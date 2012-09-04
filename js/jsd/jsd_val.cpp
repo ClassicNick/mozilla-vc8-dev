@@ -181,7 +181,6 @@ jsd_GetValueString(JSDContext* jsdc, JSDValue* jsdval)
     JSCrossCompartmentCall *call = NULL;
     jsval stringval;
     JSString *string;
-    JSBool needWrap;
     JSObject *scopeObj;
 
     if(jsdval->string)

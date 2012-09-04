@@ -1080,6 +1080,8 @@ JSD_GetErrorReporter(JSDContext*        jsdc,
 /***************************************************************************/
 /* Generic locks that callers can use for their own purposes */
 
+struct JSDStaticLock;
+
 /*
 * Is Locking and GetThread supported in this build?
 */
@@ -1089,7 +1091,7 @@ JSD_IsLockingAndThreadIdSupported();
 /*
 * Create a reentrant/nestable lock
 */
-extern JSD_PUBLIC_API(void*)
+extern JSD_PUBLIC_API(JSDStaticLock*)
 JSD_CreateLock();
 
 /*
@@ -1097,27 +1099,27 @@ JSD_CreateLock();
 * counter if this thread already owns the lock.
 */
 extern JSD_PUBLIC_API(void)
-JSD_Lock(void* lock);
+JSD_Lock(JSDStaticLock* lock);
 
 /*
 * Release lock for this thread (or decrement the counter if JSD_Lock
 * was previous called more than once).
 */
 extern JSD_PUBLIC_API(void)
-JSD_Unlock(void* lock);
+JSD_Unlock(JSDStaticLock* lock);
 
 /*
 * For debugging only if not (JS_THREADSAFE AND DEBUG) then returns JS_TRUE
 *    So JSD_IsLocked(lock) may not equal !JSD_IsUnlocked(lock)
 */
 extern JSD_PUBLIC_API(JSBool)
-JSD_IsLocked(void* lock);
+JSD_IsLocked(JSDStaticLock* lock);
 
 /*
 * See above...
 */
 extern JSD_PUBLIC_API(JSBool)
-JSD_IsUnlocked(void* lock);
+JSD_IsUnlocked(JSDStaticLock* lock);
 
 /*
 * return an ID uniquely identifying this thread.

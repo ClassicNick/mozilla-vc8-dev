@@ -306,7 +306,6 @@ jsd_GetThisForStackFrame(JSDContext* jsdc,
                          JSDThreadState* jsdthreadstate,
                          JSDStackFrameInfo* jsdframe)
 {
-    JSObject* obj;
     JSDValue* jsdval = NULL;
     JSD_LOCK_THREADSTATES(jsdc);
 
