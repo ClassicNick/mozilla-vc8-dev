@@ -134,7 +134,80 @@ namespace mozilla {
  *
  * especially since GNU C++ fails to notice that this does indeed initialize x
  * and y, which may matter if they're const.
+ * To avoid this, C++11 has tweaks to make it possible to write what you mean.
+ * The four constructor overloads above can be written as one constructor
+ * template like so[0]:
+ *
+ *   template <typename XArg, typename YArg>
+ *   C::C(XArg&& x, YArg&& y) : x(Forward<XArg>(x)), y(Forward<YArg>(y)) { }
+ *
+ * ("'Don't Repeat Yourself'? What's that?")
+ *
+ * This takes advantage of two new rules in C++11:
+ *
+ * - First, when a function template takes an argument that is an rvalue
+ *   reference to a template argument (like 'XArg&& x' and 'YArg&& y' above),
+ *   then when the argument is applied to an lvalue, the template argument
+ *   resolves to 'T &'; and when it is applied to an rvalue, the template
+ *   argument resolves to 'T &&'. Thus, in a call to C::C like:
+ *
+ *      X foo(int);
+ *      Y yy;
+ *
+ *      C(foo(5), yy)
+ *
+ *   XArg would resolve to 'X&&', and YArg would resolve to 'Y&'.
+ *
+ * - Second, Whereas C++ used to forbid references to references, C++11 defines
+ *   'collapsing rules': 'T& &', 'T&& &', and 'T& &&' (that is, any combination
+ *   involving an lvalue reference) now collapse to simply 'T&'; and 'T&& &&'
+ *   collapses to 'T&&'.
+ *
+ *   Thus, in the call above, 'XArg&&' is 'X&& &&', collapsing to 'X&&'; and
+ *   'YArg&&' is 'Y& &&', which collapses to 'Y &'. Because the arguments are
+ *   declared as rvalue references to template arguments, the rvalue-ness
+ *   "shines through" where present.
+ *
+ * Then, the 'Forward<T>' function --- you must invoke 'Forward' with its type
+ * argument --- returns an lvalue reference or an rvalue reference to its
+ * argument, depending on what T is. In our unified constructor definition, that
+ * means that we'll invoke either the copy or move constructors for x and y,
+ * depending on what we gave C's constructor. In our call, we'll move 'foo()'
+ * into 'x', but copy 'yy' into 'y'.
+ *
+ * This header file defines Move and Forward in the mozilla namespace. It's up
+ * to individual containers to annotate moves as such, by calling Move; and it's
+ * up to individual types to define move constructors and assignment operators
+ * when valuable.
+ *
+ * (C++11 says that the <utility> header file should define 'std::move' and
+ * 'std::forward', which are just like our 'Move' and 'Forward'; but those
+ * definitions aren't available in that header on all our platforms, so we
+ * define them ourselves here.)
+ *
+ * 0. This pattern is known as "perfect forwarding".  Interestingly, it is not
+ *    actually perfect, and it can't forward all possible argument expressions!
+ *    There are two issues: one that's a C++11 issue, and one that's a legacy
+ *    compiler issue.
+ *
+ *    The C++11 issue is that you can't form a reference to a bit-field.  As a
+ *    workaround, assign the bit-field to a local variable and use that:
+ *
+ *      // C is as above
+ *      struct S { int x : 1; } s;
+ *      C(s.x, 0); // BAD: s.x is a reference to a bit-field, can't form those
+ *      int tmp = s.x;
+ *      C(tmp, 0); // OK: tmp not a bit-field
+ *
+ *    The legacy issue is that when we don't have true nullptr and must emulate
+ *    it (gcc 4.4/4.5), forwarding |nullptr| results in an |int| or |long|
+ *    forwarded reference.  But such a reference, even if its value is a null
+ *    pointer constant expression, is not itself a null pointer constant
+ *    expression.  This causes -Werror=conversion-null errors and pointer-to-
+ *    integer comparison errors.  Until we always have true nullptr, users of
+ *    forwarding methods must not pass |nullptr| to them.
  */
+
 template<typename T>
 class MoveRef
 {
