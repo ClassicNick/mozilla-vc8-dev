@@ -316,7 +316,7 @@ private:
     bool mD3D11DeviceInitialized;
 #endif
 
-    virtual void GetPlatformCMSOutputProfile(void* &mem, size_t &size);
+    virtual qcms_profile* GetPlatformCMSOutputProfile();
 
     // TODO: unify this with mPrefFonts (NB: holds families, not fonts) in gfxPlatformFontList
     nsDataHashtable<nsCStringHashKey, nsTArray<nsRefPtr<gfxFontEntry> > > mPrefFonts;
