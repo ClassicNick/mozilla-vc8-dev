@@ -139,6 +139,7 @@ struct NullPtr
 
 namespace gc {
 struct Cell;
+template<typename T>
 struct PersistentRootedMarker;
 } /* namespace gc */
 
@@ -1135,7 +1136,8 @@ template<typename T>
 class PersistentRooted : private mozilla::LinkedListElement<PersistentRooted<T> > {
     friend class mozilla::LinkedList<PersistentRooted>;
     friend class mozilla::LinkedListElement<PersistentRooted>;
-    friend class js::gc::PersistentRootedMarker;
+
+    friend class js::gc::PersistentRootedMarker<T>;
 
     void registerWithRuntime(JSRuntime *rt) {
         JS::shadow::Runtime *srt = JS::shadow::Runtime::asShadowRuntime(rt);
