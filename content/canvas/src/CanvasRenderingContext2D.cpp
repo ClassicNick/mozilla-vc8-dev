@@ -859,7 +859,8 @@ CanvasRenderingContext2D::EnsureTarget()
 
         SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
-        if (glue) {
+#if USE_SKIA
+        if (glue && glue->GetGrContext() && glue->GetGLContext()) {
           mTarget = Factory::CreateDrawTargetSkiaWithGrContext(glue->GetGrContext(), size, format);
           if (mTarget) {
             mStream = gfx::SurfaceStream::CreateForType(SurfaceStreamType::TripleBuffer, glue->GetGLContext());
@@ -868,6 +869,7 @@ CanvasRenderingContext2D::EnsureTarget()
             printf_stderr("Failed to create a SkiaGL DrawTarget, falling back to software\n");
           }
         }
+#endif
         if (!mTarget) {
           mTarget = layerManager->CreateDrawTarget(size, format);
         }
@@ -4143,12 +4145,14 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
 
     CanvasLayer::Data data;
     if (mStream) {
+#ifdef USE_SKIA
       SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
       if (glue) {
         data.mGLContext = glue->GetGLContext();
         data.mStream = mStream.get();
       }
+#endif
     } else {
       data.mDrawTarget = mTarget;
     }
@@ -4191,7 +4195,9 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     if (glue) {
       canvasLayer->SetPreTransactionCallback(
               CanvasRenderingContext2DUserData::PreTransactionCallback, userData);
+#if USE_SKIA
       data.mGLContext = glue->GetGLContext();
+#endif
       data.mStream = mStream.get();
       data.mTexID = (uint32_t)((uintptr_t)mTarget->GetNativeSurface(NativeSurfaceType::OPENGL_TEXTURE));
     }

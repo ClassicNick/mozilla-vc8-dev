@@ -7,7 +7,6 @@
 PARALLEL_DIRS += [
   'encoder',
   'mediasource',
-  'ogg',
   'webaudio',
   'webvtt'
 ]
@@ -19,7 +18,7 @@ if CONFIG['MOZ_WAVE']:
     PARALLEL_DIRS += ['wave']
 
 if CONFIG['MOZ_WEBM']:
-    PARALLEL_DIRS += ['webm']
+    PARALLEL_DIRS += ['ogg', 'webm']
 
 if CONFIG['MOZ_GSTREAMER']:
     PARALLEL_DIRS += ['gstreamer']

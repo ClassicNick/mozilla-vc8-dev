@@ -9,7 +9,11 @@
 #include "prlog.h"
 #include "mozilla/Preferences.h"
 
+#undef MOZ_WEBM_ENCODER
+
+#ifdef MOZ_WEBM
 #include "OggWriter.h"
+#endif
 #ifdef MOZ_OPUS
 #include "OpusTrackEncoder.h"
 
@@ -125,6 +129,7 @@ MediaEncoder::CreateEncoder(const nsAString& aMIMEType, uint8_t aTrackTypes)
     mimeType = NS_LITERAL_STRING(VIDEO_MP4);
   }
 #endif // MOZ_OMX_ENCODER
+#ifdef MOZ_WEBM
   else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
            (aMIMEType.EqualsLiteral(AUDIO_OGG) ||
            (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK))) {
@@ -134,6 +139,7 @@ MediaEncoder::CreateEncoder(const nsAString& aMIMEType, uint8_t aTrackTypes)
     NS_ENSURE_TRUE(audioEncoder, nullptr);
     mimeType = NS_LITERAL_STRING(AUDIO_OGG);
   }
+#endif
   else {
     LOG(PR_LOG_ERROR, ("Can not find any encoder to record this media stream"));
     return nullptr;

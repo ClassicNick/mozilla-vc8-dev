@@ -18,7 +18,7 @@
 #include "insanity/pkix.h"
 
 #include <limits>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "cert.h"
 #include "cryptohi.h"

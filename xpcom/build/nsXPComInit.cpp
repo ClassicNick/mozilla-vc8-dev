@@ -699,10 +699,12 @@ NS_InitXPCOM2(nsIServiceManager* *result,
     mozilla::SetICUMemoryFunctions();
 
     // Do the same for libogg.
+#ifdef MOZ_WEBM
     ogg_set_mem_functions(OggReporter::Alloc,
                           OggReporter::Calloc,
                           OggReporter::Realloc,
                           OggReporter::Free);
+#endif
 
 #ifdef MOZ_VPX
     // And for VPX.

@@ -15,7 +15,11 @@ extern "C" {
 #ifndef EBMLWRITER_HPP
 #define EBMLWRITER_HPP
 #include <stddef.h>
+#ifdef MOZ_WEBM
 #include "vpx/vpx_integer.h"
+#else
+#include "mozilla/StandardInteger.h"
+#endif
 #include "EbmlBufferWriter.h"
 
 /* note: you must define write and serialize functions as well as your own

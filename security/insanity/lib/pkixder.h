@@ -25,7 +25,7 @@
 #include "secder.h"
 #include "secerr.h"
 #include "secoidt.h"
-#include "stdint.h"
+#include "mozilla/StandardInteger.h"
 
 namespace insanity { namespace der {
 

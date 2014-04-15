@@ -28,7 +28,7 @@ if CONFIG['MOZ_OPUS']:
     EXPORTS += ['OpusTrackEncoder.h']
     UNIFIED_SOURCES += ['OpusTrackEncoder.cpp']
 
-if CONFIG['MOZ_WEBM_ENCODER']:
+if CONFIG['MOZ_WEBM']:
     EXPORTS += ['VorbisTrackEncoder.h',
                 'VP8TrackEncoder.h',
     ]
