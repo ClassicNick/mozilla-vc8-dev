@@ -12,6 +12,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Compiler.h"
 #include "mozilla/Likely.h"
+#include "mozilla/MacroArgs.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -343,6 +344,8 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
 #define MOZ_RELEASE_ASSERT(a) \
    MOZ_ASSERT_GLUE(MOZ_ASSERT_CHOOSE_HELPER(MOZ_COUNT_ASSERT_ARGS(a)), \
                    (a))
+
+#define MOZ_RELEASE_ASSERT_GLUE(a, b) a b
 #ifdef DEBUG
 #  define MOZ_ASSERT(a) MOZ_RELEASE_ASSERT(a)
 #else

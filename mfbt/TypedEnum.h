@@ -10,6 +10,7 @@
 #define mozilla_TypedEnum_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/MacroArgs.h"
 
 #if defined(__cplusplus)
 
