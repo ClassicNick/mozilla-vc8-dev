@@ -81,7 +81,7 @@ MediaStreamAudioSourceNode::PrincipalChanged(DOMMediaStream* ms)
       subsumes = false;
     }
   }
-  auto stream = static_cast<AudioNodeExternalInputStream*>(mStream.get());
+  AudioNodeExternalInputStream* stream = static_cast<AudioNodeExternalInputStream*>(mStream.get());
   stream->SetInt32Parameter(MediaStreamAudioSourceNodeEngine::ENABLE, subsumes);
 }
 

@@ -27,7 +27,7 @@ public:
   NS_DECL_NSICONTROLLERCOMMANDGROUP
 
 public:
-  typedef nsClassHashtable<nsCStringHashKey, nsTArray<nsCString>> GroupsHashtable;
+  typedef nsClassHashtable<nsCStringHashKey, nsTArray<nsCString> > GroupsHashtable;
 
 protected:
   void ClearGroupsHash();

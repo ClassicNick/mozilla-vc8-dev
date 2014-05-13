@@ -1170,11 +1170,12 @@ mozJSComponentLoader::IsModuleLoaded(const nsACString& aLocation,
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    ComponentLoaderInfo info(aLocation);
-    rv = info.EnsureKey();
+	nsAutoCString key;
+	nsCOMPtr<nsIURI> URI;
+    rv = URI->GetSpec(key);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    *retval = !!mImports.Get(info.Key());
+    *retval = !!mImports.Get(key);
     return NS_OK;
 }
 

@@ -135,10 +135,6 @@ static inline bool profiler_is_paused() { return false; }
 static inline void profiler_pause() {}
 static inline void profiler_resume() {}
 
-<<<<<<< HEAD
-=======
-
->>>>>>> a772659
 // Immediately capture the current thread's call stack and return it
 static inline ProfilerBacktrace* profiler_get_backtrace() { return nullptr; }
 

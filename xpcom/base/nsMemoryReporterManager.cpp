@@ -215,8 +215,9 @@ static nsresult
 GetKinfoVmentrySelf(int64_t* aPrss, uint64_t* aMaxreg)
 {
   int cnt;
-  struct kinfo_vmentry *vmmap, *kve;
-  if ((vmmap = kinfo_getvmmap(getpid(), &cnt)) == nullptr) {
+  struct kinfo_vmentry* vmmap;
+  struct kinfo_vmentry* kve;
+  if (!(vmmap = kinfo_getvmmap(getpid(), &cnt))) {
     return NS_ERROR_FAILURE;
   }
   if (aPrss) {
@@ -685,7 +686,7 @@ NS_IMPL_ISUPPORTS1(PageFaultsHardReporter, nsIMemoryReporter)
 static int64_t
 HeapOverheadRatio(jemalloc_stats_t* aStats)
 {
-  return (int64_t) 10000 *
+  return (int64_t)10000 *
     (aStats->waste + aStats->bookkeeping + aStats->page_cache) /
     ((double)aStats->allocated);
 }
@@ -1047,7 +1048,7 @@ nsMemoryReporterManager::GetReportsExtended(
 nsresult
 nsMemoryReporterManager::StartGettingReports()
 {
-  GetReportsState *s = mGetReportsState;
+  GetReportsState* s = mGetReportsState;
 
   // Get reports for this process.
   GetReportsForThisProcessExtended(s->mHandleReport, s->mHandleReportData,
@@ -1065,7 +1066,7 @@ typedef nsCOMArray<nsIMemoryReporter> MemoryReporterArray;
 static PLDHashOperator
 StrongEnumerator(nsRefPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
 {
-  MemoryReporterArray *allReporters = static_cast<MemoryReporterArray*>(aData);
+  MemoryReporterArray* allReporters = static_cast<MemoryReporterArray*>(aData);
   allReporters->AppendElement(aElem->GetKey());
   return PL_DHASH_NEXT;
 }
@@ -1073,7 +1074,7 @@ StrongEnumerator(nsRefPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
 static PLDHashOperator
 WeakEnumerator(nsPtrHashKey<nsIMemoryReporter>* aElem, void* aData)
 {
-  MemoryReporterArray *allReporters = static_cast<MemoryReporterArray*>(aData);
+  MemoryReporterArray* allReporters = static_cast<MemoryReporterArray*>(aData);
   allReporters->AppendElement(aElem->GetKey());
   return PL_DHASH_NEXT;
 }
@@ -1268,8 +1269,7 @@ nsMemoryReporterManager::RegisterReporterHelper(
   }
 
   if (mStrongReporters->Contains(aReporter) ||
-      mWeakReporters->Contains(aReporter))
-  {
+      mWeakReporters->Contains(aReporter)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -1407,7 +1407,9 @@ class Int64Wrapper MOZ_FINAL : public nsISupports
 {
 public:
   NS_DECL_ISUPPORTS
-  Int64Wrapper() : mValue(0) { }
+  Int64Wrapper() : mValue(0)
+  {
+  }
   int64_t mValue;
 };
 
@@ -1431,8 +1433,7 @@ public:
     // do that for distinguished amounts.
     if (aPath.Equals("heap-allocated") ||
         (aKind == nsIMemoryReporter::KIND_NONHEAP &&
-         PromiseFlatCString(aPath).Find("explicit") == 0))
-    {
+         PromiseFlatCString(aPath).Find("explicit") == 0)) {
       Int64Wrapper* wrappedInt64 = static_cast<Int64Wrapper*>(aWrappedExplicit);
       wrappedInt64->mValue += aAmount;
     }
@@ -1515,7 +1516,8 @@ nsMemoryReporterManager::GetResidentFast(int64_t* aAmount)
 }
 
 /*static*/
-int64_t nsMemoryReporterManager::ResidentFast()
+int64_t
+nsMemoryReporterManager::ResidentFast()
 {
 #ifdef HAVE_VSIZE_AND_RESIDENT_REPORTERS
   int64_t amount;
@@ -1663,7 +1665,8 @@ public:
   MinimizeMemoryUsageRunnable(nsIRunnable* aCallback)
     : mCallback(aCallback)
     , mRemainingIters(sNumIters)
-  {}
+  {
+  }
 
   NS_IMETHOD Run()
   {
