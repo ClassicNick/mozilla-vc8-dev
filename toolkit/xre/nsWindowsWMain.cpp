@@ -81,7 +81,9 @@ FreeAllocStrings(int argc, char **argv)
 int wmain(int argc, WCHAR **argv)
 {
 #ifndef XRE_DONT_SUPPORT_XPSP2
+#if defined(_MSC_VER) && _MSC_VER >= 1600
   WindowsCrtPatch::Init();
+#endif
 #endif
 
 #ifndef XRE_DONT_PROTECT_DLL_LOAD

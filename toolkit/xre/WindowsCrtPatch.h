@@ -37,6 +37,8 @@
 #ifndef WindowsCrtPatch_h
 #define WindowsCrtPatch_h
 
+#if defined(_MSC_VER) && _MSC_VER >= 1600
+
 #include "nsWindowsDllInterceptor.h"
 #include "mozilla/WindowsVersion.h"
 
@@ -142,5 +144,7 @@ Init()
 }
 
 } // namespace WindowsCrtPatch
+
+#endif
 
 #endif // WindowsCrtPatch_h
