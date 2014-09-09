@@ -493,7 +493,9 @@ MediaStreamGraphImpl::MarkConsumed(MediaStream* aStream)
 void
 MediaStreamGraphImpl::UpdateStreamOrder()
 {
+#ifdef MOZ_WEBRTC
   bool shouldAEC = false;
+#endif
   bool audioTrackPresent = false;
   // Value of mCycleMarker for unvisited streams in cycle detection.
   const uint32_t NOT_VISITED = UINT32_MAX;
@@ -504,9 +506,15 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     MediaStream* stream = mStreams[i];
     stream->mIsConsumed = false;
     stream->mInBlockingSet = false;
+#ifdef MOZ_WEBRTC
     if (stream->AsSourceStream() &&
         stream->AsSourceStream()->NeedsMixing()) {
       shouldAEC = true;
+    }
+#endif
+    // If this is a AudioNodeStream, force a AudioCallbackDriver.
+    if (stream->AsAudioNodeStream()) {
+      audioTrackPresent = true;
     }
     for (StreamBuffer::TrackIter tracks(stream->GetStreamBuffer(), MediaSegment::AUDIO);
          !tracks.IsEnded(); tracks.Next()) {
@@ -527,6 +535,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
     }
   }
 
+#ifdef MOZ_WEBRTC
   if (shouldAEC && !mFarendObserverRef && gFarendObserver) {
     mFarendObserverRef = gFarendObserver;
     mMixer.AddCallback(mFarendObserverRef);
@@ -536,6 +545,7 @@ MediaStreamGraphImpl::UpdateStreamOrder()
       mFarendObserverRef = nullptr;
     }
   }
+#endif
 
   // The algorithm for finding cycles is based on Tim Leslie's iterative
   // implementation [1][2] of Pearce's variant [3] of Tarjan's strongly
@@ -2655,7 +2665,9 @@ MediaStreamGraphImpl::MediaStreamGraphImpl(bool aRealtime,
   , mNonRealtimeProcessing(false)
   , mStreamOrderDirty(false)
   , mLatencyLog(AsyncLatencyLogger::Get())
+#ifdef MOZ_WEBRTCj
   , mFarendObserverRef(nullptr)
+#endif
   , mMemoryReportMonitor("MSGIMemory")
   , mSelfRef(MOZ_THIS_IN_INITIALIZER_LIST())
   , mAudioStreamSizes()
