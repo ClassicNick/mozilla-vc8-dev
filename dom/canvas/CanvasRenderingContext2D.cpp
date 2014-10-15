@@ -1220,7 +1220,7 @@ CanvasRenderingContext2D::EnsureTarget(RenderingMode aRenderingMode)
 
         SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
-#if USE_SKIA
+#if USE_SKIA_GPU
         if (glue && glue->GetGrContext() && glue->GetGLContext()) {
           mTarget = Factory::CreateDrawTargetSkiaWithGrContext(glue->GetGrContext(), size, format);
           if (mTarget) {
