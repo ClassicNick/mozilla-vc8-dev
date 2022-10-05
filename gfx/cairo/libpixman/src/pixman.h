@@ -104,7 +104,7 @@ typedef unsigned __int64 uint64_t;
 #elif defined (_AIX)
 #  include <sys/inttypes.h>
 #else
-#  include <stdint.h>
+#  include "mozilla/StandardInteger.h"
 #endif
 
 #endif

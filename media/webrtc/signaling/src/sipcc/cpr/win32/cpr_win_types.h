@@ -42,8 +42,8 @@
 #if defined(CPR_WIN32_SDK_MINGW)
 #include <stdint.h>
 #elif defined(_MSC_VER) && defined(CPR_WIN32_SDK_MICROSOFT)
-#if _MSC_VER >= 1600
-#include <stdint.h>
+#ifdef _MSC_VER
+#include "mozilla/StandardInteger.h"
 #elif defined(CPR_STDINT_INCLUDE)
 #include CPR_STDINT_INCLUDE
 #else

@@ -49,8 +49,8 @@
 
 #else  /* !_WIN32 */
 
-#if _MSC_VER >= 1600
-#include <stdint.h>
+#if defined(_MSC_VER)
+#include "mozilla/StandardInteger.h"
 #elif defined(BREAKPAD_CUSTOM_STDINT_H)
 /* Visual C++ Pre-2010 did not ship a stdint.h, so allow
  * consumers of this library to provide their own because

@@ -67,8 +67,8 @@
 #define NO_64BIT_MATH 1
 #endif
 #else
-#ifdef HAVE_STDINT_H
-# include <stdint.h>
+#if defined(HAVE_STDINT_H) || defined(_MSC_VER)
+# include "mozilla/StandardInteger.h"
 #endif
 #endif /* INTEGER_TYPES_H */
 #ifdef HAVE_INTTYPES_H
