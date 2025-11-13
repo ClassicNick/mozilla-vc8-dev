@@ -21,6 +21,7 @@
  *
  * Contributor(s):
  *  Benedict Hsieh <bhsieh@mozilla.com>
+ *  Taras Glek <tglek@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -104,6 +105,7 @@ StartupCache::InitSingleton()
   rv = StartupCache::gStartupCache->Init();
   if (NS_FAILED(rv)) {
     delete StartupCache::gStartupCache;
+    StartupCache::gStartupCache = nsnull;
   }
   return rv;
 }
@@ -116,6 +118,10 @@ StartupCache::StartupCache()
 
 StartupCache::~StartupCache() 
 {
+  if (mTimer) {
+    mTimer->Cancel();
+  }
+
   // Generally, the in-memory table should be empty here,
   // but in special cases (like Talos Ts tests) we
   // could shut down before we write.
@@ -170,6 +176,9 @@ StartupCache::Init()
   rv = mObserverService->AddObserver(mListener, NS_XPCOM_SHUTDOWN_OBSERVER_ID,
                                      PR_FALSE);
   NS_ENSURE_SUCCESS(rv, rv);
+  rv = mObserverService->AddObserver(mListener, "startupcache-invalidate",
+                                     PR_FALSE);
+  NS_ENSURE_SUCCESS(rv, rv);
   
   rv = LoadArchive();
   
@@ -183,7 +192,7 @@ StartupCache::Init()
   mTimer = do_CreateInstance("@mozilla.org/timer;1", &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   // Wait for 10 seconds, then write out the cache.
-  rv = mTimer->InitWithFuncCallback(StartupCache::WriteTimeout, this, 10000,
+  rv = mTimer->InitWithFuncCallback(StartupCache::WriteTimeout, this, 600000,
                                     nsITimer::TYPE_ONE_SHOT);
 
   return rv;
@@ -207,39 +216,25 @@ StartupCache::LoadArchive()
 nsresult
 StartupCache::GetBuffer(const char* id, char** outbuf, PRUint32* length) 
 {
-  char* data = NULL;
-  PRUint32 len;
-
   if (!mStartupWriteInitiated) {
     CacheEntry* entry; 
     nsDependentCString idStr(id);
     mTable.Get(idStr, &entry);
     if (entry) {
-      data = entry->data;
-      len = entry->size;
+      *outbuf = new char[entry->size];
+      memcpy(*outbuf, entry->data, entry->size);
+      *length = entry->size;
+      return NS_OK;
     }
   }
 
-  if (!data && mArchive) {
-    nsZipItem* zipItem = mArchive->GetItem(id);
+  if (mArchive) {
+    nsZipItemPtr<char> zipItem(mArchive, id, true);
     if (zipItem) {
-      const PRUint8* itemData = mArchive->GetData(zipItem);
-      if (!itemData || !mArchive->CheckCRC(zipItem, itemData)) {
-        NS_WARNING("StartupCache file corrupted!");
-        InvalidateCache();
-        return NS_ERROR_FILE_CORRUPTED;
-      }
-
-      len = zipItem->Size();
-      data = (char*) itemData;
-    }
-  }
-
-  if (data) {
-    *outbuf = new char[len];
-    memcpy(*outbuf, data, len);
-    *length = len;
-    return NS_OK;
+      *outbuf = zipItem.Forget();
+      *length = zipItem.Length();
+      return NS_OK;
+    } 
   }
 
   return NS_ERROR_NOT_AVAILABLE;
@@ -415,6 +410,10 @@ StartupCacheListener::Observe(nsISupports *subject, const char* topic, const PRU
   nsresult rv = NS_OK;
   if (strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     StartupCache::gShutdownInitiated = PR_TRUE;
+  } else if (strcmp(topic, "startupcache-invalidate") == 0) {
+    StartupCache* sc = StartupCache::GetSingleton();
+    if (sc)
+      sc->InvalidateCache();
   }
   return rv;
 } 
@@ -608,6 +607,9 @@ StartupCacheWrapper::ResetStartupWriteTimer()
     return NS_ERROR_NOT_INITIALIZED;
   }
   sc->mStartupWriteInitiated = PR_FALSE;
+  
+  // Init with a shorter timer, for testing convenience.
+  sc->mTimer->Cancel();
   sc->mTimer->InitWithFuncCallback(StartupCache::WriteTimeout, sc, 10000,
                                    nsITimer::TYPE_ONE_SHOT);
   return NS_OK;

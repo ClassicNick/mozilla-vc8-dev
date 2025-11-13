@@ -88,7 +88,7 @@ public:
     virtual bool AnswerCreateWindow(PBrowserParent** retval);
     virtual bool RecvSyncMessage(const nsString& aMessage,
                                  const nsString& aJSON,
-                                 nsTArray<nsString>* aJSONRetVal);
+                                 InfallibleTArray<nsString>* aJSONRetVal);
     virtual bool RecvAsyncMessage(const nsString& aMessage,
                                   const nsString& aJSON);
     virtual bool RecvNotifyIMEFocus(const PRBool& aFocus,
@@ -110,8 +110,8 @@ public:
     virtual PContentDialogParent* AllocPContentDialog(const PRUint32& aType,
                                                       const nsCString& aName,
                                                       const nsCString& aFeatures,
-                                                      const nsTArray<int>& aIntParams,
-                                                      const nsTArray<nsString>& aStringParams);
+                                                      const InfallibleTArray<int>& aIntParams,
+                                                      const InfallibleTArray<nsString>& aStringParams);
     virtual bool DeallocPContentDialog(PContentDialogParent* aDialog)
     {
       delete aDialog;
@@ -132,43 +132,22 @@ public:
                       PRInt32 aCharCode, PRInt32 aModifiers,
                       PRBool aPreventDefault);
 
-    virtual mozilla::ipc::PDocumentRendererParent* AllocPDocumentRenderer(
-            const PRInt32& x,
-            const PRInt32& y,
-            const PRInt32& w,
-            const PRInt32& h,
-            const nsString& bgcolor,
-            const PRUint32& flags,
-            const bool& flush);
+    virtual PDocumentRendererParent*
+    AllocPDocumentRenderer(const nsRect& documentRect, const gfxMatrix& transform,
+                           const nsString& bgcolor,
+                           const PRUint32& renderFlags, const bool& flushLayout,
+                           const nsIntSize& renderSize);
     virtual bool DeallocPDocumentRenderer(PDocumentRendererParent* actor);
-
-    virtual mozilla::ipc::PDocumentRendererShmemParent* AllocPDocumentRendererShmem(
-            const PRInt32& x,
-            const PRInt32& y,
-            const PRInt32& w,
-            const PRInt32& h,
-            const nsString& bgcolor,
-            const PRUint32& flags,
-            const bool& flush,
-            const gfxMatrix& aMatrix,
-            Shmem& buf);
-    virtual bool DeallocPDocumentRendererShmem(PDocumentRendererShmemParent* actor);
-
-    virtual mozilla::ipc::PDocumentRendererNativeIDParent* AllocPDocumentRendererNativeID(
-            const PRInt32& x,
-            const PRInt32& y,
-            const PRInt32& w,
-            const PRInt32& h,
-            const nsString& bgcolor,
-            const PRUint32& flags,
-            const bool& flush,
-            const gfxMatrix& aMatrix,
-            const PRUint32& nativeID);
-    virtual bool DeallocPDocumentRendererNativeID(PDocumentRendererNativeIDParent* actor);
-
 
     virtual PContentPermissionRequestParent* AllocPContentPermissionRequest(const nsCString& aType, const IPC::URI& uri);
     virtual bool DeallocPContentPermissionRequest(PContentPermissionRequestParent* actor);
+
+    virtual POfflineCacheUpdateParent* AllocPOfflineCacheUpdate(
+            const URI& aManifestURI,
+            const URI& aDocumentURI,
+            const nsCString& aClientID,
+            const bool& stickDocument);
+    virtual bool DeallocPOfflineCacheUpdate(POfflineCacheUpdateParent* actor);
 
     JSBool GetGlobalJSObject(JSContext* cx, JSObject** globalp);
 
@@ -188,7 +167,7 @@ protected:
     bool ReceiveMessage(const nsString& aMessage,
                         PRBool aSync,
                         const nsString& aJSON,
-                        nsTArray<nsString>* aJSONRetVal = nsnull);
+                        InfallibleTArray<nsString>* aJSONRetVal = nsnull);
 
     void ActorDestroy(ActorDestroyReason why);
 
@@ -210,9 +189,10 @@ protected:
       nsCString mFeatures;
       nsCOMPtr<nsIDialogParamBlock> mParams;
     };
-    nsTArray<DelayedDialogData*> mDelayedDialogs;
+    InfallibleTArray<DelayedDialogData*> mDelayedDialogs;
 
     PRBool ShouldDelayDialogs();
+    PRBool AllowContentIME();
 
     NS_OVERRIDE
     virtual PRenderFrameParent* AllocPRenderFrame();

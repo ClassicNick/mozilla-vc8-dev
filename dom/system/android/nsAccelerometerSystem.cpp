@@ -1,4 +1,5 @@
-/* ***** BEGIN LICENSE BLOCK *****
+/* -*- Mode: c++; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
+ * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -34,9 +35,11 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/dom/ContentChild.h"
 #include "nsAccelerometerSystem.h"
 
 #include "AndroidBridge.h"
+#include "nsXULAppAPI.h"
 
 using namespace mozilla;
 
@@ -53,10 +56,18 @@ nsAccelerometerSystem::~nsAccelerometerSystem()
 
 void nsAccelerometerSystem::Startup()
 {
-    AndroidBridge::Bridge()->EnableAccelerometer(true);
+    if (XRE_GetProcessType() == GeckoProcessType_Default)
+        AndroidBridge::Bridge()->EnableAccelerometer(true);
+    else
+        mozilla::dom::ContentChild::GetSingleton()->
+            SendAddAccelerometerListener();
 }
 
 void nsAccelerometerSystem::Shutdown()
 {
-    AndroidBridge::Bridge()->EnableAccelerometer(false);
+    if (XRE_GetProcessType() == GeckoProcessType_Default)
+        AndroidBridge::Bridge()->EnableAccelerometer(false);
+    else
+        mozilla::dom::ContentChild::GetSingleton()->
+            SendRemoveAccelerometerListener();
 }

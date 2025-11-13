@@ -94,7 +94,12 @@ public:
   // (A resample performs the same operations as a sample but doesn't advance
   // the current time and doesn't check if the container is paused)
   void Resample() { DoSample(PR_FALSE); }
-  void SetResampleNeeded() { mResampleNeeded = PR_TRUE; }
+  void SetResampleNeeded()
+  {
+    if (!mRunningSample) {
+      mResampleNeeded = PR_TRUE;
+    }
+  }
   void FlushResampleRequests()
   {
     if (!mResampleNeeded)
@@ -111,10 +116,9 @@ public:
   void Traverse(nsCycleCollectionTraversalCallback* aCallback);
   void Unlink();
 
-  // Methods for controlling whether we're sampling
-  // (Use to register/unregister us with the given nsRefreshDriver)
-  void StartSampling(nsRefreshDriver* aRefreshDriver);
-  void StopSampling(nsRefreshDriver* aRefreshDriver);
+  // Methods for relaying the availability of the refresh driver
+  void NotifyRefreshDriverCreated(nsRefreshDriver* aRefreshDriver);
+  void NotifyRefreshDriverDestroying(nsRefreshDriver* aRefreshDriver);
 
   // Helper to check if we have any animation elements at all
   PRBool HasRegisteredAnimations()
@@ -153,6 +157,10 @@ protected:
   // Cycle-collection implementation helpers
   PR_STATIC_CALLBACK(PLDHashOperator) CompositorTableEntryTraverse(
       nsSMILCompositor* aCompositor, void* aArg);
+
+  // Methods for controlling whether we're sampling
+  void StartSampling(nsRefreshDriver* aRefreshDriver);
+  void StopSampling(nsRefreshDriver* aRefreshDriver);
 
   // Sample-related callbacks and implementation helpers
   virtual void DoSample();
@@ -196,10 +204,11 @@ protected:
   mozilla::TimeStamp         mCurrentSampleTime;
   mozilla::TimeStamp         mStartTime;
   PRPackedBool               mResampleNeeded;
+  // If we're told to start sampling but there are no animation elements we just
+  // record the time, set the following flag, and then wait until we have an
+  // animation element. Then we'll reset this flag and actually start sampling.
   PRPackedBool               mDeferredStartSampling;
-#ifdef DEBUG
   PRPackedBool               mRunningSample;
-#endif
 
   // Store raw ptr to mDocument.  It owns the controller, so controller
   // shouldn't outlive it

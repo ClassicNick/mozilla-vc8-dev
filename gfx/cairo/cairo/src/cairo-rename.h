@@ -183,6 +183,7 @@
 #define cairo_quartz_surface_create _moz_cairo_quartz_surface_create
 #define cairo_quartz_surface_create_for_cg_context _moz_cairo_quartz_surface_create_for_cg_context
 #define cairo_quartz_surface_get_cg_context _moz_cairo_quartz_surface_get_cg_context
+#define cairo_quartz_surface_get_image _moz_cairo_quartz_surface_get_image
 #define cairo_rectangle _moz_cairo_rectangle
 #define cairo_rectangle_list_destroy _moz_cairo_rectangle_list_destroy
 #define cairo_reference _moz_cairo_reference
@@ -324,6 +325,7 @@
 #define cairo_xlib_surface_get_xrender_format _moz_cairo_xlib_surface_get_xrender_format
 #define cairo_xlib_surface_set_drawable _moz_cairo_xlib_surface_set_drawable
 #define cairo_xlib_surface_set_size _moz_cairo_xlib_surface_set_size
+#ifdef MOZ_TREE_PIXMAN
 #define pixman_region_set_static_pointers _moz_pixman_region_set_static_pointers
 #define pixman_region_init _moz_pixman_region_init
 #define pixman_region_init_rect _moz_pixman_region_init_rect
@@ -409,3 +411,4 @@
 #define pixman_add_traps _moz_pixman_add_traps
 #define pixman_add_trapezoids _moz_pixman_add_trapezoids
 #define pixman_rasterize_trapezoid _moz_pixman_rasterize_trapezoid
+#endif

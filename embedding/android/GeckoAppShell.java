@@ -49,15 +49,14 @@ import android.text.*;
 import android.view.*;
 import android.view.inputmethod.*;
 import android.content.*;
+import android.content.res.*;
+import android.content.pm.*;
 import android.graphics.*;
 import android.widget.*;
 import android.hardware.*;
 import android.location.*;
 
 import android.util.*;
-import android.content.DialogInterface; 
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.net.Uri;
 
 class GeckoAppShell
@@ -70,6 +69,7 @@ class GeckoAppShell
     private GeckoAppShell() { }
 
     static boolean sGeckoRunning;
+    static private GeckoEvent gPendingResize = null;
 
     static private boolean gRestartScheduled = false;
 
@@ -90,23 +90,21 @@ class GeckoAppShell
     public static native void nativeRun(String args);
 
     // helper methods
-    public static native void setInitialSize(int width, int height);
     public static native void setSurfaceView(GeckoSurfaceView sv);
     public static native void putenv(String map);
     public static native void onResume();
     public static native void onLowMemory();
     public static native void callObserver(String observerKey, String topic, String data);
     public static native void removeObserver(String observerKey);
+    public static native void loadLibs(String apkName);
 
     // java-side stuff
-    public static void loadGeckoLibs() {
+    public static void loadGeckoLibs(String apkName) {
         // The package data lib directory isn't placed in ld.so's
         // search path, so we have to manually load libraries that
         // libxul will depend on.  Not ideal.
-
-        // MozAlloc
-        System.loadLibrary("mozalloc");
         System.loadLibrary("mozutils");
+
                 
         Intent i = GeckoApp.mAppContext.getIntent();
         String env = i.getStringExtra("env0");
@@ -121,35 +119,13 @@ class GeckoAppShell
                           GeckoApp.mAppContext.getAppName() +"/tmp");
         if (!f.exists())
             f.mkdirs();
+
         GeckoAppShell.putenv("TMPDIR=" + f.getPath());
 
         f = Environment.getDownloadCacheDirectory();
         GeckoAppShell.putenv("EXTERNAL_STORAGE" + f.getPath());
 
-        // NSPR
-        System.loadLibrary("nspr4");
-        System.loadLibrary("plc4");
-        System.loadLibrary("plds4");
-
-        // SQLite
-        System.loadLibrary("mozsqlite3");
-
-        // NSS
-        System.loadLibrary("nssutil3");
-        System.loadLibrary("nss3");
-        System.loadLibrary("ssl3");
-        System.loadLibrary("smime3");
-
-        // XUL
-        System.loadLibrary("xul");
-
-        // xpcom glue -- needed to load binary components
-        System.loadLibrary("xpcom");                                          
-
-        // Root certs. someday we may teach security/manager/ssl/src/nsNSSComponent.cpp to find ckbi itself
-        System.loadLibrary("nssckbi");
-        System.loadLibrary("freebl3");
-        System.loadLibrary("softokn3");
+        loadLibs(apkName);
     }
 
     public static void runGecko(String apkPath, String args, String url) {
@@ -158,8 +134,6 @@ class GeckoAppShell
 
         // Tell Gecko where the target surface view is for rendering
         GeckoAppShell.setSurfaceView(GeckoApp.surfaceView);
-
-        sGeckoRunning = true;
 
         // First argument is the .apk path
         String combinedArgs = apkPath + " -omnijar " + apkPath;
@@ -174,8 +148,16 @@ class GeckoAppShell
     private static GeckoEvent mLastDrawEvent;
 
     public static void sendEventToGecko(GeckoEvent e) {
-        if (sGeckoRunning)
+        if (sGeckoRunning) {
+            if (gPendingResize != null) {
+                notifyGeckoOfEvent(gPendingResize);
+                gPendingResize = null;
+            }
             notifyGeckoOfEvent(e);
+        } else {
+            if (e.mType == GeckoEvent.SIZE_CHANGED)
+                gPendingResize = e;
+        }
     }
 
     // Tell the Gecko event loop that an event is available.
@@ -348,6 +330,15 @@ class GeckoAppShell
         }
     }
 
+    static void onAppShellReady()
+    {
+        sGeckoRunning = true;
+        if (gPendingResize != null) {
+            notifyGeckoOfEvent(gPendingResize);
+            gPendingResize = null;
+        }
+    }
+
     static void onXreExit() {
         sGeckoRunning = false;
         Log.i("GeckoAppJava", "XRE exited");
@@ -355,6 +346,7 @@ class GeckoAppShell
             GeckoApp.mAppContext.doRestart();
         } else {
             Log.i("GeckoAppJava", "we're done, good bye");
+            GeckoApp.mAppContext.finish();
             System.exit(0);
         }
 
@@ -362,6 +354,26 @@ class GeckoAppShell
     static void scheduleRestart() {
         Log.i("GeckoAppJava", "scheduling restart");
         gRestartScheduled = true;        
+    }
+ 
+    // "Installs" an application by creating a shortcut
+    static void installWebApplication(String aURI, String aTitle, String aIconData) {
+        Log.w("GeckoAppJava", "installWebApplication for " + aURI + " [" + aTitle + "]");
+
+        // the intent to be launched by the shortcut
+        Intent shortcutIntent = new Intent("org.mozilla.fennec.WEBAPP");
+        shortcutIntent.setClassName(GeckoApp.mAppContext,
+                                    "org.mozilla." + GeckoApp.mAppContext.getAppName() + ".App");
+        shortcutIntent.putExtra("args", "--webapp=" + aURI);
+        
+        Intent intent = new Intent();
+        intent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
+        intent.putExtra(Intent.EXTRA_SHORTCUT_NAME, aTitle);
+        byte[] raw = Base64.decode(aIconData.substring(22), Base64.DEFAULT);
+        Bitmap bitmap = BitmapFactory.decodeByteArray(raw, 0, raw.length);
+        intent.putExtra(Intent.EXTRA_SHORTCUT_ICON, bitmap);
+        intent.setAction("com.android.launcher.action.INSTALL_SHORTCUT");
+        GeckoApp.mAppContext.sendBroadcast(intent);
     }
     
     static String[] getHandlersForMimeType(String aMimeType, String aAction) {
@@ -405,8 +417,30 @@ class GeckoAppShell
             return new Intent(Intent.ACTION_VIEW);
     }
 
-    static String getMimeTypeFromExtension(String aFileExt) {
-        return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(aFileExt);
+    static String getMimeTypeFromExtensions(String aFileExt) {
+        android.webkit.MimeTypeMap mtm =
+            android.webkit.MimeTypeMap.getSingleton();
+        StringTokenizer st = new StringTokenizer(aFileExt, "., ");
+        String type = null;
+        String subType = null;
+        while (st.hasMoreElements()) {
+            String ext = st.nextToken();
+            String mt = mtm.getMimeTypeFromExtension(ext);
+            if (mt == null)
+                continue;
+            int slash = mt.indexOf('/');
+            String tmpType = mt.substring(0, slash);
+            if (!tmpType.equalsIgnoreCase(type))
+                type = type == null ? tmpType : "*";
+            String tmpSubType = mt.substring(slash + 1);
+            if (!tmpSubType.equalsIgnoreCase(subType))
+                subType = subType == null ? tmpSubType : "*";
+        }
+        if (type == null)
+            type = "*";
+        if (subType == null)
+            subType = "*";
+        return type + "/" + subType;
     }
 
     static boolean openUriExternal(String aUriSpec, String aMimeType, String aPackageName, 
@@ -520,6 +554,15 @@ class GeckoAppShell
             notification.updateProgress(aAlertText, aProgress, aProgressMax);
     }
 
+    public static void alertsProgressListener_OnCancel(String aAlertName) {
+        Log.i("GeckoAppJava", "GeckoAppShell.alertsProgressListener_OnCancel('" + aAlertName + "'");
+
+        removeObserver(aAlertName);
+
+        int notificationID = aAlertName.hashCode();
+        removeNotification(notificationID);
+    }
+
     public static void handleNotification(String aAction, String aAlertName, String aAlertCookie) {
         int notificationID = aAlertName.hashCode();
 
@@ -549,4 +592,35 @@ class GeckoAppShell
         notificationManager.cancel(notificationID);
     }
 
+    public static int getDpi() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        GeckoApp.mAppContext.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        return metrics.densityDpi;
+    }
+
+    public static void setFullScreen(boolean fullscreen) {
+        GeckoApp.mFullscreen = fullscreen;
+
+        // force a reconfiguration to hide/show the system bar
+        GeckoApp.mAppContext.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        GeckoApp.mAppContext.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        GeckoApp.mAppContext.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER);
+    }
+
+    public static String showFilePicker(String aFilters) {
+        return GeckoApp.mAppContext.
+            showFilePicker(getMimeTypeFromExtensions(aFilters));
+    }
+
+    public static void showInputMethodPicker() {
+        InputMethodManager imm = (InputMethodManager) GeckoApp.surfaceView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.showInputMethodPicker();       
+    }
+
+    public static void hideProgressDialog() {
+        if (GeckoApp.mAppContext.mProgressDialog != null) {
+            GeckoApp.mAppContext.mProgressDialog.dismiss();
+            GeckoApp.mAppContext.mProgressDialog = null;
+        }
+    }
 }

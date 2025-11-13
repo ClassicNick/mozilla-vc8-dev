@@ -159,54 +159,17 @@ gfxMacFont::InitTextRun(gfxContext *aContext,
                         const PRUnichar *aString,
                         PRUint32 aRunStart,
                         PRUint32 aRunLength,
-                        PRInt32 aRunScript)
+                        PRInt32 aRunScript,
+                        PRBool aPreferPlatformShaping)
 {
     if (!mIsValid) {
         NS_WARNING("invalid font! expect incorrect text rendering");
         return PR_FALSE;
     }
 
-    PRBool ok = PR_FALSE;
-
-    if (mHarfBuzzShaper &&
-        !static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout())
-    {
-        if (gfxPlatform::GetPlatform()->UseHarfBuzzLevel() >=
-            gfxUnicodeProperties::ScriptShapingLevel(aRunScript)) {
-            ok = mHarfBuzzShaper->InitTextRun(aContext, aTextRun, aString,
-                                              aRunStart, aRunLength, 
-                                              aRunScript);
-#if DEBUG
-            if (!ok) {
-                NS_ConvertUTF16toUTF8 name(GetName());
-                char msg[256];
-                sprintf(msg, "HarfBuzz shaping failed for font: %s",
-                        name.get());
-                NS_WARNING(msg);
-            }
-#endif
-        }
-    }
-
-    if (!ok) {
-        // fallback to Core Text shaping
-        if (!mPlatformShaper) {
-            CreatePlatformShaper();
-        }
-
-        ok = mPlatformShaper->InitTextRun(aContext, aTextRun, aString,
-                                          aRunStart, aRunLength, 
-                                          aRunScript);
-#if DEBUG
-        if (!ok) {
-            NS_ConvertUTF16toUTF8 name(GetName());
-            char msg[256];
-            sprintf(msg, "Core Text shaping failed for font: %s",
-                    name.get());
-            NS_WARNING(msg);
-        }
-#endif
-    }
+    PRBool ok = gfxFont::InitTextRun(aContext, aTextRun, aString,
+                                     aRunStart, aRunLength, aRunScript,
+        static_cast<MacOSFontEntry*>(GetFontEntry())->RequiresAATLayout());
 
     aTextRun->AdjustAdvancesForSyntheticBold(aRunStart, aRunLength);
 
@@ -268,6 +231,16 @@ gfxMacFont::InitMetrics()
     mAdjustedSize = PR_MAX(mStyle.size, 1.0f);
     mFUnitsConvFactor = mAdjustedSize / upem;
 
+    // For CFF fonts, when scaling values read from CGFont* APIs, we need to
+    // use CG's idea of unitsPerEm, which may differ from the "true" value in
+    // the head table of the font (see bug 580863)
+    gfxFloat cgConvFactor;
+    if (static_cast<MacOSFontEntry*>(mFontEntry.get())->IsCFF()) {
+        cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
+    } else {
+        cgConvFactor = mFUnitsConvFactor;
+    }
+
     // Try to read 'sfnt' metrics; for local, non-sfnt fonts ONLY, fall back to
     // platform APIs. The InitMetrics...() functions will set mIsValid on success.
     if (!InitMetricsFromSfntTables(mMetrics) &&
@@ -279,7 +252,7 @@ gfxMacFont::InitMetrics()
     }
 
     if (mMetrics.xHeight == 0.0) {
-        mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * mFUnitsConvFactor;
+        mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
     }
 
     if (mStyle.sizeAdjust != 0.0 && mStyle.size > 0.0 &&
@@ -288,6 +261,11 @@ gfxMacFont::InitMetrics()
         gfxFloat aspect = mMetrics.xHeight / mStyle.size;
         mAdjustedSize = mStyle.GetAdjustedSize(aspect);
         mFUnitsConvFactor = mAdjustedSize / upem;
+        if (static_cast<MacOSFontEntry*>(mFontEntry.get())->IsCFF()) {
+            cgConvFactor = mAdjustedSize / ::CGFontGetUnitsPerEm(mCGFont);
+        } else {
+            cgConvFactor = mFUnitsConvFactor;
+        }
         mMetrics.xHeight = 0.0;
         if (!InitMetricsFromSfntTables(mMetrics) &&
             (!mFontEntry->IsUserFont() || mFontEntry->IsLocalUserFont())) {
@@ -299,7 +277,7 @@ gfxMacFont::InitMetrics()
             return;
         }
         if (mMetrics.xHeight == 0.0) {
-            mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * mFUnitsConvFactor;
+            mMetrics.xHeight = ::CGFontGetXHeight(mCGFont) * cgConvFactor;
         }
     }
 
@@ -317,7 +295,8 @@ gfxMacFont::InitMetrics()
 
     PRUint32 glyphID;
     if (mMetrics.aveCharWidth <= 0) {
-        mMetrics.aveCharWidth = GetCharWidth(cmap, 'x', &glyphID);
+        mMetrics.aveCharWidth = GetCharWidth(cmap, 'x', &glyphID,
+                                             cgConvFactor);
         if (glyphID == 0) {
             // we didn't find 'x', so use maxAdvance rather than zero
             mMetrics.aveCharWidth = mMetrics.maxAdvance;
@@ -326,14 +305,15 @@ gfxMacFont::InitMetrics()
     mMetrics.aveCharWidth += mSyntheticBoldOffset;
     mMetrics.maxAdvance += mSyntheticBoldOffset;
 
-    mMetrics.spaceWidth = GetCharWidth(cmap, ' ', &glyphID);
+    mMetrics.spaceWidth = GetCharWidth(cmap, ' ', &glyphID, cgConvFactor);
     if (glyphID == 0) {
         // no space glyph?!
         mMetrics.spaceWidth = mMetrics.aveCharWidth;
     }
     mSpaceGlyph = glyphID;
 
-    mMetrics.zeroOrAveCharWidth = GetCharWidth(cmap, '0', &glyphID);
+    mMetrics.zeroOrAveCharWidth = GetCharWidth(cmap, '0', &glyphID,
+                                               cgConvFactor);
     if (glyphID == 0) {
         mMetrics.zeroOrAveCharWidth = mMetrics.aveCharWidth;
     }
@@ -360,7 +340,7 @@ gfxMacFont::InitMetrics()
 
 gfxFloat
 gfxMacFont::GetCharWidth(CFDataRef aCmap, PRUnichar aUniChar,
-                         PRUint32 *aGlyphID)
+                         PRUint32 *aGlyphID, gfxFloat aConvFactor)
 {
     CGGlyph glyph = 0;
     
@@ -377,7 +357,7 @@ gfxMacFont::GetCharWidth(CFDataRef aCmap, PRUnichar aUniChar,
     if (glyph) {
         int advance;
         if (::CGFontGetGlyphAdvances(mCGFont, &glyph, 1, &advance)) {
-            return advance * mFUnitsConvFactor;
+            return advance * aConvFactor;
         }
     }
 
@@ -399,6 +379,12 @@ gfxMacFont::GetFontTable(PRUint32 aTag)
                               ::CFDataGetLength(dataRef),
                               HB_MEMORY_MODE_READONLY,
                               DestroyBlobFunc, (void*)dataRef);
+    }
+
+    if (mFontEntry->IsUserFont() && !mFontEntry->IsLocalUserFont()) {
+        // for downloaded fonts, there may be layout tables cached in the entry
+        // even though they're absent from the sanitized platform font
+        return mFontEntry->GetFontTable(aTag);
     }
 
     return nsnull;

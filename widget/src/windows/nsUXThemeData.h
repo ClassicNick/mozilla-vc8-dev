@@ -43,6 +43,7 @@
 #include <uxtheme.h>
 
 #include "nscore.h"
+#include "nsILookAndFeel.h"
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #include <dwmapi.h>
@@ -91,9 +92,26 @@ enum nsUXThemeClass {
   eUXNumClasses
 };
 
-#define CMDBUTTONIDX_MINIMIZE 0
-#define CMDBUTTONIDX_RESTORE  1
-#define CMDBUTTONIDX_CLOSE    2
+// Native windows style constants
+enum WindowsTheme {
+  WINTHEME_UNRECOGNIZED = 0,
+  WINTHEME_CLASSIC      = 1, // no theme
+  WINTHEME_AERO         = 2,
+  WINTHEME_LUNA         = 3,
+  WINTHEME_ROYALE       = 4,
+  WINTHEME_ZUNE         = 5
+};
+enum WindowsThemeColor {
+  WINTHEMECOLOR_UNRECOGNIZED = 0,
+  WINTHEMECOLOR_NORMAL       = 1,
+  WINTHEMECOLOR_HOMESTEAD    = 2,
+  WINTHEMECOLOR_METALLIC     = 3
+};
+
+#define CMDBUTTONIDX_MINIMIZE    0
+#define CMDBUTTONIDX_RESTORE     1
+#define CMDBUTTONIDX_CLOSE       2
+#define CMDBUTTONIDX_BUTTONBOX   3
 
 class nsUXThemeData {
   static HMODULE sThemeDLL;
@@ -112,9 +130,11 @@ public:
   static BOOL sFlatMenus;
   static PRPackedBool sIsXPOrLater;
   static PRPackedBool sIsVistaOrLater;
-  static PRPackedBool sHaveCompositor;
-  static PRBool sTitlebarInfoPopulated;
-  static SIZE sCommandButtons[3];
+  static PRBool sTitlebarInfoPopulatedAero;
+  static PRBool sTitlebarInfoPopulatedThemed;
+  static SIZE sCommandButtons[4];
+  static nsILookAndFeel::WindowsThemeIdentifier sThemeId;
+  static PRBool sIsDefaultWindowsTheme;
 
   static void Initialize();
   static void Teardown();
@@ -128,6 +148,10 @@ public:
   // nsWindow calls this to update desktop settings info
   static void InitTitlebarInfo();
   static void UpdateTitlebarInfo(HWND aWnd);
+
+  static void UpdateNativeThemeInfo();
+  static nsILookAndFeel::WindowsThemeIdentifier GetNativeThemeId();
+  static PRBool IsDefaultWindowTheme();
 
   static inline BOOL IsAppThemed() {
     return isAppThemed && isAppThemed();
@@ -214,7 +238,7 @@ public:
     if(dwmIsCompositionEnabledPtr)
       dwmIsCompositionEnabledPtr(&compositionIsEnabled);
 #endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-    return sHaveCompositor = (compositionIsEnabled != 0);
+    return (compositionIsEnabled != FALSE);
   }
 };
 #endif // __UXThemeData_h__

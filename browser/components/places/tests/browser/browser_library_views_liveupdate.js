@@ -204,7 +204,7 @@ var bookmarksObserver = {
   },
 
   // nsINavBookmarkObserver
-  onItemAdded: function PSB_onItemAdded(aItemId, aFolderId, aIndex) {
+  onItemAdded: function PSB_onItemAdded(aItemId, aFolderId, aIndex, aURI) {
     var node = null;
     var index = null;
     [node, index] = getNodeForTreeItem(aItemId, gLibrary.PlacesOrganizer._places);
@@ -254,7 +254,7 @@ var bookmarksObserver = {
           break;
         }
         // Fallback to separator case if this is not a query.
-      case type == PlacesUtils.bookmarks.TYPE_SEPARATOR:
+      case PlacesUtils.bookmarks.TYPE_SEPARATOR:
         is(node, null, "New Places node not added in left pane");
         break;
       default:

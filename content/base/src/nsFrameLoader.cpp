@@ -294,11 +294,11 @@ nsFrameLoader::ReallyStartLoadingInternal()
   if (mRemoteFrame) {
     if (!mRemoteBrowser) {
       TryRemoteBrowser();
-    }
 
-    if (!mRemoteBrowser) {
-      NS_WARNING("Couldn't create child process for iframe.");
-      return NS_ERROR_FAILURE;
+      if (!mRemoteBrowser) {
+        NS_WARNING("Couldn't create child process for iframe.");
+        return NS_ERROR_FAILURE;
+      }
     }
 
     // FIXME get error codes from child
@@ -623,11 +623,11 @@ nsFrameLoader::Show(PRInt32 marginWidth, PRInt32 marginHeight,
 #endif
   {
     if (!mDocShell)
-      return false;
+      return PR_FALSE;
     nsCOMPtr<nsIPresShell> presShell;
     mDocShell->GetPresShell(getter_AddRefs(presShell));
     if (presShell)
-      return true;
+      return PR_TRUE;
 
     mDocShell->SetMarginWidth(marginWidth);
     mDocShell->SetMarginHeight(marginHeight);
@@ -653,7 +653,18 @@ nsFrameLoader::Show(PRInt32 marginWidth, PRInt32 marginHeight,
 
   nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(mDocShell);
   NS_ASSERTION(baseWindow, "Found a nsIDocShell that isn't a nsIBaseWindow.");
-  baseWindow->InitWindow(nsnull, view->GetWidget(), 0, 0, 10, 10);
+  nsIntSize size;
+  if (!(frame->GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+    // We have a useful size already; use it, since we might get no
+    // more size updates.
+    size = GetSubDocumentSize(frame);
+  } else {
+    // Pick some default size for now.  Using 10x10 because that's what the
+    // code here used to do.
+    size.SizeTo(10, 10);
+  }
+  baseWindow->InitWindow(nsnull, view->GetWidget(), 0, 0,
+                         size.width, size.height);
   // This is kinda whacky, this "Create()" call doesn't really
   // create anything, one starts to wonder why this was named
   // "Create"...
@@ -698,11 +709,11 @@ nsFrameLoader::ShowRemoteFrame(const nsIntSize& size)
 
   if (!mRemoteBrowser) {
     TryRemoteBrowser();
-  }
 
-  if (!mRemoteBrowser) {
-    NS_ERROR("Couldn't create child process.");
-    return false;
+    if (!mRemoteBrowser) {
+      NS_ERROR("Couldn't create child process.");
+      return false;
+    }
   }
 
   // FIXME/bug 589337: Show()/Hide() is pretty expensive for
@@ -712,8 +723,7 @@ nsFrameLoader::ShowRemoteFrame(const nsIntSize& size)
     mRemoteBrowser->Show(size);
     mRemoteBrowserShown = PR_TRUE;
 
-    nsCOMPtr<nsIChromeFrameMessageManager> dummy;
-    GetMessageManager(getter_AddRefs(dummy)); // Initialize message manager.
+    EnsureMessageManager();
   } else {
     mRemoteBrowser->Move(size);
   }
@@ -1540,8 +1550,10 @@ nsFrameLoader::UpdateViewportConfig(const ViewportConfig& aNewConfig)
   // it if found.
   nsIFrame* frame = GetPrimaryFrameOfOwningContent();
   if (!frame) {
-    // XXX should this be a silent failure?
-    return NS_ERROR_NOT_AVAILABLE;
+    // Oops, don't have a frame right now.  That's OK; the viewport
+    // config persists and will apply to the next frame we get, if we
+    // ever get one.
+    return NS_OK;
   }
 
   // XXX could be clever here and compute a smaller invalidation

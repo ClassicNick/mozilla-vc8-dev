@@ -213,7 +213,7 @@ gfxHarfBuzzShaper::GetGlyphMetrics(gfxContext *aContext,
     NS_ASSERTION((mNumLongMetrics > 0) && mHmtxTable != nsnull,
                  "font is lacking metrics, we shouldn't be here");
 
-    if (glyph >= mNumLongMetrics) {
+    if (glyph >= PRUint32(mNumLongMetrics)) {
         glyph = mNumLongMetrics - 1;
     }
 
@@ -845,7 +845,12 @@ gfxHarfBuzzShaper::InitTextRun(gfxContext *aContext,
     hb_buffer_set_direction(buffer,
                             aTextRun->IsRightToLeft() ?
                                 HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-    hb_buffer_set_script(buffer, hb_script_t(aRunScript));
+    // For unresolved "common" or "inherited" runs, default to Latin for now.
+    // (Should we somehow use the language or locale to try and infer
+    // a better default?)
+    hb_buffer_set_script(buffer,
+                         aRunScript <= HB_SCRIPT_INHERITED ? HB_SCRIPT_LATIN
+                         : hb_script_t(aRunScript));
     hb_buffer_set_language(buffer, mHBLanguage);
 
     hb_buffer_add_utf16(buffer, reinterpret_cast<const uint16_t*>(aString + aRunStart),
@@ -896,7 +901,7 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
     }
 
     for (PRInt32 i = 0; i < numGlyphs; ++i) {
-        PRInt32 loc = ginfo[i].cluster;
+        PRUint32 loc = ginfo[i].cluster;
         if (loc < aRunLength) {
             charToGlyph[loc] = i;
         }

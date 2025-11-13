@@ -41,7 +41,11 @@
 
 #include <ogg/ogg.h>
 #include <theora/theoradec.h>
+#ifdef MOZ_TREMOR
+#include <tremor/ivorbiscodec.h>
+#else
 #include <vorbis/codec.h>
+#endif
 #include <nsDeque.h>
 #include <nsTArray.h>
 #include <nsClassHashtable.h>
@@ -253,7 +257,7 @@ public:
                              nsSeekTarget& aResult);
 
   PRBool HasIndex() const {
-    return mIndex.Count() > 0;
+    return mIndex.IsInitialized() && mIndex.Count() > 0;
   }
 
   // Returns the duration of the active tracks in the media, if we have

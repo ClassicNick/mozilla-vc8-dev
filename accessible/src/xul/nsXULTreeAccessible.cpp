@@ -472,23 +472,21 @@ nsXULTreeAccessible::GetTreeItemAccessible(PRInt32 aRow)
     return nsnull;
 
   void *key = reinterpret_cast<void*>(aRow);
-  nsRefPtr<nsAccessible> accessible = mAccessibleCache.GetWeak(key);
+  nsAccessible* cachedTreeItem = mAccessibleCache.GetWeak(key);
+  if (cachedTreeItem)
+    return cachedTreeItem;
 
-  if (!accessible) {
-    accessible = CreateTreeItemAccessible(aRow);
-    if (!accessible)
-      return nsnull;
+  nsRefPtr<nsAccessible> treeItem = CreateTreeItemAccessible(aRow);
+  if (treeItem) {
+    if (mAccessibleCache.Put(key, treeItem)) {
+      if (GetDocAccessible()->BindToDocument(treeItem, nsnull))
+        return treeItem;
 
-    if (!accessible->Init()) {
-      accessible->Shutdown();
-      return nsnull;
+      mAccessibleCache.Remove(key);
     }
-
-    if (!mAccessibleCache.Put(key, accessible))
-      return nsnull;
   }
 
-  return accessible;
+  return nsnull;
 }
 
 void
@@ -501,24 +499,21 @@ nsXULTreeAccessible::InvalidateCache(PRInt32 aRow, PRInt32 aCount)
   if (aCount > 0)
     return;
 
+  nsDocAccessible* document = GetDocAccessible();
+
   // Fire destroy event for removed tree items and delete them from caches.
   for (PRInt32 rowIdx = aRow; rowIdx < aRow - aCount; rowIdx++) {
 
     void* key = reinterpret_cast<void*>(rowIdx);
-    nsAccessible *accessible = mAccessibleCache.GetWeak(key);
+    nsAccessible* treeItem = mAccessibleCache.GetWeak(key);
 
-    if (accessible) {
+    if (treeItem) {
       nsRefPtr<AccEvent> event =
-        new AccEvent(nsIAccessibleEvent::EVENT_HIDE, accessible, PR_FALSE);
+        new AccEvent(nsIAccessibleEvent::EVENT_HIDE, treeItem);
       nsEventShell::FireEvent(event);
 
-      accessible->Shutdown();
-
-      // Remove accessible from document cache and tree cache.
-      nsDocAccessible *docAccessible = GetDocAccessible();
-      if (docAccessible)
-        docAccessible->RemoveAccessNodeFromCache(accessible);
-
+      // Unbind from document, shutdown and remove from tree cache.
+      document->UnbindFromDocument(treeItem);
       mAccessibleCache.Remove(key);
     }
   }
@@ -536,16 +531,11 @@ nsXULTreeAccessible::InvalidateCache(PRInt32 aRow, PRInt32 aCount)
   for (PRInt32 rowIdx = newRowCount; rowIdx < oldRowCount; ++rowIdx) {
 
     void *key = reinterpret_cast<void*>(rowIdx);
-    nsAccessible *accessible = mAccessibleCache.GetWeak(key);
+    nsAccessible* treeItem = mAccessibleCache.GetWeak(key);
 
-    if (accessible) {
-      accessible->Shutdown();
-
-      // Remove accessible from document cache and tree cache.
-      nsDocAccessible *docAccessible = GetDocAccessible();
-      if (docAccessible)
-        docAccessible->RemoveAccessNodeFromCache(accessible);
-
+    if (treeItem) {
+      // Unbind from document, shutdown and remove from tree cache.
+      document->UnbindFromDocument(treeItem);
       mAccessibleCache.Remove(key);
     }
   }
@@ -610,7 +600,7 @@ nsXULTreeAccessible::TreeViewChanged()
   // AT because it should be expensive to fire destroy events for each tree item
   // in cache.
   nsRefPtr<AccEvent> eventDestroy =
-    new AccEvent(nsIAccessibleEvent::EVENT_HIDE, this, PR_FALSE);
+    new AccEvent(nsIAccessibleEvent::EVENT_HIDE, this);
   if (!eventDestroy)
     return;
 
@@ -621,7 +611,7 @@ nsXULTreeAccessible::TreeViewChanged()
   mTree->GetView(getter_AddRefs(mTreeView));
 
   nsRefPtr<AccEvent> eventCreate =
-    new AccEvent(nsIAccessibleEvent::EVENT_SHOW, this, PR_FALSE);
+    new AccEvent(nsIAccessibleEvent::EVENT_SHOW, this);
   if (!eventCreate)
     return;
 
@@ -661,18 +651,6 @@ nsXULTreeItemAccessibleBase::
 NS_IMPL_ISUPPORTS_INHERITED1(nsXULTreeItemAccessibleBase,
                              nsAccessible,
                              nsXULTreeItemAccessibleBase)
-
-////////////////////////////////////////////////////////////////////////////////
-// nsXULTreeItemAccessibleBase: nsIAccessNode implementation
-
-NS_IMETHODIMP
-nsXULTreeItemAccessibleBase::GetUniqueID(void **aUniqueID)
-{
-  // Since mContent is same for all tree items and tree itself, use |this|
-  // pointer as the unique ID.
-  *aUniqueID = static_cast<void*>(this);
-  return NS_OK;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeItemAccessibleBase: nsIAccessible implementation
@@ -886,6 +864,12 @@ nsXULTreeItemAccessibleBase::Shutdown()
   mRow = -1;
 
   nsAccessibleWrap::Shutdown();
+}
+
+bool
+nsXULTreeItemAccessibleBase::IsPrimaryForNode() const
+{
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

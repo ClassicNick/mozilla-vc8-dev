@@ -29,7 +29,7 @@
  *   Daniel Glazman <glazman@netscape.com>
  *   Neil Deakin <neil@mozdevgroup.com>
  *   Masayuki Nakano <masayuki@d-toybox.com>
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *   Uri Bernstein <uriber@gmail.com>
  *   Stephen Blackheath <entangled.mooched.stephen@blacksapphire.com>
  *
@@ -194,6 +194,7 @@ public:
   
   virtual PRBool IsEmpty();
   virtual PRBool IsSelfEmpty() { return IsEmpty(); }
+  virtual nscoord GetBaseline() const;
   
   /**
    * @return PR_TRUE if this text frame ends with a newline character.  It
@@ -241,7 +242,7 @@ public:
   // placeholders or inlines containing such).
   struct TrimOutput {
     // true if we trimmed some space or changed metrics in some other way.
-    // In this case, we should call RecomputeOverflowRect on this frame.
+    // In this case, we should call RecomputeOverflow on this frame.
     PRPackedBool mChanged;
     // true if the last character is not justifiable so should be subtracted
     // from the count of justifiable characters in the frame, since the last
@@ -257,7 +258,7 @@ public:
                                    PRUint32 aSkippedStartOffset = 0,
                                    PRUint32 aSkippedMaxLength = PR_UINT32_MAX);
 
-  nsRect RecomputeOverflowRect();
+  nsOverflowAreas RecomputeOverflow();
 
   void AddInlineMinWidthForFlow(nsIRenderingContext *aRenderingContext,
                                 nsIFrame::InlineMinWidthData *aData);
@@ -333,9 +334,6 @@ public:
   // boundary.
   PRInt32 GetInFlowContentLength();
 
-  // Clears out mTextRun from this frame and all other frames that hold a reference
-  // to it, then deletes the textrun.
-  void ClearTextRun();
   /**
    * Acquires the text run for this content, if necessary.
    * @param aRC the rendering context to use as a reference for creating
@@ -355,6 +353,12 @@ public:
 
   gfxTextRun* GetTextRun() { return mTextRun; }
   void SetTextRun(gfxTextRun* aTextRun) { mTextRun = aTextRun; }
+  /**
+   * Clears out |mTextRun| from all frames that hold a reference to it,
+   * starting at |aStartContinuation|, or if it's nsnull, starting at |this|.
+   * Deletes |mTextRun| if all references were cleared and it's not cached.
+   */
+  void ClearTextRun(nsTextFrame* aStartContinuation);
 
   // Get the DOM content range mapped by this frame after excluding
   // whitespace subject to start-of-line and end-of-line trimming.
@@ -400,7 +404,7 @@ protected:
   
   void UnionTextDecorationOverflow(nsPresContext* aPresContext,
                                    PropertyProvider& aProvider,
-                                   nsRect* aOverflowRect);
+                                   nsRect* aVisualOverflowRect);
 
   void DrawText(gfxContext* aCtx,
                 const gfxPoint& aTextBaselinePt,

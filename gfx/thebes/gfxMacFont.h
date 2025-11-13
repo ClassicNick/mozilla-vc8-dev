@@ -62,7 +62,8 @@ public:
                                const PRUnichar *aString,
                                PRUint32 aRunStart,
                                PRUint32 aRunLength,
-                               PRInt32 aRunScript);
+                               PRInt32 aRunScript,
+                               PRBool aPreferPlatformShaping = PR_FALSE);
 
     /* overrides for the pure virtual methods in gfxFont */
     virtual const gfxFont::Metrics& GetMetrics() {
@@ -85,10 +86,10 @@ protected:
     void InitMetrics();
     void InitMetricsFromATSMetrics();
 
-    // Get width and glyph ID for a character; requires that
-    // mFUnitsConvFactor has been set before this is called
+    // Get width and glyph ID for a character; uses aConvFactor
+    // to convert font units as returned by CG to actual dimensions
     gfxFloat GetCharWidth(CFDataRef aCmap, PRUnichar aUniChar,
-                          PRUint32 *aGlyphID);
+                          PRUint32 *aGlyphID, gfxFloat aConvFactor);
 
     static void DestroyBlobFunc(void* aUserData);
 

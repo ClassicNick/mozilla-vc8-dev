@@ -49,6 +49,8 @@
 #include "nsMappedAttributes.h"
 #include "nsNetUtil.h"
 #include "nsHTMLFormElement.h"
+#include "nsHtml5Module.h"
+
 
 // XXX nav4 has type= start= (same as OL/UL)
 extern nsAttrValue::EnumTable kListTypeTable[];
@@ -140,6 +142,22 @@ public:
 };
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Shared)
+
+/**
+ * When creating a isindex element, we should create a nsHTMLElement if the html5
+ * parser is enabled. Otherwise, a nsHTMLSharedElement should be created.
+ */
+nsGenericHTMLElement*
+NS_NewHTMLIsIndexElement(already_AddRefed<nsINodeInfo> aNodeInfo,
+                         mozilla::dom::FromParser aFromParser)
+{
+  if (nsHtml5Module::sEnabled) {
+    return NS_NewHTMLElement(aNodeInfo, aFromParser);
+  } else {
+    return NS_NewHTMLSharedElement(aNodeInfo, aFromParser);
+  }
+}
+
 
 
 nsHTMLSharedElement::nsHTMLSharedElement(already_AddRefed<nsINodeInfo> aNodeInfo)
@@ -265,8 +283,36 @@ nsHTMLSharedElement::SetProfile(const nsAString& aValue)
 NS_IMPL_STRING_ATTR(nsHTMLSharedElement, Version, version)
 
 // nsIDOMHTMLBaseElement
-NS_IMPL_URI_ATTR(nsHTMLSharedElement, Href, href)
 NS_IMPL_STRING_ATTR(nsHTMLSharedElement, Target, target)
+NS_IMETHODIMP
+nsHTMLSharedElement::GetHref(nsAString& aValue)
+{
+  nsAutoString href;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::href, href);
+
+  nsCOMPtr<nsIURI> uri;
+  nsIDocument* doc = GetOwnerDoc();
+  if (doc) {
+    nsContentUtils::NewURIWithDocumentCharset(
+      getter_AddRefs(uri), href, doc, doc->GetDocumentURI());
+  }
+  if (!uri) {
+    aValue = href;
+    return NS_OK;
+  }
+  
+  nsCAutoString spec;
+  uri->GetSpec(spec);
+  CopyUTF8toUTF16(spec, aValue);
+
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsHTMLSharedElement::SetHref(const nsAString& aValue)
+{
+  return SetAttrHelper(nsGkAtoms::href, aValue);
+}
+
 
 PRBool
 nsHTMLSharedElement::ParseAttribute(PRInt32 aNamespaceID,

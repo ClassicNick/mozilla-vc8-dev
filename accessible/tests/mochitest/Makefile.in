@@ -51,7 +51,9 @@ DIRS	= \
   selectable \
   states \
   table \
+  text \
   tree \
+  treeupdate \
   $(null)
 
 include $(DEPTH)/config/autoconf.mk
@@ -94,6 +96,7 @@ _TEST_FILES =\
 		test_descr.html \
 		test_editabletext_1.html \
 		test_editabletext_2.html \
+		test_elm_landmarks.html \
 		test_elm_listbox.xul \
 	$(warning   test_elm_media.html temporarily disabled) \
 		test_elm_nsApplicationAcc.html \
@@ -119,6 +122,7 @@ _TEST_FILES =\
 		test_value.html \
 		test_value.xul \
 		testTextboxes.js \
+		text.js \
 		treeview.css \
 		treeview.js \
 		$(NULL)

@@ -2005,7 +2005,7 @@ static inline void KeyAppendAtom(nsIAtom* aAtom, nsACString& aKey)
   KeyAppendString(nsAtomCString(aAtom), aKey);
 }
 
-static inline PRBool IsAutocompleteOff(nsIContent* aElement)
+static inline PRBool IsAutocompleteOff(const nsIContent* aElement)
 {
   return aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::autocomplete,
                                NS_LITERAL_STRING("off"), eIgnoreCase);
@@ -2013,7 +2013,7 @@ static inline PRBool IsAutocompleteOff(nsIContent* aElement)
 
 /*static*/ nsresult
 nsContentUtils::GenerateStateKey(nsIContent* aContent,
-                                 nsIDocument* aDocument,
+                                 const nsIDocument* aDocument,
                                  nsIStatefulFrame::SpecialStateID aID,
                                  nsACString& aKey)
 {
@@ -2261,7 +2261,7 @@ nsContentUtils::CheckQName(const nsAString& aQualifiedName,
 
 //static
 nsresult
-nsContentUtils::SplitQName(nsIContent* aNamespaceResolver,
+nsContentUtils::SplitQName(const nsIContent* aNamespaceResolver,
                            const nsAFlatString& aQName,
                            PRInt32 *aNamespace, nsIAtom **aLocalName)
 {
@@ -2393,7 +2393,7 @@ nsContentUtils::SplitExpatName(const PRUnichar *aExpatName, nsIAtom **aPrefix,
 
 // static
 nsPresContext*
-nsContentUtils::GetContextForContent(nsIContent* aContent)
+nsContentUtils::GetContextForContent(const nsIContent* aContent)
 {
   nsIDocument* doc = aContent->GetCurrentDoc();
   if (doc) {
@@ -2628,7 +2628,7 @@ nsContentUtils::IsDraggableImage(nsIContent* aContent)
 
 // static
 PRBool
-nsContentUtils::IsDraggableLink(nsIContent* aContent) {
+nsContentUtils::IsDraggableLink(const nsIContent* aContent) {
   nsCOMPtr<nsIURI> absURI;
   return aContent->IsLink(getter_AddRefs(absURI));
 }
@@ -3474,7 +3474,7 @@ nsContentUtils::DispatchChromeEvent(nsIDocument *aDoc,
 
 /* static */
 Element*
-nsContentUtils::MatchElementId(nsIContent *aContent, nsIAtom* aId)
+nsContentUtils::MatchElementId(nsIContent *aContent, const nsIAtom* aId)
 {
   for (nsIContent* cur = aContent;
        cur;
@@ -3634,7 +3634,7 @@ nsContentUtils::UnregisterShutdownObserver(nsIObserver* aObserver)
 
 /* static */
 PRBool
-nsContentUtils::HasNonEmptyAttr(nsIContent* aContent, PRInt32 aNameSpaceID,
+nsContentUtils::HasNonEmptyAttr(const nsIContent* aContent, PRInt32 aNameSpaceID,
                                 nsIAtom* aName)
 {
   static nsIContent::AttrValuesArray strings[] = {&nsGkAtoms::_empty, nsnull};
@@ -3906,13 +3906,15 @@ nsContentUtils::CreateContextualFragment(nsINode* aContextNode,
                             fragment, 
                             contextAsContent->Tag(), 
                             contextAsContent->GetNameSpaceID(), 
-                            (document->GetCompatibilityMode() == eCompatibility_NavQuirks));    
+                            (document->GetCompatibilityMode() == eCompatibility_NavQuirks),
+                            PR_FALSE);
     } else {
       parser->ParseFragment(aFragment, 
                             fragment,
                             nsGkAtoms::body, 
                             kNameSpaceID_XHTML, 
-                            (document->GetCompatibilityMode() == eCompatibility_NavQuirks));
+                            (document->GetCompatibilityMode() == eCompatibility_NavQuirks),
+                            PR_FALSE);
     }
   
     frag.swap(*aReturn);
@@ -4184,8 +4186,8 @@ nsContentUtils::HasNonEmptyTextContent(nsINode* aNode)
 
 /* static */
 PRBool
-nsContentUtils::IsInSameAnonymousTree(nsINode* aNode,
-                                      nsIContent* aContent)
+nsContentUtils::IsInSameAnonymousTree(const nsINode* aNode,
+                                      const nsIContent* aContent)
 {
   NS_PRECONDITION(aNode,
                   "Must have a node to work with");
@@ -4203,7 +4205,7 @@ nsContentUtils::IsInSameAnonymousTree(nsINode* aNode,
     return aContent->GetBindingParent() == nsnull;
   }
 
-  return static_cast<nsIContent*>(aNode)->GetBindingParent() ==
+  return static_cast<const nsIContent*>(aNode)->GetBindingParent() ==
          aContent->GetBindingParent();
  
 }
@@ -4803,8 +4805,12 @@ static void ProcessViewportToken(nsIDocument *aDocument,
     return;
 
   /* Extract the key and value. */
-  const nsAString &key = Substring(tail, tip);
-  const nsAString &value = Substring(++tip, end);
+  const nsAString &key =
+    nsContentUtils::TrimWhitespace<nsCRT::IsAsciiSpace>(Substring(tail, tip),
+                                                        PR_TRUE);
+  const nsAString &value =
+    nsContentUtils::TrimWhitespace<nsCRT::IsAsciiSpace>(Substring(++tip, end),
+                                                        PR_TRUE);
 
   /* Check for known keys. If we find a match, insert the appropriate
    * information into the document header. */
@@ -4823,7 +4829,9 @@ static void ProcessViewportToken(nsIDocument *aDocument,
     aDocument->SetHeaderData(nsGkAtoms::viewport_user_scalable, value);
 }
 
-#define IS_SEPARATOR(c) ((c == ' ') || (c == ',') || (c == ';'))
+#define IS_SEPARATOR(c) ((c == '=') || (c == ',') || (c == ';') || \
+                         (c == '\t') || (c == '\n') || (c == '\r'))
+
 /* static */
 nsresult
 nsContentUtils::ProcessViewportInfo(nsIDocument *aDocument,
@@ -4839,12 +4847,12 @@ nsContentUtils::ProcessViewportInfo(nsIDocument *aDocument,
   viewportInfo.EndReading(end);
 
   /* Read the tip to the first non-separator character. */
-  while ((tip != end) && IS_SEPARATOR(*tip))
+  while ((tip != end) && (IS_SEPARATOR(*tip) || nsCRT::IsAsciiSpace(*tip)))
     ++tip;
 
   /* Read through and find tokens separated by separators. */
   while (tip != end) {
-    
+
     /* Synchronize tip and tail. */
     tail = tip;
 
@@ -4852,11 +4860,22 @@ nsContentUtils::ProcessViewportInfo(nsIDocument *aDocument,
     while ((tip != end) && !IS_SEPARATOR(*tip))
       ++tip;
 
+    /* Allow white spaces that surround the '=' character */
+    if ((tip != end) && (*tip == '=')) {
+      ++tip;
+
+      while ((tip != end) && nsCRT::IsAsciiSpace(*tip))
+        ++tip;
+
+      while ((tip != end) && !(IS_SEPARATOR(*tip) || nsCRT::IsAsciiSpace(*tip)))
+        ++tip;
+    }
+
     /* Our token consists of the characters between tail and tip. */
     ProcessViewportToken(aDocument, Substring(tail, tip));
 
     /* Skip separators. */
-    while ((tip != end) && IS_SEPARATOR(*tip))
+    while ((tip != end) && (IS_SEPARATOR(*tip) || nsCRT::IsAsciiSpace(*tip)))
       ++tip;
   }
 
@@ -5854,7 +5873,7 @@ CloneSimpleValues(JSContext* cx,
   }
 
   // Security wrapped objects are not allowed either.
-  if (obj->getClass()->ext.wrappedObject)
+  if (obj->isWrapper() && !obj->getClass()->ext.innerObject)
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
   // See if this JSObject is backed by some C++ object. If it is then we assume
@@ -6243,11 +6262,81 @@ mozAutoRemovableBlockerRemover::~mozAutoRemovableBlockerRemover()
 
 // static
 PRBool
-nsContentUtils::IsFocusedContent(nsIContent* aContent)
+nsContentUtils::IsFocusedContent(const nsIContent* aContent)
 {
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
 
   return fm && fm->GetFocusedContent() == aContent;
+}
+
+bool
+nsContentUtils::IsSubDocumentTabbable(nsIContent* aContent)
+{
+  nsIDocument* doc = aContent->GetCurrentDoc();
+  if (!doc) {
+    return false;
+  }
+
+  // XXXbz should this use GetOwnerDoc() for GetSubDocumentFor?
+  // sXBL/XBL2 issue!
+  nsIDocument* subDoc = doc->GetSubDocumentFor(aContent);
+  if (!subDoc) {
+    return false;
+  }
+
+  nsCOMPtr<nsISupports> container = subDoc->GetContainer();
+  nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(container);
+  if (!docShell) {
+    return false;
+  }
+
+  nsCOMPtr<nsIContentViewer> contentViewer;
+  docShell->GetContentViewer(getter_AddRefs(contentViewer));
+  if (!contentViewer) {
+    return false;
+  }
+
+  nsCOMPtr<nsIContentViewer> zombieViewer;
+  contentViewer->GetPreviousViewer(getter_AddRefs(zombieViewer));
+
+  // If there are 2 viewers for the current docshell, that
+  // means the current document is a zombie document.
+  // Only navigate into the subdocument if it's not a zombie.
+  return !zombieViewer;
+}
+
+void
+nsContentUtils::FlushLayoutForTree(nsIDOMWindow* aWindow)
+{
+    nsCOMPtr<nsPIDOMWindow> piWin = do_QueryInterface(aWindow);
+    if (!piWin)
+        return;
+
+    // Note that because FlushPendingNotifications flushes parents, this
+    // is O(N^2) in docshell tree depth.  However, the docshell tree is
+    // usually pretty shallow.
+
+    nsCOMPtr<nsIDOMDocument> domDoc;
+    aWindow->GetDocument(getter_AddRefs(domDoc));
+    nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc);
+    if (doc) {
+        doc->FlushPendingNotifications(Flush_Layout);
+    }
+
+    nsCOMPtr<nsIDocShellTreeNode> node =
+        do_QueryInterface(piWin->GetDocShell());
+    if (node) {
+        PRInt32 i = 0, i_end;
+        node->GetChildCount(&i_end);
+        for (; i < i_end; ++i) {
+            nsCOMPtr<nsIDocShellTreeItem> item;
+            node->GetChildAt(i, getter_AddRefs(item));
+            nsCOMPtr<nsIDOMWindow> win = do_GetInterface(item);
+            if (win) {
+                FlushLayoutForTree(win);
+            }
+        }
+    }
 }
 
 void nsContentUtils::RemoveNewlines(nsString &aString)

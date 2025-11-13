@@ -174,7 +174,9 @@ public:
     virtual nsresult UpdateFontList();
 
     /**
-     * Create the platform font-list object (gfxPlatformFontList concrete subclass)
+     * Create the platform font-list object (gfxPlatformFontList concrete subclass).
+     * This function is responsible to create the appropriate subclass of
+     * gfxPlatformFontList *and* to call its InitFontList() method.
      */
     virtual gfxPlatformFontList *CreatePlatformFontList() {
         NS_NOTREACHED("oops, this platform doesn't have a gfxPlatformFontList implementation");
@@ -233,7 +235,17 @@ public:
     /**
      * Whether to allow downloadable fonts via @font-face rules
      */
-    virtual PRBool DownloadableFontsEnabled();
+    PRBool DownloadableFontsEnabled();
+
+    /**
+     * Whether to sanitize downloaded fonts using the OTS library
+     */
+    PRBool SanitizeDownloadedFonts();
+
+    /**
+     * Whether to preserve OpenType layout tables when sanitizing
+     */
+    PRBool PreserveOTLTablesWhenSanitizing();
 
     /**
      * Whether to use the harfbuzz shaper (depending on script complexity).
@@ -355,6 +367,8 @@ protected:
                             eFontPrefLang aCharLang, eFontPrefLang aPageLang);
                                                
     PRBool  mAllowDownloadableFonts;
+    PRBool  mDownloadableFontsSanitize;
+    PRBool  mSanitizePreserveOTLTables;
 
     // whether to use the HarfBuzz layout engine
     PRInt8  mUseHarfBuzzLevel;

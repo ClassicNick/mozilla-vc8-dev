@@ -49,7 +49,7 @@ tier_platform_dirs = tools/trace-malloc/lib
 endif
 
 ifdef MOZ_TREE_FREETYPE
-tier_platform_dirs += modules/freetype2
+tier_platform_staticdirs += modules/freetype2
 endif
 
 tier_platform_dirs += xpcom
@@ -148,11 +148,17 @@ tier_platform_dirs += \
 		$(NULL)
 endif
 
-ifdef MOZ_WEBM
+ifdef MOZ_TREMOR
 tier_platform_dirs += \
-		media/libnestegg \
-		media/libvpx \
+		media/libtremor \
 		$(NULL)
+endif
+
+ifdef MOZ_WEBM
+tier_platform_dirs += media/libnestegg
+ifndef MOZ_NATIVE_LIBVPX
+tier_platform_dirs += media/libvpx
+endif
 endif
 
 ifdef MOZ_OGG
@@ -284,11 +290,6 @@ endif
 
 ifdef MOZ_MAPINFO
 tier_platform_dirs	+= tools/codesighs
-endif
-
-ifdef MOZ_SERVICES_SYNC
-tier_platform_dirs += services/crypto
-tier_platform_dirs += services/sync
 endif
 
 ifdef ENABLE_TESTS

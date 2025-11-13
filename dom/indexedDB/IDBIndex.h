@@ -44,22 +44,24 @@
 
 #include "nsIIDBIndex.h"
 
-#include "nsDOMEventTargetHelper.h"
+#include "nsCycleCollectionParticipant.h"
+
+class nsIScriptContext;
+class nsPIDOMWindow;
 
 BEGIN_INDEXEDDB_NAMESPACE
 
+class AsyncConnectionHelper;
 class IDBObjectStore;
 struct IndexInfo;
 
-class IDBIndex : public nsDOMEventTargetHelper,
-                 public nsIIDBIndex
+class IDBIndex : public nsIIDBIndex
 {
 public:
-  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIIDBINDEX
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBIndex,
-                                           nsDOMEventTargetHelper)
+  NS_DECL_CYCLE_COLLECTION_CLASS(IDBIndex)
 
   static already_AddRefed<IDBIndex>
   Create(IDBObjectStore* aObjectStore,
@@ -70,20 +72,45 @@ public:
     return mObjectStore;
   }
 
+  const PRInt64 Id() const
+  {
+    return mId;
+  }
+
+  const nsString& Name() const
+  {
+    return mName;
+  }
+
+  bool IsUnique() const
+  {
+    return mUnique;
+  }
+
+  bool IsAutoIncrement() const
+  {
+    return mAutoIncrement;
+  }
+
+  const nsString& KeyPath() const
+  {
+    return mName;
+  }
+
 private:
   IDBIndex();
   ~IDBIndex();
 
   nsRefPtr<IDBObjectStore> mObjectStore;
 
+  nsCOMPtr<nsIScriptContext> mScriptContext;
+  nsCOMPtr<nsPIDOMWindow> mOwner;
+
   PRInt64 mId;
   nsString mName;
   nsString mKeyPath;
   bool mUnique;
   bool mAutoIncrement;
-
-  // Only touched on the main thread.
-  nsRefPtr<nsDOMEventListenerWrapper> mOnErrorListener;
 };
 
 END_INDEXEDDB_NAMESPACE

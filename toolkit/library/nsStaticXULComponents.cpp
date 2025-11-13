@@ -178,13 +178,15 @@
 #define PLACES_MODULES \
     MODULE(nsPlacesModule)
 #else
-#if (defined(MOZ_MORK) && defined(MOZ_XUL))
-#define PLACES_MODULES \
-    MODULE(nsMorkModule)
-#else
 #define PLACES_MODULES
 #endif
-#endif    
+
+#if (defined(MOZ_MORK) && defined(MOZ_XUL))
+#define MORK_MODULES \
+    MODULE(nsMorkModule)
+#else
+#define MORK_MODULES
+#endif
 
 #ifdef MOZ_XUL
 #define XULENABLED_MODULES                   \
@@ -271,6 +273,7 @@
     FILEVIEW_MODULE                          \
     STORAGE_MODULE                           \
     PLACES_MODULES                           \
+    MORK_MODULES                             \
     XULENABLED_MODULES                       \
     MODULE(nsToolkitCompsModule)             \
     XREMOTE_MODULES                          \
@@ -296,13 +299,11 @@ XUL_MODULES
 #undef MODULE
 
 #define MODULE(_name) \
-    NSMODULE_NAME(_name),
+    &NSMODULE_NAME(_name),
 
-static const mozilla::Module *const kStaticModules[] = {
+const mozilla::Module *const *const kPStaticModules[] = {
   XUL_MODULES
   NULL
 };
 
 #undef MODULE
-
-mozilla::Module const *const *const kPStaticModules = kStaticModules;

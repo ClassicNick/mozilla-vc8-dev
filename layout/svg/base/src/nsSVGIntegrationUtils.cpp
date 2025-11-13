@@ -74,7 +74,7 @@ GetPreEffectsOverflowRect(nsIFrame* aFrame)
     (aFrame->Properties().Get(nsIFrame::PreEffectsBBoxProperty()));
   if (r)
     return *r;
-  return aFrame->GetOverflowRect();
+  return aFrame->GetVisualOverflowRect();
 }
 
 struct BBoxCollector : public nsLayoutUtils::BoxCallback {
@@ -147,12 +147,18 @@ nsSVGIntegrationUtils::GetInvalidAreaForChangedSource(nsIFrame* aFrame,
     nsSVGEffects::GetEffectProperties(firstFrame);
   if (!effectProperties.mFilter)
     return aInvalidRect;
-  nsSVGFilterFrame* filterFrame = nsSVGEffects::GetFilterFrame(firstFrame);
+
+  nsSVGFilterProperty *prop = nsSVGEffects::GetFilterProperty(firstFrame);
+  if (!prop || !prop->IsInObserverList()) {
+    return aInvalidRect;
+  }
+
+  nsSVGFilterFrame* filterFrame = prop->GetFilterFrame();
   if (!filterFrame) {
     // The frame is either not there or not currently available,
     // perhaps because we're in the middle of tearing stuff down.
     // Be conservative.
-    return aFrame->GetOverflowRect();
+    return aFrame->GetVisualOverflowRect();
   }
 
   PRInt32 appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
@@ -290,6 +296,8 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsIRenderingContext* aCtx,
   if (opacity != 1.0f || maskFrame || (clipPathFrame && !isTrivialClip)) {
     complexEffects = PR_TRUE;
     gfx->Save();
+    aCtx->SetClipRect(aEffectsFrame->GetVisualOverflowRect(),
+                      nsClipCombine_kIntersect);
     gfx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
   }
 

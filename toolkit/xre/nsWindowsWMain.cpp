@@ -7,6 +7,7 @@
 #endif
 
 #include "nsUTF8Utils.h"
+#include "nsSetDllDirectory.h"
 
 #if defined(_MSC_VER) && defined(_M_IX86) && defined(XRE_WANT_DLL_BLOCKLIST)
 #include "nsWindowsDllBlocklist.cpp"
@@ -90,6 +91,10 @@ void ExtractEnvironmentFromCL(int &argc, char **&argv)
 
 int wmain(int argc, WCHAR **argv)
 {
+#ifndef XRE_DONT_PROTECT_DLL_LOAD
+  mozilla::NS_SetDllDirectory(L"");
+#endif
+
 #ifdef XRE_WANT_DLL_BLOCKLIST
   SetupDllBlocklist();
 #endif

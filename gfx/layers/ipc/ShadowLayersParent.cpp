@@ -133,8 +133,8 @@ ShadowLayersParent::~ShadowLayersParent()
 }
 
 bool
-ShadowLayersParent::RecvUpdate(const nsTArray<Edit>& cset,
-                               nsTArray<EditReply>* reply)
+ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
+                               InfallibleTArray<EditReply>* reply)
 {
   MOZ_LAYERS_LOG(("[ParentSide] recieved txn with %d edits", cset.Length()));
 
@@ -152,14 +152,14 @@ ShadowLayersParent::RecvUpdate(const nsTArray<Edit>& cset,
 
       nsRefPtr<ShadowThebesLayer> layer =
         layer_manager()->CreateShadowThebesLayer();
-      layer->SetParent(this);
+      layer->SetAllocator(this);
       AsShadowLayer(edit.get_OpCreateThebesLayer())->Bind(layer);
       break;
     }
     case Edit::TOpCreateContainerLayer: {
       MOZ_LAYERS_LOG(("[ParentSide] CreateContainerLayer"));
 
-      nsRefPtr<ContainerLayer> layer = layer_manager()->CreateContainerLayer();
+      nsRefPtr<ContainerLayer> layer = layer_manager()->CreateShadowContainerLayer();
       AsShadowLayer(edit.get_OpCreateContainerLayer())->Bind(layer);
       break;
     }
@@ -168,14 +168,14 @@ ShadowLayersParent::RecvUpdate(const nsTArray<Edit>& cset,
 
       nsRefPtr<ShadowImageLayer> layer =
         layer_manager()->CreateShadowImageLayer();
-      layer->SetParent(this);
+      layer->SetAllocator(this);
       AsShadowLayer(edit.get_OpCreateImageLayer())->Bind(layer);
       break;
     }
     case Edit::TOpCreateColorLayer: {
       MOZ_LAYERS_LOG(("[ParentSide] CreateColorLayer"));
 
-      nsRefPtr<ColorLayer> layer = layer_manager()->CreateColorLayer();
+      nsRefPtr<ShadowColorLayer> layer = layer_manager()->CreateShadowColorLayer();
       AsShadowLayer(edit.get_OpCreateColorLayer())->Bind(layer);
       break;
     }
@@ -184,7 +184,7 @@ ShadowLayersParent::RecvUpdate(const nsTArray<Edit>& cset,
 
       nsRefPtr<ShadowCanvasLayer> layer = 
         layer_manager()->CreateShadowCanvasLayer();
-      layer->SetParent(this);
+      layer->SetAllocator(this);
       AsShadowLayer(edit.get_OpCreateCanvasLayer())->Bind(layer);
       break;
     }
@@ -376,12 +376,16 @@ ShadowLayersParent::RecvUpdate(const nsTArray<Edit>& cset,
       ThebesBuffer newBack;
       nsIntRegion newValidRegion;
       float newXResolution, newYResolution;
+      OptionalThebesBuffer readonlyFront;
+      nsIntRegion frontUpdatedRegion;
       thebes->Swap(newFront, op.updatedRegion(),
-                   &newBack, &newValidRegion, &newXResolution, &newYResolution);
+                   &newBack, &newValidRegion, &newXResolution, &newYResolution,
+                   &readonlyFront, &frontUpdatedRegion);
       replyv.push_back(
         OpThebesBufferSwap(
           shadow, NULL,
-          newBack, newValidRegion, newXResolution, newYResolution));
+          newBack, newValidRegion, newXResolution, newYResolution,
+          readonlyFront, frontUpdatedRegion));
       break;
     }
     case Edit::TOpPaintCanvas: {

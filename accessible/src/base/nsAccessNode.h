@@ -156,7 +156,7 @@ public:
    */
   virtual nsINode* GetNode() const { return mContent; }
   nsIContent* GetContent() const { return mContent; }
-  nsIDocument* GetDocumentNode() const
+  virtual nsIDocument* GetDocumentNode() const
     { return mContent ? mContent->GetOwnerDoc() : nsnull; }
 
   /**
@@ -181,6 +181,20 @@ public:
    */
   nsIWeakReference* GetWeakShell() const { return mWeakShell; }
 
+  /**
+   * Return the unique identifier of the accessible.
+   */
+  void* UniqueID() { return static_cast<void*>(this); }
+
+  /**
+   * Return true if the accessible is primary accessible for the given DOM node.
+   *
+   * Accessible hierarchy may be complex for single DOM node, in this case
+   * these accessibles share the same DOM node. The primary accessible "owns"
+   * that DOM node in terms it gets stored in the accessible to node map.
+   */
+  virtual bool IsPrimaryForNode() const;
+
 protected:
     nsPresContext* GetPresContext();
 
@@ -198,7 +212,6 @@ protected:
     static nsIStringBundle *gStringBundle;
     static nsIStringBundle *gKeyStringBundle;
 
-    static PRBool gIsCacheDisabled;
     static PRBool gIsFormFillEnabled;
 
 private:

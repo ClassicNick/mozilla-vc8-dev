@@ -99,6 +99,8 @@ include css-valuesandunits/reftest.list
 # layout/style/test/test_visited_reftests instead of using the reftest
 # harness.
 
+include cssom/reftest.list
+
 # columns/
 include columns/reftest.list
 
@@ -140,6 +142,9 @@ include font-matching/reftest.list
 
 # forms
 include forms/reftest.list
+
+# gfx
+include ../../gfx/tests/reftest/reftest.list
 
 # block-inside-inline splits
 include ib-split/reftest.list

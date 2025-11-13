@@ -55,13 +55,16 @@ function testSteps()
 
   for (let i = 0; i < data.length; i++) {
     let test = data[i];
-    let request = db.createObjectStore(test.name, test.keyName,
-                                       test.autoIncrement);
+
+
+    let request = db.setVersion("1");
     request.onerror = errorHandler;
     request.onsuccess = grabEventAndContinueHandler;
     event = yield;
 
-    let objectStore = event.result;
+    let objectStore = db.createObjectStore(test.name, test.keyName,
+                                           test.autoIncrement);
+
     request = objectStore.add(test.storedObject, test.keyValue);
     request.onerror = errorHandler;
     request.onsuccess = grabEventAndContinueHandler;
@@ -77,7 +80,7 @@ function testSteps()
     is(test.storedObject.name, event.result.name,
                   "The correct object was stored.");
 
-    request = objectStore.remove(id);
+    request = objectStore.delete(id);
     request.onerror = errorHandler;
     request.onsuccess = grabEventAndContinueHandler;
     event = yield;

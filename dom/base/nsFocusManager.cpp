@@ -328,7 +328,8 @@ nsFocusManager::SetActiveWindow(nsIDOMWindow* aWindow)
 {
   // only top-level windows can be made active
   nsCOMPtr<nsPIDOMWindow> piWindow = do_QueryInterface(aWindow);
-  NS_ASSERTION(!piWindow || piWindow->IsOuterWindow(), "outer window expected");
+  if (piWindow)
+      piWindow = piWindow->GetOuterWindow();
 
   NS_ENSURE_TRUE(piWindow && (piWindow == piWindow->GetPrivateRoot()),
                  NS_ERROR_INVALID_ARG);
@@ -1125,6 +1126,12 @@ nsFocusManager::SetFocusInner(nsIContent* aNewContent, PRInt32 aFlags,
     // is in chrome, any web contents should not be able to steal the focus.
     nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(mFocusedContent));
     sendFocusEvent = nsContentUtils::CanCallerAccess(domNode);
+    if (!sendFocusEvent && mMouseDownEventHandlingDocument) {
+      // However, while mouse down event is handling, the handling document's
+      // script should be able to steal focus.
+      domNode = do_QueryInterface(mMouseDownEventHandlingDocument);
+      sendFocusEvent = nsContentUtils::CanCallerAccess(domNode);
+    }
   }
 
   if (sendFocusEvent) {
@@ -1645,6 +1652,10 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
   if (CheckIfFocusable(aContent, aFlags) &&
       mFocusedWindow == aWindow && mFocusedContent == nsnull) {
     mFocusedContent = aContent;
+
+    nsIContent* focusedNode = aWindow->GetFocusedNode();
+    PRBool isRefocus = focusedNode && focusedNode->IsEqual(aContent);
+
     aWindow->SetFocusedNode(aContent, focusMethod);
 
     PRBool sendFocusEvent =
@@ -1681,8 +1692,10 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
       if (!aWindowRaised)
         aWindow->UpdateCommands(NS_LITERAL_STRING("focus"));
 
-      SendFocusOrBlurEvent(NS_FOCUS_CONTENT, presShell, aContent->GetCurrentDoc(),
-                           aContent, aFlags & FOCUSMETHOD_MASK, aWindowRaised);
+      SendFocusOrBlurEvent(NS_FOCUS_CONTENT, presShell,
+                           aContent->GetCurrentDoc(),
+                           aContent, aFlags & FOCUSMETHOD_MASK,
+                           aWindowRaised, isRefocus);
 
       nsIMEStateManager::OnTextStateFocus(presContext, aContent);
     } else {
@@ -1721,15 +1734,17 @@ class FocusBlurEvent : public nsRunnable
 {
 public:
   FocusBlurEvent(nsISupports* aTarget, PRUint32 aType,
-                 nsPresContext* aContext, PRBool aWindowRaised)
+                 nsPresContext* aContext, PRBool aWindowRaised,
+                 PRBool aIsRefocus)
   : mTarget(aTarget), mType(aType), mContext(aContext),
-    mWindowRaised(aWindowRaised) {}
+    mWindowRaised(aWindowRaised), mIsRefocus(aIsRefocus) {}
 
   NS_IMETHOD Run()
   {
     nsFocusEvent event(PR_TRUE, mType);
     event.flags |= NS_EVENT_FLAG_CANT_BUBBLE;
     event.fromRaise = mWindowRaised;
+    event.isRefocus = mIsRefocus;
     return nsEventDispatcher::Dispatch(mTarget, mContext, &event);
   }
 
@@ -1737,6 +1752,7 @@ public:
   PRUint32                mType;
   nsRefPtr<nsPresContext> mContext;
   PRBool                  mWindowRaised;
+  PRBool                  mIsRefocus;
 };
 
 void
@@ -1745,7 +1761,8 @@ nsFocusManager::SendFocusOrBlurEvent(PRUint32 aType,
                                      nsIDocument* aDocument,
                                      nsISupports* aTarget,
                                      PRUint32 aFocusMethod,
-                                     PRBool aWindowRaised)
+                                     PRBool aWindowRaised,
+                                     PRBool aIsRefocus)
 {
   NS_ASSERTION(aType == NS_FOCUS_CONTENT || aType == NS_BLUR_CONTENT,
                "Wrong event type for SendFocusOrBlurEvent");
@@ -1777,7 +1794,7 @@ nsFocusManager::SendFocusOrBlurEvent(PRUint32 aType,
 
   nsContentUtils::AddScriptRunner(
     new FocusBlurEvent(aTarget, aType, aPresShell->GetPresContext(),
-                       aWindowRaised));
+                       aWindowRaised, aIsRefocus));
 }
 
 void
@@ -1789,7 +1806,8 @@ nsFocusManager::ScrollIntoView(nsIPresShell* aPresShell,
   if (!(aFlags & FLAG_NOSCROLL))
     aPresShell->ScrollContentIntoView(aContent,
                                       NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
-                                      NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE);
+                                      NS_PRESSHELL_SCROLL_IF_NOT_VISIBLE,
+                                      nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
 }
 
 

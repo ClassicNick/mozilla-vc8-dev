@@ -231,7 +231,7 @@ nsInlineFrame::ComputeTightBounds(gfxContext* aContext) const
 {
   // be conservative
   if (GetStyleContext()->HasTextDecorations())
-    return GetOverflowRect();
+    return GetVisualOverflowRect();
   return ComputeSimpleTightBounds(aContext);
 }
 
@@ -679,7 +679,7 @@ nsInlineFrame::ReflowFrames(nsPresContext* aPresContext,
 
   // For now our overflow area is zero. The real value will be
   // computed in |nsLineLayout::RelativePositionFrames|.
-  aMetrics.mOverflowArea.SetRect(0, 0, 0, 0);
+  aMetrics.mOverflowAreas.Clear();
 
 #ifdef NOISY_FINAL_SIZE
   ListTag(stdout);
@@ -918,6 +918,17 @@ nsInlineFrame::GetSkipSides() const
   }
 
   return skip;
+}
+
+nscoord
+nsInlineFrame::GetBaseline() const
+{
+  nscoord ascent = 0;
+  nsCOMPtr<nsIFontMetrics> fm;
+  if (NS_SUCCEEDED(nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fm)))) {
+    fm->GetMaxAscent(ascent);
+  }
+  return ascent + GetUsedBorderAndPadding().top;
 }
 
 #ifdef ACCESSIBILITY
@@ -1272,7 +1283,7 @@ nsPositionedInlineFrame::Reflow(nsPresContext*          aPresContext,
     rv = mAbsoluteContainer.Reflow(this, aPresContext, aReflowState, aStatus,
                                    containingBlockWidth, containingBlockHeight,
                                    PR_TRUE, PR_TRUE, PR_TRUE, // XXX could be optimized
-                                   &aDesiredSize.mOverflowArea);
+                                   &aDesiredSize.mOverflowAreas);
   }
 
   return rv;

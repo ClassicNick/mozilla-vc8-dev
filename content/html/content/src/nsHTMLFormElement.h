@@ -188,10 +188,11 @@ public:
    * Remove an element from this form's list of elements
    *
    * @param aElement the element to remove
-   * @param aNotify If true, send nsIDocumentObserver notifications as needed.
+   * @param aUpdateValidity If true, updates the form validity.
    * @return NS_OK if the element was successfully removed.
    */
-  nsresult RemoveElement(nsGenericHTMLFormElement* aElement, PRBool aNotify);
+  nsresult RemoveElement(nsGenericHTMLFormElement* aElement,
+                         bool aUpdateValidity);
 
   /**
    * Remove an element from the lookup table maintained by the form.
@@ -210,10 +211,12 @@ public:
    * Add an element to end of this form's list of elements
    *
    * @param aElement the element to add
+   * @param aUpdateValidity If true, the form validity will be updated.
    * @param aNotify If true, send nsIDocumentObserver notifications as needed.
    * @return NS_OK if the element was successfully added
    */
-  nsresult AddElement(nsGenericHTMLFormElement* aElement, PRBool aNotify);
+  nsresult AddElement(nsGenericHTMLFormElement* aElement, bool aUpdateValidity,
+                      PRBool aNotify);
 
   /**    
    * Add an element to the lookup table maintained by the form.
@@ -299,18 +302,17 @@ protected:
 
   class RemoveElementRunnable : public nsRunnable {
   public:
-    RemoveElementRunnable(nsHTMLFormElement* aForm, PRBool aNotify):
-      mForm(aForm), mNotify(aNotify)
+    RemoveElementRunnable(nsHTMLFormElement* aForm)
+      : mForm(aForm)
     {}
 
     NS_IMETHOD Run() {
-      mForm->HandleDefaultSubmitRemoval(mNotify);
+      mForm->HandleDefaultSubmitRemoval();
       return NS_OK;
     }
 
   private:
     nsRefPtr<nsHTMLFormElement> mForm;
-    PRBool mNotify;
   };
 
   nsresult DoSubmitOrReset(nsEvent* aEvent,
@@ -318,7 +320,7 @@ protected:
   nsresult DoReset();
 
   // Async callback to handle removal of our default submit
-  void HandleDefaultSubmitRemoval(PRBool aNotify);
+  void HandleDefaultSubmitRemoval();
 
   //
   // Submit Helpers

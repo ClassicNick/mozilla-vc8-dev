@@ -82,7 +82,6 @@ nsIStringBundle *nsAccessNode::gStringBundle = 0;
 nsIStringBundle *nsAccessNode::gKeyStringBundle = 0;
 nsINode *nsAccessNode::gLastFocusedNode = nsnull;
 
-PRBool nsAccessNode::gIsCacheDisabled = PR_FALSE;
 PRBool nsAccessNode::gIsFormFillEnabled = PR_FALSE;
 
 nsApplicationAccessible *nsAccessNode::gApplicationAccessible = nsnull;
@@ -152,9 +151,12 @@ nsAccessNode::Shutdown()
 }
 
 // nsIAccessNode
-NS_IMETHODIMP nsAccessNode::GetUniqueID(void **aUniqueID)
+NS_IMETHODIMP
+nsAccessNode::GetUniqueID(void **aUniqueID)
 {
-  *aUniqueID = static_cast<void*>(GetNode());
+  NS_ENSURE_ARG_POINTER(aUniqueID);
+
+  *aUniqueID = UniqueID();
   return NS_OK;
 }
 
@@ -214,7 +216,6 @@ void nsAccessNode::InitXPAccessibility()
 
   nsCOMPtr<nsIPrefBranch> prefBranch(do_GetService(NS_PREFSERVICE_CONTRACTID));
   if (prefBranch) {
-    prefBranch->GetBoolPref("accessibility.disablecache", &gIsCacheDisabled);
     prefBranch->GetBoolPref("browser.formfill.enable", &gIsFormFillEnabled);
   }
 
@@ -310,6 +311,12 @@ nsAccessNode::GetFrame()
   return mContent ? mContent->GetPrimaryFrame() : nsnull;
 }
 
+bool
+nsAccessNode::IsPrimaryForNode() const
+{
+  return true;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // nsIAccessNode
 
@@ -373,7 +380,8 @@ nsAccessNode::ScrollTo(PRUint32 aScrollType)
 
   PRInt16 vPercent, hPercent;
   nsCoreUtils::ConvertScrollTypeToPercents(aScrollType, &vPercent, &hPercent);
-  return shell->ScrollContentIntoView(content, vPercent, hPercent);
+  return shell->ScrollContentIntoView(content, vPercent, hPercent,
+                                      nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
 }
 
 NS_IMETHODIMP

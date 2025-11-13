@@ -166,7 +166,7 @@ public:
                                               PRBool aDoCapture, PRBool aConsumeRollupEvent);
   NS_IMETHOD              GetAttention(PRInt32 aCycleCount);
   virtual PRBool          HasPendingInputEvent();
-  virtual LayerManager*   GetLayerManager();
+  virtual LayerManager*   GetLayerManager(bool* aAllowRetaining = nsnull);
   gfxASurface             *GetThebesSurface();
   NS_IMETHOD              OnDefaultButtonLoaded(const nsIntRect &aButtonRect);
   NS_IMETHOD              OverrideSystemMouseScrollSpeed(PRInt32 aOriginalDelta, PRBool aIsHorizontal, PRInt32 &aOverriddenDelta);
@@ -303,12 +303,15 @@ protected:
   virtual void            SubclassWindow(BOOL bState);
   PRBool                  CanTakeFocus();
   PRBool                  UpdateNonClientMargins(PRInt32 aSizeMode = -1, PRBool aReflowWindow = PR_TRUE);
+  void                    UpdateGetWindowInfoCaptionStatus(PRBool aActiveCaption);
   void                    ResetLayout();
   void                    InvalidateNonClientRegion();
   HRGN                    ExcludeNonClientFromPaintRegion(HRGN aRegion);
 #if !defined(WINCE)
-  static void             InitTrackPointHack();
+  static void             InitInputHackDefaults();
 #endif
+  static PRBool           UseTrackPointHack();
+  static void             GetMainWindowClass(nsAString& aClass);
   PRBool                  HasGlass() const {
     return mTransparencyMode == eTransparencyGlass ||
            mTransparencyMode == eTransparencyBorderlessGlass;
@@ -394,14 +397,15 @@ protected:
    */
   void                    UserActivity();
 
-  /**
-   * Methods for derived classes 
-   */
-  virtual PRInt32         GetHeight(PRInt32 aProposedHeight);
-  virtual LPCWSTR         WindowClass();
-  virtual LPCWSTR         WindowPopupClass();
+  PRInt32                 GetHeight(PRInt32 aProposedHeight);
+  void                    GetWindowClass(nsString& aWindowClass);
+  void                    GetWindowPopupClass(nsString& aWindowClass);
   virtual DWORD           WindowStyle();
-  virtual DWORD           WindowExStyle();
+  DWORD                   WindowExStyle();
+
+  void                    RegisterWindowClass(const nsString& aClassName,
+                                              UINT aExtraStyle,
+                                              LPWSTR aIconID);
 
   /**
    * XP and Vista theming support for windows with rounded edges
@@ -455,9 +459,6 @@ protected:
   static STDMETHODIMP_(LRESULT) LresultFromObject(REFIID riid, WPARAM wParam, LPUNKNOWN pAcc);
 #endif // ACCESSIBILITY
   void                    ClearCachedResources();
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  void                    UpdateCaptionButtonsClippingRect();
-#endif
 
 protected:
   nsCOMPtr<nsIWidget>   mParent;
@@ -491,8 +492,6 @@ protected:
   static PRUint32       sInstanceCount;
   static TriStateBool   sCanQuit;
   static nsWindow*      sCurrentWindow;
-  static BOOL           sIsRegistered;
-  static BOOL           sIsPopupClassRegistered;
   static BOOL           sIsOleInitialized;
   static HCURSOR        sHCursor;
   static imgIContainer* sCursorImgContainer;
@@ -500,7 +499,8 @@ protected:
   static PRBool         sJustGotDeactivate;
   static PRBool         sJustGotActivate;
   static int            sTrimOnMinimize;
-  static PRBool         sTrackPointHack;
+  static PRBool         sDefaultTrackPointHack;
+  static const char*    sDefaultMainWindowClass;
 #ifdef MOZ_IPC
   static PRUint32       sOOPPPluginFocusEvent;
 #endif
@@ -510,13 +510,6 @@ protected:
   nsIntMargin           mNonClientOffset;
   // Margins set by the owner
   nsIntMargin           mNonClientMargins;
-
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  // Represents the area taken by the caption buttons
-  // on dwm-enabled systems
-  nsIntRect             mCaptionButtons;
-  nsIntRegion           mCaptionButtonsRoundedRegion;
-#endif
 
   // Indicates custom frames are enabled
   PRPackedBool          mCustomNonClient;

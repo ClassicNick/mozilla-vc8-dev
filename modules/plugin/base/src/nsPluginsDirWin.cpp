@@ -54,6 +54,8 @@
 
 #include "nsString.h"
 #include "nsILocalFile.h"
+#include "nsUnicharUtils.h"
+#include "nsSetDllDirectory.h"
 
 /* Local helper functions */
 
@@ -266,6 +268,8 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   if (!plugin)
     return NS_ERROR_NULL_POINTER;
 
+  PRBool protectCurrentDirectory = PR_TRUE;
+
 #ifndef WINCE
   nsAutoString pluginFolderPath;
   plugin->GetPath(pluginFolderPath);
@@ -273,6 +277,10 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   PRInt32 idx = pluginFolderPath.RFindChar('\\');
   if (kNotFound == idx)
     return NS_ERROR_FILE_INVALID_PATH;
+
+  if (Substring(pluginFolderPath, idx).LowerCaseEqualsLiteral("\\np32dsw.dll")) {
+    protectCurrentDirectory = PR_FALSE;
+  }
 
   pluginFolderPath.SetLength(idx);
 
@@ -287,9 +295,17 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   }
 #endif
 
+  if (protectCurrentDirectory) {
+    mozilla::NS_SetDllDirectory(NULL);
+  }
+
   nsresult rv = plugin->Load(outLibrary);
   if (NS_FAILED(rv))
       *outLibrary = NULL;
+
+  if (protectCurrentDirectory) {
+    mozilla::NS_SetDllDirectory(L"");
+  }
 
 #ifndef WINCE    
   if (restoreOrigDir) {

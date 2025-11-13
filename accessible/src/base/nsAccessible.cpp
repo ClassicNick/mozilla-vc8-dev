@@ -99,6 +99,7 @@
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
 #include "nsNetUtil.h"
+#include "nsIEventStateManager.h"
 
 #ifdef NS_DEBUG
 #include "nsIDOMCharacterData.h"
@@ -466,9 +467,6 @@ nsAccessible::GetFirstChild(nsIAccessible **aFirstChild)
   NS_ENSURE_ARG_POINTER(aFirstChild);
   *aFirstChild = nsnull;
 
-  if (gIsCacheDisabled)
-    InvalidateChildren();
-
   PRInt32 childCount = GetChildCount();
   NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
 
@@ -685,24 +683,23 @@ nsAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
   if (aExtraState)
     *aExtraState = 0;
 
-  // Set STATE_UNAVAILABLE state based on disabled attribute
-  // The disabled attribute is mostly used in XUL elements and HTML forms, but
-  // if someone sets it on another attribute, 
-  // it seems reasonable to consider it unavailable
-  PRBool isDisabled;
-  if (mContent->IsHTML()) {
-    // In HTML, just the presence of the disabled attribute means it is disabled,
-    // therefore disabled="false" indicates disabled!
-    isDisabled = mContent->HasAttr(kNameSpaceID_None,
-                                   nsAccessibilityAtoms::disabled);
-  }
-  else {
-    isDisabled = mContent->AttrValueIs(kNameSpaceID_None,
-                                       nsAccessibilityAtoms::disabled,
-                                       nsAccessibilityAtoms::_true,
-                                       eCaseMatters);
-  }
-  if (isDisabled) {
+  nsEventStates intrinsicState = mContent->IntrinsicState();
+
+  if (intrinsicState.HasState(NS_EVENT_STATE_INVALID))
+    *aState |= nsIAccessibleStates::STATE_INVALID;
+
+  if (intrinsicState.HasState(NS_EVENT_STATE_REQUIRED))
+    *aState |= nsIAccessibleStates::STATE_REQUIRED;
+
+  PRBool disabled = mContent->IsHTML() ? 
+    (intrinsicState.HasState(NS_EVENT_STATE_DISABLED)) :
+    (mContent->AttrValueIs(kNameSpaceID_None,
+                           nsAccessibilityAtoms::disabled,
+                           nsAccessibilityAtoms::_true,
+                           eCaseMatters));
+
+  // Set unavailable state based on disabled state, otherwise set focus states
+  if (disabled) {
     *aState |= nsIAccessibleStates::STATE_UNAVAILABLE;
   }
   else if (mContent->IsElement()) {
@@ -985,39 +982,49 @@ void nsAccessible::GetBoundsRect(nsRect& aTotalBounds, nsIFrame** aBoundingFrame
 
 
 /* void getBounds (out long x, out long y, out long width, out long height); */
-NS_IMETHODIMP nsAccessible::GetBounds(PRInt32 *x, PRInt32 *y, PRInt32 *width, PRInt32 *height)
+NS_IMETHODIMP
+nsAccessible::GetBounds(PRInt32* aX, PRInt32* aY,
+                        PRInt32* aWidth, PRInt32* aHeight)
 {
-  // This routine will get the entire rectange for all the frames in this node
+  NS_ENSURE_ARG_POINTER(aX);
+  *aX = 0;
+  NS_ENSURE_ARG_POINTER(aY);
+  *aY = 0;
+  NS_ENSURE_ARG_POINTER(aWidth);
+  *aWidth = 0;
+  NS_ENSURE_ARG_POINTER(aHeight);
+  *aHeight = 0;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
+  // Flush layout so that all the frame construction, reflow, and styles are
+  // up-to-date since we rely on frames, and styles when calculating state.
+  // We don't flush the display because we don't care about painting.
+  nsCOMPtr<nsIPresShell> presShell = GetPresShell();
+  presShell->FlushPendingNotifications(Flush_Layout);
+
+  // This routine will get the entire rectangle for all the frames in this node.
   // -------------------------------------------------------------------------
   //      Primary Frame for node
   //  Another frame, same node                <- Example
   //  Another frame, same node
 
-  nsPresContext *presContext = GetPresContext();
-  if (!presContext)
-  {
-    *x = *y = *width = *height = 0;
-    return NS_ERROR_FAILURE;
-  }
-
   nsRect unionRectTwips;
-  nsIFrame* aBoundingFrame = nsnull;
-  GetBoundsRect(unionRectTwips, &aBoundingFrame);   // Unions up all primary frames for this node and all siblings after it
-  if (!aBoundingFrame) {
-    *x = *y = *width = *height = 0;
-    return NS_ERROR_FAILURE;
-  }
+  nsIFrame* boundingFrame = nsnull;
+  GetBoundsRect(unionRectTwips, &boundingFrame);   // Unions up all primary frames for this node and all siblings after it
+  NS_ENSURE_STATE(boundingFrame);
 
-  *x      = presContext->AppUnitsToDevPixels(unionRectTwips.x); 
-  *y      = presContext->AppUnitsToDevPixels(unionRectTwips.y);
-  *width  = presContext->AppUnitsToDevPixels(unionRectTwips.width);
-  *height = presContext->AppUnitsToDevPixels(unionRectTwips.height);
+  nsPresContext* presContext = presShell->GetPresContext();
+  *aX = presContext->AppUnitsToDevPixels(unionRectTwips.x);
+  *aY = presContext->AppUnitsToDevPixels(unionRectTwips.y);
+  *aWidth = presContext->AppUnitsToDevPixels(unionRectTwips.width);
+  *aHeight = presContext->AppUnitsToDevPixels(unionRectTwips.height);
 
   // We have the union of the rectangle, now we need to put it in absolute screen coords
-
-  nsIntRect orgRectPixels = aBoundingFrame->GetScreenRectExternal();
-  *x += orgRectPixels.x;
-  *y += orgRectPixels.y;
+  nsIntRect orgRectPixels = boundingFrame->GetScreenRectExternal();
+  *aX += orgRectPixels.x;
+  *aY += orgRectPixels.y;
 
   return NS_OK;
 }
@@ -2358,7 +2365,8 @@ nsAccessible::DispatchClickEvent(nsIContent *aContent, PRUint32 aActionIndex)
 
   // Scroll into view.
   presShell->ScrollContentIntoView(aContent, NS_PRESSHELL_SCROLL_ANYWHERE,
-                                   NS_PRESSHELL_SCROLL_ANYWHERE);
+                                   NS_PRESSHELL_SCROLL_ANYWHERE,
+                                   nsIPresShell::SCROLL_OVERFLOW_HIDDEN);
 
   // Fire mouse down and mouse up events.
   PRBool res = nsCoreUtils::DispatchMouseEvent(NS_MOUSE_BUTTON_DOWN, presShell,
@@ -2613,34 +2621,14 @@ nsAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset, PRUint32 aLe
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode public methods
 
-PRBool
-nsAccessible::Init()
-{
-  if (!nsAccessNodeWrap::Init())
-    return PR_FALSE;
-
-  nsDocAccessible *docAcc =
-    GetAccService()->GetDocAccessible(mContent->GetOwnerDoc());
-  NS_ASSERTION(docAcc, "Cannot cache new nsAccessible!");
-  if (!docAcc)
-    return PR_FALSE;
-
-  void *uniqueID = nsnull;
-  GetUniqueID(&uniqueID);
-
-  return docAcc->CacheAccessible(uniqueID, this);
-}
-
 void
 nsAccessible::Shutdown()
 {
   // Invalidate the child count and pointers to other accessibles, also make
   // sure none of its children point to this parent
   InvalidateChildren();
-  if (mParent) {
-    mParent->InvalidateChildren();
-    UnbindFromParent();
-  }
+  if (mParent)
+    mParent->RemoveChild(this);
 
   nsAccessNodeWrap::Shutdown();
 }
@@ -2689,14 +2677,14 @@ nsAccessible::BindToParent(nsAccessible* aParent, PRUint32 aIndexInParent)
 {
   NS_PRECONDITION(aParent, "This method isn't used to set null parent!");
 
-  if (mParent && mParent != aParent) {
-    // Adopt a child -- we allow this now. the new parent
-    // may be a dom node which wasn't previously accessible but now is.
-    // The old parent's children now need to be invalidated, since 
-    // it no longer owns the child, the new parent does
-    NS_ASSERTION(PR_FALSE, "Adopting child!");
-    if (mParent)
+  if (mParent) {
+    if (mParent != aParent) {
+      NS_ERROR("Adopting child!");
       mParent->InvalidateChildren();
+    } else {
+      NS_ERROR("Binding to the same parent!");
+      return;
+    }
   }
 
   mParent = aParent;
@@ -2729,6 +2717,9 @@ nsAccessible::InvalidateChildren()
 PRBool
 nsAccessible::AppendChild(nsAccessible* aChild)
 {
+  if (!aChild)
+    return PR_FALSE;
+
   if (!mChildren.AppendElement(aChild))
     return PR_FALSE;
 
@@ -2742,11 +2733,16 @@ nsAccessible::AppendChild(nsAccessible* aChild)
 PRBool
 nsAccessible::InsertChildAt(PRUint32 aIndex, nsAccessible* aChild)
 {
+  if (!aChild)
+    return PR_FALSE;
+
   if (!mChildren.InsertElementAt(aIndex, aChild))
     return PR_FALSE;
 
-  for (PRUint32 idx = aIndex + 1; idx < mChildren.Length(); idx++)
-    mChildren[idx]->mIndexInParent++;
+  for (PRUint32 idx = aIndex + 1; idx < mChildren.Length(); idx++) {
+    NS_ASSERTION(mChildren[idx]->mIndexInParent == idx - 1, "Accessible child index doesn't match");
+    mChildren[idx]->mIndexInParent = idx;
+  }
 
   if (nsAccUtils::IsText(aChild))
     mChildrenFlags = eMixedChildren;
@@ -2760,16 +2756,28 @@ nsAccessible::InsertChildAt(PRUint32 aIndex, nsAccessible* aChild)
 PRBool
 nsAccessible::RemoveChild(nsAccessible* aChild)
 {
-  if (aChild->mParent != this || aChild->mIndexInParent == -1)
+  if (!aChild)
     return PR_FALSE;
 
-  for (PRUint32 idx = aChild->mIndexInParent + 1; idx < mChildren.Length(); idx++)
-    mChildren[idx]->mIndexInParent--;
+  PRInt32 index = aChild->mIndexInParent;
+  if (aChild->mParent != this || index == -1)
+    return PR_FALSE;
 
-  mChildren.RemoveElementAt(aChild->mIndexInParent);
-  mEmbeddedObjCollector = nsnull;
+  if (index >= mChildren.Length() || mChildren[index] != aChild) {
+    NS_ERROR("Child is bound to parent but parent hasn't this child at its index!");
+    aChild->UnbindFromParent();
+    return PR_FALSE;
+  }
+
+  for (PRUint32 idx = index + 1; idx < mChildren.Length(); idx++) {
+    NS_ASSERTION(mChildren[idx]->mIndexInParent == idx, "Accessible child index doesn't match");
+    mChildren[idx]->mIndexInParent = idx - 1;
+  }
 
   aChild->UnbindFromParent();
+  mChildren.RemoveElementAt(index);
+  mEmbeddedObjCollector = nsnull;
+
   return PR_TRUE;
 }
 
@@ -2890,23 +2898,6 @@ nsAccessible::GetIndexOfEmbeddedChild(nsAccessible* aChild)
 
   return GetIndexOf(aChild);
 }
-
-#ifdef DEBUG
-PRBool
-nsAccessible::IsInCache()
-{
-  nsDocAccessible *docAccessible =
-    GetAccService()->GetDocAccessible(mContent->GetOwnerDoc());
-  if (!docAccessible)
-    return nsnull;
-
-  void *uniqueID = nsnull;
-  GetUniqueID(&uniqueID);
-
-  return docAccessible->GetCachedAccessible(uniqueID) ? PR_TRUE : PR_FALSE;
-}
-#endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 // HyperLinkAccessible methods

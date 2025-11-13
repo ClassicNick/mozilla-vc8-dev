@@ -457,7 +457,7 @@ EnumerateOverride(nsIURI* aURIKey,
 
 struct EnumerationArgs
 {
-  nsTArray<ChromePackage>& packages;
+  InfallibleTArray<ChromePackage>& packages;
   const nsCString& selectedLocale;
   const nsCString& selectedSkin;
 };
@@ -466,9 +466,9 @@ void
 nsChromeRegistryChrome::SendRegisteredChrome(
     mozilla::dom::PContentParent* aParent)
 {
-  nsTArray<ChromePackage> packages;
-  nsTArray<ResourceMapping> resources;
-  nsTArray<OverrideMapping> overrides;
+  InfallibleTArray<ChromePackage> packages;
+  InfallibleTArray<ResourceMapping> resources;
+  InfallibleTArray<OverrideMapping> overrides;
 
   EnumerationArgs args = {
     packages, mSelectedLocale, mSelectedSkin
@@ -532,11 +532,10 @@ CanLoadResource(nsIURI* aResourceURI)
   return isLocalResource;
 }
 
-nsresult
+nsIURI*
 nsChromeRegistryChrome::GetBaseURIFromPackage(const nsCString& aPackage,
                                               const nsCString& aProvider,
-                                              const nsCString& aPath,
-                                              nsIURI* *aResult)
+                                              const nsCString& aPath)
 {
   PackageEntry* entry =
       static_cast<PackageEntry*>(PL_DHashTableOperate(&mPackagesHash,
@@ -545,25 +544,24 @@ nsChromeRegistryChrome::GetBaseURIFromPackage(const nsCString& aPackage,
 
   if (PL_DHASH_ENTRY_IS_FREE(entry)) {
     if (!mInitialized)
-      return NS_ERROR_NOT_INITIALIZED;
+      return nsnull;
 
     LogMessage("No chrome package registered for chrome://%s/%s/%s",
                aPackage.get(), aProvider.get(), aPath.get());
 
-    return NS_ERROR_FAILURE;
+    return nsnull;
   }
 
-  *aResult = nsnull;
   if (aProvider.EqualsLiteral("locale")) {
-    *aResult = entry->locales.GetBase(mSelectedLocale, nsProviderArray::LOCALE);
+    return entry->locales.GetBase(mSelectedLocale, nsProviderArray::LOCALE);
   }
   else if (aProvider.EqualsLiteral("skin")) {
-    *aResult = entry->skins.GetBase(mSelectedSkin, nsProviderArray::ANY);
+    return entry->skins.GetBase(mSelectedSkin, nsProviderArray::ANY);
   }
   else if (aProvider.EqualsLiteral("content")) {
-    *aResult = entry->baseURI;
+    return entry->baseURI;
   }
-  return NS_OK;
+  return nsnull;
 }
 
 nsresult

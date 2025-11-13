@@ -54,7 +54,7 @@
 bool SendSyncMessageToParent(void* aCallbackData,
                              const nsAString& aMessage,
                              const nsAString& aJSON,
-                             nsTArray<nsString>* aJSONRetVal)
+                             InfallibleTArray<nsString>* aJSONRetVal)
 {
   nsInProcessTabChildGlobal* tabChild =
     static_cast<nsInProcessTabChildGlobal*>(aCallbackData);
@@ -315,7 +315,7 @@ nsInProcessTabChildGlobal::InitTabChildGlobal()
   nsresult rv =
     xpc->InitClassesWithNewWrappedGlobal(cx, scopeSupports,
                                          NS_GET_IID(nsISupports),
-                                         GetPrincipal(), EmptyCString(),
+                                         GetPrincipal(), nsnull,
                                          flags, getter_AddRefs(mGlobal));
   NS_ENSURE_SUCCESS(rv, false);
 

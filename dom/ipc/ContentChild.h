@@ -94,9 +94,9 @@ public:
             const PRInt64& aContentLength);
     virtual bool DeallocPExternalHelperApp(PExternalHelperAppChild *aService);
 
-    virtual bool RecvRegisterChrome(const nsTArray<ChromePackage>& packages,
-                                    const nsTArray<ResourceMapping>& resources,
-                                    const nsTArray<OverrideMapping>& overrides);
+    virtual bool RecvRegisterChrome(const InfallibleTArray<ChromePackage>& packages,
+                                    const InfallibleTArray<ResourceMapping>& resources,
+                                    const InfallibleTArray<OverrideMapping>& overrides);
 
     virtual bool RecvSetOffline(const PRBool& offline);
 
@@ -104,13 +104,18 @@ public:
     // auto remove when alertfinished is received.
     nsresult AddRemoteAlertObserver(const nsString& aData, nsIObserver* aObserver);
 
-    virtual bool RecvPreferenceUpdate(const nsCString& aDomain);
-    
+    virtual bool RecvPreferenceUpdate(const PrefTuple& aPref);
+
     virtual bool RecvNotifyAlertsObserver(const nsCString& aType, const nsString& aData);
 
     virtual bool RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON);
 
     virtual bool RecvGeolocationUpdate(const GeoPosition& somewhere);
+
+    virtual bool RecvAddPermission(const IPC::Permission& permission);
+
+    virtual bool RecvAccelerationChanged(const double& x, const double& y,
+                                         const double& z);
 
 private:
     NS_OVERRIDE
@@ -125,10 +130,8 @@ private:
      */
     NS_NORETURN void QuickExit();
 
-    nsTArray<nsAutoPtr<AlertObserver> > mAlertObservers;
-    nsTArray<nsAutoPtr<PrefObserver> > mPrefObservers;
+    InfallibleTArray<nsAutoPtr<AlertObserver> > mAlertObservers;
     nsRefPtr<ConsoleListener> mConsoleListener;
-    bool mDead;
 
     static ContentChild* sSingleton;
 

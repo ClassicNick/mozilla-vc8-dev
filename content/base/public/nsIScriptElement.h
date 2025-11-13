@@ -46,6 +46,7 @@
 #include "nsWeakPtr.h"
 #include "nsIParser.h"
 #include "nsContentCreatorFunctions.h"
+#include "nsIDOMHTMLScriptElement.h"
 
 #define NS_ISCRIPTELEMENT_IID \
 { 0x6d625b30, 0xfac4, 0x11de, \
@@ -58,15 +59,21 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISCRIPTELEMENT_IID)
 
-  nsIScriptElement(PRUint32 aFromParser)
+  nsIScriptElement(mozilla::dom::FromParser aFromParser)
     : mLineNumber(0),
       mAlreadyStarted(PR_FALSE),
       mMalformed(PR_FALSE),
-      mDoneAddingChildren(PR_TRUE),
+      mDoneAddingChildren(aFromParser == mozilla::dom::NOT_FROM_PARSER ||
+                          aFromParser == mozilla::dom::FROM_PARSER_FRAGMENT),
+      mForceAsync(aFromParser == mozilla::dom::NOT_FROM_PARSER ||
+                  aFromParser == mozilla::dom::FROM_PARSER_FRAGMENT),
       mFrozen(PR_FALSE),
       mDefer(PR_FALSE),
       mAsync(PR_FALSE),
-      mParserCreated((PRUint8)aFromParser),
+      mParserCreated(aFromParser == mozilla::dom::FROM_PARSER_FRAGMENT ?
+                     mozilla::dom::NOT_FROM_PARSER : aFromParser),
+                     // Fragment parser-created scripts (if executable)
+                     // behave like script-created scripts.
       mCreatorParser(nsnull)
   {
   }
@@ -120,10 +127,9 @@ public:
   }
 
   /**
-   * Returns a constant defined in nsContentCreatorFunctions.h. Non-zero
-   * values mean parser-created and zero means not parser-created.
+   * Returns how the element was created.
    */
-  PRUint32 GetParserCreated()
+  mozilla::dom::FromParser GetParserCreated()
   {
     return mParserCreated;
   }
@@ -156,7 +162,13 @@ public:
     mFrozen = PR_FALSE;
     mUri = nsnull;
     mCreatorParser = nsnull;
-    mParserCreated = NS_NOT_FROM_PARSER;
+    mParserCreated = mozilla::dom::NOT_FROM_PARSER;
+    PRBool async = PR_FALSE;
+    nsCOMPtr<nsIDOMHTMLScriptElement> htmlScript = do_QueryInterface(this);
+    if (htmlScript) {
+      htmlScript->GetAsync(&async);
+    }
+    mForceAsync = !async;
   }
 
   void SetCreatorParser(nsIParser* aParser)
@@ -217,6 +229,12 @@ protected:
   PRPackedBool mDoneAddingChildren;
 
   /**
+   * If true, the .async property returns true instead of reflecting the
+   * content attribute.
+   */
+  PRPackedBool mForceAsync;
+
+  /**
    * Whether src, defer and async are frozen.
    */
   PRPackedBool mFrozen;
@@ -234,7 +252,7 @@ protected:
   /**
    * Whether this element was parser-created.
    */
-  PRUint8 mParserCreated;
+  mozilla::dom::FromParser mParserCreated;
 
   /**
    * The effective src (or null if no src).

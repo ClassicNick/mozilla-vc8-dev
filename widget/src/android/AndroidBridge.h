@@ -90,6 +90,10 @@ public:
           return sBridge->AttachThread();
         return nsnull;
     }
+    
+    static jclass GetGeckoAppShellClass() {
+        return sBridge->mGeckoAppShellClass;
+    }
 
     // The bridge needs to be constructed via ConstructBridge first,
     // and then once the Gecko main thread is spun up (Gecko side),
@@ -110,6 +114,8 @@ public:
     void EnableLocation(bool aEnable);
 
     void ReturnIMEQueryResult(const PRUnichar *aResult, PRUint32 aLen, int aSelStart, int aSelLen);
+
+    void NotifyAppShellReady();
 
     void NotifyXreExit();
 
@@ -134,7 +140,7 @@ public:
                            const nsAString& aAction = EmptyString(),
                            const nsAString& aTitle = EmptyString());
 
-    void GetMimeTypeFromExtension(const nsACString& aFileExt, nsCString& aMimeType);
+    void GetMimeTypeFromExtensions(const nsACString& aFileExt, nsCString& aMimeType);
 
     void MoveTaskToBack();
 
@@ -157,6 +163,18 @@ public:
                                            PRInt64 aProgress,
                                            PRInt64 aProgressMax,
                                            const nsAString& aAlertText);
+
+    void AlertsProgressListener_OnCancel(const nsAString& aAlertName);
+
+    int GetDPI();
+
+    void ShowFilePicker(nsAString& aFilePath, nsAString& aFilters);
+
+    void SetFullScreen(PRBool aFullScreen);
+
+    void ShowInputMethodPicker();
+
+    void HideProgressDialogOnce();
 
     struct AutoLocalJNIFrame {
         AutoLocalJNIFrame(int nEntries = 128) : mEntries(nEntries) {
@@ -207,19 +225,25 @@ protected:
     jmethodID jEnableAccelerometer;
     jmethodID jEnableLocation;
     jmethodID jReturnIMEQueryResult;
+    jmethodID jNotifyAppShellReady;
     jmethodID jNotifyXreExit;
     jmethodID jScheduleRestart;
     jmethodID jGetOutstandingDrawEvents;
     jmethodID jGetHandlersForMimeType;
     jmethodID jGetHandlersForProtocol;
     jmethodID jOpenUriExternal;
-    jmethodID jGetMimeTypeFromExtension;
+    jmethodID jGetMimeTypeFromExtensions;
     jmethodID jMoveTaskToBack;
     jmethodID jGetClipboardText;
     jmethodID jSetClipboardText;
     jmethodID jShowAlertNotification;
-    jmethodID jAlertsProgressListener_OnProgress;
     jmethodID jShowFilePicker;
+    jmethodID jAlertsProgressListener_OnProgress;
+    jmethodID jAlertsProgressListener_OnCancel;
+    jmethodID jGetDpi;
+    jmethodID jSetFullScreen;
+    jmethodID jShowInputMethodPicker;
+    jmethodID jHideProgressDialog;
 
     // stuff we need for CallEglCreateWindowSurface
     jclass jEGLSurfaceImplClass;
@@ -234,5 +258,6 @@ protected:
 
 extern "C" JNIEnv * GetJNIForThread();
 extern PRBool mozilla_AndroidBridge_SetMainThread(void *);
+extern jclass GetGeckoAppShellClass();
 
 #endif /* AndroidBridge_h__ */

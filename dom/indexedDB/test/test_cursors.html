@@ -32,12 +32,12 @@
 
       let db = event.result;
 
-      request = db.createObjectStore("autoIncrement", "", true);
+      request = db.setVersion("1");
       request.onerror = errorHandler;
       request.onsuccess = grabEventAndContinueHandler;
       let event = yield;
 
-      let objectStore = event.result;
+      let objectStore = db.createObjectStore("autoIncrement", "", true);
 
       request = objectStore.openCursor();
       request.onerror = errorHandler;
@@ -47,12 +47,7 @@
       }
       yield;
 
-      request = db.createObjectStore("autoIncrementKeyPath", "foo", true);
-      request.onerror = errorHandler;
-      request.onsuccess = grabEventAndContinueHandler;
-      let event = yield;
-
-      objectStore = event.result;
+      objectStore = db.createObjectStore("autoIncrementKeyPath", "foo", true);
 
       request = objectStore.openCursor();
       request.onerror = errorHandler;
@@ -62,12 +57,7 @@
       }
       yield;
 
-      request = db.createObjectStore("keyPath", "foo");
-      request.onerror = errorHandler;
-      request.onsuccess = grabEventAndContinueHandler;
-      let event = yield;
-
-      objectStore = event.result;
+      objectStore = db.createObjectStore("keyPath", "foo");
 
       request = objectStore.openCursor();
       request.onerror = errorHandler;
@@ -77,12 +67,7 @@
       }
       yield;
 
-      request = db.createObjectStore("foo", "");
-      request.onerror = errorHandler;
-      request.onsuccess = grabEventAndContinueHandler;
-      let event = yield;
-
-      objectStore = event.result;
+      objectStore = db.createObjectStore("foo", "");
 
       request = objectStore.openCursor();
       request.onerror = errorHandler;
@@ -118,13 +103,8 @@
           let retval = cursor.continue();
           is(retval, true, "Correct return from continue");
 
-          try {
-            cursor.continue();
-            ok(false, "continue twice should throw");
-          }
-          catch (e) {
-            ok(true, "continue twice should throw");
-          }
+          cursor.continue();
+          ok(true, "continue twice should not throw");
 
           is(cursor.key, sortedKeys[keyIndex], "Correct key");
           is(cursor.value, "foo", "Correct value");
@@ -141,7 +121,7 @@
 
       keyIndex = 4;
 
-      let range = moz_indexedDB.makeBoundKeyRange(2000, "q");
+      let range = IDBKeyRange.bound(2000, "q");
       request = objectStore.openCursor(range);
       request.onerror = errorHandler;
       request.onsuccess = function (event) {
@@ -301,7 +281,7 @@
           is(cursor.value, "foo", "Correct value");
 
           if (keyIndex == 4) {
-            request = cursor.remove();
+            request = cursor.delete();
             request.onerror = errorHandler;
             request.onsuccess = function(event) {
               is(event.result, sortedKeys[4], "Correct key");

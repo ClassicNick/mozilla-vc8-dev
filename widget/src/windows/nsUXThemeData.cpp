@@ -23,6 +23,7 @@
  *
  * Contributor(s):
  *   Rob Arnold <robarnold@mozilla.com> (Original Author)
+ *   Jim Mathies <jmathies@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -67,11 +68,10 @@ PRPackedBool
 nsUXThemeData::sIsXPOrLater = PR_FALSE;
 PRPackedBool
 nsUXThemeData::sIsVistaOrLater = PR_FALSE;
-PRPackedBool
-nsUXThemeData::sHaveCompositor = PR_FALSE;
 
-PRBool nsUXThemeData::sTitlebarInfoPopulated = PR_FALSE;
-SIZE nsUXThemeData::sCommandButtons[3];
+PRBool nsUXThemeData::sTitlebarInfoPopulatedAero = PR_FALSE;
+PRBool nsUXThemeData::sTitlebarInfoPopulatedThemed = PR_FALSE;
+SIZE nsUXThemeData::sCommandButtons[4];
 
 nsUXThemeData::OpenThemeDataPtr nsUXThemeData::openTheme = NULL;
 nsUXThemeData::CloseThemeDataPtr nsUXThemeData::closeTheme = NULL;
@@ -172,8 +172,6 @@ nsUXThemeData::Invalidate() {
     // shall give WIN2K special treatment
     sFlatMenus = PR_FALSE;
   }
-  // Refresh titlebar button info
-  sTitlebarInfoPopulated = PR_FALSE;
 }
 
 HANDLE
@@ -264,29 +262,43 @@ nsUXThemeData::InitTitlebarInfo()
   sCommandButtons[0].cy = GetSystemMetrics(SM_CYSIZE);
   sCommandButtons[1].cx = sCommandButtons[2].cx = sCommandButtons[0].cx;
   sCommandButtons[1].cy = sCommandButtons[2].cy = sCommandButtons[0].cy;
+  sCommandButtons[3].cx = sCommandButtons[0].cx * 3;
+  sCommandButtons[3].cy = sCommandButtons[0].cy;
 
   // Use system metrics for pre-vista
-  if (nsWindow::GetWindowsVersion() < VISTA_VERSION)
-    sTitlebarInfoPopulated = PR_TRUE;
+  if (nsWindow::GetWindowsVersion() < VISTA_VERSION) {
+    sTitlebarInfoPopulatedAero = sTitlebarInfoPopulatedThemed = PR_TRUE;
+  }
 }
 
 // static
 void
 nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
 {
-  if (sTitlebarInfoPopulated || !aWnd)
+  if (!aWnd)
     return;
 
-  // Compositor enabled, we won't use these.
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  if (nsUXThemeData::CheckForCompositor()) {
-    sTitlebarInfoPopulated = PR_TRUE;
-    return;
+  if (!sTitlebarInfoPopulatedAero && nsUXThemeData::CheckForCompositor()) {
+    RECT captionButtons;
+    if (SUCCEEDED(nsUXThemeData::dwmGetWindowAttributePtr(aWnd,
+                                                          DWMWA_CAPTION_BUTTON_BOUNDS,
+                                                          &captionButtons,
+                                                          sizeof(captionButtons)))) {
+      sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cx = captionButtons.right - captionButtons.left - 3;
+      sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cy = (captionButtons.bottom - captionButtons.top) - 1;
+      sTitlebarInfoPopulatedAero = PR_TRUE;
+    }
   }
 #endif
 
+  if (sTitlebarInfoPopulatedThemed)
+    return;
+
   // Query a temporary, visible window with command buttons to get
   // the right metrics. 
+  nsAutoString className;
+  className.AssignLiteral(kClassNameTemp);
   WNDCLASSW wc;
   wc.style         = 0;
   wc.lpfnWndProc   = ::DefWindowProcW;
@@ -297,15 +309,15 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
   wc.hCursor       = NULL;
   wc.hbrBackground = NULL;
   wc.lpszMenuName  = NULL;
-  wc.lpszClassName = kClassNameTemp;
+  wc.lpszClassName = className.get();
   ::RegisterClassW(&wc);
 
-  // Create a transparent, descendent of the window passed in. This
+  // Create a transparent descendant of the window passed in. This
   // keeps the window from showing up on the desktop or the taskbar.
   // Note the parent (browser) window is usually still hidden, we
   // don't want to display it, so we can't query it directly.
-  HWND hWnd = CreateWindowExW(WS_EX_NOACTIVATE|WS_EX_LAYERED,
-                              kClassNameTemp, L"",
+  HWND hWnd = CreateWindowExW(WS_EX_LAYERED,
+                              className.get(), L"",
                               WS_OVERLAPPEDWINDOW,
                               0, 0, 0, 0, aWnd, NULL,
                               nsToolkit::mDllInstance, NULL);
@@ -334,5 +346,132 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
   sCommandButtons[2].cx = info.rgrect[5].right - info.rgrect[5].left;
   sCommandButtons[2].cy = info.rgrect[5].bottom - info.rgrect[5].top;
 
-  sTitlebarInfoPopulated = PR_TRUE;
+  sTitlebarInfoPopulatedThemed = PR_TRUE;
+}
+
+// visual style (aero glass, aero basic)
+//    theme (aero, luna, zune)
+//      theme color (silver, olive, blue)
+//        system colors
+
+struct THEMELIST {
+  LPCWSTR name;
+  int type;
+};
+
+const THEMELIST knownThemes[] = {
+  { L"aero.msstyles", WINTHEME_AERO },
+  { L"luna.msstyles", WINTHEME_LUNA },
+  { L"zune.msstyles", WINTHEME_ZUNE },
+  { L"royale.msstyles", WINTHEME_ROYALE }
+};
+
+const THEMELIST knownColors[] = {
+  { L"normalcolor", WINTHEMECOLOR_NORMAL },
+  { L"homestead",   WINTHEMECOLOR_HOMESTEAD },
+  { L"metallic",    WINTHEMECOLOR_METALLIC }
+};
+
+nsILookAndFeel::WindowsThemeIdentifier
+nsUXThemeData::sThemeId = nsILookAndFeel::eWindowsTheme_Generic;
+
+PRBool
+nsUXThemeData::sIsDefaultWindowsTheme = PR_FALSE;
+
+// static
+nsILookAndFeel::WindowsThemeIdentifier
+nsUXThemeData::GetNativeThemeId()
+{
+  return sThemeId;
+}
+
+// static
+PRBool nsUXThemeData::IsDefaultWindowTheme()
+{
+  return sIsDefaultWindowsTheme;
+}
+
+// static
+void
+nsUXThemeData::UpdateNativeThemeInfo()
+{
+  // Trigger a refresh of themed button metrics
+  sTitlebarInfoPopulatedThemed = PR_FALSE;
+
+  sIsDefaultWindowsTheme = PR_FALSE;
+  sThemeId = nsILookAndFeel::eWindowsTheme_Generic;
+
+  if (!IsAppThemed() || !getCurrentThemeName) {
+    sThemeId = nsILookAndFeel::eWindowsTheme_Classic;
+    return;
+  }
+
+  WCHAR themeFileName[MAX_PATH + 1];
+  WCHAR themeColor[MAX_PATH + 1];
+  if (FAILED(getCurrentThemeName(themeFileName,
+                                 MAX_PATH,
+                                 themeColor,
+                                 MAX_PATH,
+                                 NULL, 0))) {
+    sThemeId = nsILookAndFeel::eWindowsTheme_Classic;
+    return;
+  }
+
+  LPCWSTR themeName = wcsrchr(themeFileName, L'\\');
+  themeName = themeName ? themeName + 1 : themeFileName;
+
+  WindowsTheme theme = WINTHEME_UNRECOGNIZED;
+  for (int i = 0; i < NS_ARRAY_LENGTH(knownThemes); ++i) {
+    if (!lstrcmpiW(themeName, knownThemes[i].name)) {
+      theme = (WindowsTheme)knownThemes[i].type;
+      break;
+    }
+  }
+
+  if (theme == WINTHEME_UNRECOGNIZED)
+    return;
+
+  if (theme == WINTHEME_AERO || theme == WINTHEME_LUNA)
+    sIsDefaultWindowsTheme = PR_TRUE;
+  
+  if (theme != WINTHEME_LUNA) {
+    switch(theme) {
+      case WINTHEME_AERO:
+        sThemeId = nsILookAndFeel::eWindowsTheme_Aero;
+        return;
+      case WINTHEME_ZUNE:
+        sThemeId = nsILookAndFeel::eWindowsTheme_Zune;
+        return;
+      case WINTHEME_ROYALE:
+        sThemeId = nsILookAndFeel::eWindowsTheme_Royale;
+        return;
+      default:
+        NS_WARNING("unhandled theme type.");
+        return;
+    }
+  }
+
+  // calculate the luna color scheme
+  WindowsThemeColor color = WINTHEMECOLOR_UNRECOGNIZED;
+  for (int i = 0; i < NS_ARRAY_LENGTH(knownColors); ++i) {
+    if (!lstrcmpiW(themeColor, knownColors[i].name)) {
+      color = (WindowsThemeColor)knownColors[i].type;
+      break;
+    }
+  }
+
+  switch(color) {
+    case WINTHEMECOLOR_NORMAL:
+      sThemeId = nsILookAndFeel::eWindowsTheme_LunaBlue;
+      return;
+    case WINTHEMECOLOR_HOMESTEAD:
+      sThemeId = nsILookAndFeel::eWindowsTheme_LunaOlive;
+      return;
+    case WINTHEMECOLOR_METALLIC:
+      sThemeId = nsILookAndFeel::eWindowsTheme_LunaSilver;
+      return;
+    default:
+      NS_WARNING("unhandled theme color.");
+      return;
+  }
 }

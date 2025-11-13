@@ -20,6 +20,8 @@
  *
  * Contributor(s):
  *   Vladimir Vukicevic <vladimir@pobox.com>
+ *   Matt Brubeck <mbrubeck@mozilla.com>
+ *   Vivien Nicolas <vnicolas@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -74,7 +76,8 @@ static PRBool gLeftShift;
 static PRBool gRightShift;
 static PRBool gLeftAlt;
 static PRBool gRightAlt;
-static PRBool gSym;
+static PRBool gMenu;
+static PRBool gMenuConsumed;
 
 // All the toplevel windows that have been created; these are in
 // stacking order, so the window at gAndroidBounds[0] is the topmost
@@ -270,6 +273,14 @@ nsWindow::GetParent()
     return mParent;
 }
 
+float
+nsWindow::GetDPI()
+{
+    if (AndroidBridge::Bridge())
+        return AndroidBridge::Bridge()->GetDPI();
+    return 160.0f;
+}
+
 NS_IMETHODIMP
 nsWindow::Show(PRBool aState)
 {
@@ -426,6 +437,9 @@ nsWindow::SetSizeMode(PRInt32 aMode)
         case nsSizeMode_Minimized:
             AndroidBridge::Bridge()->MoveTaskToBack();
             break;
+        case nsSizeMode_Fullscreen:
+            MakeFullScreen(PR_TRUE);
+            break;
     }
     return NS_OK;
 }
@@ -578,14 +592,24 @@ nsWindow::DispatchEvent(nsGUIEvent *aEvent)
 }
 
 NS_IMETHODIMP
+nsWindow::MakeFullScreen(PRBool aFullScreen)
+{
+    AndroidBridge::Bridge()->SetFullScreen(aFullScreen);
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsWindow::SetWindowClass(const nsAString& xulWinType)
 {
     return NS_OK;
 }
 
 mozilla::layers::LayerManager*
-nsWindow::GetLayerManager()
+nsWindow::GetLayerManager(bool* aAllowRetaining)
 {
+    if (aAllowRetaining) {
+        *aAllowRetaining = true;
+    }
     if (mLayerManager) {
         return mLayerManager;
     }
@@ -651,6 +675,10 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
     if (!AndroidBridge::Bridge())
         return;
 
+    nsWindow *win = TopWindow();
+    if (!win)
+        return;
+
     switch (ae->Type()) {
         case AndroidGeckoEvent::SIZE_CHANGED: {
             int nw = ae->P0().x;
@@ -674,12 +702,12 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
         }
 
         case AndroidGeckoEvent::MOTION_EVENT: {
-            TopWindow()->UserActivity();
+            win->UserActivity();
             if (!gTopLevelWindows.IsEmpty()) {
                 nsIntPoint pt(ae->P0());
                 pt.x = NS_MIN(NS_MAX(pt.x, 0), gAndroidBounds.width - 1);
                 pt.y = NS_MIN(NS_MAX(pt.y, 0), gAndroidBounds.height - 1);
-                nsWindow *target = TopWindow()->FindWindowForPoint(pt);
+                nsWindow *target = win->FindWindowForPoint(pt);
 
 #if 0
                 ALOG("MOTION_EVENT %f,%f -> %p (visible: %d children: %d)", ae->P0().x, ae->P0().y, (void*)target,
@@ -700,23 +728,22 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
         }
 
         case AndroidGeckoEvent::KEY_EVENT:
-            TopWindow()->UserActivity();
+            win->UserActivity();
             if (gFocusedWindow)
                 gFocusedWindow->OnKeyEvent(ae);
             break;
 
         case AndroidGeckoEvent::DRAW:
-            if (TopWindow())
-                TopWindow()->OnDraw(ae);
+            win->OnDraw(ae);
             break;
 
         case AndroidGeckoEvent::IME_EVENT:
-            TopWindow()->UserActivity();
+            win->UserActivity();
             if (gFocusedWindow) {
                 gFocusedWindow->OnIMEEvent(ae);
             } else {
                 NS_WARNING("Sending unexpected IME event to top window");
-                TopWindow()->OnIMEEvent(ae);
+                win->OnIMEEvent(ae);
             }
             break;
 
@@ -838,13 +865,7 @@ nsWindow::DrawTo(gfxASurface *targetSurface)
 void
 nsWindow::OnDraw(AndroidGeckoEvent *ae)
 {
-    AndroidBridge::AutoLocalJNIFrame jniFrame;
-
     ALOG(">> OnDraw");
-
-    AndroidGeckoSurfaceView& sview(AndroidBridge::Bridge()->SurfaceView());
-
-    NS_ASSERTION(!sview.isNull(), "SurfaceView is null!");
 
     if (!IsTopLevel()) {
         ALOG("##### redraw for window %p, which is not a toplevel window -- sending to toplevel!", (void*) this);
@@ -858,6 +879,14 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
         return;
     }
 
+    AndroidBridge::AutoLocalJNIFrame jniFrame;
+
+    AndroidGeckoSurfaceView& sview(AndroidBridge::Bridge()->SurfaceView());
+
+    NS_ASSERTION(!sview.isNull(), "SurfaceView is null!");
+
+    AndroidBridge::Bridge()->HideProgressDialogOnce();
+
     if (GetLayerManager()->GetBackendType() == LayerManager::LAYERS_BASIC) {
         jobject bytebuf = sview.GetSoftwareDrawBuffer();
         if (!bytebuf) {
@@ -867,8 +896,8 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
 
         void *buf = AndroidBridge::JNI()->GetDirectBufferAddress(bytebuf);
         int cap = AndroidBridge::JNI()->GetDirectBufferCapacity(bytebuf);
-        if (!buf || cap < (mBounds.width * mBounds.height * 2)) {
-            ALOG("### Software drawing, but too small a buffer %d expected %d (or no buffer %p)!", cap, mBounds.width * mBounds.height * 2, buf);
+        if (!buf || cap != (mBounds.width * mBounds.height * 2)) {
+            ALOG("### Software drawing, but unexpected buffer size %d expected %d (or no buffer %p)!", cap, mBounds.width * mBounds.height * 2, buf);
             return;
         }
 
@@ -879,7 +908,7 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
                                 gfxASurface::ImageFormatRGB16_565);
 
         DrawTo(targetSurface);
-        sview.Draw2D(bytebuf);
+        sview.Draw2D(bytebuf, mBounds.width * 2);
     } else {
         int drawType = sview.BeginDrawing();
 
@@ -1008,7 +1037,7 @@ send_again:
 
     event.time = ae->Time();
     event.isShift = gLeftShift || gRightShift;
-    event.isControl = gSym;
+    event.isControl = PR_FALSE;
     event.isMeta = PR_FALSE;
     event.isAlt = gLeftAlt || gRightAlt;
 
@@ -1114,7 +1143,7 @@ nsWindow::DispatchGestureEvent(PRUint32 msg, PRUint32 direction, double delta,
     nsSimpleGestureEvent event(PR_TRUE, msg, this, direction, delta);
 
     event.isShift = gLeftShift || gRightShift;
-    event.isControl = gSym;
+    event.isControl = PR_FALSE;
     event.isMeta = PR_FALSE;
     event.isAlt = gLeftAlt || gRightAlt;
     event.time = time;
@@ -1281,10 +1310,13 @@ nsWindow::InitKeyEvent(nsKeyEvent& event, AndroidGeckoEvent& key)
 
     event.charCode = key.UnicodeChar();
     event.isShift = gLeftShift || gRightShift;
-    event.isControl = PR_FALSE;
+    event.isControl = gMenu;
     event.isAlt = PR_FALSE;
     event.isMeta = PR_FALSE;
     event.time = key.Time();
+
+    if (gMenu)
+        gMenuConsumed = PR_TRUE;
 }
 
 void
@@ -1292,11 +1324,18 @@ nsWindow::HandleSpecialKey(AndroidGeckoEvent *ae)
 {
     nsCOMPtr<nsIAtom> command;
     PRBool isDown = ae->Action() == AndroidKeyEvent::ACTION_DOWN;
+    PRBool isLongPress = !!(ae->Flags() & AndroidKeyEvent::FLAG_LONG_PRESS);
     PRBool doCommand = PR_FALSE;
     PRUint32 keyCode = ae->KeyCode();
 
     if (isDown) {
         switch (keyCode) {
+            case AndroidKeyEvent::KEYCODE_BACK:
+                if (isLongPress) {
+                    command = nsWidgetAtoms::Clear;
+                    doCommand = PR_TRUE;
+                }
+                break;
             case AndroidKeyEvent::KEYCODE_VOLUME_UP:
                 command = nsWidgetAtoms::VolumeUp;
                 doCommand = PR_TRUE;
@@ -1304,6 +1343,10 @@ nsWindow::HandleSpecialKey(AndroidGeckoEvent *ae)
             case AndroidKeyEvent::KEYCODE_VOLUME_DOWN:
                 command = nsWidgetAtoms::VolumeDown;
                 doCommand = PR_TRUE;
+                break;
+            case AndroidKeyEvent::KEYCODE_MENU:
+                gMenu = PR_TRUE;
+                gMenuConsumed = isLongPress;
                 break;
         }
     } else {
@@ -1315,8 +1358,11 @@ nsWindow::HandleSpecialKey(AndroidGeckoEvent *ae)
                 return;
             }
             case AndroidKeyEvent::KEYCODE_MENU:
-                command = nsWidgetAtoms::Menu;
-                doCommand = PR_TRUE;
+                gMenu = PR_FALSE;
+                if (!gMenuConsumed) {
+                    command = nsWidgetAtoms::Menu;
+                    doCommand = PR_TRUE;
+                }
                 break;
             case AndroidKeyEvent::KEYCODE_SEARCH:
                 command = nsWidgetAtoms::Search;
@@ -1370,9 +1416,6 @@ nsWindow::OnKeyEvent(AndroidGeckoEvent *ae)
         break;
     case AndroidKeyEvent::KEYCODE_ALT_RIGHT:
         gRightAlt = isDown;
-        break;
-    case AndroidKeyEvent::KEYCODE_SYM:
-        gSym = isDown;
         break;
     case AndroidKeyEvent::KEYCODE_BACK:
     case AndroidKeyEvent::KEYCODE_MENU:

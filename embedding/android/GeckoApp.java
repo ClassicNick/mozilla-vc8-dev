@@ -20,6 +20,8 @@
  *
  * Contributor(s):
  *   Vladimir Vukicevic <vladimir@pobox.com>
+ *   Matt Brubeck <mbrubeck@mozilla.com>
+ *   Vivien Nicolas <vnicolas@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -42,6 +44,7 @@ import java.util.*;
 import java.util.zip.*;
 import java.nio.*;
 import java.nio.channels.FileChannel;
+import java.util.concurrent.*;
 
 import android.os.*;
 import android.app.*;
@@ -54,6 +57,7 @@ import android.widget.*;
 import android.hardware.*;
 
 import android.util.*;
+import android.net.*;
 
 abstract public class GeckoApp
     extends Activity
@@ -64,6 +68,7 @@ abstract public class GeckoApp
     public static FrameLayout mainLayout;
     public static GeckoSurfaceView surfaceView;
     public static GeckoApp mAppContext;
+    public static boolean mFullscreen = false;
     ProgressDialog mProgressDialog;
 
     void showErrorDialog(String message)
@@ -114,83 +119,23 @@ abstract public class GeckoApp
 
         mAppContext = this;
 
-        // hide our window's title, we don't want it
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(mFullscreen ?
+                             WindowManager.LayoutParams.FLAG_FULLSCREEN : 0,
+                             WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
-        checkAndLaunchUpdate();
+        if (surfaceView == null)
+            surfaceView = new GeckoSurfaceView(this);
+        else
+            mainLayout.removeView(surfaceView);
 
-        surfaceView = new GeckoSurfaceView(this);
-        
         mainLayout = new FrameLayout(this);
         mainLayout.addView(surfaceView,
                            new FrameLayout.LayoutParams(FrameLayout.LayoutParams.FILL_PARENT,
                                                         FrameLayout.LayoutParams.FILL_PARENT));
 
-        boolean useLaunchButton = false;
-
-        String intentAction = getIntent().getAction();
-        if (intentAction != null && intentAction.equals("org.mozilla.gecko.DEBUG"))
-            useLaunchButton = true;
-
         setContentView(mainLayout,
                        new ViewGroup.LayoutParams(ViewGroup.LayoutParams.FILL_PARENT,
                                                   ViewGroup.LayoutParams.FILL_PARENT));
-
-        if (!GeckoAppShell.sGeckoRunning) {
-            try {
-                BufferedReader reader =
-                    new BufferedReader(new FileReader("/proc/cpuinfo"));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    int index = line.indexOf("CPU architecture:");
-                    if (index == -1)
-                        continue;
-                    String versionStr = line.substring(18);
-                    Log.i("GeckoApp", "cpu version: " + versionStr);
-                    int version = Integer.parseInt(versionStr);
-
-                    if (version < getMinCPUVersion()) {
-                        showErrorDialog(
-                            getString(R.string.incompatable_cpu_error));
-                        return;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                
-            } catch (Exception ex) {
-                // Not much we can do here, just continue assuming we're okay
-                Log.i("GeckoApp", "exception: " + ex);
-            }
-
-            if (!useLaunchButton)
-                mProgressDialog = 
-                    ProgressDialog.show(GeckoApp.this, "",
-                                        getString(R.string.splash_screen_label),
-                                        true);
-            // Load our JNI libs; we need to do this before launch() because
-            // setInitialSize will be called even before Gecko is actually up
-            // and running.
-            GeckoAppShell.loadGeckoLibs();
-
-            if (useLaunchButton) {
-                final Button b = new Button(this);
-                b.setText("Launch"); // don't need to localize
-                b.setOnClickListener(new Button.OnClickListener() {
-                        public void onClick (View v) {
-                            // hide the button so we can't be launched again
-                            mainLayout.removeView(b);
-                            launch();
-                        }
-                    });
-                mainLayout.addView(b, 300, 200);
-            } else {
-                launch();
-            }
-        }
-
-        super.onCreate(savedInstanceState);
     }
 
     @Override
@@ -201,12 +146,20 @@ abstract public class GeckoApp
             GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
             Log.i("GeckoApp","onNewIntent: "+uri);
         }
+        else if (Intent.ACTION_MAIN.equals(action)) {
+            Log.i("GeckoApp", "Intent : ACTION_MAIN");
+            GeckoAppShell.sendEventToGecko(new GeckoEvent(""));
+        }
+        else if (action.equals("org.mozilla.fennec.WEBAPP")) {
+            String uri = intent.getStringExtra("args");
+            GeckoAppShell.sendEventToGecko(new GeckoEvent(uri));
+            Log.i("GeckoApp","Intent : WEBAPP - " + uri);
+        }
     }
 
     @Override
     public void onPause()
     {
-
         Log.i("GeckoApp", "pause");
         GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_PAUSING));
         // The user is navigating away from this activity, but nothing
@@ -226,8 +179,6 @@ abstract public class GeckoApp
         Log.i("GeckoApp", "resume");
         if (GeckoAppShell.sGeckoRunning)
             GeckoAppShell.onResume();
-        if (surfaceView != null)
-            surfaceView.mSurfaceNeedsRedraw = true;
         // After an onPause, the activity is back in the foreground.
         // Undo whatever we did in onPause.
         super.onResume();
@@ -265,6 +216,75 @@ abstract public class GeckoApp
     {
         Log.i("GeckoApp", "start");
         super.onStart();
+
+        boolean useLaunchButton = false;
+
+        String intentAction = getIntent().getAction();
+        if (intentAction != null && intentAction.equals("org.mozilla.gecko.DEBUG"))
+            useLaunchButton = true;
+
+        if (!GeckoAppShell.sGeckoRunning) {
+            checkAndLaunchUpdate();
+
+            try {
+                BufferedReader reader =
+                    new BufferedReader(new FileReader("/proc/cpuinfo"));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    int index = line.indexOf("Processor");
+                    if (index == -1)
+                        continue;
+
+                    int version = 5;
+                    if (line.indexOf("(v8l)") != -1)
+                        version = 8;
+                    if (line.indexOf("(v7l)") != -1)
+                        version = 7;
+                    if (line.indexOf("(v6l)") != -1)
+                        version = 6;
+
+                    if (version < getMinCPUVersion()) {
+                        showErrorDialog(
+                            getString(R.string.incompatable_cpu_error));
+                        return;
+                    }
+                    else {
+                        break;
+                    }
+                }
+                
+            } catch (Exception ex) {
+                // Not much we can do here, just continue assuming we're okay
+                Log.i("GeckoApp", "exception: " + ex);
+            }
+
+            if (!useLaunchButton) {
+                mProgressDialog = 
+                    ProgressDialog.show(GeckoApp.this, "",
+                                        getString(R.string.splash_screen_label),
+                                        true);
+            }
+
+            // Load our JNI libs; we need to do this before launch() because
+            // setInitialSize will be called even before Gecko is actually up
+            // and running.
+            GeckoAppShell.loadGeckoLibs(getApplication().getPackageResourcePath());
+
+            if (useLaunchButton) {
+                final Button b = new Button(this);
+                b.setText("Launch"); // don't need to localize
+                b.setOnClickListener(new Button.OnClickListener() {
+                        public void onClick (View v) {
+                            // hide the button so we can't be launched again
+                            mainLayout.removeView(b);
+                            launch();
+                        }
+                    });
+                mainLayout.addView(b, 300, 200);
+            } else {
+                launch();
+            }
+        }
     }
 
     @Override
@@ -273,7 +293,8 @@ abstract public class GeckoApp
         Log.i("GeckoApp", "destroy");
         // Tell Gecko to shutting down; we'll end up calling System.exit()
         // in onXreExit.
-        GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_STOPPING));
+        if (isFinishing())
+            GeckoAppShell.sendEventToGecko(new GeckoEvent(GeckoEvent.ACTIVITY_STOPPING));
 
         super.onDestroy();
     }
@@ -304,6 +325,15 @@ abstract public class GeckoApp
                 } else {
                     return false;
                 }
+            case KeyEvent.KEYCODE_MENU:
+                if (event.getRepeatCount() == 0) {
+                    event.startTracking();
+                    break;
+                } else if ((event.getFlags() & KeyEvent.FLAG_LONG_PRESS) != 0) {
+                    break;
+                }
+                // Ignore repeats for KEYCODE_MENU; they confuse the widget code.
+                return false;
             case KeyEvent.KEYCODE_VOLUME_UP:
             case KeyEvent.KEYCODE_VOLUME_DOWN:
             case KeyEvent.KEYCODE_SEARCH:
@@ -324,7 +354,7 @@ abstract public class GeckoApp
     }
 
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        switch(keyCode) {
+        switch (keyCode) {
             case KeyEvent.KEYCODE_BACK:
                 if (!event.isTracking() || event.isCanceled())
                     return false;
@@ -339,6 +369,24 @@ abstract public class GeckoApp
     public boolean onKeyMultiple(int keyCode, int repeatCount, KeyEvent event) {
         GeckoAppShell.sendEventToGecko(new GeckoEvent(event));
         return true;
+    }
+
+    public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_BACK:
+                GeckoAppShell.sendEventToGecko(new GeckoEvent(event));
+                return true;
+            case KeyEvent.KEYCODE_MENU:
+                InputMethodManager imm = (InputMethodManager)
+                    surfaceView.getContext().getSystemService(
+                            Context.INPUT_METHOD_SERVICE);
+                imm.toggleSoftInputFromWindow(surfaceView.getWindowToken(),
+                                              imm.SHOW_FORCED, 0);
+                return true;
+            default:
+                break;
+        }
+        return false;
     }
 
     abstract public String getAppName();
@@ -410,7 +458,7 @@ abstract public class GeckoApp
         outFile.setLastModified(fileEntry.getTime());
     }
 
-    public String getEnvString() {
+    public void addEnvToIntent(Intent intent) {
         Map<String,String> envMap = System.getenv();
         Set<Map.Entry<String,String>> envSet = envMap.entrySet();
         Iterator<Map.Entry<String,String>> envIter = envSet.iterator();
@@ -418,39 +466,26 @@ abstract public class GeckoApp
         int c = 0;
         while (envIter.hasNext()) {
             Map.Entry<String,String> entry = envIter.next();
-            // No need to pass env vars that we know the system provides
-            // Unnecessary vars need to be trimmed since amount of data
-            // we can pass this way is limited
-            if (!entry.getKey().equals("BOOTCLASSPATH") &&
-                !entry.getKey().equals("ANDROID_SOCKET_zygote") && 
-                !entry.getKey().equals("TMPDIR") &&
-                !entry.getKey().equals("ANDROID_BOOTLOGO") &&
-                !entry.getKey().equals("EXTERNAL_STORAGE") &&
-                !entry.getKey().equals("ANDROID_ASSETS") &&
-                !entry.getKey().equals("PATH") &&
-                !entry.getKey().equals("TERMINFO") &&
-                !entry.getKey().equals("LD_LIBRARY_PATH") &&
-                !entry.getKey().equals("ANDROID_DATA") &&
-                !entry.getKey().equals("ANDROID_PROPERTY_WORKSPACE") &&
-                !entry.getKey().equals("ANDROID_ROOT")) {
-                envstr.append(" --es env" + c + " " + entry.getKey() + "=" 
-                              + entry.getValue());
-                c++;
-            }
+            intent.putExtra("env" + c, entry.getKey() + "=" 
+                            + entry.getValue());
+            c++;
         }
-        return envstr.toString();        
     }
 
     public void doRestart() {
         try {
             String action = "org.mozilla.gecko.restart" + getAppName();
-            String amCmd = "/system/bin/am broadcast -a " + action + getEnvString() + " -n org.mozilla." + getAppName() + "/org.mozilla." + getAppName() + ".Restarter";
-            Log.i("GeckoAppJava", amCmd);
-            Runtime.getRuntime().exec(amCmd);
+            Intent intent = new Intent(action);
+            intent.setClassName("org.mozilla." + getAppName(),
+                                "org.mozilla." + getAppName() + ".Restarter");
+            addEnvToIntent(intent);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Log.i("GeckoAppJava", intent.toString());
+            startActivity(intent);
         } catch (Exception e) {
             Log.i("GeckoAppJava", e.toString());
         }
-        System.exit(0);
+        finish();
     }
 
     public void handleNotification(String action, String alertName, String alertCookie) {
@@ -504,5 +539,65 @@ abstract public class GeckoApp
 
         if (statusCode == 0)
             System.exit(0);
+    }
+
+    static final int FILE_PICKER_REQUEST = 1;
+
+    private SynchronousQueue<String> mFilePickerResult = new SynchronousQueue();
+    public String showFilePicker(String aMimeType) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(aMimeType);
+        GeckoApp.this.
+            startActivityForResult(
+                Intent.createChooser(intent,"choose a file"),
+                FILE_PICKER_REQUEST);
+        String filePickerResult = "";
+        try {
+            filePickerResult = mFilePickerResult.take();
+        } catch (InterruptedException e) {
+            Log.i("GeckoApp", "error: " + e);
+        }
+        
+        return filePickerResult;
+    }
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, 
+                                    Intent data) {
+        String filePickerResult = "";
+        if (data != null && resultCode == RESULT_OK) {
+            try {
+                ContentResolver cr = getContentResolver();
+                Uri uri = data.getData();
+                String mimeType = cr.getType(uri);
+                String fileExt = "." + 
+                    mimeType.substring(mimeType.lastIndexOf('/') + 1);
+                File file = 
+                    File.createTempFile("tmp_" + 
+                                        (int)Math.floor(1000 * Math.random()), 
+                                        fileExt, 
+                                        new File("/data/data/org.mozilla." +
+                                                 getAppName()));
+                
+                FileOutputStream fos = new FileOutputStream(file);
+                InputStream is = cr.openInputStream(uri);
+                byte[] buf = new byte[4096];
+                int len = is.read(buf);
+                while (len != -1) {
+                    fos.write(buf, 0, len);
+                    len = is.read(buf);
+                }
+                fos.close();
+                filePickerResult =  file.getAbsolutePath();
+            }catch (Exception e) {
+                Log.e("GeckoApp", "error : "+ e);
+            }
+        }
+        try {
+            mFilePickerResult.put(filePickerResult);
+        } catch (InterruptedException e) {
+            Log.i("GeckoApp", "error: " + e);
+        }
     }
 }

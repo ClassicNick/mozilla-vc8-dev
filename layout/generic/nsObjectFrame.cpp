@@ -365,6 +365,7 @@ public:
   static void RemoveFromCARefreshTimer(nsPluginInstanceOwner *aPluginInstance);
   void SetupCARefresh();
   void* FixUpPluginWindow(PRInt32 inPaintState);
+  void HidePluginWindow();
   // Set a flag that (if true) indicates the plugin port info has changed and
   // SetWindow() needs to be called.
   void SetPluginPortChanged(PRBool aState) { mPluginPortChanged = aState; }
@@ -383,7 +384,11 @@ public:
   // CoreGraphics drawing model).
   void BeginCGPaint();
   void EndCGPaint();
-#endif
+#else // XP_MACOSX
+  void UpdateWindowClipRect(PRBool aSetWindow);
+  void SetWindow();
+  void UpdateWindowVisibility(PRBool aVisible);
+#endif // XP_MACOSX
 
   void SetOwner(nsObjectFrame *aOwner)
   {
@@ -514,6 +519,7 @@ private:
   // Used with windowless plugins only, initialized in CreateWidget().
   PRPackedBool                mFlash10Quirks;
 #endif
+  PRPackedBool                mPluginWindowVisible;
 
   // If true, destroy the widget on destruction. Used when plugin stop
   // is being delayed to a safer point in time.
@@ -828,6 +834,10 @@ nsObjectFrame::CreateWidget(nscoord aWidth,
       mInstanceOwner->SetupCARefresh();
     }
 #endif
+  } else {
+#ifndef XP_MACOSX
+    rpc->RegisterPluginForGeometryUpdates(this);
+#endif
   }
 
   if (!IsHidden()) {
@@ -939,7 +949,7 @@ nsObjectFrame::Reflow(nsPresContext*           aPresContext,
 
   // Get our desired size
   GetDesiredSize(aPresContext, aReflowState, aMetrics);
-  aMetrics.mOverflowArea.SetRect(0, 0, aMetrics.width, aMetrics.height);
+  aMetrics.SetOverflowAreasToDesiredBounds();
   FinishAndStoreOverflow(&aMetrics);
 
   // delay plugin instantiation until all children have
@@ -1068,15 +1078,15 @@ nsObjectFrame::FixupWindow(const nsSize& aSize)
   // on the Mac we need to set the clipRect to { 0, 0, 0, 0 } for now. This will keep
   // us from drawing on screen until the widget is properly positioned, which will not
   // happen until we have finished the reflow process.
+#ifdef XP_MACOSX
   window->clipRect.top = 0;
   window->clipRect.left = 0;
-#ifdef XP_MACOSX
   window->clipRect.bottom = 0;
   window->clipRect.right = 0;
 #else
-  window->clipRect.bottom = presContext->AppUnitsToDevPixels(aSize.height);
-  window->clipRect.right = presContext->AppUnitsToDevPixels(aSize.width);
+  mInstanceOwner->UpdateWindowClipRect(PR_FALSE);
 #endif
+
   NotifyPluginReflowObservers();
 }
 
@@ -1101,8 +1111,6 @@ nsObjectFrame::CallSetWindow()
 
   if (IsHidden())
     return;
-
-  PRBool windowless = (window->type == NPWindowTypeDrawable);
 
   // refresh the plugin port as well
   window->window = mInstanceOwner->GetPluginPortFromWidget();
@@ -1255,7 +1263,7 @@ nsDisplayPlugin::Paint(nsDisplayListBuilder* aBuilder,
                        nsIRenderingContext* aCtx)
 {
   nsObjectFrame* f = static_cast<nsObjectFrame*>(mFrame);
-  f->PaintPlugin(*aCtx, mVisibleRect, GetBounds(aBuilder));
+  f->PaintPlugin(aBuilder, *aCtx, mVisibleRect, GetBounds(aBuilder));
 }
 
 PRBool
@@ -1267,9 +1275,29 @@ nsDisplayPlugin::ComputeVisibility(nsDisplayListBuilder* aBuilder,
 }
 
 PRBool
-nsDisplayPlugin::IsOpaque(nsDisplayListBuilder* aBuilder)
+nsDisplayPlugin::IsOpaque(nsDisplayListBuilder* aBuilder,
+                          PRBool* aForceTransparentSurface)
 {
+  if (aForceTransparentSurface) {
+    *aForceTransparentSurface = PR_FALSE;
+  }
   nsObjectFrame* f = static_cast<nsObjectFrame*>(mFrame);
+  if (!aBuilder->IsForPluginGeometry()) {
+    nsIWidget* widget = f->GetWidget();
+    if (widget) {
+      nsTArray<nsIntRect> clip;
+      widget->GetWindowClipRegion(&clip);
+      nsTArray<nsIWidget::Configuration> configuration;
+      GetWidgetConfiguration(aBuilder, &configuration);
+      NS_ASSERTION(configuration.Length() == 1, "No configuration found");
+      if (clip != configuration[0].mClipRegion) {
+        // Something has clipped us unexpectedly. Perhaps there is a translucent
+        // chrome element overlaying us that forced us to be clipped away. Treat
+        // us as non-opaque since we may have holes.
+    	return PR_FALSE;
+      }
+    }
+  }
   return f->IsOpaque();
 }
 
@@ -1288,8 +1316,14 @@ nsObjectFrame::ComputeWidgetGeometry(const nsRegion& aRegion,
                                      const nsPoint& aPluginOrigin,
                                      nsTArray<nsIWidget::Configuration>* aConfigurations)
 {
-  if (!mWidget)
+  if (!mWidget) {
+#ifndef XP_MACOSX
+    if (mInstanceOwner) {
+      mInstanceOwner->UpdateWindowVisibility(!aRegion.IsEmpty());
+    }
+#endif
     return;
+  }
 
   nsPresContext* presContext = PresContext();
   nsRootPresContext* rootPC = presContext->GetRootPresContext();
@@ -1721,6 +1755,10 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   if (window->width <= 0 || window->height <= 0)
     return nsnull;
 
+#ifndef XP_MACOSX
+  mInstanceOwner->UpdateWindowVisibility(PR_TRUE);
+#endif
+
   nsRect area = GetContentRect() + aBuilder->ToReferenceFrame(GetParent());
   gfxRect r = nsLayoutUtils::RectToGfxRect(area, PresContext()->AppUnitsPerDevPixel());
   // to provide crisper and faster drawing.
@@ -1732,15 +1770,6 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
     mInstanceOwner->NotifyPaintWaiter(aBuilder, aManager);
     // Initialize ImageLayer
     layer = aManager->CreateImageLayer();
-  }
-
-  nsCOMPtr<nsIPluginInstance> pi;
-  mInstanceOwner->GetInstance(*getter_AddRefs(pi));
-  // Give plugin info about layer paint
-  if (pi) {
-    if (NS_FAILED(pi->NotifyPainted())) {
-      return nsnull;
-    }
   }
 
   if (!layer)
@@ -1775,7 +1804,8 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
 }
 
 void
-nsObjectFrame::PaintPlugin(nsIRenderingContext& aRenderingContext,
+nsObjectFrame::PaintPlugin(nsDisplayListBuilder* aBuilder,
+                           nsIRenderingContext& aRenderingContext,
                            const nsRect& aDirtyRect, const nsRect& aPluginRect)
 {
   // Screen painting code
@@ -1925,8 +1955,6 @@ nsObjectFrame::PaintPlugin(nsIRenderingContext& aRenderingContext,
     mInstanceOwner->GetWindow(window);
 
     if (window->type == NPWindowTypeDrawable) {
-      // check if we need to call SetWindow with updated parameters
-      PRBool doupdatewindow = PR_FALSE;
       // the offset of the DC
       nsPoint origin;
 
@@ -1954,92 +1982,59 @@ nsObjectFrame::PaintPlugin(nsIRenderingContext& aRenderingContext,
         RECT dirty;
         nativeDraw.TransformToNativeRect(dirtyGfxRect, dirty);
 
-        // XXX how can we be sure that window->window doesn't point to
-        // a dead DC and hdc has been reallocated at the same address?
-        if (reinterpret_cast<HDC>(window->window) != hdc ||
-            window->x != dest.left || window->y != dest.top) {
-          window->window = hdc;
-          window->x = dest.left;
-          window->y = dest.top;
+        window->window = hdc;
+        window->x = dest.left;
+        window->y = dest.top;
+        window->clipRect.left = 0;
+        window->clipRect.top = 0;
+        // if we're painting, we're visible.
+        window->clipRect.right = window->width;
+        window->clipRect.bottom = window->height;
 
-          // Windowless plugins on windows need a special event to update their location,
-          // see bug 135737.
-          //
-          // bug 271442: note, the rectangle we send is now purely the bounds of the plugin
-          // relative to the window it is contained in, which is useful for the plugin to
-          // correctly translate mouse coordinates.
-          //
-          // this does not mesh with the comments for bug 135737 which imply that the rectangle
-          // must be clipped in some way to prevent the plugin attempting to paint over areas
-          // it shouldn't.
-          //
-          // since the two uses of the rectangle are mutually exclusive in some cases, and
-          // since I don't see any incorrect painting (at least with Flash and ViewPoint -
-          // the originator of bug 135737), it seems that windowless plugins are not relying
-          // on information here for clipping their drawing, and we can safely use this message
-          // to tell the plugin exactly where it is in all cases.
+        // Windowless plugins on windows need a special event to update their location,
+        // see bug 135737.
+        //
+        // bug 271442: note, the rectangle we send is now purely the bounds of the plugin
+        // relative to the window it is contained in, which is useful for the plugin to
+        // correctly translate mouse coordinates.
+        //
+        // this does not mesh with the comments for bug 135737 which imply that the rectangle
+        // must be clipped in some way to prevent the plugin attempting to paint over areas
+        // it shouldn't.
+        //
+        // since the two uses of the rectangle are mutually exclusive in some cases, and
+        // since I don't see any incorrect painting (at least with Flash and ViewPoint -
+        // the originator of bug 135737), it seems that windowless plugins are not relying
+        // on information here for clipping their drawing, and we can safely use this message
+        // to tell the plugin exactly where it is in all cases.
 
-          nsIntPoint origin = GetWindowOriginInPixels(PR_TRUE);
-          nsIntRect winlessRect = nsIntRect(origin, nsIntSize(window->width, window->height));
-          // XXX I don't think we can be certain that the location wrt to
-          // the window only changes when the location wrt to the drawable
-          // changes, but the hdc probably changes on every paint so
-          // doupdatewindow is rarely false, and there is not likely to be
-          // a problem.
-          if (mWindowlessRect != winlessRect) {
-            mWindowlessRect = winlessRect;
+        nsIntPoint origin = GetWindowOriginInPixels(PR_TRUE);
+        nsIntRect winlessRect = nsIntRect(origin, nsIntSize(window->width, window->height));
 
-            WINDOWPOS winpos;
-            memset(&winpos, 0, sizeof(winpos));
-            winpos.x = mWindowlessRect.x;
-            winpos.y = mWindowlessRect.y;
-            winpos.cx = mWindowlessRect.width;
-            winpos.cy = mWindowlessRect.height;
+        if (mWindowlessRect != winlessRect) {
+          mWindowlessRect = winlessRect;
 
-            // finally, update the plugin by sending it a WM_WINDOWPOSCHANGED event
-            NPEvent pluginEvent;
-            pluginEvent.event = WM_WINDOWPOSCHANGED;
-            pluginEvent.wParam = 0;
-            pluginEvent.lParam = (LPARAM)&winpos;
-            inst->HandleEvent(&pluginEvent, nsnull);
-          }
+          WINDOWPOS winpos;
+          memset(&winpos, 0, sizeof(winpos));
+          winpos.x = mWindowlessRect.x;
+          winpos.y = mWindowlessRect.y;
+          winpos.cx = mWindowlessRect.width;
+          winpos.cy = mWindowlessRect.height;
 
-          inst->SetWindow(window);
+          // finally, update the plugin by sending it a WM_WINDOWPOSCHANGED event
+          NPEvent pluginEvent;
+          pluginEvent.event = WM_WINDOWPOSCHANGED;
+          pluginEvent.wParam = 0;
+          pluginEvent.lParam = (LPARAM)&winpos;
+          inst->HandleEvent(&pluginEvent, nsnull);
         }
+
+        inst->SetWindow(window);
+
         mInstanceOwner->Paint(dirty, hdc);
         nativeDraw.EndNativeDrawing();
       } while (nativeDraw.ShouldRenderAgain());
       nativeDraw.PaintToContext();
-    } else if (!(ctx->GetFlags() & gfxContext::FLAG_DESTINED_FOR_SCREEN)) {
-      // Get PrintWindow dynamically since it's not present on Win2K,
-      // which we still support
-      typedef BOOL (WINAPI * PrintWindowPtr)
-          (HWND hwnd, HDC hdcBlt, UINT nFlags);
-      PrintWindowPtr printProc = nsnull;
-      HMODULE module = ::GetModuleHandleW(L"user32.dll");
-      if (module) {
-        printProc = reinterpret_cast<PrintWindowPtr>
-          (::GetProcAddress(module, "PrintWindow"));
-      }
-      // Disable this for Sun Java, it makes it go into a 100% cpu burn loop.
-      if (printProc && !mInstanceOwner->MatchPluginName("Java(TM) Platform")) {
-        HWND hwnd = reinterpret_cast<HWND>(window->window);
-        RECT rc;
-        GetWindowRect(hwnd, &rc);
-        nsRefPtr<gfxWindowsSurface> surface =
-          new gfxWindowsSurface(gfxIntSize(rc.right - rc.left, rc.bottom - rc.top));
-
-        if (surface && printProc) {
-          printProc(hwnd, surface->GetDC(), 0);
-        
-          ctx->Translate(frameGfxRect.pos);
-          ctx->SetSource(surface);
-          gfxRect r = frameGfxRect.Intersect(dirtyGfxRect) - frameGfxRect.pos;
-          ctx->NewPath();
-          ctx->Rectangle(r);
-          ctx->Fill();
-        }
-      }
     }
 
     ctx->SetMatrix(currentMatrix);
@@ -2278,6 +2273,16 @@ nsObjectFrame::Instantiate(nsIChannel* aChannel, nsIStreamListener** aStreamList
                "Instantiation should still be prevented!");
   mPreventInstantiation = PR_FALSE;
 
+#ifdef ACCESSIBILITY
+  if (PresContext()->PresShell()->IsAccessibilityActive()) {
+    nsCOMPtr<nsIAccessibilityService> accService =
+      do_GetService("@mozilla.org/accessibilityService;1");
+    if (accService) {
+      accService->RecreateAccessible(PresContext()->PresShell(), mContent);
+    }
+  }
+#endif
+
   return rv;
 }
 
@@ -2292,6 +2297,10 @@ nsObjectFrame::Instantiate(const char* aMimeType, nsIURI* aURI)
     return NS_OK;
   }
 
+  // XXXbz can aMimeType ever actually be null here?  If not, either
+  // the callers are wrong (and passing "" instead of null) or we can
+  // remove the codepaths dealing with null aMimeType in
+  // InstantiateEmbeddedPlugin.
   NS_ASSERTION(aMimeType || aURI, "Need a type or a URI!");
 
   // Note: If PrepareInstanceOwner() returns an error, |this| may very
@@ -2335,6 +2344,16 @@ nsObjectFrame::Instantiate(const char* aMimeType, nsIURI* aURI)
 
   NS_ASSERTION(mPreventInstantiation,
                "Instantiation should still be prevented!");
+
+#ifdef ACCESSIBILITY
+  if (PresContext()->PresShell()->IsAccessibilityActive()) {
+    nsCOMPtr<nsIAccessibilityService> accService =
+      do_GetService("@mozilla.org/accessibilityService;1");
+    if (accService) {
+      accService->RecreateAccessible(PresContext()->PresShell(), mContent);
+    }
+  }
+#endif
 
   mPreventInstantiation = PR_FALSE;
 
@@ -2434,7 +2453,11 @@ DoStopPlugin(nsPluginInstanceOwner *aInstanceOwner, PRBool aDelayedStop)
     
     if (DoDelayedStop(aInstanceOwner, aDelayedStop))
       return;
-    
+
+#if defined(XP_MACOSX)
+    aInstanceOwner->HidePluginWindow();
+#endif
+
     inst->Stop();
 
     nsCOMPtr<nsIPluginHost> pluginHost = do_GetService(MOZ_PLUGIN_HOST_CONTRACTID);
@@ -2513,10 +2536,13 @@ nsObjectFrame::StopPluginInternal(PRBool aDelayedStop)
     return;
   }
 
-  if (mWidget) {
-    nsRootPresContext* rootPC = PresContext()->GetRootPresContext();
-    NS_ASSERTION(rootPC, "unable to unregister the plugin frame");
-    rootPC->UnregisterPluginForGeometryUpdates(this);
+  nsRootPresContext* rpc = PresContext()->GetRootPresContext();
+  if (!rpc) {
+    NS_ASSERTION(PresContext()->PresShell()->IsFrozen(),
+                 "unable to unregister the plugin frame");
+  }
+  else if (mWidget) {
+    rpc->UnregisterPluginForGeometryUpdates(this);
 
     // Make sure the plugin is hidden in case an update of plugin geometry
     // hasn't happened since this plugin became hidden.
@@ -2525,8 +2551,12 @@ nsObjectFrame::StopPluginInternal(PRBool aDelayedStop)
       nsTArray<nsIWidget::Configuration> configurations;
       GetEmptyClipConfiguration(&configurations);
       parent->ConfigureChildren(configurations);
-      DidSetWidgetGeometry();
     }
+  }
+  else {
+#ifndef XP_MACOSX
+    rpc->UnregisterPluginForGeometryUpdates(this);
+#endif
   }
 
   // Transfer the reference to the instance owner onto the stack so
@@ -2762,6 +2792,7 @@ nsPluginInstanceOwner::nsPluginInstanceOwner()
 #endif
   mContentFocused = PR_FALSE;
   mWidgetVisible = PR_TRUE;
+  mPluginWindowVisible = PR_FALSE;
   mNumCachedAttrs = 0;
   mNumCachedParams = 0;
   mCachedAttrParamNames = nsnull;
@@ -6182,6 +6213,9 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
           NS_NAMED_LITERAL_CSTRING(flash10Head, "Shockwave Flash 10.");
           mFlash10Quirks = StringBeginsWith(description, flash10Head);
 #endif
+
+          // Changing to windowless mode changes the NPWindow geometry.
+          mObjectFrame->FixupWindow(mObjectFrame->GetContentRect().Size());
         } else if (mWidget) {
           nsIWidget* parent = mWidget->GetParent();
           NS_ASSERTION(parent, "Plugin windows must not be toplevel");
@@ -6393,6 +6427,76 @@ void* nsPluginInstanceOwner::FixUpPluginWindow(PRInt32 inPaintState)
 #endif
 
   return nsnull;
+}
+
+void
+nsPluginInstanceOwner::HidePluginWindow()
+{
+  if (!mPluginWindow || !mInstance) {
+    return;
+  }
+
+  mPluginWindow->clipRect.bottom = mPluginWindow->clipRect.top;
+  mPluginWindow->clipRect.right  = mPluginWindow->clipRect.left;
+  mWidgetVisible = PR_FALSE;
+  mInstance->SetWindow(mPluginWindow);
+}
+
+#else // XP_MACOSX
+
+void nsPluginInstanceOwner::UpdateWindowClipRect(PRBool aSetWindow)
+{
+  if (!mPluginWindow)
+    return;
+
+  // For windowless plugins a non-empty clip rectangle will be
+  // passed to the plugin during paint, an additional update
+  // of the the clip rectangle here is not required
+  if (aSetWindow && !mWidget && mPluginWindowVisible && !UseLayers())
+    return;
+
+  const NPRect oldClipRect = mPluginWindow->clipRect;
+
+  mPluginWindow->clipRect.left = 0;
+  mPluginWindow->clipRect.top = 0;
+
+  if (mPluginWindowVisible) {
+    mPluginWindow->clipRect.right = mPluginWindow->width;
+    mPluginWindow->clipRect.bottom = mPluginWindow->height;
+  } else {
+    mPluginWindow->clipRect.right = 0;
+    mPluginWindow->clipRect.bottom = 0;
+  }
+
+  if (!aSetWindow)
+    return;
+
+  if ((mPluginWindow->clipRect.left   != oldClipRect.left   ||
+       mPluginWindow->clipRect.top    != oldClipRect.top    ||
+       mPluginWindow->clipRect.right  != oldClipRect.right  ||
+       mPluginWindow->clipRect.bottom != oldClipRect.bottom)) {
+    SetWindow();
+  }
+}
+
+void
+nsPluginInstanceOwner::SetWindow()
+{
+  if (!mInstance)
+    return;
+
+  if (UseLayers()) {
+    mInstance->AsyncSetWindow(mPluginWindow);
+  } else {
+    mInstance->SetWindow(mPluginWindow);
+  }
+}
+
+void
+nsPluginInstanceOwner::UpdateWindowVisibility(PRBool aVisible)
+{
+  mPluginWindowVisible = aVisible;
+  UpdateWindowClipRect(PR_TRUE);
 }
 
 #endif // XP_MACOSX

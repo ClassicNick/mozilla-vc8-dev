@@ -17,13 +17,13 @@ function getChromeRoot(path) {
 }
 
 function extractChromeRoot(path) {
-  var path = getChromeRoot(path);
-  var jar = getJar(path);
+  var chromeRootPath = getChromeRoot(path);
+  var jar = getJar(chromeRootPath);
   if (jar) {
     var tmpdir = extractJarToTmp(jar);
     return "file://" + tmpdir.path + "/";
   }
-  return path;
+  return chromeRootPath;
 }
 
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
@@ -72,39 +72,53 @@ var Harness = {
   installCount: null,
   runningInstalls: null,
 
+  waitingForFinish: false,
+
   // Setup and tear down functions
   setup: function() {
-    waitForExplicitFinish();
-    Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
-    Services.obs.addObserver(this, "addon-install-started", false);
-    Services.obs.addObserver(this, "addon-install-blocked", false);
-    Services.obs.addObserver(this, "addon-install-failed", false);
-    Services.obs.addObserver(this, "addon-install-complete", false);
-    Services.wm.addListener(this);
+    if (!this.waitingForFinish) {
+      waitForExplicitFinish();
+      this.waitingForFinish = true;
 
-    AddonManager.addInstallListener(this);
+      Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
+      Services.obs.addObserver(this, "addon-install-started", false);
+      Services.obs.addObserver(this, "addon-install-blocked", false);
+      Services.obs.addObserver(this, "addon-install-failed", false);
+      Services.obs.addObserver(this, "addon-install-complete", false);
+
+      AddonManager.addInstallListener(this);
+
+      Services.wm.addListener(this);
+
+      var self = this;
+      registerCleanupFunction(function() {
+        Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
+        Services.obs.removeObserver(self, "addon-install-started");
+        Services.obs.removeObserver(self, "addon-install-blocked");
+        Services.obs.removeObserver(self, "addon-install-failed");
+        Services.obs.removeObserver(self, "addon-install-complete");
+
+        AddonManager.removeInstallListener(self);
+
+        Services.wm.removeListener(self);
+
+        AddonManager.getAllInstalls(function(aInstalls) {
+          is(aInstalls.length, 0, "Should be no active installs at the end of the test");
+          aInstalls.forEach(function(aInstall) {
+            info("Install for " + aInstall.sourceURI + " is in state " + aInstall.state);
+            aInstall.cancel();
+          });
+        });
+      });
+    }
+
     this.installCount = 0;
     this.pendingCount = 0;
     this.runningInstalls = [];
-
-    var self = this;
-    registerCleanupFunction(function() {
-      Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
-      Services.obs.removeObserver(self, "addon-install-started");
-      Services.obs.removeObserver(self, "addon-install-blocked");
-      Services.obs.removeObserver(self, "addon-install-failed");
-      Services.obs.removeObserver(self, "addon-install-complete");
-      Services.wm.removeListener(self);
-
-      AddonManager.removeInstallListener(self);
-    });
   },
 
   finish: function() {
-    AddonManager.getAllInstalls(function(installs) {
-      is(installs.length, 0, "Should be no active installs at the end of the test");
-      finish();
-    });
+    finish();
   },
 
   endTest: function() {
@@ -139,12 +153,6 @@ var Harness = {
   },
 
   // Window open handling
-  windowLoad: function(window) {
-    // Allow any other load handlers to execute
-    var self = this;
-    executeSoon(function() { self.windowReady(window); } );
-  },
-
   windowReady: function(window) {
     if (window.document.location.href == XPINSTALL_URL) {
       if (this.installBlockedCallback)
@@ -165,7 +173,7 @@ var Harness = {
       }
     }
     else if (window.document.location.href == PROMPT_URL) {
-        var promptType = window.gArgs.getProperty("promptType");
+        var promptType = window.args.promptType;
         switch (promptType) {
           case "alert":
           case "alertCheck":
@@ -224,10 +232,9 @@ var Harness = {
     var domwindow = window.QueryInterface(Components.interfaces.nsIInterfaceRequestor)
                           .getInterface(Components.interfaces.nsIDOMWindowInternal);
     var self = this;
-    domwindow.addEventListener("load", function() {
-      domwindow.removeEventListener("load", arguments.callee, false);
-      self.windowLoad(domwindow);
-    }, false);
+    waitForFocus(function() {
+      self.windowReady(domwindow);
+    }, domwindow);
   },
 
   onCloseWindow: function(window) {
