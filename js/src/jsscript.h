@@ -1,5 +1,5 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=79 ft=cpp:
+ * vim: set ts=4 sw=4 et tw=79 ft=cpp:
  *
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -46,8 +46,7 @@
 #include "jsatom.h"
 #include "jsprvtd.h"
 #include "jsdbgapi.h"
-
-JS_BEGIN_EXTERN_C
+#include "jsclist.h"
 
 /*
  * Type of try note associated with each catch or finally block, and also with
@@ -80,26 +79,37 @@ class UpvarCookie
 
     static const uint32 FREE_VALUE = 0xfffffffful;
 
+    void checkInvariants() {
+        JS_STATIC_ASSERT(sizeof(UpvarCookie) == sizeof(uint32));
+        JS_STATIC_ASSERT(UPVAR_LEVEL_LIMIT < FREE_LEVEL);
+    }
+
   public:
     /*
      * All levels above-and-including FREE_LEVEL are reserved so that
      * FREE_VALUE can be used as a special value.
      */
     static const uint16 FREE_LEVEL = 0x3fff;
+
+    /*
+     * If a function has a higher static level than this limit, we will not
+     * optimize it using UPVAR opcodes.
+     */
+    static const uint16 UPVAR_LEVEL_LIMIT = 16;
     static const uint16 CALLEE_SLOT = 0xffff;
     static bool isLevelReserved(uint16 level) { return level >= FREE_LEVEL; }
 
     bool isFree() const { return value == FREE_VALUE; }
     uint32 asInteger() const { return value; }
     /* isFree check should be performed before using these accessors. */
-    uint16 level() const { JS_ASSERT(!isFree()); return value >> 16; }
-    uint16 slot() const { JS_ASSERT(!isFree()); return value; }
+    uint16 level() const { JS_ASSERT(!isFree()); return uint16(value >> 16); }
+    uint16 slot() const { JS_ASSERT(!isFree()); return uint16(value); }
 
     void set(const UpvarCookie &other) { set(other.level(), other.slot()); }
     void set(uint16 newLevel, uint16 newSlot) { value = (uint32(newLevel) << 16) | newSlot; }
     void makeFree() { set(0xffff, 0xffff); JS_ASSERT(isFree()); }
+    void fromInteger(uint32 u32) { value = u32; }
 };
-JS_STATIC_ASSERT(sizeof(UpvarCookie) == sizeof(uint32));
 
 }
 
@@ -130,6 +140,24 @@ typedef struct JSUpvarArray {
     uint32          length;     /* count of indexed upvar cookies */
 } JSUpvarArray;
 
+typedef struct JSConstArray {
+    js::Value       *vector;    /* array of indexed constant values */
+    uint32          length;
+} JSConstArray;
+
+namespace js {
+
+struct GlobalSlotArray {
+    struct Entry {
+        uint32      atomIndex;  /* index into atom table */
+        uint32      slot;       /* global obj slot number */
+    };
+    Entry           *vector;
+    uint32          length;
+};
+
+} /* namespace js */
+
 #define JS_OBJECT_ARRAY_SIZE(length)                                          \
     (offsetof(JSObjectArray, vector) + sizeof(JSObject *) * (length))
 
@@ -137,7 +165,32 @@ typedef struct JSUpvarArray {
 # define CHECK_SCRIPT_OWNER 1
 #endif
 
+#ifdef JS_METHODJIT
+namespace JSC {
+    class ExecutablePool;
+}
+namespace js {
+namespace mjit {
+
+struct JITScript;
+
+namespace ic {
+# if defined JS_POLYIC
+    struct PICInfo;
+# endif
+# if defined JS_MONOIC
+    struct MICInfo;
+    struct CallICInfo;
+# endif
+}
+struct CallSite;
+}
+}
+#endif
+
 struct JSScript {
+    /* FIXME: bug 586181 */
+    JSCList         links;      /* Links for compartment script list */
     jsbytecode      *code;      /* bytecodes and their immediate operands */
     uint32          length;     /* length of code vector */
     uint16          version;    /* JS version under which script was compiled */
@@ -152,11 +205,23 @@ struct JSScript {
                                        regexps or 0 if none. */
     uint8           trynotesOffset; /* offset to the array of try notes or
                                        0 if none */
+    uint8           globalsOffset;  /* offset to the array of global slots or
+                                       0 if none */
+    uint8           constOffset;    /* offset to the array of constants or
+                                       0 if none */
     bool            noScriptRval:1; /* no need for result value of last
                                        expression statement */
     bool            savedCallerFun:1; /* object 0 is caller function */
     bool            hasSharps:1;      /* script uses sharp variables */
     bool            strictModeCode:1; /* code is in strict mode */
+    bool            compileAndGo:1;   /* script was compiled with TCF_COMPILE_N_GO */
+    bool            usesEval:1;       /* script uses eval() */
+    bool            warnedAboutTwoArgumentEval:1; /* have warned about use of
+                                                     obsolete eval(s, o) in
+                                                     this script */
+#ifdef JS_METHODJIT
+    bool            debugMode:1;      /* script was compiled in debug mode */
+#endif
 
     jsbytecode      *main;      /* main entry point, after predef'ing prolog */
     JSAtomMap       atomMap;    /* maps immediate index to literal struct */
@@ -166,11 +231,43 @@ struct JSScript {
     uint16          staticLevel;/* static level for display maintenance */
     JSPrincipals    *principals;/* principals for this script */
     union {
-        JSObject    *object;    /* optional Script-class object wrapper */
+        /*
+         * A script object of class js_ScriptClass, to ensure the script is GC'd.
+         * - All scripts returned by JSAPI functions (JS_CompileScript,
+         *   JS_CompileFile, etc.) have these objects.
+         * - Function scripts never have script objects; such scripts are owned
+         *   by their function objects.
+         * - Temporary scripts created by obj_eval, JS_EvaluateScript, and 
+         *   similar functions never have these objects; such scripts are
+         *   explicitly destroyed by the code that created them.
+         * Debugging API functions (JSDebugHooks::newScriptHook;
+         * JS_GetFunctionScript) may reveal sans-script-object Function and
+         * temporary scripts to clients, but clients must never call
+         * JS_NewScriptObject on such scripts: doing so would double-free them,
+         * once from the explicit call to js_DestroyScript, and once when the
+         * script object is garbage collected.
+         */
+        JSObject    *object;
         JSScript    *nextToGC;  /* next to GC in rt->scriptsToGC list */
     } u;
 #ifdef CHECK_SCRIPT_OWNER
     JSThread        *owner;     /* for thread-safe life-cycle assertions */
+#endif
+#ifdef JS_METHODJIT
+    // Note: the other pointers in this group may be non-NULL only if 
+    // |execPool| is non-NULL.
+    void            *ncode;     /* native code compiled by the method JIT */
+    void            **nmap;     /* maps PCs to native code */
+    js::mjit::JITScript *jit;   /* Extra JIT info */
+# if defined JS_POLYIC
+    js::mjit::ic::PICInfo *pics; /* PICs in this script */
+# endif
+# if defined JS_MONOIC
+    js::mjit::ic::MICInfo *mics; /* MICs in this script. */
+    js::mjit::ic::CallICInfo *callICs; /* CallICs in this script. */
+# endif
+
+    bool isValidJitCode(void *jcode);
 #endif
 
     /* Script notes are allocated right after the code. */
@@ -196,6 +293,16 @@ struct JSScript {
         return (JSTryNoteArray *) ((uint8 *) this + trynotesOffset);
     }
 
+    js::GlobalSlotArray *globals() {
+        JS_ASSERT(globalsOffset != 0);
+        return (js::GlobalSlotArray *) ((uint8 *)this + globalsOffset);
+    }
+
+    JSConstArray *consts() {
+        JS_ASSERT(constOffset != 0);
+        return (JSConstArray *) ((uint8 *) this + constOffset);
+    }
+
     JSAtom *getAtom(size_t index) {
         JS_ASSERT(index < atomMap.length);
         return atomMap.vector[index];
@@ -207,9 +314,27 @@ struct JSScript {
         return arr->vector[index];
     }
 
+    uint32 getGlobalSlot(size_t index) {
+        js::GlobalSlotArray *arr = globals();
+        JS_ASSERT(index < arr->length);
+        return arr->vector[index].slot;
+    }
+
+    JSAtom *getGlobalAtom(size_t index) {
+        js::GlobalSlotArray *arr = globals();
+        JS_ASSERT(index < arr->length);
+        return getAtom(arr->vector[index].atomIndex);
+    }
+
     inline JSFunction *getFunction(size_t index);
 
     inline JSObject *getRegExp(size_t index);
+
+    const js::Value &getConst(size_t index) {
+        JSConstArray *arr = consts();
+        JS_ASSERT(index < arr->length);
+        return arr->vector[index];
+    }
 
     /*
      * The isEmpty method tells whether this script has code that computes any
@@ -227,6 +352,17 @@ struct JSScript {
     static JSScript *emptyScript() {
         return const_cast<JSScript *>(&emptyScriptConst);
     }
+
+#ifdef JS_METHODJIT
+    /*
+     * Map the given PC to the corresponding native code address.
+     */
+    void *pcToNative(jsbytecode *pc) {
+        JS_ASSERT(nmap);
+        JS_ASSERT(nmap[pc - code]);
+        return nmap[pc - code];
+    }
+#endif
 
   private:
     /*
@@ -264,7 +400,7 @@ StackDepth(JSScript *script)
         }                                                                     \
     JS_END_MACRO
 
-extern JS_FRIEND_DATA(JSClass) js_ScriptClass;
+extern JS_FRIEND_DATA(js::Class) js_ScriptClass;
 
 extern JSObject *
 js_InitScriptClass(JSContext *cx, JSObject *obj);
@@ -323,7 +459,7 @@ js_SweepScriptFilenames(JSRuntime *rt);
 extern JSScript *
 js_NewScript(JSContext *cx, uint32 length, uint32 nsrcnotes, uint32 natoms,
              uint32 nobjects, uint32 nupvars, uint32 nregexps,
-             uint32 ntrynotes);
+             uint32 ntrynotes, uint32 nconsts, uint32 nglobals);
 
 extern JSScript *
 js_NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg);
@@ -345,6 +481,9 @@ js_DestroyScript(JSContext *cx, JSScript *script);
 
 extern void
 js_TraceScript(JSTracer *trc, JSScript *script);
+
+extern JSBool
+js_NewScriptObject(JSContext *cx, JSScript *script);
 
 /*
  * To perturb as little code as possible, we introduce a js_GetSrcNote lookup
@@ -401,7 +540,5 @@ js_GetOpcode(JSContext *cx, JSScript *script, jsbytecode *pc)
 extern JSBool
 js_XDRScript(JSXDRState *xdr, JSScript **scriptp, bool needMutableScript,
              JSBool *hasMagic);
-
-JS_END_EXTERN_C
 
 #endif /* jsscript_h___ */

@@ -446,7 +446,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult,
                                  mDocument->IndexOf(rootElement));
     mDocument->EndUpdate(UPDATE_CONTENT_MODEL);
   }
-  
+
   // Start the layout process
   StartLayout(PR_FALSE);
 
@@ -507,9 +507,10 @@ nsXMLContentSink::CreateElement(const PRUnichar** aAtts, PRUint32 aAttsCount,
   *aAppendContent = PR_TRUE;
   nsresult rv = NS_OK;
 
+  nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsCOMPtr<nsIContent> content;
   rv = NS_NewElement(getter_AddRefs(content), aNodeInfo->NamespaceID(),
-                     aNodeInfo, aFromParser);
+                     ni.forget(), aFromParser);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aNodeInfo->Equals(nsGkAtoms::script, kNameSpaceID_XHTML)
@@ -1085,6 +1086,10 @@ nsXMLContentSink::HandleStartElement(const PRUnichar *aName,
     // This isn't the root and we're not inside an XHTML <head>.
     // Might need to start layout
     MaybeStartLayout(PR_FALSE);
+  }
+
+  if (content == mDocElement) {
+    NotifyDocElementCreated(mDocument);
   }
 
   return aInterruptable && NS_SUCCEEDED(result) ? DidProcessATokenImpl() :

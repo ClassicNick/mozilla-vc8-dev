@@ -586,7 +586,7 @@ nsContentList::GetNodeAt(PRUint32 aIndex)
   return Item(aIndex, PR_TRUE);
 }
 
-nsISupports*
+nsIContent*
 nsContentList::GetNodeAt(PRUint32 aIndex, nsresult* aResult)
 {
   *aResult = NS_OK;
@@ -594,46 +594,49 @@ nsContentList::GetNodeAt(PRUint32 aIndex, nsresult* aResult)
 }
 
 nsISupports*
-nsContentList::GetNamedItem(const nsAString& aName, nsresult* aResult)
+nsContentList::GetNamedItem(const nsAString& aName, nsWrapperCache **aCache,
+                            nsresult* aResult)
 {
   *aResult = NS_OK;
-  return NamedItem(aName, PR_TRUE);
+
+  nsIContent *item;
+  *aCache = item = NamedItem(aName, PR_TRUE);
+  return item;
 }
 
 void
-nsContentList::AttributeChanged(nsIDocument *aDocument, nsIContent* aContent,
+nsContentList::AttributeChanged(nsIDocument *aDocument, Element* aElement,
                                 PRInt32 aNameSpaceID, nsIAtom* aAttribute,
                                 PRInt32 aModType)
 {
-  NS_PRECONDITION(aContent, "Must have a content node to work with");
-  NS_PRECONDITION(aContent->IsElement(), "Should be an element");
+  NS_PRECONDITION(aElement, "Must have a content node to work with");
   
   if (!mFunc || !mFuncMayDependOnAttr || mState == LIST_DIRTY ||
-      !MayContainRelevantNodes(aContent->GetNodeParent()) ||
-      !nsContentUtils::IsInSameAnonymousTree(mRootNode, aContent)) {
+      !MayContainRelevantNodes(aElement->GetNodeParent()) ||
+      !nsContentUtils::IsInSameAnonymousTree(mRootNode, aElement)) {
     // Either we're already dirty or this notification doesn't affect
-    // whether we might match aContent.
+    // whether we might match aElement.
     return;
   }
   
-  if (Match(aContent->AsElement())) {
-    if (mElements.IndexOf(aContent) == -1) {
-      // We match aContent now, and it's not in our list already.  Just dirty
+  if (Match(aElement)) {
+    if (mElements.IndexOf(aElement) == -1) {
+      // We match aElement now, and it's not in our list already.  Just dirty
       // ourselves; this is simpler than trying to figure out where to insert
-      // aContent.
+      // aElement.
       SetDirty();
     }
   } else {
-    // We no longer match aContent.  Remove it from our list.  If it's
+    // We no longer match aElement.  Remove it from our list.  If it's
     // already not there, this is a no-op (though a potentially
     // expensive one).  Either way, no change of mState is required
     // here.
-    mElements.RemoveObject(aContent);
+    mElements.RemoveObject(aElement);
   }
 }
 
 void
-nsContentList::ContentAppended(nsIDocument *aDocument, nsIContent* aContainer,
+nsContentList::ContentAppended(nsIDocument* aDocument, nsIContent* aContainer,
                                nsIContent* aFirstNewContent,
                                PRInt32 aNewIndexInContainer)
 {
@@ -750,7 +753,8 @@ void
 nsContentList::ContentRemoved(nsIDocument *aDocument,
                               nsIContent* aContainer,
                               nsIContent* aChild,
-                              PRInt32 aIndexInContainer)
+                              PRInt32 aIndexInContainer,
+                              nsIContent* aPreviousSibling)
 {
   // Note that aContainer can be null here if we are removing from
   // the document itself; any attempted optimizations to this method

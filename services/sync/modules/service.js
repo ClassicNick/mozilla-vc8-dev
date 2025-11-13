@@ -36,7 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-const EXPORTED_SYMBOLS = ['Weave'];
+// 'Weave' continues to be exported for backwards compatibility.
+const EXPORTED_SYMBOLS = ["Service", "Weave"];
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
@@ -58,34 +59,15 @@ Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
 Cu.import("resource://services-sync/ext/Sync.js");
+Cu.import("resource://services-sync/ext/Preferences.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/main.js");
 
-// for export
-let Weave = {};
-Cu.import("resource://services-sync/auth.js", Weave);
-Cu.import("resource://services-sync/constants.js", Weave);
-Cu.import("resource://services-sync/base_records/keys.js", Weave);
-Cu.import("resource://services-sync/engines.js", Weave);
-Cu.import("resource://services-sync/engines/bookmarks.js", Weave);
-Cu.import("resource://services-sync/engines/clients.js", Weave);
-Cu.import("resource://services-sync/engines/forms.js", Weave);
-Cu.import("resource://services-sync/engines/history.js", Weave);
-Cu.import("resource://services-sync/engines/prefs.js", Weave);
-Cu.import("resource://services-sync/engines/passwords.js", Weave);
-Cu.import("resource://services-sync/engines/tabs.js", Weave);
-Cu.import("resource://services-sync/ext/Preferences.js");
-Cu.import("resource://services-sync/identity.js", Weave);
-Cu.import("resource://services-sync/notifications.js", Weave);
-Cu.import("resource://services-sync/resource.js", Weave);
-Cu.import("resource://services-sync/status.js", Weave);
-Cu.import("resource://services-sync/stores.js", Weave);
-Cu.import("resource://services-sync/util.js", Weave);
-
-Utils.lazy(Weave, 'Service', WeaveSvc);
+Utils.lazy(this, 'Service', WeaveSvc);
 
 /*
  * Service singleton
@@ -269,12 +251,12 @@ WeaveSvc.prototype = {
 
     if (!this._checkCrypto()) {
       this.enabled = false;
-      this._log.error("Could not load the Weave crypto component. Disabling " +
+      this._log.info("Could not load the Weave crypto component. Disabling " +
                       "Weave, since it will not work correctly.");
     }
 
+    Svc.Obs.add("weave:service:setup-complete", this);
     Svc.Obs.add("network:offline-status-changed", this);
-    Svc.Obs.add("private-browsing", this);
     Svc.Obs.add("weave:service:sync:finish", this);
     Svc.Obs.add("weave:service:sync:error", this);
     Svc.Obs.add("weave:service:backoff:interval", this);
@@ -285,13 +267,20 @@ WeaveSvc.prototype = {
       this._log.info("Weave Sync disabled");
 
     // Create Weave identities (for logging in, and for encryption)
-    ID.set('WeaveID', new Identity(PWDMGR_PASSWORD_REALM, this.username));
-    Auth.defaultAuthenticator = new BasicAuthenticator(ID.get('WeaveID'));
+    let id = ID.get("WeaveID");
+    if (!id)
+      id = ID.set("WeaveID", new Identity(PWDMGR_PASSWORD_REALM, this.username));
+    Auth.defaultAuthenticator = new BasicAuthenticator(id);
 
-    ID.set('WeaveCryptoID',
-           new Identity(PWDMGR_PASSPHRASE_REALM, this.username));
+    if (!ID.get("WeaveCryptoID"))
+      ID.set("WeaveCryptoID",
+             new Identity(PWDMGR_PASSPHRASE_REALM, this.username));
 
     this._updateCachedURLs();
+
+    let status = this._checkSetup();
+    if (status != STATUS_DISABLED && status != CLIENT_NOT_CONFIGURED)
+      Svc.Obs.notify("weave:engine:start-tracking");
 
     // Applications can specify this preference if they want autoconnect
     // to happen after a fixed delay.
@@ -307,22 +296,9 @@ WeaveSvc.prototype = {
   },
 
   _checkSetup: function WeaveSvc__checkSetup() {
-    if (!this.username) {
-      this._log.debug("checkSetup: no username set");
-      Status.login = LOGIN_FAILED_NO_USERNAME;
-    }
-    else if (!Utils.mpLocked() && !this.password) {
-      this._log.debug("checkSetup: no password set");
-      Status.login = LOGIN_FAILED_NO_PASSWORD;
-    }
-    else if (!Utils.mpLocked() && !this.passphrase) {
-      this._log.debug("checkSetup: no passphrase set");
-      Status.login = LOGIN_FAILED_NO_PASSPHRASE;
-    }
-    else
-      Status.service = STATUS_OK;
-
-    return Status.service;
+    if (!this.enabled)
+      return Status.service = STATUS_DISABLED;
+    return Status.checkSetup();
   },
 
   _migratePrefs: function _migratePrefs() {
@@ -405,14 +381,14 @@ WeaveSvc.prototype = {
 
   observe: function WeaveSvc__observe(subject, topic, data) {
     switch (topic) {
+      case "weave:service:setup-complete":
+        let status = this._checkSetup();
+        if (status != STATUS_DISABLED && status != CLIENT_NOT_CONFIGURED)
+            Svc.Obs.notify("weave:engine:start-tracking");
+        break;
       case "network:offline-status-changed":
         // Whether online or offline, we'll reschedule syncs
         this._log.trace("Network offline status change: " + data);
-        this._checkSyncStatus();
-        break;
-      case "private-browsing":
-        // Entering or exiting private browsing? Reschedule syncs
-        this._log.trace("Private browsing change: " + data);
         this._checkSyncStatus();
         break;
       case "weave:service:sync:error":
@@ -577,6 +553,26 @@ WeaveSvc.prototype = {
             return true;
 
           case 401:
+            // Login failed.  If the password contains non-ASCII characters,
+            // perhaps the server password is an old low-byte only one?
+            let id = ID.get('WeaveID');
+            if (id.password != id.passwordUTF8) {
+              let res = new Resource(this.infoURL);
+              let auth = new BrokenBasicAuthenticator(id);
+              res.authenticator = auth;
+              test = res.get();
+              if (test.status == 200) {
+                this._log.debug("Non-ASCII password detected. "
+                                + "Changing to UTF-8 version.");
+                // Let's change the password on the server to the UTF8 version.
+                let url = this.userAPI + this.username + "/password";
+                res = new Resource(url);
+                res.authenticator = auth;
+                res.post(id.passwordUTF8);
+                return this.verifyLogin();
+              }
+            }
+            // Yes, we want to fall through to the 404 case.
           case 404:
             // Check that we're verifying with the correct cluster
             if (this._setCluster())
@@ -636,7 +632,7 @@ WeaveSvc.prototype = {
     this._notify("changepwd", "", function() {
       let url = this.userAPI + this.username + "/password";
       try {
-        let resp = new Resource(url).post(newpass);
+        let resp = new Resource(url).post(Utils.encodeUTF8(newpass));
         if (resp.status != 200) {
           this._log.debug("Password change failed: " + resp);
           return false;
@@ -690,6 +686,7 @@ WeaveSvc.prototype = {
       Svc.Login.removeLogin(login);
     });
     Svc.Obs.notify("weave:service:start-over");
+    Svc.Obs.notify("weave:engine:stop-tracking");
   },
 
   delayedAutoConnect: function delayedAutoConnect(delay) {
@@ -738,6 +735,7 @@ WeaveSvc.prototype = {
       if (Svc.IO.offline)
         throw "Application is offline, login should not be called";
 
+      let initialStatus = this._checkSetup();
       if (username)
         this.username = username;
       if (password)
@@ -747,6 +745,12 @@ WeaveSvc.prototype = {
 
       if (this._checkSetup() == CLIENT_NOT_CONFIGURED)
         throw "aborting login, client not configured";
+
+      // Calling login() with parameters when the client was
+      // previously not configured means setup was completed.
+      if (initialStatus == CLIENT_NOT_CONFIGURED
+          && (username || password || passphrase))
+        Svc.Obs.notify("weave:service:setup-complete");
 
       this._log.info("Logging in user " + this.username);
 
@@ -830,17 +834,17 @@ WeaveSvc.prototype = {
   },
 
   createAccount: function WeaveSvc_createAccount(username, password, email,
-                                            captchaChallenge, captchaResponse)
-  {
+                                            captchaChallenge, captchaResponse) {
     let payload = JSON.stringify({
-      "password": password, "email": email,
+      "password": Utils.encodeUTF8(password),
+      "email": email,
       "captcha-challenge": captchaChallenge,
       "captcha-response": captchaResponse
     });
 
     let url = this.userAPI + username;
     let res = new Resource(url);
-    res.authenticator = new Weave.NoOpAuthenticator();
+    res.authenticator = new NoOpAuthenticator();
 
     // Hint to server to allow scripted user creation or otherwise
     // ignore captcha.
@@ -872,7 +876,7 @@ WeaveSvc.prototype = {
     let reset = false;
 
     this._log.trace("Fetching global metadata record");
-    let meta = Records.import(this.metaURL);
+    let meta = Records.get(this.metaURL);
 
     let remoteVersion = (meta && meta.payload.storageVersion)?
       meta.payload.storageVersion : "";
@@ -1017,9 +1021,6 @@ WeaveSvc.prototype = {
       reason = kSyncWeaveDisabled;
     else if (Svc.IO.offline)
       reason = kSyncNetworkOffline;
-    else if (Svc.Private && Svc.Private.privateBrowsingEnabled)
-      // Svc.Private doesn't exist on Fennec -- don't assume it's there.
-      reason = kSyncInPrivateBrowsing;
     else if (Status.minimumNextSync > Date.now())
       reason = kSyncBackoffNotMet;
     else if (!this._loggedIn)
@@ -1292,6 +1293,7 @@ WeaveSvc.prototype = {
 
     // if we don't have a node, get one.  if that fails, retry in 10 minutes
     if (this.clusterURL == "" && !this._setCluster()) {
+      Status.sync = NO_SYNC_NODE_FOUND;
       this._scheduleNextSync(10 * 60 * 1000);
       return;
     }
@@ -1305,8 +1307,6 @@ WeaveSvc.prototype = {
     // we'll handle that later
     Status.resetBackoff();
 
-    this.globalScore = 0;
-
     // Ping the server with a special info request once a day
     let infoURL = this.infoURL;
     let now = Math.floor(Date.now() / 1000);
@@ -1318,8 +1318,15 @@ WeaveSvc.prototype = {
 
     // Figure out what the last modified time is for each collection
     let info = new Resource(infoURL).get();
-    if (!info.success)
+    if (!info.success) {
+      if (info.status == 401) {
+        this.logout();
+        Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+      }
       throw "aborting sync, failed to get collections";
+    }
+
+    this.globalScore = 0;
 
     // Convert the response to an object and read out the modified times
     for each (let engine in [Clients].concat(Engines.getAll()))
@@ -1338,6 +1345,13 @@ WeaveSvc.prototype = {
       PubKeys.clearCache();
       PrivKeys.clearCache();
       this.keysModified = info.obj.keys;
+    }
+
+    // If the modified time of the meta record ever changes, clear the cache.
+    if (info.obj.meta != this.metaModified) {
+      this._log.debug("Clearing cached meta record.");
+      Records.del(this.metaURL);
+      this.metaModified = info.obj.meta;
     }
 
     if (!(this._remoteSetup()))
@@ -1486,7 +1500,7 @@ WeaveSvc.prototype = {
     if (Utils.checkStatus(resp.status, null, [500, [502, 504]])) {
       Status.enforceBackoff = true;
       if (resp.status == 503 && resp.headers["retry-after"])
-        Observers.notify("weave:service:backoff:interval", parseInt(resp.headers["retry-after"], 10));
+        Svc.Obs.notify("weave:service:backoff:interval", parseInt(resp.headers["retry-after"], 10));
     }
   },
   /**
@@ -1509,7 +1523,7 @@ WeaveSvc.prototype = {
    *        Array of collections to wipe. If not given, all collections are wiped.
    */
   wipeServer: function WeaveSvc_wipeServer(collections)
-    this._catch(this._notify("wipe-server", "", function() {
+    this._notify("wipe-server", "", function() {
       if (!collections) {
         collections = [];
         let info = new Resource(this.infoURL).get();
@@ -1517,19 +1531,23 @@ WeaveSvc.prototype = {
           collections.push(name);
       }
       for each (let name in collections) {
-        try {
-          new Resource(this.storageURL + name).delete();
-
-          // Remove the crypto record from the server and local cache
-          let crypto = this.storageURL + "crypto/" + name;
-          new Resource(crypto).delete();
-          CryptoMetas.del(crypto);
+        let url = this.storageURL + name;
+        let response = new Resource(url).delete();
+        if (response.status != 200 && response.status != 404) {
+          throw "Aborting wipeServer. Server responded with "
+                + response.status + " response for " + url;
         }
-        catch(ex) {
-          this._log.debug("Exception on wipe of '" + name + "': " + Utils.exceptionStr(ex));
+
+        // Remove the crypto record from the server and local cache
+        let crypto = this.storageURL + "crypto/" + name;
+        response = new Resource(crypto).delete();
+        CryptoMetas.del(crypto);
+        if (response.status != 200 && response.status != 404) {
+          throw "Aborting wipeServer. Server responded with "
+                + response.status + " response for " + crypto;
         }
       }
-    }))(),
+    })(),
 
   /**
    * Wipe all local user data.
@@ -1715,4 +1733,4 @@ WeaveSvc.prototype = {
 };
 
 // Load Weave on the first time this file is loaded
-Weave.Service.onStartup();
+Service.onStartup();

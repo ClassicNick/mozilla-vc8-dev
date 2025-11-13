@@ -149,6 +149,14 @@ nsHtml5TreeBuilder::createElement(PRInt32 aNamespace, nsIAtom* aName, nsHtml5Htm
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitManifest(*url);
           }
+        } else if (nsHtml5Atoms::base == aName &&
+            (mode == NS_HTML5TREE_BUILDER_IN_HEAD ||
+             mode == NS_HTML5TREE_BUILDER_AFTER_HEAD)) {
+          nsString* url =
+              aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
+          if (url) {
+            mSpeculativeLoadQueue.AppendElement()->InitBase(*url);
+          }
         }
         break;
       case kNameSpaceID_SVG:
@@ -507,9 +515,7 @@ nsHtml5TreeBuilder::elementPopped(PRInt32 aNamespace, nsIAtom* aName, nsIContent
   // Some HTML nodes need DoneAddingChildren() called to initialize
   // properly (e.g. form state restoration).
   // XXX expose ElementName group here and do switch
-  if (aName == nsHtml5Atoms::video ||
-      aName == nsHtml5Atoms::audio ||
-      aName == nsHtml5Atoms::object ||
+  if (aName == nsHtml5Atoms::object ||
       aName == nsHtml5Atoms::applet) {
     nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
     NS_ASSERTION(treeOp, "Tree op allocation failed.");

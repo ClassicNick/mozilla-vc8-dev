@@ -92,6 +92,7 @@ typedef nsEventStatus (* EVENT_CALLBACK)(nsGUIEvent *event);
  */
 #define NS_NATIVE_WINDOW      0
 #define NS_NATIVE_GRAPHIC     1
+#define NS_NATIVE_TMP_WINDOW  2
 #define NS_NATIVE_WIDGET      3
 #define NS_NATIVE_DISPLAY     4
 #define NS_NATIVE_REGION      5
@@ -110,10 +111,9 @@ typedef nsEventStatus (* EVENT_CALLBACK)(nsGUIEvent *event);
 #define NS_NATIVE_TSF_DISPLAY_ATTR_MGR 102
 #endif
 
-// b7ec5f61-57df-4355-81f3-41ced52e8026
 #define NS_IWIDGET_IID \
-{ 0xb7ec5f61, 0x57df, 0x4355, \
-  { 0x81, 0xf3, 0x41, 0xce, 0xd5, 0x2e, 0x80, 0x26 } }
+  { 0xe1dda370, 0xdf16, 0x4c92, \
+    { 0x9b, 0x86, 0x4b, 0xd9, 0xcf, 0xff, 0x4e, 0xb1 } }
 
 /*
  * Window shadow styles
@@ -239,6 +239,31 @@ class nsIWidget : public nsISupports {
                       nsWidgetInitData *aInitData = nsnull) = 0;
 
     /**
+     * Allocate, initialize, and return a widget that is a child of
+     * |this|.  The returned widget (if nonnull) has gone through the
+     * equivalent of CreateInstance(widgetCID) + Create(...).
+     *
+     * |CreateChild()| lets widget backends decide whether to parent
+     * the new child widget to this, nonnatively parent it, or both.
+     * This interface exists to support the PuppetWidget backend,
+     * which is entirely non-native.  All other params are the same as
+     * for |Create()|.
+     *
+     * |aForceUseIWidgetParent| forces |CreateChild()| to only use the
+     * |nsIWidget*| this, not its native widget (if it exists), when
+     * calling |Create()|.  This is a timid hack around poorly
+     * understood code, and shouldn't be used in new code.
+     */
+    virtual already_AddRefed<nsIWidget>
+    CreateChild(const nsIntRect  &aRect,
+                EVENT_CALLBACK   aHandleEventFunction,
+                nsIDeviceContext *aContext,
+                nsIAppShell      *aAppShell = nsnull,
+                nsIToolkit       *aToolkit = nsnull,
+                nsWidgetInitData *aInitData = nsnull,
+                PRBool           aForceUseIWidgetParent = PR_FALSE) = 0;
+
+    /**
      * Attach to a top level widget. 
      *
      * In cases where a top level chrome widget is being used as a content
@@ -286,6 +311,8 @@ class nsIWidget : public nsISupports {
      */
     NS_IMETHOD SetParent(nsIWidget* aNewParent) = 0;
 
+    NS_IMETHOD RegisterTouchWindow() = 0;
+    NS_IMETHOD UnregisterTouchWindow() = 0;
 
     /**
      * Return the parent Widget of this Widget or nsnull if this is a 
@@ -312,6 +339,20 @@ class nsIWidget : public nsISupports {
      *
      */
     virtual nsIWidget* GetSheetWindowParent(void) = 0;
+
+    /**
+     * Return the physical DPI of the screen containing the window ...
+     * the number of device pixels per inch.
+     */
+    virtual float GetDPI() = 0;
+
+    /**
+     * Return the default scale factor for the window. This is the
+     * default number of device pixels per CSS pixel to use. This should
+     * depend on OS/platform settings such as the Mac's "UI scale factor"
+     * or Windows' "font DPI".
+     */
+    virtual double GetDefaultScale() = 0;
 
     /**
      * Return the first child of this widget.  Will return null if
@@ -562,10 +603,10 @@ class nsIWidget : public nsISupports {
     /**
      * Get the client offset from the window origin.
      *
-     * @param aPt on return it holds the width and height of the offset.
+     * @return the x and y of the offset.
      *
      */
-    NS_IMETHOD GetClientOffset(nsIntPoint &aPt) = 0;
+    virtual nsIntPoint GetClientOffset() = 0;
 
     /**
      * Get the foreground color for this widget
@@ -769,31 +810,6 @@ class nsIWidget : public nsISupports {
      */
     virtual LayerManager* GetLayerManager() = 0;
 
-    /**
-     * Scroll a set of rectangles in this widget and (as simultaneously as
-     * possible) modify the specified child widgets.
-     * 
-     * This will invalidate areas of the children that have changed, unless
-     * they have just moved by the scroll amount, but does not need to
-     * invalidate any part of this widget, except where the scroll
-     * operation fails to blit because part of the window is unavailable
-     * (e.g. partially offscreen).
-     * 
-     * The caller guarantees that the rectangles in aDestRects are
-     * non-intersecting.
-     *
-     * @param aDelta amount to scroll (device pixels)
-     * @param aDestRects rectangles to copy into
-     * (device pixels relative to this widget)
-     * @param aReconfigureChildren commands to set the bounds and clip
-     * region of a subset of the children of this widget; these should
-     * be performed simultaneously with the scrolling, as far as possible,
-     * to avoid visual artifacts.
-     */
-    virtual void Scroll(const nsIntPoint& aDelta,
-                        const nsTArray<nsIntRect>& aDestRects,
-                        const nsTArray<Configuration>& aReconfigureChildren) = 0;
-
     /** 
      * Internal methods
      */
@@ -836,6 +852,13 @@ class nsIWidget : public nsISupports {
      */
 
     virtual nsIntPoint WidgetToScreenOffset() = 0;
+
+    /**
+     * Given the specified client size, return the corresponding window size,
+     * which includes the area for the borders and titlebar. This method
+     * should work even when the window is not yet visible.
+     */
+    virtual nsIntSize ClientToWindowSize(const nsIntSize& aClientSize) = 0;
 
     /**
      * Dispatches an event to the widget
@@ -1214,6 +1237,8 @@ class nsIWidget : public nsISupports {
     NS_IMETHOD OverrideSystemMouseScrollSpeed(PRInt32 aOriginalDelta,
                                               PRBool aIsHorizontal,
                                               PRInt32 &aOverriddenDelta) = 0;
+
+    
 
 protected:
     // keep the list of children.  We also keep track of our siblings.

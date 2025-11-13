@@ -59,6 +59,9 @@
 #include "nsThreadUtils.h"
 #include "nsContentUtils.h"
 #include "nsIPluginWidget.h"
+#include "nsXULPopupManager.h"
+#include "nsIPresShell.h"
+#include "nsPresContext.h"
 
 static NS_DEFINE_IID(kRegionCID, NS_REGION_CID);
 
@@ -96,18 +99,6 @@ public:
 };
 
 //-------------- End Invalidate Event Definition ---------------------------
-
-static PRBool IsViewVisible(nsView *aView)
-{
-  if (!aView->IsEffectivelyVisible())
-    return PR_FALSE;
-
-  // Find out if the root view is visible by asking the view observer
-  // (this won't be needed anymore if we link view trees across chrome /
-  // content boundaries in DocumentViewerImpl::MakeWindow).
-  nsIViewObserver* vo = aView->GetViewManager()->GetViewObserver();
-  return vo && vo->IsVisible();
-}
 
 void
 nsViewManager::PostInvalidateEvent()
@@ -321,7 +312,7 @@ void nsViewManager::DoSetWindowDimensions(nscoord aWidth, nscoord aHeight)
 NS_IMETHODIMP nsViewManager::SetWindowDimensions(nscoord aWidth, nscoord aHeight)
 {
   if (mRootView) {
-    if (IsViewVisible(mRootView)) {
+    if (mRootView->IsEffectivelyVisible()) {
       mDelayedResize.SizeTo(NSCOORD_NONE, NSCOORD_NONE);
       DoSetWindowDimensions(aWidth, aHeight);
     } else {
@@ -332,11 +323,19 @@ NS_IMETHODIMP nsViewManager::SetWindowDimensions(nscoord aWidth, nscoord aHeight
   return NS_OK;
 }
 
-NS_IMETHODIMP nsViewManager::FlushDelayedResize()
+NS_IMETHODIMP nsViewManager::FlushDelayedResize(PRBool aDoReflow)
 {
   if (mDelayedResize != nsSize(NSCOORD_NONE, NSCOORD_NONE)) {
-    DoSetWindowDimensions(mDelayedResize.width, mDelayedResize.height);
-    mDelayedResize.SizeTo(NSCOORD_NONE, NSCOORD_NONE);
+    if (aDoReflow) {
+      DoSetWindowDimensions(mDelayedResize.width, mDelayedResize.height);
+      mDelayedResize.SizeTo(NSCOORD_NONE, NSCOORD_NONE);
+    } else if (mObserver) {
+      nsCOMPtr<nsIPresShell> shell = do_QueryInterface(mObserver);
+      nsPresContext* presContext = shell->GetPresContext();
+      if (presContext) {
+        presContext->SetVisibleArea(nsRect(nsPoint(0, 0), mDelayedResize));
+      }
+    }
   }
   return NS_OK;
 }
@@ -610,7 +609,10 @@ nsViewManager::UpdateWidgetArea(nsView *aWidgetView, nsIWidget* aWidget,
       NS_ASSERTION(view != aWidgetView, "will recur infinitely");
       PRBool visible;
       childWidget->IsVisible(visible);
-      if (view && visible && !IsWidgetDrawnByPlugin(childWidget, view)) {
+      nsWindowType type;
+      childWidget->GetWindowType(type);
+      if (view && visible && !IsWidgetDrawnByPlugin(childWidget, view) &&
+          type != eWindowType_popup) {
         // Don't mess with views that are in completely different view
         // manager trees
         nsViewManager* viewManager = view->GetViewManager();
@@ -654,7 +656,35 @@ nsViewManager::UpdateWidgetArea(nsView *aWidgetView, nsIWidget* aWidget,
   }
 }
 
-NS_IMETHODIMP nsViewManager::UpdateView(nsIView *aView, const nsRect &aRect, PRUint32 aUpdateFlags)
+static PRBool
+ShouldIgnoreInvalidation(nsViewManager* aVM)
+{
+  while (aVM) {
+    nsIViewObserver* vo = aVM->GetViewObserver();
+    if (vo && vo->ShouldIgnoreInvalidation()) {
+      return PR_TRUE;
+    }
+    nsView* view = aVM->GetRootView()->GetParent();
+    aVM = view ? view->GetViewManager() : nsnull;
+  }
+  return PR_FALSE;
+}
+
+nsresult nsViewManager::UpdateView(nsIView *aView, const nsRect &aRect,
+                                   PRUint32 aUpdateFlags)
+{
+  // If painting is suppressed in the presshell or an ancestor drop all
+  // invalidates, it will invalidate everything when it unsuppresses.
+  if (ShouldIgnoreInvalidation(this)) {
+    return NS_OK;
+  }
+
+  return UpdateViewNoSuppression(aView, aRect, aUpdateFlags);
+}
+
+NS_IMETHODIMP nsViewManager::UpdateViewNoSuppression(nsIView *aView,
+                                                     const nsRect &aRect,
+                                                     PRUint32 aUpdateFlags)
 {
   NS_PRECONDITION(nsnull != aView, "null view");
 
@@ -717,6 +747,19 @@ void nsViewManager::UpdateViews(nsView *aView, PRUint32 aUpdateFlags)
   }
 }
 
+static PRBool
+IsViewForPopup(nsIView* aView)
+{
+  nsIWidget* widget = aView->GetWidget();
+  if (widget) {
+    nsWindowType type;
+    widget->GetWindowType(type);
+    return (type == eWindowType_popup);
+  }
+
+  return PR_FALSE;
+}
+
 NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
                                            nsIView* aView, nsEventStatus *aStatus)
 {
@@ -745,10 +788,55 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
                                     NSIntPixelsToAppUnits(height, p2a));
                 *aStatus = nsEventStatus_eConsumeNoDefault;
               }
+            else if (IsViewForPopup(aView))
+              {
+                nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+                if (pm)
+                  {
+                    pm->PopupResized(aView, nsIntSize(width, height));
+                    *aStatus = nsEventStatus_eConsumeNoDefault;
+                  }
+              }
           }
+        }
 
         break;
+
+    case NS_MOVE:
+      {
+        // A popup's parent view is the root view for the parent window, so when
+        // a popup moves, the popup's frame and view position must be updated
+        // to match.
+        if (aView && IsViewForPopup(aView))
+          {
+            nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+            if (pm)
+              {
+                pm->PopupMoved(aView, aEvent->refPoint);
+                *aStatus = nsEventStatus_eConsumeNoDefault;
+              }
+          }
+        break;
       }
+
+    case NS_XUL_CLOSE:
+      {
+        // if this is a popup, make a request to hide it. Note that a popuphidden
+        // event listener may cancel the event and the popup will not be hidden.
+        nsIWidget* widget = aView->GetWidget();
+        if (widget) {
+          nsWindowType type;
+          widget->GetWindowType(type);
+          if (type == eWindowType_popup) {
+            nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
+            if (pm) {
+              pm->HidePopup(aView);
+              *aStatus = nsEventStatus_eConsumeNoDefault;
+            }
+          }
+        }
+      }
+      break;
 
     case NS_WILL_PAINT:
     case NS_PAINT:
@@ -782,8 +870,8 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
                       ? vm->mRootView->GetParent()->GetViewManager()
                       : nsnull) {
             if (vm->mDelayedResize != nsSize(NSCOORD_NONE, NSCOORD_NONE) &&
-                IsViewVisible(vm->mRootView)) {
-              vm->FlushDelayedResize();
+                vm->mRootView->IsEffectivelyVisible()) {
+              vm->FlushDelayedResize(PR_TRUE);
 
               // Paint later.
               vm->UpdateView(vm->mRootView, NS_VMREFRESH_NO_SYNC);
@@ -797,7 +885,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
           }
 
           if (!didResize) {
-            //NS_ASSERTION(IsViewVisible(view), "painting an invisible view");
+            //NS_ASSERTION(view->IsEffectivelyVisible(), "painting an invisible view");
 
             // Notify view observers that we're about to paint.
             // Make sure to not send WillPaint notifications while scrolling.
@@ -890,13 +978,11 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
     case NS_CREATE:
     case NS_DESTROY:
     case NS_SETZLEVEL:
-    case NS_MOVE:
       /* Don't pass these events through. Passing them through
          causes performance problems on pages with lots of views/frames 
          @see bug 112861 */
       *aStatus = nsEventStatus_eConsumeNoDefault;
       break;
-
 
     case NS_DISPLAYCHANGED:
 
@@ -1555,24 +1641,7 @@ nsViewManager::FlushPendingInvalidates()
 {
   NS_ASSERTION(IsRootVM(), "Must be root VM for this to be called!");
   NS_ASSERTION(mUpdateBatchCnt == 0, "Must not be in an update batch!");
-  // XXXbz this is probably not quite OK yet, if callers can explicitly
-  // DisableRefresh while we have an event posted.
-  // NS_ASSERTION(mRefreshEnabled, "How did we get here?");
 
-  // Let all the view observers of all viewmanagers in this tree know that
-  // we're about to "paint" (this lets them get in their invalidates now so
-  // we don't go through two invalidate-processing cycles).
-  NS_ASSERTION(gViewManagers, "Better have a viewmanagers array!");
-
-  // Disable refresh while we notify our view observers, so that if they do
-  // view update batches we don't reenter this code and so that we batch
-  // all of them together.  We don't use
-  // BeginUpdateViewBatch/EndUpdateViewBatch, since that would reenter this
-  // exact code, but we want the effect of a single big update batch.
-  ++mUpdateBatchCnt;
-  CallWillPaintOnObservers(PR_FALSE);
-  --mUpdateBatchCnt;
-  
   if (mHasPendingUpdates) {
     ProcessPendingUpdates(mRootView, PR_TRUE);
     mHasPendingUpdates = PR_FALSE;
@@ -1593,11 +1662,13 @@ nsViewManager::CallWillPaintOnObservers(PRBool aWillSendDidPaint)
     nsViewManager* vm = (nsViewManager*)gViewManagers->ElementAt(index);
     if (vm->RootViewManager() == this) {
       // One of our kids.
-      nsCOMPtr<nsIViewObserver> obs = vm->GetViewObserver();
-      if (obs) {
-        obs->WillPaint(aWillSendDidPaint);
-        NS_ASSERTION(mUpdateBatchCnt == savedUpdateBatchCnt,
-                     "Observer did not end view batch?");
+      if (vm->mRootView && vm->mRootView->IsEffectivelyVisible()) {
+        nsCOMPtr<nsIViewObserver> obs = vm->GetViewObserver();
+        if (obs) {
+          obs->WillPaint(aWillSendDidPaint);
+          NS_ASSERTION(mUpdateBatchCnt == savedUpdateBatchCnt,
+                       "Observer did not end view batch?");
+        }
       }
     }
   }

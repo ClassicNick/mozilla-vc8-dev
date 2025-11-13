@@ -370,6 +370,7 @@ private:
 
 struct HeadTable {
     enum {
+        HEAD_VERSION = 0x00010000,
         HEAD_MAGIC_NUMBER = 0x5F0F3CF5,
         HEAD_CHECKSUM_CALC_CONST = 0xB1B0AFBA
     };
@@ -463,6 +464,38 @@ struct HheaTable {
     AutoSwap_PRInt16     reserved4;
     AutoSwap_PRInt16     metricDataFormat;
     AutoSwap_PRUint16    numOfLongHorMetrics;
+};
+
+struct MaxpTableHeader {
+    AutoSwap_PRUint32    version; // CFF: 0x00005000; TrueType: 0x00010000
+    AutoSwap_PRUint16    numGlyphs;
+// truetype version has additional fields that we don't currently use
+};
+
+// old 'kern' table, supported on Windows
+// see http://www.microsoft.com/typography/otspec/kern.htm
+struct KernTableVersion0 {
+    AutoSwap_PRUint16    version; // 0x0000
+    AutoSwap_PRUint16    nTables;
+};
+
+struct KernTableSubtableHeaderVersion0 {
+    AutoSwap_PRUint16    version;
+    AutoSwap_PRUint16    length;
+    AutoSwap_PRUint16    coverage;
+};
+
+// newer Mac-only 'kern' table, ignored by Windows
+// see http://developer.apple.com/textfonts/TTRefMan/RM06/Chap6kern.html
+struct KernTableVersion1 {
+    AutoSwap_PRUint32    version; // 0x00010000
+    AutoSwap_PRUint32    nTables;
+};
+
+struct KernTableSubtableHeaderVersion1 {
+    AutoSwap_PRUint32    length;
+    AutoSwap_PRUint16    coverage;
+    AutoSwap_PRUint16    tupleIndex;
 };
 
 #pragma pack()
@@ -645,7 +678,7 @@ public:
     MapUVSToGlyphFormat14(const PRUint8 *aBuf, PRUint32 aCh, PRUint32 aVS);
 
     static PRUint32
-    MapCharToGlyph(const PRUint8 *aBuf, PRUint32 aBufLength, PRUnichar aCh);
+    MapCharToGlyph(const PRUint8 *aBuf, PRUint32 aBufLength, PRUint32 aCh);
 
 #ifdef XP_WIN
 

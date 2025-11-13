@@ -97,6 +97,8 @@
 #include "nsIDOMSVGTransformable.h"
 #endif // MOZ_SMIL
 
+using namespace mozilla;
+
 // This is needed to ensure correct handling of calls to the
 // vararg-list methods in this file:
 //   nsSVGElement::GetAnimated{Length,Number,Integer}Values
@@ -110,7 +112,7 @@ nsSVGEnumMapping nsSVGElement::sSVGUnitTypesMap[] = {
   {nsnull, 0}
 };
 
-nsSVGElement::nsSVGElement(nsINodeInfo *aNodeInfo)
+nsSVGElement::nsSVGElement(already_AddRefed<nsINodeInfo> aNodeInfo)
   : nsSVGElementBase(aNodeInfo), mSuppressNotification(PR_FALSE)
 {
 }
@@ -1167,7 +1169,7 @@ MappedAttrParser::ParseMappedAttrValue(nsIAtom* aMappedAttrName,
 
   // Get the nsCSSProperty ID for our mapped attribute.
   nsCSSProperty propertyID =
-    nsCSSProps::LookupProperty(nsAtomString(aMappedAttrName));
+    nsCSSProps::LookupProperty(nsDependentAtomString(aMappedAttrName));
   PRBool changed; // outparam for ParseProperty. (ignored)
   mParser.ParseProperty(propertyID, aMappedAttrValue, mDocURI, mBaseURI,
                         mNodePrincipal, mDecl, &changed, PR_FALSE);
@@ -1180,11 +1182,7 @@ MappedAttrParser::CreateStyleRule()
     return nsnull; // No mapped attributes were parsed
   }
 
-  nsCOMPtr<nsICSSStyleRule> rule;
-  if (NS_FAILED(NS_NewCSSStyleRule(getter_AddRefs(rule), nsnull, mDecl))) {
-    NS_WARNING("could not create style rule from mapped attributes");
-    mDecl->RuleAbort(); // deletes declaration
-  }
+  nsCOMPtr<nsICSSStyleRule> rule = NS_NewCSSStyleRule(nsnull, mDecl);
   mDecl = nsnull; // We no longer own the declaration -- drop our pointer to it
   return rule.forget();
 }
@@ -1362,6 +1360,14 @@ nsIAtom* nsSVGElement::GetEventNameForAttr(nsIAtom* aAttr)
     return nsGkAtoms::onSVGScroll;
   if (aAttr == nsGkAtoms::onzoom)
     return nsGkAtoms::onSVGZoom;
+#ifdef MOZ_SMIL
+  if (aAttr == nsGkAtoms::onbegin)
+    return nsGkAtoms::onbeginEvent;
+  if (aAttr == nsGkAtoms::onrepeat)
+    return nsGkAtoms::onrepeatEvent;
+  if (aAttr == nsGkAtoms::onend)
+    return nsGkAtoms::onendEvent;
+#endif // MOZ_SMIL
 
   return aAttr;
 }
@@ -2088,7 +2094,7 @@ nsSVGElement::GetAnimatedAttr(nsIAtom* aName)
 
   // Motion (fake 'attribute' for animateMotion)
   if (aName == nsGkAtoms::mozAnimateMotionDummyAttr) {
-    return new mozilla::SVGMotionSMILAttr(this);
+    return new SVGMotionSMILAttr(this);
   }
 
   // Lengths:
@@ -2185,7 +2191,8 @@ nsSVGElement::GetAnimatedAttr(nsIAtom* aName)
 
   // Mapped attributes:
   if (IsAttributeMapped(aName)) {
-    nsCSSProperty prop = nsCSSProps::LookupProperty(nsAtomString(aName));
+    nsCSSProperty prop =
+      nsCSSProps::LookupProperty(nsDependentAtomString(aName));
     // Check IsPropertyAnimatable to avoid attributes that...
     //  - map to explicitly unanimatable properties (e.g. 'direction')
     //  - map to unsupported attributes (e.g. 'glyph-orientation-horizontal')

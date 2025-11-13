@@ -71,6 +71,7 @@
 #include "nsRuleData.h"
 #include "nsEventDispatcher.h"
 #include "mozilla/dom/Element.h"
+#include "mozAutoDocUpdate.h"
 
 using namespace mozilla::dom;
 
@@ -138,7 +139,7 @@ nsSafeOptionListMutation::~nsSafeOptionListMutation()
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Select)
 
-nsHTMLSelectElement::nsHTMLSelectElement(nsINodeInfo *aNodeInfo,
+nsHTMLSelectElement::nsHTMLSelectElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                                          PRUint32 aFromParser)
   : nsGenericHTMLFormElement(aNodeInfo),
     mOptions(new nsHTMLOptionCollection(this)),
@@ -177,14 +178,14 @@ NS_IMPL_ADDREF_INHERITED(nsHTMLSelectElement, nsGenericElement)
 NS_IMPL_RELEASE_INHERITED(nsHTMLSelectElement, nsGenericElement)
 
 
-DOMCI_DATA(HTMLSelectElement, nsHTMLSelectElement)
+DOMCI_NODE_DATA(HTMLSelectElement, nsHTMLSelectElement)
 
 // QueryInterface implementation for nsHTMLSelectElement
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLSelectElement)
   NS_HTML_CONTENT_INTERFACE_TABLE3(nsHTMLSelectElement,
                                    nsIDOMHTMLSelectElement,
-                                   nsIDOMNSHTMLSelectElement,
-                                   nsISelectElement)
+                                   nsISelectElement,
+                                   nsIConstraintValidation)
   NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(nsHTMLSelectElement,
                                                nsGenericHTMLFormElement)
 NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLSelectElement)
@@ -195,6 +196,23 @@ NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLSelectElement)
 
 NS_IMPL_ELEMENT_CLONE(nsHTMLSelectElement)
 
+// nsIConstraintValidation
+NS_IMPL_NSICONSTRAINTVALIDATION_EXCEPT_SETCUSTOMVALIDITY(nsHTMLSelectElement)
+
+NS_IMETHODIMP
+nsHTMLSelectElement::SetCustomValidity(const nsAString& aError)
+{
+  nsIConstraintValidation::SetCustomValidity(aError);
+
+  nsIDocument* doc = GetCurrentDoc();
+  if (doc) {
+    MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
+    doc->ContentStatesChanged(this, nsnull, NS_EVENT_STATE_INVALID |
+                                            NS_EVENT_STATE_VALID);
+  }
+
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 nsHTMLSelectElement::GetForm(nsIDOMHTMLFormElement** aForm)
@@ -731,7 +749,7 @@ nsHTMLSelectElement::SetLength(PRUint32 aLength)
     nsContentUtils::NameChanged(mNodeInfo, nsGkAtoms::option,
                                 getter_AddRefs(nodeInfo));
 
-    nsCOMPtr<nsIContent> element = NS_NewHTMLOptionElement(nodeInfo);
+    nsCOMPtr<nsIContent> element = NS_NewHTMLOptionElement(nodeInfo.forget());
     if (!element) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -798,8 +816,8 @@ nsHTMLSelectElement::GetOptionIndex(nsIDOMHTMLOptionElement* aOption,
                                     PRInt32 aStartIndex, PRBool aForward,
                                     PRInt32* aIndex)
 {
-  nsCOMPtr<Element> option = do_QueryInterface(aOption);
-  return mOptions->GetOptionIndex(option, aStartIndex, aForward, aIndex);
+  nsCOMPtr<nsINode> option = do_QueryInterface(aOption);
+  return mOptions->GetOptionIndex(option->AsElement(), aStartIndex, aForward, aIndex);
 }
 
 PRBool
@@ -1304,6 +1322,26 @@ nsHTMLSelectElement::BeforeSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
+nsHTMLSelectElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+                                  const nsAString* aValue, PRBool aNotify)
+{
+  if (aName == nsGkAtoms::disabled && aNameSpaceID == kNameSpaceID_None) {
+    SetBarredFromConstraintValidation(!!aValue);
+    if (aNotify) {
+      nsIDocument* doc = GetCurrentDoc();
+      if (doc) {
+        MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
+        doc->ContentStatesChanged(this, nsnull, NS_EVENT_STATE_VALID |
+                                                NS_EVENT_STATE_INVALID);
+      }
+    }
+  }
+
+  return nsGenericHTMLFormElement::AfterSetAttr(aNameSpaceID, aName,
+                                                aValue, aNotify);
+}
+
+nsresult
 nsHTMLSelectElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
                                PRBool aNotify)
 {
@@ -1449,6 +1487,18 @@ nsHTMLSelectElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   }
 
   return nsGenericHTMLFormElement::PreHandleEvent(aVisitor);
+}
+
+PRInt32
+nsHTMLSelectElement::IntrinsicState() const
+{
+  PRInt32 state = nsGenericHTMLFormElement::IntrinsicState();
+
+  if (IsCandidateForConstraintValidation()) {
+    state |= IsValid() ? NS_EVENT_STATE_VALID : NS_EVENT_STATE_INVALID;
+  }
+
+  return state | NS_EVENT_STATE_OPTIONAL;
 }
 
 // nsIFormControl
@@ -1598,8 +1648,7 @@ nsHTMLSelectElement::Reset()
 static NS_DEFINE_CID(kFormProcessorCID, NS_FORMPROCESSOR_CID);
 
 NS_IMETHODIMP
-nsHTMLSelectElement::SubmitNamesValues(nsFormSubmission* aFormSubmission,
-                                       nsIContent* aSubmitElement)
+nsHTMLSelectElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
 {
   nsresult rv = NS_OK;
 
@@ -1748,7 +1797,6 @@ nsHTMLSelectElement::VerifyOptionsArray()
   PRInt32 aIndex = 0;
   VerifyOptionsRecurse(this, aIndex, mOptions);
 }
-
 
 #endif
 
@@ -1945,22 +1993,21 @@ nsHTMLOptionCollection::Item(PRUint32 aIndex, nsIDOMNode** aReturn)
   return CallQueryInterface(item, aReturn);
 }
 
-nsISupports*
+nsIContent*
 nsHTMLOptionCollection::GetNodeAt(PRUint32 aIndex, nsresult* aResult)
 {
   *aResult = NS_OK;
 
-  return static_cast<Element*>(ItemAsOption(aIndex));
+  return static_cast<nsIContent*>(ItemAsOption(aIndex));
 }
 
-nsISupports*
-nsHTMLOptionCollection::GetNamedItem(const nsAString& aName, nsresult* aResult)
+static nsHTMLOptionElement*
+GetNamedItemHelper(nsTArray<nsRefPtr<nsHTMLOptionElement> > &aElements,
+                   const nsAString& aName)
 {
-  *aResult = NS_OK;
-
-  PRUint32 count = mElements.Length();
+  PRUint32 count = aElements.Length();
   for (PRUint32 i = 0; i < count; i++) {
-    nsIContent *content = ItemAsOption(i);
+    nsHTMLOptionElement *content = aElements.ElementAt(i);
     if (content &&
         (content->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, aName,
                               eCaseMatters) ||
@@ -1973,19 +2020,25 @@ nsHTMLOptionCollection::GetNamedItem(const nsAString& aName, nsresult* aResult)
   return nsnull;
 }
 
+nsISupports*
+nsHTMLOptionCollection::GetNamedItem(const nsAString& aName,
+                                     nsWrapperCache **aCache,
+                                     nsresult* aResult)
+{
+  *aResult = NS_OK;
+
+  nsINode *item = GetNamedItemHelper(mElements, aName);
+  *aCache = item;
+  return item;
+}
+
 NS_IMETHODIMP
 nsHTMLOptionCollection::NamedItem(const nsAString& aName,
                                   nsIDOMNode** aReturn)
 {
-  nsresult rv;
-  nsISupports* item = GetNamedItem(aName, &rv);
-  if (!item) {
-    *aReturn = nsnull;
+  NS_IF_ADDREF(*aReturn = GetNamedItemHelper(mElements, aName));
 
-    return rv;
-  }
-
-  return CallQueryInterface(item, aReturn);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

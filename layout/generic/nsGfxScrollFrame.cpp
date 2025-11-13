@@ -1157,29 +1157,6 @@ nsXULScrollFrame::GetMaxSize(nsBoxLayoutState& aState)
   return maxSize;
 }
 
-#if 0 // XXXldb I don't think this is even needed
-/* virtual */ nscoord
-nsXULScrollFrame::GetMinWidth(nsIRenderingContext *aRenderingContext)
-{
-  nsStyleUnit widthUnit = GetStylePosition()->mWidth.GetUnit();
-  if (widthUnit == eStyleUnit_Percent || widthUnit == eStyleUnit_Auto) {
-    nsMargin border = aReflowState.mComputedBorderPadding;
-    aDesiredSize.mMaxElementWidth = border.right + border.left;
-    mMaxElementWidth = aDesiredSize.mMaxElementWidth;
-  } else {
-    NS_NOTYETIMPLEMENTED("Use the info from the scrolled frame");
-#if 0
-    // if not set then use the cached size. If set then set it.
-    if (aDesiredSize.mMaxElementWidth == -1)
-      aDesiredSize.mMaxElementWidth = mMaxElementWidth;
-    else
-      mMaxElementWidth = aDesiredSize.mMaxElementWidth;
-#endif
-  }
-  return 0;
-}
-#endif
-
 #ifdef NS_DEBUG
 NS_IMETHODIMP
 nsXULScrollFrame::GetFrameName(nsAString& aResult) const
@@ -1274,9 +1251,9 @@ IsSmoothScrollingEnabled()
 
 class ScrollFrameActivityTracker : public nsExpirationTracker<nsGfxScrollFrameInner,4> {
 public:
-  // Wait for 75-100ms between scrolls before we switch the appearance back to
-  // subpixel AA. That's 4 generations of 25ms each.
-  enum { TIMEOUT_MS = 25 };
+  // Wait for 3-4s between scrolls before we remove our layers.
+  // That's 4 generations of 1s each.
+  enum { TIMEOUT_MS = 1000 };
   ScrollFrameActivityTracker()
     : nsExpirationTracker<nsGfxScrollFrameInner,4>(TIMEOUT_MS) {}
   ~ScrollFrameActivityTracker() {
@@ -1286,7 +1263,7 @@ public:
   virtual void NotifyExpired(nsGfxScrollFrameInner *aObject) {
     RemoveObject(aObject);
     aObject->mScrollingActive = PR_FALSE;
-    aObject->mOuter->InvalidateOverflowRect();
+    aObject->mOuter->InvalidateFrameSubtree();
   }
 };
 
@@ -1548,21 +1525,22 @@ CanScrollWithBlitting(nsIFrame* aFrame, nsIFrame* aDisplayRoot)
 
 static void
 InvalidateFixedBackgroundFramesFromList(nsDisplayListBuilder* aBuilder,
+                                        nsIFrame* aMovingFrame,
                                         const nsDisplayList& aList)
 {
   for (nsDisplayItem* item = aList.GetBottom(); item; item = item->GetAbove()) {
     nsDisplayList* sublist = item->GetList();
     if (sublist) {
-      InvalidateFixedBackgroundFramesFromList(aBuilder, *sublist);
+      InvalidateFixedBackgroundFramesFromList(aBuilder, aMovingFrame, *sublist);
       continue;
     }
     nsIFrame* f = item->GetUnderlyingFrame();
-    if (f && aBuilder->IsMovingFrame(f) &&
-        item->IsVaryingRelativeToMovingFrame(aBuilder)) {
+    if (f &&
+        item->IsVaryingRelativeToMovingFrame(aBuilder, aMovingFrame)) {
       if (item->IsFixedAndCoveringViewport(aBuilder)) {
         // FrameLayerBuilder takes care of scrolling these
       } else {
-        f->Invalidate(item->GetVisibleRect() - aBuilder->ToReferenceFrame(f));
+        f->Invalidate(item->GetVisibleRect() - item->ToReferenceFrame());
       }
     }
   }
@@ -1582,7 +1560,6 @@ InvalidateFixedBackgroundFrames(nsIFrame* aRootFrame,
   // Build the 'after' display list over the whole area of interest.
   nsDisplayListBuilder builder(aRootFrame, PR_FALSE, PR_TRUE);
   builder.EnterPresShell(aRootFrame, aUpdateRect);
-  builder.SetMovingFrame(aMovingFrame);
   nsDisplayList list;
   nsresult rv =
     aRootFrame->BuildDisplayListForStackingContext(&builder, aUpdateRect, &list);
@@ -1591,9 +1568,9 @@ InvalidateFixedBackgroundFrames(nsIFrame* aRootFrame,
     return;
 
   nsRegion visibleRegion(aUpdateRect);
-  list.ComputeVisibility(&builder, &visibleRegion, nsnull);
+  list.ComputeVisibilityForRoot(&builder, &visibleRegion);
 
-  InvalidateFixedBackgroundFramesFromList(&builder, list);
+  InvalidateFixedBackgroundFramesFromList(&builder, aMovingFrame, list);
   list.DeleteAll();
 }
 
@@ -1603,8 +1580,7 @@ PRBool nsGfxScrollFrameInner::IsAlwaysActive() const
   // child of a chrome document is always treated as "active".
   // XXX maybe we should extend this so that IFRAMEs which are fill the
   // entire viewport (like GMail!) are always active
-  return mIsRoot &&
-    !nsContentUtils::IsChildOfSameType(mOuter->GetContent()->GetCurrentDoc());
+  return mIsRoot && mOuter->PresContext()->IsRootContentDocument();
 }
 
 PRBool nsGfxScrollFrameInner::IsScrollingActive() const
@@ -1649,9 +1625,12 @@ void nsGfxScrollFrameInner::ScrollVisual(nsIntPoint aPixDelta)
   mOuter->InvalidateWithFlags(mScrollPort, flags);
 
   if (flags & nsIFrame::INVALIDATE_NO_THEBES_LAYERS) {
-    // XXX fix this to transform rectangle properly
-    InvalidateFixedBackgroundFrames(displayRoot, mScrolledFrame,
-      GetScrollPortRect() + mOuter->GetOffsetToCrossDoc(displayRoot));
+    nsRect update =
+      GetScrollPortRect() + mOuter->GetOffsetToCrossDoc(displayRoot);
+    update = update.ConvertAppUnitsRoundOut(
+      mOuter->PresContext()->AppUnitsPerDevPixel(),
+      displayRoot->PresContext()->AppUnitsPerDevPixel());
+    InvalidateFixedBackgroundFrames(displayRoot, mScrolledFrame, update);
   }
 }
 
@@ -1717,7 +1696,7 @@ nsGfxScrollFrameInner::ScrollToImpl(nsPoint aPt)
   // We pass in the amount to move visually
   ScrollVisual(curPosDevPx - ptDevPx);
 
-  presContext->PresShell()->GetViewManager()->SynthesizeMouseMove(PR_TRUE);
+  presContext->PresShell()->SynthesizeMouseMove(PR_TRUE);
   UpdateScrollbarPosition();
   PostScrollEvent();
 
@@ -1732,7 +1711,8 @@ AppendToTop(nsDisplayListBuilder* aBuilder, nsDisplayList* aDest,
             nsDisplayList* aSource, nsIFrame* aSourceFrame, PRBool aOwnLayer)
 {
   if (aOwnLayer) {
-    aDest->AppendNewToTop(new (aBuilder) nsDisplayOwnLayer(aSourceFrame, aSource));
+    aDest->AppendNewToTop(
+        new (aBuilder) nsDisplayOwnLayer(aBuilder, aSourceFrame, aSource));
   } else {
     aDest->AppendToTop(aSource);
   }  
@@ -1773,7 +1753,7 @@ nsGfxScrollFrameInner::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   // that's much larger than necessary. Creating independent layers for each
   // scrollbar works around the problem.
   PRBool createLayersForScrollbars = mIsRoot &&
-      !nsContentUtils::IsChildOfSameType(mOuter->GetContent()->GetCurrentDoc());
+    mOuter->PresContext()->IsRootContentDocument();
   for (nsIFrame* kid = mOuter->GetFirstChild(nsnull); kid; kid = kid->GetNextSibling()) {
     if (kid != mScrolledFrame) {
       if (kid == mScrollCornerBox && hasResizer) {
@@ -1807,12 +1787,17 @@ nsGfxScrollFrameInner::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   rv = mOuter->BuildDisplayListForChild(aBuilder, mScrolledFrame, dirtyRect, set);
   NS_ENSURE_SUCCESS(rv, rv);
   nsRect clip = mScrollPort + aBuilder->ToReferenceFrame(mOuter);
+  nscoord radii[8];
+  // Our override of GetBorderRadii ensures we never have a radius at
+  // the corners where we have a scrollbar.
+  mOuter->GetPaddingBoxBorderRadii(radii);
   // mScrolledFrame may have given us a background, e.g., the scrolled canvas
   // frame below the viewport. If so, we want it to be clipped. We also want
   // to end up on our BorderBackground list.
   // If we are the viewport scrollframe, then clip all our descendants (to ensure
   // that fixed-pos elements get clipped by us).
-  rv = mOuter->OverflowClip(aBuilder, set, aLists, clip, PR_TRUE, mIsRoot);
+  rv = mOuter->OverflowClip(aBuilder, set, aLists, clip, radii,
+                            PR_TRUE, mIsRoot);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Place the resizer in the display list in our Content() list above
@@ -2183,8 +2168,6 @@ nsGfxScrollFrameInner::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
     }
   }
 
-  nsresult rv;
-
   nsNodeInfoManager *nodeInfoManager =
     presContext->Document()->NodeInfoManager();
   nsCOMPtr<nsINodeInfo> nodeInfo;
@@ -2193,9 +2176,8 @@ nsGfxScrollFrameInner::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
   if (canHaveHorizontal) {
-    rv = NS_NewElement(getter_AddRefs(mHScrollbarContent),
-                       kNameSpaceID_XUL, nodeInfo, PR_FALSE);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsINodeInfo> ni = nodeInfo;
+    NS_TrustedNewXULElement(getter_AddRefs(mHScrollbarContent), ni.forget());
     mHScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orient,
                                 NS_LITERAL_STRING("horizontal"), PR_FALSE);
     mHScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::clickthrough,
@@ -2205,9 +2187,8 @@ nsGfxScrollFrameInner::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   }
 
   if (canHaveVertical) {
-    rv = NS_NewElement(getter_AddRefs(mVScrollbarContent),
-                       kNameSpaceID_XUL, nodeInfo, PR_FALSE);
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsINodeInfo> ni = nodeInfo;
+    NS_TrustedNewXULElement(getter_AddRefs(mVScrollbarContent), ni.forget());
     mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::orient,
                                 NS_LITERAL_STRING("vertical"), PR_FALSE);
     mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::clickthrough,
@@ -2222,8 +2203,7 @@ nsGfxScrollFrameInner::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
                                             kNameSpaceID_XUL);
     NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
-    rv = NS_NewXULElement(getter_AddRefs(mScrollCornerContent), nodeInfo);
-    NS_ENSURE_SUCCESS(rv, rv);
+    NS_TrustedNewXULElement(getter_AddRefs(mScrollCornerContent), nodeInfo.forget());
 
     nsAutoString dir;
     switch (resizeStyle) {
@@ -2256,9 +2236,7 @@ nsGfxScrollFrameInner::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   else if (canHaveHorizontal && canHaveVertical) {
     nodeInfo = nodeInfoManager->GetNodeInfo(nsGkAtoms::scrollcorner, nsnull,
                                             kNameSpaceID_XUL);
-    rv = NS_NewElement(getter_AddRefs(mScrollCornerContent),
-                       kNameSpaceID_XUL, nodeInfo, PR_FALSE);
-    NS_ENSURE_SUCCESS(rv, rv);
+    NS_TrustedNewXULElement(getter_AddRefs(mScrollCornerContent), nodeInfo.forget());
     if (!aElements.AppendElement(mScrollCornerContent))
       return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -2994,7 +2972,7 @@ static void LayoutAndInvalidate(nsBoxLayoutState& aState,
     if (aScrollbarIsBeingHidden) {
       aBox->GetParent()->Invalidate(aBox->GetOverflowRect() + aBox->GetPosition());
     } else {
-      aBox->InvalidateOverflowRect();
+      aBox->InvalidateFrameSubtree();
     }
   }
   nsBoxFrame::LayoutChildAt(aState, aBox, aRect);
@@ -3002,7 +2980,7 @@ static void LayoutAndInvalidate(nsBoxLayoutState& aState,
     if (aScrollbarIsBeingHidden) {
       aBox->GetParent()->Invalidate(aBox->GetOverflowRect() + aBox->GetPosition());
     } else {
-      aBox->InvalidateOverflowRect();
+      aBox->InvalidateFrameSubtree();
     }
   }
 }
@@ -3165,6 +3143,69 @@ nsGfxScrollFrameInner::SetCoordAttribute(nsIContent* aContent, nsIAtom* aAtom,
     return;
 
   aContent->SetAttr(kNameSpaceID_None, aAtom, newValue, PR_TRUE);
+}
+
+static void
+ReduceRadii(nscoord aXBorder, nscoord aYBorder,
+            nscoord& aXRadius, nscoord& aYRadius)
+{
+  // In order to ensure that the inside edge of the border has no
+  // curvature, we need at least one of its radii to be zero.
+  if (aXRadius <= aXBorder || aYRadius <= aYBorder)
+    return;
+
+  // For any corner where we reduce the radii, preserve the corner's shape.
+  double ratio = NS_MAX(double(aXBorder) / aXRadius,
+                        double(aYBorder) / aYRadius);
+  aXRadius *= ratio;
+  aYRadius *= ratio;
+}
+
+/**
+ * Implement an override for nsIFrame::GetBorderRadii to ensure that
+ * the clipping region for the border radius does not clip the scrollbars.
+ *
+ * In other words, we require that the border radius be reduced until the
+ * inner border radius at the inner edge of the border is 0 wherever we
+ * have scrollbars.
+ */
+PRBool
+nsGfxScrollFrameInner::GetBorderRadii(nscoord aRadii[8]) const
+{
+  if (!mOuter->nsContainerFrame::GetBorderRadii(aRadii))
+    return PR_FALSE;
+
+  // Since we can use GetActualScrollbarSizes (rather than
+  // GetDesiredScrollbarSizes) since this doesn't affect reflow, we
+  // probably should.
+  nsMargin sb = GetActualScrollbarSizes();
+  nsMargin border = mOuter->GetUsedBorder();
+
+  if (sb.left > 0 || sb.top > 0) {
+    ReduceRadii(border.left, border.top,
+                aRadii[NS_CORNER_TOP_LEFT_X],
+                aRadii[NS_CORNER_TOP_LEFT_Y]);
+  }
+
+  if (sb.top > 0 || sb.right > 0) {
+    ReduceRadii(border.right, border.top,
+                aRadii[NS_CORNER_TOP_RIGHT_X],
+                aRadii[NS_CORNER_TOP_RIGHT_Y]);
+  }
+
+  if (sb.right > 0 || sb.bottom > 0) {
+    ReduceRadii(border.right, border.bottom,
+                aRadii[NS_CORNER_BOTTOM_RIGHT_X],
+                aRadii[NS_CORNER_BOTTOM_RIGHT_Y]);
+  }
+
+  if (sb.bottom > 0 || sb.left > 0) {
+    ReduceRadii(border.left, border.bottom,
+                aRadii[NS_CORNER_BOTTOM_LEFT_X],
+                aRadii[NS_CORNER_BOTTOM_LEFT_Y]);
+  }
+
+  return PR_TRUE;
 }
 
 nsRect

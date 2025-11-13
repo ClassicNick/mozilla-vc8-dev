@@ -1008,7 +1008,8 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   nodeInfo = nimgr->GetNodeInfo(nsGkAtoms::input, nsnull, kNameSpaceID_XHTML);
 
   // create button which drops the list down
-  NS_NewHTMLElement(getter_AddRefs(mButtonContent), nodeInfo, PR_FALSE);
+  NS_NewHTMLElement(getter_AddRefs(mButtonContent), nodeInfo.forget(),
+                    PR_FALSE);
   if (!mButtonContent)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -1312,8 +1313,9 @@ nsComboboxControlFrame::UpdateRecentIndex(PRInt32 aIndex)
 
 class nsDisplayComboboxFocus : public nsDisplayItem {
 public:
-  nsDisplayComboboxFocus(nsComboboxControlFrame* aFrame)
-    : nsDisplayItem(aFrame) {
+  nsDisplayComboboxFocus(nsDisplayListBuilder* aBuilder,
+                         nsComboboxControlFrame* aFrame)
+    : nsDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayComboboxFocus);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -1331,7 +1333,7 @@ void nsDisplayComboboxFocus::Paint(nsDisplayListBuilder* aBuilder,
                                    nsIRenderingContext* aCtx)
 {
   static_cast<nsComboboxControlFrame*>(mFrame)
-    ->PaintFocus(*aCtx, aBuilder->ToReferenceFrame(mFrame));
+    ->PaintFocus(*aCtx, ToReferenceFrame());
 }
 
 NS_IMETHODIMP
@@ -1366,14 +1368,14 @@ nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
       if ((!IsThemed(disp) ||
            !presContext->GetTheme()->ThemeDrawsFocusForWidget(presContext, this, disp->mAppearance)) &&
           mDisplayFrame && IsVisibleForPainting(aBuilder)) {
-        nsresult rv = aLists.Content()->AppendNewToTop(new (aBuilder)
-                                                       nsDisplayComboboxFocus(this));
+        nsresult rv = aLists.Content()->AppendNewToTop(
+            new (aBuilder) nsDisplayComboboxFocus(aBuilder, this));
         NS_ENSURE_SUCCESS(rv, rv);
       }
     }
   }
 
-  return DisplaySelectionOverlay(aBuilder, aLists);
+  return DisplaySelectionOverlay(aBuilder, aLists.Content());
 }
 
 void nsComboboxControlFrame::PaintFocus(nsIRenderingContext& aRenderingContext,

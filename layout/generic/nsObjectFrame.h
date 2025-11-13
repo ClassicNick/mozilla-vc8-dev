@@ -48,6 +48,7 @@
 #include "nsFrame.h"
 #include "nsRegion.h"
 #include "nsDisplayList.h"
+#include "nsIReflowCallback.h"
 
 #ifdef ACCESSIBILITY
 class nsIAccessible;
@@ -62,7 +63,9 @@ class nsIDOMElement;
 
 #define nsObjectFrameSuper nsFrame
 
-class nsObjectFrame : public nsObjectFrameSuper, public nsIObjectFrame {
+class nsObjectFrame : public nsObjectFrameSuper,
+                      public nsIObjectFrame,
+                      public nsIReflowCallback {
 public:
   NS_DECL_FRAMEARENA_HELPERS
 
@@ -162,6 +165,10 @@ public:
   static nsIObjectFrame* GetNextObjectFrame(nsPresContext* aPresContext,
                                             nsIFrame* aRoot);
 
+  // nsIReflowCallback
+  virtual PRBool ReflowFinished();
+  virtual void ReflowCallbackCanceled();
+
 protected:
   nsObjectFrame(nsStyleContext* aContext);
   virtual ~nsObjectFrame();
@@ -252,20 +259,19 @@ private:
   nsIView*                        mInnerView;
   nsCOMPtr<nsIWidget>             mWidget;
   nsIntRect                       mWindowlessRect;
-#ifdef XP_WIN
-  PRUint32                        mDoublePassEvent;
-#endif
 
   // For assertions that make it easier to determine if a crash is due
   // to the underlying problem described in bug 136927, and to prevent
   // reentry into instantiation.
   PRBool mPreventInstantiation;
+
+  PRPackedBool mReflowCallbackPosted;
 };
 
 class nsDisplayPlugin : public nsDisplayItem {
 public:
-  nsDisplayPlugin(nsIFrame* aFrame)
-    : nsDisplayItem(aFrame)
+  nsDisplayPlugin(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
+    : nsDisplayItem(aBuilder, aFrame)
   {
     MOZ_COUNT_CTOR(nsDisplayPlugin);
   }
@@ -280,8 +286,7 @@ public:
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      nsIRenderingContext* aCtx);
   virtual PRBool ComputeVisibility(nsDisplayListBuilder* aBuilder,
-                                   nsRegion* aVisibleRegion,
-                                   nsRegion* aVisibleRegionBeforeMove);
+                                   nsRegion* aVisibleRegion);
 
   NS_DISPLAY_DECL_NAME("Plugin", TYPE_PLUGIN)
 

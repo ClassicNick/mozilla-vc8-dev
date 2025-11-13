@@ -185,7 +185,6 @@ GetDeviceAspectRatio(nsPresContext* aPresContext, const nsMediaFeature*,
     return MakeArray(GetDeviceSize(aPresContext), aResult);
 }
 
-
 static nsresult
 GetColor(nsPresContext* aPresContext, const nsMediaFeature*,
          nsCSSValue& aResult)
@@ -236,7 +235,7 @@ GetResolution(nsPresContext* aPresContext, const nsMediaFeature*,
 {
     // Resolution values are in device pixels, not CSS pixels.
     nsIDeviceContext *dx = GetDeviceContextFor(aPresContext);
-    float dpi = float(dx->AppUnitsPerInch()) / float(dx->AppUnitsPerDevPixel());
+    float dpi = float(dx->AppUnitsPerPhysicalInch()) / float(dx->AppUnitsPerDevPixel());
     aResult.SetFloatValue(dpi, eCSSUnit_Inch);
     return NS_OK;
 }
@@ -259,6 +258,15 @@ GetGrid(nsPresContext* aPresContext, const nsMediaFeature*,
     // feature is always 0.
     aResult.SetIntValue(0, eCSSUnit_Integer);
     return NS_OK;
+}
+
+static nsresult
+GetDevicePixelRatio(nsPresContext* aPresContext, const nsMediaFeature*,
+                    nsCSSValue& aResult)
+{
+  float ratio = aPresContext->CSSPixelsToDevPixels(1.0f);
+  aResult.SetFloatValue(ratio, eCSSUnit_Number);
+  return NS_OK;
 }
 
 static nsresult
@@ -377,6 +385,13 @@ nsMediaFeatures::features[] = {
     },
 
     // Mozilla extensions
+    {
+        &nsGkAtoms::_moz_device_pixel_ratio,
+        nsMediaFeature::eMinMaxAllowed,
+        nsMediaFeature::eFloat,
+        { nsnull },
+        GetDevicePixelRatio
+    },
     {
         &nsGkAtoms::_moz_scrollbar_start_backward,
         nsMediaFeature::eMinMaxNotAllowed,

@@ -64,6 +64,7 @@
 #include "nsIDOMDocument.h"
 #include "nsIDocument.h"
 #include "nsPresContext.h"
+#include "nsIAsyncVerifyRedirectCallback.h"
 
 static NS_DEFINE_CID(kThisImplCID, NS_THIS_DOCLOADER_IMPL_CID);
 
@@ -1584,9 +1585,10 @@ PRInt64 nsDocLoader::CalculateMaxProgress()
   return max;
 }
 
-NS_IMETHODIMP nsDocLoader::OnChannelRedirect(nsIChannel *aOldChannel,
-                                             nsIChannel *aNewChannel,
-                                             PRUint32    aFlags)
+NS_IMETHODIMP nsDocLoader::AsyncOnChannelRedirect(nsIChannel *aOldChannel,
+                                                  nsIChannel *aNewChannel,
+                                                  PRUint32 aFlags,
+                                                  nsIAsyncVerifyRedirectCallback *cb)
 {
   if (aOldChannel)
   {
@@ -1607,10 +1609,13 @@ NS_IMETHODIMP nsDocLoader::OnChannelRedirect(nsIChannel *aOldChannel,
 #endif /* DEBUG */
     }
 
-    OnRedirectStateChange(aOldChannel, aNewChannel, aFlags, stateFlags);
+    nsresult rv = OnRedirectStateChange(aOldChannel, aNewChannel, aFlags,
+                                        stateFlags);
+    NS_ENSURE_SUCCESS(rv, rv);
     FireOnStateChange(this, aOldChannel, stateFlags, NS_OK);
   }
 
+  cb->OnRedirectVerifyCallback(NS_OK);
   return NS_OK;
 }
 

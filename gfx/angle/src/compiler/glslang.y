@@ -38,7 +38,7 @@ compiler/tools. Remove it when we can exclusively use the newer version.
 #define parseContext ((TParseContext*)(parseContextLocal))
 #define YYLEX_PARAM parseContextLocal
 #define YY_DECL int yylex(YYSTYPE* pyylval, void* parseContextLocal)
-extern void yyerror(char*);
+extern void yyerror(const char*);
 
 #define FRAG_VERT_ONLY(S, L) {                                                  \
     if (parseContext->language != EShLangFragment &&                             \
@@ -1749,6 +1749,9 @@ type_specifier_nonarray
 
 struct_specifier
     : STRUCT IDENTIFIER LEFT_BRACE struct_declaration_list RIGHT_BRACE {
+        if (parseContext->reservedErrorCheck($2.line, *$2.string))
+            parseContext->recover();
+
         TType* structure = new TType($4, *$2.string);
         TVariable* userTypeDef = new TVariable($2.string, *structure, true);
         if (! parseContext->symbolTable.insert(*userTypeDef)) {
@@ -1821,11 +1824,17 @@ struct_declarator_list
 
 struct_declarator
     : IDENTIFIER {
+        if (parseContext->reservedErrorCheck($1.line, *$1.string))
+            parseContext->recover();
+
         $$.type = new TType(EbtVoid, EbpUndefined);
         $$.line = $1.line;
         $$.type->setFieldName(*$1.string);
     }
     | IDENTIFIER LEFT_BRACKET constant_expression RIGHT_BRACKET {
+        if (parseContext->reservedErrorCheck($1.line, *$1.string))
+            parseContext->recover();
+
         $$.type = new TType(EbtVoid, EbpUndefined);
         $$.line = $1.line;
         $$.type->setFieldName(*$1.string);

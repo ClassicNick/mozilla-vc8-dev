@@ -43,7 +43,6 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-var gTestfile = 'trace-test.js';
 //-----------------------------------------------------------------------------
 var BUGNUMBER = 'none';
 var summary = 'trace-capability mini-testsuite';
@@ -5165,7 +5164,7 @@ function testSlowNativeBail() {
 	for (var i = 0; i < a.length; i++)
 	    new RegExp(a[i]);
     } catch (exc) {
-	assertEq(""+exc.stack.match(/^RegExp/), "RegExp");
+        assertEq(""+exc, "SyntaxError: invalid quantifier");
     }
 }
 test(testSlowNativeBail);

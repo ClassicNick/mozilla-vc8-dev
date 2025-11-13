@@ -1,4 +1,5 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-/ * ***** BEGIN LICENSE BLOCK *****
+/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
+ * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -56,9 +57,13 @@ import android.util.*;
 abstract public class GeckoApp
     extends Activity
 {
+    public static final String ACTION_ALERT_CLICK = "org.mozilla.gecko.ACTION_ALERT_CLICK";
+    public static final String ACTION_ALERT_CLEAR = "org.mozilla.gecko.ACTION_ALERT_CLEAR";
+
     public static FrameLayout mainLayout;
     public static GeckoSurfaceView surfaceView;
     public static GeckoApp mAppContext;
+    ProgressDialog mProgressDialog;
 
     void launch()
     {
@@ -102,6 +107,11 @@ abstract public class GeckoApp
                                                   ViewGroup.LayoutParams.FILL_PARENT));
 
         if (!GeckoAppShell.sGeckoRunning) {
+            
+            if (!useLaunchButton)
+                mProgressDialog = 
+                    ProgressDialog.show(GeckoApp.this, "", getAppName() + 
+                                        " is loading", true);
             // Load our JNI libs; we need to do this before launch() because
             // setInitialSize will be called even before Gecko is actually up
             // and running.
@@ -222,22 +232,48 @@ abstract public class GeckoApp
     public void onLowMemory()
     {
         Log.i("GeckoApp", "low memory");
-        // XXX TODO
+        if (GeckoAppShell.sGeckoRunning)
+            GeckoAppShell.onLowMemory();
         super.onLowMemory();
     }
 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         switch (keyCode) {
+            case KeyEvent.KEYCODE_BACK:
+                if (event.getRepeatCount() == 0) {
+                    event.startTracking();
+                    return true;
+                } else {
+                    return false;
+                }
             case KeyEvent.KEYCODE_VOLUME_UP:
             case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_SEARCH:
                 return false;
+            case KeyEvent.KEYCODE_DEL:
+                // See comments in GeckoInputConnection.onKeyDel
+                if (surfaceView != null &&
+                    surfaceView.inputConnection != null &&
+                    surfaceView.inputConnection.onKeyDel()) {
+                    return true;
+                }
+                break;
             default:
-                GeckoAppShell.sendEventToGecko(new GeckoEvent(event));
-                return true;
+                break;
         }
+        GeckoAppShell.sendEventToGecko(new GeckoEvent(event));
+        return true;
     }
 
     public boolean onKeyUp(int keyCode, KeyEvent event) {
+        switch(keyCode) {
+            case KeyEvent.KEYCODE_BACK:
+                if (!event.isTracking() || event.isCanceled())
+                    return false;
+                break;
+            default:
+                break;
+        }
         GeckoAppShell.sendEventToGecko(new GeckoEvent(event));
         return true;
     }
@@ -259,10 +295,19 @@ abstract public class GeckoApp
             File componentsDir = new File("/data/data/org.mozilla." + getAppName() +"/components");
             componentsDir.mkdir();
             zip = new ZipFile(getApplication().getPackageResourcePath());
+        } catch (Exception e) {
+            Log.i("GeckoAppJava", e.toString());
+            return;
+        }
 
+        byte[] buf = new byte[8192];
+        unpackFile(zip, buf, null, "application.ini");
+        unpackFile(zip, buf, null, getContentProcessName());
+
+        try {
             ZipEntry componentsList = zip.getEntry("components/components.manifest");
             if (componentsList == null) {
-                Log.i("GeckoAppJava", "Can't find components.list !");
+                Log.i("GeckoAppJava", "Can't find components.manifest!");
                 return;
             }
 
@@ -271,8 +316,6 @@ abstract public class GeckoApp
             Log.i("GeckoAppJava", e.toString());
             return;
         }
-
-        byte[] buf = new byte[8192];
 
         StreamTokenizer tkn = new StreamTokenizer(new InputStreamReader(listStream));
         String line = "components/";
@@ -304,9 +347,6 @@ abstract public class GeckoApp
                 break;
             }
         } while (status != StreamTokenizer.TT_EOF);
-
-        unpackFile(zip, buf, null, "application.ini");
-        unpackFile(zip, buf, null, getContentProcessName());
     }
 
     private void unpackFile(ZipFile zip, byte[] buf, ZipEntry fileEntry, String name)
@@ -399,5 +439,9 @@ abstract public class GeckoApp
             Log.i("GeckoAppJava", e.toString());
         }
         System.exit(0);
+    }
+
+    public void handleNotification(String action, String alertName, String alertCookie) {
+        GeckoAppShell.handleNotification(action, alertName, alertCookie);
     }
 }

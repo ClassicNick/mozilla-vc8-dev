@@ -64,8 +64,10 @@ class nsClientRectList;
 #include "gfxPattern.h"
 #include "imgIContainer.h"
 #include "nsCSSPseudoElements.h"
+#include "nsHTMLReflowState.h"
 
 class nsBlockFrame;
+class gfxDrawable;
 
 /**
  * nsLayoutUtils is a namespace class used for various helper
@@ -296,12 +298,9 @@ public:
    * such ancestor before we reach aStopAtAncestor in the ancestor chain.
    * We expect frames with the same "active scrolled root" to be
    * scrolled together, so we'll place them in the same ThebesLayer.
-   * @param aOffset the offset from aFrame to the returned frame is stored
-   * here, if non-null
    */
   static nsIFrame* GetActiveScrolledRootFor(nsIFrame* aFrame,
-                                            nsIFrame* aStopAtAncestor,
-                                            nsPoint* aOffset);
+                                            nsIFrame* aStopAtAncestor);
 
   /**
     * GetFrameFor returns the root frame for a view
@@ -357,18 +356,7 @@ public:
   static PRBool HasPseudoStyle(nsIContent* aContent,
                                nsStyleContext* aStyleContext,
                                nsCSSPseudoElements::Type aPseudoElement,
-                               nsPresContext* aPresContext)
-  {
-    NS_PRECONDITION(aPresContext, "Must have a prescontext");
-
-    nsRefPtr<nsStyleContext> pseudoContext;
-    if (aContent) {
-      pseudoContext = aPresContext->StyleSet()->
-        ProbePseudoElementStyle(aContent->AsElement(), aPseudoElement,
-                                aStyleContext);
-    }
-    return pseudoContext != nsnull;
-  }
+                               nsPresContext* aPresContext);
 
   /**
    * If this frame is a placeholder for a float, then return the float,
@@ -406,11 +394,13 @@ public:
 
   /**
    * Get the popup frame of a given native mouse event.
+   * @param aPresContext only check popups within aPresContext or a descendant
    * @param aEvent  the event.
    * @return        Null, if there is no popup frame at the point, otherwise,
    *                returns top-most popup frame at the point.
    */
-  static nsIFrame* GetPopupFrameForEventCoordinates(const nsEvent* aEvent);
+  static nsIFrame* GetPopupFrameForEventCoordinates(nsPresContext* aPresContext,
+                                                    const nsEvent* aEvent);
 
 /**
    * Translate from widget coordinates to the view's coordinates
@@ -528,7 +518,8 @@ public:
     PAINT_WIDGET_LAYERS = 0x04,
     PAINT_IGNORE_SUPPRESSION = 0x08,
     PAINT_IGNORE_VIEWPORT_SCROLLING = 0x10,
-    PAINT_HIDE_CARET = 0x20
+    PAINT_HIDE_CARET = 0x20,
+    PAINT_ALL_CONTINUATIONS = 0x40
   };
 
   /**
@@ -787,6 +778,50 @@ public:
                    const nsStyleCoord&  aCoord);
 
   /*
+   * Likewise, but for 'height', 'min-height', or 'max-height'.
+   */
+  static nscoord ComputeHeightValue(nscoord aContainingBlockHeight,
+                                    const nsStyleCoord& aCoord)
+  {
+    nscoord result =
+      ComputeHeightDependentValue(aContainingBlockHeight, aCoord);
+    if (result < 0)
+      result = 0; // clamp calc()
+    return result;
+  }
+
+  static PRBool IsAutoHeight(const nsStyleCoord &aCoord, nscoord aCBHeight)
+  {
+    nsStyleUnit unit = aCoord.GetUnit();
+    return unit == eStyleUnit_Auto ||  // only for 'height'
+           unit == eStyleUnit_None ||  // only for 'max-height'
+           (aCBHeight == NS_AUTOHEIGHT && aCoord.HasPercent());
+  }
+
+  static PRBool IsPaddingZero(const nsStyleCoord &aCoord)
+  {
+    return (aCoord.GetUnit() == eStyleUnit_Coord &&
+            aCoord.GetCoordValue() == 0) ||
+           (aCoord.GetUnit() == eStyleUnit_Percent &&
+            aCoord.GetPercentValue() == 0.0) ||
+           (aCoord.IsCalcUnit() &&
+            // clamp negative calc() to 0
+            nsRuleNode::ComputeCoordPercentCalc(aCoord, nscoord_MAX) <= 0 &&
+            nsRuleNode::ComputeCoordPercentCalc(aCoord, 0) <= 0);
+  }
+
+  static PRBool IsMarginZero(const nsStyleCoord &aCoord)
+  {
+    return (aCoord.GetUnit() == eStyleUnit_Coord &&
+            aCoord.GetCoordValue() == 0) ||
+           (aCoord.GetUnit() == eStyleUnit_Percent &&
+            aCoord.GetPercentValue() == 0.0) ||
+           (aCoord.IsCalcUnit() &&
+            nsRuleNode::ComputeCoordPercentCalc(aCoord, nscoord_MAX) == 0 &&
+            nsRuleNode::ComputeCoordPercentCalc(aCoord, 0) == 0);
+  }
+
+  /*
    * Calculate the used values for 'width' and 'height' for a replaced element.
    *
    *   http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
@@ -920,6 +955,35 @@ public:
                             PRUint32             aImageFlags);
 
   /**
+   * Convert an nsRect to a gfxRect.
+   */
+  static gfxRect RectToGfxRect(const nsRect& aRect,
+                               PRInt32 aAppUnitsPerDevPixel);
+
+  /**
+   * Draw a drawable using the pixel snapping algorithm.
+   * See https://wiki.mozilla.org/Gecko:Image_Snapping_and_Rendering
+   *   @param aRenderingContext Where to draw the image, set up with an
+   *                            appropriate scale and transform for drawing in
+   *                            app units.
+   *   @param aDrawable         The drawable we want to draw.
+   *   @param aFilter           The graphics filter we should draw with.
+   *   @param aDest             Where one copy of the image should mapped to.
+   *   @param aFill             The area to be filled with copies of the
+   *                            image.
+   *   @param aAnchor           A point in aFill which we will ensure is
+   *                            pixel-aligned in the output.
+   *   @param aDirty            Pixels outside this area may be skipped.
+   */
+  static void DrawPixelSnapped(nsIRenderingContext* aRenderingContext,
+                               gfxDrawable*         aDrawable,
+                               gfxPattern::GraphicsFilter aFilter,
+                               const nsRect&        aDest,
+                               const nsRect&        aFill,
+                               const nsPoint&       aAnchor,
+                               const nsRect&        aDirty);
+
+  /**
    * Draw a whole image without scaling or tiling.
    *
    *   @param aRenderingContext Where to draw the image, set up with an
@@ -963,6 +1027,25 @@ public:
                                   const nsRect&        aDirty,
                                   PRUint32             aImageFlags,
                                   const nsRect*        aSourceArea = nsnull);
+
+  /**
+   * Given an imgIContainer, this method attempts to obtain an intrinsic
+   * px-valued height & width for it.  If the imgIContainer has a non-pixel
+   * value for either height or width, this method tries to generate a pixel
+   * value for that dimension using the intrinsic ratio (if available).
+   *
+   * This method will always set aGotWidth and aGotHeight to indicate whether
+   * we were able to successfully obtain (or compute) a value for each
+   * dimension.
+   *
+   * NOTE: This method is similar to ComputeSizeWithIntrinsicDimensions.  The
+   * difference is that this one is simpler and is suited to places where we
+   * have less information about the frame tree.
+   */
+  static void ComputeSizeForDrawing(imgIContainer* aImage,
+                                    nsIntSize&     aImageSize,
+                                    PRBool&        aGotWidth,
+                                    PRBool&        aGotHeight);
 
   /**
    * Given a source area of an image (in appunits) and a destination area
@@ -1150,6 +1233,16 @@ public:
    */
   static nsIContent*
     GetEditableRootContentByContentEditable(nsIDocument* aDocument);
+
+  /**
+   * Returns true if the passed in prescontext needs the dark grey background
+   * that goes behind the page of a print preview presentation.
+   */
+  static PRBool NeedsPrintPreviewBackground(nsPresContext* aPresContext) {
+    return aPresContext->IsRootPaginatedDocument() &&
+      (aPresContext->Type() == nsPresContext::eContext_PrintPreview ||
+       aPresContext->Type() == nsPresContext::eContext_PageLayout);
+  }
 };
 
 class nsSetAttrRunnable : public nsRunnable

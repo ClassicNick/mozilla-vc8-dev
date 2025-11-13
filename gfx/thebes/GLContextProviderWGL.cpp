@@ -87,6 +87,10 @@ CreateDummyWindow(HDC *aWindowDC = nsnull)
         pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL;
         pfd.iPixelType = PFD_TYPE_RGBA;
         pfd.cColorBits = 24;
+        pfd.cRedBits = 8;
+        pfd.cGreenBits = 8;
+        pfd.cBlueBits = 8;
+        pfd.cAlphaBits = 8;
         pfd.cDepthBits = 0;
         pfd.iLayerType = PFD_MAIN_PLANE;
 
@@ -215,7 +219,8 @@ public:
           mContext(aContext),
           mWnd(aWindow),
           mPBuffer(NULL),
-          mPixelFormat(0)
+          mPixelFormat(0),
+          mIsDoubleBuffered(PR_FALSE)
     {
     }
 
@@ -230,7 +235,8 @@ public:
           mContext(aContext),
           mWnd(NULL),
           mPBuffer(aPbuffer),
-          mPixelFormat(aPixelFormat)
+          mPixelFormat(aPixelFormat),
+          mIsDoubleBuffered(PR_FALSE)
     {
     }
 
@@ -263,7 +269,7 @@ public:
         return InitWithPrefix("gl", PR_TRUE);
     }
 
-    PRBool MakeCurrent()
+    PRBool MakeCurrent(PRBool aForce = PR_FALSE)
     {
         BOOL succeeded = PR_TRUE;
 
@@ -271,12 +277,26 @@ public:
         // of its TLS slot, so no need to do our own tls slot.
         // You would think that wglMakeCurrent would avoid doing
         // work if mContext was already current, but not so much..
-        if (sWGLLibrary.fGetCurrentContext() != mContext) {
+        if (aForce || sWGLLibrary.fGetCurrentContext() != mContext) {
             succeeded = sWGLLibrary.fMakeCurrent(mDC, mContext);
             NS_ASSERTION(succeeded, "Failed to make GL context current!");
         }
 
         return succeeded;
+    }
+
+    void SetIsDoubleBuffered(PRBool aIsDB) {
+        mIsDoubleBuffered = aIsDB;
+    }
+
+    virtual PRBool IsDoubleBuffered() {
+        return mIsDoubleBuffered;
+    }
+
+    virtual PRBool SwapBuffers() {
+        if (!mIsDoubleBuffered)
+            return PR_FALSE;
+        return ::SwapBuffers(mDC);
     }
 
     PRBool SetupLookupFunction()
@@ -316,6 +336,8 @@ protected:
     HWND mWnd;
     HANDLE mPBuffer;
     int mPixelFormat;
+
+    PRPackedBool mIsDoubleBuffered;
 };
 
 PRBool
@@ -429,17 +451,28 @@ protected:
     virtual already_AddRefed<gfxASurface>
     CreateUpdateSurface(const gfxIntSize& aSize, ImageFormat aFmt)
     {
+        mUpdateSize = aSize;
+        mUpdateFormat = aFmt;
+
         return gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, aFmt);
     }
 
     virtual already_AddRefed<gfxImageSurface>
     GetImageForUpload(gfxASurface* aUpdateSurface)
     {
-        NS_ASSERTION(gfxASurface::SurfaceTypeWin32 == aUpdateSurface->GetType(),
-                     "unexpected surface type");
-        nsRefPtr<gfxImageSurface> uploadImage(
-            static_cast<gfxWindowsSurface*>(aUpdateSurface)->
-            GetImageSurface());
+        nsRefPtr<gfxImageSurface> uploadImage;
+
+        if (aUpdateSurface->GetType() == gfxASurface::SurfaceTypeWin32) {
+            gfxWindowsSurface* ws = static_cast<gfxWindowsSurface*>(aUpdateSurface);
+            uploadImage = ws->GetImageSurface();
+        } else {
+            uploadImage = new gfxImageSurface(mUpdateSize, mUpdateFormat);
+            nsRefPtr<gfxContext> cx(new gfxContext(uploadImage));
+            cx->SetSource(aUpdateSurface);
+            cx->SetOperator(gfxContext::OPERATOR_SOURCE);
+            cx->Paint();
+        }
+
         return uploadImage.forget();
     }
 
@@ -450,6 +483,9 @@ private:
                     GLContext* aContext)
         : BasicTextureImage(aTexture, aSize, aContentType, aContext)
     {}
+
+    gfxIntSize mUpdateSize;
+    ImageFormat mUpdateFormat;
 };
 
 already_AddRefed<TextureImage>
@@ -688,6 +724,8 @@ GLContextProviderWGL::GetGlobalContext()
             gGlobalContext = nsnull;
             return PR_FALSE;
         }
+
+        gGlobalContext->SetIsGlobalSharedContext(PR_TRUE);
     }
 
     return static_cast<GLContext*>(gGlobalContext);

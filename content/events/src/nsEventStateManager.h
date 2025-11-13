@@ -331,6 +331,13 @@ protected:
   nsresult DoContentCommandEvent(nsContentCommandEvent* aEvent);
   nsresult DoContentCommandScrollEvent(nsContentCommandEvent* aEvent);
 
+#ifdef MOZ_IPC
+#ifdef ANDROID
+  mozilla::dom::PBrowserParent *GetCrossProcessTarget();
+  PRBool IsTargetCrossProcess(nsGUIEvent *aEvent);
+#endif
+#endif
+
   PRInt32     mLockCursor;
 
   nsWeakFrame mCurrentTarget;
@@ -380,8 +387,6 @@ protected:
   PRUint32 mMClickCount;
   PRUint32 mRClickCount;
 
-  PRPackedBool mNormalLMouseEventInProcess;
-
   PRPackedBool m_haveShutdown;
 
   // Array for accesskey support
@@ -392,6 +397,8 @@ protected:
   PRPackedBool mLastLineScrollConsumedY;
 
   static PRInt32 sUserInputEventDepth;
+  
+  static PRBool sNormalLMouseEventInProcess;
 
   // Functions used for click hold context menus
   PRBool mClickHoldContextMenu;

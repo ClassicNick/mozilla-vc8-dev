@@ -243,7 +243,8 @@ public:
         nsIInputStream* aPostDataStream = 0,
         nsIInputStream* aHeadersDataStream = 0,
         nsIDocShell** aDocShell = 0,
-        nsIRequest** aRequest = 0);
+        nsIRequest** aRequest = 0,
+        const char* aHttpMethod = 0);
     NS_IMETHOD OnOverLink(nsIContent* aContent,
         nsIURI* aURI,
         const PRUnichar* aTargetSpec);
@@ -269,6 +270,13 @@ public:
 
     friend class OnLinkClickEvent;
 
+    // We need dummy OnLocationChange in some cases to update the UI.
+    void FireDummyOnLocationChange()
+    {
+      FireOnLocationChange(this, nsnull, mCurrentURI);
+    }
+
+    nsresult HistoryTransactionRemoved(PRInt32 aIndex);
 protected:
     // Object Management
     virtual ~nsDocShell();
@@ -318,7 +326,8 @@ protected:
                                nsIRequest ** aRequest,
                                PRBool aIsNewWindowTarget,
                                PRBool aBypassClassifier,
-                               PRBool aForceAllowCookies);
+                               PRBool aForceAllowCookies,
+                               const char* aHttpMethod);
     NS_IMETHOD AddHeadersToChannel(nsIInputStream * aHeadersData, 
                                   nsIChannel * aChannel);
     virtual nsresult DoChannelLoad(nsIChannel * aChannel,
@@ -326,8 +335,7 @@ protected:
                                    PRBool aBypassClassifier);
 
     nsresult ScrollIfAnchor(nsIURI * aURI, PRBool * aWasAnchor,
-                            PRUint32 aLoadType, nscoord *cx, nscoord *cy,
-                            PRBool * aDoHashchange);
+                            PRUint32 aLoadType, PRBool * aDoHashchange);
 
     // Tries to stringify a given variant by converting it to JSON.  This only
     // works if the variant is backed by a JSVal.
@@ -428,10 +436,10 @@ protected:
 
     // overridden from nsDocLoader, this provides more information than the
     // normal OnStateChange with flags STATE_REDIRECTING
-    virtual void OnRedirectStateChange(nsIChannel* aOldChannel,
-                                       nsIChannel* aNewChannel,
-                                       PRUint32 aRedirectFlags,
-                                       PRUint32 aStateFlags);
+    virtual nsresult OnRedirectStateChange(nsIChannel* aOldChannel,
+                                           nsIChannel* aNewChannel,
+                                           PRUint32 aRedirectFlags,
+                                           PRUint32 aStateFlags);
 
     /**
      * Helper function that determines if channel is an HTTP POST.
@@ -441,7 +449,17 @@ protected:
      *
      * @return True iff channel is an HTTP post.
      */
-    bool ChannelIsPost(nsIChannel* aChannel);
+     static bool ChannelIsPost(nsIChannel* aChannel);
+
+     /**
+      * Helper function that determines if the HTTP channel has a safe method
+      *
+      * @param aChannel The channel to test
+      *
+      * @return Whether the channel has a safe HTTP method.
+      * @note Will return true if the channel isn't an HTTP channel.
+      */
+     static bool ChannelIsSafeHTTPMethod(nsIChannel* aChannel);
 
     /**
      * Helper function that finds the last URI and its transition flags for a
@@ -663,6 +681,8 @@ protected:
     // Override the parent setter from nsDocLoader
     virtual nsresult SetDocLoaderParent(nsDocLoader * aLoader);
 
+    void ClearFrameHistory(nsISHEntry* aEntry);
+
     // Event type dispatched by RestorePresentation
     class RestorePresentationEvent : public nsRunnable {
     public:
@@ -749,15 +769,7 @@ protected:
     eCharsetReloadState        mCharsetReloadState;
 
     // Offset in the parent's child list.
-    // XXXmats the line above is bogus, it's the offset in the parent's
-    // child list at the time this docshell was added to it,
-    // see nsDocShell::AddChild().  It isn't updated after that so if children
-    // with lower indices are removed this offset is no longer valid to be used
-    // as an index into the parent's child list (see bug 162283).  It MUST not
-    // be used for that purpose.  It's used as an index to get/add history
-    // entries into nsIDocShellHistory, although I very much doubt that it
-    // can be correct for that purpose as well...
-    // Try not to use it, we should get rid of it.
+    // -1 if the docshell is added dynamically to the parent shell.
     PRUint32                   mChildOffset;
     PRUint32                   mBusyFlags;
     PRUint32                   mAppType;
@@ -787,6 +799,7 @@ protected:
     PRPackedBool               mAllowAuth;
     PRPackedBool               mAllowKeywordFixup;
     PRPackedBool               mIsOffScreenBrowser;
+    PRPackedBool               mIsActive;
 
     // This boolean is set to true right before we fire pagehide and generally
     // unset when we embed a new content viewer.  While it's true no navigation
@@ -811,9 +824,13 @@ protected:
     // presentation of the page, and to SetupNewViewer() that the old viewer
     // should be passed a SHEntry to save itself into.
     PRPackedBool               mSavingOldViewer;
+
+    // @see nsIDocShellHistory::createdDynamically
+    PRPackedBool               mDynamicallyCreated;
 #ifdef DEBUG
     PRPackedBool               mInEnsureScriptEnv;
 #endif
+    PRUint64                   mHistoryID;
 
     static nsIURIFixup *sURIFixup;
 

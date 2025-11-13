@@ -35,7 +35,6 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-var gTestfile = 'regress-394709.js';
 //-----------------------------------------------------------------------------
 var BUGNUMBER = 394709;
 var summary = 'Do not leak with object.watch and closure';
@@ -59,6 +58,10 @@ function test()
   enterFunc ('test');
   printBugNumber(BUGNUMBER);
   printStatus (summary);
+
+  // Ensure that we flush all values so that gc() collects all objects that
+  // the user cannot reach from JS.
+  eval();
 
   runtest();
   gc();

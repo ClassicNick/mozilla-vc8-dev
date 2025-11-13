@@ -50,8 +50,7 @@
 #include "nsIDOMHTMLCollection.h" 
 #include "nsIDOMHTMLOptionsCollection.h" 
 #include "nsIDOMNSHTMLOptionCollectn.h"
-#include "nsIDOMHTMLSelectElement.h" 
-#include "nsIDOMNSHTMLSelectElement.h" 
+#include "nsIDOMHTMLSelectElement.h"
 #include "nsIDOMHTMLOptionElement.h" 
 #include "nsComboboxControlFrame.h"
 #include "nsIViewManager.h"
@@ -242,7 +241,7 @@ nsListControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     // this frame as the root of a stacking context we need make sure to draw
     // some opaque color over the whole widget. (Bug 511323)
     aLists.BorderBackground()->AppendNewToBottom(
-      new (aBuilder) nsDisplaySolidColor(
+      new (aBuilder) nsDisplaySolidColor(aBuilder,
         this, nsRect(aBuilder->ToReferenceFrame(this), GetSize()),
         mLastDropdownBackstopColor));
   }
@@ -285,8 +284,8 @@ void nsListControlFrame::PaintFocus(nsIRenderingContext& aRC, nsPoint aPt)
 
   nsCOMPtr<nsIContent> focusedContent;
 
-  nsCOMPtr<nsIDOMNSHTMLSelectElement> selectNSElement(do_QueryInterface(mContent));
-  NS_ASSERTION(selectNSElement, "Can't be null");
+  nsCOMPtr<nsIDOMHTMLSelectElement> selectDOMElement(do_QueryInterface(mContent));
+  NS_ASSERTION(selectDOMElement, "Can't be null");
 
   nsCOMPtr<nsISelectElement> selectElement(do_QueryInterface(mContent));
   NS_ASSERTION(selectElement, "Can't be null");
@@ -312,7 +311,7 @@ void nsListControlFrame::PaintFocus(nsIRenderingContext& aRC, nsPoint aPt)
       // find the first non-disabled item
       PRBool isDisabled = PR_TRUE;
       for (PRInt32 i=0;i<PRInt32(length) && isDisabled;i++) {
-        if (NS_FAILED(selectNSElement->Item(i, getter_AddRefs(node))) || !node) {
+        if (NS_FAILED(selectDOMElement->Item(i, getter_AddRefs(node))) || !node) {
           break;
         }
         if (NS_FAILED(selectElement->IsOptionDisabled(i, &isDisabled))) {

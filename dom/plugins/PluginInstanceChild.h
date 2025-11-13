@@ -352,7 +352,6 @@ private:
     };
     gfx::SharedDIBWin mSharedSurfaceDib;
     struct {
-      PRUint32        doublePassEvent;
       PRUint16        doublePass;
       HDC             hdc;
       HBITMAP         bmp;
@@ -360,10 +359,18 @@ private:
 #endif // defined(OS_WIN)
 #if defined(OS_MACOSX)
 private:
-    CGColorSpaceRef mShColorSpace;
-    CGContextRef    mShContext;
-    int16_t         mDrawingModel;
-    nsCARenderer    mCARenderer;
+    CGColorSpaceRef       mShColorSpace;
+    CGContextRef          mShContext;
+    int16_t               mDrawingModel;
+    nsCARenderer          mCARenderer;
+
+public:
+    const NPCocoaEvent* getCurrentEvent() {
+        return mCurrentEvent;
+    }
+
+private:
+    const NPCocoaEvent   *mCurrentEvent;
 #endif
 };
 

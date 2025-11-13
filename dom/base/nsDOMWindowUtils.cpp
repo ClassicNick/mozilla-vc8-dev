@@ -66,11 +66,19 @@
 #include "gfxImageSurface.h"
 #include "nsLayoutUtils.h"
 #include "nsComputedDOMStyle.h"
+#include "nsIViewObserver.h"
+#include "nsIPresShell.h"
 
 #if defined(MOZ_X11) && defined(MOZ_WIDGET_GTK2)
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
 #endif
+
+#include "jsobj.h"
+
+#include "Layers.h"
+
+using namespace mozilla::layers;
 
 static PRBool IsUniversalXPConnectCapable()
 {
@@ -224,6 +232,33 @@ nsDOMWindowUtils::SendMouseEvent(const nsAString& aType,
                                  PRInt32 aModifiers,
                                  PRBool aIgnoreRootScrollFrame)
 {
+  return SendMouseEventCommon(aType, aX, aY, aButton, aClickCount, aModifiers,
+                              aIgnoreRootScrollFrame, PR_FALSE);
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SendMouseEventToWindow(const nsAString& aType,
+                                         float aX,
+                                         float aY,
+                                         PRInt32 aButton,
+                                         PRInt32 aClickCount,
+                                         PRInt32 aModifiers,
+                                         PRBool aIgnoreRootScrollFrame)
+{
+  return SendMouseEventCommon(aType, aX, aY, aButton, aClickCount, aModifiers,
+                              aIgnoreRootScrollFrame, PR_TRUE);
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SendMouseEventCommon(const nsAString& aType,
+                                       float aX,
+                                       float aY,
+                                       PRInt32 aButton,
+                                       PRInt32 aClickCount,
+                                       PRInt32 aModifiers,
+                                       PRBool aIgnoreRootScrollFrame,
+                                       PRBool aToWindow)
+{
   if (!IsUniversalXPConnectCapable()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
@@ -279,8 +314,29 @@ nsDOMWindowUtils::SendMouseEvent(const nsAString& aType,
                           appPerDev);
   event.ignoreRootScrollFrame = aIgnoreRootScrollFrame;
 
+  nsresult rv;
   nsEventStatus status;
-  return widget->DispatchEvent(&event, status);
+  if (aToWindow) {
+    nsIPresShell* presShell = presContext->PresShell();
+    if (!presShell)
+      return NS_ERROR_FAILURE;
+    nsCOMPtr<nsIViewObserver> vo = do_QueryInterface(presShell);
+    if (!vo)
+      return NS_ERROR_FAILURE;
+    nsIViewManager* viewManager = presShell->GetViewManager();
+    if (!viewManager)
+      return NS_ERROR_FAILURE;
+    nsIView* view = nsnull;
+    rv = viewManager->GetRootView(view);
+    if (NS_FAILED(rv) || !view)
+      return NS_ERROR_FAILURE;
+
+    status = nsEventStatus_eIgnore;
+    rv = vo->HandleEvent(view, &event, &status);
+  } else {
+    rv = widget->DispatchEvent(&event, status);
+  }
+  return rv;
 }
 
 NS_IMETHODIMP
@@ -521,15 +577,13 @@ nsDOMWindowUtils::Focus(nsIDOMElement* aElement)
 NS_IMETHODIMP
 nsDOMWindowUtils::GarbageCollect()
 {
-  // NOTE: Only do this in NON debug builds, as this function can useful
-  // during debugging.
+  // Always permit this in debug builds.
 #ifndef DEBUG
   if (!IsUniversalXPConnectCapable()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 #endif
 
-  nsJSContext::CC();
   nsJSContext::CC();
 
   return NS_OK;
@@ -1074,6 +1128,18 @@ nsDOMWindowUtils::SendQueryContentEvent(PRUint32 aType,
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
+  NS_ENSURE_TRUE(mWindow, NS_ERROR_FAILURE);
+
+  nsIDocShell *docShell = mWindow->GetDocShell();
+  NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
+
+  nsCOMPtr<nsIPresShell> presShell;
+  docShell->GetPresShell(getter_AddRefs(presShell));
+  NS_ENSURE_TRUE(presShell, NS_ERROR_FAILURE);
+
+  nsPresContext* presContext = presShell->GetPresContext();
+  NS_ENSURE_TRUE(presContext, NS_ERROR_FAILURE);
+
   // get the widget to send the event to
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
@@ -1097,7 +1163,7 @@ nsDOMWindowUtils::SendQueryContentEvent(PRUint32 aType,
     nsQueryContentEvent dummyEvent(PR_TRUE, NS_QUERY_CONTENT_STATE, widget);
     InitEvent(dummyEvent, &pt);
     nsIFrame* popupFrame =
-      nsLayoutUtils::GetPopupFrameForEventCoordinates(&dummyEvent);
+      nsLayoutUtils::GetPopupFrameForEventCoordinates(presContext->GetRootPresContext(), &dummyEvent);
 
     nsIntRect widgetBounds;
     nsresult rv = widget->GetClientBounds(widgetBounds);
@@ -1349,14 +1415,10 @@ nsDOMWindowUtils::GetParent()
   JSObject *parent = JS_GetParent(cx, JSVAL_TO_OBJECT(argv[0]));
   *rval = OBJECT_TO_JSVAL(parent);
 
-  // Outerize if necessary.  Embrace the ugliness!
+  // Outerize if necessary.
   if (parent) {
-    JSClass* clasp = JS_GET_CLASS(cx, parent);
-    if (clasp->flags & JSCLASS_IS_EXTENDED) {
-      JSExtendedClass* xclasp = reinterpret_cast<JSExtendedClass*>(clasp);
-      if (JSObjectOp outerize = xclasp->outerObject)
-        *rval = OBJECT_TO_JSVAL(outerize(cx, parent));
-    }
+    if (JSObjectOp outerize = parent->getClass()->ext.outerObject)
+      *rval = OBJECT_TO_JSVAL(outerize(cx, parent));
   }
 
   cc->SetReturnValueWasSet(PR_TRUE);
@@ -1380,5 +1442,45 @@ nsDOMWindowUtils::GetCurrentInnerWindowID(PRUint64 *aWindowID)
     return NS_ERROR_NOT_AVAILABLE;
   }
   *aWindowID = inner->mWindowID;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SuspendTimeouts()
+{
+  if (!IsUniversalXPConnectCapable()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  mWindow->SuspendTimeouts();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::ResumeTimeouts()
+{
+  if (!IsUniversalXPConnectCapable()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  mWindow->ResumeTimeouts();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetLayerManagerType(nsAString& aType)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget)
+    return NS_ERROR_FAILURE;
+
+  LayerManager *mgr = widget->GetLayerManager();
+  if (!mgr)
+    return NS_ERROR_FAILURE;
+
+  mgr->GetBackendName(aType);
+
   return NS_OK;
 }

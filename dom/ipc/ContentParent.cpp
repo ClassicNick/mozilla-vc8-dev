@@ -40,21 +40,31 @@
 #include "ContentParent.h"
 
 #include "TabParent.h"
+#include "History.h"
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/net/NeckoParent.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefBranch2.h"
 #include "nsIPrefLocalizedString.h"
 #include "nsIObserverService.h"
-
+#include "nsContentUtils.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsChromeRegistryChrome.h"
+#include "nsExternalHelperAppService.h"
+#include "nsCExternalHandlerService.h"
+#include "nsFrameMessageManager.h"
+
+#ifdef ANDROID
+#include "AndroidBridge.h"
+using namespace mozilla;
+#endif
 
 using namespace mozilla::ipc;
 using namespace mozilla::net;
+using namespace mozilla::places;
 using mozilla::MonitorAutoEnter;
 
 namespace mozilla {
@@ -275,7 +285,7 @@ ContentParent::RecvTestPermission(const IPC::URI&  aUri,
 {
     EnsurePermissionService();
 
-    nsCOMPtr<nsIURI> uri = aUri;
+    nsCOMPtr<nsIURI> uri(aUri);
     if (aExact) {
         mPermissionService->TestExactPermission(uri, aType.get(), retValue);
     } else {
@@ -430,6 +440,50 @@ ContentParent::RequestRunToCompletion()
     return !!mRunToCompletionDepth;
 }
 
+bool
+ContentParent::RecvStartVisitedQuery(const IPC::URI& aURI)
+{
+    nsCOMPtr<nsIURI> newURI(aURI);
+    IHistory *history = nsContentUtils::GetHistory(); 
+    history->RegisterVisitedCallback(newURI, nsnull);
+    return true;
+}
+
+
+bool
+ContentParent::RecvVisitURI(const IPC::URI& uri,
+                                   const IPC::URI& referrer,
+                                   const PRUint32& flags)
+{
+    nsCOMPtr<nsIURI> ourURI(uri);
+    nsCOMPtr<nsIURI> ourReferrer(referrer);
+    IHistory *history = nsContentUtils::GetHistory(); 
+    history->VisitURI(ourURI, ourReferrer, flags);
+    return true;
+}
+
+
+bool
+ContentParent::RecvSetURITitle(const IPC::URI& uri,
+                                      const nsString& title)
+{
+    nsCOMPtr<nsIURI> ourURI(uri);
+    IHistory *history = nsContentUtils::GetHistory(); 
+    history->SetURITitle(ourURI, title);
+    return true;
+}
+
+bool
+ContentParent::RecvLoadURIExternal(const IPC::URI& uri)
+{
+    nsCOMPtr<nsIExternalProtocolService> extProtService(do_GetService(NS_EXTERNALPROTOCOLSERVICE_CONTRACTID));
+    if (!extProtService)
+        return true;
+    nsCOMPtr<nsIURI> ourURI(uri);
+    extProtService->LoadURI(ourURI, nsnull);
+    return true;
+}
+
 /* void onDispatchedEvent (in nsIThreadInternal thread); */
 NS_IMETHODIMP
 ContentParent::OnDispatchedEvent(nsIThreadInternal *thread)
@@ -475,6 +529,58 @@ ContentParent::AfterProcessNextEvent(nsIThreadInternal *thread,
         return mOldObserver->AfterProcessNextEvent(thread, recursionDepth);
 
     return NS_OK;
+}
+
+
+bool 
+ContentParent::RecvNotifyIMEChange(const nsString& aText, 
+                                   const PRUint32& aTextLen, 
+                                   const int& aStart, const int& aEnd, 
+                                   const int& aNewEnd)
+{
+#ifdef ANDROID
+    AndroidBridge::Bridge()->NotifyIMEChange(aText.get(), aTextLen,
+                                             aStart, aEnd, aNewEnd);
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool 
+ContentParent::RecvNotifyIME(const int& aType, const int& aStatus)
+{
+#ifdef ANDROID
+    AndroidBridge::Bridge()->NotifyIME(aType, aStatus);
+    return true;
+#else
+    return false;
+#endif
+}
+
+
+bool
+ContentParent::RecvSyncMessage(const nsString& aMsg, const nsString& aJSON,
+                               nsTArray<nsString>* aRetvals)
+{
+  nsRefPtr<nsFrameMessageManager> ppm = nsFrameMessageManager::sParentProcessManager;
+  if (ppm) {
+    ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
+                        aMsg,PR_TRUE, aJSON, nsnull, aRetvals);
+  }
+  return true;
+}
+
+
+bool
+ContentParent::RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON)
+{
+  nsRefPtr<nsFrameMessageManager> ppm = nsFrameMessageManager::sParentProcessManager;
+  if (ppm) {
+    ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
+                        aMsg, PR_FALSE, aJSON, nsnull, nsnull);
+  }
+  return true;
 }
     
 } // namespace dom

@@ -66,6 +66,7 @@
 #include "nsIDOMNSEventTarget.h"
 #include "nsIDOMNavigator.h"
 #include "nsIDOMNavigatorGeolocation.h"
+#include "nsIDOMNavigatorDesktopNotification.h"
 #include "nsIDOMLocation.h"
 #include "nsIDOMWindowInternal.h"
 #include "nsIInterfaceRequestor.h"
@@ -103,6 +104,7 @@
 #include "nsIContent.h"
 #include "nsIIDBFactory.h"
 #include "nsFrameMessageManager.h"
+#include "mozilla/TimeStamp.h"
 
 #define DEFAULT_HOME_PAGE "www.mozilla.org"
 #define PREF_BROWSER_STARTUP_HOMEPAGE "browser.startup.homepage"
@@ -179,9 +181,13 @@ struct nsTimeout : PRCList
   // Non-zero interval in milliseconds if repetitive timeout
   PRUint32 mInterval;
 
-  // Nominal time (in microseconds since the epoch) to run this
-  // timeout
-  PRTime mWhen;
+  // mWhen and mTimeRemaining can't be in a union, sadly, because they
+  // have constructors.
+  // Nominal time to run this timeout.  Use only when timeouts are not
+  // suspended.
+  mozilla::TimeStamp mWhen;
+  // Remaining time to wait.  Used only when timeouts are suspended.
+  mozilla::TimeDuration mTimeRemaining;
 
   // Principal with which to execute
   nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -355,6 +361,8 @@ public:
   virtual NS_HIDDEN_(nsresult) ForceClose();
 
   virtual NS_HIDDEN_(void) SetHasOrientationEventListener();
+  virtual NS_HIDDEN_(void) MaybeUpdateTouchState();
+  virtual NS_HIDDEN_(void) UpdateTouchState();
 
   // nsIDOMViewCSS
   NS_DECL_NSIDOMVIEWCSS
@@ -375,6 +383,11 @@ public:
   {
     // Make sure this matches the casts we do in QueryInterface().
     return (nsGlobalWindow *)(nsIScriptGlobalObject *)supports;
+  }
+  static nsISupports *ToSupports(nsGlobalWindow *win)
+  {
+    // Make sure this matches the casts we do in QueryInterface().
+    return (nsISupports *)(nsIScriptGlobalObject *)win;
   }
   static nsGlobalWindow *FromWrapper(nsIXPConnectWrappedNative *wrapper)
   {
@@ -469,6 +482,15 @@ public:
             mCleanedUp);
   }
 
+  static void FirePopupBlockedEvent(nsIDOMDocument* aDoc,
+                                    nsIDOMWindow *aRequestingWindow, nsIURI *aPopupURI,
+                                    const nsAString &aPopupWindowName,
+                                    const nsAString &aPopupWindowFeatures);
+
+  virtual PRUint32 GetSerial() {
+    return mSerial;
+  }
+
 protected:
   // Object Management
   virtual ~nsGlobalWindow();
@@ -557,7 +579,8 @@ protected:
   static void ClearWindowScope(nsISupports* aWindow);
 
   // Timeout Functions
-  // Language agnostic timeout function (all args passed)
+  // Language agnostic timeout function (all args passed).
+  // |interval| is in milliseconds.
   nsresult SetTimeoutOrInterval(nsIScriptTimeoutHandler *aHandler,
                                 PRInt32 interval,
                                 PRBool aIsInterval, PRInt32 *aReturn);
@@ -778,7 +801,6 @@ protected:
   nsRefPtr<nsBarProp>           mStatusbar;
   nsRefPtr<nsBarProp>           mScrollbars;
   nsCOMPtr<nsIWeakReference>    mWindowUtils;
-  nsRefPtr<nsLocation>          mLocation;
   nsString                      mStatus;
   nsString                      mDefaultStatus;
   // index 0->language_id 1, so index MAX-1 == language_id MAX
@@ -800,6 +822,7 @@ protected:
   nsTimeout*                    mTimeoutInsertionPoint;
   PRUint32                      mTimeoutPublicIdCounter;
   PRUint32                      mTimeoutFiringDepth;
+  nsRefPtr<nsLocation>          mLocation;
 
   // Holder of the dummy java plugin, used to expose window.java and
   // window.packages.
@@ -819,9 +842,10 @@ protected:
   // the method that was used to focus mFocusedNode
   PRUint32 mFocusMethod;
 
+  PRUint32 mSerial;
+
 #ifdef DEBUG
   PRBool mSetOpenerWindowCalled;
-  PRUint32 mSerial;
   nsCOMPtr<nsIURI> mLastOpenedURI;
 #endif
 
@@ -906,7 +930,8 @@ protected:
 
 class nsNavigator : public nsIDOMNavigator,
                     public nsIDOMClientInformation,
-                    public nsIDOMNavigatorGeolocation
+                    public nsIDOMNavigatorGeolocation,
+                    public nsIDOMNavigatorDesktopNotification
 {
 public:
   nsNavigator(nsIDocShell *aDocShell);
@@ -916,6 +941,7 @@ public:
   NS_DECL_NSIDOMNAVIGATOR
   NS_DECL_NSIDOMCLIENTINFORMATION
   NS_DECL_NSIDOMNAVIGATORGEOLOCATION
+  NS_DECL_NSIDOMNAVIGATORDESKTOPNOTIFICATION
   
   void SetDocShell(nsIDocShell *aDocShell);
   nsIDocShell *GetDocShell()

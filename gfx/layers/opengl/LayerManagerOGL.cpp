@@ -76,8 +76,30 @@ LayerManagerOGL::LayerManagerOGL(nsIWidget *aWidget)
 
 LayerManagerOGL::~LayerManagerOGL()
 {
-  mRoot = nsnull;
-  CleanupResources();
+  Destroy();
+}
+
+void
+LayerManagerOGL::Destroy()
+{
+  if (!mDestroyed) {
+    if (mRoot) {
+      RootLayer()->Destroy();
+    }
+    mRoot = nsnull;
+
+    // Make a copy, since SetLayerManager will cause mImageContainers
+    // to get mutated.
+    nsTArray<ImageContainer*> imageContainers(mImageContainers);
+    for (PRUint32 i = 0; i < imageContainers.Length(); ++i) {
+      ImageContainer *c = imageContainers[i];
+      c->SetLayerManager(nsnull);
+    }
+
+    CleanupResources();
+
+    mDestroyed = PR_TRUE;
+  }
 }
 
 void
@@ -90,7 +112,7 @@ LayerManagerOGL::CleanupResources()
   if (!ctx) {
     ctx = mGLContext;
   }
-  
+
   ctx->MakeCurrent();
 
   for (unsigned int i = 0; i < mPrograms.Length(); ++i)
@@ -145,7 +167,18 @@ LayerManagerOGL::Initialize(GLContext *aExistingContext)
   } else {
     if (mGLContext)
       CleanupResources();
-    mGLContext = gl::GLContextProvider::CreateForWindow(mWidget);
+
+    mGLContext = nsnull;
+
+#ifdef XP_WIN
+    if (PR_GetEnv("MOZ_LAYERS_PREFER_EGL")) {
+      printf_stderr("Trying GL layers...\n");
+      mGLContext = gl::GLContextProviderEGL::CreateForWindow(mWidget);
+    }
+#endif
+
+    if (!mGLContext)
+      mGLContext = gl::GLContextProvider::CreateForWindow(mWidget);
 
     if (!mGLContext) {
       NS_WARNING("Failed to create LayerManagerOGL context");
@@ -157,10 +190,9 @@ LayerManagerOGL::Initialize(GLContext *aExistingContext)
 
   DEBUG_GL_ERROR_CHECK(mGLContext);
 
-  const char *extensionStr =
-    (const char*) mGLContext->fGetString(LOCAL_GL_EXTENSIONS);
-
-  mHasBGRA = (strstr(extensionStr, "EXT_bgra") != nsnull);
+  mHasBGRA =
+    mGLContext->IsExtensionSupported(gl::GLContext::EXT_texture_format_BGRA8888) ||
+    mGLContext->IsExtensionSupported(gl::GLContext::EXT_bgra);
 
   mGLContext->fBlendFuncSeparate(LOCAL_GL_ONE, LOCAL_GL_ONE_MINUS_SRC_ALPHA,
                                  LOCAL_GL_ONE, LOCAL_GL_ONE);
@@ -311,7 +343,7 @@ LayerManagerOGL::Initialize(GLContext *aExistingContext)
      * texture rectangle access inside GLSL (sampler2DRect,
      * texture2DRect).
      */
-    if (strstr(extensionStr, "ARB_texture_rectangle") == NULL)
+    if (!mGLContext->IsExtensionSupported(gl::GLContext::ARB_texture_rectangle))
       return false;
   }
 
@@ -379,6 +411,11 @@ LayerManagerOGL::BeginTransaction()
 void
 LayerManagerOGL::BeginTransactionWithTarget(gfxContext *aTarget)
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return;
+  }
+
   mTarget = aTarget;
 }
 
@@ -386,6 +423,11 @@ void
 LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
                                 void* aCallbackData)
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return;
+  }
+
   mThebesLayerCallback = aCallback;
   mThebesLayerCallbackData = aCallbackData;
 
@@ -400,6 +442,11 @@ LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
 already_AddRefed<ThebesLayer>
 LayerManagerOGL::CreateThebesLayer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<ThebesLayer> layer = new ThebesLayerOGL(this);
   return layer.forget();
 }
@@ -407,6 +454,11 @@ LayerManagerOGL::CreateThebesLayer()
 already_AddRefed<ContainerLayer>
 LayerManagerOGL::CreateContainerLayer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<ContainerLayer> layer = new ContainerLayerOGL(this);
   return layer.forget();
 }
@@ -414,13 +466,24 @@ LayerManagerOGL::CreateContainerLayer()
 already_AddRefed<ImageContainer>
 LayerManagerOGL::CreateImageContainer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<ImageContainer> container = new ImageContainerOGL(this);
+  RememberImageContainer(container);
   return container.forget();
 }
 
 already_AddRefed<ImageLayer>
 LayerManagerOGL::CreateImageLayer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<ImageLayer> layer = new ImageLayerOGL(this);
   return layer.forget();
 }
@@ -428,6 +491,11 @@ LayerManagerOGL::CreateImageLayer()
 already_AddRefed<ColorLayer>
 LayerManagerOGL::CreateColorLayer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<ColorLayer> layer = new ColorLayerOGL(this);
   return layer.forget();
 }
@@ -435,31 +503,76 @@ LayerManagerOGL::CreateColorLayer()
 already_AddRefed<CanvasLayer>
 LayerManagerOGL::CreateCanvasLayer()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   nsRefPtr<CanvasLayer> layer = new CanvasLayerOGL(this);
   return layer.forget();
 }
 
 void
-LayerManagerOGL::MakeCurrent()
+LayerManagerOGL::ForgetImageContainer(ImageContainer *aContainer)
 {
-  mGLContext->MakeCurrent();
+  NS_ASSERTION(aContainer->Manager() == this,
+               "ForgetImageContainer called on non-owned container!");
+
+  if (!mImageContainers.RemoveElement(aContainer)) {
+    NS_WARNING("ForgetImageContainer couldn't find container it was supposed to forget!");
+    return;
+  }
+}
+
+void
+LayerManagerOGL::RememberImageContainer(ImageContainer *aContainer)
+{
+  NS_ASSERTION(aContainer->Manager() == this,
+               "RememberImageContainer called on non-owned container!");
+  mImageContainers.AppendElement(aContainer);
 }
 
 LayerOGL*
 LayerManagerOGL::RootLayer() const
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return nsnull;
+  }
+
   return static_cast<LayerOGL*>(mRoot->ImplData());
 }
 
 void
 LayerManagerOGL::Render()
 {
+  if (mDestroyed) {
+    NS_WARNING("Call on destroyed layer manager");
+    return;
+  }
+
   nsIntRect rect;
-  mWidget->GetBounds(rect);
+  mWidget->GetClientBounds(rect);
+
   GLint width = rect.width;
   GLint height = rect.height;
 
-  MakeCurrent();
+  // We can't draw anything to something with no area
+  // so just return
+  if (width == 0 || height == 0)
+    return;
+
+  // If the widget size changed, we have to force a MakeCurrent
+  // to make sure that GL sees the updated widget size.
+  if (mWidgetSize.width != width ||
+      mWidgetSize.height != height)
+  {
+    MakeCurrent(PR_TRUE);
+    mWidgetSize.width = width;
+    mWidgetSize.height = height;
+  } else {
+    MakeCurrent();
+  }
 
   DEBUG_GL_ERROR_CHECK(mGLContext);
 
@@ -469,16 +582,9 @@ LayerManagerOGL::Render()
   // Default blend function implements "OVER"
   mGLContext->fBlendFuncSeparate(LOCAL_GL_ONE, LOCAL_GL_ONE_MINUS_SRC_ALPHA,
                                  LOCAL_GL_ONE, LOCAL_GL_ONE);
+  mGLContext->fEnable(LOCAL_GL_BLEND);
 
   DEBUG_GL_ERROR_CHECK(mGLContext);
-
-#if 0
-  // XXX for whatever reason, scissor is not working -- even with no
-  // cliprect set, so we go through the 0,0,w,h path, any updates
-  // after the initial render end up failing the scissor rectangle.  I
-  // have no idea why.  We disable it for now, because it's not actually
-  // helping us with anything -- we draw to a specific location in the
-  // front buffer as it is.
 
   const nsIntRect *clipRect = mRoot->GetClipRect();
 
@@ -490,11 +596,11 @@ LayerManagerOGL::Render()
   }
 
   mGLContext->fEnable(LOCAL_GL_SCISSOR_TEST);
-#else
-  mGLContext->fDisable(LOCAL_GL_SCISSOR_TEST);
-#endif
 
   DEBUG_GL_ERROR_CHECK(mGLContext);
+
+  mGLContext->fClearColor(0.0, 0.0, 0.0, 0.0);
+  mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
 
   // Render our layers.
   RootLayer()->RenderLayer(mGLContext->IsDoubleBuffered() ? 0 : mBackBufferFBO,
@@ -660,6 +766,9 @@ LayerManagerOGL::SetupBackBuffer(int aWidth, int aHeight)
                                     mBackBufferTexture,
                                     0);
 
+  NS_ASSERTION(mGLContext->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER) ==
+               LOCAL_GL_FRAMEBUFFER_COMPLETE, "Error setting up framebuffer.");
+
   mBackBufferSize.width = aWidth;
   mBackBufferSize.height = aHeight;
 }
@@ -697,11 +806,21 @@ LayerManagerOGL::CopyToTarget()
   NS_ASSERTION(imageSurface->Stride() == width * 4,
                "Image Surfaces being created with weird stride!");
 
+  PRUint32 currentPackAlignment = 0;
+  mGLContext->fGetIntegerv(LOCAL_GL_PACK_ALIGNMENT, (GLint*)&currentPackAlignment);
+  if (currentPackAlignment != 4) {
+    mGLContext->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 4);
+  }
+
   mGLContext->fReadPixels(0, 0,
                           width, height,
                           format,
                           LOCAL_GL_UNSIGNED_BYTE,
                           imageSurface->Data());
+
+  if (currentPackAlignment != 4) {
+    mGLContext->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, currentPackAlignment);
+  }
 
   if (!mHasBGRA) {
     // need to swap B and R bytes
@@ -866,6 +985,5 @@ LayerManagerOGL::CreateFBOWithTexture(int aWidth, int aHeight,
   DEBUG_GL_ERROR_CHECK(gl());
 }
 
-                                     
 } /* layers */
 } /* mozilla */

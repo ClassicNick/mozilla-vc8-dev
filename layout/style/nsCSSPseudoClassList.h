@@ -174,6 +174,10 @@ CSS_STATE_PSEUDO_CLASS(mozReadOnly, ":-moz-read-only",
                        NS_EVENT_STATE_MOZ_READONLY)
 CSS_STATE_PSEUDO_CLASS(mozReadWrite, ":-moz-read-write",
                        NS_EVENT_STATE_MOZ_READWRITE)
+CSS_STATE_PSEUDO_CLASS(mozPlaceholder, ":-moz-placeholder",
+                       NS_EVENT_STATE_MOZ_PLACEHOLDER)
+CSS_STATE_PSEUDO_CLASS(mozSubmitInvalid, ":-moz-submit-invalid",
+                       NS_EVENT_STATE_MOZ_SUBMITINVALID)
 
 #ifdef DEFINED_CSS_STATE_PSEUDO_CLASS
 #undef DEFINED_CSS_STATE_PSEUDO_CLASS

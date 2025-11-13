@@ -45,6 +45,7 @@
 #include "nsIDOMNSHTMLFrameElement.h"
 #include "nsFrameLoader.h"
 #include "nsGkAtoms.h"
+#include "nsContentCreatorFunctions.h"
 
 class nsIDOMAttr;
 class nsIDOMEventListener;
@@ -72,10 +73,10 @@ typedef nsMappedAttributeElement nsGenericHTMLElementBase;
 class nsGenericHTMLElement : public nsGenericHTMLElementBase
 {
 public:
-  nsGenericHTMLElement(nsINodeInfo *aNodeInfo)
+  nsGenericHTMLElement(already_AddRefed<nsINodeInfo> aNodeInfo)
     : nsGenericHTMLElementBase(aNodeInfo)
   {
-    NS_ASSERTION(aNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
+    NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
   }
 
@@ -128,11 +129,6 @@ public:
   // nsIDOMNSHTMLElement methods. Note that these are non-virtual
   // methods, implementations are expected to forward calls to these
   // methods.
-  // Forward to GetStyle which is protected in the super-class
-  inline nsresult GetStyle(nsIDOMCSSStyleDeclaration** aStyle)
-  {
-    return nsGenericHTMLElementBase::GetStyle(aStyle);
-  }
   nsresult GetOffsetTop(PRInt32* aOffsetTop);
   nsresult GetOffsetLeft(PRInt32* aOffsetLeft);
   nsresult GetOffsetWidth(PRInt32* aOffsetWidth);
@@ -141,13 +137,15 @@ public:
   virtual nsresult GetInnerHTML(nsAString& aInnerHTML);
   virtual nsresult SetInnerHTML(const nsAString& aInnerHTML);
   nsresult ScrollIntoView(PRBool aTop, PRUint8 optional_argc);
-  // Declare Focus(), Blur(), GetTabIndex(), SetTabIndex(), GetSpellcheck(),
-  // SetSpellcheck(), and GetDraggable() such that classes that inherit interfaces
-  // with those methods properly override them
+  // Declare Focus(), Blur(), GetTabIndex(), SetTabIndex(), GetHidden(),
+  // SetHidden(), GetSpellcheck(), SetSpellcheck(), and GetDraggable() such that
+  // classes that inherit interfaces with those methods properly override them.
   NS_IMETHOD Focus();
   NS_IMETHOD Blur();
   NS_IMETHOD GetTabIndex(PRInt32 *aTabIndex);
   NS_IMETHOD SetTabIndex(PRInt32 aTabIndex);
+  NS_IMETHOD GetHidden(PRBool* aHidden);
+  NS_IMETHOD SetHidden(PRBool aHidden);
   NS_IMETHOD GetSpellcheck(PRBool* aSpellcheck);
   NS_IMETHOD SetSpellcheck(PRBool aSpellcheck);
   NS_IMETHOD GetDraggable(PRBool* aDraggable);
@@ -273,8 +271,8 @@ public:
    * @param aResult the resulting HTMLValue
    * @return whether the value was parsed
    */
-  PRBool ParseTableCellHAlignValue(const nsAString& aString,
-                                   nsAttrValue& aResult) const;
+  static PRBool ParseTableCellHAlignValue(const nsAString& aString,
+                                          nsAttrValue& aResult);
 
   /**
    * Convert a table valign string to value (left/right/center/char/justify/
@@ -479,8 +477,9 @@ public:
    *        a connected subtree with the node, the current form will be
    *        returned.  This is needed to handle cases when HTML elements have a
    *        current form that they're not descendants of.
+   * @note This method should not be called if the element has a form attribute.
    */
-  nsHTMLFormElement* FindForm(nsHTMLFormElement* aCurrentForm = nsnull);
+  nsHTMLFormElement* FindAncestorForm(nsHTMLFormElement* aCurrentForm = nsnull);
 
   virtual void RecompileScriptEventListeners();
 
@@ -495,6 +494,32 @@ public:
    */
   NS_HIDDEN_(nsresult) GetEditor(nsIEditor** aEditor);
   NS_HIDDEN_(nsresult) GetEditorInternal(nsIEditor** aEditor);
+
+  /**
+   * Helper method for NS_IMPL_URI_ATTR macro.
+   * Gets the absolute URI value of an attribute, by resolving any relative
+   * URIs in the attribute against the baseuri of the element. If the attribute
+   * isn't a relative URI the value of the attribute is returned as is. Only
+   * works for attributes in null namespace.
+   *
+   * @param aAttr      name of attribute.
+   * @param aBaseAttr  name of base attribute.
+   * @param aResult    result value [out]
+   */
+  NS_HIDDEN_(nsresult) GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr, nsAString& aResult);
+
+  /**
+   * Helper method for NS_IMPL_ENUM_ATTR_DEFAULT_VALUE.
+   * Gets the enum value string of an attribute and using a default value if
+   * the attribute is missing or the string is an invalid enum value.
+   *
+   * @param aType     the name of the attribute.
+   * @param aDefault  the default value if the attribute is missing or invalid.
+   * @param aResult   string corresponding to the value [out].
+   */
+  NS_HIDDEN_(nsresult) GetEnumAttr(nsIAtom* aAttr,
+                                   const char* aDefault,
+                                   nsAString& aResult);
 
 protected:
   /**
@@ -657,19 +682,6 @@ protected:
   NS_HIDDEN_(nsresult) SetFloatAttr(nsIAtom* aAttr, float aValue);
 
   /**
-   * Helper method for NS_IMPL_URI_ATTR macro.
-   * Gets the absolute URI value of an attribute, by resolving any relative
-   * URIs in the attribute against the baseuri of the element. If the attribute
-   * isn't a relative URI the value of the attribute is returned as is. Only
-   * works for attributes in null namespace.
-   *
-   * @param aAttr      name of attribute.
-   * @param aBaseAttr  name of base attribute.
-   * @param aResult    result value [out]
-   */
-  NS_HIDDEN_(nsresult) GetURIAttr(nsIAtom* aAttr, nsIAtom* aBaseAttr, nsAString& aResult);
-
-  /**
    * Helper for GetURIAttr and GetHrefURIForAnchors which returns an
    * nsIURI in the out param.
    *
@@ -694,19 +706,6 @@ protected:
    * @param aResult  result value [out]
    */
   NS_HIDDEN_(nsresult) GetURIListAttr(nsIAtom* aAttr, nsAString& aResult);
-
-  /**
-   * Helper method for NS_IMPL_ENUM_ATTR_DEFAULT_VALUE.
-   * Gets the enum value string of an attribute and using a default value if
-   * the attribute is missing or the string is an invalid enum value.
-   *
-   * @param aType     the name of the attribute.
-   * @param aDefault  the default value if the attribute is missing or invalid.
-   * @param aResult   string corresponding to the value [out].
-   */
-  NS_HIDDEN_(nsresult) GetEnumAttr(nsIAtom* aAttr,
-                                   const char* aDefault,
-                                   nsAString& aResult);
 
   /**
    * Locates the nsIEditor associated with this node.  In general this is
@@ -794,7 +793,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
                                  public nsIFormControl
 {
 public:
-  nsGenericHTMLFormElement(nsINodeInfo *aNodeInfo);
+  nsGenericHTMLFormElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsGenericHTMLFormElement();
 
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
@@ -831,6 +830,8 @@ public:
 
           PRBool IsLabelableControl() const;
 
+          PRBool IsSubmittableControl() const;
+
   // nsIContent
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,
@@ -841,6 +842,11 @@ public:
   virtual PRInt32 IntrinsicState() const;
 
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+
+  /**
+   * Returns if the control can be disabled.
+   */
+  PRBool CanBeDisabled() const;
 
 protected:
   virtual nsresult BeforeSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
@@ -857,14 +863,43 @@ protected:
     return PR_FALSE;
   }
 
-  /**
-   * Returns true if the control can be disabled
-   */
-  PRBool CanBeDisabled() const;
-
   void UpdateEditableFormControlState();
 
   PRBool IsSingleLineTextControlInternal(PRBool aExcludePassword, PRInt32 mType) const;
+
+  /**
+   * This method will update the form owner, using @form or looking to a parent.
+   *
+   * @param aBindToTree Whether the element is being attached to the tree.
+   * @param aFormIdElement The element associated with the id in @form. If
+   * aBindToTree is false, aFormIdElement *must* contain the element associated
+   * with the id in @form. Otherwise, it *must* be null.
+   *
+   * @note Callers of UpdateFormOwner have to be sure the element is in a
+   * document (GetCurrentDoc() != nsnull).
+   */
+  void UpdateFormOwner(bool aBindToTree, Element* aFormIdElement);
+
+  /**
+   * Add a form id observer which will observe when the element with the id in
+   * @form will change.
+   *
+   * @return The element associated with the current id in @form (may be null).
+   */
+  Element* AddFormIdObserver();
+
+  /**
+   * Remove the form id observer.
+   */
+  void RemoveFormIdObserver();
+
+  /**
+   * This method is a a callback for IDTargetObserver (from nsIDocument).
+   * It will be called each time the element associated with the id in @form
+   * changes.
+   */
+  static PRBool FormIdUpdated(Element* aOldElement, Element* aNewElement,
+                              void* aData);
 
   // The focusability state of this form control.  eUnfocusable means that it
   // shouldn't be focused at all, eInactiveWindow means it's in an inactive
@@ -912,9 +947,11 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
                                   public nsIFrameLoaderOwner
 {
 public:
-  nsGenericHTMLFrameElement(nsINodeInfo *aNodeInfo)
+  nsGenericHTMLFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
+                            PRUint32 aFromParser)
     : nsGenericHTMLElement(aNodeInfo)
   {
+    mNetworkCreated = aFromParser == NS_FROM_PARSER_NETWORK;
   }
   virtual ~nsGenericHTMLFrameElement();
 
@@ -961,6 +998,10 @@ protected:
   nsresult GetContentDocument(nsIDOMDocument** aContentDocument);
 
   nsRefPtr<nsFrameLoader> mFrameLoader;
+  // True when the element is created by the parser
+  // using NS_FROM_PARSER_NETWORK flag.
+  // If the element is modified, it may lose the flag.
+  PRPackedBool            mNetworkCreated;
 };
 
 //----------------------------------------------------------------------
@@ -970,14 +1011,16 @@ protected:
  */
 #define NS_IMPL_NS_NEW_HTML_ELEMENT(_elementName)                            \
 nsGenericHTMLElement*                                                        \
-NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo, PRUint32 aFromParser)\
+NS_NewHTML##_elementName##Element(already_AddRefed<nsINodeInfo> aNodeInfo,   \
+                                  PRUint32 aFromParser)                      \
 {                                                                            \
   return new nsHTML##_elementName##Element(aNodeInfo);                       \
 }
 
 #define NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(_elementName)               \
 nsGenericHTMLElement*                                                        \
-NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo, PRUint32 aFromParser)\
+NS_NewHTML##_elementName##Element(already_AddRefed<nsINodeInfo> aNodeInfo,   \
+                                  PRUint32 aFromParser)                      \
 {                                                                            \
   return new nsHTML##_elementName##Element(aNodeInfo, aFromParser);          \
 }
@@ -1212,15 +1255,14 @@ NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo, PRUint32 aFromParser)\
                                      mNodeInfo->Equals(nsGkAtoms::_tag))
 
 
-#define NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_IF_TAG(_class, _tag)             \
-  if (mNodeInfo->Equals(nsGkAtoms::_tag) &&                                   \
-      (aIID.Equals(NS_GET_IID(nsIClassInfo)) ||                               \
-       aIID.Equals(NS_GET_IID(nsXPCClassInfo)))) {                            \
-    foundInterface = NS_GetDOMClassInfoInstance(eDOMClassInfo_##_class##_id); \
-    if (!foundInterface) {                                                    \
-      *aInstancePtr = nsnull;                                                 \
-      return NS_ERROR_OUT_OF_MEMORY;                                          \
-    }                                                                         \
+#define NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO_GETTER(_getter) \
+  if (aIID.Equals(NS_GET_IID(nsIClassInfo)) ||               \
+      aIID.Equals(NS_GET_IID(nsXPCClassInfo))) {             \
+    foundInterface = _getter ();                             \
+    if (!foundInterface) {                                   \
+      *aInstancePtr = nsnull;                                \
+      return NS_ERROR_OUT_OF_MEMORY;                         \
+    }                                                        \
   } else
 
 #define NS_HTML_CONTENT_INTERFACE_TABLE0(_class)                              \
@@ -1273,6 +1315,31 @@ NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo, PRUint32 aFromParser)\
     NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
   NS_OFFSET_AND_INTERFACE_TABLE_END
 
+#define NS_HTML_CONTENT_INTERFACE_TABLE7(_class, _i1, _i2, _i3, _i4, _i5,     \
+                                         _i6, _i7)                            \
+  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
+  NS_OFFSET_AND_INTERFACE_TABLE_END
+
+#define NS_HTML_CONTENT_INTERFACE_TABLE8(_class, _i1, _i2, _i3, _i4, _i5,     \
+                                         _i6, _i7, _i8)                       \
+  NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i1)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i2)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i3)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i4)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i5)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i6)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i7)                                     \
+    NS_INTERFACE_TABLE_ENTRY(_class, _i8)                                     \
+  NS_OFFSET_AND_INTERFACE_TABLE_END
+
 #define NS_HTML_CONTENT_INTERFACE_TABLE9(_class, _i1, _i2, _i3, _i4, _i5,     \
                                          _i6, _i7, _i8, _i9)                  \
   NS_HTML_CONTENT_INTERFACE_TABLE_BEGIN(_class)                               \
@@ -1305,23 +1372,23 @@ NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo, PRUint32 aFromParser)\
 
 // Element class factory methods
 
-#define NS_DECLARE_NS_NEW_HTML_ELEMENT(_elementName)              \
-nsGenericHTMLElement*                                             \
-NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo,         \
+#define NS_DECLARE_NS_NEW_HTML_ELEMENT(_elementName)                       \
+nsGenericHTMLElement*                                                      \
+NS_NewHTML##_elementName##Element(already_AddRefed<nsINodeInfo> aNodeInfo, \
                                   PRUint32 aFromParser = 0);
 
-#define NS_DECLARE_NS_NEW_HTML_ELEMENT_AS_SHARED(_elementName)    \
-inline nsGenericHTMLElement*                                      \
-NS_NewHTML##_elementName##Element(nsINodeInfo *aNodeInfo,         \
-                                  PRUint32 aFromParser = 0)       \
-{                                                                 \
-  return NS_NewHTMLSharedElement(aNodeInfo, aFromParser);         \
+#define NS_DECLARE_NS_NEW_HTML_ELEMENT_AS_SHARED(_elementName)             \
+inline nsGenericHTMLElement*                                               \
+NS_NewHTML##_elementName##Element(already_AddRefed<nsINodeInfo> aNodeInfo, \
+                                  PRUint32 aFromParser = 0)                \
+{                                                                          \
+  return NS_NewHTMLSharedElement(aNodeInfo, aFromParser);                  \
 }
 
 // Here, we expand 'NS_DECLARE_NS_NEW_HTML_ELEMENT()' by hand.
 // (Calling the macro directly (with no args) produces compiler warnings.)
 nsGenericHTMLElement*
-NS_NewHTMLElement(nsINodeInfo *aNodeInfo,
+NS_NewHTMLElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                   PRUint32 aFromParser = 0);
 
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Shared)
@@ -1338,6 +1405,7 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT(Body)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Button)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Canvas)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Mod)
+NS_DECLARE_NS_NEW_HTML_ELEMENT(DataList)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Div)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(FieldSet)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Font)

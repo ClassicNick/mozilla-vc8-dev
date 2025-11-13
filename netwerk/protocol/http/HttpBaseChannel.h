@@ -55,6 +55,8 @@
 #include "nsIProgressEventSink.h"
 #include "nsIURI.h"
 #include "nsISupportsPriority.h"
+#include "nsIApplicationCache.h"
+#include "nsIResumableChannel.h"
 
 #define DIE_WITH_ASYNC_OPEN_MSG()                                              \
   do {                                                                         \
@@ -94,6 +96,7 @@ class HttpBaseChannel : public nsHashPropertyBag
                       , public nsIUploadChannel
                       , public nsIUploadChannel2
                       , public nsISupportsPriority
+                      , public nsIResumableChannel
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -161,13 +164,22 @@ public:
   NS_IMETHOD SetCookie(const char *aCookieHeader);
   NS_IMETHOD GetForceAllowThirdPartyCookie(PRBool *aForce);
   NS_IMETHOD SetForceAllowThirdPartyCookie(PRBool aForce);
+  NS_IMETHOD GetCanceled(PRBool *aCanceled);
+  NS_IMETHOD GetChannelIsForDownload(PRBool *aChannelIsForDownload);
+  NS_IMETHOD SetChannelIsForDownload(PRBool aChannelIsForDownload);
 
   // nsISupportsPriority
   NS_IMETHOD GetPriority(PRInt32 *value);
   NS_IMETHOD AdjustPriority(PRInt32 delta);
 
+  // nsIResumableChannel
+  NS_IMETHOD GetEntityID(nsACString& aEntityID);
+
 protected:
   void AddCookiesToRequest();
+  virtual nsresult SetupReplacementChannel(nsIURI *,
+                                           nsIChannel *,
+                                           PRBool preserveMethod);
 
   // Helper function to simplify getting notification callbacks.
   template <class T>
@@ -188,6 +200,7 @@ protected:
   nsCOMPtr<nsIInterfaceRequestor>   mCallbacks;
   nsCOMPtr<nsIProgressEventSink>    mProgressSink;
   nsCOMPtr<nsIURI>                  mReferrer;
+  nsCOMPtr<nsIApplicationCache>     mApplicationCache;
 
   nsHttpRequestHead                 mRequestHead;
   nsCOMPtr<nsIInputStream>          mUploadStream;
@@ -199,18 +212,27 @@ protected:
   nsCString                         mContentCharsetHint;
   nsCString                         mUserSetCookieHeader;
 
+  // Resumable channel specific data
+  nsCString                         mEntityID;
+  PRUint64                          mStartPos;
+
   nsresult                          mStatus;
   PRUint32                          mLoadFlags;
   PRInt16                           mPriority;
   PRUint8                           mCaps;
   PRUint8                           mRedirectionLimit;
 
-  PRUint8                           mIsPending                  : 1;
-  PRUint8                           mWasOpened                  : 1;
-  PRUint8                           mResponseHeadersModified    : 1;
-  PRUint8                           mAllowPipelining            : 1;
-  PRUint8                           mForceAllowThirdPartyCookie : 1;
+  PRUint32                          mCanceled                   : 1;
+  PRUint32                          mIsPending                  : 1;
+  PRUint32                          mWasOpened                  : 1;
+  PRUint32                          mResponseHeadersModified    : 1;
+  PRUint32                          mAllowPipelining            : 1;
+  PRUint32                          mForceAllowThirdPartyCookie : 1;
   PRUint32                          mUploadStreamHasHeaders     : 1;
+  PRUint32                          mInheritApplicationCache    : 1;
+  PRUint32                          mChooseApplicationCache     : 1;
+  PRUint32                          mLoadedFromApplicationCache : 1;
+  PRUint32                          mChannelIsForDownload       : 1;
 };
 
 

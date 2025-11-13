@@ -130,9 +130,20 @@ public:
                               nsIAppShell      *aAppShell,
                               nsIToolkit       *aToolkit,
                               nsWidgetInitData *aInitData);
+
+    virtual already_AddRefed<nsIWidget>
+    CreateChild(const nsIntRect&  aRect,
+                EVENT_CALLBACK    aHandleEventFunction,
+                nsIDeviceContext* aContext,
+                nsIAppShell*      aAppShell = nsnull,
+                nsIToolkit*       aToolkit = nsnull,
+                nsWidgetInitData* aInitData = nsnull,
+                PRBool            aForceUseIWidgetParent = PR_TRUE);
+
     NS_IMETHOD         Destroy(void);
     NS_IMETHOD         SetParent(nsIWidget* aNewParent);
     virtual nsIWidget *GetParent(void);
+    virtual float      GetDPI();
     NS_IMETHOD         Show(PRBool aState);
     NS_IMETHOD         SetModal(PRBool aModal);
     NS_IMETHOD         IsVisible(PRBool & aState);
@@ -168,9 +179,6 @@ public:
     NS_IMETHOD         Invalidate(const nsIntRect &aRect,
                                   PRBool        aIsSynchronous);
     NS_IMETHOD         Update();
-    void               Scroll(const nsIntPoint&,
-                              const nsTArray<nsIntRect>&,
-                              const nsTArray<nsIWidget::Configuration>&);
 
     virtual void*      GetNativeData(PRUint32 aDataType);
     NS_IMETHOD         SetTitle(const nsAString& aTitle);
@@ -205,6 +213,8 @@ public:
 
     void DispatchActivateEvent(void);
     void DispatchDeactivateEvent(void);
+    void DispatchActivateEventOnTopLevelWindow(void);
+    void DispatchDeactivateEventOnTopLevelWindow(void);
     void DispatchResizeEvent(nsIntRect &aRect, nsEventStatus &aStatus);
 
     nsEventStatus DispatchEvent(nsGUIEvent *aEvent) {
@@ -305,12 +315,9 @@ protected:
 
     void               ThemeChanged(void);
 
-    virtual LayerManager* GetLayerManager();
     gfxASurface*       GetThebesSurface();
 
 private:
-    void               GetToplevelWidget(MozQWidget **aWidget);
-    nsWindow*          GetTopLevelNsWindow();
     void*              SetupPluginPort(void);
     nsresult           SetWindowIconList(const nsTArray<nsCString> &aIconList);
     void               SetDefaultIcon(void);

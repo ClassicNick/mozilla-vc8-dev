@@ -77,12 +77,19 @@ public:
     virtual already_AddRefed<gfxASurface>
     CreateSimilarSurface(gfxContentType aType, const gfxIntSize& aSize);
 
-    const gfxIntSize& GetSize() { return mSize; }
+    virtual TextQuality GetTextQualityInTransparentSurfaces()
+    {
+      return TEXT_QUALITY_OK_OVER_OPAQUE_PIXELS;
+    }
+
+    virtual const gfxIntSize GetSize() const { return mSize; }
 
     Display* XDisplay() { return mDisplay; }
     Drawable XDrawable() { return mDrawable; }
+    XRenderPictFormat* XRenderFormat();
 
     static int DepthOfVisual(const Screen* screen, const Visual* visual);
+    static Visual* FindVisual(Screen* screen, gfxImageFormat format);
     static XRenderPictFormat *FindRenderFormat(Display *dpy, gfxImageFormat format);
 
     // take ownership of a passed-in Pixmap, calling XFreePixmap on it

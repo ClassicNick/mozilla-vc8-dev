@@ -44,15 +44,6 @@ var StarUI = {
   uri: null,
   _batching: false,
 
-  // nsISupports
-  QueryInterface: function SU_QueryInterface(aIID) {
-    if (aIID.equals(Ci.nsIDOMEventListener) ||
-        aIID.equals(Ci.nsISupports))
-      return this;
-
-    throw Cr.NS_NOINTERFACE;
-  },
-
   _element: function(aID) {
     return document.getElementById(aID);
   },
@@ -69,30 +60,33 @@ var StarUI = {
     return this.panel = element;
   },
 
-  // list of command elements (by id) to disable when the panel is opened
-  _blockedCommands: ["cmd_close", "cmd_closeWindow"],
+  // Array of command elements to disable when the panel is opened.
+  get _blockedCommands() {
+    delete this._blockedCommands;
+    return this._blockedCommands =
+      ["cmd_close", "cmd_closeWindow"].map(function (id) this._element(id), this);
+  },
+
   _blockCommands: function SU__blockCommands() {
-    for each(var key in this._blockedCommands) {
-      var elt = this._element(key);
+    this._blockedCommands.forEach(function (elt) {
       // make sure not to permanently disable this item (see bug 409155)
       if (elt.hasAttribute("wasDisabled"))
-        continue;
-      if (elt.getAttribute("disabled") == "true")
+        return;
+      if (elt.getAttribute("disabled") == "true") {
         elt.setAttribute("wasDisabled", "true");
-      else {
+      } else {
         elt.setAttribute("wasDisabled", "false");
         elt.setAttribute("disabled", "true");
       }
-    }
+    });
   },
 
   _restoreCommandsState: function SU__restoreCommandsState() {
-    for each(var key in this._blockedCommands) {
-      var elt = this._element(key);
+    this._blockedCommands.forEach(function (elt) {
       if (elt.getAttribute("wasDisabled") != "true")
         elt.removeAttribute("disabled");
       elt.removeAttribute("wasDisabled");
-    }
+    });
   },
 
   // nsIDOMEventListener
@@ -486,9 +480,9 @@ var PlacesCommandHook = {
     var tabList = [];
     var seenURIs = {};
 
-    var browsers = gBrowser.browsers;
-    for (var i = 0; i < browsers.length; ++i) {
-      let uri = browsers[i].currentURI;
+    let tabs = gBrowser.visibleTabs;
+    for (let i = 0; i < tabs.length; ++i) {
+      let uri = tabs[i].linkedBrowser.currentURI;
 
       // skip redundant entries
       if (uri.spec in seenURIs)
@@ -582,13 +576,13 @@ HistoryMenu.prototype = {
 
   toggleRecentlyClosedTabs: function HM_toggleRecentlyClosedTabs() {
     // enable/disable the Recently Closed Tabs sub menu
-    var undoPopup = document.getElementById("historyUndoPopup");
+    var undoMenu = this._rootElt.getElementsByClassName("recentlyClosedTabsMenu")[0];
 
     // no restorable tabs, so disable menu
     if (this._ss.getClosedTabCount(window) == 0)
-      undoPopup.parentNode.setAttribute("disabled", true);
+      undoMenu.setAttribute("disabled", true);
     else
-      undoPopup.parentNode.removeAttribute("disabled");
+      undoMenu.removeAttribute("disabled");
   },
 
   /**
@@ -609,7 +603,8 @@ HistoryMenu.prototype = {
    * Populate when the history menu is opened
    */
   populateUndoSubmenu: function PHM_populateUndoSubmenu() {
-    var undoPopup = document.getElementById("historyUndoPopup");
+    var undoMenu = this._rootElt.getElementsByClassName("recentlyClosedTabsMenu")[0];
+    var undoPopup = undoMenu.firstChild;
 
     // remove existing menu items
     while (undoPopup.hasChildNodes())
@@ -617,12 +612,12 @@ HistoryMenu.prototype = {
 
     // no restorable tabs, so make sure menu is disabled, and return
     if (this._ss.getClosedTabCount(window) == 0) {
-      undoPopup.parentNode.setAttribute("disabled", true);
+      undoMenu.setAttribute("disabled", true);
       return;
     }
 
     // enable menu
-    undoPopup.parentNode.removeAttribute("disabled");
+    undoMenu.removeAttribute("disabled");
 
     // populate menu
     var undoItems = eval("(" + this._ss.getClosedTabData(window) + ")");
@@ -659,7 +654,6 @@ HistoryMenu.prototype = {
     m = undoPopup.appendChild(document.createElement("menuitem"));
     m.id = "menu_restoreAllTabs";
     m.setAttribute("label", strings.getString("menuRestoreAllTabs.label"));
-    m.setAttribute("accesskey", strings.getString("menuRestoreAllTabs.accesskey"));
     m.addEventListener("command", function() {
       for (var i = 0; i < undoItems.length; i++)
         undoCloseTab();
@@ -668,20 +662,21 @@ HistoryMenu.prototype = {
 
   toggleRecentlyClosedWindows: function PHM_toggleRecentlyClosedWindows() {
     // enable/disable the Recently Closed Windows sub menu
-    let undoPopup = document.getElementById("historyUndoWindowPopup");
+    var undoMenu = this._rootElt.getElementsByClassName("recentlyClosedWindowsMenu")[0];
 
     // no restorable windows, so disable menu
     if (this._ss.getClosedWindowCount() == 0)
-      undoPopup.parentNode.setAttribute("disabled", true);
+      undoMenu.setAttribute("disabled", true);
     else
-      undoPopup.parentNode.removeAttribute("disabled");
+      undoMenu.removeAttribute("disabled");
   },
 
   /**
    * Populate when the history menu is opened
    */
   populateUndoWindowSubmenu: function PHM_populateUndoWindowSubmenu() {
-    let undoPopup = document.getElementById("historyUndoWindowPopup");
+    let undoMenu = this._rootElt.getElementsByClassName("recentlyClosedWindowsMenu")[0];
+    let undoPopup = undoMenu.firstChild;
     let menuLabelString = gNavigatorBundle.getString("menuUndoCloseWindowLabel");
     let menuLabelStringSingleTab =
       gNavigatorBundle.getString("menuUndoCloseWindowSingleTabLabel");
@@ -692,12 +687,12 @@ HistoryMenu.prototype = {
 
     // no restorable windows, so make sure menu is disabled, and return
     if (this._ss.getClosedWindowCount() == 0) {
-      undoPopup.parentNode.setAttribute("disabled", true);
+      undoMenu.setAttribute("disabled", true);
       return;
     }
 
     // enable menu
-    undoPopup.parentNode.removeAttribute("disabled");
+    undoMenu.removeAttribute("disabled");
 
     // populate menu
     let undoItems = JSON.parse(this._ss.getClosedWindowData());
@@ -737,9 +732,39 @@ HistoryMenu.prototype = {
     let m = undoPopup.appendChild(document.createElement("menuitem"));
     m.id = "menu_restoreAllWindows";
     m.setAttribute("label", gNavigatorBundle.getString("menuRestoreAllWindows.label"));
-    m.setAttribute("accesskey", gNavigatorBundle.getString("menuRestoreAllWindows.accesskey"));
     m.setAttribute("oncommand",
       "for (var i = 0; i < " + undoItems.length + "; i++) undoCloseWindow();");
+  },
+
+  toggleTabsFromOtherComputers: function PHM_toggleTabsFromOtherComputers() {
+    // This is a no-op if MOZ_SERVICES_SYNC isn't defined
+#ifdef MOZ_SERVICES_SYNC
+    // enable/disable the Tabs From Other Computers menu
+    let menuitem = document.getElementById("sync-tabs-menuitem");
+
+    // If Sync isn't configured yet, then don't show the menuitem.
+    if (Weave.Status.checkSetup() == Weave.CLIENT_NOT_CONFIGURED ||
+        Weave.Svc.Prefs.get("firstSync", "") == "notReady") {
+      menuitem.setAttribute("hidden", true);
+      return;
+    }
+
+    // The tabs engine might never be inited (if services.sync.registerEngines
+    // is modified), so make sure we avoid undefined errors.
+    let enabled = Weave.Service.isLoggedIn && Weave.Engines.get("tabs") &&
+                  Weave.Engines.get("tabs").enabled;
+    menuitem.setAttribute("disabled", !enabled);
+    menuitem.setAttribute("hidden", false);
+#endif
+  },
+
+  toggleRestoreLastSession: function PHM_toggleRestoreLastSession() {
+    let restoreItem = this._rootElt.getElementsByClassName("restoreLastSession")[0];
+
+    if (this._ss.canRestoreLastSession)
+      restoreItem.removeAttribute("disabled");
+    else
+      restoreItem.setAttribute("disabled", true);
   },
 
   _onPopupShowing: function HM__onPopupShowing(aEvent) {
@@ -751,6 +776,8 @@ HistoryMenu.prototype = {
 
     this.toggleRecentlyClosedTabs();
     this.toggleRecentlyClosedWindows();
+    this.toggleTabsFromOtherComputers();
+    this.toggleRestoreLastSession();
   },
 
   _onCommand: function HM__onCommand(aEvent) {

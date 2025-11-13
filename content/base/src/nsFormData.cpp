@@ -36,13 +36,12 @@
 
 #include "nsFormData.h"
 #include "nsIVariant.h"
-#include "nsIDOMFileInternal.h"
 #include "nsIInputStream.h"
-#include "nsIFile.h"
+#include "nsIDOMFile.h"
 #include "nsContentUtils.h"
 
 nsFormData::nsFormData()
-  : nsFormSubmission(NS_LITERAL_CSTRING("UTF-8"))
+  : nsFormSubmission(NS_LITERAL_CSTRING("UTF-8"), nsnull)
 {
 }
 
@@ -84,7 +83,7 @@ nsFormData::AddNameValuePair(const nsAString& aName,
 
 nsresult
 nsFormData::AddNameFilePair(const nsAString& aName,
-                            nsIFile* aFile)
+                            nsIDOMFile* aFile)
 {
   FormDataTuple* data = mFormData.AppendElement();
   data->name = aName;
@@ -113,13 +112,9 @@ nsFormData::Append(const nsAString& aName, nsIVariant* aValue)
 
     nsMemory::Free(iid);
 
-    nsCOMPtr<nsIDOMFileInternal> domFile = do_QueryInterface(supports);
+    nsCOMPtr<nsIDOMFile> domFile = do_QueryInterface(supports);
     if (domFile) {
-      nsCOMPtr<nsIFile> file;
-      rv = domFile->GetInternalFile(getter_AddRefs(file));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      return AddNameFilePair(aName, file);
+      return AddNameFilePair(aName, domFile);
     }
   }
 
@@ -141,7 +136,7 @@ NS_IMETHODIMP
 nsFormData::GetSendInfo(nsIInputStream** aBody, nsACString& aContentType,
                         nsACString& aCharset)
 {
-  nsFSMultipartFormData fs(NS_LITERAL_CSTRING("UTF-8"));
+  nsFSMultipartFormData fs(NS_LITERAL_CSTRING("UTF-8"), nsnull);
   
   for (PRUint32 i = 0; i < mFormData.Length(); ++i) {
     if (mFormData[i].valueIsFile) {

@@ -69,6 +69,7 @@
 #include "nsIPrefBranch2.h"
 #include "mozilla/AutoRestore.h"
 #include "nsINode.h"
+#include "nsHashtable.h"
 
 #include "jsapi.h"
 
@@ -110,8 +111,8 @@ class nsIScriptContext;
 class nsIRunnable;
 class nsIInterfaceRequestor;
 template<class E> class nsCOMArray;
+template<class K, class V> class nsRefPtrHashtable;
 struct JSRuntime;
-class nsICaseConversion;
 class nsIUGenCategory;
 class nsIWidget;
 class nsIDragSession;
@@ -120,6 +121,7 @@ class nsPIDOMEventTarget;
 class nsIPresShell;
 class nsIXPConnectJSObjectHolder;
 class nsPrefOldCallback;
+class nsPrefObserverHashKey;
 #ifdef MOZ_XTF
 class nsIXTFService;
 #endif
@@ -131,6 +133,7 @@ class nsIObserver;
 class nsPresContext;
 class nsIChannel;
 struct nsIntMargin;
+class nsPIDOMWindow;
 
 #ifndef have_PrefChangedFunc_typedef
 typedef int (*PR_CALLBACK PrefChangedFunc)(const char *, void *);
@@ -158,6 +161,7 @@ enum EventNameType {
   EventNameType_XUL = 0x0002,
   EventNameType_SVGGraphic = 0x0004, // svg graphic elements
   EventNameType_SVGSVG = 0x0008, // the svg element
+  EventNameType_SMIL = 0x0016, // smil elements
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
@@ -382,6 +386,7 @@ public:
   static const nsDependentSubstring TrimCharsInSet(const char* aSet,
                                                    const nsAString& aValue);
 
+  template<PRBool IsWhitespace(PRUnichar)>
   static const nsDependentSubstring TrimWhitespace(const nsAString& aStr,
                                                    PRBool aTrimTrailing = PR_TRUE);
 
@@ -439,6 +444,12 @@ public:
    * @param aDocShell The docshell or null if no JS context
    */
   static nsIDocShell *GetDocShellFromCaller();
+
+  /**
+   * Get the window through the JS context that's currently on the stack.
+   * If there's no JS context currently on the stack, returns null.
+   */
+  static nsPIDOMWindow *GetWindowFromCaller();
 
   /**
    * The two GetDocumentFrom* functions below allow a caller to get at a
@@ -606,6 +617,11 @@ public:
     return sPrefBranch;
   }
 
+  // Get a permission-manager setting for the given uri and type.
+  // If the pref doesn't exist or if it isn't ALLOW_ACTION, PR_FALSE is
+  // returned, otherwise PR_TRUE is returned.
+  static PRBool IsSitePermAllow(nsIURI* aURI, const char* aType);
+
   static nsILineBreaker* LineBreaker()
   {
     return sLineBreaker;
@@ -614,11 +630,6 @@ public:
   static nsIWordBreaker* WordBreaker()
   {
     return sWordBreaker;
-  }
-  
-  static nsICaseConversion* GetCaseConv()
-  {
-    return sCaseConv;
   }
 
   static nsIUGenCategory* GetGenCat()
@@ -1041,6 +1052,11 @@ public:
   /**
    * Creates a DocumentFragment from text using a context node to resolve
    * namespaces.
+   *
+   * Note! In the HTML case with the HTML5 parser enabled, this is only called
+   * from Range.createContextualFragment() and the implementation here is
+   * quirky accordingly (html context node behaves like a body context node).
+   * If you don't want that quirky behavior, don't use this method as-is!
    *
    * @param aContextNode the node which is used to resolve namespaces
    * @param aFragment the string which is parsed to a DocumentFragment
@@ -1499,12 +1515,14 @@ public:
   /**
    * Convert ASCII A-Z to a-z.
    */
+  static void ASCIIToLower(nsAString& aStr);
   static void ASCIIToLower(const nsAString& aSource, nsAString& aDest);
 
   /**
    * Convert ASCII a-z to A-Z.
    */
   static void ASCIIToUpper(nsAString& aStr);
+  static void ASCIIToUpper(const nsAString& aSource, nsAString& aDest);
 
   static nsIInterfaceRequestor* GetSameOriginChecker();
 
@@ -1573,17 +1591,33 @@ public:
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
                              nsIXPConnectJSObjectHolder** aHolder = nsnull,
-                             PRBool aAllowWrapping = PR_FALSE);
+                             PRBool aAllowWrapping = PR_FALSE)
+  {
+    return WrapNative(cx, scope, native, nsnull, aIID, vp, aHolder,
+                      aAllowWrapping);
+  }
 
   // Same as the WrapNative above, but use this one if aIID is nsISupports' IID.
   static nsresult WrapNative(JSContext *cx, JSObject *scope,
-                             nsISupports *native,  jsval *vp,
+                             nsISupports *native, jsval *vp,
                              // If non-null aHolder will keep the jsval alive
                              // while there's a ref to it
                              nsIXPConnectJSObjectHolder** aHolder = nsnull,
                              PRBool aAllowWrapping = PR_FALSE)
   {
-    return WrapNative(cx, scope, native, nsnull, vp, aHolder, aAllowWrapping);
+    return WrapNative(cx, scope, native, nsnull, nsnull, vp, aHolder,
+                      aAllowWrapping);
+  }
+  static nsresult WrapNative(JSContext *cx, JSObject *scope,
+                             nsISupports *native, nsWrapperCache *cache,
+                             jsval *vp,
+                             // If non-null aHolder will keep the jsval alive
+                             // while there's a ref to it
+                             nsIXPConnectJSObjectHolder** aHolder = nsnull,
+                             PRBool aAllowWrapping = PR_FALSE)
+  {
+    return WrapNative(cx, scope, native, cache, nsnull, vp, aHolder,
+                      aAllowWrapping);
   }
 
   static void StripNullChars(const nsAString& aInStr, nsAString& aOutStr);
@@ -1660,6 +1694,23 @@ public:
    */
   static PRBool IsFocusedContent(nsIContent *aContent);
 
+#ifdef MOZ_IPC
+#ifdef ANDROID
+  static void SetActiveFrameLoader(nsFrameLoader *aFrameLoader)
+  {
+    sActiveFrameLoader = aFrameLoader;
+  }
+
+  static void ClearActiveFrameLoader(const nsFrameLoader *aFrameLoader)
+  {
+    if (sActiveFrameLoader == aFrameLoader)
+      sActiveFrameLoader = nsnull;
+  }
+
+  static already_AddRefed<nsFrameLoader> GetActiveFrameLoader();
+#endif
+#endif
+
 private:
 
   static PRBool InitializeEventTable();
@@ -1673,6 +1724,12 @@ private:
 
   static PRBool CanCallerAccess(nsIPrincipal* aSubjectPrincipal,
                                 nsIPrincipal* aPrincipal);
+
+  static nsresult WrapNative(JSContext *cx, JSObject *scope,
+                             nsISupports *native, nsWrapperCache *cache,
+                             const nsIID* aIID, jsval *vp,
+                             nsIXPConnectJSObjectHolder** aHolder,
+                             PRBool aAllowWrapping);
 
   static nsIDOMScriptObjectFactory *sDOMScriptObjectFactory;
 
@@ -1694,7 +1751,8 @@ private:
 
   static nsIPrefBranch2 *sPrefBranch;
   // For old compatibility of RegisterPrefCallback
-  static nsCOMArray<nsPrefOldCallback> *sPrefCallbackList;
+  static nsRefPtrHashtable<nsPrefObserverHashKey, nsPrefOldCallback>
+    *sPrefCallbackTable;
 
   static bool sImgLoaderInitialized;
   static void InitImgLoader();
@@ -1719,7 +1777,6 @@ private:
 
   static nsILineBreaker* sLineBreaker;
   static nsIWordBreaker* sWordBreaker;
-  static nsICaseConversion* sCaseConv;
   static nsIUGenCategory* sGenCat;
 
   // Holds pointers to nsISupports* that should be released at shutdown
@@ -1743,6 +1800,12 @@ private:
   static nsIInterfaceRequestor* sSameOriginChecker;
 
   static PRBool sIsHandlingKeyBoardEvent;
+
+#ifdef MOZ_IPC
+#ifdef ANDROID
+  static nsFrameLoader *sActiveFrameLoader;
+#endif
+#endif
 };
 
 #define NS_HOLD_JS_OBJECTS(obj, clazz)                                         \
@@ -1808,7 +1871,7 @@ public:
 
   ~nsAutoGCRoot() {
     if (NS_SUCCEEDED(mResult)) {
-      RemoveJSGCRoot(mPtr, mRootType);
+      RemoveJSGCRoot((jsval *)mPtr, mRootType);
     }
   }
 

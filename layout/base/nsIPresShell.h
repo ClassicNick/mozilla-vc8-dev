@@ -66,7 +66,6 @@
 #include "mozFlushType.h"
 #include "nsWeakReference.h"
 #include <stdio.h> // for FILE definition
-#include "nsRefreshDriver.h"
 #include "nsChangeHint.h"
 
 class nsIContent;
@@ -75,6 +74,7 @@ class nsIFrame;
 class nsPresContext;
 class nsStyleSet;
 class nsIViewManager;
+class nsIView;
 class nsIRenderingContext;
 class nsIPageSequenceFrame;
 class nsAString;
@@ -101,6 +101,8 @@ struct nsPoint;
 struct nsIntPoint;
 struct nsRect;
 struct nsIntRect;
+class nsRefreshDriver;
+class nsARefreshObserver;
 
 typedef short SelectionType;
 typedef PRUint64 nsFrameState;
@@ -109,6 +111,10 @@ namespace mozilla {
 namespace dom {
 class Element;
 } // namespace dom
+
+namespace layers{
+class LayerManager;
+} // namespace layers
 } // namespace mozilla
 
 // Flags to pass to SetCapturingContent
@@ -133,8 +139,8 @@ typedef struct CapturingContentInfo {
 } CapturingContentInfo;
 
 #define NS_IPRESSHELL_IID     \
-  { 0x318f7b6c, 0x56be, 0x4256, \
-    { 0xa3, 0x09, 0xff, 0xdc, 0xde, 0x04, 0x63, 0xf6 } }
+  { 0x28d10cd2, 0x90a9, 0x4416, \
+    { 0x8e, 0x88, 0x2a, 0xe3, 0x3d, 0xb1, 0x73, 0xd4 } }
 
 // Constants for ScrollContentIntoView() function
 #define NS_PRESSHELL_SCROLL_TOP      0
@@ -187,6 +193,9 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIPresShell_base, NS_IPRESSHELL_IID)
 
 class nsIPresShell : public nsIPresShell_base
 {
+protected:
+  typedef mozilla::layers::LayerManager LayerManager;
+
 public:
   virtual NS_HIDDEN_(nsresult) Init(nsIDocument* aDocument,
                                    nsPresContext* aPresContext,
@@ -470,11 +479,11 @@ public:
   virtual NS_HIDDEN_(void) ClearFrameRefs(nsIFrame* aFrame) = 0;
 
   /**
-   * Given a frame, create a rendering context suitable for use with
-   * the frame.
+   * Get a reference rendering context. This is a context that should not
+   * be rendered to, but is suitable for measuring text and performing
+   * other non-rendering operations.
    */
-  virtual NS_HIDDEN_(nsresult) CreateRenderingContext(nsIFrame *aFrame,
-                                                      nsIRenderingContext** aContext) = 0;
+  virtual already_AddRefed<nsIRenderingContext> GetReferenceRenderingContext() = 0;
 
   /**
    * Informs the pres shell that the document is now at the anchor with
@@ -829,6 +838,9 @@ public:
    * instead of rendering using the appropriate scaling). It may also
    * slow everything down if the area rendered does not correspond to the
    * normal visible area of the window.
+   *   set RENDER_ASYNC_DECODE_IMAGES to avoid having images synchronously
+   * decoded during rendering.
+   * (by default images decode synchronously with RenderDocument)
    * @param aBackgroundColor a background color to render onto
    * @param aRenderedContext the gfxContext to render to. We render so that
    * one CSS pixel in the source document is rendered to one unit in the current
@@ -838,7 +850,8 @@ public:
     RENDER_IS_UNTRUSTED = 0x01,
     RENDER_IGNORE_VIEWPORT_SCROLLING = 0x02,
     RENDER_CARET = 0x04,
-    RENDER_USE_WIDGET_LAYERS = 0x08
+    RENDER_USE_WIDGET_LAYERS = 0x08,
+    RENDER_ASYNC_DECODE_IMAGES = 0x10
   };
   virtual NS_HIDDEN_(nsresult) RenderDocument(const nsRect& aRect, PRUint32 aFlags,
                                               nscolor aBackgroundColor,
@@ -941,6 +954,23 @@ public:
                                                 nscolor aBackstopColor = NS_RGBA(0,0,0,0),
                                                 PRBool aForceDraw = PR_FALSE) = 0;
 
+  /**
+   * Add a solid color item to the bottom of aList with frame aFrame and
+   * bounds aBounds representing the dark grey background behind the page of a
+   * print preview presentation.
+   */
+  virtual nsresult AddPrintPreviewBackgroundItem(nsDisplayListBuilder& aBuilder,
+                                                 nsDisplayList& aList,
+                                                 nsIFrame* aFrame,
+                                                 const nsRect& aBounds) = 0;
+
+  /**
+   * Computes the backstop color for the view: transparent if in a transparent
+   * widget, otherwise the PresContext default background color. This color is
+   * only visible if the contents of the view as a whole are translucent.
+   */
+  virtual nscolor ComputeBackstopColor(nsIView* aDisplayRoot) = 0;
+
   void ObserveNativeAnonMutationsForPrint(PRBool aObserve)
   {
     mObservesMutationsForPrint = aObserve;
@@ -948,6 +978,13 @@ public:
   PRBool ObservesNativeAnonMutationsForPrint()
   {
     return mObservesMutationsForPrint;
+  }
+
+  virtual nsresult SetIsActive(PRBool aIsActive) = 0;
+
+  PRBool IsActive()
+  {
+    return mIsActive;
   }
 
   // mouse capturing
@@ -1011,6 +1048,19 @@ public:
   virtual already_AddRefed<nsPIDOMWindow> GetRootWindow() = 0;
 
   /**
+   * Get the layer manager for the widget of the root view, if it has
+   * one.
+   */
+  virtual LayerManager* GetLayerManager() = 0;
+
+  /**
+   * Dispatch a mouse move event based on the most recent mouse position if
+   * this PresShell is visible. This is used when the contents of the page
+   * moved (aFromScroll is false) or scrolled (aFromScroll is true).
+   */
+  virtual void SynthesizeMouseMove(PRBool aFromScroll) = 0;
+
+  /**
    * Refresh observer management.
    */
 protected:
@@ -1048,6 +1098,8 @@ public:
   static void ReleaseStatics();
 
 protected:
+  friend class nsRefreshDriver;
+
   // IMPORTANT: The ownership implicit in the following member variables
   // has been explicitly checked.  If you add any members to this class,
   // please make the ownership explicit (pinkerton, scc).
@@ -1057,7 +1109,7 @@ protected:
   nsIDocument*              mDocument;      // [STRONG]
   nsPresContext*            mPresContext;   // [STRONG]
   nsStyleSet*               mStyleSet;      // [OWNS]
-  nsCSSFrameConstructor*    mFrameConstructor; // [STRONG]
+  nsCSSFrameConstructor*    mFrameConstructor; // [OWNS]
   nsIViewManager*           mViewManager;   // [WEAK] docViewer owns it so I don't have to
   nsFrameSelection*         mSelection;
   nsFrameManagerBase        mFrameManager;  // [OWNS]
@@ -1079,6 +1131,8 @@ protected:
   PRPackedBool              mIsReflowing;
   PRPackedBool              mPaintingSuppressed;  // For all documents we initially lock down painting.
   PRPackedBool              mIsThemeSupportDisabled;  // Whether or not form controls should use nsITheme in this shell.
+  PRPackedBool              mIsActive;
+  PRPackedBool              mFrozen;
 
 #ifdef ACCESSIBILITY
   /**
@@ -1094,6 +1148,13 @@ protected:
 
   PRPackedBool              mObservesMutationsForPrint;
 
+  PRPackedBool              mReflowScheduled; // If true, we have a reflow
+                                              // scheduled. Guaranteed to be
+                                              // false if mReflowContinueTimer
+                                              // is non-null.
+
+  PRPackedBool              mSuppressInterruptibleReflows;
+
   // A list of weak frames. This is a pointer to the last item in the list.
   nsWeakFrame*              mWeakFrames;
 
@@ -1103,6 +1164,8 @@ protected:
   // Live pres shells, for memory and other tracking
   typedef nsPtrHashKey<nsIPresShell> PresShellPtrKey;
   static nsTHashtable<PresShellPtrKey> *sLiveShells;
+
+  static nsIContent* gKeyDownTarget;
 };
 
 /**

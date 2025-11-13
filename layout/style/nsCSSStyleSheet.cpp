@@ -249,6 +249,15 @@ nsMediaExpression::Matches(nsPresContext *aPresContext,
         cmp = DoCompare(actual.GetIntValue(), required.GetIntValue());
       }
       break;
+    case nsMediaFeature::eFloat:
+      {
+        NS_ASSERTION(actual.GetUnit() == eCSSUnit_Number,
+                     "bad actual value");
+        NS_ASSERTION(required.GetUnit() == eCSSUnit_Number,
+                     "bad required value");
+        cmp = DoCompare(actual.GetFloatValue(), required.GetFloatValue());
+      }
+      break;
     case nsMediaFeature::eIntRatio:
       {
         NS_ASSERTION(actual.GetUnit() == eCSSUnit_Array &&
@@ -412,8 +421,7 @@ nsMediaQuery::AppendToString(nsAString& aString) const
           NS_ASSERTION(expr.mValue.IsLengthUnit(), "bad unit");
           // Use 'width' as a property that takes length values
           // written in the normal way.
-          css::Declaration::AppendCSSValueToString(eCSSProperty_width,
-                                                   expr.mValue, aString);
+          expr.mValue.AppendToString(eCSSProperty_width, aString);
           break;
         case nsMediaFeature::eInteger:
         case nsMediaFeature::eBoolInteger:
@@ -421,8 +429,16 @@ nsMediaQuery::AppendToString(nsAString& aString) const
                        "bad unit");
           // Use 'z-index' as a property that takes integer values
           // written without anything extra.
-          css::Declaration::AppendCSSValueToString(eCSSProperty_z_index,
-                                                   expr.mValue, aString);
+          expr.mValue.AppendToString(eCSSProperty_z_index, aString);
+          break;
+        case nsMediaFeature::eFloat:
+          {
+            NS_ASSERTION(expr.mValue.GetUnit() == eCSSUnit_Number,
+                         "bad unit");
+            // Use 'line-height' as a property that takes float values
+            // written in the normal way.
+            expr.mValue.AppendToString(eCSSProperty_line_height, aString);
+          }
           break;
         case nsMediaFeature::eIntRatio:
           {
@@ -434,11 +450,9 @@ nsMediaQuery::AppendToString(nsAString& aString) const
                          "bad unit");
             NS_ASSERTION(array->Item(1).GetUnit() == eCSSUnit_Integer,
                          "bad unit");
-            css::Declaration::AppendCSSValueToString(eCSSProperty_z_index,
-                                                     array->Item(0), aString);
+            array->Item(0).AppendToString(eCSSProperty_z_index, aString);
             aString.AppendLiteral("/");
-            css::Declaration::AppendCSSValueToString(eCSSProperty_z_index,
-                                                     array->Item(1), aString);
+            array->Item(1).AppendToString(eCSSProperty_z_index, aString);
           }
           break;
         case nsMediaFeature::eResolution:
@@ -793,12 +807,8 @@ static PRBool SetStyleSheetReference(nsICSSRule* aRule, void* aSheet)
 static PRBool
 CloneRuleInto(nsICSSRule* aRule, void* aArray)
 {
-  nsICSSRule* clone = nsnull;
-  aRule->Clone(clone);
-  if (clone) {
-    static_cast<nsCOMArray<nsICSSRule>*>(aArray)->AppendObject(clone);
-    NS_RELEASE(clone);
-  }
+  nsCOMPtr<nsICSSRule> clone = aRule->Clone();
+  static_cast<nsCOMArray<nsICSSRule>*>(aArray)->AppendObject(clone);
   return PR_TRUE;
 }
 

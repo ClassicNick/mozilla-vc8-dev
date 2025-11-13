@@ -41,7 +41,7 @@
 
 #include "nsDOMAttribute.h"
 #include "nsGenericElement.h"
-#include "nsIContent.h"
+#include "mozilla/dom/Element.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsINameSpaceManager.h"
 #include "nsDOMError.h"
@@ -60,11 +60,13 @@
 #include "mozAutoDocUpdate.h"
 #include "nsMutationEvent.h"
 
+using namespace mozilla::dom;
+
 //----------------------------------------------------------------------
 PRBool nsDOMAttribute::sInitialized;
 
 nsDOMAttribute::nsDOMAttribute(nsDOMAttributeMap *aAttrMap,
-                               nsINodeInfo       *aNodeInfo,
+                               already_AddRefed<nsINodeInfo> aNodeInfo,
                                const nsAString   &aValue)
   : nsIAttribute(aAttrMap, aNodeInfo), mValue(aValue), mChild(nsnull)
 {
@@ -124,7 +126,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMAttribute)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_USERDATA
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-DOMCI_DATA(Attr, nsDOMAttribute)
+DOMCI_NODE_DATA(Attr, nsDOMAttribute)
 
 // QueryInterface implementation for nsDOMAttribute
 NS_INTERFACE_TABLE_HEAD(nsDOMAttribute)
@@ -415,7 +417,8 @@ nsDOMAttribute::Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const
   nsAutoString value;
   const_cast<nsDOMAttribute*>(this)->GetValue(value);
 
-  *aResult = new nsDOMAttribute(nsnull, aNodeInfo, value);
+  nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
+  *aResult = new nsDOMAttribute(nsnull, ni.forget(), value);
   if (!*aResult) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -745,13 +748,13 @@ nsDOMAttribute::EnsureChildState()
 
 void
 nsDOMAttribute::AttributeChanged(nsIDocument* aDocument,
-                                 nsIContent* aContent,
+                                 Element* aElement,
                                  PRInt32 aNameSpaceID,
                                  nsIAtom* aAttribute,
                                  PRInt32 aModType)
 {
   nsIContent* content = GetContentInternal();
-  if (aContent != content) {
+  if (aElement != content) {
     return;
   }
 
@@ -764,6 +767,8 @@ nsDOMAttribute::AttributeChanged(nsIDocument* aDocument,
     return;
   }
 
+  nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
+  
   // Just blow away our mChild and recreate it if needed
   if (mChild) {
     static_cast<nsTextNode*>(mChild)->UnbindFromAttribute();

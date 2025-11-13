@@ -175,7 +175,7 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
 
   // XXX: need to get the default window size from prefs...
   // Doesn't come from prefs... will come from CSS/XUL/RDF
-  nsIntRect r(0, 0, aInitialWidth, aInitialHeight);
+  nsIntRect r(mOpenerScreenRect.x, mOpenerScreenRect.y, aInitialWidth, aInitialHeight);
   
   // Create top level window
   mWindow = do_CreateInstance(kWindowCID, &rv);
@@ -210,7 +210,9 @@ nsresult nsWebShellWindow::Initialize(nsIXULWindow* aParent,
                   nsnull,                             // nsIToolkit
                   &widgetInitData);                   // Widget initialization data
   mWindow->GetClientBounds(r);
-  mWindow->SetBackgroundColor(NS_RGB(192,192,192));
+  // Match the default background color of content. Important on windows
+  // since we no longer use content child widgets.
+  mWindow->SetBackgroundColor(NS_RGB(255,255,255));
 
   // Create web shell
   mDocShell = do_CreateInstance("@mozilla.org/docshell;1");
@@ -319,16 +321,14 @@ nsWebShellWindow::HandleEvent(nsGUIEvent *aEvent)
        * client area of the window...
        */
       case NS_MOVE: {
-#ifndef XP_MACOSX
-        // Move any popups that are attached to their parents. That is, the
-        // popup moves along with the parent window when it moves. This
-        // doesn't need to happen on Mac, as Cocoa provides a nice API
-        // which does this for us.
+        // Adjust any child popups so that their widget offsets and coordinates
+        // are correct with respect to the new position of the window
         nsCOMPtr<nsIMenuRollup> pm =
           do_GetService("@mozilla.org/xul/xul-popup-manager;1");
-        if (pm)
-          pm->AdjustPopupsOnWindowChange();
-#endif
+        if (pm) {
+          nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(docShell);
+          pm->AdjustPopupsOnWindowChange(window);
+        }
 
         // persist position, but not immediately, in case this OS is firing
         // repeated move events as the user drags the window
@@ -336,12 +336,12 @@ nsWebShellWindow::HandleEvent(nsGUIEvent *aEvent)
         break;
       }
       case NS_SIZE: {
-#ifndef XP_MACOSX
         nsCOMPtr<nsIMenuRollup> pm =
           do_GetService("@mozilla.org/xul/xul-popup-manager;1");
-        if (pm)
-          pm->AdjustPopupsOnWindowChange();
-#endif
+        if (pm) {
+          nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(docShell);
+          pm->AdjustPopupsOnWindowChange(window);
+        }
  
         nsSizeEvent* sizeEvent = (nsSizeEvent*)aEvent;
         nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(docShell));
@@ -376,6 +376,15 @@ nsWebShellWindow::HandleEvent(nsGUIEvent *aEvent)
         // write the attribute values only once.
         eventWindow->SetPersistenceTimer(PAD_MISC);
         result = nsEventStatus_eConsumeDoDefault;
+
+        // min, max, and normal are all the same to apps, but for
+        // fullscreen we need to let them know so they can update
+        // their ui. 
+        if (modeEvent->mSizeMode == nsSizeMode_Fullscreen) {
+          nsCOMPtr<nsIDOMWindowInternal> ourWindow = do_GetInterface(docShell);
+          if (ourWindow)
+            ourWindow->SetFullScreen(PR_TRUE);
+        }
 
         // Note the current implementation of SetSizeMode just stores
         // the new state; it doesn't actually resize. So here we store

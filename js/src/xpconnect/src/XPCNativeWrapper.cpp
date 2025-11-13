@@ -44,22 +44,22 @@
 #include "jsdbgapi.h"
 
 static JSBool
-XPC_NW_AddProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp);
+XPC_NW_AddProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
 
 static JSBool
-XPC_NW_DelProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp);
+XPC_NW_DelProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
 
 static JSBool
-XPC_NW_GetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp);
+XPC_NW_GetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
 
 static JSBool
-XPC_NW_SetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp);
+XPC_NW_SetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
 
 static JSBool
 XPC_NW_Enumerate(JSContext *cx, JSObject *obj);
 
 static JSBool
-XPC_NW_NewResolve(JSContext *cx, JSObject *obj, jsval id, uintN flags,
+XPC_NW_NewResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
                   JSObject **objp);
 
 static JSBool
@@ -69,32 +69,29 @@ static void
 XPC_NW_Finalize(JSContext *cx, JSObject *obj);
 
 static JSBool
-XPC_NW_CheckAccess(JSContext *cx, JSObject *obj, jsval id,
+XPC_NW_CheckAccess(JSContext *cx, JSObject *obj, jsid id,
                    JSAccessMode mode, jsval *vp);
 
 static JSBool
-XPC_NW_Call(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-            jsval *rval);
+XPC_NW_Call(JSContext *cx, uintN argc, jsval *vp);
 
 static JSBool
-XPC_NW_Construct(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                 jsval *rval);
+XPC_NW_Construct(JSContext *cx, uintN argc, jsval *vp);
 
 static JSBool
-XPC_NW_HasInstance(JSContext *cx, JSObject *obj, jsval v, JSBool *bp);
+XPC_NW_HasInstance(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp);
 
 static void
 XPC_NW_Trace(JSTracer *trc, JSObject *obj);
 
 static JSBool
-XPC_NW_Equality(JSContext *cx, JSObject *obj, jsval v, JSBool *bp);
+XPC_NW_Equality(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp);
 
 static JSObject *
 XPC_NW_Iterator(JSContext *cx, JSObject *obj, JSBool keysonly);
 
 static JSBool
-XPC_NW_FunctionWrapper(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                       jsval *rval);
+XPC_NW_FunctionWrapper(JSContext *cx, uintN argc, jsval *vp);
 
 using namespace XPCWrapper;
 
@@ -109,56 +106,68 @@ namespace XPCNativeWrapper { namespace internal {
 // JS class for XPCNativeWrapper (and this doubles as the constructor
 // for XPCNativeWrapper for the moment too...)
 
-JSExtendedClass NW_NoCall_Class = {
-  // JSClass (JSExtendedClass.base) initialization
-  { "XPCNativeWrapper",
+js::Class NW_NoCall_Class = {
+    "XPCNativeWrapper",
     JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS |
     // Our one reserved slot holds a jsint of flag bits
     JSCLASS_NEW_RESOLVE | JSCLASS_HAS_RESERVED_SLOTS(1) |
-    JSCLASS_MARK_IS_TRACE | JSCLASS_IS_EXTENDED | JSCLASS_CONSTRUCT_PROTOTYPE,
-    XPC_NW_AddProperty, XPC_NW_DelProperty,
-    XPC_NW_GetProperty, XPC_NW_SetProperty,
-    XPC_NW_Enumerate,   (JSResolveOp)XPC_NW_NewResolve,
-    XPC_NW_Convert,     XPC_NW_Finalize,
-    nsnull,             XPC_NW_CheckAccess,
-    nsnull,             XPC_NW_Construct,
-    nsnull,             XPC_NW_HasInstance,
-    JS_CLASS_TRACE(XPC_NW_Trace), nsnull
-  },
+    JSCLASS_MARK_IS_TRACE | JSCLASS_CONSTRUCT_PROTOTYPE,
+    js::Valueify(XPC_NW_AddProperty),
+    js::Valueify(XPC_NW_DelProperty),
+    js::Valueify(XPC_NW_GetProperty),
+    js::Valueify(XPC_NW_SetProperty),
+    XPC_NW_Enumerate,
+    (JSResolveOp)XPC_NW_NewResolve,
+    js::Valueify(XPC_NW_Convert),
+    XPC_NW_Finalize,
+    nsnull,   // reserved0
+    js::Valueify(XPC_NW_CheckAccess),
+    nsnull,   // call
+    js::Valueify(XPC_NW_Construct),
+    nsnull,   // xdrObject
+    js::Valueify(XPC_NW_HasInstance),
+    JS_CLASS_TRACE(XPC_NW_Trace),
 
-  // JSExtendedClass initialization
-  XPC_NW_Equality,
-  nsnull,             // outerObject
-  nsnull,             // innerObject
-  XPC_NW_Iterator,
-  nsnull,             // wrappedObject
-  JSCLASS_NO_RESERVED_MEMBERS
+    // ClassExtension
+    {
+      js::Valueify(XPC_NW_Equality),
+      nsnull, // outerObject
+      nsnull, // innerObject
+      XPC_NW_Iterator,
+      nsnull, // wrappedObject
+    }
 };
 
-JSExtendedClass NW_Call_Class = {
-  // JSClass (JSExtendedClass.base) initialization
-  { "XPCNativeWrapper",
+js::Class NW_Call_Class = {
+    "XPCNativeWrapper",
     JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS |
     // Our one reserved slot holds a jsint of flag bits
     JSCLASS_NEW_RESOLVE | JSCLASS_HAS_RESERVED_SLOTS(1) |
-    JSCLASS_MARK_IS_TRACE | JSCLASS_IS_EXTENDED | JSCLASS_CONSTRUCT_PROTOTYPE,
-    XPC_NW_AddProperty, XPC_NW_DelProperty,
-    XPC_NW_GetProperty, XPC_NW_SetProperty,
-    XPC_NW_Enumerate,   (JSResolveOp)XPC_NW_NewResolve,
-    XPC_NW_Convert,     XPC_NW_Finalize,
-    nsnull,             XPC_NW_CheckAccess,
-    XPC_NW_Call,        XPC_NW_Construct,
-    nsnull,             XPC_NW_HasInstance,
-    JS_CLASS_TRACE(XPC_NW_Trace), nsnull
-  },
+    JSCLASS_MARK_IS_TRACE | JSCLASS_CONSTRUCT_PROTOTYPE,
+    js::Valueify(XPC_NW_AddProperty),
+    js::Valueify(XPC_NW_DelProperty),
+    js::Valueify(XPC_NW_GetProperty),
+    js::Valueify(XPC_NW_SetProperty),
+    XPC_NW_Enumerate,
+    (JSResolveOp)XPC_NW_NewResolve,
+    js::Valueify(XPC_NW_Convert),
+    XPC_NW_Finalize,
+    nsnull,   // reserved0
+    js::Valueify(XPC_NW_CheckAccess),
+    js::Valueify(XPC_NW_Call),
+    js::Valueify(XPC_NW_Construct),
+    nsnull,   // xdrObject
+    js::Valueify(XPC_NW_HasInstance),
+    JS_CLASS_TRACE(XPC_NW_Trace),
 
-  // JSExtendedClass initialization
-  XPC_NW_Equality,
-  nsnull,             // outerObject
-  nsnull,             // innerObject
-  XPC_NW_Iterator,
-  nsnull,             // wrappedObject
-  JSCLASS_NO_RESERVED_MEMBERS
+    // ClassExtension
+    {
+      js::Valueify(XPC_NW_Equality),
+      nsnull, // outerObject
+      nsnull, // innerObject
+      XPC_NW_Iterator,
+      nsnull, // wrappedObject
+    }
 };
 
 } // namespace internal
@@ -274,8 +283,7 @@ RewrapValue(JSContext *cx, JSObject *obj, jsval v, jsval *rval)
 using namespace XPCNativeWrapper;
 
 static JSBool
-XPC_NW_toString(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                jsval *rval);
+XPC_NW_toString(JSContext *cx, uintN argc, jsval *vp);
 
 static inline
 JSBool
@@ -289,7 +297,7 @@ ThrowException(nsresult ex, JSContext *cx)
 static inline
 JSBool
 EnsureLegalActivity(JSContext *cx, JSObject *obj,
-                    jsval id = JSVAL_VOID, PRUint32 accessType = 0)
+                    jsid id = JSID_VOID, PRUint32 accessType = 0)
 {
   nsIScriptSecurityManager *ssm = GetSecurityManager();
   if (!ssm) {
@@ -336,7 +344,7 @@ EnsureLegalActivity(JSContext *cx, JSObject *obj,
       }
 
       JSObject* flatObj;
-      if (!JSVAL_IS_VOID(id) &&
+      if (!JSID_IS_VOID(id) &&
           (accessType & (sSecMgrSetProp | sSecMgrGetProp)) &&
           (flatObj = wn->GetFlatJSObject())) {
         rv = ssm->CheckPropertyAccess(cx, flatObj,
@@ -373,8 +381,8 @@ EnsureLegalActivity(JSContext *cx, JSObject *obj,
 
   // Otherwise, we're looking at a non-system file with a handle on an
   // implicit wrapper. This is a bug! Deny access.
-  NS_ERROR("Implicit native wrapper in content code");
-  return JS_FALSE;
+  NS_WARNING("Implicit native wrapper in content code");
+  return JS_TRUE;
 #else
   return JS_TRUE;
 #endif
@@ -383,13 +391,11 @@ EnsureLegalActivity(JSContext *cx, JSObject *obj,
 }
 
 static JSBool
-XPC_NW_AddProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp)
+XPC_NW_AddProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 {
-  jsid idAsId;
   JSPropertyDescriptor desc;
 
-  if (!JS_ValueToId(cx, id, &idAsId) ||
-      !JS_GetPropertyDescriptorById(cx, obj, idAsId, JSRESOLVE_QUALIFIED,
+  if (!JS_GetPropertyDescriptorById(cx, obj, id, JSRESOLVE_QUALIFIED,
                                     &desc)) {
     return JS_FALSE;
   }
@@ -416,16 +422,19 @@ XPC_NW_AddProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp)
 }
 
 static JSBool
-XPC_NW_DelProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp)
+XPC_NW_DelProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 {
   return EnsureLegalActivity(cx, obj);
 }
 
 static JSBool
-XPC_NW_FunctionWrapper(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                       jsval *rval)
+XPC_NW_FunctionWrapper(JSContext *cx, uintN argc, jsval *vp)
 {
-  JSObject *funObj = JSVAL_TO_OBJECT(argv[-2]);
+  JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  if (!obj)
+    return JS_FALSE;
+
+  JSObject *funObj = JSVAL_TO_OBJECT(JS_CALLEE(cx, vp));
   if (!::JS_ObjectIsFunction(cx, funObj)) {
     obj = nsnull;
   }
@@ -457,8 +466,8 @@ XPC_NW_FunctionWrapper(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
 
   jsval v;
   if (!::JS_CallFunctionValue(cx, wrappedNative->GetFlatJSObject(),
-                              OBJECT_TO_JSVAL(methodToCallObj), argc, argv,
-                              &v)) {
+                              OBJECT_TO_JSVAL(methodToCallObj), argc,
+                              JS_ARGV(cx, vp), &v)) {
     return JS_FALSE;
   }
 
@@ -467,7 +476,7 @@ XPC_NW_FunctionWrapper(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   // Make sure v doesn't get collected while we're re-wrapping it.
   AUTO_MARK_JSVAL(ccx, v);
 
-  return RewrapValue(cx, obj, v, rval);
+  return RewrapValue(cx, obj, v, vp);
 }
 
 static JSBool
@@ -496,12 +505,12 @@ GetwrappedJSObject(JSContext *cx, JSObject *obj, jsval *vp)
 }
 
 static JSBool
-XPC_NW_GetOrSetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp,
+XPC_NW_GetOrSetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp,
                         JSBool aIsSet)
 {
   // We don't deal with the following properties here.
-  if (id == GetRTStringByIndex(cx, XPCJSRuntime::IDX_PROTOTYPE) ||
-      id == GetRTStringByIndex(cx, XPCJSRuntime::IDX_TO_STRING)) {
+  if (id == GetRTIdByIndex(cx, XPCJSRuntime::IDX_PROTOTYPE) ||
+      id == GetRTIdByIndex(cx, XPCJSRuntime::IDX_TO_STRING)) {
     return JS_TRUE;
   }
 
@@ -527,7 +536,7 @@ XPC_NW_GetOrSetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp,
   JSObject *nativeObj = wrappedNative->GetFlatJSObject();
 
   if (!aIsSet &&
-      id == GetRTStringByIndex(cx, XPCJSRuntime::IDX_WRAPPED_JSOBJECT)) {
+      id == GetRTIdByIndex(cx, XPCJSRuntime::IDX_WRAPPED_JSOBJECT)) {
     return GetwrappedJSObject(cx, nativeObj, vp);
   }
 
@@ -536,13 +545,13 @@ XPC_NW_GetOrSetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp,
 }
 
 static JSBool
-XPC_NW_GetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp)
+XPC_NW_GetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 {
   return XPC_NW_GetOrSetProperty(cx, obj, id, vp, PR_FALSE);
 }
 
 static JSBool
-XPC_NW_SetProperty(JSContext *cx, JSObject *obj, jsval id, jsval *vp)
+XPC_NW_SetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 {
   return XPC_NW_GetOrSetProperty(cx, obj, id, vp, PR_TRUE);
 }
@@ -570,18 +579,18 @@ XPC_NW_Enumerate(JSContext *cx, JSObject *obj)
 }
 
 static JSBool
-XPC_NW_NewResolve(JSContext *cx, JSObject *obj, jsval id, uintN flags,
+XPC_NW_NewResolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
                   JSObject **objp)
 {
   // No need to preserve on sets of wrappedJSObject or toString, since callers
   // couldn't get at those values anyway.  Also, we always deal with
   // wrappedJSObject and toString before looking at our scriptable hooks, so no
   // need to mess with our flags yet.
-  if (id == GetRTStringByIndex(cx, XPCJSRuntime::IDX_WRAPPED_JSOBJECT)) {
+  if (id == GetRTIdByIndex(cx, XPCJSRuntime::IDX_WRAPPED_JSOBJECT)) {
     return JS_TRUE;
   }
 
-  if (id == GetRTStringByIndex(cx, XPCJSRuntime::IDX_TO_STRING)) {
+  if (id == GetRTIdByIndex(cx, XPCJSRuntime::IDX_TO_STRING)) {
     *objp = obj;
 
     // See the comment in WrapFunction for why we create this function
@@ -646,7 +655,7 @@ XPC_NW_Finalize(JSContext *cx, JSObject *obj)
 }
 
 static JSBool
-XPC_NW_CheckAccess(JSContext *cx, JSObject *obj, jsval id,
+XPC_NW_CheckAccess(JSContext *cx, JSObject *obj, jsid id,
                    JSAccessMode mode, jsval *vp)
 {
   // Prevent setting __proto__ on an XPCNativeWrapper
@@ -669,33 +678,31 @@ XPC_NW_CheckAccess(JSContext *cx, JSObject *obj, jsval id,
 
   JSObject *wrapperJSObject = wrappedNative->GetFlatJSObject();
 
-  JSClass *clazz = wrapperJSObject->getClass();
+  JSClass *clazz = wrapperJSObject->getJSClass();
   return !clazz->checkAccess ||
     clazz->checkAccess(cx, wrapperJSObject, id, mode, vp);
 }
 
 static JSBool
-XPC_NW_Call(JSContext *cx, JSObject *obj, uintN argc, jsval *argv, jsval *rval)
+XPC_NW_Call(JSContext *cx, uintN argc, jsval *vp)
 {
 #ifdef DEBUG
+  JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  if (!obj)
+    return JS_FALSE;
   if (!XPCNativeWrapper::IsNativeWrapper(obj) &&
       !JS_ObjectIsFunction(cx, obj)) {
     NS_WARNING("Ignoring a call for a weird object");
   }
 #endif
+  JS_SET_RVAL(cx, vp, JSVAL_VOID);
   return JS_TRUE;
 }
 
 static JSBool
-XPC_NW_Construct(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                 jsval *rval)
+XPC_NW_Construct(JSContext *cx, uintN argc, jsval *vp)
 {
-  // The object given to us by the JS engine is actually a stub object (the
-  // "new" object). This isn't any help to us, so instead use the function
-  // object of the constructor that we're calling (which is the native
-  // wrapper).
-  obj = JSVAL_TO_OBJECT(argv[-2]);
-
+  JSObject *obj = JSVAL_TO_OBJECT(JS_CALLEE(cx, vp));
   if (!EnsureLegalActivity(cx, obj)) {
     return JS_FALSE;
   }
@@ -713,7 +720,7 @@ XPC_NW_Construct(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   }
 
   nsresult rv = wrappedNative->GetScriptableInfo()->
-    GetCallback()->Construct(wrappedNative, cx, obj, argc, argv, rval,
+    GetCallback()->Construct(wrappedNative, cx, obj, argc, JS_ARGV(cx, vp), vp,
                              &retval);
   if (NS_FAILED(rv)) {
     return ThrowException(rv, cx);
@@ -723,61 +730,40 @@ XPC_NW_Construct(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     return JS_FALSE;
   }
 
-  if (JSVAL_IS_PRIMITIVE(*rval)) {
+  if (JSVAL_IS_PRIMITIVE(*vp)) {
     return ThrowException(NS_ERROR_ILLEGAL_VALUE, cx);
   }
 
-  return RewrapValue(cx, obj, *rval, rval);
+  return RewrapValue(cx, obj, *vp, vp);
 }
 
 static JSBool
-XPC_NW_HasInstance(JSContext *cx, JSObject *obj, jsval v, JSBool *bp)
+XPC_NW_HasInstance(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp)
 {
   return JS_TRUE;
 }
 
 static JSBool
-MirrorWrappedNativeParent(JSContext *cx, XPCWrappedNative *wrapper,
-                          JSObject **result NS_OUTPARAM)
+XPCNativeWrapperCtor(JSContext *cx, uintN argc, jsval *vp)
 {
-  JSObject *wn_parent = wrapper->GetFlatJSObject()->getParent();
-  if (!wn_parent) {
-    *result = nsnull;
-  } else {
-    XPCWrappedNative *parent_wrapper =
-      XPCWrappedNative::GetAndMorphWrappedNativeOfJSObject(cx, wn_parent);
-
-    // parent_wrapper can be null if we're in a Components.utils.evalInSandbox
-    // scope. In that case, the best we can do is just use the
-    // non-native-wrapped sandbox global object for our parent.
-    if (parent_wrapper) {
-      *result = XPCNativeWrapper::GetNewOrUsed(cx, parent_wrapper, nsnull,
-                                               nsnull);
-      if (!*result)
-        return JS_FALSE;
-    } else {
-      *result = nsnull;
-    }
-  }
-  return JS_TRUE;
-}
-
-static JSBool
-XPCNativeWrapperCtor(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                     jsval *rval)
-{
-  JSStackFrame *fp = nsnull;
   JSBool constructing = JS_FALSE;
-  if (JS_FrameIterator(cx, &fp) && JS_IsConstructorFrame(cx, fp)) {
+
+  JSObject *givenThis;
+  if (JS_IsConstructing_PossiblyWithGivenThisObject(cx, vp, &givenThis)) {
     constructing = JS_TRUE;
+    if (givenThis) {
+      // This is the XPCNativeWrapper prototype
+      JS_ASSERT(givenThis->getProto() != NULL);
+      JS_ASSERT(XPCNativeWrapper::IsNativeWrapper(givenThis));
+      JS_ASSERT(!XPCNativeWrapper::IsNativeWrapper(givenThis->getProto()));
 
-    JSObject *proto = obj->getProto();
-    if (proto && !XPCNativeWrapper::IsNativeWrapper(proto)) {
-      // Deal with our prototype object specially.
+      if (!JS_SetPrivate(cx, givenThis, nsnull) ||
+          !JS_SetReservedSlot(cx, givenThis, 0, JSVAL_ZERO)) {
+        return JS_FALSE;
+      }
 
-      JS_ASSERT(XPCNativeWrapper::IsNativeWrapper(obj));
-      return JS_SetPrivate(cx, obj, nsnull) &&
-             JS_SetReservedSlot(cx, obj, 0, JSVAL_ZERO);
+      JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(givenThis));
+      return JS_TRUE;
     }
   }
 
@@ -785,10 +771,7 @@ XPCNativeWrapperCtor(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     return ThrowException(NS_ERROR_XPC_NOT_ENOUGH_ARGS, cx);
   }
 
-  // |obj| almost always has the wrong proto and parent so we have to create
-  // our own object anyway.  Set |obj| to null so we don't use it by accident.
-  obj = nsnull;
-
+  jsval *argv = JS_ARGV(cx, vp);
   jsval native = argv[0];
 
   if (JSVAL_IS_PRIMITIVE(native)) {
@@ -796,7 +779,7 @@ XPCNativeWrapperCtor(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
       return ThrowException(NS_ERROR_ILLEGAL_VALUE, cx);
     }
 
-    *rval = native;
+    JS_SET_RVAL(cx, vp, native);
     return JS_TRUE;
   }
 
@@ -862,7 +845,7 @@ XPCNativeWrapperCtor(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     }
   }
 
-  if (!XPCNativeWrapper::CreateExplicitWrapper(cx, wrappedNative, rval)) {
+  if (!XPCNativeWrapper::CreateExplicitWrapper(cx, wrappedNative, vp)) {
     return JS_FALSE;
   }
 
@@ -870,7 +853,7 @@ XPCNativeWrapperCtor(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
     return JS_TRUE;
   }
 
-  return SystemOnlyWrapper::MakeSOW(cx, JSVAL_TO_OBJECT(*rval));
+  return SystemOnlyWrapper::MakeSOW(cx, JSVAL_TO_OBJECT(*vp));
 }
 
 static void
@@ -886,7 +869,7 @@ XPC_NW_Trace(JSTracer *trc, JSObject *obj)
 }
 
 static JSBool
-XPC_NW_Equality(JSContext *cx, JSObject *obj, jsval v, JSBool *bp)
+XPC_NW_Equality(JSContext *cx, JSObject *obj, const jsval *valp, JSBool *bp)
 {
   NS_ASSERTION(XPCNativeWrapper::IsNativeWrapper(obj),
                "Uh, we should only ever be called for XPCNativeWrapper "
@@ -896,6 +879,7 @@ XPC_NW_Equality(JSContext *cx, JSObject *obj, jsval v, JSBool *bp)
     return JS_FALSE;
   }
 
+  jsval v = *valp;
   if (JSVAL_IS_PRIMITIVE(v)) {
     *bp = JS_FALSE;
 
@@ -954,9 +938,12 @@ XPC_NW_Iterator(JSContext *cx, JSObject *obj, JSBool keysonly)
 }
 
 static JSBool
-XPC_NW_toString(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
-                jsval *rval)
+XPC_NW_toString(JSContext *cx, uintN argc, jsval *vp)
 {
+  JSObject *obj = JS_THIS_OBJECT(cx, vp);
+  if (!obj)
+    return JS_FALSE;
+
   while (!XPCNativeWrapper::IsNativeWrapper(obj)) {
     obj = obj->getProto();
     if (!obj) {
@@ -965,7 +952,7 @@ XPC_NW_toString(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
   }
 
   if (!EnsureLegalActivity(cx, obj,
-                           GetRTStringByIndex(cx, XPCJSRuntime::IDX_TO_STRING),
+                           GetRTIdByIndex(cx, XPCJSRuntime::IDX_TO_STRING),
                            sSecMgrGetProp)) {
     return JS_FALSE;
   }
@@ -981,11 +968,11 @@ XPC_NW_toString(JSContext *cx, JSObject *obj, uintN argc, jsval *argv,
                                                 (protoString.get()),
                             protoString.Length());
     NS_ENSURE_TRUE(str, JS_FALSE);
-    *rval = STRING_TO_JSVAL(str);
+    JS_SET_RVAL(cx, vp, STRING_TO_JSVAL(str));
     return JS_TRUE;
   }
 
-  return NativeToString(cx, wrappedNative, argc, argv, rval, JS_TRUE);
+  return NativeToString(cx, wrappedNative, argc, JS_ARGV(cx, vp), vp, JS_TRUE);
 }
 
 static JSBool
@@ -1029,7 +1016,8 @@ XPCNativeWrapper::AttachNewConstructorObject(XPCCallContext &ccx,
                                              JSObject *aGlobalObject)
 {
   JSObject *class_obj =
-    ::JS_InitClass(ccx, aGlobalObject, nsnull, &internal::NW_Call_Class.base,
+    ::JS_InitClass(ccx, aGlobalObject, nsnull,
+                   js::Jsvalify(&internal::NW_Call_Class),
                    XPCNativeWrapperCtor, 0, nsnull, nsnull,
                    nsnull, static_functions);
   if (!class_obj) {
@@ -1047,7 +1035,7 @@ XPCNativeWrapper::AttachNewConstructorObject(XPCCallContext &ccx,
 
   JSBool found;
   return ::JS_SetPropertyAttributes(ccx, aGlobalObject,
-                                    internal::NW_Call_Class.base.name,
+                                    internal::NW_Call_Class.name,
                                     JSPROP_READONLY | JSPROP_PERMANENT,
                                     &found);
 }
@@ -1057,6 +1045,8 @@ JSObject *
 XPCNativeWrapper::GetNewOrUsed(JSContext *cx, XPCWrappedNative *wrapper,
                                JSObject *scope, nsIPrincipal *aObjectPrincipal)
 {
+  CheckWindow(wrapper);
+
   if (aObjectPrincipal) {
     nsIScriptSecurityManager *ssm = GetSecurityManager();
 
@@ -1095,38 +1085,15 @@ XPCNativeWrapper::GetNewOrUsed(JSContext *cx, XPCWrappedNative *wrapper,
     return obj;
   }
 
-  JSObject *nw_parent;
-  if (!MirrorWrappedNativeParent(cx, wrapper, &nw_parent)) {
-    return nsnull;
-  }
-
-  PRBool lock;
-
-  if (!nw_parent) {
-    nw_parent = wrapper->GetScope()->GetGlobalJSObject();
-
-    lock = PR_FALSE;
-  } else {
-    lock = PR_TRUE;
-  }
-
-  if (lock) {
-    // Make sure nw_parent doesn't get collected while we're creating
-    // the new wrapper.
-    ::JS_LockGCThing(cx, nw_parent);
-  }
+  JSObject *nw_parent = wrapper->GetScope()->GetGlobalJSObject();
 
   bool call = NATIVE_HAS_FLAG(wrapper, WantCall) ||
               NATIVE_HAS_FLAG(wrapper, WantConstruct);
-  obj = ::JS_NewObjectWithGivenProto(cx, GetJSClass(call), nsnull, nw_parent);
-
-  if (lock) {
-    ::JS_UnlockGCThing(cx, nw_parent);
-  }
+  obj = JS_NewObjectWithGivenProto(cx, GetJSClass(call), nsnull, nw_parent);
 
   if (!obj ||
-      !::JS_SetPrivate(cx, obj, wrapper) ||
-      !::JS_SetReservedSlot(cx, obj, 0, JSVAL_ZERO)) {
+      !JS_SetPrivate(cx, obj, wrapper) ||
+      !JS_SetReservedSlot(cx, obj, 0, JSVAL_ZERO)) {
     return nsnull;
   }
 
@@ -1171,29 +1138,9 @@ XPCNativeWrapper::CreateExplicitWrapper(JSContext *cx,
     return JS_FALSE;
   }
 
-  if (!::JS_SetReservedSlot(cx, wrapperObj, 0, INT_TO_JSVAL(FLAG_EXPLICIT))) {
+  if (!JS_SetReservedSlot(cx, wrapperObj, 0, INT_TO_JSVAL(FLAG_EXPLICIT))) {
     return JS_FALSE;
   }
-
-  JSObject *parent = nsnull;
-
-  // Make sure wrapperObj doesn't get collected while we're wrapping
-  // parents for it.
-  JS_LockGCThing(cx, wrapperObj);
-
-  // A deep XPCNativeWrapper has a parent chain that mirrors its
-  // XPCWrappedNative's chain.
-  if (!MirrorWrappedNativeParent(cx, wrappedNative, &parent))
-    return JS_FALSE;
-
-  JS_UnlockGCThing(cx, wrapperObj);
-
-  if (!parent) {
-    parent = wrappedNative->GetScope()->GetGlobalJSObject();
-  }
-
-  if (!JS_SetParent(cx, wrapperObj, parent))
-    return JS_FALSE;
 
   // Set the XPCWrappedNative as private data in the native wrapper.
   if (!JS_SetPrivate(cx, wrapperObj, wrappedNative)) {

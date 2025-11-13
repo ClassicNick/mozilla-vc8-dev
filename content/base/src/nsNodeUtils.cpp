@@ -60,6 +60,7 @@
 #ifdef MOZ_MEDIA
 #include "nsHTMLMediaElement.h"
 #endif // MOZ_MEDIA
+#include "nsImageLoadingContent.h"
 
 using namespace mozilla::dom;
 
@@ -86,7 +87,6 @@ using namespace mozilla::dom;
   } while (node);                                                 \
   PR_END_MACRO
 
-
 void
 nsNodeUtils::CharacterDataWillChange(nsIContent* aContent,
                                      CharacterDataChangeInfo* aInfo)
@@ -106,26 +106,26 @@ nsNodeUtils::CharacterDataChanged(nsIContent* aContent,
 }
 
 void
-nsNodeUtils::AttributeWillChange(nsIContent* aContent,
+nsNodeUtils::AttributeWillChange(Element* aElement,
                                  PRInt32 aNameSpaceID,
                                  nsIAtom* aAttribute,
                                  PRInt32 aModType)
 {
-  nsIDocument* doc = aContent->GetOwnerDoc();
-  IMPL_MUTATION_NOTIFICATION(AttributeWillChange, aContent,
-                             (doc, aContent, aNameSpaceID, aAttribute,
+  nsIDocument* doc = aElement->GetOwnerDoc();
+  IMPL_MUTATION_NOTIFICATION(AttributeWillChange, aElement,
+                             (doc, aElement, aNameSpaceID, aAttribute,
                               aModType));
 }
 
 void
-nsNodeUtils::AttributeChanged(nsIContent* aContent,
+nsNodeUtils::AttributeChanged(Element* aElement,
                               PRInt32 aNameSpaceID,
                               nsIAtom* aAttribute,
                               PRInt32 aModType)
 {
-  nsIDocument* doc = aContent->GetOwnerDoc();
-  IMPL_MUTATION_NOTIFICATION(AttributeChanged, aContent,
-                             (doc, aContent, aNameSpaceID, aAttribute,
+  nsIDocument* doc = aElement->GetOwnerDoc();
+  IMPL_MUTATION_NOTIFICATION(AttributeChanged, aElement,
+                             (doc, aElement, aNameSpaceID, aAttribute,
                               aModType));
 }
 
@@ -168,7 +168,8 @@ nsNodeUtils::ContentInserted(nsINode* aContainer,
 void
 nsNodeUtils::ContentRemoved(nsINode* aContainer,
                             nsIContent* aChild,
-                            PRInt32 aIndexInContainer)
+                            PRInt32 aIndexInContainer,
+                            nsIContent* aPreviousSibling)
 {
   NS_PRECONDITION(aContainer->IsNodeOfType(nsINode::eCONTENT) ||
                   aContainer->IsNodeOfType(nsINode::eDOCUMENT),
@@ -186,7 +187,8 @@ nsNodeUtils::ContentRemoved(nsINode* aContainer,
   }
 
   IMPL_MUTATION_NOTIFICATION(ContentRemoved, aContainer,
-                             (document, container, aChild, aIndexInContainer));
+                             (document, container, aChild, aIndexInContainer,
+                              aPreviousSibling));
 }
 
 void
@@ -493,6 +495,9 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, PRBool aClone, PRBool aDeep,
     }
 
     aNode->mNodeInfo.swap(newNodeInfo);
+    if (elem) {
+      elem->NodeInfoChanged(newNodeInfo);
+    }
 
     nsIDocument* newDoc = aNode->GetOwnerDoc();
     if (newDoc) {
@@ -510,6 +515,11 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, PRBool aClone, PRBool aDeep,
           if (elm->MayHavePaintEventListener()) {
             window->SetHasPaintEventListeners();
           }
+#ifdef MOZ_MEDIA
+          if (elm->MayHaveAudioAvailableEventListener()) {
+            window->SetHasAudioAvailableEventListeners();
+          }
+#endif
         }
       }
     }
@@ -523,6 +533,13 @@ nsNodeUtils::CloneAndAdopt(nsINode *aNode, PRBool aClone, PRBool aDeep,
       }
     }
 #endif
+
+    // nsImageLoadingContent needs to know when its document changes
+    if (oldDoc != newDoc) {
+      nsCOMPtr<nsIImageLoadingContent> imageContent(do_QueryInterface(aNode));
+      if (imageContent)
+        imageContent->NotifyOwnerDocumentChanged(oldDoc);
+    }
 
     if (elem) {
       elem->RecompileScriptEventListeners();

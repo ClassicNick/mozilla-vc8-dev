@@ -147,7 +147,7 @@ void TOutputGLSL::writeFunctionParameters(const TIntermSequence& args)
             out << arrayBrackets(type);
 
         // Put a comma if this is not the last argument.
-        if (iter != --args.end())
+        if (iter != args.end() - 1)
             out << ", ";
     }
 }
@@ -304,8 +304,6 @@ bool TOutputGLSL::visitBinary(Visit visit, TIntermBinary* node)
 
 bool TOutputGLSL::visitUnary(Visit visit, TIntermUnary* node)
 {
-    TInfoSinkBase& out = objSink();
-
     switch (node->getOp())
     {
         case EOpNegative: writeTriplet(visit, "(-", NULL, ")"); break;
@@ -391,13 +389,17 @@ bool TOutputGLSL::visitSelection(Visit visit, TIntermSelection* node)
 
     if (node->usesTernaryOperator())
     {
-        out << "(";
+        // Notice two brackets at the beginning and end. The outer ones
+        // encapsulate the whole ternary expression. This preserves the
+        // order of precedence when ternary expressions are used in a
+        // compound expression, i.e., c = 2 * (a < b ? 1 : 2).
+        out << "((";
         node->getCondition()->traverse(this);
         out << ") ? (";
         node->getTrueBlock()->traverse(this);
         out << ") : (";
         node->getFalseBlock()->traverse(this);
-        out << ")";
+        out << "))";
     }
     else
     {
@@ -646,8 +648,6 @@ bool TOutputGLSL::visitLoop(Visit visit, TIntermLoop* node)
 
 bool TOutputGLSL::visitBranch(Visit visit, TIntermBranch* node)
 {
-    TInfoSinkBase &out = objSink();
-
     switch (node->getFlowOp())
     {
         case EOpKill: writeTriplet(visit, "discard", NULL, NULL); break;

@@ -708,11 +708,6 @@ jsd_GetScopeChainForStackFrame(JSDContext* jsdc,
                                JSDStackFrameInfo* jsdframe);
 
 extern JSBool
-jsd_IsStackFrameNative(JSDContext* jsdc, 
-                       JSDThreadState* jsdthreadstate,
-                       JSDStackFrameInfo* jsdframe);
-
-extern JSBool
 jsd_IsStackFrameDebugger(JSDContext* jsdc, 
                          JSDThreadState* jsdthreadstate,
                          JSDStackFrameInfo* jsdframe);
@@ -966,7 +961,7 @@ jsd_GetValueBoolean(JSDContext* jsdc, JSDValue* jsdval);
 extern int32
 jsd_GetValueInt(JSDContext* jsdc, JSDValue* jsdval);
 
-extern jsdouble*
+extern jsdouble
 jsd_GetValueDouble(JSDContext* jsdc, JSDValue* jsdval);
 
 extern JSString*
@@ -1043,9 +1038,6 @@ jsd_DestroyObjectManager(JSDContext* jsdc);
 
 extern void
 jsd_DestroyObjects(JSDContext* jsdc);
-
-extern void
-jsd_ObjectHook(JSContext *cx, JSObject *obj, JSBool isNew, void *closure);
 
 extern void
 jsd_Constructing(JSDContext* jsdc, JSContext *cx, JSObject *obj,

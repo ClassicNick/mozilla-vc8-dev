@@ -104,8 +104,8 @@ public:
   // nsDOMCSSDeclaration abstract methods which should never be called
   // on a nsComputedDOMStyle object, but must be defined to avoid
   // compile errors.
-  virtual nsresult GetCSSDeclaration(mozilla::css::Declaration**, PRBool);
-  virtual nsresult DeclarationChanged();
+  virtual mozilla::css::Declaration* GetCSSDeclaration(PRBool);
+  virtual nsresult SetCSSDeclaration(mozilla::css::Declaration*);
   virtual nsIDocument* DocToUpdate();
   virtual nsresult GetCSSParsingEnvironment(nsIURI**, nsIURI**, nsIPrincipal**,
                                             mozilla::css::Loader**);
@@ -252,10 +252,10 @@ private:
   nsresult DoGetBorderLeftColors(nsIDOMCSSValue** aValue);
   nsresult DoGetBorderRightColors(nsIDOMCSSValue** aValue);
   nsresult DoGetBorderTopColors(nsIDOMCSSValue** aValue);
-  nsresult DoGetBorderRadiusBottomLeft(nsIDOMCSSValue** aValue);
-  nsresult DoGetBorderRadiusBottomRight(nsIDOMCSSValue** aValue);
-  nsresult DoGetBorderRadiusTopLeft(nsIDOMCSSValue** aValue);
-  nsresult DoGetBorderRadiusTopRight(nsIDOMCSSValue** aValue);
+  nsresult DoGetBorderBottomLeftRadius(nsIDOMCSSValue** aValue);
+  nsresult DoGetBorderBottomRightRadius(nsIDOMCSSValue** aValue);
+  nsresult DoGetBorderTopLeftRadius(nsIDOMCSSValue** aValue);
+  nsresult DoGetBorderTopRightRadius(nsIDOMCSSValue** aValue);
   nsresult DoGetFloatEdge(nsIDOMCSSValue** aValue);
   nsresult DoGetBorderImage(nsIDOMCSSValue** aValue);
 
@@ -428,6 +428,7 @@ private:
    */
   void SetValueToCoord(nsROCSSPrimitiveValue* aValue,
                        const nsStyleCoord& aCoord,
+                       PRBool aClampNegativeCalc,
                        PercentageBaseGetter aPercentageBaseGetter = nsnull,
                        const PRInt32 aTable[] = nsnull,
                        nscoord aMinAppUnits = nscoord_MIN,
@@ -441,7 +442,8 @@ private:
    */
   nscoord StyleCoordToNSCoord(const nsStyleCoord& aCoord,
                               PercentageBaseGetter aPercentageBaseGetter,
-                              nscoord aDefaultValue);
+                              nscoord aDefaultValue,
+                              PRBool aClampNegativeCalc);
 
   PRBool GetCBContentWidth(nscoord& aWidth);
   PRBool GetCBContentHeight(nscoord& aWidth);
@@ -492,8 +494,6 @@ private:
    * otherwise.
    */
   nsIPresShell* mPresShell;
-
-  PRInt32 mAppUnitsPerInch; /* For unit conversions */
 
   PRPackedBool mExposeVisitedStyle;
 

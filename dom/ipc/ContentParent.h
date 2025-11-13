@@ -47,6 +47,7 @@
 #include "nsIObserver.h"
 #include "nsIThreadInternal.h"
 #include "mozilla/Monitor.h"
+#include "nsNetUtil.h"
 #include "nsIPrefService.h"
 #include "nsIPermissionManager.h"
 
@@ -144,6 +145,28 @@ private:
 
     void EnsurePrefService();
     void EnsurePermissionService();
+
+    virtual bool RecvStartVisitedQuery(const IPC::URI& uri);
+
+    virtual bool RecvVisitURI(const IPC::URI& uri,
+                              const IPC::URI& referrer,
+                              const PRUint32& flags);
+
+    virtual bool RecvSetURITitle(const IPC::URI& uri,
+                                 const nsString& title);
+    
+    virtual bool RecvNotifyIME(const int&, const int&);
+
+    virtual bool RecvNotifyIMEChange(const nsString&, const PRUint32&, const int&, 
+                               const int&, const int&)
+;
+
+
+    virtual bool RecvLoadURIExternal(const IPC::URI& uri);
+
+    virtual bool RecvSyncMessage(const nsString& aMsg, const nsString& aJSON,
+                                 nsTArray<nsString>* aRetvals);
+    virtual bool RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON);
 
     mozilla::Monitor mMonitor;
 

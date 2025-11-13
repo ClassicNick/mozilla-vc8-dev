@@ -44,7 +44,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
 
 class jsvalRoot
 {
@@ -114,8 +113,9 @@ public:
     JSObject *global;
     bool knownFail;
     JSAPITestString msgs;
+    JSCrossCompartmentCall *call;
 
-    JSAPITest() : rt(NULL), cx(NULL), global(NULL), knownFail(false) {
+    JSAPITest() : rt(NULL), cx(NULL), global(NULL), knownFail(false), call(NULL) {
         next = list;
         list = this;
     }
@@ -131,10 +131,17 @@ public:
             return false;
         JS_BeginRequest(cx);
         global = createGlobal();
-        return global != NULL;
+        if (!global)
+            return false;
+        call = JS_EnterCrossCompartmentCall(cx, global);
+        return call != NULL;
     }
 
     virtual void uninit() {
+        if (call) {
+            JS_LeaveCrossCompartmentCall(call);
+            call = NULL;
+        }
         if (cx) {
             JS_EndRequest(cx);
             JS_DestroyContext(cx);
@@ -274,10 +281,11 @@ protected:
 
     virtual JSObject * createGlobal() {
         /* Create the global object. */
-        JSObject *global = JS_NewGlobalObject(cx, getGlobalClass());
+        JSObject *global = JS_NewCompartmentAndGlobalObject(cx, getGlobalClass(), NULL);
         if (!global)
             return NULL;
 
+        JSAutoEnterCompartment enter(cx, global);
         /* Populate the global object with the standard globals,
            like Object and Array. */
         if (!JS_InitStandardClasses(cx, global))

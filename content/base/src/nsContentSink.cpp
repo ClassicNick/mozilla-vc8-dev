@@ -1600,12 +1600,10 @@ nsContentSink::DropParserAndPerfHint(void)
   // Do this hack to make sure that the parser
   // doesn't get destroyed, accidently, before
   // the circularity, between sink & parser, is
-  // actually borken.
-  nsCOMPtr<nsIParser> kungFuDeathGrip(mParser);
-
+  // actually broken.
   // Drop our reference to the parser to get rid of a circular
   // reference.
-  mParser = nsnull;
+  nsCOMPtr<nsIParser> kungFuDeathGrip(mParser.forget());
 
   if (mDynamicLowerValue) {
     // Reset the performance hint which was set to FALSE
@@ -1698,6 +1696,20 @@ nsContentSink::ContinueInterruptedParsingAsync()
     &nsContentSink::ContinueInterruptedParsingIfEnabled);
 
   NS_DispatchToCurrentThread(ev);
+}
+
+/* static */
+void
+nsContentSink::NotifyDocElementCreated(nsIDocument* aDoc)
+{
+  nsCOMPtr<nsIObserverService> observerService =
+    mozilla::services::GetObserverService();
+  if (observerService) {
+    nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(aDoc);
+    observerService->
+      NotifyObservers(domDoc, "document-element-inserted",
+                      EmptyString().get());
+  }
 }
 
 // URIs: action, href, src, longdesc, usemap, cite
@@ -1814,7 +1826,6 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::alt,
   &nsGkAtoms::autocomplete,
 #ifdef MOZ_MEDIA
-  &nsGkAtoms::autobuffer,
   &nsGkAtoms::autoplay,
 #endif
   &nsGkAtoms::axis,
@@ -1842,6 +1853,7 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::dir,
   &nsGkAtoms::disabled,
   &nsGkAtoms::enctype,
+  &nsGkAtoms::face,
   &nsGkAtoms::_for,
   &nsGkAtoms::frame,
   &nsGkAtoms::headers,
@@ -1874,6 +1886,7 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::pointSize,
 #ifdef MOZ_MEDIA
   &nsGkAtoms::poster,
+  &nsGkAtoms::preload,
 #endif
   &nsGkAtoms::prompt,
   &nsGkAtoms::readonly,

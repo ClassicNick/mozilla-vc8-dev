@@ -37,9 +37,13 @@ function crypto_meta_handler(metadata, response) {
 
 function run_test() {
   let server;
+  do_test_pending();
+
+  let passphrase = ID.set("WeaveCryptoID", new Identity());
+  passphrase.password = "passphrase";
 
   try {
-    let log = Log4Moz.repository.getLogger();
+    let log = Log4Moz.repository.getLogger("Test");
     Log4Moz.repository.rootLogger.addAppender(new Log4Moz.DumpAppender());
 
     log.info("Setting up server and authenticator");
@@ -119,5 +123,7 @@ function run_test() {
 
     log.info("Done!");
   }
-  finally { server.stop(function() {}); }
+  finally {
+    server.stop(do_test_finished);
+  }
 }

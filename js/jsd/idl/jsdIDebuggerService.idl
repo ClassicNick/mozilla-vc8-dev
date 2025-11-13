@@ -186,11 +186,11 @@ interface jsdIDebuggerService : nsISupports
      */
     const unsigned long MASK_TOP_FRAME_ONLY     = 0x20;
     /**
-     * When this flag is set, object creation will not be tracked.  This will
-     * reduce the performance price you pay by enabling the debugger.
+     * This flag has been retired, do not re-use. It previously provided a hook
+     * for object allocation.
      */
-    const unsigned long DISABLE_OBJECT_TRACE = 0x40;
-    
+    const unsigned long DISABLE_OBJECT_TRACE_RETIRED = 0x40;
+
     /**
      * Debugger service flags.
      */
@@ -792,10 +792,6 @@ interface jsdIStackFrame : jsdIEphemeral
     /** Internal use only. */
     [noscript] readonly attribute JSDStackFrameInfo JSDStackFrameInfo;
    
-    /**
-     * True if stack frame represents a native frame.
-     */
-    readonly attribute boolean isNative;
     /**
      * True if stack frame represents a frame created as a result of a debugger
      * evaluation.

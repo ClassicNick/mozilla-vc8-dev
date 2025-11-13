@@ -342,6 +342,13 @@ class LazilyConstructed
         constructed = true;
     }
 
+    template <class T1, class T2, class T3, class T4>
+    void construct(const T1 &t1, const T2 &t2, const T3 &t3, const T4 &t4) {
+        JS_ASSERT(!constructed);
+        new(storage.addr()) T(t1, t2, t3, t4);
+        constructed = true;
+    }
+
     T *addr() {
         JS_ASSERT(constructed);
         return &asT();
@@ -375,34 +382,63 @@ class Conditionally {
 };
 
 template <class T>
-JS_ALWAYS_INLINE static void
-PodZero(T *t)
+class AlignedPtrAndFlag
 {
-    memset(t, 0, sizeof(T));
-}
+    uintptr_t bits;
+
+  public:
+    AlignedPtrAndFlag(T *t, bool flag) {
+        JS_ASSERT((uintptr_t(t) & 1) == 0);
+        bits = uintptr_t(t) | uintptr_t(flag);
+    }
+
+    T *ptr() const {
+        return (T *)(bits & ~uintptr_t(1));
+    }
+
+    bool flag() const {
+        return (bits & 1) != 0;
+    }
+
+    void setPtr(T *t) {
+        JS_ASSERT((uintptr_t(t) & 1) == 0);
+        bits = uintptr_t(t) | uintptr_t(flag());
+    }
+
+    void setFlag() {
+        bits |= 1;
+    }
+
+    void unsetFlag() {
+        bits &= ~uintptr_t(1);
+    }
+
+    void set(T *t, bool flag) {
+        JS_ASSERT((uintptr_t(t) & 1) == 0);
+        bits = uintptr_t(t) | flag;
+    }
+};
 
 template <class T>
-JS_ALWAYS_INLINE static void
-PodZero(T *t, size_t nelem)
+static inline void
+Reverse(T *beg, T *end)
 {
-    memset(t, 0, nelem * sizeof(T));
+    while (beg != end) {
+        if (--end == beg)
+            return;
+        T tmp = *beg;
+        *beg = *end;
+        *end = tmp;
+        ++beg;
+    }
 }
 
-/*
- * Arrays implicitly convert to pointers to their first element, which is
- * dangerous when combined with the above PodZero definitions. Adding an
- * overload for arrays is ambiguous, so we need another identifier. The
- * ambiguous overload is left to catch mistaken uses of PodZero; if you get a
- * compile error involving PodZero and array types, use PodArrayZero instead.
- */
-template <class T, size_t N> static void PodZero(T (&)[N]);          /* undefined */
-template <class T, size_t N> static void PodZero(T (&)[N], size_t);  /* undefined */
-
-template <class T, size_t N>
-JS_ALWAYS_INLINE static void
-PodArrayZero(T (&t)[N])
+template <typename InputIterT, typename CallableT>
+void
+ForEach(InputIterT begin, InputIterT end, CallableT f)
 {
-    memset(t, 0, N * sizeof(T));
+    for (; begin != end; ++begin)
+        f(*begin);
 }
 
 } /* namespace js */

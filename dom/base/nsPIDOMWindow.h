@@ -167,6 +167,9 @@ public:
     win->mMutationBits |= aType;
   }
 
+  virtual void MaybeUpdateTouchState() {}
+  virtual void UpdateTouchState() {}
+
   // GetExtantDocument provides a backdoor to the DOM GetDocument accessor
   nsIDOMDocument* GetExtantDocument() const
   {
@@ -394,11 +397,6 @@ public:
   virtual PRBool CanClose() = 0;
   virtual nsresult ForceClose() = 0;
 
-  void SetModalContentWindow(PRBool aIsModalContentWindow)
-  {
-    mIsModalContentWindow = aIsModalContentWindow;
-  }
-
   PRBool IsModalContentWindow() const
   {
     return mIsModalContentWindow;
@@ -422,6 +420,34 @@ public:
     return mMayHavePaintEventListener;
   }
   
+  /**
+   * Call this to indicate that some node (this window, its document,
+   * or content in that document) has a touch event listener.
+   */
+  void SetHasTouchEventListeners()
+  {
+    mMayHaveTouchEventListener = PR_TRUE;
+    MaybeUpdateTouchState();
+  }
+
+  /**
+   * Call this to check whether some node (this window, its document,
+   * or content in that document) has a MozAudioAvailable event listener.
+   */
+  PRBool HasAudioAvailableEventListeners()
+  {
+    return mMayHaveAudioAvailableEventListener;
+  }
+
+  /**
+   * Call this to indicate that some node (this window, its document,
+   * or content in that document) has a MozAudioAvailable event listener.
+   */
+  void SetHasAudioAvailableEventListeners()
+  {
+    mMayHaveAudioAvailableEventListener = PR_TRUE;
+  }
+
   /**
    * Initialize window.java and window.Packages.
    */
@@ -520,6 +546,13 @@ public:
    */
   virtual nsresult SetArguments(nsIArray *aArguments, nsIPrincipal *aOrigin) = 0;
 
+  /**
+   * NOTE! This function *will* be called on multiple threads so the
+   * implementation must not do any AddRef/Release or other actions that will
+   * mutate internal state.
+   */
+  virtual PRUint32 GetSerial() = 0;
+
 protected:
   // The nsPIDOMWindow constructor. The aOuterWindow argument should
   // be null if and only if the created window itself is an outer
@@ -560,6 +593,8 @@ protected:
   PRPackedBool           mIsHandlingResizeEvent;
   PRPackedBool           mIsInnerWindow;
   PRPackedBool           mMayHavePaintEventListener;
+  PRPackedBool           mMayHaveTouchEventListener;
+  PRPackedBool           mMayHaveAudioAvailableEventListener;
 
   // This variable is used on both inner and outer windows (and they
   // should match).

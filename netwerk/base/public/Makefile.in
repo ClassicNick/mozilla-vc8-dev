@@ -72,6 +72,7 @@ XPIDLSRCS	= \
 		nsIAuthPromptAdapterFactory.idl \
 		nsIAuthPromptCallback.idl \
 		nsIAsyncStreamCopier.idl \
+		nsIAsyncVerifyRedirectCallback.idl \
 		nsIBufferedStreams.idl \
 		nsICancelable.idl \
 		nsIChannelPolicy.idl \
@@ -136,8 +137,11 @@ XPIDLSRCS	= \
 		nsINetUtil.idl \
 		nsIProxiedChannel.idl \
 		nsIRandomGenerator.idl \
+		nsIStrictTransportSecurityService.idl \
 		nsIURIWithPrincipal.idl \
 		nsIURIClassifier.idl \
+		nsIRedirectResultListener.idl \
+		nsIBrowserSearchService.idl \
 		$(NULL)
 
 EXPORTS		= \
@@ -149,6 +153,7 @@ EXPORTS		= \
 		nsURIHashKey.h \
 		nsReadLine.h \
 		nsASocketHandler.h \
+		nsAsyncRedirectVerifyHelper.h \
 		$(NULL)
 
 include $(topsrcdir)/config/rules.mk
