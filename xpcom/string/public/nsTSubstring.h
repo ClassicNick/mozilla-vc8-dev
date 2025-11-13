@@ -607,6 +607,7 @@ class nsTSubstring_CharT
       nsTSubstring_CharT( PRUint32 flags )
         : mFlags(flags) {}
 
+public:
         // copy-constructor, constructs as dependent on given object
         // (NOTE: this is for internal use only)
       nsTSubstring_CharT( const self_type& str )
@@ -614,6 +615,7 @@ class nsTSubstring_CharT
           mLength(str.mLength),
           mFlags(str.mFlags & (F_TERMINATED | F_VOIDED)) {}
 
+protected:
         /**
          * this function releases mData and does not change the value of
          * any of its member variables.  in other words, this function acts

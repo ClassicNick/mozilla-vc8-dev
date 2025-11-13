@@ -93,13 +93,14 @@ JS_Assert(const char *s, const char *file, JSIntn ln);
 #ifdef __SUNPRO_CC
 #define JS_STATIC_ASSERT(cond)
 #else
-#ifdef __COUNTER__
+#if defined __COUNTER__ && defined (_MSC_VER) && !defined _MSC_VER <= 1310
     #define JS_STATIC_ASSERT_GLUE1(x,y) x##y
     #define JS_STATIC_ASSERT_GLUE(x,y) JS_STATIC_ASSERT_GLUE1(x,y)
-    #define JS_STATIC_ASSERT(cond)                                            \
-        typedef int JS_STATIC_ASSERT_GLUE(js_static_assert, __COUNTER__)[(cond) ? 1 : -1]
-#else
+    #define JS_STATIC_ASSERT(cond)
+#elif defined (_MSC_VER) && _MSC_VER >= 1400
     #define JS_STATIC_ASSERT(cond) extern void js_static_assert(int arg[(cond) ? 1 : -1])
+#else
+#define JS_STATIC_ASSERT(cond)
 #endif
 #endif
 

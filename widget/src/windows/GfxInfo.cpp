@@ -49,7 +49,6 @@
 #include "nsIPrefService.h"
 #endif
 
-
 using namespace mozilla::widget;
 
 NS_IMPL_ISUPPORTS1(GfxInfo, nsIGfxInfo)
@@ -180,7 +179,7 @@ GfxInfo::Init()
     return;
 
   // make sure the string is NULL terminated
-  if (wcsnlen(displayDevice.DeviceKey, NS_ARRAY_LENGTH(displayDevice.DeviceKey))
+  if (wcslen(displayDevice.DeviceKey)
       == NS_ARRAY_LENGTH(displayDevice.DeviceKey)) {
     // we did not find a NULL
     return;

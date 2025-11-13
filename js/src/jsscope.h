@@ -836,8 +836,9 @@ Shape::search(js::Shape **startp, jsid id, bool adding)
          * load and id test at the end (when missing).
          */
         js::Shape **spp;
+		js::Shape *shape;
 
-        for (spp = startp; js::Shape *shape = *spp; spp = &shape->parent) {
+        for (spp = startp; shape = *spp; spp = &shape->parent) {
             if (shape->id == id) {
                 METER(hits);
                 return spp;
