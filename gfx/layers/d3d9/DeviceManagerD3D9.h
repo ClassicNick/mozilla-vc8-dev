@@ -49,6 +49,8 @@ namespace layers {
 
 class DeviceManagerD3D9;
 class LayerD3D9;
+class ThebesLayerD3D9;
+class CanvasLayerD3D9;
 class Nv3DVUtils;
 
 // Shader Constant locations
@@ -163,6 +165,8 @@ public:
    * so we can clean their resources on reset.
    */
   nsTArray<LayerD3D9*> mLayersWithResources;
+  nsTArray<CanvasLayerD3D9*> mCanvasLayersWithResources;
+  nsTArray<ThebesLayerD3D9*> mThebesLayersWithResources;
 private:
   friend class SwapChainD3D9;
 

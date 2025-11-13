@@ -59,7 +59,7 @@ public:
       mNeedsYFlip(PR_FALSE)
   {
       mImplData = static_cast<LayerD3D9*>(this);
-      aManager->deviceManager()->mLayersWithResources.AppendElement(this);
+      aManager->deviceManager()->mCanvasLayersWithResources.AppendElement(this);
   }
 
   ~CanvasLayerD3D9();

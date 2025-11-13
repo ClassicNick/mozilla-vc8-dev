@@ -52,13 +52,16 @@ ThebesLayerD3D9::ThebesLayerD3D9(LayerManagerD3D9 *aManager)
   , mD2DSurfaceInitialized(false)
 {
   mImplData = static_cast<LayerD3D9*>(this);
-  aManager->deviceManager()->mLayersWithResources.AppendElement(this);
+  aManager->deviceManager()->mThebesLayersWithResources.AppendElement(this);
 }
 
 ThebesLayerD3D9::~ThebesLayerD3D9()
 {
   if (mD3DManager) {
     mD3DManager->deviceManager()->mLayersWithResources.RemoveElement(this);
+  }
+  if (mD3DManager) {
+    mD3DManager->deviceManager()->mThebesLayersWithResources.RemoveElement(this);
   }
 }
 

@@ -44,6 +44,7 @@
 #include "nsIPrefService.h" 
 #include "Nv3DVUtils.h"
 #include "plstr.h"
+#include "CanvasLayerD3D9.h"
 
 namespace mozilla {
 namespace layers {
@@ -537,6 +538,12 @@ DeviceManagerD3D9::VerifyReadyForRendering()
 
   for(unsigned int i = 0; i < mLayersWithResources.Length(); i++) {
     mLayersWithResources[i]->CleanResources();
+  }
+  for(unsigned int i = 0; i < mCanvasLayersWithResources.Length(); i++) {
+    mCanvasLayersWithResources[i]->CleanResources();
+  }
+  for(unsigned int i = 0; i < mThebesLayersWithResources.Length(); i++) {
+    mThebesLayersWithResources[i]->CleanResources();
   }
   for(unsigned int i = 0; i < mSwapChains.Length(); i++) {
     mSwapChains[i]->Reset();
