@@ -256,8 +256,6 @@ NS_IMETHODIMP nsViewManager::Init(nsIDeviceContext* aContext)
   }
   mContext = aContext;
 
-  mRefreshEnabled = PR_TRUE;
-
   return NS_OK;
 }
 
@@ -354,28 +352,20 @@ NS_IMETHODIMP nsViewManager::FlushDelayedResize()
   return NS_OK;
 }
 
-static void ConvertNativeRegionToAppRegion(nsIRegion* aIn, nsRegion* aOut,
-                                           nsIDeviceContext* context)
+static nsRegion ConvertDeviceRegionToAppRegion(const nsIntRegion& aIn,
+                                               nsIDeviceContext* aContext)
 {
-  nsRegionRectSet* rects = nsnull;
-  aIn->GetRects(&rects);
-  if (!rects)
-    return;
+  PRInt32 p2a = aContext->AppUnitsPerDevPixel();
 
-  PRInt32 p2a = context->AppUnitsPerDevPixel();
-
-  PRUint32 i;
-  for (i = 0; i < rects->mNumRects; i++) {
-    const nsRegionRect& inR = rects->mRects[i];
-    nsRect outR;
-    outR.x = NSIntPixelsToAppUnits(inR.x, p2a);
-    outR.y = NSIntPixelsToAppUnits(inR.y, p2a);
-    outR.width = NSIntPixelsToAppUnits(inR.width, p2a);
-    outR.height = NSIntPixelsToAppUnits(inR.height, p2a);
-    aOut->Or(*aOut, outR);
+  nsRegion out;
+  nsIntRegionRectIterator iter(aIn);
+  for (;;) {
+    const nsIntRect* r = iter.Next();
+    if (!r)
+      break;
+    out.Or(out, r->ToAppUnits(p2a));
   }
-
-  aIn->FreeRects(rects);
+  return out;
 }
 
 static nsView* GetDisplayRootFor(nsView* aView)
@@ -394,12 +384,13 @@ static nsView* GetDisplayRootFor(nsView* aView)
 
 /**
    aRegion is given in device coordinates!!
+   aContext may be null, in which case layers should be used for
+   rendering.
 */
-void nsViewManager::Refresh(nsView *aView, nsIRenderingContext *aContext,
-                            nsIRegion *aRegion, PRUint32 aUpdateFlags)
+void nsViewManager::Refresh(nsView *aView, nsIWidget *aWidget,
+                            const nsIntRegion& aRegion,
+                            PRUint32 aUpdateFlags)
 {
-  NS_ASSERTION(aRegion != nsnull, "Null aRegion");
-
   if (! IsRefreshEnabled())
     return;
 
@@ -408,10 +399,8 @@ void nsViewManager::Refresh(nsView *aView, nsIRenderingContext *aContext,
   nsPoint vtowoffset = aView->ViewToWidgetOffset();
 
   // damageRegion is the damaged area, in twips, relative to the view origin
-  nsRegion damageRegion;
-  // convert pixels-relative-to-widget-origin to twips-relative-to-widget-origin
-  ConvertNativeRegionToAppRegion(aRegion, &damageRegion, mContext);
-  // move it from widget coordinates into view coordinates
+  nsRegion damageRegion = ConvertDeviceRegionToAppRegion(aRegion, mContext);
+  // move region from widget coordinates into view coordinates
   damageRegion.MoveBy(viewRect.TopLeft() - vtowoffset);
 
   if (damageRegion.IsEmpty()) {
@@ -434,36 +423,7 @@ void nsViewManager::Refresh(nsView *aView, nsIRenderingContext *aContext,
     nsAutoScriptBlocker scriptBlocker;
     SetPainting(PR_TRUE);
 
-    nsCOMPtr<nsIRenderingContext> localcx;
-    if (nsnull == aContext)
-      {
-        localcx = CreateRenderingContext(*aView);
-
-        //couldn't get rendering context. this is ok at init time atleast
-        if (nsnull == localcx) {
-          SetPainting(PR_FALSE);
-          return;
-        }
-      } else {
-        // plain assignment grabs another reference.
-        localcx = aContext;
-      }
-
-    PRInt32 p2a = mContext->AppUnitsPerDevPixel();
-
-    nsRefPtr<gfxContext> ctx = localcx->ThebesContext();
-
-    ctx->Save();
-
-    ctx->Translate(gfxPoint(gfxFloat(vtowoffset.x) / p2a,
-                            gfxFloat(vtowoffset.y) / p2a));
-
-    ctx->Translate(gfxPoint(-gfxFloat(viewRect.x) / p2a,
-                            -gfxFloat(viewRect.y) / p2a));
-
-    RenderViews(aView, *localcx, damageRegion);
-
-    ctx->Restore();
+    RenderViews(aView, aWidget, damageRegion);
 
     SetPainting(PR_FALSE);
   }
@@ -477,25 +437,20 @@ void nsViewManager::Refresh(nsView *aView, nsIRenderingContext *aContext,
 }
 
 // aRC and aRegion are in view coordinates
-void nsViewManager::RenderViews(nsView *aView, nsIRenderingContext& aRC,
+void nsViewManager::RenderViews(nsView *aView, nsIWidget *aWidget,
                                 const nsRegion& aRegion)
 {
   nsView* displayRoot = GetDisplayRootFor(aView);
   // Make sure we call Paint from the view manager that owns displayRoot.
   // (Bug 485275)
   nsViewManager* displayRootVM = displayRoot->GetViewManager();
-  if (displayRootVM && displayRootVM != this)
-    return displayRootVM->RenderViews(aView, aRC, aRegion);
+  if (displayRootVM && displayRootVM != this) {
+    displayRootVM->RenderViews(aView, aWidget, aRegion);
+    return;
+  }
 
   if (mObserver) {
-    nsPoint offsetToRoot = aView->GetOffsetTo(displayRoot);
-    nsRegion damageRegion(aRegion);
-    damageRegion.MoveBy(offsetToRoot);
-
-    aRC.PushState();
-    aRC.Translate(-offsetToRoot.x, -offsetToRoot.y);
-    mObserver->Paint(displayRoot, &aRC, damageRegion);
-    aRC.PopState();
+    mObserver->Paint(displayRoot, aView, aWidget, aRegion, PR_FALSE);
   }
 }
 
@@ -521,7 +476,7 @@ void nsViewManager::ProcessPendingUpdates(nsView* aView, PRBool aDoInvalidate)
   if (aDoInvalidate && aView->HasNonEmptyDirtyRegion()) {
     // Push out updates after we've processed the children; ensures that
     // damage is applied based on the final widget geometry
-    NS_ASSERTION(mRefreshEnabled, "Cannot process pending updates with refresh disabled");
+    NS_ASSERTION(IsRefreshEnabled(), "Cannot process pending updates with refresh disabled");
     nsRegion* dirtyRegion = aView->GetDirtyRegion();
     if (dirtyRegion) {
       nsView* nearestViewWithWidget = aView;
@@ -841,21 +796,11 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
 
         *aStatus = nsEventStatus_eConsumeNoDefault;
 
+        if (aEvent->message == NS_PAINT && event->region.IsEmpty())
+          break;
+
         // The rect is in device units, and it's in the coordinate space of its
         // associated window.
-        nsCOMPtr<nsIRegion> region = event->region;
-        if (aEvent->message == NS_PAINT) {
-          if (!region) {
-            if (NS_FAILED(CreateRegion(getter_AddRefs(region))))
-              break;
-
-            const nsIntRect& damrect = *event->rect;
-            region->SetTo(damrect.x, damrect.y, damrect.width, damrect.height);
-          }
-
-          if (region->IsEmpty())
-            break;
-        }
 
         // Refresh the view
         if (IsRefreshEnabled()) {
@@ -928,28 +873,16 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
             }
             
             if (view && aEvent->message == NS_PAINT) {
-              Refresh(view, event->renderingContext, region,
-                      NS_VMREFRESH_DOUBLE_BUFFER);
+              Refresh(view, event->widget,
+                      event->region, NS_VMREFRESH_DOUBLE_BUFFER);
             }
           }
         } else if (aEvent->message == NS_PAINT) {
           // since we got an NS_PAINT event, we need to
           // draw something so we don't get blank areas,
           // unless there's no widget or it's transparent.
-          nsIntRect damIntRect;
-          region->GetBoundingBox(&damIntRect.x, &damIntRect.y,
-                                 &damIntRect.width, &damIntRect.height);
-          nsRect damRect =
-            damIntRect.ToAppUnits(mContext->AppUnitsPerDevPixel());
-
-          nsCOMPtr<nsIRenderingContext> context = event->renderingContext;
-          if (!context)
-            context = CreateRenderingContext(*static_cast<nsView*>(aView));
-
-          if (context)
-            mObserver->PaintDefaultBackground(aView, context, damRect);
-          else
-            NS_WARNING("nsViewManager: no rc for default refresh");        
+          nsRegion rgn = ConvertDeviceRegionToAppRegion(event->region, mContext);
+          mObserver->Paint(aView, aView, event->widget, rgn, PR_TRUE);
 
           // Clients like the editor can trigger multiple
           // reflows during what the user perceives as a single
@@ -975,7 +908,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
           // ScrollingView's viewable area. (See bug 97674 for this
           // alternate patch.)
 
-          UpdateView(aView, damRect, NS_VMREFRESH_NO_SYNC);
+          UpdateView(aView, rgn.GetBounds(), NS_VMREFRESH_NO_SYNC);
         }
 
         break;
@@ -1015,7 +948,7 @@ NS_IMETHODIMP nsViewManager::DispatchEvent(nsGUIEvent *aEvent,
     default:
       {
         if ((NS_IS_MOUSE_EVENT(aEvent) &&
-             // Ignore moves that we synthesize.
+             // Ignore mouse events that we synthesize.
              static_cast<nsMouseEvent*>(aEvent)->reason ==
                nsMouseEvent::eReal &&
              // Ignore mouse exit and enter (we'll get moves if the user
@@ -1552,76 +1485,15 @@ NS_IMETHODIMP nsViewManager::GetDeviceContext(nsIDeviceContext *&aContext)
   return NS_OK;
 }
 
-already_AddRefed<nsIRenderingContext>
-nsViewManager::CreateRenderingContext(nsView &aView)
-{
-  nsView              *par = &aView;
-  nsIWidget*          win;
-  nsIRenderingContext *cx = nsnull;
-  nscoord             ax = 0, ay = 0;
-
-  do
-    {
-      win = par->GetWidget();
-      if (win)
-        break;
-
-      //get absolute coordinates of view, but don't
-      //add in view pos since the first thing you ever
-      //need to do when painting a view is to translate
-      //the rendering context by the views pos and other parts
-      //of the code do this for us...
-
-      if (par != &aView)
-        {
-          par->ConvertToParentCoords(&ax, &ay);
-        }
-
-      par = par->GetParent();
-    }
-  while (nsnull != par);
-
-  if (nsnull != win)
-    {
-      // XXXkt this has an origin at top-left of win ...
-      mContext->CreateRenderingContext(par, cx);
-
-      // XXXkt ... but the translation is between the origins of views
-      NS_ASSERTION(aView.ViewToWidgetOffset()
-                   - aView.GetDimensions().TopLeft() ==
-                   par->ViewToWidgetOffset()
-                   - par->GetDimensions().TopLeft(),
-                   "ViewToWidgetOffset not handled!");
-      if (nsnull != cx)
-        cx->Translate(ax, ay);
-    }
-
-  return cx;
-}
-
-NS_IMETHODIMP nsViewManager::DisableRefresh(void)
+void nsViewManager::TriggerRefresh(PRUint32 aUpdateFlags)
 {
   if (!IsRootVM()) {
-    return RootViewManager()->DisableRefresh();
+    RootViewManager()->TriggerRefresh(aUpdateFlags);
+    return;
   }
   
   if (mUpdateBatchCnt > 0)
-    return NS_OK;
-
-  mRefreshEnabled = PR_FALSE;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsViewManager::EnableRefresh(PRUint32 aUpdateFlags)
-{
-  if (!IsRootVM()) {
-    return RootViewManager()->EnableRefresh(aUpdateFlags);
-  }
-  
-  if (mUpdateBatchCnt > 0)
-    return NS_OK;
-
-  mRefreshEnabled = PR_TRUE;
+    return;
 
   // nested batching can combine IMMEDIATE with DEFERRED. Favour
   // IMMEDIATE over DEFERRED and DEFERRED over NO_SYNC.  We need to
@@ -1638,8 +1510,6 @@ NS_IMETHODIMP nsViewManager::EnableRefresh(PRUint32 aUpdateFlags)
   } else { // NO_SYNC
     FlushPendingInvalidates();
   }
-
-  return NS_OK;
 }
 
 nsIViewManager* nsViewManager::BeginUpdateViewBatch(void)
@@ -1648,15 +1518,11 @@ nsIViewManager* nsViewManager::BeginUpdateViewBatch(void)
     return RootViewManager()->BeginUpdateViewBatch();
   }
   
-  nsresult result = NS_OK;
-  
   if (mUpdateBatchCnt == 0) {
     mUpdateBatchFlags = 0;
-    result = DisableRefresh();
   }
 
-  if (NS_SUCCEEDED(result))
-    ++mUpdateBatchCnt;
+  ++mUpdateBatchCnt;
 
   return this;
 }
@@ -1665,8 +1531,6 @@ NS_IMETHODIMP nsViewManager::EndUpdateViewBatch(PRUint32 aUpdateFlags)
 {
   NS_ASSERTION(IsRootVM(), "Should only be called on root");
   
-  nsresult result = NS_OK;
-
   --mUpdateBatchCnt;
 
   NS_ASSERTION(mUpdateBatchCnt >= 0, "Invalid batch count!");
@@ -1679,10 +1543,10 @@ NS_IMETHODIMP nsViewManager::EndUpdateViewBatch(PRUint32 aUpdateFlags)
 
   mUpdateBatchFlags |= aUpdateFlags;
   if (mUpdateBatchCnt == 0) {
-    result = EnableRefresh(mUpdateBatchFlags);
+    TriggerRefresh(mUpdateBatchFlags);
   }
 
-  return result;
+  return NS_OK;
 }
 
 NS_IMETHODIMP nsViewManager::GetRootWidget(nsIWidget **aWidget)
@@ -1766,17 +1630,9 @@ nsViewManager::FlushPendingInvalidates()
     // all of them together.  We don't use
     // BeginUpdateViewBatch/EndUpdateViewBatch, since that would reenter this
     // exact code, but we want the effect of a single big update batch.
-    PRBool refreshEnabled = mRefreshEnabled;
-    mRefreshEnabled = PR_FALSE;
     ++mUpdateBatchCnt;
     CallWillPaintOnObservers();
     --mUpdateBatchCnt;
-
-    // Someone could have called EnableRefresh on us from inside WillPaint().
-    // Only reset the old mRefreshEnabled value if the current value is false.
-    if (!mRefreshEnabled) {
-      mRefreshEnabled = refreshEnabled;
-    }
   }
   
   if (mHasPendingUpdates) {

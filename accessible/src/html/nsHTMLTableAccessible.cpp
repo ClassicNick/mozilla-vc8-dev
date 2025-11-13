@@ -38,8 +38,9 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsHTMLTableAccessible.h"
-#include "nsAccessibilityAtoms.h"
-#include "nsAccessibleTreeWalker.h"
+
+#include "nsDocAccessible.h"
+
 #include "nsIDOMElement.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMDocumentRange.h"
@@ -1375,7 +1376,7 @@ nsHTMLTableAccessible::IsProbablyForLayout(PRBool *aIsProbablyForLayout)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIAccessible> docAccessible = do_QueryInterface(nsCOMPtr<nsIAccessibleDocument>(GetDocAccessible()));
+  nsDocAccessible *docAccessible = GetDocAccessible();
   if (docAccessible) {
     PRUint32 state, extState;
     docAccessible->GetState(&state, &extState);

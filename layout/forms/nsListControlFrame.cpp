@@ -1453,7 +1453,7 @@ nsListControlFrame::DoneAddingChildren(PRBool aIsDone)
     // Here we check to see if all the frames have been created 
     // for all the content.
     // If so, then we can initialize;
-    if (mIsAllFramesHere == PR_FALSE) {
+    if (!mIsAllFramesHere) {
       // if all the frames are now present we can initialize
       if (CheckIfAllFramesHere()) {
         mHasBeenInitialized = PR_TRUE;
@@ -1643,14 +1643,6 @@ nsListControlFrame::FireOnChange()
   if (presShell) {
     presShell->HandleEventWithTarget(&event, this, nsnull, &status);
   }
-}
-
-// Determine if the specified item in the listbox is selected.
-NS_IMETHODIMP
-nsListControlFrame::GetOptionSelected(PRInt32 aIndex, PRBool* aValue)
-{
-  *aValue = IsContentSelectedByIndex(aIndex);
-  return NS_OK;
 }
 
 NS_IMETHODIMP

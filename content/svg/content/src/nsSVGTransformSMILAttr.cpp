@@ -49,11 +49,13 @@
 #include "nsSVGElement.h"
 #include "nsISVGValue.h"
 #include "prdtoa.h"
+#include "prlog.h"
 
 nsresult
 nsSVGTransformSMILAttr::ValueFromString(const nsAString& aStr,
                                      const nsISMILAnimationElement* aSrcElement,
-                                     nsSMILValue& aValue) const
+                                     nsSMILValue& aValue,
+                                     PRBool& aCanCache) const
 {
   NS_ENSURE_TRUE(aSrcElement, NS_ERROR_FAILURE);
   NS_ASSERTION(aValue.IsNull(),
@@ -65,15 +67,17 @@ nsSVGTransformSMILAttr::ValueFromString(const nsAString& aStr,
                                : nsGkAtoms::translate;
 
   ParseValue(aStr, transformType, aValue);
+  aCanCache = PR_TRUE;
   return aValue.IsNull() ? NS_ERROR_FAILURE : NS_OK;
 }
 
 nsSMILValue
 nsSVGTransformSMILAttr::GetBaseValue() const
 {
+  // To benefit from Return Value Optimization and avoid copy constructor calls
+  // due to our use of return-by-value, we must return the exact same object
+  // from ALL return points. This function must only return THIS variable:
   nsSMILValue val(&nsSVGTransformSMILType::sSingleton);
-  if (val.IsNull())
-    return val; // Initialization failed
 
   nsIDOMSVGTransformList *list = mVal->mBaseVal.get();
 
@@ -84,7 +88,10 @@ nsSVGTransformSMILAttr::GetBaseValue() const
     nsresult rv = list->GetItem(i, getter_AddRefs(transform));
     if (NS_SUCCEEDED(rv) && transform) {
       rv = AppendSVGTransformToSMILValue(transform.get(), val);
-      NS_ENSURE_SUCCESS(rv, nsSMILValue());
+      if (NS_FAILED(rv)) {   // Appending to |val| failed (OOM?)
+        val = nsSMILValue();
+        break;
+      }
     }
   }
 
@@ -110,7 +117,6 @@ nsSVGTransformSMILAttr::SetAnimValue(const nsSMILValue& aValue)
   nsresult rv = NS_OK;
 
   // Create the anim value if necessary
-  mVal->WillModify(nsISVGValue::mod_other);
   if (!mVal->mAnimVal) {
     rv = nsSVGTransformList::Create(getter_AddRefs(mVal->mAnimVal));
     NS_ENSURE_SUCCESS(rv,rv);
@@ -125,7 +131,7 @@ nsSVGTransformSMILAttr::SetAnimValue(const nsSMILValue& aValue)
   }
   NS_ENSURE_SUCCESS(rv,rv);
 
-  mVal->DidModify(nsISVGValue::mod_other);
+  mSVGElement->DidAnimateTransform();
   return NS_OK;
 }
 
@@ -138,6 +144,9 @@ nsSVGTransformSMILAttr::ParseValue(const nsAString& aSpec,
                                    nsSMILValue& aResult)
 {
   NS_ASSERTION(aResult.IsNull(), "Unexpected type for SMIL value");
+
+  // nsSVGSMILTransform constructor should be expecting array with 3 params
+  PR_STATIC_ASSERT(nsSVGSMILTransform::NUM_SIMPLE_PARAMS == 3);
 
   float params[3] = { 0.f };
   PRInt32 numParsed = ParseParameterList(aSpec, params, 3);
@@ -181,8 +190,8 @@ nsSVGTransformSMILAttr::ParseValue(const nsAString& aSpec,
     return;
   }
 
-  // Success! Initialize our outparam with parsed value.
-  aResult = val;
+  // Success! Populate our outparam with parsed value.
+  aResult.Swap(val);
 }
 
 inline PRBool
@@ -253,6 +262,8 @@ nsSVGTransformSMILAttr::AppendSVGTransformToSMILValue(
   if (NS_FAILED(rv) || !matrix)
     return NS_ERROR_FAILURE;
 
+  // nsSVGSMILTransform constructor should be expecting array with 3 params
+  PR_STATIC_ASSERT(nsSVGSMILTransform::NUM_SIMPLE_PARAMS == 3);
   float params[3] = { 0.f };
   nsSVGSMILTransform::TransformType transformType;
 
@@ -304,6 +315,9 @@ nsSVGTransformSMILAttr::AppendSVGTransformToSMILValue(
 
     case nsIDOMSVGTransform::SVG_TRANSFORM_MATRIX:
       {
+        // nsSVGSMILTransform constructor for TRANSFORM_MATRIX type should be
+        // expecting array with 6 params
+        PR_STATIC_ASSERT(nsSVGSMILTransform::NUM_STORED_PARAMS == 6);
         float mx[6];
         matrix->GetA(&mx[0]);
         matrix->GetB(&mx[1]);

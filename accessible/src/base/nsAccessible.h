@@ -301,6 +301,12 @@ public:
   virtual nsresult AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
                                 PRUint32 aLength);
 
+  /**
+   * Assert if child not in parent's cache if the cache was initialized at this
+   * point.
+   */
+  void TestChildCache(nsAccessible *aCachedChild);
+
 protected:
 
   //////////////////////////////////////////////////////////////////////////////
@@ -312,11 +318,6 @@ protected:
   virtual void CacheChildren();
 
   /**
-   * Assert if child not in parent's cache.
-   */
-  void TestChildCache(nsAccessible *aCachedChild);
-
-  /**
    * Cache children if necessary. Return true if the accessible is defunct.
    */
   PRBool EnsureChildren();
@@ -324,8 +325,8 @@ protected:
   /**
    * Return sibling accessible at the given offset.
    */
-  virtual nsIAccessible* GetSiblingAtOffset(PRInt32 aOffset,
-                                            nsresult* aError = nsnull);
+  virtual nsAccessible* GetSiblingAtOffset(PRInt32 aOffset,
+                                           nsresult *aError = nsnull);
 
   //////////////////////////////////////////////////////////////////////////////
   // Miscellaneous helpers

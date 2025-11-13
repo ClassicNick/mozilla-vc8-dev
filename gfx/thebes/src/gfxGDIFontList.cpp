@@ -43,9 +43,8 @@
 #include "gfxWindowsPlatform.h"
 #include "gfxUserFontSet.h"
 #include "gfxFontUtils.h"
-#include "gfxWindowsFonts.h"
+#include "gfxGDIFont.h"
 
-#include "nsIPref.h"  // for pref changes callback notification
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 #include "nsUnicharUtils.h"
@@ -55,6 +54,8 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsISimpleEnumerator.h"
 #include "nsIWindowsRegKey.h"
+
+#include <usp10.h>
 
 #define ROUND(x) floor((x) + 0.5)
 
@@ -179,7 +180,9 @@ FontTypeToOutPrecision(PRUint8 fontType)
 
 GDIFontEntry::GDIFontEntry(const nsAString& aFaceName, gfxWindowsFontType aFontType,
                                    PRBool aItalic, PRUint16 aWeight, gfxUserFontData *aUserFontData) : 
-    gfxFontEntry(aFaceName), mFontType(aFontType),
+    gfxFontEntry(aFaceName), 
+    mWindowsFamily(0), mWindowsPitch(0),
+    mFontType(aFontType),
     mForceGDI(PR_FALSE), mUnknownCMAP(PR_FALSE),
     mUnicodeFont(PR_FALSE),
     mCharset(), mUnicodeRanges()
@@ -219,20 +222,9 @@ GDIFontEntry::ReadCMAP()
 }
 
 gfxFont *
-GDIFontEntry::CreateFontInstance(const gfxFontStyle* aFontStyle, PRBool /*aNeedsBold*/)
+GDIFontEntry::CreateFontInstance(const gfxFontStyle* aFontStyle, PRBool aNeedsBold)
 {
-    gfxFont *newFont;
-    newFont = new gfxWindowsFont(this, aFontStyle);
-    if (!newFont) {
-        return nsnull;
-    }
-    if (!newFont->Valid()) {
-        delete newFont;
-        return nsnull;
-    }
-    nsRefPtr<gfxFont> font = newFont;
-    gfxFontCache::GetCache()->AddNew(font);
-    return newFont;
+    return new gfxGDIFont(this, aFontStyle, aNeedsBold);
 }
 
 nsresult
@@ -295,10 +287,10 @@ GDIFontEntry::TestCharacterMap(PRUint32 aCh)
             fakeStyle.style = FONT_STYLE_ITALIC;
         fakeStyle.weight = mWeight * 100;
 
-        nsRefPtr<gfxWindowsFont> font =
-            gfxWindowsFont::GetOrMakeFont(this, &fakeStyle);
-        if (!font->IsValid())
+        nsRefPtr<gfxFont> tempFont = FindOrMakeFont(&fakeStyle, PR_FALSE);
+        if (!tempFont || !tempFont->Valid())
             return PR_FALSE;
+        gfxGDIFont *font = static_cast<gfxGDIFont*>(tempFont.get());
 
         HDC dc = GetDC((HWND)nsnull);
         SetGraphicsMode(dc, GM_ADVANCED);
@@ -309,14 +301,15 @@ GDIFontEntry::TestCharacterMap(PRUint32 aCh)
         WORD glyph[1];
 
         PRBool hasGlyph = PR_FALSE;
-        if (IsType1()) {
+        if (IsType1() || mForceGDI) {
             // Type1 fonts and uniscribe APIs don't get along.  ScriptGetCMap will return E_HANDLE
             DWORD ret = GetGlyphIndicesW(dc, str, 1, glyph, GGI_MARK_NONEXISTING_GLYPHS);
             if (ret != GDI_ERROR && glyph[0] != 0xFFFF)
                 hasGlyph = PR_TRUE;
         } else {
             // ScriptGetCMap works better than GetGlyphIndicesW for things like bitmap/vector fonts
-            HRESULT rv = ScriptGetCMap(dc, font->ScriptCache(), str, 1, 0, glyph);
+            SCRIPT_CACHE sc = NULL;
+            HRESULT rv = ScriptGetCMap(dc, &sc, str, 1, 0, glyph);
             if (rv == S_OK)
                 hasGlyph = PR_TRUE;
         }
@@ -503,12 +496,9 @@ GDIFontFamily::FindStyleVariations()
     EnumFontFamiliesExW(hdc, &logFont,
                         (FONTENUMPROCW)GDIFontFamily::FamilyAddStylesProc,
                         (LPARAM)this, 0);
-#ifdef DEBUG
-    if (mAvailableFonts.Length() == 0) {
-        char msgBuf[256];
-        (void)sprintf(msgBuf, "no styles available in family \"%s\"",
-                      NS_ConvertUTF16toUTF8(mName).get());
-        NS_ASSERTION(mAvailableFonts.Length() != 0, msgBuf);
+#ifdef PR_LOGGING
+    if (LOG_ENABLED() && mAvailableFonts.Length() == 0) {
+        LOG(("no styles available in family \"%s\"", NS_ConvertUTF16toUTF8(mName).get()));
     }
 #endif
 
@@ -634,7 +624,7 @@ gfxGDIFontList::EnumFontFamExProc(ENUMLOGFONTEXW *lpelfe,
         nsDependentString faceName(lf.lfFaceName);
         nsRefPtr<gfxFontFamily> family = new GDIFontFamily(faceName);
         fontList->mFontFamilies.Put(name, family);
-        if (fontList->mBadUnderlineFamilyNames.GetEntry(name))
+        if (fontList->mBadUnderlineFamilyNames.Contains(name))
             family->SetBadUnderlineFamily();
     }
 

@@ -43,14 +43,12 @@
 
 /*static*/ nsSMILFloatType nsSMILFloatType::sSingleton;
 
-nsresult
+void
 nsSMILFloatType::Init(nsSMILValue& aValue) const
 {
-  NS_PRECONDITION(aValue.mType == this || aValue.IsNull(),
-    "Unexpected value type");
+  NS_PRECONDITION(aValue.IsNull(), "Unexpected value type");
   aValue.mU.mDouble = 0.0;
   aValue.mType = this;
-  return NS_OK;
 }
 
 void
@@ -68,6 +66,16 @@ nsSMILFloatType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
   NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL value");
   aDest.mU.mDouble = aSrc.mU.mDouble;
   return NS_OK;
+}
+
+PRBool
+nsSMILFloatType::IsEqual(const nsSMILValue& aLeft,
+                         const nsSMILValue& aRight) const
+{
+  NS_PRECONDITION(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  NS_PRECONDITION(aLeft.mType == this, "Unexpected type for SMIL value");
+
+  return aLeft.mU.mDouble == aRight.mU.mDouble;
 }
 
 nsresult

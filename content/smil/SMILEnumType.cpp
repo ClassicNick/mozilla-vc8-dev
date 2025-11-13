@@ -43,14 +43,12 @@ namespace mozilla {
 
 /*static*/ SMILEnumType SMILEnumType::sSingleton;
 
-nsresult
+void
 SMILEnumType::Init(nsSMILValue& aValue) const
 {
-  NS_PRECONDITION(aValue.mType == this || aValue.IsNull(),
-    "Unexpected value type");
+  NS_PRECONDITION(aValue.IsNull(), "Unexpected value type");
   aValue.mU.mUint = 0;
   aValue.mType = this;
-  return NS_OK;
 }
 
 void
@@ -68,6 +66,16 @@ SMILEnumType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
   NS_PRECONDITION(aDest.mType == this, "Unexpected SMIL value");
   aDest.mU.mUint = aSrc.mU.mUint;
   return NS_OK;
+}
+
+PRBool
+SMILEnumType::IsEqual(const nsSMILValue& aLeft,
+                      const nsSMILValue& aRight) const
+{
+  NS_PRECONDITION(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  NS_PRECONDITION(aLeft.mType == this, "Unexpected type for SMIL value");
+
+  return aLeft.mU.mUint == aRight.mU.mUint;
 }
 
 nsresult

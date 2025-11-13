@@ -198,14 +198,6 @@ nsTreeBodyFrame::Init(nsIContent*     aContent,
   nsresult rv = nsLeafBoxFrame::Init(aContent, aParent, aPrevInFlow);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = nsBoxFrame::CreateViewForFrame(PresContext(), this, GetStyleContext(), PR_TRUE);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsIView* view = nsLeafBoxFrame::GetView();
-  if (!view->HasWidget()) {
-    view->CreateWidget(kWidgetCID);
-  }
-
   mIndentation = GetIndentation();
   mRowHeight = GetRowHeight();
 
@@ -258,7 +250,8 @@ nsTreeBodyFrame::GetMinSize(nsBoxLayoutState& aBoxLayoutState)
   min.height = mRowHeight * desiredRows;
 
   AddBorderAndPadding(min);
-  nsIBox::AddCSSMinSize(aBoxLayoutState, this, min);
+  PRBool widthSet, heightSet;
+  nsIBox::AddCSSMinSize(aBoxLayoutState, this, min, widthSet, heightSet);
 
   return min;
 }
@@ -377,9 +370,7 @@ void
 nsTreeBodyFrame::EnsureView()
 {
   if (!mView) {
-    PRBool isInReflow;
-    PresContext()->PresShell()->IsReflowLocked(&isInReflow);
-    if (isInReflow) {
+    if (PresContext()->PresShell()->IsReflowLocked()) {
       if (!mReflowCallbackPosted) {
         mReflowCallbackPosted = PR_TRUE;
         PresContext()->PresShell()->PostReflowCallback(this);
@@ -539,9 +530,7 @@ nsTreeBodyFrame::SetView(nsITreeView * aView)
     NS_ENSURE_STATE(weakFrame.IsAlive());
     mView->GetRowCount(&mRowCount);
  
-    PRBool isInReflow;
-    PresContext()->PresShell()->IsReflowLocked(&isInReflow);
-    if (!isInReflow) {
+    if (!PresContext()->PresShell()->IsReflowLocked()) {
       // The scrollbar will need to be updated.
       FullScrollbarsUpdate(PR_FALSE);
     } else if (!mReflowCallbackPosted) {
@@ -2824,7 +2813,9 @@ nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   nsresult rv = nsLeafBoxFrame::BuildDisplayList(aBuilder, aDirtyRect, aLists);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!mView)
+  // Bail out now if there's no view or we can't run script because the
+  // document is a zombie
+  if (!mView || !GetContent()->GetCurrentDoc()->GetScriptGlobalObject())
     return NS_OK;
 
   return aLists.Content()->AppendNewToTop(new (aBuilder)
@@ -3909,21 +3900,19 @@ nsTreeBodyFrame::PaintBackgroundLayer(nsStyleContext*      aStyleContext,
                                       const nsRect&        aRect,
                                       const nsRect&        aDirtyRect)
 {
-  const nsStyleBackground* myColor = aStyleContext->GetStyleBackground();
   const nsStyleBorder* myBorder = aStyleContext->GetStyleBorder();
-  const nsStyleOutline* myOutline = aStyleContext->GetStyleOutline();
-  
+
   nsCSSRendering::PaintBackgroundWithSC(aPresContext, aRenderingContext,
                                         this, aDirtyRect, aRect,
-                                        *myColor, *myBorder,
+                                        aStyleContext, *myBorder,
                                         nsCSSRendering::PAINTBG_SYNC_DECODE_IMAGES);
 
-  nsCSSRendering::PaintBorder(aPresContext, aRenderingContext, this,
-                              aDirtyRect, aRect, *myBorder, mStyleContext);
+  nsCSSRendering::PaintBorderWithStyleBorder(aPresContext, aRenderingContext,
+                                             this, aDirtyRect, aRect,
+                                             *myBorder, mStyleContext);
 
   nsCSSRendering::PaintOutline(aPresContext, aRenderingContext, this,
-                               aDirtyRect, aRect, *myBorder, *myOutline,
-                               aStyleContext);
+                               aDirtyRect, aRect, aStyleContext);
 }
 
 // Scrolling
@@ -3939,7 +3928,7 @@ nsTreeBodyFrame::EnsureRowIsVisible(PRInt32 aRow)
 
 nsresult nsTreeBodyFrame::EnsureRowIsVisibleInternal(const ScrollParts& aParts, PRInt32 aRow)
 {
-  if (!mView)
+  if (!mView || !mPageLength)
     return NS_OK;
 
   if (mTopRowIndex <= aRow && mTopRowIndex+mPageLength > aRow)
@@ -4129,23 +4118,27 @@ nsTreeBodyFrame::ScrollInternal(const ScrollParts& aParts, PRInt32 aRow)
       PR_ABS(delta)*mRowHeight >= mRect.height) {
     Invalidate();
   } else {
-    nsIWidget* widget = nsLeafBoxFrame::GetView()->GetWidget();
+    nsPoint viewOffset;
+    nsIView* view = GetClosestView(&viewOffset);
+    nsPoint widgetOffset;
+    nsIWidget* widget = view->GetNearestWidget(&widgetOffset);
     if (widget) {
+      nsPresContext* presContext = PresContext();
       nscoord rowHeightAsPixels =
-        PresContext()->AppUnitsToDevPixels(mRowHeight);
+        presContext->AppUnitsToDevPixels(mRowHeight);
       nsIntPoint deltaPt = nsIntPoint(0, -delta*rowHeightAsPixels);
 
-      nsIntRect bounds;
-      widget->GetBounds(bounds);
-      bounds.x = bounds.y = 0;
+      nsRect bounds(viewOffset + widgetOffset, GetSize());
+      nsIntRect boundsPx =
+        bounds.ToNearestPixels(presContext->AppUnitsPerDevPixel());
       nsTArray<nsIntRect> destRects;
-      destRects.AppendElement(bounds);
+      destRects.AppendElement(boundsPx);
 
       // No plugins have a tree widget as a parent so we don't need
       // configurations here.
       nsTArray<nsIWidget::Configuration> emptyConfigurations;
       widget->Scroll(deltaPt, destRects, emptyConfigurations);
-      nsIntRect invalid = bounds;
+      nsIntRect invalid = boundsPx;
       if (deltaPt.y < 0) {
         invalid.y = bounds.height + deltaPt.y;
         invalid.height = -deltaPt.y;
@@ -4188,21 +4181,25 @@ nsTreeBodyFrame::ScrollHorzInternal(const ScrollParts& aParts, PRInt32 aPosition
       PR_ABS(delta) >= mRect.width) {
     Invalidate();
   } else {
-    nsIWidget* widget = nsLeafBoxFrame::GetView()->GetWidget();
+    nsPoint viewOffset;
+    nsIView* view = GetClosestView(&viewOffset);
+    nsPoint widgetOffset;
+    nsIWidget* widget = view->GetNearestWidget(&widgetOffset);
     if (widget) {
-      nsIntPoint deltaPt(PresContext()->AppUnitsToDevPixels(-delta), 0);
+      nsPresContext* presContext = PresContext();
+      nsIntPoint deltaPt(presContext->AppUnitsToDevPixels(-delta), 0);
 
-      nsIntRect bounds;
-      widget->GetBounds(bounds);
-      bounds.x = bounds.y = 0;
+      nsRect bounds(viewOffset + widgetOffset, GetSize());
+      nsIntRect boundsPx =
+        bounds.ToNearestPixels(presContext->AppUnitsPerDevPixel());
       nsTArray<nsIntRect> destRects;
-      destRects.AppendElement(bounds);
+      destRects.AppendElement(boundsPx);
 
       // No plugins have a tree widget as a parent so we don't need
       // configurations here.
       nsTArray<nsIWidget::Configuration> emptyConfigurations;
       widget->Scroll(deltaPt, destRects, emptyConfigurations);
-      nsIntRect invalid = bounds;
+      nsIntRect invalid = boundsPx;
       if (deltaPt.x < 0) {
         invalid.x = bounds.width + deltaPt.x;
         invalid.width = -deltaPt.x;

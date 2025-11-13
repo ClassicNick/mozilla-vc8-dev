@@ -62,9 +62,11 @@ nsDOMTransitionEvent::~nsDOMTransitionEvent()
   }
 }
 
+DOMCI_DATA(TransitionEvent, nsDOMTransitionEvent)
+
 NS_INTERFACE_MAP_BEGIN(nsDOMTransitionEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMTransitionEvent)
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(TransitionEvent)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(TransitionEvent)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEvent)
 
 NS_IMPL_ADDREF_INHERITED(nsDOMTransitionEvent, nsDOMEvent)

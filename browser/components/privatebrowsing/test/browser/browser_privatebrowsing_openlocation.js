@@ -42,14 +42,11 @@ function test() {
   // initialization
   let pb = Cc["@mozilla.org/privatebrowsing;1"].
            getService(Ci.nsIPrivateBrowsingService);
-  let ww = Cc["@mozilla.org/embedcomp/window-watcher;1"].
-           getService(Ci.nsIWindowWatcher);
   waitForExplicitFinish();
 
   function openLocation(url, autofilled, callback) {
-    let observer = {
-      observe: function(aSubject, aTopic, aData) {
-        switch (aTopic) {
+    function observer(aSubject, aTopic, aData) {
+      switch (aTopic) {
         case "domwindowopened":
           let dialog = aSubject.QueryInterface(Ci.nsIDOMWindow);
           dialog.addEventListener("load", function () {
@@ -76,13 +73,12 @@ function test() {
           break;
 
         case "domwindowclosed":
-          ww.unregisterNotification(this);
+          Services.ww.unregisterNotification(arguments.callee);
           break;
-        }
       }
-    };
+    }
 
-    ww.registerNotification(observer);
+    Services.ww.registerNotification(observer);
     gPrefService.setIntPref("general.open_location.last_window_choice", 0);
     openDialog("chrome://browser/content/openLocation.xul", "_blank",
                "chrome,titlebar", window);

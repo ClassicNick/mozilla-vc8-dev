@@ -63,10 +63,17 @@ PARALLEL_DIRS += \
   passwordmgr \
   places \
   startup \
+  statusfilter \
   typeaheadfind \
   urlformatter \
   viewconfig \
   $(NULL)
+
+ifdef BUILD_CTYPES
+PARALLEL_DIRS += \
+  ctypes \
+  $(NULL)
+endif
 
 ifneq (,$(filter cocoa, $(MOZ_WIDGET_TOOLKIT)))
 TOOL_DIRS += alerts
@@ -97,13 +104,9 @@ PARALLEL_DIRS += \
   $(NULL)
 endif
 
-ifndef MOZ_THUNDERBIRD
-
-ifndef MOZ_SUITE
+ifdef MOZ_TOOLKIT_SEARCH
 PARALLEL_DIRS += search
 endif
-
-endif # MOZ_THUNDERBIRD
 
 ifdef MOZ_RDF
 PARALLEL_DIRS += downloads

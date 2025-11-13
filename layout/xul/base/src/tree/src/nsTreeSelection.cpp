@@ -277,6 +277,8 @@ NS_IMPL_CYCLE_COLLECTION_2(nsTreeSelection, mTree, mCurrentColumn)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsTreeSelection)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsTreeSelection)
 
+DOMCI_DATA(TreeSelection, nsTreeSelection)
+
 // QueryInterface implementation for nsBoxObject
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsTreeSelection)
   NS_INTERFACE_MAP_ENTRY(nsITreeSelection)
@@ -660,7 +662,7 @@ NS_IMETHODIMP nsTreeSelection::SetCurrentIndex(PRInt32 aIndex)
 
   nsRefPtr<nsPLDOMEvent> event =
     new nsPLDOMEvent(treeDOMNode, NS_LITERAL_STRING("DOMMenuItemActive"),
-                     PR_FALSE);
+                     PR_TRUE, PR_FALSE);
   if (!event)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -845,7 +847,7 @@ nsTreeSelection::FireOnSelectHandler()
   NS_ENSURE_STATE(node);
 
   nsRefPtr<nsPLDOMEvent> event =
-    new nsPLDOMEvent(node, NS_LITERAL_STRING("select"), PR_FALSE);
+    new nsPLDOMEvent(node, NS_LITERAL_STRING("select"), PR_TRUE, PR_FALSE);
   event->RunDOMEventWhenSafe();
   return NS_OK;
 }

@@ -158,8 +158,7 @@ nsFocusManager::nsFocusManager()
 
 nsFocusManager::~nsFocusManager()
 {
-  nsCOMPtr<nsIPrefBranch2> prefBranch =
-    do_QueryInterface(nsContentUtils::GetPrefBranch());
+  nsIPrefBranch2* prefBranch = nsContentUtils::GetPrefBranch();
 
   if (prefBranch) {
     prefBranch->RemoveObserver("accessibility.browsewithcaret", this);
@@ -180,8 +179,7 @@ nsFocusManager::Init()
     nsContentUtils::GetBoolPref("accessibility.tabfocus_applies_to_xul",
                                 nsIContent::sTabFocusModelAppliesToXUL);
 
-  nsCOMPtr<nsIPrefBranch2> prefBranch =
-    do_QueryInterface(nsContentUtils::GetPrefBranch());
+  nsIPrefBranch2* prefBranch = nsContentUtils::GetPrefBranch();
   prefBranch->AddObserver("accessibility.browsewithcaret", fm, PR_TRUE);
   prefBranch->AddObserver("accessibility.tabfocus_applies_to_xul", fm, PR_TRUE);
 
@@ -714,6 +712,9 @@ nsFocusManager::WindowLowered(nsIDOMWindow* aWindow)
   if (mActiveWindow != window)
     return NS_OK;
 
+  // clear the mouse capture as the active window has changed
+  nsIPresShell::SetCapturingContent(nsnull, 0);
+
   // inform the DOM window that it has deactivated, so that the active
   // attribute is updated on the window
   window->ActivateOrDeactivate(PR_FALSE);
@@ -1016,7 +1017,7 @@ nsFocusManager::SetFocusInner(nsIContent* aNewContent, PRInt32 aFlags,
   // if the element is already focused, just return. Note that this happens
   // after the frame check above so that we compare the element that will be
   // focused rather than the frame it is in.
-  if (!newWindow || newWindow == mFocusedWindow && contentToFocus == mFocusedContent)
+  if (!newWindow || (newWindow == mFocusedWindow && contentToFocus == mFocusedContent))
     return;
 
   // don't allow focus to be placed in docshells or descendants of docshells
@@ -1204,7 +1205,7 @@ nsFocusManager::GetCommonAncestor(nsPIDOMWindow* aWindow1,
   PRUint32 pos2 = parents2.Length();
   nsIDocShellTreeItem* parent = nsnull;
   PRUint32 len;
-  for (len = PR_MIN(pos1, pos2); len > 0; --len) {
+  for (len = NS_MIN(pos1, pos2); len > 0; --len) {
     nsIDocShellTreeItem* child1 = parents1.ElementAt(--pos1);
     nsIDocShellTreeItem* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
@@ -1670,7 +1671,7 @@ public:
 
   nsCOMPtr<nsISupports>   mTarget;
   PRUint32                mType;
-  nsCOMPtr<nsPresContext> mContext;
+  nsRefPtr<nsPresContext> mContext;
   PRBool                  mWindowRaised;
 };
 
@@ -1898,8 +1899,7 @@ nsFocusManager::SetCaretVisible(nsIPresShell* aPresShell,
   // When browsing with caret, make sure caret is visible after new focus
   // Return early if there is no caret. This can happen for the testcase
   // for bug 308025 where a window is closed in a blur handler.
-  nsRefPtr<nsCaret> caret;
-  aPresShell->GetCaret(getter_AddRefs(caret));
+  nsRefPtr<nsCaret> caret = aPresShell->GetCaret();
   if (!caret)
     return NS_OK;
 
@@ -1973,7 +1973,6 @@ nsFocusManager::GetSelectionLocation(nsIDocument* aDocument,
     nsCOMPtr<nsIDOMRange> domRange;
     rv = domSelection->GetRangeAt(0, getter_AddRefs(domRange));
     if (domRange) {
-      PRInt32 startOffset;
       domRange->GetStartContainer(getter_AddRefs(startNode));
       domRange->GetEndContainer(getter_AddRefs(endNode));
       domRange->GetStartOffset(&startOffset);
@@ -2054,22 +2053,23 @@ nsFocusManager::GetSelectionLocation(nsIDocument* aDocument,
           if (newCaretFrame && newCaretContent) {
             // If the caret is exactly at the same position of the new frame,
             // then we can use the newCaretFrame and newCaretContent for our position
-            nsRefPtr<nsCaret> caret;
-            aPresShell->GetCaret(getter_AddRefs(caret));
+            nsRefPtr<nsCaret> caret = aPresShell->GetCaret();
             nsRect caretRect;
-            nsIView *caretView;
-            caret->GetCaretCoordinates(nsCaret::eClosestViewCoordinates, 
-                                       domSelection, &caretRect,
-                                       &isCollapsed, &caretView);
-            nsPoint framePt;
-            nsIView *frameClosestView = newCaretFrame->GetClosestView(&framePt);
-            if (caretView == frameClosestView && caretRect.y == framePt.y &&
-                caretRect.x == framePt.x) {
-              // The caret is at the start of the new element.
-              startFrame = newCaretFrame;
-              startContent = newCaretContent;
-              if (endOfSelectionInStartNode) {
-                endContent = newCaretContent; // Ensure end of selection is not before start
+            nsIFrame *frame = caret->GetGeometry(domSelection, &caretRect);
+            if (frame) {
+              nsPoint caretWindowOffset;
+              nsIWidget *window = frame->GetWindowOffset(caretWindowOffset);
+              caretRect.MoveBy(caretWindowOffset);
+              nsPoint newCaretOffset;
+              nsIWidget *newCaretWindow = newCaretFrame->GetWindowOffset(newCaretOffset);
+              if (window == newCaretWindow && caretRect.y == newCaretOffset.y &&
+                  caretRect.x == newCaretOffset.x) {
+                // The caret is at the start of the new element.
+                startFrame = newCaretFrame;
+                startContent = newCaretContent;
+                if (endOfSelectionInStartNode) {
+                  endContent = newCaretContent; // Ensure end of selection is not before start
+                }
               }
             }
           }
@@ -2148,7 +2148,7 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
                                   PR_FALSE, 0, PR_FALSE, aNextContent);
   }
 
-  PRBool forward = (aType == MOVEFOCUS_FORWARD);
+  PRBool forward = (aType == MOVEFOCUS_FORWARD || aType == MOVEFOCUS_CARET);
   PRBool doNavigation = PR_TRUE;
   PRBool ignoreTabIndex = PR_FALSE;
   // when a popup is open, we want to ensure that tab navigation occurs only
@@ -2230,13 +2230,18 @@ nsFocusManager::DetermineElementToMoveFocus(nsPIDOMWindow* aWindow,
             startContent = nsnull;
         }
 
-        if (startContent) {
-          if (aType == MOVEFOCUS_CARET) {
+        if (aType == MOVEFOCUS_CARET) {
+          // GetFocusInSelection finds a focusable link near the caret.
+          // If there is no start content though, don't do this to avoid
+          // focusing something unexpected.
+          if (startContent) {
             GetFocusInSelection(aWindow, startContent,
                                 endSelectionContent, aNextContent);
-            return NS_OK;
           }
+          return NS_OK;
+        }
 
+        if (startContent) {
           // when starting from a selection, we always want to find the next or
           // previous element in the document. So the tabindex on elements
           // should be ignored.

@@ -92,6 +92,12 @@ public:
   static nsIPresShell*
   GetPresShellForContent(nsIContent* aContent);
 
+  // Helper for nsDOMWindowUtils::GetVisitedDependentComputedStyle
+  void SetExposeVisitedStyle(PRBool aExpose) {
+    NS_ASSERTION(aExpose != mExposeVisitedStyle, "should always be changing");
+    mExposeVisitedStyle = aExpose;
+  }
+
 private:
   void AssertFlushedPendingReflows() {
     NS_ASSERTION(mFlushedPendingReflows,
@@ -308,6 +314,7 @@ private:
   nsresult GetOverflow(nsIDOMCSSValue** aValue);
   nsresult GetOverflowX(nsIDOMCSSValue** aValue);
   nsresult GetOverflowY(nsIDOMCSSValue** aValue);
+  nsresult GetResize(nsIDOMCSSValue** aValue);
   nsresult GetPageBreakAfter(nsIDOMCSSValue** aValue);
   nsresult GetPageBreakBefore(nsIDOMCSSValue** aValue);
   nsresult GetMozTransform(nsIDOMCSSValue** aValue);
@@ -470,6 +477,8 @@ private:
   nsIPresShell* mPresShell;
 
   PRInt32 mAppUnitsPerInch; /* For unit conversions */
+
+  PRPackedBool mExposeVisitedStyle;
 
 #ifdef DEBUG
   PRBool mFlushedPendingReflows;

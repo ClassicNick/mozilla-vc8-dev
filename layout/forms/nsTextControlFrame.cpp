@@ -268,14 +268,9 @@ NS_INTERFACE_MAP_END
 static PRBool
 IsFocusedContent(nsIContent* aContent)
 {
-  nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (!fm)
-    return PR_FALSE;
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
 
-  nsCOMPtr<nsIDOMElement> focusedElement;
-  fm->GetFocusedElement(getter_AddRefs(focusedElement));
-  nsCOMPtr<nsIContent> focusedContent = do_QueryInterface(focusedElement);
-  return (focusedContent == aContent);
+  return fm && fm->GetFocusedContent() == aContent;
 }
 
 NS_IMETHODIMP
@@ -694,9 +689,8 @@ nsTextInputSelectionImpl::SetCaretReadOnly(PRBool aReadOnly)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret;
-    if (NS_SUCCEEDED(shell->GetCaret(getter_AddRefs(caret))))
-    {
+    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    if (caret) {
       nsISelection* domSel = mFrameSelection->
         GetSelection(nsISelectionController::SELECTION_NORMAL);
       if (domSel)
@@ -721,9 +715,8 @@ nsTextInputSelectionImpl::GetCaretVisible(PRBool *_retval)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret;
-    if (NS_SUCCEEDED(shell->GetCaret(getter_AddRefs(caret))))
-    {
+    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    if (caret) {
       nsISelection* domSel = mFrameSelection->
         GetSelection(nsISelectionController::SELECTION_NORMAL);
       if (domSel)
@@ -741,9 +734,8 @@ nsTextInputSelectionImpl::SetCaretVisibilityDuringSelection(PRBool aVisibility)
   nsCOMPtr<nsIPresShell> shell = do_QueryReferent(mPresShellWeak, &result);
   if (shell)
   {
-    nsRefPtr<nsCaret> caret;
-    if (NS_SUCCEEDED(shell->GetCaret(getter_AddRefs(caret))))
-    {
+    nsRefPtr<nsCaret> caret = shell->GetCaret();
+    if (caret) {
       nsISelection* domSel = mFrameSelection->
         GetSelection(nsISelectionController::SELECTION_NORMAL);
       if (domSel)
@@ -1099,7 +1091,11 @@ nsTextControlFrame::DestroyFrom(nsIFrame* aDestructRoot)
   if (!mDidPreDestroy) {
     PreDestroy();
   }
-  nsContentUtils::DestroyAnonymousContent(&mAnonymousDiv);
+  if (mValueDiv && mMutationObserver) {
+    mValueDiv->RemoveMutationObserver(mMutationObserver);
+  }
+  nsContentUtils::DestroyAnonymousContent(&mValueDiv);
+  nsContentUtils::DestroyAnonymousContent(&mPlaceholderDiv);
   nsBoxFrame::DestroyFrom(aDestructRoot);
 }
 
@@ -1259,14 +1255,14 @@ nsTextControlFrame::CalcIntrinsicSize(nsIRenderingContext* aRenderingContext,
       aIntrinsicSize.width += 1;
     }
 
-    // Also add in the padding of our anonymous div child.  Note that it hasn't
+    // Also add in the padding of our value div child.  Note that it hasn't
     // been reflowed yet, so we can't get its used padding, but it shouldn't be
     // using percentage padding anyway.
     nsMargin childPadding;
     if (GetFirstChild(nsnull)->GetStylePadding()->GetPadding(childPadding)) {
       aIntrinsicSize.width += childPadding.LeftRight();
     } else {
-      NS_ERROR("Percentage padding on anonymous div?");
+      NS_ERROR("Percentage padding on value div?");
     }
   }
 
@@ -1413,7 +1409,7 @@ nsTextControlFrame::InitEditor()
   if (!domdoc)
     return NS_ERROR_FAILURE;
 
-  rv = mEditor->Init(domdoc, shell, mAnonymousDiv, mSelCon, editorFlags);
+  rv = mEditor->Init(domdoc, shell, mValueDiv, mSelCon, editorFlags);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Initialize the controller for the editor
@@ -1537,6 +1533,12 @@ nsTextControlFrame::InitEditor()
     // Now restore the original editor flags.
     rv = mEditor->SetFlags(editorFlags);
 
+    // By default the placeholder is shown,
+    // we should hide it if the default value is not empty.
+    nsWeakFrame weakFrame(this);
+    HidePlaceholder();
+    NS_ENSURE_STATE(weakFrame.IsAlive());
+
     if (NS_FAILED(rv))
       return rv;
   }
@@ -1583,7 +1585,7 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
                                                  kNameSpaceID_XHTML);
   NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
 
-  nsresult rv = NS_NewHTMLElement(getter_AddRefs(mAnonymousDiv), nodeInfo, PR_FALSE);
+  nsresult rv = NS_NewHTMLElement(getter_AddRefs(mValueDiv), nodeInfo, PR_FALSE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Set the necessary classes on the text control. We use class values
@@ -1605,12 +1607,16 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
         disp->mOverflowX != NS_STYLE_OVERFLOW_CLIP) {
       classValue.AppendLiteral(" inherit-overflow");
     }
+
+    mMutationObserver = new nsAnonDivObserver(this);
+    NS_ENSURE_TRUE(mMutationObserver, NS_ERROR_OUT_OF_MEMORY);
+    mValueDiv->AddMutationObserver(mMutationObserver);
   }
-  rv = mAnonymousDiv->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                              classValue, PR_FALSE);
+  rv = mValueDiv->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                          classValue, PR_FALSE);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!aElements.AppendElement(mAnonymousDiv))
+  if (!aElements.AppendElement(mValueDiv))
     return NS_ERROR_OUT_OF_MEMORY;
 
   // Create selection
@@ -1622,7 +1628,7 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   // Create a SelectionController
 
   mSelCon = new nsTextInputSelectionImpl(mFrameSel, shell,
-                                         mAnonymousDiv);
+                                         mValueDiv);
   if (!mSelCon)
     return NS_ERROR_OUT_OF_MEMORY;
   mTextListener = new nsTextInputListener();
@@ -1640,9 +1646,9 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
                                          getter_AddRefs(domSelection))) &&
       domSelection) {
     nsCOMPtr<nsISelectionPrivate> selPriv(do_QueryInterface(domSelection));
-    nsRefPtr<nsCaret> caret;
+    nsRefPtr<nsCaret> caret = shell->GetCaret();
     nsCOMPtr<nsISelectionListener> listener;
-    if (NS_SUCCEEDED(shell->GetCaret(getter_AddRefs(caret))) && caret) {
+    if (caret) {
       listener = do_QueryInterface(caret);
       if (listener) {
         selPriv->AddSelectionListener(listener);
@@ -1660,7 +1666,18 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  // Now create the placeholder anonymous content
+  rv = CreatePlaceholderDiv(aElements, doc->NodeInfoManager());
+  NS_ENSURE_SUCCESS(rv, rv);
+
   return NS_OK;
+}
+
+void
+nsTextControlFrame::AppendAnonymousContentTo(nsBaseContentList& aElements)
+{
+  aElements.MaybeAppendElement(mValueDiv);
+  aElements.MaybeAppendElement(mPlaceholderDiv);
 }
 
 nscoord
@@ -1740,7 +1757,12 @@ nsTextControlFrame::GetPrefSize(nsBoxLayoutState& aState)
   NS_ENSURE_SUCCESS(rv, pref);
   AddBorderAndPadding(pref);
 
-  mPrefSize = pref;
+  PRBool widthSet, heightSet;
+  nsIBox::AddCSSPrefSize(this, pref, widthSet, heightSet);
+
+  nsSize minSize = GetMinSize(aState);
+  nsSize maxSize = GetMaxSize(aState);
+  mPrefSize = BoundsCheck(minSize, pref, maxSize);
 
 #ifdef DEBUG_rods
   {
@@ -1754,7 +1776,7 @@ nsTextControlFrame::GetPrefSize(nsBoxLayoutState& aState)
   }
 #endif
 
-  return pref;
+  return mPrefSize;
 }
 
 nsSize
@@ -1814,6 +1836,18 @@ nsTextControlFrame::IsLeaf() const
 void nsTextControlFrame::SetFocus(PRBool aOn, PRBool aRepaint)
 {
   if (!aOn) {
+    nsWeakFrame weakFrame(this);
+
+    nsAutoString valueString;
+    GetValue(valueString, PR_TRUE);
+    if (valueString.IsEmpty())
+      ShowPlaceholder();
+
+    if (!weakFrame.IsAlive())
+    {
+      return;
+    }
+
     MaybeEndSecureKeyboardInput();
     return;
   }
@@ -1821,8 +1855,22 @@ void nsTextControlFrame::SetFocus(PRBool aOn, PRBool aRepaint)
   if (!mSelCon)
     return;
 
+  nsWeakFrame weakFrame(this);
+
+  HidePlaceholder();
+
+  if (!weakFrame.IsAlive())
+  {
+    return;
+  }
+
   if (NS_SUCCEEDED(InitFocusedValue()))
     MaybeBeginSecureKeyboardInput();
+
+  // Scroll the current selection into view
+  mSelCon->ScrollSelectionIntoView(nsISelectionController::SELECTION_NORMAL,
+                                   nsISelectionController::SELECTION_FOCUS_REGION,
+                                   PR_FALSE);
 
   // tell the caret to use our selection
 
@@ -1832,8 +1880,7 @@ void nsTextControlFrame::SetFocus(PRBool aOn, PRBool aRepaint)
   if (!ourSel) return;
 
   nsIPresShell* presShell = PresContext()->GetPresShell();
-  nsRefPtr<nsCaret> caret;
-  presShell->GetCaret(getter_AddRefs(caret));
+  nsRefPtr<nsCaret> caret = presShell->GetCaret();
   if (!caret) return;
   caret->SetCaretDOMSelection(ourSel);
 
@@ -1882,7 +1929,7 @@ nsresult nsTextControlFrame::SetFormProperty(nsIAtom* aName, const nsAString& aV
       //      of select all which merely builds a range that selects
       //      all of the content and adds that to the selection.
 
-      SelectAllContents();
+      SelectAllOrCollapseToEndOfText(PR_TRUE);
     }
     mIsProcessing = PR_FALSE;
   }
@@ -1960,11 +2007,17 @@ nsTextControlFrame::SetSelectionInternal(nsIDOMNode *aStartNode,
 
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return selection->AddRange(range);
+  rv = selection->AddRange(range);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Scroll the selection into view (see bug 231389)
+  return mSelCon->ScrollSelectionIntoView(nsISelectionController::SELECTION_NORMAL,
+                                          nsISelectionController::SELECTION_FOCUS_REGION,
+                                          PR_FALSE);
 }
 
 nsresult
-nsTextControlFrame::SelectAllContents()
+nsTextControlFrame::SelectAllOrCollapseToEndOfText(PRBool aSelect)
 {
   if (!mEditor)
     return NS_OK;
@@ -1974,6 +2027,7 @@ nsTextControlFrame::SelectAllContents()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIContent> rootContent = do_QueryInterface(rootElement);
+  nsCOMPtr<nsIDOMNode> rootNode(do_QueryInterface(rootElement));
   PRInt32 numChildren = rootContent->GetChildCount();
 
   if (numChildren > 0) {
@@ -1984,11 +2038,18 @@ nsTextControlFrame::SelectAllContents()
       if (child->Tag() == nsGkAtoms::br)
         --numChildren;
     }
+    if (!aSelect && numChildren) {
+      child = rootContent->GetChildAt(numChildren - 1);
+      if (child && child->IsNodeOfType(nsINode::eTEXT)) {
+        rootNode = do_QueryInterface(child);
+        const nsTextFragment* fragment = child->GetText();
+        numChildren = fragment ? fragment->GetLength() : 0;
+      }
+    }
   }
 
-  nsCOMPtr<nsIDOMNode> rootNode(do_QueryInterface(rootElement));
-
-  return SetSelectionInternal(rootNode, 0, rootNode, numChildren);
+  return SetSelectionInternal(rootNode, aSelect ? 0 : numChildren,
+                              rootNode, numChildren);
 }
 
 nsresult
@@ -2384,6 +2445,12 @@ nsTextControlFrame::AttributeChanged(PRInt32         aNameSpaceID,
     }    
     mEditor->SetFlags(flags);
   }
+  else if (nsGkAtoms::placeholder == aAttribute)
+  {
+    nsWeakFrame weakFrame(this);
+    UpdatePlaceholderText(PR_TRUE);
+    NS_ENSURE_STATE(weakFrame.IsAlive());
+  }
   // Allow the base class to handle common attributes supported
   // by all form elements... 
   else {
@@ -2394,18 +2461,18 @@ nsTextControlFrame::AttributeChanged(PRInt32         aNameSpaceID,
 }
 
 
-NS_IMETHODIMP
-nsTextControlFrame::GetText(nsString* aText)
+nsresult
+nsTextControlFrame::GetText(nsString& aText)
 {
   nsresult rv = NS_OK;
   if (IsSingleLineTextControl()) {
     // If we're going to remove newlines anyway, ignore the wrap property
-    GetValue(*aText, PR_TRUE);
-    RemoveNewlines(*aText);
+    GetValue(aText, PR_TRUE);
+    RemoveNewlines(aText);
   } else {
     nsCOMPtr<nsIDOMHTMLTextAreaElement> textArea = do_QueryInterface(mContent);
     if (textArea) {
-      rv = textArea->GetValue(*aText);
+      rv = textArea->GetValue(aText);
     }
   }
   return rv;
@@ -2475,14 +2542,14 @@ nsTextControlFrame::FireOnInput()
 nsresult
 nsTextControlFrame::InitFocusedValue()
 {
-  return GetText(&mFocusedValue);
+  return GetText(mFocusedValue);
 }
 
 NS_IMETHODIMP
 nsTextControlFrame::CheckFireOnChange()
 {
   nsString value;
-  GetText(&value);
+  GetText(value);
   if (!mFocusedValue.Equals(value))
   {
     mFocusedValue = value;
@@ -2506,6 +2573,12 @@ nsTextControlFrame::GetValue(nsAString& aValue, PRBool aIgnoreWrap) const
   
   if (mEditor && mUseEditor) 
   {
+    PRBool canCache = aIgnoreWrap && !IsSingleLineTextControl();
+    if (canCache && !mCachedValue.IsEmpty()) {
+      aValue = mCachedValue;
+      return NS_OK;
+    }
+
     PRUint32 flags = (nsIDocumentEncoder::OutputLFLineBreak |
                       nsIDocumentEncoder::OutputPreformatted |
                       nsIDocumentEncoder::OutputPersistNBSP);
@@ -2541,6 +2614,11 @@ nsTextControlFrame::GetValue(nsAString& aValue, PRBool aIgnoreWrap) const
       
       rv = mEditor->OutputToString(NS_LITERAL_STRING("text/plain"), flags,
                                    aValue);
+    }
+    if (canCache) {
+      const_cast<nsTextControlFrame*>(this)->mCachedValue = aValue;
+    } else {
+      const_cast<nsTextControlFrame*>(this)->mCachedValue.Truncate();
     }
   }
   else
@@ -2580,19 +2658,16 @@ nsTextControlFrame::SetValue(const nsAString& aValue)
     // restores it afterwards (ie. we want 'change' events for those changes).
     // Focused value must be updated to prevent incorrect 'change' events,
     // but only if user hasn't changed the value.
-    nsString val;
-    GetText(&val);
+
+    // GetText removes newlines from single line control.
+    nsString currentValue;
+    GetText(currentValue);
     PRBool focusValueInit = !mFireChangeEventState &&
-      mFocusedValue.Equals(val);
+      mFocusedValue.Equals(currentValue);
 
     nsCOMPtr<nsIEditor> editor = mEditor;
     nsWeakFrame weakFrame(this);
-    nsAutoString currentValue;
-    GetValue(currentValue, PR_FALSE);
-    if (IsSingleLineTextControl())
-    {
-      RemoveNewlines(currentValue); 
-    }
+
     // this is necessary to avoid infinite recursion
     if (!currentValue.Equals(aValue))
     {
@@ -2600,12 +2675,13 @@ nsTextControlFrame::SetValue(const nsAString& aValue)
       // so convert windows and mac platform linebreaks to \n:
       // Unfortunately aValue is declared const, so we have to copy
       // in order to do this substitution.
-      currentValue.Assign(aValue);
-      ::PlatformToDOMLineBreaks(currentValue);
+      nsString newValue(aValue);
+      if (aValue.FindChar(PRUnichar('\r')) != -1) {
+        ::PlatformToDOMLineBreaks(newValue);
+      }
 
-      nsCOMPtr<nsIDOMDocument>domDoc;
-      nsresult rv = editor->GetDocument(getter_AddRefs(domDoc));
-      NS_ENSURE_SUCCESS(rv, rv);
+      nsCOMPtr<nsIDOMDocument> domDoc;
+      editor->GetDocument(getter_AddRefs(domDoc));
       NS_ENSURE_STATE(domDoc);
 
       PRBool outerTransaction;
@@ -2628,7 +2704,19 @@ nsTextControlFrame::SetValue(const nsAString& aValue)
         }
 
         nsCOMPtr<nsISelectionController> kungFuDeathGrip = mSelCon.get();
-        mSelCon->SelectAll();
+        PRUint32 currentLength = currentValue.Length();
+        PRUint32 newlength = newValue.Length();
+        if (!currentLength ||
+            !StringBeginsWith(newValue, currentValue)) {
+          // Replace the whole text.
+          currentLength = 0;
+          mSelCon->SelectAll();
+        } else {
+          // Collapse selection to the end so that we can append data.
+          SelectAllOrCollapseToEndOfText(PR_FALSE);
+        }
+        const nsAString& insertValue =
+          StringTail(newValue, newlength - currentLength);
         nsCOMPtr<nsIPlaintextEditor> plaintextEditor = do_QueryInterface(editor);
         if (!plaintextEditor || !weakFrame.IsAlive()) {
           NS_WARNING("Somehow not a plaintext editor?");
@@ -2662,11 +2750,14 @@ nsTextControlFrame::SetValue(const nsAString& aValue)
         plaintextEditor->GetMaxTextLength(&savedMaxLength);
         plaintextEditor->SetMaxTextLength(-1);
 
-        if (currentValue.Length() < 1)
+        if (insertValue.IsEmpty()) {
           editor->DeleteSelection(nsIEditor::eNone);
-        else {
-          if (plaintextEditor)
-            plaintextEditor->InsertText(currentValue);
+        } else {
+          plaintextEditor->InsertText(insertValue);
+        }
+
+        if (!IsSingleLineTextControl()) {
+          mCachedValue = newValue;
         }
 
         plaintextEditor->SetMaxTextLength(savedMaxLength);
@@ -2750,6 +2841,18 @@ nsTextControlFrame::IsScrollable() const
 void
 nsTextControlFrame::SetValueChanged(PRBool aValueChanged)
 {
+  // placeholder management
+  if (!IsFocusedContent(mContent)) {
+    // If the content is focused, we don't care about the changes because
+    // the placeholder is going to be hide/show on blur.
+    nsAutoString valueString;
+    GetValue(valueString, PR_TRUE);
+    if (valueString.IsEmpty())
+      ShowPlaceholder();
+    else
+      HidePlaceholder();
+  }
+
   nsCOMPtr<nsITextControlElement> elem = do_QueryInterface(mContent);
   if (elem) {
     elem->SetValueChanged(aValueChanged);
@@ -2762,3 +2865,122 @@ nsTextControlFrame::ShutDown()
   NS_IF_RELEASE(sNativeTextAreaBindings);
   NS_IF_RELEASE(sNativeInputBindings);
 }
+
+nsresult
+nsTextControlFrame::CreatePlaceholderDiv(nsTArray<nsIContent*>& aElements,
+                                         nsNodeInfoManager* pNodeInfoManager)
+{
+  nsresult rv;
+  nsCOMPtr<nsIContent> placeholderText;
+
+  // Create a DIV for the placeholder
+  // and add it to the anonymous content child list
+  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nodeInfo = pNodeInfoManager->GetNodeInfo(nsGkAtoms::div, nsnull,
+                                           kNameSpaceID_XHTML);
+  NS_ENSURE_TRUE(nodeInfo, NS_ERROR_OUT_OF_MEMORY);
+
+  rv = NS_NewHTMLElement(getter_AddRefs(mPlaceholderDiv), nodeInfo, PR_FALSE);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Create the text node for the placeholder text before doing anything else
+  rv = NS_NewTextNode(getter_AddRefs(placeholderText), pNodeInfoManager);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mPlaceholderDiv->AppendChildTo(placeholderText, PR_FALSE);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Set the necessary classes on the text control. We use class values
+  // instead of a 'style' attribute so that the style comes from a user-agent
+  // style sheet and is still applied even if author styles are disabled.
+  SetPlaceholderClass(PR_TRUE, PR_FALSE);
+
+  if (!aElements.AppendElement(mPlaceholderDiv))
+    return NS_ERROR_OUT_OF_MEMORY;
+
+  // initialise the text
+  UpdatePlaceholderText(PR_FALSE);
+
+  return NS_OK;
+}
+
+nsresult
+nsTextControlFrame::ShowPlaceholder()
+{
+  return SetPlaceholderClass(PR_TRUE, PR_TRUE);
+}
+
+nsresult
+nsTextControlFrame::HidePlaceholder()
+{
+  return SetPlaceholderClass(PR_FALSE, PR_TRUE);
+}
+
+nsresult
+nsTextControlFrame::SetPlaceholderClass(PRBool aVisible,
+                                        PRBool aNotify)
+{
+  nsresult rv;
+  nsAutoString classValue;
+
+  classValue.Assign(NS_LITERAL_STRING("anonymous-div placeholder"));
+
+  if (!aVisible)
+    classValue.AppendLiteral(" hidden");
+
+  rv = mPlaceholderDiv->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
+                                classValue, aNotify);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+nsresult
+nsTextControlFrame::UpdatePlaceholderText(PRBool aNotify)
+{
+  nsAutoString placeholderValue;
+
+  mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::placeholder, placeholderValue);
+  RemoveNewlines(placeholderValue);
+  NS_ASSERTION(mPlaceholderDiv->GetChildAt(0), "placeholder div has no child");
+  mPlaceholderDiv->GetChildAt(0)->SetText(placeholderValue, aNotify);
+
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS1(nsAnonDivObserver, nsIMutationObserver)
+
+void
+nsAnonDivObserver::CharacterDataChanged(nsIDocument*             aDocument,
+                                        nsIContent*              aContent,
+                                        CharacterDataChangeInfo* aInfo)
+{
+  mTextControl->ClearValueCache();
+}
+
+void
+nsAnonDivObserver::ContentAppended(nsIDocument* aDocument,
+                                   nsIContent*  aContainer,
+                                   PRInt32      aNewIndexInContainer)
+{
+  mTextControl->ClearValueCache();
+}
+
+void
+nsAnonDivObserver::ContentInserted(nsIDocument* aDocument,
+                                   nsIContent*  aContainer,
+                                   nsIContent*  aChild,
+                                   PRInt32      aIndexInContainer)
+{
+  mTextControl->ClearValueCache();
+}
+
+void
+nsAnonDivObserver::ContentRemoved(nsIDocument* aDocument,
+                                  nsIContent*  aContainer,
+                                  nsIContent*  aChild,
+                                  PRInt32      aIndexInContainer)
+{
+  mTextControl->ClearValueCache();
+}
+

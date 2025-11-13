@@ -68,6 +68,12 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMDocumentType.h"
 #include "nsIDOMElement.h"
+#include "Link.h"
+#ifdef MOZ_SVG
+#include "nsIDOMSVGElement.h"
+#include "nsIDOMSVGTitleElement.h"
+#include "nsIDOMSVGForeignObjectElem.h"
+#endif
 #include "nsIDOMEvent.h"
 #include "nsIDOMMouseEvent.h"
 #include "nsIDOMNSUIEvent.h"
@@ -85,8 +91,8 @@
 #include "nsIDOMHTMLElement.h"
 #include "nsIPresShell.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
 #include "nsIDOMWindowCollection.h"
-#include "nsIFocusController.h"
 #include "nsIWindowWatcher.h"
 #include "nsPIWindowWatcher.h"
 #include "nsIPrompt.h"
@@ -422,7 +428,7 @@ nsDocShellTreeOwner::SizeShellTo(nsIDocShellTreeItem* aShellItem,
    Set the preferred size on the aShellItem.
    */
 
-   nsCOMPtr<nsPresContext> presContext;
+   nsRefPtr<nsPresContext> presContext;
    mWebBrowser->mDocShell->GetPresContext(getter_AddRefs(presContext));
    NS_ENSURE_TRUE(presContext, NS_ERROR_FAILURE);
 
@@ -980,6 +986,36 @@ DefaultTooltipTextProvider::DefaultTooltipTextProvider()
     mTag_window       = do_GetAtom("window");   
 }
 
+#ifdef MOZ_SVG
+//
+// UseSVGTitle
+//
+// A helper routine that determines whether we're still interested
+// in SVG titles. We need to stop at the SVG root element; that
+// either has no parent, has a non-SVG parent or has an SVG ForeignObject 
+// parent.
+//
+static PRBool
+UseSVGTitle(nsIDOMElement *currElement)
+{
+  nsCOMPtr<nsIDOMSVGElement> svgContent(do_QueryInterface(currElement));
+  if (!svgContent)
+    return PR_FALSE;
+
+  nsCOMPtr<nsIDOMNode> parent;
+  currElement->GetParentNode(getter_AddRefs(parent));
+  if (!parent)
+    return PR_FALSE;
+
+  nsCOMPtr<nsIDOMSVGForeignObjectElement> parentFOContent(do_QueryInterface(parent));
+  if (parentFOContent)
+    return PR_FALSE;
+
+  nsCOMPtr<nsIDOMSVGElement> parentSVGContent(do_QueryInterface(parent));
+  return (parentSVGContent != nsnull);
+}
+
+#endif
 /* void getNodeText (in nsIDOMNode aNode, out wstring aText); */
 NS_IMETHODIMP
 DefaultTooltipTextProvider::GetNodeText(nsIDOMNode *aNode, PRUnichar **aText,
@@ -990,6 +1026,7 @@ DefaultTooltipTextProvider::GetNodeText(nsIDOMNode *aNode, PRUnichar **aText,
     
   nsString outText;
 
+  PRBool lookingForSVGTitle = PR_TRUE;
   PRBool found = PR_FALSE;
   nsCOMPtr<nsIDOMNode> current ( aNode );
   while ( !found && current ) {
@@ -1007,9 +1044,41 @@ DefaultTooltipTextProvider::GetNodeText(nsIDOMNode *aNode, PRUnichar **aText,
             found = PR_TRUE;
           else {
             // ...ok, that didn't work, try it in the XLink namespace
-            currElement->GetAttributeNS(NS_LITERAL_STRING("http://www.w3.org/1999/xlink"), NS_LITERAL_STRING("title"), outText);
-            if ( outText.Length() )
-              found = PR_TRUE;
+            NS_NAMED_LITERAL_STRING(xlinkNS, "http://www.w3.org/1999/xlink");
+            nsCOMPtr<mozilla::dom::Link> linkContent(do_QueryInterface(currElement));
+            if (linkContent) {
+              nsCOMPtr<nsIURI> uri(linkContent->GetURIExternal());
+              if (uri) {
+                currElement->GetAttributeNS(NS_LITERAL_STRING("http://www.w3.org/1999/xlink"), NS_LITERAL_STRING("title"), outText);
+                if ( outText.Length() )
+                  found = PR_TRUE;
+              }
+            }
+#ifdef MOZ_SVG
+            else {
+              if (lookingForSVGTitle) {
+                lookingForSVGTitle = UseSVGTitle(currElement);
+              }
+              if (lookingForSVGTitle) {
+                nsCOMPtr<nsIDOMNodeList>childNodes;
+                aNode->GetChildNodes(getter_AddRefs(childNodes));
+                PRUint32 childNodeCount;
+                childNodes->GetLength(&childNodeCount);
+                for (PRUint32 i = 0; i < childNodeCount; i++) {
+                  nsCOMPtr<nsIDOMNode>childNode;
+                  childNodes->Item(i, getter_AddRefs(childNode));
+                  nsCOMPtr<nsIDOMSVGTitleElement> titleElement(do_QueryInterface(childNode));
+                  if (titleElement) {
+                    nsCOMPtr<nsIDOM3Node> titleContent(do_QueryInterface(titleElement));
+                    titleContent->GetTextContent(outText);
+                    if ( outText.Length() )
+                      found = PR_TRUE;
+                    break;
+                  }
+                }
+              }
+            }
+#endif
           }
         }
       }
@@ -1775,16 +1844,15 @@ ChromeContextMenuListener::ContextMenu(nsIDOMEvent* aMouseEvent)
   res = mWebBrowser->GetContentDOMWindow(getter_AddRefs(win));
   NS_ENSURE_SUCCESS(res, res);
   NS_ENSURE_TRUE(win, NS_ERROR_FAILURE);
-  // get the private dom window
-  nsCOMPtr<nsPIDOMWindow> privateWin(do_QueryInterface(win, &res));
-  NS_ENSURE_SUCCESS(res, res);
-  NS_ENSURE_TRUE(privateWin, NS_ERROR_FAILURE);
-  // get the focus controller
-  nsIFocusController *focusController = privateWin->GetRootFocusController();
-  NS_ENSURE_TRUE(focusController, NS_ERROR_FAILURE);
-  // set the focus controller's popup node to the event target
-  res = focusController->SetPopupNode(targetDOMnode);
-  NS_ENSURE_SUCCESS(res, res);
+
+  nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(win));
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+  nsCOMPtr<nsPIWindowRoot> root = window->GetTopWindowRoot();
+  NS_ENSURE_TRUE(root, NS_ERROR_FAILURE);
+  if (root) {
+    // set the window root's popup node to the event target
+    root->SetPopupNode(targetDOMnode);
+  }
 
   // Tell the listener all about the event
   if ( menuListener2 ) {

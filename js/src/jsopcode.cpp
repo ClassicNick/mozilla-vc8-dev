@@ -79,6 +79,8 @@
 
 #include "jsautooplen.h"
 
+using namespace js;
+
 /*
  * Index limit must stay within 32 bits.
  */
@@ -307,7 +309,7 @@ ToDisassemblySource(JSContext *cx, jsval v)
         }
 
         if (clasp == &js_RegExpClass) {
-            JSAutoTempValueRooter tvr(cx);
+            AutoValueRooter tvr(cx);
             if (!js_regexp_toString(cx, obj, tvr.addr()))
                 return NULL;
             return js_GetStringBytes(cx, JSVAL_TO_STRING(tvr.value()));
@@ -553,12 +555,17 @@ SprintEnsureBuffer(Sprinter *sp, size_t len)
 static ptrdiff_t
 SprintPut(Sprinter *sp, const char *s, size_t len)
 {
-    ptrdiff_t offset;
-    char *bp;
+    ptrdiff_t offset = sp->size; /* save old size */
+    char *bp = sp->base;         /* save old base */
 
     /* Allocate space for s, including the '\0' at the end. */
     if (!SprintEnsureBuffer(sp, len))
         return -1;
+
+    if (sp->base != bp &&               /* buffer was realloc'ed */
+        s >= bp && s < bp + offset) {   /* s was within the buffer */
+        s = sp->base + (s - bp);        /* this is where it lives now */
+    }
 
     /* Advance offset and copy s into sp's buffer. */
     offset = sp->offset;
@@ -746,9 +753,9 @@ js_NewPrinter(JSContext *cx, const char *name, JSFunction *fun,
     INIT_SPRINTER(cx, &jp->sprinter, &jp->pool, 0);
     JS_InitArenaPool(&jp->pool, name, 256, 1, &cx->scriptStackQuota);
     jp->indent = indent;
-    jp->pretty = pretty;
-    jp->grouped = grouped;
-    jp->strict = strict;
+    jp->pretty = !!pretty;
+    jp->grouped = !!grouped;
+    jp->strict = !!strict;
     jp->script = NULL;
     jp->dvgfence = NULL;
     jp->pcstack = NULL;
@@ -1100,7 +1107,8 @@ SprintDoubleValue(Sprinter *sp, jsval v, JSOp *opp)
                              : "1 / 0");
         *opp = JSOP_DIV;
     } else {
-        s = JS_dtostr(buf, sizeof buf, DTOSTR_STANDARD, 0, d);
+        s = js_dtostr(JS_THREAD_DATA(sp->context)->dtoaState, buf, sizeof buf,
+                      DTOSTR_STANDARD, 0, d);
         if (!s) {
             JS_ReportOutOfMemory(sp->context);
             return -1;
@@ -1907,8 +1915,11 @@ Decompile(SprintStack *ss, jsbytecode *pc, intN nb, JSOp nextop)
  */
 #define PROPAGATE_CALLNESS()                                                  \
     JS_BEGIN_MACRO                                                            \
-        if (ss->opcodes[ss->top - 1] == JSOP_CALL)                            \
+        if (ss->opcodes[ss->top - 1] == JSOP_CALL ||                          \
+            ss->opcodes[ss->top - 1] == JSOP_EVAL ||                          \
+            ss->opcodes[ss->top - 1] == JSOP_APPLY) {                         \
             saveop = JSOP_CALL;                                               \
+        }                                                                     \
     JS_END_MACRO
 
     cx = ss->sprinter.context;
@@ -2525,13 +2536,8 @@ Decompile(SprintStack *ss, jsbytecode *pc, intN nb, JSOp nextop)
                     break;
 
                   case SRC_HIDDEN:
-                    /*
-                     * Hide this pop. Don't adjust our stack depth model if
-                     * it's from a goto in a with or for/in.
-                     */
+                    /* Hide this pop, it's from a goto in a with or for/in. */
                     todo = -2;
-                    if (lastop == JSOP_UNBRAND)
-                        (void) POP_STR();
                     break;
 
                   case SRC_DECL:
@@ -2641,7 +2647,7 @@ Decompile(SprintStack *ss, jsbytecode *pc, intN nb, JSOp nextop)
                                                    goto enterblock_out)
                 for (sprop = OBJ_SCOPE(obj)->lastProperty(); sprop;
                      sprop = sprop->parent) {
-                    if (!(sprop->flags & SPROP_HAS_SHORTID))
+                    if (!sprop->hasShortID())
                         continue;
                     LOCAL_ASSERT_OUT(sprop->shortid < argc);
                     atomv[sprop->shortid] = JSID_TO_ATOM(sprop->id);
@@ -5583,14 +5589,9 @@ ReconstructPCStack(JSContext *cx, JSScript *script, jsbytecode *target,
             }
         }
 
-        /*
-         * Ignore early-exit code, which is SRC_HIDDEN, but do not ignore the
-         * hidden POP that sometimes appears after an UNBRAND. See bug 543565.
-         */
-        if (sn && SN_TYPE(sn) == SRC_HIDDEN &&
-            (op != JSOP_POP || js_GetOpcode(cx, script, pc - 1) != JSOP_UNBRAND)) {
+        /* Ignore early-exit code, which is annotated SRC_HIDDEN. */
+        if (sn && SN_TYPE(sn) == SRC_HIDDEN)
             continue;
-        }
 
         if (SimulateOp(cx, script, op, cs, pc, pcstack, pcdepth) < 0)
             return -1;

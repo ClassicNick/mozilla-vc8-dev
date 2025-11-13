@@ -46,7 +46,7 @@
 #include "nsScriptLoader.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
-#include "nsICSSLoader.h"
+#include "nsCSSLoader.h"
 #include "nsStyleConsts.h"
 #include "nsStyleLinkElement.h"
 #include "nsINodeInfo.h"
@@ -190,15 +190,15 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 nsContentSink::nsContentSink()
 {
   // We have a zeroing operator new
-  NS_ASSERTION(mLayoutStarted == PR_FALSE, "What?");
-  NS_ASSERTION(mDynamicLowerValue == PR_FALSE, "What?");
-  NS_ASSERTION(mParsing == PR_FALSE, "What?");
+  NS_ASSERTION(!mLayoutStarted, "What?");
+  NS_ASSERTION(!mDynamicLowerValue, "What?");
+  NS_ASSERTION(!mParsing, "What?");
   NS_ASSERTION(mLastSampledUserEventTime == 0, "What?");
   NS_ASSERTION(mDeflectedCount == 0, "What?");
-  NS_ASSERTION(mDroppedTimer == PR_FALSE, "What?");
+  NS_ASSERTION(!mDroppedTimer, "What?");
   NS_ASSERTION(mInMonolithicContainer == 0, "What?");
   NS_ASSERTION(mInNotification == 0, "What?");
-  NS_ASSERTION(mDeferredLayoutStart == PR_FALSE, "What?");
+  NS_ASSERTION(!mDeferredLayoutStart, "What?");
 
 #ifdef NS_DEBUG
   if (!gContentSinkLogModuleInfo) {
@@ -532,11 +532,9 @@ nsContentSink::ProcessHeaderData(nsIAtom* aHeader, const nsAString& aValue,
     if (NS_SUCCEEDED(mParser->GetChannel(getter_AddRefs(channel)))) {
       nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
       if (httpChannel) {
-        const char* header;
-        (void)aHeader->GetUTF8String(&header);
-        (void)httpChannel->SetResponseHeader(nsDependentCString(header),
-                                             NS_ConvertUTF16toUTF8(aValue),
-                                             PR_TRUE);
+        httpChannel->SetResponseHeader(nsAtomCString(aHeader),
+                                       NS_ConvertUTF16toUTF8(aValue),
+                                       PR_TRUE);
       }
     }
   }
@@ -1087,11 +1085,22 @@ nsContentSink::ProcessOfflineManifest(nsIContent *aElement)
     return;
   }
 
-  nsresult rv;
-
   // Check for a manifest= attribute.
   nsAutoString manifestSpec;
   aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::manifest, manifestSpec);
+  ProcessOfflineManifest(manifestSpec);
+}
+
+void
+nsContentSink::ProcessOfflineManifest(const nsAString& aManifestSpec)
+{
+  // Don't bother processing offline manifest for documents
+  // without a docshell
+  if (!mDocShell) {
+    return;
+  }
+
+  nsresult rv;
 
   // Grab the application cache the document was loaded from, if any.
   nsCOMPtr<nsIApplicationCache> applicationCache;
@@ -1115,7 +1124,7 @@ nsContentSink::ProcessOfflineManifest(nsIContent *aElement)
     }
   }
 
-  if (manifestSpec.IsEmpty() && !applicationCache) {
+  if (aManifestSpec.IsEmpty() && !applicationCache) {
     // Not loaded from an application cache, and no manifest
     // attribute.  Nothing to do here.
     return;
@@ -1124,12 +1133,12 @@ nsContentSink::ProcessOfflineManifest(nsIContent *aElement)
   CacheSelectionAction action = CACHE_SELECTION_NONE;
   nsCOMPtr<nsIURI> manifestURI;
 
-  if (manifestSpec.IsEmpty()) {
+  if (aManifestSpec.IsEmpty()) {
     action = CACHE_SELECTION_RESELECT_WITHOUT_MANIFEST;
   }
   else {
     nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(manifestURI),
-                                              manifestSpec, mDocument,
+                                              aManifestSpec, mDocument,
                                               mDocumentURI);
     if (!manifestURI) {
       return;
@@ -1255,29 +1264,6 @@ nsContentSink::ScrollToRef()
   }
 }
 
-nsresult
-nsContentSink::RefreshIfEnabled(nsIViewManager* vm)
-{
-  if (!vm) {
-    // vm might be null if the shell got Destroy() called already
-    return NS_OK;
-  }
-
-  NS_ENSURE_TRUE(mDocShell, NS_ERROR_FAILURE);
-
-  nsCOMPtr<nsIContentViewer> contentViewer;
-  mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
-  if (contentViewer) {
-    PRBool enabled;
-    contentViewer->GetEnableRendering(&enabled);
-    if (enabled) {
-      vm->EnableRefresh(NS_VMREFRESH_IMMEDIATE);
-    }
-  }
-
-  return NS_OK;
-}
-
 void
 nsContentSink::StartLayout(PRBool aIgnorePendingSheets)
 {
@@ -1320,9 +1306,6 @@ nsContentSink::StartLayout(PRBool aIgnorePendingSheets)
     if (NS_FAILED(rv)) {
       return;
     }
-
-    // Now trigger a refresh
-    RefreshIfEnabled(shell->GetViewManager());
   }
 
   // If the document we are loading has a reference or it is a
@@ -1745,11 +1728,13 @@ nsContentSink::WillBuildModelImpl()
 void
 nsContentSink::ContinueInterruptedParsingIfEnabled()
 {
+  // This shouldn't be called in the HTML5 case.
   if (mParser && mParser->IsParserEnabled()) {
     mParser->ContinueInterruptedParsing();
   }
 }
 
+// Overridden in the HTML5 case
 void
 nsContentSink::ContinueInterruptedParsingAsync()
 {
@@ -1782,6 +1767,9 @@ nsIAtom** const kDefaultAllowedTags [] = {
   &nsGkAtoms::acronym,
   &nsGkAtoms::address,
   &nsGkAtoms::area,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::audio,
+#endif
   &nsGkAtoms::b,
   &nsGkAtoms::bdo,
   &nsGkAtoms::big,
@@ -1834,6 +1822,9 @@ nsIAtom** const kDefaultAllowedTags [] = {
   &nsGkAtoms::samp,
   &nsGkAtoms::select,
   &nsGkAtoms::small,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::source,
+#endif
   &nsGkAtoms::span,
   &nsGkAtoms::strike,
   &nsGkAtoms::strong,
@@ -1851,6 +1842,9 @@ nsIAtom** const kDefaultAllowedTags [] = {
   &nsGkAtoms::u,
   &nsGkAtoms::ul,
   &nsGkAtoms::var,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::video,
+#endif
   nsnull
 };
 
@@ -1863,6 +1857,10 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::align,
   &nsGkAtoms::alt,
   &nsGkAtoms::autocomplete,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::autobuffer,
+  &nsGkAtoms::autoplay,
+#endif
   &nsGkAtoms::axis,
   &nsGkAtoms::background,
   &nsGkAtoms::bgcolor,
@@ -1879,6 +1877,9 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::cols,
   &nsGkAtoms::colspan,
   &nsGkAtoms::color,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::controls,
+#endif
   &nsGkAtoms::compact,
   &nsGkAtoms::coords,
   &nsGkAtoms::datetime,
@@ -1897,6 +1898,10 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::label,
   &nsGkAtoms::lang,
   &nsGkAtoms::longdesc,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::loopend,
+  &nsGkAtoms::loopstart,
+#endif
   &nsGkAtoms::maxlength,
   &nsGkAtoms::media,
   &nsGkAtoms::method,
@@ -1905,7 +1910,15 @@ nsIAtom** const kDefaultAllowedAttributes [] = {
   &nsGkAtoms::nohref,
   &nsGkAtoms::noshade,
   &nsGkAtoms::nowrap,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::pixelratio,
+  &nsGkAtoms::playbackrate,
+  &nsGkAtoms::playcount,
+#endif
   &nsGkAtoms::pointSize,
+#ifdef MOZ_MEDIA
+  &nsGkAtoms::poster,
+#endif
   &nsGkAtoms::prompt,
   &nsGkAtoms::readonly,
   &nsGkAtoms::rel,

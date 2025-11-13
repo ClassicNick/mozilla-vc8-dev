@@ -37,6 +37,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "jscntxt.h"
 #include "nsJSEnvironment.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -76,7 +77,6 @@
 #include "nsITimer.h"
 #include "nsIAtom.h"
 #include "nsContentUtils.h"
-#include "jscntxt.h"
 #include "nsEventDispatcher.h"
 #include "nsIContent.h"
 #include "nsCycleCollector.h"
@@ -396,7 +396,7 @@ NS_HandleScriptError(nsIScriptGlobalObject *aScriptGlobal,
   nsCOMPtr<nsPIDOMWindow> win(do_QueryInterface(aScriptGlobal));
   nsIDocShell *docShell = win ? win->GetDocShell() : nsnull;
   if (docShell) {
-    nsCOMPtr<nsPresContext> presContext;
+    nsRefPtr<nsPresContext> presContext;
     docShell->GetPresContext(getter_AddRefs(presContext));
 
     static PRInt32 errorDepth; // Recursion prevention
@@ -439,7 +439,7 @@ public:
           !sHandlingScriptError) {
         sHandlingScriptError = PR_TRUE; // Recursion prevention
 
-        nsCOMPtr<nsPresContext> presContext;
+        nsRefPtr<nsPresContext> presContext;
         docShell->GetPresContext(getter_AddRefs(presContext));
 
         if (presContext) {
@@ -1927,26 +1927,24 @@ nsJSContext::ExecuteScript(void *aScriptObject,
 }
 
 
-static inline const char *
-AtomToEventHandlerName(nsIAtom *aName)
-{
-  const char *name;
-
-  aName->GetUTF8String(&name);
-
 #ifdef DEBUG
-  const char *cp;
-  char c;
+PRBool
+AtomIsEventHandlerName(nsIAtom *aName)
+{
+  const PRUnichar *name = aName->GetUTF16String();
+
+  const PRUnichar *cp;
+  PRUnichar c;
   for (cp = name; *cp != '\0'; ++cp)
   {
     c = *cp;
-    NS_ASSERTION (('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z'),
-                  "non-ASCII non-alphabetic event handler name");
+    if ((c < 'A' || c > 'Z') && (c < 'a' || c > 'z'))
+      return PR_FALSE;
   }
-#endif
 
-  return name;
+  return PR_TRUE;
 }
+#endif
 
 // Helper function to find the JSObject associated with a (presumably DOM)
 // interface.
@@ -1992,6 +1990,7 @@ nsJSContext::CompileEventHandler(nsIAtom *aName,
 {
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
 
+  NS_PRECONDITION(AtomIsEventHandlerName(aName), "Bad event name");
   NS_PRECONDITION(!::JS_IsExceptionPending(mContext),
                   "Why are we being called with a pending exception?");
 
@@ -2008,8 +2007,6 @@ nsJSContext::CompileEventHandler(nsIAtom *aName,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  const char *charName = AtomToEventHandlerName(aName);
-
 #ifdef DEBUG
   JSContext* top = nsContentUtils::GetCurrentJSContext();
   NS_ASSERTION(mContext == top, "Context not properly pushed!");
@@ -2024,7 +2021,7 @@ nsJSContext::CompileEventHandler(nsIAtom *aName,
   JSFunction* fun =
       ::JS_CompileUCFunctionForPrincipals(mContext,
                                           nsnull, nsnull,
-                                          charName, aArgCount, aArgNames,
+                                          nsAtomCString(aName).get(), aArgCount, aArgNames,
                                           (jschar*)PromiseFlatString(aBody).get(),
                                           aBody.Length(),
                                           aURL, aLineNo);
@@ -2111,15 +2108,11 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
     return NS_OK;
   }
 
-  jsval targetVal = JSVAL_VOID;
-  JSAutoTempValueRooter tvr(mContext, 1, &targetVal);
-
   JSObject* target = nsnull;
   nsresult rv = JSObjectFromInterface(aTarget, aScope, &target);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  targetVal = OBJECT_TO_JSVAL(target);
-
+  js::AutoObjectRooter targetVal(mContext, target);
   jsval rval = JSVAL_VOID;
 
   // This one's a lot easier than EvaluateString because we don't have to
@@ -2143,7 +2136,7 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
     jsval *argv = nsnull;
 
     js::LazilyConstructed<nsAutoPoolRelease> poolRelease;
-    js::LazilyConstructed<JSAutoTempValueRooter> tvr;
+    js::LazilyConstructed<js::AutoArrayRooter> tvr;
 
     // Use |target| as the scope for wrapping the arguments, since aScope is
     // the safe scope in many cases, which isn't very useful.  Wrapping aTarget
@@ -2206,7 +2199,7 @@ nsJSContext::BindCompiledEventHandler(nsISupports* aTarget, void *aScope,
   NS_ENSURE_ARG(aHandler);
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
 
-  const char *charName = AtomToEventHandlerName(aName);
+  NS_PRECONDITION(AtomIsEventHandlerName(aName), "Bad event name");
   nsresult rv;
 
   // Get the jsobject associated with this target
@@ -2240,7 +2233,7 @@ nsJSContext::BindCompiledEventHandler(nsISupports* aTarget, void *aScope,
 
   if (NS_SUCCEEDED(rv) &&
       // Make sure the flags here match those in nsEventReceiverSH::NewResolve
-      !::JS_DefineProperty(mContext, target, charName,
+      !::JS_DefineProperty(mContext, target, nsAtomCString(aName).get(),
                            OBJECT_TO_JSVAL(funobj), nsnull, nsnull,
                            JSPROP_ENUMERATE | JSPROP_PERMANENT)) {
     ReportPendingException();
@@ -2262,6 +2255,8 @@ nsJSContext::GetBoundEventHandler(nsISupports* aTarget, void *aScope,
                                   nsIAtom* aName,
                                   nsScriptObjectHolder &aHandler)
 {
+    NS_PRECONDITION(AtomIsEventHandlerName(aName), "Bad event name");
+
     nsresult rv;
     JSObject *obj = nsnull;
     nsAutoGCRoot root(&obj, &rv);
@@ -2270,11 +2265,9 @@ nsJSContext::GetBoundEventHandler(nsISupports* aTarget, void *aScope,
     rv = JSObjectFromInterface(aTarget, aScope, &obj);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    const char *charName = AtomToEventHandlerName(aName);
-
     jsval funval;
     if (!JS_LookupProperty(mContext, obj,
-                           charName, &funval))
+                           nsAtomCString(aName).get(), &funval))
         return NS_ERROR_FAILURE;
 
     if (JS_TypeOfValue(mContext, funval) != JSTYPE_FUNCTION) {
@@ -2590,8 +2583,10 @@ nsJSContext::InitContext(nsIScriptGlobalObject *aGlobalObject)
 
     // Now check whether we need to grab a pointer to the
     // XPCNativeWrapper class
-    if (!nsDOMClassInfo::GetXPCNativeWrapperClass()) {
-      nsDOMClassInfo::SetXPCNativeWrapperClass(xpc->GetNativeWrapperClass());
+    if (!nsDOMClassInfo::GetXPCNativeWrapperGetPropertyOp()) {
+      JSPropertyOp getProperty;
+      xpc->GetNativeWrapperGetPropertyOp(&getProperty);
+      nsDOMClassInfo::SetXPCNativeWrapperGetPropertyOp(getProperty);
     }
   } else {
     // There's already a global object. We are preparing this outer window
@@ -2655,7 +2650,7 @@ nsJSContext::SetProperty(void *aTarget, const char *aPropName, nsISupports *aArg
   JSAutoRequest ar(mContext);
 
   js::LazilyConstructed<nsAutoPoolRelease> poolRelease;
-  js::LazilyConstructed<JSAutoTempValueRooter> tvr;
+  js::LazilyConstructed<js::AutoArrayRooter> tvr;
 
   nsresult rv;
   rv = ConvertSupportsTojsvals(aArgs, GetNativeGlobal(), &argc,
@@ -2690,7 +2685,7 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
                                      PRUint32 *aArgc,
                                      jsval **aArgv,
                                      js::LazilyConstructed<nsAutoPoolRelease> &aPoolRelease,
-                                     js::LazilyConstructed<JSAutoTempValueRooter> &aRooter)
+                                     js::LazilyConstructed<js::AutoArrayRooter> &aRooter)
 {
   nsresult rv = NS_OK;
 
@@ -2727,11 +2722,12 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
 
   void *mark = JS_ARENA_MARK(&mContext->tempPool);
   jsval *argv;
-  JS_ARENA_ALLOCATE_CAST(argv, jsval *, &mContext->tempPool,
-                         argCount * sizeof(jsval));
+  size_t nbytes = argCount * sizeof(jsval);
+  JS_ARENA_ALLOCATE_CAST(argv, jsval *, &mContext->tempPool, nbytes);
   NS_ENSURE_TRUE(argv, NS_ERROR_OUT_OF_MEMORY);
+  memset(argv, 0, nbytes);  /* initialize so GC-able */
 
-  /* Use the caller's auto guards to release and unroot. */
+  // Use the caller's auto guards to release and unroot.
   aPoolRelease.construct(&mContext->tempPool, mark);
   aRooter.construct(mContext, argCount, argv);
 
@@ -3524,13 +3520,6 @@ nsJSContext::ScriptExecuted()
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsJSContext::PreserveWrapper(nsIXPConnectWrappedNative *aWrapper)
-{
-  nsDOMClassInfo::PreserveNodeWrapper(aWrapper);
-  return NS_OK;
-}
-
 //static
 void
 nsJSContext::CC()
@@ -4163,15 +4152,17 @@ protected:
 nsJSArgArray::nsJSArgArray(JSContext *aContext, PRUint32 argc, jsval *argv,
                            nsresult *prv) :
     mContext(aContext),
-    mArgv(argv),
+    mArgv(nsnull),
     mArgc(argc)
 {
   // copy the array - we don't know its lifetime, and ours is tied to xpcom
   // refcounting.  Alloc zero'd array so cleanup etc is safe.
-  mArgv = (jsval *) PR_CALLOC(argc * sizeof(jsval));
-  if (!mArgv) {
-    *prv = NS_ERROR_OUT_OF_MEMORY;
-    return;
+  if (argc) {
+    mArgv = (jsval *) PR_CALLOC(argc * sizeof(jsval));
+    if (!mArgv) {
+      *prv = NS_ERROR_OUT_OF_MEMORY;
+      return;
+    }
   }
 
   // Callers are allowed to pass in a null argv even for argc > 0. They can

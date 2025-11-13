@@ -197,6 +197,7 @@ ACCESSIBILITY_ATOM(tabindex, "tabindex")
 ACCESSIBILITY_ATOM(title, "title")
 ACCESSIBILITY_ATOM(tooltiptext, "tooltiptext")
 ACCESSIBILITY_ATOM(type, "type")
+ACCESSIBILITY_ATOM(usemap, "usemap")
 ACCESSIBILITY_ATOM(value, "value")
 
   // Alphabetical list of object attributes
@@ -262,6 +263,8 @@ ACCESSIBILITY_ATOM(aria_valuetext, "aria-valuetext")
 // a form property used to obtain the default label
 // of an HTML button from the button frame
 ACCESSIBILITY_ATOM(defaultLabel, "defaultLabel")
+// the attribute specifying the editor's bogus br node
+ACCESSIBILITY_ATOM(mozeditorbogusnode, "_moz_editor_bogus_node")
 
 // Object attributes
 ACCESSIBILITY_ATOM(tableCellIndex, "table-cell-index")

@@ -401,113 +401,6 @@ JSFunctionSpec gDOMWorkerFunctions[] = {
   { nsnull,                  nsnull,                                  0, 0, 0 }
 };
 
-static JSBool
-WriteCallback(const jschar* aBuffer,
-              uint32 aLength,
-              void* aData)
-{
-  nsJSONWriter* writer = static_cast<nsJSONWriter*>(aData);
-
-  nsresult rv = writer->Write((const PRUnichar*)aBuffer, (PRUint32)aLength);
-  return NS_SUCCEEDED(rv) ? JS_TRUE : JS_FALSE;
-}
-
-static nsresult
-GetStringForArgument(nsAString& aString,
-                     PRBool* aIsJSON,
-                     PRBool* aIsPrimitive)
-{
-  NS_ASSERTION(aIsJSON && aIsPrimitive, "Null pointer!");
-
-  nsIXPConnect* xpc = nsContentUtils::XPConnect();
-  NS_ENSURE_TRUE(xpc, NS_ERROR_UNEXPECTED);
-
-  nsAXPCNativeCallContext* cc;
-  nsresult rv = xpc->GetCurrentNativeCallContext(&cc);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(cc, NS_ERROR_UNEXPECTED);
-
-  PRUint32 argc;
-  rv = cc->GetArgc(&argc);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!argc) {
-    return NS_ERROR_XPC_NOT_ENOUGH_ARGS;
-  }
-
-  jsval* argv;
-  rv = cc->GetArgvPtr(&argv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  JSContext* cx;
-  rv = cc->GetJSContext(&cx);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  JSAutoRequest ar(cx);
-
-  if (JSVAL_IS_STRING(argv[0])) {
-    aString.Assign(nsDependentJSString(JSVAL_TO_STRING(argv[0])));
-    *aIsJSON = *aIsPrimitive = PR_FALSE;
-    return NS_OK;
-  }
-
-  nsAutoJSValHolder jsonVal;
-
-  JSBool ok = jsonVal.Hold(cx);
-  NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
-
-  if (JSVAL_IS_PRIMITIVE(argv[0])) {
-    // Only objects can be serialized through JSON, currently, so if we've been
-    // given a primitive we set it as a property on a dummy object before
-    // sending it to the serializer.
-    JSObject* obj = JS_NewObject(cx, NULL, NULL, NULL);
-    NS_ENSURE_TRUE(obj, NS_ERROR_OUT_OF_MEMORY);
-
-    jsonVal = obj;
-
-    ok = JS_DefineProperty(cx, obj, JSON_PRIMITIVE_PROPNAME, argv[0], NULL,
-                           NULL, JSPROP_ENUMERATE);
-    NS_ENSURE_TRUE(ok, NS_ERROR_UNEXPECTED);
-
-    *aIsPrimitive = PR_TRUE;
-  }
-  else {
-    jsonVal = argv[0];
-
-    *aIsPrimitive = PR_FALSE;
-  }
-
-  JSType type;
-  jsval* vp = jsonVal.ToJSValPtr();
-
-  // This may change vp if there is a 'toJSON' function on the object.
-  ok = JS_TryJSON(cx, vp);
-  if (!(ok && !JSVAL_IS_PRIMITIVE(*vp) &&
-        (type = JS_TypeOfValue(cx, *vp)) != JSTYPE_FUNCTION &&
-        type != JSTYPE_XML)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  // Make sure to hold the new vp in case it changed.
-  jsonVal = *vp;
-
-  nsJSONWriter writer;
-
-  ok = JS_Stringify(cx, jsonVal.ToJSValPtr(), NULL, JSVAL_NULL, WriteCallback, &writer);
-  if (!ok) {
-    return NS_ERROR_XPC_BAD_CONVERT_JS;
-  }
-
-  NS_ENSURE_TRUE(writer.DidWrite(), NS_ERROR_UNEXPECTED);
-
-  writer.FlushBuffer();
-
-  aString.Assign(writer.mOutputString);
-  *aIsJSON = PR_TRUE;
-
-  return NS_OK;
-}
-
 nsDOMWorkerScope::nsDOMWorkerScope(nsDOMWorker* aWorker)
 : mWorker(aWorker),
   mWrappedNative(nsnull),
@@ -755,13 +648,7 @@ nsDOMWorkerScope::PostMessage(/* JSObject aMessage */)
     return NS_ERROR_ABORT;
   }
 
-  nsString message;
-  PRBool isJSON, isPrimitive;
-
-  nsresult rv = GetStringForArgument(message, &isJSON, &isPrimitive);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return mWorker->PostMessageInternal(message, isJSON, isPrimitive, PR_FALSE);
+  return mWorker->PostMessageInternal(PR_FALSE);
 }
 
 NS_IMETHODIMP
@@ -947,6 +834,17 @@ public:
       return NS_ERROR_ABORT;
     }
 
+    // If the worker is suspended and we're running on the main thread then we
+    // can't actually dispatch the event yet. Instead we queue it for whenever
+    // we resume.
+    if (mWorker->IsSuspended() && NS_IsMainThread()) {
+      if (!mWorker->QueueSuspendedRunnable(this)) {
+        NS_ERROR("Out of memory?!");
+        return NS_ERROR_ABORT;
+      }
+      return NS_OK;
+    }
+
     nsCOMPtr<nsIDOMEventTarget> target = mToInner ?
       static_cast<nsDOMWorkerMessageHandler*>(mWorker->GetInnerScope()) :
       static_cast<nsDOMWorkerMessageHandler*>(mWorker);
@@ -1058,6 +956,7 @@ nsDOMWorker::~nsDOMWorker()
   }
 
   NS_ASSERTION(!mFeatures.Length(), "Live features!");
+  NS_ASSERTION(!mQueuedRunnables.Length(), "Events that never ran!");
 
   nsCOMPtr<nsIThread> mainThread;
   NS_GetMainThread(getter_AddRefs(mainThread));
@@ -1173,7 +1072,10 @@ nsDOMWorker::Finalize(nsIXPConnectWrappedNative* /* aWrapper */,
 
   // Do this *after* we null out mWrappedNative so that we don't hand out a
   // freed pointer.
-  TerminateInternal(PR_TRUE);
+  if (TerminateInternal(PR_TRUE) == NS_ERROR_ILLEGAL_DURING_SHUTDOWN) {
+    // We're shutting down, jump right to Kill.
+    Kill();
+  }
 
   return NS_OK;
 }
@@ -1363,6 +1265,9 @@ nsDOMWorker::Kill()
     features[index]->Cancel();
   }
 
+  // Make sure we kill any queued runnables that we never had a chance to run.
+  mQueuedRunnables.Clear();
+
   // We no longer need to keep our inner scope.
   mInnerScope = nsnull;
   mScopeWN = nsnull;
@@ -1414,12 +1319,29 @@ nsDOMWorker::Resume()
   if (shouldResumeFeatures) {
     ResumeFeatures();
   }
+
+  // Repost any events that were queued for the main thread while suspended.
+  PRUint32 count = mQueuedRunnables.Length();
+  for (PRUint32 index = 0; index < count; index++) {
+    NS_DispatchToCurrentThread(mQueuedRunnables[index]);
+  }
+  mQueuedRunnables.Clear();
 }
 
 PRBool
 nsDOMWorker::IsCanceled()
 {
   nsAutoLock lock(mLock);
+  return IsCanceledNoLock();
+}
+
+PRBool
+nsDOMWorker::IsCanceledNoLock()
+{
+  // If we haven't started the close process then we're not canceled.
+  if (mStatus == eRunning) {
+    return PR_FALSE;
+  }
 
   // There are several conditions under which we want JS code to abort and all
   // other functions to bail:
@@ -1455,20 +1377,54 @@ nsDOMWorker::IsSuspended()
 }
 
 nsresult
-nsDOMWorker::PostMessageInternal(const nsAString& aMessage,
-                                 PRBool aIsJSON,
-                                 PRBool aIsPrimitive,
-                                 PRBool aToInner)
+nsDOMWorker::PostMessageInternal(PRBool aToInner)
 {
+  nsIXPConnect* xpc = nsContentUtils::XPConnect();
+  NS_ENSURE_TRUE(xpc, NS_ERROR_UNEXPECTED);
+
+  nsAXPCNativeCallContext* cc;
+  nsresult rv = xpc->GetCurrentNativeCallContext(&cc);
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(cc, NS_ERROR_UNEXPECTED);
+
+  PRUint32 argc;
+  rv = cc->GetArgc(&argc);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!argc) {
+    return NS_ERROR_XPC_NOT_ENOUGH_ARGS;
+  }
+
+  jsval* argv;
+  rv = cc->GetArgvPtr(&argv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  JSContext* cx;
+  rv = cc->GetJSContext(&cx);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  JSAutoRequest ar(cx);
+
+  nsAutoJSValHolder val;
+  if (!val.Hold(cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  rv = nsContentUtils::CreateStructuredClone(cx, argv[0], val.ToJSValPtr());
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
   nsRefPtr<nsDOMWorkerMessageEvent> message = new nsDOMWorkerMessageEvent();
   NS_ENSURE_TRUE(message, NS_ERROR_OUT_OF_MEMORY);
 
-  nsresult rv = message->InitMessageEvent(NS_LITERAL_STRING("message"),
-                                          PR_FALSE, PR_FALSE, aMessage,
-                                          EmptyString(), nsnull);
+  rv = message->InitMessageEvent(NS_LITERAL_STRING("message"), PR_FALSE,
+                                 PR_FALSE, EmptyString(), EmptyString(),
+                                 nsnull);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  message->SetJSONData(aIsJSON, aIsPrimitive);
+  rv = message->SetJSVal(cx, val);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   nsRefPtr<nsDOMFireEventRunnable> runnable =
     new nsDOMFireEventRunnable(this, message, aToInner);
@@ -1823,11 +1779,8 @@ nsDOMWorker::FireCloseRunnable(PRIntervalTime aTimeoutInterval,
     runnable->ReplaceWrappedNative(mScopeWN);
   }
 
-  rv = nsDOMThreadService::get()->Dispatch(this, runnable, aTimeoutInterval,
-                                           aClearQueue);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
+  return nsDOMThreadService::get()->Dispatch(this, runnable, aTimeoutInterval,
+                                             aClearQueue);
 }
 
 nsresult
@@ -1878,6 +1831,11 @@ nsDOMWorker::TerminateInternal(PRBool aFromFinalize)
 
   nsresult rv = FireCloseRunnable(PR_INTERVAL_NO_TIMEOUT, PR_TRUE,
                                   aFromFinalize);
+  if (rv == NS_ERROR_ILLEGAL_DURING_SHUTDOWN) {
+    return rv;
+  }
+
+  // Warn about other kinds of failures.
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1913,6 +1871,13 @@ nsDOMWorker::GetExpirationTime()
 }
 #endif
 
+PRBool
+nsDOMWorker::QueueSuspendedRunnable(nsIRunnable* aRunnable)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  return mQueuedRunnables.AppendElement(aRunnable) ? PR_TRUE : PR_FALSE;
+}
+
 NS_IMETHODIMP
 nsDOMWorker::AddEventListener(const nsAString& aType,
                               nsIDOMEventListener* aListener,
@@ -1938,8 +1903,18 @@ NS_IMETHODIMP
 nsDOMWorker::DispatchEvent(nsIDOMEvent* aEvent,
                            PRBool* _retval)
 {
-  if (IsCanceled()) {
-    return NS_OK;
+  {
+    nsAutoLock lock(mLock);
+    if (IsCanceledNoLock()) {
+      return NS_OK;
+    }
+    if (mStatus == eTerminated) {
+      nsCOMPtr<nsIWorkerMessageEvent> messageEvent(do_QueryInterface(aEvent));
+      if (messageEvent) {
+        // This is a message event targeted to a terminated worker. Ignore it.
+        return NS_OK;
+      }
+    }
   }
 
   return nsDOMWorkerMessageHandler::DispatchEvent(aEvent, _retval);
@@ -1978,13 +1953,7 @@ nsDOMWorker::PostMessage(/* JSObject aMessage */)
     }
   }
 
-  nsString message;
-  PRBool isJSON, isPrimitive;
-
-  nsresult rv = GetStringForArgument(message, &isJSON, &isPrimitive);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return PostMessageInternal(message, isJSON, isPrimitive, PR_TRUE);
+  return PostMessageInternal(PR_TRUE);
 }
 
 /**

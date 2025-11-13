@@ -38,13 +38,12 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsAccessible.h"
-#include "nsAccessibleRelation.h"
-#include "nsHyperTextAccessibleWrap.h"
 
-#include "nsIAccessibleDocument.h"
-#include "nsIAccessibleHyperText.h"
 #include "nsIXBLAccessible.h"
-#include "nsAccessibleTreeWalker.h"
+
+#include "nsAccTreeWalker.h"
+#include "nsAccessibleRelation.h"
+#include "nsDocAccessible.h"
 
 #include "nsIDOMElement.h"
 #include "nsIDOMDocument.h"
@@ -882,15 +881,10 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY, PRBool aDeepestChild,
   // therefore accessible for containing block may be different from accessible
   // for DOM parent but GetFrameForPoint() should be called for containing block
   // to get an out of flow element.
-  nsCOMPtr<nsIAccessibleDocument> accDocument;
-  rv = GetAccessibleDocument(getter_AddRefs(accDocument));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsDocAccessible *accDocument = GetDocAccessible();
   NS_ENSURE_TRUE(accDocument, NS_ERROR_FAILURE);
 
-  nsRefPtr<nsAccessNode> docAccessNode =
-    nsAccUtils::QueryAccessNode(accDocument);
-
-  nsIFrame *frame = docAccessNode->GetFrame();
+  nsIFrame *frame = accDocument->GetFrame();
   NS_ENSURE_STATE(frame);
 
   nsPresContext *presContext = frame->PresContext();
@@ -1491,9 +1485,8 @@ nsAccessible::GetAttributes(nsIPersistentProperties **aAttributes)
     const nsAttrName *attr = content->GetAttrNameAt(count);
     if (attr && attr->NamespaceEquals(kNameSpaceID_None)) {
       nsIAtom *attrAtom = attr->Atom();
-      const char *attrStr;
-      attrAtom->GetUTF8String(&attrStr);
-      if (PL_strncmp(attrStr, "aria-", 5)) 
+      nsDependentAtomString attrStr(attrAtom);
+      if (!StringBeginsWith(attrStr, NS_LITERAL_STRING("aria-"))) 
         continue; // Not ARIA
       PRUint8 attrFlags = nsAccUtils::GetAttributeCharacteristics(attrAtom);
       if (attrFlags & ATTR_BYPASSOBJ)
@@ -1503,7 +1496,7 @@ nsAccessible::GetAttributes(nsIPersistentProperties **aAttributes)
         continue; // only expose token based attributes if they are defined
       nsAutoString value;
       if (content->GetAttr(kNameSpaceID_None, attrAtom, value)) {
-        attributes->SetStringProperty(nsDependentCString(attrStr + 5), value, oldValueUnused);
+        attributes->SetStringProperty(NS_ConvertUTF16toUTF8(Substring(attrStr, 5)), value, oldValueUnused);
       }
     }
   }
@@ -2498,7 +2491,7 @@ nsAccessible::DoCommand(nsIContent *aContent, PRUint32 aActionIndex)
 {
   nsCOMPtr<nsIContent> content = aContent;
   if (!content)
-    content = do_QueryInterface(mDOMNode);
+    content = nsCoreUtils::GetRoleContent(mDOMNode);
 
   NS_DISPATCH_RUNNABLEMETHOD_ARG2(DispatchClickEvent, this,
                                   content, aActionIndex)
@@ -2901,7 +2894,7 @@ nsAccessible::GetParent()
   if (mParent)
     return mParent;
 
-  nsCOMPtr<nsIAccessibleDocument> docAccessible(GetDocAccessible());
+  nsDocAccessible *docAccessible = GetDocAccessible();
   NS_ASSERTION(docAccessible, "No document accessible for valid accessible!");
 
   if (!docAccessible)
@@ -2987,45 +2980,29 @@ nsAccessible::GetCachedFirstChild()
 void
 nsAccessible::CacheChildren()
 {
-  PRBool allowsAnonChildren = GetAllowsAnonChildAccessibles();
-  nsAccessibleTreeWalker walker(mWeakShell, mDOMNode, allowsAnonChildren);
+  nsAccTreeWalker walker(mWeakShell, nsCoreUtils::GetRoleContent(mDOMNode),
+                         GetAllowsAnonChildAccessibles());
 
-  // Seed the frame hint early while we're still on a container node.
-  // This is better than doing the GetPrimaryFrameFor() later on
-  // a text node, because text nodes aren't in the frame map.
-  // XXXbz is this code still needed?
-  walker.mState.frame = GetFrame();
-
-  walker.GetFirstChild();
-  while (walker.mState.accessible) {
-    nsRefPtr<nsAccessible> acc =
-      nsAccUtils::QueryObject<nsAccessible>(walker.mState.accessible);
-
-    mChildren.AppendElement(acc);
-
-    acc->SetParent(this);
-
-    walker.GetNextSibling();
+  nsRefPtr<nsAccessible> child;
+  while ((child = walker.GetNextChild())) {
+    mChildren.AppendElement(child);
+    child->SetParent(this);
   }
 }
 
 void
 nsAccessible::TestChildCache(nsAccessible *aCachedChild)
 {
-#ifdef DEBUG_A11Y
-  // All cached accessible nodes should be in the parent
-  // It will assert if not all the children were created
-  // when they were first cached, and no invalidation
-  // ever corrected parent accessible's child cache.
+#ifdef DEBUG
   PRUint32 childCount = mChildren.Length();
   if (childCount == 0) {
-    NS_ASSERTION(mAreChildrenInitialized,
-                 "Children are stored but not initailzied!");
+    NS_ASSERTION(!mAreChildrenInitialized, "No children but initialized!");
     return;
   }
 
+  nsAccessible *child = nsnull;
   for (PRInt32 childIdx = 0; childIdx < childCount; childIdx++) {
-    nsAccessible *child = GetChildAt(childIdx);
+    child = mChildren[childIdx];
     if (child == aCachedChild)
       break;
   }
@@ -3052,7 +3029,7 @@ nsAccessible::EnsureChildren()
   return PR_FALSE;
 }
 
-nsIAccessible*
+nsAccessible*
 nsAccessible::GetSiblingAtOffset(PRInt32 aOffset, nsresult* aError)
 {
   if (IsDefunct()) {

@@ -1257,8 +1257,8 @@ CSS_PROP_COLUMN(
     mColumnRuleColor,
     eCSSType_Value,
     nsnull,
-    offsetof(nsStyleColumn, mColumnRuleColor),
-    eStyleAnimType_Color)
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_Custom)
 CSS_PROP_COLUMN(
     -moz-column-rule-style,
     _moz_column_rule_style,
@@ -2185,6 +2185,17 @@ CSS_PROP_QUOTES(
     nsnull,
     CSS_PROP_NO_OFFSET,
     eStyleAnimType_None)
+CSS_PROP_DISPLAY(
+    -moz-resize,
+    resize,
+    MozResize,
+    0,
+    Display,
+    mResize,
+    eCSSType_Value,
+    kResizeKTable,
+    CSS_PROP_NO_OFFSET,
+    eStyleAnimType_None)
 CSS_PROP_BACKENDONLY(
     richness,
     richness,
@@ -2707,9 +2718,6 @@ CSS_PROP_FONT(
 #endif
 #endif
 
-// XXX treat SVG's CSS Properties as internal for now.
-// Do we want to create an nsIDOMSVGCSS2Properties interface?
-#ifndef CSS_PROP_LIST_EXCLUDE_INTERNAL
 CSS_PROP_SVGRESET(
     clip-path,
     clip_path,
@@ -3045,7 +3053,6 @@ CSS_PROP_SVG(
     kTextRenderingKTable,
     offsetof(nsStyleSVG, mTextRendering),
     eStyleAnimType_EnumU8)
-#endif /* !defined (CSS_PROP_LIST_EXCLUDE_INTERNAL) */
 
 // Callers that want information on the properties that are in
 // the style structs but not in the nsCSS* structs should define

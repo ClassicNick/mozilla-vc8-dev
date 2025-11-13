@@ -623,6 +623,9 @@
 
       <field name="mIconURL">null</field>
 
+      <!-- This is managed by the tabbrowser -->
+      <field name="lastURI">null</field>
+
       <field name="mDestroyed">false</field>
 
       <constructor>
@@ -698,6 +701,8 @@
           
           // The feeds cache can keep the document inside this browser alive.
           this.feeds = null;
+
+          this.lastURI = null;
 
           this.removeEventListener("pageshow", this.onPageShow, true);
           this.removeEventListener("pagehide", this.onPageHide, true);
@@ -824,13 +829,13 @@
               var overflowy = this._scrollable.ownerDocument.defaultView
                                   .getComputedStyle(this._scrollable, '')
                                   .getPropertyValue('overflow-y');
-              var scrollVert = this._scrollable.scrollHeight > this._scrollable.offsetHeight &&
+              var scrollVert = this._scrollable.scrollHeight > this._scrollable.clientHeight &&
                                overflowy != 'hidden' && overflowy != 'visible';
 
               // do not allow horizontal scrolling for select elements, it leads
               // to visual artifacts and is not the expected behavior anyway
               if (!(this._scrollable instanceof HTMLSelectElement) &&
-                  this._scrollable.scrollWidth > this._scrollable.offsetWidth &&
+                  this._scrollable.scrollWidth > this._scrollable.clientWidth &&
                   overflowx != 'hidden' && overflowx != 'visible') {
                 this._autoScrollPopup.setAttribute("scrolldir", scrollVert ? "NSEW" : "EW");
                 break;

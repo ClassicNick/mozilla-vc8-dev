@@ -47,7 +47,6 @@
 #include FT_FREETYPE_H
 #include "gfxFT2Fonts.h"
 
-#include "nsIPref.h"  // for pref changes callback notification
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 #include "nsUnicharUtils.h"
@@ -121,7 +120,7 @@ gfxFT2FontList::AppendFacesFromFontFile(const PRUnichar *aFileName)
                 if (!family) {
                     family = new gfxFontFamily(name);
                     mFontFamilies.Put(name, family);
-                    if (mBadUnderlineFamilyNames.GetEntry(name))
+                    if (mBadUnderlineFamilyNames.Contains(name))
                         family->SetBadUnderlineFamily();
                 }
                 family->AddFontEntry(fe);

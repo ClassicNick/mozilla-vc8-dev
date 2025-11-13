@@ -161,6 +161,8 @@ nsHTMLCanvasElement::~nsHTMLCanvasElement()
 NS_IMPL_ADDREF_INHERITED(nsHTMLCanvasElement, nsGenericElement)
 NS_IMPL_RELEASE_INHERITED(nsHTMLCanvasElement, nsGenericElement)
 
+DOMCI_DATA(HTMLCanvasElement, nsHTMLCanvasElement)
+
 NS_INTERFACE_TABLE_HEAD(nsHTMLCanvasElement)
   NS_HTML_CONTENT_INTERFACE_TABLE2(nsHTMLCanvasElement,
                                    nsIDOMHTMLCanvasElement,
@@ -540,11 +542,6 @@ nsHTMLCanvasElement::InvalidateFrameSubrect(const gfxRect& damageRect)
   // we plan to reframe we don't need to invalidate it anyway.
   nsIFrame *frame = GetPrimaryFrame();
   if (frame) {
-    // Frame might be dirty, but we don't care about that; if the geometry
-    // changes the right invalidates will happen anyway.  Don't assert on our
-    // geometry getters.
-    nsAutoDisableGetUsedXAssertions noAssert;
-    
     nsRect contentArea(frame->GetContentRect());
     nsIntSize size = GetWidthHeight();
 

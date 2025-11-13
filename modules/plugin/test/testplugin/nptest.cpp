@@ -67,8 +67,8 @@
 
 int gCrashCount = 0;
 
-void
-IntentionalCrash()
+static void
+NoteIntentionalCrash()
 {
   char* bloatLog = getenv("XPCOM_MEM_BLOAT_LOG");
   if (bloatLog) {
@@ -85,6 +85,13 @@ IntentionalCrash()
     fprintf(processfd, "==> process %d will purposefully crash\n", getpid());
     fclose(processfd);
   }
+}
+
+static void
+IntentionalCrash()
+{
+  NoteIntentionalCrash();
+
   int *pi = NULL;
   *pi = 55; // Crash dereferencing null pointer
   ++gCrashCount;
@@ -146,6 +153,10 @@ static bool getCookie(NPObject* npobj, const NPVariant* args, uint32_t argCount,
 static bool getAuthInfo(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool asyncCallbackTest(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool checkGCRace(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool hangPlugin(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool getClipboardText(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool callOnDestroy(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool reinitWidget(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 
 static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "npnEvaluateTest",
@@ -184,6 +195,10 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "getAuthInfo",
   "asyncCallbackTest",
   "checkGCRace",
+  "hang",
+  "getClipboardText",
+  "callOnDestroy",
+  "reinitWidget",
 };
 static NPIdentifier sPluginMethodIdentifiers[ARRAY_LENGTH(sPluginMethodIdentifierNames)];
 static const ScriptableFunction sPluginMethodFunctions[ARRAY_LENGTH(sPluginMethodIdentifierNames)] = {
@@ -223,6 +238,10 @@ static const ScriptableFunction sPluginMethodFunctions[ARRAY_LENGTH(sPluginMetho
   getAuthInfo,
   asyncCallbackTest,
   checkGCRace,
+  hangPlugin,
+  getClipboardText,
+  callOnDestroy,
+  reinitWidget,
 };
 
 struct URLNotifyData
@@ -289,6 +308,11 @@ static void initializeIdentifiers()
     NPN_GetStringIdentifiers(sPluginMethodIdentifierNames,
         ARRAY_LENGTH(sPluginMethodIdentifierNames), sPluginMethodIdentifiers);
     sIdentifiersInitialized = true;    
+
+    // Check whether NULL is handled in NPN_GetStringIdentifiers
+    NPIdentifier IDList[2];
+    static char const *const kIDNames[2] = { NULL, "setCookie" };
+    NPN_GetStringIdentifiers(const_cast<const NPUTF8**>(kIDNames), 2, IDList);
   }
 }
 
@@ -411,6 +435,7 @@ getFuncFromString(const char* funcname)
       { FUNCTION_NPP_WRITEREADY, "npp_writeready" },
       { FUNCTION_NPP_WRITE, "npp_write" },
       { FUNCTION_NPP_DESTROYSTREAM, "npp_destroystream" },
+      { FUNCTION_NPP_WRITE_RPC, "npp_write_rpc" },
       { FUNCTION_NONE, NULL }
     };
   int32_t i = 0;
@@ -556,6 +581,13 @@ NPError OSCALL NP_Shutdown()
 NPError
 NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* argn[], char* argv[], NPSavedData* saved)
 {
+  // Make sure our pdata field is NULL at this point. If it isn't, that
+  // probably means the browser gave us uninitialized memory.
+  if (instance->pdata) {
+    printf("NPP_New called with non-NULL NPP->pdata pointer!\n");
+    return NPERR_GENERIC_ERROR;
+  }
+
   // Make sure we can render this plugin
   NPBool browserSupportsWindowless = false;
   NPN_GetValue(instance, NPNVSupportsWindowless, &browserSupportsWindowless);
@@ -573,6 +605,7 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->testFunction = FUNCTION_NONE;
   instanceData->functionToFail = FUNCTION_NONE;
   instanceData->failureCode = 0;
+  instanceData->callOnDestroy = NULL;
   instanceData->streamChunkSize = 1024;
   instanceData->streamBuf = NULL;
   instanceData->streamBufSize = 0;
@@ -767,6 +800,13 @@ NPP_Destroy(NPP instance, NPSavedData** save)
   if (instanceData->crashOnDestroy)
     IntentionalCrash();
 
+  if (instanceData->callOnDestroy) {
+    NPVariant result;
+    NPN_InvokeDefault(instance, instanceData->callOnDestroy, NULL, 0, &result);
+    NPN_ReleaseVariantValue(&result);
+    NPN_ReleaseObject(instanceData->callOnDestroy);
+  }
+
   if (instanceData->streamBuf) {
     free(instanceData->streamBuf);
   }
@@ -937,6 +977,16 @@ NPP_Write(NPP instance, NPStream* stream, int32_t offset, int32_t len, void* buf
   //  instanceData->err << "NPP_Write called even though NPP_WriteReady " <<
   //      "returned 0";
   //}
+
+  if (instanceData->functionToFail == FUNCTION_NPP_WRITE_RPC) {
+    // Make an RPC call and pretend to consume the data
+    NPObject* windowObject = NULL;
+    NPN_GetValue(instance, NPNVWindowNPObject, &windowObject);
+    if (windowObject)
+      NPN_ReleaseObject(windowObject);
+
+    return len;
+  }
   
   if (instanceData->functionToFail == FUNCTION_NPP_NEWSTREAM) {
     instanceData->err << "NPP_Write called";
@@ -995,9 +1045,6 @@ NPP_Write(NPP instance, NPStream* stream, int32_t offset, int32_t len, void* buf
       NPError err = NPN_DestroyStream(instance, stream, NPRES_DONE);
       if (err != NPERR_NO_ERROR) {
         instanceData->err << "Error: NPN_DestroyStream returned " << err;
-      }
-      if (instanceData->frame.length() > 0) {
-        sendBufferToFrame(instance);
       }
     }
   }
@@ -2550,5 +2597,93 @@ checkGCRace(NPObject* npobj, const NPVariant* args, uint32_t argCount,
   NPN_PluginThreadAsyncCall(npp, FinishGCRace, rd);
 
   OBJECT_TO_NPVARIANT(localFunc, *result);
+  return true;
+}
+
+bool
+hangPlugin(NPObject* npobj, const NPVariant* args, uint32_t argCount,
+           NPVariant* result)
+{
+  NoteIntentionalCrash();
+
+#ifdef XP_WIN
+  Sleep(100000000);
+#else
+  pause();
+#endif
+  // NB: returning true here means that we weren't terminated, and
+  // thus the hang detection/handling didn't work correctly.  The
+  // test harness will succeed in calling this function, and the
+  // test will fail.
+  return true;
+}
+
+#if defined(MOZ_WIDGET_GTK2)
+bool
+getClipboardText(NPObject* npobj, const NPVariant* args, uint32_t argCount,
+                 NPVariant* result)
+{
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  string sel = pluginGetClipboardText(id);
+
+  uint32 len = sel.size();
+  char* selCopy = static_cast<char*>(NPN_MemAlloc(1 + len));
+  if (!selCopy)
+    return false;
+
+  memcpy(selCopy, sel.c_str(), len);
+  selCopy[len] = '\0';
+
+  STRINGN_TO_NPVARIANT(selCopy, len, *result);
+  // *result owns str now
+
+  return true;
+}
+
+#else
+bool
+getClipboardText(NPObject* npobj, const NPVariant* args, uint32_t argCount,
+                 NPVariant* result)
+{
+  /// XXX Not implemented!
+  return false;
+}
+#endif
+
+bool
+callOnDestroy(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+
+  if (id->callOnDestroy)
+    return false;
+
+  if (1 != argCount || !NPVARIANT_IS_OBJECT(args[0]))
+    return false;
+
+  id->callOnDestroy = NPVARIANT_TO_OBJECT(args[0]);
+  NPN_RetainObject(id->callOnDestroy);
+
+  return true;
+}
+
+// On Linux at least, a windowed plugin resize causes Flash Player to
+// reconnect to the browser window.  This method simulates that.
+bool
+reinitWidget(NPObject* npobj, const NPVariant* args, uint32_t argCount,
+             NPVariant* result)
+{
+  if (argCount != 0)
+    return false;
+
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+
+  if (!id->hasWidget)
+    return false;
+
+  pluginWidgetInit(id, id->window.window);
   return true;
 }

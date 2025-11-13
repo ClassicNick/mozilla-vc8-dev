@@ -140,7 +140,7 @@ protected:
   nsresult ScrollImageTo(PRInt32 aX, PRInt32 aY, PRBool restoreImage);
 
   float GetRatio() {
-    return PR_MIN((float)mVisibleWidth / mImageWidth,
+    return NS_MIN((float)mVisibleWidth / mImageWidth,
                   (float)mVisibleHeight / mImageHeight);
   }
 
@@ -299,6 +299,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_ADDREF_INHERITED(nsImageDocument, nsMediaDocument)
 NS_IMPL_RELEASE_INHERITED(nsImageDocument, nsMediaDocument)
 
+DOMCI_DATA(ImageDocument, nsImageDocument)
+
 NS_INTERFACE_TABLE_HEAD(nsImageDocument)
   NS_HTML_DOCUMENT_INTERFACE_TABLE_BEGIN(nsImageDocument)
     NS_INTERFACE_TABLE_ENTRY(nsImageDocument, nsIImageDocument)
@@ -307,7 +309,7 @@ NS_INTERFACE_TABLE_HEAD(nsImageDocument)
     NS_INTERFACE_TABLE_ENTRY(nsImageDocument, nsIDOMEventListener)
   NS_OFFSET_AND_INTERFACE_TABLE_END
   NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(ImageDocument)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(ImageDocument)
 NS_INTERFACE_MAP_END_INHERITING(nsMediaDocument)
 
 
@@ -473,8 +475,8 @@ nsImageDocument::ShrinkToFit()
   // Keep image content alive while changing the attributes.
   nsCOMPtr<nsIContent> imageContent = mImageContent;
   nsCOMPtr<nsIDOMHTMLImageElement> image = do_QueryInterface(mImageContent);
-  image->SetWidth(PR_MAX(1, NSToCoordFloor(GetRatio() * mImageWidth)));
-  image->SetHeight(PR_MAX(1, NSToCoordFloor(GetRatio() * mImageHeight)));
+  image->SetWidth(NS_MAX(1, NSToCoordFloor(GetRatio() * mImageWidth)));
+  image->SetHeight(NS_MAX(1, NSToCoordFloor(GetRatio() * mImageHeight)));
   
   // The view might have been scrolled when zooming in, scroll back to the
   // origin now that we're showing a shrunk-to-window version.

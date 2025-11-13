@@ -71,6 +71,7 @@ _TEST_FILES =	\
 		test_bug66619.html \
 		test_bug114649.html \
 		$(warning test_bug369950.html disabled due to random orange; see bug 492575) \
+		test_bug370436.html \
 		test_bug386575.xhtml \
 		test_bug388019.html \
 		test_bug394057.html \
@@ -91,8 +92,19 @@ _TEST_FILES =	\
 		test_bug435293-interaction.html \
 		test_bug435293-skew.html \
 		test_bug495648.xul \
+		test_reftests_with_caret.html \
+		     bug106855-1.html \
+		     bug106855-2.html \
+		     bug106855-1-ref.html \
+		     bug482484.html \
+		     bug482484-ref.html \
+		     bug512295-1.html \
+		     bug512295-1-ref.html \
+		     bug512295-2.html \
+		     bug512295-2-ref.html \
 		test_bug514127.html \
 		test_bug518777.html \
+		test_bug548545.xhtml \
 		test_flush_on_paint.html \
 		test_scroll_selection_into_view.html \
 		test_scrolling.html \
@@ -196,6 +208,6 @@ libs:: $(_TEST_FILES)
 
 check::
 	@$(EXIT_ON_ERROR) \
-	  for f in $(subst .cpp,,$(BARE_UNIT_TESTS)); do \
+	  for f in $(subst .cpp,$(BIN_SUFFIX),$(BARE_UNIT_TESTS)); do \
 	    $(RUN_TEST_PROGRAM) $(DIST)/bin/$$f; \
 	  done

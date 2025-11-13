@@ -42,12 +42,11 @@
 #include "nsIAccessibleStates.h"
 #include "nsIAccessibleTypes.h"
 
-#include "nsAccEvent.h"
 #include "nsHyperTextAccessible.h"
 #include "nsHTMLTableAccessible.h"
 #include "nsDocAccessible.h"
 #include "nsAccessibilityAtoms.h"
-#include "nsAccessibleTreeWalker.h"
+#include "nsAccTreeWalker.h"
 #include "nsAccessible.h"
 #include "nsARIAMap.h"
 #include "nsXULTreeGridAccessible.h"
@@ -64,9 +63,7 @@ nsAccUtils::GetAccAttr(nsIPersistentProperties *aAttributes,
 {
   aAttrValue.Truncate();
 
-  nsCAutoString attrName;
-  aAttrName->ToUTF8String(attrName);
-  aAttributes->GetStringProperty(attrName, aAttrValue);
+  aAttributes->GetStringProperty(nsAtomCString(aAttrName), aAttrValue);
 }
 
 void
@@ -76,8 +73,7 @@ nsAccUtils::SetAccAttr(nsIPersistentProperties *aAttributes,
   nsAutoString oldValue;
   nsCAutoString attrName;
 
-  aAttrName->ToUTF8String(attrName);
-  aAttributes->SetStringProperty(attrName, aAttrValue, oldValue);
+  aAttributes->SetStringProperty(nsAtomCString(aAttrName), aAttrValue, oldValue);
 }
 
 void
@@ -362,14 +358,11 @@ nsAccUtils::HasAccessibleChildren(nsIDOMNode *aNode)
   nsIFrame *frame = content->GetPrimaryFrame();
   if (!frame)
     return PR_FALSE;
-  
+
   nsCOMPtr<nsIWeakReference> weakShell(do_GetWeakReference(presShell));
-  nsAccessibleTreeWalker walker(weakShell, aNode, PR_FALSE);
-
-  walker.mState.frame = frame;
-
-  walker.GetFirstChild();
-  return walker.mState.accessible ? PR_TRUE : PR_FALSE;
+  nsAccTreeWalker walker(weakShell, content, PR_FALSE);
+  nsRefPtr<nsAccessible> accessible = walker.GetNextChild();
+  return accessible ? PR_TRUE : PR_FALSE;
 }
 
 already_AddRefed<nsIAccessible>

@@ -201,9 +201,10 @@ struct JSTreeContext {              /* tree context for semantic checks */
     JSTreeContext(JSCompiler *jsc)
       : flags(0), ngvars(0), bodyid(0), blockidGen(0),
         topStmt(NULL), topScopeStmt(NULL), blockChain(NULL), blockNode(NULL),
-        compiler(jsc), scopeChain(NULL), parent(NULL), staticLevel(0),
+        compiler(jsc), scopeChain(NULL), parent(jsc->tc), staticLevel(0),
         funbox(NULL), functionList(NULL), sharpSlotBase(-1)
     {
+        jsc->tc = this;
         JS_SCOPE_DEPTH_METERING(scopeDepth = maxScopeDepth = 0);
     }
 
@@ -213,6 +214,7 @@ struct JSTreeContext {              /* tree context for semantic checks */
      * cases, we store uint16(-1) in maxScopeDepth.
      */
     ~JSTreeContext() {
+        compiler->tc = this->parent;
         JS_SCOPE_DEPTH_METERING_IF((maxScopeDepth != uint16(-1)),
                                    JS_BASIC_STATS_ACCUM(&compiler
                                                           ->context
@@ -304,6 +306,12 @@ struct JSTreeContext {              /* tree context for semantic checks */
  * per instance.
  */
 #define TCF_FUN_UNBRAND_THIS   0x100000
+
+/*
+ * "Module pattern", i.e., a lambda that is immediately applied and the whole
+ * of an expression statement.
+ */
+#define TCF_FUN_MODULE_PATTERN 0x200000
 
 /*
  * Flags to check for return; vs. return expr; in a function.

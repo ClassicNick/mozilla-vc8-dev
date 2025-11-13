@@ -96,7 +96,6 @@ STATIC_LIBS += \
   domplugins_s \
   mozipc_s \
   mozipdlgen_s \
-  chromium_s \
   gfxipc_s \
   $(NULL)
 
@@ -117,6 +116,10 @@ STATIC_LIBS += \
 	ucvutil_s \
 	gkgfx \
 	$(NULL)
+
+ifdef MOZ_IPC
+STATIC_LIBS += chromium_s
+endif
 
 ifndef WINCE
 ifdef MOZ_XPINSTALL
@@ -149,6 +152,8 @@ COMPONENT_LIBS += \
 	toolkitcomps \
 	pipboot \
 	pipnss \
+	mozfind \
+	appcomps \
 	$(NULL)
 
 ifdef BUILD_CTYPES
@@ -161,14 +166,6 @@ ifdef MOZ_PLUGINS
 DEFINES += -DMOZ_PLUGINS
 COMPONENT_LIBS += \
 	gkplugin \
-	$(NULL)
-endif
-
-ifdef MOZ_XPFE_COMPONENTS
-DEFINES += -DMOZ_XPFE_COMPONENTS
-COMPONENT_LIBS += \
-	mozfind \
-	appcomps \
 	$(NULL)
 endif
 
@@ -245,21 +242,15 @@ endif
 ifdef MOZ_RDF
 COMPONENT_LIBS += \
 	rdf \
-	$(NULL)
-ifdef MOZ_XPFE_COMPONENTS
-COMPONENT_LIBS += \
 	windowds \
 	intlapp \
 	$(NULL)
 endif
-endif
 
 ifeq (,$(filter qt beos os2 photon cocoa windows,$(MOZ_WIDGET_TOOLKIT)))
 ifdef MOZ_XUL
-ifdef MOZ_XPFE_COMPONENTS
 COMPONENT_LIBS += fileview
 DEFINES += -DMOZ_FILEVIEW
-endif
 endif
 endif
 
@@ -311,13 +302,11 @@ STATIC_LIBS += gfxpsshar
 endif
 
 ifneq (,$(filter icon,$(MOZ_IMG_DECODERS)))
-ifndef MOZ_ENABLE_GTK2
 DEFINES += -DICON_DECODER
 COMPONENT_LIBS += imgicon
 endif
-endif
 
-STATIC_LIBS += thebes
+STATIC_LIBS += thebes layers
 COMPONENT_LIBS += gkgfxthebes
 
 ifeq (windows,$(MOZ_WIDGET_TOOLKIT))
@@ -363,7 +352,7 @@ COMPONENT_LIBS += gkdebug
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
-EXTRA_DSO_LDOPTS += -framework OpenGL -lcups
+OS_LIBS += -framework OpenGL -lcups
 endif
 
 EXTRA_DSO_LDOPTS += \

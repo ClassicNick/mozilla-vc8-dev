@@ -161,7 +161,7 @@ nsHTMLEditor::RelativeChangeElementZIndex(nsIDOMElement * aElement,
   nsresult res = GetElementZIndex(aElement, &zIndex);
   if (NS_FAILED(res)) return res;
 
-  zIndex = PR_MAX(zIndex + aChange, 0);
+  zIndex = NS_MAX(zIndex + aChange, 0);
   SetElementZIndex(aElement, zIndex);
   *aReturn = zIndex;
 
@@ -272,7 +272,8 @@ nsHTMLEditor::CreateGrabber(nsIDOMNode * aParentNode, nsIDOMElement ** aReturn)
 
   // add the mouse listener so we can detect a click on a resizer
   nsCOMPtr<nsIDOMEventTarget> evtTarget(do_QueryInterface(*aReturn));
-  evtTarget->AddEventListener(NS_LITERAL_STRING("mousedown"), mMouseListenerP, PR_FALSE);
+  evtTarget->AddEventListener(NS_LITERAL_STRING("mousedown"),
+                              mEventListener, PR_FALSE);
 
   return res;
 }

@@ -1605,7 +1605,7 @@ nsAccessibleWrap::GetTypeInfo(UINT iTInfo, LCID lcid, ITypeInfo **ppTInfo)
   *ppTInfo = NULL;
 
   if (iTInfo != 0)
-    return ResultFromScode(DISP_E_BADINDEX);
+    return DISP_E_BADINDEX;
 
   ITypeInfo * typeInfo = GetTI(lcid);
   if (!typeInfo)
@@ -1782,8 +1782,7 @@ nsAccessibleWrap::GetHWNDFor(nsIAccessible *aAccessible)
 
   if (!hWnd) {
     void* handle = nsnull;
-    nsCOMPtr<nsIAccessibleDocument> accessibleDoc;
-    accessNode->GetAccessibleDocument(getter_AddRefs(accessibleDoc));
+    nsDocAccessible *accessibleDoc = accessNode->GetDocAccessible();
     if (!accessibleDoc)
       return 0;
 

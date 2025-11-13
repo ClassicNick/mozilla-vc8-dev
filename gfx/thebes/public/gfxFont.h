@@ -54,6 +54,8 @@
 #include "nsExpirationTracker.h"
 #include "gfxFontConstants.h"
 #include "gfxPlatform.h"
+#include "nsIAtom.h"
+#include "nsISupportsImpl.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -61,12 +63,13 @@
 
 class gfxContext;
 class gfxTextRun;
-class nsIAtom;
 class gfxFont;
 class gfxFontFamily;
 class gfxFontGroup;
 class gfxUserFontSet;
 class gfxUserFontData;
+
+class nsILanguageAtomService;
 
 // We should eliminate these synonyms when it won't cause many merge conflicts.
 #define FONT_STYLE_NORMAL              NS_FONT_STYLE_NORMAL
@@ -82,7 +85,7 @@ class gfxUserFontData;
 struct THEBES_API gfxFontStyle {
     gfxFontStyle();
     gfxFontStyle(PRUint8 aStyle, PRUint16 aWeight, PRInt16 aStretch,
-                 gfxFloat aSize, const nsACString& aLangGroup,
+                 gfxFloat aSize, nsIAtom *aLanguage,
                  float aSizeAdjust, PRPackedBool aSystemFont,
                  PRPackedBool aFamilyNameQuirks,
                  PRPackedBool aPrinterFont);
@@ -117,8 +120,8 @@ struct THEBES_API gfxFontStyle {
     // The logical size of the font, in pixels
     gfxFloat size;
 
-    // the language group
-    nsCString langGroup;
+    // the language (may be an internal langGroup code rather than an actual lang)
+    nsIAtom *language;
 
     // The aspect-value (ie., the ratio actualsize:actualxheight) that any
     // actual physical font created from this font structure must have when
@@ -137,7 +140,7 @@ struct THEBES_API gfxFontStyle {
     PLDHashNumber Hash() const {
         return ((style + (systemFont << 7) + (familyNameQuirks << 8) +
             (weight << 9)) + PRUint32(size*1000) + PRUint32(sizeAdjust*1000)) ^
-            HashString(langGroup);
+            nsISupportsHashKey::HashKey(language);
     }
 
     void ComputeWeightAndOffset(PRInt8 *outBaseWeight,
@@ -151,14 +154,14 @@ struct THEBES_API gfxFontStyle {
             (familyNameQuirks == other.familyNameQuirks) &&
             (weight == other.weight) &&
             (stretch == other.stretch) &&
-            (langGroup.Equals(other.langGroup)) &&
+            (language == other.language) &&
             (sizeAdjust == other.sizeAdjust);
     }
 };
 
 class gfxFontEntry {
 public:
-    THEBES_INLINE_DECL_REFCOUNTING(gfxFontEntry)
+    NS_INLINE_DECL_REFCOUNTING(gfxFontEntry)
 
     gfxFontEntry(const nsAString& aName, gfxFontFamily *aFamily = nsnull,
                  PRBool aIsStandardFace = PR_FALSE) : 
@@ -211,7 +214,7 @@ public:
     virtual PRBool MatchesGenericFamily(const nsACString& aGeneric) const {
         return PR_TRUE;
     }
-    virtual PRBool SupportsLangGroup(const nsACString& aLangGroup) const {
+    virtual PRBool SupportsLangGroup(nsIAtom *aLangGroup) const {
         return PR_TRUE;
     }
 
@@ -221,7 +224,7 @@ public:
 
     const nsString& FamilyName();
 
-    already_AddRefed<gfxFont> GetOrMakeFont(const gfxFontStyle *aStyle, PRBool aNeedsBold);
+    already_AddRefed<gfxFont> FindOrMakeFont(const gfxFontStyle *aStyle, PRBool aNeedsBold);
 
     nsString         mName;
 
@@ -287,7 +290,7 @@ struct FontSearch {
 
 class gfxFontFamily {
 public:
-    THEBES_INLINE_DECL_REFCOUNTING(gfxFontFamily)
+    NS_INLINE_DECL_REFCOUNTING(gfxFontFamily)
 
     gfxFontFamily(const nsAString& aName) :
         mName(aName),
@@ -316,11 +319,12 @@ public:
     void SetHasStyles(PRBool aHasStyles) { mHasStyles = aHasStyles; }
 
     // choose a specific face to match a style using CSS font matching
-    // rules (weight matching occurs here)
-    // may return a face that doesn't precisely match (e.g. normal face when no italic face exists)
-    // aNeedsBold is set to true when bolder face couldn't be found, false otherwise
+    // rules (weight matching occurs here).  may return a face that doesn't
+    // precisely match (e.g. normal face when no italic face exists).
+    // aNeedsSyntheticBold is set to true when synthetic bolding is
+    // needed, false otherwise
     gfxFontEntry *FindFontForStyle(const gfxFontStyle& aFontStyle, 
-                                   PRBool& aNeedsBold);
+                                   PRBool& aNeedsSyntheticBold);
 
     // iterates over faces looking for a match with a given characters
     // used as part of the font fallback process
@@ -632,6 +636,42 @@ private:
     PRUint32                mAppUnitsPerDevUnit;
 };
 
+/**
+ * gfxFontShaper
+ *
+ * This class implements text shaping (character to glyph mapping and
+ * glyph layout). There is a gfxFontShaper subclass for each text layout
+ * technology (uniscribe, core text, harfbuzz,....) we support.
+ *
+ * The shaper is responsible for setting up glyph data in gfxTextRuns.
+ *
+ * A generic, platform-independent shaper relies only on the standard
+ * gfxFont interface and can work with any concrete subclass of gfxFont.
+ *
+ * Platform-specific implementations designed to interface to platform
+ * shaping APIs such as Uniscribe or CoreText may rely on features of a
+ * specific font subclass to access native font references
+ * (such as CTFont, HFONT, DWriteFont, etc).
+ */
+
+class gfxFontShaper {
+public:
+    gfxFontShaper(gfxFont *aFont)
+        : mFont(aFont) { }
+
+    virtual ~gfxFontShaper() { }
+
+    virtual PRBool InitTextRun(gfxContext *aContext,
+                               gfxTextRun *aTextRun,
+                               const PRUnichar *aString,
+                               PRUint32 aRunStart,
+                               PRUint32 aRunLength) = 0;
+
+protected:
+    // the font this shaper is working with
+    gfxFont * mFont;
+};
+
 /* a SPECIFIC single font family */
 class THEBES_API gfxFont {
 public:
@@ -658,6 +698,14 @@ public:
 
     PRInt32 GetRefCount() { return mRefCnt; }
 
+    // options to specify the kind of AA to be used when creating a font
+    typedef enum {
+        kAntialiasDefault,
+        kAntialiasNone,
+        kAntialiasGrayscale,
+        kAntialiasSubpixel
+    } AntialiasOption;
+
 protected:
     nsAutoRefCnt mRefCnt;
 
@@ -673,12 +721,13 @@ protected:
         }
     }
 
-    gfxFont(gfxFontEntry *aFontEntry, const gfxFontStyle *aFontStyle);
+    gfxFont(gfxFontEntry *aFontEntry, const gfxFontStyle *aFontStyle,
+            AntialiasOption anAAOption = kAntialiasDefault);
 
 public:
     virtual ~gfxFont();
 
-    PRBool Valid() {
+    PRBool Valid() const {
         return mIsValid;
     }
 
@@ -712,7 +761,12 @@ public:
     const nsString& GetName() const { return mFontEntry->Name(); }
     const gfxFontStyle *GetStyle() const { return &mStyle; }
 
-    virtual nsString GetUniqueName() = 0;
+    virtual nsString GetUniqueName() { return GetName(); }
+
+    virtual gfxFont* CopyWithAntialiasOption(AntialiasOption anAAOption) {
+        // platforms where this actually matters should override
+        return nsnull;
+    }
 
     // Font metrics
     struct Metrics {
@@ -871,12 +925,14 @@ public:
         return mFontEntry->HasCharacter(ch); 
     }
 
-    virtual void InitTextRun(gfxTextRun *aTextRun,
+    // Default implementation simply calls mShaper->InitTextRun().
+    // Override if the font class wants to give special handling
+    // to shaper failure.
+    virtual void InitTextRun(gfxContext *aContext,
+                             gfxTextRun *aTextRun,
                              const PRUnichar *aString,
                              PRUint32 aRunStart,
-                             PRUint32 aRunLength) {
-        NS_NOTREACHED("oops, somebody didn't override InitTextRun");
-    }
+                             PRUint32 aRunLength);
 
 protected:
     nsRefPtr<gfxFontEntry> mFontEntry;
@@ -889,13 +945,18 @@ protected:
     // synthetic bolding for environments where this is not supported by the platform
     PRUint32                   mSyntheticBoldOffset;  // number of devunit pixels to offset double-strike, 0 ==> no bolding
 
+    // the AA setting requested for this font - may affect glyph bounds
+    AntialiasOption            mAntialiasOption;
+
+    nsAutoPtr<gfxFontShaper>   mShaper;
+
     // some fonts have bad metrics, this method sanitize them.
     // if this font has bad underline offset, aIsBadUnderlineFont should be true.
     void SanitizeMetrics(gfxFont::Metrics *aMetrics, PRBool aIsBadUnderlineFont);
 };
 
 class THEBES_API gfxTextRunFactory {
-    THEBES_INLINE_DECL_REFCOUNTING(gfxTextRunFactory)
+    NS_INLINE_DECL_REFCOUNTING(gfxTextRunFactory)
 
 public:
     // Flags in the mask 0xFFFF0000 are reserved for textrun clients
@@ -1018,8 +1079,6 @@ public:
  */
 class THEBES_API gfxTextRun {
 public:
-    // Override operator delete because we used custom allocation
-    void operator delete(void* aPtr);
     virtual ~gfxTextRun();
 
     typedef gfxFont::RunMetrics Metrics;
@@ -1615,18 +1674,24 @@ public:
     void AdjustAdvancesForSyntheticBold(PRUint32 aStart, PRUint32 aLength);
 
 protected:
-    // Allocates extra space for the CompressedGlyph array and the text
-    // (if needed)
-    void *operator new(size_t aSize, PRUint32 aLength, PRUint32 aFlags);
-
     /**
      * Initializes the textrun to blank.
-     * @param aObjectSize the size of the object; this lets us fine
-     * where our CompressedGlyph array and string have been allocated
+     * @param aGlyphStorage preallocated array of CompressedGlyph[aLength]
+     * for the textrun to use; if aText is not persistent, then it has also
+     * been appended to this array, so it must NOT be freed separately.
      */
     gfxTextRun(const gfxTextRunFactory::Parameters *aParams, const void *aText,
                PRUint32 aLength, gfxFontGroup *aFontGroup, PRUint32 aFlags,
-               PRUint32 aObjectSize);
+               CompressedGlyph *aGlyphStorage);
+
+    /**
+     * Helper for the Create() factory method to allocate the required
+     * glyph storage, and copy the text (modifying the aText parameter)
+     * if it is not flagged as persistent.
+     */
+    static CompressedGlyph* AllocateStorage(const void*& aText,
+                                            PRUint32 aLength,
+                                            PRUint32 aFlags);
 
 private:
     // **** general helpers **** 
@@ -1682,9 +1747,10 @@ private:
                     PRUint32 aSpacingStart, PRUint32 aSpacingEnd);
 
     // All our glyph data is in logical order, not visual.
-    // mCharacterGlyphs is allocated fused with this object. We need a pointer
-    // to it because gfxTextRun subclasses exist with extra fields, so we don't
-    // know where it starts without a virtual method call or an explicit pointer.
+    // mCharacterGlyphs is allocated by the factory that creates the textrun,
+    // to avoid the possibility of failure during the constructor;
+    // however, ownership passes to the textrun during construction and so
+    // it must be deleted in the destructor.
     CompressedGlyph*                               mCharacterGlyphs;
     nsAutoArrayPtr<nsAutoArrayPtr<DetailedGlyph> > mDetailedGlyphs; // only non-null if needed
     // XXX this should be changed to a GlyphRun plus a maybe-null GlyphRun*,
@@ -1692,8 +1758,8 @@ private:
     nsAutoTArray<GlyphRun,1>                       mGlyphRuns;
     // When TEXT_IS_8BIT is set, we use mSingle, otherwise we use mDouble.
     // When TEXT_IS_PERSISTENT is set, we don't own the text, otherwise we
-    // own the text. When we own the text, it's allocated fused with this
-    // object, so it need not be deleted.
+    // own the text. When we own the text, it's allocated fused with the
+    // mCharacterGlyphs array, and therefore need not be explicitly deleted.
     // This text is not null-terminated.
     union {
         const PRUint8   *mSingle;
@@ -1712,6 +1778,8 @@ private:
 
 class THEBES_API gfxFontGroup : public gfxTextRunFactory {
 public:
+    static void Shutdown(); // platform must call this to release the languageAtomService
+
     gfxFontGroup(const nsAString& aFamilies, const gfxFontStyle *aStyle, gfxUserFontSet *aUserFontSet = nsnull);
 
     virtual ~gfxFontGroup();
@@ -1782,10 +1850,10 @@ public:
     typedef PRBool (*FontCreationCallback) (const nsAString& aName,
                                             const nsACString& aGenericName,
                                             void *closure);
-    /*static*/ PRBool ForEachFont(const nsAString& aFamilies,
-                              const nsACString& aLangGroup,
-                              FontCreationCallback fc,
-                              void *closure);
+    PRBool ForEachFont(const nsAString& aFamilies,
+                       nsIAtom *aLanguage,
+                       FontCreationCallback fc,
+                       void *closure);
     PRBool ForEachFont(FontCreationCallback fc, void *closure);
 
     /**
@@ -1849,12 +1917,16 @@ protected:
     // as invalidation of font lists and caches is not considered.
     void SetUserFontSet(gfxUserFontSet *aUserFontSet);
 
+    // Initialize the list of fonts
+    void BuildFontList();
+
     // Init this font group's font metrics. If there no bad fonts, you don't need to call this.
     // But if there are one or more bad fonts which have bad underline offset,
     // you should call this with the *first* bad font.
     void InitMetricsForBadFont(gfxFont* aBadFont);
 
-    void InitTextRun(gfxTextRun *aTextRun,
+    void InitTextRun(gfxContext *aContext,
+                     gfxTextRun *aTextRun,
                      const PRUnichar *aString,
                      PRUint32 aLength);
 
@@ -1866,12 +1938,12 @@ protected:
      * family name in aFamilies (after resolving CSS/Gecko generic family names
      * if aResolveGeneric).
      */
-    /*static*/ PRBool ForEachFontInternal(const nsAString& aFamilies,
-                                      const nsACString& aLangGroup,
-                                      PRBool aResolveGeneric,
-                                      PRBool aResolveFontName,
-                                      FontCreationCallback fc,
-                                      void *closure);
+    PRBool ForEachFontInternal(const nsAString& aFamilies,
+                               nsIAtom *aLanguage,
+                               PRBool aResolveGeneric,
+                               PRBool aResolveFontName,
+                               FontCreationCallback fc,
+                               void *closure);
 
     static PRBool FontResolverProc(const nsAString& aName, void *aClosure);
 
@@ -1889,5 +1961,6 @@ protected:
         return nsnull;
     }
 
+    static NS_HIDDEN_(nsILanguageAtomService*) gLangService;
 };
 #endif

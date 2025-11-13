@@ -47,10 +47,12 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION(nsSVGBoolean::DOMAnimatedBoolean, mSVGElement)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsSVGBoolean::DOMAnimatedBoolean)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsSVGBoolean::DOMAnimatedBoolean)
 
+DOMCI_DATA(SVGAnimatedBoolean, nsSVGBoolean::DOMAnimatedBoolean)
+
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSVGBoolean::DOMAnimatedBoolean)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGAnimatedBoolean)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(SVGAnimatedBoolean)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGAnimatedBoolean)
 NS_INTERFACE_MAP_END
 
 /* Implementation */
@@ -69,12 +71,19 @@ nsSVGBoolean::SetBaseValueString(const nsAString &aValueAsString,
   else
     return NS_ERROR_DOM_SYNTAX_ERR;
 
-  mBaseVal = mAnimVal = val;
+  mBaseVal = val;
+  if (!mIsAnimated) {
+    mAnimVal = mBaseVal;
+  }
 #ifdef MOZ_SMIL
-  if (mIsAnimated) {
+  else {
     aSVGElement->AnimationNeedsResample();
   }
 #endif
+
+  // We don't need to call DidChange* here - we're only called by
+  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // which takes care of notifying.
   return NS_OK;
 }
 
@@ -93,13 +102,16 @@ nsSVGBoolean::SetBaseValue(PRBool aValue,
   NS_PRECONDITION(aValue == PR_TRUE || aValue == PR_FALSE, "Boolean out of range");
 
   if (aValue != mBaseVal) {
-    mAnimVal = mBaseVal = aValue;
-    aSVGElement->DidChangeBoolean(mAttrEnum, PR_TRUE);
+    mBaseVal = aValue;
+    if (!mIsAnimated) {
+      mAnimVal = mBaseVal;
+    }
 #ifdef MOZ_SMIL
-    if (mIsAnimated) {
+    else {
       aSVGElement->AnimationNeedsResample();
     }
 #endif
+    aSVGElement->DidChangeBoolean(mAttrEnum, PR_TRUE);
   }
 }
 
@@ -133,7 +145,8 @@ nsSVGBoolean::ToSMILAttr(nsSVGElement *aSVGElement)
 nsresult
 nsSVGBoolean::SMILBool::ValueFromString(const nsAString& aStr,
                                         const nsISMILAnimationElement* /*aSrcElement*/,
-                                        nsSMILValue& aValue) const
+                                        nsSMILValue& aValue,
+                                        PRBool& aCanCache) const
 {
   nsSMILValue val(&SMILBoolType::sSingleton);
 
@@ -145,6 +158,7 @@ nsSVGBoolean::SMILBool::ValueFromString(const nsAString& aStr,
     return NS_ERROR_FAILURE;
 
   aValue = val;
+  aCanCache = PR_TRUE;
   return NS_OK;
 }
 

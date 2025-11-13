@@ -121,7 +121,7 @@ public:
   // nsIFormControl
   NS_IMETHOD_(PRInt32) GetType() const { return NS_FORM_TEXTAREA; }
   NS_IMETHOD Reset();
-  NS_IMETHOD SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                nsIContent* aSubmitElement);
   NS_IMETHOD SaveState();
   virtual PRBool RestoreState(nsPresState* aState);
@@ -260,6 +260,8 @@ NS_IMPL_ADDREF_INHERITED(nsHTMLTextAreaElement, nsGenericElement)
 NS_IMPL_RELEASE_INHERITED(nsHTMLTextAreaElement, nsGenericElement) 
 
 
+DOMCI_DATA(HTMLTextAreaElement, nsHTMLTextAreaElement)
+
 // QueryInterface implementation for nsHTMLTextAreaElement
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLTextAreaElement)
   NS_HTML_CONTENT_INTERFACE_TABLE5(nsHTMLTextAreaElement,
@@ -313,7 +315,7 @@ nsHTMLTextAreaElement::Select()
 
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
 
-  nsCOMPtr<nsPresContext> presContext = GetPresContext();
+  nsRefPtr<nsPresContext> presContext = GetPresContext();
   if (state == eInactiveWindow) {
     if (fm)
       fm->SetFocus(this, nsIFocusManager::FLAG_NOSCROLL);
@@ -373,11 +375,13 @@ nsHTMLTextAreaElement::IsHTMLFocusable(PRBool *aIsFocusable, PRInt32 *aTabIndex)
 NS_IMPL_STRING_ATTR(nsHTMLTextAreaElement, AccessKey, accesskey)
 NS_IMPL_INT_ATTR(nsHTMLTextAreaElement, Cols, cols)
 NS_IMPL_BOOL_ATTR(nsHTMLTextAreaElement, Disabled, disabled)
-NS_IMPL_INT_ATTR(nsHTMLTextAreaElement, MaxLength, maxlength)
+NS_IMPL_NON_NEGATIVE_INT_ATTR(nsHTMLTextAreaElement, MaxLength, maxlength)
 NS_IMPL_STRING_ATTR(nsHTMLTextAreaElement, Name, name)
 NS_IMPL_BOOL_ATTR(nsHTMLTextAreaElement, ReadOnly, readonly)
 NS_IMPL_INT_ATTR(nsHTMLTextAreaElement, Rows, rows)
 NS_IMPL_INT_ATTR_DEFAULT_VALUE(nsHTMLTextAreaElement, TabIndex, tabindex, 0)
+NS_IMPL_STRING_ATTR(nsHTMLTextAreaElement, Wrap, wrap)
+NS_IMPL_STRING_ATTR(nsHTMLTextAreaElement, Placeholder, placeholder)
   
 
 NS_IMETHODIMP 
@@ -525,7 +529,7 @@ nsHTMLTextAreaElement::ParseAttribute(PRInt32 aNamespaceID,
 {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::maxlength) {
-      return aResult.ParseIntWithBounds(aValue, 0);
+      return aResult.ParseNonNegativeIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::cols) {
       return aResult.ParseIntWithBounds(aValue, 0);
@@ -555,6 +559,8 @@ nsHTMLTextAreaElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
   if (aAttribute == nsGkAtoms::rows ||
       aAttribute == nsGkAtoms::cols) {
     NS_UpdateHint(retval, NS_STYLE_HINT_REFLOW);
+  } else if (aAttribute == nsGkAtoms::wrap) {
+    NS_UpdateHint(retval, nsChangeHint_ReconstructFrame);
   }
   return retval;
 }
@@ -796,6 +802,9 @@ nsHTMLTextAreaElement::Reset()
   // If the frame is there, we have to set the value so that it will show up.
   nsIFormControlFrame* formControlFrame = GetFormControlFrame(PR_FALSE);
   if (formControlFrame) {
+    // To get the initial spellchecking, reset value to
+    // empty string before setting the default value.
+    SetValue(EmptyString());
     nsAutoString resetVal;
     GetDefaultValue(resetVal);
     rv = SetValue(resetVal);
@@ -806,7 +815,7 @@ nsHTMLTextAreaElement::Reset()
 }
 
 NS_IMETHODIMP
-nsHTMLTextAreaElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+nsHTMLTextAreaElement::SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                          nsIContent* aSubmitElement)
 {
   nsresult rv = NS_OK;
@@ -837,7 +846,7 @@ nsHTMLTextAreaElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
   //
   // Submit
   //
-  rv = aFormSubmission->AddNameValuePair(this, name, value);
+  rv = aFormSubmission->AddNameValuePair(name, value);
 
   return rv;
 }

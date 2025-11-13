@@ -64,8 +64,10 @@ tier_base_dirs = \
 	probes \
 	$(NULL)
 
-ifdef MOZ_MEMORY
-tier_base_dirs += memory/jemalloc
+ifndef LIBXUL_SDK
+tier_base_dirs += \
+	memory \
+	$(NULL)
 endif
 
 ifdef COMPILE_ENVIRONMENT
@@ -83,10 +85,15 @@ include $(topsrcdir)/config/config.mk
 
 GARBAGE_DIRS += dist _javagen _profile _tests staticlib
 DIST_GARBAGE = config.cache config.log config.status config-defs.h \
-   dependencies.beos config/autoconf.mk config/myrules.mk config/myconfig.mk \
+   dependencies.beos config/autoconf.mk \
    unallmakefiles mozilla-config.h \
    netwerk/necko-config.h xpcom/xpcom-config.h xpcom/xpcom-private.h \
    $(topsrcdir)/.mozconfig.mk $(topsrcdir)/.mozconfig.out
+
+ifdef WINCE
+check::
+	$(PYTHON) $(topsrcdir)/build/mobile/devicemanager-utils.py copy $(DIST)/bin
+endif
 
 default alldep all:: $(topsrcdir)/configure config.status
 	$(RM) -rf $(DIST)/sdk
@@ -125,20 +132,6 @@ package-tests:
 endif
 
 include $(topsrcdir)/config/rules.mk
-
-# After we build tier toolkit, go back and build the tools from previous dirs
-tier_toolkit::
-	$(MAKE) tools_tier_js
-	$(MAKE) tools_tier_xpcom
-	$(MAKE) tools_tier_necko
-	$(MAKE) tools_tier_gecko
-	$(MAKE) tools_tier_toolkit
-
-ifeq (netwerk,$(MOZ_BUILD_APP))
-tier_necko::
-	$(EXIT_ON_ERROR) \
-	$(foreach tier,$(TIERS),$(MAKE) tools_tier_$(tier); )
-endif
 
 distclean::
 	cat unallmakefiles | $(XARGS) rm -f
@@ -225,13 +218,7 @@ ifdef MOZ_CRASHREPORTER
 	$(SHELL) $(topsrcdir)/toolkit/crashreporter/tools/upload_symbols.sh "$(DIST)/$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip"
 endif
 
-ifneq (,$(wildcard $(DIST)/bin/application.ini))
-BUILDID = $(shell $(PYTHON) $(srcdir)/config/printconfigsetting.py $(DIST)/bin/application.ini App BuildID)
-else
-BUILDID = $(shell $(PYTHON) $(srcdir)/config/printconfigsetting.py $(DIST)/bin/platform.ini Build BuildID)
-endif
-
-MOZ_SOURCE_STAMP = $(shell hg -R $(srcdir) parent --template="{node|short}\n" 2>/dev/null)
+# defined in package-name.mk
 export MOZ_SOURCE_STAMP
 
 #XXX: this is a hack, since we don't want to clobber for MSVC

@@ -46,7 +46,7 @@ class nsSMILValue
 {
 public:
   nsSMILValue() : mU(), mType(&nsSMILNullType::sSingleton) { }
-  nsSMILValue(const nsISMILType* aType);
+  explicit nsSMILValue(const nsISMILType* aType);
   nsSMILValue(const nsSMILValue& aVal);
 
   ~nsSMILValue()
@@ -56,10 +56,20 @@ public:
 
   const nsSMILValue& operator=(const nsSMILValue& aVal);
 
+  // Equality operators. These are allowed to be conservative (return PR_FALSE
+  // more than you'd expect) - see comment above nsISMILType::IsEqual.
+  PRBool operator==(const nsSMILValue& aVal) const;
+  PRBool operator!=(const nsSMILValue& aVal) const {
+    return !(*this == aVal);
+  }
+
   PRBool IsNull() const
   {
     return (mType == &nsSMILNullType::sSingleton);
   }
+
+  // Swaps the member data (mU & mPtr) of |this| with |aOther|
+  void     Swap(nsSMILValue& aOther);
 
   nsresult Add(const nsSMILValue& aValueToAdd, PRUint32 aCount = 1);
   nsresult SandwichAdd(const nsSMILValue& aValueToAdd);
@@ -73,14 +83,19 @@ public:
     PRUint64 mUint;
     PRInt64 mInt;
     double mDouble;
+    struct {
+      float mAngle;
+      PRUint16 mUnit;
+      PRUint16 mOrientType;
+    } mOrient;
     void* mPtr;
   } mU;
   const nsISMILType* mType;
 
 protected:
-  nsresult InitAndCheckPostcondition(const nsISMILType* aNewType);
-  void     DestroyAndCheckPostcondition();
-  nsresult DestroyAndReinit(const nsISMILType* aNewType);
+  void InitAndCheckPostcondition(const nsISMILType* aNewType);
+  void DestroyAndCheckPostcondition();
+  void DestroyAndReinit(const nsISMILType* aNewType);
 };
 
 #endif  // NS_SMILVALUE_H_

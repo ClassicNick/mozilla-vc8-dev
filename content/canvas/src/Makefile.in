@@ -47,6 +47,7 @@ LIBRARY_NAME	= gkconcvs_s
 LIBXUL_LIBRARY  = 1
 
 EXPORTS = \
+	CustomQS_Canvas2D.h \
 	CustomQS_WebGL.h \
 	$(NULL)
 
@@ -59,16 +60,15 @@ CPPSRCS	= \
 
 ifdef MOZ_WEBGL
 
-ifeq (1_1,$(MOZ_X11)_$(NS_OSSO))
+ifdef MOZ_X11
+ifdef MOZ_PLATFORM_MAEMO
 WEBGL_PLATFORM = EGL
 DEFINES += -DUSE_GLES2
-endif
-
-ifeq (1_,$(MOZ_X11)_$(NS_OSSO))
+else
 WEBGL_PLATFORM = GLX
 EXTRA_DSO_LIBS += X11
 endif
-
+endif
 
 ifeq (windows,$(MOZ_WIDGET_TOOLKIT))
 ifdef WINCE
@@ -92,7 +92,6 @@ CPPSRCS += \
 	glwrap.cpp \
 	nsGLPbuffer.cpp \
 	nsGLPbufferOSMesa.cpp \
-	SimpleBuffer.cpp \
 	$(NULL)
 
 CPPSRCS += nsGLPbuffer$(WEBGL_PLATFORM).cpp

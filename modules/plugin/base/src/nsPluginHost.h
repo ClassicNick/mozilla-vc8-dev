@@ -160,7 +160,9 @@ public:
   void RemoveIdleTimeTarget(nsIPluginInstanceOwner* objectFrame);
 
 #ifdef MOZ_IPC
-  void PluginCrashed(nsNPAPIPlugin* plugin);
+  void PluginCrashed(nsNPAPIPlugin* plugin,
+                     const nsAString& pluginDumpID,
+                     const nsAString& browserDumpID);
 #endif
 
   nsPluginInstanceTag *FindInstanceTag(nsIPluginInstance *instance);
@@ -172,6 +174,10 @@ public:
   void StopRunningInstances(nsISupportsArray* aReloadDocs, nsPluginTag* aPluginTag);
 
   nsTArray< nsAutoPtr<nsPluginInstanceTag> > *InstanceTagArray();
+
+  // Return the tag for |aLibrary| if found, nsnull if not.
+  nsPluginTag*
+  FindTagForLibrary(PRLibrary* aLibrary);
 
 private:
   nsresult
@@ -196,7 +202,7 @@ private:
   nsPluginTag*
   FindPluginEnabledForExtension(const char* aExtension, const char* &aMimeType);
 
-  // Return the tag for |plugin| if found, nsnull if not.
+  // Return the tag for |aPlugin| if found, nsnull if not.
   nsPluginTag*
   FindTagForPlugin(nsIPlugin* aPlugin);
 

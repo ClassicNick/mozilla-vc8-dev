@@ -148,11 +148,18 @@ class NS_COM_GLUE nsTArray_base {
       return mHdr->mIsAutoArray;
     }
 
+    // Dummy struct to get the compiler to simulate the alignment of
+    // nsAutoTArray's and nsAutoTPtrArray's mAutoBuf.
+    struct AutoArray {
+      Header *mHdr;
+      PRUint64 aligned;
+    };
+
     // Returns a Header for the built-in buffer of this nsAutoTArray.
     Header* GetAutoArrayBuffer() {
       NS_ASSERTION(IsAutoArray(), "Should be an auto array to call this");
 
-      return reinterpret_cast<Header*>(&mHdr + 1);
+      return reinterpret_cast<Header*>(&(reinterpret_cast<AutoArray*>(&mHdr))->aligned);
     }
 
     // Returns true if this is an nsAutoTArray and it currently uses the
@@ -589,6 +596,23 @@ class nsTArray : public nsTArray_base {
       return PR_FALSE;
     }
 
+    // A variation on the GreatestIndexLtEq method defined above.
+    template<class Item, class Comparator>
+    PRBool
+    GreatestIndexLtEq(const Item& item,
+                      index_type& idx,
+                      const Comparator& comp) const {
+      return GreatestIndexLtEq(item, comp, &idx);
+    }
+
+    // A variation on the GreatestIndexLtEq method defined above.
+    template<class Item>
+    PRBool
+    GreatestIndexLtEq(const Item& item,
+                      index_type& idx) const {
+      return GreatestIndexLtEq(item, nsDefaultComparator<elem_type, Item>(), &idx);
+    }
+
     // Inserts |item| at such an index to guarantee that if the array
     // was previously sorted, it will remain sorted after this
     // insertion.
@@ -912,7 +936,10 @@ class nsAutoTArray : public nsTArray<E> {
     }
 
   protected:
-    char mAutoBuf[sizeof(Header) + N * sizeof(elem_type)];
+    union {
+      char mAutoBuf[sizeof(Header) + N * sizeof(elem_type)];
+      PRUint64 dummy;
+    };
 };
 
 // specialization for N = 0. this makes the inheritance model easier for

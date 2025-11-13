@@ -45,6 +45,7 @@ include $(DEPTH)/config/autoconf.mk
 
 DIRS =	MochiKit \
 	static \
+	dynamic \
 	tests \
 	chrome \
 	ssltunnel \
@@ -60,6 +61,8 @@ include $(topsrcdir)/build/automation-build.mk
 _SERV_FILES = 	\
 		runtests.py \
 		automation.py \
+		runtestsremote.py \
+		$(topsrcdir)/build/mobile/devicemanager.py \
 		$(topsrcdir)/build/automationutils.py \
 		gen_template.pl \
 		server.js \
@@ -102,11 +105,12 @@ ifeq ($(OS_ARCH),WINNT)
 TEST_HARNESS_BINS += \
   crashinject$(BIN_SUFFIX) \
   crashinjectdll$(DLL_SUFFIX) \
+  vmwarerecordinghelper$(DLL_SUFFIX) \
   $(NULL)
 endif
 
 ifeq ($(OS_ARCH),Darwin)
-TEST_HARNESS_BINS += fix-macosx-stack.pl
+TEST_HARNESS_BINS += fix_macosx_stack.py
 endif
 
 ifeq ($(OS_ARCH),Linux)

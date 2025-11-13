@@ -149,9 +149,6 @@ public:
 
   NS_IMETHOD  GetDeviceContext(nsIDeviceContext *&aContext);
 
-  NS_IMETHOD  DisableRefresh(void);
-  NS_IMETHOD  EnableRefresh(PRUint32 aUpdateFlags);
-
   virtual nsIViewManager* BeginUpdateViewBatch(void);
   NS_IMETHOD  EndUpdateViewBatch(PRUint32 aUpdateFlags);
 
@@ -182,16 +179,17 @@ private:
   void CallWillPaintOnObservers();
   void ReparentChildWidgets(nsIView* aView, nsIWidget *aNewWidget);
   void ReparentWidgets(nsIView* aView, nsIView *aParent);
-  already_AddRefed<nsIRenderingContext> CreateRenderingContext(nsView &aView);
   void UpdateWidgetArea(nsView *aWidgetView, nsIWidget* aWidget,
                         const nsRegion &aDamagedRegion,
                         nsView* aIgnoreWidgetView);
 
   void UpdateViews(nsView *aView, PRUint32 aUpdateFlags);
 
-  void Refresh(nsView *aView, nsIRenderingContext *aContext,
-               nsIRegion *region, PRUint32 aUpdateFlags);
-  void RenderViews(nsView *aRootView, nsIRenderingContext& aRC,
+  void TriggerRefresh(PRUint32 aUpdateFlags);
+
+  void Refresh(nsView *aView, nsIWidget *aWidget,
+               const nsIntRegion& aRegion, PRUint32 aUpdateFlags);
+  void RenderViews(nsView *aRootView, nsIWidget *aWidget,
                    const nsRegion& aRegion);
 
   void InvalidateRectDifference(nsView *aView, const nsRect& aRect, const nsRect& aCutOut, PRUint32 aUpdateFlags);
@@ -276,7 +274,7 @@ public: // NOT in nsIViewManager, so private to the view module
 
   nsresult CreateRegion(nsIRegion* *result);
 
-  PRBool IsRefreshEnabled() { return RootViewManager()->mRefreshEnabled; }
+  PRBool IsRefreshEnabled() { return RootViewManager()->mUpdateBatchCnt == 0; }
 
   nsIViewObserver* GetViewObserver() { return mObserver; }
 
@@ -311,8 +309,6 @@ private:
   PRInt32           mUpdateBatchCnt;
   PRUint32          mUpdateBatchFlags;
   PRInt32           mScrollCnt;
-  // Use IsRefreshEnabled() to check the value of mRefreshEnabled.
-  PRPackedBool      mRefreshEnabled;
   // Use IsPainting() and SetPainting() to access mPainting.
   PRPackedBool      mPainting;
   PRPackedBool      mRecursiveRefreshPending;

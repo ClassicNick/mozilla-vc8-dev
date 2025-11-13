@@ -1009,8 +1009,9 @@ nsImageFrame::DisplayAltFeedback(nsIRenderingContext& aRenderingContext,
 
   // Paint the border
   nsRecessedBorder recessedBorder(borderEdgeWidth, PresContext());
-  nsCSSRendering::PaintBorder(PresContext(), aRenderingContext, this, inner,
-                              inner, recessedBorder, mStyleContext);
+  nsCSSRendering::PaintBorderWithStyleBorder(PresContext(), aRenderingContext,
+                                             this, inner, inner,
+                                             recessedBorder, mStyleContext);
 
   // Adjust the inner rect to account for the one pixel recessed border,
   // and a six pixel padding on each edge
@@ -1258,12 +1259,9 @@ nsImageFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   }
 
   // XXX what on EARTH is this code for?
-  PRInt16 displaySelection = 0;
   nsresult result;
   nsPresContext* presContext = PresContext();
-  result = presContext->PresShell()->GetSelectionFlags(&displaySelection);
-  if (NS_FAILED(result))
-    return result;
+  PRInt16 displaySelection = presContext->PresShell()->GetSelectionFlags();
   if (!(displaySelection & nsISelectionDisplay::DISPLAY_IMAGES))
     return NS_OK;//no need to check the blue border, we cannot be drawn selected
 //insert hook here for image selection drawing
@@ -1758,8 +1756,7 @@ static const char kIconLoadPrefs[][40] = {
 
 nsImageFrame::IconLoad::IconLoad()
 {
-  nsCOMPtr<nsIPrefBranch2> prefBranch =
-    do_QueryInterface(nsContentUtils::GetPrefBranch());
+  nsIPrefBranch2* prefBranch = nsContentUtils::GetPrefBranch();
 
   // register observers
   for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(kIconLoadPrefs); ++i)

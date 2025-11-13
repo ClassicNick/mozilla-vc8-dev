@@ -68,7 +68,8 @@ static nsRect GetNonSVGUserSpace(nsIFrame* aFirst)
 static nsRect
 GetPreEffectsOverflowRect(nsIFrame* aFrame)
 {
-  nsRect* r = static_cast<nsRect*>(aFrame->GetProperty(nsGkAtoms::preEffectsBBoxProperty));
+  nsRect* r = static_cast<nsRect*>
+    (aFrame->Properties().Get(nsIFrame::PreEffectsBBoxProperty()));
   if (r)
     return *r;
   return aFrame->GetOverflowRect();
@@ -209,7 +210,7 @@ public:
   {
     nsIRenderingContext* ctx = aContext->GetRenderingContext(aTarget);
     nsIRenderingContext::AutoPushTranslation push(ctx, -mOffset.x, -mOffset.y);
-    mInnerList->Paint(mBuilder, ctx);
+    mInnerList->Paint(mBuilder, ctx, nsDisplayList::PAINT_DEFAULT);
   }
 
 private:
@@ -302,7 +303,7 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsIRenderingContext* aCtx,
     filterFrame->FilterPaint(&svgContext, aEffectsFrame, &paint, &r);
   } else {
     gfx->SetMatrix(savedCTM);
-    aInnerList->Paint(aBuilder, aCtx);
+    aInnerList->Paint(aBuilder, aCtx, nsDisplayList::PAINT_DEFAULT);
     aCtx->Translate(userSpaceRect.x, userSpaceRect.y);
   }
 

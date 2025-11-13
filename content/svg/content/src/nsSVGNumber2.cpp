@@ -70,16 +70,18 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(nsSVGNumber2::DOMAnimatedNumber)
 NS_IMPL_ADDREF(DOMSVGNumber)
 NS_IMPL_RELEASE(DOMSVGNumber)
 
+DOMCI_DATA(SVGAnimatedNumber, nsSVGNumber2::DOMAnimatedNumber)
+
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSVGNumber2::DOMAnimatedNumber)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGAnimatedNumber)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(SVGAnimatedNumber)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGAnimatedNumber)
 NS_INTERFACE_MAP_END
 
 NS_INTERFACE_MAP_BEGIN(DOMSVGNumber)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGNumber)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(SVGNumber)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGNumber)
 NS_INTERFACE_MAP_END
 
 /* Implementation */
@@ -101,16 +103,19 @@ nsSVGNumber2::SetBaseValueString(const nsAString &aValueAsString,
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
-  mBaseVal = mAnimVal = val;
-
-  // XXX shouldn't we be calling DidChangeNumber here???
-
+  mBaseVal = val;
+  if (!mIsAnimated) {
+    mAnimVal = mBaseVal;
+  }
 #ifdef MOZ_SMIL
-  if (mIsAnimated) {
+  else {
     aSVGElement->AnimationNeedsResample();
   }
 #endif
 
+  // We don't need to call DidChange* here - we're only called by
+  // nsSVGElement::ParseAttribute under nsGenericElement::SetAttr,
+  // which takes care of notifying.
   return NS_OK;
 }
 
@@ -127,13 +132,16 @@ nsSVGNumber2::SetBaseValue(float aValue,
                            nsSVGElement *aSVGElement,
                            PRBool aDoSetAttr)
 {
-  mAnimVal = mBaseVal = aValue;
-  aSVGElement->DidChangeNumber(mAttrEnum, aDoSetAttr);
+  mBaseVal = aValue;
+  if (!mIsAnimated) {
+    mAnimVal = mBaseVal;
+  }
 #ifdef MOZ_SMIL
-  if (mIsAnimated) {
+  else {
     aSVGElement->AnimationNeedsResample();
   }
 #endif
+  aSVGElement->DidChangeNumber(mAttrEnum, aDoSetAttr);
 }
 
 void
@@ -166,7 +174,8 @@ nsSVGNumber2::ToSMILAttr(nsSVGElement *aSVGElement)
 nsresult
 nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
                                           const nsISMILAnimationElement* /*aSrcElement*/,
-                                          nsSMILValue& aValue) const
+                                          nsSMILValue& aValue,
+                                          PRBool& aCanCache) const
 {
   float value;
 
@@ -178,6 +187,7 @@ nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
   nsSMILValue val(&nsSMILFloatType::sSingleton);
   val.mU.mDouble = value;
   aValue = val;
+  aCanCache = PR_TRUE;
 
   return NS_OK;
 }

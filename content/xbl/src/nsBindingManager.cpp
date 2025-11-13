@@ -142,7 +142,7 @@ NS_INTERFACE_TABLE_HEAD(nsAnonymousContentList)
     NS_INTERFACE_TABLE_ENTRY(nsAnonymousContentList, nsAnonymousContentList)
   NS_OFFSET_AND_INTERFACE_TABLE_END
   NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(NodeList)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(NodeList)
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsAnonymousContentList)
 NS_INTERFACE_MAP_END
 
@@ -683,21 +683,26 @@ nsBindingManager::ResolveTag(nsIContent* aContent, PRInt32* aNameSpaceID)
 
 nsresult
 nsBindingManager::GetContentListFor(nsIContent* aContent, nsIDOMNodeList** aResult)
+{
+  NS_IF_ADDREF(*aResult = GetContentListFor(aContent));
+  return NS_OK;
+}
+
+nsINodeList*
+nsBindingManager::GetContentListFor(nsIContent* aContent)
 { 
-  *aResult = nsnull;
-  
+  nsINodeList* result = nsnull;
+
   if (mContentListTable.ops) {
-    *aResult = static_cast<nsAnonymousContentList*>
-                          (LookupObject(mContentListTable, aContent));
-    NS_IF_ADDREF(*aResult);
-  }
-  
-  if (!*aResult) {
-    nsCOMPtr<nsIDOMNode> node(do_QueryInterface(aContent));
-    node->GetChildNodes(aResult);
+    result = static_cast<nsAnonymousContentList*>
+      (LookupObject(mContentListTable, aContent));
   }
 
-  return NS_OK;
+  if (!result) {
+    result = aContent->GetChildNodesList();
+  }
+
+  return result;
 }
 
 nsresult
@@ -1323,6 +1328,39 @@ EnumRuleProcessors(nsISupports *aKey, nsXBLBinding *aBinding, void* aClosure)
     }
   }
   return PL_DHASH_NEXT;
+}
+
+struct WalkAllRulesData {
+  nsIStyleRuleProcessor::EnumFunc mFunc;
+  RuleProcessorData* mData;
+};
+
+static PLDHashOperator
+EnumWalkAllRules(nsVoidPtrHashKey *aKey, void* aClosure)
+{
+  nsIStyleRuleProcessor *ruleProcessor =
+    static_cast<nsIStyleRuleProcessor*>(const_cast<void*>(aKey->GetKey()));
+  WalkAllRulesData *data = static_cast<WalkAllRulesData*>(aClosure);
+
+  (*(data->mFunc))(ruleProcessor, data->mData);
+
+  return PL_DHASH_NEXT;
+}
+
+void
+nsBindingManager::WalkAllRules(nsIStyleRuleProcessor::EnumFunc aFunc,
+                               RuleProcessorData* aData)
+{
+  if (!mBindingTable.IsInitialized())
+    return;
+
+  RuleProcessorSet set;
+  mBindingTable.EnumerateRead(EnumRuleProcessors, &set);
+  if (!set.IsInitialized())
+    return;
+
+  WalkAllRulesData data = { aFunc, aData };
+  set.EnumerateEntries(EnumWalkAllRules, &data);
 }
 
 struct MediumFeaturesChangedData {

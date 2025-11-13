@@ -42,13 +42,15 @@
 
 /* A namespace class for static layout utilities. */
 
+#include "jscntxt.h"
+
 #include "nsJSUtils.h"
 #include "nsCOMPtr.h"
 #include "nsAString.h"
 #include "nsPrintfCString.h"
 #include "nsUnicharUtils.h"
 #include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
+#include "nsIPrefBranch2.h"
 #include "nsIPrefLocalizedString.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIScriptGlobalObject.h"
@@ -98,10 +100,14 @@
 #include "imgIRequest.h"
 #include "imgIContainer.h"
 #include "imgILoader.h"
+#include "mozilla/IHistory.h"
+#include "nsDocShellCID.h"
 #include "nsIImageLoadingContent.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadGroup.h"
+#include "nsIObserver.h"
+#include "nsIObserverService.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNodeInfoManager.h"
 #include "nsIXBLService.h"
@@ -181,6 +187,9 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "mozAutoDocUpdate.h"
 #include "imgICache.h"
 #include "jsinterp.h"
+#include "jsarray.h"
+#include "jsdate.h"
+#include "jsregexp.h"
 
 const char kLoadAsData[] = "loadAsData";
 
@@ -198,10 +207,10 @@ nsIIOService *nsContentUtils::sIOService;
 #ifdef MOZ_XTF
 nsIXTFService *nsContentUtils::sXTFService = nsnull;
 #endif
-nsIPrefBranch *nsContentUtils::sPrefBranch = nsnull;
-nsIPref *nsContentUtils::sPref = nsnull;
+nsIPrefBranch2 *nsContentUtils::sPrefBranch = nsnull;
 imgILoader *nsContentUtils::sImgLoader;
 imgICache *nsContentUtils::sImgCache;
+mozilla::IHistory *nsContentUtils::sHistory;
 nsIConsoleService *nsContentUtils::sConsoleService;
 nsDataHashtable<nsISupportsHashKey, EventNameMapping>* nsContentUtils::sEventTable = nsnull;
 nsIStringBundleService *nsContentUtils::sStringBundleService;
@@ -230,6 +239,8 @@ nsIJSRuntimeService *nsAutoGCRoot::sJSRuntimeService;
 JSRuntime *nsAutoGCRoot::sJSScriptRuntime;
 
 PRBool nsContentUtils::sInitialized = PR_FALSE;
+
+nsCOMArray<nsPrefOldCallback> *nsContentUtils::sPrefCallbackList = nsnull;
 
 static PLDHashTable sEventListenerManagersHash;
 
@@ -280,6 +291,43 @@ class nsSameOriginChecker : public nsIChannelEventSink,
   NS_DECL_NSIINTERFACEREQUESTOR
 };
 
+// For nsContentUtils::RegisterPrefCallback/UnregisterPrefCallback
+class nsPrefOldCallback : public nsIObserver
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
+public:
+  nsPrefOldCallback(const char *aPref, PrefChangedFunc aCallback, void *aClosure) : mPref(aPref), mCallback(aCallback), mClosure(aClosure) {
+  }
+
+  PRBool IsEqual(const char *aPref, PrefChangedFunc aCallback, void *aClosure) {
+    return aCallback == mCallback &&
+           aClosure == mClosure &&
+           mPref.Equals(aPref);
+  }
+
+public:
+  nsCString       mPref;
+  PrefChangedFunc mCallback;
+  void            *mClosure;
+};
+
+NS_IMPL_ISUPPORTS1(nsPrefOldCallback, nsIObserver)
+
+NS_IMETHODIMP
+nsPrefOldCallback::Observe(nsISupports   *aSubject,
+                         const char      *aTopic,
+                         const PRUnichar *aData)
+{
+  NS_ASSERTION(!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID),
+               "invalid topic");
+  mCallback(NS_LossyConvertUTF16toASCII(aData).get(), mClosure);
+
+  return NS_OK;
+}
+
 // static
 nsresult
 nsContentUtils::Init()
@@ -296,9 +344,6 @@ nsContentUtils::Init()
 
   // It's ok to not have a pref service.
   CallGetService(NS_PREFSERVICE_CONTRACTID, &sPrefBranch);
-
-  // It's ok to not have prefs too.
-  CallGetService(NS_PREF_CONTRACTID, &sPref);
 
   rv = NS_GetNameSpaceManager(&sNameSpaceManager);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -337,6 +382,12 @@ nsContentUtils::Init()
   } else {
     if (NS_FAILED(CallGetService("@mozilla.org/image/cache;1", &sImgCache )))
       sImgCache = nsnull;
+  }
+
+  rv = CallGetService(NS_IHISTORY_CONTRACTID, &sHistory);
+  if (NS_FAILED(rv)) {
+    NS_RUNTIMEABORT("Cannot get the history service");
+    return rv;
   }
 
   sPtrsToPtrsToRelease = new nsTArray<nsISupports**>();
@@ -886,6 +937,20 @@ nsContentUtils::Shutdown()
   PRUint32 i;
   for (i = 0; i < PropertiesFile_COUNT; ++i)
     NS_IF_RELEASE(sStringBundles[i]);
+
+  // Clean up c-style's observer 
+  if (sPrefCallbackList) {
+    while (sPrefCallbackList->Count() > 0) {
+      nsRefPtr<nsPrefOldCallback> callback = (*sPrefCallbackList)[0];
+      NS_ABORT_IF_FALSE(callback, "Invalid c-style callback is appended");
+      if (sPrefBranch)
+        sPrefBranch->RemoveObserver(callback->mPref.get(), callback);
+      sPrefCallbackList->RemoveObject(callback);
+    }
+    delete sPrefCallbackList;
+    sPrefCallbackList = nsnull;
+  }
+
   NS_IF_RELEASE(sStringBundleService);
   NS_IF_RELEASE(sConsoleService);
   NS_IF_RELEASE(sDOMScriptObjectFactory);
@@ -905,8 +970,8 @@ nsContentUtils::Shutdown()
 #endif
   NS_IF_RELEASE(sImgLoader);
   NS_IF_RELEASE(sImgCache);
+  NS_IF_RELEASE(sHistory);
   NS_IF_RELEASE(sPrefBranch);
-  NS_IF_RELEASE(sPref);
 #ifdef IBMBIDI
   NS_IF_RELEASE(sBidiKeyboard);
 #endif
@@ -980,7 +1045,7 @@ nsContentUtils::IsCallerTrustedForCapability(const char* aCapability)
  */
 // static
 nsresult
-nsContentUtils::CheckSameOrigin(nsIDOMNode *aTrustedNode,
+nsContentUtils::CheckSameOrigin(nsINode *aTrustedNode,
                                 nsIDOMNode *aUnTrustedNode)
 {
   NS_PRECONDITION(aTrustedNode, "There must be a trusted node");
@@ -996,13 +1061,12 @@ nsContentUtils::CheckSameOrigin(nsIDOMNode *aTrustedNode,
   /*
    * Get hold of each node's principal
    */
-  nsCOMPtr<nsINode> trustedNode = do_QueryInterface(aTrustedNode);
   nsCOMPtr<nsINode> unTrustedNode = do_QueryInterface(aUnTrustedNode);
 
   // Make sure these are both real nodes
-  NS_ENSURE_TRUE(trustedNode && unTrustedNode, NS_ERROR_UNEXPECTED);
+  NS_ENSURE_TRUE(aTrustedNode && unTrustedNode, NS_ERROR_UNEXPECTED);
 
-  nsIPrincipal* trustedPrincipal = trustedNode->NodePrincipal();
+  nsIPrincipal* trustedPrincipal = aTrustedNode->NodePrincipal();
   nsIPrincipal* unTrustedPrincipal = unTrustedNode->NodePrincipal();
 
   if (trustedPrincipal == unTrustedPrincipal) {
@@ -1108,45 +1172,6 @@ nsContentUtils::InProlog(nsINode *aNode)
   return !root || doc->IndexOf(aNode) < doc->IndexOf(root);
 }
 
-// static
-nsresult
-nsContentUtils::doReparentContentWrapper(nsIContent *aNode,
-                                         JSContext *cx,
-                                         JSObject *aOldGlobal,
-                                         JSObject *aNewGlobal,
-                                         nsIDocument *aOldDocument,
-                                         nsIDocument *aNewDocument)
-{
-  nsCOMPtr<nsIXPConnectJSObjectHolder> old_wrapper;
-
-  nsresult rv;
-
-  rv = sXPConnect->ReparentWrappedNativeIfFound(cx, aOldGlobal, aNewGlobal,
-                                                aNode,
-                                                getter_AddRefs(old_wrapper));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Whether or not aChild is already wrapped we must iterate through
-  // its descendants since there's no guarantee that a descendant isn't
-  // wrapped even if this child is not wrapped. That used to be true
-  // when every DOM node's JSObject was parented at the DOM node's
-  // parent's JSObject, but that's no longer the case.
-
-  PRUint32 i, count = aNode->GetChildCount();
-
-  for (i = 0; i < count; i++) {
-    nsIContent *child = aNode->GetChildAt(i);
-    NS_ENSURE_TRUE(child, NS_ERROR_UNEXPECTED);
-
-    rv = doReparentContentWrapper(child, cx, 
-                                  aOldGlobal, aNewGlobal,
-                                  aOldDocument, aNewDocument);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  return rv;
-}
-
 static JSContext *
 GetContextFromDocument(nsIDocument *aDocument, JSObject** aGlobalObject)
 {
@@ -1169,33 +1194,6 @@ GetContextFromDocument(nsIDocument *aDocument, JSObject** aGlobalObject)
   }
 
   return (JSContext *)scx->GetNativeContext();
-}
-
-// static
-nsresult
-nsContentUtils::ReparentContentWrapper(nsIContent *aContent,
-                                       nsIContent *aNewParent,
-                                       nsIDocument *aNewDocument,
-                                       nsIDocument *aOldDocument)
-{
-  // If we can't find our old document we don't know what our old
-  // scope was so there's no way to find the old wrapper.
-  if (!aOldDocument || !aNewDocument || aNewDocument == aOldDocument) {
-    return NS_OK;
-  }
-
-  JSContext *cx;
-  JSObject *oldScope, *newScope;
-  nsresult rv = GetContextAndScopes(aOldDocument, aNewDocument, &cx, &oldScope,
-                                    &newScope);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!cx) {
-    return NS_OK;
-  }
-
-  return doReparentContentWrapper(aContent, cx, oldScope, newScope, 
-                                  aOldDocument, aNewDocument);
 }
 
 // static
@@ -1246,7 +1244,7 @@ nsContentUtils::GetContextAndScopes(nsIDocument *aOldDocument,
 
         if (!cx) {
           // No safe context reachable, bail.
-          NS_WARNING("No context reachable in ReparentContentWrapper()!");
+          NS_WARNING("No context reachable in GetContextAndScopes()!");
 
           return NS_ERROR_NOT_AVAILABLE;
         }
@@ -1307,7 +1305,7 @@ nsContentUtils::ReparentContentWrappersInScope(nsIScriptGlobalObject *aOldScope,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return sXPConnect->ReparentScopeAwareWrappers(cx, oldScopeObj, newScopeObj);
+  return sXPConnect->MoveWrappers(cx, oldScopeObj, newScopeObj);
 }
 
 nsIDocShell *
@@ -1546,7 +1544,7 @@ nsContentUtils::GetCommonAncestor(nsINode* aNode1,
   PRUint32 pos2 = parents2.Length();
   nsINode* parent = nsnull;
   PRUint32 len;
-  for (len = PR_MIN(pos1, pos2); len > 0; --len) {
+  for (len = NS_MIN(pos1, pos2); len > 0; --len) {
     nsINode* child1 = parents1.ElementAt(--pos1);
     nsINode* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
@@ -1646,7 +1644,7 @@ nsContentUtils::ComparePosition(nsINode* aNode1,
   // Find where the parent chain differs and check indices in the parent.
   nsINode* parent = top1;
   PRUint32 len;
-  for (len = PR_MIN(pos1, pos2); len > 0; --len) {
+  for (len = NS_MIN(pos1, pos2); len > 0; --len) {
     nsINode* child1 = parents1.ElementAt(--pos1);
     nsINode* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
@@ -1709,7 +1707,7 @@ nsContentUtils::ComparePoints(nsINode* aParent1, PRInt32 aOffset1,
   // Find where the parent chains differ
   nsINode* parent = parents1.ElementAt(pos1);
   PRUint32 len;
-  for (len = PR_MIN(pos1, pos2); len > 0; --len) {
+  for (len = NS_MIN(pos1, pos2); len > 0; --len) {
     nsINode* child1 = parents1.ElementAt(--pos1);
     nsINode* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
@@ -1907,10 +1905,7 @@ static inline void KeyAppendAtom(nsIAtom* aAtom, nsACString& aKey)
 {
   NS_PRECONDITION(aAtom, "KeyAppendAtom: aAtom can not be null!\n");
 
-  const char* atomString = nsnull;
-  aAtom->GetUTF8String(&atomString);
-
-  KeyAppendString(nsDependentCString(atomString), aKey);
+  KeyAppendString(nsAtomCString(aAtom), aKey);
 }
 
 static inline PRBool IsAutocompleteOff(nsIDOMElement* aElement)
@@ -2645,14 +2640,32 @@ nsContentUtils::GetStringPref(const char *aPref)
   return result;
 }
 
+// RegisterPrefCallback/UnregisterPrefCallback are backward compatiblity for
+// c-style observer.
+
 // static
 void
 nsContentUtils::RegisterPrefCallback(const char *aPref,
                                      PrefChangedFunc aCallback,
                                      void * aClosure)
 {
-  if (sPref)
-    sPref->RegisterCallback(aPref, aCallback, aClosure);
+  if (sPrefBranch) {
+    if (!sPrefCallbackList) {
+      sPrefCallbackList = new nsCOMArray<nsPrefOldCallback> ();
+      if (!sPrefCallbackList)
+        return;
+    }
+
+    nsPrefOldCallback *callback = new nsPrefOldCallback(aPref, aCallback, aClosure);
+    if (callback) {
+      if (NS_SUCCEEDED(sPrefBranch->AddObserver(aPref, callback, PR_FALSE))) {
+        sPrefCallbackList->AppendObject(callback);
+        return;
+      }
+      // error to get/add nsIPrefBranch2.  Destroy callback information
+      delete callback;
+    }
+  }
 }
 
 // static
@@ -2661,8 +2674,20 @@ nsContentUtils::UnregisterPrefCallback(const char *aPref,
                                        PrefChangedFunc aCallback,
                                        void * aClosure)
 {
-  if (sPref)
-    sPref->UnregisterCallback(aPref, aCallback, aClosure);
+  if (sPrefBranch) {
+    if (!sPrefCallbackList)
+      return;
+
+    int i;
+    for (i = 0; i < sPrefCallbackList->Count(); i++) {
+      nsRefPtr<nsPrefOldCallback> callback = (*sPrefCallbackList)[i];
+      if (callback && callback->IsEqual(aPref, aCallback, aClosure)) {
+        sPrefBranch->RemoveObserver(aPref, callback);
+        sPrefCallbackList->RemoveObject(callback);
+        return;
+      }
+    }
+  }
 }
 
 static int
@@ -3190,8 +3215,7 @@ nsAutoGCRoot::RemoveJSGCRoot(void* aPtr)
 PRBool
 nsContentUtils::IsEventAttributeName(nsIAtom* aName, PRInt32 aType)
 {
-  const char* name;
-  aName->GetUTF8String(&name);
+  const PRUnichar* name = aName->GetUTF16String();
   if (name[0] != 'o' || name[1] != 'n')
     return PR_FALSE;
 
@@ -3432,6 +3456,30 @@ nsContentUtils::GetReferencedElement(nsIURI* aURI, nsIContent *aFromContent)
   nsReferencedElement ref;
   ref.Reset(aFromContent, aURI);
   return ref.get();
+}
+
+/* static */
+void
+nsContentUtils::RegisterShutdownObserver(nsIObserver* aObserver)
+{
+  nsCOMPtr<nsIObserverService> observerService =
+    do_GetService("@mozilla.org/observer-service;1");
+  if (observerService) {
+    observerService->AddObserver(aObserver, 
+                                 NS_XPCOM_SHUTDOWN_OBSERVER_ID, 
+                                 PR_FALSE);
+  }
+}
+
+/* static */
+void
+nsContentUtils::UnregisterShutdownObserver(nsIObserver* aObserver)
+{
+  nsCOMPtr<nsIObserverService> observerService =
+    do_GetService("@mozilla.org/observer-service;1");
+  if (observerService) {
+    observerService->RemoveObserver(aObserver, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+  }
 }
 
 /* static */
@@ -4207,6 +4255,14 @@ nsContentUtils::CheckSecurityBeforeLoad(nsIURI* aURIToLoad,
   return aLoadingPrincipal->CheckMayLoad(aURIToLoad, PR_TRUE);
 }
 
+PRBool
+nsContentUtils::IsSystemPrincipal(nsIPrincipal* aPrincipal)
+{
+  PRBool isSystem;
+  nsresult rv = sSecurityManager->IsSystemPrincipal(aPrincipal, &isSystem);
+  return NS_SUCCEEDED(rv) && isSystem;
+}
+
 /* static */
 void
 nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
@@ -4267,7 +4323,8 @@ nsContentUtils::GetLocalizedEllipsis()
   static PRUnichar sBuf[4] = { 0, 0, 0, 0 };
   if (!sBuf[0]) {
     nsAutoString tmp(GetLocalizedStringPref("intl.ellipsis"));
-    PRUint32 len = PR_MIN(tmp.Length(), NS_ARRAY_LENGTH(sBuf) - 1);
+    PRUint32 len = NS_MIN(PRUint32(tmp.Length()),
+                          PRUint32(NS_ARRAY_LENGTH(sBuf) - 1));
     CopyUnicodeTo(tmp, 0, sBuf, len);
     if (!sBuf[0])
       sBuf[0] = PRUnichar(0x2026);
@@ -4519,7 +4576,7 @@ nsContentUtils::RemoveScriptBlocker()
   }
 
   PRUint32 firstBlocker = sRunnersCountAtFirstBlocker;
-  PRUint32 lastBlocker = sBlockedScriptRunners->Count();
+  PRUint32 lastBlocker = (PRUint32)sBlockedScriptRunners->Count();
   sRunnersCountAtFirstBlocker = 0;
   NS_ASSERTION(firstBlocker <= lastBlocker,
                "bad sRunnersCountAtFirstBlocker");
@@ -4530,7 +4587,7 @@ nsContentUtils::RemoveScriptBlocker()
     --lastBlocker;
 
     runnable->Run();
-    NS_ASSERTION(lastBlocker == sBlockedScriptRunners->Count() &&
+    NS_ASSERTION(lastBlocker == (PRUint32)sBlockedScriptRunners->Count() &&
                  sRunnersCountAtFirstBlocker == 0,
                  "Bad count");
     NS_ASSERTION(!sScriptBlockerCount, "This is really bad");
@@ -4840,6 +4897,78 @@ nsContentUtils::GetCurrentJSContext()
   sThreadJSContextStack->Peek(&cx);
 
   return cx;
+}
+
+/* static */
+void
+nsContentUtils::ASCIIToLower(const nsAString& aSource, nsAString& aDest)
+{
+  PRUint32 len = aSource.Length();
+  aDest.SetLength(len);
+  if (aDest.Length() == len) {
+    PRUnichar* dest = aDest.BeginWriting();
+    const PRUnichar* iter = aSource.BeginReading();
+    const PRUnichar* end = aSource.EndReading();
+    while (iter != end) {
+      PRUnichar c = *iter;
+      *dest = (c >= 'A' && c <= 'Z') ?
+         c + ('a' - 'A') : c;
+      ++iter;
+      ++dest;
+    }
+  }
+}
+
+/* static */
+void
+nsContentUtils::ASCIIToUpper(nsAString& aStr)
+{
+  PRUnichar* iter = aStr.BeginWriting();
+  PRUnichar* end = aStr.EndWriting();
+  while (iter != end) {
+    PRUnichar c = *iter;
+    if (c >= 'a' && c <= 'z') {
+      *iter = c + ('A' - 'a');
+    }
+    ++iter;
+  }
+}
+
+PRBool
+nsContentUtils::EqualsIgnoreASCIICase(const nsAString& aStr1,
+                                      const nsAString& aStr2)
+{
+  PRUint32 len = aStr1.Length();
+  if (len != aStr2.Length()) {
+    return PR_FALSE;
+  }
+
+  const PRUnichar* str1 = aStr1.BeginReading();
+  const PRUnichar* str2 = aStr2.BeginReading();
+  const PRUnichar* end = str1 + len;
+
+  while (str1 < end) {
+    PRUnichar c1 = *str1++;
+    PRUnichar c2 = *str2++;
+
+    // First check if any bits other than the 0x0020 differs
+    if ((c1 ^ c2) & 0xffdf) {
+      return PR_FALSE;
+    }
+
+    // We know they only differ in the 0x0020 bit.
+    // Likely the two chars are the same, so check that first
+    if (c1 != c2) {
+      // They do differ, but since it's only in the 0x0020 bit, check if it's
+      // the same ascii char, but just differing in case
+      PRUnichar c1Upper = c1 & 0xffdf;
+      if (!('A' <= c1Upper && c1Upper <= 'Z')) {
+        return PR_FALSE;
+      }
+    }
+  }
+
+  return PR_TRUE;
 }
 
 /* static */
@@ -5201,27 +5330,499 @@ nsContentUtils::WrapNative(JSContext *cx, JSObject *scope, nsISupports *native,
 
   NS_ENSURE_TRUE(sXPConnect && sThreadJSContextStack, NS_ERROR_UNEXPECTED);
 
-  // Keep sXPConnect and sThreadJSContextStack alive.
-  nsLayoutStaticsRef layoutStaticsRef;
+  // Keep sXPConnect and sThreadJSContextStack alive. If we're on the main
+  // thread then this can be done simply and cheaply by adding a reference to
+  // nsLayoutStatics. If we're not on the main thread then we need to add a
+  // more expensive reference sXPConnect directly. We have to use manual
+  // AddRef and Release calls so don't early-exit from this function after we've
+  // added the reference!
+  PRBool isMainThread = NS_IsMainThread();
+
+  if (isMainThread) {
+    nsLayoutStatics::AddRef();
+  }
+  else {
+    sXPConnect->AddRef();
+  }
 
   JSContext *topJSContext;
   nsresult rv = sThreadJSContextStack->Peek(&topJSContext);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  PRBool push = topJSContext != cx;
-  if (push) {
-    rv = sThreadJSContextStack->Push(cx);
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_SUCCEEDED(rv)) {
+    PRBool push = topJSContext != cx;
+    if (push) {
+      rv = sThreadJSContextStack->Push(cx);
+    }
+    if (NS_SUCCEEDED(rv)) {
+      rv = sXPConnect->WrapNativeToJSVal(cx, scope, native, aIID,
+                                         aAllowWrapping, vp, aHolder);
+      if (push) {
+        sThreadJSContextStack->Pop(nsnull);
+      }
+    }
   }
 
-  rv = sXPConnect->WrapNativeToJSVal(cx, scope, native, aIID, aAllowWrapping,
-                                     vp, aHolder);
-
-  if (push) {
-    sThreadJSContextStack->Pop(nsnull);
+  if (isMainThread) {
+    nsLayoutStatics::Release();
+  }
+  else {
+    sXPConnect->Release();
   }
 
   return rv;
+}
+
+void
+nsContentUtils::StripNullChars(const nsAString& aInStr, nsAString& aOutStr)
+{
+  // In common cases where we don't have nulls in the
+  // string we can simple simply bypass the checking code.
+  PRInt32 firstNullPos = aInStr.FindChar('\0');
+  if (firstNullPos == kNotFound) {
+    aOutStr.Assign(aInStr);
+    return;
+  }
+
+  aOutStr.SetCapacity(aInStr.Length() - 1);
+  nsAString::const_iterator start, end;
+  aInStr.BeginReading(start);
+  aInStr.EndReading(end);
+  while (start != end) {
+    if (*start != '\0')
+      aOutStr.Append(*start);
+    ++start;
+  }
+}
+
+namespace {
+
+const int kCloneStackFrameStackSize = 20;
+
+class CloneStackFrame
+{
+  friend class CloneStack;
+
+public:
+  // These three jsvals must all stick together as they're treated as a jsval
+  // array!
+  jsval source;
+  jsval clone;
+  jsval temp;
+  js::AutoIdArray ids;
+  jsuint index;
+
+private:
+  // Only let CloneStack access these.
+  CloneStackFrame(JSContext* aCx, jsval aSource, jsval aClone, JSIdArray* aIds)
+  : source(aSource), clone(aClone), temp(JSVAL_NULL), ids(aCx, aIds), index(0),
+    prevFrame(nsnull),  tvrVals(aCx, 3, &source)
+  {
+    MOZ_COUNT_CTOR(CloneStackFrame);
+  }
+
+  ~CloneStackFrame()
+  {
+    MOZ_COUNT_DTOR(CloneStackFrame);
+  }
+
+  CloneStackFrame* prevFrame;
+  js::AutoArrayRooter tvrVals;
+};
+
+class CloneStack
+{
+public:
+  CloneStack(JSContext* cx)
+  : mCx(cx), mLastFrame(nsnull) {
+    mObjectSet.Init();
+  }
+
+  ~CloneStack() {
+    while (!IsEmpty()) {
+      Pop();
+    }
+  }
+
+  PRBool
+  Push(jsval source, jsval clone, JSIdArray* ids) {
+    NS_ASSERTION(!JSVAL_IS_PRIMITIVE(source) && !JSVAL_IS_PRIMITIVE(clone),
+                 "Must be an object!");
+    if (!ids) {
+      return PR_FALSE;
+    }
+
+    CloneStackFrame* newFrame;
+    if (mObjectSet.Count() < kCloneStackFrameStackSize) {
+      // If the object can fit in our stack space then use that.
+      CloneStackFrame* buf = reinterpret_cast<CloneStackFrame*>(mStackFrames);
+      newFrame = new (buf + mObjectSet.Count())
+                     CloneStackFrame(mCx, source, clone, ids);
+    }
+    else {
+      // Use the heap.
+      newFrame = new CloneStackFrame(mCx, source, clone, ids);
+    }
+
+    mObjectSet.PutEntry(JSVAL_TO_OBJECT(source));
+
+    newFrame->prevFrame = mLastFrame;
+    mLastFrame = newFrame;
+
+    return PR_TRUE;
+  }
+
+  CloneStackFrame*
+  Peek() {
+    return mLastFrame;
+  }
+
+  void
+  Pop() {
+    if (IsEmpty()) {
+      NS_ERROR("Empty stack!");
+      return;
+    }
+
+    CloneStackFrame* lastFrame = mLastFrame;
+
+    mObjectSet.RemoveEntry(JSVAL_TO_OBJECT(lastFrame->source));
+    mLastFrame = lastFrame->prevFrame;
+
+    if (mObjectSet.Count() >= kCloneStackFrameStackSize) {
+      // Only delete if this was a heap object.
+      delete lastFrame;
+    }
+    else {
+      // Otherwise just run the destructor.
+      lastFrame->~CloneStackFrame();
+    }
+  }
+
+  PRBool
+  IsEmpty() {
+    NS_ASSERTION((!mLastFrame && !mObjectSet.Count()) ||
+                 (mLastFrame && mObjectSet.Count()),
+                 "Hashset is out of sync!");
+    return mObjectSet.Count() == 0;
+  }
+
+  PRBool
+  Search(JSObject* obj) {
+    return !!mObjectSet.GetEntry(obj);
+  }
+
+private:
+  JSContext* mCx;
+  CloneStackFrame* mLastFrame;
+  nsTHashtable<nsVoidPtrHashKey> mObjectSet;
+
+  // Use a char array instead of CloneStackFrame array to prevent the JSAuto*
+  // helpers from running until we're ready for them.
+  char mStackFrames[kCloneStackFrameStackSize * sizeof(CloneStackFrame)];
+};
+
+struct ReparentObjectData {
+  ReparentObjectData(JSContext* cx, JSObject* obj)
+  : cx(cx), obj(obj), ids(nsnull), index(0) { }
+
+  ~ReparentObjectData() {
+    if (ids) {
+      JS_DestroyIdArray(cx, ids);
+    }
+  }
+
+  JSContext* cx;
+  JSObject* obj;
+  JSIdArray* ids;
+  jsint index;
+};
+
+inline nsresult
+SetPropertyOnValueOrObject(JSContext* cx,
+                           jsval val,
+                           jsval* rval,
+                           JSObject* obj,
+                           jsid id)
+{
+  NS_ASSERTION((rval && !obj) || (!rval && obj), "Can only clone to one dest!");
+  if (rval) {
+    *rval = val;
+    return NS_OK;
+  }
+  if (!JS_DefinePropertyById(cx, obj, id, val, nsnull, nsnull,
+                             JSPROP_ENUMERATE)) {
+    return NS_ERROR_FAILURE;
+  }
+  return NS_OK;
+}
+
+inline JSObject*
+CreateEmptyObjectOrArray(JSContext* cx,
+                         JSObject* obj)
+{
+  if (JS_IsArrayObject(cx, obj)) {
+    jsuint length;
+    if (!JS_GetArrayLength(cx, obj, &length)) {
+      NS_ERROR("Failed to get array length?!");
+      return nsnull;
+    }
+    return JS_NewArrayObject(cx, length, NULL);
+  }
+  return JS_NewObject(cx, NULL, NULL, NULL);
+}
+
+nsresult
+CloneSimpleValues(JSContext* cx,
+                  jsval val,
+                  jsval* rval,
+                  PRBool* wasCloned,
+                  JSObject* robj = nsnull,
+                  jsid rid = INT_TO_JSID(0))
+{
+  *wasCloned = PR_TRUE;
+
+  // No cloning necessary for these non-GC'd jsvals.
+  if (!JSVAL_IS_GCTHING(val) || JSVAL_IS_NULL(val)) {
+    return SetPropertyOnValueOrObject(cx, val, rval, robj, rid);
+  }
+
+  // Clone doubles.
+  if (JSVAL_IS_DOUBLE(val)) {
+    jsval newVal;
+    if (!JS_NewDoubleValue(cx, *JSVAL_TO_DOUBLE(val), &newVal)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    return SetPropertyOnValueOrObject(cx, newVal, rval, robj, rid);
+  }
+
+  // We'll use immutable strings to prevent copying if we can.
+  if (JSVAL_IS_STRING(val)) {
+    if (!JS_MakeStringImmutable(cx, JSVAL_TO_STRING(val))) {
+      return NS_ERROR_FAILURE;
+    }
+    return SetPropertyOnValueOrObject(cx, val, rval, robj, rid);
+  }
+
+  NS_ASSERTION(JSVAL_IS_OBJECT(val), "Not an object!");
+  JSObject* obj = JSVAL_TO_OBJECT(val);
+
+  // See if this JSObject is backed by some C++ object. If it is then we assume
+  // that it is inappropriate to clone.
+  nsCOMPtr<nsIXPConnectWrappedNative> wrapper;
+  nsContentUtils::XPConnect()->
+    GetWrappedNativeOfJSObject(cx, obj, getter_AddRefs(wrapper));
+  if (wrapper) {
+    return SetPropertyOnValueOrObject(cx, JSVAL_NULL, rval, robj, rid);
+  }
+
+  // Security wrapped objects are auto-nulled as well.
+  JSClass* clasp = JS_GET_CLASS(cx, obj);
+  if ((clasp->flags & JSCLASS_IS_EXTENDED) &&
+      ((JSExtendedClass*)clasp)->wrappedObject) {
+    return SetPropertyOnValueOrObject(cx, JSVAL_NULL, rval, robj, rid);
+  }
+
+  // Function objects don't get cloned.
+  if (JS_ObjectIsFunction(cx, obj)) {
+    return SetPropertyOnValueOrObject(cx, JSVAL_NULL, rval, robj, rid);
+  }
+
+  // Date objects.
+  if (js_DateIsValid(cx, obj)) {
+    jsdouble msec = js_DateGetMsecSinceEpoch(cx, obj);
+    JSObject* newDate;
+    if (!(msec  && (newDate = js_NewDateObjectMsec(cx, msec)))) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+    return SetPropertyOnValueOrObject(cx, OBJECT_TO_JSVAL(newDate), rval, robj,
+                                      rid);
+  }
+
+  // RegExp objects.
+  if (js_ObjectIsRegExp(obj)) {
+    JSObject* proto;
+    if (!js_GetClassPrototype(cx, JS_GetScopeChain(cx), JSProto_RegExp,
+                              &proto)) {
+      return NS_ERROR_FAILURE;
+    }
+    JSObject* newRegExp = js_CloneRegExpObject(cx, obj, proto);
+    if (!newRegExp) {
+      return NS_ERROR_FAILURE;
+    }
+    return SetPropertyOnValueOrObject(cx, OBJECT_TO_JSVAL(newRegExp), rval,
+                                      robj, rid);
+  }
+
+  // ImageData is just a normal JSObject with some properties in our impl.
+  // Do we support File?
+  // Do we support Blob?
+  // Do we support FileList?
+
+  *wasCloned = PR_FALSE;
+  return NS_OK;
+}
+
+} // anonymous namespace
+
+// static
+nsresult
+nsContentUtils::CreateStructuredClone(JSContext* cx,
+                                      jsval val,
+                                      jsval* rval)
+{
+  JSAutoRequest ar(cx);
+
+  nsCOMPtr<nsIXPConnect> xpconnect(sXPConnect);
+  NS_ENSURE_STATE(xpconnect);
+
+  PRBool wasCloned;
+  nsresult rv = CloneSimpleValues(cx, val, rval, &wasCloned);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (wasCloned) {
+    return NS_OK;
+  }
+
+  NS_ASSERTION(JSVAL_IS_OBJECT(val), "Not an object?!");
+  JSObject* obj = CreateEmptyObjectOrArray(cx, JSVAL_TO_OBJECT(val));
+  if (!obj) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  jsval output = OBJECT_TO_JSVAL(obj);
+  js::AutoValueRooter tvr(cx, output);
+
+  CloneStack stack(cx);
+  if (!stack.Push(val, OBJECT_TO_JSVAL(obj),
+                  JS_Enumerate(cx, JSVAL_TO_OBJECT(val)))) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  while (!stack.IsEmpty()) {
+    CloneStackFrame* frame = stack.Peek();
+
+    NS_ASSERTION(!!frame->ids &&
+                 frame->ids.length() >= frame->index &&
+                 !JSVAL_IS_PRIMITIVE(frame->source) &&
+                 !JSVAL_IS_PRIMITIVE(frame->clone),
+                 "Bad frame state!");
+
+    if (frame->index == frame->ids.length()) {
+      // Done cloning this object, pop the frame.
+      stack.Pop();
+      continue;
+    }
+
+    // Get the current id and increment the index.
+    jsid id = frame->ids[frame->index++];
+
+    if (!JS_GetPropertyById(cx, JSVAL_TO_OBJECT(frame->source), id,
+                            &frame->temp)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (!JSVAL_IS_PRIMITIVE(frame->temp) &&
+        stack.Search(JSVAL_TO_OBJECT(frame->temp))) {
+      // Spec says to throw this particular exception for cyclical references.
+      return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+    }
+
+    JSObject* clone = JSVAL_TO_OBJECT(frame->clone);
+
+    PRBool wasCloned;
+    nsresult rv = CloneSimpleValues(cx, frame->temp, nsnull, &wasCloned, clone,
+                                    id);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (!wasCloned) {
+      NS_ASSERTION(JSVAL_IS_OBJECT(frame->temp), "Not an object?!");
+      obj = CreateEmptyObjectOrArray(cx, JSVAL_TO_OBJECT(frame->temp));
+      if (!obj ||
+          !stack.Push(frame->temp, OBJECT_TO_JSVAL(obj),
+                      JS_Enumerate(cx, JSVAL_TO_OBJECT(frame->temp)))) {
+        return NS_ERROR_OUT_OF_MEMORY;
+      }
+      // Set the new object as a property of the clone. We'll fill it on the
+      // next iteration.
+      if (!JS_DefinePropertyById(cx, clone, id, OBJECT_TO_JSVAL(obj), nsnull,
+                                 nsnull, JSPROP_ENUMERATE)) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+  }
+
+  *rval = output;
+  return NS_OK;
+}
+
+// static
+nsresult
+nsContentUtils::ReparentClonedObjectToScope(JSContext* cx,
+                                            JSObject* obj,
+                                            JSObject* scope)
+{
+  JSAutoRequest ar(cx);
+
+  scope = JS_GetGlobalForObject(cx, scope);
+
+  nsAutoTArray<ReparentObjectData, 20> objectData;
+  objectData.AppendElement(ReparentObjectData(cx, obj));
+
+  while (!objectData.IsEmpty()) {
+    ReparentObjectData& data = objectData[objectData.Length() - 1];
+
+    if (!data.ids && !data.index) {
+      // First, fix the prototype of the object.
+      JSClass* clasp = JS_GET_CLASS(cx, data.obj);
+      JSProtoKey protoKey = JSCLASS_CACHED_PROTO_KEY(clasp);
+      if (!protoKey) {
+        // We should never be reparenting an object that doesn't have a standard
+        // proto key.
+        return NS_ERROR_FAILURE;
+      }
+
+      JSObject* proto;
+      if (!js_GetClassPrototype(cx, scope, protoKey, &proto) ||
+          !JS_SetPrototype(cx, data.obj, proto)) {
+        return NS_ERROR_FAILURE;
+      }
+
+      // Adjust the parent.
+      if (!JS_SetParent(cx, data.obj, scope)) {
+        return NS_ERROR_FAILURE;
+      }
+
+      // And now enumerate the object's properties.
+      if (!(data.ids = JS_Enumerate(cx, data.obj))) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+
+    // If we've gone through all the object's properties then we're done with
+    // this frame.
+    if (data.index == data.ids->length) {
+      objectData.RemoveElementAt(objectData.Length() - 1);
+      continue;
+    }
+
+    // Get the id and increment!
+    jsid id = data.ids->vector[data.index++];
+
+    jsval prop;
+    if (!JS_GetPropertyById(cx, data.obj, id, &prop)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    // Push a new frame if this property is an object.
+    if (!JSVAL_IS_PRIMITIVE(prop)) {
+      objectData.AppendElement(ReparentObjectData(cx, JSVAL_TO_OBJECT(prop)));
+    }
+  }
+
+  return NS_OK;
 }
 
 #ifdef DEBUG
@@ -5302,8 +5903,9 @@ nsContentUtils::CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
 }
 #endif
 
-mozAutoRemovableBlockerRemover::mozAutoRemovableBlockerRemover(nsIDocument* aDocument)
+mozAutoRemovableBlockerRemover::mozAutoRemovableBlockerRemover(nsIDocument* aDocument MOZILLA_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
 {
+  MOZILLA_GUARD_OBJECT_NOTIFIER_INIT;
   mNestingLevel = nsContentUtils::GetRemovableScriptBlockerLevel();
   mDocument = aDocument;
   nsISupports* sink = aDocument ? aDocument->GetCurrentContentSink() : nsnull;

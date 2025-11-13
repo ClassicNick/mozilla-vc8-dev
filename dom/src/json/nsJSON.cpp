@@ -40,7 +40,6 @@
 #include "jsapi.h"
 #include "jsdtoa.h"
 #include "jsprvtd.h"
-#include "jsnum.h"
 #include "jsbool.h"
 #include "jsarena.h"
 #include "jscntxt.h"
@@ -63,7 +62,7 @@
 
 static const char kXPConnectServiceCID[] = "@mozilla.org/js/xpc/XPConnect;1";
 
-#define JSON_STREAM_BUFSIZE 1024
+#define JSON_STREAM_BUFSIZE 4096
 
 NS_INTERFACE_MAP_BEGIN(nsJSON)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIJSON)
@@ -607,7 +606,7 @@ nsJSONListener::OnDataAvailable(nsIRequest *aRequest, nsISupports *aContext,
   while (bytesRemaining) {
     unsigned int bytesRead;
     rv = aStream->Read(buffer,
-                       PR_MIN(sizeof(buffer), bytesRemaining),
+                       NS_MIN((unsigned long)sizeof(buffer), bytesRemaining),
                        &bytesRead);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = ProcessBytes(buffer, bytesRead);

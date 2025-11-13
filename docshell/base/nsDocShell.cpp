@@ -160,6 +160,7 @@
 #include "nsIEditingSession.h"
 
 #include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
 #include "nsIDOMDocument.h"
 #include "nsICachingChannel.h"
 #include "nsICacheVisitor.h"
@@ -179,7 +180,6 @@
 #include "nsCExternalHandlerService.h"
 #include "nsIExternalProtocolService.h"
 
-#include "nsIFocusController.h"
 #include "nsFocusManager.h"
 
 #include "nsITextToSubURI.h"
@@ -1606,7 +1606,7 @@ nsDocShell::GetPresShell(nsIPresShell ** aPresShell)
     NS_ENSURE_ARG_POINTER(aPresShell);
     *aPresShell = nsnull;
 
-    nsCOMPtr<nsPresContext> presContext;
+    nsRefPtr<nsPresContext> presContext;
     (void) GetPresContext(getter_AddRefs(presContext));
 
     if (presContext) {
@@ -1624,7 +1624,7 @@ nsDocShell::GetEldestPresShell(nsIPresShell** aPresShell)
     NS_ENSURE_ARG_POINTER(aPresShell);
     *aPresShell = nsnull;
 
-    nsCOMPtr<nsPresContext> presContext;
+    nsRefPtr<nsPresContext> presContext;
     (void) GetEldestPresContext(getter_AddRefs(presContext));
 
     if (presContext) {
@@ -1756,7 +1756,8 @@ nsDocShell::SetCharset(const char* aCharset)
     if (viewer) {
       nsCOMPtr<nsIMarkupDocumentViewer> muDV(do_QueryInterface(viewer));
       if (muDV) {
-        NS_ENSURE_SUCCESS(muDV->SetDefaultCharacterSet(nsDependentCString(aCharset)),
+        nsCString charset(aCharset);
+        NS_ENSURE_SUCCESS(muDV->SetDefaultCharacterSet(charset),
                           NS_ERROR_FAILURE);
       }
     }
@@ -1961,9 +1962,6 @@ NS_IMETHODIMP
 nsDocShell::SetAppType(PRUint32 aAppType)
 {
     mAppType = aAppType;
-    if (mAppType == APP_TYPE_MAIL || mAppType == APP_TYPE_EDITOR) {
-        SetAllowDNSPrefetch(PR_FALSE);
-    }
     return NS_OK;
 }
 
@@ -2112,8 +2110,8 @@ nsDocShell::HistoryPurged(PRInt32 aNumEntries)
     // eviction.  We need to adjust by the number of entries that we
     // just purged from history, so that we look at the right session history
     // entries during eviction.
-    mPreviousTransIndex = PR_MAX(-1, mPreviousTransIndex - aNumEntries);
-    mLoadedTransIndex = PR_MAX(0, mLoadedTransIndex - aNumEntries);
+    mPreviousTransIndex = NS_MAX(-1, mPreviousTransIndex - aNumEntries);
+    mLoadedTransIndex = NS_MAX(0, mLoadedTransIndex - aNumEntries);
 
     PRInt32 count = mChildList.Count();
     for (PRInt32 i = 0; i < count; ++i) {
@@ -2816,7 +2814,7 @@ PrintDocTree(nsIDocShellTreeItem * aParentNode, int aLevel)
   aParentNode->GetItemType(&type);
   nsCOMPtr<nsIPresShell> presShell;
   parentAsDocShell->GetPresShell(getter_AddRefs(presShell));
-  nsCOMPtr<nsPresContext> presContext;
+  nsRefPtr<nsPresContext> presContext;
   parentAsDocShell->GetPresContext(getter_AddRefs(presContext));
   nsIDocument *doc = presShell->GetDocument();
 
@@ -3621,6 +3619,11 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
         CopyUTF8toUTF16(host, formatStrs[0]);
         formatStrCount = 1;
         error.AssignLiteral("netTimeout");
+    }
+    else if (NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION == aError) {
+        // CSP error
+        cssClass.AssignLiteral("neterror");
+        error.AssignLiteral("cspFrameAncestorBlocked");
     }
     else if (NS_ERROR_GET_MODULE(aError) == NS_ERROR_MODULE_SECURITY) {
         nsCOMPtr<nsINSSErrorsService> nsserr =
@@ -4677,7 +4680,7 @@ nsDocShell::SetTitle(const PRUnichar * aTitle)
     }
 
     if (mGlobalHistory && mCurrentURI && mLoadType != LOAD_ERROR_PAGE) {
-        mGlobalHistory->SetPageTitle(mCurrentURI, nsDependentString(aTitle));
+        mGlobalHistory->SetPageTitle(mCurrentURI, nsString(mTitle));
     }
 
 
@@ -6242,7 +6245,7 @@ nsDocShell::CanSavePresentation(PRUint32 aLoadType,
     // then we should not cache the presentation.
     PRBool canSaveState;
     mOSHE->GetSaveLayoutStateFlag(&canSaveState);
-    if (canSaveState == PR_FALSE)
+    if (!canSaveState)
         return PR_FALSE;
 
     // If the document is not done loading, don't cache it.
@@ -7891,7 +7894,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
 
         PRBool wasAnchor = PR_FALSE;
         PRBool doHashchange = PR_FALSE;
-        nscoord cx, cy;
+        nscoord cx = 0, cy = 0;
 
         if (allowScroll) {
             NS_ENSURE_SUCCESS(ScrollIfAnchor(aURI, &wasAnchor, aLoadType, &cx,
@@ -7937,7 +7940,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             if (mOSHE) {
                 mOSHE->GetOwner(getter_AddRefs(owner));
             }
-            OnNewURI(aURI, nsnull, owner, mLoadType, PR_TRUE);
+            OnNewURI(aURI, nsnull, owner, mLoadType, PR_TRUE, PR_TRUE);
 
             nsCOMPtr<nsIInputStream> postData;
             PRUint32 pageIdent = PR_UINT32_MAX;
@@ -8020,6 +8023,12 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 nsCOMPtr<nsISHEntry> shEntry(do_QueryInterface(hEntry));
                 if (shEntry)
                     shEntry->SetTitle(mTitle);
+            }
+
+            /* Set the title for the Global History entry for this anchor url.
+             */
+            if (mGlobalHistory) {
+                mGlobalHistory->SetPageTitle(aURI, mTitle);
             }
 
             if (sameDocIdent) {
@@ -9511,7 +9520,7 @@ nsDocShell::AddToSessionHistory(nsIURI * aURI, nsIChannel * aChannel,
          
         }
     }
-    if (expired == PR_TRUE)
+    if (expired)
         entry->SetExpirationStatus(PR_TRUE);
 
 
@@ -10965,18 +10974,16 @@ nsDocShell::GetControllerForCommand(const char * inCommand,
 {
   NS_ENSURE_ARG_POINTER(outController);
   *outController = nsnull;
-  
-  nsresult rv = NS_ERROR_FAILURE;
-  
-  nsCOMPtr<nsPIDOMWindow> window ( do_QueryInterface(mScriptGlobal) );
-  if (window) {
-    nsIFocusController *focusController = window->GetRootFocusController();
-    if (focusController)
-      rv = focusController->GetControllerForCommand (window, inCommand, outController);
-  } // if window
 
-  return rv;
-  
+  nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mScriptGlobal));
+  if (window) {
+      nsCOMPtr<nsPIWindowRoot> root = window->GetTopWindowRoot();
+      if (root) {
+          return root->GetControllerForCommand(inCommand, outController);
+      }
+  }
+
+  return NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -11342,30 +11349,6 @@ nsDocShell::OnLeaveLink()
   return rv;
 }
 
-NS_IMETHODIMP
-nsDocShell::GetLinkState(nsIURI* aLinkURI, nsLinkState& aState)
-{
-  if (!aLinkURI) {
-    // No uri means not a link
-    aState = eLinkState_NotLink;
-    return NS_OK;
-  }
-    
-  aState = eLinkState_Unvisited;
-
-  // no history, leave state unchanged
-  if (!mGlobalHistory)
-    return NS_OK;
-
-  PRBool isVisited;
-  NS_ENSURE_SUCCESS(mGlobalHistory->IsVisited(aLinkURI, &isVisited),
-                    NS_ERROR_FAILURE);
-  if (isVisited)
-    aState = eLinkState_Visited;
-  
-  return NS_OK;
-}
-
 //----------------------------------------------------------------------
 // Web Shell Services API
 
@@ -11376,7 +11359,7 @@ nsDocShell::ReloadDocument(const char* aCharset,
                            PRInt32 aSource)
 {
 
-  // XXX hack. kee the aCharset and aSource wait to pick it up
+  // XXX hack. keep the aCharset and aSource wait to pick it up
   nsCOMPtr<nsIContentViewer> cv;
   NS_ENSURE_SUCCESS(GetContentViewer(getter_AddRefs(cv)), NS_ERROR_FAILURE);
   if (cv)
@@ -11386,19 +11369,20 @@ nsDocShell::ReloadDocument(const char* aCharset,
     {
       PRInt32 hint;
       muDV->GetHintCharacterSetSource(&hint);
-      if( aSource > hint ) 
+      if (aSource > hint)
       {
-         muDV->SetHintCharacterSet(nsDependentCString(aCharset));
-         muDV->SetHintCharacterSetSource(aSource);
-         if(eCharsetReloadRequested != mCharsetReloadState) 
-         {
-            mCharsetReloadState = eCharsetReloadRequested;
-            return Reload(LOAD_FLAGS_CHARSET_CHANGE);
-         }
+        nsCString charset(aCharset);
+        muDV->SetHintCharacterSet(charset);
+        muDV->SetHintCharacterSetSource(aSource);
+        if(eCharsetReloadRequested != mCharsetReloadState) 
+        {
+          mCharsetReloadState = eCharsetReloadRequested;
+          return Reload(LOAD_FLAGS_CHARSET_CHANGE);
+        }
       }
     }
   }
-  //return failer if this request is not accepted due to mCharsetReloadState
+  //return failure if this request is not accepted due to mCharsetReloadState
   return NS_ERROR_DOCSHELL_REQUEST_REJECTED;
 }
 
@@ -11410,20 +11394,6 @@ nsDocShell::StopDocumentLoad(void)
   {
     Stop(nsIWebNavigation::STOP_ALL);
     return NS_OK;
-  }
-  //return failer if this request is not accepted due to mCharsetReloadState
-  return NS_ERROR_DOCSHELL_REQUEST_REJECTED;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetRendering(PRBool aRender)
-{
-  if(eCharsetReloadRequested != mCharsetReloadState) 
-  {
-    if (mContentViewer) {
-       mContentViewer->SetEnableRendering(aRender);
-       return NS_OK;
-    }
   }
   //return failer if this request is not accepted due to mCharsetReloadState
   return NS_ERROR_DOCSHELL_REQUEST_REJECTED;

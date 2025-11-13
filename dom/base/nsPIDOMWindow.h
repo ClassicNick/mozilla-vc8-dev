@@ -67,7 +67,6 @@ enum PopupControlState {
 };
 
 class nsIDocShell;
-class nsIFocusController;
 class nsIContent;
 class nsIDocument;
 class nsIScriptTimeoutHandler;
@@ -76,10 +75,11 @@ struct nsTimeout;
 class nsScriptObjectHolder;
 class nsXBLPrototypeHandler;
 class nsIArray;
+class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0xeee92d9a, 0xae9f, 0x41e5, \
-  { 0x95, 0x5f, 0xaf, 0x1c, 0xe7, 0x66, 0x42, 0xe6 } }
+{ 0xC5CB154D, 0x17C0, 0x49E9, \
+  { 0x9C, 0x83, 0xFF, 0xC7, 0x2C, 0x93, 0xAF, 0x24 } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -89,6 +89,19 @@ public:
   virtual nsPIDOMWindow* GetPrivateRoot() = 0;
 
   virtual void ActivateOrDeactivate(PRBool aActivate) = 0;
+
+  // this is called GetTopWindowRoot to avoid conflicts with nsIDOMWindow2::GetWindowRoot
+  virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() = 0;
+
+  virtual void SetActive(PRBool aActive)
+  {
+    mIsActive = aActive;
+  }
+
+  PRBool IsActive()
+  {
+    return mIsActive;
+  }
 
   nsPIDOMEventTarget* GetChromeEventHandler() const
   {
@@ -146,8 +159,6 @@ public:
 
     win->mMutationBits |= aType;
   }
-
-  virtual nsIFocusController* GetRootFocusController() = 0;
 
   // GetExtantDocument provides a backdoor to the DOM GetDocument accessor
   nsIDOMDocument* GetExtantDocument() const
@@ -352,8 +363,7 @@ public:
    * created.
    */
   virtual nsresult SetNewDocument(nsIDocument *aDocument,
-                                  nsISupports *aState,
-                                  PRBool aClearScope) = 0;
+                                  nsISupports *aState) = 0;
 
   /**
    * Set the opener window.  aOriginalOpener is true if and only if this is the
@@ -490,8 +500,8 @@ protected:
       mRunningTimeout(nsnull), mMutationBits(0), mIsDocumentLoaded(PR_FALSE),
       mIsHandlingResizeEvent(PR_FALSE), mIsInnerWindow(aOuterWindow != nsnull),
       mMayHavePaintEventListener(PR_FALSE),
-      mIsModalContentWindow(PR_FALSE), mInnerWindow(nsnull),
-      mOuterWindow(aOuterWindow)
+      mIsModalContentWindow(PR_FALSE), mIsActive(PR_FALSE),
+      mInnerWindow(nsnull), mOuterWindow(aOuterWindow)
   {
   }
 
@@ -524,6 +534,9 @@ protected:
   // This variable is used on both inner and outer windows (and they
   // should match).
   PRPackedBool           mIsModalContentWindow;
+
+  // Tracks activation state that's used for :-moz-window-inactive.
+  PRPackedBool           mIsActive;
 
   // And these are the references between inner and outer windows.
   nsPIDOMWindow         *mInnerWindow;

@@ -47,17 +47,14 @@ typedef nsTArray<nsSVGSMILTransform> TransformArray;
 //----------------------------------------------------------------------
 // nsISMILType implementation
 
-nsresult
+void
 nsSVGTransformSMILType::Init(nsSMILValue &aValue) const
 {
   NS_PRECONDITION(aValue.IsNull(), "Unexpected value type");
 
   TransformArray* transforms = new TransformArray(1);
-  NS_ENSURE_TRUE(transforms, NS_ERROR_OUT_OF_MEMORY);
   aValue.mU.mPtr = transforms;
   aValue.mType = this;
-
-  return NS_OK;
 }
 
 void
@@ -88,6 +85,35 @@ nsSVGTransformSMILType::Assign(nsSMILValue& aDest,
   *dstTransforms = *srcTransforms;
 
   return NS_OK;
+}
+
+PRBool
+nsSVGTransformSMILType::IsEqual(const nsSMILValue& aLeft,
+                                const nsSMILValue& aRight) const
+{
+  NS_PRECONDITION(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  NS_PRECONDITION(aLeft.mType == this, "Unexpected SMIL type");
+
+  const TransformArray& leftArr
+    (*static_cast<const TransformArray*>(aLeft.mU.mPtr));
+  const TransformArray& rightArr
+    (*static_cast<const TransformArray*>(aRight.mU.mPtr));
+
+  // If array-lengths don't match, we're trivially non-equal.
+  if (leftArr.Length() != rightArr.Length()) {
+    return PR_FALSE;
+  }
+
+  // Array-lengths match -- check each array-entry for equality.
+  PRUint32 length = leftArr.Length(); // == rightArr->Length(), if we get here
+  for (PRUint32 i = 0; i < length; ++i) {
+    if (leftArr[i] != rightArr[i]) {
+      return PR_FALSE;
+    }
+  }
+  
+  // Found no differences.
+  return PR_TRUE;
 }
 
 nsresult

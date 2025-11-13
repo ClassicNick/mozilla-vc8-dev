@@ -50,7 +50,9 @@
 #include "nsCOMPtr.h"
 #include "nsIAtom.h"
 #include "nsIDOMKeyEvent.h"
+#include "nsIDOMNSMouseEvent.h"
 #include "nsIDOMDataTransfer.h"
+#include "nsPIDOMEventTarget.h"
 #include "nsWeakPtr.h"
 #include "nsIWidget.h"
 #include "nsTArray.h"
@@ -59,7 +61,6 @@
 #include "nsIVariant.h"
 
 class nsIRenderingContext;
-class nsIRegion;
 class nsIMenuItem;
 class nsIAccessible;
 class nsIContent;
@@ -442,6 +443,13 @@ class nsHashKey;
 #define NS_CONTENT_COMMAND_UNDO         (NS_CONTENT_COMMAND_EVENT_START+4)
 #define NS_CONTENT_COMMAND_REDO         (NS_CONTENT_COMMAND_EVENT_START+5)
 #define NS_CONTENT_COMMAND_PASTE_TRANSFERABLE (NS_CONTENT_COMMAND_EVENT_START+6)
+// NS_CONTENT_COMMAND_SCROLL scrolls the nearest scrollable element to the
+// currently focused content or latest DOM selection. This would normally be
+// the same element scrolled by keyboard scroll commands, except that this event
+// will scroll an element scrollable in either direction.  I.e., if the nearest
+// scrollable ancestor element can only be scrolled vertically, and horizontal
+// scrolling is requested using this event, no scrolling will occur.
+#define NS_CONTENT_COMMAND_SCROLL       (NS_CONTENT_COMMAND_EVENT_START+7)
 
 // Event to gesture notification
 #define NS_GESTURENOTIFY_EVENT_START 3900
@@ -518,11 +526,9 @@ public:
   // Additional type info for user defined events
   nsCOMPtr<nsIAtom>     userType;
   // Event targets, needed by DOM Events
-  // Using nsISupports, not nsIDOMEventTarget because in some cases
-  // nsIDOMEventTarget is implemented as a tearoff.
-  nsCOMPtr<nsISupports> target;
-  nsCOMPtr<nsISupports> currentTarget;
-  nsCOMPtr<nsISupports> originalTarget;
+  nsCOMPtr<nsPIDOMEventTarget> target;
+  nsCOMPtr<nsPIDOMEventTarget> currentTarget;
+  nsCOMPtr<nsPIDOMEventTarget> originalTarget;
 };
 
 /**
@@ -636,17 +642,12 @@ class nsPaintEvent : public nsGUIEvent
 {
 public:
   nsPaintEvent(PRBool isTrusted, PRUint32 msg, nsIWidget *w)
-    : nsGUIEvent(isTrusted, msg, w, NS_PAINT_EVENT),
-      renderingContext(nsnull), region(nsnull), rect(nsnull)
+    : nsGUIEvent(isTrusted, msg, w, NS_PAINT_EVENT)
   {
   }
 
-  /// Context to paint in.
-  nsIRenderingContext *renderingContext;
-  /// area to paint  (should be used instead of rect)
-  nsIRegion           *region;
-  /// x,y, width, height in pixels of area to paint
-  nsIntRect           *rect;
+  // area that needs repainting
+  nsIntRegion region;
 };
 
 /**
@@ -730,7 +731,8 @@ class nsMouseEvent_base : public nsInputEvent
 {
 public:
   nsMouseEvent_base(PRBool isTrusted, PRUint32 msg, nsIWidget *w, PRUint8 type)
-  : nsInputEvent(isTrusted, msg, w, type), button(0), pressure(0) {}
+  : nsInputEvent(isTrusted, msg, w, type), button(0), pressure(0),
+    inputSource(nsIDOMNSMouseEvent::MOZ_SOURCE_MOUSE) {}
 
   /// The possible related target
   nsCOMPtr<nsISupports> relatedTarget;
@@ -740,6 +742,9 @@ public:
   // Finger or touch pressure of event
   // ranges between 0.0 and 1.0
   float                 pressure;
+
+  // Possible values at nsIDOMNSMouseEvent
+  PRUint16              inputSource;
 };
 
 class nsMouseEvent : public nsMouseEvent_base
@@ -998,12 +1003,11 @@ typedef nsTextRange* nsTextRangeArray;
 struct nsTextEventReply
 {
   nsTextEventReply()
-    : mCursorIsCollapsed(PR_FALSE), mReferenceWidget(nsnull)
+    : mReferenceWidget(nsnull)
   {
   }
 
   nsIntRect mCursorPosition;
-  PRBool mCursorIsCollapsed;
   nsIWidget* mReferenceWidget;
 };
 
@@ -1216,13 +1220,14 @@ class nsSelectionEvent : public nsGUIEvent
 public:
   nsSelectionEvent(PRBool aIsTrusted, PRUint32 aMsg, nsIWidget *aWidget) :
     nsGUIEvent(aIsTrusted, aMsg, aWidget, NS_SELECTION_EVENT),
-    mSucceeded(PR_FALSE)
+    mExpandToClusterBoundary(PR_TRUE), mSucceeded(PR_FALSE)
   {
   }
 
   PRUint32 mOffset; // start offset of selection
   PRUint32 mLength; // length of selection
   PRPackedBool mReversed; // selection "anchor" should be in front
+  PRPackedBool mExpandToClusterBoundary; // cluster-based or character-based
   PRPackedBool mSucceeded;
 };
 
@@ -1237,7 +1242,28 @@ public:
   {
   }
 
+  // NS_CONTENT_COMMAND_PASTE_TRANSFERABLE
   nsCOMPtr<nsITransferable> mTransferable;                 // [in]
+
+  // NS_CONTENT_COMMAND_SCROLL
+  // for mScroll.mUnit
+  enum {
+    eCmdScrollUnit_Line,
+    eCmdScrollUnit_Page,
+    eCmdScrollUnit_Whole
+  };
+
+  struct ScrollInfo {
+    ScrollInfo() :
+      mAmount(0), mUnit(eCmdScrollUnit_Line), mIsHorizontal(PR_FALSE)
+    {
+    }
+
+    PRInt32      mAmount;                                  // [in]
+    PRUint8      mUnit;                                    // [in]
+    PRPackedBool mIsHorizontal;                            // [in]
+  } mScroll;
+
   PRPackedBool mOnlyEnabledCheck;                          // [in]
 
   PRPackedBool mSucceeded;                                 // [out]

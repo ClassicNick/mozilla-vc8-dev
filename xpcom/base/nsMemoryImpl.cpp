@@ -57,8 +57,7 @@
 #include <windows.h>
 #endif
 
-#if defined (NS_OSSO)
-#include <osso-mem.h>
+#if defined(MOZ_PLATFORM_MAEMO) && defined(__arm__)
 #include <fcntl.h>
 #include <unistd.h>
 static const char kHighMark[] = "/sys/kernel/high_watermark";
@@ -128,7 +127,7 @@ nsMemoryImpl::IsLowMemory(PRBool *result)
     GlobalMemoryStatusEx(&stat);
     *result = (stat.ullAvailPageFile < kRequiredMemory) &&
         ((float)stat.ullAvailPageFile / stat.ullTotalPageFile) < 0.1;
-#elif defined(NS_OSSO)
+#elif defined(MOZ_PLATFORM_MAEMO) && defined(__arm__)
     static int osso_highmark_fd = -1;
     if (osso_highmark_fd == -1) {
         osso_highmark_fd = open (kHighMark, O_RDONLY);
@@ -169,7 +168,7 @@ nsMemoryImpl::Create(nsISupports* outer, const nsIID& aIID, void **aResult)
 nsresult
 nsMemoryImpl::FlushMemory(const PRUnichar* aReason, PRBool aImmediate)
 {
-    nsresult rv;
+    nsresult rv = NS_OK;
 
     if (aImmediate) {
         // They've asked us to run the flusher *immediately*. We've
@@ -276,7 +275,7 @@ NS_Alloc(PRSize size)
     if (size > PR_INT32_MAX)
         return nsnull;
 
-    void* result = PR_Malloc(size);
+    void* result = moz_malloc(size);
     if (! result) {
         // Request an asynchronous flush
         sGlobalMemory.FlushMemory(NS_LITERAL_STRING("alloc-failure").get(), PR_FALSE);
@@ -290,7 +289,7 @@ NS_Realloc(void* ptr, PRSize size)
     if (size > PR_INT32_MAX)
         return nsnull;
 
-    void* result = PR_Realloc(ptr, size);
+    void* result = moz_realloc(ptr, size);
     if (! result && size != 0) {
         // Request an asynchronous flush
         sGlobalMemory.FlushMemory(NS_LITERAL_STRING("alloc-failure").get(), PR_FALSE);
@@ -301,7 +300,7 @@ NS_Realloc(void* ptr, PRSize size)
 XPCOM_API(void)
 NS_Free(void* ptr)
 {
-    PR_Free(ptr);
+    moz_free(ptr);
 }
 
 nsresult

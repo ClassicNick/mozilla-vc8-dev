@@ -46,12 +46,14 @@ include $(DEPTH)/config/autoconf.mk
 include $(topsrcdir)/config/rules.mk
 
 _TEST_FILES =\
+		test_aria_globals.html \
 		test_button.xul \
 		test_colorpicker.xul \
 		test_combobox.xul \
 		test_filectrl.html \
 		test_formctrl.html \
 		test_formctrl.xul \
+		test_gencontent.html \
 		test_groupbox.xul \
 		test_iframe.html \
 		test_img.html \

@@ -131,7 +131,7 @@ WrapObject(JSContext *cx, JSObject *parent, jsval v, jsval *vp);
 namespace XPCSafeJSObjectWrapper {
 
 JSObject *
-GetUnsafeObject(JSObject *obj);
+GetUnsafeObject(JSContext *cx, JSObject *obj);
 
 JSBool
 WrapObject(JSContext *cx, JSObject *scope, jsval v, jsval *vp);
@@ -146,9 +146,15 @@ namespace SystemOnlyWrapper {
 JSBool
 WrapObject(JSContext *cx, JSObject *parent, jsval v, jsval *vp);
 
+JSBool
+MakeSOW(JSContext *cx, JSObject *obj);
+
 // Used by UnwrapSOW below.
 JSBool
 AllowedToAct(JSContext *cx, jsval idval);
+
+JSBool
+CheckFilename(JSContext *cx, jsval idval, JSStackFrame *fp);
 
 }
 
@@ -170,6 +176,9 @@ namespace XPCWrapper {
 // the newResolve. It tells the addProperty hook to not worry about
 // what's being defined.
 extern const PRUint32 FLAG_RESOLVING;
+
+// When a wrapper is meant to act like a SOW, this flag will be set.
+extern const PRUint32 FLAG_SOW;
 
 // This is used by individual wrappers as a starting point to stick
 // per-wrapper flags into the flags slot. This is guaranteed to only
@@ -204,7 +213,7 @@ extern const PRUint32 sNumSlots;
  * Cross origin wrappers and safe JSObject wrappers both need to know
  * which native is 'eval' for various purposes.
  */
-extern JSNative sEvalNative;
+extern JSFastNative sEvalNative;
 
 enum FunctionObjectSlot {
   eWrappedFunctionSlot = 0,
@@ -245,7 +254,7 @@ FindEval(XPCCallContext &ccx, JSObject *obj)
   }
 
   sEvalNative =
-    ::JS_GetFunctionNative(ccx, ::JS_ValueToFunction(ccx, eval_val));
+    ::JS_GetFunctionFastNative(ccx, ::JS_ValueToFunction(ccx, eval_val));
 
   if (!sEvalNative) {
     return DoThrowException(NS_ERROR_UNEXPECTED, ccx);
@@ -267,25 +276,22 @@ GetSecurityManager()
  * Used to ensure that an XPCWrappedNative stays alive when its scriptable
  * helper defines an "expando" property on it.
  */
-inline JSBool
+inline void
 MaybePreserveWrapper(JSContext *cx, XPCWrappedNative *wn, uintN flags)
 {
-  if ((flags & JSRESOLVE_ASSIGNING) &&
-      (::JS_GetOptions(cx) & JSOPTION_PRIVATE_IS_NSISUPPORTS)) {
-    nsCOMPtr<nsIXPCScriptNotify> scriptNotify = 
-      do_QueryInterface(static_cast<nsISupports*>
-                                   (JS_GetContextPrivate(cx)));
-    if (scriptNotify) {
-      return NS_SUCCEEDED(scriptNotify->PreserveWrapper(wn));
+  if ((flags & JSRESOLVE_ASSIGNING)) {
+    nsRefPtr<nsXPCClassInfo> ci;
+    CallQueryInterface(wn->Native(), getter_AddRefs(ci));
+    if (ci) {
+      ci->PreserveWrapper(wn->Native());
     }
   }
-  return JS_TRUE;
 }
 
 inline JSBool
 IsSecurityWrapper(JSObject *wrapper)
 {
-  JSClass *clasp = STOBJ_GET_CLASS(wrapper);
+  JSClass *clasp = wrapper->getClass();
   return (clasp->flags & JSCLASS_IS_EXTENDED) &&
     ((JSExtendedClass*)clasp)->wrappedObject;
 }
@@ -309,7 +315,7 @@ Unwrap(JSContext *cx, JSObject *wrapper);
 inline JSObject *
 UnwrapGeneric(JSContext *cx, const JSExtendedClass *xclasp, JSObject *wrapper)
 {
-  if (STOBJ_GET_CLASS(wrapper) != &xclasp->base) {
+  if (wrapper->getClass() != &xclasp->base) {
     return nsnull;
   }
 
@@ -409,6 +415,20 @@ WrapFunction(JSContext *cx, JSObject *wrapperObj, JSObject *funobj, jsval *v,
 }
 
 /**
+ * Given a potentially-wrapped object, creates a wrapper for it.
+ */
+JSBool
+RewrapObject(JSContext *cx, JSObject *scope, JSObject *obj, WrapperType hint,
+             jsval *vp);
+
+JSObject *
+UnsafeUnwrapSecurityWrapper(JSContext *cx, JSObject *obj);
+
+JSBool
+CreateWrapperFromType(JSContext *cx, JSObject *scope, XPCWrappedNative *wn,
+                      WrapperType hint, jsval *vp);
+
+/**
  * Creates an iterator object that walks up the prototype of
  * wrappedObj. This is suitable for for-in loops over a wrapper. If
  * a property is not supposed to be reflected, the resolve hook
@@ -418,6 +438,14 @@ JSObject *
 CreateIteratorObj(JSContext *cx, JSObject *tempWrapper,
                   JSObject *wrapperObj, JSObject *innerObj,
                   JSBool keysonly);
+
+/**
+ * Like CreateIteratorObj, but doesn't need a security wrapper. If
+ * propertyContainer is null, creates an empty iterator.
+ */
+JSObject *
+CreateSimpleIterator(JSContext *cx, JSObject *scope, JSBool keysonly,
+                     JSObject *propertyContainer);
 
 /**
  * Called for the common part of adding a property to obj.
@@ -443,11 +471,14 @@ Enumerate(JSContext *cx, JSObject *wrapperObj, JSObject *innerObj);
  * Resolves a property (that may be) defined on |innerObj| onto
  * |wrapperObj|. This will also resolve random, page-defined objects
  * and is therefore unsuitable for cross-origin resolution.
+ *
+ * If |caller| is not NONE, then we will call the proper WrapObject
+ * hook for any getters or setters about to be lifted onto
+ * |wrapperObj|.
  */
 JSBool
-NewResolve(JSContext *cx, JSObject *wrapperObj,
-           JSBool preserveVal, JSObject *innerObj,
-           jsval id, uintN flags, JSObject **objp);
+NewResolve(JSContext *cx, JSObject *wrapperObj, JSBool preserveVal,
+           JSObject *innerObj, jsval id, uintN flags, JSObject **objp);
 
 /**
  * Resolve a native property named id from innerObj onto wrapperObj. The

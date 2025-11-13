@@ -75,7 +75,7 @@ public:
   // nsIFormControl
   NS_IMETHOD_(PRInt32) GetType() const { return NS_FORM_LEGEND; }
   NS_IMETHOD Reset();
-  NS_IMETHOD SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                nsIContent* aSubmitElement);
 
   NS_IMETHODIMP Focus();
@@ -126,6 +126,8 @@ nsHTMLLegendElement::~nsHTMLLegendElement()
 NS_IMPL_ADDREF_INHERITED(nsHTMLLegendElement, nsGenericElement) 
 NS_IMPL_RELEASE_INHERITED(nsHTMLLegendElement, nsGenericElement) 
 
+
+DOMCI_DATA(HTMLLegendElement, nsHTMLLegendElement)
 
 // QueryInterface implementation for nsHTMLLegendElement
 NS_INTERFACE_TABLE_HEAD(nsHTMLLegendElement)
@@ -284,7 +286,7 @@ nsHTMLLegendElement::PerformAccesskey(PRBool aKeyCausesActivation,
 }
 
 NS_IMETHODIMP
-nsHTMLLegendElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+nsHTMLLegendElement::SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                        nsIContent* aSubmitElement)
 {
   return NS_OK;

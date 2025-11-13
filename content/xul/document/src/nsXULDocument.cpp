@@ -90,6 +90,7 @@
 #include "nsILocalStore.h"
 #include "nsXPIDLString.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIWindowRoot.h"
 #include "nsXULCommandDispatcher.h"
 #include "nsXULDocument.h"
 #include "nsXULElement.h"
@@ -101,7 +102,6 @@
 #include "nsMimeTypes.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsIFocusController.h"
 #include "nsContentList.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptGlobalObjectOwner.h"
@@ -113,6 +113,7 @@
 #include "nsIParser.h"
 #include "nsIParserService.h"
 #include "nsICSSStyleSheet.h"
+#include "nsCSSLoader.h"
 #include "nsIScriptError.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsEventDispatcher.h"
@@ -125,7 +126,6 @@
 #include "nsXULPopupManager.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsURILoader.h"
-#include "nsCSSFrameConstructor.h"
 
 //----------------------------------------------------------------------
 //
@@ -222,7 +222,6 @@ nsRefMapEntry::RemoveContent(nsIContent* aContent)
 
 nsXULDocument::nsXULDocument(void)
     : nsXMLDocument("application/vnd.mozilla.xul+xml"),
-      mDocDirection(Direction_Uninitialized),
       mDocLWTheme(Doc_Theme_Uninitialized),
       mState(eState_Master),
       mResolutionPhase(nsForwardReference::eStart)
@@ -381,6 +380,8 @@ NS_IMPL_ADDREF_INHERITED(nsXULDocument, nsXMLDocument)
 NS_IMPL_RELEASE_INHERITED(nsXULDocument, nsXMLDocument)
 
 
+DOMCI_DATA(XULDocument, nsXULDocument)
+
 // QueryInterface implementation for nsXULDocument
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsXULDocument)
     NS_DOCUMENT_INTERFACE_TABLE_BEGIN(nsXULDocument)
@@ -390,7 +391,7 @@ NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsXULDocument)
       NS_INTERFACE_TABLE_ENTRY(nsXULDocument, nsICSSLoaderObserver)
     NS_OFFSET_AND_INTERFACE_TABLE_END
     NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-    NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(XULDocument)
+    NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(XULDocument)
 NS_INTERFACE_MAP_END_INHERITING(nsXMLDocument)
 
 
@@ -782,15 +783,13 @@ nsXULDocument::AddBroadcastListenerFor(nsIDOMElement* aBroadcaster,
     NS_ENSURE_ARG(aBroadcaster && aListener);
     
     nsresult rv =
-        nsContentUtils::CheckSameOrigin(static_cast<nsDocument *>(this),
-                                        aBroadcaster);
+        nsContentUtils::CheckSameOrigin(this, aBroadcaster);
 
     if (NS_FAILED(rv)) {
         return rv;
     }
 
-    rv = nsContentUtils::CheckSameOrigin(static_cast<nsDocument *>(this),
-                                         aListener);
+    rv = nsContentUtils::CheckSameOrigin(this, aListener);
 
     if (NS_FAILED(rv)) {
         return rv;
@@ -951,7 +950,7 @@ nsXULDocument::ExecuteOnBroadcastHandlerFor(nsIContent* aBroadcaster,
         nsCOMPtr<nsIPresShell> shell = GetPrimaryShell();
         if (shell) {
 
-            nsCOMPtr<nsPresContext> aPresContext = shell->GetPresContext();
+            nsRefPtr<nsPresContext> aPresContext = shell->GetPresContext();
 
             // Handle the DOM event
             nsEventStatus status = nsEventStatus_eIgnore;
@@ -1072,12 +1071,8 @@ nsXULDocument::AttributeChanged(nsIDocument* aDocument,
     nsAutoString persist;
     aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::persist, persist);
     if (!persist.IsEmpty()) {
-        nsAutoString attr;
-        rv = aAttribute->ToString(attr);
-        if (NS_FAILED(rv)) return;
-
         // XXXldb This should check that it's a token, not just a substring.
-        if (persist.Find(attr) >= 0) {
+        if (persist.Find(nsDependentAtomString(aAttribute)) >= 0) {
             rv = Persist(aElement, kNameSpaceID_None, aAttribute);
             if (NS_FAILED(rv)) return;
         }
@@ -1409,20 +1404,17 @@ nsXULDocument::Persist(nsIContent* aElement, PRInt32 aNameSpaceID,
 
     // Ick. Construct a property from the attribute. Punt on
     // namespaces for now.
-    const char* attrstr;
-    rv = aAttribute->GetUTF8String(&attrstr);
-    if (NS_FAILED(rv)) return rv;
-
     // Don't bother with unreasonable attributes. We clamp long values,
     // but truncating attribute names turns it into a different attribute
     // so there's no point in persisting anything at all
-    if (!attrstr || strlen(attrstr) > kMaxAttrNameLength) {
+    nsAtomCString attrstr(aAttribute);
+    if (attrstr.Length() > kMaxAttrNameLength) {
         NS_WARNING("Can't persist, Attribute name too long");
         return NS_ERROR_ILLEGAL_VALUE;
     }
 
     nsCOMPtr<nsIRDFResource> attr;
-    rv = gRDFService->GetResource(nsDependentCString(attrstr),
+    rv = gRDFService->GetResource(attrstr,
                                   getter_AddRefs(attr));
     if (NS_FAILED(rv)) return rv;
 
@@ -1555,28 +1547,29 @@ nsXULDocument::GetPopupNode(nsIDOMNode** aNode)
 NS_IMETHODIMP
 nsXULDocument::TrustedGetPopupNode(nsIDOMNode** aNode)
 {
-    // Get the focus controller.
-    nsCOMPtr<nsIFocusController> focusController;
-    GetFocusController(getter_AddRefs(focusController));
-    NS_ENSURE_TRUE(focusController, NS_ERROR_FAILURE);
+    *aNode = nsnull;
 
-    // Get the popup node.
-    return focusController->GetPopupNode(aNode); // addref happens here
+    nsCOMPtr<nsPIWindowRoot> rootWin = GetWindowRoot();
+    if (rootWin)
+        rootWin->GetPopupNode(aNode); // addref happens here
+
+    return NS_OK;
 }
 
 NS_IMETHODIMP
 nsXULDocument::SetPopupNode(nsIDOMNode* aNode)
 {
-    nsresult rv;
+    if (aNode) {
+        // only allow real node objects
+        nsCOMPtr<nsINode> node = do_QueryInterface(aNode);
+        NS_ENSURE_ARG(node);
+    }
 
-    // get focus controller
-    nsCOMPtr<nsIFocusController> focusController;
-    GetFocusController(getter_AddRefs(focusController));
-    NS_ENSURE_TRUE(focusController, NS_ERROR_FAILURE);
-    // set popup node
-    rv = focusController->SetPopupNode(aNode);
+    nsCOMPtr<nsPIWindowRoot> rootWin = GetWindowRoot();
+    if (rootWin)
+        rootWin->SetPopupNode(aNode); // addref happens here
 
-    return rv;
+    return NS_OK;
 }
 
 // Returns the rangeOffset element from the XUL Popup Manager. This is for
@@ -2036,29 +2029,7 @@ nsXULDocument::StartLayout(void)
         if (! docShell)
             return NS_ERROR_UNEXPECTED;
 
-        // Trigger a refresh before the call to InitialReflow(),
-        // because the view manager's UpdateView() function is
-        // dropping dirty rects if refresh is disabled rather than
-        // accumulating them until refresh is enabled and then
-        // triggering a repaint...
-        // XXXbz Is that still the case?
         nsresult rv = NS_OK;
-        nsIViewManager* vm = shell->GetViewManager();
-        if (vm) {
-            nsCOMPtr<nsIContentViewer> contentViewer;
-            rv = docShell->GetContentViewer(getter_AddRefs(contentViewer));
-            if (NS_SUCCEEDED(rv) && (contentViewer != nsnull)) {
-                PRBool enabled;
-                contentViewer->GetEnableRendering(&enabled);
-                if (enabled) {
-                    vm->EnableRefresh(NS_VMREFRESH_IMMEDIATE);
-                }
-            }
-        }
-
-        // Don't try to call GetVisibleArea earlier than this --- the EnableRefresh call
-        // above can flush reflows, which can cause a parent document to be flushed,
-        // calling ResizeReflow on our document which does SetVisibleArea.
         nsRect r = cx->GetVisibleArea();
         rv = shell->InitialReflow(r.width, r.height);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -4195,8 +4166,6 @@ nsXULDocument::BroadcasterHookup::~BroadcasterHookup()
 #ifdef PR_LOGGING
     if (PR_LOG_TEST(gXULLog, PR_LOG_WARNING) && !mResolved) {
         // Tell the world we failed
-        nsresult rv;
-
         nsIAtom *tag = mObservesElement->Tag();
 
         nsAutoString broadcasterID;
@@ -4211,17 +4180,12 @@ nsXULDocument::BroadcasterHookup::~BroadcasterHookup()
             attribute.AssignLiteral("*");
         }
 
-        nsAutoString tagStr;
-        rv = tag->ToString(tagStr);
-        if (NS_FAILED(rv)) return;
-
-        nsCAutoString tagstrC, attributeC,broadcasteridC;
-        tagstrC.AssignWithConversion(tagStr);
+        nsCAutoString attributeC,broadcasteridC;
         attributeC.AssignWithConversion(attribute);
         broadcasteridC.AssignWithConversion(broadcasterID);
         PR_LOG(gXULLog, PR_LOG_WARNING,
                ("xul: broadcaster hookup failed <%s attribute='%s'> to %s",
-                tagstrC.get(),
+                nsAtomCString(tag).get(),
                 attributeC.get(),
                 broadcasteridC.get()));
     }
@@ -4391,17 +4355,12 @@ nsXULDocument::CheckBroadcasterHookup(nsIContent* aElement,
         if (! content)
             return rv;
 
-        nsAutoString tagStr;
-        rv = content->Tag()->ToString(tagStr);
-        if (NS_FAILED(rv)) return rv;
-
-        nsCAutoString tagstrC, attributeC,broadcasteridC;
-        tagstrC.AssignWithConversion(tagStr);
+        nsCAutoString attributeC,broadcasteridC;
         attributeC.AssignWithConversion(attribute);
         broadcasteridC.AssignWithConversion(broadcasterID);
         PR_LOG(gXULLog, PR_LOG_NOTICE,
                ("xul: broadcaster hookup <%s attribute='%s'> to %s",
-                tagstrC.get(),
+                nsAtomCString(content->Tag()).get(),
                 attributeC.get(),
                 broadcasteridC.get()));
     }
@@ -4634,89 +4593,80 @@ nsXULDocument::ParserObserver::OnStopRequest(nsIRequest *request,
     return rv;
 }
 
-void
-nsXULDocument::GetFocusController(nsIFocusController** aFocusController)
+already_AddRefed<nsPIWindowRoot>
+nsXULDocument::GetWindowRoot()
 {
     nsCOMPtr<nsIInterfaceRequestor> ir = do_QueryReferent(mDocumentContainer);
-    nsCOMPtr<nsPIDOMWindow> windowPrivate = do_GetInterface(ir);
-    if (windowPrivate) {
-        NS_IF_ADDREF(*aFocusController = windowPrivate->GetRootFocusController());
-    } else
-        *aFocusController = nsnull;
+    nsCOMPtr<nsIDOMWindow> window(do_GetInterface(ir));
+    nsCOMPtr<nsPIDOMWindow> piWin(do_QueryInterface(window));
+    return piWin ? piWin->GetTopWindowRoot() : nsnull;
 }
 
 PRBool
 nsXULDocument::IsDocumentRightToLeft()
 {
-    if (mDocDirection == Direction_Uninitialized) {
-        mDocDirection = Direction_LeftToRight; // default to ltr on failure
-
-        // setting the localedir attribute on the root element forces a
-        // specific direction for the document.
-        nsIContent* content = GetRootContent();
-        if (content) {
-            static nsIContent::AttrValuesArray strings[] =
-                {&nsGkAtoms::ltr, &nsGkAtoms::rtl, nsnull};
-            switch (content->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::localedir,
-                                             strings, eCaseMatters)) {
-                case 0: mDocDirection = Direction_LeftToRight; return PR_FALSE;
-                case 1: mDocDirection = Direction_RightToLeft; return PR_TRUE;
-                default: break;// otherwise, not a valid value, so fall through
-            }
-        }
-
-        // otherwise, get the locale from the chrome registry and
-        // look up the intl.uidirection.<locale> preference
-        nsCOMPtr<nsIXULChromeRegistry> reg =
-            do_GetService(NS_CHROMEREGISTRY_CONTRACTID);
-        if (reg) {
-            nsCAutoString package;
-            PRBool isChrome;
-            if (NS_SUCCEEDED(mDocumentURI->SchemeIs("chrome", &isChrome)) &&
-                isChrome) {
-                mDocumentURI->GetHostPort(package);
-            }
-            else {
-                // use the 'global' package for about and resource uris.
-                // otherwise, just default to left-to-right.
-                PRBool isAbout, isResource;
-                if (NS_SUCCEEDED(mDocumentURI->SchemeIs("about", &isAbout)) &&
-                    isAbout) {
-                    package.AssignLiteral("global");
-                }
-                else if (NS_SUCCEEDED(mDocumentURI->SchemeIs("resource", &isResource)) &&
-                    isResource) {
-                    package.AssignLiteral("global");
-                }
-                else {
-                    return PR_FALSE;
-                }
-            }
-
-            PRBool isRTL = PR_FALSE;
-            reg->IsLocaleRTL(package, &isRTL);
-            mDocDirection = isRTL ?
-                            Direction_RightToLeft : Direction_LeftToRight;
+    // setting the localedir attribute on the root element forces a
+    // specific direction for the document.
+    nsIContent* content = GetRootContent();
+    if (content) {
+        static nsIContent::AttrValuesArray strings[] =
+            {&nsGkAtoms::ltr, &nsGkAtoms::rtl, nsnull};
+        switch (content->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::localedir,
+                                         strings, eCaseMatters)) {
+            case 0: return PR_FALSE;
+            case 1: return PR_TRUE;
+            default: break; // otherwise, not a valid value, so fall through
         }
     }
 
-    return (mDocDirection == Direction_RightToLeft);
+    // otherwise, get the locale from the chrome registry and
+    // look up the intl.uidirection.<locale> preference
+    nsCOMPtr<nsIXULChromeRegistry> reg =
+        do_GetService(NS_CHROMEREGISTRY_CONTRACTID);
+    if (!reg)
+        return PR_FALSE;
+
+    nsCAutoString package;
+    PRBool isChrome;
+    if (NS_SUCCEEDED(mDocumentURI->SchemeIs("chrome", &isChrome)) &&
+        isChrome) {
+        mDocumentURI->GetHostPort(package);
+    }
+    else {
+        // use the 'global' package for about and resource uris.
+        // otherwise, just default to left-to-right.
+        PRBool isAbout, isResource;
+        if (NS_SUCCEEDED(mDocumentURI->SchemeIs("about", &isAbout)) &&
+            isAbout) {
+            package.AssignLiteral("global");
+        }
+        else if (NS_SUCCEEDED(mDocumentURI->SchemeIs("resource", &isResource)) &&
+            isResource) {
+            package.AssignLiteral("global");
+        }
+        else {
+            return PR_FALSE;
+        }
+    }
+
+    PRBool isRTL = PR_FALSE;
+    reg->IsLocaleRTL(package, &isRTL);
+    return isRTL;
+}
+
+void
+nsXULDocument::ResetDocumentDirection()
+{
+    DocumentStatesChanged(NS_DOCUMENT_STATE_RTL_LOCALE);
 }
 
 int
 nsXULDocument::DirectionChanged(const char* aPrefName, void* aData)
 {
-  // reset the direction and reflow the document. This will happen if
-  // the direction isn't actually being used, but that doesn't really
-  // matter too much
+  // Reset the direction and restyle the document if necessary.
   nsXULDocument* doc = (nsXULDocument *)aData;
-  if (doc)
+  if (doc) {
       doc->ResetDocumentDirection();
-
-  nsIPresShell *shell = doc->GetPrimaryShell();
-  if (shell) {
-      shell->FrameConstructor()->
-          PostRestyleEvent(doc->GetRootContent(), eReStyle_Self, NS_STYLE_HINT_NONE);
   }
 
   return 0;

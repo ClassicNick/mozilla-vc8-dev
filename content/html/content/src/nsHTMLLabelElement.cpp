@@ -78,7 +78,7 @@ public:
   // nsIFormControl
   NS_IMETHOD_(PRInt32) GetType() const { return NS_FORM_LABEL; }
   NS_IMETHOD Reset();
-  NS_IMETHOD SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                nsIContent* aSubmitElement);
 
   NS_IMETHOD Focus();
@@ -136,6 +136,8 @@ nsHTMLLabelElement::~nsHTMLLabelElement()
 NS_IMPL_ADDREF_INHERITED(nsHTMLLabelElement, nsGenericElement) 
 NS_IMPL_RELEASE_INHERITED(nsHTMLLabelElement, nsGenericElement) 
 
+
+DOMCI_DATA(HTMLLabelElement, nsHTMLLabelElement)
 
 // QueryInterface implementation for nsHTMLLabelElement
 NS_INTERFACE_TABLE_HEAD(nsHTMLLabelElement)
@@ -329,7 +331,7 @@ nsHTMLLabelElement::Reset()
 }
 
 NS_IMETHODIMP
-nsHTMLLabelElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+nsHTMLLabelElement::SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                       nsIContent* aSubmitElement)
 {
   return NS_OK;
@@ -383,6 +385,7 @@ nsHTMLLabelElement::PerformAccesskey(PRBool aKeyCausesActivation,
     // Click on it if the users prefs indicate to do so.
     nsMouseEvent event(aIsTrustedEvent, NS_MOUSE_CLICK,
                        nsnull, nsMouseEvent::eReal);
+    event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
 
     nsAutoPopupStatePusher popupStatePusher(aIsTrustedEvent ?
                                             openAllowed : openAbused);

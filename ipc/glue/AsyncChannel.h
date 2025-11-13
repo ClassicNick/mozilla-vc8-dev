@@ -75,6 +75,7 @@ protected:
         ChannelClosed,
         ChannelOpening,
         ChannelConnected,
+        ChannelTimeout,
         ChannelClosing,
         ChannelError
     };
@@ -111,7 +112,7 @@ public:
     void Close();
 
     // Asynchronously send a message to the other side of the channel
-    bool Send(Message* msg);
+    virtual bool Send(Message* msg);
 
     //
     // These methods are called on the "IO" thread
@@ -143,6 +144,12 @@ protected:
 
     // Run on the worker thread
     void OnDispatchMessage(const Message& aMsg);
+    virtual bool OnSpecialMessage(uint16 id, const Message& msg);
+    void SendSpecialMessage(Message* msg);
+
+    // Tell the IO thread to close the channel and wait for it to ACK.
+    void SynchronouslyClose();
+
     bool MaybeHandleError(Result code, const char* channelName);
     void ReportConnectionError(const char* channelName);
 
@@ -154,19 +161,26 @@ protected:
 
     // Run on the worker thread
 
-    void SendGoodbye();
-    bool MaybeInterceptGoodbye(const Message& msg);
-
+    void OnNotifyMaybeChannelError();
+    virtual bool ShouldDeferNotifyMaybeError() {
+        return false;
+    }
     void NotifyChannelClosed();
     void NotifyMaybeChannelError();
 
-    void Clear();
+    virtual void Clear();
 
     // Run on the IO thread
 
     void OnChannelOpened();
     void OnSend(Message* aMsg);
     void OnCloseChannel();
+    void PostErrorNotifyTask();
+
+    // Return true if |msg| is a special message targeted at the IO
+    // thread, in which case it shouldn't be delivered to the worker.
+    bool MaybeInterceptSpecialIOMessage(const Message& msg);
+    void ProcessGoodbyeMessage();
 
     Transport* mTransport;
     AsyncListener* mListener;

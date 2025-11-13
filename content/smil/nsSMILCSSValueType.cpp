@@ -126,14 +126,13 @@ ExtractValueWrapper(const nsSMILValue& aValue)
 
 // Class methods
 // -------------
-nsresult
+void
 nsSMILCSSValueType::Init(nsSMILValue& aValue) const
 {
   NS_ABORT_IF_FALSE(aValue.IsNull(), "Unexpected SMIL value type");
 
   aValue.mU.mPtr = nsnull;
   aValue.mType = this;
-  return NS_OK;
 }
 
 void
@@ -170,6 +169,35 @@ nsSMILCSSValueType::Assign(nsSMILValue& aDest, const nsSMILValue& aSrc) const
   } // else, both are barely-initialized -- nothing to do.
 
   return NS_OK;
+}
+
+PRBool
+nsSMILCSSValueType::IsEqual(const nsSMILValue& aLeft,
+                            const nsSMILValue& aRight) const
+{
+  NS_ABORT_IF_FALSE(aLeft.mType == aRight.mType, "Incompatible SMIL types");
+  NS_ABORT_IF_FALSE(aLeft.mType == this, "Unexpected SMIL value");
+  const ValueWrapper* leftWrapper = ExtractValueWrapper(aLeft);
+  const ValueWrapper* rightWrapper = ExtractValueWrapper(aRight);
+
+  if (leftWrapper) {
+    if (rightWrapper) {
+      // Both non-null
+      NS_WARN_IF_FALSE(leftWrapper != rightWrapper,
+                       "Two nsSMILValues with matching ValueWrapper ptr");
+      // mPresContext doesn't really matter for equality comparison
+      return (leftWrapper->mPropID == rightWrapper->mPropID &&
+              leftWrapper->mCSSValue == rightWrapper->mCSSValue);
+    }
+    // Left non-null, right null
+    return PR_FALSE;
+  }
+  if (rightWrapper) {
+    // Left null, right non-null
+    return PR_FALSE;
+  }
+  // Both null
+  return PR_TRUE;
 }
 
 nsresult
@@ -309,6 +337,7 @@ ValueFromStringHelper(nsCSSProperty aPropID,
                       nsIContent* aTargetElement,
                       nsPresContext* aPresContext,
                       const nsAString& aString,
+                      PRBool aUseSVGMode,
                       nsStyleAnimation::Value& aStyleAnimValue)
 {
   // If value is negative, we'll strip off the "-" so the CSS parser won't
@@ -323,8 +352,8 @@ ValueFromStringHelper(nsCSSProperty aPropID,
     subStringBegin = (PRUint32)absValuePos; // Start parsing after '-' sign
   }
   nsDependentSubstring subString(aString, subStringBegin);
-  if (!nsStyleAnimation::ComputeValue(aPropID, aTargetElement,
-                                      subString, aStyleAnimValue)) {
+  if (!nsStyleAnimation::ComputeValue(aPropID, aTargetElement, subString,
+                                      aUseSVGMode, aStyleAnimValue)) {
     return PR_FALSE;
   }
   if (isNegative) {
@@ -347,6 +376,7 @@ void
 nsSMILCSSValueType::ValueFromString(nsCSSProperty aPropID,
                                     nsIContent* aTargetElement,
                                     const nsAString& aString,
+                                    PRBool aUseSVGMode,
                                     nsSMILValue& aValue)
 {
   NS_ABORT_IF_FALSE(aValue.IsNull(), "Outparam should be null-typed");
@@ -358,7 +388,7 @@ nsSMILCSSValueType::ValueFromString(nsCSSProperty aPropID,
 
   nsStyleAnimation::Value parsedValue;
   if (ValueFromStringHelper(aPropID, aTargetElement, presContext,
-                            aString, parsedValue)) {
+                            aString, aUseSVGMode, parsedValue)) {
     sSingleton.Init(aValue);
     aValue.mU.mPtr = new ValueWrapper(aPropID, parsedValue, presContext);
     if (!aValue.mU.mPtr) {

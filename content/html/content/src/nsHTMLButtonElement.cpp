@@ -100,7 +100,7 @@ public:
   // overriden nsIFormControl methods
   NS_IMETHOD_(PRInt32) GetType() const { return mType; }
   NS_IMETHOD Reset();
-  NS_IMETHOD SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                nsIContent* aSubmitElement);
   NS_IMETHOD SaveState();
   PRBool RestoreState(nsPresState* aState);
@@ -161,6 +161,8 @@ NS_IMPL_ADDREF_INHERITED(nsHTMLButtonElement, nsGenericElement)
 NS_IMPL_RELEASE_INHERITED(nsHTMLButtonElement, nsGenericElement)
 
 
+DOMCI_DATA(HTMLButtonElement, nsHTMLButtonElement)
+
 // QueryInterface implementation for nsHTMLButtonElement
 NS_INTERFACE_TABLE_HEAD(nsHTMLButtonElement)
   NS_HTML_CONTENT_INTERFACE_TABLE2(nsHTMLButtonElement,
@@ -217,7 +219,7 @@ nsHTMLButtonElement::Click()
   if (doc) {
     nsIPresShell *shell = doc->GetPrimaryShell();
     if (shell) {
-      nsCOMPtr<nsPresContext> context = shell->GetPresContext();
+      nsRefPtr<nsPresContext> context = shell->GetPresContext();
       if (context) {
         // Click() is never called from native code, but it may be
         // called from chrome JS. Mark this event trusted if Click()
@@ -225,6 +227,7 @@ nsHTMLButtonElement::Click()
         nsMouseEvent event(nsContentUtils::IsCallerChrome(),
                            NS_MOUSE_CLICK, nsnull,
                            nsMouseEvent::eReal);
+        event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_UNKNOWN;
         nsEventStatus status = nsEventStatus_eIgnore;
         nsEventDispatcher::Dispatch(static_cast<nsIContent*>(this), context,
                                     &event, nsnull, &status);
@@ -378,6 +381,7 @@ nsHTMLButtonElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
             nsMouseEvent event(NS_IS_TRUSTED_EVENT(aVisitor.mEvent),
                                NS_MOUSE_CLICK, nsnull,
                                nsMouseEvent::eReal);
+            event.inputSource = nsIDOMNSMouseEvent::MOZ_SOURCE_KEYBOARD;
             nsEventDispatcher::Dispatch(static_cast<nsIContent*>(this),
                                         aVisitor.mPresContext, &event, nsnull,
                                         &status);
@@ -503,7 +507,7 @@ nsHTMLButtonElement::Reset()
 }
 
 NS_IMETHODIMP
-nsHTMLButtonElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
+nsHTMLButtonElement::SubmitNamesValues(nsFormSubmission* aFormSubmission,
                                        nsIContent* aSubmitElement)
 {
   nsresult rv = NS_OK;
@@ -528,7 +532,8 @@ nsHTMLButtonElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
   // Get the name (if no name, no submit)
   //
   nsAutoString name;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::name, name)) {
+  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  if (name.IsEmpty()) {
     return NS_OK;
   }
 
@@ -544,7 +549,7 @@ nsHTMLButtonElement::SubmitNamesValues(nsIFormSubmission* aFormSubmission,
   //
   // Submit
   //
-  rv = aFormSubmission->AddNameValuePair(this, name, value);
+  rv = aFormSubmission->AddNameValuePair(name, value);
 
   return rv;
 }

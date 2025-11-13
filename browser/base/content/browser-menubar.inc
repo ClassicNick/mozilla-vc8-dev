@@ -213,6 +213,11 @@
                       onpopupshowing="onViewToolbarsPopupShowing(event);">
                   <menupopup>
                     <menuseparator/>
+                    <menuitem command="cmd_ToggleTabsOnTop"
+                              type="checkbox"
+                              label="&viewTabsOnTop.label;"
+                              accesskey="&viewTabsOnTop.accesskey;"/>
+                    <menuseparator/>
                     <menuitem id="menu_customizeToolbars"
                               label="&viewCustomizeToolbar.label;"
                               accesskey="&viewCustomizeToolbar.accesskey;"
@@ -510,9 +515,8 @@
         label="&bookmarksMenu.label;"
         accesskey="&bookmarksMenu.accesskey;"
         ondragenter="PlacesMenuDNDController.onBookmarksMenuDragEnter(event);"
-        ondrop="nsDragAndDrop.drop(event, BookmarksMenuDropHandler);"
-        ondragover="nsDragAndDrop.dragOver(event, BookmarksMenuDropHandler);"
-        ondragexit="nsDragAndDrop.dragExit(event, BookmarksMenuDropHandler);">
+        ondragover="BookmarksMenuDropHandler.onDragOver(event);"
+        ondrop="BookmarksMenuDropHandler.onDrop(event);">
     <menupopup id="bookmarksMenuPopup"
                type="places"
                place="place:folder=BOOKMARKS_MENU"

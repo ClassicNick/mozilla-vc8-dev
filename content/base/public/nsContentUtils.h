@@ -42,16 +42,22 @@
 #ifndef nsContentUtils_h___
 #define nsContentUtils_h___
 
-#include "jsprvtd.h"
-#include "jsnum.h"
+#include <math.h>
+#if defined(XP_WIN) || defined(XP_OS2)
+#include <float.h>
+#endif
+
+#if defined(SOLARIS)
+#include <ieeefp.h>
+#endif
+
 #include "nsAString.h"
 #include "nsIStatefulFrame.h"
-#include "nsIPref.h"
 #include "nsINodeInfo.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentList.h"
 #include "nsDOMClassInfoID.h"
-#include "nsIClassInfo.h"
+#include "nsIXPCScriptable.h"
 #include "nsIDOM3Node.h"
 #include "nsDataHashtable.h"
 #include "nsIScriptRuntime.h"
@@ -60,6 +66,10 @@
 #include "nsTArray.h"
 #include "nsTextFragment.h"
 #include "nsReadableUtils.h"
+#include "nsIPrefBranch2.h"
+#include "mozilla/AutoRestore.h"
+
+#include "jsapi.h"
 
 struct nsNativeKeyEvent; // Don't include nsINativeKeyBindings.h here: it will force strange compilation error!
 
@@ -84,7 +94,7 @@ class imgIDecoderObserver;
 class imgIRequest;
 class imgILoader;
 class imgICache;
-class nsIPrefBranch;
+class nsIPrefBranch2;
 class nsIImageLoadingContent;
 class nsIDOMHTMLFormElement;
 class nsIDOMDocument;
@@ -100,7 +110,6 @@ class nsIScriptContext;
 class nsIRunnable;
 class nsIInterfaceRequestor;
 template<class E> class nsCOMArray;
-class nsIPref;
 struct JSRuntime;
 class nsICaseConversion;
 class nsIUGenCategory;
@@ -110,6 +119,7 @@ class nsPIDOMWindow;
 class nsPIDOMEventTarget;
 class nsIPresShell;
 class nsIXPConnectJSObjectHolder;
+class nsPrefOldCallback;
 #ifdef MOZ_XTF
 class nsIXTFService;
 #endif
@@ -117,6 +127,16 @@ class nsIXTFService;
 class nsIBidiKeyboard;
 #endif
 class nsIMIMEHeaderParam;
+class nsIObserver;
+
+#ifndef have_PrefChangedFunc_typedef
+typedef int (*PR_CALLBACK PrefChangedFunc)(const char *, void *);
+#define have_PrefChangedFunc_typedef
+#endif
+
+namespace mozilla {
+  class IHistory;
+}
 
 extern const char kLoadAsData[];
 
@@ -149,17 +169,6 @@ class nsContentUtils
 {
 public:
   static nsresult Init();
-
-  // You MUST pass the old ownerDocument of aContent in as aOldDocument and the
-  // new one as aNewDocument.  aNewParent is allowed to be null; in that case
-  // aNewDocument will be assumed to be the parent.  Note that at this point
-  // the actual ownerDocument of aContent may not yet be aNewDocument.
-  // XXXbz but then if it gets wrapped after we do this call but before its
-  // ownerDocument actually changes, things will break...
-  static nsresult ReparentContentWrapper(nsIContent *aNode,
-                                         nsIContent *aNewParent,
-                                         nsIDocument *aNewDocument,
-                                         nsIDocument *aOldDocument);
 
   /**
    * Get a scope from aOldDocument and one from aNewDocument. Also get a
@@ -398,13 +407,9 @@ public:
   static void Shutdown();
 
   /**
-   * Checks whether two nodes come from the same origin. aTrustedNode is
-   * considered 'safe' in that a user can operate on it and that it isn't
-   * a js-object that implements nsIDOMNode.
-   * Never call this function with the first node provided by script, it
-   * must always be known to be a 'real' node!
+   * Checks whether two nodes come from the same origin.
    */
-  static nsresult CheckSameOrigin(nsIDOMNode* aTrustedNode,
+  static nsresult CheckSameOrigin(nsINode* aTrustedNode,
                                   nsIDOMNode* aUnTrustedNode);
 
   // Check if the (JS) caller can access aNode.
@@ -474,6 +479,11 @@ public:
   static imgILoader* GetImgLoader()
   {
     return sImgLoader;
+  }
+
+  static mozilla::IHistory* GetHistory()
+  {
+    return sHistory;
   }
 
 #ifdef MOZ_XTF
@@ -574,7 +584,7 @@ public:
                                      void * aClosure);
   static void AddBoolPrefVarCache(const char* aPref, PRBool* aVariable);
   static void AddIntPrefVarCache(const char* aPref, PRInt32* aVariable);
-  static nsIPrefBranch *GetPrefBranch()
+  static nsIPrefBranch2 *GetPrefBranch()
   {
     return sPrefBranch;
   }
@@ -598,6 +608,13 @@ public:
   {
     return sGenCat;
   }
+
+  /**
+   * Regster aObserver as a shutdown observer. A strong reference is held
+   * to aObserver until UnregisterShutdownObserver is called.
+   */
+  static void RegisterShutdownObserver(nsIObserver* aObserver);
+  static void UnregisterShutdownObserver(nsIObserver* aObserver);
 
   /**
    * @return PR_TRUE if aContent has an attribute aName in namespace aNameSpaceID,
@@ -1250,6 +1267,11 @@ public:
                                           nsISupports* aExtra = nsnull);
 
   /**
+   * Returns true if aPrincipal is the system principal.
+   */
+  static PRBool IsSystemPrincipal(nsIPrincipal* aPrincipal);
+
+  /**
    * Trigger a link with uri aLinkURI. If aClick is false, this triggers a
    * mouseover on the link, otherwise it triggers a load after doing a
    * security check using aContent's principal.
@@ -1443,7 +1465,23 @@ public:
 
   static JSContext *GetCurrentJSContext();
 
-                                             
+  /**
+   * Case insensitive comparison between two strings. However it only ignores
+   * case for ASCII characters a-z.
+   */
+  static PRBool EqualsIgnoreASCIICase(const nsAString& aStr1,
+                                      const nsAString& aStr2);
+
+  /**
+   * Convert ASCII A-Z to a-z.
+   */
+  static void ASCIIToLower(const nsAString& aSource, nsAString& aDest);
+
+  /**
+   * Convert ASCII a-z to A-Z.
+   */
+  static void ASCIIToUpper(nsAString& aStr);
+
   static nsIInterfaceRequestor* GetSameOriginChecker();
 
   static nsIThreadJSContextStack* ThreadJSContextStack()
@@ -1458,10 +1496,12 @@ public:
    * origin is set to 'null'.
    *
    * The ASCII versions return a ASCII strings that are puny-code encoded,
-   * suitable for for example header values. The UTF versions return strings
+   * suitable for, for example, header values. The UTF versions return strings
    * containing international characters.
    *
-   * aPrincipal/aOrigin must not be null.
+   * @pre aPrincipal/aOrigin must not be null.
+   *
+   * @note this should be used for HTML5 origin determination.
    */
   static nsresult GetASCIIOrigin(nsIPrincipal* aPrincipal,
                                  nsCString& aOrigin);
@@ -1520,16 +1560,32 @@ public:
     return WrapNative(cx, scope, native, nsnull, vp, aHolder, aAllowWrapping);
   }
 
+  static void StripNullChars(const nsAString& aInStr, nsAString& aOutStr);
+
+  /**
+   * Creates a structured clone of the given jsval according to the algorithm
+   * at:
+   *     http://www.whatwg.org/specs/web-apps/current-work/multipage/
+   *                                   urls.html#safe-passing-of-structured-data
+   *
+   * If the function returns a success code then rval is set to point at the
+   * cloned jsval. rval is not set if the function returns a failure code.
+   */
+  static nsresult CreateStructuredClone(JSContext* cx, jsval val, jsval* rval);
+
+  /**
+   * Reparents the given object and all subobjects to the given scope. Also
+   * fixes all the prototypes. Assumes obj is properly rooted, that obj has no
+   * getter functions that can cause side effects, and that the only types of
+   * objects nested within obj are the types that are cloneable via the
+   * CreateStructuredClone function above.
+   */
+  static nsresult ReparentClonedObjectToScope(JSContext* cx, JSObject* obj,
+                                              JSObject* scope);
+
 private:
 
   static PRBool InitializeEventTable();
-
-  static nsresult doReparentContentWrapper(nsIContent *aChild,
-                                           JSContext *cx,
-                                           JSObject *aOldGlobal,
-                                           JSObject *aNewGlobal,
-                                           nsIDocument *aOldDocument,
-                                           nsIDocument *aNewDocument);
 
   static nsresult EnsureStringBundle(PropertiesFile aFile);
 
@@ -1559,12 +1615,14 @@ private:
   static nsIXTFService *sXTFService;
 #endif
 
-  static nsIPrefBranch *sPrefBranch;
-
-  static nsIPref *sPref;
+  static nsIPrefBranch2 *sPrefBranch;
+  // For old compatibility of RegisterPrefCallback
+  static nsCOMArray<nsPrefOldCallback> *sPrefCallbackList;
 
   static imgILoader* sImgLoader;
   static imgICache* sImgCache;
+
+  static mozilla::IHistory* sHistory;
 
   static nsIConsoleService* sConsoleService;
 
@@ -1643,26 +1701,32 @@ private:
 #endif
 };
 
-class nsAutoGCRoot {
+class NS_STACK_CLASS nsAutoGCRoot {
 public:
   // aPtr should be the pointer to the jsval we want to protect
-  nsAutoGCRoot(jsval* aPtr, nsresult* aResult) :
+  nsAutoGCRoot(jsval* aPtr, nsresult* aResult
+               MOZILLA_GUARD_OBJECT_NOTIFIER_PARAM) :
     mPtr(aPtr)
   {
+    MOZILLA_GUARD_OBJECT_NOTIFIER_INIT;
     mResult = *aResult = AddJSGCRoot(aPtr, "nsAutoGCRoot");
   }
 
   // aPtr should be the pointer to the JSObject* we want to protect
-  nsAutoGCRoot(JSObject** aPtr, nsresult* aResult) :
+  nsAutoGCRoot(JSObject** aPtr, nsresult* aResult
+               MOZILLA_GUARD_OBJECT_NOTIFIER_PARAM) :
     mPtr(aPtr)
   {
+    MOZILLA_GUARD_OBJECT_NOTIFIER_INIT;
     mResult = *aResult = AddJSGCRoot(aPtr, "nsAutoGCRoot");
   }
 
   // aPtr should be the pointer to the thing we want to protect
-  nsAutoGCRoot(void* aPtr, nsresult* aResult) :
+  nsAutoGCRoot(void* aPtr, nsresult* aResult
+               MOZILLA_GUARD_OBJECT_NOTIFIER_PARAM) :
     mPtr(aPtr)
   {
+    MOZILLA_GUARD_OBJECT_NOTIFIER_INIT;
     mResult = *aResult = AddJSGCRoot(aPtr, "nsAutoGCRoot");
   }
 
@@ -1683,28 +1747,34 @@ private:
 
   void* mPtr;
   nsresult mResult;
+  MOZILLA_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class nsAutoScriptBlocker {
+class NS_STACK_CLASS nsAutoScriptBlocker {
 public:
-  nsAutoScriptBlocker() {
+  nsAutoScriptBlocker(MOZILLA_GUARD_OBJECT_NOTIFIER_ONLY_PARAM) {
+    MOZILLA_GUARD_OBJECT_NOTIFIER_INIT;
     nsContentUtils::AddScriptBlocker();
   }
   ~nsAutoScriptBlocker() {
     nsContentUtils::RemoveScriptBlocker();
   }
+private:
+  MOZILLA_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class mozAutoRemovableBlockerRemover
+class NS_STACK_CLASS mozAutoRemovableBlockerRemover
 {
 public:
-  mozAutoRemovableBlockerRemover(nsIDocument* aDocument);
+  mozAutoRemovableBlockerRemover(nsIDocument* aDocument
+                                 MOZILLA_GUARD_OBJECT_NOTIFIER_PARAM);
   ~mozAutoRemovableBlockerRemover();
 
 private:
   PRUint32 mNestingLevel;
   nsCOMPtr<nsIDocument> mDocument;
   nsCOMPtr<nsIDocumentObserver> mObserver;
+  MOZILLA_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 #define NS_AUTO_GCROOT_PASTE2(tok,line) tok##line
@@ -1713,9 +1783,6 @@ private:
 #define NS_AUTO_GCROOT(ptr, result) \ \
   nsAutoGCRoot NS_AUTO_GCROOT_PASTE(_autoGCRoot_, __LINE__) \
   (ptr, result)
-
-#define NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(_class)                      \
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(_class)
 
 #define NS_INTERFACE_MAP_ENTRY_TEAROFF(_interface, _allocator)                \
   if (aIID.Equals(NS_GET_IID(_interface))) {                                  \
@@ -1728,20 +1795,14 @@ private:
 
 /*
  * Check whether a floating point number is finite (not +/-infinity and not a
- * NaN value). We wrap JSDOUBLE_IS_FINITE in a function because it expects to
- * take the address of its argument, and because the argument must be of type
- * jsdouble to have the right size and layout of bits.
- *
- * Note: we could try to exploit the fact that |infinity - infinity == NaN|
- * instead of using JSDOUBLE_IS_FINITE. This would produce more compact code
- * and perform better by avoiding type conversions and bit twiddling.
- * Unfortunately, some architectures don't guarantee that |f == f| evaluates
- * to true (where f is any *finite* floating point number). See
- * https://bugzilla.mozilla.org/show_bug.cgi?id=369418#c63 . To play it safe
- * for gecko 1.9, we just reuse JSDOUBLE_IS_FINITE.
+ * NaN value).
  */
 inline NS_HIDDEN_(PRBool) NS_FloatIsFinite(jsdouble f) {
-  return JSDOUBLE_IS_FINITE(f);
+#ifdef WIN32
+  return _finite(f);
+#else
+  return finite(f);
+#endif
 }
 
 /*

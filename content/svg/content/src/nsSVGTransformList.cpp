@@ -152,12 +152,14 @@ nsSVGTransformList::GetConsolidationMatrix(nsIDOMSVGTransformList *transforms)
 NS_IMPL_ADDREF(nsSVGTransformList)
 NS_IMPL_RELEASE(nsSVGTransformList)
 
+DOMCI_DATA(SVGTransformList, nsSVGTransformList)
+
 NS_INTERFACE_MAP_BEGIN(nsSVGTransformList)
   NS_INTERFACE_MAP_ENTRY(nsISVGValue)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGTransformList)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsISVGValueObserver)
-  NS_INTERFACE_MAP_ENTRY_CONTENT_CLASSINFO(SVGTransformList)
+  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(SVGTransformList)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsISVGValue)
 NS_INTERFACE_MAP_END
 

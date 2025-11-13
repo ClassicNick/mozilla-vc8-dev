@@ -1170,7 +1170,7 @@ nsDownloadManager::GetDefaultDownloadsDirectory(nsILocalFile **aResult)
     }
   }
 #elif defined(XP_UNIX)
-#if defined(NS_OSSO)
+#if defined(MOZ_PLATFORM_MAEMO)
     // As maemo does not follow the XDG "standard" (as usually desktop
     // Linux distros do) neither has a working $HOME/Desktop folder
     // for us to fallback into, "$HOME/MyDocs/.documents/" is the folder
@@ -1385,12 +1385,25 @@ nsDownloadManager::AddDownload(DownloadType aDownloadType,
 
 #ifdef DOWNLOAD_SCANNER
   if (mScanner) {
-    AVCheckPolicyState res = mScanner->CheckPolicy(aSource, aTarget);
-    if (res == AVPOLICY_BLOCKED) {
-      // This download will get deleted during a call to IAE's Save,
-      // so go ahead and mark it as blocked and avoid the download.
-      (void)CancelDownload(id);
-      startState = nsIDownloadManager::DOWNLOAD_BLOCKED_POLICY;
+    PRBool scan = PR_TRUE;
+    nsCOMPtr<nsIPrefBranch> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
+    if (prefs) {
+      (void)prefs->GetBoolPref(PREF_BDM_SCANWHENDONE, &scan);
+    }
+    // We currently apply local security policy to downloads when we scan
+    // via windows all-in-one download security api. The CheckPolicy call
+    // below is a pre-emptive part of that process. So tie applying security
+    // zone policy settings when downloads are intiated to the same pref
+    // that triggers applying security zone policy settings after a download
+    // completes. (bug 504804)
+    if (scan) {
+      AVCheckPolicyState res = mScanner->CheckPolicy(aSource, aTarget);
+      if (res == AVPOLICY_BLOCKED) {
+        // This download will get deleted during a call to IAE's Save,
+        // so go ahead and mark it as blocked and avoid the download.
+        (void)CancelDownload(id);
+        startState = nsIDownloadManager::DOWNLOAD_BLOCKED_POLICY;
+      }
     }
   }
 #endif
