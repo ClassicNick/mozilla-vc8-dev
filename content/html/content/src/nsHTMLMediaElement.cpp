@@ -867,7 +867,6 @@ void nsHTMLMediaElement::UpdatePreloadAction()
     return;
   }
 
-  PRBool wasPreloadNone = mPreloadAction == PRELOAD_NONE;
   mPreloadAction = nextAction;
   if (nextAction == nsHTMLMediaElement::PRELOAD_ENOUGH) {
     if (mLoadIsSuspended) {
@@ -974,7 +973,6 @@ nsresult nsHTMLMediaElement::LoadResource(nsIURI* aURI)
     listener = crossSiteListener;
     NS_ENSURE_TRUE(crossSiteListener, NS_ERROR_OUT_OF_MEMORY);
     NS_ENSURE_SUCCESS(rv, rv);
-    crossSiteListener->AllowHTTPResult(HTTP_REQUESTED_RANGE_NOT_SATISFIABLE_CODE);
   } else {
     rv = nsContentUtils::GetSecurityManager()->
            CheckLoadURIWithPrincipal(NodePrincipal(),
@@ -993,8 +991,7 @@ nsresult nsHTMLMediaElement::LoadResource(nsIURI* aURI)
                          NS_LITERAL_CSTRING("bytes=0-"),
                          PR_FALSE);
 
-    // Send Accept header for video and audio types only (Bug 489071)
-    SetAcceptHeader(hc);
+    SetRequestHeaders(hc);
   }
 
   rv = mChannel->AsyncOpen(listener, nsnull);
@@ -1273,6 +1270,7 @@ nsHTMLMediaElement::nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo,
     mVolume(1.0),
     mChannels(0),
     mRate(0),
+    mPreloadAction(PRELOAD_UNDEFINED),
     mMediaSize(-1,-1),
     mAllowAudioData(PR_FALSE),
     mBegun(PR_FALSE),
@@ -1294,7 +1292,6 @@ nsHTMLMediaElement::nsHTMLMediaElement(already_AddRefed<nsINodeInfo> aNodeInfo,
     mHasPlayedOrSeeked(PR_FALSE),
     mHasSelfReference(PR_FALSE),
     mShuttingDown(PR_FALSE),
-    mPreloadAction(PRELOAD_UNDEFINED),
     mLoadIsSuspended(PR_FALSE),
     mMediaSecurityVerified(PR_FALSE)
 {
@@ -1524,10 +1521,6 @@ static const char gRawTypes[][16] = {
 };
 
 static const char* gRawCodecs[] = {
-  nsnull
-};
-
-static const char* gRawMaybeCodecs[] = {
   nsnull
 };
 
@@ -2558,4 +2551,16 @@ nsresult nsHTMLMediaElement::GetBuffered(nsIDOMTimeRanges** aBuffered)
     mDecoder->GetBuffered(ranges);
   }
   return NS_OK;
+}
+
+void nsHTMLMediaElement::SetRequestHeaders(nsIHttpChannel* aChannel)
+{
+  // Send Accept header for video and audio types only (Bug 489071)
+  SetAcceptHeader(aChannel);
+
+  // Set the Referer header
+  nsIDocument* doc = GetOwnerDoc();
+  if (doc) {
+    aChannel->SetReferrer(doc->GetDocumentURI());
+  }
 }

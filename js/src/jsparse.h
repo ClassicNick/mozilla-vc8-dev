@@ -1,5 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=78:
+ * vim: set ts=4 sw=4 et tw=78:
  *
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -306,21 +306,33 @@ struct GlobalScope {
     { }
 
     struct GlobalDef {
-        JSAtom *atom;
-        JSFunctionBox *funbox;
+        JSAtom        *atom;        // If non-NULL, specifies the property name to add.
+        JSFunctionBox *funbox;      // If non-NULL, function value for the property.
+                                    // This value is only set/used if atom is non-NULL.
+        uint32        knownSlot;    // If atom is NULL, this is the known shape slot.
 
         GlobalDef() { }
-        GlobalDef(JSAtom *atom) : atom(atom), funbox(NULL)
+        GlobalDef(uint32 knownSlot)
+          : atom(NULL), knownSlot(knownSlot)
         { }
         GlobalDef(JSAtom *atom, JSFunctionBox *box) :
           atom(atom), funbox(box)
         { }
     };
 
-    JSObject *globalObj;
+    JSObject        *globalObj;
     JSCodeGenerator *cg;
+
+    /*
+     * This is the table of global names encountered during parsing. Each
+     * global name appears in the list only once, and the |names| table
+     * maps back into |defs| for fast lookup.
+     *
+     * A definition may either specify an existing global property, or a new
+     * one that must be added after compilation succeeds.
+     */
     Vector<GlobalDef, 16, ContextAllocPolicy> defs;
-    uint32 globalFreeSlot;
+    JSAtomList      names;
 };
 
 } /* namespace js */
@@ -523,6 +535,7 @@ public:
     bool isDeoptimized() const  { return test(PND_DEOPTIMIZED); }
     bool isAssigned() const     { return test(PND_ASSIGNED); }
     bool isFunArg() const       { return test(PND_FUNARG); }
+    bool isClosed() const       { return test(PND_CLOSED); }
 
     /* Defined below, see after struct JSDefinition. */
     void setFunArg();
@@ -902,6 +915,7 @@ struct JSObjectBox {
     JSObjectBox         *traceLink;
     JSObjectBox         *emitLink;
     JSObject            *object;
+    uintN               index;
 };
 
 #define JSFB_LEVEL_BITS 14
@@ -994,22 +1008,12 @@ struct Parser : private js::AutoGCRooter
     uint32              functionCount;  /* number of functions in current unit */
     JSObjectBox         *traceListHead; /* list of parsed object for GC tracing */
     JSTreeContext       *tc;            /* innermost tree context (stack-allocated) */
+    JSVersion           version;        /* cached version to avoid repeated lookups */
 
     /* Root atoms and objects allocated for the parsed tree. */
     js::AutoKeepAtoms   keepAtoms;
 
-    Parser(JSContext *cx, JSPrincipals *prin = NULL, JSStackFrame *cfp = NULL)
-      : js::AutoGCRooter(cx, PARSER), context(cx),
-        aleFreeList(NULL), tokenStream(cx), principals(NULL), callerFrame(cfp),
-        callerVarObj(cfp ? cfp->varobj(cx->containingSegment(cfp)) : NULL),
-        nodeList(NULL), functionCount(0), traceListHead(NULL), tc(NULL),
-        keepAtoms(cx->runtime)
-    {
-        js::PodArrayZero(tempFreeList);
-        setPrincipals(prin);
-        JS_ASSERT_IF(cfp, cfp->hasScript());
-    }
-
+    Parser(JSContext *cx, JSPrincipals *prin = NULL, JSStackFrame *cfp = NULL);
     ~Parser();
 
     friend void js::AutoGCRooter::trace(JSTracer *trc);
@@ -1155,10 +1159,7 @@ struct Compiler
     Parser parser;
     GlobalScope *globalScope;
 
-    Compiler(JSContext *cx, JSPrincipals *prin = NULL, JSStackFrame *cfp = NULL)
-      : parser(cx, prin, cfp)
-    {
-    }
+    Compiler(JSContext *cx, JSPrincipals *prin = NULL, JSStackFrame *cfp = NULL);
 
     /*
      * Initialize a compiler. Parameters are passed on to init parser.
@@ -1182,6 +1183,10 @@ struct Compiler
                   FILE *file, const char *filename, uintN lineno,
                   JSString *source = NULL,
                   uintN staticLevel = 0);
+
+  private:
+    static bool
+    defineGlobals(JSContext *cx, GlobalScope &globalScope, JSScript *script);
 };
 
 } /* namespace js */

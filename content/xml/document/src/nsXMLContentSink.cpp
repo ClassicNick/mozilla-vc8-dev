@@ -88,6 +88,7 @@
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIContentPolicy.h"
+#include "nsIDocumentViewer.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentErrors.h"
 #include "nsIDOMProcessingInstruction.h"
@@ -386,9 +387,9 @@ nsXMLContentSink::OnDocumentCreated(nsIDocument* aResultDocument)
 
   nsCOMPtr<nsIContentViewer> contentViewer;
   mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
-  if (contentViewer) {
-    nsCOMPtr<nsIDOMDocument> doc = do_QueryInterface(aResultDocument);
-    return contentViewer->SetDOMDocument(doc);
+  nsCOMPtr<nsIDocumentViewer> docViewer = do_QueryInterface(contentViewer);
+  if (docViewer) {
+    return docViewer->SetDocumentInternal(aResultDocument, PR_TRUE);
   }
   return NS_OK;
 }
@@ -870,15 +871,14 @@ nsXMLContentSink::GetCurrentContent()
   if (mContentStack.Length() == 0) {
     return nsnull;
   }
-  return GetCurrentStackNode().mContent;
+  return GetCurrentStackNode()->mContent;
 }
 
-StackNode &
+StackNode*
 nsXMLContentSink::GetCurrentStackNode()
 {
   PRInt32 count = mContentStack.Length();
-  NS_ASSERTION(count > 0, "Bogus Length()");
-  return mContentStack[count-1];
+  return count != 0 ? &mContentStack[count-1] : nsnull;
 }
 
 
@@ -1115,11 +1115,14 @@ nsXMLContentSink::HandleEndElement(const PRUnichar *aName,
 
   FlushText();
 
-  StackNode & sn = GetCurrentStackNode();
+  StackNode* sn = GetCurrentStackNode();
+  if (!sn) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   nsCOMPtr<nsIContent> content;
-  sn.mContent.swap(content);
-  PRUint32 numFlushed = sn.mNumFlushed;
+  sn->mContent.swap(content);
+  PRUint32 numFlushed = sn->mNumFlushed;
 
   PopContent();
   NS_ASSERTION(content, "failed to pop content");

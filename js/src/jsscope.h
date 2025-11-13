@@ -291,6 +291,7 @@ struct Shape : public JSObjectMap
     friend struct ::JSObject;
     friend struct ::JSFunction;
     friend class js::PropertyTree;
+    friend bool HasUnreachableGCThings(TreeFragment *f);
 
   protected:
     mutable js::PropertyTable *table;
@@ -414,6 +415,9 @@ struct Shape : public JSObjectMap
     }
 
     void insertFree(js::Shape **freep) {
+#ifdef DEBUG
+        memset(this, JS_FREE_PATTERN, sizeof *this);
+#endif
         id = JSID_VOID;
         parent = *freep;
         if (parent)
@@ -805,6 +809,7 @@ struct JSScopeStats {
     jsrefcount          redundantPuts;
     jsrefcount          putFails;
     jsrefcount          changes;
+    jsrefcount          changePuts;
     jsrefcount          changeFails;
     jsrefcount          compresses;
     jsrefcount          grows;

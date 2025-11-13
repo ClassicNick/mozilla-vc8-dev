@@ -2403,6 +2403,7 @@ ASTSerializer::xml(JSParseNode *pn, Value *dst)
       }
 
       case TOK_XMLTEXT:
+      case TOK_XMLSPACE:
         return builder.xmlText(atomContents(pn->pn_atom), &pn->pn_pos, dst);
 
       case TOK_XMLNAME:
@@ -2494,7 +2495,7 @@ ASTSerializer::literal(JSParseNode *pn, Value *dst)
         LOCAL_ASSERT(re1 && re1->isRegExp());
 
         JSObject *proto;
-        if (!js_GetClassPrototype(cx, cx->fp()->getScopeChain(), JSProto_RegExp, &proto))
+        if (!js_GetClassPrototype(cx, &cx->fp()->scopeChain(), JSProto_RegExp, &proto))
             return false;
 
         JSObject *re2 = js_CloneRegExpObject(cx, re1, proto);
@@ -2663,7 +2664,7 @@ ASTSerializer::functionArgsAndBody(JSParseNode *pn, NodeVector &args, Value *bod
         LOCAL_ASSERT(head && PN_TYPE(head) == TOK_SEMI);
 
         pndestruct = head->pn_kid;
-        LOCAL_ASSERT(pndestruct && PN_TYPE(pndestruct) == TOK_COMMA);
+        LOCAL_ASSERT(pndestruct && PN_TYPE(pndestruct) == TOK_VAR);
     } else {
         pndestruct = NULL;
     }

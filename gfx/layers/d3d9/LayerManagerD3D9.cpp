@@ -45,6 +45,8 @@
 #include "nsIServiceManager.h"
 #include "nsIPrefService.h"
 #include "gfxWindowsPlatform.h"
+#include "nsIGfxInfo.h"
+
 #ifdef CAIRO_HAS_D2D_SURFACE
 #include "gfxD2DSurface.h"
 #endif
@@ -52,26 +54,19 @@
 namespace mozilla {
 namespace layers {
 
-DeviceManagerD3D9 *LayerManagerD3D9::mDeviceManager = nsnull;
+DeviceManagerD3D9 *LayerManagerD3D9::mDefaultDeviceManager = nsnull;
 
 LayerManagerD3D9::LayerManagerD3D9(nsIWidget *aWidget)
   : mIs3DEnabled(PR_FALSE)
 {
-    mWidget = aWidget;
-    mCurrentCallbackInfo.Callback = NULL;
-    mCurrentCallbackInfo.CallbackData = NULL;
+  mWidget = aWidget;
+  mCurrentCallbackInfo.Callback = NULL;
+  mCurrentCallbackInfo.CallbackData = NULL;
 }
 
 LayerManagerD3D9::~LayerManagerD3D9()
 {
-  /* Important to release this first since it also holds a reference to the
-   * device manager
-   */
-  mSwapChain = nsnull;
-
-  if (mDeviceManager && mDeviceManager->Release() == 0) {
-    mDeviceManager = nsnull;
-  }
+  Destroy();
 }
 
 PRBool
@@ -79,19 +74,32 @@ LayerManagerD3D9::Initialize()
 {
   /* Check the user preference for whether 3d video is enabled or not */ 
   nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID); 
-  prefs->GetBoolPref("gfx.3d_video.enabled", &mIs3DEnabled); 
+  prefs->GetBoolPref("gfx.3d_video.enabled", &mIs3DEnabled);
 
-  if (!mDeviceManager) {
+  nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+  if (gfxInfo) {
+    PRInt32 status;
+    if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS, &status))) {
+      if (status != nsIGfxInfo::FEATURE_STATUS_UNKNOWN &&
+          status != nsIGfxInfo::FEATURE_AVAILABLE)
+      {
+        NS_WARNING("Direct3D 9-accelerated layers are not supported on this system.");
+        return PR_FALSE;
+      }
+    }
+  }
+
+  if (!mDefaultDeviceManager) {
     mDeviceManager = new DeviceManagerD3D9;
-    mDeviceManager->AddRef();
 
     if (!mDeviceManager->Init()) {
-      mDeviceManager->Release();
       mDeviceManager = nsnull;
       return PR_FALSE;
     }
+
+    mDefaultDeviceManager = mDeviceManager;
   } else {
-    mDeviceManager->AddRef();
+    mDeviceManager = mDefaultDeviceManager;
   }
 
   mSwapChain = mDeviceManager->
@@ -108,6 +116,22 @@ void
 LayerManagerD3D9::SetClippingRegion(const nsIntRegion &aClippingRegion)
 {
   mClippingRegion = aClippingRegion;
+}
+
+void
+LayerManagerD3D9::Destroy()
+{
+  if (!IsDestroyed()) {
+    if (mRoot) {
+      static_cast<LayerD3D9*>(mRoot->ImplData())->LayerManagerDestroyed();
+    }
+    /* Important to release this first since it also holds a reference to the
+     * device manager
+     */
+    mSwapChain = nsnull;
+    mDeviceManager = nsnull;
+  }
+  LayerManager::Destroy();
 }
 
 void
@@ -286,29 +310,36 @@ LayerManagerD3D9::SetupPipeline()
   nsIntRect rect;
   mWidget->GetClientBounds(rect);
 
-  float viewMatrix[4][4];
+  gfx3DMatrix viewMatrix;
   /*
    * Matrix to transform to viewport space ( <-1.0, 1.0> topleft,
    * <1.0, -1.0> bottomright)
    */
-  memset(&viewMatrix, 0, sizeof(viewMatrix));
-  viewMatrix[0][0] = 2.0f / rect.width;
-  viewMatrix[1][1] = -2.0f / rect.height;
-  viewMatrix[2][2] = 1.0f;
-  viewMatrix[3][0] = -1.0f;
-  viewMatrix[3][1] = 1.0f;
-  viewMatrix[3][3] = 1.0f;
+  viewMatrix._11 = 2.0f / rect.width;
+  viewMatrix._22 = -2.0f / rect.height;
+  viewMatrix._41 = -1.0f;
+  viewMatrix._42 = 1.0f;
 
-  HRESULT hr = device()->SetVertexShaderConstantF(8, &viewMatrix[0][0], 4);
+  HRESULT hr = device()->SetVertexShaderConstantF(CBmProjection,
+                                                  &viewMatrix._11, 4);
 
   if (FAILED(hr)) {
     NS_WARNING("Failed to set projection shader constant!");
   }
 
-  hr = device()->SetVertexShaderConstantF(13, ShaderConstantRect(0, 0, 1.0f, 1.0f), 1);
+  hr = device()->SetVertexShaderConstantF(CBvTextureCoords,
+                                          ShaderConstantRect(0, 0, 1.0f, 1.0f),
+                                          1);
 
   if (FAILED(hr)) {
     NS_WARNING("Failed to set texCoords shader constant!");
+  }
+
+  float offset[] = { 0, 0, 0, 0 };
+  hr = device()->SetVertexShaderConstantF(CBvRenderTargetOffset, offset, 1);
+
+  if (FAILED(hr)) {
+    NS_WARNING("Failed to set RenderTargetOffset shader constant!");
   }
 }
 

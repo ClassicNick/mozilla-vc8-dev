@@ -47,6 +47,9 @@ namespace layers {
 
 CanvasLayerD3D9::~CanvasLayerD3D9()
 {
+  if (mD3DManager) {
+    mD3DManager->deviceManager()->mLayersWithResources.RemoveElement(this);
+  }
 }
 
 void
@@ -83,23 +86,14 @@ CanvasLayerD3D9::Initialize(const Data& aData)
 
   mIsInteropTexture = false;
 
-  if (mD3DManager->deviceManager()->HasDynamicTextures()) {
-    device()->CreateTexture(mBounds.width, mBounds.height, 1, D3DUSAGE_DYNAMIC,
-                            D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
-                            getter_AddRefs(mTexture), NULL);    
-  } else {
-    // D3DPOOL_MANAGED is fine here since we require Dynamic Textures for D3D9Ex
-    // devices.
-    device()->CreateTexture(mBounds.width, mBounds.height, 1, 0,
-                            D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
-                            getter_AddRefs(mTexture), NULL);
-  }
+  CreateTexture();
 }
 
 void
 CanvasLayerD3D9::Updated(const nsIntRect& aRect)
 {
   if (!mTexture) {
+    CreateTexture();
     NS_WARNING("CanvasLayerD3D9::Updated called but no texture present!");
     return;
   }
@@ -115,7 +109,12 @@ CanvasLayerD3D9::Updated(const nsIntRect& aRect)
   if (mGLContext) {
     // WebGL reads entire surface.
     D3DLOCKED_RECT r;
-    mTexture->LockRect(0, &r, NULL, 0);
+    HRESULT hr = mTexture->LockRect(0, &r, NULL, 0);
+
+    if (FAILED(hr)) {
+      NS_WARNING("Failed to lock CanvasLayer texture.");
+      return;
+    }
 
     PRUint8 *destination;
     if (r.Pitch != mBounds.width * 4) {
@@ -171,7 +170,12 @@ CanvasLayerD3D9::Updated(const nsIntRect& aRect)
     r.bottom = aRect.YMost();
 
     D3DLOCKED_RECT lockedRect;
-    mTexture->LockRect(0, &lockedRect, &r, 0);
+    HRESULT hr = mTexture->LockRect(0, &lockedRect, &r, 0);
+
+    if (FAILED(hr)) {
+      NS_WARNING("Failed to lock CanvasLayer texture.");
+      return;
+    }
 
     PRUint8 *startBits;
     PRUint32 sourceStride;
@@ -225,31 +229,24 @@ CanvasLayerD3D9::GetLayer()
 void
 CanvasLayerD3D9::RenderLayer()
 {
-  float quadTransform[4][4];
-  /*
-   * Matrix to transform the <0.0,0.0>, <1.0,1.0> quad to the correct position
-   * and size. To get pixel perfect mapping we offset the quad half a pixel
-   * to the top-left. We also flip the Y axis here, note we can only do this
-   * because we are in CULL_NONE mode!
-   *
-   * See: http://msdn.microsoft.com/en-us/library/bb219690%28VS.85%29.aspx
-   */
-  memset(&quadTransform, 0, sizeof(quadTransform));
-  quadTransform[0][0] = (float)mBounds.width;
-  if (mNeedsYFlip) {
-    quadTransform[1][1] = (float)-mBounds.height;
-    quadTransform[3][1] = (float)mBounds.height;
-  } else {
-    quadTransform[1][1] = (float)mBounds.height;
-    quadTransform[3][1] = 0.0f;
+  if (!mTexture) {
+    Updated(mBounds);
   }
-  quadTransform[2][2] = 1.0f;
-  quadTransform[3][0] = 0.0f;
-  quadTransform[3][3] = 1.0f;
 
-  device()->SetVertexShaderConstantF(0, &quadTransform[0][0], 4);
+  /*
+   * We flip the Y axis here, note we can only do this because we are in 
+   * CULL_NONE mode!
+   */
 
-  device()->SetVertexShaderConstantF(4, &mTransform._11, 4);
+  ShaderConstantRect quad(0, 0, mBounds.width, mBounds.height);
+  if (mNeedsYFlip) {
+    quad.mHeight = (float)-mBounds.height;
+    quad.mY = (float)mBounds.height;
+  }
+
+  device()->SetVertexShaderConstantF(CBvLayerQuad, quad, 1);
+
+  device()->SetVertexShaderConstantF(CBmLayerTransform, &mTransform._11, 4);
 
   float opacity[4];
   /*
@@ -257,7 +254,7 @@ CanvasLayerD3D9::RenderLayer()
    * first component since it's declared as a 'float'.
    */
   opacity[0] = GetOpacity();
-  device()->SetPixelShaderConstantF(0, opacity, 1);
+  device()->SetPixelShaderConstantF(CBfLayerOpacity, opacity, 1);
 
   mD3DManager->SetShaderMode(DeviceManagerD3D9::RGBALAYER);
 
@@ -270,6 +267,38 @@ CanvasLayerD3D9::RenderLayer()
   if (!mDataIsPremultiplied) {
     device()->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
     device()->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+  }
+}
+
+void
+CanvasLayerD3D9::CleanResources()
+{
+  if (mD3DManager->deviceManager()->HasDynamicTextures()) {
+    // In this case we have a texture in POOL_DEFAULT
+    mTexture = nsnull;
+  }
+}
+
+void
+CanvasLayerD3D9::LayerManagerDestroyed()
+{
+  mD3DManager->deviceManager()->mLayersWithResources.RemoveElement(this);
+  mD3DManager = nsnull;
+}
+
+void
+CanvasLayerD3D9::CreateTexture()
+{
+  if (mD3DManager->deviceManager()->HasDynamicTextures()) {
+    device()->CreateTexture(mBounds.width, mBounds.height, 1, D3DUSAGE_DYNAMIC,
+                            D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT,
+                            getter_AddRefs(mTexture), NULL);    
+  } else {
+    // D3DPOOL_MANAGED is fine here since we require Dynamic Textures for D3D9Ex
+    // devices.
+    device()->CreateTexture(mBounds.width, mBounds.height, 1, 0,
+                            D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+                            getter_AddRefs(mTexture), NULL);
   }
 }
 

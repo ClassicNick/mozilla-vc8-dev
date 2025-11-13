@@ -40,6 +40,10 @@
 #ifndef __nsWindow_h__
 #define __nsWindow_h__
 
+#ifdef MOZ_IPC
+#  include "mozilla/ipc/SharedMemorySysV.h"
+#endif
+
 #include "nsAutoPtr.h"
 
 #include "mozcontainer.h"
@@ -97,6 +101,11 @@ extern PRLogModuleInfo *gWidgetDrawLog;
 
 #endif /* MOZ_LOGGING */
 
+#if defined(MOZ_X11) && defined(MOZ_HAVE_SHAREDMEMORYSYSV)
+#  define MOZ_HAVE_SHMIMAGE
+
+class nsShmImage;
+#endif
 
 class nsWindow : public nsBaseWidget, public nsSupportsWeakReference
 {
@@ -332,11 +341,17 @@ public:
 
     static already_AddRefed<gfxASurface> GetSurfaceForGdkDrawable(GdkDrawable* aDrawable,
                                                                   const nsIntSize& aSize);
+    NS_IMETHOD         ReparentNativeWidget(nsIWidget* aNewParent);
 
 #ifdef ACCESSIBILITY
     static PRBool      sAccessibilityEnabled;
 #endif
 protected:
+    // Helper for SetParent and ReparentNativeWidget.
+    void ReparentNativeWidgetInternal(nsIWidget* aNewParent,
+                                      GtkWidget* aNewContainer,
+                                      GdkWindow* aNewParentWindow,
+                                      GtkWidget* aOldContainer);
     nsCOMPtr<nsIWidget> mParent;
     // Is this a toplevel window?
     PRPackedBool        mIsTopLevel;
@@ -396,6 +411,10 @@ private:
     PRInt32             mTransparencyBitmapWidth;
     PRInt32             mTransparencyBitmapHeight;
 
+#ifdef MOZ_HAVE_SHMIMAGE
+    // If we're using xshm rendering, mThebesSurface wraps mShmImage
+    nsRefPtr<nsShmImage>  mShmImage;
+#endif
     nsRefPtr<gfxASurface> mThebesSurface;
 
 #ifdef MOZ_DFB

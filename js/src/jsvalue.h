@@ -600,7 +600,7 @@ class Value
     }
 
     JS_ALWAYS_INLINE
-    void *asGCThing() const {
+    void *toGCThing() const {
         JS_ASSERT(isGCThing());
         return JSVAL_TO_GCTHING_IMPL(data);
     }
@@ -878,7 +878,34 @@ typedef JSBool
 typedef JSBool
 (* PropertyIdOp)(JSContext *cx, JSObject *obj, jsid id, Value *vp);
 typedef JSBool
+(* StrictPropertyIdOp)(JSContext *cx, JSObject *obj, jsid id, Value *vp, JSBool strict);
+typedef JSBool
 (* CallOp)(JSContext *cx, uintN argc, Value *vp);
+typedef JSBool
+(* LookupPropOp)(JSContext *cx, JSObject *obj, jsid id, JSObject **objp,
+                 JSProperty **propp);
+typedef JSBool
+(* AttributesOp)(JSContext *cx, JSObject *obj, jsid id, uintN *attrsp);
+typedef JSType
+(* TypeOfOp)(JSContext *cx, JSObject *obj);
+typedef void
+(* TraceOp)(JSTracer *trc, JSObject *obj);
+typedef JSObject *
+(* ObjectOp)(JSContext *cx, JSObject *obj);
+typedef void
+(* FinalizeOp)(JSContext *cx, JSObject *obj);
+
+class AutoIdVector;
+
+/*
+ * Prepare to make |obj| non-extensible; in particular, fully resolve its properties.
+ * On error, return false.
+ * If |obj| is now ready to become non-extensible, set |*fixed| to true and return true.
+ * If |obj| refuses to become non-extensible, set |*fixed| to false and return true; the
+ * caller will throw an appropriate error.
+ */
+typedef JSBool
+(* FixOp)(JSContext *cx, JSObject *obj, bool *fixed, AutoIdVector *props);
 
 static inline Native            Valueify(JSNative f)          { return (Native)f; }
 static inline JSNative          Jsvalify(Native f)            { return (JSNative)f; }
@@ -894,10 +921,6 @@ static inline CheckAccessOp     Valueify(JSCheckAccessOp f)   { return (CheckAcc
 static inline JSCheckAccessOp   Jsvalify(CheckAccessOp f)     { return (JSCheckAccessOp)f; }
 static inline EqualityOp        Valueify(JSEqualityOp f);     /* Same type as JSHasInstanceOp */
 static inline JSEqualityOp      Jsvalify(EqualityOp f);       /* Same type as HasInstanceOp */
-static inline DefinePropOp      Valueify(JSDefinePropOp f)    { return (DefinePropOp)f; }
-static inline JSDefinePropOp    Jsvalify(DefinePropOp f)      { return (JSDefinePropOp)f; }
-static inline PropertyIdOp      Valueify(JSPropertyIdOp f);   /* Same type as JSPropertyOp */
-static inline JSPropertyIdOp    Jsvalify(PropertyIdOp f);     /* Same type as PropertyOp */
 
 static const PropertyOp    PropertyStub  = (PropertyOp)JS_PropertyStub;
 static const JSEnumerateOp EnumerateStub = JS_EnumerateStub;
@@ -949,18 +972,19 @@ struct ClassExtension {
 #define JS_NULL_CLASS_EXT   {NULL,NULL,NULL,NULL,NULL}
 
 struct ObjectOps {
-    JSLookupPropOp      lookupProperty;
-    js::DefinePropOp    defineProperty;
-    js::PropertyIdOp    getProperty;
-    js::PropertyIdOp    setProperty;
-    JSAttributesOp      getAttributes;
-    JSAttributesOp      setAttributes;
-    js::PropertyIdOp    deleteProperty;
-    js::NewEnumerateOp  enumerate;
-    JSTypeOfOp          typeOf;
-    JSTraceOp           trace;
-    JSObjectOp          thisObject;
-    JSFinalizeOp        clear;
+    js::LookupPropOp        lookupProperty;
+    js::DefinePropOp        defineProperty;
+    js::PropertyIdOp        getProperty;
+    js::StrictPropertyIdOp  setProperty;
+    js::AttributesOp        getAttributes;
+    js::AttributesOp        setAttributes;
+    js::StrictPropertyIdOp  deleteProperty;
+    js::NewEnumerateOp      enumerate;
+    js::TypeOfOp            typeOf;
+    js::TraceOp             trace;
+    js::FixOp               fix;
+    js::ObjectOp            thisObject;
+    js::FinalizeOp          clear;
 };
 
 #define JS_NULL_OBJECT_OPS  {NULL,NULL,NULL,NULL,NULL,NULL, NULL,NULL,NULL,NULL,NULL,NULL}

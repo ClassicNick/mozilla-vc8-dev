@@ -46,7 +46,6 @@
 #include "jsatom.h"
 #include "jsbool.h"
 #include "jscntxt.h"
-#include "jsdtoa.h"
 #include "jsfun.h"
 #include "jsinterp.h"
 #include "jsiter.h"
@@ -67,6 +66,7 @@
 #include "jsobjinlines.h"
 
 using namespace js;
+using namespace js::gc;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -346,7 +346,7 @@ JO(JSContext *cx, Value *vp, StringifyContext *scx)
 
     JSBool memberWritten = JS_FALSE;
     AutoIdVector props(cx);
-    if (!GetPropertyNames(cx, &keySource->toObject(), JSITER_OWNONLY, props))
+    if (!GetPropertyNames(cx, &keySource->toObject(), JSITER_OWNONLY, &props))
         return JS_FALSE;
 
     for (size_t i = 0, len = props.length(); i < len; i++) {
@@ -527,21 +527,11 @@ Str(JSContext *cx, jsid id, JSObject *holder, StringifyContext *scx, Value *vp, 
                 return js_AppendLiteral(scx->cb, "null");
         }
 
-        char numBuf[DTOSTR_STANDARD_BUFFER_SIZE], *numStr;
-        jsdouble d = vp->isInt32() ? jsdouble(vp->toInt32()) : vp->toDouble();
-        numStr = js_dtostr(JS_THREAD_DATA(cx)->dtoaState, numBuf, sizeof numBuf,
-                           DTOSTR_STANDARD, 0, d);
-        if (!numStr) {
-            JS_ReportOutOfMemory(cx);
-            return JS_FALSE;
-        }
-
-        jschar dstr[DTOSTR_STANDARD_BUFFER_SIZE];
-        size_t dbufSize = DTOSTR_STANDARD_BUFFER_SIZE;
-        if (!js_InflateStringToBuffer(cx, numStr, strlen(numStr), dstr, &dbufSize))
+        JSCharBuffer cb(cx);
+        if (!js_NumberValueToCharBuffer(cx, *vp, cb))
             return JS_FALSE;
 
-        return scx->cb.append(dstr, dbufSize);
+        return scx->cb.append(cb.begin(), cb.length());
     }
 
     if (vp->isObject() && !IsFunctionObject(*vp) && !IsXML(*vp)) {
@@ -585,7 +575,10 @@ static JSBool IsNumChar(jschar c)
     return ((c <= '9' && c >= '0') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E');
 }
 
-static JSBool HandleData(JSContext *cx, JSONParser *jp, JSONDataType type);
+static JSBool HandleDataString(JSContext *cx, JSONParser *jp);
+static JSBool HandleDataKeyString(JSContext *cx, JSONParser *jp);
+static JSBool HandleDataNumber(JSContext *cx, JSONParser *jp);
+static JSBool HandleDataKeyword(JSContext *cx, JSONParser *jp);
 static JSBool PopState(JSContext *cx, JSONParser *jp);
 
 static bool
@@ -619,7 +612,7 @@ Walk(JSContext *cx, jsid id, JSObject *holder, const Value &reviver, Value *vp)
             }
         } else {
             AutoIdVector props(cx);
-            if (!GetPropertyNames(cx, obj, JSITER_OWNONLY, props))
+            if (!GetPropertyNames(cx, obj, JSITER_OWNONLY, &props))
                 return false;
 
             for (size_t i = 0, len = props.length(); i < len; i++) {
@@ -627,7 +620,7 @@ Walk(JSContext *cx, jsid id, JSObject *holder, const Value &reviver, Value *vp)
                 if (!Walk(cx, idName, obj, reviver, propValue.addr()))
                     return false;
                 if (propValue.value().isUndefined()) {
-                    if (!js_DeleteProperty(cx, obj, idName, propValue.addr()))
+                    if (!js_DeleteProperty(cx, obj, idName, propValue.addr(), false))
                         return false;
                 } else {
                     if (!obj->defineProperty(cx, idName, propValue.value(), NULL, NULL,
@@ -723,11 +716,11 @@ js_FinishJSONParse(JSContext *cx, JSONParser *jp, const Value &reviver)
     // strings because a closing quote triggers value processing.
     if ((jp->statep - jp->stateStack) == 1) {
         if (*jp->statep == JSON_PARSE_STATE_KEYWORD) {
-            early_ok = HandleData(cx, jp, JSON_DATA_KEYWORD);
+            early_ok = HandleDataKeyword(cx, jp);
             if (early_ok)
                 PopState(cx, jp);
         } else if (*jp->statep == JSON_PARSE_STATE_NUMBER) {
-            early_ok = HandleData(cx, jp, JSON_DATA_NUMBER);
+            early_ok = HandleDataNumber(cx, jp);
             if (early_ok)
                 PopState(cx, jp);
         }
@@ -959,29 +952,36 @@ HandleKeyword(JSContext *cx, JSONParser *jp, const jschar *buf, uint32 len)
 }
 
 static JSBool
-HandleData(JSContext *cx, JSONParser *jp, JSONDataType type)
+HandleDataString(JSContext *cx, JSONParser *jp)
 {
-    JSBool ok;
+    JSBool ok = HandleString(cx, jp, jp->buffer.begin(), jp->buffer.length());
+    if (ok)
+        jp->buffer.clear();
+    return ok;
+}
 
-    switch (type) {
-      case JSON_DATA_STRING:
-        ok = HandleString(cx, jp, jp->buffer.begin(), jp->buffer.length());
-        break;
+static JSBool
+HandleDataKeyString(JSContext *cx, JSONParser *jp)
+{
+    JSBool ok = jp->objectKey.append(jp->buffer.begin(), jp->buffer.end());
+    if (ok)
+        jp->buffer.clear();
+    return ok;
+}
 
-      case JSON_DATA_KEYSTRING:
-        ok = jp->objectKey.append(jp->buffer.begin(), jp->buffer.end());
-        break;
+static JSBool
+HandleDataNumber(JSContext *cx, JSONParser *jp)
+{
+    JSBool ok = HandleNumber(cx, jp, jp->buffer.begin(), jp->buffer.length());
+    if (ok)
+        jp->buffer.clear();
+    return ok;
+}
 
-      case JSON_DATA_NUMBER:
-        ok = HandleNumber(cx, jp, jp->buffer.begin(), jp->buffer.length());
-        break;
-
-      default:
-        JS_ASSERT(type == JSON_DATA_KEYWORD);
-        ok = HandleKeyword(cx, jp, jp->buffer.begin(), jp->buffer.length());
-        break;
-    }
-
+static JSBool
+HandleDataKeyword(JSContext *cx, JSONParser *jp)
+{
+    JSBool ok = HandleKeyword(cx, jp, jp->buffer.begin(), jp->buffer.length());
     if (ok)
         jp->buffer.clear();
     return ok;
@@ -1118,14 +1118,13 @@ js_ConsumeJSONText(JSContext *cx, JSONParser *jp, const jschar *data, uint32 len
             if (c == '"') {
                 if (!PopState(cx, jp))
                     return JS_FALSE;
-                JSONDataType jdt;
                 if (*jp->statep == JSON_PARSE_STATE_OBJECT_IN_PAIR) {
-                    jdt = JSON_DATA_KEYSTRING;
+                    if (!HandleDataKeyString(cx, jp))
+                        return JS_FALSE;
                 } else {
-                    jdt = JSON_DATA_STRING;
+                    if (!HandleDataString(cx, jp))
+                        return JS_FALSE;
                 }
-                if (!HandleData(cx, jp, jdt))
-                    return JS_FALSE;
             } else if (c == '\\') {
                 *jp->statep = JSON_PARSE_STATE_STRING_ESCAPE;
             } else if (c <= 0x1F) {
@@ -1195,7 +1194,7 @@ js_ConsumeJSONText(JSContext *cx, JSONParser *jp, const jschar *data, uint32 len
                 if (!PopState(cx, jp))
                     return JS_FALSE;
 
-                if (!HandleData(cx, jp, JSON_DATA_KEYWORD))
+                if (!HandleDataKeyword(cx, jp))
                     return JS_FALSE;
             }
             break;
@@ -1209,7 +1208,7 @@ js_ConsumeJSONText(JSContext *cx, JSONParser *jp, const jschar *data, uint32 len
                 i--;
                 if (!PopState(cx, jp))
                     return JS_FALSE;
-                if (!HandleData(cx, jp, JSON_DATA_NUMBER))
+                if (!HandleDataNumber(cx, jp))
                     return JS_FALSE;
             }
             break;

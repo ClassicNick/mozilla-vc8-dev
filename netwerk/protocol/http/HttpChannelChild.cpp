@@ -139,7 +139,6 @@ NS_INTERFACE_MAP_BEGIN(HttpChannelChild)
   NS_INTERFACE_MAP_ENTRY(nsIHttpChannel)
   NS_INTERFACE_MAP_ENTRY(nsIHttpChannelInternal)
   NS_INTERFACE_MAP_ENTRY(nsICacheInfoChannel)
-  NS_INTERFACE_MAP_ENTRY(nsIEncodedChannel)
   NS_INTERFACE_MAP_ENTRY(nsIResumableChannel)
   NS_INTERFACE_MAP_ENTRY(nsISupportsPriority)
   NS_INTERFACE_MAP_ENTRY(nsIProxiedChannel)
@@ -213,6 +212,7 @@ class StartRequestEvent : public ChildChannelEvent
   StartRequestEvent(HttpChannelChild* child,
                     const nsHttpResponseHead& responseHead,
                     const PRBool& useResponseHead,
+                    const RequestHeaderTuples& requestHeaders,
                     const PRBool& isFromCache,
                     const PRBool& cacheEntryAvailable,
                     const PRUint32& cacheExpirationTime,
@@ -220,6 +220,7 @@ class StartRequestEvent : public ChildChannelEvent
                     const nsCString& securityInfoSerialization)
   : mChild(child)
   , mResponseHead(responseHead)
+  , mRequestHeaders(requestHeaders)
   , mUseResponseHead(useResponseHead)
   , mIsFromCache(isFromCache)
   , mCacheEntryAvailable(cacheEntryAvailable)
@@ -230,16 +231,18 @@ class StartRequestEvent : public ChildChannelEvent
 
   void Run() 
   { 
-    mChild->OnStartRequest(mResponseHead, mUseResponseHead, mIsFromCache, 
-                           mCacheEntryAvailable, mCacheExpirationTime, 
-                           mCachedCharset, mSecurityInfoSerialization);
+    mChild->OnStartRequest(mResponseHead, mUseResponseHead, mRequestHeaders,
+                           mIsFromCache, mCacheEntryAvailable,
+                           mCacheExpirationTime, mCachedCharset,
+                           mSecurityInfoSerialization);
   }
  private:
   HttpChannelChild* mChild;
   nsHttpResponseHead mResponseHead;
-  PRBool mUseResponseHead;
-  PRBool mIsFromCache;
-  PRBool mCacheEntryAvailable;
+  RequestHeaderTuples mRequestHeaders;
+  PRPackedBool mUseResponseHead;
+  PRPackedBool mIsFromCache;
+  PRPackedBool mCacheEntryAvailable;
   PRUint32 mCacheExpirationTime;
   nsCString mCachedCharset;
   nsCString mSecurityInfoSerialization;
@@ -248,6 +251,7 @@ class StartRequestEvent : public ChildChannelEvent
 bool 
 HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
                                      const PRBool& useResponseHead,
+                                     const RequestHeaderTuples& requestHeaders,
                                      const PRBool& isFromCache,
                                      const PRBool& cacheEntryAvailable,
                                      const PRUint32& cacheExpirationTime,
@@ -256,11 +260,12 @@ HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
 {
   if (ShouldEnqueue()) {
     EnqueueEvent(new StartRequestEvent(this, responseHead, useResponseHead,
+                                       requestHeaders,
                                        isFromCache, cacheEntryAvailable,
                                        cacheExpirationTime, cachedCharset,
                                        securityInfoSerialization));
   } else {
-    OnStartRequest(responseHead, useResponseHead, isFromCache,
+    OnStartRequest(responseHead, useResponseHead, requestHeaders, isFromCache,
                    cacheEntryAvailable, cacheExpirationTime, cachedCharset,
                    securityInfoSerialization);
   }
@@ -270,6 +275,7 @@ HttpChannelChild::RecvOnStartRequest(const nsHttpResponseHead& responseHead,
 void 
 HttpChannelChild::OnStartRequest(const nsHttpResponseHead& responseHead,
                                  const PRBool& useResponseHead,
+                                 const RequestHeaderTuples& requestHeaders,
                                  const PRBool& isFromCache,
                                  const PRBool& cacheEntryAvailable,
                                  const PRUint32& cacheExpirationTime,
@@ -293,13 +299,25 @@ HttpChannelChild::OnStartRequest(const nsHttpResponseHead& responseHead,
 
   AutoEventEnqueuer ensureSerialDispatch(this);
 
-  nsresult rv = mListener->OnStartRequest(this, mListenerContext);
-  if (NS_SUCCEEDED(rv)) {
-    if (mResponseHead)
-      SetCookie(mResponseHead->PeekHeader(nsHttp::Set_Cookie));
-  } else {
-    Cancel(rv);
+  // replace our request headers with what actually got sent in the parent
+  mRequestHead.ClearHeaders();
+  for (PRUint32 i = 0; i < requestHeaders.Length(); i++) {
+    mRequestHead.Headers().SetHeader(nsHttp::ResolveAtom(requestHeaders[i].mHeader),
+                                     requestHeaders[i].mValue);
   }
+
+  nsresult rv = mListener->OnStartRequest(this, mListenerContext);
+  if (NS_FAILED(rv)) {
+    Cancel(rv);
+    return;
+  }
+
+  if (mResponseHead)
+    SetCookie(mResponseHead->PeekHeader(nsHttp::Set_Cookie));
+
+  rv = ApplyContentConversions();
+  if (NS_FAILED(rv))
+    Cancel(rv);
 }
 
 class DataAvailableEvent : public ChildChannelEvent
@@ -786,8 +804,15 @@ HttpChannelChild::Resume()
   NS_ENSURE_TRUE(mSuspendCount > 0, NS_ERROR_UNEXPECTED);
   SendResume();
   mSuspendCount--;
-  if (!mSuspendCount)
+  if (!mSuspendCount) {
+    // If we were suspended outside of an event handler (bug 595972) we'll
+    // consider ourselves unqueued. This is a legal state of affairs but
+    // FlushEventQueue() can't easily ensure this fact, so we'll do some
+    // fudging to set the invariants correctly.    
+    if (mQueuePhase == PHASE_UNQUEUED)
+      mQueuePhase = PHASE_FINISHED_QUEUEING;
     FlushEventQueue();
+  }
   return NS_OK;
 }
 
@@ -988,29 +1013,6 @@ HttpChannelChild::IsFromCache(PRBool *value)
 
   *value = mIsFromCache;
   return NS_OK;
-}
-
-//-----------------------------------------------------------------------------
-// HttpChannelChild::nsIEncodedChannel
-//-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-HttpChannelChild::GetContentEncodings(nsIUTF8StringEnumerator **result)
-{
-  DROP_DEAD();
-}
-
-/* attribute boolean applyConversion; */
-NS_IMETHODIMP
-HttpChannelChild::GetApplyConversion(PRBool *aApplyConversion)
-{
-  DROP_DEAD();
-}
-
-NS_IMETHODIMP
-HttpChannelChild::SetApplyConversion(PRBool aApplyConversion)
-{
-  DROP_DEAD();
 }
 
 //-----------------------------------------------------------------------------

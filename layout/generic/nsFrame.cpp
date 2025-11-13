@@ -1527,8 +1527,10 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   } else
 #endif
 
-  /* If there is any opacity, wrap it up in an opacity list. */
-  if (disp->mOpacity < 1.0f) {
+  /* If there is any opacity, wrap it up in an opacity list.
+   * If there's nothing in the list, don't add anything.
+   */
+  if (disp->mOpacity < 1.0f && !resultList.IsEmpty()) {
     rv = resultList.AppendNewToTop(
         new (aBuilder) nsDisplayOpacity(aBuilder, this, &resultList));
     if (NS_FAILED(rv))
@@ -1536,10 +1538,10 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   }
 
   /* If we're going to apply a transformation, wrap everything in an
-   * nsDisplayTransform.
+   * nsDisplayTransform. If there's nothing in the list, don't add anything.
    */
   if ((mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
-      disp->HasTransform()) {
+      disp->HasTransform() && !resultList.IsEmpty()) {
     rv = resultList.AppendNewToTop(
         new (aBuilder) nsDisplayTransform(aBuilder, this, &resultList));
     if (NS_FAILED(rv))
@@ -5616,6 +5618,11 @@ nsIFrame::PeekOffset(nsPeekOffsetStruct* aPos)
       FrameContentRange range = GetRangeForFrame(targetFrame.frame);
       aPos->mResultContent = range.content;
       aPos->mContentOffset = endOfLine ? range.end : range.start;
+      if (endOfLine && targetFrame.frame->HasTerminalNewline()) {
+        // Do not position the caret after the terminating newline if we're
+        // trying to move to the end of line (see bug 596506)
+        --aPos->mContentOffset;
+      }
       aPos->mResultFrame = targetFrame.frame;
       aPos->mAttachForward = (aPos->mContentOffset == range.start);
       if (!range.content)

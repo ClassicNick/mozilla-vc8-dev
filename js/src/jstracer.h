@@ -401,7 +401,6 @@ struct FrameInfo;
 
 struct VMSideExit : public nanojit::SideExit
 {
-    JSObject* block;
     jsbytecode* pc;
     jsbytecode* imacpc;
     intptr_t sp_adj;
@@ -553,7 +552,7 @@ struct FrameInfo {
      * Number of stack slots in the caller, not counting slots pushed when
      * invoking the callee. That is, slots after JSOP_CALL completes but
      * without the return value. This is also equal to the number of slots
-     * between fp->down->argv[-2] (calleR fp->callee) and fp->argv[-2]
+     * between fp->prev->argv[-2] (calleR fp->callee) and fp->argv[-2]
      * (calleE fp->callee).
      */
     uint32          callerHeight;
@@ -927,6 +926,9 @@ class TraceRecorder
     JSAtom**                        atoms;
     Value*                          consts;
 
+    /* An instruction yielding the current script's strict mode code flag.  */
+    nanojit::LIns*                  strictModeCode_ins;
+
     /* FIXME: Dead, but soon to be used for something or other. */
     Queue<jsbytecode*>              cfgMerges;
 
@@ -1041,17 +1043,17 @@ class TraceRecorder
                              bool demote);
 
 #ifdef DEBUG
-    bool isValidFrameObjPtr(JSObject **obj);
+    bool isValidFrameObjPtr(void *obj);
 #endif
 
     JS_REQUIRES_STACK void setImpl(void* p, nanojit::LIns* l, bool demote = true);
     JS_REQUIRES_STACK void set(Value* p, nanojit::LIns* l, bool demote = true);
-    JS_REQUIRES_STACK void setFrameObjPtr(JSObject** p, nanojit::LIns* l, bool demote = true);
+    JS_REQUIRES_STACK void setFrameObjPtr(void* p, nanojit::LIns* l, bool demote = true);
     nanojit::LIns* getFromTrackerImpl(const void *p);
     nanojit::LIns* getFromTracker(const Value* p);
     JS_REQUIRES_STACK nanojit::LIns* getImpl(const void* p);
     JS_REQUIRES_STACK nanojit::LIns* get(const Value* p);
-    JS_REQUIRES_STACK nanojit::LIns* getFrameObjPtr(JSObject** p);
+    JS_REQUIRES_STACK nanojit::LIns* getFrameObjPtr(void* p);
     JS_REQUIRES_STACK nanojit::LIns* attemptImport(const Value* p);
     JS_REQUIRES_STACK nanojit::LIns* addr(Value* p);
 
@@ -1111,6 +1113,8 @@ class TraceRecorder
     JS_REQUIRES_STACK nanojit::LIns* alu(nanojit::LOpcode op, jsdouble v0, jsdouble v1,
                                          nanojit::LIns* s0, nanojit::LIns* s1);
 
+    void label(nanojit::LIns* br);
+    void label(nanojit::LIns* br1, nanojit::LIns* br2);
     nanojit::LIns* i2d(nanojit::LIns* i);
     nanojit::LIns* d2i(nanojit::LIns* f, bool resultCanBeImpreciseIfFractional = false);
     nanojit::LIns* f2u(nanojit::LIns* f);
@@ -1179,7 +1183,6 @@ class TraceRecorder
     nanojit::LIns* stobj_get_fslot_uint32(nanojit::LIns* obj_ins, unsigned slot);
     nanojit::LIns* stobj_set_fslot_uint32(nanojit::LIns* value_ins, nanojit::LIns* obj_ins,
                                           unsigned slot);
-    nanojit::LIns* stobj_get_fslot_ptr(nanojit::LIns* obj_ins, unsigned slot);
     nanojit::LIns* unbox_slot(JSObject *obj, nanojit::LIns *obj_ins, uint32 slot,
                               VMSideExit *exit);
     nanojit::LIns* stobj_get_parent(nanojit::LIns* obj_ins);
@@ -1317,10 +1320,7 @@ class TraceRecorder
                                                                            nanojit::LIns* obj_ins,
                                                                            VMSideExit *exit);
     JS_REQUIRES_STACK RecordingStatus guardNativeConversion(Value& v);
-    JS_REQUIRES_STACK JSStackFrame* entryFrame() const;
-    JS_REQUIRES_STACK void clearEntryFrameSlotsFromTracker(Tracker& which);
     JS_REQUIRES_STACK void clearCurrentFrameSlotsFromTracker(Tracker& which);
-    JS_REQUIRES_STACK void clearFrameSlotsFromTracker(Tracker& which, JSStackFrame* fp, unsigned nslots);
     JS_REQUIRES_STACK void putActivationObjects();
     JS_REQUIRES_STACK RecordingStatus guardCallee(Value& callee);
     JS_REQUIRES_STACK JSStackFrame      *guardArguments(JSObject *obj, nanojit::LIns* obj_ins,
@@ -1406,7 +1406,9 @@ class TraceRecorder
     /* The destructor should only be called through finish*, not directly. */
     ~TraceRecorder();
     JS_REQUIRES_STACK AbortableRecordingStatus finishSuccessfully();
-    JS_REQUIRES_STACK AbortableRecordingStatus finishAbort(const char* reason);
+
+    enum AbortResult { NORMAL_ABORT, JIT_RESET };
+    JS_REQUIRES_STACK AbortResult finishAbort(const char* reason);
 
     friend class ImportBoxedStackSlotVisitor;
     friend class ImportUnboxedStackSlotVisitor;
@@ -1423,9 +1425,11 @@ class TraceRecorder
     friend MonitorResult MonitorLoopEdge(JSContext*, uintN&);
     friend TracePointAction MonitorTracePoint(JSContext*, uintN &inlineCallCount,
                                               bool &blacklist);
-    friend void AbortRecording(JSContext*, const char*);
+    friend AbortResult AbortRecording(JSContext*, const char*);
+    friend class BoxArg;
+    friend void TraceMonitor::sweep();
 
-public:
+  public:
     static bool JS_REQUIRES_STACK
     startRecorder(JSContext*, VMSideExit*, VMFragment*,
                   unsigned stackSlots, unsigned ngslots, JSValueType* typeMap,
@@ -1471,8 +1475,8 @@ public:
 #endif
 };
 
-#define TRACING_ENABLED(cx)       ((cx)->jitEnabled)
-#define REGEX_JIT_ENABLED(cx)     ((cx)->jitEnabled || ((cx)->options & JSOPTION_METHODJIT))
+#define TRACING_ENABLED(cx)       ((cx)->traceJitEnabled)
+#define REGEX_JIT_ENABLED(cx)     ((cx)->traceJitEnabled || (cx)->methodJitEnabled)
 #define TRACE_RECORDER(cx)        (JS_TRACE_MONITOR(cx).recorder)
 #define SET_TRACE_RECORDER(cx,tr) (JS_TRACE_MONITOR(cx).recorder = (tr))
 
@@ -1508,7 +1512,7 @@ MonitorLoopEdge(JSContext* cx, uintN& inlineCallCount);
 extern JS_REQUIRES_STACK TracePointAction
 MonitorTracePoint(JSContext*, uintN& inlineCallCount, bool& blacklist);
 
-extern JS_REQUIRES_STACK void
+extern JS_REQUIRES_STACK TraceRecorder::AbortResult
 AbortRecording(JSContext* cx, const char* reason);
 
 extern void
@@ -1541,13 +1545,13 @@ extern JS_FRIEND_API(bool)
 StartTraceVis(const char* filename);
 
 extern JS_FRIEND_API(JSBool)
-StartTraceVisNative(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Value *rval);
+StartTraceVisNative(JSContext *cx, uintN argc, jsval *vp);
 
 extern JS_FRIEND_API(bool)
 StopTraceVis();
 
 extern JS_FRIEND_API(JSBool)
-StopTraceVisNative(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Value *rval);
+StopTraceVisNative(JSContext *cx, uintN argc, jsval *vp);
 
 /* Must contain no more than 16 items. */
 enum TraceVisState {

@@ -623,8 +623,8 @@ const AddonListener = {
     properties.forEach(function(aProperty) {
       // Only test that the expected properties are listed, having additional
       // properties listed is not necessary a problem
-      if (aProperties.indexOf(aProperty) != -1)
-        ok(false, "Did not see property change for " + aProperty);
+      if (aProperties.indexOf(aProperty) == -1)
+        do_throw("Did not see property change for " + aProperty);
     });
     return check_test_completed(arguments);
   },
@@ -1012,6 +1012,10 @@ Services.prefs.setBoolPref("extensions.showMismatchUI", false);
 
 // By default, don't cache add-ons in AddonRepository.jsm
 Services.prefs.setBoolPref("extensions.getAddons.cache.enabled", false);
+
+// Point update checks to the local machine for fast failures
+Services.prefs.setCharPref("extensions.update.url", "http://127.0.0.1/updateURL");
+Services.prefs.setCharPref("extensions.blocklist.url", "http://127.0.0.1/blocklistURL");
 
 // Register a temporary directory for the tests.
 const gTmpD = gProfD.clone();

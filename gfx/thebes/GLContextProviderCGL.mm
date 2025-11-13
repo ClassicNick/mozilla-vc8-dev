@@ -121,10 +121,7 @@ public:
 
     ~GLContextCGL()
     {
-        if (mOffscreenFBO) {
-            MakeCurrent();
-            DeleteOffscreenFBO();
-        }
+        MarkDestroyed();
 
         if (mContext)
             [mContext release];
@@ -278,7 +275,7 @@ protected:
     CreateUpdateSurface(const gfxIntSize& aSize, ImageFormat aFmt)
     {
         mUpdateFormat = aFmt;
-        return gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, aFmt);
+        return gfxPlatform::GetPlatform()->CreateOffscreenSurface(aSize, gfxASurface::ContentFromFormat(aFmt));
     }
 
     virtual already_AddRefed<gfxImageSurface>
@@ -345,6 +342,7 @@ GLContextProviderCGL::CreateForWindow(nsIWidget *aWidget)
     NSView *childView = (NSView *)aWidget->GetNativeData(NS_NATIVE_WIDGET);
     [context setView:childView];
 
+    // make the context transparent
     nsRefPtr<GLContextCGL> glContext = new GLContextCGL(ContextFormat(ContextFormat::BasicRGB24),
                                                         shareContext,
                                                         context);

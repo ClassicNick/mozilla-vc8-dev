@@ -24,6 +24,7 @@
  * Michael Yoshitaka Erlewine <mitcho@mitcho.com>
  * Ehsan Akhgari <ehsan@mozilla.com>
  * Raymond Lee <raymond@appcoast.com>
+ * Sean Dunn <seanedunn@yahoo.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -48,9 +49,9 @@ let Keys = { meta: false };
 // Class: UI
 // Singleton top-level UI manager.
 let UI = {
-  // Variable: _frameInitalized
+  // Variable: _frameInitialized
   // True if the Tab View UI frame has been initialized.
-  _frameInitalized: false,
+  _frameInitialized: false,
 
   // Variable: _pageBounds
   // Stores the page bounds.
@@ -154,9 +155,11 @@ let UI = {
 
       GroupItems.init();
 
-      var groupItemsData = Storage.readGroupItemsData(gWindow);
-      var firstTime = !groupItemsData || Utils.isEmptyObject(groupItemsData);
-      var groupItemData = Storage.readGroupItemData(gWindow);
+      let firstTime = true;
+      if (gPrefBranch.prefHasUserValue("experienced_first_run"))
+        firstTime = !gPrefBranch.getBoolPref("experienced_first_run");
+      let groupItemsData = Storage.readGroupItemsData(gWindow);
+      let groupItemData = Storage.readGroupItemData(gWindow);
       GroupItems.reconstitute(groupItemsData, groupItemData);
       GroupItems.killNewTabGroup(); // temporary?
 
@@ -164,45 +167,9 @@ let UI = {
       TabItems.init();
       TabItems.pausePainting();
 
-      if (firstTime) {
-        var padding = 10;
-        var infoWidth = 350;
-        var infoHeight = 232;
-        var pageBounds = Items.getPageBounds();
-        pageBounds.inset(padding, padding);
-
-        // ___ make a fresh groupItem
-        var box = new Rect(pageBounds);
-        box.width =
-          Math.min(box.width * 0.667, pageBounds.width - (infoWidth + padding));
-        box.height = box.height * 0.667;
-        var options = {
-          bounds: box
-        };
-
-        var groupItem = new GroupItem([], options);
-
-        var items = TabItems.getItems();
-        items.forEach(function(item) {
-          if (item.parent)
-            item.parent.remove(item);
-
-          groupItem.add(item);
-        });
-
-        // ___ make info item
-        let video = "http://videos-cdn.mozilla.net/firefox4beta/tabcandy_howto.webm";
-        var html =
-          "<div class='intro'>"
-            + "<video src='" + video + "' width='100%' preload controls>"
-          + "</div>";
-
-        box.left = box.right + padding;
-        box.width = infoWidth;
-        box.height = infoHeight;
-        var infoItem = new InfoItem(box);
-        infoItem.html(html);
-      }
+      // if first time in Panorama or no group data:
+      if (firstTime || !groupItemsData || Utils.isEmptyObject(groupItemsData))
+        this.reset(firstTime);
 
       // ___ resizing
       if (this._pageBounds)
@@ -229,8 +196,14 @@ let UI = {
       Services.obs.addObserver(observer, "quit-application-requested", false);
 
       // ___ Done
-      this._frameInitalized = true;
+      this._frameInitialized = true;
       this._save();
+
+      // fire an iframe initialized event so everyone knows tab view is 
+      // initialized.
+      let event = document.createEvent("Events");
+      event.initEvent("tabviewframeinitialized", true, false);
+      dispatchEvent(event);
     } catch(e) {
       Utils.log(e);
     }
@@ -254,6 +227,61 @@ let UI = {
     this._pageBounds = null;
     this._reorderTabItemsOnShow = null;
     this._reorderTabsOnHide = null;
+    this._frameInitialized = false;
+  },
+  
+  // Function: reset
+  // Resets the Panorama view to have just one group with all tabs
+  // and, if firstTime == true, add the welcome video/tab
+  reset: function UI_reset(firstTime) {
+    let padding = 10;
+    let infoWidth = 350;
+    let infoHeight = 232;
+    let pageBounds = Items.getPageBounds();
+    pageBounds.inset(padding, padding);
+
+    // ___ make a fresh groupItem
+    let box = new Rect(pageBounds);
+    box.width = 
+      Math.min(box.width * 0.667, pageBounds.width - (infoWidth + padding));
+    box.height = box.height * 0.667;
+
+    GroupItems.groupItems.forEach(function(group) {
+      group.close();
+    });
+
+    let groupItem = new GroupItem([], {bounds: box});
+    let items = TabItems.getItems();
+    items.forEach(function(item) {
+      if (item.parent)
+        item.parent.remove(item);
+      groupItem.add(item);
+    });
+    
+    if (firstTime) {
+      gPrefBranch.setBoolPref("experienced_first_run", true);
+
+      // ___ make info item
+      let video = 
+        "http://videos-cdn.mozilla.net/firefox4beta/tabcandy_howto.webm";
+      let html =
+        "<div class='intro'>"
+          + "<video src='" + video + "' width='100%' preload controls>"
+        + "</div>";
+      let infoBox = new Rect(box.right + padding, box.top,
+                         infoWidth, infoHeight);
+      let infoItem = new InfoItem(infoBox);
+      infoItem.html(html);
+    }
+  },
+
+  // Function: blurAll
+  // Blurs any currently focused element
+  //
+  blurAll: function UI_blurAll() {
+    iQ(":focus").each(function(element) {
+      element.blur();
+    });
   },
 
   // ----------
@@ -431,6 +459,13 @@ let UI = {
       } else {
         // if not closing the last tab
         if (gBrowser.tabs.length > 1) {
+          // Don't return to TabView if there are any app tabs
+          for (let a = 0; a < gBrowser.tabs.length; a++) {
+            let theTab = gBrowser.tabs[a]; 
+            if (theTab.pinned && gBrowser._removingTabs.indexOf(theTab) == -1) 
+              return;
+          }
+
           var groupItem = GroupItems.getActiveGroupItem();
 
           // 1) Only go back to the TabView tab when there you close the last
@@ -441,7 +476,7 @@ let UI = {
           // Can't use timeout here because user would see a flicker of
           // switching to another tab before the TabView interface shows up.
           if ((groupItem && groupItem._children.length == 1) ||
-              (groupItem == null && gBrowser.visibleTabs.length == 1)) {
+              (groupItem == null && gBrowser.visibleTabs.length <= 1)) {
             // for the tab focus event to pick up.
             self._closedLastVisibleTab = true;
             // remove the zoom prep.
@@ -654,21 +689,6 @@ let UI = {
         }
         event.stopPropagation();
         event.preventDefault();
-      } else if (event.keyCode == KeyEvent.DOM_VK_SPACE) {
-        // alt/control + space to zoom into the active tab.
-#ifdef XP_MACOSX
-        if (event.altKey && !event.metaKey && !event.shiftKey &&
-            !event.ctrlKey) {
-#else
-        if (event.ctrlKey && !event.metaKey && !event.shiftKey &&
-            !event.altKey) {
-#endif
-          var activeTab = self.getActiveTab();
-          if (activeTab)
-            activeTab.zoomIn();
-          event.stopPropagation();
-          event.preventDefault();
-        }
       } else if (event.keyCode == KeyEvent.DOM_VK_ESCAPE ||
                  event.keyCode == KeyEvent.DOM_VK_RETURN ||
                  event.keyCode == KeyEvent.DOM_VK_ENTER) {
@@ -934,6 +954,8 @@ let UI = {
       activeTab = gBrowser.selectedTab.tabItem;
     if (activeTab)
       activeTab.zoomIn();
+    
+    this.blurAll();
   },
 
   // ----------
@@ -980,7 +1002,7 @@ let UI = {
       }, {
         name: "reset",
         code: function() {
-          self._reset();
+          self.reset();
         }
       }, {
 */
@@ -1003,14 +1025,6 @@ let UI = {
     }
   },
 
-  // -----------
-  // Function: _reset
-  // Wipes all TabView storage and refreshes, giving you the "first-run" state.
-  _reset: function UI__reset() {
-    Storage.wipe();
-    location.href = "";
-  },
-
   // ----------
   // Function: storageSanity
   // Given storage data for this object, returns true if it looks valid.
@@ -1031,7 +1045,7 @@ let UI = {
   // Function: _save
   // Saves the data for this object to persistent storage
   _save: function UI__save() {
-    if (!this._frameInitalized)
+    if (!this._frameInitialized)
       return;
 
     var data = {

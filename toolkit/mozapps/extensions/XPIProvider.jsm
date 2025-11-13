@@ -46,6 +46,7 @@ var EXPORTED_SYMBOLS = [];
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
 Components.utils.import("resource://gre/modules/AddonRepository.jsm");
+Components.utils.import("resource://gre/modules/LightweightThemeManager.jsm");
 Components.utils.import("resource://gre/modules/FileUtils.jsm");
 Components.utils.import("resource://gre/modules/NetUtil.jsm");
 
@@ -121,10 +122,9 @@ const PROP_TARGETAPP     = ["id", "minVersion", "maxVersion"];
 
 // Properties that only exist in the database
 const DB_METADATA        = ["installDate", "updateDate", "size", "sourceURI",
-                            "releaseNotesURI"];
+                            "releaseNotesURI", "applyBackgroundUpdates"];
 const DB_BOOL_METADATA   = ["visible", "active", "userDisabled", "appDisabled",
-                            "pendingUninstall", "applyBackgroundUpdates",
-                            "bootstrap", "skinnable"];
+                            "pendingUninstall", "bootstrap", "skinnable"];
 
 const BOOTSTRAP_REASONS = {
   APP_STARTUP     : 1,
@@ -515,15 +515,20 @@ function loadManifestFromRDF(aUri, aStream) {
     addon.targetPlatforms.push(platform);
   });
 
-  // Themes are disabled by default unless they are currently selected
-  if (addon.type == "theme")
-    addon.userDisabled = addon.internalName != XPIProvider.selectedSkin;
-  else
+  // A theme's userDisabled value is true if the theme is not the selected skin
+  // or if there is an active lightweight theme. We ignore whether softblocking
+  // is in effect since it would change the active theme.
+  if (addon.type == "theme") {
+    addon.userDisabled = !!LightweightThemeManager.currentTheme ||
+                         addon.internalName != XPIProvider.selectedSkin;
+  }
+  else {
     addon.userDisabled = addon.blocklistState == Ci.nsIBlocklistService.STATE_SOFTBLOCKED;
+  }
 
   addon.appDisabled = !isUsableAddon(addon);
 
-  addon.applyBackgroundUpdates = true;
+  addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
 
   return addon;
 }
@@ -556,7 +561,7 @@ function loadManifestFromDir(aDir) {
   let file = aDir.clone();
   file.append(FILE_INSTALL_MANIFEST);
   if (!file.exists() || !file.isFile())
-    throw new Error("Directory " + dir.path + " does not contain a valid " +
+    throw new Error("Directory " + aDir.path + " does not contain a valid " +
                     "install manifest");
 
   let fis = Cc["@mozilla.org/network/file-input-stream;1"].
@@ -1263,6 +1268,10 @@ var XPIProvider = {
     var ww = Cc["@mozilla.org/embedcomp/window-watcher;1"].
              getService(Ci.nsIWindowWatcher);
     ww.openWindow(null, URI_EXTENSION_UPDATE_DIALOG, "", features, variant);
+
+    // Ensure any changes to the add-ons list are flushed to disk
+    XPIDatabase.writeAddonsList([]);
+    Services.prefs.setBoolPref(PREF_PENDING_OPERATIONS, false);
   },
 
   /**
@@ -1920,22 +1929,31 @@ var XPIProvider = {
       migrateData = XPIDatabase.migrateData(schema);
     }
 
-    XPIDatabase.beginTransaction();
-
-    // Catch any errors during the main startup and rollback the database changes
-    try {
-      // If the database exists then the previous file cache can be trusted
-      // otherwise create an empty database
-      let db = FileUtils.getFile(KEY_PROFILEDIR, [FILE_DATABASE], true);
-      if (db.exists()) {
-        cache = Prefs.getCharPref(PREF_INSTALL_CACHE, null);
-      }
-      else {
+    // If the database exists then the previous file cache can be trusted
+    // otherwise create an empty database
+    let db = FileUtils.getFile(KEY_PROFILEDIR, [FILE_DATABASE], true);
+    if (db.exists()) {
+      cache = Prefs.getCharPref(PREF_INSTALL_CACHE, null);
+    }
+    else {
+      try {
         LOG("Database is missing, recreating");
         XPIDatabase.openConnection();
         XPIDatabase.createSchema();
       }
+      catch (e) {
+        try {
+          db.remove(true);
+        }
+        catch (e) {
+        }
+        return;
+      }
+    }
 
+    // Catch any errors during the main startup and rollback the database changes
+    XPIDatabase.beginTransaction();
+    try {
       // Load the list of bootstrapped add-ons first so processFileChanges can
       // modify it
       this.bootstrappedAddons = JSON.parse(Prefs.getCharPref(PREF_BOOTSTRAP_ADDONS,
@@ -3236,6 +3254,8 @@ var XPIDatabase = {
       ERROR("Failed to create database schema");
       logSQLError(this.connection.lastError, this.connection.lastErrorString);
       this.rollbackTransaction();
+      this.connection.close();
+      this.connection = null;
       throw e;
     }
   },
@@ -3938,8 +3958,8 @@ var XPIDatabase = {
     let stmt = this.getStatement("setAddonProperties");
     stmt.params.internal_id = aAddon._internal_id;
 
-    ["userDisabled", "appDisabled", "pendingUninstall",
-     "applyBackgroundUpdates"].forEach(function(aProp) {
+    ["userDisabled", "appDisabled",
+     "pendingUninstall"].forEach(function(aProp) {
       if (aProp in aProperties) {
         stmt.params[aProp] = convertBoolean(aProperties[aProp]);
         aAddon[aProp] = aProperties[aProp];
@@ -3948,6 +3968,14 @@ var XPIDatabase = {
         stmt.params[aProp] = convertBoolean(aAddon[aProp]);
       }
     });
+
+    if ("applyBackgroundUpdates" in aProperties) {
+      stmt.params.applyBackgroundUpdates = aProperties.applyBackgroundUpdates;
+      aAddon.applyBackgroundUpdates = aProperties.applyBackgroundUpdates;
+    }
+    else {
+      stmt.params.applyBackgroundUpdates = aAddon.applyBackgroundUpdates;
+    }
 
     executeStatement(stmt);
   },
@@ -4078,6 +4106,11 @@ function AddonInstall(aCallback, aInstallLocation, aUrl, aHash, aName, aType,
   this.listeners = [];
   this.existingAddon = aExistingAddon;
   this.error = 0;
+  if (aLoadGroup)
+    this.window = aLoadGroup.notificationCallbacks
+                            .getInterface(Ci.nsIDOMWindow);
+  else
+    this.window = null;
 
   if (aUrl instanceof Ci.nsIFileURL) {
     this.file = aUrl.file.QueryInterface(Ci.nsILocalFile);
@@ -4961,7 +4994,7 @@ AddonInstall.prototype = {
     if (iid.equals(Ci.nsIAuthPrompt2)) {
       var factory = Cc["@mozilla.org/prompter;1"].
                     getService(Ci.nsIPromptFactory);
-      return factory.getPrompt(null, Ci.nsIAuthPrompt);
+      return factory.getPrompt(this.window, Ci.nsIAuthPrompt);
     }
     else if (iid.equals(Ci.nsIChannelEventSink)) {
       return this;
@@ -5643,6 +5676,13 @@ function AddonWrapper(aAddon) {
     return aAddon.applyBackgroundUpdates;
   });
   this.__defineSetter__("applyBackgroundUpdates", function(val) {
+    if (val != AddonManager.AUTOUPDATE_DEFAULT &&
+        val != AddonManager.AUTOUPDATE_DISABLE &&
+        val != AddonManager.AUTOUPDATE_ENABLE) {
+      val = val ? AddonManager.AUTOUPDATE_DEFAULT :
+                  AddonManager.AUTOUPDATE_DISABLE;
+    }
+
     if (val == aAddon.applyBackgroundUpdates)
       return val;
 
@@ -6051,13 +6091,18 @@ DirectoryInstallLocation.prototype = {
     delete this._FileToIDMap[file.path];
     delete this._IDToFileMap[aId];
 
+    file = this._directory.clone();
+    file.append(aId);
+    if (!file.exists())
+      file.leafName += ".xpi";
+
     if (!file.exists()) {
       WARN("Attempted to remove " + aId + " from " +
            this._name + " but it was already gone");
       return;
     }
 
-    if (file.isFile())
+    if (file.leafName != aId)
       Services.obs.notifyObservers(file, "flush-cache-entry", null);
     file.remove(true);
   },
@@ -6172,8 +6217,10 @@ WinRegInstallLocation.prototype = {
                 createInstance(Ci.nsILocalFile);
       file.initWithPath(aKey.readStringValue(id));
 
-      if (!file.exists())
+      if (!file.exists()) {
         WARN("Ignoring missing add-on in " + file.path);
+        continue;
+      }
 
       this._IDToFileMap[id] = file;
       this._FileToIDMap[file.path] = id;

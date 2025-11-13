@@ -91,7 +91,7 @@ WrappedJSDyingJSObjectFinder(JSDHashTable *table, JSDHashEntryHdr *hdr,
     {
         if(wrapper->IsSubjectToFinalization())
         {
-            JSAutoEnterCompartment ac(data->cx, wrapper->GetJSObject());
+            js::SwitchToCompartment sc(data->cx, wrapper->GetJSObject());
             if(JS_IsAboutToBeFinalized(data->cx, wrapper->GetJSObject()))
                 data->array->AppendElement(wrapper);
         }
@@ -803,7 +803,7 @@ XPCJSRuntime::WatchdogMain(void *arg)
         JSContext* cx = nsnull;
         while((cx = js_NextActiveContext(self->mJSRuntime, cx)))
         {
-            JS_TriggerOperationCallback(cx);
+            js::TriggerOperationCallback(cx);
         }
     }
 

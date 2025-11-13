@@ -75,6 +75,7 @@
 #include "jsscope.h"
 #include "jsscript.h"
 #include "jstracer.h"
+#include "jstypedarray.h"
 #include "jsxml.h"
 #include "jsperf.h"
 
@@ -92,6 +93,7 @@
 
 #include "jsworkers.h"
 
+#include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
@@ -557,7 +559,7 @@ static int
 usage(void)
 {
     fprintf(gErrFile, "%s\n", JS_GetImplementationVersion());
-    fprintf(gErrFile, "usage: js [-zKPswWxCij] [-t timeoutSeconds] [-c stackchunksize] [-o option] [-v version] [-f scriptfile] [-e script] [-S maxstacksize] "
+    fprintf(gErrFile, "usage: js [-zKPswWxCijmd] [-t timeoutSeconds] [-c stackchunksize] [-o option] [-v version] [-f scriptfile] [-e script] [-S maxstacksize] "
 #ifdef JS_GC_ZEAL
 "[-Z gczeal] "
 #endif
@@ -760,7 +762,7 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
             if (JS_GET_CLASS(cx, JS_GetPrototype(cx, obj)) != &global_class) {
                 JSObject *gobj;
 
-                if (!JS_SealObject(cx, obj, JS_TRUE))
+                if (!JS_DeepFreezeObject(cx, obj))
                     return JS_FALSE;
                 gobj = JS_NewGlobalObject(cx, &global_class);
                 if (!gobj)
@@ -835,6 +837,10 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
             gMaxStackSize = atoi(argv[i]);
             break;
 
+        case 'd':
+            js_SetDebugMode(cx, JS_TRUE);
+            break;
+
         case 'z':
             obj = split_setup(cx, JS_FALSE);
             if (!obj)
@@ -871,6 +877,14 @@ Version(JSContext *cx, uintN argc, jsval *vp)
         *vp = INT_TO_JSVAL(JS_SetVersion(cx, (JSVersion) JSVAL_TO_INT(argv[0])));
     else
         *vp = INT_TO_JSVAL(JS_GetVersion(cx));
+    return JS_TRUE;
+}
+
+static JSBool
+RevertVersion(JSContext *cx, uintN argc, jsval *vp)
+{
+    js_RevertVersion(cx);
+    JS_SET_RVAL(cx, vp, JSVAL_VOID);
     return JS_TRUE;
 }
 
@@ -1172,7 +1186,7 @@ AssertJit(JSContext *cx, uintN argc, jsval *vp)
 {
 #ifdef JS_METHODJIT
     if (JS_GetOptions(cx) & JSOPTION_METHODJIT) {
-        if (cx->fp()->getScript()->nmap == NULL) {
+        if (cx->fp()->script()->nmap == NULL) {
             JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_ASSERT_JIT_FAILED);
             return JS_FALSE;
         }
@@ -1445,6 +1459,44 @@ CountHeap(JSContext *cx, uintN argc, jsval *vp)
     return countTracer.ok && JS_NewNumberValue(cx, (jsdouble) counter, vp);
 }
 
+static jsrefcount finalizeCount = 0;
+
+static void
+finalize_counter_finalize(JSContext *cx, JSObject *obj)
+{
+    JS_ATOMIC_INCREMENT(&finalizeCount);
+}
+
+static JSClass FinalizeCounterClass = {
+    "FinalizeCounter", JSCLASS_IS_ANONYMOUS,
+    JS_PropertyStub,   /* addProperty */
+    JS_PropertyStub,   /* delProperty */
+    JS_PropertyStub,   /* getProperty */
+    JS_PropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
+    finalize_counter_finalize
+};
+
+static JSBool
+MakeFinalizeObserver(JSContext *cx, uintN argc, jsval *vp)
+{
+    JSObject *obj = JS_NewObjectWithGivenProto(cx, &FinalizeCounterClass, NULL,
+                                               JS_GetGlobalObject(cx));
+    if (!obj)
+        return false;
+    *vp = OBJECT_TO_JSVAL(obj);
+    return true;
+}
+
+static JSBool
+FinalizeCount(JSContext *cx, uintN argc, jsval *vp)
+{
+    *vp = INT_TO_JSVAL(finalizeCount);
+    return true;
+}
+
 static JSScript *
 ValueToScript(JSContext *cx, jsval v)
 {
@@ -1459,7 +1511,7 @@ ValueToScript(JSContext *cx, jsval v)
             script = (JSScript *) JS_GetPrivate(cx, obj);
         } else if (clasp == Jsvalify(&js_GeneratorClass)) {
             JSGenerator *gen = (JSGenerator *) JS_GetPrivate(cx, obj);
-            fun = gen->getFloatingFrame()->getFunction();
+            fun = gen->floatingFrame()->fun();
             script = FUN_SCRIPT(fun);
         }
     }
@@ -1501,7 +1553,7 @@ GetTrapArgs(JSContext *cx, uintN argc, jsval *argv, JSScript **scriptp,
     uintN intarg;
     JSScript *script;
 
-    *scriptp = JS_GetScriptedCaller(cx, NULL)->getScript();
+    *scriptp = JS_GetScriptedCaller(cx, NULL)->script();
     *ip = 0;
     if (argc != 0) {
         v = argv[0];
@@ -1531,8 +1583,8 @@ TrapHandler(JSContext *cx, JSScript *script, jsbytecode *pc, jsval *rval,
     JSStackFrame *caller = JS_GetScriptedCaller(cx, NULL);
     if (!JS_EvaluateUCInStackFrame(cx, caller,
                                    JS_GetStringChars(str), JS_GetStringLength(str),
-                                   caller->getScript()->filename,
-                                   caller->getScript()->lineno,
+                                   caller->script()->filename,
+                                   caller->script()->lineno,
                                    rval)) {
         return JSTRAP_ERROR;
     }
@@ -1634,7 +1686,7 @@ LineToPC(JSContext *cx, uintN argc, jsval *vp)
         JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_LINE2PC_USAGE);
         return JS_FALSE;
     }
-    script = JS_GetScriptedCaller(cx, NULL)->getScript();
+    script = JS_GetScriptedCaller(cx, NULL)->script();
     if (!GetTrapArgs(cx, argc, JS_ARGV(cx, vp), &script, &i))
         return JS_FALSE;
     lineno = (i == 0) ? script->lineno : (uintN)i;
@@ -2518,20 +2570,6 @@ Clone(JSContext *cx, uintN argc, jsval *vp)
 }
 
 static JSBool
-Seal(JSContext *cx, uintN argc, jsval *vp)
-{
-    JSObject *target;
-    JSBool deep = JS_FALSE;
-
-    if (!JS_ConvertArguments(cx, argc, JS_ARGV(cx, vp), "o/b", &target, &deep))
-        return JS_FALSE;
-    JS_SET_RVAL(cx, vp, JSVAL_VOID);
-    if (!target)
-        return JS_TRUE;
-    return JS_SealObject(cx, target, deep);
-}
-
-static JSBool
 GetPDA(JSContext *cx, uintN argc, jsval *vp)
 {
     JSObject *vobj, *aobj, *pdobj;
@@ -2778,7 +2816,7 @@ split_delProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
         /* Make sure to define this property on the inner object. */
         if (!JS_ValueToId(cx, *vp, &asId))
             return JS_FALSE;
-        return cpx->inner->deleteProperty(cx, asId, Valueify(vp));
+        return cpx->inner->deleteProperty(cx, asId, Valueify(vp), true);
     }
     return JS_TRUE;
 }
@@ -2978,6 +3016,7 @@ static Class split_global_class = {
         NULL, /* enumerate      */
         NULL, /* typeOf         */
         NULL, /* trace          */
+        NULL, /* fix            */
         split_thisObject,
         NULL, /* clear          */
     },
@@ -3127,7 +3166,7 @@ NewSandbox(JSContext *cx, bool lazy, bool split)
         return NULL;
 
     {
-        JSAutoCrossCompartmentCall ac;
+        JSAutoEnterCompartment ac;
         if (!ac.enter(cx, obj))
             return NULL;
 
@@ -3188,7 +3227,7 @@ EvalInContext(JSContext *cx, uintN argc, jsval *vp)
 
     JSStackFrame *fp = JS_GetScriptedCaller(cx, NULL);
     {
-        JSAutoCrossCompartmentCall ac;
+        JSAutoEnterCompartment ac;
         if (JSCrossCompartmentWrapper::isCrossCompartmentWrapper(sobj)) {
             sobj = sobj->unwrap();
             if (!ac.enter(cx, sobj))
@@ -3203,8 +3242,8 @@ EvalInContext(JSContext *cx, uintN argc, jsval *vp)
             return false;
         }
         if (!JS_EvaluateUCScript(cx, sobj, src, srclen,
-                                 fp->getScript()->filename,
-                                 JS_PCToLineNumber(cx, fp->getScript(), fp->pc(cx)),
+                                 fp->script()->filename,
+                                 JS_PCToLineNumber(cx, fp->script(), fp->pc(cx)),
                                  vp)) {
             return false;
         }
@@ -3234,12 +3273,12 @@ EvalInFrame(JSContext *cx, uintN argc, jsval *vp)
 
     FrameRegsIter fi(cx);
     for (uint32 i = 0; i < upCount; ++i, ++fi) {
-        if (!fi.fp()->down)
+        if (!fi.fp()->prev())
             break;
     }
 
     JSStackFrame *const fp = fi.fp();
-    if (!fp->hasScript()) {
+    if (!JS_IsScriptFrame(cx, fp)) {
         JS_ReportError(cx, "cannot eval in non-script frame");
         return JS_FALSE;
     }
@@ -3249,8 +3288,8 @@ EvalInFrame(JSContext *cx, uintN argc, jsval *vp)
         oldfp = JS_SaveFrameChain(cx);
 
     JSBool ok = JS_EvaluateUCInStackFrame(cx, fp, str->chars(), str->length(),
-                                          fp->getScript()->filename,
-                                          JS_PCToLineNumber(cx, fp->getScript(),
+                                          fp->script()->filename,
+                                          JS_PCToLineNumber(cx, fp->script(),
                                                             fi.pc()),
                                           vp);
 
@@ -3975,9 +4014,9 @@ Snarf(JSContext *cx, uintN argc, jsval *vp)
 
     /* Get the currently executing script's name. */
     fp = JS_GetScriptedCaller(cx, NULL);
-    JS_ASSERT(fp && fp->getScript()->filename);
+    JS_ASSERT(fp && fp->script()->filename);
 #ifdef XP_UNIX
-    pathname = MakeAbsolutePathname(cx, fp->getScript()->filename, filename);
+    pathname = MakeAbsolutePathname(cx, fp->script()->filename, filename);
     if (!pathname)
         return JS_FALSE;
 #else
@@ -4061,8 +4100,6 @@ Snarl(JSContext *cx, uintN argc, jsval *vp)
     return JS_TRUE;
 }
 
-
-
 JSBool
 Wrap(JSContext *cx, uintN argc, jsval *vp)
 {
@@ -4082,9 +4119,53 @@ Wrap(JSContext *cx, uintN argc, jsval *vp)
     return true;
 }
 
+JSBool
+Serialize(JSContext *cx, uintN argc, jsval *vp)
+{
+    jsval v = argc > 0 ? JS_ARGV(cx, vp)[0] : JSVAL_VOID;
+    uint64 *datap;
+    size_t nbytes;
+    if (!JS_WriteStructuredClone(cx, v, &datap, &nbytes))
+        return false;
+
+    JSObject *arrayobj = js_CreateTypedArray(cx, TypedArray::TYPE_UINT8, nbytes);
+    if (!arrayobj) {
+        JS_free(cx, datap);
+        return false;
+    }
+    TypedArray *array = TypedArray::fromJSObject(arrayobj);
+    JS_ASSERT((uintptr_t(array->data) & 7) == 0);
+    memcpy(array->data, datap, nbytes);
+    JS_free(cx, datap);
+    JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(arrayobj));
+    return true;
+}
+
+JSBool
+Deserialize(JSContext *cx, uintN argc, jsval *vp)
+{
+    jsval v = argc > 0 ? JS_ARGV(cx, vp)[0] : JSVAL_VOID;
+    JSObject *obj;
+    if (!JSVAL_IS_OBJECT(v) || !js_IsTypedArray((obj = JSVAL_TO_OBJECT(v)))) {
+        JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_INVALID_ARGS, "deserialize");
+        return false;
+    }
+    TypedArray *array = TypedArray::fromJSObject(obj);
+    if ((uintptr_t(array->data) & 7) != 0) {
+        JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_BAD_ALIGNMENT);
+        return false;
+    }
+
+    if (!JS_ReadStructuredClone(cx, (uint64 *) array->data, array->byteLength, &v))
+        return false;
+    JS_SET_RVAL(cx, vp, v);
+    return true;
+}
+
 /* We use a mix of JS_FS and JS_FN to test both kinds of natives. */
 static JSFunctionSpec shell_functions[] = {
     JS_FN("version",        Version,        0,0),
+    JS_FN("revertVersion",  RevertVersion,  0,0),
     JS_FN("options",        Options,        0,0),
     JS_FN("load",           Load,           1,0),
     JS_FN("readline",       ReadLine,       0,0),
@@ -4101,6 +4182,8 @@ static JSFunctionSpec shell_functions[] = {
 #endif
     JS_FN("gcparam",        GCParameter,    2,0),
     JS_FN("countHeap",      CountHeap,      0,0),
+    JS_FN("makeFinalizeObserver", MakeFinalizeObserver, 0,0),
+    JS_FN("finalizeCount",  FinalizeCount, 0,0),
 #ifdef JS_GC_ZEAL
     JS_FN("gczeal",         GCZeal,         1,0),
 #endif
@@ -4132,7 +4215,6 @@ static JSFunctionSpec shell_functions[] = {
     JS_FN("clear",          Clear,          0,0),
     JS_FN("intern",         Intern,         1,0),
     JS_FN("clone",          Clone,          1,0),
-    JS_FN("seal",           Seal,           1,0),
     JS_FN("getpda",         GetPDA,         1,0),
     JS_FN("getslx",         GetSLX,         1,0),
     JS_FN("toint32",        ToInt32,        1,0),
@@ -4176,6 +4258,8 @@ static JSFunctionSpec shell_functions[] = {
     JS_FN("elapsed",        Elapsed,        0,0),
     JS_FN("parent",         Parent,         1,0),
     JS_FN("wrap",           Wrap,           1,0),
+    JS_FN("serialize",      Serialize,      1,0),
+    JS_FN("deserialize",    Deserialize,    1,0),
     JS_FS_END
 };
 
@@ -4184,7 +4268,8 @@ static const char shell_help_header[] =
 "=======                  ===========\n";
 
 static const char *const shell_help_messages[] = {
-"version([number])        Get or set JavaScript version number",
+"version([number])        Get or force a script compilation version number",
+"revertVersion()          Revert previously set version number",
 "options([option ...])    Get or toggle JavaScript options",
 "load(['foo.js' ...])     Load files named by string arguments",
 "readline()               Read a single line from stdin",
@@ -4209,6 +4294,12 @@ static const char *const shell_help_messages[] = {
 "  start when it is given and is not null. kind is either 'all' (default) to\n"
 "  count all things or one of 'object', 'double', 'string', 'function',\n"
 "  'qname', 'namespace', 'xml' to count only things of that kind",
+"makeFinalizeObserver()\n"
+"  get a special object whose finalization increases the counter returned\n"
+"  by the finalizeCount function",
+"finalizeCount()\n"
+"  return the current value of the finalization counter that is incremented\n"
+"  each time an object returned by the makeFinalizeObserver is finalized",
 #ifdef JS_GC_ZEAL
 "gczeal(level)            How zealous the garbage collector should be",
 #endif
@@ -4243,7 +4334,6 @@ static const char *const shell_help_messages[] = {
 "clear([obj])             Clear properties of object",
 "intern(str)              Internalize str in the atom table",
 "clone(fun[, scope])      Clone function object",
-"seal(obj[, deep])        Seal object, or object graph if deep",
 "getpda(obj)              Get the property descriptors for obj",
 "getslx(obj)              Get script line extent",
 "toint32(n)               Testing hook for JS_ValueToInt32",
@@ -4295,7 +4385,9 @@ static const char *const shell_help_messages[] = {
 "  A negative value (default) means that the execution time is unlimited.",
 "elapsed()                Execution time elapsed for the current context.",
 "parent(obj)              Returns the parent of obj.\n",
-"wrap(obj)                Wrap an object into a noop wrapper.\n"
+"wrap(obj)                Wrap an object into a noop wrapper.\n",
+"serialize(sd)            Serialize sd using JS_WriteStructuredClone. Returns a TypedArray.\n",
+"deserialize(a)           Deserialize data generated by serialize.\n"
 };
 
 /* Help messages must match shell functions. */
@@ -5106,12 +5198,14 @@ DestroyContext(JSContext *cx, bool withGC)
 }
 
 static JSObject *
-NewGlobalObject(JSContext *cx, JSAutoCrossCompartmentCall &call)
+NewGlobalObject(JSContext *cx)
 {
     JSObject *glob = JS_NewCompartmentAndGlobalObject(cx, &global_class, NULL);
     if (!glob)
         return NULL;
-    if (!call.enter(cx, glob))
+
+    JSAutoEnterCompartment ac;
+    if (!ac.enter(cx, glob))
         return NULL;
 
 #ifdef LAZY_STANDARD_CLASSES
@@ -5151,10 +5245,13 @@ int
 shell(JSContext *cx, int argc, char **argv, char **envp)
 {
     JSAutoRequest ar(cx);
-    JSAutoCrossCompartmentCall ac;
 
-    JSObject *glob = NewGlobalObject(cx, ac);
+    JSObject *glob = NewGlobalObject(cx);
     if (!glob)
+        return 1;
+
+    JSAutoEnterCompartment ac;
+    if (!ac.enter(cx, glob))
         return 1;
 
     JSObject *envobj = JS_DefineObject(cx, glob, "environment", &env_class, NULL, 0);
@@ -5193,8 +5290,7 @@ shell(JSContext *cx, int argc, char **argv, char **envp)
     class ShellWorkerHooks : public js::workers::WorkerHooks {
     public:
         JSObject *newGlobalObject(JSContext *cx) {
-            JSAutoCrossCompartmentCall ac;
-            return NewGlobalObject(cx, ac);
+            return NewGlobalObject(cx);
         }
     };
     ShellWorkerHooks hooks;
@@ -5301,8 +5397,6 @@ main(int argc, char **argv, char **envp)
     JS_SetGCParameterForThread(cx, JSGC_MAX_CODE_CACHE_BYTES, 16 * 1024 * 1024);
 
     result = shell(cx, argc, argv, envp);
-
-    JS_CommenceRuntimeShutDown(rt);
 
     DestroyContext(cx, true);
 

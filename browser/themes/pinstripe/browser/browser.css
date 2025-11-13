@@ -26,6 +26,7 @@
  *   Pamela Greene (pamg.bugs@gmail.com)
  *   Dão Gottwald (dao@mozilla.com)
  *   Stephen Horlander (stephen@noved.org)
+ *   Drew Willcoxon (adw@mozilla.com)
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -70,7 +71,7 @@
 .tabbrowser-tab:-moz-lwtheme[selected="true"] {
   background-color: transparent !important;
 }
-.tabbrowser-tab:-moz-lwtheme:not([selected="true"]):not(:hover) > .tab-text {
+.tabbrowser-tab:not(:hover) > * > * > .tab-label:not([selected="true"]):-moz-lwtheme {
   opacity: .8;
 }
 
@@ -280,11 +281,11 @@ toolbarbutton.bookmark-item > menupopup {
 }
 
 #bookmarksToolbarFolderMenu,
-#BMB_bookmarksToolbarFolderMenu {
+#BMB_bookmarksToolbar {
   list-style-image: url("chrome://browser/skin/places/bookmarksToolbar.png");
 }
 
-#BMB_unsortedBookmarksFolderMenu {
+#BMB_unsortedBookmarks {
   list-style-image: url("chrome://browser/skin/places/unfiledBookmarks.png");
 }
 
@@ -683,6 +684,7 @@ toolbar[mode="icons"] #zoom-out-button {
 toolbar[mode="icons"] #zoom-in-button {
   -moz-border-start: none;
   -moz-margin-start: 0;
+  height: 16px;
 }
 
 #zoom-out-button:-moz-locale-dir(ltr),
@@ -695,6 +697,17 @@ toolbar[mode="icons"] #zoom-in-button {
 #zoom-in-button:-moz-locale-dir(ltr) {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+/* sync button */
+
+#sync-button {
+  -moz-image-region: rect(0, 440px, 20px, 420px);
+}
+
+#sync-button[status="active"] {
+  list-style-image: url("chrome://browser/skin/sync-throbber.png");
+  -moz-image-region: rect(0, 20px, 20px, 0px);
 }
 
 /* ----- FULLSCREEN WINDOW CONTROLS ----- */
@@ -789,7 +802,7 @@ toolbar[mode="icons"] #zoom-in-button {
   margin: 0 4px 1px;
 }
 
-#urlbar > .autocomplete-textbox-container > .textbox-input-box {
+.urlbar-input-box {
   -moz-margin-start: 0;
   padding: 3px 0 2px;
 }
@@ -848,11 +861,6 @@ toolbar[mode="icons"] #zoom-in-button {
   max-width: 20em;
 }
 
-#wrapper-urlbar-container > * > * > * > * > #identity-icon-labels,
-#wrapper-urlbar-container > * > * > .autocomplete-history-dropmarker {
-  display: none;
-}
-
 #urlbar-display {
   margin-top: -3px;
   margin-bottom: -2px;
@@ -869,13 +877,101 @@ toolbar[mode="icons"] #zoom-in-button {
   margin-top: 2px;
 }
 
-statusbarpanel#statusbar-display {
-  -moz-padding-start: 0;
+/* over-link in location bar */
+
+.urlbar-origin-label {
+  padding: 0 0 0 1px;
+  margin: 0;
 }
 
-.statusbarpanel-text {
-  margin-top: 2px;
-  margin-bottom: 0;
+.urlbar-origin-label:-moz-locale-dir(rtl) {
+  -moz-padding-start: 4px;
+}
+
+.urlbar-over-link-box {
+  position: relative;
+  right: 0;
+  color: GrayText;
+  padding: 0 5px 0 18px;
+  min-height: 20px;
+  background: url(chrome://browser/skin/urlbar-over-link-arrow.png) no-repeat left center;
+}
+
+.urlbar-over-link-host-label,
+.urlbar-over-link-path-label {
+  padding: 0;
+  margin: 0;
+}
+
+/* urlbar progress */
+
+.tab-progress,
+#urlbar-progress {
+  -moz-appearance: none;
+  height: 3px;
+  margin: -2px 0 -1px;
+}
+
+#urlbar-progress[value="0"] > .progress-remainder {
+  background-image: -moz-linear-gradient(left, rgba(255,255,255,0), rgb(255,255,255), rgba(255,255,255,0)) !important;
+  background-size: 10%;
+  background-repeat: no-repeat;
+  background-position: right;
+  -moz-transition-property: background-position;
+  -moz-transition-duration: 2s;
+  -moz-transition-timing-function: linear;
+}
+
+#urlbar-progress[value="0"][slideback] > .progress-remainder {
+  background-position: left;
+}
+
+.tab-progress > .progress-bar,
+#urlbar-progress > .progress-bar {
+  -moz-appearance: none;
+  border: 0;
+  border-top: 1px solid rgba(0,0,0,.4);
+  border-bottom: 1px solid rgba(0,0,0,.3);
+  -moz-background-origin: border;
+  background-image: -moz-linear-gradient(left, rgb(107,160,193), rgb(169,223,251));
+}
+
+.tab-progress > .progress-bar:-moz-window-inactive,
+#urlbar-progress > .progress-bar:-moz-window-inactive {
+  border-top: 1px solid rgba(0,0,0,.2);
+  border-bottom: 1px solid rgba(0,0,0,.1);
+  background-image: -moz-linear-gradient(left, rgb(150,150,150), rgb(210,210,210));
+}
+
+.tab-progress > .progress-bar:-moz-locale-dir(rtl),
+#urlbar-progress > .progress-bar:-moz-locale-dir(rtl) {
+  background-image: -moz-linear-gradient(right, rgb(107,160,193), rgb(169,223,251));
+}
+
+.tab-progress > .progress-bar:-moz-window-inactive:-moz-locale-dir(rtl),
+#urlbar-progress > .progress-bar:-moz-window-inactive:-moz-locale-dir(rtl) {
+  background-image: -moz-linear-gradient(right, rgb(150,150,150), rgb(210,210,210));
+}
+
+.tab-progress > .progress-remainder,
+#urlbar-progress > .progress-remainder {
+  border-top: 1px solid rgba(0,0,0,.1);
+  border-bottom: 1px solid rgba(0,0,0,.1);
+  background-color: rgba(0,0,0,.3);
+}
+
+.urlbar-contents {
+  -moz-margin-end: -2px;
+}
+
+.urlbar-history-dropmarker {
+  -moz-margin-end: 2px;
+}
+
+/* tab progress */
+
+#tabbrowser-tabs[tabsontop="false"] > .tabbrowser-tab > .tab-stack > .tab-progress-container {
+  -moz-box-pack: end;
 }
 
 /* ----- AUTOCOMPLETE ----- */
@@ -1406,42 +1502,6 @@ sidebarheader > .tabs-closebutton > .toolbarbutton-text {
 }
 
 
-/* ----- SECURITY DISPLAY ----- */
-
-#security-button[level="high"] ,
-#security-button[level="low"] {
-  list-style-image: url("chrome://browser/skin/Secure-statusbar.png");
-}
-
-#security-button[level="broken"] {
-  list-style-image: url("chrome://browser/skin/Secure-statusbar-broken.png");
-}
-
-/* ----- PAGE REPORT DISPLAY ----- */
-
-#page-report-button {
-  list-style-image: url("chrome://browser/skin/Popup-blocked.png");
-  padding: 0px 3px 0px 3px;
-}
-
-/* ----- FEED CONTENT DISPLAY ---- */
-
-#feed-button {
-  -moz-appearance: none; 
-  min-width: 0;
-  min-height: 0;
-  -moz-padding-start: 4px !important;
-  list-style-image: url("chrome://browser/skin/feed-icons.png");
-  -moz-image-region: rect(0px, 16px, 16px, 0px);
-}
-#feed-button:hover {
-  -moz-image-region: rect(0px, 32px, 16px, 16px);
-}
-#feed-button[open="true"],
-#feed-button:hover:active {
-  -moz-image-region: rect(0px, 48px, 16px, 32px);
-}
-
 /* ----- THROBBER ----- */
 
 #navigator-throbber {
@@ -1482,47 +1542,20 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   list-style-image: url("chrome://global/skin/tree/item.png");
 }
 
-.tabbrowser-tab[busy] > .tab-icon-image {
-  list-style-image: url("chrome://browser/skin/tabbrowser/progress.png") !important;
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-.tabbrowser-tab[busy][stalled] > .tab-icon-image {
-  list-style-image: url("chrome://browser/skin/tabbrowser/progress-pulsing.png") !important;
-}
-.tabbrowser-tab[busy][progress="1"] > .tab-icon-image {
-  -moz-image-region: rect(0, 32px, 16px, 16px);
-}
-.tabbrowser-tab[busy][progress="2"] > .tab-icon-image {
-  -moz-image-region: rect(0, 48px, 16px, 32px);
-}
-.tabbrowser-tab[busy][progress="3"] > .tab-icon-image {
-  -moz-image-region: rect(0, 64px, 16px, 48px);
-}
-.tabbrowser-tab[busy][progress="4"] > .tab-icon-image {
-  -moz-image-region: rect(0, 80px, 16px, 64px);
-}
-.tabbrowser-tab[busy][progress="5"] > .tab-icon-image {
-  -moz-image-region: rect(0, 96px, 16px, 80px);
-}
-.tabbrowser-tab[busy][progress="6"] > .tab-icon-image {
-  -moz-image-region: rect(0, 112px, 16px, 96px);
-}
-.tabbrowser-tab[busy][progress="7"] > .tab-icon-image {
-  -moz-image-region: rect(0, 128px, 16px, 112px);
-}
-.tabbrowser-tab[busy][progress="8"] > .tab-icon-image {
-  -moz-image-region: rect(0, 144px, 16px, 128px);
-}
-
-.tabbrowser-tab:not(:hover):not([selected="true"]) > .tab-icon-image {
+.tabbrowser-tab:not(:hover) > * > * > .tab-icon-image:not([selected="true"]) {
   opacity: .6;
 }
 
-.tabbrowser-tab > .tab-text {
+.tab-label {
   margin-top: 1px;
   margin-bottom: 0;
   font: message-box;
   font-weight: bold;
+}
+
+.tab-stack {
+  /* ensure stable tab height with and without toolbarbuttons on the tab bar */
+  height: 19px;
 }
 
 .tabbrowser-tab,
@@ -1541,7 +1574,6 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   -moz-border-left-colors: rgba(0,0,0,.04) rgba(0,0,0,.17) rgba(255,255,255,.1);
   background-clip: padding-box;
   text-align: center;
-  height: 24px;
   background-image: url(chrome://browser/skin/tabbrowser/tab-bkgnd.png);
 }
 
@@ -1586,8 +1618,11 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   background-color: -moz-mac-chrome-inactive;
 }
 
+#tabbrowser-tabs[tabsontop="true"] > .tabbrowser-tab[pinned][titlechanged]:not([selected="true"]) {
+  background-image: -moz-radial-gradient(center 2px, circle cover, rgba(254,254,255,1) 3%, rgba(210,235,255,.9) 12%, rgba(148,205,253,.6) 30%, rgba(148,205,253,.2) 70%);
+}
 .tabbrowser-tab[pinned][titlechanged]:not([selected="true"]) {
-  background-color: rgba(255,0,0,.5) !important;
+  background-image: -moz-radial-gradient(center 99%, circle cover, rgba(254,254,255,1) 3%, rgba(210,235,255,.9) 12%, rgba(148,205,253,.6) 30%, rgba(148,205,253,.2) 70%);
 }
 
 #tabbrowser-tabs[tabsontop="true"] > .tabbrowser-tab[selected="true"] {
@@ -1597,7 +1632,7 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   background-image: -moz-linear-gradient(rgba(255,255,255,.7), rgba(255,255,255,.58));
 }
 
-.tabbrowser-tab:focus > .tab-text {
+.tabbrowser-tab:focus > .tab-stack {
   box-shadow: @focusRingShadow@;
 }
 
@@ -1678,12 +1713,6 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
 
 .tab-close-button:hover:active {
   list-style-image: url("chrome://global/skin/icons/closetab-active.png");
-}
-
-.tabbrowser-tab[selected="true"] > .tab-close-button {
-  /* Make this button focusable so clicking on it will not focus the tab while
-     it's getting closed */
-  -moz-user-focus: normal;
 }
 
 .tabbrowser-arrowscrollbox > .scrollbutton-up,
@@ -2241,8 +2270,19 @@ panel[dimmed="true"] {
   opacity: 0.5;
 }
 
-/* Sync */
+/* Vertically-center the statusbar compatibility shim, because
+   toolbars, even in small-icon mode, are a bit taller than
+   statusbars. Also turn off the statusbar border. On Windows
+   we have to disable borders on statusbar *and* child statusbar
+   elements. */
+#status-bar {
+  margin-top: 0.3em;
+  -moz-appearance: none;
+}
 
-#sync-status-button.statusbarpanel-iconic {
-  padding: 0 5px;
+/* Remove all borders from statusbarpanel children of
+   the statusbar. */
+#status-bar > statusbarpanel {
+  border-width: 0;
+  -moz-appearance: none;
 }

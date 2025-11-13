@@ -27,6 +27,7 @@
  *   Pamela Greene (pamg.bugs@gmail.com)
  *   Dão Gottwald (dao@mozilla.com)
  *   Jim Mathies (jmathies@mozilla.com)
+ *   Drew Willcoxon (adw@mozilla.com)
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -104,10 +105,6 @@
 
 #print-preview-toolbar:not(:-moz-lwtheme) {
   -moz-appearance: toolbox;
-}
-
-statusbarpanel#statusbar-display {
-  -moz-padding-start: 0;
 }
 
 /* ::::: app menu button ::::: */
@@ -277,20 +274,19 @@ statusbarpanel#statusbar-display {
   list-style-image: url("chrome://browser/skin/Privacy-16.png");
 }
 
-#appmenu_unsortedBookmarks {
-  list-style-image: url("chrome://browser/skin/places/unsortedBookmarks.png");
-}
-
 #appmenu_addons {
   list-style-image: url("chrome://mozapps/skin/extensions/extensionGeneric-16.png");
 }
 
+#BMB_subscribeToPage:not([disabled]),
+#BMB_subscribeToPageMenu,
 #appmenu_subscribeToPage:not([disabled]),
 #appmenu_subscribeToPageMenu {
   list-style-image: url("chrome://browser/skin/feeds/feed-icons-16.png");
   -moz-image-region: rect(0px 16px 16px 0px);
 }
 
+#BMB_bookmarkThisPage,
 #appmenu_bookmarkThisPage {
   list-style-image: url("chrome://browser/skin/places/bookmark.png");
   -moz-image-region: rect(0 16px 16px 0);
@@ -911,6 +907,17 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
   border-bottom-left-radius: 0;
 }
 
+/* sync button */
+
+#sync-button {
+  -moz-image-region: rect(0, 324px, 18px, 306px);
+}
+
+#sync-button[status="active"] {
+  list-style-image: url("chrome://browser/skin/sync-throbber.png");
+  -moz-image-region: rect(0, 18px, 18px, 0);
+}
+
 /* ::::: fullscreen window controls ::::: */
 
 #minimize-button,
@@ -962,12 +969,27 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
 .searchbar-textbox {
   -moz-appearance: none;
   margin: 1px 3px;
-  padding: 2px;
   background-clip: padding-box;
   border: 1px solid ThreeDDarkShadow;
   border-radius: 4px;
   box-shadow: 0 1px 0 rgba(0,0,0,.1) inset,
               0 1px 0 rgba(255,255,255,.4);
+}
+
+.urlbar-textbox-container {
+  margin-top: 2px;
+  margin-bottom: 2px;
+  margin-right: 2px;
+}
+
+.urlbar-frontcap {
+  margin-top: 2px;
+  margin-bottom: 2px;
+  margin-left: 2px;
+}
+
+.searchbar-textbox {
+  padding: 2px;
 }
 
 @media all and (-moz-windows-default-theme) {
@@ -984,7 +1006,7 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
   color: black;
 }
 
-#urlbar:-moz-lwtheme > .autocomplete-textbox-container > .textbox-input-box > html|*.textbox-input:-moz-placeholder,
+html|*.urlbar-input:-moz-lwtheme:-moz-placeholder,
 .searchbar-textbox:-moz-lwtheme > .autocomplete-textbox-container > .textbox-input-box > html|*.textbox-input:-moz-placeholder {
   color: #777;
 }
@@ -1025,11 +1047,7 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
   -moz-margin-start: 0;
 }
 
-#wrapper-urlbar-container > #urlbar-container > #urlbar > .autocomplete-history-dropmarker {
-  display: none;
-}
-
-#urlbar > .autocomplete-textbox-container {
+.urlbar-frontcap-and-textbox {
   direction: ltr;
   -moz-box-align: stretch;
 }
@@ -1043,6 +1061,93 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
   color: GrayText;
   -moz-border-end: 1px solid #AAA;
   -moz-margin-end: 3px;
+}
+
+/* over-link in location bar */
+
+.urlbar-origin-label {
+  padding: 0 0 0 4px;
+  margin: 0;
+}
+
+.urlbar-over-link-box {
+  position: relative;
+  right: 0;
+  color: GrayText;
+  padding: 0 5px 0 18px;
+  min-height: 22px;
+  background: url(chrome://browser/skin/urlbar-over-link-arrow.png) no-repeat left center;
+}
+
+.urlbar-over-link-host-label,
+.urlbar-over-link-path-label {
+  padding: 0;
+  margin: 0;
+}
+
+/* urlbar progress */
+
+.tab-progress,
+#urlbar-progress {
+  -moz-appearance: none;
+  min-height: 0px;
+  height: 3px;
+  border: 0;
+  margin: -2px 0 -1px;
+  background-color: transparent;
+}
+
+#urlbar-progress[value="0"] > .progress-remainder {
+  background-image: -moz-linear-gradient(left, rgba(255,255,255,0), rgb(255,255,255), rgba(255,255,255,0)) !important;
+  background-size: 10%;
+  background-repeat: no-repeat;
+  background-position: right;
+  -moz-transition-property: background-position;
+  -moz-transition-duration: 2s;
+  -moz-transition-timing-function: linear;
+}
+
+#urlbar-progress[value="0"][slideback] > .progress-remainder {
+  background-position: left;
+}
+
+.tab-progress > .progress-bar,
+#urlbar-progress > .progress-bar {
+  -moz-appearance: none;
+  min-width: 3px;
+  border-top: 1px solid rgba(100,100,100,.1);
+  border-bottom: 1px solid rgba(0,0,0,.2);
+  background-color: Highlight;
+  background-image: -moz-linear-gradient(left, rgba(255,255,255,.1) 50%,
+                                               rgba(255,255,255,.4) 90%,
+                                               rgba(255,255,255,.8));
+}
+
+.tab-progress > .progress-bar:-moz-locale-dir(rtl),
+#urlbar-progress > .progress-bar:-moz-locale-dir(rtl) {
+  background-image: -moz-linear-gradient(right, rgba(255,255,255,.1) 50%,
+                                                rgba(255,255,255,.4) 90%,
+                                                rgba(255,255,255,.8));
+}
+
+.tab-progress > .progress-remainder,
+#urlbar-progress > .progress-remainder {
+  border-top: 1px solid rgba(100,100,100,.1);
+  border-bottom: 1px solid rgba(0,0,0,.2);
+  background-image: -moz-linear-gradient(right, ThreeDShadow 80%, ThreeDLightShadow);
+}
+
+.tab-progress > .progress-remainder:-moz-locale-dir(rtl),
+#urlbar-progress > .progress-remainder:-moz-locale-dir(rtl) {
+  background-image: -moz-linear-gradient(left, ThreeDShadow 80%, ThreeDLightShadow);
+}
+
+.urlbar-contents {
+  -moz-margin-end: -2px;
+}
+
+.urlbar-history-dropmarker {
+  -moz-margin-end: 2px;
 }
 
 /* identity box */
@@ -1096,7 +1201,7 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
 
 /* Location bar dropmarker */
 
-#urlbar > .autocomplete-history-dropmarker {
+.urlbar-history-dropmarker {
   -moz-appearance: none;
   padding: 0 1px;
   background-color: transparent;
@@ -1106,12 +1211,12 @@ toolbar:not([iconsize="small"])[mode="icons"] #forward-button:not([disabled="tru
   -moz-image-region: rect(0, 13px, 11px, 0);
 }
 
-#urlbar > .autocomplete-history-dropmarker:-moz-system-metric(touch-enabled) {
+.urlbar-history-dropmarker:-moz-system-metric(touch-enabled) {
   min-width: 6.4mozmm;
 }
 
-#urlbar > .autocomplete-history-dropmarker:hover:active,
-#urlbar > .autocomplete-history-dropmarker[open="true"] {
+.urlbar-history-dropmarker:hover:active,
+.urlbar-history-dropmarker[open="true"] {
   -moz-image-region: rect(0, 26px, 11px, 13px);
 }
 
@@ -1242,8 +1347,6 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 #urlbar > toolbarbutton {
   -moz-appearance: none;
   list-style-image: url("chrome://browser/skin/reload-stop-go.png");
-  margin: -2px;
-  -moz-margin-start: 0;
   padding: 0 3px;
   background-origin: border-box;
   border: none;
@@ -1357,24 +1460,6 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
   -moz-padding-start: 0px;
 }
 
-#status-bar {
-  border-top: none;
-}
-
-#security-button[level="high"],
-#security-button[level="low"] {
-  list-style-image: url("chrome://browser/skin/Secure.png");
-}
-
-#security-button[level="broken"] {
-  list-style-image: url("chrome://browser/skin/Security-broken.png");
-}
-
-#page-report-button {
-  width: 20px;
-  list-style-image: url("chrome://browser/skin/Info.png");
-}
-
 /* ::::: throbber ::::: */
 
 #navigator-throbber {
@@ -1476,39 +1561,11 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 }
 
 .tabbrowser-tab[pinned][titlechanged]:not([selected="true"]) {
-  background-image: -moz-linear-gradient(rgba(255,0,0,.5), rgba(255,0,0,.5)) !important;
+  background-image: -moz-radial-gradient(40% 3px, circle cover, rgba(255,255,255,1) 2%, rgba(186,221,251,.75) 25%, rgba(127,179,255,.5) 50%, rgba(127,179,255,.25));
 }
-
-.tabbrowser-tab[busy] > .tab-icon-image {
-  list-style-image: url("chrome://browser/skin/tabbrowser/progress.png") !important;
-  -moz-image-region: rect(0, 16px, 16px, 0);
-}
-.tabbrowser-tab[busy][stalled] > .tab-icon-image {
-  list-style-image: url("chrome://browser/skin/tabbrowser/progress-pulsing.png") !important;
-}
-.tabbrowser-tab[busy][progress="1"] > .tab-icon-image {
-  -moz-image-region: rect(0, 32px, 16px, 16px);
-}
-.tabbrowser-tab[busy][progress="2"] > .tab-icon-image {
-  -moz-image-region: rect(0, 48px, 16px, 32px);
-}
-.tabbrowser-tab[busy][progress="3"] > .tab-icon-image {
-  -moz-image-region: rect(0, 64px, 16px, 48px);
-}
-.tabbrowser-tab[busy][progress="4"] > .tab-icon-image {
-  -moz-image-region: rect(0, 80px, 16px, 64px);
-}
-.tabbrowser-tab[busy][progress="5"] > .tab-icon-image {
-  -moz-image-region: rect(0, 96px, 16px, 80px);
-}
-.tabbrowser-tab[busy][progress="6"] > .tab-icon-image {
-  -moz-image-region: rect(0, 112px, 16px, 96px);
-}
-.tabbrowser-tab[busy][progress="7"] > .tab-icon-image {
-  -moz-image-region: rect(0, 128px, 16px, 112px);
-}
-.tabbrowser-tab[busy][progress="8"] > .tab-icon-image {
-  -moz-image-region: rect(0, 144px, 16px, 128px);
+.tabbrowser-tab[pinned][titlechanged]:not([selected="true"]):hover {
+  background-image: -moz-linear-gradient(hsla(0,0%,100%,.4), hsla(0,0%,75%,.4) 50%),
+                    -moz-radial-gradient(40% 3px, circle cover, rgba(255,255,255,1) 2%, rgba(186,221,251,.75) 25%, rgba(127,179,255,.5) 50%, rgba(127,179,255,.25));
 }
 
 .tab-icon-image {
@@ -1523,22 +1580,13 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
   min-height: 16px; /* corresponds to the max. height of non-textual tab contents, i.e. the favicon */
 }
 
-.tabbrowser-tab[pinned] > .tab-icon-image {
+.tab-icon-image[pinned] {
   -moz-margin-start: 2px;
   -moz-margin-end: 2px;
 }
 
 /* tabbrowser-tab focus ring */
-.tabbrowser-tab > .tab-text {
-  border: 1px dotted transparent;
-  margin: -1px !important; /* let the border not consume any space, like outline */
-}
-
-.tabbrowser-tab:focus > .tab-text {
-  border: 1px dotted -moz-DialogText;
-}
-
-.tabbrowser-tab[pinned]:focus > .tab-icon-image {
+.tabbrowser-tab:focus > .tab-stack {
   outline: 1px dotted;
 }
 
@@ -1561,20 +1609,17 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 }
 
 .tab-close-button:hover,
-.tabbrowser-tab[selected="true"] > .tab-close-button:hover {
+.tab-close-button:hover[selected="true"] {
   -moz-image-region: rect(0, 32px, 16px, 16px);
 }
 
 .tab-close-button:hover:active,
-.tabbrowser-tab[selected="true"] > .tab-close-button:hover:active {
+.tab-close-button:hover:active[selected="true"] {
   -moz-image-region: rect(0, 48px, 16px, 32px);
 }
 
-.tabbrowser-tab[selected="true"] > .tab-close-button {
+.tab-close-button[selected="true"] {
   -moz-image-region: rect(0, 16px, 16px, 0);
-  /* Make this button focusable so clicking on it will not focus the tab while
-     it's getting closed */
-  -moz-user-focus: normal;
 }
 
 .tab-close-button:focus {
@@ -1753,41 +1798,6 @@ toolbar[mode="text"] toolbarbutton.chevron > .toolbarbutton-icon {
 #sidebar-throbber[loading="true"] {
   list-style-image: url("chrome://global/skin/icons/loading_16.png");
   -moz-margin-end: 4px;
-}
-
-/* Feed icon */
-#feed-button,
-#feed-button > .button-box,
-#feed-button:hover:active > .button-box {
-  padding: 0px;
-  margin: 0px;
-  border: 0px; 
-  background-color: transparent;
-}
-
-#feed-button {
-  -moz-appearance: none; 
-  min-width: 0px; 
-  list-style-image: url("chrome://browser/skin/feeds/feed-icons-16.png");
-  -moz-image-region: rect(0px 16px 16px 0px);
-}
-
-#feed-button:hover {
-  -moz-image-region: rect(0px 32px 16px 16px);
-}
-
-#feed-button[open="true"],
-#feed-button:hover:active {
-  -moz-image-region: rect(0px 48px 16px 32px);
-}
-
-/* ::::: About Popup Blocking dialog ::::: */
-#pageReportFirstTime statusbarpanel.statusbar-resizerpanel {
-  visibility: collapse;
-}
-
-#checkForUpdates[loading="true"] {
-  list-style-image: url("chrome://global/skin/icons/loading_16.png");
 }
 
 /* Bookmarks toolbar */
@@ -1990,12 +2000,14 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 
 /* Bookmarks roots menu-items */
 #bookmarksToolbarFolderMenu,
-#BMB_bookmarksToolbarFolderMenu {
+#appmenu_bookmarksToolbar,
+#BMB_bookmarksToolbar {
   list-style-image: url("chrome://browser/skin/places/bookmarksToolbar.png");
   -moz-image-region: auto;
 }
 
-#BMB_unsortedBookmarksFolderMenu {
+#appmenu_unsortedBookmarks,
+#BMB_unsortedBookmarks {
   list-style-image: url("chrome://browser/skin/places/unsortedBookmarks.png");
   -moz-image-region: auto;
 }
@@ -2160,4 +2172,22 @@ listitem.style-section {
 
 panel[dimmed="true"] {
   opacity: 0.5;
+}
+
+/* Vertically-center the statusbar compatibility shim, because
+   toolbars, even in small-icon mode, are a bit taller than
+   statusbars. Also turn off the statusbar border. On Windows
+   we have to disable borders on statusbar *and* child statusbar
+   elements. */
+#status-bar {
+  margin-top: .3em;
+  border-width: 0;
+  -moz-appearance: none;
+}
+
+/* Remove all borders from statusbarpanel children of
+   the statusbar. */
+#status-bar > statusbarpanel {
+  border-width: 0;
+  -moz-appearance: none;
 }

@@ -55,6 +55,8 @@
 #include "nsIServiceManager.h"
 #include "nsIConsoleService.h"
 
+#include "nsIGfxInfo.h"
+
 namespace mozilla {
 namespace layers {
 
@@ -167,6 +169,18 @@ LayerManagerOGL::Initialize(GLContext *aExistingContext)
   } else {
     if (mGLContext)
       CleanupResources();
+
+    nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+    if (gfxInfo) {
+      PRInt32 status;
+      if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_OPENGL_LAYERS, &status))) {
+        if (status != nsIGfxInfo::FEATURE_STATUS_UNKNOWN &&
+            status != nsIGfxInfo::FEATURE_AVAILABLE) {
+          NS_WARNING("OpenGL-accelerated layers are not supported on this system.");
+          return PR_FALSE;
+        }
+      }
+    }
 
     mGLContext = nsnull;
 
@@ -568,6 +582,7 @@ LayerManagerOGL::Render()
       mWidgetSize.height != height)
   {
     MakeCurrent(PR_TRUE);
+
     mWidgetSize.width = width;
     mWidgetSize.height = height;
   } else {
@@ -589,8 +604,10 @@ LayerManagerOGL::Render()
   const nsIntRect *clipRect = mRoot->GetClipRect();
 
   if (clipRect) {
-    mGLContext->fScissor(clipRect->x, clipRect->y,
-                         clipRect->width, clipRect->height);
+    nsIntRect r = *clipRect;
+    if (!mGLContext->IsDoubleBuffered())
+      mGLContext->FixWindowCoordinateRect(r, mWidgetSize.height);
+    mGLContext->fScissor(r.x, r.y, r.width, r.height);
   } else {
     mGLContext->fScissor(0, 0, width, height);
   }
@@ -706,11 +723,26 @@ LayerManagerOGL::Render()
 void
 LayerManagerOGL::SetupPipeline(int aWidth, int aHeight)
 {
-  // Set the viewport correctly
+  // Set the viewport correctly. 
+  //
+  // When we're not double buffering, we use a FBO as our backbuffer.
+  // We use a normal view transform in that case, meaning that our FBO
+  // and all other FBOs look upside down.  We then do a Y-flip when
+  // we draw it into the window.
   mGLContext->fViewport(0, 0, aWidth, aHeight);
 
   // Matrix to transform to viewport space ( <-1.0, 1.0> topleft, 
-  // <1.0, -1.0> bottomright)
+  // <1.0, -1.0> bottomright).
+  //
+  // When we are double buffering, we change the view matrix around so
+  // that everything is right-side up; we're drawing directly into
+  // the window's back buffer, so this keeps things looking correct.
+  //
+  // XXX we could potentially always use the double-buffering view
+  // matrix and just change our single-buffer draw code.
+  //
+  // XXX we keep track of whether the window size changed, so we can
+  // skip this update if it hadn't since the last call.
   gfx3DMatrix viewMatrix;
   if (mGLContext->IsDoubleBuffered()) {
     /* If it's double buffered, we don't have a frontbuffer FBO,
@@ -983,6 +1015,20 @@ LayerManagerOGL::CreateFBOWithTexture(int aWidth, int aHeight,
   *aTexture = tex;
 
   DEBUG_GL_ERROR_CHECK(gl());
+}
+
+void LayerOGL::ApplyFilter(gfxPattern::GraphicsFilter aFilter)
+{
+  if (aFilter == gfxPattern::FILTER_NEAREST) {
+    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_NEAREST);
+    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_NEAREST);
+  } else {
+    if (aFilter != gfxPattern::FILTER_GOOD) {
+      NS_WARNING("Unsupported filter type!");
+    }
+    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
+    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
+  }
 }
 
 } /* layers */

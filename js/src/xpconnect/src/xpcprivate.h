@@ -58,6 +58,7 @@
 #include "jscntxt.h"
 #include "jsdbgapi.h"
 #include "jsgc.h"
+#include "jscompartment.h"
 #include "nscore.h"
 #include "nsXPCOM.h"
 #include "nsAutoPtr.h"
@@ -450,7 +451,13 @@ public:
     static JSBool IsISupportsDescendant(nsIInterfaceInfo* info);
 
     nsIXPCSecurityManager* GetDefaultSecurityManager() const
-        {return mDefaultSecurityManager;}
+    {
+        // mDefaultSecurityManager is main-thread only.
+        if (!NS_IsMainThread()) {
+            return nsnull;
+        }
+        return mDefaultSecurityManager;
+    }
 
     PRUint16 GetDefaultSecurityManagerFlags() const
         {return mDefaultSecurityManagerFlags;}
@@ -489,7 +496,6 @@ public:
                                           bool explainExpectedLiveGarbage);
     virtual nsresult FinishCycleCollection();
     virtual nsCycleCollectionParticipant *ToParticipant(void *p);
-    virtual void CommenceShutdown();
     virtual void Collect();
 #ifdef DEBUG_CC
     virtual void PrintAllReferencesTo(void *p);
@@ -1311,6 +1317,7 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSObject *obj);
         js::Valueify(XPC_WN_JSOp_Enumerate),                                  \
         XPC_WN_JSOp_TypeOf_Function,                                          \
         nsnull, /* trace          */                                          \
+        nsnull, /* fix            */                                          \
         XPC_WN_JSOp_ThisObject,                                               \
         XPC_WN_JSOp_Clear                                                     \
     }
@@ -1327,6 +1334,7 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSObject *obj);
         js::Valueify(XPC_WN_JSOp_Enumerate),                                  \
         XPC_WN_JSOp_TypeOf_Object,                                            \
         nsnull, /* trace          */                                          \
+        nsnull, /* fix            */                                          \
         XPC_WN_JSOp_ThisObject,                                               \
         XPC_WN_JSOp_Clear                                                     \
     }

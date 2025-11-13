@@ -89,7 +89,8 @@ struct MICInfo {
 
     /* Used by TRACER. */
     JSC::CodeLocationJump traceHint;
-    JSC::CodeLocationJump slowTraceHint;
+    JSC::CodeLocationJump slowTraceHintOne;
+    JSC::CodeLocationJump slowTraceHintTwo;
 
     /* Used by all MICs. */
     Kind kind : 3;
@@ -101,7 +102,10 @@ struct MICInfo {
             bool dataConst : 1;
         } name;
         /* Used by TRACER. */
-        bool hasSlowTraceHint;
+        struct {
+            bool hasSlowTraceHintOne : 1;
+            bool hasSlowTraceHintTwo : 1;
+        } hints;
     } u;
 };
 
@@ -124,7 +128,9 @@ struct CallICInfo {
     /* Used for rooting and reification. */
     JSObject *fastGuardedObject;
     JSObject *fastGuardedNative;
-    Value constantThis;
+
+    /* PC at the call site. */
+    jsbytecode *pc;
 
     uint32 argc : 16;
     uint32 frameDepth : 16;
@@ -139,7 +145,7 @@ struct CallICInfo {
     JSC::CodeLocationJump funJump;
 
     /* Offset to inline scripted call, from funGuard. */
-    uint32 hotCallOffset   : 16;
+    uint32 hotJumpOffset   : 16;
     uint32 joinPointOffset : 16;
 
     /* Out of line slow call. */
@@ -156,7 +162,6 @@ struct CallICInfo {
 
     RegisterID funObjReg : 5;
     RegisterID funPtrReg : 5;
-    bool isConstantThis : 1;
     bool hit : 1;
     bool hasJsFunCheck : 1;
 
@@ -188,7 +193,7 @@ void JS_FASTCALL NativeNew(VMFrame &f, uint32 index);
 void JS_FASTCALL NativeCall(VMFrame &f, uint32 index);
 
 void PurgeMICs(JSContext *cx, JSScript *script);
-void SweepCallICs(JSContext *cx, JSScript *script);
+void SweepCallICs(JSScript *script);
 
 } /* namespace ic */
 } /* namespace mjit */

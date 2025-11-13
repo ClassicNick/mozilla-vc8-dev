@@ -169,11 +169,8 @@ struct JSFunction : public JSObject
     bool isNative()          const { return !FUN_INTERPRETED(this); }
     bool isConstructor()     const { return flags & JSFUN_CONSTRUCTOR; }
     bool isHeavyweight()     const { return JSFUN_HEAVYWEIGHT_TEST(flags); }
-    unsigned minArgs()       const { return isInterpreted() ? nargs : 0; }
 
     inline bool inStrictMode() const;
-
-    bool isBound() const;
 
     uintN countVars() const {
         JS_ASSERT(FUN_INTERPRETED(this));
@@ -254,6 +251,10 @@ struct JSFunction : public JSObject
         return flags & JSFUN_JOINABLE;
     }
 
+    JSObject &compiledFunObj() {
+        return *this;
+    }
+
   private:
     /*
      * js_FunctionClass reserves two slots, which are free in JSObject::fslots
@@ -292,12 +293,15 @@ struct JSFunction : public JSObject
         return isInterpreted() ? NULL : u.n.native;
     }
 
+    JSScript *script() const {
+        JS_ASSERT(isInterpreted());
+        return u.i.script;
+    }
+
     /* Number of extra fixed function object slots besides JSSLOT_PRIVATE. */
     static const uint32 CLASS_RESERVED_SLOTS = JSObject::FUN_CLASS_RESERVED_SLOTS;
     static const uint32 FIRST_FREE_SLOT = JSSLOT_PRIVATE + CLASS_RESERVED_SLOTS + 1;
 };
-
-JS_STATIC_ASSERT(sizeof(JSFunction) % JS_GCTHING_ALIGN == 0);
 
 /*
  * Trace-annotated native. This expands to a JSFunctionSpec initializer (like
@@ -364,7 +368,6 @@ JSObject::isArguments() const
 extern JS_PUBLIC_DATA(js::Class) js_CallClass;
 extern JS_PUBLIC_DATA(js::Class) js_FunctionClass;
 extern js::Class js_DeclEnvClass;
-extern const uint32 CALL_CLASS_RESERVED_SLOTS;
 
 inline bool
 JSObject::isCall() const
@@ -550,9 +553,6 @@ js_PutCallObject(JSContext *cx, JSStackFrame *fp);
 extern JSBool JS_FASTCALL
 js_PutCallObjectOnTrace(JSContext *cx, JSObject *scopeChain, uint32 nargs,
                         js::Value *argv, uint32 nvars, js::Value *slots);
-
-extern JSFunction *
-js_GetCallObjectFunction(JSObject *obj);
 
 extern JSBool
 js_GetCallArg(JSContext *cx, JSObject *obj, jsid id, js::Value *vp);

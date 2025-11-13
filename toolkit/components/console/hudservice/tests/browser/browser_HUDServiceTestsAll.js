@@ -45,23 +45,23 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "HUDService", function () {
-  Cu.import("resource://gre/modules/HUDService.jsm");
   try {
-    return HUDService;
+    Cu.import("resource://gre/modules/HUDService.jsm");
   }
   catch (ex) {
     dump(ex + "\n");
   }
+  return HUDService;
 });
 
 XPCOMUtils.defineLazyGetter(this, "ConsoleUtils", function () {
-  Cu.import("resource://gre/modules/HUDService.jsm");
   try {
-    return ConsoleUtils;
+    Cu.import("resource://gre/modules/HUDService.jsm");
   }
   catch (ex) {
     dump(ex + "\n");
   }
+  return ConsoleUtils;
 });
 
 let log = function _log(msg) {
@@ -87,8 +87,6 @@ const TEST_ENCODING_ISO_8859_1 = "http://example.com/browser/toolkit/components/
 function noCacheUriSpec(aUriSpec) {
   return aUriSpec + "?_=" + Date.now();
 }
-
-content.location.href = TEST_URI;
 
 function testRegistries() {
   var displaysIdx = HUDService.displaysIndex();
@@ -224,6 +222,15 @@ function testConsoleLoggingAPI(aMethod)
   HUDService.clearDisplay(hudId);
   setStringFilter("");
 
+  // test for case insensitivity
+  setStringFilter("FOO");
+  browser.contentWindow.wrappedJSObject.console[aMethod]("foo-bar-baz");
+  browser.contentWindow.wrappedJSObject.console[aMethod]("bar-baz");
+  count = outputNode.querySelectorAll(".hud-filtered-by-string").length;
+  is(count, 1, "1 hidden " + aMethod + " node found");
+  HUDService.clearDisplay(hudId);
+  setStringFilter("");
+
   // test for multiple arguments.
   HUDService.clearDisplay(hudId);
   HUDService.setFilterState(hudId, aMethod, true);
@@ -246,7 +253,7 @@ function testLogEntry(aOutputNode, aMatchString, aSuccessErrObj)
       return;
     }
   }
-  throw new Error(aSuccessErrObj.err);
+  ok(false, aSuccessErrObj.err);
 }
 
 // test network logging
@@ -445,7 +452,7 @@ function testNullUndefinedOutput()
   is(group.childNodes.length, 2, "Three children in output");
   let outputChildren = group.childNodes;
 
-  is (outputChildren[1].childNodes[0].nodeValue, "null",
+  is (outputChildren[1].childNodes[0].nodeValue, "null\n",
       "'null' printed to output");
 
   jsterm.clearOutput();
@@ -455,7 +462,7 @@ function testNullUndefinedOutput()
   is(group.childNodes.length, 2, "Three children in output");
   outputChildren = group.childNodes;
 
-  is (outputChildren[1].childNodes[0].nodeValue, "undefined",
+  is (outputChildren[1].childNodes[0].nodeValue, "undefined\n",
       "'undefined' printed to output");
 }
 
@@ -627,6 +634,7 @@ function testNetworkPanel()
     var httpActivity = {
       url: "http://www.testpage.com",
       method: "GET",
+      body: null,
 
       panels: [],
       request: {
@@ -1036,39 +1044,40 @@ function testJSTermHelper()
   jsterm.clearOutput();
   jsterm.execute("'id=' + $('header').getAttribute('id')");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[1].textContent, "id=header", "$() worked");
+  is(group.childNodes[1].textContent, "id=header\n", "$() worked");
 
   jsterm.clearOutput();
   jsterm.execute("headerQuery = $$('h1')");
   jsterm.execute("'length=' + headerQuery.length");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[3].textContent, "length=1", "$$() worked");
+  is(group.childNodes[3].textContent, "length=1\n", "$$() worked");
 
   jsterm.clearOutput();
   jsterm.execute("xpathQuery = $x('.//*', document.body);");
   jsterm.execute("'headerFound='  + (xpathQuery[0] == headerQuery[0])");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[3].textContent, "headerFound=true", "$x() worked");
+  is(group.childNodes[3].textContent, "headerFound=true\n", "$x() worked");
 
   // no jsterm.clearOutput() here as we clear the output using the clear() fn.
   jsterm.execute("clear()");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[0].textContent, "undefined", "clear() worked");
+  is(group.childNodes[0].textContent, "undefined\n", "clear() worked");
 
   jsterm.clearOutput();
   jsterm.execute("'keysResult=' + (keys({b:1})[0] == 'b')");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[1].textContent, "keysResult=true", "keys() worked");
+  is(group.childNodes[1].textContent, "keysResult=true\n", "keys() worked");
 
   jsterm.clearOutput();
   jsterm.execute("'valuesResult=' + (values({b:1})[0] == 1)");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[1].textContent, "valuesResult=true", "values() worked");
+  is(group.childNodes[1].textContent, "valuesResult=true\n",
+     "values() worked");
 
   jsterm.clearOutput();
   jsterm.execute("pprint({b:2, a:1})");
   let group = jsterm.outputNode.querySelector(".hud-group");
-  is(group.childNodes[1].textContent, "  a: 1\n  b: 2", "pprint() worked");
+  is(group.childNodes[1].textContent, "  a: 1\n  b: 2\n", "pprint() worked");
 }
 
 function testPropertyPanel()
@@ -1362,6 +1371,7 @@ browser = gBrowser.getBrowserForTab(tab);
 
 function test() {
   waitForExplicitFinish();
+  content.location.href = TEST_URI;
   browser.addEventListener("DOMContentLoaded", function onLoad(event) {
     browser.removeEventListener("DOMContentLoaded", onLoad, false);
 

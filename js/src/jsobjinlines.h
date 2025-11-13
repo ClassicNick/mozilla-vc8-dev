@@ -60,6 +60,9 @@
 #include "jsscopeinlines.h"
 #include "jsstr.h"
 
+#include "jsgcinlines.h"
+#include "jsprobes.h"
+
 inline void
 JSObject::dropProperty(JSContext *cx, JSProperty *prop)
 {
@@ -68,13 +71,29 @@ JSObject::dropProperty(JSContext *cx, JSProperty *prop)
         JS_UNLOCK_OBJ(cx, this);
 }
 
-inline void
-JSObject::seal(JSContext *cx)
+inline bool
+JSObject::preventExtensions(JSContext *cx, js::AutoIdVector *props)
 {
-    JS_ASSERT(!sealed());
+    JS_ASSERT(isExtensible());
+
+    if (js::FixOp fix = getOps()->fix) {
+        bool success;
+        if (!fix(cx, this, &success, props))
+            return false;
+        if (!success) {
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_CHANGE_EXTENSIBILITY);
+            return false;
+        }
+    } else {
+        if (!GetPropertyNames(cx, this, JSITER_HIDDEN | JSITER_OWNONLY, props))
+            return false;
+    }
+
     if (isNative())
-        generateOwnShape(cx);
-    flags |= SEALED;
+        extensibleShapeChange(cx);
+
+    flags |= NOT_EXTENSIBLE;
+    return true;
 }
 
 inline bool
@@ -97,6 +116,26 @@ JSObject::unbrand(JSContext *cx)
     if (!branded())
         setGeneric();
     return true;
+}
+
+inline void
+JSObject::finalize(JSContext *cx, unsigned thingKind)
+{
+    JS_ASSERT(thingKind == js::gc::FINALIZE_OBJECT ||
+              thingKind == js::gc::FINALIZE_FUNCTION);
+
+    /* Cope with stillborn objects that have no map. */
+    if (!map)
+        return;
+
+    /* Finalize obj first, in case it needs map and slots. */
+    js::Class *clasp = getClass();
+    if (clasp->finalize)
+        clasp->finalize(cx, this);
+
+    js::Probes::finalizeObject(this);
+
+    finish(cx);
 }
 
 /*
@@ -122,7 +161,7 @@ JSObject::methodReadBarrier(JSContext *cx, const js::Shape &shape, js::Value *vp
     funobj->setMethodObj(*this);
 
     vp->setObject(*funobj);
-    if (!js_SetPropertyHelper(cx, this, shape.id, 0, vp))
+    if (!js_SetPropertyHelper(cx, this, shape.id, 0, vp, false))
         return false;
 
 #ifdef DEBUG
@@ -437,6 +476,42 @@ JSObject::setArgsElement(uint32 i, const js::Value &v)
     JS_ASSERT(isArguments());
     JS_ASSERT(i < getArgsInitialLength());
     getArgsData()->slots[i] = v;
+}
+
+inline void
+JSObject::setCallObjCallee(JSObject &callee)
+{
+    JS_ASSERT(isCall());
+    JS_ASSERT(callee.isFunction());
+    return fslots[JSSLOT_CALL_CALLEE].setObject(callee);
+}
+
+inline JSObject &
+JSObject::getCallObjCallee() const
+{
+    JS_ASSERT(isCall());
+    return fslots[JSSLOT_CALL_CALLEE].toObject();
+}
+
+inline JSFunction *
+JSObject::getCallObjCalleeFunction() const
+{
+    JS_ASSERT(isCall());
+    return fslots[JSSLOT_CALL_CALLEE].toObject().getFunctionPrivate();
+}
+
+inline const js::Value &
+JSObject::getCallObjArguments() const
+{
+    JS_ASSERT(isCall());
+    return fslots[JSSLOT_CALL_ARGUMENTS];
+}
+
+inline void
+JSObject::setCallObjArguments(const js::Value &v)
+{
+    JS_ASSERT(isCall());
+    fslots[JSSLOT_CALL_ARGUMENTS] = v;
 }
 
 inline const js::Value &
@@ -861,7 +936,7 @@ NewBuiltinClassInstance(JSContext *cx, Class *clasp)
         if (!global)
             return NULL;
     } else {
-        global = cx->fp()->getScopeChain()->getGlobal();
+        global = cx->fp()->scopeChain().getGlobal();
     }
     JS_ASSERT(global->getClass()->flags & JSCLASS_IS_GLOBAL);
 
@@ -991,6 +1066,20 @@ NewObject(JSContext *cx, js::Class *clasp, JSObject *proto, JSObject *parent)
            ? detail::NewObject<withProto, true>(cx, clasp, proto, parent)
            : detail::NewObject<withProto, false>(cx, clasp, proto, parent);
 }
+
+class AutoPropertyDropper {
+    JSContext *cx;
+    JSObject *holder;
+    JSProperty *prop;
+
+  public:
+    AutoPropertyDropper(JSContext *cx, JSObject *obj, JSProperty *prop)
+      : cx(cx), holder(obj), prop(prop)
+    { JS_ASSERT(prop); }
+
+    ~AutoPropertyDropper()
+    { holder->dropProperty(cx, prop); }
+};
 
 } /* namespace js */
 

@@ -42,6 +42,7 @@
 
 #include "methodjit/BaseAssembler.h"
 #include "methodjit/MachineRegs.h"
+#include "methodjit/RematInfo.h"
 
 namespace js {
 namespace mjit {
@@ -77,19 +78,13 @@ class Assembler : public BaseAssembler
   public:
     static const JSC::MacroAssembler::Scale JSVAL_SCALE = JSC::MacroAssembler::TimesEight;
 
-    Address payloadOf(Address address) {
+    template <typename T>
+    T payloadOf(T address) {
         return address;
     }
 
-    BaseIndex payloadOf(BaseIndex address) {
-        return address;
-    }
-
-    Address valueOf(Address address) {
-        return address;
-    }
-
-    BaseIndex valueOf(BaseIndex address) {
+    template <typename T>
+    T valueOf(T address) {
         return address;
     }
 
@@ -104,11 +99,8 @@ class Assembler : public BaseAssembler
         loadValueAsComponents(address, type, data);
     }
 
-    void loadValue(Address address, RegisterID dst) {
-        loadPtr(address, dst);
-    }
-
-    void loadValue(BaseIndex address, RegisterID dst) {
+    template <typename T>
+    void loadValue(T address, RegisterID dst) {
         loadPtr(address, dst);
     }
 
@@ -121,7 +113,8 @@ class Assembler : public BaseAssembler
     }
 
     /* Returns a label after the one Value load. */
-    Label loadValueAsComponents(Address address, RegisterID type, RegisterID payload) {
+    template <typename T>
+    Label loadValueAsComponents(T address, RegisterID type, RegisterID payload) {
         loadValue(address, type);
         Label l = label();
 
@@ -132,31 +125,41 @@ class Assembler : public BaseAssembler
         return l;
     }
 
-    void loadTypeTag(Address address, RegisterID reg) {
+    void loadValueAsComponents(const Value &val, RegisterID type, RegisterID payload) {
+        move(Imm64(val.asRawBits() & 0xFFFF800000000000), type);
+        move(Imm64(val.asRawBits() & 0x00007FFFFFFFFFFF), payload);
+    }
+
+    template <typename T>
+    void storeValueFromComponents(RegisterID type, RegisterID payload, T address) {
+        move(type, Registers::ValueReg);
+        orPtr(payload, Registers::ValueReg);
+        storeValue(Registers::ValueReg, address);
+    }
+
+    template <typename T>
+    void storeValueFromComponents(ImmShiftedTag type, RegisterID payload, T address) {
+        move(type, Registers::ValueReg);
+        orPtr(payload, Registers::ValueReg);
+        storeValue(Registers::ValueReg, address);
+    }
+
+    template <typename T>
+    void loadTypeTag(T address, RegisterID reg) {
         loadValue(address, reg);
         convertValueToType(reg);
     }
 
-    void loadTypeTag(BaseIndex address, RegisterID reg) {
-        loadValue(address, reg);
-        convertValueToType(reg);
-    }
-
-    void storeTypeTag(ImmShiftedTag imm, Address address) {
+    template <typename T>
+    void storeTypeTag(ImmShiftedTag imm, T address) {
         loadValue(address, Registers::ValueReg);
         convertValueToPayload(Registers::ValueReg);
         orPtr(imm, Registers::ValueReg);
         storePtr(Registers::ValueReg, valueOf(address));
     }
 
-    void storeTypeTag(ImmShiftedTag imm, BaseIndex address) {
-        loadValue(address, Registers::ValueReg);
-        convertValueToPayload(Registers::ValueReg);
-        orPtr(imm, Registers::ValueReg);
-        storePtr(Registers::ValueReg, valueOf(address));
-    }
-
-    void storeTypeTag(RegisterID reg, Address address) {
+    template <typename T>
+    void storeTypeTag(RegisterID reg, T address) {
         /* The type tag must be stored in shifted format. */
         loadValue(address, Registers::ValueReg);
         convertValueToPayload(Registers::ValueReg);
@@ -164,33 +167,14 @@ class Assembler : public BaseAssembler
         storePtr(Registers::ValueReg, valueOf(address));
     }
 
-    void storeTypeTag(RegisterID reg, BaseIndex address) {
-        /* The type tag must be stored in shifted format. */
-        loadValue(address, Registers::ValueReg);
-        convertValueToPayload(Registers::ValueReg);
-        orPtr(reg, Registers::ValueReg);
-        storePtr(Registers::ValueReg, valueOf(address));
-    }
-
-    void loadPayload(Address address, RegisterID reg) {
+    template <typename T>
+    void loadPayload(T address, RegisterID reg) {
         loadValue(address, reg);
         convertValueToPayload(reg);
     }
 
-    void loadPayload(BaseIndex address, RegisterID reg) {
-        loadValue(address, reg);
-        convertValueToPayload(reg);
-    }
-
-    void storePayload(RegisterID reg, Address address) {
-        /* Not for doubles. */
-        loadValue(address, Registers::ValueReg);
-        convertValueToType(Registers::ValueReg);
-        orPtr(reg, Registers::ValueReg);
-        storePtr(Registers::ValueReg, valueOf(address));
-    }
-
-    void storePayload(RegisterID reg, BaseIndex address) {
+    template <typename T>
+    void storePayload(RegisterID reg, T address) {
         /* Not for doubles. */
         loadValue(address, Registers::ValueReg);
         convertValueToType(Registers::ValueReg);
@@ -198,35 +182,33 @@ class Assembler : public BaseAssembler
         storePtr(Registers::ValueReg, valueOf(address));
     }
     
-    void storePayload(Imm64 imm, Address address) {
+    template <typename T>
+    void storePayload(Imm64 imm, T address) {
         /* Not for doubles. */
         storePtr(imm, valueOf(address));
     }
 
-    void storeValue(const Value &v, Address address) {
+    template <typename T>
+    void storeValue(RegisterID reg, T address) {
+        storePtr(reg, valueOf(address));
+    }
+
+    template <typename T>
+    void storeValue(const Value &v, T address) {
         jsval_layout jv;
         jv.asBits = JSVAL_BITS(Jsvalify(v));
 
         storePtr(Imm64(jv.asBits), valueOf(address));
     }
 
-    void storeValue(const Value &v, BaseIndex address) {
-        jsval_layout jv;
-        jv.asBits = JSVAL_BITS(Jsvalify(v));
-
-        storePtr(Imm64(jv.asBits), valueOf(address));        
-    }
-
-    /*
-     * Only does one store. Returns label after store.
-     * This is useless, but matches NunboxAssembler's interface.
-     */
-    Label storeValueForIC(const Value &v, Address address) {
-        jsval_layout jv;
-        jv.asBits = JSVAL_BITS(Jsvalify(v));
-
-        storePtr(Imm64(jv.asBits), valueOf(address));
-        return label();
+    template <typename T>
+    void storeValue(const ValueRemat &vr, T address) {
+        if (vr.isConstant)
+            storeValue(Valueify(vr.u.v), address);
+        else if (vr.u.s.isTypeKnown)
+            storeValueFromComponents(ImmType(vr.u.s.type.knownType), vr.u.s.data, address);
+        else
+            storeValueFromComponents(vr.u.s.type.reg, vr.u.s.data, address);
     }
 
     void loadPrivate(Address privAddr, RegisterID to) {
@@ -246,8 +228,7 @@ class Assembler : public BaseAssembler
 
     Jump testNull(Assembler::Condition cond, Address address) {
         loadValue(address, Registers::ValueReg);
-        convertValueToType(Registers::ValueReg);
-        return branchPtr(cond, Registers::ValueReg, ImmShiftedTag(JSVAL_SHIFTED_TAG_NULL));
+        return branchPtr(cond, Registers::ValueReg, Imm64(JSVAL_BITS(JSVAL_NULL)));
     }
 
     Jump testInt32(Assembler::Condition cond, RegisterID reg) {
@@ -335,8 +316,8 @@ class Assembler : public BaseAssembler
     }
 };
 
-} /* namespace js */
 } /* namespace mjit */
+} /* namespace js */
 
 #endif
 

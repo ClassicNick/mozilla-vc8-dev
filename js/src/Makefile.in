@@ -85,12 +85,9 @@ ifdef MOZ_PROFILE_GENERATE
 MODULE_OPTIMIZE_FLAGS = -O0
 else
 MODULE_OPTIMIZE_FLAGS = -O2 -ip
-#XXX: do we want different INTERP_OPTIMIZER flags here?
 endif
 else # not INTEL_CXX
-MODULE_OPTIMIZE_FLAGS = -O3 -fstrict-aliasing -fomit-frame-pointer $(MOZ_OPTIMIZE_SIZE_TWEAK)
-# Special optimization flags for jsinterp.c
-INTERP_OPTIMIZER = -O3 -fstrict-aliasing
+MODULE_OPTIMIZE_FLAGS = -O3 -fstrict-aliasing -fomit-frame-pointer
 endif
 else # not GNU_CXX
 ifeq ($(OS_ARCH),SunOS)
@@ -124,6 +121,7 @@ CPPSRCS		= \
 		jsarray.cpp \
 		jsatom.cpp \
 		jsbool.cpp \
+		jsclone.cpp \
 		jscntxt.cpp \
 		jsdate.cpp \
 		jsdbgapi.cpp \
@@ -135,6 +133,7 @@ CPPSRCS		= \
 		jsgc.cpp \
 		jsgcchunk.cpp \
 		jsgcstats.cpp \
+		jscompartment.cpp \
 		jshash.cpp \
 		jsinterp.cpp \
 		jsinvoke.cpp \
@@ -179,6 +178,7 @@ INSTALLED_HEADERS = \
 		jsbit.h \
 		jsbool.h \
 		jsclist.h \
+		jsclone.h \
 		jscntxt.h \
 		jscompat.h \
 		jsdate.h \
@@ -188,8 +188,10 @@ INSTALLED_HEADERS = \
 		jsemit.h \
 		jsfun.h \
 		jsgc.h \
+		jscell.h \
 		jsgcchunk.h \
 		jsgcstats.h \
+		jscompartment.h \
 		jshash.h \
 		jsinterp.h \
 		jsinttypes.h \
@@ -202,6 +204,7 @@ INSTALLED_HEADERS = \
 		json.h \
 		jsopcode.tbl \
 		jsopcode.h \
+		jsopcodeinlines.h \
 		jsotypes.h \
 		jsparse.h \
 		jsproxy.h \
@@ -330,6 +333,41 @@ endif
 #############################################
 
 endif
+
+###############################################
+# BEGIN include sources for V8 dtoa
+#
+VPATH += 	$(srcdir)/v8-dtoa \
+		$(NONE)
+
+CPPSRCS += 	checks.cc \
+		conversions.cc \
+		diy-fp.cc \
+		v8-dtoa.cc \
+		fast-dtoa.cc \
+		platform.cc \
+		utils.cc \
+		$(NONE)
+
+INSTALLED_HEADERS += \
+		cached-powers.h \
+		checks.h \
+		conversions.h \
+		diy-fp.h \
+		double.h \
+		dtoa.h \
+		fast-dtoa.h \
+		globals.h \
+		include-v8.h \
+		platform.h \
+		powers-ten.h \
+		utils.h \
+		v8.h \
+		$(NULL)
+
+#
+# END enclude sources for V8 dtoa
+#############################################
 
 ifeq (,$(filter-out powerpc sparc,$(TARGET_CPU)))
 
@@ -654,6 +692,7 @@ endif
 endif
 
 ifdef SOLARIS_SUNPRO_CXX
+ifeq ($(TARGET_CPU),sparc)
 # Sun Studio SPARC doesn't work well with gcc inline asm, use lock_SunOS_sparc*.il
 jslock.o: jslock.cpp Makefile.in lock_sparcv8plus.il lock_sparcv9.il
 	$(REPORT_BUILD)
@@ -663,12 +702,8 @@ ifeq (sparcv9,$(findstring sparcv9,$(OS_TEST)))
 else
 	$(CXX) -o $@ -c $(COMPILE_CFLAGS) $(srcdir)/lock_sparcv8plus.il $<
 endif # sparcv9
+endif # sparc
 endif # SOLARIS_SUNPRO_CXX
-
-# Allow building jsinterp.c with special optimization flags
-ifdef INTERP_OPTIMIZER
-jsinterp.$(OBJ_SUFFIX): MODULE_OPTIMIZE_FLAGS=$(INTERP_OPTIMIZER)
-endif
 
 ifeq ($(OS_ARCH),IRIX)
 ifndef GNU_CC
@@ -813,12 +848,13 @@ $(CURDIR)/jsautooplen.h: host_jsoplengen$(HOST_BIN_SUFFIX)
 	./host_jsoplengen$(HOST_BIN_SUFFIX) $@
 
 # Force auto-header generation before compiling any source that may use them
-$(CPPSRCS:%.cpp=%.$(OBJ_SUFFIX)): $(CURDIR)/jsautokw.h $(CURDIR)/jsautooplen.h
+$(patsubst %.cc,%.$(OBJ_SUFFIX),$(CPPSRCS:%.cpp=%.$(OBJ_SUFFIX))): $(CURDIR)/jsautokw.h $(CURDIR)/jsautooplen.h
 
 ifdef HAVE_DTRACE
 $(CURDIR)/javascript-trace.h: $(srcdir)/javascript-trace.d
 	dtrace -h -s $(srcdir)/javascript-trace.d -o javascript-trace.h.in
-	sed 's/if _DTRACE_VERSION/ifdef INCLUDE_MOZILLA_DTRACE/' \
+	sed -e 's/if _DTRACE_VERSION/ifdef INCLUDE_MOZILLA_DTRACE/' \
+	    -e '/const/!s/char \*/const char */g' \
 	    javascript-trace.h.in > javascript-trace.h
 
 # We can't automatically generate dependencies on auto-generated headers;
@@ -828,7 +864,7 @@ endif
 
 ifdef ENABLE_TRACEJIT
 # Imacro compilation.
-$(CURDIR)/imacros.c.out: $(srcdir)/imacro_asm.py $(srcdir)/imacros.jsasm
+$(CURDIR)/imacros.c.out: $(srcdir)/imacro_asm.py $(srcdir)/imacros.jsasm jsopcode.tbl
 	$(PYTHON) $< $(srcdir)/imacros.jsasm $(CURDIR)/imacros.c.out
 $(addsuffix .$(OBJ_SUFFIX),jstracer): $(CURDIR)/imacros.c.out
 

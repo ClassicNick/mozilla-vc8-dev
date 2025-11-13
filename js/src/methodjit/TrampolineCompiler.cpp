@@ -46,7 +46,7 @@ namespace js {
 namespace mjit {
 
 #define CHECK_RESULT(x) if (!(x)) return false
-#define COMPILE(which, pool, how) CHECK_RESULT(compileTrampoline((void **)(&(which)), &pool, how))
+#define COMPILE(which, pool, how) CHECK_RESULT(compileTrampoline(&(which), &pool, how))
 #define RELEASE(which, pool) JS_BEGIN_MACRO \
     which = NULL;                           \
     if (pool)                               \
@@ -86,7 +86,7 @@ TrampolineCompiler::release(Trampolines *tramps)
 }
 
 bool
-TrampolineCompiler::compileTrampoline(void **where, JSC::ExecutablePool **pool,
+TrampolineCompiler::compileTrampoline(Trampolines::TrampolinePtr *where, JSC::ExecutablePool **pool,
                                       TrampolineGenerator generator)
 {
     Assembler masm;
@@ -102,7 +102,7 @@ TrampolineCompiler::compileTrampoline(void **where, JSC::ExecutablePool **pool,
     JSC::LinkBuffer buffer(&masm, *pool);
     uint8 *result = (uint8*)buffer.finalizeCodeAddendum().dataLocation();
     masm.finalize(result);
-    *where = result + masm.distanceOf(entry);
+    *where = JS_DATA_TO_FUNC_PTR(Trampolines::TrampolinePtr, result + masm.distanceOf(entry));
 
     return true;
 }
@@ -117,40 +117,23 @@ TrampolineCompiler::compileTrampoline(void **where, JSC::ExecutablePool **pool,
 bool
 TrampolineCompiler::generateForceReturn(Assembler &masm)
 {
-    /* if (!callobj) stubs::PutCallObject */
-    Jump noCallObj = masm.branchPtr(Assembler::Equal,
-                                    Address(JSFrameReg, JSStackFrame::offsetCallObj()),
-                                    ImmPtr(0));
-    masm.stubCall(stubs::PutCallObject, NULL, 0);
-    noCallObj.linkTo(masm.label(), &masm);
+    /* if (hasArgsObj() || hasCallObj()) stubs::PutActivationObjects() */
+    Jump noActObjs = masm.branchTest32(Assembler::Zero, FrameFlagsAddress(),
+                                       Imm32(JSFRAME_HAS_CALL_OBJ | JSFRAME_HAS_ARGS_OBJ));
+    masm.stubCall(stubs::PutActivationObjects, NULL, 0);
+    noActObjs.linkTo(masm.label(), &masm);
 
-    /* if (arguments) stubs::PutArgsObject */
-    Jump noArgsObj = masm.branchPtr(Assembler::Equal,
-                                    Address(JSFrameReg, JSStackFrame::offsetArgsObj()),
-                                    ImmIntPtr(0));
-    masm.stubCall(stubs::PutArgsObject, NULL, 0);
-    noArgsObj.linkTo(masm.label(), &masm);
+    /* Store any known return value */
+    masm.loadValueAsComponents(UndefinedValue(), JSReturnReg_Type, JSReturnReg_Data);
+    Jump rvalClear = masm.branchTest32(Assembler::Zero,
+                                       FrameFlagsAddress(), Imm32(JSFRAME_RVAL_ASSIGNED));
+    Address rvalAddress(JSFrameReg, JSStackFrame::offsetOfReturnValue());
+    masm.loadValueAsComponents(rvalAddress, JSReturnReg_Type, JSReturnReg_Data);
+    rvalClear.linkTo(masm.label(), &masm);
 
-    /*
-     * r = fp->down
-     * f.fp = r
-     */
-    masm.loadPtr(Address(JSFrameReg, offsetof(JSStackFrame, down)), Registers::ReturnReg);
-    masm.storePtr(Registers::ReturnReg, FrameAddress(offsetof(VMFrame, regs.fp)));
-
-    Address rval(JSFrameReg, JSStackFrame::offsetReturnValue());
-    masm.loadPayload(rval, JSReturnReg_Data);
-    masm.loadTypeTag(rval, JSReturnReg_Type);
-
-    masm.restoreReturnAddress();
-
-    masm.move(Registers::ReturnReg, JSFrameReg);
-#ifdef DEBUG
-    masm.storePtr(ImmPtr(JSStackFrame::sInvalidPC),
-                  Address(JSFrameReg, offsetof(JSStackFrame, savedPC)));
-#endif
-
-    masm.ret();
+    /* Return to the caller */
+    masm.loadPtr(Address(JSFrameReg, JSStackFrame::offsetOfncode()), Registers::ReturnReg);
+    masm.jump(Registers::ReturnReg);
     return true;
 }
 

@@ -370,7 +370,7 @@ AttachNewConstructorObject(XPCCallContext &ccx, JSObject *aGlobalObject)
   // Make sure our prototype chain is empty and that people can't mess
   // with XPCSafeJSObjectWrapper.prototype.
   ::JS_SetPrototype(ccx, class_obj, nsnull);
-  if (!::JS_SealObject(ccx, class_obj, JS_FALSE)) {
+  if (!::JS_FreezeObject(ccx, class_obj)) {
     NS_WARNING("Failed to seal XPCSafeJSObjectWrapper.prototype");
     return PR_FALSE;
   }
@@ -558,7 +558,7 @@ XPC_SJOW_DelProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp)
 NS_STACK_CLASS class SafeCallGuard {
 public:
   SafeCallGuard(JSContext *cx, nsIPrincipal *principal)
-    : cx(cx), statics(cx), tvr(cx) {
+    : cx(cx) {
     nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();
     if (ssm) {
       // Note: We pass null as the target frame pointer because we know that
@@ -572,7 +572,6 @@ public:
       }
     }
 
-    js_SaveAndClearRegExpStatics(cx, &statics, &tvr);
     fp = JS_SaveFrameChain(cx);
     options =
       JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_DONT_REPORT_UNCAUGHT);
@@ -586,7 +585,6 @@ public:
     if (cx) {
       JS_SetOptions(cx, options);
       JS_RestoreFrameChain(cx, fp);
-      js_RestoreRegExpStatics(cx, &statics);
       nsIScriptSecurityManager *ssm = XPCWrapper::GetSecurityManager();
       if (ssm) {
         ssm->PopContextPrincipal(cx);
@@ -596,8 +594,6 @@ public:
 
 private:
   JSContext *cx;
-  js::RegExpStatics statics;
-  js::AutoStringRooter tvr;
   uint32 options;
   JSStackFrame *fp;
 };
@@ -937,8 +933,8 @@ XPC_SJOW_Create(JSContext *cx, uintN argc, jsval *vp)
       return JS_FALSE;
     }
 
-    JSAutoCrossCompartmentCall accc;
-    if (!accc.enter(cx, unsafeObj)) {
+    JSAutoEnterCompartment ac;
+    if (!ac.enter(cx, unsafeObj)) {
       return JS_FALSE;
     }
 

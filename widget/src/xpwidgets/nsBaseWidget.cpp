@@ -816,10 +816,19 @@ LayerManager* nsBaseWidget::GetLayerManager()
       }
     }
     if (!mLayerManager) {
-      mLayerManager = new BasicLayerManager(this);
+      mLayerManager = CreateBasicLayerManager();
     }
   }
   return mLayerManager;
+}
+
+BasicLayerManager* nsBaseWidget::CreateBasicLayerManager()
+{
+#if !defined(MOZ_IPC)
+      return new BasicLayerManager(this);
+#else
+      return new BasicShadowLayerManager(this);
+#endif
 }
 
 //-------------------------------------------------------------------------
@@ -1193,6 +1202,8 @@ case _value: eventName.AssignWithConversion(_name) ; break
     _ASSIGN_eventName(NS_MOVE,"NS_MOVE");
     _ASSIGN_eventName(NS_LOAD,"NS_LOAD");
     _ASSIGN_eventName(NS_POPSTATE,"NS_POPSTATE");
+    _ASSIGN_eventName(NS_BEFORE_SCRIPT_EXECUTE,"NS_BEFORE_SCRIPT_EXECUTE");
+    _ASSIGN_eventName(NS_AFTER_SCRIPT_EXECUTE,"NS_AFTER_SCRIPT_EXECUTE");
     _ASSIGN_eventName(NS_PAGE_UNLOAD,"NS_PAGE_UNLOAD");
     _ASSIGN_eventName(NS_HASHCHANGE,"NS_HASHCHANGE");
     _ASSIGN_eventName(NS_READYSTATECHANGE,"NS_READYSTATECHANGE");

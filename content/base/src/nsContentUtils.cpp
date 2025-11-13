@@ -269,12 +269,6 @@ PRBool nsContentUtils::sInitialized = PR_FALSE;
 nsRefPtrHashtable<nsPrefObserverHashKey, nsPrefOldCallback>
   *nsContentUtils::sPrefCallbackTable = nsnull;
 
-#ifdef MOZ_IPC
-#ifdef ANDROID
-nsFrameLoader *nsContentUtils::sActiveFrameLoader = nsnull;
-#endif
-#endif
-
 static PLDHashTable sEventListenerManagersHash;
 
 class EventListenerManagerMapEntry : public PLDHashEntryHdr
@@ -576,6 +570,8 @@ nsContentUtils::InitializeEventTable() {
                                                 (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
     { nsGkAtoms::onerror,                       NS_LOAD_ERROR,
                                                 (EventNameType_HTMLXUL | EventNameType_SVGSVG), NS_EVENT },
+    { nsGkAtoms::onbeforescriptexecute,         NS_BEFORE_SCRIPT_EXECUTE, EventNameType_HTMLXUL, NS_EVENT },
+    { nsGkAtoms::onafterscriptexecute,          NS_AFTER_SCRIPT_EXECUTE, EventNameType_HTMLXUL, NS_EVENT },
 
     { nsGkAtoms::onDOMAttrModified,             NS_MUTATION_ATTRMODIFIED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
     { nsGkAtoms::onDOMCharacterDataModified,    NS_MUTATION_CHARACTERDATAMODIFIED, EventNameType_HTMLXUL, NS_MUTATION_EVENT },
@@ -5432,7 +5428,7 @@ nsContentUtils::CanAccessNativeAnon()
     // Some code is running, we can't make the assumption, as above, but we
     // can't use a native frame, so clear fp.
     fp = nsnull;
-  } else if (!fp->hasScript()) {
+  } else if (!JS_IsScriptFrame(cx, fp)) {
     fp = nsnull;
   }
 
@@ -5447,8 +5443,8 @@ nsContentUtils::CanAccessNativeAnon()
   // if they've been cloned into less privileged contexts.
   static const char prefix[] = "chrome://global/";
   const char *filename;
-  if (fp && fp->hasScript() &&
-      (filename = fp->getScript()->filename) &&
+  if (fp && JS_IsScriptFrame(cx, fp) &&
+      (filename = JS_GetFrameScript(cx, fp)->filename) &&
       !strncmp(filename, prefix, NS_ARRAY_LENGTH(prefix) - 1)) {
     return PR_TRUE;
   }
@@ -6253,17 +6249,6 @@ nsContentUtils::IsFocusedContent(nsIContent* aContent)
 
   return fm && fm->GetFocusedContent() == aContent;
 }
-
-#ifdef MOZ_IPC
-#ifdef ANDROID
-// static
-already_AddRefed<nsFrameLoader>
-nsContentUtils::GetActiveFrameLoader()
-{
-  return nsCOMPtr<nsFrameLoader>(sActiveFrameLoader).forget();
-}
-#endif
-#endif
 
 void nsContentUtils::RemoveNewlines(nsString &aString)
 {

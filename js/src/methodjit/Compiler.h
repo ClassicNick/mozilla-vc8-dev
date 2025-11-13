@@ -60,6 +60,7 @@ class Compiler
     typedef JSC::MacroAssembler::RegisterID RegisterID;
     typedef JSC::MacroAssembler::FPRegisterID FPRegisterID;
     typedef JSC::MacroAssembler::Address Address;
+    typedef JSC::MacroAssembler::AbsoluteAddress AbsoluteAddress;
     typedef JSC::MacroAssembler::BaseIndex BaseIndex;
     typedef JSC::MacroAssembler::Jump Jump;
     typedef JSC::MacroAssembler::JumpList JumpList;
@@ -91,7 +92,8 @@ class Compiler
         ic::MICInfo::Kind kind;
         jsbytecode *jumpTarget;
         Jump traceHint;
-        MaybeJump slowTraceHint;
+        MaybeJump slowTraceHintOne;
+        MaybeJump slowTraceHintTwo;
         union {
             struct {
                 bool typeConst;
@@ -107,17 +109,18 @@ class Compiler
   public:
     struct CallGenInfo {
         CallGenInfo(uint32 argc)
-          : argc(argc), constantThis(UndefinedValue())
+          : argc(argc)
         { }
 
         /*
          * These members map to members in CallICInfo. See that structure for
          * more comments.
          */
+        jsbytecode   *pc;
         uint32       argc;
         DataLabelPtr funGuard;
         Jump         funJump;
-        Call         hotCall;
+        Jump         hotJump;
         Call         oolCall;
         Label        joinPoint;
         Label        slowJoinPoint;
@@ -127,12 +130,21 @@ class Compiler
         RegisterID   funObjReg;
         RegisterID   funPtrReg;
         uint32       frameDepth;
-        bool         isConstantThis;
-        Value        constantThis;
     };
 
   private:
 #endif
+
+    /*
+     * Writes of call return addresses which needs to be delayed until the final
+     * absolute address of the join point is known.
+     */
+    struct CallPatchInfo {
+        Label joinPoint;
+        DataLabelPtr fastNcodePatch;
+        DataLabelPtr slowNcodePatch;
+        bool hasSlowNcode;
+    };
 
 #if defined JS_POLYIC
     struct PICGenInfo {
@@ -214,9 +226,9 @@ class Compiler
 #if defined JS_POLYIC
     js::Vector<PICGenInfo, 64> pics;
 #endif
+    js::Vector<CallPatchInfo, 64> callPatches;
     js::Vector<InternalCallSite, 64> callSites;
     js::Vector<DoublePatch, 16> doubleList;
-    js::Vector<uint32, 16> escapingList;
     StubCompiler stubcc;
     Label invokeLabel;
     Label arityLabel;
@@ -252,8 +264,6 @@ class Compiler
     void addCallSite(uint32 id, bool stub);
 
     /* Emitting helpers. */
-    RegisterID takeHWReturnAddress(Assembler &masm);
-    void restoreReturnAddress(Assembler &masm);
     void restoreFrameRegs(Assembler &masm);
     void emitStubCmpOp(BoolStub stub, jsbytecode *target, JSOp fused);
     void iter(uintN flags);
@@ -263,14 +273,16 @@ class Compiler
     MaybeJump loadDouble(FrameEntry *fe, FPRegisterID fpReg);
 
     /* Opcode handlers. */
-    void jumpAndTrace(Jump j, jsbytecode *target, Jump *slow = NULL);
+    void jumpAndTrace(Jump j, jsbytecode *target, Jump *slowOne = NULL, Jump *slowTwo = NULL);
     void jsop_bindname(uint32 index);
     void jsop_setglobal(uint32 index);
     void jsop_getglobal(uint32 index);
     void jsop_getprop_slow();
     void jsop_getarg(uint32 index);
     void jsop_this();
-    void emitReturn();
+    void emitReturn(FrameEntry *fe);
+    void emitFinalReturn(Assembler &masm);
+    void loadReturnValue(Assembler &masm);
     void dispatchCall(VoidPtrStubUInt32 stub, uint32 argc);
     void interruptCheckHelper();
     void emitUncachedCall(uint32 argc, bool callingNew);
@@ -299,6 +311,9 @@ class Compiler
     bool jsop_callprop_generic(JSAtom *atom);
     void jsop_instanceof();
     void jsop_name(JSAtom *atom);
+    void jsop_xname(JSAtom *atom);
+    void enterBlock(JSObject *obj);
+    void leaveBlock();
 
     /* Fast arithmetic. */
     void jsop_binary(JSOp op, VoidStub stub);
@@ -312,7 +327,6 @@ class Compiler
     void maybeJumpIfNotDouble(Assembler &masm, MaybeJump &mj, FrameEntry *fe,
                               MaybeRegisterID &mreg);
     void jsop_relational(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
-    void jsop_relational_int(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
     void jsop_relational_self(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
     void jsop_relational_full(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
     void jsop_relational_double(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
@@ -359,6 +373,7 @@ class Compiler
                             MaybeRegisterID &idReg, RegisterID shapeReg);
     void jsop_stricteq(JSOp op);
     void jsop_equality(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
+    void jsop_equality_int_string(JSOp op, BoolStub stub, jsbytecode *target, JSOp fused);
     void jsop_pos();
 
 #define STUB_CALL_TYPE(type)                                            \

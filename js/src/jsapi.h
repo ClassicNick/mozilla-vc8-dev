@@ -717,8 +717,8 @@ JS_SameValue(JSContext *cx, jsval v1, jsval v2);
 extern JS_PUBLIC_API(JSRuntime *)
 JS_NewRuntime(uint32 maxbytes);
 
-extern JS_PUBLIC_API(void)
-JS_CommenceRuntimeShutDown(JSRuntime *rt);
+/* Deprecated. */
+#define JS_CommenceRuntimeShutDown(rt) ((void) 0) 
 
 extern JS_PUBLIC_API(void)
 JS_DestroyRuntime(JSRuntime *rt);
@@ -952,44 +952,37 @@ extern JS_PUBLIC_API(void *)
 JS_GetCompartmentPrivate(JSContext *cx, JSCompartment *compartment);
 
 extern JS_PUBLIC_API(JSBool)
-JS_RewrapObject(JSContext *cx, JSObject **objp);
+JS_WrapObject(JSContext *cx, JSObject **objp);
 
 extern JS_PUBLIC_API(JSBool)
-JS_RewrapValue(JSContext *cx, jsval *p);
+JS_WrapValue(JSContext *cx, jsval *vp);
 
 #ifdef __cplusplus
 JS_END_EXTERN_C
 
-class JS_PUBLIC_API(JSAutoCrossCompartmentCall)
+class JS_PUBLIC_API(JSAutoEnterCompartment)
 {
     JSCrossCompartmentCall *call;
+
   public:
-    JSAutoCrossCompartmentCall() : call(NULL) {}
+    JSAutoEnterCompartment() : call(NULL) {}
 
     bool enter(JSContext *cx, JSObject *target);
 
+    void enterAndIgnoreErrors(JSContext *cx, JSObject *target);
+
     bool entered() const { return call != NULL; }
 
-    ~JSAutoCrossCompartmentCall() {
+    ~JSAutoEnterCompartment() {
         if (call)
             JS_LeaveCrossCompartmentCall(call);
     }
 
-    void swap(JSAutoCrossCompartmentCall &other) {
+    void swap(JSAutoEnterCompartment &other) {
         JSCrossCompartmentCall *tmp = call;
         call = other.call;
         other.call = tmp;
     }
-};
-
-class JS_FRIEND_API(JSAutoEnterCompartment)
-{
-    JSContext *cx;
-    JSCompartment *compartment;
-  public:
-    JSAutoEnterCompartment(JSContext *cx, JSCompartment *newCompartment);
-    JSAutoEnterCompartment(JSContext *cx, JSObject *target);
-    ~JSAutoEnterCompartment();
 };
 
 JS_BEGIN_EXTERN_C
@@ -1725,10 +1718,11 @@ struct JSClass {
 #define JSCLASS_INTERNAL_FLAG2          (1<<(JSCLASS_HIGH_FLAGS_SHIFT+4))
 
 /* Additional global reserved slots, beyond those for standard prototypes. */
-#define JSRESERVED_GLOBAL_SLOTS_COUNT     3
+#define JSRESERVED_GLOBAL_SLOTS_COUNT     4
 #define JSRESERVED_GLOBAL_COMPARTMENT     (JSProto_LIMIT * 3)
 #define JSRESERVED_GLOBAL_THIS            (JSRESERVED_GLOBAL_COMPARTMENT + 1)
 #define JSRESERVED_GLOBAL_THROWTYPEERROR  (JSRESERVED_GLOBAL_THIS + 1)
+#define JSRESERVED_GLOBAL_REGEXP_STATICS  (JSRESERVED_GLOBAL_THROWTYPEERROR + 1)
 
 /*
  * ECMA-262 requires that most constructors used internally create objects
@@ -1907,6 +1901,10 @@ JS_NewCompartmentAndGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *pr
 extern JS_PUBLIC_API(JSObject *)
 JS_NewObject(JSContext *cx, JSClass *clasp, JSObject *proto, JSObject *parent);
 
+/* Queries the [[Extensible]] property of the object. */
+extern JS_PUBLIC_API(JSBool)
+JS_IsExtensible(JSObject *obj);
+
 /*
  * Unlike JS_NewObject, JS_NewObjectWithGivenProto does not compute a default
  * proto if proto's actual parameter value is null.
@@ -1915,8 +1913,19 @@ extern JS_PUBLIC_API(JSObject *)
 JS_NewObjectWithGivenProto(JSContext *cx, JSClass *clasp, JSObject *proto,
                            JSObject *parent);
 
+/*
+ * Freeze obj, and all objects it refers to, recursively. This will not recurse
+ * through non-extensible objects, on the assumption that those are already
+ * deep-frozen.
+ */
 extern JS_PUBLIC_API(JSBool)
-JS_SealObject(JSContext *cx, JSObject *obj, JSBool deep);
+JS_DeepFreezeObject(JSContext *cx, JSObject *obj);
+
+/*
+ * Freezes an object; see ES5's Object.freeze(obj) method.
+ */
+extern JS_PUBLIC_API(JSBool)
+JS_FreezeObject(JSContext *cx, JSObject *obj);
 
 extern JS_PUBLIC_API(JSObject *)
 JS_ConstructObject(JSContext *cx, JSClass *clasp, JSObject *proto,
@@ -2400,6 +2409,13 @@ JS_CompileUCScriptForPrincipals(JSContext *cx, JSObject *obj,
                                 const char *filename, uintN lineno);
 
 extern JS_PUBLIC_API(JSScript *)
+JS_CompileUCScriptForPrincipalsVersion(JSContext *cx, JSObject *obj,
+                                       JSPrincipals *principals,
+                                       const jschar *chars, size_t length,
+                                       const char *filename, uintN lineno,
+                                       JSVersion version);
+
+extern JS_PUBLIC_API(JSScript *)
 JS_CompileFile(JSContext *cx, JSObject *obj, const char *filename);
 
 extern JS_PUBLIC_API(JSScript *)
@@ -2465,6 +2481,14 @@ JS_CompileUCFunctionForPrincipals(JSContext *cx, JSObject *obj,
                                   uintN nargs, const char **argnames,
                                   const jschar *chars, size_t length,
                                   const char *filename, uintN lineno);
+
+extern JS_PUBLIC_API(JSFunction *)
+JS_CompileUCFunctionForPrincipalsVersion(JSContext *cx, JSObject *obj,
+                                         JSPrincipals *principals, const char *name,
+                                         uintN nargs, const char **argnames,
+                                         const jschar *chars, size_t length,
+                                         const char *filename, uintN lineno,
+                                         JSVersion version);
 
 extern JS_PUBLIC_API(JSString *)
 JS_DecompileScript(JSContext *cx, JSScript *script, const char *name,
@@ -2544,6 +2568,13 @@ JS_EvaluateUCScript(JSContext *cx, JSObject *obj,
                     const jschar *chars, uintN length,
                     const char *filename, uintN lineno,
                     jsval *rval);
+
+extern JS_PUBLIC_API(JSBool)
+JS_EvaluateUCScriptForPrincipalsVersion(JSContext *cx, JSObject *obj,
+                                        JSPrincipals *principals,
+                                        const jschar *chars, uintN length,
+                                        const char *filename, uintN lineno,
+                                        jsval *rval, JSVersion version);
 
 extern JS_PUBLIC_API(JSBool)
 JS_EvaluateUCScriptForPrincipals(JSContext *cx, JSObject *obj,
@@ -2813,6 +2844,112 @@ JS_FinishJSONParse(JSContext *cx, JSONParser *jp, jsval reviver);
 
 /************************************************************************/
 
+/* API for the HTML5 internal structured cloning algorithm. */
+
+/* The maximum supported structured-clone serialization format version. */
+#define JS_STRUCTURED_CLONE_VERSION 1
+
+JS_PUBLIC_API(JSBool)
+JS_ReadStructuredClone(JSContext *cx, const uint64 *data, size_t nbytes, jsval *vp);
+
+/* Note: On success, the caller is responsible for calling js_free(*datap). */
+JS_PUBLIC_API(JSBool)
+JS_WriteStructuredClone(JSContext *cx, jsval v, uint64 **datap, size_t *nbytesp);
+
+JS_PUBLIC_API(JSBool)
+JS_StructuredClone(JSContext *cx, jsval v, jsval *vp);
+
+#ifdef __cplusplus
+/* RAII sugar for JS_WriteStructuredClone. */
+class JSAutoStructuredCloneBuffer {
+    JSContext *cx;
+    uint64 *data_;
+    size_t nbytes_;
+
+  public:
+    explicit JSAutoStructuredCloneBuffer(JSContext *cx) : cx(cx), data_(NULL), nbytes_(0) {}
+    ~JSAutoStructuredCloneBuffer() { clear(); }
+
+    uint64 *data() const { return data_; }
+    size_t nbytes() const { return nbytes_; }
+
+    void clear() {
+        if (data_) {
+            JS_free(cx, data_);
+            data_ = NULL;
+            nbytes_ = 0;
+        }
+    }
+
+    /*
+     * Adopt some memory. It will be automatically freed by the destructor.
+     * data must have been allocated using JS_malloc.
+     */
+    void adopt(uint64 *data, size_t nbytes) {
+        clear();
+        data_ = data;
+        nbytes_ = nbytes;
+    }
+
+    /*
+     * Remove the buffer so that it will not be automatically freed.
+     * After this, the caller is responsible for calling JS_free(*datap).
+     */
+    void steal(uint64 **datap, size_t *nbytesp) {
+        *datap = data_;
+        *nbytesp = nbytes_;
+        data_ = NULL;
+        nbytes_ = 0;
+    }
+
+    bool read(jsval *vp) const {
+        JS_ASSERT(data_);
+        return !!JS_ReadStructuredClone(cx, data_, nbytes_, vp);
+    }
+
+    bool write(jsval v) {
+        clear();
+        bool ok = !!JS_WriteStructuredClone(cx, v, &data_, &nbytes_);
+        if (!ok) {
+            data_ = NULL;
+            nbytes_ = 0;
+        }
+        return ok;
+    }
+};
+#endif
+
+/* API for implementing custom serialization behavior (for ImageData, File, etc.) */
+
+/* The range of tag values the application may use for its own custom object types. */
+#define JS_SCTAG_USER_MIN  ((uint32) 0xFFFF8000)
+#define JS_SCTAG_USER_MAX  ((uint32) 0xFFFFFFFF)
+
+#define JS_SCERR_RECURSION 0
+
+struct JSStructuredCloneCallbacks {
+    ReadStructuredCloneOp read;
+    WriteStructuredCloneOp write;
+    StructuredCloneErrorOp reportError;
+};
+
+JS_PUBLIC_API(void)
+JS_SetStructuredCloneCallbacks(JSRuntime *rt, const JSStructuredCloneCallbacks *callbacks);
+
+JS_PUBLIC_API(JSBool)
+JS_ReadPair(JSStructuredCloneReader *r, uint32 *p1, uint32 *p2);
+
+JS_PUBLIC_API(JSBool)
+JS_ReadBytes(JSStructuredCloneReader *r, void *p, size_t len);
+
+JS_PUBLIC_API(JSBool)
+JS_WritePair(JSStructuredCloneWriter *w, uint32 tag, uint32 data);
+
+JS_PUBLIC_API(JSBool)
+JS_WriteBytes(JSStructuredCloneWriter *w, const void *p, size_t len);
+
+/************************************************************************/
+
 /*
  * Locale specific string conversion and error message callbacks.
  */
@@ -2957,25 +3094,32 @@ JS_SetErrorReporter(JSContext *cx, JSErrorReporter er);
 #define JSREG_NOCOMPILE 0x20    /* do not try to compile to native code */
 
 extern JS_PUBLIC_API(JSObject *)
-JS_NewRegExpObject(JSContext *cx, char *bytes, size_t length, uintN flags);
+JS_NewRegExpObject(JSContext *cx, JSObject *obj, char *bytes, size_t length, uintN flags);
 
 extern JS_PUBLIC_API(JSObject *)
-JS_NewUCRegExpObject(JSContext *cx, jschar *chars, size_t length, uintN flags);
+JS_NewUCRegExpObject(JSContext *cx, JSObject *obj, jschar *chars, size_t length, uintN flags);
 
 extern JS_PUBLIC_API(void)
-JS_SetRegExpInput(JSContext *cx, JSString *input, JSBool multiline);
+JS_SetRegExpInput(JSContext *cx, JSObject *obj, JSString *input, JSBool multiline);
 
 extern JS_PUBLIC_API(void)
-JS_ClearRegExpStatics(JSContext *cx);
-
-extern JS_PUBLIC_API(void)
-JS_ClearRegExpRoots(JSContext *cx);
+JS_ClearRegExpStatics(JSContext *cx, JSObject *obj);
 
 extern JS_PUBLIC_API(JSBool)
-JS_ExecuteRegExp(JSContext *cx, JSObject *obj, jschar *chars, size_t length,
+JS_ExecuteRegExp(JSContext *cx, JSObject *obj, JSObject *reobj, jschar *chars, size_t length,
                  size_t *indexp, JSBool test, jsval *rval);
 
-/* TODO: compile, get/set other statics... */
+/* RegExp interface for clients without a global object. */
+
+extern JS_PUBLIC_API(JSObject *)
+JS_NewRegExpObjectNoStatics(JSContext *cx, char *bytes, size_t length, uintN flags);
+
+extern JS_PUBLIC_API(JSObject *)
+JS_NewUCRegExpObjectNoStatics(JSContext *cx, jschar *chars, size_t length, uintN flags);
+
+extern JS_PUBLIC_API(JSBool)
+JS_ExecuteRegExpNoStatics(JSContext *cx, JSObject *reobj, jschar *chars, size_t length,
+                          size_t *indexp, JSBool test, jsval *rval);
 
 /************************************************************************/
 

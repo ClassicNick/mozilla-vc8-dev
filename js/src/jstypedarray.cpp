@@ -64,6 +64,7 @@
 #include "jsobjinlines.h"
 
 using namespace js;
+using namespace js::gc;
 
 /*
  * ArrayBuffer
@@ -306,7 +307,7 @@ TypedArray::obj_trace(JSTracer *trc, JSObject *obj)
 {
     TypedArray *tarray = fromJSObject(obj);
     JS_ASSERT(tarray);
-    JS_CALL_OBJECT_TRACER(trc, tarray->bufferJS, "typedarray.buffer");
+    MarkObject(trc, *tarray->bufferJS, "typedarray.buffer");
 }
 
 JSBool
@@ -535,7 +536,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_setProperty(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+    obj_setProperty(JSContext *cx, JSObject *obj, jsid id, Value *vp, JSBool strict)
     {
         ThisTypeArray *tarray = ThisTypeArray::fromJSObject(obj);
         JS_ASSERT(tarray);
@@ -620,11 +621,11 @@ class TypedArrayTemplate
             return true;
 
         Value tmp = *v;
-        return obj_setProperty(cx, obj, id, &tmp);
+        return obj_setProperty(cx, obj, id, &tmp, false);
     }
 
     static JSBool
-    obj_deleteProperty(JSContext *cx, JSObject *obj, jsid id, Value *rval)
+    obj_deleteProperty(JSContext *cx, JSObject *obj, jsid id, Value *rval, JSBool strict)
     {
         if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
             rval->setBoolean(false);
@@ -786,9 +787,8 @@ class TypedArrayTemplate
             return false;
         }
 
-        makeFastWithPrivate(cx, obj, tarray);
         rval->setObject(*obj);
-        return true;
+        return makeFastWithPrivate(cx, obj, tarray);
     }
 
     static void
@@ -868,10 +868,8 @@ class TypedArrayTemplate
             return false;
         }
 
-        makeFastWithPrivate(cx, nobj, ntarray);
-
         vp->setObject(*nobj);
-        return true;
+        return makeFastWithPrivate(cx, nobj, ntarray);
     }
 
     /* set(array[, offset]) */
@@ -962,13 +960,18 @@ class TypedArrayTemplate
     }
 
     // helper used by both the constructor and Slice()
-    static void
+    static bool
     makeFastWithPrivate(JSContext *cx, JSObject *obj, ThisTypeArray *tarray)
     {
         JS_ASSERT(obj->getClass() == slowClass());
         obj->setSharedNonNativeMap();
         obj->clasp = fastClass();
         obj->setPrivate(tarray);
+        
+        // FIXME bug 599008. make it ok to call preventExtensions here.
+        // Keeping the boolean signature of this method for now.
+        obj->flags |= JSObject::NOT_EXTENSIBLE;
+        return true;
     }
 
   public:

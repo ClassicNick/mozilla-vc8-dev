@@ -21,7 +21,7 @@
  * are Copyright (C) 2001 the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *   Masayuki Nakano <masayuki@d-toybox.com>
  *   Romashin Oleg <romaxa@gmail.com>
  *   Vladimir Vukicevic <vladimir@pobox.com>
@@ -278,7 +278,7 @@ UpdateOffScreenBuffers(int aDepth, QSize aSize)
         format = gfxASurface::ImageFormatRGB24;
 
     gBufferSurface = gfxPlatform::GetPlatform()->
-        CreateOffscreenSurface(gBufferMaxSize, format);
+        CreateOffscreenSurface(gBufferMaxSize, gfxASurface::ContentFromFormat(format));
     return true;
 }
 
@@ -391,35 +391,32 @@ NS_IMETHODIMP
 nsWindow::SetParent(nsIWidget *aNewParent)
 {
     NS_ENSURE_ARG_POINTER(aNewParent);
+    nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
+    nsIWidget* parent = GetParent();
+    if (parent) {
+        parent->RemoveChild(this);
+    }
     if (aNewParent) {
-        nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
-
-        nsIWidget* parent = GetParent();
-        if (parent) {
-            parent->RemoveChild(this);
-        }
-
-        MozQWidget* newParent = static_cast<MozQWidget*>(aNewParent->GetNativeData(NS_NATIVE_WINDOW));
-        NS_ASSERTION(newParent, "Parent widget has a null native window handle");
-        if (mWidget) {
-            mWidget->setParentItem(newParent);
-        }
-
+        ReparentNativeWidget(aNewParent);
         aNewParent->AddChild(this);
-
         return NS_OK;
     }
-
-    nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
-
-    nsIWidget* parent = GetParent();
-
-    if (parent)
-        parent->RemoveChild(this);
-
-    if (mWidget)
+    if (mWidget) {
         mWidget->setParentItem(0);
+    }
+    return NS_OK;
+}
 
+NS_IMETHODIMP
+nsWindow::ReparentNativeWidget(nsIWidget *aNewParent)
+{
+    NS_PRECONDITION(aNewParent, "");
+
+    MozQWidget* newParent = static_cast<MozQWidget*>(aNewParent->GetNativeData(NS_NATIVE_WINDOW));
+    NS_ASSERTION(newParent, "Parent widget has a null native window handle");
+    if (mWidget) {
+        mWidget->setParentItem(newParent);
+    }
     return NS_OK;
 }
 
@@ -979,8 +976,10 @@ nsWindow::DoPaint(QPainter* aPainter, const QStyleOptionGraphicsItem* aOption)
 
         targetSurface = gBufferSurface;
 
+#ifdef CAIRO_HAS_QT_SURFACE
     } else if (renderMode == gfxQtPlatform::RENDER_QPAINTER) {
         targetSurface = new gfxQPainterSurface(aPainter);
+#endif
     }
 
     if (NS_UNLIKELY(!targetSurface))
@@ -2324,7 +2323,9 @@ nsChildWindow::~nsChildWindow()
 
 nsPopupWindow::nsPopupWindow()
 {
+#ifdef DEBUG_WIDGETS
     qDebug("===================== popup!");
+#endif
 }
 
 nsPopupWindow::~nsPopupWindow()
@@ -2390,6 +2391,9 @@ nsWindow::createQWidget(MozQWidget *parent, nsWidgetInitData *aInitData)
             delete widget;
             return nsnull;
         }
+        if (!IsAcceleratedQView(newView) && GetShouldAccelerate()) {
+            newView->setViewport(new QGLWidget());
+        }
 
         // Enable gestures:
 #if (QT_VERSION >= QT_VERSION_CHECK(4, 6, 0))
@@ -2430,28 +2434,6 @@ nsWindow::IsAcceleratedQView(QGraphicsView *view)
     return PR_FALSE;
 }
 
-NS_IMETHODIMP
-nsWindow::SetAcceleratedRendering(PRBool aEnabled)
-{
-    if (mUseAcceleratedRendering == aEnabled)
-        return NS_OK;
-
-    mUseAcceleratedRendering = aEnabled;
-    mLayerManager = NULL;
-
-    QGraphicsView* view = static_cast<QGraphicsView*>(GetViewWidget());
-    if (view) {
-        if (aEnabled && !IsAcceleratedQView(view))
-            view->setViewport(new QGLWidget());
-        if (!aEnabled && IsAcceleratedQView(view))
-            view->setViewport(new QWidget());
-        view->viewport()->setAttribute(Qt::WA_PaintOnScreen, aEnabled);
-        view->viewport()->setAttribute(Qt::WA_NoSystemBackground, aEnabled);
-    }
-
-    return NS_OK;
-}
-
 // return the gfxASurface for rendering to this widget
 gfxASurface*
 nsWindow::GetThebesSurface()
@@ -2463,9 +2445,11 @@ nsWindow::GetThebesSurface()
         return mThebesSurface;
 
     gfxQtPlatform::RenderMode renderMode = gfxQtPlatform::GetPlatform()->GetRenderMode();
+#ifdef CAIRO_HAS_QT_SURFACE
     if (renderMode == gfxQtPlatform::RENDER_QPAINTER) {
         mThebesSurface = new gfxQPainterSurface(gfxIntSize(1, 1), gfxASurface::CONTENT_COLOR);
     }
+#endif
     if (!mThebesSurface) {
         gfxASurface::gfxImageFormat imageFormat = gfxASurface::ImageFormatRGB24;
         mThebesSurface = new gfxImageSurface(gfxIntSize(1, 1), imageFormat);

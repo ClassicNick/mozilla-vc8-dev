@@ -132,17 +132,6 @@ struct VMFrame
     JSRuntime *runtime() { return cx->runtime; }
 
     JSStackFrame *&fp() { return regs.fp; }
-
-    bool slowEnsureSpace(uint32 nslots);
-
-    bool ensureSpace(uint32 nmissing, uint32 nslots) {
-        /* Fast check - if it's below the limit, it's safe to just get a frame. */
-        if (JS_LIKELY(regs.sp + VALUES_PER_STACK_FRAME + nmissing + nslots < stackLimit))
-            return true;
-
-        /* Slower check that might have to commit memory or throw an error. */
-        return slowEnsureSpace(nmissing + nslots);
-    }
 };
 
 #ifdef JS_CPU_ARM
@@ -189,8 +178,6 @@ struct JITScript {
 #endif
     void            *invoke;         /* invoke address */
     void            *arityCheck;     /* arity check address */
-    uint32          *escaping;       /* list of escaping slots */
-    uint32          nescaping;       /* number of escaping slots */
 };
 
 /* Execute a method that has been JIT compiled. */
@@ -209,19 +196,16 @@ enum CompileStatus
 void JS_FASTCALL
 ProfileStubCall(VMFrame &f);
 
-CompileStatus
+CompileStatus JS_NEVER_INLINE
 TryCompile(JSContext *cx, JSScript *script, JSFunction *fun, JSObject *scopeChain);
 
 void
 ReleaseScriptCode(JSContext *cx, JSScript *script);
 
-void
-SweepCallICs(JSContext *cx);
-
 static inline CompileStatus
 CanMethodJIT(JSContext *cx, JSScript *script, JSFunction *fun, JSObject *scopeChain)
 {
-    if (!(cx->options & JSOPTION_METHODJIT) || script->ncode == JS_UNJITTABLE_METHOD)
+    if (!cx->methodJitEnabled || script->ncode == JS_UNJITTABLE_METHOD)
         return Compile_Abort;
     if (script->ncode == NULL)
         return TryCompile(cx, script, fun, scopeChain);
