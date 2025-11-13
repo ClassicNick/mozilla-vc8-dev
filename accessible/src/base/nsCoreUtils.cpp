@@ -107,7 +107,7 @@ nsCoreUtils::DispatchClickEvent(nsITreeBoxObject *aTreeBoxObj,
     return;
 
   nsIPresShell *presShell = nsnull;
-  presShell = document->GetPrimaryShell();
+  presShell = document->GetShell();
   if (!presShell)
     return;
 
@@ -163,16 +163,12 @@ nsCoreUtils::DispatchMouseEvent(PRUint32 aEventType,
   if (!frame)
     return PR_FALSE;
 
-  nsIFrame* rootFrame = aPresShell->GetRootFrame();
-  if (!rootFrame)
-    return PR_FALSE;
-
-  nsCOMPtr<nsIWidget> rootWidget = rootFrame->GetWindow();
-  if (!rootWidget)
-    return PR_FALSE;
-
   // Compute x and y coordinates.
-  nsPoint point = frame->GetOffsetToExternal(rootFrame);
+  nsPoint point;
+  nsCOMPtr<nsIWidget> widget = frame->GetNearestWidget(point);
+  if (!widget)
+    return PR_FALSE;
+
   nsSize size = frame->GetSize();
 
   nsPresContext* presContext = aPresShell->GetPresContext();
@@ -181,7 +177,7 @@ nsCoreUtils::DispatchMouseEvent(PRUint32 aEventType,
   PRInt32 y = presContext->AppUnitsToDevPixels(point.y + size.height / 2);
 
   // Fire mouse event.
-  DispatchMouseEvent(aEventType, x, y, aContent, frame, aPresShell, rootWidget);
+  DispatchMouseEvent(aEventType, x, y, aContent, frame, aPresShell, widget);
   return PR_TRUE;
 }
 
@@ -219,7 +215,7 @@ nsCoreUtils::GetAccessKeyFor(nsIContent *aContent)
   if (!doc)
     return 0;
 
-  nsCOMPtr<nsIPresShell> presShell = doc->GetPrimaryShell();
+  nsCOMPtr<nsIPresShell> presShell = doc->GetShell();
   if (!presShell)
     return 0;
 
@@ -236,38 +232,16 @@ nsCoreUtils::GetAccessKeyFor(nsIContent *aContent)
   return key;
 }
 
-already_AddRefed<nsIDOMElement>
-nsCoreUtils::GetDOMElementFor(nsIDOMNode *aNode)
+nsIContent *
+nsCoreUtils::GetDOMElementFor(nsIContent *aContent)
 {
-  nsCOMPtr<nsINode> node(do_QueryInterface(aNode));
-  nsIDOMElement *element = nsnull;
+  if (aContent->IsElement())
+    return aContent;
 
-  if (node->IsElement())
-    CallQueryInterface(node, &element);
+  if (aContent->IsNodeOfType(nsINode::eTEXT))
+    return aContent->GetParent();
 
-  else if (node->IsNodeOfType(nsINode::eTEXT)) {
-    nsCOMPtr<nsINode> nodeParent = node->GetNodeParent();
-    NS_ASSERTION(nodeParent, "Text node has no parent!");
-    if (nodeParent)
-      CallQueryInterface(nodeParent, &element);
-  }
-
-  else if (node->IsNodeOfType(nsINode::eDOCUMENT)) {
-    nsCOMPtr<nsIDOMHTMLDocument> htmlDoc(do_QueryInterface(node));
-    if (htmlDoc) {
-      nsCOMPtr<nsIDOMHTMLElement> bodyElement;
-      htmlDoc->GetBody(getter_AddRefs(bodyElement));
-      if (bodyElement) {
-        CallQueryInterface(bodyElement, &element);
-        return element;
-      }
-    }
-
-    nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(node));
-    domDoc->GetDocumentElement(&element);
-  }
-
-  return element;
+  return nsnull;
 }
 
 nsINode *
@@ -289,13 +263,13 @@ nsCoreUtils::GetDOMNodeFromDOMPoint(nsINode *aNode, PRUint32 aOffset)
 }
 
 nsIContent*
-nsCoreUtils::GetRoleContent(nsIDOMNode *aDOMNode)
+nsCoreUtils::GetRoleContent(nsINode *aNode)
 {
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aDOMNode));
+  nsCOMPtr<nsIContent> content(do_QueryInterface(aNode));
   if (!content) {
-    nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(aDOMNode));
+    nsCOMPtr<nsIDOMDocument> domDoc(do_QueryInterface(aNode));
     if (domDoc) {
-      nsCOMPtr<nsIDOMHTMLDocument> htmlDoc(do_QueryInterface(aDOMNode));
+      nsCOMPtr<nsIDOMHTMLDocument> htmlDoc(do_QueryInterface(aNode));
       if (htmlDoc) {
         nsCOMPtr<nsIDOMHTMLElement> bodyElement;
         htmlDoc->GetBody(getter_AddRefs(bodyElement));
@@ -320,7 +294,8 @@ nsCoreUtils::IsAncestorOf(nsINode *aPossibleAncestorNode,
   NS_ENSURE_TRUE(aPossibleAncestorNode && aPossibleDescendantNode, PR_FALSE);
 
   nsINode *parentNode = aPossibleDescendantNode;
-  while ((parentNode = parentNode->GetNodeParent()) != aRootNode) {
+  while ((parentNode = parentNode->GetNodeParent()) &&
+         parentNode != aRootNode) {
     if (parentNode == aPossibleAncestorNode)
       return PR_TRUE;
   }
@@ -443,7 +418,7 @@ nsCoreUtils::ConvertScrollTypeToPercents(PRUint32 aScrollType,
 }
 
 nsIntPoint
-nsCoreUtils::GetScreenCoordsForWindow(nsIDOMNode *aNode)
+nsCoreUtils::GetScreenCoordsForWindow(nsINode *aNode)
 {
   nsIntPoint coords(0, 0);
   nsCOMPtr<nsIDocShellTreeItem> treeItem(GetDocShellTreeItemFor(aNode));
@@ -469,17 +444,12 @@ nsCoreUtils::GetScreenCoordsForWindow(nsIDOMNode *aNode)
 }
 
 already_AddRefed<nsIDocShellTreeItem>
-nsCoreUtils::GetDocShellTreeItemFor(nsIDOMNode *aNode)
+nsCoreUtils::GetDocShellTreeItemFor(nsINode *aNode)
 {
   if (!aNode)
     return nsnull;
 
-  nsCOMPtr<nsIDOMDocument> domDoc;
-  aNode->GetOwnerDocument(getter_AddRefs(domDoc));
-  nsCOMPtr<nsIDocument> doc(do_QueryInterface(domDoc));
-  if (!doc)
-    doc = do_QueryInterface(aNode);
-
+  nsIDocument *doc = aNode->GetOwnerDoc();
   NS_ASSERTION(doc, "No document for node passed in");
   NS_ENSURE_TRUE(doc, nsnull);
 
@@ -549,16 +519,6 @@ nsCoreUtils::IsErrorPage(nsIDocument *aDocument)
 
   NS_NAMED_LITERAL_CSTRING(neterror, "neterror");
   return FindInReadable(neterror, start, end);
-}
-
-nsIFrame*
-nsCoreUtils::GetFrameFor(nsIDOMElement *aElm)
-{
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aElm));
-  if (!content)
-    return nsnull;
-  
-  return content->GetPrimaryFrame();
 }
 
 PRBool
@@ -956,28 +916,27 @@ nsCoreUtils::GetElementsHavingIDRefsAttrImpl(nsIContent *aRootContent,
   }
 }
 
-void
+already_AddRefed<nsIDOMCSSStyleDeclaration>
 nsCoreUtils::GetComputedStyleDeclaration(const nsAString& aPseudoElt,
-                                         nsIDOMNode *aNode,
-                                         nsIDOMCSSStyleDeclaration **aCssDecl)
+                                         nsIContent *aContent)
 {
-  *aCssDecl = nsnull;
-
-  nsCOMPtr<nsIDOMElement> domElement = GetDOMElementFor(aNode);
-  if (!domElement)
-    return;
+  nsIContent* content = GetDOMElementFor(aContent);
+  if (!content)
+    return nsnull;
 
   // Returns number of items in style declaration
-  nsCOMPtr<nsIContent> content = do_QueryInterface(domElement);
-  nsCOMPtr<nsIDocument> doc = content->GetDocument();
-  if (!doc)
-    return;
+  nsIDocument* document = content->GetOwnerDoc();
+  if (!document)
+    return nsnull;
 
-  nsCOMPtr<nsIDOMViewCSS> viewCSS(do_QueryInterface(doc->GetWindow()));
+  nsCOMPtr<nsIDOMViewCSS> viewCSS(do_QueryInterface(document->GetWindow()));
   if (!viewCSS)
-    return;
+    return nsnull;
 
-  viewCSS->GetComputedStyle(domElement, aPseudoElt, aCssDecl);
+  nsIDOMCSSStyleDeclaration* cssDecl = nsnull;
+  nsCOMPtr<nsIDOMElement> domElement(do_QueryInterface(content));
+  viewCSS->GetComputedStyle(domElement, aPseudoElt, &cssDecl);
+  return cssDecl;
 }
 
 already_AddRefed<nsIBoxObject>
@@ -994,36 +953,28 @@ nsCoreUtils::GetTreeBodyBoxObject(nsITreeBoxObject *aTreeBoxObj)
   return boxObj;
 }
 
-void
-nsCoreUtils::GetTreeBoxObject(nsIDOMNode *aDOMNode,
-                              nsITreeBoxObject **aBoxObject)
+already_AddRefed<nsITreeBoxObject>
+nsCoreUtils::GetTreeBoxObject(nsIContent *aContent)
 {
-  nsAutoString name;
-  nsCOMPtr<nsIDOMNode> parentNode, currentNode;
-  
   // Find DOMNode's parents recursively until reach the <tree> tag
-  currentNode = aDOMNode;
-  while (currentNode) {
-    currentNode->GetLocalName(name);
-    if (name.EqualsLiteral("tree")) {
+  nsIContent* currentContent = aContent;
+  while (currentContent) {
+    if (currentContent->NodeInfo()->Equals(nsAccessibilityAtoms::tree,
+                                           kNameSpaceID_XUL)) {
       // We will get the nsITreeBoxObject from the tree node
-      nsCOMPtr<nsIDOMXULElement> xulElement(do_QueryInterface(currentNode));
+      nsCOMPtr<nsIDOMXULElement> xulElement(do_QueryInterface(currentContent));
       if (xulElement) {
         nsCOMPtr<nsIBoxObject> box;
         xulElement->GetBoxObject(getter_AddRefs(box));
         nsCOMPtr<nsITreeBoxObject> treeBox(do_QueryInterface(box));
-        if (treeBox) {
-          *aBoxObject = treeBox;
-          NS_ADDREF(*aBoxObject);
-          return;
-        }
+        if (treeBox)
+          return treeBox.forget();
       }
     }
-    currentNode->GetParentNode(getter_AddRefs(parentNode));
-    currentNode = parentNode;
+    currentContent = currentContent->GetParent();
   }
-  
-  *aBoxObject = nsnull;
+
+  return nsnull;
 }
 
 already_AddRefed<nsITreeColumn>
@@ -1141,20 +1092,19 @@ nsCoreUtils::IsColumnHidden(nsITreeColumn *aColumn)
 }
 
 void
-nsCoreUtils::GeneratePopupTree(nsIDOMNode *aNode, PRBool aIsAnon)
+nsCoreUtils::GeneratePopupTree(nsIContent *aContent, PRBool aIsAnon)
 {
   // Set menugenerated="true" on the menupopup node to generate the sub-menu
   // items if they have not been generated.
 
   nsCOMPtr<nsIDOMNodeList> list;
-  if (aIsAnon) {
-    nsCOMPtr<nsIContent> content(do_QueryInterface(aNode));
-    nsIDocument* document = content->GetCurrentDoc();
+  if (aIsAnon) {    
+    nsIDocument* document = aContent->GetCurrentDoc();
     if (document)
-      document->GetXBLChildNodesFor(content, getter_AddRefs(list));
+      document->GetXBLChildNodesFor(aContent, getter_AddRefs(list));
 
   } else {
-    aNode->GetChildNodes(getter_AddRefs(list));
+    list = aContent->GetChildNodesList();
   }
 
   PRUint32 length = 0;

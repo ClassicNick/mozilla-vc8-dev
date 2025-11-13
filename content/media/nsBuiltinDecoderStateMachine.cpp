@@ -250,7 +250,7 @@ void nsBuiltinDecoderStateMachine::DecodeLoop()
       videoPlaying = mReader->DecodeVideoFrame(skipToNextKeyframe, currentTime);
       {
         MonitorAutoEnter mon(mDecoder->GetMonitor());
-        if (mDecoder->mDecoderPosition >= initialDownloadPosition) {
+        if (mDecoder->mDecoderPosition > initialDownloadPosition) {
           mBufferExhausted = PR_TRUE;
         }
       }
@@ -266,7 +266,7 @@ void nsBuiltinDecoderStateMachine::DecodeLoop()
       audioPlaying = mReader->DecodeAudioData();
       {
         MonitorAutoEnter mon(mDecoder->GetMonitor());
-        if (mDecoder->mDecoderPosition >= initialDownloadPosition) {
+        if (mDecoder->mDecoderPosition > initialDownloadPosition) {
           mBufferExhausted = PR_TRUE;
         }
       }
@@ -1145,6 +1145,7 @@ void nsBuiltinDecoderStateMachine::AdvanceFrame()
     // ready state. Post an update to do so.
     UpdateReadyState();
 
+    NS_ASSERTION(frameDuration >= 0, "Frame duration must be positive.");
     Wait(frameDuration);
   } else {
     if (IsPlaying()) {

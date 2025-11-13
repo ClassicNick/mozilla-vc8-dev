@@ -96,6 +96,8 @@ const WIN = (navigator.platform.indexOf("Win") != -1)? true : false;
 ////////////////////////////////////////////////////////////////////////////////
 // Accessible general
 
+const kEmbedChar = String.fromCharCode(0xfffc);
+
 /**
  * nsIAccessibleRetrieval, initialized when test is loaded.
  */
@@ -221,6 +223,8 @@ function getAccessible(aAccOrElmOrID, aInterfaces, aElmObj, aDoNotFailIf)
       return null;
     }
   }
+
+  acc.QueryInterface(nsIAccessNode);
 
   if (!aInterfaces)
     return acc;
@@ -392,6 +396,15 @@ function testAccessibleTree(aAccOrElmOrID, aAccTree)
       }
     }
   }
+}
+
+/**
+ * Return true if accessible for the given node is in cache.
+ */
+function isAccessibleInCache(aNodeOrId)
+{
+  var node = getNode(aNodeOrId);
+  return gAccRetrieval.getAccessibleFromCache(node) ? true : false;
 }
 
 /**

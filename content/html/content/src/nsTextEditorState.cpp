@@ -685,7 +685,7 @@ nsTextInputListener::NotifySelectionChanged(nsIDOMDocument* aDoc, nsISelection* 
       nsCOMPtr<nsIDocument> doc = content->GetDocument();
       if (doc) 
       {
-        nsCOMPtr<nsIPresShell> presShell = doc->GetPrimaryShell();
+        nsCOMPtr<nsIPresShell> presShell = doc->GetShell();
         if (presShell) 
         {
           nsEventStatus status = nsEventStatus_eIgnore;
@@ -969,6 +969,36 @@ nsTextEditorState::GetSelectionController() const
   return mSelCon;
 }
 
+// Helper class, used below in BindToFrame().
+class PrepareEditorEvent : public nsRunnable {
+public:
+  PrepareEditorEvent(nsTextEditorState &aState,
+                     nsIContent *aOwnerContent,
+                     const nsAString &aCurrentValue)
+    : mState(aState)
+    , mOwnerContent(aOwnerContent)
+    , mCurrentValue(aCurrentValue)
+  {
+  }
+
+  NS_IMETHOD Run() {
+    // Transfer the saved value to the editor if we have one
+    const nsAString *value = nsnull;
+    if (!mCurrentValue.IsEmpty()) {
+      value = &mCurrentValue;
+    }
+
+    mState.PrepareEditor(value);
+
+    return NS_OK;
+  }
+
+private:
+  nsTextEditorState &mState;
+  nsCOMPtr<nsIContent> mOwnerContent; // strong reference
+  nsAutoString mCurrentValue;
+};
+
 nsresult
 nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
 {
@@ -1029,35 +1059,6 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
 
   // If an editor exists from before, prepare it for usage
   if (mEditor) {
-    class PrepareEditorEvent : public nsRunnable {
-    public:
-      PrepareEditorEvent(nsTextEditorState &aState,
-                         nsIContent *aOwnerContent,
-                         const nsAString &aCurrentValue)
-        : mState(aState)
-        , mOwnerContent(aOwnerContent)
-        , mCurrentValue(aCurrentValue)
-      {
-      }
-
-      NS_IMETHOD Run() {
-        // Transfer the saved value to the editor if we have one
-        const nsAString *value = nsnull;
-        if (!mCurrentValue.IsEmpty()) {
-          value = &mCurrentValue;
-        }
-
-        mState.PrepareEditor(value);
-
-        return NS_OK;
-      }
-
-    private:
-      nsTextEditorState &mState;
-      nsCOMPtr<nsIContent> mOwnerContent; // strong reference
-      nsAutoString mCurrentValue;
-    };
-
     nsCOMPtr<nsIContent> content = do_QueryInterface(mTextCtrlElement);
     NS_ENSURE_TRUE(content, NS_ERROR_FAILURE);
 
@@ -1126,7 +1127,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
   } else {
     if (aValue) {
       // Set the correct value in the root node
-      rv = mBoundFrame->UpdateValueDisplay(PR_FALSE, PR_FALSE, aValue);
+      rv = mBoundFrame->UpdateValueDisplay(PR_TRUE, PR_FALSE, aValue);
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
@@ -1323,12 +1324,11 @@ nsTextEditorState::DestroyEditor()
 void
 nsTextEditorState::UnbindFromFrame(nsTextControlFrame* aFrame)
 {
-  NS_ASSERTION(mBoundFrame, "Can't be unbound without being bound originally");
   NS_ENSURE_TRUE(mBoundFrame, );
 
   // If it was, however, it should be unbounded from the same frame.
-  NS_ASSERTION(aFrame == mBoundFrame, "Unbinding from the wrong frame");
-  NS_ENSURE_TRUE(aFrame == mBoundFrame, );
+  NS_ASSERTION(!aFrame || aFrame == mBoundFrame, "Unbinding from the wrong frame");
+  NS_ENSURE_TRUE(!aFrame || aFrame == mBoundFrame, );
 
   // We need to start storing the value outside of the editor if we're not
   // going to use it anymore, so retrieve it for now.
@@ -1727,8 +1727,14 @@ nsTextEditorState::SetValue(const nsAString& aValue, PRBool aUserInput)
           plaintextEditor->InsertText(insertValue);
         }
         if (!weakFrame.IsAlive()) {
-          NS_ASSERTION(!mBoundFrame, "The frame should have been unbounded");
-          SetValue(newValue, PR_FALSE);
+          // If the frame was destroyed because of a flush somewhere inside
+          // InsertText, mBoundFrame here will be false.  But it's also possible
+          // for the frame to go away because of another reason (such as deleting
+          // the existing selection -- see bug 574558), in which case we don't
+          // need to reset the value here.
+          if (!mBoundFrame) {
+            SetValue(newValue, PR_FALSE);
+          }
           valueSetter.Cancel();
           return;
         }
@@ -1765,7 +1771,7 @@ nsTextEditorState::SetValue(const nsAString& aValue, PRBool aUserInput)
     }
     nsString value(aValue);
     nsContentUtils::PlatformToDOMLineBreaks(value);
-    *mValue = ToNewUTF8String(value);
+    CopyUTF16toUTF8(value, *mValue);
 
     // Update the frame display if needed
     if (mBoundFrame) {

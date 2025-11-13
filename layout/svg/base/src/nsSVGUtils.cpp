@@ -93,7 +93,7 @@
 
 using namespace mozilla::dom;
 
-gfxASurface *nsSVGUtils::mThebesComputationalSurface = nsnull;
+gfxASurface *nsSVGUtils::gThebesComputationalSurface = nsnull;
 
 // c = n / 255
 // (c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1 / 2.4) - 0.055) * 255 + 0.5
@@ -185,11 +185,6 @@ SVGPrefChanged(const char *aPref, void *aClosure)
     return 0;
 
   gSVGEnabled = prefVal;
-  if (gSVGEnabled)
-    nsContentDLF::RegisterSVG();
-  else
-    nsContentDLF::UnregisterSVG();
-
   return 0;
 }
 
@@ -269,6 +264,7 @@ nsSVGUtils::GetFontSize(Element *aElement)
     nsComputedDOMStyle::GetStyleContextForElementNoFlush(aElement,
                                                          nsnull, nsnull);
   if (!styleContext) {
+    // ReportToConsole
     NS_WARNING("Couldn't get style context for content in GetFontStyle");
     return 1.0f;
   }
@@ -306,6 +302,7 @@ nsSVGUtils::GetFontXHeight(Element *aElement)
     nsComputedDOMStyle::GetStyleContextForElementNoFlush(aElement,
                                                          nsnull, nsnull);
   if (!styleContext) {
+    // ReportToConsole
     NS_WARNING("Couldn't get style context for content in GetFontStyle");
     return 1.0f;
   }
@@ -333,6 +330,7 @@ nsSVGUtils::GetFontXHeight(nsStyleContext *aStyleContext)
                                                getter_AddRefs(fontMetrics));
 
   if (!fontMetrics) {
+    // ReportToConsole
     NS_WARNING("no FontMetrics in GetFontXHeight()");
     return 1.0f;
   }
@@ -560,7 +558,7 @@ nsSVGUtils::GetCTM(nsSVGElement *aElement, PRBool aScreenCTM)
   // content that we've hit may itself be inside an SVG foreignObject higher up
   float x = 0.0f, y = 0.0f;
   if (currentDoc && element->NodeInfo()->Equals(nsGkAtoms::svg, kNameSpaceID_SVG)) {
-    nsIPresShell *presShell = currentDoc->GetPrimaryShell();
+    nsIPresShell *presShell = currentDoc->GetShell();
     if (presShell) {
       nsIFrame* frame = element->GetPrimaryFrame();
       nsIFrame* ancestorFrame = presShell->GetRootFrame();
@@ -811,8 +809,7 @@ nsSVGUtils::GetViewBoxTransform(nsSVGElement* aElement,
                                 float aViewportWidth, float aViewportHeight,
                                 float aViewboxX, float aViewboxY,
                                 float aViewboxWidth, float aViewboxHeight,
-                                const nsSVGPreserveAspectRatio &aPreserveAspectRatio,
-                                PRBool aIgnoreAlign)
+                                const nsSVGPreserveAspectRatio &aPreserveAspectRatio)
 {
   NS_ASSERTION(aViewboxWidth > 0, "viewBox width must be greater than zero!");
   NS_ASSERTION(aViewboxHeight > 0, "viewBox height must be greater than zero!");
@@ -826,10 +823,6 @@ nsSVGUtils::GetViewBoxTransform(nsSVGElement* aElement,
   if (meetOrSlice == nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_UNKNOWN)
     meetOrSlice = nsIDOMSVGPreserveAspectRatio::SVG_MEETORSLICE_MEET;
 
-  // alignment disabled for this matrix setup
-  if (aIgnoreAlign)
-    align = nsIDOMSVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_XMINYMIN;
-    
   float a, d, e, f;
   a = aViewportWidth / aViewboxWidth;
   d = aViewportHeight / aViewboxHeight;
@@ -1213,17 +1206,23 @@ nsSVGUtils::ConvertToSurfaceSize(const gfxSize& aSize, PRBool *aResultOverflows)
 gfxASurface *
 nsSVGUtils::GetThebesComputationalSurface()
 {
-  if (!mThebesComputationalSurface) {
+  if (!gThebesComputationalSurface) {
     nsRefPtr<gfxImageSurface> surface =
       new gfxImageSurface(gfxIntSize(1, 1), gfxASurface::ImageFormatARGB32);
     NS_ASSERTION(surface && !surface->CairoStatus(),
                  "Could not create offscreen surface");
-    mThebesComputationalSurface = surface;
+    gThebesComputationalSurface = surface;
     // we want to keep this surface around
-    NS_IF_ADDREF(mThebesComputationalSurface);
+    NS_IF_ADDREF(gThebesComputationalSurface);
   }
 
-  return mThebesComputationalSurface;
+  return gThebesComputationalSurface;
+}
+
+void
+nsSVGUtils::Shutdown()
+{
+  NS_IF_RELEASE(gThebesComputationalSurface);
 }
 
 gfxMatrix

@@ -71,16 +71,29 @@ Tester.prototype = {
   },
 
   waitForWindowsState: function Tester_waitForWindowsState(aCallback) {
+    let timedOut = this.currentTest && this.currentTest.timedOut;
+    let baseMsg = timedOut ? "Found a {elt} after previous test timed out"
+                           : this.currentTest ? "Found an unexpected {elt} at the end of test run"
+                                              : "Found an unexpected {elt}";
+
+    if (this.currentTest && window.gBrowser && gBrowser.tabs.length > 1) {
+      while (gBrowser.tabs.length > 1) {
+        let lastTab = gBrowser.tabContainer.lastChild;
+        let msg = baseMsg.replace("{elt}", "tab") +
+                  ": " + lastTab.linkedBrowser.currentURI.spec;
+        this.currentTest.addResult(new testResult(false, msg, "", false));
+        gBrowser.removeTab(lastTab);
+      }
+    }
+
     this.dumper.dump("TEST-INFO | checking window state\n");
     let windowsEnum = this._wm.getEnumerator("navigator:browser");
     while (windowsEnum.hasMoreElements()) {
       let win = windowsEnum.getNext();
       if (win != window && !win.closed) {
-        let msg = "Found an unexpected browser window";
-        if (this.currentTest) {
-          msg += " at the end of test run";
+        let msg = baseMsg.replace("{elt}", "browser window");
+        if (this.currentTest)
           this.currentTest.addResult(new testResult(false, msg, "", false));
-        }
         else
           this.dumper.dump("TEST-UNEXPECTED-FAIL | (browser-test.js) | " + msg + "\n");
 
@@ -115,6 +128,7 @@ Tester.prototype = {
     }
 
     this.dumper.dump("\n*** End BrowserChrome Test Results ***\n");
+    this.dumper.dump("TEST-START | Shutdown\n");
 
     this.dumper.done();
 
@@ -160,7 +174,7 @@ Tester.prototype = {
   },
 
   execTest: function Tester_execTest() {
-    this.dumper.dump("Running " + this.currentTest.path + "...\n");
+    this.dumper.dump("TEST-START | " + this.currentTest.path + "\n");
 
     // Load the tests into a testscope
     this.currentTest.scope = new testScope(this, this.currentTest);
@@ -211,6 +225,7 @@ Tester.prototype = {
           return;
         }
         self.currentTest.addResult(new testResult(false, "Timed out", "", false));
+        self.currentTest.timedOut = true;
         self.currentTest.scope.__waitTimer = null;
         self.nextTest();
       }, TIMEOUT_SECONDS * 1000);

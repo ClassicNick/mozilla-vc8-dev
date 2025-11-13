@@ -75,7 +75,7 @@ class nsIDOMAttr;
 class nsIDOMEventListener;
 class nsIFrame;
 class nsIDOMNamedNodeMap;
-class nsDOMCSSDeclaration;
+class nsICSSDeclaration;
 class nsIDOMCSSStyleDeclaration;
 class nsIURI;
 class nsINodeInfo;
@@ -662,6 +662,8 @@ public:
     const nsAttrValue* mValue;
   };
 
+  // Be careful when using this method. This does *NOT* handle
+  // XUL prototypes. You may want to use GetAttrInfo.
   const nsAttrValue* GetParsedAttr(nsIAtom* aAttr) const
   {
     return mAttrsAndChildren.GetAttr(aAttr);
@@ -744,7 +746,19 @@ public:
     return NS_OK;
   }
   nsIDOMDOMTokenList* GetClassList(nsresult *aResult);
+  void SetCapture(PRBool aRetargetToElement);
+  void ReleaseCapture();
   PRBool MozMatchesSelector(const nsAString& aSelector);
+
+  /**
+   * Get the attr info for the given namespace ID and attribute name.  The
+   * namespace ID must not be kNameSpaceID_Unknown and the name must not be
+   * null.  Note that this can only return info on attributes that actually
+   * live on this element (and is only virtual to handle XUL prototypes).  That
+   * is, this should only be called from methods that only care about attrs
+   * that effectively live in mAttrsAndChildren.
+   */
+  virtual nsAttrInfo GetAttrInfo(PRInt32 aNamespaceID, nsIAtom* aName) const;
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsGenericElement)
 
@@ -864,16 +878,6 @@ protected:
                                    PRBool* aDefer);
 
   /**
-   * Get the attr info for the given namespace ID and attribute name.  The
-   * namespace ID must not be kNameSpaceID_Unknown and the name must not be
-   * null.  Note that this can only return info on attributes that actually
-   * live on this element (and is only virtual to handle XUL prototypes).  That
-   * is, this should only be called from methods that only care about attrs
-   * that effectively live in mAttrsAndChildren.
-   */
-  virtual nsAttrInfo GetAttrInfo(PRInt32 aNamespaceID, nsIAtom* aName) const;
-
-  /**
    * Copy attributes and state to another element
    * @param aDest the object to copy to
    */
@@ -921,13 +925,13 @@ public:
      * The .style attribute (an interface that forwards to the actual
      * style rules)
      * @see nsGenericHTMLElement::GetStyle */
-    nsRefPtr<nsDOMCSSDeclaration> mStyle;
+    nsCOMPtr<nsICSSDeclaration> mStyle;
 
     /**
      * SMIL Overridde style rules (for SMIL animation of CSS properties)
      * @see nsIContent::GetSMILOverrideStyle
      */
-    nsRefPtr<nsDOMCSSDeclaration> mSMILOverrideStyle;
+    nsCOMPtr<nsICSSDeclaration> mSMILOverrideStyle;
 
     /**
      * Holds any SMIL override style rules for this element.

@@ -116,6 +116,10 @@ using mozilla::PluginPRLibrary;
 using mozilla::plugins::PluginModuleParent;
 #endif
 
+#ifdef MOZ_X11
+#include "mozilla/X11Util.h"
+#endif
+
 using namespace mozilla::plugins::parent;
 
 // We should make this const...
@@ -475,7 +479,19 @@ nsNPAPIPlugin::CreatePlugin(const char* aFilePath, PRLibrary* aLibrary,
   return NS_OK;
 }
 
-NS_METHOD
+PluginLibrary*
+nsNPAPIPlugin::GetLibrary()
+{
+  return mLibrary;
+}
+
+NPPluginFuncs*
+nsNPAPIPlugin::PluginFuncs()
+{
+  return &mPluginFuncs;
+}
+
+NS_IMETHODIMP
 nsNPAPIPlugin::CreatePluginInstance(nsIPluginInstance **aResult)
 {
   if (!aResult)
@@ -483,8 +499,7 @@ nsNPAPIPlugin::CreatePluginInstance(nsIPluginInstance **aResult)
 
   *aResult = NULL;
 
-  nsRefPtr<nsNPAPIPluginInstance> inst =
-    new nsNPAPIPluginInstance(&mPluginFuncs, mLibrary);
+  nsRefPtr<nsNPAPIPluginInstance> inst = new nsNPAPIPluginInstance(this);
   if (!inst)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -1885,11 +1900,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
         inst->GetValueFromPlugin(NPPVpluginNeedsXEmbed, &needXEmbed);
       }
       if (windowless || needXEmbed) {
-#ifdef MOZ_WIDGET_GTK2
-        (*(Display **)result) = GDK_DISPLAY();
-#else
-        (*(Display **)result) = QX11Info::display();
-#endif
+        (*(Display **)result) = mozilla::DefaultXDisplay();
         return NPERR_NO_ERROR;
       }
     }

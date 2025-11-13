@@ -50,7 +50,9 @@
 
 #include "nsStringGlue.h"
 #include "nsTArray.h"
+#include "nsRefPtrHashtable.h"
 
+class AccGroupInfo;
 class nsAccessible;
 class nsAccEvent;
 struct nsRoleMapEntry;
@@ -92,7 +94,7 @@ class nsAccessible : public nsAccessNodeWrap,
                      public nsIAccessibleValue
 {
 public:
-  nsAccessible(nsIDOMNode* aNode, nsIWeakReference* aShell);
+  nsAccessible(nsIContent *aContent, nsIWeakReference *aShell);
   virtual ~nsAccessible();
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -107,7 +109,8 @@ public:
   //////////////////////////////////////////////////////////////////////////////
   // nsAccessNode
 
-  virtual nsresult Shutdown();
+  virtual PRBool Init();
+  virtual void Shutdown();
 
   //////////////////////////////////////////////////////////////////////////////
   // Public methods
@@ -201,11 +204,6 @@ public:
   virtual void SetRoleMapEntry(nsRoleMapEntry *aRoleMapEntry);
 
   /**
-   * Set accessible parent.
-   */
-  void SetParent(nsAccessible *aParent);
-
-  /**
    * Cache children if necessary. Return true if the accessible is defunct.
    */
   PRBool EnsureChildren();
@@ -213,19 +211,17 @@ public:
   /**
    * Set the child count to -1 (unknown) and null out cached child pointers.
    * Should be called when accessible tree is changed because document has
-   * transformed.
+   * transformed. Note, if accessible cares about its parent relation chain
+   * itself should override this method to do nothing.
    */
   virtual void InvalidateChildren();
 
   /**
-   * Append/remove a child. Alternative approach of children handling than
-   * CacheChildren/InvalidateChildren.
-   *
-   * @param  aAccessible  [in] child to append/remove
-   * @return true          if child was successfully appended/removed
+   * Append/insert/remove a child. Return true if operation was successful.
    */
-  virtual PRBool AppendChild(nsAccessible *aAccessible) { return PR_FALSE; }
-  virtual PRBool RemoveChild(nsAccessible *aAccessible) { return PR_FALSE; }
+  virtual PRBool AppendChild(nsAccessible* aChild);
+  virtual PRBool InsertChildAt(PRUint32 aIndex, nsAccessible* aChild);
+  virtual PRBool RemoveChild(nsAccessible* aChild);
 
   //////////////////////////////////////////////////////////////////////////////
   // Accessible tree traverse methods
@@ -233,7 +229,7 @@ public:
   /**
    * Return parent accessible.
    */
-  virtual nsAccessible* GetParent();
+  nsAccessible* GetParent();
 
   /**
    * Return child accessible at the given index.
@@ -248,12 +244,12 @@ public:
   /**
    * Return index of the given child accessible.
    */
-  virtual PRInt32 GetIndexOf(nsIAccessible *aChild);
+  virtual PRInt32 GetIndexOf(nsAccessible* aChild);
 
   /**
    * Return index in parent accessible.
    */
-  PRInt32 GetIndexInParent();
+  virtual PRInt32 GetIndexInParent();
 
   /**
    * Return true if accessible has children;
@@ -261,14 +257,28 @@ public:
   PRBool HasChildren() { return !!GetChildAt(0); }
 
   /**
-   * Return parent accessible only if cached.
+   * Return cached accessible of parent-child relatives.
    */
-  nsAccessible* GetCachedParent();
+  nsAccessible* GetCachedParent() const { return mParent; }
+  nsAccessible* GetCachedNextSibling() const
+  {
+    return mParent ?
+      mParent->mChildren.SafeElementAt(mIndexInParent + 1, nsnull).get() : nsnull;
+  }
+  nsAccessible* GetCachedPrevSibling() const
+  {
+    return mParent ?
+      mParent->mChildren.SafeElementAt(mIndexInParent - 1, nsnull).get() : nsnull;
+  }
+  PRUint32 GetCachedChildCount() const { return mChildren.Length(); }
+  PRBool AreChildrenCached() const { return mAreChildrenInitialized; }
 
+#ifdef DEBUG
   /**
-   * Return first child accessible only if cached.
+   * Return true if the access node is cached.
    */
-  nsAccessible* GetCachedFirstChild();
+  PRBool IsInCache();
+#endif
 
   //////////////////////////////////////////////////////////////////////////////
   // Miscellaneous methods
@@ -312,6 +322,12 @@ protected:
   virtual void CacheChildren();
 
   /**
+   * Set accessible parent and index in parent.
+   */
+  void BindToParent(nsAccessible* aParent, PRUint32 aIndexInParent);
+  void UnbindFromParent();
+
+  /**
    * Return sibling accessible at the given offset.
    */
   virtual nsAccessible* GetSiblingAtOffset(PRInt32 aOffset,
@@ -349,7 +365,7 @@ protected:
    * @param  aStartNode  [in] the DOM node to start from
    * @return              the resulting accessible
    */
-  nsAccessible *GetFirstAvailableAccessible(nsIDOMNode *aStartNode) const;
+  nsAccessible *GetFirstAvailableAccessible(nsINode *aStartNode) const;
 
   // Hyperlink helpers
   virtual nsresult GetLinkOffset(PRInt32* aStartOffset, PRInt32* aEndOffset);
@@ -410,6 +426,11 @@ protected:
   PRUint32 GetActionRule(PRUint32 aStates);
 
   /**
+   * Return group info.
+   */
+  AccGroupInfo* GetGroupInfo();
+
+  /**
    * Fires platform accessible event. It's notification method only. It does
    * change nothing on Gecko side. Don't use it until you're sure what you do
    * (see example in XUL tree accessible), use nsEventShell::FireEvent()
@@ -423,6 +444,10 @@ protected:
   nsRefPtr<nsAccessible> mParent;
   nsTArray<nsRefPtr<nsAccessible> > mChildren;
   PRBool mAreChildrenInitialized;
+  PRInt32 mIndexInParent;
+
+  nsAutoPtr<AccGroupInfo> mGroupInfo;
+  friend class AccGroupInfo;
 
   nsRoleMapEntry *mRoleMapEntry; // Non-null indicates author-supplied role; possibly state & value as well
 };
@@ -430,5 +455,4 @@ protected:
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAccessible,
                               NS_ACCESSIBLE_IMPL_IID)
 
-#endif  
-
+#endif

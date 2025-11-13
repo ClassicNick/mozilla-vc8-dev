@@ -62,6 +62,7 @@ enum eHtml5TreeOperation {
   eTreeOpCreateElementNotNetwork,
   eTreeOpSetFormElement,
   eTreeOpAppendText,
+  eTreeOpAppendIsindexPrompt,
   eTreeOpFosterParentText,
   eTreeOpAppendComment,
   eTreeOpAppendCommentToDocument,
@@ -81,6 +82,9 @@ enum eHtml5TreeOperation {
   eTreeOpStreamEnded,
   eTreeOpSetStyleLineNumber,
   eTreeOpSetScriptLineNumberAndFreeze,
+#ifdef MOZ_SVG
+  eTreeOpSvgLoad,
+#endif
   eTreeOpStartLayout
 };
 
@@ -319,12 +323,12 @@ class nsHtml5TreeOperation {
 
   private:
 
-    nsresult AppendTextToTextNode(PRUnichar* aBuffer,
+    nsresult AppendTextToTextNode(const PRUnichar* aBuffer,
                                   PRInt32 aLength,
                                   nsIContent* aTextNode,
                                   nsHtml5TreeOpExecutor* aBuilder);
 
-    nsresult AppendText(PRUnichar* aBuffer,
+    nsresult AppendText(const PRUnichar* aBuffer,
                         PRInt32 aLength,
                         nsIContent* aParent,
                         nsHtml5TreeOpExecutor* aBuilder);

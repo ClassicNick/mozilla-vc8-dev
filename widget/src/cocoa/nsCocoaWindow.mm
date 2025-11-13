@@ -215,12 +215,12 @@ nsCocoaWindow::~nsCocoaWindow()
 static bool WindowSizeAllowed(PRInt32 aWidth, PRInt32 aHeight)
 {
   if (aWidth > SIZE_LIMIT) {
-    NS_ERROR(nsPrintfCString(256, "Requested Cocoa window width of %d is too much, max allowed is %d\n",
+    NS_ERROR(nsPrintfCString(256, "Requested Cocoa window width of %d is too much, max allowed is %d",
                              aWidth, SIZE_LIMIT).get());
     return false;
   }
   if (aHeight > SIZE_LIMIT) {
-    NS_ERROR(nsPrintfCString(256, "Requested Cocoa window height of %d is too much, max allowed is %d\n",
+    NS_ERROR(nsPrintfCString(256, "Requested Cocoa window height of %d is too much, max allowed is %d",
                              aHeight, SIZE_LIMIT).get());
     return false;
   }
@@ -2392,9 +2392,9 @@ ContentPatternDrawCallback(void* aInfo, CGContextRef aContext)
         windowLocation = nsCocoaUtils::EventLocationForWindow(anEvent, self);
         target = [contentView hitTest:[contentView convertPoint:windowLocation fromView:nil]];
         // If the hit test failed, the event is targeted here but is not over the window.
-        // Target it at the first responder.
+        // Send it to our content view.
         if (!target)
-          target = (NSView*)[self firstResponder];
+          target = contentView;
       }
       break;
     default:
