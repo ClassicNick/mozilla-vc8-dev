@@ -47,11 +47,11 @@
 
 #define PEDANTIC 0
 #if PEDANTIC
-#  define UNLESS_PEDANTIC(...)
-#  define IF_PEDANTIC(...) __VA_ARGS__
+#  define UNLESS_PEDANTIC(a)
+#  define IF_PEDANTIC(a) __VA_ARGS__
 #else
-#  define UNLESS_PEDANTIC(...) __VA_ARGS__
-#  define IF_PEDANTIC(...)
+#  define UNLESS_PEDANTIC(a) __VA_ARGS__
+#  define IF_PEDANTIC(a)
 #endif
 
 #ifdef NANOJIT_IA32

@@ -63,11 +63,11 @@
 #endif
 
 #if defined NANOJIT_64BIT
-    #define IF_64BIT(...) __VA_ARGS__
-    #define UNLESS_64BIT(...)
+    #define IF_64BIT(a) __VA_ARGS__
+    #define UNLESS_64BIT(a)
 #else
-    #define IF_64BIT(...)
-    #define UNLESS_64BIT(...) __VA_ARGS__
+    #define IF_64BIT(a)
+    #define UNLESS_64BIT(a) __VA_ARGS__
 #endif
 
 // Embed no-op macros that let Valgrind work with the JIT.
