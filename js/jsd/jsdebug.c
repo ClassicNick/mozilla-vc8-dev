@@ -577,6 +577,14 @@ JSD_SetInterruptHook(JSDContext*           jsdc,
 }
 
 JSD_PUBLIC_API(JSBool)
+JSD_EnableSingleStepInterrupts(JSDContext* jsdc, JSDScript* jsdscript, JSBool enable)
+{
+    JSD_ASSERT_VALID_CONTEXT(jsdc);
+    JSD_ASSERT_VALID_SCRIPT(jsdscript);
+    return jsd_EnableSingleStepInterrupts(jsdc, jsdscript, enable);
+}
+
+JSD_PUBLIC_API(JSBool)
 JSD_ClearInterruptHook(JSDContext* jsdc)
 {
     JSD_ASSERT_VALID_CONTEXT(jsdc);
@@ -1114,6 +1122,14 @@ JSD_GetValueFunctionName(JSDContext* jsdc, JSDValue* jsdval)
     JSD_ASSERT_VALID_CONTEXT(jsdc);
     JSD_ASSERT_VALID_VALUE(jsdval);
     return jsd_GetValueFunctionName(jsdc, jsdval);
+}
+
+JSD_PUBLIC_API(JSFunction*)
+JSD_GetValueFunction(JSDContext* jsdc, JSDValue* jsdval)
+{
+    JSD_ASSERT_VALID_CONTEXT(jsdc);
+    JSD_ASSERT_VALID_VALUE(jsdval);
+    return jsd_GetValueFunction(jsdc, jsdval);
 }
 
 /**************************************************/

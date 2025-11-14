@@ -4039,7 +4039,8 @@ nsTextFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 class nsDisplayText : public nsDisplayItem {
 public:
   nsDisplayText(nsDisplayListBuilder* aBuilder, nsTextFrame* aFrame) :
-    nsDisplayItem(aBuilder, aFrame) {
+    nsDisplayItem(aBuilder, aFrame),
+    mDisableSubpixelAA(PR_FALSE) {
     MOZ_COUNT_CTOR(nsDisplayText);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -4061,7 +4062,14 @@ public:
                      nsIRenderingContext* aCtx);
   NS_DISPLAY_DECL_NAME("Text", TYPE_TEXT)
 
-  virtual PRBool HasText() { return PR_TRUE; }
+  virtual nsRect GetComponentAlphaBounds(nsDisplayListBuilder* aBuilder)
+  {
+    return GetBounds(aBuilder);
+  }
+
+  virtual void DisableComponentAlpha() { mDisableSubpixelAA = PR_TRUE; }
+
+  PRPackedBool mDisableSubpixelAA;
 };
 
 void
@@ -4073,8 +4081,11 @@ nsDisplayText::Paint(nsDisplayListBuilder* aBuilder,
   nsRect extraVisible = mVisibleRect;
   nscoord appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
   extraVisible.Inflate(appUnitsPerDevPixel, appUnitsPerDevPixel);
-  static_cast<nsTextFrame*>(mFrame)->
-    PaintText(aCtx, ToReferenceFrame(), extraVisible);
+  nsTextFrame* f = static_cast<nsTextFrame*>(mFrame);
+
+  gfxContextAutoDisableSubpixelAntialiasing disable(aCtx->ThebesContext(),
+                                                    mDisableSubpixelAA);
+  f->PaintText(aCtx, ToReferenceFrame(), extraVisible);
 }
 
 NS_IMETHODIMP
@@ -5072,7 +5083,7 @@ nsTextFrame::DrawText(gfxContext* aCtx, const gfxPoint& aTextBaselinePt,
 {
   // Paint the text and soft-hyphen (if any) onto the given graphics context
   mTextRun->Draw(aCtx, aTextBaselinePt, aOffset, aLength,
-                 aDirtyRect, aProvider, &aAdvanceWidth);
+                 aProvider, &aAdvanceWidth);
 
   if (aDrawSoftHyphen) {
     // Don't use ctx as the context, because we need a reference context here,
@@ -5084,7 +5095,7 @@ nsTextFrame::DrawText(gfxContext* aCtx, const gfxPoint& aTextBaselinePt,
       gfxFloat hyphenBaselineX = aTextBaselinePt.x + mTextRun->GetDirection() * aAdvanceWidth -
         (mTextRun->IsRightToLeft() ? hyphenTextRun->GetAdvanceWidth(0, hyphenTextRun->GetLength(), nsnull) : 0);
       hyphenTextRun->Draw(aCtx, gfxPoint(hyphenBaselineX, aTextBaselinePt.y),
-                          0, hyphenTextRun->GetLength(), aDirtyRect, nsnull, nsnull);
+                          0, hyphenTextRun->GetLength(), nsnull, nsnull);
     }
   }
 }

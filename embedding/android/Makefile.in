@@ -48,10 +48,12 @@ DIRS = locales
 JAVAFILES = \
   GeckoApp.java \
   GeckoAppShell.java \
+  GeckoConnectivityReceiver.java \
   GeckoEvent.java \
   GeckoSurfaceView.java \
   GeckoInputConnection.java \
   AlertNotification.java \
+  MemoryWatcher.java \
   $(NULL)
 
 PROCESSEDJAVAFILES = \
@@ -67,6 +69,10 @@ else
 MIN_CPU_VERSION=5
 endif
 
+ifeq (,$(ANDROID_VERSION_CODE))
+ANDROID_VERSION_CODE=$(shell $(PYTHON) $(topsrcdir)/toolkit/xre/make-platformini.py --print-buildid | cut -c1-10)
+endif
+
 DEFINES += \
   -DANDROID_PACKAGE_NAME=$(ANDROID_PACKAGE_NAME) \
   -DMOZ_APP_DISPLAYNAME=$(MOZ_APP_DISPLAYNAME) \
@@ -75,6 +81,7 @@ DEFINES += \
   -DMOZ_CHILD_PROCESS_NAME=$(MOZ_CHILD_PROCESS_NAME) \
   -DMOZ_MIN_CPU_VERSION=$(MIN_CPU_VERSION) \
   -DMOZ_CRASHREPORTER=$(MOZ_CRASHREPORTER) \
+  -DANDROID_VERSION_CODE=$(ANDROID_VERSION_CODE) \
   $(NULL)
 
 GARBAGE += \
@@ -102,7 +109,7 @@ RES_LAYOUT = \
   res/layout/notification_progress_text.xml \
   $(NULL)
 
-RES_VALUES = res/values/colors.xml
+RES_VALUES = res/values/colors.xml res/values/themes.xml
 
 AB_rCD = $(shell echo $(AB_CD) | sed -e s/-/-r/)
 

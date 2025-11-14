@@ -131,11 +131,15 @@ var gSyncSetup = {
   },
 
   startNewAccountSetup: function () {
+    if (!Weave.Utils.ensureMPUnlocked())
+      return false;
     this._settingUpNew = true;
     this.wizard.pageIndex = NEW_ACCOUNT_START_PAGE;
   },
 
   useExistingAccount: function () {
+    if (!Weave.Utils.ensureMPUnlocked())
+      return false;
     this._settingUpNew = false;
     this.wizard.pageIndex = EXISTING_ACCOUNT_CONNECT_PAGE;
   },
@@ -197,10 +201,6 @@ var gSyncSetup = {
     }
   },
 
-  onPassphraseKeyUp: function (event) {
-    this.checkFields();
-  },
-
   // fun with validation!
   checkFields: function () {
     this.wizard.canAdvance = this.readyToAdvance();
@@ -211,7 +211,7 @@ var gSyncSetup = {
       case INTRO_PAGE:
         return false;
       case NEW_ACCOUNT_START_PAGE:
-        for (i in this.status) {
+        for (let i in this.status) {
           if (!this.status[i])
             return false;
         }
@@ -333,6 +333,7 @@ var gSyncSetup = {
         this.wizard.getButton("next").hidden = false;
         this.wizard.getButton("back").hidden = false;
         this.wizard.getButton("extra1").hidden = false;
+        this.wizard.canAdvance = false;
         this.wizard.canRewind = true;
         this.startEasySetup();
         break;
@@ -379,6 +380,13 @@ var gSyncSetup = {
   },
 
   onWizardAdvance: function () {
+    // Check pageIndex so we don't prompt before the Sync setup wizard appears.
+    // This is a fallback in case the Master Password gets locked mid-wizard.
+    if ((this.wizard.pageIndex >= 0) &&
+        !Weave.Utils.ensureMPUnlocked()) {
+      return false;
+    }
+      
     if (!this.wizard.pageIndex)
       return true;
 
@@ -777,8 +785,6 @@ var gSyncSetup = {
               "strftime('%s','now','localtime','utc') - " +
               "( " +
                 "SELECT visit_date FROM moz_historyvisits " +
-                "UNION ALL " +
-                "SELECT visit_date FROM moz_historyvisits_temp " +
                 "ORDER BY visit_date ASC LIMIT 1 " +
                 ")/1000000 " +
               ")/86400) AS daysOfHistory ");
@@ -874,9 +880,9 @@ var gSyncSetup = {
   // if no property string is passed in, we clear label/style
   _setFeedback: function (element, success, string) {
     element.hidden = success || !string;
-    let class = success ? "success" : "error";
+    let classname = success ? "success" : "error";
     let image = element.getElementsByAttribute("class", "statusIcon")[0];
-    image.setAttribute("status", class);
+    image.setAttribute("status", classname);
     let label = element.getElementsByAttribute("class", "status")[0];
     label.value = string;
   },

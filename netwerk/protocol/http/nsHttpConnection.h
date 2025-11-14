@@ -53,7 +53,6 @@
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsITimer.h"
 
 //-----------------------------------------------------------------------------
 // nsHttpConnection - represents a connection to a HTTP server (or proxy)
@@ -132,14 +131,6 @@ private:
     nsresult ProxyStartSSL();
 
     nsresult CreateTransport(PRUint8 caps);
-    nsresult CreateTransport(PRUint8 caps,
-                             nsISocketTransport **sock,
-                             nsIAsyncInputStream **instream,
-                             nsIAsyncOutputStream **outstream);
-    nsresult AssignTransport(nsISocketTransport *sock,
-                             nsIAsyncOutputStream *outs,
-                             nsIAsyncInputStream *ins);
-
     nsresult OnTransactionDone(nsresult reason);
     nsresult OnSocketWritable();
     nsresult OnSocketReadable();
@@ -149,11 +140,6 @@ private:
     PRBool   IsAlive();
     PRBool   SupportsPipelining(nsHttpResponseHead *);
     
-    static void  IdleSynTimeout(nsITimer *, void *);
-    void         SelectPrimaryTransport(nsIAsyncOutputStream *out);
-    void         ReleaseBackupTransport(nsISocketTransport *sock,
-                                        nsIAsyncOutputStream *outs,
-                                        nsIAsyncInputStream *ins);
 private:
     nsCOMPtr<nsISocketTransport>    mSocketTransport;
     nsCOMPtr<nsIAsyncInputStream>   mSocketIn;
@@ -179,22 +165,6 @@ private:
     PRPackedBool                    mSupportsPipelining;
     PRPackedBool                    mIsReused;
     PRPackedBool                    mCompletedSSLConnect;
-
-    PRUint32                        mActivationCount;
-
-    // These items are used to implement a parallel connection opening
-    // attempt when network.http.connection-retry-timeout has expired
-    PRUint8                         mSocketCaps;
-    nsCOMPtr<nsITimer>              mIdleSynTimer;
-    nsRefPtr<nsHttpConnection>      mBackupConnection;
-
-    nsCOMPtr<nsISocketTransport>    mSocketTransport1;
-    nsCOMPtr<nsIAsyncInputStream>   mSocketIn1;
-    nsCOMPtr<nsIAsyncOutputStream>  mSocketOut1;
-
-    nsCOMPtr<nsISocketTransport>    mSocketTransport2;
-    nsCOMPtr<nsIAsyncInputStream>   mSocketIn2;
-    nsCOMPtr<nsIAsyncOutputStream>  mSocketOut2;
 };
 
 #endif // nsHttpConnection_h__

@@ -84,14 +84,6 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsIXULRuntime.h"
 
-// For locale aware string methods
-#include "plstr.h"
-#include "nsIPlatformCharset.h"
-#include "nsICharsetConverterManager.h"
-#include "nsUnicharUtils.h"
-#include "nsILocaleService.h"
-#include "nsICollation.h"
-#include "nsCollationCID.h"
 #include "nsDOMClassInfo.h"
 
 #include "jsdbgapi.h"           // for JS_ClearWatchPointsForObject
@@ -223,10 +215,6 @@ static PRTime sMaxScriptRunTime;
 static PRTime sMaxChromeScriptRunTime;
 
 static nsIScriptSecurityManager *sSecurityManager;
-
-static nsICollation *gCollation;
-
-static nsIUnicodeDecoder *gDecoder;
 
 // nsUserActivityObserver observes user-interaction-active and
 // user-interaction-inactive notifications. It counts the number of
@@ -644,158 +632,6 @@ NS_ScriptErrorReporter(JSContext *cx,
 #endif
 }
 
-static JSBool
-LocaleToUnicode(JSContext *cx, const char *src, jsval *rval)
-{
-  nsresult rv;
-
-  if (!gDecoder) {
-    // use app default locale
-    nsCOMPtr<nsILocaleService> localeService =
-      do_GetService(NS_LOCALESERVICE_CONTRACTID, &rv);
-    if (NS_SUCCEEDED(rv)) {
-      nsCOMPtr<nsILocale> appLocale;
-      rv = localeService->GetApplicationLocale(getter_AddRefs(appLocale));
-      if (NS_SUCCEEDED(rv)) {
-        nsAutoString localeStr;
-        rv = appLocale->
-          GetCategory(NS_LITERAL_STRING(NSILOCALE_TIME), localeStr);
-        NS_ASSERTION(NS_SUCCEEDED(rv), "failed to get app locale info");
-
-        nsCOMPtr<nsIPlatformCharset> platformCharset =
-          do_GetService(NS_PLATFORMCHARSET_CONTRACTID, &rv);
-
-        if (NS_SUCCEEDED(rv)) {
-          nsCAutoString charset;
-          rv = platformCharset->GetDefaultCharsetForLocale(localeStr, charset);
-          if (NS_SUCCEEDED(rv)) {
-            // get/create unicode decoder for charset
-            nsCOMPtr<nsICharsetConverterManager> ccm =
-              do_GetService(NS_CHARSETCONVERTERMANAGER_CONTRACTID, &rv);
-            if (NS_SUCCEEDED(rv))
-              ccm->GetUnicodeDecoder(charset.get(), &gDecoder);
-          }
-        }
-      }
-    }
-  }
-
-  JSString *str = nsnull;
-  PRInt32 srcLength = PL_strlen(src);
-
-  if (gDecoder) {
-    PRInt32 unicharLength = srcLength;
-    PRUnichar *unichars =
-      (PRUnichar *)JS_malloc(cx, (srcLength + 1) * sizeof(PRUnichar));
-    if (unichars) {
-      rv = gDecoder->Convert(src, &srcLength, unichars, &unicharLength);
-      if (NS_SUCCEEDED(rv)) {
-        // terminate the returned string
-        unichars[unicharLength] = 0;
-
-        // nsIUnicodeDecoder::Convert may use fewer than srcLength PRUnichars
-        if (unicharLength + 1 < srcLength + 1) {
-          PRUnichar *shrunkUnichars =
-            (PRUnichar *)JS_realloc(cx, unichars,
-                                    (unicharLength + 1) * sizeof(PRUnichar));
-          if (shrunkUnichars)
-            unichars = shrunkUnichars;
-        }
-        str = JS_NewUCString(cx,
-                             reinterpret_cast<jschar*>(unichars),
-                             unicharLength);
-      }
-      if (!str)
-        JS_free(cx, unichars);
-    }
-  }
-
-  if (!str) {
-    nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_OUT_OF_MEMORY);
-    return JS_FALSE;
-  }
-
-  *rval = STRING_TO_JSVAL(str);
-  return JS_TRUE;
-}
-
-
-static JSBool
-ChangeCase(JSContext *cx, JSString *src, jsval *rval,
-           void(* changeCaseFnc)(const nsAString&, nsAString&))
-{
-  nsAutoString result;
-  changeCaseFnc(nsDependentJSString(src), result);
-
-  JSString *ucstr = JS_NewUCStringCopyN(cx, (jschar*)result.get(), result.Length());
-  if (!ucstr) {
-    return JS_FALSE;
-  }
-
-  *rval = STRING_TO_JSVAL(ucstr);
-
-  return JS_TRUE;
-}
-
-static JSBool
-LocaleToUpperCase(JSContext *cx, JSString *src, jsval *rval)
-{
-  return ChangeCase(cx, src, rval, ToUpperCase);
-}
-
-static JSBool
-LocaleToLowerCase(JSContext *cx, JSString *src, jsval *rval)
-{
-  return ChangeCase(cx, src, rval, ToLowerCase);
-}
-
-static JSBool
-LocaleCompare(JSContext *cx, JSString *src1, JSString *src2, jsval *rval)
-{
-  nsresult rv;
-
-  if (!gCollation) {
-    nsCOMPtr<nsILocaleService> localeService =
-      do_GetService(NS_LOCALESERVICE_CONTRACTID, &rv);
-
-    if (NS_SUCCEEDED(rv)) {
-      nsCOMPtr<nsILocale> locale;
-      rv = localeService->GetApplicationLocale(getter_AddRefs(locale));
-
-      if (NS_SUCCEEDED(rv)) {
-        nsCOMPtr<nsICollationFactory> colFactory =
-          do_CreateInstance(NS_COLLATIONFACTORY_CONTRACTID, &rv);
-
-        if (NS_SUCCEEDED(rv)) {
-          rv = colFactory->CreateCollation(locale, &gCollation);
-        }
-      }
-    }
-
-    if (NS_FAILED(rv)) {
-      nsDOMClassInfo::ThrowJSException(cx, rv);
-
-      return JS_FALSE;
-    }
-  }
-
-  PRInt32 result;
-  rv = gCollation->CompareString(nsICollation::kCollationStrengthDefault,
-                                 nsDependentJSString(src1),
-                                 nsDependentJSString(src2),
-                                 &result);
-
-  if (NS_FAILED(rv)) {
-    nsDOMClassInfo::ThrowJSException(cx, rv);
-
-    return JS_FALSE;
-  }
-
-  *rval = INT_TO_JSVAL(result);
-
-  return JS_TRUE;
-}
-
 #ifdef DEBUG
 // A couple of useful functions to call when you're debugging.
 nsGlobalWindow *
@@ -877,20 +713,6 @@ DumpString(const nsAString &str)
 }
 #endif
 
-static void
-MaybeGC(JSContext *cx)
-{
-  size_t bytes = cx->runtime->gcBytes;
-  size_t lastBytes = cx->runtime->gcLastBytes;
-  if ((bytes > 8192 && bytes > lastBytes * 16)
-#ifdef DEBUG
-      || cx->runtime->gcZeal > 0
-#endif
-      ) {
-    JS_GC(cx);
-  }
-}
-
 static already_AddRefed<nsIPrompt>
 GetPromptFromContext(nsJSContext* ctx)
 {
@@ -929,7 +751,7 @@ nsJSContext::DOMOperationCallback(JSContext *cx)
   PRTime callbackTime = ctx->mOperationCallbackTime;
   PRTime modalStateTime = ctx->mModalStateTime;
 
-  MaybeGC(cx);
+  JS_MaybeGC(cx);
 
   // Now restore the callback time and count, in case they got reset.
   ctx->mOperationCallbackTime = callbackTime;
@@ -1122,7 +944,7 @@ nsJSContext::DOMOperationCallback(JSContext *cx)
         JS_SetFrameReturnValue(cx, fp, rval);
         return JS_TRUE;
       case JSTRAP_ERROR:
-        cx->throwing = JS_FALSE;
+        JS_ClearPendingException(cx);
         return JS_FALSE;
       case JSTRAP_THROW:
         JS_SetPendingException(cx, rval);
@@ -1317,15 +1139,7 @@ nsJSContext::nsJSContext(JSRuntime *aRuntime)
 
     ::JS_SetOperationCallback(mContext, DOMOperationCallback);
 
-    static JSLocaleCallbacks localeCallbacks =
-      {
-        LocaleToUpperCase,
-        LocaleToLowerCase,
-        LocaleCompare,
-        LocaleToUnicode
-      };
-
-    ::JS_SetLocaleCallbacks(mContext, &localeCallbacks);
+    xpc_LocalizeContext(mContext);
   }
   mIsInitialized = PR_FALSE;
   mNumEvaluations = 0;
@@ -1357,8 +1171,6 @@ nsJSContext::~nsJSContext()
 
     NS_IF_RELEASE(sRuntimeService);
     NS_IF_RELEASE(sSecurityManager);
-    NS_IF_RELEASE(gCollation);
-    NS_IF_RELEASE(gDecoder);
   }
 }
 
@@ -1591,27 +1403,36 @@ JSValueToAString(JSContext *cx, jsval val, nsAString *result,
   }
 
   JSString* jsstring = ::JS_ValueToString(cx, val);
-  if (jsstring) {
-    result->Assign(reinterpret_cast<const PRUnichar*>
-                                   (::JS_GetStringChars(jsstring)),
-                   ::JS_GetStringLength(jsstring));
-  } else {
-    result->Truncate();
+  if (!jsstring) {
+    goto error;
+  }
 
-    // We failed to convert val to a string. We're either OOM, or the
-    // security manager denied access to .toString(), or somesuch, on
-    // an object. Treat this case as if the result were undefined.
+  size_t length;
+  const jschar *chars;
+  chars = ::JS_GetStringCharsAndLength(cx, jsstring, &length);
+  if (!chars) {
+    goto error;
+  }
 
-    if (isUndefined) {
-      *isUndefined = PR_TRUE;
-    }
+  result->Assign(chars, length);
+  return NS_OK;
 
-    if (!::JS_IsExceptionPending(cx)) {
-      // JS_ValueToString() returned null w/o an exception
-      // pending. That means we're OOM.
+error:
+  // We failed to convert val to a string. We're either OOM, or the
+  // security manager denied access to .toString(), or somesuch, on
+  // an object. Treat this case as if the result were undefined.
 
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+  result->Truncate();
+
+  if (isUndefined) {
+    *isUndefined = PR_TRUE;
+  }
+
+  if (!::JS_IsExceptionPending(cx)) {
+    // JS_ValueToString()/JS_GetStringCharsAndLength returned null w/o an
+    // exception pending. That means we're OOM.
+
+    return NS_ERROR_OUT_OF_MEMORY;
   }
 
   return NS_OK;
@@ -2135,9 +1956,8 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
   // xxxmarkh - this comment is no longer true - principals are not used at
   // all now, and never were in some cases.
 
-  nsCOMPtr<nsIJSContextStack> stack =
-    do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv);
-  if (NS_FAILED(rv) || NS_FAILED(stack->Push(mContext)))
+  nsCxPusher pusher;
+  if (!pusher.Push(mContext, PR_TRUE))
     return NS_ERROR_FAILURE;
 
   // check if the event handler can be run on the object in question
@@ -2150,6 +1970,25 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
     PRUint32 argc = 0;
     jsval *argv = nsnull;
 
+    JSObject *funobj = static_cast<JSObject *>(aHandler);
+    nsCOMPtr<nsIPrincipal> principal;
+    rv = sSecurityManager->GetObjectPrincipal(mContext, funobj,
+                                              getter_AddRefs(principal));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    JSStackFrame *currentfp = nsnull;
+    rv = sSecurityManager->PushContextPrincipal(mContext,
+                                                JS_FrameIterator(mContext, &currentfp),
+                                                principal);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    jsval funval = OBJECT_TO_JSVAL(funobj);
+    JSAutoEnterCompartment ac;
+    if (!ac.enter(mContext, target)) {
+      sSecurityManager->PopContextPrincipal(mContext);
+      return NS_ERROR_FAILURE;
+    }
+
     js::LazilyConstructed<nsAutoPoolRelease> poolRelease;
     js::LazilyConstructed<js::AutoArrayRooter> tvr;
 
@@ -2160,17 +1999,7 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
     // in the same scope as aTarget.
     rv = ConvertSupportsTojsvals(aargv, target, &argc,
                                  &argv, poolRelease, tvr);
-    if (NS_FAILED(rv)) {
-      stack->Pop(nsnull);
-      return rv;
-    }
-
-    jsval funval = OBJECT_TO_JSVAL(static_cast<JSObject *>(aHandler));
-    JSAutoEnterCompartment ac;
-    if (!ac.enter(mContext, target)) {
-      stack->Pop(nsnull);
-      return NS_ERROR_FAILURE;
-    }
+    NS_ENSURE_SUCCESS(rv, rv);
 
     ++mExecuteDepth;
     PRBool ok = ::JS_CallFunctionValue(mContext, target,
@@ -2190,10 +2019,11 @@ nsJSContext::CallEventHandler(nsISupports* aTarget, void *aScope, void *aHandler
       // Tell the caller that the handler threw an error.
       rv = NS_ERROR_FAILURE;
     }
+
+    sSecurityManager->PopContextPrincipal(mContext);
   }
 
-  if (NS_FAILED(stack->Pop(nsnull)))
-    return NS_ERROR_FAILURE;
+  pusher.Pop();
 
   // Convert to variant before calling ScriptEvaluated, as it may GC, meaning
   // we would need to root rval.
@@ -3302,16 +3132,6 @@ static JSFunctionSpec JProfFunctions[] = {
 
 #endif /* defined(MOZ_JPROF) */
 
-#ifdef MOZ_SHARK
-static JSFunctionSpec SharkFunctions[] = {
-    {"startShark",                 js_StartShark,              0, 0},
-    {"stopShark",                  js_StopShark,               0, 0},
-    {"connectShark",               js_ConnectShark,            0, 0},
-    {"disconnectShark",            js_DisconnectShark,         0, 0},
-    {nsnull,                       nsnull,                     0, 0}
-};
-#endif
-
 #ifdef MOZ_CALLGRIND
 static JSFunctionSpec CallgrindFunctions[] = {
     {"startCallgrind",             js_StartCallgrind,          0, 0},
@@ -3361,6 +3181,9 @@ nsJSContext::InitClasses(void *aGlobalObj)
     rv = NS_ERROR_FAILURE;
   }
 
+  // Attempt to initialize profiling functions
+  ::JS_DefineProfilingFunctions(mContext, globalObj);
+
 #ifdef NS_TRACE_MALLOC
   // Attempt to initialize TraceMalloc functions
   ::JS_DefineFunctions(mContext, globalObj, TraceMallocFunctions);
@@ -3369,11 +3192,6 @@ nsJSContext::InitClasses(void *aGlobalObj)
 #ifdef MOZ_JPROF
   // Attempt to initialize JProf functions
   ::JS_DefineFunctions(mContext, globalObj, JProfFunctions);
-#endif
-
-#ifdef MOZ_SHARK
-  // Attempt to initialize Shark functions
-  ::JS_DefineFunctions(mContext, globalObj, SharkFunctions);
 #endif
 
 #ifdef MOZ_CALLGRIND
@@ -3524,12 +3342,12 @@ nsJSContext::ScriptEvaluated(PRBool aTerminated)
 
 #ifdef JS_GC_ZEAL
   if (mContext->runtime->gcZeal >= 2) {
-    MaybeGC(mContext);
+    JS_MaybeGC(mContext);
   } else
 #endif
   if (mNumEvaluations > 20) {
     mNumEvaluations = 0;
-    MaybeGC(mContext);
+    JS_MaybeGC(mContext);
   }
 
   if (aTerminated) {
@@ -3947,7 +3765,6 @@ nsJSRuntime::Startup()
   sDidShutdown = PR_FALSE;
   sContextCount = 0;
   sSecurityManager = nsnull;
-  gCollation = nsnull;
 }
 
 static int
@@ -3987,26 +3804,20 @@ ReportAllJSExceptionsPrefChangedCallback(const char* aPrefName, void* aClosure)
 static int
 SetMemoryHighWaterMarkPrefChangedCallback(const char* aPrefName, void* aClosure)
 {
-  PRInt32 highwatermark = nsContentUtils::GetIntPref(aPrefName, 32);
+  PRInt32 highwatermark = nsContentUtils::GetIntPref(aPrefName, 128);
 
-  if (highwatermark >= 32) {
-    /*
-     * There are two ways to allocate memory in SpiderMonkey. One is
-     * to use jsmalloc() and the other is to use GC-owned memory
-     * (e.g. js_NewGCThing()).
-     *
-     * In the browser, we don't cap the amount of GC-owned memory.
-     */
-    JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_MALLOC_BYTES,
-                      128L * 1024L * 1024L);
-    JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_BYTES,
-                      0xffffffff);
-  } else {
-    JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_MALLOC_BYTES,
-                      highwatermark * 1024L * 1024L);
-    JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_BYTES,
-                      highwatermark * 1024L * 1024L);
-  }
+  JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_MALLOC_BYTES,
+                    highwatermark * 1024L * 1024L);
+  return 0;
+}
+
+static int
+SetMemoryMaxPrefChangedCallback(const char* aPrefName, void* aClosure)
+{
+  PRInt32 pref = nsContentUtils::GetIntPref(aPrefName, -1);
+  // handle overflow and negative pref values
+  PRUint32 max = (pref <= 0 || pref >= 0x1000) ? -1 : (PRUint32)pref * 1024 * 1024;
+  JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MAX_BYTES, max);
   return 0;
 }
 
@@ -4015,6 +3826,16 @@ SetMemoryGCFrequencyPrefChangedCallback(const char* aPrefName, void* aClosure)
 {
   PRInt32 triggerFactor = nsContentUtils::GetIntPref(aPrefName, 300);
   JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_TRIGGER_FACTOR, triggerFactor);
+  return 0;
+}
+
+static int
+SetMemoryGCModePrefChangedCallback(const char* aPrefName, void* aClosure)
+{
+  PRBool enableCompartmentGC = nsContentUtils::GetBoolPref(aPrefName);
+  JS_SetGCParameter(nsJSRuntime::sRuntime, JSGC_MODE, enableCompartmentGC
+                                                      ? JSGC_MODE_COMPARTMENT
+                                                      : JSGC_MODE_GLOBAL);
   return 0;
 }
 
@@ -4049,7 +3870,8 @@ static JSObject*
 DOMReadStructuredClone(JSContext* cx,
                        JSStructuredCloneReader* reader,
                        uint32 tag,
-                       uint32 data)
+                       uint32 data,
+                       void* closure)
 {
   // We don't currently support any extensions to structured cloning.
   nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
@@ -4059,7 +3881,8 @@ DOMReadStructuredClone(JSContext* cx,
 static JSBool
 DOMWriteStructuredClone(JSContext* cx,
                         JSStructuredCloneWriter* writer,
-                        JSObject* obj)
+                        JSObject* obj,
+                        void *closure)
 {
   // We don't currently support any extensions to structured cloning.
   nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
@@ -4144,11 +3967,23 @@ nsJSRuntime::Init()
   SetMemoryHighWaterMarkPrefChangedCallback("javascript.options.mem.high_water_mark",
                                             nsnull);
 
+  nsContentUtils::RegisterPrefCallback("javascript.options.mem.max",
+                                       SetMemoryMaxPrefChangedCallback,
+                                       nsnull);
+  SetMemoryMaxPrefChangedCallback("javascript.options.mem.max",
+                                  nsnull);
+
   nsContentUtils::RegisterPrefCallback("javascript.options.mem.gc_frequency",
                                        SetMemoryGCFrequencyPrefChangedCallback,
                                        nsnull);
   SetMemoryGCFrequencyPrefChangedCallback("javascript.options.mem.gc_frequency",
                                           nsnull);
+
+  nsContentUtils::RegisterPrefCallback("javascript.options.mem.gc_per_compartment",
+                                       SetMemoryGCModePrefChangedCallback,
+                                       nsnull);
+  SetMemoryGCModePrefChangedCallback("javascript.options.mem.gc_per_compartment",
+                                     nsnull);
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs)
@@ -4217,8 +4052,6 @@ nsJSRuntime::Shutdown()
     }
     NS_IF_RELEASE(sRuntimeService);
     NS_IF_RELEASE(sSecurityManager);
-    NS_IF_RELEASE(gCollation);
-    NS_IF_RELEASE(gDecoder);
   }
 
   sDidShutdown = PR_TRUE;

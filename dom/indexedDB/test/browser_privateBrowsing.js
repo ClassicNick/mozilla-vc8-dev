@@ -6,15 +6,13 @@
 const testPageURL = "http://mochi.test:8888/browser/" +
   "dom/indexedDB/test/browser_permissionsPrompt.html";
 const notificationID = "indexedDB-permissions-prompt";
-const exceptionText = "5: A mutation operation was attempted on a database " +
-                      "that did not allow mutations.";
 
 function test()
 {
   waitForExplicitFinish();
   // Avoids the actual prompt
   setPermission(testPageURL, "indexedDB");
-  executeSoon(test2);
+  executeSoon(test1);
 }
 
 function test1()
@@ -52,7 +50,8 @@ function test3()
 
     setFinishedCallback(function(result, exception) {
       ok(!result, "No database");
-      is(exception, exceptionText, "Correct exception");
+      is(exception, IDBDatabaseException.NOT_ALLOWED_ERR.toString(),
+         "Correct exception");
       gBrowser.removeCurrentTab();
 
       executeSoon(test4);

@@ -298,6 +298,7 @@ public:
     ~TextureImageCGL()
     {
         if (mPixelBuffer) {
+            mGLContext->MakeCurrent();
             mGLContext->fDeleteBuffers(1, &mPixelBuffer);
         }
     }
@@ -306,9 +307,13 @@ protected:
     already_AddRefed<gfxASurface>
     GetSurfaceForUpdate(const gfxIntSize& aSize, ImageFormat aFmt)
     {
-        if (!mGLContext->IsExtensionSupported(GLContext::ARB_pixel_buffer_object)) {
+        mGLContext->MakeCurrent();
+        if (!mGLContext->
+            IsExtensionSupported(GLContext::ARB_pixel_buffer_object)) 
+        {
             return gfxPlatform::GetPlatform()->
-                CreateOffscreenSurface(aSize, gfxASurface::ContentFromFormat(aFmt));
+                CreateOffscreenSurface(aSize, 
+                                       gfxASurface::ContentFromFormat(aFmt));
         }
 
         if (!mPixelBuffer) {
@@ -323,22 +328,32 @@ protected:
             mPixelBufferSize = size;
         }
         unsigned char* data = 
-          (unsigned char*)mGLContext->fMapBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, LOCAL_GL_WRITE_ONLY);
+            (unsigned char*)mGLContext->
+                fMapBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, 
+                           LOCAL_GL_WRITE_ONLY);
+
+        mGLContext->fBindBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, 0);
 
         if (!data) {
-          return nsnull;
+            mGLContext->fBindBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, 0);
+            return gfxPlatform::GetPlatform()->
+                CreateOffscreenSurface(aSize, 
+                                       gfxASurface::ContentFromFormat(aFmt));
         }
 
         nsRefPtr<gfxQuartzSurface> surf = 
             new gfxQuartzSurface(data, aSize,
                                  aSize.width * 4, aFmt);
 
+        mBoundPixelBuffer = true;
         return surf.forget();
     }
   
     bool FinishedSurfaceUpdate()
     {
-        if (mPixelBuffer) {
+        if (mBoundPixelBuffer) {
+            mGLContext->MakeCurrent();
+            mGLContext->fBindBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, mPixelBuffer);
             mGLContext->fUnmapBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER);
             return true;
         }
@@ -347,8 +362,10 @@ protected:
 
     void FinishedSurfaceUpload()
     {
-        if (mPixelBuffer) {
+        if (mBoundPixelBuffer) {
+            mGLContext->MakeCurrent();
             mGLContext->fBindBuffer(LOCAL_GL_PIXEL_UNPACK_BUFFER, 0);
+            mBoundPixelBuffer = false;
         }
     }
 
@@ -361,10 +378,12 @@ private:
         : BasicTextureImage(aTexture, aSize, aWrapMode, aContentType, aContext)
         , mPixelBuffer(0)
         , mPixelBufferSize(0)
+        , mBoundPixelBuffer(false)
     {}
     
     GLuint mPixelBuffer;
     PRInt32 mPixelBufferSize;
+    bool mBoundPixelBuffer;
 };
 
 already_AddRefed<TextureImage>

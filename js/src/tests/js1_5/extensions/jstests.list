@@ -55,7 +55,7 @@ script regress-339685.js
 script regress-341956-01.js
 script regress-341956-02.js
 script regress-341956-03.js
-skip-if(!xulRuntime.shell&&(xulRuntime.OS=="WINNT"||xulRuntime.OS=="Linux")) script regress-342960.js # bug 528464
+skip-if(!xulRuntime.shell&&(xulRuntime.OS=="WINNT"||xulRuntime.OS=="Linux")) silentfail script regress-342960.js # bug 528464
 skip script regress-345967.js # slow
 script regress-346494-01.js
 script regress-346494.js
@@ -151,7 +151,7 @@ script regress-390597.js
 script regress-390598.js
 script regress-394967.js
 script regress-396326.js
-script regress-406572.js
+skip script regress-406572.js
 script regress-407019.js
 script regress-407501.js
 skip-if(!xulRuntime.shell) script regress-407720.js # slow

@@ -177,6 +177,7 @@ void
 nsHtml5TreeBuilder::characters(const PRUnichar* buf, PRInt32 start, PRInt32 length)
 {
   if (needToDropLF) {
+    needToDropLF = PR_FALSE;
     if (buf[start] == '\n') {
       start++;
       length--;
@@ -184,7 +185,6 @@ nsHtml5TreeBuilder::characters(const PRUnichar* buf, PRInt32 start, PRInt32 leng
         return;
       }
     }
-    needToDropLF = PR_FALSE;
   }
   switch(mode) {
     case NS_HTML5TREE_BUILDER_IN_BODY:
@@ -1088,7 +1088,7 @@ nsHtml5TreeBuilder::startTag(nsHtml5ElementName* elementName, nsHtml5HtmlAttribu
             case NS_HTML5TREE_BUILDER_AREA_OR_WBR: {
               reconstructTheActiveFormattingElements();
             }
-            case NS_HTML5TREE_BUILDER_PARAM_OR_SOURCE: {
+            case NS_HTML5TREE_BUILDER_PARAM_OR_SOURCE_OR_TRACK: {
               appendVoidElementToCurrentMayFoster(elementName, attributes);
               selfClosing = PR_FALSE;
               attributes = nsnull;
@@ -2388,7 +2388,7 @@ nsHtml5TreeBuilder::endTag(nsHtml5ElementName* elementName)
             NS_HTML5_BREAK(endtagloop);
           }
           case NS_HTML5TREE_BUILDER_AREA_OR_WBR:
-          case NS_HTML5TREE_BUILDER_PARAM_OR_SOURCE:
+          case NS_HTML5TREE_BUILDER_PARAM_OR_SOURCE_OR_TRACK:
           case NS_HTML5TREE_BUILDER_EMBED_OR_IMG:
           case NS_HTML5TREE_BUILDER_IMAGE:
           case NS_HTML5TREE_BUILDER_INPUT:

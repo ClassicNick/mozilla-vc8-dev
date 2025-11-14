@@ -124,12 +124,27 @@ PRBool nsPluginsDir::IsPluginFile(nsIFile* file)
 // Caller is responsible for freeing returned buffer.
 static char* CFStringRefToUTF8Buffer(CFStringRef cfString)
 {
-  int bufferLength = ::CFStringGetLength(cfString) + 1;
-  char* newBuffer = static_cast<char*>(NS_Alloc(bufferLength));
-  if (newBuffer && !::CFStringGetCString(cfString, newBuffer, bufferLength, kCFStringEncodingUTF8)) {
-    NS_Free(newBuffer);
-    newBuffer = nsnull;
+  const char* buffer = ::CFStringGetCStringPtr(cfString, kCFStringEncodingUTF8);
+  if (buffer) {
+    return PL_strdup(buffer);
   }
+
+  int bufferLength =
+    ::CFStringGetMaximumSizeForEncoding(::CFStringGetLength(cfString),
+                                        kCFStringEncodingUTF8) + 1;
+  char* newBuffer = static_cast<char*>(NS_Alloc(bufferLength));
+  if (!newBuffer) {
+    return nsnull;
+  }
+
+  if (!::CFStringGetCString(cfString, newBuffer, bufferLength,
+                            kCFStringEncodingUTF8)) {
+    NS_Free(newBuffer);
+    return nsnull;
+  }
+
+  newBuffer = static_cast<char*>(NS_Realloc(newBuffer,
+                                            PL_strlen(newBuffer) + 1));
   return newBuffer;
 }
 
@@ -212,22 +227,7 @@ static CFDictionaryRef ParsePlistForMIMETypesFilename(CFBundleRef bundle)
   if (::CFGetTypeID(propertyList) != ::CFDictionaryGetTypeID()) {
     return NULL;
   }
-  
-  CFTypeRef localizedName = ::CFDictionaryGetValue(static_cast<CFDictionaryRef>(propertyList), CFSTR("WebPluginLocalizationName"));
-  if (!localizedName || ::CFGetTypeID(localizedName) != ::CFStringGetTypeID()) {
-    return NULL;
-  }
-  
-  CFLocaleRef currentLocale = ::CFLocaleCopyCurrent();
-  if (!currentLocale) {
-    return NULL;
-  }
-  
-  AutoCFTypeObject currentLocaleAutorelease(currentLocale);
-  if (::CFStringCompare(static_cast<CFStringRef>(localizedName), ::CFLocaleGetIdentifier(currentLocale), 0) != kCFCompareEqualTo) {
-    return NULL;
-  }
-  
+
   CFTypeRef mimeTypes = ::CFDictionaryGetValue(static_cast<CFDictionaryRef>(propertyList), CFSTR("WebPluginMIMETypes"));
   if (!mimeTypes || ::CFGetTypeID(mimeTypes) != ::CFDictionaryGetTypeID() || ::CFDictionaryGetCount(static_cast<CFDictionaryRef>(mimeTypes)) == 0) {
     return NULL;

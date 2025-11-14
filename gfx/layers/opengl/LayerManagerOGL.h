@@ -101,18 +101,20 @@ public:
 
   void Destroy();
 
+
   /**
-   * Initializes the layer manager, this is when the layer manager will
-   * actually access the device and attempt to create the swap chain used
-   * to draw to the window. If this method fails the device cannot be used.
-   * This function is not threadsafe.
+   * Initializes the layer manager with a given GLContext. If aContext is null
+   * then the layer manager will try to create one for the associated widget.
    *
-   * \param aExistingContext an existing GL context to use, instead of creating
-   * our own for the widget.
+   * \param aContext an existing GL context to use. Can be created with CreateContext()
    *
    * \return True is initialization was succesful, false when it was not.
    */
-  PRBool Initialize(GLContext *aExistingContext = nsnull);
+  PRBool Initialize() {
+    return Initialize(CreateContext());
+  }
+
+  PRBool Initialize(nsRefPtr<GLContext> aContext);
 
   /**
    * Sets the clipping region for this layer manager. This is important on 
@@ -134,6 +136,7 @@ public:
 
   void EndConstruction();
 
+  virtual bool EndEmptyTransaction();
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData);
 
@@ -182,7 +185,7 @@ public:
   }
 
   ColorTextureLayerProgram *GetColorTextureLayerProgram(ProgramType type){
-    return static_cast<ColorTextureLayerProgram*>(mPrograms[type]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[type]);
   }
 
   ColorTextureLayerProgram *GetRGBALayerProgram() {
@@ -218,6 +221,14 @@ public:
   }
   YCbCrTextureLayerProgram *GetYCbCrLayerProgram() {
     return static_cast<YCbCrTextureLayerProgram*>(mYCbCrTexturePrograms[gl::YCbCrLayerProgramType]);
+  }
+  ComponentAlphaTextureLayerProgram *GetComponentAlphaPass1LayerProgram() {
+    return static_cast<ComponentAlphaTextureLayerProgram*>
+             (mAlphaPrograms[gl::ComponentAlphaPass1ProgramType]);
+  }
+  ComponentAlphaTextureLayerProgram *GetComponentAlphaPass2LayerProgram() {
+    return static_cast<ComponentAlphaTextureLayerProgram*>
+             (mAlphaPrograms[gl::ComponentAlphaPass2ProgramType]);
   }
   CopyProgram *GetCopy2DProgram() {
     return static_cast<CopyProgram*>(mCopyPrograms[gl::Copy2DProgramType]);
@@ -266,13 +277,27 @@ public:
 
   GLenum FBOTextureTarget() { return mFBOTextureTarget; }
 
+  /**
+   * Controls how to initialize the texture / FBO created by
+   * CreateFBOWithTexture.
+   *  - InitModeNone: No initialization, contents are undefined.
+   *  - InitModeClear: Clears the FBO.
+   *  - InitModeCopy: Copies the contents of the current glReadBuffer into the
+   *    texture.
+   */
+  enum InitMode {
+    InitModeNone,
+    InitModeClear,
+    InitModeCopy
+  };
+
   /* Create a FBO backed by a texture; will leave the FBO
    * bound.  Note that the texture target type will be
    * of the type returned by FBOTextureTarget; different
    * shaders are required to sample from the different
    * texture types.
    */
-  void CreateFBOWithTexture(int aWidth, int aHeight,
+  void CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
                             GLuint *aFBO, GLuint *aTexture);
 
   GLuint QuadVBO() { return mQuadVBO; }
@@ -365,6 +390,8 @@ private:
 
   nsRefPtr<GLContext> mGLContext;
 
+  already_AddRefed<mozilla::gl::GLContext> CreateContext();
+
   // The image containers that this layer manager has created.
   // The destructor will tell the layer manager to remove
   // it from the list.
@@ -383,6 +410,7 @@ private:
   nsTArray<SolidColorLayerProgram*> mSolidColorPrograms;
   nsTArray<YCbCrTextureLayerProgram*> mYCbCrTexturePrograms;
   nsTArray<CopyProgram*> mCopyPrograms;
+  nsTArray<ComponentAlphaTextureLayerProgram*> mAlphaPrograms;
 
   /** Texture target to use for FBOs */
   GLenum mFBOTextureTarget;

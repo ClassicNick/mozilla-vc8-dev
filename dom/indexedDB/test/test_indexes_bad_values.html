@@ -49,12 +49,12 @@
         { key: "237-23-7734", value: { name: "Ron", height: 73, weight: 180 } }
       ];
 
-      let request = moz_indexedDB.open(name, description);
+      let request = mozIndexedDB.open(name, description);
       request.onerror = errorHandler;
       request.onsuccess = grabEventAndContinueHandler;
       let event = yield;
 
-      let db = event.result;
+      let db = event.target.result;
 
       request = db.setVersion("1");
       request.onerror = errorHandler;
@@ -102,7 +102,7 @@
       request = objectStore.index("weight").openKeyCursor();
       request.onerror = errorHandler;
       request.onsuccess = function (event) {
-        let cursor = event.result;
+        let cursor = event.target.result;
         if (cursor) {
           is(cursor.key, objectStoreDataWeightSort[keyIndex].value.weight,
              "Correct key");
@@ -125,7 +125,7 @@
       request = objectStore.openCursor();
       request.onerror = errorHandler;
       request.onsuccess = function (event) {
-        let cursor = event.result;
+        let cursor = event.target.result;
         if (cursor) {
           keyIndex++;
           cursor.continue();

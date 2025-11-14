@@ -45,8 +45,9 @@
 #include "assembler/assembler/LinkBuffer.h"
 #include "assembler/assembler/MacroAssembler.h"
 #include "assembler/assembler/CodeLocation.h"
-#include "CodeGenIncludes.h"
+#include "methodjit/CodeGenIncludes.h"
 #include "methodjit/Compiler.h"
+#include "methodjit/ICRepatcher.h"
 #include "InlineFrameAssembler.h"
 #include "jsobj.h"
 
@@ -104,17 +105,7 @@ ic::GetGlobalName(VMFrame &f, ic::MICInfo *ic)
     repatcher.repatch(ic->shape, obj->shape());
 
     /* Patch loads. */
-    slot *= sizeof(Value);
-#if defined JS_CPU_X86
-    repatcher.repatch(ic->load.dataLabel32AtOffset(MICInfo::GET_DATA_OFFSET), slot);
-    repatcher.repatch(ic->load.dataLabel32AtOffset(MICInfo::GET_TYPE_OFFSET), slot + 4);
-#elif defined JS_CPU_ARM
-    // ic->load actually points to the LDR instruction which fetches the offset, but 'repatch'
-    // knows how to dereference it to find the integer value.
-    repatcher.repatch(ic->load.dataLabel32AtOffset(0), slot);
-#elif defined JS_PUNBOX64
-    repatcher.repatch(ic->load.dataLabel32AtOffset(ic->patchValueOffset), slot);
-#endif
+    repatcher.patchAddressOffsetForValueLoad(ic->load, slot * sizeof(Value));
 
     /* Do load anyway... this time. */
     stubs::GetGlobalName(f);
@@ -169,7 +160,8 @@ ic::SetGlobalName(VMFrame &f, ic::MICInfo *ic)
 
     const Shape *shape = obj->nativeLookup(id);
     if (!shape ||
-        !shape->hasDefaultGetterOrIsMethod() ||
+        shape->isMethod() ||
+        !shape->hasDefaultSetter() ||
         !shape->writable() ||
         !shape->hasSlot())
     {
@@ -190,24 +182,8 @@ ic::SetGlobalName(VMFrame &f, ic::MICInfo *ic)
     repatcher.repatch(ic->shape, obj->shape());
 
     /* Patch loads. */
-    slot *= sizeof(Value);
-
-#if defined JS_CPU_X86
-    repatcher.repatch(ic->load.dataLabel32AtOffset(MICInfo::SET_TYPE_OFFSET), slot + 4);
-
-    uint32 dataOffset;
-    if (ic->u.name.typeConst)
-        dataOffset = MICInfo::SET_DATA_CONST_TYPE_OFFSET;
-    else
-        dataOffset = MICInfo::SET_DATA_TYPE_OFFSET;
-    repatcher.repatch(ic->load.dataLabel32AtOffset(dataOffset), slot);
-#elif defined JS_CPU_ARM
-    // ic->load actually points to the LDR instruction which fetches the offset, but 'repatch'
-    // knows how to dereference it to find the integer value.
-    repatcher.repatch(ic->load.dataLabel32AtOffset(0), slot);
-#elif defined JS_PUNBOX64
-    repatcher.repatch(ic->load.dataLabel32AtOffset(ic->patchValueOffset), slot);
-#endif
+    repatcher.patchAddressOffsetForValueStore(ic->load, slot * sizeof(Value),
+                                              ic->u.name.typeConst);
 
     if (ic->u.name.usePropertyCache)
         STRICT_VARIANT(stubs::SetGlobalName)(f, atom);
@@ -292,13 +268,13 @@ class EqualityCompiler : public BaseCompiler
         /* Test if lhs/rhs are atomized. */
         Imm32 atomizedFlags(JSString::FLAT | JSString::ATOMIZED);
         
-        masm.load32(Address(lvr.dataReg(), offsetof(JSString, mLengthAndFlags)), tmp);
+        masm.load32(Address(lvr.dataReg(), JSString::offsetOfLengthAndFlags()), tmp);
         masm.and32(Imm32(JSString::TYPE_FLAGS_MASK), tmp);
         Jump lhsNotAtomized = masm.branch32(Assembler::NotEqual, tmp, atomizedFlags);
         linkToStub(lhsNotAtomized);
 
         if (!rvr.isConstant()) {
-            masm.load32(Address(rvr.dataReg(), offsetof(JSString, mLengthAndFlags)), tmp);
+            masm.load32(Address(rvr.dataReg(), JSString::offsetOfLengthAndFlags()), tmp);
             masm.and32(Imm32(JSString::TYPE_FLAGS_MASK), tmp);
             Jump rhsNotAtomized = masm.branch32(Assembler::NotEqual, tmp, atomizedFlags);
             linkToStub(rhsNotAtomized);
@@ -625,7 +601,7 @@ class CallCompiler : public BaseCompiler
 
         /* Guard that it's the same function. */
         JSFunction *fun = obj->getFunctionPrivate();
-        masm.loadFunctionPrivate(ic.funObjReg, t0);
+        masm.loadObjPrivate(ic.funObjReg, t0);
         Jump funGuard = masm.branchPtr(Assembler::NotEqual, t0, ImmPtr(fun));
         Jump done = masm.jump();
 
@@ -783,7 +759,7 @@ class CallCompiler : public BaseCompiler
         else
             masm.storeArg(1, argcReg.reg());
         masm.storeArg(0, cxReg);
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, fun->u.n.native));
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, fun->u.n.native), false);
 
         Jump hasException = masm.branchTest32(Assembler::Zero, Registers::ReturnReg,
                                               Registers::ReturnReg);
@@ -1118,12 +1094,15 @@ JITScript::nukeScriptDependentICs()
 }
 
 void
-JITScript::sweepCallICs()
+JITScript::sweepCallICs(JSContext *cx, bool purgeAll)
 {
-    if (!nCallICs)
-        return;
-
     Repatcher repatcher(this);
+
+    /*
+     * If purgeAll is set, purge stubs in the script except those covered by PurgePICs
+     * (which is always called during GC). We want to remove references which can keep
+     * alive pools that we are trying to destroy (see JSCompartment::sweep).
+     */
 
     for (uint32 i = 0; i < nCallICs; i++) {
         ic::CallICInfo &ic = callICs[i];
@@ -1133,11 +1112,10 @@ JITScript::sweepCallICs()
          * executing a stub generated by a guard on that object. This lets us
          * precisely GC call ICs while keeping the identity guard safe.
          */
-        bool fastFunDead = ic.fastGuardedObject && IsAboutToBeFinalized(ic.fastGuardedObject);
-        bool nativeDead = ic.fastGuardedNative && IsAboutToBeFinalized(ic.fastGuardedNative);
-
-        if (!fastFunDead && !nativeDead)
-            continue;
+        bool fastFunDead = ic.fastGuardedObject &&
+            (purgeAll || IsAboutToBeFinalized(cx, ic.fastGuardedObject));
+        bool nativeDead = ic.fastGuardedNative &&
+            (purgeAll || IsAboutToBeFinalized(cx, ic.fastGuardedNative));
 
         if (fastFunDead) {
             repatcher.repatch(ic.funGuard, NULL);
@@ -1151,19 +1129,48 @@ JITScript::sweepCallICs()
             ic.fastGuardedNative = NULL;
         }
 
-        repatcher.relink(ic.funJump, ic.slowPathStart);
+        if (purgeAll) {
+            ic.releasePool(CallICInfo::Pool_ScriptStub);
+            JSC::CodeLocationJump oolJump = ic.slowPathStart.jumpAtOffset(ic.oolJumpOffset);
+            JSC::CodeLocationLabel icCall = ic.slowPathStart.labelAtOffset(ic.icCallOffset);
+            repatcher.relink(oolJump, icCall);
+        }
 
+        repatcher.relink(ic.funJump, ic.slowPathStart);
         ic.hit = false;
+    }
+
+    if (purgeAll) {
+        /* Purge ICs generating stubs into execPools. */
+        uint32 released = 0;
+
+        for (uint32 i = 0; i < nEqualityICs; i++) {
+            ic::EqualityICInfo &ic = equalityICs[i];
+            if (!ic.generated)
+                continue;
+
+            JSC::FunctionPtr fptr(JS_FUNC_TO_DATA_PTR(void *, ic::Equality));
+            repatcher.relink(ic.stubCall, fptr);
+            repatcher.relink(ic.jumpToStub, ic.stubEntry);
+
+            ic.generated = false;
+            released++;
+        }
+
+        JS_ASSERT(released == execPools.length());
+        for (uint32 i = 0; i < released; i++)
+            execPools[i]->release();
+        execPools.clear();
     }
 }
 
 void
-ic::SweepCallICs(JSScript *script)
+ic::SweepCallICs(JSContext *cx, JSScript *script, bool purgeAll)
 {
     if (script->jitNormal)
-        script->jitNormal->sweepCallICs();
+        script->jitNormal->sweepCallICs(cx, purgeAll);
     if (script->jitCtor)
-        script->jitCtor->sweepCallICs();
+        script->jitCtor->sweepCallICs(cx, purgeAll);
 }
 
 #endif /* JS_MONOIC */

@@ -162,6 +162,7 @@ public:
     ContainerLayer(aManager, static_cast<BasicImplData*>(this))
   {
     MOZ_COUNT_CTOR(BasicContainerLayer);
+    mSupportsComponentAlphaChildren = PR_TRUE;
   }
   virtual ~BasicContainerLayer();
 
@@ -422,17 +423,27 @@ protected:
     }
     aCallback(this, aContext, aRegionToDraw, aRegionToInvalidate,
               aCallbackData);
-    mValidRegion.Or(mValidRegion, aRegionToDraw);
+    // Everything that's visible has been validated. Do this instead of
+    // OR-ing with aRegionToDraw, since that can lead to a very complex region
+    // here (OR doesn't automatically simplify to the simplest possible
+    // representation of a region.)
+    mValidRegion.Or(mValidRegion, mVisibleRegion);
   }
 
   Buffer mBuffer;
 };
 
-static void
+/**
+ * Clips to the smallest device-pixel-aligned rectangle containing aRect
+ * in user space.
+ * Returns true if the clip is "perfect", i.e. we actually clipped exactly to
+ * aRect.
+ */
+static PRBool
 ClipToContain(gfxContext* aContext, const nsIntRect& aRect)
 {
-  gfxRect deviceRect =
-    aContext->UserToDevice(gfxRect(aRect.x, aRect.y, aRect.width, aRect.height));
+  gfxRect userRect(aRect.x, aRect.y, aRect.width, aRect.height);
+  gfxRect deviceRect = aContext->UserToDevice(userRect);
   deviceRect.RoundOut();
 
   gfxMatrix currentMatrix = aContext->CurrentMatrix();
@@ -441,6 +452,8 @@ ClipToContain(gfxContext* aContext, const nsIntRect& aRect)
   aContext->Rectangle(deviceRect);
   aContext->Clip();
   aContext->SetMatrix(currentMatrix);
+
+  return aContext->DeviceToUser(deviceRect) == userRect;
 }
 
 static nsIntRegion
@@ -454,6 +467,42 @@ IntersectWithClip(const nsIntRegion& aRegion, gfxContext* aContext)
   return result;
 }
 
+static void
+SetAntialiasingFlags(Layer* aLayer, gfxContext* aTarget)
+{
+  nsRefPtr<gfxASurface> surface = aTarget->CurrentSurface();
+  if (surface->GetContentType() != gfxASurface::CONTENT_COLOR_ALPHA) {
+    // Destination doesn't have alpha channel; no need to set any special flags
+    return;
+  }
+
+  surface->SetSubpixelAntialiasingEnabled(
+      !(aLayer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA));
+}
+
+static PRBool
+PushGroupForLayer(gfxContext* aContext, Layer* aLayer, const nsIntRegion& aRegion)
+{
+  // If we need to call PushGroup, we should clip to the smallest possible
+  // area first to minimize the size of the temporary surface.
+  PRBool didCompleteClip = ClipToContain(aContext, aRegion.GetBounds());
+
+  gfxASurface::gfxContentType contentType = gfxASurface::CONTENT_COLOR_ALPHA;
+  PRBool needsClipToVisibleRegion = PR_FALSE;
+  if (aLayer->CanUseOpaqueSurface() &&
+      ((didCompleteClip && aRegion.GetNumRects() == 1) ||
+       !aContext->CurrentMatrix().HasNonIntegerTranslation())) {
+    // If the layer is opaque in its visible region we can push a CONTENT_COLOR
+    // group. We need to make sure that only pixels inside the layer's visible
+    // region are copied back to the destination. Remember if we've already
+    // clipped precisely to the visible region.
+    needsClipToVisibleRegion = !didCompleteClip || aRegion.GetNumRects() > 1;
+    contentType = gfxASurface::CONTENT_COLOR;
+  }
+  aContext->PushGroupAndCopyBackground(contentType);
+  return needsClipToVisibleRegion;
+}
+
 void
 BasicThebesLayer::Paint(gfxContext* aContext,
                         LayerManager::DrawThebesLayerCallback aCallback,
@@ -461,8 +510,6 @@ BasicThebesLayer::Paint(gfxContext* aContext,
 {
   NS_ASSERTION(BasicManager()->InDrawing(),
                "Can only draw in drawing phase");
-  gfxContext* target = BasicManager()->GetTarget();
-  NS_ASSERTION(target, "We shouldn't be called if there's no target");
   nsRefPtr<gfxASurface> targetSurface = aContext->CurrentSurface();
 
   PRBool canUseOpaqueSurface = CanUseOpaqueSurface();
@@ -478,24 +525,30 @@ BasicThebesLayer::Paint(gfxContext* aContext,
     mValidRegion.SetEmpty();
     mBuffer.Clear();
 
-    nsIntRegion toDraw = IntersectWithClip(mVisibleRegion, target);
+    nsIntRegion toDraw = IntersectWithClip(mVisibleRegion, aContext);
     if (!toDraw.IsEmpty()) {
       if (!aCallback) {
         BasicManager()->SetTransactionIncomplete();
         return;
       }
 
-      target->Save();
-      gfxUtils::ClipToRegionSnapped(target, toDraw);
+      aContext->Save();
+
+      PRBool needsClipToVisibleRegion = PR_FALSE;
       if (opacity != 1.0) {
-        target->PushGroup(contentType);
+        needsClipToVisibleRegion = PushGroupForLayer(aContext, this, toDraw);
       }
-      aCallback(this, target, toDraw, nsIntRegion(), aCallbackData);
+      SetAntialiasingFlags(this, aContext);
+      aCallback(this, aContext, toDraw, nsIntRegion(), aCallbackData);
       if (opacity != 1.0) {
-        target->PopGroupToSource();
-        target->Paint(opacity);
+        aContext->PopGroupToSource();
+        if (needsClipToVisibleRegion) {
+          gfxUtils::ClipToRegion(aContext, toDraw);
+        }
+        aContext->Paint(opacity);
       }
-      target->Restore();
+
+      aContext->Restore();
     }
     return;
   }
@@ -515,6 +568,7 @@ BasicThebesLayer::Paint(gfxContext* aContext,
       state.mRegionToInvalidate.And(state.mRegionToInvalidate, mVisibleRegion);
       mXResolution = paintXRes;
       mYResolution = paintYRes;
+      SetAntialiasingFlags(this, state.mContext);
       PaintBuffer(state.mContext,
                   state.mRegionToDraw, state.mRegionToInvalidate,
                   aCallback, aCallbackData);
@@ -527,7 +581,7 @@ BasicThebesLayer::Paint(gfxContext* aContext,
     }
   }
 
-  mBuffer.DrawTo(this, target, opacity);
+  mBuffer.DrawTo(this, aContext, opacity);
 }
 
 static PRBool
@@ -1222,12 +1276,24 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
 
     // If we're doing manual double-buffering, we need to avoid drawing
     // the results of an incomplete transaction to the destination surface.
+    // If the transaction is incomplete and we're not double-buffering then
+    // either the system is double-buffering our window (in which case the
+    // followup EndTransaction will be drawn over the top of our incomplete
+    // transaction before the system updates the window), or we have no
+    // overlapping or transparent layers in the update region, in which case
+    // our partial transaction drawing will look fine.
     if (useDoubleBuffering && !mTransactionIncomplete) {
       finalTarget->SetOperator(gfxContext::OPERATOR_SOURCE);
       PopGroupWithCachedSurface(finalTarget, cachedSurfaceOffset);
     }
 
-    mTarget = nsnull;
+    if (!mTransactionIncomplete) {
+      // Clear out target if we have a complete transaction.
+      mTarget = nsnull;
+    } else {
+      // If we don't have a complete transaction set back to the old mTarget.
+      mTarget = finalTarget;
+    }
   }
 
 #ifdef MOZ_LAYERS_HAVE_LOG
@@ -1236,23 +1302,32 @@ BasicLayerManager::EndTransactionInternal(DrawThebesLayerCallback aCallback,
 #endif
 
 #ifdef DEBUG
-  mPhase = PHASE_NONE;
+  // Go back to the construction phase if the transaction isn't complete.
+  // Layout will update the layer tree and call EndTransaction().
+  mPhase = mTransactionIncomplete ? PHASE_CONSTRUCTION : PHASE_NONE;
 #endif
-  mUsingDefaultTarget = PR_FALSE;
+
+  if (!mTransactionIncomplete) {
+    // This is still valid if the transaction was incomplete.
+    mUsingDefaultTarget = PR_FALSE;
+  }
 
   NS_ASSERTION(!aCallback || !mTransactionIncomplete,
                "If callback is not null, transaction must be complete");
+
+  // XXX - We should probably assert here that for an incomplete transaction
+  // out target is the default target.
+
   return !mTransactionIncomplete;
 }
 
 bool
-BasicLayerManager::DoEmptyTransaction()
+BasicLayerManager::EndEmptyTransaction()
 {
   if (!mRoot) {
     return false;
   }
 
-  BeginTransaction();
   return EndTransactionInternal(nsnull, nsnull);
 }
 
@@ -1299,14 +1374,26 @@ BasicLayerManager::PaintLayer(Layer* aLayer,
   effectiveTransform.Is2D(&transform);
   mTarget->SetMatrix(transform);
 
-  if (needsGroup) {
-    // If we need to call PushGroup, we should clip to the smallest possible
-    // area first to minimize the size of the temporary surface.
-    ClipToContain(mTarget, aLayer->GetEffectiveVisibleRegion().GetBounds());
+  PRBool pushedTargetOpaqueRect = PR_FALSE;
+  const nsIntRegion& visibleRegion = aLayer->GetEffectiveVisibleRegion();
+  nsRefPtr<gfxASurface> currentSurface = mTarget->CurrentSurface();
+  const gfxRect& targetOpaqueRect = currentSurface->GetOpaqueRect();
 
-    gfxASurface::gfxContentType type = aLayer->CanUseOpaqueSurface()
-        ? gfxASurface::CONTENT_COLOR : gfxASurface::CONTENT_COLOR_ALPHA;
-    mTarget->PushGroup(type);
+  // Try to annotate currentSurface with a region of pixels that have been
+  // (or will be) painted opaque, if no such region is currently set.
+  if (targetOpaqueRect.IsEmpty() && visibleRegion.GetNumRects() == 1 &&
+      (aLayer->GetContentFlags() & Layer::CONTENT_OPAQUE) &&
+      !transform.HasNonAxisAlignedTransform()) {
+    const nsIntRect& bounds = visibleRegion.GetBounds();
+    currentSurface->SetOpaqueRect(
+        mTarget->UserToDevice(gfxRect(bounds.x, bounds.y, bounds.width, bounds.height)));
+    pushedTargetOpaqueRect = PR_TRUE;
+  }
+
+  PRBool needsClipToVisibleRegion = PR_FALSE;
+  if (needsGroup) {
+    needsClipToVisibleRegion =
+        PushGroupForLayer(mTarget, aLayer, aLayer->GetEffectiveVisibleRegion());
   }
 
   /* Only paint ourself, or our children - This optimization relies on this! */
@@ -1330,11 +1417,14 @@ BasicLayerManager::PaintLayer(Layer* aLayer,
 
   if (needsGroup) {
     mTarget->PopGroupToSource();
-    // If the layer is opaque in its visible region we pushed a CONTENT_COLOR
-    // group. We need to make sure that only pixels inside the layer's visible
-    // region are copied back to the destination.
-    gfxUtils::ClipToRegionSnapped(mTarget, aLayer->GetEffectiveVisibleRegion());
+    if (needsClipToVisibleRegion) {
+      gfxUtils::ClipToRegion(mTarget, aLayer->GetEffectiveVisibleRegion());
+    }
     mTarget->Paint(aLayer->GetEffectiveOpacity());
+  }
+
+  if (pushedTargetOpaqueRect) {
+    currentSurface->SetOpaqueRect(gfxRect(0, 0, 0, 0));
   }
 
   if (needsSaveRestore) {
@@ -1784,8 +1874,6 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext,
     return;
 
   if (oldSize != mSize) {
-    NS_ASSERTION(oldSize == gfxIntSize(-1, -1), "video changed size?");
-
     if (mBackSurface) {
       BasicManager()->ShadowLayerForwarder::DestroySharedSurface(mBackSurface);
       mBackSurface = nsnull;
@@ -1936,7 +2024,10 @@ BasicShadowableCanvasLayer::Paint(gfxContext* aContext,
   // the shmem back buffer
   nsRefPtr<gfxContext> tmpCtx = new gfxContext(mBackBuffer);
   tmpCtx->SetOperator(gfxContext::OPERATOR_SOURCE);
-  tmpCtx->DrawSurface(mSurface, gfxSize(mBounds.width, mBounds.height));
+
+  // call BasicCanvasLayer::Paint to draw to our tmp context, because
+  // it'll handle things like flipping correctly
+  BasicCanvasLayer::Paint(tmpCtx, nsnull, nsnull);
 
   BasicManager()->PaintedCanvas(BasicManager()->Hold(this),
                                 mBackBuffer);
@@ -2554,7 +2645,7 @@ BasicShadowLayerManager::BeginTransactionWithTarget(gfxContext* aTarget)
   // If the last transaction was incomplete (a failed DoEmptyTransaction),
   // don't signal a new transaction to ShadowLayerForwarder. Carry on adding
   // to the previous transaction.
-  if (HasShadowManager() && !mTransactionIncomplete) {
+  if (HasShadowManager()) {
     ShadowLayerForwarder::BeginTransaction();
   }
   BasicLayerManager::BeginTransactionWithTarget(aTarget);
@@ -2569,17 +2660,12 @@ BasicShadowLayerManager::EndTransaction(DrawThebesLayerCallback aCallback,
 }
 
 bool
-BasicShadowLayerManager::DoEmptyTransaction()
+BasicShadowLayerManager::EndEmptyTransaction()
 {
-  if (!mRoot) {
-    return false;
-  }
-
-  BasicLayerManager::BeginTransaction();
-  if (!EndTransactionInternal(nsnull, nsnull)) {
+  if (!BasicLayerManager::EndEmptyTransaction()) {
     // Return without calling ForwardTransaction. This leaves the
     // ShadowLayerForwarder transaction open; the following
-    // BeginTransaction/EndTransaction pair will complete it.
+    // EndTransaction will complete it.
     return false;
   }
   ForwardTransaction();

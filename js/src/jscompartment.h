@@ -1,4 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  *
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -54,6 +54,12 @@
 #pragma warning(disable:4251) /* Silence warning about JS_FRIEND_API and data members. */
 #endif
 
+namespace JSC {
+
+class ExecutableAllocator;
+
+}
+
 namespace js {
 
 /* Holds the number of recording attemps for an address. */
@@ -74,6 +80,69 @@ typedef HashSet<JSScript *,
                 DefaultHasher<JSScript *>,
                 SystemAllocPolicy> TracedScriptSet;
 
+/* Holds the execution state during trace execution. */
+struct TracerState
+{
+    JSContext*     cx;                  // current VM context handle
+    double*        stackBase;           // native stack base
+    double*        sp;                  // native stack pointer, stack[0] is spbase[0]
+    double*        eos;                 // first unusable word after the native stack / begin of globals
+    FrameInfo**    callstackBase;       // call stack base
+    void*          sor;                 // start of rp stack
+    FrameInfo**    rp;                  // call stack pointer
+    void*          eor;                 // first unusable word after the call stack
+    VMSideExit*    lastTreeExitGuard;   // guard we exited on during a tree call
+    VMSideExit*    lastTreeCallGuard;   // guard we want to grow from if the tree
+                                        // call exit guard mismatched
+    void*          rpAtLastTreeCall;    // value of rp at innermost tree call guard
+    VMSideExit*    outermostTreeExitGuard; // the last side exit returned by js_CallTree
+    TreeFragment*  outermostTree;       // the outermost tree we initially invoked
+    uintN*         inlineCallCountp;    // inline call count counter
+    VMSideExit**   innermostNestedGuardp;
+    VMSideExit*    innermost;
+    uint64         startTime;
+    TracerState*   prev;
+
+    // Used by _FAIL builtins; see jsbuiltins.h. The builtin sets the
+    // JSBUILTIN_BAILED bit if it bails off trace and the JSBUILTIN_ERROR bit
+    // if an error or exception occurred.
+    uint32         builtinStatus;
+
+    // Used to communicate the location of the return value in case of a deep bail.
+    double*        deepBailSp;
+
+    // Used when calling natives from trace to root the vp vector.
+    uintN          nativeVpLen;
+    js::Value*     nativeVp;
+
+    TracerState(JSContext *cx, TraceMonitor *tm, TreeFragment *ti,
+                uintN &inlineCallCountp, VMSideExit** innermostNestedGuardp);
+    ~TracerState();
+};
+
+/*
+ * Storage for the execution state and store during trace execution. Generated
+ * code depends on the fact that the globals begin |MAX_NATIVE_STACK_SLOTS|
+ * doubles after the stack begins. Thus, on trace, |TracerState::eos| holds a
+ * pointer to the first global.
+ */
+struct TraceNativeStorage
+{
+    double stack_global_buf[MAX_NATIVE_STACK_SLOTS + GLOBAL_SLOTS_BUFFER_SIZE];
+    FrameInfo *callstack_buf[MAX_CALL_STACK_ENTRIES];
+
+    double *stack() { return stack_global_buf; }
+    double *global() { return stack_global_buf + MAX_NATIVE_STACK_SLOTS; }
+    FrameInfo **callstack() { return callstack_buf; }
+};
+
+/* Holds data to track a single globa. */
+struct GlobalState {
+    JSObject*               globalObj;
+    uint32                  globalShape;
+    SlotList*               globalSlots;
+};
+
 /*
  * Trace monitor. Every JSCompartment has an associated trace monitor
  * that keeps track of loop frequencies for all JavaScript code loaded
@@ -91,6 +160,14 @@ struct TraceMonitor {
      * tracecx && recorder: executing inner loop, recording outer loop
      */
     JSContext               *tracecx;
+
+    /*
+     * State for the current tree execution.  bailExit is valid if the tree has
+     * called back into native code via a _FAIL builtin and has not yet bailed,
+     * else garbage (NULL in debug builds).
+     */
+    js::TracerState     *tracerState;
+    js::VMSideExit      *bailExit;
 
     /* Counts the number of iterations run by the currently executing trace. */
     unsigned                iterationCounter;
@@ -162,11 +239,6 @@ struct TraceMonitor {
      */
     JSBool                  needFlush;
 
-    /*
-     * Fragment map for the regular expression compiler.
-     */
-    REHashMap*              reFragments;
-
     // Cached temporary typemap to avoid realloc'ing every time we create one.
     // This must be used in only one place at a given time. It must be cleared
     // before use.
@@ -180,8 +252,8 @@ struct TraceMonitor {
     nanojit::Seq<nanojit::Fragment*>* branches;
     uint32                  lastFragID;
     /*
-     * profAlloc has a lifetime which spans exactly from js_InitJIT to
-     * js_FinishJIT.
+     * profAlloc has a lifetime which spans exactly from InitJIT to
+     * FinishJIT.
      */
     VMAllocator*            profAlloc;
     FragStatsMap*           profTab;
@@ -195,7 +267,10 @@ struct TraceMonitor {
     void flush();
 
     /* Sweep any cache entry pointing to dead GC things. */
-    void sweep();
+    void sweep(JSContext *cx);
+
+    /* Mark any tracer stacks that are active. */
+    void mark(JSTracer *trc);
 
     bool outOfMemory() const;
 };
@@ -222,6 +297,43 @@ struct JSEvalCacheMeter {
 # undef identity
 #endif
 
+namespace js {
+
+class NativeIterCache {
+    static const size_t SIZE = size_t(1) << 8;
+    
+    /* Cached native iterators. */
+    JSObject            *data[SIZE];
+
+    static size_t getIndex(uint32 key) {
+        return size_t(key) % SIZE;
+    }
+
+  public:
+    /* Native iterator most recently started. */
+    JSObject            *last;
+
+    NativeIterCache()
+      : last(NULL) {
+        PodArrayZero(data);
+    }
+
+    void purge() {
+        PodArrayZero(data);
+        last = NULL;
+    }
+
+    JSObject *get(uint32 key) const {
+        return data[getIndex(key)];
+    }
+
+    void set(uint32 key, JSObject *iterobj) {
+        data[getIndex(key)] = iterobj;
+    }
+};
+
+} /* namespace js */
+
 struct JS_FRIEND_API(JSCompartment) {
     JSRuntime                    *rt;
     JSPrincipals                 *principals;
@@ -230,24 +342,29 @@ struct JS_FRIEND_API(JSCompartment) {
     js::gc::ArenaList            arenas[js::gc::FINALIZE_LIMIT];
     js::gc::FreeLists            freeLists;
 
+    size_t                       gcBytes;
+    size_t                       gcTriggerBytes;
+    size_t                       gcLastBytes;
+
 #ifdef JS_GCMETER
     js::gc::JSGCArenaStats       compartmentStats[js::gc::FINALIZE_LIMIT];
 #endif
 
 #ifdef JS_TRACER
     /* Trace-tree JIT recorder/interpreter state. */
-    js::TraceMonitor traceMonitor;
+    js::TraceMonitor             traceMonitor;
 #endif
 
-    /* Lock-free hashed lists of scripts created by eval to garbage-collect. */
+    /* Hashed lists of scripts created by eval to garbage-collect. */
     JSScript                     *scriptsToGC[JS_EVAL_CACHE_SIZE];
 
 #ifdef DEBUG
-    JSEvalCacheMeter    evalCacheMeter;
+    JSEvalCacheMeter             evalCacheMeter;
 #endif
 
     void                         *data;
     bool                         marked;
+    bool                         active;  // GC flag, whether there are active frames
     js::WrapperMap               crossCompartmentWrappers;
 
 #ifdef JS_METHODJIT
@@ -257,21 +374,16 @@ struct JS_FRIEND_API(JSCompartment) {
     bool                         debugMode;  // true iff debug mode on
     JSCList                      scripts;    // scripts in this compartment
 
-    /*
-     * Weak references to lazily-created, well-known XML singletons.
-     *
-     * NB: Singleton objects must be carefully disconnected from the rest of
-     * the object graph usually associated with a JSContext's global object,
-     * including the set of standard class objects.  See jsxml.c for details.
-     */
-    JSObject                     *anynameObject;
-    JSObject                     *functionNamespaceObject;
+    JSC::ExecutableAllocator     *regExpAllocator;
+
+    js::NativeIterCache          nativeIterCache;
 
     JSCompartment(JSRuntime *cx);
     ~JSCompartment();
 
     bool init();
 
+    void mark(JSTracer *trc);
     bool wrap(JSContext *cx, js::Value *vp);
     bool wrap(JSContext *cx, JSString **strp);
     bool wrap(JSContext *cx, JSObject **objp);
@@ -279,12 +391,15 @@ struct JS_FRIEND_API(JSCompartment) {
     bool wrap(JSContext *cx, js::PropertyOp *op);
     bool wrap(JSContext *cx, js::PropertyDescriptor *desc);
     bool wrap(JSContext *cx, js::AutoIdVector &props);
-    bool wrapException(JSContext *cx);
 
-    void sweep(JSContext *cx);
+    void sweep(JSContext *cx, uint32 releaseInterval);
     void purge(JSContext *cx);
     void finishArenaLists();
+    void finalizeObjectArenaLists(JSContext *cx);
+    void finalizeStringArenaLists(JSContext *cx);
     bool arenaListsAreEmpty();
+
+    void setGCLastBytes(size_t lastBytes);
 
   private:
     js::MathCache                *mathCache;
@@ -345,6 +460,22 @@ class SwitchToCompartment : public PreserveCompartment {
 
     SwitchToCompartment(JSContext *cx, JSObject *target) : PreserveCompartment(cx) {
         cx->compartment = target->getCompartment();
+    }
+};
+
+class AssertCompartmentUnchanged {
+  protected:
+    JSContext * const cx;
+    JSCompartment * const oldCompartment;
+    JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+  public:
+     AssertCompartmentUnchanged(JSContext *cx JS_GUARD_OBJECT_NOTIFIER_PARAM)
+     : cx(cx), oldCompartment(cx->compartment) {
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
+    }
+
+    ~AssertCompartmentUnchanged() {
+        JS_ASSERT(cx->compartment == oldCompartment);
     }
 };
 

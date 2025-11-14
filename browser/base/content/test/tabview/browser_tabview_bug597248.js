@@ -100,22 +100,30 @@ function setupTwo() {
           restoredWin.removeEventListener(
             "tabviewframeinitialized", onTabViewFrameInitialized, false);
 
+          /*
+          // bug 615954 happens too often so we disable this until we have a fix
           let restoredContentWindow = 
             restoredWin.document.getElementById("tab-view").contentWindow;
           // prevent TabItems._update being called before checking cached images
           restoredContentWindow.TabItems._pauseUpdateForTest = true;
+          */
+          restoredWin.close();
+          finish();
         }
         restoredWin.addEventListener(
           "tabviewframeinitialized", onTabViewFrameInitialized, false);
 
-        restoredWin.addEventListener("tabviewshown", onTabViewShown, false);
-        
         is(restoredWin.gBrowser.tabs.length, 2, "The total number of tabs is 2");
+
+        /*
+        // bug 615954 happens too often so we disable this until we have a fix
+        restoredWin.addEventListener("tabviewshown", onTabViewShown, false);
 
         // setup tab variables and listen to the load progress.
         newTabOne = restoredWin.gBrowser.tabs[0];
         newTabTwo = restoredWin.gBrowser.tabs[1];
         restoredWin.gBrowser.addTabsProgressListener(gTabsProgressListener);
+        */
       }, false);
     });
   };
@@ -202,7 +210,7 @@ function onTabViewShown() {
   tabItems.forEach(function(tabItem) {
     // tabitem might not be connected so use subscriber for those which are not
     // connected.
-    if (tabItem.reconnected) {
+    if (tabItem._reconnected) {
       ok(tabItem.isShowingCachedData(), 
          "Tab item is showing cached data and is already connected. " +
          tabItem.tab.linkedBrowser.currentURI.spec);

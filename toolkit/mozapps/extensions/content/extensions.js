@@ -548,6 +548,19 @@ var gViewController = {
     this.loadViewInternal(aViewId, this.currentViewId);
   },
 
+  // Replaces the existing view with a new one, rewriting the current history
+  // entry to match.
+  replaceView: function(aViewId) {
+    if (aViewId == this.currentViewId)
+      return;
+
+    gHistory.replaceState({
+      view: aViewId,
+      previousView: null
+    }, document.title);
+    this.loadViewInternal(aViewId, null);
+  },
+
   loadInitialView: function(aViewId) {
     gHistory.replaceState({
       view: aViewId,
@@ -874,7 +887,7 @@ var gViewController = {
       doCommand: function(aAddon) {
         var aboutURL = aAddon.aboutURL;
         if (aboutURL)
-          openDialog(aboutURL, "", "chrome,centerscreen,modal");
+          openDialog(aboutURL, "", "chrome,centerscreen,modal", aAddon);
         else
           openDialog("chrome://mozapps/content/extensions/about.xul",
                      "", "chrome,centerscreen,modal", aAddon);
@@ -935,6 +948,16 @@ var gViewController = {
       }
     },
 
+    cmd_purchaseItem: {
+      isEnabled: function(aAddon) {
+        if (!aAddon)
+          return false;
+        return !!aAddon.purchaseURL;
+      },
+      doCommand: function(aAddon) {
+        openURL(aAddon.purchaseURL);
+      }
+    },
 
     cmd_uninstallItem: {
       isEnabled: function(aAddon) {
@@ -1167,8 +1190,12 @@ function createItem(aObj, aIsInstall, aIsRemote) {
 }
 
 function sortElements(aElements, aSortBy, aAscending) {
+  // aSortBy is an Array of attributes to sort by, in decending
+  // order of priority.
+
   const DATE_FIELDS = ["updateDate"];
-  const INTEGER_FIELDS = ["size", "relevancescore"];
+  const NUMERIC_FIELDS = ["size", "relevancescore", "purchaseAmount"];
+  const UISTATE_ORDER = ["enabled", "incompatible", "disabled", "blocked"]
 
   function dateCompare(a, b) {
     var aTime = a.getTime();
@@ -1180,7 +1207,7 @@ function sortElements(aElements, aSortBy, aAscending) {
     return 0;
   }
 
-  function intCompare(a, b) {
+  function numberCompare(a, b) {
     return a - b;
   }
 
@@ -1188,47 +1215,92 @@ function sortElements(aElements, aSortBy, aAscending) {
     return a.localeCompare(b);
   }
 
-  function getValue(aObj) {
+  function uiStateCompare(a, b) {
+    // If we're in descending order, swap a and b, because
+    // we don't ever want to have descending uiStates
+    if (!aAscending)
+      [a, b] = [b, a];
+
+    return (UISTATE_ORDER.indexOf(a) - UISTATE_ORDER.indexOf(b));
+  }
+
+  function getValue(aObj, aKey) {
     if (!aObj)
       return null;
 
-    if (aObj.hasAttribute(aSortBy))
-      return aObj.getAttribute(aSortBy);
+    if (aObj.hasAttribute(aKey))
+      return aObj.getAttribute(aKey);
 
     addon = aObj.mAddon || aObj.mInstall;
     if (!addon)
       return null;
+    if (aKey == "uiState") {
+      if (addon.isActive)
+        return "enabled";
+      else if (!addon.isCompatible)
+        return "incompatible";
+      else if (addon.blocklistState == Ci.nsIBlocklistService.STATE_NOT_BLOCKED)
+        return "disabled";
+      else if (addon.isCompatible &&
+               addon.blocklistState != Ci.nsIBlocklistService.STATE_NOT_BLOCKED)
+        return "blocked";
+    }
 
-    return addon[aSortBy];
+
+    return addon[aKey];
   }
 
-  var sortFunc = stringCompare;
-  if (DATE_FIELDS.indexOf(aSortBy) != -1)
-    sortFunc = dateCompare;
-  else if (INTEGER_FIELDS.indexOf(aSortBy) != -1)
-    sortFunc = intCompare;
+  // aSortFuncs will hold the sorting functions that we'll
+  // use per element, in the correct order.
+  var aSortFuncs = [];
+
+  for (let i = 0; i < aSortBy.length; i++) {
+    var sortBy = aSortBy[i];
+
+    aSortFuncs[i] = stringCompare;
+
+    if (sortBy == "uiState")
+      aSortFuncs[i] = uiStateCompare;
+    else if (DATE_FIELDS.indexOf(sortBy) != -1)
+      aSortFuncs[i] = dateCompare;
+    else if (NUMERIC_FIELDS.indexOf(sortBy) != -1)
+      aSortFuncs[i] = numberCompare;
+  }
+
 
   aElements.sort(function(a, b) {
     if (!aAscending)
       [a, b] = [b, a];
 
-    var aValue = getValue(a);
-    var bValue = getValue(b);
+    for (let i = 0; i < aSortFuncs.length; i++) {
+      var sortBy = aSortBy[i];
+      var aValue = getValue(a, sortBy);
+      var bValue = getValue(b, sortBy);
 
-    if (!aValue && !bValue)
-      return 0;
-    if (!aValue)
-      return -1;
-    if (!bValue)
-      return 1;
+      if (!aValue && !bValue)
+        return 0;
+      if (!aValue)
+        return -1;
+      if (!bValue)
+        return 1;
+      if (aValue != bValue) {
+        var result = aSortFuncs[i](aValue, bValue);
 
-    return sortFunc(aValue, bValue);
+        if (result != 0)
+          return result;
+      }
+    }
+
+    // If we got here, then all values of a and b
+    // must have been equal.
+    return 0;
+
   });
 }
 
 function sortList(aList, aSortBy, aAscending) {
   var elements = Array.slice(aList.childNodes, 0);
-  sortElements(elements, aSortBy, aAscending);
+  sortElements(elements, [aSortBy], aAscending);
 
   while (aList.listChild)
     aList.removeChild(aList.lastChild);
@@ -1364,9 +1436,13 @@ var gCategories = {
     });
   },
 
+  get selected() {
+    return this.node.selectedItem ? this.node.selectedItem.value : null;
+  },
+
   select: function(aId, aPreviousView) {
     var view = gViewController.parseViewId(aId);
-    if (view.type == "detail") {
+    if (view.type == "detail" && aPreviousView) {
       aId = aPreviousView;
       view = gViewController.parseViewId(aPreviousView);
     }
@@ -1719,6 +1795,7 @@ var gSearchView = {
     this.showEmptyNotice(false);
     this.showAllResultsLink(0);
     this.showLoading(true);
+    this._sorters.showprice = false;
 
     gHeader.searchQuery = aQuery;
     aQuery = aQuery.trim().toLocaleLowerCase();
@@ -1753,8 +1830,11 @@ var gSearchView = {
 
         let item = createItem(aObj, aIsInstall, aIsRemote);
         item.setAttribute("relevancescore", score);
-        if (aIsRemote)
+        if (aIsRemote) {
           gCachedAddons[aObj.id] = aObj;
+          if (aObj.purchaseURL)
+            self._sorters.showprice = true;
+        }
 
         elements.push(item);
       });
@@ -1762,7 +1842,7 @@ var gSearchView = {
 
     function finishSearch(createdCount) {
       if (elements.length > 0) {
-        sortElements(elements, self._sorters.sortBy, self._sorters.ascending);
+        sortElements(elements, [self._sorters.sortBy], self._sorters.ascending);
         elements.forEach(function(aElement) {
           self._listBox.insertBefore(aElement, self._listBox.lastChild);
         });
@@ -1994,13 +2074,10 @@ var gListView = {
   node: null,
   _listBox: null,
   _emptyNotice: null,
-  _sorters: null,
   _type: null,
 
   initialize: function() {
     this.node = document.getElementById("list-view");
-    this._sorters = document.getElementById("list-sorters");
-    this._sorters.handler = this;
     this._listBox = document.getElementById("addon-list");
     this._emptyNotice = document.getElementById("addon-list-empty");
 
@@ -2038,7 +2115,7 @@ var gListView = {
 
       self.showEmptyNotice(elements.length == 0);
       if (elements.length > 0) {
-        sortElements(elements, self._sorters.sortBy, self._sorters.ascending);
+        sortElements(elements, ["uiState", "name"], true);
         elements.forEach(function(aElement) {
           self._listBox.appendChild(aElement);
         });
@@ -2096,6 +2173,9 @@ var gListView = {
 
   addItem: function(aObj, aIsInstall) {
     if (aObj.type != this._type)
+      return;
+
+    if (aIsInstall && aObj.existingAddon)
       return;
 
     let prop = aIsInstall ? "mInstall" : "mAddon";
@@ -2183,6 +2263,11 @@ var gDetailView = {
 
     this.node.setAttribute("type", aAddon.type);
 
+    // If the search category isn't selected then make sure to select the
+    // correct category
+    if (gCategories.selected != "addons://search/")
+      gCategories.select("addons://list/" + aAddon.type);
+
     document.getElementById("detail-name").textContent = aAddon.name;
     var icon = aAddon.icon64URL ? aAddon.icon64URL : aAddon.iconURL;
     document.getElementById("detail-icon").src = icon ? icon : null;
@@ -2208,18 +2293,38 @@ var gDetailView = {
     }
 
     var desc = document.getElementById("detail-desc");
-    desc.textContent = aAddon.fullDescription ? aAddon.fullDescription
-                                              : aAddon.description;
+    desc.textContent = aAddon.description;
+
+    var fullDesc = document.getElementById("detail-fulldesc");
+    if (aAddon.fullDescription) {
+      fullDesc.textContent = aAddon.fullDescription;
+      fullDesc.hidden = false;
+    } else {
+      fullDesc.hidden = true;
+    }
 
     var contributions = document.getElementById("detail-contributions");
     if ("contributionURL" in aAddon && aAddon.contributionURL) {
       contributions.hidden = false;
       var amount = document.getElementById("detail-contrib-suggested");
-      amount.value = gStrings.ext.formatStringFromName("contributionAmount2",
-                                                       [aAddon.contributionAmount],
-                                                       1);
+      if (aAddon.contributionAmount) {
+        amount.value = gStrings.ext.formatStringFromName("contributionAmount2",
+                                                         [aAddon.contributionAmount],
+                                                         1);
+        amount.hidden = false;
+      } else {
+        amount.hidden = true;
+      }
     } else {
       contributions.hidden = true;
+    }
+
+    if ("purchaseURL" in aAddon && aAddon.purchaseURL) {
+      var purchase = document.getElementById("detail-purchase-btn");
+      purchase.label = gStrings.ext.formatStringFromName("cmd.purchaseAddon.label",
+                                                         [aAddon.purchaseDisplayAmount],
+                                                         1);
+      purchase.accesskey = gStrings.ext.GetStringFromName("cmd.purchaseAddon.accesskey");
     }
 
     var updateDateRow = document.getElementById("detail-dateUpdated");
@@ -2352,7 +2457,10 @@ var gDetailView = {
           return;
         }
 
-        // This case should never happen in normal operation
+        // This might happen due to session restore restoring us back to an
+        // add-on that doesn't exist but otherwise shouldn't normally happen.
+        // Either way just revert to the default view.
+        gViewController.replaceView(VIEW_DEFAULT);
       });
     });
   },
@@ -2360,9 +2468,11 @@ var gDetailView = {
   hide: function() {
     this._updatePrefs.removeObserver("", this);
     this.clearLoading();
-    gEventManager.unregisterAddonListener(this, this._addon.id);
-    gEventManager.unregisterInstallListener(this);
-    this._addon = null;
+    if (this._addon) {
+      gEventManager.unregisterAddonListener(this, this._addon.id);
+      gEventManager.unregisterInstallListener(this);
+      this._addon = null;
+    }
   },
 
   updateState: function() {
@@ -2575,7 +2685,7 @@ var gUpdatesView = {
 
       self.showEmptyNotice(elements.length == 0);
       if (elements.length > 0) {
-        sortElements(elements, self._sorters.sortBy, self._sorters.ascending);
+        sortElements(elements, [self._sorters.sortBy], self._sorters.ascending);
         elements.forEach(function(aElement) {
           self._listBox.appendChild(aElement);
         });
@@ -2622,7 +2732,7 @@ var gUpdatesView = {
       self.showEmptyNotice(elements.length == 0);
       if (elements.length > 0) {
         self._updateSelected.hidden = false;
-        sortElements(elements, self._sorters.sortBy, self._sorters.ascending);
+        sortElements(elements, [self._sorters.sortBy], self._sorters.ascending);
         elements.forEach(function(aElement) {
           self._listBox.appendChild(aElement);
         });
@@ -2666,7 +2776,7 @@ var gUpdatesView = {
       var count = aInstallsList.filter(function(aInstall) {
         return self.isManualUpdate(aInstall, true);
       }).length;
-      self._categoryItem.disabled = gViewController.currentViewObj != self &&
+      self._categoryItem.disabled = gViewController.currentViewId != "addons://updates/available" &&
                                     count == 0;
       self._categoryItem.badgeCount = count;
       if (aInitializing)

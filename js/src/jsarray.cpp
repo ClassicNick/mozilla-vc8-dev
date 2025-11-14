@@ -143,10 +143,10 @@ ENSURE_SLOW_ARRAY(JSContext *cx, JSObject *obj)
  * 'id' is passed as a jsboxedword since the given id need not necessarily hold
  * an atomized string.
  */
-JSBool
-js_StringIsIndex(JSString *str, jsuint *indexp)
+bool
+js_StringIsIndex(JSLinearString *str, jsuint *indexp)
 {
-    jschar *cp = str->chars();
+    const jschar *cp = str->chars();
     if (JS7_ISDEC(*cp) && str->length() < sizeof(MAXSTR)) {
         jsuint index = JS7_UNDEC(*cp++);
         jsuint oldIndex = 0;
@@ -166,10 +166,10 @@ js_StringIsIndex(JSString *str, jsuint *indexp)
               (oldIndex == (MAXINDEX / 10) && c < (MAXINDEX % 10))))
         {
             *indexp = index;
-            return JS_TRUE;
+            return true;
         }
     }
-    return JS_FALSE;
+    return false;
 }
 
 static bool 
@@ -363,7 +363,7 @@ GetElement(JSContext *cx, JSObject *obj, jsdouble index, JSBool *hole, Value *vp
     }
     if (obj->isArguments() &&
         index < obj->getArgsInitialLength() &&
-        !(*vp = obj->getArgsElement(uint32(index))).isMagic(JS_ARRAY_HOLE)) {
+        !(*vp = obj->getArgsElement(uint32(index))).isMagic(JS_ARGS_HOLE)) {
         *hole = JS_FALSE;
         JSStackFrame *fp = (JSStackFrame *)obj->getPrivate();
         if (fp != JS_ARGUMENTS_OBJECT_ON_TRACE) {
@@ -853,21 +853,35 @@ static JSBool
 array_defineProperty(JSContext *cx, JSObject *obj, jsid id, const Value *value,
                      PropertyOp getter, PropertyOp setter, uintN attrs)
 {
-    uint32 i = 0;       // init to shut GCC up
-    JSBool isIndex;
-
     if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom))
         return JS_TRUE;
 
-    isIndex = js_IdIsIndex(id, &i);
-    if (!isIndex || attrs != JSPROP_ENUMERATE) {
-        if (!ENSURE_SLOW_ARRAY(cx, obj))
-            return JS_FALSE;
+    if (!obj->isDenseArray())
         return js_DefineProperty(cx, obj, id, value, getter, setter, attrs);
-    }
 
-    Value tmp = *value;
-    return array_setProperty(cx, obj, id, &tmp, false);
+    do {
+        uint32 i = 0;       // init to shut GCC up
+        bool isIndex = js_IdIsIndex(id, &i);
+        if (!isIndex || attrs != JSPROP_ENUMERATE)
+            break;
+
+        JSObject::EnsureDenseResult result = obj->ensureDenseArrayElements(cx, i, 1);
+        if (result != JSObject::ED_OK) {
+            if (result == JSObject::ED_FAILED)
+                return false;
+            JS_ASSERT(result == JSObject::ED_SPARSE);
+            break;
+        }
+
+        if (i >= obj->getArrayLength())
+            obj->setArrayLength(i + 1);
+        obj->setDenseArrayElement(i, *value);
+        return true;
+    } while (false);
+
+    if (!obj->makeDenseArraySlow(cx))
+        return false;
+    return js_DefineProperty(cx, obj, id, value, getter, setter, attrs);
 }
 
 static JSBool
@@ -1066,9 +1080,9 @@ JSObject::makeDenseArraySlow(JSContext *cx)
 
 /* Transfer ownership of buffer to returned string. */
 static inline JSBool
-BufferToString(JSContext *cx, JSCharBuffer &cb, Value *rval)
+BufferToString(JSContext *cx, StringBuffer &sb, Value *rval)
 {
-    JSString *str = js_NewStringFromCharBuffer(cx, cb);
+    JSString *str = sb.finishString();
     if (!str)
         return false;
     rval->setString(str);
@@ -1103,28 +1117,28 @@ array_toSource(JSContext *cx, uintN argc, Value *vp)
      * This object will take responsibility for the jschar buffer until the
      * buffer is transferred to the returned JSString.
      */
-    JSCharBuffer cb(cx);
+    StringBuffer sb(cx);
 
     /* Cycles/joins are indicated by sharp objects. */
 #if JS_HAS_SHARP_VARS
     if (IS_SHARP(he)) {
         JS_ASSERT(sharpchars != 0);
-        cb.replaceRawBuffer(sharpchars, js_strlen(sharpchars));
+        sb.replaceRawBuffer(sharpchars, js_strlen(sharpchars));
         goto make_string;
     } else if (sharpchars) {
         MAKE_SHARP(he);
-        cb.replaceRawBuffer(sharpchars, js_strlen(sharpchars));
+        sb.replaceRawBuffer(sharpchars, js_strlen(sharpchars));
     }
 #else
     if (IS_SHARP(he)) {
-        if (!js_AppendLiteral(cb, "[]"))
+        if (!sb.append("[]"))
             goto out;
         cx->free(sharpchars);
         goto make_string;
     }
 #endif
 
-    if (!cb.append('['))
+    if (!sb.append('['))
         goto out;
 
     jsuint length;
@@ -1149,28 +1163,29 @@ array_toSource(JSContext *cx, uintN argc, Value *vp)
                 goto out;
         }
         vp->setString(str);
-        const jschar *chars;
-        size_t charlen;
-        str->getCharsAndLength(chars, charlen);
+
+        const jschar *chars = str->getChars(cx);
+        if (!chars)
+            goto out;
 
         /* Append element to buffer. */
-        if (!cb.append(chars, charlen))
+        if (!sb.append(chars, chars + str->length()))
             goto out;
         if (index + 1 != length) {
-            if (!js_AppendLiteral(cb, ", "))
+            if (!sb.append(", "))
                 goto out;
         } else if (hole) {
-            if (!cb.append(','))
+            if (!sb.append(','))
                 goto out;
         }
     }
 
     /* Finalize the buffer. */
-    if (!cb.append(']'))
+    if (!sb.append(']'))
         goto out;
 
   make_string:
-    if (!BufferToString(cx, cb, vp))
+    if (!BufferToString(cx, sb, vp))
         goto out;
 
     ok = true;
@@ -1188,19 +1203,30 @@ array_toString_sub(JSContext *cx, JSObject *obj, JSBool locale,
 {
     JS_CHECK_RECURSION(cx, return false);
 
+    /* Get characters to use for the separator. */
+    static const jschar comma = ',';
+    const jschar *sep;
+    size_t seplen;
+    if (sepstr) {
+        seplen = sepstr->length();
+        sep = sepstr->getChars(cx);
+        if (!sep)
+            return false;
+    } else {
+        sep = &comma;
+        seplen = 1;
+    }
+
     /*
      * Use HashTable entry as the cycle indicator. On first visit, create the
      * entry, and, when leaving, remove the entry.
      */
-    typedef js::HashSet<JSObject *> ObjSet;
-    ObjSet::AddPtr hashp = cx->busyArrays.lookupForAdd(obj);
+    BusyArraysMap::AddPtr hashp = cx->busyArrays.lookupForAdd(obj);
     uint32 genBefore;
     if (!hashp) {
         /* Not in hash table, so not a cycle. */
-        if (!cx->busyArrays.add(hashp, obj)) {
-            JS_ReportOutOfMemory(cx);
+        if (!cx->busyArrays.add(hashp, obj))
             return false;
-        }
         genBefore = cx->busyArrays.generation();
     } else {
         /* Cycle, so return empty string. */
@@ -1214,22 +1240,11 @@ array_toString_sub(JSContext *cx, JSObject *obj, JSBool locale,
     MUST_FLOW_THROUGH("out");
     bool ok = false;
 
-    /* Get characters to use for the separator. */
-    static const jschar comma = ',';
-    const jschar *sep;
-    size_t seplen;
-    if (sepstr) {
-        sepstr->getCharsAndLength(sep, seplen);
-    } else {
-        sep = &comma;
-        seplen = 1;
-    }
-
     /*
      * This object will take responsibility for the jschar buffer until the
      * buffer is transferred to the returned JSString.
      */
-    JSCharBuffer cb(cx);
+    StringBuffer sb(cx);
 
     jsuint length;
     if (!js_GetLengthProperty(cx, obj, &length))
@@ -1257,19 +1272,19 @@ array_toString_sub(JSContext *cx, JSObject *obj, JSBool locale,
                     goto out;
             }
 
-            if (!js_ValueToCharBuffer(cx, *rval, cb))
+            if (!ValueToStringBuffer(cx, *rval, sb))
                 goto out;
         }
 
         /* Append the separator. */
         if (index + 1 != length) {
-            if (!cb.append(sep, seplen))
+            if (!sb.append(sep, seplen))
                 goto out;
         }
     }
 
     /* Finalize the buffer. */
-    if (!BufferToString(cx, cb, rval))
+    if (!BufferToString(cx, sb, rval))
         goto out;
 
     ok = true;
@@ -1710,15 +1725,10 @@ comparator_stack_cast(JSRedComparator func)
 static int
 sort_compare_strings(void *arg, const void *a, const void *b, int *result)
 {
-    const Value *av = (const Value *)a, *bv = (const Value *)b;
-
-    JS_ASSERT(av->isString());
-    JS_ASSERT(bv->isString());
-    if (!JS_CHECK_OPERATION_LIMIT((JSContext *)arg))
-        return JS_FALSE;
-
-    *result = (int) js_CompareStrings(av->toString(), bv->toString());
-    return JS_TRUE;
+    JSContext *cx = (JSContext *)arg;
+    JSString *astr = ((const Value *)a)->toString();
+    JSString *bstr = ((const Value *)b)->toString();
+    return JS_CHECK_OPERATION_LIMIT(cx) && CompareStrings(cx, astr, bstr, result);
 }
 
 JSBool
@@ -2049,7 +2059,7 @@ js_ArrayCompPush_tn(JSContext *cx, JSObject *obj, ValueArgType v)
         return JS_FALSE;
     }
 
-    return cx->tracerState->builtinStatus == 0;
+    return WasBuiltinSuccessful(cx);
 }
 JS_DEFINE_CALLINFO_3(extern, BOOL_FAIL, js_ArrayCompPush_tn, CONTEXT, OBJECT,
                      VALUE, 0, nanojit::ACCSET_STORE_ANY)
@@ -2615,9 +2625,14 @@ array_indexOfHelper(JSContext *cx, JSBool isLast, uintN argc, Value *vp)
             !GetElement(cx, obj, (jsuint)i, &hole, vp)) {
             return JS_FALSE;
         }
-        if (!hole && StrictlyEqual(cx, *vp, tosearch)) {
-            vp->setNumber(i);
-            return JS_TRUE;
+        if (!hole) {
+            JSBool equal;
+            if (!StrictlyEqual(cx, *vp, tosearch, &equal))
+                return JS_FALSE;
+            if (equal) {
+                vp->setNumber(i);
+                return JS_TRUE;
+            }
         }
         if (i == stop)
             goto not_found;
@@ -2980,6 +2995,8 @@ NewArray(JSContext *cx, jsuint length, JSObject *proto)
 
     gc::FinalizeKind kind = GuessObjectGCKind(length, true);
     JSObject *obj = detail::NewObject<WithProto::Class, false>(cx, &js_ArrayClass, proto, NULL, kind);
+    if (!obj)
+        return NULL;
 
     obj->setArrayLength(length);
 
@@ -3011,6 +3028,9 @@ JSObject *
 NewDenseCopiedArray(JSContext *cx, uintN length, Value *vp, JSObject *proto)
 {
     JSObject* obj = NewArray<true>(cx, length, proto);
+    if (!obj)
+        return NULL;
+
     JS_ASSERT(obj->getDenseArrayCapacity() >= length);
 
     if (vp)

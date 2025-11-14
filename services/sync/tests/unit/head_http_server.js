@@ -7,6 +7,13 @@ function httpd_setup (handlers) {
   return server;
 }
 
+function httpd_handler(statusCode, status, body) {
+  return function(request, response) {
+    response.setStatusLine(request.httpVersion, statusCode, status);
+    response.bodyOutputStream.write(body, body.length);
+  };
+}
+
 function httpd_basic_auth_handler(body, metadata, response) {
   // no btoa() in xpcshell.  it's guest:guest
   if (metadata.hasHeader("Authorization") &&
@@ -34,34 +41,6 @@ function readBytesFromInputStream(inputStream, count) {
     count = inputStream.available();
   }
   return new BinaryInputStream(inputStream).readBytes(count);
-}
-
-/*
- * Create and upload public + private key pair. You probably want to enable
- * FakeCryptoService first, otherwise this will be very expensive.
- */
-function createAndUploadKeypair() {
-  let storageURL = Svc.Prefs.get("clusterURL") + Svc.Prefs.get("storageAPI")
-                   + "/" + ID.get("WeaveID").username + "/storage/";
-
-  PubKeys.defaultKeyUri = storageURL + "keys/pubkey";
-  PrivKeys.defaultKeyUri = storageURL + "keys/privkey";
-  let keys = PubKeys.createKeypair(ID.get("WeaveCryptoID"),
-                                   PubKeys.defaultKeyUri,
-                                   PrivKeys.defaultKeyUri);
-  PubKeys.uploadKeypair(keys);
-}
-
-/*
- * Create and upload an engine's symmetric key.
- */
-function createAndUploadSymKey(url) {
-  let symkey = Svc.Crypto.generateRandomKey();
-  let pubkey = PubKeys.getDefaultKey();
-  let meta = new CryptoMeta(url);
-  meta.addUnwrappedKey(pubkey, symkey);
-  let res = new Resource(meta.uri);
-  res.put(meta);
 }
 
 /*
@@ -151,8 +130,9 @@ function ServerCollection(wbos) {
 ServerCollection.prototype = {
 
   _inResultSet: function(wbo, options) {
-    return ((!options.ids || (options.ids.indexOf(wbo.id) != -1))
-            && (!options.newer || (wbo.modified > options.newer)));
+    return wbo.payload
+           && (!options.ids || (options.ids.indexOf(wbo.id) != -1))
+           && (!options.newer || (wbo.modified > options.newer));
   },
 
   get: function(options) {

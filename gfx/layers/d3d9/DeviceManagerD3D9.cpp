@@ -182,7 +182,8 @@ SwapChainD3D9::Reset()
 #define LACKS_CAP(a, b) !(((a) & (b)) == (b))
 
 DeviceManagerD3D9::DeviceManagerD3D9()
-  : mHasDynamicTextures(false)
+  : mDeviceResetCount(0)
+  , mHasDynamicTextures(false)
   , mDeviceWasRemoved(false)
 {
 }
@@ -364,6 +365,20 @@ DeviceManagerD3D9::Init()
     return false;
   }
 
+  hr = mDevice->CreatePixelShader((DWORD*)ComponentPass1ShaderPS,
+                                  getter_AddRefs(mComponentPass1PS));
+
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  hr = mDevice->CreatePixelShader((DWORD*)ComponentPass2ShaderPS,
+                                  getter_AddRefs(mComponentPass2PS));
+
+  if (FAILED(hr)) {
+    return false;
+  }
+
   hr = mDevice->CreatePixelShader((DWORD*)YCbCrShaderPS,
                                   getter_AddRefs(mYCbCrPS));
 
@@ -484,6 +499,14 @@ DeviceManagerD3D9::SetShaderMode(ShaderMode aMode)
       mDevice->SetVertexShader(mLayerVS);
       mDevice->SetPixelShader(mRGBAPS);
       break;
+    case COMPONENTLAYERPASS1:
+      mDevice->SetVertexShader(mLayerVS);
+      mDevice->SetPixelShader(mComponentPass1PS);
+      break;
+    case COMPONENTLAYERPASS2:
+      mDevice->SetVertexShader(mLayerVS);
+      mDevice->SetPixelShader(mComponentPass2PS);
+      break;
     case YCBCRLAYER:
       mDevice->SetVertexShader(mLayerVS);
       mDevice->SetPixelShader(mYCbCrPS);
@@ -504,28 +527,11 @@ DeviceManagerD3D9::VerifyReadyForRendering()
     if (IsD3D9Ex()) {
       hr = mDeviceEx->CheckDeviceState(mFocusWnd);
 
-      if (hr == D3DERR_DEVICEREMOVED) {
+      if (FAILED(hr)) {
         mDeviceWasRemoved = true;
         LayerManagerD3D9::OnDeviceManagerDestroy(this);
+        ++mDeviceResetCount;
         return false;
-      }
-
-      if (FAILED(hr)) {
-        D3DPRESENT_PARAMETERS pp;
-        memset(&pp, 0, sizeof(D3DPRESENT_PARAMETERS));
-
-        pp.BackBufferWidth = 1;
-        pp.BackBufferHeight = 1;
-        pp.BackBufferFormat = D3DFMT_A8R8G8B8;
-        pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-        pp.Windowed = TRUE;
-        pp.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-        pp.hDeviceWindow = mFocusWnd;
-        
-        hr = mDeviceEx->ResetEx(&pp, NULL);
-        if (FAILED(hr)) {
-          return false;
-        }
       }
     }
     return true;
@@ -558,6 +564,7 @@ DeviceManagerD3D9::VerifyReadyForRendering()
   pp.hDeviceWindow = mFocusWnd;
 
   hr = mDevice->Reset(&pp);
+  ++mDeviceResetCount;
 
   if (hr == D3DERR_DEVICELOST) {
     return false;

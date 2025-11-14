@@ -1290,13 +1290,14 @@ nsDisplayPlugin::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   return nsDisplayItem::ComputeVisibility(aBuilder, aVisibleRegion);
 }
 
-PRBool
-nsDisplayPlugin::IsOpaque(nsDisplayListBuilder* aBuilder,
-                          PRBool* aForceTransparentSurface)
+nsRegion
+nsDisplayPlugin::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
+                                 PRBool* aForceTransparentSurface)
 {
   if (aForceTransparentSurface) {
     *aForceTransparentSurface = PR_FALSE;
   }
+  nsRegion result;
   nsObjectFrame* f = static_cast<nsObjectFrame*>(mFrame);
   if (!aBuilder->IsForPluginGeometry()) {
     nsIWidget* widget = f->GetWidget();
@@ -1310,11 +1311,14 @@ nsDisplayPlugin::IsOpaque(nsDisplayListBuilder* aBuilder,
         // Something has clipped us unexpectedly. Perhaps there is a translucent
         // chrome element overlaying us that forced us to be clipped away. Treat
         // us as non-opaque since we may have holes.
-    	return PR_FALSE;
+    	return result;
       }
     }
   }
-  return f->IsOpaque();
+  if (f->IsOpaque()) {
+    result = GetBounds(aBuilder);
+  }
+  return result;
 }
 
 void
@@ -1473,7 +1477,7 @@ nsObjectFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     NPWindow* window = nsnull;
     mInstanceOwner->GetWindow(window);
     PRBool isVisible = window && window->width > 0 && window->height > 0;
-    if (isVisible) {
+    if (isVisible && aBuilder->ShouldSyncDecodeImages()) {
   #ifndef XP_MACOSX
       mInstanceOwner->UpdateWindowVisibility(PR_TRUE);
   #endif
@@ -1714,10 +1718,13 @@ nsObjectFrame::PrintPlugin(nsIRenderingContext& aRenderingContext,
 }
 
 ImageContainer*
-nsObjectFrame::GetImageContainer()
+nsObjectFrame::GetImageContainer(LayerManager* aManager)
 {
-  nsRefPtr<LayerManager> manager =
-    nsContentUtils::LayerManagerForDocument(mContent->GetOwnerDoc());
+  nsRefPtr<LayerManager> manager = aManager;
+
+  if (!manager) {
+    manager = nsContentUtils::LayerManagerForDocument(mContent->GetOwnerDoc());
+  }
   if (!manager) {
     return nsnull;
   }
@@ -1837,7 +1844,7 @@ nsObjectFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
 
   NS_ASSERTION(layer->GetType() == Layer::TYPE_IMAGE, "ObjectFrame works only with ImageLayer");
   // Create image
-  nsRefPtr<ImageContainer> container = GetImageContainer();
+  nsRefPtr<ImageContainer> container = GetImageContainer(aManager);
   if (!container)
     return nsnull;
 
@@ -6252,15 +6259,10 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
 {
   NS_ENSURE_TRUE(mPluginWindow, NS_ERROR_NULL_POINTER);
 
-  nsIView   *view;
   nsresult  rv = NS_ERROR_FAILURE;
 
   if (mObjectFrame) {
-    // Create view if necessary
-
-    view = mObjectFrame->GetView();
-
-    if (!view || !mWidget) {
+    if (!mWidget) {
       PRBool windowless = PR_FALSE;
       mInstance->IsWindowless(&windowless);
 
@@ -6282,16 +6284,9 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void)
           mPluginWindow->window = nsnull;
 #ifdef MOZ_X11
           // Fill in the display field.
-          nsIWidget* win = mObjectFrame->GetNearestWidget();
           NPSetWindowCallbackStruct* ws_info = 
             static_cast<NPSetWindowCallbackStruct*>(mPluginWindow->ws_info);
-          if (win) {
-            ws_info->display =
-              static_cast<Display*>(win->GetNativeData(NS_NATIVE_DISPLAY));
-          }
-          else {
-            ws_info->display = DefaultXDisplay();
-          }
+          ws_info->display = DefaultXDisplay();
 
           nsCAutoString description;
           GetPluginDescription(description);

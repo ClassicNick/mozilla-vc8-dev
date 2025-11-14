@@ -398,12 +398,13 @@ ContentChild::DeallocPStorage(PStorageChild* aActor)
 bool
 ContentChild::RecvRegisterChrome(const InfallibleTArray<ChromePackage>& packages,
                                  const InfallibleTArray<ResourceMapping>& resources,
-                                 const InfallibleTArray<OverrideMapping>& overrides)
+                                 const InfallibleTArray<OverrideMapping>& overrides,
+                                 const nsCString& locale)
 {
     nsCOMPtr<nsIChromeRegistry> registrySvc = nsChromeRegistry::GetService();
     nsChromeRegistryContent* chromeRegistry =
         static_cast<nsChromeRegistryContent*>(registrySvc.get());
-    chromeRegistry->RegisterRemoteChrome(packages, resources, overrides);
+    chromeRegistry->RegisterRemoteChrome(packages, resources, overrides, locale);
     return true;
 }
 
@@ -488,6 +489,18 @@ ContentChild::RecvPreferenceUpdate(const PrefTuple& aPref)
         return false;
 
     prefs->SetPreference(&aPref);
+
+    return true;
+}
+
+bool
+ContentChild::RecvClearUserPreference(const nsCString& aPrefName)
+{
+    nsCOMPtr<nsIPrefServiceInternal> prefs = do_GetService("@mozilla.org/preferences-service;1");
+    if (!prefs)
+        return false;
+
+    prefs->ClearContentPref(aPrefName);
 
     return true;
 }
@@ -592,7 +605,7 @@ ContentChild::RecvFlushMemory(const nsString& reason)
     nsCOMPtr<nsIObserverService> os =
         mozilla::services::GetObserverService();
     if (os)
-	os->NotifyObservers(nsnull, "memory-pressure", reason.get());
+        os->NotifyObservers(nsnull, "memory-pressure", reason.get());
   return true;
 }
 

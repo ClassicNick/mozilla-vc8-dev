@@ -55,9 +55,7 @@ const CLUSTER_BACKOFF = 5 * 60 * 1000; // 5 minutes
 const PBKDF2_KEY_BYTES = 16;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://services-sync/auth.js");
-Cu.import("resource://services-sync/base_records/crypto.js");
-Cu.import("resource://services-sync/base_records/wbo.js");
+Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
@@ -83,7 +81,6 @@ function WeaveSvc() {
 WeaveSvc.prototype = {
 
   _lock: Utils.lock,
-  _catch: Utils.catch,
   _locked: false,
   _loggedIn: false,
 
@@ -218,6 +215,20 @@ WeaveSvc.prototype = {
   },
   unlock: function Svc_unlock() {
     this._locked = false;
+  },
+
+  // A specialized variant of Utils.catch.
+  // This provides a more informative error message when we're already syncing:
+  // see Bug 616568.
+  _catch: function _catch(func) {
+    function lockExceptions(ex) {
+      if (Utils.isLockException(ex)) {
+        // This only happens if we're syncing already.
+        this._log.info("Cannot start sync: already syncing?");
+      }
+    }
+      
+    return Utils.catch.call(this, func, lockExceptions);
   },
 
   _updateCachedURLs: function _updateCachedURLs() {
@@ -479,9 +490,14 @@ WeaveSvc.prototype = {
       verbose.append("verbose-log.txt");
       if (!verbose.exists())
         verbose.create(verbose.NORMAL_FILE_TYPE, PERMS_FILE);
-  
-      let maxSize = 65536; // 64 * 1024 (64KB)
-      this._debugApp = new Log4Moz.RotatingFileAppender(verbose, formatter, maxSize);
+
+      if (Svc.Prefs.get("log.appender.debugLog.rotate", true)) {
+        let maxSize = Svc.Prefs.get("log.appender.debugLog.maxSize");
+        this._debugApp = new Log4Moz.RotatingFileAppender(verbose, formatter,
+                                                          maxSize);
+      } else {
+        this._debugApp = new Log4Moz.FileAppender(verbose, formatter);
+      }
       this._debugApp.level = Log4Moz.Level[Svc.Prefs.get("log.appender.debugLog")];
       root.addAppender(this._debugApp);
     }
@@ -529,7 +545,6 @@ WeaveSvc.prototype = {
         this._handleSyncError();
         if (Status.sync == CREDENTIALS_CHANGED) {
           this.logout();
-          Utils.delay(function() this.login(), 0, this);
         }
         break;
       case "weave:service:sync:finish":
@@ -673,6 +688,7 @@ WeaveSvc.prototype = {
   _fetchInfo: function _fetchInfo(url, logout) {
     let infoURL = url || this.infoURL;
     
+    this._log.trace("In _fetchInfo: " + infoURL);
     let info = new Resource(infoURL).get();
     if (!info.success) {
       if (info.status == 401) {
@@ -820,9 +836,24 @@ WeaveSvc.prototype = {
         return false;
       }
 
+      // Unlock master password, or return.
       try {
         // Fetch collection info on every startup.
+        // Attaching auth credentials to a request requires access to
+        // passwords, which means that Resource.get can throw MP-related
+        // exceptions!
+        // Try to fetch the passphrase first, while we still have control.
+        try {
+          this.passphrase;
+        } catch (ex) {
+          this._log.debug("Fetching passphrase threw " + ex +
+                          "; assuming master password locked.");
+          Status.login = MASTER_PASSWORD_LOCKED;
+          return false;
+        }
+        
         let test = new Resource(this.infoURL).get();
+        
         switch (test.status) {
           case 200:
             // The user is authenticated.
@@ -950,7 +981,6 @@ WeaveSvc.prototype = {
       CollectionKeys.clear();
 
       /* Login and sync. This also generates new keys. */
-      this.login();
       this.sync(true);
       return true;
     }))(),
@@ -990,9 +1020,23 @@ WeaveSvc.prototype = {
   },
 
   _autoConnect: let (attempts = 0) function _autoConnect() {
-    let reason = 
-      Utils.mpLocked() ? "master password still locked"
-                       : this._checkSync([kSyncNotLoggedIn, kFirstSyncChoiceNotMade]);
+    let isLocked = Utils.mpLocked();
+    if (isLocked) {
+      // There's no reason to back off if we're locked: we'll just try to login
+      // during sync. Clear our timer, see if we should go ahead and sync, then
+      // just return.
+      this._log.trace("Autoconnect skipped: master password still locked.");
+      
+      if (this._autoTimer)
+        this._autoTimer.clear();
+      
+      this._checkSyncStatus();
+      Svc.Prefs.set("autoconnect", true);
+      
+      return;
+    }
+    
+    let reason = this._checkSync([kSyncNotLoggedIn, kFirstSyncChoiceNotMade]);
 
     // Can't autoconnect if we're missing these values.
     if (!reason) {
@@ -1047,6 +1091,11 @@ WeaveSvc.prototype = {
       this._log.info("Logging in user " + this.username);
 
       if (!this.verifyLogin()) {
+        if (Status.login == MASTER_PASSWORD_LOCKED) {
+          // Drat.
+          this._log.debug("Login failed: " + Status.login);
+          return false;
+        }
         // verifyLogin sets the failure states here.
         throw "Login failed: " + Status.login;
       }
@@ -1315,6 +1364,19 @@ WeaveSvc.prototype = {
   },
 
   /**
+   * Return whether we should attempt login at the start of a sync.
+   * 
+   * Note that this function has strong ties to _checkSync: callers 
+   * of this function should typically use _checkSync to verify that
+   * any necessary login took place.
+   */
+  _shouldLogin: function _shouldLogin() {
+    return this.enabled &&
+           !Svc.IO.offline &&
+           !this.isLoggedIn;
+  },
+  
+  /**
    * Determine if a sync should run.
    * 
    * @param ignore [optional]
@@ -1330,6 +1392,9 @@ WeaveSvc.prototype = {
       reason = kSyncNetworkOffline;
     else if (Status.minimumNextSync > Date.now())
       reason = kSyncBackoffNotMet;
+    else if ((Status.login == MASTER_PASSWORD_LOCKED) &&
+             Utils.mpLocked())
+      reason = kSyncMasterPasswordLocked;
     else if (!this._loggedIn)
       reason = kSyncNotLoggedIn;
     else if (Svc.Prefs.get("firstSync") == "notReady")
@@ -1345,6 +1410,8 @@ WeaveSvc.prototype = {
    * Remove any timers/observers that might trigger a sync
    */
   _clearSyncTriggers: function _clearSyncTriggers() {
+    this._log.debug("Clearing sync triggers.");
+    
     // Clear out any scheduled syncs
     if (this._syncTimer)
       this._syncTimer.clear();
@@ -1365,7 +1432,18 @@ WeaveSvc.prototype = {
   _checkSyncStatus: function WeaveSvc__checkSyncStatus() {
     // Should we be syncing now, if not, cancel any sync timers and return
     // if we're in backoff, we'll schedule the next sync
-    if (this._checkSync([kSyncBackoffNotMet])) {
+    let ignore = [kSyncBackoffNotMet];
+    
+    // We're ready to sync even if we're not logged in... so long as the 
+    // master password isn't locked.
+    if (Utils.mpLocked()) {
+      ignore.push(kSyncNotLoggedIn);
+      ignore.push(kSyncMasterPasswordLocked);
+    }
+    
+    let skip = this._checkSync(ignore);
+    this._log.trace("_checkSync returned \"" + skip + "\".");
+    if (skip) {
       this._clearSyncTriggers();
       return;
     }
@@ -1385,9 +1463,19 @@ WeaveSvc.prototype = {
    * delay is optional
    */
   syncOnIdle: function WeaveSvc_syncOnIdle(delay) {
-    // No need to add a duplicate idle observer
+    // No need to add a duplicate idle observer, and no point if we got kicked
+    // out by the master password dialog.
+    if (Status.login == MASTER_PASSWORD_LOCKED &&
+        Utils.mpLocked()) {
+      this._log.debug("Not syncing on idle: Login status is " + Status.login);
+      
+      // If we're not syncing now, we need to schedule the next one.
+      this._scheduleAtInterval(MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
+      return false;
+    }
+
     if (this._idleTime)
-      return;
+      return false;
 
     this._idleTime = delay || IDLE_TIME;
     this._log.debug("Idle timer created for sync, will sync after " +
@@ -1411,8 +1499,8 @@ WeaveSvc.prototype = {
 
     // Start the sync right away if we're already late
     if (interval <= 0) {
-      this._log.debug("Syncing as soon as we're idle.");
-      this.syncOnIdle();
+      if (this.syncOnIdle())
+        this._log.debug("Syncing as soon as we're idle.");
       return;
     }
 
@@ -1496,6 +1584,22 @@ WeaveSvc.prototype = {
     Utils.delay(function() this._doHeartbeat(), interval, this, "_heartbeatTimer");
   },
 
+  /**
+   * Incorporates the backoff/retry logic used in error handling and elective
+   * non-syncing.
+   */
+  _scheduleAtInterval: function _scheduleAtInterval(minimumInterval) {
+    const MINIMUM_BACKOFF_INTERVAL = 15 * 60 * 1000;     // 15 minutes
+    let interval = this._calculateBackoff(this._syncErrors, MINIMUM_BACKOFF_INTERVAL);
+    if (minimumInterval)
+      interval = Math.max(minimumInterval, interval);
+
+    let d = new Date(Date.now() + interval);
+    this._log.config("Starting backoff, next sync at:" + d.toString());
+
+    this._scheduleNextSync(interval);
+  },
+  
   _syncErrors: 0,
   /**
    * Deal with sync errors appropriately
@@ -1511,22 +1615,46 @@ WeaveSvc.prototype = {
       }
       Status.enforceBackoff = true;
     }
-
-    const MINIMUM_BACKOFF_INTERVAL = 15 * 60 * 1000;     // 15 minutes
-    let interval = this._calculateBackoff(this._syncErrors, MINIMUM_BACKOFF_INTERVAL);
-
-    this._scheduleNextSync(interval);
-
-    let d = new Date(Date.now() + interval);
-    this._log.config("Starting backoff, next sync at:" + d.toString());
+    
+    this._scheduleAtInterval();
   },
 
+  _skipScheduledRetry: function _skipScheduledRetry() {
+    return [LOGIN_FAILED_INVALID_PASSPHRASE,
+            LOGIN_FAILED_LOGIN_REJECTED].indexOf(Status.login) == -1;
+  },
+  
+  sync: function sync() {
+    this._log.debug("In wrapping sync().");
+    this._catch(function () {
+      // Make sure we're logged in.
+      if (this._shouldLogin()) {
+        this._log.debug("In sync: should login.");
+        if (!this.login()) {
+          this._log.debug("Not syncing: login returned false.");
+          this._clearSyncTriggers();    // No more pending syncs, please.
+          
+          // Try again later, just as if we threw an error... only without the
+          // error count.
+          if (!this._skipScheduledRetry())
+            this._scheduleAtInterval(MASTER_PASSWORD_LOCKED_RETRY_INTERVAL);
+    
+          return;
+        }
+      }
+      else {
+        this._log.trace("In sync: no need to login.");
+      }
+      return this._lockedSync.apply(this, arguments);
+    })();
+  },
+  
   /**
    * Sync up engines with the server.
    */
-  sync: function sync()
-    this._catch(this._lock("service.js: sync", 
-                           this._notify("sync", "", function() {
+  _lockedSync: function _lockedSync()
+    this._lock("service.js: sync", 
+               this._notify("sync", "", function() {
 
     this._log.info("In sync().");
 
@@ -1647,7 +1775,7 @@ WeaveSvc.prototype = {
       this._syncError = false;
       Svc.Prefs.reset("firstSync");
     }
-  })))(),
+  }))(),
 
   /**
    * Process the locally stored clients list to figure out what mode to be in

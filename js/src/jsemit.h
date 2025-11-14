@@ -234,9 +234,9 @@ struct JSStmtInfo {
 /*
  * Flag to prevent a non-escaping function from being optimized into a null
  * closure (i.e., a closure that needs only its global object for free variable
- * resolution, thanks to JSOP_{GET,CALL}UPVAR), because this function contains
- * a closure that needs one or more scope objects surrounding it (i.e., Call
- * object for a heavyweight outer function). See bug 560234.
+ * resolution), because this function contains a closure that needs one or more
+ * scope objects surrounding it (i.e., a Call object for an outer heavyweight
+ * function). See bug 560234.
  */
 #define TCF_FUN_ENTRAINS_SCOPES 0x400000
 
@@ -252,12 +252,20 @@ struct JSStmtInfo {
 #define TCF_COMPILE_FOR_EVAL     0x2000000
 
 /*
- * The function has broken or incorrect def-use information, and it cannot
- * safely optimize free variables to global names. This can happen because
- * of a named function statement not at the top level (emitting a DEFFUN),
- * or a variable declaration inside a "with".
+ * The function or a function that encloses it may define new local names
+ * at runtime through means other than calling eval.
  */
 #define TCF_FUN_MIGHT_ALIAS_LOCALS  0x4000000
+
+/*
+ * The script contains singleton initialiser JSOP_OBJECT.
+ */
+#define TCF_HAS_SINGLETONS       0x8000000
+
+/*
+ * Some enclosing scope is a with-statement or E4X filter-expression.
+ */
+#define TCF_IN_WITH             0x10000000
 
 /*
  * Flags to check for return; vs. return expr; in a function.
@@ -329,16 +337,21 @@ struct JSTreeContext {              /* tree context for semantic checks */
 
     JSParseNode     *innermostWith; /* innermost WITH parse node */
 
+    js::Bindings    bindings;       /* bindings in this code, including
+                                       arguments if we're compiling a function */
+
 #ifdef JS_SCOPE_DEPTH_METER
     uint16          scopeDepth;     /* current lexical scope chain depth */
     uint16          maxScopeDepth;  /* maximum lexical scope chain depth */
 #endif
 
+    void trace(JSTracer *trc);
+
     JSTreeContext(js::Parser *prs)
-      : flags(0), bodyid(0), blockidGen(0),
-        topStmt(NULL), topScopeStmt(NULL), blockChainBox(NULL), blockNode(NULL),
-        parser(prs), scopeChain_(NULL), parent(prs->tc), staticLevel(0),
-        funbox(NULL), functionList(NULL), innermostWith(NULL), sharpSlotBase(-1)
+      : flags(0), bodyid(0), blockidGen(0), topStmt(NULL), topScopeStmt(NULL),
+        blockChainBox(NULL), blockNode(NULL), parser(prs), scopeChain_(NULL), parent(prs->tc),
+        staticLevel(0), funbox(NULL), functionList(NULL), innermostWith(NULL), bindings(prs->context),
+        sharpSlotBase(-1)
     {
         prs->tc = this;
         JS_SCOPE_DEPTH_METERING(scopeDepth = maxScopeDepth = 0);
@@ -653,6 +666,17 @@ struct JSCodeGenerator : public JSTreeContext
     bool compilingForEval() { return !!(flags & TCF_COMPILE_FOR_EVAL); }
 
     bool shouldNoteClosedName(JSParseNode *pn);
+
+    bool checkSingletonContext() {
+        if (!compileAndGo() || inFunction())
+            return false;
+        for (JSStmtInfo *stmt = topStmt; stmt; stmt = stmt->down) {
+            if (STMT_IS_LOOP(stmt))
+                return false;
+        }
+        flags |= TCF_HAS_SINGLETONS;
+        return true;
+    }
 };
 
 #define CG_TS(cg)               TS((cg)->parser)

@@ -176,7 +176,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     final static int COMMAND = 54;
 
-    final static int PARAM_OR_SOURCE = 55;
+    final static int PARAM_OR_SOURCE_OR_TRACK = 55;
 
     final static int MGLYPH_OR_MALIGNMARK = 56;
 
@@ -832,6 +832,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     public final void characters(@Const @NoLength char[] buf, int start, int length)
             throws SAXException {
         if (needToDropLF) {
+            needToDropLF = false;
             if (buf[start] == '\n') {
                 start++;
                 length--;
@@ -839,7 +840,6 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                     return;
                 }
             }
-            needToDropLF = false;
         }
 
         // optimize the most common case
@@ -2013,8 +2013,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             case EMBED_OR_IMG:
                             case AREA_OR_WBR:
                                 reconstructTheActiveFormattingElements();
-                                // FALL THROUGH to PARAM_OR_SOURCE
-                            case PARAM_OR_SOURCE:
+                                // FALL THROUGH to PARAM_OR_SOURCE_OR_TRACK
+                            case PARAM_OR_SOURCE_OR_TRACK:
                                 appendVoidElementToCurrentMayFoster(
                                         elementName,
                                         attributes);
@@ -3504,7 +3504,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                     HtmlAttributes.EMPTY_ATTRIBUTES);
                             break endtagloop;
                         case AREA_OR_WBR:
-                        case PARAM_OR_SOURCE:
+                        case PARAM_OR_SOURCE_OR_TRACK:
                         case EMBED_OR_IMG:
                         case IMAGE:
                         case INPUT:

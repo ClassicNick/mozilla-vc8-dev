@@ -193,7 +193,7 @@ gfxFT2FontBase::GetFontTable(PRUint32 aTag)
     if (mFontEntry->GetExistingFontTable(aTag, &blob))
         return blob;
 
-    nsTArray<PRUint8> buffer;
+    FallibleTArray<PRUint8> buffer;
     PRBool haveTable = gfxFT2LockedFace(this).GetFontTable(aTag, buffer);
 
     // Cache even when there is no table to save having to open the FT_Face
@@ -216,7 +216,7 @@ gfxFT2FontBase::GetGlyph(PRUint32 unicode, PRUint32 variation_selector)
 }
 
 PRInt32
-gfxFT2FontBase::GetHintedGlyphWidth(gfxContext *aCtx, PRUint16 aGID)
+gfxFT2FontBase::GetGlyphWidth(gfxContext *aCtx, PRUint16 aGID)
 {
     cairo_text_extents_t extents;
     GetGlyphExtents(aGID, &extents);

@@ -278,8 +278,20 @@ IDBTransaction::GetOrCreateConnection(mozIStorageConnection** aResult)
       IDBFactory::GetConnection(mDatabase->FilePath());
     NS_ENSURE_TRUE(connection, NS_ERROR_FAILURE);
 
-    NS_NAMED_LITERAL_CSTRING(beginTransaction, "BEGIN TRANSACTION;");
-    nsresult rv = connection->ExecuteSimpleSQL(beginTransaction);
+    nsCString beginTransaction;
+    if (mMode == nsIIDBTransaction::READ_WRITE) {
+      beginTransaction.AssignLiteral("BEGIN IMMEDIATE TRANSACTION;");
+    }
+    else {
+      beginTransaction.AssignLiteral("BEGIN TRANSACTION;");
+    }
+
+    nsCOMPtr<mozIStorageStatement> stmt;
+    nsresult rv = connection->CreateStatement(beginTransaction,
+                                              getter_AddRefs(stmt));
+    NS_ENSURE_SUCCESS(rv, false);
+
+    rv = stmt->Execute();
     NS_ENSURE_SUCCESS(rv, false);
 
     connection.swap(mConnection);
@@ -937,10 +949,10 @@ CommitHelper::Run()
         }
       }
 
-      event = IDBEvent::CreateGenericEvent(NS_LITERAL_STRING(ABORT_EVT_STR));
+      event = CreateGenericEvent(NS_LITERAL_STRING(ABORT_EVT_STR));
     }
     else {
-      event = IDBEvent::CreateGenericEvent(NS_LITERAL_STRING(COMPLETE_EVT_STR));
+      event = CreateGenericEvent(NS_LITERAL_STRING(COMPLETE_EVT_STR));
     }
     NS_ENSURE_TRUE(event, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 

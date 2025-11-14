@@ -21,12 +21,12 @@
       const description = "My Test Database";
       const objectStoreName = "Objects";
 
-      let request = moz_indexedDB.open(name, description);
+      let request = mozIndexedDB.open(name, description);
       request.onerror = errorHandler;
       request.onsuccess = grabEventAndContinueHandler;
       let event = yield;
 
-      let db = event.result;
+      let db = event.target.result;
       is(db.objectStoreNames.length, 0, "Correct objectStoreNames list");
 
       request = db.setVersion("1");
@@ -68,7 +68,7 @@
       request = objectStore.openCursor();
       request.onerror = errorHandler;
       request.onsuccess = function(event) {
-        is(event.result, undefined, "ObjectStore shouldn't have any items");
+        is(event.target.result, undefined, "ObjectStore shouldn't have any items");
         testGenerator.send(event);
       }
       event = yield;

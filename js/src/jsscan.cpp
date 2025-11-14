@@ -72,6 +72,8 @@
 #include "jsstaticcheck.h"
 #include "jsvector.h"
 
+#include "jsscriptinlines.h"
+
 #if JS_HAS_XML_SUPPORT
 #include "jsxml.h"
 #endif
@@ -147,19 +149,17 @@ js_CheckKeyword(const jschar *str, size_t length)
 }
 
 JSBool
-js_IsIdentifier(JSString *str)
+js_IsIdentifier(JSLinearString *str)
 {
-    size_t length;
-    jschar c;
-    const jschar *chars, *end;
+    const jschar *chars = str->chars();
+    size_t length = str->length();
 
-    str->getCharsAndLength(chars, length);
     if (length == 0)
         return JS_FALSE;
-    c = *chars;
+    jschar c = *chars;
     if (!JS_ISIDSTART(c))
         return JS_FALSE;
-    end = chars + length;
+    const jschar *end = chars + length;
     while (++chars != end) {
         c = *chars;
         if (!JS_ISIDENT(c))
@@ -629,7 +629,7 @@ TokenStream::getXMLEntity()
     char *bytes;
     JSErrNum msg;
 
-    JSCharBuffer &tb = tokenbuf;
+    CharBuffer &tb = tokenbuf;
 
     /* Put the entity, including the '&' already scanned, in tokenbuf. */
     offset = tb.length();
@@ -738,28 +738,47 @@ TokenStream::getXMLEntity()
 #endif /* JS_HAS_XML_SUPPORT */
 
 /*
- * We have encountered a '\': check for a Unicode escape sequence after it,
- * returning the character code value if we found a Unicode escape sequence.
- * Otherwise, non-destructively return the original '\'.
+ * We have encountered a '\': check for a Unicode escape sequence after it.
+ * Return 'true' and the character code value (by value) if we found a
+ * Unicode escape sequence.  Otherwise, return 'false'.  In both cases, do not
+ * advance along the buffer.
  */
-int32
-TokenStream::getUnicodeEscape()
+bool
+TokenStream::peekUnicodeEscape(int *result)
 {
     jschar cp[5];
-    int32 c;
 
     if (peekChars(5, cp) && cp[0] == 'u' &&
         JS7_ISHEX(cp[1]) && JS7_ISHEX(cp[2]) &&
         JS7_ISHEX(cp[3]) && JS7_ISHEX(cp[4]))
     {
-        c = (((((JS7_UNHEX(cp[1]) << 4)
+        *result = (((((JS7_UNHEX(cp[1]) << 4)
                 + JS7_UNHEX(cp[2])) << 4)
               + JS7_UNHEX(cp[3])) << 4)
             + JS7_UNHEX(cp[4]);
-        skipChars(5);
-        return c;
+        return true;
     }
-    return '\\';
+    return false;
+}
+
+bool
+TokenStream::matchUnicodeEscapeIdStart(int32 *cp)
+{
+    if (peekUnicodeEscape(cp) && JS_ISIDSTART(*cp)) {
+        skipChars(5);
+        return true;
+    }
+    return false;
+}
+
+bool
+TokenStream::matchUnicodeEscapeIdent(int32 *cp)
+{
+    if (peekUnicodeEscape(cp) && JS_ISIDENT(*cp)) {
+        skipChars(5);
+        return true;
+    }
+    return false;
 }
 
 Token *
@@ -782,8 +801,8 @@ ScanAsSpace(jschar c)
     return JS_FALSE;
 }
 
-static JS_ALWAYS_INLINE JSAtom *
-atomize(JSContext *cx, JSCharBuffer &cb)
+JS_ALWAYS_INLINE JSAtom *
+TokenStream::atomize(JSContext *cx, CharBuffer &cb)
 {
     return js_AtomizeChars(cx, cb.begin(), cb.length(), 0);
 }
@@ -795,7 +814,7 @@ TokenStream::getTokenInternal()
     int c, qc;
     Token *tp;
     JSAtom *atom;
-    JSBool hadUnicodeEscape;
+    bool hadUnicodeEscape;
     const struct keyword *kw;
 #if JS_HAS_XML_SUPPORT
     JSBool inTarget;
@@ -993,11 +1012,9 @@ TokenStream::getTokenInternal()
      * Look for an identifier.
      */
 
-    hadUnicodeEscape = JS_FALSE;
+    hadUnicodeEscape = false;
     if (JS_ISIDSTART(c) ||
-        (c == '\\' &&
-         (qc = getUnicodeEscape(),
-          hadUnicodeEscape = JS_ISIDSTART(qc))))
+        (c == '\\' && (hadUnicodeEscape = matchUnicodeEscapeIdStart(&qc))))
     {
         if (hadUnicodeEscape)
             c = qc;
@@ -1007,11 +1024,10 @@ TokenStream::getTokenInternal()
                 goto error;
             c = getChar();
             if (c == '\\') {
-                qc = getUnicodeEscape();
-                if (!JS_ISIDENT(qc))
+                if (!matchUnicodeEscapeIdent(&qc))
                     break;
                 c = qc;
-                hadUnicodeEscape = JS_TRUE;
+                hadUnicodeEscape = true;
             } else {
                 if (!JS_ISIDENT(c))
                     break;
@@ -1027,14 +1043,35 @@ TokenStream::getTokenInternal()
             !(flags & TSF_KEYWORD_IS_NAME) &&
             (kw = FindKeyword(tokenbuf.begin(), tokenbuf.length()))) {
             if (kw->tokentype == TOK_RESERVED) {
-                if (!ReportCompileErrorNumber(cx, this, NULL, JSREPORT_WARNING | JSREPORT_STRICT,
+                if (!ReportCompileErrorNumber(cx, this, NULL, JSREPORT_ERROR,
                                               JSMSG_RESERVED_ID, kw->chars)) {
                     goto error;
                 }
-            } else if (kw->version <= VersionNumber(version)) {
-                tt = kw->tokentype;
-                tp->t_op = (JSOp) kw->op;
-                goto out;
+            } else if (kw->tokentype == TOK_STRICT_RESERVED) {
+                if (isStrictMode()
+                    ? !ReportStrictModeError(cx, this, NULL, NULL, JSMSG_RESERVED_ID, kw->chars)
+                    : !ReportCompileErrorNumber(cx, this, NULL,
+                                                JSREPORT_STRICT | JSREPORT_WARNING,
+                                                JSMSG_RESERVED_ID, kw->chars)) {
+                    goto error;
+                }
+            } else {
+                if (kw->version <= VersionNumber(version)) {
+                    tt = kw->tokentype;
+                    tp->t_op = (JSOp) kw->op;
+                    goto out;
+                }
+
+                /*
+                 * let/yield are a Mozilla extension starting in JS1.7. If we
+                 * aren't parsing for a version supporting these extensions,
+                 * conform to ES5 and forbid these names in strict mode.
+                 */
+                if ((kw->tokentype == TOK_LET || kw->tokentype == TOK_YIELD) &&
+                    !ReportStrictModeError(cx, this, NULL, NULL, JSMSG_RESERVED_ID, kw->chars))
+                {
+                    goto error;
+                }
             }
         }
 
@@ -1468,10 +1505,8 @@ TokenStream::getTokenInternal()
                 if (contentIndex < 0) {
                     atom = cx->runtime->atomState.emptyAtom;
                 } else {
-                    atom = js_AtomizeChars(cx,
-                                           tokenbuf.begin() + contentIndex,
-                                           tokenbuf.length() - contentIndex,
-                                           0);
+                    atom = js_AtomizeChars(cx, tokenbuf.begin() + contentIndex,
+                                           tokenbuf.length() - contentIndex, 0);
                     if (!atom)
                         goto error;
                 }

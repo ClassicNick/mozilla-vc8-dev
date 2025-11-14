@@ -122,9 +122,9 @@ ElementPropertyTransition::ValuePortionFor(TimeStamp aRefreshTime) const
     // When duration is zero, we can still have a transition when delay
     // is nonzero.  mStartTime already incorporates delay.
     if (aRefreshTime >= mStartTime) {
-      timePortion = 0.0;
-    } else {
       timePortion = 1.0;
+    } else {
+      timePortion = 0.0;
     }
   } else {
     timePortion = (aRefreshTime - mStartTime).ToSeconds() / duration;
@@ -588,9 +588,11 @@ nsTransitionManager::ConsiderStartingTransition(nsCSSProperty aProperty,
 
   ElementPropertyTransition pt;
   nsStyleAnimation::Value dummyValue;
-  PRBool shouldAnimate =
+  PRBool haveValues =
     TransExtractComputedValue(aProperty, aOldStyleContext, pt.mStartValue) &&
-    TransExtractComputedValue(aProperty, aNewStyleContext, pt.mEndValue) &&
+    TransExtractComputedValue(aProperty, aNewStyleContext, pt.mEndValue);
+  PRBool shouldAnimate =
+    haveValues &&
     pt.mStartValue != pt.mEndValue &&
     // Check that we can interpolate between these values
     // (If this is ever a performance problem, we could add a
@@ -613,13 +615,19 @@ nsTransitionManager::ConsiderStartingTransition(nsCSSProperty aProperty,
   nsPresContext *presContext = aNewStyleContext->PresContext();
 
   if (!shouldAnimate) {
-    if (currentIndex != nsTArray<ElementPropertyTransition>::NoIndex) {
+    nsTArray<ElementPropertyTransition> &pts =
+      aElementTransitions->mPropertyTransitions;
+    if (currentIndex != nsTArray<ElementPropertyTransition>::NoIndex &&
+        (!haveValues || pts[currentIndex].mEndValue != pt.mEndValue)) {
       // We're in the middle of a transition, but just got a
       // non-transition style change changing to exactly the
       // current in-progress value.   (This is quite easy to cause
       // using 'transition-delay'.)
-      nsTArray<ElementPropertyTransition> &pts =
-        aElementTransitions->mPropertyTransitions;
+      //
+      // We also check that this current in-progress value is different
+      // from the end value; we don't want to cancel a transition that
+      // is almost done (and whose current value rounds to its end
+      // value) just because we got an unrelated style change.
       pts.RemoveElementAt(currentIndex);
       if (pts.IsEmpty()) {
         aElementTransitions->Destroy();

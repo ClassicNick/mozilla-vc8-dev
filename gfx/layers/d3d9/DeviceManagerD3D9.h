@@ -144,6 +144,8 @@ public:
   enum ShaderMode {
     RGBLAYER,
     RGBALAYER,
+    COMPONENTLAYERPASS1,
+    COMPONENTLAYERPASS2,
     YCBCRLAYER,
     SOLIDCOLORLAYER
   };
@@ -159,6 +161,8 @@ public:
    * Returns true if this device was removed.
    */
   bool DeviceWasRemoved() { return mDeviceWasRemoved; }
+
+  PRUint32 GetDeviceResetCount() { return mDeviceResetCount; }
 
   /**
    * We keep a list of all layers here that may have hardware resource allocated
@@ -209,6 +213,12 @@ private:
   /* Pixel shader used for RGBA textures */
   nsRefPtr<IDirect3DPixelShader9> mRGBAPS;
 
+  /* Pixel shader used for component alpha textures (pass 1) */
+  nsRefPtr<IDirect3DPixelShader9> mComponentPass1PS;
+
+  /* Pixel shader used for component alpha textures (pass 2) */
+  nsRefPtr<IDirect3DPixelShader9> mComponentPass2PS;
+
   /* Pixel shader used for RGB textures */
   nsRefPtr<IDirect3DPixelShader9> mYCbCrPS;
 
@@ -225,6 +235,8 @@ private:
    * device with.
    */
   HWND mFocusWnd;
+
+  PRUint32 mDeviceResetCount;
 
   /* If this device supports dynamic textures */
   bool mHasDynamicTextures;

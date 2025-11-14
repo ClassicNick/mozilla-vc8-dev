@@ -46,6 +46,7 @@
 #include "nsCSSRendering.h"
 #include "nsCSSFrameConstructor.h"
 #include "gfxUtils.h"
+#include "nsImageFrame.h"
 
 #ifdef DEBUG
 #include <stdio.h>
@@ -122,7 +123,7 @@ public:
     mBuilder(aBuilder), mManager(aManager),
     mContainerFrame(aContainerFrame), mContainerLayer(aContainerLayer),
     mNextFreeRecycledThebesLayer(0), mNextFreeRecycledColorLayer(0),
-    mInvalidateAllThebesContent(PR_FALSE)
+    mNextFreeRecycledImageLayer(0), mInvalidateAllThebesContent(PR_FALSE)
   {
     CollectOldLayers();
   }
@@ -169,7 +170,8 @@ protected:
       mActiveScrolledRoot(nsnull), mLayer(nsnull),
       mIsSolidColorInVisibleRegion(PR_FALSE),
       mNeedComponentAlpha(PR_FALSE),
-      mForceTransparentSurface(PR_FALSE) {}
+      mForceTransparentSurface(PR_FALSE),
+      mImage(nsnull) {}
     /**
      * Record that an item has been added to the ThebesLayer, so we
      * need to update our regions.
@@ -186,8 +188,16 @@ protected:
     void Accumulate(nsDisplayListBuilder* aBuilder,
                     nsDisplayItem* aItem,
                     const nsIntRect& aVisibleRect,
-                    const nsIntRect& aDrawRect);
+                    const nsIntRect& aDrawRect,
+                    const FrameLayerBuilder::Clip& aClip);
     nsIFrame* GetActiveScrolledRoot() { return mActiveScrolledRoot; }
+
+    /**
+     * If this represents only a nsDisplayImage, and the image type
+     * supports being optimized to an ImageLayer (TYPE_RASTER only) returns
+     * an ImageContainer for the image.
+     */
+    nsRefPtr<ImageContainer> CanOptimizeImageLayer(LayerManager* aManager);
 
     /**
      * The region of visible content in the layer, relative to the
@@ -250,6 +260,12 @@ protected:
      * part of its surface.
      */
     PRPackedBool mForceTransparentSurface;
+
+    /**
+     * Stores the pointer to the nsDisplayImage if we want to
+     * convert this to an ImageLayer.
+     */
+    nsDisplayImage* mImage;
   };
 
   /**
@@ -265,6 +281,11 @@ protected:
    */
   already_AddRefed<ColorLayer> CreateOrRecycleColorLayer();
   /**
+   * Grab the next recyclable ImageLayer, or create one if there are no
+   * more recyclable ImageLayers.
+   */
+  already_AddRefed<ImageLayer> CreateOrRecycleImageLayer();
+  /**
    * Grabs all ThebesLayers and ColorLayers from the ContainerLayer and makes them
    * available for recycling.
    */
@@ -277,7 +298,8 @@ protected:
   void InvalidateForLayerChange(nsDisplayItem* aItem, Layer* aNewLayer);
   /**
    * Try to determine whether the ThebesLayer at aThebesLayerIndex
-   * has an opaque single color covering the visible area behind it.
+   * has a single opaque color behind it, over the entire bounds of its visible
+   * region.
    * If successful, return that color, otherwise return NS_RGBA(0,0,0,0).
    */
   nscolor FindOpaqueBackgroundColorFor(PRInt32 aThebesLayerIndex);
@@ -307,6 +329,7 @@ protected:
   already_AddRefed<ThebesLayer> FindThebesLayerFor(nsDisplayItem* aItem,
                                                    const nsIntRect& aVisibleRect,
                                                    const nsIntRect& aDrawRect,
+                                                   const FrameLayerBuilder::Clip& aClip,
                                                    nsIFrame* aActiveScrolledRoot);
   ThebesLayerData* GetTopThebesLayerData()
   {
@@ -333,8 +356,10 @@ protected:
   AutoLayersArray                  mNewChildLayers;
   nsTArray<nsRefPtr<ThebesLayer> > mRecycledThebesLayers;
   nsTArray<nsRefPtr<ColorLayer> >  mRecycledColorLayers;
+  nsTArray<nsRefPtr<ImageLayer> >  mRecycledImageLayers;
   PRUint32                         mNextFreeRecycledThebesLayer;
   PRUint32                         mNextFreeRecycledColorLayer;
+  PRUint32                         mNextFreeRecycledImageLayer;
   PRPackedBool                     mInvalidateAllThebesContent;
 };
 
@@ -344,6 +369,10 @@ public:
   ThebesDisplayItemLayerUserData() :
     mForcedBackgroundColor(NS_RGBA(0,0,0,0)) {}
 
+  /**
+   * A color that should be painted over the bounds of the layer's visible
+   * region before any other content is painted.
+   */
   nscolor mForcedBackgroundColor;
 };
 
@@ -363,6 +392,12 @@ PRUint8 gThebesDisplayItemLayerUserData;
  * The user data is null.
  */
 PRUint8 gColorLayerUserData;
+/**
+ * The address of gImageLayerUserData is used as the user
+ * data key for ImageLayers created by FrameLayerBuilder.
+ * The user data is null.
+ */
+PRUint8 gImageLayerUserData;
 /**
  * The address of gLayerManagerUserData is used as the user
  * data key for retained LayerManagers managed by FrameLayerBuilder.
@@ -427,7 +462,7 @@ FrameLayerBuilder::DestroyDisplayItemData(nsIFrame* aFrame,
 }
 
 void
-FrameLayerBuilder::WillBeginRetainedLayerTransaction(LayerManager* aManager)
+FrameLayerBuilder::DidBeginRetainedLayerTransaction(LayerManager* aManager)
 {
   mRetainingManager = aManager;
   LayerManagerData* data = static_cast<LayerManagerData*>
@@ -657,6 +692,28 @@ ContainerState::CreateOrRecycleColorLayer()
   return layer.forget();
 }
 
+already_AddRefed<ImageLayer>
+ContainerState::CreateOrRecycleImageLayer()
+{
+  nsRefPtr<ImageLayer> layer;
+  if (mNextFreeRecycledImageLayer < mRecycledImageLayers.Length()) {
+    // Recycle a layer
+    layer = mRecycledImageLayers[mNextFreeRecycledImageLayer];
+    ++mNextFreeRecycledImageLayer;
+    // Clear clip rect so we don't accidentally stay clipped. We will
+    // reapply any necessary clipping.
+    layer->SetClipRect(nsnull);
+  } else {
+    // Create a new layer
+    layer = mManager->CreateImageLayer();
+    if (!layer)
+      return nsnull;
+    // Mark this layer as being used for Thebes-painting display items
+    layer->SetUserData(&gImageLayerUserData, nsnull);
+  }
+  return layer.forget();
+}
+
 already_AddRefed<ThebesLayer>
 ContainerState::CreateOrRecycleThebesLayer(nsIFrame* aActiveScrolledRoot)
 {
@@ -788,6 +845,16 @@ ContainerState::FindOpaqueBackgroundColorFor(PRInt32 aThebesLayerIndex)
   return NS_RGBA(0,0,0,0);
 }
 
+nsRefPtr<ImageContainer>
+ContainerState::ThebesLayerData::CanOptimizeImageLayer(LayerManager* aManager)
+{
+  if (!mImage) {
+    return nsnull;
+  }
+
+  return mImage->GetContainer(aManager);
+}
+
 void
 ContainerState::PopThebesLayerData()
 {
@@ -796,39 +863,56 @@ ContainerState::PopThebesLayerData()
   PRInt32 lastIndex = mThebesLayerDataStack.Length() - 1;
   ThebesLayerData* data = mThebesLayerDataStack[lastIndex];
 
-  Layer* layer;
-  if (data->mIsSolidColorInVisibleRegion) {
-    nsRefPtr<ColorLayer> colorLayer = CreateOrRecycleColorLayer();
-    colorLayer->SetColor(data->mSolidColor);
+  nsRefPtr<Layer> layer;
+  nsRefPtr<ImageContainer> imageContainer = data->CanOptimizeImageLayer(mManager); 
 
-    NS_ASSERTION(!mNewChildLayers.Contains(colorLayer), "Layer already in list???");
+  if (data->mIsSolidColorInVisibleRegion || imageContainer) {
+    NS_ASSERTION(!(data->mIsSolidColorInVisibleRegion && imageContainer),
+                 "Can't be a solid color as well as an image!");
+    if (imageContainer) {
+      nsRefPtr<ImageLayer> imageLayer = CreateOrRecycleImageLayer();
+      imageLayer->SetContainer(imageContainer);
+      data->mImage->ConfigureLayer(imageLayer);
+      layer = imageLayer;
+    } else {
+      nsRefPtr<ColorLayer> colorLayer = CreateOrRecycleColorLayer();
+      colorLayer->SetColor(data->mSolidColor);
+
+      // Copy transform
+      colorLayer->SetTransform(data->mLayer->GetTransform());
+      
+      // Clip colorLayer to its visible region, since ColorLayers are
+      // allowed to paint outside the visible region. Here we rely on the
+      // fact that uniform display items fill rectangles; obviously the
+      // area to fill must contain the visible region, and because it's
+      // a rectangle, it must therefore contain the visible region's GetBounds.
+      // Note that the visible region is already clipped appropriately.
+      nsIntRect visibleRect = data->mVisibleRegion.GetBounds();
+      colorLayer->SetClipRect(&visibleRect);
+
+      layer = colorLayer;
+    }
+
+    NS_ASSERTION(!mNewChildLayers.Contains(layer), "Layer already in list???");
     AutoLayersArray::index_type index = mNewChildLayers.IndexOf(data->mLayer);
     NS_ASSERTION(index != AutoLayersArray::NoIndex, "Thebes layer not found?");
-    mNewChildLayers.InsertElementAt(index + 1, colorLayer);
-
-    // Copy transform and clip rect
-    colorLayer->SetTransform(data->mLayer->GetTransform());
-    // Clip colorLayer to its visible region, since ColorLayers are
-    // allowed to paint outside the visible region. Here we rely on the
-    // fact that uniform display items fill rectangles; obviously the
-    // area to fill must contain the visible region, and because it's
-    // a rectangle, it must therefore contain the visible region's GetBounds.
-    // Note that the visible region is already clipped appropriately.
-    nsIntRect visibleRect = data->mVisibleRegion.GetBounds();
-    colorLayer->SetClipRect(&visibleRect);
+    mNewChildLayers.InsertElementAt(index + 1, layer);
 
     // Hide the ThebesLayer. We leave it in the layer tree so that we
     // can find and recycle it later.
     data->mLayer->IntersectClipRect(nsIntRect());
     data->mLayer->SetVisibleRegion(nsIntRegion());
-
-    layer = colorLayer;
   } else {
     layer = data->mLayer;
   }
 
   gfxMatrix transform;
-  if (layer->GetTransform().Is2D(&transform)) {
+  if (!layer->GetTransform().Is2D(&transform)) {
+    NS_ERROR("Only 2D transformations currently supported");
+  }
+  
+  //ImageLayers are already configured with a visible region
+  if (!imageContainer) {
     NS_ASSERTION(!transform.HasNonIntegerTranslation(),
                  "Matrix not just an integer translation?");
     // Convert from relative to the container to relative to the
@@ -836,8 +920,6 @@ ContainerState::PopThebesLayerData()
     nsIntRegion rgn = data->mVisibleRegion;
     rgn.MoveBy(-nsIntPoint(PRInt32(transform.x0), PRInt32(transform.y0)));
     layer->SetVisibleRegion(rgn);
-  } else {
-    NS_ERROR("Only 2D transformations currently supported");
   }
 
   nsIntRegion transparentRegion;
@@ -895,49 +977,116 @@ ContainerState::PopThebesLayerData()
   mThebesLayerDataStack.RemoveElementAt(lastIndex);
 }
 
+static PRBool
+SuppressComponentAlpha(nsDisplayListBuilder* aBuilder,
+                       nsDisplayItem* aItem,
+                       const nsRect& aComponentAlphaBounds)
+{
+  const nsRegion* windowTransparentRegion = aBuilder->GetFinalTransparentRegion();
+  if (!windowTransparentRegion || windowTransparentRegion->IsEmpty())
+    return PR_FALSE;
+
+  // Suppress component alpha for items in the toplevel window that are over
+  // the window translucent area
+  nsIFrame* f = aItem->GetUnderlyingFrame();
+  nsIFrame* ref = aBuilder->ReferenceFrame();
+  if (f->PresContext() != ref->PresContext())
+    return PR_FALSE;
+
+  for (nsIFrame* t = f; t; t = t->GetParent()) {
+    if (t->IsTransformed())
+      return PR_FALSE;
+  }
+
+  return windowTransparentRegion->Intersects(aComponentAlphaBounds);
+}
+
+static PRBool
+WindowHasTransparency(nsDisplayListBuilder* aBuilder)
+{
+  const nsRegion* windowTransparentRegion = aBuilder->GetFinalTransparentRegion();
+  return windowTransparentRegion && !windowTransparentRegion->IsEmpty();
+}
+
 void
 ContainerState::ThebesLayerData::Accumulate(nsDisplayListBuilder* aBuilder,
                                             nsDisplayItem* aItem,
                                             const nsIntRect& aVisibleRect,
-                                            const nsIntRect& aDrawRect)
+                                            const nsIntRect& aDrawRect,
+                                            const FrameLayerBuilder::Clip& aClip)
 {
   nscolor uniformColor;
-  if (aItem->IsUniform(aBuilder, &uniformColor)) {
-    if (mVisibleRegion.IsEmpty()) {
-      // This color is all we have
-      mSolidColor = uniformColor;
-      mIsSolidColorInVisibleRegion = PR_TRUE;
-    } else if (mIsSolidColorInVisibleRegion &&
-               mVisibleRegion.IsEqual(nsIntRegion(aVisibleRect))) {
-      // we can just blend the colors together
-      mSolidColor = NS_ComposeColors(mSolidColor, uniformColor);
+  PRBool isUniform = aItem->IsUniform(aBuilder, &uniformColor);
+  // Some display items have to exist (so they can set forceTransparentSurface
+  // below) but don't draw anything. They'll return true for isUniform but
+  // a color with opacity 0.
+  if (!isUniform || NS_GET_A(uniformColor) > 0) {
+    if (isUniform &&
+        aItem->GetBounds(aBuilder).ToInsidePixels(AppUnitsPerDevPixel(aItem)).Contains(aVisibleRect)) {
+      if (mVisibleRegion.IsEmpty()) {
+        // This color is all we have
+        mSolidColor = uniformColor;
+        mIsSolidColorInVisibleRegion = PR_TRUE;
+      } else if (mIsSolidColorInVisibleRegion &&
+                 mVisibleRegion.IsEqual(nsIntRegion(aVisibleRect))) {
+        // we can just blend the colors together
+        mSolidColor = NS_ComposeColors(mSolidColor, uniformColor);
+      } else {
+        mIsSolidColorInVisibleRegion = PR_FALSE;
+      }
     } else {
       mIsSolidColorInVisibleRegion = PR_FALSE;
     }
-  } else {
-    mIsSolidColorInVisibleRegion = PR_FALSE;
+
+    mVisibleRegion.Or(mVisibleRegion, aVisibleRect);
+    mVisibleRegion.SimplifyOutward(4);
+    mDrawRegion.Or(mDrawRegion, aDrawRect);
+    mDrawRegion.SimplifyOutward(4);
   }
 
-  mVisibleRegion.Or(mVisibleRegion, aVisibleRect);
-  mVisibleRegion.SimplifyOutward(4);
-  mDrawRegion.Or(mDrawRegion, aDrawRect);
-  mDrawRegion.SimplifyOutward(4);
-
+  /* Mark as available for conversion to image layer if this is a nsDisplayImage and
+   * we are the first visible item in the ThebesLayerData object.
+   */
+  if (aItem->GetType() == nsDisplayItem::TYPE_IMAGE && mVisibleRegion.IsEmpty()) {
+    mImage = static_cast<nsDisplayImage*>(aItem);
+  } else {
+    mImage = nsnull;
+  }
+  
   PRBool forceTransparentSurface = PR_FALSE;
-  if (aItem->IsOpaque(aBuilder, &forceTransparentSurface)) {
-    // We don't use SimplifyInward here since it's not defined exactly
-    // what it will discard. For our purposes the most important case
-    // is a large opaque background at the bottom of z-order (e.g.,
-    // a canvas background), so we need to make sure that the first rect
-    // we see doesn't get discarded.
-    nsIntRegion tmp;
-    tmp.Or(mOpaqueRegion, aDrawRect);
-    if (tmp.GetNumRects() <= 4) {
-      mOpaqueRegion = tmp;
+  nsRegion opaque = aItem->GetOpaqueRegion(aBuilder, &forceTransparentSurface);
+  if (!opaque.IsEmpty()) {
+    nsRegionRectIterator iter(opaque);
+    nscoord appUnitsPerDevPixel = AppUnitsPerDevPixel(aItem);
+    for (const nsRect* r = iter.Next(); r; r = iter.Next()) {
+      // We don't use SimplifyInward here since it's not defined exactly
+      // what it will discard. For our purposes the most important case
+      // is a large opaque background at the bottom of z-order (e.g.,
+      // a canvas background), so we need to make sure that the first rect
+      // we see doesn't get discarded.
+      nsIntRect rect = aClip.ApproximateIntersect(*r).ToInsidePixels(appUnitsPerDevPixel);
+      nsIntRegion tmp;
+      tmp.Or(mOpaqueRegion, rect);
+       // Opaque display items in chrome documents whose window is partially
+       // transparent are always added to the opaque region. This helps ensure
+       // that we get as much subpixel-AA as possible in the chrome.
+       if (tmp.GetNumRects() <= 4 ||
+           (WindowHasTransparency(aBuilder) &&
+            aItem->GetUnderlyingFrame()->PresContext()->IsChrome())) {
+        mOpaqueRegion = tmp;
+      }
     }
-  } else if (aItem->HasText()) {
-    if (!mOpaqueRegion.Contains(aVisibleRect)) {
-      mNeedComponentAlpha = PR_TRUE;
+  }
+  nsRect componentAlpha = aItem->GetComponentAlphaBounds(aBuilder);
+  componentAlpha.IntersectRect(componentAlpha, aItem->GetVisibleRect());
+  if (!componentAlpha.IsEmpty()) {
+    nscoord appUnitsPerDevPixel = AppUnitsPerDevPixel(aItem);
+    if (!mOpaqueRegion.Contains(componentAlpha.ToOutsidePixels(appUnitsPerDevPixel))) {
+      if (SuppressComponentAlpha(aBuilder, aItem, componentAlpha)) {
+        aItem->DisableComponentAlpha();
+      } else {
+        mNeedComponentAlpha = PR_TRUE;
+      }
     }
   }
   mForceTransparentSurface = mForceTransparentSurface || forceTransparentSurface;
@@ -947,6 +1096,7 @@ already_AddRefed<ThebesLayer>
 ContainerState::FindThebesLayerFor(nsDisplayItem* aItem,
                                    const nsIntRect& aVisibleRect,
                                    const nsIntRect& aDrawRect,
+                                   const FrameLayerBuilder::Clip& aClip,
                                    nsIFrame* aActiveScrolledRoot)
 {
   PRInt32 i;
@@ -1001,7 +1151,7 @@ ContainerState::FindThebesLayerFor(nsDisplayItem* aItem,
     layer = thebesLayerData->mLayer;
   }
 
-  thebesLayerData->Accumulate(mBuilder, aItem, aVisibleRect, aDrawRect);
+  thebesLayerData->Accumulate(mBuilder, aItem, aVisibleRect, aDrawRect, aClip);
   return layer.forget();
 }
 
@@ -1023,7 +1173,7 @@ BuildTempManagerForInactiveLayer(nsDisplayListBuilder* aBuilder,
   }
   PRInt32 appUnitsPerDevPixel = AppUnitsPerDevPixel(aItem);
   nsIntRect itemVisibleRect =
-    aItem->GetVisibleRect().ToNearestPixels(appUnitsPerDevPixel);
+    aItem->GetVisibleRect().ToOutsidePixels(appUnitsPerDevPixel);
   SetVisibleRectForLayer(layer, itemVisibleRect);
 
   tempManager->SetRoot(layer);
@@ -1067,12 +1217,12 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       "items in a container layer should all have the same app units per dev pixel");
 
     nsIntRect itemVisibleRect =
-      item->GetVisibleRect().ToNearestPixels(appUnitsPerDevPixel);
+      item->GetVisibleRect().ToOutsidePixels(appUnitsPerDevPixel);
     nsRect itemContent = item->GetBounds(mBuilder);
     if (aClip.mHaveClipRect) {
       itemContent.IntersectRect(aClip.mClipRect, itemContent);
     }
-    nsIntRect itemDrawRect = itemContent.ToNearestPixels(appUnitsPerDevPixel);
+    nsIntRect itemDrawRect = itemContent.ToOutsidePixels(appUnitsPerDevPixel);
     nsDisplayItem::LayerState layerState =
       item->GetLayerState(mBuilder, mManager);
 
@@ -1148,7 +1298,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       }
 
       nsRefPtr<ThebesLayer> thebesLayer =
-        FindThebesLayerFor(item, itemVisibleRect, itemDrawRect,
+        FindThebesLayerFor(item, itemVisibleRect, itemDrawRect, aClip,
                            activeScrolledRoot);
 
       InvalidateForLayerChange(item, thebesLayer);
@@ -1266,6 +1416,8 @@ ContainerState::CollectOldLayers()
        layer = layer->GetNextSibling()) {
     if (layer->HasUserData(&gColorLayerUserData)) {
       mRecycledColorLayers.AppendElement(static_cast<ColorLayer*>(layer));
+    } else if (layer->HasUserData(&gImageLayerUserData)) {
+      mRecycledImageLayers.AppendElement(static_cast<ImageLayer*>(layer));
     } else if (layer->HasUserData(&gThebesDisplayItemLayerUserData)) {
       NS_ASSERTION(layer->AsThebesLayer(), "Wrong layer type");
       mRecycledThebesLayers.AppendElement(static_cast<ThebesLayer*>(layer));
@@ -1544,6 +1696,7 @@ FrameLayerBuilder::HasDedicatedLayer(nsIFrame* aFrame, PRUint32 aDisplayItemKey)
     if (array->ElementAt(i).mDisplayItemKey == aDisplayItemKey) {
       Layer* layer = array->ElementAt(i).mLayer;
       if (!layer->HasUserData(&gColorLayerUserData) &&
+          !layer->HasUserData(&gImageLayerUserData) &&
           !layer->HasUserData(&gThebesDisplayItemLayerUserData))
         return PR_TRUE;
     }
@@ -1582,8 +1735,11 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
       (aLayer->GetUserData(&gThebesDisplayItemLayerUserData));
   NS_ASSERTION(userData, "where did our user data go?");
   if (NS_GET_A(userData->mForcedBackgroundColor) > 0) {
+    nsIntRect r = aLayer->GetVisibleRegion().GetBounds();
+    aContext->NewPath();
+    aContext->Rectangle(gfxRect(r.x, r.y, r.width, r.height));
     aContext->SetColor(gfxRGBA(userData->mForcedBackgroundColor));
-    aContext->Paint();
+    aContext->Fill();
   }
 
   gfxMatrix transform;
@@ -1785,6 +1941,22 @@ FrameLayerBuilder::Clip::ApplyTo(gfxContext* aContext,
     aContext->RoundedRectangle(clip, pixelRadii);
     aContext->Clip();
   }
+}
+
+nsRect
+FrameLayerBuilder::Clip::ApproximateIntersect(const nsRect& aRect) const
+{
+  nsRect r = aRect;
+  if (mHaveClipRect) {
+    r.IntersectRect(r, mClipRect);
+  }
+  for (PRUint32 i = 0, iEnd = mRoundedClipRects.Length();
+       i < iEnd; ++i) {
+    const Clip::RoundedRect &rr = mRoundedClipRects[i];
+    nsRegion rgn = nsLayoutUtils::RoundedRectIntersectRect(rr.mRect, rr.mRadii, r);
+    r = rgn.GetLargestRectangle();
+  }
+  return r;
 }
 
 } // namespace mozilla

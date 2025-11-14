@@ -109,10 +109,10 @@ public:
   void Init(nsDisplayListBuilder* aBuilder);
 
   /**
-   * Call this to notify that we are about to start a transaction on the
+   * Call this to notify that we have just started a transaction on the
    * retained layer manager aManager.
    */
-  void WillBeginRetainedLayerTransaction(LayerManager* aManager);
+  void DidBeginRetainedLayerTransaction(LayerManager* aManager);
 
   /**
    * Call this just before we end a transaction on aManager. If aManager
@@ -316,6 +316,11 @@ public:
     // Apply this |Clip| to the given gfxContext.  Any saving of state
     // or clearing of other clips must be done by the caller.
     void ApplyTo(gfxContext* aContext, nsPresContext* aPresContext);
+
+    // Return a rectangle contained in the intersection of aRect with this
+    // clip region. Tries to return the largest possible rectangle, but may
+    // not succeed.
+    nsRect ApproximateIntersect(const nsRect& aRect) const;
 
     bool operator==(const Clip& aOther) const {
       return mHaveClipRect == aOther.mHaveClipRect &&

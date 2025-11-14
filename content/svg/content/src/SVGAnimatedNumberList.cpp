@@ -85,7 +85,7 @@ SVGAnimatedNumberList::ClearBaseValue(PRUint32 aAttrEnum)
     DOMSVGAnimatedNumberList::GetDOMWrapperIfExists(this);
   if (domWrapper) {
     // We must send this notification *before* changing mBaseVal! (See above.)
-    domWrapper->InternalAnimValListWillChangeTo(SVGNumberList());
+    domWrapper->InternalBaseValListWillChangeTo(SVGNumberList());
   }
   mBaseVal.Clear();
   // Caller notifies
@@ -171,6 +171,7 @@ SVGAnimatedNumberList::
     nlai->SetInfo(mElement);
     aValue.Swap(val);
   }
+  aPreventCachingOfSandwich = PR_FALSE;
   return rv;
 }
 

@@ -78,16 +78,19 @@ class GeckoSurfaceView
         inputConnection = new GeckoInputConnection(this);
         setFocusable(true);
         setFocusableInTouchMode(true);
-
-        mWidth = 0;
-        mHeight = 0;
+        
+        DisplayMetrics metrics = new DisplayMetrics();
+        GeckoApp.mAppContext.getWindowManager().
+            getDefaultDisplay().getMetrics(metrics);
+        mWidth = metrics.widthPixels;
+        mHeight = metrics.heightPixels;
         mBufferWidth = 0;
         mBufferHeight = 0;
 
         mSurfaceLock = new ReentrantLock();
 
         mEditableFactory = Editable.Factory.getInstance();
-        setupEditable("");
+        initEditable("");
         mIMEState = IME_STATE_DISABLED;
         mIMETypeHint = "";
         mIMEActionHint = "";
@@ -95,6 +98,10 @@ class GeckoSurfaceView
 
     protected void finalize() throws Throwable {
         super.finalize();
+    }
+
+    void drawSplashScreen() {
+        this.drawSplashScreen(getHolder(), mWidth, mHeight);
     }
 
     void drawSplashScreen(SurfaceHolder holder, int width, int height) {
@@ -109,7 +116,7 @@ class GeckoSurfaceView
         int w = drawable.getIntrinsicWidth();
         int h = drawable.getIntrinsicHeight();
         int x = (width - w)/2;
-        int y = (height - h)/2;
+        int y = (height - h)/2 - 16;
         drawable.setBounds(x, y, x + w, y + h);
         drawable.draw(c);
         Paint p = new Paint();
@@ -117,7 +124,7 @@ class GeckoSurfaceView
         p.setTextSize(32f);
         p.setAntiAlias(true);
         p.setColor(res.getColor(R.color.splash_font));
-        c.drawText(res.getString(R.string.splash_screen_label), width/2, y + h + 32, p);
+        c.drawText(GeckoSurfaceView.mSplashStatusMsg, width/2, y + h + 16, p);
         holder.unlockCanvasAndPost(c);
     }
 
@@ -153,7 +160,11 @@ class GeckoSurfaceView
 
             Log.i("GeckoAppJava", "surfaceChanged: fmt: " + format + " dim: " + width + " " + height);
 
-            GeckoEvent e = new GeckoEvent(GeckoEvent.SIZE_CHANGED, width, height, -1, -1);
+            DisplayMetrics metrics = new DisplayMetrics();
+            GeckoApp.mAppContext.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+
+            GeckoEvent e = new GeckoEvent(GeckoEvent.SIZE_CHANGED, width, height,
+                                          metrics.widthPixels, metrics.heightPixels);
             GeckoAppShell.sendEventToGecko(e);
 
             if (mSoftwareBuffer != null)
@@ -175,7 +186,7 @@ class GeckoSurfaceView
         try {
             bb = mSyncBuf.take();
         } catch (InterruptedException ie) {
-            Log.e("GeckoAppJava", "Threw exception while getting sync buf: " + ie);
+            Log.e("GeckoAppJava", "Threw exception while getting sync buf: ", ie);
         }
         if (bb != null && bb.capacity() == (width * height * 2)) {
             mSoftwareBitmap = Bitmap.createBitmap(mWidth, mHeight, Bitmap.Config.RGB_565);
@@ -190,6 +201,8 @@ class GeckoSurfaceView
         Log.i("GeckoAppJava", "surface created");
         GeckoEvent e = new GeckoEvent(GeckoEvent.SURFACE_CREATED);
         GeckoAppShell.sendEventToGecko(e);
+        if (mShowingSplashScreen)
+            drawSplashScreen();
     }
 
     public void surfaceDestroyed(SurfaceHolder holder) {
@@ -289,7 +302,7 @@ class GeckoSurfaceView
                 try {
                     mSyncBuf.put(buffer);
                 } catch (InterruptedException ie) {
-                    Log.e("GeckoAppJava", "Threw exception while getting sync buf: " + ie);
+                    Log.e("GeckoAppJava", "Threw exception while getting sync buf: ", ie);
                 }
                 return;
             }
@@ -375,7 +388,15 @@ class GeckoSurfaceView
         return inputConnection;
     }
 
-    public void setupEditable(String contents)
+    public void setEditable(String contents)
+    {
+        mEditable.removeSpan(inputConnection);
+        mEditable.replace(0, mEditable.length(), contents);
+        mEditable.setSpan(inputConnection, 0, contents.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+        Selection.setSelection(mEditable, contents.length());
+    }
+
+    public void initEditable(String contents)
     {
         mEditable = mEditableFactory.newEditable(contents);
         mEditable.setSpan(inputConnection, 0, contents.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
@@ -532,6 +553,7 @@ class GeckoSurfaceView
     int mDrawMode;
 
     static boolean mShowingSplashScreen = true;
+    static String  mSplashStatusMsg = "";
 
     // let's not change stuff around while we're in the middle of
     // starting drawing, ending drawing, or changing surface

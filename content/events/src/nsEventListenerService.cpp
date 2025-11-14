@@ -140,7 +140,10 @@ nsEventListenerInfo::ToSource(nsAString& aResult)
         if (GetJSVal(&v)) {
           JSString* str = JS_ValueToSource(cx, v);
           if (str) {
-            aResult.Assign(nsDependentJSString(str));
+            nsDependentJSString depStr;
+            if (depStr.init(cx, str)) {
+              aResult.Assign(depStr);
+            }
           }
         }
       }
@@ -181,9 +184,9 @@ nsEventListenerInfo::GetDebugObject(nsISupports** aRetVal)
           nsCOMPtr<jsdIValue> jsdValue;
           jsd->WrapJSValue(v, getter_AddRefs(jsdValue));
           *aRetVal = jsdValue.forget().get();
-          return NS_OK;
         }
       }
+      stack->Pop(&cx);
     }
   }
 #endif

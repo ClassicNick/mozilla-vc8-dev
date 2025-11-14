@@ -89,6 +89,7 @@ NS_IMPL_ISUPPORTS3(TabParent, nsITabParent, nsIAuthPromptProvider, nsISecureBrow
 TabParent::TabParent()
   : mIMEComposing(PR_FALSE)
   , mIMECompositionEnding(PR_FALSE)
+  , mIMESeqno(0)
   , mDPI(0)
 {
 }
@@ -107,6 +108,21 @@ TabParent::SetOwnerElement(nsIDOMElement* aElement)
     nsCOMPtr<nsIWidget> widget = GetWidget();
     NS_ABORT_IF_FALSE(widget, "Non-null OwnerElement must provide a widget!");
     mDPI = widget->GetDPI();
+  }
+}
+
+void
+TabParent::Destroy()
+{
+  // If this fails, it's most likely due to a content-process crash,
+  // and auto-cleanup will kick in.  Otherwise, the child side will
+  // destroy itself and send back __delete__().
+  unused << SendDestroy();
+
+  for (size_t i = 0; i < ManagedPRenderFrameParent().Length(); ++i) {
+    RenderFrameParent* rfp =
+      static_cast<RenderFrameParent*>(ManagedPRenderFrameParent()[i]);
+    rfp->Destroy();
   }
 }
 

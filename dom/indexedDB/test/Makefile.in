@@ -56,6 +56,7 @@ TEST_FILES = \
   test_bfcache.html \
   test_clear.html \
   test_create_index.html \
+  test_create_index_with_integer_keys.html \
   test_create_objectStore.html \
   test_cursors.html \
   test_cursor_mutation.html \
@@ -86,6 +87,7 @@ TEST_FILES = \
   test_remove_objectStore.html \
   test_request_readyState.html \
   test_success_events_after_abort.html \
+  test_third_party.html \
   test_transaction_abort.html \
   test_transaction_lifetimes.html \
   test_transaction_lifetimes_nested.html \
@@ -93,10 +95,15 @@ TEST_FILES = \
   test_setVersion_abort.html \
   test_setVersion_events.html \
   test_writer_starvation.html \
+  third_party_iframe1.html \
+  third_party_iframe2.html \
   $(NULL)
 
 ifeq (browser,$(MOZ_BUILD_APP))
 BROWSER_TEST_FILES = \
+  browser_forgetThisSite.js \
+  browser_forgetThisSiteAdd.html \
+  browser_forgetThisSiteGet.html \
   browserHelpers.js \
   browser_permissionsPrompt.html \
   browser_permissionsPromptAllow.js \

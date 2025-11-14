@@ -346,12 +346,13 @@ nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
   versionsize = ::GetFileVersionInfoSizeW(lpFilepath, &zerome);
 
   if (versionsize > 0)
-    verbuf = (WCHAR*)PR_Malloc(versionsize);
+    verbuf = (WCHAR*) PR_Malloc(versionsize);
   if (!verbuf)
     return NS_ERROR_OUT_OF_MEMORY;
 
   if (::GetFileVersionInfoW(lpFilepath, NULL, versionsize, verbuf))
   {
+    // TODO: get appropriately-localized info from plugin file
     info.fName = GetKeyValue(verbuf, L"\\StringFileInfo\\040904E4\\ProductName");
     info.fDescription = GetKeyValue(verbuf, L"\\StringFileInfo\\040904E4\\FileDescription");
 

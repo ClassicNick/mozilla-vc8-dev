@@ -82,7 +82,9 @@ public:
   { }
 
   nsresult DoDatabaseWork(mozIStorageConnection* aConnection);
-  nsresult GetSuccessResult(nsIWritableVariant* aResult);
+  nsresult OnSuccess();
+  nsresult GetSuccessResult(JSContext* aCx,
+                            jsval* aVal);
 
 private:
   // In-params
@@ -98,8 +100,16 @@ public:
   { }
 
   nsresult DoDatabaseWork(mozIStorageConnection* aConnection);
-  nsresult OnSuccess(nsIDOMEventTarget* aTarget);
-  void OnError(nsIDOMEventTarget* aTarget, nsresult aErrorCode);
+
+  nsresult OnSuccess()
+  {
+    return NS_OK;
+  }
+
+  void OnError()
+  {
+    NS_ASSERTION(mTransaction->IsAborted(), "How else can this fail?!");
+  }
 
   void ReleaseMainThreadObjects()
   {
@@ -120,8 +130,16 @@ public:
   { }
 
   nsresult DoDatabaseWork(mozIStorageConnection* aConnection);
-  nsresult OnSuccess(nsIDOMEventTarget* aTarget);
-  void OnError(nsIDOMEventTarget* aTarget, nsresult aErrorCode);
+
+  nsresult OnSuccess()
+  {
+    return NS_OK;
+  }
+
+  void OnError()
+  {
+    NS_ASSERTION(mTransaction->IsAborted(), "How else can this fail?!");
+  }
 
 private:
   // In-params.
@@ -590,7 +608,12 @@ IDBDatabase::CreateObjectStore(const nsAString& aName,
           NS_WARNING("JS_ValueToString failed!");
           return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
         }
-        keyPath = nsDependentJSString(str);
+        nsDependentJSString dependentKeyPath;
+        if (!dependentKeyPath.init(aCx, str)) {
+          NS_WARNING("Initializing keyPath failed!");
+          return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+        }
+        keyPath = dependentKeyPath;
       }
       else if (id == nsDOMClassInfo::sAutoIncrement_id) {
         JSBool boolVal;
@@ -727,13 +750,8 @@ IDBDatabase::Transaction(nsIVariant* aStoreNames,
 
   if (aOptionalArgCount) {
     if (aMode != nsIIDBTransaction::READ_WRITE &&
-        aMode != nsIIDBTransaction::READ_ONLY &&
-        aMode != nsIIDBTransaction::SNAPSHOT_READ) {
+        aMode != nsIIDBTransaction::READ_ONLY) {
       return NS_ERROR_DOM_INDEXEDDB_NON_TRANSIENT_ERR;
-    }
-    if (aMode == nsIIDBTransaction::SNAPSHOT_READ) {
-      NS_NOTYETIMPLEMENTED("Implement me!");
-      return NS_ERROR_NOT_IMPLEMENTED;
     }
   }
   else {
@@ -896,15 +914,20 @@ IDBDatabase::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
   NS_ENSURE_TRUE(aVisitor.mDOMEvent, NS_ERROR_UNEXPECTED);
 
   if (aVisitor.mEventStatus != nsEventStatus_eConsumeNoDefault) {
-    nsCOMPtr<nsIDOMEvent> duplicateEvent =
-      IDBErrorEvent::MaybeDuplicate(aVisitor.mDOMEvent);
+    nsString type;
+    nsresult rv = aVisitor.mDOMEvent->GetType(type);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-    if (duplicateEvent) {
+    if (type.EqualsLiteral(ERROR_EVT_STR)) {
+      nsRefPtr<nsDOMEvent> duplicateEvent = CreateGenericEvent(type);
+      NS_ENSURE_STATE(duplicateEvent);
+
       nsCOMPtr<nsIDOMEventTarget> target(do_QueryInterface(mOwner));
       NS_ASSERTION(target, "How can this happen?!");
 
       PRBool dummy;
-      target->DispatchEvent(duplicateEvent, &dummy);
+      rv = target->DispatchEvent(duplicateEvent, &dummy);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
   }
 
@@ -934,7 +957,7 @@ SetVersionHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 }
 
 nsresult
-SetVersionHelper::GetSuccessResult(nsIWritableVariant* aResult)
+SetVersionHelper::OnSuccess()
 {
   DatabaseInfo* info;
   if (!DatabaseInfo::Get(mDatabase->Id(), &info)) {
@@ -943,8 +966,15 @@ SetVersionHelper::GetSuccessResult(nsIWritableVariant* aResult)
   }
   info->version = mVersion;
 
-  aResult->SetAsISupports(static_cast<nsPIDOMEventTarget*>(mTransaction));
-  return NS_OK;
+  // We want an event, with a result, etc. Call the base class method.
+  return AsyncConnectionHelper::OnSuccess();
+}
+
+nsresult
+SetVersionHelper::GetSuccessResult(JSContext* aCx,
+                                   jsval* aVal)
+{
+  return WrapNative(aCx, static_cast<nsPIDOMEventTarget*>(mTransaction), aVal);
 }
 
 nsresult
@@ -981,20 +1011,6 @@ CreateObjectStoreHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 }
 
 nsresult
-CreateObjectStoreHelper::OnSuccess(nsIDOMEventTarget* aTarget)
-{
-  NS_ASSERTION(!aTarget, "Huh?!");
-  return NS_OK;
-}
-
-void
-CreateObjectStoreHelper::OnError(nsIDOMEventTarget* aTarget,
-                                 nsresult aErrorCode)
-{
-  NS_ASSERTION(!aTarget, "Huh?!");
-}
-
-nsresult
 DeleteObjectStoreHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 {
   nsCOMPtr<mozIStorageStatement> stmt =
@@ -1013,19 +1029,4 @@ DeleteObjectStoreHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   return NS_OK;
-}
-
-nsresult
-DeleteObjectStoreHelper::OnSuccess(nsIDOMEventTarget* aTarget)
-{
-  NS_ASSERTION(!aTarget, "Huh?!");
-
-  return NS_OK;
-}
-
-void
-DeleteObjectStoreHelper::OnError(nsIDOMEventTarget* aTarget,
-                                 nsresult aErrorCode)
-{
-  NS_NOTREACHED("Removing an object store should never fail here!");
 }

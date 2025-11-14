@@ -143,26 +143,14 @@ nsAccessibilityService::Observe(nsISupports *aSubject, const char *aTopic,
 
 // nsIAccessibilityService
 void
-nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent *aTarget)
+nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode)
 {
-  nsIDocument *document = aTarget->GetCurrentDoc();
-  if (!document)
-    return;
-
-  // If the jump target is not accessible then fire an event for nearest
-  // accessible in parent chain.
-  nsCOMPtr<nsIWeakReference> weakShell(nsCoreUtils::GetWeakShellFor(aTarget));
-  nsAccessible* targetAcc = GetAccessibleOrContainer(aTarget, weakShell);
-  if (!targetAcc)
-    return;
-
-  nsINode* targetNode = targetAcc->GetNode();
-
-  // XXX note in rare cases the node could go away before we flush the queue,
-  // for example if the node becomes inaccessible, or is removed from the DOM.
-  GetDocAccessible(document)->
-    FireDelayedAccessibleEvent(nsIAccessibleEvent::EVENT_SCROLLING_START,
-                               targetNode);
+  nsIDocument* documentNode = aTargetNode->GetCurrentDoc();
+  if (documentNode) {
+    nsDocAccessible* document = GetDocAccessible(documentNode);
+    if (document)
+      document->HandleAnchorJump(aTargetNode);
+  }
 }
 
 // nsIAccessibilityService
@@ -503,7 +491,7 @@ nsAccessibilityService::ContentRangeInserted(nsIPresShell* aPresShell,
 
   nsDocAccessible* docAccessible = GetDocAccessible(aPresShell->GetDocument());
   if (docAccessible)
-    docAccessible->UpdateTree(aContainer, aStartChild, aEndChild, PR_TRUE);
+    docAccessible->ContentInserted(aContainer, aStartChild, aEndChild);
 }
 
 void
@@ -537,8 +525,7 @@ nsAccessibilityService::ContentRemoved(nsIPresShell* aPresShell,
 
   nsDocAccessible* docAccessible = GetDocAccessible(aPresShell->GetDocument());
   if (docAccessible)
-    docAccessible->UpdateTree(aContainer, aChild, aChild->GetNextSibling(),
-                              PR_FALSE);
+    docAccessible->ContentRemoved(aContainer, aChild);
 }
 
 void
