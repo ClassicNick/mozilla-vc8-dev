@@ -205,8 +205,10 @@ protected:
     return mData.SetLength(aLength);
   }
 
+public:
   nsresult SetValueFromString(const nsAString& aValue);
 
+protected:
   void Clear() {
     mData.Clear();
   }

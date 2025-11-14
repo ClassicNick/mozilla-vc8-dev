@@ -48,6 +48,7 @@
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
+#include "AsyncConnectionHelper.h"
 #include "DatabaseInfo.h"
 #include "IDBCursor.h"
 #include "IDBEvents.h"
@@ -78,7 +79,8 @@ already_AddRefed<IDBTransaction>
 IDBTransaction::Create(IDBDatabase* aDatabase,
                        nsTArray<nsString>& aObjectStoreNames,
                        PRUint16 aMode,
-                       PRUint32 aTimeout)
+                       PRUint32 aTimeout,
+                       bool aDispatchDelayed)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
@@ -101,6 +103,25 @@ IDBTransaction::Create(IDBDatabase* aDatabase,
     return nsnull;
   }
 
+  if (!aDispatchDelayed) {
+    nsCOMPtr<nsIThreadInternal2> thread =
+      do_QueryInterface(NS_GetCurrentThread());
+    NS_ENSURE_TRUE(thread, nsnull);
+
+    // We need the current recursion depth first.
+    PRUint32 depth;
+    nsresult rv = thread->GetRecursionDepth(&depth);
+    NS_ENSURE_SUCCESS(rv, nsnull);
+
+    NS_ASSERTION(depth, "This should never be 0!");
+    transaction->mCreatedRecursionDepth = depth - 1;
+
+    rv = thread->AddObserver(transaction);
+    NS_ENSURE_SUCCESS(rv, nsnull);
+
+    transaction->mCreating = true;
+  }
+
   return transaction.forget();
 }
 
@@ -109,9 +130,10 @@ IDBTransaction::IDBTransaction()
   mMode(nsIIDBTransaction::READ_ONLY),
   mTimeout(0),
   mPendingRequests(0),
+  mCreatedRecursionDepth(0),
   mSavepointCount(0),
   mAborted(false),
-  mClosed(false)
+  mCreating(false)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 }
@@ -122,6 +144,7 @@ IDBTransaction::~IDBTransaction()
   NS_ASSERTION(!mPendingRequests, "Should have no pending requests here!");
   NS_ASSERTION(!mSavepointCount, "Should have released them all!");
   NS_ASSERTION(!mConnection, "Should have called CommitOrRollback!");
+  NS_ASSERTION(!mCreating, "Should have been cleared already!");
 
   if (mListenerManager) {
     mListenerManager->Disconnect();
@@ -150,10 +173,6 @@ IDBTransaction::OnRequestFinished()
     if (!mAborted) {
       NS_ASSERTION(mReadyState == nsIIDBTransaction::LOADING, "Bad state!");
     }
-
-    NS_ASSERTION(!mClosed, "Shouldn't be closed yet!");
-    mClosed = true;
-
     CommitOrRollback();
   }
 }
@@ -533,16 +552,35 @@ IDBTransaction::GetCachedStatement(const nsACString& aQuery)
   return stmt.forget();
 }
 
-#ifdef DEBUG
 bool
 IDBTransaction::TransactionIsOpen() const
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-  return (mReadyState == nsIIDBTransaction::INITIAL ||
-          mReadyState == nsIIDBTransaction::LOADING) &&
-         !mClosed;
+
+  // If we haven't started anything then we're open.
+  if (mReadyState == nsIIDBTransaction::INITIAL) {
+    NS_ASSERTION(AsyncConnectionHelper::GetCurrentTransaction() != this,
+                 "This should be some other transaction (or null)!");
+    return true;
+  }
+
+  // If we've already started then we need to check to see if we still have the
+  // mCreating flag set. If we do (i.e. we haven't returned to the event loop
+  // from the time we were created) then we are open. Otherwise check the
+  // currently running transaction to see if it's the same. We only allow other
+  // requests to be made if this transaction is currently running.
+  if (mReadyState == nsIIDBTransaction::LOADING) {
+    if (mCreating) {
+      return true;
+    }
+
+    if (AsyncConnectionHelper::GetCurrentTransaction() == this) {
+      return true;
+    }
+  }
+
+  return false;
 }
-#endif
 
 already_AddRefed<IDBObjectStore>
 IDBTransaction::GetOrCreateObjectStore(const nsAString& aName,
@@ -606,6 +644,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(IDBTransaction)
   NS_INTERFACE_MAP_ENTRY(nsIIDBTransaction)
+  NS_INTERFACE_MAP_ENTRY(nsIThreadObserver)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(IDBTransaction)
 NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
@@ -792,6 +831,57 @@ IDBTransaction::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   return NS_OK;
 }
 
+// XXX Once nsIThreadObserver gets split this method will disappear.
+NS_IMETHODIMP
+IDBTransaction::OnDispatchedEvent(nsIThreadInternal* aThread)
+{
+  NS_NOTREACHED("Don't call me!");
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+IDBTransaction::OnProcessNextEvent(nsIThreadInternal* aThread,
+                                   PRBool aMayWait,
+                                   PRUint32 aRecursionDepth)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aRecursionDepth > mCreatedRecursionDepth,
+               "Should be impossible!");
+  NS_ASSERTION(mCreating, "Should be true!");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+IDBTransaction::AfterProcessNextEvent(nsIThreadInternal* aThread,
+                                      PRUint32 aRecursionDepth)
+{
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+  NS_ASSERTION(aThread, "This should never be null!");
+  NS_ASSERTION(aRecursionDepth >= mCreatedRecursionDepth,
+               "Should be impossible!");
+  NS_ASSERTION(mCreating, "Should be true!");
+
+  if (aRecursionDepth == mCreatedRecursionDepth) {
+    // We're back at the event loop, no longer newborn.
+    mCreating = false;
+
+    // Maybe set the readyState to DONE if there were no requests generated.
+    if (mReadyState == nsIIDBTransaction::INITIAL) {
+      mReadyState = nsIIDBTransaction::DONE;
+    }
+
+    // No longer need to observe thread events.
+    nsCOMPtr<nsIThreadInternal2> thread = do_QueryInterface(aThread);
+    NS_ASSERTION(thread, "This must never fail!");
+
+    if(NS_FAILED(thread->RemoveObserver(this))) {
+      NS_ERROR("Failed to remove observer!");
+    }
+  }
+
+  return NS_OK;
+}
+
 CommitHelper::CommitHelper(IDBTransaction* aTransaction)
 : mTransaction(aTransaction),
   mAborted(!!aTransaction->mAborted),
@@ -809,8 +899,6 @@ NS_IMPL_THREADSAFE_ISUPPORTS1(CommitHelper, nsIRunnable)
 NS_IMETHODIMP
 CommitHelper::Run()
 {
-  NS_ASSERTION(mTransaction->mClosed, "Should be closed!");
-
   if (NS_IsMainThread()) {
     NS_ASSERTION(mDoomedObjects.IsEmpty(), "Didn't release doomed objects!");
 

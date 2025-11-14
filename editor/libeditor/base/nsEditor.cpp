@@ -484,7 +484,7 @@ nsEditor::SetFlags(PRUint32 aFlags)
     if (NS_SUCCEEDED(rv)) {
       // NOTE: When the enabled state isn't going to be modified, this method
       // is going to do nothing.
-      nsIMEStateManager::UpdateIMEState(newState);
+      nsIMEStateManager::UpdateIMEState(newState, focusedContent);
     }
   }
 
@@ -1076,13 +1076,27 @@ nsEditor::EndOfDocument()
   nsIDOMElement *rootElement = GetRoot(); 
   NS_ENSURE_TRUE(rootElement, NS_ERROR_NULL_POINTER); 
 
-  // get the length of the rot element 
-  PRUint32 len; 
-  res = GetLengthOfDOMNode(rootElement, len); 
+  nsCOMPtr<nsIDOMNode> node = do_QueryInterface(rootElement);
+  nsCOMPtr<nsIDOMNode> child;
+  NS_ASSERTION(node, "Invalid root element");
+
+  do {
+    node->GetLastChild(getter_AddRefs(child));
+
+    if (child) {
+      if (IsContainer(child)) {
+        node = child;
+      } else {
+        break;
+      }
+    }
+  } while (child);
+
+  PRUint32 length = 0;
+  res = GetLengthOfDOMNode(node, length);
   NS_ENSURE_SUCCESS(res, res);
 
-  // set the selection to after the last child of the root element 
-  return selection->Collapse(rootElement, (PRInt32)len); 
+  return selection->Collapse(node, (PRInt32)length);
 } 
   
 NS_IMETHODIMP
@@ -4198,20 +4212,14 @@ nsresult nsEditor::EndUpdateViewBatch()
     GetFlags(&flags);
 
     // Turn view updating back on.
-    nsCOMPtr<nsIViewManager> viewManager;
-    if (presShell)
-      viewManager = presShell->GetViewManager();
-    if (viewManager)
-    {
-      PRUint32 updateFlag = NS_VMREFRESH_IMMEDIATE;
+    PRUint32 updateFlag = NS_VMREFRESH_IMMEDIATE;
 
-      // If we're doing async updates, use NS_VMREFRESH_DEFERRED here, so that
-      // the reflows we caused will get processed before the invalidates.
-      if (flags & nsIPlaintextEditor::eEditorUseAsyncUpdatesMask) {
-        updateFlag = NS_VMREFRESH_DEFERRED;
-      }
-      mBatch.EndUpdateViewBatch(updateFlag);
+    // If we're doing async updates, use NS_VMREFRESH_DEFERRED here, so that
+    // the reflows we caused will get processed before the invalidates.
+    if (flags & nsIPlaintextEditor::eEditorUseAsyncUpdatesMask) {
+      updateFlag = NS_VMREFRESH_DEFERRED;
     }
+    mBatch.EndUpdateViewBatch(updateFlag);
 
     // Turn selection updating and notifications back on.
 

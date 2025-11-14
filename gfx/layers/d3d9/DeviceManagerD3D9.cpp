@@ -378,29 +378,9 @@ DeviceManagerD3D9::Init()
     return false;
   }
 
-  hr = mDevice->CreateVertexBuffer(sizeof(vertex) * 4,
-                                   D3DUSAGE_WRITEONLY,
-                                   0,
-                                   D3DPOOL_DEFAULT,
-                                   getter_AddRefs(mVB),
-                                   NULL);
-
-  if (FAILED(hr)) {
+  if (!CreateVertexBuffer()) {
     return false;
   }
-
-  vertex *vertices;
-  hr = mVB->Lock(0, 0, (void**)&vertices, 0);
-  if (FAILED(hr)) {
-    return false;
-  }
-
-  vertices[0].x = vertices[0].y = 0;
-  vertices[1].x = 1; vertices[1].y = 0;
-  vertices[2].x = 0; vertices[2].y = 1;
-  vertices[3].x = 1; vertices[3].y = 1;
-
-  mVB->Unlock();
 
   hr = mDevice->SetStreamSource(0, mVB, 0, sizeof(vertex));
   if (FAILED(hr)) {
@@ -548,6 +528,8 @@ DeviceManagerD3D9::VerifyReadyForRendering()
   for(unsigned int i = 0; i < mSwapChains.Length(); i++) {
     mSwapChains[i]->Reset();
   }
+
+  mVB = nsnull;
   
   D3DPRESENT_PARAMETERS pp;
   memset(&pp, 0, sizeof(D3DPRESENT_PARAMETERS));
@@ -566,7 +548,7 @@ DeviceManagerD3D9::VerifyReadyForRendering()
     return false;
   }
 
-  if (FAILED(hr)) {
+  if (FAILED(hr) || !CreateVertexBuffer()) {
     mDeviceWasRemoved = true;
     LayerManagerD3D9::OnDeviceManagerDestroy(this);
     return false;
@@ -632,6 +614,38 @@ DeviceManagerD3D9::VerifyCaps()
   if (HAS_CAP(caps.Caps2, D3DCAPS2_DYNAMICTEXTURES)) {
     mHasDynamicTextures = true;
   }
+
+  return true;
+}
+
+bool
+DeviceManagerD3D9::CreateVertexBuffer()
+{
+  HRESULT hr;
+
+  hr = mDevice->CreateVertexBuffer(sizeof(vertex) * 4,
+                                   D3DUSAGE_WRITEONLY,
+                                   0,
+                                   D3DPOOL_DEFAULT,
+                                   getter_AddRefs(mVB),
+                                   NULL);
+
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  vertex *vertices;
+  hr = mVB->Lock(0, 0, (void**)&vertices, 0);
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  vertices[0].x = vertices[0].y = 0;
+  vertices[1].x = 1; vertices[1].y = 0;
+  vertices[2].x = 0; vertices[2].y = 1;
+  vertices[3].x = 1; vertices[3].y = 1;
+
+  mVB->Unlock();
 
   return true;
 }

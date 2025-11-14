@@ -88,6 +88,7 @@
 #include "nsCOMArray.h"
 #include "nsIUnicharStreamListener.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsWeakReference.h"
 
 class nsICharsetConverterManager;
 class nsICharsetAlias;
@@ -102,7 +103,8 @@ class nsIThreadPool;
 
 
 class nsParser : public nsIParser,
-                 public nsIStreamListener
+                 public nsIStreamListener,
+                 public nsSupportsWeakReference
 {
   public:
     /**
@@ -219,8 +221,7 @@ class nsParser : public nsIParser,
                              nsIContent* aTargetNode,
                              nsIAtom* aContextLocalName,
                              PRInt32 aContextNamespace,
-                             PRBool aQuirks,
-                             PRBool aPreventScriptExecution);
+                             PRBool aQuirks);
                              
     /**
      * This method gets called when the tokens have been consumed, and it's time

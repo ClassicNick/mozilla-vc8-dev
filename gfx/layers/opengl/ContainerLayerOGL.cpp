@@ -36,6 +36,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "ContainerLayerOGL.h"
+#include "gfxUtils.h"
 
 namespace mozilla {
 namespace layers {
@@ -52,6 +53,8 @@ ContainerInsertAfter(Container* aContainer, Layer* aChild, Layer* aAfter)
     aChild->SetPrevSibling(nsnull);
     if (oldFirstChild) {
       oldFirstChild->SetPrevSibling(aChild);
+    } else {
+      aContainer->mLastChild = aChild;
     }
     NS_ADDREF(aChild);
     return;
@@ -64,6 +67,8 @@ ContainerInsertAfter(Container* aContainer, Layer* aChild, Layer* aAfter)
       aChild->SetNextSibling(oldNextSibling);
       if (oldNextSibling) {
         oldNextSibling->SetPrevSibling(aChild);
+      } else {
+        aContainer->mLastChild = aChild;
       }
       aChild->SetPrevSibling(child);
       NS_ADDREF(aChild);
@@ -81,6 +86,8 @@ ContainerRemoveChild(Container* aContainer, Layer* aChild)
     aContainer->mFirstChild = aContainer->GetFirstChild()->GetNextSibling();
     if (aContainer->mFirstChild) {
       aContainer->mFirstChild->SetPrevSibling(nsnull);
+    } else {
+      aContainer->mLastChild = nsnull;
     }
     aChild->SetNextSibling(nsnull);
     aChild->SetPrevSibling(nsnull);
@@ -96,6 +103,8 @@ ContainerRemoveChild(Container* aContainer, Layer* aChild)
       lastChild->SetNextSibling(child->GetNextSibling());
       if (child->GetNextSibling()) {
         child->GetNextSibling()->SetPrevSibling(lastChild);
+      } else {
+        aContainer->mLastChild = lastChild;
       }
       child->SetNextSibling(nsnull);
       child->SetPrevSibling(nsnull);
@@ -118,6 +127,15 @@ ContainerDestroy(Container* aContainer)
     }
     aContainer->mDestroyed = PR_TRUE;
   }
+}
+
+static inline LayerOGL*
+GetNextSibling(LayerOGL* aLayer)
+{
+   Layer* layer = aLayer->GetLayer()->GetNextSibling();
+   return layer ? static_cast<LayerOGL*>(layer->
+                                         ImplData())
+                 : nsnull;
 }
 
 template<class Container>
@@ -163,24 +181,40 @@ ContainerRender(Container* aContainer,
   /**
    * Render this container's contents.
    */
-  LayerOGL *layerToRender = aContainer->GetFirstChildOGL();
-  while (layerToRender) {
+  for (LayerOGL* layerToRender = aContainer->GetFirstChildOGL();
+       layerToRender != nsnull;
+       layerToRender = GetNextSibling(layerToRender)) {
+
+    if (layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
+      continue;
+    }
+
     nsIntRect scissorRect(visibleRect);
 
     const nsIntRect *clipRect = layerToRender->GetLayer()->GetEffectiveClipRect();
     if (clipRect) {
+      if (clipRect->IsEmpty()) {
+        continue;
+      }
       scissorRect = *clipRect;
     }
 
     if (needsFramebuffer) {
       scissorRect.MoveBy(- visibleRect.TopLeft());
-    }
+    } else {
+      if (!aPreviousFrameBuffer) {
+        /**
+         * glScissor coordinates are oriented with 0,0 being at the bottom left,
+         * the opposite to layout (0,0 at the top left).
+         * All rendering to an FBO is upside-down, making the coordinate systems
+         * match.
+         * When rendering directly to a window (No current or previous FBO),
+         * we need to flip the scissor rect.
+         */
+        aContainer->gl()->FixWindowCoordinateRect(scissorRect,
+                                                  aManager->GetWigetSize().height);
+      }
 
-    if (!needsFramebuffer && aPreviousFrameBuffer) {
-      scissorRect.IntersectRect(scissorRect, cachedScissor);
-    } else if (!needsFramebuffer) {
-      aContainer->gl()->FixWindowCoordinateRect(scissorRect, 
-                                                aManager->GetWigetSize().height);
       scissorRect.IntersectRect(scissorRect, cachedScissor);
     }
 
@@ -200,11 +234,6 @@ ContainerRender(Container* aContainer,
     }
 
     layerToRender->RenderLayer(frameBuffer, childOffset);
-
-    Layer *nextSibling = layerToRender->GetLayer()->GetNextSibling();
-    layerToRender = nextSibling ? static_cast<LayerOGL*>(nextSibling->
-                                                         ImplData())
-                                : nsnull;
   }
 
   aContainer->gl()->PopScissorRect();
@@ -242,7 +271,7 @@ ContainerRender(Container* aContainer,
 
     DEBUG_GL_ERROR_CHECK(aContainer->gl());
 
-    aManager->BindAndDrawQuad(rgb);
+    aManager->BindAndDrawQuad(rgb, aPreviousFrameBuffer == 0);
 
     DEBUG_GL_ERROR_CHECK(aContainer->gl());
 

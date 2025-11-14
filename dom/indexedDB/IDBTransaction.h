@@ -45,6 +45,7 @@
 
 #include "nsIIDBTransaction.h"
 #include "nsIRunnable.h"
+#include "nsIThreadInternal.h"
 
 #include "nsDOMEventTargetHelper.h"
 #include "nsCycleCollectionParticipant.h"
@@ -65,15 +66,18 @@ struct ObjectStoreInfo;
 class TransactionThreadPool;
 
 class IDBTransaction : public nsDOMEventTargetHelper,
-                       public nsIIDBTransaction
+                       public nsIIDBTransaction,
+                       public nsIThreadObserver
 {
   friend class AsyncConnectionHelper;
   friend class CommitHelper;
+  friend class ThreadObserver;
   friend class TransactionThreadPool;
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIIDBTRANSACTION
+  NS_DECL_NSITHREADOBSERVER
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBTransaction,
                                            nsDOMEventTargetHelper)
@@ -82,7 +86,8 @@ public:
   Create(IDBDatabase* aDatabase,
          nsTArray<nsString>& aObjectStoreNames,
          PRUint16 aMode,
-         PRUint32 aTimeout);
+         PRUint32 aTimeout,
+         bool aDispatchDelayed = false);
 
   // nsPIDOMEventTarget
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
@@ -133,16 +138,7 @@ public:
     return GetCachedStatement(query);
   }
 
-#ifdef DEBUG
   bool TransactionIsOpen() const;
-#else
-  bool TransactionIsOpen() const
-  {
-    return (mReadyState == nsIIDBTransaction::INITIAL ||
-            mReadyState == nsIIDBTransaction::LOADING) &&
-           !mClosed;
-  }
-#endif
 
   bool IsWriteAllowed() const
   {
@@ -177,6 +173,7 @@ private:
   PRUint16 mMode;
   PRUint32 mTimeout;
   PRUint32 mPendingRequests;
+  PRUint32 mCreatedRecursionDepth;
 
   // Only touched on the main thread.
   nsRefPtr<nsDOMEventListenerWrapper> mOnErrorListener;
@@ -196,7 +193,7 @@ private:
   nsTArray<nsRefPtr<IDBObjectStore> > mCreatedObjectStores;
 
   bool mAborted;
-  bool mClosed;
+  bool mCreating;
 };
 
 class CommitHelper : public nsIRunnable

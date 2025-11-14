@@ -41,6 +41,10 @@
 
 #include "WebGLContext.h"
 
+#ifndef __restrict
+#define __restrict
+#endif
+
 namespace mozilla {
 
 typedef PRUint8  uint8_t;

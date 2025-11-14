@@ -100,6 +100,7 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "jstypedarray.h"
+#include "nsStringBuffer.h"
 
 #define LOAD_STR "load"
 #define ERROR_STR "error"
@@ -1174,12 +1175,13 @@ nsXMLHttpRequest::ConvertBodyToText(nsAString& aOutBuffer)
   if (NS_FAILED(rv))
     return rv;
 
-  PRUnichar * outBuffer =
-    static_cast<PRUnichar*>(nsMemory::Alloc((outBufferLength + 1) *
-                                               sizeof(PRUnichar)));
-  if (!outBuffer) {
+  nsStringBuffer* buf =
+    nsStringBuffer::Alloc((outBufferLength + 1) * sizeof(PRUnichar));
+  if (!buf) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+
+  PRUnichar* outBuffer = static_cast<PRUnichar*>(buf->Data());
 
   PRInt32 totalChars = 0,
           outBufferIndex = 0,
@@ -1212,10 +1214,18 @@ nsXMLHttpRequest::ConvertBodyToText(nsAString& aOutBuffer)
     }
   } while ( NS_FAILED(rv) && (dataLen > 0) );
 
-  mResponseBodyUnicode.Assign(outBuffer, totalChars);
+  // Use the string buffer if it is small, or doesn't contain
+  // too much extra data.
+  if (outBufferLength < 127 ||
+      (outBufferLength * 0.9) < totalChars) {
+    outBuffer[totalChars] = PRUnichar(0);
+    // Move ownership to mResponseBodyUnicode.
+    buf->ToString(totalChars, mResponseBodyUnicode, PR_TRUE);
+  } else {
+    mResponseBodyUnicode.Assign(outBuffer, totalChars);
+    buf->Release();
+  }
   aOutBuffer = mResponseBodyUnicode;
-  nsMemory::Free(outBuffer);
-
   return NS_OK;
 }
 
@@ -1310,8 +1320,6 @@ nsXMLHttpRequest::GetStatusText(nsACString& aStatusText)
   nsCOMPtr<nsIHttpChannel> httpChannel = GetCurrentHttpChannel();
 
   aStatusText.Truncate();
-
-  nsresult rv = NS_OK;
 
   if (httpChannel) {
     if (mState & XML_HTTP_REQUEST_USE_XSITE_AC) {
@@ -2763,9 +2771,11 @@ nsXMLHttpRequest::SetRequestHeader(const nsACString& header,
   if (!privileged) {
     // Check for dangerous headers
     const char *kInvalidHeaders[] = {
-      "accept-charset", "accept-encoding", "connection", "content-length",
-      "content-transfer-encoding", "date", "expect", "host", "keep-alive",
-      "referer", "te", "trailer", "transfer-encoding", "upgrade", "via"
+      "accept-charset", "accept-encoding", "access-control-request-headers",
+      "access-control-request-method", "connection", "content-length",
+      "cookie", "cookie2", "content-transfer-encoding", "date", "expect",
+      "host", "keep-alive", "origin", "referer", "te", "trailer",
+      "transfer-encoding", "upgrade", "user-agent", "via"
     };
     PRUint32 i;
     for (i = 0; i < NS_ARRAY_LENGTH(kInvalidHeaders); ++i) {

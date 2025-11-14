@@ -195,10 +195,12 @@ private:
   // aIndex, if it doesn't already exist.
   void EnsureItemAt(PRUint32 aIndex);
 
+public:
   DOMSVGPathSeg*& ItemAt(PRUint32 aIndex) {
     return mItems[aIndex].mItem;
   }
 
+private:
   /**
    * This struct is used in our array of mItems to provide us with somewhere to
    * store the indexes into the internal SVGPathData of the internal seg data

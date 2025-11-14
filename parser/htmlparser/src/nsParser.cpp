@@ -890,6 +890,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsParser)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIParser)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
+  NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIParser)
 NS_INTERFACE_MAP_END
 
@@ -2126,8 +2127,7 @@ nsParser::ParseFragment(const nsAString& aSourceBuffer,
                         nsIContent* aTargetNode,
                         nsIAtom* aContextLocalName,
                         PRInt32 aContextNamespace,
-                        PRBool aQuirks,
-                        PRBool aPreventScriptExecution)
+                        PRBool aQuirks)
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }

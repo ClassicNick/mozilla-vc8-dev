@@ -148,7 +148,7 @@ public:
 
   /* ------------ nsPlaintextEditor overrides -------------- */
   NS_IMETHOD GetIsDocumentEditable(PRBool *aIsDocumentEditable);
-  NS_IMETHODIMP BeginningOfDocument();
+  NS_IMETHOD BeginningOfDocument();
   virtual nsresult HandleKeyPressEvent(nsIDOMKeyEvent* aKeyEvent);
   virtual already_AddRefed<nsIContent> GetFocusedContent();
   virtual PRBool IsActiveInDOMWindow();
@@ -781,12 +781,12 @@ protected:
 
   nsCOMArray<nsIContentFilter> mContentFilters;
 
-  TypeInState*         mTypeInState;
+  nsRefPtr<TypeInState>        mTypeInState;
 
   PRPackedBool mCRInParagraphCreatesParagraph;
 
   PRPackedBool mCSSAware;
-  nsHTMLCSSUtils *mHTMLCSSUtils;
+  nsAutoPtr<nsHTMLCSSUtils> mHTMLCSSUtils;
 
   // Used by GetFirstSelectedCell and GetNextSelectedCell
   PRInt32  mSelectedCellIndex;
