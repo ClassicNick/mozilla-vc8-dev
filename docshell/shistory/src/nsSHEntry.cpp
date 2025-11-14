@@ -144,6 +144,7 @@ nsSHEntry::nsSHEntry(const nsSHEntry &other)
   , mParent(other.mParent)
   , mViewerBounds(0, 0, 0, 0)
   , mOwner(other.mOwner)
+  , mStateData(other.mStateData)
   , mDocShellID(other.mDocShellID)
 {
 }
@@ -632,28 +633,83 @@ nsSHEntry::AddChild(nsISHEntry * aChild, PRInt32 aOffset)
   //
   NS_ASSERTION(aOffset < (mChildren.Count()+1023), "Large frames array!\n");
 
-#ifdef DEBUG
-  if (aOffset < mChildren.Count()) {
-    nsISHEntry* oldChild = mChildren.ObjectAt(aOffset);
-    if (aChild && oldChild && oldChild != aChild) {
-      PRBool dyn = PR_FALSE;
-      oldChild->IsDynamicallyAdded(&dyn);
-      NS_WARN_IF_FALSE(dyn, "Adding child where we already have a child?  "
-                            "This may misbehave");
-    }
+  PRBool newChildIsDyn = PR_FALSE;
+  if (aChild) {
+    aChild->IsDynamicallyAdded(&newChildIsDyn);
   }
-#endif
 
-  // InsertObjectAt allows only appending one object.
-  // If aOffset is larger than Count(), we must first manually
-  // set the capacity.
-  if (aOffset > mChildren.Count()) {
-    mChildren.SetCount(aOffset);
-  }
-  if (!mChildren.InsertObjectAt(aChild, aOffset)) {
-    NS_WARNING("Adding a child failed!");
-    aChild->SetParent(nsnull);
-    return NS_ERROR_FAILURE;
+  // If the new child is dynamically added, try to add it to aOffset, but if
+  // there are non-dynamically added children, the child must be after those.
+  if (newChildIsDyn) {
+    PRInt32 lastNonDyn = aOffset - 1;
+    for (PRInt32 i = aOffset; i < mChildren.Count(); ++i) {
+      nsISHEntry* entry = mChildren[i];
+      if (entry) {
+        PRBool dyn = PR_FALSE;
+        entry->IsDynamicallyAdded(&dyn);
+        if (dyn) {
+          break;
+        } else {
+          lastNonDyn = i;
+        }
+      }
+    }
+    // InsertObjectAt allows only appending one object.
+    // If aOffset is larger than Count(), we must first manually
+    // set the capacity.
+    if (aOffset > mChildren.Count()) {
+      mChildren.SetCount(aOffset);
+    }
+    if (!mChildren.InsertObjectAt(aChild, lastNonDyn + 1)) {
+      NS_WARNING("Adding a child failed!");
+      aChild->SetParent(nsnull);
+      return NS_ERROR_FAILURE;
+    }
+  } else {
+    // If the new child isn't dynamically added, it should be set to aOffset.
+    // If there are dynamically added children before that, those must be
+    // moved to be after aOffset.
+    if (mChildren.Count() > 0) {
+      PRInt32 start = PR_MIN(mChildren.Count() - 1, aOffset);
+      PRInt32 dynEntryIndex = -1;
+      nsISHEntry* dynEntry = nsnull;
+      for (PRInt32 i = start; i >= 0; --i) {
+        nsISHEntry* entry = mChildren[i];
+        if (entry) {
+          PRBool dyn = PR_FALSE;
+          entry->IsDynamicallyAdded(&dyn);
+          if (dyn) {
+            dynEntryIndex = i;
+            dynEntry = entry;
+          } else {
+            break;
+          }
+        }
+      }
+  
+      if (dynEntry) {
+        nsCOMArray<nsISHEntry> tmp;
+        tmp.SetCount(aOffset - dynEntryIndex + 1);
+        mChildren.InsertObjectsAt(tmp, dynEntryIndex);
+        NS_ASSERTION(mChildren[aOffset + 1] == dynEntry, "Whaat?");
+      }
+    }
+    
+
+    // Make sure there isn't anything at aOffset.
+    if (aOffset < mChildren.Count()) {
+      nsISHEntry* oldChild = mChildren[aOffset];
+      if (oldChild && oldChild != aChild) {
+        NS_ERROR("Adding a child where we already have a child? This may misbehave");
+        oldChild->SetParent(nsnull);
+      }
+    }
+
+    if (!mChildren.ReplaceObjectAt(aChild, aOffset)) {
+      NS_WARNING("Adding a child failed!");
+      aChild->SetParent(nsnull);
+      return NS_ERROR_FAILURE;
+    }
   }
 
   return NS_OK;
@@ -762,6 +818,7 @@ nsSHEntry::DropPresentationState()
   mViewerBounds.SetRect(0, 0, 0, 0);
   mChildShells.Clear();
   mRefreshURIList = nsnull;
+  mEditorData = nsnull;
 }
 
 void
@@ -1001,14 +1058,14 @@ nsSHEntry::SetDocshellID(PRUint64 aID)
 
 
 NS_IMETHODIMP
-nsSHEntry::GetLastTouched(unsigned int *aLastTouched)
+nsSHEntry::GetLastTouched(PRUint32 *aLastTouched)
 {
   *aLastTouched = mLastTouched;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetLastTouched(unsigned int aLastTouched)
+nsSHEntry::SetLastTouched(PRUint32 aLastTouched)
 {
   mLastTouched = aLastTouched;
   return NS_OK;

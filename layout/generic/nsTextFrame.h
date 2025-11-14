@@ -176,8 +176,12 @@ public:
 
   NS_IMETHOD CheckVisibility(nsPresContext* aContext, PRInt32 aStartIndex, PRInt32 aEndIndex, PRBool aRecurse, PRBool *aFinished, PRBool *_retval);
   
+  // Flags for aSetLengthFlags
+  enum { ALLOW_FRAME_CREATION_AND_DESTRUCTION = 0x01 };
+
   // Update offsets to account for new length. This may clear mTextRun.
-  void SetLength(PRInt32 aLength, nsLineLayout* aLineLayout);
+  void SetLength(PRInt32 aLength, nsLineLayout* aLineLayout,
+                 PRUint32 aSetLengthFlags = 0);
   
   NS_IMETHOD GetOffsets(PRInt32 &start, PRInt32 &end)const;
   
@@ -428,13 +432,19 @@ protected:
 
   struct TextDecorations {
     PRUint8 mDecorations;
+    PRUint8 mOverStyle;
+    PRUint8 mUnderStyle;
+    PRUint8 mStrikeStyle;
     nscolor mOverColor;
     nscolor mUnderColor;
     nscolor mStrikeColor;
 
     TextDecorations() :
-      mDecorations(0), mOverColor(NS_RGB(0, 0, 0)),
-      mUnderColor(NS_RGB(0, 0, 0)), mStrikeColor(NS_RGB(0, 0, 0))
+      mDecorations(0), mOverStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID),
+      mUnderStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID),
+      mStrikeStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID),
+      mOverColor(NS_RGB(0, 0, 0)), mUnderColor(NS_RGB(0, 0, 0)),
+      mStrikeColor(NS_RGB(0, 0, 0))
     { }
 
     PRBool HasDecorationlines() {
@@ -467,6 +477,8 @@ protected:
   void ClearFrameOffsetCache();
 
   virtual PRBool HasAnyNoncollapsedCharacters();
+
+  void ClearMetrics(nsHTMLReflowMetrics& aMetrics);
 };
 
 #endif

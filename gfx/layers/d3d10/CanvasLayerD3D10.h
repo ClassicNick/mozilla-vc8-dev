@@ -36,8 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#ifndef GFX_CANVASLAYEROGL_H
-#define GFX_CANVASLAYEROGL_H
+#ifndef GFX_CANVASLAYERD3D10_H
+#define GFX_CANVASLAYERD3D10_H
 
 #include "LayerManagerD3D10.h"
 #include "GLContext.h"
@@ -51,10 +51,11 @@ class THEBES_API CanvasLayerD3D10 : public CanvasLayer,
 {
 public:
   CanvasLayerD3D10(LayerManagerD3D10 *aManager)
-    : CanvasLayer(aManager, NULL),
-      LayerD3D10(aManager),
-      mDataIsPremultiplied(PR_FALSE),
-      mNeedsYFlip(PR_FALSE)
+    : CanvasLayer(aManager, NULL)
+    , LayerD3D10(aManager)
+    , mDataIsPremultiplied(PR_FALSE)
+    , mNeedsYFlip(PR_FALSE)
+    , mHasAlpha(PR_TRUE)
   {
       mImplData = static_cast<LayerD3D10*>(this);
   }
@@ -63,7 +64,6 @@ public:
 
   // CanvasLayer implementation
   virtual void Initialize(const Data& aData);
-  virtual void Updated(const nsIntRect& aRect);
 
   // LayerD3D10 implementation
   virtual Layer* GetLayer();
@@ -71,6 +71,8 @@ public:
 
 private:
   typedef mozilla::gl::GLContext GLContext;
+
+  void UpdateSurface();
 
   nsRefPtr<gfxASurface> mSurface;
   nsRefPtr<GLContext> mGLContext;
@@ -83,6 +85,7 @@ private:
   PRPackedBool mNeedsYFlip;
   PRPackedBool mIsD2DTexture;
   PRPackedBool mUsingSharedTexture;
+  PRPackedBool mHasAlpha;
 };
 
 } /* layers */

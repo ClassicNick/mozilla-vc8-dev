@@ -134,13 +134,10 @@
         []
       </field>
       <field name="mTabListeners">
-        new Array()
+        []
       </field>
       <field name="mTabFilters">
-        new Array()
-      </field>
-      <field name="mTabbedMode">
-        false
+        []
       </field>
       <field name="mIsBusy">
         false
@@ -190,6 +187,42 @@
         ]]></body>
       </method>
 
+      <method name="_setCloseKeyState">
+        <parameter name="aEnabled"/>
+        <body><![CDATA[
+          let keyClose = document.getElementById("key_close");
+          let closeKeyEnabled = keyClose.getAttribute("disabled") != "true";
+          if (closeKeyEnabled == aEnabled)
+            return;
+
+          if (aEnabled)
+            keyClose.removeAttribute("disabled");
+          else
+            keyClose.setAttribute("disabled", "true");
+
+          // We also want to remove the keyboard shortcut from the file menu
+          // when the shortcut is disabled, and bring it back when it's
+          // renabled.
+          //
+          // Fixing bug 630826 could make that happen automatically.
+          // Fixing bug 630830 could avoid the ugly hack below.
+          
+          let closeMenuItem = document.getElementById("menu_close");
+          let parentPopup = closeMenuItem.parentNode;
+          let nextItem = closeMenuItem.nextSibling;
+          let clonedItem = closeMenuItem.cloneNode(true);
+
+          parentPopup.removeChild(closeMenuItem);
+
+          if (aEnabled)
+            clonedItem.setAttribute("key", "key_close");
+          else
+            clonedItem.removeAttribute("key");
+
+          parentPopup.insertBefore(clonedItem, nextItem);
+        ]]></body>
+      </method>
+
       <method name="pinTab">
         <parameter name="aTab"/>
         <body><![CDATA[
@@ -205,6 +238,9 @@
           this.tabContainer.adjustTabstrip();
 
           this.getBrowserForTab(aTab).docShell.isAppTab = true;
+
+          if (aTab.selected)
+            this._setCloseKeyState(false);
 
           let event = document.createEvent("Events");
           event.initEvent("TabPinned", true, false);
@@ -226,6 +262,9 @@
           this.tabContainer.adjustTabstrip();
 
           this.getBrowserForTab(aTab).docShell.isAppTab = false;
+
+          if (aTab.selected)
+            this._setCloseKeyState(true);
 
           let event = document.createEvent("Events");
           event.initEvent("TabUnpinned", true, false);
@@ -892,6 +931,9 @@
                                           true, false);
             }
 
+            if (this.mCurrentTab.selected)
+              this._setCloseKeyState(!this.mCurrentTab.pinned);
+
             // TabSelect events are suppressed during preview mode to avoid confusing extensions and other bits of code
             // that might rely upon the other changes suppressed.
             // Focus is suppressed in the event that the main browser window is minimized - focusing a tab would restore the window
@@ -1019,47 +1061,6 @@
         </body>
       </method>
 
-      <method name="enterTabbedMode">
-        <body>
-          <![CDATA[
-            if (this.mTabbedMode)
-              return;
-
-            this.mTabbedMode = true; // Welcome to multi-tabbed mode.
-
-            if (XULBrowserWindow.isBusy) {
-              this.mCurrentTab.setAttribute("busy", "true");
-              this.mIsBusy = true;
-              this.setTabTitleLoading(this.mCurrentTab);
-            } else {
-              this.setIcon(this.mCurrentTab, this.mCurrentBrowser.mIconURL);
-            }
-
-            var filter;
-            if (this.mTabFilters.length > 0) {
-              // Use the filter hooked up in our addProgressListener
-              filter = this.mTabFilters[0];
-            } else {
-              // create a filter and hook it up to our first browser
-              filter = Components.classes["@mozilla.org/appshell/component/browser-status-filter;1"]
-                                 .createInstance(Components.interfaces.nsIWebProgress);
-              this.mTabFilters[0] = filter;
-              this.mCurrentBrowser.webProgress.addProgressListener(filter, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
-            }
-
-            // Remove all our progress listeners from the active browser's filter.
-            this.mProgressListeners.forEach(filter.removeProgressListener, filter);
-
-            // Wire up a progress listener to our filter.
-            const listener = this.mTabProgressListener(this.mCurrentTab,
-                                                       this.mCurrentBrowser,
-                                                       false);
-            filter.addProgressListener(listener, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
-            this.mTabListeners[0] = listener;
-          ]]>
-        </body>
-      </method>
-
       <method name="loadOneTab">
         <parameter name="aURI"/>
         <parameter name="aReferrerURI"/>
@@ -1183,8 +1184,6 @@
 
             this._browsers = null; // invalidate cache
 
-            this.enterTabbedMode();
-
             // if we're adding tabs, we're past interrupt mode, ditch the owner
             if (this.mCurrentTab.owner)
               this.mCurrentTab.owner = null;
@@ -1226,15 +1225,6 @@
 
             this.tabContainer.appendChild(t);
 
-            if (this.tabContainer.mTabstrip._isRTLScrollbox) {
-              /* In RTL UI, the tab is visually added to the left side of the
-               * tabstrip. This means the tabstip has to be scrolled back in
-               * order to make sure the same set of tabs is visible before and
-               * after the new tab is added.  See bug 508816. */
-
-              this.tabContainer.mTabstrip.scrollByPixels(t.clientWidth);
-            }
-
             // invalidate cache, because tabContainer is about to change
             this._browsers = null;
 
@@ -1250,7 +1240,8 @@
             b.setAttribute("contextmenu", this.getAttribute("contentcontextmenu"));
             b.setAttribute("tooltip", this.getAttribute("contenttooltip"));
 
-            if (window.gShowPageResizers && document.getElementById("addon-bar").collapsed) {
+            if (window.gShowPageResizers && document.getElementById("addon-bar").collapsed &&
+                window.windowState == window.STATE_NORMAL) {
               b.setAttribute("showresizer", "true");
             }
 
@@ -1829,38 +1820,21 @@
 
       <method name="addProgressListener">
         <parameter name="aListener"/>
-        <parameter name="aMask"/>
         <body>
           <![CDATA[
+            if (arguments.length != 1) {
+              Components.utils.reportError("gBrowser.addProgressListener was " +
+                                           "called with a second argument, " +
+                                           "which is not supported. See bug " +
+                                           "608628.");
+            }
+
             if (!this.mAddProgressListenerWasCalled) {
               this.mAddProgressListenerWasCalled = true;
               this.tabContainer.updateVisibility();
             }
 
-            if (this.mProgressListeners.length == 1) {
-              // If we are adding a 2nd progress listener, we need to enter tabbed mode
-              // because the browser status filter can only handle one progress listener.
-              // In tabbed mode, mTabProgressListener is used which will iterate over all listeners.
-              this.enterTabbedMode();
-            }
-
             this.mProgressListeners.push(aListener);
-
-            if (!this.mTabbedMode) {
-              // If someone does this:
-              // addProgressListener, removeProgressListener, addProgressListener
-              // don't create a new filter; reuse the existing filter.
-              if (this.mTabFilters.length == 0) {
-                // hook a filter up to our first browser
-                const filter = Components.classes["@mozilla.org/appshell/component/browser-status-filter;1"]
-                                         .createInstance(Components.interfaces.nsIWebProgress);
-                this.mTabFilters[0] = filter;
-                this.mCurrentBrowser.webProgress.addProgressListener(filter, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
-              }
-
-              // Directly hook the listener up to the filter for better performance
-              this.mTabFilters[0].addProgressListener(aListener, aMask);
-            }
           ]]>
         </body>
       </method>
@@ -1871,10 +1845,6 @@
           <![CDATA[
             this.mProgressListeners =
               this.mProgressListeners.filter(function (l) l != aListener);
-
-            if (!this.mTabbedMode)
-              // Don't forget to remove it from the filter we hooked it up to
-              this.mTabFilters[0].removeProgressListener(aListener);
          ]]>
         </body>
       </method>
@@ -1882,7 +1852,6 @@
       <method name="addTabsProgressListener">
         <parameter name="aListener"/>
         <body>
-          this.enterTabbedMode();
           this.mTabsProgressListeners.push(aListener);
         </body>
       </method>
@@ -2452,8 +2421,32 @@
           this.mCurrentBrowser.setAttribute("autoscrollpopup", this._autoScrollPopup.id);
           this.mCurrentBrowser.droppedLinkHandler = handleDroppedLink;
           this.updateWindowResizers();
+
+          // Hook up the event listeners to the first browser
+          var tabListener = this.mTabProgressListener(this.mCurrentTab, this.mCurrentBrowser, true);
+          const nsIWebProgress = Components.interfaces.nsIWebProgress;
+          const filter = Components.classes["@mozilla.org/appshell/component/browser-status-filter;1"]
+                                   .createInstance(nsIWebProgress);
+          filter.addProgressListener(tabListener, nsIWebProgress.NOTIFY_ALL);
+          this.mTabListeners[0] = tabListener;
+          this.mTabFilters[0] = filter;
+          this.init();
         ]]>
       </constructor>
+
+      <method name="init">
+        <body><![CDATA[
+          if (!this._initialProgressListenerAdded) {
+            this._initialProgressListenerAdded = true;
+            try {
+              this.webProgress.addProgressListener(this.mTabFilters[0], Components.interfaces.nsIWebProgress.NOTIFY_ALL);
+            } catch (e) {
+              // The binding was constructed too early, need to try this again later. See bug 463384.
+              this._initialProgressListenerAdded = false;
+            }
+          }
+        ]]></body>
+      </method>
 
       <destructor>
         <![CDATA[
@@ -2474,6 +2467,13 @@
       </destructor>
 
       <!-- Deprecated stuff, implemented for backwards compatibility. -->
+      <method name="enterTabbedMode">
+        <body>
+          Application.console.log("enterTabbedMode is an obsolete method and " +
+                                  "will be removed in a future release.");
+        </body>
+      </method>
+      <field name="mTabbedMode" readonly="true">true</field>
       <method name="setStripVisibilityTo">
         <parameter name="aShow"/>
         <body>
@@ -2621,7 +2621,7 @@
     </resources>
 
     <content>
-      <xul:hbox align="start">
+      <xul:hbox align="end">
         <xul:image class="tab-drop-indicator" anonid="tab-drop-indicator" collapsed="true"/>
       </xul:hbox>
       <xul:arrowscrollbox anonid="arrowscrollbox" orient="horizontal" flex="1"
@@ -2730,9 +2730,6 @@
 
           this._container.collapsed = !val;
 
-          if (val)
-            this.tabbrowser.enterTabbedMode();
-
           document.getElementById("menu_closeWindow").hidden = !val;
           document.getElementById("menu_close").setAttribute("label",
             this.tabbrowser.mStringBundle.getString(val ? "tabs.closeTab" : "tabs.close"));
@@ -2746,9 +2743,9 @@
 
       <method name="updateVisibility">
         <body><![CDATA[
-          if (this.childNodes.length - this.tabbrowser._removingTabs.length == 1 &&
-              window.toolbar.visible)
-            this.visible = !Services.prefs.getBoolPref("browser.tabs.autoHide");
+          if (this.childNodes.length - this.tabbrowser._removingTabs.length == 1)
+            this.visible = window.toolbar.visible &&
+                           !Services.prefs.getBoolPref("browser.tabs.autoHide");
           else
             this.visible = true;
         ]]></body>
@@ -3055,7 +3052,16 @@
       ]]></handler>
 
       <handler event="dblclick"><![CDATA[
-        // See hack note in the tabbrowser-close-button binding
+#ifdef MOZ_WIDGET_GTK2
+        // Disable this on GTK2 when the menubar is draggable, since (a)
+        // the menubar and tabbbar have unified appearance and should
+        // thus not have different behavior (though this condition alone
+        // applies to more cases) and (b) it interacts badly with the
+        // drag handling that we use for dragging either one.
+        if (this.parentNode._dragBindingAlive)
+          return;
+#endif
+        // See hack note in the tabbrowser-close-tab-button binding
         if (!this._blockDblClick && event.button == 0 &&
             event.originalTarget.localName == "box")
           BrowserOpenTab();
@@ -3220,7 +3226,6 @@
 
         ind.style.MozTransform = "translate(" + Math.round(newMargin) + "px)";
         ind.style.MozMarginStart = (-ind.clientWidth) + "px";
-        ind.style.marginTop = (-ind.clientHeight) + "px";
       ]]></handler>
 
       <handler event="drop"><![CDATA[
@@ -3660,11 +3665,13 @@
       <handler event="popuphidden">
       <![CDATA[
         // clear out the menu popup and remove the listeners
-        while (this.hasChildNodes()) {
-          var menuItem = this.lastChild;
-          menuItem.removeEventListener("command", this, false);
-          menuItem.tab.mCorrespondingMenuitem = null;
-          this.removeChild(menuItem);
+        for (let i = this.childNodes.length - 1; i > 0; i--) {
+          let menuItem = this.childNodes[i];
+          if (!menuItem.hasAttribute("keepme")) {
+            menuItem.removeEventListener("command", this, false);
+            menuItem.tab.mCorrespondingMenuitem = null;
+            this.removeChild(menuItem);
+          }
         }
         var tabcontainer = gBrowser.tabContainer;
         tabcontainer.mTabstrip.removeEventListener("scroll", this, false);
@@ -3689,6 +3696,72 @@
         XULBrowserWindow.setOverLink("", null);
       ]]></handler>
 
+    </handlers>
+  </binding>
+
+  <binding id="statuspanel" display="xul:hbox">
+    <content>
+      <xul:hbox class="statuspanel-inner">
+        <xul:label class="statuspanel-label"
+                   role="status"
+                   xbl:inherits="value=label,crop,mirror"
+                   flex="1"
+                   crop="end"/>
+      </xul:hbox>
+    </content>
+
+    <implementation implements="nsIDOMEventListener">
+      <constructor><![CDATA[
+        window.addEventListener("findbaropen", this, false);
+      ]]></constructor>
+
+      <destructor><![CDATA[
+        window.removeEventListener("findbaropen", this, false);
+      ]]></destructor>
+
+      <property name="label">
+        <setter><![CDATA[
+          if (!this.label) {
+            if (window.gFindBarInitialized && !window.gFindBar.hidden)
+              this.setAttribute("mirror", "true");
+            else
+              this.removeAttribute("mirror");
+          }
+
+          this.style.minWidth = this.getAttribute("type") == "status" &&
+                                this.getAttribute("previoustype") == "status"
+                                  ? getComputedStyle(this).width : "";
+
+          this.setAttribute("label", val);
+          return val;
+        ]]></setter>
+        <getter>
+          return this.getAttribute("label");
+        </getter>
+      </property>
+
+      <method name="handleEvent">
+        <parameter name="event"/>
+        <body><![CDATA[
+          if (event.type == "findbaropen" &&
+              this.label)
+            this.setAttribute("mirror", "true");
+        ]]></body>
+      </method>
+
+      <method name="_mirror">
+        <body>
+          if (this.hasAttribute("mirror"))
+            this.removeAttribute("mirror");
+          else
+            this.setAttribute("mirror", "true");
+        </body>
+      </method>
+    </implementation>
+
+    <handlers>
+      <handler event="mouseover" action="this._mirror();"/>
+      <handler event="dragover" action="this._mirror();"/>
     </handlers>
   </binding>
 

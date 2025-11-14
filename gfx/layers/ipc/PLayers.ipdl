@@ -122,6 +122,8 @@ struct CommonLayerAttributes {
   float opacity;
   bool useClipRect;
   nsIntRect clipRect;
+  bool useTileSourceRect;
+  nsIntRect tileSourceRect;
 };
 
 struct ThebesLayerAttributes {
@@ -170,7 +172,6 @@ struct OpPaintThebesBuffer {
 
 struct OpPaintCanvas  {
   PLayer layer;
-  nsIntRect updated;
   Shmem newFrontBuffer;
 };
 

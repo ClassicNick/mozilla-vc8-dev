@@ -62,6 +62,8 @@ var gPlayTests = [
 
   // oggz-chop stream
   { name:"bug482461.ogv", type:"video/ogg", duration:4.34 },
+  // Theora only oggz-chop stream
+  { name:"bug482461-theora.ogv", type:"video/ogg", duration:4.138 },
   // With first frame a "duplicate" (empty) frame.
   { name:"bug500311.ogv", type:"video/ogg", duration:1.96 },
   // Small audio file
@@ -72,6 +74,8 @@ var gPlayTests = [
   { name:"bug504613.ogv", type:"video/ogg", duration:Number.NaN },
   // Multiple audio streams.
   { name:"bug516323.ogv", type:"video/ogg", duration:4.208 },
+  // oggz-chop with non-keyframe as first frame
+  { name:"bug556821.ogv", type:"video/ogg", duration:2.551 },
 
   // Encoded with vorbis beta1, includes unusually sized codebooks
   { name:"beta-phrasebook.ogg", type:"audio/ogg", duration:4.01 },
@@ -394,3 +398,25 @@ function mediaTestCleanup() {
     netscape.security.PrivilegeManager.enablePrivilege('UniversalXPConnect');
     Components.utils.forceGC();
 }
+
+(function() {
+  netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
+  // Ensure that preload preferences are comsistent
+  var prefService = Components.classes["@mozilla.org/preferences-service;1"]
+                               .getService(Components.interfaces.nsIPrefService);
+  var branch = prefService.getBranch("media.");
+  var oldDefault = 2;
+  var oldAuto = 3;
+  try {
+    oldDefault = branch.getIntPref("preload.default");
+    oldAuto    = branch.getIntPref("preload.auto");
+  } catch(ex) { }
+  branch.setIntPref("preload.default", 2); // preload_metadata
+  branch.setIntPref("preload.auto", 3); // preload_enough
+
+  window.addEventListener("unload", function() {
+    netscape.security.PrivilegeManager.enablePrivilege("UniversalXPConnect");
+    branch.setIntPref("preload.default", oldDefault);
+    branch.setIntPref("preload.auto", oldAuto);
+  }, false);
+ })();

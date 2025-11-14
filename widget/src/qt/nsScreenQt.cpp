@@ -42,14 +42,14 @@
 #include <qrect.h>
 #include <qdesktopwidget.h>
 #include <qapplication.h>
-
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-#include <MApplication>
-#include <MApplicationWindow>
-#endif
+#include <QTransform>
 
 #include "nsScreenQt.h"
 #include "nsXULAppAPI.h"
+
+#ifdef MOZ_ENABLE_QTMOBILITY
+#include "mozqorientationsensorfilter.h"
+#endif
 
 nsScreenQt::nsScreenQt(int aScreen)
     : mScreen(aScreen)
@@ -71,17 +71,10 @@ NS_IMETHODIMP
 nsScreenQt::GetRect(PRInt32 *outLeft,PRInt32 *outTop,
                     PRInt32 *outWidth,PRInt32 *outHeight)
 {
-    QRect r;
-#if defined MOZ_IPC && defined MOZ_ENABLE_MEEGOTOUCH
-    if (XRE_GetProcessType() == GeckoProcessType_Default) {
-        MWindow *window = MApplication::activeWindow();
-        if (window) {
-            QSize aSceneSize = window->visibleSceneSize();
-            r = QRect(QPoint(), aSceneSize);
-        }
-    } else
+    QRect r = QApplication::desktop()->screenGeometry(mScreen);
+#ifdef MOZ_ENABLE_QTMOBILITY
+    r = MozQOrientationSensorFilter::GetRotationTransform().mapRect(r);
 #endif
-    r = QApplication::desktop()->screenGeometry(mScreen);
 
     *outTop = r.x();
     *outLeft = r.y();
@@ -95,7 +88,11 @@ NS_IMETHODIMP
 nsScreenQt::GetAvailRect(PRInt32 *outLeft,PRInt32 *outTop,
                          PRInt32 *outWidth,PRInt32 *outHeight)
 {
-    QRect r = QApplication::desktop()->availableGeometry(mScreen);
+    QRect r = QApplication::desktop()->screenGeometry(mScreen);
+#ifdef MOZ_ENABLE_QTMOBILITY
+    r = MozQOrientationSensorFilter::GetRotationTransform().mapRect(r);
+#endif
+
     *outTop = r.x();
     *outLeft = r.y();
     *outWidth = r.width();

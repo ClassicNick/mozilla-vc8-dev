@@ -74,7 +74,7 @@
 #include "nsIDOMXULElement.h"
 #include "nsIDocument.h"
 #include "nsIContent.h"
-#include "nsICSSStyleRule.h"
+#include "mozilla/css/StyleRule.h"
 #include "nsCSSRendering.h"
 #include "nsIFontMetrics.h"
 #include "nsIDeviceContext.h"
@@ -1670,8 +1670,7 @@ nsTreeBodyFrame::GetCellAt(nscoord aX, nscoord aY, PRInt32* aRow,
 
     if (aX >= cellRect.x && aX < cellRect.x + cellRect.width) {
       // We know the column hit now.
-      if (aCol)
-        *aCol = currCol;
+      *aCol = currCol;
 
       if (currCol->IsCycler())
         // Cyclers contain only images.  Fill this in immediately and return.
@@ -4197,11 +4196,11 @@ nsTreeBodyFrame::GetPseudoStyleContext(nsIAtom* aPseudoElement)
 PRBool
 nsTreeBodyFrame::PseudoMatches(nsCSSSelector* aSelector)
 {
-  // Iterate the pseudoclass list.  For each item in the list, see if
+  // Iterate the class list.  For each item in the list, see if
   // it is contained in our scratch array.  If we have a miss, then
-  // we aren't a match.  If all items in the pseudoclass list are
+  // we aren't a match.  If all items in the class list are
   // present in the scratch array, then we have a match.
-  nsPseudoClassList* curr = aSelector->mPseudoClassList;
+  nsAtomList* curr = aSelector->mClassList;
   while (curr) {
     PRInt32 index;
     mScratchArray->GetIndexOf(curr->mAtom, &index);

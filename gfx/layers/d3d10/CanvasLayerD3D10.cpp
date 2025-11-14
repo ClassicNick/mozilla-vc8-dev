@@ -78,6 +78,8 @@ CanvasLayerD3D10::Initialize(const Data& aData)
       mTexture = static_cast<ID3D10Texture2D*>(data);
       mIsD2DTexture = PR_TRUE;
       device()->CreateShaderResourceView(mTexture, NULL, getter_AddRefs(mSRView));
+      mHasAlpha =
+        mSurface->GetContentType() == gfxASurface::CONTENT_COLOR_ALPHA;
       return;
     }
   }
@@ -88,8 +90,12 @@ CanvasLayerD3D10::Initialize(const Data& aData)
   HANDLE shareHandle = mGLContext ? mGLContext->GetD3DShareHandle() : nsnull;
   if (shareHandle) {
     HRESULT hr = device()->OpenSharedResource(shareHandle, __uuidof(ID3D10Texture2D), getter_AddRefs(mTexture));
-    if (SUCCEEDED(hr))
+    if (SUCCEEDED(hr)) {
       mUsingSharedTexture = PR_TRUE;
+      // XXX for ANGLE, it's already the right-way up.  If we start using NV GL-D3D interop
+      // however, we'll need to do the right thing.
+      mNeedsYFlip = PR_FALSE;
+    }
   }
 
   if (!mUsingSharedTexture) {
@@ -108,8 +114,12 @@ CanvasLayerD3D10::Initialize(const Data& aData)
 }
 
 void
-CanvasLayerD3D10::Updated(const nsIntRect& aRect)
+CanvasLayerD3D10::UpdateSurface()
 {
+  if (!mDirty)
+    return;
+  mDirty = PR_FALSE;
+
   if (mIsD2DTexture) {
     mSurface->Flush();
     return;
@@ -155,9 +165,6 @@ CanvasLayerD3D10::Updated(const nsIntRect& aRect)
     if (currentFramebuffer != mCanvasFramebuffer)
       mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mCanvasFramebuffer);
 
-    // For simplicity, we read the entire framebuffer for now -- in
-    // the future we should use aRect, though with WebGL we don't
-    // have an easy way to generate one.
     nsRefPtr<gfxImageSurface> tmpSurface =
       new gfxImageSurface(destination,
                           gfxIntSize(mBounds.width, mBounds.height),
@@ -183,10 +190,10 @@ CanvasLayerD3D10::Updated(const nsIntRect& aRect)
     mTexture->Unmap(0);
   } else if (mSurface) {
     RECT r;
-    r.left = aRect.x;
-    r.top = aRect.y;
-    r.right = aRect.XMost();
-    r.bottom = aRect.YMost();
+    r.left = 0;
+    r.top = 0;
+    r.right = mBounds.width;
+    r.bottom = mBounds.height;
 
     D3D10_MAPPED_TEXTURE2D map;
     HRESULT hr = mTexture->Map(0, D3D10_MAP_WRITE_DISCARD, 0, &map);
@@ -196,17 +203,13 @@ CanvasLayerD3D10::Updated(const nsIntRect& aRect)
       return;
     }
 
-    PRUint8 *startBits;
-    PRUint32 sourceStride;
-
     nsRefPtr<gfxImageSurface> dstSurface;
 
     dstSurface = new gfxImageSurface((unsigned char*)map.pData,
-                                     gfxIntSize(aRect.width, aRect.height),
+                                     gfxIntSize(mBounds.width, mBounds.height),
                                      map.RowPitch,
                                      gfxASurface::ImageFormatARGB32);
     nsRefPtr<gfxContext> ctx = new gfxContext(dstSurface);
-    ctx->Translate(gfxPoint(-aRect.x, -aRect.y));
     ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
     ctx->SetSource(mSurface);
     ctx->Paint();
@@ -224,9 +227,11 @@ CanvasLayerD3D10::GetLayer()
 void
 CanvasLayerD3D10::RenderLayer()
 {
-  if (!mTexture) {
+  UpdateSurface();
+  FireDidTransactionCallback();
+
+  if (!mTexture)
     return;
-  }
 
   nsIntRect visibleRect = mVisibleRegion.GetBounds();
 
@@ -235,7 +240,7 @@ CanvasLayerD3D10::RenderLayer()
   ID3D10EffectTechnique *technique;
 
   if (mDataIsPremultiplied) {
-    if (mSurface && mSurface->GetContentType() == gfxASurface::CONTENT_COLOR) {
+    if (!mHasAlpha) {
       if (mFilter == gfxPattern::FILTER_NEAREST) {
         technique = effect()->GetTechniqueByName("RenderRGBLayerPremulPoint");
       } else {

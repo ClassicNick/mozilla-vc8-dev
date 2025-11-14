@@ -237,7 +237,7 @@ private:
  * Implementation of &lt;select&gt;
  */
 class nsHTMLSelectElement : public nsGenericHTMLFormElement,
-                            public nsIDOMHTMLSelectElement_Mozilla_2_0_Branch,
+                            public nsIDOMHTMLSelectElement,
                             public nsISelectElement,
                             public nsIConstraintValidation
 {
@@ -262,9 +262,6 @@ public:
 
   // nsIDOMHTMLSelectElement
   NS_DECL_NSIDOMHTMLSELECTELEMENT
-
-  // nsIDOMHTMLSelectElement_Mozilla_2_0_Branch
-  NS_DECL_NSIDOMHTMLSELECTELEMENT_MOZILLA_2_0_BRANCH
 
   // nsIContent
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
@@ -506,11 +503,6 @@ protected:
   void VerifyOptionsArray();
 #endif
 
-  virtual PRBool AcceptAutofocus() const
-  {
-    return PR_TRUE;
-  }
-
   nsresult SetSelectedIndexInternal(PRInt32 aIndex, PRBool aNotify);
 
   void SetSelectionChanged(PRBool aValue, PRBool aNotify);
@@ -523,19 +515,13 @@ protected:
    */
   bool ShouldShowValidityUI() const {
     /**
-     * Never show the validity UI if the form has the novalidate attribute set.
      * Always show the validity UI if the form has already tried to be submitted
      * but was invalid.
      *
      * Otherwise, show the validity UI if the selection has been changed.
      */
-    if (mForm) {
-      if (mForm->HasAttr(kNameSpaceID_None, nsGkAtoms::novalidate)) {
-        return false;
-      }
-      if (mForm->HasEverTriedInvalidSubmit()) {
-        return true;
-      }
+    if (mForm && mForm->HasEverTriedInvalidSubmit()) {
+      return true;
     }
 
     return mSelectionHasChanged;

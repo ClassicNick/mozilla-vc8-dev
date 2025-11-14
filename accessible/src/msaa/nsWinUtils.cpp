@@ -17,7 +17,7 @@
  * The Original Code is mozilla.org code.
  *
  * The Initial Developer of the Original Code is
- * Mozilla Corporation.
+ * Mozilla Foundation.
  * Portions created by the Initial Developer are Copyright (C) 2009
  * the Initial Developer. All Rights Reserved.
  *
@@ -40,8 +40,9 @@
 
 #include "nsWinUtils.h"
 
-#include "nsAccessibleWrap.h"
 #include "nsIWinAccessNode.h"
+#include "nsRootAccessible.h"
+
 #include "nsArrayUtils.h"
 #include "nsIDocShellTreeItem.h"
 
@@ -98,6 +99,34 @@ nsWinUtils::ConvertToIA2Array(nsIArray *aGeckoArray, IUnknown ***aIA2Array,
   return S_OK;
 }
 
+bool
+nsWinUtils::MaybeStartWindowEmulation()
+{
+  // Register window class that'll be used for document accessibles associated
+  // with tabs.
+  if (IsWindowEmulationFor(0)) {
+    RegisterNativeWindow(kClassNameTabContent);
+    nsAccessNodeWrap::sHWNDCache.Init(4);
+    return true;
+  }
+  return false;
+}
+
+void
+nsWinUtils::ShutdownWindowEmulation()
+{
+  // Unregister window call that's used for document accessibles associated
+  // with tabs.
+  if (IsWindowEmulationFor(0))
+    ::UnregisterClassW(kClassNameTabContent, GetModuleHandle(NULL));
+}
+
+bool
+nsWinUtils::IsWindowEmulationStarted()
+{
+  return nsAccessNodeWrap::sHWNDCache.IsInitialized();
+}
+
 void
 nsWinUtils::RegisterNativeWindow(LPCWSTR aWindowClass)
 {
@@ -116,25 +145,41 @@ nsWinUtils::RegisterNativeWindow(LPCWSTR aWindowClass)
 }
 
 HWND
-nsWinUtils::CreateNativeWindow(LPCWSTR aWindowClass, HWND aParentWnd)
+nsWinUtils::CreateNativeWindow(LPCWSTR aWindowClass, HWND aParentWnd,
+                               int aX, int aY, int aWidth, int aHeight,
+                               bool aIsActive)
 {
-  return ::CreateWindowW(aWindowClass,
-                         L"NetscapeDispatchWnd",
-                         WS_CHILD | WS_VISIBLE,
-                         CW_USEDEFAULT, CW_USEDEFAULT,
-                         0, 0,
-                         aParentWnd,
-                         NULL,
-                         GetModuleHandle(NULL),
-                         NULL);
+  return ::CreateWindowExW(WS_EX_TRANSPARENT, aWindowClass,
+                           L"NetscapeDispatchWnd",
+                           WS_CHILD | (aIsActive ? WS_VISIBLE : 0),
+                           aX, aY, aWidth, aHeight,
+                           aParentWnd,
+                           NULL,
+                           GetModuleHandle(NULL),
+                           NULL);
+}
+
+void
+nsWinUtils::ShowNativeWindow(HWND aWnd)
+{
+  ::ShowWindow(aWnd, SW_SHOW);
+}
+
+void
+nsWinUtils::HideNativeWindow(HWND aWnd)
+{
+  ::SetWindowPos(aWnd, NULL, 0, 0, 0, 0,
+                 SWP_HIDEWINDOW | SWP_NOSIZE | SWP_NOMOVE |
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 bool
-nsWinUtils::IsWindowEmulationEnabled()
+nsWinUtils::IsWindowEmulationFor(LPCWSTR kModuleHandle)
 {
-  return ::GetModuleHandleW(kJAWSModuleHandle) ||
+  return kModuleHandle ? ::GetModuleHandleW(kModuleHandle) :
+    ::GetModuleHandleW(kJAWSModuleHandle) ||
     ::GetModuleHandleW(kWEModuleHandle)  ||
-    ::GetModuleHandleW(kDolphnModuleHandle);
+    ::GetModuleHandleW(kDolphinModuleHandle);
 }
 
 bool

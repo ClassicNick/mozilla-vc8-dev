@@ -42,6 +42,7 @@
 
 interface nsIBoxObject;
 interface nsIDOMLocation;
+interface nsIVariant;
 
 [scriptable, uuid(92f2c6f8-3668-4a47-8251-2a900afe11fa)]
 interface nsIDOMNSDocument : nsISupports

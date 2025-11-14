@@ -118,15 +118,9 @@ typedef nsEventStatus (* EVENT_CALLBACK)(nsGUIEvent *event);
 #define NS_NATIVE_TSF_DISPLAY_ATTR_MGR 102
 #endif
 
-// cc443f0b-af39-415d-9c4b-7e06eaa8b13b
 #define NS_IWIDGET_IID \
-  { 0xcc443f0b, 0xaf39, 0x415d, \
-    { 0x9c, 0x4b, 0x7e, 0x06, 0xea, 0xa8, 0xb1, 0x3b } }
-
-// d64532e0-03d6-421c-8e63-da2cff624825
-#define NS_IWIDGET_MOZILLA_2_0_BRANCH_IID \
-  { 0xd64532e0, 0x03d6, 0x421c, \
-    { 0x8e, 0x63, 0xda, 0x2c, 0xff, 0x62, 0x48, 0x25 } }
+  { 0xe5c2efd1, 0xfbae, 0x4a74, \
+    { 0xb2, 0xeb, 0xf3, 0x49, 0xf5, 0x72, 0xca, 0x71 } }
 
 /*
  * Window shadow styles
@@ -641,7 +635,9 @@ class nsIWidget : public nsISupports {
     NS_IMETHOD SetFocus(PRBool aRaise = PR_FALSE) = 0;
 
     /**
-     * Get this widget's outside dimensions relative to its parent widget
+     * Get this widget's outside dimensions relative to its parent widget. For
+     * popup widgets the returned rect is in screen coordinates and not
+     * relative to its parent widget.
      *
      * @param aRect   On return it holds the  x, y, width and height of
      *                this widget.
@@ -791,16 +787,6 @@ class nsIWidget : public nsISupports {
     virtual nsTransparencyMode GetTransparencyMode() = 0;
 
     /**
-     * Updates a region of the window that might not have opaque content drawn. Widgets should
-     * assume that the initial possibly transparent region is empty.
-     *
-     * @param aDirtyRegion the region of the window that aMaybeTransparentRegion pertains to
-     * @param aPossiblyTransparentRegion the region of the window that is possibly transparent
-     */
-    virtual void UpdatePossiblyTransparentRegion(const nsIntRegion &aDirtyRegion,
-                                                 const nsIntRegion &aPossiblyTransparentRegion) {};
-
-    /**
      * This represents a command to set the bounds and clip region of
      * a child widget.
      */
@@ -896,7 +882,52 @@ class nsIWidget : public nsISupports {
      * @param aAllowRetaining an outparam that states whether the returned
      * layer manager should be used for retained layers
      */
-    virtual LayerManager* GetLayerManager(bool* aAllowRetaining = nsnull) = 0;
+    inline LayerManager* GetLayerManager(bool* aAllowRetaining = nsnull)
+    {
+        return GetLayerManager(LAYER_MANAGER_CURRENT, aAllowRetaining);
+    }
+
+
+    enum LayerManagerPersistence
+    {
+      LAYER_MANAGER_CURRENT = 0,
+      LAYER_MANAGER_PERSISTENT
+    };
+
+    virtual LayerManager *GetLayerManager(LayerManagerPersistence aPersistence,
+                                          bool* aAllowRetaining = nsnull) = 0;
+
+    /**
+     * Called after the LayerManager draws the layer tree
+     *
+     * @param aManager The drawing LayerManager.
+     * @param aRect Current widget rect that is being drawn.
+     */
+    virtual void DrawOver(LayerManager* aManager, nsIntRect aRect) = 0;
+
+    /**
+     * Called when Gecko knows which themed widgets exist in this window.
+     * The passed array contains an entry for every themed widget of the right
+     * type (currently only NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR and
+     * NS_THEME_TOOLBAR) within the window, except for themed widgets which are
+     * transformed or have effects applied to them (e.g. CSS opacity or
+     * filters).
+     * This could sometimes be called during display list construction
+     * outside of painting.
+     * If called during painting, it will be called before we actually
+     * paint anything.
+     */
+    virtual void UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) = 0;
+
+    /**
+     * Informs the widget about the region of the window that is partially
+     * transparent. Widgets should assume that the initial transparent
+     * region is empty.
+     *
+     * @param aTransparentRegion the region of the window that is partially
+     * transparent.
+     */
+    virtual void UpdateTransparentRegion(const nsIntRegion &aTransparentRegion) {};
 
     /** 
      * Internal methods
@@ -1255,6 +1286,19 @@ class nsIWidget : public nsISupports {
      */
     NS_IMETHOD CancelIMEComposition() = 0;
 
+    /*
+     * Notifies the IME if the input context changes.
+     *
+     * aContext cannot be null.
+     * Set mStatus to 'Enabled' or 'Disabled' or 'Password'.
+     */
+    NS_IMETHOD SetInputMode(const IMEContext& aContext) = 0;
+
+    /*
+     * Get IME is 'Enabled' or 'Disabled' or 'Password' and other input context
+     */
+    NS_IMETHOD GetInputMode(IMEContext& aContext) = 0;
+
     /**
      * Set accelerated rendering to 'True' or 'False'
      */
@@ -1334,7 +1378,6 @@ class nsIWidget : public nsISupports {
                                               PRBool aIsHorizontal,
                                               PRInt32 &aOverriddenDelta) = 0;
 
-#ifdef MOZ_IPC
     /**
      * Return true if this process shouldn't use platform widgets, and
      * so should use PuppetWidgets instead.  If this returns true, the
@@ -1343,8 +1386,15 @@ class nsIWidget : public nsISupports {
      */
     static bool
     UsePuppetWidgets()
-    { return XRE_GetProcessType() == GeckoProcessType_Content; }
+    {
+#ifdef MOZ_IPC
+      return XRE_GetProcessType() == GeckoProcessType_Content;
+#else
+      return PR_FALSE;
+#endif
+    }
 
+#ifdef MOZ_IPC
     /**
      * Allocate and return a "puppet widget" that doesn't directly
      * correlate to a platform widget; platform events and data must
@@ -1380,62 +1430,5 @@ protected:
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIWidget, NS_IWIDGET_IID)
-
-class nsIWidget_MOZILLA_2_0_BRANCH : public nsIWidget {
-  public:
-    NS_DECLARE_STATIC_IID_ACCESSOR(NS_IWIDGET_MOZILLA_2_0_BRANCH_IID)
-
-    typedef mozilla::layers::LayerManager LayerManager;
-
-    /*
-     * Notifies the IME if the input context changes.
-     *
-     * aContext cannot be null.
-     * Set mStatus to 'Enabled' or 'Disabled' or 'Password'.
-     */
-    NS_IMETHOD SetInputMode(const IMEContext& aContext) = 0;
-
-    /*
-     * Get IME is 'Enabled' or 'Disabled' or 'Password' and other input context
-     */
-    NS_IMETHOD GetInputMode(IMEContext& aContext) = 0;
-
-    enum LayerManagerPersistence
-    {
-      LAYER_MANAGER_CURRENT = 0,
-      LAYER_MANAGER_PERSISTENT
-    };
-
-    virtual LayerManager *GetLayerManager(LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                          bool* aAllowRetaining = nsnull) = 0;
-
-    // Hide build warnings about nsIWidget::GetLayerManager being hidden by
-    // our GetLayerManager method above.
-    using nsIWidget::GetLayerManager;
-
-    /**
-     * Called after the LayerManager draws the layer tree
-     *
-     * @param aManager The drawing LayerManager.
-     * @param aRect Current widget rect that is being drawn.
-     */
-    virtual void DrawOver(LayerManager* aManager, nsIntRect aRect) = 0;
-
-    /**
-     * Called when Gecko knows which themed widgets exist in this window.
-     * The passed array contains an entry for every themed widget of the right
-     * type (currently only NS_THEME_MOZ_MAC_UNIFIED_TOOLBAR and
-     * NS_THEME_TOOLBAR) within the window, except for themed widgets which are
-     * transformed or have effects applied to them (e.g. CSS opacity or
-     * filters).
-     * This could sometimes be called during display list construction
-     * outside of painting.
-     * If called during painting, it will be called before we actually
-     * paint anything.
-     */
-    virtual void UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) = 0;
-};
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIWidget_MOZILLA_2_0_BRANCH, NS_IWIDGET_MOZILLA_2_0_BRANCH_IID)
 
 #endif // nsIWidget_h__

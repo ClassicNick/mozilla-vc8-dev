@@ -98,23 +98,6 @@ class BaseCompiler : public MacroAssemblerTypedefs
 
     BaseCompiler(JSContext *cx) : cx(cx)
     { }
-
-  protected:
-
-    JSC::ExecutablePool *
-    getExecPool(JSScript *script, size_t size) {
-        return BaseCompiler::GetExecPool(cx, script, size);
-    }
-
-  public:
-    static JSC::ExecutablePool *
-    GetExecPool(JSContext *cx, JSScript *script, size_t size) {
-        JaegerCompartment *jc = script->compartment->jaegerCompartment;
-        JSC::ExecutablePool *pool = jc->poolForSize(size);
-        if (!pool)
-            js_ReportOutOfMemory(cx);
-        return pool;
-    }
 };
 
 // This class wraps JSC::LinkBuffer for Mozilla-specific memory handling.
@@ -164,18 +147,15 @@ class LinkerHelper : public JSC::LinkBuffer
         // The pool is incref'd after this call, so it's necessary to release()
         // on any failure.
         JSScript *script = cx->fp()->script();
-        JSC::ExecutablePool *ep = BaseCompiler::GetExecPool(cx, script, masm.size());
-        if (!ep)
-            return ep;
-
-        m_size = masm.size();
-        m_code = executableCopy(masm, ep);
+        JSC::ExecutableAllocator *allocator = script->compartment->jaegerCompartment->execAlloc();
+        JSC::ExecutablePool *pool;
+        m_code = executableAllocAndCopy(masm, allocator, &pool);
         if (!m_code) {
-            ep->release();
             js_ReportOutOfMemory(cx);
             return NULL;
         }
-        return ep;
+        m_size = masm.size();   // must come after call to executableAllocAndCopy()!
+        return pool;
     }
 
     JSC::CodeLocationLabel finalize() {
@@ -266,7 +246,8 @@ class AutoReserveICSpace {
     }
 };
 
-# define RESERVE_IC_SPACE(__masm)       AutoReserveICSpace<96> arics(__masm)
+# define RESERVE_IC_SPACE(__masm)       AutoReserveICSpace<128> arics(__masm)
+# define CHECK_IC_SPACE()               arics.check()
 
 /* The OOL path can need a lot of space because we save and restore a lot of registers. The actual
  * sequene varies. However, dumping the literal pool before an OOL block is probably a good idea
@@ -278,6 +259,7 @@ class AutoReserveICSpace {
 # define CHECK_OOL_SPACE()              arics_ool.check()
 #else
 # define RESERVE_IC_SPACE(__masm)       /* Do nothing. */
+# define CHECK_IC_SPACE()               /* Do nothing. */
 # define RESERVE_OOL_SPACE(__masm)      /* Do nothing. */
 # define CHECK_OOL_SPACE()              /* Do nothing. */
 #endif

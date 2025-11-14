@@ -135,18 +135,17 @@ CanvasLayerOGL::MakeTexture()
 }
 
 void
-CanvasLayerOGL::Updated(const nsIntRect& aRect)
+CanvasLayerOGL::UpdateSurface()
 {
+  if (!mDirty)
+    return;
+  mDirty = PR_FALSE;
+
   if (mDestroyed || mDelayedUpdates) {
     return;
   }
 
-  NS_ASSERTION(mUpdatedRect.IsEmpty(),
-               "CanvasLayer::Updated called more than once during a transaction!");
-
   mOGLManager->MakeCurrent();
-
-  mUpdatedRect.UnionRect(mUpdatedRect, aRect);
 
   if (mCanvasGLContext &&
       mCanvasGLContext->GetContextType() == gl()->GetContextType())
@@ -157,41 +156,36 @@ CanvasLayerOGL::Updated(const nsIntRect& aRect)
       MakeTexture();
     }
   } else {
-    if (!mTexture) {
-      mUpdatedRect = mBounds;
-    }
-
     nsRefPtr<gfxASurface> updatedAreaSurface;
     if (mCanvasSurface) {
       updatedAreaSurface = mCanvasSurface;
     } else if (mCanvasGLContext) {
       nsRefPtr<gfxImageSurface> updatedAreaImageSurface =
-        new gfxImageSurface(gfxIntSize(mUpdatedRect.width, mUpdatedRect.height),
+        new gfxImageSurface(gfxIntSize(mBounds.width, mBounds.height),
                             gfxASurface::ImageFormatARGB32);
-      mCanvasGLContext->ReadPixelsIntoImageSurface(mUpdatedRect.x, mUpdatedRect.y,
-                                                   mUpdatedRect.width,
-                                                   mUpdatedRect.height,
+      mCanvasGLContext->ReadPixelsIntoImageSurface(0, 0,
+                                                   mBounds.width,
+                                                   mBounds.height,
                                                    updatedAreaImageSurface);
       updatedAreaSurface = updatedAreaImageSurface;
     }
 
     mLayerProgram =
       gl()->UploadSurfaceToTexture(updatedAreaSurface,
-                                   mUpdatedRect,
+                                   mBounds,
                                    mTexture,
                                    false,
-                                   mUpdatedRect.TopLeft());
+                                   nsIntPoint(0, 0));
   }
-
-  // sanity
-  NS_ASSERTION(mBounds.Contains(mUpdatedRect),
-               "CanvasLayer: Updated rect bigger than bounds!");
 }
 
 void
 CanvasLayerOGL::RenderLayer(int aPreviousDestination,
                             const nsIntPoint& aOffset)
 {
+  UpdateSurface();
+  FireDidTransactionCallback();
+
   mOGLManager->MakeCurrent();
 
   // XXX We're going to need a different program depending on if
@@ -217,7 +211,6 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
 
     gl()->MakeCurrent();
     gl()->BindTex2DOffscreen(mCanvasGLContext);
-    DEBUG_GL_ERROR_CHECK(gl());
     program = mOGLManager->GetBasicLayerProgram(CanUseOpaqueSurface(), PR_TRUE);
   } else if (mDelayedUpdates) {
     NS_ABORT_IF_FALSE(mCanvasSurface, "WebGL canvases should always be using full texture upload");
@@ -226,9 +219,10 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
 
     mLayerProgram =
       gl()->UploadSurfaceToTexture(mCanvasSurface,
-                                   drawRect,
+                                   nsIntRect(0, 0, drawRect.width, drawRect.height),
                                    mTexture,
-                                   true);
+                                   true,
+                                   drawRect.TopLeft());
   }
   if (!program) { 
     program = mOGLManager->GetColorTextureLayerProgram(mLayerProgram);
@@ -245,13 +239,9 @@ CanvasLayerOGL::RenderLayer(int aPreviousDestination,
 
   mOGLManager->BindAndDrawQuad(program, mNeedsYFlip ? true : false);
 
-  DEBUG_GL_ERROR_CHECK(gl());
-
   if (useGLContext) {
     gl()->UnbindTex2DOffscreen(mCanvasGLContext);
   }
-
-  mUpdatedRect.Empty();
 }
 
 
@@ -343,8 +333,6 @@ ShadowCanvasLayerOGL::RenderLayer(int aPreviousFrameBuffer,
   program->SetTextureUnit(0);
 
   mOGLManager->BindAndDrawQuad(program);
-
-  DEBUG_GL_ERROR_CHECK(gl());
 }
 
 #endif  // MOZ_IPC

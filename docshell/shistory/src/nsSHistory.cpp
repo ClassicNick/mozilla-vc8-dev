@@ -904,7 +904,7 @@ nsSHistory::EvictContentViewersInRange(PRInt32 aStart, PRInt32 aEnd)
   nsCOMPtr<nsISHTransaction> trans;
   GetTransactionAtIndex(aStart, getter_AddRefs(trans));
 
-  for (PRInt32 i = aStart; i < aEnd; ++i) {
+  for (PRInt32 i = aStart; trans && i < aEnd; ++i) {
     nsCOMPtr<nsISHEntry> entry;
     trans->GetSHEntry(getter_AddRefs(entry));
     nsCOMPtr<nsIContentViewer> viewer;
@@ -968,8 +968,8 @@ nsSHistory::EvictGlobalContentViewer()
                                 shist->mIndex + gHistoryMaxViewers);
       nsCOMPtr<nsISHTransaction> trans;
       shist->GetTransactionAtIndex(startIndex, getter_AddRefs(trans));
-      
-      for (PRInt32 i = startIndex; i <= endIndex; ++i) {
+
+      for (PRInt32 i = startIndex; trans && i <= endIndex; ++i) {
         nsCOMPtr<nsISHEntry> entry;
         trans->GetSHEntry(getter_AddRefs(entry));
         nsCOMPtr<nsIContentViewer> viewer;

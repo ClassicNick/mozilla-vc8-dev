@@ -192,6 +192,7 @@ pref("gfx.color_management.display_profile", "");
 pref("gfx.color_management.rendering_intent", 0);
 
 pref("gfx.downloadable_fonts.enabled", true);
+pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.sanitize", true);
 #ifdef XP_MACOSX
 pref("gfx.downloadable_fonts.sanitize.preserve_otl_tables", false);
@@ -573,7 +574,9 @@ pref("dom.storage.default_quota",      5120);
 pref("dom.send_after_paint_to_content", false);
 
 // Timeout clamp in ms for timeouts we clamp
-pref("dom.min_timeout_value", 10);
+pref("dom.min_timeout_value", 4);
+// And for background windows
+pref("dom.min_background_timeout_value", 1000);
 
 // Parsing perf prefs. For now just mimic what the old code did.
 #ifndef XP_WIN
@@ -585,6 +588,9 @@ pref("content.sink.pending_event_mode", 0);
 //   1 = openControlled
 //   2 = openAbused
 pref("privacy.popups.disable_from_plugins", 2);
+
+// "do not track" HTTP header, disabled by default
+pref("privacy.donottrackheader.enabled",    false);
 
 pref("dom.event.contextmenu.enabled",       true);
 
@@ -600,6 +606,7 @@ pref("javascript.options.methodjit.content", true);
 pref("javascript.options.methodjit.chrome",  false);
 pref("javascript.options.jitprofiling.content", true);
 pref("javascript.options.jitprofiling.chrome",  false);
+pref("javascript.options.methodjit_always", false);
 // This preference limits the memory usage of javascript.
 // If you want to change these values for your device,
 // please find Bug 417052 comment 17 and Bug 456721
@@ -608,6 +615,7 @@ pref("javascript.options.mem.high_water_mark", 128);
 pref("javascript.options.mem.max", -1);
 pref("javascript.options.mem.gc_frequency",   300);
 pref("javascript.options.mem.gc_per_compartment", true);
+pref("javascript.options.mem.log", false);
 
 // advanced prefs
 pref("advanced.mailftp",                    false);
@@ -745,6 +753,11 @@ pref("network.http.prompt-temp-redirect", true);
 // Section 4.8 "High-Throughput Data Service Class"
 pref("network.http.qos", 0);
 
+// The number of milliseconds after sending a SYN for an HTTP connection,
+// to wait before trying a different connection. 0 means do not use a second
+// connection.
+pref("network.http.connection-retry-timeout", 250);
+
 // default values for FTP
 // in a DSCP environment this should be 40 (0x28, or AF11), per RFC-4594,
 // Section 4.8 "High-Throughput Data Service Class", and 80 (0x50, or AF22)
@@ -817,6 +830,7 @@ pref("network.IDN.whitelist.sh", true);
 pref("network.IDN.whitelist.th", true);
 pref("network.IDN.whitelist.tm", true);
 pref("network.IDN.whitelist.tw", true);
+pref("network.IDN.whitelist.ua", true);
 pref("network.IDN.whitelist.vn", true);
 
 // IDN ccTLDs
@@ -825,6 +839,8 @@ pref("network.IDN.whitelist.xn--mgbaam7a8h", true);
 // cn, China, .<China> with variants
 pref("network.IDN.whitelist.xn--fiqz9s", true); // Traditional
 pref("network.IDN.whitelist.xn--fiqs8s", true); // Simplified
+// eg, Egypt, .<Masr>
+pref("network.IDN.whitelist.xn--wgbh1c", true);
 // hk, Hong Kong, .<Hong Kong>
 pref("network.IDN.whitelist.xn--j6w193g", true);
 // ir, Iran, <.Iran> with variants
@@ -1003,10 +1019,10 @@ pref("intl.menuitems.insertseparatorbeforeaccesskeys","chrome://global/locale/in
 pref("intl.charsetmenu.browser.static",     "chrome://global/locale/intl.properties");
 pref("intl.charsetmenu.browser.more1",      "ISO-8859-1, ISO-8859-15, IBM850, x-mac-roman, windows-1252, ISO-8859-14, ISO-8859-7, x-mac-greek, windows-1253, x-mac-icelandic, ISO-8859-10, ISO-8859-3");
 pref("intl.charsetmenu.browser.more2",      "ISO-8859-4, ISO-8859-13, windows-1257, IBM852, ISO-8859-2, x-mac-ce, windows-1250, x-mac-croatian, IBM855, ISO-8859-5, ISO-IR-111, KOI8-R, x-mac-cyrillic, windows-1251, IBM866, KOI8-U, x-mac-ukrainian, ISO-8859-16, x-mac-romanian");
-pref("intl.charsetmenu.browser.more3",      "GB2312, x-gbk, gb18030, HZ-GB-2312, ISO-2022-CN, Big5, Big5-HKSCS, x-euc-tw, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR, x-windows-949, x-johab, ISO-2022-KR");
+pref("intl.charsetmenu.browser.more3",      "GB2312, gbk, gb18030, HZ-GB-2312, ISO-2022-CN, Big5, Big5-HKSCS, x-euc-tw, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR, x-windows-949, x-johab, ISO-2022-KR");
 pref("intl.charsetmenu.browser.more4",      "armscii-8, GEOSTD8, TIS-620, ISO-8859-11, windows-874, IBM857, ISO-8859-9, x-mac-turkish, windows-1254, x-viet-tcvn5712, VISCII, x-viet-vps, windows-1258, x-mac-devanagari, x-mac-gujarati, x-mac-gurmukhi");
 pref("intl.charsetmenu.browser.more5",      "ISO-8859-6, windows-1256, IBM864, ISO-8859-8-I, windows-1255, ISO-8859-8, IBM862");
-pref("intl.charsetmenu.browser.unicode",    "UTF-8, UTF-16LE, UTF-16BE, UTF-32, UTF-32LE, UTF-32BE");
+pref("intl.charsetmenu.browser.unicode",    "UTF-8, UTF-16LE, UTF-16BE");
 pref("intl.charsetmenu.mailedit",           "chrome://global/locale/intl.properties");
 pref("intl.charsetmenu.browser.cache",      "");
 pref("intl.charsetmenu.mailview.cache",     "");
@@ -1338,11 +1354,9 @@ pref("dom.ipc.plugins.timeoutSecs", 0);
 pref("dom.ipc.plugins.processLaunchTimeoutSecs", 0);
 #endif
 
-#ifdef XP_WIN
-// Disable oopp for java on windows. They run their own
-// process isolation which conflicts with our implementation.
+// Disable oopp for standard java. They run their own process isolation (which
+// conflicts with our implementation, at least on Windows).
 pref("dom.ipc.plugins.java.enabled", false);
-#endif
 
 #ifndef ANDROID
 #ifndef XP_MACOSX
@@ -1350,6 +1364,7 @@ pref("dom.ipc.plugins.java.enabled", false);
 // Linux plugins using Xt instead of Xembed don't work out-of-process yet.
 pref("dom.ipc.plugins.enabled.libvlcplugin.so", false);
 pref("dom.ipc.plugins.enabled.nppdf.so", false);
+pref("dom.ipc.plugins.enabled.602plugin.so", false);
 #endif
 #endif
 #endif
@@ -1760,12 +1775,6 @@ pref("plugin.scan.WindowsMediaPlayer", "7.0");
 // Which is currently HKLM\Software\MozillaPlugins\xxxPLIDxxx\Path
 pref("plugin.scan.plid.all", true);
 
-// Controls the scanning of the Navigator 4.x directory for plugins
-// When pref is missing, the default is to pickup popular plugins such as
-// Flash, Shockwave, Acrobat, and Quicktime. If set to true, ALL plugins
-// will be picked up and if set to false the scan will not happen at all
-//pref("plugin.scan.4xPluginFolder", false);
-
 // Help Windows NT, 2000, and XP dialup a RAS connection
 // when a network address is unreachable.
 pref("network.autodial-helper.enabled", true);
@@ -1811,6 +1820,11 @@ pref("ui.trackpoint_hack.enabled", -1);
 // for "normal" windows. Setting this to MozillaUIWindowClass might make
 // some trackpad drivers behave better.
 pref("ui.window_class_override", "");
+
+// Enables or disables the Elantech gesture hacks.  -1 is autodetect, 0 is off,
+// and 1 is on.  Set this to 1 if three-finger swipe gestures do not cause
+// page back/forward actions, or if pinch-to-zoom does not work.
+pref("ui.elantech_gesture_hacks.enabled", -1);
 
 # WINNT
 #endif
@@ -2443,102 +2457,6 @@ pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 # OS2
 #endif
 
-#ifdef XP_BEOS
-
-pref("intl.font_charset", "");
-pref("intl.font_spec_list", "");
-pref("mail.signature_date", 0);
-
-pref("font.alias-list", "sans,sans-serif,serif,monospace");
-
-pref("font.default.ar", "sans-serif");
-pref("font.size.variable.ar", 16);
-pref("font.size.fixed.ar", 13);
-
-pref("font.default.el", "serif");
-pref("font.size.variable.el", 16);
-pref("font.size.fixed.el", 13);
-
-pref("font.default.he", "sans-serif");
-pref("font.size.variable.he", 16);
-pref("font.size.fixed.he", 13);
-
-pref("font.default.ja", "sans-serif");
-pref("font.size.variable.ja", 16);
-pref("font.size.fixed.ja", 16);
-
-pref("font.default.ko", "sans-serif");
-pref("font.size.variable.ko", 16);
-pref("font.size.fixed.ko", 16);
-
-pref("font.default.th", "serif");
-pref("font.size.variable.th", 16);
-pref("font.size.fixed.th", 13);
-
-pref("font.default.tr", "serif");
-pref("font.size.variable.tr", 16);
-pref("font.size.fixed.tr", 13);
-
-pref("font.default.x-baltic", "serif");
-pref("font.size.variable.x-baltic", 16);
-pref("font.size.fixed.x-baltic", 13);
-
-pref("font.default.x-central-euro", "serif");
-pref("font.size.variable.x-central-euro", 16);
-pref("font.size.fixed.x-central-euro", 13);
-
-pref("font.default.x-cyrillic", "serif");
-pref("font.size.variable.x-cyrillic", 16);
-pref("font.size.fixed.x-cyrillic", 13);
-
-pref("font.default.x-unicode", "serif");
-pref("font.size.variable.x-unicode", 16);
-pref("font.size.fixed.x-unicode", 13);
-
-pref("font.default.x-western", "serif");
-pref("font.size.variable.x-western", 16);
-pref("font.size.fixed.x-western", 13);
-
-pref("font.default.zh-CN", "sans-serif");
-pref("font.size.variable.zh-CN", 16);
-pref("font.size.fixed.zh-CN", 16);
-
-pref("font.default.zh-TW", "sans-serif");
-pref("font.size.variable.zh-TW", 16);
-pref("font.size.fixed.zh-TW", 16);
-
-pref("font.default.zh-HK", "sans-serif");
-pref("font.size.variable.zh-HK", 16);
-pref("font.size.fixed.zh-HK", 16);
-
-/**
- * Set default accelKey to "Alt", which is the default under BeOS.
- * The generalAccessKey is used for shortcuts on web pages, set to
- * Ctrl+Shift. The menuAccessKey is now the "windows" key.
- */
-pref("ui.key.accelKey", 18);
-pref("ui.key.menuAccessKey", 17);
-pref("ui.key.generalAccessKey", -1);
-
-// If generalAccessKey is -1, use the following two prefs instead.
-// Use 0 for disabled, 1 for Shift, 2 for Ctrl, 4 for Alt, 8 for Meta
-// (values can be combined, e.g. 3 for Ctrl+Shift)
-pref("ui.key.chromeAccess", 2);
-pref("ui.key.contentAccess", 3);
-
-// xxx toolkit?
-pref("browser.download.dir", "/boot/home/Downloads");
-
-// IMEs of BeOS might use non-topmost windows for topmost <panel> element,
-// see bug 451015. If there are other problems by this value, we may need to
-// change this value.
-pref("ui.panel.default_level_parent", false);
-
-pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
-
-# BeOS
-#endif
-
 #ifdef ANDROID
 // Handled differently under Mac/Windows
 pref("network.protocol-handler.warn-external.file", false);
@@ -2567,9 +2485,6 @@ pref("autocomplete.ungrab_during_mode_switch", true);
 // Default to using the system filepicker if possible, but allow
 // toggling to use the XUL filepicker
 pref("ui.allow_platform_file_picker", true);
-
-// should NetworkManager be authoritative for online/offline status?
-pref("toolkit.networkmanager.disable", true);
 
 pref("helpers.global_mime_types_file", "/etc/mime.types");
 pref("helpers.global_mailcap_file", "/etc/mailcap");
@@ -2611,7 +2526,7 @@ pref("font.name.sans-serif.he", "Droid Sans");
 pref("font.name.monospace.he", "Droid Sans Mono");
 
 pref("font.name.serif.ja", "Droid Serif");
-pref("font.name.sans-serif.ja", "Droid Sans");
+pref("font.name.sans-serif.ja", "Droid Sans Japanese");
 pref("font.name.monospace.ja", "Droid Sans Mono");
 
 pref("font.name.serif.ko", "Droid Serif");
@@ -2841,9 +2756,6 @@ pref("autocomplete.ungrab_during_mode_switch", true);
 // Default to using the system filepicker if possible, but allow
 // toggling to use the XUL filepicker
 pref("ui.allow_platform_file_picker", true);
-
-// should NetworkManager be authoritative for online/offline status?
-pref("toolkit.networkmanager.disable", true);
 
 pref("helpers.global_mime_types_file", "/etc/mime.types");
 pref("helpers.global_mailcap_file", "/etc/mailcap");
@@ -3089,32 +3001,6 @@ pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 #endif
 #endif
 
-#if OS_ARCH==OpenVMS
-
-pref("mail.use_builtin_movemail", false);
-
-pref("helpers.global_mime_types_file", "/sys$manager/netscape/mime.types");
-pref("helpers.global_mailcap_file", "/sys$manager/netscape/mailcap");
-pref("helpers.private_mime_types_file", "/sys$login/.mime.types");
-pref("helpers.private_mailcaptypes_file", "/sys$login/.mailcap");
-
-pref("applications.telnet", "create /term /detach \"telnet %h %p\"");
-pref("applications.tn3270", "create /term /detach \"telnet /term=IBM-3278-5 %h %p\"");
-pref("applications.rlogin", "create /term /detach \"rlogin %h\"");
-pref("applications.rlogin_with_user", "create /term /detach \"rlogin %h -l %u\"");
-
-/* PostScript module specific (see unix.js for additional configuration details) */
-pref("print.postscript.print_command", "print /delete");
-/* Print module independent */
-pref("print.print_command", "print /delete");
-pref("print.print_color", false);
-
-pref("browser.cache.disk.capacity", 4096);
-pref("plugin.soname.list", "");
-
-# OpenVMS
-#endif
-
 #if OS_ARCH==AIX
 
 // Override default Japanese fonts
@@ -3195,7 +3081,7 @@ pref("image.mem.decodeondraw", false);
 // Minimum timeout for image discarding (in milliseconds). The actual time in
 // which an image must inactive for it to be discarded will vary between this
 // value and twice this value.
-pref("image.mem.min_discard_timeout_ms", 10000);
+pref("image.mem.min_discard_timeout_ms", 120000);
 
 // Chunk size for calls to the image decoders
 pref("image.mem.decode_bytes_at_a_time", 200000);
@@ -3207,12 +3093,13 @@ pref("image.mem.max_ms_before_yield", 400);
 pref("image.mem.max_bytes_for_sync_decode", 150000);
 
 // WebGL prefs
-pref("webgl.enabled_for_all_sites", true);
+pref("webgl.force-enabled", false);
+pref("webgl.disabled", false);
 pref("webgl.shader_validator", true);
 pref("webgl.force_osmesa", false);
-pref("webgl.mochitest_native_gl", false);
 pref("webgl.osmesalib", "");
 pref("webgl.verbose", false);
+pref("webgl.prefer-native-gl", false);
 
 #ifdef XP_WIN
 #ifndef WINCE
@@ -3252,7 +3139,7 @@ pref("geo.enabled", true);
 pref("accelerometer.enabled", true);
 
 // Enable/Disable HTML5 parser
-pref("html5.enable", true);
+pref("html5.parser.enable", true);
 // Toggle which thread the HTML5 parser uses for stream parsing
 pref("html5.offmainthread", true);
 // Time in milliseconds between the time a network buffer is seen and the 

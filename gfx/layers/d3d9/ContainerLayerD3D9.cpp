@@ -38,6 +38,8 @@
 #include "ContainerLayerD3D9.h"
 #include "gfxUtils.h"
 #include "nsRect.h"
+#include "ThebesLayerD3D9.h"
+#include "ReadbackProcessor.h"
 
 namespace mozilla {
 namespace layers {
@@ -71,6 +73,7 @@ ContainerLayerD3D9::InsertAfter(Layer* aChild, Layer* aAfter)
       mLastChild = aChild;
     }
     NS_ADDREF(aChild);
+    DidInsertChild(aChild);
     return;
   }
   for (Layer *child = GetFirstChild();
@@ -86,6 +89,7 @@ ContainerLayerD3D9::InsertAfter(Layer* aChild, Layer* aAfter)
       }
       aChild->SetPrevSibling(child);
       NS_ADDREF(aChild);
+      DidInsertChild(aChild);
       return;
     }
   }
@@ -105,6 +109,7 @@ ContainerLayerD3D9::RemoveChild(Layer *aChild)
     aChild->SetNextSibling(nsnull);
     aChild->SetPrevSibling(nsnull);
     aChild->SetParent(nsnull);
+    DidRemoveChild(aChild);
     NS_RELEASE(aChild);
     return;
   }
@@ -122,6 +127,7 @@ ContainerLayerD3D9::RemoveChild(Layer *aChild)
       child->SetNextSibling(nsnull);
       child->SetPrevSibling(nsnull);
       child->SetParent(nsnull);
+      DidRemoveChild(aChild);
       NS_RELEASE(aChild);
       return;
     }
@@ -169,11 +175,20 @@ ContainerLayerD3D9::RenderLayer()
   nsRefPtr<IDirect3DSurface9> previousRenderTarget;
   nsRefPtr<IDirect3DTexture9> renderTexture;
   float previousRenderTargetOffset[4];
-  RECT containerClipRect;
   float renderTargetOffset[] = { 0, 0, 0, 0 };
   float oldViewMatrix[4][4];
 
-  device()->GetScissorRect(&containerClipRect);
+  RECT containerD3D9ClipRect; 
+  device()->GetScissorRect(&containerD3D9ClipRect);
+  // Convert scissor to an nsIntRect. RECT's are exclusive on the bottom and
+  // right values.
+  nsIntRect oldScissor(containerD3D9ClipRect.left, 
+                       containerD3D9ClipRect.top,
+                       containerD3D9ClipRect.right - containerD3D9ClipRect.left,
+                       containerD3D9ClipRect.bottom - containerD3D9ClipRect.top);
+
+  ReadbackProcessor readback;
+  readback.BuildUpdates(this);
 
   nsIntRect visibleRect = mVisibleRegion.GetBounds();
   PRBool useIntermediate = UseIntermediateSurface();
@@ -253,70 +268,36 @@ ContainerLayerD3D9::RenderLayer()
        layerToRender != nsnull;
        layerToRender = GetNextSiblingD3D9(layerToRender)) {
 
-    const nsIntRect* clipRect = layerToRender->GetLayer()->GetClipRect();
-    if ((clipRect && clipRect->IsEmpty()) ||
-        layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
+    if (layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
+      continue;
+    }
+    
+    nsIntRect scissorRect =
+      layerToRender->GetLayer()->CalculateScissorRect(useIntermediate,
+                                                      visibleRect,
+                                                      oldScissor,
+                                                      contTransform);
+
+
+    if (scissorRect.IsEmpty()) {
       continue;
     }
 
-    if (clipRect || useIntermediate) {
-      RECT r;
-      if (clipRect) {
-        r.left = (LONG)(clipRect->x - renderTargetOffset[0]);
-        r.top = (LONG)(clipRect->y - renderTargetOffset[1]);
-        r.right = (LONG)(clipRect->x - renderTargetOffset[0] + clipRect->width);
-        r.bottom = (LONG)(clipRect->y - renderTargetOffset[1] + clipRect->height);
-      } else {
-        r.left = 0;
-        r.top = 0;
-        r.right = visibleRect.width;
-        r.bottom = visibleRect.height;
-      }
+    RECT d3drect;
+    d3drect.left = scissorRect.x;
+    d3drect.top = scissorRect.y;
+    d3drect.right = scissorRect.x + scissorRect.width;
+    d3drect.bottom = scissorRect.y + scissorRect.height;
+    device()->SetScissorRect(&d3drect);
 
-      nsRefPtr<IDirect3DSurface9> renderSurface;
-      device()->GetRenderTarget(0, getter_AddRefs(renderSurface));
-
-      D3DSURFACE_DESC desc;
-      renderSurface->GetDesc(&desc);
-
-      if (!useIntermediate) {
-        // Transform clip rect
-        if (clipRect) {
-          gfxRect cliprect(r.left, r.top, r.right - r.left, r.bottom - r.top);
-          gfxRect trScissor = contTransform.TransformBounds(cliprect);
-          trScissor.Round();
-          nsIntRect trIntScissor;
-          if (gfxUtils::GfxRectToIntRect(trScissor, &trIntScissor)) {
-            r.left = trIntScissor.x;
-            r.top = trIntScissor.y;
-            r.right = trIntScissor.XMost();
-            r.bottom = trIntScissor.YMost();
-          } else {
-            r.left = 0;
-            r.top = 0;
-            r.right = visibleRect.width;
-            r.bottom = visibleRect.height;
-            clipRect = nsnull;
-          }
-        }
-        // Intersect with current clip rect.
-        r.left = NS_MAX<PRInt32>(containerClipRect.left, r.left);
-        r.right = NS_MIN<PRInt32>(containerClipRect.right, r.right);
-        r.top = NS_MAX<PRInt32>(containerClipRect.top, r.top);
-        r.bottom = NS_MIN<PRInt32>(containerClipRect.bottom, r.bottom);
-      } else {
-        // > 0 is implied during the intersection when useIntermediate == true;
-        r.left = NS_MAX<LONG>(0, r.left);
-        r.top = NS_MAX<LONG>(0, r.top);
-      }
-      r.bottom = NS_MIN<LONG>(r.bottom, desc.Height);
-      r.right = NS_MIN<LONG>(r.right, desc.Width);
-
-      device()->SetScissorRect(&r);
+    if (layerToRender->GetLayer()->GetType() == TYPE_THEBES) {
+      static_cast<ThebesLayerD3D9*>(layerToRender)->RenderThebesLayer(&readback);
+    } else {
+      layerToRender->RenderLayer();
     }
-
-    layerToRender->RenderLayer();
   }
+    
+  device()->SetScissorRect(&containerD3D9ClipRect);
 
   if (useIntermediate) {
     device()->SetRenderTarget(0, previousRenderTarget);
@@ -334,11 +315,8 @@ ContainerLayerD3D9::RenderLayer()
 
     mD3DManager->SetShaderMode(DeviceManagerD3D9::RGBALAYER);
 
-    device()->SetScissorRect(&containerClipRect);
     device()->SetTexture(0, renderTexture);
     device()->DrawPrimitive(D3DPT_TRIANGLESTRIP, 0, 2);
-  } else {
-    device()->SetScissorRect(&containerClipRect);
   }
 }
 

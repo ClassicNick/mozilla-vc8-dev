@@ -54,7 +54,7 @@
 #include "nsFrameManager.h"
 #ifdef ACCESSIBILITY
 #include "nsIServiceManager.h"
-#include "nsIAccessibilityService.h"
+#include "nsAccessibilityService.h"
 #endif
 #include "nsDisplayList.h"
 
@@ -922,6 +922,22 @@ nsInlineFrame::GetBaseline() const
   return ascent + GetUsedBorderAndPadding().top;
 }
 
+nscoord
+nsInlineFrame::GetCaretBaseline() const
+{
+  nscoord baseline;
+  if (mRect.height == 0) {
+    // Empty inline frames will be pushed down in the line, so we need to
+    // account for that here.
+    baseline = 0;
+  } else {
+    baseline = GetBaseline();
+    NS_ASSERTION(baseline <= mRect.height,
+                 "We should never hit a case where our height is non-zero but smaller than the caret baseline...");
+  }
+  return baseline;
+}
+
 #ifdef ACCESSIBILITY
 already_AddRefed<nsAccessible>
 nsInlineFrame::CreateAccessible()
@@ -932,7 +948,8 @@ nsInlineFrame::CreateAccessible()
   if ((tagAtom == nsGkAtoms::img || tagAtom == nsGkAtoms::input || 
        tagAtom == nsGkAtoms::label) && mContent->IsHTML()) {
     // Only get accessibility service if we're going to use it
-    nsCOMPtr<nsIAccessibilityService> accService(do_GetService("@mozilla.org/accessibilityService;1"));
+
+    nsAccessibilityService* accService = nsIPresShell::AccService();
     if (!accService)
       return nsnull;
     if (tagAtom == nsGkAtoms::input)  // Broken <input type=image ... />

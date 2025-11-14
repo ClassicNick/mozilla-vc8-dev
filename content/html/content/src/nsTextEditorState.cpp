@@ -92,6 +92,9 @@ public:
 
   NS_IMETHOD Run() {
     if (mWeakFrame.IsAlive()) {
+      // SetSelectionRange leads to Selection::AddRange which flushes Layout -
+      // need to block script to avoid nested PrepareEditor calls (bug 642800).
+      nsAutoScriptBlocker scriptBlocker;
       mFrame->SetSelectionRange(mStart, mEnd);
     }
     return NS_OK;
@@ -1124,6 +1127,18 @@ nsTextEditorState::BindToFrame(nsTextControlFrame* aFrame)
     nsCOMPtr<nsIContent> content = do_QueryInterface(mTextCtrlElement);
     NS_ENSURE_TRUE(content, NS_ERROR_FAILURE);
 
+    // Set the correct direction on the newly created root node
+    PRUint32 flags;
+    rv = mEditor->GetFlags(&flags);
+    NS_ENSURE_SUCCESS(rv, rv);
+    if (flags & nsIPlaintextEditor::eEditorRightToLeft) {
+      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, NS_LITERAL_STRING("rtl"), PR_FALSE);
+    } else if (flags & nsIPlaintextEditor::eEditorLeftToRight) {
+      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, NS_LITERAL_STRING("ltr"), PR_FALSE);
+    } else {
+      // otherwise, inherit the content node's direction
+    }
+
     if (!nsContentUtils::AddScriptRunner(
           new PrepareEditorEvent(*this, content, currentValue)))
       return NS_ERROR_OUT_OF_MEMORY;
@@ -1219,7 +1234,7 @@ nsTextEditorState::PrepareEditor(const nsAString *aValue)
     nsCxPusher pusher;
     pusher.PushNull();
 
-    rv = newEditor->Init(domdoc, shell, GetRootNode(), mSelCon, editorFlags);
+    rv = newEditor->Init(domdoc, GetRootNode(), mSelCon, editorFlags);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 

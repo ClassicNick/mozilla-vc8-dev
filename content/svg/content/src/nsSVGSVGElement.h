@@ -57,10 +57,6 @@
 class nsSMILTimeContainer;
 #endif // MOZ_SMIL
 
-#define QI_AND_CAST_TO_NSSVGSVGELEMENT(base)                                  \
-  (nsCOMPtr<nsIDOMSVGSVGElement>(do_QueryInterface(base)) ?                   \
-   static_cast<nsSVGSVGElement*>(base.get()) : nsnull)
-
 typedef nsSVGStylableElement nsSVGSVGElementBase;
 
 class nsSVGSVGElement;
@@ -212,9 +208,10 @@ public:
   gfxMatrix GetViewBoxTransform();
   PRBool    HasValidViewbox() const { return mViewBox.IsValid(); }
 
-  // This flushes any pending notifications for a preserveAspectRatio override
-  // in this document.  (Only applicable in SVG-as-an-image documents.)
-  virtual void FlushPreserveAspectRatioOverride();
+  // This services any pending notifications for the transform on on this root
+  // <svg> node needing to be recalculated.  (Only applicable in
+  // SVG-as-an-image documents.)
+  virtual void FlushImageTransformInvalidation();
 
   virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
 
@@ -244,6 +241,12 @@ private:
   void ClearImageOverridePreserveAspectRatio();
   const SVGPreserveAspectRatio* GetImageOverridePreserveAspectRatio();
 
+  // Returns PR_TRUE if we should synthesize a viewBox for ourselves (that is,
+  // if we're the outermost <svg> in an image document, and we're not currently
+  // being painted by an <svg:image> element). This method also assumes that we
+  // lack a valid viewBox attribute.
+  PRBool ShouldSynthesizeViewBox();
+
 protected:
   // nsSVGElement overrides
   PRBool IsEventName(nsIAtom* aName);
@@ -262,6 +265,16 @@ protected:
                  (GetOwnerDoc() && (GetOwnerDoc()->GetRootElement() == this)),
                  "Can't determine if we're root");
     return IsInDoc() && !GetParent();
+  }
+
+  /**
+   * Returns true if this is an SVG <svg> element that is the child of
+   * another non-foreignObject SVG element.
+   */
+  PRBool IsInner() {
+    const mozilla::dom::Element *parent = nsSVGUtils::GetParentElement(this);
+    return parent && parent->GetNameSpaceID() == kNameSpaceID_SVG &&
+           parent->Tag() != nsGkAtoms::foreignObject;
   }
 
 #ifdef MOZ_SMIL
@@ -339,7 +352,8 @@ protected:
   // to manually kick off animation when they are bound to the tree.
   PRPackedBool                      mStartAnimationOnBindToTree;
 #endif // MOZ_SMIL
-  PRPackedBool                      mNeedsPreserveAspectRatioFlush;
+  PRPackedBool                      mImageNeedsTransformInvalidation;
+  PRPackedBool                      mIsPaintingSVGImageElement;
 };
 
 #endif

@@ -336,8 +336,7 @@ PlacesTreeView.prototype = {
         if (isopen != curChild.containerOpen)
           aToOpen.push(curChild);
         else if (curChild.containerOpen && curChild.childCount > 0)
-          rowsInserted += this._buildVisibleSection(curChild, aToOpen,
-                                                    row + 1);
+          rowsInserted += this._buildVisibleSection(curChild, row + 1, aToOpen);
       }
     }
 
@@ -842,8 +841,12 @@ PlacesTreeView.prototype = {
   },
 
   nodeAnnotationChanged: function PTV_nodeAnnotationChanged(aNode, aAnno) {
-    if (aAnno == PlacesUIUtils.DESCRIPTION_ANNO)
+    if (aAnno == PlacesUIUtils.DESCRIPTION_ANNO) {
       this._invalidateCellValue(aNode, this.COLUMN_TYPE_DESCRIPTION);
+    } else if (aAnno == PlacesUtils.LMANNO_FEEDURI) {
+      // The livemark attribute is set as a cell property on the title cell.
+      this._invalidateCellValue(aNode, this.COLUMN_TYPE_TITLE);
+    }
   },
 
   nodeDateAddedChanged: function PTV_nodeDateAddedChanged(aNode, aNewValue) {

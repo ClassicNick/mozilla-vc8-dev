@@ -155,6 +155,10 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
 
     PRBool ok = PR_FALSE;
 
+    // ensure the cairo font is set up, so there's no risk it'll fall back to
+    // creating a "toy" font internally (see bug 544617)
+    SetupCairoFont(aContext);
+
     if (mHarfBuzzShaper) {
         if (gfxPlatform::GetPlatform()->UseHarfBuzzLevel() >=
             gfxUnicodeProperties::ScriptShapingLevel(aRunScript)) {
@@ -166,11 +170,11 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
 
     if (!ok) {
         GDIFontEntry *fe = static_cast<GDIFontEntry*>(GetFontEntry());
-        PRBool useUniscribeOnly = !fe->IsTrueType() || fe->IsSymbolFont();
+        PRBool preferUniscribe =
+            (!fe->IsTrueType() || fe->IsSymbolFont()) && !fe->mForceGDI;
 
-        if (useUniscribeOnly ||
-            (UseUniscribe(aTextRun, aString, aRunStart, aRunLength)
-             && !fe->mForceGDI))
+        if (preferUniscribe ||
+            UseUniscribe(aTextRun, aString, aRunStart, aRunLength))
         {
             // first try Uniscribe
             if (!mUniscribeShaper) {
@@ -185,16 +189,13 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
             }
 
             // fallback to GDI shaping
-            if (!useUniscribeOnly) {
-                if (!mPlatformShaper) {
-                    CreatePlatformShaper();
-                }
-
-                ok = mPlatformShaper->InitTextRun(aContext, aTextRun, aString,
-                                                  aRunStart, aRunLength, 
-                                                  aRunScript);
+            if (!mPlatformShaper) {
+                CreatePlatformShaper();
             }
 
+            ok = mPlatformShaper->InitTextRun(aContext, aTextRun, aString,
+                                              aRunStart, aRunLength, 
+                                              aRunScript);
         } else {
             // first use GDI
             if (!mPlatformShaper) {
@@ -209,7 +210,7 @@ gfxGDIFont::InitTextRun(gfxContext *aContext,
                 return PR_TRUE;
             }
 
-            // first try Uniscribe
+            // try Uniscribe if GDI failed
             if (!mUniscribeShaper) {
                 mUniscribeShaper = new gfxUniscribeShaper(this);
             }
@@ -268,7 +269,6 @@ gfxGDIFont::SetupCairoFont(gfxContext *aContext)
         return PR_FALSE;
     }
     cairo_set_scaled_font(aContext->GetCairo(), mScaledFont);
-    cairo_win32_scaled_font_select_font(mScaledFont, DCFromContext(aContext));
     return PR_TRUE;
 }
 

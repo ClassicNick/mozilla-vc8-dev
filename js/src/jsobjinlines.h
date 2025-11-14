@@ -49,6 +49,7 @@
 #include "jsobj.h"
 #include "jsprobes.h"
 #include "jspropertytree.h"
+#include "jsproxy.h"
 #include "jsscope.h"
 #include "jsstaticcheck.h"
 #include "jsxml.h"
@@ -57,11 +58,13 @@
 #include "jsbool.h"
 #include "jscntxt.h"
 #include "jsnum.h"
-#include "jsscopeinlines.h"
+#include "jsscriptinlines.h"
 #include "jsstr.h"
 
+#include "jsfuninlines.h"
 #include "jsgcinlines.h"
 #include "jsprobes.h"
+#include "jsscopeinlines.h"
 
 inline bool
 JSObject::preventExtensions(JSContext *cx, js::AutoIdVector *props)
@@ -139,11 +142,64 @@ JSObject::finalize(JSContext *cx)
     finish(cx);
 }
 
+/* 
+ * Initializer for Call objects for functions and eval frames. Set class,
+ * parent, map, and shape, and allocate slots.
+ */
+inline void
+JSObject::initCall(JSContext *cx, const js::Bindings &bindings, JSObject *parent)
+{
+    init(cx, &js_CallClass, NULL, parent, NULL, false);
+    map = bindings.lastShape();
+
+    /*
+     * If |bindings| is for a function that has extensible parents, that means
+     * its Call should have its own shape; see js::Bindings::extensibleParents.
+     */
+    if (bindings.extensibleParents())
+        setOwnShape(js_GenerateShape(cx));
+    else
+        objShape = map->shape;
+}
+
+/*
+ * Initializer for cloned block objects. Set class, prototype, frame, map, and
+ * shape.
+ */
+inline void
+JSObject::initClonedBlock(JSContext *cx, JSObject *proto, JSStackFrame *frame)
+{
+    init(cx, &js_BlockClass, proto, NULL, frame, false);
+
+    /* Cloned blocks copy their prototype's map; it had better be shareable. */
+    JS_ASSERT(!proto->inDictionaryMode() || proto->lastProp->frozen());
+    map = proto->map;
+
+    /*
+     * If the prototype has its own shape, that means the clone should, too; see
+     * js::Bindings::extensibleParents.
+     */
+    if (proto->hasOwnShape())
+        setOwnShape(js_GenerateShape(cx));
+    else
+        objShape = map->shape;
+}
+
+/* 
+ * Mark a compile-time block as OWN_SHAPE, indicating that its run-time clones
+ * also need unique shapes. See js::Bindings::extensibleParents.
+ */
+inline void
+JSObject::setBlockOwnShape(JSContext *cx) {
+    JS_ASSERT(isStaticBlock());
+    setOwnShape(js_GenerateShape(cx));
+}
+
 /*
  * Property read barrier for deferred cloning of compiler-created function
  * objects optimized as typically non-escaping, ad-hoc methods in obj.
  */
-inline bool
+inline const js::Shape *
 JSObject::methodReadBarrier(JSContext *cx, const js::Shape &shape, js::Value *vp)
 {
     JS_ASSERT(canHaveMethodBarrier());
@@ -151,36 +207,45 @@ JSObject::methodReadBarrier(JSContext *cx, const js::Shape &shape, js::Value *vp
     JS_ASSERT(nativeContains(shape));
     JS_ASSERT(shape.isMethod());
     JS_ASSERT(&shape.methodObject() == &vp->toObject());
+    JS_ASSERT(shape.writable());
+    JS_ASSERT(shape.slot != SHAPE_INVALID_SLOT);
+    JS_ASSERT(shape.hasDefaultSetter() || shape.setterOp() == js_watch_set);
+    JS_ASSERT(!isGlobal());  /* i.e. we are not changing the global shape */
 
     JSObject *funobj = &vp->toObject();
-    JSFunction *fun = GET_FUNCTION_PRIVATE(cx, funobj);
-    JS_ASSERT(fun == funobj && FUN_NULL_CLOSURE(fun));
+    JSFunction *fun = funobj->getFunctionPrivate();
+    JS_ASSERT(fun == funobj);
+    JS_ASSERT(FUN_NULL_CLOSURE(fun));
 
     funobj = CloneFunctionObject(cx, fun, funobj->getParent());
     if (!funobj)
-        return false;
+        return NULL;
     funobj->setMethodObj(*this);
 
+    /*
+     * Replace the method property with an ordinary data property. This is
+     * equivalent to this->setProperty(cx, shape.id, vp) except that any
+     * watchpoint on the property is not triggered.
+     */
+    uint32 slot = shape.slot;
+    const js::Shape *newshape = methodShapeChange(cx, shape);
+    if (!newshape)
+        return NULL;
+    JS_ASSERT(!newshape->isMethod());
+    JS_ASSERT(newshape->slot == slot);
     vp->setObject(*funobj);
-    if (!js_SetPropertyHelper(cx, this, shape.id, 0, vp, false))
-        return false;
+    nativeSetSlot(slot, *vp);
 
 #ifdef DEBUG
     if (cx->runtime->functionMeterFilename) {
         JS_FUNCTION_METER(cx, mreadbarrier);
 
-        typedef JSRuntime::FunctionCountMap HM;
-        HM &h = cx->runtime->methodReadBarrierCountMap;
-        HM::AddPtr p = h.lookupForAdd(fun);
-        if (!p) {
-            h.add(p, fun, 1);
-        } else {
-            JS_ASSERT(p->key == fun);
+        typedef JSRuntime::FunctionCountMap::Ptr Ptr;
+        if (Ptr p = cx->runtime->methodReadBarrierCountMap.lookupWithDefault(fun, 0))
             ++p->value;
-        }
     }
 #endif
-    return true;
+    return newshape;
 }
 
 static JS_ALWAYS_INLINE bool
@@ -599,7 +664,7 @@ JSObject::getNamePrefix() const
 {
     JS_ASSERT(isNamespace() || isQName());
     const js::Value &v = getSlot(JSSLOT_NAME_PREFIX);
-    return !v.isUndefined() ? v.toString()->assertIsLinear() : NULL;
+    return !v.isUndefined() ? &v.toString()->asLinear() : NULL;
 }
 
 inline jsval
@@ -628,7 +693,7 @@ JSObject::getNameURI() const
 {
     JS_ASSERT(isNamespace() || isQName());
     const js::Value &v = getSlot(JSSLOT_NAME_URI);
-    return !v.isUndefined() ? v.toString()->assertIsLinear() : NULL;
+    return !v.isUndefined() ? &v.toString()->asLinear() : NULL;
 }
 
 inline jsval
@@ -664,7 +729,7 @@ JSObject::getQNameLocalName() const
 {
     JS_ASSERT(isQName());
     const js::Value &v = getSlot(JSSLOT_QNAME_LOCAL_NAME);
-    return !v.isUndefined() ? v.toString()->assertIsLinear() : NULL;
+    return !v.isUndefined() ? &v.toString()->asLinear() : NULL;
 }
 
 inline jsval
@@ -704,10 +769,8 @@ JSObject::init(JSContext *cx, js::Class *aclasp, JSObject *proto, JSObject *pare
     /*
      * NB: objShape must not be set here; rather, the caller must call setMap
      * or setSharedNonNativeMap after calling init. To defend this requirement
-     * we set map to null in DEBUG builds, and set objShape to a value we then
-     * assert obj->shape() never returns.
+     * we set objShape to a value that obj->shape() is asserted never to return.
      */
-    map = NULL;
     objShape = JSObjectMap::INVALID_SHAPE;
 #endif
 
@@ -737,7 +800,7 @@ JSObject::finish(JSContext *cx)
     if (hasSlotsArray())
         freeSlotsArray(cx);
     if (emptyShapes)
-        cx->free(emptyShapes);
+        cx->free_(emptyShapes);
 }
 
 inline bool
@@ -764,7 +827,7 @@ inline void
 JSObject::freeSlotsArray(JSContext *cx)
 {
     JS_ASSERT(hasSlotsArray());
-    cx->free(slots);
+    cx->free_(slots);
 }
 
 inline void
@@ -835,7 +898,8 @@ class AutoPropertyDescriptorRooter : private AutoGCRooter, public PropertyDescri
     AutoPropertyDescriptorRooter(JSContext *cx) : AutoGCRooter(cx, DESCRIPTOR) {
         obj = NULL;
         attrs = 0;
-        getter = setter = (PropertyOp) NULL;
+        getter = (PropertyOp) NULL;
+        setter = (StrictPropertyOp) NULL;
         value.setUndefined();
     }
 
@@ -899,7 +963,6 @@ NewNativeClassInstance(JSContext *cx, Class *clasp, JSObject *proto,
                        JSObject *parent, gc::FinalizeKind kind)
 {
     JS_ASSERT(proto);
-    JS_ASSERT(proto->isNative());
     JS_ASSERT(parent);
 
     /*
@@ -1050,7 +1113,7 @@ NewObject(JSContext *cx, js::Class *clasp, JSObject *proto, JSObject *parent,
 {
     /* Bootstrap the ur-object, and make it the default prototype object. */
     if (withProto == WithProto::Class && !proto) {
-        if (!FindProto (cx, clasp, parent, &proto))
+        if (!FindProto(cx, clasp, parent, &proto))
           return NULL;
     }
 
@@ -1133,7 +1196,7 @@ NewObject(JSContext *cx, js::Class *clasp, JSObject *proto, JSObject *parent)
 }
 
 /*
- * As for js_GetGCObjectKind, where numSlots is a guess at the final size of
+ * As for gc::GetGCObjectKind, where numSlots is a guess at the final size of
  * the object, zero if the final size is unknown.
  */
 static inline gc::FinalizeKind
@@ -1176,6 +1239,49 @@ CopyInitializerObject(JSContext *cx, JSObject *baseobj)
     obj->objShape = baseobj->objShape;
 
     return obj;
+}
+
+/*
+ * When we have an object of a builtin class, we don't quite know what its
+ * valueOf/toString methods are, since these methods may have been overwritten
+ * or shadowed. However, we can still do better than js_TryMethod by
+ * hard-coding the necessary properties for us to find the native we expect.
+ *
+ * TODO: a per-thread shape-based cache would be faster and simpler.
+ */
+static JS_ALWAYS_INLINE bool
+ClassMethodIsNative(JSContext *cx, JSObject *obj, Class *clasp, jsid methodid,
+                    Native native)
+{
+    JS_ASSERT(obj->getClass() == clasp);
+
+    if (HasNativeMethod(obj, methodid, native))
+        return true;
+
+    JSObject *pobj = obj->getProto();
+    return pobj && pobj->getClass() == clasp &&
+           HasNativeMethod(pobj, methodid, native);
+}
+
+inline bool
+DefineConstructorAndPrototype(JSContext *cx, JSObject *global,
+                              JSProtoKey key, JSFunction *ctor, JSObject *proto)
+{
+    JS_ASSERT(global->isGlobal());
+    JS_ASSERT(!global->nativeEmpty()); /* reserved slots already allocated */
+    JS_ASSERT(ctor);
+    JS_ASSERT(proto);
+
+    jsid id = ATOM_TO_JSID(cx->runtime->atomState.classAtoms[key]);
+    JS_ASSERT(!global->nativeLookup(id));
+
+    if (!global->addDataProperty(cx, id, key + JSProto_LIMIT * 2, 0))
+        return false;
+
+    global->setSlot(key, ObjectValue(*ctor));
+    global->setSlot(key + JSProto_LIMIT, ObjectValue(*proto));
+    global->setSlot(key + JSProto_LIMIT * 2, ObjectValue(*ctor));
+    return true;
 }
 
 } /* namespace js */

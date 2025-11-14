@@ -73,7 +73,6 @@
 #include "jsobj.h"
 #include "jsopcode.h"
 #include "jspubtd.h"
-#include "jsscan.h"
 #include "jsscope.h"
 #include "jsscript.h"
 #include "jsstaticcheck.h"
@@ -138,6 +137,19 @@ StackSegment::contains(const JSStackFrame *fp) const
     return false;
 }
 #endif
+
+JSStackFrame *
+StackSegment::computeNextFrame(JSStackFrame *fp) const
+{
+    JS_ASSERT(contains(fp));
+    JS_ASSERT(fp != getCurrentFrame());
+
+    JSStackFrame *next = getCurrentFrame();
+    JSStackFrame *prev;
+    while ((prev = next->prev()) != fp)
+        next = prev;
+    return next;
+}
 
 bool
 StackSpace::init()
@@ -301,11 +313,11 @@ StackSpace::popSegmentForInvoke(const InvokeArgsGuard &ag)
 }
 
 bool
-StackSpace::getSegmentAndFrame(JSContext *cx, uintN vplen, uintN nfixed,
+StackSpace::getSegmentAndFrame(JSContext *cx, uintN vplen, uintN nslots,
                                FrameGuard *fg) const
 {
     Value *start = firstUnused();
-    uintN nvals = VALUES_PER_STACK_SEGMENT + vplen + VALUES_PER_STACK_FRAME + nfixed;
+    uintN nvals = VALUES_PER_STACK_SEGMENT + vplen + VALUES_PER_STACK_FRAME + nslots;
     if (!ensureSpace(cx, start, nvals))
         return false;
 
@@ -316,20 +328,20 @@ StackSpace::getSegmentAndFrame(JSContext *cx, uintN vplen, uintN nfixed,
 }
 
 void
-StackSpace::pushSegmentAndFrame(JSContext *cx, JSObject *initialVarObj,
-                                JSFrameRegs *regs, FrameGuard *fg)
+StackSpace::pushSegmentAndFrame(JSContext *cx, JSFrameRegs *regs, FrameGuard *fg)
 {
     /* Caller should have already initialized regs. */
     JS_ASSERT(regs->fp == fg->fp());
-
-    /* Push segment. */
     StackSegment *seg = fg->segment();
+
+    /* Register new segment/frame with the context. */
+    cx->pushSegmentAndFrame(seg, *regs);
+
+    /* Officially push the segment/frame on the stack. */
     seg->setPreviousInMemory(currentSegment);
     currentSegment = seg;
 
-    /* Push frame. */
-    cx->pushSegmentAndFrame(seg, *regs);
-    seg->setInitialVarObj(initialVarObj);
+    /* Mark as 'pushed' in the guard. */
     fg->cx_ = cx;
 }
 
@@ -338,8 +350,19 @@ StackSpace::popSegmentAndFrame(JSContext *cx)
 {
     JS_ASSERT(isCurrentAndActive(cx));
     JS_ASSERT(cx->hasActiveSegment());
-    cx->popSegmentAndFrame();
+
+    PutActivationObjects(cx, cx->fp());
+
+    /* Officially pop the segment/frame from the stack. */
     currentSegment = currentSegment->getPreviousInMemory();
+
+    /* Unregister pushed segment/frame from the context. */
+    cx->popSegmentAndFrame();
+
+    /*
+     * N.B. This StackSpace should be GC-able without any operations after
+     * cx->popSegmentAndFrame executes since it can trigger GC.
+     */
 }
 
 FrameGuard::~FrameGuard()
@@ -354,7 +377,7 @@ FrameGuard::~FrameGuard()
 bool
 StackSpace::getExecuteFrame(JSContext *cx, JSScript *script, ExecuteFrameGuard *fg) const
 {
-    return getSegmentAndFrame(cx, 2, script->nfixed, fg);
+    return getSegmentAndFrame(cx, 2, script->nslots, fg);
 }
 
 void
@@ -365,26 +388,27 @@ StackSpace::pushExecuteFrame(JSContext *cx, JSObject *initialVarObj, ExecuteFram
     fg->regs_.pc = script->code;
     fg->regs_.fp = fp;
     fg->regs_.sp = fp->base();
-    pushSegmentAndFrame(cx, initialVarObj, &fg->regs_, fg);
+    pushSegmentAndFrame(cx, &fg->regs_, fg);
+    fg->seg_->setInitialVarObj(initialVarObj);
 }
 
 bool
 StackSpace::pushDummyFrame(JSContext *cx, JSObject &scopeChain, DummyFrameGuard *fg)
 {
-    if (!getSegmentAndFrame(cx, 0 /*vplen*/, 0 /*nfixed*/, fg))
+    if (!getSegmentAndFrame(cx, 0 /*vplen*/, 0 /*nslots*/, fg))
         return false;
     fg->fp()->initDummyFrame(cx, scopeChain);
     fg->regs_.fp = fg->fp();
     fg->regs_.pc = NULL;
     fg->regs_.sp = fg->fp()->slots();
-    pushSegmentAndFrame(cx, NULL /*varobj*/, &fg->regs_, fg);
+    pushSegmentAndFrame(cx, &fg->regs_, fg);
     return true;
 }
 
 bool
-StackSpace::getGeneratorFrame(JSContext *cx, uintN vplen, uintN nfixed, GeneratorFrameGuard *fg)
+StackSpace::getGeneratorFrame(JSContext *cx, uintN vplen, uintN nslots, GeneratorFrameGuard *fg)
 {
-    return getSegmentAndFrame(cx, vplen, nfixed, fg);
+    return getSegmentAndFrame(cx, vplen, nslots, fg);
 }
 
 void
@@ -392,7 +416,7 @@ StackSpace::pushGeneratorFrame(JSContext *cx, JSFrameRegs *regs, GeneratorFrameG
 {
     JS_ASSERT(regs->fp == fg->fp());
     JS_ASSERT(regs->fp->prev() == cx->maybefp());
-    pushSegmentAndFrame(cx, NULL /*varobj*/, regs, fg);
+    pushSegmentAndFrame(cx, regs, fg);
 }
 
 bool
@@ -533,8 +557,6 @@ JSThreadData::purge(JSContext *cx)
 
     /* FIXME: bug 506341. */
     propertyCache.purge(cx);
-
-    dtoaCache.s = NULL;
 }
 
 #ifdef JS_THREADSAFE
@@ -543,13 +565,13 @@ static JSThread *
 NewThread(void *id)
 {
     JS_ASSERT(js_CurrentThreadId() == id);
-    JSThread *thread = (JSThread *) js_calloc(sizeof(JSThread));
+    JSThread *thread = (JSThread *) OffTheBooks::calloc_(sizeof(JSThread));
     if (!thread)
         return NULL;
     JS_INIT_CLIST(&thread->contextList);
     thread->id = id;
     if (!thread->data.init()) {
-        js_free(thread);
+        Foreground::free_(thread);
         return NULL;
     }
     return thread;
@@ -568,7 +590,7 @@ DestroyThread(JSThread *thread)
     JS_ASSERT(!thread->data.conservativeGC.hasStackToScan());
 
     thread->data.finish();
-    js_free(thread);
+    Foreground::free_(thread);
 }
 
 JSThread *
@@ -725,7 +747,7 @@ js_NewContext(JSRuntime *rt, size_t stackChunkSize)
      * runtime list. After that it can be accessed from another thread via
      * js_ContextIterator.
      */
-    void *mem = js_calloc(sizeof *cx);
+    void *mem = OffTheBooks::calloc_(sizeof *cx);
     if (!mem)
         return NULL;
 
@@ -813,19 +835,6 @@ js_NewContext(JSRuntime *rt, size_t stackChunkSize)
             ok = js_InitRuntimeScriptState(rt);
         if (ok)
             ok = js_InitRuntimeNumberState(cx);
-        if (ok) {
-            /*
-             * Ensure that the empty scopes initialized by
-             * Shape::initRuntimeState get the desired special shapes.
-             * (The rt->state dance above guarantees that this abuse of
-             * rt->shapeGen is thread-safe.)
-             */
-            uint32 shapeGen = rt->shapeGen;
-            rt->shapeGen = 0;
-            ok = Shape::initRuntimeState(cx);
-            if (rt->shapeGen < shapeGen)
-                rt->shapeGen = shapeGen;
-        }
 
 #ifdef JS_THREADSAFE
         JS_EndRequest(cx);
@@ -1047,7 +1056,6 @@ js_DestroyContext(JSContext *cx, JSDestroyContextMode mode)
                 JS_BeginRequest(cx);
 #endif
 
-            Shape::finishRuntimeState(cx);
             js_FinishRuntimeNumberState(cx);
 
             /* Unpin all common atoms before final GC. */
@@ -1115,25 +1123,20 @@ FreeContext(JSContext *cx)
     JS_FinishArenaPool(&cx->regExpPool);
 
     if (cx->lastMessage)
-        js_free(cx->lastMessage);
+        cx->free_(cx->lastMessage);
 
     /* Remove any argument formatters. */
     JSArgumentFormatMap *map = cx->argumentFormatMap;
     while (map) {
         JSArgumentFormatMap *temp = map;
         map = map->next;
-        cx->free(temp);
+        cx->free_(temp);
     }
 
-    /* Destroy the resolve recursion damper. */
-    if (cx->resolvingTable) {
-        JS_DHashTableDestroy(cx->resolvingTable);
-        cx->resolvingTable = NULL;
-    }
+    JS_ASSERT(!cx->resolvingList);
 
     /* Finally, free cx itself. */
-    cx->~JSContext();
-    js_free(cx);
+    Foreground::delete_(cx);
 }
 
 JSContext *
@@ -1164,107 +1167,22 @@ js_NextActiveContext(JSRuntime *rt, JSContext *cx)
 #endif
 }
 
-static JSDHashNumber
-resolving_HashKey(JSDHashTable *table, const void *ptr)
-{
-    const JSResolvingKey *key = (const JSResolvingKey *)ptr;
+namespace js {
 
-    return (JSDHashNumber(uintptr_t(key->obj)) >> JS_GCTHING_ALIGN) ^ JSID_BITS(key->id);
+bool
+AutoResolving::alreadyStartedSlow() const
+{
+    JS_ASSERT(link);
+    AutoResolving *cursor = link;
+    do {
+        JS_ASSERT(this != cursor);
+        if (object == cursor->object && id == cursor->id && kind == cursor->kind)
+            return true;
+    } while (!!(cursor = cursor->link));
+    return false;
 }
 
-static JSBool
-resolving_MatchEntry(JSDHashTable *table,
-                     const JSDHashEntryHdr *hdr,
-                     const void *ptr)
-{
-    const JSResolvingEntry *entry = (const JSResolvingEntry *)hdr;
-    const JSResolvingKey *key = (const JSResolvingKey *)ptr;
-
-    return entry->key.obj == key->obj && entry->key.id == key->id;
-}
-
-static const JSDHashTableOps resolving_dhash_ops = {
-    JS_DHashAllocTable,
-    JS_DHashFreeTable,
-    resolving_HashKey,
-    resolving_MatchEntry,
-    JS_DHashMoveEntryStub,
-    JS_DHashClearEntryStub,
-    JS_DHashFinalizeStub,
-    NULL
-};
-
-JSBool
-js_StartResolving(JSContext *cx, JSResolvingKey *key, uint32 flag,
-                  JSResolvingEntry **entryp)
-{
-    JSDHashTable *table;
-    JSResolvingEntry *entry;
-
-    table = cx->resolvingTable;
-    if (!table) {
-        table = JS_NewDHashTable(&resolving_dhash_ops, NULL,
-                                 sizeof(JSResolvingEntry),
-                                 JS_DHASH_MIN_SIZE);
-        if (!table)
-            goto outofmem;
-        cx->resolvingTable = table;
-    }
-
-    entry = (JSResolvingEntry *)
-            JS_DHashTableOperate(table, key, JS_DHASH_ADD);
-    if (!entry)
-        goto outofmem;
-
-    if (entry->flags & flag) {
-        /* An entry for (key, flag) exists already -- dampen recursion. */
-        entry = NULL;
-    } else {
-        /* Fill in key if we were the first to add entry, then set flag. */
-        if (!entry->key.obj)
-            entry->key = *key;
-        entry->flags |= flag;
-    }
-    *entryp = entry;
-    return JS_TRUE;
-
-outofmem:
-    JS_ReportOutOfMemory(cx);
-    return JS_FALSE;
-}
-
-void
-js_StopResolving(JSContext *cx, JSResolvingKey *key, uint32 flag,
-                 JSResolvingEntry *entry, uint32 generation)
-{
-    JSDHashTable *table;
-
-    /*
-     * Clear flag from entry->flags and return early if other flags remain.
-     * We must take care to re-lookup entry if the table has changed since
-     * it was found by js_StartResolving.
-     */
-    table = cx->resolvingTable;
-    if (!entry || table->generation != generation) {
-        entry = (JSResolvingEntry *)
-                JS_DHashTableOperate(table, key, JS_DHASH_LOOKUP);
-    }
-    JS_ASSERT(JS_DHASH_ENTRY_IS_BUSY(&entry->hdr));
-    entry->flags &= ~flag;
-    if (entry->flags)
-        return;
-
-    /*
-     * Do a raw remove only if fewer entries were removed than would cause
-     * alpha to be less than .5 (alpha is at most .75).  Otherwise, we just
-     * call JS_DHashTableOperate to re-lookup the key and remove its entry,
-     * compressing or shrinking the table as needed.
-     */
-    if (table->removedCount < JS_DHASH_TABLE_SIZE(table) >> 2)
-        JS_DHashTableRawRemove(table, &entry->hdr);
-    else
-        JS_DHashTableOperate(table, key, JS_DHASH_REMOVE);
-}
+} /* namespace js */
 
 static void
 ReportError(JSContext *cx, const char *message, JSErrorReport *reportp,
@@ -1332,7 +1250,7 @@ js_ReportOutOfMemory(JSContext *cx)
      * If we are in a builtin called directly from trace, don't report an
      * error. We will retry in the interpreter instead.
      */
-    if (JS_ON_TRACE(cx) && !JS_TRACE_MONITOR(cx).bailExit)
+    if (JS_ON_TRACE(cx) && !JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit)
         return;
 #endif
 
@@ -1406,18 +1324,18 @@ checkReportFlags(JSContext *cx, uintN *flags)
         JSStackFrame *fp = js_GetScriptedCaller(cx, NULL);
         if (fp && fp->script()->strictModeCode)
             *flags &= ~JSREPORT_WARNING;
-        else if (JS_HAS_STRICT_OPTION(cx))
+        else if (cx->hasStrictOption())
             *flags |= JSREPORT_WARNING;
         else
             return true;
     } else if (JSREPORT_IS_STRICT(*flags)) {
         /* Warning/error only when JSOPTION_STRICT is set. */
-        if (!JS_HAS_STRICT_OPTION(cx))
+        if (!cx->hasStrictOption())
             return true;
     }
 
     /* Warnings become errors when JSOPTION_WERROR is set. */
-    if (JSREPORT_IS_WARNING(*flags) && JS_HAS_WERROR_OPTION(cx))
+    if (JSREPORT_IS_WARNING(*flags) && cx->hasWErrorOption())
         *flags &= ~JSREPORT_WARNING;
 
     return false;
@@ -1449,8 +1367,8 @@ js_ReportErrorVA(JSContext *cx, uintN flags, const char *format, va_list ap)
     warning = JSREPORT_IS_WARNING(report.flags);
 
     ReportError(cx, message, &report, NULL, NULL);
-    js_free(message);
-    cx->free(ucmessage);
+    Foreground::free_(message);
+    Foreground::free_(ucmessage);
     return warning;
 }
 
@@ -1495,7 +1413,7 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
              * pointers later.
              */
             reportp->messageArgs = (const jschar **)
-                cx->malloc(sizeof(jschar *) * (argCount + 1));
+                cx->malloc_(sizeof(jschar *) * (argCount + 1));
             if (!reportp->messageArgs)
                 return JS_FALSE;
             reportp->messageArgs[argCount] = NULL;
@@ -1539,9 +1457,9 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
                 * is used once and only once in the expansion !!!
                 */
                 reportp->ucmessage = out = (jschar *)
-                    cx->malloc((expandedLength + 1) * sizeof(jschar));
+                    cx->malloc_((expandedLength + 1) * sizeof(jschar));
                 if (!out) {
-                    cx->free(buffer);
+                    cx->free_(buffer);
                     goto error;
                 }
                 while (*fmt) {
@@ -1561,7 +1479,7 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
                 }
                 JS_ASSERT(expandedArgs == argCount);
                 *out = 0;
-                cx->free(buffer);
+                cx->free_(buffer);
                 *messagep =
                     js_DeflateString(cx, reportp->ucmessage,
                                      (size_t)(out - reportp->ucmessage));
@@ -1590,7 +1508,7 @@ js_ExpandErrorArguments(JSContext *cx, JSErrorCallback callback,
         const char *defaultErrorMessage
             = "No error message available for error number %d";
         size_t nbytes = strlen(defaultErrorMessage) + 16;
-        *messagep = (char *)cx->malloc(nbytes);
+        *messagep = (char *)cx->malloc_(nbytes);
         if (!*messagep)
             goto error;
         JS_snprintf(*messagep, nbytes, defaultErrorMessage, errorNumber);
@@ -1603,17 +1521,17 @@ error:
         if (charArgs) {
             i = 0;
             while (reportp->messageArgs[i])
-                cx->free((void *)reportp->messageArgs[i++]);
+                cx->free_((void *)reportp->messageArgs[i++]);
         }
-        cx->free((void *)reportp->messageArgs);
+        cx->free_((void *)reportp->messageArgs);
         reportp->messageArgs = NULL;
     }
     if (reportp->ucmessage) {
-        cx->free((void *)reportp->ucmessage);
+        cx->free_((void *)reportp->ucmessage);
         reportp->ucmessage = NULL;
     }
     if (*messagep) {
-        cx->free((void *)*messagep);
+        cx->free_((void *)*messagep);
         *messagep = NULL;
     }
     return JS_FALSE;
@@ -1645,7 +1563,7 @@ js_ReportErrorNumberVA(JSContext *cx, uintN flags, JSErrorCallback callback,
     ReportError(cx, message, &report, callback, userRef);
 
     if (message)
-        cx->free(message);
+        cx->free_(message);
     if (report.messageArgs) {
         /*
          * js_ExpandErrorArguments owns its messageArgs only if it had to
@@ -1654,12 +1572,12 @@ js_ReportErrorNumberVA(JSContext *cx, uintN flags, JSErrorCallback callback,
         if (charArgs) {
             int i = 0;
             while (report.messageArgs[i])
-                cx->free((void *)report.messageArgs[i++]);
+                cx->free_((void *)report.messageArgs[i++]);
         }
-        cx->free((void *)report.messageArgs);
+        cx->free_((void *)report.messageArgs);
     }
     if (report.ucmessage)
-        cx->free((void *)report.ucmessage);
+        cx->free_((void *)report.ucmessage);
 
     return warning;
 }
@@ -1673,7 +1591,7 @@ js_ReportErrorAgain(JSContext *cx, const char *message, JSErrorReport *reportp)
         return;
 
     if (cx->lastMessage)
-        js_free(cx->lastMessage);
+        Foreground::free_(cx->lastMessage);
     cx->lastMessage = JS_strdup(cx, message);
     if (!cx->lastMessage)
         return;
@@ -1731,7 +1649,7 @@ js_ReportIsNullOrUndefined(JSContext *cx, intN spindex, const Value &v,
                                           js_null_str, NULL);
     }
 
-    cx->free(bytes);
+    cx->free_(bytes);
     return ok;
 }
 
@@ -1747,14 +1665,14 @@ js_ReportMissingArg(JSContext *cx, const Value &v, uintN arg)
     if (IsFunctionObject(v)) {
         atom = GET_FUNCTION_PRIVATE(cx, &v.toObject())->atom;
         bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK,
-                                        v, ATOM_TO_STRING(atom));
+                                        v, atom);
         if (!bytes)
             return;
     }
     JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                          JSMSG_MISSING_FUN_ARG, argbuf,
                          bytes ? bytes : "");
-    cx->free(bytes);
+    cx->free_(bytes);
 }
 
 JSBool
@@ -1773,7 +1691,7 @@ js_ReportValueErrorFlags(JSContext *cx, uintN flags, const uintN errorNumber,
 
     ok = JS_ReportErrorFlagsAndNumber(cx, flags, js_GetErrorMessage,
                                       NULL, errorNumber, bytes, arg1, arg2);
-    cx->free(bytes);
+    cx->free_(bytes);
     return ok;
 }
 
@@ -1920,8 +1838,8 @@ js_GetCurrentBytecodePC(JSContext* cx)
 
 #ifdef JS_TRACER
     if (JS_ON_TRACE(cx)) {
-        pc = JS_TRACE_MONITOR(cx).bailExit->pc;
-        imacpc = JS_TRACE_MONITOR(cx).bailExit->imacpc;
+        pc = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->pc;
+        imacpc = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->imacpc;
     } else
 #endif
     {
@@ -1946,7 +1864,7 @@ js_CurrentPCIsInImacro(JSContext *cx)
 #ifdef JS_TRACER
     VOUCH_DOES_NOT_REQUIRE_STACK();
     if (JS_ON_TRACE(cx))
-        return JS_TRACE_MONITOR(cx).bailExit->imacpc != NULL;
+        return JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->imacpc != NULL;
     return cx->fp()->hasImacropc();
 #else
     return false;
@@ -1990,7 +1908,8 @@ DSTOffsetCache::DSTOffsetCache()
 }
 
 JSContext::JSContext(JSRuntime *rt)
-  : runtime(rt),
+  : hasVersionOverride(false),
+    runtime(rt),
     compartment(NULL),
     regs(NULL),
     busyArrays()
@@ -2033,9 +1952,8 @@ error:
 
 /*
  * Since this function is only called in the context of a pending exception,
- * the caller must subsequently take an error path. If wrapping fails, we leave
- * the exception cleared, which, in the context of an error path, will be
- * interpreted as an uncatchable exception.
+ * the caller must subsequently take an error path. If wrapping fails, it will
+ * set a new (uncatchable) exception to be used in place of the original.
  */
 void
 JSContext::wrapPendingException()
@@ -2061,13 +1979,22 @@ JSContext::pushSegmentAndFrame(js::StackSegment *newseg, JSFrameRegs &newregs)
 void
 JSContext::popSegmentAndFrame()
 {
+    JS_ASSERT_IF(regs->fp->hasCallObj(), !regs->fp->callObj().getPrivate());
+    JS_ASSERT_IF(regs->fp->hasArgsObj(), !regs->fp->argsObj().getPrivate());
     JS_ASSERT(currentSegment->maybeContext() == this);
     JS_ASSERT(currentSegment->getInitialFrame() == regs->fp);
+
+    /*
+     * NB: This function calls resetCompartment, which may GC, so the stack needs
+     * to be in a GC-able state by that point.
+     */
+
     currentSegment->leaveContext();
     currentSegment = currentSegment->getPreviousInContext();
     if (currentSegment) {
         if (currentSegment->isSaved()) {
             setCurrentRegs(NULL);
+            resetCompartment();
         } else {
             setCurrentRegs(currentSegment->getSuspendedRegs());
             currentSegment->resume();
@@ -2075,7 +2002,9 @@ JSContext::popSegmentAndFrame()
     } else {
         JS_ASSERT(regs->fp->prev() == NULL);
         setCurrentRegs(NULL);
+        resetCompartment();
     }
+    maybeMigrateVersionOverride();
 }
 
 void
@@ -2084,6 +2013,7 @@ JSContext::saveActiveSegment()
     JS_ASSERT(hasActiveSegment());
     currentSegment->save(regs);
     setCurrentRegs(NULL);
+    resetCompartment();
 }
 
 void
@@ -2092,6 +2022,7 @@ JSContext::restoreSegment()
     js::StackSegment *ccs = currentSegment;
     setCurrentRegs(ccs->getSuspendedRegs());
     ccs->restore();
+    resetCompartment();
 }
 
 JSGenerator *
@@ -2168,11 +2099,11 @@ JSRuntime::onOutOfMemory(void *p, size_t nbytes, JSContext *cx)
 #ifdef JS_THREADSAFE
     gcHelperThread.waitBackgroundSweepEnd(this);
     if (!p)
-        p = ::js_malloc(nbytes);
+        p = OffTheBooks::malloc_(nbytes);
     else if (p == reinterpret_cast<void *>(1))
-        p = ::js_calloc(nbytes);
+        p = OffTheBooks::calloc_(nbytes);
     else
-      p = ::js_realloc(p, nbytes);
+      p = OffTheBooks::realloc_(p, nbytes);
     if (p)
         return p;
 #endif
@@ -2233,6 +2164,7 @@ ComputeIsJITBroken()
     do {
         if (0 == line.find("Hardware")) {
             const char* blacklist[] = {
+                "SCH-I400",     // Samsung Continuum
                 "SGH-T959",     // Samsung i9000, Vibrant device
                 "SGH-I897",     // Samsung i9000, Captivate device
                 "SCH-I500",     // Samsung i9000, Fascinate device
@@ -2276,14 +2208,14 @@ void
 JSContext::updateJITEnabled()
 {
 #ifdef JS_TRACER
-    traceJitEnabled = ((options & JSOPTION_JIT) &&
+    traceJitEnabled = ((runOptions & JSOPTION_JIT) &&
                        !IsJITBrokenHere() &&
                        (debugHooks == &js_NullDebugHooks ||
                         (debugHooks == &runtime->globalDebugHooks &&
                          !runtime->debuggerInhibitsJIT())));
 #endif
 #ifdef JS_METHODJIT
-    methodJitEnabled = (options & JSOPTION_METHODJIT) &&
+    methodJitEnabled = (runOptions & JSOPTION_METHODJIT) &&
                        !IsJITBrokenHere()
 # if defined JS_CPU_X86 || defined JS_CPU_X64
                        && JSC::MacroAssemblerX86Common::getSSEState() >=
@@ -2291,7 +2223,7 @@ JSContext::updateJITEnabled()
 # endif
                         ;
 #ifdef JS_TRACER
-    profilingEnabled = (options & JSOPTION_PROFILING) && traceJitEnabled && methodJitEnabled;
+    profilingEnabled = (runOptions & JSOPTION_PROFILING) && traceJitEnabled && methodJitEnabled;
 #endif
 #endif
 }

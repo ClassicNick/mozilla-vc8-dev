@@ -2376,7 +2376,9 @@ public:
 
     static void relinkJump(void* from, void* to)
     {
-        FIXME_INSN_PRINTING;
+        js::JaegerSpew(js::JSpew_Insns,
+                       ISPFX "##relinkJump ((from=%p)) ((to=%p))\n",
+                       from, to);
         setRel32(from, to);
     }
 
@@ -2412,7 +2414,10 @@ public:
 
     static void repatchLoadPtrToLEA(void* where)
     {
-        FIXME_INSN_PRINTING;
+        js::JaegerSpew(js::JSpew_Insns,
+                       ISPFX "##repatchLoadPtrToLEA ((where=%p))\n",
+                       where);
+
 #if WTF_CPU_X86_64
         // On x86-64 pointer memory accesses require a 64-bit operand, and as such a REX prefix.
         // Skip over the prefix byte.
@@ -2423,7 +2428,9 @@ public:
     
     static void repatchLEAToLoadPtr(void* where)
     {
-        FIXME_INSN_PRINTING;
+        js::JaegerSpew(js::JSpew_Insns,
+                       ISPFX "##repatchLEAToLoadPtr ((where=%p))\n",
+                       where);
 #if WTF_CPU_X86_64
         // On x86-64 pointer memory accesses require a 64-bit operand, and as such a REX prefix.
         // Skip over the prefix byte.
@@ -2467,17 +2474,14 @@ public:
         return dst.m_offset - src.m_offset;
     }
     
-    void* executableCopy(ExecutablePool* allocator)
+    void* executableAllocAndCopy(ExecutableAllocator* allocator, ExecutablePool **poolp)
     {
-        void* copy = m_formatter.executableCopy(allocator);
-        return copy;
+        return m_formatter.executableAllocAndCopy(allocator, poolp);
     }
 
-    void* executableCopy(void* buffer)
+    void executableCopy(void* buffer)
     {
-        if (m_formatter.oom())
-            return NULL;
-        return memcpy(buffer, m_formatter.buffer(), size());
+        memcpy(buffer, m_formatter.buffer(), size());
     }
 
 private:
@@ -2822,7 +2826,9 @@ private:
         bool oom() const { return m_buffer.oom(); }
         bool isAligned(int alignment) const { return m_buffer.isAligned(alignment); }
         void* data() const { return m_buffer.data(); }
-        void* executableCopy(ExecutablePool* allocator) { return m_buffer.executableCopy(allocator); }
+        void* executableAllocAndCopy(ExecutableAllocator* allocator, ExecutablePool** poolp) {
+            return m_buffer.executableAllocAndCopy(allocator, poolp);
+        }
 
     private:
 

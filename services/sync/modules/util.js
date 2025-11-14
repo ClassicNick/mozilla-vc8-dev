@@ -46,8 +46,22 @@ Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
 Cu.import("resource://services-sync/ext/StringBundle.js");
-Cu.import("resource://services-sync/ext/Sync.js");
 Cu.import("resource://services-sync/log4moz.js");
+
+let NetUtil;
+try {
+  let ns = {};
+  Cu.import("resource://gre/modules/NetUtil.jsm", ns);
+  NetUtil = ns.NetUtil;
+} catch (ex) {
+  // Firefox 3.5 :(
+}
+
+// Constants for makeSyncCallback, waitForSyncCallback
+const CB_READY = {};
+const CB_COMPLETE = {};
+const CB_FAIL = {};
+
 
 /*
  * Utility functions
@@ -189,7 +203,23 @@ let Utils = {
         throw batchEx;
     };
   },
-  
+
+  runInTransaction: function(db, callback, thisObj) {
+    let hasTransaction = false;
+    try {
+      db.beginTransaction();
+      hasTransaction = true;
+    } catch(e) { /* om nom nom exceptions */ }
+
+    try {
+      return callback.call(thisObj);
+    } finally {
+      if (hasTransaction) {
+        db.commitTransaction();
+      }
+    }
+  },
+
   createStatement: function createStatement(db, query) {
     // Gecko 2.0
     if (db.createAsyncStatement)
@@ -199,31 +229,51 @@ let Utils = {
     return db.createStatement(query);
   },
 
-  queryAsync: function(query, names) {
-    // Allow array of names, single name, and no name
-    if (!Utils.isArray(names))
-      names = names == null ? [] : [names];
+  // Prototype for mozIStorageCallback, used in queryAsync below.
+  // This allows us to define the handle* functions just once rather
+  // than on every queryAsync invocation.
+  _storageCallbackPrototype: {
+    results: null,
+    // These are set by queryAsync
+    names: null,
+    syncCb: null,
 
-    // Synchronously asyncExecute fetching all results by name
-    let [exec, execCb] = Sync.withCb(query.executeAsync, query);
-    return exec({
-      items: [],
-      handleResult: function handleResult(results) {
-        let row;
-        while ((row = results.getNextRow()) != null) {
-          this.items.push(names.reduce(function(item, name) {
-            item[name] = row.getResultByName(name);
-            return item;
-          }, {}));
-        }
-      },
-      handleError: function handleError(error) {
-        execCb.throw(error);
-      },
-      handleCompletion: function handleCompletion(reason) {
-        execCb(this.items);
+    handleResult: function handleResult(results) {
+      if (!this.names) {
+        return;
       }
-    });
+      if (!this.results) {
+        this.results = [];
+      }
+      let row;
+      while ((row = results.getNextRow()) != null) {
+        let item = {};
+        for each (name in this.names) {
+          item[name] = row.getResultByName(name);
+        }
+        this.results.push(item);
+      }
+    },
+    handleError: function handleError(error) {
+      this.syncCb.throw(error);
+    },
+    handleCompletion: function handleCompletion(reason) {
+      // If we were called with column names but didn't find any results,
+      // the calling code probably still expects an array as a return value.
+      if (this.names && !this.results) {
+        this.results = [];
+      }
+      this.syncCb(this.results);
+    }
+  },
+
+  queryAsync: function(query, names) {
+    // Synchronously asyncExecute fetching all results by name
+    let storageCallback = {names: names,
+                           syncCb: Utils.makeSyncCallback()};
+    storageCallback.__proto__ = Utils._storageCallbackPrototype;
+    query.executeAsync(storageCallback);
+    return Utils.waitForSyncCallback(storageCallback.syncCb);
   },
 
   byteArrayToString: function byteArrayToString(bytes) {
@@ -255,31 +305,9 @@ let Utils = {
     return Utils.encodeBase64url(Utils.generateRandomBytes(9));
   },
 
-  anno: function anno(id, anno, val, expire) {
-    // Figure out if we have a bookmark or page
-    let annoFunc = (typeof id == "number" ? "Item" : "Page") + "Annotation";
-
-    // Convert to a nsIURI if necessary
-    if (typeof id == "string")
-      id = Utils.makeURI(id);
-
-    if (id == null)
-      throw "Null id for anno! (invalid uri)";
-
-    switch (arguments.length) {
-      case 2:
-        // Get the annotation with 2 args
-        return Svc.Annos["get" + annoFunc](id, anno);
-      case 3:
-        expire = "NEVER";
-        // Fallthrough!
-      case 4:
-        // Convert to actual EXPIRE value
-        expire = Svc.Annos["EXPIRE_" + expire];
-
-        // Set the annotation with 3 or 4 args
-        return Svc.Annos["set" + annoFunc](id, anno, val, 0, expire);
-    }
+  _base64url_regex: /^[-abcdefghijklmnopqrstuvwxyz0123456789_]{12}$/i,
+  checkGUID: function checkGUID(guid) {
+    return !!guid && this._base64url_regex.test(guid);
   },
 
   ensureOneOpen: let (windows = {}) function ensureOneOpen(window) {
@@ -331,7 +359,7 @@ let Utils = {
    * @param obj
    *        Object to add properties to defer in its prototype
    * @param defer
-   *        Hash property of obj to defer to (dot split each level)
+   *        Property of obj to defer to
    * @param prop
    *        Property name to defer (or an array of property names)
    */
@@ -339,44 +367,22 @@ let Utils = {
     if (Utils.isArray(prop))
       return prop.map(function(prop) Utils.deferGetSet(obj, defer, prop));
 
-    // Split the defer into each dot part for each level to dereference
-    let parts = defer.split(".");
-    let deref = function(base) Utils.deref(base, parts);
-
     let prot = obj.prototype;
 
     // Create a getter if it doesn't exist yet
     if (!prot.__lookupGetter__(prop)) {
-      // Yes, this should be a one-liner, but there are errors if it's not
-      // broken out. *sigh*
-      // Errors are these:
-      // JavaScript strict warning: resource://services-sync/util.js, line 304: reference to undefined property deref(this)[prop]
-      // JavaScript strict warning: resource://services-sync/util.js, line 304: reference to undefined property deref(this)[prop]
-      let f = function() {
-        let d = deref(this);
-        if (!d)
-          return undefined;
-        let out = d[prop];
-        return out;
-      }
-      prot.__defineGetter__(prop, f);
+      prot.__defineGetter__(prop, function () {
+        return this[defer][prop];
+      });
     }
 
     // Create a setter if it doesn't exist yet
-    if (!prot.__lookupSetter__(prop))
-      prot.__defineSetter__(prop, function(val) deref(this)[prop] = val);
+    if (!prot.__lookupSetter__(prop)) {
+      prot.__defineSetter__(prop, function (val) {
+        this[defer][prop] = val;
+      });
+    }
   },
-
-  /**
-   * Dereference an array of properties starting from a base object
-   *
-   * @param base
-   *        Base object to start dereferencing
-   * @param props
-   *        Array of properties to dereference (one for each level)
-   */
-  deref: function Utils_deref(base, props) props.reduce(function(curr, prop)
-    curr[prop], base),
 
   /**
    * Determine if some value is an array
@@ -574,27 +580,49 @@ let Utils = {
       throw 'checkStatus failed';
   },
 
-  digest: function digest(message, hasher) {
-    let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].
-      createInstance(Ci.nsIScriptableUnicodeConverter);
-    converter.charset = "UTF-8";
-
-    let data = converter.convertToByteArray(message, {});
+  /**
+   * UTF8-encode a message and hash it with the given hasher. Returns a
+   * string containing bytes. The hasher is reset if it's an HMAC hasher.
+   */
+  digestUTF8: function digestUTF8(message, hasher) {
+    let data = this._utf8Converter.convertToByteArray(message, {});
     hasher.update(data, data.length);
-    return hasher.finish(false);
+    let result = hasher.finish(false);
+    if (hasher instanceof Ci.nsICryptoHMAC) {
+      hasher.reset();
+    }
+    return result;
+  },
+
+  /**
+   * Treat the given message as a bytes string and hash it with the given
+   * hasher. Returns a string containing bytes. The hasher is reset if it's
+   * an HMAC hasher.
+   */
+  digestBytes: function digestBytes(message, hasher) {
+    // No UTF-8 encoding for you, sunshine.
+    let bytes = [b.charCodeAt() for each (b in message)];
+    hasher.update(bytes, bytes.length);
+    let result = hasher.finish(false);
+    if (hasher instanceof Ci.nsICryptoHMAC) {
+      hasher.reset();
+    }
+    return result;
   },
 
   bytesAsHex: function bytesAsHex(bytes) {
-    // Convert each hashed byte into 2-hex strings then combine them
-    return [("0" + byte.charCodeAt().toString(16)).slice(-2)
-            for each (byte in bytes)].join("");
+    let hex = "";
+    for (let i = 0; i < bytes.length; i++) {
+      hex += ("0" + bytes[i].charCodeAt().toString(16)).slice(-2);
+    }
+    return hex;
   },
 
   _sha256: function _sha256(message) {
     let hasher = Cc["@mozilla.org/security/hash;1"].
       createInstance(Ci.nsICryptoHash);
     hasher.init(hasher.SHA256);
-    return Utils.digest(message, hasher);
+    return Utils.digestUTF8(message, hasher);
   },
 
   sha256: function sha256(message) {
@@ -609,7 +637,7 @@ let Utils = {
     let hasher = Cc["@mozilla.org/security/hash;1"].
       createInstance(Ci.nsICryptoHash);
     hasher.init(hasher.SHA1);
-    return Utils.digest(message, hasher);
+    return Utils.digestUTF8(message, hasher);
   },
 
   sha1: function sha1(message) {
@@ -620,6 +648,10 @@ let Utils = {
     return Utils.encodeBase32(Utils._sha1(message));
   },
   
+  sha1Base64: function (message) {
+    return btoa(Utils._sha1(message));
+  },
+
   /**
    * Produce an HMAC key object from a key string.
    */
@@ -628,61 +660,33 @@ let Utils = {
   },
     
   /**
-   * Produce an HMAC hasher.
+   * Produce an HMAC hasher and initialize it with the given HMAC key.
    */
-  makeHMACHasher: function makeHMACHasher() {
-    return Cc["@mozilla.org/security/hmac;1"]
-             .createInstance(Ci.nsICryptoHMAC);
-  },
-
-  sha1Base64: function (message) {
-    return btoa(Utils._sha1(message));
+  makeHMACHasher: function makeHMACHasher(type, key) {
+    let hasher = Cc["@mozilla.org/security/hmac;1"]
+                   .createInstance(Ci.nsICryptoHMAC);
+    hasher.init(type, key);
+    return hasher;
   },
 
   /**
-   * Generate a sha1 HMAC for a message, not UTF-8 encoded,
-   * and a given nsIKeyObject.
-   * Optionally provide an existing hasher, which will be 
-   * initialized and reused.
+   * Some HMAC convenience functions for tests and backwards compatibility:
+   * 
+   *   sha1HMACBytes: hashes byte string, returns bytes string
+   *   sha256HMAC: hashes UTF-8 encoded string, returns hex string
+   *   sha256HMACBytes: hashes byte string, returns bytes string
    */
-  sha1HMACBytes: function sha1HMACBytes(message, key, hasher) {
-    let h = hasher || this.makeHMACHasher();
-    h.init(h.SHA1, key);
-    
-    // No UTF-8 encoding for you, sunshine.
-    let bytes = [b.charCodeAt() for each (b in message)];
-    h.update(bytes, bytes.length);
-    return h.finish(false);
+  sha1HMACBytes: function sha1HMACBytes(message, key) {
+    let h = Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA1, key);
+    return Utils.digestBytes(message, h);
   },
-  
-  /**
-   * Generate a sha256 HMAC for a string message and a given nsIKeyObject.
-   * Optionally provide an existing hasher, which will be
-   * initialized and reused.
-   *
-   * Returns hex output.
-   */
-  sha256HMAC: function sha256HMAC(message, key, hasher) {
-    let h = hasher || this.makeHMACHasher();
-    h.init(h.SHA256, key);
-    return Utils.bytesAsHex(Utils.digest(message, h));
+  sha256HMAC: function sha256HMAC(message, key) {
+    let h = Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256, key);
+    return Utils.bytesAsHex(Utils.digestUTF8(message, h));
   },
-  
-  
-  /**
-   * Generate a sha256 HMAC for a string message, not UTF-8 encoded,
-   * and a given nsIKeyObject.
-   * Optionally provide an existing hasher, which will be
-   * initialized and reused.
-   */
-  sha256HMACBytes: function sha256HMACBytes(message, key, hasher) {
-    let h = hasher || this.makeHMACHasher();
-    h.init(h.SHA256, key);
-
-    // No UTF-8 encoding for you, sunshine.
-    let bytes = [b.charCodeAt() for each (b in message)];
-    h.update(bytes, bytes.length);
-    return h.finish(false);
+  sha256HMACBytes: function sha256HMACBytes(message, key) {
+    let h = Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256, key);
+    return Utils.digestBytes(message, h);
   },
 
   /**
@@ -690,13 +694,13 @@ let Utils = {
    */
   hkdfExpand: function hkdfExpand(prk, info, len) {
     const BLOCKSIZE = 256 / 8;
-    let h = Utils.makeHMACHasher();
+    let h = Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA256,
+                                 Utils.makeHMACKey(prk));
     let T = "";
     let Tn = "";
     let iterations = Math.ceil(len/BLOCKSIZE);
     for (let i = 0; i < iterations; i++) {
-      Tn = Utils.sha256HMACBytes(Tn + info + String.fromCharCode(i + 1),
-                                 Utils.makeHMACKey(prk), h);
+      Tn = Utils.digestBytes(Tn + info + String.fromCharCode(i + 1), h);
       T += Tn;
     }
     return T.slice(0, len);
@@ -722,7 +726,6 @@ let Utils = {
    * can encode as you wish.
    */
   pbkdf2Generate : function pbkdf2Generate(P, S, c, dkLen) {
-    
     // We don't have a default in the algo itself, as NSS does.
     // Use the constant.
     if (!dkLen)
@@ -731,7 +734,7 @@ let Utils = {
     /* For HMAC-SHA-1 */
     const HLEN = 20;
     
-    function F(PK, S, c, i, h) {
+    function F(S, c, i, h) {
     
       function XOR(a, b, isA) {
         if (a.length != b.length) {
@@ -760,9 +763,9 @@ let Utils = {
       I[2] = String.fromCharCode((i >> 8) & 0xff);
       I[3] = String.fromCharCode(i & 0xff);
 
-      U[0] = Utils.sha1HMACBytes(S + I.join(''), PK, h);
+      U[0] = Utils.digestBytes(S + I.join(''), h);
       for (let j = 1; j < c; j++) {
-        U[j] = Utils.sha1HMACBytes(U[j - 1], PK, h);
+        U[j] = Utils.digestBytes(U[j - 1], h);
       }
 
       ret = U[0];
@@ -777,12 +780,11 @@ let Utils = {
     let r = dkLen - ((l - 1) * HLEN);
 
     // Reuse the key and the hasher. Remaking them 4096 times is 'spensive.
-    let PK = Utils.makeHMACKey(P);
-    let h = Utils.makeHMACHasher();
+    let h = Utils.makeHMACHasher(Ci.nsICryptoHMAC.SHA1, Utils.makeHMACKey(P));
     
     T = [];
     for (let i = 0; i < l;) {
-      T[i] = F(PK, S, c, ++i, h);
+      T[i] = F(S, c, ++i, h);
     }
 
     let ret = '';
@@ -1062,19 +1064,45 @@ let Utils = {
       that._log.trace("Loading json from disk: " + filePath);
 
     let file = Utils.getProfileFile(filePath);
-    if (!file.exists())
+    if (!file.exists()) {
+      callback.call(that);
       return;
+    }
 
-    try {
-      let [is] = Utils.open(file, "<");
-      let json = Utils.readStream(is);
+    // Gecko < 2.0
+    if (!NetUtil || !NetUtil.newChannel) {
+      let json;
+      try {
+        let [is] = Utils.open(file, "<");
+        json = JSON.parse(Utils.readStream(is));
+        is.close();
+      } catch (ex) {
+        if (that._log)
+          that._log.debug("Failed to load json: " + Utils.exceptionStr(ex));
+      }
+      callback.call(that, json);
+      return;
+    }
+
+    let channel = NetUtil.newChannel(file);
+    channel.contentType = "application/json";
+
+    NetUtil.asyncFetch(channel, function (is, result) {
+      if (!Components.isSuccessCode(result)) {
+        callback.call(that);
+        return;
+      }
+      let string = NetUtil.readInputStreamToString(is, is.available());
       is.close();
-      callback.call(that, JSON.parse(json));
-    }
-    catch (ex) {
-      if (that._log)
-        that._log.debug("Failed to load json: " + Utils.exceptionStr(ex));
-    }
+      let json;
+      try {
+        json = JSON.parse(string);
+      } catch (ex) {
+        if (that._log)
+          that._log.debug("Failed to load json: " + Utils.exceptionStr(ex));
+      }
+      callback.call(that, json);
+    });
   },
 
   /**
@@ -1084,21 +1112,42 @@ let Utils = {
    *        Json file path save to weave/[filePath].json
    * @param that
    *        Object to use for logging and "this" for callback
-   * @param callback
+   * @param obj
    *        Function to provide json-able object to save. If this isn't a
    *        function, it'll be used as the object to make a json string.
+   * @param callback
+   *        Function called when the write has been performed. Optional.
    */
-  jsonSave: function Utils_jsonSave(filePath, that, callback) {
+  jsonSave: function Utils_jsonSave(filePath, that, obj, callback) {
     filePath = "weave/" + filePath + ".json";
     if (that._log)
       that._log.trace("Saving json to disk: " + filePath);
 
     let file = Utils.getProfileFile({ autoCreate: true, path: filePath });
-    let json = typeof callback == "function" ? callback.call(that) : callback;
+    let json = typeof obj == "function" ? obj.call(that) : obj;
     let out = JSON.stringify(json);
-    let [fos] = Utils.open(file, ">");
-    fos.writeString(out);
-    fos.close();
+
+    // Firefox 3.5
+    if (!NetUtil) {
+      let [fos] = Utils.open(file, ">");
+      fos.writeString(out);
+      fos.close();
+      if (typeof callback == "function") {
+        callback.call(that);
+      }
+      return;
+    }
+
+    let fos = Cc["@mozilla.org/network/safe-file-output-stream;1"]
+                .createInstance(Ci.nsIFileOutputStream);
+    fos.init(file, MODE_WRONLY | MODE_CREATE | MODE_TRUNCATE, PERMS_FILE,
+             fos.DEFER_OPEN || 0);
+    let is = this._utf8Converter.convertToInputStream(out);
+    NetUtil.asyncCopy(is, fos, function (result) {
+      if (typeof callback == "function") {
+        callback.call(that);        
+      }
+    });
   },
 
   /**
@@ -1141,6 +1190,7 @@ let Utils = {
     return thisObj[name] = timer;
   },
 
+  // Gecko <2.0
   open: function open(pathOrFile, mode, perms) {
     let stream, file;
 
@@ -1213,6 +1263,7 @@ let Utils = {
     return Str.errors.get("error.reason.unknown");
   },
 
+  // Gecko <2.0
   // assumes an nsIConverterInputStream
   readStream: function Weave_readStream(is) {
     let ret = "", str = {};
@@ -1224,11 +1275,8 @@ let Utils = {
 
   encodeUTF8: function(str) {
     try {
-      var unicodeConverter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                             .createInstance(Ci.nsIScriptableUnicodeConverter);
-      unicodeConverter.charset = "UTF-8";
-      str = unicodeConverter.ConvertFromUnicode(str);
-      return str + unicodeConverter.Finish();
+      str = this._utf8Converter.ConvertFromUnicode(str);
+      return str + this._utf8Converter.Finish();
     } catch(ex) {
       return null;
     }
@@ -1236,11 +1284,8 @@ let Utils = {
 
   decodeUTF8: function(str) {
     try {
-      var unicodeConverter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
-                             .createInstance(Ci.nsIScriptableUnicodeConverter);
-      unicodeConverter.charset = "UTF-8";
-      str = unicodeConverter.ConvertToUnicode(str);
-      return str + unicodeConverter.Finish();
+      str = this._utf8Converter.ConvertToUnicode(str);
+      return str + this._utf8Converter.Finish();
     } catch(ex) {
       return null;
     }
@@ -1394,13 +1439,20 @@ let Utils = {
     return minuend.filter(function(i) subtrahend.indexOf(i) == -1);
   },
 
+  /**
+   * Build the union of two arrays.
+   */
+  arrayUnion: function arrayUnion(foo, bar) {
+    return foo.concat(Utils.arraySub(bar, foo));
+  },
+
   bind2: function Async_bind2(object, method) {
     return function innerBind() { return method.apply(object, arguments); };
   },
 
   mpLocked: function mpLocked() {
-    let modules = Cc["@mozilla.org/security/pkcs11moduledb;1"].
-                  getService(Ci.nsIPKCS11ModuleDB);
+    let modules = Cc["@mozilla.org/security/pkcs11moduledb;1"]
+                    .getService(Ci.nsIPKCS11ModuleDB);
     let sdrSlot = modules.findSlotByName("");
     let status  = sdrSlot.status;
     let slots = Ci.nsIPKCS11Slot;
@@ -1419,13 +1471,13 @@ let Utils = {
   // If Master Password is enabled and locked, present a dialog to unlock it.
   // Return whether the system is unlocked.
   ensureMPUnlocked: function ensureMPUnlocked() {
-    sdr = Cc["@mozilla.org/security/sdr;1"].getService(Ci.nsISecretDecoderRing);
-    var ok = false;
+    let sdr = Cc["@mozilla.org/security/sdr;1"]
+                .getService(Ci.nsISecretDecoderRing);
     try {
       sdr.encryptString("bacon");
-      ok = true;
+      return true;
     } catch(e) {}
-    return ok;
+    return false;
   },
   
   __prefs: null,
@@ -1437,6 +1489,77 @@ let Utils = {
       this.__prefs.QueryInterface(Ci.nsIPrefBranch2);
     }
     return this.__prefs;
+  },
+
+  /**
+   * Helpers for making asynchronous calls within a synchronous API possible.
+   * 
+   * If you value your sanity, do not look closely at the following functions.
+   */
+
+  /**
+   * Check if the app is ready (not quitting)
+   */
+  checkAppReady: function checkAppReady() {
+    // Watch for app-quit notification to stop any sync calls
+    Svc.Obs.add("quit-application", function() {
+      Utils.checkAppReady = function() {
+        throw Components.Exception("App. Quitting", Cr.NS_ERROR_ABORT);
+      };
+    });
+    // In the common case, checkAppReady just returns true
+    return (Utils.checkAppReady = function() true)();
+  },
+
+  /**
+   * Create a sync callback that remembers state like whether it's been called
+   */
+  makeSyncCallback: function makeSyncCallback() {
+    // The main callback remembers the value it's passed and that it got data
+    let onComplete = function onComplete(data) {
+      onComplete.state = CB_COMPLETE;
+      onComplete.value = data;
+    };
+
+    // Initialize private callback data to prepare to be called
+    onComplete.state = CB_READY;
+    onComplete.value = null;
+
+    // Allow an alternate callback to trigger an exception to be thrown
+    onComplete.throw = function onComplete_throw(data) {
+      onComplete.state = CB_FAIL;
+      onComplete.value = data;
+
+      // Cause the caller to get an exception and stop execution
+      throw data;
+    };
+
+    return onComplete;
+  },
+
+  /**
+   * Wait for a sync callback to finish
+   */
+  waitForSyncCallback: function waitForSyncCallback(callback) {
+    // Grab the current thread so we can make it give up priority
+    let thread = Cc["@mozilla.org/thread-manager;1"].getService().currentThread;
+
+    // Keep waiting until our callback is triggered unless the app is quitting
+    while (Utils.checkAppReady() && callback.state == CB_READY) {
+      thread.processNextEvent(true);
+    }
+
+    // Reset the state of the callback to prepare for another call
+    let state = callback.state;
+    callback.state = CB_READY;
+
+    // Throw the value the callback decided to fail with
+    if (state == CB_FAIL) {
+      throw callback.value;
+    }
+
+    // Return the value passed to the callback
+    return callback.value;
   }
 };
 
@@ -1502,6 +1625,12 @@ let FakeSvc = {
     isFake: true
   }
 };
+Utils.lazy2(Utils, "_utf8Converter", function() {
+  let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"]
+                    .createInstance(Ci.nsIScriptableUnicodeConverter);
+  converter.charset = "UTF-8";
+  return converter;
+});
 
 /*
  * Commonly-used services

@@ -186,7 +186,7 @@ static NS_DEFINE_CID(kLookAndFeelCID,  NS_LOOKANDFEEL_CID);
 
 nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
   : mType(aType), mDocument(aDocument), mTextZoom(1.0), mFullZoom(1.0),
-    mPageSize(-1, -1), mPPScale(1.0f),
+    mPageSize(-1, -1), mPPScale(1.0f), mMinFontSize(0),
     mViewportStyleOverflow(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO),
     mImageAnimationModePref(imgIContainer::kNormalAnimMode),
     // Font sizes default to zero; they will be set in GetFontPreferences
@@ -484,10 +484,10 @@ nsPresContext::GetFontPreferences()
 
   PRInt32 size = nsContentUtils::GetIntPref(pref.get());
   if (unit == eUnit_px) {
-    mMinimumFontSize = CSSPixelsToAppUnits(size);
+    mMinimumFontSizePref = CSSPixelsToAppUnits(size);
   }
   else if (unit == eUnit_pt) {
-    mMinimumFontSize = CSSPointsToAppUnits(size);
+    mMinimumFontSizePref = CSSPointsToAppUnits(size);
   }
 
   // get attributes specific to each generic font
@@ -1071,12 +1071,10 @@ nsPresContext::UpdateCharSet(const nsAFlatCString& aCharSet)
     // this will be a language group (or script) code rather than a true language code
 
     // bug 39570: moved from nsLanguageAtomService::LookupCharSet()
-#if !defined(XP_BEOS) 
     if (mLanguage == nsGkAtoms::Unicode) {
       NS_RELEASE(mLanguage);
       NS_IF_ADDREF(mLanguage = mLangService->GetLocaleLanguage()); 
     }
-#endif
     GetFontPreferences();
   }
 #ifdef IBMBIDI
@@ -2438,9 +2436,8 @@ nsPresContext::IsRootContentDocument()
     return PR_FALSE;
   }
   // We may not have a root frame, so use views.
-  nsIViewManager* vm = PresShell()->GetViewManager();
-  nsIView* view = nsnull;
-  if (NS_FAILED(vm->GetRootView(view)) || !view) {
+  nsIView* view = PresShell()->GetViewManager()->GetRootView();
+  if (!view) {
     return PR_FALSE;
   }
   view = view->GetParent(); // anonymous inner view
@@ -2530,7 +2527,7 @@ PluginHideEnumerator(nsPtrHashKey<nsObjectFrame>* aEntry, void* userArg)
 
 static void
 RecoverPluginGeometry(nsDisplayListBuilder* aBuilder,
-    nsDisplayList* aList, PluginGeometryClosure* aClosure)
+    nsDisplayList* aList, PRBool aInTransform, PluginGeometryClosure* aClosure)
 {
   for (nsDisplayItem* i = aList->GetBottom(); i; i = i->GetAbove()) {
     switch (i->GetType()) {
@@ -2544,7 +2541,9 @@ RecoverPluginGeometry(nsDisplayListBuilder* aBuilder,
       // would be incorrect
       nsPtrHashKey<nsObjectFrame>* entry =
         aClosure->mAffectedPlugins.GetEntry(f);
-      if (entry) {
+      // Windowed plugins in transforms are always ignored, we don't
+      // create configurations for them
+      if (entry && (!aInTransform || !f->GetWidget())) {
         displayPlugin->GetWidgetConfiguration(aBuilder,
                                               aClosure->mOutputConfigurations);
         // we've dealt with this plugin now
@@ -2552,10 +2551,16 @@ RecoverPluginGeometry(nsDisplayListBuilder* aBuilder,
       }
       break;
     }
+    case nsDisplayItem::TYPE_TRANSFORM: {
+      nsDisplayList* sublist =
+          static_cast<nsDisplayTransform*>(i)->GetStoredList()->GetList();
+      RecoverPluginGeometry(aBuilder, sublist, PR_TRUE, aClosure);
+      break;
+    }
     default: {
       nsDisplayList* sublist = i->GetList();
       if (sublist) {
-        RecoverPluginGeometry(aBuilder, sublist, aClosure);
+        RecoverPluginGeometry(aBuilder, sublist, aInTransform, aClosure);
       }
       break;
     }
@@ -2621,7 +2626,7 @@ nsRootPresContext::GetPluginGeometryUpdates(nsIFrame* aChangedSubtree,
     }
 #endif
 
-    RecoverPluginGeometry(&builder, &list, &closure);
+    RecoverPluginGeometry(&builder, &list, PR_FALSE, &closure);
     list.DeleteAll();
   }
 
@@ -2802,6 +2807,16 @@ nsRootPresContext::RootForgetUpdatePluginGeometryFrame(nsIFrame* aFrame)
   if (aFrame == mUpdatePluginGeometryForFrame) {
     mUpdatePluginGeometryForFrame->PresContext()->
       SetContainsUpdatePluginGeometryFrame(PR_FALSE);
+    mUpdatePluginGeometryForFrame = nsnull;
+  }
+}
+
+void
+nsRootPresContext::RootForgetUpdatePluginGeometryFrameForPresContext(
+  nsPresContext* aPresContext)
+{
+  if (aPresContext->GetContainsUpdatePluginGeometryFrame()) {
+    aPresContext->SetContainsUpdatePluginGeometryFrame(PR_FALSE);
     mUpdatePluginGeometryForFrame = nsnull;
   }
 }

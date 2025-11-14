@@ -55,6 +55,7 @@
 #include "nsHashKeys.h"
 #include "nsNodeInfoManager.h"
 #include "nsIStreamListener.h"
+#include "nsIVariant.h"
 #include "nsIObserver.h"
 #include "nsGkAtoms.h"
 #include "nsAutoPtr.h"
@@ -122,8 +123,8 @@ class Element;
 
 
 #define NS_IDOCUMENT_IID      \
-{ 0xc38a7935, 0xc854, 0x4df7, \
-  { 0x8f, 0xd4, 0xa2, 0x6f, 0x0d, 0x27, 0x9f, 0x31 } }
+{ 0x2c6ad63f, 0xb7b9, 0x42f8, \
+ { 0xbd, 0xde, 0x76, 0x0a, 0x83, 0xe3, 0xb0, 0x49 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -688,7 +689,7 @@ public:
   /**
    * Return the window containing the document (the outer window).
    */
-  nsPIDOMWindow *GetWindow()
+  nsPIDOMWindow *GetWindow() const
   {
     return mWindow ? mWindow->GetOuterWindow() : GetWindowInternal();
   }
@@ -706,7 +707,7 @@ public:
   /**
    * Return the outer window ID.
    */
-  PRUint64 OuterWindowID()
+  PRUint64 OuterWindowID() const
   {
     nsPIDOMWindow *window = GetWindow();
     return window ? window->WindowID() : 0;
@@ -756,11 +757,9 @@ public:
   virtual void SetReadyStateInternal(ReadyState rs) = 0;
   virtual ReadyState GetReadyStateEnum() = 0;
 
-  // notify that one or two content nodes changed state
-  // either may be nsnull, but not both
-  virtual void ContentStatesChanged(nsIContent* aContent1,
-                                    nsIContent* aContent2,
-                                    nsEventStates aStateMask) = 0;
+  // notify that a content node changed state
+  virtual void ContentStateChanged(nsIContent* aContent,
+                                   nsEventStates aStateMask) = 0;
 
   // Notify that a document state has changed.
   // This should only be called by callers whose state is also reflected in the
@@ -1423,25 +1422,12 @@ public:
   };
 
   /**
-   * Returns the document's pending state object (serialized to JSON), or the
-   * empty string if one doesn't exist.
-   *
-   * This field serves as a waiting place for the history entry's state object:
-   * We set the field's value to the history entry's state object early on in
-   * the load, then after we fire onload we deserialize the field's value and
-   * fire a popstate event containing the resulting object.
-   */
-  nsAString& GetPendingStateObject()
-  {
-    return mPendingStateObject;
-  }
-
-  /**
    * Set the document's pending state object (as serialized to JSON).
    */
-  void SetPendingStateObject(nsAString &obj)
+  void SetCurrentStateObject(nsAString &obj)
   {
-    mPendingStateObject.Assign(obj);
+    mCurrentStateObject.Assign(obj);
+    mCurrentStateObjectCached = nsnull;
   }
 
   /**
@@ -1529,6 +1515,8 @@ public:
   // state is unlocked/false.
   virtual nsresult SetImageLockingState(PRBool aLocked) = 0;
 
+  virtual nsresult GetMozCurrentStateObject(nsIVariant** aResult) = 0;
+
 protected:
   ~nsIDocument()
   {
@@ -1541,7 +1529,7 @@ protected:
   nsPropertyTable* GetExtraPropertyTable(PRUint16 aCategory);
 
   // Never ever call this. Only call GetWindow!
-  virtual nsPIDOMWindow *GetWindowInternal() = 0;
+  virtual nsPIDOMWindow *GetWindowInternal() const = 0;
 
   // Never ever call this. Only call GetInnerWindow!
   virtual nsPIDOMWindow *GetInnerWindowInternal() = 0;
@@ -1736,7 +1724,7 @@ protected:
    */
   PRUint32 mExternalScriptsBeingEvaluated;
 
-  nsString mPendingStateObject;
+  nsString mCurrentStateObject;
 
   // Weak reference to mScriptGlobalObject QI:d to nsPIDOMWindow,
   // updated on every set of mSecriptGlobalObject.
@@ -1752,6 +1740,8 @@ protected:
 
   // Our base target.
   nsString mBaseTarget;
+
+  nsCOMPtr<nsIVariant> mCurrentStateObjectCached;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocument, NS_IDOCUMENT_IID)

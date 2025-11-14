@@ -29,6 +29,7 @@
 #include <limits.h>
 #include <wtf/ASCIICType.h>
 #include "yarr/jswtfbridge.h"
+#include "yarr/yarr/RegexCommon.h"
 
 namespace JSC { namespace Yarr {
 
@@ -37,22 +38,6 @@ enum BuiltInCharacterClassID {
     SpaceClassID,
     WordClassID,
     NewlineClassID
-};
-
-enum ErrorCode {
-    NoError,
-    PatternTooLarge,
-    QuantifierOutOfOrder,
-    QuantifierWithoutAtom,
-    MissingParentheses,
-    ParenthesesUnmatched,
-    ParenthesesTypeInvalid,
-    CharacterClassUnmatched,
-    CharacterClassOutOfOrder,
-    CharacterClassRangeSingleChar,
-    EscapeUnterminated,
-    QuantifierTooLarge,
-    NumberOfErrorCodes
 };
 
 // The Parser class should not be used directly - only via the Yarr::parse() method.
@@ -77,6 +62,9 @@ private:
             : m_delegate(delegate)
             , m_err(err)
             , m_state(empty)
+#if __GNUC__ >= 4 && __GNUC_MINOR__ >= 5 /* quell GCC overwarning */
+            , m_character(0xFFFF)
+#endif
         {
         }
 

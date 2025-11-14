@@ -41,9 +41,12 @@
 #include "Layers.h"
 #include "LayerManagerD3D9.h"
 #include "gfxImageSurface.h"
+#include "ReadbackProcessor.h"
 
 namespace mozilla {
 namespace layers {
+
+class ReadbackProcessor;
 
 class ThebesLayerD3D9 : public ThebesLayer,
                         public LayerD3D9
@@ -58,9 +61,11 @@ public:
   /* LayerD3D9 implementation */
   Layer* GetLayer();
   virtual PRBool IsEmpty();
-  virtual void RenderLayer();
+  virtual void RenderLayer() { RenderThebesLayer(nsnull); }
   virtual void CleanResources();
   virtual void LayerManagerDestroyed();
+
+  void RenderThebesLayer(ReadbackProcessor* aReadback);
 
 private:
   /*
@@ -93,17 +98,29 @@ private:
   /* Render the rectangles of mVisibleRegion with D3D9 using the currently
    * bound textures, target, shaders, etc.
    */
-  void RenderVisibleRegion();
+  void RenderRegion(const nsIntRegion& aRegion);
 
   /* Have a region of our layer drawn */
-  void DrawRegion(const nsIntRegion &aRegion, SurfaceMode aMode);
+  void DrawRegion(nsIntRegion &aRegion, SurfaceMode aMode,
+                  const nsTArray<ReadbackProcessor::Update>& aReadbackUpdates);
 
   /* Create a new texture */
   void CreateNewTextures(const gfxIntSize &aSize, SurfaceMode aMode);
 
   void CopyRegion(IDirect3DTexture9* aSrc, const nsIntPoint &aSrcOffset,
                   IDirect3DTexture9* aDest, const nsIntPoint &aDestOffset,
-                  const nsIntRegion &aCopyRegion, nsIntRegion* aValidRegion);
+                  const nsIntRegion &aCopyRegion, nsIntRegion* aValidRegion,
+                  float aXRes, float aYRes);
+
+  /**
+   * Calculate the desired texture resolution based on
+   * the layer managers resolution, and the current
+   * transforms scale factor.
+   */
+  void GetDesiredResolutions(float& aXRes, float& aYRes);
+
+  /* Check if the current texture resolution matches */
+  bool ResolutionChanged(float aXRes, float aYRes);
 };
 
 } /* layers */

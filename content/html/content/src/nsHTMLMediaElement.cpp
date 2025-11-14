@@ -846,24 +846,29 @@ void nsHTMLMediaElement::UpdatePreloadAction()
     // Find the appropriate preload action by looking at the attribute.
     const nsAttrValue* val = mAttrsAndChildren.GetAttr(nsGkAtoms::preload,
                                                        kNameSpaceID_None);
+    PRUint32 preloadDefault = nsContentUtils::GetIntPref("media.preload.default",
+                            nsHTMLMediaElement::PRELOAD_ATTR_METADATA);
+    PRUint32 preloadAuto = nsContentUtils::GetIntPref("media.preload.auto",
+                            nsHTMLMediaElement::PRELOAD_ENOUGH);
     if (!val) {
-      // Attribute is not set. The default is to load metadata.
-      nextAction = nsHTMLMediaElement::PRELOAD_METADATA;
+      // Attribute is not set. Use the preload action specified by the 
+      // media.preload.default pref, or just preload metadata if not present.
+      nextAction = static_cast<PreloadAction>(preloadDefault);
     } else if (val->Type() == nsAttrValue::eEnum) {
       PreloadAttrValue attr = static_cast<PreloadAttrValue>(val->GetEnumValue());
       if (attr == nsHTMLMediaElement::PRELOAD_ATTR_EMPTY ||
           attr == nsHTMLMediaElement::PRELOAD_ATTR_AUTO)
       {
-        nextAction = nsHTMLMediaElement::PRELOAD_ENOUGH;
+        nextAction = static_cast<PreloadAction>(preloadAuto);
       } else if (attr == nsHTMLMediaElement::PRELOAD_ATTR_METADATA) {
         nextAction = nsHTMLMediaElement::PRELOAD_METADATA;
       } else if (attr == nsHTMLMediaElement::PRELOAD_ATTR_NONE) {
         nextAction = nsHTMLMediaElement::PRELOAD_NONE;
       }
     } else {
-      // There was a value, but it wasn't an enumerated value.
-      // Use the suggested "missing value default" of "metadata".
-      nextAction = nsHTMLMediaElement::PRELOAD_METADATA;
+      // Use the suggested "missing value default" of "metadata", or the value
+      // specified by the media.preload.default, if present.
+      nextAction = static_cast<PreloadAction>(preloadDefault);
     }
   }
 
@@ -969,11 +974,11 @@ nsresult nsHTMLMediaElement::LoadResource(nsIURI* aURI)
   nsCOMPtr<nsIStreamListener> listener;
   if (ShouldCheckAllowOrigin()) {
     listener =
-      new nsCrossSiteListenerProxy(loadListener,
-                                   NodePrincipal(),
-                                   channel,
-                                   PR_FALSE,
-                                   &rv);
+      new nsCORSListenerProxy(loadListener,
+                              NodePrincipal(),
+                              channel,
+                              PR_FALSE,
+                              &rv);
   } else {
     rv = nsContentUtils::GetSecurityManager()->
            CheckLoadURIWithPrincipal(NodePrincipal(),
@@ -1377,6 +1382,9 @@ NS_IMETHODIMP nsHTMLMediaElement::Play()
   if (mPaused) {
     DispatchAsyncEvent(NS_LITERAL_STRING("play"));
     switch (mReadyState) {
+    case nsIDOMHTMLMediaElement::HAVE_NOTHING:
+      DispatchAsyncEvent(NS_LITERAL_STRING("waiting"));
+      break;
     case nsIDOMHTMLMediaElement::HAVE_METADATA:
     case nsIDOMHTMLMediaElement::HAVE_CURRENT_DATA:
       FireTimeUpdate(PR_FALSE);
@@ -1414,16 +1422,11 @@ PRBool nsHTMLMediaElement::ParseAttribute(PRInt32 aNamespaceID,
   };
 
   if (aNamespaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::src) {
-      static const char* kWhitespace = " \n\r\t\b";
-      aResult.SetTo(nsContentUtils::TrimCharsInSet(kWhitespace, aValue));
-      return PR_TRUE;
-    }
-    else if (aAttribute == nsGkAtoms::loopstart
-            || aAttribute == nsGkAtoms::loopend
-            || aAttribute == nsGkAtoms::start
-            || aAttribute == nsGkAtoms::end) {
-      return aResult.ParseFloatValue(aValue);
+    if (aAttribute == nsGkAtoms::loopstart
+       || aAttribute == nsGkAtoms::loopend
+       || aAttribute == nsGkAtoms::start
+       || aAttribute == nsGkAtoms::end) {
+      return aResult.ParseDoubleValue(aValue);
     }
     else if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       return PR_TRUE;
@@ -2397,6 +2400,8 @@ void nsHTMLMediaElement::DoRemoveSelfReference()
 nsresult nsHTMLMediaElement::Observe(nsISupports* aSubject,
                                      const char* aTopic, const PRUnichar* aData)
 {
+  NS_ENSURE_TRUE(nsContentUtils::IsCallerChrome(), NS_ERROR_NOT_AVAILABLE);
+  
   if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     mShuttingDown = PR_TRUE;
     AddRemoveSelfReference();

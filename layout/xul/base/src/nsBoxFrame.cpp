@@ -1131,6 +1131,8 @@ nsBoxFrame::AttributeChanged(PRInt32 aNameSpaceID,
       aAttribute == nsGkAtoms::top         ||
       aAttribute == nsGkAtoms::right        ||
       aAttribute == nsGkAtoms::bottom       ||
+      aAttribute == nsGkAtoms::start        ||
+      aAttribute == nsGkAtoms::end          ||
       aAttribute == nsGkAtoms::minwidth     ||
       aAttribute == nsGkAtoms::maxwidth     ||
       aAttribute == nsGkAtoms::minheight    ||
@@ -1203,7 +1205,9 @@ nsBoxFrame::AttributeChanged(PRInt32 aNameSpaceID,
     else if (aAttribute == nsGkAtoms::left ||
              aAttribute == nsGkAtoms::top ||
              aAttribute == nsGkAtoms::right ||
-             aAttribute == nsGkAtoms::bottom) {
+             aAttribute == nsGkAtoms::bottom ||
+             aAttribute == nsGkAtoms::start ||
+             aAttribute == nsGkAtoms::end) {
       mState &= ~NS_STATE_STACK_NOT_POSITIONED;
     }
     else if (aAttribute == nsGkAtoms::mousethrough) {
@@ -1865,7 +1869,7 @@ nsBoxFrame::CreateViewForFrame(nsPresContext*  aPresContext,
 
       // Create a view
       if (aIsPopup) {
-        viewManager->GetRootView(parentView);
+        parentView = viewManager->GetRootView();
         visibility = nsViewVisibility_kHide;
         zIndex = PR_INT32_MAX;
       }

@@ -828,6 +828,11 @@ get_lib_extents(int fd, const char *name, void *__hdr, unsigned *total_sz)
 
 static int reserve_mem_region(soinfo *si)
 {
+#ifdef MOZ_LINKER
+    static int mapping_collision = 0;
+    if (mapping_collision)
+        si->base = NULL;
+#endif
     void *base = mmap((void *)si->base, si->size, PROT_READ | PROT_EXEC,
                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (base == MAP_FAILED) {
@@ -837,11 +842,16 @@ static int reserve_mem_region(soinfo *si)
               errno, strerror(errno));
         return -1;
     } else if (base != (void *)si->base) {
+#ifdef MOZ_LINKER
+        mapping_collision = 1;
+        si->base = base;
+#else
         DL_ERR("OOPS: %5d %sprelinked library '%s' mapped at 0x%08x, "
               "not at 0x%08x", pid, (si->ba_index < 0 ? "" : "non-"),
               si->name, (unsigned)base, si->base);
         munmap(base, si->size);
         return -1;
+#endif
     }
     return 0;
 }
@@ -949,10 +959,6 @@ load_segments(int fd, size_t offset, void *header, soinfo *si)
                       (unsigned)tmp, len, phdr->p_vaddr, phdr->p_offset);
                 goto fail;
             }
-
-            report_mapping(si->name, pbase,
-                           (len + PAGE_MASK) & (~PAGE_MASK),
-                           phdr->p_offset & (~PAGE_MASK));
 
             /* If 'len' didn't end on page boundary, and it's a writable
              * segment, zero-fill the rest. */
@@ -1066,6 +1072,9 @@ load_segments(int fd, size_t offset, void *header, soinfo *si)
     TRACE("[ %5d - Finish loading segments for '%s' @ 0x%08x. "
           "Total memory footprint: 0x%08x bytes ]\n", pid, si->name,
           (unsigned)si->base, si->size);
+
+    report_mapping(si->name, si->base, (si->size + PAGE_MASK) & (~PAGE_MASK), 0);
+
     return 0;
 
 fail:
@@ -1410,12 +1419,11 @@ static int reloc_library(soinfo *si, Elf32_Rel *rel, unsigned count)
     Elf32_Phdr *phdr = (Elf32_Phdr *)((unsigned char *)si->base + ehdr->e_phoff);
     for (cnt = 0; cnt < ehdr->e_phnum; ++cnt, ++phdr) {
         if (phdr->p_type != PT_LOAD ||
-            PFLAGS_TO_PROT(phdr->p_flags) & PROT_WRITE ||
-            phdr->p_vaddr != 0)
+            PFLAGS_TO_PROT(phdr->p_flags) & PROT_WRITE)
             continue;
 
-        ro_region_end = si->base + phdr->p_filesz;
-        break;
+        if (si->base + phdr->p_vaddr + phdr->p_filesz > ro_region_end)
+            ro_region_end = si->base + phdr->p_vaddr + phdr->p_filesz;
     }
 
     void * remapped_page = NULL;

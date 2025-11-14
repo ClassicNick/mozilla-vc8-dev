@@ -178,7 +178,6 @@ struct THEBES_API gfxRGBA {
     };
 
     gfxRGBA() { }
-    gfxRGBA(const gfxRGBA& c) : r(c.r), g(c.g), b(c.b), a(c.a) {}
     /**
      * Intialize this color using explicit red, green, blue and alpha
      * values.
@@ -242,6 +241,10 @@ struct THEBES_API gfxRGBA {
     bool operator==(const gfxRGBA& other) const
     {
         return r == other.r && g == other.g && b == other.b && a == other.a;
+    }
+    bool operator!=(const gfxRGBA& other) const
+    {
+        return !(*this == other);
     }
 
     /**

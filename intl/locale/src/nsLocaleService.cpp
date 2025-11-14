@@ -35,9 +35,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-// It's necessary to include this before realloc gets macroed.
-#include <mgconfitem.h>
+#ifdef MOZ_WIDGET_QT
+#include <QString>
+#include <QtCore/QLocale>
 #endif
 
 #include "nsCOMPtr.h"
@@ -62,7 +62,7 @@
 #elif defined(XP_MACOSX)
 #  include <Carbon/Carbon.h>
 #  include "nsIMacLocale.h"
-#elif defined(XP_UNIX) || defined(XP_BEOS)
+#elif defined(XP_UNIX)
 #  include <locale.h>
 #  include <stdlib.h>
 #  include "nsIPosixLocale.h"
@@ -84,7 +84,7 @@ const char* LocaleList[LocaleListLength] =
 #define NSILOCALE_MAX_ACCEPT_LANGUAGE	16
 #define NSILOCALE_MAX_ACCEPT_LENGTH		18
 
-#if (defined(XP_UNIX) && !defined(XP_MACOSX)) || defined(XP_BEOS) || defined(XP_OS2)
+#if (defined(XP_UNIX) && !defined(XP_MACOSX)) || defined(XP_OS2)
 static int posix_locale_category[LocaleListLength] =
 {
   LC_COLLATE,
@@ -98,18 +98,6 @@ static int posix_locale_category[LocaleListLength] =
   LC_CTYPE
 #endif
 };
-#endif
-
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-static void CopyGConfToEnv(const char* gconf, const char* env)
-{
-    MGConfItem item(gconf);
-    QVariant value = item.value();
-    if (QVariant::String == value.type()) {
-        const QByteArray& array = value.toString().toAscii();
-        setenv(env, array.constData(), 1);
-    } // else it's an incompatible type or QVariant::Invalid (not set)
-}
 #endif
 
 //
@@ -179,7 +167,7 @@ nsLocaleService::nsLocaleService(void)
         if (NS_FAILED(result)) { return;}
     }
 #endif
-#if (defined(XP_UNIX) && !defined(XP_MACOSX)) || defined(XP_BEOS)
+#if defined(XP_UNIX) && !defined(XP_MACOSX)
     nsCOMPtr<nsIPosixLocale> posixConverter = do_GetService(NS_POSIXLOCALE_CONTRACTID);
 
     nsAutoString xpLocale, platformLocale;
@@ -192,18 +180,14 @@ nsLocaleService::nsLocaleService(void)
             return; 
         }
 
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-        // Create a snapshot of the gconf locale values into the
-        // corresponding environment variables to obey system settings
-        // as accurately as possible.
-        CopyGConfToEnv("/meegotouch/i18n/language", "LANG");
-        CopyGConfToEnv("/meegotouch/i18n/lc_collate", NSILOCALE_COLLATE);
-        CopyGConfToEnv("/meegotouch/i18n/lc_monetary", NSILOCALE_MONETARY);
-        CopyGConfToEnv("/meegotouch/i18n/lc_numeric", NSILOCALE_NUMERIC);
-        CopyGConfToEnv("/meegotouch/i18n/lc_time", NSILOCALE_TIME);
-#endif
+
+#ifdef MOZ_WIDGET_QT
+        const char* lang = QLocale::system().name().toAscii();
+#else
         // Get system configuration
         const char* lang = getenv("LANG");
+#endif
+
         for( i = 0; i < LocaleListLength; i++ ) {
             nsresult result;
             // setlocale( , "") evaluates LC_* and LANG
@@ -234,7 +218,7 @@ nsLocaleService::nsLocaleService(void)
         mApplicationLocale = do_QueryInterface(resultLocale);
     }  // if ( NS_SUCCEEDED )...
        
-#endif // XP_UNIX || XP_BEOS
+#endif // XP_UNIX
 #ifdef XP_OS2
     nsCOMPtr<nsIOS2Locale> os2Converter = do_GetService(NS_OS2LOCALE_CONTRACTID);
     nsAutoString xpLocale;
@@ -338,7 +322,7 @@ nsLocaleService::NewLocale(const nsAString &aLocale, nsILocale **_retval)
       nsString category; category.AssignWithConversion(LocaleList[i]);
       result = resultLocale->AddCategory(category, aLocale);
       if (NS_FAILED(result)) return result;
-#if (defined(XP_UNIX) && !defined(XP_MACOSX)) || defined(XP_BEOS)
+#if defined(XP_UNIX) && !defined(XP_MACOSX)
       category.AppendLiteral("##PLATFORM");
       result = resultLocale->AddCategory(category, aLocale);
       if (NS_FAILED(result)) return result;

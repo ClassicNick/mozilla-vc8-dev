@@ -422,8 +422,8 @@ Script::analyze(JSContext *cx, JSScript *script)
                 if (locals[local] == LOCAL_CONDITIONALLY_DEFINED)
                     setLocal(local, offset);
             }
-            defineArray = NULL;
-            defineCount = 0;
+            defineArray = bytecode->defineArray = NULL;
+            defineCount = bytecode->defineCount = 0;
         }
 
         unsigned nuses, ndefs;
@@ -568,6 +568,7 @@ Script::analyze(JSContext *cx, JSScript *script)
             break;
 
           case JSOP_CALLLOCAL:
+          case JSOP_GETLOCALPROP:
           case JSOP_INCLOCAL:
           case JSOP_DECLOCAL:
           case JSOP_LOCALINC:

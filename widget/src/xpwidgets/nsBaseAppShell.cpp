@@ -56,10 +56,10 @@ NS_IMPL_THREADSAFE_ISUPPORTS3(nsBaseAppShell, nsIAppShell, nsIThreadObserver,
 
 nsBaseAppShell::nsBaseAppShell()
   : mSuspendNativeCount(0)
+  , mEventloopNestingLevel(0)
   , mBlockedWait(nsnull)
   , mFavorPerf(0)
   , mNativeEventPending(0)
-  , mEventloopNestingLevel(0)
   , mStarvationDelay(0)
   , mSwitchTime(0)
   , mLastNativeEventTime(0)
@@ -93,12 +93,11 @@ nsBaseAppShell::Init()
   return NS_OK;
 }
 
-// Called by nsAppShell's native event callback. Set aAlwaysBlockNative to true
-// to always block native events.
+// Called by nsAppShell's native event callback
 void
-nsBaseAppShell::NativeEventCallback(PRBool aAlwaysBlockNative)
+nsBaseAppShell::NativeEventCallback()
 {
-  PRInt32 hasPending = PR_AtomicSet(&mNativeEventPending, 0);
+  PRInt32 hasPending = PR_ATOMIC_SET(&mNativeEventPending, 0);
   if (hasPending == 0)
     return;
 
@@ -118,9 +117,7 @@ nsBaseAppShell::NativeEventCallback(PRBool aAlwaysBlockNative)
 
   nsIThread *thread = NS_GetCurrentThread();
   PRBool prevBlockNativeEvent = mBlockNativeEvent;
-  if (aAlwaysBlockNative) {
-    mBlockNativeEvent = PR_TRUE;
-  } else if (mEventloopNestingState == eEventloopOther) {
+  if (mEventloopNestingState == eEventloopOther) {
     if (!NS_HasPendingEvents(thread))
       return;
     // We're in a nested native event loop and have some gecko events to
@@ -265,7 +262,7 @@ nsBaseAppShell::OnDispatchedEvent(nsIThreadInternal *thr)
   if (mBlockNativeEvent)
     return NS_OK;
 
-  PRInt32 lastVal = PR_AtomicSet(&mNativeEventPending, 1);
+  PRInt32 lastVal = PR_ATOMIC_SET(&mNativeEventPending, 1);
   if (lastVal == 1)
     return NS_OK;
 

@@ -49,6 +49,8 @@
 #include "nsPluginSafety.h"
 #include "nsPluginLogging.h"
 #include "nsIPrivateBrowsingService.h"
+#include "nsContentUtils.h"
+#include "nsIContentUtils.h"
 
 #include "nsIDocument.h"
 #include "nsIScriptGlobalObject.h"
@@ -57,13 +59,13 @@
 #include "nsJSNPRuntime.h"
 #include "nsPluginStreamListenerPeer.h"
 
+using namespace mozilla;
 using namespace mozilla::plugins::parent;
-using mozilla::TimeStamp;
 
 static NS_DEFINE_IID(kIOutputStreamIID, NS_IOUTPUTSTREAM_IID);
 static NS_DEFINE_IID(kIPluginStreamListenerIID, NS_IPLUGINSTREAMLISTENER_IID);
 
-NS_IMPL_ISUPPORTS1(nsNPAPIPluginInstance, nsIPluginInstance)
+NS_IMPL_ISUPPORTS2(nsNPAPIPluginInstance, nsIPluginInstance, nsIPluginInstance_MOZILLA_2_0_BRANCH)
 
 nsNPAPIPluginInstance::nsNPAPIPluginInstance(nsNPAPIPlugin* plugin)
   :
@@ -187,10 +189,11 @@ NS_IMETHODIMP nsNPAPIPluginInstance::Stop()
 
   // Make sure we lock while we're writing to mRunning after we've
   // started as other threads might be checking that inside a lock.
-  EnterAsyncPluginThreadCallLock();
-  mRunning = DESTROYING;
-  mStopTime = TimeStamp::Now();
-  ExitAsyncPluginThreadCallLock();
+  {
+    AsyncCallbackAutoLock lock;
+    mRunning = DESTROYING;
+    mStopTime = TimeStamp::Now();
+  }
 
   OnPluginDestroy(&mNPP);
 
@@ -413,19 +416,15 @@ nsNPAPIPluginInstance::InitializePlugin()
   mRunning = RUNNING;
 
   nsresult newResult = library->NPP_New((char*)mimetype, &mNPP, (PRUint16)mode, count, (char**)names, (char**)values, NULL, &error);
-  if (NS_FAILED(newResult)) {
-    mRunning = DESTROYED;
-    return newResult;
-  }
-
   mInPluginInitCall = oldVal;
 
   NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
   ("NPP New called: this=%p, npp=%p, mime=%s, mode=%d, argc=%d, return=%d\n",
   this, &mNPP, mimetype, mode, count, error));
 
-  if (error != NPERR_NO_ERROR) {
+  if (NS_FAILED(newResult) || error != NPERR_NO_ERROR) {
     mRunning = DESTROYED;
+    nsJSNPRuntime::OnPluginDestroy(&mNPP);
     return NS_ERROR_FAILURE;
   }
   
@@ -604,19 +603,26 @@ NS_IMETHODIMP nsNPAPIPluginInstance::GetValueFromPlugin(NPPVariable variable, vo
     return NS_OK;
   }
 #endif
+
   if (!mPlugin || !mPlugin->GetLibrary())
     return NS_ERROR_FAILURE;
 
   NPPluginFuncs* pluginFunctions = mPlugin->PluginFuncs();
 
   nsresult rv = NS_ERROR_FAILURE;
+
   if (pluginFunctions->getvalue && RUNNING == mRunning) {
     PluginDestructionGuard guard(this);
 
-    NS_TRY_SAFE_CALL_RETURN(rv, (*pluginFunctions->getvalue)(&mNPP, variable, value), this);
+    NPError pluginError = NPERR_GENERIC_ERROR;
+    NS_TRY_SAFE_CALL_RETURN(pluginError, (*pluginFunctions->getvalue)(&mNPP, variable, value), this);
     NPP_PLUGIN_LOG(PLUGIN_LOG_NORMAL,
     ("NPP GetValue called: this=%p, npp=%p, var=%d, value=%d, return=%d\n", 
-    this, &mNPP, variable, value, rv));
+    this, &mNPP, variable, value, pluginError));
+
+    if (pluginError == NPERR_NO_ERROR) {
+      rv = NS_OK;
+    }
   }
 
   return rv;
@@ -718,6 +724,22 @@ NS_IMETHODIMP nsNPAPIPluginInstance::GetDrawingModel(PRInt32* aModel)
 #endif
 }
 
+NS_IMETHODIMP nsNPAPIPluginInstance::IsRemoteDrawingCoreAnimation(PRBool* aDrawing)
+{
+#ifdef XP_MACOSX
+  if (!mPlugin)
+      return NS_ERROR_FAILURE;
+
+  PluginLibrary* library = mPlugin->GetLibrary();
+  if (!library)
+      return NS_ERROR_FAILURE;
+  
+  return library->IsRemoteDrawingCoreAnimation(&mNPP, aDrawing);
+#else
+  return NS_ERROR_FAILURE;
+#endif
+}
+
 NS_IMETHODIMP
 nsNPAPIPluginInstance::GetJSObject(JSContext *cx, JSObject** outObject)
 {
@@ -811,18 +833,32 @@ nsNPAPIPluginInstance::IsWindowless(PRBool* isWindowless)
   return NS_OK;
 }
 
+class NS_STACK_CLASS AutoPluginLibraryCall
+{
+public:
+  AutoPluginLibraryCall(nsNPAPIPluginInstance* aThis)
+    : mThis(aThis), mGuard(aThis), mLibrary(nsnull)
+  {
+    nsNPAPIPlugin* plugin = mThis->GetPlugin();
+    if (plugin)
+      mLibrary = plugin->GetLibrary();
+  }
+  operator bool() { return !!mLibrary; }
+  PluginLibrary* operator->() { return mLibrary; }
+
+private:
+  nsNPAPIPluginInstance* mThis;
+  PluginDestructionGuard mGuard;
+  PluginLibrary* mLibrary;
+};
+
 NS_IMETHODIMP
 nsNPAPIPluginInstance::AsyncSetWindow(NPWindow* window)
 {
   if (RUNNING != mRunning)
     return NS_OK;
 
-  PluginDestructionGuard guard(this);
-
-  if (!mPlugin)
-    return NS_ERROR_FAILURE;
-
-  PluginLibrary* library = mPlugin->GetLibrary();
+  AutoPluginLibraryCall library(this);
   if (!library)
     return NS_ERROR_FAILURE;
 
@@ -835,18 +871,36 @@ nsNPAPIPluginInstance::GetSurface(gfxASurface** aSurface)
   if (RUNNING != mRunning)
     return NS_OK;
 
-  PluginDestructionGuard guard(this);
-
-  if (!mPlugin)
-    return NS_ERROR_FAILURE;
-
-  PluginLibrary* library = mPlugin->GetLibrary();
+  AutoPluginLibraryCall library(this);
   if (!library)
     return NS_ERROR_FAILURE;
 
   return library->GetSurface(&mNPP, aSurface);
 }
 
+NS_IMETHODIMP
+nsNPAPIPluginInstance::GetImage(ImageContainer* aContainer, Image** aImage)
+{
+  *aImage = nsnull;
+
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  return !library ? NS_ERROR_FAILURE : library->GetImage(&mNPP, aContainer, aImage);
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::GetImageSize(nsIntSize* aSize)
+{
+  *aSize = nsIntSize(0, 0);
+
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  return !library ? NS_ERROR_FAILURE : library->GetImageSize(&mNPP, aSize);
+}
 
 NS_IMETHODIMP
 nsNPAPIPluginInstance::NotifyPainted(void)
@@ -863,17 +917,53 @@ nsNPAPIPluginInstance::UseAsyncPainting(PRBool* aIsAsync)
     return NS_OK;
   }
 
-  PluginDestructionGuard guard(this);
-
-  if (!mPlugin)
-    return NS_ERROR_FAILURE;
-
-  PluginLibrary* library = mPlugin->GetLibrary();
+  AutoPluginLibraryCall library(this);
   if (!library)
     return NS_ERROR_FAILURE;
 
   *aIsAsync = library->UseAsyncPainting();
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::SetBackgroundUnknown()
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  if (!library)
+    return NS_ERROR_FAILURE;
+
+  return library->SetBackgroundUnknown(&mNPP);
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::BeginUpdateBackground(nsIntRect* aRect,
+                                             gfxContext** aContext)
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  if (!library)
+    return NS_ERROR_FAILURE;
+
+  return library->BeginUpdateBackground(&mNPP, *aRect, aContext);
+}
+
+NS_IMETHODIMP
+nsNPAPIPluginInstance::EndUpdateBackground(gfxContext* aContext,
+                                           nsIntRect* aRect)
+{
+  if (RUNNING != mRunning)
+    return NS_OK;
+
+  AutoPluginLibraryCall library(this);
+  if (!library)
+    return NS_ERROR_FAILURE;
+
+  return library->EndUpdateBackground(&mNPP, aContext, *aRect);
 }
 
 NS_IMETHODIMP
@@ -1252,5 +1342,57 @@ nsNPAPIPluginInstance::URLRedirectResponse(void* notifyData, NPBool allow)
     if (currentListener->GetNotifyData() == notifyData) {
       currentListener->URLRedirectResponse(allow);
     }
+  }
+}
+
+class CarbonEventModelFailureEvent : public nsRunnable {
+public:
+  nsCOMPtr<nsIContent> mContent;
+
+  CarbonEventModelFailureEvent(nsIContent* aContent)
+    : mContent(aContent)
+  {}
+
+  ~CarbonEventModelFailureEvent() {}
+
+  NS_IMETHOD Run();
+};
+
+NS_IMETHODIMP
+CarbonEventModelFailureEvent::Run()
+{
+  nsString type = NS_LITERAL_STRING("npapi-carbon-event-model-failure");
+#ifdef MOZ_ENABLE_LIBXUL
+  nsContentUtils::DispatchTrustedEvent(mContent->GetDocument(), mContent,
+                                       type, PR_TRUE, PR_TRUE);
+#else
+  nsCOMPtr<nsIContentUtils_MOZILLA_2_0_BRANCH> cu =
+    do_GetService("@mozilla.org/content/contentutils-moz2.0;1");
+  if (cu) {
+    cu->DispatchTrustedEvent(mContent->GetDocument(), mContent,
+                             type, PR_TRUE, PR_TRUE);
+  }
+#endif
+  return NS_OK;
+}
+
+void
+nsNPAPIPluginInstance::CarbonNPAPIFailure()
+{
+  nsCOMPtr<nsIDOMElement> element;
+  GetDOMElement(getter_AddRefs(element));
+  if (!element) {
+    return;
+  }
+
+  nsCOMPtr<nsIContent> content(do_QueryInterface(element));
+  if (!content) {
+    return;
+  }
+
+  nsCOMPtr<nsIRunnable> e = new CarbonEventModelFailureEvent(content);
+  nsresult rv = NS_DispatchToCurrentThread(e);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Failed to dispatch CarbonEventModelFailureEvent.");
   }
 }

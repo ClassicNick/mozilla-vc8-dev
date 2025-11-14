@@ -203,7 +203,7 @@ __try {
     // Return window system accessible object for root document and tab document
     // accessibles.
     if (!doc->ParentDocument() ||
-        nsWinUtils::IsWindowEmulationEnabled() &&
+        nsWinUtils::IsWindowEmulationStarted() &&
         nsWinUtils::IsTabDocument(doc->GetDocumentNode())) {
       HWND hwnd = static_cast<HWND>(doc->GetNativeWindow());
       if (hwnd && SUCCEEDED(AccessibleObjectFromWindow(hwnd, OBJID_WINDOW,
@@ -215,11 +215,13 @@ __try {
   }
 
   nsAccessible* xpParentAcc = GetParent();
-  NS_ASSERTION(xpParentAcc,
-               "No parent accessible where we're not direct child of window");
+  if (!xpParentAcc) {
+    if (IsApplication())
+      return S_OK;
 
-  if (!xpParentAcc)
+    NS_ERROR("No parent accessible. Should we really assert here?");
     return E_UNEXPECTED;
+  }
 
   *ppdispParent = NativeAccessible(xpParentAcc);
 
@@ -234,9 +236,7 @@ __try {
   if (nsAccUtils::MustPrune(this))
     return NS_OK;
 
-  PRInt32 numChildren;
-  GetChildCount(&numChildren);
-  *pcountChildren = numChildren;
+  *pcountChildren = GetChildCount();
 } __except(FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
 
   return S_OK;
@@ -1012,9 +1012,7 @@ __try {
 
   mEnumVARIANTPosition += aNumElements;
 
-  PRInt32 numChildren;
-  GetChildCount(&numChildren);
-
+  PRInt32 numChildren = GetChildCount();
   if (mEnumVARIANTPosition > numChildren)
   {
     mEnumVARIANTPosition = numChildren;
@@ -1370,12 +1368,7 @@ __try {
   if (IsDefunct())
     return E_FAIL;
 
-  void *handle = nsnull;
-  nsresult rv = GetOwnerWindow(&handle);
-  if (NS_FAILED(rv))
-    return GetHRESULT(rv);
-
-  *aWindowHandle = reinterpret_cast<HWND>(handle);
+  *aWindowHandle = GetHWNDFor(this);
   return S_OK;
 
 } __except(nsAccessNodeWrap::FilterA11yExceptions(::GetExceptionCode(), GetExceptionInformation())) { }
@@ -1532,6 +1525,7 @@ NS_IMETHODIMP nsAccessibleWrap::GetNativeInterface(void **aOutAccessible)
   return NS_OK;
 }
 
+////////////////////////////////////////////////////////////////////////////////
 // nsAccessible
 
 nsresult
@@ -1542,6 +1536,9 @@ nsAccessibleWrap::HandleAccEvent(AccEvent* aEvent)
 
   return FirePlatformEvent(aEvent);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// nsAccessibleWrap
 
 nsresult
 nsAccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
@@ -1622,11 +1619,35 @@ PRInt32 nsAccessibleWrap::GetChildIDFor(nsAccessible* aAccessible)
 HWND
 nsAccessibleWrap::GetHWNDFor(nsAccessible *aAccessible)
 {
-  if (!aAccessible)
-    return 0;
+  if (aAccessible) {
+    // Popup lives in own windows, use its HWND until the popup window is
+    // hidden to make old JAWS versions work with collapsed comboboxes (see
+    // discussion in bug 379678).
+    nsIFrame* frame = aAccessible->GetFrame();
+    if (frame) {
+      nsIWidget* widget = frame->GetNearestWidget();
+      PRBool isVisible = PR_FALSE;
+      widget->IsVisible(isVisible);
+      if (isVisible) {
+        nsCOMPtr<nsIPresShell> shell(aAccessible->GetPresShell());
+        nsIViewManager* vm = shell->GetViewManager();
+        if (vm) {
+          nsCOMPtr<nsIWidget> rootWidget;
+          vm->GetRootWidget(getter_AddRefs(rootWidget));
+          // Make sure the accessible belongs to popup. If not then use
+          // document HWND (which might be different from root widget in the
+          // case of window emulation).
+          if (rootWidget != widget)
+            return static_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
+        }
+      }
+    }
 
-  nsDocAccessible* document = aAccessible->GetDocAccessible();
-  return document ? static_cast<HWND>(document->GetNativeWindow()) : 0;
+    nsDocAccessible* document = aAccessible->GetDocAccessible();
+    if (document)
+      return static_cast<HWND>(document->GetNativeWindow());
+  }
+  return nsnull;
 }
 
 HRESULT
@@ -1747,7 +1768,7 @@ void nsAccessibleWrap::UpdateSystemCaret()
   // off-screen model can follow the caret
   ::DestroyCaret();
 
-  nsRefPtr<nsRootAccessible> rootAccessible = GetRootAccessible();
+  nsRootAccessible* rootAccessible = RootAccessible();
   if (!rootAccessible) {
     return;
   }

@@ -95,6 +95,11 @@ public:
   static nsIContent* FindContentFor(ViewID aId);
 
   /**
+   * Get display port for the given element.
+   */
+  static bool GetDisplayPort(nsIContent* aContent, nsRect *aResult);
+
+  /**
    * Use heuristics to figure out the name of the child list that
    * aChildFrame is currently in.
    */
@@ -521,6 +526,18 @@ public:
   static nsRect MatrixTransformRect(const nsRect &aBounds,
                                     const gfxMatrix &aMatrix, float aFactor);
 
+  /**
+   * Helper function that, given a rectangle and a matrix, returns the smallest
+   * rectangle containing the image of the source rectangle rounded out to the nearest
+   * pixel value.
+   *
+   * @param aBounds The rectangle to transform.
+   * @param aMatrix The matrix to transform it with.
+   * @param aFactor The number of app units per graphics unit.
+   * @return The smallest rect that contains the image of aBounds.
+   */
+  static nsRect MatrixTransformRectOut(const nsRect &aBounds,
+                                    const gfxMatrix &aMatrix, float aFactor);
   /**
    * Helper function that, given a point and a matrix, returns the image
    * of that point under the matrix transform.
@@ -1254,7 +1271,7 @@ public:
   };
 
   struct SurfaceFromElementResult {
-    SurfaceFromElementResult() : mIsStillLoading(PR_FALSE) {}
+    SurfaceFromElementResult() : mIsWriteOnly(PR_TRUE), mIsStillLoading(PR_FALSE) {}
 
     /* mSurface will contain the resulting surface, or will be NULL on error */
     nsRefPtr<gfxASurface> mSurface;
@@ -1262,11 +1279,13 @@ public:
     gfxIntSize mSize;
     /* The principal associated with the element whose surface was returned */
     nsCOMPtr<nsIPrincipal> mPrincipal;
+    /* The image request, if the element is an nsIImageLoadingContent */
+    nsCOMPtr<imgIRequest> mImageRequest;
     /* Whether the element was "write only", that is, the bits should not be exposed to content */
-    PRBool mIsWriteOnly;
+    PRPackedBool mIsWriteOnly;
     /* Whether the element was still loading.  Some consumers need to handle
        this case specially. */
-    PRBool mIsStillLoading;
+    PRPackedBool mIsStillLoading;
   };
 
   static SurfaceFromElementResult SurfaceFromElement(nsIDOMElement *aElement,

@@ -42,6 +42,9 @@
 
 #include "gfxPattern.h"
 #include "nsThreadUtils.h"
+#include "nsCoreAnimationSupport.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/TimeStamp.h"
 
 namespace mozilla {
 namespace layers {
@@ -95,7 +98,15 @@ public:
      * manipulated on the main thread, since the underlying cairo surface
      * is main-thread-only.
      */
-    CAIRO_SURFACE
+    CAIRO_SURFACE,
+
+    /**
+     * The MAC_IO_SURFACE format creates a MacIOSurfaceImage. This
+     * is only supported on Mac with OpenGL layers.
+     *
+     * It wraps an IOSurface object and binds it directly to a GL texture.
+     */
+    MAC_IO_SURFACE
   };
 
   Format GetFormat() { return mFormat; }
@@ -122,7 +133,12 @@ class THEBES_API ImageContainer {
   THEBES_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
 
 public:
-  ImageContainer() {}
+  ImageContainer() :
+    mMonitor("ImageContainer"),
+    mPaintCount(0),
+    mPreviousImagePainted(PR_FALSE)
+  {}
+
   virtual ~ImageContainer() {}
 
   /**
@@ -130,6 +146,8 @@ public:
    * Picks the "best" format from the list and creates an Image of that
    * format.
    * Returns null if this backend does not support any of the formats.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
    */
   virtual already_AddRefed<Image> CreateImage(const Image::Format* aFormats,
                                               PRUint32 aNumFormats) = 0;
@@ -137,6 +155,8 @@ public:
   /**
    * Set an Image as the current image to display. The Image must have
    * been created by this ImageContainer.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
    * 
    * The Image data must not be modified after this method is called!
    */
@@ -147,6 +167,10 @@ public:
    * This has to add a reference since otherwise there are race conditions
    * where the current image is destroyed before the caller can add
    * a reference.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
+   * Implementations must call CurrentImageChanged() while holding mMonitor.
+   *
    */
   virtual already_AddRefed<Image> GetCurrentImage() = 0;
 
@@ -162,6 +186,8 @@ public:
    * Returns the size in aSize.
    * The returned surface will never be modified. The caller must not
    * modify it.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
    */
   virtual already_AddRefed<gfxASurface> GetCurrentAsSurface(gfxIntSize* aSizeResult) = 0;
 
@@ -178,13 +204,15 @@ public:
 
   /**
    * Returns the size of the image in pixels.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
    */
   virtual gfxIntSize GetCurrentSize() = 0;
 
   /**
    * Set a new layer manager for this image container.  It must be
    * either of the same type as the container's current layer manager,
-   * or null.  TRUE is returned on success.
+   * or null.  TRUE is returned on success. Main thread only.
    */
   virtual PRBool SetLayerManager(LayerManager *aManager) = 0;
 
@@ -192,20 +220,95 @@ public:
    * Sets a size that the image is expected to be rendered at.
    * This is a hint for image backends to optimize scaling.
    * Default implementation in this class is to ignore the hint.
+   * Can be called on any thread. This method takes mMonitor when accessing
+   * thread-shared state.
    */
   virtual void SetScaleHint(const gfxIntSize& /* aScaleHint */) { }
 
   /**
    * Get the layer manager type this image container was created with,
    * presumably its users might want to do something special if types do not
-   * match.
+   * match. Can be called on any thread.
    */
   virtual LayerManager::LayersBackend GetBackendType() = 0;
 
+  /**
+   * Returns the time at which the currently contained image was first
+   * painted.  This is reset every time a new image is set as the current
+   * image.  Note this may return a null timestamp if the current image
+   * has not yet been painted.  Can be called from any thread.
+   */
+  TimeStamp GetPaintTime() {
+    MonitorAutoEnter mon(mMonitor);
+    return mPaintTime;
+  }
+
+  /**
+   * Returns the number of images which have been contained in this container
+   * and painted at least once.  Can be called from any thread.
+   */
+  PRUint32 GetPaintCount() {
+    MonitorAutoEnter mon(mMonitor);
+    return mPaintCount;
+  }
+
+  /**
+   * Increments mPaintCount if this is the first time aPainted has been
+   * painted, and sets mPaintTime if the painted image is the current image.
+   * current image.  Can be called from any thread.
+   */
+  void NotifyPaintedImage(Image* aPainted) {
+    MonitorAutoEnter mon(mMonitor);
+    nsRefPtr<Image> current = GetCurrentImage();
+    if (aPainted == current) {
+      if (mPaintTime.IsNull()) {
+        mPaintTime = TimeStamp::Now();
+        mPaintCount++;
+      }
+    } else if (!mPreviousImagePainted) {
+      // While we were painting this image, the current image changed. We
+      // still must count it as painted, but can't set mPaintTime, since we're
+      // no longer the current image.
+      mPaintCount++;
+      mPreviousImagePainted = PR_TRUE;
+    }
+  }
+
 protected:
+  typedef mozilla::Monitor Monitor;
   LayerManager* mManager;
 
-  ImageContainer(LayerManager* aManager) : mManager(aManager) {}
+  // Monitor to protect thread safe access to the "current image", and any
+  // other state which is shared between threads.
+  Monitor mMonitor;
+
+  ImageContainer(LayerManager* aManager) :
+    mManager(aManager),
+    mMonitor("ImageContainer"),
+    mPaintCount(0),
+    mPreviousImagePainted(PR_FALSE)
+  {}
+
+  // Performs necessary housekeeping to ensure the painted frame statistics
+  // are accurate. Must be called by SetCurrentImage() implementations with
+  // mMonitor held.
+  void CurrentImageChanged() {
+    mMonitor.AssertCurrentThreadIn();
+    mPreviousImagePainted = !mPaintTime.IsNull();
+    mPaintTime = TimeStamp();
+  }
+
+  // Number of contained images that have been painted at least once.  It's up
+  // to the ImageContainer implementation to ensure accesses to this are
+  // threadsafe.
+  PRUint32 mPaintCount;
+
+  // Time stamp at which the current image was first painted.  It's up to the
+  // ImageContainer implementation to ensure accesses to this are threadsafe.
+  TimeStamp mPaintTime;
+
+  // Denotes whether the previous image was painted.
+  PRPackedBool mPreviousImagePainted;
 };
 
 /**
@@ -337,6 +440,35 @@ public:
 protected:
   CairoImage(void* aImplData) : Image(aImplData, CAIRO_SURFACE) {}
 };
+
+#ifdef XP_MACOSX
+class THEBES_API MacIOSurfaceImage : public Image {
+public:
+  struct Data {
+    nsIOSurface* mIOSurface;
+  };
+
+ /**
+  * This can only be called on the main thread. It may add a reference
+  * to the surface (which will eventually be released on the main thread).
+  * The surface must not be modified after this call!!!
+  */
+  virtual void SetData(const Data& aData) = 0;
+
+  /**
+   * Temporary hacks to force plugin drawing during an empty transaction.
+   * This should not be used for anything else, and will be removed
+   * when async plugin rendering is complete.
+   */
+  typedef void (*UpdateSurfaceCallback)(ImageContainer* aContainer, void* aInstanceOwner);
+  virtual void SetUpdateCallback(UpdateSurfaceCallback aCallback, void* aInstanceOwner) = 0;
+  typedef void (*DestroyCallback)(void* aInstanceOwner);
+  virtual void SetDestroyCallback(DestroyCallback aCallback) = 0;
+
+protected:
+  MacIOSurfaceImage(void* aImplData) : Image(aImplData, MAC_IO_SURFACE) {}
+};
+#endif
 
 }
 }

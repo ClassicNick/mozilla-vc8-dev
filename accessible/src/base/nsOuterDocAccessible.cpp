@@ -76,32 +76,25 @@ nsOuterDocAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
   return NS_OK;
 }
 
-nsresult
+nsAccessible*
 nsOuterDocAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
-                                      PRBool aDeepestChild,
-                                      nsIAccessible **aChild)
+                                      EWhichChildAtPoint aWhichChild)
 {
   PRInt32 docX = 0, docY = 0, docWidth = 0, docHeight = 0;
   nsresult rv = GetBounds(&docX, &docY, &docWidth, &docHeight);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_SUCCESS(rv, nsnull);
 
   if (aX < docX || aX >= docX + docWidth || aY < docY || aY >= docY + docHeight)
-    return NS_OK;
+    return nsnull;
 
   // Always return the inner doc as direct child accessible unless bounds
   // outside of it.
-  nsCOMPtr<nsIAccessible> childAcc;
-  rv = GetFirstChild(getter_AddRefs(childAcc));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsAccessible* child = GetChildAt(0);
+  NS_ENSURE_TRUE(child, nsnull);
 
-  if (!childAcc)
-    return NS_OK;
-
-  if (aDeepestChild)
-    return childAcc->GetDeepestChildAtPoint(aX, aY, aChild);
-
-  NS_ADDREF(*aChild = childAcc);
-  return NS_OK;
+  if (aWhichChild = eDeepestChild)
+    return child->GetChildAtPoint(aX, aY, eDeepestChild);
+  return child;
 }
 
 nsresult
@@ -190,7 +183,7 @@ nsOuterDocAccessible::InvalidateChildren()
   // then allow nsAccDocManager to handle this case since the document
   // accessible is created and appended as a child when it's requested.
 
-  mChildrenFlags = eChildrenUninitialized;
+  SetChildrenFlag(eChildrenUninitialized);
 }
 
 PRBool
@@ -243,16 +236,11 @@ void
 nsOuterDocAccessible::CacheChildren()
 {
   // Request document accessible for the content document to make sure it's
-  // created because once it's created it appends itself as a child.
-  nsIDocument *outerDoc = mContent->GetCurrentDoc();
-  if (!outerDoc)
-    return;
-
-  nsIDocument *innerDoc = outerDoc->GetSubDocumentFor(mContent);
-  if (!innerDoc)
-    return;
-
-  nsDocAccessible *docAcc = GetAccService()->GetDocAccessible(innerDoc);
-  NS_ASSERTION(docAcc && docAcc->GetParent() == this,
-               "Document accessible isn't a child of outerdoc accessible!");
+  // created. It will appended to outerdoc accessible children asynchronously.
+  nsIDocument* outerDoc = mContent->GetCurrentDoc();
+  if (outerDoc) {
+    nsIDocument* innerDoc = outerDoc->GetSubDocumentFor(mContent);
+    if (innerDoc)
+      GetAccService()->GetDocAccessible(innerDoc);
+  }
 }

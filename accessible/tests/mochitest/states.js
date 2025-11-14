@@ -19,6 +19,7 @@ const STATE_FOCUSABLE = nsIAccessibleStates.STATE_FOCUSABLE;
 const STATE_FOCUSED = nsIAccessibleStates.STATE_FOCUSED;
 const STATE_HASPOPUP = nsIAccessibleStates.STATE_HASPOPUP;
 const STATE_INVALID = nsIAccessibleStates.STATE_INVALID;
+const STATE_INVISIBLE = nsIAccessibleStates.STATE_INVISIBLE;
 const STATE_LINKED = nsIAccessibleStates.STATE_LINKED;
 const STATE_MIXED = nsIAccessibleStates.STATE_MIXED;
 const STATE_MULTISELECTABLE = nsIAccessibleStates.STATE_MULTISELECTABLE;
@@ -58,13 +59,14 @@ const EXT_STATE_VERTICAL = nsIAccessibleStates.EXT_STATE_VERTICAL;
  * @param aExtraState        The extra state bits that are wanted.
  * @param aAbsentState       State bits that are not wanted.
  * @param aAbsentExtraState  Extra state bits that are not wanted.
+ * @param aTestName          The test name.
  */
 function testStates(aAccOrElmOrID, aState, aExtraState, aAbsentState,
-                    aAbsentExtraState)
+                    aAbsentExtraState, aTestName)
 {
   var [state, extraState] = getStates(aAccOrElmOrID);
 
-  var id = prettyName(aAccOrElmOrID);
+  var id = prettyName(aAccOrElmOrID) + (aTestName ? " [" + aTestName + "]": "");
 
   // Primary test.
   isState(state & aState, aState, false,

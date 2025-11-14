@@ -57,6 +57,7 @@ ContainerInsertAfter(Container* aContainer, Layer* aChild, Layer* aAfter)
       aContainer->mLastChild = aChild;
     }
     NS_ADDREF(aChild);
+    aContainer->DidInsertChild(aChild);
     return;
   }
   for (Layer *child = aContainer->GetFirstChild(); 
@@ -72,6 +73,7 @@ ContainerInsertAfter(Container* aContainer, Layer* aChild, Layer* aAfter)
       }
       aChild->SetPrevSibling(child);
       NS_ADDREF(aChild);
+      aContainer->DidInsertChild(aChild);
       return;
     }
   }
@@ -92,6 +94,7 @@ ContainerRemoveChild(Container* aContainer, Layer* aChild)
     aChild->SetNextSibling(nsnull);
     aChild->SetPrevSibling(nsnull);
     aChild->SetParent(nsnull);
+    aContainer->DidRemoveChild(aChild);
     NS_RELEASE(aChild);
     return;
   }
@@ -109,6 +112,7 @@ ContainerRemoveChild(Container* aContainer, Layer* aChild)
       child->SetNextSibling(nsnull);
       child->SetPrevSibling(nsnull);
       child->SetParent(nsnull);
+      aContainer->DidRemoveChild(aChild);
       NS_RELEASE(aChild);
       return;
     }
@@ -197,22 +201,14 @@ ContainerRender(Container* aContainer,
       }
     }
 
-    aContainer->gl()->fScissor(0, 0, visibleRect.width, visibleRect.height);
+    aContainer->gl()->PushViewportRect();
     framebufferRect -= childOffset; 
-    if (!aPreviousFrameBuffer) {
-      aContainer->gl()->FixWindowCoordinateRect(framebufferRect,
-                                                aManager->GetWigetSize().height);
-    }
     aManager->CreateFBOWithTexture(framebufferRect,
                                    mode,
                                    &frameBuffer,
                                    &containerSurface);
     childOffset.x = visibleRect.x;
     childOffset.y = visibleRect.y;
-
-    aContainer->gl()->PushViewportRect();
-    aManager->SetupPipeline(visibleRect.width, visibleRect.height);
-
   } else {
     frameBuffer = aPreviousFrameBuffer;
     aContainer->mSupportsComponentAlphaChildren = (aContainer->GetContentFlags() & Layer::CONTENT_OPAQUE) ||
@@ -235,62 +231,25 @@ ContainerRender(Container* aContainer,
       continue;
     }
 
-    nsIntRect scissorRect(visibleRect);
+    nsIntRect scissorRect = 
+      layerToRender->GetLayer()->CalculateScissorRect(needsFramebuffer,
+                                                      visibleRect,
+                                                      cachedScissor,
+                                                      contTransform);
 
-    const nsIntRect *clipRect = layerToRender->GetLayer()->GetEffectiveClipRect();
-    if (clipRect) {
-      if (clipRect->IsEmpty()) {
-        continue;
-      }
-      scissorRect = *clipRect;
-      if (!needsFramebuffer) {
-        gfxRect r(scissorRect.x, scissorRect.y, scissorRect.width, scissorRect.height);
-        gfxRect trScissor = contTransform.TransformBounds(r);
-        trScissor.Round();
-        if (!gfxUtils::GfxRectToIntRect(trScissor, &scissorRect)) {
-          scissorRect = visibleRect;
-        }
-      }
+    if (scissorRect.IsEmpty()) {
+      continue;
     }
 
-    if (needsFramebuffer) {
-      scissorRect.MoveBy(- visibleRect.TopLeft());
-    } else {
-      if (!aPreviousFrameBuffer) {
-        /**
-         * glScissor coordinates are oriented with 0,0 being at the bottom left,
-         * the opposite to layout (0,0 at the top left).
-         * All rendering to an FBO is upside-down, making the coordinate systems
-         * match.
-         * When rendering directly to a window (No current or previous FBO),
-         * we need to flip the scissor rect.
-         */
-        aContainer->gl()->FixWindowCoordinateRect(scissorRect,
-                                                  aManager->GetWigetSize().height);
-      }
-
-      scissorRect.IntersectRect(scissorRect, cachedScissor);
-    }
-
-    /**
-     *  We can't clip to a visible region if theres no framebuffer since we might be transformed
-     */
-    if (needsFramebuffer || clipRect) {
-      aContainer->gl()->fScissor(scissorRect.x, 
-                                 scissorRect.y, 
-                                 scissorRect.width, 
-                                 scissorRect.height);
-    } else {
-      aContainer->gl()->fScissor(cachedScissor.x, 
-                                 cachedScissor.y, 
-                                 cachedScissor.width, 
-                                 cachedScissor.height);
-    }
+    aContainer->gl()->fScissor(scissorRect.x, 
+                               scissorRect.y, 
+                               scissorRect.width, 
+                               scissorRect.height);
 
     layerToRender->RenderLayer(frameBuffer, childOffset);
+    aContainer->gl()->MakeCurrent();
   }
 
-  aContainer->gl()->PopScissorRect();
 
   if (needsFramebuffer) {
     // Unbind the current framebuffer and rebind the previous one.
@@ -298,7 +257,9 @@ ContainerRender(Container* aContainer,
     // Restore the viewport
     aContainer->gl()->PopViewportRect();
     nsIntRect viewport = aContainer->gl()->ViewportRect();
-    aManager->SetupPipeline(viewport.width, viewport.height);
+    aManager->SetupPipeline(viewport.width, viewport.height,
+                            LayerManagerOGL::ApplyWorldTransform);
+    aContainer->gl()->PopScissorRect();
 
     aContainer->gl()->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, aPreviousFrameBuffer);
     aContainer->gl()->fDeleteFramebuffers(1, &frameBuffer);
@@ -323,16 +284,15 @@ ContainerRender(Container* aContainer,
                       2, f);
     }
 
-    DEBUG_GL_ERROR_CHECK(aContainer->gl());
-
-    aManager->BindAndDrawQuad(rgb, aPreviousFrameBuffer == 0);
-
-    DEBUG_GL_ERROR_CHECK(aContainer->gl());
+    // Drawing is always flipped, but when copying between surfaces we want to avoid
+    // this. Pass true for the flip parameter to introduce a second flip
+    // that cancels the other one out.
+    aManager->BindAndDrawQuad(rgb, true);
 
     // Clean up resources.  This also unbinds the texture.
     aContainer->gl()->fDeleteTextures(1, &containerSurface);
-
-    DEBUG_GL_ERROR_CHECK(aContainer->gl());
+  } else {
+    aContainer->gl()->PopScissorRect();
   }
 }
 

@@ -95,6 +95,12 @@ function presentableValueFor(aObject)
         display: aObject
       };
 
+    case "Iterator":
+      return {
+        type: TYPE_OTHER,
+        display: "Iterator"
+      };
+
     case "Function":
       presentable = aObject.toString();
       return {
@@ -105,7 +111,21 @@ function presentableValueFor(aObject)
     default:
       presentable = aObject.toString();
       let m = /^\[object (\S+)\]/.exec(presentable);
-      let display;
+
+      if (typeof aObject == "object" && typeof aObject.next == "function" &&
+          m && m[1] == "Generator") {
+        return {
+          type: TYPE_OTHER,
+          display: m[1]
+        };
+      }
+
+      if (typeof aObject == "object" && typeof aObject.__iterator__ == "function") {
+        return {
+          type: TYPE_OTHER,
+          display: "Iterator"
+        };
+      }
 
       return {
         type: TYPE_OBJECT,
@@ -430,7 +450,8 @@ function PropertyPanel(aParent, aDocument, aTitle, aObject, aButtons)
     label: aTitle,
     titlebar: "normal",
     noautofocus: "true",
-    noautohide: "true"
+    noautohide: "true",
+    close: "true",
   });
 
   // Create the tree.
@@ -484,6 +505,12 @@ function PropertyPanel(aParent, aDocument, aTitle, aObject, aButtons)
     self.panel.removeEventListener("popupshown", onPopupShow, false);
     self.tree.view = self.treeView;
   }, false);
+
+  this.panel.addEventListener("popuphidden", function onPopupHide()
+  {
+    self.panel.removeEventListener("popuphidden", onPopupHide, false);
+    self.destroy();
+  }, false);
 }
 
 /**
@@ -494,9 +521,13 @@ function PropertyPanel(aParent, aDocument, aTitle, aObject, aButtons)
  */
 PropertyPanel.prototype.destroy = function PP_destroy()
 {
-  this.panel.hidePopup();
   this.panel.parentNode.removeChild(this.panel);
   this.treeView = null;
   this.panel = null;
   this.tree = null;
+
+  if (this.linkNode) {
+    this.linkNode._panelOpen = false;
+    this.linkNode = null;
+  }
 }

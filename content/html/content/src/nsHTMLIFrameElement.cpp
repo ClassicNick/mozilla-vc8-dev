@@ -162,16 +162,16 @@ nsHTMLIFrameElement::ParseAttribute(PRInt32 aNamespaceID,
 {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::marginwidth) {
-      return aResult.ParseSpecialIntValue(aValue, PR_TRUE);
+      return aResult.ParseSpecialIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::marginheight) {
-      return aResult.ParseSpecialIntValue(aValue, PR_TRUE);
+      return aResult.ParseSpecialIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::width) {
-      return aResult.ParseSpecialIntValue(aValue, PR_TRUE);
+      return aResult.ParseSpecialIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::height) {
-      return aResult.ParseSpecialIntValue(aValue, PR_TRUE);
+      return aResult.ParseSpecialIntValue(aValue);
     }
     if (aAttribute == nsGkAtoms::frameborder) {
       return ParseFrameborderValue(aValue, aResult);
@@ -202,34 +202,40 @@ MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
       if (NS_STYLE_FRAME_0 == frameborder ||
           NS_STYLE_FRAME_NO == frameborder ||
           NS_STYLE_FRAME_OFF == frameborder) {
-        if (aData->mMarginData->mBorderWidth.mLeft.GetUnit() == eCSSUnit_Null)
-          aData->mMarginData->mBorderWidth.mLeft.SetFloatValue(0.0f, eCSSUnit_Pixel);
-        if (aData->mMarginData->mBorderWidth.mRight.GetUnit() == eCSSUnit_Null)
-          aData->mMarginData->mBorderWidth.mRight.SetFloatValue(0.0f, eCSSUnit_Pixel);
-        if (aData->mMarginData->mBorderWidth.mTop.GetUnit() == eCSSUnit_Null)
-          aData->mMarginData->mBorderWidth.mTop.SetFloatValue(0.0f, eCSSUnit_Pixel);
-        if (aData->mMarginData->mBorderWidth.mBottom.GetUnit() == eCSSUnit_Null)
-          aData->mMarginData->mBorderWidth.mBottom.SetFloatValue(0.0f, eCSSUnit_Pixel);
+        nsCSSValue* borderLeftWidth = aData->ValueForBorderLeftWidthValue();
+        if (borderLeftWidth->GetUnit() == eCSSUnit_Null)
+          borderLeftWidth->SetFloatValue(0.0f, eCSSUnit_Pixel);
+        nsCSSValue* borderRightWidth = aData->ValueForBorderRightWidthValue();
+        if (borderRightWidth->GetUnit() == eCSSUnit_Null)
+          borderRightWidth->SetFloatValue(0.0f, eCSSUnit_Pixel);
+        nsCSSValue* borderTopWidth = aData->ValueForBorderTopWidth();
+        if (borderTopWidth->GetUnit() == eCSSUnit_Null)
+          borderTopWidth->SetFloatValue(0.0f, eCSSUnit_Pixel);
+        nsCSSValue* borderBottomWidth = aData->ValueForBorderBottomWidth();
+        if (borderBottomWidth->GetUnit() == eCSSUnit_Null)
+          borderBottomWidth->SetFloatValue(0.0f, eCSSUnit_Pixel);
       }
     }
   }
   if (aData->mSIDs & NS_STYLE_INHERIT_BIT(Position)) {
     // width: value
-    if (aData->mPositionData->mWidth.GetUnit() == eCSSUnit_Null) {
+    nsCSSValue* width = aData->ValueForWidth();
+    if (width->GetUnit() == eCSSUnit_Null) {
       const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::width);
       if (value && value->Type() == nsAttrValue::eInteger)
-        aData->mPositionData->mWidth.SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
+        width->SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
       else if (value && value->Type() == nsAttrValue::ePercent)
-        aData->mPositionData->mWidth.SetPercentValue(value->GetPercentValue());
+        width->SetPercentValue(value->GetPercentValue());
     }
 
     // height: value
-    if (aData->mPositionData->mHeight.GetUnit() == eCSSUnit_Null) {
+    nsCSSValue* height = aData->ValueForHeight();
+    if (height->GetUnit() == eCSSUnit_Null) {
       const nsAttrValue* value = aAttributes->GetAttr(nsGkAtoms::height);
       if (value && value->Type() == nsAttrValue::eInteger)
-        aData->mPositionData->mHeight.SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
+        height->SetFloatValue((float)value->GetIntegerValue(), eCSSUnit_Pixel);
       else if (value && value->Type() == nsAttrValue::ePercent)
-        aData->mPositionData->mHeight.SetPercentValue(value->GetPercentValue());
+        height->SetPercentValue(value->GetPercentValue());
     }
   }
 

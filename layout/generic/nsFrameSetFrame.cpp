@@ -101,7 +101,6 @@ void nsFramesetDrag::Reset(PRBool               aVertical,
   mIndex    = aIndex;
   mChange   = aChange;
   mSource   = aSource;
-  mActive   = PR_TRUE;
 }
 
 void nsFramesetDrag::UnSet()
@@ -110,7 +109,6 @@ void nsFramesetDrag::UnSet()
   mIndex    = -1;
   mChange   = 0;
   mSource   = nsnull;
-  mActive   = PR_FALSE;
 }
 
 /*******************************************************************************
@@ -319,13 +317,19 @@ nsHTMLFramesetFrame::Init(nsIContent*      aContent,
   NS_ENSURE_SUCCESS(result, result);
   result = ourContent->GetColSpec(&mNumCols, &colSpecs);
   NS_ENSURE_SUCCESS(result, result);
+
+  // Maximum value of mNumRows and mNumCols is NS_MAX_FRAMESET_SPEC_COUNT
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < UINT_MAX / sizeof(nscoord));
   mRowSizes  = new nscoord[mNumRows];
   mColSizes  = new nscoord[mNumCols];
   if (!mRowSizes || !mColSizes)
     return NS_ERROR_OUT_OF_MEMORY; 
 
+  // Ensure we can't overflow numCells
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < PR_INT32_MAX / NS_MAX_FRAMESET_SPEC_COUNT);
   PRInt32 numCells = mNumRows*mNumCols;
 
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < UINT_MAX / sizeof(nsHTMLFramesetBorderFrame*));
   mVerBorders    = new nsHTMLFramesetBorderFrame*[mNumCols];  // 1 more than number of ver borders
   if (!mVerBorders)
     return NS_ERROR_OUT_OF_MEMORY;
@@ -339,9 +343,15 @@ nsHTMLFramesetFrame::Init(nsIContent*      aContent,
 
   for (int horX = 0; horX < mNumRows; horX++)
     mHorBorders[horX]    = nsnull;
-     
+ 
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT
+                   < UINT_MAX / sizeof(PRInt32) / NS_MAX_FRAMESET_SPEC_COUNT); 
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT
+                   < UINT_MAX / sizeof(nsFrameborder) / NS_MAX_FRAMESET_SPEC_COUNT); 
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT
+                   < UINT_MAX / sizeof(nsBorderColor) / NS_MAX_FRAMESET_SPEC_COUNT); 
   mChildTypes = new PRInt32[numCells]; 
-  mChildFrameborder  = new nsFrameborder[numCells]; 
+  mChildFrameborder  = new nsFrameborder[numCells];
   mChildBorderColors  = new nsBorderColor[numCells]; 
   if (!mChildTypes || !mChildFrameborder || !mChildBorderColors)
     return NS_ERROR_OUT_OF_MEMORY;
@@ -355,15 +365,24 @@ nsHTMLFramesetFrame::Init(nsIContent*      aContent,
 
   for (PRUint32 childX = 0; childX < numChildren; childX++) {
     if (mChildCount == numCells) { // we have more <frame> or <frameset> than cells
-      // Clear the lazy bits in the remaining children.
+      // Clear the lazy bits in the remaining children.  Also clear
+      // the restyle flags, like nsCSSFrameConstructor::ProcessChildren does.
       for (PRUint32 i = childX; i < numChildren; i++) {
-        mContent->GetChildAt(i)->UnsetFlags(NODE_DESCENDANTS_NEED_FRAMES |
-                                            NODE_NEEDS_FRAME);
+        nsIContent *child = mContent->GetChildAt(i);
+        child->UnsetFlags(NODE_DESCENDANTS_NEED_FRAMES | NODE_NEEDS_FRAME);
+        if (child->IsElement()) {
+          child->UnsetFlags(ELEMENT_ALL_RESTYLE_FLAGS);
+        }
       }
       break;
     }
     nsIContent *child = mContent->GetChildAt(childX);
     child->UnsetFlags(NODE_DESCENDANTS_NEED_FRAMES | NODE_NEEDS_FRAME);
+    // Also clear the restyle flags in the child like
+    // nsCSSFrameConstructor::ProcessChildren does.
+    if (child->IsElement()) {
+      child->UnsetFlags(ELEMENT_ALL_RESTYLE_FLAGS);
+    }
 
     // IMPORTANT: This must match the conditions in
     // nsCSSFrameConstructor::ContentAppended/Inserted/Removed    
@@ -528,6 +547,9 @@ void nsHTMLFramesetFrame::CalculateRowCol(nsPresContext*       aPresContext,
                                           const nsFramesetSpec* aSpecs, 
                                           nscoord*              aValues)
 {
+  // aNumSpecs maximum value is NS_MAX_FRAMESET_SPEC_COUNT
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < UINT_MAX / sizeof(PRInt32));
+
   PRInt32  fixedTotal = 0;
   PRInt32  numFixed = 0;
   nsAutoArrayPtr<PRInt32> fixed(new PRInt32[aNumSpecs]);
@@ -984,10 +1006,8 @@ nsHTMLFramesetFrame::Reflow(nsPresContext*          aPresContext,
     return NS_OK;
   }
 
-  if (!mDrag.mActive) {
-    CalculateRowCol(aPresContext, width, mNumCols, colSpecs, mColSizes);
-    CalculateRowCol(aPresContext, height, mNumRows, rowSpecs, mRowSizes);
-  }
+  CalculateRowCol(aPresContext, width, mNumCols, colSpecs, mColSizes);
+  CalculateRowCol(aPresContext, height, mNumRows, rowSpecs, mRowSizes);
 
   nsAutoArrayPtr<PRBool>  verBordersVis; // vertical borders visibility
   nsAutoArrayPtr<nscolor> verBorderColors;
@@ -997,6 +1017,11 @@ nsHTMLFramesetFrame::Reflow(nsPresContext*          aPresContext,
   nsFrameborder           frameborder = GetFrameBorder();
 
   if (firstTime) {
+    // Check for overflow in memory allocations using mNumCols and mNumRows
+    // which have a maxium value of NS_MAX_FRAMESET_SPEC_COUNT.
+    PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < UINT_MAX / sizeof(PRBool));
+    PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < UINT_MAX / sizeof(nscolor));
+
     verBordersVis = new PRBool[mNumCols];
     NS_ENSURE_TRUE(verBordersVis, NS_ERROR_OUT_OF_MEMORY);
     verBorderColors = new nscolor[mNumCols];
@@ -1330,7 +1355,10 @@ nsHTMLFramesetFrame::RecalculateBorderResize()
     return;
   }
 
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT < PR_INT32_MAX / NS_MAX_FRAMESET_SPEC_COUNT);
   PRInt32 numCells = mNumRows * mNumCols; // max number of cells
+  PR_STATIC_ASSERT(NS_MAX_FRAMESET_SPEC_COUNT
+                   < UINT_MAX / sizeof(PRInt32) / NS_MAX_FRAMESET_SPEC_COUNT); 
   nsAutoArrayPtr<PRInt32> childTypes(new PRInt32[numCells]);
   if (NS_UNLIKELY(!childTypes)) {
     return;
@@ -1518,8 +1546,7 @@ nsHTMLFramesetFrame::MouseDrag(nsPresContext* aPresContext,
     // Update the view immediately (make drag appear snappier)
     nsIViewManager* vm = aPresContext->GetPresShell()->GetViewManager();
     if (vm) {
-      nsIView* root;
-      vm->GetRootView(root);
+      nsIView* root = vm->GetRootView();
       if (root) {
         vm->UpdateView(root, NS_VMREFRESH_IMMEDIATE);
       }

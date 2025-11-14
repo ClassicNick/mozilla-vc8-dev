@@ -62,7 +62,6 @@
 
 #ifdef JS_TRACER
 #include "jstracer.h"
-using namespace avmplus;
 using namespace nanojit;
 #endif
 
@@ -80,7 +79,7 @@ static void
 resc_finalize(JSContext *cx, JSObject *obj)
 {
     RegExpStatics *res = static_cast<RegExpStatics *>(obj->getPrivate());
-    cx->destroy<RegExpStatics>(res);
+    cx->delete_(res);
 }
 
 static void
@@ -94,22 +93,22 @@ resc_trace(JSTracer *trc, JSObject *obj)
 
 Class js::regexp_statics_class = {
     "RegExpStatics", 
-    JSCLASS_HAS_PRIVATE | JSCLASS_MARK_IS_TRACE,
-    PropertyStub,   /* addProperty */
-    PropertyStub,   /* delProperty */
-    PropertyStub,   /* getProperty */
-    PropertyStub,   /* setProperty */
+    JSCLASS_HAS_PRIVATE,
+    PropertyStub,         /* addProperty */
+    PropertyStub,         /* delProperty */
+    PropertyStub,         /* getProperty */
+    StrictPropertyStub,   /* setProperty */
     EnumerateStub,
     ResolveStub,
     ConvertStub,
     resc_finalize,
-    NULL,           /* reserved0   */
-    NULL,           /* checkAccess */
-    NULL,           /* call        */
-    NULL,           /* construct   */
-    NULL,           /* xdrObject   */
-    NULL,           /* hasInstance */
-    JS_CLASS_TRACE(resc_trace)
+    NULL,                 /* reserved0   */
+    NULL,                 /* checkAccess */
+    NULL,                 /* call        */
+    NULL,                 /* construct   */
+    NULL,                 /* xdrObject   */
+    NULL,                 /* hasInstance */
+    resc_trace
 };
 
 /*
@@ -122,11 +121,16 @@ SwapObjectRegExp(JSContext *cx, JSObject *obj, AlreadyIncRefed<RegExp> newRegExp
 {
     RegExp *oldRegExp = RegExp::extractFrom(obj);
 #ifdef DEBUG
+    if (oldRegExp)
+        assertSameCompartment(cx, obj, oldRegExp->compartment);
     assertSameCompartment(cx, obj, newRegExp->compartment);
 #endif
 
-    obj->setPrivate(newRegExp.get());
-    obj->zeroRegExpLastIndex();
+    /*
+     * |obj| isn't a new regular expression, so it won't fail due to failing to
+     * define the initial set of properties.
+     */
+    JS_ALWAYS_TRUE(obj->initRegExp(cx, newRegExp.get()));
     if (oldRegExp)
         oldRegExp->decref(cx);
 }
@@ -167,8 +171,8 @@ js_CloneRegExpObject(JSContext *cx, JSObject *obj, JSObject *proto)
         }
     }
     JS_ASSERT(re);
-    clone->setPrivate(re);
-    clone->zeroRegExpLastIndex();
+    if (!clone->initRegExp(cx, re))
+        return NULL;
     return clone;
 }
 
@@ -209,6 +213,7 @@ RegExp::handleYarrError(JSContext *cx, int error)
       COMPILE_EMSG(CharacterClassRangeSingleChar, JSMSG_BAD_CLASS_RANGE);
       COMPILE_EMSG(EscapeUnterminated, JSMSG_TRAILING_SLASH);
       COMPILE_EMSG(QuantifierTooLarge, JSMSG_BAD_QUANTIFIER);
+      COMPILE_EMSG(HitRecursionLimit, JSMSG_REGEXP_TOO_COMPLEX);
 #undef COMPILE_EMSG
       default:
         JS_NOT_REACHED("Precondition violation: unknown Yarr error code.");
@@ -218,10 +223,11 @@ RegExp::handleYarrError(JSContext *cx, int error)
 void
 RegExp::handlePCREError(JSContext *cx, int error)
 {
-#define REPORT(__msg) \
-    JS_ReportErrorFlagsAndNumberUC(cx, JSREPORT_ERROR, js_GetErrorMessage, NULL, __msg); \
+#define REPORT(msg_) \
+    JS_ReportErrorFlagsAndNumberUC(cx, JSREPORT_ERROR, js_GetErrorMessage, NULL, msg_); \
     return
     switch (error) {
+      case -2: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
       case 0: JS_NOT_REACHED("Precondition violation: an error must have occurred.");
       case 1: REPORT(JSMSG_TRAILING_SLASH);
       case 2: REPORT(JSMSG_TRAILING_SLASH);
@@ -247,20 +253,20 @@ RegExp::handlePCREError(JSContext *cx, int error)
 }
 
 bool
-RegExp::parseFlags(JSContext *cx, JSString *flagStr, uint32 &flagsOut)
+RegExp::parseFlags(JSContext *cx, JSString *flagStr, uintN *flagsOut)
 {
     size_t n = flagStr->length();
     const jschar *s = flagStr->getChars(cx);
     if (!s)
         return false;
 
-    flagsOut = 0;
+    *flagsOut = 0;
     for (size_t i = 0; i < n; i++) {
-#define HANDLE_FLAG(__name)                                             \
-        JS_BEGIN_MACRO                                                  \
-            if (flagsOut & (__name))                                    \
-                goto bad_flag;                                          \
-            flagsOut |= (__name);                                       \
+#define HANDLE_FLAG(name_)                                                    \
+        JS_BEGIN_MACRO                                                        \
+            if (*flagsOut & (name_))                                          \
+                goto bad_flag;                                                \
+            *flagsOut |= (name_);                                             \
         JS_END_MACRO
         switch (s[i]) {
           case 'i': HANDLE_FLAG(JSREG_FOLD); break;
@@ -288,96 +294,48 @@ RegExp::createFlagged(JSContext *cx, JSString *str, JSString *opt)
 {
     if (!opt)
         return create(cx, str, 0);
-    uint32 flags = 0;
-    if (!parseFlags(cx, opt, flags))
+    uintN flags = 0;
+    if (!parseFlags(cx, opt, &flags))
         return AlreadyIncRefed<RegExp>(NULL);
     return create(cx, str, flags);
 }
 
-/*
- * RegExp instance properties.
- */
-#define DEFINE_GETTER(name, code)                                              \
-    static JSBool                                                              \
-    name(JSContext *cx, JSObject *obj, jsid id, Value *vp)                     \
-    {                                                                          \
-        while (obj->getClass() != &js_RegExpClass) {                           \
-            obj = obj->getProto();                                             \
-            if (!obj)                                                          \
-                return true;                                                   \
-        }                                                                      \
-        RegExp *re = RegExp::extractFrom(obj);                                 \
-        code;                                                                  \
-        return true;                                                           \
-    }
-
-/* lastIndex is stored in the object, re = re silences the compiler warning. */
-DEFINE_GETTER(lastIndex_getter,  re = re; *vp = obj->getRegExpLastIndex())
-DEFINE_GETTER(source_getter,     *vp = StringValue(re->getSource()))
-DEFINE_GETTER(global_getter,     *vp = BooleanValue(re->global()))
-DEFINE_GETTER(ignoreCase_getter, *vp = BooleanValue(re->ignoreCase()))
-DEFINE_GETTER(multiline_getter,  *vp = BooleanValue(re->multiline()))
-DEFINE_GETTER(sticky_getter,     *vp = BooleanValue(re->sticky()))
-
-static JSBool
-lastIndex_setter(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+const Shape *
+JSObject::assignInitialRegExpShape(JSContext *cx)
 {
-    while (obj->getClass() != &js_RegExpClass) {
-        obj = obj->getProto();
-        if (!obj)
-            return true;
-    }
-    obj->setRegExpLastIndex(*vp);
-    return true;
-}
+    JS_ASSERT(!cx->compartment->initialRegExpShape);
+    JS_ASSERT(isRegExp());
+    JS_ASSERT(nativeEmpty());
 
-static const struct LazyProp {
-    const char *name;
-    uint16 atomOffset;
-    PropertyOp getter;
-} lazyRegExpProps[] = {
-    { js_source_str,     ATOM_OFFSET(source),     source_getter },
-    { js_global_str,     ATOM_OFFSET(global),     global_getter },
-    { js_ignoreCase_str, ATOM_OFFSET(ignoreCase), ignoreCase_getter },
-    { js_multiline_str,  ATOM_OFFSET(multiline),  multiline_getter },
-    { js_sticky_str,     ATOM_OFFSET(sticky),     sticky_getter }
-};
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_LAST_INDEX == 0);
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_SOURCE == JSSLOT_REGEXP_LAST_INDEX + 1);
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_GLOBAL == JSSLOT_REGEXP_SOURCE + 1);
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_IGNORE_CASE == JSSLOT_REGEXP_GLOBAL + 1);
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_MULTILINE == JSSLOT_REGEXP_IGNORE_CASE + 1);
+    JS_STATIC_ASSERT(JSSLOT_REGEXP_STICKY == JSSLOT_REGEXP_MULTILINE + 1);
 
-static JSBool
-regexp_resolve(JSContext *cx, JSObject *obj, jsid id, uint32 flags, JSObject **objp)
-{
-    JS_ASSERT(obj->isRegExp());
-
-    if (!JSID_IS_ATOM(id))
-        return JS_TRUE;
-
-    if (id == ATOM_TO_JSID(cx->runtime->atomState.lastIndexAtom)) {
-        if (!js_DefineNativeProperty(cx, obj, id, UndefinedValue(),
-                                     lastIndex_getter, lastIndex_setter,
-                                     JSPROP_PERMANENT | JSPROP_SHARED,
-                                     0, 0, NULL)) {
-            return false;
-        }
-        *objp = obj;
-        return true;
+    /* The lastIndex property alone is writable but non-configurable. */
+    if (!addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.lastIndexAtom),
+                         JSSLOT_REGEXP_LAST_INDEX, JSPROP_PERMANENT))
+    {
+        return NULL;
     }
 
-    for (size_t i = 0; i < JS_ARRAY_LENGTH(lazyRegExpProps); i++) {
-        const LazyProp &lazy = lazyRegExpProps[i];
-        JSAtom *atom = OFFSET_TO_ATOM(cx->runtime, lazy.atomOffset);
-        if (id == ATOM_TO_JSID(atom)) {
-            if (!js_DefineNativeProperty(cx, obj, id, UndefinedValue(),
-                                         lazy.getter, NULL,
-                                         JSPROP_PERMANENT | JSPROP_SHARED | JSPROP_READONLY,
-                                         0, 0, NULL)) {
-                return false;
-            }
-            *objp = obj;
-            return true;
-        }
+    /* Remaining instance properties are non-writable and non-configurable. */
+    if (!addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.sourceAtom),
+                         JSSLOT_REGEXP_SOURCE, JSPROP_PERMANENT | JSPROP_READONLY) ||
+        !addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.globalAtom),
+                         JSSLOT_REGEXP_GLOBAL, JSPROP_PERMANENT | JSPROP_READONLY) ||
+        !addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.ignoreCaseAtom),
+                         JSSLOT_REGEXP_IGNORE_CASE, JSPROP_PERMANENT | JSPROP_READONLY) ||
+        !addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.multilineAtom),
+                         JSSLOT_REGEXP_MULTILINE, JSPROP_PERMANENT | JSPROP_READONLY))
+    {
+        return NULL;
     }
 
-    return true;
+    return addDataProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.stickyAtom),
+                           JSSLOT_REGEXP_STICKY, JSPROP_PERMANENT | JSPROP_READONLY);
 }
 
 /*
@@ -421,7 +379,7 @@ DEFINE_STATIC_GETTER(static_paren9_getter,       return res->createParen(cx, 9, 
 
 #define DEFINE_STATIC_SETTER(name, code)                                        \
     static JSBool                                                               \
-    name(JSContext *cx, JSObject *obj, jsid id, jsval *vp)                      \
+    name(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)       \
     {                                                                           \
         RegExpStatics *res = cx->regExpStatics();                               \
         code;                                                                   \
@@ -473,12 +431,6 @@ regexp_finalize(JSContext *cx, JSObject *obj)
 static JSBool
 regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool test, Value *rval);
 
-static JSBool
-regexp_call(JSContext *cx, uintN argc, Value *vp)
-{
-    return regexp_exec_sub(cx, &JS_CALLEE(cx, vp).toObject(), argc, JS_ARGV(cx, vp), false, vp);
-}
-
 #if JS_HAS_XDR
 
 #include "jsxdrapi.h"
@@ -508,8 +460,8 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
         AlreadyIncRefed<RegExp> re = RegExp::create(xdr->cx, source, flagsword);
         if (!re)
             return false;
-        obj->setPrivate(re.get());
-        obj->zeroRegExpLastIndex();
+        if (!obj->initRegExp(xdr->cx, re.get()))
+            return false;
         *objp = obj;
     }
     return true;
@@ -521,53 +473,26 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
 
 #endif /* !JS_HAS_XDR */
 
-static void
-regexp_trace(JSTracer *trc, JSObject *obj)
-{
-    RegExp *re = RegExp::extractFrom(obj);
-    if (re && re->getSource())
-        MarkString(trc, re->getSource(), "source");
-}
-
-static JSBool
-regexp_enumerate(JSContext *cx, JSObject *obj)
-{
-    JS_ASSERT(obj->isRegExp());
-
-    jsval v;
-    if (!JS_LookupPropertyById(cx, obj, ATOM_TO_JSID(cx->runtime->atomState.lastIndexAtom), &v))
-        return false;
-
-    for (size_t i = 0; i < JS_ARRAY_LENGTH(lazyRegExpProps); i++) {
-        const LazyProp &lazy = lazyRegExpProps[i];
-        jsid id = ATOM_TO_JSID(OFFSET_TO_ATOM(cx->runtime, lazy.atomOffset));
-        if (!JS_LookupPropertyById(cx, obj, id, &v))
-            return false;
-    }
-
-    return true;
-}
-
 js::Class js_RegExpClass = {
     js_RegExp_str,
-    JSCLASS_HAS_PRIVATE | JSCLASS_NEW_RESOLVE |
+    JSCLASS_HAS_PRIVATE |
     JSCLASS_HAS_RESERVED_SLOTS(JSObject::REGEXP_CLASS_RESERVED_SLOTS) |
-    JSCLASS_MARK_IS_TRACE | JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
-    PropertyStub,   /* addProperty */
-    PropertyStub,   /* delProperty */
-    PropertyStub,   /* getProperty */
-    PropertyStub,   /* setProperty */
-    regexp_enumerate,
-    reinterpret_cast<JSResolveOp>(regexp_resolve),
+    JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
+    PropertyStub,         /* addProperty */
+    PropertyStub,         /* delProperty */
+    PropertyStub,         /* getProperty */
+    StrictPropertyStub,   /* setProperty */
+    EnumerateStub,        /* enumerate */
+    ResolveStub,
     ConvertStub,
     regexp_finalize,
-    NULL,           /* reserved0 */
-    NULL,           /* checkAccess */
-    regexp_call,
-    NULL,           /* construct */
+    NULL,                 /* reserved0 */
+    NULL,                 /* checkAccess */
+    NULL,                 /* call */
+    NULL,                 /* construct */
     js_XDRRegExpObject,
-    NULL,           /* hasInstance */
-    JS_CLASS_TRACE(regexp_trace)
+    NULL,                 /* hasInstance */
+    NULL                  /* trace */
 };
 
 /*
@@ -591,9 +516,9 @@ js_regexp_toString(JSContext *cx, JSObject *obj, Value *vp)
     if (size_t len = src->length()) {
         if (!sb.reserve(len + 2))
             return false;
-        JS_ALWAYS_TRUE(sb.append('/'));
-        JS_ALWAYS_TRUE(sb.append(src->chars(), len));
-        JS_ALWAYS_TRUE(sb.append('/'));
+        sb.infallibleAppend('/');
+        sb.infallibleAppend(src->chars(), len);
+        sb.infallibleAppend('/');
     } else {
         if (!sb.append("/(?:)/"))
             return false;
@@ -617,8 +542,10 @@ js_regexp_toString(JSContext *cx, JSObject *obj, Value *vp)
 static JSBool
 regexp_toString(JSContext *cx, uintN argc, Value *vp)
 {
-    JSObject *obj = JS_THIS_OBJECT(cx, Jsvalify(vp));
-    return obj && js_regexp_toString(cx, obj, vp);
+    JSObject *obj = ToObject(cx, &vp[1]);
+    if (!obj)
+        return false;
+    return js_regexp_toString(cx, obj, vp);
 }
 
 /*
@@ -634,6 +561,7 @@ EscapeNakedForwardSlashes(JSContext *cx, JSString *unescaped)
     const jschar *oldChars = unescaped->getChars(cx);
     if (!oldChars)
         return NULL;
+    JS::Anchor<JSString *> anchor(unescaped);
 
     js::Vector<jschar, 128> newChars(cx);
     for (const jschar *it = oldChars; it < oldChars + oldLen; ++it) {
@@ -641,30 +569,31 @@ EscapeNakedForwardSlashes(JSContext *cx, JSString *unescaped)
             if (!newChars.length()) {
                 if (!newChars.reserve(oldLen + 1))
                     return NULL;
-                newChars.append(oldChars, size_t(it - oldChars));
+                newChars.infallibleAppend(oldChars, size_t(it - oldChars));
             }
-            newChars.append('\\');
+            if (!newChars.append('\\'))
+                return NULL;
         }
 
-        if (newChars.length())
-            newChars.append(*it);
+        if (!newChars.empty() && !newChars.append(*it))
+            return NULL;
     }
 
-    if (newChars.length()) {
-        size_t len = newChars.length();
-        if (!newChars.append('\0'))
-            return NULL;
-        jschar *chars = newChars.extractRawBuffer();
-        JSString *escaped = js_NewString(cx, chars, len);
-        if (!escaped)
-            cx->free(chars);
-        return escaped;
-    }
-    return unescaped;
+    if (newChars.empty())
+        return unescaped;
+
+    size_t len = newChars.length();
+    if (!newChars.append('\0'))
+        return NULL;
+    jschar *chars = newChars.extractRawBuffer();
+    JSString *escaped = js_NewString(cx, chars, len);
+    if (!escaped)
+        cx->free_(chars);
+    return escaped;
 }
 
 static bool
-regexp_compile_sub_tail(JSContext *cx, JSObject *obj, Value *rval, JSString *str, uint32 flags = 0)
+SwapRegExpInternals(JSContext *cx, JSObject *obj, Value *rval, JSString *str, uint32 flags = 0)
 {
     flags |= cx->regExpStatics()->getFlags();
     AlreadyIncRefed<RegExp> re = RegExp::create(cx, str, flags);
@@ -673,70 +602,6 @@ regexp_compile_sub_tail(JSContext *cx, JSObject *obj, Value *rval, JSString *str
     SwapObjectRegExp(cx, obj, re);
     *rval = ObjectValue(*obj);
     return true;
-}
-
-static JSBool
-regexp_compile_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Value *rval)
-{
-    if (!InstanceOf(cx, obj, &js_RegExpClass, argv))
-        return false;
-
-    if (argc == 0)
-        return regexp_compile_sub_tail(cx, obj, rval, cx->runtime->emptyString);
-
-    Value sourceValue = argv[0];
-    if (sourceValue.isObject() && sourceValue.toObject().getClass() == &js_RegExpClass) {
-        /*
-         * If we get passed in a RegExp object we construct a new
-         * RegExp that is a duplicate of it by re-compiling the
-         * original source code. ECMA requires that it be an error
-         * here if the flags are specified. (We must use the flags
-         * from the original RegExp also).
-         */
-        JSObject &sourceObj = sourceValue.toObject();
-        if (argc >= 2 && !argv[1].isUndefined()) {
-            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_NEWREGEXP_FLAGGED);
-            return false;
-        }
-        RegExp *re = RegExp::extractFrom(&sourceObj);
-        if (!re)
-            return false;
-        AlreadyIncRefed<RegExp> clone = RegExp::clone(cx, *re);
-        if (!clone)
-            return false;
-        SwapObjectRegExp(cx, obj, clone);
-        *rval = ObjectValue(*obj);
-        return true;
-    }
-
-    /* Coerce to string and compile. */
-    JSString *sourceStr = js_ValueToString(cx, sourceValue);
-    if (!sourceStr)
-        return false;
-    argv[0] = StringValue(sourceStr);
-    uint32 flags = 0;
-    if (argc > 1 && !argv[1].isUndefined()) {
-        JSString *flagStr = js_ValueToString(cx, argv[1]);
-        if (!flagStr)
-            return false;
-        argv[1] = StringValue(flagStr);
-        if (!RegExp::parseFlags(cx, flagStr, flags))
-            return false;
-    }
-
-    JSString *escapedSourceStr = EscapeNakedForwardSlashes(cx, sourceStr);
-    if (!escapedSourceStr)
-        return false;
-    argv[0] = StringValue(escapedSourceStr);
-
-    return regexp_compile_sub_tail(cx, obj, rval, escapedSourceStr, flags);
-}
-
-static JSBool
-regexp_compile(JSContext *cx, uintN argc, Value *vp)
-{
-    JSObject *obj = JS_THIS_OBJECT(cx, Jsvalify(vp));
-    return obj && regexp_compile_sub(cx, obj, argc, vp + 2, vp);
 }
 
 static JSBool
@@ -820,17 +685,125 @@ regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool te
 JSBool
 js_regexp_exec(JSContext *cx, uintN argc, Value *vp)
 {
-    return regexp_exec_sub(cx, JS_THIS_OBJECT(cx, Jsvalify(vp)), argc, vp + 2, JS_FALSE, vp);
+    JSObject *obj = ToObject(cx, &vp[1]);
+    if (!obj)
+        return false;
+    return regexp_exec_sub(cx, obj, argc, vp + 2, JS_FALSE, vp);
 }
 
 JSBool
 js_regexp_test(JSContext *cx, uintN argc, Value *vp)
 {
-    if (!regexp_exec_sub(cx, JS_THIS_OBJECT(cx, Jsvalify(vp)), argc, vp + 2, JS_TRUE, vp))
+    JSObject *obj = ToObject(cx, &vp[1]);
+    if (!obj)
+        return false;
+    if (!regexp_exec_sub(cx, obj, argc, vp + 2, JS_TRUE, vp))
         return false;
     if (!vp->isTrue())
         vp->setBoolean(false);
     return true;
+}
+
+/*
+ * Compile new js::RegExp guts for obj.
+ *
+ * Per ECMAv5 15.10.4.1, we act on combinations of (pattern, flags) as
+ * arguments:
+ *
+ *  RegExp, undefined => flags := pattern.flags
+ *  RegExp, _ => throw TypeError
+ *  _ => pattern := ToString(pattern) if defined(pattern) else ''
+ *       flags := ToString(flags) if defined(flags) else ''
+ */
+static bool
+CompileRegExpAndSwap(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Value *rval)
+{
+    if (argc == 0)
+        return SwapRegExpInternals(cx, obj, rval, cx->runtime->emptyString);
+
+    Value sourceValue = argv[0];
+    if (sourceValue.isObject() && sourceValue.toObject().getClass() == &js_RegExpClass) {
+        /*
+         * If we get passed in a RegExp object we return a new object with the
+         * same RegExp (internal matcher program) guts.
+         * Note: the regexp static flags are not taken into consideration here.
+         */
+        JSObject &sourceObj = sourceValue.toObject();
+        if (argc >= 2 && !argv[1].isUndefined()) {
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_NEWREGEXP_FLAGGED);
+            return false;
+        }
+        RegExp *re = RegExp::extractFrom(&sourceObj);
+        if (!re)
+            return false;
+
+        re->incref(cx);
+        SwapObjectRegExp(cx, obj, AlreadyIncRefed<RegExp>(re));
+
+        *rval = ObjectValue(*obj);
+        return true;
+    }
+
+    JSString *sourceStr;
+    if (sourceValue.isUndefined()) {
+        sourceStr = cx->runtime->emptyString;
+    } else {
+        /* Coerce to string and compile. */
+        sourceStr = js_ValueToString(cx, sourceValue);
+        if (!sourceStr)
+            return false;
+    }  
+
+    uintN flags = 0;
+    if (argc > 1 && !argv[1].isUndefined()) {
+        JSString *flagStr = js_ValueToString(cx, argv[1]);
+        if (!flagStr)
+            return false;
+        argv[1].setString(flagStr);
+        if (!RegExp::parseFlags(cx, flagStr, &flags))
+            return false;
+    }
+
+    JSString *escapedSourceStr = EscapeNakedForwardSlashes(cx, sourceStr);
+    if (!escapedSourceStr)
+        return false;
+
+    return SwapRegExpInternals(cx, obj, rval, escapedSourceStr, flags);
+}
+
+static JSBool
+regexp_compile(JSContext *cx, uintN argc, Value *vp)
+{
+    JSObject *obj = ToObject(cx, &vp[1]);
+    if (!obj || !InstanceOf(cx, obj, &js_RegExpClass, JS_ARGV(cx, vp)))
+        return false;
+
+    return CompileRegExpAndSwap(cx, obj, argc, JS_ARGV(cx, vp), &JS_RVAL(cx, vp));
+}
+
+static JSBool
+regexp_construct(JSContext *cx, uintN argc, Value *vp)
+{
+    Value *argv = JS_ARGV(cx, vp);
+
+    if (!IsConstructing(vp)) {
+        /*
+         * If first arg is regexp and no flags are given, just return the arg.
+         * Otherwise, delegate to the standard constructor.
+         * See ECMAv5 15.10.3.1.
+         */
+        if (argc >= 1 && argv[0].isObject() && argv[0].toObject().isRegExp() &&
+            (argc == 1 || argv[1].isUndefined())) {
+            *vp = argv[0];
+            return true;
+        }
+    }
+
+    JSObject *obj = NewBuiltinClassInstance(cx, &js_RegExpClass);
+    if (!obj)
+        return false;
+
+    return CompileRegExpAndSwap(cx, obj, argc, argv, &JS_RVAL(cx, vp));
 }
 
 static JSFunctionSpec regexp_methods[] = {
@@ -844,65 +817,89 @@ static JSFunctionSpec regexp_methods[] = {
     JS_FS_END
 };
 
-static JSBool
-regexp_construct(JSContext *cx, uintN argc, Value *vp)
-{
-    Value *argv = JS_ARGV(cx, vp);
-    if (!IsConstructing(vp)) {
-        /*
-         * If first arg is regexp and no flags are given, just return the arg.
-         * (regexp_compile_sub detects the regexp + flags case and throws a
-         * TypeError.)  See 15.10.3.1.
-         */
-        if (argc >= 1 && argv[0].isObject() && argv[0].toObject().isRegExp() &&
-            (argc == 1 || argv[1].isUndefined()))
-        {
-            *vp = argv[0];
-            return true;
-        }
-    }
-
-    /* Otherwise, replace obj with a new RegExp object. */
-    JSObject *obj = NewBuiltinClassInstance(cx, &js_RegExpClass);
-    if (!obj)
-        return false;
-
-    return regexp_compile_sub(cx, obj, argc, argv, vp);
-}
-
-/* Similar to regexp_compile_sub_tail. */
-static bool
-InitRegExpClassCompile(JSContext *cx, JSObject *obj)
-{
-    AlreadyIncRefed<RegExp> re = RegExp::create(cx, cx->runtime->emptyString, 0);
-    if (!re)
-        return false;
-    SwapObjectRegExp(cx, obj, re);
-    return true;
-}
-
 JSObject *
-js_InitRegExpClass(JSContext *cx, JSObject *obj)
+js_InitRegExpClass(JSContext *cx, JSObject *global)
 {
-    JSObject *proto = js_InitClass(cx, obj, NULL, &js_RegExpClass, regexp_construct, 2,
-                                   NULL, regexp_methods, regexp_static_props, NULL);
+    JS_ASSERT(global->isGlobal());
+    JS_ASSERT(global->isNative());
+
+    /* Create and initialize RegExp.prototype. */
+    JSObject *objectProto;
+    if (!js_GetClassPrototype(cx, global, JSProto_Object, &objectProto))
+        return NULL;
+    JS_ASSERT(objectProto);
+
+    JSObject *proto = NewObject<WithProto::Class>(cx, &js_RegExpClass, objectProto, global);
     if (!proto)
         return NULL;
 
-    JSObject *ctor = JS_GetConstructor(cx, proto);
+    AlreadyIncRefed<RegExp> re = RegExp::create(cx, cx->runtime->emptyString, 0);
+    if (!re)
+        return NULL;
+#ifdef DEBUG
+    assertSameCompartment(cx, proto, re->compartment);
+#endif
+
+    /*
+     * Associate the empty regular expression with RegExp.prototype, and define
+     * the initial non-method properties of any regular expression instance.
+     * These must be added before methods to preserve slot layout.
+     */
+    if (!proto->initRegExp(cx, re.get()))
+        return NULL;
+
+    /*
+     * Now add the standard methods to RegExp.prototype, and pre-brand for
+     * better shape-guarding code.
+     */
+    if (!JS_DefineFunctions(cx, proto, regexp_methods))
+        return NULL;
+    proto->brand(cx);
+
+    /* Create the RegExp constructor. */
+    JSAtom *regExpAtom = CLASS_ATOM(cx, RegExp);
+    JSFunction *ctor =
+        js_NewFunction(cx, NULL, regexp_construct, 2, JSFUN_CONSTRUCTOR, global, regExpAtom);
     if (!ctor)
         return NULL;
 
-    /* Give RegExp.prototype private data so it matches the empty string. */
-    if (!JS_AliasProperty(cx, ctor, "input",        "$_") ||
+    /* RegExp creates regular expressions. */
+    FUN_CLASP(ctor) = &js_RegExpClass;
+
+    /* Define RegExp.prototype and RegExp.prototype.constructor. */
+    if (!ctor->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom),
+                              ObjectValue(*proto), PropertyStub, StrictPropertyStub,
+                              JSPROP_PERMANENT | JSPROP_READONLY) ||
+        !proto->defineProperty(cx, ATOM_TO_JSID(cx->runtime->atomState.constructorAtom),
+                               ObjectValue(*ctor), PropertyStub, StrictPropertyStub, 0)) {
+        return NULL;
+    }
+
+    /* Add static properties to the RegExp constructor. */
+    if (!JS_DefineProperties(cx, ctor, regexp_static_props) ||
+        !JS_AliasProperty(cx, ctor, "input",        "$_") ||
         !JS_AliasProperty(cx, ctor, "multiline",    "$*") ||
         !JS_AliasProperty(cx, ctor, "lastMatch",    "$&") ||
         !JS_AliasProperty(cx, ctor, "lastParen",    "$+") ||
         !JS_AliasProperty(cx, ctor, "leftContext",  "$`") ||
-        !JS_AliasProperty(cx, ctor, "rightContext", "$'") ||
-        !InitRegExpClassCompile(cx, proto)) {
+        !JS_AliasProperty(cx, ctor, "rightContext", "$'")) {
         return NULL;
     }
+
+    /*
+     * Make sure proto's emptyShape is available to be shared by objects of
+     * this class.  JSObject::emptyShape is a one-slot cache. If we omit this,
+     * some other class could snap it up. (The risk is particularly great for
+     * Object.prototype.)
+     *
+     * All callers of JSObject::initSharingEmptyShape depend on this.
+     */
+    if (!proto->getEmptyShape(cx, &js_RegExpClass, FINALIZE_OBJECT0))
+        return NULL;
+
+    /* Install the fully-constructed RegExp and RegExp.prototype in global. */
+    if (!DefineConstructorAndPrototype(cx, global, JSProto_RegExp, ctor, proto))
+        return NULL;
 
     return proto;
 }

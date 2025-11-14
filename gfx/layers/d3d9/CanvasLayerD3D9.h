@@ -36,8 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#ifndef GFX_CANVASLAYEROGL_H
-#define GFX_CANVASLAYEROGL_H
+#ifndef GFX_CANVASLAYERD3D9_H
+#define GFX_CANVASLAYERD3D9_H
 
 #include "LayerManagerD3D9.h"
 #include "GLContext.h"
@@ -52,10 +52,11 @@ class THEBES_API CanvasLayerD3D9 :
 {
 public:
   CanvasLayerD3D9(LayerManagerD3D9 *aManager)
-    : CanvasLayer(aManager, NULL),
-      LayerD3D9(aManager),
-      mDataIsPremultiplied(PR_FALSE),
-      mNeedsYFlip(PR_FALSE)
+    : CanvasLayer(aManager, NULL)
+    , LayerD3D9(aManager)
+    , mDataIsPremultiplied(PR_FALSE)
+    , mNeedsYFlip(PR_FALSE)
+    , mHasAlpha(PR_TRUE)
   {
       mImplData = static_cast<LayerD3D9*>(this);
       aManager->deviceManager()->mCanvasLayersWithResources.AppendElement(this);
@@ -65,7 +66,6 @@ public:
 
   // CanvasLayer implementation
   virtual void Initialize(const Data& aData);
-  virtual void Updated(const nsIntRect& aRect);
 
   // LayerD3D9 implementation
   virtual Layer* GetLayer();
@@ -78,6 +78,8 @@ public:
 protected:
   typedef mozilla::gl::GLContext GLContext;
 
+  void UpdateSurface();
+
   nsRefPtr<gfxASurface> mSurface;
   nsRefPtr<GLContext> mGLContext;
   nsRefPtr<IDirect3DTexture9> mTexture;
@@ -86,6 +88,7 @@ protected:
 
   PRPackedBool mDataIsPremultiplied;
   PRPackedBool mNeedsYFlip;
+  PRPackedBool mHasAlpha;
 };
 
 } /* layers */

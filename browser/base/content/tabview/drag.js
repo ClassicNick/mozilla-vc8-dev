@@ -102,6 +102,13 @@ function Drag(item, event, isFauxDrag) {
 
 Drag.prototype = {
   // ----------
+  // Function: toString
+  // Prints [Drag (item)] for debug use
+  toString: function Drag_toString() {
+    return "[Drag (" + this.item + ")]";
+  },
+
+  // ----------
   // Function: snapBounds
   // Adjusts the given bounds according to the currently active trenches. Used by <Drag.snap>
   //
@@ -288,7 +295,7 @@ Drag.prototype = {
     Trenches.hideGuides();
     this.item.isDragging = false;
 
-    if (this.parent && !this.parent.locked.close && this.parent != this.item.parent &&
+    if (this.parent && this.parent != this.item.parent &&
        this.parent.isEmpty()) {
       this.parent.close();
     }

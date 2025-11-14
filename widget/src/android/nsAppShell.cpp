@@ -44,14 +44,18 @@
 #include "nsIAppStartup.h"
 #include "nsIGeolocationProvider.h"
 #include "nsIPrefService.h"
+#include "nsIPrefLocalizedString.h"
 
 #include "mozilla/Services.h"
+#include "mozilla/unused.h"
 #include "prenv.h"
 
 #include "AndroidBridge.h"
 #include "nsAccelerometerSystem.h"
 #include <android/log.h>
 #include <pthread.h>
+#include "nsIPrefBranch2.h"
+#include <wchar.h>
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG
@@ -78,9 +82,9 @@ nsAppShell *nsAppShell::gAppShell = nsnull;
 NS_IMPL_ISUPPORTS_INHERITED1(nsAppShell, nsBaseAppShell, nsIObserver)
 
 nsAppShell::nsAppShell()
-    : mQueueLock(nsnull),
-      mCondLock(nsnull),
-      mQueueCond(nsnull),
+    : mQueueLock("nsAppShell.mQueueLock"),
+      mCondLock("nsAppShell.mCondLock"),
+      mQueueCond(mCondLock, "nsAppShell.mQueueCond"),
       mNumDraws(0)
 {
     gAppShell = this;
@@ -94,9 +98,8 @@ nsAppShell::~nsAppShell()
 void
 nsAppShell::NotifyNativeEvent()
 {
-    PR_Lock(mCondLock);
-    PR_NotifyCondVar(mQueueCond);
-    PR_Unlock(mCondLock);
+    MutexAutoLock lock(mCondLock);
+    mQueueCond.Notify();
 }
 
 nsresult
@@ -107,21 +110,55 @@ nsAppShell::Init()
         gWidgetLog = PR_NewLogModule("Widget");
 #endif
 
-    mQueueLock = PR_NewLock();
-    mCondLock = PR_NewLock();
-    mQueueCond = PR_NewCondVar(mCondLock);
-
     mObserversHash.Init();
 
     nsresult rv = nsBaseAppShell::Init();
-    if (AndroidBridge::Bridge())
-        AndroidBridge::Bridge()->NotifyAppShellReady();
+    AndroidBridge* bridge = AndroidBridge::Bridge();
+    if (bridge)
+        bridge->NotifyAppShellReady();
 
     nsCOMPtr<nsIObserverService> obsServ =
-            mozilla::services::GetObserverService();
+        mozilla::services::GetObserverService();
     if (obsServ) {
         obsServ->AddObserver(this, "xpcom-shutdown", PR_FALSE);
     }
+
+    if (!bridge)
+        return rv;
+
+    nsCOMPtr<nsIPrefBranch2> branch = do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+    branch->AddObserver("intl.locale.matchOS", this, PR_FALSE);
+    branch->AddObserver("general.useragent.locale", this, PR_FALSE);
+
+    nsString locale;
+    PRBool match = PR_FALSE;
+    rv = branch->GetBoolPref("intl.locale.matchOS", &match);
+
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    if (match) {
+        bridge->SetSelectedLocale(EmptyString());
+        return NS_OK;
+    }
+    nsCOMPtr<nsIPrefLocalizedString> pls;
+    rv = branch->GetComplexValue("general.useragent.locale",
+                                 NS_GET_IID(nsIPrefLocalizedString),
+                                 getter_AddRefs(pls));
+    if (NS_SUCCEEDED(rv) && pls) {
+        nsXPIDLString uval;
+        pls->ToString(getter_Copies(uval));
+        if (uval)
+            locale.Assign(uval);
+    } else {
+        nsXPIDLCString cval;
+        rv = branch->GetCharPref("general.useragent.locale",
+                                 getter_Copies(cval));
+        if (NS_SUCCEEDED(rv) && cval)
+            locale.AssignWithConversion(cval);
+    }
+
+    bridge->SetSelectedLocale(locale);
     return rv;
 }
 
@@ -134,8 +171,49 @@ nsAppShell::Observe(nsISupports* aSubject,
         // We need to ensure no observers stick around after XPCOM shuts down
         // or we'll see crashes, as the app shell outlives XPConnect.
         mObserversHash.Clear();
+        return nsBaseAppShell::Observe(aSubject, aTopic, aData);
+    } else if (!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID) && aData && (
+                   nsDependentString(aData).Equals(
+                       NS_LITERAL_STRING("general.useragent.locale")) ||
+                   nsDependentString(aData).Equals(
+                       NS_LITERAL_STRING("intl.locale.matchOS"))))
+    {
+        AndroidBridge* bridge = AndroidBridge::Bridge();
+        nsCOMPtr<nsIPrefBranch> prefs = do_QueryInterface(aSubject);
+        if (!prefs || !bridge)
+            return NS_OK;
+
+        nsString locale;
+        PRBool match = PR_FALSE;
+        nsresult rv = prefs->GetBoolPref("intl.locale.matchOS", &match);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        if (match) {
+            bridge->SetSelectedLocale(EmptyString());
+            return NS_OK;
+        }
+        nsCOMPtr<nsIPrefLocalizedString> pls;
+        rv = prefs->GetComplexValue("general.useragent.locale",
+                                    NS_GET_IID(nsIPrefLocalizedString),
+                                    getter_AddRefs(pls));
+        if (NS_SUCCEEDED(rv) && pls) {
+            nsXPIDLString uval;
+            pls->ToString(getter_Copies(uval));
+            if (uval)
+                locale.Assign(uval);
+        }
+        else {
+            nsXPIDLCString cval;
+            rv = prefs->GetCharPref("general.useragent.locale",
+                                    getter_Copies(cval));
+            if (NS_SUCCEEDED(rv) && cval)
+                locale.AssignWithConversion(cval);
+        }
+
+        bridge->SetSelectedLocale(locale);
+        return NS_OK;
     }
-    return nsBaseAppShell::Observe(aSubject, aTopic, aData);
+    return NS_OK;
 }
 
 void
@@ -152,30 +230,29 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
 {
     EVLOG("nsAppShell::ProcessNextNativeEvent %d", mayWait);
 
-    PR_Lock(mCondLock);
-
     nsAutoPtr<AndroidGeckoEvent> curEvent;
     AndroidGeckoEvent *nextEvent;
-
-    curEvent = GetNextEvent();
-    if (!curEvent && mayWait) {
-        // hmm, should we really hardcode this 10s?
-#if defined(ANDROID_DEBUG_EVENTS)
-        PRTime t0, t1;
-        EVLOG("nsAppShell: waiting on mQueueCond");
-        t0 = PR_Now();
-
-        PR_WaitCondVar(mQueueCond, PR_MillisecondsToInterval(10000));
-        t1 = PR_Now();
-        EVLOG("nsAppShell: wait done, waited %d ms", (int)(t1-t0)/1000);
-#else
-        PR_WaitCondVar(mQueueCond, PR_INTERVAL_NO_TIMEOUT);
-#endif
+    {
+        MutexAutoLock lock(mCondLock);
 
         curEvent = GetNextEvent();
-    }
+        if (!curEvent && mayWait) {
+            // hmm, should we really hardcode this 10s?
+#if defined(ANDROID_DEBUG_EVENTS)
+            PRTime t0, t1;
+            EVLOG("nsAppShell: waiting on mQueueCond");
+            t0 = PR_Now();
 
-    PR_Unlock(mCondLock);
+            mQueueCond.Wait(PR_MillisecondsToInterval(10000));
+            t1 = PR_Now();
+            EVLOG("nsAppShell: wait done, waited %d ms", (int)(t1-t0)/1000);
+#else
+            mQueueCond.Wait();
+#endif
+
+            curEvent = GetNextEvent();
+        }
+    }
 
     if (!curEvent)
         return false;
@@ -241,19 +318,25 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         gAccel->AccelerationChanged(-curEvent->X(), curEvent->Y(), curEvent->Z());
         break;
 
-    case AndroidGeckoEvent::LOCATION_EVENT:
+    case AndroidGeckoEvent::LOCATION_EVENT: {
         if (!gLocationCallback)
             break;
 
-        if (curEvent->GeoPosition())
+        nsGeoPosition* p = curEvent->GeoPosition();
+        nsGeoPositionAddress* a = curEvent->GeoAddress();
+
+        if (p) {
+            p->SetAddress(a);
             gLocationCallback->Update(curEvent->GeoPosition());
+        }
         else
             NS_WARNING("Received location event without geoposition!");
         break;
+    }
 
     case AndroidGeckoEvent::ACTIVITY_STOPPING: {
         nsCOMPtr<nsIObserverService> obsServ =
-          mozilla::services::GetObserverService();
+            mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(minimize, "heap-minimize");
         obsServ->NotifyObservers(nsnull, "memory-pressure", minimize.get());
 
@@ -262,7 +345,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
 
     case AndroidGeckoEvent::ACTIVITY_SHUTDOWN: {
         nsCOMPtr<nsIObserverService> obsServ =
-          mozilla::services::GetObserverService();
+            mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(context, "shutdown-persist");
         obsServ->NotifyObservers(nsnull, "quit-application-granted", nsnull);
         obsServ->NotifyObservers(nsnull, "quit-application-forced", nsnull);
@@ -296,12 +379,12 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         if (!uri)
             break;
 
-        char* argv[3] = {
+        const char *argv[3] = {
             "dummyappname",
             "-remote",
             uri
         };
-        nsresult rv = cmdline->Init(3, argv, nsnull, nsICommandLine::STATE_REMOTE_AUTO);
+        nsresult rv = cmdline->Init(3, const_cast<char **>(argv), nsnull, nsICommandLine::STATE_REMOTE_AUTO);
         if (NS_SUCCEEDED(rv))
             cmdline->Run();
         nsMemory::Free(uri);
@@ -321,7 +404,7 @@ AndroidGeckoEvent*
 nsAppShell::GetNextEvent()
 {
     AndroidGeckoEvent *ae = nsnull;
-    PR_Lock(mQueueLock);
+    MutexAutoLock lock(mQueueLock);
     if (mEventQueue.Length()) {
         ae = mEventQueue[0];
         mEventQueue.RemoveElementAt(0);
@@ -329,7 +412,6 @@ nsAppShell::GetNextEvent()
             mNumDraws--;
         }
     }
-    PR_Unlock(mQueueLock);
 
     return ae;
 }
@@ -338,11 +420,10 @@ AndroidGeckoEvent*
 nsAppShell::PeekNextEvent()
 {
     AndroidGeckoEvent *ae = nsnull;
-    PR_Lock(mQueueLock);
+    MutexAutoLock lock(mQueueLock);
     if (mEventQueue.Length()) {
         ae = mEventQueue[0];
     }
-    PR_Unlock(mQueueLock);
 
     return ae;
 }
@@ -350,12 +431,13 @@ nsAppShell::PeekNextEvent()
 void
 nsAppShell::PostEvent(AndroidGeckoEvent *ae)
 {
-    PR_Lock(mQueueLock);
-    mEventQueue.AppendElement(ae);
-    if (ae->Type() == AndroidGeckoEvent::DRAW) {
-        mNumDraws++;
+    {
+        MutexAutoLock lock(mQueueLock);
+        mEventQueue.AppendElement(ae);
+        if (ae->Type() == AndroidGeckoEvent::DRAW) {
+            mNumDraws++;
+        }
     }
-    PR_Unlock(mQueueLock);
     NotifyNativeEvent();
 }
 
@@ -363,7 +445,7 @@ void
 nsAppShell::RemoveNextEvent()
 {
     AndroidGeckoEvent *ae = nsnull;
-    PR_Lock(mQueueLock);
+    MutexAutoLock lock(mQueueLock);
     if (mEventQueue.Length()) {
         ae = mEventQueue[0];
         mEventQueue.RemoveElementAt(0);
@@ -371,7 +453,6 @@ nsAppShell::RemoveNextEvent()
             mNumDraws--;
         }
     }
-    PR_Unlock(mQueueLock);
 }
 
 void
@@ -422,7 +503,7 @@ nsAppShell::CallObserver(const nsAString &aObserverKey, const nsAString &aTopic,
 
     const NS_ConvertUTF16toUTF8 sTopic(aTopic);
     const nsPromiseFlatString& sData = PromiseFlatString(aData);
-    
+
     if (NS_IsMainThread()) {
         // This branch will unlikely be hit, have it just in case
         observer->Observe(nsnull, sTopic.get(), sData.get());
@@ -431,6 +512,7 @@ nsAppShell::CallObserver(const nsAString &aObserverKey, const nsAString &aTopic,
         nsCOMPtr<nsIRunnable> observerCaller = new ObserverCaller(observer, sTopic.get(), sData.get());
         nsresult rv = NS_DispatchToMainThread(observerCaller);
         ALOG("NS_DispatchToMainThread result: %d", rv);
+        unused << rv;
     }
 }
 
@@ -446,7 +528,7 @@ class NotifyObserversCaller : public nsRunnable {
 public:
     NotifyObserversCaller(nsISupports *aSupports,
                           const char *aTopic, const PRUnichar *aData) :
-         mSupports(aSupports), mTopic(aTopic), mData(aData) {
+        mSupports(aSupports), mTopic(aTopic), mData(aData) {
     }
 
     NS_IMETHOD Run() {

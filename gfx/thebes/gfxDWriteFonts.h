@@ -72,9 +72,6 @@ public:
     virtual PRBool IsValid();
 
     gfxFloat GetAdjustedSize() {
-        if (!mInitialized) {
-            Initialize();
-        }
         return mAdjustedSize;
     }
 
@@ -93,7 +90,7 @@ protected:
 
     virtual void CreatePlatformShaper();
 
-    void Initialize(); // creates IDWriteFontFace and metrics
+    PRBool GetFakeMetricsForArialBlack(DWRITE_FONT_METRICS *aFontMetrics);
 
     void ComputeMetrics();
 
@@ -109,7 +106,6 @@ protected:
     cairo_font_face_t *mCairoFontFace;
     cairo_scaled_font_t *mCairoScaledFont;
 
-    PRBool                     mInitialized;
     gfxFont::Metrics          *mMetrics;
 
     // cache of glyph widths in 16.16 fixed-point pixels
@@ -118,6 +114,7 @@ protected:
     PRPackedBool mNeedsOblique;
     PRPackedBool mNeedsBold;
     PRPackedBool mUseSubpixelPositions;
+    PRPackedBool mAllowManualShowGlyphs;
 };
 
 #endif

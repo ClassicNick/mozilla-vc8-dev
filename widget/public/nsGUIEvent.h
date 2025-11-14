@@ -59,6 +59,7 @@
 #include "nsTraceRefcnt.h"
 #include "nsITransferable.h"
 #include "nsIVariant.h"
+#include "nsStyleConsts.h"
 
 #ifdef MOZ_IPC
 namespace mozilla {
@@ -226,6 +227,9 @@ class nsHashKey;
 // Indicates that the ui state such as whether to show focus or
 // keyboard accelerator indicators has changed.
 #define NS_UISTATECHANGED               (NS_WINDOW_START + 43)
+
+// Done sizing or moving a window, so ensure that the mousedown state was cleared.
+#define NS_DONESIZEMOVE                 (NS_WINDOW_START + 44)
 
 #define NS_RESIZE_EVENT                 (NS_WINDOW_START + 60)
 #define NS_SCROLL_EVENT                 (NS_WINDOW_START + 61)
@@ -406,6 +410,9 @@ class nsHashKey;
 // Query for character at a point.  This returns the character offset and its
 // rect.  The point is specified by nsEvent::refPoint.
 #define NS_QUERY_CHARACTER_AT_POINT     (NS_QUERY_CONTENT_EVENT_START + 8)
+// Query if the DOM element under nsEvent::refPoint belongs to our widget
+// or not.
+#define NS_QUERY_DOM_WIDGET_HITTEST     (NS_QUERY_CONTENT_EVENT_START + 9)
 
 // Video events
 #ifdef MOZ_MEDIA
@@ -951,12 +958,12 @@ public:
 struct nsTextRangeStyle
 {
   enum {
-    LINESTYLE_NONE   = 0,
-    LINESTYLE_SOLID  = 1,
-    LINESTYLE_DOTTED = 2,
-    LINESTYLE_DASHED = 3,
-    LINESTYLE_DOUBLE = 4,
-    LINESTYLE_WAVY   = 5
+    LINESTYLE_NONE   = NS_STYLE_TEXT_DECORATION_STYLE_NONE,
+    LINESTYLE_SOLID  = NS_STYLE_TEXT_DECORATION_STYLE_SOLID,
+    LINESTYLE_DOTTED = NS_STYLE_TEXT_DECORATION_STYLE_DOTTED,
+    LINESTYLE_DASHED = NS_STYLE_TEXT_DECORATION_STYLE_DASHED,
+    LINESTYLE_DOUBLE = NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE,
+    LINESTYLE_WAVY   = NS_STYLE_TEXT_DECORATION_STYLE_WAVY
   };
 
   enum {
@@ -1270,6 +1277,13 @@ public:
     mInput.mLength = aLength;
   }
 
+  void InitForQueryDOMWidgetHittest(nsIntPoint& aPoint)
+  {
+    NS_ASSERTION(message == NS_QUERY_DOM_WIDGET_HITTEST,
+                 "wrong initializer is called");
+    refPoint = aPoint;
+  }
+
   PRUint32 GetSelectionStart(void) const
   {
     NS_ASSERTION(message == NS_QUERY_SELECTED_TEXT,
@@ -1299,6 +1313,7 @@ public:
     nsIWidget* mFocusedWidget;
     PRPackedBool mReversed; // true if selection is reversed (end < start)
     PRPackedBool mHasSelection; // true if the selection exists
+    PRPackedBool mWidgetIsHit; // true if DOM element under mouse belongs to widget
     // used by NS_QUERY_SELECTION_AS_TRANSFERABLE
     nsCOMPtr<nsITransferable> mTransferable;
   } mReply;
@@ -1579,7 +1594,8 @@ enum nsDragDropEventStatus {
         ((evnt)->message == NS_QUERY_EDITOR_RECT) || \
         ((evnt)->message == NS_QUERY_CONTENT_STATE) || \
         ((evnt)->message == NS_QUERY_SELECTION_AS_TRANSFERABLE) || \
-        ((evnt)->message == NS_QUERY_CHARACTER_AT_POINT))
+        ((evnt)->message == NS_QUERY_CHARACTER_AT_POINT) || \
+        ((evnt)->message == NS_QUERY_DOM_WIDGET_HITTEST))
 
 #define NS_IS_SELECTION_EVENT(evnt) \
        (((evnt)->message == NS_SELECTION_SET))

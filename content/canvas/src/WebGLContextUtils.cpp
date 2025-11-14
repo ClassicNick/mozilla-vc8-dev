@@ -89,9 +89,9 @@ WebGLContext::SafeToCreateCanvas3DContext(nsHTMLCanvasElement *canvasElement)
     nsCOMPtr<nsIPrefBranch> prefService = do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
     NS_ENSURE_SUCCESS(rv, PR_FALSE);
 
-    PRBool allSites = PR_FALSE;
-    rv = prefService->GetBoolPref("webgl.enabled_for_all_sites", &allSites);
-    if (NS_SUCCEEDED(rv) && allSites) {
+    PRBool disabled = PR_FALSE;
+    rv = prefService->GetBoolPref("webgl.disabled", &disabled);
+    if (NS_SUCCEEDED(rv) && !disabled) {
         // the all-sites pref was set, we're good to go
         return PR_TRUE;
     }
@@ -315,3 +315,15 @@ WebGLContext::ErrorInvalidValue(const char *fmt, ...)
 
     return SynthesizeGLError(LOCAL_GL_INVALID_VALUE);
 }
+
+nsresult
+WebGLContext::ErrorOutOfMemory(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    LogMessageIfVerbose(fmt, va);
+    va_end(va);
+
+    return SynthesizeGLError(LOCAL_GL_OUT_OF_MEMORY);
+}
+

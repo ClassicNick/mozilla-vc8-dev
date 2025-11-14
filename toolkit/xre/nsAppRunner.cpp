@@ -54,10 +54,6 @@
 #include <QtGui/QApplication>
 #include <QtGui/QInputContextFactory>
 #include <QtGui/QInputContext>
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-#include <MApplication>
-#include "MozMeegoAppService.h"
-#endif // MOZ_ENABLE_MEEGOTOUCH
 #endif // MOZ_WIDGET_QT
 
 #ifdef MOZ_IPC
@@ -167,13 +163,6 @@ using mozilla::dom::ContentParent;
 #include <pwd.h>
 #endif
 
-#ifdef XP_BEOS
-// execv() behaves bit differently in R5 and Zeta, looks unreliable in such situation
-//#include <unistd.h>
-#include <AppKit.h>
-#include <AppFileInfo.h>
-#endif //XP_BEOS
-
 #ifdef XP_WIN
 #ifndef WINCE
 #include <process.h>
@@ -257,6 +246,7 @@ protected:
 };
 #endif
 
+extern PRUint32 gRestartMode;
 extern void InstallSignalHandlers(const char *ProgramName);
 #include "nsX11ErrorHandler.h"
 
@@ -299,6 +289,14 @@ SaveToEnv(const char *putenv)
   if (expr)
     PR_SetEnv(expr);
   // We intentionally leak |expr| here since it is required by PR_SetEnv.
+}
+
+// Tests that an environment variable exists and has a value
+static PRBool
+EnvHasValue(const char *name)
+{
+  const char *val = PR_GetEnv(name);
+  return (val && *val);
 }
 
 // Save the given word to the specified environment variable.
@@ -362,8 +360,7 @@ GetFileFromEnv(const char *name)
 static void
 SaveWordToEnvIfUnset(const char *name, const nsACString & word)
 {
-  const char *val = PR_GetEnv(name);
-  if (!(val && *val))
+  if (!EnvHasValue(name))
     SaveWordToEnv(name, word);
 }
 
@@ -372,8 +369,7 @@ SaveWordToEnvIfUnset(const char *name, const nsACString & word)
 static void
 SaveFileToEnvIfUnset(const char *name, nsIFile *file)
 {
-  const char *val = PR_GetEnv(name);
-  if (!(val && *val))
+  if (!EnvHasValue(name))
     SaveFileToEnv(name, file);
 }
 
@@ -617,6 +613,7 @@ class nsXULAppInfo : public nsIXULAppInfo,
 
 {
 public:
+  nsXULAppInfo() {}
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIXULAPPINFO
   NS_DECL_NSIXULRUNTIME
@@ -876,7 +873,7 @@ nsXULAppInfo::GetUserCanElevate(PRBool *aUserCanElevate)
     //      be elevated again)
     //   TokenElevationTypeLimited: The token is linked to a limited token 
     //     (e.g. UAC is enabled and the user is not elevated, so they can be
-    //	    elevated)
+    //      elevated)
     *aUserCanElevate = (elevationType == VistaTokenElevationTypeLimited);
   }
 
@@ -1334,10 +1331,7 @@ DumpHelp()
 #ifdef MOZ_X11
   printf("X11 options\n"
          "  --display=DISPLAY  X display to use\n"
-         "  --sync             Make X calls synchronous\n"
-         "  --no-xshm          Don't use X shared memory extension\n"
-         "  --xim-preedit=STYLE\n"
-         "  --xim-status=STYLE\n");
+         "  --sync             Make X calls synchronous\n");
 #endif
 #ifdef XP_UNIX
   printf("  --g-fatal-warnings Make all warnings fatal\n"
@@ -1618,18 +1612,6 @@ XRE_GetBinaryPath(const char* argv0, nsILocalFile* *aResult)
   if (NS_FAILED(rv))
     return rv;
 
-#elif defined(XP_BEOS)
-  int32 cookie = 0;
-  image_info info;
-
-  if(get_next_image_info(0, &cookie, &info) != B_OK)
-    return NS_ERROR_FAILURE;
-
-  rv = NS_NewNativeLocalFile(nsDependentCString(info.name), PR_TRUE,
-                             getter_AddRefs(lf));
-  if (NS_FAILED(rv))
-    return rv;
-
 #else
 #error Oops, you need platform-specific code here
 #endif
@@ -1762,7 +1744,11 @@ static nsresult LaunchChild(nsINativeAppSupport* aNative,
 #else
 #if defined(XP_MACOSX)
   CommandLineServiceMac::SetupMacCommandLine(gRestartArgc, gRestartArgv, PR_TRUE);
-  LaunchChildMac(gRestartArgc, gRestartArgv);
+  PRUint32 restartMode = 0;
+#if defined(MOZ_ENABLE_LIBXUL)
+  restartMode = gRestartMode;
+#endif
+  LaunchChildMac(gRestartArgc, gRestartArgv, restartMode);
 #else
   nsCOMPtr<nsILocalFile> lf;
   nsresult rv = XRE_GetBinaryPath(gArgv[0], getter_AddRefs(lf));
@@ -1793,12 +1779,6 @@ static nsresult LaunchChild(nsINativeAppSupport* aNative,
     return NS_ERROR_FAILURE;
 #elif defined(XP_UNIX)
   if (execv(exePath.get(), gRestartArgv) == -1)
-    return NS_ERROR_FAILURE;
-#elif defined(XP_BEOS)
-  extern char **environ;
-  status_t res;
-  res = resume_thread(load_image(gRestartArgc,(const char **)gRestartArgv,(const char **)environ));
-  if (res != B_OK)
     return NS_ERROR_FAILURE;
 #else
   PRProcess* process = PR_CreateProcess(exePath.get(), gRestartArgv,
@@ -2092,8 +2072,7 @@ SelectProfile(nsIProfileLock* *aResult, nsINativeAppSupport* aNative,
     return NS_ERROR_FAILURE;
   }
 
-  arg = PR_GetEnv("XRE_START_OFFLINE");
-  if ((arg && *arg) || ar)
+  if (ar || EnvHasValue("XRE_START_OFFLINE"))
     *aStartOffline = PR_TRUE;
 
 
@@ -2218,8 +2197,7 @@ SelectProfile(nsIProfileLock* *aResult, nsINativeAppSupport* aNative,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (gAppData->flags & NS_XRE_ENABLE_PROFILE_MIGRATOR) {
-    arg = PR_GetEnv("XRE_IMPORT_PROFILES");
-    if (!count && (!arg || !*arg)) {
+    if (!count && !EnvHasValue("XRE_IMPORT_PROFILES")) {
       return ImportProfiles(profileSvc, aNative);
     }
   }
@@ -2761,19 +2739,24 @@ static DWORD InitDwriteBG(LPVOID lpdwThreadParam)
   SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
   LOGREGISTRY(L"loading dwrite.dll");
   HMODULE dwdll = LoadLibraryW(L"dwrite.dll");
-  DWriteCreateFactoryFunc createDWriteFactory = (DWriteCreateFactoryFunc)
-    GetProcAddress(dwdll, "DWriteCreateFactory");
-  if (createDWriteFactory) {
-    LOGREGISTRY(L"creating dwrite factory");
-    IDWriteFactory *factory;
-    HRESULT hr = createDWriteFactory(
-      DWRITE_FACTORY_TYPE_SHARED,
-      __uuidof(IDWriteFactory),
-      reinterpret_cast<IUnknown**>(&factory));
-    
-    LOGREGISTRY(L"dwrite factory done");
-    factory->Release();
-    LOGREGISTRY(L"freed factory");
+  if (dwdll) {
+    DWriteCreateFactoryFunc createDWriteFactory = (DWriteCreateFactoryFunc)
+      GetProcAddress(dwdll, "DWriteCreateFactory");
+    if (createDWriteFactory) {
+      LOGREGISTRY(L"creating dwrite factory");
+      IDWriteFactory *factory;
+      HRESULT hr = createDWriteFactory(
+        DWRITE_FACTORY_TYPE_SHARED,
+        __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(&factory));
+      if (SUCCEEDED(hr)) {
+        LOGREGISTRY(L"dwrite factory done");
+        factory->Release();
+        LOGREGISTRY(L"freed factory");
+      } else {
+        LOGREGISTRY(L"failed to create factory");
+      }
+    }
   }
   SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
   return 0;
@@ -2850,7 +2833,7 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   }
 
   // Suppress atk-bridge init at startup, it works after GNOME 2.24.2
-  PR_SetEnv("NO_AT_BRIDGE=1");
+  SaveToEnv("NO_AT_BRIDGE=1");
 #endif
 
   gArgc = argc;
@@ -3010,8 +2993,7 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
     return 1;
 
 #ifdef MOZ_CRASHREPORTER
-  const char* crashreporterEnv = PR_GetEnv("MOZ_CRASHREPORTER");
-  if (crashreporterEnv && *crashreporterEnv) {
+  if (EnvHasValue("MOZ_CRASHREPORTER")) {
     appData.flags |= NS_XRE_ENABLE_CRASH_REPORTER;
   }
 
@@ -3069,7 +3051,7 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 #endif
 
 #ifdef XP_MACOSX
-  if (PR_GetEnv("MOZ_LAUNCHED_CHILD")) {
+  if (EnvHasValue("MOZ_LAUNCHED_CHILD")) {
     // This is needed, on relaunch, to force the OS to use the "Cocoa Dock
     // API".  Otherwise the call to ReceiveNextEvent() below will make it
     // use the "Carbon Dock API".  For more info see bmo bug 377166.
@@ -3124,10 +3106,10 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   ScopedFPHandler handler;
 #endif /* XP_OS2 */
 
-  if (PR_GetEnv("MOZ_SAFE_MODE_RESTART")) {
+  if (EnvHasValue("MOZ_SAFE_MODE_RESTART")) {
     gSafeMode = PR_TRUE;
     // unset the env variable
-    PR_SetEnv("MOZ_SAFE_MODE_RESTART=");
+    SaveToEnv("MOZ_SAFE_MODE_RESTART=");
   }
 
   ar = CheckArg("safe-mode", PR_TRUE);
@@ -3223,17 +3205,7 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
     if (ar == ARG_FOUND)
       PR_SetEnv(PR_smprintf("MOZ_QT_GRAPHICSSYSTEM=%s", qgraphicssystemARG));
 
-#ifdef MOZ_ENABLE_MEEGOTOUCH
-    QScopedPointer<QApplication> app;
-    if (XRE_GetProcessType() == GeckoProcessType_Default) {
-      MozMeegoAppService *appService = new MozMeegoAppService;
-      app.reset(new MApplication(gArgc, gArgv, appService));
-    } else {
-      app.reset(new QApplication(gArgc, gArgv));
-    }
-#else
     QScopedPointer<QApplication> app(new QApplication(gArgc, gArgv));
-#endif
 
 #if MOZ_PLATFORM_MAEMO > 5
     if (XRE_GetProcessType() == GeckoProcessType_Default) {
@@ -3370,6 +3342,18 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
       return 1;
     }
 
+#if defined(HAVE_DESKTOP_STARTUP_ID) && defined(MOZ_WIDGET_GTK2)
+    // DESKTOP_STARTUP_ID is cleared now,
+    // we recover it in case we need a restart.
+    if (!desktopStartupID.IsEmpty()) {
+      nsCAutoString desktopStartupEnv;
+      desktopStartupEnv.AssignLiteral("DESKTOP_STARTUP_ID=");
+      desktopStartupEnv.Append(desktopStartupID);
+      // Leak it with extreme prejudice!
+      PR_SetEnv(ToNewCString(desktopStartupEnv));
+    }
+#endif
+
 #if defined(MOZ_UPDATER) && !defined(ANDROID)
     // Check for and process any available updates
     nsCOMPtr<nsIFile> updRoot;
@@ -3394,8 +3378,8 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
                    gRestartArgc,
                    gRestartArgv,
                    appData.version);
-    if (PR_GetEnv("MOZ_PROCESS_UPDATES")) {
-      PR_SetEnv("MOZ_PROCESS_UPDATES=");
+    if (EnvHasValue("MOZ_PROCESS_UPDATES")) {
+      SaveToEnv("MOZ_PROCESS_UPDATES=");
       return 0;
     }
 #endif
@@ -3612,7 +3596,7 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
         NS_TIME_FUNCTION_MARK("Finished startupNotifier");
 
-        nsCOMPtr<nsIAppStartup2> appStartup
+        nsCOMPtr<nsIAppStartup> appStartup
           (do_GetService(NS_APPSTARTUP_CONTRACTID));
         NS_ENSURE_TRUE(appStartup, 1);
 
@@ -3711,6 +3695,9 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
           if (toolkit && !desktopStartupID.IsEmpty()) {
             toolkit->SetDesktopStartupID(desktopStartupID);
           }
+          // Clear the environment variable so it won't be inherited by
+          // child processes and confuse things.
+          g_unsetenv ("DESKTOP_STARTUP_ID");
 #endif
 
 #ifdef XP_MACOSX
@@ -3825,16 +3812,6 @@ XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
         static char kEnvVar[MAXPATHLEN];
         sprintf(kEnvVar, "XRE_BINARY_PATH=%s", gBinaryPath);
         PR_SetEnv(kEnvVar);
-      }
-#endif
-
-#if defined(HAVE_DESKTOP_STARTUP_ID) && defined(MOZ_WIDGET_GTK2)
-      if (!desktopStartupID.IsEmpty()) {
-        nsCAutoString desktopStartupEnv;
-        desktopStartupEnv.AssignLiteral("DESKTOP_STARTUP_ID=");
-        desktopStartupEnv.Append(desktopStartupID);
-        // Leak it with extreme prejudice!
-        PR_SetEnv(ToNewCString(desktopStartupEnv));
       }
 #endif
 

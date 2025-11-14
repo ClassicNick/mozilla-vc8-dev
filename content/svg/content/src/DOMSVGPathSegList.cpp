@@ -44,7 +44,7 @@
 
 // See the comment in this file's header.
 
-using namespace mozilla;
+namespace mozilla {
 
 static nsSVGAttrTearoffTable<void, DOMSVGPathSegList>
   sSVGPathSegListTearoffTable;
@@ -54,7 +54,9 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION(DOMSVGPathSegList, mElement)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGPathSegList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMSVGPathSegList)
 
-DOMCI_DATA(SVGPathSegList, DOMSVGPathSegList)
+} // namespace mozilla
+DOMCI_DATA(SVGPathSegList, mozilla::DOMSVGPathSegList)
+namespace mozilla {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGPathSegList)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGPathSegList)
@@ -86,10 +88,8 @@ DOMSVGPathSegList::GetDOMWrapperIfExists(void *aList)
 
 DOMSVGPathSegList::~DOMSVGPathSegList()
 {
-  // We no longer have any list items, and there are no script references to
-  // us.
-  //
-  // Do NOT use InternalList() here! That's different!
+  // There are now no longer any references to us held by script or list items.
+  // Note we must use GetAnimValKey/GetBaseValKey here, NOT InternalList()!
   void *key = mIsAnimValList ?
     InternalAList().GetAnimValKey() :
     InternalAList().GetBaseValKey();
@@ -140,6 +140,13 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
 
   PRUint32 newSegType;
 
+  nsRefPtr<DOMSVGPathSegList> kungFuDeathGrip;
+  if (length && aNewValue.IsEmpty()) {
+    // RemovingFromList() might clear last reference to |this|.
+    // Retain a temporary reference to keep from dying before returning.
+    kungFuDeathGrip = this;
+  }
+
   while (index < length && dataIndex < dataLength) {
     newSegType = SVGPathSegUtils::DecodeType(aNewValue.mData[dataIndex]);
     if (ItemAt(index) && ItemAt(index)->Type() != newSegType) {
@@ -177,6 +184,12 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
 
     // Sync mItems:
     while (dataIndex < dataLength) {
+      if (mItems.Length() &&
+          mItems.Length() - 1 > DOMSVGPathSeg::MaxListIndex()) {
+        // It's safe to get out of sync with our internal list as long as we
+        // have FEWER items than it does.
+        return;
+      }
       if (!mItems.AppendElement(ItemProxy(nsnull, dataIndex))) {
         // OOM
         Clear();
@@ -316,13 +329,6 @@ DOMSVGPathSegList::InsertItemBefore(nsIDOMSVGPathSeg *aNewItem,
     return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR;
   }
 
-  nsCOMPtr<DOMSVGPathSeg> domItem = do_QueryInterface(aNewItem);
-  if (!domItem) {
-    return NS_ERROR_DOM_SVG_WRONG_TYPE_ERR;
-  }
-  if (domItem->HasOwner()) {
-    domItem = domItem->Clone(); // must do this before changing anything!
-  }
   PRUint32 internalIndex;
   if (aIndex < Length()) {
     internalIndex = mItems[aIndex].mInternalDataIndex;
@@ -330,6 +336,18 @@ DOMSVGPathSegList::InsertItemBefore(nsIDOMSVGPathSeg *aNewItem,
     aIndex = Length();
     internalIndex = InternalList().mData.Length();
   }
+  if (aIndex >= DOMSVGPathSeg::MaxListIndex()) {
+    return NS_ERROR_DOM_INDEX_SIZE_ERR;
+  }
+
+  nsCOMPtr<DOMSVGPathSeg> domItem = do_QueryInterface(aNewItem);
+  if (!domItem) {
+    return NS_ERROR_DOM_SVG_WRONG_TYPE_ERR;
+  }
+  if (domItem->HasOwner()) {
+    domItem = domItem->Clone(); // must do this before changing anything!
+  }
+
   PRUint32 argCount = SVGPathSegUtils::ArgCountForType(domItem->Type());
 
   // Ensure we have enough memory so we can avoid complex error handling below:
@@ -338,6 +356,9 @@ DOMSVGPathSegList::InsertItemBefore(nsIDOMSVGPathSeg *aNewItem,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  // Now that we know we're inserting, keep animVal list in sync as necessary.
+  MaybeInsertNullInAnimValListAt(aIndex, internalIndex, argCount);
+
   float segAsRaw[1 + NS_SVG_PATH_SEG_MAX_ARGS];
   domItem->ToSVGPathSegEncodedData(segAsRaw);
 
@@ -345,16 +366,11 @@ DOMSVGPathSegList::InsertItemBefore(nsIDOMSVGPathSeg *aNewItem,
   mItems.InsertElementAt(aIndex, ItemProxy(domItem.get(), internalIndex));
 
   // This MUST come after the insertion into InternalList(), or else under the
-  // insertion into InternalList() the data read from domItem would be bad data
-  // from InternalList() itself!:
+  // insertion into InternalList() the values read from domItem would be bad
+  // data from InternalList() itself!:
   domItem->InsertingIntoList(this, aIndex, IsAnimValList());
 
-  for (PRUint32 i = aIndex + 1; i < Length(); ++i) {
-    mItems[i].mInternalDataIndex += 1 + argCount;
-    if (ItemAt(i)) {
-      ItemAt(i)->UpdateListIndex(i);
-    }
-  }
+  UpdateListIndicesFromIndex(aIndex + 1, argCount + 1);
 
   Element()->DidChangePathSegList(PR_TRUE);
 #ifdef MOZ_SMIL
@@ -411,7 +427,7 @@ DOMSVGPathSegList::ReplaceItem(nsIDOMSVGPathSeg *aNewItem,
   }
   ItemAt(aIndex) = domItem;
 
-  // This MUST come after the ToSVGPathSegEncodedData call otherwise that call
+  // This MUST come after the ToSVGPathSegEncodedData call, otherwise that call
   // would end up reading bad data from InternalList()!
   domItem->InsertingIntoList(this, aIndex, IsAnimValList());
 
@@ -456,15 +472,15 @@ DOMSVGPathSegList::RemoveItem(PRUint32 aIndex,
   PRUint32 segType = SVGPathSegUtils::DecodeType(InternalList().mData[internalIndex]);
   PRUint32 argCount = SVGPathSegUtils::ArgCountForType(segType);
 
+  // Now that we know we're removing, keep animVal list in sync as necessary.
+  // Do this *before* touching InternalList() so the removed item can get its
+  // internal value.
+  MaybeRemoveItemFromAnimValListAt(aIndex, argCount);
+
   InternalList().mData.RemoveElementsAt(internalIndex, 1 + argCount);
   mItems.RemoveElementAt(aIndex);
 
-  for (PRUint32 i = aIndex; i < Length(); ++i) {
-    mItems[i].mInternalDataIndex -= 1 + argCount;
-    if (ItemAt(i)) {
-      ItemAt(i)->UpdateListIndex(i);
-    }
-  }
+  UpdateListIndicesFromIndex(aIndex, -(argCount + 1));
 
   Element()->DidChangePathSegList(PR_TRUE);
 #ifdef MOZ_SMIL
@@ -490,3 +506,79 @@ DOMSVGPathSegList::EnsureItemAt(PRUint32 aIndex)
   }
 }
 
+void
+DOMSVGPathSegList::
+  MaybeInsertNullInAnimValListAt(PRUint32 aIndex,
+                                 PRUint32 aInternalIndex,
+                                 PRUint32 aArgCountForItem)
+{
+  NS_ABORT_IF_FALSE(!IsAnimValList(), "call from baseVal to animVal");
+
+  if (AttrIsAnimating()) {
+    // animVal not a clone of baseVal
+    return;
+  }
+
+  // The anim val list is in sync with the base val list
+  DOMSVGPathSegList *animVal =
+    GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+  if (!animVal) {
+    // No animVal list wrapper
+    return;
+  }
+
+  NS_ABORT_IF_FALSE(animVal->mItems.Length() == mItems.Length(),
+                    "animVal list not in sync!");
+
+  animVal->mItems.InsertElementAt(aIndex, ItemProxy(nsnull, aInternalIndex));
+
+  animVal->UpdateListIndicesFromIndex(aIndex + 1, 1 + aArgCountForItem);
+}
+
+void
+DOMSVGPathSegList::
+  MaybeRemoveItemFromAnimValListAt(PRUint32 aIndex,
+                                   PRUint32 aArgCountForItem)
+{
+  NS_ABORT_IF_FALSE(!IsAnimValList(), "call from baseVal to animVal");
+
+  if (AttrIsAnimating()) {
+    // animVal not a clone of baseVal
+    return;
+  }
+
+  // This needs to be a strong reference; otherwise, the RemovingFromList call
+  // below might drop the last reference to animVal before we're done with it.
+  nsRefPtr<DOMSVGPathSegList> animVal =
+    GetDOMWrapperIfExists(InternalAList().GetAnimValKey());
+  if (!animVal) {
+    // No animVal list wrapper
+    return;
+  }
+
+  NS_ABORT_IF_FALSE(animVal->mItems.Length() == mItems.Length(),
+                    "animVal list not in sync!");
+
+  if (animVal->ItemAt(aIndex)) {
+    animVal->ItemAt(aIndex)->RemovingFromList();
+  }
+  animVal->mItems.RemoveElementAt(aIndex);
+
+  animVal->UpdateListIndicesFromIndex(aIndex, -(1 + aArgCountForItem));
+}
+
+void
+DOMSVGPathSegList::UpdateListIndicesFromIndex(PRUint32 aStartingIndex,
+                                              PRInt32  aInternalDataIndexDelta)
+{
+  PRUint32 length = mItems.Length();
+
+  for (PRUint32 i = aStartingIndex; i < length; ++i) {
+    mItems[i].mInternalDataIndex += aInternalDataIndexDelta;
+    if (ItemAt(i)) {
+      ItemAt(i)->UpdateListIndex(i);
+    }
+  }
+}
+
+} // namespace mozilla

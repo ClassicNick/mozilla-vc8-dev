@@ -105,9 +105,11 @@ public:
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager)
   {
-    // XXX we should have some kind of activity timeout here so that
-    // inactive canvases can be composited into the background
-    return mozilla::LAYER_ACTIVE;
+    // If compositing is cheap, just do that
+    if (aManager->IsCompositingCheap())
+      return mozilla::LAYER_ACTIVE;
+
+    return mFrame->AreLayersMarkedActive() ? LAYER_ACTIVE : LAYER_INACTIVE;
   }
 };
 
@@ -119,6 +121,21 @@ NS_NewHTMLCanvasFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 }
 
 NS_IMPL_FRAMEARENA_HELPERS(nsHTMLCanvasFrame)
+
+NS_IMETHODIMP
+nsHTMLCanvasFrame::Init(nsIContent* aContent,
+                        nsIFrame*   aParent,
+                        nsIFrame*   aPrevInFlow)
+{
+  nsresult rv = nsSplittableFrame::Init(aContent, aParent, aPrevInFlow);
+
+  // We can fill in the canvas before the canvas frame is created, in
+  // which case we never get around to marking the layer active. Therefore,
+  // we mark it active here when we create the frame.
+  MarkLayersActive();
+
+  return rv;
+}
 
 nsHTMLCanvasFrame::~nsHTMLCanvasFrame()
 {
@@ -258,11 +275,9 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
 
   CanvasLayer* oldLayer = static_cast<CanvasLayer*>
     (aBuilder->LayerBuilder()->GetLeafLayerFor(aBuilder, aManager, aItem));
-  nsRefPtr<CanvasLayer> layer = element->GetCanvasLayer(oldLayer, aManager);
+  nsRefPtr<CanvasLayer> layer = element->GetCanvasLayer(aBuilder, oldLayer, aManager);
   if (!layer)
     return nsnull;
-
-  element->MarkContextClean();
 
   nsPresContext* presContext = PresContext();
   gfxRect r = gfxRect(presContext->AppUnitsToGfxUnits(area.x),
@@ -276,6 +291,7 @@ nsHTMLCanvasFrame::BuildLayer(nsDisplayListBuilder* aBuilder,
   transform.Scale(r.Width()/canvasSize.width, r.Height()/canvasSize.height);
   layer->SetTransform(gfx3DMatrix::From2D(transform));
   layer->SetFilter(nsLayoutUtils::GetGraphicsFilterForFrame(this));
+  layer->SetVisibleRegion(nsIntRect(0, 0, canvasSize.width, canvasSize.height));
 
   return layer.forget();
 }

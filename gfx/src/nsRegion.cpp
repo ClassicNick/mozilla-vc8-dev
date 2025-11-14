@@ -34,7 +34,6 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#include "prlock.h"
 #include "nsRegion.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
@@ -109,14 +108,7 @@ class RgnRectMemoryAllocator
   nsRegion::RgnRect*  mFreeListHead;
   PRUint32  mFreeEntries;
   void*     mChunkListHead;
-#if 0
-  PRLock*   mLock;
-
-  void InitLock ()    { mLock = PR_NewLock (); }
-  void DestroyLock () { PR_DestroyLock (mLock); }
-  void Lock ()        { PR_Lock   (mLock); }
-  void Unlock ()      { PR_Unlock (mLock); }
-#elif defined (DEBUG)
+#if defined (DEBUG)
   NS_DECL_OWNINGTHREAD
 
   void InitLock ()    { NS_ASSERT_OWNINGTHREAD (RgnRectMemoryAllocator); }
@@ -1013,6 +1005,18 @@ PRBool nsRegion::Contains (const nsRect& aRect) const
   return tmpRgn.IsEmpty();
 }
 
+PRBool nsRegion::Contains (const nsRegion& aRgn) const
+{
+  // XXX this could be made faster
+  nsRegionRectIterator iter(aRgn);
+  while (const nsRect* r = iter.Next()) {
+    if (!Contains (*r)) {
+      return PR_FALSE;
+    }
+  }
+  return PR_TRUE;
+}
+
 PRBool nsRegion::Intersects (const nsRect& aRect) const
 {
   if (aRect.IsEmpty() || IsEmpty())
@@ -1287,6 +1291,38 @@ void nsRegion::MoveBy (nsPoint aPt)
 
     mBoundRect.MoveBy (aPt.x, aPt.y);
   }
+}
+
+nsRegion& nsRegion::ExtendForScaling (float aXMult, float aYMult)
+{
+  nsRegion region;
+  nsRegionRectIterator iter(*this);
+  for (;;) {
+    const nsRect* r = iter.Next();
+    if (!r)
+      break;
+    nsRect rect = *r;
+    rect.ExtendForScaling(aXMult, aYMult);
+    region.Or(region, rect);
+  }
+  *this = region;
+  return *this;
+}
+
+nsRegion& nsRegion::ScaleRoundOut (float aXScale, float aYScale)
+{
+  nsRegion region;
+  nsRegionRectIterator iter(*this);
+  for (;;) {
+    const nsRect* r = iter.Next();
+    if (!r)
+      break;
+    nsRect rect = *r;
+    rect.ScaleRoundOut(aXScale, aYScale);
+    region.Or(region, rect);
+  }
+  *this = region;
+  return *this;
 }
 
 nsRegion nsRegion::ConvertAppUnitsRoundOut (PRInt32 aFromAPP, PRInt32 aToAPP) const

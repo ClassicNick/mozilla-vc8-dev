@@ -233,7 +233,8 @@ nsXBLJSClass::nsXBLJSClass(const nsAFlatCString& aClassName)
     JSCLASS_NEW_RESOLVE | JSCLASS_NEW_RESOLVE_GETS_START |
     // Our one reserved slot holds the relevant nsXBLPrototypeBinding
     JSCLASS_HAS_RESERVED_SLOTS(1);
-  addProperty = delProperty = setProperty = getProperty = ::JS_PropertyStub;
+  addProperty = delProperty = getProperty = ::JS_PropertyStub;
+  setProperty = ::JS_StrictPropertyStub;
   enumerate = ::JS_EnumerateStub;
   resolve = (JSResolveOp)XBLResolve;
   convert = ::JS_ConvertStub;
@@ -455,14 +456,6 @@ BuildContentLists(nsISupports* aKey,
   if (count == 0)
     return PL_DHASH_NEXT;
 
-  // XXX Could this array just be altered in place and passed directly to
-  // SetContentListFor?  We'd save space if we could pull this off.
-  nsInsertionPointList* contentList = new nsInsertionPointList;
-  if (!contentList) {
-    data->mRv = NS_ERROR_OUT_OF_MEMORY;
-    return PL_DHASH_STOP;
-  }
-
   // Figure out the relevant content node.
   nsXBLInsertionPoint* currPoint = aData->ElementAt(0);
   nsCOMPtr<nsIContent> parent = currPoint->GetInsertionParent();
@@ -471,6 +464,14 @@ BuildContentLists(nsISupports* aKey,
     return PL_DHASH_STOP;
   }
   PRInt32 currIndex = currPoint->GetInsertionIndex();
+
+  // XXX Could this array just be altered in place and passed directly to
+  // SetContentListFor?  We'd save space if we could pull this off.
+  nsInsertionPointList* contentList = new nsInsertionPointList;
+  if (!contentList) {
+    data->mRv = NS_ERROR_OUT_OF_MEMORY;
+    return PL_DHASH_STOP;
+  }
 
   nsCOMPtr<nsIDOMNodeList> nodeList;
   if (parent == boundElement) {

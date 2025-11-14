@@ -58,8 +58,11 @@
 #include "gfxUtils.h"
 
 #include "CanvasUtils.h"
+#include "nsDisplayList.h"
 
 #include "GLContextProvider.h"
+
+#include "gfxCrashReporterUtils.h"
 
 #ifdef MOZ_SVG
 #include "nsSVGEffects.h"
@@ -113,11 +116,17 @@ WebGLContext::WebGLContext()
     mBlackTexturesAreInitialized = PR_FALSE;
     mFakeBlackStatus = DoNotNeedFakeBlack;
 
-    mFakeVertexAttrib0Array = nsnull;
     mVertexAttrib0Vector[0] = 0;
     mVertexAttrib0Vector[1] = 0;
     mVertexAttrib0Vector[2] = 0;
     mVertexAttrib0Vector[3] = 1;
+    mFakeVertexAttrib0BufferObjectVector[0] = 0;
+    mFakeVertexAttrib0BufferObjectVector[1] = 0;
+    mFakeVertexAttrib0BufferObjectVector[2] = 0;
+    mFakeVertexAttrib0BufferObjectVector[3] = 1;
+    mFakeVertexAttrib0BufferObjectSize = 0;
+    mFakeVertexAttrib0BufferObject = 0;
+    mFakeVertexAttrib0BufferStatus = VertexAttrib0Status::Default;
 }
 
 WebGLContext::~WebGLContext()
@@ -223,6 +232,10 @@ WebGLContext::DestroyResourcesAndContext()
         mBlackTexturesAreInitialized = PR_FALSE;
     }
 
+    if (mFakeVertexAttrib0BufferObject) {
+        gl->fDeleteBuffers(1, &mFakeVertexAttrib0BufferObject);
+    }
+
     // We just got rid of everything, so the context had better
     // have been going away.
 #ifdef DEBUG
@@ -235,6 +248,9 @@ WebGLContext::DestroyResourcesAndContext()
 void
 WebGLContext::Invalidate()
 {
+    if (mInvalidated)
+        return;
+
     if (!mCanvasElement)
         return;
 
@@ -242,11 +258,8 @@ WebGLContext::Invalidate()
     nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
 #endif
 
-    if (mInvalidated)
-        return;
-
     mInvalidated = PR_TRUE;
-    HTMLCanvasElement()->InvalidateFrame();
+    HTMLCanvasElement()->InvalidateCanvasContent(nsnull);
 }
 
 /* readonly attribute nsIDOMHTMLCanvasElement canvas; */
@@ -339,6 +352,12 @@ WebGLContext::SetContextOptions(nsIPropertyBag *aOptions)
 NS_IMETHODIMP
 WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
 {
+    ScopedGfxFeatureReporter reporter("WebGL");
+
+    if (mCanvasElement) {
+        HTMLCanvasElement()->InvalidateCanvas();
+    }
+
     if (mWidth == width && mHeight == height)
         return NS_OK;
 
@@ -402,10 +421,11 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     PRBool forceOSMesa = PR_FALSE;
     PRBool preferEGL = PR_FALSE;
     PRBool preferOpenGL = PR_FALSE;
+    PRBool forceEnabled = PR_FALSE;
     prefService->GetBoolPref("webgl.force_osmesa", &forceOSMesa);
-    prefService->GetBoolPref("webgl.prefer_egl", &preferEGL);
-    prefService->GetBoolPref("webgl.prefer_gl", &preferOpenGL);
-
+    prefService->GetBoolPref("webgl.prefer-egl", &preferEGL);
+    prefService->GetBoolPref("webgl.prefer-native-gl", &preferOpenGL);
+    prefService->GetBoolPref("webgl.force-enabled", &forceEnabled);
     if (PR_GetEnv("MOZ_WEBGL_PREFER_EGL")) {
         preferEGL = PR_TRUE;
     }
@@ -415,19 +435,15 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     PRBool useANGLE = PR_TRUE;
 
     nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
-    if (gfxInfo) {
+    if (gfxInfo && !forceEnabled) {
         PRInt32 status;
         if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_WEBGL_OPENGL, &status))) {
-            if (status == nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION ||
-                status == nsIGfxInfo::FEATURE_BLOCKED_DEVICE)
-            {
+            if (status != nsIGfxInfo::FEATURE_NO_INFO) {
                 useOpenGL = PR_FALSE;
             }
         }
         if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_WEBGL_ANGLE, &status))) {
-            if (status == nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION ||
-                status == nsIGfxInfo::FEATURE_BLOCKED_DEVICE)
-            {
+            if (status != nsIGfxInfo::FEATURE_NO_INFO) {
                 useANGLE = PR_FALSE;
             }
         }
@@ -462,14 +478,6 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     // if it failed, then try the default provider, whatever that is
     if (!gl && useOpenGL) {
         gl = gl::GLContextProvider::CreateOffscreen(gfxIntSize(width, height), format);
-        if (gl && !InitAndValidateGL()) {
-            gl = nsnull;
-        }
-    }
-
-    // if that failed, and we weren't already preferring EGL, try it now.
-    if (!gl && !(preferEGL || useANGLE)) {
-        gl = gl::GLContextProviderEGL::CreateOffscreen(gfxIntSize(width, height), format);
         if (gl && !InitAndValidateGL()) {
             gl = nsnull;
         }
@@ -528,6 +536,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     gl->fClearStencil(0);
     gl->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT | LOCAL_GL_STENCIL_BUFFER_BIT);
 
+    reporter.SetSuccessful();
     return NS_OK;
 }
 
@@ -577,9 +586,12 @@ WebGLContext::GetInputStream(const char* aMimeType,
     if (surf->CairoStatus() != 0)
         return NS_ERROR_FAILURE;
 
-    gl->ReadPixelsIntoImageSurface(0, 0, mWidth, mHeight, surf);
+    nsRefPtr<gfxContext> tmpcx = new gfxContext(surf);
+    // Use Render() to make sure that appropriate y-flip gets applied
+    nsresult rv = Render(tmpcx, gfxPattern::FILTER_NEAREST);
+    if (NS_FAILED(rv))
+        return rv;
 
-    nsresult rv;
     const char encoderPrefix[] = "@mozilla.org/image/encoder;2?type=";
     nsAutoArrayPtr<char> conid(new char[strlen(encoderPrefix) + strlen(aMimeType) + 1]);
 
@@ -612,17 +624,27 @@ WebGLContext::GetThebesSurface(gfxASurface **surface)
 
 static PRUint8 gWebGLLayerUserData;
 
+class WebGLContextUserData : public LayerUserData {
+public:
+    WebGLContextUserData(nsHTMLCanvasElement *aContent)
+    : mContent(aContent) {}
+  static void DidTransactionCallback(void* aData)
+  {
+    static_cast<WebGLContextUserData*>(aData)->mContent->MarkContextClean();
+  }
+
+private:
+  nsRefPtr<nsHTMLCanvasElement> mContent;
+};
+
 already_AddRefed<layers::CanvasLayer>
-WebGLContext::GetCanvasLayer(CanvasLayer *aOldLayer,
+WebGLContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
+                             CanvasLayer *aOldLayer,
                              LayerManager *aManager)
 {
     if (!mResetLayer && aOldLayer &&
         aOldLayer->HasUserData(&gWebGLLayerUserData)) {
         NS_ADDREF(aOldLayer);
-        if (mInvalidated) {
-            aOldLayer->Updated(nsIntRect(0, 0, mWidth, mHeight));
-            mInvalidated = PR_FALSE;
-        }
         return aOldLayer;
     }
 
@@ -631,7 +653,25 @@ WebGLContext::GetCanvasLayer(CanvasLayer *aOldLayer,
         NS_WARNING("CreateCanvasLayer returned null!");
         return nsnull;
     }
-    canvasLayer->SetUserData(&gWebGLLayerUserData, nsnull);
+    WebGLContextUserData *userData = nsnull;
+    if (aBuilder->IsPaintingToWindow()) {
+      // Make the layer tell us whenever a transaction finishes (including
+      // the current transaction), so we can clear our invalidation state and
+      // start invalidating again. We need to do this for the layer that is
+      // being painted to a window (there shouldn't be more than one at a time,
+      // and if there is, flushing the invalidation state more often than
+      // necessary is harmless).
+
+      // The layer will be destroyed when we tear down the presentation
+      // (at the latest), at which time this userData will be destroyed,
+      // releasing the reference to the element.
+      // The userData will receive DidTransactionCallbacks, which flush the
+      // the invalidation state to indicate that the canvas is up to date.
+      userData = new WebGLContextUserData(HTMLCanvasElement());
+      canvasLayer->SetDidTransactionCallback(
+              WebGLContextUserData::DidTransactionCallback, userData);
+    }
+    canvasLayer->SetUserData(&gWebGLLayerUserData, userData);
 
     CanvasLayer::Data data;
 
@@ -653,9 +693,8 @@ WebGLContext::GetCanvasLayer(CanvasLayer *aOldLayer,
     canvasLayer->Initialize(data);
     PRUint32 flags = gl->CreationFormat().alpha == 0 ? Layer::CONTENT_OPAQUE : 0;
     canvasLayer->SetContentFlags(flags);
-    canvasLayer->Updated(nsIntRect(0, 0, mWidth, mHeight));
+    canvasLayer->Updated();
 
-    mInvalidated = PR_FALSE;
     mResetLayer = PR_FALSE;
 
     return canvasLayer.forget().get();
@@ -890,5 +929,43 @@ NS_IMETHODIMP
 WebGLActiveInfo::GetName(nsAString & aName)
 {
     aName = mName;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+WebGLContext::GetSupportedExtensions(nsIVariant **retval)
+{
+    nsCOMPtr<nsIWritableVariant> wrval = do_CreateInstance("@mozilla.org/variant;1");
+    NS_ENSURE_TRUE(wrval, NS_ERROR_FAILURE);
+
+    nsTArray<const char *> extList;
+
+    /* no extensions to add to extList */
+
+    nsresult rv;
+    if (extList.Length() > 0) {
+        rv = wrval->SetAsArray(nsIDataType::VTYPE_CHAR_STR, nsnull,
+                               extList.Length(), &extList[0]);
+    } else {
+        rv = wrval->SetAsEmptyArray();
+    }
+    if (NS_FAILED(rv))
+        return rv;
+
+    *retval = wrval.forget().get();
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+WebGLContext::IsContextLost(WebGLboolean *retval)
+{
+    *retval = PR_FALSE;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+WebGLContext::GetExtension(const nsAString& aName, nsISupports **retval)
+{
+    *retval = nsnull;
     return NS_OK;
 }

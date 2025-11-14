@@ -327,7 +327,8 @@ GDIFontEntry::FillLogFont(LOGFONTW *aLogFont, PRBool aItalic,
     aLogFont->lfQuality        = (aUseCleartype ? CLEARTYPE_QUALITY : DEFAULT_QUALITY);
 }
 
-#define MISSING_GLYPH 0x1F
+#define MISSING_GLYPH 0x1F // glyph index returned for missing characters
+                           // on WinXP with .fon fonts, but not Type1 (.pfb)
 
 PRBool 
 GDIFontEntry::TestCharacterMap(PRUint32 aCh)
@@ -376,8 +377,8 @@ GDIFontEntry::TestCharacterMap(PRUint32 aCh)
             DWORD ret = GetGlyphIndicesW(dc, str, 1, 
                                          glyph, GGI_MARK_NONEXISTING_GLYPHS);
             if (ret != GDI_ERROR
-                && glyph[0] != 0xFFFF 
-                && glyph[0] != MISSING_GLYPH)
+                && glyph[0] != 0xFFFF
+                && (IsType1() || glyph[0] != MISSING_GLYPH))
             {
                 hasGlyph = PR_TRUE;
             }
@@ -512,8 +513,7 @@ GDIFontFamily::FamilyAddStylesProc(const ENUMLOGFONTEXW *lpelfe,
     if (!fe)
         return 1;
 
-    ff->mAvailableFonts.AppendElement(fe);
-    fe->SetFamily(ff);
+    ff->AddFontEntry(fe);
 
     // mark the charset bit
     fe->mCharset.set(metrics.tmCharSet);
@@ -626,7 +626,7 @@ gfxGDIFontList::GetFontSubstitutes()
 
     for (i = 0, rv = ERROR_SUCCESS; rv != ERROR_NO_MORE_ITEMS; i++) {
         aliasName[0] = 0;
-        lenAlias = sizeof(aliasName);
+        lenAlias = NS_ARRAY_LENGTH(aliasName);
         actualName[0] = 0;
         lenActual = sizeof(actualName);
         rv = RegEnumValueW(hKey, i, aliasName, &lenAlias, NULL, &valueType, 
@@ -880,8 +880,9 @@ gfxGDIFontList::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
     if (!TTLoadEmbeddedFontPtr || !TTDeleteEmbeddedFontPtr)
         return nsnull;
 
-    PRBool isCFF = gfxFontUtils::IsCffFont(aFontData);
-        
+    PRBool hasVertical;
+    PRBool isCFF = gfxFontUtils::IsCffFont(aFontData, hasVertical);
+
     nsresult rv;
     HANDLE fontRef = nsnull;
     PRBool isEmbedded = PR_FALSE;
@@ -957,7 +958,9 @@ gfxGDIFontList::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
             return nsnull;
 
         // only load fonts with a single face contained in the data
-        if (fontRef && numFonts != 1) {
+        // AddFontMemResourceEx generates an additional face name for
+        // vertical text if the font supports vertical writing
+        if (fontRef && numFonts != 1 + !!hasVertical) {
             RemoveFontMemResourceEx(fontRef);
             return nsnull;
         }

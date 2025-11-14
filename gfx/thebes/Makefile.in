@@ -20,6 +20,7 @@ EXPORTS	= \
 	gfxColor.h \
 	gfxContext.h \
 	gfxDrawable.h \
+	gfxFailure.h \
 	gfxFont.h \
 	gfxFontConstants.h \
 	gfxFontUtils.h \
@@ -59,16 +60,6 @@ EXPORTS += \
 	gfxAndroidPlatform.h \
 	gfxFT2Fonts.h \
 	gfxFT2FontBase.h \
-	$(NULL)
-endif
-
-ifeq ($(MOZ_WIDGET_TOOLKIT),beos)
-EXPORTS	+= \
-	gfxBeOSPlatform.h \
-	gfxBeOSSurface.h \
-	gfxFT2FontBase.h \
-	gfxPDFSurface.h \
-	gfxPangoFonts.h \
 	$(NULL)
 endif
 
@@ -277,7 +268,7 @@ CPPSRCS	+= gfxGDIFont.cpp \
 	   gfxGDIShaper.cpp \
 	   gfxUniscribeShaper.cpp \
 	   $(NULL)
-_OS_LIBS = usp10 msimg32 ole32 version advapi32
+_OS_LIBS = usp10 msimg32 ole32 version advapi32 shlwapi shell32
 endif
 
 CPPSRCS +=	gfxPDFSurface.cpp
@@ -367,17 +358,6 @@ CPPSRCS +=	gfxFontconfigUtils.cpp
 CPPSRCS +=	nsUnicodeRange.cpp
 CPPSRCS +=	gfxPDFSurface.cpp
 EXTRA_DSO_LDOPTS += $(MOZ_PANGO_LIBS) $(ZLIB_LIBS) $(XLDFLAGS) $(XLIBS) $(CAIRO_FT_LIBS) $(XEXT_LIBS)
-endif
-
-ifeq ($(MOZ_WIDGET_TOOLKIT),beos)
-CPPSRCS	+= 	gfxBeOSSurface.cpp gfxBeOSPlatform.cpp
-CPPSRCS +=	gfxPangoFonts.cpp 
-CPPSRCS +=	gfxFT2FontBase.cpp
-CPPSRCS +=	gfxFT2Utils.cpp
-#CPPSRCS +=	gfxPDFSurface.cpp
-CPPSRCS +=	gfxFontconfigUtils.cpp
-CPPSRCS +=	nsUnicodeRange.cpp
-EXTRA_DSO_LDOPTS += $(MOZ_PANGO_LIBS) $(CAIRO_FT_LIBS) -lfontconfig
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
@@ -473,10 +453,6 @@ endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),gtk2)
 CXXFLAGS += $(MOZ_PANGO_CFLAGS)
-endif
-
-ifeq ($(MOZ_WIDGET_TOOLKIT),beos)
-CXXFLAGS += $(CAIRO_FT_CFLAGS)
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),os2)

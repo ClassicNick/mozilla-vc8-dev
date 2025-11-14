@@ -84,7 +84,6 @@
 
 [browser]
 ; [Base Browser Files]
-@BINPATH@/jsloader/
 #ifndef XP_UNIX
 @BINPATH@/@MOZ_APP_NAME@.exe
 #else
@@ -242,9 +241,6 @@
 #endif
 @BINPATH@/components/txtsvc.xpt
 @BINPATH@/components/txmgr.xpt
-#ifdef MOZ_USE_NATIVE_UCONV
-@BINPATH@/components/ucnative.xpt
-#endif
 @BINPATH@/components/uconv.xpt
 @BINPATH@/components/unicharutil.xpt
 @BINPATH@/components/update.xpt
@@ -406,12 +402,12 @@
 @BINPATH@/components/@DLL_PREFIX@mozgnome@DLL_SUFFIX@
 #endif
 
-; ANGLE on Win32
-#ifdef XP_WIN32
-#ifndef HAVE_64BIT_OS
+; ANGLE GLES-on-D3D rendering library
+#ifdef MOZ_ANGLE
 @BINPATH@/libEGL.dll
 @BINPATH@/libGLESv2.dll
-#endif
+@BINPATH@/@MOZ_D3DX9_DLL@
+@BINPATH@/@MOZ_D3DCOMPILER_DLL@
 #endif
 
 ; [Browser Chrome Files]

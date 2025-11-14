@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -78,6 +78,8 @@ class ColorLayer;
 class ImageContainer;
 class CanvasLayer;
 class ShadowLayer;
+class ReadbackLayer;
+class ReadbackProcessor;
 class SpecificLayerAttributes;
 
 /**
@@ -348,7 +350,8 @@ public:
 
   /**
    * CONSTRUCTION PHASE ONLY
-   * Set the root layer.
+   * Set the root layer. The root layer is initially null. If there is
+   * no root layer, EndTransaction won't draw anything.
    */
   virtual void SetRoot(Layer* aLayer) = 0;
   /**
@@ -359,8 +362,15 @@ public:
   /**
    * CONSTRUCTION PHASE ONLY
    * Called when a managee has mutated.
+   * Subclasses overriding this method must first call their
+   * superclass's impl
    */
+#ifdef DEBUG
+  // In debug builds, we check some properties of |aLayer|.
+  virtual void Mutated(Layer* aLayer);
+#else
   virtual void Mutated(Layer* aLayer) { }
+#endif
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -387,6 +397,11 @@ public:
    * Create a CanvasLayer for this manager's layer tree.
    */
   virtual already_AddRefed<CanvasLayer> CreateCanvasLayer() = 0;
+  /**
+   * CONSTRUCTION PHASE ONLY
+   * Create a ReadbackLayer for this manager's layer tree.
+   */
+  virtual already_AddRefed<ReadbackLayer> CreateReadbackLayer() { return nsnull; }
 
   /**
    * Can be called anytime
@@ -467,6 +482,11 @@ public:
   static bool IsLogEnabled();
   static PRLogModuleInfo* GetLog() { return sLog; }
 
+  PRBool IsCompositingCheap(LayerManager::LayersBackend aBackend)
+  { return LAYERS_BASIC != aBackend; }
+
+  virtual PRBool IsCompositingCheap() { return PR_TRUE; }
+
 protected:
   nsRefPtr<Layer> mRoot;
   LayerUserDataSet mUserData;
@@ -491,13 +511,15 @@ class THEBES_API Layer {
   NS_INLINE_DECL_REFCOUNTING(Layer)  
 
 public:
+  // Keep these in alphabetical order
   enum LayerType {
-    TYPE_THEBES,
+    TYPE_CANVAS,
+    TYPE_COLOR,
     TYPE_CONTAINER,
     TYPE_IMAGE,
-    TYPE_COLOR,
-    TYPE_CANVAS,
-    TYPE_SHADOW
+    TYPE_READBACK,
+    TYPE_SHADOW,
+    TYPE_THEBES
   };
 
   virtual ~Layer() {}
@@ -622,6 +644,39 @@ public:
     Mutated();
   }
 
+  /**
+   * CONSTRUCTION PHASE ONLY
+   *
+   * Define a subrect of this layer that will be used as the source
+   * image for tiling this layer's visible region.  The coordinates
+   * are in the un-transformed space of this layer (i.e. the visible
+   * region of this this layer is tiled before being transformed).
+   * The visible region is tiled "outwards" from the source rect; that
+   * is, the source rect is drawn "in place", then repeated to cover
+   * the layer's visible region.
+   *
+   * The interpretation of the source rect varies depending on
+   * underlying layer type.  For ImageLayers and CanvasLayers, it
+   * doesn't make sense to set a source rect not fully contained by
+   * the bounds of their underlying images.  For ThebesLayers, thebes
+   * content may need to be rendered to fill the source rect.  For
+   * ColorLayers, a source rect for tiling doesn't make sense at all.
+   *
+   * If aRect is null no tiling will be performed. 
+   *
+   * NB: this interface is only implemented for BasicImageLayers, and
+   * then only for source rects the same size as the layers'
+   * underlying images.
+   */
+  void SetTileSourceRect(const nsIntRect* aRect)
+  {
+    mUseTileSourceRect = aRect != nsnull;
+    if (aRect) {
+      mTileSourceRect = *aRect;
+    }
+    Mutated();
+  }
+
   // These getters can be used anytime.
   float GetOpacity() { return mOpacity; }
   const nsIntRect* GetClipRect() { return mUseClipRect ? &mClipRect : nsnull; }
@@ -633,6 +688,7 @@ public:
   virtual Layer* GetFirstChild() { return nsnull; }
   virtual Layer* GetLastChild() { return nsnull; }
   const gfx3DMatrix& GetTransform() { return mTransform; }
+  const nsIntRect* GetTileSourceRect() { return mUseTileSourceRect ? &mTileSourceRect : nsnull; }
 
   /**
    * DRAWING PHASE ONLY
@@ -741,6 +797,20 @@ public:
    * have already had ComputeEffectiveTransforms called.
    */
   virtual void ComputeEffectiveTransforms(const gfx3DMatrix& aTransformToSurface) = 0;
+  
+  /**
+   * Calculate the scissor rect required when rendering this layer.
+   *
+   * @param aIntermediate true if the layer is being rendered to an
+   * intermediate surface, false otherwise.
+   * @param aVisibleRect The bounds of the parent's visible region.
+   * @param aParentScissor The existing scissor rect set for the parent.
+   * @param aTransform The current 2d transform of the parent.
+   */
+  nsIntRect CalculateScissorRect(bool aIntermediate,
+                                 const nsIntRect& aVisibleRect,
+                                 const nsIntRect& aParentScissor,
+                                 const gfxMatrix& aTransform);
 
   virtual const char* Name() const =0;
   virtual LayerType GetType() const =0;
@@ -792,7 +862,8 @@ protected:
     mImplData(aImplData),
     mOpacity(1.0),
     mContentFlags(0),
-    mUseClipRect(PR_FALSE)
+    mUseClipRect(PR_FALSE),
+    mUseTileSourceRect(PR_FALSE)
     {}
 
   void Mutated() { mManager->Mutated(this); }
@@ -836,8 +907,10 @@ protected:
   gfx3DMatrix mEffectiveTransform;
   float mOpacity;
   nsIntRect mClipRect;
+  nsIntRect mTileSourceRect;
   PRUint32 mContentFlags;
   PRPackedBool mUseClipRect;
+  PRPackedBool mUseTileSourceRect;
 };
 
 /**
@@ -879,12 +952,16 @@ public:
     mEffectiveTransform = SnapTransform(idealTransform, gfxRect(0, 0, 0, 0), nsnull);
   }
 
+  bool UsedForReadback() { return mUsedForReadback; }
+  void SetUsedForReadback(bool aUsed) { mUsedForReadback = aUsed; }
+
 protected:
   ThebesLayer(LayerManager* aManager, void* aImplData)
     : Layer(aManager, aImplData)
     , mValidRegion()
     , mXResolution(1.0)
     , mYResolution(1.0)
+    , mUsedForReadback(false)
   {
     mContentFlags = 0; // Clear NO_TEXT, NO_TEXT_OVER_TRANSPARENT
   }
@@ -907,6 +984,11 @@ protected:
   // sense for all backends to fully support it.
   float mXResolution;
   float mYResolution;
+  /**
+   * Set when this ThebesLayer is participating in readback, i.e. some
+   * ReadbackLayer (may) be getting its background from this layer.
+   */
+  bool mUsedForReadback;
 };
 
 /**
@@ -976,12 +1058,18 @@ public:
   PRBool SupportsComponentAlphaChildren() { return mSupportsComponentAlphaChildren; }
 
 protected:
+  friend class ReadbackProcessor;
+
+  void DidInsertChild(Layer* aLayer);
+  void DidRemoveChild(Layer* aLayer);
+
   ContainerLayer(LayerManager* aManager, void* aImplData)
     : Layer(aManager, aImplData),
       mFirstChild(nsnull),
       mLastChild(nsnull),
       mUseIntermediateSurface(PR_FALSE),
-      mSupportsComponentAlphaChildren(PR_FALSE)
+      mSupportsComponentAlphaChildren(PR_FALSE),
+      mMayHaveReadbackChild(PR_FALSE)
   {
     mContentFlags = 0; // Clear NO_TEXT, NO_TEXT_OVER_TRANSPARENT
   }
@@ -1004,6 +1092,7 @@ protected:
   FrameMetrics mFrameMetrics;
   PRPackedBool mUseIntermediateSurface;
   PRPackedBool mSupportsComponentAlphaChildren;
+  PRPackedBool mMayHaveReadbackChild;
 };
 
 /**
@@ -1087,13 +1176,20 @@ public:
   virtual void Initialize(const Data& aData) = 0;
 
   /**
-   * CONSTRUCTION PHASE ONLY
-   * Notify this CanvasLayer that the rectangle given by aRect
-   * has been updated, and any work that needs to be done
-   * to bring the contents from the Surface/GLContext to the
-   * Layer in preparation for compositing should be performed.
+   * Notify this CanvasLayer that the canvas surface contents have
+   * changed (or will change) before the next transaction.
    */
-  virtual void Updated(const nsIntRect& aRect) = 0;
+  void Updated() { mDirty = PR_TRUE; }
+
+  /**
+   * Register a callback to be called at the end of each transaction.
+   */
+  typedef void (* DidTransactionCallback)(void* aClosureData);
+  void SetDidTransactionCallback(DidTransactionCallback aCallback, void* aClosureData)
+  {
+    mCallback = aCallback;
+    mCallbackData = aClosureData;
+  }
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -1118,15 +1214,30 @@ public:
 
 protected:
   CanvasLayer(LayerManager* aManager, void* aImplData)
-    : Layer(aManager, aImplData), mFilter(gfxPattern::FILTER_GOOD) {}
+    : Layer(aManager, aImplData),
+      mCallback(nsnull), mCallbackData(nsnull), mFilter(gfxPattern::FILTER_GOOD),
+      mDirty(PR_FALSE) {}
 
   virtual nsACString& PrintInfo(nsACString& aTo, const char* aPrefix);
+
+  void FireDidTransactionCallback()
+  {
+    if (mCallback) {
+      mCallback(mCallbackData);
+    }
+  }
 
   /**
    * 0, 0, canvaswidth, canvasheight
    */
   nsIntRect mBounds;
+  DidTransactionCallback mCallback;
+  void* mCallbackData;
   gfxPattern::GraphicsFilter mFilter;
+  /**
+   * Set to true in Updated(), cleared during a transaction.
+   */
+  PRPackedBool mDirty;
 };
 
 }

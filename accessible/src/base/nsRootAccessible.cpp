@@ -112,6 +112,7 @@ nsRootAccessible::
                    nsIWeakReference *aShell) :
   nsDocAccessibleWrap(aDocument, aRootContent, aShell)
 {
+  mFlags |= eRootAccessible;
 }
 
 nsRootAccessible::~nsRootAccessible()
@@ -308,6 +309,9 @@ nsresult nsRootAccessible::RemoveEventListeners()
   return NS_OK;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// public
+
 nsCaretAccessible*
 nsRootAccessible::GetCaretAccessible()
 {
@@ -435,6 +439,11 @@ nsRootAccessible::FireCurrentFocusEvent()
   }
 }
 
+void
+nsRootAccessible::DocumentActivated(nsDocAccessible* aDocument)
+{
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // nsIDOMEventListener
 
@@ -517,6 +526,9 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
   nsINode* targetNode = accessible->GetNode();
   nsIContent* targetContent = targetNode->IsElement() ?
     targetNode->AsElement() : nsnull;
+  nsIContent* origTargetContent = origTargetNode->IsElement() ?
+    origTargetNode->AsElement() : nsnull;
+
 #ifdef MOZ_XUL
   PRBool isTree = targetContent ?
     targetContent->NodeInfo()->Equals(nsAccessibilityAtoms::tree,
@@ -562,7 +574,7 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     nsEventShell::FireEvent(accEvent);
 
     if (isEnabled)
-      FireAccessibleFocusEvent(accessible, targetContent);
+      FireAccessibleFocusEvent(accessible, origTargetContent);
 
     return;
   }
@@ -666,7 +678,7 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
         }
       }
     }
-    FireAccessibleFocusEvent(accessible, targetContent);
+    FireAccessibleFocusEvent(accessible, origTargetContent);
   }
   else if (eventType.EqualsLiteral("blur")) {
     NS_IF_RELEASE(gLastFocusedNode);
@@ -740,7 +752,7 @@ nsRootAccessible::ProcessDOMEvent(nsIDOMEvent* aDOMEvent)
     }
     if (fireFocus) {
       // Always asynch, always from user input.
-      FireAccessibleFocusEvent(accessible, targetContent, PR_TRUE,
+      FireAccessibleFocusEvent(accessible, origTargetContent, PR_TRUE,
                                eFromUserInput);
     }
   }

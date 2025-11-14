@@ -44,13 +44,12 @@
 #include "gfxImageSurface.h"
 #include "yuv_convert.h"
 #include "GLContextProvider.h"
+#include "MacIOSurfaceImageOGL.h"
 
 using namespace mozilla::gl;
 
 namespace mozilla {
 namespace layers {
-
-using mozilla::MutexAutoLock;
 
 /**
  * This is an event used to unref a GLContext on the main thread and
@@ -191,7 +190,6 @@ RecycleBin::GetTexture(TextureType aType, const gfxIntSize& aSize,
 ImageContainerOGL::ImageContainerOGL(LayerManagerOGL *aManager)
   : ImageContainer(aManager)
   , mRecycleBin(new RecycleBin())
-  , mActiveImageLock("mozilla.layers.ImageContainerOGL.mActiveImageLock")
 {
 }
 
@@ -218,6 +216,12 @@ ImageContainerOGL::CreateImage(const Image::Format *aFormats,
   } else if (aFormats[0] == Image::CAIRO_SURFACE) {
     img = new CairoImageOGL(static_cast<LayerManagerOGL*>(mManager));
   }
+#ifdef XP_MACOSX
+  else if (aFormats[0] == Image::MAC_IO_SURFACE) {
+    img = new MacIOSurfaceImageOGL(static_cast<LayerManagerOGL*>(mManager));
+  }
+#endif
+
   return img.forget();
 }
 
@@ -227,10 +231,11 @@ ImageContainerOGL::SetCurrentImage(Image *aImage)
   nsRefPtr<Image> oldImage;
 
   {
-    MutexAutoLock lock(mActiveImageLock);
+    MonitorAutoEnter mon(mMonitor);
 
     oldImage = mActiveImage.forget();
     mActiveImage = aImage;
+    CurrentImageChanged();
   }
 
   // Make sure oldImage is released outside the lock, so it can take our
@@ -240,7 +245,7 @@ ImageContainerOGL::SetCurrentImage(Image *aImage)
 already_AddRefed<Image>
 ImageContainerOGL::GetCurrentImage()
 {
-  MutexAutoLock lock(mActiveImageLock);
+  MonitorAutoEnter mon(mMonitor);
 
   nsRefPtr<Image> retval = mActiveImage;
   return retval.forget();
@@ -249,7 +254,7 @@ ImageContainerOGL::GetCurrentImage()
 already_AddRefed<gfxASurface>
 ImageContainerOGL::GetCurrentAsSurface(gfxIntSize *aSize)
 {
-  MutexAutoLock lock(mActiveImageLock);
+  MonitorAutoEnter mon(mMonitor);
 
   if (!mActiveImage) {
     *aSize = gfxIntSize(0,0);
@@ -307,7 +312,7 @@ ImageContainerOGL::GetCurrentAsSurface(gfxIntSize *aSize)
 gfxIntSize
 ImageContainerOGL::GetCurrentSize()
 {
-  MutexAutoLock lock(mActiveImageLock);
+  MonitorAutoEnter mon(mMonitor);
   if (!mActiveImage) {
     return gfxIntSize(0,0);
   }
@@ -319,7 +324,6 @@ ImageContainerOGL::GetCurrentSize()
       return gfxIntSize(0,0);
     }
     return yuvImage->mSize;
-
   }
 
   if (mActiveImage->GetFormat() == Image::CAIRO_SURFACE) {
@@ -327,6 +331,14 @@ ImageContainerOGL::GetCurrentSize()
       static_cast<CairoImageOGL*>(mActiveImage.get());
     return cairoImage->mSize;
   }
+
+#ifdef XP_MACOSX
+  if (mActiveImage->GetFormat() == Image::MAC_IO_SURFACE) {
+    MacIOSurfaceImageOGL *ioImage =
+      static_cast<MacIOSurfaceImageOGL*>(mActiveImage.get());
+      return ioImage->mSize;
+  }
+#endif
 
   return gfxIntSize(0,0);
 }
@@ -418,8 +430,6 @@ ImageLayerOGL::RenderLayer(int,
     program->SetRenderOffset(aOffset);
     program->SetYCbCrTextureUnits(0, 1, 2);
 
-    DEBUG_GL_ERROR_CHECK(gl());
-
     mOGLManager->BindAndDrawQuad(program);
 
     // We shouldn't need to do this, but do it anyway just in case
@@ -447,9 +457,50 @@ ImageLayerOGL::RenderLayer(int,
     program->SetTextureUnit(0);
 
     mOGLManager->BindAndDrawQuad(program);
-  }
+#ifdef XP_MACOSX
+  } else if (image->GetFormat() == Image::MAC_IO_SURFACE) {
+     MacIOSurfaceImageOGL *ioImage =
+       static_cast<MacIOSurfaceImageOGL*>(image.get());
 
-  DEBUG_GL_ERROR_CHECK(gl());
+     if (!mOGLManager->GetThebesLayerCallback()) {
+       // If its an empty transaction we still need to update
+       // the plugin IO Surface and make sure we grab the
+       // new image
+       ioImage->Update(GetContainer());
+       image = GetContainer()->GetCurrentImage();
+       gl()->MakeCurrent();
+       ioImage = static_cast<MacIOSurfaceImageOGL*>(image.get());
+     }
+     
+     gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
+     gl()->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, ioImage->mTexture.GetTextureID());
+
+     ColorTextureLayerProgram *program = 
+       mOGLManager->GetRGBARectLayerProgram();
+     
+     program->Activate();
+     if (program->GetTexCoordMultiplierUniformLocation() != -1) {
+       // 2DRect case, get the multiplier right for a sampler2DRect
+       float f[] = { float(ioImage->mSize.width), float(ioImage->mSize.height) };
+       program->SetUniform(program->GetTexCoordMultiplierUniformLocation(),
+                           2, f);
+     } else {
+       NS_ASSERTION(0, "no rects?");
+     }
+     
+     program->SetLayerQuadRect(nsIntRect(0, 0, 
+                                         ioImage->mSize.width, 
+                                         ioImage->mSize.height));
+     program->SetLayerTransform(GetEffectiveTransform());
+     program->SetLayerOpacity(GetEffectiveOpacity());
+     program->SetRenderOffset(aOffset);
+     program->SetTextureUnit(0);
+    
+     mOGLManager->BindAndDrawQuad(program);
+     gl()->fBindTexture(LOCAL_GL_TEXTURE_RECTANGLE_ARB, 0);
+#endif
+  }
+  GetContainer()->NotifyPaintedImage(image);
 }
 
 static void
@@ -688,21 +739,11 @@ CairoImageOGL::SetData(const CairoImage::Data &aData)
   InitTexture(gl, tex, LOCAL_GL_RGBA, aData.mSize);
   mSize = aData.mSize;
 
-  if (!mASurfaceAsGLContext) {
-    mASurfaceAsGLContext = GLContextProvider::CreateForNativePixmapSurface(aData.mSurface);
-    if (mASurfaceAsGLContext)
-      mASurfaceAsGLContext->BindTexImage();
-  }
-
-  if (mASurfaceAsGLContext)
-    return;
-
   mLayerProgram =
     gl->UploadSurfaceToTexture(aData.mSurface,
                                nsIntRect(0,0, mSize.width, mSize.height),
                                tex);
 }
-
 
 #ifdef MOZ_IPC
 
@@ -794,8 +835,6 @@ ShadowImageLayerOGL::RenderLayer(int aPreviousFrameBuffer,
   program->SetTextureUnit(0);
 
   mOGLManager->BindAndDrawQuad(program);
-
-  DEBUG_GL_ERROR_CHECK(gl());
 }
 
 #endif  // MOZ_IPC

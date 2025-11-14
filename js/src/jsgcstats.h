@@ -148,6 +148,7 @@ struct GCTimer {
     uint64 startSweep;
     uint64 sweepObjectEnd;
     uint64 sweepStringEnd;
+    uint64 sweepShapeEnd;
     uint64 sweepDestroyEnd;
     uint64 end;
 
@@ -160,7 +161,7 @@ struct GCTimer {
 
 # define GCTIMER_PARAM      , GCTimer &gcTimer
 # define GCTIMER_ARG        , gcTimer
-# define TIMESTAMP(x)       (gcTimer.x = rdtsc())
+# define TIMESTAMP(x)       (gcTimer.x = PRMJ_Now())
 # define GCTIMER_BEGIN()    GCTimer gcTimer
 # define GCTIMER_END(last)  (gcTimer.finish(last))
 #else

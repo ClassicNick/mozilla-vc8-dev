@@ -721,15 +721,19 @@ def writeResultConv(f, type, jsvalPtr, jsvalRef):
                     % jsvalPtr)
             return
         else:
-            f.write("    nsWrapperCache* cache = xpc_qsGetWrapperCache(result);\n"
-                    "    if (xpc_GetCachedSlimWrapper(cache, obj, %s)) {\n"
+            f.write("    if (!result) {\n"
+                    "      *%s = JSVAL_NULL;\n"
+                    "      return JS_TRUE;\n"
+                    "    }\n"
+                    "    nsWrapperCache* cache = xpc_qsGetWrapperCache(result);\n"
+                    "    if (xpc_FastGetCachedWrapper(cache, obj, %s)) {\n"
                     "      return JS_TRUE;\n"
                     "    }\n"
                     "    // After this point do not use 'result'!\n"
                     "    qsObjectHelper helper(result, cache);\n"
                     "    return xpc_qsXPCOMObjectToJsval(lccx, "
                     "helper, &NS_GET_IID(%s), &interfaces[k_%s], %s);\n"
-                    % (jsvalPtr, type.name, type.name, jsvalPtr))
+                    % (jsvalPtr, jsvalPtr, type.name, type.name, jsvalPtr))
             return
 
     warn("Unable to convert result of type %s" % type.name)
@@ -778,7 +782,10 @@ def writeQuickStub(f, customMethodCalls, member, stubName, isSetter=False):
     signature = "static JSBool\n"
     if isAttr:
         # JSPropertyOp signature.
-        signature += "%s(JSContext *cx, JSObject *obj, jsid id,%s jsval *vp)\n"
+        if isSetter:
+            signature += "%s(JSContext *cx, JSObject *obj, jsid id, JSBool strict,%s jsval *vp)\n"
+        else:
+            signature += "%s(JSContext *cx, JSObject *obj, jsid id,%s jsval *vp)\n"
     else:
         # JSFastNative.
         signature += "%s(JSContext *cx, uintN argc,%s jsval *vp)\n"
@@ -815,8 +822,8 @@ def writeQuickStub(f, customMethodCalls, member, stubName, isSetter=False):
             argumentValues = (customMethodCall['additionalArgumentValues']
                               % nativeName)
             if isAttr:
-                callTemplate += ("    return %s(cx, obj, id, %s, vp);\n"
-                                 % (templateName, argumentValues))
+                callTemplate += ("    return %s(cx, obj, id%s, %s, vp);\n"
+                                 % (templateName, ", strict" if isSetter else "", argumentValues))
             else:
                 callTemplate += ("    return %s(cx, argc, %s, vp);\n"
                                  % (templateName, argumentValues))
@@ -1208,7 +1215,7 @@ def writeTraceableArgumentConversion(f, member, i, name, type, haveCcx,
                 f.write("    nsresult rv;\n");
             f.write("    %s *%s;\n" % (type.name, name))
             f.write("    xpc_qsSelfRef %sref;\n" % name)
-            f.write("    js::Anchor<jsval> %sanchor;\n" % name);
+            f.write("    JS::Anchor<jsval> %sanchor;\n" % name);
             f.write("    rv = xpc_qsUnwrapArg<%s>("
                     "cx, js::Jsvalify(js::ValueArgToConstRef(%s)), &%s, &%sref.ptr, &%sanchor.get());\n"
                     % (type.name, argVal, name, name, name))
@@ -1280,9 +1287,12 @@ def writeTraceableResultConv(f, type):
                     "    JSBool ok = xpc_qsVariantToJsval(lccx, result, "
                     "&returnVal);\n")
         else:
-            f.write("    nsWrapperCache* cache = xpc_qsGetWrapperCache(result);\n"
+            f.write("    if (!result) {\n"
+                    "      return nsnull;\n"
+                    "    }\n"
+                    "    nsWrapperCache* cache = xpc_qsGetWrapperCache(result);\n"
                     "    JSObject* wrapper =\n"
-                    "      xpc_GetCachedSlimWrapper(cache, obj);\n"
+                    "      xpc_FastGetCachedWrapper(cache, obj);\n"
                     "    if (wrapper) {\n"
                     "      return wrapper;\n"
                     "    }\n"
@@ -1348,7 +1358,7 @@ def writeTraceableQuickStub(f, customMethodCalls, member, stubName):
     else:
         f.write("    %s *self;\n" % customMethodCall['thisType'])
     f.write("    xpc_qsSelfRef selfref;\n")
-    f.write("    js::Anchor<jsval> selfanchor;\n")
+    f.write("    JS::Anchor<jsval> selfanchor;\n")
     if haveCcx:
         f.write("    if (!xpc_qsUnwrapThisFromCcx(ccx, &self, &selfref.ptr, "
                 "&selfanchor.get())) {\n")

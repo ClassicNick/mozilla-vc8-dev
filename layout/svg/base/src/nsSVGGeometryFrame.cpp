@@ -68,8 +68,10 @@ nsSVGGeometryFrame::GetPaintServer(const nsStyleSVGPaint *aPaint,
   if (aPaint->mType != eStyleSVGPaintType_Server)
     return nsnull;
 
+  nsIFrame *frame = mContent->IsNodeOfType(nsINode::eTEXT) ?
+                      GetParent() : this;
   nsSVGPaintingProperty *property =
-    nsSVGEffects::GetPaintingProperty(aPaint->mPaint.mPaintServer, this, aType);
+    nsSVGEffects::GetPaintingProperty(aPaint->mPaint.mPaintServer, frame, aType);
   if (!property)
     return nsnull;
   nsIFrame *result = property->GetReferencedFrame();
@@ -324,4 +326,63 @@ nsSVGGeometryFrame::SetupCairoStroke(gfxContext *aContext)
                             &nsStyleSVG::mStroke, opacity);
 
   return PR_TRUE;
+}
+
+PRUint16
+nsSVGGeometryFrame::GetHittestMask()
+{
+  PRUint16 mask = 0;
+
+  switch(GetStyleVisibility()->mPointerEvents) {
+  case NS_STYLE_POINTER_EVENTS_NONE:
+    break;
+  case NS_STYLE_POINTER_EVENTS_AUTO:
+  case NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED:
+    if (GetStyleVisibility()->IsVisible()) {
+      if (GetStyleSVG()->mFill.mType != eStyleSVGPaintType_None)
+        mask |= HITTEST_MASK_FILL;
+      if (GetStyleSVG()->mStroke.mType != eStyleSVGPaintType_None)
+        mask |= HITTEST_MASK_STROKE;
+      if (GetStyleSVG()->mStrokeOpacity > 0)
+        mask |= HITTEST_MASK_CHECK_MRECT;
+    }
+    break;
+  case NS_STYLE_POINTER_EVENTS_VISIBLEFILL:
+    if (GetStyleVisibility()->IsVisible()) {
+      mask |= HITTEST_MASK_FILL;
+    }
+    break;
+  case NS_STYLE_POINTER_EVENTS_VISIBLESTROKE:
+    if (GetStyleVisibility()->IsVisible()) {
+      mask |= HITTEST_MASK_STROKE;
+    }
+    break;
+  case NS_STYLE_POINTER_EVENTS_VISIBLE:
+    if (GetStyleVisibility()->IsVisible()) {
+      mask |= HITTEST_MASK_FILL | HITTEST_MASK_STROKE;
+    }
+    break;
+  case NS_STYLE_POINTER_EVENTS_PAINTED:
+    if (GetStyleSVG()->mFill.mType != eStyleSVGPaintType_None)
+      mask |= HITTEST_MASK_FILL;
+    if (GetStyleSVG()->mStroke.mType != eStyleSVGPaintType_None)
+      mask |= HITTEST_MASK_STROKE;
+    if (GetStyleSVG()->mStrokeOpacity)
+      mask |= HITTEST_MASK_CHECK_MRECT;
+    break;
+  case NS_STYLE_POINTER_EVENTS_FILL:
+    mask |= HITTEST_MASK_FILL;
+    break;
+  case NS_STYLE_POINTER_EVENTS_STROKE:
+    mask |= HITTEST_MASK_STROKE;
+    break;
+  case NS_STYLE_POINTER_EVENTS_ALL:
+    mask |= HITTEST_MASK_FILL | HITTEST_MASK_STROKE;
+    break;
+  default:
+    NS_ERROR("not reached");
+    break;
+  }
+
+  return mask;
 }

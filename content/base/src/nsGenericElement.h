@@ -386,8 +386,30 @@ public:
   {
     return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
   }
+  /**
+   * Helper for SetAttr/SetParsedAttr. This method will return true if aNotify
+   * is true or there are mutation listeners that must be triggered, the
+   * attribute is currently set, and the new value that is about to be set is
+   * different to the current value. As a perf optimization the new and old
+   * values will not actually be compared if we aren't notifying and we don't
+   * have mutation listeners (in which case it's cheap to just return PR_FALSE
+   * and let the caller go ahead and set the value).
+   * @param aOldValue Set to the old value of the attribute, but only if there
+   *   are event listeners
+   * @param aModType Set to nsIDOMMutationEvent::MODIFICATION or to
+   *   nsIDOMMutationEvent::ADDITION, but only if this helper returns true
+   * @param aHasListeners Set to true if there are mutation event listeners
+   *   listening for NS_EVENT_BITS_MUTATION_ATTRMODIFIED
+   */
+  PRBool MaybeCheckSameAttrVal(PRInt32 aNamespaceID, nsIAtom* aName,
+                               nsIAtom* aPrefix, const nsAString& aValue,
+                               PRBool aNotify, nsAutoString* aOldValue,
+                               PRUint8* aModType, PRBool* aHasListeners);
   virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
                            const nsAString& aValue, PRBool aNotify);
+  virtual nsresult SetParsedAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
+                                 nsIAtom* aPrefix, nsAttrValue& aParsedValue,
+                                 PRBool aNotify);
   virtual PRBool GetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                          nsAString& aResult) const;
   virtual PRBool HasAttr(PRInt32 aNameSpaceID, nsIAtom* aName) const;
@@ -420,7 +442,6 @@ public:
   virtual void AppendTextTo(nsAString& aResult);
   virtual nsIContent *GetBindingParent() const;
   virtual PRBool IsNodeOfType(PRUint32 aFlags) const;
-  virtual already_AddRefed<nsIURI> GetBaseURI() const;
   virtual PRBool IsLink(nsIURI** aURI) const;
 
   virtual PRUint32 GetScriptTypeID() const;
@@ -434,9 +455,9 @@ public:
   {
     return nsnull;
   }
-  virtual nsresult GetSMILOverrideStyle(nsIDOMCSSStyleDeclaration** aStyle);
-  virtual nsICSSStyleRule* GetSMILOverrideStyleRule();
-  virtual nsresult SetSMILOverrideStyleRule(nsICSSStyleRule* aStyleRule,
+  virtual nsIDOMCSSStyleDeclaration* GetSMILOverrideStyle();
+  virtual mozilla::css::StyleRule* GetSMILOverrideStyleRule();
+  virtual nsresult SetSMILOverrideStyleRule(mozilla::css::StyleRule* aStyleRule,
                                             PRBool aNotify);
 #endif // MOZ_SMIL
 
@@ -452,8 +473,8 @@ public:
 
   virtual const nsAttrValue* DoGetClasses() const;
   NS_IMETHOD WalkContentStyleRules(nsRuleWalker* aRuleWalker);
-  virtual nsICSSStyleRule* GetInlineStyleRule();
-  NS_IMETHOD SetInlineStyleRule(nsICSSStyleRule* aStyleRule, PRBool aNotify);
+  virtual mozilla::css::StyleRule* GetInlineStyleRule();
+  NS_IMETHOD SetInlineStyleRule(mozilla::css::StyleRule* aStyleRule, PRBool aNotify);
   NS_IMETHOD_(PRBool)
     IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsChangeHint GetAttributeChangeHint(const nsIAtom* aAttribute,
@@ -940,7 +961,7 @@ public:
     /**
      * Holds any SMIL override style rules for this element.
      */
-    nsCOMPtr<nsICSSStyleRule> mSMILOverrideStyleRule;
+    nsRefPtr<mozilla::css::StyleRule> mSMILOverrideStyleRule;
 
     /**
      * An object implementing nsIDOMNamedNodeMap for this content (attributes)

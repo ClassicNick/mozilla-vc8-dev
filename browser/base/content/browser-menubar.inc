@@ -38,6 +38,10 @@
 # ***** END LICENSE BLOCK *****
 
        <menubar id="main-menubar"
+                onpopupshowing="if (event.target.parentNode.parentNode == this &amp;&amp;
+                                    !('@mozilla.org/widget/nativemenuservice;1' in Cc))
+                                  this.setAttribute('openedwithkey',
+                                                    event.target.parentNode.openedWithKey);"
                 style="border:0px;padding:0px;margin:0px;-moz-appearance:none">
             <menu id="file-menu" label="&fileMenu.label;"
                   accesskey="&fileMenu.accesskey;">
@@ -53,6 +57,7 @@
                           key="key_newNavigator"
                           command="cmd_newNavigator"/>
                 <menuitem id="menu_openLocation"
+                          class="show-only-for-keyboard"
                           label="&openLocationCmd.label;"
                           command="Browser:OpenLocation"
                           key="focusURLBar"
@@ -63,11 +68,13 @@
                           key="openFileKb"
                           accesskey="&openFileCmd.accesskey;"/>
                 <menuitem id="menu_close"
+                          class="show-only-for-keyboard"
                           label="&closeCmd.label;"
                           key="key_close"
                           accesskey="&closeCmd.accesskey;"
                           command="cmd_close"/>
                 <menuitem id="menu_closeWindow"
+                          class="show-only-for-keyboard"
                           hidden="true"
                           command="cmd_closeWindow"
                           key="key_closeWindow"
@@ -183,6 +190,7 @@
                           key="key_find"
                           command="cmd_find"/>
                 <menuitem id="menu_findAgain"
+                          class="show-only-for-keyboard"
                           label="&findAgainCmd.label;"
                           accesskey="&findAgainCmd.accesskey;"
                           key="key_findAgain"
@@ -209,11 +217,6 @@
             <menu id="view-menu" label="&viewMenu.label;"
                   accesskey="&viewMenu.accesskey;">
               <menupopup id="menu_viewPopup">
-                <menuitem id="menu_tabview"
-                          key="key_tabview"
-                          label="&viewTabGroups.label;"
-                          accesskey="&viewTabGroups.accesskey;"
-                          command="Browser:ToggleTabView"/>
                 <menu id="viewToolbarsMenu"
                       label="&viewToolbarsMenu.label;"
                       accesskey="&viewToolbarsMenu.accesskey;">
@@ -248,6 +251,7 @@
                 </menu>
                 <menuseparator/>
                 <menuitem id="menu_stop"
+                          class="show-only-for-keyboard"
                           label="&stopCmd.label;"
                           accesskey="&stopCmd.accesskey;"
                           command="Browser:Stop"
@@ -257,12 +261,13 @@
                           key="key_stop"/>
 #endif
                 <menuitem id="menu_reload"
+                          class="show-only-for-keyboard"
                           label="&reloadCmd.label;"
                           accesskey="&reloadCmd.accesskey;"
                           key="key_reload"
                           command="Browser:ReloadOrDuplicate"
                           onclick="checkForMiddleClick(this, event);"/>
-                <menuseparator/>
+                <menuseparator class="show-only-for-keyboard"/>
                 <menu id="viewFullZoomMenu" label="&fullZoom.label;"
                       accesskey="&fullZoom.accesskey;"
                       onpopupshowing="FullZoom.updateMenu();">
@@ -351,6 +356,7 @@
                          tooltip="bhTooltip"
                          popupsinherittooltip="true">
                 <menuitem id="historyMenuBack"
+                          class="show-only-for-keyboard"
                           label="&backCmd.label;"
 #ifdef XP_MACOSX
                           key="goBackKb2"
@@ -360,6 +366,7 @@
                           command="Browser:BackOrBackDuplicate"
                           onclick="checkForMiddleClick(this, event);"/>
                 <menuitem id="historyMenuForward"
+                          class="show-only-for-keyboard"
                           label="&forwardCmd.label;"
 #ifdef XP_MACOSX
                           key="goForwardKb2"
@@ -369,6 +376,7 @@
                           command="Browser:ForwardOrForwardDuplicate"
                           onclick="checkForMiddleClick(this, event);"/>
                 <menuitem id="historyMenuHome"
+                          class="show-only-for-keyboard"
                           label="&historyHomeCmd.label;"
                           oncommand="BrowserGoHome(event);"
                           onclick="checkForMiddleClick(this, event);"
@@ -429,9 +437,10 @@
 #endif
                context="placesContext"
                openInTabs="children"
-               oncommand="BookmarksEventHandler.onCommand(event);"
-               onclick="BookmarksEventHandler.onClick(event);"
-               onpopupshowing="if (!this.parentNode._placesView)
+               oncommand="BookmarksEventHandler.onCommand(event, this.parentNode._placesView);"
+               onclick="BookmarksEventHandler.onClick(event, this.parentNode._placesView);"
+               onpopupshowing="PlacesCommandHook.updateBookmarkAllTabsCommand();
+                               if (!this.parentNode._placesView)
                                  new PlacesMenu(event, 'place:folder=BOOKMARKS_MENU');"
                tooltip="bhTooltip" popupsinherittooltip="true">
       <menuitem id="menu_bookmarkThisPage"
@@ -459,6 +468,7 @@
       </menu>
       <menuitem id="menu_bookmarkAllTabs"
                 label="&addCurPagesCmd.label;"
+                class="show-only-for-keyboard"
                 command="Browser:BookmarkAllTabs"
                 key="bookmarkAllTabsKb"/>
       <menuitem id="bookmarksShowAll"
@@ -491,11 +501,13 @@
 #endif
                          >
               <menuitem id="menu_search"
+                        class="show-only-for-keyboard"
                         label="&search.label;"
                         accesskey="&search.accesskey;"
                         key="key_search"
                         command="Tools:Search"/>
-              <menuseparator id="browserToolsSeparator"/>
+              <menuseparator id="browserToolsSeparator"
+                             class="show-only-for-keyboard"/>
               <menuitem id="menu_openDownloads"
                         label="&downloads.label;"
                         accesskey="&downloads.accesskey;"

@@ -213,8 +213,7 @@ struct JSStmtInfo {
  */
 #define TCF_STRICT_MODE_CODE    0x40000
 
-/* Function has parameter named 'eval'. */
-#define TCF_FUN_PARAM_EVAL      0x80000
+/* bit 0x80000 is unused */
 
 /*
  * Flag signifying that the current function seems to be a constructor that
@@ -267,6 +266,16 @@ struct JSStmtInfo {
  */
 #define TCF_IN_WITH             0x10000000
 
+/* 
+ * This function does something that can extend the set of bindings in its
+ * call objects --- it does a direct eval in non-strict code, or includes a
+ * function statement (as opposed to a function definition).
+ *
+ * This flag is *not* inherited by enclosed or enclosing functions; it
+ * applies only to the function in whose flags it appears.
+ */
+#define TCF_FUN_EXTENSIBLE_SCOPE 0x20000000
+
 /*
  * Flags to check for return; vs. return expr; in a function.
  */
@@ -285,7 +294,8 @@ struct JSStmtInfo {
                                  TCF_FUN_CALLS_EVAL      |                    \
                                  TCF_FUN_MIGHT_ALIAS_LOCALS |                 \
                                  TCF_FUN_MUTATES_PARAMETER |                  \
-                                 TCF_STRICT_MODE_CODE)
+                                 TCF_STRICT_MODE_CODE    |                    \
+                                 TCF_FUN_EXTENSIBLE_SCOPE)
 
 struct JSTreeContext {              /* tree context for semantic checks */
     uint32          flags;          /* statement state flags, see above */
@@ -349,8 +359,9 @@ struct JSTreeContext {              /* tree context for semantic checks */
 
     JSTreeContext(js::Parser *prs)
       : flags(0), bodyid(0), blockidGen(0), topStmt(NULL), topScopeStmt(NULL),
-        blockChainBox(NULL), blockNode(NULL), parser(prs), scopeChain_(NULL), parent(prs->tc),
-        staticLevel(0), funbox(NULL), functionList(NULL), innermostWith(NULL), bindings(prs->context),
+        blockChainBox(NULL), blockNode(NULL), parser(prs), scopeChain_(NULL),
+        parent(prs->tc), staticLevel(0), funbox(NULL), functionList(NULL),
+        innermostWith(NULL), bindings(prs->context, prs->emptyCallShape),
         sharpSlotBase(-1)
     {
         prs->tc = this;
@@ -457,6 +468,14 @@ struct JSTreeContext {              /* tree context for semantic checks */
     bool needsEagerArguments() const {
         return inStrictMode() && ((usesArguments() && mutatesParameter()) || callsEval());
     }
+
+    void noteHasExtensibleScope() {
+        flags |= TCF_FUN_EXTENSIBLE_SCOPE;
+    }
+
+    bool hasExtensibleScope() const {
+        return flags & TCF_FUN_EXTENSIBLE_SCOPE;
+    }
 };
 
 /*
@@ -464,7 +483,7 @@ struct JSTreeContext {              /* tree context for semantic checks */
  * JSOPTION_STRICT warnings or strict mode errors.
  */
 inline bool JSTreeContext::needStrictChecks() {
-    return JS_HAS_STRICT_OPTION(parser->context) || inStrictMode();
+    return parser->context->hasStrictOption() || inStrictMode();
 }
 
 /*
@@ -653,17 +672,18 @@ struct JSCodeGenerator : public JSTreeContext
      */
     bool addGlobalUse(JSAtom *atom, uint32 slot, js::UpvarCookie *cookie);
 
-    bool hasSharps() {
+    bool hasSharps() const {
         bool rv = !!(flags & TCF_HAS_SHARPS);
         JS_ASSERT((sharpSlotBase >= 0) == rv);
         return rv;
     }
 
-    uintN sharpSlots() {
+    uintN sharpSlots() const {
         return hasSharps() ? SHARP_NSLOTS : 0;
     }
 
-    bool compilingForEval() { return !!(flags & TCF_COMPILE_FOR_EVAL); }
+    bool compilingForEval() const { return !!(flags & TCF_COMPILE_FOR_EVAL); }
+    JSVersion version() const { return parser->versionWithFlags(); }
 
     bool shouldNoteClosedName(JSParseNode *pn);
 

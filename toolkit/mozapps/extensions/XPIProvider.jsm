@@ -344,6 +344,9 @@ SafeInstallOperation.prototype = {
 function getLocale() {
   if (Prefs.getBoolPref(PREF_MATCH_OS_LOCALE, false))
     return Services.locale.getLocaleComponentForUserAgent();
+  let locale = Prefs.getComplexPref(PREF_SELECTED_LOCALE, Ci.nsIPrefLocalizedString);
+  if (locale)
+    return locale;
   return Prefs.getCharPref(PREF_SELECTED_LOCALE, "en-US");
 }
 
@@ -958,8 +961,10 @@ function escapeAddonURI(aAddon, aUri, aUpdateType, aAppVersion)
 
   if (!aAddon.isCompatible)
     addonStatus += ",incompatible";
-  if (aAddon.blocklistState > 0)
+  if (aAddon.blocklistState == Ci.nsIBlocklistService.STATE_BLOCKED)
     addonStatus += ",blocklisted";
+  if (aAddon.blocklistState == Ci.nsIBlocklistService.STATE_SOFTBLOCKED)
+    addonStatus += ",softblocked";
 
   try {
     var xpcomABI = Services.appinfo.XPCOMABI;
@@ -1214,6 +1219,26 @@ var Prefs = {
   },
 
   /**
+   * Gets a complex preference.
+   *
+   * @param  aName
+   *         The name of the preference
+   * @param  aType
+   *         The interface type of the preference
+   * @param  aDefaultValue
+   *         A value to return if the preference does not exist
+   * @return the value of the preference or aDefaultValue if there is none
+   */
+  getComplexPref: function(aName, aType, aDefaultValue) {
+    try {
+      return Services.prefs.getComplexPref(aName, aType).data;
+    }
+    catch (e) {
+    }
+    return aDefaultValue;
+  },
+
+  /**
    * Gets a boolean preference.
    *
    * @param  aName
@@ -1435,6 +1460,13 @@ var XPIProvider = {
       // Init this, so it will get the notification.
       let xulPrototypeCache = Cc["@mozilla.org/xul/xul-prototype-cache;1"].getService(Ci.nsISupports);
       Services.obs.notifyObservers(null, "startupcache-invalidate", null);
+
+      // UI displayed early in startup (like the compatibility UI) may have
+      // caused us to cache parts of the skin or locale in memory. These must
+      // be flushed to allow extension provided skins and locales to take full
+      // effect
+      Services.obs.notifyObservers(null, "chrome-flush-skin-caches", null);
+      Services.obs.notifyObservers(null, "chrome-flush-caches", null);
     }
 
     this.enabledAddons = Prefs.getCharPref(PREF_EM_ENABLED_ADDONS, "");
@@ -4532,7 +4564,7 @@ var XPIDatabase = {
       // Note that binding to index 0 sets the value for the ?1 parameter
       stmt = this.getStatement("getVisibleAddons_" + aTypes.length, sql);
       for (let i = 0; i < aTypes.length; i++)
-        stmt.bindStringParameter(i, aTypes[i]);
+        stmt.bindByIndex(i, aTypes[i]);
     }
 
     stmt.executeAsync(new AsyncAddonListCallback(aCallback));
@@ -4601,7 +4633,7 @@ var XPIDatabase = {
       stmt = this.getStatement("getVisibleAddonsWithPendingOperations_" +
                                aTypes.length, sql);
       for (let i = 0; i < aTypes.length; i++)
-        stmt.bindStringParameter(i, aTypes[i]);
+        stmt.bindByIndex(i, aTypes[i]);
     }
 
     stmt.executeAsync(new AsyncAddonListCallback(aCallback));

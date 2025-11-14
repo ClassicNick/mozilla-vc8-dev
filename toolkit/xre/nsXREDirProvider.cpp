@@ -78,10 +78,6 @@
 #ifdef XP_MACOSX
 #include "nsILocalFileMac.h"
 #endif
-#ifdef XP_BEOS
-#include <be/kernel/image.h>
-#include <FindDirectory.h>
-#endif
 #ifdef XP_UNIX
 #include <ctype.h>
 #endif
@@ -1095,24 +1091,6 @@ nsXREDirProvider::GetUserDataDirectoryHome(nsILocalFile** aFile, PRBool aLocal)
     *strrchr(appDir, '\\') = '\0';
     rv = NS_NewNativeLocalFile(nsDependentCString(appDir), PR_TRUE, getter_AddRefs(localDir));
   }
-#elif defined(XP_BEOS)
-  char appDir[MAXPATHLEN];
-  if (find_directory(B_USER_SETTINGS_DIRECTORY, NULL, true, appDir, MAXPATHLEN))
-    return NS_ERROR_FAILURE;
-
-  int len = strlen(appDir);
-  appDir[len]   = '/';
-  appDir[len+1] = '\0';
-
-  rv = NS_NewNativeLocalFile(nsDependentCString(appDir), PR_TRUE,
-                             getter_AddRefs(localDir));
-#elif defined(ANDROID)
-  // used for setting the patch to our profile
-  // XXX: investigate putting the profile somewhere else
-  const char* homeDir = "/data/data/" ANDROID_PACKAGE_NAME;
-
-  rv = NS_NewNativeLocalFile(nsDependentCString(homeDir), PR_TRUE,
-                             getter_AddRefs(localDir));
 #elif defined(XP_UNIX)
   const char* homeDir = getenv("HOME");
   if (!homeDir || !*homeDir)
@@ -1289,7 +1267,7 @@ nsXREDirProvider::AppendSysUserExtensionPath(nsIFile* aFile)
 
   nsresult rv;
 
-#if defined (XP_MACOSX) || defined(XP_WIN) || defined(XP_OS2) || defined(XP_BEOS)
+#if defined (XP_MACOSX) || defined(XP_WIN) || defined(XP_OS2)
 
   static const char* const sXR = "Mozilla";
   rv = aFile->AppendNative(nsDependentCString(sXR));
@@ -1338,7 +1316,7 @@ nsXREDirProvider::AppendProfilePath(nsIFile* aFile)
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
-#elif defined(XP_WIN) || defined(XP_OS2) || defined(XP_BEOS)
+#elif defined(XP_WIN) || defined(XP_OS2)
   if (gAppData->profile) {
     rv = AppendProfileString(aFile, gAppData->profile);
   }

@@ -57,12 +57,18 @@ DIRS		= unix
 endif
 endif
 
+ifeq ($(MOZ_WIDGET_TOOLKIT), qt)
+OS_INCLUDES	+= $(MOZ_QT_CFLAGS)
+endif
+
 CPPSRCS		= \
 		nsCollation.cpp \
 		nsScriptableDateFormat.cpp \
 		nsLanguageAtomService.cpp \
 		nsLocale.cpp \
 		nsLocaleService.cpp \
+		nsCharsetAliasImp.cpp \
+		nsUConvPropertySearch.cpp \
 		$(NULL)
 
 EXPORTS		= \
@@ -83,11 +89,14 @@ FORCE_STATIC_LIB = 1
 
 include $(topsrcdir)/config/rules.mk
 
-ifdef MOZ_ENABLE_MEEGOTOUCH
-# Meegotouch does not make sense without Qt,
-# so there's no need to check MOZ_WIDGET_TOOLKIT
-CXXFLAGS	+= $(MOZ_QT_CFLAGS) $(MOZ_MEEGOTOUCH_CFLAGS)
-endif
+nsCharsetAliasImp.$(OBJ_SUFFIX): charsetalias.properties.h
+
+charsetalias.properties.h: props2arrays.py charsetalias.properties
+	$(PYTHON) $^ $@
+
+GARBAGE += \
+	charsetalias.properties.h \
+	$(NULL)
 
 libs::
 	$(INSTALL) $(EXPORT_RESOURCE) $(DIST)/bin/res

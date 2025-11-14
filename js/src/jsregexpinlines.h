@@ -40,9 +40,14 @@
 #ifndef jsregexpinlines_h___
 #define jsregexpinlines_h___
 
-#include "jsregexp.h"
 #include "jscntxt.h"
+#include "jsobj.h"
+#include "jsregexp.h"
+#include "jsscope.h"
+
 #include "jsobjinlines.h"
+#include "jsstrinlines.h"
+
 #include "assembler/wtf/Platform.h"
 
 #if ENABLE_YARR_JIT
@@ -65,7 +70,7 @@ regexp_statics_construct(JSContext *cx, JSObject *parent)
     JSObject *obj = NewObject<WithProto::Given>(cx, &regexp_statics_class, NULL, parent);
     if (!obj)
         return NULL;
-    RegExpStatics *res = cx->create<RegExpStatics>();
+    RegExpStatics *res = cx->new_<RegExpStatics>();
     if (!res)
         return NULL;
     obj->setPrivate(static_cast<void *>(res));
@@ -112,15 +117,14 @@ class RegExp
 #endif
     { }
 
+    JS_DECLARE_ALLOCATION_FRIENDS_FOR_PRIVATE_CONSTRUCTOR;
+
     ~RegExp() {
 #if !ENABLE_YARR_JIT
         if (compiled)
             jsRegExpFree(compiled);
 #endif
     }
-
-    /* Constructor/destructor are hidden; called by cx->create/destroy. */
-    friend struct ::JSContext;
 
     bool compileHelper(JSContext *cx, JSLinearString &pattern);
     bool compile(JSContext *cx);
@@ -140,8 +144,10 @@ class RegExp
     /*
      * Parse regexp flags. Report an error and return false if an invalid
      * sequence of flags is encountered (repeat/invalid flag).
+     *
+     * N.B. flagStr must be rooted.
      */
-    static bool parseFlags(JSContext *cx, JSString *flagStr, uint32 &flagsOut);
+    static bool parseFlags(JSContext *cx, JSString *flagStr, uintN *flagsOut);
 
     /*
      * Execute regexp on |input| at |*lastIndex|.
@@ -179,7 +185,6 @@ class RegExp
     static JSObject *createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length,
                                            uint32 flags);
     static RegExp *extractFrom(JSObject *obj);
-    static AlreadyIncRefed<RegExp> clone(JSContext *cx, const RegExp &other);
 
     /* Mutators */
 
@@ -215,7 +220,7 @@ class RegExpMatchBuilder
     }
 
     bool append(jsid id, Value val) {
-        return !!js_DefineProperty(cx, array, id, &val, js::PropertyStub, js::PropertyStub,
+        return !!js_DefineProperty(cx, array, id, &val, js::PropertyStub, js::StrictPropertyStub,
                                    JSPROP_ENUMERATE);
     }
 
@@ -360,11 +365,20 @@ RegExp::executeInternal(JSContext *cx, RegExpStatics *res, JSString *inputstr,
                                          bufCount);
 #else
     int result = jsRegExpExecute(cx, compiled, chars, len, *lastIndex - inputOffset, buf, 
-                                 bufCount) < 0 ? -1 : buf[0];
+                                 bufCount);
 #endif
     if (result == -1) {
         *rval = NullValue();
         return true;
+    }
+
+    if (result < 0) {
+#if ENABLE_YARR_JIT
+        handleYarrError(cx, result);
+#else
+        handlePCREError(cx, result);
+#endif
+        return false;
     }
 
     /* 
@@ -404,11 +418,11 @@ RegExp::create(JSContext *cx, JSString *source, uint32 flags)
     JSLinearString *flatSource = source->ensureLinear(cx);
     if (!flatSource)
         return RetType(NULL);
-    RegExp *self = cx->create<RegExp>(flatSource, flags, cx->compartment);
+    RegExp *self = cx->new_<RegExp>(flatSource, flags, cx->compartment);
     if (!self)
         return RetType(NULL);
     if (!self->compile(cx)) {
-        cx->destroy<RegExp>(self);
+        Foreground::delete_(self);
         return RetType(NULL);
     }
     return RetType(self);
@@ -437,8 +451,8 @@ RegExp::createObjectNoStatics(JSContext *cx, const jschar *chars, size_t length,
         re->decref(cx);
         return NULL;
     }
-    obj->setPrivate(re.get());
-    obj->zeroRegExpLastIndex();
+    if (!obj->initRegExp(cx, re.get()))
+        return NULL;
     return obj;
 }
 
@@ -511,9 +525,9 @@ RegExp::compile(JSContext *cx)
     StringBuffer sb(cx);
     if (!sb.reserve(JS_ARRAY_LENGTH(prefix) + source->length() + JS_ARRAY_LENGTH(postfix)))
         return false;
-    JS_ALWAYS_TRUE(sb.append(prefix, JS_ARRAY_LENGTH(prefix)));
-    JS_ALWAYS_TRUE(sb.append(source->chars(), source->length()));
-    JS_ALWAYS_TRUE(sb.append(postfix, JS_ARRAY_LENGTH(postfix)));
+    sb.infallibleAppend(prefix, JS_ARRAY_LENGTH(prefix));
+    sb.infallibleAppend(source->chars(), source->length());
+    sb.infallibleAppend(postfix, JS_ARRAY_LENGTH(postfix));
 
     JSLinearString *fakeySource = sb.finishString();
     if (!fakeySource)
@@ -561,7 +575,7 @@ RegExp::decref(JSContext *cx)
     assertSameCompartment(cx, compartment);
 #endif
     if (--refCount == 0)
-        cx->destroy<RegExp>(this);
+        cx->delete_(this);
 }
 
 inline RegExp *
@@ -574,12 +588,6 @@ RegExp::extractFrom(JSObject *obj)
         CompartmentChecker::check(obj->getCompartment(), re->compartment);
 #endif
     return re;
-}
-
-inline AlreadyIncRefed<RegExp>
-RegExp::clone(JSContext *cx, const RegExp &other)
-{
-    return create(cx, other.source, other.flags);
 }
 
 /* RegExpStatics inlines. */
@@ -728,6 +736,49 @@ RegExpStatics::getRightContext(JSSubString *out) const
     out->length = matchPairsInput->length() - get(0, 1);
 }
 
+} // namespace js
+
+inline bool
+JSObject::initRegExp(JSContext *cx, js::RegExp *re)
+{
+    JS_ASSERT(isRegExp());
+
+    /*
+     * It's currently possible to swap RegExp guts. In that case this object
+     * will already have the relevant properties, at the relevant locations.
+     */
+    if (nativeEmpty()) {
+        const js::Shape **shapep = &cx->compartment->initialRegExpShape;
+        if (!*shapep) {
+            *shapep = assignInitialRegExpShape(cx);
+            if (!*shapep)
+                return false;
+        }
+        setLastProperty(*shapep);
+        JS_ASSERT(!nativeEmpty());
+    }
+
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.lastIndexAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_LAST_INDEX);
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.sourceAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_SOURCE);
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.globalAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_GLOBAL);
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.ignoreCaseAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_IGNORE_CASE);
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.multilineAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_MULTILINE);
+    JS_ASSERT(nativeLookup(ATOM_TO_JSID(cx->runtime->atomState.stickyAtom))->slot ==
+              JSObject::JSSLOT_REGEXP_STICKY);
+
+    setPrivate(re);
+    zeroRegExpLastIndex();
+    setRegExpSource(re->getSource());
+    setRegExpGlobal(re->global());
+    setRegExpIgnoreCase(re->ignoreCase());
+    setRegExpMultiline(re->multiline());
+    setRegExpSticky(re->sticky());
+    return true;
 }
 
 #endif /* jsregexpinlines_h___ */

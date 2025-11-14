@@ -40,6 +40,7 @@
 #ifdef MOZ_IPC
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/unused.h"
 #endif
 #include "nsPermissionManager.h"
 #include "nsPermission.h"
@@ -65,6 +66,7 @@ static nsPermissionManager *gPermissionManager = nsnull;
 #ifdef MOZ_IPC
 using mozilla::dom::ContentParent;
 using mozilla::dom::ContentChild;
+using mozilla::unused; // ha!
 
 static PRBool
 IsChildProcess()
@@ -225,13 +227,19 @@ nsPermissionManager::Init()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
+  mObserverService = do_GetService("@mozilla.org/observer-service;1", &rv);
+  if (NS_SUCCEEDED(rv)) {
+    mObserverService->AddObserver(this, "profile-before-change", PR_TRUE);
+    mObserverService->AddObserver(this, "profile-do-change", PR_TRUE);
+  }
+
 #ifdef MOZ_IPC
   if (IsChildProcess()) {
     // Get the permissions from the parent process
     InfallibleTArray<IPC::Permission> perms;
     ChildProcess()->SendReadPermissions(&perms);
 
-    for (int i = 0; i < perms.Length(); i++) {
+    for (PRUint32 i = 0; i < perms.Length(); i++) {
       const IPC::Permission &perm = perms[i];
       AddInternal(perm.host, perm.type, perm.capability, 0, perm.expireType,
                   perm.expireTime, eNotify, eNoDBOperation);
@@ -246,12 +254,6 @@ nsPermissionManager::Init()
   // persistent storage - e.g. if there's no profile).
   // XXX should we tell the user about this?
   InitDB(PR_FALSE);
-
-  mObserverService = do_GetService("@mozilla.org/observer-service;1", &rv);
-  if (NS_SUCCEEDED(rv)) {
-    mObserverService->AddObserver(this, "profile-before-change", PR_TRUE);
-    mObserverService->AddObserver(this, "profile-do-change", PR_TRUE);
-  }
 
   return NS_OK;
 }
@@ -481,7 +483,7 @@ nsPermissionManager::AddInternal(const nsAFlatCString &aHost,
       IPC::Permission permission((aHost),
                                  (aType),
                                  aPermission, aExpireType, aExpireTime);
-      ParentProcess()->SendAddPermission(permission);
+      unused << ParentProcess()->SendAddPermission(permission);
     }
   }
 #endif
@@ -933,10 +935,10 @@ nsPermissionManager::Read()
           getter_AddRefs(stmtDeleteExpired));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = stmtDeleteExpired->BindInt32Parameter(0, nsIPermissionManager::EXPIRE_TIME);
+    rv = stmtDeleteExpired->BindInt32ByIndex(0, nsIPermissionManager::EXPIRE_TIME);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = stmtDeleteExpired->BindInt64Parameter(1, PR_Now() / 1000);
+    rv = stmtDeleteExpired->BindInt64ByIndex(1, PR_Now() / 1000);
     NS_ENSURE_SUCCESS(rv, rv);
 
     PRBool hasResult;
@@ -1109,43 +1111,43 @@ nsPermissionManager::UpdateDB(OperationType         aOp,
   switch (aOp) {
   case eOperationAdding:
     {
-      rv = aStmt->BindInt64Parameter(0, aID);
+      rv = aStmt->BindInt64ByIndex(0, aID);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindUTF8StringParameter(1, aHost);
+      rv = aStmt->BindUTF8StringByIndex(1, aHost);
       if (NS_FAILED(rv)) break;
       
-      rv = aStmt->BindUTF8StringParameter(2, aType);
+      rv = aStmt->BindUTF8StringByIndex(2, aType);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt32Parameter(3, aPermission);
+      rv = aStmt->BindInt32ByIndex(3, aPermission);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt32Parameter(4, aExpireType);
+      rv = aStmt->BindInt32ByIndex(4, aExpireType);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt64Parameter(5, aExpireTime);
+      rv = aStmt->BindInt64ByIndex(5, aExpireTime);
       break;
     }
 
   case eOperationRemoving:
     {
-      rv = aStmt->BindInt64Parameter(0, aID);
+      rv = aStmt->BindInt64ByIndex(0, aID);
       break;
     }
 
   case eOperationChanging:
     {
-      rv = aStmt->BindInt64Parameter(0, aID);
+      rv = aStmt->BindInt64ByIndex(0, aID);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt32Parameter(1, aPermission);
+      rv = aStmt->BindInt32ByIndex(1, aPermission);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt32Parameter(2, aExpireType);
+      rv = aStmt->BindInt32ByIndex(2, aExpireType);
       if (NS_FAILED(rv)) break;
 
-      rv = aStmt->BindInt64Parameter(3, aExpireTime);
+      rv = aStmt->BindInt64ByIndex(3, aExpireTime);
       break;
     }
 

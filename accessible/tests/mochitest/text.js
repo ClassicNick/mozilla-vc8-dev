@@ -19,13 +19,21 @@ const kOk = 2;
  */
 function testCharacterCount(aIDs, aCount)
 {
-  for (var i = 1; i < aIDs.length; i++) {
+  for (var i = 0; i < aIDs.length; i++) {
     var textacc = getAccessible(aIDs[i], [nsIAccessibleText]);
     is(textacc.characterCount, aCount,
        "Wrong character count for " + prettyName(aIDs[i]));
   }
 }
 
+/**
+ * Test text between two given offsets
+ *
+ * @param aIDs          [in] an array of accessible IDs to test
+ * @param aStartOffset  [in] the start offset within the text to test
+ * @param aEndOffset    [in] the end offset up to which the text is tested
+ * @param aText         [in] the expected result from the test
+ */
 function testText(aIDs, aStartOffset, aEndOffset, aText)
 {
   for (var i = 0; i < aIDs.length; i++)
@@ -40,6 +48,56 @@ function testText(aIDs, aStartOffset, aEndOffset, aText)
          "getText fails between start and end offsets '" + aStartOffset +
          "', '" + aEndOffset + " for '" + prettyName(aIDs[i]) + "'");
     }
+  }
+}
+
+/**
+ * Test password text between two given offsets
+ *
+ * @param aIDs          [in] an array of accessible IDs to test
+ * @param aStartOffset  [in] the start offset within the text to test
+ * @param aEndOffset    [in] the end offset up to which the text is tested
+ * @param aText         [in] the expected result from the test
+ *
+ * @note  All this function does is test that getText doe snot expose the
+ *        password text itself, but something else.
+ */
+function testPasswordText(aIDs, aStartOffset, aEndOffset, aText)
+{
+  for (var i = 0; i < aIDs.length; i++)
+  {
+    var acc = getAccessible(aIDs[i], nsIAccessibleText);
+    try {
+      isnot(acc.getText(aStartOffset, aEndOffset), aText,
+         "getText: plain text between start and end offsets '" + aStartOffset +
+         "', '" + aEndOffset + " for '" + prettyName(aIDs[i]) + "'");
+    } catch (e) {
+      ok(false,
+         "getText fails between start and end offsets '" + aStartOffset +
+         "', '" + aEndOffset + " for '" + prettyName(aIDs[i]) + "'");
+    }
+  }
+}
+
+/**
+ * Test getTextAtOffset for BOUNDARY_CHAR over different elements.
+ *
+ * @param aIDs          [in] the accessible identifier or array of accessible
+ *                        identifiers
+ * @param aOffset       [in] the offset to get a character at it
+ * @param aChar         [in] the expected character
+ * @param aStartOffset  [in] expected start offset of the character
+ * @param aEndOffset    [in] expected end offset of the character
+ */
+function testCharAtOffset(aIDs, aOffset, aChar, aStartOffset, aEndOffset)
+{
+  var IDs = (aIDs instanceof Array) ? aIDs : [ aIDs ];
+  for (var i = 0; i < IDs.length; i++) {
+    var acc = getAccessible(IDs[i], nsIAccessibleText);
+    testTextHelper(IDs[i], aOffset, BOUNDARY_CHAR,
+                   aChar, aStartOffset, aEndOffset,
+                   kOk, kOk, kOk,
+                   acc.getTextAtOffset, "getTextAtOffset ");
   }
 }
 
@@ -76,6 +134,28 @@ function testTextAtOffset(aOffset, aBoundaryType, aText,
 }
 
 /**
+ * Test getTextAfterOffset for BOUNDARY_CHAR over different elements.
+ *
+ * @param aIDs          [in] the accessible identifier or array of accessible
+ *                        identifiers
+ * @param aOffset       [in] the offset to get a character after it
+ * @param aChar         [in] the expected character
+ * @param aStartOffset  [in] expected start offset of the character
+ * @param aEndOffset    [in] expected end offset of the character
+ */
+function testCharAfterOffset(aIDs, aOffset, aChar, aStartOffset, aEndOffset)
+{
+  var IDs = (aIDs instanceof Array) ? aIDs : [ aIDs ];
+  for (var i = 0; i < IDs.length; i++) {
+    var acc = getAccessible(IDs[i], nsIAccessibleText);
+    testTextHelper(IDs[i], aOffset, BOUNDARY_CHAR,
+                   aChar, aStartOffset, aEndOffset,
+                   kOk, kOk, kOk,
+                   acc.getTextAfterOffset, "getTextAfterOffset ");
+  }
+}
+
+/**
  * Test getTextAfterOffset function over different elements
  *
  * @param aOffset         [in] the offset to get the text after
@@ -88,7 +168,6 @@ function testTextAtOffset(aOffset, aBoundaryType, aText,
  *                              kTodo or kOk for returned text
  *                              kTodo or kOk for returned start offset
  *                              kTodo or kOk for returned offset result
- *          
  */
 function testTextAfterOffset(aOffset, aBoundaryType,
                              aText, aStartOffset, aEndOffset)
@@ -104,6 +183,28 @@ function testTextAfterOffset(aOffset, aBoundaryType,
                    aText, aStartOffset, aEndOffset,
                    toDoFlag1, toDoFlag2, toDoFlag3, 
                    acc.getTextAfterOffset, "getTextAfterOffset ");
+  }
+}
+
+/**
+ * Test getTextBeforeOffset for BOUNDARY_CHAR over different elements.
+ *
+ * @param aIDs          [in] the accessible identifier or array of accessible
+ *                        identifiers
+ * @param aOffset       [in] the offset to get a character before it
+ * @param aChar         [in] the expected character
+ * @param aStartOffset  [in] expected start offset of the character
+ * @param aEndOffset    [in] expected end offset of the character
+ */
+function testCharBeforeOffset(aIDs, aOffset, aChar, aStartOffset, aEndOffset)
+{
+  var IDs = (aIDs instanceof Array) ? aIDs : [ aIDs ];
+  for (var i = 0; i < IDs.length; i++) {
+    var acc = getAccessible(IDs[i], nsIAccessibleText);
+    testTextHelper(IDs[i], aOffset, BOUNDARY_CHAR,
+                   aChar, aStartOffset, aEndOffset,
+                   kOk, kOk, kOk,
+                   acc.getTextBeforeOffset, "getTextBeforeOffset ");
   }
 }
 

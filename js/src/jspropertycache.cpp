@@ -493,8 +493,10 @@ PropertyCache::purge(JSContext *cx)
 }
 
 void
-PropertyCache::purgeForScript(JSScript *script)
+PropertyCache::purgeForScript(JSContext *cx, JSScript *script)
 {
+    JS_ASSERT(!cx->runtime->gcRunning);
+
     for (PropertyCacheEntry *entry = table; entry < table + SIZE; entry++) {
         if (JS_UPTRDIFF(entry->kpc, script->code) < script->length) {
             entry->kpc = NULL;
@@ -504,4 +506,15 @@ PropertyCache::purgeForScript(JSScript *script)
 #endif
         }
     }
+}
+
+void
+PropertyCache::restore(PropertyCacheEntry *entry)
+{
+    PropertyCacheEntry *entry2;
+
+    empty = false;
+
+    entry2 = &table[hash(entry->kpc, entry->kshape)];
+    *entry2 = *entry;
 }

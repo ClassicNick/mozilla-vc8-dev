@@ -524,9 +524,6 @@ nsContentSink::ProcessHeaderData(nsIAtom* aHeader, const nsAString& aValue,
       return rv;
     }
   }
-  else if (aHeader == nsGkAtoms::link) {
-    rv = ProcessLinkHeader(aContent, aValue);
-  }
   else if (aHeader == nsGkAtoms::msthemecompatible) {
     // Disable theming for the presshell if the value is no.
     // XXXbz don't we want to support this as an HTTP header too?
@@ -535,24 +532,6 @@ nsContentSink::ProcessHeaderData(nsIAtom* aHeader, const nsAString& aValue,
       nsIPresShell* shell = mDocument->GetShell();
       if (shell) {
         shell->DisableThemeSupport();
-      }
-    }
-  }
-  // Don't report "refresh" headers back to necko, since our document handles
-  // them
-  else if (aHeader != nsGkAtoms::refresh && mParser) {
-    // we also need to report back HTTP-EQUIV headers to the channel
-    // so that it can process things like pragma: no-cache or other
-    // cache-control headers. Ideally this should also be the way for
-    // cookies to be set! But we'll worry about that in the next
-    // iteration
-    nsCOMPtr<nsIChannel> channel;
-    if (NS_SUCCEEDED(mParser->GetChannel(getter_AddRefs(channel)))) {
-      nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
-      if (httpChannel) {
-        httpChannel->SetResponseHeader(nsAtomCString(aHeader),
-                                       NS_ConvertUTF16toUTF8(aValue),
-                                       PR_TRUE);
       }
     }
   }

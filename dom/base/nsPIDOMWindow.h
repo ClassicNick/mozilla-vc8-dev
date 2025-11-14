@@ -102,6 +102,16 @@ public:
     return mIsActive;
   }
 
+  void SetIsBackground(PRBool aIsBackground)
+  {
+    mIsBackground = aIsBackground;
+  }
+
+  PRBool IsBackground()
+  {
+    return mIsBackground;
+  }
+
   nsPIDOMEventTarget* GetChromeEventHandler() const
   {
     return mChromeEventHandler;
@@ -392,8 +402,8 @@ public:
    * Callback for notifying a window about a modal dialog being
    * opened/closed with the window as a parent.
    */
-  virtual void EnterModalState() = 0;
-  virtual void LeaveModalState() = 0;
+  virtual nsIDOMWindow *EnterModalState() = 0;
+  virtual void LeaveModalState(nsIDOMWindow *) = 0;
 
   virtual PRBool CanClose() = 0;
   virtual nsresult ForceClose() = 0;
@@ -608,7 +618,13 @@ protected:
   PRPackedBool           mIsModalContentWindow;
 
   // Tracks activation state that's used for :-moz-window-inactive.
+  // Only used on outer windows.
   PRPackedBool           mIsActive;
+
+  // Tracks whether our docshell is active.  If it is, mIsBackground
+  // is false.  Too bad we have so many different concepts of
+  // "active".  Only used on outer windows.
+  PRPackedBool           mIsBackground;
 
   // And these are the references between inner and outer windows.
   nsPIDOMWindow         *mInnerWindow;

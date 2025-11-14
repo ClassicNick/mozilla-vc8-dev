@@ -60,7 +60,6 @@ public:
         : mRef(0)
         , mProxyInfo(proxyInfo)
         , mUsingSSL(usingSSL)
-        , mAllowHttp09(PR_TRUE)
     {
         LOG(("Creating nsHttpConnectionInfo @%x\n", this));
 
@@ -76,14 +75,14 @@ public:
 
     nsrefcnt AddRef()
     {
-        nsrefcnt n = PR_AtomicIncrement((PRInt32 *) &mRef);
+        nsrefcnt n = NS_AtomicIncrementRefcnt(mRef);
         NS_LOG_ADDREF(this, n, "nsHttpConnectionInfo", sizeof(*this));
         return n;
     }
 
     nsrefcnt Release()
     {
-        nsrefcnt n = PR_AtomicDecrement((PRInt32 *) &mRef);
+        nsrefcnt n = NS_AtomicDecrementRefcnt(mRef);
         NS_LOG_RELEASE(this, n, "nsHttpConnectionInfo");
         if (n == 0)
             delete this;
@@ -123,8 +122,6 @@ public:
     PRBool        UsingHttpProxy() const { return mUsingHttpProxy; }
     PRBool        UsingSSL() const       { return mUsingSSL; }
     PRInt32       DefaultPort() const    { return mUsingSSL ? NS_HTTPS_DEFAULT_PORT : NS_HTTP_DEFAULT_PORT; }
-    void          DisallowHttp09()       { mAllowHttp09 = PR_FALSE; }
-    PRBool        IsHttp09Allowed()      { return mAllowHttp09; }
     void          SetAnonymous(PRBool anon)         
                                          { mHashKey.SetCharAt(anon ? 'A' : '.', 2); }
             
@@ -136,7 +133,6 @@ private:
     nsCOMPtr<nsProxyInfo>  mProxyInfo;
     PRPackedBool           mUsingHttpProxy;
     PRPackedBool           mUsingSSL;
-    PRPackedBool           mAllowHttp09;
 };
 
 #endif // nsHttpConnectionInfo_h__

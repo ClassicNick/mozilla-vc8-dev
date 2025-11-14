@@ -156,21 +156,20 @@ gfxDWriteFontFamily::FindStyleVariations()
          */
         gfxDWriteFontEntry *fe = 
             new gfxDWriteFontEntry(fullID, font);
-        fe->SetFamily(this);
+        AddFontEntry(fe);
 
 #ifdef PR_LOGGING
-    if (LOG_FONTLIST_ENABLED()) {
-        LOG_FONTLIST(("(fontlist) added (%s) to family (%s)"
-             " with style: %s weight: %d stretch: %d",
-             NS_ConvertUTF16toUTF8(fe->Name()).get(),
-             NS_ConvertUTF16toUTF8(Name()).get(),
-             (fe->IsItalic()) ? "italic" : "normal",
-             fe->Weight(), fe->Stretch()));
-    }
+        if (LOG_FONTLIST_ENABLED()) {
+            LOG_FONTLIST(("(fontlist) added (%s) to family (%s)"
+                 " with style: %s weight: %d stretch: %d",
+                 NS_ConvertUTF16toUTF8(fe->Name()).get(),
+                 NS_ConvertUTF16toUTF8(Name()).get(),
+                 (fe->IsItalic()) ? "italic" : "normal",
+                 fe->Weight(), fe->Stretch()));
+        }
 #endif
-
-        mAvailableFonts.AppendElement(fe);
     }
+
     if (!mAvailableFonts.Length()) {
         NS_WARNING("Family with no font faces in it.");
     }
@@ -262,13 +261,37 @@ gfxDWriteFontEntry::IsSymbolFont()
     }
 }
 
+static bool
+UsingArabicScriptSystemLocale()
+{
+    LANGID langid = PRIMARYLANGID(::GetSystemDefaultLangID());
+    switch (langid) {
+    case LANG_ARABIC:
+    case LANG_DARI:
+    case LANG_PASHTO:
+    case LANG_PERSIAN:
+    case LANG_SINDHI:
+    case LANG_UIGHUR:
+    case LANG_URDU:
+        return true;
+    default:
+        return false;
+    }
+}
+
 nsresult
 gfxDWriteFontEntry::GetFontTable(PRUint32 aTableTag,
                                  FallibleTArray<PRUint8> &aBuffer)
 {
     gfxDWriteFontList *pFontList = gfxDWriteFontList::PlatformFontList();
 
-    if (mFont && pFontList->UseGDIFontTableAccess()) {
+    // don't use GDI table loading for symbol fonts or for
+    // italic fonts in Arabic-script system locales because of
+    // potential cmap discrepancies, see bug 629386
+    if (mFont && pFontList->UseGDIFontTableAccess() &&
+        !(mItalic && UsingArabicScriptSystemLocale()) &&
+        !mFont->IsSymbolFont())
+    {
         LOGFONTW logfont = { 0 };
         if (!InitLogFont(mFont, &logfont))
             return NS_ERROR_FAILURE;
@@ -646,6 +669,8 @@ gfxDWriteFontList::InitFontList()
 {
     LOGREGISTRY(L"InitFontList start");
 
+    mInitialized = PR_FALSE;
+
 #ifdef PR_LOGGING
     LARGE_INTEGER frequency;        // ticks per second
     LARGE_INTEGER t1, t2, t3;           // ticks
@@ -866,6 +891,66 @@ gfxDWriteFontList::DelayedInitFontList()
     mOtherFamilyNamesInitialized = PR_TRUE;
     GetFontSubstitutes();
 
+    // bug 642093 - DirectWrite does not support old bitmap (.fon)
+    // font files, but a few of these such as "Courier" and "MS Sans Serif"
+    // are frequently specified in shoddy CSS, without appropriate fallbacks.
+    // By mapping these to TrueType equivalents, we provide better consistency
+    // with both pre-DW systems and with IE9, which appears to do the same.
+    GetDirectWriteSubstitutes();
+
+    // bug 551313 - DirectWrite creates a Gill Sans family out of 
+    // poorly named members of the Gill Sans MT family containing
+    // only Ultra Bold weights.  This causes big problems for pages
+    // using Gill Sans which is usually only available on OSX
+
+    nsAutoString nameGillSans(L"Gill Sans");
+    nsAutoString nameGillSansMT(L"Gill Sans MT");
+    BuildKeyNameFromFontName(nameGillSans);
+    BuildKeyNameFromFontName(nameGillSansMT);
+
+    gfxFontFamily *gillSansFamily = mFontFamilies.GetWeak(nameGillSans);
+    gfxFontFamily *gillSansMTFamily = mFontFamilies.GetWeak(nameGillSansMT);
+
+    if (gillSansFamily && gillSansMTFamily) {
+        gillSansFamily->FindStyleVariations();
+        nsTArray<nsRefPtr<gfxFontEntry> >& faces = gillSansFamily->GetFontList();
+        PRUint32 i;
+
+        PRBool allUltraBold = PR_TRUE;
+        for (i = 0; i < faces.Length(); i++) {
+            // does the face have 'Ultra Bold' in the name?
+            if (faces[i]->Name().Find(NS_LITERAL_STRING("Ultra Bold")) == -1) {
+                allUltraBold = PR_FALSE;
+                break;
+            }
+        }
+
+        // if all the Gill Sans faces are Ultra Bold ==> move faces
+        // for Gill Sans into Gill Sans MT family
+        if (allUltraBold) {
+
+            // add faces to Gill Sans MT
+            for (i = 0; i < faces.Length(); i++) {
+                gillSansMTFamily->AddFontEntry(faces[i]);
+
+#ifdef PR_LOGGING
+                if (LOG_FONTLIST_ENABLED()) {
+                    gfxFontEntry *fe = faces[i];
+                    LOG_FONTLIST(("(fontlist) moved (%s) to family (%s)"
+                         " with style: %s weight: %d stretch: %d",
+                         NS_ConvertUTF16toUTF8(fe->Name()).get(),
+                         NS_ConvertUTF16toUTF8(gillSansMTFamily->Name()).get(),
+                         (fe->IsItalic()) ? "italic" : "normal",
+                         fe->Weight(), fe->Stretch()));
+                }
+#endif
+            }
+
+            // remove Gills Sans
+            mFontFamilies.Remove(nameGillSans);
+        }
+    }
+
     StartLoader(kDelayBeforeLoadingFonts, kIntervalBetweenLoadingFonts);
 
     LOGREGISTRY(L"DelayedInitFontList end");
@@ -926,7 +1011,7 @@ gfxDWriteFontList::GetFontSubstitutes()
 
     for (i = 0, rv = ERROR_SUCCESS; rv != ERROR_NO_MORE_ITEMS; i++) {
         aliasName[0] = 0;
-        lenAlias = sizeof(aliasName);
+        lenAlias = NS_ARRAY_LENGTH(aliasName);
         actualName[0] = 0;
         lenActual = sizeof(actualName);
         rv = RegEnumValueW(hKey, i, aliasName, &lenAlias, NULL, &valueType, 
@@ -955,6 +1040,43 @@ gfxDWriteFontList::GetFontSubstitutes()
         }
     }
     return NS_OK;
+}
+
+struct FontSubstitution {
+    const WCHAR* aliasName;
+    const WCHAR* actualName;
+};
+
+static const FontSubstitution sDirectWriteSubs[] = {
+    { L"MS Sans Serif", L"Microsoft Sans Serif" },
+    { L"MS Serif", L"Times New Roman" },
+    { L"Courier", L"Courier New" },
+    { L"Small Fonts", L"Arial" },
+    { L"Roman", L"Times New Roman" },
+    { L"Script", L"Mistral" }
+};
+
+void
+gfxDWriteFontList::GetDirectWriteSubstitutes()
+{
+    for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(sDirectWriteSubs); ++i) {
+        const FontSubstitution& sub(sDirectWriteSubs[i]);
+        nsAutoString substituteName((PRUnichar*)sub.aliasName);
+        BuildKeyNameFromFontName(substituteName);
+        if (nsnull != mFontFamilies.GetWeak(substituteName)) {
+            // don't do the substitution if user actually has a usable font
+            // with this name installed
+            continue;
+        }
+        nsAutoString actualFontName((PRUnichar*)sub.actualName);
+        BuildKeyNameFromFontName(actualFontName);
+        gfxFontFamily *ff;
+        if (nsnull != (ff = mFontFamilies.GetWeak(actualFontName))) {
+            mFontSubstitutes.Put(substituteName, ff);
+        } else {
+            mNonExistingFonts.AppendElement(substituteName);
+        }
+    }
 }
 
 PRBool

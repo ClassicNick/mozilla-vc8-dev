@@ -291,6 +291,15 @@ nsEventListenerManager::nsEventListenerManager() :
 
 nsEventListenerManager::~nsEventListenerManager() 
 {
+  // If your code fails this assertion, a possible reason is that
+  // a class did not call our Disconnect() manually. Note that
+  // this class can have Disconnect called in one of two ways:
+  // if it is part of a cycle, then in Unlink() (such a cycle
+  // would be with one of the listeners, not mTarget which is weak).
+  // If not part of a cycle, then Disconnect must be called manually,
+  // typically from the destructor of the owner class (mTarget).
+  // XXX azakai: Is there any reason to not just call Disconnect
+  //             from right here, if not previously called?
   NS_ASSERTION(!mTarget, "didn't call Disconnect");
   RemoveAllListeners();
 
@@ -734,16 +743,29 @@ nsEventListenerManager::AddScriptEventListener(nsISupports *aObject,
 
     if (csp) {
       PRBool inlineOK;
-      // this call will trigger violaton reports if necessary
       rv = csp->GetAllowsInlineScript(&inlineOK);
       NS_ENSURE_SUCCESS(rv, rv);
 
       if ( !inlineOK ) {
-        //can log something here too.
-        //nsAutoString attr;
-        //aName->ToString(attr);
-        //printf(" *** CSP bailing on adding event listener for: %s\n",
-        //       ToNewCString(attr));
+        // gather information to log with violation report
+        nsIURI* uri = doc->GetDocumentURI();
+        nsCAutoString asciiSpec;
+        if (uri)
+          uri->GetAsciiSpec(asciiSpec);
+        nsAutoString scriptSample, attr, tagName(NS_LITERAL_STRING("UNKNOWN"));
+        aName->ToString(attr);
+        nsCOMPtr<nsIDOMNode> domNode(do_QueryInterface(aObject));
+        if (domNode)
+          domNode->GetNodeName(tagName);
+        // build a "script sample" based on what we know about this element
+        scriptSample.Assign(attr);
+        scriptSample.AppendLiteral(" attribute on ");
+        scriptSample.Append(tagName);
+        scriptSample.AppendLiteral(" element");
+        csp->LogViolationDetails(nsIContentSecurityPolicy::VIOLATION_TYPE_INLINE_SCRIPT,
+                                 NS_ConvertUTF8toUTF16(asciiSpec),
+                                 scriptSample,
+                                 nsnull);
         return NS_OK;
       }
     }

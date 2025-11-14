@@ -183,6 +183,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsIPluginHost.h"
 #include "nsICategoryManager.h"
 #include "nsAHtml5FragmentParser.h"
+#include "nsIViewManager.h"
 
 #ifdef IBMBIDI
 #include "nsIBidiKeyboard.h"
@@ -1523,6 +1524,11 @@ nsContentUtils::GetDocumentFromCaller()
   sXPConnect->GetCaller(&cx, &obj);
   NS_ASSERTION(cx && obj, "Caller ensures something is running");
 
+  JSAutoEnterCompartment ac;
+  if (!ac.enter(cx, obj)) {
+    return nsnull;
+  }
+
   nsCOMPtr<nsPIDOMWindow> win =
     do_QueryInterface(nsJSUtils::GetStaticScriptGlobal(cx, obj));
   if (!win) {
@@ -2132,11 +2138,17 @@ nsContentUtils::GenerateStateKey(nsIContent* aContent,
 
   if (!generatedUniqueKey) {
     // Either we didn't have a form control or we aren't in an HTML document so
-    // we can't figure out form info.  First append a character that is not "d"
-    // or "f" to disambiguate from the case when we were a form control in an
-    // HTML document.
-    KeyAppendString(NS_LITERAL_CSTRING("o"), aKey);
-    
+    // we can't figure out form info.  Append the tag name if it's an element
+    // to avoid restoring state for one type of element on another type.
+    if (aContent->IsElement()) {
+      KeyAppendString(nsDependentAtomString(aContent->Tag()), aKey);
+    }
+    else {
+      // Append a character that is not "d" or "f" to disambiguate from
+      // the case when we were a form control in an HTML document.
+      KeyAppendString(NS_LITERAL_CSTRING("o"), aKey);
+    }
+
     // Now start at aContent and append the indices of it and all its ancestors
     // in their containers.  That should at least pin down its position in the
     // DOM...
@@ -3527,24 +3539,6 @@ nsContentUtils::CheckForBOM(const unsigned char* aBuffer, PRUint32 aLength,
       aBuffer[1] == 0xBB &&
       aBuffer[2] == 0xBF) {
     aCharset = "UTF-8";
-  }
-  else if (aLength >= 4 &&
-           aBuffer[0] == 0x00 &&
-           aBuffer[1] == 0x00 &&
-           aBuffer[2] == 0xFE &&
-           aBuffer[3] == 0xFF) {
-    aCharset = "UTF-32";
-    if (bigEndian)
-      *bigEndian = PR_TRUE;
-  }
-  else if (aLength >= 4 &&
-           aBuffer[0] == 0xFF &&
-           aBuffer[1] == 0xFE &&
-           aBuffer[2] == 0x00 &&
-           aBuffer[3] == 0x00) {
-    aCharset = "UTF-32";
-    if (bigEndian)
-      *bigEndian = PR_FALSE;
   }
   else if (aLength >= 2 &&
            aBuffer[0] == 0xFE && aBuffer[1] == 0xFF) {
@@ -5498,7 +5492,7 @@ nsContentUtils::WrapNative(JSContext *cx, JSObject *scope, nsISupports *native,
     return NS_OK;
   }
 
-  JSObject *wrapper = xpc_GetCachedSlimWrapper(cache, scope, vp);
+  JSObject *wrapper = xpc_FastGetCachedWrapper(cache, scope, vp);
   if (wrapper) {
     return NS_OK;
   }
@@ -6332,8 +6326,24 @@ nsContentUtils::PlatformToDOMLineBreaks(nsString &aString)
   }
 }
 
+static nsIView* GetDisplayRootFor(nsIView* aView)
+{
+  nsIView *displayRoot = aView;
+  for (;;) {
+    nsIView *displayParent = displayRoot->GetParent();
+    if (!displayParent)
+      return displayRoot;
+
+    if (displayRoot->GetFloating() && !displayParent->GetFloating())
+      return displayRoot;
+    displayRoot = displayParent;
+  }
+  return nsnull;
+}
+
 static already_AddRefed<LayerManager>
-LayerManagerForDocumentInternal(nsIDocument *aDoc, bool aRequirePersistent)
+LayerManagerForDocumentInternal(nsIDocument *aDoc, bool aRequirePersistent,
+                                bool* aAllowRetaining)
 {
   nsIDocument* doc = aDoc;
   nsIDocument* displayDoc = doc->GetDisplayDocument();
@@ -6362,34 +6372,39 @@ LayerManagerForDocumentInternal(nsIDocument *aDoc, bool aRequirePersistent)
   }
 
   if (shell) {
-    nsIFrame* rootFrame = shell->FrameManager()->GetRootFrame();
-    if (rootFrame) {
-      nsIWidget* widget =
-        nsLayoutUtils::GetDisplayRootFrame(rootFrame)->GetNearestWidget();
-      if (widget) {
-        nsRefPtr<LayerManager> manager =
-          static_cast<nsIWidget_MOZILLA_2_0_BRANCH*>(widget)->
-            GetLayerManager(aRequirePersistent ? nsIWidget_MOZILLA_2_0_BRANCH::LAYER_MANAGER_PERSISTENT : 
-                                                 nsIWidget_MOZILLA_2_0_BRANCH::LAYER_MANAGER_CURRENT);
-        return manager.forget();
+    nsIViewManager* VM = shell->GetViewManager();
+    if (VM) {
+      nsIView* rootView = VM->GetRootView();
+      if (rootView) {
+        nsIView* displayRoot = GetDisplayRootFor(rootView);
+        if (displayRoot) {
+          nsIWidget* widget = displayRoot->GetNearestWidget(nsnull);
+          if (widget) {
+            nsRefPtr<LayerManager> manager =
+              widget->
+                GetLayerManager(aRequirePersistent ? nsIWidget::LAYER_MANAGER_PERSISTENT : 
+                                                     nsIWidget::LAYER_MANAGER_CURRENT,
+                                aAllowRetaining);
+            return manager.forget();
+          }
+        }
       }
     }
   }
 
-  nsRefPtr<LayerManager> manager = new BasicLayerManager();
-  return manager.forget();
+  return nsnull;
 }
 
 already_AddRefed<LayerManager>
-nsContentUtils::LayerManagerForDocument(nsIDocument *aDoc)
+nsContentUtils::LayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining)
 {
-  return LayerManagerForDocumentInternal(aDoc, false);
+  return LayerManagerForDocumentInternal(aDoc, false, aAllowRetaining);
 }
 
 already_AddRefed<LayerManager>
-nsContentUtils::PersistentLayerManagerForDocument(nsIDocument *aDoc)
+nsContentUtils::PersistentLayerManagerForDocument(nsIDocument *aDoc, bool *aAllowRetaining)
 {
-  return LayerManagerForDocumentInternal(aDoc, true);
+  return LayerManagerForDocumentInternal(aDoc, true, aAllowRetaining);
 }
 
 bool
@@ -6499,3 +6514,21 @@ nsIContentUtils2::CheckSameOrigin(nsIChannel *aOldChannel, nsIChannel *aNewChann
 {
   return nsContentUtils::CheckSameOrigin(aOldChannel, aNewChannel);
 }
+
+#ifndef MOZ_ENABLE_LIBXUL
+
+NS_IMPL_ISUPPORTS1(nsIContentUtils_MOZILLA_2_0_BRANCH, nsIContentUtils_MOZILLA_2_0_BRANCH)
+
+nsresult
+nsIContentUtils_MOZILLA_2_0_BRANCH::DispatchTrustedEvent(nsIDocument* aDoc,
+                                                         nsISupports* aTarget,
+                                                         const nsAString& aEventName,
+                                                         PRBool aCanBubble,
+                                                         PRBool aCancelable,
+                                                         PRBool *aDefaultAction)
+{
+  return nsContentUtils::DispatchTrustedEvent(aDoc, aTarget, aEventName,
+                                              aCanBubble, aCancelable, aDefaultAction);
+}
+
+#endif

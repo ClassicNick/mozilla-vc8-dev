@@ -158,14 +158,14 @@ public:
   virtual void Shutdown();
   virtual PRInt64 GetDuration();
   virtual void SetDuration(PRInt64 aDuration);
-  virtual PRBool OnDecodeThread() {
+  virtual PRBool OnDecodeThread() const {
     return IsCurrentThread(mDecodeThread);
   }
 
   virtual nsHTMLMediaElement::NextFrameStatus GetNextFrameStatus();
-  virtual void Decode();
+  virtual void Play();
   virtual void Seek(double aTime);
-  virtual double GetCurrentTime();
+  virtual double GetCurrentTime() const;
   virtual void ClearPositionChangeFlag();
   virtual void SetSeekable(PRBool aSeekable);
   virtual void UpdatePlaybackPosition(PRInt64 aTime);
@@ -184,14 +184,14 @@ public:
   // The decoder monitor must be obtained before calling this.
   PRBool HasAudio() const {
     mDecoder->GetMonitor().AssertCurrentThreadIn();
-    return mReader->GetInfo().mHasAudio;
+    return mInfo.mHasAudio;
   }
 
   // This is called on the state machine thread and audio thread.
   // The decoder monitor must be obtained before calling this.
   PRBool HasVideo() const {
     mDecoder->GetMonitor().AssertCurrentThreadIn();
-    return mReader->GetInfo().mHasVideo;
+    return mInfo.mHasVideo;
   }
 
   // Should be called by main thread.
@@ -235,10 +235,7 @@ public:
   // Accessed on state machine, audio, main, and AV thread. 
   State mState;
 
-  nsresult GetBuffered(nsTimeRanges* aBuffered) {
-    NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
-    return mReader->GetBuffered(aBuffered, mStartTime);
-  }
+  nsresult GetBuffered(nsTimeRanges* aBuffered);
 
   void NotifyDataArrived(const char* aBuffer, PRUint32 aLength, PRUint32 aOffset) {
     NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
@@ -250,25 +247,32 @@ public:
     return mEndTime;
   }
 
-  void NotifyDataExhausted();
-
 protected:
 
-  // Returns PR_TRUE if the decode is withing an estimated one tenth of a
-  // second's worth of data of the download, i.e. the decode has almost
-  // caught up with the download. If we can't estimate one tenth of a second's
-  // worth of data, we'll return PR_TRUE if the decode is within 100KB of
-  // the download.
-  PRBool IsDecodeCloseToDownload();
+  // Returns PR_TRUE if we'v got less than aAudioMs ms of decoded and playable
+  // data. The decoder monitor must be held.
+  PRBool HasLowDecodedData(PRInt64 aAudioMs) const;
+
+  // Returns PR_TRUE if we're running low on data which is not yet decoded.
+  // The decoder monitor must be held.
+  PRBool HasLowUndecodedData() const;
+
+  // Returns the number of milliseconds of undecoded data available for
+  // decoding. The decoder monitor must be held.
+  PRInt64 GetUndecodedData() const;
 
   // Returns the number of unplayed ms of audio we've got decoded and/or
   // pushed to the hardware waiting to play. This is how much audio we can
-  // play without having to run the audio decoder.
+  // play without having to run the audio decoder. The decoder monitor
+  // must be held.
   PRInt64 AudioDecodedMs() const;
 
   // Returns PR_TRUE when there's decoded audio waiting to play.
   // The decoder monitor must be held.
   PRBool HasFutureAudio() const;
+
+  // Returns PR_TRUE if we recently exited "quick buffering" mode.
+  PRBool JustExitedQuickBuffering();
 
   // Waits on the decoder Monitor for aMs. If the decoder monitor is awoken
   // by a Notify() call, we'll continue waiting, unless we've moved into
@@ -276,7 +280,7 @@ protected:
   // time, and that the myriad of Notify()s we do an the decoder monitor
   // don't cause the audio thread to be starved. The decoder monitor must
   // be locked.
-  void Wait(PRUint32 aMs);
+  void Wait(PRInt64 aMs);
 
   // Dispatches an asynchronous event to update the media element's ready state.
   void UpdateReadyState();
@@ -300,10 +304,18 @@ protected:
   // count. Called on the state machine thread.
   void FindEndTime();
 
-  // Performs YCbCr to RGB conversion, and pushes the image down the
-  // rendering pipeline. Called on the state machine thread.
-  void RenderVideoFrame(VideoData* aData);
+  // Update only the state machine's current playback position (and duration,
+  // if unknown).  Does not update the playback position on the decoder or
+  // media element -- use UpdatePlaybackPosition for that.  Called on the state
+  // machine thread, caller must hold the decoder lock.
+  void UpdatePlaybackPositionInternal(PRInt64 aTime);
 
+  // Performs YCbCr to RGB conversion, and pushes the image down the
+  // rendering pipeline. Called on the state machine thread. The decoder
+  // monitor must not be held when calling this.
+  void RenderVideoFrame(VideoData* aData, TimeStamp aTarget, 
+                        nsIntSize aDisplaySize, float aAspectRatio);
+ 
   // If we have video, display a video frame if it's time for display has
   // arrived, otherwise sleep until it's time for the next sample. Update
   // the current frame time as appropriate, and trigger ready state update.
@@ -358,6 +370,10 @@ protected:
   // exactly one lock count. Called on the state machine thread.
   void StartPlayback();
 
+  // Moves the decoder into decoding state. Called on the state machine
+  // thread. The decoder monitor must be held.
+  void StartDecoding();
+
   // Returns PR_TRUE if we're currently playing. The decoder monitor must
   // be held.
   PRBool IsPlaying();
@@ -401,25 +417,21 @@ protected:
   // Thread for decoding video in background. The "decode thread".
   nsCOMPtr<nsIThread> mDecodeThread;
 
-  // The time that playback started from the system clock. This is used
-  // for timing the display of audio frames when there's no audio.
+  // The time that playback started from the system clock. This is used for
+  // timing the presentation of video frames when there's no audio.
   // Accessed only via the state machine thread.
   TimeStamp mPlayStartTime;
 
   // The amount of time we've spent playing already the media. The current
-  // playback position is therefore (mPlayDuration + (now - mPlayStartTime)).
-  // Accessed only via the state machine thread.
+  // playback position is therefore |Now() - mPlayStartTime +
+  // mPlayDuration|, which must be adjusted by mStartTime if used with media
+  // timestamps.  Accessed only via the state machine thread.
   TimeDuration mPlayDuration;
 
   // Time that buffering started. Used for buffering timeout and only
   // accessed on the state machine thread. This is null while we're not
   // buffering.
   TimeStamp mBufferingStart;
-
-  // Download position where we should stop buffering. Only
-  // accessed on the state machine thread. This is -1 while we're not
-  // buffering.
-  PRInt64 mBufferingEndOffset;
 
   // Start time of the media, in milliseconds. This is the presentation
   // time of the first sample decoded from the media, and is used to calculate
@@ -472,6 +484,9 @@ protected:
   // monitor.
   double mVolume;
 
+  // Time at which we started decoding. Synchronised via decoder monitor.
+  TimeStamp mDecodeStartTime;
+
   // PR_TRUE if the media resource can be seeked. Accessed from the state
   // machine and main threads. Synchronised via decoder monitor.
   PRPackedBool mSeekable;
@@ -498,11 +513,22 @@ protected:
   // state machine and decode threads. Syncrhonised by decoder monitor.
   PRPackedBool mStopDecodeThreads;
 
+  // If this is PR_TRUE while we're in buffering mode, we can exit early,
+  // as it's likely we may be able to playback. This happens when we enter
+  // buffering mode soon after the decode starts, because the decode-ahead
+  // ran fast enough to exhaust all data while the download is starting up.
+  // Synchronised via decoder monitor.
+  PRPackedBool mQuickBuffering;
+
 private:
   // Manager for queuing and dispatching MozAudioAvailable events.  The
   // event manager is accessed from the state machine and audio threads,
   // and takes care of synchronizing access to its internal queue.
   nsAudioAvailableEventManager mEventManager;
+
+  // Stores presentation info required for playback. The decoder monitor
+  // must be held when accessing this.
+  nsVideoInfo mInfo;
 };
 
 #endif

@@ -240,6 +240,7 @@ struct ParamTraits<nsQueryContentEvent>
     WriteParam(aMsg, aParam.mReply.mRect);
     WriteParam(aMsg, aParam.mReply.mReversed);
     WriteParam(aMsg, aParam.mReply.mHasSelection);
+    WriteParam(aMsg, aParam.mReply.mWidgetIsHit);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
@@ -253,7 +254,8 @@ struct ParamTraits<nsQueryContentEvent>
            ReadParam(aMsg, aIter, &aResult->mReply.mString) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mRect) &&
            ReadParam(aMsg, aIter, &aResult->mReply.mReversed) &&
-           ReadParam(aMsg, aIter, &aResult->mReply.mHasSelection);
+           ReadParam(aMsg, aIter, &aResult->mReply.mHasSelection) &&
+           ReadParam(aMsg, aIter, &aResult->mReply.mWidgetIsHit);
   }
 };
 

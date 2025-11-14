@@ -186,8 +186,7 @@ class nsDocShell : public nsDocLoader,
                    public nsILoadContext,
                    public nsIWebShellServices,
                    public nsILinkHandler,
-                   public nsIClipboardCommands,
-                   public nsIDocShell_MOZILLA_2_0_BRANCH
+                   public nsIClipboardCommands
 {
     friend class nsDSURIContentListener;
 
@@ -202,7 +201,6 @@ public:
     NS_DECL_ISUPPORTS_INHERITED
 
     NS_DECL_NSIDOCSHELL
-    NS_DECL_NSIDOCSHELL_MOZILLA_2_0_BRANCH
     NS_DECL_NSIDOCSHELLTREEITEM
     NS_DECL_NSIDOCSHELLTREENODE
     NS_DECL_NSIDOCSHELLHISTORY
@@ -340,7 +338,8 @@ protected:
 
     // Tries to stringify a given variant by converting it to JSON.  This only
     // works if the variant is backed by a JSVal.
-    nsresult StringifyJSValVariant(nsIVariant *aData, nsAString &aResult);
+    nsresult StringifyJSValVariant(JSContext *aCx, nsIVariant *aData,
+                                   nsAString &aResult);
 
     // Returns PR_TRUE if would have called FireOnLocationChange,
     // but did not because aFireOnLocationChange was false on entry.
@@ -358,10 +357,13 @@ protected:
     // In all other cases PR_FALSE is returned.
     // Either aChannel or aOwner must be null.  If aChannel is
     // present, the owner should be gotten from it.
+    // If OnNewURI calls AddToSessionHistory, it will pass its
+    // aCloneSHChildren argument as aCloneChildren.
     PRBool OnNewURI(nsIURI * aURI, nsIChannel * aChannel, nsISupports* aOwner,
                     PRUint32 aLoadType,
                     PRBool aFireOnLocationChange,
-                    PRBool aAddToGlobalHistory = PR_TRUE);
+                    PRBool aAddToGlobalHistory,
+                    PRBool aCloneSHChildren);
 
     virtual void SetReferrerURI(nsIURI * aURI);
 
@@ -369,10 +371,16 @@ protected:
     virtual PRBool ShouldAddToSessionHistory(nsIURI * aURI);
     // Either aChannel or aOwner must be null.  If aChannel is
     // present, the owner should be gotten from it.
+    // If aCloneChildren is true, then our current session history's
+    // children will be cloned onto the new entry.  This should be
+    // used when we aren't actually changing the document while adding
+    // the new session history entry.
     virtual nsresult AddToSessionHistory(nsIURI * aURI, nsIChannel * aChannel,
                                          nsISupports* aOwner,
+                                         PRBool aCloneChildren,
                                          nsISHEntry ** aNewEntry);
-    nsresult DoAddChildSHEntry(nsISHEntry* aNewEntry, PRInt32 aChildOffset);
+    nsresult DoAddChildSHEntry(nsISHEntry* aNewEntry, PRInt32 aChildOffset,
+                               PRBool aCloneChildren);
 
     NS_IMETHOD LoadHistoryEntry(nsISHEntry * aEntry, PRUint32 aLoadType);
     NS_IMETHOD PersistLayoutHistoryState();
@@ -383,10 +391,13 @@ protected:
     // |aReplaceEntry|.  |aSrcShell| is a (possibly null) docshell which
     // corresponds to |aSrcEntry| via its mLSHE or mOHE pointers, and will
     // have that pointer updated to point to the cloned history entry.
+    // If aCloneChildren is true then the children of the entry with id
+    // |aCloneID| will be cloned into |aReplaceEntry|.
     static nsresult CloneAndReplace(nsISHEntry *aSrcEntry,
                                     nsDocShell *aSrcShell,
                                     PRUint32 aCloneID,
                                     nsISHEntry *aReplaceEntry,
+                                    PRBool aCloneChildren,
                                     nsISHEntry **aDestEntry);
 
     // Child-walking callback for CloneAndReplace
@@ -561,10 +572,10 @@ protected:
                                  nsIChannel * aChannel,
                                  nsresult aResult);
 
-    // Sets the current document's pending state object to the given SHEntry's
-    // state object.  The pending state object is eventually given to the page
+    // Sets the current document's current state object to the given SHEntry's
+    // state object.  The current state object is eventually given to the page
     // in the PopState event.
-    nsresult SetDocPendingStateObj(nsISHEntry *shEntry);
+    nsresult SetDocCurrentStateObj(nsISHEntry *shEntry);
 
     nsresult CheckLoadingPermissions();
 
@@ -792,6 +803,7 @@ protected:
     PRPackedBool               mIsOffScreenBrowser;
     PRPackedBool               mIsActive;
     PRPackedBool               mIsAppTab;
+    PRPackedBool               mUseGlobalHistory;
 
     // This boolean is set to true right before we fire pagehide and generally
     // unset when we embed a new content viewer.  While it's true no navigation

@@ -459,10 +459,7 @@ nsAccessibleWrap::CreateMaiInterfaces(void)
 
     if (!nsAccUtils::MustPrune(this)) {  // These interfaces require children
       //nsIAccessibleHypertext
-      nsCOMPtr<nsIAccessibleHyperText> accessInterfaceHypertext;
-      QueryInterface(NS_GET_IID(nsIAccessibleHyperText),
-                     getter_AddRefs(accessInterfaceHypertext));
-      if (accessInterfaceHypertext) {
+      if (IsHyperText()) {
           interfacesBits |= 1 << MAI_INTERFACE_HYPERTEXT;
       }
 
@@ -1084,7 +1081,7 @@ nsAccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
     case nsIAccessibleEvent::EVENT_FOCUS:
       {
         MAI_LOG_DEBUG(("\n\nReceived: EVENT_FOCUS\n"));
-        nsRefPtr<nsRootAccessible> rootAccWrap = accWrap->GetRootAccessible();
+        nsRootAccessible* rootAccWrap = accWrap->RootAccessible();
         if (rootAccWrap && rootAccWrap->mActivated) {
             atk_focus_tracker_notify(atkObj);
             // Fire state change event for focus
@@ -1272,6 +1269,27 @@ nsAccessibleWrap::FirePlatformEvent(AccEvent* aEvent)
           static_cast<nsRootAccessible *>(accessible);
         rootAcc->mActivated = PR_FALSE;
         guint id = g_signal_lookup ("deactivate", MAI_TYPE_ATK_OBJECT);
+        g_signal_emit(atkObj, id, 0);
+      } break;
+
+    case nsIAccessibleEvent::EVENT_WINDOW_MAXIMIZE:
+      {
+        MAI_LOG_DEBUG(("\n\nReceived: EVENT_WINDOW_MAXIMIZE\n"));
+        guint id = g_signal_lookup ("maximize", MAI_TYPE_ATK_OBJECT);
+        g_signal_emit(atkObj, id, 0);
+      } break;
+
+    case nsIAccessibleEvent::EVENT_WINDOW_MINIMIZE:
+      {
+        MAI_LOG_DEBUG(("\n\nReceived: EVENT_WINDOW_MINIMIZE\n"));
+        guint id = g_signal_lookup ("minimize", MAI_TYPE_ATK_OBJECT);
+        g_signal_emit(atkObj, id, 0);
+      } break;
+
+    case nsIAccessibleEvent::EVENT_WINDOW_RESTORE:
+      {
+        MAI_LOG_DEBUG(("\n\nReceived: EVENT_WINDOW_RESTORE\n"));
+        guint id = g_signal_lookup ("restore", MAI_TYPE_ATK_OBJECT);
         g_signal_emit(atkObj, id, 0);
       } break;
 

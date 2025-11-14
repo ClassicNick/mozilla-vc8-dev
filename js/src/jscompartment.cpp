@@ -45,11 +45,18 @@
 #include "jsproxy.h"
 #include "jsscope.h"
 #include "jstracer.h"
+#include "jswrapper.h"
+#include "assembler/wtf/Platform.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/PolyIC.h"
 #include "methodjit/MonoIC.h"
 
 #include "jsgcinlines.h"
+#include "jsscopeinlines.h"
+
+#if ENABLE_YARR_JIT
+#include "assembler/jit/ExecutableAllocator.h"
+#endif
 
 using namespace js;
 using namespace js::gc;
@@ -60,13 +67,32 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     gcBytes(0),
     gcTriggerBytes(0),
     gcLastBytes(0),
+    hold(false),
     data(NULL),
-    marked(false),
     active(false),
+#ifdef JS_METHODJIT
+    jaegerCompartment(NULL),
+#endif
+    propertyTree(thisForCtor()),
+    emptyArgumentsShape(NULL),
+    emptyBlockShape(NULL),
+    emptyCallShape(NULL),
+    emptyDeclEnvShape(NULL),
+    emptyEnumeratorShape(NULL),
+    emptyWithShape(NULL),
+    initialRegExpShape(NULL),
     debugMode(rt->debugMode),
+#if ENABLE_YARR_JIT
+    regExpAllocator(NULL),
+#endif
     mathCache(NULL)
 {
     JS_INIT_CLIST(&scripts);
+
+#ifdef JS_TRACER
+    /* InitJIT expects this area to be zero'd. */
+    PodZero(&traceMonitor);
+#endif
 
     PodArrayZero(scriptsToGC);
 }
@@ -74,17 +100,18 @@ JSCompartment::JSCompartment(JSRuntime *rt)
 JSCompartment::~JSCompartment()
 {
 #if ENABLE_YARR_JIT
-    js_delete(regExpAllocator);
+    Foreground::delete_(regExpAllocator);
 #endif
 
 #if defined JS_TRACER
     FinishJIT(&traceMonitor);
 #endif
+
 #ifdef JS_METHODJIT
-    js_delete(jaegerCompartment);
+    Foreground::delete_(jaegerCompartment);
 #endif
 
-    js_delete(mathCache);
+    Foreground::delete_(mathCache);
 
 #ifdef DEBUG
     for (size_t i = 0; i != JS_ARRAY_LENGTH(scriptsToGC); ++i)
@@ -106,25 +133,30 @@ JSCompartment::init()
     if (!crossCompartmentWrappers.init())
         return false;
 
-#ifdef JS_TRACER
-    if (!InitJIT(&traceMonitor)) {
-        return false;
+#ifdef DEBUG
+    if (rt->meterEmptyShapes()) {
+        if (!emptyShapes.init())
+            return false;
     }
 #endif
 
+#ifdef JS_TRACER
+    if (!InitJIT(&traceMonitor, rt))
+        return false;
+#endif
+
 #if ENABLE_YARR_JIT
-    regExpAllocator = JSC::ExecutableAllocator::create();
+    regExpAllocator = rt->new_<JSC::ExecutableAllocator>();
     if (!regExpAllocator)
         return false;
 #endif
 
-#ifdef JS_METHODJIT
-    if (!(jaegerCompartment = js_new<mjit::JaegerCompartment>())) {
-#ifdef JS_TRACER
-        FinishJIT(&traceMonitor);
-#endif
+    if (!backEdgeTable.init())
         return false;
-    }
+
+#ifdef JS_METHODJIT
+    if (!(jaegerCompartment = rt->new_<mjit::JaegerCompartment>()))
+        return false;
     return jaegerCompartment->Initialize();
 #else
     return true;
@@ -139,6 +171,13 @@ JSCompartment::arenaListsAreEmpty()
            return false;
   }
   return true;
+}
+
+static bool
+IsCrossCompartmentWrapper(JSObject *wrapper)
+{
+    return wrapper->isWrapper() &&
+           !!(JSWrapper::wrapperHandler(wrapper)->flags() & JSWrapper::CROSS_COMPARTMENT);
 }
 
 bool
@@ -157,17 +196,17 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     if (vp->isString()) {
         JSString *str = vp->toString();
 
-        /* Static strings do not have to be wrapped. */
-        if (JSString::isStatic(str))
+        /* Static atoms do not have to be wrapped. */
+        if (str->isStaticAtom())
             return true;
 
         /* If the string is already in this compartment, we are done. */
-        if (str->asCell()->compartment() == this)
+        if (str->compartment() == this)
             return true;
 
         /* If the string is an atom, we don't have to copy. */
-        if (str->isAtomized()) {
-            JS_ASSERT(str->asCell()->compartment() == cx->runtime->atomsCompartment);
+        if (str->isAtom()) {
+            JS_ASSERT(str->compartment() == cx->runtime->atomsCompartment);
             return true;
         }
     }
@@ -241,8 +280,16 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     /* If we already have a wrapper for this value, use it. */
     if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(*vp)) {
         *vp = p->value;
-        if (vp->isObject())
-            vp->toObject().setParent(global);
+        if (vp->isObject()) {
+            JSObject *obj = &vp->toObject();
+            JS_ASSERT(IsCrossCompartmentWrapper(obj));
+            if (obj->getParent() != global) {
+                do {
+                    obj->setParent(global);
+                    obj = obj->getProto();
+                } while (obj && IsCrossCompartmentWrapper(obj));
+            }
+        }
         return true;
     }
 
@@ -338,6 +385,16 @@ JSCompartment::wrap(JSContext *cx, PropertyOp *propp)
 }
 
 bool
+JSCompartment::wrap(JSContext *cx, StrictPropertyOp *propp)
+{
+    Value v = CastAsObjectJsval(*propp);
+    if (!wrap(cx, &v))
+        return false;
+    *propp = CastAsStrictPropertyOp(v.toObjectOrNull());
+    return true;
+}
+
+bool
 JSCompartment::wrap(JSContext *cx, PropertyDescriptor *desc)
 {
     return wrap(cx, &desc->obj) &&
@@ -385,9 +442,16 @@ ScriptPoolDestroyed(JSContext *cx, mjit::JITScript *jit,
 }
 #endif
 
+/*
+ * This method marks pointers that cross compartment boundaries. It should be
+ * called only for per-compartment GCs, since full GCs naturally follow pointers
+ * across compartments.
+ */
 void
-JSCompartment::mark(JSTracer *trc)
+JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
 {
+    JS_ASSERT(trc->context->runtime->gcCurrentCompartment);
+
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront())
         MarkValue(trc, e.front().key, "cross-compartment wrapper");
 }
@@ -396,6 +460,7 @@ void
 JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
 {
     chunk = NULL;
+
     /* Remove dead wrappers from the table. */
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
         JS_ASSERT_IF(IsAboutToBeFinalized(cx, e.front().key.toGCThing()) &&
@@ -406,6 +471,23 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
             e.removeFront();
         }
     }
+
+    /* Remove dead empty shapes. */
+    if (emptyArgumentsShape && IsAboutToBeFinalized(cx, emptyArgumentsShape))
+        emptyArgumentsShape = NULL;
+    if (emptyBlockShape && IsAboutToBeFinalized(cx, emptyBlockShape))
+        emptyBlockShape = NULL;
+    if (emptyCallShape && IsAboutToBeFinalized(cx, emptyCallShape))
+        emptyCallShape = NULL;
+    if (emptyDeclEnvShape && IsAboutToBeFinalized(cx, emptyDeclEnvShape))
+        emptyDeclEnvShape = NULL;
+    if (emptyEnumeratorShape && IsAboutToBeFinalized(cx, emptyEnumeratorShape))
+        emptyEnumeratorShape = NULL;
+    if (emptyWithShape && IsAboutToBeFinalized(cx, emptyWithShape))
+        emptyWithShape = NULL;
+
+    if (initialRegExpShape && IsAboutToBeFinalized(cx, initialRegExpShape))
+        initialRegExpShape = NULL;
 
 #ifdef JS_TRACER
     traceMonitor.sweep(cx);
@@ -450,11 +532,13 @@ void
 JSCompartment::purge(JSContext *cx)
 {
     freeLists.purge();
+    dtoaCache.purge();
 
     /* Destroy eval'ed scripts. */
     js_DestroyScriptsToGC(cx, this);
 
     nativeIterCache.purge();
+    toSourceCache.destroyIfConstructed();
 
 #ifdef JS_TRACER
     /*
@@ -490,8 +574,26 @@ MathCache *
 JSCompartment::allocMathCache(JSContext *cx)
 {
     JS_ASSERT(!mathCache);
-    mathCache = js_new<MathCache>();
+    mathCache = cx->new_<MathCache>();
     if (!mathCache)
         js_ReportOutOfMemory(cx);
     return mathCache;
 }
+
+size_t
+JSCompartment::backEdgeCount(jsbytecode *pc) const
+{
+    if (BackEdgeMap::Ptr p = backEdgeTable.lookup(pc))
+        return p->value;
+
+    return 0;
+}
+
+size_t
+JSCompartment::incBackEdgeCount(jsbytecode *pc)
+{
+    if (BackEdgeMap::Ptr p = backEdgeTable.lookupWithDefault(pc, 0))
+        return ++p->value;
+    return 1;  /* oom not reported by backEdgeTable, so ignore. */
+}
+

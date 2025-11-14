@@ -40,6 +40,9 @@
 #include "gfxUtils.h"
 #include "nsRect.h"
 
+#include "ThebesLayerD3D10.h"
+#include "ReadbackProcessor.h"
+
 namespace mozilla {
 namespace layers {
 
@@ -72,6 +75,7 @@ ContainerLayerD3D10::InsertAfter(Layer* aChild, Layer* aAfter)
       mLastChild = aChild;
     }
     NS_ADDREF(aChild);
+    DidInsertChild(aChild);
     return;
   }
   for (Layer *child = GetFirstChild();
@@ -87,6 +91,7 @@ ContainerLayerD3D10::InsertAfter(Layer* aChild, Layer* aAfter)
       }
       aChild->SetPrevSibling(child);
       NS_ADDREF(aChild);
+      DidInsertChild(aChild);
       return;
     }
   }
@@ -106,6 +111,7 @@ ContainerLayerD3D10::RemoveChild(Layer *aChild)
     aChild->SetNextSibling(nsnull);
     aChild->SetPrevSibling(nsnull);
     aChild->SetParent(nsnull);
+    DidRemoveChild(aChild);
     NS_RELEASE(aChild);
     return;
   }
@@ -123,6 +129,7 @@ ContainerLayerD3D10::RemoveChild(Layer *aChild)
       child->SetNextSibling(nsnull);
       child->SetPrevSibling(nsnull);
       child->SetParent(nsnull);
+      DidRemoveChild(aChild);
       NS_RELEASE(aChild);
       return;
     }
@@ -152,6 +159,16 @@ GetNextSiblingD3D10(LayerD3D10* aLayer)
    return layer ? static_cast<LayerD3D10*>(layer->
                                            ImplData())
                 : nsnull;
+}
+
+static PRBool
+HasOpaqueAncestorLayer(Layer* aLayer)
+{
+  for (Layer* l = aLayer->GetParent(); l; l = l->GetParent()) {
+    if (l->GetContentFlags() & Layer::CONTENT_OPAQUE)
+      return PR_TRUE;
+  }
+  return PR_FALSE;
 }
 
 void
@@ -188,14 +205,46 @@ ContainerLayerD3D10::RenderLayer()
     
     device()->CreateRenderTargetView(renderTexture, NULL, getter_AddRefs(rtView));
 
-    float black[] = { 0, 0, 0, 0};
-    device()->ClearRenderTargetView(rtView, black);
+    effect()->GetVariableByName("vRenderTargetOffset")->
+      GetRawValue(previousRenderTargetOffset, 0, 8);
+
+    if (mVisibleRegion.GetNumRects() != 1 || !(GetContentFlags() & CONTENT_OPAQUE)) {
+      const gfx3DMatrix& transform3D = GetEffectiveTransform();
+      gfxMatrix transform;
+      // If we have an opaque ancestor layer, then we can be sure that
+      // all the pixels we draw into are either opaque already or will be
+      // covered by something opaque. Otherwise copying up the background is
+      // not safe.
+      if (mSupportsComponentAlphaChildren) {
+        PRBool is2d = transform3D.Is2D(&transform);
+        NS_ASSERTION(is2d, "Transform should be 2d when mSupportsComponentAlphaChildren.");
+
+        // Copy background up from below. This applies any 2D transform that is
+        // applied to use relative to our parent, and compensates for the offset
+        // that was applied on our parent's rendering.
+        D3D10_BOX srcBox;
+        srcBox.left = visibleRect.x + PRInt32(transform.x0) - PRInt32(previousRenderTargetOffset[0]);
+        srcBox.top = visibleRect.y + PRInt32(transform.y0) - PRInt32(previousRenderTargetOffset[1]);
+        srcBox.right = srcBox.left + visibleRect.width;
+        srcBox.bottom = srcBox.top + visibleRect.height;
+        srcBox.back = 1;
+        srcBox.front = 0;
+
+        nsRefPtr<ID3D10Resource> srcResource;
+        previousRTView->GetResource(getter_AddRefs(srcResource));
+
+        device()->CopySubresourceRegion(renderTexture, 0,
+                                        0, 0, 0,
+                                        srcResource, 0,
+                                        &srcBox);
+      } else {
+        float black[] = { 0, 0, 0, 0};
+        device()->ClearRenderTargetView(rtView, black);
+      }
+    }
 
     ID3D10RenderTargetView *rtViewPtr = rtView;
     device()->OMSetRenderTargets(1, &rtViewPtr, NULL);
-
-    effect()->GetVariableByName("vRenderTargetOffset")->
-      GetRawValue(previousRenderTargetOffset, 0, 8);
 
     renderTargetOffset[0] = (float)visibleRect.x;
     renderTargetOffset[1] = (float)visibleRect.y;
@@ -205,12 +254,19 @@ ContainerLayerD3D10::RenderLayer()
     previousViewportSize = mD3DManager->GetViewport();
     mD3DManager->SetViewport(nsIntSize(visibleRect.Size()));
   } else {
-#ifdef DEBUG
-    PRBool is2d =
-#endif
-    GetEffectiveTransform().Is2D(&contTransform);
+    PRBool is2d = GetEffectiveTransform().Is2D(&contTransform);
     NS_ASSERTION(is2d, "Transform must be 2D");
   }
+    
+  D3D10_RECT oldD3D10Scissor;
+  UINT numRects = 1;
+  device()->RSGetScissorRects(&numRects, &oldD3D10Scissor);
+  // Convert scissor to an nsIntRect. D3D10_RECT's are exclusive
+  // on the bottom and right values.
+  nsIntRect oldScissor(oldD3D10Scissor.left,
+                       oldD3D10Scissor.top,
+                       oldD3D10Scissor.right - oldD3D10Scissor.left,
+                       oldD3D10Scissor.bottom - oldD3D10Scissor.top);
 
   /*
    * Render this container's contents.
@@ -219,78 +275,31 @@ ContainerLayerD3D10::RenderLayer()
        layerToRender != nsnull;
        layerToRender = GetNextSiblingD3D10(layerToRender)) {
 
-    const nsIntRect* clipRect = layerToRender->GetLayer()->GetClipRect();
-    if ((clipRect && clipRect->IsEmpty()) ||
-        layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
+    if (layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
+      continue;
+    }
+    
+    nsIntRect scissorRect =
+      layerToRender->GetLayer()->CalculateScissorRect(useIntermediate,
+                                                      visibleRect,
+                                                      oldScissor,
+                                                      contTransform);
+
+    if (scissorRect.IsEmpty()) {
       continue;
     }
 
-    D3D10_RECT oldScissor;
-    if (clipRect || useIntermediate) {
-      UINT numRects = 1;
-      device()->RSGetScissorRects(&numRects, &oldScissor);
+    D3D10_RECT d3drect;
+    d3drect.left = scissorRect.x;
+    d3drect.top = scissorRect.y;
+    d3drect.right = scissorRect.x + scissorRect.width;
+    d3drect.bottom = scissorRect.y + scissorRect.height;
+    device()->RSSetScissorRects(1, &d3drect);
 
-      RECT r;
-      if (clipRect) {
-        r.left = (LONG)(clipRect->x - renderTargetOffset[0]);
-        r.top = (LONG)(clipRect->y - renderTargetOffset[1]);
-        r.right = (LONG)(clipRect->x - renderTargetOffset[0] + clipRect->width);
-        r.bottom = (LONG)(clipRect->y - renderTargetOffset[1] + clipRect->height);
-      } else {
-        // useIntermediate == true
-        r.left = 0;
-        r.top = 0;
-        r.right = visibleRect.width;
-        r.bottom = visibleRect.height;
-      }
-
-      D3D10_RECT d3drect;
-      if (!useIntermediate) {
-        if (clipRect) {
-          gfxRect cliprect(r.left, r.top, r.right - r.left, r.bottom - r.top);
-          gfxRect trScissor = contTransform.TransformBounds(cliprect);
-          trScissor.Round();
-          nsIntRect trIntScissor;
-          if (gfxUtils::GfxRectToIntRect(trScissor, &trIntScissor)) {
-            r.left = trIntScissor.x;
-            r.top = trIntScissor.y;
-            r.right = trIntScissor.XMost();
-            r.bottom = trIntScissor.YMost();
-          } else {
-            r.left = 0;
-            r.top = 0;
-            r.right = visibleRect.width;
-            r.bottom = visibleRect.height;
-            clipRect = nsnull;
-          }
-        }
-        // Scissor rect should be an intersection of the old and current scissor.
-        r.left = NS_MAX<PRInt32>(oldScissor.left, r.left);
-        r.right = NS_MIN<PRInt32>(oldScissor.right, r.right);
-        r.top = NS_MAX<PRInt32>(oldScissor.top, r.top);
-        r.bottom = NS_MIN<PRInt32>(oldScissor.bottom, r.bottom);
-      }
-
-      if (r.left >= r.right || r.top >= r.bottom) {
-        // Entire layer's clipped out, don't bother drawing.
-        continue;
-      }
-
-      d3drect.left = NS_MAX<PRInt32>(r.left, 0);
-      d3drect.top = NS_MAX<PRInt32>(r.top, 0);
-      d3drect.bottom = r.bottom;
-      d3drect.right = r.right;
-
-      device()->RSSetScissorRects(1, &d3drect);
-    }
-
-    // SetScissorRect
     layerToRender->RenderLayer();
-
-    if (clipRect || useIntermediate) {
-      device()->RSSetScissorRects(1, &oldScissor);
-    }
   }
+      
+  device()->RSSetScissorRects(1, &oldD3D10Scissor);
 
   if (useIntermediate) {
     mD3DManager->SetViewport(previousViewportSize);
@@ -334,9 +343,41 @@ ContainerLayerD3D10::LayerManagerDestroyed()
 void
 ContainerLayerD3D10::Validate()
 {
+  nsIntRect visibleRect = mVisibleRegion.GetBounds();
+
+  mSupportsComponentAlphaChildren = PR_FALSE;
+
+  if (UseIntermediateSurface()) {
+    const gfx3DMatrix& transform3D = GetEffectiveTransform();
+    gfxMatrix transform;
+
+    if (mVisibleRegion.GetNumRects() == 1 && (GetContentFlags() & CONTENT_OPAQUE)) {
+      // don't need a background, we're going to paint all opaque stuff
+      mSupportsComponentAlphaChildren = PR_TRUE;
+    } else {
+      if (HasOpaqueAncestorLayer(this) &&
+          transform3D.Is2D(&transform) && !transform.HasNonIntegerTranslation() &&
+          GetParent()->GetEffectiveVisibleRegion().GetBounds().Contains(visibleRect))
+      {
+        // In this case we can copy up the background. See RenderLayer.
+        mSupportsComponentAlphaChildren = PR_TRUE;
+      }
+    }
+  } else {
+    mSupportsComponentAlphaChildren = (GetContentFlags() & CONTENT_OPAQUE) ||
+        (mParent && mParent->SupportsComponentAlphaChildren());
+  }
+
+  ReadbackProcessor readback;
+  readback.BuildUpdates(this);
+
   Layer *layer = GetFirstChild();
   while (layer) {
-    static_cast<LayerD3D10*>(layer->ImplData())->Validate();
+    if (layer->GetType() == TYPE_THEBES) {
+      static_cast<ThebesLayerD3D10*>(layer)->Validate(&readback);
+    } else {
+      static_cast<LayerD3D10*>(layer->ImplData())->Validate();
+    }
     layer = layer->GetNextSibling();
   }
 }

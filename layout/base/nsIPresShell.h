@@ -104,6 +104,9 @@ struct nsIntPoint;
 struct nsIntRect;
 class nsRefreshDriver;
 class nsARefreshObserver;
+#ifdef ACCESSIBILITY
+class nsAccessibilityService;
+#endif
 
 typedef short SelectionType;
 typedef PRUint64 nsFrameState;
@@ -136,16 +139,8 @@ typedef struct CapturingContentInfo {
 } CapturingContentInfo;
 
 #define NS_IPRESSHELL_IID     \
- { 0xd1978bee, 0x43b9, 0x40de, \
-    { 0x95, 0x47, 0x85, 0x06, 0x5e, 0x02, 0xec, 0xb4 } }
-
-#define NS_IPRESSHELL_MOZILLA_2_0_BRANCH_IID     \
- { 0x5e445910, 0xfbee, 0x11df, \
-    { 0x8c, 0xff, 0x08, 0x00, 0x20, 0x0c, 0x9a, 0x66 } }
-
-#define NS_IPRESSHELL_MOZILLA_2_0_BRANCH2_IID     \
- { 0x5ff6fd00, 0x1ba9, 0x11e0, \
-    { 0xac, 0x64, 0x08, 0x00, 0x20, 0x0c, 0x9a, 0x66 } }
+ { 0x3a8030b5, 0x8d2c, 0x4cb3, \
+    { 0xb5, 0xae, 0xb2, 0x43, 0xa9, 0x28, 0x02, 0x82 } }
 
 // Constants for ScrollContentIntoView() function
 #define NS_PRESSHELL_SCROLL_TOP      0
@@ -174,29 +169,6 @@ enum nsRectVisibility {
   nsRectVisibility_kLeftOfViewport, 
   nsRectVisibility_kRightOfViewport
 };
-
-class nsIPresShell_MOZILLA_2_0_BRANCH : public nsISupports {
-public:  
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_IPRESSHELL_MOZILLA_2_0_BRANCH_IID)
-
-  virtual PRBool GetIsViewportOverridden() = 0;
-};
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIPresShell_MOZILLA_2_0_BRANCH,
-                              NS_IPRESSHELL_MOZILLA_2_0_BRANCH_IID)
-
-class nsIPresShell_MOZILLA_2_0_BRANCH2 : public nsISupports {
-public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_IPRESSHELL_MOZILLA_2_0_BRANCH2_IID)
-
-  /**
-   * Return true if the presshell expects layout flush.
-   */
-  virtual PRBool IsLayoutFlushObserver() = 0;
-};
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIPresShell_MOZILLA_2_0_BRANCH2,
-                              NS_IPRESSHELL_MOZILLA_2_0_BRANCH2_IID)
 
 /**
  * Presentation shell interface. Presentation shells are the
@@ -384,6 +356,16 @@ public:
    * ResizeReflow() calls are ignored after ResizeReflowOverride().
    */
   virtual NS_HIDDEN_(nsresult) ResizeReflowOverride(nscoord aWidth, nscoord aHeight) = 0;
+
+  /**
+   * Returns true if ResizeReflowOverride has been called.
+   */
+  virtual PRBool GetIsViewportOverridden() = 0;
+
+  /**
+   * Return true if the presshell expects layout flush.
+   */
+  virtual PRBool IsLayoutFlushObserver() = 0;
 
   /**
    * Reflow the frame model with a reflow reason of eReflowReason_StyleChange
@@ -579,6 +561,9 @@ public:
    *                  direction even if overflow:hidden is specified in that
    *                  direction; otherwise we will not scroll in that direction
    *                  when overflow:hidden is set for that direction.
+   *                  If SCROLL_NO_PARENT_FRAMES is set then we only scroll
+   *                  nodes in this document, not in any parent documents which
+   *                  contain this document in a iframe or the like.
    */
   virtual NS_HIDDEN_(nsresult) ScrollContentIntoView(nsIContent* aContent,
                                                      PRIntn      aVPercent,
@@ -587,7 +572,8 @@ public:
 
   enum {
     SCROLL_FIRST_ANCESTOR_ONLY = 0x01,
-    SCROLL_OVERFLOW_HIDDEN = 0x02
+    SCROLL_OVERFLOW_HIDDEN = 0x02,
+    SCROLL_NO_PARENT_FRAMES = 0x04
   };
   /**
    * Scrolls the view of the document so that the given area of a frame
@@ -603,6 +589,9 @@ public:
    * even if overflow:hidden is specified in that direction; otherwise
    * we will not scroll in that direction when overflow:hidden is
    * set for that direction
+   * If SCROLL_NO_PARENT_FRAMES is set then we only scroll
+   * nodes in this document, not in any parent documents which
+   * contain this document in a iframe or the like.
    * @return true if any scrolling happened, false if no scrolling happened
    */
   virtual PRBool ScrollFrameRectIntoView(nsIFrame*     aFrame,
@@ -834,6 +823,13 @@ public:
   static PRBool gIsAccessibilityActive;
   static PRBool IsAccessibilityActive() { return gIsAccessibilityActive; }
 
+#ifdef ACCESSIBILITY
+  /**
+   * Return accessibility service if accessibility is active.
+   */
+  static nsAccessibilityService* AccService();
+#endif
+
   /**
    * Stop all active elements (plugins and the caret) in this presentation and
    * in the presentations of subdocuments.  Resets painting to a suppressed state.
@@ -992,18 +988,24 @@ public:
   virtual void UpdateCanvasBackground() = 0;
 
   /**
-   * Add a solid color item to the bottom of aList with frame aFrame and
-   * bounds aBounds. Checks first if this needs to be done by checking if
-   * aFrame is a canvas frame (if aForceDraw is true then this check is
-   * skipped). aBackstopColor is composed behind the background color of
-   * the canvas, it is transparent by default.
+   * Add a solid color item to the bottom of aList with frame aFrame and bounds
+   * aBounds. Checks first if this needs to be done by checking if aFrame is a
+   * canvas frame (if the FORCE_DRAW flag is passed then this check is skipped).
+   * aBackstopColor is composed behind the background color of the canvas, it is
+   * transparent by default. The ROOT_CONTENT_DOC_BG flag indicates that this is
+   * the background for the root content document.
    */
+  enum {
+    FORCE_DRAW = 0x01,
+    ROOT_CONTENT_DOC_BG = 0x02
+  };
   virtual nsresult AddCanvasBackgroundColorItem(nsDisplayListBuilder& aBuilder,
                                                 nsDisplayList& aList,
                                                 nsIFrame* aFrame,
                                                 const nsRect& aBounds,
                                                 nscolor aBackstopColor = NS_RGBA(0,0,0,0),
-                                                PRBool aForceDraw = PR_FALSE) = 0;
+                                                PRUint32 aFlags = 0) = 0;
+
 
   /**
    * Add a solid color item to the bottom of aList with frame aFrame and
@@ -1112,25 +1114,6 @@ public:
   virtual void SetIgnoreViewportScrolling(PRBool aIgnore) = 0;
   PRBool IgnoringViewportScrolling() const
   { return mRenderFlags & STATE_IGNORING_VIEWPORT_SCROLLING; }
-
-  /**
-   * Set up a "displayport", which overrides what everything else thinks
-   * is the visible region of this document with the specified
-   * displayport rect.
-   */
-  virtual void SetDisplayPort(const nsRect& aDisplayPort) = 0;
-  PRBool UsingDisplayPort() const
-  { return mRenderFlags & STATE_USING_DISPLAYPORT; }
-
-  /**
-   * Return the displayport being used.  |UsingDisplayPort()| must be
-   * true.
-   */
-  nsRect GetDisplayPort()
-  {
-    NS_ABORT_IF_FALSE(UsingDisplayPort(), "no displayport defined!");
-    return mDisplayPort;
-  }
 
    /**
    * Set a "resolution" for the document, which if not 1.0 will
@@ -1247,10 +1230,6 @@ protected:
   // changes in a way that prevents us from being able to (usefully)
   // re-use old pixels.
   PRUint32                  mRenderFlags;
-  // If displayport rendering has been requested, |UsingDisplayPort()|
-  // is true and |mDisplayPort| defines the "visible rect" we
-  // maintain.
-  nsRect                    mDisplayPort;
 
   // Used to force allocation and rendering of proportionally more or
   // less pixels in the given dimension.

@@ -209,6 +209,7 @@ nsView::nsView(nsViewManager* aViewManager, nsViewVisibility aVisibility)
   mViewManager = aViewManager;
   mDirtyRegion = nsnull;
   mDeletionObserver = nsnull;
+  mHaveInvalidationDimensions = PR_FALSE;
   mWidgetIsTopLevel = PR_FALSE;
 }
 
@@ -239,7 +240,7 @@ nsView::~nsView()
   {
     DropMouseGrabbing();
   
-    nsView *rootView = mViewManager->GetRootView();
+    nsView *rootView = mViewManager->GetRootViewImpl();
     
     if (rootView)
     {
@@ -268,6 +269,17 @@ nsView::~nsView()
   }
 
   // Destroy and release the widget
+  DestroyWidget();
+
+  delete mDirtyRegion;
+
+  if (mDeletionObserver) {
+    mDeletionObserver->Clear();
+  }
+}
+
+void nsView::DestroyWidget()
+{
   if (mWindow)
   {
     // Release memory for the view wrapper
@@ -290,11 +302,6 @@ nsView::~nsView()
     }
 
     NS_RELEASE(mWindow);
-  }
-  delete mDirtyRegion;
-
-  if (mDeletionObserver) {
-    mDeletionObserver->Clear();
   }
 }
 
@@ -348,6 +355,11 @@ void nsView::SetPosition(nscoord aX, nscoord aY)
                "Don't try to move the root widget to something non-zero");
 
   ResetWidgetBounds(PR_TRUE, PR_TRUE, PR_FALSE);
+}
+
+void nsIView::SetInvalidationDimensions(const nsRect* aRect)
+{
+  return Impl()->SetInvalidationDimensions(aRect);
 }
 
 void nsView::SetPositionIgnoringChildWidgets(nscoord aX, nscoord aY)
@@ -434,12 +446,10 @@ void nsView::DoResetWidgetBounds(PRBool aMoveOnly,
                                  PRBool aInvalidateChangedSize) {
   // The geometry of a root view's widget is controlled externally,
   // NOT by sizing or positioning the view
-  if (mViewManager->GetRootView() == this) {
+  if (mViewManager->GetRootViewImpl() == this) {
     return;
   }
   
-  NS_PRECONDITION(mWindow, "Why was this called??");
-
   nsIntRect curBounds;
   mWindow->GetBounds(curBounds);
 
@@ -455,18 +465,12 @@ void nsView::DoResetWidgetBounds(PRBool aMoveOnly,
     return;
   }
 
+  NS_PRECONDITION(mWindow, "Why was this called??");
+
   nsIntRect newBounds = CalcWidgetBounds(type);
 
   PRBool changedPos = curBounds.TopLeft() != newBounds.TopLeft();
   PRBool changedSize = curBounds.Size() != newBounds.Size();
-
-  PRBool curVisibility;
-  mWindow->IsVisible(curVisibility);
-  PRBool newVisibility = IsEffectivelyVisible();
-
-  if (curVisibility && !newVisibility) {
-    mWindow->Show(PR_FALSE);
-  }
 
   // Child views are never attached to top level widgets, this is safe.
   if (changedPos) {
@@ -480,10 +484,6 @@ void nsView::DoResetWidgetBounds(PRBool aMoveOnly,
     if (changedSize && !aMoveOnly) {
       mWindow->Resize(newBounds.width, newBounds.height, aInvalidateChangedSize);
     } // else do nothing!
-  }
-
-  if (!curVisibility && newVisibility) {
-    mWindow->Show(PR_TRUE);
   }
 }
 
@@ -507,6 +507,13 @@ void nsView::SetDimensions(const nsRect& aRect, PRBool aPaint, PRBool aResizeWid
   }
 }
 
+void nsView::SetInvalidationDimensions(const nsRect* aRect)
+{
+  if ((mHaveInvalidationDimensions = !!aRect)) {
+    mInvalidationDimensions = *aRect;
+  }
+}
+
 void nsView::NotifyEffectiveVisibilityChanged(PRBool aEffectivelyVisible)
 {
   if (!aEffectivelyVisible)
@@ -516,7 +523,13 @@ void nsView::NotifyEffectiveVisibilityChanged(PRBool aEffectivelyVisible)
 
   if (nsnull != mWindow)
   {
-    ResetWidgetBounds(PR_FALSE, PR_TRUE, PR_FALSE);
+    if (aEffectivelyVisible)
+    {
+      DoResetWidgetBounds(PR_FALSE, PR_TRUE);
+      mWindow->Show(PR_TRUE);
+    }
+    else
+      mWindow->Show(PR_FALSE);
   }
 
   for (nsView* child = mFirstChild; child; child = child->mNextSibling) {
@@ -555,7 +568,7 @@ NS_IMETHODIMP nsView::SetFloating(PRBool aFloatingView)
 
 void nsView::InvalidateHierarchy(nsViewManager *aViewManagerParent)
 {
-  if (mViewManager->GetRootView() == this)
+  if (mViewManager->GetRootViewImpl() == this)
     mViewManager->InvalidateHierarchy();
 
   for (nsView *child = mFirstChild; child; child = child->GetNextSibling())
@@ -588,7 +601,7 @@ void nsView::InsertChild(nsView *aChild, nsView *aSibling)
     // on all view managers in the new subtree.
 
     nsViewManager *vm = aChild->GetViewManager();
-    if (vm->GetRootView() == aChild)
+    if (vm->GetRootViewImpl() == aChild)
     {
       aChild->InvalidateHierarchy(nsnull); // don't care about releasing grabs
     }
@@ -624,7 +637,7 @@ void nsView::RemoveChild(nsView *child)
     // on all view managers in the removed subtree.
 
     nsViewManager *vm = child->GetViewManager();
-    if (vm->GetRootView() == child)
+    if (vm->GetRootViewImpl() == child)
     {
       child->InvalidateHierarchy(GetViewManager());
     }
@@ -689,6 +702,11 @@ nsresult nsIView::CreateWidgetForPopup(nsWidgetInitData *aWidgetInitData,
 {
   return Impl()->CreateWidgetForPopup(aWidgetInitData, aParentWidget,
                                       aEnableDragDrop, aResetVisibility);
+}
+
+void nsIView::DestroyWidget()
+{
+  Impl()->DestroyWidget();
 }
 
 struct DefaultWidgetInitData : public nsWidgetInitData {
@@ -860,7 +878,8 @@ nsresult nsIView::AttachToTopLevelWidget(nsIWidget* aWidget)
 
   // Note, the previous device context will be released. Detaching
   // will not restore the old one.
-  nsresult rv = aWidget->AttachViewToTopLevel(::AttachedHandleEvent, dx);
+  nsresult rv = aWidget->AttachViewToTopLevel(
+    nsIWidget::UsePuppetWidgets() ? ::HandleEvent : ::AttachedHandleEvent, dx);
   if (NS_FAILED(rv))
     return rv;
 
@@ -1123,7 +1142,7 @@ nsIWidget* nsView::GetNearestWidget(nsPoint* aOffset, const PRInt32 aAPD) const
 PRBool nsIView::IsRoot() const
 {
   NS_ASSERTION(mViewManager != nsnull," View manager is null in nsView::IsRoot()");
-  return mViewManager->GetRootView() == this;
+  return mViewManager->GetRootViewImpl() == this;
 }
 
 PRBool nsIView::ExternalIsRoot() const
@@ -1157,7 +1176,7 @@ nsView::GetBoundsInParentUnits() const
 {
   nsView* parent = GetParent();
   nsViewManager* VM = GetViewManager();
-  if (this != VM->GetRootView() || !parent) {
+  if (this != VM->GetRootViewImpl() || !parent) {
     return mDimBounds;
   }
   PRInt32 ourAPD = VM->AppUnitsPerDevPixel();

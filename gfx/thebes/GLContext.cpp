@@ -51,6 +51,8 @@
 #include "GLContext.h"
 #include "GLContextProvider.h"
 
+#include "gfxCrashReporterUtils.h"
+
 namespace mozilla {
 namespace gl {
 
@@ -162,7 +164,10 @@ LibrarySymbolLoader::LoadSymbols(PRLibrary *lib,
 PRBool
 GLContext::InitWithPrefix(const char *prefix, PRBool trygl)
 {
+    ScopedGfxFeatureReporter reporter("GL Context");
+
     if (mInitialized) {
+        reporter.SetSuccessful();
         return PR_TRUE;
     }
 
@@ -323,31 +328,16 @@ GLContext::InitWithPrefix(const char *prefix, PRBool trygl)
 
     mInitialized = LoadSymbols(&symbols[0], trygl, prefix);
 
+    const char *glVendorString;
+
     if (mInitialized) {
-        InitExtensions();
-
-        NS_ASSERTION(!IsExtensionSupported(GLContext::ARB_pixel_buffer_object) ||
-                     (mSymbols.fMapBuffer && mSymbols.fUnmapBuffer),
-                     "ARB_pixel_buffer_object supported without glMapBuffer/UnmapBuffer being available!");
-
-        GLint v[4];
-
-        fGetIntegerv(LOCAL_GL_SCISSOR_BOX, v);
-        mScissorStack.AppendElement(nsIntRect(v[0], v[1], v[2], v[3]));
-
-        fGetIntegerv(LOCAL_GL_VIEWPORT, v);
-        mViewportStack.AppendElement(nsIntRect(v[0], v[1], v[2], v[3]));
-
-        const char *glVendorString = (const char *)fGetString(LOCAL_GL_VENDOR);
+        glVendorString = (const char *)fGetString(LOCAL_GL_VENDOR);
         const char *vendorMatchStrings[VendorOther] = {
                 "Intel",
                 "NVIDIA",
                 "ATI",
                 "Qualcomm"
         };
-
-        fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &mMaxTextureSize);
-
         mVendor = VendorOther;
         for (int i = 0; i < VendorOther; ++i) {
             if (DoesVendorStringMatch(glVendorString, vendorMatchStrings[i])) {
@@ -355,7 +345,9 @@ GLContext::InitWithPrefix(const char *prefix, PRBool trygl)
                 break;
             }
         }
+    }
 
+    if (mInitialized) {
 #ifdef DEBUG
         static bool once = false;
         if (!once) {
@@ -376,6 +368,22 @@ GLContext::InitWithPrefix(const char *prefix, PRBool trygl)
         }
 #endif
 
+        InitExtensions();
+
+        NS_ASSERTION(!IsExtensionSupported(GLContext::ARB_pixel_buffer_object) ||
+                     (mSymbols.fMapBuffer && mSymbols.fUnmapBuffer),
+                     "ARB_pixel_buffer_object supported without glMapBuffer/UnmapBuffer being available!");
+
+        GLint v[4];
+
+        fGetIntegerv(LOCAL_GL_SCISSOR_BOX, v);
+        mScissorStack.AppendElement(nsIntRect(v[0], v[1], v[2], v[3]));
+
+        fGetIntegerv(LOCAL_GL_VIEWPORT, v);
+        mViewportStack.AppendElement(nsIntRect(v[0], v[1], v[2], v[3]));
+
+        fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &mMaxTextureSize);
+
         UpdateActualFormat();
     }
 
@@ -393,9 +401,12 @@ GLContext::InitWithPrefix(const char *prefix, PRBool trygl)
         mDebugMode |= DebugAbortOnError;
 #endif
 
-    // if initialization fails, ensure all symbols are zero, to avoid hard-to-understand bugs
-    if (!mInitialized)
-      mSymbols.Zero();
+    if (mInitialized)
+        reporter.SetSuccessful();
+    else {
+        // if initialization fails, ensure all symbols are zero, to avoid hard-to-understand bugs
+        mSymbols.Zero();
+    }
 
     return mInitialized;
 }
@@ -418,6 +429,7 @@ static const char *sExtensionNames[] = {
     "GL_APPLE_client_storage",
     "GL_ARB_texture_non_power_of_two",
     "GL_ARB_pixel_buffer_object",
+    "GL_ARB_ES2_compatibility",
     NULL
 };
 
@@ -530,7 +542,6 @@ GLContext::CreateTextureImage(const nsIntSize& aSize,
     fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, texfilter);
     fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S, aWrapMode);
     fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_T, aWrapMode);
-    DEBUG_GL_ERROR_CHECK(this);
 
     return CreateBasicTextureImage(texture, aSize, aWrapMode, aContentType, this);
 }
@@ -561,7 +572,7 @@ BasicTextureImage::BeginUpdate(nsIntRegion& aRegion)
     ImageFormat format =
         (GetContentType() == gfxASurface::CONTENT_COLOR) ?
         gfxASurface::ImageFormatRGB24 : gfxASurface::ImageFormatARGB32;
-    if (!mTextureInited)
+    if (mTextureState != Valid)
     {
         // if the texture hasn't been initialized yet, or something important
         // changed, we need to recreate our backing surface and force the
@@ -609,13 +620,13 @@ BasicTextureImage::EndUpdate()
         mGLContext->UploadSurfaceToTexture(mUpdateSurface,
                                            mUpdateRegion,
                                            mTexture,
-                                           !mTextureInited,
+                                           mTextureState == Created,
                                            mUpdateOffset,
                                            relative);
     FinishedSurfaceUpload();
 
     mUpdateSurface = nsnull;
-    mTextureInited = PR_TRUE;
+    mTextureState = Valid;
 }
 
 already_AddRefed<gfxASurface>
@@ -641,7 +652,7 @@ BasicTextureImage::DirectUpdate(gfxASurface *aSurf, const nsIntRegion& aRegion)
 {
     nsIntRect bounds = aRegion.GetBounds();
     nsIntRegion region;
-    if (!mTextureInited) {
+    if (mTextureState != Valid) {
         bounds = nsIntRect(0, 0, mSize.width, mSize.height);
         region = nsIntRegion(bounds);
     } else {
@@ -652,10 +663,10 @@ BasicTextureImage::DirectUpdate(gfxASurface *aSurf, const nsIntRegion& aRegion)
         mGLContext->UploadSurfaceToTexture(aSurf,
                                            region,
                                            mTexture,
-                                           !mTextureInited,
+                                           mTextureState == Created,
                                            bounds.TopLeft(),
                                            PR_FALSE);
-    mTextureInited = PR_TRUE;
+    mTextureState = Valid;
     return true;
 }
 
@@ -676,7 +687,7 @@ BasicTextureImage::Resize(const nsIntSize& aSize)
                             LOCAL_GL_UNSIGNED_BYTE,
                             NULL);
 
-    mTextureInited = PR_TRUE;
+    mTextureState = Initialized;
     mSize = aSize;
 }
 
@@ -1172,11 +1183,7 @@ GLContext::BlitTextureImage(TextureImage *aSrc, const nsIntRect& aSrcRect,
 
     SetBlitFramebufferForDestTexture(aDst->Texture());
 
-    DEBUG_GL_ERROR_CHECK(this);
-
     UseBlitProgram();
-
-    DEBUG_GL_ERROR_CHECK(this);
 
     nsIntSize srcSize = aSrc->GetSize();
     nsIntSize dstSize = aDst->GetSize();
@@ -1221,11 +1228,7 @@ GLContext::BlitTextureImage(TextureImage *aSrc, const nsIntRect& aSrcRect,
     fEnableVertexAttribArray(0);
     fEnableVertexAttribArray(1);
 
-    DEBUG_GL_ERROR_CHECK(this);
-
     fDrawArrays(LOCAL_GL_TRIANGLES, 0, rects.numRects * 6);
-
-    DEBUG_GL_ERROR_CHECK(this);
 
     fDisableVertexAttribArray(0);
     fDisableVertexAttribArray(1);

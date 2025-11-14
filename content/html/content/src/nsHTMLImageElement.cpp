@@ -369,11 +369,6 @@ nsHTMLImageElement::ParseAttribute(PRInt32 aNamespaceID,
     if (aAttribute == nsGkAtoms::align) {
       return ParseAlignValue(aValue, aResult);
     }
-    if (aAttribute == nsGkAtoms::src) {
-      static const char* kWhitespace = " \n\r\t\b";
-      aResult.SetTo(nsContentUtils::TrimCharsInSet(kWhitespace, aValue));
-      return PR_TRUE;
-    }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       return PR_TRUE;
     }
@@ -510,7 +505,8 @@ nsHTMLImageElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
       return NS_OK;
     }
 
-    nsCOMPtr<imgIRequest> oldCurrentRequest = mCurrentRequest;
+    // A hack to get animations to reset. See bug 594771.
+    mNewRequestsWillNeedAnimationReset = PR_TRUE;
 
     // Force image loading here, so that we'll try to load the image from
     // network if it's set to be not cacheable...  If we change things so that
@@ -519,17 +515,7 @@ nsHTMLImageElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
     // here.
     LoadImage(aValue, PR_TRUE, aNotify);
 
-    if (mCurrentRequest && !mPendingRequest &&
-        oldCurrentRequest != mCurrentRequest) {
-      // We have a current request, and it's not the same one as we used
-      // to have, and we have no pending request.  So imglib already had
-      // that image.  Reset the animation on it -- see bug 210001
-      nsCOMPtr<imgIContainer> container;
-      mCurrentRequest->GetImage(getter_AddRefs(container));
-      if (container) {
-        container->ResetAnimation();
-      }
-    }
+    mNewRequestsWillNeedAnimationReset = PR_FALSE;
   }
     
   return nsGenericHTMLElement::SetAttr(aNameSpaceID, aName, aPrefix, aValue,

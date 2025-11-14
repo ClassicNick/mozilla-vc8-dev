@@ -385,7 +385,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
           stateMask ^= node->IntrinsicState();
           if (!stateMask.IsEmpty() && document) {
             MOZ_AUTO_DOC_UPDATE(document, UPDATE_CONTENT_STATE, PR_TRUE);
-            document->ContentStatesChanged(node, nsnull, stateMask);
+            document->ContentStateChanged(node, stateMask);
           }
           nsNodeUtils::AttributeChanged(node, 
                                         nsuri, 
@@ -670,7 +670,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
     }
     case eTreeOpNeedsCharsetSwitchTo: {
       char* str = mOne.charPtr;
-      aBuilder->NeedsCharsetSwitchTo(str);
+      PRInt32 charsetSource = mInt;
+      aBuilder->NeedsCharsetSwitchTo(str, charsetSource);
       return rv;    
     }
     case eTreeOpUpdateStyleSheet: {

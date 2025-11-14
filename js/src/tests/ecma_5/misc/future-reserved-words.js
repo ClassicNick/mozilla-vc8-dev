@@ -37,45 +37,14 @@ var strictFutureReservedWords =
    "yield", // enabled: this file doesn't execute as JS1.7
   ];
 
-function testWord(word, expectNormal, expectStrict)
+function testWord(word, wordKind, expectNormal, expectStrict)
 {
   var actual, status;
-
-  // USE IN VARIABLE DECLARATION
-
-  actual = "";
-  status = summary + ", normal var: " + word;
-  try
-  {
-    eval("var " + word + ";");
-    actual = "no error";
-  }
-  catch (e)
-  {
-    actual = "error";
-    status +=  ", " + e.name + ": " + e.message + " ";
-  }
-  reportCompare(expectNormal, actual, status);
-
-  actual = "";
-  status = summary + ", strict var: " + word;
-  try
-  {
-    eval("'use strict'; var " + word + ";");
-    actual = "no error";
-  }
-  catch (e)
-  {
-    actual = "error";
-    status +=  ", " + e.name + ": " + e.message + " ";
-  }
-  reportCompare(expectStrict, actual, status);
-
 
   // USE AS LHS FOR ASSIGNMENT
 
   actual = "";
-  status = summary + ", normal assignment: " + word;
+  status = summary + ": " + word + ": normal assignment";
   try
   {
     eval(word + " = 'foo';");
@@ -83,13 +52,13 @@ function testWord(word, expectNormal, expectStrict)
   }
   catch(e)
   {
-    actual = "error";
+    actual = e.name;
     status +=  ", " + e.name + ": " + e.message + " ";
   }
   reportCompare(expectNormal, actual, status);
 
   actual = "";
-  status = summary + ", strict assignment: " + word;
+  status = summary + ": " + word + ": strict assignment";
   try
   {
     eval("'use strict'; " + word + " = 'foo';");
@@ -97,7 +66,383 @@ function testWord(word, expectNormal, expectStrict)
   }
   catch(e)
   {
-    actual = "error";
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE IN VARIABLE DECLARATION
+
+  actual = "";
+  status = summary + ": " + word + ": normal var";
+  try
+  {
+    eval("var " + word + ";");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict var";
+  try
+  {
+    eval("'use strict'; var " + word + ";");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE IN FOR-IN VARIABLE DECLARATION
+
+  actual = "";
+  status = summary + ": " + word + ": normal for-in var";
+  try
+  {
+    eval("for (var " + word + " in {});");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict for-in var";
+  try
+  {
+    eval("'use strict'; for (var " + word + " in {});");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS CATCH IDENTIFIER
+
+  actual = "";
+  status = summary + ": " + word + ": normal var";
+  try
+  {
+    eval("try { } catch (" + word + ") { }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict var";
+  try
+  {
+    eval("'use strict'; try { } catch (" + word + ") { }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS LABEL
+
+  actual = "";
+  status = summary + ": " + word + ": normal label";
+  try
+  {
+    eval(word + ": while (false);");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict label";
+  try
+  {
+    eval("'use strict'; " + word + ": while (false);");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS ARGUMENT NAME IN FUNCTION DECLARATION
+
+  actual = "";
+  status = summary + ": " + word + ": normal function argument";
+  try
+  {
+    eval("function foo(" + word + ") { }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict function argument";
+  try
+  {
+    eval("'use strict'; function foo(" + word + ") { }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": function argument retroactively strict";
+  try
+  {
+    eval("function foo(" + word + ") { 'use strict'; }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS ARGUMENT NAME IN FUNCTION EXPRESSION
+
+  actual = "";
+  status = summary + ": " + word + ": normal function expression argument";
+  try
+  {
+    eval("var s = (function foo(" + word + ") { });");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict function expression argument";
+  try
+  {
+    eval("'use strict'; var s = (function foo(" + word + ") { });");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": function expression argument retroactively strict";
+  try
+  {
+    eval("var s = (function foo(" + word + ") { 'use strict'; });");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS ARGUMENT NAME WITH FUNCTION CONSTRUCTOR
+
+  actual = "";
+  status = summary + ": " + word + ": argument with normal Function";
+  try
+  {
+    Function(word, "return 17");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": argument with strict Function";
+  try
+  {
+    Function(word, "'use strict'; return 17");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS ARGUMENT NAME IN PROPERTY SETTER
+
+  actual = "";
+  status = summary + ": " + word + ": normal property setter argument";
+  try
+  {
+    eval("var o = { set x(" + word + ") { } };");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectNormal, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": strict property setter argument";
+  try
+  {
+    eval("'use strict'; var o = { set x(" + word + ") { } };");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": property setter argument retroactively strict";
+  try
+  {
+    eval("var o = { set x(" + word + ") { 'use strict'; } };");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS FUNCTION NAME IN FUNCTION DECLARATION
+
+  if (wordKind !== "reserved")
+  {
+    actual = "";
+    status = summary + ": " + word + ": normal function name";
+    try
+    {
+      eval("function " + word + "() { }");
+      actual = "no error";
+    }
+    catch (e)
+    {
+      actual = e.name;
+      status +=  ", " + e.name + ": " + e.message + " ";
+    }
+    reportCompare(expectNormal, actual, status);
+  }
+
+  actual = "";
+  status = summary + ": " + word + ": strict function name";
+  try
+  {
+    eval("'use strict'; function " + word + "() { }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": function name retroactively strict";
+  try
+  {
+    eval("function " + word + "() { 'use strict'; }");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  // USE AS FUNCTION NAME IN FUNCTION EXPRESSION
+
+  if (wordKind !== "reserved")
+  {
+    actual = "";
+    status = summary + ": " + word + ": normal function expression name";
+    try
+    {
+      eval("var s = (function " + word + "() { });");
+      actual = "no error";
+    }
+    catch (e)
+    {
+      actual = e.name;
+      status +=  ", " + e.name + ": " + e.message + " ";
+    }
+    reportCompare(expectNormal, actual, status);
+  }
+
+  actual = "";
+  status = summary + ": " + word + ": strict function expression name";
+  try
+  {
+    eval("'use strict'; var s = (function " + word + "() { });");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
+    status +=  ", " + e.name + ": " + e.message + " ";
+  }
+  reportCompare(expectStrict, actual, status);
+
+  actual = "";
+  status = summary + ": " + word + ": function expression name retroactively strict";
+  try
+  {
+    eval("var s = (function " + word + "() { 'use strict'; });");
+    actual = "no error";
+  }
+  catch (e)
+  {
+    actual = e.name;
     status +=  ", " + e.name + ": " + e.message + " ";
   }
   reportCompare(expectStrict, actual, status);
@@ -105,12 +450,12 @@ function testWord(word, expectNormal, expectStrict)
 
 function testFutureReservedWord(word)
 {
-  testWord(word, "error", "error");
+  testWord(word, "reserved", "SyntaxError", "SyntaxError");
 }
 
 function testStrictFutureReservedWord(word)
 {
-  testWord(word, "no error", "error");
+  testWord(word, "strict reserved", "no error", "SyntaxError");
 }
 
 futureReservedWords.forEach(testFutureReservedWord);

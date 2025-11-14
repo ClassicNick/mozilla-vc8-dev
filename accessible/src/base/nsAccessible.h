@@ -53,11 +53,14 @@
 #include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
 
+class AccEvent;
 class AccGroupInfo;
 class EmbeddedObjCollector;
 class nsAccessible;
-class AccEvent;
+class nsHyperTextAccessible;
+class nsHTMLLIAccessible;
 struct nsRoleMapEntry;
+class nsTextAccessible;
 
 struct nsRect;
 class nsIContent;
@@ -187,16 +190,23 @@ public:
   virtual nsresult GetAttributesInternal(nsIPersistentProperties *aAttributes);
 
   /**
+   * Used by GetChildAtPoint() method to get direct or deepest child at point.
+   */
+  enum EWhichChildAtPoint {
+    eDirectChild,
+    eDeepestChild
+  };
+
+  /**
    * Return direct or deepest child at the given point.
    *
-   * @param  aX             [in] x coordinate relative screen
-   * @param  aY             [in] y coordinate relative screen
-   * @param  aDeepestChild  [in] flag points if deep child should be returned
-   * @param  aChild         [out] found child
+   * @param  aX           [in] x coordinate relative screen
+   * @param  aY           [in] y coordinate relative screen
+   * @param  aWhichChild  [in] flag points if deepest or direct child
+   *                        should be returned
    */
-  virtual nsresult GetChildAtPoint(PRInt32 aX, PRInt32 aY,
-                                   PRBool aDeepestChild,
-                                   nsIAccessible **aChild);
+  virtual nsAccessible* GetChildAtPoint(PRInt32 aX, PRInt32 aY,
+                                        EWhichChildAtPoint aWhichChild);
 
   /**
    * Return calculated group level based on accessible hierarchy.
@@ -226,9 +236,18 @@ public:
   virtual void SetRoleMapEntry(nsRoleMapEntry *aRoleMapEntry);
 
   /**
+   * Update the children cache.
+   */
+  inline bool UpdateChildren()
+  {
+    InvalidateChildren();
+    return EnsureChildren();
+  }
+
+  /**
    * Cache children if necessary. Return true if the accessible is defunct.
    */
-  PRBool EnsureChildren();
+  bool EnsureChildren();
 
   /**
    * Set the child count to -1 (unknown) and null out cached child pointers.
@@ -251,7 +270,7 @@ public:
   /**
    * Return parent accessible.
    */
-  virtual nsAccessible* GetParent();
+  nsAccessible* GetParent() const { return mParent; }
 
   /**
    * Return child accessible at the given index.
@@ -271,7 +290,7 @@ public:
   /**
    * Return index in parent accessible.
    */
-  virtual PRInt32 GetIndexInParent();
+  virtual PRInt32 GetIndexInParent() const;
 
   /**
    * Return true if accessible has children;
@@ -296,7 +315,6 @@ public:
   /**
    * Return cached accessible of parent-child relatives.
    */
-  nsAccessible* GetCachedParent() const { return mParent; }
   nsAccessible* GetCachedNextSibling() const
   {
     return mParent ?
@@ -309,8 +327,9 @@ public:
   }
   PRUint32 GetCachedChildCount() const { return mChildren.Length(); }
   nsAccessible* GetCachedChildAt(PRUint32 aIndex) const { return mChildren.ElementAt(aIndex); }
-  PRBool AreChildrenCached() const { return mChildrenFlags != eChildrenUninitialized; }
-  bool IsBoundToParent() const { return mParent; }
+  inline bool AreChildrenCached() const
+    { return !IsChildrenFlag(eChildrenUninitialized); }
+  bool IsBoundToParent() const { return !!mParent; }
 
   //////////////////////////////////////////////////////////////////////////////
   // Miscellaneous methods
@@ -330,18 +349,37 @@ public:
    * Returns text of accessible if accessible has text role otherwise empty
    * string.
    *
-   * @param aText         returned text of the accessible
-   * @param aStartOffset  start offset inside of the accesible
-   * @param aLength       required lenght of text
+   * @param aText         [in] returned text of the accessible
+   * @param aStartOffset  [in, optional] start offset inside of the accessible,
+   *                        if missed entire text is appended
+   * @param aLength       [in, optional] required length of text, if missed
+   *                        then text form start offset till the end is appended
    */
-  virtual nsresult AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
-                                PRUint32 aLength);
+  virtual void AppendTextTo(nsAString& aText, PRUint32 aStartOffset = 0,
+                            PRUint32 aLength = PR_UINT32_MAX);
 
   /**
    * Assert if child not in parent's cache if the cache was initialized at this
    * point.
    */
-  void TestChildCache(nsAccessible *aCachedChild);
+  void TestChildCache(nsAccessible* aCachedChild) const;
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Downcasting
+
+  inline bool IsApplication() const { return mFlags & eApplicationAccessible; }
+
+  inline bool IsHyperText() const { return mFlags & eHyperTextAccessible; }
+  nsHyperTextAccessible* AsHyperText();
+
+  inline bool IsHTMLListItem() const { return mFlags & eHTMLListItemAccessible; }
+  nsHTMLLIAccessible* AsHTMLListItem();
+
+  inline bool IsRoot() const { return mFlags & eRootAccessible; }
+  nsRootAccessible* AsRoot();
+
+  inline bool IsTextLeaf() const { return mFlags & eTextLeafAccessible; }
+  nsTextAccessible* AsTextLeaf();
 
   //////////////////////////////////////////////////////////////////////////////
   // HyperLinkAccessible
@@ -457,6 +495,39 @@ protected:
   virtual nsAccessible* GetSiblingAtOffset(PRInt32 aOffset,
                                            nsresult *aError = nsnull);
 
+  /**
+   * Flags used to describe the state and type of children.
+   */
+  enum ChildrenFlags {
+    eChildrenUninitialized = 0, // children aren't initialized
+    eMixedChildren = 1 << 0, // text leaf children are presented
+    eEmbeddedChildren = 1 << 1 // all children are embedded objects
+  };
+
+  /**
+   * Return true if the children flag is set.
+   */
+  inline bool IsChildrenFlag(ChildrenFlags aFlag) const
+    { return (mFlags & kChildrenFlagsMask) == aFlag; }
+
+  /**
+   * Set children flag.
+   */
+  inline void SetChildrenFlag(ChildrenFlags aFlag)
+    { mFlags = (mFlags & ~kChildrenFlagsMask) | aFlag; }
+
+  /**
+   * Flags describing the accessible itself.
+   * @note keep these flags in sync with ChildrenFlags
+   */
+  enum AccessibleTypes {
+    eApplicationAccessible = 1 << 2,
+    eHyperTextAccessible = 1 << 3,
+    eHTMLListItemAccessible = 1 << 4,
+    eRootAccessible = 1 << 5,
+    eTextLeafAccessible = 1 << 6
+  };
+
   //////////////////////////////////////////////////////////////////////////////
   // Miscellaneous helpers
 
@@ -571,12 +642,10 @@ protected:
   nsTArray<nsRefPtr<nsAccessible> > mChildren;
   PRInt32 mIndexInParent;
 
-  enum ChildrenFlags {
-    eChildrenUninitialized = 0x00,
-    eMixedChildren = 0x01,
-    eEmbeddedChildren = 0x02
-  };
-  ChildrenFlags mChildrenFlags;
+  static const PRUint32 kChildrenFlagsMask =
+    eChildrenUninitialized | eMixedChildren | eEmbeddedChildren;
+
+  PRUint32 mFlags;
 
   nsAutoPtr<EmbeddedObjCollector> mEmbeddedObjCollector;
   PRInt32 mIndexOfEmbeddedChild;

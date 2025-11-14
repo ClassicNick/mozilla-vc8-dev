@@ -65,6 +65,9 @@
 #include "nsContentEventHandler.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
+#include "nsIFormControl.h"
+#include "nsIForm.h"
+#include "nsHTMLFormElement.h"
 
 /******************************************************************/
 /* nsIMEStateManager                                              */
@@ -73,6 +76,7 @@
 nsIContent*    nsIMEStateManager::sContent      = nsnull;
 nsPresContext* nsIMEStateManager::sPresContext  = nsnull;
 PRBool         nsIMEStateManager::sInstalledMenuKeyboardListener = PR_FALSE;
+PRBool         nsIMEStateManager::sInSecureInputMode = PR_FALSE;
 
 nsTextStateManager* nsIMEStateManager::sTextStateObserver = nsnull;
 
@@ -130,6 +134,29 @@ nsIMEStateManager::OnChangeFocus(nsPresContext* aPresContext,
     return NS_OK;
   }
 
+  // Handle secure input mode for password field input.
+  PRBool contentIsPassword = PR_FALSE;
+  if (aContent && aContent->GetNameSpaceID() == kNameSpaceID_XHTML) {
+    if (aContent->Tag() == nsGkAtoms::input) {
+      nsAutoString type;
+      aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
+      contentIsPassword = type.LowerCaseEqualsLiteral("password");
+    }
+  }
+  if (sInSecureInputMode) {
+    if (!contentIsPassword) {
+      if (NS_SUCCEEDED(widget->EndSecureKeyboardInput())) {
+        sInSecureInputMode = PR_FALSE;
+      }
+    }
+  } else {
+    if (contentIsPassword) {
+      if (NS_SUCCEEDED(widget->BeginSecureKeyboardInput())) {
+        sInSecureInputMode = PR_TRUE;
+      }
+    }
+  }
+
   PRUint32 newState = GetNewIMEState(aPresContext, aContent);
   if (aPresContext == sPresContext && aContent == sContent) {
     // actual focus isn't changing, but if IME enabled state is changing,
@@ -139,9 +166,8 @@ nsIMEStateManager::OnChangeFocus(nsPresContext* aPresContext,
       // the enabled state isn't changing, we should do nothing.
       return NS_OK;
     }
-    nsIWidget_MOZILLA_2_0_BRANCH* widget2 = static_cast<nsIWidget_MOZILLA_2_0_BRANCH*>(widget.get());
     IMEContext context;
-    if (!widget2 || NS_FAILED(widget2->GetInputMode(context))) {
+    if (!widget || NS_FAILED(widget->GetInputMode(context))) {
       // this platform doesn't support IME controlling
       return NS_OK;
     }
@@ -196,9 +222,8 @@ nsIMEStateManager::UpdateIMEState(PRUint32 aNewIMEState, nsIContent* aContent)
   }
 
   // Don't update IME state when enabled state isn't actually changed.
-  nsIWidget_MOZILLA_2_0_BRANCH* widget2 = static_cast<nsIWidget_MOZILLA_2_0_BRANCH*>(widget.get());
   IMEContext context;
-  nsresult rv = widget2->GetInputMode(context);
+  nsresult rv = widget->GetInputMode(context);
   if (NS_FAILED(rv)) {
     return; // This platform doesn't support controling the IME state.
   }
@@ -267,8 +292,7 @@ nsIMEStateManager::SetIMEState(PRUint32 aState,
                                nsIWidget* aWidget)
 {
   if (aState & nsIContent::IME_STATUS_MASK_ENABLED) {
-    nsIWidget_MOZILLA_2_0_BRANCH* widget2 = static_cast<nsIWidget_MOZILLA_2_0_BRANCH*>(aWidget);
-    if (!widget2)
+    if (!aWidget)
       return;
 
     PRUint32 state = nsContentUtils::GetWidgetStatusFromIMEStatus(aState);
@@ -282,9 +306,28 @@ nsIMEStateManager::SetIMEState(PRUint32 aState,
                         context.mHTMLInputType);
       aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::moz_action_hint,
                         context.mActionHint);
+
+      // if we don't have an action hint and  return won't submit the form use "next"
+      if (context.mActionHint.IsEmpty() && aContent->Tag() == nsGkAtoms::input) {
+        PRBool willSubmit = PR_FALSE;
+        nsCOMPtr<nsIFormControl> control(do_QueryInterface(aContent));
+        mozilla::dom::Element* formElement = control->GetFormElement();
+        nsCOMPtr<nsIForm> form;
+        if (control) {
+          // is this a form and does it have a default submit element?
+          if ((form = do_QueryInterface(formElement)) && form->GetDefaultSubmitElement()) {
+            willSubmit = PR_TRUE;
+          // is this an html form and does it only have a single text input element?
+          } else if (formElement && formElement->Tag() == nsGkAtoms::form && formElement->IsHTML() &&
+                     static_cast<nsHTMLFormElement*>(formElement)->HasSingleTextControl()) {
+            willSubmit = PR_TRUE;
+          }
+        }
+        context.mActionHint.Assign(willSubmit ? NS_LITERAL_STRING("go") : NS_LITERAL_STRING("next"));
+      }
     }
 
-    widget2->SetInputMode(context);
+    aWidget->SetInputMode(context);
 
     nsContentUtils::AddScriptRunner(new IMEEnabledStateChangedEvent(state));
   }
@@ -587,19 +630,11 @@ static nsINode* GetRootEditableNode(nsPresContext* aPresContext,
                                     nsIContent* aContent)
 {
   if (aContent) {
-    nsIContent* root = nsnull;
-    nsIContent* content = aContent;
-    while (content && content->IntrinsicState().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
-      root = content;
-      content = content->GetParent();
-    }
-    if (!root) {
-      NS_ASSERTION(content, "We should have a content node here");
-      // See if the document is editable
-      nsIDocument* doc = content->GetCurrentDoc();
-      if (doc && doc->IsEditable()) {
-        return doc;
-      }
+    nsINode* root = nsnull;
+    nsINode* node = aContent;
+    while (node && node->IsEditable()) {
+      root = node;
+      node = node->GetNodeParent();
     }
     return root;
   }

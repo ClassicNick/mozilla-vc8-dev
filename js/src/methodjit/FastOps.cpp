@@ -851,7 +851,7 @@ mjit::Compiler::jsop_typeof()
 
         if (atom) {
             frame.pop();
-            frame.push(StringValue(ATOM_TO_STRING(atom)));
+            frame.push(StringValue(atom));
             return;
         }
     }
@@ -1301,7 +1301,7 @@ mjit::Compiler::jsop_setelem(bool popGuaranteed)
     // js_DoubleToECMAInt32(), which would clobber registers. To deal with
     // this, we tell the IC exactly which registers need to be saved
     // across calls.
-    ic.volatileMask = frame.regsInUse() & Registers::TempRegs;
+    ic.volatileMask = frame.regsInUse();
 
     // If the RHS will be popped, and doesn't overlap any live values, then
     // there's no need to save it across calls. Note that this is not true of

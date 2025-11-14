@@ -51,6 +51,7 @@ class nsIContent;
 
 #ifdef DEBUG_NOTIFICATIONS
 #define DEBUG_CONTENTMUTATION
+#define DEBUG_TEXTCHANGE
 #endif
 
 /**
@@ -127,6 +128,14 @@ public:
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(NotificationController)
 
   /**
+   * Return true when tree is constructed.
+   */
+  inline bool IsTreeConstructed()
+  {
+    return mTreeConstructedState == eTreeConstructed;
+  }
+
+  /**
    * Shutdown the notification controller.
    */
   void Shutdown();
@@ -135,6 +144,23 @@ public:
    * Put an accessible event into the queue to process it later.
    */
   void QueueEvent(AccEvent* aEvent);
+
+  /**
+   * Schedule binding the child document to the tree of this document.
+   */
+  void ScheduleChildDocBinding(nsDocAccessible* aDocument);
+
+  /**
+   * Schedule the accessible tree update because of rendered text changes.
+   */
+  inline void ScheduleTextUpdate(nsIContent* aTextNode)
+  {
+    // Ignore the notification if initial tree construction hasn't been done yet.
+    if (mTreeConstructedState != eTreeConstructionPending &&
+        mTextHash.PutEntry(aTextNode)) {
+      ScheduleProcessing();
+    }
+  }
 
   /**
    * Pend accessible tree update for content insertion.
@@ -164,6 +190,23 @@ public:
       return;
     }
 
+    nsRefPtr<Notification> notification =
+      new TNotification<Class, Arg>(aInstance, aMethod, aArg);
+    if (notification && mNotifications.AppendElement(notification))
+      ScheduleProcessing();
+  }
+
+  /**
+   * Schedule the generic notification to process asynchronously.
+   *
+   * @note  The caller must guarantee that the given instance still exists when
+   *        the notification is processed.
+   */
+  template<class Class, class Arg>
+  inline void ScheduleNotification(Class* aInstance,
+                                   typename TNotification<Class, Arg>::Callback aMethod,
+                                   Arg* aArg)
+  {
     nsRefPtr<Notification> notification =
       new TNotification<Class, Arg>(aInstance, aMethod, aArg);
     if (notification && mNotifications.AppendElement(notification))
@@ -268,6 +311,11 @@ private:
   eTreeConstructedState mTreeConstructedState;
 
   /**
+   * Child documents that needs to be bound to the tree.
+   */
+  nsTArray<nsRefPtr<nsDocAccessible> > mHangingChildDocuments;
+
+  /**
    * Storage for content inserted notification information.
    */
   class ContentInsertion
@@ -304,6 +352,41 @@ private:
    * Don't make this an nsAutoTArray; we use SwapElements() on it.
    */
   nsTArray<nsRefPtr<ContentInsertion> > mContentInsertions;
+
+  template<class T>
+  class nsCOMPtrHashKey : public PLDHashEntryHdr
+  {
+  public:
+    typedef T* KeyType;
+    typedef const T* KeyTypePointer;
+
+    nsCOMPtrHashKey(const T* aKey) : mKey(const_cast<T*>(aKey)) {}
+    nsCOMPtrHashKey(const nsPtrHashKey<T> &aToCopy) : mKey(aToCopy.mKey) {}
+    ~nsCOMPtrHashKey() { }
+
+    KeyType GetKey() const { return mKey; }
+    PRBool KeyEquals(KeyTypePointer aKey) const { return aKey == mKey; }
+
+    static KeyTypePointer KeyToPointer(KeyType aKey) { return aKey; }
+    static PLDHashNumber HashKey(KeyTypePointer aKey)
+      { return NS_PTR_TO_INT32(aKey) >> 2; }
+
+    enum { ALLOW_MEMMOVE = PR_TRUE };
+
+   protected:
+     nsCOMPtr<T> mKey;
+  };
+
+  /**
+   * A pending accessible tree update notifications for rendered text changes.
+   */
+  nsTHashtable<nsCOMPtrHashKey<nsIContent> > mTextHash;
+
+  /**
+   * Update the accessible tree for pending rendered text change notifications.
+   */
+  static PLDHashOperator TextEnumerator(nsCOMPtrHashKey<nsIContent>* aEntry,
+                                        void* aUserArg);
 
   /**
    * Other notifications like DOM events. Don't make this an nsAutoTArray; we

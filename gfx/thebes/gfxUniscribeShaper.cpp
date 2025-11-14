@@ -471,9 +471,6 @@ gfxUniscribeShaper::InitTextRun(gfxContext *aContext,
     PRBool result = PR_TRUE;
     HRESULT rv;
 
-    gfxGDIFont *font = static_cast<gfxGDIFont*>(mFont);
-    AutoSelectFont fs(aDC, font->GetHFONT());
-
     Uniscribe us(aString + aRunStart, aRunLength, aTextRun);
 
     /* itemize the string */

@@ -185,7 +185,7 @@ nsresult nsAccessible::QueryInterface(REFNSIID aIID, void** aInstancePtr)
 
 nsAccessible::nsAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
   nsAccessNodeWrap(aContent, aShell),
-  mParent(nsnull), mIndexInParent(-1), mChildrenFlags(eChildrenUninitialized),
+  mParent(nsnull), mIndexInParent(-1), mFlags(eChildrenUninitialized),
   mIndexOfEmbeddedChild(-1), mRoleMapEntry(nsnull)
 {
 #ifdef NS_DEBUG_X
@@ -765,24 +765,22 @@ nsAccessible::GetFocusedChild(nsIAccessible **aFocusedChild)
 }
 
 // nsAccessible::GetChildAtPoint()
-nsresult
-nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY, PRBool aDeepestChild,
-                              nsIAccessible **aChild)
+nsAccessible*
+nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
+                              EWhichChildAtPoint aWhichChild)
 {
   // If we can't find the point in a child, we will return the fallback answer:
   // we return |this| if the point is within it, otherwise nsnull.
   PRInt32 x = 0, y = 0, width = 0, height = 0;
   nsresult rv = GetBounds(&x, &y, &width, &height);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_SUCCESS(rv, nsnull);
 
-  nsCOMPtr<nsIAccessible> fallbackAnswer;
+  nsAccessible* fallbackAnswer = nsnull;
   if (aX >= x && aX < x + width && aY >= y && aY < y + height)
     fallbackAnswer = this;
 
-  if (nsAccUtils::MustPrune(this)) {  // Do not dig any further
-    NS_IF_ADDREF(*aChild = fallbackAnswer);
-    return NS_OK;
-  }
+  if (nsAccUtils::MustPrune(this))  // Do not dig any further
+    return fallbackAnswer;
 
   // Search an accessible at the given point starting from accessible document
   // because containing block (see CSS2) for out of flow element (for example,
@@ -791,10 +789,10 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY, PRBool aDeepestChild,
   // for DOM parent but GetFrameForPoint() should be called for containing block
   // to get an out of flow element.
   nsDocAccessible *accDocument = GetDocAccessible();
-  NS_ENSURE_TRUE(accDocument, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(accDocument, nsnull);
 
   nsIFrame *frame = accDocument->GetFrame();
-  NS_ENSURE_STATE(frame);
+  NS_ENSURE_TRUE(frame, nsnull);
 
   nsPresContext *presContext = frame->PresContext();
 
@@ -806,19 +804,15 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY, PRBool aDeepestChild,
   nsIFrame *foundFrame = presShell->GetFrameForPoint(frame, offset);
 
   nsIContent* content = nsnull;
-  if (!foundFrame || !(content = foundFrame->GetContent())) {
-    NS_IF_ADDREF(*aChild = fallbackAnswer);
-    return NS_OK;
-  }
+  if (!foundFrame || !(content = foundFrame->GetContent()))
+    return fallbackAnswer;
 
   // Get accessible for the node with the point or the first accessible in
   // the DOM parent chain.
   nsAccessible* accessible =
    GetAccService()->GetAccessibleOrContainer(content, mWeakShell);
-  if (!accessible) {
-    NS_IF_ADDREF(*aChild = fallbackAnswer);
-    return NS_OK;
-  }
+  if (!accessible)
+    return fallbackAnswer;
 
   if (accessible == this) {
     // Manually walk through accessible children and see if the are within this
@@ -836,40 +830,36 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY, PRBool aDeepestChild,
           aY >= childY && aY < childY + childHeight &&
           (nsAccUtils::State(child) & nsIAccessibleStates::STATE_INVISIBLE) == 0) {
 
-        if (aDeepestChild)
-          return child->GetDeepestChildAtPoint(aX, aY, aChild);
+        if (aWhichChild == eDeepestChild)
+          return child->GetChildAtPoint(aX, aY, eDeepestChild);
 
-        NS_IF_ADDREF(*aChild = child);
-        return NS_OK;
+        return child;
       }
     }
 
     // The point is in this accessible but not in a child. We are allowed to
     // return |this| as the answer.
-    NS_IF_ADDREF(*aChild = accessible);
-    return NS_OK;
+    return accessible;
   }
 
   // Since DOM node of obtained accessible may be out of flow then we should
   // ensure obtained accessible is a child of this accessible.
-  nsCOMPtr<nsIAccessible> parent, child(accessible);
-  while (PR_TRUE) {
-    child->GetParent(getter_AddRefs(parent));
+  nsAccessible* child = accessible;
+  while (true) {
+    nsAccessible* parent = child->GetParent();
     if (!parent) {
       // Reached the top of the hierarchy. These bounds were inside an
       // accessible that is not a descendant of this one.
-      NS_IF_ADDREF(*aChild = fallbackAnswer);      
-      return NS_OK;
+      return fallbackAnswer;
     }
 
-    if (parent == this) {
-      NS_ADDREF(*aChild = (aDeepestChild ? accessible : child));
-      return NS_OK;
-    }
-    child.swap(parent);
+    if (parent == this)
+      return aWhichChild == eDeepestChild ? accessible : child;
+
+    child = parent;
   }
 
-  return NS_OK;
+  return nsnull;
 }
 
 // nsIAccessible getChildAtPoint(in long x, in long y)
@@ -883,7 +873,8 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  return GetChildAtPoint(aX, aY, PR_FALSE, aAccessible);
+  NS_IF_ADDREF(*aAccessible = GetChildAtPoint(aX, aY, eDirectChild));
+  return NS_OK;
 }
 
 // nsIAccessible getDeepestChildAtPoint(in long x, in long y)
@@ -897,7 +888,8 @@ nsAccessible::GetDeepestChildAtPoint(PRInt32 aX, PRInt32 aY,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  return GetChildAtPoint(aX, aY, PR_TRUE, aAccessible);
+  NS_IF_ADDREF(*aAccessible = GetChildAtPoint(aX, aY, eDeepestChild));
+  return NS_OK;
 }
 
 void nsAccessible::GetBoundsRect(nsRect& aTotalBounds, nsIFrame** aBoundingFrame)
@@ -1005,11 +997,7 @@ nsAccessible::GetBounds(PRInt32* aX, PRInt32* aY,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  // Flush layout so that all the frame construction, reflow, and styles are
-  // up-to-date since we rely on frames, and styles when calculating state.
-  // We don't flush the display because we don't care about painting.
   nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-  presShell->FlushPendingNotifications(Flush_Layout);
 
   // This routine will get the entire rectangle for all the frames in this node.
   // -------------------------------------------------------------------------
@@ -1524,14 +1512,6 @@ NS_IMETHODIMP
 nsAccessible::GetState(PRUint32 *aState, PRUint32 *aExtraState)
 {
   NS_ENSURE_ARG_POINTER(aState);
-
-  if (!IsDefunct()) {
-    // Flush layout so that all the frame construction, reflow, and styles are
-    // up-to-date since we rely on frames, and styles when calculating state.
-    // We don't flush the display because we don't care about painting.
-    nsCOMPtr<nsIPresShell> presShell = GetPresShell();
-    presShell->FlushPendingNotifications(Flush_Layout);
-  }
 
   nsresult rv = GetStateInternal(aState, aExtraState);
   NS_ENSURE_A11Y_SUCCESS(rv, rv);
@@ -2641,28 +2621,29 @@ nsAccessible::GetSelected(PRBool *aSelected)
 
 }
 
-nsresult
-nsAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset, PRUint32 aLength)
+void
+nsAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
+                           PRUint32 aLength)
 {
   // Return text representation of non-text accessible within hypertext
   // accessible. Text accessible overrides this method to return enclosed text.
-  if (aStartOffset != 0)
-    return NS_OK;
+  if (aStartOffset != 0 || aLength == 0)
+    return;
 
   nsIFrame *frame = GetFrame();
-  NS_ENSURE_STATE(frame);
+  if (!frame)
+    return;
 
   if (frame->GetType() == nsAccessibilityAtoms::brFrame) {
     aText += kForcedNewLineChar;
-  } else if (nsAccUtils::MustPrune(this)) {
-    // Expose imaginary embedded object character if the accessible hans't
-    // children.
+  } else if (nsAccUtils::MustPrune(GetParent())) {
+    // Expose the embedded object accessible as imaginary embedded object
+    // character if its parent hypertext accessible doesn't expose children to
+    // AT.
     aText += kImaginaryEmbeddedObjectChar;
   } else {
     aText += kEmbeddedObjectChar;
   }
-
-  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2727,7 +2708,7 @@ nsAccessible::BindToParent(nsAccessible* aParent, PRUint32 aIndexInParent)
   if (mParent) {
     if (mParent != aParent) {
       NS_ERROR("Adopting child!");
-      mParent->InvalidateChildren();
+      mParent->RemoveChild(this);
     } else {
       NS_ERROR("Binding to the same parent!");
       return;
@@ -2758,7 +2739,7 @@ nsAccessible::InvalidateChildren()
 
   mEmbeddedObjCollector = nsnull;
   mChildren.Clear();
-  mChildrenFlags = eChildrenUninitialized;
+  SetChildrenFlag(eChildrenUninitialized);
 }
 
 PRBool
@@ -2771,7 +2752,7 @@ nsAccessible::AppendChild(nsAccessible* aChild)
     return PR_FALSE;
 
   if (!nsAccUtils::IsEmbeddedObject(aChild))
-    mChildrenFlags = eMixedChildren;
+    SetChildrenFlag(eMixedChildren);
 
   aChild->BindToParent(this, mChildren.Length() - 1);
   return PR_TRUE;
@@ -2792,7 +2773,7 @@ nsAccessible::InsertChildAt(PRUint32 aIndex, nsAccessible* aChild)
   }
 
   if (nsAccUtils::IsText(aChild))
-    mChildrenFlags = eMixedChildren;
+    SetChildrenFlag(eMixedChildren);
 
   mEmbeddedObjCollector = nsnull;
 
@@ -2829,37 +2810,6 @@ nsAccessible::RemoveChild(nsAccessible* aChild)
 }
 
 nsAccessible*
-nsAccessible::GetParent()
-{
-  if (mParent)
-    return mParent;
-
-  if (IsDefunct())
-    return nsnull;
-
-  // XXX: mParent can be null randomly because supposedly we get layout
-  // notification and invalidate parent-child relations, this accessible stays
-  // unattached. This should gone after bug 572951.
-  NS_WARNING("Bad accessible tree!");
-
-#ifdef DEBUG
-  nsDocAccessible *docAccessible = GetDocAccessible();
-  NS_ASSERTION(docAccessible, "No document accessible for valid accessible!");
-#endif
-
-  nsAccessible* parent = GetAccService()->GetContainerAccessible(mContent,
-                                                                 mWeakShell);
-  NS_ASSERTION(parent, "No accessible parent for valid accessible!");
-  if (!parent)
-    return nsnull;
-
-  // Repair parent-child relations.
-  parent->EnsureChildren();
-  NS_ASSERTION(parent == mParent, "Wrong children repair!");
-  return parent;
-}
-
-nsAccessible*
 nsAccessible::GetChildAt(PRUint32 aIndex)
 {
   if (EnsureChildren())
@@ -2892,10 +2842,8 @@ nsAccessible::GetIndexOf(nsAccessible* aChild)
 }
 
 PRInt32
-nsAccessible::GetIndexInParent()
+nsAccessible::GetIndexInParent() const
 {
-  // XXX: call GetParent() to repair the tree if it's broken.
-  GetParent();
   return mIndexInParent;
 }
 
@@ -2905,7 +2853,7 @@ nsAccessible::GetEmbeddedChildCount()
   if (EnsureChildren())
     return -1;
 
-  if (mChildrenFlags == eMixedChildren) {
+  if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
     return mEmbeddedObjCollector ? mEmbeddedObjCollector->Count() : -1;
@@ -2920,7 +2868,7 @@ nsAccessible::GetEmbeddedChildAt(PRUint32 aIndex)
   if (EnsureChildren())
     return nsnull;
 
-  if (mChildrenFlags == eMixedChildren) {
+  if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
     return mEmbeddedObjCollector ?
@@ -2936,7 +2884,7 @@ nsAccessible::GetIndexOfEmbeddedChild(nsAccessible* aChild)
   if (EnsureChildren())
     return -1;
 
-  if (mChildrenFlags == eMixedChildren) {
+  if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
     return mEmbeddedObjCollector ?
@@ -2954,8 +2902,7 @@ nsAccessible::IsHyperLink()
 {
   // Every embedded accessible within hypertext accessible implements
   // hyperlink interface.
-  nsRefPtr<nsHyperTextAccessible> hyperText = do_QueryObject(GetParent());
-  return hyperText && nsAccUtils::IsEmbeddedObject(this);
+  return mParent && mParent->IsHyperText() && nsAccUtils::IsEmbeddedObject(this);
 }
 
 PRUint32
@@ -2963,7 +2910,7 @@ nsAccessible::StartOffset()
 {
   NS_PRECONDITION(IsHyperLink(), "StartOffset is called not on hyper link!");
 
-  nsRefPtr<nsHyperTextAccessible> hyperText(do_QueryObject(GetParent()));
+  nsHyperTextAccessible* hyperText = mParent ? mParent->AsHyperText() : nsnull;
   return hyperText ? hyperText->GetChildOffset(this) : 0;
 }
 
@@ -2972,7 +2919,7 @@ nsAccessible::EndOffset()
 {
   NS_PRECONDITION(IsHyperLink(), "EndOffset is called on not hyper link!");
 
-  nsRefPtr<nsHyperTextAccessible> hyperText(do_QueryObject(GetParent()));
+  nsHyperTextAccessible* hyperText = mParent ? mParent->AsHyperText() : nsnull;
   return hyperText ? (hyperText->GetChildOffset(this) + 1) : 0;
 }
 
@@ -3175,17 +3122,17 @@ nsAccessible::CacheChildren()
 {
   nsAccTreeWalker walker(mWeakShell, mContent, GetAllowsAnonChildAccessibles());
 
-  nsRefPtr<nsAccessible> child;
-  while ((child = walker.GetNextChild()) && AppendChild(child));
+  nsAccessible* child = nsnull;
+  while ((child = walker.NextChild()) && AppendChild(child));
 }
 
 void
-nsAccessible::TestChildCache(nsAccessible *aCachedChild)
+nsAccessible::TestChildCache(nsAccessible* aCachedChild) const
 {
 #ifdef DEBUG
   PRInt32 childCount = mChildren.Length();
   if (childCount == 0) {
-    NS_ASSERTION(mChildrenFlags == eChildrenUninitialized,
+    NS_ASSERTION(IsChildrenFlag(eChildrenUninitialized),
                  "No children but initialized!");
     return;
   }
@@ -3203,19 +3150,19 @@ nsAccessible::TestChildCache(nsAccessible *aCachedChild)
 }
 
 // nsAccessible public
-PRBool
+bool
 nsAccessible::EnsureChildren()
 {
   if (IsDefunct()) {
-    mChildrenFlags = eChildrenUninitialized;
-    return PR_TRUE;
+    SetChildrenFlag(eChildrenUninitialized);
+    return true;
   }
 
-  if (mChildrenFlags != eChildrenUninitialized)
-    return PR_FALSE;
+  if (!IsChildrenFlag(eChildrenUninitialized))
+    return false;
 
   // State is embedded children until text leaf accessible is appended.
-  mChildrenFlags = eEmbeddedChildren; // Prevent reentry
+  SetChildrenFlag(eEmbeddedChildren); // Prevent reentry
 
   // Notify the document about caching status.
   nsDocAccessible* document = GetDocAccessible();
@@ -3227,7 +3174,7 @@ nsAccessible::EnsureChildren()
   if (document)
     document->NotifyOfCachingEnd(this);
 
-  return PR_FALSE;
+  return false;
 }
 
 nsAccessible*
@@ -3273,15 +3220,37 @@ nsAccessible::GetSiblingAtOffset(PRInt32 aOffset, nsresult* aError)
 nsAccessible *
 nsAccessible::GetFirstAvailableAccessible(nsINode *aStartNode) const
 {
-  nsAccessible *accessible =
+  nsAccessible* accessible =
     GetAccService()->GetAccessibleInWeakShell(aStartNode, mWeakShell);
   if (accessible)
     return accessible;
 
-  nsIContent *content = nsCoreUtils::GetRoleContent(aStartNode);
-  nsAccTreeWalker walker(mWeakShell, content, PR_FALSE);
-  nsRefPtr<nsAccessible> childAccessible = walker.GetNextChild();
-  return childAccessible;
+  nsCOMPtr<nsIDOMDocumentTraversal> trav =
+    do_QueryInterface(aStartNode->GetOwnerDoc());
+  NS_ENSURE_TRUE(trav, nsnull);
+
+  nsCOMPtr<nsIDOMNode> currentNode = do_QueryInterface(aStartNode);
+  nsCOMPtr<nsIDOMNode> rootNode(do_QueryInterface(GetNode()));
+  nsCOMPtr<nsIDOMTreeWalker> walker;
+  trav->CreateTreeWalker(rootNode,
+                         nsIDOMNodeFilter::SHOW_ELEMENT | nsIDOMNodeFilter::SHOW_TEXT,
+                         nsnull, PR_FALSE, getter_AddRefs(walker));
+  NS_ENSURE_TRUE(walker, nsnull);
+
+  walker->SetCurrentNode(currentNode);
+  while (true) {
+    walker->NextNode(getter_AddRefs(currentNode));
+    if (!currentNode)
+      return nsnull;
+
+    nsCOMPtr<nsINode> node(do_QueryInterface(currentNode));
+    nsAccessible* accessible =
+      GetAccService()->GetAccessibleInWeakShell(node, mWeakShell);
+    if (accessible)
+      return accessible;
+  }
+
+  return nsnull;
 }
 
 PRBool nsAccessible::CheckVisibilityInParentChain(nsIDocument* aDocument, nsIView* aView)
@@ -3342,7 +3311,7 @@ nsAccessible::GetAttrValue(nsIAtom *aProperty, double *aValue)
     return NS_OK;
 
   PRInt32 error = NS_OK;
-  double value = attrValue.ToFloat(&error);
+  double value = attrValue.ToDouble(&error);
   if (NS_SUCCEEDED(error))
     *aValue = value;
 

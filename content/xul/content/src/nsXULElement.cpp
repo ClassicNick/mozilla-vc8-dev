@@ -100,7 +100,7 @@
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptGlobalObjectOwner.h"
 #include "nsIServiceManager.h"
-#include "nsICSSStyleRule.h"
+#include "mozilla/css/StyleRule.h"
 #include "nsIStyleSheet.h"
 #include "nsIURL.h"
 #include "nsIViewManager.h"
@@ -152,6 +152,8 @@
 #include "nsIDOMXULCommandEvent.h"
 #include "nsIDOMNSEvent.h"
 #include "nsCCUncollectableMarker.h"
+
+namespace css = mozilla::css;
 
 // Global object maintenance
 nsIXBLService * nsXULElement::gXBLService = nsnull;
@@ -375,6 +377,15 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULElement,
                                                   nsStyledElement)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_MEMBER(mPrototype,
                                                     nsXULPrototypeElement)
+    {
+        nsXULSlots* slots = static_cast<nsXULSlots*>(tmp->GetExistingSlots());
+        if (slots) {
+            NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mFrameLoader");
+            nsISupports *frameLoader =
+                static_cast<nsIFrameLoader*>(slots->mFrameLoader);
+            cb.NoteXPCOMChild(frameLoader);
+        }
+    }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(nsXULElement, nsStyledElement)
@@ -1332,6 +1343,9 @@ nsXULElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, PRBool aNotify)
         NS_ENSURE_SUCCESS(rv, rv);
     }
 
+    nsIDocument* doc = GetCurrentDoc();
+    mozAutoDocUpdate updateBatch(doc, UPDATE_CONTENT_MODEL, aNotify);
+
     PRBool isId = PR_FALSE;
     if (aName == nsGkAtoms::id && aNameSpaceID == kNameSpaceID_None) {
       // Have to do this before clearing flag. See RemoveFromIdTable
@@ -1349,9 +1363,6 @@ nsXULElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, PRBool aNotify)
 
     nsAutoString oldValue;
     GetAttr(aNameSpaceID, aName, oldValue);
-
-    nsIDocument* doc = GetCurrentDoc();
-    mozAutoDocUpdate updateBatch(doc, UPDATE_CONTENT_MODEL, aNotify);
 
     // When notifying, make sure to keep track of states whose value
     // depends solely on the value of an attribute.
@@ -1462,7 +1473,7 @@ nsXULElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, PRBool aNotify)
         stateMask ^= IntrinsicState();
         if (doc && !stateMask.IsEmpty()) {
             MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, aNotify);
-            doc->ContentStatesChanged(this, nsnull, stateMask);
+            doc->ContentStateChanged(this, stateMask);
         }
         nsNodeUtils::AttributeChanged(this, aNameSpaceID, aName,
                                       nsIDOMMutationEvent::REMOVAL);
@@ -1793,7 +1804,7 @@ nsXULElement::WalkContentStyleRules(nsRuleWalker* aRuleWalker)
     return NS_OK;
 }
 
-nsICSSStyleRule*
+css::StyleRule*
 nsXULElement::GetInlineStyleRule()
 {
     if (!HasFlag(NODE_MAY_HAVE_STYLE)) {
@@ -1830,7 +1841,8 @@ nsXULElement::GetAttributeChangeHint(const nsIAtom* aAttribute,
         // if left or top changes we reflow. This will happen in xul
         // containers that manage positioned children such as a stack.
         if (nsGkAtoms::left == aAttribute || nsGkAtoms::top == aAttribute ||
-            nsGkAtoms::right == aAttribute || nsGkAtoms::bottom == aAttribute)
+            nsGkAtoms::right == aAttribute || nsGkAtoms::bottom == aAttribute ||
+            nsGkAtoms::start == aAttribute || nsGkAtoms::end == aAttribute)
             retval = NS_STYLE_HINT_REFLOW;
     }
 
@@ -1957,7 +1969,7 @@ nsXULElement::EnsureLocalStyle()
             protoattr->mValue.ToString(stringValue);
 
             nsAttrValue value;
-            nsCOMPtr<nsICSSStyleRule> styleRule = do_QueryInterface(ruleClone);
+            nsRefPtr<css::StyleRule> styleRule = do_QueryObject(ruleClone);
             value.SetTo(styleRule, &stringValue);
 
             nsresult rv =
@@ -2335,7 +2347,7 @@ nsresult nsXULElement::MakeHeavyweight()
             nsString stringValue;
             protoattr->mValue.ToString(stringValue);
 
-            nsCOMPtr<nsICSSStyleRule> styleRule = do_QueryInterface(ruleClone);
+            nsRefPtr<css::StyleRule> styleRule = do_QueryObject(ruleClone);
             attrValue.SetTo(styleRule, &stringValue);
         }
         else {
@@ -2414,12 +2426,32 @@ nsXULElement::SetTitlebarColor(nscolor aColor, PRBool aActive)
     }
 }
 
+class SetDrawInTitleBarEvent : public nsRunnable
+{
+public:
+  SetDrawInTitleBarEvent(nsIWidget* aWidget, PRBool aState)
+    : mWidget(aWidget)
+    , mState(aState)
+  {}
+
+  NS_IMETHOD Run() {
+    NS_ASSERTION(mWidget, "You shouldn't call this runnable with a null widget!");
+
+    mWidget->SetDrawsInTitlebar(mState);
+    return NS_OK;
+  }
+
+private:
+  nsCOMPtr<nsIWidget> mWidget;
+  PRBool mState;
+};
+
 void
 nsXULElement::SetDrawsInTitlebar(PRBool aState)
 {
     nsIWidget* mainWidget = GetWindowWidget();
     if (mainWidget) {
-        mainWidget->SetDrawsInTitlebar(aState);
+        nsContentUtils::AddScriptRunner(new SetDrawInTitleBarEvent(mainWidget, aState));
     }
 }
 
@@ -2846,7 +2878,7 @@ nsXULPrototypeElement::SetAttrAt(PRUint32 aPos, const nsAString& aValue,
     else if (mAttributes[aPos].mName.Equals(nsGkAtoms::style)) {
         mHasStyleAttribute = PR_TRUE;
         // Parse the element's 'style' attribute
-        nsCOMPtr<nsICSSStyleRule> rule;
+        nsRefPtr<css::StyleRule> rule;
 
         nsCSSParser parser;
         NS_ENSURE_TRUE(parser, NS_ERROR_OUT_OF_MEMORY);

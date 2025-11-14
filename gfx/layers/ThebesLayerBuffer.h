@@ -110,14 +110,19 @@ public:
    * by ThebesLayerBuffer and must be redrawn on the screen.
    * mRegionToInvalidate is set when the buffer has changed from
    * opaque to transparent or vice versa, since the details of rendering can
-   * depend on the buffer type.
+   * depend on the buffer type.  mDidSelfCopy is true if we kept our buffer
+   * but used MovePixels() to shift its content.
    */
   struct PaintState {
     nsRefPtr<gfxContext> mContext;
     nsIntRegion mRegionToDraw;
     nsIntRegion mRegionToInvalidate;
+    PRPackedBool mDidSelfCopy;
   };
 
+  enum {
+    PAINT_WILL_RESAMPLE = 0x01
+  };
   /**
    * Start a drawing operation. This returns a PaintState describing what
    * needs to be drawn to bring the buffer up to date in the visible region.
@@ -125,15 +130,29 @@ public:
    * The returned mContext may be null if mRegionToDraw is empty.
    * Otherwise it must not be null.
    * mRegionToInvalidate will contain mRegionToDraw.
+   * @param aFlags when PAINT_WILL_RESAMPLE is passed, this indicates that
+   * buffer will be resampled when rendering (i.e the effective transform
+   * combined with the scale for the resolution is not just an integer
+   * translation). This will disable buffer rotation (since we don't want
+   * to resample across the rotation boundary) and will ensure that we
+   * make the entire buffer contents valid (since we don't want to sample
+   * invalid pixels outside the visible region, if the visible region doesn't
+   * fill the buffer bounds).
    */
   PaintState BeginPaint(ThebesLayer* aLayer, ContentType aContentType,
-                        float aXResolution, float aYResolution);
+                        float aXResolution, float aYResolution,
+                        PRUint32 aFlags);
 
+  enum {
+    ALLOW_REPEAT = 0x01
+  };
   /**
    * Return a new surface of |aSize| and |aType|.
+   * @param aFlags if ALLOW_REPEAT is set, then the buffer should be configured
+   * to allow repeat-mode, otherwise it should be in pad (clamp) mode
    */
   virtual already_AddRefed<gfxASurface>
-  CreateBuffer(ContentType aType, const nsIntSize& aSize) = 0;
+  CreateBuffer(ContentType aType, const nsIntSize& aSize, PRUint32 aFlags) = 0;
 
   /**
    * Get the underlying buffer, if any. This is useful because we can pass

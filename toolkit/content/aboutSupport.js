@@ -65,6 +65,7 @@ const PREFS_WHITELIST = [
   "font.",
   "general.useragent.",
   "gfx.",
+  "html5.",
   "mozilla.widget.render-mode",
   "layers.",
   "javascript.",
@@ -108,6 +109,16 @@ window.onload = function () {
 
 function populateExtensionsSection() {
   AddonManager.getAddonsByTypes(["extension"], function(extensions) {
+    extensions.sort(function(a,b) {
+      if (a.isActive != b.isActive)
+        return b.isActive ? 1 : -1;
+      let lc = a.name.localeCompare(b.name);
+      if (lc != 0)
+        return lc;
+      if (a.version != b.version)
+        return a.version > b.version ? 1 : -1;
+      return 0;
+    });
     let trExtensions = [];
     for (let i = 0; i < extensions.length; i++) {
       let extension = extensions[i];
@@ -257,6 +268,16 @@ function populateGraphicsSection() {
     ]));
 
     appendChildren(graphics_tbody, trGraphics);
+   
+    // display any failures that have occurred
+    let graphics_failures_tbody = document.getElementById("graphics-failures-tbody");
+    let trGraphicsFailures = gfxInfo.getFailures().map(function (value)
+        createParentElement("tr", [
+            createElement("td", value)
+        ])
+    );
+    appendChildren(graphics_failures_tbody, trGraphicsFailures);
+
   } // end if (gfxInfo)
 
   let windows = Services.ww.getWindowEnumerator();

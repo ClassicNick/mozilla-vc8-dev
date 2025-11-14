@@ -239,10 +239,11 @@ nsDOMGeoPositionError::NotifyCallback(nsIDOMGeoPositionErrorCallback* aCallback)
 nsGeolocationRequest::nsGeolocationRequest(nsGeolocation* aLocator,
                                            nsIDOMGeoPositionCallback* aCallback,
                                            nsIDOMGeoPositionErrorCallback* aErrorCallback,
-                                           nsIDOMGeoPositionOptions* aOptions)
+                                           nsIDOMGeoPositionOptions* aOptions,
+                                           PRBool aWatchPositionRequest)
   : mAllowed(PR_FALSE),
     mCleared(PR_FALSE),
-    mIsFirstUpdate(PR_TRUE),
+    mIsWatchPositionRequest(aWatchPositionRequest),
     mCallback(aCallback),
     mErrorCallback(aErrorCallback),
     mOptions(aOptions),
@@ -454,24 +455,15 @@ nsGeolocationRequest::SendLocation(nsIDOMGeoPosition* aPosition)
   JSContext* cx;
   stack->Pop(&cx);
 
-  SetTimeoutTimer();
+  if (mIsWatchPositionRequest)
+    SetTimeoutTimer();
 }
 
 void
-nsGeolocationRequest::Update(nsIDOMGeoPosition* aPosition, PRBool isBetter)
+nsGeolocationRequest::Update(nsIDOMGeoPosition* aPosition)
 {
-  // Only dispatch callbacks if this is the first position for this request, or
-  // if the accuracy is as good or improving.
-  //
-  // This ensures that all listeners get at least one position callback, particularly
-  // in the case when newly detected positions are all less accurate than the cached one.
-  //
-  // Fixes bug 596481
-  if (mIsFirstUpdate || isBetter) {
-    mIsFirstUpdate = PR_FALSE;
-    nsCOMPtr<nsIRunnable> ev  = new RequestSendLocationEvent(aPosition, this);
-    NS_DispatchToMainThread(ev);
-  }
+  nsCOMPtr<nsIRunnable> ev  = new RequestSendLocationEvent(aPosition, this);
+  NS_DispatchToMainThread(ev);
 }
 
 void
@@ -655,98 +647,11 @@ nsGeolocationService::Observe(nsISupports* aSubject,
 NS_IMETHODIMP
 nsGeolocationService::Update(nsIDOMGeoPosition *aSomewhere)
 {
-  // here we have to determine this aSomewhere is a "better"
-  // position than any previously recv'ed.
-
-  PRBool isBetter = IsBetterPosition(aSomewhere);
-  if (isBetter) {
-    SetCachedPosition(aSomewhere);
-  }
+  SetCachedPosition(aSomewhere);
 
   for (PRUint32 i = 0; i< mGeolocators.Length(); i++)
-    mGeolocators[i]->Update(aSomewhere, isBetter);
+    mGeolocators[i]->Update(aSomewhere);
   return NS_OK;
-}
-
-PRBool
-nsGeolocationService::IsBetterPosition(nsIDOMGeoPosition *aSomewhere)
-{
-  if (!aSomewhere)
-    return PR_FALSE;
-
-  nsRefPtr<nsGeolocationService> geoService = nsGeolocationService::GetInstance();
-  if (!geoService)
-    return PR_FALSE;
-
-  nsCOMPtr<nsIDOMGeoPosition> lastPosition = geoService->GetCachedPosition();
-  if (!lastPosition)
-    return PR_TRUE;
-
-  nsresult rv;
-  DOMTimeStamp oldTime;
-  rv = lastPosition->GetTimestamp(&oldTime);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  nsCOMPtr<nsIDOMGeoPositionCoords> coords;
-  lastPosition->GetCoords(getter_AddRefs(coords));
-  if (!coords)
-    return PR_FALSE;
-
-  double oldAccuracy;
-  rv = coords->GetAccuracy(&oldAccuracy);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  double oldLat, oldLon;
-  rv = coords->GetLongitude(&oldLon);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  rv = coords->GetLatitude(&oldLat);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-
-  DOMTimeStamp newTime;
-  rv = aSomewhere->GetTimestamp(&newTime);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  aSomewhere->GetCoords(getter_AddRefs(coords));
-  if (!coords)
-    return PR_FALSE;
-
-  double newAccuracy;
-  rv = coords->GetAccuracy(&newAccuracy);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  double newLat, newLon;
-  rv = coords->GetLongitude(&newLon);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  rv = coords->GetLatitude(&newLat);
-  NS_ENSURE_SUCCESS(rv, PR_FALSE);
-
-  // check to see if there has been a large movement
-  // Use spherical law of cosines to calculate difference
-  // Not quite as correct as the Haversine but simpler and cheaper
-  double radsInDeg = 3.14159265 / 180.0;
-
-  double rNewLat = newLat * radsInDeg;
-  double rNewLon = newLon * radsInDeg;
-  double rOldLat = oldLat * radsInDeg;
-  double rOldLon = oldLon * radsInDeg;
-
-  // WGS84 equatorial radius of earth = 6378137m
-  double delta = acos( (sin(rNewLat) * sin(rOldLat)) + (cos(rNewLat) * cos(rOldLat) * cos(rOldLon - rNewLon)) ) * 6378137; 
-
-  // The threshold is when the distance between the two positions exceeds the
-  // worse (larger value) of the two accuracies.
-  double max_accuracy = NS_MAX(oldAccuracy, newAccuracy);
-  if (delta > max_accuracy)
-    return PR_TRUE;
-
-  // check to see if the aSomewhere position is more accurate
-  if (oldAccuracy >= newAccuracy)
-    return PR_TRUE;
-
-  return PR_FALSE;
 }
 
 void
@@ -996,19 +901,19 @@ nsGeolocation::RemoveRequest(nsGeolocationRequest* aRequest)
 }
 
 void
-nsGeolocation::Update(nsIDOMGeoPosition *aSomewhere, PRBool isBetter)
+nsGeolocation::Update(nsIDOMGeoPosition *aSomewhere)
 {
   if (!WindowOwnerStillExists())
     return Shutdown();
 
   for (PRUint32 i = 0; i< mPendingCallbacks.Length(); i++) {
-    mPendingCallbacks[i]->Update(aSomewhere, isBetter);
+    mPendingCallbacks[i]->Update(aSomewhere);
   }
   mPendingCallbacks.Clear();
 
   // notify everyone that is watching
   for (PRUint32 i = 0; i< mWatchingCallbacks.Length(); i++) {
-    mWatchingCallbacks[i]->Update(aSomewhere, isBetter);
+    mWatchingCallbacks[i]->Update(aSomewhere);
   }
 }
 
@@ -1025,7 +930,11 @@ nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
   if (mPendingCallbacks.Length() > MAX_GEO_REQUESTS_PER_WINDOW)
     return NS_ERROR_NOT_AVAILABLE;
 
-  nsRefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(this, callback, errorCallback, options);
+  nsRefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(this,
+								    callback,
+								    errorCallback,
+								    options,
+								    PR_FALSE);
   if (!request)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -1033,7 +942,9 @@ nsGeolocation::GetCurrentPosition(nsIDOMGeoPositionCallback *callback,
     return NS_ERROR_FAILURE; // this as OKAY.  not sure why we wouldn't throw. xxx dft
 
   if (mOwner) {
-    RegisterRequestWithPrompt(request);
+    if (!RegisterRequestWithPrompt(request))
+      return NS_ERROR_NOT_AVAILABLE;
+    
     mPendingCallbacks.AppendElement(request);
     return NS_OK;
   }
@@ -1064,7 +975,11 @@ nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
   if (mPendingCallbacks.Length() > MAX_GEO_REQUESTS_PER_WINDOW)
     return NS_ERROR_NOT_AVAILABLE;
 
-  nsRefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(this, callback, errorCallback, options);
+  nsRefPtr<nsGeolocationRequest> request = new nsGeolocationRequest(this,
+								    callback,
+								    errorCallback,
+								    options,
+								    PR_TRUE);
   if (!request)
     return NS_ERROR_OUT_OF_MEMORY;
 
@@ -1072,7 +987,8 @@ nsGeolocation::WatchPosition(nsIDOMGeoPositionCallback *callback,
     return NS_ERROR_FAILURE; // this as OKAY.  not sure why we wouldn't throw. xxx dft
 
   if (mOwner) {
-    RegisterRequestWithPrompt(request);
+    if (!RegisterRequestWithPrompt(request))
+      return NS_ERROR_NOT_AVAILABLE;
 
     // need to hand back an index/reference.
     mWatchingCallbacks.AppendElement(request);
@@ -1130,18 +1046,20 @@ nsGeolocation::WindowOwnerStillExists()
   return PR_TRUE;
 }
 
-void
+bool
 nsGeolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
 {
 #ifdef MOZ_IPC
   if (XRE_GetProcessType() == GeckoProcessType_Content) {
     nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mOwner);
     if (!window)
-      return;
+      return true;
 
     // because owner implements nsITabChild, we can assume that it is
     // the one and only TabChild.
     TabChild* child = GetTabChildFrom(window->GetDocShell());
+    if (!child)
+      return false;
     
     // Retain a reference so the object isn't deleted without IPDL's knowledge.
     // Corresponding release occurs in DeallocPContentPermissionRequest.
@@ -1151,7 +1069,7 @@ nsGeolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
     child->SendPContentPermissionRequestConstructor(request, type, IPC::URI(mURI));
     
     request->Sendprompt();
-    return;
+    return true;
   }
 #endif
 
@@ -1159,10 +1077,11 @@ nsGeolocation::RegisterRequestWithPrompt(nsGeolocationRequest* request)
   {
     nsCOMPtr<nsIRunnable> ev  = new RequestAllowEvent(nsContentUtils::GetBoolPref("geo.prompt.testing.allow", PR_FALSE), request);
     NS_DispatchToMainThread(ev);
-    return;
+    return true;
   }
 
   nsCOMPtr<nsIRunnable> ev  = new RequestPromptEvent(request);
   NS_DispatchToMainThread(ev);
+  return true;
 }
 

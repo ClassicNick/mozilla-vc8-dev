@@ -61,8 +61,6 @@
 #include "nsWindowDbg.h"
 #include "cairo.h"
 #include "nsITimer.h"
-#include "mozilla/TimeStamp.h"
-
 #ifdef CAIRO_HAS_D2D_SURFACE
 #include "gfxD2DSurface.h"
 #endif
@@ -101,7 +99,6 @@ class imgIContainer;
 
 class nsWindow : public nsBaseWidget
 {
-  typedef mozilla::TimeStamp TimeStamp;
   typedef mozilla::widget::WindowHook WindowHook;
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   typedef mozilla::widget::TaskbarWindowPreview TaskbarWindowPreview;
@@ -196,7 +193,7 @@ public:
 #ifdef MOZ_XUL
   virtual void            SetTransparencyMode(nsTransparencyMode aMode);
   virtual nsTransparencyMode GetTransparencyMode();
-  virtual void            UpdatePossiblyTransparentRegion(const nsIntRegion &aDirtyRegion, const nsIntRegion& aPossiblyTransparentRegion);
+  virtual void            UpdateTransparentRegion(const nsIntRegion& aTransparentRegion);
 #endif // MOZ_XUL
 #ifdef NS_ENABLE_TSF
   NS_IMETHOD              OnIMEFocusChange(PRBool aFocus);
@@ -317,11 +314,13 @@ protected:
   static BOOL    CALLBACK EnumAllThreadWindowProc(HWND aWnd, LPARAM aParam);
   static void             AllowD3D9Callback(nsWindow *aWindow);
   static void             AllowD3D9WithReinitializeCallback(nsWindow *aWindow);
+  static BOOL CALLBACK    FindOurWindowAtPointCallback(HWND aHWND, LPARAM aLPARAM);
 
   /**
    * Window utilities
    */
   static BOOL             SetNSWindowPtr(HWND aWnd, nsWindow * ptr);
+  static PRInt32          GetMonitorCount();
   LPARAM                  lParamToScreen(LPARAM lParam);
   LPARAM                  lParamToClient(LPARAM lParam);
   virtual void            SubclassWindow(BOOL bState);
@@ -332,16 +331,19 @@ protected:
   void                    InvalidateNonClientRegion();
   HRGN                    ExcludeNonClientFromPaintRegion(HRGN aRegion);
 #if !defined(WINCE)
-  static void             InitInputHackDefaults();
+  static void             InitInputWorkaroundPrefDefaults();
 #endif
+  static PRBool           GetInputWorkaroundPref(const char* aPrefName, PRBool aValueIfAutomatic);
   static PRBool           UseTrackPointHack();
+  static void             PerformElantechSwipeGestureHack(UINT& aVirtualKeyCode, nsModifierKeyState& aModKeyState);
   static void             GetMainWindowClass(nsAString& aClass);
   PRBool                  HasGlass() const {
     return mTransparencyMode == eTransparencyGlass ||
            mTransparencyMode == eTransparencyBorderlessGlass;
   }
-  PRBool                  IsOurProcessWindow(HWND aHWND);
-  HWND                    FindOurProcessWindow(HWND aHWND);
+  static PRBool           IsOurProcessWindow(HWND aHWND);
+  static HWND             FindOurProcessWindow(HWND aHWND);
+  static HWND             FindOurWindowAtPoint(const POINT& aPoint);
 
   /**
    * Event processing helpers
@@ -527,6 +529,8 @@ protected:
   nsPopupType           mPopupType;
   nsSizeMode            mOldSizeMode;
   WindowHook            mWindowHook;
+  DWORD                 mAssumeWheelIsZoomUntil;
+  static PRBool         sDropShadowEnabled;
   static PRUint32       sInstanceCount;
   static TriStateBool   sCanQuit;
   static nsWindow*      sCurrentWindow;
@@ -540,7 +544,13 @@ protected:
   static int            sTrimOnMinimize;
   static PRBool         sDefaultTrackPointHack;
   static const char*    sDefaultMainWindowClass;
+  static PRBool         sUseElantechGestureHacks;
   static bool           sAllowD3D9;
+
+  // Always use the helper method to read this property.  See bug 603793.
+  static TriStateBool   sHasBogusPopupsDropShadowOnMultiMonitor;
+  static bool           HasBogusPopupsDropShadowOnMultiMonitor();
+
 #ifdef MOZ_IPC
   static PRUint32       sOOPPPluginFocusEvent;
 #endif
@@ -617,10 +627,6 @@ protected:
   // icon has been created on the taskbar.
   PRBool                mHasTaskbarIconBeenCreated;
 #endif
-
-  // The point in time at which the last paint completed. We use this to avoid
-  //  painting too rapidly in response to frequent input events.
-  TimeStamp mLastPaintEndTime;
 
 #if defined(WINCE_HAVE_SOFTKB)
   static PRBool         sSoftKeyboardState;

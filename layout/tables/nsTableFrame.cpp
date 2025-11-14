@@ -598,10 +598,11 @@ void nsTableFrame::InsertCol(nsTableColFrame& aColFrame,
             nsTableColGroupFrame* lastColGroup = (nsTableColGroupFrame *)mColGroups.LastChild();
             if (lastColGroup) {
               lastColGroup->RemoveChild(*lastCol, PR_FALSE);
-            }
-            // remove the col group if it is empty
-            if (lastColGroup->GetColCount() <= 0) {
-              mColGroups.DestroyFrame((nsIFrame*)lastColGroup);
+
+              // remove the col group if it is empty
+              if (lastColGroup->GetColCount() <= 0) {
+                mColGroups.DestroyFrame((nsIFrame*)lastColGroup);
+              }
             }
             removedFromCache = PR_TRUE;
           }
@@ -2315,9 +2316,9 @@ nsTableFrame::RemoveFrame(nsIAtom*        aListName,
       ResetRowIndices(nsFrameList::Slice(mFrames, nsnull, nsnull));
       nsRect damageArea;
       cellMap->RebuildConsideringCells(nsnull, nsnull, 0, 0, PR_FALSE, damageArea);
-    }
 
-    MatchCellMapToColCache(cellMap);
+      MatchCellMapToColCache(cellMap);
+    }
   }
   // for now, just bail and recalc all of the collapsing borders
   // as the cellmap changes we need to recalc
@@ -2779,7 +2780,6 @@ nsTableFrame::ReflowChildren(nsTableReflowState& aReflowState,
       }
       // record the presence of a next in flow, it might get destroyed so we
       // need to reorder the row group array
-      nsIFrame* kidNextInFlow = kidFrame->GetNextInFlow();
       PRBool reorder = PR_FALSE;
       if (kidFrame->GetNextInFlow())
         reorder = PR_TRUE;
@@ -2852,7 +2852,7 @@ nsTableFrame::ReflowChildren(nsTableReflowState& aReflowState,
 
       // Special handling for incomplete children
       if (NS_FRAME_IS_NOT_COMPLETE(aStatus)) {
-        kidNextInFlow = kidFrame->GetNextInFlow();
+        nsIFrame* kidNextInFlow = kidFrame->GetNextInFlow();
         if (!kidNextInFlow) {
           // The child doesn't have a next-in-flow so create a continuing
           // frame. This hooks the child into the flow
@@ -4262,15 +4262,14 @@ BCMapCellIterator::First(BCMapCellInfo& aMapInfo)
         static_cast<BCCellData*>(mCellMap->GetDataAt(mAreaStart.y -
                                                       mRowGroupStart,
                                                       mAreaStart.x));
-      if (cellData && cellData->IsOrig()) {
+      if (cellData && (cellData->IsOrig() || cellData->IsDead())) {
         aMapInfo.SetInfo(mRow, mAreaStart.x, cellData, this);
+        return;
       }
       else {
         NS_ASSERTION(((0 == mAreaStart.x) && (mRowGroupStart == mAreaStart.y)) ,
                      "damage area expanded incorrectly");
-        mAtEnd = PR_TRUE;
       }
-      break;
     }
     SetNewRowGroup(PR_TRUE); // sets mAtEnd
   }
@@ -5902,9 +5901,9 @@ nsTableFrame::CalcBCBorders()
           // set the flag on the next border indicating it is not the start of a
           // new segment
           if (iter.mCellMap) {
-            tableCellMap->SetNotTopStart(NS_SIDE_BOTTOM, *iter.mCellMap,
-                                         info.GetCellEndRowIndex(),
-                                         info.GetCellEndColIndex() + 1);
+            tableCellMap->ResetTopStart(NS_SIDE_BOTTOM, *iter.mCellMap,
+                                        info.GetCellEndRowIndex(),
+                                        info.GetCellEndColIndex() + 1);
           }
         }
       }

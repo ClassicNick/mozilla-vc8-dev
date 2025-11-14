@@ -43,7 +43,7 @@
 
 // See the architecture comment in this file's header.
 
-using namespace mozilla;
+namespace mozilla {
 
 static nsSVGAttrTearoffTable<SVGAnimatedNumberList, DOMSVGAnimatedNumberList>
   sSVGAnimatedNumberListTearoffTable;
@@ -53,7 +53,9 @@ NS_SVG_VAL_IMPL_CYCLE_COLLECTION(DOMSVGAnimatedNumberList, mElement)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGAnimatedNumberList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMSVGAnimatedNumberList)
 
-DOMCI_DATA(SVGAnimatedNumberList, DOMSVGAnimatedNumberList)
+} // namespace mozilla
+DOMCI_DATA(SVGAnimatedNumberList, mozilla::DOMSVGAnimatedNumberList)
+namespace mozilla {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGAnimatedNumberList)
   NS_INTERFACE_MAP_ENTRY(nsIDOMSVGAnimatedNumberList)
@@ -119,7 +121,13 @@ DOMSVGAnimatedNumberList::InternalBaseValListWillChangeTo(const SVGNumberList& a
   // able to access "items" at indexes that are out of bounds (read/write to
   // bad memory)!!
 
+  nsRefPtr<DOMSVGAnimatedNumberList> kungFuDeathGrip;
   if (mBaseVal) {
+    if (!aNewValue.Length()) {
+      // InternalListLengthWillChange might clear last reference to |this|.
+      // Retain a temporary reference to keep from dying before returning.
+      kungFuDeathGrip = this;
+    }
     mBaseVal->InternalListLengthWillChange(aNewValue.Length());
   }
 
@@ -158,3 +166,5 @@ DOMSVGAnimatedNumberList::InternalAList() const
 {
   return *mElement->GetAnimatedNumberList(mAttrEnum);
 }
+
+} // namespace mozilla

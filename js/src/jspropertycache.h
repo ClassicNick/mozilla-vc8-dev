@@ -269,7 +269,10 @@ class PropertyCache
                                                const js::Shape *shape, JSBool adding = false);
 
     void purge(JSContext *cx);
-    void purgeForScript(JSScript *script);
+    void purgeForScript(JSContext *cx, JSScript *script);
+
+    /* Restore an entry that may have been purged during a GC. */
+    void restore(PropertyCacheEntry *entry);
 };
 
 } /* namespace js */

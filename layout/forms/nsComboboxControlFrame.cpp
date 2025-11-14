@@ -77,7 +77,7 @@
 #include "nsListControlFrame.h"
 #include "nsContentCID.h"
 #ifdef ACCESSIBILITY
-#include "nsIAccessibilityService.h"
+#include "nsAccessibilityService.h"
 #endif
 #include "nsIServiceManager.h"
 #include "nsIDOMNode.h"
@@ -305,8 +305,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 already_AddRefed<nsAccessible>
 nsComboboxControlFrame::CreateAccessible()
 {
-  nsCOMPtr<nsIAccessibilityService> accService = do_GetService("@mozilla.org/accessibilityService;1");
-
+  nsAccessibilityService* accService = nsIPresShell::AccService();
   if (accService) {
     return accService->CreateHTMLComboboxAccessible(mContent,
                                                     PresContext()->PresShell());
@@ -388,6 +387,21 @@ nsComboboxControlFrame::ShowList(PRBool aShowList)
   nsCOMPtr<nsIPresShell> shell = PresContext()->GetPresShell();
 
   nsWeakFrame weakFrame(this);
+
+  if (aShowList) {
+    nsIView* view = mDropdownFrame->GetView();
+    NS_ASSERTION(!view->HasWidget(),
+                 "We shoudldn't have a widget before we need to display the popup");
+
+    // Create the widget for the drop-down list
+    view->GetViewManager()->SetViewFloating(view, PR_TRUE);
+
+    nsWidgetInitData widgetData;
+    widgetData.mWindowType  = eWindowType_popup;
+    widgetData.mBorderStyle = eBorderStyle_default;
+    view->CreateWidgetForPopup(&widgetData);
+  }
+
   ShowPopup(aShowList);  // might destroy us
   if (!weakFrame.IsAlive()) {
     return PR_FALSE;
@@ -413,8 +427,13 @@ nsComboboxControlFrame::ShowList(PRBool aShowList)
     NS_ASSERTION(view, "nsComboboxControlFrame view is null");
     if (view) {
       nsIWidget* widget = view->GetWidget();
-      if (widget)
+      if (widget) {
         widget->CaptureRollupEvents(this, nsnull, mDroppedDown, mDroppedDown);
+
+        if (!aShowList) {
+          view->DestroyWidget();
+        }
+      }
     }
   }
 
@@ -1010,7 +1029,7 @@ nsComboboxControlFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
     return NS_ERROR_OUT_OF_MEMORY;
 
   nsCOMPtr<nsINodeInfo> nodeInfo;
-  nodeInfo = nimgr->GetNodeInfo(nsGkAtoms::input, nsnull, kNameSpaceID_XHTML);
+  nodeInfo = nimgr->GetNodeInfo(nsGkAtoms::button, nsnull, kNameSpaceID_XHTML);
 
   // create button which drops the list down
   NS_NewHTMLElement(getter_AddRefs(mButtonContent), nodeInfo.forget(),
@@ -1246,7 +1265,7 @@ nsComboboxControlFrame::SetInitialChildList(nsIAtom*        aListName,
     for (nsFrameList::Enumerator e(aChildList); !e.AtEnd(); e.Next()) {
       nsCOMPtr<nsIFormControl> formControl =
         do_QueryInterface(e.get()->GetContent());
-      if (formControl && formControl->GetType() == NS_FORM_INPUT_BUTTON) {
+      if (formControl && formControl->GetType() == NS_FORM_BUTTON_BUTTON) {
         mButtonFrame = e.get();
         break;
       }

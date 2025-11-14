@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 sw=2 et tw=79: */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -59,6 +60,7 @@
 #include "nsContentUtils.h"
 #include "nsCRTGlue.h"
 #include "nsAutoPtr.h"
+#include "nsIScriptSecurityManager.h"
 
 static const char kXPConnectServiceCID[] = "@mozilla.org/js/xpc/XPConnect;1";
 
@@ -111,17 +113,13 @@ nsJSON::Encode(nsAString &aJSON)
 static const char UTF8BOM[] = "\xEF\xBB\xBF";
 static const char UTF16LEBOM[] = "\xFF\xFE";
 static const char UTF16BEBOM[] = "\xFE\xFF";
-static const char UTF32LEBOM[] = "\xFF\xFE\0\0";
-static const char UTF32BEBOM[] = "\0\0\xFE\xFF";
 
 static nsresult CheckCharset(const char* aCharset)
 {
   // Check that the charset is permissible
   if (!(strcmp(aCharset, "UTF-8") == 0 ||
         strcmp(aCharset, "UTF-16LE") == 0 ||
-        strcmp(aCharset, "UTF-16BE") == 0 ||
-        strcmp(aCharset, "UTF-32LE") == 0 ||
-        strcmp(aCharset, "UTF-32BE") == 0)) {
+        strcmp(aCharset, "UTF-16BE") == 0)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -164,10 +162,6 @@ nsJSON::EncodeToStream(nsIOutputStream *aStream,
       rv = aStream->Write(UTF16LEBOM, 2, &ignored);
     else if (strcmp(aCharset, "UTF-16BE") == 0)
       rv = aStream->Write(UTF16BEBOM, 2, &ignored);
-    else if (strcmp(aCharset, "UTF-32LE") == 0)
-      rv = aStream->Write(UTF32LEBOM, 4, &ignored);
-    else if (strcmp(aCharset, "UTF-32BE") == 0)
-      rv = aStream->Write(UTF32BEBOM, 4, &ignored);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -204,14 +198,30 @@ nsJSON::EncodeFromJSVal(jsval *value, JSContext *cx, nsAString &result)
 
   JSAutoEnterCompartment ac;
   JSObject *obj;
-  if (JSVAL_IS_OBJECT(*value) && (obj = JSVAL_TO_OBJECT(*value)) &&
-      !ac.enter(cx, obj)) {
-    return NS_ERROR_FAILURE;
+  nsIScriptSecurityManager *ssm = nsnull;
+  if (JSVAL_IS_OBJECT(*value) && (obj = JSVAL_TO_OBJECT(*value))) {
+    if (!ac.enter(cx, obj)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    nsCOMPtr<nsIPrincipal> principal;
+    ssm = nsContentUtils::GetSecurityManager();
+    nsresult rv = ssm->GetObjectPrincipal(cx, obj, getter_AddRefs(principal));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    JSStackFrame *fp = nsnull;
+    rv = ssm->PushContextPrincipal(cx, JS_FrameIterator(cx, &fp), principal);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   nsJSONWriter writer;
   JSBool ok = JS_Stringify(cx, value, NULL, JSVAL_NULL,
                            WriteCallback, &writer);
+
+  if (ssm) {
+    ssm->PopContextPrincipal(cx);
+  }
+
   if (!ok) {
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
@@ -287,7 +297,7 @@ nsJSONWriter::nsJSONWriter() : mStream(nsnull),
 {
 }
 
-nsJSONWriter::nsJSONWriter(nsIOutputStream *aStream) : mStream(nsnull),
+nsJSONWriter::nsJSONWriter(nsIOutputStream *aStream) : mStream(aStream),
                                                        mBuffer(nsnull),
                                                        mBufferCount(0),
                                                        mDidWrite(PR_FALSE),
@@ -686,15 +696,9 @@ nsJSONListener::ProcessBytes(const char* aBuffer, PRUint32 aByteLength)
       // See section 3 of RFC4627 for details on why this works.
       const char *buffer = mSniffBuffer.get();
       if (mSniffBuffer.Length() >= 4) {
-        if (buffer[0] == 0x00 && buffer[1] == 0x00 &&
+        if (buffer[0] == 0x00 && buffer[1] != 0x00 &&
             buffer[2] == 0x00 && buffer[3] != 0x00) {
-          charset = "UTF-32BE";
-        } else if (buffer[0] == 0x00 && buffer[1] != 0x00 &&
-                   buffer[2] == 0x00 && buffer[3] != 0x00) {
           charset = "UTF-16BE";
-        } else if (buffer[0] != 0x00 && buffer[1] == 0x00 &&
-                   buffer[2] == 0x00 && buffer[3] == 0x00) {
-          charset = "UTF-32LE";
         } else if (buffer[0] != 0x00 && buffer[1] == 0x00 &&
                    buffer[2] != 0x00 && buffer[3] == 0x00) {
           charset = "UTF-16LE";

@@ -56,7 +56,10 @@ namespace mozilla {
 enum LayerState {
   LAYER_NONE,
   LAYER_INACTIVE,
-  LAYER_ACTIVE
+  LAYER_ACTIVE,
+  // Force an active layer even if it causes incorrect rendering, e.g.
+  // when the layer has rounded rect clips.
+  LAYER_ACTIVE_FORCE
 };
 
 /**
@@ -99,7 +102,6 @@ public:
   FrameLayerBuilder() :
     mRetainingManager(nsnull),
     mDetectedDOMModification(PR_FALSE),
-    mInvalidateAllThebesContent(PR_FALSE),
     mInvalidateAllLayers(PR_FALSE)
   {
     mNewDisplayItemData.Init();
@@ -140,8 +142,8 @@ public:
    * children of the new container, and assigning all other items to
    * ThebesLayer children created and managed by the FrameLayerBuilder.
    * Returns a layer with clip rect cleared; it is the
-   * caller's responsibility to add any clip rect and set the visible
-   * region.
+   * caller's responsibility to add any clip rect. The visible region
+   * is set based on what's in the layer.
    */
   already_AddRefed<ContainerLayer>
   BuildContainerLayerFor(nsDisplayListBuilder* aBuilder,
@@ -182,12 +184,6 @@ public:
   static void InvalidateThebesLayersInSubtree(nsIFrame* aFrame);
 
   /**
-   * Call this to force *all* retained layer contents to be discarded at
-   * the next paint.
-   */
-  static void InvalidateAllThebesLayerContents(LayerManager* aManager);
-
-  /**
    * Call this to force all retained layers to be discarded and recreated at
    * the next paint.
    */
@@ -195,9 +191,10 @@ public:
 
   /**
    * Call this to determine if a frame has a dedicated (non-Thebes) layer
-   * for the given display item key.
+   * for the given display item key. If there isn't one, we return null,
+   * otherwise we return the layer.
    */
-  static PRBool HasDedicatedLayer(nsIFrame* aFrame, PRUint32 aDisplayItemKey);
+  static Layer* GetDedicatedLayer(nsIFrame* aFrame, PRUint32 aDisplayItemKey);
 
   /**
    * This callback must be provided to EndTransaction. The callback data
@@ -238,8 +235,7 @@ public:
                             nsDisplayItem* aItem,
                             const Clip& aClip,
                             nsIFrame* aContainerLayerFrame,
-                            LayerState aLayerState,
-                            LayerManager* aTempManager);
+                            LayerState aLayerState);
 
   /**
    * Given a frame and a display item key that uniquely identifies a
@@ -277,6 +273,26 @@ public:
   {
     aFrame->Properties().Delete(DisplayItemDataProperty());
   }
+
+  LayerManager* GetRetainingLayerManager() { return mRetainingManager; }
+
+  /**
+   * Returns true if the given item (which we assume here is
+   * background-attachment:fixed) needs to be repainted as we scroll in its
+   * document.
+   * Returns false if it doesn't need to be repainted because the layer system
+   * is ensuring its fixed-ness for us.
+   */
+  static PRBool NeedToInvalidateFixedDisplayItem(nsDisplayListBuilder* aBuilder,
+                                                 nsDisplayItem* aItem);
+
+  /**
+   * Returns true if the given display item was rendered directly
+   * into a retained layer.
+   * Returns false if it was rendered into a temporary layer manager and then
+   * into a retained layer.
+   */
+  static PRBool HasRetainedLayerFor(nsIFrame* aFrame, PRUint32 aDisplayItemKey);
 
   /**
    * Clip represents the intersection of an optional rectangle with a
@@ -321,6 +337,18 @@ public:
     // clip region. Tries to return the largest possible rectangle, but may
     // not succeed.
     nsRect ApproximateIntersect(const nsRect& aRect) const;
+
+    // Returns false if aRect is definitely not clipped by a rounded corner in
+    // this clip. Returns true if aRect is clipped by a rounded corner in this
+    // clip or it can not be quickly determined that it is not clipped by a
+    // rounded corner in this clip.
+    bool IsRectClippedByRoundedCorner(const nsRect& aRect) const;
+
+    // Intersection of all rects in this clip ignoring any rounded corners.
+    nsRect NonRoundedIntersection() const;
+
+    // Gets rid of any rounded corners in this clip.
+    void RemoveRoundedCorners();
 
     bool operator==(const Clip& aOther) const {
       return mHaveClipRect == aOther.mHaveClipRect &&
@@ -398,8 +426,8 @@ protected:
     }
 
     nsDisplayItem* mItem;
-    nsRefPtr<LayerManager> mTempLayerManager;
     Clip mClip;
+    PRPackedBool mInactiveLayer;
   };
 
   /**
@@ -463,11 +491,6 @@ protected:
    * the current paint.
    */
   PRPackedBool                        mDetectedDOMModification;
-  /**
-   * Indicates that the contents of all ThebesLayers should be rerendered
-   * during this paint.
-   */
-  PRPackedBool                        mInvalidateAllThebesContent;
   /**
    * Indicates that the entire layer tree should be rerendered
    * during this paint.

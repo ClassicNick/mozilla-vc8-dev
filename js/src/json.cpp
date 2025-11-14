@@ -64,6 +64,7 @@
 
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
+#include "jsstrinlines.h"
 
 using namespace js;
 using namespace js::gc;
@@ -100,10 +101,10 @@ struct JSONParser
 Class js_JSONClass = {
     js_JSON_str,
     JSCLASS_HAS_CACHED_PROTO(JSProto_JSON),
-    PropertyStub,   /* addProperty */
-    PropertyStub,   /* delProperty */
-    PropertyStub,   /* getProperty */
-    PropertyStub,   /* setProperty */
+    PropertyStub,        /* addProperty */
+    PropertyStub,        /* delProperty */
+    PropertyStub,        /* getProperty */
+    StrictPropertyStub,  /* setProperty */
     EnumerateStub,
     ResolveStub,
     ConvertStub
@@ -406,6 +407,7 @@ JO(JSContext *cx, Value *vp, StringifyContext *scx)
         if (!s)
             return JS_FALSE;
 
+        JS::Anchor<JSString *> anchor(s);
         size_t length = s->length();
         const jschar *chars = s->getChars(cx);
         if (!chars)
@@ -493,37 +495,60 @@ CallReplacerFunction(JSContext *cx, jsid id, JSObject *holder, StringifyContext 
 static JSBool
 Str(JSContext *cx, jsid id, JSObject *holder, StringifyContext *scx, Value *vp, bool callReplacer)
 {
-    JS_CHECK_RECURSION(cx, return JS_FALSE);
+    JS_CHECK_RECURSION(cx, return false);
 
+    /*
+     * This method implements the Str algorithm in ES5 15.12.3, but we move
+     * property retrieval (step 1) into callers to stream the stringification
+     * process and avoid constantly copying strings.
+     */
+
+    /* Step 2. */
     if (vp->isObject() && !js_TryJSON(cx, vp))
-        return JS_FALSE;
+        return false;
 
+    /* Step 3. */
     if (callReplacer && !CallReplacerFunction(cx, id, holder, scx, vp))
-        return JS_FALSE;
+        return false;
 
-    // catches string and number objects with no toJSON
+    /* Step 4. */
     if (vp->isObject()) {
         JSObject *obj = &vp->toObject();
         Class *clasp = obj->getClass();
-        if (clasp == &js_StringClass || clasp == &js_NumberClass)
+        if (clasp == &js_NumberClass) {
+            double d;
+            if (!ValueToNumber(cx, *vp, &d))
+                return false;
+            vp->setNumber(d);
+        } else if (clasp == &js_StringClass) {
+            JSString *str = js_ValueToString(cx, *vp);
+            if (!str)
+                return false;
+            vp->setString(str);
+        } else if (clasp == &js_BooleanClass) {
             *vp = obj->getPrimitiveThis();
+        }
     }
 
+    /* Step 8. */
     if (vp->isString()) {
         JSString *str = vp->toString();
         size_t length = str->length();
         const jschar *chars = str->getChars(cx);
         if (!chars)
-            return JS_FALSE;
+            return false;
         return write_string(cx, scx->sb, chars, length);
     }
 
+    /* Step 5. */
     if (vp->isNull())
         return scx->sb.append("null");
 
+    /* Steps 6-7. */
     if (vp->isBoolean())
         return vp->toBoolean() ? scx->sb.append("true") : scx->sb.append("false");
 
+    /* Step 9. */
     if (vp->isNumber()) {
         if (vp->isDouble()) {
             jsdouble d = vp->toDouble();
@@ -533,11 +558,12 @@ Str(JSContext *cx, jsid id, JSObject *holder, StringifyContext *scx, Value *vp, 
 
         StringBuffer sb(cx);
         if (!NumberValueToStringBuffer(cx, *vp, sb))
-            return JS_FALSE;
+            return false;
 
         return scx->sb.append(sb.begin(), sb.length());
     }
 
+    /* Step 10. */
     if (vp->isObject() && !IsFunctionObject(*vp) && !IsXML(*vp)) {
         JSBool ok;
 
@@ -548,8 +574,9 @@ Str(JSContext *cx, jsid id, JSObject *holder, StringifyContext *scx, Value *vp, 
         return ok;
     }
 
+    /* Step 11. */
     vp->setUndefined();
-    return JS_TRUE;
+    return true;
 }
 
 JSBool
@@ -688,7 +715,7 @@ js_BeginJSONParse(JSContext *cx, Value *rootVal, bool suppressErrors /*= false*/
     if (!arr)
         return NULL;
 
-    JSONParser *jp = cx->create<JSONParser>(cx);
+    JSONParser *jp = cx->new_<JSONParser>(cx);
     if (!jp)
         return NULL;
 
@@ -744,7 +771,7 @@ js_FinishJSONParse(JSContext *cx, JSONParser *jp, const Value &reviver)
         ok = Revive(cx, reviver, vp);
     }
 
-    cx->destroy(jp);
+    cx->delete_(jp);
 
     return ok;
 }
@@ -935,13 +962,13 @@ HandleString(JSContext *cx, JSONParser *jp, const jschar *buf, uint32 len)
 static JSBool
 HandleKeyword(JSContext *cx, JSONParser *jp, const jschar *buf, uint32 len)
 {
-    Value keyword;
-    TokenKind tt = js_CheckKeyword(buf, len);
-    if (tt != TOK_PRIMARY) {
+    const KeywordInfo *ki = FindKeyword(buf, len);
+    if (!ki || ki->tokentype != TOK_PRIMARY) {
         // bad keyword
         return JSONParseError(jp, cx);
     }
 
+    Value keyword;
     if (buf[0] == 'n') {
         keyword.setNull();
     } else if (buf[0] == 't') {
@@ -1236,7 +1263,7 @@ js_ConsumeJSONText(JSContext *cx, JSONParser *jp, const jschar *data, uint32 len
 static JSBool
 json_toSource(JSContext *cx, uintN argc, Value *vp)
 {
-    vp->setString(ATOM_TO_STRING(CLASS_ATOM(cx, JSON)));
+    vp->setString(CLASS_ATOM(cx, JSON));
     return JS_TRUE;
 }
 #endif
@@ -1259,7 +1286,7 @@ js_InitJSONClass(JSContext *cx, JSObject *obj)
     if (!JSON)
         return NULL;
     if (!JS_DefineProperty(cx, obj, js_JSON_str, OBJECT_TO_JSVAL(JSON),
-                           JS_PropertyStub, JS_PropertyStub, 0))
+                           JS_PropertyStub, JS_StrictPropertyStub, 0))
         return NULL;
 
     if (!JS_DefineFunctions(cx, JSON, json_static_methods))

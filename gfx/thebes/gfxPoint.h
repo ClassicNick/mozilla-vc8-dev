@@ -60,6 +60,13 @@ struct THEBES_API gfxIntSize {
     int operator!=(const gfxIntSize& s) const {
         return ((width != s.width) || (height != s.height));
     }
+    bool operator<(const gfxIntSize& s) const {
+        return (operator<=(s) &&
+                (width < s.width || height < s.height));
+    }
+    bool operator<=(const gfxIntSize& s) const {
+        return (width <= s.width) && (height <= s.height);
+    }
     gfxIntSize operator+(const gfxIntSize& s) const {
         return gfxIntSize(width + s.width, height + s.height);
     }
@@ -115,7 +122,6 @@ struct THEBES_API gfxPoint {
     gfxFloat x, y;
 
     gfxPoint() { }
-    gfxPoint(const gfxPoint& p) : x(p.x), y(p.y) {}
     gfxPoint(gfxFloat _x, gfxFloat _y) : x(_x), y(_y) {}
 
     void MoveTo(gfxFloat aX, gfxFloat aY) { x = aX; y = aY; }

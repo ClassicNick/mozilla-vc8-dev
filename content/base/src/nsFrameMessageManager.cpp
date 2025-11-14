@@ -378,7 +378,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
           // create array even if len == 0.
           aObjectsArray = JS_NewArrayObject(ctx, 0, NULL);
           if (!aObjectsArray) {
-            return false;
+            return NS_ERROR_OUT_OF_MEMORY;
           }
         }
 
@@ -414,7 +414,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
         JSAutoEnterCompartment ac;
 
         if (!ac.enter(ctx, object))
-          return PR_FALSE;
+          return NS_ERROR_FAILURE;
 
         jsval funval = JSVAL_VOID;
         if (JS_ObjectIsFunction(ctx, object)) {
@@ -613,7 +613,7 @@ nsFrameScriptExecutor::Shutdown()
 void
 nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
 {
-  if (!mGlobal || !mCx) {
+  if (!mGlobal || !mCx || !sCachedScripts) {
     return;
   }
 
@@ -627,10 +627,7 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
       JSObject* global = nsnull;
       mGlobal->GetJSObject(&global);
       if (global) {
-        jsval val;
-        JS_ExecuteScript(mCx, global,
-                         (JSScript*)JS_GetPrivate(mCx, holder->mObject),
-                         &val);
+        JS_ExecuteScript(mCx, global, holder->mObject, nsnull);
       }
     }
     JSContext* unused;
@@ -682,15 +679,19 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
         JSPrincipals* jsprin = nsnull;
         mPrincipal->GetJSPrincipals(mCx, &jsprin);
         nsContentUtils::XPConnect()->FlagSystemFilenamePrefix(url.get(), PR_TRUE);
-        JSScript* script =
+
+        uint32 oldopts = JS_GetOptions(mCx);
+        JS_SetOptions(mCx, oldopts | JSOPTION_NO_SCRIPT_RVAL);
+
+        JSObject* scriptObj =
           JS_CompileUCScriptForPrincipals(mCx, nsnull, jsprin,
                                          (jschar*)dataString.get(),
                                           dataString.Length(),
                                           url.get(), 1);
 
-        if (script) {
-          JSObject* scriptObj = JS_NewScriptObject(mCx, script);
-          JS_AddObjectRoot(mCx, &scriptObj);
+        JS_SetOptions(mCx, oldopts);
+
+        if (scriptObj) {
           nsCAutoString scheme;
           uri->GetScheme(scheme);
           // We don't cache data: scripts!
@@ -702,10 +703,7 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
                                   "Cached message manager script");
             sCachedScripts->Put(aURL, holder);
           }
-          jsval val;
-          JS_ExecuteScript(mCx, global,
-                           (JSScript*)JS_GetPrivate(mCx, scriptObj), &val);
-          JS_RemoveObjectRoot(mCx, &scriptObj);
+          JS_ExecuteScript(mCx, global, scriptObj, nsnull);
         }
         //XXX Argh, JSPrincipals are manually refcounted!
         JSPRINCIPALS_DROP(mCx, jsprin);
@@ -714,6 +712,16 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
     JSContext* unused;
     nsContentUtils::ThreadJSContextStack()->Pop(&unused);
   }
+}
+
+// static
+void
+nsFrameScriptExecutor::Traverse(nsFrameScriptExecutor *tmp,
+                                nsCycleCollectionTraversalCallback &cb)
+{
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mGlobal)
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mCx");
+  nsContentUtils::XPConnect()->NoteJSContext(tmp->mCx, cb);
 }
 
 NS_IMPL_ISUPPORTS1(nsScriptCacheCleaner, nsIObserver)

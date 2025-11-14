@@ -49,7 +49,6 @@ const Cu = Components.utils;
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
-Cu.import("resource://services-sync/ext/Sync.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/resource.js");
@@ -115,7 +114,9 @@ Tracker.prototype = {
 
   loadChangedIDs: function T_loadChangedIDs() {
     Utils.jsonLoad("changes/" + this.file, this, function(json) {
-      this.changedIDs = json;
+      if (json) {
+        this.changedIDs = json;
+      }
     });
   },
 
@@ -191,8 +192,34 @@ function Store(name) {
   this._log = Log4Moz.repository.getLogger("Store." + name);
   let level = Svc.Prefs.get("log.logger.engine." + this.name, "Debug");
   this._log.level = Log4Moz.Level[level];
+
+  Utils.lazy2(this, "_timer", function() {
+    return Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+  });
 }
 Store.prototype = {
+
+  _sleep: function _sleep(delay) {
+    let cb = Utils.makeSyncCallback();
+    this._timer.initWithCallback({notify: cb}, delay,
+                                 Ci.nsITimer.TYPE_ONE_SHOT);
+    Utils.waitForSyncCallback(cb);
+  },
+
+  applyIncomingBatch: function applyIncomingBatch(records) {
+    let failed = [];
+    for each (let record in records) {
+      try {
+        this.applyIncoming(record);
+      } catch (ex) {
+        this._log.warn("Failed to apply incoming record " + record.id);
+        this._log.warn("Encountered exception: " + Utils.exceptionStr(ex));
+        failed.push(record.id);
+      }
+    };
+    return failed;
+  },
+
   applyIncoming: function Store_applyIncoming(record) {
     if (record.deleted)
       this.remove(record);
@@ -303,7 +330,6 @@ EngineManagerSvc.prototype = {
       name = name.name || "";
 
       let out = "Could not initialize engine '" + name + "': " + mesg;
-      dump(out);
       this._log.error(out);
 
       return engineObject;
@@ -320,7 +346,6 @@ EngineManagerSvc.prototype = {
 function Engine(name) {
   this.Name = name || "Unnamed";
   this.name = name.toLowerCase();
-  this.downloadLimit = null;
 
   this._notify = Utils.notify("weave:engine:");
   this._log = Log4Moz.repository.getLogger("Engine." + this.Name);
@@ -360,86 +385,7 @@ Engine.prototype = {
     if (!this._sync)
       throw "engine does not implement _sync method";
 
-    let times = {};
-    let wrapped = {};
-    // Find functions in any point of the prototype chain
-    for (let _name in this) {
-      let name = _name;
-
-      // Ignore certain constructors/functions
-      if (name.search(/^_(.+Obj|notify)$/) == 0)
-        continue;
-
-      // Only track functions but skip the constructors
-      if (typeof this[name] == "function") {
-        times[name] = [];
-        wrapped[name] = this[name];
-
-        // Wrap the original function with a start/stop timer
-        this[name] = function() {
-          let start = Date.now();
-          try {
-            return wrapped[name].apply(this, arguments);
-          }
-          finally {
-            times[name].push(Date.now() - start);
-          }
-        };
-      }
-    }
-
-    try {
-      this._notify("sync", this.name, this._sync)();
-    }
-    finally {
-      // Restore original unwrapped functionality
-      for (let [name, func] in Iterator(wrapped))
-        this[name] = func;
-
-      let stats = {};
-      for (let [name, time] in Iterator(times)) {
-        // Figure out stats on the times unless there's nothing
-        let num = time.length;
-        if (num == 0)
-          continue;
-
-        // Track the min/max/sum of the values
-        let stat = {
-          num: num,
-          sum: 0
-        };
-        time.forEach(function(val) {
-          if (stat.min == null || val < stat.min)
-            stat.min = val;
-          if (stat.max == null || val > stat.max)
-            stat.max = val;
-          stat.sum += val;
-        });
-
-        stat.avg = Number((stat.sum / num).toFixed(2));
-        stats[name] = stat;
-      }
-
-      stats.toString = function() {
-        let sums = [];
-        for (let [name, stat] in Iterator(this))
-          if (stat.sum != null)
-            sums.push(name.replace(/^_/, "") + " " + stat.sum);
-
-        // Order certain functions first before any other random ones
-        let nameOrder = ["sync", "processIncoming", "uploadOutgoing",
-          "syncStartup", "syncFinish"];
-        let getPos = function(str) {
-          let pos = nameOrder.indexOf(str.split(" ")[0]);
-          return pos != -1 ? pos : Infinity;
-        };
-        let order = function(a, b) getPos(a) > getPos(b);
-
-        return "Total (ms): " + sums.sort(order).join(", ");
-      };
-
-      this._log.debug(stats);
-    }
+    this._notify("sync", this.name, this._sync)();
   },
 
   /**
@@ -468,11 +414,14 @@ Engine.prototype = {
 
 function SyncEngine(name) {
   Engine.call(this, name || "SyncEngine");
+  this.loadToFetch();
 }
 SyncEngine.prototype = {
   __proto__: Engine.prototype,
   _recordObj: CryptoWrapper,
   version: 1,
+  downloadLimit: null,
+  applyIncomingBatchSize: DEFAULT_STORE_BATCH_SIZE,
 
   get storageURL() Svc.Prefs.get("clusterURL") + Svc.Prefs.get("storageAPI") +
     "/" + ID.get("WeaveID").username + "/storage/",
@@ -509,6 +458,24 @@ SyncEngine.prototype = {
     Svc.Prefs.reset(this.name + ".lastSync");
     Svc.Prefs.set(this.name + ".lastSync", "0");
     this.lastSyncLocal = 0;
+  },
+
+  get toFetch() this._toFetch,
+  set toFetch(val) {
+    this._toFetch = val;
+    Utils.delay(function () {
+      Utils.jsonSave("toFetch/" + this.name, this, val);
+    }, 0, this, "_toFetchDelay");
+  },
+
+  loadToFetch: function loadToFetch() {
+    // Initialize to empty if there's no file
+    this._toFetch = [];
+    Utils.jsonLoad("toFetch/" + this.name, this, function(toFetch) {
+      if (toFetch) {
+        this._toFetch = toFetch;
+      }
+    });
   },
 
   /*
@@ -629,15 +596,43 @@ SyncEngine.prototype = {
     newitems.full = true;
     newitems.limit = batchSize;
 
-    let count = {applied: 0, reconciled: 0};
+    let count = {applied: 0, failed: 0, reconciled: 0};
     let handled = [];
-    newitems.recordHandler = Utils.bind2(this, function(item) {
+    let applyBatch = [];
+    let failed = [];
+    let fetchBatch = this.toFetch;
+
+    function doApplyBatch() {
+      this._tracker.ignoreAll = true;
+      failed = failed.concat(this._store.applyIncomingBatch(applyBatch));
+      this._tracker.ignoreAll = false;
+      applyBatch = [];
+    }
+
+    function doApplyBatchAndPersistFailed() {
+      // Apply remaining batch.
+      if (applyBatch.length) {
+        doApplyBatch.call(this);
+      }
+      // Persist failed items so we refetch them.
+      if (failed.length) {
+        this.toFetch = Utils.arrayUnion(failed, this.toFetch);
+        count.failed += failed.length;
+        this._log.debug("Records that failed to apply: " + failed);
+        failed = [];
+      }
+    }
+
+    // Not binding this method to 'this' for performance reasons. It gets
+    // called for every incoming record.
+    let self = this;
+    newitems.recordHandler = function(item) {
       // Grab a later last modified if possible
-      if (this.lastModified == null || item.modified > this.lastModified)
-        this.lastModified = item.modified;
+      if (self.lastModified == null || item.modified > self.lastModified)
+        self.lastModified = item.modified;
 
       // Track the collection for the WBO.
-      item.collection = this.name;
+      item.collection = self.name;
       
       // Remember which records were processed
       handled.push(item.id);
@@ -646,36 +641,47 @@ SyncEngine.prototype = {
         try {
           item.decrypt();
         } catch (ex if (Utils.isHMACMismatch(ex) &&
-                        this.handleHMACMismatch())) {
+                        self.handleHMACMismatch(item))) {
           // Let's try handling it.
           // If the callback returns true, try decrypting again, because
           // we've got new keys.
-          this._log.info("Trying decrypt again...");
+          self._log.info("Trying decrypt again...");
           item.decrypt();
-        }
-       
-        if (this._reconcile(item)) {
-          count.applied++;
-          this._tracker.ignoreAll = true;
-          this._store.applyIncoming(item);
-        } else {
-          count.reconciled++;
-          this._log.trace("Skipping reconciled incoming item " + item.id);
-        }
-      } catch (ex if (Utils.isHMACMismatch(ex))) {
-        this._log.warn("Error processing record: " + Utils.exceptionStr(ex));
-
-        // Upload a new record to replace the bad one if we have it
-        if (this._store.itemExists(item.id))
-          this._modified[item.id] = 0;
+        }       
+      } catch (ex) {
+        self._log.warn("Error decrypting record: " + Utils.exceptionStr(ex));
+        failed.push(item.id);
+        return;
       }
-      this._tracker.ignoreAll = false;
-      Sync.sleep(0);
-    });
+
+      let shouldApply;
+      try {
+        shouldApply = self._reconcile(item);
+      } catch (ex) {
+        self._log.warn("Failed to reconcile incoming record " + item.id);
+        self._log.warn("Encountered exception: " + Utils.exceptionStr(ex));
+        failed.push(item.id);
+        return;
+      }
+
+      if (shouldApply) {
+        count.applied++;
+        applyBatch.push(item);
+      } else {
+        count.reconciled++;
+        self._log.trace("Skipping reconciled incoming item " + item.id);
+      }
+
+      if (applyBatch.length == self.applyIncomingBatchSize) {
+        doApplyBatch.call(self);
+      }
+      self._store._sleep(0);
+    };
 
     // Only bother getting data from the server if there's new things
     if (this.lastModified == null || this.lastModified > this.lastSync) {
       let resp = newitems.get();
+      doApplyBatchAndPersistFailed.call(this);
       if (!resp.success) {
         resp.failureCode = ENGINE_DOWNLOAD_FAIL;
         throw resp;
@@ -683,14 +689,13 @@ SyncEngine.prototype = {
     }
 
     // Mobile: check if we got the maximum that we requested; get the rest if so.
-    let toFetch = [];
     if (handled.length == newitems.limit) {
       let guidColl = new Collection(this.engineURL);
       
       // Sort and limit so that on mobile we only get the last X records.
       guidColl.limit = this.downloadLimit;
       guidColl.newer = this.lastSync;
-      
+
       // index: Orders by the sortindex descending (highest weight first).
       guidColl.sort  = "index";
 
@@ -701,19 +706,25 @@ SyncEngine.prototype = {
       // Figure out which guids weren't just fetched then remove any guids that
       // were already waiting and prepend the new ones
       let extra = Utils.arraySub(guids.obj, handled);
-      if (extra.length > 0)
-        toFetch = extra.concat(Utils.arraySub(toFetch, extra));
+      if (extra.length > 0) {
+        fetchBatch = Utils.arrayUnion(extra, fetchBatch);
+        this.toFetch = Utils.arrayUnion(extra, this.toFetch);
+      }
+    }
+
+    // Fast-foward the lastSync timestamp since we have stored the
+    // remaining items in toFetch.
+    if (this.lastSync < this.lastModified) {
+      this.lastSync = this.lastModified;
     }
 
     // Mobile: process any backlog of GUIDs
-    while (toFetch.length) {
+    while (fetchBatch.length) {
       // Reuse the original query, but get rid of the restricting params
+      // and batch remaining records.
       newitems.limit = 0;
       newitems.newer = 0;
-
-      // Get the first bunch of records and save the rest for later
-      newitems.ids = toFetch.slice(0, batchSize);
-      toFetch = toFetch.slice(batchSize);
+      newitems.ids = fetchBatch.slice(0, batchSize);
 
       // Reuse the existing record handler set earlier
       let resp = newitems.get();
@@ -721,13 +732,32 @@ SyncEngine.prototype = {
         resp.failureCode = ENGINE_DOWNLOAD_FAIL;
         throw resp;
       }
+
+      // This batch was successfully applied. Not using
+      // doApplyBatchAndPersistFailed() here to avoid writing toFetch twice.
+      fetchBatch = fetchBatch.slice(batchSize);
+      let newToFetch = Utils.arraySub(this.toFetch, newitems.ids);
+      this.toFetch = Utils.arrayUnion(newToFetch, failed);
+      count.failed += failed.length;
+      this._log.debug("Records that failed to apply: " + failed);
+      failed = [];
+      if (this.lastSync < this.lastModified) {
+        this.lastSync = this.lastModified;
+      }
     }
 
-    if (this.lastSync < this.lastModified)
-      this.lastSync = this.lastModified;
+    // Apply remaining items.
+    doApplyBatchAndPersistFailed.call(this);
 
-    this._log.info(["Records:", count.applied, "applied,", count.reconciled,
-      "reconciled."].join(" "));
+    if (count.failed) {
+      // Notify observers if records failed to apply. Pass the count object
+      // along so that they can make an informed decision on what to do.
+      Observers.notify("weave:engine:sync:apply-failed", count, this.name);
+    }
+    this._log.info(["Records:",
+                    count.applied, "applied,",
+                    count.failed, "failed to apply,",
+                    count.reconciled, "reconciled."].join(" "));
   },
 
   /**
@@ -823,6 +853,7 @@ SyncEngine.prototype = {
 
   // Upload outgoing records
   _uploadOutgoing: function SyncEngine__uploadOutgoing() {
+    this._log.trace("Uploading local changes to server.");
     if (this._modifiedIDs.length) {
       this._log.trace("Preparing " + this._modifiedIDs.length +
                       " outgoing records");
@@ -878,7 +909,7 @@ SyncEngine.prototype = {
         if ((++count % MAX_UPLOAD_RECORDS) == 0)
           doUpload((count - MAX_UPLOAD_RECORDS) + " - " + count + " out");
 
-        Sync.sleep(0);
+        this._store._sleep(0);
       }
 
       // Final upload
@@ -969,6 +1000,7 @@ SyncEngine.prototype = {
 
   _resetClient: function SyncEngine__resetClient() {
     this.resetLastSync();
+    this.toFetch = [];
   },
 
   wipeServer: function wipeServer() {
@@ -976,7 +1008,7 @@ SyncEngine.prototype = {
     this._resetClient();
   },
   
-  handleHMACMismatch: function handleHMACMismatch() {
+  handleHMACMismatch: function handleHMACMismatch(item) {
     return Weave.Service.handleHMACEvent();
   }
 };

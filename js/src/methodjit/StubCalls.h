@@ -71,8 +71,8 @@ void JS_FASTCALL SlowCall(VMFrame &f, uint32 argc);
 void * JS_FASTCALL UncachedNew(VMFrame &f, uint32 argc);
 void * JS_FASTCALL UncachedCall(VMFrame &f, uint32 argc);
 void JS_FASTCALL Eval(VMFrame &f, uint32 argc);
-void JS_FASTCALL EnterScript(VMFrame &f);
-void JS_FASTCALL LeaveScript(VMFrame &f);
+void JS_FASTCALL ScriptDebugPrologue(VMFrame &f);
+void JS_FASTCALL ScriptDebugEpilogue(VMFrame &f);
 
 /*
  * Result struct for UncachedXHelper.
@@ -80,7 +80,7 @@ void JS_FASTCALL LeaveScript(VMFrame &f);
  * These functions can have one of two results:
  *
  *   (1) The function was executed in the interpreter. Then all fields
- *       are NULL.
+ *       are NULL except unjittable.
  *
  *   (2) The function was not executed, and the function has been compiled
  *       to JM native code. Then all fields are non-NULL.
@@ -89,11 +89,13 @@ struct UncachedCallResult {
     JSObject   *callee;       // callee object
     JSFunction *fun;          // callee function
     void       *codeAddr;     // code address of compiled callee function
+    bool       unjittable;    // did we try to JIT and fail?
 
     void init() {
         callee = NULL;
         fun = NULL;
         codeAddr = NULL;
+        unjittable = false;
     }        
 };
 
@@ -107,9 +109,8 @@ void UncachedNewHelper(VMFrame &f, uint32 argc, UncachedCallResult *ucr);
 
 void JS_FASTCALL CreateThis(VMFrame &f, JSObject *proto);
 void JS_FASTCALL Throw(VMFrame &f);
-void JS_FASTCALL PutStrictEvalCallObject(VMFrame &f);
 void JS_FASTCALL PutActivationObjects(VMFrame &f);
-void JS_FASTCALL GetCallObject(VMFrame &f);
+void JS_FASTCALL CreateFunCallObject(VMFrame &f);
 #if JS_MONOIC
 void * JS_FASTCALL InvokeTracer(VMFrame &f, ic::TraceICInfo *tic);
 #else
@@ -134,6 +135,7 @@ void JS_FASTCALL CallElem(VMFrame &f);
 template<JSBool strict> void JS_FASTCALL SetElem(VMFrame &f);
 void JS_FASTCALL Length(VMFrame &f);
 void JS_FASTCALL CallName(VMFrame &f);
+void JS_FASTCALL PushImplicitThisForGlobal(VMFrame &f);
 void JS_FASTCALL GetUpvar(VMFrame &f, uint32 index);
 void JS_FASTCALL GetGlobalName(VMFrame &f);
 

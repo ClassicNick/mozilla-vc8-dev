@@ -60,6 +60,8 @@
 #include "gfxPlatform.h"
 #include "GLContext.h"
 
+#include "gfxCrashReporterUtils.h"
+
 namespace mozilla {
 namespace gl {
 
@@ -96,11 +98,17 @@ GLXLibrary::EnsureInitialized()
     mTriedInitializing = PR_TRUE;
 
     if (!mOGLLibrary) {
-        mOGLLibrary = PR_LoadLibrary("libGL.so.1");
+        // see e.g. bug 608526: it is intrinsically interesting to know whether we have dynamically linked to libGL.so.1
+        // because at least the NVIDIA implementation requires an executable stack, which causes mprotect calls,
+        // which trigger glibc bug http://sourceware.org/bugzilla/show_bug.cgi?id=12225
+        const char *libGLfilename = "libGL.so.1";
+        ScopedGfxFeatureReporter reporter(libGLfilename);
+        mOGLLibrary = PR_LoadLibrary(libGLfilename);
         if (!mOGLLibrary) {
-	    NS_WARNING("Couldn't load OpenGL shared library.");
-	    return PR_FALSE;
+            NS_WARNING("Couldn't load OpenGL shared library.");
+            return PR_FALSE;
         }
+        reporter.SetSuccessful();
     }
 
     LibrarySymbolLoader::SymLoadStruct symbols[] = {
@@ -112,6 +120,7 @@ GLXLibrary::EnsureInitialized()
         { (PRFuncPtr*) &xGetCurrentContext, { "glXGetCurrentContext", NULL } },
         /* functions introduced in GLX 1.1 */
         { (PRFuncPtr*) &xQueryExtensionsString, { "glXQueryExtensionsString", NULL } },
+        { (PRFuncPtr*) &xGetClientString, { "glXGetClientString", NULL } },
         { (PRFuncPtr*) &xQueryServerString, { "glXQueryServerString", NULL } },
         { NULL, { NULL } }
     };
@@ -163,21 +172,62 @@ GLXLibrary::EnsureInitialized()
     }
 
     Display *display = DefaultXDisplay();
-    int screen = DefaultScreen(display);
-    if (!xQueryVersion(display, &gGLXMajorVersion, &gGLXMinorVersion)) {
-        gGLXMajorVersion = 0;
-        gGLXMinorVersion = 0;
-        return PR_FALSE;
+    PRBool ignoreBlacklist = PR_GetEnv("MOZ_GLX_IGNORE_BLACKLIST") != nsnull;
+    if (!ignoreBlacklist) {
+        // ATI's libGL (at least the one provided with 11.2 drivers) segfaults
+        // when querying server info if the server does not have the
+        // ATIFGLEXTENSION extension.
+        const char *clientVendor = xGetClientString(display, GLX_VENDOR);
+        if (clientVendor && strcmp(clientVendor, "ATI") == 0) {
+            printf("[GLX] The ATI proprietary libGL.so.1 is currently "
+                   "blacklisted to avoid crashes that happen in some "
+                   "situations. If you would like to bypass this, set the "
+                   "MOZ_GLX_IGNORE_BLACKLIST environment variable.\n");
+            return PR_FALSE;
+        }
     }
 
-    const char *vendor = xQueryServerString(display, screen, GLX_VENDOR);
-    const char *serverVersionStr = xQueryServerString(display, screen, GLX_VERSION);
+    int screen = DefaultScreen(display);
+    const char *serverVendor;
+    const char *serverVersionStr;
+    const char *extensionsStr;
 
-    if (!GLXVersionCheck(1, 1))
-        // Not possible to query for extensions.
-        return PR_FALSE;
+    // This scope is covered by a ScopedXErrorHandler to catch X errors in GLX
+    // calls.  See bug 632867 comment 3: Mesa versions up to 7.10 cause a
+    // BadLength error during the first GLX call that communicates with the
+    // server when the server GLX version < 1.3.
+    {
+        ScopedXErrorHandler xErrorHandler;
 
-    const char *extensionsStr = xQueryExtensionsString(display, screen);
+        if (!xQueryVersion(display, &gGLXMajorVersion, &gGLXMinorVersion)) {
+            gGLXMajorVersion = 0;
+            gGLXMinorVersion = 0;
+            return PR_FALSE;
+        }
+
+        serverVendor = xQueryServerString(display, screen, GLX_VENDOR);
+        serverVersionStr = xQueryServerString(display, screen, GLX_VERSION);
+
+        PRBool IsDriverBlacklisted = !serverVendor ||   // it's been reported that a VNC X server was returning serverVendor=null
+                                     !serverVersionStr ||
+                                     strcmp(serverVendor, "NVIDIA Corporation");
+
+        if (IsDriverBlacklisted && !ignoreBlacklist)
+        {
+          printf("[GLX] your GL driver is currently blocked. If you would like to bypass this, "
+                  "define the MOZ_GLX_IGNORE_BLACKLIST environment variable.\n");
+          return PR_FALSE;
+        }
+
+        if (!GLXVersionCheck(1, 1))
+            // Not possible to query for extensions.
+            return PR_FALSE;
+
+        extensionsStr = xQueryExtensionsString(display, screen);
+
+        if (xErrorHandler.GetError())
+          return PR_FALSE;
+    }
 
     LibrarySymbolLoader::SymLoadStruct *sym13;
     if (!GLXVersionCheck(1, 3)) {
@@ -211,9 +261,11 @@ GLXLibrary::EnsureInitialized()
         return PR_FALSE;
     }
 
-    gIsATI = vendor && DoesVendorStringMatch(vendor, "ATI");
-    gIsChromium = (vendor && DoesVendorStringMatch(vendor, "Chromium")) ||
-        (serverVersionStr && DoesVendorStringMatch(serverVersionStr, "Chromium"));
+    gIsATI = serverVendor && DoesVendorStringMatch(serverVendor, "ATI");
+    gIsChromium = (serverVendor &&
+                   DoesVendorStringMatch(serverVendor, "Chromium")) ||
+        (serverVersionStr &&
+         DoesVendorStringMatch(serverVersionStr, "Chromium"));
 
     mInitialized = PR_TRUE;
     return PR_TRUE;
@@ -234,15 +286,6 @@ public:
                     PRBool deleteDrawable,
                     gfxXlibSurface *pixmap = nsnull)
     {
-        const char *glxVendorString = sGLXLibrary.xQueryServerString(display, DefaultScreen(display), GLX_VENDOR);
-        if (strcmp(glxVendorString, "NVIDIA Corporation") &&
-            !PR_GetEnv("MOZ_GLX_IGNORE_BLACKLIST"))
-        {
-          printf("[GLX] currently only allowing the NVIDIA proprietary driver, as other drivers are giving too many crashes. "
-                 "To bypass this, define the MOZ_GLX_IGNORE_BLACKLIST environment variable.\n");
-          return nsnull;
-        }
-
         int db = 0, err;
         err = sGLXLibrary.xGetFBConfigAttrib(display, cfg,
                                              GLX_DOUBLEBUFFER, &db);
@@ -254,11 +297,13 @@ public:
 
         GLXContext context;
         nsRefPtr<GLContextGLX> glContext;
-        bool error = false;
+        bool error;
 
         ScopedXErrorHandler xErrorHandler;
 
 TRY_AGAIN_NO_SHARING:
+
+        error = false;
 
         context = sGLXLibrary.xCreateNewContext(display,
                                                 cfg,
@@ -281,23 +326,17 @@ TRY_AGAIN_NO_SHARING:
             error = true;
         }
 
-        if (shareContext) {
-            if (error || xErrorHandler.SyncAndGetError(display)) {
+        error |= xErrorHandler.SyncAndGetError(display);
+
+        if (error) {
+            if (shareContext) {
                 shareContext = nsnull;
                 goto TRY_AGAIN_NO_SHARING;
             }
-        }
 
-        // at this point, if shareContext != null, we know there's no error.
-        // it's important to minimize the number of XSyncs for startup performance.
-        if (!shareContext) {
-            if (error || // earlier recorded error
-                xErrorHandler.SyncAndGetError(display))
-            {
-                NS_WARNING("Failed to create GLXContext!");
-                glContext = nsnull; // note: this must be done while the graceful X error handler is set,
-                                    // because glxMakeCurrent can give a GLXBadDrawable error
-            }
+            NS_WARNING("Failed to create GLXContext!");
+            glContext = nsnull; // note: this must be done while the graceful X error handler is set,
+                                // because glxMakeCurrent can give a GLXBadDrawable error
         }
 
         return glContext.forget();

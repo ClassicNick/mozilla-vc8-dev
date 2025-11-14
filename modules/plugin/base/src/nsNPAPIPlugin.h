@@ -86,7 +86,7 @@ public:
 
   // Constructs and initializes an nsNPAPIPlugin object. A NULL file path
   // will prevent this from calling NP_Initialize.
-  static nsresult CreatePlugin(nsPluginTag *aPluginTag, nsIPlugin** aResult);
+  static nsresult CreatePlugin(nsPluginTag *aPluginTag, nsNPAPIPlugin** aResult);
 
   PluginLibrary* GetLibrary();
   // PluginFuncs() can't fail but results are only valid if GetLibrary() succeeds
@@ -383,10 +383,15 @@ OnPluginDestroy(NPP instance);
 void
 OnShutdown();
 
-void
-EnterAsyncPluginThreadCallLock();
-void
-ExitAsyncPluginThreadCallLock();
+/**
+ * within a lexical scope, locks and unlocks the mutex used to
+ * serialize modifications to plugin async callback state.
+ */
+struct NS_STACK_CLASS AsyncCallbackAutoLock
+{
+  AsyncCallbackAutoLock();
+  ~AsyncCallbackAutoLock();
+};
 
 class NPPStack
 {

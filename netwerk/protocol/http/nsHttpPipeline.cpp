@@ -47,7 +47,6 @@
 #include "nsIPipe.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
-#include "nsAutoLock.h"
 
 #ifdef DEBUG
 #include "prthread.h"
@@ -290,6 +289,20 @@ nsHttpPipeline::PushBack(const char *data, PRUint32 length)
     return NS_OK;
 }
 
+PRBool
+nsHttpPipeline::LastTransactionExpectedNoContent()
+{
+    NS_ABORT_IF_FALSE(mConnection, "no connection");
+    return mConnection->LastTransactionExpectedNoContent();
+}
+
+void
+nsHttpPipeline::SetLastTransactionExpectedNoContent(PRBool val)
+{
+    NS_ABORT_IF_FALSE(mConnection, "no connection");
+     mConnection->SetLastTransactionExpectedNoContent(val);
+}
+
 //-----------------------------------------------------------------------------
 // nsHttpPipeline::nsAHttpConnection
 //-----------------------------------------------------------------------------
@@ -310,16 +323,20 @@ nsHttpPipeline::SetConnection(nsAHttpConnection *conn)
 }
 
 void
-nsHttpPipeline::GetSecurityCallbacks(nsIInterfaceRequestor **result)
+nsHttpPipeline::GetSecurityCallbacks(nsIInterfaceRequestor **result,
+                                     nsIEventTarget        **target)
 {
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
 
     // return security callbacks from first request
     nsAHttpTransaction *trans = Request(0);
     if (trans)
-        trans->GetSecurityCallbacks(result);
-    else
+        trans->GetSecurityCallbacks(result, target);
+    else {
         *result = nsnull;
+        if (target)
+            *target = nsnull;
+    }
 }
 
 void

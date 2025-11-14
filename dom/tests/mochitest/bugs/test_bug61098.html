@@ -55,8 +55,8 @@ function registerMockPromptService()
       var winUtils = this.domWindow
                          .QueryInterface(Ci.nsIInterfaceRequestor)
                          .getInterface(Ci.nsIDOMWindowUtils);
-      winUtils.enterModalState();
-      winUtils.leaveModalState();
+      var w = winUtils.enterModalStateWithWindow();
+      winUtils.leaveModalStateWithWindow(w);
     },
 
     alert: function(aDialogTitle, aText)

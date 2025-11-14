@@ -42,7 +42,6 @@
 #include "nsJARProtocolHandler.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
-#include "nsInt64.h"
 #include "nsEscape.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
@@ -94,7 +93,10 @@ public:
         , mContentLength(-1)
     {
         if (fullJarURI) {
-            nsresult rv = fullJarURI->GetAsciiSpec(mJarDirSpec);
+#ifdef DEBUG
+            nsresult rv =
+#endif
+                fullJarURI->GetAsciiSpec(mJarDirSpec);
             NS_ASSERTION(NS_SUCCEEDED(rv), "this shouldn't fail");
         }
     }

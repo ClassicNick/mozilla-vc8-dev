@@ -291,10 +291,17 @@ public:
                       ContentType aContentType,
                       GLContext* aContext)
         : TextureImage(aTexture, aSize, aWrapMode, aContentType)
-        , mTextureInited(PR_FALSE)
+        , mTextureState(Created)
         , mGLContext(aContext)
         , mUpdateOffset(0, 0)
     {}
+
+    enum TextureState
+    {
+      Created, // Texture created, but has not had glTexImage called to initialize it.
+      Initialized,  // Texture memory exists, but contents are invalid.
+      Valid  // Texture fully ready to use.
+    };
 
     virtual gfxASurface* BeginUpdate(nsIntRegion& aRegion);
     virtual void EndUpdate();
@@ -317,7 +324,7 @@ public:
     virtual void Resize(const nsIntSize& aSize);
 protected:
 
-    PRBool mTextureInited;
+    TextureState mTextureState;
     GLContext* mGLContext;
     nsRefPtr<gfxASurface> mUpdateSurface;
     nsIntRegion mUpdateRegion;
@@ -404,12 +411,12 @@ public:
         mIsGLES2(PR_FALSE),
 #endif
         mIsGlobalSharedContext(PR_FALSE),
-        mWindowOriginBottomLeft(PR_FALSE),
         mVendor(-1),
         mDebugMode(0),
         mCreationFormat(aFormat),
         mSharedContext(aSharedContext),
         mOffscreenTexture(0),
+        mFlipped(PR_FALSE),
         mBlitProgram(0),
         mBlitFramebuffer(0),
         mOffscreenFBO(0),
@@ -509,8 +516,15 @@ public:
      * This means that various GLES2 restrictions might be in effect (modulo
      * extensions).
      */
-    PRBool IsGLES2() {
+    PRBool IsGLES2() const {
         return mIsGLES2;
+    }
+    
+    /**
+     * Returns PR_TRUE if either this is the GLES2 API, or had the GL_ARB_ES2_compatibility extension
+     */
+    PRBool HasES2Compatibility() const {
+        return mIsGLES2 || IsExtensionSupported(ARB_ES2_compatibility);
     }
 
     enum {
@@ -523,36 +537,6 @@ public:
 
     int Vendor() const {
         return mVendor;
-    }
-
-    /**
-     * Returns PR_TRUE if the window coordinate origin is the bottom
-     * left corener.  If PR_FALSE, it is the top left corner.
-     *
-     * This needs to be taken into account when calling glViewport
-     * and glScissor when drawing directly to a window.  If this is
-     * PR_FALSE, the y coordinate given to those functions should be
-     * (windowHeight - (desiredHeight + desiredY)).
-     *
-     * This should only be done when drawing directly to a window;
-     * when drawing to a FBO, the origin is always the bottom left.
-     *
-     * See FixWindowCoordinateRect().
-     */
-    PRBool IsWindowOriginBottomLeft() {
-        return mWindowOriginBottomLeft;
-    }
-
-    /**
-     * Fix up the rectangle given in aRect, taking into account
-     * window height aWindowHeight and whether windows have their
-     * natural origin in the bottom left or not.
-     */
-    nsIntRect& FixWindowCoordinateRect(nsIntRect& aRect, int aWindowHeight) {
-        if (!mWindowOriginBottomLeft) {
-            aRect.y = aWindowHeight - (aRect.height + aRect.y);
-        }
-        return aRect;
     }
 
     /**
@@ -845,10 +829,11 @@ public:
         APPLE_client_storage,
         ARB_texture_non_power_of_two,
         ARB_pixel_buffer_object,
+        ARB_ES2_compatibility,
         Extensions_Max
     };
 
-    PRBool IsExtensionSupported(GLExtensions aKnownExtension) {
+    PRBool IsExtensionSupported(GLExtensions aKnownExtension) const {
         return mAvailableExtensions[aKnownExtension];
     }
 
@@ -857,13 +842,13 @@ public:
                                    const char *extension);
 
     GLint GetMaxTextureSize() { return mMaxTextureSize; }
+    void SetFlipped(PRBool aFlipped) { mFlipped = aFlipped; }
 
 protected:
     PRPackedBool mInitialized;
     PRPackedBool mIsOffscreen;
     PRPackedBool mIsGLES2;
     PRPackedBool mIsGlobalSharedContext;
-    PRPackedBool mWindowOriginBottomLeft;
 
     PRInt32 mVendor;
 
@@ -893,6 +878,7 @@ protected:
     gfxIntSize mOffscreenSize;
     gfxIntSize mOffscreenActualSize;
     GLuint mOffscreenTexture;
+    PRBool mFlipped;
 
     // lazy-initialized things
     GLuint mBlitProgram, mBlitFramebuffer;
@@ -920,6 +906,10 @@ protected:
         bool& operator[](size_t index) {
             NS_ASSERTION(index < setlen, "out of range");
             return values[index];
+        }
+
+        const bool& operator[](size_t index) const {
+            return const_cast<ExtensionBitset*>(this)->operator[](index);
         }
 
         bool values[setlen];
@@ -1053,10 +1043,20 @@ public:
 
 protected:
 
+    GLint FixYValue(GLint y, GLint height)
+    {
+        return mFlipped ? ViewportRect().height - (height + y) : y;
+    }
+
     // only does the glScissor call, no ScissorRect business
     void raw_fScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
         BEFORE_GL_CALL;
-        mSymbols.fScissor(x, y, width, height);
+        // GL's coordinate system is flipped compared to ours (in the Y axis),
+        // so we may need to flip our rectangle.
+        mSymbols.fScissor(x, 
+                          FixYValue(y, height),
+                          width, 
+                          height);
         AFTER_GL_CALL;
     }
 
@@ -1103,6 +1103,11 @@ protected:
     // only does the glViewport call, no ViewportRect business
     void raw_fViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
         BEFORE_GL_CALL;
+        // XXX: Flipping should really happen using the destination height, but
+        // we use viewport instead and assume viewport size matches the
+        // destination. If we ever try use partial viewports for layers we need
+        // to fix this, and remove the assertion.
+        NS_ASSERTION(!mFlipped || (x == 0 && y == 0), "TODO: Need to flip the viewport rect"); 
         mSymbols.fViewport(x, y, width, height);
         AFTER_GL_CALL;
     }
@@ -1766,13 +1771,17 @@ public:
 
     void fCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
         BEFORE_GL_CALL;
-        mSymbols.fCopyTexImage2D(target, level, internalformat, x, y, width, height, border);
+        mSymbols.fCopyTexImage2D(target, level, internalformat, 
+                                 x, FixYValue(y, height),
+                                 width, height, border);
         AFTER_GL_CALL;
     }
 
     void fCopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height) {
         BEFORE_GL_CALL;
-        mSymbols.fCopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
+        mSymbols.fCopyTexSubImage2D(target, level, xoffset, yoffset, 
+                                    x, FixYValue(y, height),
+                                    width, height);
         AFTER_GL_CALL;
     }
 
@@ -2055,25 +2064,12 @@ public:
 
 };
 
-inline void
-GLDebugPrintError(GLContext* aCx, const char* const aFile, int aLine)
-{
-    aCx->MakeCurrent();
-    GLenum err = aCx->fGetError();
-    if (err) {
-        printf_stderr("GL ERROR: 0x%04x at %s:%d\n", err, aFile, aLine);
-    }
-}
-
-#ifdef DEBUG
-#  define DEBUG_GL_ERROR_CHECK(cx) mozilla::gl::GLDebugPrintError(cx, __FILE__, __LINE__)
-#else
-#  define DEBUG_GL_ERROR_CHECK(cx) do { } while (0)
-#endif
-
 inline PRBool
 DoesVendorStringMatch(const char* aVendorString, const char *aWantedVendor)
 {
+    if (!aVendorString || !aWantedVendor)
+        return PR_FALSE;
+
     const char *occurrence = strstr(aVendorString, aWantedVendor);
 
     // aWantedVendor not found

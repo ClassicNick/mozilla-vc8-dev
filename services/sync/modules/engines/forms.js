@@ -44,6 +44,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/log4moz.js");
 
 const FORMS_TTL = 5184000; // 60 days
@@ -90,7 +91,7 @@ let FormWrapper = {
     getQuery.params.value = value;
 
     // Give the guid if we found one
-    let item = Utils.queryAsync(getQuery, "guid")[0];
+    let item = Utils.queryAsync(getQuery, ["guid"])[0];
     
     if (!item) {
       // Shouldn't happen, but Bug 597400...
@@ -119,9 +120,9 @@ let FormWrapper = {
 
   hasGUID: function hasGUID(guid) {
     let query = this.createStatement(
-      "SELECT 1 FROM moz_formhistory WHERE guid = :guid");
+      "SELECT guid FROM moz_formhistory WHERE guid = :guid LIMIT 1");
     query.params.guid = guid;
-    return Utils.queryAsync(query).length == 1;
+    return Utils.queryAsync(query, ["guid"]).length == 1;
   },
 
   replaceGUID: function replaceGUID(oldGUID, newGUID) {
@@ -159,6 +160,8 @@ FormEngine.prototype = {
   _storeObj: FormStore,
   _trackerObj: FormTracker,
   _recordObj: FormRec,
+  applyIncomingBatchSize: FORMS_STORE_BATCH_SIZE,
+
   get prefName() "history",
 
   _findDupe: function _findDupe(item) {
@@ -172,6 +175,17 @@ function FormStore(name) {
 }
 FormStore.prototype = {
   __proto__: Store.prototype,
+
+  applyIncomingBatch: function applyIncomingBatch(records) {
+    return Utils.runInTransaction(Svc.Form.DBConnection, function() {
+      return Store.prototype.applyIncomingBatch.call(this, records);
+    }, this);
+  },
+
+  applyIncoming: function applyIncoming(record) {
+    Store.prototype.applyIncoming.call(this, record);
+    this._sleep(0); // Yield back to main thread after synchronous operation.
+  },
 
   getAllIDs: function FormStore_getAllIDs() {
     let guids = {};
@@ -193,7 +207,7 @@ FormStore.prototype = {
     let entry = FormWrapper.getEntry(id);
     if (entry != null) {
       record.name = entry.name;
-      record.value = entry.value
+      record.value = entry.value;
     }
     else
       record.deleted = true;

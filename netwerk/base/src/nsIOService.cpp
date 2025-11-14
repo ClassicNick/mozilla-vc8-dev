@@ -268,15 +268,15 @@ nsIOService::Init()
 #endif
         mNetworkLinkService = do_GetService(NS_NETWORK_LINK_SERVICE_CONTRACTID);
 
-    if (!mNetworkLinkService) {
-        mManageOfflineStatus = PR_FALSE;
+    if (!mNetworkLinkService)
         // We can't really determine if the machine has a usable network connection,
         // so let's cross our fingers!
-        SetOffline(PR_FALSE);
-    }
+        mManageOfflineStatus = PR_FALSE;
 
     if (mManageOfflineStatus)
         TrackNetworkLinkStatusForOffline();
+    else
+        SetOffline(PR_FALSE);
     
     NS_TIME_FUNCTION_MARK("Set up network link service");
 
@@ -454,6 +454,27 @@ nsIOService::GetProtocolHandler(const char* scheme, nsIProtocolHandler* *result)
         }
 
 #ifdef MOZ_X11
+        // check to see whether GVFS can handle this URI scheme.  if it can
+        // create a nsIURI for the "scheme:", then we assume it has support for
+        // the requested protocol.  otherwise, we failover to using the default
+        // protocol handler.
+
+        rv = CallGetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX"moz-gio",
+                            result);
+        if (NS_SUCCEEDED(rv)) {
+            nsCAutoString spec(scheme);
+            spec.Append(':');
+
+            nsIURI *uri;
+            rv = (*result)->NewURI(spec, nsnull, nsnull, &uri);
+            if (NS_SUCCEEDED(rv)) {
+                NS_RELEASE(uri);
+                return rv;
+            }
+
+            NS_RELEASE(*result);
+        }
+
         // check to see whether GnomeVFS can handle this URI scheme.  if it can
         // create a nsIURI for the "scheme:", then we assume it has support for
         // the requested protocol.  otherwise, we failover to using the default

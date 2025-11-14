@@ -48,7 +48,6 @@ const Cu = Components.utils;
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/ext/Observers.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
-Cu.import("resource://services-sync/ext/Sync.js");
 Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/util.js");
 
@@ -141,6 +140,9 @@ function AsyncResource(uri) {
 }
 AsyncResource.prototype = {
   _logName: "Net.Resource",
+
+  // Wait 5 minutes before killing a request
+  ABORT_TIMEOUT: 300000,
 
   // ** {{{ Resource.authenticator }}} **
   //
@@ -270,7 +272,7 @@ AsyncResource.prototype = {
     // Setup a channel listener so that the actual network operation
     // is performed asynchronously.
     let listener = new ChannelListener(this._onComplete, this._onProgress,
-                                       this._log);
+                                       this._log, this.ABORT_TIMEOUT);
     channel.requestMethod = action;
     channel.asyncOpen(listener, null);
   },
@@ -400,7 +402,7 @@ Resource.prototype = {
   // is never called directly, but is used by the high-level
   // {{{get}}}, {{{put}}}, {{{post}}} and {{delete}} methods.
   _request: function Res__request(action, data) {
-    let [doRequest, cb] = Sync.withCb(this._doRequest, this);
+    let cb = Utils.makeSyncCallback();
     function callback(error, ret) {
       if (error)
         cb.throw(error);
@@ -409,10 +411,13 @@ Resource.prototype = {
 
     // The channel listener might get a failure code
     try {
-      return doRequest(action, data, callback);
+      this._doRequest(action, data, callback);
+      return Utils.waitForSyncCallback(cb);
     } catch(ex) {
-      // Combine the channel stack with this request stack
+      // Combine the channel stack with this request stack.  Need to create
+      // a new error object for that.
       let error = Error(ex.message);
+      error.result = ex.result;
       let chanStack = [];
       if (ex.stack)
         chanStack = ex.stack.trim().split(/\n/).slice(1);
@@ -466,15 +471,14 @@ Resource.prototype = {
 //
 // This object implements the {{{nsIStreamListener}}} interface
 // and is called as the network operation proceeds.
-function ChannelListener(onComplete, onProgress, logger) {
+function ChannelListener(onComplete, onProgress, logger, timeout) {
   this._onComplete = onComplete;
   this._onProgress = onProgress;
   this._log = logger;
+  this._timeout = timeout;
   this.delayAbort();
 }
 ChannelListener.prototype = {
-  // Wait 5 minutes before killing a request
-  ABORT_TIMEOUT: 300000,
 
   onStartRequest: function Channel_onStartRequest(channel) {
     channel.QueryInterface(Ci.nsIHttpChannel);
@@ -497,9 +501,13 @@ ChannelListener.prototype = {
     if (this._data == '')
       this._data = null;
 
-    // Throw the failure code name (and stop execution)
+    // Throw the failure code and stop execution.  Use Components.Exception()
+    // instead of Error() so the exception is QI-able and can be passed across
+    // XPCOM borders while preserving the status code.
     if (!Components.isSuccessCode(status)) {
-      this._onComplete(Error(Components.Exception("", status).name));
+      let message = Components.Exception("", status).name;
+      let error = Components.Exception(message, status);
+      this._onComplete(error);
       return;
     }
 
@@ -535,14 +543,15 @@ ChannelListener.prototype = {
    * Create or push back the abort timer that kills this request
    */
   delayAbort: function delayAbort() {
-    Utils.delay(this.abortRequest, this.ABORT_TIMEOUT, this, "abortTimer");
+    Utils.delay(this.abortRequest, this._timeout, this, "abortTimer");
   },
 
   abortRequest: function abortRequest() {
     // Ignore any callbacks if we happen to get any now
     this.onStopRequest = function() {};
-    this.onDataAvailable = function() {};
-    this._onComplete(Error("Aborting due to channel inactivity."));
+    let error = Components.Exception("Aborting due to channel inactivity.",
+                                     Cr.NS_ERROR_NET_TIMEOUT);
+    this._onComplete(error);
   }
 };
 

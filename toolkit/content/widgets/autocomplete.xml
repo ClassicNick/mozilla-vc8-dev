@@ -110,20 +110,24 @@
       <!-- =================== nsIAutoCompleteInput =================== -->
 
       <field name="popup"><![CDATA[
-        var popup = null;
-        var popupId = this.getAttribute("autocompletepopup");
-        if (popupId)
-          popup = document.getElementById(popupId);
-        if (!popup) {
-          popup = document.createElement("panel");
-          popup.setAttribute("type", "autocomplete");
-          popup.setAttribute("noautofocus", "true");
+        // Wrap in a block so that the let statements don't
+        // create properties on 'this' (bug 635252).
+        {
+          let popup = null;
+          let popupId = this.getAttribute("autocompletepopup");
+          if (popupId)
+            popup = document.getElementById(popupId);
+          if (!popup) {
+            popup = document.createElement("panel");
+            popup.setAttribute("type", "autocomplete");
+            popup.setAttribute("noautofocus", "true");
 
-          var popupset = document.getAnonymousElementByAttribute(this, "anonid", "popupset");
-          popupset.appendChild(popup);
+            let popupset = document.getAnonymousElementByAttribute(this, "anonid", "popupset");
+            popupset.appendChild(popup);
+          }
+          popup.mInput = this;
+          popup;
         }
-        popup.mInput = this;
-        popup;
       ]]></field>
 
       <property name="controller" onget="return this.mController;" readonly="true"/>

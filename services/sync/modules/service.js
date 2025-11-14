@@ -54,12 +54,13 @@ const CLUSTER_BACKOFF = 5 * 60 * 1000; // 5 minutes
 // How long a key to generate from an old passphrase.
 const PBKDF2_KEY_BYTES = 16;
 
+const LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S";
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://services-sync/record.js");
 Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/engines/clients.js");
-Cu.import("resource://services-sync/ext/Sync.js");
 Cu.import("resource://services-sync/ext/Preferences.js");
 Cu.import("resource://services-sync/identity.js");
 Cu.import("resource://services-sync/log4moz.js");
@@ -398,9 +399,11 @@ WeaveSvc.prototype = {
     Svc.Obs.add("weave:service:setup-complete", this);
     Svc.Obs.add("network:offline-status-changed", this);
     Svc.Obs.add("weave:service:sync:finish", this);
+    Svc.Obs.add("weave:service:login:error", this);
     Svc.Obs.add("weave:service:sync:error", this);
     Svc.Obs.add("weave:service:backoff:interval", this);
     Svc.Obs.add("weave:engine:score:updated", this);
+    Svc.Obs.add("weave:engine:sync:apply-failed", this);
     Svc.Obs.add("weave:resource:status:401", this);
     Svc.Prefs.observe("engine.", this);
 
@@ -431,9 +434,12 @@ WeaveSvc.prototype = {
     }
 
     // Send an event now that Weave service is ready.  We don't do this
-    // synchronously so that observers will definitely have access to the
-    // 'Weave' namespace.
-    Utils.delay(function() Svc.Obs.notify("weave:service:ready"), 0);
+    // synchronously so that observers can import this module before
+    // registering an observer.
+    Utils.delay(function() {
+      Status.ready = true;
+      Svc.Obs.notify("weave:service:ready");
+    }, 0);
   },
 
   _checkSetup: function WeaveSvc__checkSetup() {
@@ -541,15 +547,28 @@ WeaveSvc.prototype = {
         this._log.trace("Network offline status change: " + data);
         this._checkSyncStatus();
         break;
+      case "weave:service:login:error":
+        if (Status.login == LOGIN_FAILED_NETWORK_ERROR && !Svc.IO.offline) {
+          this._ignorableErrorCount += 1;
+        }
+        break;
       case "weave:service:sync:error":
         this._handleSyncError();
-        if (Status.sync == CREDENTIALS_CHANGED) {
-          this.logout();
+        switch (Status.sync) {
+          case LOGIN_FAILED_NETWORK_ERROR:
+            if (!Svc.IO.offline) {
+              this._ignorableErrorCount += 1;
+            }
+            break;
+          case CREDENTIALS_CHANGED:
+            this.logout();
+            break;
         }
         break;
       case "weave:service:sync:finish":
         this._scheduleNextSync();
         this._syncErrors = 0;
+        this._ignorableErrorCount = 0;
         break;
       case "weave:service:backoff:interval":
         let interval = (data + Math.random() * data * 0.25) * 1000; // required backoff + up to 25%
@@ -558,6 +577,14 @@ WeaveSvc.prototype = {
         break;
       case "weave:engine:score:updated":
         this._handleScoreUpdate();
+        break;
+      case "weave:engine:sync:apply-failed":
+        // An engine isn't able to apply one or more incoming records.
+        // We don't fail hard on this, but it usually indicates a bug,
+        // so for now treat it as sync error (c.f. Service._syncEngine())
+        Status.engines = [data, ENGINE_APPLY_FAIL];
+        this._syncError = true;
+        this._log.debug(data + " failed to apply some records.");
         break;
       case "weave:resource:status:401":
         this._handleResource401(subject);
@@ -685,18 +712,19 @@ WeaveSvc.prototype = {
   /**
    * Perform the info fetch as part of a login or key fetch.
    */
-  _fetchInfo: function _fetchInfo(url, logout) {
+  _fetchInfo: function _fetchInfo(url) {
     let infoURL = url || this.infoURL;
     
     this._log.trace("In _fetchInfo: " + infoURL);
-    let info = new Resource(infoURL).get();
+    let info;
+    try {
+      info = new Resource(infoURL).get();
+    } catch (ex) {
+      this._checkServerError(ex);
+      throw ex;
+    }
     if (!info.success) {
-      if (info.status == 401) {
-        if (logout) {
-          this.logout();
-          Status.login = LOGIN_FAILED_LOGIN_REJECTED;
-        }
-      }
+      this._checkServerError(info);
       throw "aborting sync, failed to get collections";
     }
     return info;
@@ -821,15 +849,6 @@ WeaveSvc.prototype = {
   
   verifyLogin: function verifyLogin()
     this._notify("verify-login", "", function() {
-      // Make sure we have a cluster to verify against
-      // this is a little weird, if we don't get a node we pretend
-      // to succeed, since that probably means we just don't have storage
-      if (this.clusterURL == "" && !this._setCluster()) {
-        Status.sync = NO_SYNC_NODE_FOUND;
-        Svc.Obs.notify("weave:service:sync:delayed");
-        return true;
-      }
-
       if (!this.username) {
         this._log.warn("No username in verifyLogin.");
         Status.login = LOGIN_FAILED_NO_USERNAME;
@@ -837,21 +856,30 @@ WeaveSvc.prototype = {
       }
 
       // Unlock master password, or return.
+      // Attaching auth credentials to a request requires access to
+      // passwords, which means that Resource.get can throw MP-related
+      // exceptions!
+      // Try to fetch the passphrase first, while we still have control.
       try {
-        // Fetch collection info on every startup.
-        // Attaching auth credentials to a request requires access to
-        // passwords, which means that Resource.get can throw MP-related
-        // exceptions!
-        // Try to fetch the passphrase first, while we still have control.
-        try {
-          this.passphrase;
-        } catch (ex) {
-          this._log.debug("Fetching passphrase threw " + ex +
-                          "; assuming master password locked.");
-          Status.login = MASTER_PASSWORD_LOCKED;
-          return false;
+        this.passphrase;
+      } catch (ex) {
+        this._log.debug("Fetching passphrase threw " + ex +
+                        "; assuming master password locked.");
+        Status.login = MASTER_PASSWORD_LOCKED;
+        return false;
+      }
+
+      try {
+        // Make sure we have a cluster to verify against
+        // this is a little weird, if we don't get a node we pretend
+        // to succeed, since that probably means we just don't have storage
+        if (this.clusterURL == "" && !this._setCluster()) {
+          Status.sync = NO_SYNC_NODE_FOUND;
+          Svc.Obs.notify("weave:service:sync:delayed");
+          return true;
         }
         
+        // Fetch collection info on every startup.
         let test = new Resource(this.infoURL).get();
         
         switch (test.status) {
@@ -1068,8 +1096,10 @@ WeaveSvc.prototype = {
     this._catch(this._lock("service.js: login", 
           this._notify("login", "", function() {
       this._loggedIn = false;
-      if (Svc.IO.offline)
+      if (Svc.IO.offline) {
+        Status.login = LOGIN_FAILED_NETWORK_ERROR;
         throw "Application is offline, login should not be called";
+      }
 
       let initialStatus = this._checkSetup();
       if (username)
@@ -1607,9 +1637,10 @@ WeaveSvc.prototype = {
   _handleSyncError: function WeaveSvc__handleSyncError() {
     this._syncErrors++;
 
-    // do nothing on the first couple of failures, if we're not in backoff due to 5xx errors
+    // Do nothing on the first couple of failures, if we're not in
+    // backoff due to 5xx errors.
     if (!Status.enforceBackoff) {
-      if (this._syncErrors < 3) {
+      if (this._syncErrors < MAX_ERROR_COUNT_BEFORE_BACKOFF) {
         this._scheduleNextSync();
         return;
       }
@@ -1619,13 +1650,20 @@ WeaveSvc.prototype = {
     this._scheduleAtInterval();
   },
 
+  _ignorableErrorCount: 0,
+  shouldIgnoreError: function shouldIgnoreError() {
+    return ([Status.login, Status.sync].indexOf(LOGIN_FAILED_NETWORK_ERROR) != -1
+            && this._ignorableErrorCount < MAX_IGNORE_ERROR_COUNT);
+  },
+
   _skipScheduledRetry: function _skipScheduledRetry() {
     return [LOGIN_FAILED_INVALID_PASSPHRASE,
             LOGIN_FAILED_LOGIN_REJECTED].indexOf(Status.login) == -1;
   },
   
   sync: function sync() {
-    this._log.debug("In wrapping sync().");
+    let dateStr = new Date().toLocaleFormat(LOG_DATE_FORMAT);
+    this._log.info("Starting sync at " + dateStr);
     this._catch(function () {
       // Make sure we're logged in.
       if (this._shouldLogin()) {
@@ -1665,6 +1703,9 @@ WeaveSvc.prototype = {
     // Make sure we should sync or record why we shouldn't
     let reason = this._checkSync();
     if (reason) {
+      if (reason == kSyncNetworkOffline) {
+        Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+      }
       // this is a purposeful abort rather than a failure, so don't set
       // any status bits
       reason = "Can't sync: " + reason;
@@ -1697,7 +1738,7 @@ WeaveSvc.prototype = {
     }
 
     // Figure out what the last modified time is for each collection
-    let info = this._fetchInfo(infoURL, true);
+    let info = this._fetchInfo(infoURL);
     this.globalScore = 0;
 
     // Convert the response to an object and read out the modified times
@@ -1769,7 +1810,9 @@ WeaveSvc.prototype = {
         Svc.Prefs.set("lastSync", new Date().toString());
         Status.sync = SYNC_SUCCEEDED;
         let syncTime = ((Date.now() - syncStartTime) / 1000).toFixed(2);
-        this._log.info("Sync completed successfully in " + syncTime + " secs.");
+        let dateStr = new Date().toLocaleFormat(LOG_DATE_FORMAT);
+        this._log.info("Sync completed successfully at " + dateStr
+                       + " after " + syncTime + " secs.");
       }
     } finally {
       this._syncError = false;
@@ -1818,6 +1861,10 @@ WeaveSvc.prototype = {
 
     let enabled = [eng.name for each (eng in Engines.getEnabled())];
     for (let engineName in meta.payload.engines) {
+      if (engineName == "clients") {
+        // Clients is special.
+        continue;
+      }
       let index = enabled.indexOf(engineName);
       if (index != -1) {
         // The engine is enabled locally. Nothing to do.
@@ -1965,18 +2012,46 @@ WeaveSvc.prototype = {
   },
 
   /**
-   * Check to see if this is a failure
-   *
+   * Handle HTTP response results or exceptions and set the appropriate
+   * Status.* bits.
    */
   _checkServerError: function WeaveSvc__checkServerError(resp) {
-    if (Utils.checkStatus(resp.status, null, [500, [502, 504]])) {
-      Status.enforceBackoff = true;
-      if (resp.status == 503 && resp.headers["retry-after"])
-        Svc.Obs.notify("weave:service:backoff:interval",
-                       parseInt(resp.headers["retry-after"], 10));
+    switch (resp.status) {
+      case 400:
+        if (resp == RESPONSE_OVER_QUOTA) {
+          Status.sync = OVER_QUOTA;
+        }
+        break;
+
+      case 401:
+        this.logout();
+        Status.login = LOGIN_FAILED_LOGIN_REJECTED;
+        break;
+
+      case 500:
+      case 502:
+      case 503:
+      case 504:
+        Status.enforceBackoff = true;
+        if (resp.status == 503 && resp.headers["retry-after"]) {
+          Svc.Obs.notify("weave:service:backoff:interval",
+                         parseInt(resp.headers["retry-after"], 10));
+        }
+        break;
     }
-    if (resp.status == 400 && resp == RESPONSE_OVER_QUOTA)
-      Status.sync = OVER_QUOTA;
+
+    switch (resp.result) {
+      case Cr.NS_ERROR_UNKNOWN_HOST:
+      case Cr.NS_ERROR_CONNECTION_REFUSED:
+      case Cr.NS_ERROR_NET_TIMEOUT:
+      case Cr.NS_ERROR_NET_RESET:
+      case Cr.NS_ERROR_NET_INTERRUPT:
+      case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED:
+        // The constant says it's about login, but in fact it just
+        // indicates general network error.
+        Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+        break;
+    }
   },
   /**
    * Return a value for a backoff interval.  Maximum is eight hours, unless

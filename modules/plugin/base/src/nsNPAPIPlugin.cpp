@@ -51,7 +51,6 @@
 
 #include "jscntxt.h"
 
-#include "nsAutoLock.h"
 #include "nsNPAPIPlugin.h"
 #include "nsNPAPIPluginInstance.h"
 #include "nsNPAPIPluginStreamListener.h"
@@ -108,6 +107,7 @@
 
 #include "nsNetUtil.h"
 
+#include "mozilla/Mutex.h"
 #include "mozilla/PluginLibrary.h"
 using mozilla::PluginLibrary;
 
@@ -123,6 +123,11 @@ using mozilla::plugins::PluginModuleParent;
 #include "mozilla/X11Util.h"
 #endif
 
+#ifdef XP_WIN
+#include <windows.h>
+#endif
+
+using namespace mozilla;
 using namespace mozilla::plugins::parent;
 
 // We should make this const...
@@ -186,7 +191,7 @@ static NPNetscapeFuncs sBrowserFuncs = {
   _urlredirectresponse
 };
 
-static PRLock *sPluginThreadAsyncCallLock = nsnull;
+static Mutex *sPluginThreadAsyncCallLock = nsnull;
 static PRCList sPendingAsyncCalls = PR_INIT_STATIC_CLIST(&sPendingAsyncCalls);
 
 // POST/GET stream type
@@ -225,7 +230,7 @@ static void CheckClassInitialized()
     return;
 
   if (!sPluginThreadAsyncCallLock)
-    sPluginThreadAsyncCallLock = nsAutoLock::NewLock("sPluginThreadAsyncCallLock");
+    sPluginThreadAsyncCallLock = new Mutex("nsNPAPIPlugin.sPluginThreadAsyncCallLock");
 
   initialized = PR_TRUE;
 
@@ -273,7 +278,7 @@ nsNPAPIPlugin::PluginCrashed(const nsAString& pluginDumpID,
 
 #ifdef MOZ_IPC
 
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX) && defined(__i386__)
 static PRInt32 OSXVersion()
 {
   static PRInt32 gOSXVersion = 0x0;
@@ -324,7 +329,7 @@ nsNPAPIPlugin::RunPluginOOP(const nsPluginTag *aPluginTag)
     return PR_FALSE;
   }
 
-#ifdef XP_MACOSX
+#if defined(XP_MACOSX) && defined(__i386__)
   // Only allow on Mac OS X 10.6 or higher.
   if (OSXVersion() < 0x00001060) {
     return PR_FALSE;
@@ -345,6 +350,7 @@ nsNPAPIPlugin::RunPluginOOP(const nsPluginTag *aPluginTag)
         return PR_FALSE;
       }
     }
+
     // At this point we have Flash 10.1+ but now we also need to blacklist
     // if the machine has a Intel GMA9XX GPU.
     if (GMA9XXGraphics()) {
@@ -474,7 +480,7 @@ GetNewPluginLibrary(nsPluginTag *aPluginTag)
 
 // Creates an nsNPAPIPlugin object. One nsNPAPIPlugin object exists per plugin (not instance).
 nsresult
-nsNPAPIPlugin::CreatePlugin(nsPluginTag *aPluginTag, nsIPlugin** aResult)
+nsNPAPIPlugin::CreatePlugin(nsPluginTag *aPluginTag, nsNPAPIPlugin** aResult)
 {
   *aResult = nsnull;
 
@@ -835,7 +841,7 @@ nsPluginThreadRunnable::nsPluginThreadRunnable(NPP instance,
   PR_INIT_CLIST(this);
 
   {
-    nsAutoLock lock(sPluginThreadAsyncCallLock);
+    MutexAutoLock lock(*sPluginThreadAsyncCallLock);
 
     nsNPAPIPluginInstance *inst = (nsNPAPIPluginInstance *)instance->ndata;
     if (!inst || !inst->IsRunning()) {
@@ -856,7 +862,7 @@ nsPluginThreadRunnable::~nsPluginThreadRunnable()
   }
 
   {
-    nsAutoLock lock(sPluginThreadAsyncCallLock);
+    MutexAutoLock lock(*sPluginThreadAsyncCallLock);
 
     PR_REMOVE_LINK(this);
   }
@@ -882,7 +888,7 @@ OnPluginDestroy(NPP instance)
   }
 
   {
-    nsAutoLock lock(sPluginThreadAsyncCallLock);
+    MutexAutoLock lock(*sPluginThreadAsyncCallLock);
 
     if (PR_CLIST_IS_EMPTY(&sPendingAsyncCalls)) {
       return;
@@ -908,27 +914,22 @@ OnShutdown()
                "Pending async plugin call list not cleaned up!");
 
   if (sPluginThreadAsyncCallLock) {
-    nsAutoLock::DestroyLock(sPluginThreadAsyncCallLock);
+    delete sPluginThreadAsyncCallLock;
 
     sPluginThreadAsyncCallLock = nsnull;
   }
 }
 
-void
-EnterAsyncPluginThreadCallLock()
+AsyncCallbackAutoLock::AsyncCallbackAutoLock()
 {
-  if (sPluginThreadAsyncCallLock) {
-    PR_Lock(sPluginThreadAsyncCallLock);
-  }
+  sPluginThreadAsyncCallLock->Lock();
 }
 
-void
-ExitAsyncPluginThreadCallLock()
+AsyncCallbackAutoLock::~AsyncCallbackAutoLock()
 {
-  if (sPluginThreadAsyncCallLock) {
-    PR_Unlock(sPluginThreadAsyncCallLock);
-  }
+  sPluginThreadAsyncCallLock->Unlock();
 }
+
 
 NPP NPPStack::sCurrentNPP = nsnull;
 
@@ -1517,7 +1518,10 @@ _retainobject(NPObject* npobj)
     NPN_PLUGIN_LOG(PLUGIN_LOG_ALWAYS,("NPN_retainobject called from the wrong thread\n"));
   }
   if (npobj) {
-    int32_t refCnt = PR_AtomicIncrement((PRInt32*)&npobj->referenceCount);
+#ifdef NS_BUILD_REFCNT_LOGGING
+    int32_t refCnt =
+#endif
+      PR_ATOMIC_INCREMENT((PRInt32*)&npobj->referenceCount);
     NS_LOG_ADDREF(npobj, refCnt, "BrowserNPObject", sizeof(NPObject));
   }
 
@@ -1533,7 +1537,7 @@ _releaseobject(NPObject* npobj)
   if (!npobj)
     return;
 
-  int32_t refCnt = PR_AtomicDecrement((PRInt32*)&npobj->referenceCount);
+  int32_t refCnt = PR_ATOMIC_DECREMENT((PRInt32*)&npobj->referenceCount);
   NS_LOG_RELEASE(npobj, refCnt, "BrowserNPObject");
 
   if (refCnt == 0) {
@@ -2034,7 +2038,11 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
       inst->IsWindowless(&windowless);
       NPBool needXEmbed = PR_FALSE;
       if (!windowless) {
-        inst->GetValueFromPlugin(NPPVpluginNeedsXEmbed, &needXEmbed);
+        res = inst->GetValueFromPlugin(NPPVpluginNeedsXEmbed, &needXEmbed);
+        // If the call returned an error code make sure we still use our default value.
+        if (NS_FAILED(res)) {
+          needXEmbed = PR_FALSE;
+        }
       }
       if (windowless || needXEmbed) {
         (*(Display **)result) = mozilla::DefaultXDisplay();
