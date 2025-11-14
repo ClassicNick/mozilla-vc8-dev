@@ -60,6 +60,7 @@
 #include "jsarray.h"
 #include "jsbool.h"
 #include "jscntxt.h"
+#include "jscompartment.h"
 #include "jsdate.h"
 #include "jsdbgapi.h"
 #include "jsemit.h"
@@ -2221,7 +2222,7 @@ TraceRecorder::TraceRecorder(JSContext* cx, VMSideExit* anchor, VMFragment* frag
     global_slots(NULL),
     callDepth(anchor ? anchor->calldepth : 0),
     atoms(FrameAtomBase(cx, cx->fp())),
-    consts(cx->fp()->script()->constOffset
+    consts(JSScript::isValidOffset(cx->fp()->script()->constOffset)
            ? cx->fp()->script()->consts()->vector
            : NULL),
     strictModeCode_ins(NULL),
@@ -2344,7 +2345,13 @@ TraceRecorder::TraceRecorder(JSContext* cx, VMSideExit* anchor, VMFragment* frag
          * thread and cannot outlive the corresponding JSThreadData.
          */
         w.comment("begin-interruptFlags-check");
-        LIns* flagptr = w.nameImmpNonGC((void *) &JS_THREAD_DATA(cx)->interruptFlags);
+        /* FIXME: See bug 621140 for moving interruptCounter to the compartment. */
+#ifdef JS_THREADSAFE
+        void *interrupt = (void*) &cx->runtime->interruptCounter;
+#else
+        void *interrupt = (void*) &JS_THREAD_DATA(cx)->interruptFlags;
+#endif
+        LIns* flagptr = w.nameImmpNonGC(interrupt);
         LIns* x = w.ldiVolatile(flagptr);
         guard(true, w.eqi0(x), TIMEOUT_EXIT);
         w.comment("end-interruptFlags-check");
@@ -2357,7 +2364,7 @@ TraceRecorder::TraceRecorder(JSContext* cx, VMSideExit* anchor, VMFragment* frag
 #ifdef JS_METHODJIT
         if (cx->methodJitEnabled) {
             w.comment("begin-count-loop-iterations");
-            LIns* counterPtr = w.nameImmpNonGC((void *) &JS_THREAD_DATA(cx)->iterationCounter);
+            LIns* counterPtr = w.nameImmpNonGC((void *) &traceMonitor->iterationCounter);
             LIns* counterValue = w.ldiVolatile(counterPtr);
             LIns* test = w.ltiN(counterValue, LOOP_COUNT_MAX);
             LIns *branch = w.jfUnoptimizable(test);
@@ -2430,7 +2437,7 @@ TraceRecorder::finishSuccessfully()
     delete this;
 
     /* Catch OOM that occurred during recording. */
-    if (localtm->outOfMemory() || OverfullJITCache(localtm)) {
+    if (localtm->outOfMemory() || OverfullJITCache(localcx, localtm)) {
         ResetJIT(localcx, FR_OOM);
         return ARECORD_ABORTED;
     }
@@ -2446,7 +2453,7 @@ TraceRecorder::finishAbort(const char* reason)
 
     AUDIT(recorderAborted);
 #ifdef DEBUG
-    debug_only_printf(LC_TMMinimal,
+    debug_only_printf(LC_TMMinimal | LC_TMAbort,
                       "Abort recording of tree %s:%d@%d at %s:%d@%d: %s.\n",
                       tree->treeFileName,
                       tree->treeLineNumber,
@@ -2480,7 +2487,7 @@ TraceRecorder::finishAbort(const char* reason)
 
     localtm->recorder = NULL;
     delete this;
-    if (localtm->outOfMemory() || OverfullJITCache(localtm)) {
+    if (localtm->outOfMemory() || OverfullJITCache(localcx, localtm)) {
         ResetJIT(localcx, FR_OOM);
         return JIT_RESET;
     }
@@ -2788,6 +2795,13 @@ TraceMonitor::sweep()
     JS_ASSERT(!ontrace());
     debug_only_print0(LC_TMTracer, "Purging fragments with dead things");
 
+    bool shouldAbortRecording = false;
+    TreeFragment *recorderTree = NULL;
+    if (recorder) {
+        recorderTree = recorder->getTree();
+        shouldAbortRecording = HasUnreachableGCThings(recorderTree);
+    }
+        
     for (size_t i = 0; i < FRAGMENT_TABLE_SIZE; ++i) {
         TreeFragment** fragp = &vmfragments[i];
         while (TreeFragment* frag = *fragp) {
@@ -2805,7 +2819,9 @@ TraceMonitor::sweep()
                 JS_ASSERT(frag->root == frag);
                 *fragp = frag->next;
                 do {
-                    verbose_only( FragProfiling_FragFinalizer(frag, this); )
+                    verbose_only( FragProfiling_FragFinalizer(frag, this); );
+                    if (recorderTree == frag)
+                        shouldAbortRecording = true;
                     TrashTree(frag);
                     frag = frag->peer;
                 } while (frag);
@@ -2815,7 +2831,7 @@ TraceMonitor::sweep()
         }
     }
 
-    if (recorder && HasUnreachableGCThings(recorder->getTree()))
+    if (shouldAbortRecording)
         recorder->finishAbort("dead GC things");
 }
 
@@ -4289,7 +4305,7 @@ TraceRecorder::guard(bool expected, LIns* cond, VMSideExit* exit,
             RETURN_STOP("Constantly false guard detected");
         }
         /*
-         * If this assertion fails, first decide if you want recording to
+         * If you hit this assertion, first decide if you want recording to
          * abort in the case where the guard always exits.  If not, find a way
          * to detect that case and avoid calling guard().  Otherwise, change
          * the invocation of guard() so it passes in abortIfAlwaysExits=true,
@@ -4298,7 +4314,7 @@ TraceRecorder::guard(bool expected, LIns* cond, VMSideExit* exit,
          * insGuard() below and an always-exits guard will be inserted, which
          * is correct but sub-optimal.)
          */
-        JS_ASSERT(0);
+        JS_NOT_REACHED("unexpected constantly false guard detected");
     }
 
     /*
@@ -4404,6 +4420,10 @@ ResetJITImpl(JSContext* cx)
         JS_ASSERT_NOT_ON_TRACE(cx);
         AbortRecording(cx, "flush cache");
     }
+#if JS_METHODJIT
+    if (tm->profile)
+        AbortProfiling(cx);
+#endif
     if (ProhibitFlush(cx)) {
         debug_only_print0(LC_TMTracer, "Deferring JIT flush due to deep bail.\n");
         tm->needFlush = JS_TRUE;
@@ -5509,7 +5529,7 @@ TraceRecorder::startRecorder(JSContext* cx, VMSideExit* anchor, VMFragment* f,
                                      expectedInnerExit, outerScript, outerPC, outerArgc,
                                      speculate);
 
-    if (!tm->recorder || tm->outOfMemory() || OverfullJITCache(tm)) {
+    if (!tm->recorder || tm->outOfMemory() || OverfullJITCache(cx, tm)) {
         ResetJIT(cx, FR_OOM);
         return false;
     }
@@ -5634,9 +5654,9 @@ RecordTree(JSContext* cx, TreeFragment* first, JSScript* outerScript, jsbytecode
     AUDIT(recorderStarted);
 
     if (tm->outOfMemory() ||
-        OverfullJITCache(tm) ||
+        OverfullJITCache(cx, tm) ||
         !tm->tracedScripts.put(cx->fp()->script())) {
-        if (!OverfullJITCache(tm))
+        if (!OverfullJITCache(cx, tm))
             js_ReportOutOfMemory(cx);
         Backoff(cx, (jsbytecode*) f->root->ip);
         ResetJIT(cx, FR_OOM);
@@ -6503,7 +6523,7 @@ ExecuteTree(JSContext* cx, TreeFragment* f, uintN& inlineCallCount,
     debug_only_stmt(*(uint64*)&tm->storage->global()[globalSlots] = 0xdeadbeefdeadbeefLL;)
 
     /* Execute trace. */
-    JS_THREAD_DATA(cx)->iterationCounter = 0;
+    tm->iterationCounter = 0;
     debug_only(int64 t0 = PRMJ_Now();)
 #ifdef MOZ_TRACEVIS
     VMSideExit* lr = (TraceVisStateObj(cx, S_NATIVE), ExecuteTrace(cx, f, state));
@@ -6522,7 +6542,7 @@ ExecuteTree(JSContext* cx, TreeFragment* f, uintN& inlineCallCount,
     bool ok = !(state.builtinStatus & BUILTIN_ERROR);
     JS_ASSERT_IF(cx->throwing, !ok);
 
-    size_t iters = JS_THREAD_DATA(cx)->iterationCounter;
+    size_t iters = tm->iterationCounter;
 
     f->execs++;
     f->iters += iters;
@@ -7244,7 +7264,7 @@ TraceRecorder::monitorRecording(JSOp op)
             return status == ARECORD_ERROR ? ARECORD_ERROR : ARECORD_ABORTED;
         }
 
-        if (outOfMemory() || OverfullJITCache(&localtm)) {
+        if (outOfMemory() || OverfullJITCache(cx, &localtm)) {
             ResetJIT(cx, FR_OOM);
 
             /*
@@ -7513,18 +7533,21 @@ disable_debugger_exceptions() { }
 void
 SetMaxCodeCacheBytes(JSContext* cx, uint32 bytes)
 {
-    TraceMonitor* tm = &JS_THREAD_DATA(cx)->traceMonitor;
+    TraceMonitor* tm = &JS_TRACE_MONITOR(cx);
     JS_ASSERT(tm->codeAlloc && tm->dataAlloc && tm->traceAlloc);
     if (bytes > 1 G)
         bytes = 1 G;
     if (bytes < 128 K)
         bytes = 128 K;
-    tm->maxCodeCacheBytes = bytes;
+    JS_THREAD_DATA(cx)->maxCodeCacheBytes = bytes;
 }
 
 bool
 InitJIT(TraceMonitor *tm)
 {
+    // InitJIT expects this area to be zero'd
+    memset(tm, 0, sizeof(*tm));
+
 #if defined JS_JIT_SPEW
     tm->profAlloc = NULL;
     /* Set up debug logging. */
@@ -7568,9 +7591,6 @@ InitJIT(TraceMonitor *tm)
         did_we_check_processor_features = true;
     }
 
-    /* Set the default size for the code cache to 16MB. */
-    tm->maxCodeCacheBytes = 16 M;
-
     tm->oracle = new Oracle();
 
     tm->profile = NULL;
@@ -7585,7 +7605,6 @@ InitJIT(TraceMonitor *tm)
 
     tm->flushEpoch = 0;
     
-    JS_ASSERT(!tm->dataAlloc && !tm->traceAlloc && !tm->codeAlloc);
     tm->dataAlloc = new VMAllocator();
     tm->traceAlloc = new VMAllocator();
     tm->tempAlloc = new VMAllocator();
@@ -7780,7 +7799,7 @@ PurgeScriptFragments(TraceMonitor* tm, JSScript* script)
 }
 
 bool
-OverfullJITCache(TraceMonitor* tm)
+OverfullJITCache(JSContext *cx, TraceMonitor* tm)
 {
     /*
      * You might imagine the outOfMemory flag on the allocator is sufficient
@@ -7816,7 +7835,7 @@ OverfullJITCache(TraceMonitor* tm)
      * handled by the (few) callers of this function.
      *
      */
-    jsuint maxsz = tm->maxCodeCacheBytes;
+    jsuint maxsz = JS_THREAD_DATA(cx)->maxCodeCacheBytes;
     VMAllocator *dataAlloc = tm->dataAlloc;
     VMAllocator *traceAlloc = tm->traceAlloc;
     CodeAlloc *codeAlloc = tm->codeAlloc;
@@ -7884,9 +7903,9 @@ TraceRecorder::updateAtoms()
 {
     JSScript *script = cx->fp()->script();
     atoms = FrameAtomBase(cx, cx->fp());
-    consts = cx->fp()->hasImacropc() || script->constOffset == 0
-           ? 0 
-           : script->consts()->vector;
+    consts = (cx->fp()->hasImacropc() || !JSScript::isValidOffset(script->constOffset))
+             ? 0
+             : script->consts()->vector;
     strictModeCode_ins = w.name(w.immi(script->strictModeCode), "strict");
 }
 
@@ -7894,7 +7913,7 @@ JS_REQUIRES_STACK void
 TraceRecorder::updateAtoms(JSScript *script)
 {
     atoms = script->atomMap.vector;
-    consts = script->constOffset == 0 ? 0 : script->consts()->vector;
+    consts = JSScript::isValidOffset(script->constOffset) ? script->consts()->vector : 0;
     strictModeCode_ins = w.name(w.immi(script->strictModeCode), "strict");
 }
 
@@ -10839,13 +10858,20 @@ TraceRecorder::newArray(JSObject* ctor, uint32 argc, Value* argv, Value* rval)
     CHECK_STATUS(getClassPrototype(ctor, proto_ins));
 
     LIns *arr_ins;
-    if (argc == 0 || (argc == 1 && argv[0].isNumber())) {
-        LIns *args[] = { argc == 0 ? w.immi(0) : d2i(get(argv)), proto_ins, cx_ins };
-        arr_ins = w.call(&js_NewEmptyArray_ci, args);
+    if (argc == 0) {
+        LIns *args[] = { proto_ins, cx_ins };
+        arr_ins = w.call(&js::NewDenseEmptyArray_ci, args);
         guard(false, w.eqp0(arr_ins), OOM_EXIT);
+
+    } else if (argc == 1 && argv[0].isNumber()) {
+        /* Abort on RangeError if the double doesn't fit in a uint. */
+        LIns *args[] = { proto_ins, d2i(get(argv)), cx_ins };
+        arr_ins = w.call(&js::NewDenseUnallocatedArray_ci, args);
+        guard(false, w.eqp0(arr_ins), OOM_EXIT);
+
     } else {
-        LIns *args[] = { w.nameImmi(argc), proto_ins, cx_ins };
-        arr_ins = w.call(&js_NewPreallocatedArray_ci, args);
+        LIns *args[] = { proto_ins, w.nameImmi(argc), cx_ins };
+        arr_ins = w.call(&js::NewDenseAllocatedArray_ci, args);
         guard(false, w.eqp0(arr_ins), OOM_EXIT);
 
         // arr->slots[i] = box_jsval(vp[i]);  for i in 0..argc
@@ -11030,7 +11056,7 @@ TraceRecorder::callSpecializedNative(JSNativeTraceInfo *trcinfo, uintN argc,
                     goto next_specialization;
                 *argp = this_ins;
             } else if (argtype == 'M') {
-                MathCache *mathCache = JS_THREAD_DATA(cx)->getMathCache(cx);
+                MathCache *mathCache = GetMathCache(cx);
                 if (!mathCache)
                     return RECORD_ERROR;
                 *argp = w.nameImmpNonGC(mathCache);
@@ -11165,7 +11191,7 @@ TraceRecorder::callNative(uintN argc, JSOp mode)
                 }
             } else if (native == js_math_abs) {
                 LIns* a = get(&vp[2]);
-                if (IsPromoteInt(a)) {
+                if (IsPromoteInt(a) && vp[2].toNumber() != INT_MIN) {
                     a = w.demote(a);
                     /* abs(INT_MIN) can't be done using integers;  exit if we see it. */
                     LIns* intMin_ins = w.name(w.immi(0x80000000), "INT_MIN");
@@ -11183,6 +11209,8 @@ TraceRecorder::callNative(uintN argc, JSOp mode)
                 JSString *str = vp[1].toString();
                 if (native == js_str_charAt) {
                     jsdouble i = vp[2].toNumber();
+                    if (JSDOUBLE_IS_NaN(i))
+                      i = 0;
                     if (i < 0 || i >= str->length())
                         RETURN_STOP("charAt out of bounds");
                     LIns* str_ins = get(&vp[1]);
@@ -11194,6 +11222,8 @@ TraceRecorder::callNative(uintN argc, JSOp mode)
                     return RECORD_CONTINUE;
                 } else if (native == js_str_charCodeAt) {
                     jsdouble i = vp[2].toNumber();
+                    if (JSDOUBLE_IS_NaN(i))
+                      i = 0;
                     if (i < 0 || i >= str->length())
                         RETURN_STOP("charCodeAt out of bounds");
                     LIns* str_ins = get(&vp[1]);
@@ -11447,7 +11477,7 @@ TraceRecorder::functionCall(uintN argc, JSOp mode)
 
     if (Probes::callTrackingActive(cx)) {
         JSScript *script = FUN_SCRIPT(fun);
-        if (! script || ! script->isEmpty()) {
+        if (!script || !script->isEmpty()) {
             LIns* args[] = { w.immi(1), w.nameImmpNonGC(fun), cx_ins };
             LIns* call_ins = w.call(&functionProbe_ci, args);
             guard(false, w.eqi0(call_ins), MISMATCH_EXIT);
@@ -12773,9 +12803,10 @@ TraceRecorder::setElem(int lval_spindex, int idx_spindex, int v_spindex)
         CHECK_STATUS_A(makeNumberInt32(idx_ins, &idx_ins));
 
         // Ensure idx >= 0 && idx < length (by using uint32)
-        guard(true,
-              w.ltui(idx_ins, w.ldiConstTypedArrayLength(priv_ins)),
-              OVERFLOW_EXIT);
+        CHECK_STATUS_A(guard(true,
+                             w.name(w.ltui(idx_ins, w.ldiConstTypedArrayLength(priv_ins)),
+                                    "inRange"),
+                             OVERFLOW_EXIT, /* abortIfAlwaysExits = */true));
 
         // We're now ready to store
         LIns* data_ins = w.ldpConstTypedArrayData(priv_ins);
@@ -13198,13 +13229,11 @@ TraceRecorder::interpretedFunctionCall(Value& fval, JSFunction* fun, uintN argc,
 {
     /*
      * The function's identity (JSFunction and therefore JSScript) is guarded,
-     * so we can optimize for the empty script singleton right away. No need to
-     * worry about crossing globals or relocating argv, even, in this case!
-     *
-     * Note that the interpreter shortcuts empty-script call and construct too,
-     * and does not call any TR::record_*CallComplete hook.
+     * so we can optimize away the function call if the corresponding script is
+     * empty. No need to worry about crossing globals or relocating argv, even,
+     * in this case!
      */
-    if (fun->u.i.script->isEmpty()) {
+    if (fun->script()->isEmpty()) {
         LIns* rval_ins;
         if (constructing) {
             LIns* args[] = { get(&fval), w.nameImmpNonGC(&js_ObjectClass), cx_ins };
@@ -13829,7 +13858,7 @@ TraceRecorder::typedArrayElement(Value& oval, Value& ival, Value*& vp, LIns*& v_
      * length.
      */
     guard(true,
-          w.ltui(idx_ins, w.ldiConstTypedArrayLength(priv_ins)),
+          w.name(w.ltui(idx_ins, w.ldiConstTypedArrayLength(priv_ins)), "inRange"),
           BRANCH_EXIT);
 
     /* We are now ready to load.  Do a different type of load
@@ -14075,8 +14104,8 @@ TraceRecorder::record_JSOP_NEWINIT()
 
     LIns *v_ins;
     if (key == JSProto_Array) {
-        LIns *args[] = { w.immi(0), proto_ins, cx_ins };
-        v_ins = w.call(&js_NewPreallocatedArray_ci, args);
+        LIns *args[] = { proto_ins, cx_ins };
+        v_ins = w.call(&NewDenseEmptyArray_ci, args);
     } else {
         LIns *args[] = { w.immpNull(), proto_ins, cx_ins };
         v_ins = w.call(&js_InitializerObject_ci, args);
@@ -14095,8 +14124,8 @@ TraceRecorder::record_JSOP_NEWARRAY()
     CHECK_STATUS_A(getClassPrototype(JSProto_Array, proto_ins));
 
     unsigned count = GET_UINT24(cx->regs->pc);
-    LIns *args[] = { w.immi(count), proto_ins, cx_ins };
-    LIns *v_ins = w.call(&js_NewPreallocatedArray_ci, args);
+    LIns *args[] = { proto_ins, w.immi(count), cx_ins };
+    LIns *v_ins = w.call(&NewDenseAllocatedArray_ci, args);
 
     guard(false, w.eqp0(v_ins), OOM_EXIT);
     stack(0, v_ins);

@@ -3591,7 +3591,8 @@ gfxTextRun::BreakAndMeasureText(PRUint32 aStart, PRUint32 aMaxLength,
                            spacingBuffer);
     }
     PRPackedBool hyphenBuffer[MEASUREMENT_BUFFER_SIZE];
-    PRBool haveHyphenation = (mFlags & gfxTextRunFactory::TEXT_ENABLE_HYPHEN_BREAKS) != 0;
+    PRBool haveHyphenation = aProvider &&
+                             (mFlags & gfxTextRunFactory::TEXT_ENABLE_HYPHEN_BREAKS) != 0;
     if (haveHyphenation) {
         aProvider->GetHyphenationBreaks(bufferStart, bufferLength,
                                         hyphenBuffer);
@@ -4027,7 +4028,7 @@ gfxTextRun::CopyGlyphDataFrom(gfxTextRun *aSource, PRUint32 aStart,
         g.SetCanBreakBefore(mCharacterGlyphs[i + aDest].CanBreakBefore());
         mCharacterGlyphs[i + aDest] = g;
         if (aStealData) {
-            aSource->mCharacterGlyphs[i + aStart].SetMissing(0);
+            aSource->mCharacterGlyphs[i + aStart] = CompressedGlyph();
         }
     }
 

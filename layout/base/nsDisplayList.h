@@ -151,10 +151,14 @@ public:
    */
   PRBool IsForEventDelivery() { return mMode == EVENT_DELIVERY; }
   /**
-   * @return PR_TRUE if the display list is being build to compute geometry
+   * @return PR_TRUE if the display list is being built to compute geometry
    * for plugins.
    */
   PRBool IsForPluginGeometry() { return mMode == PLUGIN_GEOMETRY; }
+  /**
+   * @return PR_TRUE if the display list is being built for painting.
+   */
+  PRBool IsForPainting() { return mMode == PAINTING; }
   /**
    * @return PR_TRUE if "painting is suppressed" during page load and we
    * should paint only the background of the document.
@@ -629,8 +633,7 @@ public:
    * so implementations of nsDisplayItem::ComputeVisibility do not
    * need to do these things.
    * nsDisplayList::ComputeVisibility will already have set mVisibleRect on
-   * this item to the intersection of *aVisibleRegion (unioned with
-   * *aVisibleRegionBeforeMove, if that's non-null) and this item's bounds.
+   * this item to the intersection of *aVisibleRegion and this item's bounds.
    * We rely on that, so this should only be called by
    * nsDisplayList::ComputeVisibility or nsDisplayItem::RecomputeVisibility.
    * 

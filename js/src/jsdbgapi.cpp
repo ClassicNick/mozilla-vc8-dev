@@ -265,12 +265,6 @@ JS_SetTrap(JSContext *cx, JSScript *script, jsbytecode *pc,
     if (!CheckDebugMode(cx))
         return JS_FALSE;
 
-    if (script == JSScript::emptyScript()) {
-        JS_ReportErrorFlagsAndNumber(cx, JSREPORT_ERROR, js_GetErrorMessage,
-                                     NULL, JSMSG_READ_ONLY, "empty script");
-        return JS_FALSE;
-    }
-
     JS_ASSERT((JSOp) *pc != JSOP_TRAP);
     junk = NULL;
     rt = cx->runtime;
@@ -491,17 +485,6 @@ JITInhibitingHookChange(JSRuntime *rt, bool wasInhibited)
             js_ContextFromLinkField(cl)->traceJitEnabled = false;
     }
 }
-
-static void
-LeaveTraceRT(JSRuntime *rt)
-{
-    JSThreadData *data = js_CurrentThreadData(rt);
-    JSContext *cx = data ? data->traceMonitor.tracecx : NULL;
-    JS_UNLOCK_GC(rt);
-
-    if (cx)
-        LeaveTrace(cx);
-}
 #endif
 
 JS_PUBLIC_API(JSBool)
@@ -517,7 +500,6 @@ JS_SetInterrupt(JSRuntime *rt, JSInterruptHook hook, void *closure)
 #ifdef JS_TRACER
         JITInhibitingHookChange(rt, wasInhibited);
     }
-    LeaveTraceRT(rt);
 #endif
     return JS_TRUE;
 }
@@ -1678,8 +1660,6 @@ JS_SetCallHook(JSRuntime *rt, JSInterpreterHook hook, void *closure)
 #ifdef JS_TRACER
         JITInhibitingHookChange(rt, wasInhibited);
     }
-    if (hook)
-        LeaveTraceRT(rt);
 #endif
     return JS_TRUE;
 }
@@ -1761,7 +1741,7 @@ JS_GetScriptTotalSize(JSContext *cx, JSScript *script)
         continue;
     nbytes += (sn - notes + 1) * sizeof *sn;
 
-    if (script->objectsOffset != 0) {
+    if (JSScript::isValidOffset(script->objectsOffset)) {
         objarray = script->objects();
         i = objarray->length;
         nbytes += sizeof *objarray + i * sizeof objarray->vector[0];
@@ -1770,7 +1750,7 @@ JS_GetScriptTotalSize(JSContext *cx, JSScript *script)
         } while (i != 0);
     }
 
-    if (script->regexpsOffset != 0) {
+    if (JSScript::isValidOffset(script->regexpsOffset)) {
         objarray = script->regexps();
         i = objarray->length;
         nbytes += sizeof *objarray + i * sizeof objarray->vector[0];
@@ -1779,7 +1759,7 @@ JS_GetScriptTotalSize(JSContext *cx, JSScript *script)
         } while (i != 0);
     }
 
-    if (script->trynotesOffset != 0) {
+    if (JSScript::isValidOffset(script->trynotesOffset)) {
         nbytes += sizeof(JSTryNoteArray) +
             script->trynotes()->length * sizeof(JSTryNote);
     }

@@ -91,6 +91,7 @@ class THEBES_API LayerManagerOGL :
 #endif
 {
   typedef mozilla::gl::GLContext GLContext;
+  typedef mozilla::gl::ShaderProgramType ProgramType;
 
 public:
   LayerManagerOGL(nsIWidget *aWidget);
@@ -180,17 +181,21 @@ public:
     mGLContext->MakeCurrent(aForce);
   }
 
+  ColorTextureLayerProgram *GetColorTextureLayerProgram(ProgramType type){
+    return static_cast<ColorTextureLayerProgram*>(mPrograms[type]);
+  }
+
   ColorTextureLayerProgram *GetRGBALayerProgram() {
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[RGBALayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::RGBALayerProgramType]);
   }
   ColorTextureLayerProgram *GetBGRALayerProgram() {
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[BGRALayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::BGRALayerProgramType]);
   }
   ColorTextureLayerProgram *GetRGBXLayerProgram() {
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[RGBXLayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::RGBXLayerProgramType]);
   }
   ColorTextureLayerProgram *GetBGRXLayerProgram() {
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[BGRXLayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::BGRXLayerProgramType]);
   }
   ColorTextureLayerProgram *GetBasicLayerProgram(PRBool aOpaque, PRBool aIsRGB)
   {
@@ -206,25 +211,25 @@ public:
   }
 
   ColorTextureLayerProgram *GetRGBARectLayerProgram() {
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[RGBARectLayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::RGBARectLayerProgramType]);
   }
   SolidColorLayerProgram *GetColorLayerProgram() {
-    return static_cast<SolidColorLayerProgram*>(mSolidColorPrograms[ColorLayerProgramType]);
+    return static_cast<SolidColorLayerProgram*>(mSolidColorPrograms[gl::ColorLayerProgramType]);
   }
   YCbCrTextureLayerProgram *GetYCbCrLayerProgram() {
-    return static_cast<YCbCrTextureLayerProgram*>(mYCbCrTexturePrograms[YCbCrLayerProgramType]);
+    return static_cast<YCbCrTextureLayerProgram*>(mYCbCrTexturePrograms[gl::YCbCrLayerProgramType]);
   }
   CopyProgram *GetCopy2DProgram() {
-    return static_cast<CopyProgram*>(mCopyPrograms[Copy2DProgramType]);
+    return static_cast<CopyProgram*>(mCopyPrograms[gl::Copy2DProgramType]);
   }
   CopyProgram *GetCopy2DRectProgram() {
-    return static_cast<CopyProgram*>(mCopyPrograms[Copy2DRectProgramType]);
+    return static_cast<CopyProgram*>(mCopyPrograms[gl::Copy2DRectProgramType]);
   }
 
   ColorTextureLayerProgram *GetFBOLayerProgram() {
     if (mFBOTextureTarget == LOCAL_GL_TEXTURE_RECTANGLE_ARB)
-      return static_cast<ColorTextureLayerProgram*>(mColorPrograms[RGBARectLayerProgramType]);
-    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[RGBALayerProgramType]);
+		return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::RGBARectLayerProgramType]);
+    return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::RGBALayerProgramType]);
   }
 
   GLContext *gl() const { return mGLContext; }
@@ -341,7 +346,7 @@ public:
   const nsIntSize& GetWigetSize() {
     return mWidgetSize;
   }
-  
+
   /**
    * Setup the viewport and projection matrix for rendering
    * to a window of the given dimensions.
@@ -364,19 +369,6 @@ private:
   // The destructor will tell the layer manager to remove
   // it from the list.
   nsTArray<ImageContainer*> mImageContainers;
-
-  enum ProgramType {
-    RGBALayerProgramType,
-    BGRALayerProgramType,
-    RGBXLayerProgramType,
-    BGRXLayerProgramType,
-    RGBARectLayerProgramType,
-    ColorLayerProgramType,
-    YCbCrLayerProgramType,
-    Copy2DProgramType,
-    Copy2DRectProgramType,
-    NumProgramTypes
-  };
 
   static ProgramType sLayerProgramTypes[];
 

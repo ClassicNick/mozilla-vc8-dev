@@ -122,7 +122,6 @@ mjit::Compiler::Compiler(JSContext *cx, JSStackFrame *fp)
 CompileStatus
 mjit::Compiler::compile()
 {
-    JS_ASSERT(!script->isEmpty());
     JS_ASSERT_IF(isConstructing, !script->jitCtor);
     JS_ASSERT_IF(!isConstructing, !script->jitNormal);
 
@@ -598,6 +597,7 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
 
     if (ic::TraceICInfo *scriptTICs = jit->traceICs) {
         for (size_t i = 0; i < traceICs.length(); i++) {
+            scriptTICs[i].initialized = traceICs[i].initialized;
             if (!traceICs[i].initialized)
                 continue;
 

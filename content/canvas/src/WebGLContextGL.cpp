@@ -2400,8 +2400,14 @@ NS_IMETHODIMP
 WebGLContext::IsBuffer(nsIWebGLBuffer *bobj, WebGLboolean *retval)
 {
     PRBool isDeleted;
-    *retval = CanGetConcreteObject<WebGLBuffer>("isBuffer", bobj, 0, &isDeleted) && !isDeleted;
+    WebGLuint obj;
+    PRBool ok = GetGLName<WebGLBuffer>("isBuffer", bobj, &obj, 0, &isDeleted) && !isDeleted;
+    if (ok) {
+        MakeContextCurrent();
+        ok = gl->fIsBuffer(obj);
+    }
 
+    *retval = ok;
     return NS_OK;
 }
 
@@ -2409,8 +2415,14 @@ NS_IMETHODIMP
 WebGLContext::IsFramebuffer(nsIWebGLFramebuffer *fbobj, WebGLboolean *retval)
 {
     PRBool isDeleted;
-    *retval = CanGetConcreteObject<WebGLFramebuffer>("isFramebuffer", fbobj, 0, &isDeleted) && !isDeleted;
+    WebGLuint obj;
+    PRBool ok = GetGLName<WebGLFramebuffer>("isFramebuffer", fbobj, &obj, 0, &isDeleted) && !isDeleted;
+    if (ok) {
+        MakeContextCurrent();
+        ok = gl->fIsFramebuffer(obj);
+    }
 
+    *retval = ok;
     return NS_OK;
 }
 
@@ -2427,8 +2439,14 @@ NS_IMETHODIMP
 WebGLContext::IsRenderbuffer(nsIWebGLRenderbuffer *rbobj, WebGLboolean *retval)
 {
     PRBool isDeleted;
-    *retval = CanGetConcreteObject<WebGLRenderbuffer>("isRenderBuffer", rbobj, 0, &isDeleted) && !isDeleted;
+    WebGLuint obj;
+    PRBool ok = GetGLName<WebGLRenderbuffer>("isRenderBuffer", rbobj, &obj, 0, &isDeleted) && !isDeleted;
+    if (ok) {
+        MakeContextCurrent();
+        ok = gl->fIsRenderbuffer(obj);
+    }
 
+    *retval = ok;
     return NS_OK;
 }
 
@@ -2445,8 +2463,14 @@ NS_IMETHODIMP
 WebGLContext::IsTexture(nsIWebGLTexture *tobj, WebGLboolean *retval)
 {
     PRBool isDeleted;
-    *retval = CanGetConcreteObject<WebGLTexture>("isTexture", tobj, 0, &isDeleted) && !isDeleted;
+    WebGLuint obj;
+    PRBool ok = GetGLName<WebGLTexture>("isTexture", tobj, &obj, 0, &isDeleted) && !isDeleted;
+    if (ok) {
+        MakeContextCurrent();
+        ok = gl->fIsTexture(obj);
+    }
 
+    *retval = ok;
     return NS_OK;
 }
 
@@ -2554,6 +2578,10 @@ WebGLContext::ReadPixels_base(WebGLint x, WebGLint y, WebGLsizei width, WebGLsiz
 
     if (width < 0 || height < 0)
         return ErrorInvalidValue("ReadPixels: negative size passed");
+
+    // there's nothing to do in this case, since we won't read any pixels
+    if (width == 0 || height == 0)
+        return NS_OK;
 
     WebGLsizei boundWidth = mBoundFramebuffer ? mBoundFramebuffer->width() : mWidth;
     WebGLsizei boundHeight = mBoundFramebuffer ? mBoundFramebuffer->height() : mHeight;
@@ -2670,7 +2698,8 @@ WebGLContext::ReadPixels_base(WebGLint x, WebGLint y, WebGLsizei width, WebGLsiz
         delete [] subrect_data;
     }
 
-    // if we're reading alpha, we may need to do fixup
+    // if we're reading alpha, we may need to do fixup.  Note that we don't allow
+    // GL_ALPHA to readpixels currently, but we had the code written for it already.
     if (format == LOCAL_GL_ALPHA ||
         format == LOCAL_GL_RGBA)
     {

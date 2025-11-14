@@ -616,7 +616,7 @@ NoSuchMethod(JSContext *cx, uintN argc, Value *vp, uint32 flags)
     args.callee() = obj->getSlot(JSSLOT_FOUND_FUNCTION);
     args.thisv() = vp[1];
     args[0] = obj->getSlot(JSSLOT_SAVED_ID);
-    JSObject *argsobj = js_NewArrayObject(cx, argc, vp + 2);
+    JSObject *argsobj = NewDenseCopiedArray(cx, argc, vp + 2);
     if (!argsobj)
         return JS_FALSE;
     args[1].setObject(*argsobj);
@@ -749,6 +749,10 @@ InvokeSessionGuard::start(JSContext *cx, const Value &calleev, const Value &this
 #ifdef JS_TRACER
     if (TRACE_RECORDER(cx))
         AbortRecording(cx, "attempt to reenter VM while recording");
+#ifdef JS_METHODJIT
+    if (TRACE_PROFILER(cx))
+        AbortProfiling(cx);
+#endif
     LeaveTrace(cx);
 #endif
 
@@ -908,7 +912,7 @@ Execute(JSContext *cx, JSObject *chain, JSScript *script,
     if (script->isEmpty()) {
         if (result)
             result->setUndefined();
-        return JS_TRUE;
+        return true;
     }
 
     LeaveTrace(cx);
@@ -2337,11 +2341,21 @@ Interpret(JSContext *cx, JSStackFrame *entryFrame, uintN inlineCallCount, JSInte
 
     /* Check for too deep of a native thread stack. */
 #ifdef JS_TRACER
+#ifdef JS_METHODJIT
+    JS_CHECK_RECURSION(cx, do {
+            if (TRACE_RECORDER(cx))
+                AbortRecording(cx, "too much recursion");
+            if (TRACE_PROFILER(cx))
+                AbortProfiling(cx);
+            return JS_FALSE;
+        } while (0););
+#else
     JS_CHECK_RECURSION(cx, do {
             if (TRACE_RECORDER(cx))
                 AbortRecording(cx, "too much recursion");
             return JS_FALSE;
         } while (0););
+#endif
 #else
     JS_CHECK_RECURSION(cx, return JS_FALSE);
 #endif
@@ -2404,6 +2418,7 @@ Interpret(JSContext *cx, JSStackFrame *entryFrame, uintN inlineCallCount, JSInte
             MonitorResult r = MonitorLoopEdge(cx, inlineCallCount);           \
             if (r == MONITOR_RECORDING) {                                     \
                 JS_ASSERT(TRACE_RECORDER(cx));                                \
+                JS_ASSERT(!TRACE_PROFILER(cx));                               \
                 MONITOR_BRANCH_TRACEVIS;                                      \
                 ENABLE_INTERRUPTS();                                          \
                 CLEAR_LEAVE_ON_TRACE_POINT();                                 \
@@ -2506,9 +2521,6 @@ Interpret(JSContext *cx, JSStackFrame *entryFrame, uintN inlineCallCount, JSInte
     Value *argv = regs.fp->maybeFormalArgs();
     CHECK_INTERRUPT_HANDLER();
 
-    JS_ASSERT(!script->isEmpty());
-    JS_ASSERT(script->length >= 1);
-
 #if defined(JS_TRACER) && defined(JS_METHODJIT)
     bool leaveOnSafePoint = (interpMode == JSINTERP_SAFEPOINT);
 # define CLEAR_LEAVE_ON_TRACE_POINT() ((void) (leaveOnSafePoint = false))
@@ -2556,6 +2568,10 @@ Interpret(JSContext *cx, JSStackFrame *entryFrame, uintN inlineCallCount, JSInte
         ENABLE_INTERRUPTS();
     } else if (TRACE_RECORDER(cx)) {
         AbortRecording(cx, "attempt to reenter interpreter while recording");
+#ifdef JS_METHODJIT
+    } else if (TRACE_PROFILER(cx)) {
+        AbortProfiling(cx);
+#endif
     }
 
     if (regs.fp->hasImacropc())
@@ -2630,6 +2646,10 @@ Interpret(JSContext *cx, JSStackFrame *entryFrame, uintN inlineCallCount, JSInte
 #ifdef JS_TRACER
             if (TRACE_RECORDER(cx))
                 AbortRecording(cx, "interrupt hook");
+#ifdef JS_METHODJIT
+            if (TRACE_PROFILER(cx))
+                AbortProfiling(cx);
+#endif
 #endif
             Value rval;
             switch (hook(cx, script, regs.pc, Jsvalify(&rval),
@@ -4078,8 +4098,8 @@ BEGIN_CASE(JSOP_UNBRANDTHIS)
     Value &thisv = regs.fp->thisValue();
     if (thisv.isObject()) {
         JSObject *obj = &thisv.toObject();
-        if (obj->isNative() && !obj->unbrand(cx))
-            goto error;
+        if (obj->isNative())
+            obj->unbrand(cx);
     }
 }
 END_CASE(JSOP_UNBRANDTHIS)
@@ -4293,8 +4313,7 @@ END_CASE(JSOP_CALLPROP)
 
 BEGIN_CASE(JSOP_UNBRAND)
     JS_ASSERT(regs.sp - regs.fp->slots() >= 1);
-    if (!regs.sp[-1].toObject().unbrand(cx))
-        goto error;
+    regs.sp[-1].toObject().unbrand(cx);
 END_CASE(JSOP_UNBRAND)
 
 BEGIN_CASE(JSOP_SETGNAME)
@@ -4677,7 +4696,7 @@ BEGIN_CASE(JSOP_FUNCALL)
         if (newfun->isInterpreted())
       inline_call:
         {
-            JSScript *newscript = newfun->u.i.script;
+            JSScript *newscript = newfun->script();
             if (JS_UNLIKELY(newscript->isEmpty())) {
                 vp->setUndefined();
                 regs.sp = vp + 1;
@@ -5892,7 +5911,7 @@ BEGIN_CASE(JSOP_NEWINIT)
     JSObject *obj;
 
     if (i == JSProto_Array) {
-        obj = js_NewArrayObject(cx, 0, NULL);
+        obj = NewDenseEmptyArray(cx);
     } else {
         gc::FinalizeKind kind = GuessObjectGCKind(0, false);
         obj = NewBuiltinClassInstance(cx, &js_ObjectClass, kind);
@@ -5909,10 +5928,8 @@ END_CASE(JSOP_NEWINIT)
 BEGIN_CASE(JSOP_NEWARRAY)
 {
     unsigned count = GET_UINT24(regs.pc);
-    JSObject *obj = js_NewArrayObject(cx, count, NULL);
-
-    /* Avoid ensureDenseArrayElements to skip sparse array checks there. */
-    if (!obj || !obj->ensureSlots(cx, count))
+    JSObject *obj = NewDenseAllocatedArray(cx, count);
+    if (!obj)
         goto error;
 
     PUSH_OBJECT(*obj);
@@ -6069,7 +6086,7 @@ BEGIN_CASE(JSOP_DEFSHARP)
         obj = &lref.toObject();
     } else {
         JS_ASSERT(lref.isUndefined());
-        obj = js_NewArrayObject(cx, 0, NULL);
+        obj = NewDenseEmptyArray(cx);
         if (!obj)
             goto error;
         regs.fp->slots()[slot].setObject(*obj);
@@ -6832,7 +6849,7 @@ END_CASE(JSOP_ARRAYPUSH)
         /*
          * Look for a try block in script that can catch this exception.
          */
-        if (script->trynotesOffset == 0)
+        if (!JSScript::isValidOffset(script->trynotesOffset))
             goto no_catch;
 
         offset = (uint32)(regs.pc - script->main);

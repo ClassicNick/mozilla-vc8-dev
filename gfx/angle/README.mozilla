@@ -1,15 +1,13 @@
 This is the ANGLE project, from http://code.google.com/p/angleproject/.
 
-Current revision: r498
+Current revision: r515
 
 Local patches:
     angle-shared.patch - add declspec dllexport/dllimport support on win32
 
     angle-fixes.patch - fix angle issues 51 & 52
 
-    angle-bug-40.patch - fix angle issue 40: freeze when compiling bad #ifdef shader
-
-    angle-bug-93.patch - fix angle issue 93: was leaking locale objects
+    angle-nspr-misc.patch - don't bother with ANGLE_OS detection with NSPR
 
 == Visual Studio Solution Files ==
 
