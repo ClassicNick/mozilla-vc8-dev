@@ -38,7 +38,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#include "base/basictypes.h"
+#ifdef MOZ_IPC
+#  include "base/basictypes.h"
+#endif
 
 #include "nsIDOMXULElement.h"
 
@@ -112,16 +114,18 @@
 #include "nsStyleUtil.h"
 #include "CanvasImageCache.h"
 
-#include <algorithm>
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/ipc/PDocumentRendererParent.h"
-#include "mozilla/dom/PBrowserParent.h"
-#include "mozilla/ipc/DocumentRendererParent.h"
+#ifdef MOZ_IPC
+#  include <algorithm>
+#  include "mozilla/dom/ContentParent.h"
+#  include "mozilla/ipc/PDocumentRendererParent.h"
+#  include "mozilla/dom/PBrowserParent.h"
+#  include "mozilla/ipc/DocumentRendererParent.h"
 
 // windows.h (included by chromium code) defines this, in its infinite wisdom
-#undef DrawText
+#  undef DrawText
 
 using namespace mozilla::ipc;
+#endif
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -1201,6 +1205,7 @@ nsCanvasRenderingContext2D::SetIsOpaque(PRBool isOpaque)
 NS_IMETHODIMP
 nsCanvasRenderingContext2D::SetIsIPC(PRBool isIPC)
 {
+#ifdef MOZ_IPC
     if (isIPC == mIPC)
         return NS_OK;
 
@@ -1214,6 +1219,9 @@ nsCanvasRenderingContext2D::SetIsIPC(PRBool isIPC)
     }
 
     return NS_OK;
+#else
+    return NS_ERROR_NOT_IMPLEMENTED;
+#endif
 }
 
 NS_IMETHODIMP
@@ -3735,6 +3743,7 @@ nsCanvasRenderingContext2D::AsyncDrawXULElement(nsIDOMXULElement* aElem, float a
     if (!frameloader)
         return NS_ERROR_FAILURE;
 
+#ifdef MOZ_IPC
     PBrowserParent *child = frameloader->GetRemoteBrowser();
     if (!child) {
         nsCOMPtr<nsIDOMWindow> window =
@@ -3782,6 +3791,14 @@ nsCanvasRenderingContext2D::AsyncDrawXULElement(nsIDOMXULElement* aElem, float a
     }
 
     return NS_OK;
+#else
+    nsCOMPtr<nsIDOMWindow> window =
+        do_GetInterface(frameloader->GetExistingDocShell());
+    if (!window)
+        return NS_ERROR_FAILURE;
+
+    return DrawWindow(window, aX, aY, aW, aH, aBGColor, flags);
+#endif
 }
 
 //
