@@ -32,6 +32,8 @@
 #include "pixman-combine32.h"
 #include "pixman-fast-path.h"
 
+typedef _W64 unsigned int uintptr_t;
+
 static force_inline uint32_t
 fetch_24 (uint8_t *a)
 {
