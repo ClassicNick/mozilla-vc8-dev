@@ -5825,15 +5825,14 @@ dnl ========================================================
 dnl = Disable IPC support for tabs and plugins
 dnl ========================================================
 MOZ_ARG_DISABLE_BOOL(ipc,
-[  --disable-ipc           Disable IPC for tabs and plugins (not supported)],
+[  --disable-ipc           Disable IPC supports for tabs and plugins],
     MOZ_IPC=,
     MOZ_IPC=1)
 
-if test -z "$MOZ_IPC"; then
-  AC_MSG_ERROR([--disable-ipc is no longer supported.])
+if test -n "$MOZ_IPC"; then
+    AC_DEFINE(MOZ_IPC)
 fi
 
-AC_DEFINE(MOZ_IPC)
 AC_SUBST(MOZ_IPC)
 
 dnl ========================================================
@@ -5845,6 +5844,10 @@ MOZ_ARG_ENABLE_BOOL(ipdl-tests,
 [  --enable-ipdl-tests     Enable expensive IPDL tests],
     MOZ_IPDL_TESTS=1,
     MOZ_IPDL_TESTS=)
+
+if test -z "$MOZ_IPC" -a -n "$MOZ_IPDL_TESTS"; then
+    AC_MSG_ERROR([--enable-ipdl-tests requires --enable-ipc])
+fi
 
 if test -n "$MOZ_IPDL_TESTS"; then
     AC_DEFINE(MOZ_IPDL_TESTS)
