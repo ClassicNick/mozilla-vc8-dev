@@ -163,7 +163,7 @@ bool FileVersionInfo::GetValue(const wchar_t* name, std::wstring* value_str) {
     wchar_t sub_block[MAX_PATH];
     WORD language = lang_codepage[i++];
     WORD code_page = lang_codepage[i++];
-    _snwprintf_s(sub_block, MAX_PATH, MAX_PATH,
+    _snwprintf(sub_block, MAX_PATH, (const wchar_t*) MAX_PATH,
                  L"\\StringFileInfo\\%04x%04x\\%ls", language, code_page, name);
     LPVOID value = NULL;
     uint32 size;

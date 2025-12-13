@@ -43,10 +43,10 @@
 #include "nsDebug.h"
 #include "nsTraceRefcnt.h"
 
-#define RPC_ASSERT(_cond, ...)                                      \
+#define RPC_ASSERT(_cond, a)                                      \
     do {                                                            \
         if (!(_cond))                                               \
-            DebugAbort(__FILE__, __LINE__, #_cond,## __VA_ARGS__);  \
+            DebugAbort(__FILE__, __LINE__, #_cond, a);  \
     } while (0)
 
 using mozilla::MutexAutoLock;

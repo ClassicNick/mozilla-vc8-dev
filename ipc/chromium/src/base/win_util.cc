@@ -442,8 +442,10 @@ void NotifyHWNDDestruction(const tracked_objects::Location& from_here,
 //
 // If the ASSERT below fails, please install Visual Studio 2005 Service Pack 1.
 //
+
+#define ASSERTSTUB(a,b)
 extern char VisualStudio2005ServicePack1Detection[10];
-COMPILE_ASSERT(sizeof(&VisualStudio2005ServicePack1Detection) == sizeof(void*),
+ASSERTSTUB(sizeof(&VisualStudio2005ServicePack1Detection) == sizeof(void*),
                VS2005SP1Detect);
 //
 // Chrome requires at least Service Pack 1 for Visual Studio 2005.

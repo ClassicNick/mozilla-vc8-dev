@@ -1945,7 +1945,7 @@ PluginInstanceChild::FlashThrottleMessage(HWND aWnd,
 
     {
         MutexAutoLock lock(mAsyncCallMutex);
-        mPendingAsyncCalls.AppendElement(task);
+        mPendingAsyncCalls.AppendElement((ChildAsyncCall*) task);
     }
     MessageLoop::current()->PostDelayedTask(FROM_HERE,
         task, kFlashWMUSERMessageThrottleDelayMs);

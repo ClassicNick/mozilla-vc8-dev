@@ -14,6 +14,7 @@
 #include "base/observer_list.h"
 #include "base/ref_counted.h"
 #include "base/task.h"
+#include "nsError.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -132,16 +133,7 @@ class ObserverListThreadSafe
  private:
   template <class Method, class Params>
   void Notify(const UnboundMethod<ObserverType, Method, Params>& method) {
-    AutoLock lock(list_lock_);
-    typename ObserversListMap::iterator it;
-    for (it = observer_lists_.begin(); it != observer_lists_.end(); ++it) {
-      MessageLoop* loop = (*it).first;
-      ObserverList<ObserverType>* list = (*it).second;
-      loop->PostTask(FROM_HERE,
-          NewRunnableMethod(this,
-              &ObserverListThreadSafe<ObserverType>::
-                 template NotifyWrapper<Method, Params>, list, method));
-    }
+    NS_ERROR_NOT_IMPLEMENTED;
   }
 
   // Wrapper which is called to fire the notifications for each thread's

@@ -14,6 +14,28 @@
 #include "base/scoped_handle_win.h"
 #include "base/scoped_ptr.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1310
+typedef union _PSAPI_WORKING_SET_BLOCK {
+    ULONG_PTR Flags;
+    struct {
+        ULONG_PTR Protection : 5;
+        ULONG_PTR ShareCount : 3;
+        ULONG_PTR Shared : 1;
+        ULONG_PTR Reserved : 3;
+#if defined(_WIN64)
+        ULONG_PTR VirtualPage : 52;
+#else
+        ULONG_PTR VirtualPage : 20;
+#endif
+    };
+} PSAPI_WORKING_SET_BLOCK, *PPSAPI_WORKING_SET_BLOCK;
+
+typedef struct _PSAPI_WORKING_SET_INFORMATION {
+    ULONG_PTR NumberOfEntries;
+    PSAPI_WORKING_SET_BLOCK WorkingSetInfo[1];
+} PSAPI_WORKING_SET_INFORMATION, *PPSAPI_WORKING_SET_INFORMATION;
+#endif
+
 namespace {
 
 // System pagesize. This value remains constant on x86/64 architectures.
@@ -532,12 +554,14 @@ size_t ProcessMetrics::GetPrivateBytes() const {
   // GetProcessMemoryInfo() will simply fail on prior OS. So the requested
   // information is simply not available. Hence, we will return 0 on unsupported
   // OSes. Unlike most Win32 API, we don't need to initialize the "cb" member.
+#if defined (_MSC_VER) && _MSC_VER >= 1400
   PROCESS_MEMORY_COUNTERS_EX pmcx;
   if (GetProcessMemoryInfo(process_,
                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmcx),
                           sizeof(pmcx))) {
       return pmcx.PrivateUsage;
   }
+#endif
   return 0;
 }
 
@@ -762,8 +786,10 @@ bool EnableLowFragmentationHeap() {
 }
 
 void EnableTerminationOnHeapCorruption() {
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
   // Ignore the result code. Supported on XP SP3 and Vista.
   HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+#endif
 }
 
 void RaiseProcessToHighPriority() {

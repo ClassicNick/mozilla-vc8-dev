@@ -980,7 +980,7 @@ PluginScriptableObjectChild::AnswerEnumerate(InfallibleTArray<PPluginIdentifierC
   }
 
   for (uint32_t index = 0; index < idCount; index++) {
-    PluginIdentifierChild* id = static_cast<PluginIdentifierChild*>(ids[index]);
+    PPluginIdentifierChild* id = static_cast<PPluginIdentifierChild*>(ids[index]);
     aProperties->AppendElement(id);
   }
 

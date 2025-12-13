@@ -406,7 +406,7 @@ bool RegisterCOMServer(const tchar* guid,
 bool RegisterCOMServer(const tchar* guid, const tchar* name, HINSTANCE module) {
   tchar module_path[MAX_PATH];
   ::GetModuleFileName(module, module_path, MAX_PATH);
-  _tcslwr_s(module_path, MAX_PATH);
+  _tcslwr(module_path);
   return RegisterCOMServer(guid, name, module_path);
 }
 

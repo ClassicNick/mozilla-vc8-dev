@@ -255,6 +255,7 @@ StackTrace::StackTrace() {
   // From http://msdn.microsoft.com/en-us/library/bb204633(VS.85).aspx,
   // the sum of FramesToSkip and FramesToCapture must be less than 63,
   // so set it to 62.
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
   const int kMaxCallers = 62;
 
   void* callers[kMaxCallers];
@@ -266,6 +267,7 @@ StackTrace::StackTrace() {
   } else {
     trace_.resize(0);
   }
+#endif
 }
 
 void StackTrace::PrintBacktrace() {

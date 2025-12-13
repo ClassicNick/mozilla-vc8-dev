@@ -9,6 +9,11 @@
 #include "base/histogram.h"
 #include "base/win_util.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1310
+#define USER_TIMER_MAXIMUM  0x7FFFFFFF
+#define USER_TIMER_MINIMUM  0x0000000A
+#endif
+
 using base::Time;
 
 namespace base {

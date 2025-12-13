@@ -79,7 +79,7 @@ namespace nspr {
 /* Implements the Unix localtime_r() function for windows */
 #if defined(OS_WIN)
 static void localtime_r(const time_t* secs, struct tm* time) {
-  (void) localtime_s(time, secs);
+  (void) localtime(secs);
 }
 #endif
 

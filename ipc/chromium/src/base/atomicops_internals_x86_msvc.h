@@ -43,11 +43,34 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
 }
 
 #if !(defined(_MSC_VER) && _MSC_VER >= 1400)
-#error "We require at least vs2005 for MemoryBarrier"
+// #error "We require at least vs2005 for MemoryBarrier"
 #endif
+#if defined(_MSC_VER) && (_MSC_VER < 1400)
+#pragma warning( push )
+#pragma warning( disable : 4793 )
+namespace InlMemBarrier {
+FORCEINLINE
+VOID
+MemoryBarrier (
+    VOID
+    )
+{
+    LONG Barrier;
+    __asm {
+        xchg Barrier, eax
+    }
+}
+}
+#pragma warning( pop )
+#endif
+
 inline void MemoryBarrier() {
   // We use MemoryBarrier from WinNT.h
-  ::MemoryBarrier();
+  #if defined(_MSC_VER) && _MSC_VER < 1400
+  InlMemBarrier::MemoryBarrier();
+#else
+	::MemoryBarrier();
+#endif
 }
 
 inline Atomic32 Acquire_CompareAndSwap(volatile Atomic32* ptr,

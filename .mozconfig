@@ -6,8 +6,8 @@
 mk_add_options MOZ_MAKE_FLAGS="-j1"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR=/i/Browsers/VC71Compat/objdir/obj-fxvc71-release
-WIN32_REDIST_DIR=/r/browsers/VC71Compat/mozilla6-Test/redist/VC90
+mk_add_options MOZ_OBJDIR=/j/Browsers/VC71Compat/objdir/obj-fxvc71-release
+WIN32_REDIST_DIR=/h/browsers/VC71Compat/mozilla6-Test/redist/VC71
 
 
 # Configure Options
@@ -36,7 +36,7 @@ ac_add_options --disable-gamepad
 ac_add_options --disable-methodjit
 ac_add_options --disable-tracejit
 ac_add_options --disable-jit
-ac_add_options --disable-ipc
+ac_add_options --enable-ipc
 ac_add_options --disable-webm
 ac_add_options --disable-sps
 ac_add_options --disable-skia
