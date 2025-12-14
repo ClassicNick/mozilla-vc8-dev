@@ -139,14 +139,14 @@ nsSVGFilterInstance::ComputeFilterPrimitiveSubregion(PrimitiveInfo* aPrimitive)
     &fE->mLengthAttributes[nsSVGFE::X], mTargetBBox, mTargetFrame);
   gfxRect region = UserSpaceToFilterSpace(feArea);
 
-  if (!fE->HasAttr(kNameSpaceID_None, nsGkAtoms::x))
-    region.pos.x = defaultFilterSubregion.X();
-  if (!fE->HasAttr(kNameSpaceID_None, nsGkAtoms::y))
-    region.pos.y = defaultFilterSubregion.Y();
-  if (!fE->HasAttr(kNameSpaceID_None, nsGkAtoms::width))
-    region.size.width = defaultFilterSubregion.Width();
-  if (!fE->HasAttr(kNameSpaceID_None, nsGkAtoms::height))
-    region.size.height = defaultFilterSubregion.Height();
+  if (!fE->mLengthAttributes[nsSVGFE::X].IsExplicitlySet())
+    region.x = defaultFilterSubregion.X();
+  if (!fE->mLengthAttributes[nsSVGFE::Y].IsExplicitlySet())
+    region.y = defaultFilterSubregion.Y();
+  if (!fE->mLengthAttributes[nsSVGFE::WIDTH].IsExplicitlySet())
+    region.width = defaultFilterSubregion.Width();
+  if (!fE->mLengthAttributes[nsSVGFE::HEIGHT].IsExplicitlySet())
+    region.height = defaultFilterSubregion.Height();
 
   // We currently require filter primitive subregions to be pixel-aligned.
   // Following the spec, any pixel partially in the region is included

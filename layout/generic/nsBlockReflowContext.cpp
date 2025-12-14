@@ -42,7 +42,6 @@
 #include "nsBlockReflowContext.h"
 #include "nsLineLayout.h"
 #include "nsFloatManager.h"
-#include "nsIFontMetrics.h"
 #include "nsPresContext.h"
 #include "nsFrameManager.h"
 #include "nsIContent.h"
@@ -174,8 +173,6 @@ nsBlockReflowContext::ComputeCollapsedTopMargin(const nsHTMLReflowState& aRS,
               nsSize availSpace(aRS.ComputedWidth(), aRS.ComputedHeight());
               outerReflowState = new nsHTMLReflowState(prescontext,
                                                        aRS, frame, availSpace);
-              if (!outerReflowState)
-                goto done;
             }
             {
               nsSize availSpace(outerReflowState->ComputedWidth(),

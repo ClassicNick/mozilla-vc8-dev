@@ -68,6 +68,8 @@
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsConsoleMessage.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "IDBFactory.h"
 #if defined(MOZ_SYDNEYAUDIO)
 #include "AudioParent.h"
 #endif
@@ -75,6 +77,7 @@
 #if defined(ANDROID) || defined(LINUX)
 #include <sys/time.h>
 #include <sys/resource.h>
+#include "nsSystemInfo.h"
 #endif
 
 #ifdef MOZ_PERMISSIONS
@@ -90,7 +93,7 @@
 #include "mozilla/dom/StorageParent.h"
 #include "mozilla/Services.h"
 #include "mozilla/unused.h"
-#include "nsAccelerometer.h"
+#include "nsDeviceMotion.h"
 
 #include "nsIMemoryReporter.h"
 #include "nsMemoryReporterManager.h"
@@ -98,6 +101,7 @@
 
 #ifdef ANDROID
 #include "gfxAndroidPlatform.h"
+#include "AndroidBridge.h"
 #endif
 
 #include "nsIClipboard.h"
@@ -109,7 +113,6 @@ static const char* sClipboardTextFlavors[] = { kUnicodeMime };
 using namespace mozilla::ipc;
 using namespace mozilla::net;
 using namespace mozilla::places;
-using mozilla::MonitorAutoEnter;
 using mozilla::unused; // heh
 using base::KillProcess;
 
@@ -217,8 +220,17 @@ ContentParent::OnChannelConnected(int32 pid)
             nice = atoi(relativeNicenessStr);
         }
 
-        if (nice != 0) {
-            setpriority(PRIO_PROCESS, pid, getpriority(PRIO_PROCESS, pid) + nice);
+        /* make the GUI thread have higher priority on single-cpu devices */
+        nsCOMPtr<nsIPropertyBag2> infoService = do_GetService(NS_SYSTEMINFO_CONTRACTID);
+        if (infoService) {
+            PRInt32 cpus;
+            nsresult rv = infoService->GetPropertyAsInt32(NS_LITERAL_STRING("cpucount"), &cpus);
+            if (NS_FAILED(rv)) {
+                cpus = 1;
+            }
+            if (nice != 0 && cpus == 1) {
+                setpriority(PRIO_PROCESS, pid, getpriority(PRIO_PROCESS, pid) + nice);
+            }
         }
 #endif
     }
@@ -259,7 +271,7 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     }
 
     RecvRemoveGeolocationListener();
-    RecvRemoveAccelerometerListener();
+    RecvRemoveDeviceMotionListener();
 
     nsCOMPtr<nsIThreadInternal>
         threadInt(do_QueryInterface(NS_GetCurrentThread()));
@@ -284,10 +296,9 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
             TakeMinidump(getter_AddRefs(crashDump)) &&
                 CrashReporter::GetIDFromMinidump(crashDump, dumpID);
 
-            if (!dumpID.IsEmpty()) {
-                props->SetPropertyAsAString(NS_LITERAL_STRING("dumpID"),
-                                            dumpID);
+            props->SetPropertyAsAString(NS_LITERAL_STRING("dumpID"), dumpID);
 
+            if (!dumpID.IsEmpty()) {
                 CrashReporter::AnnotationTable notes;
                 notes.Init();
                 notes.Put(NS_LITERAL_CSTRING("ProcessType"), NS_LITERAL_CSTRING("content"));
@@ -331,8 +342,7 @@ ContentParent::DestroyTestShell(TestShellParent* aTestShell)
 }
 
 ContentParent::ContentParent()
-    : mMonitor("ContentParent::mMonitor")
-    , mGeolocationWatchID(-1)
+    : mGeolocationWatchID(-1)
     , mRunToCompletionDepth(0)
     , mShouldCallUnblockChild(false)
     , mIsAlive(true)
@@ -441,6 +451,24 @@ ContentParent::RecvReadPermissions(InfallibleTArray<IPC::Permission>* aPermissio
 }
 
 bool
+ContentParent::RecvGetIndexedDBDirectory(nsString* aDirectory)
+{
+    indexedDB::IDBFactory::NoteUsedByProcessType(GeckoProcessType_Content);
+
+    nsCOMPtr<nsIFile> dbDirectory;
+    nsresult rv = indexedDB::IDBFactory::GetDirectory(getter_AddRefs(dbDirectory));
+
+    if (NS_FAILED(rv)) {
+        NS_ERROR("Failed to get IndexedDB directory");
+        return true;
+    }
+
+    dbDirectory->GetPath(*aDirectory);
+
+    return true;
+}
+
+bool
 ContentParent::RecvSetClipboardText(const nsString& text, const PRInt32& whichClipboard)
 {
     nsresult rv;
@@ -515,6 +543,36 @@ ContentParent::RecvClipboardHasText(PRBool* hasText)
 
     clipboard->HasDataMatchingFlavors(sClipboardTextFlavors, 1, 
                                       nsIClipboard::kGlobalClipboard, hasText);
+    return true;
+}
+
+bool
+ContentParent::RecvGetSystemColors(const PRUint32& colorsCount, InfallibleTArray<PRUint32>* colors)
+{
+#ifdef ANDROID
+    if (!AndroidBridge::Bridge())
+        return false;
+
+    colors->AppendElements(colorsCount);
+
+    // The array elements correspond to the members of AndroidSystemColors structure,
+    // so just pass the pointer to the elements buffer
+    AndroidBridge::Bridge()->GetSystemColors((AndroidSystemColors*)colors->Elements());
+#endif
+    return true;
+}
+
+bool
+ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32& aIconSize, InfallibleTArray<PRUint8>* bits)
+{
+#ifdef ANDROID
+    if (!AndroidBridge::Bridge())
+        return false;
+
+    bits->AppendElements(aIconSize * aIconSize * 4);
+
+    AndroidBridge::Bridge()->GetIconForExtension(aFileExt, aIconSize, bits->Elements());
+#endif
     return true;
 }
 
@@ -650,23 +708,24 @@ ContentParent::DeallocPMemoryReportRequest(PMemoryReportRequestParent* actor)
 void
 ContentParent::SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& report)
 {
-    nsCOMPtr<nsIMemoryReporterManager> mgr = do_GetService("@mozilla.org/memory-reporter-manager;1");
-    for (PRUint32 i = 0; i < mMemoryReporters.Count(); i++)
+    nsCOMPtr<nsIMemoryReporterManager> mgr =
+        do_GetService("@mozilla.org/memory-reporter-manager;1");
+    for (PRInt32 i = 0; i < mMemoryReporters.Count(); i++)
         mgr->UnregisterReporter(mMemoryReporters[i]);
 
     for (PRUint32 i = 0; i < report.Length(); i++) {
-
-        nsCString prefix = report[i].prefix();
-        nsCString path   = report[i].path();
-        nsCString desc   = report[i].desc();
-        PRInt64 memoryUsed = report[i].memoryUsed();
+        nsCString process  = report[i].process();
+        nsCString path     = report[i].path();
+        PRInt32   kind     = report[i].kind();
+        PRInt32   units    = report[i].units();
+        PRInt64   amount   = report[i].amount();
+        nsCString desc     = report[i].desc();
         
-        nsRefPtr<nsMemoryReporter> r = new nsMemoryReporter(prefix,
-                                                            path,
-                                                            desc,
-                                                            memoryUsed);
-      mMemoryReporters.AppendObject(r);
-      mgr->RegisterReporter(r);
+        nsRefPtr<nsMemoryReporter> r =
+            new nsMemoryReporter(process, path, kind, units, amount, desc);
+
+        mMemoryReporters.AppendObject(r);
+        mgr->RegisterReporter(r);
     }
 
     nsCOMPtr<nsIObserverService> obs =
@@ -831,6 +890,7 @@ ContentParent::RecvSetURITitle(const IPC::URI& uri,
 bool
 ContentParent::RecvShowFilePicker(const PRInt16& mode,
                                   const PRInt16& selectedType,
+                                  const PRBool& addToRecentDocs,
                                   const nsString& title,
                                   const nsString& defaultFile,
                                   const nsString& defaultExtension,
@@ -856,7 +916,9 @@ ContentParent::RecvShowFilePicker(const PRInt16& mode,
     *result = filePicker->Init(window, title, mode);
     if (NS_FAILED(*result))
         return true;
-    
+
+    filePicker->SetAddToRecentDocs(addToRecentDocs);
+
     PRUint32 count = filters.Length();
     for (PRUint32 i = 0; i < count; ++i) {
         filePicker->AppendFilter(filterNames[i], filters[i]);
@@ -1023,22 +1085,22 @@ ContentParent::RecvRemoveGeolocationListener()
 }
 
 bool
-ContentParent::RecvAddAccelerometerListener()
+ContentParent::RecvAddDeviceMotionListener()
 {
-    nsCOMPtr<nsIAccelerometer> ac = 
-        do_GetService(NS_ACCELEROMETER_CONTRACTID);
-    if (ac)
-        ac->AddListener(this);
+    nsCOMPtr<nsIDeviceMotion> dm = 
+        do_GetService(NS_DEVICE_MOTION_CONTRACTID);
+    if (dm)
+        dm->AddListener(this);
     return true;
 }
 
 bool
-ContentParent::RecvRemoveAccelerometerListener()
+ContentParent::RecvRemoveDeviceMotionListener()
 {
-    nsCOMPtr<nsIAccelerometer> ac = 
-        do_GetService(NS_ACCELEROMETER_CONTRACTID);
-    if (ac)
-        ac->RemoveListener(this);
+    nsCOMPtr<nsIDeviceMotion> dm = 
+        do_GetService(NS_DEVICE_MOTION_CONTRACTID);
+    if (dm)
+        dm->RemoveListener(this);
     return true;
 }
 
@@ -1085,14 +1147,15 @@ ContentParent::RecvScriptError(const nsString& aMessage,
 }
 
 NS_IMETHODIMP
-ContentParent::OnAccelerationChange(nsIAcceleration *aAcceleration)
-{
+ContentParent::OnMotionChange(nsIDeviceMotionData *aDeviceData) {
+    PRUint32 type;
     double x, y, z;
-    aAcceleration->GetX(&x);
-    aAcceleration->GetY(&y);
-    aAcceleration->GetZ(&z);
+    aDeviceData->GetType(&type);
+    aDeviceData->GetX(&x);
+    aDeviceData->GetY(&y);
+    aDeviceData->GetZ(&z);
 
-    unused << SendAccelerationChanged(x, y, z);
+    unused << SendDeviceMotionChanged(type, x, y, z);
     return NS_OK;
 }
 

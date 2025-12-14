@@ -42,8 +42,8 @@ inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32* ptr,
   return Barrier_AtomicIncrement(ptr, increment);
 }
 
-#if !(defined(_MSC_VER) && _MSC_VER >= 1400)
-// #error "We require at least vs2005 for MemoryBarrier"
+#if defined(_MSC_VER) && (_MSC_VER < 1400)
+//#error "We require at least vs2005 for MemoryBarrier"
 #endif
 #if defined(_MSC_VER) && (_MSC_VER < 1400)
 #pragma warning( push )

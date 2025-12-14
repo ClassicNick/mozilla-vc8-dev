@@ -43,6 +43,7 @@
 #ifndef jshashtable_h_
 #define jshashtable_h_
 
+#include "jsalloc.h"
 #include "jstl.h"
 
 namespace js {
@@ -53,6 +54,49 @@ typedef uint32 HashNumber;
 /*****************************************************************************/
 
 namespace detail {
+
+template <class T, class HashPolicy, class AllocPolicy>
+class HashTable;
+
+template <class T>
+class HashTableEntry {
+    HashNumber keyHash;
+
+    typedef typename tl::StripConst<T>::result NonConstT;
+
+    static const HashNumber sFreeKey = 0;
+    static const HashNumber sRemovedKey = 1;
+    static const HashNumber sCollisionBit = 1;
+
+    template <class, class, class> friend class HashTable;
+
+    static bool isLiveHash(HashNumber hash)
+    {
+        return hash > sRemovedKey;
+    }
+
+  public:
+    HashTableEntry() : keyHash(0), t() {}
+    void operator=(const HashTableEntry &rhs) { keyHash = rhs.keyHash; t = rhs.t; }
+
+    NonConstT t;
+
+    bool isFree() const           { return keyHash == sFreeKey; }
+    void setFree()                { keyHash = sFreeKey; t = T(); }
+    bool isRemoved() const        { return keyHash == sRemovedKey; }
+    void setRemoved()             { keyHash = sRemovedKey; t = T(); }
+    bool isLive() const           { return isLiveHash(keyHash); }
+    void setLive(HashNumber hn)   { JS_ASSERT(isLiveHash(hn)); keyHash = hn; }
+
+    void setCollision()           { JS_ASSERT(isLive()); keyHash |= sCollisionBit; }
+    void setCollision(HashNumber collisionBit) {
+        JS_ASSERT(isLive()); keyHash |= collisionBit;
+    }
+    void unsetCollision()         { JS_ASSERT(isLive()); keyHash &= ~sCollisionBit; }
+    bool hasCollision() const     { JS_ASSERT(isLive()); return keyHash & sCollisionBit; }
+    bool matchHash(HashNumber hn) { return (keyHash & ~sCollisionBit) == hn; }
+    HashNumber getKeyHash() const { JS_ASSERT(!hasCollision()); return keyHash; }
+};
 
 /*
  * js::detail::HashTable is an implementation detail of the js::HashMap and
@@ -68,39 +112,8 @@ class HashTable : private AllocPolicy
     typedef typename HashPolicy::KeyType Key;
     typedef typename HashPolicy::Lookup Lookup;
 
-    /*
-     * T::operator= is a private operation for HashMap::Entry. HashMap::Entry
-     * makes HashTable a friend, but MSVC does not allow HashMap::Entry to make
-     * HashTable::Entry a friend. So do assignment here:
-     */
-    static void assignT(NonConstT &dst, const T &src) { dst = src; }
-
   public:
-    class Entry {
-        HashNumber keyHash;
-
-      public:
-        Entry() : keyHash(0), t() {}
-        void operator=(const Entry &rhs) { keyHash = rhs.keyHash; assignT(t, rhs.t); }
-
-        NonConstT t;
-
-        bool isFree() const           { return keyHash == sFreeKey; }
-        void setFree()                { keyHash = sFreeKey; assignT(t, T()); }
-        bool isRemoved() const        { return keyHash == sRemovedKey; }
-        void setRemoved()             { keyHash = sRemovedKey; assignT(t, T()); }
-        bool isLive() const           { return isLiveHash(keyHash); }
-        void setLive(HashNumber hn)   { JS_ASSERT(isLiveHash(hn)); keyHash = hn; }
-
-        void setCollision()           { JS_ASSERT(isLive()); keyHash |= sCollisionBit; }
-        void setCollision(HashNumber collisionBit) {
-            JS_ASSERT(isLive()); keyHash |= collisionBit;
-        }
-        void unsetCollision()         { JS_ASSERT(isLive()); keyHash &= ~sCollisionBit; }
-        bool hasCollision() const     { JS_ASSERT(isLive()); return keyHash & sCollisionBit; }
-        bool matchHash(HashNumber hn) { return (keyHash & ~sCollisionBit) == hn; }
-        HashNumber getKeyHash() const { JS_ASSERT(!hasCollision()); return keyHash; }
-    };
+    typedef HashTableEntry<T> Entry;
 
     /*
      * A nullable pointer to a hash table element. A Ptr |p| can be tested
@@ -120,6 +133,13 @@ class HashTable : private AllocPolicy
         Ptr(Entry &entry) : entry(&entry) {}
 
       public:
+        /* Leaves Ptr uninitialized. */
+        Ptr() {
+#ifdef DEBUG
+            entry = (Entry *)0xbad;
+#endif
+        }
+
         bool found() const                    { return entry->isLive(); }
         operator ConvertibleToBool() const    { return found() ? &Ptr::nonNull : 0; }
         bool operator==(const Ptr &rhs) const { JS_ASSERT(found() && rhs.found()); return entry == rhs.entry; }
@@ -142,6 +162,9 @@ class HashTable : private AllocPolicy
 #else
         AddPtr(Entry &entry, HashNumber hn) : Ptr(entry), keyHash(hn) {}
 #endif
+      public:
+        /* Leaves AddPtr uninitialized. */
+        AddPtr() {}
     };
 
     /*
@@ -163,6 +186,8 @@ class HashTable : private AllocPolicy
         Entry *cur, *end;
 
       public:
+        Range() : cur(NULL), end(NULL) {}
+
         bool empty() const {
             return cur == end;
         }
@@ -276,13 +301,13 @@ class HashTable : private AllocPolicy
     static const uint8    sMaxAlphaFrac = 192; /* (0x100 * .75) taken from jsdhash.h */
     static const uint8    sInvMaxAlpha  = 171; /* (ceil(0x100 / .75) >> 1) */
     static const HashNumber sGoldenRatio  = 0x9E3779B9U;       /* taken from jsdhash.h */
-    static const HashNumber sCollisionBit = 1;
-    static const HashNumber sFreeKey = 0;
-    static const HashNumber sRemovedKey = 1;
+    static const HashNumber sFreeKey = Entry::sFreeKey;
+    static const HashNumber sRemovedKey = Entry::sRemovedKey;
+    static const HashNumber sCollisionBit = Entry::sCollisionBit;
 
     static bool isLiveHash(HashNumber hash)
     {
-        return hash > sRemovedKey;
+        return Entry::isLiveHash(hash);
     }
 
     static HashNumber prepareHash(const Lookup& l)
@@ -562,10 +587,31 @@ class HashTable : private AllocPolicy
   public:
     void clear()
     {
-        for (Entry *e = table, *end = table + tableCapacity; e != end; ++e)
-            *e = Entry();
+        if (tl::IsPodType<Entry>::result) {
+            memset(table, 0, sizeof(*table) * tableCapacity);
+        } else {
+            for (Entry *e = table, *end = table + tableCapacity; e != end; ++e)
+                *e = Entry();
+        }
         removedCount = 0;
         entryCount = 0;
+#ifdef DEBUG
+        mutationCount++;
+#endif
+    }
+
+    void finish()
+    {
+        JS_ASSERT(!entered);
+
+        if (!table)
+            return;
+        
+        destroyTable(*this, table, tableCapacity);
+        table = NULL;
+        gen++;
+        entryCount = 0;
+        removedCount = 0;
 #ifdef DEBUG
         mutationCount++;
 #endif
@@ -738,23 +784,70 @@ struct DefaultHasher
     }
 };
 
-/* Specialized hashing policy for pointer types. */
-template <class T>
-struct DefaultHasher<T *>
+/*
+ * Pointer hashing policy that strips the lowest zeroBits when calculating the
+ * hash to improve key distribution.
+ */
+template <typename Key, size_t zeroBits>
+struct PointerHasher
 {
-    typedef T *Lookup;
-    static HashNumber hash(T *l) {
-        /*
-         * Strip often-0 lower bits for better distribution after multiplying
-         * by the sGoldenRatio.
-         */
-        return HashNumber(reinterpret_cast<size_t>(l) >>
-                          tl::FloorLog2<sizeof(void *)>::result);
+    typedef Key Lookup;
+    static HashNumber hash(const Lookup &l) {
+        size_t word = reinterpret_cast<size_t>(l) >> zeroBits;
+        JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
+#if JS_BYTES_PER_WORD == 4
+        return HashNumber(word);
+#else
+        JS_STATIC_ASSERT(sizeof word == 8);
+        return HashNumber((word >> 32) ^ word);
+#endif
     }
-    static bool match(T *k, T *l) {
+    static bool match(const Key &k, const Lookup &l) {
         return k == l;
     }
 };
+
+/*
+ * Specialized hashing policy for pointer types. It assumes that the type is
+ * at least word-aligned. For types with smaller size use PointerHasher.
+ */
+template <class T>
+struct DefaultHasher<T *>: PointerHasher<T *, tl::FloorLog2<sizeof(void *)>::result> { };
+
+/* Looking for a hasher for jsid?  Try the DefaultHasher<jsid> in jsatom.h. */
+
+template <class Key, class Value>
+class HashMapEntry
+{
+    template <class, class, class> friend class detail::HashTable;
+    template <class> friend class detail::HashTableEntry;
+    void operator=(const HashMapEntry &rhs) {
+        const_cast<Key &>(key) = rhs.key;
+        value = rhs.value;
+    }
+
+  public:
+    HashMapEntry() : key(), value() {}
+    HashMapEntry(const Key &k, const Value &v) : key(k), value(v) {}
+
+    const Key key;
+    Value value;
+};
+
+namespace tl {
+
+template <class T>
+struct IsPodType<detail::HashTableEntry<T> > {
+    static const bool result = IsPodType<T>::result;
+};
+
+template <class K, class V>
+struct IsPodType<HashMapEntry<K, V> >
+{
+    static const bool result = IsPodType<K>::result && IsPodType<V>::result;
+};
+
+} /* namespace tl */
 
 /*
  * JS-friendly, STL-like container providing a hash-based map from keys to
@@ -766,7 +859,7 @@ struct DefaultHasher<T *>
  * HashPolicy requirements:
  *  - see "Hash policy" above (default js::DefaultHasher<Key>)
  * AllocPolicy:
- *  - see "Allocation policies" in jstl.h (default js::ContextAllocPolicy)
+ *  - see "Allocation policies" in jsalloc.h
  *
  * N.B: HashMap is not reentrant: Key/Value/HashPolicy/AllocPolicy members
  *      called by HashMap must not call back into the same HashMap object.
@@ -778,21 +871,7 @@ class HashMap
   public:
     typedef typename HashPolicy::Lookup Lookup;
 
-    class Entry
-    {
-        template <class, class, class> friend class detail::HashTable;
-        void operator=(const Entry &rhs) {
-            const_cast<Key &>(key) = rhs.key;
-            value = rhs.value;
-        }
-
-      public:
-        Entry() : key(), value() {}
-        Entry(const Key &k, const Value &v) : key(k), value(v) {}
-
-        const Key key;
-        Value value;
-    };
+    typedef HashMapEntry<Key, Value> Entry;
 
   private:
     /* Implement HashMap using HashTable. Lift |Key| operations to |Entry|. */
@@ -929,10 +1008,19 @@ class HashMap
      */
     typedef typename Impl::Enum Enum;
 
-    /* Remove all entries. */
+    /*
+     * Remove all entries. This does not shrink the table. For that consider
+     * using the finish() method.
+     */
     void clear()                                      { impl.clear(); }
 
-    /* Does the table contain any entries? */
+    /*
+     * Remove all the entries and release all internal buffers. The map must
+     * be initialized again before any use.
+     */
+    void finish()                                     { impl.finish(); }
+
+   /* Does the table contain any entries? */
     bool empty() const                                { return impl.empty(); }
 
     /*
@@ -990,7 +1078,7 @@ class HashMap
  * HashPolicy requirements:
  *  - see "Hash policy" above (default js::DefaultHasher<Key>)
  * AllocPolicy:
- *  - see "Allocation policies" in jstl.h (default js::ContextAllocPolicy)
+ *  - see "Allocation policies" in jsalloc.h
  *
  * N.B: HashSet is not reentrant: T/HashPolicy/AllocPolicy members called by
  *      HashSet must not call back into the same HashSet object.
@@ -1118,8 +1206,17 @@ class HashSet
      */
     typedef typename Impl::Enum Enum;
 
-    /* Remove all entries. */
+    /*
+     * Remove all entries. This does not shrink the table. For that consider
+     * using the finish() method.
+     */
     void clear()                                      { impl.clear(); }
+
+    /*
+     * Remove all the entries and release all internal buffers. The set must
+     * be initialized again before any use.
+     */
+    void finish()                                     { impl.finish(); }
 
     /* Does the table contain any entries? */
     bool empty() const                                { return impl.empty(); }

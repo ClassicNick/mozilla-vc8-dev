@@ -39,7 +39,6 @@
 #include "txXPathTreeWalker.h"
 #include "nsIAtom.h"
 #include "nsIAttribute.h"
-#include "nsIDOM3Node.h"
 #include "nsIDOMAttr.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMNode.h"
@@ -430,7 +429,7 @@ txXPathNodeUtils::getLocalName(const txXPathNode& aNode, nsAString& aLocalName)
     if (aNode.isContent()) {
         if (aNode.mNode->IsElement()) {
             nsINodeInfo* nodeInfo = aNode.Content()->NodeInfo();
-            nodeInfo->GetLocalName(aLocalName);
+            nodeInfo->GetName(aLocalName);
             return;
         }
 
@@ -468,23 +467,11 @@ txXPathNodeUtils::getNodeName(const txXPathNode& aNode, nsAString& aName)
     }
 
     if (aNode.isContent()) {
-        if (aNode.mNode->IsElement()) {
-            nsINodeInfo* nodeInfo = aNode.Content()->NodeInfo();
-            nodeInfo->GetQualifiedName(aName);
-
-            // Check for html
-            if (aNode.Content()->IsHTML() &&
-                aNode.Content()->IsInHTMLDocument()) {
-                ToUpperCase(aName);
-            }
-            return;
-        }
-
-        if (aNode.mNode->IsNodeOfType(nsINode::ePROCESSING_INSTRUCTION)) {
-            // PIs don't have a nodeinfo but do have a name
-            nsCOMPtr<nsIDOMNode> node = do_QueryInterface(aNode.mNode);
-            node->GetNodeName(aName);
-
+        // Elements and PIs have a name
+        if (aNode.mNode->IsElement() ||
+            aNode.mNode->NodeType() ==
+            nsIDOMNode::PROCESSING_INSTRUCTION_NODE) {
+            aName = aNode.Content()->NodeName();
             return;
         }
 
@@ -494,11 +481,6 @@ txXPathNodeUtils::getNodeName(const txXPathNode& aNode, nsAString& aName)
     }
 
     aNode.Content()->GetAttrNameAt(aNode.mIndex)->GetQualifiedName(aName);
-
-    // Check for html
-    if (aNode.Content()->IsHTML()) {
-        ToUpperCase(aName);
-    }
 }
 
 /* static */
@@ -532,11 +514,7 @@ txXPathNodeUtils::getNodeType(const txXPathNode& aNode)
     }
 
     if (aNode.isContent()) {
-        PRUint16 type;
-        nsCOMPtr<nsIDOMNode> node = do_QueryInterface(aNode.mNode);
-        node->GetNodeType(&type);
-
-        return type;
+        return aNode.mNode->NodeType();
     }
 
     return txXPathNodeType::ATTRIBUTE_NODE;
@@ -614,15 +592,17 @@ const char gPrintfFmtAttr[] = "id0x%016p-%010i";
 /* static */
 nsresult
 txXPathNodeUtils::getXSLTId(const txXPathNode& aNode,
+                            const txXPathNode& aBase,
                             nsAString& aResult)
 {
+    PRUword nodeid = ((PRUword)aNode.mNode) - ((PRUword)aBase.mNode);
     if (!aNode.isAttribute()) {
-        CopyASCIItoUTF16(nsPrintfCString(kFmtSize, gPrintfFmt, aNode.mNode),
+        CopyASCIItoUTF16(nsPrintfCString(kFmtSize, gPrintfFmt, nodeid),
                          aResult);
     }
     else {
         CopyASCIItoUTF16(nsPrintfCString(kFmtSizeAttr, gPrintfFmtAttr,
-                                         aNode.mNode, aNode.mIndex), aResult);
+                                         nodeid, aNode.mIndex), aResult);
     }
 
     return NS_OK;
@@ -632,13 +612,7 @@ txXPathNodeUtils::getXSLTId(const txXPathNode& aNode,
 void
 txXPathNodeUtils::getBaseURI(const txXPathNode& aNode, nsAString& aURI)
 {
-    nsCOMPtr<nsIDOM3Node> node = do_QueryInterface(aNode.mNode);
-    if (node) {
-        node->GetBaseURI(aURI);
-    }
-    else {
-        aURI.Truncate();
-    }
+    aNode.mNode->GetDOMBaseURI(aURI);
 }
 
 /* static */
@@ -717,7 +691,7 @@ txXPathNodeUtils::comparePosition(const txXPathNode& aNode,
     PRInt32 otherTotal = otherParents.Length() - 1;
     NS_ASSERTION(total != otherTotal, "Can't have same number of parents");
 
-    PRInt32 lastIndex = PR_MIN(total, otherTotal);
+    PRInt32 lastIndex = NS_MIN(total, otherTotal);
     PRInt32 i;
     parent = nsnull;
     for (i = 0; i <= lastIndex; ++i) {

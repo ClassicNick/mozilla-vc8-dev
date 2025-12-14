@@ -274,20 +274,11 @@ nsDOMWorkerXHRUpload::nsDOMWorkerXHRUpload(nsDOMWorkerXHR* aWorkerXHR)
 NS_IMPL_ISUPPORTS_INHERITED1(nsDOMWorkerXHRUpload, nsDOMWorkerXHREventTarget,
                                                    nsIXMLHttpRequestUpload)
 
-NS_IMPL_CI_INTERFACE_GETTER4(nsDOMWorkerXHRUpload, nsIDOMNSEventTarget,
-                                                   nsIDOMEventTarget,
+NS_IMPL_CI_INTERFACE_GETTER3(nsDOMWorkerXHRUpload, nsIDOMEventTarget,
                                                    nsIXMLHttpRequestEventTarget,
                                                    nsIXMLHttpRequestUpload)
 
 NS_IMPL_THREADSAFE_DOM_CI_GETINTERFACES(nsDOMWorkerXHRUpload)
-
-NS_IMETHODIMP
-nsDOMWorkerXHRUpload::AddEventListener(const nsAString& aType,
-                                       nsIDOMEventListener* aListener,
-                                       PRBool aUseCapture)
-{
-  return AddEventListener(aType, aListener, aUseCapture, PR_FALSE, 0);
-}
 
 NS_IMETHODIMP
 nsDOMWorkerXHRUpload::RemoveEventListener(const nsAString& aType,
@@ -405,8 +396,7 @@ NS_IMPL_QUERY_INTERFACE_INHERITED2(nsDOMWorkerXHR, nsDOMWorkerXHREventTarget,
                                                    nsIXMLHttpRequest,
                                                    nsIXPCScriptable)
 
-NS_IMPL_CI_INTERFACE_GETTER4(nsDOMWorkerXHR, nsIDOMNSEventTarget,
-                                             nsIDOMEventTarget,
+NS_IMPL_CI_INTERFACE_GETTER3(nsDOMWorkerXHR, nsIDOMEventTarget,
                                              nsIXMLHttpRequestEventTarget,
                                              nsIXMLHttpRequest)
 
@@ -430,8 +420,6 @@ nsDOMWorkerXHR::Trace(nsIXPConnectWrappedNative* /* aWrapper */,
                       JSTracer* aTracer,
                       JSObject* /*aObj */)
 {
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
   if (!mCanceled) {
     nsDOMWorkerMessageHandler::Trace(aTracer);
     if (mUpload) {
@@ -720,7 +708,7 @@ nsDOMWorkerXHR::SetRequestHeader(const nsACString& aHeader,
 }
 
 NS_IMETHODIMP
-nsDOMWorkerXHR::GetReadyState(PRInt32* aReadyState)
+nsDOMWorkerXHR::GetReadyState(PRUint16* aReadyState)
 {
   NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
 
@@ -902,9 +890,21 @@ nsDOMWorkerXHR::SetWithCredentials(PRBool aWithCredentials)
   return NS_OK;
 }
 
-/* readonly attribute jsval (ArrayBuffer) mozResponseArrayBuffer; */
 NS_IMETHODIMP
-nsDOMWorkerXHR::GetMozResponseArrayBuffer(jsval *aResult)
+nsDOMWorkerXHR::GetResponseType(nsAString& aResponseText)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsDOMWorkerXHR::SetResponseType(const nsAString& aResponseText)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+/* readonly attribute jsval response; */
+NS_IMETHODIMP
+nsDOMWorkerXHR::GetResponse(JSContext *aCx, jsval *aResult)
 {
     return NS_ERROR_NOT_IMPLEMENTED;
 }

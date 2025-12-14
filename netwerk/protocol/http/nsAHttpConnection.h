@@ -44,6 +44,10 @@ class nsAHttpTransaction;
 class nsHttpRequestHead;
 class nsHttpResponseHead;
 class nsHttpConnectionInfo;
+class nsHttpConnection;
+class nsISocketTransport;
+class nsIAsyncInputStream;
+class nsIAsyncOutputStream;
 
 //-----------------------------------------------------------------------------
 // Abstract base class for a HTTP connection
@@ -92,6 +96,12 @@ public:
     // get a reference to the connection's connection info object.
     virtual void GetConnectionInfo(nsHttpConnectionInfo **) = 0;
 
+    // get the transport level information for this connection. This may fail
+    // if it is in use.
+    virtual nsresult TakeTransport(nsISocketTransport **,
+                                   nsIAsyncInputStream **,
+                                   nsIAsyncOutputStream **) = 0;
+
     // called by a transaction to get the security info from the socket.
     virtual void GetSecurityInfo(nsISupports **) = 0;
 
@@ -110,6 +120,10 @@ public:
     // the same connection and work around buggy servers.
     virtual PRBool LastTransactionExpectedNoContent() = 0;
     virtual void   SetLastTransactionExpectedNoContent(PRBool) = 0;
+
+    // Transfer the base http connection object along with a
+    // reference to it to the caller.
+    virtual nsHttpConnection *TakeHttpConnection() = 0;
 };
 
 #define NS_DECL_NSAHTTPCONNECTION \
@@ -118,11 +132,15 @@ public:
     nsresult ResumeRecv(); \
     void CloseTransaction(nsAHttpTransaction *, nsresult); \
     void GetConnectionInfo(nsHttpConnectionInfo **); \
+    nsresult TakeTransport(nsISocketTransport **,    \
+                           nsIAsyncInputStream **,   \
+                           nsIAsyncOutputStream **); \
     void GetSecurityInfo(nsISupports **); \
     PRBool IsPersistent(); \
     PRBool IsReused(); \
     nsresult PushBack(const char *, PRUint32); \
     PRBool LastTransactionExpectedNoContent(); \
-    void   SetLastTransactionExpectedNoContent(PRBool);
+    void   SetLastTransactionExpectedNoContent(PRBool); \
+    nsHttpConnection *TakeHttpConnection();
 
 #endif // nsAHttpConnection_h__

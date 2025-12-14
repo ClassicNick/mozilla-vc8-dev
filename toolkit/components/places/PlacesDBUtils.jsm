@@ -86,8 +86,8 @@ let PlacesDBUtils = {
       }
       else {
         // Output to the error console.
-        let messages = aTasks.messages
-                             .unshift("[ Places Maintenance ]");  
+        let messages = aTasks.messages;
+        messages.unshift("[ Places Maintenance ]");
         try {
           Services.console.logStringMessage(messages.join("\n"));
         } catch(ex) {}
@@ -766,8 +766,8 @@ let PlacesDBUtils = {
       PlacesDBUtils._executeTasks(tasks);
     }, PlacesUtils.TOPIC_EXPIRATION_FINISHED, false);
 
-    // Force a full expiration step.
-    expiration.observe(null, "places-debug-start-expiration", -1);
+    // Force an orphans expiration step.
+    expiration.observe(null, "places-debug-start-expiration", 0);
   },
 
   /**
@@ -841,14 +841,16 @@ let PlacesDBUtils = {
  */
 function Tasks(aTasks)
 {
-  if (Array.isArray(aTasks)) {
-    this._list = aTasks.slice(0, aTasks.length);
-  }
-  else if ("list" in aTasks) {
-    this._list = aTasks.list;
-    this._log = aTasks.messages;
-    this.callback = aTasks.callback;
-    this.scope = aTasks.scope;
+  if (aTasks) {
+    if (Array.isArray(aTasks)) {
+      this._list = aTasks.slice(0, aTasks.length);
+    }
+    else if ("list" in aTasks) {
+      this._list = aTasks.list;
+      this._log = aTasks.messages;
+      this.callback = aTasks.callback;
+      this.scope = aTasks.scope;
+    }
   }
 }
 

@@ -42,23 +42,18 @@
 
 #include "jscntxt.h"
 #include "jsgc.h"
-#include "jsmath.h"
 #include "jsobj.h"
 #include "jsfun.h"
 #include "jsgcstats.h"
 #include "jsclist.h"
-#include "jsxml.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4251) /* Silence warning about JS_FRIEND_API and data members. */
 #endif
 
-namespace JSC {
-
-class ExecutableAllocator;
-
-}
+namespace JSC { class ExecutableAllocator; }
+namespace WTF { class BumpPointerAllocator; }
 
 namespace js {
 
@@ -105,7 +100,6 @@ struct TracerState
     void*          rpAtLastTreeCall;    // value of rp at innermost tree call guard
     VMSideExit*    outermostTreeExitGuard; // the last side exit returned by js_CallTree
     TreeFragment*  outermostTree;       // the outermost tree we initially invoked
-    uintN*         inlineCallCountp;    // inline call count counter
     VMSideExit**   innermostNestedGuardp;
     VMSideExit*    innermost;
     uint64         startTime;
@@ -124,7 +118,7 @@ struct TracerState
     js::Value*     nativeVp;
 
     TracerState(JSContext *cx, TraceMonitor *tm, TreeFragment *ti,
-                uintN &inlineCallCountp, VMSideExit** innermostNestedGuardp);
+                VMSideExit** innermostNestedGuardp);
     ~TracerState();
 };
 
@@ -136,6 +130,10 @@ struct TracerState
  */
 struct TraceNativeStorage
 {
+    /* Max number of stack slots/frame that may need to be restored in LeaveTree. */
+    static const size_t MAX_NATIVE_STACK_SLOTS  = 4096;
+    static const size_t MAX_CALL_STACK_ENTRIES  = 500;
+
     double stack_global_buf[MAX_NATIVE_STACK_SLOTS + GLOBAL_SLOTS_BUFFER_SIZE];
     FrameInfo *callstack_buf[MAX_CALL_STACK_ENTRIES];
 
@@ -259,13 +257,16 @@ struct TraceMonitor {
     /* Fields needed for fragment/guard profiling. */
     nanojit::Seq<nanojit::Fragment*>* branches;
     uint32                  lastFragID;
-    /*
-     * profAlloc has a lifetime which spans exactly from InitJIT to
-     * FinishJIT.
-     */
     VMAllocator*            profAlloc;
     FragStatsMap*           profTab;
+
+    void logFragProfile();
 #endif
+
+    TraceMonitor();
+    ~TraceMonitor();
+
+    bool init(JSRuntime* rt);
 
     bool ontrace() const {
         return !!tracecx;
@@ -281,6 +282,10 @@ struct TraceMonitor {
     void mark(JSTracer *trc);
 
     bool outOfMemory() const;
+
+    JS_FRIEND_API(void) getCodeAllocStats(size_t &total, size_t &frag_size, size_t &free_size) const;
+    JS_FRIEND_API(size_t) getVMAllocatorsMainSize() const;
+    JS_FRIEND_API(size_t) getVMAllocatorsReserveSize() const;
 };
 
 namespace mjit {
@@ -293,17 +298,6 @@ class JaegerCompartment;
 # define JS_EVAL_CACHE_SHIFT        6
 #endif
 #define JS_EVAL_CACHE_SIZE          JS_BIT(JS_EVAL_CACHE_SHIFT)
-
-#ifdef DEBUG
-# define EVAL_CACHE_METER_LIST(_)   _(probe), _(hit), _(step), _(noscope)
-# define identity(x)                x
-
-struct JSEvalCacheMeter {
-    uint64 EVAL_CACHE_METER_LIST(identity);
-};
-
-# undef identity
-#endif
 
 namespace js {
 
@@ -339,6 +333,8 @@ class NativeIterCache {
         data[getIndex(key)] = iterobj;
     }
 };
+
+class MathCache;
 
 /*
  * A single-entry cache for some base-10 double-to-string conversions. This
@@ -377,35 +373,55 @@ struct JS_FRIEND_API(JSCompartment) {
     js::gc::ArenaList            arenas[js::gc::FINALIZE_LIMIT];
     js::gc::FreeLists            freeLists;
 
-    size_t                       gcBytes;
-    size_t                       gcTriggerBytes;
+    uint32                       gcBytes;
+    uint32                       gcTriggerBytes;
     size_t                       gcLastBytes;
 
     bool                         hold;
-
-#ifdef JS_GCMETER
-    js::gc::JSGCArenaStats       compartmentStats[js::gc::FINALIZE_LIMIT];
-#endif
+    bool                         systemGCChunks;
 
 #ifdef JS_TRACER
-    /* Trace-tree JIT recorder/interpreter state. */
-    js::TraceMonitor             traceMonitor;
+  private:
+    /*
+     * Trace-tree JIT recorder/interpreter state.  It's created lazily because
+     * many compartments don't end up needing it.
+     */
+    js::TraceMonitor             *traceMonitor_;
 #endif
 
+  public:
     /* Hashed lists of scripts created by eval to garbage-collect. */
     JSScript                     *scriptsToGC[JS_EVAL_CACHE_SIZE];
-
-#ifdef DEBUG
-    JSEvalCacheMeter             evalCacheMeter;
-#endif
 
     void                         *data;
     bool                         active;  // GC flag, whether there are active frames
     js::WrapperMap               crossCompartmentWrappers;
 
 #ifdef JS_METHODJIT
-    js::mjit::JaegerCompartment  *jaegerCompartment;
+  private:
+    /* This is created lazily because many compartments don't need it. */
+    js::mjit::JaegerCompartment  *jaegerCompartment_;
+    /*
+     * This function is here so that xpconnect/src/xpcjsruntime.cpp doesn't
+     * need to see the declaration of JaegerCompartment, which would require
+     * #including MethodJIT.h into xpconnect/src/xpcjsruntime.cpp, which is
+     * difficult due to reasons explained in bug 483677.
+     */
+  public:
+    bool hasJaegerCompartment() {
+        return !!jaegerCompartment_;
+    }
+
+    js::mjit::JaegerCompartment *jaegerCompartment() const {
+        JS_ASSERT(jaegerCompartment_);
+        return jaegerCompartment_;
+    }
+
+    bool ensureJaegerCompartmentExists(JSContext *cx);
+
+    size_t getMjitCodeSize() const;
 #endif
+    WTF::BumpPointerAllocator    *regExpAllocator;
 
     /*
      * Shared scope property tree, and arena-pool for allocating its nodes.
@@ -438,24 +454,23 @@ struct JS_FRIEND_API(JSCompartment) {
     EmptyShapeSet                emptyShapes;
 
     /*
-     * Initial shape given to RegExp objects, encoding the initial set of
-     * built-in instance properties and the fixed slots where they must be
-     * stored (see JSObject::JSSLOT_REGEXP_*). Later property additions may
-     * cause this shape to not be used by a regular expression (even along the
-     * entire shape parent chain, should the object go into dictionary mode).
-     * But because all the initial properties are non-configurable, they will
-     * always map to fixed slots.
+     * Initial shapes given to RegExp and String objects, encoding the initial
+     * sets of built-in instance properties and the fixed slots where they must
+     * be stored (see JSObject::JSSLOT_(REGEXP|STRING)_*). Later property
+     * additions may cause these shapes to not be used by a RegExp or String
+     * (even along the entire shape parent chain, should the object go into
+     * dictionary mode). But because all the initial properties are
+     * non-configurable, they will always map to fixed slots.
      */
     const js::Shape              *initialRegExpShape;
+    const js::Shape              *initialStringShape;
 
     bool                         debugMode;  // true iff debug mode on
     JSCList                      scripts;    // scripts in this compartment
 
-    JSC::ExecutableAllocator     *regExpAllocator;
-
     js::NativeIterCache          nativeIterCache;
 
-    typedef js::LazilyConstructed<js::ToSourceCache> LazyToSourceCache;
+    typedef js::Maybe<js::ToSourceCache> LazyToSourceCache;
     LazyToSourceCache            toSourceCache;
 
     JSCompartment(JSRuntime *rt);
@@ -479,11 +494,12 @@ struct JS_FRIEND_API(JSCompartment) {
     void purge(JSContext *cx);
     void finishArenaLists();
     void finalizeObjectArenaLists(JSContext *cx);
-    void finalizeShapeArenaLists(JSContext *cx);
     void finalizeStringArenaLists(JSContext *cx);
+    void finalizeShapeArenaLists(JSContext *cx);
     bool arenaListsAreEmpty();
 
-    void setGCLastBytes(size_t lastBytes);
+    void setGCLastBytes(size_t lastBytes, JSGCInvocationKind gckind);
+    void reduceGCTriggerBytes(uint32 amount);
 
     js::DtoaCache dtoaCache;
 
@@ -505,18 +521,25 @@ struct JS_FRIEND_API(JSCompartment) {
         return mathCache ? mathCache : allocMathCache(cx);
     }
 
+#ifdef JS_TRACER
+    bool hasTraceMonitor() {
+        return !!traceMonitor_;
+    }
+
+    js::TraceMonitor *allocAndInitTraceMonitor(JSContext *cx);
+
+    js::TraceMonitor *traceMonitor() const {
+        JS_ASSERT(traceMonitor_);
+        return traceMonitor_;
+    }
+#endif
+
     size_t backEdgeCount(jsbytecode *pc) const;
     size_t incBackEdgeCount(jsbytecode *pc);
 };
 
 #define JS_SCRIPTS_TO_GC(cx)    ((cx)->compartment->scriptsToGC)
 #define JS_PROPERTY_TREE(cx)    ((cx)->compartment->propertyTree)
-
-#ifdef DEBUG
-#define JS_COMPARTMENT_METER(x) x
-#else
-#define JS_COMPARTMENT_METER(x)
-#endif
 
 /*
  * N.B. JS_ON_TRACE(cx) is true if JIT code is on the stack in the current
@@ -528,7 +551,7 @@ JS_ON_TRACE(JSContext *cx)
 {
 #ifdef JS_TRACER
     if (JS_THREAD_DATA(cx)->onTraceCompartment)
-        return JS_THREAD_DATA(cx)->onTraceCompartment->traceMonitor.ontrace();
+        return JS_THREAD_DATA(cx)->onTraceCompartment->traceMonitor()->ontrace();
 #endif
     return false;
 }
@@ -538,7 +561,7 @@ static inline js::TraceMonitor *
 JS_TRACE_MONITOR_ON_TRACE(JSContext *cx)
 {
     JS_ASSERT(JS_ON_TRACE(cx));
-    return &JS_THREAD_DATA(cx)->onTraceCompartment->traceMonitor;
+    return JS_THREAD_DATA(cx)->onTraceCompartment->traceMonitor();
 }
 
 /*
@@ -549,7 +572,20 @@ JS_TRACE_MONITOR_ON_TRACE(JSContext *cx)
 static inline js::TraceMonitor *
 JS_TRACE_MONITOR_FROM_CONTEXT(JSContext *cx)
 {
-    return &cx->compartment->traceMonitor;
+    return cx->compartment->traceMonitor();
+}
+
+/*
+ * This one also creates the TraceMonitor if it doesn't already exist.
+ * It returns NULL if the lazy creation fails due to OOM.
+ */
+static inline js::TraceMonitor *
+JS_TRACE_MONITOR_FROM_CONTEXT_WITH_LAZY_INIT(JSContext *cx)
+{
+    if (!cx->compartment->hasTraceMonitor())
+        return cx->compartment->allocAndInitTraceMonitor(cx);
+        
+    return cx->compartment->traceMonitor();
 }
 #endif
 
@@ -558,7 +594,7 @@ TRACE_RECORDER(JSContext *cx)
 {
 #ifdef JS_TRACER
     if (JS_THREAD_DATA(cx)->recordingCompartment)
-        return JS_THREAD_DATA(cx)->recordingCompartment->traceMonitor.recorder;
+        return JS_THREAD_DATA(cx)->recordingCompartment->traceMonitor()->recorder;
 #endif
     return NULL;
 }
@@ -568,7 +604,7 @@ TRACE_PROFILER(JSContext *cx)
 {
 #ifdef JS_TRACER
     if (JS_THREAD_DATA(cx)->profilingCompartment)
-        return JS_THREAD_DATA(cx)->profilingCompartment->traceMonitor.profile;
+        return JS_THREAD_DATA(cx)->profilingCompartment->traceMonitor()->profile;
 #endif
     return NULL;
 }
@@ -580,12 +616,6 @@ GetMathCache(JSContext *cx)
     return cx->compartment->getMathCache(cx);
 }
 }
-
-#ifdef DEBUG
-# define EVAL_CACHE_METER(x)    (cx->compartment->evalCacheMeter.x++)
-#else
-# define EVAL_CACHE_METER(x)    ((void) 0)
-#endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)

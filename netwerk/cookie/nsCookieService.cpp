@@ -83,6 +83,7 @@
 #include "nsNetCID.h"
 #include "mozilla/storage.h"
 #include "mozilla/FunctionTimer.h"
+#include "mozilla/Util.h" // for DebugOnly
 
 using namespace mozilla::net;
 
@@ -1550,7 +1551,11 @@ nsCookieService::SetCookieStringInternal(nsIURI          *aHostURI,
   // process each cookie in the header
   nsDependentCString cookieHeader(aCookieHeader);
   while (SetCookieInternal(aHostURI, baseDomain, requireHostMatch,
-                           cookieStatus, cookieHeader, serverTime, aFromHttp));
+                           cookieStatus, cookieHeader, serverTime, aFromHttp)) {
+    // document.cookie can only set one cookie at a time
+    if (!aFromHttp)
+      break;
+  }
 }
 
 // notify observers that a cookie was rejected due to the users' prefs.
@@ -1941,7 +1946,7 @@ nsCookieService::CancelAsyncRead(PRBool aPurgeReadSet)
   // Cancel the pending read, kill the read listener, and empty the array
   // of data already read in on the background thread.
   mDefaultDBState->readListener->Cancel();
-  nsresult rv = mDefaultDBState->pendingRead->Cancel();
+  mozilla::DebugOnly<nsresult> rv = mDefaultDBState->pendingRead->Cancel();
   NS_ASSERT_SUCCESS(rv);
 
   mDefaultDBState->stmtReadDomain = nsnull;
@@ -3192,7 +3197,7 @@ nsCookieService::CheckPath(nsCookieAttributes &aCookieAttributes,
                            nsIURI             *aHostURI)
 {
   // if a path is given, check the host has permission
-  if (aCookieAttributes.path.IsEmpty()) {
+  if (aCookieAttributes.path.IsEmpty() || aCookieAttributes.path.First() != '/') {
     // strip down everything after the last slash to get the path,
     // ignoring slashes in the query string part.
     // if we can QI to nsIURL, that'll take care of the query string portion.

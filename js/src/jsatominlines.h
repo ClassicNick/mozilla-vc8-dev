@@ -51,7 +51,7 @@ js_ValueToAtom(JSContext *cx, const js::Value &v, JSAtom **atomp)
         if (!str)
             return false;
         JS::Anchor<JSString *> anchor(str);
-        *atomp = js_AtomizeString(cx, str, 0);
+        *atomp = js_AtomizeString(cx, str);
         return !!*atomp;
     }
 
@@ -61,7 +61,7 @@ js_ValueToAtom(JSContext *cx, const js::Value &v, JSAtom **atomp)
         return true;
     }
 
-    *atomp = js_AtomizeString(cx, str, 0);
+    *atomp = js_AtomizeString(cx, str);
     return !!*atomp;
 }
 
@@ -129,5 +129,38 @@ js_Int32ToId(JSContext* cx, int32 index, jsid* id)
 
     return js_ValueToStringId(cx, js::StringValue(str), id);
 }
+
+namespace js {
+
+inline bool
+IndexToId(JSContext *cx, uint32 index, jsid *idp)
+{
+    if (index <= JSID_INT_MAX) {
+        *idp = INT_TO_JSID(index);
+        return true;
+    }
+
+    JSString *str = js_NumberToString(cx, index);
+    if (!str)
+        return false;
+
+    JSAtom *atom = js_AtomizeString(cx, str);
+    if (!atom)
+        return false;
+    *idp = ATOM_TO_JSID(atom);
+    return true;
+}
+
+static JS_ALWAYS_INLINE JSString *
+IdToString(JSContext *cx, jsid id)
+{
+    if (JSID_IS_STRING(id))
+        return JSID_TO_STRING(id);
+    if (JS_LIKELY(JSID_IS_INT(id)))
+        return js_IntToString(cx, JSID_TO_INT(id));
+    return js_ValueToString(cx, IdToValue(id));
+}
+
+} // namespace js
 
 #endif /* jsatominlines_h___ */

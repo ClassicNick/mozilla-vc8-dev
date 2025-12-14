@@ -40,6 +40,7 @@
 #include "SVGPathSegUtils.h"
 #include "nsTArray.h"
 #include "nsSVGElement.h"
+#include "nsIWeakReferenceUtils.h"
 
 class gfxContext;
 struct gfxMatrix;
@@ -105,6 +106,7 @@ class SVGPathData
   // are responsible for that!
 
 public:
+  typedef const float* const_iterator;
 
   SVGPathData(){}
   ~SVGPathData(){}
@@ -121,7 +123,7 @@ public:
 
 #ifdef DEBUG
   /**
-   * This method iterates over the encoded segment data and countes the number
+   * This method iterates over the encoded segment data and counts the number
    * of segments we currently have.
    */
   PRUint32 CountItems() const;
@@ -178,6 +180,9 @@ public:
 
   void ConstructPath(gfxContext *aCtx) const;
 
+  const_iterator begin() const { return mData.Elements(); }
+  const_iterator end() const { return mData.Elements() + mData.Length(); }
+
   // Access to methods that can modify objects of this type is deliberately
   // limited. This is to reduce the chances of someone modifying objects of
   // this type without taking the necessary steps to keep DOM wrappers in sync.
@@ -186,6 +191,7 @@ public:
   // can take care of keeping DOM wrappers in sync.
 
 protected:
+  typedef float* iterator;
 
   /**
    * This may fail on OOM if the internal capacity needs to be increased, in
@@ -223,6 +229,9 @@ protected:
 
   nsresult AppendSeg(PRUint32 aType, ...); // variable number of float args
 
+  iterator begin() { return mData.Elements(); }
+  iterator end() { return mData.Elements() + mData.Length(); }
+
   nsTArray<float> mData;
 };
 
@@ -238,17 +247,17 @@ protected:
 class SVGPathDataAndOwner : public SVGPathData
 {
 public:
-
   SVGPathDataAndOwner(nsSVGElement *aElement = nsnull)
-    : mElement(aElement)
+    : mElement(do_GetWeakReference(static_cast<nsINode*>(aElement)))
   {}
 
   void SetElement(nsSVGElement *aElement) {
-    mElement = aElement;
+    mElement = do_GetWeakReference(static_cast<nsINode*>(aElement));
   }
 
   nsSVGElement* Element() const {
-    return mElement;
+    nsCOMPtr<nsIContent> e = do_QueryReferent(mElement);
+    return static_cast<nsSVGElement*>(e.get());
   }
 
   nsresult CopyFrom(const SVGPathDataAndOwner& rhs) {
@@ -256,29 +265,34 @@ public:
     return SVGPathData::CopyFrom(rhs);
   }
 
+  PRBool IsIdentity() const {
+    if (!mElement) {
+      NS_ABORT_IF_FALSE(IsEmpty(), "target element propagation failure");
+      return PR_TRUE;
+    }
+    return PR_FALSE;
+  }
+
   /**
    * Exposed so that SVGPathData baseVals can be copied to
    * SVGPathDataAndOwner objects. Note that callers should also call
    * SetElement() when using this method!
    */
-  nsresult CopyFrom(const SVGPathData& rhs) {
-    return SVGPathData::CopyFrom(rhs);
-  }
-  const float& operator[](PRUint32 aIndex) const {
-    return SVGPathData::operator[](aIndex);
-  }
-  float& operator[](PRUint32 aIndex) {
-    return SVGPathData::operator[](aIndex);
-  }
-  PRBool SetLength(PRUint32 aNumberOfItems) {
-    return SVGPathData::SetLength(aNumberOfItems);
-  }
+  using SVGPathData::CopyFrom;
+
+  // Exposed since SVGPathData objects can be modified.
+  using SVGPathData::iterator;
+  using SVGPathData::operator[];
+  using SVGPathData::SetLength;
+  using SVGPathData::begin;
+  using SVGPathData::end;
 
 private:
-  // We must keep a strong reference to our element because we may belong to a
+  // We must keep a weak reference to our element because we may belong to a
   // cached baseVal nsSMILValue. See the comments starting at:
   // https://bugzilla.mozilla.org/show_bug.cgi?id=515116#c15
-  nsRefPtr<nsSVGElement> mElement;
+  // See also https://bugzilla.mozilla.org/show_bug.cgi?id=653497
+  nsWeakPtr mElement;
 };
 
 } // namespace mozilla

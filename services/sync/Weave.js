@@ -19,6 +19,7 @@
  *
  * Contributor(s):
  *  Dan Mills <thunder@mozilla.com>
+ *  Philipp von Weitershausen <philipp@weitershausen.de>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -39,6 +40,8 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/FileUtils.jsm");
 
 function WeaveService() {
   this.wrappedJSObject = this;
@@ -58,8 +61,6 @@ WeaveService.prototype = {
       break;
 
     case "final-ui-startup":
-      this.addResourceAlias();
-
       // Force Weave service to load if it hasn't triggered from overlays
       this.timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
       this.timer.initWithCallback({
@@ -70,25 +71,6 @@ WeaveService.prototype = {
         }
       }, 10000, Ci.nsITimer.TYPE_ONE_SHOT);
       break;
-    }
-  },
-
-  addResourceAlias: function() {
-    let ioService = Cc["@mozilla.org/network/io-service;1"]
-                    .getService(Ci.nsIIOService);
-    let resProt = ioService.getProtocolHandler("resource")
-                  .QueryInterface(Ci.nsIResProtocolHandler);
-
-    // Only create alias if resource://services-sync doesn't already exist.
-    if (!resProt.hasSubstitution("services-sync")) {
-      let uri = ioService.newURI("resource:///modules/services-sync/",
-                                 null, null);
-      resProt.setSubstitution("services-sync", uri);
-    }
-    if (!resProt.hasSubstitution("services-crypto")) {
-      let uri = ioService.newURI("resource:///modules/services-crypto/",
-                                 null, null);
-      resProt.setSubstitution("services-crypto", uri);
     }
   }
 };
@@ -105,53 +87,20 @@ AboutWeaveLog.prototype = {
   },
 
   newChannel: function(aURI) {
-    let dir = Cc["@mozilla.org/file/directory_service;1"].
-      getService(Ci.nsIProperties);
-    let file = dir.get("ProfD", Ci.nsILocalFile);
-    file.append("weave");
-    file.append("logs");
-    file.append("verbose-log.txt");
-    let ios = Cc["@mozilla.org/network/io-service;1"].
-      getService(Ci.nsIIOService);
-    let ch = ios.newChannel(ios.newFileURI(file).spec, null, null);
-    ch.originalURI = aURI;
-    return ch;
+    let dir = FileUtils.getDir("ProfD", ["weave", "logs"], true);
+    let uri = Services.io.newFileURI(dir);
+    let channel = Services.io.newChannelFromURI(uri);
+    channel.originalURI = aURI;
+
+    // Ensure that the about page has the same privileges as a regular directory
+    // view. That way links to files can be opened.
+    let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"]
+                .getService(Ci.nsIScriptSecurityManager);
+    let principal = ssm.getCodebasePrincipal(uri);
+    channel.owner = principal;
+    return channel;
   }
 };
 
-function AboutWeaveLog1() {}
-AboutWeaveLog1.prototype = {
-  classID: Components.ID("{a08ee179-df50-48e0-9c87-79e4dd5caeb1}"),
-
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIAboutModule,
-                                         Ci.nsISupportsWeakReference]),
-
-  getURIFlags: function(aURI) {
-    return 0;
-  },
-
-  newChannel: function(aURI) {
-    let dir = Cc["@mozilla.org/file/directory_service;1"].
-      getService(Ci.nsIProperties);
-    let file = dir.get("ProfD", Ci.nsILocalFile);
-    file.append("weave");
-    file.append("logs");
-    file.append("verbose-log.txt.1");
-    let ios = Cc["@mozilla.org/network/io-service;1"].
-      getService(Ci.nsIIOService);
-    let ch = ios.newChannel(ios.newFileURI(file).spec, null, null);
-    ch.originalURI = aURI;
-    return ch;
-  }
-};
-
-let components = [WeaveService, AboutWeaveLog, AboutWeaveLog1];
-
-// Gecko <2.0
-function NSGetModule(compMgr, fileSpec) {
-  return XPCOMUtils.generateModule(components);
-}
-
-// Gecko >=2.0
-if (typeof XPCOMUtils.generateNSGetFactory == "function")
-    const NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+const components = [WeaveService, AboutWeaveLog];
+const NSGetFactory = XPCOMUtils.generateNSGetFactory(components);

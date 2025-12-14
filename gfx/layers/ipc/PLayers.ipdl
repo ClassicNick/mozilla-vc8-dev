@@ -83,6 +83,18 @@ union SurfaceDescriptor {
   SurfaceDescriptorX11;
 };
 
+struct YUVImage {
+  Shmem Ydata;
+  Shmem Udata;
+  Shmem Vdata;
+  nsIntRect picture;
+};
+
+union SharedImage {
+  SurfaceDescriptor;
+  YUVImage;
+};
+
 struct ThebesBuffer {
   SurfaceDescriptor buffer;
   nsIntRect rect;
@@ -94,22 +106,21 @@ struct OpCreateThebesBuffer {
   PLayer layer;
   OptionalThebesBuffer initialFront;
   nsIntRegion frontValidRegion;
-  float xResolution;
-  float yResolution;
 };
 struct OpDestroyThebesFrontBuffer { PLayer layer; };
 
 struct OpCreateCanvasBuffer {
   PLayer layer;
   nsIntSize size;
-  Shmem initialFront;
+  SurfaceDescriptor initialFront;
+  bool needYFlip;
 };
 struct OpDestroyCanvasFrontBuffer { PLayer layer; };
 
 struct OpCreateImageBuffer {
   PLayer layer;
   nsIntSize size;
-  Shmem initialFront;
+  SharedImage initialFront;
 };
 struct OpDestroyImageFrontBuffer { PLayer layer; };
 
@@ -124,12 +135,11 @@ struct CommonLayerAttributes {
   nsIntRect clipRect;
   bool useTileSourceRect;
   nsIntRect tileSourceRect;
+  bool isFixedPosition;
 };
 
 struct ThebesLayerAttributes {
   nsIntRegion validRegion;
-  float xResolution;
-  float yResolution;
 };
 struct ContainerLayerAttributes{ FrameMetrics metrics; };
 struct ColorLayerAttributes    { gfxRGBA color; };
@@ -172,12 +182,12 @@ struct OpPaintThebesBuffer {
 
 struct OpPaintCanvas  {
   PLayer layer;
-  Shmem newFrontBuffer;
+  SurfaceDescriptor newFrontBuffer;
 };
 
 struct OpPaintImage  {
   PLayer layer;
-  Shmem newFrontBuffer;
+  SharedImage newFrontBuffer;
 };
 
 
@@ -211,12 +221,12 @@ union Edit {
 // Replies to operations
 struct OpBufferSwap   { PLayer layer; SurfaceDescriptor newBackBuffer; };
 
+struct OpImageSwap { PLayer layer; SharedImage newBackImage; };
+
 struct OpThebesBufferSwap {
   PLayer layer;
   ThebesBuffer newBackBuffer;
   nsIntRegion newValidRegion;
-  float newXResolution;
-  float newYResolution;
   // If the parent took the child's old back buffer and returned its
   // old front buffer, |readOnlyFrontBuffer| may (if non-null) contain
   // the child's old back buffer (parent's new front buffer).  This
@@ -232,6 +242,7 @@ struct OpThebesBufferSwap {
 union EditReply {
   OpBufferSwap;
   OpThebesBufferSwap;
+  OpImageSwap;
 };
 
 

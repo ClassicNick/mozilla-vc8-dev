@@ -125,7 +125,7 @@ nsContextMenu.prototype = {
         } catch (ex) {}
       }
       // Check if this could be a valid url, just missing the protocol.
-      else if (/^(?:\w+\.)+\D\S*$/.test(linkText)) {
+      else if (/^(?:[a-z\d-]+\.)+[a-z]+$/i.test(linkText)) {
         // Now let's see if this is an intentional link selection. Our guess is
         // based on whether the selection begins/ends with whitespace or is
         // preceded/followed by a non-word character.
@@ -497,9 +497,9 @@ nsContextMenu.prototype = {
       }
       else if (this.target instanceof HTMLInputElement ) {
         this.onTextInput = this.isTargetATextBox(this.target);
-        // allow spellchecking UI on all writable text boxes except passwords
+        // Allow spellchecking UI on all text and search inputs.
         if (this.onTextInput && ! this.target.readOnly &&
-            this.target.type != "password") {
+            (this.target.type == "text" || this.target.type == "search")) {
           this.onEditableArea = true;
           InlineSpellCheckerUI.init(this.target.QueryInterface(Ci.nsIDOMNSEditableElement).editor);
           InlineSpellCheckerUI.initFromEvent(aRangeParent, aRangeOffset);

@@ -31,7 +31,9 @@ function onTabViewWindowLoaded() {
 
     is(groupItem.getChildren().length, 1, "The new group has a tab item");
     // start the tests
-    testUndoGroup(contentWindow, groupItem);
+    waitForFocus(function() {
+      testUndoGroup(contentWindow, groupItem);
+    }, contentWindow);
   };
   window.addEventListener("tabviewhidden", onTabViewHidden, false);
   window.addEventListener("tabviewshown", onTabViewShown, false);
@@ -80,7 +82,7 @@ function testUndoGroup(contentWindow, groupItem) {
   });
 
   let closeButton = groupItem.container.getElementsByClassName("close");
-  ok(closeButton, "Group item close button exists");
+  ok(closeButton[0], "Group item close button exists");
   EventUtils.sendMouseEvent({ type: "click" }, closeButton[0], contentWindow);
 }
 
@@ -123,12 +125,12 @@ function testCloseUndoGroup(contentWindow, groupItem) {
     // visibility of tabview
     let tabItems = contentWindow.TabItems.getItems();
     ok(tabItems[0], "A tab item exists");
-    contentWindow.UI.setActiveTab(tabItems[0]);
+    contentWindow.UI.setActive(tabItems[0]);
 
     TabView.toggle();
   });
 
   let closeButton = groupItem.container.getElementsByClassName("close");
-  ok(closeButton, "Group item close button exists");
+  ok(closeButton[0], "Group item close button exists");
   EventUtils.sendMouseEvent({ type: "click" }, closeButton[0], contentWindow);
 }

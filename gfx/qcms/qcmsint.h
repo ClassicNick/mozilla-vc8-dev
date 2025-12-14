@@ -113,7 +113,7 @@ struct tag_value {
 			} XYZNumber;
 		} XYZType;
 	};
-}; /* I guess we need to pack this? */
+}; // I guess we need to pack this?
 #endif
 
 #define RGB_SIGNATURE  0x52474220
@@ -143,7 +143,7 @@ struct _qcms_profile {
 
 static inline float s15Fixed16Number_to_float(s15Fixed16Number a)
 {
-	return ((int32_t)a)/65536.;
+	return ((int32_t)a)/65536.f;
 }
 
 static inline s15Fixed16Number double_to_s15Fixed16Number(double v)

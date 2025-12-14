@@ -44,6 +44,8 @@
 
 #include "CheckedInt.h"
 
+#include "jstypedarray.h"
+
 #if defined(USE_ANGLE)
 #include "angle/ShaderLang.h"
 #endif
@@ -91,12 +93,12 @@ PRBool
 WebGLContext::ValidateBuffers(PRInt32 *maxAllowedCount, const char *info)
 {
 #ifdef DEBUG
-    GLuint currentProgram = 0;
+    GLint currentProgram = 0;
     MakeContextCurrent();
-    gl->fGetIntegerv(LOCAL_GL_CURRENT_PROGRAM, (GLint*) &currentProgram);
-    NS_ASSERTION(currentProgram == mCurrentProgram->GLName(),
+    gl->fGetIntegerv(LOCAL_GL_CURRENT_PROGRAM, &currentProgram);
+    NS_ASSERTION(GLuint(currentProgram) == mCurrentProgram->GLName(),
                  "WebGL: current program doesn't agree with GL state");
-    if (currentProgram != mCurrentProgram->GLName())
+    if (GLuint(currentProgram) != mCurrentProgram->GLName())
         return PR_FALSE;
 #endif
 
@@ -327,53 +329,78 @@ PRBool WebGLContext::ValidateDrawModeEnum(WebGLenum mode, const char *info)
     }
 }
 
-PRBool WebGLContext::ValidateTexFormatAndType(WebGLenum format, WebGLenum type,
-                                                PRUint32 *texelSize, const char *info)
+PRBool WebGLContext::ValidateTexFormatAndType(WebGLenum format, WebGLenum type, int jsArrayType,
+                                              PRUint32 *texelSize, const char *info)
 {
-    if (type == LOCAL_GL_UNSIGNED_BYTE)
+    if (type == LOCAL_GL_UNSIGNED_BYTE ||
+        (IsExtensionEnabled(WebGL_OES_texture_float) && type == LOCAL_GL_FLOAT))
     {
+        if (jsArrayType != -1) {
+            if ((type == LOCAL_GL_UNSIGNED_BYTE && jsArrayType != js::TypedArray::TYPE_UINT8) ||
+                (type == LOCAL_GL_FLOAT && jsArrayType != js::TypedArray::TYPE_FLOAT32))
+            {
+                ErrorInvalidOperation("%s: invalid typed array type for given format", info);
+                return PR_FALSE;
+            }
+        }
+
+        int texMultiplier = type == LOCAL_GL_FLOAT ? 4 : 1;
         switch (format) {
             case LOCAL_GL_ALPHA:
             case LOCAL_GL_LUMINANCE:
-                *texelSize = 1;
+                *texelSize = 1 * texMultiplier;
                 return PR_TRUE;
             case LOCAL_GL_LUMINANCE_ALPHA:
-                *texelSize = 2;
+                *texelSize = 2 * texMultiplier;
                 return PR_TRUE;
             case LOCAL_GL_RGB:
-                *texelSize = 3;
+                *texelSize = 3 * texMultiplier;
                 return PR_TRUE;
             case LOCAL_GL_RGBA:
-                *texelSize = 4;
+                *texelSize = 4 * texMultiplier;
                 return PR_TRUE;
             default:
-                ErrorInvalidEnum("%s: invalid format 0x%x", info, format);
-                return PR_FALSE;
+                break;
         }
-    } else {
-        switch (type) {
-            case LOCAL_GL_UNSIGNED_SHORT_4_4_4_4:
-            case LOCAL_GL_UNSIGNED_SHORT_5_5_5_1:
-                if (format == LOCAL_GL_RGBA) {
-                    *texelSize = 2;
-                    return PR_TRUE;
-                } else {
-                    ErrorInvalidOperation("%s: mutually incompatible format and type", info);
-                    return PR_FALSE;
-                }
-            case LOCAL_GL_UNSIGNED_SHORT_5_6_5:
-                if (format == LOCAL_GL_RGB) {
-                    *texelSize = 2;
-                    return PR_TRUE;
-                } else {
-                    ErrorInvalidOperation("%s: mutually incompatible format and type", info);
-                    return PR_FALSE;
-                }
-            default:
-                ErrorInvalidEnum("%s: invalid type 0x%x", info, type);
-                return PR_FALSE;
-        }
+
+        ErrorInvalidEnum("%s: invalid format 0x%x", info, format);
+        return PR_FALSE;
     }
+
+    switch (type) {
+        case LOCAL_GL_UNSIGNED_SHORT_4_4_4_4:
+        case LOCAL_GL_UNSIGNED_SHORT_5_5_5_1:
+            if (jsArrayType != -1 && jsArrayType != js::TypedArray::TYPE_UINT16) {
+                ErrorInvalidOperation("%s: invalid typed array type for given format", info);
+                return PR_FALSE;
+            }
+
+            if (format == LOCAL_GL_RGBA) {
+                *texelSize = 2;
+                return PR_TRUE;
+            }
+            ErrorInvalidOperation("%s: mutually incompatible format and type", info);
+            return PR_FALSE;
+
+        case LOCAL_GL_UNSIGNED_SHORT_5_6_5:
+            if (jsArrayType != -1 && jsArrayType != js::TypedArray::TYPE_UINT16) {
+                ErrorInvalidOperation("%s: invalid typed array type for given format", info);
+                return PR_FALSE;
+            }
+
+            if (format == LOCAL_GL_RGB) {
+                *texelSize = 2;
+                return PR_TRUE;
+            }
+            ErrorInvalidOperation("%s: mutually incompatible format and type", info);
+            return PR_FALSE;
+
+        default:
+            break;
+        }
+
+    ErrorInvalidEnum("%s: invalid type 0x%x", info, type);
+    return PR_FALSE;
 }
 
 PRBool WebGLContext::ValidateAttribIndex(WebGLuint index, const char *info)
@@ -390,6 +417,24 @@ PRBool WebGLContext::ValidateAttribIndex(WebGLuint index, const char *info)
     } else {
         return PR_TRUE;
     }
+}
+
+PRBool WebGLContext::ValidateStencilParamsForDrawCall()
+{
+  const char *msg = "%s set different front and back stencil %s. Drawing in this configuration is not allowed.";
+  if (mStencilRefFront != mStencilRefBack) {
+      ErrorInvalidOperation(msg, "stencilFuncSeparate", "reference values");
+      return PR_FALSE;
+  }
+  if (mStencilValueMaskFront != mStencilValueMaskBack) {
+      ErrorInvalidOperation(msg, "stencilFuncSeparate", "value masks");
+      return PR_FALSE;
+  }
+  if (mStencilWriteMaskFront != mStencilWriteMaskBack) {
+      ErrorInvalidOperation(msg, "stencilMaskSeparate", "write masks");
+      return PR_FALSE;
+  }
+  return PR_TRUE;
 }
 
 PRBool
@@ -426,9 +471,6 @@ WebGLContext::InitAndValidateGL()
     mMapFramebuffers.Clear();
     mMapRenderbuffers.Clear();
 
-    // make sure that the opengl stuff that we need is supported
-    GLint val = 0;
-
     MakeContextCurrent();
 
     // on desktop OpenGL, we always keep vertex attrib 0 array enabled
@@ -436,7 +478,7 @@ WebGLContext::InitAndValidateGL()
         gl->fEnableVertexAttribArray(0);
     }
 
-    gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_ATTRIBS, (GLint*) &mGLMaxVertexAttribs);
+    gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_ATTRIBS, &mGLMaxVertexAttribs);
     if (mGLMaxVertexAttribs < 8) {
         LogMessage("GL_MAX_VERTEX_ATTRIBS: %d is < 8!", mGLMaxVertexAttribs);
         return PR_FALSE;
@@ -447,7 +489,7 @@ WebGLContext::InitAndValidateGL()
     // Note: GL_MAX_TEXTURE_UNITS is fixed at 4 for most desktop hardware,
     // even though the hardware supports much more.  The
     // GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS value is the accurate value.
-    gl->fGetIntegerv(LOCAL_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, (GLint*) &mGLMaxTextureUnits);
+    gl->fGetIntegerv(LOCAL_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mGLMaxTextureUnits);
     if (mGLMaxTextureUnits < 8) {
         LogMessage("GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS: %d is < 8!", mGLMaxTextureUnits);
         return PR_FALSE;
@@ -456,20 +498,20 @@ WebGLContext::InitAndValidateGL()
     mBound2DTextures.SetLength(mGLMaxTextureUnits);
     mBoundCubeMapTextures.SetLength(mGLMaxTextureUnits);
 
-    gl->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, (GLint*) &mGLMaxTextureSize);
-    gl->fGetIntegerv(LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE, (GLint*) &mGLMaxCubeMapTextureSize);
+    gl->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &mGLMaxTextureSize);
+    gl->fGetIntegerv(LOCAL_GL_MAX_CUBE_MAP_TEXTURE_SIZE, &mGLMaxCubeMapTextureSize);
 
-    gl->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS, (GLint*) &mGLMaxTextureImageUnits);
-    gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, (GLint*) &mGLMaxVertexTextureImageUnits);
+    gl->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_IMAGE_UNITS, &mGLMaxTextureImageUnits);
+    gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &mGLMaxVertexTextureImageUnits);
 
     if (gl->HasES2Compatibility()) {
-        gl->fGetIntegerv(LOCAL_GL_MAX_FRAGMENT_UNIFORM_VECTORS, (GLint*) &mGLMaxFragmentUniformVectors);
-        gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_UNIFORM_VECTORS, (GLint*) &mGLMaxVertexUniformVectors);
-        gl->fGetIntegerv(LOCAL_GL_MAX_VARYING_VECTORS, (GLint*) &mGLMaxVaryingVectors);
+        gl->fGetIntegerv(LOCAL_GL_MAX_FRAGMENT_UNIFORM_VECTORS, &mGLMaxFragmentUniformVectors);
+        gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_UNIFORM_VECTORS, &mGLMaxVertexUniformVectors);
+        gl->fGetIntegerv(LOCAL_GL_MAX_VARYING_VECTORS, &mGLMaxVaryingVectors);
     } else {
-        gl->fGetIntegerv(LOCAL_GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, (GLint*) &mGLMaxFragmentUniformVectors);
+        gl->fGetIntegerv(LOCAL_GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &mGLMaxFragmentUniformVectors);
         mGLMaxFragmentUniformVectors /= 4;
-        gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_UNIFORM_COMPONENTS, (GLint*) &mGLMaxVertexUniformVectors);
+        gl->fGetIntegerv(LOCAL_GL_MAX_VERTEX_UNIFORM_COMPONENTS, &mGLMaxVertexUniformVectors);
         mGLMaxVertexUniformVectors /= 4;
 
         // we are now going to try to read GL_MAX_VERTEX_OUTPUT_COMPONENTS and GL_MAX_FRAGMENT_INPUT_COMPONENTS,
@@ -493,7 +535,7 @@ WebGLContext::InitAndValidateGL()
         error = gl->fGetError();
         switch (error) {
             case LOCAL_GL_NO_ERROR:
-                mGLMaxVaryingVectors = PR_MIN(maxVertexOutputComponents, minFragmentInputComponents) / 4;
+                mGLMaxVaryingVectors = NS_MIN(maxVertexOutputComponents, minFragmentInputComponents) / 4;
                 break;
             case LOCAL_GL_INVALID_ENUM:
                 mGLMaxVaryingVectors = 16; // = 64/4, 64 is the min value for maxVertexOutputComponents in OpenGL 3.2 spec
@@ -504,23 +546,8 @@ WebGLContext::InitAndValidateGL()
         }
     }
 
-#if 0
-    // Leaving this code in here, even though it's ifdef'd out, for
-    // when we support more than 1 color attachment.
-    gl->fGetIntegerv(LOCAL_GL_MAX_COLOR_ATTACHMENTS, (GLint*) &val);
-#else
     // Always 1 for GLES2
-    val = 1;
-#endif
-    mMaxFramebufferColorAttachments = val;
-
-#if defined(DEBUG_vladimir) && defined(USE_GLES2)
-    gl->fGetIntegerv(LOCAL_GL_IMPLEMENTATION_COLOR_READ_FORMAT, (GLint*) &val);
-    fprintf(stderr, "GL_IMPLEMENTATION_COLOR_READ_FORMAT: 0x%04x\n", val);
-
-    gl->fGetIntegerv(LOCAL_GL_IMPLEMENTATION_COLOR_READ_TYPE, (GLint*) &val);
-    fprintf(stderr, "GL_IMPLEMENTATION_COLOR_READ_TYPE: 0x%04x\n", val);
-#endif
+    mMaxFramebufferColorAttachments = 1;
 
     if (!gl->IsGLES2()) {
         // gl_PointSize is always available in ES2 GLSL, but has to be
@@ -543,13 +570,6 @@ WebGLContext::InitAndValidateGL()
             gl->fEnable(LOCAL_GL_POINT_SPRITE);
         }
     }
-
-    gl->fGetIntegerv(LOCAL_GL_PACK_ALIGNMENT,   (GLint*) &mPixelStorePackAlignment);
-    gl->fGetIntegerv(LOCAL_GL_UNPACK_ALIGNMENT, (GLint*) &mPixelStoreUnpackAlignment);
-
-    gl->fGetIntegerv(LOCAL_GL_STENCIL_WRITEMASK, (GLint*) &mStencilWriteMask);
-    gl->fGetIntegerv(LOCAL_GL_STENCIL_VALUE_MASK, (GLint*) &mStencilValueMask);
-    gl->fGetIntegerv(LOCAL_GL_STENCIL_REF, (GLint*) &mStencilRef);
 
     // Check the shader validator pref
     nsCOMPtr<nsIPrefBranch> prefService = do_GetService(NS_PREFSERVICE_CONTRACTID);

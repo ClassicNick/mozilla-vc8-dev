@@ -43,6 +43,18 @@ def check_manifest(test_list):
     else:
         print 'All test files are listed in manifests'
 
+def print_tinderbox_result(label, path, message=None, skip=False, time=None):
+    result = label
+    result += " | " + path
+    result += " |" + OPTIONS.shell_args
+    if message:
+        result += " | " + message
+    if skip:
+        result += ' | (SKIP)'
+    if time > OPTIONS.timeout:
+        result += ' | (TIMEOUT)'
+    print result
+
 class TestTask:
     js_cmd_prefix = None
 
@@ -82,7 +94,7 @@ class ResultsSink:
     def push(self, output):
         if isinstance(output, NullTestOutput):
             if OPTIONS.tinderbox:
-                print '%s | %s (SKIP)' % ('TEST-KNOWN-FAIL', output.test.path)
+                print_tinderbox_result('TEST-KNOWN-FAIL', output.test.path, time=output.dt, skip=True)
             self.counts[2] += 1
             self.n += 1
         else:
@@ -97,6 +109,8 @@ class ResultsSink:
             result = TestResult.from_output(output)
             tup = (result.result, result.test.expect, result.test.random)
             dev_label = self.LABELS[tup][1]
+            if output.timed_out:
+                dev_label = 'TIMEOUTS'
             self.groups.setdefault(dev_label, []).append(result.test.path)
 
             self.n += 1
@@ -114,10 +128,10 @@ class ResultsSink:
                         label = self.LABELS[(sub_ok, result.test.expect, result.test.random)][0]
                         if label == 'TEST-UNEXPECTED-PASS':
                             label = 'TEST-PASS (EXPECTED RANDOM)'
-                        print '%s | %s | %s' % (label, result.test.path, msg)
-                print '%s | %s' % (self.LABELS[(result.result, 
-                                              result.test.expect, result.test.random)][0],
-                                 result.test.path)
+                        print_tinderbox_result(label, result.test.path, time=output.dt, message=msg)
+                print_tinderbox_result(self.LABELS[
+                    (result.result, result.test.expect, result.test.random)][0],
+                    result.test.path, time=output.dt)
            
         if self.pb:
             self.pb.label = '[%4d|%4d|%4d]'%tuple(self.counts)
@@ -154,7 +168,7 @@ class ResultsSink:
         if OPTIONS.failure_file:
               failure_file = open(OPTIONS.failure_file, 'w')
               if not self.all_passed():
-                  for path in self.groups['REGRESSIONS']:
+                  for path in self.groups['REGRESSIONS'] + self.groups['TIMEOUTS']:
                       print >> failure_file, path
               failure_file.close()
 
@@ -165,7 +179,7 @@ class ResultsSink:
             print 'FAIL' + suffix
 
     def all_passed(self):
-        return 'REGRESSIONS' not in self.groups
+        return 'REGRESSIONS' not in self.groups and 'TIMEOUTS' not in self.groups
 
 def run_tests(tests, results):
     """Run the given tests, sending raw results to the given results accumulator."""
@@ -317,7 +331,8 @@ if __name__ == '__main__':
         test_list = exclude_tests(test_list, OPTIONS.exclude_file)
 
     if OPTIONS.no_extensions:
-        test_list = [_ for _ in test_list if '/extensions/' not in _.path]
+        pattern = os.sep + 'extensions' + os.sep
+        test_list = [_ for _ in test_list if pattern not in _.path]
 
     if not OPTIONS.random:
         test_list = [ _ for _ in test_list if not _.random ]
@@ -345,6 +360,7 @@ if __name__ == '__main__':
         call(cmd)
         sys.exit()
 
+    results = None
     if not test_list:
         print 'no tests selected'
     else:
@@ -361,5 +377,5 @@ if __name__ == '__main__':
     if output_file != sys.stdout:
         output_file.close()
 
-    if not results.all_passed():
+    if results is None or not results.all_passed():
         sys.exit(1)

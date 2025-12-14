@@ -56,6 +56,7 @@
 #include "gfxFont.h"
 #include "gfxSkipChars.h"
 #include "gfxContext.h"
+#include "nsDisplayList.h"
 
 class nsTextPaintStyle;
 class PropertyProvider;
@@ -226,13 +227,13 @@ public:
 #endif
   
   virtual void MarkIntrinsicWidthsDirty();
-  virtual nscoord GetMinWidth(nsIRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsIRenderingContext *aRenderingContext);
-  virtual void AddInlineMinWidth(nsIRenderingContext *aRenderingContext,
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
+  virtual void AddInlineMinWidth(nsRenderingContext *aRenderingContext,
                                  InlineMinWidthData *aData);
-  virtual void AddInlinePrefWidth(nsIRenderingContext *aRenderingContext,
+  virtual void AddInlinePrefWidth(nsRenderingContext *aRenderingContext,
                                   InlinePrefWidthData *aData);
-  virtual nsSize ComputeSize(nsIRenderingContext *aRenderingContext,
+  virtual nsSize ComputeSize(nsRenderingContext *aRenderingContext,
                              nsSize aCBSize, nscoord aAvailableWidth,
                              nsSize aMargin, nsSize aBorder, nsSize aPadding,
                              PRBool aShrinkWrap);
@@ -256,7 +257,7 @@ public:
     // an amount to *subtract* from the frame's width (zero if !mChanged)
     nscoord      mDeltaWidth;
   };
-  TrimOutput TrimTrailingWhiteSpace(nsIRenderingContext* aRC);
+  TrimOutput TrimTrailingWhiteSpace(nsRenderingContext* aRC);
   virtual nsresult GetRenderedText(nsAString* aString = nsnull,
                                    gfxSkipChars* aSkipChars = nsnull,
                                    gfxSkipCharsIterator* aSkipIter = nsnull,
@@ -265,41 +266,71 @@ public:
 
   nsOverflowAreas RecomputeOverflow();
 
-  void AddInlineMinWidthForFlow(nsIRenderingContext *aRenderingContext,
+  void AddInlineMinWidthForFlow(nsRenderingContext *aRenderingContext,
                                 nsIFrame::InlineMinWidthData *aData);
-  void AddInlinePrefWidthForFlow(nsIRenderingContext *aRenderingContext,
+  void AddInlinePrefWidthForFlow(nsRenderingContext *aRenderingContext,
                                  InlinePrefWidthData *aData);
 
-  gfxFloat GetSnappedBaselineY(gfxContext* aContext, gfxFloat aY);
-
+  /**
+   * Calculate the horizontal bounds of the grapheme clusters that fit entirely
+   * inside the given left/right edges (which are positive lengths from the
+   * respective frame edge).  If an input value is zero it is ignored and the
+   * result for that edge is zero.  All out parameter values are undefined when
+   * the method returns false.
+   * @return true if at least one whole grapheme cluster fit between the edges
+   */
+  bool MeasureCharClippedText(gfxContext* aCtx,
+                              nscoord aLeftEdge, nscoord aRightEdge,
+                              nscoord* aSnappedLeftEdge,
+                              nscoord* aSnappedRightEdge);
+  /**
+   * Same as above; this method also the returns the corresponding text run
+   * offset and number of characters that fit.  All out parameter values are
+   * undefined when the method returns false.
+   * @return true if at least one whole grapheme cluster fit between the edges
+   */
+  bool MeasureCharClippedText(gfxContext* aCtx,
+                              PropertyProvider& aProvider,
+                              nscoord aLeftEdge, nscoord aRightEdge,
+                              PRUint32* aStartOffset, PRUint32* aMaxLength,
+                              nscoord* aSnappedLeftEdge,
+                              nscoord* aSnappedRightEdge);
   // primary frame paint method called from nsDisplayText
   // The private DrawText() is what applies the text to a graphics context
-  void PaintText(nsIRenderingContext* aRenderingContext, nsPoint aPt,
-                 const nsRect& aDirtyRect);
+  void PaintText(nsRenderingContext* aRenderingContext, nsPoint aPt,
+                 const nsRect& aDirtyRect, const nsCharClipDisplayItem& aItem);
   // helper: paint quirks-mode CSS text decorations
   void PaintTextDecorations(gfxContext* aCtx, const gfxRect& aDirtyRect,
                             const gfxPoint& aFramePt,
                             const gfxPoint& aTextBaselinePt,
                             nsTextPaintStyle& aTextStyle,
                             PropertyProvider& aProvider,
+                            const nsCharClipDisplayItem::ClipEdges& aClipEdges,
                             const nscolor* aOverrideColor = nsnull);
   // helper: paint text frame when we're impacted by at least one selection.
-  // Return PR_FALSE if the text was not painted and we should continue with
+  // Return false if the text was not painted and we should continue with
   // the fast path.
-  PRBool PaintTextWithSelection(gfxContext* aCtx,
-                                const gfxPoint& aFramePt,
-                                const gfxPoint& aTextBaselinePt,
-                                const gfxRect& aDirtyRect,
-                                PropertyProvider& aProvider,
-                                nsTextPaintStyle& aTextPaintStyle);
+  bool PaintTextWithSelection(gfxContext* aCtx,
+                              const gfxPoint& aFramePt,
+                              const gfxPoint& aTextBaselinePt,
+                              const gfxRect& aDirtyRect,
+                              PropertyProvider& aProvider,
+                              PRUint32 aContentOffset,
+                              PRUint32 aContentLength,
+                              nsTextPaintStyle& aTextPaintStyle,
+                              const nsCharClipDisplayItem::ClipEdges& aClipEdges);
   // helper: paint text with foreground and background colors determined
   // by selection(s). Also computes a mask of all selection types applying to
   // our text, returned in aAllTypes.
-  void PaintTextWithSelectionColors(gfxContext* aCtx,
+  // Return false if the text was not painted and we should continue with
+  // the fast path.
+  bool PaintTextWithSelectionColors(gfxContext* aCtx,
                                     const gfxPoint& aFramePt,
                                     const gfxPoint& aTextBaselinePt,
                                     const gfxRect& aDirtyRect,
                                     PropertyProvider& aProvider,
+                                    PRUint32 aContentOffset,
+                                    PRUint32 aContentLength,
                                     nsTextPaintStyle& aTextPaintStyle,
                                     SelectionDetails* aDetails,
                                     SelectionType* aAllTypes);
@@ -309,6 +340,8 @@ public:
                                      const gfxPoint& aTextBaselinePt,
                                      const gfxRect& aDirtyRect,
                                      PropertyProvider& aProvider,
+                                     PRUint32 aContentOffset,
+                                     PRUint32 aContentLength,
                                      nsTextPaintStyle& aTextPaintStyle,
                                      SelectionDetails* aDetails,
                                      SelectionType aSelectionType);
@@ -378,7 +411,7 @@ public:
 
   // Similar to Reflow(), but for use from nsLineLayout
   void ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
-                  nsIRenderingContext* aRenderingContext, PRBool aShouldBlink,
+                  nsRenderingContext* aRenderingContext, PRBool aShouldBlink,
                   nsHTMLReflowMetrics& aMetrics, nsReflowStatus& aStatus);
 
 protected:
@@ -428,7 +461,9 @@ protected:
                       const gfxPoint& aFramePt,
                       const gfxPoint& aTextBaselinePt,
                       gfxContext* aCtx,
-                      const nscolor& aForegroundColor);
+                      const nscolor& aForegroundColor,
+                      const nsCharClipDisplayItem::ClipEdges& aClipEdges,
+                      nscoord aLeftSideOffset);
 
   struct TextDecorations {
     PRUint8 mDecorations;
@@ -448,18 +483,19 @@ protected:
     { }
 
     PRBool HasDecorationlines() {
-      return !!(mDecorations & (NS_STYLE_TEXT_DECORATION_UNDERLINE |
-                                NS_STYLE_TEXT_DECORATION_OVERLINE |
-                                NS_STYLE_TEXT_DECORATION_LINE_THROUGH));
+      return HasUnderline() || HasOverline() || HasStrikeout();
     }
     PRBool HasUnderline() {
-      return !!(mDecorations & NS_STYLE_TEXT_DECORATION_UNDERLINE);
+      return (mDecorations & NS_STYLE_TEXT_DECORATION_LINE_UNDERLINE) &&
+             mUnderStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE;
     }
     PRBool HasOverline() {
-      return !!(mDecorations & NS_STYLE_TEXT_DECORATION_OVERLINE);
+      return (mDecorations & NS_STYLE_TEXT_DECORATION_LINE_OVERLINE) &&
+             mOverStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE;
     }
     PRBool HasStrikeout() {
-      return !!(mDecorations & NS_STYLE_TEXT_DECORATION_LINE_THROUGH);
+      return (mDecorations & NS_STYLE_TEXT_DECORATION_LINE_LINE_THROUGH) &&
+             mStrikeStyle != NS_STYLE_TEXT_DECORATION_STYLE_NONE;
     }
   };
   TextDecorations GetTextDecorations(nsPresContext* aPresContext);

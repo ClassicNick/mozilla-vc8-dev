@@ -53,8 +53,8 @@ nsIContentIterator.h \
 nsContentErrors.h \
 nsContentPolicyUtils.h \
 nsContentUtils.h \
-nsIContentUtils.h \
 nsIDocument.h \
+nsDeprecatedOperationList.h \
 nsIDocumentObserver.h \
 nsIMutationObserver.h \
 nsIMutationObserver2.h \
@@ -114,10 +114,7 @@ XPIDLSRCS	= \
 		nsISelectionListener.idl  \
 		nsISelectionPrivate.idl  \
 		nsIScriptLoaderObserver.idl  \
-		nsISyncLoadDOMService.idl  \
 		nsIDroppedLinkHandler.idl \
-		nsIScriptEventHandler.idl \
-		nsIScriptEventManager.idl \
 		nsIImageLoadingContent.idl \
 		nsIObjectLoadingContent.idl \
 		nsIFrameLoader.idl \
@@ -125,6 +122,7 @@ XPIDLSRCS	= \
 		nsIContentSecurityPolicy.idl \
 		nsIFrameMessageManager.idl \
 		nsIWebSocket.idl \
+		nsIEventSource.idl \
 		$(NULL)
 
 include $(topsrcdir)/config/rules.mk

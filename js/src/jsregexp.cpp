@@ -49,6 +49,7 @@
 #include "jsapi.h"
 #include "jscntxt.h"
 #include "jsgc.h"
+#include "jsgcmark.h"
 #include "jsnum.h"
 #include "jsobj.h"
 #include "jsregexp.h"
@@ -57,8 +58,6 @@
 
 #include "jsobjinlines.h"
 #include "jsregexpinlines.h"
-
-#include "yarr/RegexParser.h"
 
 #ifdef JS_TRACER
 #include "jstracer.h"
@@ -92,7 +91,7 @@ resc_trace(JSTracer *trc, JSObject *obj)
 }
 
 Class js::regexp_statics_class = {
-    "RegExpStatics", 
+    "RegExpStatics",
     JSCLASS_HAS_PRIVATE,
     PropertyStub,         /* addProperty */
     PropertyStub,         /* delProperty */
@@ -146,7 +145,7 @@ js_CloneRegExpObject(JSContext *cx, JSObject *obj, JSObject *proto)
     if (!clone)
         return NULL;
 
-    /* 
+    /*
      * This clone functionality does not duplicate the JITted code blob, which is necessary for
      * cross-compartment cloning functionality.
      */
@@ -192,11 +191,11 @@ js_ObjectIsRegExp(JSObject *obj)
  */
 
 void
-RegExp::handleYarrError(JSContext *cx, int error)
+RegExp::reportYarrError(JSContext *cx, JSC::Yarr::ErrorCode error)
 {
     switch (error) {
       case JSC::Yarr::NoError:
-        JS_NOT_REACHED("Precondition violation: an error must have occurred.");
+        JS_NOT_REACHED("Called reportYarrError with value for no error");
         return;
 #define COMPILE_EMSG(__code, __msg) \
       case JSC::Yarr::__code: \
@@ -209,47 +208,14 @@ RegExp::handleYarrError(JSContext *cx, int error)
       COMPILE_EMSG(ParenthesesUnmatched, JSMSG_UNMATCHED_RIGHT_PAREN);
       COMPILE_EMSG(ParenthesesTypeInvalid, JSMSG_BAD_QUANTIFIER); /* "(?" with bad next char */
       COMPILE_EMSG(CharacterClassUnmatched, JSMSG_BAD_CLASS_RANGE);
+      COMPILE_EMSG(CharacterClassInvalidRange, JSMSG_BAD_CLASS_RANGE);
       COMPILE_EMSG(CharacterClassOutOfOrder, JSMSG_BAD_CLASS_RANGE);
-      COMPILE_EMSG(CharacterClassRangeSingleChar, JSMSG_BAD_CLASS_RANGE);
-      COMPILE_EMSG(EscapeUnterminated, JSMSG_TRAILING_SLASH);
       COMPILE_EMSG(QuantifierTooLarge, JSMSG_BAD_QUANTIFIER);
-      COMPILE_EMSG(HitRecursionLimit, JSMSG_REGEXP_TOO_COMPLEX);
+      COMPILE_EMSG(EscapeUnterminated, JSMSG_TRAILING_SLASH);
 #undef COMPILE_EMSG
       default:
-        JS_NOT_REACHED("Precondition violation: unknown Yarr error code.");
+        JS_NOT_REACHED("Unknown Yarr error code");
     }
-}
-
-void
-RegExp::handlePCREError(JSContext *cx, int error)
-{
-#define REPORT(msg_) \
-    JS_ReportErrorFlagsAndNumberUC(cx, JSREPORT_ERROR, js_GetErrorMessage, NULL, msg_); \
-    return
-    switch (error) {
-      case -2: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 0: JS_NOT_REACHED("Precondition violation: an error must have occurred.");
-      case 1: REPORT(JSMSG_TRAILING_SLASH);
-      case 2: REPORT(JSMSG_TRAILING_SLASH);
-      case 3: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 4: REPORT(JSMSG_BAD_QUANTIFIER);
-      case 5: REPORT(JSMSG_BAD_QUANTIFIER);
-      case 6: REPORT(JSMSG_BAD_CLASS_RANGE);
-      case 7: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 8: REPORT(JSMSG_BAD_CLASS_RANGE);
-      case 9: REPORT(JSMSG_BAD_QUANTIFIER);
-      case 10: REPORT(JSMSG_UNMATCHED_RIGHT_PAREN);
-      case 11: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 12: REPORT(JSMSG_UNMATCHED_RIGHT_PAREN);
-      case 13: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 14: REPORT(JSMSG_MISSING_PAREN);
-      case 15: REPORT(JSMSG_BAD_BACKREF);
-      case 16: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      case 17: REPORT(JSMSG_REGEXP_TOO_COMPLEX);
-      default:
-        JS_NOT_REACHED("Precondition violation: unknown PCRE error code.");
-    }
-#undef REPORT
 }
 
 bool
@@ -427,10 +393,6 @@ regexp_finalize(JSContext *cx, JSObject *obj)
     re->decref(cx);
 }
 
-/* Forward static prototype. */
-static JSBool
-regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool test, Value *rval);
-
 #if JS_HAS_XDR
 
 #include "jsxdrapi.h"
@@ -457,6 +419,13 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
             return false;
         obj->clearParent();
         obj->clearProto();
+
+        /*
+         * initRegExp can GC before storing re in the private field of the
+         * object. At that point the only reference to the source string could
+         * be from the malloc-allocated GC-invisible re. So we must anchor.
+         */
+        JS::Anchor<JSString *> anchor(source);
         AlreadyIncRefed<RegExp> re = RegExp::create(xdr->cx, source, flagsword);
         if (!re)
             return false;
@@ -502,8 +471,10 @@ js::Class js_RegExpClass = {
 JSBool
 js_regexp_toString(JSContext *cx, JSObject *obj, Value *vp)
 {
-    if (!InstanceOf(cx, obj, &js_RegExpClass, vp + 2))
+    if (!obj->isRegExp()) {
+        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
         return false;
+    }
 
     RegExp *re = RegExp::extractFrom(obj);
     if (!re) {
@@ -604,48 +575,51 @@ SwapRegExpInternals(JSContext *cx, JSObject *obj, Value *rval, JSString *str, ui
     return true;
 }
 
+enum ExecType { RegExpExec, RegExpTest };
+
+/*
+ * ES5 15.10.6.2 (and 15.10.6.3, which calls 15.10.6.2).
+ *
+ * RegExp.prototype.test doesn't need to create a results array, and we use
+ * |execType| to perform this optimization.
+ */
 static JSBool
-regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool test, Value *rval)
+ExecuteRegExp(JSContext *cx, ExecType execType, uintN argc, Value *vp)
 {
-    if (!InstanceOf(cx, obj, &js_RegExpClass, argv))
+    /* Step 1. */
+    JSObject *obj = ToObject(cx, &vp[1]);
+    if (!obj)
         return false;
+    if (!obj->isRegExp()) {
+        JSFunction *fun = vp[0].toObject().getFunctionPrivate();
+        JSAutoByteString funNameBytes;
+        if (const char *funName = GetFunctionNameBytes(cx, fun, &funNameBytes)) {
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INCOMPATIBLE_PROTO,
+                                 "RegExp", funName, obj->getClass()->name);
+        }
+        return false;
+    }
 
     RegExp *re = RegExp::extractFrom(obj);
     if (!re)
         return true;
 
-    /* 
+    /*
      * Code execution under this call could swap out the guts of |obj|, so we
      * have to take a defensive refcount here.
      */
     AutoRefCount<RegExp> arc(cx, NeedsIncRef<RegExp>(re));
-
-    jsdouble lastIndex;
-    if (re->global() || re->sticky()) {
-        const Value v = obj->getRegExpLastIndex();
-        if (v.isInt32()) {
-            lastIndex = v.toInt32();
-        } else {
-            if (v.isDouble())
-                lastIndex = v.toDouble();
-            else if (!ValueToNumber(cx, v, &lastIndex))
-                return JS_FALSE;
-            lastIndex = js_DoubleToInteger(lastIndex);
-        }
-    } else {
-        lastIndex = 0;
-    }
-
     RegExpStatics *res = cx->regExpStatics();
 
+    /* Step 2. */
     JSString *input;
-    if (argc) {
-        input = js_ValueToString(cx, argv[0]);
+    if (argc > 0) {
+        input = js_ValueToString(cx, vp[2]);
         if (!input)
             return false;
-        argv[0] = StringValue(input);
+        vp[2] = StringValue(input);
     } else {
-        /* Need to grab input from statics. */
+        /* NON-STANDARD: Grab input from statics. */
         input = res->getPendingInput();
         if (!input) {
             JSAutoByteString sourceBytes(cx, re->getSource());
@@ -661,19 +635,36 @@ regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool te
         }
     }
 
-    if (lastIndex < 0 || input->length() < lastIndex) {
+    /* Step 3. */
+    size_t length = input->length();
+
+    /* Step 4. */
+    const Value &lastIndex = obj->getRegExpLastIndex();
+
+    /* Step 5. */
+    jsdouble i;
+    if (!ToInteger(cx, lastIndex, &i))
+        return false;
+
+    /* Steps 6-7 (with sticky extension). */
+    if (!re->global() && !re->sticky())
+        i = 0;
+
+    /* Step 9a. */
+    if (i < 0 || i > length) {
         obj->zeroRegExpLastIndex();
-        *rval = NullValue();
+        *vp = NullValue();
         return true;
     }
 
-    size_t lastIndexInt(lastIndex);
-    if (!re->execute(cx, res, input, &lastIndexInt, !!test, rval))
+    /* Steps 8-21. */
+    size_t lastIndexInt(i);
+    if (!re->execute(cx, res, input, &lastIndexInt, execType == RegExpTest, vp))
         return false;
 
-    /* Update lastIndex. */
-    if (re->global() || (!rval->isNull() && re->sticky())) {
-        if (rval->isNull())
+    /* Step 11 (with sticky extension). */
+    if (re->global() || (!vp->isNull() && re->sticky())) {
+        if (vp->isNull())
             obj->zeroRegExpLastIndex();
         else
             obj->setRegExpLastIndex(lastIndexInt);
@@ -682,22 +673,18 @@ regexp_exec_sub(JSContext *cx, JSObject *obj, uintN argc, Value *argv, JSBool te
     return true;
 }
 
+/* ES5 15.10.6.2. */
 JSBool
 js_regexp_exec(JSContext *cx, uintN argc, Value *vp)
 {
-    JSObject *obj = ToObject(cx, &vp[1]);
-    if (!obj)
-        return false;
-    return regexp_exec_sub(cx, obj, argc, vp + 2, JS_FALSE, vp);
+    return ExecuteRegExp(cx, RegExpExec, argc, vp);
 }
 
+/* ES5 15.10.6.3. */
 JSBool
 js_regexp_test(JSContext *cx, uintN argc, Value *vp)
 {
-    JSObject *obj = ToObject(cx, &vp[1]);
-    if (!obj)
-        return false;
-    if (!regexp_exec_sub(cx, obj, argc, vp + 2, JS_TRUE, vp))
+    if (!ExecuteRegExp(cx, RegExpTest, argc, vp))
         return false;
     if (!vp->isTrue())
         vp->setBoolean(false);
@@ -752,7 +739,7 @@ CompileRegExpAndSwap(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Valu
         sourceStr = js_ValueToString(cx, sourceValue);
         if (!sourceStr)
             return false;
-    }  
+    }
 
     uintN flags = 0;
     if (argc > 1 && !argv[1].isUndefined()) {
@@ -775,8 +762,12 @@ static JSBool
 regexp_compile(JSContext *cx, uintN argc, Value *vp)
 {
     JSObject *obj = ToObject(cx, &vp[1]);
-    if (!obj || !InstanceOf(cx, obj, &js_RegExpClass, JS_ARGV(cx, vp)))
+    if (!obj)
         return false;
+    if (!obj->isRegExp()) {
+        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        return false;
+    }
 
     return CompileRegExpAndSwap(cx, obj, argc, JS_ARGV(cx, vp), &JS_RVAL(cx, vp));
 }
@@ -903,3 +894,4 @@ js_InitRegExpClass(JSContext *cx, JSObject *global)
 
     return proto;
 }
+

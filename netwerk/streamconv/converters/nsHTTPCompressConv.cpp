@@ -50,10 +50,10 @@
 #include "nsComponentManagerUtils.h"
 
 // nsISupports implementation
-NS_IMPL_ISUPPORTS3(nsHTTPCompressConv,
-                   nsIStreamConverter,
-                   nsIStreamListener,
-                   nsIRequestObserver)
+NS_IMPL_THREADSAFE_ISUPPORTS3(nsHTTPCompressConv,
+                              nsIStreamConverter,
+                              nsIStreamListener,
+                              nsIRequestObserver)
 
 // nsFTPDirListingConv methods
 nsHTTPCompressConv::nsHTTPCompressConv()
@@ -266,7 +266,8 @@ nsHTTPCompressConv::OnDataAvailable(nsIRequest* request,
 
                         // stop an endless loop caused by non-deflate data being labelled as deflate
                         if (mDummyStreamInitialised) {
-                            NS_ERROR("endless loop detected");
+                            NS_WARNING("endless loop detected"
+                                       " - invalid deflate");
                             return NS_ERROR_INVALID_CONTENT_ENCODING;
                         }
                         mDummyStreamInitialised = PR_TRUE;

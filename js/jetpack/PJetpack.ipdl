@@ -37,8 +37,11 @@
 
 include protocol PHandle;
 
+include "mozilla/ipc/RPCChannel.h";
+
 using mozilla::void_t;
 using mozilla::null_t;
+using mozilla::ipc::RPCChannel;
 
 namespace mozilla {
 namespace jetpack {

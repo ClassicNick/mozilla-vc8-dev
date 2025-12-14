@@ -39,9 +39,13 @@
 
 #include "jsprf.h"
 #include "jstl.h"
+
 #include "jscompartment.h"
+#include "jsiter.h"
 #include "Writer.h"
 #include "nanojit.h"
+
+#include "vm/ArgumentsObject.h"
 
 namespace js {
 namespace tjit {
@@ -370,17 +374,17 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
 
       case ACCSET_FRAMEREGS:
         // base = ldp.cx ...[offsetof(JSContext, regs)]
-        // ins  = ldp.regs base[<disp within JSFrameRegs>]
+        // ins  = ldp.regs base[<disp within FrameRegs>]
         ok = op == LIR_ldp &&
-             dispWithin(JSFrameRegs) && 
-             match(base, LIR_ldp, ACCSET_CX, offsetof(JSContext, regs));
+             dispWithin(FrameRegs) && 
+             match(base, LIR_ldp, ACCSET_SEG, StackSegment::offsetOfRegs());
         break;
 
       case ACCSET_STACKFRAME:
-        // base = ldp.regs ...[offsetof(JSFrameRegs, fp)]
-        // ins  = {ld,st}X.sf base[<disp within JSStackFrame>]
-        ok = dispWithin(JSStackFrame) && 
-             match(base, LIR_ldp, ACCSET_FRAMEREGS, offsetof(JSFrameRegs, fp));
+        // base = ldp.regs ...[offsetof(FrameRegs, fp)]
+        // ins  = {ld,st}X.sf base[<disp within StackFrame>]
+        ok = dispWithin(StackFrame) && 
+             match(base, LIR_ldp, ACCSET_FRAMEREGS, FrameRegs::offsetOfFp);
         break;
 
       case ACCSET_RUNTIME:
@@ -544,9 +548,15 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
         // base_oprnd1 = <const private ptr slots[JSSLOT_ARGS_DATA]>
         // base        = addp base_oprnd1, ...
         // ins         = {ld,st}X.argsdata base[...]
-        ok = (isConstPrivatePtr(base, JSObject::JSSLOT_ARGS_DATA) ||
+        ok = (isConstPrivatePtr(base, ArgumentsObject::DATA_SLOT) ||
               (base->isop(LIR_addp) &&
-               isConstPrivatePtr(base->oprnd1(), JSObject::JSSLOT_ARGS_DATA)));
+               isConstPrivatePtr(base->oprnd1(), ArgumentsObject::DATA_SLOT)));
+        break;
+
+      case ACCSET_SEG:
+        // Match the ACCSET_SEG load that comes out of ldpContextRegs
+        ok = dispWithin(StackSegment) &&
+             match(base, LIR_ldp, ACCSET_CX, offsetof(JSContext, stack) + ContextStack::offsetOfSeg());
         break;
 
       default:
@@ -565,7 +575,7 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
     }
 }
 
-}
+} // namespace nanojit
 
 #endif
 

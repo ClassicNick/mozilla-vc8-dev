@@ -70,6 +70,8 @@
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
 #include "nsFrameManager.h"
+#include "nsIObserverService.h"
+#include "mozilla/Services.h"
 
 const nsNavigationDirection DirectionFromKeyCodeTable[2][6] = {
   {
@@ -130,10 +132,10 @@ void nsMenuChainItem::Detach(nsMenuChainItem** aRoot)
 }
 
 NS_IMPL_ISUPPORTS4(nsXULPopupManager,
-                   nsIDOMKeyListener,
                    nsIDOMEventListener,
                    nsIMenuRollup,
-                   nsITimerCallback)
+                   nsITimerCallback,
+                   nsIObserver)
 
 nsXULPopupManager::nsXULPopupManager() :
   mRangeOffset(0),
@@ -143,6 +145,10 @@ nsXULPopupManager::nsXULPopupManager() :
   mNoHidePanels(nsnull),
   mTimerMenu(nsnull)
 {
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->AddObserver(this, "xpcom-shutdown", PR_FALSE);
+  }
 }
 
 nsXULPopupManager::~nsXULPopupManager() 
@@ -163,6 +169,29 @@ void
 nsXULPopupManager::Shutdown()
 {
   NS_IF_RELEASE(sInstance);
+}
+
+NS_IMETHODIMP
+nsXULPopupManager::Observe(nsISupports *aSubject,
+                           const char *aTopic,
+                           const PRUnichar *aData)
+{
+  if (!nsCRT::strcmp(aTopic, "xpcom-shutdown")) {
+    if (mKeyListener) {
+      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keypress"), this, PR_TRUE);
+      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keydown"), this, PR_TRUE);
+      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keyup"), this, PR_TRUE);
+      mKeyListener = nsnull;
+    }
+    mRangeParent = nsnull;
+    // mOpeningPopup is cleared explicitly soon after using it.
+    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+    if (obs) {
+      obs->RemoveObserver(this, "xpcom-shutdown");
+    }
+  }
+
+  return NS_OK;
 }
 
 nsXULPopupManager*
@@ -1731,6 +1760,13 @@ nsXULPopupManager::CancelMenuTimer(nsMenuParent* aMenuParent)
   }
 }
 
+static nsGUIEvent* DOMKeyEventToGUIEvent(nsIDOMEvent* aEvent)
+{
+  nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(aEvent));
+  nsEvent* evt = privateEvent ? privateEvent->GetInternalNSEvent() : nsnull;
+  return (evt->eventStructType == NS_KEY_EVENT) ? static_cast<nsGUIEvent *>(evt) : nsnull;
+}
+
 PRBool
 nsXULPopupManager::HandleShortcutNavigation(nsIDOMKeyEvent* aKeyEvent,
                                             nsMenuPopupFrame* aFrame)
@@ -1745,7 +1781,8 @@ nsXULPopupManager::HandleShortcutNavigation(nsIDOMKeyEvent* aKeyEvent,
     if (result) {
       aFrame->ChangeMenuItem(result, PR_FALSE);
       if (action) {
-        nsMenuFrame* menuToOpen = result->Enter();
+        nsGUIEvent* evt = DOMKeyEventToGUIEvent(aKeyEvent);
+        nsMenuFrame* menuToOpen = result->Enter(evt);
         if (menuToOpen) {
           nsCOMPtr<nsIContent> content = menuToOpen->GetContent();
           ShowMenu(content, PR_TRUE, PR_FALSE);
@@ -2035,7 +2072,30 @@ nsXULPopupManager::IsValidMenuItem(nsPresContext* aPresContext,
 }
 
 nsresult
-nsXULPopupManager::KeyUp(nsIDOMEvent* aKeyEvent)
+nsXULPopupManager::HandleEvent(nsIDOMEvent* aEvent)
+{
+  nsCOMPtr<nsIDOMKeyEvent> keyEvent = do_QueryInterface(aEvent);
+  NS_ENSURE_TRUE(keyEvent, NS_ERROR_UNEXPECTED);
+
+  nsAutoString eventType;
+  keyEvent->GetType(eventType);
+  if (eventType.EqualsLiteral("keyup")) {
+    return KeyUp(keyEvent);
+  }
+  if (eventType.EqualsLiteral("keydown")) {
+    return KeyDown(keyEvent);
+  }
+  if (eventType.EqualsLiteral("keypress")) {
+    return KeyPress(keyEvent);
+  }
+
+  NS_ABORT();
+
+  return NS_OK;
+}
+
+nsresult
+nsXULPopupManager::KeyUp(nsIDOMKeyEvent* aKeyEvent)
 {
   // don't do anything if a menu isn't open or a menubar isn't active
   if (!mActiveMenuBar) {
@@ -2051,7 +2111,7 @@ nsXULPopupManager::KeyUp(nsIDOMEvent* aKeyEvent)
 }
 
 nsresult
-nsXULPopupManager::KeyDown(nsIDOMEvent* aKeyEvent)
+nsXULPopupManager::KeyDown(nsIDOMKeyEvent* aKeyEvent)
 {
   nsMenuChainItem* item = GetTopVisibleMenu();
   if (item && item->Frame()->IsMenuLocked())
@@ -2069,22 +2129,21 @@ nsXULPopupManager::KeyDown(nsIDOMEvent* aKeyEvent)
   nsMenuBarListener::GetMenuAccessKey(&menuAccessKey);
   if (menuAccessKey) {
     PRUint32 theChar;
-    nsCOMPtr<nsIDOMKeyEvent> keyEvent = do_QueryInterface(aKeyEvent);
-    keyEvent->GetKeyCode(&theChar);
+    aKeyEvent->GetKeyCode(&theChar);
 
     if (theChar == (PRUint32)menuAccessKey) {
       PRBool ctrl = PR_FALSE;
       if (menuAccessKey != nsIDOMKeyEvent::DOM_VK_CONTROL)
-        keyEvent->GetCtrlKey(&ctrl);
+        aKeyEvent->GetCtrlKey(&ctrl);
       PRBool alt=PR_FALSE;
       if (menuAccessKey != nsIDOMKeyEvent::DOM_VK_ALT)
-        keyEvent->GetAltKey(&alt);
+        aKeyEvent->GetAltKey(&alt);
       PRBool shift=PR_FALSE;
       if (menuAccessKey != nsIDOMKeyEvent::DOM_VK_SHIFT)
-        keyEvent->GetShiftKey(&shift);
+        aKeyEvent->GetShiftKey(&shift);
       PRBool meta=PR_FALSE;
       if (menuAccessKey != nsIDOMKeyEvent::DOM_VK_META)
-        keyEvent->GetMetaKey(&meta);
+        aKeyEvent->GetMetaKey(&meta);
       if (!(ctrl || alt || shift || meta)) {
         // The access key just went down and no other
         // modifiers are already down.
@@ -2104,7 +2163,7 @@ nsXULPopupManager::KeyDown(nsIDOMEvent* aKeyEvent)
 }
 
 nsresult
-nsXULPopupManager::KeyPress(nsIDOMEvent* aKeyEvent)
+nsXULPopupManager::KeyPress(nsIDOMKeyEvent* aKeyEvent)
 {
   // Don't check prevent default flag -- menus always get first shot at key events.
   // When a menu is open, the prevent default flag on a keypress is always set, so
@@ -2126,6 +2185,7 @@ nsXULPopupManager::KeyPress(nsIDOMEvent* aKeyEvent)
     return NS_OK;
 
   nsCOMPtr<nsIDOMKeyEvent> keyEvent = do_QueryInterface(aKeyEvent);
+  NS_ENSURE_TRUE(keyEvent, NS_ERROR_UNEXPECTED);
   PRUint32 theChar;
   keyEvent->GetKeyCode(&theChar);
 
@@ -2178,10 +2238,11 @@ nsXULPopupManager::KeyPress(nsIDOMEvent* aKeyEvent)
     // Enter method will return a menu if one needs to be opened as a result.
     nsMenuFrame* menuToOpen = nsnull;
     nsMenuChainItem* item = GetTopVisibleMenu();
+    nsGUIEvent* evt = DOMKeyEventToGUIEvent(aKeyEvent);
     if (item)
-      menuToOpen = item->Frame()->Enter();
+      menuToOpen = item->Frame()->Enter(evt);
     else if (mActiveMenuBar)
-      menuToOpen = mActiveMenuBar->Enter();
+      menuToOpen = mActiveMenuBar->Enter(evt);
     if (menuToOpen) {
       nsCOMPtr<nsIContent> content = menuToOpen->GetContent();
       ShowMenu(content, PR_TRUE, PR_FALSE);

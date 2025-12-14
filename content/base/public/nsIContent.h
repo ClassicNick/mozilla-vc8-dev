@@ -48,7 +48,7 @@
 class nsIAtom;
 class nsIDOMEvent;
 class nsIContent;
-class nsIEventListenerManager;
+class nsEventListenerManager;
 class nsIURI;
 class nsRuleWalker;
 class nsAttrValue;
@@ -76,8 +76,8 @@ enum nsLinkState {
 
 // IID for the nsIContent interface
 #define NS_ICONTENT_IID       \
-{ 0x5788c9eb, 0x646a, 0x4285, \
-  { 0xa2, 0x8c, 0xde, 0x0d, 0x43, 0x6b, 0x47, 0x72 } }
+{ 0x860ee35b, 0xe505, 0x438f, \
+ { 0xa7, 0x7b, 0x65, 0xb9, 0xf5, 0x0b, 0xe5, 0x29 } }
 
 /**
  * A node of content in a document's content model. This interface
@@ -787,20 +787,12 @@ public:
   }
 
   /**
-   * Method to get the _intrinsic_ content state of this content node.  This is
-   * the state that is independent of the node's presentation.  To get the full
-   * content state, use nsIEventStateManager.  Also see nsIEventStateManager
-   * for the possible bits that could be set here.
-   */
-  virtual nsEventStates IntrinsicState() const;
-
-  /**
    * Get the ID of this content node (the atom corresponding to the
    * value of the null-namespace attribute whose name is given by
    * GetIDAttributeName().  This may be null if there is no ID.
    */
   nsIAtom* GetID() const {
-    if (HasFlag(NODE_HAS_ID)) {
+    if (HasID()) {
       return DoGetID();
     }
     return nsnull;
@@ -864,9 +856,10 @@ public:
   /**
    * Should be called when the node can become editable or when it can stop
    * being editable (for example when its contentEditable attribute changes,
-   * when it is moved into an editable parent, ...).
+   * when it is moved into an editable parent, ...).  If aNotify is true and
+   * the node is an element, this will notify the state change.
    */
-  virtual void UpdateEditableState();
+  virtual void UpdateEditableState(PRBool aNotify);
 
   /**
    * Destroy this node and its children. Ideally this shouldn't be needed
@@ -935,12 +928,6 @@ public:
   nsresult LookupNamespaceURI(const nsAString& aNamespacePrefix,
                               nsAString& aNamespaceURI) const;
 
-  nsIAtom* LookupPrefix(const nsAString& aNamespaceURI);
-
-  PRBool IsEqual(nsIContent *aOther);
-
-  virtual PRBool IsEqualNode(nsINode* aOther);
-
   /**
    * If this content has independent selection, e.g., if this is input field
    * or textarea, this return TRUE.  Otherwise, false.
@@ -957,10 +944,16 @@ public:
   // Overloaded from nsINode
   virtual already_AddRefed<nsIURI> GetBaseURI() const;
 
+  virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+
+  PRInt64 SizeOf() const {
+    return sizeof(*this);
+  }
+
 protected:
   /**
    * Hook for implementing GetID.  This is guaranteed to only be
-   * called if the NODE_HAS_ID flag is set.
+   * called if HasID() is true.
    */
   virtual nsIAtom* DoGetID() const = 0;
 

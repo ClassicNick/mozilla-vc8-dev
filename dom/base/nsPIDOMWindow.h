@@ -45,12 +45,15 @@
 #include "nsIDOMXULCommandDispatcher.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMWindowInternal.h"
-#include "nsPIDOMEventTarget.h"
+#include "nsIDOMEventTarget.h"
 #include "nsIDOMDocument.h"
 #include "nsCOMPtr.h"
 #include "nsEvent.h"
+#include "nsIURI.h"
 
 #define DOM_WINDOW_DESTROYED_TOPIC "dom-window-destroyed"
+#define DOM_WINDOW_FROZEN_TOPIC "dom-window-frozen"
+#define DOM_WINDOW_THAWED_TOPIC "dom-window-thawed"
 
 class nsIPrincipal;
 
@@ -77,8 +80,8 @@ class nsIArray;
 class nsPIWindowRoot;
 
 #define NS_PIDOMWINDOW_IID \
-{ 0x8d8be7db, 0xffaa, 0x4962, \
-  { 0xa7, 0x27, 0xb7, 0x0f, 0xc9, 0xfa, 0xd3, 0x0e } }
+{ 0x6c05ae9d, 0x4ad1, 0x4e92, \
+  { 0x9c, 0x95, 0xd3, 0x54, 0xea, 0x0f, 0xb9, 0x48 } }
 
 class nsPIDOMWindow : public nsIDOMWindowInternal
 {
@@ -89,7 +92,7 @@ public:
 
   virtual void ActivateOrDeactivate(PRBool aActivate) = 0;
 
-  // this is called GetTopWindowRoot to avoid conflicts with nsIDOMWindow2::GetWindowRoot
+  // this is called GetTopWindowRoot to avoid conflicts with nsIDOMWindow::GetWindowRoot
   virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() = 0;
 
   virtual void SetActive(PRBool aActive)
@@ -102,7 +105,7 @@ public:
     return mIsActive;
   }
 
-  void SetIsBackground(PRBool aIsBackground)
+  virtual void SetIsBackground(PRBool aIsBackground)
   {
     mIsBackground = aIsBackground;
   }
@@ -112,14 +115,14 @@ public:
     return mIsBackground;
   }
 
-  nsPIDOMEventTarget* GetChromeEventHandler() const
+  nsIDOMEventTarget* GetChromeEventHandler() const
   {
     return mChromeEventHandler;
   }
 
-  virtual void SetChromeEventHandler(nsPIDOMEventTarget* aChromeEventHandler) = 0;
+  virtual void SetChromeEventHandler(nsIDOMEventTarget* aChromeEventHandler) = 0;
 
-  nsPIDOMEventTarget* GetParentTarget()
+  nsIDOMEventTarget* GetParentTarget()
   {
     if (!mParentTarget) {
       UpdateParentTarget();
@@ -441,6 +444,11 @@ public:
     MaybeUpdateTouchState();
   }
 
+  PRBool HasTouchEventListeners()
+  {
+    return mMayHaveTouchEventListener;
+  }
+
   /**
    * Call this to check whether some node (this window, its document,
    * or content in that document) has a MozAudioAvailable event listener.
@@ -537,7 +545,8 @@ public:
    * Instructs this window to asynchronously dispatch a hashchange event.  This
    * method must be called on an inner window.
    */
-  virtual nsresult DispatchAsyncHashchange() = 0;
+  virtual nsresult DispatchAsyncHashchange(nsIURI *aOldURI,
+                                           nsIURI *aNewURI) = 0;
 
   /**
    * Instructs this window to synchronously dispatch a popState event.
@@ -579,7 +588,7 @@ protected:
 
   ~nsPIDOMWindow();
 
-  void SetChromeEventHandlerInternal(nsPIDOMEventTarget* aChromeEventHandler) {
+  void SetChromeEventHandlerInternal(nsIDOMEventTarget* aChromeEventHandler) {
     mChromeEventHandler = aChromeEventHandler;
     // mParentTarget will be set when the next event is dispatched.
     mParentTarget = nsnull;
@@ -590,10 +599,10 @@ protected:
   // These two variables are special in that they're set to the same
   // value on both the outer window and the current inner window. Make
   // sure you keep them in sync!
-  nsCOMPtr<nsPIDOMEventTarget> mChromeEventHandler; // strong
+  nsCOMPtr<nsIDOMEventTarget> mChromeEventHandler; // strong
   nsCOMPtr<nsIDOMDocument> mDocument; // strong
 
-  nsCOMPtr<nsPIDOMEventTarget> mParentTarget; // strong
+  nsCOMPtr<nsIDOMEventTarget> mParentTarget; // strong
 
   // These members are only used on outer windows.
   nsCOMPtr<nsIDOMElement> mFrameElement;

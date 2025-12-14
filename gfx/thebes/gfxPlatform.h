@@ -65,7 +65,11 @@ class gfxPlatformFontList;
 class gfxTextRun;
 class nsIURI;
 class nsIAtom;
-class nsIPrefBranch;
+
+#include "gfx2DGlue.h"
+#include "mozilla/RefPtr.h"
+
+extern cairo_user_data_key_t kDrawTarget;
 
 // pref lang id's for font prefs
 // !!! needs to match the list of pref font.default.xx entries listed in all.js !!!
@@ -147,12 +151,13 @@ public:
     static gfxPlatform *GetPlatform();
 
     /**
-     * Start up Thebes. This can fail.
+     * Start up Thebes.
      */
-    static nsresult Init();
+    static void Init();
 
     /**
-     * Clean up static objects to shut down thebes.
+     * Shut down Thebes.
+     * Init() arranges for this to be called at an appropriate time.
      */
     static void Shutdown();
 
@@ -166,6 +171,18 @@ public:
 
     virtual already_AddRefed<gfxASurface> OptimizeImage(gfxImageSurface *aSurface,
                                                         gfxASurface::gfxImageFormat format);
+
+    virtual mozilla::RefPtr<mozilla::gfx::DrawTarget>
+      CreateDrawTargetForSurface(gfxASurface *aSurface);
+
+    virtual mozilla::RefPtr<mozilla::gfx::SourceSurface>
+      GetSourceSurfaceForSurface(mozilla::gfx::DrawTarget *aTarget, gfxASurface *aSurface);
+
+    virtual mozilla::RefPtr<mozilla::gfx::ScaledFont>
+      GetScaledFontForFont(gfxFont *aFont);
+
+    virtual already_AddRefed<gfxASurface>
+      GetThebesSurfaceForDrawTarget(mozilla::gfx::DrawTarget *aTarget);
 
     /*
      * Font bits
@@ -257,25 +274,11 @@ public:
     PRBool SanitizeDownloadedFonts();
 
     /**
-     * Whether to preserve OpenType layout tables when sanitizing
-     */
-    PRBool PreserveOTLTablesWhenSanitizing();
-
-    /**
      * Whether to use the harfbuzz shaper (depending on script complexity).
      *
      * This allows harfbuzz to be enabled selectively via the preferences.
-     * Current "harfbuzz level" options:
-     * <= 0 will never use the harfbuzz shaper;
-     *  = 1 will use it for "simple" scripts (Latin, Cyrillic, CJK, etc);
-     * >= 2 will use it for all scripts, including those requiring complex
-     *      shaping for correct rendering (Arabic, Indic, etc).
-     *
-     * Depending how harfbuzz complex-script support evolves, we may want to
-     * update this mechanism - e.g., separating complex-bidi from Indic,
-     * or other distinctions.
      */
-    PRInt8 UseHarfBuzzLevel();
+    PRBool UseHarfBuzzForScript(PRInt32 aScriptCode);
 
     // check whether format is supported on a platform or not (if unclear, returns true)
     virtual PRBool IsFontFormatSupported(nsIURI *aFontURI, PRUint32 aFormatFlags) { return PR_FALSE; }
@@ -363,7 +366,7 @@ public:
      */
     static qcms_transform* GetCMSRGBATransform();
 
-    virtual void FontsPrefsChanged(nsIPrefBranch *aPrefBranch, const char *aPref);
+    virtual void FontsPrefsChanged(const char *aPref);
 
     /**
      * Returns a 1x1 surface that can be used to create graphics contexts
@@ -383,24 +386,22 @@ protected:
     gfxPlatform();
     virtual ~gfxPlatform();
 
-    static PRBool GetBoolPref(const char *aPref, PRBool aDefault);
-
     void AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, 
                             eFontPrefLang aCharLang, eFontPrefLang aPageLang);
                                                
     PRBool  mAllowDownloadableFonts;
     PRBool  mDownloadableFontsSanitize;
-    PRBool  mSanitizePreserveOTLTables;
 
-    // whether to use the HarfBuzz layout engine
-    PRInt8  mUseHarfBuzzLevel;
+    // which scripts should be shaped with harfbuzz
+    PRInt32 mUseHarfBuzzScripts;
 
 private:
     virtual qcms_profile* GetPlatformCMSOutputProfile();
 
     nsRefPtr<gfxASurface> mScreenReferenceSurface;
     nsTArray<PRUint32> mCJKPrefLangs;
-    nsCOMPtr<nsIObserver> overrideObserver;
+    nsCOMPtr<nsIObserver> mSRGBOverrideObserver;
+    nsCOMPtr<nsIObserver> mFontPrefsObserver;
 };
 
 #endif /* GFX_PLATFORM_H */

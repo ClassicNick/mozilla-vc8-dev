@@ -93,7 +93,7 @@
 #include "nsPermissionManager.h"
 #endif
 
-#include "nsAccelerometer.h"
+#include "nsDeviceMotion.h"
 
 #if defined(ANDROID)
 #include "APKOpen.h"
@@ -111,6 +111,8 @@ using namespace mozilla::docshell;
 
 namespace mozilla {
 namespace dom {
+
+nsString* gIndexedDBPath = nsnull;
 
 class MemoryReportRequestChild : public PMemoryReportRequestChild
 {
@@ -229,6 +231,8 @@ ContentChild::ContentChild()
 
 ContentChild::~ContentChild()
 {
+    delete gIndexedDBPath;
+    gIndexedDBPath = nsnull;
 }
 
 bool
@@ -256,11 +260,11 @@ ContentChild::Init(MessageLoop* aIOLoop,
     Open(aChannel, aParentHandle, aIOLoop);
     sSingleton = this;
 
-#if defined(ANDROID)
+#if defined(ANDROID) && defined(MOZ_CRASHREPORTER)
     PCrashReporterChild* crashreporter = SendPCrashReporterConstructor();
     InfallibleTArray<Mapping> mappings;
     const struct mapping_info *info = getLibraryMapping();
-    while (info->name) {
+    while (info && info->name) {
         mappings.AppendElement(Mapping(nsDependentCString(info->name),
                                        nsDependentCString(info->file_id),
                                        info->base,
@@ -294,34 +298,92 @@ ContentChild::AllocPMemoryReportRequest()
     return new MemoryReportRequestChild();
 }
 
+// This is just a wrapper for InfallibleTArray<MemoryReport> that implements
+// nsISupports, so it can be passed to nsIMemoryMultiReporter::CollectReports.
+class MemoryReportsWrapper : public nsISupports {
+public:
+    NS_DECL_ISUPPORTS
+    MemoryReportsWrapper(InfallibleTArray<MemoryReport> *r) : mReports(r) { }
+    InfallibleTArray<MemoryReport> *mReports;
+};
+NS_IMPL_ISUPPORTS0(MemoryReportsWrapper)
+
+class MemoryReportCallback : public nsIMemoryMultiReporterCallback
+{
+public:
+    NS_DECL_ISUPPORTS
+
+    MemoryReportCallback(const nsACString &aProcess)
+    : mProcess(aProcess)
+    {
+    }
+
+    NS_IMETHOD Callback(const nsACString &aProcess, const nsACString &aPath,
+                        PRInt32 aKind, PRInt32 aUnits, PRInt64 aAmount,
+                        const nsACString &aDescription,
+                        nsISupports *aiWrappedReports)
+    {
+        MemoryReportsWrapper *wrappedReports =
+            static_cast<MemoryReportsWrapper *>(aiWrappedReports);
+
+        MemoryReport memreport(mProcess, nsCString(aPath), aKind, aUnits,
+                               aAmount, nsCString(aDescription));
+        wrappedReports->mReports->AppendElement(memreport);
+        return NS_OK;
+    }
+private:
+    const nsCString mProcess;
+};
+NS_IMPL_ISUPPORTS1(
+  MemoryReportCallback
+, nsIMemoryMultiReporterCallback
+)
+
 bool
 ContentChild::RecvPMemoryReportRequestConstructor(PMemoryReportRequestChild* child)
 {
-    InfallibleTArray<MemoryReport> reports;
     
     nsCOMPtr<nsIMemoryReporterManager> mgr = do_GetService("@mozilla.org/memory-reporter-manager;1");
-    nsCOMPtr<nsISimpleEnumerator> r;
-    mgr->EnumerateReporters(getter_AddRefs(r));
 
+    InfallibleTArray<MemoryReport> reports;
+
+    static const int maxLength = 31;   // big enough; pid is only a few chars
+    nsPrintfCString process(maxLength, "Content (%d)", getpid());
+
+    // First do the vanilla memory reporters.
+    nsCOMPtr<nsISimpleEnumerator> e;
+    mgr->EnumerateReporters(getter_AddRefs(e));
     PRBool more;
-    while (NS_SUCCEEDED(r->HasMoreElements(&more)) && more) {
-      nsCOMPtr<nsIMemoryReporter> report;
-      r->GetNext(getter_AddRefs(report));
+    while (NS_SUCCEEDED(e->HasMoreElements(&more)) && more) {
+      nsCOMPtr<nsIMemoryReporter> r;
+      e->GetNext(getter_AddRefs(r));
 
       nsCString path;
+      PRInt32 kind;
+      PRInt32 units;
+      PRInt64 amount;
       nsCString desc;
-      PRInt64 memoryUsed;
-      report->GetPath(getter_Copies(path));
-      report->GetDescription(getter_Copies(desc));
-      report->GetMemoryUsed(&memoryUsed);
+      r->GetPath(getter_Copies(path));
+      r->GetKind(&kind);
+      r->GetUnits(&units);
+      r->GetAmount(&amount);
+      r->GetDescription(getter_Copies(desc));
 
-      MemoryReport memreport(nsPrintfCString("Content Process - %d - ", getpid()),
-                             path,
-                             desc,
-                             memoryUsed);
-
+      MemoryReport memreport(process, path, kind, units, amount, desc);
       reports.AppendElement(memreport);
+    }
 
+    // Then do the memory multi-reporters, by calling CollectReports on each
+    // one, whereupon the callback will turn each measurement into a
+    // MemoryReport.
+    mgr->EnumerateMultiReporters(getter_AddRefs(e));
+    MemoryReportsWrapper wrappedReports(&reports);
+    MemoryReportCallback cb(process);
+    while (NS_SUCCEEDED(e->HasMoreElements(&more)) && more) {
+      nsCOMPtr<nsIMemoryMultiReporter> r;
+      e->GetNext(getter_AddRefs(r));
+
+      r->CollectReports(&cb, &wrappedReports);
     }
 
     child->Send__delete__(child, reports);
@@ -638,14 +700,16 @@ ContentChild::RecvAddPermission(const IPC::Permission& permission)
 
   return true;
 }
+
 bool
-ContentChild::RecvAccelerationChanged(const double& x, const double& y,
+ContentChild::RecvDeviceMotionChanged(const long int& type,
+                                      const double& x, const double& y,
                                       const double& z)
 {
-    nsCOMPtr<nsIAccelerometerUpdate> acu = 
-        do_GetService(NS_ACCELEROMETER_CONTRACTID);
-    if (acu)
-        acu->AccelerationChanged(x, y, z);
+    nsCOMPtr<nsIDeviceMotionUpdate> dmu = 
+        do_GetService(NS_DEVICE_MOTION_CONTRACTID);
+    if (dmu)
+        dmu->DeviceMotionChanged(type, x, y, z);
     return true;
 }
 
@@ -668,6 +732,17 @@ ContentChild::RecvFlushMemory(const nsString& reason)
     if (os)
         os->NotifyObservers(nsnull, "memory-pressure", reason.get());
   return true;
+}
+
+nsString&
+ContentChild::GetIndexedDBPath()
+{
+    if (!gIndexedDBPath) {
+        gIndexedDBPath = new nsString(); // cleaned up in the destructor
+        SendGetIndexedDBDirectory(gIndexedDBPath);
+    }
+
+    return *gIndexedDBPath;
 }
 
 } // namespace dom

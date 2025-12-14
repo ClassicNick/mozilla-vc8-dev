@@ -115,7 +115,8 @@ enum nsCSSUnit {
   eCSSUnit_Counter      = 21,     // (nsCSSValue::Array*) a counter(string,[string]) value
   eCSSUnit_Counters     = 22,     // (nsCSSValue::Array*) a counters(string,string[,string]) value
   eCSSUnit_Cubic_Bezier = 23,     // (nsCSSValue::Array*) a list of float values
-  eCSSUnit_Function     = 24,     // (nsCSSValue::Array*) a function with
+  eCSSUnit_Steps        = 24,     // (nsCSSValue::Array*) a list of (integer, enumerated)
+  eCSSUnit_Function     = 25,     // (nsCSSValue::Array*) a function with
                                   //  parameters.  First elem of array is name,
                                   //  the rest of the values are arguments.
 
@@ -127,14 +128,14 @@ enum nsCSSUnit {
   // exists so we can distinguish calc(2em) from 2em as specified values
   // (but we drop this distinction for nsStyleCoord when we store
   // computed values).
-  eCSSUnit_Calc         = 25,     // (nsCSSValue::Array*) calc() value
+  eCSSUnit_Calc         = 30,     // (nsCSSValue::Array*) calc() value
   // Plus, Minus, Times_* and Divided have arrays with exactly 2
   // elements.  a + b + c + d is grouped as ((a + b) + c) + d
-  eCSSUnit_Calc_Plus    = 26,     // (nsCSSValue::Array*) + node within calc()
-  eCSSUnit_Calc_Minus   = 27,     // (nsCSSValue::Array*) - within calc
-  eCSSUnit_Calc_Times_L = 28,     // (nsCSSValue::Array*) num * val within calc
-  eCSSUnit_Calc_Times_R = 29,     // (nsCSSValue::Array*) val * num within calc
-  eCSSUnit_Calc_Divided = 30,     // (nsCSSValue::Array*) / within calc
+  eCSSUnit_Calc_Plus    = 31,     // (nsCSSValue::Array*) + node within calc()
+  eCSSUnit_Calc_Minus   = 32,     // (nsCSSValue::Array*) - within calc
+  eCSSUnit_Calc_Times_L = 33,     // (nsCSSValue::Array*) num * val within calc
+  eCSSUnit_Calc_Times_R = 34,     // (nsCSSValue::Array*) val * num within calc
+  eCSSUnit_Calc_Divided = 35,     // (nsCSSValue::Array*) / within calc
 
   eCSSUnit_URL          = 40,     // (nsCSSValue::URL*) value
   eCSSUnit_Image        = 41,     // (nsCSSValue::Image*) value
@@ -347,7 +348,7 @@ public:
     NS_ABORT_IF_FALSE(mUnit == eCSSUnit_URL || mUnit == eCSSUnit_Image,
                  "not a URL value");
     return mUnit == eCSSUnit_URL ?
-      mValue.mURL->mURI : mValue.mImage->mURI;
+      mValue.mURL->GetURI() : mValue.mImage->GetURI();
   }
 
   nsCSSValueGradient* GetGradientValue() const
@@ -449,8 +450,13 @@ public:
     // caps, which leads to REQUIRES hell, since this header is included all
     // over.
 
-    // aString must not be null.
-    // aOriginPrincipal must not be null.
+    // For both constructors aString must not be null.
+    // For both constructors aOriginPrincipal must not be null.
+    // Construct with a base URI; this will create the actual URI lazily from
+    // aString and aBaseURI.
+    URL(nsStringBuffer* aString, nsIURI* aBaseURI, nsIURI* aReferrer,
+        nsIPrincipal* aOriginPrincipal);
+    // Construct with the actual URI.
     URL(nsIURI* aURI, nsStringBuffer* aString, nsIURI* aReferrer,
         nsIPrincipal* aOriginPrincipal);
 
@@ -464,7 +470,14 @@ public:
     // unless you're sure this is the case.
     PRBool URIEquals(const URL& aOther) const;
 
-    nsCOMPtr<nsIURI> mURI; // null == invalid URL
+    nsIURI* GetURI() const;
+
+  private:
+    // If mURIResolved is false, mURI stores the base URI.
+    // If mURIResolved is true, mURI stores the URI we resolve to; this may be
+    // null if the URI is invalid.
+    mutable nsCOMPtr<nsIURI> mURI;
+  public:
     nsStringBuffer* mString; // Could use nsRefPtr, but it'd add useless
                              // null-checks; this is never null.
     nsCOMPtr<nsIURI> mReferrer;
@@ -472,7 +485,8 @@ public:
 
     NS_INLINE_DECL_REFCOUNTING(nsCSSValue::URL)
 
-  protected:
+  private:
+    mutable PRBool mURIResolved;
 
     // not to be implemented
     URL(const URL& aOther);

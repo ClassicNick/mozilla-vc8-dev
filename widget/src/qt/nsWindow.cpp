@@ -94,18 +94,16 @@ using namespace QtMobility;
 #endif
 
 #include "nsToolkit.h"
-#include "nsIDeviceContext.h"
 #include "nsIdleService.h"
-#include "nsIRenderingContext.h"
+#include "nsRenderingContext.h"
 #include "nsIRegion.h"
 #include "nsIRollupListener.h"
 #include "nsIMenuRollup.h"
 #include "nsWidgetsCID.h"
 #include "nsQtKeyUtils.h"
 #include "mozilla/Services.h"
+#include "mozilla/Preferences.h"
 
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsIStringBundle.h"
 #include "nsGfxCIID.h"
 
@@ -156,9 +154,6 @@ nsRefPtr<nsShmImage> gShmImage;
 
 static int gBufferPixmapUsageCount = 0;
 static gfxIntSize gBufferMaxSize(0, 0);
-
-/* For PrepareNativeWidget */
-static NS_DEFINE_IID(kDeviceContextCID, NS_DEVICE_CONTEXT_CID);
 
 // initialization static functions 
 static nsresult    initialize_prefs        (void);
@@ -270,17 +265,6 @@ nsWindow::nsWindow()
         gSwipeGestureId = QGestureRecognizer::registerRecognizer(swipeRecognizer);
     }
 #endif
-#ifdef MOZ_ENABLE_QTMOBILITY
-    if (!gOrientation) {
-        gOrientation = new QOrientationSensor();
-        gOrientation->addFilter(&gOrientationFilter);
-        gOrientation->start();
-        if (!gOrientation->isActive()) {
-            qWarning("Orientationsensor didn't start!");
-        }
-        gOrientationFilter.filter(gOrientation->reading());
-    }
-#endif
 }
 
 static inline gfxASurface::gfxImageFormat
@@ -325,8 +309,8 @@ UpdateOffScreenBuffers(int aDepth, QSize aSize, QWidget* aWidget = nsnull)
             return true;
     }
 
-    gBufferMaxSize.width = PR_MAX(gBufferMaxSize.width, size.width);
-    gBufferMaxSize.height = PR_MAX(gBufferMaxSize.height, size.height);
+    gBufferMaxSize.width = NS_MAX(gBufferMaxSize.width, size.width);
+    gBufferMaxSize.height = NS_MAX(gBufferMaxSize.height, size.height);
 
     // Check if system depth has related gfxImage format
     gfxASurface::gfxImageFormat format =
@@ -480,14 +464,8 @@ nsWindow::SetParent(nsIWidget *aNewParent)
     if (parent) {
         parent->RemoveChild(this);
     }
-    if (aNewParent) {
-        ReparentNativeWidget(aNewParent);
-        aNewParent->AddChild(this);
-        return NS_OK;
-    }
-    if (mWidget) {
-        mWidget->setParentItem(0);
-    }
+    ReparentNativeWidget(aNewParent);
+    aNewParent->AddChild(this);
     return NS_OK;
 }
 
@@ -603,6 +581,9 @@ nsWindow::SetSizeMode(PRInt32 aMode)
     nsresult rv;
 
     LOG(("nsWindow::SetSizeMode [%p] %d\n", (void *)this, aMode));
+    if (aMode != nsSizeMode_Minimized) {
+        GetViewWidget()->activateWindow();
+    }
 
     // Save the requested state.
     rv = nsBaseWidget::SetSizeMode(aMode);
@@ -2186,7 +2167,7 @@ nsWindow::Create(nsIWidget        *aParent,
                  nsNativeWidget    aNativeParent,
                  const nsIntRect  &aRect,
                  EVENT_CALLBACK    aHandleEventFunction,
-                 nsIDeviceContext *aContext,
+                 nsDeviceContext *aContext,
                  nsIAppShell      *aAppShell,
                  nsIToolkit       *aToolkit,
                  nsWidgetInitData *aInitData)
@@ -2244,7 +2225,7 @@ nsWindow::Create(nsIWidget        *aParent,
 already_AddRefed<nsIWidget>
 nsWindow::CreateChild(const nsIntRect&  aRect,
                       EVENT_CALLBACK    aHandleEventFunction,
-                      nsIDeviceContext* aContext,
+                      nsDeviceContext* aContext,
                       nsIAppShell*      aAppShell,
                       nsIToolkit*       aToolkit,
                       nsWidgetInitData* aInitData,
@@ -2515,15 +2496,9 @@ nsresult
 initialize_prefs(void)
 {
     // check to see if we should set our raise pref
-    nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-    if (!prefs)
-        return NS_OK;
-
-    PRBool val = PR_TRUE;
-    nsresult rv;
-    rv = prefs->GetBoolPref("mozilla.widget.disable-native-theme", &val);
-    if (NS_SUCCEEDED(rv))
-        gDisableNativeTheme = val;
+    gDisableNativeTheme =
+        Preferences::GetBool("mozilla.widget.disable-native-theme",
+                             gDisableNativeTheme);
 
     return NS_OK;
 }
@@ -2621,7 +2596,12 @@ nsWindow::createQWidget(MozQWidget *parent, nsWidgetInitData *aInitData)
     // create a QGraphicsView if this is a new toplevel window
 
     if (mIsTopLevel) {
-        QGraphicsView* newView = new MozQGraphicsView(widget, parentWidget);
+        QGraphicsView* newView = nsnull;
+#if defined MOZ_ENABLE_MEEGOTOUCH
+        newView = new MozMGraphicsView(widget, parentWidget);
+#else
+        newView = new MozQGraphicsView(widget, parentWidget);
+#endif
 
         if (!newView) {
             delete widget;
@@ -2642,10 +2622,6 @@ nsWindow::createQWidget(MozQWidget *parent, nsWidgetInitData *aInitData)
             newView->viewport()->setAttribute(Qt::WA_PaintOnScreen, true);
             newView->viewport()->setAttribute(Qt::WA_NoSystemBackground, true);
         }
-#ifdef MOZ_ENABLE_QTMOBILITY
-        QObject::connect((QObject*) &gOrientationFilter, SIGNAL(orientationChanged()),
-                         widget, SLOT(orientationChanged()));
-#endif
         // Enable gestures:
 #if (QT_VERSION >= QT_VERSION_CHECK(4, 6, 0))
         newView->viewport()->grabGesture(Qt::PinchGesture);
@@ -2852,6 +2828,27 @@ nsWindow::Show(PRBool aState)
 
     mIsShown = aState;
 
+#ifdef MOZ_ENABLE_QTMOBILITY
+    if (mWidget &&
+        (mWindowType == eWindowType_toplevel ||
+         mWindowType == eWindowType_dialog ||
+         mWindowType == eWindowType_popup))
+    {
+        if (!gOrientation) {
+            gOrientation = new QOrientationSensor();
+            gOrientation->addFilter(&gOrientationFilter);
+            gOrientation->start();
+            if (!gOrientation->isActive()) {
+                qWarning("Orientationsensor didn't start!");
+            }
+            gOrientationFilter.filter(gOrientation->reading());
+
+            QObject::connect((QObject*) &gOrientationFilter, SIGNAL(orientationChanged()),
+                             mWidget, SLOT(orientationChanged()));
+        }
+    }
+#endif
+
     if ((aState && !AreBoundsSane()) || !mWidget) {
         LOG(("\tbounds are insane or window hasn't been created yet\n"));
         mNeedsShow = PR_TRUE;
@@ -3048,11 +3045,8 @@ nsWindow::SetInputMode(const IMEContext& aContext)
         case nsIWidget::IME_STATUS_ENABLED:
         case nsIWidget::IME_STATUS_PASSWORD:
             {
-                PRInt32 openDelay = 200;
-                nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-                if (prefs)
-                  prefs->GetIntPref("ui.vkb.open.delay", &openDelay);
-
+                PRInt32 openDelay =
+                    Preferences::GetInt("ui.vkb.open.delay", 200);
                 mWidget->requestVKB(openDelay);
             }
             break;

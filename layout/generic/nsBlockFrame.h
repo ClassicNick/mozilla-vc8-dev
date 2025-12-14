@@ -262,8 +262,8 @@ public:
   virtual bool HasBullet() const;
 
   virtual void MarkIntrinsicWidthsDirty();
-  virtual nscoord GetMinWidth(nsIRenderingContext *aRenderingContext);
-  virtual nscoord GetPrefWidth(nsIRenderingContext *aRenderingContext);
+  virtual nscoord GetMinWidth(nsRenderingContext *aRenderingContext);
+  virtual nscoord GetPrefWidth(nsRenderingContext *aRenderingContext);
 
   virtual nsRect ComputeTightBounds(gfxContext* aContext) const;
   
@@ -373,6 +373,7 @@ protected:
                                        gfxFloat aOffset,
                                        gfxFloat aAscent,
                                        gfxFloat aSize,
+                                       const nsCharClipDisplayItem::ClipEdges& aClipEdges,
                                        const PRUint8 aDecoration);
 
   virtual void AdjustForTextIndent(const nsLineBox* aLine,

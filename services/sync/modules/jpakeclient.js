@@ -124,7 +124,7 @@ const JPAKE_VERIFY_VALUE      = "0123456789ABCDEF";
 function JPAKEClient(observer) {
   this.observer = observer;
 
-  this._log = Log4Moz.repository.getLogger("Service.JPAKEClient");
+  this._log = Log4Moz.repository.getLogger("Sync.JPAKEClient");
   this._log.level = Log4Moz.Level[Svc.Prefs.get(
     "log.logger.service.jpakeclient", "Debug")];
 
@@ -203,11 +203,16 @@ JPAKEClient.prototype = {
     this._log.debug("Aborting...");
     this._finished = true;
     let self = this;
+
+    // Default to "user aborted".
+    if (!error)
+      error = JPAKE_ERROR_USERABORT;
+
     if (error == JPAKE_ERROR_CHANNEL
         || error == JPAKE_ERROR_NETWORK
         || error == JPAKE_ERROR_NODATA) {
-      Utils.delay(function() { this.observer.onAbort(error); }, 0,
-                  this, "_timer_onAbort");
+      Utils.namedTimer(function() { this.observer.onAbort(error); }, 0,
+                       this, "_timer_onAbort");
     } else {
       this._reportFailure(error, function() { self.observer.onAbort(error); });
     }
@@ -273,8 +278,8 @@ JPAKEClient.prototype = {
 
       // Don't block on UI code.
       let pin = this._secret + this._channel;
-      Utils.delay(function() { this.observer.displayPIN(pin); }, 0,
-                  this, "_timer_displayPIN");
+      Utils.namedTimer(function() { this.observer.displayPIN(pin); }, 0,
+                       this, "_timer_displayPIN");
       callback();
     }));
   },
@@ -303,8 +308,8 @@ JPAKEClient.prototype = {
       // There's no point in returning early here since the next step will
       // always be a GET so let's pause for twice the poll interval.
       this._etag = response.headers["etag"];
-      Utils.delay(function () { callback(); }, this._pollInterval * 2, this,
-                  "_pollTimer");
+      Utils.namedTimer(function () { callback(); }, this._pollInterval * 2,
+                       this, "_pollTimer");
     }));
   },
 
@@ -336,8 +341,8 @@ JPAKEClient.prototype = {
           return;
         }
         this._pollTries += 1;
-        Utils.delay(function() { this._getStep(callback); },
-                    this._pollInterval, this, "_pollTimer");
+        Utils.namedTimer(function() { this._getStep(callback); },
+                         this._pollInterval, this, "_pollTimer");
         return;
       }
       this._pollTries = 0;
@@ -582,8 +587,8 @@ JPAKEClient.prototype = {
   _complete: function _complete() {
     this._log.debug("Exchange completed.");
     this._finished = true;
-    Utils.delay(function () { this.observer.onComplete(this._newData); },
-                0, this, "_timer_onComplete");
+    Utils.namedTimer(function () { this.observer.onComplete(this._newData); },
+                     0, this, "_timer_onComplete");
   }
 
 };

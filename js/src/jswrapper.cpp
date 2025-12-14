@@ -41,6 +41,8 @@
 
 #include "jsapi.h"
 #include "jscntxt.h"
+#include "jsgc.h"
+#include "jsgcmark.h"
 #include "jsiter.h"
 #include "jsnum.h"
 #include "jsregexp.h"
@@ -259,9 +261,9 @@ JSWrapper::construct(JSContext *cx, JSObject *wrapper, uintN argc, Value *argv, 
 bool
 JSWrapper::hasInstance(JSContext *cx, JSObject *wrapper, const Value *vp, bool *bp)
 {
-    *bp = true; // default result if we refuse to perform this action
+    *bp = false; // default result if we refuse to perform this action
     const jsid id = JSID_VOID;
-    JSBool b;
+    JSBool b = JS_FALSE;
     GET(JS_HasInstance(cx, wrappedObject(wrapper), Jsvalify(*vp), &b) && Cond(b, bp));
 }
 
@@ -305,6 +307,15 @@ JSWrapper::fun_toString(JSContext *cx, JSObject *wrapper, uintN indent)
     JSString *str = JSProxyHandler::fun_toString(cx, wrapper, indent);
     leave(cx, wrapper);
     return str;
+}
+
+bool
+JSWrapper::defaultValue(JSContext *cx, JSObject *wrapper, JSType hint, Value *vp)
+{
+    *vp = ObjectValue(*wrappedObject(wrapper));
+    if (hint == JSTYPE_VOID)
+        return ToPrimitive(cx, vp);
+    return ToPrimitive(cx, hint, vp);
 }
 
 void
@@ -355,12 +366,39 @@ TransparentObjectWrapper(JSContext *cx, JSObject *obj, JSObject *wrappedProto, J
 
 }
 
+ForceFrame::ForceFrame(JSContext *cx, JSObject *target)
+    : context(cx),
+      target(target),
+      frame(NULL)
+{
+}
+
+ForceFrame::~ForceFrame()
+{
+    context->delete_(frame);
+}
+
+bool
+ForceFrame::enter()
+{
+    frame = context->new_<DummyFrameGuard>();
+    if (!frame)
+       return false;
+    LeaveTrace(context);
+
+    JS_ASSERT(context->compartment == target->compartment());
+
+    JSObject *scopeChain = target->getGlobal();
+    JS_ASSERT(scopeChain->isNative());
+
+    return context->stack.pushDummyFrame(context, *scopeChain, frame);
+}
+
 AutoCompartment::AutoCompartment(JSContext *cx, JSObject *target)
     : context(cx),
       origin(cx->compartment),
       target(target),
       destination(target->getCompartment()),
-      input(cx),
       entered(false)
 {
 }
@@ -383,7 +421,7 @@ AutoCompartment::enter()
         JS_ASSERT(scopeChain->isNative());
 
         frame.construct();
-        if (!context->stack().pushDummyFrame(context, *scopeChain, &frame.ref())) {
+        if (!context->stack.pushDummyFrame(context, *scopeChain, &frame.ref())) {
             context->compartment = origin;
             return false;
         }
@@ -696,6 +734,20 @@ JSCrossCompartmentWrapper::fun_toString(JSContext *cx, JSObject *wrapper, uintN 
     if (!call.origin->wrap(cx, &str))
         return NULL;
     return str;
+}
+
+bool
+JSCrossCompartmentWrapper::defaultValue(JSContext *cx, JSObject *wrapper, JSType hint, Value *vp)
+{
+    AutoCompartment call(cx, wrappedObject(wrapper));
+    if (!call.enter())
+        return false;
+
+    if (!JSWrapper::defaultValue(cx, wrapper, hint, vp))
+        return false;
+
+    call.leave();
+    return call.origin->wrap(cx, vp);
 }
 
 JSCrossCompartmentWrapper JSCrossCompartmentWrapper::singleton(0u);

@@ -55,9 +55,6 @@
 #include "nsIDOMCSSPrimitiveValue.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMHTMLDocument.h"
-#include "nsIDOMHTMLElement.h"
-#include "nsIDOMNSDocument.h"
 #include "nsIDOMNSHTMLElement.h"
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
@@ -93,7 +90,7 @@ nsApplicationAccessible *nsAccessNode::gApplicationAccessible = nsnull;
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessible. nsISupports
 
-NS_IMPL_CYCLE_COLLECTION_0(nsAccessNode)
+NS_IMPL_CYCLE_COLLECTION_1(nsAccessNode, mContent)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsAccessNode)
   NS_INTERFACE_MAP_ENTRY(nsIAccessNode)
@@ -101,9 +98,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsAccessNode)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIAccessNode)
 NS_INTERFACE_MAP_END
  
-NS_IMPL_CYCLE_COLLECTING_ADDREF_AMBIGUOUS(nsAccessNode, nsIAccessNode)
-NS_IMPL_CYCLE_COLLECTING_RELEASE_FULL(nsAccessNode, nsIAccessNode,
-                                      LastRelease())
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsAccessNode)
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_DESTROY(nsAccessNode, LastRelease())
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode construction/desctruction
@@ -135,6 +131,12 @@ void nsAccessNode::LastRelease()
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode public
+
+bool
+nsAccessNode::IsDefunct() const
+{
+  return !mContent;
+}
 
 PRBool
 nsAccessNode::Init()

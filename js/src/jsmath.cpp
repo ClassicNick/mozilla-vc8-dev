@@ -43,7 +43,6 @@
 #include <stdlib.h>
 #include "jstypes.h"
 #include "jsstdint.h"
-#include "jslong.h"
 #include "prmjtime.h"
 #include "jsapi.h"
 #include "jsatom.h"
@@ -565,7 +564,7 @@ math_random(JSContext *cx, uintN argc, Value *vp)
     return JS_TRUE;
 }
 
-#if defined _WIN32 && !defined WINCE && _MSC_VER < 1400
+#if defined _WIN32 && _MSC_VER < 1400
 /* Try to work around apparent _copysign bustage in VC7.x. */
 double
 js_copysign(double x, double y)
@@ -881,5 +880,8 @@ js_InitMathClass(JSContext *cx, JSObject *obj)
         return NULL;
     if (!JS_DefineConstDoubles(cx, Math, math_constants))
         return NULL;
+
+    MarkStandardClassInitializedNoProto(obj, &js_MathClass);
+
     return Math;
 }

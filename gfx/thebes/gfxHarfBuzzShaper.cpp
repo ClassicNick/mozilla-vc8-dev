@@ -37,6 +37,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "prtypes.h"
+#include "nsAlgorithm.h"
 #include "prmem.h"
 #include "nsString.h"
 #include "nsBidiUtils.h"
@@ -57,6 +58,10 @@
 
 #include "nsUnicodeRange.h"
 #include "nsCRT.h"
+
+#if defined(XP_WIN)
+#include "gfxWindowsPlatform.h"
+#endif
 
 #define FloatToFixed(f) (65536 * (f))
 #define FixedToFloat(f) ((f) * (1.0 / 65536.0))
@@ -105,7 +110,17 @@ static hb_blob_t *
 HBGetTable(hb_tag_t aTag, void *aUserData)
 {
     gfxHarfBuzzShaper *shaper = static_cast<gfxHarfBuzzShaper*>(aUserData);
-    return shaper->GetFont()->GetFontTable(aTag);
+    gfxFont *font = shaper->GetFont();
+
+    // bug 589682 - ignore the GDEF table in buggy fonts (applies to
+    // Italic and BoldItalic faces of Times New Roman)
+    if (aTag == TRUETYPE_TAG('G','D','E','F') &&
+        font->GetFontEntry()->IgnoreGDEF())
+    {
+        return nsnull;
+    }
+
+    return font->GetFontTable(aTag);
 }
 
 /*
@@ -321,7 +336,7 @@ GetKernValueFmt0(const void* aSubtable,
         if (aIsOverride) {
             aValue = PRInt16(lo->value);
         } else if (aIsMinimum) {
-            aValue = PR_MAX(aValue, PRInt16(lo->value));
+            aValue = NS_MAX(aValue, PRInt32(lo->value));
         } else {
             aValue += PRInt16(lo->value);
         }
@@ -936,8 +951,13 @@ GetRoundOffsetsToPixels(gfxContext *aContext,
 #if CAIRO_HAS_DWRITE_FONT // dwrite backend is not in std cairo releases yet
         case CAIRO_FONT_TYPE_DWRITE:
             // show_glyphs is implemented on the font and so is used for
-            // all surface types.
-            return;
+            // all surface types; however, it may pixel-snap depending on
+            // the dwrite rendering mode
+            if (!cairo_dwrite_scaled_font_get_force_GDI_classic(scaled_font) &&
+                gfxWindowsPlatform::GetPlatform()->DWriteMeasuringMode() ==
+                    DWRITE_MEASURING_MODE_NATURAL) {
+                return;
+            }
 #endif
         case CAIRO_FONT_TYPE_QUARTZ:
             // Quartz surfaces implement show_glyphs for Quartz fonts
@@ -1029,7 +1049,7 @@ gfxHarfBuzzShaper::SetGlyphsFromRun(gfxContext *aContext,
             // find the maximum glyph index covered by the clump so far
             for (PRInt32 i = charStart; i < charEnd; ++i) {
                 if (charToGlyph[i] != NO_GLYPH) {
-                    glyphEnd = PR_MAX(glyphEnd, charToGlyph[i] + 1);
+                    glyphEnd = NS_MAX(glyphEnd, charToGlyph[i] + 1);
                     // update extent of glyph range
                 }
             }

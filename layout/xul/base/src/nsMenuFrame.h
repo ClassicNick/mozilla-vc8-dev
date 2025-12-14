@@ -174,7 +174,7 @@ public:
   // one in its parent popup. This will carry out the command attached to
   // the menuitem. If the menu should be opened, this frame will be returned,
   // otherwise null will be returned.
-  nsMenuFrame* Enter();
+  nsMenuFrame* Enter(nsGUIEvent* aEvent);
 
   virtual void SetParent(nsIFrame* aParent);
 
@@ -189,6 +189,7 @@ public:
   virtual PRBool IsOnActiveMenuBar() { return IsOnMenuBar() && mMenuParent->IsActive(); }
   virtual PRBool IsOpen();
   virtual PRBool IsMenu();
+  virtual nsMenuListType GetParentMenuListType();
   PRBool IsDisabled();
   void ToggleMenuState();
 

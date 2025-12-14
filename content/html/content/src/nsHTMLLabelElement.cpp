@@ -34,11 +34,14 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+
+/**
+ * Implementation of HTML <label> elements.
+ */
+#include "nsHTMLLabelElement.h"
 #include "nsCOMPtr.h"
-#include "nsIDOMHTMLLabelElement.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMEventTarget.h"
-#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
@@ -47,76 +50,13 @@
 #include "nsIDOMDocument.h"
 #include "nsIDocument.h"
 #include "nsGUIEvent.h"
-#include "nsIEventStateManager.h"
 #include "nsEventDispatcher.h"
 #include "nsPIDOMWindow.h"
 #include "nsFocusManager.h"
 
-class nsHTMLLabelElement : public nsGenericHTMLFormElement,
-                           public nsIDOMHTMLLabelElement
-{
-public:
-  nsHTMLLabelElement(already_AddRefed<nsINodeInfo> aNodeInfo);
-  virtual ~nsHTMLLabelElement();
-
-  // nsISupports
-  NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIDOMNode
-  NS_FORWARD_NSIDOMNODE(nsGenericHTMLFormElement::)
-
-  // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFormElement::)
-
-  // nsIDOMHTMLElement
-  NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFormElement::)
-
-  // nsIDOMHTMLLabelElement
-  NS_DECL_NSIDOMHTMLLABELELEMENT
-
-  // nsIFormControl
-  NS_IMETHOD_(PRUint32) GetType() const { return NS_FORM_LABEL; }
-  NS_IMETHOD Reset();
-  NS_IMETHOD SubmitNamesValues(nsFormSubmission* aFormSubmission);
-
-  NS_IMETHOD Focus();
-
-  virtual bool IsDisabled() const { return PR_FALSE; }
-
-  // nsIContent
-  virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent,
-                              PRBool aCompileEventHandlers);
-  virtual void UnbindFromTree(PRBool aDeep = PR_TRUE,
-                              PRBool aNullParent = PR_TRUE);
-
-  virtual nsresult PostHandleEvent(nsEventChainPostVisitor& aVisitor);
-
-  nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, PRBool aNotify)
-  {
-    return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
-  }
-  virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                           nsIAtom* aPrefix, const nsAString& aValue,
-                           PRBool aNotify);
-  virtual nsresult UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
-                             PRBool aNotify);
-  virtual void PerformAccesskey(PRBool aKeyCausesActivation,
-                                PRBool aIsTrustedEvent);
-  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const;
-
-  virtual nsXPCClassInfo* GetClassInfo();
-protected:
-  already_AddRefed<nsIContent> GetControlContent();
-  already_AddRefed<nsIContent> GetFirstFormControl(nsIContent *current);
-
-  // XXX It would be nice if we could use an event flag instead.
-  PRPackedBool mHandlingEvent;
-};
-
 // construction, destruction
 
+using namespace mozilla::dom;
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Label)
 
@@ -166,15 +106,13 @@ nsHTMLLabelElement::GetControl(nsIDOMHTMLElement** aElement)
 {
   *aElement = nsnull;
 
-  nsCOMPtr<nsIContent> content = GetControlContent();
-  nsCOMPtr<nsIDOMHTMLElement> element = do_QueryInterface(content);
+  nsCOMPtr<nsIDOMHTMLElement> element = do_QueryInterface(GetLabeledElement());
 
   element.swap(*aElement);
   return NS_OK;
 }
 
 
-NS_IMPL_STRING_ATTR(nsHTMLLabelElement, AccessKey, accesskey)
 NS_IMPL_STRING_ATTR(nsHTMLLabelElement, HtmlFor, _for)
 
 NS_IMETHODIMP
@@ -183,9 +121,7 @@ nsHTMLLabelElement::Focus()
   // retarget the focus method at the for content
   nsIFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
-    nsCOMPtr<nsIContent> content = GetControlContent();
-
-    nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(content);
+    nsCOMPtr<nsIDOMElement> elem = do_QueryInterface(GetLabeledElement());
     if (elem)
       fm->SetFocus(elem, 0);
   }
@@ -198,25 +134,14 @@ nsHTMLLabelElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                                nsIContent* aBindingParent,
                                PRBool aCompileEventHandlers)
 {
-  nsresult rv = nsGenericHTMLFormElement::BindToTree(aDocument, aParent,
-                                                     aBindingParent,
-                                                     aCompileEventHandlers);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (aDocument) {
-    RegAccessKey();
-  }
-
-  return rv;
+  return nsGenericHTMLFormElement::BindToTree(aDocument, aParent,
+                                              aBindingParent,
+                                              aCompileEventHandlers);
 }
 
 void
 nsHTMLLabelElement::UnbindFromTree(PRBool aDeep, PRBool aNullParent)
 {
-  if (IsInDoc()) {
-    UnregAccessKey();
-  }
-
   nsGenericHTMLFormElement::UnbindFromTree(aDeep, aNullParent);
 }
 
@@ -260,7 +185,8 @@ nsHTMLLabelElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
     return NS_OK;
   }
 
-  nsCOMPtr<nsIContent> content = GetControlContent();
+  // Strong ref because event dispatch is going to happen.
+  nsRefPtr<Element> content = GetLabeledElement();
 
   if (content && !EventTargetIn(aVisitor.mEvent, content, this)) {
     mHandlingEvent = PR_TRUE;
@@ -356,34 +282,14 @@ nsresult
 nsHTMLLabelElement::SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName, nsIAtom* aPrefix,
                             const nsAString& aValue, PRBool aNotify)
 {
-  if (aName == nsGkAtoms::accesskey && kNameSpaceID_None == aNameSpaceID) {
-    UnregAccessKey();
-  }
-
-  nsresult rv =
-      nsGenericHTMLFormElement::SetAttr(aNameSpaceID, aName, aPrefix, aValue,
-                                        aNotify);
-
-  if (aName == nsGkAtoms::accesskey && kNameSpaceID_None == aNameSpaceID &&
-      !aValue.IsEmpty()) {
-    SetFlags(NODE_HAS_ACCESSKEY);
-    RegAccessKey();
-  }
-
-  return rv;
+  return nsGenericHTMLFormElement::SetAttr(aNameSpaceID, aName, aPrefix, aValue,
+                                           aNotify);
 }
 
 nsresult
 nsHTMLLabelElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
                               PRBool aNotify)
 {
-  if (aAttribute == nsGkAtoms::accesskey &&
-      kNameSpaceID_None == aNameSpaceID) {
-    // Have to unregister before clearing flag. See UnregAccessKey
-    UnregAccessKey();
-    UnsetFlags(NODE_HAS_ACCESSKEY);
-  }
-
   return nsGenericHTMLFormElement::UnsetAttr(aNameSpaceID, aAttribute, aNotify);
 }
 
@@ -392,9 +298,9 @@ nsHTMLLabelElement::PerformAccesskey(PRBool aKeyCausesActivation,
                                      PRBool aIsTrustedEvent)
 {
   if (!aKeyCausesActivation) {
-    nsCOMPtr<nsIContent> content = GetControlContent();
-    if (content)
-      content->PerformAccesskey(aKeyCausesActivation, aIsTrustedEvent);
+    nsRefPtr<Element> element = GetLabeledElement();
+    if (element)
+      element->PerformAccesskey(aKeyCausesActivation, aIsTrustedEvent);
   } else {
     nsPresContext *presContext = GetPresContext();
     if (!presContext)
@@ -413,15 +319,15 @@ nsHTMLLabelElement::PerformAccesskey(PRBool aKeyCausesActivation,
   }
 }
 
-already_AddRefed<nsIContent>
-nsHTMLLabelElement::GetControlContent()
+Element*
+nsHTMLLabelElement::GetLabeledElement()
 {
   nsAutoString elementId;
 
   if (!GetAttr(kNameSpaceID_None, nsGkAtoms::_for, elementId)) {
     // No @for, so we are a label for our first form control element.
     // Do a depth-first traversal to look for the first form control element.
-    return GetFirstFormControl(this);
+    return GetFirstDescendantFormControl();
   }
 
   // We have a @for. The id has to be linked to an element in the same document
@@ -431,41 +337,31 @@ nsHTMLLabelElement::GetControlContent()
     return nsnull;
   }
 
-  nsIContent* content = doc->GetElementById(elementId);
-  if (!content) {
+  Element* element = doc->GetElementById(elementId);
+  if (!element) {
     return nsnull;
   }
 
-  nsCOMPtr<nsIFormControl> element = do_QueryInterface(content);
-  if (element && element->IsLabelableControl()) {
+  nsCOMPtr<nsIFormControl> controlElement = do_QueryInterface(element);
+  if (controlElement && controlElement->IsLabelableControl()) {
     // Transfer the reference count of element to the returned value.
-    element.forget();
-    return content;
+    return element;
   }
 
   return nsnull;
 }
 
-already_AddRefed<nsIContent>
-nsHTMLLabelElement::GetFirstFormControl(nsIContent *current)
+Element*
+nsHTMLLabelElement::GetFirstDescendantFormControl()
 {
-  PRUint32 numNodes = current->GetChildCount();
-
-  for (PRUint32 i = 0; i < numNodes; i++) {
-    nsIContent *child = current->GetChildAt(i);
-    if (!child) {
-      continue;
-    }
-
-    nsCOMPtr<nsIFormControl> element = do_QueryInterface(child);
+  // Have to cast do disambiguate GetFirstChild from the DOM method of that name
+  for (nsINode* cur = static_cast<nsINode*>(this)->GetFirstChild();
+       cur;
+       cur = cur->GetNextNode(this)) {
+    nsCOMPtr<nsIFormControl> element = do_QueryInterface(cur);
     if (element && element->IsLabelableControl()) {
-      NS_ADDREF(child);
-      return child;
-    }
-
-    nsIContent* content = GetFirstFormControl(child).get();
-    if (content) {
-      return content;
+      NS_ASSERTION(cur->IsElement(), "How did that happen?");
+      return cur->AsElement();
     }
   }
 

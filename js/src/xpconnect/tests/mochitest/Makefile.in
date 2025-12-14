@@ -80,6 +80,7 @@ _TEST_FILES =	bug500931_helper.html \
 		test_bug605167.html \
 		test_bug623437.html \
 		test_bug601299.html \
+		test_bug628794.html \
 		test_bug629227.html \
 		file1_bug629227.html \
 		file2_bug629227.html \
@@ -88,7 +89,19 @@ _TEST_FILES =	bug500931_helper.html \
 		test2_bug629331.html \
 		test_bug618017.html \
 		test_bug636097.html \
+		test_bug661980.html \
+		test_bug650273.html \
+		file_bug650273.html \
+		file_bug658560.html \
 		$(NULL)
+
+ifneq ($(OS_TARGET),Android)
+ifndef MOZ_PLATFORM_MAEMO
+_TEST_FILES +=	test_bug657267.html \
+		bug657267.jar
+endif
+endif
+
 
 		#test_bug484107.html \
 

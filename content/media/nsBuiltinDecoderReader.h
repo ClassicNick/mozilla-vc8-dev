@@ -46,7 +46,7 @@
 #include "mozilla/TimeStamp.h"
 #include "nsSize.h"
 #include "nsRect.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 
 class nsBuiltinDecoderStateMachine;
 
@@ -54,10 +54,8 @@ class nsBuiltinDecoderStateMachine;
 class nsVideoInfo {
 public:
   nsVideoInfo()
-    : mPixelAspectRatio(1.0),
-      mAudioRate(0),
+    : mAudioRate(0),
       mAudioChannels(0),
-      mFrame(0,0),
       mDisplay(0,0),
       mStereoMode(mozilla::layers::STEREO_MODE_MONO),
       mHasAudio(PR_FALSE),
@@ -67,14 +65,10 @@ public:
   // Returns PR_TRUE if it's safe to use aPicture as the picture to be
   // extracted inside a frame of size aFrame, and scaled up to and displayed
   // at a size of aDisplay. You should validate the frame, picture, and
-  // display regions before setting them into the mFrame, mPicture and
-  // mDisplay fields of nsVideoInfo.
+  // display regions before using them to display video frames.
   static PRBool ValidateVideoRegion(const nsIntSize& aFrame,
                                     const nsIntRect& aPicture,
                                     const nsIntSize& aDisplay);
-
-  // Pixel aspect ratio, as stored in the metadata.
-  float mPixelAspectRatio;
 
   // Samples per second.
   PRUint32 mAudioRate;
@@ -82,19 +76,9 @@ public:
   // Number of audio channels.
   PRUint32 mAudioChannels;
 
-  // Dimensions of the video frame.
-  nsIntSize mFrame;
-
-  // The picture region inside the video frame to be displayed.
-  nsIntRect mPicture;
-
-  // Display size of the video frame. The picture region will be scaled
-  // to and displayed at this size.
+  // Size in pixels at which the video is rendered. This is after it has
+  // been scaled by its aspect ratio.
   nsIntSize mDisplay;
-
-  // The offset of the first non-header page in the file, in bytes.
-  // Used to seek to the start of the media.
-  PRInt64 mDataOffset;
 
   // Indicates the frame layout for single track stereo videos.
   mozilla::layers::StereoMode mStereoMode;
@@ -179,8 +163,8 @@ public:
   // chunk ends.
   const PRInt64 mOffset;
 
-  PRInt64 mTime; // Start time of samples in ms.
-  const PRInt64 mDuration; // In ms.
+  PRInt64 mTime; // Start time of samples in usecs.
+  const PRInt64 mDuration; // In usecs.
   const PRUint32 mSamples;
   const PRUint32 mChannels;
   nsAutoArrayPtr<SoundDataValue> mAudioData;
@@ -220,7 +204,8 @@ public:
                            PRInt64 aEndTime,
                            const YCbCrBuffer &aBuffer,
                            PRBool aKeyframe,
-                           PRInt64 aTimecode);
+                           PRInt64 aTimecode,
+                           nsIntRect aPicture);
 
   // Constructs a duplicate VideoData object. This intrinsically tells the
   // player that it does not need to update the displayed frame when this
@@ -238,13 +223,18 @@ public:
     MOZ_COUNT_DTOR(VideoData);
   }
 
+  // Dimensions at which to display the video frame. The picture region
+  // will be scaled to this size. This is should be the picture region's
+  // dimensions scaled with respect to its aspect ratio.
+  nsIntSize mDisplay;
+
   // Approximate byte offset of the end of the frame in the media.
   PRInt64 mOffset;
 
-  // Start time of frame in milliseconds.
+  // Start time of frame in microseconds.
   PRInt64 mTime;
 
-  // End time of frame in milliseconds;
+  // End time of frame in microseconds.
   PRInt64 mEndTime;
 
   // Codec specific internal time code. For Ogg based codecs this is the
@@ -276,8 +266,10 @@ public:
             PRInt64 aTime,
             PRInt64 aEndTime,
             PRBool aKeyframe,
-            PRInt64 aTimecode)
-    : mOffset(aOffset),
+            PRInt64 aTimecode,
+            nsIntSize aDisplay)
+    : mDisplay(aDisplay),
+      mOffset(aOffset),
       mTime(aTime),
       mEndTime(aEndTime),
       mTimecode(aTimecode),
@@ -301,12 +293,12 @@ class MediaQueueDeallocator : public nsDequeFunctor {
 
 template <class T> class MediaQueue : private nsDeque {
  public:
-   typedef mozilla::MonitorAutoEnter MonitorAutoEnter;
-   typedef mozilla::Monitor Monitor;
+   typedef mozilla::ReentrantMonitorAutoEnter ReentrantMonitorAutoEnter;
+   typedef mozilla::ReentrantMonitor ReentrantMonitor;
 
    MediaQueue()
      : nsDeque(new MediaQueueDeallocator<T>()),
-       mMonitor("mediaqueue"),
+       mReentrantMonitor("mediaqueue"),
        mEndOfStream(0)
    {}
   
@@ -315,52 +307,52 @@ template <class T> class MediaQueue : private nsDeque {
   }
 
   inline PRInt32 GetSize() { 
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return nsDeque::GetSize();
   }
   
   inline void Push(T* aItem) {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     nsDeque::Push(aItem);
   }
   
   inline void PushFront(T* aItem) {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     nsDeque::PushFront(aItem);
   }
   
   inline T* Pop() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return static_cast<T*>(nsDeque::Pop());
   }
 
   inline T* PopFront() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return static_cast<T*>(nsDeque::PopFront());
   }
   
   inline T* Peek() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return static_cast<T*>(nsDeque::Peek());
   }
   
   inline T* PeekFront() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return static_cast<T*>(nsDeque::PeekFront());
   }
 
   inline void Empty() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     nsDeque::Empty();
   }
 
   inline void Erase() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     nsDeque::Erase();
   }
 
   void Reset() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     while (GetSize() > 0) {
       T* x = PopFront();
       delete x;
@@ -369,7 +361,7 @@ template <class T> class MediaQueue : private nsDeque {
   }
 
   PRBool AtEndOfStream() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return GetSize() == 0 && mEndOfStream;    
   }
 
@@ -377,19 +369,19 @@ template <class T> class MediaQueue : private nsDeque {
   // This happens when the media stream has been completely decoded. Note this
   // does not mean that the corresponding stream has finished playback.
   PRBool IsFinished() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     return mEndOfStream;    
   }
 
   // Informs the media queue that it won't be receiving any more samples.
   void Finish() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     mEndOfStream = PR_TRUE;    
   }
 
-  // Returns the approximate number of milliseconds of samples in the queue.
+  // Returns the approximate number of microseconds of samples in the queue.
   PRInt64 Duration() {
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     if (GetSize() < 2) {
       return 0;
     }
@@ -399,7 +391,7 @@ template <class T> class MediaQueue : private nsDeque {
   }
 
 private:
-  Monitor mMonitor;
+  ReentrantMonitor mReentrantMonitor;
 
   // PR_TRUE when we've decoded the last frame of data in the
   // bitstream for which we're queueing sample-data.
@@ -414,8 +406,8 @@ private:
 // this class.
 class nsBuiltinDecoderReader : public nsRunnable {
 public:
-  typedef mozilla::Monitor Monitor;
-  typedef mozilla::MonitorAutoEnter MonitorAutoEnter;
+  typedef mozilla::ReentrantMonitor ReentrantMonitor;
+  typedef mozilla::ReentrantMonitorAutoEnter ReentrantMonitorAutoEnter;
 
   nsBuiltinDecoderReader(nsBuiltinDecoder* aDecoder);
   ~nsBuiltinDecoderReader();
@@ -448,18 +440,13 @@ public:
   virtual nsresult ReadMetadata(nsVideoInfo* aInfo) = 0;
 
   // Stores the presentation time of the first frame/sample we'd be
-  // able to play if we started playback at aOffset, and returns the
-  // first video sample, if we have video.
-  virtual VideoData* FindStartTime(PRInt64 aOffset,
-                                   PRInt64& aOutStartTime);
+  // able to play if we started playback at the current position. Returns
+  // the first video sample, if we have video.
+  VideoData* FindStartTime(PRInt64& aOutStartTime);
 
-  // Returns the end time of the last page which occurs before aEndOffset.
-  // This will not read past aEndOffset. Returns -1 on failure. 
-  virtual PRInt64 FindEndTime(PRInt64 aEndOffset);
-
-  // Moves the decode head to aTime milliseconds. aStartTime and aEndTime
-  // denote the start and end times of the media in ms, and aCurrentTime
-  // is the current playback position in ms.
+  // Moves the decode head to aTime microseconds. aStartTime and aEndTime
+  // denote the start and end times of the media in usecs, and aCurrentTime
+  // is the current playback position in microseconds.
   virtual nsresult Seek(PRInt64 aTime,
                         PRInt64 aStartTime,
                         PRInt64 aEndTime,
@@ -485,7 +472,7 @@ public:
 protected:
 
   // Pumps the decode until we reach frames/samples required to play at
-  // time aTarget (ms).
+  // time aTarget (usecs).
   nsresult DecodeToTarget(PRInt64 aTarget);
 
   // Reader decode function. Matches DecodeVideoFrame() and
@@ -507,15 +494,11 @@ protected:
 
   // The lock which we hold whenever we read or decode. This ensures the thread
   // safety of the reader and its data fields.
-  Monitor mMonitor;
+  ReentrantMonitor mReentrantMonitor;
 
   // Reference to the owning decoder object. Do not hold the
   // reader's monitor when accessing this.
   nsBuiltinDecoder* mDecoder;
-
-  // The offset of the start of the first non-header page in the file.
-  // Used to seek to media start time.
-  PRInt64 mDataOffset;
 
   // Stores presentation info required for playback. The reader's monitor
   // must be held when accessing this.

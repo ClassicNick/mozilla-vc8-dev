@@ -187,7 +187,7 @@ nsIsIndexFrame::SetFocus(PRBool aOn, PRBool aRepaint)
 }
 
 nsresult
-nsIsIndexFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
+nsIsIndexFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 {
   // Get the node info manager (used to create hr's and input's)
   nsCOMPtr<nsIDocument> doc = mContent->GetDocument();
@@ -195,7 +195,8 @@ nsIsIndexFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
 
   // Create an hr
   nsCOMPtr<nsINodeInfo> hrInfo;
-  hrInfo = nimgr->GetNodeInfo(nsGkAtoms::hr, nsnull, kNameSpaceID_XHTML);
+  hrInfo = nimgr->GetNodeInfo(nsGkAtoms::hr, nsnull, kNameSpaceID_XHTML,
+                              nsIDOMNode::ELEMENT_NODE);
 
   NS_NewHTMLElement(getter_AddRefs(mPreHr), hrInfo.forget(),
                     dom::NOT_FROM_PARSER);
@@ -214,7 +215,8 @@ nsIsIndexFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
 
   // Create text input field
   nsCOMPtr<nsINodeInfo> inputInfo;
-  inputInfo = nimgr->GetNodeInfo(nsGkAtoms::input, nsnull, kNameSpaceID_XHTML);
+  inputInfo = nimgr->GetNodeInfo(nsGkAtoms::input, nsnull, kNameSpaceID_XHTML,
+                                 nsIDOMNode::ELEMENT_NODE);
 
   NS_NewHTMLElement(getter_AddRefs(mInputContent), inputInfo.forget(),
                     dom::NOT_FROM_PARSER);
@@ -232,7 +234,8 @@ nsIsIndexFrame::CreateAnonymousContent(nsTArray<nsIContent*>& aElements)
   mInputContent->AddEventListenerByIID(mListener, NS_GET_IID(nsIDOMKeyListener));
 
   // Create an hr
-  hrInfo = nimgr->GetNodeInfo(nsGkAtoms::hr, nsnull, kNameSpaceID_XHTML);
+  hrInfo = nimgr->GetNodeInfo(nsGkAtoms::hr, nsnull, kNameSpaceID_XHTML,
+                              nsIDOMNode::ELEMENT_NODE);
   NS_NewHTMLElement(getter_AddRefs(mPostHr), hrInfo.forget(),
                     dom::NOT_FROM_PARSER);
   if (!mPostHr || !aElements.AppendElement(mPostHr))
@@ -259,7 +262,7 @@ NS_IMPL_ISUPPORTS2(nsIsIndexFrame::KeyListener,
                    nsIDOMEventListener)
 
 nscoord
-nsIsIndexFrame::GetMinWidth(nsIRenderingContext *aRenderingContext)
+nsIsIndexFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
 {
   nscoord result;
   DISPLAY_MIN_WIDTH(this, result);
@@ -429,7 +432,7 @@ nsIsIndexFrame::OnSubmit(nsPresContext* aPresContext)
 
   // Now pretend we're triggering a link
   nsContentUtils::TriggerLink(mContent, aPresContext, uri,
-                              EmptyString(), PR_TRUE, PR_TRUE);
+                              EmptyString(), PR_TRUE, PR_TRUE, PR_TRUE);
   return result;
 }
 

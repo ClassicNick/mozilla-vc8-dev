@@ -43,10 +43,12 @@
 #include "jscntxt.h"
 #include "jstypedarray.h"
 
+#include "jsnuminlines.h"
+
 namespace js {
 namespace mjit {
 
-#if defined(JS_POLYIC) && (defined JS_CPU_X86 || defined JS_CPU_X64)
+#ifdef JS_POLYIC_TYPED_ARRAY
 
 typedef JSC::MacroAssembler::RegisterID RegisterID;
 typedef JSC::MacroAssembler::FPRegisterID FPRegisterID;

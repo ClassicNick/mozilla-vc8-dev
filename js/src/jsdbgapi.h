@@ -107,9 +107,9 @@ extern JS_PUBLIC_API(JSBool)
 JS_GetDebugMode(JSContext *cx);
 
 /*
- * Turn on/off debugging mode for a single compartment. This must be
- * called from the main thread and the compartment must be associated
- * with the main thread.
+ * Turn on/off debugging mode for a single compartment. This should only be
+ * used when no code from this compartment is running or on the stack in any
+ * thread.
  */
 JS_FRIEND_API(JSBool)
 JS_SetDebugModeForCompartment(JSContext *cx, JSCompartment *comp, JSBool debug);
@@ -217,6 +217,11 @@ JS_LineNumberToPC(JSContext *cx, JSScript *script, uintN lineno);
 extern JS_PUBLIC_API(jsbytecode *)
 JS_EndPC(JSContext *cx, JSScript *script);
 
+extern JS_PUBLIC_API(JSBool)
+JS_GetLinePCs(JSContext *cx, JSScript *script,
+              uintN startLine, uintN maxLines,
+              uintN* count, uintN** lines, jsbytecode*** pcs);
+
 extern JS_PUBLIC_API(uintN)
 JS_GetFunctionArgumentCount(JSContext *cx, JSFunction *fun);
 
@@ -271,16 +276,6 @@ JS_GetFramePC(JSContext *cx, JSStackFrame *fp);
 extern JS_PUBLIC_API(JSStackFrame *)
 JS_GetScriptedCaller(JSContext *cx, JSStackFrame *fp);
 
-/*
- * Return a weak reference to fp's principals.  A null return does not denote
- * an error, it means there are no principals.
- */
-extern JSPrincipals *
-js_StackFramePrincipals(JSContext *cx, JSStackFrame *fp);
-
-JSPrincipals *
-js_EvalFramePrincipals(JSContext *cx, JSObject *callee, JSStackFrame *caller);
-
 extern JS_PUBLIC_API(void *)
 JS_GetFrameAnnotation(JSContext *cx, JSStackFrame *fp);
 
@@ -319,6 +314,9 @@ JS_IsConstructorFrame(JSContext *cx, JSStackFrame *fp);
 
 extern JS_PUBLIC_API(JSBool)
 JS_IsDebuggerFrame(JSContext *cx, JSStackFrame *fp);
+
+extern JS_PUBLIC_API(JSBool)
+JS_IsGlobalFrame(JSContext *cx, JSStackFrame *fp);
 
 extern JS_PUBLIC_API(jsval)
 JS_GetFrameReturnValue(JSContext *cx, JSStackFrame *fp);
@@ -482,40 +480,6 @@ extern JS_PUBLIC_API(size_t)
 JS_GetScriptTotalSize(JSContext *cx, JSScript *script);
 
 /*
- * Get the top-most running script on cx starting from fp, or from the top of
- * cx's frame stack if fp is null, and return its script filename flags.  If
- * the script has a null filename member, return JSFILENAME_NULL.
- */
-extern JS_PUBLIC_API(uint32)
-JS_GetTopScriptFilenameFlags(JSContext *cx, JSStackFrame *fp);
-
-/*
- * Get the script filename flags for the script.  If the script doesn't have a
- * filename, return JSFILENAME_NULL.
- */
-extern JS_PUBLIC_API(uint32)
-JS_GetScriptFilenameFlags(JSScript *script);
-
-/*
- * Associate flags with a script filename prefix in rt, so that any subsequent
- * script compilation will inherit those flags if the script's filename is the
- * same as prefix, or if prefix is a substring of the script's filename.
- *
- * The API defines only one flag bit, JSFILENAME_SYSTEM, leaving the remaining
- * 31 bits up to the API client to define.  The union of all 32 bits must not
- * be a legal combination, however, in order to preserve JSFILENAME_NULL as a
- * unique value.  API clients may depend on JSFILENAME_SYSTEM being a set bit
- * in JSFILENAME_NULL -- a script with a null filename member is presumed to
- * be a "system" script.
- */
-extern JS_PUBLIC_API(JSBool)
-JS_FlagScriptFilenamePrefix(JSRuntime *rt, const char *prefix, uint32 flags);
-
-#define JSFILENAME_NULL         0xffffffff      /* null script filename */
-#define JSFILENAME_SYSTEM       0x00000001      /* "system" script, see below */
-#define JSFILENAME_PROTECTED    0x00000002      /* scripts need protection */
-
-/*
  * Return true if obj is a "system" object, that is, one created by
  * JS_NewSystemObject with the system flag set and not JS_NewObject.
  *
@@ -533,11 +497,6 @@ JS_IsSystemObject(JSContext *cx, JSObject *obj);
  */
 extern JS_PUBLIC_API(JSBool)
 JS_MakeSystemObject(JSContext *cx, JSObject *obj);
-
-/************************************************************************/
-
-extern JS_PUBLIC_API(JSObject *)
-JS_UnwrapObject(JSContext *cx, JSObject *obj);
 
 /************************************************************************/
 
@@ -620,6 +579,12 @@ JS_SetFunctionCallback(JSContext *cx, JSFunctionCallback fcb);
 extern JS_PUBLIC_API(JSFunctionCallback)
 JS_GetFunctionCallback(JSContext *cx);
 #endif /* MOZ_TRACE_JSCALLS */
+
+extern JS_PUBLIC_API(void)
+JS_DumpProfile(JSContext *cx, JSScript *script);
+
+extern JS_PUBLIC_API(void)
+JS_DumpAllProfiles(JSContext *cx);
 
 JS_END_EXTERN_C
 

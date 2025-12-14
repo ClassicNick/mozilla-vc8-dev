@@ -42,7 +42,9 @@
 #include "nsIDOMCSSRule.h"
 #include "nsCSSParser.h"
 #include "mozilla/css/Loader.h"
+#include "nsCSSStyleSheet.h"
 #include "nsIStyleRule.h"
+#include "mozilla/css/Rule.h"
 #include "mozilla/css/Declaration.h"
 #include "nsCSSProps.h"
 #include "nsCOMPtr.h"
@@ -123,18 +125,10 @@ nsDOMCSSDeclaration::SetCssText(const nsAString& aCssText)
     return NS_ERROR_FAILURE;
   }
 
-  nsresult result;
-  nsRefPtr<css::Loader> cssLoader;
-  nsCOMPtr<nsIURI> baseURI, sheetURI;
-  nsCOMPtr<nsIPrincipal> sheetPrincipal;
-
-  result = GetCSSParsingEnvironment(getter_AddRefs(sheetURI),
-                                    getter_AddRefs(baseURI),
-                                    getter_AddRefs(sheetPrincipal),
-                                    getter_AddRefs(cssLoader));
-
-  if (NS_FAILED(result)) {
-    return result;
+  CSSParsingEnvironment env;
+  GetCSSParsingEnvironment(env);
+  if (!env.mPrincipal) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // For nsDOMCSSAttributeDeclaration, SetCSSDeclaration will lead to
@@ -146,10 +140,11 @@ nsDOMCSSDeclaration::SetCssText(const nsAString& aCssText)
 
   nsAutoPtr<css::Declaration> decl(new css::Declaration());
   decl->InitializeEmpty();
-  nsCSSParser cssParser(cssLoader);
+  nsCSSParser cssParser(env.mCSSLoader);
   PRBool changed;
-  result = cssParser.ParseDeclarations(aCssText, sheetURI, baseURI,
-                                       sheetPrincipal, decl, &changed);
+  nsresult result = cssParser.ParseDeclarations(aCssText, env.mSheetURI,
+                                                env.mBaseURI,
+                                                env.mPrincipal, decl, &changed);
   if (NS_FAILED(result) || !changed) {
     return result;
   }
@@ -269,6 +264,24 @@ nsDOMCSSDeclaration::RemoveProperty(const nsAString& aPropertyName,
   return RemoveProperty(propID);
 }
 
+/* static */ void
+nsDOMCSSDeclaration::GetCSSParsingEnvironmentForRule(css::Rule* aRule,
+                                                     CSSParsingEnvironment& aCSSParseEnv)
+{
+  nsIStyleSheet* sheet = aRule ? aRule->GetStyleSheet() : nsnull;
+  nsRefPtr<nsCSSStyleSheet> cssSheet(do_QueryObject(sheet));
+  if (!cssSheet) {
+    aCSSParseEnv.mPrincipal = nsnull;
+    return;
+  }
+
+  nsIDocument* document = sheet->GetOwningDocument();
+  aCSSParseEnv.mSheetURI = sheet->GetSheetURI();
+  aCSSParseEnv.mBaseURI = sheet->GetBaseURI();
+  aCSSParseEnv.mPrincipal = cssSheet->Principal();
+  aCSSParseEnv.mCSSLoader = document ? document->CSSLoader() : nsnull;
+}
+
 nsresult
 nsDOMCSSDeclaration::ParsePropertyValue(const nsCSSProperty aPropID,
                                         const nsAString& aPropValue,
@@ -279,17 +292,10 @@ nsDOMCSSDeclaration::ParsePropertyValue(const nsCSSProperty aPropID,
     return NS_ERROR_FAILURE;
   }
 
-  nsresult result;
-  nsRefPtr<css::Loader> cssLoader;
-  nsCOMPtr<nsIURI> baseURI, sheetURI;
-  nsCOMPtr<nsIPrincipal> sheetPrincipal;
-
-  result = GetCSSParsingEnvironment(getter_AddRefs(sheetURI),
-                                    getter_AddRefs(baseURI),
-                                    getter_AddRefs(sheetPrincipal),
-                                    getter_AddRefs(cssLoader));
-  if (NS_FAILED(result)) {
-    return result;
+  CSSParsingEnvironment env;
+  GetCSSParsingEnvironment(env);
+  if (!env.mPrincipal) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // For nsDOMCSSAttributeDeclaration, SetCSSDeclaration will lead to
@@ -300,11 +306,11 @@ nsDOMCSSDeclaration::ParsePropertyValue(const nsCSSProperty aPropID,
   mozAutoDocConditionalContentUpdateBatch autoUpdate(DocToUpdate(), PR_TRUE);
   css::Declaration* decl = olddecl->EnsureMutable();
 
-  nsCSSParser cssParser(cssLoader);
+  nsCSSParser cssParser(env.mCSSLoader);
   PRBool changed;
-  result = cssParser.ParseProperty(aPropID, aPropValue, sheetURI, baseURI,
-                                   sheetPrincipal, decl, &changed,
-                                   aIsImportant);
+  nsresult result = cssParser.ParseProperty(aPropID, aPropValue, env.mSheetURI,
+                                            env.mBaseURI, env.mPrincipal, decl,
+                                            &changed, aIsImportant);
   if (NS_FAILED(result) || !changed) {
     if (decl != olddecl) {
       delete decl;

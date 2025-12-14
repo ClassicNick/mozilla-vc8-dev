@@ -107,8 +107,7 @@ public:
   virtual mozilla::css::Declaration* GetCSSDeclaration(PRBool);
   virtual nsresult SetCSSDeclaration(mozilla::css::Declaration*);
   virtual nsIDocument* DocToUpdate();
-  virtual nsresult GetCSSParsingEnvironment(nsIURI**, nsIURI**, nsIPrincipal**,
-                                            mozilla::css::Loader**);
+  virtual void GetCSSParsingEnvironment(CSSParsingEnvironment& aCSSParseEnv);
 
 private:
   void AssertFlushedPendingReflows() {
@@ -168,6 +167,8 @@ private:
   void GetImageRectString(nsIURI* aURI,
                           const nsStyleSides& aCropRect,
                           nsString& aString);
+  void AppendTimingFunction(nsDOMCSSValueList *aValueList,
+                            const nsTimingFunction& aTimingFunction);
 
   /* Properties queryable as CSSValues.
    * To avoid a name conflict with nsIDOM*CSS2Properties, these are all
@@ -306,16 +307,20 @@ private:
   /* Text Properties */
   nsIDOMCSSValue* DoGetLineHeight();
   nsIDOMCSSValue* DoGetTextAlign();
+  nsIDOMCSSValue* DoGetMozTextBlink();
   nsIDOMCSSValue* DoGetTextDecoration();
   nsIDOMCSSValue* DoGetMozTextDecorationColor();
+  nsIDOMCSSValue* DoGetMozTextDecorationLine();
   nsIDOMCSSValue* DoGetMozTextDecorationStyle();
   nsIDOMCSSValue* DoGetTextIndent();
+  nsIDOMCSSValue* DoGetTextOverflow();
   nsIDOMCSSValue* DoGetTextTransform();
   nsIDOMCSSValue* DoGetTextShadow();
   nsIDOMCSSValue* DoGetLetterSpacing();
   nsIDOMCSSValue* DoGetWordSpacing();
   nsIDOMCSSValue* DoGetWhiteSpace();
   nsIDOMCSSValue* DoGetWordWrap();
+  nsIDOMCSSValue* DoGetHyphens();
   nsIDOMCSSValue* DoGetMozTabSize();
 
   /* Visibility properties */
@@ -342,6 +347,7 @@ private:
   nsIDOMCSSValue* DoGetPageBreakBefore();
   nsIDOMCSSValue* DoGetMozTransform();
   nsIDOMCSSValue* DoGetMozTransformOrigin();
+  nsIDOMCSSValue* DoGetOrient();
 
   /* User interface properties */
   nsIDOMCSSValue* DoGetCursor();
@@ -365,6 +371,16 @@ private:
   nsIDOMCSSValue* DoGetTransitionDuration();
   nsIDOMCSSValue* DoGetTransitionDelay();
   nsIDOMCSSValue* DoGetTransitionTimingFunction();
+
+  /* CSS Animations */
+  nsIDOMCSSValue* DoGetAnimationName();
+  nsIDOMCSSValue* DoGetAnimationDuration();
+  nsIDOMCSSValue* DoGetAnimationDelay();
+  nsIDOMCSSValue* DoGetAnimationTimingFunction();
+  nsIDOMCSSValue* DoGetAnimationDirection();
+  nsIDOMCSSValue* DoGetAnimationFillMode();
+  nsIDOMCSSValue* DoGetAnimationIterationCount();
+  nsIDOMCSSValue* DoGetAnimationPlayState();
 
   /* SVG properties */
   nsIDOMCSSValue* DoGetFill();

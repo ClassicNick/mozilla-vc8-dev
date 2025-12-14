@@ -52,10 +52,7 @@
 #include "mozilla/css/Loader.h"
 #include "nsIDOMMutationEvent.h"
 #include "nsXULElement.h"
-
-#ifdef MOZ_SVG
 #include "nsIDOMSVGStylable.h"
-#endif
 
 namespace css = mozilla::css;
 
@@ -63,25 +60,25 @@ namespace css = mozilla::css;
 // nsIContent methods
 
 nsIAtom*
-nsStyledElement::GetClassAttributeName() const
+nsStyledElementNotElementCSSInlineStyle::GetClassAttributeName() const
 {
   return nsGkAtoms::_class;
 }
 
 nsIAtom*
-nsStyledElement::GetIDAttributeName() const
+nsStyledElementNotElementCSSInlineStyle::GetIDAttributeName() const
 {
   return nsGkAtoms::id;
 }
 
 nsIAtom*
-nsStyledElement::DoGetID() const
+nsStyledElementNotElementCSSInlineStyle::DoGetID() const
 {
-  NS_ASSERTION(HasFlag(NODE_HAS_ID), "Unexpected call");
+  NS_ASSERTION(HasID(), "Unexpected call");
 
   // The nullcheck here is needed because nsGenericElement::UnsetAttr calls
   // out to various code between removing the attribute and we get a chance to
-  // clear the NODE_HAS_ID flag.
+  // ClearHasID().
 
   const nsAttrValue* attr = mAttrsAndChildren.GetAttr(nsGkAtoms::id);
 
@@ -89,19 +86,21 @@ nsStyledElement::DoGetID() const
 }
 
 const nsAttrValue*
-nsStyledElement::DoGetClasses() const
+nsStyledElementNotElementCSSInlineStyle::DoGetClasses() const
 {
   NS_ASSERTION(HasFlag(NODE_MAY_HAVE_CLASS), "Unexpected call");
   return mAttrsAndChildren.GetAttr(nsGkAtoms::_class);
 }
 
 PRBool
-nsStyledElement::ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
-                                const nsAString& aValue, nsAttrValue& aResult)
+nsStyledElementNotElementCSSInlineStyle::ParseAttribute(PRInt32 aNamespaceID,
+                                                        nsIAtom* aAttribute,
+                                                        const nsAString& aValue,
+                                                        nsAttrValue& aResult)
 {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::style) {
-      SetFlags(NODE_MAY_HAVE_STYLE);
+      SetMayHaveStyle();
       ParseStyleAttribute(aValue, aResult, PR_FALSE);
       return PR_TRUE;
     }
@@ -115,11 +114,11 @@ nsStyledElement::ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
       // not that it has an emptystring as the id.
       RemoveFromIdTable();
       if (aValue.IsEmpty()) {
-        UnsetFlags(NODE_HAS_ID);
+        ClearHasID();
         return PR_FALSE;
       }
       aResult.ParseAtom(aValue);
-      SetFlags(NODE_HAS_ID);
+      SetHasID();
       AddToIdTable(aResult.GetAtomValue());
       return PR_TRUE;
     }
@@ -130,10 +129,11 @@ nsStyledElement::ParseAttribute(PRInt32 aNamespaceID, nsIAtom* aAttribute,
 }
 
 nsresult
-nsStyledElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
-                           PRBool aNotify)
+nsStyledElementNotElementCSSInlineStyle::UnsetAttr(PRInt32 aNameSpaceID,
+                                                   nsIAtom* aAttribute,
+                                                   PRBool aNotify)
 {
-  nsAutoRemovableScriptBlocker scriptBlocker;
+  nsAutoScriptBlocker scriptBlocker;
   if (aAttribute == nsGkAtoms::id && aNameSpaceID == kNameSpaceID_None) {
     // Have to do this before clearing flag. See RemoveFromIdTable
     RemoveFromIdTable();
@@ -143,15 +143,17 @@ nsStyledElement::UnsetAttr(PRInt32 aNameSpaceID, nsIAtom* aAttribute,
 }
 
 nsresult
-nsStyledElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aAttribute,
-                              const nsAString* aValue, PRBool aNotify)
+nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
+                                                      nsIAtom* aAttribute,
+                                                      const nsAString* aValue,
+                                                      PRBool aNotify)
 {
   if (aNamespaceID == kNameSpaceID_None && !aValue &&
       aAttribute == nsGkAtoms::id) {
     // The id has been removed when calling UnsetAttr but we kept it because
     // the id is used for some layout stuff between UnsetAttr and AfterSetAttr.
     // Now. the id is really removed so it would not be safe to keep this flag.
-    UnsetFlags(NODE_HAS_ID);
+    ClearHasID();
   }
 
   return nsGenericElement::AfterSetAttr(aNamespaceID, aAttribute, aValue,
@@ -159,9 +161,10 @@ nsStyledElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aAttribute,
 }
 
 NS_IMETHODIMP
-nsStyledElement::SetInlineStyleRule(css::StyleRule* aStyleRule, PRBool aNotify)
+nsStyledElementNotElementCSSInlineStyle::SetInlineStyleRule(css::StyleRule* aStyleRule,
+                                                            PRBool aNotify)
 {
-  SetFlags(NODE_MAY_HAVE_STYLE);
+  SetMayHaveStyle();
   PRBool modification = PR_FALSE;
   nsAutoString oldValueStr;
 
@@ -198,9 +201,9 @@ nsStyledElement::SetInlineStyleRule(css::StyleRule* aStyleRule, PRBool aNotify)
 }
 
 css::StyleRule*
-nsStyledElement::GetInlineStyleRule()
+nsStyledElementNotElementCSSInlineStyle::GetInlineStyleRule()
 {
-  if (!HasFlag(NODE_MAY_HAVE_STYLE)) {
+  if (!MayHaveStyle()) {
     return nsnull;
   }
   const nsAttrValue* attrVal = mAttrsAndChildren.GetAttr(nsGkAtoms::style);
@@ -213,16 +216,17 @@ nsStyledElement::GetInlineStyleRule()
 }
 
 nsresult
-nsStyledElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
-                            nsIContent* aBindingParent,
-                            PRBool aCompileEventHandlers)
+nsStyledElementNotElementCSSInlineStyle::BindToTree(nsIDocument* aDocument,
+                                                    nsIContent* aParent,
+                                                    nsIContent* aBindingParent,
+                                                    PRBool aCompileEventHandlers)
 {
   nsresult rv = nsStyledElementBase::BindToTree(aDocument, aParent,
                                                 aBindingParent,
                                                 aCompileEventHandlers);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aDocument && HasFlag(NODE_HAS_ID) && !GetBindingParent()) {
+  if (aDocument && HasID() && !GetBindingParent()) {
     aDocument->AddToIdTable(this, DoGetID());
   }
 
@@ -236,7 +240,8 @@ nsStyledElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 }
 
 void
-nsStyledElement::UnbindFromTree(PRBool aDeep, PRBool aNullParent)
+nsStyledElementNotElementCSSInlineStyle::UnbindFromTree(PRBool aDeep,
+                                                        PRBool aNullParent)
 {
   RemoveFromIdTable();
 
@@ -248,7 +253,7 @@ nsStyledElement::UnbindFromTree(PRBool aDeep, PRBool aNullParent)
 // Others and helpers
 
 nsIDOMCSSStyleDeclaration*
-nsStyledElement::GetStyle(nsresult* retval)
+nsStyledElementNotElementCSSInlineStyle::GetStyle(nsresult* retval)
 {
   nsXULElement* xulElement = nsXULElement::FromContent(this);
   if (xulElement) {
@@ -270,7 +275,7 @@ nsStyledElement::GetStyle(nsresult* retval)
                                                      , PR_FALSE
 #endif // MOZ_SMIL
                                                      );
-    SetFlags(NODE_MAY_HAVE_STYLE);
+    SetMayHaveStyle();
   }
 
   *retval = NS_OK;
@@ -278,9 +283,9 @@ nsStyledElement::GetStyle(nsresult* retval)
 }
 
 nsresult
-nsStyledElement::ReparseStyleAttribute(PRBool aForceInDataDoc)
+nsStyledElementNotElementCSSInlineStyle::ReparseStyleAttribute(PRBool aForceInDataDoc)
 {
-  if (!HasFlag(NODE_MAY_HAVE_STYLE)) {
+  if (!MayHaveStyle()) {
     return NS_OK;
   }
   const nsAttrValue* oldVal = mAttrsAndChildren.GetAttr(nsGkAtoms::style);
@@ -300,9 +305,9 @@ nsStyledElement::ReparseStyleAttribute(PRBool aForceInDataDoc)
 }
 
 void
-nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
-                                     nsAttrValue& aResult,
-                                     PRBool aForceInDataDoc)
+nsStyledElementNotElementCSSInlineStyle::ParseStyleAttribute(const nsAString& aValue,
+                                                             nsAttrValue& aResult,
+                                                             PRBool aForceInDataDoc)
 {
   nsIDocument* doc = GetOwnerDoc();
 
@@ -324,18 +329,17 @@ nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
     if (isCSS) {
       css::Loader* cssLoader = doc->CSSLoader();
       nsCSSParser cssParser(cssLoader);
-      if (cssParser) {
-        nsCOMPtr<nsIURI> baseURI = GetBaseURI();
 
-        nsRefPtr<css::StyleRule> rule;
-        cssParser.ParseStyleAttribute(aValue, doc->GetDocumentURI(),
-                                      baseURI,
-                                      NodePrincipal(),
-                                      getter_AddRefs(rule));
-        if (rule) {
-          aResult.SetTo(rule, &aValue);
-          return;
-        }
+      nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+
+      nsRefPtr<css::StyleRule> rule;
+      cssParser.ParseStyleAttribute(aValue, doc->GetDocumentURI(),
+                                    baseURI,
+                                    NodePrincipal(),
+                                    getter_AddRefs(rule));
+      if (rule) {
+        aResult.SetTo(rule, &aValue);
+        return;
       }
     }
   }

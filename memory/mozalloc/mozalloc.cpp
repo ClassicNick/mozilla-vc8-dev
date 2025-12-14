@@ -42,6 +42,8 @@
 #include <new>                  // for std::bad_alloc
 #include <string.h>
 
+#include <sys/types.h>
+
 #if defined(MALLOC_H)
 #  include MALLOC_H             // for memalign, valloc where available
 #endif // if defined(MALLOC_H)
@@ -84,6 +86,7 @@
 #define strdup(a)     je_strdup(a)
 #define strndup(a, b) je_strndup(a, b)
 #define posix_memalign(a, b, c)  je_posix_memalign(a, b, c)
+#define malloc_usable_size(a) je_malloc_usable_size(a)
 #endif
 
 void

@@ -137,14 +137,6 @@ class nsWrapperCache;
 #define NS_ERROR_XPC_CANT_MODIFY_PROP_ON_WN            GENERATE_XPC_FAILURE(52)
 #define NS_ERROR_XPC_BAD_CONVERT_JS_ZERO_ISNOT_NULL    GENERATE_XPC_FAILURE(53)
 
-#ifdef XPC_IDISPATCH_SUPPORT
-// IDispatch support related errors
-#define NS_ERROR_XPC_COM_UNKNOWN                       GENERATE_XPC_FAILURE(54)
-#define NS_ERROR_XPC_COM_ERROR                         GENERATE_XPC_FAILURE(55)
-#define NS_ERROR_XPC_COM_INVALID_CLASS_ID              GENERATE_XPC_FAILURE(56)
-#define NS_ERROR_XPC_COM_CREATE_FAILED                 GENERATE_XPC_FAILURE(57)
-#define NS_ERROR_XPC_IDISPATCH_NOT_ENABLED             GENERATE_XPC_FAILURE(58)
-#endif
 // any new errors here should have an associated entry added in xpc.msg
 /***************************************************************************/
 %}
@@ -400,7 +392,7 @@ interface nsIXPCFunctionThisTranslator : nsISupports
     { 0xbd, 0xd6, 0x0, 0x0, 0x64, 0x65, 0x73, 0x74 } }
 %}
 
-[uuid(fb780ace-dced-432b-bb82-8df7d4f919c8)]
+[uuid(f99ffb06-4e7b-4bab-83d4-7d573235a08a)]
 interface nsIXPConnect : nsISupports
 {
 %{ C++
@@ -675,21 +667,6 @@ interface nsIXPConnect : nsISupports
     nsIVariant JSToVariant(in JSContextPtr ctx, in jsval value);
 
     /**
-     * Preconfigure XPCNativeWrapper automation so that when a scripted
-     * caller whose filename starts with filenamePrefix accesses a wrapped
-     * native that is not flagged as "system", the wrapped native will be
-     * automatically wrapped with an XPCNativeWrapper.
-     *
-     * @param aFilenamePrefix the UTF-8 filename prefix to match, which
-     *                        should end with a slash (/) character
-     * @param aWantNativeWrappers whether XPConnect should produce native
-     *                            wrappers for scripts whose paths begin
-     *                            with this prefix
-     */
-    void flagSystemFilenamePrefix(in string aFilenamePrefix,
-                                  in PRBool aWantNativeWrappers);
-
-    /**
      * Restore an old prototype for wrapped natives of type
      * aClassInfo. This should be used only when restoring an old
      * scope into a state close to where it was prior to
@@ -800,7 +777,6 @@ interface nsIXPConnect : nsISupports
         [array, size_is(interfaceCount)] in nsIIDPtr interfaceArray);
 
 %{C++
-#ifndef XPCONNECT_STANDALONE
     /**
      * Get the object principal for this wrapper.  Note that this may well end
      * up being null; in that case one should seek principals elsewhere.  Null
@@ -809,7 +785,6 @@ interface nsIXPConnect : nsISupports
      */
     virtual nsIPrincipal* GetPrincipal(JSObject* obj,
                                        PRBool allowShortCircuit) const = 0;
-#endif
     virtual char* DebugPrintJSStack(PRBool showArgs,
                                     PRBool showLocals,
                                     PRBool showThisProps) = 0;

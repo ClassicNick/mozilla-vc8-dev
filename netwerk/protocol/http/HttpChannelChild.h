@@ -58,7 +58,6 @@
 #include "nsIUploadChannel2.h"
 #include "nsIResumableChannel.h"
 #include "nsIProxiedChannel.h"
-#include "nsITraceableChannel.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIAssociatedContentSecurity.h"
 #include "nsIChildChannel.h"
@@ -69,21 +68,19 @@ namespace net {
 
 class HttpChannelChild : public PHttpChannelChild
                        , public HttpBaseChannel
+                       , public HttpAsyncAborter<HttpChannelChild>
                        , public nsICacheInfoChannel
                        , public nsIProxiedChannel
-                       , public nsITraceableChannel
                        , public nsIApplicationCacheChannel
                        , public nsIAsyncVerifyRedirectCallback
                        , public nsIAssociatedContentSecurity
                        , public nsIChildChannel
                        , public nsIHttpChannelChild
-                       , public ChannelEventQueue<HttpChannelChild>
 {
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSICACHEINFOCHANNEL
   NS_DECL_NSIPROXIEDCHANNEL
-  NS_DECL_NSITRACEABLECHANNEL
   NS_DECL_NSIAPPLICATIONCACHECONTAINER
   NS_DECL_NSIAPPLICATIONCACHECHANNEL
   NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
@@ -109,6 +106,10 @@ public:
                               PRBool aMerge);
   // nsIHttpChannelInternal
   NS_IMETHOD SetupFallbackChannel(const char *aFallbackKey);
+  NS_IMETHOD GetLocalAddress(nsACString& addr);
+  NS_IMETHOD GetLocalPort(PRInt32* port);
+  NS_IMETHOD GetRemoteAddress(nsACString& addr);
+  NS_IMETHOD GetRemotePort(PRInt32* port);
   // nsISupportsPriority
   NS_IMETHOD SetPriority(PRInt32 value);
   // nsIResumableChannel
@@ -130,14 +131,19 @@ protected:
                           const PRBool& cacheEntryAvailable,
                           const PRUint32& cacheExpirationTime,
                           const nsCString& cachedCharset,
-                          const nsCString& securityInfoSerialization);
-  bool RecvOnDataAvailable(const nsCString& data, 
-                           const PRUint32& offset,
-                           const PRUint32& count);
+                          const nsCString& securityInfoSerialization,
+                          const PRNetAddr& selfAddr,
+                          const PRNetAddr& peerAddr);
+  bool RecvOnTransportAndData(const nsresult& status,
+                              const PRUint64& progress,
+                              const PRUint64& progressMax,
+                              const nsCString& data,
+                              const PRUint32& offset,
+                              const PRUint32& count);
   bool RecvOnStopRequest(const nsresult& statusCode);
   bool RecvOnProgress(const PRUint64& progress, const PRUint64& progressMax);
-  bool RecvOnStatus(const nsresult& status, const nsString& statusArg);
-  bool RecvCancelEarly(const nsresult& status);
+  bool RecvOnStatus(const nsresult& status);
+  bool RecvFailedAsyncOpen(const nsresult& status);
   bool RecvRedirect1Begin(const PRUint32& newChannel,
                           const URI& newURI,
                           const PRUint32& redirectFlags,
@@ -148,6 +154,7 @@ protected:
   bool RecvDeleteSelf();
 
   bool GetAssociatedContentSecurity(nsIAssociatedContentSecurity** res = nsnull);
+  virtual void DoNotifyListenerCleanup();
 
 private:
   RequestHeaderTuples mRequestHeaders;
@@ -162,27 +169,32 @@ private:
 
   // If ResumeAt is called before AsyncOpen, we need to send extra data upstream
   bool mSendResumeAt;
-  // Current suspension depth for this channel object
-  PRUint32 mSuspendCount;
 
   bool mIPCOpen;
   bool mKeptAlive;
+  ChannelEventQueue mEventQ;
 
   void OnStartRequest(const nsHttpResponseHead& responseHead,
-                          const PRBool& useResponseHead,
-                          const RequestHeaderTuples& requestHeaders,
-                          const PRBool& isFromCache,
-                          const PRBool& cacheEntryAvailable,
-                          const PRUint32& cacheExpirationTime,
-                          const nsCString& cachedCharset,
-                          const nsCString& securityInfoSerialization);
-  void OnDataAvailable(const nsCString& data, 
-                       const PRUint32& offset,
-                       const PRUint32& count);
+                      const PRBool& useResponseHead,
+                      const RequestHeaderTuples& requestHeaders,
+                      const PRBool& isFromCache,
+                      const PRBool& cacheEntryAvailable,
+                      const PRUint32& cacheExpirationTime,
+                      const nsCString& cachedCharset,
+                      const nsCString& securityInfoSerialization,
+                      const PRNetAddr& selfAddr,
+                      const PRNetAddr& peerAddr);
+  void OnTransportAndData(const nsresult& status,
+                          const PRUint64 progress,
+                          const PRUint64& progressMax,
+                          const nsCString& data,
+                          const PRUint32& offset,
+                          const PRUint32& count);
   void OnStopRequest(const nsresult& statusCode);
   void OnProgress(const PRUint64& progress, const PRUint64& progressMax);
-  void OnStatus(const nsresult& status, const nsString& statusArg);
-  void OnCancel(const nsresult& status);
+  void OnStatus(const nsresult& status);
+  void FailedAsyncOpen(const nsresult& status);
+  void HandleAsyncAbort();
   void Redirect1Begin(const PRUint32& newChannelId,
                       const URI& newUri,
                       const PRUint32& redirectFlags,
@@ -190,15 +202,19 @@ private:
   void Redirect3Complete();
   void DeleteSelf();
 
+  // Called asynchronously from Resume: continues any pending calls into client.
+  void CompleteResume();
+
   friend class StartRequestEvent;
   friend class StopRequestEvent;
-  friend class DataAvailableEvent;
+  friend class TransportAndDataEvent;
   friend class ProgressEvent;
   friend class StatusEvent;
-  friend class CancelEvent;
+  friend class FailedAsyncOpenEvent;
   friend class Redirect1Event;
   friend class Redirect3Event;
   friend class DeleteSelfEvent;
+  friend class HttpAsyncAborter<HttpChannelChild>;
 };
 
 //-----------------------------------------------------------------------------

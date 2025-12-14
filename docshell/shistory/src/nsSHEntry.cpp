@@ -105,7 +105,6 @@ static void StopTrackingEntry(nsSHEntry *aEntry)
 nsSHEntry::nsSHEntry() 
   : mLoadType(0)
   , mID(gEntryID++)
-  , mPageIdentifier(mID)
   , mDocIdentifier(gEntryDocIdentifier++)
   , mScrollPositionX(0)
   , mScrollPositionY(0)
@@ -130,7 +129,6 @@ nsSHEntry::nsSHEntry(const nsSHEntry &other)
   , mLayoutHistoryState(other.mLayoutHistoryState)
   , mLoadType(0)         // XXX why not copy?
   , mID(other.mID)
-  , mPageIdentifier(other.mPageIdentifier)
   , mDocIdentifier(other.mDocIdentifier)
   , mScrollPositionX(0)  // XXX why not copy?
   , mScrollPositionY(0)  // XXX why not copy?
@@ -144,8 +142,8 @@ nsSHEntry::nsSHEntry(const nsSHEntry &other)
   , mParent(other.mParent)
   , mViewerBounds(0, 0, 0, 0)
   , mOwner(other.mOwner)
-  , mStateData(other.mStateData)
   , mDocShellID(other.mDocShellID)
+  , mStateData(other.mStateData)
 {
 }
 
@@ -388,18 +386,6 @@ NS_IMETHODIMP nsSHEntry::GetID(PRUint32 * aResult)
 NS_IMETHODIMP nsSHEntry::SetID(PRUint32  aID)
 {
   mID = aID;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsSHEntry::GetPageIdentifier(PRUint32 * aResult)
-{
-  *aResult = mPageIdentifier;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsSHEntry::SetPageIdentifier(PRUint32 aPageIdentifier)
-{
-  mPageIdentifier = aPageIdentifier;
   return NS_OK;
 }
 
@@ -670,7 +656,7 @@ nsSHEntry::AddChild(nsISHEntry * aChild, PRInt32 aOffset)
     // If there are dynamically added children before that, those must be
     // moved to be after aOffset.
     if (mChildren.Count() > 0) {
-      PRInt32 start = PR_MIN(mChildren.Count() - 1, aOffset);
+      PRInt32 start = NS_MIN(mChildren.Count() - 1, aOffset);
       PRInt32 dynEntryIndex = -1;
       nsISHEntry* dynEntry = nsnull;
       for (PRInt32 i = start; i >= 0; --i) {
@@ -1006,16 +992,17 @@ nsSHEntry::HasDetachedEditor()
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetStateData(nsAString &aStateData)
+nsSHEntry::GetStateData(nsIStructuredCloneContainer **aContainer)
 {
-  aStateData.Assign(mStateData);
+  NS_ENSURE_ARG_POINTER(aContainer);
+  NS_IF_ADDREF(*aContainer = mStateData);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetStateData(const nsAString &aDataStr)
+nsSHEntry::SetStateData(nsIStructuredCloneContainer *aContainer)
 {
-  mStateData.Assign(aDataStr);
+  mStateData = aContainer;
   return NS_OK;
 }
 

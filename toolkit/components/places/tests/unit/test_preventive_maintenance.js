@@ -15,7 +15,7 @@
  *
  * The Original Code is Bug 431558 code.
  *
- * The Initial Developer of the Original Code is Mozilla Corp.
+ * The Initial Developer of the Original Code is the Mozilla Foundation.
  * Portions created by the Initial Developer are Copyright (C) 2008
  * the Initial Developer. All Rights Reserved.
  *
@@ -272,12 +272,9 @@ tests.push({
 
     // Remove the root.
     mDBConn.executeSimpleSQL("DELETE FROM moz_bookmarks WHERE parent = 0");
-    try {
-      bs.getFolderIdForItem(bs.placesRoot);
-      do_throw("Places root should not exist now!");
-    } catch(e) {
-      // Root has been removed so this call should throw.
-    }
+    let stmt = mDBConn.createStatement("SELECT id FROM moz_bookmarks WHERE parent = 0");
+    do_check_false(stmt.executeStep());
+    stmt.finalize();
   },
 
   check: function() {

@@ -67,10 +67,9 @@ NS_CYCLE_COLLECTION_CLASSNAME(nsXPCWrappedJS)::Traverse
                         tmp->GetClass()->GetInterfaceName());
         else
             JS_snprintf(name, sizeof(name), "nsXPCWrappedJS");
-        cb.DescribeNode(RefCounted, refcnt, sizeof(nsXPCWrappedJS), name);
+        cb.DescribeRefCountedNode(refcnt, sizeof(nsXPCWrappedJS), name);
     } else {
-        cb.DescribeNode(RefCounted, refcnt, sizeof(nsXPCWrappedJS),
-                        "nsXPCWrappedJS");
+        NS_IMPL_CYCLE_COLLECTION_DESCRIBE(nsXPCWrappedJS, refcnt)
     }
 
     // nsXPCWrappedJS keeps its own refcount artificially at or above 1, see the
@@ -93,31 +92,6 @@ NS_CYCLE_COLLECTION_CLASSNAME(nsXPCWrappedJS)::Traverse
 
     return NS_OK;
 }
-
-NS_IMPL_CYCLE_COLLECTION_ROOT_BEGIN(nsXPCWrappedJS)
-    if(tmp->IsValid())
-    {
-        XPCJSRuntime* rt = nsXPConnect::GetRuntimeInstance();
-        if(rt)
-        {
-            if(tmp->mRoot == tmp)
-            {
-                // remove this root wrapper from the map
-                JSObject2WrappedJSMap* map = rt->GetWrappedJSMap();
-                if(map)
-                {
-                    XPCAutoLock lock(rt->GetMapLock());
-                    map->Remove(tmp);
-                }
-            }
-
-            if(tmp->mRefCnt > 1)
-                tmp->RemoveFromRootSet(rt->GetMapLock());
-        }
-
-        tmp->mJSObj = nsnull;
-    }
-NS_IMPL_CYCLE_COLLECTION_ROOT_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXPCWrappedJS)
     tmp->Unlink();
@@ -479,6 +453,29 @@ nsXPCWrappedJS::~nsXPCWrappedJS()
 void
 nsXPCWrappedJS::Unlink()
 {
+    if(IsValid())
+    {
+        XPCJSRuntime* rt = nsXPConnect::GetRuntimeInstance();
+        if(rt)
+        {
+            if(mRoot == this)
+            {
+                // remove this root wrapper from the map
+                JSObject2WrappedJSMap* map = rt->GetWrappedJSMap();
+                if(map)
+                {
+                    XPCAutoLock lock(rt->GetMapLock());
+                    map->Remove(this);
+                }
+            }
+
+            if(mRefCnt > 1)
+                RemoveFromRootSet(rt->GetMapLock());
+        }
+
+        mJSObj = nsnull;
+    }
+
     if(mRoot == this)
     {
         ClearWeakReferences();

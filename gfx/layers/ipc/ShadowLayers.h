@@ -66,6 +66,7 @@ class ShadowCanvasLayer;
 class SurfaceDescriptor;
 class ThebesBuffer;
 class Transaction;
+class SharedImage;
 
 /**
  * We want to share layer trees across thread contexts and address
@@ -156,7 +157,6 @@ public:
    */
   void CreatedThebesBuffer(ShadowableLayer* aThebes,
                            const nsIntRegion& aFrontValidRegion,
-                           float aXResolution, float aYResolution,
                            const nsIntRect& aBufferRect,
                            const SurfaceDescriptor& aInitialFrontBuffer);
   /**
@@ -165,10 +165,11 @@ public:
    */
   void CreatedImageBuffer(ShadowableLayer* aImage,
                           nsIntSize aSize,
-                          gfxSharedImageSurface* aInitialFrontSurface);
+                          const SharedImage& aInitialFrontImage);
   void CreatedCanvasBuffer(ShadowableLayer* aCanvas,
                            nsIntSize aSize,
-                           gfxSharedImageSurface* aInitialFrontSurface);
+                           const SurfaceDescriptor& aInitialFrontSurface,
+                           bool aNeedYFlip);
 
   /**
    * The specified layer is destroying its buffers.
@@ -225,9 +226,9 @@ public:
    * ImageLayers.  This is slow, and will be optimized.
    */
   void PaintedImage(ShadowableLayer* aImage,
-                    gfxSharedImageSurface* aNewFrontSurface);
+                    const SharedImage& aNewFrontImage);
   void PaintedCanvas(ShadowableLayer* aCanvas,
-                     gfxSharedImageSurface* aNewFrontSurface);
+                     const SurfaceDescriptor& aNewFrontSurface);
 
   /**
    * End the current transaction and forward it to ShadowLayerManager.
@@ -492,8 +493,7 @@ public:
    * values.  This is called when a new buffer has been created.
    */
   virtual void SetFrontBuffer(const OptionalThebesBuffer& aNewFront,
-                              const nsIntRegion& aValidRegion,
-                              float aXResolution, float aYResolution) = 0;
+                              const nsIntRegion& aValidRegion) = 0;
 
   virtual void InvalidateRegion(const nsIntRegion& aRegion)
   {
@@ -511,16 +511,6 @@ public:
 
   /**
    * CONSTRUCTION PHASE ONLY
-   */
-  virtual void SetResolution(float aXResolution, float aYResolution)
-  {
-    mXResolution = aXResolution;
-    mYResolution = aYResolution;
-    Mutated();
-  }
-
-  /**
-   * CONSTRUCTION PHASE ONLY
    *
    * Publish the remote layer's back ThebesLayerBuffer to this shadow,
    * swapping out the old front ThebesLayerBuffer (the new back buffer
@@ -529,7 +519,6 @@ public:
   virtual void
   Swap(const ThebesBuffer& aNewFront, const nsIntRegion& aUpdatedRegion,
        ThebesBuffer* aNewBack, nsIntRegion* aNewBackValidRegion,
-       float* aNewXResolution, float* aNewYResolution,
        OptionalThebesBuffer* aReadOnlyFront, nsIntRegion* aFrontUpdatedRegion) = 0;
 
   /**
@@ -569,6 +558,17 @@ class ShadowCanvasLayer : public ShadowLayer,
                           public CanvasLayer
 {
 public:
+
+  /**
+   * CONSTRUCTION PHASE ONLY
+   *
+   * Initialize this with a (temporary) front surface with the given
+   * size.  This is expected to be followed with a Swap() in the same
+   * transaction to bring in real pixels.  Init() may only be called
+   * once.
+   */
+  virtual void Init(const SurfaceDescriptor& front, const nsIntSize& aSize, bool needYFlip) = 0;
+
   /**
    * CONSTRUCTION PHASE ONLY
    *
@@ -576,8 +576,7 @@ public:
    * out the old front surface (the new back surface for the remote
    * layer).
    */
-  virtual already_AddRefed<gfxSharedImageSurface>
-  Swap(gfxSharedImageSurface* aNewFront) = 0;
+  virtual void Swap(const SurfaceDescriptor& aNewFront, SurfaceDescriptor* aNewBack) = 0;
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -609,14 +608,13 @@ public:
    * transaction to bring in real pixels.  Init() may only be called
    * once.
    */
-  virtual PRBool Init(gfxSharedImageSurface* aFront, const nsIntSize& aSize) = 0;
+  virtual PRBool Init(const SharedImage& front, const nsIntSize& aSize) = 0;
 
   /**
    * CONSTRUCTION PHASE ONLY
    * @see ShadowCanvasLayer::Swap
    */
-  virtual already_AddRefed<gfxSharedImageSurface>
-  Swap(gfxSharedImageSurface* newFront) = 0;
+  virtual void Swap(const SharedImage& aFront, SharedImage* aNewBack) = 0;
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -650,6 +648,7 @@ protected:
   {}
 };
 
+PRBool IsSurfaceDescriptorValid(const SurfaceDescriptor& aSurface);
 
 } // namespace layers
 } // namespace mozilla

@@ -41,7 +41,7 @@ CPPSRCS += \
 	nsStaticXULComponents.cpp \
 	$(NULL)
 
-ifeq (,$(filter-out WINCE WINNT,$(OS_ARCH)))
+ifeq ($(OS_ARCH),WINNT)
 REQUIRES += widget gfx
 CPPSRCS += \
 	nsDllMain.cpp \
@@ -50,7 +50,6 @@ endif
 
 ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_)
 CPPSRCS += \
-	dlldeps.cpp \
 	nsGFXDeps.cpp \
 	$(NULL)
 
@@ -73,7 +72,6 @@ ifeq ($(OS_ARCH),OS2)
 REQUIRES += widget gfx
 
 CPPSRCS += \
-	dlldeps.cpp \
 	nsGFXDeps.cpp \
 	$(NULL)
 
@@ -81,10 +79,8 @@ ifndef MOZ_NATIVE_ZLIB
 CPPSRCS += dlldeps-zlib.cpp
 endif
 
-ifdef MOZ_ENABLE_LIBXUL
 RESFILE = xulrunos2.res
 RCFLAGS += -i $(topsrcdir)/widget/src/os2
-endif
 
 LOCAL_INCLUDES += -I$(topsrcdir)/widget/src/os2
 LOCAL_INCLUDES += -I$(topsrcdir)/xpcom/base
@@ -98,6 +94,7 @@ STATIC_LIBS += \
   mozipc_s \
   mozipdlgen_s \
   ipcshell_s \
+  gfx2d \
   gfxipc_s \
   $(NULL)
 
@@ -115,13 +112,8 @@ STATIC_LIBS += \
 	xpcom_core \
 	ucvutil_s \
 	chromium_s \
-	$(NULL)
-
-ifndef WINCE
-STATIC_LIBS += \
 	mozreg_s \
 	$(NULL)
-endif
 
 # component libraries
 COMPONENT_LIBS += \
@@ -148,6 +140,7 @@ COMPONENT_LIBS += \
 	appcomps \
 	composer \
 	jetpack_s \
+	telemetry \
 	$(NULL)
 
 ifdef BUILD_CTYPES
@@ -238,7 +231,9 @@ EXTRA_DSO_LDOPTS += $(SQLITE_LIBS)
 endif
 
 ifdef MOZ_PLACES
+ifdef MOZ_MORKREADER
 STATIC_LIBS += morkreader_s
+endif
 
 COMPONENT_LIBS += \
 	places \
@@ -275,7 +270,7 @@ endif
 endif
 
 # Platform-specific icon channel stuff - supported mostly-everywhere
-ifneq (,$(filter windows os2 mac cocoa gtk2 qt,$(MOZ_WIDGET_TOOLKIT)))
+ifneq (,$(filter windows os2 mac cocoa gtk2 qt android,$(MOZ_WIDGET_TOOLKIT)))
 DEFINES += -DICON_DECODER
 COMPONENT_LIBS += imgicon
 endif

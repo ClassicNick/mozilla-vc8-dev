@@ -43,6 +43,7 @@
 #include "nsAccUtils.h"
 #include "nsDocAccessible.h"
 #include "nsEventShell.h"
+#include "States.h"
 
 #include "nsITreeSelection.h"
 
@@ -627,12 +628,12 @@ nsXULTreeGridRowAccessible::
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULTreeGridRowAccessible)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULTreeGridRowAccessible,
-                                                  nsAccessible)
+                                                  nsXULTreeItemAccessibleBase)
 CycleCollectorTraverseCache(tmp->mAccessibleCache, &cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXULTreeGridRowAccessible,
-                                                nsAccessible)
+                                                nsXULTreeItemAccessibleBase)
 ClearCache(tmp->mAccessibleCache);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -664,9 +665,33 @@ nsXULTreeGridRowAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_ROW;
 }
 
+NS_IMETHODIMP
+nsXULTreeGridRowAccessible::GetName(nsAString& aName)
+{
+  aName.Truncate();
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
+  // XXX: the row name sholdn't be a concatenation of cell names (bug 664384).
+  nsCOMPtr<nsITreeColumn> column = nsCoreUtils::GetFirstSensibleColumn(mTree);
+  while (column) {
+    if (!aName.IsEmpty())
+      aName.AppendLiteral(" ");
+
+    nsAutoString cellName;
+    GetCellName(column, cellName);
+    aName.Append(cellName);
+
+    column = nsCoreUtils::GetNextSensibleColumn(column);
+  }
+
+  return NS_OK;
+}
+
 nsAccessible*
-nsXULTreeGridRowAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
-                                            EWhichChildAtPoint aWhichChild)
+nsXULTreeGridRowAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
+                                         EWhichChildAtPoint aWhichChild)
 {
   nsIFrame *frame = GetFrame();
   if (!frame)
@@ -796,10 +821,29 @@ nsXULTreeGridCellAccessible(nsIContent *aContent, nsIWeakReference *aShell,
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: nsISupports implementation
 
-NS_IMPL_ISUPPORTS_INHERITED2(nsXULTreeGridCellAccessible,
-                             nsLeafAccessible,
-                             nsIAccessibleTableCell,
-                             nsXULTreeGridCellAccessible)
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULTreeGridCellAccessible)
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULTreeGridCellAccessible,
+                                                  nsLeafAccessible)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTree)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTreeView)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mColumn)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXULTreeGridCellAccessible,
+                                                nsLeafAccessible)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTree)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTreeView)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mColumn)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsXULTreeGridCellAccessible)
+  NS_INTERFACE_TABLE_INHERITED2(nsXULTreeGridCellAccessible,
+                                nsIAccessibleTableCell,
+                                nsXULTreeGridCellAccessible)
+NS_INTERFACE_TABLE_TAIL_INHERITING(nsLeafAccessible)
+NS_IMPL_ADDREF_INHERITED(nsXULTreeGridCellAccessible, nsLeafAccessible)
+NS_IMPL_RELEASE_INHERITED(nsXULTreeGridCellAccessible, nsLeafAccessible)
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: nsIAccessible implementation
@@ -1086,8 +1130,8 @@ nsXULTreeGridCellAccessible::IsSelected(PRBool *aIsSelected)
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: nsAccessNode implementation
 
-PRBool
-nsXULTreeGridCellAccessible::IsDefunct()
+bool
+nsXULTreeGridCellAccessible::IsDefunct() const
 {
   return nsLeafAccessible::IsDefunct() || !mParent || !mTree || !mTreeView ||
     !mColumn;
@@ -1161,24 +1205,11 @@ nsXULTreeGridCellAccessible::NativeRole()
   return nsIAccessibleRole::ROLE_GRID_CELL;
 }
 
-nsresult
-nsXULTreeGridCellAccessible::GetStateInternal(PRUint32 *aStates,
-                                              PRUint32 *aExtraStates)
+PRUint64
+nsXULTreeGridCellAccessible::NativeState()
 {
-  NS_ENSURE_ARG_POINTER(aStates);
-
-  *aStates = 0;
-  if (aExtraStates)
-    *aExtraStates = 0;
-
-  if (IsDefunct()) {
-    if (aExtraStates)
-      *aExtraStates = nsIAccessibleStates::EXT_STATE_DEFUNCT;
-    return NS_OK_DEFUNCT_OBJECT;
-  }
-
   // selectable/selected state
-  *aStates |= nsIAccessibleStates::STATE_SELECTABLE;
+  PRUint64 states = states::SELECTABLE;
 
   nsCOMPtr<nsITreeSelection> selection;
   mTreeView->GetSelection(getter_AddRefs(selection));
@@ -1186,25 +1217,25 @@ nsXULTreeGridCellAccessible::GetStateInternal(PRUint32 *aStates,
     PRBool isSelected = PR_FALSE;
     selection->IsSelected(mRow, &isSelected);
     if (isSelected)
-      *aStates |= nsIAccessibleStates::STATE_SELECTED;
+      states |= states::SELECTED;
   }
 
   // checked state
   PRInt16 type;
   mColumn->GetType(&type);
   if (type == nsITreeColumn::TYPE_CHECKBOX) {
-    *aStates |= nsIAccessibleStates::STATE_CHECKABLE;
+    states |= states::CHECKABLE;
     nsAutoString checked;
     mTreeView->GetCellValue(mRow, mColumn, checked);
     if (checked.EqualsIgnoreCase("true"))
-      *aStates |= nsIAccessibleStates::STATE_CHECKED;
+      states |= states::CHECKED;
   }
 
-  return NS_OK;
+  return states;
 }
 
 PRInt32
-nsXULTreeGridCellAccessible::GetIndexInParent() const
+nsXULTreeGridCellAccessible::IndexInParent() const
 {
   return GetColumnIndex();
 }
@@ -1235,8 +1266,7 @@ nsXULTreeGridCellAccessible::CellInvalidated()
     if (mCachedTextEquiv != textEquiv) {
       PRBool isEnabled = textEquiv.EqualsLiteral("true");
       nsRefPtr<AccEvent> accEvent =
-        new AccStateChangeEvent(this, nsIAccessibleStates::STATE_CHECKED,
-                                PR_FALSE, isEnabled);
+        new AccStateChangeEvent(this, states::CHECKED, isEnabled);
       nsEventShell::FireEvent(accEvent);
 
       mCachedTextEquiv = textEquiv;
@@ -1257,17 +1287,10 @@ nsXULTreeGridCellAccessible::CellInvalidated()
 
 nsAccessible*
 nsXULTreeGridCellAccessible::GetSiblingAtOffset(PRInt32 aOffset,
-                                                nsresult* aError)
+                                                nsresult* aError) const
 {
-  if (IsDefunct()) {
-    if (aError)
-      *aError = NS_ERROR_FAILURE;
-
-    return nsnull;
-  }
-
   if (aError)
-    *aError = NS_OK; // fail peacefully
+    *aError =  NS_OK; // fail peacefully
 
   nsCOMPtr<nsITreeColumn> columnAtOffset(mColumn), column;
   if (aOffset < 0) {
@@ -1285,8 +1308,7 @@ nsXULTreeGridCellAccessible::GetSiblingAtOffset(PRInt32 aOffset,
   if (!columnAtOffset)
     return nsnull;
 
-  nsRefPtr<nsXULTreeItemAccessibleBase> rowAcc = do_QueryObject(mParent);
-
+  nsRefPtr<nsXULTreeItemAccessibleBase> rowAcc = do_QueryObject(GetParent());
   return rowAcc->GetCellAccessible(columnAtOffset);
 }
 

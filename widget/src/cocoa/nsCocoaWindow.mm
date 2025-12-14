@@ -52,11 +52,8 @@
 #include "nsIBaseWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIXULWindow.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsToolkit.h"
 #include "nsPrintfCString.h"
-#include "nsIServiceManager.h"
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDOMElement.h"
@@ -71,12 +68,15 @@
 #include "gfxPlatform.h"
 #include "qcms.h"
 
+#include "mozilla/Preferences.h"
+
 namespace mozilla {
 namespace layers {
 class LayerManager;
 }
 }
 using namespace mozilla::layers;
+using namespace mozilla;
 
 // defined in nsAppShell.mm
 extern nsCocoaAppModalWindowList *gCocoaAppModalWindowList;
@@ -227,20 +227,18 @@ static void FitRectToVisibleAreaForScreen(nsIntRect &aRect, NSScreen *screen)
 // (native context menus, native tooltips)
 static PRBool UseNativePopupWindows()
 {
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (!prefs)
-    return PR_FALSE;
-
-  PRBool useNativePopupWindows;
-  nsresult rv = prefs->GetBoolPref("ui.use_native_popup_windows", &useNativePopupWindows);
-  return (NS_SUCCEEDED(rv) && useNativePopupWindows);
+#ifdef MOZ_USE_NATIVE_POPUP_WINDOWS
+  return PR_TRUE;
+#else
+  return PR_FALSE;
+#endif /* MOZ_USE_NATIVE_POPUP_WINDOWS */
 }
 
 nsresult nsCocoaWindow::Create(nsIWidget *aParent,
                                nsNativeWidget aNativeParent,
                                const nsIntRect &aRect,
                                EVENT_CALLBACK aHandleEventFunction,
-                               nsIDeviceContext *aContext,
+                               nsDeviceContext *aContext,
                                nsIAppShell *aAppShell,
                                nsIToolkit *aToolkit,
                                nsWidgetInitData *aInitData)
@@ -429,7 +427,8 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect &aRect,
     [mWindow setHasShadow:YES];
   }
 
-  [mWindow setBackgroundColor:[NSColor whiteColor]];
+  [mWindow setBackgroundColor:[NSColor clearColor]];
+  [mWindow setOpaque:NO];
   [mWindow setContentMinSize:NSMakeSize(60, 60)];
   [mWindow disableCursorRects];
 
@@ -447,7 +446,7 @@ nsresult nsCocoaWindow::CreateNativeWindow(const NSRect &aRect,
 
 NS_IMETHODIMP nsCocoaWindow::CreatePopupContentView(const nsIntRect &aRect,
                              EVENT_CALLBACK aHandleEventFunction,
-                             nsIDeviceContext *aContext,
+                             nsDeviceContext *aContext,
                              nsIAppShell *aAppShell,
                              nsIToolkit *aToolkit)
 {

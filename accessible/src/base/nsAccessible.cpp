@@ -52,11 +52,11 @@
 #include "nsAccTreeWalker.h"
 #include "nsRelUtils.h"
 #include "nsTextEquivUtils.h"
+#include "States.h"
 
 #include "nsIDOMElement.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMDocumentXBL.h"
-#include "nsIDOMDocumentTraversal.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMNodeFilter.h"
@@ -75,6 +75,7 @@
 #include "nsIForm.h"
 #include "nsIFormControl.h"
 
+#include "nsLayoutUtils.h"
 #include "nsIPresShell.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -88,8 +89,6 @@
 #include "nsReadableUtils.h"
 #include "prdtoa.h"
 #include "nsIAtom.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsIURI.h"
 #include "nsArrayUtils.h"
 #include "nsIMutableArray.h"
@@ -98,13 +97,16 @@
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
 #include "nsNetUtil.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStates.h"
 
 #ifdef NS_DEBUG
 #include "nsIDOMCharacterData.h"
 #endif
 
 #include "mozilla/unused.h"
+#include "mozilla/Preferences.h"
+
+using namespace mozilla;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -172,7 +174,7 @@ nsresult nsAccessible::QueryInterface(REFNSIID aIID, void** aInstancePtr)
   }                       
 
   if (aIID.Equals(NS_GET_IID(nsIAccessibleHyperLink))) {
-    if (IsHyperLink()) {
+    if (IsLink()) {
       *aInstancePtr = static_cast<nsIAccessibleHyperLink*>(this);
       NS_ADDREF_THIS();
       return NS_OK;
@@ -196,10 +198,10 @@ nsAccessible::nsAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
             (void*)shell.get());
     nsCOMPtr<nsIContent> content = do_QueryInterface(aNode);
     if (content) {
+      printf(" Con: %s@%p",
+             NS_ConvertUTF16toUTF8(content->NodeInfo()->QualifiedName()).get(),
+             (void *)content.get());
       nsAutoString buf;
-      if (content->NodeInfo())
-        content->NodeInfo()->GetQualifiedName(buf);
-      printf(" Con: %s@%p", NS_ConvertUTF16toUTF8(buf).get(), (void *)content.get());
       if (NS_SUCCEEDED(GetName(buf))) {
         printf(" Name:[%s]", NS_ConvertUTF16toUTF8(buf).get());
        }
@@ -271,54 +273,60 @@ nsAccessible::GetName(nsAString& aName)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsAccessible::GetDescription(nsAString& aDescription)
+NS_IMETHODIMP
+nsAccessible::GetDescription(nsAString& aDescription)
 {
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
+  nsAutoString desc;
+  Description(desc);
+  aDescription.Assign(desc);
+
+  return NS_OK;
+}
+
+void
+nsAccessible::Description(nsString& aDescription)
+{
   // There are 4 conditions that make an accessible have no accDescription:
   // 1. it's a text node; or
   // 2. It has no DHTML describedby property
   // 3. it doesn't have an accName; or
   // 4. its title attribute already equals to its accName nsAutoString name; 
 
-  if (!mContent->IsNodeOfType(nsINode::eTEXT)) {
-    nsAutoString description;
-    nsresult rv = nsTextEquivUtils::
-      GetTextEquivFromIDRefs(this, nsAccessibilityAtoms::aria_describedby,
-                             description);
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (mContent->IsNodeOfType(nsINode::eTEXT))
+    return;
 
-    if (description.IsEmpty()) {
-      PRBool isXUL = mContent->IsXUL();
-      if (isXUL) {
-        // Try XUL <description control="[id]">description text</description>
-        XULDescriptionIterator iter(GetDocAccessible(), mContent);
-        nsAccessible* descr = nsnull;
-        while ((descr = iter.Next())) {
-          nsTextEquivUtils::
-            AppendTextEquivFromContent(this, descr->GetContent(), &description);
-        }
+  nsTextEquivUtils::
+    GetTextEquivFromIDRefs(this, nsAccessibilityAtoms::aria_describedby,
+                           aDescription);
+
+  if (aDescription.IsEmpty()) {
+    PRBool isXUL = mContent->IsXUL();
+    if (isXUL) {
+      // Try XUL <description control="[id]">description text</description>
+      XULDescriptionIterator iter(GetDocAccessible(), mContent);
+      nsAccessible* descr = nsnull;
+      while ((descr = iter.Next()))
+        nsTextEquivUtils::AppendTextEquivFromContent(this, descr->GetContent(),
+                                                     &aDescription);
       }
-      if (description.IsEmpty()) {
+
+      if (aDescription.IsEmpty()) {
         nsIAtom *descAtom = isXUL ? nsAccessibilityAtoms::tooltiptext :
                                     nsAccessibilityAtoms::title;
-        if (mContent->GetAttr(kNameSpaceID_None, descAtom, description)) {
+        if (mContent->GetAttr(kNameSpaceID_None, descAtom, aDescription)) {
           nsAutoString name;
           GetName(name);
-          if (name.IsEmpty() || description == name) {
+          if (name.IsEmpty() || aDescription == name)
             // Don't use tooltip for a description if this object
             // has no name or the tooltip is the same as the name
-            description.Truncate();
-          }
+            aDescription.Truncate();
         }
       }
     }
-    description.CompressWhitespace();
-    aDescription = description;
-  }
-
-  return NS_OK;
+    aDescription.CompressWhitespace();
 }
 
 // mask values for ui.key.chromeAccess and ui.key.contentAccess
@@ -332,22 +340,14 @@ NS_IMETHODIMP nsAccessible::GetDescription(nsAString& aDescription)
 static PRInt32
 GetAccessModifierMask(nsIContent* aContent)
 {
-  nsCOMPtr<nsIPrefBranch> prefBranch =
-    do_GetService(NS_PREFSERVICE_CONTRACTID);
-  if (!prefBranch)
-    return 0;
-
   // use ui.key.generalAccessKey (unless it is -1)
-  PRInt32 accessKey;
-  nsresult rv = prefBranch->GetIntPref("ui.key.generalAccessKey", &accessKey);
-  if (NS_SUCCEEDED(rv) && accessKey != -1) {
-    switch (accessKey) {
-      case nsIDOMKeyEvent::DOM_VK_SHIFT:   return NS_MODIFIER_SHIFT;
-      case nsIDOMKeyEvent::DOM_VK_CONTROL: return NS_MODIFIER_CONTROL;
-      case nsIDOMKeyEvent::DOM_VK_ALT:     return NS_MODIFIER_ALT;
-      case nsIDOMKeyEvent::DOM_VK_META:    return NS_MODIFIER_META;
-      default:                             return 0;
-    }
+  switch (Preferences::GetInt("ui.key.generalAccessKey", -1)) {
+    case -1:                             break;
+    case nsIDOMKeyEvent::DOM_VK_SHIFT:   return NS_MODIFIER_SHIFT;
+    case nsIDOMKeyEvent::DOM_VK_CONTROL: return NS_MODIFIER_CONTROL;
+    case nsIDOMKeyEvent::DOM_VK_ALT:     return NS_MODIFIER_ALT;
+    case nsIDOMKeyEvent::DOM_VK_META:    return NS_MODIFIER_META;
+    default:                             return 0;
   }
 
   // get the docShell to this DOMNode, return 0 on failure
@@ -362,17 +362,17 @@ GetAccessModifierMask(nsIContent* aContent)
     return 0;
 
   // determine the access modifier used in this context
+  nsresult rv = NS_ERROR_FAILURE;
   PRInt32 itemType, accessModifierMask = 0;
   treeItem->GetItemType(&itemType);
   switch (itemType) {
+    case nsIDocShellTreeItem::typeChrome:
+      rv = Preferences::GetInt("ui.key.chromeAccess", &accessModifierMask);
+      break;
 
-  case nsIDocShellTreeItem::typeChrome:
-    rv = prefBranch->GetIntPref("ui.key.chromeAccess", &accessModifierMask);
-    break;
-
-  case nsIDocShellTreeItem::typeContent:
-    rv = prefBranch->GetIntPref("ui.key.contentAccess", &accessModifierMask);
-    break;
+    case nsIDocShellTreeItem::typeContent:
+      rv = Preferences::GetInt("ui.key.contentAccess", &accessModifierMask);
+      break;
   }
 
   return NS_SUCCEEDED(rv) ? accessModifierMask : 0;
@@ -450,6 +450,10 @@ NS_IMETHODIMP
 nsAccessible::GetNextSibling(nsIAccessible **aNextSibling) 
 {
   NS_ENSURE_ARG_POINTER(aNextSibling);
+  *aNextSibling = nsnull;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
   nsresult rv = NS_OK;
   NS_IF_ADDREF(*aNextSibling = GetSiblingAtOffset(1, &rv));
@@ -461,6 +465,10 @@ NS_IMETHODIMP
 nsAccessible::GetPreviousSibling(nsIAccessible * *aPreviousSibling) 
 {
   NS_ENSURE_ARG_POINTER(aPreviousSibling);
+  *aPreviousSibling = nsnull;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
   nsresult rv = NS_OK;
   NS_IF_ADDREF(*aPreviousSibling = GetSiblingAtOffset(-1, &rv));
@@ -473,6 +481,9 @@ nsAccessible::GetFirstChild(nsIAccessible **aFirstChild)
 {
   NS_ENSURE_ARG_POINTER(aFirstChild);
   *aFirstChild = nsnull;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
   PRInt32 childCount = GetChildCount();
   NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
@@ -490,6 +501,9 @@ nsAccessible::GetLastChild(nsIAccessible **aLastChild)
   NS_ENSURE_ARG_POINTER(aLastChild);
   *aLastChild = nsnull;
 
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
   PRInt32 childCount = GetChildCount();
   NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
 
@@ -502,6 +516,9 @@ nsAccessible::GetChildAt(PRInt32 aChildIndex, nsIAccessible **aChild)
 {
   NS_ENSURE_ARG_POINTER(aChild);
   *aChild = nsnull;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
   PRInt32 childCount = GetChildCount();
   NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
@@ -525,6 +542,9 @@ nsAccessible::GetChildren(nsIArray **aOutChildren)
 {
   NS_ENSURE_ARG_POINTER(aOutChildren);
   *aOutChildren = nsnull;
+
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
   PRInt32 childCount = GetChildCount();
   NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
@@ -555,6 +575,9 @@ nsAccessible::GetChildCount(PRInt32 *aChildCount)
 {
   NS_ENSURE_ARG_POINTER(aChildCount);
 
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
   *aChildCount = GetChildCount();
   return *aChildCount != -1 ? NS_OK : NS_ERROR_FAILURE;  
 }
@@ -565,7 +588,7 @@ nsAccessible::GetIndexInParent(PRInt32 *aIndexInParent)
 {
   NS_ENSURE_ARG_POINTER(aIndexInParent);
 
-  *aIndexInParent = GetIndexInParent();
+  *aIndexInParent = IndexInParent();
   return *aIndexInParent != -1 ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -588,7 +611,7 @@ nsresult nsAccessible::GetFullKeyName(const nsAString& aModifierName, const nsAS
   if (!gKeyStringBundle ||
       NS_FAILED(gKeyStringBundle->GetStringFromName(PromiseFlatString(aModifierName).get(), 
                                                     getter_Copies(modifierName))) ||
-      NS_FAILED(gKeyStringBundle->GetStringFromName(PromiseFlatString(NS_LITERAL_STRING("MODIFIER_SEPARATOR")).get(), 
+      NS_FAILED(gKeyStringBundle->GetStringFromName(NS_LITERAL_STRING("MODIFIER_SEPARATOR").get(), 
                                                     getter_Copies(separator)))) {
     return NS_ERROR_FAILURE;
   }
@@ -597,12 +620,13 @@ nsresult nsAccessible::GetFullKeyName(const nsAString& aModifierName, const nsAS
   return NS_OK;
 }
 
-PRBool nsAccessible::IsVisible(PRBool *aIsOffscreen) 
+PRBool
+nsAccessible::IsVisible(PRBool* aIsOffscreen)
 {
-  // We need to know if at least a kMinPixels around the object is visible
-  // Otherwise it will be marked nsIAccessibleStates::STATE_OFFSCREEN
-  // The STATE_INVISIBLE flag is for elements which are programmatically hidden
-  
+  // We need to know if at least a kMinPixels around the object is visible,
+  // otherwise it will be marked states::OFFSCREEN. The states::INVISIBLE flag
+  // is for elements which are programmatically hidden.
+
   *aIsOffscreen = PR_TRUE;
   if (IsDefunct())
     return PR_FALSE;
@@ -660,90 +684,74 @@ PRBool nsAccessible::IsVisible(PRBool *aIsOffscreen)
   }
 
   // The frame intersects the viewport, but we need to check the parent view chain :(
-  nsIDocument* doc = mContent->GetOwnerDoc();
-  if (!doc)  {
-    return PR_FALSE;
-  }
-
-  nsIFrame* frameWithView =
-    frame->HasView() ? frame : frame->GetAncestorWithViewExternal();
-  nsIView* view = frameWithView->GetViewExternal();
-  PRBool isVisible = CheckVisibilityInParentChain(doc, view);
+  bool isVisible = nsCoreUtils::CheckVisibilityInParentChain(frame);
   if (isVisible && rectVisibility == nsRectVisibility_kVisible) {
     *aIsOffscreen = PR_FALSE;
   }
   return isVisible;
 }
 
-nsresult
-nsAccessible::GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState)
+PRUint64
+nsAccessible::NativeState()
 {
-  *aState = 0;
+  PRUint64 state = 0;
+  PRBool disabled = PR_FALSE;
+  if (mContent->IsElement()) {
+    nsEventStates elementState = mContent->AsElement()->State();
 
-  if (IsDefunct()) {
-    if (aExtraState)
-      *aExtraState = nsIAccessibleStates::EXT_STATE_DEFUNCT;
+    if (elementState.HasState(NS_EVENT_STATE_INVALID))
+      state |= states::INVALID;
 
-    return NS_OK_DEFUNCT_OBJECT;
+    if (elementState.HasState(NS_EVENT_STATE_REQUIRED))
+      state |= states::REQUIRED;
+
+    disabled = mContent->IsHTML() ? 
+      (elementState.HasState(NS_EVENT_STATE_DISABLED)) :
+      (mContent->AttrValueIs(kNameSpaceID_None,
+                             nsAccessibilityAtoms::disabled,
+                             nsAccessibilityAtoms::_true,
+                             eCaseMatters));
   }
-
-  if (aExtraState)
-    *aExtraState = 0;
-
-  nsEventStates intrinsicState = mContent->IntrinsicState();
-
-  if (intrinsicState.HasState(NS_EVENT_STATE_INVALID))
-    *aState |= nsIAccessibleStates::STATE_INVALID;
-
-  if (intrinsicState.HasState(NS_EVENT_STATE_REQUIRED))
-    *aState |= nsIAccessibleStates::STATE_REQUIRED;
-
-  PRBool disabled = mContent->IsHTML() ? 
-    (intrinsicState.HasState(NS_EVENT_STATE_DISABLED)) :
-    (mContent->AttrValueIs(kNameSpaceID_None,
-                           nsAccessibilityAtoms::disabled,
-                           nsAccessibilityAtoms::_true,
-                           eCaseMatters));
 
   // Set unavailable state based on disabled state, otherwise set focus states
   if (disabled) {
-    *aState |= nsIAccessibleStates::STATE_UNAVAILABLE;
+    state |= states::UNAVAILABLE;
   }
   else if (mContent->IsElement()) {
     nsIFrame *frame = GetFrame();
     if (frame && frame->IsFocusable()) {
-      *aState |= nsIAccessibleStates::STATE_FOCUSABLE;
+      state |= states::FOCUSABLE;
     }
 
     if (gLastFocusedNode == mContent) {
-      *aState |= nsIAccessibleStates::STATE_FOCUSED;
+      state |= states::FOCUSED;
     }
   }
 
-  // Check if nsIAccessibleStates::STATE_INVISIBLE and
-  // STATE_OFFSCREEN flags should be turned on for this object.
+  // Check if states::INVISIBLE and
+  // states::OFFSCREEN flags should be turned on for this object.
   PRBool isOffscreen;
   if (!IsVisible(&isOffscreen)) {
-    *aState |= nsIAccessibleStates::STATE_INVISIBLE;
+    state |= states::INVISIBLE;
   }
   if (isOffscreen) {
-    *aState |= nsIAccessibleStates::STATE_OFFSCREEN;
+    state |= states::OFFSCREEN;
   }
 
   nsIFrame *frame = GetFrame();
   if (frame && (frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW))
-    *aState |= nsIAccessibleStates::STATE_FLOATING;
+    state |= states::FLOATING;
 
   // Check if a XUL element has the popup attribute (an attached popup menu).
   if (mContent->IsXUL())
     if (mContent->HasAttr(kNameSpaceID_None, nsAccessibilityAtoms::popup))
-      *aState |= nsIAccessibleStates::STATE_HASPOPUP;
+      state |= states::HASPOPUP;
 
   // Add 'linked' state for simple xlink.
   if (nsCoreUtils::IsXLink(mContent))
-    *aState |= nsIAccessibleStates::STATE_LINKED;
+    state |= states::LINKED;
 
-  return NS_OK;
+  return state;
 }
 
   /* readonly attribute boolean focusedChild; */
@@ -764,10 +772,10 @@ nsAccessible::GetFocusedChild(nsIAccessible **aFocusedChild)
   return NS_OK;
 }
 
-// nsAccessible::GetChildAtPoint()
+// nsAccessible::ChildAtPoint()
 nsAccessible*
-nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
-                              EWhichChildAtPoint aWhichChild)
+nsAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
+                           EWhichChildAtPoint aWhichChild)
 {
   // If we can't find the point in a child, we will return the fallback answer:
   // we return |this| if the point is within it, otherwise nsnull.
@@ -828,10 +836,10 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
       child->GetBounds(&childX, &childY, &childWidth, &childHeight);
       if (aX >= childX && aX < childX + childWidth &&
           aY >= childY && aY < childY + childHeight &&
-          (nsAccUtils::State(child) & nsIAccessibleStates::STATE_INVISIBLE) == 0) {
+          (child->State() & states::INVISIBLE) == 0) {
 
         if (aWhichChild == eDeepestChild)
-          return child->GetChildAtPoint(aX, aY, eDeepestChild);
+          return child->ChildAtPoint(aX, aY, eDeepestChild);
 
         return child;
       }
@@ -873,7 +881,7 @@ nsAccessible::GetChildAtPoint(PRInt32 aX, PRInt32 aY,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  NS_IF_ADDREF(*aAccessible = GetChildAtPoint(aX, aY, eDirectChild));
+  NS_IF_ADDREF(*aAccessible = ChildAtPoint(aX, aY, eDirectChild));
   return NS_OK;
 }
 
@@ -888,7 +896,7 @@ nsAccessible::GetDeepestChildAtPoint(PRInt32 aX, PRInt32 aY,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  NS_IF_ADDREF(*aAccessible = GetChildAtPoint(aX, aY, eDeepestChild));
+  NS_IF_ADDREF(*aAccessible = ChildAtPoint(aX, aY, eDeepestChild));
   return NS_OK;
 }
 
@@ -1038,8 +1046,7 @@ NS_IMETHODIMP nsAccessible::SetSelected(PRBool aSelect)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRUint32 state = nsAccUtils::State(this);
-  if (state & nsIAccessibleStates::STATE_SELECTABLE) {
+  if (State() & states::SELECTABLE) {
     nsCOMPtr<nsIAccessible> multiSelect =
       nsAccUtils::GetMultiSelectableContainer(mContent);
     if (!multiSelect) {
@@ -1067,8 +1074,7 @@ NS_IMETHODIMP nsAccessible::TakeSelection()
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRUint32 state = nsAccUtils::State(this);
-  if (state & nsIAccessibleStates::STATE_SELECTABLE) {
+  if (State() & states::SELECTABLE) {
     nsCOMPtr<nsIAccessible> multiSelect =
       nsAccUtils::GetMultiSelectableContainer(mContent);
     if (multiSelect) {
@@ -1316,7 +1322,7 @@ nsAccessible::GetAttributes(nsIPersistentProperties **aAttributes)
   }
 
   // Expose checkable object attribute if the accessible has checkable state
-  if (nsAccUtils::State(this) & nsIAccessibleStates::STATE_CHECKABLE)
+  if (State() & states::CHECKABLE)
     nsAccUtils::SetAccAttr(attributes, nsAccessibilityAtoms::checkable, NS_LITERAL_STRING("true"));
 
   // Group attributes (level/setsize/posinset)
@@ -1482,7 +1488,7 @@ nsAccessible::GroupPosition(PRInt32 *aGroupLevel,
 
   // If ARIA is missed and the accessible is visible then calculate group
   // position from hierarchy.
-  if (nsAccUtils::State(this) & nsIAccessibleStates::STATE_INVISIBLE)
+  if (State() & states::INVISIBLE)
     return NS_OK;
 
   // Calculate group level if ARIA is missed.
@@ -1509,22 +1515,35 @@ nsAccessible::GroupPosition(PRInt32 *aGroupLevel,
 }
 
 NS_IMETHODIMP
-nsAccessible::GetState(PRUint32 *aState, PRUint32 *aExtraState)
+nsAccessible::GetState(PRUint32* aState, PRUint32* aExtraState)
 {
   NS_ENSURE_ARG_POINTER(aState);
 
-  nsresult rv = GetStateInternal(aState, aExtraState);
-  NS_ENSURE_A11Y_SUCCESS(rv, rv);
+  nsAccUtils::To32States(State(), aState, aExtraState);
+  return NS_OK;
+}
 
-  // Apply ARIA states to be sure accessible states will be overriden.
-  GetARIAState(aState, aExtraState);
+PRUint64
+nsAccessible::State()
+{
+  if (IsDefunct())
+    return states::DEFUNCT;
 
-  if (mRoleMapEntry && mRoleMapEntry->role == nsIAccessibleRole::ROLE_PAGETAB) {
-    if (*aState & nsIAccessibleStates::STATE_FOCUSED) {
-      *aState |= nsIAccessibleStates::STATE_SELECTED;
+  PRUint64 state = NativeState();
+  // Apply ARIA states to be sure accessible states will be overridden.
+  ApplyARIAState(&state);
+
+  if (mRoleMapEntry && mRoleMapEntry->role == nsIAccessibleRole::ROLE_PAGETAB &&
+      !(state & states::SELECTED) &&
+      !mContent->AttrValueIs(kNameSpaceID_None,
+                             nsAccessibilityAtoms::aria_selected,
+                             nsAccessibilityAtoms::_false, eCaseMatters)) {
+    // Special case: for tabs, focused implies selected, unless explicitly
+    // false, i.e. aria-selected="false".
+    if (state & states::FOCUSED) {
+      state |= states::SELECTED;
     } else {
-      // Expose 'selected' state on ARIA tab if the focus is on internal element
-      // of related tabpanel.
+      // If focus is in a child of the tab panel surely the tab is selected!
       nsCOMPtr<nsIAccessible> tabPanel = nsRelUtils::
         GetRelatedAccessible(this, nsIAccessibleRelation::RELATION_LABEL_FOR);
 
@@ -1532,34 +1551,27 @@ nsAccessible::GetState(PRUint32 *aState, PRUint32 *aExtraState)
         nsRefPtr<nsAccessible> tabPanelAcc(do_QueryObject(tabPanel));
         nsINode *tabPanelNode = tabPanelAcc->GetNode();
         if (nsCoreUtils::IsAncestorOf(tabPanelNode, gLastFocusedNode))
-          *aState |= nsIAccessibleStates::STATE_SELECTED;
+          state |= states::SELECTED;
       }
     }
   }
 
-  const PRUint32 kExpandCollapseStates =
-    nsIAccessibleStates::STATE_COLLAPSED | nsIAccessibleStates::STATE_EXPANDED;
-  if ((*aState & kExpandCollapseStates) == kExpandCollapseStates) {
+  const PRUint32 kExpandCollapseStates = states::COLLAPSED | states::EXPANDED;
+  if ((state & kExpandCollapseStates) == kExpandCollapseStates) {
     // Cannot be both expanded and collapsed -- this happens in ARIA expanded
     // combobox because of limitation of nsARIAMap.
     // XXX: Perhaps we will be able to make this less hacky if we support
     // extended states in nsARIAMap, e.g. derive COLLAPSED from
     // EXPANDABLE && !EXPANDED.
-    *aState &= ~nsIAccessibleStates::STATE_COLLAPSED;
+    state &= ~states::COLLAPSED;
   }
 
-  // Set additional states which presence depends on another states.
-  if (!aExtraState)
-    return NS_OK;
-
-  if (!(*aState & nsIAccessibleStates::STATE_UNAVAILABLE)) {
-    *aExtraState |= nsIAccessibleStates::EXT_STATE_ENABLED |
-                    nsIAccessibleStates::EXT_STATE_SENSITIVE;
+  if (!(state & states::UNAVAILABLE)) {
+    state |= states::ENABLED | states::SENSITIVE;
   }
 
-  if ((*aState & nsIAccessibleStates::STATE_COLLAPSED) ||
-      (*aState & nsIAccessibleStates::STATE_EXPANDED))
-    *aExtraState |= nsIAccessibleStates::EXT_STATE_EXPANDABLE;
+  if ((state & states::COLLAPSED) || (state & states::EXPANDED))
+    state |= states::EXPANDABLE;
 
   if (mRoleMapEntry) {
     // If an object has an ancestor with the activedescendant property
@@ -1573,7 +1585,7 @@ nsAccessible::GetState(PRUint32 *aState, PRUint32 *aExtraState)
       while ((ancestorContent = ancestorContent->GetParent()) != nsnull) {
         if (ancestorContent->GetAttr(kNameSpaceID_None, nsAccessibilityAtoms::aria_activedescendant, activeID)) {
           if (id == activeID) {
-            *aExtraState |= nsIAccessibleStates::EXT_STATE_ACTIVE;
+            state |= states::ACTIVE;
           }
           break;
         }
@@ -1585,38 +1597,38 @@ nsAccessible::GetState(PRUint32 *aState, PRUint32 *aExtraState)
   // as invisible.
   nsIFrame *frame = GetFrame();
   if (!frame)
-    return NS_OK;
+    return state;
 
   const nsStyleDisplay* display = frame->GetStyleDisplay();
   if (display && display->mOpacity == 1.0f &&
-      !(*aState & nsIAccessibleStates::STATE_INVISIBLE)) {
-    *aExtraState |= nsIAccessibleStates::EXT_STATE_OPAQUE;
+      !(state & states::INVISIBLE)) {
+    state |= states::OPAQUE1;
   }
 
   const nsStyleXUL *xulStyle = frame->GetStyleXUL();
   if (xulStyle) {
     // In XUL all boxes are either vertical or horizontal
     if (xulStyle->mBoxOrient == NS_STYLE_BOX_ORIENT_VERTICAL) {
-      *aExtraState |= nsIAccessibleStates::EXT_STATE_VERTICAL;
+      state |= states::VERTICAL;
     }
     else {
-      *aExtraState |= nsIAccessibleStates::EXT_STATE_HORIZONTAL;
+      state |= states::HORIZONTAL;
     }
   }
   
   // If we are editable, force readonly bit off
-  if (*aExtraState & nsIAccessibleStates::EXT_STATE_EDITABLE)
-    *aState &= ~nsIAccessibleStates::STATE_READONLY;
+  if (state & states::EDITABLE)
+    state &= ~states::READONLY;
  
-  return NS_OK;
+  return state;
 }
 
-nsresult
-nsAccessible::GetARIAState(PRUint32 *aState, PRUint32 *aExtraState)
+void
+nsAccessible::ApplyARIAState(PRUint64* aState)
 {
   // Test for universal states first
   PRUint32 index = 0;
-  while (nsStateMapEntry::MapToStates(mContent, aState, aExtraState,
+  while (nsStateMapEntry::MapToStates(mContent, aState,
                                       nsARIAMap::gWAIUnivStateMap[index])) {
     ++ index;
   }
@@ -1627,7 +1639,7 @@ nsAccessible::GetARIAState(PRUint32 *aState, PRUint32 *aExtraState)
     // role. This preserves the ability for screen readers to use readonly
     // (primarily on the document) as the hint for creating a virtual buffer.
     if (mRoleMapEntry->role != nsIAccessibleRole::ROLE_NOTHING)
-      *aState &= ~nsIAccessibleStates::STATE_READONLY;
+      *aState &= ~states::READONLY;
 
     if (mContent->HasAttr(kNameSpaceID_None, mContent->GetIDAttributeName())) {
       // If has a role & ID and aria-activedescendant on the container, assume focusable
@@ -1635,40 +1647,39 @@ nsAccessible::GetARIAState(PRUint32 *aState, PRUint32 *aExtraState)
       while ((ancestorContent = ancestorContent->GetParent()) != nsnull) {
         if (ancestorContent->HasAttr(kNameSpaceID_None, nsAccessibilityAtoms::aria_activedescendant)) {
             // ancestor has activedescendant property, this content could be active
-          *aState |= nsIAccessibleStates::STATE_FOCUSABLE;
+          *aState |= states::FOCUSABLE;
           break;
         }
       }
     }
   }
 
-  if (*aState & nsIAccessibleStates::STATE_FOCUSABLE) {
+  if (*aState & states::FOCUSABLE) {
     // Special case: aria-disabled propagates from ancestors down to any focusable descendant
     nsIContent *ancestorContent = mContent;
     while ((ancestorContent = ancestorContent->GetParent()) != nsnull) {
       if (ancestorContent->AttrValueIs(kNameSpaceID_None, nsAccessibilityAtoms::aria_disabled,
                                        nsAccessibilityAtoms::_true, eCaseMatters)) {
           // ancestor has aria-disabled property, this is disabled
-        *aState |= nsIAccessibleStates::STATE_UNAVAILABLE;
+        *aState |= states::UNAVAILABLE;
         break;
       }
     }    
   }
 
   if (!mRoleMapEntry)
-    return NS_OK;
+    return;
 
   // Note: the readonly bitflag will be overridden later if content is editable
   *aState |= mRoleMapEntry->state;
-  if (nsStateMapEntry::MapToStates(mContent, aState, aExtraState,
+  if (nsStateMapEntry::MapToStates(mContent, aState,
                                    mRoleMapEntry->attributeMap1) &&
-      nsStateMapEntry::MapToStates(mContent, aState, aExtraState,
+      nsStateMapEntry::MapToStates(mContent, aState,
                                    mRoleMapEntry->attributeMap2)) {
-    nsStateMapEntry::MapToStates(mContent, aState, aExtraState,
+    nsStateMapEntry::MapToStates(mContent, aState,
                                  mRoleMapEntry->attributeMap3);
   }
 
-  return NS_OK;
 }
 
 // Not implemented by this class
@@ -1747,10 +1758,9 @@ nsAccessible::SetCurrentValue(double aValue)
   if (!mRoleMapEntry || mRoleMapEntry->valueRule == eNoValue)
     return NS_OK_NO_ARIA_VALUE;
 
-  const PRUint32 kValueCannotChange = nsIAccessibleStates::STATE_READONLY |
-                                      nsIAccessibleStates::STATE_UNAVAILABLE;
+  const PRUint32 kValueCannotChange = states::READONLY | states::UNAVAILABLE;
 
-  if (nsAccUtils::State(this) & kValueCannotChange)
+  if (State() & kValueCannotChange)
     return NS_ERROR_FAILURE;
 
   double minValue = 0;
@@ -1864,7 +1874,7 @@ nsAccessible::GetNumActions(PRUint8 *aNumActions)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRUint32 actionRule = GetActionRule(nsAccUtils::State(this));
+  PRUint32 actionRule = GetActionRule(State());
   if (actionRule == eNoAction)
     return NS_OK;
 
@@ -1884,7 +1894,7 @@ nsAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRUint32 states = nsAccUtils::State(this);
+  PRUint64 states = State();
   PRUint32 actionRule = GetActionRule(states);
 
  switch (actionRule) {
@@ -1897,9 +1907,9 @@ nsAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
      return NS_OK;
 
    case eCheckUncheckAction:
-     if (states & nsIAccessibleStates::STATE_CHECKED)
+     if (states & states::CHECKED)
        aName.AssignLiteral("uncheck");
-     else if (states & nsIAccessibleStates::STATE_MIXED)
+     else if (states & states::MIXED)
        aName.AssignLiteral("cycle");
      else
        aName.AssignLiteral("check");
@@ -1910,7 +1920,7 @@ nsAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
      return NS_OK;
 
    case eOpenCloseAction:
-     if (states & nsIAccessibleStates::STATE_COLLAPSED)
+     if (states & states::COLLAPSED)
        aName.AssignLiteral("open");
      else
        aName.AssignLiteral("close");
@@ -1929,7 +1939,7 @@ nsAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
      return NS_OK;
    
    case eExpandAction:
-     if (states & nsIAccessibleStates::STATE_COLLAPSED)
+     if (states & states::COLLAPSED)
        aName.AssignLiteral("expand");
      else
        aName.AssignLiteral("collapse");
@@ -1961,7 +1971,7 @@ nsAccessible::DoAction(PRUint8 aIndex)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  if (GetActionRule(nsAccUtils::State(this)) != eNoAction) {
+  if (GetActionRule(State()) != eNoAction) {
     DoCommand();
     return NS_OK;
   }
@@ -2571,7 +2581,7 @@ nsAccessible::GetURI(PRInt32 aIndex, nsIURI **aURI)
   if (aIndex < 0 || aIndex >= static_cast<PRInt32>(AnchorCount()))
     return NS_ERROR_INVALID_ARG;
 
-  *aURI = GetAnchorURI(aIndex).get();
+  nsRefPtr<nsIURI>(AnchorURIAt(aIndex)).forget(aURI);
   return NS_OK;
 }
 
@@ -2588,7 +2598,7 @@ nsAccessible::GetAnchor(PRInt32 aIndex, nsIAccessible** aAccessible)
   if (aIndex < 0 || aIndex >= static_cast<PRInt32>(AnchorCount()))
     return NS_ERROR_INVALID_ARG;
 
-  NS_IF_ADDREF(*aAccessible = GetAnchor(aIndex));
+  NS_IF_ADDREF(*aAccessible = AnchorAt(aIndex));
   return NS_OK;
 }
 
@@ -2602,7 +2612,7 @@ nsAccessible::GetValid(PRBool *aValid)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  *aValid = IsValid();
+  *aValid = IsLinkValid();
   return NS_OK;
 }
 
@@ -2616,7 +2626,7 @@ nsAccessible::GetSelected(PRBool *aSelected)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  *aSelected = IsSelected();
+  *aSelected = IsLinkSelected();
   return NS_OK;
 
 }
@@ -2787,10 +2797,10 @@ nsAccessible::RemoveChild(nsAccessible* aChild)
   if (!aChild)
     return PR_FALSE;
 
-  PRInt32 index = aChild->mIndexInParent;
-  if (aChild->mParent != this || index == -1)
+  if (aChild->mParent != this || aChild->mIndexInParent == -1)
     return PR_FALSE;
 
+  PRUint32 index = static_cast<PRUint32>(aChild->mIndexInParent);
   if (index >= mChildren.Length() || mChildren[index] != aChild) {
     NS_ERROR("Child is bound to parent but parent hasn't this child at its index!");
     aChild->UnbindFromParent();
@@ -2812,9 +2822,6 @@ nsAccessible::RemoveChild(nsAccessible* aChild)
 nsAccessible*
 nsAccessible::GetChildAt(PRUint32 aIndex)
 {
-  if (EnsureChildren())
-    return nsnull;
-
   nsAccessible *child = mChildren.SafeElementAt(aIndex, nsnull);
   if (!child)
     return nsnull;
@@ -2831,18 +2838,17 @@ nsAccessible::GetChildAt(PRUint32 aIndex)
 PRInt32
 nsAccessible::GetChildCount()
 {
-  return EnsureChildren() ? -1 : mChildren.Length();
+  return mChildren.Length();
 }
 
 PRInt32
 nsAccessible::GetIndexOf(nsAccessible* aChild)
 {
-  return EnsureChildren() || (aChild->mParent != this) ?
-    -1 : aChild->GetIndexInParent();
+  return (aChild->mParent != this) ? -1 : aChild->IndexInParent();
 }
 
 PRInt32
-nsAccessible::GetIndexInParent() const
+nsAccessible::IndexInParent() const
 {
   return mIndexInParent;
 }
@@ -2850,9 +2856,6 @@ nsAccessible::GetIndexInParent() const
 PRInt32
 nsAccessible::GetEmbeddedChildCount()
 {
-  if (EnsureChildren())
-    return -1;
-
   if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
@@ -2865,9 +2868,6 @@ nsAccessible::GetEmbeddedChildCount()
 nsAccessible*
 nsAccessible::GetEmbeddedChildAt(PRUint32 aIndex)
 {
-  if (EnsureChildren())
-    return nsnull;
-
   if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
@@ -2881,9 +2881,6 @@ nsAccessible::GetEmbeddedChildAt(PRUint32 aIndex)
 PRInt32
 nsAccessible::GetIndexOfEmbeddedChild(nsAccessible* aChild)
 {
-  if (EnsureChildren())
-    return -1;
-
   if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
@@ -2898,7 +2895,7 @@ nsAccessible::GetIndexOfEmbeddedChild(nsAccessible* aChild)
 // HyperLinkAccessible methods
 
 bool
-nsAccessible::IsHyperLink()
+nsAccessible::IsLink()
 {
   // Every embedded accessible within hypertext accessible implements
   // hyperlink interface.
@@ -2908,7 +2905,7 @@ nsAccessible::IsHyperLink()
 PRUint32
 nsAccessible::StartOffset()
 {
-  NS_PRECONDITION(IsHyperLink(), "StartOffset is called not on hyper link!");
+  NS_PRECONDITION(IsLink(), "StartOffset is called not on hyper link!");
 
   nsHyperTextAccessible* hyperText = mParent ? mParent->AsHyperText() : nsnull;
   return hyperText ? hyperText->GetChildOffset(this) : 0;
@@ -2917,50 +2914,30 @@ nsAccessible::StartOffset()
 PRUint32
 nsAccessible::EndOffset()
 {
-  NS_PRECONDITION(IsHyperLink(), "EndOffset is called on not hyper link!");
+  NS_PRECONDITION(IsLink(), "EndOffset is called on not hyper link!");
 
   nsHyperTextAccessible* hyperText = mParent ? mParent->AsHyperText() : nsnull;
   return hyperText ? (hyperText->GetChildOffset(this) + 1) : 0;
 }
 
-bool
-nsAccessible::IsValid()
-{
-  NS_PRECONDITION(IsHyperLink(), "IsValid is called on not hyper link!");
-
-  PRUint32 state = nsAccUtils::State(this);
-  return (0 == (state & nsIAccessibleStates::STATE_INVALID));
-  // XXX In order to implement this we would need to follow every link
-  // Perhaps we can get information about invalid links from the cache
-  // In the mean time authors can use role="link" aria-invalid="true"
-  // to force it for links they internally know to be invalid
-}
-
-bool
-nsAccessible::IsSelected()
-{
-  NS_PRECONDITION(IsHyperLink(), "IsSelected is called on not hyper link!");
-  return (gLastFocusedNode == GetNode());
-}
-
 PRUint32
 nsAccessible::AnchorCount()
 {
-  NS_PRECONDITION(IsHyperLink(), "AnchorCount is called on not hyper link!");
+  NS_PRECONDITION(IsLink(), "AnchorCount is called on not hyper link!");
   return 1;
 }
 
 nsAccessible*
-nsAccessible::GetAnchor(PRUint32 aAnchorIndex)
+nsAccessible::AnchorAt(PRUint32 aAnchorIndex)
 {
-  NS_PRECONDITION(IsHyperLink(), "GetAnchor is called on not hyper link!");
+  NS_PRECONDITION(IsLink(), "GetAnchor is called on not hyper link!");
   return aAnchorIndex == 0 ? this : nsnull;
 }
 
 already_AddRefed<nsIURI>
-nsAccessible::GetAnchorURI(PRUint32 aAnchorIndex)
+nsAccessible::AnchorURIAt(PRUint32 aAnchorIndex)
 {
-  NS_PRECONDITION(IsHyperLink(), "GetAnchorURI is called on not hyper link!");
+  NS_PRECONDITION(IsLink(), "AnchorURIAt is called on not hyper link!");
 
   if (aAnchorIndex != 0)
     return nsnull;
@@ -3052,7 +3029,7 @@ nsAccessible::IsItemSelected(PRUint32 aIndex)
     index++;
 
   return selected &&
-    nsAccUtils::State(selected) & nsIAccessibleStates::STATE_SELECTED;
+    selected->State() & states::SELECTED;
 }
 
 bool
@@ -3178,39 +3155,21 @@ nsAccessible::EnsureChildren()
 }
 
 nsAccessible*
-nsAccessible::GetSiblingAtOffset(PRInt32 aOffset, nsresult* aError)
+nsAccessible::GetSiblingAtOffset(PRInt32 aOffset, nsresult* aError) const
 {
-  if (IsDefunct()) {
-    if (aError)
-      *aError = NS_ERROR_FAILURE;
-
-    return nsnull;
-  }
-
-  nsAccessible *parent = GetParent();
-  if (!parent) {
+  if (!mParent || mIndexInParent == -1) {
     if (aError)
       *aError = NS_ERROR_UNEXPECTED;
 
     return nsnull;
   }
 
-  if (mIndexInParent == -1) {
-    if (aError)
-      *aError = NS_ERROR_UNEXPECTED;
-
+  if (aError && mIndexInParent + aOffset >= mParent->GetChildCount()) {
+    *aError = NS_OK; // fail peacefully
     return nsnull;
   }
 
-  if (aError) {
-    PRInt32 childCount = parent->GetChildCount();
-    if (mIndexInParent + aOffset >= childCount) {
-      *aError = NS_OK; // fail peacefully
-      return nsnull;
-    }
-  }
-
-  nsAccessible* child = parent->GetChildAt(mIndexInParent + aOffset);
+  nsAccessible* child = mParent->GetChildAt(mIndexInParent + aOffset);
   if (aError && !child)
     *aError = NS_ERROR_UNEXPECTED;
 
@@ -3225,16 +3184,15 @@ nsAccessible::GetFirstAvailableAccessible(nsINode *aStartNode) const
   if (accessible)
     return accessible;
 
-  nsCOMPtr<nsIDOMDocumentTraversal> trav =
-    do_QueryInterface(aStartNode->GetOwnerDoc());
-  NS_ENSURE_TRUE(trav, nsnull);
+  nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(aStartNode->GetOwnerDoc());
+  NS_ENSURE_TRUE(domDoc, nsnull);
 
   nsCOMPtr<nsIDOMNode> currentNode = do_QueryInterface(aStartNode);
-  nsCOMPtr<nsIDOMNode> rootNode(do_QueryInterface(GetNode()));
+  nsCOMPtr<nsIDOMNode> rootNode = do_QueryInterface(GetNode());
   nsCOMPtr<nsIDOMTreeWalker> walker;
-  trav->CreateTreeWalker(rootNode,
-                         nsIDOMNodeFilter::SHOW_ELEMENT | nsIDOMNodeFilter::SHOW_TEXT,
-                         nsnull, PR_FALSE, getter_AddRefs(walker));
+  domDoc->CreateTreeWalker(rootNode,
+                           nsIDOMNodeFilter::SHOW_ELEMENT | nsIDOMNodeFilter::SHOW_TEXT,
+                           nsnull, PR_FALSE, getter_AddRefs(walker));
   NS_ENSURE_TRUE(walker, nsnull);
 
   walker->SetCurrentNode(currentNode);
@@ -3251,44 +3209,6 @@ nsAccessible::GetFirstAvailableAccessible(nsINode *aStartNode) const
   }
 
   return nsnull;
-}
-
-PRBool nsAccessible::CheckVisibilityInParentChain(nsIDocument* aDocument, nsIView* aView)
-{
-  nsIDocument* document = aDocument;
-  nsIView* view = aView;
-  // both view chain and widget chain are broken between chrome and content
-  while (document != nsnull) {
-    while (view != nsnull) {
-      if (view->GetVisibility() == nsViewVisibility_kHide) {
-        return PR_FALSE;
-      }
-      view = view->GetParent();
-    }
-
-    nsIDocument* parentDoc = document->GetParentDocument();
-    if (parentDoc != nsnull) {
-      nsIContent* content = parentDoc->FindContentForSubDocument(document);
-      if (content != nsnull) {
-        nsIPresShell* shell = parentDoc->GetShell();
-        if (!shell) {
-          return PR_FALSE;
-        }
-        nsIFrame* frame = content->GetPrimaryFrame();
-        while (frame != nsnull && !frame->HasView()) {
-          frame = frame->GetParent();
-        }
-
-        if (frame != nsnull) {
-          view = frame->GetViewExternal();
-        }
-      }
-    }
-
-    document = parentDoc;
-  }
-
-  return PR_TRUE;
 }
 
 nsresult
@@ -3319,9 +3239,9 @@ nsAccessible::GetAttrValue(nsIAtom *aProperty, double *aValue)
 }
 
 PRUint32
-nsAccessible::GetActionRule(PRUint32 aStates)
+nsAccessible::GetActionRule(PRUint64 aStates)
 {
-  if (aStates & nsIAccessibleStates::STATE_UNAVAILABLE)
+  if (aStates & states::UNAVAILABLE)
     return eNoAction;
   
   // Check if it's simple xlink.

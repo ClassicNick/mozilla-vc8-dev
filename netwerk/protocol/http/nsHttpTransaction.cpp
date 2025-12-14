@@ -136,6 +136,7 @@ nsHttpTransaction::nsHttpTransaction()
     , mHasRequestBody(PR_FALSE)
     , mSSLConnectFailed(PR_FALSE)
     , mHttpResponseMatched(PR_FALSE)
+    , mPreserveStream(PR_FALSE)
 {
     LOG(("Creating nsHttpTransaction @%x\n", this));
 }
@@ -229,8 +230,10 @@ nsHttpTransaction::Init(PRUint8 caps,
 
     // make sure we eliminate any proxy specific headers from 
     // the request if we are talking HTTPS via a SSL tunnel.
-    PRBool pruneProxyHeaders = cinfo->UsingSSL() &&
-                               cinfo->UsingHttpProxy();
+    PRBool pruneProxyHeaders = 
+        cinfo->ShouldForceConnectMethod() ||
+        (cinfo->UsingSSL() && cinfo->UsingHttpProxy());
+    
     mReqHeaderBuf.Truncate();
     requestHead->Flatten(mReqHeaderBuf, pruneProxyHeaders);
 
@@ -318,6 +321,18 @@ nsHttpTransaction::TakeResponseHead()
     return head;
 }
 
+void
+nsHttpTransaction::SetSSLConnectFailed()
+{
+    mSSLConnectFailed = PR_TRUE;
+}
+
+nsHttpRequestHead *
+nsHttpTransaction::RequestHead()
+{
+    return mRequestHead;
+}
+
 //----------------------------------------------------------------------------
 // nsHttpTransaction::nsAHttpTransaction
 //----------------------------------------------------------------------------
@@ -339,14 +354,27 @@ nsHttpTransaction::GetSecurityCallbacks(nsIInterfaceRequestor **cb,
 }
 
 void
-nsHttpTransaction::OnTransportStatus(nsresult status, PRUint64 progress)
+nsHttpTransaction::OnTransportStatus(nsITransport* transport,
+                                     nsresult status, PRUint64 progress)
 {
     LOG(("nsHttpTransaction::OnSocketStatus [this=%x status=%x progress=%llu]\n",
         this, status, progress));
 
+    if (TimingEnabled()) {
+        if (status == nsISocketTransport::STATUS_RESOLVING) {
+            mTimings.domainLookupStart = mozilla::TimeStamp::Now();
+        } else if (status == nsISocketTransport::STATUS_RESOLVED) {
+            mTimings.domainLookupEnd = mozilla::TimeStamp::Now();
+        } else if (status == nsISocketTransport::STATUS_CONNECTING_TO) {
+            mTimings.connectStart = mozilla::TimeStamp::Now();
+        } else if (status == nsISocketTransport::STATUS_CONNECTED_TO) {
+            mTimings.connectEnd = mozilla::TimeStamp::Now();
+        }
+    }
+
     if (!mTransportSink)
         return;
-    
+
     NS_ASSERTION(PR_GetCurrentThread() == gSocketThread, "wrong thread");
 
     // Need to do this before the STATUS_RECEIVING_FROM check below, to make
@@ -398,7 +426,7 @@ nsHttpTransaction::OnTransportStatus(nsresult status, PRUint64 progress)
         progressMax = 0;
     }
 
-    mTransportSink->OnTransportStatus(nsnull, status, progress, progressMax);
+    mTransportSink->OnTransportStatus(transport, status, progress, progressMax);
 }
 
 PRBool
@@ -434,6 +462,10 @@ nsHttpTransaction::ReadRequestSegment(nsIInputStream *stream,
     nsresult rv = trans->mReader->OnReadSegment(buf, count, countRead);
     if (NS_FAILED(rv)) return rv;
 
+    if (trans->TimingEnabled() && trans->mTimings.requestStart.IsNull()) {
+        // First data we're sending -> this is requestStart
+        trans->mTimings.requestStart = mozilla::TimeStamp::Now();
+    }
     trans->mSentData = PR_TRUE;
     return NS_OK;
 }
@@ -493,6 +525,10 @@ nsHttpTransaction::WritePipeSegment(nsIOutputStream *stream,
     if (trans->mTransactionDone)
         return NS_BASE_STREAM_CLOSED; // stop iterating
 
+    if (trans->TimingEnabled() && trans->mTimings.responseStart.IsNull()) {
+        trans->mTimings.responseStart = mozilla::TimeStamp::Now();
+    }
+
     nsresult rv;
     //
     // OK, now let the caller fill this segment with data.
@@ -503,8 +539,12 @@ nsHttpTransaction::WritePipeSegment(nsIOutputStream *stream,
     NS_ASSERTION(*countWritten > 0, "bad writer");
     trans->mReceivedData = PR_TRUE;
 
-    // now let the transaction "play" with the buffer.  it is free to modify
+    // Let the transaction "play" with the buffer.  It is free to modify
     // the contents of the buffer and/or modify countWritten.
+    // - Bytes in HTTP headers don't count towards countWritten, so the input
+    // side of pipe (aka nsHttpChannel's mTransactionPump) won't hit
+    // OnInputStreamReady until all headers have been parsed.
+    //    
     rv = trans->ProcessData(buf, *countWritten, countWritten);
     if (NS_FAILED(rv))
         trans->Close(rv);
@@ -554,6 +594,8 @@ nsHttpTransaction::Close(nsresult reason)
         LOG(("  already closed\n"));
         return;
     }
+
+    mTimings.responseEnd = mozilla::TimeStamp::Now();
 
     if (mActivityDistributor) {
         // report the reponse is complete if not already reported
@@ -696,7 +738,7 @@ nsHttpTransaction::LocateHttpStart(char *buf, PRUint32 len,
     // mLineBuf can contain partial match from previous search
     if (!mLineBuf.IsEmpty()) {
         NS_ASSERTION(mLineBuf.Length() < HTTPHeaderLen, "ouch");
-        PRInt32 checkChars = PR_MIN(len, HTTPHeaderLen - mLineBuf.Length());
+        PRInt32 checkChars = NS_MIN(len, HTTPHeaderLen - mLineBuf.Length());
         if (PL_strncasecmp(buf, HTTPHeader + mLineBuf.Length(),
                            checkChars) == 0) {
             mLineBuf.Append(buf, checkChars);
@@ -715,7 +757,7 @@ nsHttpTransaction::LocateHttpStart(char *buf, PRUint32 len,
 
     PRBool firstByte = PR_TRUE;
     while (len > 0) {
-        if (PL_strncasecmp(buf, HTTPHeader, PR_MIN(len, HTTPHeaderLen)) == 0) {
+        if (PL_strncasecmp(buf, HTTPHeader, NS_MIN<PRUint32>(len, HTTPHeaderLen)) == 0) {
             if (len < HTTPHeaderLen) {
                 // partial HTTPHeader sequence found
                 // save partial match to mLineBuf
@@ -746,12 +788,12 @@ nsHttpTransaction::LocateHttpStart(char *buf, PRUint32 len,
     return 0;
 }
 
-
-void
+nsresult
 nsHttpTransaction::ParseLine(char *line)
 {
     LOG(("nsHttpTransaction::ParseLine [%s]\n", line));
-
+    nsresult rv = NS_OK;
+    
     if (!mHaveStatusLine) {
         mResponseHead->ParseStatusLine(line);
         mHaveStatusLine = PR_TRUE;
@@ -759,8 +801,10 @@ nsHttpTransaction::ParseLine(char *line)
         if (mResponseHead->Version() == NS_HTTP_VERSION_0_9)
             mHaveAllHeaders = PR_TRUE;
     }
-    else
-        mResponseHead->ParseHeaderLine(line);
+    else {
+        rv = mResponseHead->ParseHeaderLine(line);
+    }
+    return rv;
 }
 
 nsresult
@@ -775,8 +819,11 @@ nsHttpTransaction::ParseLineSegment(char *segment, PRUint32 len)
         // of mLineBuf.
         mLineBuf.Truncate(mLineBuf.Length() - 1);
         if (!mHaveStatusLine || (*segment != ' ' && *segment != '\t')) {
-            ParseLine(mLineBuf.BeginWriting());
+            nsresult rv = ParseLine(mLineBuf.BeginWriting());
             mLineBuf.Truncate();
+            if (NS_FAILED(rv)) {
+                return rv;
+            }
         }
     }
 
@@ -791,7 +838,8 @@ nsHttpTransaction::ParseLineSegment(char *segment, PRUint32 len)
     if (mLineBuf.First() == '\n') {
         mLineBuf.Truncate();
         // discard this response if it is a 100 continue or other 1xx status.
-        if (mResponseHead->Status() / 100 == 1) {
+        PRUint16 status = mResponseHead->Status();
+        if ((status != 101) && (status / 100 == 1)) {
             LOG(("ignoring 1xx response\n"));
             mHaveStatusLine = PR_FALSE;
             mHttpResponseMatched = PR_FALSE;
@@ -843,7 +891,7 @@ nsHttpTransaction::ParseHead(char *buf,
         if (!mConnection || !mConnection->LastTransactionExpectedNoContent()) {
             // tolerate only minor junk before the status line
             mHttpResponseMatched = PR_TRUE;
-            char *p = LocateHttpStart(buf, PR_MIN(count, 11), PR_TRUE);
+            char *p = LocateHttpStart(buf, NS_MIN<PRUint32>(count, 11), PR_TRUE);
             if (!p) {
                 // Treat any 0.9 style response of a put as a failure.
                 if (mRequestHead->Method() == nsHttp::Put)
@@ -962,6 +1010,8 @@ nsHttpTransaction::HandleContentStart()
 
         // check if this is a no-content response
         switch (mResponseHead->Status()) {
+        case 101:
+            mPreserveStream = PR_TRUE;    // fall through to other no content
         case 204:
         case 205:
         case 304:
@@ -1038,10 +1088,9 @@ nsHttpTransaction::HandleContent(char *buf,
         // headers. So, unless the connection is persistent, we must make
         // allowances for a possibly invalid Content-Length header. Thus, if
         // NOT persistent, we simply accept everything in |buf|.
-        if (mConnection->IsPersistent()) {
+        if (mConnection->IsPersistent() || mPreserveStream) {
             PRInt64 remaining = mContentLength - mContentRead;
-            PRInt64 count64 = count;
-            *contentRead = PR_MIN(count64, remaining);
+            *contentRead = PRUint32(NS_MIN<PRInt64>(count, remaining));
             *contentRemaining = count - *contentRead;
         }
         else {
@@ -1063,9 +1112,9 @@ nsHttpTransaction::HandleContent(char *buf,
     if (*contentRead) {
         // update count of content bytes read and report progress...
         mContentRead += *contentRead;
-        /* when uncommenting, take care of 64-bit integers w/ PR_MAX...
+        /* when uncommenting, take care of 64-bit integers w/ NS_MAX...
         if (mProgressSink)
-            mProgressSink->OnProgress(nsnull, nsnull, mContentRead, PR_MAX(0, mContentLength));
+            mProgressSink->OnProgress(nsnull, nsnull, mContentRead, NS_MAX(0, mContentLength));
         */
     }
 
@@ -1193,9 +1242,10 @@ nsHttpTransaction::DeleteSelfOnConsumerThread()
     LOG(("nsHttpTransaction::DeleteSelfOnConsumerThread [this=%x]\n", this));
     
     PRBool val;
-    if (NS_SUCCEEDED(mConsumerTarget->IsOnCurrentThread(&val)) && val)
+    if (!mConsumerTarget ||
+        (NS_SUCCEEDED(mConsumerTarget->IsOnCurrentThread(&val)) && val)) {
         delete this;
-    else {
+    } else {
         LOG(("proxying delete to consumer thread...\n"));
         nsCOMPtr<nsIRunnable> event = new nsDeleteHttpTransaction(this);
         if (NS_FAILED(mConsumerTarget->Dispatch(event, NS_DISPATCH_NORMAL)))

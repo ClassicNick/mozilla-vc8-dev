@@ -88,7 +88,7 @@
 #include "nsSerializationHelper.h"
 #include "nsIFrame.h"
 #include "nsIView.h"
-#include "nsIEventListenerManager.h"
+#include "nsEventListenerManager.h"
 #include "PCOMContentPermissionRequestChild.h"
 #include "xpcpublic.h"
 
@@ -145,6 +145,7 @@ TabChild::Init()
 }
 
 NS_INTERFACE_MAP_BEGIN(TabChild)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserChrome2)
   NS_INTERFACE_MAP_ENTRY(nsIEmbeddingSiteWindow)
@@ -356,6 +357,7 @@ TabChild::ProvideWindow(nsIDOMWindow* aParent, PRUint32 aChromeFlags,
         return NS_ERROR_NOT_AVAILABLE;
     }
 
+    *aWindowIsNew = PR_TRUE;
     nsCOMPtr<nsIDOMWindow> win =
         do_GetInterface(static_cast<TabChild*>(newChild)->mWebNav);
     win.forget(aReturn);
@@ -476,7 +478,7 @@ TabChild::~TabChild()
       DestroyCx();
     }
     
-    nsIEventListenerManager* elm = mTabChildGlobal->GetListenerManager(PR_FALSE);
+    nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(PR_FALSE);
     if (elm) {
       elm->Disconnect();
     }
@@ -753,9 +755,11 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
                            const nsString& aJSON)
 {
   if (mTabChildGlobal) {
-    static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get())->
-      ReceiveMessage(static_cast<nsPIDOMEventTarget*>(mTabChildGlobal),
-                     aMessage, PR_FALSE, aJSON, nsnull, nsnull);
+    nsFrameScriptCx cx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsRefPtr<nsFrameMessageManager> mm =
+      static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
+    mm->ReceiveMessage(static_cast<nsIDOMEventTarget*>(mTabChildGlobal),
+                       aMessage, PR_FALSE, aJSON, nsnull, nsnull);
   }
   return true;
 }
@@ -843,10 +847,10 @@ TabChild::InitTabChildGlobal()
   nsContentUtils::GetSecurityManager()->GetSystemPrincipal(getter_AddRefs(mPrincipal));
 
   JS_SetNativeStackQuota(cx, 128 * sizeof(size_t) * 1024);
-  JS_SetScriptStackQuota(cx, 25 * sizeof(size_t) * 1024 * 1024);
 
-  JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_ANONFUNFIX | JSOPTION_PRIVATE_IS_NSISUPPORTS);
+  JS_SetOptions(cx, JS_GetOptions(cx) | JSOPTION_JIT | JSOPTION_PRIVATE_IS_NSISUPPORTS);
   JS_SetVersion(cx, JSVERSION_LATEST);
+  JS_SetErrorReporter(cx, ContentScriptErrorReporter);
 
   xpc_LocalizeContext(cx);
 
@@ -862,7 +866,7 @@ TabChild::InitTabChildGlobal()
   mTabChildGlobal = scope;
 
   nsISupports* scopeSupports =
-    NS_ISUPPORTS_CAST(nsPIDOMEventTarget*, scope);
+    NS_ISUPPORTS_CAST(nsIDOMEventTarget*, scope);
   JS_SetContextPrivate(cx, scopeSupports);
 
   nsresult rv =
@@ -899,7 +903,7 @@ TabChild::InitWidget(const nsIntSize& size)
         nsnull, 0,              // no parents
         nsIntRect(nsIntPoint(0, 0), size),
         nsnull,                 // HandleWidgetEvent
-        nsnull                  // nsIDeviceContext
+        nsnull                  // nsDeviceContext
         );
 
     RenderFrameChild* remoteFrame =

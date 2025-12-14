@@ -46,7 +46,7 @@
 #include "nsThreadUtils.h"
 #include "nsHashtable.h"
 #include "nsAutoPtr.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/ReentrantMonitor.h"
 #include "nsISocketTransportService.h"
 
 #include "nsIObserver.h"
@@ -138,6 +138,11 @@ public:
     // preference to the specified connection.
     nsresult ProcessPendingQ(nsHttpConnectionInfo *);
 
+    // This is used to force an idle connection to be closed and removed from
+    // the idle connection list. It is called when the idle connection detects
+    // that the network peer has closed the transport.
+    nsresult CloseIdleConnection(nsHttpConnection *);
+
 private:
     virtual ~nsHttpConnectionMgr();
     class nsHalfOpenSocket;
@@ -206,12 +211,15 @@ private:
         
         nsresult SetupStreams(nsISocketTransport **,
                               nsIAsyncInputStream **,
-                              nsIAsyncOutputStream **);
+                              nsIAsyncOutputStream **,
+                              PRBool isBackup);
         nsresult SetupPrimaryStreams();
         nsresult SetupBackupStreams();
         void     SetupBackupTimer();
         void     Abandon();
         
+        nsHttpTransaction *Transaction() { return mTransaction; }
+
     private:
         nsConnectionEntry              *mEnt;
         nsRefPtr<nsHttpTransaction>    mTransaction;
@@ -228,11 +236,11 @@ private:
     friend class nsHalfOpenSocket;
 
     //-------------------------------------------------------------------------
-    // NOTE: these members may be accessed from any thread (use mMonitor)
+    // NOTE: these members may be accessed from any thread (use mReentrantMonitor)
     //-------------------------------------------------------------------------
 
     PRInt32                      mRef;
-    mozilla::Monitor             mMonitor;
+    mozilla::ReentrantMonitor    mReentrantMonitor;
     nsCOMPtr<nsIEventTarget>     mSocketThreadTarget;
 
     // connection limits
@@ -258,7 +266,7 @@ private:
     PRBool   ProcessPendingQForEntry(nsConnectionEntry *);
     PRBool   AtActiveConnectionLimit(nsConnectionEntry *, PRUint8 caps);
     void     GetConnection(nsConnectionEntry *, nsHttpTransaction *,
-                           nsHttpConnection **);
+                           PRBool, nsHttpConnection **);
     nsresult DispatchTransaction(nsConnectionEntry *, nsAHttpTransaction *,
                                  PRUint8 caps, nsHttpConnection *);
     PRBool   BuildPipeline(nsConnectionEntry *, nsAHttpTransaction *, nsHttpPipeline **);

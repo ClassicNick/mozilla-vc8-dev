@@ -54,15 +54,8 @@ class nsDOMEventTargetWrapperCache : public nsDOMEventTargetHelper,
 public:  
   NS_DECL_ISUPPORTS_INHERITED
 
-  class NS_CYCLE_COLLECTION_INNERCLASS
-    : public NS_CYCLE_COLLECTION_CLASSNAME(nsDOMEventTargetHelper)
-  {
-    NS_IMETHOD RootAndUnlinkJSObjects(void *p);
-    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(nsDOMEventTargetWrapperCache,
-                                                            nsDOMEventTargetHelper)
-    NS_IMETHOD_(void) Trace(void *p, TraceCallback cb, void *closure);
-  };
-  NS_CYCLE_COLLECTION_PARTICIPANT_INSTANCE
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(nsDOMEventTargetWrapperCache,
+                                                         nsDOMEventTargetHelper)
   
   void GetParentObject(nsIScriptGlobalObject **aParentObject)
   {
@@ -76,15 +69,15 @@ public:
 
   static nsDOMEventTargetWrapperCache* FromSupports(nsISupports* aSupports)
   {
-    nsPIDOMEventTarget* target =
-      static_cast<nsPIDOMEventTarget*>(aSupports);
+    nsIDOMEventTarget* target =
+      static_cast<nsIDOMEventTarget*>(aSupports);
 #ifdef DEBUG
     {
-      nsCOMPtr<nsPIDOMEventTarget> target_qi =
+      nsCOMPtr<nsIDOMEventTarget> target_qi =
         do_QueryInterface(aSupports);
 
       // If this assertion fires the QI implementation for the object in
-      // question doesn't use the nsPIDOMEventTarget pointer as the
+      // question doesn't use the nsIDOMEventTarget pointer as the
       // nsISupports pointer. That must be fixed, or we'll crash...
       NS_ASSERTION(target_qi == target, "Uh, fix QI!");
     }

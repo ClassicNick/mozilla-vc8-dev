@@ -51,11 +51,11 @@
 #include "mozilla/storage.h"
 #include "mozilla/dom/Link.h"
 #include "nsDocShellCID.h"
-#include "nsIEventStateManager.h"
 #include "mozilla/Services.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
 #include "nsIXPConnect.h"
+#include "mozilla/Util.h"
 
 // Initial size for the cache holding visited status observers.
 #define VISIT_OBSERVERS_INITIAL_CACHE_SIZE 128
@@ -464,13 +464,14 @@ public:
         mPlace.transitionType != nsINavHistoryService::TRANSITION_FRAMED_LINK) {
       navHistory->NotifyOnVisit(uri, mPlace.visitId, mPlace.visitTime,
                                 mPlace.sessionId, mReferrer.visitId,
-                                mPlace.transitionType);
+                                mPlace.transitionType, mPlace.guid);
     }
 
     nsCOMPtr<nsIObserverService> obsService =
       mozilla::services::GetObserverService();
     if (obsService) {
-      nsresult rv = obsService->NotifyObservers(uri, URI_VISIT_SAVED, nsnull);
+      DebugOnly<nsresult> rv =
+        obsService->NotifyObservers(uri, URI_VISIT_SAVED, nsnull);
       NS_WARN_IF_FALSE(NS_SUCCEEDED(rv), "Could not notify observers");
     }
 
@@ -498,9 +499,11 @@ public:
    *        The new title to notify about.
    */
   NotifyTitleObservers(const nsCString& aSpec,
-                       const nsString& aTitle)
+                       const nsString& aTitle,
+                       const nsCString& aGUID)
   : mSpec(aSpec)
   , mTitle(aTitle)
+  , mGUID(aGUID)
   {
   }
 
@@ -513,13 +516,14 @@ public:
     NS_ENSURE_TRUE(navHistory, NS_ERROR_OUT_OF_MEMORY);
     nsCOMPtr<nsIURI> uri;
     (void)NS_NewURI(getter_AddRefs(uri), mSpec);
-    navHistory->NotifyTitleChange(uri, mTitle);
+    navHistory->NotifyTitleChange(uri, mTitle, mGUID);
 
     return NS_OK;
   }
 private:
   const nsCString mSpec;
   const nsString mTitle;
+  const nsCString mGUID;
 };
 
 /**
@@ -696,7 +700,7 @@ public:
 
       // Notify about title change if needed.
       if ((!known && !place.title.IsVoid()) || place.titleChanged) {
-        event = new NotifyTitleObservers(place.spec, place.title);
+        event = new NotifyTitleObservers(place.spec, place.title, place.guid);
         rv = NS_DispatchToMainThread(event);
         NS_ENSURE_SUCCESS(rv, rv);
       }
@@ -800,8 +804,9 @@ private:
       NS_ENSURE_SUCCESS(rv, rv);
 
       // We need the place id and guid of the page we just inserted when we
-      // have a callback.  No point in doing the disk I/O if we do not need it.
-      if (mCallback) {
+      // have a callback or when the GUID isn't known.  No point in doing the
+      // disk I/O if we do not need it.
+      if (mCallback || aPlace.guid.IsEmpty()) {
         bool exists = mHistory->FetchPageInfo(aPlace);
         if (!exists) {
           NS_NOTREACHED("should have an entry in moz_places");
@@ -1164,7 +1169,7 @@ public:
     }
 
     nsCOMPtr<nsIRunnable> event =
-      new NotifyTitleObservers(mPlace.spec, mPlace.title);
+      new NotifyTitleObservers(mPlace.spec, mPlace.title, mPlace.guid);
     nsresult rv = NS_DispatchToMainThread(event);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1909,7 +1914,7 @@ History::UpdatePlaces(const jsval& aPlaceInfos,
       // We must have a date and a transaction type!
       rv = GetIntFromJSObject(aCtx, visit, "visitDate", &data.visitTime);
       NS_ENSURE_SUCCESS(rv, rv);
-      PRUint32 transitionType;
+      PRUint32 transitionType = 0;
       rv = GetIntFromJSObject(aCtx, visit, "transitionType", &transitionType);
       NS_ENSURE_SUCCESS(rv, rv);
       NS_ENSURE_ARG_RANGE(transitionType,

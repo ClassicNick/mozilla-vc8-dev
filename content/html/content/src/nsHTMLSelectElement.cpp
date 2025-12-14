@@ -38,6 +38,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsHTMLSelectElement.h"
+
 #include "nsHTMLOptionElement.h"
 #include "nsIDOMEventTarget.h"
 #include "nsContentCreatorFunctions.h"
@@ -51,13 +52,9 @@
 #include "nsContentCreatorFunctions.h"
 
 #include "nsIDOMHTMLOptGroupElement.h"
-#include "nsHTMLOptionElement.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStates.h"
 #include "nsGUIEvent.h"
 #include "nsIPrivateDOMEvent.h"
-#include "nsIBoxObject.h"
-#include "nsIDOMNSDocument.h"
-#include "nsIDOMDocumentEvent.h"
 
 // Notify/query select frame for selectedIndex
 #include "nsIDocument.h"
@@ -88,20 +85,20 @@ nsSafeOptionListMutation::nsSafeOptionListMutation(nsIContent* aSelect,
                                                    nsIContent* aKid,
                                                    PRUint32 aIndex,
                                                    PRBool aNotify)
-  : mSelect(do_QueryInterface(aSelect)), mTopLevelMutation(PR_FALSE),
-    mNeedsRebuild(PR_FALSE)
+  : mSelect(nsHTMLSelectElement::FromContent(aSelect))
+  , mTopLevelMutation(PR_FALSE)
+  , mNeedsRebuild(PR_FALSE)
 {
-  nsHTMLSelectElement* select = static_cast<nsHTMLSelectElement*>(mSelect.get());
-  if (select) {
-    mTopLevelMutation = !select->mMutating;
+  if (mSelect) {
+    mTopLevelMutation = !mSelect->mMutating;
     if (mTopLevelMutation) {
-      select->mMutating = PR_TRUE;
+      mSelect->mMutating = PR_TRUE;
     } else {
       // This is very unfortunate, but to handle mutation events properly,
       // option list must be up-to-date before inserting or removing options.
       // Fortunately this is called only if mutation event listener
       // adds or removes options.
-      select->RebuildOptionsArray(aNotify);
+      mSelect->RebuildOptionsArray(aNotify);
     }
     nsresult rv;
     if (aKid) {
@@ -116,16 +113,14 @@ nsSafeOptionListMutation::nsSafeOptionListMutation(nsIContent* aSelect,
 nsSafeOptionListMutation::~nsSafeOptionListMutation()
 {
   if (mSelect) {
-    nsHTMLSelectElement* select =
-      static_cast<nsHTMLSelectElement*>(mSelect.get());
     if (mNeedsRebuild || (mTopLevelMutation && mGuard.Mutated(1))) {
-      select->RebuildOptionsArray(PR_TRUE);
+      mSelect->RebuildOptionsArray(PR_TRUE);
     }
     if (mTopLevelMutation) {
-      select->mMutating = PR_FALSE;
+      mSelect->mMutating = PR_FALSE;
     }
 #ifdef DEBUG
-    select->VerifyOptionsArray();
+    mSelect->VerifyOptionsArray();
 #endif
   }
 }
@@ -161,6 +156,11 @@ nsHTMLSelectElement::nsHTMLSelectElement(already_AddRefed<nsINodeInfo> aNodeInfo
 
   // DoneAddingChildren() will be called later if it's from the parser,
   // otherwise it is
+
+  // Set up our default state: enabled, optional, and valid.
+  AddStatesSilently(NS_EVENT_STATE_ENABLED |
+                    NS_EVENT_STATE_OPTIONAL |
+                    NS_EVENT_STATE_VALID);
 }
 
 nsHTMLSelectElement::~nsHTMLSelectElement()
@@ -187,9 +187,8 @@ DOMCI_NODE_DATA(HTMLSelectElement, nsHTMLSelectElement)
 
 // QueryInterface implementation for nsHTMLSelectElement
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsHTMLSelectElement)
-  NS_HTML_CONTENT_INTERFACE_TABLE3(nsHTMLSelectElement,
+  NS_HTML_CONTENT_INTERFACE_TABLE2(nsHTMLSelectElement,
                                    nsIDOMHTMLSelectElement,
-                                   nsISelectElement,
                                    nsIConstraintValidation)
   NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(nsHTMLSelectElement,
                                                nsGenericHTMLFormElement)
@@ -209,14 +208,7 @@ nsHTMLSelectElement::SetCustomValidity(const nsAString& aError)
 {
   nsIConstraintValidation::SetCustomValidity(aError);
 
-  nsIDocument* doc = GetCurrentDoc();
-  if (doc) {
-    MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-    doc->ContentStateChanged(this, NS_EVENT_STATE_INVALID |
-                                   NS_EVENT_STATE_VALID |
-                                   NS_EVENT_STATE_MOZ_UI_INVALID |
-                                   NS_EVENT_STATE_MOZ_UI_VALID);
-  }
+  UpdateState(true);
 
   return NS_OK;
 }
@@ -241,11 +233,10 @@ nsHTMLSelectElement::InsertChildAt(nsIContent* aKid,
 }
 
 nsresult
-nsHTMLSelectElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify, PRBool aMutationEvent)
+nsHTMLSelectElement::RemoveChildAt(PRUint32 aIndex, PRBool aNotify)
 {
-  NS_ASSERTION(aMutationEvent, "Someone tried to inhibit mutations on select child removal.");
   nsSafeOptionListMutation safeMutation(this, this, nsnull, aIndex, aNotify);
-  nsresult rv = nsGenericHTMLFormElement::RemoveChildAt(aIndex, aNotify, aMutationEvent);
+  nsresult rv = nsGenericHTMLFormElement::RemoveChildAt(aIndex, aNotify);
   if (NS_FAILED(rv)) {
     safeMutation.MutationFailed();
   }
@@ -362,16 +353,7 @@ nsHTMLSelectElement::RemoveOptionsFromList(nsIContent* aOptions,
       // option.
       UpdateValueMissingValidityState();
 
-      if (aNotify) {
-        nsIDocument* doc = GetCurrentDoc();
-        if (doc) {
-          MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-          doc->ContentStateChanged(this, NS_EVENT_STATE_VALID |
-                                         NS_EVENT_STATE_INVALID |
-                                         NS_EVENT_STATE_MOZ_UI_INVALID |
-                                         NS_EVENT_STATE_MOZ_UI_VALID);
-        }
-      }
+      UpdateState(aNotify);
     }
   }
 
@@ -895,16 +877,7 @@ nsHTMLSelectElement::OnOptionSelected(nsISelectControlFrame* aSelectFrame,
   }
 
   UpdateValueMissingValidityState();
-  if (aNotify) {
-    nsIDocument* doc = GetCurrentDoc();
-    if (doc) {
-      MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-      doc->ContentStateChanged(this, NS_EVENT_STATE_VALID |
-                                     NS_EVENT_STATE_INVALID |
-                                     NS_EVENT_STATE_MOZ_UI_INVALID |
-                                     NS_EVENT_STATE_MOZ_UI_VALID);
-    }
-  }
+  UpdateState(aNotify);
 }
 
 void
@@ -1272,18 +1245,6 @@ NS_IMPL_BOOL_ATTR(nsHTMLSelectElement, Required, required)
 NS_IMPL_NON_NEGATIVE_INT_ATTR_DEFAULT_VALUE(nsHTMLSelectElement, Size, size, 0)
 NS_IMPL_INT_ATTR(nsHTMLSelectElement, TabIndex, tabindex)
 
-NS_IMETHODIMP
-nsHTMLSelectElement::Blur()
-{
-  return nsGenericHTMLElement::Blur();
-}
-
-NS_IMETHODIMP
-nsHTMLSelectElement::Focus()
-{
-  return nsGenericHTMLElement::Focus();
-}
-
 PRBool
 nsHTMLSelectElement::IsHTMLFocusable(PRBool aWithMouse,
                                      PRBool *aIsFocusable, PRInt32 *aTabIndex)
@@ -1340,16 +1301,7 @@ nsHTMLSelectElement::SelectSomething(PRBool aNotify)
       NS_ENSURE_SUCCESS(rv, PR_FALSE);
 
       UpdateValueMissingValidityState();
-      if (aNotify) {
-        nsIDocument* doc = GetCurrentDoc();
-        if (doc) {
-          MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-          doc->ContentStateChanged(this, NS_EVENT_STATE_VALID |
-                                         NS_EVENT_STATE_INVALID |
-                                         NS_EVENT_STATE_MOZ_UI_INVALID |
-                                         NS_EVENT_STATE_MOZ_UI_VALID);
-        }
-      }
+      UpdateState(aNotify);
 
       return PR_TRUE;
     }
@@ -1370,9 +1322,28 @@ nsHTMLSelectElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
 
   // If there is a disabled fieldset in the parent chain, the element is now
   // barred from constraint validation.
+  // XXXbz is this still needed now that fieldset changes always call
+  // FieldSetDisabledChanged?
   UpdateBarredFromConstraintValidation();
 
+  // And now make sure our state is up to date
+  UpdateState(false);
+
   return rv;
+}
+
+void
+nsHTMLSelectElement::UnbindFromTree(PRBool aDeep, PRBool aNullParent)
+{
+  nsGenericHTMLFormElement::UnbindFromTree(aDeep, aNullParent);
+
+  // We might be no longer disabled because our parent chain changed.
+  // XXXbz is this still needed now that fieldset changes always call
+  // FieldSetDisabledChanged?
+  UpdateBarredFromConstraintValidation();
+
+  // And now make sure our state is up to date
+  UpdateState(false);
 }
 
 nsresult
@@ -1392,26 +1363,14 @@ nsresult
 nsHTMLSelectElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                                   const nsAString* aValue, PRBool aNotify)
 {
-  nsEventStates states;
-
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::disabled) {
       UpdateBarredFromConstraintValidation();
-      states |= NS_EVENT_STATE_VALID | NS_EVENT_STATE_INVALID |
-                NS_EVENT_STATE_MOZ_UI_VALID | NS_EVENT_STATE_MOZ_UI_INVALID;
     } else if (aName == nsGkAtoms::required) {
       UpdateValueMissingValidityState();
-      states |= NS_EVENT_STATE_VALID | NS_EVENT_STATE_INVALID |
-                NS_EVENT_STATE_MOZ_UI_VALID | NS_EVENT_STATE_MOZ_UI_INVALID;
     }
-  }
 
-  if (aNotify && !states.IsEmpty()) {
-    nsIDocument* doc = GetCurrentDoc();
-    if (doc) {
-      MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-      doc->ContentStateChanged(this, states);
-    }
+    UpdateState(aNotify);
   }
 
   return nsGenericHTMLFormElement::AfterSetAttr(aNameSpaceID, aName,
@@ -1480,6 +1439,9 @@ nsHTMLSelectElement::DoneAddingChildren(PRBool aHaveNotified)
     // with an empty value. We have to make sure the select element updates it's
     // validity state to take this into account.
     UpdateValueMissingValidityState();
+
+    // And now make sure we update our content state too
+    UpdateState(aHaveNotified);
   }
 
   mDefaultSelectionSet = PR_TRUE;
@@ -1583,12 +1545,7 @@ nsHTMLSelectElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
     mCanShowInvalidUI = PR_TRUE;
     mCanShowValidUI = PR_TRUE;
 
-    nsIDocument* doc = GetCurrentDoc();
-    if (doc) {
-      MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-      doc->ContentStateChanged(this, NS_EVENT_STATE_MOZ_UI_VALID |
-                                     NS_EVENT_STATE_MOZ_UI_INVALID);
-    }
+    UpdateState(true);
   }
 
   return nsGenericHTMLFormElement::PostHandleEvent(aVisitor);
@@ -2091,10 +2048,8 @@ NS_INTERFACE_TABLE_HEAD(nsHTMLOptionCollection)
 NS_INTERFACE_MAP_END
 
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF_AMBIGUOUS(nsHTMLOptionCollection,
-                                          nsIHTMLCollection)
-NS_IMPL_CYCLE_COLLECTING_RELEASE_AMBIGUOUS(nsHTMLOptionCollection,
-                                           nsIHTMLCollection)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(nsHTMLOptionCollection)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(nsHTMLOptionCollection)
 
 
 // nsIDOMNSHTMLOptionCollection interface
@@ -2186,22 +2141,19 @@ nsHTMLOptionCollection::SetSelectedIndex(PRInt32 aSelectedIndex)
 NS_IMETHODIMP
 nsHTMLOptionCollection::Item(PRUint32 aIndex, nsIDOMNode** aReturn)
 {
-  nsresult rv;
-  nsISupports* item = GetNodeAt(aIndex, &rv);
+  nsISupports* item = GetNodeAt(aIndex);
   if (!item) {
     *aReturn = nsnull;
 
-    return rv;
+    return NS_OK;
   }
 
   return CallQueryInterface(item, aReturn);
 }
 
 nsIContent*
-nsHTMLOptionCollection::GetNodeAt(PRUint32 aIndex, nsresult* aResult)
+nsHTMLOptionCollection::GetNodeAt(PRUint32 aIndex)
 {
-  *aResult = NS_OK;
-
   return static_cast<nsIContent*>(ItemAsOption(aIndex));
 }
 
@@ -2226,11 +2178,8 @@ GetNamedItemHelper(nsTArray<nsRefPtr<nsHTMLOptionElement> > &aElements,
 
 nsISupports*
 nsHTMLOptionCollection::GetNamedItem(const nsAString& aName,
-                                     nsWrapperCache **aCache,
-                                     nsresult* aResult)
+                                     nsWrapperCache **aCache)
 {
-  *aResult = NS_OK;
-
   nsINode *item = GetNamedItemHelper(mElements, aName);
   *aCache = item;
   return item;
@@ -2305,13 +2254,11 @@ nsHTMLSelectElement::UpdateBarredFromConstraintValidation()
 }
 
 void
-nsHTMLSelectElement::FieldSetDisabledChanged(nsEventStates aStates, PRBool aNotify)
+nsHTMLSelectElement::FieldSetDisabledChanged(PRBool aNotify)
 {
   UpdateBarredFromConstraintValidation();
 
-  aStates |= NS_EVENT_STATE_VALID | NS_EVENT_STATE_INVALID |
-             NS_EVENT_STATE_MOZ_UI_VALID | NS_EVENT_STATE_MOZ_UI_INVALID;
-  nsGenericHTMLFormElement::FieldSetDisabledChanged(aStates, aNotify);
+  nsGenericHTMLFormElement::FieldSetDisabledChanged(aNotify);
 }
 
 void
@@ -2324,13 +2271,8 @@ nsHTMLSelectElement::SetSelectionChanged(PRBool aValue, PRBool aNotify)
   PRBool previousSelectionChangedValue = mSelectionHasChanged;
   mSelectionHasChanged = aValue;
 
-  if (aNotify && mSelectionHasChanged != previousSelectionChangedValue) {
-    nsIDocument* doc = GetCurrentDoc();
-    if (doc) {
-      MOZ_AUTO_DOC_UPDATE(doc, UPDATE_CONTENT_STATE, PR_TRUE);
-      doc->ContentStateChanged(this, NS_EVENT_STATE_MOZ_UI_INVALID |
-                                     NS_EVENT_STATE_MOZ_UI_VALID);
-    }
+  if (mSelectionHasChanged != previousSelectionChangedValue) {
+    UpdateState(aNotify);
   }
 }
 

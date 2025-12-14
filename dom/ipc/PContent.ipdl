@@ -47,6 +47,7 @@ include protocol PMemoryReportRequest;
 
 include "mozilla/chrome/RegistryMessageUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+include "mozilla/ipc/RPCChannel.h";
 
 include "nsGeoPositionIPCSerialiser.h";
 include "PPrefTuple.h";
@@ -60,6 +61,7 @@ using OverrideMapping;
 using IPC::URI;
 using IPC::Permission;
 using mozilla::null_t;
+using mozilla::ipc::RPCChannel;
 using gfxIntSize;
 
 namespace mozilla {
@@ -123,7 +125,7 @@ child:
     // nsIPermissionManager messages
     AddPermission(Permission permission);
 
-    AccelerationChanged(double x, double y, double z);
+    DeviceMotionChanged(long type, double x, double y, double z);
 
     ScreenSizeChanged(gfxIntSize size);
 
@@ -144,7 +146,7 @@ parent:
     async SetURITitle(URI uri, nsString title);
     
     // filepicker remoting
-    sync ShowFilePicker(PRInt16 mode, PRInt16 selectedType, 
+    sync ShowFilePicker(PRInt16 mode, PRInt16 selectedType, PRBool addToRecentDocs,
                         nsString title, nsString defaultFile, nsString defaultExtension,
                         nsString[] filters, nsString[] filterNames)
         returns (nsString[] files, PRInt16 retValue, nsresult result);
@@ -172,8 +174,8 @@ parent:
     
     AddGeolocationListener();
     RemoveGeolocationListener();
-    AddAccelerometerListener();
-    RemoveAccelerometerListener();
+    AddDeviceMotionListener();
+    RemoveDeviceMotionListener();
 
     ConsoleMessage(nsString message);
     ScriptError(nsString message, nsString sourceName, nsString sourceLine,
@@ -183,6 +185,8 @@ parent:
     // nsIPermissionManager messages
     sync ReadPermissions() returns (Permission[] permissions);
 
+    sync GetIndexedDBDirectory() returns (nsString directory);
+
     // These clipboard methods are only really used on Android since
     // the clipboard is not available in the content process.
     SetClipboardText(nsString text, PRInt32 whichClipboard);
@@ -191,6 +195,12 @@ parent:
     EmptyClipboard();
     sync ClipboardHasText()
         returns (PRBool hasText);
+
+    sync GetSystemColors(PRUint32 colorsCount)
+        returns (PRUint32[] colors);
+
+    sync GetIconForExtension(nsCString aFileExt, PRUint32 aIconSize)
+        returns (PRUint8[] bits);
 
 both:
      AsyncMessage(nsString aMessage, nsString aJSON);

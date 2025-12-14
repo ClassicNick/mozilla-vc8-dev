@@ -335,7 +335,6 @@ public:
   NS_DECL_ISUPPORTS
 
   enum ReporterType {
-    LookAside_Used,
     Cache_Used,
     Schema_Used,
     Stmt_Used
@@ -349,54 +348,49 @@ public:
   }
 
 
+  NS_IMETHOD GetProcess(char **process)
+  {
+    *process = strdup("");
+    return NS_OK;
+  }
+
   NS_IMETHOD GetPath(char **memoryPath)
   {
     nsCString path;
 
-    path.AppendLiteral("storage/");
+    path.AppendLiteral("explicit/storage/sqlite/");
     path.Append(mDBConn.getFilename());
 
-    if (mType == LookAside_Used) {
-      path.AppendLiteral("/LookAside_Used");
-    }
-    else if (mType == Cache_Used) {
-      path.AppendLiteral("/Cache_Used");
+    if (mType == Cache_Used) {
+      path.AppendLiteral("/cache-used");
     }
     else if (mType == Schema_Used) {
-      path.AppendLiteral("/Schema_Used");
+      path.AppendLiteral("/schema-used");
     }
     else if (mType == Stmt_Used) {
-      path.AppendLiteral("/Stmt_Used");
+      path.AppendLiteral("/stmt-used");
     }
 
     *memoryPath = ::ToNewCString(path);
     return NS_OK;
   }
 
-  NS_IMETHOD GetDescription(char **desc)
+  NS_IMETHOD GetKind(PRInt32 *kind)
   {
-    if (mType == LookAside_Used) {
-      *desc = ::strdup("Number of lookaside memory slots currently checked out");
-    }
-    else if (mType == Cache_Used) {
-      *desc = ::strdup("Approximate number of bytes of heap memory used by all pager caches");
-    }
-    else if (mType == Schema_Used) {
-      *desc = ::strdup("Approximate number of bytes of heap memory used to store the schema for all databases associated with the connection");
-    }
-    else if (mType == Stmt_Used) {
-      *desc = ::strdup("Approximate number of bytes of heap and lookaside memory used by all prepared statements");
-    }
+    *kind = KIND_HEAP;
     return NS_OK;
   }
 
-  NS_IMETHOD GetMemoryUsed(PRInt64 *memoryUsed)
+  NS_IMETHOD GetUnits(PRInt32 *units)
+  {
+    *units = UNITS_BYTES;
+    return NS_OK;
+  }
+
+  NS_IMETHOD GetAmount(PRInt64 *amount)
   {
     int type = 0;
-    if (mType == LookAside_Used) {
-      type = SQLITE_DBSTATUS_LOOKASIDE_USED;
-    }
-    else if (mType == Cache_Used) {
+    if (mType == Cache_Used) {
       type = SQLITE_DBSTATUS_CACHE_USED;
     }
     else if (mType == Schema_Used) {
@@ -408,9 +402,25 @@ public:
 
     int cur=0, max=0;
     int rc = ::sqlite3_db_status(mDBConn, type, &cur, &max, 0);
-    *memoryUsed = cur;
+    *amount = cur;
     return convertResultCode(rc);
   }
+
+  NS_IMETHOD GetDescription(char **desc)
+  {
+    if (mType == Cache_Used) {
+      *desc = ::strdup("Memory (approximate) used by all pager caches.");
+    }
+    else if (mType == Schema_Used) {
+      *desc = ::strdup("Memory (approximate) used to store the schema "
+                       "for all databases associated with the connection");
+    }
+    else if (mType == Stmt_Used) {
+      *desc = ::strdup("Memory (approximate) used by all prepared statements");
+    }
+    return NS_OK;
+  }
+
   Connection &mDBConn;
   nsCString mFileName;
   ReporterType mType;
@@ -576,9 +586,6 @@ Connection::initialize(nsIFile *aDatabaseFile,
   }
 
   nsRefPtr<nsIMemoryReporter> reporter;
-  reporter =
-    new StorageMemoryReporter(*this, StorageMemoryReporter::LookAside_Used);
-  mMemoryReporters.AppendElement(reporter);
 
   reporter =
     new StorageMemoryReporter(*this, StorageMemoryReporter::Cache_Used);
@@ -588,7 +595,8 @@ Connection::initialize(nsIFile *aDatabaseFile,
     new StorageMemoryReporter(*this, StorageMemoryReporter::Schema_Used);
   mMemoryReporters.AppendElement(reporter);
 
-  reporter = new StorageMemoryReporter(*this, StorageMemoryReporter::Stmt_Used);
+  reporter =
+    new StorageMemoryReporter(*this, StorageMemoryReporter::Stmt_Used);
   mMemoryReporters.AppendElement(reporter);
 
   for (PRUint32 i = 0; i < mMemoryReporters.Length(); i++) {

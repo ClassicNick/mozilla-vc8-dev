@@ -196,7 +196,7 @@ public:
   nsresult ReallyStartLoading();
   void Finalize();
   nsIDocShell* GetExistingDocShell() { return mDocShell; }
-  nsPIDOMEventTarget* GetTabChildGlobalAsEventTarget();
+  nsIDOMEventTarget* GetTabChildGlobalAsEventTarget();
   nsresult CreateStaticClone(nsIFrameLoader* aDest);
 
   /**
@@ -206,6 +206,11 @@ public:
   PRBool Show(PRInt32 marginWidth, PRInt32 marginHeight,
               PRInt32 scrollbarPrefX, PRInt32 scrollbarPrefY,
               nsSubDocumentFrame* frame);
+
+  /**
+   * Called when the margin properties of the containing frame are changed.
+   */
+  void MarginsChanged(PRUint32 aMarginWidth, PRUint32 aMarginHeight);
 
   /**
    * Called from the layout frame associated with this frame loader, when

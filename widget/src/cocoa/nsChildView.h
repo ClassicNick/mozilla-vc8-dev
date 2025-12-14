@@ -52,7 +52,7 @@
 #include "nsIPluginInstanceOwner.h"
 #include "nsIPluginWidget.h"
 #include "nsWeakPtr.h"
-#include "nsCocoaTextInputHandler.h"
+#include "TextInputHandler.h"
 #include "nsCocoaUtils.h"
 
 #include "nsIAppShell.h"
@@ -65,6 +65,52 @@
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
 #import <AppKit/NSOpenGL.h>
+
+// The header files QuickdrawAPI.h and QDOffscreen.h are missing on OS X 10.7
+// and up (though the QuickDraw APIs defined in them are still present) -- so
+// we need to supply the relevant parts of their contents here.  It's likely
+// that Apple will eventually remove the APIs themselves (probably in OS X
+// 10.8), so we need to make them weak imports, and test for their presence
+// before using them.
+#ifdef __cplusplus
+extern "C" {
+#endif
+  #if !defined(__QUICKDRAWAPI__)
+
+  extern void SetPort(GrafPtr port)
+    __attribute__((weak_import));
+  extern void SetOrigin(short h, short v)
+    __attribute__((weak_import));
+  extern RgnHandle NewRgn(void)
+    __attribute__((weak_import));
+  extern void DisposeRgn(RgnHandle rgn)
+    __attribute__((weak_import));
+  extern void RectRgn(RgnHandle rgn, const Rect * r)
+    __attribute__((weak_import));
+  extern GDHandle GetMainDevice(void)
+    __attribute__((weak_import));
+  extern Boolean IsPortOffscreen(CGrafPtr port)
+    __attribute__((weak_import));
+  extern void SetPortVisibleRegion(CGrafPtr port, RgnHandle visRgn)
+    __attribute__((weak_import));
+  extern void SetPortClipRegion(CGrafPtr port, RgnHandle clipRgn)
+    __attribute__((weak_import));
+  extern CGrafPtr GetQDGlobalsThePort(void)
+    __attribute__((weak_import));
+
+  #endif /* __QUICKDRAWAPI__ */
+
+  #if !defined(__QDOFFSCREEN__)
+
+  extern void GetGWorld(CGrafPtr *  port, GDHandle *  gdh)
+    __attribute__((weak_import));
+  extern void SetGWorld(CGrafPtr port, GDHandle gdh)
+    __attribute__((weak_import));
+
+  #endif /* __QDOFFSCREEN__ */
+#ifdef __cplusplus
+}
+#endif
 
 class gfxASurface;
 class nsChildView;
@@ -133,6 +179,15 @@ extern "C" long TSMProcessRawKeyEvent(EventRef carbonEvent);
   // the link back to it must be weak.
   nsChildView* mGeckoChild;
 
+  // Text input handler for mGeckoChild and us.  Note that this is a weak
+  // reference.  Ideally, this should be a strong reference but a ChildView
+  // object can live longer than the mGeckoChild that owns it.  And if
+  // mTextInputHandler were a strong reference, this would make it difficult
+  // for Gecko's leak detector to detect leaked TextInputHandler objects.
+  // This is initialized by [mozView installTextInputHandler:aHandler] and
+  // cleared by [mozView uninstallTextInputHandler].
+  mozilla::widget::TextInputHandler* mTextInputHandler;  // [WEAK]
+
   BOOL mIsPluginView;
   NPEventModel mPluginEventModel;
   NPDrawingModel mPluginDrawingModel;
@@ -151,9 +206,6 @@ extern "C" long TSMProcessRawKeyEvent(EventRef carbonEvent);
   // Valid when mKeyPressSent is true.
   PRBool mKeyPressHandled;
 
-  // needed for NSTextInput implementation
-  NSRange mMarkedRange;
-  
   // when mouseDown: is called, we store its event here (strong)
   NSEvent* mLastMouseDownEvent;
 
@@ -308,7 +360,7 @@ public:
                                  nsNativeWidget aNativeParent,
                                  const nsIntRect &aRect,
                                  EVENT_CALLBACK aHandleEventFunction,
-                                 nsIDeviceContext *aContext,
+                                 nsDeviceContext *aContext,
                                  nsIAppShell *aAppShell = nsnull,
                                  nsIToolkit *aToolkit = nsnull,
                                  nsWidgetInitData *aInitData = nsnull);
@@ -421,7 +473,6 @@ public:
   static PRUint32 GetCurrentInputEventCount();
   static void UpdateCurrentInputEventCount();
 
-  nsCocoaTextInputHandler* TextInputHandler() { return &mTextInputHandler; }
   NSView<mozView>* GetEditorView();
 
   PRBool IsPluginView() { return (mWindowType == eWindowType_plugin); }
@@ -453,7 +504,7 @@ protected:
 protected:
 
   NSView<mozView>*      mView;      // my parallel cocoa view (ChildView or NativeScrollbarView), [STRONG]
-  nsCocoaTextInputHandler mTextInputHandler;
+  nsRefPtr<mozilla::widget::TextInputHandler> mTextInputHandler;
   IMEContext            mIMEContext;
 
   NSView<mozView>*      mParentView;

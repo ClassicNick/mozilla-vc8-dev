@@ -59,7 +59,6 @@
 #include "nsIPrivateDOMEvent.h"
 #include "nsFrameLoader.h"
 #include "nsNetUtil.h"
-#include "jsarray.h"
 #include "nsContentUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsIDOMNSHTMLFrameElement.h"
@@ -400,7 +399,7 @@ TabParent::HandleQueryContentEvent(nsQueryContentEvent& aEvent)
   {
   case NS_QUERY_SELECTED_TEXT:
     {
-      aEvent.mReply.mOffset = PR_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+      aEvent.mReply.mOffset = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
       if (mIMESelectionAnchor == mIMESelectionFocus) {
         aEvent.mReply.mString.Truncate(0);
       } else {
@@ -446,7 +445,7 @@ bool
 TabParent::SendCompositionEvent(nsCompositionEvent& event)
 {
   mIMEComposing = event.message == NS_COMPOSITION_START;
-  mIMECompositionStart = PR_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+  mIMECompositionStart = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
   if (mIMECompositionEnding)
     return true;
   event.seqno = ++mIMESeqno;
@@ -471,7 +470,7 @@ TabParent::SendTextEvent(nsTextEvent& event)
   // We must be able to simulate the selection because
   // we might not receive selection updates in time
   if (!mIMEComposing) {
-    mIMECompositionStart = PR_MIN(mIMESelectionAnchor, mIMESelectionFocus);
+    mIMECompositionStart = NS_MIN(mIMESelectionAnchor, mIMESelectionFocus);
   }
   mIMESelectionAnchor = mIMESelectionFocus =
       mIMECompositionStart + event.theText.Length();
@@ -515,8 +514,10 @@ bool
 TabParent::RecvGetIMEEnabled(PRUint32* aValue)
 {
   nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (!widget)
+  if (!widget) {
+    *aValue = nsIWidget::IME_STATUS_DISABLED;
     return true;
+  }
 
   IMEContext context;
   widget->GetInputMode(context);
@@ -525,8 +526,11 @@ TabParent::RecvGetIMEEnabled(PRUint32* aValue)
 }
 
 bool
-TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const nsString& aAction)
+TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const nsString& aAction, const PRUint32& aReason)
 {
+  // mIMETabParent (which is actually static) tracks which if any TabParent has IMEFocus
+  // When the input mode is set to anything but IME_STATUS_NONE, mIMETabParent should be set to this
+  mIMETabParent = aValue & nsIContent::IME_STATUS_MASK_ENABLED ? this : nsnull;
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget || !AllowContentIME())
     return true;
@@ -535,6 +539,7 @@ TabParent::RecvSetInputMode(const PRUint32& aValue, const nsString& aType, const
   context.mStatus = aValue;
   context.mHTMLInputType.Assign(aType);
   context.mActionHint.Assign(aAction);
+  context.mReason = aReason;
   widget->SetInputMode(context);
 
   nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
@@ -583,7 +588,8 @@ TabParent::ReceiveMessage(const nsString& aMessage,
 {
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader && frameLoader->GetFrameMessageManager()) {
-    nsFrameMessageManager* manager = frameLoader->GetFrameMessageManager();
+    nsRefPtr<nsFrameMessageManager> manager =
+      frameLoader->GetFrameMessageManager();
     JSContext* ctx = manager->GetJSContext();
     JSAutoRequest ar(ctx);
     PRUint32 len = 0; //TODO: obtain a real value in bug 572685

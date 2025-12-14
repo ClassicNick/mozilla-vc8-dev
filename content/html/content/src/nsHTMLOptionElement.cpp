@@ -39,6 +39,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsHTMLOptionElement.h"
+#include "nsHTMLSelectElement.h"
 #include "nsIDOMHTMLOptGroupElement.h"
 #include "nsIDOMHTMLFormElement.h"
 #include "nsIDOMEventTarget.h"
@@ -48,9 +49,7 @@
 #include "nsIForm.h"
 #include "nsIDOMText.h"
 #include "nsIDOMNode.h"
-#include "nsGenericElement.h"
 #include "nsIDOMHTMLCollection.h"
-#include "nsISelectElement.h"
 #include "nsISelectControlFrame.h"
 
 // Notify/query select frame for selected state
@@ -60,13 +59,33 @@
 #include "nsIDOMHTMLSelectElement.h"
 #include "nsNodeInfoManager.h"
 #include "nsCOMPtr.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStates.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
 #include "nsContentCreatorFunctions.h"
 #include "mozAutoDocUpdate.h"
 
 using namespace mozilla::dom;
+
+/**
+ * This macro is similar to NS_IMPL_STRING_ATTR except that the getter method
+ * falls back to GetText if the content attribute isn't set. GetText returns a
+ * whitespace compressed .textContent value.
+ */
+#define NS_IMPL_STRING_ATTR_WITH_TEXTCONTENT(_class, _method, _atom) \
+  NS_IMETHODIMP                                                      \
+  _class::Get##_method(nsAString& aValue)                            \
+  {                                                                  \
+    if (!GetAttr(kNameSpaceID_None, nsGkAtoms::_atom, aValue)) {     \
+      GetText(aValue);                                               \
+    }                                                                \
+    return NS_OK;                                                    \
+  }                                                                  \
+  NS_IMETHODIMP                                                      \
+  _class::Set##_method(const nsAString& aValue)                      \
+  {                                                                  \
+    return SetAttrHelper(nsGkAtoms::_atom, aValue);                  \
+  }
 
 /**
  * Implementation of &lt;option&gt;
@@ -88,7 +107,8 @@ NS_NewHTMLOptionElement(already_AddRefed<nsINodeInfo> aNodeInfo,
     NS_ENSURE_TRUE(doc, nsnull);
 
     nodeInfo = doc->NodeInfoManager()->GetNodeInfo(nsGkAtoms::option, nsnull,
-                                                   kNameSpaceID_XHTML);
+                                                   kNameSpaceID_XHTML,
+                                                   nsIDOMNode::ELEMENT_NODE);
     NS_ENSURE_TRUE(nodeInfo, nsnull);
   }
 
@@ -101,6 +121,8 @@ nsHTMLOptionElement::nsHTMLOptionElement(already_AddRefed<nsINodeInfo> aNodeInfo
     mIsSelected(PR_FALSE),
     mIsInSetDefaultSelected(PR_FALSE)
 {
+  // We start off enabled
+  AddStatesSilently(NS_EVENT_STATE_ENABLED);
 }
 
 nsHTMLOptionElement::~nsHTMLOptionElement()
@@ -135,8 +157,7 @@ nsHTMLOptionElement::GetForm(nsIDOMHTMLFormElement** aForm)
   NS_ENSURE_ARG_POINTER(aForm);
   *aForm = nsnull;
 
-  nsCOMPtr<nsIDOMHTMLSelectElement> selectControl =
-    do_QueryInterface(GetSelect());
+  nsHTMLSelectElement* selectControl = GetSelect();
 
   if (selectControl) {
     selectControl->GetForm(aForm);
@@ -151,48 +172,18 @@ nsHTMLOptionElement::SetSelectedInternal(PRBool aValue, PRBool aNotify)
   mSelectedChanged = PR_TRUE;
   mIsSelected = aValue;
 
-  // When mIsInSetDefaultSelected is true, the notification will be handled by
+  // When mIsInSetDefaultSelected is true, the state change will be handled by
   // SetAttr/UnsetAttr.
-  if (aNotify && !mIsInSetDefaultSelected) {
-    nsIDocument* document = GetCurrentDoc();
-    if (document) {
-      mozAutoDocUpdate upd(document, UPDATE_CONTENT_STATE, aNotify);
-      document->ContentStateChanged(this, NS_EVENT_STATE_CHECKED);
-    }
+  if (!mIsInSetDefaultSelected) {
+    UpdateState(aNotify);
   }
-}
-
-NS_IMETHODIMP
-nsHTMLOptionElement::SetValue(const nsAString& aValue)
-{
-  SetAttr(kNameSpaceID_None, nsGkAtoms::value, aValue, PR_TRUE);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHTMLOptionElement::GetValue(nsAString& aValue)
-{
-  // If the value attr is there, that is *exactly* what we use.  If it is
-  // not, we compress whitespace .text.
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::value, aValue)) {
-    GetText(aValue);
-  }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP 
 nsHTMLOptionElement::GetSelected(PRBool* aValue)
 {
   NS_ENSURE_ARG_POINTER(aValue);
-  *aValue = PR_FALSE;
-
-  // If we haven't been explictly selected or deselected, use our default value
-  if (!mSelectedChanged) {
-    return GetDefaultSelected(aValue);
-  }
-
-  *aValue = mIsSelected;
+  *aValue = Selected();
   return NS_OK;
 }
 
@@ -201,7 +192,7 @@ nsHTMLOptionElement::SetSelected(PRBool aValue)
 {
   // Note: The select content obj maintains all the PresState
   // so defer to it to get the answer
-  nsCOMPtr<nsISelectElement> selectInt = do_QueryInterface(GetSelect());
+  nsHTMLSelectElement* selectInt = GetSelect();
   if (selectInt) {
     PRInt32 index;
     GetIndex(&index);
@@ -218,8 +209,8 @@ nsHTMLOptionElement::SetSelected(PRBool aValue)
 }
 
 NS_IMPL_BOOL_ATTR(nsHTMLOptionElement, DefaultSelected, selected)
-NS_IMPL_STRING_ATTR(nsHTMLOptionElement, Label, label)
-//NS_IMPL_STRING_ATTR(nsHTMLOptionElement, Value, value)
+NS_IMPL_STRING_ATTR_WITH_TEXTCONTENT(nsHTMLOptionElement, Label, label)
+NS_IMPL_STRING_ATTR_WITH_TEXTCONTENT(nsHTMLOptionElement, Value, value)
 NS_IMPL_BOOL_ATTR(nsHTMLOptionElement, Disabled, disabled)
 
 NS_IMETHODIMP 
@@ -230,8 +221,7 @@ nsHTMLOptionElement::GetIndex(PRInt32* aIndex)
   *aIndex = -1; // -1 indicates the index was not found
 
   // Get our containing select content object.
-  nsCOMPtr<nsIDOMHTMLSelectElement> selectElement =
-    do_QueryInterface(GetSelect());
+  nsHTMLSelectElement* selectElement = GetSelect();
 
   if (selectElement) {
     // Get the options from the select object.
@@ -258,6 +248,23 @@ nsHTMLOptionElement::GetIndex(PRInt32* aIndex)
   }
 
   return NS_OK;
+}
+
+bool
+nsHTMLOptionElement::Selected() const
+{
+  // If we haven't been explictly selected or deselected, use our default value
+  if (!mSelectedChanged) {
+    return DefaultSelected();
+  }
+
+  return mIsSelected;
+}
+
+bool
+nsHTMLOptionElement::DefaultSelected() const
+{
+  return HasAttr(kNameSpaceID_None, nsGkAtoms::selected);
 }
 
 nsChangeHint
@@ -288,9 +295,9 @@ nsHTMLOptionElement::BeforeSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
   }
   
   // We just changed out selected state (since we look at the "selected"
-  // attribute when mSelectedChanged is false.  Let's tell our select about
+  // attribute when mSelectedChanged is false).  Let's tell our select about
   // it.
-  nsCOMPtr<nsISelectElement> selectInt = do_QueryInterface(GetSelect());
+  nsHTMLSelectElement* selectInt = GetSelect();
   if (!selectInt) {
     return NS_OK;
   }
@@ -344,18 +351,10 @@ nsEventStates
 nsHTMLOptionElement::IntrinsicState() const
 {
   nsEventStates state = nsGenericHTMLElement::IntrinsicState();
-  // Nasty hack because we need to call an interface method, and one that
-  // toggles some of our hidden internal state at that!  Would that we could
-  // use |mutable|.
-  PRBool selected;
-  const_cast<nsHTMLOptionElement*>(this)->GetSelected(&selected);
-  if (selected) {
+  if (Selected()) {
     state |= NS_EVENT_STATE_CHECKED;
   }
-
-  // Also calling a non-const interface method (for :default)
-  const_cast<nsHTMLOptionElement*>(this)->GetDefaultSelected(&selected);
-  if (selected) {
+  if (DefaultSelected()) {
     state |= NS_EVENT_STATE_DEFAULT;
   }
 
@@ -371,14 +370,14 @@ nsHTMLOptionElement::IntrinsicState() const
 }
 
 // Get the select content element that contains this option
-nsIContent*
+nsHTMLSelectElement*
 nsHTMLOptionElement::GetSelect()
 {
   nsIContent* parent = this;
   while ((parent = parent->GetParent()) &&
          parent->IsHTML()) {
     if (parent->Tag() == nsGkAtoms::select) {
-      return parent;
+      return nsHTMLSelectElement::FromContent(parent);
     }
     if (parent->Tag() != nsGkAtoms::optgroup) {
       break;
@@ -478,9 +477,7 @@ nsHTMLOptionElement::CopyInnerTo(nsGenericElement* aDest) const
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aDest->GetOwnerDoc()->IsStaticDocument()) {
-    PRBool selected = PR_FALSE;
-    const_cast<nsHTMLOptionElement*>(this)->GetSelected(&selected);
-    static_cast<nsHTMLOptionElement*>(aDest)->SetSelected(selected);
+    static_cast<nsHTMLOptionElement*>(aDest)->SetSelected(Selected());
   }
   return NS_OK;
 }

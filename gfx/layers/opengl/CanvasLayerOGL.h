@@ -38,11 +38,13 @@
 #ifndef GFX_CANVASLAYEROGL_H
 #define GFX_CANVASLAYEROGL_H
 
-#include "mozilla/layers/PLayers.h"
-#include "mozilla/layers/ShadowLayers.h"
 
 #include "LayerManagerOGL.h"
 #include "gfxASurface.h"
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#include "GLXLibrary.h"
+#include "mozilla/X11Util.h"
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -57,6 +59,9 @@ public:
       LayerOGL(aManager),
       mTexture(0),
       mDelayedUpdates(PR_FALSE)
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+      ,mPixmap(0)
+#endif
   { 
       mImplData = static_cast<LayerOGL*>(this);
   }
@@ -84,6 +89,9 @@ protected:
   PRPackedBool mDelayedUpdates;
   PRPackedBool mGLBufferIsPremultiplied;
   PRPackedBool mNeedsYFlip;
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+  GLXPixmap mPixmap;
+#endif
 };
 
 // NB: eventually we'll have separate shadow canvas2d and shadow
@@ -100,12 +108,14 @@ public:
 
   // CanvasLayer impl
   virtual void Initialize(const Data& aData);
+  virtual void Init(const SurfaceDescriptor& aNewFront, const nsIntSize& aSize, bool needYFlip);
+
   // This isn't meaningful for shadow canvas.
   virtual void Updated(const nsIntRect&) {}
 
   // ShadowCanvasLayer impl
-  virtual already_AddRefed<gfxSharedImageSurface>
-  Swap(gfxSharedImageSurface* aNewFront);
+  virtual void Swap(const SurfaceDescriptor& aNewFront,
+                    SurfaceDescriptor* aNewBack);
 
   virtual void DestroyFrontBuffer();
 
@@ -120,11 +130,8 @@ public:
 private:
   nsRefPtr<TextureImage> mTexImage;
 
-
-  // XXX FIXME holding to free
-  nsRefPtr<gfxSharedImageSurface> mDeadweight;
-
-
+  SurfaceDescriptor mDeadweight;
+  PRPackedBool mNeedsYFlip;
 };
 
 } /* layers */

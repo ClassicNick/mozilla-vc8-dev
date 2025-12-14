@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * ***** BEGIN LICENSE BLOCK *****
+/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -44,8 +43,10 @@
 #include "CheckedInt.h"
 #include "nsMathUtils.h"
 
-typedef nsresult (NS_STDCALL nsIDOMCanvasRenderingContext2D::*CanvasStyleSetterType)(const nsAString &, nsISupports *);
-typedef nsresult (NS_STDCALL nsIDOMCanvasRenderingContext2D::*CanvasStyleGetterType)(nsAString &, nsISupports **, PRInt32 *);
+typedef NS_STDCALL_FUNCPROTO(nsresult, CanvasStyleSetterType, nsIDOMCanvasRenderingContext2D,
+                             SetStrokeStyle_multi, (const nsAString &, nsISupports *));
+typedef NS_STDCALL_FUNCPROTO(nsresult, CanvasStyleGetterType, nsIDOMCanvasRenderingContext2D,
+                             GetStrokeStyle_multi, (nsAString &, nsISupports **, PRInt32 *));
 
 static JSBool
 Canvas2D_SetStyleHelper(JSContext *cx, JSObject *obj, jsid id, jsval *vp,
@@ -58,8 +59,7 @@ Canvas2D_SetStyleHelper(JSContext *cx, JSObject *obj, jsid id, jsval *vp,
     if (!xpc_qsUnwrapThis(cx, obj, nsnull, &self, &selfref.ptr, tvr.jsval_addr(), nsnull))
         return JS_FALSE;
 
-    nsresult rv;
-
+    nsresult rv = NS_OK;
     if (JSVAL_IS_STRING(*vp)) {
         xpc_qsDOMString arg0(cx, *vp, vp,
                              xpc_qsDOMString::eDefaultNullBehavior,
@@ -287,8 +287,8 @@ nsIDOMCanvasRenderingContext2D_CreateImageData(JSContext *cx, uintN argc, jsval 
     int32 wi = JS_DoubleToInt32(width);
     int32 hi = JS_DoubleToInt32(height);
 
-    uint32 w = PR_ABS(wi);
-    uint32 h = PR_ABS(hi);
+    uint32 w = NS_ABS(wi);
+    uint32 h = NS_ABS(hi);
     return CreateImageData(cx, w, h, NULL, 0, 0, vp);
 }
 

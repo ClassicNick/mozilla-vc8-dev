@@ -57,7 +57,6 @@ const EXPORTED_SYMBOLS = [
 , "PlacesEditBookmarkPostDataTransaction"
 , "PlacesEditLivemarkSiteURITransaction"
 , "PlacesEditLivemarkFeedURITransaction"
-, "PlacesEditBookmarkMicrosummaryTransaction"
 , "PlacesEditItemDateAddedTransaction"
 , "PlacesEditItemLastModifiedTransaction"
 , "PlacesSortFolderByNameTransaction"
@@ -130,6 +129,8 @@ var PlacesUtils = {
   TYPE_HTML: "text/html",
   // Place entries as raw URL text
   TYPE_UNICODE: "text/unicode",
+  // Used to track the action that populated the clipboard.
+  TYPE_X_MOZ_PLACE_ACTION: "text/x-moz-place-action",
 
   EXCLUDE_FROM_BACKUP_ANNO: "places/excludeFromBackup",
   GUID_ANNO: "placesInternal/GUID",
@@ -164,6 +165,19 @@ var PlacesUtils = {
    */
   _uri: function PU__uri(aSpec) {
     return NetUtil.newURI(aSpec);
+  },
+
+  /**
+   * Wraps a string in a nsISupportsString wrapper.
+   * @param   aString
+   *          The string to wrap.
+   * @returns A nsISupportsString object containing a string.
+   */
+  toISupportsString: function PU_toISupportsString(aString) {
+    let s = Cc["@mozilla.org/supports-string;1"].
+            createInstance(Ci.nsISupportsString);
+    s.data = aString;
+    return s;
   },
 
   getFormattedString: function PU_getFormattedString(key, params) {
@@ -597,8 +611,9 @@ var PlacesUtils = {
       case this.TYPE_X_MOZ_URL: {
         function gatherDataUrl(bNode) {
           if (PlacesUtils.nodeIsLivemarkContainer(bNode)) {
-            let siteURI = PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
-            return siteURI + NEWLINE + bNode.title;
+            let uri = PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+                      PlacesUtils.livemarks.getFeedURI(bNode.itemId);
+            return uri.spec + NEWLINE + bNode.title;
           }
           if (PlacesUtils.nodeIsURI(bNode))
             return (aOverrideURI || bNode.uri) + NEWLINE + bNode.title;
@@ -626,8 +641,9 @@ var PlacesUtils = {
           // escape out potential HTML in the title
           let escapedTitle = bNode.title ? htmlEscape(bNode.title) : "";
           if (PlacesUtils.nodeIsLivemarkContainer(bNode)) {
-            let siteURI = PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
-            return "<A HREF=\"" + siteURI + "\">" + escapedTitle + "</A>" + NEWLINE;
+            let uri = PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+                      PlacesUtils.livemarks.getFeedURI(bNode.itemId);
+            return "<A HREF=\"" + uri.spec + "\">" + escapedTitle + "</A>" + NEWLINE;
           }
           if (PlacesUtils.nodeIsContainer(bNode)) {
             asContainer(bNode);
@@ -665,7 +681,8 @@ var PlacesUtils = {
     // Otherwise, we wrap as TYPE_UNICODE.
     function gatherDataText(bNode) {
       if (PlacesUtils.nodeIsLivemarkContainer(bNode))
-        return PlacesUtils.livemarks.getSiteURI(bNode.itemId).spec;
+        return PlacesUtils.livemarks.getSiteURI(bNode.itemId) ||
+               PlacesUtils.livemarks.getFeedURI(bNode.itemId);
       if (PlacesUtils.nodeIsContainer(bNode)) {
         asContainer(bNode);
         let wasOpen = bNode.containerOpen;
@@ -2174,10 +2191,6 @@ XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "livemarks",
                                    "@mozilla.org/browser/livemark-service;2",
                                    "nsILivemarkService");
 
-XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "microsummaries",
-                                   "@mozilla.org/microsummary/service;1",
-                                   "nsIMicrosummaryService");
-
 XPCOMUtils.defineLazyGetter(PlacesUtils, "transactionManager", function() {
   let tm = Cc["@mozilla.org/transactionmanager;1"].
            getService(Ci.nsITransactionManager);
@@ -2595,11 +2608,11 @@ function PlacesRemoveLivemarkTransaction(aFolderId)
   this._container = PlacesUtils.bookmarks.getFolderIdForItem(this._id);
   let annos = PlacesUtils.getAnnotationsForItem(this._id);
   // Exclude livemark service annotations, those will be recreated automatically
-  let annosToExclude = ["livemark/feedURI",
-                        "livemark/siteURI",
-                        "livemark/expiration",
-                        "livemark/loadfailed",
-                        "livemark/loading"];
+  let annosToExclude = [PlacesUtils.LMANNO_FEEDURI,
+                        PlacesUtils.LMANNO_SITEURI,
+                        PlacesUtils.LMANNO_EXPIRATION,
+                        PlacesUtils.LMANNO_LOADFAILED,
+                        PlacesUtils.LMANNO_LOADING];
   this._annotations = annos.filter(function(aValue, aIndex, aArray) {
       return annosToExclude.indexOf(aValue.name) == -1;
     });
@@ -3118,47 +3131,6 @@ PlacesEditLivemarkFeedURITransaction.prototype = {
   {
     PlacesUtils.livemarks.setFeedURI(this._folderId, this._oldURI);
     PlacesUtils.livemarks.reloadLivemarkFolder(this._folderId);
-  }
-};
-
-
-/**
- * Transaction for editing a bookmark's microsummary.
- *
- * @param aBookmarkId
- *        id of the bookmark to edit
- * @param aNewMicrosummary
- *        new microsummary for the bookmark
- * @returns nsITransaction object
- */
-
-function PlacesEditBookmarkMicrosummaryTransaction(aItemId, newMicrosummary)
-{
-  this.id = aItemId;
-  this._mss = Cc["@mozilla.org/microsummary/service;1"].
-              getService(Ci.nsIMicrosummaryService);
-  this._newMicrosummary = newMicrosummary;
-  this._oldMicrosummary = null;
-}
-
-PlacesEditBookmarkMicrosummaryTransaction.prototype = {
-  __proto__: BaseTransaction.prototype,
-
-  doTransaction: function EBMTXN_doTransaction()
-  {
-    this._oldMicrosummary = this._mss.getMicrosummary(this.id);
-    if (this._newMicrosummary)
-      this._mss.setMicrosummary(this.id, this._newMicrosummary);
-    else
-      this._mss.removeMicrosummary(this.id);
-  },
-
-  undoTransaction: function EBMTXN_undoTransaction()
-  {
-    if (this._oldMicrosummary)
-      this._mss.setMicrosummary(this.id, this._oldMicrosummary);
-    else
-      this._mss.removeMicrosummary(this.id);
   }
 };
 

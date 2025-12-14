@@ -37,16 +37,30 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-#include "nsIDOMWindow2.idl"
+#include "nsIDOMWindow.idl"
+
+%{ C++
+#include "jspubtd.h"
+%}
 
 interface nsIPrompt;
 interface nsIControllers;
 interface nsIDOMLocation;
+interface nsIDOMPerformance;
 interface nsIVariant;
 interface nsIAnimationFrameListener;
+interface nsIDOMMediaQueryList;
+interface nsIDOMBlob;
 
-[scriptable, uuid(9d6a1157-0719-46a7-b49f-7ffeaa0b5c86)]
-interface nsIDOMWindowInternal : nsIDOMWindow2
+[scriptable, uuid(8fc58f56-f769-4368-a098-edd08550cf1a)]
+interface nsIDOMMozURLProperty : nsISupports
+{
+  DOMString createObjectURL(in nsIDOMBlob blob);
+  void revokeObjectURL(in DOMString URL);
+};
+
+[scriptable, uuid(7fec9403-7562-4ae0-8d9b-0735f0a55d7d)]
+interface nsIDOMWindowInternal : nsIDOMWindow
 {
   readonly attribute nsIDOMWindowInternal        window;
 
@@ -213,8 +227,8 @@ interface nsIDOMWindowInternal : nsIDOMWindow2
    * 
    * See the WHATWG HTML5 specification, section 6.4, for more details.
    */
-  [binaryname(PostMessageMoz)] void postMessage(in DOMString message,
-                                                in DOMString targetOrigin);
+  [implicit_jscontext, binaryname(PostMessageMoz)]
+    void postMessage(in jsval message, in DOMString targetOrigin);
 
   /**
    * Returns the number of times this document for this window has
@@ -232,17 +246,21 @@ interface nsIDOMWindowInternal : nsIDOMWindow2
    * The current animation start time in milliseconds since the epoch.
    */
   readonly attribute long long mozAnimationStartTime;
-};
 
-[scriptable, uuid(8fc58f56-f769-4368-a098-edd08550cf1a)]
-interface nsIDOMMozURLProperty : nsISupports
-{
-  DOMString createObjectURL(in nsIDOMBlob blob);
-  void revokeObjectURL(in DOMString URL);
-};
+  /**
+   * http://dev.w3.org/csswg/cssom-view/#extensions-to-the-window-interface
+   */
+  nsIDOMMediaQueryList matchMedia(in DOMString media_query_list);
 
-[scriptable, uuid(05563c0c-b74c-41ad-91d1-bc22d580a581)]
-interface nsIDOMWindow_2_0_BRANCH : nsISupports
-{
   readonly attribute nsIDOMMozURLProperty URL;
 };
+
+[scriptable, uuid(2146c906-57f7-486c-a1b4-8cdb57ef577f)]
+interface nsIDOMWindowPerformance : nsISupports
+{
+  /**
+   * A namespace to hold performance related data and statistics.
+   */
+  readonly attribute nsIDOMPerformance performance;
+};
+

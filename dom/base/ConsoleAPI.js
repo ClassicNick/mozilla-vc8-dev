@@ -21,6 +21,7 @@
  *  David Dahl <ddahl@mozilla.com>  (Original Author)
  *  Ryan Flint <rflint@mozilla.com>
  *  Rob Campbell <rcampbell@mozilla.com>
+ *  Mihai Sucan <mihai.sucan@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -76,11 +77,19 @@ ConsoleAPI.prototype = {
       error: function CA_error() {
         self.notifyObservers(id, "error", arguments);
       },
+      debug: function CA_debug() {
+        self.notifyObservers(id, "log", arguments);
+      },
+      trace: function CA_trace() {
+        self.notifyObservers(id, "trace", self.getStackTrace());
+      },
       __exposedProps__: {
         log: "r",
         info: "r",
         warn: "r",
-        error: "r"
+        error: "r",
+        debug: "r",
+        trace: "r",
       }
     };
 
@@ -95,6 +104,8 @@ ConsoleAPI.prototype = {
             info: bind.call(x.info, x),\
             warn: bind.call(x.warn, x),\
             error: bind.call(x.error, x),\
+            debug: bind.call(x.debug, x),\
+            trace: bind.call(x.trace, x),\
             __noSuchMethod__: function() {}\
           };\
           Object.defineProperty(obj, '__mozillaConsole__', { value: true });\
@@ -111,9 +122,15 @@ ConsoleAPI.prototype = {
     if (!aID)
       return;
 
+    let stack = this.getStackTrace();
+    // Skip the first frame since it contains an internal call.
+    let frame = stack[1];
     let consoleEvent = {
       ID: aID,
       level: aLevel,
+      filename: frame.filename,
+      lineNumber: frame.lineNumber,
+      functionName: frame.functionName,
       arguments: aArguments
     };
 
@@ -121,6 +138,31 @@ ConsoleAPI.prototype = {
 
     Services.obs.notifyObservers(consoleEvent,
                                  "console-api-log-event", aID);
+  },
+
+  /**
+   * Build the stacktrace array for the console.trace() call.
+   *
+   * @return array
+   *         Each element is a stack frame that holds the following properties:
+   *         filename, lineNumber, functionName and language.
+   **/
+  getStackTrace: function CA_getStackTrace() {
+    let stack = [];
+    let frame = Components.stack.caller;
+    while (frame = frame.caller) {
+      if (frame.language == Ci.nsIProgrammingLanguage.JAVASCRIPT ||
+          frame.language == Ci.nsIProgrammingLanguage.JAVASCRIPT2) {
+        stack.push({
+          filename: frame.filename,
+          lineNumber: frame.lineNumber,
+          functionName: frame.name,
+          language: frame.language,
+        });
+      }
+    }
+
+    return stack;
   }
 };
 

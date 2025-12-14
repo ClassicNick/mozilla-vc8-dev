@@ -64,10 +64,7 @@
 #include "nsIServiceManager.h"
 #include "nsEscape.h"
 #include "mozilla/dom/Element.h"
-
-#ifdef MOZ_SVG
 #include "nsHtml5SVGLoadDispatcher.h"
-#endif
 
 namespace dom = mozilla::dom;
 
@@ -260,9 +257,10 @@ nsHtml5TreeOperation::AppendToDocument(nsIContent* aNode,
 
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "Someone forgot to block scripts");
-  nsContentUtils::AddScriptRunner(
-    new nsDocElementCreatedNotificationRunner(doc));
-
+  if (aNode->IsElement()) {
+    nsContentUtils::AddScriptRunner(
+        new nsDocElementCreatedNotificationRunner(doc));
+  }
   return rv;
 }
 
@@ -286,7 +284,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
                                      aBuilder->GetDocument());
         PRUint32 pos = parent->IndexOf(node);
         NS_ASSERTION((pos >= 0), "Element not found as child of its parent");
-        rv = parent->RemoveChildAt(pos, PR_TRUE, PR_FALSE);
+        rv = parent->RemoveChildAt(pos, PR_TRUE);
         NS_ENSURE_SUCCESS(rv, rv);
       }
       return rv;
@@ -303,7 +301,7 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       PRBool didAppend = PR_FALSE;
       while (node->GetChildCount()) {
         nsCOMPtr<nsIContent> child = node->GetChildAt(0);
-        rv = node->RemoveChildAt(0, PR_TRUE, PR_FALSE);
+        rv = node->RemoveChildAt(0, PR_TRUE);
         NS_ENSURE_SUCCESS(rv, rv);
         rv = parent->AppendChildTo(child, PR_FALSE);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -347,8 +345,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsHtml5OtherDocUpdate update(node->GetOwnerDoc(),
                                    aBuilder->GetDocument());
 
-      nsIDocument* document = node->GetCurrentDoc();
-
       PRInt32 len = attributes->getLength();
       for (PRInt32 i = len; i > 0;) {
         --i;
@@ -357,40 +353,10 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
         nsCOMPtr<nsIAtom> localName = Reget(attributes->getLocalName(i));
         PRInt32 nsuri = attributes->getURI(i);
         if (!node->HasAttr(nsuri, localName)) {
-
-          // the manual notification code is based on nsGenericElement
-          
-          nsEventStates stateMask = node->IntrinsicState();
-          nsNodeUtils::AttributeWillChange(node, 
-                                           nsuri,
-                                           localName,
-                                           static_cast<PRUint8>(nsIDOMMutationEvent::ADDITION));
-
           // prefix doesn't need regetting. it is always null or a static atom
           // local name is never null
-          node->SetAttr(nsuri, localName, attributes->getPrefix(i), *(attributes->getValue(i)), PR_FALSE);
+          node->SetAttr(nsuri, localName, attributes->getPrefix(i), *(attributes->getValue(i)), PR_TRUE);
           // XXX what to do with nsresult?
-          
-          if (document || node->HasFlag(NODE_FORCE_XBL_BINDINGS)) {
-            nsIDocument* ownerDoc = node->GetOwnerDoc();
-            if (ownerDoc) {
-              nsRefPtr<nsXBLBinding> binding =
-                ownerDoc->BindingManager()->GetBinding(node);
-              if (binding) {
-                binding->AttributeChanged(localName, nsuri, PR_FALSE, PR_FALSE);
-              }
-            }
-          }
-          
-          stateMask ^= node->IntrinsicState();
-          if (!stateMask.IsEmpty() && document) {
-            MOZ_AUTO_DOC_UPDATE(document, UPDATE_CONTENT_STATE, PR_TRUE);
-            document->ContentStateChanged(node, stateMask);
-          }
-          nsNodeUtils::AttributeChanged(node, 
-                                        nsuri, 
-                                        localName, 
-                                        static_cast<PRUint8>(nsIDOMMutationEvent::ADDITION));
         }
       }
       
@@ -409,7 +375,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       }
       
       nsCOMPtr<nsIContent> newContent;
-      nsCOMPtr<nsINodeInfo> nodeInfo = aBuilder->GetNodeInfoManager()->GetNodeInfo(name, nsnull, ns);
+      nsCOMPtr<nsINodeInfo> nodeInfo = aBuilder->GetNodeInfoManager()->
+        GetNodeInfo(name, nsnull, ns, nsIDOMNode::ELEMENT_NODE);
       NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
       NS_NewElement(getter_AddRefs(newContent),
                     ns, nodeInfo.forget(),
@@ -450,7 +417,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
         nsCOMPtr<nsINodeInfo> optionNodeInfo = 
           aBuilder->GetNodeInfoManager()->GetNodeInfo(nsHtml5Atoms::option, 
                                                       nsnull, 
-                                                      kNameSpaceID_XHTML);
+                                                      kNameSpaceID_XHTML,
+                                                      nsIDOMNode::ELEMENT_NODE);
                                                       
         for (PRUint32 i = 0; i < theContent.Length(); ++i) {
           nsCOMPtr<nsIContent> optionElt;
@@ -624,8 +592,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
                             aBuilder->GetNodeInfoManager(),
                             nsnull,
                             name,
-                            nsnull,
-                            nsnull,
                             publicId,
                             systemId,
                             voidString);
@@ -727,7 +693,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       sele->FreezeUriAsyncDefer();
       return rv;
     }
-#ifdef MOZ_SVG
     case eTreeOpSvgLoad: {
       nsIContent* node = *(mOne.node);
       nsCOMPtr<nsIRunnable> event = new nsHtml5SVGLoadDispatcher(node);
@@ -736,7 +701,6 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       }
       return rv;
     }
-#endif
     default: {
       NS_NOTREACHED("Bogus tree op");
     }

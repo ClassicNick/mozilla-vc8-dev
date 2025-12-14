@@ -3,21 +3,19 @@ Cu.import("resource://services-sync/log4moz.js");
 Cu.import("resource://services-sync/service.js");
 Cu.import("resource://services-sync/status.js");
 Cu.import("resource://services-sync/util.js");
+Cu.import("resource://services-sync/policies.js");
 
-function login_handler(request, response) {
-  // btoa('johndoe:ilovejane') == am9obmRvZTppbG92ZWphbmU=
-  // btoa('janedoe:ilovejohn') == amFuZWRvZTppbG92ZWpvaG4=
-  let body;
-  let header = request.getHeader("Authorization");
-  if (header == "Basic am9obmRvZTppbG92ZWphbmU="
-      || header == "Basic amFuZWRvZTppbG92ZWpvaG4=") {
-    body = "{}";
-    response.setStatusLine(request.httpVersion, 200, "OK");
-  } else {
-    body = "Unauthorized";
-    response.setStatusLine(request.httpVersion, 401, "Unauthorized");
-  }
-  response.bodyOutputStream.write(body, body.length);
+function login_handling(handler) {
+  return function (request, response) {
+    if (basic_auth_matches(request, "johndoe", "ilovejane") ||
+        basic_auth_matches(request, "janedoe", "ilovejohn")) {
+      handler(request, response);
+    } else {
+      let body = "Unauthorized";
+      response.setStatusLine(request.httpVersion, 401, "Unauthorized");
+      response.bodyOutputStream.write(body, body.length);
+    }
+  };
 }
 
 function run_test() {
@@ -26,34 +24,40 @@ function run_test() {
 
   try {
     _("The right bits are set when we're offline.");
-    Svc.IO.offline = true;
+    Services.io.offline = true;
     do_check_eq(Service._ignorableErrorCount, 0);
     do_check_false(!!Service.login());
     do_check_eq(Status.login, LOGIN_FAILED_NETWORK_ERROR);
     do_check_eq(Service._ignorableErrorCount, 0);
-    Svc.IO.offline = false;
+    Services.io.offline = false;
   } finally {
     Svc.Prefs.resetBranch("");
   }
  
+  let janeHelper = track_collections_helper();
+  let janeU      = janeHelper.with_updated_collection;
+  let janeColls  = janeHelper.collections;
+  let johnHelper = track_collections_helper();
+  let johnU      = johnHelper.with_updated_collection;
+  let johnColls  = johnHelper.collections;
+
   do_test_pending();
   let server = httpd_setup({
-    "/1.0/johndoe/info/collections": login_handler,
-    "/1.0/janedoe/info/collections": login_handler,
+    "/1.1/johndoe/info/collections": login_handling(johnHelper.handler),
+    "/1.1/janedoe/info/collections": login_handling(janeHelper.handler),
       
     // We need these handlers because we test login, and login
     // is where keys are generated or fetched.
     // TODO: have Jane fetch her keys, not generate them...
-    "/1.0/johndoe/storage/crypto/keys": new ServerWBO().handler(),
-    "/1.0/johndoe/storage/meta/global": new ServerWBO().handler(),
-    "/1.0/janedoe/storage/crypto/keys": new ServerWBO().handler(),
-    "/1.0/janedoe/storage/meta/global": new ServerWBO().handler()
+    "/1.1/johndoe/storage/crypto/keys": johnU("crypto", new ServerWBO("keys").handler()),
+    "/1.1/johndoe/storage/meta/global": johnU("meta",   new ServerWBO("global").handler()),
+    "/1.1/janedoe/storage/crypto/keys": janeU("crypto", new ServerWBO("keys").handler()),
+    "/1.1/janedoe/storage/meta/global": janeU("meta",   new ServerWBO("global").handler())
   });
 
   try {
     Service.serverURL = "http://localhost:8080/";
     Service.clusterURL = "http://localhost:8080/";
-    Svc.Prefs.set("autoconnect", false);
 
     _("Force the initial state.");
     Status.service = STATUS_OK;
@@ -64,7 +68,6 @@ function run_test() {
     do_check_eq(Status.service, CLIENT_NOT_CONFIGURED);
     do_check_eq(Status.login, LOGIN_FAILED_NO_USERNAME);
     do_check_false(Service.isLoggedIn);
-    do_check_false(Svc.Prefs.get("autoconnect"));
 
     _("Try again with username and password set.");
     Service.username = "johndoe";
@@ -73,7 +76,6 @@ function run_test() {
     do_check_eq(Status.service, CLIENT_NOT_CONFIGURED);
     do_check_eq(Status.login, LOGIN_FAILED_NO_PASSPHRASE);
     do_check_false(Service.isLoggedIn);
-    do_check_false(Svc.Prefs.get("autoconnect"));
 
     _("Success if passphrase is set.");
     Service.passphrase = "foo";
@@ -81,7 +83,6 @@ function run_test() {
     do_check_eq(Status.service, STATUS_OK);
     do_check_eq(Status.login, LOGIN_SUCCEEDED);
     do_check_true(Service.isLoggedIn);
-    do_check_true(Svc.Prefs.get("autoconnect"));
 
     _("We can also pass username, password and passphrase to login().");
     Service.login("janedoe", "incorrectpassword", "bar");
@@ -97,7 +98,6 @@ function run_test() {
     do_check_eq(Status.service, STATUS_OK);
     do_check_eq(Status.login, LOGIN_SUCCEEDED);
     do_check_true(Service.isLoggedIn);
-    do_check_true(Svc.Prefs.get("autoconnect"));
     
     _("Calling login() with parameters when the client is unconfigured sends notification.");
     let notified = false;
@@ -112,17 +112,14 @@ function run_test() {
     do_check_eq(Status.service, STATUS_OK);
     do_check_eq(Status.login, LOGIN_SUCCEEDED);
     do_check_true(Service.isLoggedIn);
-    do_check_true(Svc.Prefs.get("autoconnect"));
 
     _("Logout.");
     Service.logout();
     do_check_false(Service.isLoggedIn);
-    do_check_false(Svc.Prefs.get("autoconnect"));
 
     _("Logging out again won't do any harm.");
     Service.logout();
     do_check_false(Service.isLoggedIn);
-    do_check_false(Svc.Prefs.get("autoconnect"));
 
     /*
      * Testing login-on-sync.
@@ -151,9 +148,9 @@ function run_test() {
     
     // Stub scheduleNextSync. This gets called within checkSyncStatus if we're
     // ready to sync, so use it as an indicator.
-    let scheduleNextSyncF = Service._scheduleNextSync;
+    let scheduleNextSyncF = SyncScheduler.scheduleNextSync;
     let scheduleCalled = false;
-    Service._scheduleNextSync = function(wait) {
+    SyncScheduler.scheduleNextSync = function(wait) {
       scheduleCalled = true;
       scheduleNextSyncF.call(this, wait);
     }
@@ -172,17 +169,17 @@ function run_test() {
     
     _("We're ready to sync if locked.");
     Service.enabled = true;
-    Svc.IO.offline = false;
-    Service._checkSyncStatus();
+    Services.io.offline = false;
+    SyncScheduler.checkSyncStatus();
     do_check_true(scheduleCalled);
     
     scheduleCalled = false;
     mpLocked = false;
     
     _("... and not if not.");
-    Service._checkSyncStatus();
+    SyncScheduler.checkSyncStatus();
     do_check_false(scheduleCalled);
-    Service._scheduleNextSync = scheduleNextSyncF;
+    SyncScheduler.scheduleNextSync = scheduleNextSyncF;
     
     // TODO: need better tests around master password prompting. See Bug 620583.
 
@@ -197,13 +194,13 @@ function run_test() {
                              throw "User canceled Master Password entry";
                            });
     
-    let oldClearSyncTriggers = Service._clearSyncTriggers;
+    let oldClearSyncTriggers = SyncScheduler.clearSyncTriggers;
     let oldLockedSync = Service._lockedSync;
     
     let cSTCalled = false;
     let lockedSyncCalled = false;
     
-    Service._clearSyncTriggers = function() { cSTCalled = true; };
+    SyncScheduler.clearSyncTriggers = function() { cSTCalled = true; };
     Service._lockedSync = function() { lockedSyncCalled = true; };
     
     _("If master password is canceled, login fails and we report lockage.");

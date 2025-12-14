@@ -46,8 +46,7 @@
 #define mozilla_css_StyleRule_h__
 
 //#include <stdio.h>
-#include "nsICSSRule.h"
-#include "nsCSSRule.h"
+#include "mozilla/css/Rule.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsCSSPseudoElements.h"
@@ -292,11 +291,35 @@ namespace mozilla {
 namespace css {
 
 class Declaration;
-class ImportantRule;
 class DOMCSSStyleRule;
 
-class NS_FINAL_CLASS StyleRule : public nsCSSRule,
-                                 public nsICSSRule {
+class StyleRule;
+
+class ImportantRule : public nsIStyleRule {
+public:
+  ImportantRule(Declaration *aDeclaration);
+
+  NS_DECL_ISUPPORTS
+
+  // nsIStyleRule interface
+  virtual void MapRuleInfoInto(nsRuleData* aRuleData);
+#ifdef DEBUG
+  virtual void List(FILE* out = stdout, PRInt32 aIndent = 0) const;
+#endif
+
+protected:
+  virtual ~ImportantRule();
+
+  // Not an owning reference; the StyleRule that owns this
+  // ImportantRule also owns the mDeclaration, and any rule node
+  // pointing to this rule keeps that StyleRule alive as well.
+  Declaration* mDeclaration;
+
+  friend class StyleRule;
+};
+
+class NS_FINAL_CLASS StyleRule : public Rule
+{
  public:
   StyleRule(nsCSSSelectorList* aSelector,
             Declaration *aDeclaration);
@@ -309,7 +332,7 @@ private:
 public:
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_CSS_STYLE_RULE_IMPL_CID)
 
-  NS_DECL_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
 
   // null for style attribute
   nsCSSSelectorList* Selector() { return mSelector; }
@@ -331,7 +354,7 @@ public:
   already_AddRefed<StyleRule>
   DeclarationChanged(Declaration* aDecl, PRBool aHandleContainer);
 
-  nsIStyleRule* GetImportantRule();
+  nsIStyleRule* GetImportantRule() const { return mImportantRule; }
 
   /**
    * The rule processor must call this method before calling
@@ -342,20 +365,14 @@ public:
   // hooks for DOM rule
   void GetCssText(nsAString& aCssText);
   void SetCssText(const nsAString& aCssText);
-  nsCSSStyleSheet* GetParentStyleSheet() { return mSheet; }
-  nsICSSGroupRule* GetParentRule() { return mParentRule; }
   void GetSelectorText(nsAString& aSelectorText);
   void SetSelectorText(const nsAString& aSelectorText);
 
   virtual PRInt32 GetType() const;
 
-  virtual already_AddRefed<nsIStyleSheet> GetStyleSheet() const;
-  virtual void SetStyleSheet(nsCSSStyleSheet* aSheet);
-  virtual void SetParentRule(nsICSSGroupRule* aRule);
+  virtual already_AddRefed<Rule> Clone() const;
 
-  virtual already_AddRefed<nsICSSRule> Clone() const;
-
-  nsIDOMCSSRule* GetDOMRuleWeak(nsresult* aResult);
+  virtual nsIDOMCSSRule* GetDOMRule();
 
   // The new mapping function.
   virtual void MapRuleInfoInto(nsRuleData* aRuleData);
@@ -385,9 +402,5 @@ private:
 } // namespace mozilla
 
 NS_DEFINE_STATIC_IID_ACCESSOR(mozilla::css::StyleRule, NS_CSS_STYLE_RULE_IMPL_CID)
-
-already_AddRefed<mozilla::css::StyleRule>
-NS_NewCSSStyleRule(nsCSSSelectorList* aSelector,
-                   mozilla::css::Declaration* aDeclaration);
 
 #endif /* mozilla_css_StyleRule_h__ */

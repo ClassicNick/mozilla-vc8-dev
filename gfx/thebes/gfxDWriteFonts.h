@@ -61,8 +61,6 @@ public:
 
     virtual gfxFont* CopyWithAntialiasOption(AntialiasOption anAAOption);
 
-    virtual nsString GetUniqueName();
-
     virtual const gfxFont::Metrics& GetMetrics();
 
     virtual PRUint32 GetSpaceGlyph();
@@ -76,6 +74,13 @@ public:
     }
 
     IDWriteFontFace *GetFontFace();
+
+    /* override Measure to add padding for antialiasing */
+    virtual RunMetrics Measure(gfxTextRun *aTextRun,
+                               PRUint32 aStart, PRUint32 aEnd,
+                               BoundingBoxType aBoundingBoxType,
+                               gfxContext *aContextForTightBoundingBox,
+                               Spacing *aSpacing);
 
     // override gfxFont table access function to bypass gfxFontEntry cache,
     // use DWrite API to get direct access to system font data
@@ -92,7 +97,7 @@ protected:
 
     PRBool GetFakeMetricsForArialBlack(DWRITE_FONT_METRICS *aFontMetrics);
 
-    void ComputeMetrics();
+    void ComputeMetrics(AntialiasOption anAAOption);
 
     PRBool HasBitmapStrikeForSize(PRUint32 aSize);
 
@@ -100,7 +105,12 @@ protected:
 
     cairo_scaled_font_t *CairoScaledFont();
 
+    gfxFloat MeasureGlyphWidth(PRUint16 aGlyph);
+
     static void DestroyBlobFunc(void* userArg);
+
+    DWRITE_MEASURING_MODE GetMeasuringMode();
+    bool GetForceGDIClassic();
 
     nsRefPtr<IDWriteFontFace> mFontFace;
     cairo_font_face_t *mCairoFontFace;

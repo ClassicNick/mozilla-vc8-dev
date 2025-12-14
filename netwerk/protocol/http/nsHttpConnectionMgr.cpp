@@ -81,7 +81,7 @@ InsertTransactionSorted(nsTArray<nsHttpTransaction*> &pendingQ, nsHttpTransactio
 
 nsHttpConnectionMgr::nsHttpConnectionMgr()
     : mRef(0)
-    , mMonitor("nsHttpConnectionMgr.mMonitor")
+    , mReentrantMonitor("nsHttpConnectionMgr.mReentrantMonitor")
     , mMaxConns(0)
     , mMaxConnsPerHost(0)
     , mMaxConnsPerProxy(0)
@@ -115,7 +115,7 @@ nsHttpConnectionMgr::EnsureSocketThreadTargetIfOnline()
         }
     }
 
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
     // do nothing if already initialized or if we've shut down
     if (mSocketThreadTarget || mIsShuttingDown)
@@ -138,7 +138,7 @@ nsHttpConnectionMgr::Init(PRUint16 maxConns,
     LOG(("nsHttpConnectionMgr::Init\n"));
 
     {
-        MonitorAutoEnter mon(mMonitor);
+        ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
         mMaxConns = maxConns;
         mMaxConnsPerHost = maxConnsPerHost;
@@ -159,7 +159,7 @@ nsHttpConnectionMgr::Shutdown()
 {
     LOG(("nsHttpConnectionMgr::Shutdown\n"));
 
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
     // do nothing if already shutdown
     if (!mSocketThreadTarget)
@@ -192,7 +192,7 @@ nsHttpConnectionMgr::PostEvent(nsConnEventHandler handler, PRInt32 iparam, void 
     // care of initializing the socket thread target if that's the case.
     EnsureSocketThreadTargetIfOnline();
 
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
 
     nsresult rv;
     if (!mSocketThreadTarget) {
@@ -317,7 +317,7 @@ nsHttpConnectionMgr::GetSocketThreadTarget(nsIEventTarget **target)
     // care of initializing the socket thread target if that's the case.
     EnsureSocketThreadTargetIfOnline();
 
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     NS_IF_ADDREF(*target = mSocketThreadTarget);
     return NS_OK;
 }
@@ -383,6 +383,31 @@ nsHttpConnectionMgr::ProcessPendingQ(nsHttpConnectionInfo *ci)
     return rv;
 }
 
+nsresult
+nsHttpConnectionMgr::CloseIdleConnection(nsHttpConnection *conn)
+{
+    NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
+    LOG(("nsHttpConnectionMgr::CloseIdleConnection %p conn=%p",
+         this, conn));
+
+    nsHttpConnectionInfo *ci = conn->ConnectionInfo();
+    if (!ci)
+        return NS_ERROR_UNEXPECTED;
+
+    nsCStringKey key(ci->HashKey());
+    nsConnectionEntry *ent = (nsConnectionEntry *) mCT.Get(&key);
+
+    if (!ent || !ent->mIdleConns.RemoveElement(conn))
+        return NS_ERROR_UNEXPECTED;
+
+    conn->Close(NS_ERROR_ABORT);
+    NS_RELEASE(conn);
+    mNumIdleConns--;
+    if (0 == mNumIdleConns)
+        StopPruneDeadConnectionsTimer();
+    return NS_OK;
+}
+
 //-----------------------------------------------------------------------------
 // enumeration callbacks
 
@@ -445,7 +470,7 @@ nsHttpConnectionMgr::PruneDeadConnectionsCB(nsHashKey *key, void *data, void *cl
                 NS_RELEASE(conn);
                 self->mNumIdleConns--;
             } else {
-                timeToNextExpire = PR_MIN(timeToNextExpire, conn->TimeToLive());
+                timeToNextExpire = NS_MIN(timeToNextExpire, conn->TimeToLive());
             }
         }
     }
@@ -561,7 +586,21 @@ nsHttpConnectionMgr::ProcessPendingQForEntry(nsConnectionEntry *ent)
         nsHttpConnection *conn = nsnull;
         for (i=0; i<count; ++i) {
             trans = ent->mPendingQ[i];
-            GetConnection(ent, trans, &conn);
+
+            // When this transaction has already established a half-open
+            // connection, we want to prevent any duplicate half-open
+            // connections from being established and bound to this
+            // transaction. Allow only use of an idle persistent connection
+            // (if found) for transactions referred by a half-open connection.
+            PRBool alreadyHalfOpen = PR_FALSE;
+            for (PRInt32 j = 0; j < ((PRInt32) ent->mHalfOpens.Length()); j++) {
+                if (ent->mHalfOpens[j]->Transaction() == trans) {
+                    alreadyHalfOpen = PR_TRUE;
+                    break;
+                }
+            }
+
+            GetConnection(ent, trans, alreadyHalfOpen, &conn);
             if (conn)
                 break;
         }
@@ -647,6 +686,7 @@ nsHttpConnectionMgr::AtActiveConnectionLimit(nsConnectionEntry *ent, PRUint8 cap
 void
 nsHttpConnectionMgr::GetConnection(nsConnectionEntry *ent,
                                    nsHttpTransaction *trans,
+                                   PRBool onlyReusedConnection,
                                    nsHttpConnection **result)
 {
     LOG(("nsHttpConnectionMgr::GetConnection [ci=%s caps=%x]\n",
@@ -674,8 +714,11 @@ nsHttpConnectionMgr::GetConnection(nsConnectionEntry *ent,
                 conn->Close(NS_ERROR_ABORT);
                 NS_RELEASE(conn);
             }
-            else
+            else {
                 LOG(("   reusing connection [conn=%x]\n", conn));
+                conn->EndIdleMonitoring();
+            }
+
             ent->mIdleConns.RemoveElementAt(0);
             mNumIdleConns--;
 
@@ -687,6 +730,12 @@ nsHttpConnectionMgr::GetConnection(nsConnectionEntry *ent,
     }
 
     if (!conn) {
+
+        // If the onlyReusedConnection parameter is TRUE, then GetConnection()
+        // does not create new transports under any circumstances.
+        if (onlyReusedConnection)
+            return;
+        
         // Check if we need to purge an idle connection. Note that we may have
         // removed one above; if so, this will be a no-op. We do this before
         // checking the active connection limit to catch the case where we do
@@ -876,26 +925,22 @@ nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction *trans)
         mCT.Put(&key, ent);
     }
 
-    nsHttpConnection *conn;
+    // Check if the transaction already has a sticky reference to a connection.
+    // If so, then we can just use it directly by transferring its reference
+    // to the new connection var instead of calling GetConnection() to search
+    // for an available one.
 
-    // check if the transaction already has a sticky reference to a connection.
-    // if so, then we can just use it directly.  XXX check if alive??
-    // XXX add a TakeConnection method or something to make this clearer!
-    nsConnectionHandle *handle = (nsConnectionHandle *) trans->Connection();
-    if (handle) {
+    nsAHttpConnection *wrappedConnection = trans->Connection();
+    nsHttpConnection  *conn;
+    conn = wrappedConnection ? wrappedConnection->TakeHttpConnection() : nsnull;
+
+    if (conn) {
         NS_ASSERTION(caps & NS_HTTP_STICKY_CONNECTION, "unexpected caps");
-        NS_ASSERTION(handle->mConn, "no connection");
 
-        // steal reference from connection handle.
-        // XXX prevent SetConnection(nsnull) from calling ReclaimConnection
-        conn = handle->mConn;
-        handle->mConn = nsnull;
-
-        // destroy connection handle.
         trans->SetConnection(nsnull);
     }
     else
-        GetConnection(ent, trans, &conn);
+        GetConnection(ent, trans, PR_FALSE, &conn);
 
     nsresult rv;
     if (!conn) {
@@ -924,7 +969,7 @@ nsHttpConnectionMgr::OnMsgShutdown(PRInt32, void *)
     mCT.Reset(ShutdownPassCB, this);
 
     // signal shutdown complete
-    MonitorAutoEnter mon(mMonitor);
+    ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     mon.Notify();
 }
 
@@ -1057,12 +1102,25 @@ nsHttpConnectionMgr::OnMsgReclaimConnection(PRInt32, void *param)
 
         if (conn->CanReuse()) {
             LOG(("  adding connection to idle list\n"));
-            // hold onto this connection in the idle list.  we push it to
-            // the end of the list so as to ensure that we'll visit older
-            // connections first before getting to this one.
+            // Keep The idle connection list sorted with the connections that
+            // have moved the largest data pipelines at the front because these
+            // connections have the largest cwnds on the server.
+
+            // The linear search is ok here because the number of idleconns
+            // in a single entry is generally limited to a small number (i.e. 6)
+
+            PRUint32 idx;
+            for (idx = 0; idx < ent->mIdleConns.Length(); idx++) {
+                nsHttpConnection *idleConn = ent->mIdleConns[idx];
+                if (idleConn->MaxBytesRead() < conn->MaxBytesRead())
+                    break;
+            }
+
             NS_ADDREF(conn);
-            ent->mIdleConns.AppendElement(conn);
+            ent->mIdleConns.InsertElementAt(idx, conn);
             mNumIdleConns++;
+            conn->BeginIdleMonitoring();
+
             // If the added connection was first idle connection or has shortest
             // time to live among the idle connections, pruning dead
             // connections needs to be done when it can't be reused anymore.
@@ -1160,6 +1218,15 @@ nsHttpConnectionMgr::nsConnectionHandle::GetConnectionInfo(nsHttpConnectionInfo 
     mConn->GetConnectionInfo(result);
 }
 
+nsresult
+nsHttpConnectionMgr::
+nsConnectionHandle::TakeTransport(nsISocketTransport  **aTransport,
+                                  nsIAsyncInputStream **aInputStream,
+                                  nsIAsyncOutputStream **aOutputStream)
+{
+    return mConn->TakeTransport(aTransport, aInputStream, aOutputStream);
+}
+
 void
 nsHttpConnectionMgr::nsConnectionHandle::GetSecurityInfo(nsISupports **result)
 {
@@ -1213,9 +1280,10 @@ nsHttpConnectionMgr::nsHalfOpenSocket::~nsHalfOpenSocket()
     LOG(("Destroying nsHalfOpenSocket [this=%p]\n", this));
     
     if (mEnt) {
-        PRInt32 index = mEnt->mHalfOpens.IndexOf(this);
-        NS_ABORT_IF_FALSE(index != -1, "half open complete but no item");
-        mEnt->mHalfOpens.RemoveElementAt(index);
+        // A failure to create the transport object at all
+        // will result in this not being present in the halfopen table
+        // so ignore failures of RemoveElement()
+        mEnt->mHalfOpens.RemoveElement(this);
     }
 }
 
@@ -1223,7 +1291,8 @@ nsresult
 nsHttpConnectionMgr::
 nsHalfOpenSocket::SetupStreams(nsISocketTransport **transport,
                                nsIAsyncInputStream **instream,
-                               nsIAsyncOutputStream **outstream)
+                               nsIAsyncOutputStream **outstream,
+                               PRBool isBackup)
 {
     nsresult rv;
 
@@ -1251,6 +1320,14 @@ nsHalfOpenSocket::SetupStreams(nsISocketTransport **transport,
 
     if (mTransaction->Caps() & NS_HTTP_LOAD_ANONYMOUS)
         tmpFlags |= nsISocketTransport::ANONYMOUS_CONNECT;
+
+    // For backup connections, we disable IPv6. That's because some users have
+    // broken IPv6 connectivity (leading to very long timeouts), and disabling
+    // IPv6 on the backup connection gives them a much better user experience
+    // with dual-stack hosts, though they still pay the 250ms delay for each new
+    // connection. This strategy is also known as "happy eyeballs".
+    if (isBackup)
+        tmpFlags |= nsISocketTransport::DISABLE_IPV6;
 
     socketTransport->SetConnectionFlags(tmpFlags);
 
@@ -1290,7 +1367,8 @@ nsHttpConnectionMgr::nsHalfOpenSocket::SetupPrimaryStreams()
 {
     nsresult rv = SetupStreams(getter_AddRefs(mSocketTransport),
                                getter_AddRefs(mStreamIn),
-                               getter_AddRefs(mStreamOut));
+                               getter_AddRefs(mStreamOut),
+                               PR_FALSE);
     LOG(("nsHalfOpenSocket::SetupPrimaryStream [this=%p ent=%s rv=%x]",
          this, mEnt->mConnInfo->Host(), rv));
     if (NS_FAILED(rv)) {
@@ -1308,7 +1386,8 @@ nsHttpConnectionMgr::nsHalfOpenSocket::SetupBackupStreams()
 {
     nsresult rv = SetupStreams(getter_AddRefs(mBackupTransport),
                                getter_AddRefs(mBackupStreamIn),
-                               getter_AddRefs(mBackupStreamOut));
+                               getter_AddRefs(mBackupStreamOut),
+                               PR_TRUE);
     LOG(("nsHalfOpenSocket::SetupBackupStream [this=%p ent=%s rv=%x]",
          this, mEnt->mConnInfo->Host(), rv));
     if (NS_FAILED(rv)) {
@@ -1483,7 +1562,7 @@ nsHttpConnectionMgr::nsHalfOpenSocket::OnTransportStatus(nsITransport *trans,
                                                          PRUint64 progressMax)
 {
     if (mTransaction)
-        mTransaction->OnTransportStatus(status, progress);
+      mTransaction->OnTransportStatus(trans, status, progress);
     return NS_OK;
 }
 
@@ -1499,6 +1578,19 @@ nsHttpConnectionMgr::nsHalfOpenSocket::GetInterface(const nsIID &iid,
             return callbacks->GetInterface(iid, result);
     }
     return NS_ERROR_NO_INTERFACE;
+}
+
+
+nsHttpConnection *
+nsHttpConnectionMgr::nsConnectionHandle::TakeHttpConnection()
+{
+    // return our connection object to the caller and clear it internally
+    // do not drop our reference - the caller now owns it.
+
+    NS_ASSERTION(mConn, "no connection");
+    nsHttpConnection *conn = mConn;
+    mConn = nsnull;
+    return conn;
 }
 
 PRBool

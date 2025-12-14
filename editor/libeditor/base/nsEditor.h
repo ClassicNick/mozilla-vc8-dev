@@ -62,7 +62,7 @@
 #include "nsSelectionState.h"
 #include "nsIEditorSpellCheck.h"
 #include "nsIInlineSpellChecker.h"
-#include "nsPIDOMEventTarget.h"
+#include "nsIDOMEventTarget.h"
 #include "nsStubMutationObserver.h"
 #include "nsIViewManager.h"
 #include "nsCycleCollectionParticipant.h"
@@ -100,8 +100,7 @@ class nsIDOMNSEvent;
 class nsEditor : public nsIEditor,
                  public nsIEditorIMESupport,
                  public nsSupportsWeakReference,
-                 public nsIPhonetic,
-                 public nsIEditor_MOZILLA_2_0_BRANCH
+                 public nsIPhonetic
 {
 public:
 
@@ -146,8 +145,8 @@ public:
                                            nsIEditor)
 
   /* ------------ utility methods   -------------- */
-  NS_IMETHOD GetPresShell(nsIPresShell **aPS);
-  void NotifyEditorObservers(void);
+  already_AddRefed<nsIPresShell> GetPresShell();
+  void NotifyEditorObservers();
 
   /* ------------ nsIEditor methods -------------- */
   NS_DECL_NSIEDITOR
@@ -156,9 +155,6 @@ public:
   
   // nsIPhonetic
   NS_DECL_NSIPHONETIC
-
-  // nsIEditor_MOZILLA_2_0_BRANCH
-  NS_DECL_NSIEDITOR_MOZILLA_2_0_BRANCH
 
 public:
 
@@ -617,7 +613,7 @@ public:
                                     nsIDOMNode *aEndNode,
                                     PRInt32 aEndOffset);
 
-  virtual already_AddRefed<nsPIDOMEventTarget> GetPIDOMEventTarget() = 0;
+  virtual already_AddRefed<nsIDOMEventTarget> GetDOMEventTarget() = 0;
 
   // Fast non-refcounting editor root element accessor
   nsIDOMElement *GetRoot();
@@ -768,7 +764,7 @@ protected:
   PRInt8                        mDocDirtyState;		// -1 = not initialized
   nsWeakPtr        mDocWeak;  // weak reference to the nsIDOMDocument
   // The form field as an event receiver
-  nsCOMPtr<nsPIDOMEventTarget> mEventTarget;
+  nsCOMPtr<nsIDOMEventTarget> mEventTarget;
 
   nsString* mPhonetic;
 

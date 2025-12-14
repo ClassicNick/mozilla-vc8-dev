@@ -45,6 +45,7 @@ Cu.import("resource://services-sync/constants.js");
 Cu.import("resource://services-sync/engines.js");
 Cu.import("resource://services-sync/ext/StringBundle.js");
 Cu.import("resource://services-sync/record.js");
+Cu.import("resource://services-sync/resource.js");
 Cu.import("resource://services-sync/util.js");
 
 const CLIENTS_TTL = 1814400; // 21 days
@@ -55,14 +56,16 @@ function ClientsRec(collection, id) {
 }
 ClientsRec.prototype = {
   __proto__: CryptoWrapper.prototype,
-  _logName: "Record.Clients",
+  _logName: "Sync.Record.Clients",
   ttl: CLIENTS_TTL
 };
 
 Utils.deferGetSet(ClientsRec, "cleartext", ["name", "type", "commands"]);
 
 
-Utils.lazy(this, "Clients", ClientEngine);
+XPCOMUtils.defineLazyGetter(this, "Clients", function () {
+  return new ClientEngine();
+});
 
 function ClientEngine() {
   SyncEngine.call(this, "Clients");
@@ -150,12 +153,15 @@ ClientEngine.prototype = {
       return localName;
 
     // Generate a client name if we don't have a useful one yet
-    let user = Svc.Env.get("USER") || Svc.Env.get("USERNAME") ||
+    let env = Cc["@mozilla.org/process/environment;1"]
+                .getService(Ci.nsIEnvironment);
+    let user = env.get("USER") || env.get("USERNAME") ||
                Svc.Prefs.get("account") || Svc.Prefs.get("username");
     let brand = new StringBundle("chrome://branding/locale/brand.properties");
     let app = brand.get("brandShortName");
 
-    let system = Svc.SysInfo.get("device") ||
+    let system = Cc["@mozilla.org/system-info;1"]
+                   .getService(Ci.nsIPropertyBag2).get("device") ||
                  Cc["@mozilla.org/network/protocol;1?name=http"]
                    .getService(Ci.nsIHttpProtocolHandler).oscpu;
 
@@ -193,19 +199,26 @@ ClientEngine.prototype = {
     SyncEngine.prototype._resetClient.call(this);
     this._store.wipe();
   },
-  
+
+  removeClientData: function removeClientData() {
+    let res = new Resource(this.engineURL + "/" + this.localID);
+    res.delete();
+  },
+
   // Override the default behavior to delete bad records from the server.
-  handleHMACMismatch: function handleHMACMismatch(item) {
+  handleHMACMismatch: function handleHMACMismatch(item, mayRetry) {
     this._log.debug("Handling HMAC mismatch for " + item.id);
-    if (SyncEngine.prototype.handleHMACMismatch.call(this, item))
-      return true;
+    
+    let base = SyncEngine.prototype.handleHMACMismatch.call(this, item, mayRetry);
+    if (base != SyncEngine.kRecoveryStrategy.error)
+      return base;
 
     // It's a bad client record. Save it to be deleted at the end of the sync.
     this._log.debug("Bad client record detected. Scheduling for deletion.");
     this._deleteId(item.id);
 
-    // Don't try again.
-    return false;
+    // Neither try again nor error; we're going to delete it.
+    return SyncEngine.kRecoveryStrategy.ignore;
   }
 };
 

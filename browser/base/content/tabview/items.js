@@ -72,15 +72,6 @@ function Item() {
   // The z-index for this item.
   this.zIndex = 0;
 
-  // Variable: debug
-  // When set to true, displays a rectangle on the screen that corresponds with bounds.
-  // May be used for additional debugging features in the future.
-  this.debug = false;
-
-  // Variable: $debug
-  // If <debug> is true, this will be the iQ object for the visible rectangle.
-  this.$debug = null;
-
   // Variable: container
   // The outermost DOM element that describes this item on screen.
   this.container = null;
@@ -154,26 +145,15 @@ Item.prototype = {
     this.container = container;
     this.$container = iQ(container);
 
-    if (this.debug) {
-      this.$debug = iQ('<div>')
-        .css({
-          border: '2px solid green',
-          zIndex: -10,
-          position: 'absolute'
-        })
-        .appendTo('body');
-    }
-
     iQ(this.container).data('item', this);
 
     // ___ drag
     this.dragOptions = {
       cancelClass: 'close stackExpander',
       start: function(e, ui) {
-        if (this.isAGroupItem) {
-          GroupItems.setActiveGroupItem(this);
+        UI.setActive(this);
+        if (this.isAGroupItem)
           this._unfreezeItemSize();
-        }
         // if we start dragging a tab within a group, start with dropSpace on.
         else if (this.parent != null)
           this.parent._dropSpaceActive = true;
@@ -184,9 +164,13 @@ Item.prototype = {
       },
       stop: function() {
         drag.info.stop();
-        drag.info = null;
-        if (!this.isAGroupItem && !this.parent)
+
+        if (!this.isAGroupItem && !this.parent) {
+          new GroupItem([drag.info.$el], {focusTitle: true});
           gTabView.firstUseExperienced = true;
+        }
+
+        drag.info = null;
       },
       // The minimum the mouse must move after mouseDown in order to move an 
       // item
@@ -220,8 +204,7 @@ Item.prototype = {
       minWidth: 90,
       minHeight: 90,
       start: function(e,ui) {
-        if (this.isAGroupItem)
-          GroupItems.setActiveGroupItem(this);
+        UI.setActive(this);
         resize.info = new Drag(this, e);
       },
       resize: function(e,ui) {
@@ -511,16 +494,6 @@ Item.prototype = {
   },
 
   // ----------
-  // Function: _updateDebugBounds
-  // Called by a subclass when its bounds change, to update the debugging rectangles on screen.
-  // This functionality is enabled only by the debug property.
-  _updateDebugBounds: function Item__updateDebugBounds() {
-    if (this.$debug) {
-      this.$debug.css(this.bounds);
-    }
-  },
-
-  // ----------
   // Function: setTrenches
   // Sets up/moves the trenches for snapping to this item.
   setTrenches: function Item_setTrenches(rect) {
@@ -572,9 +545,7 @@ Item.prototype = {
     var defaultRadius = Trenches.defaultRadius;
     Trenches.defaultRadius = 2 * defaultRadius; // bump up from 10 to 20!
 
-    var event = {startPosition:{}}; // faux event
-    var FauxDragInfo = new Drag(this, event, true);
-    // true == isFauxDrag
+    var FauxDragInfo = new Drag(this, {});
     FauxDragInfo.snap('none', false);
     FauxDragInfo.stop(immediately);
 
@@ -690,7 +661,7 @@ Item.prototype = {
           .unbind('mousemove', handleMouseMove)
           .unbind('mouseup', handleMouseUp);
 
-        if (dropTarget) {
+        if (startSent && dropTarget) {
           var dropOptions = dropTarget.dropOptions;
           if (dropOptions && typeof dropOptions.drop == "function")
             dropOptions.drop.apply(dropTarget, [e]);
@@ -943,7 +914,6 @@ let Items = {
   //     width of children and the columns.
   //   count - overrides the item count for layout purposes;
   //     default: the actual item count
-  //   padding - pixels between each item
   //   columns - (int) a preset number of columns to use
   //   dropPos - a <Point> which should have a one-tab space left open, used
   //             when a tab is dragged over.

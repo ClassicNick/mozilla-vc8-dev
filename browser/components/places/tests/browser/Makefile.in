@@ -13,7 +13,7 @@
 #
 # The Original Code is Places test code.
 #
-# The Initial Developer of the Original Code is Mozilla Corp.
+# The Initial Developer of the Original Code is the Mozilla Foundation.
 # Portions created by the Initial Developer are Copyright (C) 2008
 # the Initial Developer. All Rights Reserved.
 #
@@ -73,6 +73,7 @@ _BROWSER_TEST_FILES = \
 	browser_toolbar_migration.js \
 	browser_library_batch_delete.js \
 	browser_555547.js \
+	browser_416459_cut.js \
 	$(NULL)
 
 libs:: $(_BROWSER_TEST_FILES)

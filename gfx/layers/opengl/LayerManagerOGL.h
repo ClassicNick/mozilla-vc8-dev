@@ -44,6 +44,8 @@
 
 #include "mozilla/layers/ShadowLayers.h"
 
+#include "mozilla/TimeStamp.h"
+
 #ifdef XP_WIN
 #include <windows.h>
 #endif
@@ -358,6 +360,12 @@ public:
                     aFlipped);
   }
 
+  void BindAndDrawQuadWithTextureRect(LayerProgram *aProg,
+                                      const nsIntRect& aTexCoordRect,
+                                      const nsIntSize& aTexSize,
+                                      GLenum aWrapMode = LOCAL_GL_REPEAT);
+                                      
+
 #ifdef MOZ_LAYERS_HAVE_LOG
   virtual const char* Name() const { return "OGL"; }
 #endif // MOZ_LAYERS_HAVE_LOG
@@ -385,6 +393,8 @@ public:
   void SetWorldTransform(const gfxMatrix& aMatrix);
   gfxMatrix& GetWorldTransform(void);
   void WorldTransformRect(nsIntRect& aRect);
+
+  void SetRenderFPS(bool aRenderFPS) { mRenderFPS = aRenderFPS; };
 
 private:
   /** Widget associated with this layer manager */
@@ -469,6 +479,25 @@ private:
   DrawThebesLayerCallback mThebesLayerCallback;
   void *mThebesLayerCallbackData;
   gfxMatrix mWorldMatrix;
+
+  struct FPSState
+  {
+      GLuint texture;
+      int fps;
+      bool initialized;
+      int fcount;
+      TimeStamp last;
+
+      FPSState()
+        : texture(0)
+        , fps(0)
+        , initialized(false)
+        , fcount(0)
+      {}
+      void DrawFPS(GLContext*, CopyProgram*);
+  } mFPS;
+
+  bool mRenderFPS;
 };
 
 /**

@@ -76,7 +76,7 @@ function start() {
   };
 
   Page.prototype.isExpectedToFullyPass = function() {
-    return testsExpectedToFail.indexOf(this.url) == -1;
+    return testsExpectedToFail.indexOf(this.url) == -1 && testsToIgnore.indexOf(this.url) == -1;
   }
 
   Page.prototype.errormsg = function(msg) {
@@ -198,6 +198,8 @@ function start() {
     expectedtofailTextNode.textContent = testsExpectedToFail.length +
                                          ' test pages are expected to fail out of ' +
                                          this.totalPages;
+    ignoredtestsTextNode.textContent = testsToIgnore.length +
+                                         ' test pages have their results ignored';
     return page.startPage();
   };
 
@@ -232,7 +234,7 @@ function start() {
   Reporter.prototype.finishedTestSuite = function() {
       for (var i = 0; i < testsExpectedToFail.length; ++i)
         if (testsSuccessful.indexOf(testsExpectedToFail[i]) != -1)
-          ok(false, 'Test expected to fail, but passed: ' + testsExpectedToFail[i]);
+          todo(true, 'Test expected to fail, but passed: ' + testsExpectedToFail[i]);
       statusTextNode.textContent = 'Finished';
       SimpleTest.finish();
   }
@@ -341,6 +343,10 @@ function start() {
   var expectedtofailTextNode = document.createTextNode('');
   expectedtofailElem.appendChild(expectedtofailTextNode);
 
+  var ignoredtestsElem = document.getElementById("ignoredtests");
+  var ignoredtestsTextNode = document.createTextNode('');
+  ignoredtestsElem.appendChild(ignoredtestsTextNode);
+
   // Windows uses the ANGLE library for rendering. Until everything is perfect, this means a different set of
   // failing tests. It's easier to do a platform check for Windows than for ANGLE itself.
   // Moreover, we currently also have different tests failing on Mac and on Linux,
@@ -357,9 +363,14 @@ function start() {
                             .replace(/\r/g, '') // convert to unix line breaks
                             .split('\n');
 
-  // canvas-test.html is currently failing on Windows XP test slaves
-  if (kIsWindows && !kIsWindowsVistaOrHigher)
-      testsExpectedToFail.push('conformance/canvas-test.html');
+  if (kIsWindows && !kIsWindowsVistaOrHigher) {
+    testsExpectedToFail.push('conformance/framebuffer-object-attachment.html'); // NVIDIA 190.42 doesnt support DEPTH_STENCIL
+    testsExpectedToFail.push('conformance/gl-get-active-attribute.html'); // bug in NVIDIA 190.42, fixed in newer drivers
+    testsExpectedToFail.push('conformance/gl-uniform-bool.html'); // bug in NVIDIA 190.42, fixed in newer drivers
+    testsExpectedToFail.push('conformance/tex-image-and-sub-image-2d-with-array-buffer-view.html'); // ???
+  }
+
+  var testsToIgnore = [];
 
   var testsSuccessful = [];
 
@@ -385,6 +396,8 @@ function start() {
     <div><span id="results-default"></span></div>
     <br />
     <div><span id="expectedtofail"></span></div>
+    <br />
+    <div><span id="ignoredtests"></span></div>
   </div>
 </td></tr>
 </table>

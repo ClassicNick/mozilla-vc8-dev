@@ -512,9 +512,7 @@ XRE_InitChildProcess(int aArgc,
       // Allow ProcessChild to clean up after itself before going out of
       // scope and being deleted
       process->CleanUp();
-#ifdef MOZ_OMNIJAR
-      mozilla::SetOmnijar(nsnull);
-#endif
+      mozilla::Omnijar::CleanUp();
     }
   }
 
@@ -570,13 +568,13 @@ XRE_InitParentProcess(int aArgc,
   NS_ENSURE_ARG_POINTER(aArgv);
   NS_ENSURE_ARG_POINTER(aArgv[0]);
 
+  ScopedXREEmbed embed;
+
   gArgc = aArgc;
   gArgv = aArgv;
   int rv = XRE_InitCommandLine(gArgc, gArgv);
   if (NS_FAILED(rv))
       return NS_ERROR_FAILURE;
-
-  ScopedXREEmbed embed;
 
   {
     embed.Start();

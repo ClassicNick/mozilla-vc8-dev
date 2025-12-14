@@ -4,6 +4,11 @@
 
 /* Test applying an update by staging an update and launching an application */
 
+/**
+ * The MAR file used for this test should not contain a version 2 update
+ * manifest file (e.g. updatev2.manifest).
+ */
+
 // Use a copy of the main application executable for the test to avoid main
 // executable in use errors.
 const FILE_WIN_TEST_EXE = "aus_test_app.exe";
@@ -104,11 +109,6 @@ XPCOMUtils.defineLazyGetter(this, "gAppBinPath", function test_gAppBinPath() {
 function run_test() {
   if (IS_ANDROID) {
     logTestInfo("this test is not applicable to Android... returning early");
-    return;
-  }
-
-  if (IS_WINCE) {
-    logTestInfo("this test is not applicable to Windows CE... returning early");
     return;
   }
 

@@ -22,7 +22,7 @@
  * Contributor(s):
  *   Boris Zbarsky <bzbarsky@mit.edu> (original author)
  *   L. David Baron <dbaron@dbaron.org>, Mozilla Corporation
- *   Mats Palmgren <mats.palmgren@bredband.net>
+ *   Mats Palmgren <matspal@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either of the GNU General Public License Version 2 or later (the "GPL"),
@@ -49,8 +49,10 @@ class nsIScrollableFrame;
 class nsIDOMEvent;
 class nsRegion;
 class nsDisplayListBuilder;
-class nsIFontMetrics;
+class nsDisplayItem;
+class nsFontMetrics;
 class nsClientRectList;
+class nsFontFaceList;
 
 #include "prtypes.h"
 #include "nsStyleContext.h"
@@ -328,6 +330,13 @@ public:
   static nsIFrame* GetActiveScrolledRootFor(nsIFrame* aFrame,
                                             nsIFrame* aStopAtAncestor);
 
+  static nsIFrame* GetActiveScrolledRootFor(nsDisplayItem* aItem,
+                                            nsDisplayListBuilder* aBuilder,
+                                            PRBool* aShouldFixToViewport = nsnull);
+
+  static PRBool ScrolledByViewportScrolling(nsIFrame* aActiveScrolledRoot,
+                                            nsDisplayListBuilder* aBuilder);
+
   /**
     * GetFrameFor returns the root frame for a view
     * @param aView is the view to return the root frame for
@@ -502,6 +511,18 @@ public:
                                    PRBool aIgnoreRootScrollFrame = PR_FALSE);
 
   /**
+   * Returns the CTM at the specified frame. This matrix can be used to map
+   * coordinates from aFrame's to aStopAtAncestor's coordinate system.
+   *
+   * @param aFrame The frame at which we should calculate the CTM.
+   * @param aStopAtAncestor is an ancestor frame to stop at. If it's nsnull,
+   * matrix accumulating stops at root.
+   * @return The CTM at the specified frame.
+   */
+  static gfxMatrix GetTransformToAncestor(nsIFrame *aFrame,
+                                          nsIFrame* aStopAtAncestor = nsnull);
+
+  /**
    * Given a point in the global coordinate space, returns that point expressed
    * in the coordinate system of aFrame.  This effectively inverts all transforms
    * between this point and the root frame.
@@ -623,7 +644,7 @@ public:
    * necessarily correspond to what's visible in the window; we don't
    * want to mess up the widget's layer tree.
    */
-  static nsresult PaintFrame(nsIRenderingContext* aRenderingContext, nsIFrame* aFrame,
+  static nsresult PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFrame,
                              const nsRegion& aDirtyRegion, nscolor aBackstop,
                              PRUint32 aFlags = 0);
 
@@ -646,7 +667,7 @@ public:
    * before the cursor aIndex contains the index of the text where the cursor falls
    */
   static PRBool
-  BinarySearchForPosition(nsIRenderingContext* acx,
+  BinarySearchForPosition(nsRenderingContext* acx,
                           const PRUnichar* aText,
                           PRInt32    aBaseWidth,
                           PRInt32    aBaseInx,
@@ -731,7 +752,7 @@ public:
    * @return success or failure code
    */
   static nsresult GetFontMetricsForFrame(const nsIFrame* aFrame,
-                                         nsIFontMetrics** aFontMetrics);
+                                         nsFontMetrics** aFontMetrics);
 
   /**
    * Get the font metrics corresponding to the given style data.
@@ -740,7 +761,7 @@ public:
    * @return success or failure code
    */
   static nsresult GetFontMetricsForStyleContext(nsStyleContext* aStyleContext,
-                                                nsIFontMetrics** aFontMetrics);
+                                                nsFontMetrics** aFontMetrics);
 
   /**
    * Find the immediate child of aParent whose frame subtree contains
@@ -802,7 +823,7 @@ public:
    * and margin.
    */
   enum IntrinsicWidthType { MIN_WIDTH, PREF_WIDTH };
-  static nscoord IntrinsicForContainer(nsIRenderingContext* aRenderingContext,
+  static nscoord IntrinsicForContainer(nsRenderingContext* aRenderingContext,
                                        nsIFrame* aFrame,
                                        IntrinsicWidthType aType);
 
@@ -832,7 +853,7 @@ public:
    * @param aCoord The width value to compute.
    */
   static nscoord ComputeWidthValue(
-                   nsIRenderingContext* aRenderingContext,
+                   nsRenderingContext* aRenderingContext,
                    nsIFrame*            aFrame,
                    nscoord              aContainingBlockWidth,
                    nscoord              aContentEdgeToBoxSizing,
@@ -873,7 +894,7 @@ public:
     return (aCoord.GetUnit() == eStyleUnit_Coord &&
             aCoord.GetCoordValue() == 0) ||
            (aCoord.GetUnit() == eStyleUnit_Percent &&
-            aCoord.GetPercentValue() == 0.0) ||
+            aCoord.GetPercentValue() == 0.0f) ||
            (aCoord.IsCalcUnit() &&
             // clamp negative calc() to 0
             nsRuleNode::ComputeCoordPercentCalc(aCoord, nscoord_MAX) <= 0 &&
@@ -885,7 +906,7 @@ public:
     return (aCoord.GetUnit() == eStyleUnit_Coord &&
             aCoord.GetCoordValue() == 0) ||
            (aCoord.GetUnit() == eStyleUnit_Percent &&
-            aCoord.GetPercentValue() == 0.0) ||
+            aCoord.GetPercentValue() == 0.0f) ||
            (aCoord.IsCalcUnit() &&
             nsRuleNode::ComputeCoordPercentCalc(aCoord, nscoord_MAX) == 0 &&
             nsRuleNode::ComputeCoordPercentCalc(aCoord, 0) == 0);
@@ -897,30 +918,54 @@ public:
    *   http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
    */
   static nsSize ComputeSizeWithIntrinsicDimensions(
-                    nsIRenderingContext* aRenderingContext, nsIFrame* aFrame,
+                    nsRenderingContext* aRenderingContext, nsIFrame* aFrame,
                     const nsIFrame::IntrinsicSize& aIntrinsicSize,
                     nsSize aIntrinsicRatio, nsSize aCBSize,
                     nsSize aMargin, nsSize aBorder, nsSize aPadding);
 
   // Implement nsIFrame::GetPrefWidth in terms of nsIFrame::AddInlinePrefWidth
   static nscoord PrefWidthFromInline(nsIFrame* aFrame,
-                                     nsIRenderingContext* aRenderingContext);
+                                     nsRenderingContext* aRenderingContext);
 
   // Implement nsIFrame::GetMinWidth in terms of nsIFrame::AddInlineMinWidth
   static nscoord MinWidthFromInline(nsIFrame* aFrame,
-                                    nsIRenderingContext* aRenderingContext);
+                                    nsRenderingContext* aRenderingContext);
+
+  // Get a suitable foreground color for painting text for the frame.
+  static nscolor GetTextColor(nsIFrame* aFrame);
+
+  // Get a baseline y position in app units that is snapped to device pixels.
+  static gfxFloat GetSnappedBaselineY(nsIFrame* aFrame, gfxContext* aContext,
+                                      nscoord aY, nscoord aAscent);
 
   static void DrawString(const nsIFrame*      aFrame,
-                         nsIRenderingContext* aContext,
+                         nsRenderingContext* aContext,
                          const PRUnichar*     aString,
                          PRInt32              aLength,
                          nsPoint              aPoint,
                          PRUint8              aDirection = NS_STYLE_DIRECTION_INHERIT);
 
   static nscoord GetStringWidth(const nsIFrame*      aFrame,
-                                nsIRenderingContext* aContext,
+                                nsRenderingContext* aContext,
                                 const PRUnichar*     aString,
                                 PRInt32              aLength);
+
+  /**
+   * Helper function for drawing text-shadow. The callback's job
+   * is to draw whatever needs to be blurred onto the given context.
+   */
+  typedef void (* TextShadowCallback)(nsRenderingContext* aCtx,
+                                      nsPoint aShadowOffset,
+                                      const nscolor& aShadowColor,
+                                      void* aData);
+
+  static void PaintTextShadow(const nsIFrame*     aFrame,
+                              nsRenderingContext* aContext,
+                              const nsRect&       aTextRect,
+                              const nsRect&       aDirtyRect,
+                              const nscolor&      aForegroundColor,
+                              TextShadowCallback  aCallback,
+                              void*               aCallbackData);
 
   /**
    * Gets the baseline to vertically center text from a font within a
@@ -928,7 +973,7 @@ public:
    *
    * Returns the baseline position relative to the top of the line.
    */
-  static nscoord GetCenteredFontBaseline(nsIFontMetrics* aFontMetrics,
+  static nscoord GetCenteredFontBaseline(nsFontMetrics* aFontMetrics,
                                          nscoord         aLineHeight);
 
   /**
@@ -1015,7 +1060,7 @@ public:
    *   @param aDirty            Pixels outside this area may be skipped.
    *   @param aImageFlags       Image flags of the imgIContainer::FLAG_* variety
    */
-  static nsresult DrawImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawImage(nsRenderingContext* aRenderingContext,
                             imgIContainer*       aImage,
                             GraphicsFilter       aGraphicsFilter,
                             const nsRect&        aDest,
@@ -1045,7 +1090,7 @@ public:
    *                            pixel-aligned in the output.
    *   @param aDirty            Pixels outside this area may be skipped.
    */
-  static void DrawPixelSnapped(nsIRenderingContext* aRenderingContext,
+  static void DrawPixelSnapped(nsRenderingContext* aRenderingContext,
                                gfxDrawable*         aDrawable,
                                GraphicsFilter       aFilter,
                                const nsRect&        aDest,
@@ -1069,7 +1114,7 @@ public:
    *                            in appunits. For best results it should
    *                            be aligned with image pixels.
    */
-  static nsresult DrawSingleUnscaledImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawSingleUnscaledImage(nsRenderingContext* aRenderingContext,
                                           imgIContainer*       aImage,
                                           GraphicsFilter       aGraphicsFilter,
                                           const nsPoint&       aDest,
@@ -1092,7 +1137,7 @@ public:
    *                            be aligned with image pixels.
    *   @param aImageFlags       Image flags of the imgIContainer::FLAG_* variety
    */
-  static nsresult DrawSingleImage(nsIRenderingContext* aRenderingContext,
+  static nsresult DrawSingleImage(nsRenderingContext* aRenderingContext,
                                   imgIContainer*       aImage,
                                   GraphicsFilter       aGraphicsFilter,
                                   const nsRect&        aDest,
@@ -1133,7 +1178,7 @@ public:
   /**
    * Set the font on aRC based on the style in aSC
    */
-  static void SetFontFromStyle(nsIRenderingContext* aRC, nsStyleContext* aSC);
+  static void SetFontFromStyle(nsRenderingContext* aRC, nsStyleContext* aSC);
 
   /**
    * Determine if any corner radius is of nonzero size
@@ -1205,7 +1250,7 @@ public:
    * dimensions for the given docshell.  For some reason, this is more
    * complicated than it ought to be in multi-monitor situations.
    */
-  static nsIDeviceContext*
+  static nsDeviceContext*
   GetDeviceContextForScreenInfo(nsIDocShell* aDocShell);
 
   /**
@@ -1323,6 +1368,25 @@ public:
       (aPresContext->Type() == nsPresContext::eContext_PrintPreview ||
        aPresContext->Type() == nsPresContext::eContext_PageLayout);
   }
+
+  /**
+   * Adds all font faces used in the frame tree starting from aFrame
+   * to the list aFontFaceList.
+   */
+  static nsresult GetFontFacesForFrames(nsIFrame* aFrame,
+                                        nsFontFaceList* aFontFaceList);
+
+  /**
+   * Adds all font faces used within the specified range of text in aFrame,
+   * and optionally its continuations, to the list in aFontFaceList.
+   * Pass 0 and PR_INT32_MAX for aStartOffset and aEndOffset to specify the
+   * entire text is to be considered.
+   */
+  static nsresult GetFontFacesForText(nsIFrame* aFrame,
+                                      PRInt32 aStartOffset,
+                                      PRInt32 aEndOffset,
+                                      PRBool aFollowContinuations,
+                                      nsFontFaceList* aFontFaceList);
 
   static void Shutdown();
 

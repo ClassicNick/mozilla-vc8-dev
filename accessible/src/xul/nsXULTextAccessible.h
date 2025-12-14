@@ -59,7 +59,7 @@ public:
   // nsAccessible
   virtual nsresult GetNameInternal(nsAString& aName);
   virtual PRUint32 NativeRole();
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 NativeState();
 };
 
 /**
@@ -73,7 +73,7 @@ public:
 
   // nsAccessible
   virtual PRUint32 NativeRole();
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 NativeState();
 };
 
 class nsXULLinkAccessible : public nsHyperTextAccessibleWrap
@@ -94,13 +94,13 @@ public:
   // nsAccessible
   virtual nsresult GetNameInternal(nsAString& aName);
   virtual PRUint32 NativeRole();
-  virtual nsresult GetStateInternal(PRUint32 *aState, PRUint32 *aExtraState);
+  virtual PRUint64 NativeState();
 
   // HyperLinkAccessible
-  virtual bool IsHyperLink();
+  virtual bool IsLink();
   virtual PRUint32 StartOffset();
   virtual PRUint32 EndOffset();
-  virtual already_AddRefed<nsIURI> GetAnchorURI(PRUint32 aAnchorIndex);
+  virtual already_AddRefed<nsIURI> AnchorURIAt(PRUint32 aAnchorIndex);
 
 protected:
   enum { eAction_Jump = 0 };
