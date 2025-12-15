@@ -529,7 +529,6 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #ifdef MOZ_B2G_RIL
 #include "Telephony.h"
 #include "TelephonyCall.h"
-#include "TelephonyCallArray.h"
 #include "CallEvent.h"
 #endif
 
@@ -538,6 +537,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #endif
 
 #include "DOMError.h"
+#include "DOMRequest.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1630,8 +1630,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(TelephonyCall, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(TelephonyCallArray, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CallEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
@@ -1643,6 +1641,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   NS_DEFINE_CLASSINFO_DATA(DOMError, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
+  NS_DEFINE_CLASSINFO_DATA(DOMRequest, nsEventTargetSH,
+                           EVENTTARGET_SCRIPTABLE_FLAGS)
 };
 
 // Objects that should be constructable through |new Name();|
@@ -4374,10 +4375,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(TelephonyCallArray, nsIDOMTelephonyCallArray)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMTelephonyCallArray)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(CallEvent, nsIDOMCallEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMCallEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEvent)
@@ -4392,6 +4389,11 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(DOMError, nsIDOMDOMError)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMError)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(DOMRequest, nsIDOMDOMRequest)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMRequest)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
 #ifdef NS_DEBUG
@@ -4470,7 +4472,7 @@ nsDOMClassInfo::GetArrayIndexFromId(JSContext *cx, jsid id, bool *aIsNumber)
       JSAutoRequest ar(cx);
 
       jsval idval;
-      jsdouble array_index;
+      double array_index;
       if (!::JS_IdToValue(cx, id, &idval) ||
           !::JS_ValueToNumber(cx, idval, &array_index) ||
           !::JS_DoubleIsInt32(array_index, &i)) {

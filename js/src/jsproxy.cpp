@@ -59,7 +59,7 @@
 using namespace js;
 using namespace js::gc;
 
-static inline HeapValue &
+static inline HeapSlot &
 GetCall(JSObject *proxy)
 {
     JS_ASSERT(IsFunctionProxy(proxy));
@@ -74,7 +74,7 @@ GetConstruct(JSObject *proxy)
     return proxy->getSlot(JSSLOT_PROXY_CONSTRUCT);
 }
 
-static inline HeapValue &
+static inline HeapSlot &
 GetFunctionProxyConstruct(JSObject *proxy)
 {
     JS_ASSERT(IsFunctionProxy(proxy));
@@ -306,11 +306,11 @@ ProxyHandler::fun_toString(JSContext *cx, JSObject *proxy, uintN indent)
     return fun_toStringHelper(cx, &fval.toObject(), indent);
 }
 
-RegExpShared *
-ProxyHandler::regexp_toShared(JSContext *cx, JSObject *proxy)
+bool
+ProxyHandler::regexp_toShared(JSContext *cx, JSObject *proxy, RegExpGuard *g)
 {
     JS_NOT_REACHED("This should have been a wrapped regexp");
-    return (RegExpShared *)NULL;
+    return false;
 }
 
 bool
@@ -965,12 +965,12 @@ Proxy::fun_toString(JSContext *cx, JSObject *proxy, uintN indent)
     return GetProxyHandler(proxy)->fun_toString(cx, proxy, indent);
 }
 
-RegExpShared *
-Proxy::regexp_toShared(JSContext *cx, JSObject *proxy)
+bool
+Proxy::regexp_toShared(JSContext *cx, JSObject *proxy, RegExpGuard *g)
 {
     JS_CHECK_RECURSION(cx, return NULL);
     AutoPendingProxyOperation pending(cx, proxy);
-    return GetProxyHandler(proxy)->regexp_toShared(cx, proxy);
+    return GetProxyHandler(proxy)->regexp_toShared(cx, proxy, g);
 }
 
 bool
@@ -1248,12 +1248,12 @@ static void
 proxy_TraceObject(JSTracer *trc, JSObject *obj)
 {
     GetProxyHandler(obj)->trace(trc, obj);
-    MarkCrossCompartmentValue(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_PRIVATE), "private");
-    MarkCrossCompartmentValue(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 0), "extra0");
-    MarkCrossCompartmentValue(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 1), "extra1");
+    MarkCrossCompartmentSlot(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_PRIVATE), "private");
+    MarkCrossCompartmentSlot(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 0), "extra0");
+    MarkCrossCompartmentSlot(trc, &obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 1), "extra1");
     if (IsFunctionProxy(obj)) {
-        MarkCrossCompartmentValue(trc, &GetCall(obj), "call");
-        MarkCrossCompartmentValue(trc, &GetFunctionProxyConstruct(obj), "construct");
+        MarkCrossCompartmentSlot(trc, &GetCall(obj), "call");
+        MarkCrossCompartmentSlot(trc, &GetFunctionProxyConstruct(obj), "construct");
     }
 }
 
@@ -1261,8 +1261,8 @@ static void
 proxy_TraceFunction(JSTracer *trc, JSObject *obj)
 {
     proxy_TraceObject(trc, obj);
-    MarkCrossCompartmentValue(trc, &GetCall(obj), "call");
-    MarkCrossCompartmentValue(trc, &GetFunctionProxyConstruct(obj), "construct");
+    MarkCrossCompartmentSlot(trc, &GetCall(obj), "call");
+    MarkCrossCompartmentSlot(trc, &GetFunctionProxyConstruct(obj), "construct");
 }
 
 static JSBool

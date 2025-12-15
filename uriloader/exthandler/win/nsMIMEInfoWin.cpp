@@ -55,6 +55,7 @@
 #include "nsIProcess.h"
 #include "nsOSHelperAppService.h"
 #include "nsUnicharUtils.h"
+#include "nsITextToSubURI.h"
 
 #define RUNDLL32_EXE L"\\rundll32.exe"
 
@@ -273,6 +274,18 @@ nsMIMEInfoWin::LoadUriInternal(nsIURI * aURL)
     // extract the url spec from the url
     nsCAutoString urlSpec;
     aURL->GetAsciiSpec(urlSpec);
+ 
+    // Unescape non-ASCII characters in the URL
+    nsCAutoString urlCharset;
+    nsAutoString utf16Spec;
+    rv = aURL->GetOriginCharset(urlCharset);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsITextToSubURI> textToSubURI = do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = textToSubURI->UnEscapeNonAsciiURI(urlCharset, urlSpec, utf16Spec);
+    NS_ENSURE_SUCCESS(rv, rv);
 
     // Some versions of windows (Win2k before SP3, Win XP before SP1)
     // crash in ShellExecute on long URLs (bug 161357).
@@ -302,10 +315,9 @@ nsMIMEInfoWin::LoadUriInternal(nsIURI * aURL)
     // Version 6.0 and higher
     if (pMySHParseDisplayName = 
         (MySHParseDisplayName)::GetProcAddress(hDll, "SHParseDisplayName")) {
-      if (SUCCEEDED(pMySHParseDisplayName(NS_ConvertUTF8toUTF16(urlSpec).get(),
-                                          NULL, &pidl, 0, &sfgao))) {
-        sinfo.lpIDList = pidl;
-        sinfo.fMask |= SEE_MASK_INVOKEIDLIST;
+      if (SUCCEEDED(pMySHParseDisplayName(utf16Spec.get(),NULL, &pidl, 0, &sfgao))) {
+      sinfo.lpIDList = pidl;
+      sinfo.fMask |= SEE_MASK_INVOKEIDLIST;
       } else {
         // SHParseDisplayName exists, but failed. Bailing out as work around for
         // Microsoft Security Bulletin MS07-061
