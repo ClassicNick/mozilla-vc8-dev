@@ -61,12 +61,12 @@ public:
 
   NS_IMETHOD DuplicatePrivateData() = 0;
   NS_IMETHOD SetTarget(nsIDOMEventTarget* aTarget) = 0;
-  NS_IMETHOD_(PRBool) IsDispatchStopped() = 0;
+  NS_IMETHOD_(bool) IsDispatchStopped() = 0;
   NS_IMETHOD_(nsEvent*) GetInternalNSEvent() = 0;
-  NS_IMETHOD SetTrusted(PRBool aTrusted) = 0;
+  NS_IMETHOD SetTrusted(bool aTrusted) = 0;
   virtual void Serialize(IPC::Message* aMsg,
-                         PRBool aSerializeInterfaceType) = 0;
-  virtual PRBool Deserialize(const IPC::Message* aMsg, void** aIter) = 0;
+                         bool aSerializeInterfaceType) = 0;
+  virtual bool Deserialize(const IPC::Message* aMsg, void** aIter) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIPrivateDOMEvent, NS_IPRIVATEDOMEVENT_IID)
@@ -86,6 +86,8 @@ NS_NewDOMDragEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext
 nsresult
 NS_NewDOMKeyboardEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsKeyEvent *aEvent);
 nsresult
+NS_NewDOMCompositionEvent(nsIDOMEvent** aInstancePtrResult, nsPresContext* aPresContext, class nsCompositionEvent *aEvent);
+nsresult
 NS_NewDOMMutationEvent(nsIDOMEvent** aResult NS_OUTPARAM, nsPresContext* aPresContext, class nsMutationEvent* aEvent);
 nsresult
 NS_NewDOMPopupBlockedEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, nsEvent* aEvent);
@@ -103,10 +105,8 @@ nsresult
 NS_NewDOMSVGEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsEvent* aEvent);
 nsresult
 NS_NewDOMSVGZoomEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsGUIEvent* aEvent);
-#ifdef MOZ_SMIL
 nsresult
 NS_NewDOMTimeEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsEvent* aEvent);
-#endif // MOZ_SMIL
 nsresult
 NS_NewDOMXULCommandEvent(nsIDOMEvent** aResult, nsPresContext* aPresContext, class nsInputEvent* aEvent);
 nsresult

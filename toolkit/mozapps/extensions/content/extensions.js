@@ -35,6 +35,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+"use strict";
+
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
@@ -60,7 +62,7 @@ const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
 const BRANCH_REGEXP = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
 
-#ifdef MOZ_COMPATABILITY_NIGHTLY
+#ifdef MOZ_COMPATIBILITY_NIGHTLY
 const PREF_CHECK_COMPATIBILITY = PREF_CHECK_COMPATIBILITY_BASE +
                                  ".nightly";
 #else
@@ -113,7 +115,12 @@ window.addEventListener("unload", shutdown, false);
 var gPendingInitializations = 1;
 __defineGetter__("gIsInitializing", function() gPendingInitializations > 0);
 
-function initialize() {
+function initialize(event) {
+  // XXXbz this listener gets _all_ load events for all nodes in the
+  // document... but relies on not being called "too early".
+  if (event.target instanceof XMLStylesheetProcessingInstruction) {
+    return;
+  }
   document.removeEventListener("load", initialize, true);
   gViewController.initialize();
   gCategories.initialize();
@@ -225,13 +232,14 @@ var HTML5History = {
   },
 
   popState: function() {
-    window.addEventListener("popstate", function(event) {
-      window.removeEventListener("popstate", arguments.callee, true);
+    function onStatePopped(aEvent) {
+      window.removeEventListener("popstate", onStatePopped, true);
       // TODO To ensure we can't go forward again we put an additional entry
       // for the current state into the history. Ideally we would just strip
       // the history but there doesn't seem to be a way to do that. Bug 590661
-      window.history.pushState(event.state, document.title);
-    }, true);
+      window.history.pushState(aEvent.state, document.title);
+    }
+    window.addEventListener("popstate", onStatePopped, true);
     window.history.back();
     gViewController.updateCommand("cmd_back");
     gViewController.updateCommand("cmd_forward");
@@ -279,7 +287,7 @@ var FakeHistory = {
 
   pushState: function(aState) {
     this.pos++;
-    this.states.splice(this.pos);
+    this.states.splice(this.pos, this.states.length);
     this.states.push(aState);
   },
 
@@ -291,7 +299,7 @@ var FakeHistory = {
     if (this.pos == 0)
       throw new Error("Cannot popState from this view");
 
-    this.states.splice(this.pos);
+    this.states.splice(this.pos, this.states.length);
     this.pos--;
 
     gViewController.updateState(this.states[this.pos]);
@@ -812,7 +820,6 @@ var gViewController = {
         var numUpdated = 0;
         var numManualUpdates = 0;
         var restartNeeded = false;
-        var autoUpdateDefault = AddonManager.autoUpdateDefault;
         var self = this;
 
         function updateStatus() {
@@ -864,7 +871,7 @@ var gViewController = {
           onUpdateAvailable: function(aAddon, aInstall) {
             gEventManager.delegateAddonEvent("onUpdateAvailable",
                                              [aAddon, aInstall]);
-            if (shouldAutoUpdate(aAddon, autoUpdateDefault)) {
+            if (AddonManager.shouldAutoUpdate(aAddon)) {
               aInstall.addListener(updateInstallListener);
               aInstall.install();
             } else {
@@ -909,7 +916,7 @@ var gViewController = {
           onUpdateAvailable: function(aAddon, aInstall) {
             gEventManager.delegateAddonEvent("onUpdateAvailable",
                                              [aAddon, aInstall]);
-            if (shouldAutoUpdate(aAddon))
+            if (AddonManager.shouldAutoUpdate(aAddon))
               aInstall.install();
           },
           onNoUpdateAvailable: function(aAddon) {
@@ -1104,7 +1111,7 @@ var gViewController = {
             if (installs.length > 0) {
               // Display the normal install confirmation for the installs
               AddonManager.installAddonsFromWebpage("application/x-xpinstall",
-                                                    this, null, installs);
+                                                    window, null, installs);
             }
             return;
           }
@@ -1241,17 +1248,6 @@ function isPending(aAddon, aAction) {
 function isInState(aInstall, aState) {
   var state = AddonManager["STATE_" + aState.toUpperCase()];
   return aInstall.state == state;
-}
-
-
-function shouldAutoUpdate(aAddon, aDefault) {
-  if (!("applyBackgroundUpdates" in aAddon))
-    return false;
-  if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_ENABLE)
-    return true;
-  if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_DISABLE)
-    return false;
-  return aDefault !== undefined ? aDefault : AddonManager.autoUpdateDefault;
 }
 
 function shouldShowVersionNumber(aAddon) {
@@ -1495,7 +1491,7 @@ var gCategories = {
     // If there was no last view or no existing category matched the last view
     // then the list will default to selecting the search category and we never
     // want to show that as the first view so switch to the default category
-    if (this.node.selectedItem == this._search)
+    if (!this.node.selectedItem || this.node.selectedItem == this._search)
       this.node.value = VIEW_DEFAULT;
 
     var self = this;
@@ -2555,10 +2551,16 @@ var gDetailView = {
 
     var screenshot = document.getElementById("detail-screenshot");
     if (aAddon.screenshots && aAddon.screenshots.length > 0) {
-      if (aAddon.screenshots[0].thumbnailURL)
+      if (aAddon.screenshots[0].thumbnailURL) {
         screenshot.src = aAddon.screenshots[0].thumbnailURL;
-      else
+        screenshot.width = aAddon.screenshots[0].thumbnailWidth;
+        screenshot.height = aAddon.screenshots[0].thumbnailHeight;
+      } else {
         screenshot.src = aAddon.screenshots[0].url;
+        screenshot.width = aAddon.screenshots[0].width;
+        screenshot.height = aAddon.screenshots[0].height;
+      }
+      screenshot.setAttribute("loading", "true");
       screenshot.hidden = false;
     } else {
       screenshot.hidden = true;
@@ -2672,7 +2674,7 @@ var gDetailView = {
     if ("applyBackgroundUpdates" in aAddon) {
       this._autoUpdate.hidden = false;
       this._autoUpdate.value = aAddon.applyBackgroundUpdates;
-      let hideFindUpdates = shouldAutoUpdate(this._addon);
+      let hideFindUpdates = AddonManager.shouldAutoUpdate(this._addon);
       document.getElementById("detail-findUpdates-btn").hidden = hideFindUpdates;
     } else {
       this._autoUpdate.hidden = true;
@@ -2937,7 +2939,7 @@ var gDetailView = {
   onPropertyChanged: function(aProperties) {
     if (aProperties.indexOf("applyBackgroundUpdates") != -1) {
       this._autoUpdate.value = this._addon.applyBackgroundUpdates;
-      let hideFindUpdates = shouldAutoUpdate(this._addon);
+      let hideFindUpdates = AddonManager.shouldAutoUpdate(this._addon);
       document.getElementById("detail-findUpdates-btn").hidden = hideFindUpdates;
     }
   },
@@ -2966,7 +2968,6 @@ var gUpdatesView = {
   _emptyNotice: null,
   _sorters: null,
   _updateSelected: null,
-  _updatePrefs: null,
   _categoryItem: null,
 
   initialize: function() {
@@ -2983,9 +2984,6 @@ var gUpdatesView = {
       gUpdatesView.installSelected();
     }, false);
 
-    this._updatePrefs = Services.prefs.getBranch("extensions.update.");
-    this._updatePrefs.QueryInterface(Ci.nsIPrefBranch2);
-    this._updatePrefs.addObserver("", this, false);
     this.updateAvailableCount(true);
 
     AddonManager.addAddonListener(this);
@@ -2995,8 +2993,6 @@ var gUpdatesView = {
   shutdown: function() {
     AddonManager.removeAddonListener(this);
     AddonManager.removeInstallListener(this);
-    this._updatePrefs.removeObserver("", this);
-    delete this._updatePrefs;
   },
 
   show: function(aType, aRequest) {
@@ -3103,15 +3099,10 @@ var gUpdatesView = {
 
   isManualUpdate: function(aInstall, aOnlyAvailable) {
     var isManual = aInstall.existingAddon &&
-                   !shouldAutoUpdate(aInstall.existingAddon);
+                   !AddonManager.shouldAutoUpdate(aInstall.existingAddon);
     if (isManual && aOnlyAvailable)
       return isInState(aInstall, "available");
     return isManual;
-  },
-
-  observe: function(aSubject, aTopic, aData) {
-    if (aTopic != "nsPref:changed")
-      return;
   },
 
   maybeRefresh: function() {

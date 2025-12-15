@@ -563,7 +563,12 @@
                 if (this.mBlank)
                   this.mBlank = false;
 
-                this.mTab.removeAttribute("busy");
+                if (this.mTab.hasAttribute("busy")) {
+                  this.mTab.removeAttribute("busy");
+                  this.mTabBrowser._tabAttrModified(this.mTab);
+                  if (!this.mTab.selected)
+                    this.mTab.setAttribute("unread", "true");
+                }
                 this.mTab.removeAttribute("progress");
 
                 var location = aRequest.QueryInterface(nsIChannel).URI;
@@ -777,12 +782,10 @@
         <body>
           <![CDATA[
             var newTitle = "";
-            var docTitle;
             var docElement = this.ownerDocument.documentElement;
             var sep = docElement.getAttribute("titlemenuseparator");
 
-            if (aBrowser.docShell.contentViewer)
-              docTitle = aBrowser.contentTitle;
+            var docTitle = aBrowser.contentTitle;
 
             if (!docTitle)
               docTitle = docElement.getAttribute("titledefault");
@@ -809,12 +812,6 @@
                   newTitle = uri.prePath + sep + newTitle;
               }
             } catch (e) {}
-
-            if ("TabView" in window) {
-              let groupName = TabView.getActiveGroupName();
-              if (groupName)
-                newTitle = groupName + sep + newTitle;
-            }
 
             return newTitle;
           ]]>
@@ -859,7 +856,7 @@
             var oldBrowser = this.mCurrentBrowser;
             if (oldBrowser) {
               oldBrowser.setAttribute("type", "content-targetable");
-              oldBrowser.docShell.isActive = false;
+              oldBrowser.docShellIsActive = false;
             }
 
             var updatePageReport = false;
@@ -869,10 +866,15 @@
               updatePageReport = true;
 
             newBrowser.setAttribute("type", "content-primary");
-            newBrowser.docShell.isActive = true;
+            newBrowser.docShellIsActive =
+              (window.windowState != window.STATE_MINIMIZED);
             this.mCurrentBrowser = newBrowser;
             this.mCurrentTab = this.selectedTab;
             this.showTab(this.mCurrentTab);
+
+            var backForwardContainer = document.getElementById("unified-back-forward-button");
+            if (backForwardContainer)
+              backForwardContainer.setAttribute("switchingtabs", "true");
 
             if (updatePageReport)
               this.mCurrentBrowser.updatePageReport();
@@ -880,6 +882,10 @@
             // Update the URL bar.
             var loc = this.mCurrentBrowser.currentURI;
 
+#ifdef MOZ_E10S_COMPAT
+            // Bug 666801 - WebProgress support for e10s and
+            // Bug 666809 - SecurityUI support for e10s
+#else
             var webProgress = this.mCurrentBrowser.webProgress;
             var securityUI = this.mCurrentBrowser.securityUI;
 
@@ -890,6 +896,7 @@
               this._callProgressListeners(null, "onSecurityChange",
                                           [webProgress, null, securityUI.state], true, false);
             }
+#endif
 
             var listener = this.mTabListeners[this.tabContainer.selectedIndex] || null;
             if (listener && listener.mStateFlags) {
@@ -899,9 +906,14 @@
                                           true, false);
             }
 
-            // Don't switch the fast find or update the titlebar (bug 540248) - this tab switch is temporary
             if (!this._previewMode) {
+              this.mCurrentTab.removeAttribute("unread");
+
+#ifdef MOZ_E10S_COMPAT
+              // Bug 666816 - TypeAheadFind support for e10s
+#else
               this._fastFind.setDocShell(this.mCurrentBrowser.docShell);
+#endif
 
               this.updateTitlebar();
 
@@ -930,6 +942,9 @@
                                            nsIWebProgressListener.STATE_IS_NETWORK, 0],
                                           true, false);
             }
+
+            if (backForwardContainer)
+              backForwardContainer.removeAttribute("switchingtabs");
 
             if (this.mCurrentTab.selected)
               this._setCloseKeyState(!this.mCurrentTab.pinned);
@@ -1093,6 +1108,7 @@
           <![CDATA[
             var aFromExternal;
             var aRelatedToCurrent;
+            var aIsUTF8;
             if (arguments.length == 2 &&
                 typeof arguments[1] == "object" &&
                 !(arguments[1] instanceof Ci.nsIURI)) {
@@ -1104,6 +1120,7 @@
               aAllowThirdPartyFixup = params.allowThirdPartyFixup;
               aFromExternal         = params.fromExternal;
               aRelatedToCurrent     = params.relatedToCurrent;
+              aIsUTF8               = params.isUTF8;
             }
 
             var bgLoad = (aLoadInBackground != null) ? aLoadInBackground :
@@ -1116,7 +1133,8 @@
                                   ownerTab: owner,
                                   allowThirdPartyFixup: aAllowThirdPartyFixup,
                                   fromExternal: aFromExternal,
-                                  relatedToCurrent: aRelatedToCurrent});
+                                  relatedToCurrent: aRelatedToCurrent,
+                                  isUTF8: aIsUTF8});
             if (!bgLoad)
               this.selectedTab = tab;
 
@@ -1189,6 +1207,7 @@
             var aFromExternal;
             var aRelatedToCurrent;
             var aSkipAnimation;
+            var aIsUTF8;
             if (arguments.length == 2 &&
                 typeof arguments[1] == "object" &&
                 !(arguments[1] instanceof Ci.nsIURI)) {
@@ -1201,6 +1220,7 @@
               aFromExternal         = params.fromExternal;
               aRelatedToCurrent     = params.relatedToCurrent;
               aSkipAnimation        = params.skipAnimation;
+              aIsUTF8               = params.isUTF8;
             }
 
             this._browsers = null; // invalidate cache
@@ -1263,6 +1283,11 @@
             b.setAttribute("contextmenu", this.getAttribute("contentcontextmenu"));
             b.setAttribute("tooltip", this.getAttribute("contenttooltip"));
 
+            if (Services.prefs.getPrefType("browser.tabs.remote") == Services.prefs.PREF_BOOL &&
+                Services.prefs.getBoolPref("browser.tabs.remote")) {
+              b.setAttribute("remote", "true");
+            }
+
             if (window.gShowPageResizers && document.getElementById("addon-bar").collapsed &&
                 window.windowState == window.STATE_NORMAL) {
               b.setAttribute("showresizer", "true");
@@ -1310,7 +1335,11 @@
             const filter = Components.classes["@mozilla.org/appshell/component/browser-status-filter;1"]
                                      .createInstance(Components.interfaces.nsIWebProgress);
             filter.addProgressListener(tabListener, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
+#ifdef MOZ_E10S_COMPAT
+            // Bug 666801 - WebProgress support for e10s
+#else
             b.webProgress.addProgressListener(filter, Components.interfaces.nsIWebProgress.NOTIFY_ALL);
+#endif
             this.mTabListeners[position] = tabListener;
             this.mTabFilters[position] = filter;
 
@@ -1339,6 +1368,8 @@
                 flags |= Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
               if (aFromExternal)
                 flags |= Ci.nsIWebNavigation.LOAD_FLAGS_FROM_EXTERNAL;
+              if (aIsUTF8)
+                flags |= Ci.nsIWebNavigation.LOAD_FLAGS_URI_IS_UTF8;
               try {
                 b.loadURIWithFlags(aURI, flags, aReferrerURI, aCharset, aPostData);
               } catch (ex) {
@@ -1348,7 +1379,7 @@
 
             // We start our browsers out as inactive, and then maintain
             // activeness in the tab switcher.
-            b.docShell.isActive = false;
+            b.docShellIsActive = false;
 
             // Check if we're opening a tab related to the current tab and
             // move it to after the current tab.
@@ -1567,7 +1598,11 @@
 
             // Remove the tab's filter and progress listener.
             const filter = this.mTabFilters[aTab._tPos];
+#ifdef MOZ_E10S_COMPAT
+            // Bug 666801 - WebProgress support for e10s
+#else 
             browser.webProgress.removeProgressListener(filter);
+#endif
             filter.removeProgressListener(this.mTabListeners[aTab._tPos]);
             this.mTabListeners[aTab._tPos].destroy();
 
@@ -2404,7 +2439,7 @@
 #else
           if (aEvent.ctrlKey && !aEvent.shiftKey && !aEvent.metaKey &&
               aEvent.keyCode == KeyEvent.DOM_VK_F4 &&
-              this.mTabBox.handleCtrlPageUpDown) {
+              !this.mCurrentTab.pinned) {
             this.removeCurrentTab({animate: true});
             aEvent.stopPropagation();
             aEvent.preventDefault();
@@ -2443,6 +2478,12 @@
             case "keypress":
               this._handleKeyEvent(aEvent);
               break;
+            case "sizemodechange":
+              if (aEvent.target == window) {
+                this.mCurrentBrowser.docShellIsActive =
+                  (window.windowState != window.STATE_MINIMIZED);
+              }
+              break;
           }
         ]]></body>
       </method>
@@ -2452,6 +2493,7 @@
           this.mCurrentBrowser = this.mPanelContainer.childNodes[0].firstChild.firstChild;
           this.mCurrentTab = this.tabContainer.firstChild;
           document.addEventListener("keypress", this, false);
+          window.addEventListener("sizemodechange", this, false);
 
           var uniqueId = "panel" + Date.now();
           this.mPanelContainer.childNodes[0].id = uniqueId;
@@ -2514,6 +2556,7 @@
             this.mTabListeners[i] = null;
           }
           document.removeEventListener("keypress", this, false);
+          window.removeEventListener("sizemodechange", this, false);
         ]]>
       </destructor>
 
@@ -3164,12 +3207,9 @@
         <body><![CDATA[
           if (tab.parentNode != this)
             return;
+          tab._fullyOpen = true;
 
           this.adjustTabstrip();
-
-          if (tab._fullyOpen)
-            return;
-          tab._fullyOpen = true;
 
           if (tab.getAttribute("selected") == "true") {
             this._fillTrailingGap();
@@ -3212,10 +3252,14 @@
 
         var tab = event.target;
 
-        if (tab.getAttribute("fadein") == "true")
-          this._handleNewTab(tab);
-        else if (tab.closing)
+        if (tab.getAttribute("fadein") == "true") {
+          if (tab._fullyOpen)
+            this.adjustTabstrip();
+          else
+            this._handleNewTab(tab);
+        } else if (tab.closing) {
           this.tabbrowser._endRemoveTab(tab);
+        }
       ]]></handler>
 
       <handler event="dblclick"><![CDATA[
@@ -3687,7 +3731,6 @@
                      role="presentation"/>
           <xul:toolbarbutton anonid="close-button"
                              xbl:inherits="fadein,pinned,selected"
-                             tabindex="-1"
                              clickthrough="never"
                              class="tab-close-button"/>
         </xul:hbox>
@@ -3726,24 +3769,16 @@
       <handler event="dragstart" phase="capturing">
         this.style.MozUserFocus = '';
       </handler>
-      <handler event="mousedown" button="0" phase="capturing">
+      <handler event="mousedown" phase="capturing">
       <![CDATA[
-        if (this.mOverCloseButton) {
-          event.stopPropagation();
-        }
-        else if (this.selected) {
+        if (this.selected) {
           this.style.MozUserFocus = 'ignore';
           this.clientTop; // just using this to flush style updates
+        } else if (this.mOverCloseButton) {
+          // Prevent tabbox.xml from selecting the tab.
+          event.stopPropagation();
         }
       ]]>
-      </handler>
-      <handler event="mousedown" button="1">
-        this.style.MozUserFocus = 'ignore';
-        this.clientTop;
-      </handler>
-      <handler event="mousedown" button="2">
-        this.style.MozUserFocus = 'ignore';
-        this.clientTop;
       </handler>
       <handler event="mouseup">
         this.style.MozUserFocus = '';
@@ -3856,12 +3891,19 @@
         <body><![CDATA[
           aMenuitem.setAttribute("label", aTab.label);
           aMenuitem.setAttribute("crop", aTab.getAttribute("crop"));
-          aMenuitem.setAttribute("image", aTab.getAttribute("image"));
 
-          if (aTab.hasAttribute("busy"))
+          if (aTab.hasAttribute("busy")) {
             aMenuitem.setAttribute("busy", aTab.getAttribute("busy"));
-          else
+            aMenuitem.removeAttribute("image");
+          } else {
+            aMenuitem.setAttribute("image", aTab.getAttribute("image"));
             aMenuitem.removeAttribute("busy");
+          }
+
+          if (aTab.hasAttribute("pending"))
+            aMenuitem.setAttribute("pending", aTab.getAttribute("pending"));
+          else
+            aMenuitem.removeAttribute("pending");
 
           if (aTab.selected)
             aMenuitem.setAttribute("selected", "true");
@@ -3960,11 +4002,17 @@
                                 this.getAttribute("previoustype") == "status"
                                   ? getComputedStyle(this).width : "";
 
-          this.setAttribute("label", val);
+          if (val) {
+            this.setAttribute("label", val);
+            this.removeAttribute("inactive");
+          } else {
+            this.setAttribute("inactive", "true");
+          }
+
           return val;
         ]]></setter>
         <getter>
-          return this.getAttribute("label");
+          return this.hasAttribute("inactive") ? "" : this.getAttribute("label");
         </getter>
       </property>
 

@@ -44,7 +44,7 @@
 #include "nsHttpTransaction.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "nsHashtable.h"
+#include "nsClassHashtable.h"
 #include "nsAutoPtr.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "nsISocketTransportService.h"
@@ -112,6 +112,10 @@ public:
     // called to force the connection manager to prune its list of idle
     // connections.
     nsresult PruneDeadConnections();
+
+    // Close all idle persistent connections and prevent any active connections
+    // from being reused.
+    nsresult ClosePersistentConnections();
 
     // called to get a reference to the socket transport service.  the socket
     // transport service is not available when the connection manager is down.
@@ -212,10 +216,11 @@ private:
         nsresult SetupStreams(nsISocketTransport **,
                               nsIAsyncInputStream **,
                               nsIAsyncOutputStream **,
-                              PRBool isBackup);
+                              bool isBackup);
         nsresult SetupPrimaryStreams();
         nsresult SetupBackupStreams();
         void     SetupBackupTimer();
+        void     CancelBackupTimer();
         void     Abandon();
         
         nsHttpTransaction *Transaction() { return mTransaction; }
@@ -252,26 +257,28 @@ private:
     PRUint16 mMaxRequestDelay; // in seconds
     PRUint16 mMaxPipelinedRequests;
 
-    PRPackedBool mIsShuttingDown;
+    bool mIsShuttingDown;
 
     //-------------------------------------------------------------------------
     // NOTE: these members are only accessed on the socket transport thread
     //-------------------------------------------------------------------------
 
-    static PRIntn ProcessOneTransactionCB(nsHashKey *, void *, void *);
+    static PLDHashOperator ProcessOneTransactionCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
 
-    static PRIntn PruneDeadConnectionsCB(nsHashKey *, void *, void *);
-    static PRIntn ShutdownPassCB(nsHashKey *, void *, void *);
-    static PRIntn PurgeExcessIdleConnectionsCB(nsHashKey *, void *, void *);
-    PRBool   ProcessPendingQForEntry(nsConnectionEntry *);
-    PRBool   AtActiveConnectionLimit(nsConnectionEntry *, PRUint8 caps);
+    static PLDHashOperator PruneDeadConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+    static PLDHashOperator ShutdownPassCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+    static PLDHashOperator PurgeExcessIdleConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+    static PLDHashOperator ClosePersistentConnectionsCB(const nsACString &, nsAutoPtr<nsConnectionEntry> &, void *);
+    bool     ProcessPendingQForEntry(nsConnectionEntry *);
+    bool     AtActiveConnectionLimit(nsConnectionEntry *, PRUint8 caps);
     void     GetConnection(nsConnectionEntry *, nsHttpTransaction *,
-                           PRBool, nsHttpConnection **);
+                           bool, nsHttpConnection **);
     nsresult DispatchTransaction(nsConnectionEntry *, nsAHttpTransaction *,
                                  PRUint8 caps, nsHttpConnection *);
-    PRBool   BuildPipeline(nsConnectionEntry *, nsAHttpTransaction *, nsHttpPipeline **);
+    bool     BuildPipeline(nsConnectionEntry *, nsAHttpTransaction *, nsHttpPipeline **);
     nsresult ProcessNewTransaction(nsHttpTransaction *);
     nsresult EnsureSocketThreadTargetIfOnline();
+    void     ClosePersistentConnections(nsConnectionEntry *ent);
     nsresult CreateTransport(nsConnectionEntry *, nsHttpTransaction *);
     void     AddActiveConn(nsHttpConnection *, nsConnectionEntry *);
     void     StartedConnect();
@@ -333,6 +340,7 @@ private:
     void OnMsgPruneDeadConnections (PRInt32, void *);
     void OnMsgReclaimConnection    (PRInt32, void *);
     void OnMsgUpdateParam          (PRInt32, void *);
+    void OnMsgClosePersistentConnections (PRInt32, void *);
 
     // Total number of active connections in all of the ConnectionEntry objects
     // that are accessed from mCT connection table.
@@ -350,9 +358,9 @@ private:
     // the connection table
     //
     // this table is indexed by connection key.  each entry is a
-    // ConnectionEntry object.
+    // nsConnectionEntry object.
     //
-    nsHashtable mCT;
+    nsClassHashtable<nsCStringHashKey, nsConnectionEntry> mCT;
 };
 
 #endif // !nsHttpConnectionMgr_h__

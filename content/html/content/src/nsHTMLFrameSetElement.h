@@ -74,6 +74,8 @@ struct nsFramesetSpec {
  */
 #define NS_MAX_FRAMESET_SPEC_COUNT 16000
 
+//----------------------------------------------------------------------
+
 class nsHTMLFrameSetElement : public nsGenericHTMLElement,
                               public nsIDOMHTMLFrameSetElement
 {
@@ -96,16 +98,26 @@ public:
   // nsIDOMHTMLFrameSetElement
   NS_DECL_NSIDOMHTMLFRAMESETELEMENT
 
+  // Event listener stuff; we need to declare only the ones we need to
+  // forward to window that don't come from nsIDOMHTMLFrameSetElement.
+#define EVENT(name_, id_, type_, struct_) /* nothing; handled by the superclass */
+#define FORWARDED_EVENT(name_, id_, type_, struct_)                     \
+    NS_IMETHOD GetOn##name_(JSContext *cx, jsval *vp);            \
+    NS_IMETHOD SetOn##name_(JSContext *cx, const jsval &v);
+#include "nsEventNameList.h"
+#undef FORWARDED_EVENT
+#undef EVENT
+
   // These override the SetAttr methods in nsGenericHTMLElement (need
   // both here to silence compiler warnings).
   nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
-                   const nsAString& aValue, PRBool aNotify)
+                   const nsAString& aValue, bool aNotify)
   {
     return SetAttr(aNameSpaceID, aName, nsnull, aValue, aNotify);
   }
   virtual nsresult SetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
                            nsIAtom* aPrefix, const nsAString& aValue,
-                           PRBool aNotify);
+                           bool aNotify);
 
    /**
     * GetRowSpec is used to get the "rows" spec.
@@ -125,7 +137,7 @@ public:
   nsresult GetColSpec(PRInt32 *aNumValues, const nsFramesetSpec** aSpecs);
 
 
-  virtual PRBool ParseAttribute(PRInt32 aNamespaceID,
+  virtual bool ParseAttribute(PRInt32 aNamespaceID,
                                 nsIAtom* aAttribute,
                                 const nsAString& aValue,
                                 nsAttrValue& aResult);

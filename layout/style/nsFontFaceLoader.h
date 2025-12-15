@@ -79,7 +79,7 @@ public:
   // It's removed from the mLoaders set.
   void RemoveLoader(nsFontFaceLoader *aLoader);
 
-  PRBool UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules);
+  bool UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules);
 
   nsPresContext *GetPresContext() { return mPresContext; }
 
@@ -100,7 +100,12 @@ protected:
 
   void InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
                   nsTArray<FontFaceRuleRecord>& oldRules,
-                  PRBool& aFontSetModified);
+                  bool& aFontSetModified);
+
+  virtual nsresult LogMessage(gfxProxyFontEntry *aProxy,
+                              const char *aMessage,
+                              PRUint32 aFlags = nsIScriptError::errorFlag,
+                              nsresult aStatus = 0);
 
   nsPresContext *mPresContext;  // weak reference
 
@@ -140,6 +145,7 @@ public:
 
 private:
   nsRefPtr<gfxProxyFontEntry>  mFontEntry;
+  nsRefPtr<gfxFontFamily>      mFontFamily;
   nsCOMPtr<nsIURI>        mFontURI;
   nsRefPtr<nsUserFontSet> mFontSet;
   nsCOMPtr<nsIChannel>    mChannel;

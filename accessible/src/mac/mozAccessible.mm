@@ -52,6 +52,8 @@
 
 #include "nsRootAccessible.h"
 
+using namespace mozilla::a11y;
+
 // These constants are only defined in OS X SDK 10.4, so we define them in order
 // to be able to use for earlier OS versions.
 const NSString *kInstanceDescriptionAttribute = @"AXDescription";       // NSAccessibilityDescriptionAttribute
@@ -188,9 +190,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
                                                            NSAccessibilityTitleAttribute,
                                                            NSAccessibilityValueAttribute,
                                                            NSAccessibilitySubroleAttribute,
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4
                                                            NSAccessibilityRoleDescriptionAttribute,
-#endif
                                                            NSAccessibilityPositionAttribute,
                                                            NSAccessibilityEnabledAttribute,
                                                            NSAccessibilitySizeAttribute,
@@ -234,10 +234,8 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
     return [NSNumber numberWithBool:[self isEnabled]];
   if ([attribute isEqualToString:NSAccessibilityValueAttribute])
     return [self value];
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4
   if ([attribute isEqualToString:NSAccessibilityRoleDescriptionAttribute])
     return NSAccessibilityRoleDescription([self role], nil);
-#endif
   if ([attribute isEqualToString: (NSString*) kInstanceDescriptionAttribute])
     return [self customDescription];
   if ([attribute isEqualToString:NSAccessibilityFocusedAttribute])
@@ -334,9 +332,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   if (mIsExpired)
     return nil;
   
-  nsCOMPtr<nsIAccessible> focusedGeckoChild;
-  mGeckoAccessible->GetFocusedChild (getter_AddRefs (focusedGeckoChild));
-  
+  nsAccessible* focusedGeckoChild = mGeckoAccessible->FocusedChild();
   if (focusedGeckoChild) {
     mozAccessible *focusedChild = GetNativeFromGeckoAccessible(focusedGeckoChild);
     if (focusedChild)

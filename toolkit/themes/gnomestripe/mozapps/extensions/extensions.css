@@ -136,7 +136,7 @@
   margin-bottom: 15px;
 }
 
-.alert .addon-control {
+.alert button {
   margin: 1em 2em;
 }
 
@@ -252,6 +252,9 @@
 }
 #category-plugin > .category-icon {
   list-style-image: url("chrome://mozapps/skin/extensions/category-plugins.png");
+}
+#category-dictionary > .category-icon {
+  list-style-image: url("chrome://mozapps/skin/extensions/category-dictionaries.png");
 }
 #category-availableUpdates > .category-icon {
   list-style-image: url("chrome://mozapps/skin/extensions/category-available.png");
@@ -432,6 +435,10 @@
 
 .addon-view[type="plugin"] .icon {
   list-style-image: url("chrome://mozapps/skin/plugins/pluginGeneric.png");
+}
+
+.addon-view[type="dictionary"] .icon {
+  list-style-image: url("chrome://mozapps/skin/extensions/dictionaryGeneric.png");
 }
 
 .name-container {
@@ -661,6 +668,19 @@
   max-height: 300px;
 }
 
+#detail-screenshot[loading] {
+  background-image: url("chrome://global/skin/icons/loading_16.png");
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+  border: 1px threedshadow solid;
+  border-radius: 5px;
+  -moz-box-sizing: border-box;
+}
+
+#detail-screenshot[loading="error"] {
+  background-image: url("chrome://global/skin/media/error.png");
+}
+
 #detail-desc-container {
   margin-bottom: 2em;
 }
@@ -749,6 +769,10 @@ menulist { /* Fixes some styling inconsistencies */
 colorpicker[type="button"] { /* Fixes some styling inconsistencies */
   height: 29px;
   margin: 1px 5px 2px 5px;
+}
+
+setting[type="radio"] > radiogroup {
+  -moz-box-orient: horizontal;
 }
 
 /*** creator ***/

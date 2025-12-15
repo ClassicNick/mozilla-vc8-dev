@@ -103,7 +103,7 @@ public:
    *
    * \return True is initialization was succesful, false when it was not.
    */
-  PRBool Initialize();
+  bool Initialize();
 
   /*
    * Sets the clipping region for this layer manager. This is important on
@@ -121,6 +121,9 @@ public:
    */
   virtual void Destroy();
 
+  virtual ShadowLayerManager* AsShadowManager()
+  { return this; }
+
   virtual void BeginTransaction();
 
   virtual void BeginTransactionWithTarget(gfxContext* aTarget);
@@ -135,11 +138,20 @@ public:
   };
 
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
-                              void* aCallbackData);
+                              void* aCallbackData,
+                              EndTransactionFlags aFlags = END_DEFAULT);
 
   const CallbackInfo &GetCallbackInfo() { return mCurrentCallbackInfo; }
 
   void SetRoot(Layer* aLayer);
+
+  virtual bool CanUseCanvasLayerForSize(const gfxIntSize &aSize)
+  {
+    if (!mDeviceManager)
+      return false;
+    PRInt32 maxSize = mDeviceManager->GetMaxTextureSize();
+    return aSize <= gfxIntSize(maxSize, maxSize);
+  }
 
   virtual already_AddRefed<ThebesLayer> CreateThebesLayer();
 
@@ -168,7 +180,7 @@ public:
   /*
    * Helper methods.
    */
-  void SetClippingEnabled(PRBool aEnabled);
+  void SetClippingEnabled(bool aEnabled);
 
   void SetShaderMode(DeviceManagerD3D9::ShaderMode aMode)
     { mDeviceManager->SetShaderMode(aMode); }

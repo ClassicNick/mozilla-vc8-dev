@@ -65,7 +65,6 @@
 #if defined(XP_WIN)
 #include <windows.h>
 #endif
-#include "mozilla/Telemetry.h"
 
 /**
  * Global allocator used with zlib. Destroyed in module shutdown.
@@ -235,6 +234,11 @@ nsresult nsZipHandle::Init(nsZipArchive *zip, const char *entry,
   return NS_OK;
 }
 
+PRInt64 nsZipHandle::SizeOfMapping()
+{
+    return mLen;
+}
+
 nsZipHandle::~nsZipHandle()
 {
   if (mMap) {
@@ -266,7 +270,7 @@ nsresult nsZipArchive::OpenArchive(nsZipHandle *aZipHandle)
   char *env = PR_GetEnv("MOZ_JAR_LOG_DIR");
   if (env && NS_SUCCEEDED(rv) && aZipHandle->mFile) {
     nsCOMPtr<nsILocalFile> logFile;
-    nsresult rv2 = NS_NewLocalFile(NS_ConvertUTF8toUTF16(env), PR_FALSE, getter_AddRefs(logFile));
+    nsresult rv2 = NS_NewLocalFile(NS_ConvertUTF8toUTF16(env), false, getter_AddRefs(logFile));
     
     if (!NS_SUCCEEDED(rv2))
       return rv;
@@ -460,7 +464,7 @@ nsZipArchive::FindInit(const char * aPattern, nsZipFind **aFind)
   // null out param in case an error happens
   *aFind = NULL;
 
-  PRBool  regExp = PR_FALSE;
+  bool    regExp = false;
   char*   pattern = 0;
 
   // Create synthetic directory entries on demand
@@ -477,16 +481,16 @@ nsZipArchive::FindInit(const char * aPattern, nsZipFind **aFind)
         return NS_ERROR_ILLEGAL_VALUE;
 
       case NON_SXP:
-        regExp = PR_FALSE;
+        regExp = false;
         break;
 
       case VALID_SXP:
-        regExp = PR_TRUE;
+        regExp = true;
         break;
 
       default:
         // undocumented return value from RegExpValid!
-        PR_ASSERT(PR_FALSE);
+        PR_ASSERT(false);
         return NS_ERROR_ILLEGAL_VALUE;
     }
 
@@ -523,17 +527,17 @@ MOZ_WIN_MEM_TRY_BEGIN
     // move to next in current chain, or move to new slot
     mItem = mItem ? mItem->next : mArchive->mFiles[mSlot];
 
-    PRBool found = PR_FALSE;
+    bool found = false;
     if (!mItem)
       ++mSlot;                          // no more in this chain, move to next slot
     else if (!mPattern)
-      found = PR_TRUE;            // always match
+      found = true;            // always match
     else if (mRegExp)
     {
       char buf[kMaxNameLength+1];
       memcpy(buf, mItem->Name(), mItem->nameLength);
       buf[mItem->nameLength]='\0';
-      found = (NS_WildCardMatch(buf, mPattern, PR_FALSE) == MATCH);
+      found = (NS_WildCardMatch(buf, mPattern, false) == MATCH);
     }
     else
       found = ((mItem->nameLength == strlen(mPattern)) &&
@@ -698,14 +702,14 @@ MOZ_WIN_MEM_TRY_BEGIN
 
         // Is the directory already in the file table?
         PRUint32 hash = HashName(item->Name(), dirlen);
-        PRBool found = PR_FALSE;
+        bool found = false;
         for (nsZipItem* zi = mFiles[hash]; zi != NULL; zi = zi->next)
         {
           if ((dirlen == zi->nameLength) &&
               (0 == memcmp(item->Name(), zi->Name(), dirlen)))
           {
             // we've already added this dir and all its parents
-            found = PR_TRUE;
+            found = true;
             break;
           }
         }
@@ -776,6 +780,14 @@ MOZ_WIN_MEM_TRY_BEGIN
 MOZ_WIN_MEM_TRY_CATCH(return nsnull)
 }
 
+//---------------------------------------------
+// nsZipArchive::SizeOfMapping
+//---------------------------------------------
+PRInt64 nsZipArchive::SizeOfMapping()
+{
+    return mFd ? mFd->SizeOfMapping() : 0;
+}
+
 //------------------------------------------
 // nsZipArchive constructor and destructor
 //------------------------------------------
@@ -801,7 +813,7 @@ nsZipArchive::~nsZipArchive()
 // nsZipFind constructor and destructor
 //------------------------------------------
 
-nsZipFind::nsZipFind(nsZipArchive* aZip, char* aPattern, PRBool aRegExp) : 
+nsZipFind::nsZipFind(nsZipArchive* aZip, char* aPattern, bool aRegExp) : 
   mArchive(aZip),
   mPattern(aPattern),
   mItem(0),
@@ -1081,7 +1093,6 @@ nsZipItemPtr_base::nsZipItemPtr_base(nsZipArchive *aZip, const char * aEntryName
   nsZipCursor cursor(item, aZip, mAutoBuf, size, doCRC);
   mReturnBuf = cursor.Read(&mReadlen);
   if (!mReturnBuf) {
-    Telemetry::Accumulate(Telemetry::ZIPARCHIVE_CRC, false);
     return;
   }
 
@@ -1090,6 +1101,4 @@ nsZipItemPtr_base::nsZipItemPtr_base(nsZipArchive *aZip, const char * aEntryName
     mReturnBuf = nsnull;
     return;
   }
-
-  Telemetry::Accumulate(Telemetry::ZIPARCHIVE_CRC, true);
 }

@@ -50,8 +50,15 @@
 #include "nsInterfaceHashtable.h"
 #include "nsHashKeys.h"
 
+#include "gfxASurface.h"
+#include "gfxImageSurface.h"
+
 #include "mozilla/TimeStamp.h"
 #include "mozilla/PluginLibrary.h"
+
+#ifdef ANDROID
+#include "mozilla/Mutex.h"
+#endif
 
 struct JSObject;
 
@@ -68,6 +75,7 @@ public:
   uint32_t id;
   nsCOMPtr<nsITimer> timer;
   void (*callback)(NPP npp, uint32_t timerID);
+  bool inCallback;
 };
 
 class nsNPAPIPluginInstance : public nsISupports
@@ -85,25 +93,27 @@ public:
   nsresult NewStreamToPlugin(nsIPluginStreamListener** listener);
   nsresult NewStreamFromPlugin(const char* type, const char* target, nsIOutputStream* *result);
   nsresult Print(NPPrint* platformPrint);
+#ifdef ANDROID
+  nsresult PostEvent(void* event) { return 0; };
+#endif
   nsresult HandleEvent(void* event, PRInt16* result);
   nsresult GetValueFromPlugin(NPPVariable variable, void* value);
   nsresult GetDrawingModel(PRInt32* aModel);
-  nsresult IsRemoteDrawingCoreAnimation(PRBool* aDrawing);
+  nsresult IsRemoteDrawingCoreAnimation(bool* aDrawing);
   nsresult GetJSObject(JSContext *cx, JSObject** outObject);
   nsresult DefineJavaProperties();
-  nsresult ShouldCache(PRBool* shouldCache);
-  nsresult IsWindowless(PRBool* isWindowless);
+  nsresult IsWindowless(bool* isWindowless);
   nsresult AsyncSetWindow(NPWindow* window);
   nsresult GetImage(ImageContainer* aContainer, Image** aImage);
   nsresult GetImageSize(nsIntSize* aSize);
   nsresult NotifyPainted(void);
-  nsresult UseAsyncPainting(PRBool* aIsAsync);
+  nsresult UseAsyncPainting(bool* aIsAsync);
   nsresult SetBackgroundUnknown();
   nsresult BeginUpdateBackground(nsIntRect* aRect, gfxContext** aContext);
   nsresult EndUpdateBackground(gfxContext* aContext, nsIntRect* aRect);
-  nsresult IsTransparent(PRBool* isTransparent);
+  nsresult IsTransparent(bool* isTransparent);
   nsresult GetFormValue(nsAString& aValue);
-  nsresult PushPopupsEnabledState(PRBool aEnabled);
+  nsresult PushPopupsEnabledState(bool aEnabled);
   nsresult PopPopupsEnabledState();
   nsresult GetPluginAPIVersion(PRUint16* version);
   nsresult InvalidateRect(NPRect *invalidRect);
@@ -115,6 +125,9 @@ public:
   nsresult SetOwner(nsIPluginInstanceOwner *aOwner);
   nsresult ShowStatus(const char* message);
   nsresult InvalidateOwner();
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+  nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
+#endif
 
   nsNPAPIPlugin* GetPlugin();
 
@@ -123,20 +136,32 @@ public:
   void SetURI(nsIURI* uri);
   nsIURI* GetURI();
 
-  NPError SetWindowless(PRBool aWindowless);
+  NPError SetWindowless(bool aWindowless);
 
-  NPError SetWindowlessLocal(PRBool aWindowlessLocal);
+  NPError SetWindowlessLocal(bool aWindowlessLocal);
 
-  NPError SetTransparent(PRBool aTransparent);
+  NPError SetTransparent(bool aTransparent);
 
-  NPError SetWantsAllNetworkStreams(PRBool aWantsAllNetworkStreams);
+  NPError SetWantsAllNetworkStreams(bool aWantsAllNetworkStreams);
 
-  NPError SetUsesDOMForCursor(PRBool aUsesDOMForCursor);
-  PRBool UsesDOMForCursor();
+  NPError SetUsesDOMForCursor(bool aUsesDOMForCursor);
+  bool UsesDOMForCursor();
 
 #ifdef XP_MACOSX
   void SetDrawingModel(NPDrawingModel aModel);
   void SetEventModel(NPEventModel aModel);
+#endif
+
+#ifdef ANDROID
+  void SetDrawingModel(PRUint32 aModel);
+  void* GetJavaSurface();
+
+  gfxImageSurface* LockTargetSurface();
+  gfxImageSurface* LockTargetSurface(PRUint32 aWidth, PRUint32 aHeight, gfxASurface::gfxImageFormat aFormat,
+                                     NPRect* aRect);
+  void UnlockTargetSurface(bool aInvalidate);
+
+  static nsNPAPIPluginInstance* FindByJavaSurface(void* aJavaSurface);
 #endif
 
   nsresult NewStreamListener(const char* aURL, void* notifyData,
@@ -161,12 +186,6 @@ public:
   bool CanFireNotifications() {
     return mRunning == RUNNING || mRunning == DESTROYING;
   }
-
-  // return is only valid when the plugin is not running
-  mozilla::TimeStamp LastStopTime();
-
-  // cache this NPAPI plugin
-  nsresult SetCached(PRBool aCache);
 
   already_AddRefed<nsPIDOMWindow> GetDOMWindow();
 
@@ -211,6 +230,10 @@ protected:
   NPDrawingModel mDrawingModel;
 #endif
 
+#ifdef ANDROID
+  PRUint32 mDrawingModel;
+#endif
+
   enum {
     NOT_STARTED,
     RUNNING,
@@ -220,15 +243,14 @@ protected:
 
   // these are used to store the windowless properties
   // which the browser will later query
-  PRPackedBool mWindowless;
-  PRPackedBool mWindowlessLocal;
-  PRPackedBool mTransparent;
-  PRPackedBool mCached;
-  PRPackedBool mUsesDOMForCursor;
+  bool mWindowless;
+  bool mWindowlessLocal;
+  bool mTransparent;
+  bool mUsesDOMForCursor;
 
 public:
   // True while creating the plugin, or calling NPP_SetWindow() on it.
-  PRPackedBool mInPluginInitCall;
+  bool mInPluginInitCall;
 
   nsXPIDLCString mFakeURL;
 
@@ -252,13 +274,17 @@ private:
   // non-null during a HandleEvent call
   void* mCurrentPluginEvent;
 
-  // Timestamp for the last time this plugin was stopped.
-  // This is only valid when the plugin is actually stopped!
-  mozilla::TimeStamp mStopTime;
-
   nsCOMPtr<nsIURI> mURI;
 
-  PRPackedBool mUsePluginLayersPref;
+  bool mUsePluginLayersPref;
+#ifdef ANDROID
+  void InvalidateTargetRect();
+  
+  void* mSurface;
+  gfxImageSurface *mTargetSurface;
+  mozilla::Mutex* mTargetSurfaceLock;
+  NPRect mTargetLockRect;
+#endif
 };
 
 #endif // nsNPAPIPluginInstance_h_

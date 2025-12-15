@@ -41,7 +41,6 @@
 #include "nsIAccessible.h"
 
 #include "nsAccCache.h"
-#include "nsAccessibilityAtoms.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 
@@ -55,7 +54,7 @@
 #include "nsIDOMCSSPrimitiveValue.h"
 #include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMNSHTMLElement.h"
+#include "nsIDOMHTMLElement.h"
 #include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -76,10 +75,8 @@
  */
 
 nsIStringBundle *nsAccessNode::gStringBundle = 0;
-nsIStringBundle *nsAccessNode::gKeyStringBundle = 0;
-nsINode *nsAccessNode::gLastFocusedNode = nsnull;
 
-PRBool nsAccessNode::gIsFormFillEnabled = PR_FALSE;
+bool nsAccessNode::gIsFormFillEnabled = false;
 
 nsApplicationAccessible *nsAccessNode::gApplicationAccessible = nsnull;
 
@@ -109,7 +106,7 @@ nsAccessNode::
   mContent(aContent), mWeakShell(aShell)
 {
 #ifdef DEBUG_A11Y
-  mIsInitialized = PR_FALSE;
+  mIsInitialized = false;
 #endif
 }
 
@@ -138,10 +135,10 @@ nsAccessNode::IsDefunct() const
   return !mContent;
 }
 
-PRBool
+bool
 nsAccessNode::Init()
 {
-  return PR_TRUE;
+  return true;
 }
 
 
@@ -160,19 +157,6 @@ nsAccessNode::GetUniqueID(void **aUniqueID)
 
   *aUniqueID = UniqueID();
   return NS_OK;
-}
-
-// nsIAccessNode
-NS_IMETHODIMP
-nsAccessNode::GetOwnerWindow(void **aWindow)
-{
-  NS_ENSURE_ARG_POINTER(aWindow);
-  *aWindow = nsnull;
-
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
-  return GetDocAccessible()->GetWindowHandle(aWindow);
 }
 
 nsApplicationAccessible*
@@ -210,22 +194,18 @@ void nsAccessNode::InitXPAccessibility()
     // Static variables are released in ShutdownAllXPAccessibility();
     stringBundleService->CreateBundle(ACCESSIBLE_BUNDLE_URL, 
                                       &gStringBundle);
-    stringBundleService->CreateBundle(PLATFORM_KEYS_BUNDLE_URL, 
-                                      &gKeyStringBundle);
   }
-
-  nsAccessibilityAtoms::AddRefAtoms();
 
   nsCOMPtr<nsIPrefBranch> prefBranch(do_GetService(NS_PREFSERVICE_CONTRACTID));
   if (prefBranch) {
     prefBranch->GetBoolPref("browser.formfill.enable", &gIsFormFillEnabled);
   }
 
-  NotifyA11yInitOrShutdown(PR_TRUE);
+  NotifyA11yInitOrShutdown(true);
 }
 
 // nsAccessNode protected static
-void nsAccessNode::NotifyA11yInitOrShutdown(PRBool aIsInit)
+void nsAccessNode::NotifyA11yInitOrShutdown(bool aIsInit)
 {
   nsCOMPtr<nsIObserverService> obsService =
     mozilla::services::GetObserverService();
@@ -246,8 +226,6 @@ void nsAccessNode::ShutdownXPAccessibility()
   // at exit of program
 
   NS_IF_RELEASE(gStringBundle);
-  NS_IF_RELEASE(gKeyStringBundle);
-  NS_IF_RELEASE(gLastFocusedNode);
 
   // Release gApplicationAccessible after everything else is shutdown
   // so we don't accidently create it again while tearing down root accessibles
@@ -257,7 +235,7 @@ void nsAccessNode::ShutdownXPAccessibility()
     NS_RELEASE(gApplicationAccessible);
   }
 
-  NotifyA11yInitOrShutdown(PR_FALSE);
+  NotifyA11yInitOrShutdown(false);
 }
 
 already_AddRefed<nsIPresShell>
@@ -284,7 +262,7 @@ nsDocAccessible *
 nsAccessNode::GetDocAccessible() const
 {
   return mContent ?
-    GetAccService()->GetDocAccessible(mContent->GetOwnerDoc()) : nsnull;
+    GetAccService()->GetDocAccessible(mContent->OwnerDoc()) : nsnull;
 }
 
 nsRootAccessible*
@@ -359,10 +337,10 @@ nsAccessNode::GetInnerHTML(nsAString& aInnerHTML)
 {
   aInnerHTML.Truncate();
 
-  nsCOMPtr<nsIDOMNSHTMLElement> domNSElement(do_QueryInterface(mContent));
-  NS_ENSURE_TRUE(domNSElement, NS_ERROR_NULL_POINTER);
+  nsCOMPtr<nsIDOMHTMLElement> htmlElement = do_QueryInterface(mContent);
+  NS_ENSURE_TRUE(htmlElement, NS_ERROR_NULL_POINTER);
 
-  return domNSElement->GetInnerHTML(aInnerHTML);
+  return htmlElement->GetInnerHTML(aInnerHTML);
 }
 
 NS_IMETHODIMP
@@ -459,7 +437,7 @@ nsAccessNode::GetCurrentFocus()
   nsCOMPtr<nsIDOMElement> focusedElement;
   nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
   if (fm)
-    fm->GetFocusedElementForWindow(win, PR_TRUE, getter_AddRefs(focusedWindow),
+    fm->GetFocusedElementForWindow(win, true, getter_AddRefs(focusedWindow),
                                    getter_AddRefs(focusedElement));
 
   nsINode *focusedNode = nsnull;
@@ -487,10 +465,8 @@ nsAccessNode::GetLanguage(nsAString& aLanguage)
   nsCoreUtils::GetLanguageFor(mContent, nsnull, aLanguage);
 
   if (aLanguage.IsEmpty()) { // Nothing found, so use document's language
-    nsIDocument *doc = mContent->GetOwnerDoc();
-    if (doc) {
-      doc->GetHeaderData(nsAccessibilityAtoms::headerContentLanguage, aLanguage);
-    }
+    mContent->OwnerDoc()->GetHeaderData(nsGkAtoms::headerContentLanguage,
+                                        aLanguage);
   }
  
   return NS_OK;

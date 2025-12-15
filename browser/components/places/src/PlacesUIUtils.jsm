@@ -56,7 +56,7 @@ XPCOMUtils.defineLazyGetter(this, "PlacesUtils", function() {
 });
 
 var PlacesUIUtils = {
-  ORGANIZER_LEFTPANE_VERSION: 6,
+  ORGANIZER_LEFTPANE_VERSION: 7,
   ORGANIZER_FOLDER_ANNO: "PlacesOrganizer/OrganizerFolder",
   ORGANIZER_QUERY_ANNO: "PlacesOrganizer/OrganizerQuery",
 
@@ -332,238 +332,6 @@ var PlacesUIUtils = {
     return null;
   },
 
-  _reportDeprecatedAddBookmarkMethod:
-  function PUIU__reportDeprecatedAddBookmarkMethod() {
-    // Removes "PUIU_".
-    let oldFuncName = arguments.callee.caller.name.slice(5);
-    Cu.reportError(oldFuncName + " is deprecated and will be removed in a " +
-                   "future release. Use showBookmarkDialog instead.");
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showAddBookmarkUI: function PUIU_showAddBookmarkUI(
-    aURI, aTitle, aDescription, aDefaultInsertionPoint, aShowPicker,
-    aLoadInSidebar, aKeyword, aPostData, aCharSet) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "add",
-      type: "bookmark"
-    };
-
-    if (aURI)
-      info.uri = aURI;
-
-    // allow default empty title
-    if (typeof(aTitle) == "string")
-      info.title = aTitle;
-
-    if (aDescription)
-      info.description = aDescription;
-
-    if (aDefaultInsertionPoint) {
-      info.defaultInsertionPoint = aDefaultInsertionPoint;
-      if (!aShowPicker)
-        info.hiddenRows = ["folderPicker"];
-    }
-
-    if (aLoadInSidebar)
-      info.loadBookmarkInSidebar = true;
-
-    if (typeof(aKeyword) == "string") {
-      info.keyword = aKeyword;
-      if (typeof(aPostData) == "string")
-        info.postData = aPostData;
-      if (typeof(aCharSet) == "string")
-        info.charSet = aCharSet;
-    }
-
-    return this.showBookmarkDialog(info);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showMinimalAddBookmarkUI:
-  function PUIU_showMinimalAddBookmarkUI(
-    aURI, aTitle, aDescription, aDefaultInsertionPoint, aShowPicker,
-    aLoadInSidebar, aKeyword, aPostData, aCharSet) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "add",
-      type: "bookmark",
-      hiddenRows: ["description"]
-    };
-    if (aURI)
-      info.uri = aURI;
-
-    // allow default empty title
-    if (typeof(aTitle) == "string")
-      info.title = aTitle;
-
-    if (aDescription)
-      info.description = aDescription;
-
-    if (aDefaultInsertionPoint) {
-      info.defaultInsertionPoint = aDefaultInsertionPoint;
-      if (!aShowPicker)
-        info.hiddenRows.push("folderPicker");
-    }
-
-    if (aLoadInSidebar)
-      info.loadBookmarkInSidebar = true;
-    else
-      info.hiddenRows = info.hiddenRows.concat(["location", "loadInSidebar"]);
-
-    if (typeof(aKeyword) == "string") {
-      info.keyword = aKeyword;
-      // Hide the Tags field if we are adding a keyword.
-      info.hiddenRows.push("tags");
-      // Keyword related params.
-      if (typeof(aPostData) == "string")
-        info.postData = aPostData;
-      if (typeof(aCharSet) == "string")
-        info.charSet = aCharSet;
-    }
-    else
-      info.hiddenRows.push("keyword");
-
-    return this.showBookmarkDialog(info, undefined, true);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showAddLivemarkUI: function PUIU_showAddLivemarkURI(aFeedURI,
-                                                      aSiteURI,
-                                                      aTitle,
-                                                      aDescription,
-                                                      aDefaultInsertionPoint,
-                                                      aShowPicker) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "add",
-      type: "livemark"
-    };
-
-    if (aFeedURI)
-      info.feedURI = aFeedURI;
-    if (aSiteURI)
-      info.siteURI = aSiteURI;
-
-    // allow default empty title
-    if (typeof(aTitle) == "string")
-      info.title = aTitle;
-
-    if (aDescription)
-      info.description = aDescription;
-
-    if (aDefaultInsertionPoint) {
-      info.defaultInsertionPoint = aDefaultInsertionPoint;
-      if (!aShowPicker)
-        info.hiddenRows = ["folderPicker"];
-    }
-    return this.showBookmarkDialog(info);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showMinimalAddLivemarkUI:
-  function PUIU_showMinimalAddLivemarkURI(
-    aFeedURI, aSiteURI, aTitle, aDescription, aDefaultInsertionPoint,
-    aShowPicker) {
-
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "add",
-      type: "livemark",
-      hiddenRows: ["feedLocation", "siteLocation", "description"]
-    };
-
-    if (aFeedURI)
-      info.feedURI = aFeedURI;
-    if (aSiteURI)
-      info.siteURI = aSiteURI;
-
-    // allow default empty title
-    if (typeof(aTitle) == "string")
-      info.title = aTitle;
-
-    if (aDescription)
-      info.description = aDescription;
-
-    if (aDefaultInsertionPoint) {
-      info.defaultInsertionPoint = aDefaultInsertionPoint;
-      if (!aShowPicker)
-        info.hiddenRows.push("folderPicker");
-    }
-    return this.showBookmarkDialog(info, undefined, true);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showMinimalAddMultiBookmarkUI: function PUIU_showAddMultiBookmarkUI(aURIList) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    if (aURIList.length == 0)
-      throw("showAddMultiBookmarkUI expects a list of nsIURI objects");
-    var info = {
-      action: "add",
-      type: "folder",
-      hiddenRows: ["description"],
-      URIList: aURIList
-    };
-    return this.showBookmarkDialog(info, undefined, true);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showItemProperties: function PUIU_showItemProperties(aItemId, aType, aReadOnly) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "edit",
-      type: aType,
-      itemId: aItemId,
-      readOnly: aReadOnly
-    };
-    return this.showBookmarkDialog(info);
-  },
-
-  /**
-   * This is here for compatibility reasons, use ShowBookmarkDialog instead.
-   */
-  showAddFolderUI:
-  function PUIU_showAddFolderUI(aTitle, aDefaultInsertionPoint, aShowPicker) {
-    this._reportDeprecatedAddBookmarkMethod();
-
-    var info = {
-      action: "add",
-      type: "folder",
-      hiddenRows: []
-    };
-
-    // allow default empty title
-    if (typeof(aTitle) == "string")
-      info.title = aTitle;
-
-    if (aDefaultInsertionPoint) {
-      info.defaultInsertionPoint = aDefaultInsertionPoint;
-      if (!aShowPicker)
-        info.hiddenRows.push("folderPicker");
-    }
-    return this.showBookmarkDialog(info);
-  },
-
-
   /**
    * Shows the bookmark dialog corresponding to the specified info.
    *
@@ -812,8 +580,10 @@ var PlacesUIUtils = {
     }
 
     var loadInBackground = where == "tabshifted" ? true : false;
-    var replaceCurrentTab = where == "tab" ? false : true;
-    browserWindow.gBrowser.loadTabs(urls, loadInBackground, replaceCurrentTab);
+    // For consistency, we want all the bookmarks to open in new tabs, instead
+    // of having one of them replace the currently focused tab.  Hence we call
+    // loadTabs with aReplace set to false.
+    browserWindow.gBrowser.loadTabs(urls, loadInBackground, false);
   },
 
   /**
@@ -986,6 +756,7 @@ var PlacesUIUtils = {
     let queries = {
       "PlacesRoot": { title: "" },
       "History": { title: this.getString("OrganizerQueryHistory") },
+      "Downloads": { title: this.getString("OrganizerQueryDownloads") },
       "Tags": { title: this.getString("OrganizerQueryTags") },
       "AllBookmarks": { title: this.getString("OrganizerQueryAllBookmarks") },
       "BookmarksToolbar":
@@ -1002,7 +773,7 @@ var PlacesUIUtils = {
           concreteId: PlacesUtils.unfiledBookmarksFolderId },
     };
     // All queries but PlacesRoot.
-    const EXPECTED_QUERY_COUNT = 6;
+    const EXPECTED_QUERY_COUNT = 7;
 
     // Removes an item and associated annotations, ignoring eventual errors.
     function safeRemoveItem(aItemId) {
@@ -1175,7 +946,12 @@ var PlacesUIUtils = {
                           "&sort=" +
                           Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_DESCENDING);
 
-        // XXX: Downloads.
+        // Downloads.
+        this.create_query("Downloads", leftPaneRoot,
+                          "place:transition=" +
+                          Ci.nsINavHistoryService.TRANSITION_DOWNLOAD +
+                          "&sort=" +
+                          Ci.nsINavHistoryQueryOptions.SORT_BY_DATE_DESCENDING);
 
         // Tags Query.
         this.create_query("Tags", leftPaneRoot,

@@ -43,7 +43,7 @@
 
 #include "nsIDOMUIEvent.idl"
 
-[scriptable, uuid(1d78da1e-2177-4b8f-9b11-41e78d1e60f7)]
+[scriptable, uuid(980999ae-7702-4c8f-944d-77db4e99583c)]
 interface nsIDOMXULCommandEvent : nsIDOMUIEvent
 {
   /**

@@ -67,8 +67,6 @@
 #define DEFLATE  8
 #define LZMA    14
 
-#define NS_EXPORT __attribute__ ((visibility("default")))
-
 struct local_file_header {
   uint32_t signature;
   uint16_t min_version;
@@ -189,7 +187,7 @@ find_cdir_entry (struct cdir_entry *entry, int count, const char *name)
     if (letoh16(entry->filename_size) == name_size &&
         !memcmp(entry->data, name, name_size))
       return entry;
-    entry = (struct cdir_entry *)((void *)entry + cdir_entry_size(entry));
+    entry = (struct cdir_entry *)((char *)entry + cdir_entry_size(entry));
   }
   return NULL;
 }
@@ -233,6 +231,7 @@ Java_org_mozilla_gecko_GeckoAppShell_ ## name(JNIEnv *jenv, jclass jc, type1 one
 SHELL_WRAPPER0(nativeInit)
 SHELL_WRAPPER1(nativeRun, jstring)
 SHELL_WRAPPER1(notifyGeckoOfEvent, jobject)
+SHELL_WRAPPER0(processNextNativeEvent)
 SHELL_WRAPPER1(setSurfaceView, jobject)
 SHELL_WRAPPER0(onResume)
 SHELL_WRAPPER0(onLowMemory)
@@ -240,6 +239,9 @@ SHELL_WRAPPER3(callObserver, jstring, jstring, jstring)
 SHELL_WRAPPER1(removeObserver, jstring)
 SHELL_WRAPPER1(onChangeNetworkLinkStatus, jstring)
 SHELL_WRAPPER1(reportJavaCrash, jstring)
+SHELL_WRAPPER0(executeNextRunnable)
+SHELL_WRAPPER1(cameraCallbackBridge, jbyteArray)
+SHELL_WRAPPER2(notifyBatteryChange, jfloat, jboolean);
 
 static void * xul_handle = NULL;
 static time_t apk_mtime = 0;
@@ -248,31 +250,6 @@ extern "C" int extractLibs = 1;
 #else
 extern "C" int extractLibs = 0;
 #endif
-
-#ifdef DEBUG
-#define DEBUG_EXTRACT_LIBS 1
-#endif
-
-#ifdef DEBUG_EXTRACT_LIBS
-static uint32_t simple_write(int fd, const void *buf, uint32_t count)
-{
-  uint32_t out_offset = 0;
-  while (out_offset < count) {
-    uint32_t written = write(fd, buf + out_offset,
-                             count - out_offset);
-    if (written == -1) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK)
-        continue;
-      else {
-        __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "simple_write failed");
-        break;
-      }
-    }
-
-    out_offset += written;
-  }
-  return out_offset;
-}
 
 static void
 extractFile(const char * path, const struct cdir_entry *entry, void * data)
@@ -291,10 +268,17 @@ extractFile(const char * path, const struct cdir_entry *entry, void * data)
     return;
   }
 
-  void * buf = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (ftruncate(fd, size) == -1) {
+    __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't ftruncate %s to decompress library", path);
+    close(fd);
+    return;
+  }
+
+  void * buf = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                    MAP_SHARED, fd, 0);
   if (buf == (void *)-1) {
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't mmap decompression buffer");
+    close(fd);
     return;
   }
 
@@ -304,7 +288,7 @@ extractFile(const char * path, const struct cdir_entry *entry, void * data)
     total_in: 0,
 
     next_out: (Bytef *)buf,
-    avail_out: 4096,
+    avail_out: size,
     total_out: 0
   };
 
@@ -313,14 +297,7 @@ extractFile(const char * path, const struct cdir_entry *entry, void * data)
   if (ret != Z_OK)
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "inflateInit failed: %s", strm.msg);
 
-  while ((ret = inflate(&strm, Z_SYNC_FLUSH)) != Z_STREAM_END) {
-    simple_write(fd, buf, 4096 - strm.avail_out);
-    strm.next_out = (Bytef *)buf;
-    strm.avail_out = 4096;
-  }
-  simple_write(fd, buf, 4096 - strm.avail_out);
-
-  if (ret != Z_STREAM_END)
+  if (inflate(&strm, Z_FINISH) != Z_STREAM_END)
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "inflate failed: %s", strm.msg);
 
   if (strm.total_out != size)
@@ -331,9 +308,13 @@ extractFile(const char * path, const struct cdir_entry *entry, void * data)
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "inflateEnd failed: %s", strm.msg);
 
   close(fd);
-  munmap(buf, 4096);
-}
+#ifdef ANDROID_ARM_LINKER
+  /* We just extracted data that is going to be executed in the future.
+   * We thus need to ensure Instruction and Data cache coherency. */
+  cacheflush((unsigned) buf, (unsigned) buf + size, 0);
 #endif
+  munmap(buf, size);
+}
 
 static void
 extractLib(const struct cdir_entry *entry, void * data, void * dest)
@@ -450,14 +431,13 @@ static void * mozload(const char * path, void *zip,
 #endif
 
   struct cdir_entry *entry = find_cdir_entry(cdir_start, cdir_entries, path);
-  struct local_file_header *file = (struct local_file_header *)(zip + letoh32(entry->offset));
-  void * data = ((void *)&file->data) + letoh16(file->filename_size) + letoh16(file->extra_field_size);
+  struct local_file_header *file = (struct local_file_header *)((char *)zip + letoh32(entry->offset));
+  void * data = ((char *)&file->data) + letoh16(file->filename_size) + letoh16(file->extra_field_size);
   void * handle;
 
-#ifdef DEBUG_EXTRACT_LIBS
   if (extractLibs) {
     char fullpath[PATH_MAX];
-    snprintf(fullpath, PATH_MAX, "%s/%s", getenv("CACHE_PATH"), path + 4);
+    snprintf(fullpath, PATH_MAX, "%s/%s", getenv("CACHE_PATH"), path);
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "resolved %s to %s", path, fullpath);
     extractFile(fullpath, entry, data);
     handle = __wrap_dlopen(fullpath, RTLD_LAZY);
@@ -473,7 +453,7 @@ static void * mozload(const char * path, void *zip,
 #endif
     return handle;
   }
-#endif
+
   size_t offset = letoh32(entry->offset) + sizeof(*file) + letoh16(file->filename_size) + letoh16(file->extra_field_size);
   bool skipLibCache = false;
   int fd = zip_fd;
@@ -481,49 +461,17 @@ static void * mozload(const char * path, void *zip,
   uint32_t lib_size = letoh32(entry->uncompressed_size);
   int cache_fd = 0;
   if (letoh16(file->compression) == DEFLATE) {
-    cache_fd = lookupLibCacheFd(path + 4);
+    cache_fd = lookupLibCacheFd(path);
     fd = cache_fd;
-    if (fd < 0) {
-      char fullpath[PATH_MAX];
-      snprintf(fullpath, PATH_MAX, "%s/%s", getenv("CACHE_PATH"), path + 4);
-      fd = open(fullpath, O_RDWR);
-      struct stat status;
-      if (stat(fullpath, &status) ||
-          status.st_size != lib_size ||
-          apk_mtime > status.st_mtime) {
-        unlink(fullpath);
-        fd = -1;
-      } else {
-        cache_fd = fd;
-        addLibCacheFd(path + 4, fd);
-      }
-    }
     if (fd < 0)
       fd = createAshmem(lib_size, path);
 #ifdef DEBUG
     else
-      __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Loading %s from cache", path + 4);
+      __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Loading %s from cache", path);
 #endif
     if (fd < 0) {
-      __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't open " ASHMEM_NAME_DEF ", Error %d, %s, using a file", errno, strerror(errno));
-      char fullpath[PATH_MAX];
-      snprintf(fullpath, PATH_MAX, "%s/%s", getenv("CACHE_PATH"), path + 4);
-      fd = open(fullpath, O_RDWR | O_CREAT);
-      if (fd < 0) {
-        __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't create a file either, giving up");
-        return NULL;
-      }
-      // we'd like to use fallocate here, but it doesn't exist currently?
-      if (lseek(fd, lib_size - 1, SEEK_SET) == (off_t) - 1) {
-         __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "seeking file failed");
-        return NULL;
-      }
-      if (write(fd, "", 1) != 1) {
-        __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "writting one byte to the file failed");
-        return NULL;
-      }
-      skipLibCache = true;
-      addLibCacheFd(path + 4, fd);
+      __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't open " ASHMEM_NAME_DEF ", Error %d, %s, bailing out", errno, strerror(errno));
+      return NULL;
     }
     buf = mmap(NULL, lib_size,
                PROT_READ | PROT_WRITE,
@@ -538,12 +486,16 @@ static void * mozload(const char * path, void *zip,
 
     if (cache_fd < 0) {
       extractLib(entry, data, buf);
-      if (!skipLibCache)
-        addLibCacheFd(path + 4, fd, lib_size, buf);
+#ifdef ANDROID_ARM_LINKER
+      /* We just extracted data that is going to be executed in the future.
+       * We thus need to ensure Instruction and Data cache coherency. */
+      cacheflush((unsigned) buf, (unsigned) buf + entry->uncompressed_size, 0);
+#endif
+      addLibCacheFd(path, fd, lib_size, buf);
     }
 
     // preload libxul, to avoid slowly demand-paging it
-    if (!strcmp(path, "lib/libxul.so"))
+    if (!strcmp(path, "libxul.so"))
       madvise(buf, entry->uncompressed_size, MADV_WILLNEED);
     data = buf;
   }
@@ -557,9 +509,7 @@ static void * mozload(const char * path, void *zip,
   if (!handle)
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't load %s because %s", path, __wrap_dlerror());
 
-  // if we're extracting the libs to disk and cache_fd is not valid then 
-  // keep this buffer around so it can be used to write to disk
-  if (buf && (!extractLibs || cache_fd >= 0))
+  if (buf)
     munmap(buf, lib_size);
 
 #ifdef DEBUG
@@ -576,8 +526,8 @@ extractBuf(const char * path, void *zip,
            struct cdir_entry *cdir_start, uint16_t cdir_entries)
 {
   struct cdir_entry *entry = find_cdir_entry(cdir_start, cdir_entries, path);
-  struct local_file_header *file = (struct local_file_header *)(zip + letoh32(entry->offset));
-  void * data = ((void *)&file->data) + letoh16(file->filename_size) + letoh16(file->extra_field_size);
+  struct local_file_header *file = (struct local_file_header *)((char *)zip + letoh32(entry->offset));
+  void * data = ((char *)&file->data) + letoh16(file->filename_size) + letoh16(file->extra_field_size);
 
   void * buf = malloc(letoh32(entry->uncompressed_size));
   if (buf == (void *)-1) {
@@ -633,10 +583,10 @@ loadLibs(const char *apkName)
   getrusage(RUSAGE_SELF, &usage1);
 
   void *zip = map_file(apkName);
-  struct cdir_end *dirend = (struct cdir_end *)(zip + zip_size - sizeof(*dirend));
+  struct cdir_end *dirend = (struct cdir_end *)((char *)zip + zip_size - sizeof(*dirend));
   while ((void *)dirend > zip &&
          letoh32(dirend->signature) != CDIR_END_SIG)
-    dirend = (struct cdir_end *)((void *)dirend - 1);
+    dirend = (struct cdir_end *)((char *)dirend - 1);
   if (letoh32(dirend->signature) != CDIR_END_SIG) {
     __android_log_print(ANDROID_LOG_ERROR, "GeckoLibLoad", "Couldn't find end of central directory record");
     return;
@@ -645,14 +595,14 @@ loadLibs(const char *apkName)
   uint32_t cdir_offset = letoh32(dirend->cdir_offset);
   uint16_t cdir_entries = letoh16(dirend->cdir_entries);
 
-  struct cdir_entry *cdir_start = (struct cdir_entry *)(zip + cdir_offset);
+  struct cdir_entry *cdir_start = (struct cdir_entry *)((char *)zip + cdir_offset);
 
   lib_mapping = (struct mapping_info *)calloc(MAX_MAPPING_INFO, sizeof(*lib_mapping));
 #ifdef MOZ_CRASHREPORTER
   file_ids = (char *)extractBuf("lib.id", zip, cdir_start, cdir_entries);
 #endif
 
-#define MOZLOAD(name) mozload("lib/lib" name ".so", zip, cdir_start, cdir_entries)
+#define MOZLOAD(name) mozload("lib" name ".so", zip, cdir_start, cdir_entries)
   MOZLOAD("mozalloc");
   MOZLOAD("nspr4");
   MOZLOAD("plc4");
@@ -683,6 +633,7 @@ loadLibs(const char *apkName)
   GETFUNC(nativeInit);
   GETFUNC(nativeRun);
   GETFUNC(notifyGeckoOfEvent);
+  GETFUNC(processNextNativeEvent);
   GETFUNC(setSurfaceView);
   GETFUNC(onResume);
   GETFUNC(onLowMemory);
@@ -690,6 +641,9 @@ loadLibs(const char *apkName)
   GETFUNC(removeObserver);
   GETFUNC(onChangeNetworkLinkStatus);
   GETFUNC(reportJavaCrash);
+  GETFUNC(executeNextRunnable);
+  GETFUNC(cameraCallbackBridge);
+  GETFUNC(notifyBatteryChange);
 #undef GETFUNC
   gettimeofday(&t1, 0);
   struct rusage usage2;
@@ -716,51 +670,6 @@ Java_org_mozilla_gecko_GeckoAppShell_loadLibs(JNIEnv *jenv, jclass jGeckoAppShel
 
   loadLibs(str);
   jenv->ReleaseStringUTFChars(jApkName, str);
-  bool haveLibsToWrite = false;
-  if (cache_mapping && extractLibs)
-    for (int i = 0; i < cache_count && !haveLibsToWrite; i++)
-      if (cache_mapping[i].buffer)
-        haveLibsToWrite = true;
-
-  int count = cache_count;
-  struct lib_cache_info *info;
-  if (haveLibsToWrite) {
-    if (fork()) {
-      // just unmap.  fork will do the real work.
-      while (count--) {
-        info = &cache_mapping[count];
-        if (!info->buffer)
-          continue;
-        munmap(info->buffer, info->lib_size);
-      }
-    }
-    else {
-      sleep(10);
-      nice(10);
-      while (count--) {
-        info = &cache_mapping[count];
-        if (!info->buffer)
-          continue;
-
-        char fullpath[PATH_MAX];
-        snprintf(fullpath, PATH_MAX, "%s/%s", getenv("CACHE_PATH"), info->name);
-        char tmp_path[PATH_MAX];
-        sprintf(tmp_path, "%s.tmp", fullpath);
-        int file_fd = open(tmp_path, O_CREAT | O_WRONLY);
-        // using sendfile would be preferable, but it doesn't seem to work
-        // with shared memory on any of the devices we've tested
-        uint32_t sent = write(file_fd, info->buffer, info->lib_size);
-        munmap(info->buffer, info->lib_size);
-        info->buffer = 0;
-        close(file_fd);
-        if (sent == info->lib_size)
-          rename(tmp_path, fullpath);
-        else
-          unlink(tmp_path);
-      }
-      exit(0);
-    }
-  }
 }
 
 typedef int GeckoProcessType;

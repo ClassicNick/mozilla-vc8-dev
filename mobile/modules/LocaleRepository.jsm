@@ -45,8 +45,6 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 
-var gServiceURL = Services.prefs.getCharPref("extensions.getLocales.get.url");
-
 // A map between XML keys to LocaleSearchResult keys for string values
 // that require no extra parsing from XML
 const STRING_KEY_MAP = {
@@ -55,7 +53,8 @@ const STRING_KEY_MAP = {
   version:            "version",
   icon:               "iconURL",
   homepage:           "homepageURL",
-  support:            "supportURL"
+  support:            "supportURL",
+  strings:            "strings"
 };
 
 var LocaleRepository = {
@@ -81,18 +80,30 @@ var LocaleRepository = {
     return (descendant != null) ? this._getTextContent(descendant) : null;
   },
 
-  getLocales: function getLocales(aCallback) {
-    if (!gServiceURL) {
+  getLocales: function getLocales(aCallback, aFilters) {
+    let url = Services.prefs.getCharPref("extensions.getLocales.get.url");
+
+    if (!url) {
       aCallback([]);
       return;
     }
+
+    let buildID = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULAppInfo).QueryInterface(Ci.nsIXULRuntime).appBuildID;
+    if (aFilters) {
+      if (aFilters.buildID)
+        buildID = aFilters.buildID;
+    }
+    buildID = buildID.substring(0,4) + "-" + buildID.substring(4).replace(/\d{2}(?=\d)/g, "$&-");
+    url = url.replace(/%BUILDID_EXPANDED%/g, buildID);
+    url = Services.urlFormatter.formatURL(url);
+
     let request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].createInstance(Ci.nsIXMLHttpRequest);
     request.mozBackgroundRequest = true;
-    request.open("GET", gServiceURL, true);
+    request.open("GET", url, true);
     request.overrideMimeType("text/xml");
   
     let self = this;
-    request.onreadystatechange = function () {
+    request.addEventListener("readystatechange", function () {
       if (request.readyState == 4) {
         if (request.status == 200) {
           self.log("---- got response")
@@ -109,7 +120,7 @@ var LocaleRepository = {
           Cu.reportError("Locale Repository: Error getting locale from AMO [" + request.status + "]");
         }
       }
-    };
+    }, false);
   
     request.send(null);
   },
@@ -153,7 +164,7 @@ var LocaleRepository = {
               addon.type = "language";
               break;
             default:
-              WARN("Unknown type id when parsing addon: " + id);
+              this.log("Unknown type id when parsing addon: " + id);
           }
           break;
         case "authors":
@@ -206,7 +217,12 @@ var LocaleRepository = {
             return null;
   
           result.xpiURL = xpiURL;
-          addon.sourceURI = NetUtil.newURI(xpiURL);
+          try {
+            addon.sourceURI = NetUtil.newURI(xpiURL);
+          } catch(ex) {
+            this.log("Addon has invalid uri: " + addon.sourceURI);
+            addon.sourceURI = null;
+          }
   
           let size = parseInt(node.getAttribute("size"));
           addon.size = (size >= 0) ? size : null;
@@ -257,7 +273,7 @@ var LocaleRepository = {
         continue;
 
       // Ignore add-on missing a required attribute
-      let requiredAttributes = ["id", "name", "version", "type", "targetLocale"];
+      let requiredAttributes = ["id", "name", "version", "type", "targetLocale", "sourceURI"];
       if (requiredAttributes.some(function(aAttribute) !result.addon[aAttribute]))
         continue;
 
@@ -320,6 +336,7 @@ LocaleSearchResult.prototype = {
   sourceURI: null,
   repositoryStatus: null,
   size: null,
+  strings: "",
   updateDate: null,
   isCompatible: true,
   isPlatformCompatible: true,

@@ -63,6 +63,9 @@ public:
 
   // nsAccessible
   virtual PRUint32 NativeRole();
+
+  // Widgets
+  virtual bool IsWidget() const;
 };
 
 /**
@@ -75,14 +78,19 @@ public:
   nsRadioButtonAccessible(nsIContent *aContent, nsIWeakReference *aShell);
 
   // nsIAccessible
-  NS_IMETHOD GetNumActions(PRUint8 *_retval);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
   NS_IMETHOD DoAction(PRUint8 aIndex);
 
   // nsAccessible
   virtual PRUint32 NativeRole();
 
+  // ActionAccessible
+  virtual PRUint8 ActionCount();
+
   enum { eAction_Click = 0 };
+
+  // Widgets
+  virtual bool IsWidget() const;
 };
 
 

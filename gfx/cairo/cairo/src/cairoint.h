@@ -974,7 +974,7 @@ _cairo_round (double r)
     return floor (r + .5);
 }
 
-#if DISABLE_SOME_FLOATING_POINT
+#if DISABLE_SOME_FLOATING_POINT || __STDC_VERSION__ < 199901L
 cairo_private int
 _cairo_lround (double d) cairo_const;
 #else
@@ -1907,6 +1907,12 @@ _cairo_surface_release_device_reference (cairo_surface_t *surface);
 						      CAIRO_CONTENT_ALPHA |      \
 						      CAIRO_CONTENT_COLOR_ALPHA))\
 				       == 0))
+
+static inline cairo_bool_t
+_cairo_valid_stride_alignment(int stride)
+{
+    return !(stride & (CAIRO_STRIDE_ALIGNMENT-1));
+}
 
 cairo_private int
 _cairo_format_bits_per_pixel (cairo_format_t format) cairo_const;

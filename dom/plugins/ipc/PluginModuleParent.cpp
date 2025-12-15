@@ -56,12 +56,13 @@
 #include "mozilla/ipc/SyncChannel.h"
 #include "mozilla/plugins/PluginModuleParent.h"
 #include "mozilla/plugins/BrowserStreamParent.h"
+#include "mozilla/dom/PCrashReporterParent.h"
 #include "PluginIdentifierParent.h"
 
 #include "nsAutoPtr.h"
 #include "nsCRT.h"
 #ifdef MOZ_CRASHREPORTER
-#include "nsExceptionHandler.h"
+#include "mozilla/dom/CrashReporterParent.h"
 #endif
 #include "nsNPAPIPlugin.h"
 #include "nsILocalFile.h"
@@ -74,12 +75,15 @@ using base::KillProcess;
 
 using mozilla::PluginLibrary;
 using mozilla::ipc::SyncChannel;
+using mozilla::dom::PCrashReporterParent;
+using mozilla::dom::CrashReporterParent;
 
 using namespace mozilla;
 using namespace mozilla::plugins;
 using namespace mozilla::plugins::parent;
 
-static const char kTimeoutPref[] = "dom.ipc.plugins.timeoutSecs";
+static const char kChildTimeoutPref[] = "dom.ipc.plugins.timeoutSecs";
+static const char kParentTimeoutPref[] = "dom.ipc.plugins.parentTimeoutSecs";
 static const char kLaunchTimeoutPref[] = "dom.ipc.plugins.processLaunchTimeoutSecs";
 
 template<>
@@ -109,20 +113,27 @@ PluginModuleParent::LoadModule(const char* aFilePath)
     parent->Open(parent->mSubprocess->GetChannel(),
                  parent->mSubprocess->GetChildProcessHandle());
 
-    TimeoutChanged(kTimeoutPref, parent);
+    TimeoutChanged(kChildTimeoutPref, parent);
+
+#ifdef MOZ_CRASHREPORTER
+    // If this fails, we're having IPC troubles, and we're doomed anyways.
+    if (!CrashReporterParent::CreateCrashReporter(parent.get())) {
+        parent->mShutdown = true;
+        return nsnull;
+    }
+#endif
+
     return parent.forget();
 }
 
 
 PluginModuleParent::PluginModuleParent(const char* aFilePath)
     : mSubprocess(new PluginProcessParent(aFilePath))
-    , mPluginThread(0)
     , mShutdown(false)
     , mClearSiteDataSupported(false)
     , mGetSitesWithDataSupported(false)
     , mNPNIface(NULL)
     , mPlugin(NULL)
-    , mProcessStartTime(time(NULL))
     , mTaskFactory(this)
 {
     NS_ASSERTION(mSubprocess, "Out of memory!");
@@ -131,18 +142,13 @@ PluginModuleParent::PluginModuleParent(const char* aFilePath)
         NS_ERROR("Out of memory");
     }
 
-    Preferences::RegisterCallback(TimeoutChanged, kTimeoutPref, this);
+    Preferences::RegisterCallback(TimeoutChanged, kChildTimeoutPref, this);
+    Preferences::RegisterCallback(TimeoutChanged, kParentTimeoutPref, this);
 }
 
 PluginModuleParent::~PluginModuleParent()
 {
     NS_ASSERTION(OkToCleanup(), "unsafe destruction");
-
-#ifdef OS_MACOSX
-    if (mCATimer) {
-        mCATimer->Cancel();
-    }
-#endif
 
     if (!mShutdown) {
         NS_WARNING("Plugin host deleted the module without shutting down.");
@@ -156,24 +162,15 @@ PluginModuleParent::~PluginModuleParent()
         mSubprocess = nsnull;
     }
 
-    Preferences::UnregisterCallback(TimeoutChanged, kTimeoutPref, this);
+    Preferences::UnregisterCallback(TimeoutChanged, kChildTimeoutPref, this);
+    Preferences::UnregisterCallback(TimeoutChanged, kParentTimeoutPref, this);
 }
 
 #ifdef MOZ_CRASHREPORTER
 void
-PluginModuleParent::WritePluginExtraDataForMinidump(const nsAString& id)
+PluginModuleParent::WriteExtraDataForMinidump(CrashReporter::AnnotationTable& notes)
 {
     typedef nsDependentCString CS;
-
-    CrashReporter::AnnotationTable notes;
-    if (!notes.Init(32))
-        return;
-
-    notes.Put(CS("ProcessType"), CS("plugin"));
-
-    char startTime[32];
-    sprintf(startTime, "%lld", static_cast<PRInt64>(mProcessStartTime));
-    notes.Put(CS("StartupTime"), CS(startTime));
 
     // Get the plugin filename, try to get just the file leafname
     const std::string& pluginFile = mSubprocess->GetPluginFilePath();
@@ -189,51 +186,27 @@ PluginModuleParent::WritePluginExtraDataForMinidump(const nsAString& id)
     notes.Put(CS("PluginName"), CS(""));
     notes.Put(CS("PluginVersion"), CS(""));
 
-    if (!mCrashNotes.IsEmpty())
-        notes.Put(CS("Notes"), CS(mCrashNotes.get()));
-
-    if (!mHangID.IsEmpty())
-        notes.Put(CS("HangID"), NS_ConvertUTF16toUTF8(mHangID));
-
-    if (!CrashReporter::AppendExtraData(id, notes))
-        NS_WARNING("problem appending plugin data to .extra");
-}
-
-void
-PluginModuleParent::WriteExtraDataForHang()
-{
-    // this writes HangID
-    WritePluginExtraDataForMinidump(mPluginDumpID);
-
-    CrashReporter::AnnotationTable notes;
-    if (!notes.Init(4))
-        return;
-
-    notes.Put(nsDependentCString("HangID"), NS_ConvertUTF16toUTF8(mHangID));
-    if (!CrashReporter::AppendExtraData(mBrowserDumpID, notes))
-        NS_WARNING("problem appending browser data to .extra");
+    const nsString& hangID = CrashReporter()->HangID();
+    if (!hangID.IsEmpty())
+        notes.Put(CS("HangID"), NS_ConvertUTF16toUTF8(hangID));
 }
 #endif  // MOZ_CRASHREPORTER
-
-bool
-PluginModuleParent::RecvAppendNotesToCrashReport(const nsCString& aNotes)
-{
-    mCrashNotes.Append(aNotes);
-    return true;
-}
 
 int
 PluginModuleParent::TimeoutChanged(const char* aPref, void* aModule)
 {
     NS_ASSERTION(NS_IsMainThread(), "Wrong thead!");
-    NS_ABORT_IF_FALSE(!strcmp(aPref, kTimeoutPref),
-                      "unexpected pref callback");
-
-    PRInt32 timeoutSecs = Preferences::GetInt(kTimeoutPref, 0);
-    int32 timeoutMs = (timeoutSecs > 0) ? (1000 * timeoutSecs) :
-                      SyncChannel::kNoTimeout;
-
-    static_cast<PluginModuleParent*>(aModule)->SetReplyTimeoutMs(timeoutMs);
+    if (!strcmp(aPref, kChildTimeoutPref)) {
+      // The timeout value used by the parent for children
+      PRInt32 timeoutSecs = Preferences::GetInt(kChildTimeoutPref, 0);
+      int32 timeoutMs = (timeoutSecs > 0) ? (1000 * timeoutSecs) :
+                        SyncChannel::kNoTimeout;
+      static_cast<PluginModuleParent*>(aModule)->SetReplyTimeoutMs(timeoutMs);
+    } else if (!strcmp(aPref, kParentTimeoutPref)) {
+      // The timeout value used by the child for its parent
+      PRInt32 timeoutSecs = Preferences::GetInt(kParentTimeoutPref, 0);
+      static_cast<PluginModuleParent*>(aModule)->SendSetParentHangTimeout(timeoutSecs);
+    }
     return 0;
 }
 
@@ -248,29 +221,16 @@ bool
 PluginModuleParent::ShouldContinueFromReplyTimeout()
 {
 #ifdef MOZ_CRASHREPORTER
-    nsCOMPtr<nsILocalFile> pluginDump;
-    nsCOMPtr<nsILocalFile> browserDump;
-    CrashReporter::ProcessHandle child;
-#ifdef XP_MACOSX
-    child = mSubprocess->GetChildTask();
-#else
-    child = OtherProcess();
-#endif
-    if (CrashReporter::CreatePairedMinidumps(child,
-                                             mPluginThread,
-                                             &mHangID,
-                                             getter_AddRefs(pluginDump),
-                                             getter_AddRefs(browserDump)) &&
-        CrashReporter::GetIDFromMinidump(pluginDump, mPluginDumpID) &&
-        CrashReporter::GetIDFromMinidump(browserDump, mBrowserDumpID)) {
-
+    CrashReporterParent* crashReporter = CrashReporter();
+    if (crashReporter->GeneratePairedMinidump(this)) {
+        mBrowserDumpID = crashReporter->ParentDumpID();
+        mPluginDumpID = crashReporter->ChildDumpID();
         PLUGIN_LOG_DEBUG(
-            ("generated paired browser/plugin minidumps: %s/%s (ID=%s)",
-             NS_ConvertUTF16toUTF8(mBrowserDumpID).get(),
-             NS_ConvertUTF16toUTF8(mPluginDumpID).get(),
-             NS_ConvertUTF16toUTF8(mHangID).get()));
-    }
-    else {
+                ("generated paired browser/plugin minidumps: %s/%s (ID=%s)",
+                 NS_ConvertUTF16toUTF8(mBrowserDumpID).get(),
+                 NS_ConvertUTF16toUTF8(mPluginDumpID).get(),
+                 NS_ConvertUTF16toUTF8(crashReporter->HangID()).get()));
+    } else {
         NS_WARNING("failed to capture paired minidumps from hang");
     }
 #endif
@@ -288,21 +248,34 @@ PluginModuleParent::ShouldContinueFromReplyTimeout()
     return false;
 }
 
+#ifdef MOZ_CRASHREPORTER
+CrashReporterParent*
+PluginModuleParent::CrashReporter()
+{
+    MOZ_ASSERT(ManagedPCrashReporterParent().Length() > 0);
+    return static_cast<CrashReporterParent*>(ManagedPCrashReporterParent()[0]);
+}
+#endif
+
 void
 PluginModuleParent::ActorDestroy(ActorDestroyReason why)
 {
     switch (why) {
     case AbnormalShutdown: {
 #ifdef MOZ_CRASHREPORTER
-        nsCOMPtr<nsILocalFile> pluginDump;
-        if (TakeMinidump(getter_AddRefs(pluginDump)) &&
-            CrashReporter::GetIDFromMinidump(pluginDump, mPluginDumpID)) {
+        CrashReporterParent* crashReporter = CrashReporter();
+
+        CrashReporter::AnnotationTable notes;
+        notes.Init(4);
+        WriteExtraDataForMinidump(notes);
+        
+        if (crashReporter->GenerateCrashReport(this, &notes)) {
+            mPluginDumpID = crashReporter->ChildDumpID();
             PLUGIN_LOG_DEBUG(("got child minidump: %s",
                               NS_ConvertUTF16toUTF8(mPluginDumpID).get()));
-            WritePluginExtraDataForMinidump(mPluginDumpID);
         }
         else if (!mPluginDumpID.IsEmpty() && !mBrowserDumpID.IsEmpty()) {
-            WriteExtraDataForHang();
+            crashReporter->GenerateHangCrashReport(&notes);
         }
         else {
             NS_WARNING("[PluginModuleParent::ActorDestroy] abnormal shutdown without minidump!");
@@ -635,7 +608,7 @@ PluginModuleParent::GetIdentifierForNPIdentifier(NPP npp, NPIdentifier aIdentifi
     }
     else {
         intval = mozilla::plugins::parent::_intfromidentifier(aIdentifier);
-        string.SetIsVoid(PR_TRUE);
+        string.SetIsVoid(true);
     }
 
     ident = new PluginIdentifierParent(aIdentifier, temporary);
@@ -697,6 +670,20 @@ PluginModuleParent::AsyncSetWindow(NPP instance, NPWindow* window)
     return i->AsyncSetWindow(window);
 }
 
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+nsresult
+PluginModuleParent::HandleGUIEvent(NPP instance,
+                                   const nsGUIEvent& anEvent,
+                                   bool* handled)
+{
+    PluginInstanceParent* i = InstCast(instance);
+    if (!i)
+        return NS_ERROR_FAILURE;
+
+    return i->HandleGUIEvent(anEvent, handled);
+}
+#endif
+
 nsresult
 PluginModuleParent::GetImage(NPP instance,
                              mozilla::layers::ImageContainer* aContainer,
@@ -754,8 +741,6 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPPluginFuncs* pFuncs
 {
     PLUGIN_LOG_DEBUG_METHOD;
 
-    nsresult rv;
-
     mNPNIface = bFuncs;
 
     if (mShutdown) {
@@ -763,7 +748,7 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPPluginFuncs* pFuncs
         return NS_ERROR_FAILURE;
     }
 
-    if (!CallNP_Initialize(&mPluginThread, error)) {
+    if (!CallNP_Initialize(error)) {
         return NS_ERROR_FAILURE;
     }
     else if (*error != NPERR_NO_ERROR) {
@@ -787,7 +772,7 @@ PluginModuleParent::NP_Initialize(NPNetscapeFuncs* bFuncs, NPError* error)
         return NS_ERROR_FAILURE;
     }
 
-    if (!CallNP_Initialize(&mPluginThread, error))
+    if (!CallNP_Initialize(error))
         return NS_ERROR_FAILURE;
 
 #if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
@@ -921,6 +906,8 @@ PluginModuleParent::NPP_New(NPMIMEType pluginType, NPP instance,
         return NS_ERROR_FAILURE;
     }
 
+    TimeoutChanged(kParentTimeoutPref, this);
+    
     return NS_OK;
 }
 
@@ -961,7 +948,7 @@ PluginModuleParent::NPP_GetSitesWithData(InfallibleTArray<nsCString>& result)
 
 #if defined(XP_MACOSX)
 nsresult
-PluginModuleParent::IsRemoteDrawingCoreAnimation(NPP instance, PRBool *aDrawing)
+PluginModuleParent::IsRemoteDrawingCoreAnimation(NPP instance, bool *aDrawing)
 {
     PluginInstanceParent* i = InstCast(instance);
     if (!i)
@@ -1086,6 +1073,24 @@ PluginModuleParent::RecvPluginHideWindow(const uint32_t& aWindowId)
 #endif
 }
 
+PCrashReporterParent*
+PluginModuleParent::AllocPCrashReporter(mozilla::dom::NativeThreadId* id,
+                                        PRUint32* processType)
+{
+#ifdef MOZ_CRASHREPORTER
+    return new CrashReporterParent();
+#else
+    return nsnull;
+#endif
+}
+
+bool
+PluginModuleParent::DeallocPCrashReporter(PCrashReporterParent* actor)
+{
+    delete actor;
+    return true;
+}
+
 bool
 PluginModuleParent::RecvSetCursor(const NSCursorInfo& aCursorInfo)
 {
@@ -1147,12 +1152,12 @@ PluginModuleParent::RecvGetNativeCursorsSupported(bool* supported)
 {
     PLUGIN_LOG_DEBUG(("%s", FULLFUNCTION));
 #if defined(XP_MACOSX)
-    PRBool nativeCursorsSupported = PR_FALSE;
+    bool nativeCursorsSupported = false;
     nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefs) {
       if (NS_FAILED(prefs->GetBoolPref("dom.ipc.plugins.nativeCursorSupport",
           &nativeCursorsSupported))) {
-        nativeCursorsSupported = PR_FALSE;
+        nativeCursorsSupported = false;
       }
     }
     *supported = nativeCursorsSupported;
@@ -1164,48 +1169,20 @@ PluginModuleParent::RecvGetNativeCursorsSupported(bool* supported)
 #endif
 }
 
-#ifdef OS_MACOSX
-#define DEFAULT_REFRESH_MS 20 // CoreAnimation: 50 FPS
+bool
+PluginModuleParent::RecvNPN_SetException(PPluginScriptableObjectParent* aActor,
+                                         const nsCString& aMessage)
+{
+    PLUGIN_LOG_DEBUG(("%s", FULLFUNCTION));
 
-void
-CAUpdate(nsITimer *aTimer, void *aClosure) {
-    nsTObserverArray<PluginInstanceParent*> *ips =
-        static_cast<nsTObserverArray<PluginInstanceParent*> *>(aClosure);
-    nsTObserverArray<PluginInstanceParent*>::ForwardIterator iter(*ips);
-#ifdef MOZ_WIDGET_COCOA
-    while (iter.HasMore()) {
-        iter.GetNext()->Invalidate();
-    }
-#endif // MOZ_WIDGET_COCOA
-}
-
-void
-PluginModuleParent::AddToRefreshTimer(PluginInstanceParent *aInstance) {
-    if (mCATimerTargets.Contains(aInstance)) {
-        return;
-    }
-
-    mCATimerTargets.AppendElement(aInstance);
-    if (mCATimerTargets.Length() == 1) {
-        if (!mCATimer) {
-            nsresult rv;
-            nsCOMPtr<nsITimer> xpcomTimer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
-            if (NS_FAILED(rv)) {
-                NS_WARNING("Could not create Core Animation timer for plugin.");
-                return;
-            }
-            mCATimer = xpcomTimer;
+    NPObject* aNPObj = NULL;
+    if (aActor) {
+        aNPObj = static_cast<PluginScriptableObjectParent*>(aActor)->GetObject(true);
+        if (!aNPObj) {
+            NS_ERROR("Failed to get object!");
+            return false;
         }
-        mCATimer->InitWithFuncCallback(CAUpdate, &mCATimerTargets, DEFAULT_REFRESH_MS,
-                                       nsITimer::TYPE_REPEATING_SLACK);
     }
+    mozilla::plugins::parent::_setexception(aNPObj, NullableStringGet(aMessage));
+    return true;
 }
-
-void
-PluginModuleParent::RemoveFromRefreshTimer(PluginInstanceParent *aInstance) {
-    PRBool visibleRemoved = mCATimerTargets.RemoveElement(aInstance);
-    if (visibleRemoved && mCATimerTargets.IsEmpty()) {
-        mCATimer->Cancel();
-    }
-}
-#endif

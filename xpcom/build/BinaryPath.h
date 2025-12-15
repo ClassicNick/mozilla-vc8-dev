@@ -46,6 +46,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #elif defined(XP_UNIX)
 #include <sys/stat.h>
+#include <string.h>
 #endif
 
 namespace mozilla {
@@ -102,10 +103,11 @@ private:
     // multiple applications, we will try a series of techniques:
     //
     // 1) use realpath() on argv[0], which works unless we're loaded from the
-    //    PATH
+    //    PATH. Only do so if argv[0] looks like a path (contains a /).
     // 2) manually walk through the PATH and look for ourself
     // 3) give up
-    if (realpath(argv0, aResult) && stat(aResult, &fileStat) == 0)
+    if (strchr(argv0, '/') && realpath(argv0, aResult) &&
+        stat(aResult, &fileStat) == 0)
       return NS_OK;
 
     const char *path = getenv("PATH");
@@ -116,13 +118,13 @@ private:
     if (!pathdup)
       return NS_ERROR_OUT_OF_MEMORY;
 
-    PRBool found = PR_FALSE;
+    bool found = false;
     char *token = strtok(pathdup, ":");
     while (token) {
       char tmpPath[MAXPATHLEN];
       sprintf(tmpPath, "%s/%s", token, argv0);
       if (realpath(tmpPath, aResult) && stat(aResult, &fileStat) == 0) {
-        found = PR_TRUE;
+        found = true;
         break;
       }
       token = strtok(NULL, ":");
@@ -160,10 +162,10 @@ public:
     if (NS_FAILED(rv))
       return rv;
 #ifdef XP_WIN
-    rv = NS_NewLocalFile(nsDependentString(exePath), PR_TRUE,
+    rv = NS_NewLocalFile(nsDependentString(exePath), true,
                          getter_AddRefs(lf));
 #else
-    rv = NS_NewNativeLocalFile(nsDependentCString(exePath), PR_TRUE,
+    rv = NS_NewNativeLocalFile(nsDependentCString(exePath), true,
                                getter_AddRefs(lf));
 #endif
     if (NS_FAILED(rv))

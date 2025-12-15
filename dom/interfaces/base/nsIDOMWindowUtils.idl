@@ -65,8 +65,10 @@ interface nsIDOMEvent;
 interface nsITransferable;
 interface nsIQueryContentEventResult;
 interface nsIDOMWindow;
+interface nsIDOMFile;
+interface nsIFile;
 
-[scriptable, uuid(b46050ea-6f18-11e0-bf00-f389b7004a12)]
+[scriptable, uuid(910484d7-219c-4c72-b999-7a7e9c954646)]
 interface nsIDOMWindowUtils : nsISupports {
 
   /**
@@ -364,6 +366,18 @@ interface nsIDOMWindowUtils : nsISupports {
   void garbageCollect([optional] in nsICycleCollectorListener aListener);
 
   /**
+   * Force a cycle collection without garbage collection.
+   *
+   * Will throw a DOM security error if called without UniversalXPConnect
+   * privileges in non-debug builds. Available to all callers in debug builds.
+   *
+   * @param aListener listener that receives information about the CC graph
+   *                  (see @mozilla.org/cycle-collector-logger;1 for a logger
+   *                   component)
+   */
+  void cycleCollect([optional] in nsICycleCollectorListener aListener);
+
+  /**
    * Force processing of any queued paints
    */
 
@@ -567,9 +581,16 @@ interface nsIDOMWindowUtils : nsISupports {
    * Will throw a DOM security error if called without UniversalXPConnect
    * privileges.
    *
-   * @param aType The event type: "compositionstart" or "compositionend".
+   * @param aType     The event type: "compositionstart", "compositionend" or
+   *                  "compositionupdate".
+   * @param aData     The data property value.  Note that this isn't applied
+   *                  for compositionstart event because its value is the
+   *                  selected text which is automatically computed.
+   * @param aLocale   The locale property value.
    */
-  void sendCompositionEvent(in AString aType);
+  void sendCompositionEvent(in AString aType,
+                            in AString aData,
+                            in AString aLocale);
 
   /**
    * Synthesize a text event to the window.
@@ -870,6 +891,11 @@ interface nsIDOMWindowUtils : nsISupports {
                                   in AString value2);
 
   /**
+   * Wrap an nsIFile in an nsIDOMFile
+   */
+  nsIDOMFile wrapDOMFile(in nsIFile aFile);
+
+  /**
    * Get the type of the currently focused html input, if any.
    */
   readonly attribute string focusedInputType;
@@ -893,4 +919,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * true if the (current inner) window may have event listeners for touch events.
    */
   readonly attribute boolean mayHaveTouchEventListeners;
+ 
+  /**
+   * Check if any ThebesLayer painting has been done for this element,
+   * clears the painted flags if they have.
+   */
+  boolean checkAndClearPaintedState(in nsIDOMElement aElement);
+
 };

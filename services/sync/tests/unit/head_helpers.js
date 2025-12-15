@@ -9,10 +9,6 @@ let provider = {
     switch (prop) {
       case "ExtPrefDL":
         return [Services.dirsvc.get("CurProcD", Ci.nsIFile)];
-      case "UHist":
-        let histFile = Services.dirsvc.get("ProfD", Ci.nsIFile);
-        histFile.append("history.dat");
-        return histFile;
       default:
         throw Cr.NS_ERROR_FAILURE;
     }
@@ -20,6 +16,23 @@ let provider = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsIDirectoryServiceProvider])
 };
 Services.dirsvc.QueryInterface(Ci.nsIDirectoryService).registerProvider(provider);
+
+let timer;
+function waitForZeroTimer(callback) {
+  // First wait >100ms (nsITimers can take up to that much time to fire, so
+  // we can account for the timer in delayedAutoconnect) and then two event
+  // loop ticks (to account for the Utils.nextTick() in autoConnect).
+  let ticks = 2;
+  function wait() {
+    if (ticks) {
+      ticks -= 1;
+      Utils.nextTick(wait);
+      return;
+    }
+    callback();
+  }
+  timer = Utils.namedTimer(wait, 150, {}, "timer");
+}
 
 btoa = Cu.import("resource://services-sync/log4moz.js").btoa;
 function getTestLogger(component) {
@@ -86,6 +99,14 @@ function FakeGUIDService() {
 }
 
 
+function fakeSHA256HMAC(message) {
+   message = message.substr(0, 64);
+   while (message.length < 64) {
+     message += " ";
+   }
+   return message;
+}
+
 /*
  * Mock implementation of WeaveCrypto. It does not encrypt or
  * decrypt, merely returning the input verbatim.
@@ -95,23 +116,12 @@ function FakeCryptoService() {
 
   delete Svc.Crypto;  // get rid of the getter first
   Svc.Crypto = this;
-  Utils.sha256HMAC = this.sha256HMAC;
 
-  CryptoWrapper.prototype.ciphertextHMAC = this.ciphertextHMAC;
+  CryptoWrapper.prototype.ciphertextHMAC = function ciphertextHMAC(keyBundle) {
+    return fakeSHA256HMAC(this.ciphertext);
+  };
 }
 FakeCryptoService.prototype = {
-
-  sha256HMAC: function Utils_sha256HMAC(message, hasher) {
-     message = message.substr(0, 64);
-     while (message.length < 64) {
-       message += " ";
-     }
-     return message;
-  },
-
-  ciphertextHMAC: function CryptoWrapper_ciphertextHMAC(keyBundle) {
-    return Utils.sha256HMAC(this.ciphertext);
-  },
 
   encrypt: function(aClearText, aSymmetricKey, aIV) {
     return aClearText;
@@ -191,7 +201,7 @@ Cu.import("resource://services-sync/identity.js");
  * Test setup helpers.
  */
 
-// Turn WBO cleartext into "encrypted" payload as it goes over the wire
+// Turn WBO cleartext into fake "encrypted" payload as it goes over the wire.
 function encryptPayload(cleartext) {
   if (typeof cleartext == "object") {
     cleartext = JSON.stringify(cleartext);
@@ -199,7 +209,7 @@ function encryptPayload(cleartext) {
 
   return {ciphertext: cleartext, // ciphertext == cleartext with fake crypto
           IV: "irrelevant",
-          hmac: Utils.sha256HMAC(cleartext, Utils.makeHMACKey(""))};
+          hmac: fakeSHA256HMAC(cleartext, Utils.makeHMACKey(""))};
 }
 
 function generateNewKeys(collections) {
@@ -208,13 +218,12 @@ function generateNewKeys(collections) {
   CollectionKeys.setContents(wbo.cleartext, modified);
 }
 
-function basic_auth_header(user, password) {
-  return "Basic " + btoa(user + ":" + Utils.encodeUTF8(password));
+function do_check_empty(obj) {
+  do_check_attribute_count(obj, 0);
 }
 
-function basic_auth_matches(req, user, password) {
-  return req.hasHeader("Authorization") &&
-         (req.getHeader("Authorization") == basic_auth_header(user, password));
+function do_check_attribute_count(obj, c) {
+  do_check_eq(c, Object.keys(obj).length);
 }
 
 function do_check_throws(aFunc, aResult, aStack)

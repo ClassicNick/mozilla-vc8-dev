@@ -149,7 +149,7 @@ GetHistogramByEnumId(Telemetry::ID id, Histogram **ret)
   const TelemetryHistogram &p = gHistograms[id];
   nsresult rv = HistogramGet(p.id, p.min, p.max, p.bucketCount, p.histogramType, &h);
   if (NS_FAILED(rv))
-    return NS_ERROR_FAILURE;
+    return rv;
 
   *ret = knownHistograms[id] = h;
   return NS_OK;
@@ -177,7 +177,7 @@ ReflectHistogramSnapshot(JSContext *cx, JSObject *obj, Histogram *h)
   if (!(JS_DefineProperty(cx, obj, "min", INT_TO_JSVAL(h->declared_min()), NULL, NULL, JSPROP_ENUMERATE)
         && JS_DefineProperty(cx, obj, "max", INT_TO_JSVAL(h->declared_max()), NULL, NULL, JSPROP_ENUMERATE)
         && JS_DefineProperty(cx, obj, "histogram_type", INT_TO_JSVAL(h->histogram_type()), NULL, NULL, JSPROP_ENUMERATE)
-        && JS_DefineProperty(cx, obj, "sum", INT_TO_JSVAL(ss.sum()), NULL, NULL, JSPROP_ENUMERATE)
+        && JS_DefineProperty(cx, obj, "sum", DOUBLE_TO_JSVAL(ss.sum()), NULL, NULL, JSPROP_ENUMERATE)
         && (rarray = JS_NewArrayObject(cx, count, NULL))
         && JS_DefineProperty(cx, obj, "ranges", OBJECT_TO_JSVAL(rarray), NULL, NULL, JSPROP_ENUMERATE)
         && FillRanges(cx, rarray, h)
@@ -233,7 +233,7 @@ JSHistogram_Snapshot(JSContext *cx, uintN argc, jsval *vp)
   Histogram *h = static_cast<Histogram*>(JS_GetPrivate(cx, obj));
   JSObject *snapshot = JS_NewObject(cx, NULL, NULL, NULL);
   if (!snapshot)
-    return NS_ERROR_FAILURE;
+    return JS_FALSE;
   JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(snapshot));
   return ReflectHistogramSnapshot(cx, snapshot, h);
 }
@@ -259,7 +259,7 @@ WrapAndReturnHistogram(Histogram *h, JSContext *cx, jsval *ret)
 }
 
 TelemetryImpl::TelemetryImpl():
-mCanRecord(true)
+mCanRecord(XRE_GetProcessType() == GeckoProcessType_Default)
 {
   mHistogramMap.Init(Telemetry::HistogramCount);
 }
@@ -333,13 +333,13 @@ TelemetryImpl::GetHistogramById(const nsACString &name, JSContext *cx, jsval *re
 }
 
 NS_IMETHODIMP
-TelemetryImpl::GetCanRecord(PRBool *ret) {
+TelemetryImpl::GetCanRecord(bool *ret) {
   *ret = mCanRecord;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TelemetryImpl::SetCanRecord(PRBool canRecord) {
+TelemetryImpl::SetCanRecord(bool canRecord) {
   mCanRecord = !!canRecord;
   return NS_OK;
 }
@@ -409,6 +409,21 @@ Accumulate(ID aHistogram, PRUint32 aSample)
   nsresult rv = GetHistogramByEnumId(aHistogram, &h);
   if (NS_SUCCEEDED(rv))
     h->Add(aSample);
+}
+
+void
+AccumulateTimeDelta(ID aHistogram, TimeStamp start, TimeStamp end)
+{
+  Accumulate(aHistogram,
+             static_cast<PRUint32>((end - start).ToMilliseconds()));
+}
+
+base::Histogram*
+GetHistogramById(ID id)
+{
+  Histogram *h = NULL;
+  GetHistogramByEnumId(id, &h);
+  return h;
 }
 
 } // namespace Telemetry

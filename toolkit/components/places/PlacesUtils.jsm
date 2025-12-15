@@ -315,9 +315,22 @@ var PlacesUtils = {
   //// nsIObserver
   observe: function PU_observe(aSubject, aTopic, aData)
   {
-    if (aTopic == this.TOPIC_SHUTDOWN) {
-      Services.obs.removeObserver(this, this.TOPIC_SHUTDOWN);
-      this._shutdownFunctions.forEach(function (aFunc) aFunc.apply(this), this);
+    switch (aTopic) {
+      case this.TOPIC_SHUTDOWN:
+        Services.obs.removeObserver(this, this.TOPIC_SHUTDOWN);
+        this._shutdownFunctions.forEach(function (aFunc) aFunc.apply(this), this);
+        if (this._bookmarksServiceObserversQueue.length > 0) {
+          Services.obs.removeObserver(this, "bookmarks-service-ready", false);
+          this._bookmarksServiceObserversQueue.length = 0;
+        }
+        break;
+      case "bookmarks-service-ready":
+        Services.obs.removeObserver(this, "bookmarks-service-ready", false);
+        while (this._bookmarksServiceObserversQueue.length > 0) {
+          let observer = this._bookmarksServiceObserversQueue.shift();
+          this.bookmarks.addObserver(observer, false);
+        }
+        break;
     }
   },
 
@@ -1722,8 +1735,7 @@ var PlacesUtils = {
    * Serialize a JS object to JSON
    */
   toJSONString: function PU_toJSONString(aObj) {
-    var JSON = Cc["@mozilla.org/dom/json;1"].createInstance(Ci.nsIJSON);
-    return JSON.encode(aObj);
+    return JSON.stringify(aObj);
   },
 
   /**
@@ -2117,7 +2129,56 @@ var PlacesUtils = {
         }
       }
     });
-  }
+  },
+
+  _isServiceInstantiated: function PU__isServiceInstantiated(aContractID) {
+    try {
+      return Components.manager
+                       .QueryInterface(Ci.nsIServiceManager)
+                       .isServiceInstantiatedByContractID(aContractID,
+                                                          Ci.nsISupports);
+    } catch (ex) {}
+    return false;
+  },
+
+  /**
+   * Lazily adds a bookmarks observer, waiting for the bookmarks service to be
+   * alive before registering the observer.  This is especially useful in the
+   * startup path, to avoid initializing the service just to add an observer.
+   *
+   * @param aObserver
+   *        Object implementing nsINavBookmarkObserver
+   * @note Correct functionality of lazy observers relies on the fact Places
+   *       notifies categories before real observers, and uses
+   *       PlacesCategoriesStarter component to kick-off the registration.
+   */
+  _bookmarksServiceObserversQueue: [],
+  addLazyBookmarkObserver:
+  function PU_addLazyBookmarkObserver(aObserver) {
+    if (this._isServiceInstantiated("@mozilla.org/browser/nav-bookmarks-service;1")) {
+      this.bookmarks.addObserver(aObserver, false);
+      return;
+    }
+    Services.obs.addObserver(this, "bookmarks-service-ready", false);
+    this._bookmarksServiceObserversQueue.push(aObserver);
+  },
+  /**
+   * Removes a bookmarks observer added through addLazyBookmarkObserver.
+   *
+   * @param aObserver
+   *        Object implementing nsINavBookmarkObserver
+   */
+  removeLazyBookmarkObserver:
+  function PU_removeLazyBookmarkObserver(aObserver) {
+    if (this._bookmarksServiceObserversQueue.length == 0) {
+      this.bookmarks.removeObserver(aObserver, false);
+      return;
+    }
+    let index = this._bookmarksServiceObserversQueue.indexOf(aObserver);
+    if (index != -1) {
+      this._bookmarksServiceObserversQueue.splice(index, 1);
+    }
+  },
 };
 
 /**
@@ -2165,10 +2226,6 @@ XPCOMUtils.defineLazyGetter(PlacesUtils, "bhistory", function() {
 
 XPCOMUtils.defineLazyGetter(PlacesUtils, "ghistory2", function() {
   return PlacesUtils.history.QueryInterface(Ci.nsIGlobalHistory2);
-});
-
-XPCOMUtils.defineLazyGetter(PlacesUtils, "ghistory3", function() {
-  return PlacesUtils.history.QueryInterface(Ci.nsIGlobalHistory3);
 });
 
 XPCOMUtils.defineLazyServiceGetter(PlacesUtils, "favicons",
@@ -2225,7 +2282,7 @@ XPCOMUtils.defineLazyServiceGetter(this, "focusManager",
 function updateCommandsOnActiveWindow()
 {
   let win = focusManager.activeWindow;
-  if (win && win instanceof Ci.nsIDOMWindowInternal) {
+  if (win && win instanceof Ci.nsIDOMWindow) {
     // Updating "undo" will cause a group update including "redo".
     win.updateCommands("undo");
   }
@@ -2264,7 +2321,9 @@ BaseTransaction.prototype = {
 
 function PlacesAggregatedTransaction(aName, aTransactions)
 {
-  this._transactions = aTransactions;
+  // Copy the transactions array to decouple it from its prototype, which
+  // otherwise keeps alive its associated global object.
+  this._transactions = Array.slice(aTransactions);
   this._name = aName;
   this.container = -1;
 
@@ -2351,9 +2410,12 @@ function PlacesCreateFolderTransaction(aName, aContainer, aIndex, aAnnotations,
   this._name = aName;
   this._container = aContainer;
   this._index = typeof(aIndex) == "number" ? aIndex : -1;
-  this._annotations = aAnnotations;
   this._id = null;
-  this.childTransactions = aChildItemsTransactions || [];
+  // Copy the array to decouple it from its prototype, which otherwise keeps
+  // alive its associated global object.
+  this._annotations = aAnnotations ? Array.slice(aAnnotations) : [];
+  this.childTransactions = aChildItemsTransactions ?
+                             Array.slice(aChildItemsTransactions) : [];
 }
 
 PlacesCreateFolderTransaction.prototype = {
@@ -2438,8 +2500,10 @@ function PlacesCreateBookmarkTransaction(aURI, aContainer, aIndex, aTitle,
   this._index = typeof(aIndex) == "number" ? aIndex : -1;
   this._title = aTitle;
   this._keyword = aKeyword;
-  this._annotations = aAnnotations;
-  this.childTransactions = aChildTransactions || [];
+  // Copy the array to decouple it from its prototype, which otherwise keeps
+  // alive its associated global object.
+  this._annotations = aAnnotations ? Array.slice(aAnnotations) : [];
+  this.childTransactions = aChildTransactions ? Array.slice(aChildTransactions) : [];
 }
 
 PlacesCreateBookmarkTransaction.prototype = {
@@ -2560,7 +2624,9 @@ function PlacesCreateLivemarkTransaction(aFeedURI, aSiteURI, aName, aContainer,
   this._name = aName;
   this._container = aContainer;
   this._index = typeof(aIndex) == "number" ? aIndex : -1;
-  this._annotations = aAnnotations;
+  // Copy the array to decouple it from its prototype, which otherwise keeps
+  // alive its associated global object.
+  this._annotations = aAnnotations ? Array.slice(aAnnotations) : [];
 }
 
 PlacesCreateLivemarkTransaction.prototype = {
@@ -3255,7 +3321,7 @@ PlacesSortFolderByNameTransaction.prototype = {
         if (preSep.length > 0) {
           preSep.sort(sortingMethod);
           newOrder = newOrder.concat(preSep);
-          preSep.splice(0);
+          preSep.splice(0, preSep.length);
         }
         newOrder.push(item);
       }
@@ -3309,8 +3375,10 @@ PlacesSortFolderByNameTransaction.prototype = {
 function PlacesTagURITransaction(aURI, aTags)
 {
   this._uri = aURI;
-  this._tags = aTags;
   this._unfiledItemId = -1;
+  // Copy the array to decouple it from its prototype, which otherwise keeps
+  // alive its associated global object.
+  this._tags = Array.slice(aTags);
 }
 
 PlacesTagURITransaction.prototype = {
@@ -3363,11 +3431,14 @@ function PlacesUntagURITransaction(aURI, aTags)
 {
   this._uri = aURI;
   if (aTags) {    
+    // Copy the array to decouple it from its prototype, which otherwise keeps
+    // alive its associated global object.
+    this._tags = Array.slice(aTags);
+
     // Within this transaction, we cannot rely on tags given by itemId
     // since the tag containers may be gone after we call untagURI.
     // Thus, we convert each tag given by its itemId to name.
-    this._tags = aTags;
-    for (let i = 0; i < aTags.length; ++i) {
+    for (let i = 0; i < this._tags.length; ++i) {
       if (typeof(this._tags[i]) == "number")
         this._tags[i] = PlacesUtils.bookmarks.getItemTitle(this._tags[i]);
     }

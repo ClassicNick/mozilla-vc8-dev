@@ -53,8 +53,8 @@ namespace mozilla {
 namespace scache {
 
 NS_EXPORT nsresult
-NS_NewObjectInputStreamFromBuffer(char* buffer, PRUint32 len, 
-                                  nsIObjectInputStream** stream)
+NewObjectInputStreamFromBuffer(char* buffer, PRUint32 len, 
+                               nsIObjectInputStream** stream)
 {
   nsCOMPtr<nsIStringInputStream> stringStream
     = do_CreateInstance("@mozilla.org/io/string-input-stream;1");
@@ -69,9 +69,9 @@ NS_NewObjectInputStreamFromBuffer(char* buffer, PRUint32 len,
 }
 
 NS_EXPORT nsresult
-NS_NewObjectOutputWrappedStorageStream(nsIObjectOutputStream **wrapperStream,
-                                       nsIStorageStream** stream,
-                                       PRBool wantDebugStream)
+NewObjectOutputWrappedStorageStream(nsIObjectOutputStream **wrapperStream,
+                                    nsIStorageStream** stream,
+                                    bool wantDebugStream)
 {
   nsCOMPtr<nsIStorageStream> storageStream;
 
@@ -106,8 +106,8 @@ NS_NewObjectOutputWrappedStorageStream(nsIObjectOutputStream **wrapperStream,
 }
 
 NS_EXPORT nsresult
-NS_NewBufferFromStorageStream(nsIStorageStream *storageStream, 
-                              char** buffer, PRUint32* len) 
+NewBufferFromStorageStream(nsIStorageStream *storageStream, 
+                           char** buffer, PRUint32* len) 
 {
   nsresult rv;
   nsCOMPtr<nsIInputStream> inputStream;
@@ -134,7 +134,7 @@ NS_NewBufferFromStorageStream(nsIStorageStream *storageStream,
 
 static const char baseName[2][5] = { "gre/", "app/" };
 
-static inline PRBool
+static inline bool
 canonicalizeBase(nsCAutoString &spec,
                  nsACString &out,
                  mozilla::Omnijar::Type aType)
@@ -143,15 +143,15 @@ canonicalizeBase(nsCAutoString &spec,
     nsresult rv = mozilla::Omnijar::GetURIString(aType, base);
 
     if (NS_FAILED(rv) || !base.Length())
-        return PR_FALSE;
+        return false;
 
-    if (base.Compare(spec.get(), PR_FALSE, base.Length()))
-        return PR_FALSE;
+    if (base.Compare(spec.get(), false, base.Length()))
+        return false;
 
     out.Append("/resource/");
     out.Append(baseName[aType]);
     out.Append(Substring(spec, base.Length()));
-    return PR_TRUE;
+    return true;
 }
 
 /**
@@ -180,9 +180,9 @@ canonicalizeBase(nsCAutoString &spec,
  *     jsloader/$PROFILE_DIR/extensions/some.xpi/components/component.js
  */
 NS_EXPORT nsresult
-NS_PathifyURI(nsIURI *in, nsACString &out)
+PathifyURI(nsIURI *in, nsACString &out)
 {
-    PRBool equals;
+    bool equals;
     nsresult rv;
     nsCOMPtr<nsIURI> uri = in;
     nsCAutoString spec;
@@ -240,7 +240,7 @@ NS_PathifyURI(nsIURI *in, nsACString &out)
             rv = jarURI->GetJARFile(getter_AddRefs(jarFileURI));
             NS_ENSURE_SUCCESS(rv, rv);
 
-            rv = NS_PathifyURI(jarFileURI, out);
+            rv = PathifyURI(jarFileURI, out);
             NS_ENSURE_SUCCESS(rv, rv);
 
             nsCAutoString path;

@@ -58,7 +58,7 @@ NS_IMPL_ISUPPORTS3(WyciwygChannelChild,
 
 WyciwygChannelChild::WyciwygChannelChild()
   : mStatus(NS_OK)
-  , mIsPending(PR_FALSE)
+  , mIsPending(false)
   , mCanceled(false)
   , mLoadFlags(LOAD_NORMAL)
   , mContentLength(-1)
@@ -274,7 +274,7 @@ WyciwygChannelChild::OnStopRequest(const nsresult& statusCode)
 
     mState = WCC_ONSTOP;
 
-    mIsPending = PR_FALSE;
+    mIsPending = false;
 
     if (!mCanceled)
       mStatus = statusCode;
@@ -357,7 +357,7 @@ WyciwygChannelChild::GetName(nsACString & aName)
 
 /* boolean isPending (); */
 NS_IMETHODIMP
-WyciwygChannelChild::IsPending(PRBool *aIsPending)
+WyciwygChannelChild::IsPending(bool *aIsPending)
 {
   *aIsPending = mIsPending;
   return NS_OK;
@@ -535,6 +535,24 @@ WyciwygChannelChild::SetContentCharset(const nsACString & aContentCharset)
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+WyciwygChannelChild::GetContentDisposition(PRUint32 *aContentDisposition)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+WyciwygChannelChild::GetContentDispositionFilename(nsAString &aContentDispositionFilename)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+WyciwygChannelChild::GetContentDispositionHeader(nsACString &aContentDispositionHeader)
+{
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
 /* attribute long contentLength; */
 NS_IMETHODIMP
 WyciwygChannelChild::GetContentLength(PRInt32 *aContentLength)
@@ -571,7 +589,7 @@ WyciwygChannelChild::AsyncOpen(nsIStreamListener *aListener, nsISupports *aConte
 
   mListener = aListener;
   mListenerContext = aContext;
-  mIsPending = PR_TRUE;
+  mIsPending = true;
 
   if (mLoadGroup)
     mLoadGroup->AddRequest(this, nsnull);

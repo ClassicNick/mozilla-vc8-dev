@@ -38,6 +38,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/layers/PLayers.h"
 #include "mozilla/layers/ShadowLayers.h"
 
 #include "ImageLayers.h"
@@ -45,7 +46,9 @@
 #include "gfxPlatform.h"
 #include "ReadbackLayer.h"
 #include "gfxUtils.h"
+#include "nsPrintfCString.h"
 #include "mozilla/Util.h"
+#include "LayerSorter.h"
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
@@ -215,8 +218,8 @@ TemporaryRef<DrawTarget>
 LayerManager::CreateDrawTarget(const IntSize &aSize,
                                SurfaceFormat aFormat)
 {
-  // Right now this doesn't work on the general layer manager.
-  return NULL;
+  return gfxPlatform::GetPlatform()->
+    CreateOffscreenDrawTarget(aSize, aFormat);
 }
 
 #ifdef DEBUG
@@ -229,13 +232,13 @@ LayerManager::Mutated(Layer* aLayer)
 //--------------------------------------------------
 // Layer
 
-PRBool
+bool
 Layer::CanUseOpaqueSurface()
 {
   // If the visible content in the layer is opaque, there is no need
   // for an alpha channel.
   if (GetContentFlags() & CONTENT_OPAQUE)
-    return PR_TRUE;
+    return true;
   // Also, if this layer is the bottommost layer in a container which
   // doesn't need an alpha channel, we can use an opaque surface for this
   // layer too. Any transparent areas must be covered by something else
@@ -389,7 +392,13 @@ Layer::GetEffectiveOpacity()
   return opacity;
 }
 
-PRBool
+void
+ContainerLayer::FillSpecificAttributes(SpecificLayerAttributes& aAttrs)
+{
+  aAttrs = ContainerLayerAttributes(GetFrameMetrics());
+}
+
+bool
 ContainerLayer::HasMultipleChildren()
 {
   PRUint32 count = 0;
@@ -401,10 +410,33 @@ ContainerLayer::HasMultipleChildren()
       continue;
     ++count;
     if (count > 1)
-      return PR_TRUE;
+      return true;
   }
 
-  return PR_FALSE;
+  return false;
+}
+
+void
+ContainerLayer::SortChildrenBy3DZOrder(nsTArray<Layer*>& aArray)
+{
+  nsAutoTArray<Layer*, 10> toSort;
+
+  for (Layer* l = GetFirstChild(); l; l = l->GetNextSibling()) {
+    ContainerLayer* container = l->AsContainerLayer();
+    if (container && container->GetContentFlags() & CONTENT_PRESERVE_3D) {
+      toSort.AppendElement(l);
+    } else {
+      if (toSort.Length() > 0) {
+        SortLayersBy3DZOrder(toSort);
+        aArray.MoveElementsFrom(toSort);
+      }
+      aArray.AppendElement(l);
+    }
+  }
+  if (toSort.Length() > 0) {
+    SortLayersBy3DZOrder(toSort);
+    aArray.MoveElementsFrom(toSort);
+  }
 }
 
 void
@@ -412,14 +444,15 @@ ContainerLayer::DefaultComputeEffectiveTransforms(const gfx3DMatrix& aTransformT
 {
   gfxMatrix residual;
   gfx3DMatrix idealTransform = GetLocalTransform()*aTransformToSurface;
+  idealTransform.ProjectTo2D();
   mEffectiveTransform = SnapTransform(idealTransform, gfxRect(0, 0, 0, 0), &residual);
 
-  PRBool useIntermediateSurface;
+  bool useIntermediateSurface;
   float opacity = GetEffectiveOpacity();
   if (opacity != 1.0f && HasMultipleChildren()) {
-    useIntermediateSurface = PR_TRUE;
+    useIntermediateSurface = true;
   } else {
-    useIntermediateSurface = PR_FALSE;
+    useIntermediateSurface = false;
     gfxMatrix contTransform;
     if (!mEffectiveTransform.Is2D(&contTransform) ||
 #ifdef MOZ_GFX_OPTIMIZE_MOBILE
@@ -434,7 +467,7 @@ ContainerLayer::DefaultComputeEffectiveTransforms(const gfx3DMatrix& aTransformT
          * the calculations performed by CalculateScissorRect above.
          */
         if (clipRect && !clipRect->IsEmpty() && !child->GetVisibleRegion().IsEmpty()) {
-          useIntermediateSurface = PR_TRUE;
+          useIntermediateSurface = true;
           break;
         }
       }
@@ -477,7 +510,7 @@ void
 ContainerLayer::DidInsertChild(Layer* aLayer)
 {
   if (aLayer->GetType() == TYPE_READBACK) {
-    mMayHaveReadbackChild = PR_TRUE;
+    mMayHaveReadbackChild = true;
   }
 }
 
@@ -494,7 +527,6 @@ PlanarYCbCrImage::CopyData(Data& aDest, gfxIntSize& aDestSize,
 {
   aDest = aData;
 
-  /* We always have a multiple of 16 width so we can force the stride */
   aDest.mYStride = aDest.mYSize.width;
   aDest.mCbCrStride = aDest.mCbCrSize.width;
 

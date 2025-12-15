@@ -6,12 +6,12 @@ Components.utils.import("resource://gre/modules/NetUtil.jsm");
 
 var pathParts = gTestPath.split("/");
 // Drop the test filename
-pathParts.splice(pathParts.length - 1);
+pathParts.splice(pathParts.length - 1, pathParts.length);
 
 var gTestInWindow = /-window$/.test(pathParts[pathParts.length - 1]);
 
 // Drop the UI type
-pathParts.splice(pathParts.length - 1);
+pathParts.splice(pathParts.length - 1, pathParts.length);
 pathParts.push("browser");
 
 const RELATIVE_DIR = pathParts.slice(4).join("/") + "/";
@@ -20,11 +20,13 @@ const TESTROOT = "http://example.com/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/" + RELATIVE_DIR;
 const CHROMEROOT = pathParts.join("/") + "/";
 const PREF_DISCOVERURL = "extensions.webservice.discoverURL";
+const PREF_UPDATEURL = "extensions.update.url";
 
 const MANAGER_URI = "about:addons";
 const INSTALL_URI = "chrome://mozapps/content/xpinstall/xpinstallConfirm.xul";
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
 const PREF_SEARCH_MAXRESULTS = "extensions.getAddons.maxResults";
+const PREF_STRICT_COMPAT = "extensions.strictCompatibility";
 
 var gPendingTests = [];
 var gTestsRun = 0;
@@ -33,6 +35,7 @@ var gTestStart = null;
 var gUseInContentUI = !gTestInWindow && ("switchToTabHavingURI" in window);
 
 var gDiscoveryURL = Services.prefs.getCharPref(PREF_DISCOVERURL);
+var gUpdateURL = Services.prefs.getCharPref(PREF_UPDATEURL);
 
 // Turn logging on for all tests
 Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
@@ -42,11 +45,13 @@ registerCleanupFunction(function() {
   Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
   try {
     Services.prefs.clearUserPref(PREF_SEARCH_MAXRESULTS);
-  }
-  catch (e) {
-  }
+  } catch (e) {}
+  try {
+    Services.prefs.clearUserPref(PREF_STRICT_COMPAT);
+  } catch (e) {}
 
   Services.prefs.setCharPref(PREF_DISCOVERURL, gDiscoveryURL);
+  Services.prefs.setCharPref(PREF_UPDATEURL, gUpdateURL);
 
   // Throw an error if the add-ons manager window is open anywhere
   var windows = Services.wm.getEnumerator("Addons:Manager");
@@ -304,7 +309,7 @@ function wait_for_window_open(aCallback) {
       Services.wm.removeListener(this);
 
       let domwindow = aWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Ci.nsIDOMWindowInternal);
+                             .getInterface(Ci.nsIDOMWindow);
       domwindow.addEventListener("load", function() {
         domwindow.removeEventListener("load", arguments.callee, false);
         executeSoon(function() {
@@ -627,6 +632,10 @@ MockProvider.prototype = {
       }
       if (!addon.optionsType && !!addon.optionsURL)
         addon.optionsType = AddonManager.OPTIONS_TYPE_DIALOG;
+
+      // Make sure the active state matches the passed in properties
+      addon.isActive = addon.shouldBeActive;
+
       this.addAddon(addon);
       newAddons.push(addon);
     }, this);

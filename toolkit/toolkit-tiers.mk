@@ -74,12 +74,7 @@ endif
 #
 
 ifndef MOZ_NATIVE_JPEG
-tier_platform_dirs	+= jpeg
-endif
-
-# Installer needs standalone libjar, hence standalone zlib
-ifdef MOZ_INSTALLER
-tier_platform_dirs	+= modules/zlib/standalone
+tier_platform_dirs	+= media/libjpeg
 endif
 
 ifdef MOZ_UPDATER
@@ -99,7 +94,8 @@ tier_platform_dirs	+= gfx/qcms
 tier_platform_dirs += ipc js/ipc js/jetpack
 
 tier_platform_dirs += \
-		js/src/xpconnect \
+		hal \
+		js/xpconnect \
 		intl/chardet \
 		$(NULL)
 
@@ -111,7 +107,7 @@ endif
 
 tier_platform_dirs	+= \
 		modules/libjar \
-		db \
+		storage \
 		$(NULL)
 
 ifdef MOZ_PERMISSIONS
@@ -121,13 +117,7 @@ tier_platform_dirs += \
 		$(NULL)
 endif
 
-ifdef MOZ_STORAGE
-tier_platform_dirs += storage
-endif
-
-ifdef MOZ_RDF
 tier_platform_dirs += rdf
-endif
 
 ifdef MOZ_JSDEBUGGER
 tier_platform_dirs += js/jsd
@@ -165,13 +155,16 @@ tier_platform_dirs += \
 		$(NULL)
 endif
 
+ifndef MOZ_NATIVE_PNG
+tier_platform_dirs += media/libpng
+endif
+
 tier_platform_dirs	+= \
 		uriloader \
-		modules/libimg \
 		caps \
 		parser \
 		gfx \
-		modules/libpr0n \
+		image \
 		dom \
 		view \
 		widget \
@@ -202,6 +195,8 @@ ifdef MOZ_JPROF
 tier_platform_dirs        += tools/jprof
 endif
 
+tier_platform_dirs  += tools/profiler
+
 tier_platform_dirs	+= xpfe/components
 
 ifdef MOZ_ENABLE_XREMOTE
@@ -227,6 +222,8 @@ endif
 tier_platform_dirs += services/crypto/component
 
 tier_platform_dirs += startupcache
+
+tier_platform_dirs += js/ductwork/debugger
 
 ifdef APP_LIBXUL_STATICDIRS
 # Applications can cheat and ask for code to be
@@ -268,8 +265,7 @@ endif
 
 ifdef ENABLE_TESTS
 tier_platform_dirs += testing/mochitest
-tier_platform_dirs += testing/xpcshell 
-tier_platform_dirs += testing/mozmill
+tier_platform_dirs += testing/xpcshell
 tier_platform_dirs += testing/tools/screenshot
 endif
 

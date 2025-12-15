@@ -106,11 +106,11 @@ public:
    *
    * \return True is initialization was succesful, false when it was not.
    */
-  PRBool Initialize() {
+  bool Initialize() {
     return Initialize(CreateContext());
   }
 
-  PRBool Initialize(nsRefPtr<GLContext> aContext);
+  bool Initialize(nsRefPtr<GLContext> aContext);
 
   /**
    * Sets the clipping region for this layer manager. This is important on 
@@ -126,6 +126,11 @@ public:
   /**
    * LayerManager implementation.
    */
+  virtual ShadowLayerManager* AsShadowManager()
+  {
+    return this;
+  }
+
   void BeginTransaction();
 
   void BeginTransactionWithTarget(gfxContext* aTarget);
@@ -134,9 +139,18 @@ public:
 
   virtual bool EndEmptyTransaction();
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
-                              void* aCallbackData);
+                              void* aCallbackData,
+                              EndTransactionFlags aFlags = END_DEFAULT);
 
   virtual void SetRoot(Layer* aLayer) { mRoot = aLayer; }
+
+  virtual bool CanUseCanvasLayerForSize(const gfxIntSize &aSize)
+  {
+      if (!mGLContext)
+          return false;
+      PRInt32 maxSize = mGLContext->GetMaxTextureSize();
+      return aSize <= gfxIntSize(maxSize, maxSize);
+  }
 
   virtual already_AddRefed<ThebesLayer> CreateThebesLayer();
 
@@ -172,7 +186,7 @@ public:
   /**
    * Helper methods.
    */
-  void MakeCurrent(PRBool aForce = PR_FALSE) {
+  void MakeCurrent(bool aForce = false) {
     if (mDestroyed) {
       NS_WARNING("Call on destroyed layer manager");
       return;
@@ -196,7 +210,7 @@ public:
   ColorTextureLayerProgram *GetBGRXLayerProgram() {
     return static_cast<ColorTextureLayerProgram*>(mColorPrograms[gl::BGRXLayerProgramType]);
   }
-  ColorTextureLayerProgram *GetBasicLayerProgram(PRBool aOpaque, PRBool aIsRGB)
+  ColorTextureLayerProgram *GetBasicLayerProgram(bool aOpaque, bool aIsRGB)
   {
     if (aIsRGB) {
       return aOpaque
@@ -394,8 +408,6 @@ public:
   gfxMatrix& GetWorldTransform(void);
   void WorldTransformRect(nsIntRect& aRect);
 
-  void SetRenderFPS(bool aRenderFPS) { mRenderFPS = aRenderFPS; };
-
 private:
   /** Widget associated with this layer manager */
   nsIWidget *mWidget;
@@ -442,7 +454,7 @@ private:
   nsIntRegion mClippingRegion;
 
   /** Misc */
-  PRPackedBool mHasBGRA;
+  bool mHasBGRA;
 
   /** Current root layer. */
   LayerOGL *RootLayer() const;
@@ -493,11 +505,13 @@ private:
         , fps(0)
         , initialized(false)
         , fcount(0)
-      {}
+      {
+        last = TimeStamp::Now();
+      }
       void DrawFPS(GLContext*, CopyProgram*);
   } mFPS;
 
-  bool mRenderFPS;
+  static bool sDrawFPS;
 };
 
 /**
@@ -507,7 +521,7 @@ class LayerOGL
 {
 public:
   LayerOGL(LayerManagerOGL *aManager)
-    : mOGLManager(aManager), mDestroyed(PR_FALSE)
+    : mOGLManager(aManager), mDestroyed(false)
   { }
 
   virtual ~LayerOGL() { }
@@ -531,10 +545,9 @@ public:
   LayerManagerOGL* OGLManager() const { return mOGLManager; }
   GLContext *gl() const { return mOGLManager->gl(); }
 
-  void ApplyFilter(gfxPattern::GraphicsFilter aFilter);
 protected:
   LayerManagerOGL *mOGLManager;
-  PRPackedBool mDestroyed;
+  bool mDestroyed;
 };
 
 } /* layers */

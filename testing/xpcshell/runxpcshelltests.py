@@ -38,7 +38,7 @@
 #
 # ***** END LICENSE BLOCK ***** */
 
-import re, sys, os, os.path, logging, shutil, signal, math
+import re, sys, os, os.path, logging, shutil, signal, math, time
 from glob import glob
 from optparse import OptionParser
 from subprocess import Popen, PIPE, STDOUT
@@ -162,10 +162,7 @@ class XPCShellTests(object):
     self.env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
     # Capturing backtraces is very slow on some platforms, and it's
     # disabled by automation.py too
-    if not (sys.platform == 'osx' or sys.platform == "darwin"):
-      # XXX automation.py has this odd special case; without it, bug
-      # 618052 seems to be exacerbated
-      self.env["NS_TRACE_MALLOC_DISABLE_STACKS"] = "1"
+    self.env["NS_TRACE_MALLOC_DISABLE_STACKS"] = "1"
 
     if sys.platform == 'win32':
       self.env["PATH"] = self.env["PATH"] + ";" + self.xrePath
@@ -220,7 +217,9 @@ class XPCShellTests(object):
     """
     # - NOTE: if you rename/add any of the constants set here, update
     #   do_load_child_test_harness() in head.js
-    self.xpcsCmd = [self.xpcshell, '-g', self.xrePath, '-r', self.httpdManifest, '-j', '-s'] + \
+    if not self.appPath:
+        self.appPath = self.xrePath
+    self.xpcsCmd = [self.xpcshell, '-g', self.xrePath, '-a', self.appPath, '-r', self.httpdManifest, '-j', '-s'] + \
         ['-e', 'const _HTTPD_JS_PATH = "%s";' % self.httpdJSPath,
          '-e', 'const _HEAD_JS_PATH = "%s";' % self.headJSPath,
          '-f', os.path.join(self.testharnessdir, 'head.js')]
@@ -259,7 +258,7 @@ class XPCShellTests(object):
       test['head'] is a whitespace delimited list of head files.
       return the list of head files as paths including the subdir if the head file exists
 
-      On a remote system, this is overloaded to list files in a remote directory structure.
+      On a remote system, this may be overloaded to list files in a remote directory structure.
     """
     return [os.path.join(test['here'], f).strip() for f in sorted(test['head'].split(' ')) if os.path.isfile(os.path.join(test['here'], f))]
 
@@ -268,7 +267,7 @@ class XPCShellTests(object):
       test['tail'] is a whitespace delimited list of head files.
       return the list of tail files as paths including the subdir if the tail file exists
 
-      On a remote system, this is overloaded to list files in a remote directory structure.
+      On a remote system, this may be overloaded to list files in a remote directory structure.
     """
     return [os.path.join(test['here'], f).strip() for f in sorted(test['tail'].split(' ')) if os.path.isfile(os.path.join(test['here'], f))]
 
@@ -278,7 +277,7 @@ class XPCShellTests(object):
       When running check-interactive and check-one, the directory is well-defined and
       retained for inspection once the tests complete.
 
-      On a remote system, we overload this to use a remote path structure.
+      On a remote system, this may be overloaded to use a remote path structure.
     """
     if self.interactive or self.singleFile:
       profileDir = os.path.join(gettempdir(), self.profileName, "xpcshellprofile")
@@ -299,7 +298,7 @@ class XPCShellTests(object):
     """
       Enable leaks (only) detection to its own log file and set environment variables.
 
-      On a remote system, we overload this to use a remote filename and path structure
+      On a remote system, this may be overloaded to use a remote filename and path structure
     """
     filename = "runxpcshelltests_leaks.log"
 
@@ -379,16 +378,25 @@ class XPCShellTests(object):
              '-e', 'const _HEAD_FILES = [%s];' % cmdH,
              '-e', 'const _TAIL_FILES = [%s];' % cmdT]
 
-  def runTests(self, xpcshell, xrePath=None, symbolsPath=None,
+  def buildCmdTestFile(self, name):
+    """
+      Build the command line arguments for the test file.
+      On a remote system, this may be overloaded to use a remote path structure.
+    """
+    return ['-e', 'const _TEST_FILE = ["%s"];' %
+              replaceBackSlashes(name)]
+
+  def runTests(self, xpcshell, xrePath=None, appPath=None, symbolsPath=None,
                manifest=None, testdirs=[], testPath=None,
                interactive=False, verbose=False, keepGoing=False, logfiles=True,
                thisChunk=1, totalChunks=1, debugger=None,
                debuggerArgs=None, debuggerInteractive=False,
-               profileName=None, mozInfo=None):
+               profileName=None, mozInfo=None, **otherOptions):
     """Run xpcshell tests.
 
     |xpcshell|, is the xpcshell executable to use to run the tests.
     |xrePath|, if provided, is the path to the XRE to use.
+    |appPath|, if provided, is the path to an application directory.
     |symbolsPath|, if provided is the path to a directory containing
       breakpad symbols for processing crashes in tests.
     |manifest|, if provided, is a file containing a list of
@@ -407,12 +415,14 @@ class XPCShellTests(object):
     |profileName|, if set, specifies the name of the application for the profile
       directory if running only a subset of tests.
     |mozInfo|, if set, specifies specifies build configuration information, either as a filename containing JSON, or a dict.
+    |otherOptions| may be present for the convenience of subclasses
     """
 
     global gotSIGINT 
 
     self.xpcshell = xpcshell
     self.xrePath = xrePath
+    self.appPath = appPath
     self.symbolsPath = symbolsPath
     self.manifest = manifest
     self.testdirs = testdirs
@@ -487,11 +497,11 @@ class XPCShellTests(object):
       self.leakLogFile = self.setupLeakLogging()
 
       # The test file will have to be loaded after the head files.
-      cmdT = ['-e', 'const _TEST_FILE = ["%s"];' %
-                replaceBackSlashes(name)]
+      cmdT = self.buildCmdTestFile(name)
 
       try:
         self.log.info("TEST-INFO | %s | running test ..." % name)
+        startTime = time.time()
 
         proc = self.launchProcess(cmdH + cmdT + self.xpcsRunArgs,
                     stdout=pStdout, stderr=pStderr, env=self.env, cwd=testdir)
@@ -510,8 +520,9 @@ class XPCShellTests(object):
         def print_stdout(stdout):
           """Print stdout line-by-line to avoid overflowing buffers."""
           self.log.info(">>>>>>>")
-          for line in stdout.splitlines():
-            self.log.info(line)
+          if (stdout):
+            for line in stdout.splitlines():
+              self.log.info(line)
           self.log.info("<<<<<<<")
 
         result = not ((self.getReturnCode(proc) != 0) or
@@ -525,7 +536,8 @@ class XPCShellTests(object):
           print_stdout(stdout)
           self.failCount += 1
         else:
-          self.log.info("TEST-%s | %s | test passed" % ("PASS" if expected else "KNOWN-FAIL", name))
+          timeTaken = (time.time() - startTime) * 1000
+          self.log.info("TEST-%s | %s | test passed (time: %.3fms)" % ("PASS" if expected else "KNOWN-FAIL", name, timeTaken))
           if verbose:
             print_stdout(stdout)
           if expected:
@@ -566,8 +578,8 @@ INFO | Failed: %d
 INFO | Todo: %d""" % (self.passCount, self.failCount, self.todoCount))
 
     if gotSIGINT and not keepGoing:
-      log.error("TEST-UNEXPECTED-FAIL | Received SIGINT (control-C), so stopped run. " \
-            "(Use --keep-going to keep running tests after killing one with SIGINT)")
+      self.log.error("TEST-UNEXPECTED-FAIL | Received SIGINT (control-C), so stopped run. " \
+                     "(Use --keep-going to keep running tests after killing one with SIGINT)")
       return False
     return self.failCount == 0
 
@@ -577,6 +589,9 @@ class XPCShellOptions(OptionParser):
     OptionParser.__init__(self)
 
     addCommonOptions(self)
+    self.add_option("--app-path",
+                    type="string", dest="appPath", default=None,
+                    help="application directory (as opposed to XRE directory)")
     self.add_option("--interactive",
                     action="store_true", dest="interactive", default=False,
                     help="don't automatically run tests, drop to an xpcshell prompt")

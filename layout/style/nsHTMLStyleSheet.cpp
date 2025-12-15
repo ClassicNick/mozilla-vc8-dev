@@ -153,7 +153,7 @@ MappedAttrTable_ClearEntry(PLDHashTable *table, PLDHashEntryHdr *hdr)
   memset(entry, 0, sizeof(MappedAttrTableEntry));
 }
 
-static PRBool
+static bool
 MappedAttrTable_MatchEntry(PLDHashTable *table, const PLDHashEntryHdr *hdr,
                            const void *key)
 {
@@ -262,10 +262,10 @@ nsHTMLStyleSheet::HasStateDependentStyle(StateRuleProcessorData* aData)
   return nsRestyleHint(0);
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLStyleSheet::HasDocumentStateDependentStyle(StateRuleProcessorData* aData)
 {
-  return PR_FALSE;
+  return false;
 }
 
 /* virtual */ nsRestyleHint
@@ -305,12 +305,17 @@ nsHTMLStyleSheet::HasAttributeDependentStyle(AttributeRuleProcessorData* aData)
   return nsRestyleHint(0);
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLStyleSheet::MediumFeaturesChanged(nsPresContext* aPresContext)
 {
-  return PR_FALSE;
+  return false;
 }
 
+/* virtual */ PRInt64
+nsHTMLStyleSheet::SizeOf() const
+{
+  return 0; // nsHTMLStyleSheets are charged to the DOM, not layout
+}
 
 /* virtual */ void
 nsHTMLStyleSheet::RulesMatching(PseudoElementRuleProcessorData* aData)
@@ -354,27 +359,27 @@ nsHTMLStyleSheet::GetType(nsString& aType) const
   aType.AssignLiteral("text/html");
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLStyleSheet::HasRules() const
 {
-  return PR_TRUE; // We have rules at all reasonable times
+  return true; // We have rules at all reasonable times
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLStyleSheet::IsApplicable() const
 {
-  return PR_TRUE;
+  return true;
 }
 
 /* virtual */ void
-nsHTMLStyleSheet::SetEnabled(PRBool aEnabled)
+nsHTMLStyleSheet::SetEnabled(bool aEnabled)
 { // these can't be disabled
 }
 
-/* virtual */ PRBool
+/* virtual */ bool
 nsHTMLStyleSheet::IsComplete() const
 {
-  return PR_TRUE;
+  return true;
 }
 
 /* virtual */ void
@@ -477,7 +482,7 @@ already_AddRefed<nsMappedAttributes>
 nsHTMLStyleSheet::UniqueMappedAttributes(nsMappedAttributes* aMapped)
 {
   if (!mMappedAttrTable.ops) {
-    PRBool res = PL_DHashTableInit(&mMappedAttrTable, &MappedAttrTable_Ops,
+    bool res = PL_DHashTableInit(&mMappedAttrTable, &MappedAttrTable_Ops,
                                    nsnull, sizeof(MappedAttrTableEntry), 16);
     if (!res) {
       mMappedAttrTable.ops = nsnull;
@@ -528,6 +533,43 @@ nsHTMLStyleSheet::List(FILE* out, PRInt32 aIndent) const
 }
 #endif
 
+static
+PLDHashOperator
+GetHashEntryAttributesSize(PLDHashTable* aTable, PLDHashEntryHdr* aEntry,
+                           PRUint32 number, void* aArg)
+{
+  NS_PRECONDITION(aEntry, "The entry should not be null!");
+  NS_PRECONDITION(aArg, "The passed argument should not be null!");
+
+  MappedAttrTableEntry* entry = static_cast<MappedAttrTableEntry*>(aEntry);
+  PRInt64 size = *static_cast<PRInt64*>(aArg);
+
+  NS_ASSERTION(entry->mAttributes, "entry->mAttributes should not be null!");
+  size += entry->mAttributes->SizeOf();
+
+  return PL_DHASH_NEXT;
+}
+
+PRInt64
+nsHTMLStyleSheet::DOMSizeOf() const
+{
+  PRInt64 size = sizeof(*this);
+
+  size += mLinkRule ? sizeof(*mLinkRule.get()) : 0;
+  size += mVisitedRule ? sizeof(*mVisitedRule.get()) : 0;
+  size += mActiveRule ? sizeof(*mActiveRule.get()) : 0;
+  size += mTableQuirkColorRule ? sizeof(*mTableQuirkColorRule.get()) : 0;
+  size += mTableTHRule ? sizeof(*mTableTHRule.get()) : 0;
+
+  if (mMappedAttrTable.ops) {
+    size += PL_DHASH_TABLE_SIZE(&mMappedAttrTable) * sizeof(MappedAttrTableEntry);
+    PL_DHashTableEnumerate(const_cast<PLDHashTable*>(&mMappedAttrTable),
+                           GetHashEntryAttributesSize, &size);
+  }
+
+  return size;
+}
+
 // XXX For convenience and backwards compatibility
 nsresult
 NS_NewHTMLStyleSheet(nsHTMLStyleSheet** aInstancePtrResult, nsIURI* aURL, 
@@ -567,3 +609,4 @@ NS_NewHTMLStyleSheet(nsHTMLStyleSheet** aInstancePtrResult)
   *aInstancePtrResult = it; // NS_ADDREF above, or set to null by NS_RELEASE
   return rv;
 }
+

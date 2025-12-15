@@ -72,7 +72,17 @@ pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.
 
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
+pref("browser.viewport.desktopWidth", 980);
 
+#ifndef ANDROID
+#ifndef MOZ_PLATFORM_MAEMO
+// On desktop builds, simulate an MDPI tablet by default.
+pref("layout.css.dpi", 160);
+#else
+// Maemo X11 lies about its dpi
+pref("layout.css.dpi", 240);
+#endif
+#endif
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
 
@@ -80,8 +90,8 @@ pref("ui.scrollbarsCanOverlapContent", 1);
 pref("ui.click_hold_context_menus", true);
 
 /* cache prefs */
-pref("browser.cache.disk.enable", false);
-pref("browser.cache.disk.capacity", 0); // kilobytes
+pref("browser.cache.disk.enable", true);
+pref("browser.cache.disk.capacity", 10240); // kilobytes
 pref("browser.cache.disk.smart_size.enabled", false);
 pref("browser.cache.disk.smart_size.first_run", false);
 
@@ -130,7 +140,6 @@ pref("browser.display.remotetabs.timeout", 10);
 /* session history */
 pref("browser.sessionhistory.max_total_viewers", 1);
 pref("browser.sessionhistory.max_entries", 50);
-pref("browser.sessionhistory.optimize_eviction", true);
 
 /* session store */
 pref("browser.sessionstore.resume_session_once", false);
@@ -163,6 +172,9 @@ pref("alerts.slideIncrement", 1);
 pref("alerts.slideIncrementTime", 10);
 pref("alerts.totalOpenTime", 6000);
 pref("alerts.height", 50);
+
+/* download helper */
+pref("browser.helperApps.deleteTempFileOnExit", false);
 
 /* password manager */
 pref("signon.rememberSignons", true);
@@ -214,6 +226,7 @@ pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/%LOCAL
 
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
+pref("extensions.compatability.locales.buildid", "0");
 
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
@@ -362,15 +375,10 @@ pref("privacy.item.geolocation", true);
 pref("privacy.item.siteSettings", true);
 pref("privacy.item.syncAccount", true);
 
-#ifdef MOZ_PLATFORM_MAEMO
 pref("plugins.force.wmode", "opaque");
-#endif
 
 // URL to the Learn More link XXX this is the firefox one.  Bug 495578 fixes this.
 pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
-
-// base url for the wifi geolocation network provider
-pref("geo.wifi.uri", "https://www.google.com/loc/json");
 
 // enable geo
 pref("geo.enabled", true);
@@ -382,13 +390,22 @@ pref("content.sink.pending_event_mode", 0);
 pref("content.sink.perf_deflect_count", 1000000);
 pref("content.sink.perf_parse_time", 50000000);
 
+// Disable methodjit in chrome to save memory
+pref("javascript.options.methodjit.chrome",  false);
+
 pref("javascript.options.mem.high_water_mark", 32);
+
+// Disable the JS engine's gc on memory pressure, since we do one in the mobile
+// browser (bug 669346).
+pref("javascript.options.gc_on_memory_pressure", false);
 
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
 pref("dom.max_script_run_time", 20);
 
 // JS error console
 pref("devtools.errorconsole.enabled", false);
+
+pref("browser.ui.layout.tablet", -1); // on: 1, off: 0, auto: -1
 
 // kinetic tweakables
 pref("browser.ui.kinetic.updateInterval", 16);
@@ -418,10 +435,14 @@ pref("browser.ui.touch.weight.visited", 120); // percentage
 // plugins
 #if MOZ_PLATFORM_MAEMO == 6
 pref("plugin.disable", false);
+pref("dom.ipc.plugins.enabled", true);
+#elifdef ANDROID
+pref("plugin.disable", false);
+pref("dom.ipc.plugins.enabled", false);
 #else
 pref("plugin.disable", true);
-#endif
 pref("dom.ipc.plugins.enabled", true);
+#endif
 
 // process priority
 // higher values give content process less CPU time
@@ -440,6 +461,7 @@ pref("app.support.baseURL", "http://support.mozilla.com/mobile");
 pref("app.feedbackURL", "http://input.mozilla.com/feedback/");
 pref("app.privacyURL", "http://www.mozilla.com/%LOCALE%/m/privacy.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
+pref("app.channelURL", "http://www.mozilla.org/%LOCALE%/firefox/channel/");
 #if MOZ_UPDATE_CHANNEL == beta
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/features/");
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/faq/");
@@ -531,8 +553,6 @@ pref("font.default.x-western", "SwissA");
 #endif
 
 #ifdef MOZ_SERVICES_SYNC
-pref("browser.sync.enabled", true);
-
 // sync service
 pref("services.sync.client.type", "mobile");
 pref("services.sync.registerEngines", "Tab,Bookmarks,Form,History,Password,Prefs");
@@ -549,6 +569,7 @@ pref("services.sync.prefs.sync.lightweightThemes.isThemeSelected", true);
 pref("services.sync.prefs.sync.lightweightThemes.usedThemes", true);
 pref("services.sync.prefs.sync.network.cookie.cookieBehavior", true);
 pref("services.sync.prefs.sync.permissions.default.image", true);
+pref("services.sync.prefs.sync.privacy.donottrackheader.enabled", true);
 pref("services.sync.prefs.sync.signon.rememberSignons", true);
 #endif
 
@@ -558,6 +579,8 @@ pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
 #if MOZ_PLATFORM_MAEMO == 6
+pref("layers.acceleration.disabled", false);
+#elifdef ANDROID
 pref("layers.acceleration.disabled", false);
 #else
 pref("layers.acceleration.disabled", true);
@@ -587,8 +610,8 @@ pref("image.mem.min_discard_timeout_ms", 10000);
 
 // enable touch events interfaces
 pref("dom.w3c_touch_events.enabled", true);
-pref("dom.w3c_touch_events.safetyX", 0); // escape borders in units of 1/240"
-pref("dom.w3c_touch_events.safetyY", 120); // escape borders in units of 1/240"
+pref("dom.w3c_touch_events.safetyX", 5); // escape borders in units of 1/240"
+pref("dom.w3c_touch_events.safetyY", 20); // escape borders in units of 1/240"
 
 #ifdef MOZ_SAFE_BROWSING
 // Safe browsing does nothing unless this pref is set
@@ -643,7 +666,18 @@ pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.goog
 
 // True if this is the first time we are showing about:firstrun
 pref("browser.firstrun.show.uidiscovery", true);
-pref("browser.firstrun.show.localepicker", true);
+pref("browser.firstrun.show.localepicker", false);
 
-// initiated by a user
-pref("content.ime.strict_policy", true);
+// True if you always want dump() to work
+//
+// On Android, you also need to do the following for the output
+// to show up in logcat:
+//
+// $ adb shell stop
+// $ adb shell setprop log.redirect-stdio true
+// $ adb shell start
+pref("browser.dom.window.dump.enabled", false);
+
+// controls if we want camera support
+pref("device.camera.enabled", true);
+pref("media.realtime_decoder.enabled", true);

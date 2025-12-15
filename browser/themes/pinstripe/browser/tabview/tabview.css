@@ -191,7 +191,7 @@ html[dir=rtl] .stack-trayed .tab-title {
 ----------------------------------*/
 
 .groupItem {
-  cursor: move;
+  cursor: pointer;
   background-color: rgb(240,240,240);
   border-radius: 0.4em;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
@@ -210,6 +210,17 @@ html[dir=rtl] .groupItem.activeGroupItem {
 
 .groupItem .close {
   z-index: 10;
+  top: 0px;
+  right: 0px;
+  width: 22px;
+  height: 22px;
+  background-position: bottom left;
+}
+
+html[dir=rtl] .groupItem .close {
+  right: auto;
+  left: 0px;
+  background-position: bottom right;
 }
 
 .phantom {
@@ -313,29 +324,6 @@ html[dir=rtl] .undo .close {
   opacity: 1.0;
 }
 
-/* InfoItems
-----------------------------------*/
-
-.info-item {
-  cursor: move;
-  border: 1px solid rgba(230,230,230,1);
-  background-color: rgba(248,248,248,1);
-  border-radius: 0.4em;
-  box-shadow:
-    inset rgba(255, 255, 255, 0.6) 0 0 0 2px,
-    rgba(0,0,0, .2) 1px 1px 3px;
-}
-
-html[dir=rtl] .info-item {
-  box-shadow:
-    inset rgba(255, 255, 255, 0.6) 0 0 0 2px,
-    rgba(0,0,0, .2) -1px 1px 3px;
-}
-
-.intro {
-  margin: 10px;
-}
-
 /* Trenches
 ----------------------------------*/
 
@@ -376,25 +364,6 @@ html[dir=rtl] .guideTrench {
 /* Other
 ----------------------------------*/
 
-.newTabButton {
-  width: 16px;
-  height: 15px;
-  bottom: 10px;
-  left: 10px;
-  cursor: pointer;
-  opacity: .3;
-  background-image: url(chrome://browser/skin/tabview/new-tab.png);
-}
-
-html[dir=rtl] .newTabButton {
-  left: auto;
-  right: 10px;
-}
-
-.newTabButton:hover {
-  opacity: 1;
-}
-
 .active {
   box-shadow: 5px 5px 3px rgba(0,0,0,.5);
 }
@@ -412,6 +381,7 @@ html[dir=rtl] .acceptsDrop {
 }
 
 .titlebar {
+  cursor: move;
   font-size: 12px;
   height: 18px;
 }
@@ -465,8 +435,8 @@ input.name:-moz-placeholder {
   padding: 1px;
   left: 0;
   top: 0;
-  width: 100%;
   height: 100%;
+  width: -moz-available;
   cursor: text;
 }
 
@@ -635,6 +605,10 @@ html[dir=rtl] #otherresults {
   -moz-margin-end: 5px;
 }
 
+#otherresults .label:-moz-window-inactive {
+  color: #404040;
+}
+
 .inlineMatch {
   background-color: #EBEBEB;
   border-radius: 0.4em;
@@ -655,10 +629,12 @@ html[dir=rtl] #otherresults {
   -moz-margin-end: 5px;
   position: relative;
   top: 2px;
+  width: 16px;
+  height: 16px;
 }
 
 .inlineMatch > span {
-  max-width:200px;
+  max-width: 200px;
   height: 15px;
 }
 

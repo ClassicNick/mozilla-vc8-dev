@@ -104,15 +104,9 @@ static qcms_transform *gCMSRGBTransform = nsnull;
 static qcms_transform *gCMSInverseRGBTransform = nsnull;
 static qcms_transform *gCMSRGBATransform = nsnull;
 
-static PRBool gCMSInitialized = PR_FALSE;
+static bool gCMSInitialized = false;
 static eCMSMode gCMSMode = eCMSMode_Off;
 static int gCMSIntent = -2;
-
-static const char *CMPrefName = "gfx.color_management.mode";
-static const char *CMPrefNameOld = "gfx.color_management.enabled";
-static const char *CMIntentPrefName = "gfx.color_management.rendering_intent";
-static const char *CMProfilePrefName = "gfx.color_management.display_profile";
-static const char *CMForceSRGBPrefName = "gfx.color_management.force_srgb";
 
 static void ShutdownCMS();
 static void MigratePrefs();
@@ -324,7 +318,7 @@ gfxPlatform::Init()
 
     /* Create and register our CMS Override observer. */
     gPlatform->mSRGBOverrideObserver = new SRGBOverrideObserver();
-    Preferences::AddWeakObserver(gPlatform->mSRGBOverrideObserver, CMForceSRGBPrefName);
+    Preferences::AddWeakObserver(gPlatform->mSRGBOverrideObserver, "gfx.color_management.force_srgb");
 
     gPlatform->mFontPrefsObserver = new FontPrefsObserver();
     Preferences::AddStrongObservers(gPlatform->mFontPrefsObserver, kObservedPrefs);
@@ -356,7 +350,7 @@ gfxPlatform::Shutdown()
     if (gPlatform) {
         /* Unregister our CMS Override callback. */
         NS_ASSERTION(gPlatform->mSRGBOverrideObserver, "mSRGBOverrideObserver has alreay gone");
-        Preferences::RemoveObserver(gPlatform->mSRGBOverrideObserver, CMForceSRGBPrefName);
+        Preferences::RemoveObserver(gPlatform->mSRGBOverrideObserver, "gfx.color_management.force_srgb");
         gPlatform->mSRGBOverrideObserver = nsnull;
 
         NS_ASSERTION(gPlatform->mFontPrefsObserver, "mFontPrefsObserver has alreay gone");
@@ -487,6 +481,24 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
       ctx->Paint();
     }
 
+    gfxImageFormat cairoFormat = imgSurface->Format();
+    switch(cairoFormat) {
+      case gfxASurface::ImageFormatARGB32:
+        format = FORMAT_B8G8R8A8;
+        break;
+      case gfxASurface::ImageFormatRGB24:
+        format = FORMAT_B8G8R8X8;
+        break;
+      case gfxASurface::ImageFormatA8:
+        format = FORMAT_A8;
+        break;
+      case gfxASurface::ImageFormatRGB16_565:
+        format = FORMAT_R5G6B5;
+        break;
+      default:
+        NS_RUNTIMEABORT("Invalid surface format!");
+    }
+
     srcBuffer = aTarget->CreateSourceSurfaceFromData(imgSurface->Data(),
                                                      IntSize(imgSurface->GetSize().width, imgSurface->GetSize().height),
                                                      imgSurface->Stride(),
@@ -508,7 +520,25 @@ gfxPlatform::GetScaledFontForFont(gfxFont *aFont)
 already_AddRefed<gfxASurface>
 gfxPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
 {
-  // Don't know how to do this outside of Windows with D2D yet.
+  RefPtr<SourceSurface> source = aTarget->Snapshot();
+  RefPtr<DataSourceSurface> data = source->GetDataSurface();
+
+  if (!data) {
+    return NULL;
+  }
+
+  IntSize size = data->GetSize();
+  gfxASurface::gfxImageFormat format = gfxASurface::FormatFromContent(ContentForFormat(data->GetFormat()));
+  
+  nsRefPtr<gfxImageSurface> image =
+    new gfxImageSurface(data->GetData(), gfxIntSize(size.width, size.height),
+                        data->Stride(), format);
+  return image.forget();
+}
+
+RefPtr<DrawTarget>
+gfxPlatform::CreateOffscreenDrawTarget(const IntSize& aSize, SurfaceFormat aFormat)
+{
   return NULL;
 }
 
@@ -526,29 +556,29 @@ gfxPlatform::UpdateFontList()
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-PRBool
+bool
 gfxPlatform::DownloadableFontsEnabled()
 {
     if (mAllowDownloadableFonts == UNINITIALIZED_VALUE) {
         mAllowDownloadableFonts =
-            Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_ENABLED, PR_FALSE);
+            Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_ENABLED, false);
     }
 
     return mAllowDownloadableFonts;
 }
 
-PRBool
+bool
 gfxPlatform::SanitizeDownloadedFonts()
 {
     if (mDownloadableFontsSanitize == UNINITIALIZED_VALUE) {
         mDownloadableFontsSanitize =
-            Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_SANITIZE, PR_TRUE);
+            Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_SANITIZE, true);
     }
 
     return mDownloadableFontsSanitize;
 }
 
-PRBool
+bool
 gfxPlatform::UseHarfBuzzForScript(PRInt32 aScriptCode)
 {
     if (mUseHarfBuzzScripts == UNINITIALIZED_VALUE) {
@@ -619,7 +649,7 @@ AppendGenericFontFromPref(nsString& aFonts, nsIAtom *aLangGroup, const char *aGe
 }
 
 void
-gfxPlatform::GetPrefFonts(nsIAtom *aLanguage, nsString& aFonts, PRBool aAppendUnicode)
+gfxPlatform::GetPrefFonts(nsIAtom *aLanguage, nsString& aFonts, bool aAppendUnicode)
 {
     aFonts.Truncate();
 
@@ -628,10 +658,10 @@ gfxPlatform::GetPrefFonts(nsIAtom *aLanguage, nsString& aFonts, PRBool aAppendUn
         AppendGenericFontFromPref(aFonts, gfxAtoms::x_unicode, nsnull);
 }
 
-PRBool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangArrayLen, PrefFontCallback aCallback,
+bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangArrayLen, PrefFontCallback aCallback,
                                     void *aClosure)
 {
-    NS_ENSURE_TRUE(Preferences::GetRootBranch(), PR_FALSE);
+    NS_ENSURE_TRUE(Preferences::GetRootBranch(), false);
 
     PRUint32    i;
     for (i = 0; i < aLangArrayLen; i++) {
@@ -653,7 +683,7 @@ PRBool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangAr
         nsAdoptingCString nameValue = Preferences::GetCString(prefName.get());
         if (nameValue) {
             if (!aCallback(prefLang, NS_ConvertUTF8toUTF16(nameValue), aClosure))
-                return PR_FALSE;
+                return false;
         }
     
         // fetch font.name-list.xxx value                   
@@ -677,15 +707,15 @@ PRBool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangAr
                 while (++p != p_end && *p != kComma)
                     /* nothing */ ;
                 nsCAutoString fontName(Substring(start, p));
-                fontName.CompressWhitespace(PR_FALSE, PR_TRUE);
+                fontName.CompressWhitespace(false, true);
                 if (!aCallback(prefLang, NS_ConvertUTF8toUTF16(fontName), aClosure))
-                    return PR_FALSE;
+                    return false;
                 p++;
             }
         }
     }
 
-    return PR_TRUE;
+    return true;
 }
 
 eFontPrefLang
@@ -755,7 +785,7 @@ gfxPlatform::GetFontPrefLangFor(PRUint8 aUnicodeRange)
     }
 }
 
-PRBool 
+bool 
 gfxPlatform::IsLangCJK(eFontPrefLang aLang)
 {
     switch (aLang) {
@@ -765,9 +795,9 @@ gfxPlatform::IsLangCJK(eFontPrefLang aLang)
         case eFontPrefLang_ChineseHK:
         case eFontPrefLang_Korean:
         case eFontPrefLang_CJKSet:
-            return PR_TRUE;
+            return true;
         default:
-            return PR_FALSE;
+            return false;
     }
 }
 
@@ -816,7 +846,7 @@ gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFon
                 while (++p != p_end && *p != kComma)
                     /* nothing */ ;
                 nsCAutoString lang(Substring(start, p));
-                lang.CompressWhitespace(PR_FALSE, PR_TRUE);
+                lang.CompressWhitespace(false, true);
                 eFontPrefLang fpl = gfxPlatform::GetFontPrefLangFor(lang.get());
                 switch (fpl) {
                     case eFontPrefLang_Japanese:
@@ -911,12 +941,20 @@ gfxPlatform::AppendPrefLang(eFontPrefLang aPrefLangs[], PRUint32& aLen, eFontPre
 eCMSMode
 gfxPlatform::GetCMSMode()
 {
-    if (gCMSInitialized == PR_FALSE) {
-        gCMSInitialized = PR_TRUE;
+    if (gCMSInitialized == false) {
+        gCMSInitialized = true;
+        nsresult rv;
+
         PRInt32 mode;
-        nsresult rv = Preferences::GetInt(CMPrefName, &mode);
+        rv = Preferences::GetInt("gfx.color_management.mode", &mode);
         if (NS_SUCCEEDED(rv) && (mode >= 0) && (mode < eCMSMode_AllCount)) {
             gCMSMode = static_cast<eCMSMode>(mode);
+        }
+
+        bool enableV4;
+        rv = Preferences::GetBool("gfx.color_management.enablev4", &enableV4);
+        if (NS_SUCCEEDED(rv) && enableV4) {
+            qcms_enable_iccv4();
         }
     }
     return gCMSMode;
@@ -929,14 +967,14 @@ unacceptable performance overhead, so we go with perceptual. */
 #define INTENT_MIN 0
 #define INTENT_MAX 3
 
-PRBool
+int
 gfxPlatform::GetRenderingIntent()
 {
     if (gCMSIntent == -2) {
 
         /* Try to query the pref system for a rendering intent. */
         PRInt32 pIntent;
-        if (NS_SUCCEEDED(Preferences::GetInt(CMIntentPrefName, &pIntent))) {
+        if (NS_SUCCEEDED(Preferences::GetInt("gfx.color_management.rendering_intent", &pIntent))) {
             /* If the pref is within range, use it as an override. */
             if ((pIntent >= INTENT_MIN) && (pIntent <= INTENT_MAX)) {
                 gCMSIntent = pIntent;
@@ -1003,12 +1041,12 @@ gfxPlatform::GetCMSOutputProfile()
            default value of this preference, which means nsIPrefBranch::GetBoolPref
            will typically throw (and leave its out-param untouched).
          */
-        if (Preferences::GetBool(CMForceSRGBPrefName, PR_FALSE)) {
+        if (Preferences::GetBool("gfx.color_management.force_srgb", false)) {
             gCMSOutputProfile = GetCMSsRGBProfile();
         }
 
         if (!gCMSOutputProfile) {
-            nsAdoptingCString fname = Preferences::GetCString(CMProfilePrefName);
+            nsAdoptingCString fname = Preferences::GetCString("gfx.color_management.display_profile");
             if (!fname.IsEmpty()) {
                 gCMSOutputProfile = qcms_profile_from_path(fname);
             }
@@ -1139,18 +1177,18 @@ static void ShutdownCMS()
     // Reset the state variables
     gCMSIntent = -2;
     gCMSMode = eCMSMode_Off;
-    gCMSInitialized = PR_FALSE;
+    gCMSInitialized = false;
 }
 
 static void MigratePrefs()
 {
     /* Migrate from the boolean color_management.enabled pref - we now use
        color_management.mode. */
-    if (Preferences::HasUserValue(CMPrefNameOld)) {
-        if (Preferences::GetBool(CMPrefNameOld, PR_FALSE)) {
-            Preferences::SetInt(CMPrefName, static_cast<PRInt32>(eCMSMode_All));
+    if (Preferences::HasUserValue("gfx.color_management.enabled")) {
+        if (Preferences::GetBool("gfx.color_management.enabled", false)) {
+            Preferences::SetInt("gfx.color_management.mode", static_cast<PRInt32>(eCMSMode_All));
         }
-        Preferences::ClearUser(CMPrefNameOld);
+        Preferences::ClearUser("gfx.color_management.enabled");
     }
 }
 
@@ -1170,19 +1208,19 @@ gfxPlatform::SetupClusterBoundaries(gfxTextRun *aTextRun, const PRUnichar *aStri
     }
 
     gfxTextRun::CompressedGlyph extendCluster;
-    extendCluster.SetComplex(PR_FALSE, PR_TRUE, 0);
+    extendCluster.SetComplex(false, true, 0);
 
     PRUint32 i, length = aTextRun->GetLength();
     gfxUnicodeProperties::HSType hangulState = gfxUnicodeProperties::HST_NONE;
 
     for (i = 0; i < length; ++i) {
-        PRBool surrogatePair = PR_FALSE;
+        bool surrogatePair = false;
         PRUint32 ch = aString[i];
         if (NS_IS_HIGH_SURROGATE(ch) &&
             i < length - 1 && NS_IS_LOW_SURROGATE(aString[i+1]))
         {
             ch = SURROGATE_TO_UCS4(ch, aString[i+1]);
-            surrogatePair = PR_TRUE;
+            surrogatePair = true;
         }
 
         PRUint8 category = gfxUnicodeProperties::GetGeneralCategory(ch);

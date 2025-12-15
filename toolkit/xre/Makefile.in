@@ -77,10 +77,6 @@ ifdef MOZ_INSTRUMENT_EVENT_LOOP
 CPPSRCS += EventTracer.cpp
 endif
 
-ifdef MOZ_SPLASHSCREEN
-CPPSRCS += nsSplashScreenDummy.cpp
-endif
-
 DEFINES += -DIMPL_XREAPI -DMOZ_APP_NAME='"$(MOZ_APP_NAME)"'
 
 ifdef MOZ_UPDATER
@@ -98,6 +94,7 @@ EXPORTS = nsWindowsDllInterceptor.h
 else
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 CMMSRCS = nsNativeAppSupportCocoa.mm
+EXPORTS = MacQuirks.h
 else
 ifeq ($(MOZ_WIDGET_TOOLKIT),os2)
 CPPSRCS += nsNativeAppSupportOS2.cpp
@@ -106,6 +103,8 @@ ifeq ($(MOZ_WIDGET_TOOLKIT),gtk2)
 CPPSRCS += nsNativeAppSupportUnix.cpp
 else
 ifeq ($(MOZ_WIDGET_TOOLKIT),qt)
+MOCSRCS += moc_nsNativeAppSupportQt.cpp
+CPPSRCS += $(MOCSRCS)
 CPPSRCS += nsNativeAppSupportQt.cpp
 CPPSRCS += nsQAppInstance.cpp
 EXPORTS += nsQAppInstance.h

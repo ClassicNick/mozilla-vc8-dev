@@ -77,10 +77,16 @@ ifeq ($(_MSC_VER), 1600)
 CPPSRCS += nsUTF8UtilsSSE2.cpp
 endif
 
+ifneq (,$(INTEL_ARCHITECTURE))
 # gcc requires -msse2 on nsUTF8UtilsSSE2.cpp since it uses SSE2 intrinsics.
 # (See bug 585538 comment 12.)
 ifdef GNU_CC
 nsUTF8UtilsSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-msse2
+endif
+
+ifdef SOLARIS_SUNPRO_CXX
+nsUTF8UtilsSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-xarch=sse2 -xO4
+endif
 endif
 endif
 

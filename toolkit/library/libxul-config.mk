@@ -96,6 +96,7 @@ STATIC_LIBS += \
   ipcshell_s \
   gfx2d \
   gfxipc_s \
+  hal_s \
   $(NULL)
 
 ifdef MOZ_IPDL_TESTS
@@ -122,7 +123,7 @@ COMPONENT_LIBS += \
 	i18n \
 	chardet \
 	jar$(VERSION_NUMBER) \
-        startupcache \
+	startupcache \
 	pref \
 	htmlpars \
 	imglib2 \
@@ -138,9 +139,14 @@ COMPONENT_LIBS += \
 	pipboot \
 	pipnss \
 	appcomps \
+	jsreflect \
 	composer \
 	jetpack_s \
 	telemetry \
+	jsdebugger \
+	storagecomps \
+	rdf \
+	windowds \
 	$(NULL)
 
 ifdef BUILD_CTYPES
@@ -211,13 +217,6 @@ COMPONENT_LIBS += universalchardet
 DEFINES += -DMOZ_UNIVERSALCHARDET
 endif
 
-ifdef MOZ_RDF
-COMPONENT_LIBS += \
-	rdf \
-	windowds \
-	$(NULL)
-endif
-
 ifeq (,$(filter android qt os2 cocoa windows,$(MOZ_WIDGET_TOOLKIT)))
 ifdef MOZ_XUL
 COMPONENT_LIBS += fileview
@@ -225,27 +224,10 @@ DEFINES += -DMOZ_FILEVIEW
 endif
 endif
 
-ifdef MOZ_STORAGE
-COMPONENT_LIBS += storagecomps
-EXTRA_DSO_LDOPTS += $(SQLITE_LIBS)
-endif
-
 ifdef MOZ_PLACES
-ifdef MOZ_MORKREADER
-STATIC_LIBS += morkreader_s
-endif
-
 COMPONENT_LIBS += \
 	places \
 	$(NULL)
-endif
-
-ifdef MOZ_MORK
-ifdef MOZ_XUL
-COMPONENT_LIBS += \
-	mork \
-	$(NULL)
-endif
 endif
 
 ifdef MOZ_XUL
@@ -280,6 +262,10 @@ COMPONENT_LIBS += widget_android
 endif
 
 STATIC_LIBS += thebes ycbcr
+
+ifeq ($(MOZ_WIDGET_TOOLKIT),android)
+STATIC_LIBS += profiler
+endif
 
 STATIC_LIBS += angle
 
@@ -341,6 +327,7 @@ EXTRA_DSO_LDOPTS += \
 	$(MOZ_HARFBUZZ_LIBS) \
 	$(MOZ_OTS_LIBS) \
 	$(MOZ_APP_EXTRA_LIBS) \
+	$(SQLITE_LIBS) \
 	$(NULL)
 
 ifdef MOZ_NATIVE_ZLIB
@@ -369,6 +356,10 @@ endif
 
 ifdef HAVE_CLOCK_MONOTONIC
 EXTRA_DSO_LDOPTS += $(REALTIME_LIBS)
+endif
+
+ifeq (,$(filter-out cocoa android,$(MOZ_WIDGET_TOOLKIT)))
+EXTRA_DSO_LDOPTS += $(MOZ_SKIA_LIBS)
 endif
 
 ifeq (android,$(MOZ_WIDGET_TOOLKIT))

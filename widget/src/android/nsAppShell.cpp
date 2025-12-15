@@ -60,7 +60,7 @@
 #include "prlog.h"
 #endif
 
-#ifdef ANDROID_DEBUG_EVENTS
+#ifdef DEBUG_ANDROID_EVENTS
 #define EVLOG(args...)  ALOG(args)
 #else
 #define EVLOG(args...) do { } while (0)
@@ -74,6 +74,7 @@ PRLogModuleInfo *gWidgetLog = nsnull;
 
 nsDeviceMotionSystem *gDeviceMotionSystem = nsnull;
 nsIGeolocationUpdate *gLocationCallback = nsnull;
+nsAutoPtr<mozilla::AndroidGeckoEvent> gLastSizeChange;
 
 nsAppShell *nsAppShell::gAppShell = nsnull;
 
@@ -126,7 +127,7 @@ nsAppShell::Init()
     nsCOMPtr<nsIObserverService> obsServ =
         mozilla::services::GetObserverService();
     if (obsServ) {
-        obsServ->AddObserver(this, "xpcom-shutdown", PR_FALSE);
+        obsServ->AddObserver(this, "xpcom-shutdown", false);
     }
 
     if (!bridge)
@@ -134,7 +135,7 @@ nsAppShell::Init()
 
     Preferences::AddStrongObservers(this, kObservedPrefs);
 
-    PRBool match;
+    bool match;
     rv = Preferences::GetBool(PREFNAME_MATCH_OS, &match);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -173,7 +174,7 @@ nsAppShell::Observe(nsISupports* aSubject,
             return NS_OK;
         }
 
-        PRBool match;
+        bool match;
         nsresult rv = Preferences::GetBool(PREFNAME_MATCH_OS, &match);
         NS_ENSURE_SUCCESS(rv, rv);
 
@@ -203,8 +204,8 @@ nsAppShell::ScheduleNativeEventCallback()
     PostEvent(new AndroidGeckoEvent(AndroidGeckoEvent::NATIVE_POKE));
 }
 
-PRBool
-nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
+bool
+nsAppShell::ProcessNextNativeEvent(bool mayWait)
 {
     EVLOG("nsAppShell::ProcessNextNativeEvent %d", mayWait);
 
@@ -216,7 +217,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         curEvent = GetNextEvent();
         if (!curEvent && mayWait) {
             // hmm, should we really hardcode this 10s?
-#if defined(ANDROID_DEBUG_EVENTS)
+#if defined(DEBUG_ANDROID_EVENTS)
             PRTime t0, t1;
             EVLOG("nsAppShell: waiting on mQueueCond");
             t0 = PR_Now();
@@ -255,7 +256,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
             RemoveNextEvent();
             delete nextEvent;
 
-#if defined(ANDROID_DEBUG_EVENTS)
+#if defined(DEBUG_ANDROID_EVENTS)
             ALOG("# Removing DRAW event (%d outstanding)", mNumDraws);
 #endif
 
@@ -276,7 +277,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
               nextEvent->Action() == AndroidMotionEvent::ACTION_MOVE))
             break;
 
-#if defined(ANDROID_DEBUG_EVENTS)
+#if defined(DEBUG_ANDROID_EVENTS)
         ALOG("# Removing % 2d event", curType);
 #endif
 
@@ -327,6 +328,7 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
             mozilla::services::GetObserverService();
         NS_NAMED_LITERAL_STRING(minimize, "heap-minimize");
         obsServ->NotifyObservers(nsnull, "memory-pressure", minimize.get());
+        obsServ->NotifyObservers(nsnull, "application-background", nsnull);
 
         break;
     }
@@ -358,6 +360,14 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         break;
     }
 
+    case AndroidGeckoEvent::ACTIVITY_START: {
+        nsCOMPtr<nsIObserverService> obsServ =
+            mozilla::services::GetObserverService();
+        obsServ->NotifyObservers(nsnull, "application-foreground", nsnull);
+
+        break;
+    }
+
     case AndroidGeckoEvent::LOAD_URI: {
         nsCOMPtr<nsICommandLineRunner> cmdline
             (do_CreateInstance("@mozilla.org/toolkit/command-line;1"));
@@ -380,6 +390,15 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
         break;
     }
 
+    case AndroidGeckoEvent::SIZE_CHANGED: {
+        // store the last resize event to dispatch it to new windows with a FORCED_RESIZE event
+        if (curEvent != gLastSizeChange) {
+            gLastSizeChange = new AndroidGeckoEvent(curEvent);
+        }
+        nsWindow::OnGlobalAndroidEvent(curEvent);
+        break;
+    }
+
     default:
         nsWindow::OnGlobalAndroidEvent(curEvent);
     }
@@ -387,6 +406,13 @@ nsAppShell::ProcessNextNativeEvent(PRBool mayWait)
     EVLOG("nsAppShell: -- done event %p %d", (void*)curEvent.get(), curEvent->Type());
 
     return true;
+}
+
+void
+nsAppShell::ResendLastResizeEvent(nsWindow* aDest) {
+    if (gLastSizeChange) {
+        nsWindow::OnGlobalAndroidEvent(gLastSizeChange);
+    }
 }
 
 AndroidGeckoEvent*
@@ -422,7 +448,22 @@ nsAppShell::PostEvent(AndroidGeckoEvent *ae)
 {
     {
         MutexAutoLock lock(mQueueLock);
-        mEventQueue.AppendElement(ae);
+        if (ae->Type() == AndroidGeckoEvent::SURFACE_DESTROYED) {
+            // Give priority to this event, and discard any pending
+            // SURFACE_CREATED events.
+            mEventQueue.InsertElementAt(0, ae);
+            AndroidGeckoEvent *event;
+            for (int i = mEventQueue.Length()-1; i >=1; i--) {
+                event = mEventQueue[i];
+                if (event->Type() == AndroidGeckoEvent::SURFACE_CREATED) {
+                    mEventQueue.RemoveElementAt(i);
+                    delete event;
+                }
+            }
+        } else {
+            mEventQueue.AppendElement(ae);
+        }
+
         if (ae->Type() == AndroidGeckoEvent::DRAW) {
             mNumDraws++;
         }
@@ -550,7 +591,7 @@ namespace mozilla {
 
 bool ProcessNextEvent()
 {
-    return nsAppShell::gAppShell->ProcessNextNativeEvent(PR_TRUE) ? true : false;
+    return nsAppShell::gAppShell->ProcessNextNativeEvent(true) ? true : false;
 }
 
 void NotifyEvent()

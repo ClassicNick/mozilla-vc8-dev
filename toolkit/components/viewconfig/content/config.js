@@ -417,9 +417,17 @@ function ShowPrefs()
   if (!document.getElementById("showWarningNextTime").checked)
     gPrefBranch.setBoolPref("general.warnOnAboutConfig", false);
 
+  // Process about:config?filter=<string>
   var textbox = document.getElementById("textbox");
+  // About URIs don't support query params, so do this manually
+  var loc = document.location.href;
+  var matches = /[?&]filter\=([^&]+)/i.exec(loc);
+  if (matches)
+    textbox.value = decodeURIComponent(matches[1]);
+
+  // Even if we did not set the filter string via the URL query,
+  // textbox might have been set via some other mechanism
   if (textbox.value)
-    // somebody seems to already have tried to apply a filter
     FilterPrefs();
   textbox.focus();
 }
@@ -600,7 +608,12 @@ function NewPref(type)
                             gConfigBundle.getString("new_prompt"),
                             result,
                             null,
-                            dummy) && result.value) {
+                            dummy)) {
+    result.value = result.value.trim();
+    if (!result.value) {
+      return;
+    }
+
     var pref;
     if (result.value in gPrefHash)
       pref = gPrefHash[result.value];

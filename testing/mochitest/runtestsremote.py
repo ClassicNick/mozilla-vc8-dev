@@ -136,7 +136,7 @@ class RemoteOptions(MochitestOptions):
             return None
 
         if (options.remoteLogFile == None):
-            options.remoteLogFile = options.remoteTestRoot + '/mochitest.log'
+            options.remoteLogFile = options.remoteTestRoot + '/logs/mochitest.log'
 
         if (options.remoteLogFile.count('/') < 1):
             options.remoteLogFile = options.remoteTestRoot + '/' + options.remoteLogFile
@@ -192,6 +192,7 @@ class MochiRemote(Mochitest):
         self._dm = devmgr
         self.runSSLTunnel = False
         self.remoteProfile = options.remoteTestRoot + "/profile"
+        self._automation.setRemoteProfile(self.remoteProfile)
         self.remoteLog = options.remoteLogFile
 
     def cleanup(self, manifest, options):
@@ -279,11 +280,11 @@ class MochiRemote(Mochitest):
         options.profilePath = self.remoteProfile
         return manifest
     
-    def buildURLOptions(self, options):
+    def buildURLOptions(self, options, env):
         self.localLog = options.logFile
         options.logFile = self.remoteLog
         options.profilePath = self.localProfile
-        retVal = Mochitest.buildURLOptions(self, options)
+        retVal = Mochitest.buildURLOptions(self, options, env)
         #we really need testConfig.js (for browser chrome)
         if self._dm.pushDir(options.profilePath, self.remoteProfile) == None:
             raise devicemanager.FileError("Unable to copy profile to device.")
@@ -315,7 +316,7 @@ def main():
         if (options.deviceIP):
             dm = devicemanagerADB.DeviceManagerADB(options.deviceIP, options.devicePort)
         else:
-            dm = dm_auto
+            dm = dm_none
     else:
          dm = devicemanagerSUT.DeviceManagerSUT(options.deviceIP, options.devicePort)
     auto.setDeviceManager(dm)
@@ -336,6 +337,8 @@ def main():
     if (options == None):
         sys.exit(1)
     
+    logParent = os.path.dirname(options.remoteLogFile)
+    dm.mkDir(logParent);
     auto.setRemoteLog(options.remoteLogFile)
     auto.setServerInfo(options.webServer, options.httpPort, options.sslPort)
 
@@ -343,8 +346,16 @@ def main():
     if (dm.processExist(procName)):
       dm.killProcess(procName)
 
-    sys.exit(mochitest.runTests(options))
-    
+    try:
+      retVal = mochitest.runTests(options)
+    except:
+      print "TEST-UNEXPECTED-ERROR | | Exception caught while running tests."
+      mochitest.stopWebServer(options)
+      mochitest.stopWebSocketServer(options)
+      sys.exit(1)
+      
+    sys.exit(retVal)
+        
 if __name__ == "__main__":
     main()
 

@@ -78,9 +78,9 @@ public:
   NS_DISPLAY_DECL_NAME("nsDisplayCanvas", TYPE_CANVAS)
 
   virtual nsRegion GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
-                                   PRBool* aForceTransparentSurface = nsnull) {
+                                   bool* aForceTransparentSurface = nsnull) {
     if (aForceTransparentSurface) {
-      *aForceTransparentSurface = PR_FALSE;
+      *aForceTransparentSurface = false;
     }
     nsIFrame* f = GetUnderlyingFrame();
     nsHTMLCanvasElement *canvas = CanvasElementFromContent(f->GetContent());
@@ -106,6 +106,9 @@ public:
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager)
   {
+    if (CanvasElementFromContent(mFrame->GetContent())->ShouldForceInactiveLayer(aManager))
+      return LAYER_INACTIVE;
+
     // If compositing is cheap, just do that
     if (aManager->IsCompositingCheap())
       return mozilla::LAYER_ACTIVE;
@@ -188,7 +191,7 @@ nsHTMLCanvasFrame::GetIntrinsicRatio()
 nsHTMLCanvasFrame::ComputeSize(nsRenderingContext *aRenderingContext,
                                nsSize aCBSize, nscoord aAvailableWidth,
                                nsSize aMargin, nsSize aBorder, nsSize aPadding,
-                               PRBool aShrinkWrap)
+                               bool aShrinkWrap)
 {
   nsIntSize size = GetCanvasSize();
 

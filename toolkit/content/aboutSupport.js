@@ -51,10 +51,10 @@ const ELLIPSIS = Services.prefs.getComplexValue("intl.ellipsis",
 // under the "accessibility.*" branch.
 const PREFS_WHITELIST = [
   "accessibility.",
+  "browser.display.",
   "browser.fixup.",
   "browser.history_expire_",
   "browser.link.open_newwindow",
-  "browser.mousewheel.",
   "browser.places.",
   "browser.startup.homepage",
   "browser.tabs.",
@@ -63,16 +63,20 @@ const PREFS_WHITELIST = [
   "extensions.checkCompatibility",
   "extensions.lastAppVersion",
   "font.",
+  "general.autoScroll",
   "general.useragent.",
   "gfx.",
   "html5.",
-  "mozilla.widget.render-mode",
   "layers.",
   "javascript.",
   "keyword.",
   "layout.css.dpi",
+  "mousewheel.",
   "network.",
+  "permissions.default.image",
   "places.",
+  "plugin.",
+  "plugins.",
   "print.",
   "privacy.",
   "security.",
@@ -245,6 +249,15 @@ function populateGraphicsSection() {
     pushInfoRow(trGraphics, "driverDate", gfxInfo.adapterDriverDate);
 
 #ifdef XP_WIN
+    pushInfoRow(trGraphics, "adapterDescription2", gfxInfo.adapterDescription2);
+    pushInfoRow(trGraphics, "adapterVendorID2", hexValueToString(gfxInfo.adapterVendorID2));
+    pushInfoRow(trGraphics, "adapterDeviceID2", hexValueToString(gfxInfo.adapterDeviceID2));
+    pushInfoRow(trGraphics, "adapterRAM2", gfxInfo.adapterRAM2);
+    pushInfoRow(trGraphics, "adapterDrivers2", gfxInfo.adapterDriver2);
+    pushInfoRow(trGraphics, "driverVersion2", gfxInfo.adapterDriverVersion2);
+    pushInfoRow(trGraphics, "driverDate2", gfxInfo.adapterDriverDate2);
+    pushInfoRow(trGraphics, "isGPU2Active", gfxInfo.isGPU2Active);
+
     var version = Cc["@mozilla.org/system-info;1"]
                   .getService(Ci.nsIPropertyBag2)
                   .getProperty("version");

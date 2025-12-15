@@ -91,13 +91,17 @@ public:
     mDocAccessibleCache.Remove(aDocument);
   }
 
+#ifdef DEBUG
+  bool IsProcessingRefreshDriverNotification() const;
+#endif
+
 protected:
   nsAccDocManager() { };
 
   /**
    * Initialize the manager.
    */
-  PRBool Init();
+  bool Init();
 
   /**
    * Shutdown the manager.
@@ -121,27 +125,9 @@ private:
                              PRUint32 aLoadEventType);
 
   /**
-   * Return true if accessibility events accompanying document accessible
-   * loading should be fired.
-   *
-   * The rules are: do not fire events for root chrome document accessibles and
-   * for sub document accessibles (like HTML frame of iframe) of the loading
-   * document accessible.
-   *
-   * XXX: in general AT expect events for document accessible loading into
-   * tabbrowser, events from other document accessibles may break AT. We need to
-   * figure out what AT wants to know about loading page (for example, some of
-   * them have separate processing of iframe documents on the page and therefore
-   * they need a way to distinguish sub documents from page document). Ideally
-   * we should make events firing for any loaded document and provide additional
-   * info AT are needing.
-   */
-  PRBool IsEventTargetDocument(nsIDocument *aDocument) const;
-
-  /**
    * Add 'pagehide' and 'DOMContentLoaded' event listeners.
    */
-  void AddListeners(nsIDocument *aDocument, PRBool aAddPageShowListener);
+  void AddListeners(nsIDocument *aDocument, bool aAddPageShowListener);
 
   /**
    * Create document or root accessible.
@@ -175,6 +161,12 @@ private:
                                nsDocAccessible* aDocAccessible,
                                void* aUserArg);
 
+#ifdef DEBUG
+  static PLDHashOperator
+    SearchIfDocIsRefreshing(const nsIDocument* aKey,
+                            nsDocAccessible* aDocAccessible, void* aUserArg);
+#endif
+
   nsDocAccessibleHashtable mDocAccessibleCache;
 };
 
@@ -182,6 +174,8 @@ private:
  * nsAccDocManager debugging macros.
  */
 #ifdef DEBUG_ACCDOCMGR
+
+#include "nsTraceRefcntImpl.h"
 
 // Enable these to log accessible document loading, creation or destruction.
 #define DEBUG_ACCDOCMGR_DOCLOAD
@@ -200,10 +194,23 @@ private:
 
 #define NS_LOG_ACCDOC_TYPE(aDocument)                                          \
   if (aDocument->IsActive()) {                                                 \
-    PRBool isContent = nsCoreUtils::IsContentDocument(aDocument);              \
+    bool isContent = nsCoreUtils::IsContentDocument(aDocument);              \
     printf("%s document", (isContent ? "content" : "chrome"));                 \
   } else {                                                                     \
     printf("document type: [failed]");                                         \
+  }
+
+#define NS_LOG_ACCDOC_DOCSHELLTREE(aDocument)                                  \
+  if (aDocument->IsActive()) {                                                 \
+    nsCOMPtr<nsISupports> container = aDocument->GetContainer();               \
+    nsCOMPtr<nsIDocShellTreeItem> treeItem(do_QueryInterface(container));      \
+    nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;                              \
+    treeItem->GetParent(getter_AddRefs(parentTreeItem));                       \
+    nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;                                \
+    treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));                   \
+    printf("docshell hierarchy, parent: %p, root: %p, is tab document: %s;",   \
+           parentTreeItem, rootTreeItem,                                       \
+           (nsCoreUtils::IsTabDocument(aDocument) ? "yes" : "no"));            \
   }
 
 #define NS_LOG_ACCDOC_SHELLSTATE(aDocument)                                    \
@@ -352,6 +359,8 @@ private:
       printf("; ");                                                            \
       NS_LOG_ACCDOC_TYPE(aDocument)                                            \
       printf("\n    ");                                                        \
+      NS_LOG_ACCDOC_DOCSHELLTREE(aDocument)                                    \
+      printf("\n    ");                                                        \
       NS_LOG_ACCDOC_DOCSTATES(aDocument)                                       \
       printf("\n    ");                                                        \
       NS_LOG_ACCDOC_DOCPRESSHELL(aDocument)                                    \
@@ -408,6 +417,10 @@ private:
 #define NS_LOG_ACCDOC_TEXT(aMsg)                                               \
   printf("  " aMsg "\n");
 
+#define NS_LOG_ACCDOC_STACK                                                    \
+  printf("  stack: \n");                                                       \
+  nsTraceRefcntImpl::WalkTheStack(stdout);
+
 // Accessible document loading macros.
 #ifdef DEBUG_ACCDOCMGR_DOCLOAD
 
@@ -461,7 +474,7 @@ private:
         NS_LOG_ACCDOCLOAD_REQUEST(aRequest)                                    \
         printf("\n");                                                          \
         printf("    state flags: %x", aStateFlags);                            \
-        PRBool isDocLoading;                                                   \
+        bool isDocLoading;                                                   \
         aWebProgress->GetIsLoadingDocument(&isDocLoading);                     \
         printf(", document is %sloading\n", (isDocLoading ? "" : "not "));     \
         printf("  }\n");                                                       \
@@ -518,7 +531,10 @@ private:
   NS_LOG_ACCDOC_ACCADDRESS(aName, aAcc)
 
 #define NS_LOG_ACCDOCCREATE_TEXT(aMsg)                                         \
-    NS_LOG_ACCDOC_TEXT(aMsg)
+  NS_LOG_ACCDOC_TEXT(aMsg)
+
+#define NS_LOG_ACCDOCCREATE_STACK                                              \
+  NS_LOG_ACCDOC_STACK
 
 #endif // DEBUG_ACCDOCMGR_DOCCREATE
 
@@ -562,6 +578,7 @@ private:
 #define NS_LOG_ACCDOCCREATE(aMsg, aDocument)
 #define NS_LOG_ACCDOCCREATE_ACCADDRESS(aName, aAcc)
 #define NS_LOG_ACCDOCCREATE_TEXT(aMsg)
+#define NS_LOG_ACCDOCCREATE_STACK
 #endif
 
 #ifndef DEBUG_ACCDOCMGR_DOCDESTROY

@@ -51,6 +51,7 @@ const XULNS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/AddonManager.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
   Cu.import("resource://gre/modules/NetUtil.jsm");
@@ -151,9 +152,8 @@ BrowserGlue.prototype = {
     }
     delay = delay <= MAX_DELAY ? delay : MAX_DELAY;
 
-    let syncTemp = {};
-    Cu.import("resource://services-sync/service.js", syncTemp);
-    syncTemp.Weave.Service.delayedAutoConnect(delay);
+    Cu.import("resource://services-sync/main.js");
+    Weave.SyncScheduler.delayedAutoConnect(delay);
   },
 #endif
 
@@ -378,9 +378,11 @@ BrowserGlue.prototype = {
     // Show about:rights notification, if needed.
     if (this._shouldShowRights()) {
       this._showRightsNotification();
+#ifdef MOZ_TELEMETRY_REPORTING
     } else {
       // Only show telemetry notification when about:rights notification is not shown.
       this._showTelemetryNotification();
+#endif
     }
 
 
@@ -398,6 +400,21 @@ BrowserGlue.prototype = {
     // been warned about them yet, open the plugins update page.
     if (Services.prefs.getBoolPref(PREF_PLUGINS_NOTIFYUSER))
       this._showPluginUpdatePage();
+
+    // For any add-ons that were installed disabled and can be enabled offer
+    // them to the user
+    var win = this.getMostRecentBrowserWindow();
+    var browser = win.gBrowser;
+    var changedIDs = AddonManager.getStartupChanges(AddonManager.STARTUP_CHANGE_INSTALLED);
+    AddonManager.getAddonsByIDs(changedIDs, function(aAddons) {
+      aAddons.forEach(function(aAddon) {
+        // If the add-on isn't user disabled or can't be enabled then skip it
+        if (!aAddon.userDisabled || !(aAddon.permissions & AddonManager.PERM_CAN_ENABLE))
+          return;
+
+        browser.selectedTab = browser.addTab("about:newaddon?id=" + aAddon.id);
+      })
+    });
   },
 
   _onQuitRequest: function BG__onQuitRequest(aCancelQuit, aQuitType) {
@@ -622,8 +639,8 @@ BrowserGlue.prototype = {
     var currentVersion = Services.prefs.getIntPref("browser.rights.version");
     Services.prefs.setBoolPref("browser.rights." + currentVersion + ".shown", true);
 
-    var box = notifyBox.appendNotification(notifyRightsText, "about-rights", null, notifyBox.PRIORITY_INFO_LOW, buttons);
-    box.persistence = 3; // arbitrary number, just so bar sticks around for a bit
+    var notification = notifyBox.appendNotification(notifyRightsText, "about-rights", null, notifyBox.PRIORITY_INFO_LOW, buttons);
+    notification.persistence = -1; // Until user closes it
   },
 
   _showUpdateNotification: function BG__showUpdateNotification() {
@@ -692,10 +709,10 @@ BrowserGlue.prototype = {
                       }
                     ];
 
-      let box = notifyBox.appendNotification(text, "post-update-notification",
-                                             null, notifyBox.PRIORITY_INFO_LOW,
-                                             buttons);
-      box.persistence = 3;
+      let notification = notifyBox.appendNotification(text, "post-update-notification",
+                                                      null, notifyBox.PRIORITY_INFO_LOW,
+                                                      buttons);
+      notification.persistence = -1; // Until user closes it
     }
 
     if (actions.indexOf("showAlert") == -1)
@@ -740,20 +757,28 @@ BrowserGlue.prototype = {
     }
   },
 
+#ifdef MOZ_TELEMETRY_REPORTING
   _showTelemetryNotification: function BG__showTelemetryNotification() {
     const PREF_TELEMETRY_PROMPTED = "toolkit.telemetry.prompted";
     const PREF_TELEMETRY_ENABLED  = "toolkit.telemetry.enabled";
+    const PREF_TELEMETRY_REJECTED  = "toolkit.telemetry.rejected";
     const PREF_TELEMETRY_INFOURL  = "toolkit.telemetry.infoURL";
     const PREF_TELEMETRY_SERVER_OWNER = "toolkit.telemetry.server_owner";
+    // This is used to reprompt users when privacy message changes
+    const TELEMETRY_PROMPT_REV = 2;
 
+    var telemetryPrompted = null;
     try {
-      // If the user hasn't already been prompted, ask if they want to
-      // send telemetry data.
-      if (Services.prefs.getBoolPref(PREF_TELEMETRY_ENABLED) ||
-          Services.prefs.getBoolPref(PREF_TELEMETRY_PROMPTED))
-         return;
+      telemetryPrompted = Services.prefs.getIntPref(PREF_TELEMETRY_PROMPTED);
     } catch(e) {}
-
+    // If the user has seen the latest telemetry prompt, do not prompt again
+    // else clear old prefs and reprompt
+    if (telemetryPrompted === TELEMETRY_PROMPT_REV)
+      return;
+    
+    Services.prefs.clearUserPref(PREF_TELEMETRY_PROMPTED);
+    Services.prefs.clearUserPref(PREF_TELEMETRY_ENABLED);
+    
     // Stick the notification onto the selected tab of the active browser window.
     var win = this.getMostRecentBrowserWindow();
     var browser = win.gBrowser; // for closure in notification bar callback
@@ -764,11 +789,11 @@ BrowserGlue.prototype = {
 
     var productName        = brandBundle.GetStringFromName("brandFullName");
     var serverOwner        = Services.prefs.getCharPref(PREF_TELEMETRY_SERVER_OWNER);
-    var telemetryText      = browserBundle.formatStringFromName("telemetryText", [productName, serverOwner], 2);
+    var telemetryPrompt    = browserBundle.formatStringFromName("telemetryPrompt", [productName, serverOwner], 2);
 
     var buttons = [
                     {
-                      label:     browserBundle.GetStringFromName("telemetryYesButtonLabel"),
+                      label:     browserBundle.GetStringFromName("telemetryYesButtonLabel2"),
                       accessKey: browserBundle.GetStringFromName("telemetryYesButtonAccessKey"),
                       popup:     null,
                       callback:  function(aNotificationBar, aButton) {
@@ -779,15 +804,18 @@ BrowserGlue.prototype = {
                       label:     browserBundle.GetStringFromName("telemetryNoButtonLabel"),
                       accessKey: browserBundle.GetStringFromName("telemetryNoButtonAccessKey"),
                       popup:     null,
-                      callback:  function(aNotificationBar, aButton) {}
+                      callback:  function(aNotificationBar, aButton) {
+                        Services.prefs.setBoolPref(PREF_TELEMETRY_REJECTED, true);
+                      }
                     }
                   ];
 
     // Set pref to indicate we've shown the notification.
-    Services.prefs.setBoolPref(PREF_TELEMETRY_PROMPTED, true);
+    Services.prefs.setIntPref(PREF_TELEMETRY_PROMPTED, TELEMETRY_PROMPT_REV);
 
-    var notification = notifyBox.appendNotification(telemetryText, "telemetry", null, notifyBox.PRIORITY_INFO_LOW, buttons);
-    notification.persistence = 3; // arbitrary number, just so bar sticks around for a bit
+    var notification = notifyBox.appendNotification(telemetryPrompt, "telemetry", null, notifyBox.PRIORITY_INFO_LOW, buttons);
+    notification.setAttribute("hideclose", true);
+    notification.persistence = -1;  // Until user closes it
 
     let XULNS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
     let link = notification.ownerDocument.createElementNS(XULNS, "label");
@@ -799,12 +827,14 @@ BrowserGlue.prototype = {
       // Remove the notification on which the user clicked
       notification.parentNode.removeNotification(notification, true);
       // Add a new notification to that tab, with no "Learn more" link
-      var notifyBox = browser.getNotificationBox();
-      notifyBox.appendNotification(telemetryText, "telemetry", null, notifyBox.PRIORITY_INFO_LOW, buttons);
+      notifyBox = browser.getNotificationBox();
+      notification = notifyBox.appendNotification(telemetryPrompt, "telemetry", null, notifyBox.PRIORITY_INFO_LOW, buttons);
+      notification.persistence = -1; // Until user closes it
     }, false);
     let description = notification.ownerDocument.getAnonymousElementByAttribute(notification, "anonid", "messageText");
     description.appendChild(link);
   },
+#endif
 
   _showPluginUpdatePage: function BG__showPluginUpdatePage() {
     Services.prefs.setBoolPref(PREF_PLUGINS_NOTIFYUSER, false);
@@ -1063,10 +1093,10 @@ BrowserGlue.prototype = {
                   ];
 
     var notifyBox = browser.getNotificationBox();
-    var box = notifyBox.appendNotification(text, title, null,
-                                           notifyBox.PRIORITY_CRITICAL_MEDIUM,
-                                           buttons);
-    box.persistence = -1; // Until user closes it
+    var notification = notifyBox.appendNotification(text, title, null,
+                                                    notifyBox.PRIORITY_CRITICAL_MEDIUM,
+                                                    buttons);
+    notification.persistence = -1; // Until user closes it
   },
 
   _migrateUI: function BG__migrateUI() {

@@ -50,8 +50,6 @@ using namespace mozilla;
 using mozilla::layers::ImageContainer;
 using mozilla::layers::PlanarYCbCrImage;
 
-using mozilla::layers::PlanarYCbCrImage;
-
 // Verify these values are sane. Once we've checked the frame sizes, we then
 // can do less integer overflow checking.
 PR_STATIC_ASSERT(MAX_VIDEO_WIDTH < PlanarYCbCrImage::MAX_DIMENSION);
@@ -74,7 +72,7 @@ extern PRLogModuleInfo* gBuiltinDecoderLog;
 #define SEEK_LOG(type, msg)
 #endif
 
-static PRBool
+static bool
 ValidatePlane(const VideoData::YCbCrBuffer::Plane& aPlane)
 {
   return aPlane.mWidth <= PlanarYCbCrImage::MAX_DIMENSION &&
@@ -83,7 +81,7 @@ ValidatePlane(const VideoData::YCbCrBuffer::Plane& aPlane)
          aPlane.mStride > 0;
 }
 
-PRBool
+bool
 nsVideoInfo::ValidateVideoRegion(const nsIntSize& aFrame,
                                  const nsIntRect& aPicture,
                                  const nsIntSize& aDisplay)
@@ -113,7 +111,7 @@ VideoData* VideoData::Create(nsVideoInfo& aInfo,
                              PRInt64 aTime,
                              PRInt64 aEndTime,
                              const YCbCrBuffer& aBuffer,
-                             PRBool aKeyframe,
+                             bool aKeyframe,
                              PRInt64 aTimecode,
                              nsIntRect aPicture)
 {
@@ -190,8 +188,7 @@ VideoData* VideoData::Create(nsVideoInfo& aInfo,
 }
 
 nsBuiltinDecoderReader::nsBuiltinDecoderReader(nsBuiltinDecoder* aDecoder)
-  : mReentrantMonitor("media.decoderreader"),
-    mDecoder(aDecoder)
+  : mDecoder(aDecoder)
 {
   MOZ_COUNT_CTOR(nsBuiltinDecoderReader);
 }
@@ -214,7 +211,8 @@ nsresult nsBuiltinDecoderReader::ResetDecode()
 
 VideoData* nsBuiltinDecoderReader::FindStartTime(PRInt64& aOutStartTime)
 {
-  NS_ASSERTION(mDecoder->OnStateMachineThread(), "Should be on state machine thread.");
+  NS_ASSERTION(mDecoder->OnStateMachineThread() || mDecoder->OnDecodeThread(),
+               "Should be on state machine or decode thread.");
 
   // Extract the start times of the bitstreams in order to calculate
   // the duration.
@@ -230,10 +228,10 @@ VideoData* nsBuiltinDecoderReader::FindStartTime(PRInt64& aOutStartTime)
     }
   }
   if (HasAudio()) {
-    SoundData* soundData = DecodeToFirstData(&nsBuiltinDecoderReader::DecodeAudioData,
+    AudioData* audioData = DecodeToFirstData(&nsBuiltinDecoderReader::DecodeAudioData,
                                              mAudioQueue);
-    if (soundData) {
-      audioStartTime = soundData->mTime;
+    if (audioData) {
+      audioStartTime = audioData->mTime;
     }
   }
 
@@ -249,7 +247,7 @@ template<class Data>
 Data* nsBuiltinDecoderReader::DecodeToFirstData(DecodeFn aDecodeFn,
                                                 MediaQueue<Data>& aQueue)
 {
-  PRBool eof = PR_FALSE;
+  bool eof = false;
   while (!eof && aQueue.GetSize() == 0) {
     {
       ReentrantMonitorAutoEnter decoderMon(mDecoder->GetReentrantMonitor());
@@ -267,14 +265,14 @@ nsresult nsBuiltinDecoderReader::DecodeToTarget(PRInt64 aTarget)
 {
   // Decode forward to the target frame. Start with video, if we have it.
   if (HasVideo()) {
-    PRBool eof = PR_FALSE;
+    bool eof = false;
     PRInt64 startTime = -1;
+    nsAutoPtr<VideoData> video;
     while (HasVideo() && !eof) {
       while (mVideoQueue.GetSize() == 0 && !eof) {
-        PRBool skip = PR_FALSE;
+        bool skip = false;
         eof = !DecodeVideoFrame(skip, 0);
         {
-          ReentrantMonitorAutoExit exitReaderMon(mReentrantMonitor);
           ReentrantMonitorAutoEnter decoderMon(mDecoder->GetReentrantMonitor());
           if (mDecoder->GetDecodeState() == nsBuiltinDecoderStateMachine::DECODER_STATE_SHUTDOWN) {
             return NS_ERROR_FAILURE;
@@ -282,9 +280,13 @@ nsresult nsBuiltinDecoderReader::DecodeToTarget(PRInt64 aTarget)
         }
       }
       if (mVideoQueue.GetSize() == 0) {
+        // Hit end of file, we want to display the last frame of the video.
+        if (video) {
+          mVideoQueue.PushFront(video.forget());
+        }
         break;
       }
-      nsAutoPtr<VideoData> video(mVideoQueue.PeekFront());
+      video = mVideoQueue.PeekFront();
       // If the frame end time is less than the seek target, we won't want
       // to display this frame after the seek, so discard it.
       if (video && video->mEndTime <= aTarget) {
@@ -292,14 +294,12 @@ nsresult nsBuiltinDecoderReader::DecodeToTarget(PRInt64 aTarget)
           startTime = video->mTime;
         }
         mVideoQueue.PopFront();
-        video = nsnull;
       } else {
         video.forget();
         break;
       }
     }
     {
-      ReentrantMonitorAutoExit exitReaderMon(mReentrantMonitor);
       ReentrantMonitorAutoEnter decoderMon(mDecoder->GetReentrantMonitor());
       if (mDecoder->GetDecodeState() == nsBuiltinDecoderStateMachine::DECODER_STATE_SHUTDOWN) {
         return NS_ERROR_FAILURE;
@@ -310,26 +310,79 @@ nsresult nsBuiltinDecoderReader::DecodeToTarget(PRInt64 aTarget)
 
   if (HasAudio()) {
     // Decode audio forward to the seek target.
-    PRBool eof = PR_FALSE;
+    PRInt64 targetFrame = 0;
+    if (!UsecsToFrames(aTarget, mInfo.mAudioRate, targetFrame)) {
+      return NS_ERROR_FAILURE;
+    }
+    bool eof = false;
     while (HasAudio() && !eof) {
       while (!eof && mAudioQueue.GetSize() == 0) {
         eof = !DecodeAudioData();
         {
-          ReentrantMonitorAutoExit exitReaderMon(mReentrantMonitor);
           ReentrantMonitorAutoEnter decoderMon(mDecoder->GetReentrantMonitor());
           if (mDecoder->GetDecodeState() == nsBuiltinDecoderStateMachine::DECODER_STATE_SHUTDOWN) {
             return NS_ERROR_FAILURE;
           }
         }
       }
-      nsAutoPtr<SoundData> audio(mAudioQueue.PeekFront());
-      if (audio && audio->mTime + audio->mDuration <= aTarget) {
-        mAudioQueue.PopFront();
+      const AudioData* audio = mAudioQueue.PeekFront();
+      if (!audio)
+        break;
+      PRInt64 startFrame = 0;
+      if (!UsecsToFrames(audio->mTime, mInfo.mAudioRate, startFrame)) {
+        return NS_ERROR_FAILURE;
+      }
+      if (startFrame + audio->mFrames <= targetFrame) {
+        // Our seek target lies after the frames in this AudioData. Pop it
+        // off the queue, and keep decoding forwards.
+        delete mAudioQueue.PopFront();
         audio = nsnull;
-      } else {
-        audio.forget();
+        continue;
+      }
+      if (startFrame > targetFrame) {
+        // The seek target doesn't lie in the audio block just after the last
+        // audio frames we've seen which were before the seek target. This
+        // could have been the first audio data we've seen after seek, i.e. the
+        // seek terminated after the seek target in the audio stream. Just
+        // abort the audio decode-to-target, the state machine will play
+        // silence to cover the gap. Typically this happens in poorly muxed
+        // files.
+        NS_WARNING("Audio not synced after seek, maybe a poorly muxed file?");
         break;
       }
+
+      // The seek target lies somewhere in this AudioData's frames, strip off
+      // any frames which lie before the seek target, so we'll begin playback
+      // exactly at the seek target.
+      NS_ASSERTION(targetFrame >= startFrame, "Target must at or be after data start.");
+      NS_ASSERTION(targetFrame < startFrame + audio->mFrames, "Data must end after target.");
+
+      PRInt64 framesToPrune = targetFrame - startFrame;
+      if (framesToPrune > audio->mFrames) {
+        // We've messed up somehow. Don't try to trim frames, the |frames|
+        // variable below will overflow.
+        NS_WARNING("Can't prune more frames that we have!");
+        break;
+      }
+      PRUint32 frames = audio->mFrames - static_cast<PRUint32>(framesToPrune);
+      PRUint32 channels = audio->mChannels;
+      nsAutoArrayPtr<AudioDataValue> audioData(new AudioDataValue[frames * channels]);
+      memcpy(audioData.get(),
+             audio->mAudioData.get() + (framesToPrune * channels),
+             frames * channels * sizeof(AudioDataValue));
+      PRInt64 duration;
+      if (!FramesToUsecs(frames, mInfo.mAudioRate, duration)) {
+        return NS_ERROR_FAILURE;
+      }
+      nsAutoPtr<AudioData> data(new AudioData(audio->mOffset,
+                                              aTarget,
+                                              duration,
+                                              frames,
+                                              audioData.forget(),
+                                              channels));
+      delete mAudioQueue.PopFront();
+      mAudioQueue.PushFront(data.forget());
+      break;
     }
   }
   return NS_OK;

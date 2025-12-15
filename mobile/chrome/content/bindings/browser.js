@@ -5,9 +5,9 @@ let Cu = Components.utils;
 
 Cu.import("resource://gre/modules/Services.jsm");
 
-dump("!! remote browser loaded\n");
-
 let WebProgressListener = {
+  _lastLocation: null,
+
   init: function() {
     let flags = Ci.nsIWebProgress.NOTIFY_LOCATION |
                 Ci.nsIWebProgress.NOTIFY_SECURITY |
@@ -33,6 +33,8 @@ let WebProgressListener = {
   onProgressChange: function onProgressChange(aWebProgress, aRequest, aCurSelf, aMaxSelf, aCurTotal, aMaxTotal) {
   },
 
+  _firstPaint: false,
+
   onLocationChange: function onLocationChange(aWebProgress, aRequest, aLocationURI) {
     if (content != aWebProgress.DOMWindow)
       return;
@@ -53,10 +55,18 @@ let WebProgressListener = {
 
     sendAsyncMessage("Content:LocationChange", json);
 
+    this._firstPaint = false;
+    let self = this;
+
+    // Keep track of hash changes
+    this.hashChanged = (location == this._lastLocation);
+    this._lastLocation = location;
+
     // When a new page is loaded fire a message for the first paint
     addEventListener("MozAfterPaint", function(aEvent) {
       removeEventListener("MozAfterPaint", arguments.callee, true);
 
+      self._firstPaint = true;
       let scrollOffset = ContentScroll.getScrollOffset(content);
       sendAsyncMessage("Browser:FirstPaint", scrollOffset);
     }, true);
@@ -126,10 +136,10 @@ let WebNavigation =  {
   receiveMessage: function(message) {
     switch (message.name) {
       case "WebNavigation:GoBack":
-        this.goBack(message);
+        this.goBack();
         break;
       case "WebNavigation:GoForward":
-        this.goForward(message);
+        this.goForward();
         break;
       case "WebNavigation:GotoIndex":
         this.gotoIndex(message);
@@ -147,11 +157,13 @@ let WebNavigation =  {
   },
 
   goBack: function() {
-    this._webNavigation.goBack();
+    if (this._webNavigation.canGoBack)
+      this._webNavigation.goBack();
   },
 
   goForward: function() {
-    this._webNavigation.goForward();
+    if (this._webNavigation.canGoForward)
+      this._webNavigation.goForward();
   },
 
   gotoIndex: function(message) {
@@ -256,8 +268,13 @@ let WebNavigation =  {
     if (aEntry.docshellID)
       shEntry.docshellID = aEntry.docshellID;
 
-    if (aEntry.stateData)
-      shEntry.stateData = aEntry.stateData;
+    if (aEntry.structuredCloneState && aEntry.structuredCloneVersion) {
+      shEntry.stateData =
+        Cc["@mozilla.org/docshell/structured-clone-container;1"].
+        createInstance(Ci.nsIStructuredCloneContainer);
+
+      shEntry.stateData.initFromBase64(aEntry.structuredCloneState, aEntry.structuredCloneVersion);
+    }
 
     if (aEntry.scroll) {
       let scrollPos = aEntry.scroll.split(",");
@@ -265,24 +282,19 @@ let WebNavigation =  {
       shEntry.setScrollPosition(scrollPos[0], scrollPos[1]);
     }
 
+    let childDocIdents = {};
     if (aEntry.docIdentifier) {
-      // Get a new document identifier for this entry to ensure that history
-      // entries after a session restore are considered to have different
-      // documents from the history entries before the session restore.
-      // Document identifiers are 64-bit ints, so JS will loose precision and
-      // start assigning all entries the same doc identifier if these ever get
-      // large enough.
-      //
-      // It's a potential security issue if document identifiers aren't
-      // globally unique, but shEntry.setUniqueDocIdentifier() below guarantees
-      // that we won't re-use a doc identifier within a given instance of the
-      // application.
-      let ident = aDocIdentMap[aEntry.docIdentifier];
-      if (!ident) {
-        shEntry.setUniqueDocIdentifier();
-        aDocIdentMap[aEntry.docIdentifier] = shEntry.docIdentifier;
+      // If we have a serialized document identifier, try to find an SHEntry
+      // which matches that doc identifier and adopt that SHEntry's
+      // BFCacheEntry.  If we don't find a match, insert shEntry as the match
+      // for the document identifier.
+      let matchingEntry = aDocIdentMap[aEntry.docIdentifier];
+      if (!matchingEntry) {
+        matchingEntry = {shEntry: shEntry, childDocIdents: childDocIdents};
+        aDocIdentMap[aEntry.docIdentifier] = matchingEntry;
       } else {
-        shEntry.docIdentifier = ident;
+        shEntry.adoptBFCacheEntry(matchingEntry);
+        childDocIdents = matchingEntry.childDocIdents;
       }
     }
 
@@ -301,7 +313,23 @@ let WebNavigation =  {
       for (let i = 0; i < aEntry.children.length; i++) {
         if (!aEntry.children[i].url)
           continue;
-        shEntry.AddChild(this._deserializeHistoryEntry(aEntry.children[i], aIdMap, aDocIdentMap), i);
+
+        // We're getting sessionrestore.js files with a cycle in the
+        // doc-identifier graph, likely due to bug 698656.  (That is, we have
+        // an entry where doc identifier A is an ancestor of doc identifier B,
+        // and another entry where doc identifier B is an ancestor of A.)
+        //
+        // If we were to respect these doc identifiers, we'd create a cycle in
+        // the SHEntries themselves, which causes the docshell to loop forever
+        // when it looks for the root SHEntry.
+        //
+        // So as a hack to fix this, we restrict the scope of a doc identifier
+        // to be a node's siblings and cousins, and pass childDocIdents, not
+        // aDocIdents, to _deserializeHistoryEntry.  That is, we say that two
+        // SHEntries with the same doc identifier have the same document iff
+        // they have the same parent or their parents have the same document.
+
+        shEntry.AddChild(this._deserializeHistoryEntry(aEntry.children[i], aIdMap, childDocIdents), i);
       }
     }
     
@@ -367,11 +395,12 @@ let WebNavigation =  {
       } catch (e) { dump(e); }
     }
 
-    if (aEntry.docIdentifier)
-      entry.docIdentifier = aEntry.docIdentifier;
+    entry.docIdentifier = aEntry.BFCacheEntry.ID;
 
-    if (aEntry.stateData)
-      entry.stateData = aEntry.stateData;
+    if (aEntry.stateData != null) {
+      entry.structuredCloneState = aEntry.stateData.getDataAsBase64();
+      entry.structuredCloneVersion = aEntry.stateData.formatVersion;
+    }
 
     if (!(aEntry instanceof Ci.nsISHContainer))
       return entry;
@@ -441,6 +470,15 @@ let DOMEvents =  {
           persisted: aEvent.persisted
         };
 
+        // Clear onload focus to prevent the VKB to be shown unexpectingly
+        // but only if the location has really changed and not only the
+        // fragment identifier
+        let contentWindowID = content.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
+        if (!WebProgressListener.hashChanged && contentWindowID == util.currentInnerWindowID) {
+          let focusManager = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
+          focusManager.clearFocus(content);
+        }
+
         sendAsyncMessage(aEvent.type, json);
         break;
       }
@@ -479,6 +517,10 @@ let DOMEvents =  {
           rel: target.rel,
           type: target.type
         };
+        
+        // rel=icon can also have a sizes attribute
+        if (target.hasAttribute("sizes"))
+          json.sizes = target.getAttribute("sizes");
 
         sendAsyncMessage("DOMLinkAdded", json);
         break;
@@ -540,8 +582,11 @@ let ContentScroll =  {
       case "Content:SetCacheViewport": {
         // Set resolution for root view
         let rootCwu = content.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-        if (json.id == 1)
+        if (json.id == 1) {
           rootCwu.setResolution(json.scale, json.scale);
+          if (!WebProgressListener._firstPaint)
+            break;
+        }
 
         let displayport = new Rect(json.x, json.y, json.w, json.h);
         if (displayport.isEmpty())
@@ -584,7 +629,6 @@ let ContentScroll =  {
         let win = element.ownerDocument.defaultView;
         let winCwu = win.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
         winCwu.setDisplayPortForElement(x, y, displayport.width, displayport.height, element);
-
         break;
       }
 
@@ -619,8 +663,15 @@ let ContentScroll =  {
         sendAsyncMessage("MozScrolledAreaChanged", {
           width: aEvent.width,
           height: aEvent.height,
-          left: aEvent.x
+          left: aEvent.x + content.scrollX
         });
+
+        // Send event only after painting to make sure content views in the parent process have
+        // been updated.
+        addEventListener("MozAfterPaint", function afterPaint() {
+          removeEventListener("MozAfterPaint", afterPaint, false);
+          sendAsyncMessage("Content:UpdateDisplayPort");
+        }, false);
 
         break;
       }

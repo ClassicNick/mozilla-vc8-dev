@@ -22,9 +22,6 @@
     COMPONENT(CONSOLESERVICE, nsConsoleServiceConstructor)
     COMPONENT(EXCEPTIONSERVICE, nsExceptionServiceConstructor)
     COMPONENT(ATOMSERVICE, nsAtomServiceConstructor)
-#ifdef MOZ_TIMELINE
-    COMPONENT(TIMELINESERVICE, nsTimelineServiceConstructor)
-#endif
     COMPONENT(OBSERVERSERVICE, nsObserverService::Create)
 
     COMPONENT(XPCOMPROXY, nsProxyObjectManager::Create)
@@ -77,7 +74,7 @@
     COMPONENT(WINDOWSREGKEY, nsWindowsRegKeyConstructor)
 #endif
 
-#ifdef XP_MACOSX
+#if defined(MOZ_WIDGET_COCOA)
     COMPONENT(MACUTILSIMPL, nsMacUtilsImplConstructor)
 #endif
 

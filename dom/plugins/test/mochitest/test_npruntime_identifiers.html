@@ -2,16 +2,12 @@
 <head>
   <title>NPN_Invoke Tests</title>
   <script type="text/javascript" 
-          src="/MochiKit/packed.js"></script>
-  <script type="text/javascript" 
           src="/tests/SimpleTest/SimpleTest.js"></script>
   <link rel="stylesheet" type="text/css" 
         href="/tests/SimpleTest/test.css" />
 </head>
 <body>
   <p id="display"></p>
-
-  <iframe id="subframe" src="npruntime_identifiers_subpage.html"></iframe>
 
   <script class="testbody" type="application/javascript">
   ////
@@ -21,8 +17,6 @@
   SimpleTest.waitForExplicitFinish();
 
   var testsRun = 0;
-
-  document.getElementById('subframe').addEventListener('load', doTest, false);
 
   function doTest() {
     SpecialPowers.gc();
@@ -58,5 +52,8 @@
     }
   }
   </script>
+
+  <iframe id="subframe" src="npruntime_identifiers_subpage.html" onload="doTest()"></iframe>
+
 </body>
 </html>

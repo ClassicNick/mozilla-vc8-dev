@@ -45,7 +45,6 @@
 #include "nsIViewManager.h"
 #include "nsITextToSubURI.h"
 #include "nsIURL.h"
-#include "nsPrintfCString.h"
 #include "nsIContentViewer.h"
 #include "nsIMarkupDocumentViewer.h"
 #include "nsIDocShell.h"
@@ -151,6 +150,8 @@ MediaDocument::Init()
                                 getter_AddRefs(mStringBundle));
   }
 
+  mIsSyntheticDocument = true;
+
   return NS_OK;
 }
 
@@ -160,7 +161,7 @@ MediaDocument::StartDocumentLoad(const char*         aCommand,
                                  nsILoadGroup*       aLoadGroup,
                                  nsISupports*        aContainer,
                                  nsIStreamListener** aDocListener,
-                                 PRBool              aReset,
+                                 bool                aReset,
                                  nsIContentSink*     aSink)
 {
   nsresult rv = nsDocument::StartDocumentLoad(aCommand, aChannel, aLoadGroup,
@@ -247,7 +248,7 @@ MediaDocument::CreateSyntheticDocument()
   }
 
   NS_ASSERTION(GetChildCount() == 0, "Shouldn't have any kids");
-  rv = AppendChildTo(root, PR_FALSE);
+  rv = AppendChildTo(root, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::head, nsnull,
@@ -261,7 +262,26 @@ MediaDocument::CreateSyntheticDocument()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  root->AppendChildTo(head, PR_FALSE);
+  nsCOMPtr<nsINodeInfo> nodeInfoMeta;
+  nodeInfoMeta = mNodeInfoManager->GetNodeInfo(nsGkAtoms::meta, nsnull,
+                                               kNameSpaceID_XHTML,
+                                               nsIDOMNode::ELEMENT_NODE);
+  NS_ENSURE_TRUE(nodeInfoMeta, NS_ERROR_OUT_OF_MEMORY);
+
+  nsRefPtr<nsGenericHTMLElement> metaContent = NS_NewHTMLMetaElement(nodeInfoMeta.forget());
+  if (!metaContent) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  metaContent->SetAttr(kNameSpaceID_None, nsGkAtoms::name,
+                       NS_LITERAL_STRING("viewport"),
+                       true);
+
+  metaContent->SetAttr(kNameSpaceID_None, nsGkAtoms::content,
+                       NS_LITERAL_STRING("width=device-width; height=device-height;"),
+                       true);
+  head->AppendChildTo(metaContent, false);
+
+  root->AppendChildTo(head, false);
 
   nodeInfo = mNodeInfoManager->GetNodeInfo(nsGkAtoms::body, nsnull,
                                            kNameSpaceID_XHTML,
@@ -273,7 +293,7 @@ MediaDocument::CreateSyntheticDocument()
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  root->AppendChildTo(body, PR_FALSE);
+  root->AppendChildTo(body, false);
 
   return NS_OK;
 }
@@ -281,7 +301,7 @@ MediaDocument::CreateSyntheticDocument()
 nsresult
 MediaDocument::StartLayout()
 {
-  mMayStartLayout = PR_TRUE;
+  mMayStartLayout = true;
   nsCOMPtr<nsIPresShell> shell = GetShell();
   // Don't mess with the presshell if someone has already handled
   // its initial reflow.

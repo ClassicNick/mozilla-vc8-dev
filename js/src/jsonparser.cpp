@@ -539,7 +539,7 @@ JSONParser::parse(Value *vp)
              */
             jsid propid = ATOM_TO_JSID(&valueStack.popCopy().toString()->asAtom());
             if (!DefineNativeProperty(cx, &valueStack.back().toObject(), propid, v,
-                                      PropertyStub, StrictPropertyStub, JSPROP_ENUMERATE,
+                                      JS_PropertyStub, JS_StrictPropertyStub, JSPROP_ENUMERATE,
                                       0, 0))
             {
                 return false;
@@ -584,7 +584,7 @@ JSONParser::parse(Value *vp)
 
           case FinishArrayElement: {
             Value v = valueStack.popCopy();
-            if (!js_ArrayCompPush(cx, &valueStack.back().toObject(), v))
+            if (!js_NewbornArrayPush(cx, &valueStack.back().toObject(), v))
                 return false;
             token = advanceAfterArrayElement();
             if (token == Comma) {
@@ -634,7 +634,7 @@ JSONParser::parse(Value *vp)
               }
 
               case ObjectOpen: {
-                JSObject *obj = NewBuiltinClassInstance(cx, &js_ObjectClass);
+                JSObject *obj = NewBuiltinClassInstance(cx, &ObjectClass);
                 if (!obj || !valueStack.append(ObjectValue(*obj)))
                     return false;
                 token = advanceAfterObjectOpen();

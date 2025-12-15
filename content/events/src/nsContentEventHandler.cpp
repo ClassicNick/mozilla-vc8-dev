@@ -43,7 +43,6 @@
 #include "nsPresContext.h"
 #include "nsIPresShell.h"
 #include "nsISelection.h"
-#include "nsIDOMText.h"
 #include "nsIDOMRange.h"
 #include "nsRange.h"
 #include "nsGUIEvent.h"
@@ -59,7 +58,6 @@
 #include "nsISelectionPrivate.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsISelection2.h"
 #include "nsIMEStateManager.h"
 #include "nsIObjectFrame.h"
 
@@ -127,11 +125,11 @@ nsContentEventHandler::Init(nsQueryContentEvent* aEvent)
   nsresult rv = InitCommon();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aEvent->mSucceeded = PR_FALSE;
+  aEvent->mSucceeded = false;
 
   aEvent->mReply.mContentsRoot = mRootContent.get();
 
-  PRBool isCollapsed;
+  bool isCollapsed;
   rv = mSelection->GetIsCollapsed(&isCollapsed);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_NOT_AVAILABLE);
   aEvent->mReply.mHasSelection = !isCollapsed;
@@ -156,7 +154,7 @@ nsContentEventHandler::Init(nsSelectionEvent* aEvent)
   nsresult rv = InitCommon();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aEvent->mSucceeded = PR_FALSE;
+  aEvent->mSucceeded = false;
 
   return NS_OK;
 }
@@ -165,7 +163,7 @@ nsContentEventHandler::Init(nsSelectionEvent* aEvent)
 // have any text. This happens even for single line editors.
 // When we get text content and when we change the selection,
 // we don't want to include the bogus BRs at the end.
-static PRBool IsContentBR(nsIContent* aContent)
+static bool IsContentBR(nsIContent* aContent)
 {
   return aContent->IsHTML() &&
          aContent->Tag() == nsGkAtoms::br &&
@@ -332,7 +330,7 @@ static nsresult GenerateFlatTextContent(nsIRange* aRange,
 
 nsresult
 nsContentEventHandler::ExpandToClusterBoundary(nsIContent* aContent,
-                                                    PRBool aForward,
+                                                    bool aForward,
                                                     PRUint32* aXPOffset)
 {
   // XXX This method assumes that the frame boundaries must be cluster
@@ -379,7 +377,7 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
                               nsIRange* aRange,
                               PRUint32 aNativeOffset,
                               PRUint32 aNativeLength,
-                              PRBool aExpandToClusterBoundaries)
+                              bool aExpandToClusterBoundaries)
 {
   nsCOMPtr<nsIContentIterator> iter;
   nsresult rv = NS_NewContentIterator(getter_AddRefs(iter));
@@ -414,7 +412,7 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
           ConvertToXPOffset(content, aNativeOffset - nativeOffset) : 0;
 
       if (aExpandToClusterBoundaries) {
-        rv = ExpandToClusterBoundary(content, PR_FALSE, &xpOffset);
+        rv = ExpandToClusterBoundary(content, false, &xpOffset);
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
@@ -435,7 +433,7 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
       if (content->IsNodeOfType(nsINode::eTEXT)) {
         xpOffset = ConvertToXPOffset(content, nativeEndOffset - nativeOffset);
         if (aExpandToClusterBoundaries) {
-          rv = ExpandToClusterBoundary(content, PR_TRUE, &xpOffset);
+          rv = ExpandToClusterBoundary(content, true, &xpOffset);
           NS_ENSURE_SUCCESS(rv, rv);
         }
       } else {
@@ -510,7 +508,7 @@ nsContentEventHandler::OnQuerySelectedText(nsQueryContentEvent* aEvent)
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -527,13 +525,13 @@ nsContentEventHandler::OnQueryTextContent(nsQueryContentEvent* aEvent)
   nsCOMPtr<nsIRange> range = new nsRange();
   NS_ENSURE_TRUE(range, NS_ERROR_OUT_OF_MEMORY);
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
-                                  aEvent->mInput.mLength, PR_FALSE);
+                                  aEvent->mInput.mLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = GenerateFlatTextContent(range, aEvent->mReply.mString);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
 
   return NS_OK;
 }
@@ -562,7 +560,7 @@ static nsINode* AdjustTextRectNode(nsINode* aNode,
 // but this is more flexible for OnQueryTextRect to use
 static nsresult GetFrameForTextRect(nsINode* aNode,
                                     PRInt32 aOffset,
-                                    PRBool aHint,
+                                    bool aHint,
                                     nsIFrame** aReturnFrame)
 {
   NS_ENSURE_TRUE(aNode && aNode->IsNodeOfType(nsINode::eCONTENT),
@@ -587,7 +585,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
     return NS_ERROR_OUT_OF_MEMORY;
   }
   rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset,
-                                  aEvent->mInput.mLength, PR_TRUE);
+                                  aEvent->mInput.mLength, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // used to iterate over all contents and their frames
@@ -604,7 +602,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
     node = AdjustTextRectNode(range->GetStartParent(), offset);
   }
   nsIFrame* firstFrame = nsnull;
-  rv = GetFrameForTextRect(node, offset, PR_TRUE, &firstFrame);
+  rv = GetFrameForTextRect(node, offset, true, &firstFrame);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // get the starting frame rect
@@ -662,7 +660,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
   }
   aEvent->mReply.mRect =
       rect.ToOutsidePixels(mPresContext->AppUnitsPerDevPixel());
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -691,7 +689,7 @@ nsContentEventHandler::OnQueryEditorRect(nsQueryContentEvent* aEvent)
 
   aEvent->mReply.mRect =
       resultRect.ToOutsidePixels(mPresContext->AppUnitsPerDevPixel());
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -707,7 +705,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
 
   // When the selection is collapsed and the queried offset is current caret
   // position, we should return the "real" caret rect.
-  PRBool selectionIsCollapsed;
+  bool selectionIsCollapsed;
   rv = mSelection->GetIsCollapsed(&selectionIsCollapsed);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -724,7 +722,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
       NS_ENSURE_SUCCESS(rv, rv);
       aEvent->mReply.mRect =
         rect.ToOutsidePixels(caretFrame->PresContext()->AppUnitsPerDevPixel());
-      aEvent->mSucceeded = PR_TRUE;
+      aEvent->mSucceeded = true;
       return NS_OK;
     }
   }
@@ -732,7 +730,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
   // Otherwise, we should set the guessed caret rect.
   nsCOMPtr<nsIRange> range = new nsRange();
   NS_ENSURE_TRUE(range, NS_ERROR_OUT_OF_MEMORY);
-  rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset, 0, PR_TRUE);
+  rv = SetRangeFromFlatTextOffset(range, aEvent->mInput.mOffset, 0, true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   PRInt32 offsetInFrame;
@@ -755,7 +753,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
 
   aEvent->mReply.mRect =
       rect.ToOutsidePixels(mPresContext->AppUnitsPerDevPixel());
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -766,7 +764,7 @@ nsContentEventHandler::OnQueryContentState(nsQueryContentEvent * aEvent)
   if (NS_FAILED(rv))
     return rv;
   
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
 
   return NS_OK;
 }
@@ -779,7 +777,7 @@ nsContentEventHandler::OnQuerySelectionAsTransferable(nsQueryContentEvent* aEven
     return rv;
 
   if (!aEvent->mReply.mHasSelection) {
-    aEvent->mSucceeded = PR_TRUE;
+    aEvent->mSucceeded = true;
     aEvent->mReply.mTransferable = nsnull;
     return NS_OK;
   }
@@ -790,7 +788,7 @@ nsContentEventHandler::OnQuerySelectionAsTransferable(nsQueryContentEvent* aEven
   rv = nsCopySupport::GetTransferableForSelection(mSelection, doc, getter_AddRefs(aEvent->mReply.mTransferable));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -818,7 +816,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
     NS_ENSURE_TRUE(rootWidget, NS_ERROR_FAILURE);
   }
 
-  nsQueryContentEvent eventOnRoot(PR_TRUE, NS_QUERY_CHARACTER_AT_POINT,
+  nsQueryContentEvent eventOnRoot(true, NS_QUERY_CHARACTER_AT_POINT,
                                   rootWidget);
   eventOnRoot.refPoint = aEvent->refPoint;
   if (rootWidget != aEvent->widget) {
@@ -835,7 +833,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
                                              mRootContent)) {
     // there is no character at the point.
     aEvent->mReply.mOffset = nsQueryContentEvent::NOT_FOUND;
-    aEvent->mSucceeded = PR_TRUE;
+    aEvent->mSucceeded = true;
     return NS_OK;
   }
   nsPoint ptInTarget = ptInRoot + rootFrame->GetOffsetToCrossDoc(targetFrame);
@@ -852,7 +850,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
                                 &nativeOffset);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsQueryContentEvent textRect(PR_TRUE, NS_QUERY_TEXT_RECT, aEvent->widget);
+  nsQueryContentEvent textRect(true, NS_QUERY_TEXT_RECT, aEvent->widget);
   textRect.InitForQueryTextRect(nativeOffset, 1);
   rv = OnQueryTextRect(&textRect);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -861,7 +859,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
   // currently, we don't need to get the actual text.
   aEvent->mReply.mOffset = nativeOffset;
   aEvent->mReply.mRect = textRect.mReply.mRect;
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -872,7 +870,7 @@ nsContentEventHandler::OnQueryDOMWidgetHittest(nsQueryContentEvent* aEvent)
   if (NS_FAILED(rv))
     return rv;
 
-  aEvent->mReply.mWidgetIsHit = PR_FALSE;
+  aEvent->mReply.mWidgetIsHit = false;
 
   NS_ENSURE_TRUE(aEvent->widget, NS_ERROR_FAILURE);
 
@@ -890,7 +888,7 @@ nsContentEventHandler::OnQueryDOMWidgetHittest(nsQueryContentEvent* aEvent)
   eventLoc.y -= docFrameRect.y;
 
   nsCOMPtr<nsIDOMElement> elementUnderMouse;
-  doc->ElementFromPointHelper(eventLoc.x, eventLoc.y, PR_FALSE, PR_FALSE,
+  doc->ElementFromPointHelper(eventLoc.x, eventLoc.y, false, false,
                               getter_AddRefs(elementUnderMouse));
   nsCOMPtr<nsIContent> contentUnderMouse = do_QueryInterface(elementUnderMouse);
   if (contentUnderMouse) {
@@ -903,10 +901,10 @@ nsContentEventHandler::OnQueryDOMWidgetHittest(nsQueryContentEvent* aEvent)
       targetWidget = targetFrame->GetNearestWidget();
     }
     if (aEvent->widget == targetWidget)
-      aEvent->mReply.mWidgetIsHit = PR_TRUE;
+      aEvent->mReply.mWidgetIsHit = true;
   }
 
-  aEvent->mSucceeded = PR_TRUE;
+  aEvent->mSucceeded = true;
   return NS_OK;
 }
 
@@ -1038,7 +1036,7 @@ static void AdjustRangeForSelection(nsIContent* aRoot,
 nsresult
 nsContentEventHandler::OnSelectionEvent(nsSelectionEvent* aEvent)
 {
-  aEvent->mSucceeded = PR_FALSE;
+  aEvent->mSucceeded = false;
 
   // Get selection to manipulate
   // XXX why do we need to get them from ISM? This method should work fine
@@ -1071,8 +1069,7 @@ nsContentEventHandler::OnSelectionEvent(nsSelectionEvent* aEvent)
   nsCOMPtr<nsIDOMNode> endDomNode(do_QueryInterface(endNode));
   NS_ENSURE_TRUE(startDomNode && endDomNode, NS_ERROR_UNEXPECTED);
 
-  nsCOMPtr<nsISelectionPrivate> selPrivate = do_QueryInterface(mSelection);
-  NS_ENSURE_TRUE(selPrivate, NS_ERROR_UNEXPECTED);
+  nsCOMPtr<nsISelectionPrivate> selPrivate(do_QueryInterface(mSelection));
   selPrivate->StartBatchChanges();
 
   // Clear selection first before setting
@@ -1096,8 +1093,8 @@ nsContentEventHandler::OnSelectionEvent(nsSelectionEvent* aEvent)
   selPrivate->EndBatchChanges();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsISelection2>(do_QueryInterface(mSelection))->ScrollIntoView(
-      nsISelectionController::SELECTION_FOCUS_REGION, PR_FALSE, -1, -1);
-  aEvent->mSucceeded = PR_TRUE;
+  selPrivate->ScrollIntoView(
+      nsISelectionController::SELECTION_FOCUS_REGION, false, -1, -1);
+  aEvent->mSucceeded = true;
   return NS_OK;
 }

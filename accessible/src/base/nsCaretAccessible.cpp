@@ -211,10 +211,10 @@ nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
   nsDocAccessible* document = GetAccService()->GetDocAccessible(documentNode);
 
 #ifdef DEBUG_NOTIFICATIONS
-  nsCOMPtr<nsISelection2> sel2(do_QueryInterface(aSelection));
+  nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(aSelection));
 
   PRInt16 type = 0;
-  sel2->GetType(&type);
+  privSel->GetType(&type);
 
   if (type == nsISelectionController::SELECTION_NORMAL ||
       type == nsISelectionController::SELECTION_SPELLCHECK) {
@@ -226,6 +226,10 @@ nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
     printf("\nSelection changed, selection type: %s, notification %s\n",
            (isNormalSelection ? "normal" : "spellcheck"),
            (isIgnored ? "ignored" : "pending"));
+  } else {
+    bool isIgnored = !document || !document->IsContentLoaded();
+    printf("\nSelection changed, selection type: unknown, notification %s\n",
+               (isIgnored ? "ignored" : "pending"));
   }
 #endif
 
@@ -245,10 +249,10 @@ nsCaretAccessible::NotifySelectionChanged(nsIDOMDocument* aDOMDocument,
 void
 nsCaretAccessible::ProcessSelectionChanged(nsISelection* aSelection)
 {
-  nsCOMPtr<nsISelection2> sel2(do_QueryInterface(aSelection));
+  nsCOMPtr<nsISelectionPrivate> privSel(do_QueryInterface(aSelection));
 
   PRInt16 type = 0;
-  sel2->GetType(&type);
+  privSel->GetType(&type);
 
   if (type == nsISelectionController::SELECTION_NORMAL)
     NormalSelectionChanged(aSelection);
@@ -339,7 +343,7 @@ nsCaretAccessible::GetCaretRect(nsIWidget **aOutWidget)
   nsCOMPtr<nsISelection> caretSelection(do_QueryReferent(mLastUsedSelection));
   NS_ENSURE_TRUE(caretSelection, caretRect);
   
-  PRBool isVisible;
+  bool isVisible;
   caret->GetCaretVisible(&isVisible);
   if (!isVisible) {
     return nsIntRect();  // Return empty rect
@@ -382,11 +386,7 @@ nsCaretAccessible::GetSelectionControllerForNode(nsIContent *aContent)
   if (!aContent)
     return nsnull;
 
-  nsIDocument *document = aContent->GetOwnerDoc();
-  if (!document)
-    return nsnull;
-
-  nsIPresShell *presShell = document->GetShell();
+  nsIPresShell *presShell = aContent->OwnerDoc()->GetShell();
   if (!presShell)
     return nsnull;
 

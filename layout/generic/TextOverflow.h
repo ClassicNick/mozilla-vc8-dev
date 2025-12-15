@@ -52,7 +52,6 @@ namespace css {
  * Usage:
  *  1. allocate an object using WillProcessLines
  *  2. then call ProcessLine for each line you are building display lists for
- *  3. finally call DidProcessLines
  */
 class TextOverflow {
  public:
@@ -69,12 +68,6 @@ class TextOverflow {
    * and remove or clip items that would overlap a marker.
    */
   void ProcessLine(const nsDisplayListSet& aLists, nsLineBox* aLine);
-
-  /**
-   * Do final processing, currently just adds a dummy item for scroll frames
-   * to make IsVaryingRelativeToMovingFrame() true for the entire area.
-   */
-  void DidProcessLines();
 
   /**
    * @return true if aBlockFrame needs analysis for text overflow.
@@ -188,7 +181,7 @@ class TextOverflow {
 
   class Marker {
   public:
-    void Init(const nsStyleTextOverflow& aStyle) {
+    void Init(const nsStyleTextOverflowSide& aStyle) {
       mInitialized = false;
       mWidth = 0;
       mStyle = &aStyle;
@@ -211,7 +204,7 @@ class TextOverflow {
     // The marker text.
     nsString                       mMarkerString;
     // The style for this side.
-    const nsStyleTextOverflow*     mStyle;
+    const nsStyleTextOverflowSide* mStyle;
     // True if there is visible overflowing inline content on this side.
     bool                           mHasOverflow;
     // True if mMarkerString and mWidth have been setup from style.

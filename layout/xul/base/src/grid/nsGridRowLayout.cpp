@@ -128,7 +128,7 @@ nsGridRowLayout::GetGrid(nsIBox* aBox, PRInt32* aIndex, nsGridRowLayout* aReques
      // if there is a scrollframe walk inside it to its child
      nsIBox* childBox = nsGrid::GetScrolledBox(child);
 
-     nsIBoxLayout* layout = childBox->GetLayoutManager();
+     nsBoxLayout* layout = childBox->GetLayoutManager();
      nsIGridPart* gridRow = nsGrid::GetPartFromBox(childBox);
      if (gridRow) 
      {
@@ -162,7 +162,7 @@ nsGridRowLayout::GetGrid(nsIBox* aBox, PRInt32* aIndex, nsGridRowLayout* aReques
 }
 
 nsMargin
-nsGridRowLayout::GetTotalMargin(nsIBox* aBox, PRBool aIsHorizontal)
+nsGridRowLayout::GetTotalMargin(nsIBox* aBox, bool aIsHorizontal)
 {
   // get our parents margin
   nsMargin margin(0,0,0,0);

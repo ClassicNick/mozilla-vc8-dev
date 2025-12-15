@@ -1,3 +1,4 @@
+//* -*- Mode: Javascript; tab-width: 8; indent-tabs-mode: nil; js-indent-level: 2 -*- *
 function dumpn(s) {
   dump(s + "\n");
 }
@@ -277,6 +278,8 @@ function runNextTest()
   dbservice.setHashCompleter('test-phish-simple', null);
   dumpn("running " + gTests[gNextTest]);
 
+  dump("running " + gTests[gNextTest]);
+
   gTests[gNextTest++]();
 }
 
@@ -286,10 +289,13 @@ function runTests(tests)
   runNextTest();
 }
 
+var timerArray = [];
+
 function Timer(delay, cb) {
   this.cb = cb;
   var timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.initWithCallback(this, delay, timer.TYPE_ONE_SHOT);
+  timerArray.push(timer);
 }
 
 Timer.prototype = {

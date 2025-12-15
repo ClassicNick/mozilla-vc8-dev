@@ -41,8 +41,11 @@
 
 #include "nsIDOMComment.h"
 #include "nsGenericDOMDataNode.h"
+
 #include "nsCOMPtr.h"
 #include "nsIDocument.h"
+#include "nsGenericElement.h" // DOMCI_NODE_DATA
+#include "nsDOMMemoryReporter.h"
 
 class nsCommentNode : public nsGenericDOMDataNode,
                       public nsIDOMComment
@@ -60,20 +63,24 @@ public:
   // nsIDOMCharacterData
   NS_FORWARD_NSIDOMCHARACTERDATA(nsGenericDOMDataNode::)
 
+  // DOM Memory Reporter participant.
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsCommentNode,
+                                              nsGenericDOMDataNode)
+
   // nsIDOMComment
   // Empty interface
 
   // nsINode
-  virtual PRBool IsNodeOfType(PRUint32 aFlags) const;
+  virtual bool IsNodeOfType(PRUint32 aFlags) const;
 
   virtual nsGenericDOMDataNode* CloneDataNode(nsINodeInfo *aNodeInfo,
-                                              PRBool aCloneText) const;
+                                              bool aCloneText) const;
 
   virtual nsXPCClassInfo* GetClassInfo();
 #ifdef DEBUG
   virtual void List(FILE* out, PRInt32 aIndent) const;
   virtual void DumpContent(FILE* out = stdout, PRInt32 aIndent = 0,
-                           PRBool aDumpAll = PR_TRUE) const
+                           bool aDumpAll = true) const
   {
     return;
   }
@@ -126,14 +133,14 @@ NS_IMPL_ADDREF_INHERITED(nsCommentNode, nsGenericDOMDataNode)
 NS_IMPL_RELEASE_INHERITED(nsCommentNode, nsGenericDOMDataNode)
 
 
-PRBool
+bool
 nsCommentNode::IsNodeOfType(PRUint32 aFlags) const
 {
   return !(aFlags & ~(eCONTENT | eCOMMENT | eDATA_NODE));
 }
 
 nsGenericDOMDataNode*
-nsCommentNode::CloneDataNode(nsINodeInfo *aNodeInfo, PRBool aCloneText) const
+nsCommentNode::CloneDataNode(nsINodeInfo *aNodeInfo, bool aCloneText) const
 {
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   nsCommentNode *it = new nsCommentNode(ni.forget());

@@ -86,11 +86,11 @@ function init(aEvent)
 
 #ifdef MOZ_UPDATER
   gAppUpdater = new appUpdater();
-#endif
 
   let defaults = Services.prefs.getDefaultBranch("");
   let channelLabel = document.getElementById("currentChannel");
   channelLabel.value = defaults.getCharPref("app.update.channel");
+#endif
 
 #ifdef XP_MACOSX
   // it may not be sized at this point, and we need its width to calculate its position
@@ -250,7 +250,7 @@ appUpdater.prototype =
     this.updateBtn.label = this.bundle.GetStringFromName(aKeyPrefix + ".label");
     this.updateBtn.accessKey = this.bundle.GetStringFromName(aKeyPrefix + ".accesskey");
     if (!document.commandDispatcher.focusedElement ||
-        document.commandDispatcher.focusedElement.isSameNode(this.updateBtn))
+        document.commandDispatcher.focusedElement == this.updateBtn)
       this.updateBtn.focus();
   },
 

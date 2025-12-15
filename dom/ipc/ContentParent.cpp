@@ -44,13 +44,13 @@
 #include "History.h"
 #include "mozilla/ipc/TestShellParent.h"
 #include "mozilla/net/NeckoParent.h"
+#include "mozilla/Preferences.h"
 #include "nsHashPropertyBag.h"
 #include "nsIFilePicker.h"
 #include "nsIWindowWatcher.h"
 #include "nsIDOMWindow.h"
 #include "nsIPrefBranch.h"
 #include "nsIPrefBranch2.h"
-#include "nsIPrefService.h"
 #include "nsIPrefLocalizedString.h"
 #include "nsIObserverService.h"
 #include "nsContentUtils.h"
@@ -62,6 +62,7 @@
 #include "nsExternalHelperAppService.h"
 #include "nsCExternalHandlerService.h"
 #include "nsFrameMessageManager.h"
+#include "nsIPresShell.h"
 #include "nsIAlertsService.h"
 #include "nsToolkitCompsCID.h"
 #include "nsIDOMGeoGeolocation.h"
@@ -69,10 +70,12 @@
 #include "nsIScriptError.h"
 #include "nsConsoleMessage.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsAppRunner.h"
 #include "IDBFactory.h"
 #if defined(MOZ_SYDNEYAUDIO)
 #include "AudioParent.h"
 #endif
+#include "SandboxHal.h"
 
 #if defined(ANDROID) || defined(LINUX)
 #include <sys/time.h>
@@ -91,9 +94,11 @@
 
 #include "mozilla/dom/ExternalHelperAppParent.h"
 #include "mozilla/dom/StorageParent.h"
+#include "mozilla/hal_sandbox/PHalParent.h"
 #include "mozilla/Services.h"
 #include "mozilla/unused.h"
 #include "nsDeviceMotion.h"
+#include "mozilla/Util.h"
 
 #include "nsIMemoryReporter.h"
 #include "nsMemoryReporterManager.h"
@@ -110,7 +115,9 @@
 static NS_DEFINE_CID(kCClipboardCID, NS_CLIPBOARD_CID);
 static const char* sClipboardTextFlavors[] = { kUnicodeMime };
 
+using mozilla::Preferences;
 using namespace mozilla::ipc;
+using namespace mozilla::hal_sandbox;
 using namespace mozilla::net;
 using namespace mozilla::places;
 using mozilla::unused; // heh
@@ -153,21 +160,42 @@ MemoryReportRequestParent::~MemoryReportRequestParent()
     MOZ_COUNT_DTOR(MemoryReportRequestParent);
 }
 
-ContentParent* ContentParent::gSingleton;
+nsTArray<ContentParent*>* ContentParent::gContentParents;
+
+// The first content child has ID 1, so the chrome process can have ID 0.
+static PRUint64 gContentChildID = 1;
 
 ContentParent*
-ContentParent::GetSingleton(PRBool aForceNew)
+ContentParent::GetNewOrUsed()
 {
-    if (gSingleton && !gSingleton->IsAlive())
-        gSingleton = nsnull;
-    
-    if (!gSingleton && aForceNew) {
-        nsRefPtr<ContentParent> parent = new ContentParent();
-        gSingleton = parent;
-        parent->Init();
+    if (!gContentParents)
+        gContentParents = new nsTArray<ContentParent*>();
+
+    PRInt32 maxContentProcesses = Preferences::GetInt("dom.ipc.processCount", 1);
+    if (maxContentProcesses < 1)
+        maxContentProcesses = 1;
+
+    if (gContentParents->Length() >= PRUint32(maxContentProcesses)) {
+        ContentParent* p = (*gContentParents)[rand() % gContentParents->Length()];
+        NS_ASSERTION(p->IsAlive(), "Non-alive contentparent in gContentParents?");
+        return p;
+    }
+        
+    nsRefPtr<ContentParent> p = new ContentParent();
+    p->Init();
+    gContentParents->AppendElement(p);
+    return p;
+}
+
+void
+ContentParent::GetAll(nsTArray<ContentParent*>& aArray)
+{
+    if (!gContentParents) {
+        aArray.Clear();
+        return;
     }
 
-    return gSingleton;
+    aArray = *gContentParents;
 }
 
 void
@@ -175,14 +203,19 @@ ContentParent::Init()
 {
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (obs) {
-        obs->AddObserver(this, "xpcom-shutdown", PR_FALSE);
-        obs->AddObserver(this, NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC, PR_FALSE);
-        obs->AddObserver(this, "child-memory-reporter-request", PR_FALSE);
-        obs->AddObserver(this, "memory-pressure", PR_FALSE);
+        obs->AddObserver(this, "xpcom-shutdown", false);
+        obs->AddObserver(this, NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC, false);
+        obs->AddObserver(this, "child-memory-reporter-request", false);
+        obs->AddObserver(this, "memory-pressure", false);
+        obs->AddObserver(this, "child-gc-request", false);
+        obs->AddObserver(this, "child-cc-request", false);
+#ifdef ACCESSIBILITY
+        obs->AddObserver(this, "a11y-init-or-shutdown", false);
+#endif
     }
     nsCOMPtr<nsIPrefBranch2> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
     if (prefs) {
-        prefs->AddObserver("", this, PR_FALSE);
+        prefs->AddObserver("", this, false);
     }
     nsCOMPtr<nsIThreadInternal>
             threadInt(do_QueryInterface(NS_GetCurrentThread()));
@@ -191,8 +224,16 @@ ContentParent::Init()
         threadInt->SetObserver(this);
     }
     if (obs) {
-        obs->NotifyObservers(nsnull, "ipc:content-created", nsnull);
+        obs->NotifyObservers(static_cast<nsIObserver*>(this), "ipc:content-created", nsnull);
     }
+
+#ifdef ACCESSIBILITY
+    // If accessibility is running in chrome process then start it in content
+    // process.
+    if (nsIPresShell::IsAccessibilityActive()) {
+        unused << SendActivateA11y();
+    }
+#endif
 }
 
 void
@@ -237,6 +278,7 @@ ContentParent::OnChannelConnected(int32 pid)
 }
 
 namespace {
+
 void
 DelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess)
 {
@@ -244,6 +286,20 @@ DelayedDeleteSubprocess(GeckoChildProcessHost* aSubprocess)
         ->PostTask(FROM_HERE,
                    new DeleteTask<GeckoChildProcessHost>(aSubprocess));
 }
+
+// This runnable only exists to delegate ownership of the
+// ContentParent to this runnable, until it's deleted by the event
+// system.
+struct DelayedDeleteContentParentTask : public nsRunnable
+{
+    DelayedDeleteContentParentTask(ContentParent* aObj) : mObj(aObj) { }
+
+    // No-op
+    NS_IMETHODIMP Run() { return NS_OK; }
+
+    nsRefPtr<ContentParent> mObj;
+};
+
 }
 
 void
@@ -257,7 +313,14 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
         obs->RemoveObserver(static_cast<nsIObserver*>(this), "memory-pressure");
         obs->RemoveObserver(static_cast<nsIObserver*>(this), "child-memory-reporter-request");
         obs->RemoveObserver(static_cast<nsIObserver*>(this), NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC);
+        obs->RemoveObserver(static_cast<nsIObserver*>(this), "child-gc-request");
+        obs->RemoveObserver(static_cast<nsIObserver*>(this), "child-cc-request");
+#ifdef ACCESSIBILITY
+        obs->RemoveObserver(static_cast<nsIObserver*>(this), "a11y-init-or-shutdown");
+#endif
     }
+
+    mMessageManager->Disconnect();
 
     // clear the child memory reporters
     InfallibleTArray<MemoryReport> empty;
@@ -280,6 +343,14 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     if (mRunToCompletionDepth)
         mRunToCompletionDepth = 0;
 
+    if (gContentParents) {
+        gContentParents->RemoveElement(this);
+        if (!gContentParents->Length()) {
+            delete gContentParents;
+            gContentParents = NULL;
+        }
+    }
+
     mIsAlive = false;
 
     if (obs) {
@@ -287,30 +358,17 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
         props->Init();
 
         if (AbnormalShutdown == why) {
-            props->SetPropertyAsBool(NS_LITERAL_STRING("abnormal"), PR_TRUE);
+            props->SetPropertyAsBool(NS_LITERAL_STRING("abnormal"), true);
 
 #ifdef MOZ_CRASHREPORTER
-            nsAutoString dumpID;
+            MOZ_ASSERT(ManagedPCrashReporterParent().Length() > 0);
+            CrashReporterParent* crashReporter =
+                    static_cast<CrashReporterParent*>(ManagedPCrashReporterParent()[0]);
 
-            nsCOMPtr<nsILocalFile> crashDump;
-            TakeMinidump(getter_AddRefs(crashDump)) &&
-                CrashReporter::GetIDFromMinidump(crashDump, dumpID);
-
+            crashReporter->GenerateCrashReport(this, NULL);
+ 
+            nsAutoString dumpID(crashReporter->ChildDumpID());
             props->SetPropertyAsAString(NS_LITERAL_STRING("dumpID"), dumpID);
-
-            if (!dumpID.IsEmpty()) {
-                CrashReporter::AnnotationTable notes;
-                notes.Init();
-                notes.Put(NS_LITERAL_CSTRING("ProcessType"), NS_LITERAL_CSTRING("content"));
-
-                char startTime[32];
-                sprintf(startTime, "%lld", static_cast<PRInt64>(mProcessStartTime));
-                notes.Put(NS_LITERAL_CSTRING("StartupTime"),
-                          nsDependentCString(startTime));
-
-                // TODO: Additional per-process annotations.
-                CrashReporter::AppendExtraData(dumpID, notes);
-            }
 #endif
 
             obs->NotifyObservers((nsIPropertyBag2*) props, "ipc:content-shutdown", nsnull);
@@ -321,6 +379,15 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
         PostTask(FROM_HERE,
                  NewRunnableFunction(DelayedDeleteSubprocess, mSubprocess));
     mSubprocess = NULL;
+
+    // IPDL rules require actors to live on past ActorDestroy, but it
+    // may be that the kungFuDeathGrip above is the last reference to
+    // |this|.  If so, when we go out of scope here, we're deleted and
+    // all hell breaks loose.
+    //
+    // This runnable ensures that a reference to |this| lives on at
+    // least until after the current task finishes running.
+    NS_DispatchToCurrentThread(new DelayedDeleteContentParentTask(this));
 }
 
 TabParent*
@@ -341,22 +408,40 @@ ContentParent::DestroyTestShell(TestShellParent* aTestShell)
     return PTestShellParent::Send__delete__(aTestShell);
 }
 
+TestShellParent*
+ContentParent::GetTestShellSingleton()
+{
+    if (!ManagedPTestShellParent().Length())
+        return nsnull;
+    return static_cast<TestShellParent*>(ManagedPTestShellParent()[0]);
+}
+
 ContentParent::ContentParent()
     : mGeolocationWatchID(-1)
     , mRunToCompletionDepth(0)
     , mShouldCallUnblockChild(false)
     , mIsAlive(true)
-    , mProcessStartTime(time(NULL))
+    , mSendPermissionUpdates(false)
 {
     NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
     mSubprocess = new GeckoChildProcessHost(GeckoProcessType_Content);
     mSubprocess->AsyncLaunch();
     Open(mSubprocess->GetChannel(), mSubprocess->GetChildProcessHandle());
+    unused << SendSetID(gContentChildID++);
 
     nsCOMPtr<nsIChromeRegistry> registrySvc = nsChromeRegistry::GetService();
     nsChromeRegistryChrome* chromeRegistry =
         static_cast<nsChromeRegistryChrome*>(registrySvc.get());
     chromeRegistry->SendRegisteredChrome(this);
+    mMessageManager = nsFrameMessageManager::NewProcessMessageManager(this);
+
+    if (gAppData) {
+        nsCString version(gAppData->version);
+        nsCString buildID(gAppData->buildID);
+
+        //Sending all information to content process
+        SendAppInfo(version, buildID);
+    }
 }
 
 ContentParent::~ContentParent()
@@ -365,10 +450,8 @@ ContentParent::~ContentParent()
         base::CloseProcessHandle(OtherProcess());
 
     NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-    //If the previous content process has died, a new one could have
-    //been started since.
-    if (gSingleton == this)
-        gSingleton = nsnull;
+    NS_ASSERTION(!gContentParents || !gContentParents->Contains(this),
+                 "Should have been removed in ActorDestroy");
 }
 
 bool
@@ -381,7 +464,7 @@ bool
 ContentParent::RecvReadPrefsArray(InfallibleTArray<PrefTuple> *prefs)
 {
     EnsurePrefService();
-    mPrefService->MirrorPreferences(prefs);
+    Preferences::MirrorPreferences(prefs);
     return true;
 }
 
@@ -410,16 +493,18 @@ bool
 ContentParent::RecvReadPermissions(InfallibleTArray<IPC::Permission>* aPermissions)
 {
 #ifdef MOZ_PERMISSIONS
-    nsRefPtr<nsPermissionManager> permissionManager =
-        nsPermissionManager::GetSingleton();
+    nsCOMPtr<nsIPermissionManager> permissionManagerIface =
+        do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+    nsPermissionManager* permissionManager =
+        static_cast<nsPermissionManager*>(permissionManagerIface.get());
     NS_ABORT_IF_FALSE(permissionManager,
                  "We have no permissionManager in the Chrome process !");
 
     nsCOMPtr<nsISimpleEnumerator> enumerator;
-    nsresult rv = permissionManager->GetEnumerator(getter_AddRefs(enumerator));
+    DebugOnly<nsresult> rv = permissionManager->GetEnumerator(getter_AddRefs(enumerator));
     NS_ABORT_IF_FALSE(NS_SUCCEEDED(rv), "Could not get enumerator!");
     while(1) {
-        PRBool hasMore;
+        bool hasMore;
         enumerator->HasMoreElements(&hasMore);
         if (!hasMore)
             break;
@@ -444,7 +529,7 @@ ContentParent::RecvReadPermissions(InfallibleTArray<IPC::Permission>* aPermissio
     }
 
     // Ask for future changes
-    permissionManager->ChildRequestPermissions();
+    mSendPermissionUpdates = true;
 #endif
 
     return true;
@@ -512,12 +597,14 @@ ContentParent::RecvGetClipboardText(const PRInt32& whichClipboard, nsString* tex
     clipboard->GetData(trans, whichClipboard);
     nsCOMPtr<nsISupports> tmp;
     PRUint32 len;
-    rv  = trans->GetTransferData(kUnicodeMime, getter_AddRefs(tmp), &len);
-    NS_ENSURE_SUCCESS(rv, rv);
+    rv = trans->GetTransferData(kUnicodeMime, getter_AddRefs(tmp), &len);
+    if (NS_FAILED(rv))
+        return false;
 
     nsCOMPtr<nsISupportsString> supportsString = do_QueryInterface(tmp);
     // No support for non-text data
-    NS_ENSURE_TRUE(supportsString, NS_ERROR_NOT_IMPLEMENTED);
+    if (!supportsString)
+        return false;
     supportsString->GetData(*text);
     return true;
 }
@@ -535,7 +622,7 @@ ContentParent::RecvEmptyClipboard()
 }
 
 bool
-ContentParent::RecvClipboardHasText(PRBool* hasText)
+ContentParent::RecvClipboardHasText(bool* hasText)
 {
     nsresult rv;
     nsCOMPtr<nsIClipboard> clipboard(do_GetService(kCClipboardCID, &rv));
@@ -550,8 +637,11 @@ bool
 ContentParent::RecvGetSystemColors(const PRUint32& colorsCount, InfallibleTArray<PRUint32>* colors)
 {
 #ifdef ANDROID
-    if (!AndroidBridge::Bridge())
-        return false;
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() == nsnull) {
+        // Do not fail - the colors won't be right, but it's not critical
+        return true;
+    }
 
     colors->AppendElements(colorsCount);
 
@@ -566,8 +656,11 @@ bool
 ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32& aIconSize, InfallibleTArray<PRUint8>* bits)
 {
 #ifdef ANDROID
-    if (!AndroidBridge::Bridge())
-        return false;
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() == nsnull) {
+        // Do not fail - just no icon will be shown
+        return true;
+    }
 
     bits->AppendElements(aIconSize * aIconSize * 4);
 
@@ -576,10 +669,24 @@ ContentParent::RecvGetIconForExtension(const nsCString& aFileExt, const PRUint32
     return true;
 }
 
-NS_IMPL_THREADSAFE_ISUPPORTS3(ContentParent,
+bool
+ContentParent::RecvGetShowPasswordSetting(bool* showPassword)
+{
+    // default behavior is to show the last password character
+    *showPassword = true;
+#ifdef ANDROID
+    NS_ASSERTION(AndroidBridge::Bridge() != nsnull, "AndroidBridge is not available");
+    if (AndroidBridge::Bridge() != nsnull)
+        *showPassword = AndroidBridge::Bridge()->GetShowPasswordSetting();
+#endif
+    return true;
+}
+
+NS_IMPL_THREADSAFE_ISUPPORTS4(ContentParent,
                               nsIObserver,
                               nsIThreadObserver,
-                              nsIDOMGeoPositionCallback)
+                              nsIDOMGeoPositionCallback,
+                              nsIDeviceMotionListener)
 
 NS_IMETHODIMP
 ContentParent::Observe(nsISupports* aSubject,
@@ -603,33 +710,9 @@ ContentParent::Observe(nsISupports* aSubject,
         // We know prefs are ASCII here.
         NS_LossyConvertUTF16toASCII strData(aData);
 
-        nsCOMPtr<nsIPrefServiceInternal> prefService =
-          do_GetService("@mozilla.org/preferences-service;1");
-
-        PRBool prefNeedUpdate;
-        prefService->PrefHasUserValue(strData, &prefNeedUpdate);
-
-        // If the pref does not have a user value, check if it exist on the
-        // default branch or not
-        if (!prefNeedUpdate) {
-          nsCOMPtr<nsIPrefBranch> defaultBranch;
-          nsCOMPtr<nsIPrefService> prefsService = do_QueryInterface(prefService);
-          prefsService->GetDefaultBranch(nsnull, getter_AddRefs(defaultBranch));
-
-          PRInt32 prefType = nsIPrefBranch::PREF_INVALID;
-          defaultBranch->GetPrefType(strData.get(), &prefType);
-          prefNeedUpdate = (prefType != nsIPrefBranch::PREF_INVALID);
-        }
-
+        PrefTuple pref;
+        bool prefNeedUpdate = Preferences::MirrorPreference(strData.get(), &pref);
         if (prefNeedUpdate) {
-          // Pref was created, or previously existed and its value
-          // changed.
-          PrefTuple pref;
-#ifdef DEBUG
-          nsresult rv =
-#endif
-          prefService->MirrorPreference(strData, &pref);
-          NS_ASSERTION(NS_SUCCEEDED(rv), "Pref has value but can't mirror?");
           if (!SendPreferenceUpdate(pref)) {
               return NS_ERROR_NOT_AVAILABLE;
           }
@@ -654,8 +737,22 @@ ContentParent::Observe(nsISupports* aSubject,
             return NS_ERROR_NOT_AVAILABLE;
     }
     else if (!strcmp(aTopic, "child-memory-reporter-request")) {
-        SendPMemoryReportRequestConstructor();
+        unused << SendPMemoryReportRequestConstructor();
     }
+    else if (!strcmp(aTopic, "child-gc-request")){
+        SendGarbageCollect();
+    }
+    else if (!strcmp(aTopic, "child-cc-request")){
+        SendCycleCollect();
+    }
+#ifdef ACCESSIBILITY
+    // Make sure accessibility is running in content process when accessibility
+    // gets initiated in chrome process.
+    else if (aData && (*aData == '1') &&
+             !strcmp(aTopic, "a11y-init-or-shutdown")) {
+        unused << SendActivateA11y();
+    }
+#endif
 
     return NS_OK;
 }
@@ -679,9 +776,23 @@ ContentParent::DeallocPBrowser(PBrowserParent* frame)
 }
 
 PCrashReporterParent*
-ContentParent::AllocPCrashReporter()
+ContentParent::AllocPCrashReporter(const NativeThreadId& tid,
+                                   const PRUint32& processType)
 {
+#ifdef MOZ_CRASHREPORTER
   return new CrashReporterParent();
+#else
+  return nsnull;
+#endif
+}
+
+bool
+ContentParent::RecvPCrashReporterConstructor(PCrashReporterParent* actor,
+                                             const NativeThreadId& tid,
+                                             const PRUint32& processType)
+{
+  static_cast<CrashReporterParent*>(actor)->SetChildData(tid, processType);
+  return true;
 }
 
 bool
@@ -689,6 +800,19 @@ ContentParent::DeallocPCrashReporter(PCrashReporterParent* crashreporter)
 {
   delete crashreporter;
   return true;
+}
+
+PHalParent*
+ContentParent::AllocPHal()
+{
+    return CreateHalParent();
+}
+
+bool
+ContentParent::DeallocPHal(PHalParent* aHal)
+{
+    delete aHal;
+    return true;
 }
 
 PMemoryReportRequestParent*
@@ -890,7 +1014,7 @@ ContentParent::RecvSetURITitle(const IPC::URI& uri,
 bool
 ContentParent::RecvShowFilePicker(const PRInt16& mode,
                                   const PRInt16& selectedType,
-                                  const PRBool& addToRecentDocs,
+                                  const bool& addToRecentDocs,
                                   const nsString& title,
                                   const nsString& defaultFile,
                                   const nsString& defaultExtension,
@@ -938,7 +1062,7 @@ ContentParent::RecvShowFilePicker(const PRInt16& mode,
         *result = filePicker->GetFiles(getter_AddRefs(fileIter));
 
         nsCOMPtr<nsILocalFile> singleFile;
-        PRBool loop = PR_TRUE;
+        bool loop = true;
         while (NS_SUCCEEDED(fileIter->HasMoreElements(&loop)) && loop) {
             fileIter->GetNext(getter_AddRefs(singleFile));
             if (singleFile) {
@@ -986,7 +1110,7 @@ ContentParent::OnDispatchedEvent(nsIThreadInternal *thread)
 /* void onProcessNextEvent (in nsIThreadInternal thread, in boolean mayWait, in unsigned long recursionDepth); */
 NS_IMETHODIMP
 ContentParent::OnProcessNextEvent(nsIThreadInternal *thread,
-                                  PRBool mayWait,
+                                  bool mayWait,
                                   PRUint32 recursionDepth)
 {
     if (mRunToCompletionDepth)
@@ -1022,7 +1146,7 @@ ContentParent::AfterProcessNextEvent(nsIThreadInternal *thread,
 
 bool
 ContentParent::RecvShowAlertNotification(const nsString& aImageUrl, const nsString& aTitle,
-                                         const nsString& aText, const PRBool& aTextClickable,
+                                         const nsString& aText, const bool& aTextClickable,
                                          const nsString& aCookie, const nsString& aName)
 {
     nsCOMPtr<nsIAlertsService> sysAlerts(do_GetService(NS_ALERTSERVICE_CONTRACTID));
@@ -1038,10 +1162,10 @@ bool
 ContentParent::RecvSyncMessage(const nsString& aMsg, const nsString& aJSON,
                                InfallibleTArray<nsString>* aRetvals)
 {
-  nsRefPtr<nsFrameMessageManager> ppm = nsFrameMessageManager::sParentProcessManager;
+  nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg,PR_TRUE, aJSON, nsnull, aRetvals);
+                        aMsg,true, aJSON, nsnull, aRetvals);
   }
   return true;
 }
@@ -1049,10 +1173,10 @@ ContentParent::RecvSyncMessage(const nsString& aMsg, const nsString& aJSON,
 bool
 ContentParent::RecvAsyncMessage(const nsString& aMsg, const nsString& aJSON)
 {
-  nsRefPtr<nsFrameMessageManager> ppm = nsFrameMessageManager::sParentProcessManager;
+  nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, PR_FALSE, aJSON, nsnull, nsnull);
+                        aMsg, false, aJSON, nsnull, nsnull);
   }
   return true;
 }

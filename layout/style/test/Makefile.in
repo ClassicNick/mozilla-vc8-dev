@@ -129,7 +129,11 @@ _TEST_FILES =	test_acid3_test46.html \
 		test_bug657143.html \
 		test_bug664955.html \
 		test_bug667520.html \
+		test_bug645998.html \
+		file_bug645998-1.css \
+		file_bug645998-2.css \
 		test_cascade.html \
+		test_ch_ex_no_infloops.html \
 		test_compute_data_with_start_struct.html \
 		test_computed_style.html \
 		test_computed_style_no_pseudo.html \
@@ -222,12 +226,16 @@ _TEST_FILES =	test_acid3_test46.html \
 		visited_image_loading.sjs \
 		visited_image_loading_frame.html \
 		visited_image_loading_frame_empty.html \
+		test_load_events_on_stylesheets.html \
 		$(NULL)
 
 _VISITED_REFTEST_FILES = \
 		$(shell find $(topsrcdir)/layout/reftests/css-visited/ -name '*.html' -o -name '*.xhtml') \
 		$(topsrcdir)/layout/reftests/svg/pseudo-classes-02.svg \
 		$(topsrcdir)/layout/reftests/svg/pseudo-classes-02-ref.svg \
+		$(topsrcdir)/layout/reftests/svg/as-image/lime100x100.svg \
+		$(topsrcdir)/layout/reftests/svg/as-image/svg-image-visited-1-helper.svg \
+		$(topsrcdir)/layout/reftests/svg/as-image/svg-image-visited-2-helper.svg \
 		$(NULL)
 
 ifneq (mobile,$(MOZ_BUILD_APP))

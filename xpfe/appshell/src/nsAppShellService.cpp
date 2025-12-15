@@ -52,12 +52,11 @@
 #include "nsIWindowMediator.h"
 #include "nsIWindowWatcher.h"
 #include "nsPIWindowWatcher.h"
-#include "nsIDOMWindowInternal.h"
+#include "nsIDOMWindow.h"
 #include "nsWebShellWindow.h"
 
 #include "nsIEnumerator.h"
 #include "nsCRT.h"
-#include "nsITimelineService.h"
 #include "prprf.h"    
 
 #include "nsWidgetsCID.h"
@@ -85,17 +84,17 @@ using namespace mozilla;
 class nsIAppShell;
 
 nsAppShellService::nsAppShellService() : 
-  mXPCOMWillShutDown(PR_FALSE),
-  mXPCOMShuttingDown(PR_FALSE),
+  mXPCOMWillShutDown(false),
+  mXPCOMShuttingDown(false),
   mModalWindowCount(0),
-  mApplicationProvidedHiddenWindow(PR_FALSE)
+  mApplicationProvidedHiddenWindow(false)
 {
   nsCOMPtr<nsIObserverService> obs
     (do_GetService("@mozilla.org/observer-service;1"));
 
   if (obs) {
-    obs->AddObserver(this, "xpcom-will-shutdown", PR_FALSE);
-    obs->AddObserver(this, "xpcom-shutdown", PR_FALSE);
+    obs->AddObserver(this, "xpcom-will-shutdown", false);
+    obs->AddObserver(this, "xpcom-shutdown", false);
   }
 }
 
@@ -111,51 +110,8 @@ NS_IMPL_ISUPPORTS2(nsAppShellService,
                    nsIAppShellService,
                    nsIObserver)
 
-nsresult 
-nsAppShellService::SetXPConnectSafeContext()
-{
-  nsresult rv;
-
-  nsCOMPtr<nsIThreadJSContextStack> cxstack =
-    do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIDOMWindowInternal> junk;
-  JSContext *cx;
-  rv = GetHiddenWindowAndJSContext(getter_AddRefs(junk), &cx);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return cxstack->SetSafeJSContext(cx);
-}  
-
-nsresult nsAppShellService::ClearXPConnectSafeContext()
-{
-  nsresult rv;
-
-  nsCOMPtr<nsIThreadJSContextStack> cxstack =
-    do_GetService("@mozilla.org/js/xpc/ContextStack;1", &rv);
-  if (NS_FAILED(rv)) {
-    NS_ERROR("XPConnect ContextStack gone before XPCOM shutdown?");
-    return rv;
-  }
-
-  nsCOMPtr<nsIDOMWindowInternal> junk;
-  JSContext *cx;
-  rv = GetHiddenWindowAndJSContext(getter_AddRefs(junk), &cx);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  JSContext *safe_cx;
-  rv = cxstack->GetSafeJSContext(&safe_cx);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (cx == safe_cx)
-    rv = cxstack->SetSafeJSContext(nsnull);
-
-  return rv;
-}
-
 NS_IMETHODIMP
-nsAppShellService::CreateHiddenWindow(nsIAppShell* aAppShell)
+nsAppShellService::CreateHiddenWindow()
 {
   nsresult rv;
   PRInt32 initialHeight = 100, initialWidth = 100;
@@ -165,7 +121,7 @@ nsAppShellService::CreateHiddenWindow(nsIAppShell* aAppShell)
   nsAdoptingCString prefVal =
       Preferences::GetCString("browser.hiddenWindowChromeURL");
   const char* hiddenWindowURL = prefVal.get() ? prefVal.get() : DEFAULT_HIDDENWINDOW_URL;
-  mApplicationProvidedHiddenWindow = prefVal.get() ? PR_TRUE : PR_FALSE;
+  mApplicationProvidedHiddenWindow = prefVal.get() ? true : false;
 #else
   static const char hiddenWindowURL[] = DEFAULT_HIDDENWINDOW_URL;
   PRUint32    chromeMask =  nsIWebBrowserChrome::CHROME_ALL;
@@ -178,16 +134,10 @@ nsAppShellService::CreateHiddenWindow(nsIAppShell* aAppShell)
   nsRefPtr<nsWebShellWindow> newWindow;
   rv = JustCreateTopWindow(nsnull, url,
                            chromeMask, initialWidth, initialHeight,
-                           PR_TRUE, aAppShell, getter_AddRefs(newWindow));
+                           true, getter_AddRefs(newWindow));
   NS_ENSURE_SUCCESS(rv, rv);
 
   mHiddenWindow.swap(newWindow);
-
-  // Set XPConnect's fallback JSContext (used for JS Components)
-  // to the DOM JSContext for this thread, so that DOM-to-XPConnect
-  // conversions get the JSContext private magic they need to
-  // succeed.
-  SetXPConnectSafeContext();
 
   // RegisterTopLevelWindow(newWindow); -- Mac only
 
@@ -198,7 +148,6 @@ NS_IMETHODIMP
 nsAppShellService::DestroyHiddenWindow()
 {
   if (mHiddenWindow) {
-    ClearXPConnectSafeContext();
     mHiddenWindow->Destroy();
 
     mHiddenWindow = nsnull;
@@ -206,6 +155,8 @@ nsAppShellService::DestroyHiddenWindow()
 
   return NS_OK;
 }
+
+PRTime gCreateTopLevelWindowTimestamp = 0;
 
 /*
  * Create a new top level window and display the given URL within it...
@@ -216,16 +167,18 @@ nsAppShellService::CreateTopLevelWindow(nsIXULWindow *aParent,
                                         PRUint32 aChromeMask,
                                         PRInt32 aInitialWidth,
                                         PRInt32 aInitialHeight,
-                                        nsIAppShell* aAppShell,
                                         nsIXULWindow **aResult)
 
 {
   nsresult rv;
 
+  if (!gCreateTopLevelWindowTimestamp)
+    gCreateTopLevelWindowTimestamp = PR_Now();
+
   nsWebShellWindow *newWindow = nsnull;
   rv = JustCreateTopWindow(aParent, aUrl,
                            aChromeMask, aInitialWidth, aInitialHeight,
-                           PR_FALSE, aAppShell, &newWindow);  // addrefs
+                           false, &newWindow);  // addrefs
 
   *aResult = newWindow; // transfer ref
 
@@ -281,23 +234,23 @@ nsAppShellService::CalculateWindowZLevel(nsIXULWindow *aParent,
 /*
  * Checks to see if any existing window is currently in fullscreen mode.
  */
-static PRBool
+static bool
 CheckForFullscreenWindow()
 {
   nsCOMPtr<nsIWindowMediator> wm(do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (!wm)
-    return PR_FALSE;
+    return false;
 
   nsCOMPtr<nsISimpleEnumerator> windowList;
   wm->GetXULWindowEnumerator(nsnull, getter_AddRefs(windowList));
   if (!windowList)
-    return PR_FALSE;
+    return false;
 
   for (;;) {
-    PRBool more = PR_FALSE;
+    bool more = false;
     windowList->HasMoreElements(&more);
     if (!more)
-      return PR_FALSE;
+      return false;
 
     nsCOMPtr<nsISupports> supportsWindow;
     windowList->GetNext(getter_AddRefs(supportsWindow));
@@ -308,11 +261,11 @@ CheckForFullscreenWindow()
       baseWin->GetMainWidget(getter_AddRefs(widget));
       if (widget && NS_SUCCEEDED(widget->GetSizeMode(&sizeMode)) && 
           sizeMode == nsSizeMode_Fullscreen) {
-        return PR_TRUE;
+        return true;
       }
     }
   }
-  return PR_FALSE;
+  return false;
 }
 #endif
 
@@ -325,8 +278,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
                                        PRUint32 aChromeMask,
                                        PRInt32 aInitialWidth,
                                        PRInt32 aInitialHeight,
-                                       PRBool aIsHiddenWindow,
-                                       nsIAppShell* aAppShell,
+                                       bool aIsHiddenWindow,
                                        nsWebShellWindow **aResult)
 {
   *aResult = nsnull;
@@ -344,7 +296,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
   // full screen states. This way new browser windows open on top of fullscreen
   // windows normally.
   if (window && CheckForFullscreenWindow())
-    window->IgnoreXULSizeMode(PR_TRUE);
+    window->IgnoreXULSizeMode(true);
 #endif
 
   nsWidgetInitData widgetInitData;
@@ -375,7 +327,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
 #if defined(XP_WIN)
   if (widgetInitData.mWindowType == eWindowType_toplevel ||
       widgetInitData.mWindowType == eWindowType_dialog)
-    widgetInitData.clipChildren = PR_TRUE;
+    widgetInitData.clipChildren = true;
 #endif
 
   // note default chrome overrides other OS chrome settings, but
@@ -411,24 +363,23 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
       aInitialHeight == nsIAppShellService::SIZE_TO_CONTENT) {
     aInitialWidth = 1;
     aInitialHeight = 1;
-    window->SetIntrinsicallySized(PR_TRUE);
+    window->SetIntrinsicallySized(true);
   }
 
-  PRBool center = aChromeMask & nsIWebBrowserChrome::CHROME_CENTER_SCREEN;
+  bool center = aChromeMask & nsIWebBrowserChrome::CHROME_CENTER_SCREEN;
 
   nsCOMPtr<nsIXULChromeRegistry> reg =
     mozilla::services::GetXULChromeRegistryService();
   if (reg) {
     nsCAutoString package;
     package.AssignLiteral("global");
-    PRBool isRTL = PR_FALSE;
+    bool isRTL = false;
     reg->IsLocaleRTL(package, &isRTL);
     widgetInitData.mRTL = isRTL;
   }
 
   nsresult rv = window->Initialize(parent, center ? aParent : nsnull,
-                                   aAppShell, aUrl,
-                                   aInitialWidth, aInitialHeight,
+                                   aUrl, aInitialWidth, aInitialHeight,
                                    aIsHiddenWindow, widgetInitData);
       
   NS_ENSURE_SUCCESS(rv, rv);
@@ -438,7 +389,7 @@ nsAppShellService::JustCreateTopWindow(nsIXULWindow *aParent,
     parent->AddChildWindow(*aResult);
 
   if (center)
-    rv = (*aResult)->Center(parent, parent ? PR_FALSE : PR_TRUE, PR_FALSE);
+    rv = (*aResult)->Center(parent, parent ? false : true, false);
 
   return rv;
 }
@@ -454,7 +405,7 @@ nsAppShellService::GetHiddenWindow(nsIXULWindow **aWindow)
 }
 
 NS_IMETHODIMP
-nsAppShellService::GetHiddenDOMWindow(nsIDOMWindowInternal **aWindow)
+nsAppShellService::GetHiddenDOMWindow(nsIDOMWindow **aWindow)
 {
   nsresult rv;
   nsCOMPtr<nsIDocShell> docShell;
@@ -463,7 +414,7 @@ nsAppShellService::GetHiddenDOMWindow(nsIDOMWindowInternal **aWindow)
   rv = mHiddenWindow->GetDocShell(getter_AddRefs(docShell));
   NS_ENSURE_SUCCESS(rv, rv);
   
-  nsCOMPtr<nsIDOMWindowInternal> hiddenDOMWindow(do_GetInterface(docShell, &rv));
+  nsCOMPtr<nsIDOMWindow> hiddenDOMWindow(do_GetInterface(docShell, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
 
   *aWindow = hiddenDOMWindow;
@@ -472,7 +423,7 @@ nsAppShellService::GetHiddenDOMWindow(nsIDOMWindowInternal **aWindow)
 }
 
 NS_IMETHODIMP
-nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindowInternal **aWindow,
+nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindow **aWindow,
                                                JSContext    **aJSContext)
 {
     nsresult rv = NS_OK;
@@ -481,15 +432,15 @@ nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindowInternal **aWindow,
         *aJSContext = nsnull;
 
         if ( mHiddenWindow ) {
-            // Convert hidden window to nsIDOMWindowInternal and extract its JSContext.
+            // Convert hidden window to nsIDOMWindow and extract its JSContext.
             do {
                 // 1. Get doc for hidden window.
                 nsCOMPtr<nsIDocShell> docShell;
                 rv = mHiddenWindow->GetDocShell(getter_AddRefs(docShell));
                 if (NS_FAILED(rv)) break;
 
-                // 2. Convert that to an nsIDOMWindowInternal.
-                nsCOMPtr<nsIDOMWindowInternal> hiddenDOMWindow(do_GetInterface(docShell));
+                // 2. Convert that to an nsIDOMWindow.
+                nsCOMPtr<nsIDOMWindow> hiddenDOMWindow(do_GetInterface(docShell));
                 if(!hiddenDOMWindow) break;
 
                 // 3. Get script global object for the window.
@@ -502,7 +453,7 @@ nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindowInternal **aWindow,
                 if (!scriptContext) { rv = NS_ERROR_FAILURE; break; }
 
                 // 5. Get JSContext from the script context.
-                JSContext *jsContext = (JSContext*)scriptContext->GetNativeContext();
+                JSContext *jsContext = scriptContext->GetNativeContext();
                 if (!jsContext) { rv = NS_ERROR_FAILURE; break; }
 
                 // Now, give results to caller.
@@ -520,7 +471,7 @@ nsAppShellService::GetHiddenWindowAndJSContext(nsIDOMWindowInternal **aWindow,
 }
 
 NS_IMETHODIMP
-nsAppShellService::GetApplicationProvidedHiddenWindow(PRBool* aAPHW)
+nsAppShellService::GetApplicationProvidedHiddenWindow(bool* aAPHW)
 {
     *aAPHW = mApplicationProvidedHiddenWindow;
     return NS_OK;
@@ -619,11 +570,10 @@ nsAppShellService::Observe(nsISupports* aSubject, const char *aTopic,
                            const PRUnichar *aData)
 {
   if (!strcmp(aTopic, "xpcom-will-shutdown")) {
-    mXPCOMWillShutDown = PR_TRUE;
+    mXPCOMWillShutDown = true;
   } else if (!strcmp(aTopic, "xpcom-shutdown")) {
-    mXPCOMShuttingDown = PR_TRUE;
+    mXPCOMShuttingDown = true;
     if (mHiddenWindow) {
-      ClearXPConnectSafeContext();
       mHiddenWindow->Destroy();
     }
   } else {

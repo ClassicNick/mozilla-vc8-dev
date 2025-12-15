@@ -37,6 +37,8 @@
 # ***** END LICENSE BLOCK *****
 */
 
+"use strict";
+
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cr = Components.results;
@@ -46,6 +48,9 @@ const PREF_EM_UPDATE_ENABLED          = "extensions.update.enabled";
 const PREF_EM_LAST_APP_VERSION        = "extensions.lastAppVersion";
 const PREF_EM_LAST_PLATFORM_VERSION   = "extensions.lastPlatformVersion";
 const PREF_EM_AUTOUPDATE_DEFAULT      = "extensions.update.autoUpdateDefault";
+const PREF_EM_STRICT_COMPATIBILITY    = "extensions.strictCompatibility";
+
+const STRICT_COMPATIBILITY_DEFAULT    = true;
 
 const VALID_TYPES_REGEXP = /^[\w\-]+$/;
 
@@ -191,20 +196,37 @@ AddonAuthor.prototype = {
  *
  * @param  aURL
  *         The URL to the full version of the screenshot
+ * @param  aWidth
+ *         The width in pixels of the screenshot
+ * @param  aHeight
+ *         The height in pixels of the screenshot
  * @param  aThumbnailURL
  *         The URL to the thumbnail version of the screenshot
+ * @param  aThumbnailWidth
+ *         The width in pixels of the thumbnail version of the screenshot
+ * @param  aThumbnailHeight
+ *         The height in pixels of the thumbnail version of the screenshot
  * @param  aCaption
  *         The caption of the screenshot
  */
-function AddonScreenshot(aURL, aThumbnailURL, aCaption) {
+function AddonScreenshot(aURL, aWidth, aHeight, aThumbnailURL,
+                         aThumbnailWidth, aThumbnailHeight, aCaption) {
   this.url = aURL;
-  this.thumbnailURL = aThumbnailURL;
-  this.caption = aCaption;
+  if (aWidth) this.width = aWidth;
+  if (aHeight) this.height = aHeight;
+  if (aThumbnailURL) this.thumbnailURL = aThumbnailURL;
+  if (aThumbnailWidth) this.thumbnailWidth = aThumbnailWidth;
+  if (aThumbnailHeight) this.thumbnailHeight = aThumbnailHeight;
+  if (aCaption) this.caption = aCaption;
 }
 
 AddonScreenshot.prototype = {
   url: null,
+  width: null,
+  height: null,
   thumbnailURL: null,
+  thumbnailWidth: null,
+  thumbnailHeight: null,
   caption: null,
 
   // Returns the screenshot URL, defaulting to the empty string
@@ -262,6 +284,7 @@ function AddonType(aId, aLocaleURI, aLocaleKey, aViewType, aUIPriority, aFlags) 
 }
 
 var gStarted = false;
+var gStrictCompatibility = STRICT_COMPATIBILITY_DEFAULT;
 
 /**
  * This is the real manager, kept here rather than in AddonManager to keep its
@@ -354,6 +377,11 @@ var AddonManagerInternal = {
       Services.prefs.setIntPref(PREF_BLOCKLIST_PINGCOUNTVERSION,
                                 (appChanged === undefined ? 0 : -1));
     }
+
+    try {
+      gStrictCompatibility = Services.prefs.getBoolPref(PREF_EM_STRICT_COMPATIBILITY);
+    } catch (e) {}
+    Services.prefs.addObserver(PREF_EM_STRICT_COMPATIBILITY, this, false);
 
     // Ensure all default providers have had a chance to register themselves
     DEFAULT_PROVIDERS.forEach(function(url) {
@@ -476,16 +504,43 @@ var AddonManagerInternal = {
    * up everything in order for automated tests to fake restarts.
    */
   shutdown: function AMI_shutdown() {
+    Services.prefs.removeObserver(PREF_EM_STRICT_COMPATIBILITY, this);
+
     this.providers.forEach(function(provider) {
       callProvider(provider, "shutdown");
     });
 
-    this.installListeners.splice(0);
-    this.addonListeners.splice(0);
-    this.typeListeners.splice(0);
+    this.installListeners.splice(0, this.installListeners.length);
+    this.addonListeners.splice(0, this.addonListeners.length);
+    this.typeListeners.splice(0, this.typeListeners.length);
     for (let type in this.startupChanges)
       delete this.startupChanges[type];
     gStarted = false;
+  },
+
+  /**
+   * Notified when a preference we're interested in has changed.
+   *
+   * @see nsIObserver
+   */
+  observe: function AMI_observe(aSubject, aTopic, aData) {
+    switch (aData) {
+    case PREF_EM_STRICT_COMPATIBILITY:
+      let oldValue = gStrictCompatibility;
+      try {
+        gStrictCompatibility = Services.prefs.getBoolPref(PREF_EM_STRICT_COMPATIBILITY);
+      } catch(e) {
+        gStrictCompatibility = STRICT_COMPATIBILITY_DEFAULT;
+      }
+
+      // XXXunf Currently, this won't notify listeners that an addon's
+      // compatibility status has changed if the addon's appDisabled state
+      // doesn't change.
+      if (gStrictCompatibility != oldValue)
+        this.updateAddonAppDisabledStates();
+
+      break;
+    }
   },
 
   /**
@@ -515,17 +570,6 @@ var AddonManagerInternal = {
       scope.AddonRepository.repopulateCache(ids, notifyComplete);
 
       pendingUpdates += aAddons.length;
-      var autoUpdateDefault = AddonManager.autoUpdateDefault;
-
-      function shouldAutoUpdate(aAddon) {
-        if (!("applyBackgroundUpdates" in aAddon))
-          return false;
-        if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_ENABLE)
-          return true;
-        if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_DISABLE)
-          return false;
-        return autoUpdateDefault;
-      }
 
       aAddons.forEach(function BUC_forEachCallback(aAddon) {
         // Check all add-ons for updates so that any compatibility updates will
@@ -535,7 +579,7 @@ var AddonManagerInternal = {
             // Start installing updates when the add-on can be updated and
             // background updates should be applied.
             if (aAddon.permissions & AddonManager.PERM_CAN_UPGRADE &&
-                shouldAutoUpdate(aAddon)) {
+                AddonManager.shouldAutoUpdate(aAddon)) {
               aInstall.install();
             }
           },
@@ -827,7 +871,7 @@ var AddonManagerInternal = {
    * @param  aMimetype
    *         The mimetype of add-ons being installed
    * @param  aSource
-   *         The nsIDOMWindowInternal that started the installs
+   *         The nsIDOMWindow that started the installs
    * @param  aURI
    *         the nsIURI that started the installs
    * @param  aInstalls
@@ -1087,6 +1131,10 @@ var AddonManagerInternal = {
       return Services.prefs.getBoolPref(PREF_EM_AUTOUPDATE_DEFAULT);
     } catch(e) { }
     return true;
+  },
+
+  get strictCompatibility() {
+    return gStrictCompatibility;
   }
 };
 
@@ -1397,6 +1445,20 @@ var AddonManager = {
 
   get autoUpdateDefault() {
     return AddonManagerInternal.autoUpdateDefault;
+  },
+
+  shouldAutoUpdate: function AM_shouldAutoUpdate(aAddon) {
+    if (!("applyBackgroundUpdates" in aAddon))
+      return false;
+    if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_ENABLE)
+      return true;
+    if (aAddon.applyBackgroundUpdates == AddonManager.AUTOUPDATE_DISABLE)
+      return false;
+    return this.autoUpdateDefault;
+  },
+
+  get strictCompatibility() {
+    return AddonManagerInternal.strictCompatibility;
   }
 };
 

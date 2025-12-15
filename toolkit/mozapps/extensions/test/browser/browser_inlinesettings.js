@@ -10,6 +10,9 @@ var gProvider;
 
 const SETTINGS_ROWS = 8;
 
+var MockFilePicker = SpecialPowers.MockFilePicker;
+MockFilePicker.reset();
+
 var observer = {
   lastData: null,
   observe: function(aSubject, aTopic, aData) {
@@ -42,6 +45,13 @@ function test() {
     optionsURL: CHROMEROOT + "options.xul",
     optionsType: AddonManager.OPTIONS_TYPE_INLINE
   },{
+    id: "inlinesettings3@tests.mozilla.org",
+    name: "Inline Settings (More Options)",
+    description: "Tests for option types introduced after Mozilla 7.0",
+    version: "1",
+    optionsURL: CHROMEROOT + "more_options.xul",
+    optionsType: AddonManager.OPTIONS_TYPE_INLINE
+  },{
     id: "noninlinesettings@tests.mozilla.org",
     name: "Non-Inline Settings",
     version: "1",
@@ -70,6 +80,12 @@ function end_test() {
   Services.prefs.clearUserPref("extensions.inlinesettings1.color");
   Services.prefs.clearUserPref("extensions.inlinesettings1.file");
   Services.prefs.clearUserPref("extensions.inlinesettings1.directory");
+  Services.prefs.clearUserPref("extensions.inlinesettings3.radioBool");
+  Services.prefs.clearUserPref("extensions.inlinesettings3.radioInt");
+  Services.prefs.clearUserPref("extensions.inlinesettings3.radioString");
+  Services.prefs.clearUserPref("extensions.inlinesettings3.menulist");
+
+  MockFilePicker.reset();
 
   close_manager(gManagerWindow, function() {
     AddonManager.getAddonByID("inlinesettings1@tests.mozilla.org", function(aAddon) {
@@ -201,8 +217,6 @@ add_test(function() {
     is(Services.prefs.getCharPref("extensions.inlinesettings1.color"), "#FF9900", "Color pref should have been updated");
 
     try {
-      mockFilePickerFactory.register();
-
       ok(!settings[6].hasAttribute("first-row"), "Not the first row");
       var button = gManagerWindow.document.getAnonymousElementByAttribute(settings[6], "anonid", "button");
       input = gManagerWindow.document.getAnonymousElementByAttribute(settings[6], "anonid", "input");
@@ -211,17 +225,17 @@ add_test(function() {
       var profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
       var curProcD = Services.dirsvc.get("CurProcD", Ci.nsIFile);
 
-      _returnFile = profD;
-      _returnValue = Ci.nsIFilePicker.returnOK;
+      MockFilePicker.returnFiles = [profD];
+      MockFilePicker.returnValue = Ci.nsIFilePicker.returnOK;
       EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-      is(_mode, Ci.nsIFilePicker.modeOpen, "File picker mode should be open file");
+      is(MockFilePicker.mode, Ci.nsIFilePicker.modeOpen, "File picker mode should be open file");
       is(input.value, profD.path, "Label value should match file chosen");
       is(Services.prefs.getCharPref("extensions.inlinesettings1.file"), profD.path, "File pref should match file chosen");
 
-      _returnFile = curProcD;
-      _returnValue = Ci.nsIFilePicker.returnCancel;
+      MockFilePicker.returnFiles = [curProcD];
+      MockFilePicker.returnValue = Ci.nsIFilePicker.returnCancel;
       EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-      is(_mode, Ci.nsIFilePicker.modeOpen, "File picker mode should be open file");
+      is(MockFilePicker.mode, Ci.nsIFilePicker.modeOpen, "File picker mode should be open file");
       is(input.value, profD.path, "Label value should not have changed");
       is(Services.prefs.getCharPref("extensions.inlinesettings1.file"), profD.path, "File pref should not have changed");
 
@@ -230,28 +244,92 @@ add_test(function() {
       input = gManagerWindow.document.getAnonymousElementByAttribute(settings[7], "anonid", "input");
       is(input.value, "", "Label value should be empty");
 
-      _returnFile = profD;
-      _returnValue = Ci.nsIFilePicker.returnOK;
+      MockFilePicker.returnFiles = [profD];
+      MockFilePicker.returnValue = Ci.nsIFilePicker.returnOK;
       EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-      is(_mode, Ci.nsIFilePicker.modeGetFolder, "File picker mode should be directory");
+      is(MockFilePicker.mode, Ci.nsIFilePicker.modeGetFolder, "File picker mode should be directory");
       is(input.value, profD.path, "Label value should match file chosen");
       is(Services.prefs.getCharPref("extensions.inlinesettings1.directory"), profD.path, "Directory pref should match file chosen");
 
-      _returnFile = curProcD;
-      _returnValue = Ci.nsIFilePicker.returnCancel;
+      MockFilePicker.returnFiles = [curProcD];
+      MockFilePicker.returnValue = Ci.nsIFilePicker.returnCancel;
       EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
-      is(_mode, Ci.nsIFilePicker.modeGetFolder, "File picker mode should be directory");
+      is(MockFilePicker.mode, Ci.nsIFilePicker.modeGetFolder, "File picker mode should be directory");
       is(input.value, profD.path, "Label value should not have changed");
       is(Services.prefs.getCharPref("extensions.inlinesettings1.directory"), profD.path, "Directory pref should not have changed");
 
     } finally {
-      mockFilePickerFactory.unregister();
-
       button = gManagerWindow.document.getElementById("detail-prefs-btn");
       is_element_hidden(button, "Preferences button should not be visible");
 
       gCategoryUtilities.openType("extension", run_next_test);
     }
+  });
+});
+
+// Tests for the setting.xml bindings introduced after Mozilla 7
+add_test(function() {
+  var addon = get_addon_element(gManagerWindow, "inlinesettings3@tests.mozilla.org");
+  addon.parentNode.ensureElementIsVisible(addon);
+
+  var button = gManagerWindow.document.getAnonymousElementByAttribute(addon, "anonid", "preferences-btn");
+  EventUtils.synthesizeMouseAtCenter(button, { clickCount: 1 }, gManagerWindow);
+
+  wait_for_view_load(gManagerWindow, function() {
+    is(observer.lastData, "inlinesettings3@tests.mozilla.org", "Observer notification should have fired");
+
+    var grid = gManagerWindow.document.getElementById("detail-grid");
+    var settings = grid.querySelectorAll("rows > setting");
+    is(settings.length, 4, "Grid should have settings children");
+
+    // Force bindings to apply
+    settings[0].clientTop;
+
+    ok(settings[0].hasAttribute("first-row"), "First visible row should have first-row attribute");
+    Services.prefs.setBoolPref("extensions.inlinesettings3.radioBool", false);
+    var radios = settings[0].getElementsByTagName("radio");
+    isnot(radios[0].selected, true, "Correct radio button should be selected");
+    is(radios[1].selected, true, "Correct radio button should be selected");
+    EventUtils.synthesizeMouseAtCenter(radios[0], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getBoolPref("extensions.inlinesettings3.radioBool"), true, "Radio pref should have been updated");
+    EventUtils.synthesizeMouseAtCenter(radios[1], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getBoolPref("extensions.inlinesettings3.radioBool"), false, "Radio pref should have been updated");
+
+    ok(!settings[1].hasAttribute("first-row"), "Not the first row");
+    Services.prefs.setIntPref("extensions.inlinesettings3.radioInt", 5);
+    var radios = settings[1].getElementsByTagName("radio");
+    isnot(radios[0].selected, true, "Correct radio button should be selected");
+    is(radios[1].selected, true, "Correct radio button should be selected");
+    isnot(radios[2].selected, true, "Correct radio button should be selected");
+    EventUtils.synthesizeMouseAtCenter(radios[0], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getIntPref("extensions.inlinesettings3.radioInt"), 4, "Radio pref should have been updated");
+    EventUtils.synthesizeMouseAtCenter(radios[2], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getIntPref("extensions.inlinesettings3.radioInt"), 6, "Radio pref should have been updated");
+
+    ok(!settings[2].hasAttribute("first-row"), "Not the first row");
+    Services.prefs.setCharPref("extensions.inlinesettings3.radioString", "juliet");
+    var radios = settings[2].getElementsByTagName("radio");
+    isnot(radios[0].selected, true, "Correct radio button should be selected");
+    is(radios[1].selected, true, "Correct radio button should be selected");
+    isnot(radios[2].selected, true, "Correct radio button should be selected");
+    EventUtils.synthesizeMouseAtCenter(radios[0], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getCharPref("extensions.inlinesettings3.radioString"), "india", "Radio pref should have been updated");
+    EventUtils.synthesizeMouseAtCenter(radios[2], { clickCount: 1 }, gManagerWindow);
+    is(Services.prefs.getCharPref("extensions.inlinesettings3.radioString"), "kilo", "Radio pref should have been updated");
+
+    ok(!settings[3].hasAttribute("first-row"), "Not the first row");
+    Services.prefs.setIntPref("extensions.inlinesettings3.menulist", 8);
+    var input = settings[3].firstElementChild;
+    is(input.value, "8", "Menulist should have initial value");
+    input.focus();
+    EventUtils.synthesizeKey("n", {}, gManagerWindow);
+    is(input.value, "9", "Menulist should have updated value");
+    is(Services.prefs.getIntPref("extensions.inlinesettings3.menulist"), 9, "Menulist pref should have been updated");
+
+    button = gManagerWindow.document.getElementById("detail-prefs-btn");
+    is_element_hidden(button, "Preferences button should not be visible");
+
+    gCategoryUtilities.openType("extension", run_next_test);
   });
 });
 
@@ -398,60 +476,3 @@ add_test(function() {
     });
   });
 });
-
-var _returnFile, _returnValue, _mode;
-
-function MockFilePicker() { };
-MockFilePicker.prototype = {
-  QueryInterface: XPCOMUtils.generateQI([Ci.nsIFilePicker]),
-  init: function(aParent, aTitle, aMode) {
-    _mode = aMode;
-  },
-  appendFilters: function(aFilterMask) { },
-  appendFilter: function(aTitle, aFilter) { },
-  defaultString: "",
-  defaultExtension: "",
-  filterIndex: 0,
-  displayDirectory: null,
-  get file() {
-    return _returnFile;
-  },
-  get fileURL() {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
-  get files() {
-    throw Cr.NS_ERROR_NOT_IMPLEMENTED;
-  },
-  show: function() {
-    return _returnValue;
-  }
-};
-var mockFilePickerFactory = {
-  registrar: Components.manager.QueryInterface(Ci.nsIComponentRegistrar),
-  contractID: "@mozilla.org/filepicker;1",
-  classID: Cc["@mozilla.org/uuid-generator;1"].getService(Ci.nsIUUIDGenerator).generateUUID(),
-
-  register: function() {
-    this.registrar.registerFactory(this.classID, "", this.contractID, this);
-  },
-
-  unregister: function() {
-    this.registrar.unregisterFactory(this.classID, this);
-  },
-
-  // nsIFactory
-  createInstance: function(aOuter, aIID) {
-    if (aOuter) {
-      throw Components.results.NS_ERROR_NO_AGGREGATION;
-    }
-    return new MockFilePicker().QueryInterface(aIID);
-  },
-
-  lockFactory: function(aLock) {
-    throw Components.results.NS_ERROR_NOT_IMPLEMENTED;
-  },
-
-  QueryInterface: XPCOMUtils.generateQI([
-    Ci.nsIFactory
-  ])
-};

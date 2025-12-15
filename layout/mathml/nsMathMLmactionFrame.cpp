@@ -69,7 +69,6 @@
 #define NS_MATHML_ACTION_TYPE_TOGGLE       1
 #define NS_MATHML_ACTION_TYPE_STATUSLINE   2
 #define NS_MATHML_ACTION_TYPE_TOOLTIP      3 // unsupported
-#define NS_MATHML_ACTION_TYPE_RESTYLE      4
 
 
 nsIFrame*
@@ -86,11 +85,11 @@ nsMathMLmactionFrame::~nsMathMLmactionFrame()
   //  printf("maction:%p unregistering as mouse event listener ...\n", this);
   if (mListener) {
     mContent->RemoveEventListener(NS_LITERAL_STRING("click"), mListener,
-                                  PR_FALSE);
+                                  false);
     mContent->RemoveEventListener(NS_LITERAL_STRING("mouseover"), mListener,
-                                  PR_FALSE);
+                                  false);
     mContent->RemoveEventListener(NS_LITERAL_STRING("mouseout"), mListener,
-                                  PR_FALSE);
+                                  false);
   }
 }
 
@@ -128,37 +127,6 @@ nsMathMLmactionFrame::Init(nsIContent*      aContent,
         mActionType = NS_MATHML_ACTION_TYPE_STATUSLINE;
     }
 
-    if (NS_MATHML_ACTION_TYPE_NONE == mActionType) {
-      // expected restyle prefix (8ch)...
-      if (8 < value.Length() && 0 == value.Find("restyle#")) {
-        mActionType = NS_MATHML_ACTION_TYPE_RESTYLE;
-        mRestyle = value;
-
-        // Here is the situation:
-        // When the attribute [actiontype="restyle#id"] is set, the Style System has
-        // given us the associated style. But we want to start with our default style.
-
-        // So... first, remove the attribute actiontype="restyle#id"
-        // XXXbz this is pretty messed up, since this can change whether we
-        // should have a frame at all.  This really needs a better solution.
-        PRBool notify = PR_FALSE; // don't trigger a reflow yet!
-        aContent->UnsetAttr(kNameSpaceID_None, nsGkAtoms::actiontype_, notify);
-
-        // then, re-resolve our style
-        nsStyleContext* parentStyleContext = GetStyleContext()->GetParent();
-        newStyleContext = PresContext()->StyleSet()->
-          ResolveStyleFor(aContent->AsElement(), parentStyleContext);
-
-        if (!newStyleContext) 
-          mRestyle.Truncate();
-        else {
-          if (newStyleContext != GetStyleContext())
-            SetStyleContextWithoutNotification(newStyleContext);
-          else
-            mRestyle.Truncate();
-        }
-      }
-    }
   }
 
   // Let the base class do the rest
@@ -246,10 +214,10 @@ nsMathMLmactionFrame::GetSelectedFrame()
 }
 
 NS_IMETHODIMP
-nsMathMLmactionFrame::SetInitialChildList(nsIAtom*        aListName,
+nsMathMLmactionFrame::SetInitialChildList(ChildListID     aListID,
                                           nsFrameList&    aChildList)
 {
-  nsresult rv = nsMathMLContainerFrame::SetInitialChildList(aListName, aChildList);
+  nsresult rv = nsMathMLContainerFrame::SetInitialChildList(aListID, aChildList);
 
   // This very first call to GetSelectedFrame() will cause us to be marked as an
   // embellished operator if the selected child is an embellished operator
@@ -261,11 +229,11 @@ nsMathMLmactionFrame::SetInitialChildList(nsIAtom*        aListName,
     mListener = new nsMathMLmactionFrame::MouseListener(this);
     // printf("maction:%p registering as mouse event listener ...\n", this);
     mContent->AddEventListener(NS_LITERAL_STRING("click"), mListener,
-                               PR_FALSE, PR_FALSE);
+                               false, false);
     mContent->AddEventListener(NS_LITERAL_STRING("mouseover"), mListener,
-                               PR_FALSE, PR_FALSE);
+                               false, false);
     mContent->AddEventListener(NS_LITERAL_STRING("mouseout"), mListener,
-                               PR_FALSE, PR_FALSE);
+                               false, false);
   }
   return rv;
 }
@@ -326,7 +294,7 @@ nsMathMLmactionFrame::Reflow(nsPresContext*          aPresContext,
 // Only place the selected child ...
 /* virtual */ nsresult
 nsMathMLmactionFrame::Place(nsRenderingContext& aRenderingContext,
-                            PRBool               aPlaceOrigin,
+                            bool                 aPlaceOrigin,
                             nsHTMLReflowMetrics& aDesiredSize)
 {
   aDesiredSize.width = aDesiredSize.height = 0;
@@ -382,7 +350,7 @@ nsMathMLmactionFrame::MouseListener::HandleEvent(nsIDOMEvent* aEvent)
   if (eventType.EqualsLiteral("mouseover")) {
     mOwner->MouseOver();
   }
-  else if (eventType.EqualsLiteral("mouseclick")) {
+  else if (eventType.EqualsLiteral("click")) {
     mOwner->MouseClick();
   }
   else if (eventType.EqualsLiteral("mouseout")) {
@@ -431,30 +399,13 @@ nsMathMLmactionFrame::MouseClick()
       char cbuf[10];
       PR_snprintf(cbuf, sizeof(cbuf), "%d", selection);
       value.AssignASCII(cbuf);
-      PRBool notify = PR_FALSE; // don't yet notify the document
+      bool notify = false; // don't yet notify the document
       mContent->SetAttr(kNameSpaceID_None, nsGkAtoms::selection_, value, notify);
 
       // Now trigger a content-changed reflow...
       PresContext()->PresShell()->
         FrameNeedsReflow(mSelectedFrame, nsIPresShell::eTreeChange,
                          NS_FRAME_IS_DIRTY);
-    }
-  }
-  else if (NS_MATHML_ACTION_TYPE_RESTYLE == mActionType) {
-    if (!mRestyle.IsEmpty()) {
-      nsCOMPtr<nsIDOMElement> node( do_QueryInterface(mContent) );
-      if (node.get()) {
-        if (nsContentUtils::HasNonEmptyAttr(mContent, kNameSpaceID_None,
-                                            nsGkAtoms::actiontype_))
-          node->RemoveAttribute(NS_LITERAL_STRING("actiontype"));
-        else
-          node->SetAttribute(NS_LITERAL_STRING("actiontype"), mRestyle);
-
-        // Trigger a style change reflow
-        PresContext()->PresShell()->
-          FrameNeedsReflow(mSelectedFrame, nsIPresShell::eStyleChange,
-                           NS_FRAME_IS_DIRTY);
-      }
     }
   }
 }

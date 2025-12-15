@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <sys/uio.h>
 
 #include <string>
 #include <map>
@@ -238,7 +239,6 @@ bool ClientConnectToFifo(const std::string &pipe_name, int* client_socket) {
   return true;
 }
 
-#if defined(CHROMIUM_MOZILLA_BUILD)
 bool SetCloseOnExec(int fd) {
   int flags = fcntl(fd, F_GETFD);
   if (flags == -1)
@@ -250,7 +250,6 @@ bool SetCloseOnExec(int fd) {
 
   return true;
 }
-#endif
 
 }  // namespace
 //------------------------------------------------------------------------------
@@ -327,14 +326,12 @@ bool Channel::ChannelImpl::CreatePipe(const std::wstring& channel_id,
         return false;
       }
 
-#if defined(CHROMIUM_MOZILLA_BUILD)
       if (!SetCloseOnExec(pipe_fds[0]) ||
           !SetCloseOnExec(pipe_fds[1])) {
         HANDLE_EINTR(close(pipe_fds[0]));
         HANDLE_EINTR(close(pipe_fds[1]));
         return false;
       }
-#endif
 
       pipe_ = pipe_fds[0];
       client_pipe_ = pipe_fds[1];
@@ -481,8 +478,10 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
 
     // Process messages from input buffer.
     const char *p;
+    const char *overflowp;
     const char *end;
     if (input_overflow_buf_.empty()) {
+      overflowp = NULL;
       p = input_buf_;
       end = p + bytes_read;
     } else {
@@ -493,7 +492,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
         return false;
       }
       input_overflow_buf_.append(input_buf_, bytes_read);
-      p = input_overflow_buf_.data();
+      overflowp = p = input_overflow_buf_.data();
       end = p + input_overflow_buf_.size();
     }
 
@@ -571,7 +570,15 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
         break;
       }
     }
-    input_overflow_buf_.assign(p, end - p);
+    if (end == p) {
+      input_overflow_buf_.clear();
+    } else if (!overflowp) {
+      // p is from input_buf_
+      input_overflow_buf_.assign(p, end - p);
+    } else if (p > overflowp) {
+      // p is from input_overflow_buf_
+      input_overflow_buf_.erase(0, p - overflowp);
+    }
     input_overflow_fds_ = std::vector<int>(&fds[fds_i], &fds[num_fds]);
 
     // When the input data buffer is empty, the overflow fds should be too. If
@@ -678,9 +685,6 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
 }
 
 bool Channel::ChannelImpl::Send(Message* message) {
-#ifndef CHROMIUM_MOZILLA_BUILD
-  chrome::Counters::ipc_send_counter().Increment();
-#endif
 #ifdef IPC_MESSAGE_DEBUG_EXTRA
   DLOG(INFO) << "sending message @" << message << " on channel @" << this
              << " with type " << message->type()
@@ -814,11 +818,9 @@ Channel::Channel(const std::wstring& channel_id, Mode mode,
     : channel_impl_(new ChannelImpl(channel_id, mode, listener)) {
 }
 
-#if defined(CHROMIUM_MOZILLA_BUILD)
 Channel::Channel(int fd, Mode mode, Listener* listener)
     : channel_impl_(new ChannelImpl(fd, mode, listener)) {
 }
-#endif
 
 Channel::~Channel() {
   delete channel_impl_;
@@ -832,15 +834,9 @@ void Channel::Close() {
   channel_impl_->Close();
 }
 
-#ifdef CHROMIUM_MOZILLA_BUILD
 Channel::Listener* Channel::set_listener(Listener* listener) {
   return channel_impl_->set_listener(listener);
 }
-#else
-void Channel::set_listener(Listener* listener) {
-  channel_impl_->set_listener(listener);
-}
-#endif
 
 bool Channel::Send(Message* message) {
   return channel_impl_->Send(message);
@@ -850,10 +846,8 @@ void Channel::GetClientFileDescriptorMapping(int *src_fd, int *dest_fd) const {
   return channel_impl_->GetClientFileDescriptorMapping(src_fd, dest_fd);
 }
 
-#ifdef CHROMIUM_MOZILLA_BUILD
 int Channel::GetServerFileDescriptor() const {
   return channel_impl_->GetServerFileDescriptor();
 }
-#endif
 
 }  // namespace IPC

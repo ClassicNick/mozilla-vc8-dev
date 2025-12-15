@@ -63,7 +63,7 @@ class ThinkPadSensor : public Sensor
 public:
   ThinkPadSensor();
   ~ThinkPadSensor();
-  PRBool Startup();
+  bool Startup();
   void Shutdown();
   void GetValues(double *x, double *y, double *z);
 private:
@@ -78,27 +78,29 @@ ThinkPadSensor::~ThinkPadSensor()
 {
 }
 
-PRBool
+bool
 ThinkPadSensor::Startup()
 {
   mLibrary = LoadLibraryW(L"sensor.dll");
   if (!mLibrary)
-    return PR_FALSE;
+    return false;
 
   gShockproofGetAccelerometerData = (ShockproofGetAccelerometerData)
     GetProcAddress(mLibrary, "ShockproofGetAccelerometerData");
   if (!gShockproofGetAccelerometerData) {
     FreeLibrary(mLibrary);
     mLibrary = nsnull;
-    return PR_FALSE;
+    return false;
   }
-  return PR_TRUE;
+  return true;
 }
 
 void
 ThinkPadSensor::Shutdown()
 {
-  NS_ASSERTION(mLibrary, "Shutdown called when mLibrary is null?");
+  if (mLibrary == nsnull)
+    return;
+
   FreeLibrary(mLibrary);
   mLibrary = nsnull;
   gShockproofGetAccelerometerData = nsnull;
@@ -139,14 +141,16 @@ void nsDeviceMotionSystem::Startup()
 {
   NS_ASSERTION(!mSensor, "mSensor should be null.  Startup called twice?");
 
-  PRBool started = PR_FALSE;
+  bool started = false;
 
   mSensor = new ThinkPadSensor();
   if (mSensor)
     started = mSensor->Startup();
 
-  if (!started)
+  if (!started) {
+    mSensor = nsnull;
     return;
+  }
 
   mUpdateTimer = do_CreateInstance("@mozilla.org/timer;1");
   if (mUpdateTimer)

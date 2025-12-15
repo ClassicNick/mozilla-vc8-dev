@@ -39,7 +39,6 @@
 #include "nscore.h"
 #include "nsCUPSShim.h"
 #include "nsIServiceManager.h"
-#include "nsPrintfCString.h"
 #include "nsPSPrinters.h"
 #include "nsReadableUtils.h"        // StringBeginsWith()
 #include "nsCUPSShim.h"
@@ -59,30 +58,26 @@ using namespace mozilla;
 
 nsCUPSShim gCupsShim;
 
-/* Initialize the printer manager object */
-nsresult
-nsPSPrinterList::Init()
+nsPSPrinterList::nsPSPrinterList()
 {
     // Should we try cups?
-    PRBool useCups =
-        Preferences::GetBool("print.postscript.cups.enabled", PR_TRUE);
-    if (useCups && !gCupsShim.IsInitialized()) {
+    if (Preferences::GetBool("print.postscript.cups.enabled", true) &&
+        !gCupsShim.IsInitialized()) {
         gCupsShim.Init();
     }
-    return NS_OK;
 }
 
 
 /* Check whether the PostScript module has been disabled at runtime */
-PRBool
+bool
 nsPSPrinterList::Enabled()
 {
     const char *val = PR_GetEnv("MOZILLA_POSTSCRIPT_ENABLED");
     if (val && (val[0] == '0' || !PL_strcasecmp(val, "false")))
-        return PR_FALSE;
+        return false;
 
     // is the PS module enabled?
-    return Preferences::GetBool("print.postscript.enabled", PR_TRUE);
+    return Preferences::GetBool("print.postscript.enabled", true);
 }
 
 

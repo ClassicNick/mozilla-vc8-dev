@@ -39,13 +39,11 @@
 #define nsContentDLF_h__
 
 #include "nsIDocumentLoaderFactory.h"
-#include "nsIDocumentViewer.h"
 #include "nsIDocument.h"
 #include "nsMimeTypes.h"
 
 class nsIChannel;
 class nsIContentViewer;
-class nsIDocumentViewer;
 class nsIFile;
 class nsIInputStream;
 class nsILoadGroup;
@@ -71,7 +69,7 @@ public:
                           nsISupports* aContainer,
                           const nsCID& aDocumentCID,
                           nsIStreamListener** aDocListener,
-                          nsIContentViewer** aDocViewer);
+                          nsIContentViewer** aContentViewer);
 
   nsresult CreateXULDocument(const char* aCommand,
                              nsIChannel* aChannel,
@@ -80,11 +78,11 @@ public:
                              nsISupports* aContainer,
                              nsISupports* aExtraInfo,
                              nsIStreamListener** aDocListener,
-                             nsIContentViewer** aDocViewer);
+                             nsIContentViewer** aContentViewer);
 
 private:
   static nsresult EnsureUAStyleSheet();
-  static PRBool IsImageContentType(const char* aContentType);
+  static bool IsImageContentType(const char* aContentType);
 };
 
 nsresult
@@ -107,6 +105,7 @@ NS_NewContentDocumentLoaderFactory(nsIDocumentLoaderFactory** aResult);
     { "Gecko-Content-Viewers", APPLICATION_JAVASCRIPT, "@mozilla.org/content/document-loader-factory;1" }, \
     { "Gecko-Content-Viewers", APPLICATION_ECMASCRIPT, "@mozilla.org/content/document-loader-factory;1" }, \
     { "Gecko-Content-Viewers", APPLICATION_XJAVASCRIPT, "@mozilla.org/content/document-loader-factory;1" }, \
+    { "Gecko-Content-Viewers", APPLICATION_JSON, "@mozilla.org/content/document-loader-factory;1" }, \
     { "Gecko-Content-Viewers", APPLICATION_XHTML_XML, "@mozilla.org/content/document-loader-factory;1" }, \
     { "Gecko-Content-Viewers", TEXT_XML, "@mozilla.org/content/document-loader-factory;1" }, \
     { "Gecko-Content-Viewers", APPLICATION_XML, "@mozilla.org/content/document-loader-factory;1" }, \

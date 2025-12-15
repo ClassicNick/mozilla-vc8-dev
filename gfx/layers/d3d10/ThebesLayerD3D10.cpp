@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -35,6 +35,11 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/layers/PLayers.h"
+
+/* This must occur *after* layers/PLayers.h to avoid typedefs conflicts. */
+#include "mozilla/Util.h"
+
 #include "ThebesLayerD3D10.h"
 #include "gfxPlatform.h"
 
@@ -43,6 +48,7 @@
 #include "gfxD2DSurface.h"
 #endif
 
+#include "../d3d9/Nv3DVUtils.h"
 #include "gfxTeeSurface.h"
 #include "gfxUtils.h"
 #include "ReadbackLayer.h"
@@ -281,10 +287,16 @@ ThebesLayerD3D10::Validate(ReadbackProcessor *aReadback)
                                  D3D10_CPU_ACCESS_READ);
 
       nsRefPtr<ID3D10Texture2D> readbackTexture;
-      device()->CreateTexture2D(&desc, NULL, getter_AddRefs(readbackTexture));
+      HRESULT hr = device()->CreateTexture2D(&desc, NULL, getter_AddRefs(readbackTexture));
+      if (FAILED(hr)) {
+        LayerManagerD3D10::ReportFailure(NS_LITERAL_CSTRING("ThebesLayerD3D10::Validate(): Failed to create texture"),
+                                         hr);
+        return;
+      }
+
       device()->CopyResource(readbackTexture, mTexture);
 
-      for (int i = 0; i < readbackUpdates.Length(); i++) {
+      for (PRUint32 i = 0; i < readbackUpdates.Length(); i++) {
         mD3DManager->readbackManager()->PostTask(readbackTexture,
                                                  &readbackUpdates[i],
                                                  gfxPoint(newTextureRect.x, newTextureRect.y));
@@ -362,11 +374,11 @@ ThebesLayerD3D10::DrawRegion(nsIntRegion &aRegion, SurfaceMode aMode)
     FillSurface(mD2DSurface, aRegion, visibleRect.TopLeft(), gfxRGBA(0.0, 0.0, 0.0, 1.0));
     FillSurface(mD2DSurfaceOnWhite, aRegion, visibleRect.TopLeft(), gfxRGBA(1.0, 1.0, 1.0, 1.0));
     gfxASurface* surfaces[2] = { mD2DSurface.get(), mD2DSurfaceOnWhite.get() };
-    destinationSurface = new gfxTeeSurface(surfaces, NS_ARRAY_LENGTH(surfaces));
+    destinationSurface = new gfxTeeSurface(surfaces, ArrayLength(surfaces));
     // Using this surface as a source will likely go horribly wrong, since
     // only the onBlack surface will really be used, so alpha information will
     // be incorrect.
-    destinationSurface->SetAllowUseAsSource(PR_FALSE);
+    destinationSurface->SetAllowUseAsSource(false);
   } else {
     destinationSurface = mD2DSurface;
   }
@@ -454,6 +466,113 @@ ThebesLayerD3D10::CreateNewTextures(const gfxIntSize &aSize, SurfaceMode aMode)
       return;
     }
   }
+}
+ 
+ShadowThebesLayerD3D10::ShadowThebesLayerD3D10(LayerManagerD3D10* aManager)
+  : ShadowThebesLayer(aManager, NULL)
+  , LayerD3D10(aManager)
+{
+  mImplData = static_cast<LayerD3D10*>(this);
+}
+
+ShadowThebesLayerD3D10::~ShadowThebesLayerD3D10()
+{
+}
+
+void
+ShadowThebesLayerD3D10::Swap(
+  const ThebesBuffer& aNewFront, const nsIntRegion& aUpdatedRegion,
+  OptionalThebesBuffer* aNewBack, nsIntRegion* aNewBackValidRegion,
+  OptionalThebesBuffer* aReadOnlyFront, nsIntRegion* aFrontUpdatedRegion)
+{
+  nsRefPtr<ID3D10Texture2D> newBackBuffer = mTexture;
+
+  mTexture = OpenForeign(mD3DManager->device(), aNewFront.buffer());
+  NS_ABORT_IF_FALSE(mTexture, "Couldn't open foreign texture");
+
+  // The content process tracks back/front buffers on its own, so
+  // the newBack is in essence unused.
+  aNewBack->get_ThebesBuffer().buffer() = aNewFront.buffer();
+
+  // The content process doesn't need to read back from the front
+  // buffer (yet).
+  *aReadOnlyFront = null_t();
+
+  // FIXME/bug 662109: synchronize using KeyedMutex
+}
+
+void
+ShadowThebesLayerD3D10::DestroyFrontBuffer()
+{
+}
+
+void
+ShadowThebesLayerD3D10::Disconnect()
+{
+}
+
+void
+ShadowThebesLayerD3D10::RenderLayer()
+{
+  if (!mTexture) {
+    return;
+  }
+
+  // FIXME/bug 662109: synchronize using KeyedMutex
+  
+  nsRefPtr<ID3D10ShaderResourceView> srView;
+  HRESULT hr = device()->CreateShaderResourceView(mTexture, NULL, getter_AddRefs(srView));
+  if (FAILED(hr)) {
+      NS_WARNING("Failed to create shader resource view for ThebesLayerD3D10.");
+  }
+
+
+  SetEffectTransformAndOpacity();
+
+  ID3D10EffectTechnique *technique =
+      effect()->GetTechniqueByName("RenderRGBLayerPremul");
+
+  effect()->GetVariableByName("tRGB")->AsShaderResource()->SetResource(srView);
+
+  nsIntRect textureRect = GetVisibleRegion().GetBounds();
+
+  nsIntRegionRectIterator iter(mVisibleRegion);
+  while (const nsIntRect *iterRect = iter.Next()) {
+    effect()->GetVariableByName("vLayerQuad")->AsVector()->SetFloatVector(
+      ShaderConstantRectD3D10(
+        (float)iterRect->x,
+        (float)iterRect->y,
+        (float)iterRect->width,
+        (float)iterRect->height)
+      );
+
+    effect()->GetVariableByName("vTextureCoords")->AsVector()->SetFloatVector(
+      ShaderConstantRectD3D10(
+        (float)(iterRect->x - textureRect.x) / (float)textureRect.width,
+        (float)(iterRect->y - textureRect.y) / (float)textureRect.height,
+        (float)iterRect->width / (float)textureRect.width,
+        (float)iterRect->height / (float)textureRect.height)
+      );
+
+    technique->GetPassByIndex(0)->Apply(0);
+    device()->Draw(4, 0);
+  }
+
+  // FIXME/bug 662109: synchronize using KeyedMutex
+
+  // Set back to default.
+  effect()->GetVariableByName("vTextureCoords")->AsVector()->
+    SetFloatVector(ShaderConstantRectD3D10(0, 0, 1.0f, 1.0f));
+}
+
+void
+ShadowThebesLayerD3D10::Validate()
+{
+}
+
+void
+ShadowThebesLayerD3D10::LayerManagerDestroyed()
+{
 }
 
 } /* namespace layers */

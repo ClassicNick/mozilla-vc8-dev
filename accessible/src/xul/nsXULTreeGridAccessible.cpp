@@ -43,9 +43,13 @@
 #include "nsAccUtils.h"
 #include "nsDocAccessible.h"
 #include "nsEventShell.h"
+#include "Relation.h"
 #include "States.h"
 
 #include "nsITreeSelection.h"
+#include "nsComponentManagerUtils.h"
+
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridAccessible
@@ -199,14 +203,14 @@ nsXULTreeGridAccessible::GetSelectedCells(nsIArray **aCells)
   rv = GetRowCount(&rowCount);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRBool isSelected;
+  bool isSelected;
   for (PRInt32 rowIdx = 0; rowIdx < rowCount; rowIdx++) {
     selection->IsSelected(rowIdx, &isSelected);
     if (isSelected) {
       for (PRInt32 colIdx = 0; colIdx < columnCount; colIdx++) {
         nsCOMPtr<nsIAccessible> cell;
         GetCellAt(rowIdx, colIdx, getter_AddRefs(cell));
-        selCells->AppendElement(cell, PR_FALSE);
+        selCells->AppendElement(cell, false);
       }
     }
   }
@@ -245,7 +249,7 @@ nsXULTreeGridAccessible::GetSelectedCellIndices(PRUint32 *aCellsCount,
   rv = GetRowCount(&rowCount);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRBool isSelected;
+  bool isSelected;
   for (PRInt32 rowIdx = 0, arrayIdx = 0; rowIdx < rowCount; rowIdx++) {
     selection->IsSelected(rowIdx, &isSelected);
     if (isSelected) {
@@ -329,7 +333,7 @@ nsXULTreeGridAccessible::GetSelectedRowIndices(PRUint32 *arowCount,
   rv = GetRowCount(&rowCount);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  PRBool isSelected;
+  bool isSelected;
   for (PRInt32 rowIdx = 0, arrayIdx = 0; rowIdx < rowCount; rowIdx++) {
     selection->IsSelected(rowIdx, &isSelected);
     if (isSelected)
@@ -487,10 +491,10 @@ nsXULTreeGridAccessible::GetRowDescription(PRInt32 aRowIndex,
 
 NS_IMETHODIMP
 nsXULTreeGridAccessible::IsColumnSelected(PRInt32 aColumnIndex,
-                                          PRBool *aIsSelected)
+                                          bool *aIsSelected)
 {
   NS_ENSURE_ARG_POINTER(aIsSelected);
-  *aIsSelected = PR_FALSE;
+  *aIsSelected = false;
 
   if (IsDefunct())
     return NS_ERROR_FAILURE;
@@ -511,10 +515,10 @@ nsXULTreeGridAccessible::IsColumnSelected(PRInt32 aColumnIndex,
 }
 
 NS_IMETHODIMP
-nsXULTreeGridAccessible::IsRowSelected(PRInt32 aRowIndex, PRBool *aIsSelected)
+nsXULTreeGridAccessible::IsRowSelected(PRInt32 aRowIndex, bool *aIsSelected)
 {
   NS_ENSURE_ARG_POINTER(aIsSelected);
-  *aIsSelected = PR_FALSE;
+  *aIsSelected = false;
 
   if (IsDefunct())
     return NS_ERROR_FAILURE;
@@ -528,7 +532,7 @@ nsXULTreeGridAccessible::IsRowSelected(PRInt32 aRowIndex, PRBool *aIsSelected)
 
 NS_IMETHODIMP
 nsXULTreeGridAccessible::IsCellSelected(PRInt32 aRowIndex, PRInt32 aColumnIndex,
-                                        PRBool *aIsSelected)
+                                        bool *aIsSelected)
 {
   return IsRowSelected(aRowIndex, aIsSelected);
 }
@@ -566,10 +570,10 @@ nsXULTreeGridAccessible::UnselectColumn(PRInt32 aColumnIndex)
 }
 
 NS_IMETHODIMP
-nsXULTreeGridAccessible::IsProbablyForLayout(PRBool *aIsProbablyForLayout)
+nsXULTreeGridAccessible::IsProbablyForLayout(bool *aIsProbablyForLayout)
 {
   NS_ENSURE_ARG_POINTER(aIsProbablyForLayout);
-  *aIsProbablyForLayout = PR_FALSE;
+  *aIsProbablyForLayout = false;
 
   return NS_OK;
 }
@@ -848,13 +852,10 @@ NS_IMPL_RELEASE_INHERITED(nsXULTreeGridCellAccessible, nsLeafAccessible)
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: nsIAccessible implementation
 
-NS_IMETHODIMP
-nsXULTreeGridCellAccessible::GetFocusedChild(nsIAccessible **aFocusedChild) 
+nsAccessible*
+nsXULTreeGridCellAccessible::FocusedChild()
 {
-  NS_ENSURE_ARG_POINTER(aFocusedChild);
-  *aFocusedChild = nsnull;
-
-  return IsDefunct() ? NS_ERROR_FAILURE : NS_OK;
+  return nsnull;
 }
 
 NS_IMETHODIMP
@@ -920,28 +921,20 @@ nsXULTreeGridCellAccessible::GetBounds(PRInt32 *aX, PRInt32 *aY,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXULTreeGridCellAccessible::GetNumActions(PRUint8 *aActionsCount)
+PRUint8
+nsXULTreeGridCellAccessible::ActionCount()
 {
-  NS_ENSURE_ARG_POINTER(aActionsCount);
-  *aActionsCount = 0;
-
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
-  PRBool isCycler = PR_FALSE;
+  bool isCycler = false;
   mColumn->GetCycler(&isCycler);
-  if (isCycler) {
-    *aActionsCount = 1;
-    return NS_OK;
-  }
+  if (isCycler)
+    return 1;
 
   PRInt16 type;
   mColumn->GetType(&type);
   if (type == nsITreeColumn::TYPE_CHECKBOX && IsEditable())
-    *aActionsCount = 1;
+    return 1;
 
-  return NS_OK;
+  return 0;
 }
 
 NS_IMETHODIMP
@@ -955,7 +948,7 @@ nsXULTreeGridCellAccessible::GetActionName(PRUint8 aIndex, nsAString& aName)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRBool isCycler = PR_FALSE;
+  bool isCycler = false;
   mColumn->GetCycler(&isCycler);
   if (isCycler) {
     aName.AssignLiteral("cycle");
@@ -987,7 +980,7 @@ nsXULTreeGridCellAccessible::DoAction(PRUint8 aIndex)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRBool isCycler = PR_FALSE;
+  bool isCycler = false;
   mColumn->GetCycler(&isCycler);
   if (isCycler) {
     DoCommand();
@@ -1016,7 +1009,10 @@ nsXULTreeGridCellAccessible::GetTable(nsIAccessibleTable **aTable)
   if (IsDefunct())
     return NS_OK;
 
-  CallQueryInterface(mParent->GetParent(), aTable);
+  nsAccessible* grandParent = mParent->Parent();
+  if (grandParent)
+    CallQueryInterface(grandParent, aTable);
+
   return NS_OK;
 }
 
@@ -1087,7 +1083,7 @@ nsXULTreeGridCellAccessible::GetColumnHeaderCells(nsIArray **aHeaderCells)
 
   if (headerCell)
     headerCells->AppendElement(static_cast<nsIAccessible*>(headerCell),
-                               PR_FALSE);
+                               false);
 
   NS_ADDREF(*aHeaderCells = headerCells);
   return NS_OK;
@@ -1112,10 +1108,10 @@ nsXULTreeGridCellAccessible::GetRowHeaderCells(nsIArray **aHeaderCells)
 }
 
 NS_IMETHODIMP
-nsXULTreeGridCellAccessible::IsSelected(PRBool *aIsSelected)
+nsXULTreeGridCellAccessible::IsSelected(bool *aIsSelected)
 {
   NS_ENSURE_ARG_POINTER(aIsSelected);
-  *aIsSelected = PR_FALSE;
+  *aIsSelected = false;
 
   if (IsDefunct())
     return NS_ERROR_FAILURE;
@@ -1137,11 +1133,11 @@ nsXULTreeGridCellAccessible::IsDefunct() const
     !mColumn;
 }
 
-PRBool
+bool
 nsXULTreeGridCellAccessible::Init()
 {
   if (!nsLeafAccessible::Init())
-    return PR_FALSE;
+    return false;
 
   PRInt16 type;
   mColumn->GetType(&type);
@@ -1150,7 +1146,7 @@ nsXULTreeGridCellAccessible::Init()
   else
     mTreeView->GetCellText(mRow, mColumn, mCachedTextEquiv);
 
-  return PR_TRUE;
+  return true;
 }
 
 bool
@@ -1171,9 +1167,11 @@ nsXULTreeGridCellAccessible::GetAttributesInternal(nsIPersistentProperties *aAtt
     return NS_ERROR_FAILURE;
 
   // "table-cell-index" attribute
-  nsCOMPtr<nsIAccessible> accessible;
-  mParent->GetParent(getter_AddRefs(accessible));
-  nsCOMPtr<nsIAccessibleTable> tableAccessible = do_QueryInterface(accessible);
+  nsAccessible* grandParent = mParent->Parent();
+  if (!grandParent)
+    return NS_OK;
+
+  nsCOMPtr<nsIAccessibleTable> tableAccessible = do_QueryObject(grandParent);
 
   // XXX - temp fix for crash bug 516047
   if (!tableAccessible)
@@ -1186,14 +1184,14 @@ nsXULTreeGridCellAccessible::GetAttributesInternal(nsIPersistentProperties *aAtt
 
   nsAutoString stringIdx;
   stringIdx.AppendInt(cellIdx);
-  nsAccUtils::SetAccAttr(aAttributes, nsAccessibilityAtoms::tableCellIndex,
+  nsAccUtils::SetAccAttr(aAttributes, nsGkAtoms::tableCellIndex,
                          stringIdx);
 
   // "cycles" attribute
-  PRBool isCycler = PR_FALSE;
+  bool isCycler = false;
   nsresult rv = mColumn->GetCycler(&isCycler);
   if (NS_SUCCEEDED(rv) && isCycler)
-    nsAccUtils::SetAccAttr(aAttributes, nsAccessibilityAtoms::cycles,
+    nsAccUtils::SetAccAttr(aAttributes, nsGkAtoms::cycles,
                            NS_LITERAL_STRING("true"));
 
   return NS_OK;
@@ -1214,7 +1212,7 @@ nsXULTreeGridCellAccessible::NativeState()
   nsCOMPtr<nsITreeSelection> selection;
   mTreeView->GetSelection(getter_AddRefs(selection));
   if (selection) {
-    PRBool isSelected = PR_FALSE;
+    bool isSelected = false;
     selection->IsSelected(mRow, &isSelected);
     if (isSelected)
       states |= states::SELECTED;
@@ -1238,6 +1236,12 @@ PRInt32
 nsXULTreeGridCellAccessible::IndexInParent() const
 {
   return GetColumnIndex();
+}
+
+Relation
+nsXULTreeGridCellAccessible::RelationByType(PRUint32 aType)
+{
+  return Relation();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1264,7 +1268,7 @@ nsXULTreeGridCellAccessible::CellInvalidated()
   if (type == nsITreeColumn::TYPE_CHECKBOX) {
     mTreeView->GetCellValue(mRow, mColumn, textEquiv);
     if (mCachedTextEquiv != textEquiv) {
-      PRBool isEnabled = textEquiv.EqualsLiteral("true");
+      bool isEnabled = textEquiv.EqualsLiteral("true");
       nsRefPtr<AccEvent> accEvent =
         new AccStateChangeEvent(this, states::CHECKED, isEnabled);
       nsEventShell::FireEvent(accEvent);
@@ -1308,7 +1312,7 @@ nsXULTreeGridCellAccessible::GetSiblingAtOffset(PRInt32 aOffset,
   if (!columnAtOffset)
     return nsnull;
 
-  nsRefPtr<nsXULTreeItemAccessibleBase> rowAcc = do_QueryObject(GetParent());
+  nsRefPtr<nsXULTreeItemAccessibleBase> rowAcc = do_QueryObject(Parent());
   return rowAcc->GetCellAccessible(columnAtOffset);
 }
 
@@ -1325,29 +1329,29 @@ nsXULTreeGridCellAccessible::DispatchClickEvent(nsIContent *aContent,
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: protected implementation
 
-PRBool
+bool
 nsXULTreeGridCellAccessible::IsEditable() const
 {
   // XXX: logic corresponds to tree.xml, it's preferable to have interface
   // method to check it.
-  PRBool isEditable = PR_FALSE;
+  bool isEditable = false;
   nsresult rv = mTreeView->IsEditable(mRow, mColumn, &isEditable);
   if (NS_FAILED(rv) || !isEditable)
-    return PR_FALSE;
+    return false;
 
   nsCOMPtr<nsIDOMElement> columnElm;
   mColumn->GetElement(getter_AddRefs(columnElm));
   if (!columnElm)
-    return PR_FALSE;
+    return false;
 
   nsCOMPtr<nsIContent> columnContent(do_QueryInterface(columnElm));
   if (!columnContent->AttrValueIs(kNameSpaceID_None,
-                                  nsAccessibilityAtoms::editable,
-                                  nsAccessibilityAtoms::_true,
+                                  nsGkAtoms::editable,
+                                  nsGkAtoms::_true,
                                   eCaseMatters))
-    return PR_FALSE;
+    return false;
 
   return mContent->AttrValueIs(kNameSpaceID_None,
-                               nsAccessibilityAtoms::editable,
-                               nsAccessibilityAtoms::_true, eCaseMatters);
+                               nsGkAtoms::editable,
+                               nsGkAtoms::_true, eCaseMatters);
 }

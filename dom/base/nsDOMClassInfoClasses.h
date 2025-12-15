@@ -77,6 +77,7 @@ DOMCI_CLASS(MouseEvent)
 DOMCI_CLASS(MouseScrollEvent)
 DOMCI_CLASS(DragEvent)
 DOMCI_CLASS(KeyboardEvent)
+DOMCI_CLASS(CompositionEvent)
 DOMCI_CLASS(PopupBlockedEvent)
 DOMCI_CLASS(DeviceOrientationEvent)
 DOMCI_CLASS(DeviceMotionEvent)
@@ -114,13 +115,13 @@ DOMCI_CLASS(HTMLHtmlElement)
 DOMCI_CLASS(HTMLIFrameElement)
 DOMCI_CLASS(HTMLImageElement)
 DOMCI_CLASS(HTMLInputElement)
-DOMCI_CLASS(HTMLIsIndexElement)
 DOMCI_CLASS(HTMLLIElement)
 DOMCI_CLASS(HTMLLabelElement)
 DOMCI_CLASS(HTMLLegendElement)
 DOMCI_CLASS(HTMLLinkElement)
 DOMCI_CLASS(HTMLMapElement)
 DOMCI_CLASS(HTMLMenuElement)
+DOMCI_CLASS(HTMLMenuItemElement)
 DOMCI_CLASS(HTMLMetaElement)
 DOMCI_CLASS(HTMLModElement)
 DOMCI_CLASS(HTMLOListElement)
@@ -218,9 +219,6 @@ DOMCI_CLASS(XULTreeBuilder)
 // DOMStringList object
 DOMCI_CLASS(DOMStringList)
 
-// NameList object used by the DOM
-DOMCI_CLASS(NameList)
-
 #ifdef MOZ_XUL
 DOMCI_CLASS(TreeColumn)
 DOMCI_CLASS(TreeColumns)
@@ -236,14 +234,12 @@ DOMCI_CLASS(SVGDocument)
 // SVG element classes
 DOMCI_CLASS(SVGAElement)
 DOMCI_CLASS(SVGAltGlyphElement)
-#ifdef MOZ_SMIL
 DOMCI_CLASS(SVGAnimateElement)
 DOMCI_CLASS(SVGAnimateTransformElement)
 DOMCI_CLASS(SVGAnimateMotionElement)
 DOMCI_CLASS(SVGMpathElement)
 DOMCI_CLASS(SVGSetElement)
 DOMCI_CLASS(TimeEvent)
-#endif // MOZ_SMIL
 DOMCI_CLASS(SVGCircleElement)
 DOMCI_CLASS(SVGClipPathElement)
 DOMCI_CLASS(SVGDefsElement)
@@ -430,6 +426,8 @@ DOMCI_CLASS(GeoPositionCoords)
 DOMCI_CLASS(GeoPositionAddress)
 DOMCI_CLASS(GeoPositionError)
 
+DOMCI_CLASS(BatteryManager)
+
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
 DOMCI_CLASS(CSSFontFaceStyleDecl)
@@ -462,9 +460,6 @@ DOMCI_CLASS(MozTouchEvent)
 
 DOMCI_CLASS(MathMLElement)
 
-DOMCI_CLASS(Worker)
-DOMCI_CLASS(ChromeWorker)
-
 // WebGL
 DOMCI_CLASS(WebGLRenderingContext)
 DOMCI_CLASS(WebGLBuffer)
@@ -476,6 +471,8 @@ DOMCI_CLASS(WebGLRenderbuffer)
 DOMCI_CLASS(WebGLUniformLocation)
 DOMCI_CLASS(WebGLActiveInfo)
 DOMCI_CLASS(WebGLExtension)
+DOMCI_CLASS(WebGLExtensionStandardDerivatives)
+DOMCI_CLASS(WebGLExtensionLoseContext)
 
 DOMCI_CLASS(PaintRequest)
 DOMCI_CLASS(PaintRequestList)
@@ -497,7 +494,7 @@ DOMCI_CLASS(DesktopNotification)
 DOMCI_CLASS(DesktopNotificationCenter)
 
 // WebSocket
-DOMCI_CLASS(WebSocket)
+DOMCI_CLASS(MozWebSocket)
 DOMCI_CLASS(CloseEvent)
 
 DOMCI_CLASS(IDBFactory)
@@ -510,10 +507,8 @@ DOMCI_CLASS(IDBCursorWithValue)
 DOMCI_CLASS(IDBKeyRange)
 DOMCI_CLASS(IDBIndex)
 DOMCI_CLASS(IDBVersionChangeEvent)
-DOMCI_CLASS(IDBVersionChangeRequest)
+DOMCI_CLASS(IDBOpenDBRequest)
 DOMCI_CLASS(IDBDatabaseException)
-
-DOMCI_CLASS(EventException)
 
 DOMCI_CLASS(Touch)
 DOMCI_CLASS(TouchList)

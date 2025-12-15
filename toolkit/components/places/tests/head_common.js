@@ -35,9 +35,10 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+const CURRENT_SCHEMA_VERSION = 12;
+
 const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 const NS_APP_PROFILE_DIR_STARTUP = "ProfDS";
-const NS_APP_HISTORY_50_FILE = "UHist";
 const NS_APP_BOOKMARKS_50_FILE = "BMarks";
 
 // Shortcuts to transitions type.
@@ -54,6 +55,8 @@ const TRANSITION_DOWNLOAD = Ci.nsINavHistoryService.TRANSITION_DOWNLOAD;
 // nsIFaviconService.idl, aboutCertError.xhtml and netError.xhtml.
 const FAVICON_ERRORPAGE_URL = "chrome://global/skin/icons/warning-16.png";
 
+const TITLE_LENGTH_MAX = 4096;
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "Services", function() {
@@ -64,6 +67,11 @@ XPCOMUtils.defineLazyGetter(this, "Services", function() {
 XPCOMUtils.defineLazyGetter(this, "NetUtil", function() {
   Cu.import("resource://gre/modules/NetUtil.jsm");
   return NetUtil;
+});
+
+XPCOMUtils.defineLazyGetter(this, "FileUtils", function() {
+  Cu.import("resource://gre/modules/FileUtils.jsm");
+  return FileUtils;
 });
 
 XPCOMUtils.defineLazyGetter(this, "PlacesUtils", function() {
@@ -86,26 +94,6 @@ Services.prefs.setBoolPref("places.history.enabled", true);
 
 // Initialize profile.
 let gProfD = do_get_profile();
-
-// Add our own dirprovider for old history.dat.
-let (provider = {
-      getFile: function(prop, persistent) {
-        persistent.value = true;
-        if (prop == NS_APP_HISTORY_50_FILE) {
-          let histFile = Services.dirsvc.get("ProfD", Ci.nsIFile);
-          histFile.append("history.dat");
-          return histFile;
-        }
-        throw Cr.NS_ERROR_FAILURE;
-      },
-      QueryInterface: XPCOMUtils.generateQI([Ci.nsIDirectoryServiceProvider])
-    })
-{
-  Cc["@mozilla.org/file/directory_service;1"].
-  getService(Ci.nsIDirectoryService).
-  QueryInterface(Ci.nsIDirectoryService).registerProvider(provider);
-}
-
 
 // Remove any old database.
 clearDB();
@@ -149,30 +137,46 @@ function DBConn() {
   return gDBConn.connectionReady ? gDBConn : null;
 };
 
+/**
+ * Reads data from the provided inputstream.
+ *
+ * @return an array of bytes.
+ */ 
+function readInputStreamData(aStream) {
+  let bistream = Cc["@mozilla.org/binaryinputstream;1"].
+                 createInstance(Ci.nsIBinaryInputStream);
+  try {
+    bistream.setInputStream(aStream);
+    let expectedData = [];
+    let avail;
+    while ((avail = bistream.available())) {
+      expectedData = expectedData.concat(bistream.readByteArray(avail));
+    }
+    return expectedData;
+  } finally {
+    bistream.close();
+  }
+}
 
 /**
- * Reads the data from the specified nsIFile, and returns an array of bytes.
+ * Reads the data from the specified nsIFile.
  *
  * @param aFile
  *        The nsIFile to read from.
+ * @return an array of bytes.
  */
 function readFileData(aFile) {
   let inputStream = Cc["@mozilla.org/network/file-input-stream;1"].
                     createInstance(Ci.nsIFileInputStream);
   // init the stream as RD_ONLY, -1 == default permissions.
   inputStream.init(aFile, 0x01, -1, null);
-  let size = inputStream.available();
 
-  // use a binary input stream to grab the bytes.
-  let bis = Cc["@mozilla.org/binaryinputstream;1"].
-            createInstance(Ci.nsIBinaryInputStream);
-  bis.setInputStream(inputStream);
-
-  let bytes = bis.readByteArray(size);
-
-  if (size != bytes.length)
-      throw "Didn't read expected number of bytes";
-
+  // Check the returned size versus the expected size.
+  let size  = inputStream.available();
+  let bytes = readInputStreamData(inputStream);
+  if (size != bytes.length) {
+    throw "Didn't read expected number of bytes";
+  }
   return bytes;
 }
 
@@ -617,8 +621,12 @@ function waitForAsyncUpdates(aCallback, aScope, aArguments)
   let scope = aScope || this;
   let args = aArguments || [];
   let db = DBConn();
-  db.createAsyncStatement("BEGIN EXCLUSIVE").executeAsync();
-  db.createAsyncStatement("COMMIT").executeAsync({
+  let begin = db.createAsyncStatement("BEGIN EXCLUSIVE");
+  begin.executeAsync();
+  begin.finalize();
+
+  let commit = db.createAsyncStatement("COMMIT");
+  commit.executeAsync({
     handleResult: function() {},
     handleError: function() {},
     handleCompletion: function(aReason)
@@ -626,6 +634,7 @@ function waitForAsyncUpdates(aCallback, aScope, aArguments)
       aCallback.apply(scope, args);
     }
   });
+  commit.finalize();
 }
 
 /**

@@ -61,7 +61,6 @@ XPIDLSRCS =					\
 	nsIDOMDataContainerEvent.idl	\
 	nsIDOMKeyEvent.idl			\
 	nsIDOMMutationEvent.idl			\
-	nsIDOMNSUIEvent.idl			\
 	nsIDOMDragEvent.idl  			\
 	nsIDOMDataTransfer.idl  			\
 	nsIDOMPopupBlockedEvent.idl		\
@@ -75,7 +74,6 @@ XPIDLSRCS =					\
 	nsIDOMPaintRequest.idl			\
 	nsIDOMPaintRequestList.idl		\
 	nsIDOMSimpleGestureEvent.idl		\
-	nsIDOMNSMouseEvent.idl			\
 	nsIDOMMozTouchEvent.idl			\
 	nsIDOMDeviceOrientationEvent.idl\
 	nsIDOMDeviceMotionEvent.idl		\
@@ -84,10 +82,10 @@ XPIDLSRCS =					\
 	nsIDOMAnimationEvent.idl		\
 	nsIDOMPopStateEvent.idl			\
 	nsIDOMCloseEvent.idl			\
-	nsIDOMEventException.idl		\
 	nsIDOMTouchEvent.idl			\
 	nsIDOMHashChangeEvent.idl		\
 	nsIDOMCustomEvent.idl			\
+	nsIDOMCompositionEvent.idl		\
 	$(NULL)
 
 include $(topsrcdir)/config/rules.mk

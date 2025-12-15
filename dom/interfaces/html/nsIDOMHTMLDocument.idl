@@ -39,18 +39,15 @@
 
 #include "nsIDOMDocument.idl"
 
-%{C++
-#include "jspubtd.h"
-%}
-
 /**
  * The nsIDOMHTMLDocument interface is the interface to a [X]HTML
  * document object.
  *
  * @see <http://www.whatwg.org/html/>
  */
+interface nsISelection;
 
-[scriptable, uuid(3c0ca40f-72c5-4d15-935e-ccaff7953f2c)]
+[scriptable, uuid(cc1af020-6543-429c-82d7-840cda3be0b9)]
 interface nsIDOMHTMLDocument : nsIDOMDocument
 {
   readonly attribute DOMString            URL;
@@ -69,6 +66,7 @@ interface nsIDOMHTMLDocument : nsIDOMDocument
   readonly attribute nsIDOMHTMLCollection plugins;
   readonly attribute nsIDOMHTMLCollection links;
   readonly attribute nsIDOMHTMLCollection forms;
+  readonly attribute nsIDOMHTMLCollection scripts;
   nsIDOMNodeList            getElementsByName(in DOMString elementName);
 
   // If aContentType is not something supported by nsHTMLDocument and
@@ -132,7 +130,7 @@ interface nsIDOMHTMLDocument : nsIDOMDocument
 
 
   // DOM Range
-  DOMString                 getSelection();
+  nsISelection                getSelection();
 
 
   // Mozilla extensions

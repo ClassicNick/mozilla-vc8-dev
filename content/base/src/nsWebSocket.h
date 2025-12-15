@@ -41,7 +41,7 @@
 #define nsWebSocket_h__
 
 #include "nsISupportsUtils.h"
-#include "nsIWebSocket.h"
+#include "nsIMozWebSocket.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsIJSNativeInitializer.h"
@@ -50,6 +50,11 @@
 #include "nsIDOMEventListener.h"
 #include "nsDOMEventTargetWrapperCache.h"
 #include "nsAutoPtr.h"
+#include "nsIDOMDOMStringList.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIWebSocketChannel.h"
+#include "nsIWebSocketListener.h"
+#include "nsIRequest.h"
 
 #define DEFAULT_WS_SCHEME_PORT  80
 #define DEFAULT_WSS_SCHEME_PORT 443
@@ -61,17 +66,18 @@
 
 #define NS_WEBSOCKET_CONTRACTID "@mozilla.org/websocket;1"
 
-class nsWSNetAddressComparator;
-class nsWebSocketEstablishedConnection;
 class nsWSCloseEvent;
+class nsAutoCloseWS;
 
 class nsWebSocket: public nsDOMEventTargetWrapperCache,
-                   public nsIWebSocket,
-                   public nsIJSNativeInitializer
+                   public nsIMozWebSocket,
+                   public nsIJSNativeInitializer,
+                   public nsIInterfaceRequestor,
+                   public nsIWebSocketListener,
+                   public nsIRequest
 {
-friend class nsWSNetAddressComparator;
-friend class nsWebSocketEstablishedConnection;
 friend class nsWSCloseEvent;
+friend class nsAutoCloseWS;
 
 public:
   nsWebSocket();
@@ -79,7 +85,10 @@ public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsWebSocket,
                                            nsDOMEventTargetWrapperCache)
-  NS_DECL_NSIWEBSOCKET
+  NS_DECL_NSIMOZWEBSOCKET
+  NS_DECL_NSIINTERFACEREQUESTOR
+  NS_DECL_NSIWEBSOCKETLISTENER
+  NS_DECL_NSIREQUEST
 
   // nsIJSNativeInitializer
   NS_IMETHOD Initialize(nsISupports* aOwner, JSContext* aContext,
@@ -88,30 +97,36 @@ public:
   // nsIDOMEventTarget
   NS_IMETHOD AddEventListener(const nsAString& aType,
                               nsIDOMEventListener *aListener,
-                              PRBool aUseCapture,
-                              PRBool aWantsUntrusted,
+                              bool aUseCapture,
+                              bool aWantsUntrusted,
                               PRUint8 optional_argc);
   NS_IMETHOD RemoveEventListener(const nsAString& aType,
                                  nsIDOMEventListener* aListener,
-                                 PRBool aUseCapture);
+                                 bool aUseCapture);
 
   // Determine if preferences allow WebSocket
-  static PRBool PrefEnabled();
-
-  const PRUint64 WindowID() const { return mWindowID; }
-  const nsCString& GetScriptFile() const { return mScriptFile; }
-  const PRUint32 GetScriptLine() const { return mScriptLine; }
+  static bool PrefEnabled();
 
 protected:
   nsresult ParseURL(const nsString& aURL);
-  nsresult SetProtocol(const nsString& aProtocol);
   nsresult EstablishConnection();
+
+  // these three methods when called can release the WebSocket object
+  nsresult FailConnection();
+  nsresult CloseConnection();
+  nsresult Disconnect();
+
+  nsresult ConsoleError();
+  nsresult PrintErrorOnConsole(const char       *aBundleURI,
+                               const PRUnichar  *aError,
+                               const PRUnichar **aFormatStrings,
+                               PRUint32          aFormatStringsLen);
 
   nsresult CreateAndDispatchSimpleEvent(const nsString& aName);
   nsresult CreateAndDispatchMessageEvent(const nsACString& aData);
-  nsresult CreateAndDispatchCloseEvent(PRBool aWasClean);
+  nsresult CreateAndDispatchCloseEvent(bool aWasClean, PRUint16 aCode,
+                                       const nsString &aReason);
 
-  // called from mConnection accordingly to the situation
   void SetReadyState(PRUint16 aNewReadyState);
 
   // if there are "strong event listeners" (see comment in nsWebSocket.cpp) or
@@ -122,6 +137,8 @@ protected:
   // (and possibly collected).
   void DontKeepAliveAnyMore();
 
+  nsCOMPtr<nsIWebSocketChannel> mWebSocketChannel;
+
   nsRefPtr<nsDOMEventListenerWrapper> mOnOpenListener;
   nsRefPtr<nsDOMEventListenerWrapper> mOnErrorListener;
   nsRefPtr<nsDOMEventListenerWrapper> mOnMessageListener;
@@ -129,39 +146,45 @@ protected:
 
   // related to the WebSocket constructor steps
   nsString mOriginalURL;
-  PRPackedBool mSecure; // if true it is using SSL and the wss scheme,
+  bool mSecure; // if true it is using SSL and the wss scheme,
                         // otherwise it is using the ws scheme with no SSL
 
-  PRPackedBool mKeepingAlive;
-  PRPackedBool mCheckMustKeepAlive;
-  PRPackedBool mTriggeredCloseEvent;
+  bool mKeepingAlive;
+  bool mCheckMustKeepAlive;
+  bool mTriggeredCloseEvent;
+  bool mClosedCleanly;
+  bool mDisconnected;
+
+  nsCString mClientReason;
+  PRUint16  mClientReasonCode;
+  nsString  mServerReason;
+  PRUint16  mServerReasonCode;
 
   nsCString mAsciiHost;  // hostname
   PRUint32  mPort;
   nsCString mResource; // [filepath[?query]]
   nsString  mUTF16Origin;
-  
+
   nsCOMPtr<nsIURI> mURI;
-  nsCString mProtocol;
+  nsCString mRequestedProtocolList;
+  nsCString mEstablishedProtocol;
+  nsCString mEstablishedExtensions;
 
   PRUint16 mReadyState;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
-  nsRefPtr<nsWebSocketEstablishedConnection> mConnection;
-  PRUint32 mOutgoingBufferedAmount; // actually, we get this value from
-                                    // mConnection when we are connected,
-                                    // but we need this one after disconnecting.
+  PRUint32 mOutgoingBufferedAmount;
 
   // Web Socket owner information:
   // - the script file name, UTF8 encoded.
   // - source code line number where the Web Socket object was constructed.
-  // - the window ID of the outer window where the script lives. Note that this 
-  // may not be the same as the Web Socket owner window.
+  // - the ID of the inner window where the script lives. Note that this may not
+  //   be the same as the Web Socket owner window.
   // These attributes are used for error reporting.
   nsCString mScriptFile;
   PRUint32 mScriptLine;
-  PRUint64 mWindowID;
+  PRUint64 mInnerWindowID;
 
 private:
   nsWebSocket(const nsWebSocket& x);   // prevent bad usage

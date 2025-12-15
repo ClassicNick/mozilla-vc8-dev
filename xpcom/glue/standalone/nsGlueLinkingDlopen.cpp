@@ -204,7 +204,7 @@ preload(const char *file)
 #endif
 
 static void
-ReadDependentCB(const char *aDependentLib, PRBool do_preload)
+ReadDependentCB(const char *aDependentLib, bool do_preload)
 {
 #if defined(LINUX) && !defined(ANDROID)
     if (do_preload)
@@ -252,6 +252,9 @@ XPCOMGlueLoad(const char *xpcomFile, GetFrozenFunctionsFunc *func)
         libHandle = dlopen(xpcomFile, RTLD_GLOBAL | RTLD_LAZY);
         if (libHandle) {
             AppendDependentLib(libHandle);
+        } else {
+            fprintf(stderr, "XPCOMGlueLoad error for file %s:\n%s\n", xpcomFile,
+                    dlerror());
         }
     }
 

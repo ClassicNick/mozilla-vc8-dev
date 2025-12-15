@@ -103,7 +103,7 @@ public:
   // HttpBaseChannel::nsIHttpChannel
   NS_IMETHOD SetRequestHeader(const nsACString& aHeader, 
                               const nsACString& aValue, 
-                              PRBool aMerge);
+                              bool aMerge);
   // nsIHttpChannelInternal
   NS_IMETHOD SetupFallbackChannel(const char *aFallbackKey);
   NS_IMETHOD GetLocalAddress(nsACString& addr);
@@ -125,10 +125,10 @@ public:
 
 protected:
   bool RecvOnStartRequest(const nsHttpResponseHead& responseHead,
-                          const PRBool& useResponseHead,
+                          const bool& useResponseHead,
                           const RequestHeaderTuples& requestHeaders,
-                          const PRBool& isFromCache,
-                          const PRBool& cacheEntryAvailable,
+                          const bool& isFromCache,
+                          const bool& cacheEntryAvailable,
                           const PRUint32& cacheExpirationTime,
                           const nsCString& cachedCharset,
                           const nsCString& securityInfoSerialization,
@@ -159,11 +159,10 @@ protected:
 private:
   RequestHeaderTuples mRequestHeaders;
   nsCOMPtr<nsIChildChannel> mRedirectChannelChild;
-  nsCOMPtr<nsIURI> mRedirectOriginalURI;
   nsCOMPtr<nsISupports> mSecurityInfo;
 
-  PRPackedBool mIsFromCache;
-  PRPackedBool mCacheEntryAvailable;
+  bool mIsFromCache;
+  bool mCacheEntryAvailable;
   PRUint32     mCacheExpirationTime;
   nsCString    mCachedCharset;
 
@@ -171,14 +170,19 @@ private:
   bool mSendResumeAt;
 
   bool mIPCOpen;
-  bool mKeptAlive;
+  bool mKeptAlive;            // IPC kept open, but only for security info
   ChannelEventQueue mEventQ;
 
+  // true after successful AsyncOpen until OnStopRequest completes.
+  bool RemoteChannelExists() { return mIPCOpen && !mKeptAlive; }
+
+  void AssociateApplicationCache(const nsCString &groupID,
+                                 const nsCString &clientID);
   void OnStartRequest(const nsHttpResponseHead& responseHead,
-                      const PRBool& useResponseHead,
+                      const bool& useResponseHead,
                       const RequestHeaderTuples& requestHeaders,
-                      const PRBool& isFromCache,
-                      const PRBool& cacheEntryAvailable,
+                      const bool& isFromCache,
+                      const bool& cacheEntryAvailable,
                       const PRUint32& cacheExpirationTime,
                       const nsCString& cachedCharset,
                       const nsCString& securityInfoSerialization,
@@ -205,6 +209,7 @@ private:
   // Called asynchronously from Resume: continues any pending calls into client.
   void CompleteResume();
 
+  friend class AssociateApplicationCacheEvent;
   friend class StartRequestEvent;
   friend class StopRequestEvent;
   friend class TransportAndDataEvent;

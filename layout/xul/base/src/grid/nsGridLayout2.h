@@ -53,14 +53,14 @@ class nsBoxLayoutState;
 class nsGridCell;
 
 /**
- * The nsIBoxLayout implementation for a grid.
+ * The nsBoxLayout implementation for a grid.
  */
 class nsGridLayout2 : public nsStackLayout, 
                       public nsIGridPart
 {
 public:
 
-  friend nsresult NS_NewGridLayout2(nsIPresShell* aPresShell, nsIBoxLayout** aNewLayout);
+  friend nsresult NS_NewGridLayout2(nsIPresShell* aPresShell, nsBoxLayout** aNewLayout);
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -79,7 +79,7 @@ public:
   virtual void CountRowsColumns(nsIBox* aBox, PRInt32& aRowCount, PRInt32& aComputedColumnCount) { aRowCount++; }
   virtual void DirtyRows(nsIBox* aBox, nsBoxLayoutState& aState) { }
   virtual PRInt32 BuildRows(nsIBox* aBox, nsGridRow* aRows);
-  virtual nsMargin GetTotalMargin(nsIBox* aBox, PRBool aIsHorizontal);
+  virtual nsMargin GetTotalMargin(nsIBox* aBox, bool aIsHorizontal);
   virtual Type GetType() { return eGrid; }
   virtual void ChildrenInserted(nsIBox* aBox, nsBoxLayoutState& aState,
                                 nsIBox* aPrevBox,
@@ -101,7 +101,7 @@ protected:
   nsGrid mGrid;
 
 private:
-  void AddWidth(nsSize& aSize, nscoord aSize2, PRBool aIsHorizontal);
+  void AddWidth(nsSize& aSize, nscoord aSize2, bool aIsHorizontal);
 
 
 }; // class nsGridLayout2

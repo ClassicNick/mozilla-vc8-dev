@@ -101,6 +101,10 @@ using namespace mozilla::ipc::windows;
 
 // pulled from widget's nsAppShell
 extern const PRUnichar* kAppShellEventId;
+#if defined(ACCESSIBILITY)
+// pulled from accessibility's win utils
+extern const PRUnichar* kPropNameTabContent;
+#endif
 
 namespace {
 
@@ -379,6 +383,14 @@ WindowIsDeferredWindow(HWND hWnd)
     return false;
   }
 
+#if defined(ACCESSIBILITY)
+  // Tab content creates a window that responds to accessible WM_GETOBJECT
+  // calls. This window can safely be ignored.
+  if (::GetPropW(hWnd, kPropNameTabContent)) {
+    return false;
+  }
+#endif
+
   // Common mozilla windows we must defer messages to.
   nsDependentString className(buffer, length);
   if (StringBeginsWith(className, NS_LITERAL_STRING("Mozilla")) ||
@@ -393,6 +405,13 @@ WindowIsDeferredWindow(HWND hWnd)
   // 'AGFullScreenWinClass' - silverlight fullscreen window
   if (className.EqualsLiteral("ShockwaveFlashFullScreen") ||
       className.EqualsLiteral("AGFullScreenWinClass")) {
+    return true;
+  }
+
+  // Google Earth bridging msg window between the plugin instance and a separate
+  // earth process. The earth process can trigger a plugin incall on the browser
+  // at any time, which is badness if the instance is already making an incall.
+  if (className.EqualsLiteral("__geplugin_bridge_window__")) {
     return true;
   }
 

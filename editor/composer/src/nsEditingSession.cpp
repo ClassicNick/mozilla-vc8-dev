@@ -42,7 +42,6 @@
 
 #include "nsPIDOMWindow.h"
 #include "nsIDOMWindowUtils.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDocument.h"
 #include "nsIHTMLDocument.h"
@@ -91,14 +90,14 @@
 
 ----------------------------------------------------------------------------*/
 nsEditingSession::nsEditingSession()
-: mDoneSetup(PR_FALSE)
-, mCanCreateEditor(PR_FALSE)
-, mInteractive(PR_FALSE)
-, mMakeWholeDocumentEditable(PR_TRUE)
-, mDisabledJSAndPlugins(PR_FALSE)
-, mScriptsEnabled(PR_TRUE)
-, mPluginsEnabled(PR_TRUE)
-, mProgressListenerRegistered(PR_FALSE)
+: mDoneSetup(false)
+, mCanCreateEditor(false)
+, mInteractive(false)
+, mMakeWholeDocumentEditable(true)
+, mDisabledJSAndPlugins(false)
+, mScriptsEnabled(true)
+, mPluginsEnabled(true)
+, mProgressListenerRegistered(false)
 , mImageAnimationMode(0)
 , mEditorFlags(0)
 , mEditorStatus(eEditorOK)
@@ -138,9 +137,9 @@ NS_IMPL_ISUPPORTS3(nsEditingSession, nsIEditingSession, nsIWebProgressListener,
 NS_IMETHODIMP
 nsEditingSession::MakeWindowEditable(nsIDOMWindow *aWindow,
                                      const char *aEditorType, 
-                                     PRBool aDoAfterUriLoad,
-                                     PRBool aMakeWholeDocumentEditable,
-                                     PRBool aInteractive)
+                                     bool aDoAfterUriLoad,
+                                     bool aMakeWholeDocumentEditable,
+                                     bool aInteractive)
 {
   mEditorType.Truncate();
   mEditorFlags = 0;
@@ -220,13 +219,13 @@ nsEditingSession::DisableJSAndPlugins(nsIDOMWindow *aWindow)
   nsIDocShell *docShell = GetDocShellFromWindow(aWindow);
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
-  PRBool tmp;
+  bool tmp;
   nsresult rv = docShell->GetAllowJavascript(&tmp);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mScriptsEnabled = tmp;
 
-  rv = docShell->SetAllowJavascript(PR_FALSE);
+  rv = docShell->SetAllowJavascript(false);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Disable plugins in this document:
@@ -235,10 +234,10 @@ nsEditingSession::DisableJSAndPlugins(nsIDOMWindow *aWindow)
 
   mPluginsEnabled = tmp;
 
-  rv = docShell->SetAllowPlugins(PR_FALSE);
+  rv = docShell->SetAllowPlugins(false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mDisabledJSAndPlugins = PR_TRUE;
+  mDisabledJSAndPlugins = true;
 
   return NS_OK;
 }
@@ -248,7 +247,7 @@ nsEditingSession::RestoreJSAndPlugins(nsIDOMWindow *aWindow)
 {
   NS_ENSURE_TRUE(mDisabledJSAndPlugins, NS_OK);
 
-  mDisabledJSAndPlugins = PR_FALSE;
+  mDisabledJSAndPlugins = false;
 
   nsIDocShell *docShell = GetDocShellFromWindow(aWindow);
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
@@ -261,7 +260,7 @@ nsEditingSession::RestoreJSAndPlugins(nsIDOMWindow *aWindow)
 }
 
 NS_IMETHODIMP
-nsEditingSession::GetJsAndPluginsDisabled(PRBool *aResult)
+nsEditingSession::GetJsAndPluginsDisabled(bool *aResult)
 {
   NS_ENSURE_ARG_POINTER(aResult);
   *aResult = mDisabledJSAndPlugins;
@@ -275,7 +274,7 @@ nsEditingSession::GetJsAndPluginsDisabled(PRBool *aResult)
   boolean windowIsEditable (in nsIDOMWindow aWindow);
 ----------------------------------------------------------------------------*/
 NS_IMETHODIMP
-nsEditingSession::WindowIsEditable(nsIDOMWindow *aWindow, PRBool *outIsEditable)
+nsEditingSession::WindowIsEditable(nsIDOMWindow *aWindow, bool *outIsEditable)
 {
   nsCOMPtr<nsIEditorDocShell> editorDocShell;
   nsresult rv = GetEditorDocShellFromWindow(aWindow,
@@ -306,23 +305,23 @@ const char* const gSupportedTextTypes[] = {
   NULL      // IMPORTANT! Null must be at end
 };
 
-PRBool
+bool
 IsSupportedTextType(const char* aMIMEType)
 {
-  NS_ENSURE_TRUE(aMIMEType, PR_FALSE);
+  NS_ENSURE_TRUE(aMIMEType, false);
 
   PRInt32 i = 0;
   while (gSupportedTextTypes[i])
   {
     if (strcmp(gSupportedTextTypes[i], aMIMEType) == 0)
     {
-      return PR_TRUE;
+      return true;
     }
 
     i ++;
   }
   
-  return PR_FALSE;
+  return false;
 }
 
 /*---------------------------------------------------------------------------
@@ -334,7 +333,7 @@ IsSupportedTextType(const char* aMIMEType)
 NS_IMETHODIMP
 nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
 {
-  mDoneSetup = PR_TRUE;
+  mDoneSetup = true;
 
   nsresult rv;
 
@@ -374,11 +373,16 @@ nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
     if (document) {
       document->FlushPendingNotifications(Flush_Frames);
       if (mMakeWholeDocumentEditable) {
-        document->SetEditableFlag(PR_TRUE);
+        document->SetEditableFlag(true);
+        nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(document);
+        if (htmlDocument) {
+          // Enable usage of the execCommand API
+          htmlDocument->SetEditingState(nsIHTMLDocument::eDesignMode);
+        }
       }
     }
   }
-  PRBool needHTMLController = PR_FALSE;
+  bool needHTMLController = false;
 
   const char *classString = "@mozilla.org/editor/htmleditor;1";
   if (mEditorType.EqualsLiteral("textmail"))
@@ -396,7 +400,7 @@ nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
   {
     if (mimeCType.EqualsLiteral("text/html"))
     {
-      needHTMLController = PR_TRUE;
+      needHTMLController = true;
       mEditorFlags = nsIPlaintextEditor::eEditorMailMask;
     }
     else //set the flags back to textplain.
@@ -405,7 +409,7 @@ nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
   }
   else // Defaulted to html
   {
-    needHTMLController = PR_TRUE;
+    needHTMLController = true;
   }
 
   if (mInteractive) {
@@ -449,7 +453,7 @@ nsEditingSession::SetupEditorOnWindow(nsIDOMWindow *aWindow)
   // Try to reuse an existing editor
   nsCOMPtr<nsIEditor> editor = do_QueryReferent(mExistingEditor);
   if (editor) {
-    editor->PreDestroy(PR_FALSE);
+    editor->PreDestroy(false);
   } else {
     editor = do_CreateInstance(classString, &rv);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -553,7 +557,9 @@ nsEditingSession::RemoveListenersAndControllers(nsIDOMWindow *aWindow,
 NS_IMETHODIMP
 nsEditingSession::TearDownEditorOnWindow(nsIDOMWindow *aWindow)
 {
-  NS_ENSURE_TRUE(mDoneSetup, NS_OK);
+  if (!mDoneSetup) {
+    return NS_OK;
+  }
 
   NS_ENSURE_TRUE(aWindow, NS_ERROR_NULL_POINTER);
 
@@ -566,13 +572,13 @@ nsEditingSession::TearDownEditorOnWindow(nsIDOMWindow *aWindow)
     mLoadBlankDocTimer = nsnull;
   }
 
-  mDoneSetup = PR_FALSE;
+  mDoneSetup = false;
 
   // Check if we're turning off editing (from contentEditable or designMode).
   nsCOMPtr<nsIDOMDocument> domDoc;
   aWindow->GetDocument(getter_AddRefs(domDoc));
   nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(domDoc);
-  PRBool stopEditing = htmlDoc && htmlDoc->IsEditingOn();
+  bool stopEditing = htmlDoc && htmlDoc->IsEditingOn();
   if (stopEditing)
     RemoveWebProgressListener(aWindow);
 
@@ -611,7 +617,11 @@ nsEditingSession::TearDownEditorOnWindow(nsIDOMWindow *aWindow)
       nsCOMPtr<nsIDocument> doc = do_QueryInterface(domDoc, &rv);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      doc->SetEditableFlag(PR_FALSE);
+      doc->SetEditableFlag(false);
+      nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(doc);
+      if (htmlDocument) {
+        htmlDocument->SetEditingState(nsIHTMLDocument::eOff);
+      }
     }
   }
 
@@ -699,7 +709,7 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
       printf("STATE_START & STATE_IS_DOCUMENT flags=%x\n", aStateFlags);
 #endif
 
-      PRBool progressIsForTargetDocument =
+      bool progressIsForTargetDocument =
         IsProgressForTargetDocument(aWebProgress);
 
       if (progressIsForTargetDocument)
@@ -727,7 +737,7 @@ nsEditingSession::OnStateChange(nsIWebProgress *aWebProgress,
           }
         }
 
-        mCanCreateEditor = PR_TRUE;
+        mCanCreateEditor = true;
         StartDocumentLoad(aWebProgress, progressIsForTargetDocument);
       }
     }
@@ -891,7 +901,7 @@ nsEditingSession::OnSecurityChange(nsIWebProgress *aWebProgress,
   Check that this notification is for our document.
 ----------------------------------------------------------------------------*/
 
-PRBool
+bool
 nsEditingSession::IsProgressForTargetDocument(nsIWebProgress *aWebProgress)
 {
   nsCOMPtr<nsIWebProgress> editedWebProgress = do_QueryReferent(mDocShell);
@@ -923,7 +933,7 @@ nsEditingSession::GetEditorStatus(PRUint32 *aStatus)
 ----------------------------------------------------------------------------*/
 nsresult
 nsEditingSession::StartDocumentLoad(nsIWebProgress *aWebProgress, 
-                                    PRBool aIsToBeMadeEditable)
+                                    bool aIsToBeMadeEditable)
 {
 #ifdef NOISY_DOC_LOADING
   printf("======= StartDocumentLoad ========\n");
@@ -957,7 +967,7 @@ nsEditingSession::StartDocumentLoad(nsIWebProgress *aWebProgress,
 nsresult
 nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
                                   nsIChannel* aChannel, nsresult aStatus,
-                                  PRBool aIsToBeMadeEditable)
+                                  bool aIsToBeMadeEditable)
 {
   NS_ENSURE_ARG_POINTER(aWebProgress);
   
@@ -1004,7 +1014,7 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
   // did someone set the flag to make this shell editable?
   if (aIsToBeMadeEditable && mCanCreateEditor && editorDocShell)
   {
-    PRBool  makeEditable;
+    bool    makeEditable;
     editorDocShell->GetEditable(&makeEditable);
   
     if (makeEditable)
@@ -1025,7 +1035,7 @@ nsEditingSession::EndDocumentLoad(nsIWebProgress *aWebProgress,
 
       if (needsSetup)
       {
-        mCanCreateEditor = PR_FALSE;
+        mCanCreateEditor = false;
         rv = SetupEditorOnWindow(domWindow);
         if (NS_FAILED(rv))
         {
@@ -1128,7 +1138,7 @@ nsEditingSession::EndPageLoad(nsIWebProgress *aWebProgress,
 
 #if 0
   // Shouldn't we do this when we want to edit sub-frames?
-  return MakeWindowEditable(domWindow, "html", PR_FALSE, mInteractive);
+  return MakeWindowEditable(domWindow, "html", false, mInteractive);
 #else
   return NS_OK;
 #endif
@@ -1214,21 +1224,15 @@ nsEditingSession::SetupEditorCommandController(
   NS_ENSURE_ARG_POINTER(aWindow);
   NS_ENSURE_ARG_POINTER(aContext);
   NS_ENSURE_ARG_POINTER(aControllerId);
-
-  nsresult rv;
-  nsCOMPtr<nsIDOMWindowInternal> domWindowInt =
-                                    do_QueryInterface(aWindow, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
   
   nsCOMPtr<nsIControllers> controllers;      
-  rv = domWindowInt->GetControllers(getter_AddRefs(controllers));
+  nsresult rv = aWindow->GetControllers(getter_AddRefs(controllers));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // We only have to create each singleton controller once
   // We know this has happened once we have a controllerId value
   if (!*aControllerId)
   {
-    nsresult rv;
     nsCOMPtr<nsIController> controller;
     controller = do_CreateInstance(aControllerClassName, &rv);
     NS_ENSURE_SUCCESS(rv, rv);  
@@ -1258,15 +1262,10 @@ NS_IMETHODIMP
 nsEditingSession::SetEditorOnControllers(nsIDOMWindow *aWindow,
                                          nsIEditor* aEditor)
 {
-  nsresult rv;
-  
-  // set the editor on the controller
-  nsCOMPtr<nsIDOMWindowInternal> domWindowInt =
-                                     do_QueryInterface(aWindow, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(aWindow, NS_ERROR_NULL_POINTER);
   
   nsCOMPtr<nsIControllers> controllers;      
-  rv = domWindowInt->GetControllers(getter_AddRefs(controllers));
+  nsresult rv = aWindow->GetControllers(getter_AddRefs(controllers));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsISupports> editorAsISupports = do_QueryInterface(aEditor);
@@ -1315,11 +1314,10 @@ nsEditingSession::RemoveEditorControllers(nsIDOMWindow *aWindow)
 {
   // Remove editor controllers from the aWindow, call when we're 
   // tearing down/detaching editor.
-  nsCOMPtr<nsIDOMWindowInternal> domWindowInt(do_QueryInterface(aWindow));
 
   nsCOMPtr<nsIControllers> controllers;
-  if (domWindowInt)
-    domWindowInt->GetControllers(getter_AddRefs(controllers));
+  if (aWindow)
+    aWindow->GetControllers(getter_AddRefs(controllers));
 
   if (controllers)
   {
@@ -1363,7 +1361,7 @@ nsEditingSession::RemoveWebProgressListener(nsIDOMWindow *aWindow)
   if (webProgress)
   {
     webProgress->RemoveProgressListener(this);
-    mProgressListenerRegistered = PR_FALSE;
+    mProgressListenerRegistered = false;
   }
 }
 
@@ -1479,7 +1477,7 @@ nsEditingSession::ReattachToWindow(nsIDOMWindow* aWindow)
 
 #ifdef DEBUG
   {
-    PRBool isEditable;
+    bool isEditable;
     rv = WindowIsEditable(aWindow, &isEditable);
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ASSERTION(isEditable, "Window is not editable after reattaching editor.");

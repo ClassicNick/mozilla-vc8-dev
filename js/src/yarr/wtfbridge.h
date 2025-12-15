@@ -47,10 +47,11 @@
 
 #include "jsstr.h"
 #include "jsprvtd.h"
-#include "jstl.h"
 #include "vm/String.h"
 #include "assembler/wtf/Platform.h"
+#if ENABLE_YARR_JIT
 #include "assembler/jit/ExecutableAllocator.h"
+#endif
 
 namespace JSC { namespace Yarr {
 
@@ -61,10 +62,12 @@ namespace JSC { namespace Yarr {
 typedef jschar UChar;
 typedef JSLinearString UString;
 
+using namespace js::unicode;
+
 class Unicode {
   public:
-    static UChar toUpper(UChar c) { return JS_TOUPPER(c); }
-    static UChar toLower(UChar c) { return JS_TOLOWER(c); }
+    static UChar toUpper(UChar c) { return ToUpperCase(c); }
+    static UChar toLower(UChar c) { return ToLowerCase(c); }
 };
 
 /*
@@ -261,6 +264,8 @@ deleteAllValues(Vector<T, N> &v) {
     v.deleteAllValues();
 }
 
+#if ENABLE_YARR_JIT
+
 /*
  * Minimal JSGlobalData. This used by Yarr to get the allocator.
  */
@@ -271,6 +276,8 @@ class JSGlobalData {
     JSGlobalData(ExecutableAllocator *regexAllocator)
      : regexAllocator(regexAllocator) { }
 };
+
+#endif
 
 /*
  * Sentinel value used in Yarr.

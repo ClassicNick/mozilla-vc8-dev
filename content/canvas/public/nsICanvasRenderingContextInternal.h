@@ -110,7 +110,7 @@ public:
   // be created as opaque; all compositing operators should assume the
   // dst alpha is always 1.0.  If this is never called, the context
   // defaults to false (not opaque).
-  NS_IMETHOD SetIsOpaque(PRBool isOpaque) = 0;
+  NS_IMETHOD SetIsOpaque(bool isOpaque) = 0;
 
   // Invalidate this context and release any held resources, in preperation
   // for possibly reinitializing with SetDimensions/InitializeWithSurface.
@@ -121,6 +121,11 @@ public:
   virtual already_AddRefed<CanvasLayer> GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                                        CanvasLayer *aOldLayer,
                                                        LayerManager *aManager) = 0;
+
+  // Return true if the canvas should be forced to be "inactive" to ensure
+  // it can be drawn to the screen even if it's too large to be blitted by
+  // an accelerated CanvasLayer.
+  virtual bool ShouldForceInactiveLayer(LayerManager *aManager) { return false; }
 
   virtual void MarkContextClean() = 0;
 
@@ -139,7 +144,7 @@ public:
   // store, this will set it to that state. Note that if you have drawn
   // anything into this canvas before changing the shmem state, it will be
   // lost.
-  NS_IMETHOD SetIsIPC(PRBool isIPC) = 0;
+  NS_IMETHOD SetIsIPC(bool isIPC) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsICanvasRenderingContextInternal,

@@ -62,7 +62,6 @@ CPPSRCS = 				\
 	nsPSMBackgroundThread.cpp       \
 	nsSSLThread.cpp                 \
 	nsCertVerificationThread.cpp    \
-	nsCipherInfo.cpp \
 	nsProtectedAuthThread.cpp \
 	nsNSSCallbacks.cpp		\
 	nsNSSComponent.cpp		\
@@ -104,6 +103,7 @@ CPPSRCS = 				\
   nsRandomGenerator.cpp \
   NSSErrorsService.cpp \
   nsNSSCertificateFakeTransport.cpp \
+  PSMRunnable.cpp \
   $(NULL)
 
 ifdef MOZ_XUL

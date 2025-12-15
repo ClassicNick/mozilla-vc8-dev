@@ -76,7 +76,6 @@ public:
 
   // nsIAccessible
   NS_IMETHOD GetValue(nsAString& aValue);
-  NS_IMETHOD GetFocusedChild(nsIAccessible **aFocusedChild);
 
   // nsAccessNode
   virtual bool IsDefunct() const;
@@ -101,6 +100,14 @@ public:
   virtual bool RemoveItemFromSelection(PRUint32 aIndex);
   virtual bool SelectAll();
   virtual bool UnselectAll();
+
+  // Widgets
+  virtual bool IsWidget() const;
+  virtual bool IsActiveWidget() const;
+  virtual bool AreItemsOperable() const;
+  virtual nsAccessible* CurrentItem();
+
+  virtual nsAccessible* ContainerWidget() const;
 
   // nsXULTreeAccessible
 
@@ -182,22 +189,16 @@ public:
                                            nsAccessibleWrap)
 
   // nsIAccessible
-  NS_IMETHOD GetFocusedChild(nsIAccessible **aFocusedChild);
-
   NS_IMETHOD GetBounds(PRInt32 *aX, PRInt32 *aY,
                        PRInt32 *aWidth, PRInt32 *aHeight);
 
-  NS_IMETHOD SetSelected(PRBool aSelect); 
+  NS_IMETHOD SetSelected(bool aSelect); 
   NS_IMETHOD TakeFocus();
-
-  NS_IMETHOD GetRelationByType(PRUint32 aRelationType,
-                               nsIAccessibleRelation **aRelation);
 
   NS_IMETHOD GroupPosition(PRInt32 *aGroupLevel,
                            PRInt32 *aSimilarItemsInGroup,
                            PRInt32 *aPositionInGroup);
 
-  NS_IMETHOD GetNumActions(PRUint8 *aCount);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
   NS_IMETHOD DoAction(PRUint8 aIndex);
 
@@ -209,6 +210,14 @@ public:
   // nsAccessible
   virtual PRUint64 NativeState();
   virtual PRInt32 IndexInParent() const;
+  virtual Relation RelationByType(PRUint32 aType);
+  virtual nsAccessible* FocusedChild();
+
+  // ActionAccessible
+  virtual PRUint8 ActionCount();
+
+  // Widgets
+  virtual nsAccessible* ContainerWidget() const;
 
   // nsXULTreeItemAccessibleBase
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_XULTREEITEMBASEACCESSIBLE_IMPL_CID)
@@ -243,7 +252,7 @@ protected:
   /**
    * Return true if the tree item accessible is expandable (contains subrows).
    */
-  PRBool IsExpandable();
+  bool IsExpandable();
 
   /**
    * Return name for cell at the given column.
@@ -278,7 +287,7 @@ public:
 
   // nsAccessNode
   virtual bool IsDefunct() const;
-  virtual PRBool Init();
+  virtual bool Init();
   virtual void Shutdown();
 
   // nsAccessible

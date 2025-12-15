@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set sw=2 ts=8 et tw=80 : */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
@@ -70,6 +70,10 @@ namespace mozilla { namespace net {
 class nsPostMessage;
 class nsWSAdmissionManager;
 class nsWSCompression;
+class CallOnMessageAvailable;
+class CallOnStop;
+class CallOnServerClose;
+class CallAcknowledge;
 
 class WebSocketChannel : public BaseWebSocketChannel,
                          public nsIHttpUpgradeListener,
@@ -99,7 +103,7 @@ public:
                        const nsACString &aOrigin,
                        nsIWebSocketListener *aListener,
                        nsISupports *aContext);
-  NS_IMETHOD Close();
+  NS_IMETHOD Close(PRUint16 aCode, const nsACString & aReason);
   NS_IMETHOD SendMsg(const nsACString &aMsg);
   NS_IMETHOD SendBinaryMsg(const nsACString &aMsg);
   NS_IMETHOD GetSecurityInfo(nsISupports **aSecurityInfo);
@@ -123,21 +127,16 @@ public:
   const static PRUint8 kMaskBit             = 0x80;
   const static PRUint8 kFinalFragBit        = 0x80;
 
-  // section 7.4.1 defines these
-  const static PRUint16 kCloseNormal        = 1000;
-  const static PRUint16 kCloseGoingAway     = 1001;
-  const static PRUint16 kCloseProtocolError = 1002;
-  const static PRUint16 kCloseUnsupported   = 1003;
-  const static PRUint16 kCloseTooLarge      = 1004;
-  const static PRUint16 kCloseNoStatus      = 1005;
-  const static PRUint16 kCloseAbnormal      = 1006;
-
 protected:
   virtual ~WebSocketChannel();
 
 private:
   friend class nsPostMessage;
   friend class nsWSAdmissionManager;
+  friend class CallOnMessageAvailable;
+  friend class CallOnStop;
+  friend class CallOnServerClose;
+  friend class CallAcknowledge;
 
   void SendMsgInternal(nsCString *aMsg, PRInt32 datalen);
   void PrimeNewOutgoingMessage();
@@ -159,23 +158,24 @@ private:
   void EnsureHdrOut(PRUint32 size);
   void ApplyMask(PRUint32 mask, PRUint8 *data, PRUint64 len);
 
-  PRBool   IsPersistentFramePtr();
+  bool     IsPersistentFramePtr();
   nsresult ProcessInput(PRUint8 *buffer, PRUint32 count);
-  PRUint32 UpdateReadBuffer(PRUint8 *buffer, PRUint32 count);
+  PRUint32 UpdateReadBuffer(PRUint8 *buffer, PRUint32 count,
+                            PRUint32 accumulatedFragments);
 
   class OutboundMessage
   {
   public:
     OutboundMessage (nsCString *str)
-      : mMsg(str), mIsControl(PR_FALSE), mBinaryLen(-1)
+      : mMsg(str), mIsControl(false), mBinaryLen(-1)
     { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
 
     OutboundMessage (nsCString *str, PRInt32 dataLen)
-      : mMsg(str), mIsControl(PR_FALSE), mBinaryLen(dataLen)
+      : mMsg(str), mIsControl(false), mBinaryLen(dataLen)
     { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
 
     OutboundMessage ()
-      : mMsg(nsnull), mIsControl(PR_TRUE), mBinaryLen(-1)
+      : mMsg(nsnull), mIsControl(true), mBinaryLen(-1)
     { MOZ_COUNT_CTOR(WebSocketOutboundMessage); }
 
     ~OutboundMessage()
@@ -184,7 +184,7 @@ private:
       delete mMsg;
     }
 
-    PRBool IsControl()  { return mIsControl; }
+    bool IsControl()  { return mIsControl; }
     const nsCString *Msg()  { return mMsg; }
     PRInt32 BinaryLen() { return mBinaryLen; }
     PRInt32 Length()
@@ -202,14 +202,13 @@ private:
 
   private:
     nsCString *mMsg;
-    PRBool     mIsControl;
+    bool       mIsControl;
     PRInt32    mBinaryLen;
   };
 
   nsCOMPtr<nsIEventTarget>                 mSocketThread;
   nsCOMPtr<nsIHttpChannelInternal>         mChannel;
   nsCOMPtr<nsIHttpChannel>                 mHttpChannel;
-  nsCOMPtr<nsILoadGroup>                   mLoadGroup;
   nsCOMPtr<nsICancelable>                  mDNSRequest;
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIRandomGenerator>             mRandomGenerator;
@@ -249,10 +248,16 @@ private:
   PRUint32                        mAutoFollowRedirects       : 1;
   PRUint32                        mReleaseOnTransmit         : 1;
   PRUint32                        mTCPClosed                 : 1;
+  PRUint32                        mOpenBlocked               : 1;
+  PRUint32                        mOpenRunning               : 1;
+  PRUint32                        mChannelWasOpened          : 1;
 
   PRInt32                         mMaxMessageSize;
   nsresult                        mStopOnClose;
-  PRUint16                        mCloseCode;
+  PRUint16                        mServerCloseCode;
+  nsCString                       mServerCloseReason;
+  PRUint16                        mScriptCloseCode;
+  nsCString                       mScriptCloseReason;
 
   // These are for the read buffers
   PRUint8                        *mFramePtr;
@@ -283,7 +288,7 @@ private:
 class WebSocketSSLChannel : public WebSocketChannel
 {
 public:
-    WebSocketSSLChannel() { BaseWebSocketChannel::mEncrypted = PR_TRUE; }
+    WebSocketSSLChannel() { BaseWebSocketChannel::mEncrypted = true; }
 protected:
     virtual ~WebSocketSSLChannel() {}
 };

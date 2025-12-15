@@ -37,7 +37,6 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsHttpConnectionInfo.h"
-#include "nsPrintfCString.h"
 #include "nsIProtocolProxyService.h"
 
 void
@@ -101,18 +100,18 @@ nsHttpConnectionInfo::Clone() const
     return clone;
 }
 
-PRBool
+bool
 nsHttpConnectionInfo::ShouldForceConnectMethod()
 {
     if (!mProxyInfo)
-        return PR_FALSE;
+        return false;
     
     PRUint32 resolveFlags;
     nsresult rv;
     
     rv = mProxyInfo->GetResolveFlags(&resolveFlags);
     if (NS_FAILED(rv))
-        return PR_FALSE;
+        return false;
 
     return resolveFlags & nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL;
 }

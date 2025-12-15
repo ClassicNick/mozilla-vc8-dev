@@ -59,6 +59,10 @@
 #include <dlfcn.h>
 #include "nscore.h"
 
+#ifdef __SUNPRO_CC
+#include <stdio.h>
+#endif
+
 namespace mozilla {
 namespace widget {
 // the read end of the pipe, which will be used by GfxInfo
@@ -107,38 +111,52 @@ x_error_handler(Display *, XErrorEvent *ev)
 static void glxtest()
 {
   ///// Open libGL and load needed symbols /////
+#ifdef __OpenBSD__
+  void *libgl = dlopen("libGL.so", RTLD_LAZY);
+#else
   void *libgl = dlopen("libGL.so.1", RTLD_LAZY);
+#endif
   if (!libgl)
     fatal_error("Unable to load libGL.so.1");
+  
+  typedef void* (* PFNGLXGETPROCADDRESS) (const char *);
+  PFNGLXGETPROCADDRESS glXGetProcAddress = cast<PFNGLXGETPROCADDRESS>(dlsym(libgl, "glXGetProcAddress"));
+  
+  if (!glXGetProcAddress)
+    fatal_error("Unable to find glXGetProcAddress in libGL.so.1");
 
   typedef GLXFBConfig* (* PFNGLXQUERYEXTENSION) (Display *, int *, int *);
-  PFNGLXQUERYEXTENSION glXQueryExtension = cast<PFNGLXQUERYEXTENSION>(dlsym(libgl, "glXQueryExtension"));
+  PFNGLXQUERYEXTENSION glXQueryExtension = cast<PFNGLXQUERYEXTENSION>(glXGetProcAddress("glXQueryExtension"));
+
+  typedef GLXFBConfig* (* PFNGLXQUERYVERSION) (Display *, int *, int *);
+  PFNGLXQUERYVERSION glXQueryVersion = cast<PFNGLXQUERYVERSION>(dlsym(libgl, "glXQueryVersion"));
 
   typedef GLXFBConfig* (* PFNGLXCHOOSEFBCONFIG) (Display *, int, const int *, int *);
-  PFNGLXCHOOSEFBCONFIG glXChooseFBConfig = cast<PFNGLXCHOOSEFBCONFIG>(dlsym(libgl, "glXChooseFBConfig"));
+  PFNGLXCHOOSEFBCONFIG glXChooseFBConfig = cast<PFNGLXCHOOSEFBCONFIG>(glXGetProcAddress("glXChooseFBConfig"));
 
   typedef XVisualInfo* (* PFNGLXGETVISUALFROMFBCONFIG) (Display *, GLXFBConfig);
-  PFNGLXGETVISUALFROMFBCONFIG glXGetVisualFromFBConfig = cast<PFNGLXGETVISUALFROMFBCONFIG>(dlsym(libgl, "glXGetVisualFromFBConfig"));
+  PFNGLXGETVISUALFROMFBCONFIG glXGetVisualFromFBConfig = cast<PFNGLXGETVISUALFROMFBCONFIG>(glXGetProcAddress("glXGetVisualFromFBConfig"));
 
   typedef GLXPixmap (* PFNGLXCREATEPIXMAP) (Display *, GLXFBConfig, Pixmap, const int *);
-  PFNGLXCREATEPIXMAP glXCreatePixmap = cast<PFNGLXCREATEPIXMAP>(dlsym(libgl, "glXCreatePixmap"));
+  PFNGLXCREATEPIXMAP glXCreatePixmap = cast<PFNGLXCREATEPIXMAP>(glXGetProcAddress("glXCreatePixmap"));
 
   typedef GLXContext (* PFNGLXCREATENEWCONTEXT) (Display *, GLXFBConfig, int, GLXContext, Bool);
-  PFNGLXCREATENEWCONTEXT glXCreateNewContext = cast<PFNGLXCREATENEWCONTEXT>(dlsym(libgl, "glXCreateNewContext"));
+  PFNGLXCREATENEWCONTEXT glXCreateNewContext = cast<PFNGLXCREATENEWCONTEXT>(glXGetProcAddress("glXCreateNewContext"));
 
   typedef Bool (* PFNGLXMAKECURRENT) (Display*, GLXDrawable, GLXContext);
-  PFNGLXMAKECURRENT glXMakeCurrent = cast<PFNGLXMAKECURRENT>(dlsym(libgl, "glXMakeCurrent"));
+  PFNGLXMAKECURRENT glXMakeCurrent = cast<PFNGLXMAKECURRENT>(glXGetProcAddress("glXMakeCurrent"));
 
   typedef void (* PFNGLXDESTROYPIXMAP) (Display *, GLXPixmap);
-  PFNGLXDESTROYPIXMAP glXDestroyPixmap = cast<PFNGLXDESTROYPIXMAP>(dlsym(libgl, "glXDestroyPixmap"));
+  PFNGLXDESTROYPIXMAP glXDestroyPixmap = cast<PFNGLXDESTROYPIXMAP>(glXGetProcAddress("glXDestroyPixmap"));
 
   typedef void (* PFNGLXDESTROYCONTEXT) (Display*, GLXContext);
-  PFNGLXDESTROYCONTEXT glXDestroyContext = cast<PFNGLXDESTROYCONTEXT>(dlsym(libgl, "glXDestroyContext"));
+  PFNGLXDESTROYCONTEXT glXDestroyContext = cast<PFNGLXDESTROYCONTEXT>(glXGetProcAddress("glXDestroyContext"));
 
   typedef GLubyte* (* PFNGLGETSTRING) (GLenum);
-  PFNGLGETSTRING glGetString = cast<PFNGLGETSTRING>(dlsym(libgl, "glGetString"));
+  PFNGLGETSTRING glGetString = cast<PFNGLGETSTRING>(glXGetProcAddress("glGetString"));
 
   if (!glXQueryExtension ||
+      !glXQueryVersion ||
       !glXChooseFBConfig ||
       !glXGetVisualFromFBConfig ||
       !glXCreatePixmap ||
@@ -148,7 +166,7 @@ static void glxtest()
       !glXDestroyContext ||
       !glGetString)
   {
-    fatal_error("Unable to find required symbols in libGL.so.1");
+    fatal_error("glXGetProcAddress couldn't find required functions");
   }
   ///// Open a connection to the X server /////
   Display *dpy = XOpenDisplay(NULL);
@@ -158,6 +176,14 @@ static void glxtest()
   ///// Check that the GLX extension is present /////
   if (!glXQueryExtension(dpy, NULL, NULL))
     fatal_error("GLX extension missing");
+  
+  ///// Check that the GLX version is >= 1.3, needed for glXCreatePixmap, bug 659932 /////
+  int majorVersion, minorVersion;
+  if (!glXQueryVersion(dpy, &majorVersion, &minorVersion))
+    fatal_error("Unable to query GLX version");
+
+  if (majorVersion < 1 || (majorVersion == 1 && minorVersion < 3))
+    fatal_error("GLX version older than the required 1.3");
 
   XSetErrorHandler(x_error_handler);
 
@@ -183,6 +209,9 @@ static void glxtest()
   GLXContext context = glXCreateNewContext(dpy, fbConfigs[0], GLX_RGBA_TYPE, NULL, True);
   glXMakeCurrent(dpy, glxpixmap, context);
 
+  ///// Look for this symbol to determine texture_from_pixmap support /////
+  void* glXBindTexImageEXT = glXGetProcAddress("glXBindTexImageEXT"); 
+
   ///// Get GL vendor/renderer/versions strings /////
   enum { bufsize = 1024 };
   char buf[bufsize];
@@ -194,10 +223,11 @@ static void glxtest()
     fatal_error("glGetString returned null");
 
   int length = snprintf(buf, bufsize,
-                        "VENDOR\n%s\nRENDERER\n%s\nVERSION\n%s\n",
+                        "VENDOR\n%s\nRENDERER\n%s\nVERSION\n%s\nTFP\n%s\n",
                         vendorString,
                         rendererString,
-                        versionString);
+                        versionString,
+                        glXBindTexImageEXT ? "TRUE" : "FALSE");
   if (length >= bufsize)
     fatal_error("GL strings length too large for buffer size");
 

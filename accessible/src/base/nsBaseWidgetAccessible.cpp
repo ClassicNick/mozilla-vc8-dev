@@ -40,18 +40,18 @@
 #include "nsBaseWidgetAccessible.h"
 
 #include "States.h"
-#include "nsAccessibilityAtoms.h"
 #include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
 #include "nsHyperTextAccessibleWrap.h"
 
-#include "nsIDOMNSHTMLElement.h"
 #include "nsGUIEvent.h"
 #include "nsILink.h"
 #include "nsIFrame.h"
 #include "nsINameSpaceManager.h"
 #include "nsIURI.h"
+
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsLeafAccessible
@@ -94,8 +94,8 @@ nsLinkableAccessible::
   nsLinkableAccessible(nsIContent *aContent, nsIWeakReference *aShell) :
   nsAccessibleWrap(aContent, aShell),
   mActionAcc(nsnull),
-  mIsLink(PR_FALSE),
-  mIsOnclick(PR_FALSE)
+  mIsLink(false),
+  mIsOnclick(false)
 {
 }
 
@@ -136,13 +136,10 @@ nsLinkableAccessible::GetValue(nsAString& aValue)
 }
 
 
-NS_IMETHODIMP
-nsLinkableAccessible::GetNumActions(PRUint8 *aNumActions)
+PRUint8
+nsLinkableAccessible::ActionCount()
 {
-  NS_ENSURE_ARG_POINTER(aNumActions);
-
-  *aNumActions = (mIsOnclick || mIsLink) ? 1 : 0;
-  return NS_OK;
+  return (mIsOnclick || mIsLink) ? 1 : 0;
 }
 
 NS_IMETHODIMP
@@ -175,13 +172,11 @@ nsLinkableAccessible::DoAction(PRUint8 aIndex)
     nsAccessibleWrap::DoAction(aIndex);
 }
 
-NS_IMETHODIMP
-nsLinkableAccessible::GetKeyboardShortcut(nsAString& aKeyboardShortcut)
+KeyBinding
+nsLinkableAccessible::AccessKey() const
 {
-  aKeyboardShortcut.Truncate();
-
-  return mActionAcc ? mActionAcc->GetKeyboardShortcut(aKeyboardShortcut) :
-    nsAccessible::GetKeyboardShortcut(aKeyboardShortcut);
+  return mActionAcc ?
+    mActionAcc->AccessKey() : nsAccessible::AccessKey();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,8 +185,8 @@ nsLinkableAccessible::GetKeyboardShortcut(nsAString& aKeyboardShortcut)
 void
 nsLinkableAccessible::Shutdown()
 {
-  mIsLink = PR_FALSE;
-  mIsOnclick = PR_FALSE;
+  mIsLink = false;
+  mIsOnclick = false;
   mActionAcc = nsnull;
   nsAccessibleWrap::Shutdown();
 }
@@ -224,11 +219,11 @@ nsLinkableAccessible::BindToParent(nsAccessible* aParent,
 
   // Cache action content.
   mActionAcc = nsnull;
-  mIsLink = PR_FALSE;
-  mIsOnclick = PR_FALSE;
+  mIsLink = false;
+  mIsOnclick = false;
 
   if (nsCoreUtils::HasClickListener(mContent)) {
-    mIsOnclick = PR_TRUE;
+    mIsOnclick = true;
     return;
   }
 
@@ -236,17 +231,17 @@ nsLinkableAccessible::BindToParent(nsAccessible* aParent,
   // on non accessible node in parent chain but this node is skipped when tree
   // is traversed.
   nsAccessible* walkUpAcc = this;
-  while ((walkUpAcc = walkUpAcc->GetParent()) && !walkUpAcc->IsDoc()) {
-    if (walkUpAcc && walkUpAcc->Role() == nsIAccessibleRole::ROLE_LINK &&
+  while ((walkUpAcc = walkUpAcc->Parent()) && !walkUpAcc->IsDoc()) {
+    if (walkUpAcc->Role() == nsIAccessibleRole::ROLE_LINK &&
         walkUpAcc->State() & states::LINKED) {
-      mIsLink = PR_TRUE;
+      mIsLink = true;
       mActionAcc = walkUpAcc;
       return;
     }
 
     if (nsCoreUtils::HasClickListener(walkUpAcc->GetContent())) {
       mActionAcc = walkUpAcc;
-      mIsOnclick = PR_TRUE;
+      mIsOnclick = true;
       return;
     }
   }

@@ -39,6 +39,9 @@
 
 #include "mozilla/layers/PLayers.h"
 
+/* This must occur *after* layers/PLayers.h to avoid typedefs conflicts. */
+#include "mozilla/Util.h"
+
 #include "LayerManagerOGL.h"
 #include "ThebesLayerOGL.h"
 #include "ContainerLayerOGL.h"
@@ -46,6 +49,7 @@
 #include "ColorLayerOGL.h"
 #include "CanvasLayerOGL.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/Preferences.h"
 
 #include "LayerManagerOGLShaders.h"
 
@@ -79,7 +83,6 @@ LayerManagerOGL::LayerManagerOGL(nsIWidget *aWidget)
   , mBackBufferTexture(0)
   , mBackBufferSize(-1, -1)
   , mHasBGRA(0)
-  , mRenderFPS(false)
 {
 }
 
@@ -107,7 +110,7 @@ LayerManagerOGL::Destroy()
 
     CleanupResources();
 
-    mDestroyed = PR_TRUE;
+    mDestroyed = true;
   }
 }
 
@@ -194,7 +197,7 @@ LayerManagerOGL::CreateContext()
   return context.forget();
 }
 
-PRBool
+bool
 LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
 {
   ScopedGfxFeatureReporter reporter("GL Layers");
@@ -203,10 +206,10 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
   NS_ABORT_IF_FALSE(mGLContext == nsnull, "Don't reiniailize layer managers");
 
   if (!aContext)
-    return PR_FALSE;
+    return false;
 
   mGLContext = aContext;
-  mGLContext->SetFlipped(PR_TRUE);
+  mGLContext->SetFlipped(true);
 
   MakeCurrent();
 
@@ -226,7 +229,7 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
     ptype *p = new ptype(mGLContext);                                             \
     if (!p->Initialize(vsstr, fsstr)) {                                           \
       delete p;                                                                   \
-      return PR_FALSE;                                                            \
+      return false;                                                            \
     }                                                                             \
     mPrograms.AppendElement(p);                                                   \
   } while (0)
@@ -323,7 +326,7 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
 
   mFBOTextureTarget = LOCAL_GL_NONE;
 
-  for (PRUint32 i = 0; i < NS_ARRAY_LENGTH(textureTargets); i++) {
+  for (PRUint32 i = 0; i < ArrayLength(textureTargets); i++) {
     GLenum target = textureTargets[i];
     mGLContext->fGenTextures(1, &mBackBufferTexture);
     mGLContext->fBindTexture(target, mBackBufferTexture);
@@ -399,7 +402,7 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
   };
   mGLContext->fBufferData(LOCAL_GL_ARRAY_BUFFER, sizeof(vertices), vertices, LOCAL_GL_STATIC_DRAW);
 
-  nsCOMPtr<nsIConsoleService> 
+  nsCOMPtr<nsIConsoleService>
     console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
 
   if (console) {
@@ -421,6 +424,8 @@ LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
       msg += NS_LITERAL_STRING("TEXTURE_RECTANGLE");
     console->LogStringMessage(msg.get());
   }
+
+  Preferences::AddBoolVarCache(&sDrawFPS, "layers.acceleration.draw-fps");
 
   reporter.SetSuccessful();
   return true;
@@ -465,7 +470,8 @@ LayerManagerOGL::EndEmptyTransaction()
 
 void
 LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
-                                void* aCallbackData)
+                                void* aCallbackData,
+                                EndTransactionFlags aFlags)
 {
 #ifdef MOZ_LAYERS_HAVE_LOG
   MOZ_LAYERS_LOG(("  ----- (beginning paint)"));
@@ -477,7 +483,7 @@ LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
     return;
   }
 
-  if (mRoot) {
+  if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
     // The results of our drawing always go directly into a pixel buffer,
     // so we don't need to pass any global transform here.
     mRoot->ComputeEffectiveTransforms(gfx3DMatrix());
@@ -603,6 +609,8 @@ LayerManagerOGL::RootLayer() const
   return static_cast<LayerOGL*>(mRoot->ImplData());
 }
 
+bool LayerManagerOGL::sDrawFPS = false;
+
 /* This function tries to stick to portable C89 as much as possible
  * so that it can be easily copied into other applications */
 void
@@ -702,6 +710,7 @@ LayerManagerOGL::FPSState::DrawFPS(GLContext* context, CopyProgram* copyprog)
   context->fEnable(LOCAL_GL_BLEND);
   context->fBlendFunc(LOCAL_GL_ONE, LOCAL_GL_SRC_COLOR);
 
+  context->fActiveTexture(LOCAL_GL_TEXTURE0);
   context->fBindTexture(LOCAL_GL_TEXTURE_2D, texture);
 
   copyprog->Activate();
@@ -825,7 +834,7 @@ LayerManagerOGL::Render()
   if (mWidgetSize.width != width ||
       mWidgetSize.height != height)
   {
-    MakeCurrent(PR_TRUE);
+    MakeCurrent(true);
 
     mWidgetSize.width = width;
     mWidgetSize.height = height;
@@ -867,7 +876,7 @@ LayerManagerOGL::Render()
     return;
   }
 
-  if (mRenderFPS) {
+  if (sDrawFPS) {
     mFPS.DrawFPS(mGLContext, GetCopy2DProgram());
   }
 
@@ -1010,7 +1019,10 @@ LayerManagerOGL::SetupPipeline(int aWidth, int aHeight, WorldTransforPolicy aTra
     viewMatrix = mWorldMatrix * viewMatrix;
   }
 
-  SetLayerProgramProjectionMatrix(gfx3DMatrix::From2D(viewMatrix));
+  gfx3DMatrix matrix3d = gfx3DMatrix::From2D(viewMatrix);
+  matrix3d._33 = 0.0f;
+
+  SetLayerProgramProjectionMatrix(matrix3d);
 }
 
 void
@@ -1049,8 +1061,10 @@ LayerManagerOGL::SetupBackBuffer(int aWidth, int aHeight)
                                     mBackBufferTexture,
                                     0);
 
-  NS_ASSERTION(mGLContext->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER) ==
-               LOCAL_GL_FRAMEBUFFER_COMPLETE, "Error setting up framebuffer.");
+  if (mGLContext->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER) !=
+      LOCAL_GL_FRAMEBUFFER_COMPLETE) {
+    NS_RUNTIMEABORT("Error setting up framebuffer --- framebuffer not complete");
+  }
 
   mBackBufferSize.width = aWidth;
   mBackBufferSize.height = aHeight;
@@ -1076,13 +1090,13 @@ LayerManagerOGL::CopyToTarget()
   mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER,
                                mGLContext->IsDoubleBuffered() ? 0 : mBackBufferFBO);
 
+#ifndef USE_GLES2
+  // GLES2 promises that binding to any custom FBO will attach
+  // to GL_COLOR_ATTACHMENT0 attachment point.
   if (mGLContext->IsDoubleBuffered()) {
     mGLContext->fReadBuffer(LOCAL_GL_BACK);
   }
-#ifndef USE_GLES2
   else {
-  // GLES2 promises that binding to any custom FBO will attach
-  // to GL_COLOR_ATTACHMENT0 attachment point.
     mGLContext->fReadBuffer(LOCAL_GL_COLOR_ATTACHMENT0);
   }
 #endif
@@ -1144,7 +1158,7 @@ LayerManagerOGL::ProgramType LayerManagerOGL::sLayerProgramTypes[] = {
 
 #define FOR_EACH_LAYER_PROGRAM(vname)                       \
   for (size_t lpindex = 0;                                  \
-       lpindex < NS_ARRAY_LENGTH(sLayerProgramTypes);       \
+       lpindex < ArrayLength(sLayerProgramTypes);           \
        ++lpindex)                                           \
   {                                                         \
     LayerProgram *vname = static_cast<LayerProgram*>        \
@@ -1301,8 +1315,12 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
                                     tex,
                                     0);
 
-  NS_ASSERTION(mGLContext->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER) ==
-               LOCAL_GL_FRAMEBUFFER_COMPLETE, "Error setting up framebuffer.");
+  // Making this call to fCheckFramebufferStatus prevents a crash on
+  // PowerVR. See bug 695246.
+  if (mGLContext->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER) !=
+      LOCAL_GL_FRAMEBUFFER_COMPLETE) {
+    NS_RUNTIMEABORT("Error setting up framebuffer --- framebuffer not complete");
+  }
 
   SetupPipeline(aRect.width, aRect.height, DontApplyWorldTransform);
   mGLContext->fScissor(0, 0, aRect.width, aRect.height);
@@ -1314,21 +1332,6 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
 
   *aFBO = fbo;
   *aTexture = tex;
-}
-
-void 
-LayerOGL::ApplyFilter(gfxPattern::GraphicsFilter aFilter)
-{
-  if (aFilter == gfxPattern::FILTER_NEAREST) {
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_NEAREST);
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_NEAREST);
-  } else {
-    if (aFilter != gfxPattern::FILTER_GOOD) {
-      NS_WARNING("Unsupported filter type!");
-    }
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
-  }
 }
 
 already_AddRefed<ShadowThebesLayer>

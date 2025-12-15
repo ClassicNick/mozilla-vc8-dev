@@ -57,6 +57,7 @@
 #ifdef MOZ_X11
 class gfxXlibSurface;
 #endif
+#include "nsGUIEvent.h"
 
 namespace mozilla {
 namespace plugins {
@@ -129,6 +130,9 @@ public:
                                        NPError* result);
     virtual bool
     AnswerNPN_GetValue_NPNVprivateModeBool(bool* value, NPError* result);
+  
+    virtual bool
+    AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value, NPError* result);
 
     virtual bool
     AnswerNPN_SetValue_NPPVpluginWindow(const bool& windowed, NPError* result);
@@ -275,21 +279,20 @@ public:
     virtual bool
     AnswerPluginFocusChange(const bool& gotFocus);
 
-#ifdef MOZ_WIDGET_COCOA
-    void Invalidate();
-#endif // definied(MOZ_WIDGET_COCOA)
-
     nsresult AsyncSetWindow(NPWindow* window);
     nsresult GetImage(mozilla::layers::ImageContainer* aContainer, mozilla::layers::Image** aImage);
     nsresult GetImageSize(nsIntSize* aSize);
 #ifdef XP_MACOSX
-    nsresult IsRemoteDrawingCoreAnimation(PRBool *aDrawing);
+    nsresult IsRemoteDrawingCoreAnimation(bool *aDrawing);
 #endif
     nsresult SetBackgroundUnknown();
     nsresult BeginUpdateBackground(const nsIntRect& aRect,
                                    gfxContext** aCtx);
     nsresult EndUpdateBackground(gfxContext* aCtx,
                                  const nsIntRect& aRect);
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+    nsresult HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled);
+#endif
 
 private:
     // Create an appropriate platform surface for a background of size
@@ -306,16 +309,6 @@ private:
     virtual bool
     DeallocPPluginBackgroundDestroyer(PPluginBackgroundDestroyerParent* aActor);
 
-    // Quirks mode support for various plugin mime types
-    enum PluginQuirks {
-        // OSX: Don't use the refresh timer for plug-ins
-        // using this quirk. These plug-in most have another
-        // way to refresh the window.
-        COREANIMATION_REFRESH_TIMER = 1,
-    };
-
-    void InitQuirksModes(const nsCString& aMimeType);
-
     bool InternalGetValueForNPObject(NPNVariable aVariable,
                                      PPluginScriptableObjectParent** aValue,
                                      NPError* aResult);
@@ -325,7 +318,6 @@ private:
     NPP mNPP;
     const NPNetscapeFuncs* mNPNIface;
     NPWindowType mWindowType;
-    int mQuirks;
 
     nsDataHashtable<nsVoidPtrHashKey, PluginScriptableObjectParent*> mScriptableObjects;
 
@@ -353,12 +345,12 @@ private:
 #if defined(MOZ_WIDGET_COCOA)
 private:
     Shmem                  mShSurface; 
-    size_t                 mShWidth;
-    size_t                 mShHeight;
+    uint16_t               mShWidth;
+    uint16_t               mShHeight;
     CGColorSpaceRef        mShColorSpace;
     int16_t                mDrawingModel;
-    nsAutoPtr<nsIOSurface> mIOSurface;
-    nsAutoPtr<nsIOSurface> mFrontIOSurface;
+    nsRefPtr<nsIOSurface> mIOSurface;
+    nsRefPtr<nsIOSurface> mFrontIOSurface;
 #endif // definied(MOZ_WIDGET_COCOA)
 
     // ObjectFrame layer wrapper

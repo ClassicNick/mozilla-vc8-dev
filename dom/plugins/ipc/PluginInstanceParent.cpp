@@ -38,7 +38,6 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "PluginInstanceParent.h"
-
 #include "BrowserStreamParent.h"
 #include "PluginBackgroundDestroyer.h"
 #include "PluginModuleParent.h"
@@ -97,7 +96,6 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
     , mPluginWndProc(NULL)
     , mNestedEventState(false)
 #endif // defined(XP_WIN)
-    , mQuirks(0)
 #if defined(XP_MACOSX)
     , mShWidth(0)
     , mShHeight(0)
@@ -105,20 +103,6 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
     , mDrawingModel(NPDrawingModelCoreGraphics)
 #endif
 {
-    InitQuirksModes(aMimeType);
-}
-
-void
-PluginInstanceParent::InitQuirksModes(const nsCString& aMimeType)
-{
-#ifdef MOZ_WIDGET_COCOA
-    NS_NAMED_LITERAL_CSTRING(flash, "application/x-shockwave-flash");
-    // Flash sends us Invalidate events so we will use those
-    // instead of the refresh timer.
-    if (!FindInReadable(flash, aMimeType)) {
-        mQuirks |= COREANIMATION_REFRESH_TIMER;
-    }
-#endif
 }
 
 PluginInstanceParent::~PluginInstanceParent()
@@ -136,9 +120,6 @@ PluginInstanceParent::~PluginInstanceParent()
     }
     if (mShColorSpace)
         ::CGColorSpaceRelease(mShColorSpace);
-    if (mDrawingModel == NPDrawingModelCoreAnimation) {
-        mParent->RemoveFromRefreshTimer(this);
-    }
 #endif
 }
 
@@ -274,6 +255,9 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVnetscapeWindow(NativeWindowHandle* 
 #elif defined(ANDROID)
 #warning Need Android impl
     int id;
+#elif defined(MOZ_WIDGET_QT)
+#  warning Need Qt non X impl
+    int id;
 #else
 #warning Implement me
 #endif
@@ -339,6 +323,18 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVprivateModeBool(bool* value,
 }
 
 bool
+PluginInstanceParent::AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value,
+                                                            NPError* result)
+{
+    void *v = nsnull;
+    *result = mNPNIface->getvalue(mNPP, NPNVdocumentOrigin, &v);
+    if (*result == NPERR_NO_ERROR && v) {
+        value->Adopt(static_cast<char*>(v));
+    }
+    return true;
+}
+
+bool
 PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginWindow(
     const bool& windowed, NPError* result)
 {
@@ -380,10 +376,6 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
         mDrawingModel = drawingModel;
         *result = mNPNIface->setvalue(mNPP, NPPVpluginDrawingModel,
                                   (void*)NPDrawingModelCoreGraphics);
-        if (drawingModel == NPDrawingModelCoreAnimation &&
-            mQuirks & COREANIMATION_REFRESH_TIMER) {
-            mParent->AddToRefreshTimer(this);
-        }
     } else {
         mDrawingModel = drawingModel;
         *result = mNPNIface->setvalue(mNPP, NPPVpluginDrawingModel,
@@ -519,18 +511,21 @@ PluginInstanceParent::RecvShow(const NPRect& updatedRect,
     else if (newSurface.type() == SurfaceDescriptor::TIOSurfaceDescriptor) {
         IOSurfaceDescriptor iodesc = newSurface.get_IOSurfaceDescriptor();
     
-        nsIOSurface *newIOSurface = nsIOSurface::LookupSurface(iodesc.surfaceId());
+        nsRefPtr<nsIOSurface> newIOSurface = nsIOSurface::LookupSurface(iodesc.surfaceId());
 
         if (!newIOSurface) {
             NS_WARNING("Got bad IOSurfaceDescriptor in RecvShow");
             return false;
         }
       
+        if (mFrontIOSurface)
+            *prevSurface = IOSurfaceDescriptor(mFrontIOSurface->GetIOSurfaceID());
+        else
+            *prevSurface = null_t();
+
         mFrontIOSurface = newIOSurface;
 
         RecvNPN_InvalidateRect(updatedRect);
-
-        *prevSurface = null_t();
 
         PLUGIN_LOG_DEBUG(("   (RecvShow invalidated for surface %p)",
                           mFrontSurface.get()));
@@ -598,7 +593,7 @@ PluginInstanceParent::AsyncSetWindow(NPWindow* aWindow)
 {
     NPRemoteWindow window;
     mWindowType = aWindow->type;
-    window.window = reinterpret_cast<uintptr_t>(aWindow->window);
+    window.window = reinterpret_cast<uint64_t>(aWindow->window);
     window.x = aWindow->x;
     window.y = aWindow->y;
     window.width = aWindow->width;
@@ -611,6 +606,31 @@ PluginInstanceParent::AsyncSetWindow(NPWindow* aWindow)
 
     return NS_OK;
 }
+
+#if defined(MOZ_WIDGET_QT) && (MOZ_PLATFORM_MAEMO == 6)
+nsresult
+PluginInstanceParent::HandleGUIEvent(const nsGUIEvent& anEvent, bool* handled)
+{
+    switch (anEvent.eventStructType) {
+    case NS_KEY_EVENT:
+        if (!CallHandleKeyEvent(static_cast<const nsKeyEvent&>(anEvent),
+                                handled)) {
+            return NS_ERROR_FAILURE;
+        }
+        break;
+    case NS_TEXT_EVENT:
+        if (!CallHandleTextEvent(static_cast<const nsTextEvent&>(anEvent),
+                                 handled)) {
+            return NS_ERROR_FAILURE;
+        }
+        break;
+    default:
+        NS_ERROR("Not implemented for this event type");
+        return NS_ERROR_FAILURE;
+    }
+    return NS_OK;
+}
+#endif
 
 nsresult
 PluginInstanceParent::GetImage(ImageContainer* aContainer, Image** aImage)
@@ -693,7 +713,7 @@ PluginInstanceParent::GetImageSize(nsIntSize* aSize)
 
 #ifdef XP_MACOSX
 nsresult
-PluginInstanceParent::IsRemoteDrawingCoreAnimation(PRBool *aDrawing)
+PluginInstanceParent::IsRemoteDrawingCoreAnimation(bool *aDrawing)
 {
     *aDrawing = (NPDrawingModelCoreAnimation == (NPDrawingModel)mDrawingModel ||
                  NPDrawingModelInvalidatingCoreAnimation == (NPDrawingModel)mDrawingModel);
@@ -880,7 +900,7 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
     else {
         SubclassPluginWindow(reinterpret_cast<HWND>(aWindow->window));
 
-        window.window = reinterpret_cast<uintptr_t>(aWindow->window);
+        window.window = reinterpret_cast<uint64_t>(aWindow->window);
         window.x = aWindow->x;
         window.y = aWindow->y;
         window.width = aWindow->width;
@@ -888,7 +908,7 @@ PluginInstanceParent::NPP_SetWindow(const NPWindow* aWindow)
         window.type = aWindow->type;
     }
 #else
-    window.window = reinterpret_cast<unsigned long>(aWindow->window);
+    window.window = reinterpret_cast<uint64_t>(aWindow->window);
     window.x = aWindow->x;
     window.y = aWindow->y;
     window.width = aWindow->width;
@@ -1821,12 +1841,3 @@ PluginInstanceParent::AnswerPluginFocusChange(const bool& gotFocus)
     return false;
 #endif
 }
-
-#ifdef MOZ_WIDGET_COCOA
-void
-PluginInstanceParent::Invalidate()
-{
-    NPRect windowRect = {0, 0, mShHeight, mShWidth};
-    RecvNPN_InvalidateRect(windowRect);
-}
-#endif

@@ -4,7 +4,8 @@
 
 function testVal(originalValue, targetValue) {
   gURLBar.value = originalValue;
-  is(gURLBar.value, targetValue || originalValue, "original value: " + originalValue);
+  gURLBar.valueIsTyped = false;
+  is(gURLBar.value, targetValue || originalValue, "url bar value set");
 }
 
 function test() {
@@ -63,6 +64,7 @@ function test() {
 
     testCopy("example.com", "http://example.com/", function () {
       SetPageProxyState("invalid");
+      gURLBar.valueIsTyped = true;
       testCopy("example.com", "example.com", finish);
     });
   }, true);
@@ -72,7 +74,7 @@ function test() {
 
 function testCopy(originalValue, targetValue, cb) {
   waitForClipboard(targetValue, function () {
-    is(gURLBar.value, originalValue);
+    is(gURLBar.value, originalValue, "url bar copy value set");
 
     gURLBar.focus();
     gURLBar.select();

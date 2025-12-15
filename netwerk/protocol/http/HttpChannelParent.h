@@ -53,6 +53,7 @@
 using namespace mozilla::dom;
 
 class nsICacheEntryDescriptor;
+class nsIAssociatedContentSecurity;
 
 namespace mozilla {
 namespace net {
@@ -87,11 +88,11 @@ protected:
                              const RequestHeaderTuples& requestHeaders,
                              const nsHttpAtom&          requestMethod,
                              const IPC::InputStream&    uploadStream,
-                             const PRBool&              uploadStreamHasHeaders,
+                             const bool&              uploadStreamHasHeaders,
                              const PRUint16&            priority,
                              const PRUint8&             redirectionLimit,
-                             const PRBool&              allowPipelining,
-                             const PRBool&              forceAllowThirdPartyCookie,
+                             const bool&              allowPipelining,
+                             const bool&              forceAllowThirdPartyCookie,
                              const bool&                doResumeAt,
                              const PRUint64&            startPos,
                              const nsCString&           entityID,
@@ -120,8 +121,9 @@ protected:
   nsCOMPtr<nsITabParent> mTabParent;
 
 private:
-  nsCOMPtr<nsIChannel> mChannel;
-  nsCOMPtr<nsICacheEntryDescriptor> mCacheDescriptor;
+  nsCOMPtr<nsIChannel>                    mChannel;
+  nsCOMPtr<nsICacheEntryDescriptor>       mCacheDescriptor;
+  nsCOMPtr<nsIAssociatedContentSecurity>  mAssociatedContentSecurity;
   bool mIPCClosed;                // PHttpChannel actor has been Closed()
 
   nsCOMPtr<nsIChannel> mRedirectChannel;

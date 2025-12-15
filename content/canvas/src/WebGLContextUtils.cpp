@@ -46,10 +46,7 @@
 #include "nsIJSContextStack.h"
 #include "jsapi.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIPrefBranch.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIVariant.h"
 
 #include "nsIDOMDocument.h"
@@ -59,6 +56,7 @@
 #include "nsIDOMDataContainerEvent.h"
 
 #include "nsContentUtils.h"
+#include "mozilla/Preferences.h"
 
 #if 0
 #include "nsIContentURIGrouper.h"
@@ -108,7 +106,7 @@ WebGLContext::LogMessageIfVerbose(const char *fmt, ...)
 void
 WebGLContext::LogMessageIfVerbose(const char *fmt, va_list ap)
 {
-    static PRBool firstTime = PR_TRUE;
+    static bool firstTime = true;
 
     if (mVerbose)
         LogMessage(fmt, ap);
@@ -116,7 +114,25 @@ WebGLContext::LogMessageIfVerbose(const char *fmt, va_list ap)
         LogMessage("There are WebGL warnings or messages in this page, but they are hidden. To see them, "
                    "go to about:config, set the webgl.verbose preference, and reload this page.");
 
-    firstTime = PR_FALSE;
+    firstTime = false;
+}
+
+CheckedUint32
+WebGLContext::GetImageSize(WebGLsizei height, 
+                           WebGLsizei width, 
+                           PRUint32 pixelSize,
+                           PRUint32 packOrUnpackAlignment)
+{
+    CheckedUint32 checked_plainRowSize = CheckedUint32(width) * pixelSize;
+
+    // alignedRowSize = row size rounded up to next multiple of packAlignment
+    CheckedUint32 checked_alignedRowSize = RoundedToNextMultipleOf(checked_plainRowSize, packOrUnpackAlignment);
+
+    // if height is 0, we don't need any memory to store this; without this check, we'll get an overflow
+    CheckedUint32 checked_neededByteLength
+        = height <= 0 ? 0 : (height-1) * checked_alignedRowSize + checked_plainRowSize;
+
+    return checked_neededByteLength;
 }
 
 nsresult
@@ -126,15 +142,13 @@ WebGLContext::SynthesizeGLError(WebGLenum err)
     // but if there isn't, then we need to check for a gl error
     // that may have occurred before this one and use that code
     // instead.
+    
+    MakeContextCurrent();
 
-    if (mSynthesizedGLError == LOCAL_GL_NO_ERROR) {
-        MakeContextCurrent();
+    UpdateWebGLErrorAndClearGLError();
 
-        mSynthesizedGLError = gl->fGetError();
-
-        if (mSynthesizedGLError == LOCAL_GL_NO_ERROR)
-            mSynthesizedGLError = err;
-    }
+    if (!mWebGLError)
+        mWebGLError = err;
 
     return NS_OK;
 }
@@ -194,3 +208,24 @@ WebGLContext::ErrorOutOfMemory(const char *fmt, ...)
     return SynthesizeGLError(LOCAL_GL_OUT_OF_MEMORY);
 }
 
+const char *
+WebGLContext::ErrorName(GLenum error)
+{
+    switch(error) {
+        case LOCAL_GL_INVALID_ENUM:
+            return "INVALID_ENUM";
+        case LOCAL_GL_INVALID_OPERATION:
+            return "INVALID_OPERATION";
+        case LOCAL_GL_INVALID_VALUE:
+            return "INVALID_VALUE";
+        case LOCAL_GL_OUT_OF_MEMORY:
+            return "OUT_OF_MEMORY";
+        case LOCAL_GL_INVALID_FRAMEBUFFER_OPERATION:
+            return "INVALID_FRAMEBUFFER_OPERATION";
+        case LOCAL_GL_NO_ERROR:
+            return "NO_ERROR";
+        default:
+            NS_ABORT();
+            return "[unknown WebGL error!]";
+    }
+};

@@ -42,7 +42,7 @@ const Cr = Components.results;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
-#ifdef MOZ_CRASH_REPORTER
+#ifdef MOZ_CRASHREPORTER
 XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
   "@mozilla.org/xre/app-info;1", "nsICrashReporter");
 #endif
@@ -578,7 +578,7 @@ SessionStore.prototype = {
   },
 
   _updateCrashReportURL: function ss_updateCrashReportURL(aWindow) {
-#ifdef MOZ_CRASH_REPORTER
+#ifdef MOZ_CRASHREPORTER
     try {
       let currentURI = aWindow.Browser.selectedBrowser.currentURI.clone();
       // if the current URI contains a username/password, remove it
@@ -707,14 +707,16 @@ SessionStore.prototype = {
   },
 
   restoreLastSession: function ss_restoreLastSession(aBringToFront) {
-    // The previous session data has already been renamed to the backup file
-    if (!this._sessionFileBackup.exists())
-      return;
-
     let self = this;
-    function notifyObservers() {
+    function notifyObservers(aMessage) {
       self._clearCache();
-      Services.obs.notifyObservers(null, "sessionstore-windows-restored", "");
+      Services.obs.notifyObservers(null, "sessionstore-windows-restored", aMessage || "");
+    }
+
+    // The previous session data has already been renamed to the backup file
+    if (!this._sessionFileBackup.exists()) {
+      notifyObservers("fail")
+      return;
     }
 
     try {
@@ -723,7 +725,7 @@ SessionStore.prototype = {
       NetUtil.asyncFetch(channel, function(aStream, aResult) {
         if (!Components.isSuccessCode(aResult)) {
           Cu.reportError("SessionStore: Could not read from sessionstore.bak file");
-          notifyObservers();
+          notifyObservers("fail");
           return;
         }
 
@@ -742,14 +744,17 @@ SessionStore.prototype = {
         }
 
         if (!data || data.windows.length == 0) {
-          notifyObservers();
+          notifyObservers("fail");
           return;
         }
 
         let window = Services.wm.getMostRecentWindow("navigator:browser");
 
-        let selected = data.windows[0].selected;
         let tabs = data.windows[0].tabs;
+        let selected = data.windows[0].selected;
+        if (selected > tabs.length) // Clamp the selected index if it's bogus
+          selected = 1;
+
         for (let i=0; i<tabs.length; i++) {
           let tabData = tabs[i];
 
@@ -776,14 +781,19 @@ SessionStore.prototype = {
             tab.browser.__SS_data = tabData;
             tab.browser.__SS_restore = true;
 
+            // Restore current title
+            tab.chromeTab.updateTitle(tabData.entries[tabData.index - 1].title);
+
             // Recreate the thumbnail if we are delay loading the tab
             let canvas = tab.chromeTab.thumbnail;
             canvas.setAttribute("restored", "true");
+            canvas.removeAttribute("empty");
   
             let image = new window.Image();
             image.onload = function() {
-              if (canvas)
+              if (canvas) {
                 canvas.getContext("2d").drawImage(image, 0, 0);
+              }
             };
             image.src = tabData.extData.thumbnail;
           }
@@ -795,7 +805,7 @@ SessionStore.prototype = {
       });
     } catch (ex) {
       Cu.reportError("SessionStore: Could not read from sessionstore.bak file: " + ex);
-      notifyObservers();
+      notifyObservers("fail");
     }
   }
 };

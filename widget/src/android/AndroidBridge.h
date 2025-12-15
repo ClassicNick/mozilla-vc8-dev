@@ -42,6 +42,7 @@
 #include <android/log.h>
 
 #include "nsCOMPtr.h"
+#include "nsCOMArray.h"
 #include "nsIRunnable.h"
 #include "nsIObserver.h"
 
@@ -52,12 +53,16 @@
 #include "nsColor.h"
 
 // Some debug #defines
-// #define ANDROID_DEBUG_EVENTS
-// #define ANDROID_DEBUG_WIDGET
+// #define DEBUG_ANDROID_EVENTS
+// #define DEBUG_ANDROID_WIDGET
 
 class nsWindow;
 
 namespace mozilla {
+
+namespace hal {
+class BatteryInformation;
+} // namespace hal
 
 // The order and number of the members in this structure must correspond
 // to the attrsAppearance array in GeckoAppShell.getSystemColors()
@@ -116,9 +121,9 @@ public:
     // SetMainThread should be called which will create the JNIEnv for
     // us to use.  toolkit/xre/nsAndroidStartup.cpp calls
     // SetMainThread.
-    PRBool SetMainThread(void *thr);
+    bool SetMainThread(void *thr);
 
-    JNIEnv* AttachThread(PRBool asDaemon = PR_TRUE);
+    JNIEnv* AttachThread(bool asDaemon = true);
 
     /* These are all implemented in Java */
     static void NotifyIME(int aType, int aState);
@@ -145,24 +150,24 @@ public:
     void SetSurfaceView(jobject jobj);
     AndroidGeckoSurfaceView& SurfaceView() { return mSurfaceView; }
 
-    PRBool GetHandlersForURL(const char *aURL, 
+    bool GetHandlersForURL(const char *aURL, 
                              nsIMutableArray* handlersArray = nsnull,
                              nsIHandlerApp **aDefaultApp = nsnull,
                              const nsAString& aAction = EmptyString());
 
-    PRBool GetHandlersForMimeType(const char *aMimeType,
+    bool GetHandlersForMimeType(const char *aMimeType,
                                   nsIMutableArray* handlersArray = nsnull,
                                   nsIHandlerApp **aDefaultApp = nsnull,
                                   const nsAString& aAction = EmptyString());
 
-    PRBool OpenUriExternal(const nsACString& aUriSpec, const nsACString& aMimeType,
+    bool OpenUriExternal(const nsACString& aUriSpec, const nsACString& aMimeType,
                            const nsAString& aPackageName = EmptyString(),
                            const nsAString& aClassName = EmptyString(),
                            const nsAString& aAction = EmptyString(),
                            const nsAString& aTitle = EmptyString());
 
     void GetMimeTypeFromExtensions(const nsACString& aFileExt, nsCString& aMimeType);
-    void GetExtensionFromMimeType(const nsCString& aMimeType, nsACString& aFileExt);
+    void GetExtensionFromMimeType(const nsACString& aMimeType, nsACString& aFileExt);
 
     void MoveTaskToBack();
 
@@ -192,9 +197,12 @@ public:
 
     void ShowFilePicker(nsAString& aFilePath, nsAString& aFilters);
 
-    void PerformHapticFeedback(PRBool aIsLongPress);
+    void PerformHapticFeedback(bool aIsLongPress);
 
-    void SetFullScreen(PRBool aFullScreen);
+    void Vibrate(const nsTArray<PRUint32>& aPattern);
+    void CancelVibrate();
+
+    void SetFullScreen(bool aFullScreen);
 
     void ShowInputMethodPicker();
 
@@ -209,6 +217,10 @@ public:
     void GetSystemColors(AndroidSystemColors *aColors);
 
     void GetIconForExtension(const nsACString& aFileExt, PRUint32 aIconSize, PRUint8 * const aBuf);
+
+    bool GetShowPasswordSetting();
+
+    void FireAndWaitForTracerEvent();
 
     struct AutoLocalJNIFrame {
         AutoLocalJNIFrame(int nEntries = 128) : mEntries(nEntries) {
@@ -247,6 +259,8 @@ public:
 
     void ScanMedia(const nsAString& aFile, const nsACString& aMimeType);
 
+    void CreateShortcut(const nsAString& aTitle, const nsAString& aURI, const nsAString& aIconData, const nsAString& aIntent);
+
     // These next four functions are for native Bitmap access in Android 2.2+
     bool HasNativeBitmapAccess();
 
@@ -255,6 +269,34 @@ public:
     void *LockBitmap(jobject bitmap);
 
     void UnlockBitmap(jobject bitmap);
+
+    void PostToJavaThread(nsIRunnable* aRunnable, bool aMainThread = false);
+
+    void ExecuteNextRunnable();
+
+    /* Copied from Android's native_window.h in newer (platform 9) NDK */
+    enum {
+        WINDOW_FORMAT_RGBA_8888          = 1,
+        WINDOW_FORMAT_RGBX_8888          = 2,
+        WINDOW_FORMAT_RGB_565            = 4,
+    };
+
+    bool HasNativeWindowAccess();
+
+    void *AcquireNativeWindow(jobject surface);
+    void ReleaseNativeWindow(void *window);
+    bool SetNativeWindowFormat(void *window, int format);
+
+    bool LockWindow(void *window, unsigned char **bits, int *width, int *height, int *format, int *stride);
+    bool UnlockWindow(void *window);
+
+    bool InitCamera(const nsCString& contentType, PRUint32 camera, PRUint32 *width, PRUint32 *height, PRUint32 *fps);
+
+    void CloseCamera();
+
+    void EnableBatteryNotifications();
+    void DisableBatteryNotifications();
+    void GetCurrentBatteryInformation(hal::BatteryInformation* aBatteryInfo);
 
 protected:
     static AndroidBridge *sBridge;
@@ -273,12 +315,17 @@ protected:
     jclass mGeckoAppShellClass;
 
     AndroidBridge() { }
-    PRBool Init(JNIEnv *jEnv, jclass jGeckoApp);
+    bool Init(JNIEnv *jEnv, jclass jGeckoApp);
 
     void EnsureJNIThread();
 
-    bool mOpenedBitmapLibrary;
+    bool mOpenedGraphicsLibraries;
+    void OpenGraphicsLibraries();
+
     bool mHasNativeBitmapAccess;
+    bool mHasNativeWindowAccess;
+
+    nsCOMArray<nsIRunnable> mRunnableQueue;
 
     // other things
     jmethodID jNotifyIME;
@@ -309,6 +356,9 @@ protected:
     jmethodID jShowInputMethodPicker;
     jmethodID jHideProgressDialog;
     jmethodID jPerformHapticFeedback;
+    jmethodID jVibrate1;
+    jmethodID jVibrateA;
+    jmethodID jCancelVibrate;
     jmethodID jSetKeepScreenOn;
     jmethodID jIsNetworkLinkUp;
     jmethodID jIsNetworkLinkKnown;
@@ -316,6 +366,15 @@ protected:
     jmethodID jScanMedia;
     jmethodID jGetSystemColors;
     jmethodID jGetIconForExtension;
+    jmethodID jFireAndWaitForTracerEvent;
+    jmethodID jCreateShortcut;
+    jmethodID jGetShowPasswordSetting;
+    jmethodID jPostToJavaThread;
+    jmethodID jInitCamera;
+    jmethodID jCloseCamera;
+    jmethodID jEnableBatteryNotifications;
+    jmethodID jDisableBatteryNotifications;
+    jmethodID jGetCurrentBatteryInformation;
 
     // stuff we need for CallEglCreateWindowSurface
     jclass jEGLSurfaceImplClass;
@@ -329,12 +388,19 @@ protected:
     int (* AndroidBitmap_getInfo)(JNIEnv *env, jobject bitmap, void *info);
     int (* AndroidBitmap_lockPixels)(JNIEnv *env, jobject bitmap, void **buffer);
     int (* AndroidBitmap_unlockPixels)(JNIEnv *env, jobject bitmap);
+
+    void* (*ANativeWindow_fromSurface)(JNIEnv *env, jobject surface);
+    void (*ANativeWindow_release)(void *window);
+    int (*ANativeWindow_setBuffersGeometry)(void *window, int width, int height, int format);
+
+    int (* ANativeWindow_lock)(void *window, void *outBuffer, void *inOutDirtyBounds);
+    int (* ANativeWindow_unlockAndPost)(void *window);
 };
 
 }
 
 extern "C" JNIEnv * GetJNIForThread();
-extern PRBool mozilla_AndroidBridge_SetMainThread(void *);
+extern bool mozilla_AndroidBridge_SetMainThread(void *);
 extern jclass GetGeckoAppShellClass();
 
 #endif /* AndroidBridge_h__ */

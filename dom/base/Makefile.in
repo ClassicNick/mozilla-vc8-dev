@@ -52,6 +52,9 @@ EXTRA_PP_COMPONENTS = \
 		ConsoleAPI.manifest \
 		$(NULL)
 
+EXTRA_JS_MODULES = ConsoleAPIStorage.jsm \
+		$(NULL)
+
 XPIDLSRCS = \
   nsIEntropyCollector.idl \
   nsIScriptChannel.idl \
@@ -85,6 +88,12 @@ EXPORTS = \
   nsWrapperCache.h \
   nsContentPermissionHelper.h \
   nsStructuredCloneContainer.h \
+  nsDOMMemoryReporter.h \
+  $(NULL)
+
+EXPORTS_NAMESPACES = mozilla/dom
+EXPORTS_mozilla/dom = \
+  StructuredCloneTags.h \
   $(NULL)
 
 CPPSRCS =			\
@@ -113,6 +122,7 @@ CPPSRCS =			\
 	nsDOMNavigationTiming.cpp \
 	nsPerformance.cpp	\
 	nsDOMMemoryReporter.cpp \
+	Navigator.cpp \
 	$(NULL)
 
 include $(topsrcdir)/dom/dom-config.mk
@@ -127,8 +137,8 @@ include $(topsrcdir)/ipc/chromium/chromium-config.mk
 include $(topsrcdir)/config/rules.mk
 
 LOCAL_INCLUDES += \
-		-I$(srcdir)/../../js/src/xpconnect/src \
-		-I$(srcdir)/../../js/src/xpconnect/wrappers \
+		-I$(topsrcdir)/js/xpconnect/src \
+		-I$(topsrcdir)/js/xpconnect/wrappers \
 		-I$(topsrcdir)/xpcom/ds \
 		$(NULL)
 

@@ -51,6 +51,7 @@
 #include "nsContentUtils.h"
 #include "nsFormControlFrame.h"
 #include "nsFontMetrics.h"
+#include "mozilla/dom/Element.h"
 
 
 nsIFrame*
@@ -77,7 +78,7 @@ nsProgressFrame::DestroyFrom(nsIFrame* aDestructRoot)
   NS_ASSERTION(!GetPrevContinuation(),
                "nsProgressFrame should not have continuations; if it does we "
                "need to call RegUnregAccessKey only for the first.");
-  nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), PR_FALSE);
+  nsFormControlFrame::RegUnRegAccessKey(static_cast<nsIFrame*>(this), false);
   nsContentUtils::DestroyAnonymousContent(&mBarDiv);
   nsHTMLContainerFrame::DestroyFrom(aDestructRoot);
 }
@@ -139,7 +140,7 @@ NS_IMETHODIMP nsProgressFrame::Reflow(nsPresContext*           aPresContext,
                "need to call RegUnregAccessKey only for the first.");
 
   if (mState & NS_FRAME_FIRST_REFLOW) {
-    nsFormControlFrame::RegUnRegAccessKey(this, PR_TRUE);
+    nsFormControlFrame::RegUnRegAccessKey(this, true);
   }
 
   nsIFrame* barFrame = mBarDiv->GetPrimaryFrame();
@@ -248,6 +249,7 @@ nsProgressFrame::AttributeChanged(PRInt32  aNameSpaceID,
     NS_ASSERTION(barFrame, "The progress frame should have a child with a frame!");
     PresContext()->PresShell()->FrameNeedsReflow(barFrame, nsIPresShell::eResize,
                                                  NS_FRAME_IS_DIRTY);
+    Invalidate(GetVisualOverflowRectRelativeToSelf());
   }
 
   return nsHTMLContainerFrame::AttributeChanged(aNameSpaceID, aAttribute,
@@ -258,7 +260,7 @@ nsSize
 nsProgressFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                  nsSize aCBSize, nscoord aAvailableWidth,
                                  nsSize aMargin, nsSize aBorder,
-                                 nsSize aPadding, PRBool aShrinkWrap)
+                                 nsSize aPadding, bool aShrinkWrap)
 {
   nsRefPtr<nsFontMetrics> fontMet;
   NS_ENSURE_SUCCESS(nsLayoutUtils::GetFontMetricsForFrame(this,
@@ -275,6 +277,28 @@ nsProgressFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   }
 
   return autoSize;
+}
+
+nscoord
+nsProgressFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
+{
+  nsRefPtr<nsFontMetrics> fontMet;
+  NS_ENSURE_SUCCESS(
+      nsLayoutUtils::GetFontMetricsForFrame(this, getter_AddRefs(fontMet)), 0);
+
+  nscoord minWidth = fontMet->Font().size; // 1em
+
+  if (GetStyleDisplay()->mOrient == NS_STYLE_ORIENT_HORIZONTAL) {
+    minWidth *= 10; // 10em
+  }
+
+  return minWidth;
+}
+
+nscoord
+nsProgressFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
+{
+  return GetMinWidth(aRenderingContext);
 }
 
 bool

@@ -91,6 +91,17 @@ nsDOMNavigationTiming::TimeStampToDOM(mozilla::TimeStamp aStamp,
   return NS_OK;
 }
 
+nsresult 
+nsDOMNavigationTiming::TimeStampToDOMOrFetchStart(mozilla::TimeStamp aStamp, 
+                                                  DOMTimeMilliSec* aResult)
+{
+  if (!aStamp.IsNull()) {
+    return TimeStampToDOM(aStamp, aResult);
+  } else {
+    return GetFetchStart(aResult);
+  }
+}
+
 DOMTimeMilliSec nsDOMNavigationTiming::DurationFromStart(){
   DOMTimeMilliSec result; 
   TimeStampToDOM(mozilla::TimeStamp::Now(), &result);
@@ -167,7 +178,7 @@ nsDOMNavigationTiming::NotifyLoadEventEnd()
   mLoadEventEnd = DurationFromStart();
 }
 
-PRBool
+bool
 nsDOMNavigationTiming::ReportRedirects()
 {
   if (mRedirectCheck == NOT_CHECKED) {
@@ -179,7 +190,7 @@ nsDOMNavigationTiming::ReportRedirects()
       nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
       for (int i = mRedirects.Count() - 1; i >= 0; --i) {
         nsIURI * curr = mRedirects[i];
-        nsresult rv = ssm->CheckSameOriginURI(curr, mLoadedURI, PR_FALSE);
+        nsresult rv = ssm->CheckSameOriginURI(curr, mLoadedURI, false);
         if (!NS_SUCCEEDED(rv)) {
           mRedirectCheck = CHECK_FAILED;
           mRedirectCount = 0;
@@ -285,7 +296,7 @@ nsDOMNavigationTiming::GetUnloadEventStart(DOMTimeMilliSec* aStart)
 {
   *aStart = 0;
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  nsresult rv = ssm->CheckSameOriginURI(mLoadedURI, mUnloadedURI, PR_FALSE);
+  nsresult rv = ssm->CheckSameOriginURI(mLoadedURI, mUnloadedURI, false);
   if (NS_SUCCEEDED(rv)) {
     *aStart = mUnloadStart;
   }
@@ -297,7 +308,7 @@ nsDOMNavigationTiming::GetUnloadEventEnd(DOMTimeMilliSec* aEnd)
 {
   *aEnd = 0;
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-  nsresult rv = ssm->CheckSameOriginURI(mLoadedURI, mUnloadedURI, PR_FALSE);
+  nsresult rv = ssm->CheckSameOriginURI(mLoadedURI, mUnloadedURI, false);
   if (NS_SUCCEEDED(rv)) {
     *aEnd = mUnloadEnd;
   }

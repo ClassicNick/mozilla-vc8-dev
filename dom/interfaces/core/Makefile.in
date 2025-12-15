@@ -65,7 +65,6 @@ SDK_XPIDLSRCS =                                 \
 	$(NULL)
 XPIDLSRCS =                                     \
 	nsIDOMDOMStringList.idl			\
-	nsIDOMNameList.idl			\
 	nsIDOMXMLDocument.idl			\
 	nsIDOMUserDataHandler.idl		\
 	nsIDOMNSEditableElement.idl		\
@@ -73,6 +72,7 @@ XPIDLSRCS =                                     \
 	nsIDOMNodeSelector.idl			\
 	nsIDOMDOMTokenList.idl			\
 	nsIDOMDOMSettableTokenList.idl	\
+	nsIInlineEventHandlers.idl              \
 	$(NULL)
 
 include $(topsrcdir)/config/rules.mk

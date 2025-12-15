@@ -4,6 +4,7 @@ script small-codepoints.js
 script parse.js
 script parse-arguments.js
 script parse-crockford-01.js
+script parse-mega-huge-array.js
 script parse-number-syntax.js
 script parse-octal-syntax-error.js
 script parse-primitives.js
@@ -23,6 +24,7 @@ script stringify-missing-arguments.js
 script stringify-nonarray-noncallable-replacer.js
 script stringify-primitives.js
 script stringify-replacer.js
+script stringify-replacer-array-boxed-elements.js
 script stringify-replacer-array-duplicated-element.js
 script stringify-replacer-array-edgecase-jsid-elements.js
 script stringify-replacer-array-hijinks.js

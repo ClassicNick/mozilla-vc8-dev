@@ -46,10 +46,9 @@
 #include "prcvar.h"
 #include "jsapi.h"
 #include "jscntxt.h"
-#include "jshashtable.h"
+#include "jsdbgapi.h"
 #include "jsstdint.h"
 #include "jslock.h"
-#include "jsvector.h"
 #include "jsworkers.h"
 
 extern size_t gMaxStackSize;
@@ -170,6 +169,7 @@ class WorkerParent {
     }
 
     void disposeChildren();
+    void notifyTerminating();
 };
 
 template <class T>
@@ -528,11 +528,12 @@ class ThreadPool
         return ok;
     }
 
-    void terminateAll(JSRuntime *rt) {
+    void terminateAll() {
         // See comment about JS_ATOMIC_SET in the implementation of
         // JS_TriggerOperationCallback.
         JS_ATOMIC_SET(&terminating, 1);
-        JS_TriggerAllOperationCallbacks(rt);
+        if (mq)
+            mq->notifyTerminating();
     }
 
     /* This context is used only to free memory. */
@@ -593,6 +594,7 @@ class Worker : public WorkerParent
     ThreadPool *threadPool;
     WorkerParent *parent;
     JSObject *object;  // Worker object exposed to parent
+    JSRuntime *runtime;
     JSContext *context;
     JSLock *lock;
     Queue<Event *, SystemAllocPolicy> events;  // owning pointers to pending events
@@ -603,7 +605,7 @@ class Worker : public WorkerParent
     static JSClass jsWorkerClass;
 
     Worker()
-        : threadPool(NULL), parent(NULL), object(NULL),
+        : threadPool(NULL), parent(NULL), object(NULL), runtime(NULL),
           context(NULL), lock(NULL), current(NULL), terminated(false), terminateFlag(0) {}
 
     bool init(JSContext *parentcx, WorkerParent *parent, JSObject *obj) {
@@ -616,13 +618,24 @@ class Worker : public WorkerParent
         this->object = obj;
         lock = JS_NEW_LOCK();
         return lock &&
+               createRuntime(parentcx) &&
                createContext(parentcx, parent) &&
                JS_SetPrivate(parentcx, obj, this);
     }
 
+    bool createRuntime(JSContext *parentcx) {
+        runtime = JS_NewRuntime(1L * 1024L * 1024L);
+        if (!runtime) {
+            JS_ReportOutOfMemory(parentcx);
+            return false;
+        }
+        JS_ClearRuntimeThread(runtime);
+        return true;
+    }
+
     bool createContext(JSContext *parentcx, WorkerParent *parent) {
-        JSRuntime *rt = JS_GetRuntime(parentcx);
-        context = JS_NewContext(rt, 8192);
+        JSAutoSetRuntimeThread guard(runtime);
+        context = JS_NewContext(runtime, 8192);
         if (!context)
             return false;
 
@@ -754,10 +767,16 @@ class Worker : public WorkerParent
             JS_DESTROY_LOCK(lock);
             lock = NULL;
         }
+        if (runtime)
+            JS_SetRuntimeThread(runtime);
         if (context) {
             JS_SetContextThread(context);
             JS_DestroyContextNoGC(context);
             context = NULL;
+        }
+        if (runtime) {
+            JS_DestroyRuntime(runtime);
+            runtime = NULL;
         }
         object = NULL;
 
@@ -795,6 +814,11 @@ class Worker : public WorkerParent
         terminateFlag = true;
         if (current)
             JS_TriggerOperationCallback(context);
+    }
+
+    void notifyTerminating() {
+        setTerminateFlag();
+        WorkerParent::notifyTerminating();
     }
 
     void processOneEvent();
@@ -894,12 +918,12 @@ class InitEvent : public Event
         if (!filename)
             return fail;
 
-        JSObject *scriptObj = JS_CompileFile(cx, child->getGlobal(), filename.ptr());
-        if (!scriptObj)
+        JSScript *script = JS_CompileFile(cx, child->getGlobal(), filename.ptr());
+        if (!script)
             return fail;
 
         AutoValueRooter rval(cx);
-        JSBool ok = JS_ExecuteScript(cx, child->getGlobal(), scriptObj, Jsvalify(rval.addr()));
+        JSBool ok = JS_ExecuteScript(cx, child->getGlobal(), script, rval.addr());
         return Result(ok);
     }
 };
@@ -935,7 +959,7 @@ class ErrorEvent : public Event
         JSString *data = NULL;
         jsval exc;
         if (JS_GetPendingException(cx, &exc)) {
-            AutoValueRooter tvr(cx, Valueify(exc));
+            AutoValueRooter tvr(cx, exc);
             JS_ClearPendingException(cx);
 
             // Determine what error message to put in the error event.
@@ -975,6 +999,14 @@ WorkerParent::disposeChildren()
         e.front()->dispose();
         e.removeFront();
     }
+}
+
+void
+WorkerParent::notifyTerminating()
+{
+    AutoLock hold(getLock());
+    for (ChildSet::Range r = children.all(); !r.empty(); r.popFront())
+        r.front()->notifyTerminating();
 }
 
 bool
@@ -1110,7 +1142,8 @@ Worker::processOneEvent()
 
     Event::Result result;
     {
-        JSAutoRequest req(context);
+        JSAutoSetRuntimeThread asrt(JS_GetRuntime(context));
+        JSAutoRequest ar(context);
         result = event->process(context);
     }
 
@@ -1126,7 +1159,8 @@ Worker::processOneEvent()
         }
     }
     if (result == Event::fail && !checkTermination()) {
-        JSAutoRequest req(context);
+        JSAutoSetRuntimeThread asrt(JS_GetRuntime(context));
+        JSAutoRequest ar(context);
         Event *err = ErrorEvent::create(context, this);
         if (err && !parent->post(err)) {
             JS_ReportOutOfMemory(context);
@@ -1260,9 +1294,9 @@ js::workers::init(JSContext *cx, WorkerHooks *hooks, JSObject *global, JSObject 
 }
 
 void
-js::workers::terminateAll(JSRuntime *rt, ThreadPool *tp)
+js::workers::terminateAll(ThreadPool *tp)
 {
-    tp->terminateAll(rt);
+    tp->terminateAll();
 }
 
 void

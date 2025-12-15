@@ -41,10 +41,6 @@
 #define jsnum_h___
 
 #include <math.h>
-#ifdef WIN32
-#include <float.h>
-#endif
-#include "jsvalue.h"
 
 #include "jsstdint.h"
 #include "jsobj.h"
@@ -82,19 +78,18 @@ typedef union jsdpun {
 } jsdpun;
 
 /* Low-level floating-point predicates. See bug 640494. */
+#define JSDOUBLE_HI32_SIGNBIT   0x80000000
+#define JSDOUBLE_HI32_EXPMASK   0x7ff00000
+#define JSDOUBLE_HI32_MANTMASK  0x000fffff
+#define JSDOUBLE_HI32_NAN       0x7ff80000
+#define JSDOUBLE_LO32_NAN       0x00000000
 
 static inline int
 JSDOUBLE_IS_NaN(jsdouble d)
 {
-/* Visual Studio PGO miscompiles the bitwise version, so keep using _isnan
- * from float.h until we figure out what's going on. */
-#ifdef WIN32
-    return _isnan(d);
-#else
     jsdpun u;
     u.d = d;
-    return (u.u64 & ~JSDOUBLE_SIGNBIT) > JSDOUBLE_EXPMASK;
-#endif
+    return (u.s.hi & JSDOUBLE_HI32_NAN) == JSDOUBLE_HI32_NAN;
 }
 
 static inline int
@@ -113,12 +108,6 @@ JSDOUBLE_IS_INFINITE(jsdouble d)
     u.d = d;
     return (u.u64 & ~JSDOUBLE_SIGNBIT) == JSDOUBLE_EXPMASK;
 }
-
-#define JSDOUBLE_HI32_SIGNBIT   0x80000000
-#define JSDOUBLE_HI32_EXPMASK   0x7ff00000
-#define JSDOUBLE_HI32_MANTMASK  0x000fffff
-#define JSDOUBLE_HI32_NAN       0x7ff80000
-#define JSDOUBLE_LO32_NAN       0x00000000
 
 static inline bool
 JSDOUBLE_IS_NEG(jsdouble d)
@@ -160,14 +149,6 @@ FinishRuntimeNumberState(JSRuntime *rt);
 } /* namespace js */
 
 /* Initialize the Number class, returning its prototype object. */
-extern js::Class js_NumberClass;
-
-inline bool
-JSObject::isNumber() const
-{
-    return getClass() == &js_NumberClass;
-}
-
 extern JSObject *
 js_InitNumberClass(JSContext *cx, JSObject *obj);
 
@@ -207,6 +188,9 @@ NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb);
 /* Same as js_NumberToString, different signature. */
 extern JSFixedString *
 NumberToString(JSContext *cx, jsdouble d);
+
+extern JSFixedString *
+IndexToString(JSContext *cx, uint32 index);
 
 /*
  * Usually a small amount of static storage is enough, but sometimes we need
@@ -259,30 +243,27 @@ extern bool
 GetPrefixInteger(JSContext *cx, const jschar *start, const jschar *end, int base,
                  const jschar **endp, jsdouble *dp);
 
-/*
- * Convert a value to a number, returning the converted value in 'out' if the
- * conversion succeeds.
- */
+/* ES5 9.3 ToNumber. */
 JS_ALWAYS_INLINE bool
-ValueToNumber(JSContext *cx, const js::Value &v, double *out)
+ToNumber(JSContext *cx, const Value &v, double *out)
 {
     if (v.isNumber()) {
         *out = v.toNumber();
         return true;
     }
-    extern bool ValueToNumberSlow(JSContext *, js::Value, double *);
-    return ValueToNumberSlow(cx, v, out);
+    extern bool ToNumberSlow(JSContext *cx, js::Value v, double *dp);
+    return ToNumberSlow(cx, v, out);
 }
 
-/* Convert a value to a number, replacing 'vp' with the converted value. */
+/* ES5 9.3 ToNumber, overwriting *vp with the appropriate number value. */
 JS_ALWAYS_INLINE bool
-ValueToNumber(JSContext *cx, js::Value *vp)
+ToNumber(JSContext *cx, Value *vp)
 {
     if (vp->isNumber())
         return true;
     double d;
-    extern bool ValueToNumberSlow(JSContext *, js::Value, double *);
-    if (!ValueToNumberSlow(cx, *vp, &d))
+    extern bool ToNumberSlow(JSContext *cx, js::Value v, double *dp);
+    if (!ToNumberSlow(cx, *vp, &d))
         return false;
     vp->setNumber(d);
     return true;
@@ -632,6 +613,32 @@ ValueFitsInInt32(const Value &v, int32_t *pi)
     return v.isDouble() && JSDOUBLE_IS_INT32(v.toDouble(), pi);
 }
 
+/*
+ * Returns true if the given value is definitely an index: that is, the value
+ * is a number that's an unsigned 32-bit integer.
+ *
+ * This method prioritizes common-case speed over accuracy in every case.  It
+ * can produce false negatives (but not false positives): some values which are
+ * indexes will be reported not to be indexes by this method.  Users must
+ * consider this possibility when using this method.
+ */
+static JS_ALWAYS_INLINE bool
+IsDefinitelyIndex(const Value &v, uint32 *indexp)
+{
+    if (v.isInt32() && v.toInt32() >= 0) {
+        *indexp = v.toInt32();
+        return true;
+    }
+
+    int32 i;
+    if (v.isDouble() && JSDOUBLE_IS_INT32(v.toDouble(), &i) && i >= 0) {
+        *indexp = uint32(i);
+        return true;
+    }
+
+    return false;
+}
+
 /* ES5 9.4 ToInteger. */
 static inline bool
 ToInteger(JSContext *cx, const js::Value &v, jsdouble *dp)
@@ -643,8 +650,8 @@ ToInteger(JSContext *cx, const js::Value &v, jsdouble *dp)
     if (v.isDouble()) {
         *dp = v.toDouble();
     } else {
-        extern bool ValueToNumberSlow(JSContext *cx, js::Value v, double *dp);
-        if (!ValueToNumberSlow(cx, v, dp))
+        extern bool ToNumberSlow(JSContext *cx, Value v, double *dp);
+        if (!ToNumberSlow(cx, v, dp))
             return false;
     }
     *dp = js_DoubleToInteger(*dp);

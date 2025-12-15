@@ -73,7 +73,10 @@
 #include "nsIChannelPolicy.h"
 #include "nsChannelPolicy.h"
 
+#include "nsIConsoleService.h"
+
 #include "nsStyleSet.h"
+#include "nsPrintfCString.h"
 
 using namespace mozilla;
 
@@ -90,6 +93,7 @@ nsFontFaceLoader::nsFontFaceLoader(gfxProxyFontEntry *aProxy, nsIURI *aFontURI,
   : mFontEntry(aProxy), mFontURI(aFontURI), mFontSet(aFontSet),
     mChannel(aChannel)
 {
+  mFontFamily = aProxy->Family();
 }
 
 nsFontFaceLoader::~nsFontFaceLoader()
@@ -134,11 +138,10 @@ nsFontFaceLoader::LoadTimerCallback(nsITimer *aTimer, void *aClosure)
   // we allow another timeout period before showing a fallback font.
   if (pe->mLoadingState == gfxProxyFontEntry::LOADING_STARTED) {
     PRInt32 contentLength;
-    loader->mChannel->GetContentLength(&contentLength);
     PRUint32 numBytesRead;
-    loader->mStreamLoader->GetNumBytesRead(&numBytesRead);
-
-    if (contentLength > 0 &&
+    if (NS_SUCCEEDED(loader->mChannel->GetContentLength(&contentLength)) &&
+        contentLength > 0 &&
+        NS_SUCCEEDED(loader->mStreamLoader->GetNumBytesRead(&numBytesRead)) &&
         numBytesRead > 3 * (PRUint32(contentLength) >> 2))
     {
       // More than 3/4 the data has been downloaded, so allow 50% extra
@@ -212,10 +215,29 @@ nsFontFaceLoader::OnStreamComplete(nsIStreamLoader* aLoader,
     return aStatus;
   }
 
+  if (NS_SUCCEEDED(aStatus)) {
+    // for HTTP requests, check whether the request _actually_ succeeded;
+    // the "request status" in aStatus does not necessarily indicate this,
+    // because HTTP responses such as 404 (Not Found) will still result in
+    // a success code and potentially an HTML error page from the server
+    // as the resulting data. We don't want to use that as a font.
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel);
+    if (httpChannel) {
+      bool succeeded;
+      nsresult rv = httpChannel->GetRequestSucceeded(&succeeded);
+      if (NS_SUCCEEDED(rv) && !succeeded) {
+        aStatus = NS_ERROR_NOT_AVAILABLE;
+      }
+    }
+  }
+
   // The userFontSet is responsible for freeing the downloaded data
   // (aString) when finished with it; the pointer is no longer valid
   // after OnLoadComplete returns.
-  PRBool fontUpdate = userFontSet->OnLoadComplete(mFontEntry,
+  // This is called even in the case of a failed download (HTTP 404, etc),
+  // as there may still be data to be freed (e.g. an error page),
+  // and we need the fontSet to initiate loading the next source.
+  bool fontUpdate = userFontSet->OnLoadComplete(mFontEntry,
                                                   aString, aStringLen,
                                                   aStatus);
 
@@ -342,17 +364,7 @@ nsUserFontSet::StartLoad(gfxProxyFontEntry *aProxy,
   rv = nsFontFaceLoader::CheckLoadAllowed(principal, aFontFaceSrc->mURI, 
                                           ps->GetDocument());
   if (NS_FAILED(rv)) {
-#ifdef PR_LOGGING
-    if (LOG_ENABLED()) {
-      nsCAutoString fontURI, referrerURI;
-      aFontFaceSrc->mURI->GetSpec(fontURI);
-      if (aFontFaceSrc->mReferrer)
-        aFontFaceSrc->mReferrer->GetSpec(referrerURI);
-      LOG(("fontdownloader download blocked - font uri: (%s) "
-           "referrer uri: (%s) err: %8.8x\n", 
-          fontURI.get(), referrerURI.get(), rv));
-    }
-#endif    
+    LogMessage(aProxy, "download not allowed", nsIScriptError::errorFlag, rv);
     return rv;
   }
 
@@ -404,7 +416,7 @@ nsUserFontSet::StartLoad(gfxProxyFontEntry *aProxy,
   rv = NS_NewStreamLoader(getter_AddRefs(streamLoader), fontLoader);
   NS_ENSURE_SUCCESS(rv, rv);
   
-  PRBool inherits = PR_FALSE;
+  bool inherits = false;
   rv = NS_URIChainHasFlags(aFontFaceSrc->mURI,
                            nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
                            &inherits);
@@ -414,7 +426,7 @@ nsUserFontSet::StartLoad(gfxProxyFontEntry *aProxy,
   } else {
     nsCOMPtr<nsIStreamListener> listener =
       new nsCORSListenerProxy(streamLoader, principal, channel, 
-                              PR_FALSE, &rv);
+                              false, &rv);
     if (NS_FAILED(rv)) {
       fontLoader->DropChannel();  // explicitly need to break ref cycle
     }
@@ -432,15 +444,15 @@ nsUserFontSet::StartLoad(gfxProxyFontEntry *aProxy,
   return rv;
 }
 
-PRBool
+bool
 nsUserFontSet::UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules)
 {
-  PRBool modified = PR_FALSE;
+  bool modified = false;
 
   // destroy any current loaders, as the entries they refer to
   // may be about to get replaced
   if (mLoaders.Count() > 0) {
-    modified = PR_TRUE; // trigger reflow so that any necessary downloads
+    modified = true; // trigger reflow so that any necessary downloads
                         // will be reinitiated
   }
   mLoaders.EnumerateEntries(DestroyIterator, nsnull);
@@ -462,7 +474,7 @@ nsUserFontSet::UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules)
 
   // if any rules are left in the old list, note that the set has changed
   if (oldRules.Length() > 0) {
-    modified = PR_TRUE;
+    modified = true;
   }
 
   if (modified) {
@@ -475,7 +487,7 @@ nsUserFontSet::UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules)
 void
 nsUserFontSet::InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
                           nsTArray<FontFaceRuleRecord>& aOldRules,
-                          PRBool& aFontSetModified)
+                          bool& aFontSetModified)
 {
   NS_ABORT_IF_FALSE(aRule->GetType() == mozilla::css::Rule::FONT_FACE_RULE,
                     "InsertRule passed a non-fontface CSS rule");
@@ -511,7 +523,7 @@ nsUserFontSet::InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
       // note the set has been modified if an old rule was skipped to find
       // this one - something has been dropped, or ordering changed
       if (i > 0) {
-        aFontSetModified = PR_TRUE;
+        aFontSetModified = true;
       }
       return;
     }
@@ -604,12 +616,12 @@ nsUserFontSet::InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
 
       case eCSSUnit_Local_Font:
         val.GetStringValue(face->mLocalName);
-        face->mIsLocal = PR_TRUE;
+        face->mIsLocal = true;
         face->mURI = nsnull;
         face->mFormatFlags = 0;
         break;
       case eCSSUnit_URL:
-        face->mIsLocal = PR_FALSE;
+        face->mIsLocal = false;
         face->mURI = val.GetURLValue();
         NS_ASSERTION(face->mURI, "null url in @font-face rule");
         face->mReferrer = val.GetURLStructValue()->mReferrer;
@@ -669,7 +681,7 @@ nsUserFontSet::InsertRule(nsCSSFontFaceRule *aRule, PRUint8 aSheetType,
       mRules.AppendElement(ruleRec);
     }
     // this was a new rule and fontEntry, so note that the set was modified
-    aFontSetModified = PR_TRUE;
+    aFontSetModified = true;
   }
 }
 
@@ -696,4 +708,110 @@ nsUserFontSet::FindRuleForEntry(gfxFontEntry *aFontEntry)
     }
   }
   return nsnull;
+}
+
+nsresult
+nsUserFontSet::LogMessage(gfxProxyFontEntry *aProxy,
+                          const char        *aMessage,
+                          PRUint32          aFlags,
+                          nsresult          aStatus)
+{
+  nsCOMPtr<nsIConsoleService>
+    console(do_GetService(NS_CONSOLESERVICE_CONTRACTID));
+  if (!console) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  NS_ConvertUTF16toUTF8 familyName(aProxy->FamilyName());
+  nsCAutoString fontURI;
+  if (aProxy->mSrcList[aProxy->mSrcIndex].mURI) {
+    aProxy->mSrcList[aProxy->mSrcIndex].mURI->GetSpec(fontURI);
+  } else {
+    fontURI.AppendLiteral("(invalid URI)");
+  }
+
+  char weightKeywordBuf[8]; // plenty to sprintf() a PRUint16
+  const char *weightKeyword;
+  const nsAFlatCString& weightKeywordString =
+    nsCSSProps::ValueToKeyword(aProxy->Weight(),
+                               nsCSSProps::kFontWeightKTable);
+  if (weightKeywordString.Length() > 0) {
+    weightKeyword = weightKeywordString.get();
+  } else {
+    sprintf(weightKeywordBuf, "%u", aProxy->Weight());
+    weightKeyword = weightKeywordBuf;
+  }
+
+  nsPrintfCString
+    msg(1024,
+        "downloadable font: %s "
+        "(font-family: \"%s\" style:%s weight:%s stretch:%s src index:%d)",
+        aMessage,
+        familyName.get(),
+        aProxy->IsItalic() ? "italic" : "normal",
+        weightKeyword,
+        nsCSSProps::ValueToKeyword(aProxy->Stretch(),
+                                   nsCSSProps::kFontStretchKTable).get(),
+        aProxy->mSrcIndex);
+
+  if (aStatus != 0) {
+    msg.Append(": ");
+    switch (aStatus) {
+    case NS_ERROR_DOM_BAD_URI:
+      msg.Append("bad URI or cross-site access not allowed");
+      break;
+    case NS_ERROR_CONTENT_BLOCKED:
+      msg.Append("content blocked");
+      break;
+    default:
+      msg.Append("status=");
+      msg.AppendInt(aStatus);
+      break;
+    }
+  }
+  msg.Append("\nsource: ");
+  msg.Append(fontURI);
+
+#ifdef PR_LOGGING
+  if (PR_LOG_TEST(sUserFontsLog, PR_LOG_DEBUG)) {
+    PR_LOG(sUserFontsLog, PR_LOG_DEBUG,
+           ("userfonts (%p) %s", this, msg.get()));
+  }
+#endif
+
+  // try to give the user an indication of where the rule came from
+  nsCSSFontFaceRule* rule = FindRuleForEntry(aProxy);
+  nsString href;
+  nsString text;
+  nsresult rv;
+  if (rule) {
+    rv = rule->GetCssText(text);
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIDOMCSSStyleSheet> sheet;
+    rv = rule->GetParentStyleSheet(getter_AddRefs(sheet));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = sheet->GetHref(href);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  nsCOMPtr<nsIScriptError2> scriptError =
+    do_CreateInstance(NS_SCRIPTERROR_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  PRUint64 innerWindowID = GetPresContext()->Document()->InnerWindowID();
+  rv = scriptError->InitWithWindowID(NS_ConvertUTF8toUTF16(msg).get(),
+                                     href.get(),   // file
+                                     text.get(),   // src line
+                                     0, 0,         // line & column number
+                                     aFlags,       // flags
+                                     "CSS Loader", // category (make separate?)
+                                     innerWindowID);
+  if (NS_SUCCEEDED(rv)){
+    nsCOMPtr<nsIScriptError> logError = do_QueryInterface(scriptError);
+    if (logError) {
+      console->LogMessage(logError);
+    }
+  }
+
+  return NS_OK;
 }

@@ -2,6 +2,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsCOMArray.h"
 #include "mozilla/Mutex.h"
+#include "nsString.h"
 
 using mozilla::Mutex;
 
@@ -11,12 +12,12 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
 
-  nsMemoryReporter(nsCString& process,
-                   nsCString& path, 
+  nsMemoryReporter(nsACString& process,
+                   nsACString& path, 
                    PRInt32 kind,
                    PRInt32 units,
                    PRInt64 amount,
-                   nsCString& desc);
+                   nsACString& desc);
 
   ~nsMemoryReporter();
 

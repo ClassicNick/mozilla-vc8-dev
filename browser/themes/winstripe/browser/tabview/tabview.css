@@ -82,6 +82,7 @@ html[dir=rtl] .favicon {
   width: 16px;
   height: 16px;
   background-image: -moz-image-rect(url("chrome://browser/skin/tabview/close.png"), 0, 16, 16, 0);
+  background-repeat: no-repeat;
 }
 
 .close:hover {
@@ -204,7 +205,7 @@ html[dir=rtl] .tab.focus {
 ----------------------------------*/
 
 .groupItem {
-  cursor: move;
+  cursor: pointer;
   background-color: #E0EAF5;
   border-radius: 0.4em;
   box-shadow:
@@ -236,6 +237,17 @@ html[dir=rtl] .groupItem.activeGroupItem {
 
 .groupItem .close {
   z-index: 10;
+  top: 0px;
+  right: 0px;
+  width: 22px;
+  height: 22px;
+  background-position: bottom left;
+}
+
+html[dir=rtl] .groupItem .close {
+  right: auto;
+  left: 0px;
+  background-position: bottom right;
 }
 
 .dragRegion {
@@ -335,29 +347,6 @@ html[dir=rtl] .undo .close {
   opacity: 1.0;
 }
 
-/* InfoItems
-----------------------------------*/
-
-.info-item {
-  cursor: move;
-  border: 1px solid rgba(230,230,230,1);
-  background-color: rgba(248,248,248,1);
-  border-radius: 0.4em;
-  box-shadow:
-    inset rgba(255, 255, 255, 0.6) 0 0 0 2px,
-    rgba(0,0,0, .2) 1px 1px 3px;
-}
-
-.info-item {
-  box-shadow:
-    inset rgba(255, 255, 255, 0.6) 0 0 0 2px,
-    rgba(0,0,0, .2) -1px 1px 3px;
-}
-
-.intro {
-  margin: 10px;
-}
-
 /* Trenches
 ----------------------------------*/
 
@@ -398,25 +387,6 @@ html[dir=rtl] .guideTrench {
 /* Other
 ----------------------------------*/
 
-.newTabButton {
-  width: 16px;
-  height: 15px;
-  bottom: 10px;
-  left: 10px;
-  cursor: pointer;
-  opacity: .3;
-  background-image: url(chrome://browser/skin/tabview/new-tab.png);
-}
-
-html[dir=rtl] .newTabButton {
-  left: auto;
-  right: 10px;
-}
-
-.newTabButton:hover {
-  opacity: 1;
-}
-
 .active {
   box-shadow: 5px 5px 3px rgba(0,0,0,.5);
 }
@@ -434,6 +404,7 @@ html[dir=rtl] .acceptsDrop {
 }
 
 .titlebar {
+  cursor: move;
   font-size: 12px;
   height: 18px;
 }
@@ -487,8 +458,8 @@ input.name:-moz-placeholder {
   padding: 1px;
   left: 0;
   top: 0;
-  width: 100%;
   height: 100%;
+  width: -moz-available;
   cursor: text;
 }
 
@@ -684,6 +655,8 @@ html[dir=rtl] #otherresults {
   -moz-margin-end: 5px;
   position: relative;
   top: 2px;
+  width: 16px;
+  height: 16px;
 }
 
 .inlineMatch > span {

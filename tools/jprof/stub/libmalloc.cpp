@@ -72,6 +72,18 @@
 #include <errno.h>
 #include <dlfcn.h>
 
+#include "mozilla/mozalloc_undef_macro_wrappers.h"
+
+// Must define before including jprof.h
+void *moz_xmalloc(size_t size)
+{
+    return malloc(size);
+}
+
+void moz_xfree(void *mem)
+{
+    free(mem);
+}
 
 #ifdef NTO
 #include <sys/link.h>
@@ -177,6 +189,7 @@ JPROF_STATIC void CrawlStack(malloc_log_entry* me,
 
 static int rtcHz;
 static int rtcFD = -1;
+static bool circular = false;
 
 #if defined(linux) || defined(NTO)
 static void DumpAddressMap()
@@ -213,10 +226,207 @@ static void DumpAddressMap()
 }
 #endif
 
+static bool was_paused = true;
+
+JPROF_STATIC void JprofBufferDump();
+JPROF_STATIC void JprofBufferClear();
+
+static void ClearProfilingHook(int signum)
+{
+    if (circular) {
+        JprofBufferClear();
+        puts("Jprof: cleared circular buffer.");
+    }
+}
+
 static void EndProfilingHook(int signum)
 {
+    if (circular)
+        JprofBufferDump();
+
     DumpAddressMap();
+    was_paused = true;
     puts("Jprof: profiling paused.");
+}
+
+
+
+//----------------------------------------------------------------------
+// proper usage would be a template, including the function to find the
+// size of an entry, or include a size header explicitly to each entry.
+#if defined(linux)
+#define DUMB_LOCK()   pthread_mutex_lock(&mutex);
+#define DUMB_UNLOCK() pthread_mutex_unlock(&mutex);
+#else
+#define DUMB_LOCK()   FIXME()
+#define DUMB_UNLOCK() FIXME()
+#endif
+
+
+class DumbCircularBuffer
+{
+public:
+    DumbCircularBuffer(size_t init_buffer_size) {
+        used = 0;
+        buffer_size = init_buffer_size;
+        buffer = (unsigned char *) malloc(buffer_size);
+        head = tail = buffer;
+
+#if defined(linux)
+        pthread_mutexattr_t mAttr;
+        pthread_mutexattr_settype(&mAttr, PTHREAD_MUTEX_RECURSIVE_NP);
+        pthread_mutex_init(&mutex, &mAttr);
+        pthread_mutexattr_destroy(&mAttr);
+#endif
+    }
+    ~DumbCircularBuffer() {
+        free(buffer);
+#if defined(linux)
+        pthread_mutex_destroy (&mutex);
+#endif
+    }
+
+    void clear() {
+        DUMB_LOCK();
+        head = tail;
+        used = 0;
+        DUMB_UNLOCK();
+    }
+
+    bool empty() {
+        return head == tail;
+    }
+
+    size_t space_available() {
+        size_t result;
+        DUMB_LOCK();
+        if (tail > head)
+            result = buffer_size - (tail-head) - 1;
+        else
+            result = head-tail - 1;
+        DUMB_UNLOCK();
+        return result;
+    }
+
+    void drop(size_t size) {
+        // assumes correctness!
+        DUMB_LOCK();
+        head += size;
+        if (head >= &buffer[buffer_size])
+            head -= buffer_size;
+        used--;
+        DUMB_UNLOCK();
+    }
+
+    bool insert(void *data, size_t size) {
+        // can fail if not enough space in the entire buffer
+        DUMB_LOCK();
+        if (space_available() < size)
+            return false;
+
+        size_t max_without_wrap = &buffer[buffer_size] - tail;
+        size_t initial = size > max_without_wrap ? max_without_wrap : size;
+#if DEBUG_CIRCULAR
+        fprintf(stderr,"insert(%d): max_without_wrap %d, size %d, initial %d\n",used,max_without_wrap,size,initial);
+#endif
+        memcpy(tail,data,initial);
+        tail += initial;
+        data = ((char *)data)+initial;
+        size -= initial;
+        if (size != 0) {
+#if DEBUG_CIRCULAR
+            fprintf(stderr,"wrapping by %d bytes\n",size);
+#endif
+            memcpy(buffer,data,size);
+            tail = &(((unsigned char *)buffer)[size]);
+        }
+            
+        used++;
+        DUMB_UNLOCK();
+
+        return true;
+    }
+
+    // for external access to the buffer (saving)
+    void lock() {
+        DUMB_LOCK();
+    }
+
+    void unlock() {
+        DUMB_UNLOCK();
+    }
+
+    // XXX These really shouldn't be public...
+    unsigned char *head;
+    unsigned char *tail;
+    unsigned int used;
+    unsigned char *buffer;
+    size_t buffer_size;
+
+private:
+    pthread_mutex_t mutex;
+};
+
+class DumbCircularBuffer *JprofBuffer;
+
+JPROF_STATIC void
+JprofBufferInit(size_t size)
+{
+    JprofBuffer = new DumbCircularBuffer(size);
+}
+
+JPROF_STATIC void
+JprofBufferClear()
+{
+    fprintf(stderr,"Told to clear JPROF circular buffer\n");
+    JprofBuffer->clear();
+}
+
+JPROF_STATIC size_t
+JprofEntrySizeof(malloc_log_entry *me)
+{
+    return offsetof(malloc_log_entry, pcs) + me->numpcs*sizeof(char*);
+}
+
+JPROF_STATIC void
+JprofBufferAppend(malloc_log_entry *me)
+{
+    size_t size = JprofEntrySizeof(me);
+
+    do {
+        while (JprofBuffer->space_available() < size &&
+               JprofBuffer->used > 0) {
+#if DEBUG_CIRCULAR
+            fprintf(stderr,"dropping entry: %d in use, %d free, need %d, size_to_free = %d\n",
+                    JprofBuffer->used,JprofBuffer->space_available(),size,JprofEntrySizeof((malloc_log_entry *) JprofBuffer->head));
+#endif
+            JprofBuffer->drop(JprofEntrySizeof((malloc_log_entry *) JprofBuffer->head));
+        }
+        if (JprofBuffer->space_available() < size)
+            return;
+
+    } while (!JprofBuffer->insert(me,size));
+}
+
+JPROF_STATIC void
+JprofBufferDump()
+{
+    JprofBuffer->lock();
+#if DEBUG_CIRCULAR
+    fprintf(stderr,"dumping JP_CIRCULAR buffer, %d of %d bytes\n",
+            JprofBuffer->tail > JprofBuffer->head ? 
+              JprofBuffer->tail - JprofBuffer->head :
+              JprofBuffer->buffer_size + JprofBuffer->tail - JprofBuffer->head,
+            JprofBuffer->buffer_size);
+#endif
+    if (JprofBuffer->tail >= JprofBuffer->head) {
+        write(gLogFD, JprofBuffer->head, JprofBuffer->tail - JprofBuffer->head);
+    } else {
+        write(gLogFD, JprofBuffer->head, &(JprofBuffer->buffer[JprofBuffer->buffer_size]) - JprofBuffer->head);
+        write(gLogFD, JprofBuffer->buffer, JprofBuffer->tail - JprofBuffer->buffer);
+    }
+    JprofBuffer->clear();
+    JprofBuffer->unlock();
 }
 
 //----------------------------------------------------------------------
@@ -224,18 +434,28 @@ static void EndProfilingHook(int signum)
 JPROF_STATIC void
 JprofLog(u_long aTime, void* stack_top, void* top_instr_ptr)
 {
-  // Static is simply to make debugging tollerable
+  // Static is simply to make debugging tolerable
   static malloc_log_entry me;
 
   me.delTime = aTime;
   me.thread = syscall(SYS_gettid); //gettid();
+  if (was_paused) {
+      me.flags = JP_FIRST_AFTER_PAUSE;
+      was_paused = 0;
+  } else {
+      me.flags = 0;
+  }
 
   CrawlStack(&me, stack_top, top_instr_ptr);
 
 #ifndef NTO
-  write(gLogFD, &me, offsetof(malloc_log_entry, pcs) + me.numpcs*sizeof(char*));
+  if (circular) {
+      JprofBufferAppend(&me);
+  } else {
+      write(gLogFD, &me, JprofEntrySizeof(&me));
+  }
 #else
-  printf("Neutrino is missing the pcs member of malloc_log_entry!! \n");
+      printf("Neutrino is missing the pcs member of malloc_log_entry!! \n");
 #endif
 }
 
@@ -390,6 +610,8 @@ void *ucontext)
 NS_EXPORT_(void) setupProfilingStuff(void)
 {
     static int gFirstTime = 1;
+    char filename[2048]; // XXX fix
+
     if(gFirstTime && !(gFirstTime=0)) {
 	int  startTimer = 1;
 	int  doNotStart = 1;
@@ -411,7 +633,15 @@ NS_EXPORT_(void) setupProfilingStuff(void)
          *   JP_APPEND -> Append to jprof-log rather than overwriting it.
          *               This is somewhat risky since it depends on the
          *               address map staying constant across multiple runs.
+         *   JP_FILENAME -> base filename to use when saving logs.  Note that
+         *               this does not affect the mapfile.
+         *   JP_CIRCULAR -> use a circular buffer of size N, write/clear on SIGUSR1
+         *
+         * JPROF_SLAVE is set if this is not the first process.
 	*/
+
+        circular = false;
+
 	if(tst) {
 	    if(strstr(tst, "JP_DEFER"))
 	    {
@@ -433,6 +663,20 @@ NS_EXPORT_(void) setupProfilingStuff(void)
                             tmp);
                     timerMiliSec = 1;
                 }
+	    }
+
+	    char *circular_op = strstr(tst,"JP_CIRCULAR=");
+	    if(circular_op) {
+                size_t size = atol(circular_op+strlen("JP_CIRCULAR="));
+                if (size < 1000) {
+                    fprintf(stderr,
+                            "JP_CIRCULAR of %d less than 1000, using 10000\n",
+                            size);
+                    size = 10000;
+                }
+                JprofBufferInit(size);
+                fprintf(stderr,"JP_CIRCULAR buffer of %d bytes\n",size);
+                circular = true;
 	    }
 
 	    char *first = strstr(tst, "JP_FIRST=");
@@ -461,12 +705,29 @@ NS_EXPORT_(void) setupProfilingStuff(void)
                   
 #endif
             }
+            char *f = strstr(tst,"JP_FILENAME=");
+            if (f)
+                f = f + strlen("JP_FILENAME=");
+            else
+                f = M_LOGFILE;
+
+            char *is_slave = getenv("JPROF_SLAVE");
+            if (!is_slave)
+                setenv("JPROF_SLAVE","", 0);
+
+            int pid = syscall(SYS_gettid); //gettid();
+            if (is_slave)
+                snprintf(filename,sizeof(filename),"%s-%d",f,pid);
+            else
+                snprintf(filename,sizeof(filename),"%s",f);
+
+            // XXX FIX! inherit current capture state!
 	}
 
 	if(!doNotStart) {
 
 	    if(gLogFD<0) {
-		gLogFD = open(M_LOGFILE, O_CREAT | O_WRONLY | append, 0666);
+		gLogFD = open(filename, O_CREAT | O_WRONLY | append, 0666);
 		if(gLogFD<0) {
 		    fprintf(stderr, "Unable to create " M_LOGFILE);
 		    perror(":");
@@ -481,6 +742,8 @@ NS_EXPORT_(void) setupProfilingStuff(void)
                     //fprintf(stderr,"jprof: main_thread = %u\n",
                     //        (unsigned int)main_thread);
 
+                    // FIX!  probably should block these against each other
+                    // Very unlikely.
 		    sigemptyset(&mset);
 		    action.sa_handler = NULL;
 		    action.sa_sigaction = StackHook;
@@ -497,11 +760,13 @@ NS_EXPORT_(void) setupProfilingStuff(void)
 
                     if (!rtcHz || firstDelay != 0)
 #endif
-                    if (realTime) {
-                        sigaction(SIGALRM, &action, NULL);
-                    } else {
-                        sigaction(SIGPROF, &action, NULL);
+                    {
+                        if (realTime) {
+                            sigaction(SIGALRM, &action, NULL);
+                        }
                     }
+                    // enable PROF in all cases to simplify JP_DEFER/pause/restart
+                    sigaction(SIGPROF, &action, NULL);
 
 		    // make it so a SIGUSR1 will stop the profiling
 		    // Note:  It currently does not close the logfile.
@@ -513,6 +778,13 @@ NS_EXPORT_(void) setupProfilingStuff(void)
 		    stop_action.sa_mask  = mset;
 		    stop_action.sa_flags = SA_RESTART;
 		    sigaction(SIGUSR1, &stop_action, NULL);
+
+		    // make it so a SIGUSR2 will clear the circular buffer
+
+		    stop_action.sa_handler = ClearProfilingHook;
+		    stop_action.sa_mask  = mset;
+		    stop_action.sa_flags = SA_RESTART;
+		    sigaction(SIGUSR2, &stop_action, NULL);
 
                     printf("Jprof: Initialized signal handler and set "
                            "timer for %lu %s, %d s "

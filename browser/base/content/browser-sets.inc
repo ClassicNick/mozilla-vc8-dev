@@ -145,12 +145,8 @@
   <commandset id="inspectorCommands">
     <command id="Inspector:Inspect"
              oncommand="InspectorUI.toggleInspection();"/>
-    <command id="Inspector:Previous"
-             oncommand="InspectorUI.inspectPrevious();"
-             disabled="true"/>
-    <command id="Inspector:Next"
-             oncommand="InspectorUI.inspectNext();"
-             disabled="true"/>
+    <command id="Inspector:Sidebar"
+             oncommand="InspectorUI.toggleSidebar();"/>
   </commandset>
 
   <broadcasterset id="mainBroadcasterSet">
@@ -220,6 +216,7 @@
 # Mac:  Cmd+K (cross platform binding)
 #       Cmd+Opt+F (platform convention)
 # Win:  Ctrl+K (cross platform binding)
+#       Ctrl+E (IE compat)
 #
 # We support Ctrl+K on all platforms now and advertise it in the menu since it is
 # our standard - it is a "safe" choice since it is near no harmful keys like "W" as
@@ -231,6 +228,9 @@
     <key id="key_search" key="&searchFocus.commandkey;" command="Tools:Search" modifiers="accel"/>
 #ifdef XP_MACOSX
     <key id="key_search2" key="&findOnCmd.commandkey;" command="Tools:Search" modifiers="accel,alt"/>
+#endif
+#ifdef XP_WIN
+    <key id="key_search2" key="&searchFocus.commandkey2;" command="Tools:Search" modifiers="accel"/>
 #endif
 #ifdef XP_GNOME
     <key id="key_search2" key="&searchFocusUnix.commandkey;" command="Tools:Search" modifiers="accel"/>

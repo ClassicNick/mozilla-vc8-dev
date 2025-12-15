@@ -49,6 +49,7 @@
 #include "nsXULAppAPI.h"
 
 class nsPIDOMWindow;
+class nsIAtom;
 
 BEGIN_INDEXEDDB_NAMESPACE
 
@@ -68,12 +69,6 @@ public:
   static already_AddRefed<mozIStorageConnection>
   GetConnection(const nsAString& aDatabaseFilePath);
 
-  static bool
-  SetCurrentDatabase(IDBDatabase* aDatabase);
-
-  static PRUint32
-  GetIndexedDBQuota();
-
   // Called when a process uses an IndexedDB factory. We only allow
   // a single process type to use IndexedDB - the chrome/single process
   // in Firefox, and the child process in Fennec - so access by more
@@ -90,18 +85,24 @@ public:
 
   static nsresult
   LoadDatabaseInformation(mozIStorageConnection* aConnection,
-                          PRUint32 aDatabaseId,
-                          nsAString& aVersion,
+                          nsIAtom* aDatabaseId,
+                          PRUint64* aVersion,
                           ObjectStoreInfoArray& aObjectStores);
 
   static nsresult
   UpdateDatabaseMetadata(DatabaseInfo* aDatabaseInfo,
-                         const nsAString& aVersion,
+                         PRUint64 aVersion,
                          ObjectStoreInfoArray& aObjectStores);
 
 private:
   IDBFactory();
   ~IDBFactory() { }
+
+  nsresult
+  OpenCommon(const nsAString& aName,
+             PRInt64 aVersion,
+             bool aDeleting,
+             nsIIDBOpenDBRequest** _retval);
 
   nsCOMPtr<nsIWeakReference> mWindow;
 };

@@ -40,6 +40,8 @@
 # ***** END LICENSE BLOCK *****
 */
 
+"use strict";
+
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cr = Components.results;
@@ -544,8 +546,8 @@ Blocklist.prototype = {
     request.QueryInterface(Components.interfaces.nsIJSXMLHttpRequest);
 
     var self = this;
-    request.onerror = function(event) { self.onXMLError(event); };
-    request.onload  = function(event) { self.onXMLLoad(event);  };
+    request.addEventListener("error", function(event) { self.onXMLError(event); }, false);
+    request.addEventListener("load", function(event) { self.onXMLLoad(event);  }, false);
     request.send(null);
 
     // When the blocklist loads we need to compare it to the current copy so
@@ -905,7 +907,7 @@ Blocklist.prototype = {
     var addonList = [];
 
     var self = this;
-    AddonManager.getAddonsByTypes(["extension", "theme", "locale"], function(addons) {
+    AddonManager.getAddonsByTypes(["extension", "theme", "locale", "dictionary"], function(addons) {
 
       for (let i = 0; i < addons.length; i++) {
         let oldState = Ci.nsIBlocklistService.STATE_NOTBLOCKED;
@@ -1036,20 +1038,21 @@ Blocklist.prototype = {
           restartApp();
 
         Services.obs.notifyObservers(self, "blocklist-updated", "");
-        Services.obs.removeObserver(arguments.callee, "addon-blocklist-closed");
+        Services.obs.removeObserver(applyBlocklistChanges, "addon-blocklist-closed");
       }
 
       Services.obs.addObserver(applyBlocklistChanges, "addon-blocklist-closed", false)
 
+      function blocklistUnloadHandler(event) {
+        if (event.target.location == URI_BLOCKLIST_DIALOG) {
+          applyBlocklistChanges();
+          blocklistWindow.removeEventListener("unload", blocklistUnloadHandler);
+        }
+      }
+
       let blocklistWindow = Services.ww.openWindow(null, URI_BLOCKLIST_DIALOG, "",
                               "chrome,centerscreen,dialog,titlebar", args);
-
-      blocklistWindow.addEventListener("unload", function(event) {
-        if(event.target.location == URI_BLOCKLIST_DIALOG) {
-          applyBlocklistChanges();
-          blocklistWindow.removeEventListener("unload", arguments.callee);
-        }
-      },false)
+      blocklistWindow.addEventListener("unload", blocklistUnloadHandler, false);
     });
   },
 

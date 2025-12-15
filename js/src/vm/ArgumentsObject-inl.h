@@ -58,14 +58,15 @@ inline uint32
 ArgumentsObject::initialLength() const
 {
     uint32 argc = uint32(getSlot(INITIAL_LENGTH_SLOT).toInt32()) >> PACKED_BITS_COUNT;
-    JS_ASSERT(argc <= JS_ARGS_LENGTH_MAX);
+    JS_ASSERT(argc <= StackSpace::ARGS_LENGTH_MAX);
     return argc;
 }
 
 inline void
 ArgumentsObject::markLengthOverridden()
 {
-    getSlotRef(INITIAL_LENGTH_SLOT).getInt32Ref() |= LENGTH_OVERRIDDEN_BIT;
+    uint32 v = getSlot(INITIAL_LENGTH_SLOT).toInt32() | LENGTH_OVERRIDDEN_BIT;
+    setSlot(INITIAL_LENGTH_SLOT, Int32Value(v));
 }
 
 inline bool
@@ -96,17 +97,10 @@ ArgumentsObject::element(uint32 i) const
     return data()->slots[i];
 }
 
-inline js::Value *
+inline const js::Value *
 ArgumentsObject::elements() const
 {
     return data()->slots;
-}
-
-inline Value *
-ArgumentsObject::addressOfElement(uint32 i)
-{
-    JS_ASSERT(i < initialLength());
-    return &data()->slots[i];
 }
 
 inline void
@@ -114,6 +108,37 @@ ArgumentsObject::setElement(uint32 i, const js::Value &v)
 {
     JS_ASSERT(i < initialLength());
     data()->slots[i] = v;
+}
+
+inline js::StackFrame *
+ArgumentsObject::maybeStackFrame() const
+{
+    return reinterpret_cast<js::StackFrame *>(getPrivate());
+}
+
+inline void
+ArgumentsObject::setStackFrame(StackFrame *frame)
+{
+    return setPrivate(frame);
+}
+
+#define JS_ARGUMENTS_OBJECT_ON_TRACE ((void *)0xa126)
+inline bool
+ArgumentsObject::onTrace() const
+{
+    return getPrivate() == JS_ARGUMENTS_OBJECT_ON_TRACE;
+}
+
+inline void
+ArgumentsObject::setOnTrace()
+{
+    return setPrivate(JS_ARGUMENTS_OBJECT_ON_TRACE);
+}
+
+inline void
+ArgumentsObject::clearOnTrace()
+{
+    return setPrivate(NULL);
 }
 
 inline const js::Value &

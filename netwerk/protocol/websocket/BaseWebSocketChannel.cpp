@@ -125,6 +125,14 @@ BaseWebSocketChannel::SetLoadGroup(nsILoadGroup *aLoadGroup)
 }
 
 NS_IMETHODIMP
+BaseWebSocketChannel::GetExtensions(nsACString &aExtensions)
+{
+  LOG(("BaseWebSocketChannel::GetExtensions() %p\n", this));
+  aExtensions = mNegotiatedExtensions;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 BaseWebSocketChannel::GetProtocol(nsACString &aProtocol)
 {
   LOG(("BaseWebSocketChannel::GetProtocol() %p\n", this));
@@ -208,12 +216,12 @@ BaseWebSocketChannel::NewChannel(nsIURI *aURI, nsIChannel **_retval NS_OUTPARAM)
 
 NS_IMETHODIMP
 BaseWebSocketChannel::AllowPort(PRInt32 port, const char *scheme,
-                                PRBool *_retval NS_OUTPARAM)
+                                bool *_retval NS_OUTPARAM)
 {
   LOG(("BaseWebSocketChannel::AllowPort() %p\n", this));
 
   // do not override any blacklisted ports
-  *_retval = PR_FALSE;
+  *_retval = false;
   return NS_OK;
 }
 

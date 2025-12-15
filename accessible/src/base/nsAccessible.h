@@ -40,7 +40,7 @@
 #define _nsAccessible_H_
 
 #include "nsAccessNodeWrap.h"
-#include "States.h"
+#include "mozilla/a11y/States.h"
 
 #include "nsIAccessible.h"
 #include "nsIAccessibleHyperLink.h"
@@ -57,10 +57,12 @@
 class AccEvent;
 class AccGroupInfo;
 class EmbeddedObjCollector;
+class KeyBinding;
 class nsAccessible;
 class nsHyperTextAccessible;
 class nsHTMLLIAccessible;
 struct nsRoleMapEntry;
+class Relation;
 class nsTextAccessible;
 
 struct nsRect;
@@ -217,6 +219,11 @@ public:
                                      EWhichChildAtPoint aWhichChild);
 
   /**
+   * Return the focused child if any.
+   */
+  virtual nsAccessible* FocusedChild();
+
+  /**
    * Return calculated group level based on accessible hierarchy.
    */
   virtual PRInt32 GetLevelInternal();
@@ -230,6 +237,11 @@ public:
    */
   virtual void GetPositionAndSizeInternal(PRInt32 *aPosInSet,
                                           PRInt32 *aSetSize);
+
+  /**
+   * Get the relation of the given type.
+   */
+  virtual Relation RelationByType(PRUint32 aType);
 
   //////////////////////////////////////////////////////////////////////////////
   // Initializing methods
@@ -268,9 +280,9 @@ public:
   /**
    * Append/insert/remove a child. Return true if operation was successful.
    */
-  virtual PRBool AppendChild(nsAccessible* aChild);
-  virtual PRBool InsertChildAt(PRUint32 aIndex, nsAccessible* aChild);
-  virtual PRBool RemoveChild(nsAccessible* aChild);
+  virtual bool AppendChild(nsAccessible* aChild);
+  virtual bool InsertChildAt(PRUint32 aIndex, nsAccessible* aChild);
+  virtual bool RemoveChild(nsAccessible* aChild);
 
   //////////////////////////////////////////////////////////////////////////////
   // Accessible tree traverse methods
@@ -278,7 +290,7 @@ public:
   /**
    * Return parent accessible.
    */
-  nsAccessible* GetParent() const { return mParent; }
+  nsAccessible* Parent() const { return mParent; }
 
   /**
    * Return child accessible at the given index.
@@ -303,15 +315,23 @@ public:
   /**
    * Return true if accessible has children;
    */
-  PRBool HasChildren() { return !!GetChildAt(0); }
+  bool HasChildren() { return !!GetChildAt(0); }
 
   /**
-   * Return next/previous sibling of the accessible.
+   * Return first/last/next/previous sibling of the accessible.
    */
   inline nsAccessible* NextSibling() const
     {  return GetSiblingAtOffset(1); }
   inline nsAccessible* PrevSibling() const
     { return GetSiblingAtOffset(-1); }
+  inline nsAccessible* FirstChild()
+    { return GetChildCount() != 0 ? GetChildAt(0) : nsnull; }
+  inline nsAccessible* LastChild()
+  {
+    PRUint32 childCount = GetChildCount();
+    return childCount != 0 ? GetChildAt(childCount - 1) : nsnull;
+  }
+
 
   /**
    * Return embedded accessible children count.
@@ -360,7 +380,7 @@ public:
   /**
    * Return true if there are accessible children in anonymous content
    */
-  virtual PRBool GetAllowsAnonChildAccessibles();
+  virtual bool GetAllowsAnonChildAccessibles();
 
   /**
    * Returns text of accessible if accessible has text role otherwise empty
@@ -382,9 +402,15 @@ public:
   void TestChildCache(nsAccessible* aCachedChild) const;
 
   //////////////////////////////////////////////////////////////////////////////
-  // Downcasting
+  // Downcasting and types
 
   inline bool IsApplication() const { return mFlags & eApplicationAccessible; }
+
+  bool IsAutoComplete() const { return mFlags & eAutoCompleteAccessible; }
+
+  inline bool IsAutoCompletePopup() const { return mFlags & eAutoCompletePopupAccessible; }
+
+  inline bool IsCombobox() const { return mFlags & eComboboxAccessible; }
 
   inline bool IsDoc() const { return mFlags & eDocAccessible; }
   nsDocAccessible* AsDoc();
@@ -395,11 +421,36 @@ public:
   inline bool IsHTMLListItem() const { return mFlags & eHTMLListItemAccessible; }
   nsHTMLLIAccessible* AsHTMLListItem();
 
+  inline bool IsListControl() const { return mFlags & eListControlAccessible; }
+
+  inline bool IsMenuButton() const { return mFlags & eMenuButtonAccessible; }
+
+  inline bool IsMenuPopup() const { return mFlags & eMenuPopupAccessible; }
+
   inline bool IsRoot() const { return mFlags & eRootAccessible; }
   nsRootAccessible* AsRoot();
 
   inline bool IsTextLeaf() const { return mFlags & eTextLeafAccessible; }
   nsTextAccessible* AsTextLeaf();
+
+  //////////////////////////////////////////////////////////////////////////////
+  // ActionAccessible
+
+  /**
+   * Return the number of actions that can be performed on this accessible.
+   */
+  virtual PRUint8 ActionCount();
+
+  /**
+   * Return access key, such as Alt+D.
+   */
+  virtual KeyBinding AccessKey() const;
+
+  /**
+   * Return global keyboard shortcut for default action, such as Ctrl+O for
+   * Open file menuitem.
+   */
+  virtual KeyBinding KeyboardShortcut() const;
 
   //////////////////////////////////////////////////////////////////////////////
   // HyperLinkAccessible
@@ -430,18 +481,13 @@ public:
     // Perhaps we can get information about invalid links from the cache
     // In the mean time authors can use role="link" aria-invalid="true"
     // to force it for links they internally know to be invalid
-    return (0 == (State() & states::INVALID));
+    return (0 == (State() & mozilla::a11y::states::INVALID));
   }
 
   /**
    * Return true if the link currently has the focus.
    */
-  inline bool IsLinkSelected()
-  {
-    NS_PRECONDITION(IsLink(),
-                    "IsLinkSelected() called on something that is not a hyper link!");
-    return gLastFocusedNode == GetNode();
-  }
+  bool IsLinkSelected();
 
   /**
    * Return the number of anchors within the link.
@@ -507,6 +553,38 @@ public:
    */
   virtual bool UnselectAll();
 
+  //////////////////////////////////////////////////////////////////////////////
+  // Widgets
+
+  /**
+   * Return true if accessible is a widget, i.e. control or accessible that
+   * manages its items. Note, being a widget the accessible may be a part of
+   * composite widget.
+   */
+  virtual bool IsWidget() const;
+
+  /**
+   * Return true if the widget is active, i.e. has a focus within it.
+   */
+  virtual bool IsActiveWidget() const;
+
+  /**
+   * Return true if the widget has items and items are operable by user and
+   * can be activated.
+   */
+  virtual bool AreItemsOperable() const;
+
+  /**
+   * Return the current item of the widget, i.e. an item that has or will have
+   * keyboard focus when widget gets active.
+   */
+  virtual nsAccessible* CurrentItem();
+
+  /**
+   * Return container widget this accessible belongs to.
+   */
+  virtual nsAccessible* ContainerWidget() const;
+
 protected:
 
   //////////////////////////////////////////////////////////////////////////////
@@ -556,11 +634,17 @@ protected:
    */
   enum AccessibleTypes {
     eApplicationAccessible = 1 << 2,
-    eDocAccessible = 1 << 3,
-    eHyperTextAccessible = 1 << 4,
-    eHTMLListItemAccessible = 1 << 5,
-    eRootAccessible = 1 << 6,
-    eTextLeafAccessible = 1 << 7
+    eAutoCompleteAccessible = 1 << 3,
+    eAutoCompletePopupAccessible = 1 << 4,
+    eComboboxAccessible = 1 << 5,
+    eDocAccessible = 1 << 6,
+    eHyperTextAccessible = 1 << 7,
+    eHTMLListItemAccessible = 1 << 8,
+    eListControlAccessible = 1 << 9,
+    eMenuButtonAccessible = 1 << 10,
+    eMenuPopupAccessible = 1 << 11,
+    eRootAccessible = 1 << 12,
+    eTextLeafAccessible = 1 << 13
   };
 
   //////////////////////////////////////////////////////////////////////////////
@@ -573,7 +657,7 @@ protected:
 
   virtual nsIFrame* GetBoundsFrame();
   virtual void GetBoundsRect(nsRect& aRect, nsIFrame** aRelativeFrame);
-  PRBool IsVisible(PRBool *aIsOffscreen); 
+  bool IsVisible(bool *aIsOffscreen); 
 
   //////////////////////////////////////////////////////////////////////////////
   // Name helpers
@@ -634,7 +718,7 @@ protected:
    *  Get the container node for an atomic region, defined by aria-atomic="true"
    *  @return the container node
    */
-  nsIDOMNode* GetAtomicRegion();
+  nsIContent* GetAtomicRegion() const;
 
   /**
    * Get numeric value of the given ARIA attribute.
@@ -648,7 +732,7 @@ protected:
 
   /**
    * Return the action rule based on ARIA enum constants EActionRule
-   * (see nsARIAMap.h). Used by GetNumActions() and GetActionName().
+   * (see nsARIAMap.h). Used by ActionCount() and GetActionName().
    *
    * @param aStates  [in] states of the accessible
    */
@@ -691,5 +775,62 @@ protected:
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAccessible,
                               NS_ACCESSIBLE_IMPL_IID)
+
+
+/**
+ * Represent key binding associated with accessible (such as access key and
+ * global keyboard shortcuts).
+ */
+class KeyBinding
+{
+public:
+  /**
+   * Modifier mask values.
+   */
+  static const PRUint32 kShift = 1;
+  static const PRUint32 kControl = 2;
+  static const PRUint32 kAlt = 4;
+  static const PRUint32 kMeta = 8;
+
+  KeyBinding() : mKey(0), mModifierMask(0) {}
+  KeyBinding(PRUint32 aKey, PRUint32 aModifierMask) :
+    mKey(aKey), mModifierMask(aModifierMask) {};
+
+  inline bool IsEmpty() const { return !mKey; }
+  inline PRUint32 Key() const { return mKey; }
+  inline PRUint32 ModifierMask() const { return mModifierMask; }
+
+  enum Format {
+    ePlatformFormat,
+    eAtkFormat
+  };
+
+  /**
+   * Return formatted string for this key binding depending on the given format.
+   */
+  inline void ToString(nsAString& aValue,
+                       Format aFormat = ePlatformFormat) const
+  {
+    aValue.Truncate();
+    AppendToString(aValue, aFormat);
+  }
+  inline void AppendToString(nsAString& aValue,
+                             Format aFormat = ePlatformFormat) const
+  {
+    if (mKey) {
+      if (aFormat == ePlatformFormat)
+        ToPlatformFormat(aValue);
+      else
+        ToAtkFormat(aValue);
+    }
+  }
+
+private:
+  void ToPlatformFormat(nsAString& aValue) const;
+  void ToAtkFormat(nsAString& aValue) const;
+
+  PRUint32 mKey;
+  PRUint32 mModifierMask;
+};
 
 #endif

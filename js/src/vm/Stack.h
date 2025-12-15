@@ -44,6 +44,7 @@
 #include "jsfun.h"
 
 struct JSContext;
+struct JSCompartment;
 
 namespace js {
 
@@ -60,13 +61,26 @@ class ExecuteFrameGuard;
 class DummyFrameGuard;
 class GeneratorFrameGuard;
 
+namespace mjit {
+    struct JITScript;
+    struct CallSite;
+    jsbytecode *NativeToPC(JITScript *jit, void *ncode, CallSite **pinline);
+}
+namespace detail { struct OOMCheck; }
+
 class CallIter;
 class FrameRegsIter;
 class AllFramesIter;
 
 class ArgumentsObject;
 
-namespace mjit { struct JITScript; }
+#ifdef JS_METHODJIT
+typedef js::mjit::CallSite JSInlinedSite;
+#else
+struct JSInlinedSite {};
+#endif
+
+typedef /* js::mjit::RejoinState */ size_t JSRejoinState;
 
 /*
  * VM stack layout
@@ -225,8 +239,8 @@ class CallArgs : public CallReceiver
     friend CallArgs CallArgsFromArgv(uintN, Value *);
     friend CallArgs CallArgsFromSp(uintN, Value *);
     Value &operator[](unsigned i) const { JS_ASSERT(i < argc_); return argv_[i]; }
-    Value *argv() const { return argv_; }
-    uintN argc() const { return argc_; }
+    Value *array() const { return argv_; }
+    uintN length() const { return argc_; }
     Value *end() const { return argv_ + argc_; }
 };
 
@@ -254,6 +268,13 @@ CallArgsFromSp(uintN argc, Value *sp)
 
 /*****************************************************************************/
 
+/*
+ * For calls to natives, the InvokeArgsGuard object provides a record of the
+ * call for the debugger's callstack. For this to work, the InvokeArgsGuard
+ * record needs to know when the call is actually active (because the
+ * InvokeArgsGuard can be pushed long before and popped long after the actual
+ * call, during which time many stack-observing things can happen).
+ */
 class CallArgsList : public CallArgs
 {
     friend class StackSegment;
@@ -290,20 +311,6 @@ CallArgsListFromVp(uintN argc, Value *vp, CallArgsList *prev)
 
 /*****************************************************************************/
 
-enum MaybeConstruct {
-    NO_CONSTRUCT           =          0, /* == false */
-    CONSTRUCT              =       0x80  /* == StackFrame::CONSTRUCTING, asserted below */
-};
-
-enum ExecuteType {
-    EXECUTE_GLOBAL         =        0x1, /* == StackFrame::GLOBAL */
-    EXECUTE_DIRECT_EVAL    =        0x8, /* == StackFrame::EVAL */
-    EXECUTE_INDIRECT_EVAL  =        0x9, /* == StackFrame::GLOBAL | EVAL */
-    EXECUTE_DEBUG          =       0x18  /* == StackFrame::EVAL | DEBUGGER */
-};
-
-/*****************************************************************************/
-
 class StackFrame
 {
   public:
@@ -337,7 +344,11 @@ class StackFrame
         HAS_ANNOTATION     =    0x20000,  /* frame has annotation_ set */
         HAS_RVAL           =    0x40000,  /* frame has rval_ set */
         HAS_SCOPECHAIN     =    0x80000,  /* frame has scopeChain_ set */
-        HAS_PREVPC         =   0x100000   /* frame has prevpc_ set */
+        HAS_PREVPC         =   0x100000,  /* frame has prevpc_ and prevInline_ set */
+
+        /* Method JIT state */
+        DOWN_FRAMES_EXPANDED = 0x200000,  /* inlining in down frames has been expanded */
+        LOWERED_CALL_APPLY   = 0x400000   /* Pushed by a lowered call/apply */
     };
 
   private:
@@ -358,9 +369,12 @@ class StackFrame
     /* Lazily initialized */
     Value               rval_;          /* return value of the frame */
     jsbytecode          *prevpc_;       /* pc of previous frame*/
+    JSInlinedSite       *prevInline_;   /* inlined site in previous frame */
     jsbytecode          *imacropc_;     /* pc of macro caller */
     void                *hookData_;     /* closure returned by call hook */
     void                *annotation_;   /* perhaps remove with bug 546848 */
+    JSRejoinState       rejoin_;        /* If rejoining into the interpreter
+                                         * from JIT code, state at rejoin. */
 
     static void staticAsserts() {
         JS_STATIC_ASSERT(offsetof(StackFrame, rval_) % sizeof(Value) == 0);
@@ -368,7 +382,7 @@ class StackFrame
     }
 
     inline void initPrev(JSContext *cx);
-    jsbytecode *prevpcSlow();
+    jsbytecode *prevpcSlow(JSInlinedSite **pinlined);
 
   public:
     /*
@@ -387,7 +401,7 @@ class StackFrame
     void resetCallFrame(JSScript *script);
 
     /* Called by jit stubs and serve as a specification for jit-code. */
-    void initJitFrameCallerHalf(JSContext *cx, StackFrame::Flags flags, void *ncode);
+    void initJitFrameCallerHalf(StackFrame *prev, StackFrame::Flags flags, void *ncode);
     void initJitFrameEarlyPrologue(JSFunction *fun, uint32 nactual);
     bool initJitFrameLatePrologue(JSContext *cx, Value **limit);
 
@@ -481,6 +495,9 @@ class StackFrame
     }
 
     inline void resetGeneratorPrev(JSContext *cx);
+    inline void resetInlinePrev(StackFrame *prevfp, jsbytecode *prevpc);
+
+    inline void initInlineFrame(JSFunction *fun, StackFrame *prevfp, jsbytecode *prevpc);
 
     /*
      * Frame slots
@@ -508,30 +525,52 @@ class StackFrame
      * Script
      *
      * All function and global frames have an associated JSScript which holds
-     * the bytecode being executed for the frame.
+     * the bytecode being executed for the frame. This script/bytecode does
+     * not reflect any inlining that has been performed by the method JIT.
+     * If other frames were inlined into this one, the script/pc reflect the
+     * point of the outermost call. Inlined frame invariants:
+     *
+     * - Inlined frames have the same scope chain as the outer frame.
+     * - Inlined frames have the same strictness as the outer frame.
+     * - Inlined frames can only make calls to other JIT frames associated with
+     *   the same VMFrame. Other calls force expansion of the inlined frames.
      */
 
     /*
-     * Get the frame's current bytecode, assuming |this| is in |cx|.
+     * Get the frame's current bytecode, assuming |this| is in |cx|. next is
+     * frame whose prev == this, NULL if not known or if this == cx->fp().
+     * If the frame is inside an inline call made within the pc, the pc will
+     * be that of the outermost call and the state of any inlined frame(s) is
+     * returned through pinlined.
      *
      * Beware, as the name implies, pcQuadratic can lead to quadratic behavior
      * in loops such as:
      *
      *   for ( ...; fp; fp = fp->prev())
-     *     ... fp->pcQuadratic(cx);
+     *     ... fp->pcQuadratic(cx->stack);
      *
-     * For such situations, prefer FrameRegsIter; its amortized O(1).
+     * Using next can avoid this, but in most cases prefer FrameRegsIter;
+     * it is amortized O(1).
      *
      *   When I get to the bottom I go back to the top of the stack
      *   Where I stop and I turn and I go right back
      *   Till I get to the bottom and I see you again...
      */
-    jsbytecode *pcQuadratic(JSContext *cx) const;
+    jsbytecode *pcQuadratic(const ContextStack &stack, StackFrame *next = NULL,
+                            JSInlinedSite **pinlined = NULL);
 
-    jsbytecode *prevpc() {
-        if (flags_ & HAS_PREVPC)
+    jsbytecode *prevpc(JSInlinedSite **pinlined) {
+        if (flags_ & HAS_PREVPC) {
+            if (pinlined)
+                *pinlined = prevInline_;
             return prevpc_;
-        return prevpcSlow();
+        }
+        return prevpcSlow(pinlined);
+    }
+
+    JSInlinedSite *prevInline() {
+        JS_ASSERT(flags_ & HAS_PREVPC);
+        return prevInline_;
     }
 
     JSScript *script() const {
@@ -741,10 +780,9 @@ class StackFrame
     }
 
     /*
-     * getValidCalleeObject is a fallible getter to compute the correct callee
-     * function object, which may require deferred cloning due to the JSObject
-     * methodReadBarrier. For a non-function frame, return true with *vp set
-     * from calleev, which may not be an object (it could be undefined).
+     * Compute the callee function for this stack frame, cloning if needed to
+     * implement the method read barrier.  If this is not a function frame,
+     * set *vp to null.
      */
     bool getValidCalleeObject(JSContext *cx, Value *vp);
 
@@ -769,6 +807,12 @@ class StackFrame
      * when setting the scope chain, to indicate whether the new scope chain
      * contains a new call object and thus changes the 'hasCallObj' state.
      *
+     * The method JIT requires that HAS_SCOPECHAIN be set for all frames which
+     * use NAME or related opcodes that can access the scope chain (so it does
+     * not have to test the bit). To ensure this, we always initialize the
+     * scope chain when pushing frames in the VM, and only initialize it when
+     * pushing frames in JIT code when the above situation applies.
+     *
      * NB: 'fp->hasCallObj()' implies that fp->callObj() needs to be 'put' when
      * the frame is popped. Since the scope chain of a non-strict eval frame
      * contains the call object of the parent (function) frame, it is possible
@@ -791,16 +835,31 @@ class StackFrame
         return ret;
     }
 
-    inline JSObject &callObj() const;
+    inline CallObject &callObj() const;
     inline void setScopeChainNoCallObj(JSObject &obj);
-    inline void setScopeChainWithOwnCallObj(JSObject &obj);
+    inline void setScopeChainWithOwnCallObj(CallObject &obj);
 
     /*
-     * NB: putActivationObjects does not mark activation objects as having been
-     * put (since the frame is about to be popped).
+     * Prologue for function frames: make a call object for heavyweight
+     * functions, and maintain type nesting invariants.
      */
-    inline void putActivationObjects();
-    inline void markActivationObjectsAsPut();
+    inline bool functionPrologue(JSContext *cx);
+
+    /*
+     * Epilogue for function frames: put any args or call object for the frame
+     * which may still be live, and maintain type nesting invariants. Note:
+     * this does not mark the epilogue as having been completed, since the
+     * frame is about to be popped. Use markFunctionEpilogueDone for this.
+     */
+    inline void functionEpilogue();
+
+    /*
+     * Mark any work needed in the function's epilogue as done. This call must
+     * be followed by a later functionEpilogue.
+     */
+    inline void markFunctionEpilogueDone();
+
+    inline bool maintainNestingState() const;
 
     /*
      * Variables object
@@ -832,7 +891,7 @@ class StackFrame
      */
 
     JSCompartment *compartment() const {
-        JS_ASSERT_IF(isScriptFrame(), scopeChain().compartment() == script()->compartment);
+        JS_ASSERT_IF(isScriptFrame(), scopeChain().compartment() == script()->compartment());
         return scopeChain().compartment();
     }
 
@@ -877,6 +936,26 @@ class StackFrame
     void setAnnotation(void *annot) {
         flags_ |= HAS_ANNOTATION;
         annotation_ = annot;
+    }
+
+    /* JIT rejoin state */
+
+    JSRejoinState rejoin() const {
+        return rejoin_;
+    }
+
+    void setRejoin(JSRejoinState state) {
+        rejoin_ = state;
+    }
+
+    /* Down frame expansion state */
+
+    void setDownFramesExpanded() {
+        flags_ |= DOWN_FRAMES_EXPANDED;
+    }
+
+    bool downFramesExpanded() {
+        return !!(flags_ & DOWN_FRAMES_EXPANDED);
     }
 
     /* Debugger hook data */
@@ -980,10 +1059,27 @@ class StackFrame
      * Other flags
      */
 
-    MaybeConstruct isConstructing() const {
-        JS_STATIC_ASSERT((int)CONSTRUCT == (int)CONSTRUCTING);
-        JS_STATIC_ASSERT((int)NO_CONSTRUCT == 0);
-        return MaybeConstruct(flags_ & CONSTRUCTING);
+    InitialFrameFlags initialFlags() const {
+        JS_STATIC_ASSERT((int)INITIAL_NONE == 0);
+        JS_STATIC_ASSERT((int)INITIAL_CONSTRUCT == (int)CONSTRUCTING);
+        JS_STATIC_ASSERT((int)INITIAL_LOWERED == (int)LOWERED_CALL_APPLY);
+        uint32 mask = CONSTRUCTING | LOWERED_CALL_APPLY;
+        JS_ASSERT((flags_ & mask) != mask);
+        return InitialFrameFlags(flags_ & mask);
+    }
+
+    bool isConstructing() const {
+        return !!(flags_ & CONSTRUCTING);
+    }
+
+    /*
+     * The method JIT call/apply optimization can erase Function.{call,apply}
+     * invocations from the stack and push the callee frame directly. The base
+     * of these frames will be offset by one value, however, which the
+     * interpreter needs to account for if it ends up popping the frame.
+     */
+    bool loweredCallOrApply() const {
+        return !!(flags_ & LOWERED_CALL_APPLY);
     }
 
     bool isDebuggerFrame() const {
@@ -1037,6 +1133,10 @@ class StackFrame
     static size_t offsetOfExec() {
         return offsetof(StackFrame, exec);
     }
+
+    static size_t offsetOfArgs() {
+        return offsetof(StackFrame, args);
+    }    
 
     void *addressOfArgs() {
         return &args;
@@ -1095,23 +1195,33 @@ class StackFrame
 static const size_t VALUES_PER_STACK_FRAME = sizeof(StackFrame) / sizeof(Value);
 
 static inline uintN
-ToReportFlags(MaybeConstruct construct)
+ToReportFlags(InitialFrameFlags initial)
 {
-    return uintN(construct);
+    return uintN(initial & StackFrame::CONSTRUCTING);
 }
 
 static inline StackFrame::Flags
-ToFrameFlags(MaybeConstruct construct)
+ToFrameFlags(InitialFrameFlags initial)
 {
-    JS_STATIC_ASSERT((int)CONSTRUCT == (int)StackFrame::CONSTRUCTING);
-    JS_STATIC_ASSERT((int)NO_CONSTRUCT == 0);
-    return StackFrame::Flags(construct);
+    return StackFrame::Flags(initial);
 }
 
-static inline MaybeConstruct
-MaybeConstructFromBool(bool b)
+static inline InitialFrameFlags
+InitialFrameFlagsFromConstructing(bool b)
 {
-    return b ? CONSTRUCT : NO_CONSTRUCT;
+    return b ? INITIAL_CONSTRUCT : INITIAL_NONE;
+}
+
+static inline bool
+InitialFrameFlagsAreConstructing(InitialFrameFlags initial)
+{
+    return !!(initial & INITIAL_CONSTRUCT);
+}
+
+static inline bool
+InitialFrameFlagsAreLowered(InitialFrameFlags initial)
+{
+    return !!(initial & INITIAL_LOWERED);
 }
 
 inline StackFrame *          Valueify(JSStackFrame *fp) { return (StackFrame *)fp; }
@@ -1125,27 +1235,33 @@ class FrameRegs
     Value *sp;
     jsbytecode *pc;
   private:
+    JSInlinedSite *inlined_;
     StackFrame *fp_;
   public:
     StackFrame *fp() const { return fp_; }
+    JSInlinedSite *inlined() const { return inlined_; }
 
     /* For jit use (need constant): */
-    static const size_t offsetOfFp = 2 * sizeof(void *);
+    static const size_t offsetOfFp = 3 * sizeof(void *);
+    static const size_t offsetOfInlined = 2 * sizeof(void *);
     static void staticAssert() {
         JS_STATIC_ASSERT(offsetOfFp == offsetof(FrameRegs, fp_));
+        JS_STATIC_ASSERT(offsetOfInlined == offsetof(FrameRegs, inlined_));
     }
+    void clearInlined() { inlined_ = NULL; }
 
     /* For generator: */
     void rebaseFromTo(const FrameRegs &from, StackFrame &to) {
         fp_ = &to;
         sp = to.slots() + (from.sp - from.fp_->slots());
         pc = from.pc;
+        inlined_ = from.inlined_;
         JS_ASSERT(fp_);
     }
 
     /* For ContextStack: */
     void popFrame(Value *newsp) {
-        pc = fp_->prevpc();
+        pc = fp_->prevpc(&inlined_);
         sp = newsp;
         fp_ = fp_->prev();
         JS_ASSERT(fp_);
@@ -1158,12 +1274,17 @@ class FrameRegs
         JS_ASSERT(fp_);
     }
 
+    /* For InternalInterpret: */
+    void restorePartialFrame(Value *newfp) {
+        fp_ = (StackFrame *) newfp;
+    }
+
     /* For stubs::CompileFunction, ContextStack: */
     void prepareToRun(StackFrame &fp, JSScript *script) {
         pc = script->code;
         sp = fp.slots() + script->nfixed;
         fp_ = &fp;
-        JS_ASSERT(fp_);
+        inlined_ = NULL;
     }
 
     /* For pushDummyFrame: */
@@ -1171,8 +1292,22 @@ class FrameRegs
         pc = NULL;
         sp = fp.slots();
         fp_ = &fp;
-        JS_ASSERT(fp_);
+        inlined_ = NULL;
     }
+
+    /* For expandInlineFrames: */
+    void expandInline(StackFrame *innerfp, jsbytecode *innerpc) {
+        pc = innerpc;
+        fp_ = innerfp;
+        inlined_ = NULL;
+    }
+
+#ifdef JS_METHODJIT
+    /* For LimitCheck: */
+    void updateForNcode(mjit::JITScript *jit, void *ncode) {
+        pc = mjit::NativeToPC(jit, ncode, &inlined_);
+    }
+#endif
 };
 
 /*****************************************************************************/
@@ -1237,11 +1372,11 @@ class StackSegment
     }
 
     Value *callArgv() const {
-        return calls_->argv();
+        return calls_->array();
     }
 
     Value *maybeCallArgv() const {
-        return calls_ ? calls_->argv() : NULL;
+        return calls_ ? calls_->array() : NULL;
     }
 
     StackSegment *prevInContext() const {
@@ -1283,269 +1418,27 @@ class StackSegment
 static const size_t VALUES_PER_STACK_SEGMENT = sizeof(StackSegment) / sizeof(Value);
 JS_STATIC_ASSERT(sizeof(StackSegment) % sizeof(Value) == 0);
 
-/*****************************************************************************/
+inline Value *
+StackSpace::firstUnused() const { return seg_ ? seg_->end() : base_; }
 
-class StackSpace
-{
-    Value         *base_;
-    mutable Value *commitEnd_;
-    Value         *end_;
-    StackSegment  *seg_;
+inline bool         ContextStack::hasfp() const     { return seg_ && seg_->maybeRegs(); }
+inline FrameRegs *  ContextStack::maybeRegs() const { return seg_ ? seg_->maybeRegs() : NULL; }
+inline StackFrame * ContextStack::maybefp() const   { return seg_ ? seg_->maybefp() : NULL; }
+inline FrameRegs &  ContextStack::regs() const      { JS_ASSERT(hasfp()); return seg_->regs(); }
+inline StackFrame * ContextStack::fp() const        { JS_ASSERT(hasfp()); return seg_->fp(); }
 
-    static const size_t CAPACITY_VALS  = 512 * 1024;
-    static const size_t CAPACITY_BYTES = CAPACITY_VALS * sizeof(Value);
-    static const size_t COMMIT_VALS    = 16 * 1024;
-    static const size_t COMMIT_BYTES   = COMMIT_VALS * sizeof(Value);
+} /* namespace js */
 
-    static void staticAsserts() {
-        JS_STATIC_ASSERT(CAPACITY_VALS % COMMIT_VALS == 0);
-    }
+inline bool            JSContext::hasfp() const      { return stack.hasfp(); }
+inline js::StackFrame* JSContext::fp() const         { return stack.fp(); }
+inline js::StackFrame* JSContext::maybefp() const    { return stack.maybefp(); }
+inline js::FrameRegs&  JSContext::regs() const       { return stack.regs(); }
+inline js::FrameRegs*  JSContext::maybeRegs() const  { return stack.maybeRegs(); }
 
-#ifdef XP_WIN
-    JS_FRIEND_API(bool) bumpCommit(JSContext *maybecx, Value *from, ptrdiff_t nvals) const;
-#endif
+namespace js {
 
-    friend class AllFramesIter;
-    friend class ContextStack;
-    friend class StackFrame;
-    friend class OOMCheck;
-    inline bool ensureSpace(JSContext *maybecx, Value *from, ptrdiff_t nvals) const;
-    StackSegment &findContainingSegment(const StackFrame *target) const;
-
-  public:
-    StackSpace();
-    bool init();
-    ~StackSpace();
-
-    /* See stack layout comment above. */
-    Value *firstUnused() const { return seg_ ? seg_->end() : base_; }
-    Value *endOfSpace() const { return end_; }
-
-#ifdef JS_TRACER
-    /*
-     * LeaveTree requires stack allocation to rebuild the stack. There is no
-     * good way to handle an OOM for these allocations, so this function checks
-     * that OOM cannot occur using the size of the TraceNativeStorage as a
-     * conservative upper bound.
-     */
-    inline bool ensureEnoughSpaceToEnterTrace();
-#endif
-
-    /*
-     * Return a limit against which jit code can check for. This limit is not
-     * necessarily the end of the stack since we lazily commit stack memory on
-     * some platforms. Thus, when the stack limit is exceeded, the caller should
-     * use tryBumpLimit to attempt to increase the stack limit by committing
-     * more memory. If the stack is truly exhausted, tryBumpLimit will report an
-     * error and return NULL.
-     *
-     * An invariant of the methodjit is that there is always space to push a
-     * frame on top of the current frame's expression stack (which can be at
-     * most script->nslots deep). getStackLimit ensures that the returned limit
-     * does indeed have this required space and reports an error and returns
-     * NULL if this reserve space cannot be allocated.
-     */
-    inline Value *getStackLimit(JSContext *cx);
-    bool tryBumpLimit(JSContext *maybecx, Value *from, uintN nvals, Value **limit);
-
-    /* Called during GC: mark segments, frames, and slots under firstUnused. */
-    void mark(JSTracer *trc);
-
-    /* We only report the committed size;  uncommitted size is uninteresting. */
-    JS_FRIEND_API(size_t) committedSize();
-};
-
-/*****************************************************************************/
-
-/*
- * For pushInlineFrame, there are three different ways the caller may want to
- * check for stack overflow:
- *  - NoCheck: the caller has already ensured there is enough space
- *  - OOMCheck: perform normal checking against the end of the stack
- *  - LimitCheck: check against the given stack limit (see getStackLimit)
- */
-
-class NoCheck
-{
-  public:
-    bool operator()(JSContext *, StackSpace &, Value *, uintN) { return true; }
-};
-
-class OOMCheck
-{
-  public:
-    bool operator()(JSContext *cx, StackSpace &space, Value *from, uintN nvals);
-};
-
-class LimitCheck
-{
-    Value **limit;
-  public:
-    LimitCheck(Value **limit) : limit(limit) {}
-    bool operator()(JSContext *cx, StackSpace &space, Value *from, uintN nvals);
-};
-
-/*****************************************************************************/
-
-class ContextStack
-{
-    StackSegment *seg_;
-    StackSpace *space_;
-    JSContext *cx_;
-
-    /*
-     * Return whether this ContextStack is at the top of the contiguous stack.
-     * This is a precondition for extending the current segment by pushing
-     * stack frames or overrides etc.
-     *
-     * NB: Just because a stack is onTop() doesn't mean there is necessarily
-     * a frame pushed on the stack. For this, use hasfp().
-     */
-    bool onTop() const;
-
-#ifdef DEBUG
-    void assertSpaceInSync() const;
-#else
-    void assertSpaceInSync() const {}
-#endif
-
-    /* Implementation details of push* public interface. */
-    StackSegment *pushSegment(JSContext *cx);
-    enum MaybeExtend { CAN_EXTEND = true, CANT_EXTEND = false };
-    Value *ensureOnTop(JSContext *cx, uintN nvars, MaybeExtend extend, bool *pushedSeg);
-
-    /* Check = { OOMCheck, LimitCheck } */
-    template <class Check>
-    inline StackFrame *
-    getCallFrame(JSContext *cx, const CallArgs &args, JSFunction *fun, JSScript *script,
-                 StackFrame::Flags *pflags, Check check) const;
-
-    /* Make pop* functions private since only called by guard classes. */
-    void popSegment();
-    friend class InvokeArgsGuard;
-    void popInvokeArgs(const InvokeArgsGuard &iag);
-    friend class FrameGuard;
-    void popFrame(const FrameGuard &fg);
-    friend class GeneratorFrameGuard;
-    void popGeneratorFrame(const GeneratorFrameGuard &gfg);
-
-    friend class StackIter;
-
-  public:
-    ContextStack(JSContext *cx);
-    ~ContextStack();
-
-    /*** Stack accessors ***/
-
-    /*
-     * A context's stack is "empty" if there are no scripts or natives
-     * executing. Note that JS_SaveFrameChain does factor into this definition.
-     */
-    bool empty() const                { return !seg_; }
-
-    /*
-     * Return whether there has been at least one frame pushed since the most
-     * recent call to JS_SaveFrameChain. Note that natives do not have frames
-     * and dummy frames are frames that do not represent script execution hence
-     * this query has little semantic meaning past "you can call fp()".
-     */
-    bool hasfp() const                { return seg_ && seg_->maybeRegs(); }
-
-    /*
-     * Return the most recent script activation's registers with the same
-     * caveat as hasfp regarding JS_SaveFrameChain.
-     */
-    FrameRegs *maybeRegs() const      { return seg_ ? seg_->maybeRegs() : NULL; }
-    StackFrame *maybefp() const       { return seg_ ? seg_->maybefp() : NULL; }
-
-    /* Faster alternatives to maybe* functions. */
-    FrameRegs &regs() const           { JS_ASSERT(hasfp()); return seg_->regs(); }
-    StackFrame *fp() const            { JS_ASSERT(hasfp()); return seg_->fp(); }
-
-    /* The StackSpace currently hosting this ContextStack. */
-    StackSpace &space() const    { assertSpaceInSync(); return *space_; }
-
-    /* Return whether the given frame is in this context's stack. */
-    bool containsSlow(const StackFrame *target) const;
-
-    /*** Stack manipulation ***/
-
-    /*
-     * pushInvokeArgs allocates |argc + 2| rooted values that will be passed as
-     * the arguments to Invoke. A single allocation can be used for multiple
-     * Invoke calls. The InvokeArgumentsGuard passed to Invoke must come from
-     * an immediately-enclosing (stack-wise) call to pushInvokeArgs.
-     */
-    bool pushInvokeArgs(JSContext *cx, uintN argc, InvokeArgsGuard *ag);
-
-    /* Called by Invoke for a scripted function call. */
-    bool pushInvokeFrame(JSContext *cx, const CallArgs &args,
-                         MaybeConstruct construct, InvokeFrameGuard *ifg);
-
-    /* Called by Execute for execution of eval or global code. */
-    bool pushExecuteFrame(JSContext *cx, JSScript *script, const Value &thisv,
-                          JSObject &scopeChain, ExecuteType type,
-                          StackFrame *evalInFrame, ExecuteFrameGuard *efg);
-
-    /*
-     * Called by SendToGenerator to resume a yielded generator. In addition to
-     * pushing a frame onto the VM stack, this function copies over the
-     * floating frame stored in 'gen'. When 'gfg' is destroyed, the destructor
-     * will copy the frame back to the floating frame.
-     */
-    bool pushGeneratorFrame(JSContext *cx, JSGenerator *gen, GeneratorFrameGuard *gfg);
-
-    /* Pushes a "dummy" frame; should be removed one day. */
-    bool pushDummyFrame(JSContext *cx, JSObject &scopeChain, DummyFrameGuard *dfg);
-
-    /*
-     * An "inline frame" may only be pushed from within the top, active
-     * segment. This is the case for calls made inside mjit code and Interpret.
-     * For the Check parameter, see OOMCheck et al above.
-     */
-    template <class Check>
-    bool pushInlineFrame(JSContext *cx, FrameRegs &regs, const CallArgs &args,
-                         JSObject &callee, JSFunction *fun, JSScript *script,
-                         MaybeConstruct construct, Check check);
-    void popInlineFrame(FrameRegs &regs);
-
-    /* Pop a partially-pushed frame after hitting the limit before throwing. */
-    void popFrameAfterOverflow();
-
-    /*
-     * Called by the methodjit for an arity mismatch. Arity mismatch can be
-     * hot, so getFixupFrame avoids doing call setup performed by jit code when
-     * FixupArity returns. In terms of work done:
-     *
-     *   getFixupFrame = pushInlineFrame -
-     *                   (fp->initJitFrameLatePrologue + regs->prepareToRun)
-     */
-    StackFrame *getFixupFrame(JSContext *cx, FrameRegs &regs, const CallArgs &args,
-                              JSFunction *fun, JSScript *script, void *ncode,
-                              MaybeConstruct construct, LimitCheck check);
-
-    bool saveFrameChain();
-    void restoreFrameChain();
-
-    /*
-     * As an optimization, the interpreter/mjit can operate on a local
-     * FrameRegs instance repoint the ContextStack to this local instance.
-     */
-    void repointRegs(FrameRegs *regs) { JS_ASSERT(hasfp()); seg_->repointRegs(regs); }
-
-    /*** For JSContext: ***/
-
-    /*
-     * To avoid indirection, ContextSpace caches a pointer to the StackSpace.
-     * This must be kept coherent with cx->thread->data.space by calling
-     * 'threadReset' whenver cx->thread changes.
-     */
-    void threadReset();
-
-    /*** For jit compiler: ***/
-
-    static size_t offsetOfSeg() { return offsetof(ContextStack, seg_); }
-};
+inline void
+ContextStack::repointRegs(FrameRegs *regs) { JS_ASSERT(hasfp()); seg_->repointRegs(regs); }
 
 /*****************************************************************************/
 
@@ -1673,7 +1566,8 @@ class FrameRegsIter
     }
 
   public:
-    FrameRegsIter(JSContext *cx) : iter_(cx) { settle(); }
+    FrameRegsIter(JSContext *cx, StackIter::SavedOption opt = StackIter::STOP_AT_SAVED)
+        : iter_(cx, opt) { settle(); }
 
     bool done() const { return iter_.done(); }
     FrameRegsIter &operator++() { ++iter_; settle(); return *this; }

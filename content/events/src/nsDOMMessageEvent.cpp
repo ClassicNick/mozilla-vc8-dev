@@ -103,9 +103,11 @@ nsDOMMessageEvent::UnrootData()
 }
 
 NS_IMETHODIMP
-nsDOMMessageEvent::GetData(jsval* aData)
+nsDOMMessageEvent::GetData(JSContext* aCx, jsval* aData)
 {
   *aData = mData;
+  if (!JS_WrapValue(aCx, aData))
+    return NS_ERROR_FAILURE;
   return NS_OK;
 }
 
@@ -132,8 +134,8 @@ nsDOMMessageEvent::GetSource(nsIDOMWindow** aSource)
 
 NS_IMETHODIMP
 nsDOMMessageEvent::InitMessageEvent(const nsAString& aType,
-                                    PRBool aCanBubble,
-                                    PRBool aCancelable,
+                                    bool aCanBubble,
+                                    bool aCancelable,
                                     const jsval& aData,
                                     const nsAString& aOrigin,
                                     const nsAString& aLastEventId,

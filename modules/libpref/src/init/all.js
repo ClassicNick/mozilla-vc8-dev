@@ -64,16 +64,16 @@ pref("browser.cache.disk.enable",           true);
 pref("browser.cache.disk.smart_size.first_run", true);
 // Does the user want smart-sizing?
 pref("browser.cache.disk.smart_size.enabled", true);
-// Size explicitly set by the user. Used when smart_size.enabled == false
+// Size (in KB) explicitly set by the user. Used when smart_size.enabled == false
 pref("browser.cache.disk.capacity",         256000);
-// User-controllable max-size for entries in disk-cache. Regardless of this
-// setting, no entries bigger than 1/8 of disk-cache will be cached
-pref("browser.cache.disk.max_entry_size",    5120);
+// Max-size (in KB) for entries in disk cache. Set to -1 for no limit.
+// (Note: entries bigger than 1/8 of disk-cache are never cached)
+pref("browser.cache.disk.max_entry_size",    51200);  // 50 MB
 pref("browser.cache.memory.enable",         true);
 // -1 = determine dynamically, 0 = none, n = memory capacity in kilobytes
 //pref("browser.cache.memory.capacity",     -1);
-// User-controllable max-size for entries in mem-cache. Regardless of this
-// setting, no entries bigger than 90% of the mem-cache will be cached
+// Max-size (in KB) for entries in memory cache. Set to -1 for no limit.  
+// (Note: entries bigger than than 90% of the mem-cache are never cached)
 pref("browser.cache.memory.max_entry_size",  5120);
 pref("browser.cache.disk_cache_ssl",        true);
 // 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
@@ -97,14 +97,17 @@ pref("dom.indexedDB.enabled", true);
 // Space to allow indexedDB databases before prompting (in MB).
 pref("dom.indexedDB.warningQuota", 50);
 
+// Whether or not Web Workers are enabled.
+pref("dom.workers.enabled", true);
+// The number of workers per domain allowed to run concurrently.
+pref("dom.workers.maxPerDomain", 20);
+
 // Whether window.performance is enabled
 pref("dom.enable_performance", true);
 
 // Fastback caching - if this pref is negative, then we calculate the number
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
-
-pref("browser.sessionhistory.optimize_eviction", true);
 
 pref("ui.use_native_colors", true);
 pref("ui.click_hold_context_menus", false);
@@ -191,6 +194,7 @@ pref("media.autoplay.enabled", true);
 pref("gfx.color_management.mode", 2);
 pref("gfx.color_management.display_profile", "");
 pref("gfx.color_management.rendering_intent", 0);
+pref("gfx.color_management.enablev4", false);
 
 pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
@@ -198,11 +202,15 @@ pref("gfx.downloadable_fonts.sanitize", true);
 
 // see gfx/thebes/gfxUnicodeProperties.h for definitions of script bits
 #ifdef XP_MACOSX
-// use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04)
-pref("gfx.font_rendering.harfbuzz.scripts", 7);
+// use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04) + thai (0x40)
+pref("gfx.font_rendering.harfbuzz.scripts", 71);
+#else
+#ifdef ANDROID
+pref("gfx.font_rendering.harfbuzz.scripts", 71);
 #else
 // use harfbuzz for default (0x01) + arabic (0x02)
 pref("gfx.font_rendering.harfbuzz.scripts", 3);
+#endif
 #endif
 
 #ifdef XP_WIN
@@ -591,6 +599,10 @@ pref("dom.min_timeout_value", 4);
 // And for background windows
 pref("dom.min_background_timeout_value", 1000);
 
+// Use the new DOM bindings (only affects any scopes created after the pref is
+// changed)
+pref("dom.new_bindings", true);
+
 // Parsing perf prefs. For now just mimic what the old code did.
 #ifndef XP_WIN
 pref("content.sink.pending_event_mode", 0);
@@ -613,13 +625,16 @@ pref("javascript.options.strict",           false);
 pref("javascript.options.strict.debug",     true);
 #endif
 pref("javascript.options.relimit",          true);
-pref("javascript.options.tracejit.content",  true);
-pref("javascript.options.tracejit.chrome",   true);
+pref("javascript.options.tracejit.content",  false);
+pref("javascript.options.tracejit.chrome",   false);
 pref("javascript.options.methodjit.content", true);
 pref("javascript.options.methodjit.chrome",  true);
 pref("javascript.options.jitprofiling.content", true);
 pref("javascript.options.jitprofiling.chrome",  true);
+pref("javascript.options.pccounts.content", false);
+pref("javascript.options.pccounts.chrome",  false);
 pref("javascript.options.methodjit_always", false);
+pref("javascript.options.typeinference", true);
 // This preference limits the memory usage of javascript.
 // If you want to change these values for your device,
 // please find Bug 417052 comment 17 and Bug 456721
@@ -628,6 +643,7 @@ pref("javascript.options.mem.high_water_mark", 128);
 pref("javascript.options.mem.max", -1);
 pref("javascript.options.mem.gc_per_compartment", true);
 pref("javascript.options.mem.log", false);
+pref("javascript.options.gc_on_memory_pressure", true);
 
 // advanced prefs
 pref("advanced.mailftp",                    false);
@@ -773,6 +789,10 @@ pref("network.http.qos", 0);
 // connection.
 pref("network.http.connection-retry-timeout", 250);
 
+// Disable IPv6 for backup connections to workaround problems about broken
+// IPv6 connectivity.
+pref("network.http.fast-fallback-to-IPv4", true);
+
 // default values for FTP
 // in a DSCP environment this should be 40 (0x28, or AF11), per RFC-4594,
 // Section 4.8 "High-Throughput Data Service Class", and 80 (0x50, or AF22)
@@ -808,13 +828,19 @@ pref("network.websocket.timeout.ping.request", 0);
 pref("network.websocket.timeout.ping.response", 10);
 
 // Defines whether or not to try and negotiate the stream-deflate compression
-// extension with the websocket server
-pref("network.websocket.extensions.stream-deflate", true);
+// extension with the websocket server. Stream-Deflate has been removed from
+// the standards track document, but can still be used by servers who opt
+// into it.
+pref("network.websocket.extensions.stream-deflate", false);
 
 // the maximum number of concurrent websocket sessions. By specification there
 // is never more than one handshake oustanding to an individual host at
 // one time.
 pref("network.websocket.max-connections", 200);
+
+// by default scripts loaded from a https:// origin can only open secure
+// (i.e. wss://) websockets.
+pref("network.websocket.allowInsecureFromHTTPS", false);
 
 // </ws>
 
@@ -1096,11 +1122,64 @@ pref("font.language.group",                 "chrome://global/locale/intl.propert
 pref("intl.uidirection.ar", "rtl");
 pref("intl.uidirection.he", "rtl");
 pref("intl.uidirection.fa", "rtl");
+pref("intl.uidirection.ur", "rtl");
 
 // use en-US hyphenation by default for content tagged with plain lang="en"
 pref("intl.hyphenation-alias.en", "en-us");
 // and for other subtags of en-*, if no specific patterns are available
 pref("intl.hyphenation-alias.en-*", "en-us");
+
+pref("intl.hyphenation-alias.af-*", "af");
+pref("intl.hyphenation-alias.bg-*", "bg");
+pref("intl.hyphenation-alias.ca-*", "ca");
+pref("intl.hyphenation-alias.cy-*", "cy");
+pref("intl.hyphenation-alias.da-*", "da");
+pref("intl.hyphenation-alias.eo-*", "eo");
+pref("intl.hyphenation-alias.es-*", "es");
+pref("intl.hyphenation-alias.et-*", "et");
+pref("intl.hyphenation-alias.fi-*", "fi");
+pref("intl.hyphenation-alias.fr-*", "fr");
+pref("intl.hyphenation-alias.gl-*", "gl");
+pref("intl.hyphenation-alias.hr-*", "hr");
+pref("intl.hyphenation-alias.hsb-*", "hsb");
+pref("intl.hyphenation-alias.hu-*", "hu");
+pref("intl.hyphenation-alias.ia-*", "ia");
+pref("intl.hyphenation-alias.is-*", "is");
+pref("intl.hyphenation-alias.it-*", "it");
+pref("intl.hyphenation-alias.kmr-*", "kmr");
+pref("intl.hyphenation-alias.la-*", "la");
+pref("intl.hyphenation-alias.lt-*", "lt");
+pref("intl.hyphenation-alias.mn-*", "mn");
+pref("intl.hyphenation-alias.nl-*", "nl");
+pref("intl.hyphenation-alias.pt-*", "pt");
+pref("intl.hyphenation-alias.ru-*", "ru");
+pref("intl.hyphenation-alias.sl-*", "sl");
+pref("intl.hyphenation-alias.sv-*", "sv");
+pref("intl.hyphenation-alias.tr-*", "tr");
+pref("intl.hyphenation-alias.uk-*", "uk");
+
+// use reformed (1996) German patterns by default unless specifically tagged as de-1901
+// (these prefs may soon be obsoleted by better BCP47-based tag matching, but for now...)
+pref("intl.hyphenation-alias.de", "de-1996");
+pref("intl.hyphenation-alias.de-*", "de-1996");
+pref("intl.hyphenation-alias.de-DE-1901", "de-1901");
+pref("intl.hyphenation-alias.de-CH-*", "de-CH");
+
+// patterns from TeX are tagged as "sh" (Serbo-Croatian) macrolanguage;
+// alias "sr" (Serbian) and "bs" (Bosnian) to those patterns
+// (Croatian has its own separate patterns).
+pref("intl.hyphenation-alias.sr", "sh");
+pref("intl.hyphenation-alias.bs", "sh");
+pref("intl.hyphenation-alias.sh-*", "sh");
+pref("intl.hyphenation-alias.sr-*", "sh");
+pref("intl.hyphenation-alias.bs-*", "sh");
+
+// Norwegian has two forms, Bokmål and Nynorsk, with "no" as a macrolanguage encompassing both.
+// For "no", we'll alias to "nb" (Bokmål) as that is the more widely used written form.
+pref("intl.hyphenation-alias.no", "nb");
+pref("intl.hyphenation-alias.no-*", "nb");
+pref("intl.hyphenation-alias.nb-*", "nb");
+pref("intl.hyphenation-alias.nn-*", "nn");
 
 pref("font.mathfont-family", "STIXNonUnicode, STIXSizeOneSym, STIXSize1, STIXGeneral, Asana Math, Standard Symbols L, DejaVu Sans, Cambria Math");
 
@@ -1395,6 +1474,10 @@ pref("dom.max_script_run_time", 10);
 // How long a plugin is allowed to process a synchronous IPC message
 // before we consider it "hung".
 pref("dom.ipc.plugins.timeoutSecs", 45);
+// How long a plugin process will wait for a response from the parent
+// to a synchronous request before terminating itself. After this
+// point the child assumes the parent is hung.
+pref("dom.ipc.plugins.parentTimeoutSecs", 15);
 // How long a plugin launch is allowed to take before
 // we consider it failed.
 pref("dom.ipc.plugins.processLaunchTimeoutSecs", 45);
@@ -1402,6 +1485,7 @@ pref("dom.ipc.plugins.processLaunchTimeoutSecs", 45);
 // No timeout in DEBUG builds
 pref("dom.ipc.plugins.timeoutSecs", 0);
 pref("dom.ipc.plugins.processLaunchTimeoutSecs", 0);
+pref("dom.ipc.plugins.parentTimeoutSecs", 0);
 #endif
 
 // Disable oopp for standard java. They run their own process isolation (which
@@ -1418,6 +1502,8 @@ pref("dom.ipc.plugins.enabled.602plugin.so", false);
 #endif
 #endif
 #endif
+
+pref("dom.ipc.processCount", 1);
 
 pref("svg.smil.enabled", true);
 
@@ -2042,15 +2128,15 @@ pref("font.name-list.monospace.x-central-euro", "Courier");
 pref("font.name-list.cursive.x-central-euro", "Apple Chancery");
 pref("font.name-list.fantasy.x-central-euro", "Papyrus");
 
-pref("font.name.serif.x-cyrillic", "Times CY");
-pref("font.name.sans-serif.x-cyrillic", "Helvetica CY");
-pref("font.name.monospace.x-cyrillic", "Monaco CY");
-pref("font.name.cursive.x-cyrillic", "Geneva CY");
+pref("font.name.serif.x-cyrillic", "Times");
+pref("font.name.sans-serif.x-cyrillic", "Helvetica");
+pref("font.name.monospace.x-cyrillic", "Monaco");
+pref("font.name.cursive.x-cyrillic", "Geneva");
 pref("font.name.fantasy.x-cyrillic", "Charcoal CY");
-pref("font.name-list.serif.x-cyrillic", "Times CY");
-pref("font.name-list.sans-serif.x-cyrillic", "Helvetica CY");
-pref("font.name-list.monospace.x-cyrillic", "Monaco CY");
-pref("font.name-list.cursive.x-cyrillic", "Geneva CY");
+pref("font.name-list.serif.x-cyrillic", "Times");
+pref("font.name-list.sans-serif.x-cyrillic", "Helvetica");
+pref("font.name-list.monospace.x-cyrillic", "Monaco");
+pref("font.name-list.cursive.x-cyrillic", "Geneva");
 pref("font.name-list.fantasy.x-cyrillic", "Charcoal CY");
 
 pref("font.name.serif.x-devanagari", "Devanagari MT");
@@ -3173,7 +3259,7 @@ pref("image.mem.discardable", true);
 
 // Prevents images from automatically being decoded on load, instead allowing
 // them to be decoded on demand when they are drawn.
-pref("image.mem.decodeondraw", false);
+pref("image.mem.decodeondraw", true);
 
 // Minimum timeout for image discarding (in milliseconds). The actual time in
 // which an image must inactive for it to be discarded will vary between this
@@ -3185,10 +3271,10 @@ pref("image.mem.decodeondraw", false);
 pref("image.mem.min_discard_timeout_ms", 10000);
 
 // Chunk size for calls to the image decoders
-pref("image.mem.decode_bytes_at_a_time", 200000);
+pref("image.mem.decode_bytes_at_a_time", 4096);
 
 // The longest time we can spend in an iteration of an async decode
-pref("image.mem.max_ms_before_yield", 400);
+pref("image.mem.max_ms_before_yield", 5);
 
 // The maximum source data size for which we auto sync decode
 pref("image.mem.max_bytes_for_sync_decode", 150000);
@@ -3201,6 +3287,10 @@ pref("webgl.force_osmesa", false);
 pref("webgl.osmesalib", "");
 pref("webgl.verbose", false);
 pref("webgl.prefer-native-gl", false);
+pref("webgl.min_capability_mode", false);
+pref("webgl.disable-extensions", false);
+pref("webgl.msaa-level", 2);
+pref("webgl.msaa-force", false);
 
 #ifdef XP_WIN
 // The default TCP send window on Windows is too small, and autotuning only occurs on receive
@@ -3208,14 +3298,24 @@ pref("network.tcp.sendbuffer", 131072);
 #endif
 
 // Whether to disable acceleration for all widgets.
+#ifdef MOZ_E10S_COMPAT
+pref("layers.acceleration.disabled", true);
+#else
 pref("layers.acceleration.disabled", false);
+#endif
 
 // Whether to force acceleration on, ignoring blacklists.
 pref("layers.acceleration.force-enabled", false);
 
+pref("layers.acceleration.draw-fps", false);
+
 #ifdef XP_WIN
 // Whether to disable the automatic detection and use of direct2d.
+#ifdef MOZ_E10S_COMPAT
+pref("gfx.direct2d.disabled", true);
+#else
 pref("gfx.direct2d.disabled", false);
+#endif
 // Whether to attempt to enable Direct2D regardless of automatic detection or
 // blacklisting
 pref("gfx.direct2d.force-enabled", false);
@@ -3230,8 +3330,6 @@ pref("geo.enabled", true);
 // Enable/Disable the orientation API for content
 pref("device.motion.enabled", true);
 
-// Enable/Disable HTML5 parser
-pref("html5.parser.enable", true);
 // Toggle which thread the HTML5 parser uses for stream parsing
 pref("html5.offmainthread", true);
 // Time in milliseconds between the time a network buffer is seen and the 
@@ -3257,3 +3355,25 @@ pref("network.buffer.cache.size",  32768);
 
 // Desktop Notification
 pref("notification.feature.enabled", false);
+
+// Alert sliding effect
+pref("alerts.slideIncrement", 1);
+pref("alerts.slideIncrementTime", 10);
+pref("alerts.totalOpenTime", 4000);
+pref("alerts.disableSlidingEffect", false);
+
+// DOM full-screen API.
+pref("full-screen-api.enabled", false);
+pref("full-screen-api.allow-trusted-requests-only", true);
+pref("full-screen-api.key-input-restricted", true);
+pref("full-screen-api.warning.enabled", true);
+
+// Time limit, in milliseconds, for nsEventStateManager::IsHandlingUserInput().
+// Used to detect long running handlers of user-generated events.
+pref("dom.event.handling-user-input-time-limit", 1000);
+ 
+//3D Transforms
+pref("layout.3d-transforms.enabled", true);
+
+// Battery API
+pref("dom.battery.enabled", true);

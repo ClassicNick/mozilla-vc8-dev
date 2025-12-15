@@ -122,6 +122,8 @@ TabChild::TabChild(PRUint32 aChromeFlags)
   : mRemoteFrame(nsnull)
   , mTabChildGlobal(nsnull)
   , mChromeFlags(aChromeFlags)
+  , mOuterRect(0, 0, 0, 0)
+  , mLastBackgroundColor(NS_RGB(255, 255, 255))
 {
     printf("creating %d!\n", NS_IsMainThread());
 }
@@ -224,9 +226,9 @@ TabChild::ShowAsModal()
 }
 
 NS_IMETHODIMP
-TabChild::IsWindowModal(PRBool* aRetVal)
+TabChild::IsWindowModal(bool* aRetVal)
 {
-  *aRetVal = PR_FALSE;
+  *aRetVal = false;
   return NS_OK;
 }
 
@@ -243,9 +245,8 @@ TabChild::SetStatusWithContext(PRUint32 aStatusType,
                                     const nsAString& aStatusText,
                                     nsISupports* aStatusContext)
 {
-  NS_NOTREACHED("TabChild::SetStatusWithContext not supported in TabChild");
-
-  return NS_ERROR_NOT_IMPLEMENTED;
+  // FIXME/bug 617804: should the platform support this?
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -261,9 +262,20 @@ NS_IMETHODIMP
 TabChild::GetDimensions(PRUint32 aFlags, PRInt32* aX,
                              PRInt32* aY, PRInt32* aCx, PRInt32* aCy)
 {
-  NS_NOTREACHED("TabChild::GetDimensions not supported in TabChild");
+  if (aX) {
+    *aX = mOuterRect.x;
+  }
+  if (aY) {
+    *aY = mOuterRect.y;
+  }
+  if (aCx) {
+    *aCx = mOuterRect.width;
+  }
+  if (aCy) {
+    *aCy = mOuterRect.height;
+  }
 
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -275,18 +287,17 @@ TabChild::SetFocus()
 }
 
 NS_IMETHODIMP
-TabChild::GetVisibility(PRBool* aVisibility)
+TabChild::GetVisibility(bool* aVisibility)
 {
-  *aVisibility = PR_TRUE;
+  *aVisibility = true;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-TabChild::SetVisibility(PRBool aVisibility)
+TabChild::SetVisibility(bool aVisibility)
 {
-  NS_NOTREACHED("TabChild::SetVisibility not supported in TabChild");
-
-  return NS_ERROR_NOT_IMPLEMENTED;
+  // should the platform support this? Bug 666365
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -323,14 +334,14 @@ TabChild::Blur()
 NS_IMETHODIMP
 TabChild::FocusNextElement()
 {
-  SendMoveFocus(PR_TRUE);
+  SendMoveFocus(true);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 TabChild::FocusPrevElement()
 {
-  SendMoveFocus(PR_FALSE);
+  SendMoveFocus(false);
   return NS_OK;
 }
 
@@ -344,10 +355,10 @@ TabChild::GetInterface(const nsIID & aIID, void **aSink)
 
 NS_IMETHODIMP
 TabChild::ProvideWindow(nsIDOMWindow* aParent, PRUint32 aChromeFlags,
-                        PRBool aCalledFromJS,
-                        PRBool aPositionSpecified, PRBool aSizeSpecified,
+                        bool aCalledFromJS,
+                        bool aPositionSpecified, bool aSizeSpecified,
                         nsIURI* aURI, const nsAString& aName,
-                        const nsACString& aFeatures, PRBool* aWindowIsNew,
+                        const nsACString& aFeatures, bool* aWindowIsNew,
                         nsIDOMWindow** aReturn)
 {
     *aReturn = nsnull;
@@ -357,7 +368,7 @@ TabChild::ProvideWindow(nsIDOMWindow* aParent, PRUint32 aChromeFlags,
         return NS_ERROR_NOT_AVAILABLE;
     }
 
-    *aWindowIsNew = PR_TRUE;
+    *aWindowIsNew = true;
     nsCOMPtr<nsIDOMWindow> win =
         do_GetInterface(static_cast<TabChild*>(newChild)->mWebNav);
     win.forget(aReturn);
@@ -461,11 +472,13 @@ TabChild::DestroyWindow()
 void
 TabChild::ActorDestroy(ActorDestroyReason why)
 {
-  // The messageManager relays messages via the TabChild which
-  // no longer exists.
-  static_cast<nsFrameMessageManager*>
-    (mTabChildGlobal->mMessageManager.get())->Disconnect();
-  mTabChildGlobal->mMessageManager = nsnull;
+  if (mTabChildGlobal) {
+    // The messageManager relays messages via the TabChild which
+    // no longer exists.
+    static_cast<nsFrameMessageManager*>
+      (mTabChildGlobal->mMessageManager.get())->Disconnect();
+    mTabChildGlobal->mMessageManager = nsnull;
+  }
 }
 
 TabChild::~TabChild()
@@ -478,11 +491,13 @@ TabChild::~TabChild()
       DestroyCx();
     }
     
-    nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(PR_FALSE);
-    if (elm) {
-      elm->Disconnect();
+    if (mTabChildGlobal) {
+      nsEventListenerManager* elm = mTabChildGlobal->GetListenerManager(false);
+      if (elm) {
+        elm->Disconnect();
+      }
+      mTabChildGlobal->mTabChild = nsnull;
     }
-    mTabChildGlobal->mTabChild = nsnull;
 }
 
 bool
@@ -497,7 +512,7 @@ TabChild::RecvLoadURL(const nsCString& uri)
         NS_WARNING("mWebNav->LoadURI failed. Eating exception, what else can I do?");
     }
 
-    return NS_SUCCEEDED(rv);
+    return true;
 }
 
 bool
@@ -512,20 +527,24 @@ TabChild::RecvShow(const nsIntSize& size)
     }
 
     if (!InitWidget(size)) {
-        return false;
+        // We can fail to initialize our widget if the <browser
+        // remote> has already been destroyed, and we couldn't hook
+        // into the parent-process's layer system.  That's not a fatal
+        // error.
+        return true;
     }
 
     baseWindow->InitWindow(0, mWidget,
                            0, 0, size.width, size.height);
     baseWindow->Create();
-    baseWindow->SetVisibility(PR_TRUE);
+    baseWindow->SetVisibility(true);
 
     // IPC uses a WebBrowser object for which DNS prefetching is turned off
     // by default. But here we really want it, so enable it explicitly
     nsCOMPtr<nsIWebBrowserSetup> webBrowserSetup = do_QueryInterface(baseWindow);
     if (webBrowserSetup) {
       webBrowserSetup->SetProperty(nsIWebBrowserSetup::SETUP_ALLOW_DNS_PREFETCH,
-                                   PR_TRUE);
+                                   true);
     } else {
         NS_WARNING("baseWindow doesn't QI to nsIWebBrowserSetup, skipping "
                    "DNS prefetching enable step.");
@@ -535,16 +554,28 @@ TabChild::RecvShow(const nsIntSize& size)
 }
 
 bool
-TabChild::RecvMove(const nsIntSize& size)
+TabChild::RecvUpdateDimensions(const nsRect& rect, const nsIntSize& size)
 {
-    printf("[TabChild] RESIZE to (w,h)= (%ud, %ud)\n", size.width, size.height);
+#ifdef DEBUG
+    printf("[TabChild] Update Dimensions to (x,y,w,h)= (%ud, %ud, %ud, %ud) and move to (w,h)= (%ud, %ud)\n", rect.x, rect.y, rect.width, rect.height, size.width, size.height);
+#endif
+
+    if (!mRemoteFrame) {
+        return true;
+    }
+
+    mOuterRect.x = rect.x;
+    mOuterRect.y = rect.y;
+    mOuterRect.width = rect.width;
+    mOuterRect.height = rect.height;
 
     mWidget->Resize(0, 0, size.width, size.height,
-                    PR_TRUE);
+                    true);
 
     nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(mWebNav);
     baseWin->SetPositionAndSize(0, 0, size.width, size.height,
-                                PR_TRUE);
+                                true);
+
     return true;
 }
 
@@ -553,6 +584,13 @@ TabChild::RecvActivate()
 {
   nsCOMPtr<nsIWebBrowserFocus> browser = do_QueryInterface(mWebNav);
   browser->Activate();
+  return true;
+}
+
+bool TabChild::RecvDeactivate()
+{
+  nsCOMPtr<nsIWebBrowserFocus> browser = do_QueryInterface(mWebNav);
+  browser->Deactivate();
   return true;
 }
 
@@ -574,6 +612,31 @@ TabChild::RecvMouseEvent(const nsString& aType,
 }
 
 bool
+TabChild::RecvRealMouseEvent(const nsMouseEvent& event)
+{
+  nsMouseEvent localEvent(event);
+  DispatchWidgetEvent(localEvent);
+  return true;
+}
+
+bool
+TabChild::RecvMouseScrollEvent(const nsMouseScrollEvent& event)
+{
+  nsMouseScrollEvent localEvent(event);
+  DispatchWidgetEvent(localEvent);
+  return true;
+}
+
+
+bool
+TabChild::RecvRealKeyEvent(const nsKeyEvent& event)
+{
+  nsKeyEvent localEvent(event);
+  DispatchWidgetEvent(localEvent);
+  return true;
+}
+
+bool
 TabChild::RecvKeyEvent(const nsString& aType,
                        const PRInt32& aKeyCode,
                        const PRInt32& aCharCode,
@@ -583,7 +646,7 @@ TabChild::RecvKeyEvent(const nsString& aType,
   nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(mWebNav);
   nsCOMPtr<nsIDOMWindowUtils> utils = do_GetInterface(window);
   NS_ENSURE_TRUE(utils, true);
-  PRBool ignored = PR_FALSE;
+  bool ignored = false;
   utils->SendKeyEvent(aType, aKeyCode, aCharCode,
                       aModifiers, aPreventDefault, &ignored);
   return true;
@@ -744,7 +807,9 @@ bool
 TabChild::RecvLoadRemoteScript(const nsString& aURL)
 {
   if (!mCx && !InitTabChildGlobal())
-    return false;
+    // This can happen if we're half-destroyed.  It's not a fatal
+    // error.
+    return true;
 
   LoadFrameScriptInternal(aURL);
   return true;
@@ -759,7 +824,7 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     mm->ReceiveMessage(static_cast<nsIDOMEventTarget*>(mTabChildGlobal),
-                       aMessage, PR_FALSE, aJSON, nsnull, nsnull);
+                       aMessage, false, aJSON, nsnull, nsnull);
   }
   return true;
 }
@@ -776,11 +841,11 @@ public:
     nsCOMPtr<nsIDOMEvent> event;
     NS_NewDOMEvent(getter_AddRefs(event), nsnull, nsnull);
     if (event) {
-      event->InitEvent(NS_LITERAL_STRING("unload"), PR_FALSE, PR_FALSE);
+      event->InitEvent(NS_LITERAL_STRING("unload"), false, false);
       nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(event));
-      privateEvent->SetTrusted(PR_TRUE);
+      privateEvent->SetTrusted(true);
 
-      PRBool dummy;
+      bool dummy;
       mTabChildGlobal->DispatchEvent(event, &dummy);
     }
 
@@ -794,10 +859,12 @@ public:
 bool
 TabChild::RecvDestroy()
 {
-  // Let the frame scripts know the child is being closed
-  nsContentUtils::AddScriptRunner(
-    new UnloadScriptEvent(this, mTabChildGlobal)
-  );
+  if (mTabChildGlobal) {
+    // Let the frame scripts know the child is being closed
+    nsContentUtils::AddScriptRunner(
+      new UnloadScriptEvent(this, mTabChildGlobal)
+    );
+  }
 
   // XXX what other code in ~TabChild() should we be running here?
   DestroyWindow();
@@ -915,7 +982,8 @@ TabChild::InitWidget(const nsIntSize& size)
 
     NS_ABORT_IF_FALSE(0 == remoteFrame->ManagedPLayersChild().Length(),
                       "shouldn't have a shadow manager yet");
-    PLayersChild* shadowManager = remoteFrame->SendPLayersConstructor();
+    LayerManager::LayersBackend be;
+    PLayersChild* shadowManager = remoteFrame->SendPLayersConstructor(&be);
     if (!shadowManager) {
       NS_WARNING("failed to construct LayersChild");
       // This results in |remoteFrame| being deleted.
@@ -923,17 +991,23 @@ TabChild::InitWidget(const nsIntSize& size)
       return false;
     }
 
-    LayerManager* lm = mWidget->GetLayerManager();
-    NS_ABORT_IF_FALSE(LayerManager::LAYERS_BASIC == lm->GetBackendType(),
-                      "content processes should only be using BasicLayers");
-
-    BasicShadowLayerManager* bslm = static_cast<BasicShadowLayerManager*>(lm);
-    NS_ABORT_IF_FALSE(!bslm->HasShadowManager(),
-                      "PuppetWidget shouldn't have shadow manager yet");
-    bslm->SetShadowManager(shadowManager);
+    ShadowLayerForwarder* lf =
+        mWidget->GetLayerManager(shadowManager, be)->AsShadowForwarder();
+    NS_ABORT_IF_FALSE(lf && lf->HasShadowManager(),
+                      "PuppetWidget should have shadow manager");
+    lf->SetParentBackendType(be);
 
     mRemoteFrame = remoteFrame;
     return true;
+}
+
+void
+TabChild::SetBackgroundColor(const nscolor& aColor)
+{
+  if (mLastBackgroundColor != aColor) {
+    mLastBackgroundColor = aColor;
+    SendSetBackgroundColor(mLastBackgroundColor);
+  }
 }
 
 static bool
@@ -959,7 +1033,7 @@ SendAsyncMessageToParent(void* aCallbackData,
 TabChildGlobal::TabChildGlobal(TabChild* aTabChild)
 : mTabChild(aTabChild)
 {
-  mMessageManager = new nsFrameMessageManager(PR_FALSE,
+  mMessageManager = new nsFrameMessageManager(false,
                                               SendSyncMessageToParent,
                                               SendAsyncMessageToParent,
                                               nsnull,
@@ -978,12 +1052,12 @@ TabChildGlobal::~TabChildGlobal()
 NS_IMPL_CYCLE_COLLECTION_CLASS(TabChildGlobal)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(TabChildGlobal,
-                                                nsDOMEventTargetHelper)
+                                                nsDOMEventTargetWrapperCache)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mMessageManager)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(TabChildGlobal,
-                                                  nsDOMEventTargetHelper)
+                                                  nsDOMEventTargetWrapperCache)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mMessageManager)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -994,7 +1068,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(TabChildGlobal)
   NS_INTERFACE_MAP_ENTRY(nsIScriptContextPrincipal)
   NS_INTERFACE_MAP_ENTRY(nsIScriptObjectPrincipal)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(ContentFrameMessageManager)
-NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetWrapperCache)
 
 NS_IMPL_ADDREF_INHERITED(TabChildGlobal, nsDOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(TabChildGlobal, nsDOMEventTargetHelper)
@@ -1028,6 +1102,20 @@ TabChildGlobal::GetDocShell(nsIDocShell** aDocShell)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+TabChildGlobal::Btoa(const nsAString& aBinaryData,
+                     nsAString& aAsciiBase64String)
+{
+  return nsContentUtils::Btoa(aBinaryData, aAsciiBase64String);
+}
+
+NS_IMETHODIMP
+TabChildGlobal::Atob(const nsAString& aAsciiString,
+                     nsAString& aBinaryData)
+{
+  return nsContentUtils::Atob(aAsciiString, aBinaryData);
+}
+
 JSContext*
 TabChildGlobal::GetJSContextForEventHandlers()
 {
@@ -1043,4 +1131,3 @@ TabChildGlobal::GetPrincipal()
     return nsnull;
   return mTabChild->GetPrincipal();
 }
-
