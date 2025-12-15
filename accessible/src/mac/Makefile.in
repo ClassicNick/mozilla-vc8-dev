@@ -56,6 +56,7 @@ CMMSRCS = nsAccessNodeWrap.mm \
           mozDocAccessible.mm \
           mozActionElements.mm \
           mozTextAccessible.mm \
+          mozHTMLAccessible.mm \
           $(NULL)
           
 
@@ -75,7 +76,6 @@ EXPORTS = \
   nsApplicationAccessibleWrap.h \
   mozDocAccessible.h \
   mozAccessible.h \
-  mozAccessibleWrapper.h \
   mozAccessibleProtocol.h \
   mozActionElements.h \
   mozTextAccessible.h \

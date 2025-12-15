@@ -77,6 +77,8 @@
 #  define WIDGET_MODULES MODULE(nsWidgetQtModule)
 #elif defined(MOZ_WIDGET_ANDROID)
 #  define WIDGET_MODULES MODULE(nsWidgetAndroidModule)
+#elif defined(MOZ_WIDGET_GONK)
+#  define WIDGET_MODULES MODULE(nsWidgetGonkModule)
 #else
 #  error Unknown widget module.
 #endif
@@ -102,7 +104,6 @@
 #ifdef MOZ_PREF_EXTENSIONS
 #ifdef MOZ_ENABLE_GTK2
 #define SYSTEMPREF_MODULES \
-    MODULE(nsSystemPrefModule) \
     MODULE(nsAutoConfigModule)
 #else
 #define SYSTEMPREF_MODULES MODULE(nsAutoConfigModule)
@@ -115,13 +116,6 @@
 #define LAYOUT_DEBUG_MODULE MODULE(nsLayoutDebugModule)
 #else
 #define LAYOUT_DEBUG_MODULE
-#endif
-
-#if defined(ENABLE_JETPACK_SERVICE)
-#define JETPACK_MODULES \
-    MODULE(jetpack)
-#else
-#define JETPACK_MODULES
 #endif
 
 #ifdef MOZ_JSDEBUGGER
@@ -220,10 +214,10 @@
     MODULE(nsWindowDataSourceModule)         \
     MODULE(nsParserModule)                   \
     MODULE(nsGfxModule)                      \
+    MODULE(nsProfilerModule)                 \
     WIDGET_MODULES                           \
     MODULE(nsImageLib2Module)                \
     ICON_MODULE                              \
-    JETPACK_MODULES                          \
     MODULE(nsPluginModule)                   \
     MODULE(nsLayoutModule)                   \
     MODULE(docshell_provider)                \

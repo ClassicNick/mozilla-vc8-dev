@@ -43,6 +43,7 @@
 #include "nsMargin.h"
 #include "nsStyleCoord.h"
 #include "nsIFrame.h"
+#include "mozilla/AutoRestore.h"
 
 class nsPresContext;
 class nsRenderingContext;
@@ -369,6 +370,12 @@ public:
     
   } mFlags;
 
+private:
+
+  mozilla::AutoRestore<nsIFrame*> mRestoreCurrentInflationContainer;
+  mozilla::AutoRestore<nscoord> mRestoreCurrentInflationContainerWidth;
+
+public:
   // Note: The copy constructor is written by the compiler automatically. You
   // can use that and then override specific values if you want, or you can
   // call Init as desired...
@@ -419,9 +426,14 @@ public:
    *                     Only used with line-height:-moz-block-height.
    *                     NS_AUTOHEIGHT results in a normal line-height for
    *                     line-height:-moz-block-height.
+   * @param aFontSizeInflation The result of the appropriate
+   *                           nsLayoutUtils::FontSizeInflationFor call,
+   *                           or 1.0 if during intrinsic size
+   *                           calculation.
    */
   static nscoord CalcLineHeight(nsStyleContext* aStyleContext,
-                                nscoord aBlockHeight);
+                                nscoord aBlockHeight,
+                                float aFontSizeInflation);
 
 
   void ComputeContainingBlockRectangle(nsPresContext*          aPresContext,

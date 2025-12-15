@@ -41,6 +41,7 @@
 #include "SVGAnimatedPathSegList.h"
 #include "nsCOMPtr.h"
 #include "nsSVGAttrTearoffTable.h"
+#include "SVGPathSegUtils.h"
 
 // See the comment in this file's header.
 
@@ -230,18 +231,18 @@ DOMSVGPathSegList::InternalListWillChangeTo(const SVGPathData& aNewValue)
 bool
 DOMSVGPathSegList::AttrIsAnimating() const
 {
-  return const_cast<DOMSVGPathSegList*>(this)->InternalAList().IsAnimating();
+  return InternalAList().IsAnimating();
 }
 
 SVGPathData&
-DOMSVGPathSegList::InternalList()
+DOMSVGPathSegList::InternalList() const
 {
   SVGAnimatedPathSegList *alist = mElement->GetAnimPathSegList();
   return mIsAnimValList && alist->IsAnimating() ? *alist->mAnimVal : alist->mBaseVal;
 }
 
 SVGAnimatedPathSegList&
-DOMSVGPathSegList::InternalAList()
+DOMSVGPathSegList::InternalAList() const
 {
   NS_ABORT_IF_FALSE(mElement->GetAnimPathSegList(), "Internal error");
   return *mElement->GetAnimPathSegList();

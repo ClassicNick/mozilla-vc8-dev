@@ -233,23 +233,6 @@ nsHtml5TreeOperation::Append(nsIContent* aNode,
   return rv;
 }
 
-class nsDocElementCreatedNotificationRunner : public nsRunnable
-{
-public:
-  nsDocElementCreatedNotificationRunner(nsIDocument* aDoc)
-    : mDoc(aDoc)
-  {
-  }
-
-  NS_IMETHOD Run()
-  {
-    nsContentSink::NotifyDocElementCreated(mDoc);
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIDocument> mDoc;
-};
-
 nsresult
 nsHtml5TreeOperation::AppendToDocument(nsIContent* aNode,
                                        nsHtml5TreeOpExecutor* aBuilder)
@@ -306,8 +289,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
       PRUint32 childCount = parent->GetChildCount();
       bool didAppend = false;
-      while (node->GetChildCount()) {
-        nsCOMPtr<nsIContent> child = node->GetChildAt(0);
+      while (node->HasChildren()) {
+        nsCOMPtr<nsIContent> child = node->GetFirstChild();
         rv = node->RemoveChildAt(0, true);
         NS_ENSURE_SUCCESS(rv, rv);
         rv = parent->AppendChildTo(child, false);
@@ -386,10 +369,10 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
         GetNodeInfo(name, nsnull, ns, nsIDOMNode::ELEMENT_NODE);
       NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
       NS_NewElement(getter_AddRefs(newContent),
-                    ns, nodeInfo.forget(),
+                    nodeInfo.forget(),
                     (mOpCode == eTreeOpCreateElementNetwork ?
                      dom::FROM_PARSER_NETWORK
-                     : (aBuilder->IsFragmentMode() ?
+                     : (aBuilder->BelongsToStringParser() ?
                         dom::FROM_PARSER_FRAGMENT :
                         dom::FROM_PARSER_DOCUMENT_WRITE)));
       NS_ASSERTION(newContent, "Element creation created null pointer.");
@@ -431,11 +414,10 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
           nsCOMPtr<nsIContent> optionElt;
           nsCOMPtr<nsINodeInfo> ni = optionNodeInfo;
           NS_NewElement(getter_AddRefs(optionElt), 
-                        optionNodeInfo->NamespaceID(), 
                         ni.forget(),
                         (mOpCode == eTreeOpCreateElementNetwork ?
                          dom::FROM_PARSER_NETWORK
-                         : (aBuilder->IsFragmentMode() ?
+                         : (aBuilder->BelongsToStringParser() ?
                             dom::FROM_PARSER_FRAGMENT :
                             dom::FROM_PARSER_DOCUMENT_WRITE)));
           nsCOMPtr<nsIContent> optionText;
@@ -535,8 +517,8 @@ nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
                                      aBuilder->GetDocument());
 
         PRUint32 pos = foster->IndexOf(table);
-        
-        nsIContent* previousSibling = foster->GetChildAt(pos - 1);
+
+        nsIContent* previousSibling = table->GetPreviousSibling();
         if (previousSibling && previousSibling->IsNodeOfType(nsINode::eTEXT)) {
           return AppendTextToTextNode(buffer, 
                                       length, 

@@ -43,6 +43,7 @@
 #include "mozilla/Util.h"
 
 #include "nsCOMPtr.h"
+#include "nsAutoPtr.h"
 #include "nsMemory.h"
 
 #include "nsLocalFile.h"
@@ -144,52 +145,36 @@ public:
     nsresult Resolve(const WCHAR* in, WCHAR* out);
 
 private:
-    Mutex         mLock;
-    IPersistFile* mPersistFile;
-    // Win 95 and 98 don't have IShellLinkW
-    IShellLinkW*  mShellLink;
+    Mutex                  mLock;
+    nsRefPtr<IPersistFile> mPersistFile;
+    nsRefPtr<IShellLinkW>  mShellLink;
 };
 
-ShortcutResolver::ShortcutResolver() : mLock("ShortcutResolver.mLock")
+ShortcutResolver::ShortcutResolver() :
+    mLock("ShortcutResolver.mLock")
 {
-    mPersistFile = nsnull;
-    mShellLink  = nsnull;
+    CoInitialize(NULL);
 }
 
 ShortcutResolver::~ShortcutResolver()
 {
-    // Release the pointer to the IPersistFile interface.
-    if (mPersistFile)
-        mPersistFile->Release();
-
-    // Release the pointer to the IShellLink interface.
-    if (mShellLink)
-        mShellLink->Release();
-
     CoUninitialize();
 }
 
 nsresult
 ShortcutResolver::Init()
 {
-    CoInitialize(NULL);  // FIX: we should probably move somewhere higher up during startup
-
-    HRESULT hres; 
-    hres = CoCreateInstance(CLSID_ShellLink,
-                            NULL,
-                            CLSCTX_INPROC_SERVER,
-                            IID_IShellLinkW,
-                            (void**)&(mShellLink));
-    if (SUCCEEDED(hres))
-    {
-        // Get a pointer to the IPersistFile interface.
-        hres = mShellLink->QueryInterface(IID_IPersistFile,
-                                          (void**)&mPersistFile);
-    }
-
-    if (mPersistFile == nsnull || mShellLink == nsnull)
+    // Get a pointer to the IPersistFile interface.
+    if (FAILED(CoCreateInstance(CLSID_ShellLink,
+                                NULL,
+                                CLSCTX_INPROC_SERVER,
+                                IID_IShellLinkW,
+                                getter_AddRefs(mShellLink))) ||
+        FAILED(mShellLink->QueryInterface(IID_IPersistFile,
+                                          getter_AddRefs(mPersistFile)))) {
+        mShellLink = nsnull;
         return NS_ERROR_FAILURE;
-
+    }
     return NS_OK;
 }
 
@@ -197,24 +182,14 @@ ShortcutResolver::Init()
 nsresult
 ShortcutResolver::Resolve(const WCHAR* in, WCHAR* out)
 {
+    if (!mShellLink)
+        return NS_ERROR_FAILURE;
+
     MutexAutoLock lock(mLock);
 
-    // see if we can Load the path.
-    HRESULT hres = mPersistFile->Load(in, STGM_READ);
-
-    if (FAILED(hres))
-        return NS_ERROR_FAILURE;
-
-    // Resolve the link.
-    hres = mShellLink->Resolve(nsnull, SLR_NO_UI);
-
-    if (FAILED(hres))
-        return NS_ERROR_FAILURE;
-
-    // Get the path to the link target.
-    hres = mShellLink->GetPath(out, MAX_PATH, NULL, SLGP_UNCPRIORITY);
-
-    if (FAILED(hres))
+    if (FAILED(mPersistFile->Load(in, STGM_READ)) ||
+        FAILED(mShellLink->Resolve(nsnull, SLR_NO_UI)) ||
+        FAILED(mShellLink->GetPath(out, MAX_PATH, NULL, SLGP_UNCPRIORITY)))
         return NS_ERROR_FAILURE;
     return NS_OK;
 }
@@ -573,11 +548,12 @@ ReadDir(nsDir *dir, PRDirFlags flags, nsString& name)
 }
 
 static nsresult
-CloseDir(nsDir *d)
+CloseDir(nsDir *&d)
 {
     NS_ENSURE_ARG(d);
 
     BOOL isOk = FindClose(d->handle);
+    // PR_DELETE also nulls out the passed in pointer.
     PR_DELETE(d);
     return isOk ? NS_OK : ConvertWinError(GetLastError());
 }
@@ -635,8 +611,6 @@ class nsDirEnumerator : public nsISimpleEnumerator,
                     if (NS_FAILED(CloseDir(mDir)))
                         return NS_ERROR_FAILURE;
 
-                    mDir = nsnull;
-
                     *result = false;
                     return NS_OK;
                 }
@@ -693,7 +667,6 @@ class nsDirEnumerator : public nsISimpleEnumerator,
                 NS_ASSERTION(NS_SUCCEEDED(rv), "close failed");
                 if (NS_FAILED(rv))
                     return NS_ERROR_FAILURE;
-                mDir = nsnull;
             }
             return NS_OK;
         }
@@ -2808,7 +2781,7 @@ nsLocalFile::RevealUsingShell()
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // All of these shell32.dll related pointers should be non NULL 
   // on XP and later.
-  if (!sLibShell || !sILCreateFromPathW || !sSHOpenFolderAndSelectItems) {
+  if (!sILCreateFromPathW || !sSHOpenFolderAndSelectItems) {
     return NS_ERROR_FAILURE;
   }
 
@@ -3172,18 +3145,18 @@ nsLocalFile::GlobalInit()
 
     // shell32.dll should be loaded already, so we are not actually 
     // loading the library here.
-    sLibShell = PR_LoadLibrary("shell32.dll");
-    if (sLibShell) {
+    HMODULE hLibShell = GetModuleHandleW(L"shell32.dll");
+    if (hLibShell) {
       // ILCreateFromPathW is available in XP and up.
       sILCreateFromPathW = (ILCreateFromPathWPtr) 
-                           PR_FindFunctionSymbol(sLibShell, 
-                                                 "ILCreateFromPathW");
+                            GetProcAddress(hLibShell, 
+                                           "ILCreateFromPathW");
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
       // SHOpenFolderAndSelectItems is available in XP and up.
       sSHOpenFolderAndSelectItems = (SHOpenFolderAndSelectItemsPtr) 
-                                     PR_FindFunctionSymbol(sLibShell, 
-                                                           "SHOpenFolderAndSelectItems");
+                                     GetProcAddress(hLibShell, 
+                                                    "SHOpenFolderAndSelectItems");
 #endif
     }
 }
@@ -3191,9 +3164,6 @@ nsLocalFile::GlobalInit()
 void
 nsLocalFile::GlobalShutdown()
 {
-    if (sLibShell) {
-      PR_UnloadLibrary(sLibShell);
-    }
     NS_DestroyShortcutResolver();
 }
 

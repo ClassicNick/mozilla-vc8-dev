@@ -37,18 +37,22 @@
 #ifndef __NS_SVGLENGTH2_H__
 #define __NS_SVGLENGTH2_H__
 
-#include "nsIDOMSVGLength.h"
-#include "nsIDOMSVGAnimatedLength.h"
-#include "nsSVGUtils.h"
-#include "nsSVGElement.h"
+#include "nsAutoPtr.h"
+#include "nsCoord.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsDOMError.h"
-#include "nsMathUtils.h"
-
+#include "nsError.h"
+#include "nsIDOMSVGAnimatedLength.h"
+#include "nsIDOMSVGLength.h"
 #include "nsISMILAttr.h"
-class nsSMILValue;
-class nsISMILType;
+#include "nsMathUtils.h"
+#include "nsSVGElement.h"
+#include "nsSVGUtils.h"
 
 class nsIFrame;
+class nsISMILAnimationElement;
+class nsSMILValue;
+class nsSVGSVGElement;
 
 class nsSVGLength2
 {
@@ -100,6 +104,9 @@ public:
   float GetAnimValue(nsSVGSVGElement* aCtx) const
     { return mAnimVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType); }
 
+  bool HasBaseVal() const {
+    return mIsBaseSet;
+  }
   // Returns true if the animated value of this length has been explicitly
   // set (either by animation, or by taking on the base value which has been
   // explicitly set by markup or a DOM call), false otherwise.

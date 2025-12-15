@@ -77,26 +77,30 @@
 #ifndef SAMPLER_H
 #define SAMPLER_H
 
-#if defined(_MSC_VER)
-#define FULLFUNCTION __FUNCSIG__
-#elif (__GNUC__ >= 4)
-#define FULLFUNCTION __PRETTY_FUNCTION__
+// Redefine the macros for platforms where SPS is supported.
+#if defined(ANDROID) || defined(__linux__) || defined(XP_MACOSX) || defined(XP_WIN) && !defined (_MSC_VER) || _MSC_VER >= 1400
+
+#include "sps_sampler.h"
+
 #else
-#define FULLFUNCTION __FUNCTION__
-#endif
 
 // Initialize the sampler. Any other calls will be silently discarded
 // before the sampler has been initialized (i.e. early start-up code)
 #define SAMPLER_INIT()
 #define SAMPLER_DEINIT()
-#define SAMPLE_CHECKPOINT(name_space, info)
+#define SAMPLER_START(entries, interval, features, featureCount)
+#define SAMPLER_STOP()
+#define SAMPLER_IS_ACTIVE() false
+#define SAMPLER_SAVE()
+// Returned string must be free'ed
+#define SAMPLER_GET_PROFILE() NULL
+#define SAMPLER_RESPONSIVENESS(time) NULL
+#define SAMPLER_GET_RESPONSIVENESS() NULL
+#define SAMPLER_GET_FEATURES() NULL
+#define SAMPLE_LABEL(name_space, info)
+#define SAMPLE_LABEL_FN(name_space, info)
 #define SAMPLE_MARKER(info)
 
-// Redefine the macros for platforms where SPS is supported.
-#ifdef ANDROID
-
-#include "sps_sampler.h"
-
 #endif
 
-#endif
+#endif // ifndef SAMPLER_H

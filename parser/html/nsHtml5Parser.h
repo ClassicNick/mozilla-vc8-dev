@@ -47,7 +47,6 @@
 #include "nsITokenizer.h"
 #include "nsThreadUtils.h"
 #include "nsIContentSink.h"
-#include "nsIParserFilter.h"
 #include "nsIRequest.h"
 #include "nsIChannel.h"
 #include "nsCOMArray.h"
@@ -118,11 +117,6 @@ class nsHtml5Parser : public nsIParser,
     }
 
     /**
-     * No-op for backwards compat.
-     */
-    NS_IMETHOD_(void) SetParserFilter(nsIParserFilter* aFilter);
-
-    /**
      * Get the channel associated with this parser
      * @param aChannel out param that will contain the result
      * @return NS_OK if successful or NS_NOT_AVAILABLE if not
@@ -137,7 +131,7 @@ class nsHtml5Parser : public nsIParser,
     /**
      * Get the stream parser for this parser
      */
-    NS_IMETHOD GetStreamListener(nsIStreamListener** aListener);
+    virtual nsIStreamListener* GetStreamListener();
 
     /**
      * Don't call. For interface compat only.
@@ -155,6 +149,11 @@ class nsHtml5Parser : public nsIParser,
     NS_IMETHOD_(void) UnblockParser();
 
     /**
+     * Asynchronously continues parsing.
+     */
+    NS_IMETHOD_(void) ContinueInterruptedParsingAsync();
+
+    /**
      * Query whether the parser is enabled (i.e. not blocked) or not.
      */
     NS_IMETHOD_(bool) IsParserEnabled();
@@ -167,7 +166,7 @@ class nsHtml5Parser : public nsIParser,
     /**
      * Set up request observer.
      *
-     * @param   aURL ignored (for interface compat only)
+     * @param   aURL used for View Source title
      * @param   aListener a listener to forward notifications to
      * @param   aKey the root context key (used for document.write)
      * @param   aMode ignored (for interface compat only)
@@ -193,11 +192,6 @@ class nsHtml5Parser : public nsIParser,
                      nsDTDMode aMode = eDTDMode_autodetect);
 
     /**
-     * Gets the key passed to initial Parse()
-     */
-    NS_IMETHOD_(void *) GetRootContextKey();
-
-    /**
      * Stops the parser prematurely
      */
     NS_IMETHOD Terminate();
@@ -219,7 +213,7 @@ class nsHtml5Parser : public nsIParser,
     NS_IMETHODIMP CancelParsingEvents();
 
     /**
-     * Sets the state to initial values
+     * Don't call. For interface compat only.
      */
     virtual void Reset();
     
@@ -258,25 +252,6 @@ class nsHtml5Parser : public nsIParser,
     virtual bool IsScriptCreated();
 
     /* End nsIParser  */
-
-    /**
-     * Invoke the fragment parsing algorithm (innerHTML).
-     *
-     * @param aSourceBuffer the string being set as innerHTML
-     * @param aTargetNode the target container
-     * @param aContextLocalName local name of context node
-     * @param aContextNamespace namespace of context node
-     * @param aQuirks true to make <table> not close <p>
-     * @param aPreventScriptExecution true to prevent scripts from executing;
-     * don't set to false when parsing into a target node that has been bound
-     * to tree.
-     */
-    nsresult ParseHtml5Fragment(const nsAString& aSourceBuffer,
-                                nsIContent* aTargetNode,
-                                nsIAtom* aContextLocalName,
-                                PRInt32 aContextNamespace,
-                                bool aQuirks,
-                                bool aPreventScriptExecution);
 
     // Not from an external interface
     // Non-inherited methods

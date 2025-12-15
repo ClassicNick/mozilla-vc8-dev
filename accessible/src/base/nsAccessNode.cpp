@@ -47,7 +47,6 @@
 #include "nsHashtable.h"
 #include "nsAccessibilityService.h"
 #include "nsApplicationAccessibleWrap.h"
-#include "nsIAccessibleDocument.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocument.h"
@@ -147,16 +146,6 @@ nsAccessNode::Shutdown()
 {
   mContent = nsnull;
   mWeakShell = nsnull;
-}
-
-// nsIAccessNode
-NS_IMETHODIMP
-nsAccessNode::GetUniqueID(void **aUniqueID)
-{
-  NS_ENSURE_ARG_POINTER(aUniqueID);
-
-  *aUniqueID = UniqueID();
-  return NS_OK;
 }
 
 nsApplicationAccessible*

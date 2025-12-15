@@ -57,6 +57,7 @@
 #include "qcms.h"
 
 #include <dlfcn.h>
+#include "mozilla/gfx/2D.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -91,13 +92,6 @@ DisableFontActivation()
     if (CTFontManagerSetAutoActivationSettingPtr) {
         CTFontManagerSetAutoActivationSettingPtr(mainBundleID,
                                                  kAutoActivationDisabled);
-    }
-
-    if (mainBundleID) {
-        ::CFRelease(mainBundleID);
-    }
-    if (mainBundle) {
-        ::CFRelease(mainBundle);
     }
 }
 
@@ -138,12 +132,6 @@ gfxPlatformMac::CreateOffscreenSurface(const gfxIntSize& size,
     NS_IF_ADDREF(newSurface);
     return newSurface;
 }
-    
-RefPtr<DrawTarget>
-gfxPlatformMac::CreateOffscreenDrawTarget(const IntSize& aSize, SurfaceFormat aFormat)
-{
-  return Factory::CreateDrawTarget(BACKEND_SKIA, aSize, aFormat);
-}
 
 already_AddRefed<gfxASurface>
 gfxPlatformMac::OptimizeImage(gfxImageSurface *aSurface,
@@ -169,14 +157,14 @@ RefPtr<ScaledFont>
 gfxPlatformMac::GetScaledFontForFont(gfxFont *aFont)
 {
     gfxMacFont *font = static_cast<gfxMacFont*>(aFont);
+    return font->GetScaledFont();
+}
 
-    NativeFont nativeFont;
-    nativeFont.mType = NATIVE_FONT_MAC_FONT_FACE;
-    nativeFont.mFont = font->GetCGFontRef();
-    RefPtr<ScaledFont> scaledFont =
-      mozilla::gfx::Factory::CreateScaledFontForNativeFont(nativeFont, font->GetAdjustedSize());
-
-    return scaledFont;
+bool
+gfxPlatformMac::SupportsAzure(BackendType& aBackend)
+{
+  aBackend = BACKEND_COREGRAPHICS;
+  return true;
 }
 
 nsresult
@@ -310,6 +298,36 @@ gfxPlatformMac::ReadAntiAliasingThreshold()
 
     return threshold;
 }
+
+already_AddRefed<gfxASurface>
+gfxPlatformMac::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
+{
+  if (aTarget->GetType() == BACKEND_COREGRAPHICS) {
+    void *surface = aTarget->GetUserData(&ThebesSurfaceKey);
+    if (surface) {
+      nsRefPtr<gfxASurface> surf = static_cast<gfxQuartzSurface*>(surface);
+      return surf.forget();
+    } else {
+      CGContextRef cg = static_cast<CGContextRef>(aTarget->GetNativeSurface(NATIVE_SURFACE_CGCONTEXT));
+
+      //XXX: it would be nice to have an implicit conversion from IntSize to gfxIntSize
+      IntSize intSize = aTarget->GetSize();
+      gfxIntSize size(intSize.width, intSize.height);
+
+      nsRefPtr<gfxASurface> surf =
+        new gfxQuartzSurface(cg, size);
+
+      // add a reference to be held by the drawTarget
+      surf->AddRef();
+      aTarget->AddUserData(&ThebesSurfaceKey, surf.get(), DestroyThebesSurface);
+
+      return surf.forget();
+    }
+  }
+
+  return gfxPlatform::GetThebesSurfaceForDrawTarget(aTarget);
+}
+
 
 qcms_profile *
 gfxPlatformMac::GetPlatformCMSOutputProfile()

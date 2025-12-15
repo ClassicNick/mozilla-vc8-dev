@@ -124,6 +124,8 @@ _TEST_FILES = \
 		file_bug680257.html \
 		test_bug691547.html \
 		bug691547_frame.html \
+		test_bug694612.html \
+		test_bug713825.html \
 		$(NULL)
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)

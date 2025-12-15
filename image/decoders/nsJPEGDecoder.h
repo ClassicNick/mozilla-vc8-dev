@@ -63,7 +63,7 @@ extern "C" {
 #include <setjmp.h>
 
 namespace mozilla {
-namespace imagelib {
+namespace image {
 
 typedef struct {
     struct jpeg_error_mgr pub;  /* "public" fields for IJG library*/
@@ -124,12 +124,11 @@ public:
   qcms_transform *mTransform;
 
   bool mReading;
-  bool mInvertedCMYK;
 
   PRUint32 mCMSMode;
 };
 
-} // namespace imagelib
+} // namespace image
 } // namespace mozilla
 
 #endif // nsJPEGDecoder_h__

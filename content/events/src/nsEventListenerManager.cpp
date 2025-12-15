@@ -82,6 +82,7 @@
 #include "nsDOMEvent.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsJSEnvironment.h"
+#include "sampler.h"
 
 using namespace mozilla::dom;
 
@@ -405,7 +406,7 @@ nsEventListenerManager::SetJSEventListener(nsIScriptContext *aContext,
   if (!ls) {
     // If we didn't find a script listener or no listeners existed
     // create and add a new one.
-    nsCOMPtr<nsIDOMEventListener> scriptListener;
+    nsCOMPtr<nsIJSEventListener> scriptListener;
     rv = NS_NewJSEventListener(aContext, aScopeObject, mTarget, aName,
                                aHandler, getter_AddRefs(scriptListener));
     if (NS_SUCCEEDED(rv)) {
@@ -579,7 +580,7 @@ nsEventListenerManager::CompileEventHandlerInternal(nsListenerStruct *aListenerS
   nsIScriptContext *context = listener->GetEventContext();
   nsCOMPtr<nsIScriptEventHandlerOwner> handlerOwner =
     do_QueryInterface(mTarget);
-  nsScriptObjectHolder handler(context);
+  nsScriptObjectHolder<JSObject> handler(context);
 
   if (handlerOwner) {
     result = handlerOwner->GetCompiledEventHandler(aListenerStruct->mTypeAtom,
@@ -699,12 +700,10 @@ nsEventListenerManager::CompileEventHandlerInternal(nsListenerStruct *aListenerS
 
   if (handler) {
     // Bind it
-    nsScriptObjectHolder boundHandler(context);
+    nsScriptObjectHolder<JSObject> boundHandler(context);
     context->BindCompiledEventHandler(mTarget, listener->GetEventScope(),
-                                      handler, boundHandler);
-    listener->SetHandler(
-      static_cast<JSObject*>(
-        static_cast<void*>(boundHandler)));
+                                      handler.get(), boundHandler);
+    listener->SetHandler(boundHandler.get());
   }
 
   return result;
@@ -753,6 +752,7 @@ nsEventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
                                             nsEventStatus* aEventStatus,
                                             nsCxPusher* aPusher)
 {
+  SAMPLE_LABEL("nsEventListenerManager", "HandleEventInternal");
   //Set the value of the internal PreventDefault flag properly based on aEventStatus
   if (*aEventStatus == nsEventStatus_eConsumeNoDefault) {
     aEvent->flags |= NS_EVENT_FLAG_NO_DEFAULT;

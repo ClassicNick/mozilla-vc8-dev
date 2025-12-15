@@ -75,21 +75,27 @@ NS_CYCLE_COLLECTION_CLASSNAME(nsXPCWrappedJS)::Traverse
 
     // nsXPCWrappedJS keeps its own refcount artificially at or above 1, see the
     // comment above nsXPCWrappedJS::AddRef.
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "self");
     cb.NoteXPCOMChild(s);
 
-    if (refcnt > 1)
+    if (refcnt > 1) {
         // nsXPCWrappedJS roots its mJSObj when its refcount is > 1, see
         // the comment above nsXPCWrappedJS::AddRef.
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mJSObj");
         cb.NoteScriptChild(nsIProgrammingLanguage::JAVASCRIPT,
                            tmp->GetJSObjectPreserveColor());
+    }
 
     nsXPCWrappedJS* root = tmp->GetRootWrapper();
-    if (root == tmp)
+    if (root == tmp) {
         // The root wrapper keeps the aggregated native object alive.
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "aggregated native");
         cb.NoteXPCOMChild(tmp->GetAggregatedNativeObject());
-    else
+    } else {
         // Non-root wrappers keep their root alive.
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "root");
         cb.NoteXPCOMChild(static_cast<nsIXPConnectWrappedJS*>(root));
+    }
 
     return NS_OK;
 }
@@ -316,7 +322,7 @@ nsXPCWrappedJS::GetNewOrUsed(XPCCallContext& ccx,
     nsXPCWrappedJS* wrapper = nsnull;
     nsXPCWrappedJSClass* clazz = nsnull;
     XPCJSRuntime* rt = ccx.GetRuntime();
-    JSBool release_root = JS_FALSE;
+    JSBool release_root = false;
 
     map = rt->GetWrappedJSMap();
     if (!map) {
@@ -389,7 +395,7 @@ nsXPCWrappedJS::GetNewOrUsed(XPCCallContext& ccx,
             if (!root)
                 goto return_wrapper;
 
-            release_root = JS_TRUE;
+            release_root = true;
 
             {   // scoped lock
 #if DEBUG_xpc_leaks

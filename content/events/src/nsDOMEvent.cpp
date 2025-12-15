@@ -61,6 +61,10 @@
 #include "nsIScriptError.h"
 #include "nsDOMPopStateEvent.h"
 #include "mozilla/Preferences.h"
+#include "nsJSUtils.h"
+#include "DictionaryHelpers.h"
+#include "nsLayoutUtils.h"
+#include "nsIScrollableFrame.h"
 
 using namespace mozilla;
 
@@ -93,7 +97,6 @@ static const char* const sEventNames[] = {
   "durationchange", "volumechange", "MozAudioAvailable",
 #endif // MOZ_MEDIA
   "MozAfterPaint",
-  "MozBeforePaint",
   "MozBeforeResize",
   "mozfullscreenchange",
   "mozfullscreenerror",
@@ -109,6 +112,12 @@ static const char* const sEventNames[] = {
   "MozTouchDown",
   "MozTouchMove",
   "MozTouchUp",
+  "touchstart",
+  "touchend",
+  "touchmove",
+  "touchcancel",
+  "touchenter",
+  "touchleave",
   "MozScrolledAreaChanged",
   "transitionend",
   "animationstart",
@@ -123,7 +132,6 @@ static char *sPopupAllowedEvents;
 
 nsDOMEvent::nsDOMEvent(nsPresContext* aPresContext, nsEvent* aEvent)
 {
-  mPresContext = aPresContext;
   mPrivateDataDuplicated = false;
 
   if (aEvent) {
@@ -160,6 +168,15 @@ nsDOMEvent::nsDOMEvent(nsPresContext* aPresContext, nsEvent* aEvent)
     mEvent->time = PR_Now();
   }
 
+  InitPresContextData(aPresContext);
+
+  NS_ASSERTION(mEvent->message != NS_PAINT, "Trying to create a DOM paint event!");
+}
+
+void
+nsDOMEvent::InitPresContextData(nsPresContext* aPresContext)
+{
+  mPresContext = aPresContext;
   // Get the explicit original target (if it's anonymous make it null)
   {
     nsCOMPtr<nsIContent> content = GetTargetFromFrame();
@@ -169,8 +186,6 @@ nsDOMEvent::nsDOMEvent(nsPresContext* aPresContext, nsEvent* aEvent)
       mExplicitOriginalTarget = nsnull;
     }
   }
-
-  NS_ASSERTION(mEvent->message != NS_PAINT, "Trying to create a DOM paint event!");
 }
 
 nsDOMEvent::~nsDOMEvent() 
@@ -191,6 +206,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMEvent)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNSEvent)
   NS_INTERFACE_MAP_ENTRY(nsIPrivateDOMEvent)
+  NS_INTERFACE_MAP_ENTRY(nsIJSNativeInitializer)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Event)
 NS_INTERFACE_MAP_END
 
@@ -374,6 +390,53 @@ nsDOMEvent::SetTrusted(bool aTrusted)
 }
 
 NS_IMETHODIMP
+nsDOMEvent::Initialize(nsISupports* aOwner, JSContext* aCx, JSObject* aObj,
+                       PRUint32 aArgc, jsval* aArgv)
+{
+  NS_ENSURE_TRUE(aArgc >= 1, NS_ERROR_XPC_NOT_ENOUGH_ARGS);
+
+  bool trusted = false;
+  nsCOMPtr<nsPIDOMWindow> w = do_QueryInterface(aOwner);
+  if (w) {
+    nsCOMPtr<nsIDocument> d = do_QueryInterface(w->GetExtantDocument());
+    if (d) {
+      trusted = nsContentUtils::IsChromeDoc(d);
+      nsIPresShell* s = d->GetShell();
+      if (s) {
+        InitPresContextData(s->GetPresContext());
+      }
+    }
+  }
+
+  JSAutoRequest ar(aCx);
+  JSString* jsstr = JS_ValueToString(aCx, aArgv[0]);
+  if (!jsstr) {
+    return NS_ERROR_DOM_SYNTAX_ERR;
+  }
+
+  JS::Anchor<JSString*> deleteProtector(jsstr);
+
+  nsDependentJSString type;
+  NS_ENSURE_STATE(type.init(aCx, jsstr));
+
+  nsresult rv = InitFromCtor(type, aCx, aArgc >= 2 ? &(aArgv[1]) : nsnull);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  SetTrusted(trusted);
+  return NS_OK;
+}
+
+nsresult
+nsDOMEvent::InitFromCtor(const nsAString& aType,
+                         JSContext* aCx, jsval* aVal)
+{
+  mozilla::dom::EventInit d;
+  nsresult rv = d.Init(aCx, aVal);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return InitEvent(aType, d.bubbles, d.cancelable);
+}
+
+NS_IMETHODIMP
 nsDOMEvent::GetEventPhase(PRUint16* aEventPhase)
 {
   // Note, remember to check that this works also
@@ -451,13 +514,11 @@ ReportUseOfDeprecatedMethod(nsEvent* aEvent, nsIDOMEvent* aDOMEvent,
   nsAutoString type;
   aDOMEvent->GetType(type);
   const PRUnichar *strings[] = { type.get() };
-  nsContentUtils::ReportToConsole(nsContentUtils::eDOM_PROPERTIES,
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  "DOM Events", doc,
+                                  nsContentUtils::eDOM_PROPERTIES,
                                   aWarning,
-                                  strings, ArrayLength(strings),
-                                  nsnull,
-                                  EmptyString(), 0, 0,
-                                  nsIScriptError::warningFlag,
-                                  "DOM Events", doc);
+                                  strings, ArrayLength(strings));
 }
 
 NS_IMETHODIMP
@@ -527,7 +588,7 @@ nsDOMEvent::InitEvent(const nsAString& aEventTypeArg, bool aCanBubbleArg, bool a
 
     bool enabled = false;
     nsContentUtils::GetSecurityManager()->
-      IsCapabilityEnabled("UniversalBrowserWrite", &enabled);
+      IsCapabilityEnabled("UniversalXPConnect", &enabled);
 
     if (!enabled) {
       SetTrusted(false);
@@ -849,6 +910,13 @@ NS_METHOD nsDOMEvent::DuplicatePrivateData()
       isInputEvent = true;
       break;
     }
+    case NS_TOUCH_EVENT:
+    {
+      newEvent = new nsTouchEvent(false, msg, nsnull);
+      NS_ENSURE_TRUE(newEvent, NS_ERROR_OUT_OF_MEMORY);
+      isInputEvent = true;
+      break;
+    }
     default:
     {
       NS_WARNING("Unknown event type!!!");
@@ -999,6 +1067,9 @@ nsDOMEvent::GetEventPopupControlState(nsEvent *aEvent)
         if (::PopupAllowedForEvent("change"))
           abuse = openControlled;
         break;
+      case NS_XUL_COMMAND:
+        abuse = openControlled;
+        break;
       }
     }
     break;
@@ -1107,6 +1178,92 @@ nsDOMEvent::Shutdown()
   if (sPopupAllowedEvents) {
     nsMemory::Free(sPopupAllowedEvents);
   }
+}
+
+nsIntPoint
+nsDOMEvent::GetScreenCoords(nsPresContext* aPresContext,
+                            nsEvent* aEvent,
+                            nsIntPoint aPoint)
+{
+  if (!aEvent || 
+       (aEvent->eventStructType != NS_MOUSE_EVENT &&
+        aEvent->eventStructType != NS_POPUP_EVENT &&
+        aEvent->eventStructType != NS_MOUSE_SCROLL_EVENT &&
+        aEvent->eventStructType != NS_MOZTOUCH_EVENT &&
+        aEvent->eventStructType != NS_TOUCH_EVENT &&
+        aEvent->eventStructType != NS_DRAG_EVENT &&
+        aEvent->eventStructType != NS_SIMPLE_GESTURE_EVENT)) {
+    return nsIntPoint(0, 0);
+  }
+
+  nsGUIEvent* guiEvent = static_cast<nsGUIEvent*>(aEvent);
+  if (!guiEvent->widget) {
+    return aPoint;
+  }
+
+  nsIntPoint offset = aPoint + guiEvent->widget->WidgetToScreenOffset();
+  nscoord factor = aPresContext->DeviceContext()->UnscaledAppUnitsPerDevPixel();
+  return nsIntPoint(nsPresContext::AppUnitsToIntCSSPixels(offset.x * factor),
+                    nsPresContext::AppUnitsToIntCSSPixels(offset.y * factor));
+}
+
+//static
+nsIntPoint
+nsDOMEvent::GetPageCoords(nsPresContext* aPresContext,
+                          nsEvent* aEvent,
+                          nsIntPoint aPoint,
+                          nsIntPoint aDefaultPoint)
+{
+  nsIntPoint pagePoint = nsDOMEvent::GetClientCoords(aPresContext,
+                                                     aEvent,
+                                                     aPoint,
+                                                     aDefaultPoint);
+
+  // If there is some scrolling, add scroll info to client point.
+  if (aPresContext && aPresContext->GetPresShell()) {
+    nsIPresShell* shell = aPresContext->GetPresShell();
+    nsIScrollableFrame* scrollframe = shell->GetRootScrollFrameAsScrollable();
+    if (scrollframe) {
+      nsPoint pt = scrollframe->GetScrollPosition();
+      pagePoint += nsIntPoint(nsPresContext::AppUnitsToIntCSSPixels(pt.x),
+                              nsPresContext::AppUnitsToIntCSSPixels(pt.y));
+    }
+  }
+
+  return pagePoint;
+}
+
+// static
+nsIntPoint
+nsDOMEvent::GetClientCoords(nsPresContext* aPresContext,
+                            nsEvent* aEvent,
+                            nsIntPoint aPoint,
+                            nsIntPoint aDefaultPoint)
+{
+  if (!aEvent ||
+      (aEvent->eventStructType != NS_MOUSE_EVENT &&
+       aEvent->eventStructType != NS_POPUP_EVENT &&
+       aEvent->eventStructType != NS_MOUSE_SCROLL_EVENT &&
+       aEvent->eventStructType != NS_MOZTOUCH_EVENT &&
+       aEvent->eventStructType != NS_TOUCH_EVENT &&
+       aEvent->eventStructType != NS_DRAG_EVENT &&
+       aEvent->eventStructType != NS_SIMPLE_GESTURE_EVENT) ||
+      !aPresContext ||
+      !((nsGUIEvent*)aEvent)->widget) {
+    return aDefaultPoint;
+  }
+
+  nsPoint pt(0, 0);
+  nsIPresShell* shell = aPresContext->GetPresShell();
+  if (!shell) {
+    return nsIntPoint(0, 0);
+  }
+  nsIFrame* rootFrame = shell->GetRootFrame();
+  if (rootFrame)
+    pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, aPoint, rootFrame);
+
+  return nsIntPoint(nsPresContext::AppUnitsToIntCSSPixels(pt.x),
+                    nsPresContext::AppUnitsToIntCSSPixels(pt.y));
 }
 
 // To be called ONLY by nsDOMEvent::GetType (which has the additional
@@ -1291,6 +1448,18 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
     return sEventNames[eDOMEvents_SVGScroll];
   case NS_SVG_ZOOM:
     return sEventNames[eDOMEvents_SVGZoom];
+  case NS_TOUCH_START:
+    return sEventNames[eDOMEvents_touchstart];
+  case NS_TOUCH_MOVE:
+    return sEventNames[eDOMEvents_touchmove];
+  case NS_TOUCH_END:
+    return sEventNames[eDOMEvents_touchend];
+  case NS_TOUCH_ENTER:
+    return sEventNames[eDOMEvents_touchenter];
+  case NS_TOUCH_LEAVE:
+    return sEventNames[eDOMEvents_touchleave];
+  case NS_TOUCH_CANCEL:
+    return sEventNames[eDOMEvents_touchcancel];
   case NS_SMIL_BEGIN:
     return sEventNames[eDOMEvents_beginEvent];
   case NS_SMIL_END:
@@ -1343,8 +1512,6 @@ const char* nsDOMEvent::GetEventName(PRUint32 aEventType)
 #endif
   case NS_AFTERPAINT:
     return sEventNames[eDOMEvents_afterpaint];
-  case NS_BEFOREPAINT:
-    return sEventNames[eDOMEvents_beforepaint];
   case NS_BEFORERESIZE_EVENT:
     return sEventNames[eDOMEvents_beforeresize];
   case NS_SIMPLE_GESTURE_SWIPE:

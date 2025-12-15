@@ -1,12 +1,11 @@
 #include "nsAccessibleWrap.h"
+
+#include "nsCocoaUtils.h"
 #include "nsObjCExceptions.h"
 
 #import "mozTextAccessible.h"
 
 using namespace mozilla::a11y;
-
-extern const NSString *kInstanceDescriptionAttribute; // NSAccessibilityDescriptionAttribute
-extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevelUIElementAttribute
 
 @interface mozTextAccessible (Private)
 - (NSString*)subrole;
@@ -15,6 +14,7 @@ extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevel
 - (long)textLength;
 - (BOOL)isReadOnly;
 - (void)setText:(NSString*)newText;
+- (NSString*)text;
 @end
 
 @implementation mozTextAccessible
@@ -55,8 +55,8 @@ extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevel
                                                            NSAccessibilityWindowAttribute, // required
                                                            NSAccessibilityFocusedAttribute, // required
                                                            NSAccessibilityEnabledAttribute, // required
-                                                           kTopLevelUIElementAttribute, // required (on OS X 10.4+)
-                                                           kInstanceDescriptionAttribute, // required (on OS X 10.4+)
+                                                           NSAccessibilityTopLevelUIElementAttribute, // required
+                                                           NSAccessibilityDescriptionAttribute, // required
                                                            /* text-specific attributes */
                                                            NSAccessibilitySelectedTextAttribute, // required
                                                            NSAccessibilitySelectedTextRangeAttribute, // required
@@ -82,8 +82,9 @@ extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevel
     return [self selectedText];
   // Apple's SpeechSynthesisServer expects AXValue to return an AXStaticText
   // object's AXSelectedText attribute.  See bug 674612.
+  // Also if there is no selected text, we return the full text.See bug 369710
   if ([attribute isEqualToString:NSAccessibilityValueAttribute])
-    return [self selectedText];
+    return [self selectedText] ? : [self text];
 
   // let mozAccessible handle all other attributes
   return [super accessibilityAttributeValue:attribute];
@@ -159,6 +160,20 @@ extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevel
   }
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
+- (NSString*)text
+{
+  if (!mGeckoTextAccessible)
+    return nil;
+    
+  nsAutoString text;
+  nsresult rv = 
+    mGeckoTextAccessible->GetText(0, nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT,
+				  text);
+  NS_ENSURE_SUCCESS(rv, nil);
+
+  return text.IsEmpty() ? nil : nsCocoaUtils::ToNSString(text);
 }
 
 - (long)textLength
@@ -256,8 +271,8 @@ extern const NSString *kTopLevelUIElementAttribute;   // NSAccessibilityTopLevel
                                                            NSAccessibilityChildrenAttribute, // required
                                                            NSAccessibilityHelpAttribute,
                                                            // NSAccessibilityExpandedAttribute, // required
-                                                           kTopLevelUIElementAttribute, // required (on OS X 10.4+)
-                                                           kInstanceDescriptionAttribute, // required (on OS X 10.4+)
+                                                           NSAccessibilityTopLevelUIElementAttribute, // required
+                                                           NSAccessibilityDescriptionAttribute, // required
                                                            /* text-specific attributes */
                                                            NSAccessibilitySelectedTextAttribute, // required
                                                            NSAccessibilitySelectedTextRangeAttribute, // required
