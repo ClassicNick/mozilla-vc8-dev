@@ -128,26 +128,15 @@
 
 #define MOZ_STATIC_ASSERT_IF(cond, expr, reason)  MOZ_STATIC_ASSERT(!(cond) || (expr), reason)
 
-/*
- * XXX: we're cheating here in order to avoid creating object files
- * for mfbt /just/ to provide a function like FatalError() to be used
- * by MOZ_ASSERT().  (It'll happen eventually, but for just ASSERT()
- * it isn't worth the pain.)  JS_Assert(), although unfortunately
- * named, is part of SpiderMonkey's stable, external API, so this
- * isn't quite as bad as it seems.
- *
- * Once mfbt needs object files, this unholy union with JS_Assert()
- * will be broken.
- *
- * JS_Assert is present even in release builds, for the benefit of applications
- * that build DEBUG and link against a non-DEBUG SpiderMonkey library.
- */
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 extern MFBT_API(void)
-JS_Assert(const char* s, const char* file, int ln);
+MOZ_Crash(void);
+
+extern MFBT_API(void)
+MOZ_Assert(const char* s, const char* file, int ln);
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -188,22 +177,34 @@ JS_Assert(const char* s, const char* file, int ln);
 #ifdef DEBUG
    /* First the single-argument form. */
 #  define MOZ_ASSERT_HELPER1(expr) \
-     ((expr) ? ((void)0) : JS_Assert(#expr, __FILE__, __LINE__))
+     ((expr) ? ((void)0) : MOZ_Assert(#expr, __FILE__, __LINE__))
    /* Now the two-argument form. */
 #  define MOZ_ASSERT_HELPER2(expr, explain) \
-     ((expr) ? ((void)0) : JS_Assert(#expr " (" explain ")", __FILE__, __LINE__))
+     ((expr) ? ((void)0) : MOZ_Assert(#expr " (" explain ")", __FILE__, __LINE__))
    /* And now, helper macrology up the wazoo. */
-   /* Count the number of arguments passed to MOZ_ASSERT. */
-#  define MOZ_COUNT_ASSERT_ARGS(...) \
-     MOZ_COUNT_ASSERT_ARGS_IMPL(__VA_ARGS__, 2, 1, 0)
-#  define MOZ_COUNT_ASSERT_ARGS_IMPL(_1, _2, count, ...) \
+   /*
+    * Count the number of arguments passed to MOZ_ASSERT, very carefully
+    * tiptoeing around an MSVC bug where it improperly expands __VA_ARGS__ as a
+    * single token in argument lists.  See these URLs for details:
+    *
+    *   http://connect.microsoft.com/VisualStudio/feedback/details/380090/variadic-macro-replacement
+    *   http://cplusplus.co.il/2010/07/17/variadic-macro-to-count-number-of-arguments/#comment-644
+    */
+#  define MOZ_COUNT_ASSERT_ARGS_IMPL2(_1, _2, count, ...) \
      count
-   /* Invoke the right helper. */
-#  define MOZ_ASSERT_VAHELP2(count, ...) MOZ_ASSERT_HELPER##count(__VA_ARGS__)
-#  define MOZ_ASSERT_VAHELP(count, ...) MOZ_ASSERT_VAHELP2(count, __VA_ARGS__)
+#  define MOZ_COUNT_ASSERT_ARGS_IMPL(args) \
+	 MOZ_COUNT_ASSERT_ARGS_IMPL2 args
+#  define MOZ_COUNT_ASSERT_ARGS(...) \
+     MOZ_COUNT_ASSERT_ARGS_IMPL((__VA_ARGS__, 2, 1, 0))
+   /* Pick the right helper macro to invoke. */
+#  define MOZ_ASSERT_CHOOSE_HELPER2(count) MOZ_ASSERT_HELPER##count
+#  define MOZ_ASSERT_CHOOSE_HELPER1(count) MOZ_ASSERT_CHOOSE_HELPER2(count)
+#  define MOZ_ASSERT_CHOOSE_HELPER(count) MOZ_ASSERT_CHOOSE_HELPER1(count)
    /* The actual macro. */
+#  define MOZ_ASSERT_GLUE(x, y) x y
 #  define MOZ_ASSERT(...) \
-     MOZ_ASSERT_VAHELP(MOZ_COUNT_ASSERT_ARGS(__VA_ARGS__), __VA_ARGS__)
+     MOZ_ASSERT_GLUE(MOZ_ASSERT_CHOOSE_HELPER(MOZ_COUNT_ASSERT_ARGS(__VA_ARGS__)), \
+                     (__VA_ARGS__))
 #else
 #  define MOZ_ASSERT(a) ((void)0)
 #endif /* DEBUG */
@@ -241,7 +242,7 @@ JS_Assert(const char* s, const char* file, int ln);
  *   }
  */
 #ifdef DEBUG
-#  define MOZ_NOT_REACHED(reason)    JS_Assert(reason, __FILE__, __LINE__)
+#  define MOZ_NOT_REACHED(reason)    MOZ_Assert(reason, __FILE__, __LINE__)
 #else
 #  define MOZ_NOT_REACHED(reason)    ((void)0)
 #endif

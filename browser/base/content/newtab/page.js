@@ -22,8 +22,8 @@ let gPage = {
     gAllPages.register(this);
 
     // Listen for 'unload' to unregister this page.
-    function unload() gAllPages.unregister(self);
-    addEventListener("unload", unload, false);
+    function unload() { gAllPages.unregister(this); }
+    addEventListener("unload", unload.bind(this), false);
 
     // Check if the new tab feature is enabled.
     if (gAllPages.enabled)
@@ -77,21 +77,22 @@ let gPage = {
 
     this._initialized = true;
 
-    let self = this;
+    gLinks.populateCache(function () {
+      // Check if the grid is modified.
+      this.updateModifiedFlag();
 
-    // Check if the grid is modified.
-    this.updateModifiedFlag();
+      // Initialize and render the grid.
+      gGrid.init(this._gridSelector);
 
-    // Initialize and render the grid.
-    gGrid.init(this._gridSelector);
+      // Initialize the drop target shim.
+      gDropTargetShim.init();
 
-    // Initialize the drop target shim.
-    gDropTargetShim.init();
-
-    // Workaround to prevent a delay on MacOSX due to a slow drop animation.
-    let doc = document.documentElement;
-    doc.addEventListener("dragover", this.onDragOver, false);
-    doc.addEventListener("drop", this.onDrop, false);
+#ifdef XP_MACOSX
+      // Workaround to prevent a delay on MacOSX due to a slow drop animation.
+      document.addEventListener("dragover", this.onDragOver, false);
+      document.addEventListener("drop", this.onDrop, false);
+#endif
+    }.bind(this));
   },
 
   /**
@@ -155,7 +156,7 @@ let gPage = {
    * @param aEvent The 'dragover' event.
    */
   onDragOver: function Page_onDragOver(aEvent) {
-    if (gDrag.isValid(aEvent))
+    if (gDrag.isValid(aEvent) && gDrag.draggedSite)
       aEvent.preventDefault();
   },
 
@@ -165,7 +166,7 @@ let gPage = {
    * @param aEvent The 'drop' event.
    */
   onDrop: function Page_onDrop(aEvent) {
-    if (gDrag.isValid(aEvent)) {
+    if (gDrag.isValid(aEvent) && gDrag.draggedSite) {
       aEvent.preventDefault();
       aEvent.stopPropagation();
     }

@@ -109,7 +109,6 @@ _TEST_FILES = \
 		test_bug495300.html \
 		test_bug686942.html \
 		test_can_play_type.html \
-		test_closing_connections.html \
 		test_constants.html \
 		test_controls.html \
 		test_currentTime.html \
@@ -127,6 +126,7 @@ _TEST_FILES = \
 		test_loop.html \
 		test_media_selection.html \
 		test_mozLoadFrom.html \
+		test_no_load_event.html \
 		test_networkState.html \
 		test_new_audio.html \
 		test_paused.html \
@@ -175,6 +175,8 @@ endif
 #   test_mixed_principals.html
 # Disabled since we don't play Wave files standalone, for now
 #		test_audioDocumentTitle.html
+# Bug 634564:
+#		test_closing_connections.html \
 
 # sample files
 _TEST_FILES += \

@@ -41,10 +41,13 @@
 /* API for getting a stack trace of the C/C++ stack on the current thread */
 
 #include "mozilla/Util.h"
+#include "mozilla/StackWalk.h"
 #include "nsDebug.h"
 #include "nsStackWalkPrivate.h"
 
 #include "nsStackWalk.h"
+
+using namespace mozilla;
 
 // The presence of this address is the stack must stop the stack walk. If
 // there is no such address, the structure will be {NULL, true}.
@@ -214,8 +217,6 @@ StackWalkInitCriticalAddress()
 #define USING_WXP_VERSION 1
 #endif
 #endif
-
-using namespace mozilla;
 
 // Define these as static pointers so that we can load the DLL on the
 // fly (and not introduce a link-time dependency on it). Tip o' the
@@ -735,6 +736,19 @@ WalkStackMain(struct WalkStackData* data)
 }
 #endif
 
+static
+void PerformStackWalk(struct WalkStackData* data)
+{
+#if defined(_WIN64)
+    WalkStackMain64(data);
+#else
+    if (_StackWalk64)
+        WalkStackMain64(data);
+    else
+        WalkStackMain(data);
+#endif
+}
+
 unsigned int WINAPI
 WalkStackThread(void* aData)
 {
@@ -772,14 +786,7 @@ WalkStackThread(void* aData)
                 PrintError("ThreadSuspend");
             }
             else {
-#if defined(_WIN64)
-                WalkStackMain64(data);
-#else
-                if (_StackWalk64)
-                    WalkStackMain64(data);
-                else
-                    WalkStackMain(data);
-#endif
+                PerformStackWalk(data);
 
                 ret = ::ResumeThread(data->thread);
                 if (ret == -1) {
@@ -845,36 +852,44 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     data.skipFrames = aSkipFrames;
     data.thread = myThread;
     data.process = myProcess;
-    data.eventStart = ::CreateEvent(NULL, FALSE /* auto-reset*/,
-                          FALSE /* initially non-signaled */, NULL);
-    data.eventEnd = ::CreateEvent(NULL, FALSE /* auto-reset*/,
-                        FALSE /* initially non-signaled */, NULL);
     void *local_pcs[1024];
     data.pcs = local_pcs;
     data.pc_count = 0;
     data.pc_size = ArrayLength(local_pcs);
 
-    ::PostThreadMessage(gStackWalkThread, WM_USER, 0, (LPARAM)&data);
+    if (aThread) {
+        // If we're walking the stack of another thread, we don't need to
+        // use a separate walker thread.
+        PerformStackWalk(&data);
+    } else {
+        data.eventStart = ::CreateEvent(NULL, FALSE /* auto-reset*/,
+                              FALSE /* initially non-signaled */, NULL);
+        data.eventEnd = ::CreateEvent(NULL, FALSE /* auto-reset*/,
+                            FALSE /* initially non-signaled */, NULL);
 
-    walkerReturn = ::SignalObjectAndWait(data.eventStart,
-                       data.eventEnd, INFINITE, FALSE);
-    if (walkerReturn != WAIT_OBJECT_0)
-        PrintError("SignalObjectAndWait (1)");
-    if (data.pc_count > data.pc_size) {
-        data.pcs = (void**) malloc(data.pc_count * sizeof(void*));
-        data.pc_size = data.pc_count;
-        data.pc_count = 0;
         ::PostThreadMessage(gStackWalkThread, WM_USER, 0, (LPARAM)&data);
+
         walkerReturn = ::SignalObjectAndWait(data.eventStart,
                            data.eventEnd, INFINITE, FALSE);
         if (walkerReturn != WAIT_OBJECT_0)
-            PrintError("SignalObjectAndWait (2)");
+            PrintError("SignalObjectAndWait (1)");
+        if (data.pc_count > data.pc_size) {
+            data.pcs = (void**) malloc(data.pc_count * sizeof(void*));
+            data.pc_size = data.pc_count;
+            data.pc_count = 0;
+            ::PostThreadMessage(gStackWalkThread, WM_USER, 0, (LPARAM)&data);
+            walkerReturn = ::SignalObjectAndWait(data.eventStart,
+                               data.eventEnd, INFINITE, FALSE);
+            if (walkerReturn != WAIT_OBJECT_0)
+                PrintError("SignalObjectAndWait (2)");
+        }
+
+        ::CloseHandle(data.eventStart);
+        ::CloseHandle(data.eventEnd);
     }
 
     ::CloseHandle(myThread);
     ::CloseHandle(myProcess);
-    ::CloseHandle(data.eventStart);
-    ::CloseHandle(data.eventEnd);
 
     for (PRUint32 i = 0; i < data.pc_count; ++i)
         (*aCallback)(data.pcs[i], aClosure);
@@ -1558,9 +1573,6 @@ NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
 
 #else // not __sun-specific
 
-#define X86_OR_PPC (defined(__i386) || defined(PPC) || defined(__ppc__))
-#if X86_OR_PPC && (NSSTACKWALK_SUPPORTS_MACOSX || NSSTACKWALK_SUPPORTS_LINUX) // i386 or PPC Linux or Mac stackwalking code
-
 #if __GLIBC__ > 2 || __GLIBC_MINOR > 1
 #define HAVE___LIBC_STACK_END 1
 #else
@@ -1570,25 +1582,12 @@ NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
 #if HAVE___LIBC_STACK_END
 extern void *__libc_stack_end; // from ld-linux.so
 #endif
-
-EXPORT_XPCOM_API(nsresult)
-NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
-             void *aClosure, uintptr_t aThread)
+namespace mozilla {
+nsresult
+FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+                      void *aClosure, void **bp)
 {
-  MOZ_ASSERT(gCriticalAddress.mInit);
-  MOZ_ASSERT(!aThread);
   // Stack walking code courtesy Kipp's "leaky".
-
-  // Get the frame pointer
-  void **bp;
-#if defined(__i386) 
-  __asm__( "movl %%ebp, %0" : "=g"(bp));
-#else
-  // It would be nice if this worked uniformly, but at least on i386 and
-  // x86_64, it stopped working with gcc 4.1, because it points to the
-  // end of the saved registers instead of the start.
-  bp = (void**) __builtin_frame_address(0);
-#endif
 
   int skip = aSkipFrames;
   while (1) {
@@ -1620,6 +1619,33 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     bp = next;
   }
   return NS_OK;
+}
+
+}
+
+#define X86_OR_PPC (defined(__i386) || defined(PPC) || defined(__ppc__))
+#if X86_OR_PPC && (NSSTACKWALK_SUPPORTS_MACOSX || NSSTACKWALK_SUPPORTS_LINUX) // i386 or PPC Linux or Mac stackwalking code
+
+EXPORT_XPCOM_API(nsresult)
+NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+             void *aClosure, uintptr_t aThread)
+{
+  MOZ_ASSERT(gCriticalAddress.mInit);
+  MOZ_ASSERT(!aThread);
+
+  // Get the frame pointer
+  void **bp;
+#if defined(__i386) 
+  __asm__( "movl %%ebp, %0" : "=g"(bp));
+#else
+  // It would be nice if this worked uniformly, but at least on i386 and
+  // x86_64, it stopped working with gcc 4.1, because it points to the
+  // end of the saved registers instead of the start.
+  bp = (void**) __builtin_frame_address(0);
+#endif
+  return FramePointerStackWalk(aCallback, aSkipFrames,
+                               aClosure, bp);
+
 }
 
 #elif defined(HAVE__UNWIND_BACKTRACE)

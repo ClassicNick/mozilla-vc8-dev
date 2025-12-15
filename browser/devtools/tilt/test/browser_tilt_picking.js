@@ -1,9 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-
-/*global ok, is, info, waitForExplicitFinish, finish, gBrowser */
-/*global isTiltEnabled, isWebGLSupported, createTab, createTilt */
-/*global Services, InspectorUI, TILT_DESTROYED */
 "use strict";
 
 function test() {
@@ -27,7 +23,7 @@ function test() {
 
         presenter.onSetupMesh = function() {
 
-          presenter.pickNode(canvas.width / 2, canvas.height / 2, {
+          presenter.pickNode(canvas.width / 2, 10, {
             onpick: function(data)
             {
               ok(data.index > 0,
@@ -35,7 +31,7 @@ function test() {
               ok(!presenter.highlight.disabled,
                 "After only picking a node, it shouldn't be highlighted.");
 
-              Services.obs.addObserver(cleanup, TILT_DESTROYED, false);
+              Services.obs.addObserver(cleanup, DESTROYED, false);
               InspectorUI.closeInspectorUI();
             }
           });
@@ -46,7 +42,7 @@ function test() {
 }
 
 function cleanup() {
-  Services.obs.removeObserver(cleanup, TILT_DESTROYED);
+  Services.obs.removeObserver(cleanup, DESTROYED);
   gBrowser.removeCurrentTab();
   finish();
 }

@@ -52,7 +52,7 @@ Protocol.prototype = {
    * The flags specific to this protocol implementation.
    */
   get protocolFlags() {
-    return Ci.nsIProtocolHandler.URI_IS_UI_RESOURCE |
+    return Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD |
            Ci.nsIProtocolHandler.URI_NORELATIVE |
            Ci.nsIProtocolHandler.URI_NOAUTH;
   },
@@ -129,11 +129,17 @@ Channel.prototype = {
 
     // Try to read the data from the thumbnail cache.
     this._readCache(function (aData) {
+      let telemetryThumbnailFound = true;
+
       // Update response if there's no data.
       if (!aData) {
         this._responseStatus = 404;
         this._responseText = "Not Found";
+        telemetryThumbnailFound = false;
       }
+
+      Services.telemetry.getHistogramById("FX_THUMBNAILS_HIT_OR_MISS")
+        .add(telemetryThumbnailFound);
 
       this._startRequest();
 

@@ -104,7 +104,7 @@ class nsAccessible : public nsAccessNodeWrap,
                      public nsIAccessibleValue
 {
 public:
-  nsAccessible(nsIContent *aContent, nsIWeakReference *aShell);
+  nsAccessible(nsIContent* aContent, nsDocAccessible* aDoc);
   virtual ~nsAccessible();
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -128,6 +128,17 @@ public:
    * get the description of this accessible
    */
   virtual void Description(nsString& aDescription);
+
+  /**
+   * Return DOM node associated with this accessible.
+   */
+  inline already_AddRefed<nsIDOMNode> DOMNode() const
+  {
+    nsIDOMNode *DOMNode = nsnull;
+    if (GetNode())
+      CallQueryInterface(GetNode(), &DOMNode);
+    return DOMNode;
+  }
 
   /**
    * Returns the accessible name specified by ARIA.
@@ -388,9 +399,9 @@ public:
   virtual nsresult HandleAccEvent(AccEvent* aAccEvent);
 
   /**
-   * Return true if there are accessible children in anonymous content
+   * Return true if this accessible allows accessible children from anonymous subtree.
    */
-  virtual bool GetAllowsAnonChildAccessibles();
+  virtual bool CanHaveAnonChildren();
 
   /**
    * Returns text of accessible if accessible has text role otherwise empty
@@ -611,6 +622,11 @@ public:
    */
   virtual nsAccessible* ContainerWidget() const;
 
+  /**
+   * Return the localized string for the given key.
+   */
+  static void TranslateString(const nsAString& aKey, nsAString& aStringOut);
+
 protected:
 
   //////////////////////////////////////////////////////////////////////////////
@@ -703,7 +719,6 @@ protected:
 
   // helper method to verify frames
   static nsresult GetFullKeyName(const nsAString& aModifierName, const nsAString& aKeyName, nsAString& aStringOut);
-  static nsresult GetTranslatedString(const nsAString& aKey, nsAString& aStringOut);
 
   /**
    * Return an accessible for the given DOM node, or if that node isn't

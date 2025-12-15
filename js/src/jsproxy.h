@@ -84,7 +84,9 @@ class JS_FRIEND_API(ProxyHandler) {
     virtual bool objectClassIs(JSObject *obj, ESClassValue classValue, JSContext *cx);
     virtual JSString *obj_toString(JSContext *cx, JSObject *proxy);
     virtual JSString *fun_toString(JSContext *cx, JSObject *proxy, uintN indent);
+    virtual RegExpShared *regexp_toShared(JSContext *cx, JSObject *proxy);
     virtual bool defaultValue(JSContext *cx, JSObject *obj, JSType hint, Value *vp);
+    virtual bool iteratorNext(JSContext *cx, JSObject *proxy, Value *vp);
     virtual void finalize(JSContext *cx, JSObject *proxy);
     virtual void trace(JSTracer *trc, JSObject *proxy);
     virtual bool getElementIfPresent(JSContext *cx, JSObject *obj, JSObject *receiver,
@@ -137,24 +139,35 @@ class Proxy {
     static bool objectClassIs(JSObject *obj, ESClassValue classValue, JSContext *cx);
     static JSString *obj_toString(JSContext *cx, JSObject *proxy);
     static JSString *fun_toString(JSContext *cx, JSObject *proxy, uintN indent);
+    static RegExpShared *regexp_toShared(JSContext *cx, JSObject *proxy);
     static bool defaultValue(JSContext *cx, JSObject *obj, JSType hint, Value *vp);
+    static bool iteratorNext(JSContext *cx, JSObject *proxy, Value *vp);
 };
+
+inline bool IsObjectProxyClass(const Class *clasp)
+{
+    return clasp == &js::ObjectProxyClass || clasp == &js::OuterWindowProxyClass;
+}
+
+inline bool IsFunctionProxyClass(const Class *clasp)
+{
+    return clasp == &js::FunctionProxyClass;
+}
 
 inline bool IsObjectProxy(const JSObject *obj)
 {
-    Class *clasp = GetObjectClass(obj);
-    return clasp == &js::ObjectProxyClass || clasp == &js::OuterWindowProxyClass;
+    return IsObjectProxyClass(GetObjectClass(obj));
 }
 
 inline bool IsFunctionProxy(const JSObject *obj)
 {
-    Class *clasp = GetObjectClass(obj);
-    return clasp == &js::FunctionProxyClass;
+    return IsFunctionProxyClass(GetObjectClass(obj));
 }
 
 inline bool IsProxy(const JSObject *obj)
 {
-    return IsObjectProxy(obj) || IsFunctionProxy(obj);
+    Class *clasp = GetObjectClass(obj);
+    return IsObjectProxyClass(clasp) || IsFunctionProxyClass(clasp);
 }
 
 /* Shared between object and function proxies. */
@@ -179,13 +192,6 @@ GetProxyPrivate(const JSObject *obj)
     return GetReservedSlot(obj, JSSLOT_PROXY_PRIVATE);
 }
 
-inline void
-SetProxyPrivate(JSObject *obj, const Value &priv)
-{
-    JS_ASSERT(IsProxy(obj));
-    SetReservedSlot(obj, JSSLOT_PROXY_PRIVATE, priv);
-}
-
 inline const Value &
 GetProxyExtra(const JSObject *obj, size_t n)
 {
@@ -205,9 +211,6 @@ JS_FRIEND_API(JSObject *)
 NewProxyObject(JSContext *cx, ProxyHandler *handler, const Value &priv,
                JSObject *proto, JSObject *parent,
                JSObject *call = NULL, JSObject *construct = NULL);
-
-JS_FRIEND_API(JSBool)
-FixProxy(JSContext *cx, JSObject *proxy, JSBool *bp);
 
 } /* namespace js */
 

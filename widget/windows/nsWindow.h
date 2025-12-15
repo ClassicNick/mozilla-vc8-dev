@@ -482,9 +482,6 @@ protected:
   nsIntRegion             GetRegionToPaint(bool aForceFullRepaint, 
                                            PAINTSTRUCT ps, HDC aDC);
   static void             ActivateOtherWindowHelper(HWND aWnd);
-#ifdef ACCESSIBILITY
-  static STDMETHODIMP_(LRESULT) LresultFromObject(REFIID riid, WPARAM wParam, LPUNKNOWN pAcc);
-#endif // ACCESSIBILITY
   void                    ClearCachedResources();
 
   nsPopupType PopupType() { return mPopupType; }
@@ -596,10 +593,8 @@ protected:
   nsRefPtr<gfxASurface> mTransparentSurface;
   HDC                   mMemoryDC;
   nsTransparencyMode    mTransparencyMode;
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   nsIntRegion           mPossiblyTransparentRegion;
   MARGINS               mGlassMargins;
-#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #endif // MOZ_XUL
 
   // Win7 Gesture processing and management
@@ -616,12 +611,6 @@ protected:
   // The point in time at which the last paint completed. We use this to avoid
   //  painting too rapidly in response to frequent input events.
   TimeStamp mLastPaintEndTime;
-
-#ifdef ACCESSIBILITY
-  static BOOL           sIsAccessibilityOn;
-  static HINSTANCE      sAccLib;
-  static LPFNLRESULTFROMOBJECT sLresultFromObject;
-#endif // ACCESSIBILITY
 
   // sRedirectedKeyDown is WM_KEYDOWN message or WM_SYSKEYDOWN message which
   // was reirected to SendInput() API by OnKeyDown().

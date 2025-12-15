@@ -125,12 +125,7 @@ struct JSXDRState {
     JSXDRMode   mode;
     JSXDROps    *ops;
     JSContext   *cx;
-    JSClass     **registry;
-    uintN       numclasses;
-    uintN       maxclasses;
-    void        *reghash;
     void        *userdata;
-    JSScript    *script;
     js::XDRScriptState *state;
 };
 
@@ -183,22 +178,10 @@ extern JS_PUBLIC_API(JSBool)
 JS_XDRDouble(JSXDRState *xdr, jsdouble *dp);
 
 extern JS_PUBLIC_API(JSBool)
-JS_XDRValue(JSXDRState *xdr, jsval *vp);
-
-extern JS_PUBLIC_API(JSBool)
 JS_XDRFunctionObject(JSXDRState *xdr, JSObject **objp);
 
 extern JS_PUBLIC_API(JSBool)
 JS_XDRScript(JSXDRState *xdr, JSScript **scriptp);
-
-extern JS_PUBLIC_API(JSBool)
-JS_XDRRegisterClass(JSXDRState *xdr, JSClass *clasp, uint32_t *lp);
-
-extern JS_PUBLIC_API(uint32_t)
-JS_XDRFindClassIdByName(JSXDRState *xdr, const char *name);
-
-extern JS_PUBLIC_API(JSClass *)
-JS_XDRFindClassById(JSXDRState *xdr, uint32_t id);
 
 /*
  * Magic numbers.
@@ -226,7 +209,7 @@ JS_XDRFindClassById(JSXDRState *xdr, uint32_t id);
  * and saved versions. If deserialization fails, the data should be
  * invalidated if possible.
  */
-#define JSXDR_BYTECODE_VERSION      (0xb973c0de - 105)
+#define JSXDR_BYTECODE_VERSION      (0xb973c0de - 107)
 
 /*
  * Library-private functions.

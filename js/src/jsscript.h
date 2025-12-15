@@ -48,6 +48,7 @@
 #include "jsdbgapi.h"
 #include "jsclist.h"
 #include "jsinfer.h"
+#include "jsopcode.h"
 #include "jsscope.h"
 
 #include "gc/Barrier.h"
@@ -175,7 +176,9 @@ class Bindings {
     uint16_t nargs;
     uint16_t nvars;
     uint16_t nupvars;
+    bool     hasDup_:1;     // true if there are duplicate argument names
 
+    inline Shape *initialShape(JSContext *cx) const;
   public:
     inline Bindings(JSContext *cx);
 
@@ -207,8 +210,14 @@ class Bindings {
     /* Ensure these bindings have a shape lineage. */
     inline bool ensureShape(JSContext *cx);
 
-    /* Returns the shape lineage generated for these bindings. */
+    /* Return the shape lineage generated for these bindings. */
     inline Shape *lastShape() const;
+
+    /*
+     * Return the shape to use to create a call object for these bindings.
+     * The result is guaranteed not to have duplicate property names.
+     */
+    Shape *callObjectShape(JSContext *cx) const;
 
     /* See Scope::extensibleParents */
     inline bool extensibleParents();
@@ -261,6 +270,9 @@ class Bindings {
         *slotp = nargs;
         return add(cx, NULL, ARGUMENT);
     }
+
+    void noteDup() { hasDup_ = true; }
+    bool hasDup() const { return hasDup_; }
 
     /*
      * Look up an argument or variable name, returning its kind when found or
@@ -836,8 +848,8 @@ js_SweepScriptFilenames(JSCompartment *comp);
 
 /*
  * New-script-hook calling is factored from NewScriptFromEmitter so that it
- * and callers of js_XDRScript can share this code.  In the case of callers
- * of js_XDRScript, the hook should be invoked only after successful decode
+ * and callers of XDRScript can share this code.  In the case of callers
+ * of XDRScript, the hook should be invoked only after successful decode
  * of any owning function (the fun parameter) or script object (null fun).
  */
 extern JS_FRIEND_API(void)
@@ -916,10 +928,8 @@ enum LineOption {
 inline void
 CurrentScriptFileLineOrigin(JSContext *cx, uintN *linenop, LineOption = NOT_CALLED_FROM_JSOP_EVAL);
 
-}
-
 extern JSScript *
-js_CloneScript(JSContext *cx, JSScript *script);
+CloneScript(JSContext *cx, JSScript *script);
 
 /*
  * NB: after a successful JSXDR_DECODE, js_XDRScript callers must do any
@@ -927,6 +937,8 @@ js_CloneScript(JSContext *cx, JSScript *script);
  * js_CallNewScriptHook.
  */
 extern JSBool
-js_XDRScript(JSXDRState *xdr, JSScript **scriptp);
+XDRScript(JSXDRState *xdr, JSScript **scriptp);
+
+}
 
 #endif /* jsscript_h___ */

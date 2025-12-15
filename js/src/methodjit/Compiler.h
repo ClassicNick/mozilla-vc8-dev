@@ -380,6 +380,10 @@ class Compiler : public BaseCompiler
         uint32_t source;
         uint32_t target;
 
+#ifdef JS_CPU_X64
+        Label sourceTrampoline;
+#endif
+
         Jump fastJump;
         MaybeJump slowJump;
     };
@@ -484,7 +488,7 @@ private:
     bool hasGlobalReallocation;
     bool oomInVector;       // True if we have OOM'd appending to a vector. 
     bool overflowICSpace;   // True if we added a constant pool in a reserved space.
-    uint32_t gcNumber;
+    uint64_t gcNumber;
     enum { NoApplyTricks, LazyArgsObj } applyTricks;
     PCLengthEntry *pcLengths;
 
@@ -683,7 +687,7 @@ private:
     bool jsop_instanceof();
     void jsop_name(PropertyName *name, JSValueType type);
     bool jsop_xname(PropertyName *name);
-    void enterBlock(JSObject *obj);
+    void enterBlock(StaticBlockObject *block);
     void leaveBlock();
     void emitEval(uint32_t argc);
     void jsop_arguments(RejoinState rejoin);

@@ -27,6 +27,7 @@ const EVENT_TEXT_INSERTED = nsIAccessibleEvent.EVENT_TEXT_INSERTED;
 const EVENT_TEXT_REMOVED = nsIAccessibleEvent.EVENT_TEXT_REMOVED;
 const EVENT_TEXT_SELECTION_CHANGED = nsIAccessibleEvent.EVENT_TEXT_SELECTION_CHANGED;
 const EVENT_VALUE_CHANGE = nsIAccessibleEvent.EVENT_VALUE_CHANGE;
+const EVENT_VIRTUALCURSOR_CHANGED = nsIAccessibleEvent.EVENT_VIRTUALCURSOR_CHANGED;
 
 ////////////////////////////////////////////////////////////////////////////////
 // General
@@ -174,7 +175,7 @@ const DO_NOT_FINISH_TEST = 1;
  *     //   phase getter: function() {},
  *     //
  *     //   * Callback, called to match handled event. *
- *     //   match : function() {},
+ *     //   match : function(aEvent) {},
  *     //
  *     //   * Callback, called when event is handled
  *     //   check: function(aEvent) {},
@@ -1220,6 +1221,33 @@ function synthSelectAll(aNodeOrID, aCheckerOrEventSeq)
   }
 }
 
+/**
+ * Set caret offset in text accessible.
+ */
+function setCaretOffset(aID, aOffset, aFocusTargetID)
+{
+  this.target = getAccessible(aID, [nsIAccessibleText]);
+  this.offset = aOffset == -1 ? this.target.characterCount: aOffset;
+  this.focus = aFocusTargetID ? getAccessible(aFocusTargetID) : null;
+
+  this.invoke = function setCaretOffset_invoke()
+  {
+    this.target.caretOffset = this.offset;
+  }
+
+  this.getID = function setCaretOffset_getID()
+  {
+   return "Set caretOffset on " + prettyName(aID) + " at " + this.offset;
+  }
+
+  this.eventSeq = [
+    new caretMoveChecker(this.offset, this.target)
+  ];
+
+  if (this.focus)
+    this.eventSeq.push(new asyncInvokerChecker(EVENT_FOCUS, this.focus));
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Event queue checkers
@@ -1340,10 +1368,10 @@ function caretMoveChecker(aCaretOffset, aTargetOrFunc, aTargetFuncArg)
  * State change checker.
  */
 function stateChangeChecker(aState, aIsExtraState, aIsEnabled,
-                            aTargetOrFunc, aTargetFuncArg)
+                            aTargetOrFunc, aTargetFuncArg, aIsAsync)
 {
   this.__proto__ = new invokerChecker(EVENT_STATE_CHANGE, aTargetOrFunc,
-                                      aTargetFuncArg);
+                                      aTargetFuncArg, aIsAsync);
 
   this.check = function stateChangeChecker_check(aEvent)
   {
@@ -1370,6 +1398,22 @@ function stateChangeChecker(aState, aIsExtraState, aIsEnabled,
     var unxpdExtraState = aIsEnabled ? 0 : (aIsExtraState ? aState : 0);
     testStates(event.accessible, state, extraState, unxpdState, unxpdExtraState);
   }
+
+  this.match = function stateChangeChecker_match(aEvent)
+  {
+    if (aEvent instanceof nsIAccessibleStateChangeEvent) {
+      var scEvent = aEvent.QueryInterface(nsIAccessibleStateChangeEvent);
+      return aEvent.accessible = this.target && scEvent.state == aState;
+    }
+    return false;
+  }
+}
+
+function asyncStateChangeChecker(aState, aIsExtraState, aIsEnabled,
+                                 aTargetOrFunc, aTargetFuncArg)
+{
+  this.__proto__ = new stateChangeChecker(aState, aIsExtraState, aIsEnabled,
+                                          aTargetOrFunc, aTargetFuncArg, true);
 }
 
 /**

@@ -51,6 +51,10 @@
 #include "gc/Barrier.h"
 #include "js/HashTable.h"
 
+namespace JS {
+struct TypeInferenceSizes;
+}
+
 namespace js {
 namespace types {
 
@@ -366,7 +370,7 @@ class TypeSet
     void print(JSContext *cx);
 
     inline void sweep(JSContext *cx, JSCompartment *compartment);
-    inline size_t dynamicSize();
+    inline size_t computedSizeOfExcludingThis();
 
     /* Whether this set contains a specific type. */
     inline bool hasType(Type type);
@@ -664,7 +668,7 @@ struct TypeNewScript
      * Shape to use for newly constructed objects. Reflects all definite
      * properties the object will have.
      */
-    HeapPtr<const Shape> shape;
+    HeapPtrShape  shape;
 
     /*
      * Order in which properties become initialized. We need this in case a
@@ -865,7 +869,9 @@ struct TypeObject : gc::Cell
     inline void clearProperties();
     inline void sweep(JSContext *cx);
 
-    inline size_t dynamicSize();
+    inline size_t computedSizeOfExcludingThis();
+
+    void sizeOfExcludingThis(TypeInferenceSizes *sizes, JSMallocSizeOfFun mallocSizeOf);
 
     /*
      * Type objects don't have explicit finalizers. Memory owned by a type

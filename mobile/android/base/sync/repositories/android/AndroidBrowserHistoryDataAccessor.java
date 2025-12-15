@@ -70,7 +70,6 @@ public class AndroidBrowserHistoryDataAccessor extends AndroidBrowserRepositoryD
     ContentValues cv = new ContentValues();
     HistoryRecord rec = (HistoryRecord) record;
     cv.put(BrowserContract.History.GUID,          rec.guid);
-    cv.put(BrowserContract.History.DATE_MODIFIED, rec.lastModified);
     cv.put(BrowserContract.History.TITLE,         rec.title);
     cv.put(BrowserContract.History.URL,           rec.histURI);
     if (rec.visits != null) {
@@ -102,8 +101,18 @@ public class AndroidBrowserHistoryDataAccessor extends AndroidBrowserRepositoryD
     dataExtender.store(record.guid, rec.visits);
     Log.d(LOG_TAG, "Storing record " + record.guid);
     return super.insert(record);
-  }  
-  
+  }
+
+  @Override
+  public void update(String oldGUID, Record newRecord) {
+    HistoryRecord rec = (HistoryRecord) newRecord;
+    String newGUID = newRecord.guid;
+    Log.d(LOG_TAG, "Storing visits for " + newGUID + ", replacing " + oldGUID);
+    dataExtender.delete(oldGUID);
+    dataExtender.store(newGUID, rec.visits);
+    super.update(oldGUID, newRecord);
+  }
+
   @Override
   protected void delete(String guid) {
     Log.d(LOG_TAG, "Deleting record " + guid);

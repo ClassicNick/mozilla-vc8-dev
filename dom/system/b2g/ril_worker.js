@@ -62,15 +62,20 @@
 
 "use strict";
 
-importScripts("ril_consts.js");
+importScripts("ril_consts.js", "systemlibs.js");
 
-let DEBUG = false;
+// We leave this as 'undefined' instead of setting it to 'false'. That
+// way an outer scope can define it to 'true' (e.g. for testing purposes)
+// without us overriding that here.
+let DEBUG;
 
 const INT32_MAX   = 2147483647;
 const UINT8_SIZE  = 1;
 const UINT16_SIZE = 2;
 const UINT32_SIZE = 4;
 const PARCEL_SIZE_SIZE = UINT32_SIZE;
+
+let RILQUIRKS_CALLSTATE_EXTRA_UINT32 = false;
 
 /**
  * This object contains helpers buffering incoming data & deconstructing it
@@ -105,6 +110,9 @@ let Buf = {
 
     // How many bytes we've read for this parcel so far.
     this.readIncoming = 0;
+
+    // How many bytes available as parcel data.
+    this.readAvailable = 0;
 
     // Size of the incoming parcel. If this is zero, we're expecting a new
     // parcel.
@@ -190,11 +198,20 @@ let Buf = {
    * These are all little endian, apart from readParcelSize();
    */
 
-  readUint8: function readUint8() {
+  readUint8Unchecked: function readUint8Unchecked() {
     let value = this.incomingBytes[this.incomingReadIndex];
     this.incomingReadIndex = (this.incomingReadIndex + 1) %
                              this.INCOMING_BUFFER_LENGTH;
     return value;
+  },
+
+  readUint8: function readUint8() {
+    if (!this.readAvailable) {
+      throw new Error("Trying to read data beyond the parcel end!");
+    }
+
+    this.readAvailable--;
+    return this.readUint8Unchecked();
   },
 
   readUint16: function readUint16() {
@@ -249,8 +266,10 @@ let Buf = {
   },
 
   readParcelSize: function readParcelSize() {
-    return this.readUint8() << 24 | this.readUint8() << 16 |
-           this.readUint8() <<  8 | this.readUint8();
+    return this.readUint8Unchecked() << 24 |
+           this.readUint8Unchecked() << 16 |
+           this.readUint8Unchecked() <<  8 |
+           this.readUint8Unchecked();
   },
 
   /**
@@ -410,6 +429,7 @@ let Buf = {
 
       if (DEBUG) debug("We have at least one complete parcel.");
       try {
+        this.readAvailable = this.currentParcelSize;
         this.processParcel();
       } catch (ex) {
         if (DEBUG) debug("Parcel handling threw " + ex + "\n" + ex.stack);
@@ -425,6 +445,7 @@ let Buf = {
         this.incomingReadIndex = expectedAfterIndex;
       }
       this.readIncoming -= this.currentParcelSize;
+      this.readAvailable = 0;
       this.currentParcelSize = 0;
     }
   },
@@ -432,37 +453,39 @@ let Buf = {
   /**
    * Process one parcel.
    */
-
   processParcel: function processParcel() {
     let response_type = this.readUint32();
-    let length = this.readIncoming - UINT32_SIZE;
 
-    let request_type;
+    let request_type, options;
     if (response_type == RESPONSE_TYPE_SOLICITED) {
       let token = this.readUint32();
       let error = this.readUint32();
-      length -= 2 * UINT32_SIZE;
-      request_type = this.tokenRequestMap[token];
+
+      options = this.tokenRequestMap[token];
+      request_type = options.rilRequestType;
       if (error) {
         //TODO
-        debug("Received error " + error + " for solicited parcel type " +
-              request_type);
+        if (DEBUG) {
+          debug("Received error " + error + " for solicited parcel type " +
+                request_type);
+        }
         return;
       }
-      debug("Solicited response for request type " + request_type +
-            ", token " + token);
+      if (DEBUG) {
+        debug("Solicited response for request type " + request_type +
+              ", token " + token);
+      }
       delete this.tokenRequestMap[token];
       this.lastSolicitedToken = token;
     } else if (response_type == RESPONSE_TYPE_UNSOLICITED) {
       request_type = this.readUint32();
-      length -= UINT32_SIZE;
-      debug("Unsolicited response for request type " + request_type);
+      if (DEBUG) debug("Unsolicited response for request type " + request_type);
     } else {
-      debug("Unknown response type: " + response_type);
+      if (DEBUG) debug("Unknown response type: " + response_type);
       return;
     }
 
-    RIL.handleParcel(request_type, length);
+    RIL.handleParcel(request_type, this.readAvailable, options);
   },
 
   /**
@@ -470,22 +493,30 @@ let Buf = {
    *
    * @param type
    *        Integer specifying the request type.
+   * @param options [optional]
+   *        Object containing information about the request, e.g. the
+   *        original main thread message object that led to the RIL request. 
    */
-  newParcel: function newParcel(type) {
+  newParcel: function newParcel(type, options) {
+    if (DEBUG) debug("New outgoing parcel of type " + type);
     // We're going to leave room for the parcel size at the beginning.
     this.outgoingIndex = PARCEL_SIZE_SIZE;
     this.writeUint32(type);
     let token = this.token;
     this.writeUint32(token);
-    this.tokenRequestMap[token] = type;
+
+    if (!options) {
+      options = {};
+    }
+    options.rilRequestType = type;
+    this.tokenRequestMap[token] = options;
     this.token++;
     return token;
   },
 
   /**
-   * Communication with the RIL IPC thread.
+   * Communicate with the RIL IPC thread.
    */
-
   sendParcel: function sendParcel() {
     // Compute the size of the parcel and write it to the front of the parcel
     // where we left room for it. Note that he parcel size does not include
@@ -496,7 +527,7 @@ let Buf = {
     // This assumes that postRILMessage will make a copy of the ArrayBufferView
     // right away!
     let parcel = this.outgoingBytes.subarray(0, this.outgoingIndex);
-    debug("Outgoing parcel: " + Array.slice(parcel));
+    if (DEBUG) debug("Outgoing parcel: " + Array.slice(parcel));
     postRILMessage(parcel);
     this.outgoingIndex = PARCEL_SIZE_SIZE;
   },
@@ -515,6 +546,46 @@ let Buf = {
  * between method calls and RIL parcels. Somebody's gotta do the job...
  */
 let RIL = {
+
+  /**
+   * Set quirk flags based on the RIL model detected. Note that this
+   * requires the RIL being "warmed up" first, which happens when on
+   * an incoming or outgoing call.
+   */
+  rilQuirksInitialized: false,
+  initRILQuirks: function initRILQuirks() {
+    // The Samsung Galaxy S2 I-9100 radio sends an extra Uint32 in the
+    // call state.
+    let model_id = libcutils.property_get("ril.model_id");
+    if (DEBUG) debug("Detected RIL model " + model_id);
+    if (model_id == "I9100") {
+      if (DEBUG) debug("Enabling RILQUIRKS_CALLSTATE_EXTRA_UINT32 for I9100.");
+      RILQUIRKS_CALLSTATE_EXTRA_UINT32 = true;
+    }
+
+    this.rilQuirksInitialized = true;
+  },
+
+  /**
+   * Parse an integer from a string, falling back to a default value
+   * if the the provided value is not a string or does not contain a valid
+   * number.
+   * 
+   * @param string
+   *        String to be parsed.
+   * @param defaultValue
+   *        Default value to be used.
+   */
+  parseInt: function RIL_parseInt(string, defaultValue) {
+    let number = parseInt(string, 10);
+    if (!isNaN(number)) {
+      return number;
+    }
+    if (defaultValue === undefined) {
+      defaultValue = null;
+    }
+    return defaultValue;
+  },
 
   /**
    * Retrieve the ICC's status.
@@ -708,9 +779,11 @@ let RIL = {
   /**
    * Send an SMS.
    *
-   * @param smscPDU
+   * The `options` parameter object should contain the following attributes:
+   *
+   * @param SMSC
    *        String containing the SMSC PDU in hex format.
-   * @param address
+   * @param number
    *        String containing the recipients address.
    * @param body
    *        String containing the message body.
@@ -720,15 +793,18 @@ let RIL = {
    * @param bodyLengthInOctets
    *        Byte length of the message body when encoded with the given DCS.
    */
-  sendSMS: function sendSMS(smscPDU, address, body, dcs, bodyLengthInOctets) {
-    let token = Buf.newParcel(REQUEST_SEND_SMS);
+  sendSMS: function sendSMS(options) {
+    let token = Buf.newParcel(REQUEST_SEND_SMS, options);
     //TODO we want to map token to the input values so that on the
     // response from the RIL device we know which SMS request was successful
     // or not. Maybe we should build that functionality into newParcel() and
     // handle it within tokenRequestMap[].
     Buf.writeUint32(2);
-    Buf.writeString(smscPDU);
-    GsmPDUHelper.writeMessage(address, body, dcs, bodyLengthInOctets);
+    Buf.writeString(options.SMSC);
+    GsmPDUHelper.writeMessage(options.number,
+                              options.body,
+                              options.dcs,
+                              options.bodyLengthInOctets);
     Buf.sendParcel();
   },
 
@@ -794,8 +870,8 @@ let RIL = {
    *
    * @param radioTech
    *        Integer to indicate radio technology.
-   *        DATACALL_RADIOTECHONLOGY_CDMA => CDMA.
-   *        DATACALL_RADIOTECHONLOGY_GSM  => GSM.
+   *        DATACALL_RADIOTECHNOLOGY_CDMA => CDMA.
+   *        DATACALL_RADIOTECHNOLOGY_GSM  => GSM.
    * @param apn
    *        String containing the name of the APN to connect to.
    * @param user
@@ -862,11 +938,11 @@ let RIL = {
    * _is_ the method name, so that's easy.
    */
 
-  handleParcel: function handleParcel(request_type, length) {
+  handleParcel: function handleParcel(request_type, length, options) {
     let method = this[request_type];
     if (typeof method == "function") {
-      debug("Handling parcel as " + method.name);
-      method.call(this, length);
+      if (DEBUG) debug("Handling parcel as " + method.name);
+      method.call(this, length, options);
     }
   }
 };
@@ -915,6 +991,10 @@ RIL[REQUEST_CHANGE_SIM_PIN] = function REQUEST_CHANGE_SIM_PIN() {
 RIL[REQUEST_CHANGE_SIM_PIN2] = null;
 RIL[REQUEST_ENTER_NETWORK_DEPERSONALIZATION] = null;
 RIL[REQUEST_GET_CURRENT_CALLS] = function REQUEST_GET_CURRENT_CALLS(length) {
+  if (!this.rilQuirksInitialized) {
+    this.initRILQuirks();
+  }
+
   let calls_length = 0;
   // The RIL won't even send us the length integer if there are no active calls.
   // So only read this integer if the parcel actually has it.
@@ -928,22 +1008,24 @@ RIL[REQUEST_GET_CURRENT_CALLS] = function REQUEST_GET_CURRENT_CALLS(length) {
 
   let calls = {};
   for (let i = 0; i < calls_length; i++) {
-    let call = {
-      state:              Buf.readUint32(), // CALL_STATE_*
-      callIndex:          Buf.readUint32(), // GSM index (1-based)
-      toa:                Buf.readUint32(),
-      isMpty:             Boolean(Buf.readUint32()),
-      isMT:               Boolean(Buf.readUint32()),
-      als:                Buf.readUint32(),
-      isVoice:            Boolean(Buf.readUint32()),
-      isVoicePrivacy:     Boolean(Buf.readUint32()),
-      somethingOrOther:   Buf.readUint32(), //XXX TODO whatziz? not in ril.h, but it's in the output...
-      number:             Buf.readString(), //TODO munge with TOA
-      numberPresentation: Buf.readUint32(), // CALL_PRESENTATION_*
-      name:               Buf.readString(),
-      namePresentation:   Buf.readUint32(),
-      uusInfo:            null
-    };
+    let call = {};
+    call.state          = Buf.readUint32(); // CALL_STATE_*
+    call.callIndex      = Buf.readUint32(); // GSM index (1-based)
+    call.toa            = Buf.readUint32();
+    call.isMpty         = Boolean(Buf.readUint32());
+    call.isMT           = Boolean(Buf.readUint32());
+    call.als            = Buf.readUint32();
+    call.isVoice        = Boolean(Buf.readUint32());
+    call.isVoicePrivacy = Boolean(Buf.readUint32());
+    if (RILQUIRKS_CALLSTATE_EXTRA_UINT32) {
+      Buf.readUint32();
+    }
+    call.number             = Buf.readString(); //TODO munge with TOA
+    call.numberPresentation = Buf.readUint32(); // CALL_PRESENTATION_*
+    call.name               = Buf.readString();
+    call.namePresentation   = Buf.readUint32();
+
+    call.uusInfo = null;
     let uusInfoPresent = Buf.readUint32();
     if (uusInfoPresent == 1) {
       call.uusInfo = {
@@ -952,6 +1034,7 @@ RIL[REQUEST_GET_CURRENT_CALLS] = function REQUEST_GET_CURRENT_CALLS(length) {
         userData: null //XXX TODO byte array?!?
       };
     }
+
     calls[call.callIndex] = call;
   }
   Phone.onCurrentCalls(calls);
@@ -1012,11 +1095,11 @@ RIL[REQUEST_RADIO_POWER] = null;
 RIL[REQUEST_DTMF] = function REQUEST_DTMF() {
   Phone.onSendTone();
 };
-RIL[REQUEST_SEND_SMS] = function REQUEST_SEND_SMS() {
-  let messageRef = Buf.readUint32();
-  let ackPDU = Buf.readString();
-  let errorCode = Buf.readUint32();
-  Phone.onSendSMS(messageRef, ackPDU, errorCode);
+RIL[REQUEST_SEND_SMS] = function REQUEST_SEND_SMS(length, options) {
+  options.messageRef = Buf.readUint32();
+  options.ackPDU = Buf.readString();
+  options.errorCode = Buf.readUint32();
+  Phone.onSendSMS(options);
 };
 RIL[REQUEST_SEND_SMS_EXPECT_MORE] = null;
 RIL[REQUEST_SETUP_DATA_CALL] = function REQUEST_SETUP_DATA_CALL() {
@@ -1077,21 +1160,25 @@ RIL[REQUEST_GET_MUTE] = null;
 RIL[REQUEST_QUERY_CLIP] = null;
 RIL[REQUEST_LAST_DATA_CALL_FAIL_CAUSE] = null;
 RIL[REQUEST_DATA_CALL_LIST] = function REQUEST_DATA_CALL_LIST(length) {
-  let datacalls = [];
-
-  if (!length) {
+  let num = 0;
+  if (length) {
+    num = Buf.readUint32();
+  }
+  if (!num) {
+    Phone.onDataCallList(null);
     return;
   }
 
-  let num = Buf.readUint32();
+  let datacalls = {};
   for (let i = 0; i < num; i++) {
-    datacalls.push({
+    let datacall = {
       cid: Buf.readUint32().toString(),
       active: Buf.readUint32(),
       type: Buf.readString(),
       apn: Buf.readString(),
       address: Buf.readString()
-    });
+    };
+    datacalls[datacall.cid] = datacall;
   }
 
   Phone.onDataCallList(datacalls);
@@ -1174,7 +1261,9 @@ RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = null;
 RIL[UNSOLICITED_SIGNAL_STRENGTH] = function UNSOLICITED_SIGNAL_STRENGTH() {
   this[REQUEST_SIGNAL_STRENGTH]();
 };
-RIL[UNSOLICITED_DATA_CALL_LIST_CHANGED] = null;
+RIL[UNSOLICITED_DATA_CALL_LIST_CHANGED] = function UNSOLICITED_DATA_CALL_LIST_CHANGED(length) {
+  Phone.onDataCallListChanged();
+};
 RIL[UNSOLICITED_SUPP_SVC_NOTIFICATION] = null;
 RIL[UNSOLICITED_STK_SESSION_END] = null;
 RIL[UNSOLICITED_STK_PROACTIVE_COMMAND] = null;
@@ -1218,9 +1307,6 @@ RIL[UNSOLICITED_RESEND_INCALL_MUTE] = null;
  */
 let Phone = {
 
-  //XXX TODO beware, this is just demo code. It's still missing
-  // communication with the UI thread.
-
   /**
    * One of the RADIO_STATE_* constants.
    */
@@ -1233,6 +1319,9 @@ let Phone = {
   IMEISV: null,
   IMSI: null,
   SMSC: null,
+
+  registrationState: {},
+  gprsRegistrationState: {},
 
   /**
    * List of strings identifying the network operator.
@@ -1313,7 +1402,9 @@ let Phone = {
    */
 
   onRadioStateChanged: function onRadioStateChanged(newState) {
-    debug("Radio state changed from " + this.radioState + " to " + newState);
+    if (DEBUG) {
+      debug("Radio state changed from " + this.radioState + " to " + newState);
+    }
     if (this.radioState == newState) {
       // No change in state, return.
       return;
@@ -1346,7 +1437,7 @@ let Phone = {
       this.sendDOMMessage({
         type: "radiostatechange",
         radioState: (newState == RADIO_STATE_OFF) ?
-                     DOM_RADIOSTATE_OFF : DOM_RADIOSTATE_READY
+                     GECKO_RADIOSTATE_OFF : GECKO_RADIOSTATE_READY
       });
 
       //XXX TODO For now, just turn the radio on if it's off. for the real
@@ -1363,7 +1454,7 @@ let Phone = {
       //TODO do that
 
       this.sendDOMMessage({type: "radiostatechange",
-                           radioState: DOM_RADIOSTATE_UNAVAILABLE});
+                           radioState: GECKO_RADIOSTATE_UNAVAILABLE});
     }
 
     if (newState == RADIO_STATE_SIM_READY  ||
@@ -1375,13 +1466,13 @@ let Phone = {
       RIL.getSignalStrength();
       RIL.getSMSCAddress();
       this.sendDOMMessage({type: "cardstatechange",
-                           cardState: DOM_CARDSTATE_READY});
+                           cardState: GECKO_CARDSTATE_READY});
     }
     if (newState == RADIO_STATE_SIM_LOCKED_OR_ABSENT  ||
         newState == RADIO_STATE_RUIM_LOCKED_OR_ABSENT) {
       RIL.getICCStatus();
       this.sendDOMMessage({type: "cardstatechange",
-                           cardState: DOM_CARDSTATE_UNAVAILABLE});
+                           cardState: GECKO_CARDSTATE_UNAVAILABLE});
     }
 
     let wasOn = this.radioState != RADIO_STATE_OFF &&
@@ -1416,8 +1507,7 @@ let Phone = {
           currentCall.state = newCall.state;
           this._handleChangedCallState(currentCall);
         }
-      }
-      else {
+      } else {
         // Call is no longer reported by the radio. Remove from our map and
         // send disconnected state change.
         delete this.currentCalls[currentCall.callIndex];
@@ -1455,22 +1545,22 @@ let Phone = {
   },
 
   onNetworkStateChanged: function onNetworkStateChanged() {
-    debug("Network state changed, re-requesting phone state.");
+    if (DEBUG) debug("Network state changed, re-requesting phone state.");
     this.requestNetworkInfo();
   },
 
   onICCStatus: function onICCStatus(iccStatus) {
     if (DEBUG) {
-        debug("iccStatus: " + JSON.stringify(iccStatus));
+      debug("iccStatus: " + JSON.stringify(iccStatus));
     }
     this.iccStatus = iccStatus;
 
     if ((!iccStatus) || (iccStatus.cardState == CARD_STATE_ABSENT)) {
       if (DEBUG) debug("ICC absent");
-      if (this.cardState == DOM_CARDSTATE_ABSENT) {
+      if (this.cardState == GECKO_CARDSTATE_ABSENT) {
         return;
       }
-      this.cardState = DOM_CARDSTATE_ABSENT;
+      this.cardState = GECKO_CARDSTATE_ABSENT;
       this.sendDOMMessage({type: "cardstatechange",
                            cardState: this.cardState});
       return;
@@ -1483,10 +1573,10 @@ let Phone = {
         (this.radioState == RADIO_STATE_NV_NOT_READY) ||
         (this.radioState == RADIO_STATE_NV_READY)) {
       if (DEBUG) debug("ICC not ready");
-      if (this.cardState == DOM_CARDSTATE_NOT_READY) {
+      if (this.cardState == GECKO_CARDSTATE_NOT_READY) {
         return;
       }
-      this.cardState = DOM_CARDSTATE_NOT_READY;
+      this.cardState = GECKO_CARDSTATE_NOT_READY;
       this.sendDOMMessage({type: "cardstatechange",
                            cardState: this.cardState});
       return;
@@ -1501,10 +1591,10 @@ let Phone = {
         if (DEBUG) {
           debug("Subscription application is not present in iccStatus.");
         }
-        if (this.cardState == DOM_CARDSTATE_ABSENT) {
+        if (this.cardState == GECKO_CARDSTATE_ABSENT) {
           return;
         }
-        this.cardState = DOM_CARDSTATE_ABSENT;
+        this.cardState = GECKO_CARDSTATE_ABSENT;
         this.sendDOMMessage({type: "cardstatechange",
                              cardState: this.cardState});
         return;
@@ -1513,21 +1603,21 @@ let Phone = {
       let newCardState;
       switch (app.app_state) {
         case CARD_APP_STATE_PIN:
-          newCardState = DOM_CARDSTATE_PIN_REQUIRED;
+          newCardState = GECKO_CARDSTATE_PIN_REQUIRED;
           break;
         case CARD_APP_STATE_PUK:
-          newCardState = DOM_CARDSTATE_PUK_REQUIRED;
+          newCardState = GECKO_CARDSTATE_PUK_REQUIRED;
           break;
         case CARD_APP_STATE_SUBSCRIPTION_PERSO:
-          newCardState = DOM_CARDSTATE_NETWORK_LOCKED;
+          newCardState = GECKO_CARDSTATE_NETWORK_LOCKED;
           break;
         case CARD_APP_STATE_READY:
-          newCardState = DOM_CARDSTATE_READY;
+          newCardState = GECKO_CARDSTATE_READY;
           break;
         case CARD_APP_STATE_UNKNOWN:
         case CARD_APP_STATE_DETECTED:
         default:
-          newCardState = DOM_CARDSTATE_NOT_READY;
+          newCardState = GECKO_CARDSTATE_NOT_READY;
       }
 
       if (this.cardState == newCardState) {
@@ -1578,12 +1668,67 @@ let Phone = {
     this.IMEISV = imeiSV;
   },
 
-  onRegistrationState: function onRegistrationState(newState) {
-    this.registrationState = newState;
+  onRegistrationState: function onRegistrationState(state) {
+    let rs = this.registrationState;
+    let stateChanged = false;
+
+    let regState = RIL.parseInt(state[0], NETWORK_CREG_STATE_UNKNOWN);
+    if (rs.regState != regState) {
+      rs.regState = regState;
+      stateChanged = true;
+    }
+
+    let radioTech = RIL.parseInt(state[3], NETWORK_CREG_TECH_UNKNOWN);
+    if (rs.radioTech != radioTech) {
+      rs.radioTech = radioTech;
+      stateChanged = true;
+    }
+
+    // TODO: This zombie code branch that will be raised from the dead once
+    // we add explicit CDMA support everywhere (bug 726098).
+    let cdma = false;
+    if (cdma) {
+      let baseStationId = RIL.parseInt(state[4]);
+      let baseStationLatitude = RIL.parseInt(state[5]);
+      let baseStationLongitude = RIL.parseInt(state[6]);
+      if (!baseStationLatitude && !baseStationLongitude) {
+        baseStationLatitude = baseStationLongitude = null;
+      }
+      let cssIndicator = RIL.parseInt(state[7]);
+      let systemId = RIL.parseInt(state[8]);
+      let networkId = RIL.parseInt(state[9]);
+      let roamingIndicator = RIL.parseInt(state[10]);
+      let systemIsInPRL = RIL.parseInt(state[11]);
+      let defaultRoamingIndicator = RIL.parseInt(state[12]);
+      let reasonForDenial = RIL.parseInt(state[13]);
+    }
+
+    if (stateChanged) {
+      this.sendDOMMessage({type: "registrationstatechange",
+                           registrationState: rs});
+    }
   },
 
-  onGPRSRegistrationState: function onGPRSRegistrationState(newState) {
-    this.gprsRegistrationState = newState;
+  onGPRSRegistrationState: function onGPRSRegistrationState(state) {
+    let rs = this.gprsRegistrationState;
+    let stateChanged = false;
+
+    let regState = RIL.parseInt(state[0], NETWORK_CREG_STATE_UNKNOWN);
+    if (rs.regState != regState) {
+      rs.regState = regState;
+      stateChanged = true;
+    }
+
+    let radioTech = RIL.parseInt(state[3], NETWORK_CREG_TECH_UNKNOWN);
+    if (rs.radioTech != radioTech) {
+      rs.radioTech = radioTech;
+      stateChanged = true;
+    }
+
+    if (stateChanged) {
+      this.sendDOMMessage({type: "gprsregistrationstatechange",
+                           gprsRegistrationState: rs});
+    }
   },
 
   onOperator: function onOperator(operator) {
@@ -1603,7 +1748,7 @@ let Phone = {
   },
 
   onSignalStrength: function onSignalStrength(strength) {
-    debug("Signal strength " + JSON.stringify(strength));
+    if (DEBUG) debug("Signal strength " + JSON.stringify(strength));
     this.sendDOMMessage({type: "signalstrengthchange",
                          signalStrength: strength});
   },
@@ -1639,8 +1784,9 @@ let Phone = {
   onSetSMSCAddress: function onSetSMSCAddress() {
   },
 
-  onSendSMS: function onSendSMS(messageRef, ackPDU, errorCode) {
-    //TODO
+  onSendSMS: function onSendSMS(options) {
+    options.type = "sms-sent";
+    this.sendDOMMessage(options);
   },
 
   onNewSMS: function onNewSMS(payloadLength) {
@@ -1692,8 +1838,9 @@ let Phone = {
     let options = this.activeDataRequests[token];
     delete this.activeDataRequests[token];
 
-    this.currentDataCalls[cid] = {
-      state: GECKO_DATACALL_STATE_CONNECTED,
+    let datacall = this.currentDataCalls[cid] = {
+      active: -1,
+      state: GECKO_NETWORK_STATE_CONNECTING,
       cid: cid,
       apn: options.apn,
       ifname: ifname,
@@ -1702,71 +1849,65 @@ let Phone = {
       gw: gw,
     };
     this.sendDOMMessage({type: "datacallstatechange",
-                         state: GECKO_DATACALL_STATE_CONNECTED,
-                         cid: cid,
-                         apn: options.apn,
-                         ifname: ifname,
-                         ipaddr: ipaddr,
-                         dns: dns,
-                         gateway: gw});
+                         datacall: datacall});
+
+    // Let's get the list of data calls to ensure we know whether it's active
+    // or not.
+    RIL.getDataCallList();
   },
 
   onDeactivateDataCall: function onDeactivateDataCall(token) {
     let options = this.activeDataRequests[token];
     delete this.activeDataRequests[token];
 
-    let cid = options.cid;
-    if (!(cid in this.currentDataCalls)) {
-      return;
-    }
-
-    let apn = this.currentDataCalls[cid].apn;
-    delete this.currentDataCalls[cid];
+    let datacall = this.currentDataCalls[options.cid];
+    delete this.currentDataCalls[options.cid];
+    datacall.state = GECKO_NETWORK_STATE_DISCONNECTED;
     this.sendDOMMessage({type: "datacallstatechange",
-                         state: GECKO_DATACALL_STATE_DISCONNECTED,
-                         cid: cid,
-                         apn: apn});
+                         datacall: datacall});
   },
 
   onDataCallList: function onDataCallList(datacalls) {
-    let currentDataCalls = this.currentDataCalls;
+    for each (let currentDataCall in this.currentDataCalls) {
+      let newDataCall;
+      if (datacalls) {
+        newDataCall = datacalls[currentDataCall.cid];
+        delete datacalls[currentDataCall.cid];
+      }
 
-    // Sync content of currentDataCalls and data call list.
-    for each (let datacall in datacalls) {
-      let {cid, apn} = datacall;
-
-      if (datacall.active != DATACALL_INACTIVE) {
-        // XXX: This should be followed up.
-        // datacall.active == DATACALL_ACTIVE_DOWN(1) for my device
-        if (!(cid in currentDataCalls)) {
-          let datacall = {state: GECKO_DATACALL_STATE_CONNECTED,
-                          cid: cid,
-                          apn: apn,
-                          ipaddr: datacall.address};
-          currentDataCalls[cid] = datacall;
-
-          this.sendDOMMessage({type: "datacallstatechange",
-                               state: GECKO_DATACALL_STATE_CONNECTED,
-                               cid: cid,
-                               apn: apn});
+      if (newDataCall) {
+        switch (newDataCall.active) {
+          case DATACALL_INACTIVE:
+            newDataCall.state = GECKO_NETWORK_STATE_DISCONNECTED;
+            break;
+          case DATACALL_ACTIVE_DOWN:
+            newDataCall.state = GECKO_NETWORK_STATE_SUSPENDED;
+            break;
+          case DATACALL_ACTIVE_UP:
+            newDataCall.state = GECKO_NETWORK_STATE_CONNECTED;
+            break;
         }
-      } else {                 // datacall.active == DATACALL_INACTIVE
-        if (cid in currentDataCalls) {
-          delete currentDataCalls[cid];
+        if (newDataCall.state != currentDataCall.state) {
+          currentDataCall.active = newDataCall.active;
+          currentDataCall.state = newDataCall.state;
           this.sendDOMMessage({type: "datacallstatechange",
-                               state: GECKO_DATACALL_STATE_DISCONNECTED,
-                               cid: cid,
-                               apn: apn});
+                               datacall: currentDataCall});
         }
+      } else {
+        delete this.currentCalls[currentDataCall.callIndex];
+        currentDataCall.state = GECKO_NETWORK_STATE_DISCONNECTED;
+        this.sendDOMMessage({type: "datacallstatechange",
+                             datacall: currentDataCall});
       }
     }
 
-    let datacall_list = [];
-    for each (let datacall in this.currentDataCalls) {
-      datacall_list.push(datacall);
+    for each (let datacall in datacalls) {
+      if (DEBUG) debug("Unexpected data call: " + JSON.stringify(datacall));
     }
-    this.sendDOMMessage({type: "datacalllist",
-                         datacalls: datacall_list});
+  },
+
+  onDataCallListChanged: function onDataCallListChanged() {
+    RIL.getDataCallList();
   },
 
   /**
@@ -1803,6 +1944,15 @@ let Phone = {
       calls.push(call);
     }
     this.sendDOMMessage({type: "enumerateCalls", calls: calls});
+  },
+
+  enumerateDataCalls: function enumerateDataCalls() {
+    let datacall_list = [];
+    for each (let datacall in this.currentDataCalls) {
+      datacall_list.push(datacall);
+    }
+    this.sendDOMMessage({type: "datacalllist",
+                         datacalls: datacall_list});
   },
 
   /**
@@ -1895,6 +2045,10 @@ let Phone = {
    *        String containing the recipient number.
    * @param body
    *        String containing the message text.
+   * @param requestId
+   *        String identifying the sms request used by the SmsRequestManager.
+   * @param processId
+   *        String containing the processId for the SmsRequestManager.
    */
   sendSMS: function sendSMS(options) {
     // Get the SMS Center address
@@ -1907,12 +2061,17 @@ let Phone = {
       }
       return;
     }
+    // We explicitly save this information on the options object so that we
+    // can refer to it later, in particular on the main thread (where this
+    // object may get sent eventually.)
+    options.SMSC = this.SMSC;
+
     //TODO: verify values on 'options'
     //TODO: the data encoding and length in octets should eventually be
     // computed on the mainthread and passed down to us.
-    RIL.sendSMS(this.SMSC, options.number, options.body,
-                PDU_DCS_MSG_CODING_7BITS_ALPHABET, //TODO: hard-coded for now,
-                Math.ceil(options.body.length * 7 / 8)); //TODO: ditto
+    options.dcs = PDU_DCS_MSG_CODING_7BITS_ALPHABET;
+    options.bodyLengthInOctets = Math.ceil(options.body.length * 7 / 8);
+    RIL.sendSMS(options);
   },
 
   /**
@@ -1923,11 +2082,8 @@ let Phone = {
 
     let token = RIL.setupDataCall(options.radioTech, options.apn,
                                   options.user, options.passwd,
-                                  options.chappap, options.reason);
+                                  options.chappap, options.pdptype);
     this.activeDataRequests[token] = options;
-    this.sendDOMMessage({type: "datacallstatechange",
-                         state: GECKO_DATACALL_STATE_CONNECTING,
-                         apn: options.apn});
   },
 
   /**
@@ -1938,15 +2094,14 @@ let Phone = {
       return;
     }
 
-    let datacall = this.currentDataCalls[options.cid];
-    datacall.state = GECKO_DATACALL_STATE_DISCONNECTING;
-
-    let token = RIL.deactivateDataCall(options.cid, options.reason);
+    let reason = options.reason || DATACALL_DEACTIVATE_NO_REASON;
+    let token = RIL.deactivateDataCall(options.cid, reason);
     this.activeDataRequests[token] = options;
+
+    let datacall = this.currentDataCalls[options.cid];
+    datacall.state = GECKO_NETWORK_STATE_DISCONNECTING;
     this.sendDOMMessage({type: "datacallstatechange",
-                         state: GECKO_DATACALL_STATE_DISCONNECTING,
-                         cid: options.cid,
-                         apn: datacall.apn});
+                         datacall: datacall});
   },
 
   /**

@@ -93,45 +93,6 @@ function bindDOMWindowUtils(aWindow) {
   return target;
 }
 
-function Observer(specialPowers, aTopic, aCallback, aIsPref) {
-  this._sp = specialPowers;
-  this._topic = aTopic;
-  this._callback = aCallback;
-  this._isPref = aIsPref;
-}
-
-Observer.prototype = {
-  _sp: null,
-  _topic: null,
-  _callback: null,
-  _isPref: false,
-
-  observe: function(aSubject, aTopic, aData) {
-    if ((!this._isPref && aTopic == this._topic) ||
-        (this._isPref && aTopic == "nsPref:changed")) {
-      if (aData == this._topic) {
-       this.cleanup();
-        /* The callback must execute asynchronously after all the preference observers have run */
-        content.window.setTimeout(this._callback, 0);
-        content.window.setTimeout(this._sp._finishPrefEnv, 0);
-      }
-    }
-  },
-
-  cleanup: function() {
-    if (this._isPref) {
-      var os = Cc["@mozilla.org/preferences-service;1"].getService()
-               .QueryInterface(Ci.nsIPrefBranch2);
-      os.removeObserver(this._topic, this);
-    } else {
-      var os = Cc["@mozilla.org/observer-service;1"]
-              .getService(Ci.nsIObserverService)
-              .QueryInterface(Ci.nsIObserverService);
-      os.removeObserver(this, this._topic);
-    }
-  },
-};
-
 function isWrappable(x) {
   if (typeof x === "object")
     return x !== null;
@@ -156,6 +117,9 @@ function doApply(fun, invocant, args) {
   return Function.prototype.apply.call(fun, invocant, args);
 }
 
+// Use a weak map to cache wrappers. This allows the wrappers to preserve identity.
+var wrapperCache = WeakMap();
+
 function wrapPrivileged(obj) {
 
   // Primitives pass straight through.
@@ -166,10 +130,15 @@ function wrapPrivileged(obj) {
   if (isWrapper(obj))
     throw "Trying to double-wrap object!";
 
+  // Try the cache.
+  if (wrapperCache.has(obj))
+    return wrapperCache.get(obj);
+
   // Make our core wrapper object.
   var handler = new SpecialPowersHandler(obj);
 
   // If the object is callable, make a function proxy.
+  var wrapper;
   if (typeof obj === "function") {
     var callTrap = function() {
       // The invocant and arguments may or may not be wrappers. Unwrap them if necessary.
@@ -193,11 +162,16 @@ function wrapPrivileged(obj) {
       return wrapPrivileged(new FakeConstructor());
     };
 
-    return Proxy.createFunction(handler, callTrap, constructTrap);
+    wrapper = Proxy.createFunction(handler, callTrap, constructTrap);
+  }
+  // Otherwise, just make a regular object proxy.
+  else {
+    wrapper = Proxy.create(handler);
   }
 
-  // Otherwise, just make a regular object proxy.
-  return Proxy.create(handler);
+  // Cache the wrapper and return it.
+  wrapperCache.set(obj, wrapper);
+  return wrapper;
 };
 
 function unwrapPrivileged(x) {
@@ -408,9 +382,6 @@ SpecialPowersAPI.prototype = {
    *
    * Known Issues:
    *
-   *  - The wrapping function does not preserve identity, so
-   *    SpecialPowers.wrap(foo) !== SpecialPowers.wrap(foo). See bug 718543.
-   *
    *  - The wrapper cannot see expando properties on unprivileged DOM objects.
    *    That is to say, the wrapper uses Xray delegation.
    *
@@ -466,7 +437,7 @@ SpecialPowersAPI.prototype = {
    * what we have set.
    *
    * prefs: {set|clear: [[pref, value], [pref, value, Iid], ...], set|clear: [[pref, value], ...], ...}
-   * ex: {'set': [['foo.bar', 2], ['browser.magic', '0xfeedface']], 'remove': [['bad.pref']] }
+   * ex: {'set': [['foo.bar', 2], ['browser.magic', '0xfeedface']], 'clear': [['bad.pref']] }
    *
    * In the scenario where our prefs specify the same pref more than once, we do not guarantee
    * the behavior.  
@@ -546,8 +517,21 @@ SpecialPowersAPI.prototype = {
     }
 
     if (pendingActions.length > 0) {
+      // The callback needs to be delayed twice. One delay is because the pref
+      // service doesn't guarantee the order it calls its observers in, so it
+      // may notify the observer holding the callback before the other
+      // observers have been notified and given a chance to make the changes
+      // that the callback checks for. The second delay is because pref
+      // observers often defer making their changes by posting an event to the
+      // event loop.
+      function delayedCallback() {
+        function delayAgain() {
+          content.window.setTimeout(callback, 0);
+        }
+        content.window.setTimeout(delayAgain, 0);
+      }
       this._prefEnvUndoStack.push(cleanupActions);
-      this._pendingPrefs.push([pendingActions, callback]);
+      this._pendingPrefs.push([pendingActions, delayedCallback]);
       this._applyPrefs();
     } else {
       content.window.setTimeout(callback, 0);
@@ -556,8 +540,16 @@ SpecialPowersAPI.prototype = {
 
   popPrefEnv: function(callback) {
     if (this._prefEnvUndoStack.length > 0) {
+      // See pushPrefEnv comment regarding delay.
+      function delayedCallback() {
+        function delayAgain() {
+          content.window.setTimeout(callback, 0);
+        }
+        content.window.setTimeout(delayAgain, 0);
+      }
+      let cb = callback ? delayedCallback : null; 
       /* Each pop will have a valid block of preferences */
-      this._pendingPrefs.push([this._prefEnvUndoStack.pop(), callback]);
+      this._pendingPrefs.push([this._prefEnvUndoStack.pop(), cb]);
       this._applyPrefs();
     } else {
       content.window.setTimeout(callback, 0);
@@ -587,7 +579,19 @@ SpecialPowersAPI.prototype = {
     var callback = transaction[1];
 
     var lastPref = pendingActions[pendingActions.length-1];
-    this._addObserver(lastPref.name, callback, true);
+
+    var pb = Cc["@mozilla.org/preferences-service;1"].getService(Ci.nsIPrefBranch);
+    var self = this;
+    pb.addObserver(lastPref.name, function prefObs(subject, topic, data) {
+      pb.removeObserver(lastPref.name, prefObs);
+
+      content.window.setTimeout(callback, 0);
+      content.window.setTimeout(function () {
+        self._applyingPrefs = false;
+        // Now apply any prefs that may have been queued while we were applying
+        self._applyPrefs();
+      }, 0);
+    }, false);
 
     for (var idx in pendingActions) {
       var pref = pendingActions[idx];
@@ -597,31 +601,6 @@ SpecialPowersAPI.prototype = {
         this.clearUserPref(pref.name);
       }
     }
-  },
-
-  _addObserver: function(aTopic, aCallback, aIsPref) {
-    var observer = new Observer(this, aTopic, aCallback, aIsPref);
-
-    if (aIsPref) {
-      var os = Cc["@mozilla.org/preferences-service;1"].getService()
-               .QueryInterface(Ci.nsIPrefBranch2);	
-      os.addObserver(aTopic, observer, false);
-    } else {
-      var os = Cc["@mozilla.org/observer-service;1"]
-              .getService(Ci.nsIObserverService)
-              .QueryInterface(Ci.nsIObserverService);
-      os.addObserver(observer, aTopic, false);
-    }
-  },
-
-  /* called from the observer when we get a pref:changed.  */
-  _finishPrefEnv: function() {
-    /*
-      Any subsequent pref environment pushes that occurred while waiting 
-      for the preference update are pending, and will now be executed.
-    */
-    this.wrappedJSObject.SpecialPowers._applyingPrefs = false;
-    this.wrappedJSObject.SpecialPowers._applyPrefs();
   },
 
   addObserver: function(obs, notification, weak) {
@@ -1060,4 +1039,3 @@ SpecialPowersAPI.prototype = {
     return el.dispatchEvent(event);
   },
 };
-

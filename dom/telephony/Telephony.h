@@ -51,31 +51,25 @@ class nsPIDOMWindow;
 
 BEGIN_TELEPHONY_NAMESPACE
 
-class Telephony : public nsDOMEventTargetWrapperCache,
+class Telephony : public nsDOMEventTargetHelper,
                   public nsIDOMTelephony
 {
   nsCOMPtr<nsIRadioInterfaceLayer> mRIL;
   nsCOMPtr<nsIRILTelephonyCallback> mRILTelephonyCallback;
 
-  NS_DECL_EVENT_HANDLER(incoming);
+  NS_DECL_EVENT_HANDLER(incoming)
 
   TelephonyCall* mActiveCall;
   nsTArray<nsRefPtr<TelephonyCall> > mCalls;
 
-  // Cached calls array object. Cleared whenever mCalls changes and then rebuilt
-  // once a page looks for the liveCalls attribute.
-  JSObject* mCallsArray;
-
-  bool mRooted;
+  nsRefPtr<TelephonyCallArray> mCallsArray;
 
 public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDOMTELEPHONY
   NS_DECL_NSIRILTELEPHONYCALLBACK
-  NS_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetWrapperCache::)
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
-                                                   Telephony,
-                                                   nsDOMEventTargetWrapperCache)
+  NS_FORWARD_NSIDOMEVENTTARGET(nsDOMEventTargetHelper::)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Telephony, nsDOMEventTargetHelper)
 
   static already_AddRefed<Telephony>
   Create(nsPIDOMWindow* aOwner, nsIRadioInterfaceLayer* aRIL);
@@ -83,7 +77,7 @@ public:
   nsIDOMEventTarget*
   ToIDOMEventTarget() const
   {
-    return static_cast<nsDOMEventTargetWrapperCache*>(
+    return static_cast<nsDOMEventTargetHelper*>(
              const_cast<Telephony*>(this));
   }
 
@@ -98,7 +92,6 @@ public:
   {
     NS_ASSERTION(!mCalls.Contains(aCall), "Already know about this one!");
     mCalls.AppendElement(aCall);
-    mCallsArray = nsnull;
   }
 
   void
@@ -106,7 +99,6 @@ public:
   {
     NS_ASSERTION(mCalls.Contains(aCall), "Didn't know about this one!");
     mCalls.RemoveElement(aCall);
-    mCallsArray = nsnull;
   }
 
   nsIRadioInterfaceLayer*
@@ -127,9 +119,15 @@ public:
     return mScriptContext;
   }
 
+  const nsTArray<nsRefPtr<TelephonyCall> >&
+  Calls() const
+  {
+    return mCalls;
+  }
+
 private:
   Telephony()
-  : mActiveCall(nsnull), mCallsArray(nsnull), mRooted(false)
+  : mActiveCall(nsnull)
   { }
 
   ~Telephony();

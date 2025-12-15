@@ -21,6 +21,7 @@
  *
  * Contributor(s):
  *   Mihai Sucan <mihai.sucan@gmail.com> (original author)
+ *   Spyros Livathinos <livathinos.spyros@gmail.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -51,7 +52,7 @@ var component = Services.prefs.getCharPref(PREF_EDITOR_COMPONENT);
 var obj = {};
 try {
   if (component == "ui") {
-    throw new Error("The UI editor component is not available.");
+    throw new Error("The ui editor component is not available.");
   }
   Cu.import("resource:///modules/source-editor-" + component + ".jsm", obj);
 } catch (ex) {
@@ -105,13 +106,99 @@ SourceEditor.THEMES = {
 
 /**
  * Source editor configuration defaults.
+ * @see SourceEditor.init
  */
 SourceEditor.DEFAULTS = {
-  MODE: SourceEditor.MODES.TEXT,
-  THEME: SourceEditor.THEMES.MOZILLA,
-  UNDO_LIMIT: 200,
-  TAB_SIZE: 4, // overriden by pref
-  EXPAND_TAB: true, // overriden by pref
+  /**
+   * The text you want shown when the editor opens up.
+   * @type string
+   */
+  initialText: "",
+
+  /**
+   * The editor mode, based on the file type you want to edit. You can use one of
+   * the predefined modes.
+   *
+   * @see SourceEditor.MODES
+   * @type string
+   */
+  mode: SourceEditor.MODES.TEXT,
+
+  /**
+   * The syntax highlighting theme you want. You can use one of the predefined
+   * themes, or you can point to your CSS file.
+   *
+   * @see SourceEditor.THEMES.
+   * @type string
+   */
+  theme: SourceEditor.THEMES.MOZILLA,
+
+  /**
+   * How many steps should the undo stack hold.
+   * @type number
+   */
+  undoLimit: 200,
+
+  /**
+   * Define how many spaces to use for a tab character. This value is overridden
+   * by a user preference, see SourceEditor.PREFS.TAB_SIZE.
+   *
+   * @type number
+   */
+  tabSize: 4,
+
+  /**
+   * Tells if you want tab characters to be expanded to spaces. This value is
+   * overridden by a user preference, see SourceEditor.PREFS.EXPAND_TAB.
+   * @type boolean
+   */
+  expandTab: true,
+
+  /**
+   * Tells if you want the editor to be read only or not.
+   * @type boolean
+   */
+  readOnly: false,
+
+  /**
+   * Display the line numbers gutter.
+   * @type boolean
+   */
+  showLineNumbers: false,
+
+  /**
+   * Display the annotations gutter/ruler. This gutter currently supports
+   * annotations of breakpoint type.
+   * @type boolean
+   */
+  showAnnotationRuler: false,
+
+  /**
+   * Display the overview gutter/ruler. This gutter presents an overview of the
+   * current annotations in the editor, for example the breakpoints.
+   * @type boolean
+   */
+  showOverviewRuler: false,
+
+  /**
+   * Highlight the current line.
+   * @type boolean
+   */
+  highlightCurrentLine: true,
+
+  /**
+   * An array of objects that allows you to define custom editor keyboard
+   * bindings. Each object can have:
+   *   - action - name of the editor action to invoke.
+   *   - code - keyCode for the shortcut.
+   *   - accel - boolean for the Accel key (Cmd on Macs, Ctrl on Linux/Windows).
+   *   - shift - boolean for the Shift key.
+   *   - alt - boolean for the Alt key.
+   *   - callback - optional function to invoke, if the action is not predefined
+   *   in the editor.
+   * @type array
+   */
+  keys: null,
 };
 
 /**
@@ -150,6 +237,51 @@ SourceEditor.EVENTS = {
    * Both ranges are objects which hold two properties: start and end.
    */
   SELECTION: "Selection",
+
+  /**
+   * The focus event is fired when the editor is focused.
+   */
+  FOCUS: "Focus",
+
+  /**
+   * The blur event is fired when the editor goes out of focus.
+   */
+  BLUR: "Blur",
+
+  /**
+   * The MouseMove event is sent when the user moves the mouse over a line
+   * annotation. The event object properties:
+   *   - event - the DOM mousemove event object.
+   *   - x and y - the mouse coordinates relative to the document being edited.
+   */
+  MOUSE_MOVE: "MouseMove",
+
+  /**
+   * The MouseOver event is sent when the mouse pointer enters a line
+   * annotation. The event object properties:
+   *   - event - the DOM mouseover event object.
+   *   - x and y - the mouse coordinates relative to the document being edited.
+   */
+  MOUSE_OVER: "MouseOver",
+
+  /**
+   * This MouseOut event is sent when the mouse pointer exits a line
+   * annotation. The event object properties:
+   *   - event - the DOM mouseout event object.
+   *   - x and y - the mouse coordinates relative to the document being edited.
+   */
+  MOUSE_OUT: "MouseOut",
+
+  /**
+   * The BreakpointChange event is fired when a new breakpoint is added or when
+   * a breakpoint is removed - either through API use or through the editor UI.
+   * Event object properties:
+   *   - added - array that holds the new breakpoints.
+   *   - removed - array that holds the breakpoints that have been removed.
+   * Each object in the added/removed arrays holds two properties: line and
+   * condition.
+   */
+  BREAKPOINT_CHANGE: "BreakpointChange",
 };
 
 /**

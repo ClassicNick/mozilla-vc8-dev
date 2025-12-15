@@ -127,6 +127,7 @@
 #include "methodjit/StubCalls-inl.h"
 
 #include "vm/ArgumentsObject.h"
+#include "vm/MethodGuard.h"
 
 #include "ds/Sort.h"
 
@@ -1215,7 +1216,7 @@ array_fix(JSContext *cx, JSObject *obj, bool *success, AutoIdVector *props)
 
 Class js::ArrayClass = {
     "Array",
-    Class::NON_NATIVE | JSCLASS_HAS_CACHED_PROTO(JSProto_Array),
+    Class::NON_NATIVE | JSCLASS_HAS_CACHED_PROTO(JSProto_Array) | JSCLASS_FOR_OF_ITERATION,
     JS_PropertyStub,         /* addProperty */
     JS_PropertyStub,         /* delProperty */
     JS_PropertyStub,         /* getProperty */
@@ -1224,14 +1225,19 @@ Class js::ArrayClass = {
     JS_ResolveStub,
     JS_ConvertStub,
     NULL,
-    NULL,           /* reserved0   */
     NULL,           /* checkAccess */
     NULL,           /* call        */
     NULL,           /* construct   */
-    NULL,           /* xdrObject   */
     NULL,           /* hasInstance */
     array_trace,    /* trace       */
-    JS_NULL_CLASS_EXT,
+    {
+        NULL,       /* equality    */
+        NULL,       /* outerObject */
+        NULL,       /* innerObject */
+        JS_ElementIteratorStub,
+        NULL,       /* unused      */
+        false,      /* isWrappedNative */
+    },
     {
         array_lookupGeneric,
         array_lookupProperty,
@@ -1272,14 +1278,28 @@ Class js::ArrayClass = {
 
 Class js::SlowArrayClass = {
     "Array",
-    JSCLASS_HAS_CACHED_PROTO(JSProto_Array),
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Array) | JSCLASS_FOR_OF_ITERATION,
     slowarray_addProperty,
     JS_PropertyStub,         /* delProperty */
     JS_PropertyStub,         /* getProperty */
     JS_StrictPropertyStub,   /* setProperty */
     JS_EnumerateStub,
     JS_ResolveStub,
-    JS_ConvertStub
+    JS_ConvertStub,
+    NULL,
+    NULL,           /* checkAccess */
+    NULL,           /* call        */
+    NULL,           /* construct   */
+    NULL,           /* hasInstance */
+    NULL,           /* trace       */
+    {
+        NULL,       /* equality    */
+        NULL,       /* outerObject */
+        NULL,       /* innerObject */
+        JS_ElementIteratorStub,
+        NULL,       /* unused      */
+        false,      /* isWrappedNative */
+    }
 };
 
 bool
@@ -1411,23 +1431,22 @@ JSObject::makeDenseArraySlow(JSContext *cx)
 class ArraySharpDetector
 {
     JSContext *cx;
-    JSHashEntry *he;
+    bool success;
     bool alreadySeen;
     bool sharp;
 
   public:
     ArraySharpDetector(JSContext *cx)
       : cx(cx),
-        he(NULL),
+        success(false),
         alreadySeen(false),
         sharp(false)
     {}
 
     bool init(JSObject *obj) {
-        he = js_EnterSharpObject(cx, obj, NULL, &alreadySeen);
-        if (!he)
+        success = js_EnterSharpObject(cx, obj, NULL, &alreadySeen, &sharp);
+        if (!success)
             return false;
-        sharp = IS_SHARP(he);
         return true;
     }
 
@@ -1437,7 +1456,7 @@ class ArraySharpDetector
     }
 
     ~ArraySharpDetector() {
-        if (he && !sharp)
+        if (success && !sharp)
             js_LeaveSharpObject(cx, NULL);
     }
 };
@@ -1973,22 +1992,35 @@ CompareStringValues(JSContext *cx, const Value &a, const Value &b, bool *lessOrE
     return true;
 }
 
-static int32_t const powersOf10Int32[] = {
+static uint32_t const powersOf10[] = {
     1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000
 };
 
-static inline int
-NumDigitsBase10(int32_t n)
+static inline unsigned
+NumDigitsBase10(uint32_t n)
 {
     /*
      * This is just floor_log10(n) + 1
      * Algorithm taken from
      * http://graphics.stanford.edu/~seander/bithacks.html#IntegerLog10
      */
-    int32_t log2, t;
+    uint32_t log2, t;
     JS_CEILING_LOG2(log2, n);
     t = log2 * 1233 >> 12;
-    return t - (n < powersOf10Int32[t]) + 1;
+    return t - (n < powersOf10[t]) + 1;
+}
+
+static JS_ALWAYS_INLINE uint32_t
+NegateNegativeInt32(int32_t i)
+{
+    /*
+     * We cannot simply return '-i' because this is undefined for INT32_MIN.
+     * 2s complement does actually give us what we want, however.  That is,
+     * ~0x80000000 + 1 = 0x80000000 which is correct when interpreted as a
+     * uint32_t. To avoid undefined behavior, we write out 2s complement
+     * explicitly and rely on the peephole optimizer to generate 'neg'.
+     */
+    return ~uint32_t(i) + 1;
 }
 
 inline bool
@@ -2010,14 +2042,14 @@ CompareLexicographicInt32(JSContext *cx, const Value &a, const Value &b, bool *l
         *lessOrEqualp = true;
     } else if ((aint >= 0) && (bint < 0)) {
         *lessOrEqualp = false;
-    } else if (bint == INT32_MIN) { /* a is negative too --> a <= b */
-        *lessOrEqualp = true;
-    } else if (aint == INT32_MIN) { /* b is negative too but not INT32_MIN --> a > b */
-        *lessOrEqualp = false;
     } else {
-        if (aint < 0) { /* b is also negative */
-            aint = -aint;
-            bint = -bint;
+        uint32_t auint, buint;
+        if (aint >= 0) {
+            auint = aint;
+            buint = bint;
+        } else {
+            auint = NegateNegativeInt32(aint);
+            buint = NegateNegativeInt32(bint);
         }
 
         /*
@@ -2026,14 +2058,14 @@ CompareLexicographicInt32(JSContext *cx, const Value &a, const Value &b, bool *l
          * If digits_a > digits_b: a < b*10e(digits_a - digits_b).
          * If digits_b > digits_a: a*10e(digits_b - digits_a) <= b.
          */
-        int digitsa = NumDigitsBase10(aint);
-        int digitsb = NumDigitsBase10(bint);
+        unsigned digitsa = NumDigitsBase10(auint);
+        unsigned digitsb = NumDigitsBase10(buint);
         if (digitsa == digitsb)
-            *lessOrEqualp = (aint <= bint);
+            *lessOrEqualp = (auint <= buint);
         else if (digitsa > digitsb)
-            *lessOrEqualp = (aint < bint*powersOf10Int32[digitsa - digitsb]);
+            *lessOrEqualp = (uint64_t(auint) < uint64_t(buint) * powersOf10[digitsa - digitsb]);
         else /* if (digitsb > digitsa) */
-            *lessOrEqualp = (aint*powersOf10Int32[digitsb - digitsa] <= bint);
+            *lessOrEqualp = (uint64_t(auint) * powersOf10[digitsb - digitsa] <= uint64_t(buint));
     }
 
     return true;
@@ -2493,7 +2525,7 @@ mjit::stubs::ArrayShift(VMFrame &f)
      * themselves.
      */
     uint32_t initlen = obj->getDenseArrayInitializedLength();
-    obj->moveDenseArrayElements(0, 1, initlen);
+    obj->moveDenseArrayElementsUnbarriered(0, 1, initlen);
 }
 #endif /* JS_METHODJIT */
 
@@ -2520,7 +2552,7 @@ js::array_shift(JSContext *cx, uintN argc, Value *vp)
             args.rval() = obj->getDenseArrayElement(0);
             if (args.rval().isMagic(JS_ARRAY_HOLE))
                 args.rval().setUndefined();
-            obj->moveDenseArrayElements(0, 1, length);
+            obj->moveDenseArrayElements(0, 1, obj->getDenseArrayInitializedLength() - 1);
             obj->setDenseArrayInitializedLength(obj->getDenseArrayInitializedLength() - 1);
             obj->setArrayLength(cx, length);
             if (!js_SuppressDeletedProperty(cx, obj, INT_TO_JSID(length)))
@@ -3554,9 +3586,7 @@ static JSBool
 array_isArray(JSContext *cx, uintN argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
-    bool isArray = args.length() > 0 &&
-                   args[0].isObject() &&
-                   ObjectClassIs(args[0].toObject(), ESClass_Array, cx);
+    bool isArray = args.length() > 0 && IsObjectWithClass(args[0], ESClass_Array, cx);
     args.rval().setBoolean(isArray);
     return true;
 }

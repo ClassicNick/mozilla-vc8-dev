@@ -16,6 +16,8 @@
 #include "base/task.h"
 #include "nsError.h"
 
+namespace base {
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // OVERVIEW:
@@ -187,5 +189,7 @@ class ObserverListThreadSafe
 
   DISALLOW_EVIL_CONSTRUCTORS(ObserverListThreadSafe);
 };
+
+} // namespace base
 
 #endif  // BASE_OBSERVER_LIST_THREADSAFE_H_

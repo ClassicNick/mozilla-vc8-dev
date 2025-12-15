@@ -5,7 +5,9 @@ const PREF_NEWTAB_ENABLED = "browser.newtabpage.enabled";
 
 Services.prefs.setBoolPref(PREF_NEWTAB_ENABLED, true);
 
-Cu.import("resource:///modules/NewTabUtils.jsm");
+let tmp = {};
+Cu.import("resource:///modules/NewTabUtils.jsm", tmp);
+let NewTabUtils = tmp.NewTabUtils;
 
 registerCleanupFunction(function () {
   reset();
@@ -126,10 +128,15 @@ function addNewTabPageTab() {
 
     cw = browser.contentWindow;
 
-    if (NewTabUtils.allPages.enabled)
+    if (NewTabUtils.allPages.enabled) {
       cells = cw.gGrid.cells;
 
-    TestRunner.next();
+      // Continue when the link cache has been populated.
+      NewTabUtils.links.populateCache(TestRunner.next);
+    } else {
+      TestRunner.next();
+    }
+
   }, true);
 }
 
