@@ -418,18 +418,14 @@ nsWindow::nsWindow() : nsBaseWidget()
   mBrush                = ::CreateSolidBrush(NSRGB_2_COLOREF(mBackground));
   mForeground           = ::GetSysColor(COLOR_WINDOWTEXT);
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   mTaskbarPreview = nsnull;
   mHasTaskbarIconBeenCreated = false;
-#endif
 
   // Global initialization
   if (!sInstanceCount) {
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
     // Global app registration id for Win7 and up. See
     // WinTaskbar.cpp for details.
     mozilla::widget::WinTaskbar::RegisterAppUserModelID();
-#endif
 
     gKbdLayout.LoadLayout(::GetKeyboardLayout(0));
 
@@ -5328,14 +5324,12 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
     *aRetValue = TABLET_ROTATE_GESTURE_ENABLE;
     break;
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   case WM_TOUCH:
     result = OnTouch(wParam, lParam);
     if (result) {
       *aRetValue = 0;
     }
     break;
-#endif
 
   case WM_GESTURE:
     result = OnGesture(wParam, lParam);
@@ -5455,10 +5449,8 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
         nsTextStore::OnTextChangeMsg();
       }
 #endif //NS_ENABLE_TSF
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
       if (msg == nsAppShell::GetTaskbarButtonCreatedMessage())
         SetHasTaskbarIconBeenCreated();
-#endif
       if (msg == sOOPPPluginFocusEvent) {
         if (wParam == 1) {
           // With OOPP, the plugin window exists in another process and is a child of
@@ -6202,7 +6194,6 @@ void nsWindow::UserActivity()
   }
 }
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 bool nsWindow::OnTouch(WPARAM wParam, LPARAM lParam)
 {
   PRUint32 cInputs = LOWORD(wParam);
@@ -6239,7 +6230,6 @@ bool nsWindow::OnTouch(WPARAM wParam, LPARAM lParam)
   mGesture.CloseTouchInputHandle((HTOUCHINPUT)lParam);
   return true;
 }
-#endif
 
 // Gesture event processing. Handles WM_GESTURE events.
 bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam)
