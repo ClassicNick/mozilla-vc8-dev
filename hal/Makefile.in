@@ -92,11 +92,18 @@ ifdef MOZ_ENABLE_DBUS
 CPPSRCS += UPowerClient.cpp
 endif
 else ifeq (WINNT,$(OS_TARGET))
+ifneq ($(_MSC_VER), 1310)
 CPPSRCS += \
   WindowsHal.cpp \
   WindowsBattery.cpp \
   FallbackSensor.cpp \
   $(NULL)
+else
+CPPSRCS += \
+  FallbackHal.cpp \
+  FallbackSensor.cpp \
+  $(NULL)
+endif
 else
 CPPSRCS += \
   FallbackHal.cpp \

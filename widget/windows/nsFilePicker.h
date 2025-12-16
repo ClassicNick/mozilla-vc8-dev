@@ -72,8 +72,10 @@
  */
 
 class nsFilePicker :
-  public nsBaseFilePicker,
-  public IFileDialogEvents
+  public nsBaseFilePicker
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+  , public IFileDialogEvents
+#endif
 {
 public:
   nsFilePicker(); 
@@ -81,8 +83,10 @@ public:
 
   NS_DECL_ISUPPORTS
   
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // IUnknown's QueryInterface
   STDMETHODIMP QueryInterface(REFIID refiid, void** ppvResult);
+#endif
 
   // nsIFilePicker (less what's in nsBaseFilePicker)
   NS_IMETHOD GetDefaultString(nsAString& aDefaultString);
@@ -98,6 +102,7 @@ public:
   NS_IMETHOD ShowW(PRInt16 *aReturnVal); 
   NS_IMETHOD AppendFilter(const nsAString& aTitle, const nsAString& aFilter);
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // IFileDialogEvents
   HRESULT STDMETHODCALLTYPE OnFileOk(IFileDialog *pfd);
   HRESULT STDMETHODCALLTYPE OnFolderChanging(IFileDialog *pfd, IShellItem *psiFolder);
@@ -106,6 +111,7 @@ public:
   HRESULT STDMETHODCALLTYPE OnShareViolation(IFileDialog *pfd, IShellItem *psi, FDE_SHAREVIOLATION_RESPONSE *pResponse);
   HRESULT STDMETHODCALLTYPE OnTypeChange(IFileDialog *pfd);
   HRESULT STDMETHODCALLTYPE OnOverwrite(IFileDialog *pfd, IShellItem *psi, FDE_OVERWRITE_RESPONSE *pResponse);
+#endif
 
 protected:
   enum PickerType {
@@ -150,6 +156,7 @@ protected:
   static PRUnichar      *mLastUsedUnicodeDirectory;
   HWND                   mDlgWnd;
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   class ComDlgFilterSpec
   {
   public:
@@ -176,6 +183,7 @@ protected:
 
   ComDlgFilterSpec       mComFilterList;
   DWORD                  mFDECookie;
+#endif
 };
 
 #if defined(_WIN32_WINNT_bak)

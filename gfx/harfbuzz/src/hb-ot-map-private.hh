@@ -100,11 +100,13 @@ struct hb_ot_map_t
   };
 
   typedef void (*pause_func_t) (const hb_ot_map_t *map, void *face_or_font, hb_buffer_t *buffer, void *user_data);
+public:
   typedef struct {
     pause_func_t func;
     void *user_data;
   } pause_callback_t;
 
+private:
   struct pause_map_t {
     unsigned int num_lookups; /* Cumulative */
     pause_callback_t callback;

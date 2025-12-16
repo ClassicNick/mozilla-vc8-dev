@@ -247,13 +247,13 @@ tail =
         self.assertTestResult(False, xunitFilename=filename)
 
         self.assertTrue(os.path.exists(filename))
-        self.assertGreater(os.path.getsize(filename), 0)
+        self.assertTrue(os.path.getsize(filename) > 0)
 
         tree = ElementTree()
         tree.parse(filename)
         suite = tree.getroot()
 
-        self.assertIsNotNone(suite)
+        self.assertTrue(suite is not None)
         self.assertEqual(suite.get("tests"), "3")
         self.assertEqual(suite.get("failures"), "1")
         self.assertEqual(suite.get("skip"), "1")
@@ -267,8 +267,8 @@ tail =
             self.assertTrue("name" in attributes)
             self.assertTrue("time" in attributes)
 
-        self.assertIsNotNone(testcases[1].find("failure"))
-        self.assertIsNotNone(testcases[2].find("skipped"))
+        self.assertTrue(testcases[1].find("failure") is not None)
+        self.assertTrue(testcases[2].find("skipped") is not None)
 
 if __name__ == "__main__":
     unittest.main()

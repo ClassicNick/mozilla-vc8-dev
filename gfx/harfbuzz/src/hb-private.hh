@@ -541,9 +541,9 @@ _hb_debug_msg<0> (const char *what,
   return TRUE;
 }
 
-#define DEBUG_MSG_LEVEL(WHAT, OBJ, LEVEL, ...) _hb_debug_msg<HB_DEBUG_##WHAT> (#WHAT, (OBJ), NULL, FALSE, (LEVEL), __VA_ARGS__)
-#define DEBUG_MSG(WHAT, OBJ, ...) DEBUG_MSG_LEVEL (WHAT, OBJ, 0, __VA_ARGS__)
-#define DEBUG_MSG_FUNC(WHAT, OBJ, ...) _hb_debug_msg<HB_DEBUG_##WHAT> (#WHAT, (OBJ), HB_FUNC, FALSE, 0, __VA_ARGS__)
+#define DEBUG_MSG_LEVEL(WHAT, OBJ, LEVEL, a) _hb_debug_msg<HB_DEBUG_##WHAT> (#WHAT, (OBJ), NULL, FALSE, (LEVEL), a)
+#define DEBUG_MSG(WHAT, OBJ, a) DEBUG_MSG_LEVEL (WHAT, OBJ, 0, a)
+#define DEBUG_MSG_FUNC(WHAT, OBJ, a) _hb_debug_msg<HB_DEBUG_##WHAT> (#WHAT, (OBJ), HB_FUNC, FALSE, 0, a)
 
 
 /*

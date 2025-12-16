@@ -60,6 +60,10 @@
 #include "nsExceptionHandler.h"
 #endif
 
+#ifndef IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE
+#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE 0x0040     // DLL can move.
+#endif
+
 #define ALL_VERSIONS   ((unsigned long long)-1LL)
 
 // DLLs sometimes ship without a version number, particularly early
@@ -278,6 +282,32 @@ private:
 CRITICAL_SECTION ReentrancySentinel::sLock;
 std::map<DWORD, const char*>* ReentrancySentinel::sThreadMap;
 
+static
+wchar_t* getFullPath (PWCHAR filePath, wchar_t* fname)
+{
+  // In Windows 8, the first parameter seems to be used for more than just the
+  // path name.  For example, its numerical value can be 1.  Passing a non-valid
+  // pointer to SearchPathW will cause a crash, so we need to check to see if we
+  // are handed a valid pointer, and otherwise just pass NULL to SearchPathW.
+  PWCHAR sanitizedFilePath = (intptr_t(filePath) < 1024) ? NULL : filePath;
+
+  // figure out the length of the string that we need
+  DWORD pathlen = SearchPathW(sanitizedFilePath, fname, L".dll", 0, NULL, NULL);
+  if (pathlen == 0) {
+    return nsnull;
+  }
+
+  wchar_t* full_fname = new wchar_t[pathlen+1];
+  if (!full_fname) {
+    // couldn't allocate memory?
+    return nsnull;
+  }
+
+  // now actually grab it
+  SearchPathW(sanitizedFilePath, fname, L".dll", pathlen+1, full_fname, NULL);
+  return full_fname;
+}
+
 static NTSTATUS NTAPI
 patched_LdrLoadDll (PWCHAR filePath, PULONG flags, PUNICODE_STRING moduleFileName, PHANDLE handle)
 {
@@ -289,29 +319,7 @@ patched_LdrLoadDll (PWCHAR filePath, PULONG flags, PUNICODE_STRING moduleFileNam
 
   int len = moduleFileName->Length / 2;
   wchar_t *fname = moduleFileName->Buffer;
-
-  // In Windows 8, the first parameter seems to be used for more than just the
-  // path name.  For example, its numerical value can be 1.  Passing a non-valid
-  // pointer to SearchPathW will cause a crash, so we need to check to see if we
-  // are handed a valid pointer, and otherwise just pass NULL to SearchPathW.
-  PWCHAR sanitizedFilePath = (intptr_t(filePath) < 1024) ? NULL : filePath;
-
-  // figure out the length of the string that we need
-  DWORD pathlen = SearchPathW(sanitizedFilePath, fname, L".dll", 0, NULL, NULL);
-  if (pathlen == 0) {
-    // uh, we couldn't find the DLL at all, so...
-    printf_stderr("LdrLoadDll: Blocking load of '%s' (SearchPathW didn't find it?)\n", dllName);
-    return STATUS_DLL_NOT_FOUND;
-  }
-
-  nsAutoArrayPtr<wchar_t> full_fname(new wchar_t[pathlen+1]);
-  if (!full_fname) {
-    // couldn't allocate memory?
-    return STATUS_DLL_NOT_FOUND;
-  }
-
-  // now actually grab it
-  SearchPathW(sanitizedFilePath, fname, L".dll", pathlen+1, full_fname, NULL);
+  nsAutoArrayPtr<wchar_t> full_fname;
 
   // The filename isn't guaranteed to be null terminated, but in practice
   // it always will be; ensure that this is so, and bail if not.
@@ -393,6 +401,13 @@ patched_LdrLoadDll (PWCHAR filePath, PULONG flags, PUNICODE_STRING moduleFileNam
         goto continue_loading;
       }
 
+      full_fname = getFullPath(filePath, fname);
+      if (!full_fname) {
+        // uh, we couldn't find the DLL at all, so...
+        printf_stderr("LdrLoadDll: Blocking load of '%s' (SearchPathW didn't find it?)\n", dllName);
+        return STATUS_DLL_NOT_FOUND;
+      }
+
       DWORD zero;
       DWORD infoSize = GetFileVersionInfoSizeW(full_fname, &zero);
 
@@ -433,9 +448,18 @@ continue_loading:
 
   if (gInXPCOMLoadOnMainThread && NS_IsMainThread()) {
     // Check to ensure that the DLL has ASLR.
+    full_fname = getFullPath(filePath, fname);
+    if (!full_fname) {
+      // uh, we couldn't find the DLL at all, so...
+      printf_stderr("LdrLoadDll: Blocking load of '%s' (SearchPathW didn't find it?)\n", dllName);
+      return STATUS_DLL_NOT_FOUND;
+    }
+
     if (!CheckASLR(full_fname)) {
       printf_stderr("LdrLoadDll: Blocking load of '%s'.  XPCOM components must support ASLR.\n", dllName);
-      return STATUS_DLL_NOT_FOUND;
+	  // Do not return a value here, unless you want to see a
+	  // "The address isn't valid, The URL is not valid and cannot be loaded" error!
+      // return STATUS_DLL_NOT_FOUND;
     }
   }
 

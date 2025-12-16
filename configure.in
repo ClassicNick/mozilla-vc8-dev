@@ -108,7 +108,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10509
+MOZPNG=10401
 MOZZLIB=0x1230
 NSPR_VERSION=4
 NSS_VERSION=3
@@ -991,6 +991,8 @@ EOF
 
     AC_DEFINE_UNQUOTED(MOZ_WINSDK_TARGETVER,0x$MOZ_WINSDK_TARGETVER)
     # Definitions matching sdkddkver.h
+    AC_DEFINE_UNQUOTED(MOZ_NTDDI_WS03, 0x05020000)
+    AC_DEFINE_UNQUOTED(MOZ_NTDDI_LONGHORN, 0x06000000)
     AC_DEFINE_UNQUOTED(MOZ_NTDDI_WIN7, 0x06010000)
     ;;
 esac
@@ -5176,10 +5178,10 @@ incorrect])
     else
        AC_CHECK_LIB(QtSensors, main, [
           MOZ_ENABLE_QTMOBILITY=1
-          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I/usr/include/qt4/QtMobility"
-          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I/usr/include/qt4/QtSensors"
-          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I/usr/include/qt4/QtFeedback"
-          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I/usr/include/qt4/QtLocation"
+          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I$QTDIR/include/QtMobility"
+          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I$QTDIR/include/QtSensors"
+          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I$QTDIR/include/QtFeedback"
+          MOZ_QT_CFLAGS="$MOZ_QT_CFLAGS -I$QTDIR/include/QtLocation"
           MOZ_QT_LIBS="$MOZ_QT_LIBS -lQtSensors -lQtFeedback -lQtLocation"
        ])
     fi
@@ -5717,7 +5719,9 @@ MOZ_ARG_DISABLE_BOOL(ogg,
 if test -n "$MOZ_OGG"; then
     AC_DEFINE(MOZ_OGG)
     MOZ_SYDNEYAUDIO=1
+    if test "$_CC_MAJOR_VERSION" = "16"; then
     MOZ_CUBEB=1
+    fi
     MOZ_MEDIA=1
     case "$target_cpu" in
     arm*)
@@ -5835,7 +5839,9 @@ AC_SUBST(MOZ_LIBVPX_LIBS)
 
 if test -n "$MOZ_WEBM" -a -z "$MOZ_NATIVE_LIBVPX"; then
     MOZ_SYDNEYAUDIO=1
+    if test "$_CC_MAJOR_VERSION" = "16"; then
     MOZ_CUBEB=1
+    fi
     MOZ_MEDIA=1
     case "$target_cpu" in
     arm*)
@@ -5947,7 +5953,9 @@ MOZ_ARG_DISABLE_BOOL(wave,
 if test -n "$MOZ_WAVE"; then
     AC_DEFINE(MOZ_WAVE)
     MOZ_SYDNEYAUDIO=1
+    if test "$_CC_MAJOR_VERSION" = "16"; then
     MOZ_CUBEB=1
+    fi
     MOZ_MEDIA=1
 fi
 
@@ -6520,6 +6528,23 @@ if test -n "$MOZ_VERIFY_MAR_SIGNATURE"; then
   else
     AC_MSG_ERROR([Can only build with --enable-verify-mar with a Windows target])
   fi
+fi
+
+dnl ========================================================
+dnl Enable building the signmar program.
+dnl This option is much different than the --enable-verify-mar option.
+dnl --enable-verify-mar is for enabling the verification check on MAR
+dnl files in the updater.  The --enable-signmar option is for building
+dnl the signmar program.
+dnl ========================================================
+
+MOZ_ARG_ENABLE_BOOL(sign-mar,
+[  --enable-signmar     Enable building the signmar program],
+    MOZ_ENABLE_SIGNMAR=1,
+    MOZ_ENABLE_SIGNMAR= )
+
+if test -n "$MOZ_ENABLE_SIGNMAR"; then
+  AC_DEFINE(MOZ_ENABLE_SIGNMAR)
 fi
 
 dnl ========================================================
@@ -8627,6 +8652,7 @@ AC_SUBST(MOZ_USER_DIR)
 AC_SUBST(MOZ_CRASHREPORTER)
 AC_SUBST(MOZ_MAINTENANCE_SERVICE)
 AC_SUBST(MOZ_VERIFY_MAR_SIGNATURE)
+AC_SUBST(MOZ_ENABLE_SIGNMAR)
 AC_SUBST(MOZ_UPDATER)
 AC_SUBST(MOZ_ANGLE)
 AC_SUBST(MOZ_DIRECTX_SDK_PATH)

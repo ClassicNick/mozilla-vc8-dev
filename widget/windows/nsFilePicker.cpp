@@ -206,7 +206,9 @@ private:
 nsFilePicker::nsFilePicker() :
   mSelectedType(1)
   , mDlgWnd(NULL)
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   , mFDECookie(0)
+#endif
 {
    CoInitialize(NULL);
 }
@@ -222,7 +224,7 @@ nsFilePicker::~nsFilePicker()
 
 NS_IMPL_ISUPPORTS1(nsFilePicker, nsIFilePicker)
 
-
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 STDMETHODIMP nsFilePicker::QueryInterface(REFIID refiid, void** ppvResult)
 {
   *ppvResult = NULL;
@@ -238,6 +240,7 @@ STDMETHODIMP nsFilePicker::QueryInterface(REFIID refiid, void** ppvResult)
 
   return E_NOINTERFACE;
 }
+#endif
 
 /*
  * XP picker callbacks
@@ -431,6 +434,8 @@ nsFilePicker::MultiFilePickerHook(HWND hwnd,
  * Vista+ callbacks
  */
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+
 HRESULT
 nsFilePicker::OnFileOk(IFileDialog *pfd)
 {
@@ -492,6 +497,8 @@ nsFilePicker::OnOverwrite(IFileDialog *pfd,
 {
   return S_OK;
 }
+
+#endif // MOZ_NTDDI_LONGHORN
 
 /*
  * Close on parent close logic
@@ -590,6 +597,8 @@ nsFilePicker::ShowXPFolderPicker(const nsString& aInitialDir)
   return result;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+
 bool
 nsFilePicker::ShowFolderPicker(const nsString& aInitialDir)
 {
@@ -633,6 +642,7 @@ nsFilePicker::ShowFolderPicker(const nsString& aInitialDir)
 
   // results
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   // If the user chose a Win7 Library, resolve to the library's
   // default save folder.
   nsRefPtr<IShellItem> folderPath;
@@ -645,10 +655,13 @@ nsFilePicker::ShowFolderPicker(const nsString& aInitialDir)
                                                getter_AddRefs(folderPath)))) {
     item.swap(folderPath);
   }
+#endif
 
   // get the folder's file system path
   return WinUtils::GetShellItemPath(item, mUnicodeFile);
 }
+
+#endif // MOZ_WINSDK_TARGETVER
 
 /*
  * File open and save picker invocation
@@ -866,6 +879,8 @@ nsFilePicker::ShowXPFilePicker(const nsString& aInitialDir)
   return true;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+
 bool
 nsFilePicker::ShowFilePicker(const nsString& aInitialDir)
 {
@@ -1017,6 +1032,8 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir)
   return true;
 }
 
+#endif // MOZ_WINSDK_TARGETVER
+
 ///////////////////////////////////////////////////////////////////////////////
 // nsIFilePicker impl.
 
@@ -1045,15 +1062,23 @@ nsFilePicker::ShowW(PRInt16 *aReturnVal)
 
   bool result = false;
    if (mMode == modeGetFolder) {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION)
       result = ShowFolderPicker(initialDir);
     else
       result = ShowXPFolderPicker(initialDir);
+#else
+    result = ShowXPFolderPicker(initialDir);
+#endif 
    } else {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION)
       result = ShowFilePicker(initialDir);
     else
       result = ShowXPFilePicker(initialDir);
+#else
+    result = ShowXPFilePicker(initialDir);
+#endif
    }
 
   // exit, and return returnCancel in aReturnVal
@@ -1243,11 +1268,15 @@ nsFilePicker::AppendXPFilter(const nsAString& aTitle, const nsAString& aFilter)
 NS_IMETHODIMP
 nsFilePicker::AppendFilter(const nsAString& aTitle, const nsAString& aFilter)
 {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION) {
     mComFilterList.Append(aTitle, aFilter);
   } else {
     AppendXPFilter(aTitle, aFilter);
   }
+#else
+  AppendXPFilter(aTitle, aFilter);
+#endif
   return NS_OK;
 }
 
@@ -1318,6 +1347,8 @@ nsFilePicker::IsDefaultPathHtml()
   return false;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+
 void
 nsFilePicker::ComDlgFilterSpec::Append(const nsAString& aTitle, const nsAString& aFilter)
 {
@@ -1347,3 +1378,5 @@ nsFilePicker::ComDlgFilterSpec::Append(const nsAString& aTitle, const nsAString&
   }
   pSpecForward->pszSpec = pStr->get();
 }
+
+#endif

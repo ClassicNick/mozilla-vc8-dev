@@ -604,10 +604,12 @@ nsWindow::Create(nsIWidget *aParent,
     return NS_ERROR_FAILURE;
   }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (mIsRTL && nsUXThemeData::dwmSetWindowAttributePtr) {
     DWORD dwAttribute = TRUE;    
     nsUXThemeData::dwmSetWindowAttributePtr(mWnd, DWMWA_NONCLIENT_RTL_LAYOUT, &dwAttribute, sizeof dwAttribute);
   }
+#endif
 
   if (mWindowType != eWindowType_plugin &&
       mWindowType != eWindowType_invisible &&
@@ -2553,6 +2555,7 @@ void nsWindow::UpdateOpaqueRegion(const nsIntRegion &aOpaqueRegion)
 
 void nsWindow::UpdateGlass()
 {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   MARGINS margins = mGlassMargins;
 
   // DWMNCRP_USEWINDOWSTYLE - The non-client rendering area is
@@ -2585,6 +2588,7 @@ void nsWindow::UpdateGlass()
     nsUXThemeData::dwmExtendFrameIntoClientAreaPtr(mWnd, &margins);
     nsUXThemeData::dwmSetWindowAttributePtr(mWnd, DWMWA_NCRENDERING_POLICY, &policy, sizeof policy);
   }
+#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 }
 #endif
 
@@ -4542,6 +4546,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
   bool result = false;    // call the default nsWindow proc
   *aRetValue = 0;
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // Glass hit testing w/custom transparent margins
   LRESULT dwmHitResult;
   if (mCustomNonClient &&
@@ -4550,6 +4555,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
     *aRetValue = dwmHitResult;
     return true;
   }
+#endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 
   switch (msg) {
     // WM_QUERYENDSESSION must be handled by all windows.

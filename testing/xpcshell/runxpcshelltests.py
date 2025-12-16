@@ -388,7 +388,7 @@ class XPCShellTests(object):
     return ['-e', 'const _TEST_FILE = ["%s"];' %
               replaceBackSlashes(name)]
 
-  def writeXunitResults(self, results, name="xpcshell", filename=None, fh=None):
+  def writeXunitResults(self, results, name=None, filename=None, fh=None):
     """
       Write Xunit XML from results.
 
@@ -424,6 +424,11 @@ class XPCShellTests(object):
     """
     if filename is None and fh is None:
       raise Exception("One of filename or fh must be defined.")
+
+    if name is None:
+      name = "xpcshell"
+    else:
+      assert isinstance(name, str)
 
     if filename is not None:
       fh = open(filename, 'wb')
@@ -463,10 +468,14 @@ class XPCShellTests(object):
         failure.setAttribute("type", str(result["failure"]["type"]))
         failure.setAttribute("message", result["failure"]["message"])
 
-        # Lossy translation but required to not break CDATA.
+        # Lossy translation but required to not break CDATA. Also, text could
+        # be None and Python 2.5's minidom doesn't accept None. Later versions
+        # do, however.
         cdata = result["failure"]["text"]
-        if cdata is not None:
-            cdata = cdata.replace("]]>", "]] >")
+        if not isinstance(cdata, str):
+            cdata = ""
+
+        cdata = cdata.replace("]]>", "]] >")
         text = doc.createCDATASection(cdata)
         failure.appendChild(text)
         testcase.appendChild(failure)
