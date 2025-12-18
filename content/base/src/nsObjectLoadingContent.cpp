@@ -498,16 +498,26 @@ IsSupportedImage(const nsCString& aMimeType)
 
 nsresult nsObjectLoadingContent::IsPluginEnabledForType(const nsCString& aMIMEType)
 {
+  nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
+  nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
+  if (!pluginHost) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsresult rv = pluginHost->IsPluginEnabledForType(aMIMEType.get());
+
+  // Check to see if the plugin is disabled before deciding if it
+  // should be in the "click to play" state, since we only want to
+  // display "click to play" UI for enabled plugins.
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
   if (!mShouldPlay) {
     return NS_ERROR_PLUGIN_CLICKTOPLAY;
   }
 
-  nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
-  nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
-  if (!pluginHost) {
-    return false;
-  }
-  return pluginHost->IsPluginEnabledForType(aMIMEType.get());
+  return NS_OK;
 }
 
 static void
@@ -1283,13 +1293,14 @@ nsObjectLoadingContent::LoadObject(nsIURI* aURI,
   // Only do a URI equality check for things that aren't stopped plugins.
   // This is because we still need to load again if the plugin has been stopped.
   if (mType == eType_Document || mType == eType_Image || mInstanceOwner) {
-    if (mURI && aURI && !aForceLoad) {
+    if (mURI && aURI) {
       bool equal;
       nsresult rv = mURI->Equals(aURI, &equal);
-      if (NS_SUCCEEDED(rv) && equal) {
+      if (NS_SUCCEEDED(rv) && equal && !aForceLoad) {
         // URI didn't change, do nothing
         return NS_OK;
       }
+      StopPluginInstance();
     }
   }
 

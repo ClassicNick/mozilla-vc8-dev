@@ -62,8 +62,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
                                   "resource://gre/modules/PlacesUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "KeywordURLResetPrompter",
-                                  "resource:///modules/KeywordURLResetPrompter.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "BookmarkHTMLUtils",
+                                  "resource://gre/modules/BookmarkHTMLUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "webappsUI", 
                                   "resource:///modules/webappsUI.jsm");
@@ -228,10 +228,6 @@ BrowserGlue.prototype = {
         // no longer needed, since history was initialized completely.
         Services.obs.removeObserver(this, "places-database-locked");
         this._isPlacesLockedObserver = false;
-
-        // Now apply distribution customized bookmarks.
-        // This should always run after Places initialization.
-        this._distributionCustomizer.applyBookmarks();
         break;
       case "places-database-locked":
         this._isPlacesDatabaseLocked = true;
@@ -257,13 +253,6 @@ BrowserGlue.prototype = {
         // Customization has finished, we don't need the customizer anymore.
         delete this._distributionCustomizer;
         break;
-      case "bookmarks-restore-success":
-      case "bookmarks-restore-failed":
-        Services.obs.removeObserver(this, "bookmarks-restore-success");
-        Services.obs.removeObserver(this, "bookmarks-restore-failed");
-        if (topic == "bookmarks-restore-success" && data == "html-initial")
-          this.ensurePlacesDefaultQueriesInitialized();
-        break;
       case "browser-glue-test": // used by tests
         if (data == "post-update-notification") {
           if (Services.prefs.prefHasUserValue("app.update.postupdate"))
@@ -281,12 +270,8 @@ BrowserGlue.prototype = {
           this._initPlaces();
         }
         break;
-      case "defaultURIFixup-using-keyword-pref":
-        if (KeywordURLResetPrompter.shouldPrompt) {
-          let keywordURI = subject.QueryInterface(Ci.nsIURI);
-          KeywordURLResetPrompter.prompt(this.getMostRecentBrowserWindow(),
-                                         keywordURI);
-        }
+      case "initial-migration":
+        this._initialMigrationPerformed = true;
         break;
     }
   }, 
@@ -317,7 +302,6 @@ BrowserGlue.prototype = {
     os.addObserver(this, "distribution-customization-complete", false);
     os.addObserver(this, "places-shutdown", false);
     this._isPlacesShutdownObserver = true;
-    os.addObserver(this, "defaultURIFixup-using-keyword-pref", false);
   },
 
   // cleanup (called on application shutdown)
@@ -346,7 +330,6 @@ BrowserGlue.prototype = {
       os.removeObserver(this, "places-database-locked");
     if (this._isPlacesShutdownObserver)
       os.removeObserver(this, "places-shutdown");
-    os.removeObserver(this, "defaultURIFixup-using-keyword-pref");
     webappsUI.uninit();
   },
 
@@ -990,18 +973,9 @@ BrowserGlue.prototype = {
     // If the database is corrupt or has been newly created we should
     // import bookmarks.
     var dbStatus = PlacesUtils.history.databaseStatus;
-    var importBookmarks = dbStatus == PlacesUtils.history.DATABASE_STATUS_CREATE ||
-                          dbStatus == PlacesUtils.history.DATABASE_STATUS_CORRUPT;
-
-    if (dbStatus == PlacesUtils.history.DATABASE_STATUS_CREATE) {
-      // If the database has just been created, but we already have any
-      // bookmark, this is not the initial import.  This can happen after a
-      // migration from a different browser since migrators run before us.
-      // In such a case we should not import, unless some pref has been set.
-      if (PlacesUtils.bookmarks.getIdForItemAt(PlacesUtils.bookmarksMenuFolderId, 0) != -1 ||
-          PlacesUtils.bookmarks.getIdForItemAt(PlacesUtils.toolbarFolderId, 0) != -1)
-        importBookmarks = false;
-    }
+    var importBookmarks = !this._initialMigrationPerformed &&
+                          (dbStatus == PlacesUtils.history.DATABASE_STATUS_CREATE ||
+                           dbStatus == PlacesUtils.history.DATABASE_STATUS_CORRUPT);
 
     // Check if user or an extension has required to import bookmarks.html
     var importBookmarksHTML = false;
@@ -1058,6 +1032,9 @@ BrowserGlue.prototype = {
     // delayed till the import operations has finished.  Not doing so would
     // cause them to be overwritten by the newly imported bookmarks.
     if (!importBookmarks) {
+      // Now apply distribution customized bookmarks.
+      // This should always run after Places initialization.
+      this._distributionCustomizer.applyBookmarks();
       this.ensurePlacesDefaultQueriesInitialized();
     }
     else {
@@ -1091,25 +1068,28 @@ BrowserGlue.prototype = {
       }
 
       if (bookmarksURI) {
-        // Add an import observer.  It will ensure that smart bookmarks are
-        // created once the operation is complete.
-        Services.obs.addObserver(this, "bookmarks-restore-success", false);
-        Services.obs.addObserver(this, "bookmarks-restore-failed", false);
-
         // Import from bookmarks.html file.
         try {
-          var importer = Cc["@mozilla.org/browser/places/import-export-service;1"].
-                         getService(Ci.nsIPlacesImportExportService);
-          importer.importHTMLFromURI(bookmarksURI, true /* overwrite existing */);
+          BookmarkHTMLUtils.importFromURL(bookmarksURI.spec, true, (function (success) {
+            if (success) {
+              // Now apply distribution customized bookmarks.
+              // This should always run after Places initialization.
+              this._distributionCustomizer.applyBookmarks();
+              // Ensure that smart bookmarks are created once the operation is
+              // complete.
+              this.ensurePlacesDefaultQueriesInitialized();
+            }
+            else {
+              Cu.reportError("Bookmarks.html file could be corrupt.");
+            }
+          }).bind(this));
         } catch (err) {
-          // Report the error, but ignore it.
           Cu.reportError("Bookmarks.html file could be corrupt. " + err);
-          Services.obs.removeObserver(this, "bookmarks-restore-success");
-          Services.obs.removeObserver(this, "bookmarks-restore-failed");
         }
       }
-      else
+      else {
         Cu.reportError("Unable to find bookmarks.html file.");
+      }
 
       // Reset preferences, so we won't try to import again at next run
       if (importBookmarksHTML)
@@ -1228,33 +1208,6 @@ BrowserGlue.prototype = {
     this._dataSource = this._rdf.GetDataSource("rdf:local-store");
     this._dirty = false;
 
-    if (currentUIVersion < 1) {
-      // this code should always migrate pre-FF3 profiles to the current UI state
-      let currentsetResource = this._rdf.GetResource("currentset");
-      let toolbars = ["nav-bar", "toolbar-menubar", "PersonalToolbar"];
-      for (let i = 0; i < toolbars.length; i++) {
-        let toolbar = this._rdf.GetResource(BROWSER_DOCURL + toolbars[i]);
-        let currentset = this._getPersist(toolbar, currentsetResource);
-        if (!currentset) {
-          // toolbar isn't customized
-          if (i == 0)
-            // new button is in the defaultset, nothing to migrate
-            break;
-          continue;
-        }
-        if (/(?:^|,)unified-back-forward-button(?:$|,)/.test(currentset))
-          // new button is already there, nothing to migrate
-          break;
-        if (/(?:^|,)back-button(?:$|,)/.test(currentset)) {
-          let newset = currentset.replace(/(^|,)back-button($|,)/,
-                                          "$1unified-back-forward-button,back-button$2")
-          this._setPersist(toolbar, currentsetResource, newset);
-          // done migrating
-          break;
-        }
-      }
-    }
-
     if (currentUIVersion < 2) {
       // This code adds the customizable bookmarks button.
       let currentsetResource = this._rdf.GetResource("currentset");
@@ -1263,13 +1216,7 @@ BrowserGlue.prototype = {
       // Need to migrate only if toolbar is customized and the element is not found.
       if (currentset &&
           currentset.indexOf("bookmarks-menu-button-container") == -1) {
-        if (currentset.indexOf("fullscreenflex") != -1) {
-          currentset = currentset.replace(/(^|,)fullscreenflex($|,)/,
-                                          "$1bookmarks-menu-button-container,fullscreenflex$2")
-        }
-        else {
-          currentset += ",bookmarks-menu-button-container";
-        }
+        currentset += ",bookmarks-menu-button-container";
         this._setPersist(toolbarResource, currentsetResource, currentset);
       }
     }

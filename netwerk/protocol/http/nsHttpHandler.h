@@ -233,6 +233,11 @@ public:
                                      nsCString& hostLine);
 
     bool GetPipelineAggressive()     { return mPipelineAggressive; }
+    void GetMaxPipelineObjectSize(PRInt64 &outVal)
+    {
+        outVal = mMaxPipelineObjectSize;
+    }
+    PRIntervalTime GetPipelineTimeout()   { return mPipelineReadTimeout; }
 
 private:
 
@@ -293,6 +298,9 @@ private:
     PRUint16 mMaxPipelinedRequests;
     PRUint16 mMaxOptimisticPipelinedRequests;
     bool     mPipelineAggressive;
+    PRInt64  mMaxPipelineObjectSize;
+
+    PRIntervalTime mPipelineReadTimeout;
 
     PRUint8  mRedirectionLimit;
 

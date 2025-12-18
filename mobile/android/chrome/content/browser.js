@@ -193,6 +193,7 @@ var BrowserApp = {
     Services.obs.addObserver(this, "Viewport:Change", false);
     Services.obs.addObserver(this, "Passwords:Init", false);
     Services.obs.addObserver(this, "FormHistory:Init", false);
+    Services.obs.addObserver(this, "ToggleProfiling", false);
 
     Services.obs.addObserver(this, "sessionstore-state-purge-complete", false);
 
@@ -235,6 +236,7 @@ var BrowserApp = {
     CharacterEncoding.init();
     SearchEngines.init();
     ActivityObserver.init();
+    WebappsUI.init();
 
     // Init LoginManager
     Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
@@ -311,6 +313,9 @@ var BrowserApp = {
       this._showTelemetryPrompt();
     }
 
+    if (this.isAppUpdated())
+      this.onAppUpdated();
+
     // notify java that gecko has loaded
     sendMessageToJava({
       gecko: {
@@ -325,9 +330,6 @@ var BrowserApp = {
         "value": Services.prefs.getBoolPref("gfx.show_checkerboard_pattern")
       }
     });
-
-    if (this.isAppUpdated())
-      this.onAppUpdated();
   },
 
   isAppUpdated: function() {
@@ -414,6 +416,7 @@ var BrowserApp = {
     ConsoleAPI.uninit();
     CharacterEncoding.uninit();
     SearchEngines.uninit();
+    WebappsUI.uninit();
   },
 
   // This function returns false during periods where the browser displayed document is
@@ -935,11 +938,9 @@ var BrowserApp = {
     } else if (aTopic == "Viewport:Change") {
       if (this.isBrowserContentDocumentDisplayed())
         this.selectedTab.setViewport(JSON.parse(aData));
-    } else if (aTopic == "SearchEngines:Get") {
-      this.getSearchEngines();
     } else if (aTopic == "Passwords:Init") {
-      // Force creation/upgrade of signons.sqlite
-      let storage = Cc["@mozilla.org/login-manager/storage/mozStorage;1"].getService(Ci.nsILoginManagerStorage);
+      let storage = Components.classes["@mozilla.org/login-manager/storage/mozStorage;1"].
+        getService(Components.interfaces.nsILoginManagerStorage);
       storage.init();
 
       sendMessageToJava({gecko: { type: "Passwords:Init:Return" }});
@@ -952,6 +953,14 @@ var BrowserApp = {
       Services.obs.removeObserver(this, "FormHistory:Init", false);
     } else if (aTopic == "sessionstore-state-purge-complete") {
       sendMessageToJava({ gecko: { type: "Session:StatePurged" }});
+    } else if (aTopic == "ToggleProfiling") {
+      let profiler = Cc["@mozilla.org/tools/profiler;1"].
+                       getService(Ci.nsIProfiler);
+      if (profiler.IsActive()) {
+        profiler.StopProfiler();
+      } else {
+        profiler.StartProfiler(100000, 25, ["stackwalk"], 1);
+      }
     }
   },
 
@@ -1052,11 +1061,11 @@ var NativeWindow = {
     },
 
     hide: function(aValue, aTabID) {
-      sendMessageToJava({
+      sendMessageToJava({ gecko: {
         type: "Doorhanger:Remove",
         value: aValue,
         tabID: aTabID
-      });
+      }});
     }
   },
 
@@ -1065,10 +1074,15 @@ var NativeWindow = {
       if (this.menu._callbacks[aData])
         this.menu._callbacks[aData]();
     } else if (aTopic == "Doorhanger:Reply") {
-      let reply_id = aData;
+      let data = JSON.parse(aData);
+      let reply_id = data["callback"];
+
       if (this.doorhanger._callbacks[reply_id]) {
+        // Pass the value of the optional checkbox to the callback
+        let checked = data["checked"];
+        this.doorhanger._callbacks[reply_id].cb(checked);
+
         let prompt = this.doorhanger._callbacks[reply_id].prompt;
-        this.doorhanger._callbacks[reply_id].cb();
         for (let id in this.doorhanger._callbacks) {
           if (this.doorhanger._callbacks[id].prompt == prompt) {
             delete this.doorhanger._callbacks[id];
@@ -1272,7 +1286,9 @@ var NativeWindow = {
 
       let popupNode = aEvent.originalTarget;
       let title = "";
-      if ((popupNode instanceof Ci.nsIDOMHTMLAnchorElement && popupNode.href) ||
+      if (popupNode.hasAttribute("title")) {
+        title = popupNode.getAttribute("title")
+      } else if ((popupNode instanceof Ci.nsIDOMHTMLAnchorElement && popupNode.href) ||
               (popupNode instanceof Ci.nsIDOMHTMLAreaElement && popupNode.href)) {
         title = this._getLinkURL(popupNode);
       } else if (popupNode instanceof Ci.nsIImageLoadingContent && popupNode.currentURI) {
@@ -1502,8 +1518,7 @@ Tab.prototype = {
     sendMessageToJava(message);
 
     this.overscrollController = new OverscrollController(this);
-    this.browser.contentWindow.controllers
-      .insertControllerAt(0, this.overscrollController);
+    this.browser.contentWindow.controllers.insertControllerAt(0, this.overscrollController);
 
     let flags = Ci.nsIWebProgress.NOTIFY_STATE_ALL |
                 Ci.nsIWebProgress.NOTIFY_LOCATION |
@@ -1553,8 +1568,7 @@ Tab.prototype = {
     if (!this.browser)
       return;
 
-    this.browser.controllers.contentWindow
-      .removeController(this.overscrollController);
+    this.browser.contentWindow.controllers.removeController(this.overscrollController);
 
     this.browser.removeProgressListener(this);
     this.browser.removeEventListener("DOMContentLoaded", this, true);
@@ -1597,20 +1611,43 @@ Tab.prototype = {
       return this.browser.docShellIsActive;
   },
 
-  setDisplayPort: function(aViewportX, aViewportY, aDisplayPortRect) {
+  setDisplayPort: function(aViewportX, aViewportY, aDisplayPort) {
     let zoom = this._zoom;
-    if (zoom <= 0)
+    let resolution = aDisplayPort.resolution;
+    if (zoom <= 0 || resolution <= 0)
       return;
+
+    // "zoom" is the user-visible zoom of the "this" tab
+    // "resolution" is the zoom at which we wish gecko to render "this" tab at
+    // these two may be different if we are, for example, trying to render a
+    // large area of the page at low resolution because the user is panning real
+    // fast.
+    // The viewport values (aViewportX and aViewportY) correspond to the
+    // gecko scroll position, and are zoom-multiplied. The display port rect
+    // values (aDisplayPort), however, is in CSS pixels multiplied by the desired
+    // rendering resolution. Therefore care must be taken when doing math with
+    // these sets of values, to ensure that they are normalized to the same coordinate
+    // space first.
 
     let element = this.browser.contentDocument.documentElement;
     if (!element)
       return;
 
+    // we should never be drawing background tabs at resolutions other than the user-
+    // visible zoom. for foreground tabs, however, if we are drawing at some other
+    // resolution, we need to set the resolution as specified.
     let cwu = window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-    cwu.setDisplayPortForElement((aDisplayPortRect.left - aViewportX) / zoom,
-                                 (aDisplayPortRect.top - aViewportY) / zoom,
-                                 (aDisplayPortRect.right - aDisplayPortRect.left) / zoom,
-                                 (aDisplayPortRect.bottom - aDisplayPortRect.top) / zoom,
+    if (BrowserApp.selectedTab == this)
+      cwu.setResolution(resolution, resolution);
+    else if (resolution != zoom)
+      dump("Warning: setDisplayPort resolution did not match zoom for background tab!");
+
+    // finally, we set the display port, taking care to convert everything into the CSS-pixel
+    // coordinate space, because that is what the function accepts.
+    cwu.setDisplayPortForElement((aDisplayPort.left / resolution) - (aViewportX / zoom),
+                                 (aDisplayPort.top / resolution) - (aViewportY / zoom),
+                                 (aDisplayPort.right - aDisplayPort.left) / resolution,
+                                 (aDisplayPort.bottom - aDisplayPort.top) / resolution,
                                  element);
   },
 
@@ -2218,18 +2255,32 @@ Tab.prototype = {
         // Is it on the top level?
         let contentDocument = aSubject;
         if (contentDocument == this.browser.contentDocument) {
-          // reset CSS viewport and zoom to default on new page
+          // reset CSS viewport and zoom to default on new page, and then calculate
+          // them properly using the actual metadata from the page. note that the
+          // updateMetadata call takes into account the existing CSS viewport size
+          // and zoom when calculating the new ones, so we need to reset these
+          // things here before calling updateMetadata.
           this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight);
           this.setResolution(gScreenWidth / this.browserWidth, false);
-          // and then use the metadata to figure out how it needs to be updated
           ViewportHandler.updateMetadata(this);
 
-          // If we draw without a display-port, things can go wrong. While it's
-          // almost certain a display-port has been set via the
-          // MozScrolledAreaChanged event, make sure by sending a viewport
-          // update here. As it's the first paint, this will end up being a
-          // display-port request only.
-          this.sendViewportUpdate();
+          // Note that if we draw without a display-port, things can go wrong. By the
+          // time we execute this, it's almost certain a display-port has been set via
+          // the MozScrolledAreaChanged event. If that didn't happen, the updateMetadata
+          // call above does so at the end of the updateViewportSize function. As long
+          // as that is happening, we don't need to do it again here.
+
+          if (contentDocument instanceof ImageDocument) {
+            // for images, scale to fit width. this needs to happen *after* the call
+            // to updateMetadata above, because that call sets the CSS viewport which
+            // will affect the page size (i.e. contentDocument.body.scroll*) that we
+            // use in this calculation. also we call sendViewportUpdate after changing
+            // the resolution so that the display port gets recalculated appropriately.
+            let fitZoom = Math.min(gScreenWidth / contentDocument.body.scrollWidth,
+                                   gScreenHeight / contentDocument.body.scrollHeight);
+            this.setResolution(fitZoom, false);
+            this.sendViewportUpdate();
+          }
 
           BrowserApp.displayedDocumentChanged();
           this.contentDocumentIsDisplayed = true;
@@ -2930,7 +2981,8 @@ var FormAssistant = {
       // Reset invalid submit state on each pageshow
       case "pageshow":
         let target = aEvent.originalTarget;
-        if (target == content.document || target.ownerDocument == content.document)
+        let selectedDocument = BrowserApp.selectedBrowser.contentDocument;
+        if (target == selectedDocument || target.ownerDocument == selectedDocument)
           this._invalidSubmit = false;
     }
   },
@@ -3164,23 +3216,7 @@ var XPInstallObserver = {
       needsRestart = true;
 
     if (needsRestart) {
-      let buttons = [{
-        label: Strings.browser.GetStringFromName("notificationRestart.button"),
-        callback: function() {
-          // Notify all windows that an application quit has been requested
-          let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(Ci.nsISupportsPRBool);
-          Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
-
-          // If nothing aborted, quit the app
-          if (cancelQuit.data == false) {
-            let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
-            appStartup.quit(Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit);
-          }
-        }
-      }];
-
-      let message = Strings.browser.GetStringFromName("notificationRestart.normal");
-      NativeWindow.doorhanger.show(message, "addon-app-restart", buttons, BrowserApp.selectedTab.id, { persistence: -1 });
+      this.showRestartPrompt();
     } else {
       let message = Strings.browser.GetStringFromName("alertAddonsInstalledNoRestart");
       NativeWindow.toast.show(message, "short");
@@ -3221,6 +3257,30 @@ var XPInstallObserver = {
     msg = msg.replace("#4", Services.appinfo.version);
 
     NativeWindow.toast.show(msg, "short");
+  },
+
+  showRestartPrompt: function() {
+    let buttons = [{
+      label: Strings.browser.GetStringFromName("notificationRestart.button"),
+      callback: function() {
+        // Notify all windows that an application quit has been requested
+        let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(Ci.nsISupportsPRBool);
+        Services.obs.notifyObservers(cancelQuit, "quit-application-requested", "restart");
+
+        // If nothing aborted, quit the app
+        if (cancelQuit.data == false) {
+          let appStartup = Cc["@mozilla.org/toolkit/app-startup;1"].getService(Ci.nsIAppStartup);
+          appStartup.quit(Ci.nsIAppStartup.eRestart | Ci.nsIAppStartup.eAttemptQuit);
+        }
+      }
+    }];
+
+    let message = Strings.browser.GetStringFromName("notificationRestart.normal");
+    NativeWindow.doorhanger.show(message, "addon-app-restart", buttons, BrowserApp.selectedTab.id, { persistence: -1 });
+  },
+
+  hideRestartPrompt: function() {
+    NativeWindow.doorhanger.hide("addon-app-restart", BrowserApp.selectedTab.id);
   }
 };
 
@@ -3867,23 +3927,54 @@ var ClipboardHelper = {
 
 var PluginHelper = {
   showDoorHanger: function(aTab) {
+    if (!aTab.browser)
+      return;
+
+    // Even though we may not end up showing a doorhanger, this flag
+    // lets us know that we've tried to show a doorhanger.
     aTab.clickToPlayPluginDoorhangerShown = true;
-    let message = Strings.browser.GetStringFromName("clickToPlayPlugins.message");
+
+    let uri = aTab.browser.currentURI;
+
+    // If the user has previously set a plugins permission for this website,
+    // either play or don't play the plugins instead of showing a doorhanger.
+    let permValue = Services.perms.testPermission(uri, "plugins");
+    if (permValue != Services.perms.UNKNOWN_ACTION) {
+      if (permValue == Services.perms.ALLOW_ACTION)
+        PluginHelper.playAllPlugins(aTab.browser.contentWindow);
+
+      return;
+    }
+
+    let message = Strings.browser.formatStringFromName("clickToPlayPlugins.message1",
+                                                       [uri.host], 1);
     let buttons = [
       {
         label: Strings.browser.GetStringFromName("clickToPlayPlugins.yes"),
-        callback: function() {
+        callback: function(aChecked) {
+          // If the user checked "Don't ask again", make a permanent exception
+          if (aChecked)
+            Services.perms.add(uri, "plugins", Ci.nsIPermissionManager.ALLOW_ACTION);
+
           PluginHelper.playAllPlugins(aTab.browser.contentWindow);
         }
       },
       {
         label: Strings.browser.GetStringFromName("clickToPlayPlugins.no"),
-        callback: function() {
-          // Do nothing
+        callback: function(aChecked) {
+          // If the user checked "Don't ask again", make a permanent exception
+          if (aChecked)
+            Services.perms.add(uri, "plugins", Ci.nsIPermissionManager.DENY_ACTION);
+
+          // Other than that, do nothing
         }
       }
-    ]
-    NativeWindow.doorhanger.show(message, "ask-to-play-plugins", buttons, aTab.id);
+    ];
+
+    // Add a checkbox with a "Don't ask again" message
+    let options = { checkbox: Strings.browser.GetStringFromName("clickToPlayPlugins.dontAskAgain") };
+
+    NativeWindow.doorhanger.show(message, "ask-to-play-plugins", buttons, aTab.id, options);
   },
 
   playAllPlugins: function(aContentWindow) {
@@ -3945,7 +4036,7 @@ var PluginHelper = {
 var PermissionsHelper = {
 
   _permissonTypes: ["password", "geolocation", "popup", "indexedDB",
-                    "offline-app", "desktop-notification"],
+                    "offline-app", "desktop-notification", "plugins"],
   _permissionStrings: {
     "password": {
       label: "password.rememberPassword",
@@ -3976,6 +4067,11 @@ var PermissionsHelper = {
       label: "desktopNotification.useNotifications",
       allowed: "desktopNotification.allow",
       denied: "desktopNotification.dontAllow"
+    },
+    "plugins": {
+      label: "clickToPlayPlugins.playPlugins",
+      allowed: "clickToPlayPlugins.yes",
+      denied: "clickToPlayPlugins.no"
     }
   },
 
@@ -4442,3 +4538,60 @@ var ActivityObserver = {
     }
   }
 };
+
+var WebappsUI = {
+  init: function() {
+    Cu.import("resource://gre/modules/Webapps.jsm");
+
+    Services.obs.addObserver(this, "webapps-ask-install", false);
+    Services.obs.addObserver(this, "webapps-launch", false);
+  },
+  
+  uninit: function() {
+    Services.obs.removeObserver(this, "webapps-ask-install");
+    Services.obs.removeObserver(this, "webapps-launch");
+  },
+  
+  observe: function(aSubject, aTopic, aData) {
+    let data = JSON.parse(aData);
+    switch (aTopic) {
+      case "webapps-ask-install":
+        this.doInstall(data);
+        break;
+      case "webapps-launch":
+        DOMApplicationRegistry.getManifestFor(data.origin, (function(aManifest) {
+	   if (!aManifest)
+	     return;
+          let manifest = new DOMApplicationManifest(aManifest, data.origin);
+          this.openURL(manifest.fullLaunchPath(), data.origin);
+        }).bind(this));
+        break;
+    }
+  },
+  
+  doInstall: function(aData) {
+    let manifest = new DOMApplicationManifest(aData.app.manifest, aData.app.origin);
+    let name = manifest.name ? manifest.name : manifest.fullLaunchPath();
+    if (Services.prompt.confirm(null, Strings.browser.GetStringFromName("webapps.installTitle"), name))
+      DOMApplicationRegistry.confirmInstall(aData);
+  },
+  
+  openURL: function(aURI, aOrigin) {
+    let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
+
+    let tabs = BrowserApp.tabs;
+    let tab = null;
+    for (let i = 0; i < tabs.length; i++) {
+      let appOrigin = ss.getTabValue(tabs[i], "appOrigin");
+      if (appOrigin == aOrigin)
+        tab = tabs[i];
+    }
+
+    if (tab) {
+      BrowserApp.selectTab(tab);
+    } else {
+      tab = BrowserApp.addTab(aURI);
+      ss.setTabValue(tab, "appOrigin", aOrigin);
+    }
+  }
+}

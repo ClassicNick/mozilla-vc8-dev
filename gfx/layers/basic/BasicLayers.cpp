@@ -1174,7 +1174,7 @@ BasicCanvasLayer::UpdateSurface(gfxASurface* aDestSurface)
         return;
     }
 #endif
-    gfxImageSurface* isurf = nsnull;
+    nsRefPtr<gfxImageSurface> isurf;
     if (aDestSurface) {
       DiscardTempSurface();
       isurf = static_cast<gfxImageSurface*>(aDestSurface);
@@ -2412,7 +2412,7 @@ BasicShadowableThebesLayer::PaintBuffer(gfxContext* aContext,
                     aRegionToDraw, aExtendedRegionToDraw, aRegionToInvalidate,
                     aDidSelfCopy,
                     aCallback, aCallbackData);
-  if (!HasShadow()) {
+  if (!HasShadow() || BasicManager()->IsTransactionIncomplete()) {
     return;
   }
 

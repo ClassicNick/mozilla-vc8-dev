@@ -151,7 +151,7 @@ abstract public class GeckoApp
     public String mLastSnapshotUri;
     public String mLastViewport;
     public byte[] mLastScreen;
-    public int mOwnActivityDepth = 0;
+    private int mOwnActivityDepth = 0;
     private boolean mRestoreSession = false;
     private boolean mInitialized = false;
 
@@ -1570,7 +1570,8 @@ abstract public class GeckoApp
                 view.setVisibility(View.VISIBLE);
             }
 
-            mPluginContainer.updateViewLayout(view, lp);
+            if (mPluginContainer.indexOfChild(view) >= 0)
+                mPluginContainer.updateViewLayout(view, lp);
         }
     }
 
@@ -1622,6 +1623,8 @@ abstract public class GeckoApp
             mLastScreen = savedInstanceState.getByteArray(SAVED_STATE_SCREEN);
             mRestoreSession = savedInstanceState.getBoolean(SAVED_STATE_SESSION);
         }
+
+        LayoutInflater.from(this).setFactory(GeckoViewsFactory.getInstance());
 
         super.onCreate(savedInstanceState);
 
@@ -1743,9 +1746,15 @@ abstract public class GeckoApp
              * run experience, perhaps?
              */
             mLayerController = new LayerController(this);
-            mPlaceholderLayerClient = new PlaceholderLayerClient(mLayerController, mLastViewport);
+            View v = mLayerController.getView();
 
-            mGeckoLayout.addView(mLayerController.getView(), 0);
+            mPlaceholderLayerClient = new PlaceholderLayerClient(mLayerController, mLastViewport);
+            if (!mPlaceholderLayerClient.loadScreenshot()) {
+                // Instead of flickering the checkerboard, show a white screen until Gecko paints
+                v.setBackgroundColor(Color.WHITE);
+            }
+
+            mGeckoLayout.addView(v, 0);
         }
 
         mPluginContainer = (AbsoluteLayout) findViewById(R.id.plugin_container);
@@ -2172,9 +2181,6 @@ abstract public class GeckoApp
                 SmsManager.getInstance().shutdown();
         }
 
-        GeckoNetworkManager.getInstance().stop();
-        GeckoScreenOrientationListener.getInstance().stop();
-
         super.onDestroy();
 
         unregisterReceiver(mBatteryReceiver);
@@ -2551,7 +2557,6 @@ abstract public class GeckoApp
                 }
             }
         }
-        mOwnActivityDepth++;
         startActivityForResult(intent, AWESOMEBAR_REQUEST);
         return true;
     }
@@ -2842,6 +2847,18 @@ abstract public class GeckoApp
             }
         }
     } 
+
+    @Override
+    public void startActivity(Intent intent) {
+        mOwnActivityDepth++;
+        super.startActivity(intent);
+    }
+
+    @Override
+    public void startActivityForResult(Intent intent, int request) {
+        mOwnActivityDepth++;
+        super.startActivityForResult(intent, request);
+    }
 }
 
 class PluginLayoutParams extends AbsoluteLayout.LayoutParams

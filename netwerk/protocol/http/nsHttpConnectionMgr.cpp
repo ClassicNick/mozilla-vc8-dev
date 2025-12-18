@@ -870,11 +870,14 @@ nsHttpConnectionMgr::ProcessPendingQForEntry(nsConnectionEntry *ent)
 
     ProcessSpdyPendingQ(ent);
 
-    PRInt32 count = ent->mPendingQ.Length();
+    PRUint32 count = ent->mPendingQ.Length();
     nsHttpTransaction *trans;
     nsresult rv;
-    
-    for (PRInt32 i = 0; i < count; ++i) {
+    bool dispatchedSuccessfully = false;
+
+    // iterate the pending list until one is dispatched successfully. Keep
+    // iterating afterwards only until a transaction fails to dispatch.
+    for (PRUint32 i = 0; i < count; ++i) {
         trans = ent->mPendingQ[i];
 
         // When this transaction has already established a half-open
@@ -895,8 +898,16 @@ nsHttpConnectionMgr::ProcessPendingQForEntry(nsConnectionEntry *ent)
             LOG(("  dispatching pending transaction...\n"));
             ent->mPendingQ.RemoveElementAt(i);
             NS_RELEASE(trans);
-            return true;
+
+            // reset index and array length after RemoveElelmentAt()
+            dispatchedSuccessfully = true;
+            count = ent->mPendingQ.Length();
+            --i;
+            continue;
         }
+
+        if (dispatchedSuccessfully)
+            return true;
 
         NS_ABORT_IF_FALSE(count == ((PRInt32) ent->mPendingQ.Length()),
                           "something mutated pending queue from "
@@ -977,6 +988,29 @@ nsHttpConnectionMgr::PipelineFeedbackInfo(nsHttpConnectionInfo *ci,
 
     if (ent)
         ent->OnPipelineFeedbackInfo(info, conn, data);
+}
+
+void
+nsHttpConnectionMgr::ReportFailedToProcess(nsIURI *uri)
+{
+    NS_ABORT_IF_FALSE(uri, "precondition");
+
+    nsCAutoString host;
+    PRInt32 port = -1;
+    bool usingSSL = false;
+
+    nsresult rv = uri->SchemeIs("https", &usingSSL);
+    if (NS_SUCCEEDED(rv))
+        rv = uri->GetAsciiHost(host);
+    if (NS_SUCCEEDED(rv))
+        rv = uri->GetPort(&port);
+    if (NS_FAILED(rv) || host.IsEmpty())
+        return;
+
+    nsRefPtr<nsHttpConnectionInfo> ci =
+        new nsHttpConnectionInfo(host, port, nsnull, usingSSL);
+    
+    PipelineFeedbackInfo(ci, RedCorruptedContent, nsnull, 0);
 }
 
 // we're at the active connection limit if any one of the following conditions is true:
@@ -1927,12 +1961,6 @@ nsHttpConnectionMgr::ActivateTimeoutTick()
     LOG(("nsHttpConnectionMgr::ActivateTimeoutTick() "
          "this=%p mReadTimeoutTick=%p\n"));
 
-    // right now the spdy timeout code is the only thing hooked to the timeout
-    // tick, so disable it if spdy is not being used. However pipelining code
-    // will also want this functionality soon.
-    if (!gHttpHandler->IsSpdyEnabled())
-        return;
-
     // The timer tick should be enabled if it is not already pending.
     // Upon running the tick will rearm itself if there are active
     // connections available.
@@ -1950,8 +1978,7 @@ nsHttpConnectionMgr::ActivateTimeoutTick()
 
     NS_ABORT_IF_FALSE(!mReadTimeoutTickArmed, "timer tick armed");
     mReadTimeoutTickArmed = true;
-    // pipeline will expect a 1000ms granuality
-    mReadTimeoutTick->Init(this, 15000, nsITimer::TYPE_REPEATING_SLACK);
+    mReadTimeoutTick->Init(this, 1000, nsITimer::TYPE_REPEATING_SLACK);
 }
 
 void
@@ -2060,6 +2087,12 @@ bool
 nsHttpConnectionMgr::nsConnectionHandle::IsReused()
 {
     return mConn->IsReused();
+}
+
+void
+nsHttpConnectionMgr::nsConnectionHandle::DontReuse()
+{
+    mConn->DontReuse();
 }
 
 nsresult
@@ -2506,6 +2539,32 @@ nsHttpConnectionMgr::nsConnectionHandle::IsProxyConnectInProgress()
     return mConn->IsProxyConnectInProgress();
 }
 
+PRUint32
+nsHttpConnectionMgr::nsConnectionHandle::CancelPipeline(nsresult reason)
+{
+    // no pipeline to cancel
+    return 0;
+}
+
+nsAHttpTransaction::Classifier
+nsHttpConnectionMgr::nsConnectionHandle::Classification()
+{
+    if (mConn)
+        return mConn->Classification();
+
+    LOG(("nsConnectionHandle::Classification this=%p "
+         "has null mConn using CLASS_SOLO default", this));
+    return nsAHttpTransaction::CLASS_SOLO;
+}
+
+void
+nsHttpConnectionMgr::
+nsConnectionHandle::Classify(nsAHttpTransaction::Classifier newclass)
+{
+    if (mConn)
+        mConn->Classify(newclass);
+}
+
 // nsConnectionEntry
 
 nsHttpConnectionMgr::
@@ -2570,7 +2629,8 @@ nsConnectionEntry::OnPipelineFeedbackInfo(
     nsAHttpTransaction::Classifier classification;
     if (conn)
         classification = conn->Classification();
-    else if (info == BadInsufficientFraming)
+    else if (info == BadInsufficientFraming ||
+             info == BadUnexpectedLarge)
         classification = (nsAHttpTransaction::Classifier) data;
     else
         classification = nsAHttpTransaction::CLASS_SOLO;
@@ -2628,6 +2688,9 @@ nsConnectionEntry::OnPipelineFeedbackInfo(
             break;
         case BadInsufficientFraming:
             mPipeliningClassPenalty[classification] += 7000;
+            break;
+        case BadUnexpectedLarge:
+            mPipeliningClassPenalty[classification] += 120;
             break;
 
         default:

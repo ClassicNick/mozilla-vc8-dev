@@ -115,8 +115,6 @@ JSDOUBLE_IS_INT32(double d, int32_t* pi)
 
 #if defined(_MSC_VER) && _MSC_VER >= 1400
 # define JS_ENUM_HEADER(id, type)              enum id : type
-# define JS_ENUM_MEMBER(id, type, value)       id = (type)value,
-# define JS_LAST_ENUM_MEMBER(id, type, value)  id = (type)value
 # define JS_ENUM_FOOTER(id)
 #elif defined (_MSC_VER) && _MSC_VER <= 1310
 # define JS_ENUM_HEADER(id, type)              enum id
@@ -125,8 +123,6 @@ JSDOUBLE_IS_INT32(double d, int32_t* pi)
 # define JS_ENUM_FOOTER(id)
 #else
 # define JS_ENUM_HEADER(id, type)              enum id
-# define JS_ENUM_MEMBER(id, type, value)       id = (type)value,
-# define JS_LAST_ENUM_MEMBER(id, type, value)  id = (type)value
 # define JS_ENUM_FOOTER(id)                    __attribute__((packed))
 #endif
 

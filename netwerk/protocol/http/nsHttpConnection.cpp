@@ -86,6 +86,7 @@ nsHttpConnection::nsHttpConnection()
     , mIdleMonitoring(false)
     , mProxyConnectInProgress(false)
     , mHttp1xTransactionCount(0)
+    , mRemainingConnectionUses(0xffffffff)
     , mClassification(nsAHttpTransaction::CLASS_GENERAL)
     , mNPNComplete(false)
     , mSetupNPNCalled(false)
@@ -537,9 +538,28 @@ nsHttpConnection::DontReuse()
         mSpdySession->DontReuse();
 }
 
+// Checked by the Connection Manager before scheduling a pipelined transaction
+bool
+nsHttpConnection::SupportsPipelining()
+{
+    if (mTransaction &&
+        mTransaction->PipelineDepth() >= mRemainingConnectionUses) {
+        LOG(("nsHttpConnection::SupportsPipelining this=%p deny pipeline "
+             "because current depth %d exceeds max remaining uses %d\n",
+             this, mTransaction->PipelineDepth(), mRemainingConnectionUses));
+        return false;
+    }
+    return mSupportsPipelining && IsKeepAlive();
+}
+
 bool
 nsHttpConnection::CanReuse()
 {
+    if ((mTransaction ? mTransaction->PipelineDepth() : 0) >=
+        mRemainingConnectionUses) {
+        return false;
+    }
+
     bool canReuse;
     
     if (mSpdySession)
@@ -737,9 +757,13 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
         // HTTP/1.1 connections are by default persistent
         if (val && !PL_strcasecmp(val, "close")) {
             mKeepAlive = false;
-            // persistent connections are required for pipelining to work
-            gHttpHandler->ConnMgr()->PipelineFeedbackInfo(
-                mConnInfo, nsHttpConnectionMgr::BadExplicitClose, this, 0);
+
+            // persistent connections are required for pipelining to work - if
+            // this close was not pre-announced then generate the negative
+            // BadExplicitClose feedback
+            if (mRemainingConnectionUses > 1)
+                gHttpHandler->ConnMgr()->PipelineFeedbackInfo(
+                    mConnInfo, nsHttpConnectionMgr::BadExplicitClose, this, 0);
         }
         else {
             mKeepAlive = true;
@@ -787,6 +811,7 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
     // a "keep-alive" connection is by definition capable of being reused, and
     // we only care about being able to reuse it once.  if a timeout is not 
     // specified then we use our advertized timeout value.
+    bool foundKeepAliveMax = false;
     if (mKeepAlive) {
         val = responseHead->PeekHeader(nsHttp::Keep_Alive);
 
@@ -796,6 +821,15 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
                 mIdleTimeout = PR_SecondsToInterval((PRUint32) atoi(cp + 8));
             else
                 mIdleTimeout = gHttpHandler->SpdyTimeout();
+
+            cp = PL_strcasestr(val, "max=");
+            if (cp) {
+                int val = atoi(cp + 4);
+                if (val > 0) {
+                    foundKeepAliveMax = true;
+                    mRemainingConnectionUses = static_cast<PRUint32>(val);
+                }
+            }
         }
         else {
             mIdleTimeout = gHttpHandler->SpdyTimeout();
@@ -804,6 +838,9 @@ nsHttpConnection::OnHeadersAvailable(nsAHttpTransaction *trans,
         LOG(("Connection can be reused [this=%p idle-timeout=%usec]\n",
              this, PR_IntervalToSeconds(mIdleTimeout)));
     }
+
+    if (!foundKeepAliveMax && mRemainingConnectionUses && !mUsingSpdy)
+        --mRemainingConnectionUses;
 
     if (!mProxyConnectStream)
         HandleAlternateProtocol(responseHead);
@@ -926,8 +963,56 @@ nsHttpConnection::ReadTimeoutTick(PRIntervalTime now)
         return;
     }
     
-    // Pending patches places pipeline rescheduling code will go here
+    PRIntervalTime delta = PR_IntervalNow() - mLastReadTime;
 
+    // we replicate some of the checks both here and in OnSocketReadable() as
+    // they will be discovered under different conditions. The ones here
+    // will generally be discovered if we are totally hung and OSR does
+    // not get called at all, however OSR discovers them with lower latency
+    // if the issue is just very slow (but not stalled) reading.
+    //
+    // Right now we only take action if pipelining is involved, but this would
+    // be the place to add general read timeout handling if it is desired.
+
+    const PRIntervalTime k1000ms = PR_MillisecondsToInterval(1000);
+
+    if (delta < k1000ms)
+        return;
+
+    PRUint32 pipelineDepth = mTransaction->PipelineDepth();
+
+    // this just reschedules blocked transactions. no transaction
+    // is aborted completely.
+    LOG(("cancelling pipeline due to a %ums stall - depth %d\n",
+         PR_IntervalToMilliseconds(delta), pipelineDepth));
+
+    if (pipelineDepth > 1) {
+        nsHttpPipeline *pipeline = mTransaction->QueryPipeline();
+        NS_ABORT_IF_FALSE(pipeline, "pipelinedepth > 1 without pipeline");
+        // code this defensively for the moment and check for null in opt build
+        if (pipeline)
+            pipeline->CancelPipeline(NS_ERROR_NET_TIMEOUT);
+    }
+    
+    if (delta < gHttpHandler->GetPipelineTimeout())
+        return;
+
+    if (pipelineDepth <= 1 && !mTransaction->PipelinePosition())
+        return;
+    
+    // nothing has transpired on this pipelined socket for many
+    // seconds. Call that a total stall and close the transaction.
+    // There is a chance the transaction will be restarted again
+    // depending on its state.. that will come back araound
+    // without pipelining on, so this won't loop.
+
+    LOG(("canceling transaction stalled for %ums on a pipeline"
+         "of depth %d and scheduled originally at pos %d\n",
+         PR_IntervalToMilliseconds(delta),
+         pipelineDepth, mTransaction->PipelinePosition()));
+
+    // This will also close the connection
+    CloseTransaction(mTransaction, NS_ERROR_NET_TIMEOUT);
 }
 
 void
@@ -1253,8 +1338,20 @@ nsHttpConnection::OnSocketReadable()
     const PRIntervalTime k1200ms = PR_MillisecondsToInterval(1200);
 
     if (delta > k1200ms) {
+        LOG(("Read delta ms of %u causing slow read major "
+             "event and pipeline cancellation",
+             PR_IntervalToMilliseconds(delta)));
+
         gHttpHandler->ConnMgr()->PipelineFeedbackInfo(
             mConnInfo, nsHttpConnectionMgr::BadSlowReadMajor, this, 0);
+
+        if (mTransaction->PipelineDepth() > 1) {
+            nsHttpPipeline *pipeline = mTransaction->QueryPipeline();
+            NS_ABORT_IF_FALSE(pipeline, "pipelinedepth > 1 without pipeline");
+            // code this defensively for the moment and check for null
+            if (pipeline)
+                pipeline->CancelPipeline(NS_ERROR_NET_TIMEOUT);
+        }
     }
     else if (delta > k400ms) {
         gHttpHandler->ConnMgr()->PipelineFeedbackInfo(

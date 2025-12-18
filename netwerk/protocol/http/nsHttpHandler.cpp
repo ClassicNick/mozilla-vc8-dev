@@ -188,6 +188,8 @@ nsHttpHandler::nsHttpHandler()
     , mMaxPipelinedRequests(32)
     , mMaxOptimisticPipelinedRequests(4)
     , mPipelineAggressive(false)
+    , mMaxPipelineObjectSize(300000)
+    , mPipelineReadTimeout(PR_MillisecondsToInterval(10000))
     , mRedirectionLimit(10)
     , mPhishyUserPassLength(1)
     , mQoSBits(0x00)
@@ -341,6 +343,7 @@ nsHttpHandler::Init()
         mObserverService->AddObserver(this, "net:clear-active-logins", true);
         mObserverService->AddObserver(this, NS_PRIVATE_BROWSING_SWITCH_TOPIC, true);
         mObserverService->AddObserver(this, "net:prune-dead-connections", true);
+        mObserverService->AddObserver(this, "net:failed-to-process-uri", true);
     }
  
     return NS_OK;
@@ -1049,6 +1052,22 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
             mPipelineAggressive = cVar;
     }
 
+    if (PREF_CHANGED(HTTP_PREF("pipelining.maxsize"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("pipelining.maxsize"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mMaxPipelineObjectSize =
+                static_cast<PRInt64>(clamped(val, 1000, 100000000));
+        }
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("pipelining.read-timeout"))) {
+        rv = prefs->GetIntPref(HTTP_PREF("pipelining.read-timeout"), &val);
+        if (NS_SUCCEEDED(rv)) {
+            mPipelineReadTimeout =
+                PR_MillisecondsToInterval(clamped(val, 500, 0xffff));
+        }
+    }
+
     if (PREF_CHANGED(HTTP_PREF("pipelining.ssl"))) {
         rv = prefs->GetBoolPref(HTTP_PREF("pipelining.ssl"), &cVar);
         if (NS_SUCCEEDED(rv))
@@ -1620,6 +1639,11 @@ nsHttpHandler::Observe(nsISupports *subject,
         if (mConnMgr) {
             mConnMgr->PruneDeadConnections();
         }
+    }
+    else if (strcmp(topic, "net:failed-to-process-uri") == 0) {
+        nsCOMPtr<nsIURI> uri = do_QueryInterface(subject);
+        if (uri && mConnMgr)
+            mConnMgr->ReportFailedToProcess(uri);
     }
   
     return NS_OK;
