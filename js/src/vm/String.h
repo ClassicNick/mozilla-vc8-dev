@@ -446,6 +446,8 @@ private:
         JS_ASSERT(isRope());
         return d.s.u2.right;
     }
+
+    inline void markChildren(JSTracer *trc);
 };
 
 JS_STATIC_ASSERT(sizeof(JSRope) == sizeof(JSString));
@@ -488,6 +490,8 @@ class JSDependentString : public JSLinearString
         JS_ASSERT(JSString::isDependent());
         return d.s.u2.base;
     }
+
+    inline void markChildren(JSTracer *trc);
 };
 
 JS_STATIC_ASSERT(sizeof(JSDependentString) == sizeof(JSString));
@@ -725,7 +729,7 @@ class StaticStrings
     inline JSAtom *getUint(uint32_t u);
 
     static inline bool hasInt(int32_t i);
-    inline JSAtom *getInt(jsint i);
+    inline JSAtom *getInt(int32_t i);
 
     static inline bool hasUnit(jschar c);
     JSAtom *getUnit(jschar c);

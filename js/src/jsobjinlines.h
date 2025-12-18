@@ -122,6 +122,13 @@ JSObject::setPrivate(void *data)
 }
 
 inline void
+JSObject::setPrivateUnbarriered(void *data)
+{
+    void **pprivate = &privateRef(numFixedSlots());
+    *pprivate = data;
+}
+
+inline void
 JSObject::initPrivate(void *data)
 {
     privateRef(numFixedSlots()) = data;
@@ -652,23 +659,6 @@ JSObject::denseArrayHasInlineSlots() const
 
 namespace js {
 
-inline JSObject *
-ValueToObjectOrPrototype(JSContext *cx, const Value &v)
-{
-    if (v.isObject())
-        return &v.toObject();
-    GlobalObject *global = &cx->fp()->scopeChain().global();
-    if (v.isString())
-        return global->getOrCreateStringPrototype(cx);
-    if (v.isNumber())
-        return global->getOrCreateNumberPrototype(cx);
-    if (v.isBoolean())
-        return global->getOrCreateBooleanPrototype(cx);
-    JS_ASSERT(v.isNull() || v.isUndefined());
-    js_ReportIsNullOrUndefined(cx, JSDVG_SEARCH_STACK, v, NULL);
-    return NULL;
-}
-
 /*
  * Any name atom for a function which will be added as a DeclEnv object to the
  * scope chain above call objects for fun.
@@ -1086,8 +1076,10 @@ JSObject::createDenseArray(JSContext *cx, js::gc::AllocKind kind,
     uint32_t capacity = js::gc::GetGCKindSlots(kind) - js::ObjectElements::VALUES_PER_HEADER;
 
     JSObject *obj = js_NewGCObject(cx, kind);
-    if (!obj)
+    if (!obj) {
+        js_ReportOutOfMemory(cx);
         return NULL;
+    }
 
     obj->shape_.init(shape);
     obj->type_.init(type);
@@ -1128,9 +1120,8 @@ JSObject::isCallable()
 inline JSPrincipals *
 JSObject::principals(JSContext *cx)
 {
-    JSSecurityCallbacks *cb = JS_GetSecurityCallbacks(cx);
-    if (JSObjectPrincipalsFinder finder = cb ? cb->findObjectPrincipals : NULL)
-        return finder(cx, this);
+    if (JSObjectPrincipalsFinder find = cx->runtime->securityCallbacks->findObjectPrincipals)
+        return find(this);
     return cx->compartment ? cx->compartment->principals : NULL;
 }
 

@@ -61,21 +61,6 @@
 
 namespace js {
 
-class AutoPreserveEnumerators {
-    JSContext *cx;
-    JSObject *enumerators;
-
-  public:
-    AutoPreserveEnumerators(JSContext *cx) : cx(cx), enumerators(cx->enumerators)
-    {
-    }
-
-    ~AutoPreserveEnumerators()
-    {
-        cx->enumerators = enumerators;
-    }
-};
-
 /*
  * Compute the implicit |this| parameter for a call expression where the callee
  * funval was resolved from an unqualified name reference to a property on obj
@@ -232,7 +217,7 @@ GetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, Value *vp
         if (lval.isObject()) {
             JSObject *obj = &lval.toObject();
             if (obj->isArray()) {
-                jsuint length = obj->getArrayLength();
+                uint32_t length = obj->getArrayLength();
                 *vp = NumberValue(length);
                 return true;
             }
@@ -255,7 +240,7 @@ GetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, Value *vp
         }
     }
 
-    JSObject *obj = ValueToObjectOrPrototype(cx, lval);
+    JSObject *obj = ValueToObject(cx, lval);
     if (!obj)
         return false;
 
@@ -717,8 +702,17 @@ ToIdOperation(JSContext *cx, const Value &objval, const Value &idval, Value *res
 }
 
 static JS_ALWAYS_INLINE bool
-GetObjectElementOperation(JSContext *cx, JSObject *obj, const Value &rref, Value *res)
+GetObjectElementOperation(JSContext *cx, JSOp op, JSObject *obj, const Value &rref, Value *res)
 {
+#if JS_HAS_XML_SUPPORT
+    if (op == JSOP_CALLELEM && JS_UNLIKELY(obj->isXML())) {
+        jsid id;
+        if (!FetchElementId(cx, obj, rref, id, res))
+            return false;
+        return js_GetXMLMethod(cx, obj, id, res);
+    }
+#endif
+
     uint32_t index;
     if (IsDefinitelyIndex(rref, &index)) {
         do {
@@ -768,8 +762,10 @@ GetObjectElementOperation(JSContext *cx, JSObject *obj, const Value &rref, Value
 }
 
 static JS_ALWAYS_INLINE bool
-GetElementOperation(JSContext *cx, const Value &lref, const Value &rref, Value *res)
+GetElementOperation(JSContext *cx, JSOp op, const Value &lref, const Value &rref, Value *res)
 {
+    JS_ASSERT(op == JSOP_GETELEM || op == JSOP_CALLELEM);
+
     if (lref.isString() && rref.isInt32()) {
         JSString *str = lref.toString();
         int32_t i = rref.toInt32();
@@ -791,10 +787,20 @@ GetElementOperation(JSContext *cx, const Value &lref, const Value &rref, Value *
         JS_ASSERT(!lref.isMagic(JS_LAZY_ARGUMENTS));
     }
 
+    bool isObject = lref.isObject();
     JSObject *obj = ValueToObject(cx, lref);
     if (!obj)
         return false;
-    return GetObjectElementOperation(cx, obj, rref, res);
+    if (!GetObjectElementOperation(cx, op, obj, rref, res))
+        return false;
+
+#if JS_HAS_NO_SUCH_METHOD
+    if (op == JSOP_CALLELEM && JS_UNLIKELY(res->isPrimitive()) && isObject) {
+        if (!OnUnknownMethod(cx, obj, rref, res))
+            return false;
+    }
+#endif
+    return true;
 }
 
 static JS_ALWAYS_INLINE bool
@@ -804,13 +810,13 @@ SetObjectElementOperation(JSContext *cx, JSObject *obj, jsid id, const Value &va
 
     do {
         if (obj->isDenseArray() && JSID_IS_INT(id)) {
-            jsuint length = obj->getDenseArrayInitializedLength();
-            jsint i = JSID_TO_INT(id);
-            if ((jsuint)i < length) {
+            uint32_t length = obj->getDenseArrayInitializedLength();
+            int32_t i = JSID_TO_INT(id);
+            if ((uint32_t)i < length) {
                 if (obj->getDenseArrayElement(i).isMagic(JS_ARRAY_HOLE)) {
                     if (js_PrototypeHasIndexedProperties(cx, obj))
                         break;
-                    if ((jsuint)i >= obj->getArrayLength())
+                    if ((uint32_t)i >= obj->getArrayLength())
                         obj->setArrayLength(cx, i + 1);
                 }
                 obj->setDenseArrayElementWithType(cx, i, value);

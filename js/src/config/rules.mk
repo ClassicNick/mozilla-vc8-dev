@@ -148,6 +148,9 @@ xpcshell-tests:
 	  $(testxpcsrcdir)/runxpcshelltests.py \
 	  --symbols-path=$(DIST)/crashreporter-symbols \
 	  --build-info-json=$(DEPTH)/mozinfo.json \
+	  --tests-root-dir=$(testxpcobjdir) \
+	  --xunit-file=$(testxpcobjdir)/$(relativesrcdir)/results.xml \
+	  --xunit-suite-name=xpcshell \
 	  $(EXTRA_TEST_ARGS) \
 	  $(LIBXUL_DIST)/bin/xpcshell \
 	  $(foreach dir,$(XPCSHELL_TESTS),$(testxpcobjdir)/$(relativesrcdir)/$(dir))
@@ -957,10 +960,10 @@ ifdef MSMANIFEST_TOOL
 endif	# MSVC with manifest tool
 else
 ifeq ($(CPP_PROG_LINK),1)
-	$(EXPAND_CCC) $(CXXFLAGS) -o $@ $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_GLUE_PROGRAM_LDFLAGS) $(WRAP_LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS) $(BIN_FLAGS)
+	$(EXPAND_CCC) $(CXXFLAGS) -o $@ $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(WRAP_LDFLAGS) $(LIBS_DIR) $(LIBS) $(MOZ_GLUE_PROGRAM_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(BIN_FLAGS)
 	@$(call CHECK_STDCXX,$@)
 else
-	$(EXPAND_CC) $(CFLAGS) $(OUTOPTION)$@ $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(MOZ_GLUE_PROGRAM_LDFLAGS) $(WRAP_LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS) $(BIN_FLAGS)
+	$(EXPAND_CC) $(CFLAGS) $(OUTOPTION)$@ $< $(WIN32_EXE_LDFLAGS) $(LDFLAGS) $(WRAP_LDFLAGS) $(LIBS_DIR) $(LIBS) $(MOZ_GLUE_PROGRAM_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(BIN_FLAGS)
 endif # CPP_PROG_LINK
 endif # WINNT && !GNU_CC
 
@@ -1908,9 +1911,6 @@ echo-dirs:
 echo-module:
 	@echo $(MODULE)
 
-echo-requires:
-	@echo $(REQUIRES)
-
 echo-depth-path:
 	@$(topsrcdir)/build/unix/print-depth-path.sh
 
@@ -2017,7 +2017,6 @@ FREEZE_VARIABLES = \
   DIRS \
   LIBRARY \
   MODULE \
-  REQUIRES \
   SHORT_LIBNAME \
   TIERS \
   EXTRA_COMPONENTS \

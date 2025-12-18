@@ -134,7 +134,7 @@ class nsGlobalWindow;
 class nsDummyJavaPluginOwner;
 class PostMessageEvent;
 class nsRunnable;
-
+class nsDOMEventTargetHelper;
 class nsDOMOfflineResourceList;
 class nsDOMMozURLProperty;
 
@@ -426,6 +426,16 @@ public:
     return FromSupports(wrapper->Native());
   }
 
+  /**
+   * Wrap nsIDOMWindow::GetTop so we can overload the inline GetTop()
+   * implementation below.  (nsIDOMWindow::GetTop simply calls
+   * nsIDOMWindow::GetRealTop().)
+   */
+  nsresult GetTop(nsIDOMWindow **aWindow)
+  {
+    return nsIDOMWindow::GetTop(aWindow);
+  }
+
   inline nsGlobalWindow *GetTop()
   {
     nsCOMPtr<nsIDOMWindow> top;
@@ -581,12 +591,18 @@ public:
   void SizeOfIncludingThis(nsWindowSizes* aWindowSizes) const;
 
   void UnmarkGrayTimers();
+
+  void AddEventTargetObject(nsDOMEventTargetHelper* aObject);
+  void RemoveEventTargetObject(nsDOMEventTargetHelper* aObject);
 private:
   // Enable updates for the accelerometer.
   void EnableDeviceMotionUpdates();
 
   // Disables updates for the accelerometer.
   void DisableDeviceMotionUpdates();
+
+  // Implements Get{Real,Scriptable}Top.
+  nsresult GetTopImpl(nsIDOMWindow **aWindow, bool aScriptable);
 
 protected:
   friend class HashchangeCallback;
@@ -998,10 +1014,11 @@ protected:
 
   nsRefPtr<nsDOMMozURLProperty> mURLProperty;
 
+  nsTHashtable<nsPtrHashKey<nsDOMEventTargetHelper> > mEventTargetObjects;
+
   friend class nsDOMScriptableHelper;
   friend class nsDOMWindowUtils;
   friend class PostMessageEvent;
-  static nsIDOMStorageList* sGlobalStorageList;
 
   static WindowByIdTable* sWindowsById;
   static bool sWarnedAboutWindowInternal;

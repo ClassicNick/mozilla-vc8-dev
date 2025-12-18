@@ -76,6 +76,7 @@ const UINT32_SIZE = 4;
 const PARCEL_SIZE_SIZE = UINT32_SIZE;
 
 let RILQUIRKS_CALLSTATE_EXTRA_UINT32 = false;
+let RILQUIRKS_DATACALLSTATE_DOWN_IS_UP = false;
 
 /**
  * This object contains helpers buffering incoming data & deconstructing it
@@ -463,12 +464,14 @@ let Buf = {
 
       options = this.tokenRequestMap[token];
       request_type = options.rilRequestType;
-      if (error) {
-        //TODO
+
+      options.rilRequestError = error;
+      if (error) {   	  
         if (DEBUG) {
           debug("Received error " + error + " for solicited parcel type " +
                 request_type);
         }
+        RIL.handleRequestError(options);
         return;
       }
       if (DEBUG) {
@@ -509,6 +512,7 @@ let Buf = {
       options = {};
     }
     options.rilRequestType = type;
+    options.rilRequestError = null;
     this.tokenRequestMap[token] = options;
     this.token++;
     return token;
@@ -550,17 +554,26 @@ let RIL = {
   /**
    * Set quirk flags based on the RIL model detected. Note that this
    * requires the RIL being "warmed up" first, which happens when on
-   * an incoming or outgoing call.
+   * an incoming or outgoing voice call or data call.
    */
   rilQuirksInitialized: false,
   initRILQuirks: function initRILQuirks() {
+    if (this.rilQuirksInitialized) {
+      return;
+    }
+
     // The Samsung Galaxy S2 I-9100 radio sends an extra Uint32 in the
     // call state.
     let model_id = libcutils.property_get("ril.model_id");
     if (DEBUG) debug("Detected RIL model " + model_id);
     if (model_id == "I9100") {
-      if (DEBUG) debug("Enabling RILQUIRKS_CALLSTATE_EXTRA_UINT32 for I9100.");
+      if (DEBUG) {
+        debug("Detected I9100, enabling " +
+              "RILQUIRKS_CALLSTATE_EXTRA_UINT32, " +
+              "RILQUIRKS_DATACALLSTATE_DOWN_IS_UP.");
+      }
       RILQUIRKS_CALLSTATE_EXTRA_UINT32 = true;
+      RILQUIRKS_DATACALLSTATE_DOWN_IS_UP = true;
     }
 
     this.rilQuirksInitialized = true;
@@ -790,8 +803,16 @@ let RIL = {
    * @param dcs
    *        Data coding scheme. One of the PDU_DCS_MSG_CODING_*BITS_ALPHABET
    *        constants.
-   * @param bodyLengthInOctets
-   *        Byte length of the message body when encoded with the given DCS.
+   * @param userDataHeaderLength
+   *        Length of embedded user data header, in bytes. The whole header
+   *        size will be userDataHeaderLength + 1; 0 for no header.
+   * @param encodedBodyLength
+   *        Length of the message body when encoded with the given DCS. For
+   *        UCS2, in bytes; for 7-bit, in septets.
+   * @param langIndex
+   *        Table index used for normal 7-bit encoded character lookup.
+   * @param langShiftIndex
+   *        Table index used for escaped 7-bit encoded character lookup.
    */
   sendSMS: function sendSMS(options) {
     let token = Buf.newParcel(REQUEST_SEND_SMS, options);
@@ -801,10 +822,7 @@ let RIL = {
     // handle it within tokenRequestMap[].
     Buf.writeUint32(2);
     Buf.writeString(options.SMSC);
-    GsmPDUHelper.writeMessage(options.number,
-                              options.body,
-                              options.dcs,
-                              options.bodyLengthInOctets);
+    GsmPDUHelper.writeMessage(options);
     Buf.sendParcel();
   },
 
@@ -904,6 +922,41 @@ let RIL = {
     return token;
   },
 
+   /**
+   *  Request an ICC I/O operation.
+   * 
+   *  See TS 27.007 "restricted SIM" operation, "AT Command +CRSM".
+   *  The sequence is in the same order as how libril reads this parcel,
+   *  see the struct RIL_SIM_IO_v5 or RIL_SIM_IO_v6 defined in ril.h
+   *
+   *  @param command 
+   *         The I/O command, one of the ICC_COMMAND_* constants.
+   *  @param fileid
+   *         The file to operate on, one of the ICC_EF_* constants.
+   *  @param pathid
+   *         String type, check pathid from TS 27.007 +CRSM  
+   *  @param p1, p2, p3
+   *         Arbitrary integer parameters for the command.
+   *  @param data
+   *         String parameter for the command.
+   *  @param pin2 [optional]
+   *         String containing the PIN2.
+   */
+  iccIO: function iccIO (options) {
+    let token = Buf.newParcel(REQUEST_SIM_IO, options);
+    Buf.writeUint32(options.command);
+    Buf.writeUint32(options.fileid);
+    Buf.writeString(options.path);
+    Buf.writeUint32(options.p1);
+    Buf.writeUint32(options.p2);
+    Buf.writeUint32(options.p3);
+    Buf.writeString(options.data);
+    if (options.pin2 != null) {
+      Buf.writeString(options.pin2);
+    }
+    Buf.sendParcel();
+  },
+  
   /**
    * Deactivate a data call.
    *
@@ -934,6 +987,14 @@ let RIL = {
   getFailCauseCode: function getFailCauseCode() {
     Buf.simpleRequest(REQUEST_LAST_CALL_FAIL_CAUSE);
   },
+  
+  /**
+   * Handle the RIL request errors
+   */ 
+  handleRequestError: function handleRequestError(options) {	  
+	options.type = "error";
+	Phone.sendDOMMessage(options);
+  },   
 
   /**
    * Handle incoming requests from the RIL. We find the method that
@@ -994,9 +1055,7 @@ RIL[REQUEST_CHANGE_SIM_PIN] = function REQUEST_CHANGE_SIM_PIN() {
 RIL[REQUEST_CHANGE_SIM_PIN2] = null;
 RIL[REQUEST_ENTER_NETWORK_DEPERSONALIZATION] = null;
 RIL[REQUEST_GET_CURRENT_CALLS] = function REQUEST_GET_CURRENT_CALLS(length) {
-  if (!this.rilQuirksInitialized) {
-    this.initRILQuirks();
-  }
+  this.initRILQuirks();
 
   let calls_length = 0;
   // The RIL won't even send us the length integer if there are no active calls.
@@ -1062,11 +1121,16 @@ RIL[REQUEST_UDUB] = function REQUEST_UDUB(length) {
 };
 RIL[REQUEST_LAST_CALL_FAIL_CAUSE] = null;
 RIL[REQUEST_SIGNAL_STRENGTH] = function REQUEST_SIGNAL_STRENGTH() {
+  let signalStrength = Buf.readUint32();
+  // The SGS2 seems to compute the number of bars for us and expose those
+  // instead of the actual signal strength.
+  let bars = signalStrength >> 8;
+  signalStrength = signalStrength & 0xff;
   let strength = {
     // Valid values are (0-31, 99) as defined in TS 27.007 8.5.
-    // For some reason we're getting int32s like [99, 4, 0, 0] and [99, 3, 0, 0]
-    // here, so let's strip of anything beyond the first byte.
-    gsmSignalStrength: Buf.readUint32() & 0xff,
+    gsmSignalStrength: signalStrength,
+    // Non-standard extension by the SGS2.
+    bars:              bars,
     // GSM bit error rate (0-7, 99) as defined in TS 27.007 8.5.
     gsmBitErrorRate:   Buf.readUint32(),
     // The CDMA RSSI value.
@@ -1109,7 +1173,9 @@ RIL[REQUEST_SETUP_DATA_CALL] = function REQUEST_SETUP_DATA_CALL() {
   let [cid, ifname, ipaddr, dns, gw] = Buf.readStringList();
   Phone.onSetupDataCall(Buf.lastSolicitedToken, cid, ifname, ipaddr, dns, gw);
 };
-RIL[REQUEST_SIM_IO] = null;
+RIL[REQUEST_SIM_IO] = function REQUEST_SIM_IO(length, options) {
+  Phone.onICCIO(options);
+};
 RIL[REQUEST_SEND_USSD] = null;
 RIL[REQUEST_CANCEL_USSD] = null;
 RIL[REQUEST_GET_CLIR] = null;
@@ -1163,6 +1229,8 @@ RIL[REQUEST_GET_MUTE] = null;
 RIL[REQUEST_QUERY_CLIP] = null;
 RIL[REQUEST_LAST_DATA_CALL_FAIL_CAUSE] = null;
 RIL[REQUEST_DATA_CALL_LIST] = function REQUEST_DATA_CALL_LIST(length) {
+  this.initRILQuirks();
+
   let num = 0;
   if (length) {
     num = Buf.readUint32();
@@ -1260,7 +1328,41 @@ RIL[UNSOLICITED_RESPONSE_NEW_SMS_ON_SIM] = function UNSOLICITED_RESPONSE_NEW_SMS
 };
 RIL[UNSOLICITED_ON_USSD] = null;
 RIL[UNSOLICITED_ON_USSD_REQUEST] = null;
-RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = null;
+
+RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = function UNSOLICITED_NITZ_TIME_RECEIVED() {
+  let dateString = Buf.readString();
+
+  // The data contained in the NITZ message is
+  // in the form "yy/mm/dd,hh:mm:ss(+/-)tz,dt"
+  // for example: 12/02/16,03:36:08-20,00,310410
+
+  // Always print the NITZ info so we can collection what different providers
+  // send down the pipe (see bug XXX).
+  // TODO once data is collected, add in |if (DEBUG)|
+  
+  debug("DateTimeZone string " + dateString);
+
+  let now = Date.now();
+	
+  let year = parseInt(dateString.substr(0, 2), 10);
+  let month = parseInt(dateString.substr(3, 2), 10);
+  let day = parseInt(dateString.substr(6, 2), 10);
+  let hours = parseInt(dateString.substr(9, 2), 10);
+  let minutes = parseInt(dateString.substr(12, 2), 10);
+  let seconds = parseInt(dateString.substr(15, 2), 10);
+  let tz = parseInt(dateString.substr(17, 3), 10); // TZ is in 15 min. units
+  let dst = parseInt(dateString.substr(21, 2), 10); // DST already is in local time
+
+  let timeInSeconds = Date.UTC(year + PDU_TIMESTAMP_YEAR_OFFSET, month - 1, day,
+                               hours, minutes, seconds) / 1000;
+
+  if (isNaN(timeInSeconds)) {
+    debug("NITZ failed to convert date");
+  } else {
+    Phone.onNITZ(timeInSeconds, tz*15, dst, now);
+  }
+};
+
 RIL[UNSOLICITED_SIGNAL_STRENGTH] = function UNSOLICITED_SIGNAL_STRENGTH() {
   this[REQUEST_SIGNAL_STRENGTH]();
 };
@@ -1322,6 +1424,7 @@ let Phone = {
   IMEISV: null,
   IMSI: null,
   SMSC: null,
+  MSISDN: null,
 
   registrationState: {},
   gprsRegistrationState: {},
@@ -1468,6 +1571,7 @@ let Phone = {
       this.requestNetworkInfo();
       RIL.getSignalStrength();
       RIL.getSMSCAddress();
+      this.getMSISDN();
       this.sendDOMMessage({type: "cardstatechange",
                            cardState: GECKO_CARDSTATE_READY});
     }
@@ -1561,6 +1665,7 @@ let Phone = {
     if ((!iccStatus) || (iccStatus.cardState == CARD_STATE_ABSENT)) {
       if (DEBUG) debug("ICC absent");
       if (this.cardState == GECKO_CARDSTATE_ABSENT) {
+        this.operator = null;
         return;
       }
       this.cardState = GECKO_CARDSTATE_ABSENT;
@@ -1598,6 +1703,7 @@ let Phone = {
           return;
         }
         this.cardState = GECKO_CARDSTATE_ABSENT;
+        this.operator = null;
         this.sendDOMMessage({type: "cardstatechange",
                              cardState: this.cardState});
         return;
@@ -1669,6 +1775,52 @@ let Phone = {
 
   onIMEISV: function onIMEISV(imeiSV) {
     this.IMEISV = imeiSV;
+  },
+
+  onICCIO: function onICCIO(options) {
+    switch (options.fileid) {
+      case ICC_EF_MSISDN:
+        this.readMSISDNResponse(options);
+        break;
+    }
+  },
+  
+  readMSISDNResponse: function readMSISDNResponse(options) {
+    let sw1 = Buf.readUint32();
+    let sw2 = Buf.readUint32();
+    // See GSM11.11 section 9.4 for sw1 and sw2
+    if (sw1 != STATUS_NORMAL_ENDING) {
+      // TODO: error 
+      // Wait for fix for Bug 713451 to report error.
+      debug("Error in iccIO");
+    }
+    if (DEBUG) debug("ICC I/O (" + sw1 + "/" + sw2 + ")");
+
+    switch (options.command) {
+      case ICC_COMMAND_GET_RESPONSE:
+        let response = Buf.readString();
+        let recordSize = parseInt(
+            response.substr(RESPONSE_DATA_RECORD_LENGTH * 2, 2), 16) & 0xff;
+        let options = {
+          command: ICC_COMMAND_READ_RECORD,
+          fileid:  ICC_EF_MSISDN,
+          pathid:  EF_PATH_MF_SIM + EF_PATH_DF_TELECOM,
+          p1:      1, // Record number, MSISDN is always in the 1st record
+          p2:      READ_RECORD_ABSOLUTE_MODE,
+          p3:      recordSize,
+          data:    null,
+          pin2:    null,
+        };
+        RIL.iccIO(options);
+        break;
+
+      case ICC_COMMAND_READ_RECORD:
+        // Ignore 2 bytes prefix, which is 4 chars
+        let number = GsmPDUHelper.readStringAsBCD().toString().substr(4); 
+        if (DEBUG) debug("MSISDN: " + number);
+        this.MSISDN = number;
+        break;
+    } 
   },
 
   onRegistrationState: function onRegistrationState(state) {
@@ -1894,6 +2046,9 @@ let Phone = {
             break;
           case DATACALL_ACTIVE_DOWN:
             newDataCall.state = GECKO_NETWORK_STATE_SUSPENDED;
+            if (RILQUIRKS_DATACALLSTATE_DOWN_IS_UP) {
+              newDataCall.state = GECKO_NETWORK_STATE_CONNECTED;
+            }
             break;
           case DATACALL_ACTIVE_UP:
             newDataCall.state = GECKO_NETWORK_STATE_CONNECTED;
@@ -1920,6 +2075,15 @@ let Phone = {
 
   onDataCallListChanged: function onDataCallListChanged() {
     RIL.getDataCallList();
+  },
+
+  onNITZ: function onNITZ(timeInSeconds, timeZoneInMinutes, dstFlag, timeStampInMS) {
+    let message = {type: "nitzTime",
+                   networkTimeInSeconds: timeInSeconds,
+                   networkTimeZoneInMinutes: timeZoneInMinutes,
+                   dstFlag: dstFlag,
+                   localTimeStampInMS: timeStampInMS};
+    this.sendDOMMessage(message);
   },
 
   /**
@@ -2127,6 +2291,23 @@ let Phone = {
   },
 
   /**
+   *  Get MSISDN
+   */ 
+  getMSISDN: function getMSISDN() {
+    let options = {
+      command: ICC_COMMAND_GET_RESPONSE,
+      fileid:  ICC_EF_MSISDN,
+      pathid:  EF_PATH_MF_SIM + EF_PATH_DF_TELECOM,
+      p1:      0, // For GET_RESPONSE, p1 = 0
+      p2:      0, // For GET_RESPONSE, p2 = 0
+      p3:      GET_RESPONSE_EF_SIZE_BYTES,
+      data:    null,
+      pin2:    null,
+    };
+    RIL.iccIO(options);
+  },
+
+  /**
    * Handle incoming messages from the main UI thread.
    *
    * @param message
@@ -2163,6 +2344,13 @@ let Phone = {
  * timestamp, etc.
  */
 let GsmPDUHelper = {
+
+  /**
+   * List of tuples of national language identifier pairs.
+   */
+  enabledGsmTableTuples: [
+    [PDU_NL_IDENTIFIER_DEFAULT, PDU_NL_IDENTIFIER_DEFAULT],
+  ],
 
   /**
    * Read one character (2 bytes) from a RIL string and decode as hex.
@@ -2247,6 +2435,8 @@ let GsmPDUHelper = {
     let number = 0;
     for (let i = 0; i < length; i++) {
       let octet = this.readHexOctet();
+      if (octet == 0xff)
+        continue;
       // If the first nibble is an "F" , only the second nibble is to be taken
       // into account.
       if ((octet & 0xf0) == 0xf0) {
@@ -2258,6 +2448,21 @@ let GsmPDUHelper = {
       number += this.octetToBCD(octet);
     }
     return number;
+  },
+
+  /**
+   *  Read a string from Buf and convert it to BCD
+   * 
+   *  @return the decimal as a number.
+   */ 
+  readStringAsBCD: function readStringAsBCD() {
+    let length = Buf.readUint32();
+    let bcd = this.readSwappedNibbleBCD(length / 2);
+    let delimiter = Buf.readUint16();
+    if (!(length & 1)) {
+      delimiter |= Buf.readUint16();
+    }
+    return bcd;
   },
 
   /**
@@ -2283,66 +2488,145 @@ let GsmPDUHelper = {
    *
    * @param length
    *        Number of septets to read (*not* octets)
+   * @param paddingBits
+   *        Number of padding bits in the first byte of user data.
+   * @param langIndex
+   *        Table index used for normal 7-bit encoded character lookup.
+   * @param langShiftIndex
+   *        Table index used for escaped 7-bit encoded character lookup.
    *
    * @return a string.
-   *
-   * TODO: support other alphabets
-   * TODO: support escape chars
    */
-  readSeptetsToString: function readSeptetsToString(length) {
+  readSeptetsToString: function readSeptetsToString(length, paddingBits, langIndex, langShiftIndex) {
     let ret = "";
-    let byteLength = Math.ceil(length * 7 / 8);
+    let byteLength = Math.ceil((length * 7 + paddingBits) / 8);
 
-    let leftOver = 0;
-    for (let i = 0; i < byteLength; i++) {
-      let octet = this.readHexOctet();
-      let shift = (i % 7);
-      let leftOver_mask = (0xff << (7 - shift)) & 0xff;
-      let septet_mask = (0xff >> (shift + 1));
-
-      let septet = ((octet & septet_mask) << shift) | leftOver;
-      ret += PDU_ALPHABET_7BIT_DEFAULT[septet];
-      leftOver = (octet & leftOver_mask) >> (7 - shift);
-
-      // Every 7th byte we have a whole septet left over that we can apply.
-      if (shift == 6) {
-        ret += PDU_ALPHABET_7BIT_DEFAULT[leftOver];
-        leftOver = 0;
-      }
+    /**
+     * |<-                    last byte in header                    ->|
+     * |<-           incompleteBits          ->|<- last header septet->|
+     * +===7===|===6===|===5===|===4===|===3===|===2===|===1===|===0===|
+     *
+     * |<-                   1st byte in user data                   ->|
+     * |<-               data septet 1               ->|<-paddingBits->|
+     * +===7===|===6===|===5===|===4===|===3===|===2===|===1===|===0===|
+     *
+     * |<-                   2nd byte in user data                   ->|
+     * |<-                   data spetet 2                   ->|<-ds1->|
+     * +===7===|===6===|===5===|===4===|===3===|===2===|===1===|===0===|
+     */
+    let data = 0;
+    let dataBits = 0;
+    if (paddingBits) {
+      data = this.readHexOctet() >> paddingBits;
+      dataBits = 8 - paddingBits;
+      --byteLength;
     }
+
+    let escapeFound = false;
+    const langTable = PDU_NL_LOCKING_SHIFT_TABLES[langIndex];
+    const langShiftTable = PDU_NL_SINGLE_SHIFT_TABLES[langShiftIndex];
+    do {
+      // Read as much as fits in 32bit word
+      let bytesToRead = Math.min(byteLength, dataBits ? 3 : 4);
+      for (let i = 0; i < bytesToRead; i++) {
+        data |= this.readHexOctet() << dataBits;
+        dataBits += 8;
+        --byteLength;
+      }
+
+      // Consume available full septets
+      for (; dataBits >= 7; dataBits -= 7) {
+        let septet = data & 0x7F;
+        data >>>= 7;
+
+        if (escapeFound) {
+          escapeFound = false;
+          if (septet == PDU_NL_EXTENDED_ESCAPE) {
+            // According to 3GPP TS 23.038, section 6.2.1.1, NOTE 1, "On
+            // receipt of this code, a receiving entity shall display a space
+            // until another extensiion table is defined."
+            ret += " ";
+          } else if (septet == PDU_NL_RESERVED_CONTROL) {
+            // According to 3GPP TS 23.038 B.2, "This code represents a control
+            // character and therefore must not be used for language specific
+            // characters."
+            ret += " ";
+          } else {
+            ret += langShiftTable[septet];
+          }
+        } else if (septet == PDU_NL_EXTENDED_ESCAPE) {
+          escapeFound = true;
+
+          // <escape> is not an effective character
+          --length;
+        } else {
+          ret += langTable[septet];
+        }
+      }
+    } while (byteLength);
+
     if (ret.length != length) {
+      /**
+       * If num of effective characters does not equal to the length of read
+       * string, cut the tail off. This happens when the last octet of user
+       * data has following layout:
+       *
+       * |<-              penultimate octet in user data               ->|
+       * |<-               data septet N               ->|<-   dsN-1   ->|
+       * +===7===|===6===|===5===|===4===|===3===|===2===|===1===|===0===|
+       *
+       * |<-                  last octet in user data                  ->|
+       * |<-                       fill bits                   ->|<-dsN->|
+       * +===7===|===6===|===5===|===4===|===3===|===2===|===1===|===0===|
+       *
+       * The fill bits in the last octet may happen to form a full septet and
+       * be appended at the end of result string.
+       */
       ret = ret.slice(0, length);
     }
     return ret;
   },
 
-  writeStringAsSeptets: function writeStringAsSeptets(message) {
-    let right = 0;
-    for (let i = 0; i < message.length + 1; i++) {
-      let shift = (i % 8);
-      let septet;
-      if (i < message.length) {
-        septet = PDU_ALPHABET_7BIT_DEFAULT.indexOf(message[i]);
-      } else {
-        septet = 0;
-      }
-      if (septet == -1) {
-        if (DEBUG) debug("Fffff, "  + message[i] + " not in 7 bit alphabet!");
-        septet = 0;
-      }
-      if (shift == 0) {
-        // We're at the beginning of a cycle, but we need two septet values
-        // to make an octet. So we're going to have to sit this one out.
-        right = septet;
+  writeStringAsSeptets: function writeStringAsSeptets(message, paddingBits, langIndex, langShiftIndex) {
+    const langTable = PDU_NL_LOCKING_SHIFT_TABLES[langIndex];
+    const langShiftTable = PDU_NL_SINGLE_SHIFT_TABLES[langShiftIndex];
+
+    let dataBits = paddingBits;
+    let data = 0;
+    for (let i = 0; i < message.length; i++) {
+      let septet = langTable.indexOf(message[i]);
+      if (septet == PDU_NL_EXTENDED_ESCAPE) {
         continue;
       }
 
-      let left_mask = 0xff >> (8 - shift);
-      let right_mask = (0xff << shift) & 0xff;
-      let left = (septet & left_mask) << (8 - shift);
-      let octet = left | right;
-      this.writeHexOctet(left | right);
-      right = (septet & right_mask) >> shift;
+      if (septet >= 0) {
+        data |= septet << dataBits;
+        dataBits += 7;
+      } else {
+        septet = langShiftTable.indexOf(message[i]);
+        if (septet == -1) {
+          throw new Error(message[i] + " not in 7 bit alphabet "
+                          + langIndex + ":" + langShiftIndex + "!");
+        }
+
+        if (septet == PDU_NL_RESERVED_CONTROL) {
+          continue;
+        }
+
+        data |= PDU_NL_EXTENDED_ESCAPE << dataBits;
+        dataBits += 7;
+        data |= septet << dataBits;
+        dataBits += 7;
+      }
+
+      for (; dataBits >= 8; dataBits -= 8) {
+        this.writeHexOctet(data & 0xFF);
+        data >>>= 8;
+      }
+    }
+
+    if (dataBits != 0) {
+      this.writeHexOctet(data & 0xFF);
     }
   },
 
@@ -2382,36 +2666,228 @@ let GsmPDUHelper = {
   },
 
   /**
+   * Calculate encoded length using specified locking/single shift table
+   *
+   * @param message
+   *        message string to be encoded.
+   * @param langTable
+   *        locking shift table string.
+   * @param langShiftTable
+   *        single shift table string.
+   *
+   * @return encoded length in septets.
+   *
+   * @note that the algorithm used in this function must match exactly with
+   * #writeStringAsSeptets.
+   */
+  _calculateLangEncodedSeptets: function _calculateLangEncodedSeptets(message, langTable, langShiftTable) {
+    let length = 0;
+    for (let msgIndex = 0; msgIndex < message.length; msgIndex++) {
+      let septet = langTable.indexOf(message.charAt(msgIndex));
+
+      // According to 3GPP TS 23.038, section 6.1.1 General notes, "The
+      // characters marked '1)' are not used but are displayed as a space."
+      if (septet == PDU_NL_EXTENDED_ESCAPE) {
+        continue;
+      }
+
+      if (septet >= 0) {
+        length++;
+        continue;
+      }
+
+      septet = langShiftTable.indexOf(message.charAt(msgIndex));
+      if (septet == -1) {
+        return -1;
+      }
+
+      // According to 3GPP TS 23.038 B.2, "This code represents a control
+      // character and therefore must not be used for language specific
+      // characters."
+      if (septet == PDU_NL_RESERVED_CONTROL) {
+        continue;
+      }
+
+      // The character is not found in locking shfit table, but could be
+      // encoded as <escape><char> with single shift table. Note that it's
+      // still possible for septet to has the value of PDU_NL_EXTENDED_ESCAPE,
+      // but we can display it as a space in this case as said in previous
+      // comment.
+      length += 2;
+    }
+
+    return length;
+  },
+
+  /**
    * Calculate user data length and its encoding.
    *
    * The `options` parameter object should contain the `body` attribute, and
-   * the `dcs`, `bodyLengthInOctets` attributes will be set as return:
+   * the `dcs`, `userDataHeaderLength`, `encodedBodyLength`, `langIndex`,
+   * `langShiftIndex` attributes will be set as return:
    *
    * @param body
    *        String containing the message body.
    * @param dcs
    *        Data coding scheme. One of the PDU_DCS_MSG_CODING_*BITS_ALPHABET
    *        constants.
-   * @param bodyLengthInOctets
-   *        Byte length of the message body when encoded with the given DCS.
+   * @param userDataHeaderLength
+   *        Length of embedded user data header, in bytes. The whole header
+   *        size will be userDataHeaderLength + 1; 0 for no header.
+   * @param encodedBodyLength
+   *        Length of the message body when encoded with the given DCS. For
+   *        UCS2, in bytes; for 7-bit, in septets.
+   * @param langIndex
+   *        Table index used for normal 7-bit encoded character lookup.
+   * @param langShiftIndex
+   *        Table index used for escaped 7-bit encoded character lookup.
    */
   calculateUserDataLength: function calculateUserDataLength(options) {
-    //TODO: support language tables, see bug 729876
     //TODO: support multipart SMS, see bug 712933
-    let needUCS2 = false;
-    for (let i = 0; i < options.body.length; ++i) {
-      if (options.body.charCodeAt(i) >= 128) {
-        needUCS2 = true;
-        break;
+    options.dcs = PDU_DCS_MSG_CODING_7BITS_ALPHABET;
+    options.langIndex = PDU_NL_IDENTIFIER_DEFAULT;
+    options.langShiftIndex = PDU_NL_IDENTIFIER_DEFAULT;
+    options.encodedBodyLength = 0;
+    options.userDataHeaderLength = 0;
+
+    let needUCS2 = true;
+    let minUserDataSeptets = Number.MAX_VALUE;
+    for (let i = 0; i < this.enabledGsmTableTuples.length; i++) {
+      let [langIndex, langShiftIndex] = this.enabledGsmTableTuples[i];
+
+      const langTable = PDU_NL_LOCKING_SHIFT_TABLES[langIndex];
+      const langShiftTable = PDU_NL_SINGLE_SHIFT_TABLES[langShiftIndex];
+
+      let bodySeptets = this._calculateLangEncodedSeptets(options.body,
+                                                          langTable,
+                                                          langShiftTable);
+      if (bodySeptets < 0) {
+        continue;
       }
+
+      let headerLen = 0;
+      if (langIndex != PDU_NL_IDENTIFIER_DEFAULT) {
+        headerLen += 3; // IEI + len + langIndex
+      }
+      if (langShiftIndex != PDU_NL_IDENTIFIER_DEFAULT) {
+        headerLen += 3; // IEI + len + langShiftIndex
+      }
+
+      // Calculate full user data length, note the extra byte is for header len
+      let headerSeptets = Math.ceil((headerLen ? headerLen + 1 : 0) * 8 / 7);
+      let userDataSeptets = bodySeptets + headerSeptets;
+      if (userDataSeptets >= minUserDataSeptets) {
+        continue;
+      }
+
+      needUCS2 = false;
+      minUserDataSeptets = userDataSeptets;
+
+      options.encodedBodyLength = bodySeptets;
+      options.userDataHeaderLength = headerLen;
+      options.langIndex = langIndex;
+      options.langShiftIndex = langShiftIndex;
     }
 
     if (needUCS2) {
       options.dcs = PDU_DCS_MSG_CODING_16BITS_ALPHABET;
-      options.bodyLengthInOctets = options.body.length * 2;
-    } else {
-      options.dcs = PDU_DCS_MSG_CODING_7BITS_ALPHABET;
-      options.bodyLengthInOctets = Math.ceil(options.body.length * 7 / 8);
+      options.encodedBodyLength = options.body.length * 2;
+      options.userDataHeaderLength = 0;
+    }
+  },
+
+  /**
+   * Read 1 + UDHL octets and construct user data header at return.
+   *
+   * @return A header object with properties contained in received message.
+   * The properties set include:
+   * <ul>
+   * <li>length: totoal length of the header, default 0.
+   * <li>langIndex: used locking shift table index, default
+   *     PDU_NL_IDENTIFIER_DEFAULT.
+   * <li>langShiftIndex: used locking shift table index, default
+   *     PDU_NL_IDENTIFIER_DEFAULT.
+   * </ul>
+   */
+  readUserDataHeader: function readUserDataHeader() {
+    let header = {
+      length: 0,
+      langIndex: PDU_NL_IDENTIFIER_DEFAULT,
+      langShiftIndex: PDU_NL_IDENTIFIER_DEFAULT
+    };
+
+    header.length = this.readHexOctet();
+    let dataAvailable = header.length;
+    while (dataAvailable >= 2) {
+      let id = this.readHexOctet();
+      let length = this.readHexOctet();
+      dataAvailable -= 2;
+
+      switch (id) {
+        case PDU_IEI_NATIONAL_LANGUAGE_SINGLE_SHIFT:
+          let langShiftIndex = this.readHexOctet();
+          --dataAvailable;
+          if (langShiftIndex < PDU_NL_SINGLE_SHIFT_TABLES.length) {
+            header.langShiftIndex = langShiftIndex;
+          }
+          break;
+        case PDU_IEI_NATIONAL_LANGUAGE_LOCKING_SHIFT:
+          let langIndex = this.readHexOctet();
+          --dataAvailable;
+          if (langIndex < PDU_NL_LOCKING_SHIFT_TABLES.length) {
+            header.langIndex = langIndex;
+          }
+          break;
+        default:
+          if (DEBUG) {
+            debug("readUserDataHeader: unsupported IEI(" + id
+                  + "), " + length + " bytes.");
+          }
+
+          // Read out unsupported data
+          if (length) {
+            let octets;
+            if (DEBUG) octets = new Uint8Array(length);
+
+            for (let i = 0; i < length; i++) {
+              let octet = this.readHexOctet();
+              if (DEBUG) octets[i] = octet;
+            }
+            dataAvailable -= length;
+
+            if (DEBUG) debug("readUserDataHeader: " + Array.slice(octets));
+          }
+          break;
+      }
+    }
+
+    if (dataAvailable != 0) {
+      throw new Error("Illegal user data header found!");
+    }
+
+    return header;
+  },
+
+  /**
+   * Write out user data header.
+   *
+   * @param options
+   *        Options containing information for user data header write-out. The
+   *        `userDataHeaderLength` property must be correctly pre-calculated.
+   */
+  writeUserDataHeader: function writeUserDataHeader(options) {
+    this.writeHexOctet(options.userDataHeaderLength);
+
+    if (options.langIndex != PDU_NL_IDENTIFIER_DEFAULT) {
+      this.writeHexOctet(PDU_IEI_NATIONAL_LANGUAGE_LOCKING_SHIFT);
+      this.writeHexOctet(1);
+      this.writeHexOctet(options.langIndex);
+    }
+
+    if (options.langShiftIndex != PDU_NL_IDENTIFIER_DEFAULT) {
+      this.writeHexOctet(PDU_IEI_NATIONAL_LANGUAGE_SINGLE_SHIFT);
+      this.writeHexOctet(1);
+      this.writeHexOctet(options.langShiftIndex);
     }
   },
 
@@ -2419,7 +2895,7 @@ let GsmPDUHelper = {
    * User data can be 7 bit (default alphabet) data, 8 bit data, or 16 bit
    * (UCS2) data.
    */
-  readUserData: function readUserData(length, codingScheme) {
+  readUserData: function readUserData(length, codingScheme, hasHeader) {
     if (DEBUG) {
       debug("Reading " + length + " bytes of user data.");
       debug("Coding scheme: " + codingScheme);
@@ -2456,6 +2932,22 @@ let GsmPDUHelper = {
         break;
     }
 
+    let header;
+    let paddingBits = 0;
+    if (hasHeader) {
+      header = this.readUserDataHeader();
+
+      if (encoding == PDU_DCS_MSG_CODING_7BITS_ALPHABET) {
+        let headerBits = (header.length + 1) * 8;
+        let headerSeptets = Math.ceil(headerBits / 7);
+
+        length -= headerSeptets;
+        paddingBits = headerSeptets * 7 - headerBits;
+      } else {
+        length -= (header.length + 1);
+      }
+    }
+
     if (DEBUG) debug("PDU: message encoding is " + encoding + " bit.");
     switch (encoding) {
       case PDU_DCS_MSG_CODING_7BITS_ALPHABET:
@@ -2465,7 +2957,11 @@ let GsmPDUHelper = {
           if (DEBUG) debug("PDU error: user data is too long: " + length);
           return null;
         }
-        return this.readSeptetsToString(length);
+
+        return this.readSeptetsToString(length,
+                                        paddingBits,
+                                        hasHeader ? header.langIndex : PDU_NL_IDENTIFIER_DEFAULT,
+                                        hasHeader ? header.langShiftIndex : PDU_NL_IDENTIFIER_DEFAULT);
       case PDU_DCS_MSG_CODING_8BITS_ALPHABET:
         // Unsupported.
         return null;
@@ -2505,6 +3001,10 @@ let GsmPDUHelper = {
 
     // First octet of this SMS-DELIVER or SMS-SUBMIT message
     let firstOctet = this.readHexOctet();
+
+    // User data header indicator
+    let hasUserDataHeader = firstOctet & PDU_UDHI;
+
     // if the sms is of SMS-SUBMIT type it would contain a TP-MR
     let isSmsSubmit = firstOctet & PDU_MTI_SMS_SUBMIT;
     if (isSmsSubmit) {
@@ -2560,10 +3060,10 @@ let GsmPDUHelper = {
       // - TP-Service-Center-Time-Stamp -
       let year   = this.readSwappedNibbleBCD(1) + PDU_TIMESTAMP_YEAR_OFFSET;
       let month  = this.readSwappedNibbleBCD(1) - 1;
-      let day    = this.readSwappedNibbleBCD(1) - 1;
-      let hour   = this.readSwappedNibbleBCD(1) - 1;
-      let minute = this.readSwappedNibbleBCD(1) - 1;
-      let second = this.readSwappedNibbleBCD(1) - 1;
+      let day    = this.readSwappedNibbleBCD(1);
+      let hour   = this.readSwappedNibbleBCD(1);
+      let minute = this.readSwappedNibbleBCD(1);
+      let second = this.readSwappedNibbleBCD(1);
       msg.timestamp = Date.UTC(year, month, day, hour, minute, second);
 
       // If the most significant bit of the least significant nibble is 1,
@@ -2582,7 +3082,9 @@ let GsmPDUHelper = {
 
     // - TP-User-Data -
     if (userDataLength > 0) {
-      msg.body = this.readUserData(userDataLength, dataCodingScheme);
+      msg.body = this.readUserData(userDataLength,
+                                   dataCodingScheme,
+                                   hasUserDataHeader);
     }
 
     return msg;
@@ -2602,13 +3104,29 @@ let GsmPDUHelper = {
    * @param dcs
    *        Data coding scheme. One of the PDU_DCS_MSG_CODING_*BITS_ALPHABET
    *        constants.
-   * @param userDataLengthInOctets
-   *        Byte length of the user data when encoded with the given DCS.
+   * @param userDataHeaderLength
+   *        Length of embedded user data header, in bytes. The whole header
+   *        size will be userDataHeaderLength + 1; 0 for no header.
+   * @param encodedBodyLength
+   *        Length of the user data when encoded with the given DCS. For UCS2,
+   *        in bytes; for 7-bit, in septets.
+   * @param langIndex
+   *        Table index used for normal 7-bit encoded character lookup.
+   * @param langShiftIndex
+   *        Table index used for escaped 7-bit encoded character lookup.
    */
-  writeMessage: function writeMessage(address,
-                                      userData,
-                                      dcs,
-                                      userDataLengthInOctets) {
+  writeMessage: function writeMessage(options) {
+    if (DEBUG) {
+      debug("writeMessage: " + JSON.stringify(options));
+    }
+    let address = options.number;
+    let body = options.body;
+    let dcs = options.dcs;
+    let userDataHeaderLength = options.userDataHeaderLength;
+    let encodedBodyLength = options.encodedBodyLength;
+    let langIndex = options.langIndex;
+    let langShiftIndex = options.langShiftIndex;
+
     // SMS-SUBMIT Format:
     //
     // PDU Type - 1 octet
@@ -2627,6 +3145,20 @@ let GsmPDUHelper = {
     }
     //TODO validity is unsupported for now
     let validity = 0;
+
+    let headerOctets = (userDataHeaderLength ? userDataHeaderLength + 1 : 0);
+    let paddingBits;
+    let userDataLengthInSeptets;
+    let userDataLengthInOctets;
+    if (dcs == PDU_DCS_MSG_CODING_7BITS_ALPHABET) {
+      let headerSeptets = Math.ceil(headerOctets * 8 / 7);
+      userDataLengthInSeptets = headerSeptets + encodedBodyLength;
+      userDataLengthInOctets = Math.ceil(userDataLengthInSeptets * 7 / 8);
+      paddingBits = headerSeptets * 7 - headerOctets * 8;
+    } else {
+      userDataLengthInOctets = headerOctets + encodedBodyLength;
+      paddingBits = 0;
+    }
 
     let pduOctetLength = 4 + // PDU Type, Message Ref, address length + format
                          Math.ceil(address.length / 2) +
@@ -2672,8 +3204,8 @@ let GsmPDUHelper = {
     if (validity) {
       //TODO: not supported yet, OR with one of PDU_VPF_*
     }
-    let udhi = ""; //TODO: for now this is unsupported
-    if (udhi) {
+    // User data header indicator
+    if (headerOctets) {
       firstOctet |= PDU_UDHI;
     }
     this.writeHexOctet(firstOctet);
@@ -2699,20 +3231,25 @@ let GsmPDUHelper = {
     }
 
     // - User Data -
-    let userDataLength = userData.length;
-    if (dcs == PDU_DCS_MSG_CODING_16BITS_ALPHABET) {
-      userDataLength = userData.length * 2;
+    if (dcs == PDU_DCS_MSG_CODING_7BITS_ALPHABET) {
+      this.writeHexOctet(userDataLengthInSeptets);
+    } else {
+      this.writeHexOctet(userDataLengthInOctets);
     }
-    this.writeHexOctet(userDataLength);
+
+    if (headerOctets) {
+      this.writeUserDataHeader(options);
+    }
+
     switch (dcs) {
       case PDU_DCS_MSG_CODING_7BITS_ALPHABET:
-        this.writeStringAsSeptets(userData);
+        this.writeStringAsSeptets(body, paddingBits, langIndex, langShiftIndex);
         break;
       case PDU_DCS_MSG_CODING_8BITS_ALPHABET:
         // Unsupported.
         break;
       case PDU_DCS_MSG_CODING_16BITS_ALPHABET:
-        this.writeUCS2String(userData);
+        this.writeUCS2String(body);
         break;
     }
 

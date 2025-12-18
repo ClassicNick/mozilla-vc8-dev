@@ -44,10 +44,16 @@ VPATH       = $(srcdir)
 
 include $(DEPTH)/config/autoconf.mk
 
-EXPORTS = \
-  sampler.h \
+EXPORTS = sampler.h
+
+ifdef MOZ_ENABLE_PROFILER_SPS
+EXPORTS += \
   sps_sampler.h \
   thread_helper.h \
+  $(NULL)
+
+EXPORTS += \
+  shared-libraries.h \
   $(NULL)
 
 LOCAL_INCLUDES += \
@@ -64,6 +70,7 @@ IS_COMPONENT    = 1
 CPPSRCS		= \
   nsProfilerFactory.cpp \
   nsProfiler.cpp \
+  TableTicker.cpp \
   $(NULL)
 
 XPIDLSRCS = \
@@ -75,23 +82,16 @@ EXTRA_JS_MODULES = \
   $(NULL)
 
 ifneq (,$(filter Android Linux,$(OS_TARGET)))
-
-DEFINES += -DMOZ_ENABLE_PROFILER_SPS
-
 CPPSRCS += \
   shared-libraries-linux.cc \
   platform-linux.cc \
-  TableTicker.cpp \
   $(NULL)
 endif
+
 ifeq ($(OS_TARGET),Darwin)
-
-DEFINES += -DMOZ_ENABLE_PROFILER_SPS
-
 CPPSRCS += \
   shared-libraries-macos.cc \
   platform-macos.cc \
-  TableTicker.cpp \
   $(NULL)
 endif
 
@@ -108,5 +108,6 @@ CPPSRCS += \
   $(NULL)
 endif
 
-include $(topsrcdir)/config/rules.mk
+endif
 
+include $(topsrcdir)/config/rules.mk

@@ -159,6 +159,8 @@
 #include "nsLayoutStatics.h"
 #include "mozilla/Telemetry.h"
 
+#include "mozilla/CORSMode.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -1980,7 +1982,7 @@ nsGenericElement::GetChildrenList()
   return slots->mChildrenList;
 }
 
-nsIDOMDOMTokenList*
+nsDOMTokenList*
 nsGenericElement::GetClassList(nsresult *aResult)
 {
   *aResult = NS_ERROR_OUT_OF_MEMORY;
@@ -2312,7 +2314,7 @@ nsGenericElement::GetClientRects(nsIDOMClientRectList** aResult)
 {
   *aResult = nsnull;
 
-  nsRefPtr<nsClientRectList> rectList = new nsClientRectList();
+  nsRefPtr<nsClientRectList> rectList = new nsClientRectList(this);
 
   nsIFrame* frame = GetPrimaryFrame(Flush_Layout);
   if (!frame) {
@@ -2468,6 +2470,9 @@ nsGenericElement::nsDOMSlots::Traverse(nsCycleCollectionTraversalCallback &cb, b
 
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mChildrenList");
   cb.NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIDOMNodeList*, mChildrenList));
+
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mClassList");
+  cb.NoteXPCOMChild(mClassList.get());
 }
 
 void
@@ -2482,6 +2487,10 @@ nsGenericElement::nsDOMSlots::Unlink(bool aIsXUL)
   if (aIsXUL)
     NS_IF_RELEASE(mControllers);
   mChildrenList = nsnull;
+  if (mClassList) {
+    mClassList->DropReference();
+    mClassList = nsnull;
+  }
 }
 
 nsGenericElement::nsGenericElement(already_AddRefed<nsINodeInfo> aNodeInfo)
@@ -2729,6 +2738,9 @@ nsGenericElement::RemoveAttribute(const nsAString& aName)
   const nsAttrName* name = InternalGetExistingAttrNameFromQName(aName);
 
   if (!name) {
+    // If there is no canonical nsAttrName for this attribute name, then the
+    // attribute does not exist and we can't get its namespace ID and
+    // local name below, so we return early.
     return NS_OK;
   }
 
@@ -2843,15 +2855,16 @@ nsGenericElement::GetAttributeNS(const nsAString& aNamespaceURI,
     nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI);
 
   if (nsid == kNameSpaceID_Unknown) {
-    // Unknown namespace means no attr...
-
-    aReturn.Truncate();
-
+    // Unknown namespace means no attribute.
+    SetDOMStringToNull(aReturn);
     return NS_OK;
   }
 
   nsCOMPtr<nsIAtom> name = do_GetAtom(aLocalName);
-  GetAttr(nsid, name, aReturn);
+  bool hasAttr = GetAttr(nsid, name, aReturn);
+  if (!hasAttr) {
+    SetDOMStringToNull(aReturn);
+  }
 
   return NS_OK;
 }
@@ -2882,8 +2895,9 @@ nsGenericElement::RemoveAttributeNS(const nsAString& aNamespaceURI,
     nsContentUtils::NameSpaceManager()->GetNameSpaceID(aNamespaceURI);
 
   if (nsid == kNameSpaceID_Unknown) {
-    // Unknown namespace means no attr...
-
+    // If the namespace ID is unknown, it means there can't possibly be an
+    // existing attribute. We would need a known namespace ID to pass into
+    // UnsetAttr, so we return early if we don't have one.
     return NS_OK;
   }
 
@@ -6222,6 +6236,48 @@ nsGenericElement::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
 {
   return Element::SizeOfExcludingThis(aMallocSizeOf) +
          mAttrsAndChildren.SizeOfExcludingThis(aMallocSizeOf);
+}
+
+static const nsAttrValue::EnumTable kCORSAttributeTable[] = {
+  // Order matters here
+  // See ParseCORSValue
+  { "anonymous",       CORS_ANONYMOUS       },
+  { "use-credentials", CORS_USE_CREDENTIALS },
+  { 0 }
+};
+
+/* static */ void
+nsGenericElement::ParseCORSValue(const nsAString& aValue,
+                                 nsAttrValue& aResult)
+{
+  DebugOnly<bool> success =
+    aResult.ParseEnumValue(aValue, kCORSAttributeTable, false,
+                           // default value is anonymous if aValue is
+                           // not a value we understand
+                           &kCORSAttributeTable[0]);
+  MOZ_ASSERT(success);
+}
+
+/* static */ CORSMode
+nsGenericElement::StringToCORSMode(const nsAString& aValue)
+{
+  if (aValue.IsVoid()) {
+    return CORS_NONE;
+  }
+
+  nsAttrValue val;
+  nsGenericElement::ParseCORSValue(aValue, val);
+  return CORSMode(val.GetEnumValue());
+}
+
+/* static */ CORSMode
+nsGenericElement::AttrValueToCORSMode(const nsAttrValue* aValue)
+{
+  if (!aValue) {
+    return CORS_NONE;
+  }
+
+  return CORSMode(aValue->GetEnumValue());
 }
 
 #define EVENT(name_, id_, type_, struct_)                                    \

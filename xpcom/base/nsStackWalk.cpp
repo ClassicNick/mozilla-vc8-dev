@@ -438,19 +438,19 @@ void PrintError(char *prefix)
 {
     LPVOID lpMsgBuf;
     DWORD lastErr = GetLastError();
-    FormatMessage(
+    FormatMessageA(
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
       NULL,
       lastErr,
       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-      (LPTSTR) &lpMsgBuf,
+      (LPSTR) &lpMsgBuf,
       0,
       NULL
     );
     fprintf(stderr, "### ERROR: %s: %s",
                     prefix, lpMsgBuf ? lpMsgBuf : "(null)\n");
     fflush(stderr);
-    LocalFree( lpMsgBuf );
+    LocalFree(lpMsgBuf);
 }
 
 bool
@@ -1585,7 +1585,7 @@ extern void *__libc_stack_end; // from ld-linux.so
 namespace mozilla {
 nsresult
 FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
-                      void *aClosure, void **bp)
+                      void *aClosure, void **bp, void *aStackEnd)
 {
   // Stack walking code courtesy Kipp's "leaky".
 
@@ -1596,10 +1596,10 @@ FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     // -fomit-frame-pointer, so do some sanity checks.
     // (bp should be a frame pointer on ppc(64) but checking anyway may help
     // a little if the stack has been corrupted.)
+    // We don't need to check against the begining of the stack because
+    // we can assume that bp > sp
     if (next <= bp ||
-#if HAVE___LIBC_STACK_END
-        next > __libc_stack_end ||
-#endif
+        next > aStackEnd ||
         (long(next) & 3)) {
       break;
     }
@@ -1643,8 +1643,15 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
   // end of the saved registers instead of the start.
   bp = (void**) __builtin_frame_address(0);
 #endif
+
+  void *stackEnd;
+#if HAVE___LIBC_STACK_END
+  stackEnd = __libc_stack_end;
+#else
+  stackEnd = reinterpret_cast<void*>(-1);
+#endif
   return FramePointerStackWalk(aCallback, aSkipFrames,
-                               aClosure, bp);
+                               aClosure, bp, stackEnd);
 
 }
 
@@ -1762,6 +1769,15 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     MOZ_ASSERT(gCriticalAddress.mInit);
     MOZ_ASSERT(!aThread);
     return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+namespace mozilla {
+nsresult
+FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
+                      void *aClosure, void **bp)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
 }
 
 EXPORT_XPCOM_API(nsresult)

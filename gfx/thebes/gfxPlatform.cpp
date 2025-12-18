@@ -120,6 +120,7 @@ static PRLogModuleInfo *sFontlistLog = nsnull;
 static PRLogModuleInfo *sFontInitLog = nsnull;
 static PRLogModuleInfo *sTextrunLog = nsnull;
 static PRLogModuleInfo *sTextrunuiLog = nsnull;
+static PRLogModuleInfo *sCmapDataLog = nsnull;
 #endif
 
 /* Class to listen for pref changes so that chrome code can dynamically
@@ -151,6 +152,7 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 
 #define GFX_PREF_HARFBUZZ_SCRIPTS "gfx.font_rendering.harfbuzz.scripts"
 #define HARFBUZZ_SCRIPTS_DEFAULT  mozilla::unicode::SHAPING_DEFAULT
+#define GFX_PREF_FALLBACK_USE_CMAPS  "gfx.font_rendering.fallback.always_use_cmaps"
 
 #ifdef MOZ_GRAPHITE
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
@@ -234,6 +236,8 @@ gfxPlatform::gfxPlatform()
     mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
+    mFallbackUsesCmaps = UNINITIALIZED_VALUE;
+
 #ifdef MOZ_GRAPHITE
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
 #endif
@@ -270,6 +274,7 @@ gfxPlatform::Init()
     sFontInitLog = PR_NewLogModule("fontinit");;
     sTextrunLog = PR_NewLogModule("textrun");;
     sTextrunuiLog = PR_NewLogModule("textrunui");;
+    sCmapDataLog = PR_NewLogModule("cmapdata");;
 #endif
 
 
@@ -680,6 +685,17 @@ gfxPlatform::SanitizeDownloadedFonts()
     }
 
     return mDownloadableFontsSanitize;
+}
+
+bool
+gfxPlatform::UseCmapsDuringSystemFallback()
+{
+    if (mFallbackUsesCmaps == UNINITIALIZED_VALUE) {
+        mFallbackUsesCmaps =
+            Preferences::GetBool(GFX_PREF_FALLBACK_USE_CMAPS, false);
+    }
+
+    return mFallbackUsesCmaps;
 }
 
 #ifdef MOZ_GRAPHITE
@@ -1360,6 +1376,8 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
         mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_DOWNLOADABLE_FONTS_SANITIZE, aPref)) {
         mDownloadableFontsSanitize = UNINITIALIZED_VALUE;
+    } else if (!strcmp(GFX_PREF_FALLBACK_USE_CMAPS, aPref)) {
+        mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 #ifdef MOZ_GRAPHITE
     } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
         mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
@@ -1398,6 +1416,9 @@ gfxPlatform::GetLog(eGfxLog aWhichLog)
         break;
     case eGfxLog_textrunui:
         return sTextrunuiLog;
+        break;
+    case eGfxLog_cmapdata:
+        return sCmapDataLog;
         break;
     default:
         break;

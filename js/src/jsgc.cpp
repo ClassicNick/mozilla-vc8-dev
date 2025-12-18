@@ -664,7 +664,7 @@ Chunk::init()
     info.age = 0;
 
     /* Initialize the arena header state. */
-    for (jsuint i = 0; i < ArenasPerChunk; i++) {
+    for (unsigned i = 0; i < ArenasPerChunk; i++) {
         arenas[i].aheader.setAsNotAllocated();
         arenas[i].aheader.next = (i + 1 < ArenasPerChunk)
                                  ? &arenas[i + 1].aheader
@@ -724,14 +724,14 @@ Chunk::removeFromAvailableList()
  * it to the most recently freed arena when we free, and forcing it to
  * the last alloc + 1 when we allocate.
  */
-jsuint
+uint32_t
 Chunk::findDecommittedArenaOffset()
 {
     /* Note: lastFreeArenaOffset can be past the end of the list. */
-    for (jsuint i = info.lastDecommittedArenaOffset; i < ArenasPerChunk; i++)
+    for (unsigned i = info.lastDecommittedArenaOffset; i < ArenasPerChunk; i++)
         if (decommittedArenas.get(i))
             return i;
-    for (jsuint i = 0; i < info.lastDecommittedArenaOffset; i++)
+    for (unsigned i = 0; i < info.lastDecommittedArenaOffset; i++)
         if (decommittedArenas.get(i))
             return i;
     JS_NOT_REACHED("No decommitted arenas found.");
@@ -744,7 +744,7 @@ Chunk::fetchNextDecommittedArena()
     JS_ASSERT(info.numArenasFreeCommitted == 0);
     JS_ASSERT(info.numArenasFree > 0);
 
-    jsuint offset = findDecommittedArenaOffset();
+    unsigned offset = findDecommittedArenaOffset();
     info.lastDecommittedArenaOffset = offset + 1;
     --info.numArenasFree;
     decommittedArenas.unset(offset);
@@ -1308,15 +1308,6 @@ js_AddGCThingRoot(JSContext *cx, void **rp, const char *name)
 JS_FRIEND_API(JSBool)
 js_AddRootRT(JSRuntime *rt, jsval *vp, const char *name)
 {
-    /*
-     * Due to the long-standing, but now removed, use of rt->gcLock across the
-     * bulk of js::GC, API users have come to depend on JS_AddRoot etc. locking
-     * properly with a racing GC, without calling JS_AddRoot from a request.
-     * We have to preserve API compatibility here, now that we avoid holding
-     * rt->gcLock across the mark phase (including the root hashtable mark).
-     */
-    AutoLockGC lock(rt);
-
     return !!rt->gcRootsHash.put((void *)vp,
                                  RootInfo(name, JS_GC_ROOT_VALUE_PTR));
 }
@@ -1324,15 +1315,6 @@ js_AddRootRT(JSRuntime *rt, jsval *vp, const char *name)
 JS_FRIEND_API(JSBool)
 js_AddGCThingRootRT(JSRuntime *rt, void **rp, const char *name)
 {
-    /*
-     * Due to the long-standing, but now removed, use of rt->gcLock across the
-     * bulk of js::GC, API users have come to depend on JS_AddRoot etc. locking
-     * properly with a racing GC, without calling JS_AddRoot from a request.
-     * We have to preserve API compatibility here, now that we avoid holding
-     * rt->gcLock across the mark phase (including the root hashtable mark).
-     */
-    AutoLockGC lock(rt);
-
     return !!rt->gcRootsHash.put((void *)rp,
                                  RootInfo(name, JS_GC_ROOT_GCTHING_PTR));
 }
@@ -1340,11 +1322,6 @@ js_AddGCThingRootRT(JSRuntime *rt, void **rp, const char *name)
 JS_FRIEND_API(JSBool)
 js_RemoveRoot(JSRuntime *rt, void *rp)
 {
-    /*
-     * Due to the JS_RemoveRootRT API, we may be called outside of a request.
-     * Same synchronization drill as above in js_AddRoot.
-     */
-    AutoLockGC lock(rt);
     rt->gcRootsHash.remove(rp);
     rt->gcPoke = JS_TRUE;
     return JS_TRUE;
@@ -1404,7 +1381,6 @@ js_DumpNamedRoots(JSRuntime *rt,
 uint32_t
 js_MapGCRoots(JSRuntime *rt, JSGCRootMapFun map, void *data)
 {
-    AutoLockGC lock(rt);
     int ct = 0;
     for (RootEnum e(rt->gcRootsHash); !e.empty(); e.popFront()) {
         RootEntry &entry = e.front();
@@ -1421,14 +1397,19 @@ js_MapGCRoots(JSRuntime *rt, JSGCRootMapFun map, void *data)
     return ct;
 }
 
-void
-JSCompartment::setGCLastBytes(size_t lastBytes, JSGCInvocationKind gckind)
+static size_t
+ComputeTriggerBytes(size_t lastBytes, size_t maxBytes, JSGCInvocationKind gckind)
 {
-    gcLastBytes = lastBytes;
-
     size_t base = gckind == GC_SHRINK ? lastBytes : Max(lastBytes, GC_ALLOCATION_THRESHOLD);
     float trigger = float(base) * GC_HEAP_GROWTH_FACTOR;
-    gcTriggerBytes = size_t(Min(float(rt->gcMaxBytes), trigger));
+    return size_t(Min(float(maxBytes), trigger));
+}
+
+void
+JSCompartment::setGCLastBytes(size_t lastBytes, size_t lastMallocBytes, JSGCInvocationKind gckind)
+{
+    gcTriggerBytes = ComputeTriggerBytes(lastBytes, rt->gcMaxBytes, gckind);
+    gcTriggerMallocAndFreeBytes = ComputeTriggerBytes(lastMallocBytes, SIZE_MAX, gckind);
 }
 
 void
@@ -1708,13 +1689,13 @@ ArenaLists::finalizeScripts(JSContext *cx)
 }
 
 static void
-RunLastDitchGC(JSContext *cx)
+RunLastDitchGC(JSContext *cx, gcreason::Reason reason)
 {
     JSRuntime *rt = cx->runtime;
 
     /* The last ditch GC preserves all atoms. */
     AutoKeepAtoms keep(rt);
-    GC(cx, rt->gcTriggerCompartment, GC_NORMAL, gcreason::LAST_DITCH);
+    GC(cx, rt->gcTriggerCompartment, GC_NORMAL, reason);
 }
 
 /* static */ void *
@@ -1729,7 +1710,7 @@ ArenaLists::refillFreeList(JSContext *cx, AllocKind thingKind)
     bool runGC = rt->gcIncrementalState != NO_INCREMENTAL && comp->gcBytes > comp->gcTriggerBytes;
     for (;;) {
         if (JS_UNLIKELY(runGC)) {
-            RunLastDitchGC(cx);
+            RunLastDitchGC(cx, gcreason::LAST_DITCH);
 
             /*
              * The JSGC_END callback can legitimately allocate new GC
@@ -1790,7 +1771,6 @@ js_LockGCThingRT(JSRuntime *rt, void *thing)
     if (!thing)
         return true;
 
-    AutoLockGC lock(rt);
     if (GCLocks::Ptr p = rt->gcLocksHash.lookupWithDefault(thing, 0)) {
         p->value++;
         return true;
@@ -1805,10 +1785,7 @@ js_UnlockGCThingRT(JSRuntime *rt, void *thing)
     if (!thing)
         return;
 
-    AutoLockGC lock(rt);
-    GCLocks::Ptr p = rt->gcLocksHash.lookup(thing);
-
-    if (p) {
+    if (GCLocks::Ptr p = rt->gcLocksHash.lookup(thing)) {
         rt->gcPoke = true;
         if (--p->value == 0)
             rt->gcLocksHash.remove(p);
@@ -2316,6 +2293,13 @@ AutoGCRooter::trace(JSTracer *trc)
         MarkValueRootRange(trc, array->length(), array->start(), "js::AutoValueArray");
         return;
       }
+
+      case SCRIPTVECTOR: {
+        AutoScriptVector::VectorImpl &vector = static_cast<AutoScriptVector *>(this)->vector;
+        for (size_t i = 0; i < vector.length(); i++)
+            MarkScriptRoot(trc, &vector[i], "AutoScriptVector element");
+        return;
+      }
     }
 
     JS_ASSERT(tag >= 0);
@@ -2412,6 +2396,7 @@ MarkRuntime(JSTracer *trc, bool useSavedRoots = false)
         }
     }
 }
+
 void
 TriggerGC(JSRuntime *rt, gcreason::Reason reason)
 {
@@ -2458,7 +2443,7 @@ TriggerCompartmentGC(JSCompartment *comp, gcreason::Reason reason)
     rt->gcIsNeeded = true;
     rt->gcTriggerCompartment = comp;
     rt->gcTriggerReason = reason;
-    comp->rt->triggerOperationCallback();
+    rt->triggerOperationCallback();
 }
 
 void
@@ -2484,6 +2469,11 @@ MaybeGC(JSContext *cx)
         rt->gcIncrementalState == NO_INCREMENTAL)
     {
         GCSlice(cx, NULL, GC_NORMAL, gcreason::MAYBEGC);
+        return;
+    }
+
+    if (comp->gcMallocAndFreeBytes > comp->gcTriggerMallocAndFreeBytes) {
+        GCSlice(cx, rt->gcMode == JSGC_MODE_GLOBAL ? NULL : comp, GC_NORMAL, gcreason::MAYBEGC);
         return;
     }
 
@@ -2932,7 +2922,7 @@ SweepCompartments(JSContext *cx, JSGCInvocationKind gckind)
             if (callback)
                 JS_ALWAYS_TRUE(callback(cx, compartment, JSCOMPARTMENT_DESTROY));
             if (compartment->principals)
-                JSPRINCIPALS_DROP(cx, compartment->principals);
+                JS_DropPrincipals(rt, compartment->principals);
             cx->delete_(compartment);
             continue;
         }
@@ -3272,7 +3262,7 @@ SweepPhase(JSContext *cx, JSGCInvocationKind gckind)
     }
 
     for (CompartmentsIter c(rt); !c.done(); c.next())
-        c->setGCLastBytes(c->gcBytes, gckind);
+        c->setGCLastBytes(c->gcBytes, c->gcMallocAndFreeBytes, gckind);
 }
 
 /* Perform mark-and-sweep GC. If comp is set, we perform a single-compartment GC. */
@@ -3662,12 +3652,31 @@ GCCycle(JSContext *cx, JSCompartment *comp, int64_t budget, JSGCInvocationKind g
 #endif
 }
 
+#ifdef JS_GC_ZEAL
+static bool
+IsDeterministicGCReason(gcreason::Reason reason)
+{
+    if (reason > gcreason::DEBUG_GC && reason != gcreason::CC_FORCED)
+        return false;
+
+    if (reason == gcreason::MAYBEGC)
+        return false;
+
+    return true;
+}
+#endif
+
 static void
 Collect(JSContext *cx, JSCompartment *comp, int64_t budget,
         JSGCInvocationKind gckind, gcreason::Reason reason)
 {
     JSRuntime *rt = cx->runtime;
     JS_AbortIfWrongThread(rt);
+
+#ifdef JS_GC_ZEAL
+    if (rt->gcDeterministicOnly && !IsDeterministicGCReason(reason))
+        return;
+#endif
 
     JS_ASSERT_IF(budget != SliceBudget::Unlimited, JSGC_INCREMENTAL);
 
@@ -3903,10 +3912,10 @@ NewCompartment(JSContext *cx, JSPrincipals *principals)
         compartment->isSystemCompartment = principals && rt->trustedPrincipals() == principals;
         if (principals) {
             compartment->principals = principals;
-            JSPRINCIPALS_HOLD(cx, principals);
+            JS_HoldPrincipals(principals);
         }
 
-        compartment->setGCLastBytes(8192, GC_NORMAL);
+        compartment->setGCLastBytes(8192, 8192, GC_NORMAL);
 
         /*
          * Before reporting the OOM condition, |lock| needs to be cleaned up,
@@ -3947,7 +3956,16 @@ RunDebugGC(JSContext *cx)
     if (rt->gcTriggerCompartment == rt->atomsCompartment)
         rt->gcTriggerCompartment = NULL;
 
-    RunLastDitchGC(cx);
+    RunLastDitchGC(cx, gcreason::DEBUG_GC);
+#endif
+}
+
+void
+SetDeterministicGC(JSContext *cx, bool enabled)
+{
+#ifdef JS_GC_ZEAL
+    JSRuntime *rt = cx->runtime;
+    rt->gcDeterministicOnly = enabled;
 #endif
 }
 
@@ -4478,7 +4496,6 @@ JS_FRIEND_API(void)
 StartPCCountProfiling(JSContext *cx)
 {
     JSRuntime *rt = cx->runtime;
-    AutoLockGC lock(rt);
 
     if (rt->profilingScripts)
         return;
@@ -4495,7 +4512,6 @@ JS_FRIEND_API(void)
 StopPCCountProfiling(JSContext *cx)
 {
     JSRuntime *rt = cx->runtime;
-    AutoLockGC lock(rt);
 
     if (!rt->profilingScripts)
         return;
@@ -4528,7 +4544,6 @@ JS_FRIEND_API(void)
 PurgePCCounts(JSContext *cx)
 {
     JSRuntime *rt = cx->runtime;
-    AutoLockGC lock(rt);
 
     if (!rt->scriptPCCounters)
         return;
@@ -4547,6 +4562,10 @@ JS_IterateCompartments(JSRuntime *rt, void *data,
 
     AutoLockGC lock(rt);
     AutoHeapSession session(rt);
+#ifdef JS_THREADSAFE
+    rt->gcHelperThread.waitBackgroundSweepOrAllocEnd();
+#endif
+    AutoUnlockGC unlock(rt);
 
     for (CompartmentsIter c(rt); !c.done(); c.next())
         (*compartmentCallback)(rt, data, c);

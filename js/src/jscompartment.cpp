@@ -75,18 +75,19 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     needsBarrier_(false),
     gcBytes(0),
     gcTriggerBytes(0),
-    gcLastBytes(0),
     hold(false),
     typeLifoAlloc(TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     data(NULL),
     active(false),
-    hasDebugModeCodeToDrop(false),
 #ifdef JS_METHODJIT
     jaegerCompartment_(NULL),
 #endif
     regExps(rt),
     propertyTree(thisForCtor()),
     emptyTypeObject(NULL),
+    gcMallocAndFreeBytes(0),
+    gcTriggerMallocAndFreeBytes(0),
+    gcMallocBytes(0),
     debugModeBits(rt->debugMode ? DebugFromC : 0),
     mathCache(NULL),
     watchpointMap(NULL)
@@ -397,7 +398,7 @@ bool
 JSCompartment::wrap(JSContext *cx, AutoIdVector &props)
 {
     jsid *vector = props.begin();
-    jsint length = props.length();
+    int length = props.length();
     for (size_t n = 0; n < size_t(length); ++n) {
         if (!wrapId(cx, &vector[n]))
             return false;
@@ -676,12 +677,10 @@ JSCompartment::updateForDebugMode(JSContext *cx)
 #ifdef JS_METHODJIT
     bool enabled = debugMode();
 
-    if (enabled) {
+    if (enabled)
         JS_ASSERT(!hasScriptsOnStack());
-    } else if (hasScriptsOnStack()) {
-        hasDebugModeCodeToDrop = true;
+    else if (hasScriptsOnStack())
         return;
-    }
 
     /*
      * Discard JIT code and bytecode analyses for any scripts that change
@@ -695,7 +694,6 @@ JSCompartment::updateForDebugMode(JSContext *cx)
             script->debugMode = enabled;
         }
     }
-    hasDebugModeCodeToDrop = false;
 #endif
 }
 

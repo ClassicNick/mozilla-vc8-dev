@@ -84,8 +84,8 @@ public:
   // nsIDOMHTMLLinkElement
   NS_DECL_NSIDOMHTMLLINKELEMENT
 
-  // TODO: nsHTMLLinkElement::SizeOfAnchorElement should call
-  // Link::SizeOfExcludingThis().  See bug 682431.
+  // DOM memory reporter participant
+  NS_DECL_SIZEOF_EXCLUDING_THIS
 
   // nsILink
   NS_IMETHOD    LinkAdded();
@@ -436,7 +436,9 @@ nsHTMLLinkElement::GetStyleSheetInfo(nsAString& aTitle,
   }
 
   GetAttr(kNameSpaceID_None, nsGkAtoms::media, aMedia);
-  ToLowerCase(aMedia); // HTML4.0 spec is inconsistent, make it case INSENSITIVE
+  // The HTML5 spec is formulated in terms of the CSSOM spec, which specifies
+  // that media queries should be ASCII lowercased during serialization.
+  nsContentUtils::ASCIIToLower(aMedia);
 
   nsAutoString mimeType;
   nsAutoString notUsed;
@@ -458,3 +460,11 @@ nsHTMLLinkElement::IntrinsicState() const
 {
   return Link::LinkState() | nsGenericHTMLElement::IntrinsicState();
 }
+
+size_t
+nsHTMLLinkElement::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  return nsGenericHTMLElement::SizeOfExcludingThis(aMallocSizeOf) +
+         Link::SizeOfExcludingThis(aMallocSizeOf);
+}
+

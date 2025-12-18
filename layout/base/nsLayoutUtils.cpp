@@ -90,7 +90,6 @@
 #ifdef MOZ_MEDIA
 #include "nsHTMLVideoElement.h"
 #endif
-#include "nsGenericHTMLElement.h"
 #include "imgIRequest.h"
 #include "nsIImageLoadingContent.h"
 #include "nsCOMPtr.h"
@@ -973,6 +972,21 @@ nsLayoutUtils::GetEventCoordinatesRelativeTo(const nsEvent* aEvent, nsIFrame* aF
 #else
   if (!GUIEvent->widget)
     return nsPoint(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+
+  nsIView* view = aFrame->GetView();
+  if (view) {
+    nsIWidget* widget = view->GetWidget();
+    if (widget && widget == GUIEvent->widget) {
+      // Special case this cause it happens a lot.
+      // This also fixes bug 664707, events in the extra-special case of select
+      // dropdown popups that are transformed.
+      nsPresContext* presContext = aFrame->PresContext();
+      nsPoint pt(presContext->DevPixelsToAppUnits(GUIEvent->refPoint.x),
+                 presContext->DevPixelsToAppUnits(GUIEvent->refPoint.y));
+      return pt - view->ViewToWidgetOffset();
+    }
+  }
+
   /* If we walk up the frame tree and discover that any of the frames are
    * transformed, we need to do extra work to convert from the global
    * space to the local space.
@@ -1029,6 +1043,20 @@ nsLayoutUtils::GetEventCoordinatesRelativeTo(const nsEvent* aEvent,
   nsIWidget* widget = GUIEvent->widget;
   if (!widget) {
     return nsPoint(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+  }
+
+  nsIView* view = aFrame->GetView();
+  if (view) {
+    nsIWidget* frameWidget = view->GetWidget();
+    if (frameWidget && frameWidget == GUIEvent->widget) {
+      // Special case this cause it happens a lot.
+      // This also fixes bug 664707, events in the extra-special case of select
+      // dropdown popups that are transformed.
+      nsPresContext* presContext = aFrame->PresContext();
+      nsPoint pt(presContext->DevPixelsToAppUnits(aPoint.x),
+                 presContext->DevPixelsToAppUnits(aPoint.y));
+      return pt - view->ViewToWidgetOffset();
+    }
   }
 
   /* If we walk up the frame tree and discover that any of the frames are
@@ -4173,7 +4201,7 @@ nsLayoutUtils::SurfaceFromElement(dom::Element* aElement,
       surf = imgSurf;
     }
 
-    result.mCORSUsed = video->GetCORSMode() != nsGenericHTMLElement::CORS_NONE;
+    result.mCORSUsed = video->GetCORSMode() != CORS_NONE;
     result.mSurface = surf;
     result.mSize = size;
     result.mPrincipal = principal.forget();
@@ -4734,9 +4762,13 @@ ShouldInflateFontsForContainer(const nsIFrame *aFrame)
   // indicates whether the frame is inside something with a constrained
   // height (propagating down the tree), but the propagation stops when
   // we hit overflow-y: scroll or auto.
-  return aFrame->GetStyleText()->mTextSizeAdjust !=
-           NS_STYLE_TEXT_SIZE_ADJUST_NONE &&
-         !(aFrame->GetStateBits() & NS_FRAME_IN_CONSTRAINED_HEIGHT);
+  const nsStyleText* styleText = aFrame->GetStyleText();
+
+  return styleText->mTextSizeAdjust != NS_STYLE_TEXT_SIZE_ADJUST_NONE &&
+         !(aFrame->GetStateBits() & NS_FRAME_IN_CONSTRAINED_HEIGHT) &&
+         // We also want to disable font inflation for containers that have
+         // preformatted text.
+         styleText->WhiteSpaceCanWrap();
 }
 
 nscoord
