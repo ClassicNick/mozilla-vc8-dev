@@ -113,7 +113,6 @@ public:
                   nsIAsyncInputStream  **responseBody);
 
     // attributes
-    PRUint8                Caps()           { return mCaps; }
     nsHttpConnectionInfo  *ConnectionInfo() { return mConnInfo; }
     nsHttpResponseHead    *ResponseHead()   { return mHaveAllHeaders ? mResponseHead : nsnull; }
     nsISupports           *SecurityInfo()   { return mSecurityInfo; }
@@ -135,6 +134,7 @@ public:
     PRInt32    Priority()                 { return mPriority; }
 
     const TimingStruct& Timings() const { return mTimings; }
+    enum Classifier Classification() { return mClassification; }
 
 private:
     nsresult Restart();
@@ -147,6 +147,8 @@ private:
     nsresult HandleContent(char *, PRUint32 count, PRUint32 *contentRead, PRUint32 *contentRemaining);
     nsresult ProcessData(char *, PRUint32, PRUint32 *);
     void     DeleteSelfOnConsumerThread();
+
+    Classifier Classify();
 
     static NS_METHOD ReadRequestSegment(nsIInputStream *, void *, const char *,
                                         PRUint32, PRUint32, PRUint32 *);
@@ -200,6 +202,8 @@ private:
 
     PRUint16                        mRestartCount;        // the number of times this transaction has been restarted
     PRUint8                         mCaps;
+    enum Classifier                 mClassification;
+    PRInt32                         mPipelinePosition;
 
     // state flags, all logically boolean, but not packed together into a
     // bitfield so as to avoid bitfield-induced races.  See bug 560579.

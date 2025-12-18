@@ -94,6 +94,7 @@
         macanimationtype="document"
         screenX="4" screenY="4"
         browsingmode="normal"
+        fullscreenbutton="true"
         persist="screenX screenY width height sizemode">
 
 # All JS files which are not content (only) dependent that browser.xul
@@ -527,7 +528,7 @@
             <image id="addons-notification-icon" class="notification-anchor-icon" role="button"/>
             <image id="indexedDB-notification-icon" class="notification-anchor-icon" role="button"/>
             <image id="password-notification-icon" class="notification-anchor-icon" role="button"/>
-            <image id="webapps-notification-icon" class="webapps-anchor-icon" role="button"/>
+            <image id="webapps-notification-icon" class="notification-anchor-icon" role="button"/>
           </box>
           <!-- Use onclick instead of normal popup= syntax since the popup
                code fires onmousedown, and hence eats our favicon drag events.
@@ -1059,7 +1060,7 @@
     </svg:mask>
     <svg:mask id="winstripe-urlbar-back-button-mask" maskContentUnits="userSpaceOnUse">
       <svg:rect x="0" y="0" width="10000" height="50" fill="white"/>
-      <svg:circle cx="-11" cy="13" r="15"/>
+      <svg:circle cx="-11" cy="18" r="15"/>
     </svg:mask>
   </svg:svg>
 #endif

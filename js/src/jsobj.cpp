@@ -81,6 +81,7 @@
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/Parser.h"
+#include "vm/StringBuffer.h"
 #include "js/MemoryMetrics.h"
 
 #include "jsarrayinlines.h"
@@ -91,7 +92,6 @@
 #include "jsscriptinlines.h"
 
 #include "vm/MethodGuard-inl.h"
-#include "vm/StringBuffer-inl.h"
 
 #if JS_HAS_XML_SUPPORT
 #include "jsxml.h"
@@ -3808,43 +3808,6 @@ js_InitClass(JSContext *cx, HandleObject obj, JSObject *protoProto,
                                          ps, fs, static_ps, static_fs, ctorp, ctorKind);
 }
 
-void
-JSObject::initSlotRange(size_t start, const Value *vector, size_t length)
-{
-    JSCompartment *comp = compartment();
-    HeapSlot *fixedStart, *fixedEnd, *slotsStart, *slotsEnd;
-    getSlotRange(start, length, &fixedStart, &fixedEnd, &slotsStart, &slotsEnd);
-    for (HeapSlot *sp = fixedStart; sp != fixedEnd; sp++)
-        sp->init(comp, this, start++, *vector++);
-    for (HeapSlot *sp = slotsStart; sp != slotsEnd; sp++)
-        sp->init(comp, this, start++, *vector++);
-}
-
-void
-JSObject::copySlotRange(size_t start, const Value *vector, size_t length)
-{
-    JSCompartment *comp = compartment();
-    HeapSlot *fixedStart, *fixedEnd, *slotsStart, *slotsEnd;
-    getSlotRange(start, length, &fixedStart, &fixedEnd, &slotsStart, &slotsEnd);
-    for (HeapSlot *sp = fixedStart; sp != fixedEnd; sp++)
-        sp->set(comp, this, start++, *vector++);
-    for (HeapSlot *sp = slotsStart; sp != slotsEnd; sp++)
-        sp->set(comp, this, start++, *vector++);
-}
-
-inline void
-JSObject::invalidateSlotRange(size_t start, size_t length)
-{
-#ifdef DEBUG
-    JS_ASSERT(!isDenseArray());
-
-    HeapSlot *fixedStart, *fixedEnd, *slotsStart, *slotsEnd;
-    getSlotRange(start, length, &fixedStart, &fixedEnd, &slotsStart, &slotsEnd);
-    Debug_SetSlotRangeToCrashOnTouch(fixedStart, fixedEnd);
-    Debug_SetSlotRangeToCrashOnTouch(slotsStart, slotsEnd);
-#endif /* DEBUG */
-}
-
 inline bool
 JSObject::updateSlotsForSpan(JSContext *cx, size_t oldSpan, size_t newSpan)
 {
@@ -4128,17 +4091,6 @@ JSObject::shrinkElements(JSContext *cx, unsigned newcap)
     if (Probes::objectResizeActive())
         Probes::resizeObject(cx, this, oldSize, computedSizeOfThisSlotsElements());
 }
-
-#ifdef DEBUG
-bool
-JSObject::slotInRange(unsigned slot, SentinelAllowed sentinel) const
-{
-    size_t capacity = numFixedSlots() + numDynamicSlots();
-    if (sentinel == SENTINEL_ALLOWED)
-        return slot <= capacity;
-    return slot < capacity;
-}
-#endif /* DEBUG */
 
 static JSObject *
 js_InitNullClass(JSContext *cx, JSObject *obj)
@@ -5751,9 +5703,10 @@ js_DeleteSpecial(JSContext *cx, JSObject *obj, SpecialId sid, Value *rval, JSBoo
 namespace js {
 
 bool
-HasDataProperty(JSContext *cx, JSObject *obj, jsid methodid, Value *vp)
+HasDataProperty(JSContext *cx, JSObject *obj, jsid id, Value *vp)
 {
-    if (const Shape *shape = obj->nativeLookup(cx, methodid)) {
+    JS_ASSERT(id == js_CheckForStringIndex(id));
+    if (const Shape *shape = obj->nativeLookup(cx, id)) {
         if (shape->hasDefaultGetterOrIsMethod() && shape->hasSlot()) {
             *vp = obj->nativeGetSlot(shape->slot());
             return true;
@@ -6246,7 +6199,6 @@ dumpValue(const Value &v)
 #ifdef DEBUG
         switch (v.whyMagic()) {
           case JS_ARRAY_HOLE:        fprintf(stderr, " array hole");         break;
-          case JS_ARGS_HOLE:         fprintf(stderr, " args hole");          break;
           case JS_NATIVE_ENUMERATE:  fprintf(stderr, " native enumeration"); break;
           case JS_NO_ITER_VALUE:     fprintf(stderr, " no iter value");      break;
           case JS_GENERATOR_CLOSING: fprintf(stderr, " generator closing");  break;

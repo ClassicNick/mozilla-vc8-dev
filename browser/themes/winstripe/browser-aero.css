@@ -2,7 +2,7 @@
 %include browser.css
 %undef WINSTRIPE_AERO
 
-%define customToolbarColor hsl(214,44%,87%)
+%define customToolbarColor hsl(210,75%,92%)
 %define glassActiveBorderColor rgb(37, 44, 51)
 %define glassInactiveBorderColor rgb(102, 102, 102)
 
@@ -64,6 +64,21 @@
     background-image: @toolbarShadowOnTab@,
                       -moz-linear-gradient(white, @toolbarHighlight@ 50%),
                       -moz-linear-gradient(@customToolbarColor@, @customToolbarColor@);
+  }
+
+  #navigator-toolbox[tabsontop=true] #urlbar:not(:-moz-lwtheme),
+  #navigator-toolbox[tabsontop=true] .searchbar-textbox:not(:-moz-lwtheme) {
+    border-color: hsla(210,54%,20%,.25) hsla(210,54%,20%,.27) hsla(210,54%,20%,.3);
+  }
+
+  #navigator-toolbox[tabsontop=true] #urlbar:not(:-moz-lwtheme):not([focused]):hover,
+  #navigator-toolbox[tabsontop=true] .searchbar-textbox:not(:-moz-lwtheme):not([focused]):hover {
+    border-color: hsla(210,54%,20%,.35) hsla(210,54%,20%,.37) hsla(210,54%,20%,.4);
+  }
+
+  #navigator-toolbox[tabsontop=true] #urlbar:not(:-moz-lwtheme)[focused],
+  #navigator-toolbox[tabsontop=true] .searchbar-textbox:not(:-moz-lwtheme)[focused] {
+    border-color: hsla(206,100%,60%,.65) hsla(206,100%,55%,.65) hsla(206,100%,50%,.65);
   }
 
   #sidebar-splitter {
@@ -148,6 +163,17 @@
   #navigator-toolbox[tabsontop=false] > #nav-bar :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme),
   #nav-bar + #customToolbars + #PersonalToolbar[collapsed=true] + #TabsToolbar[tabsontop=false]:last-child :-moz-any(@primaryToolbarButtons@):not(:-moz-any(#alltabs-button,#tabview-button,#new-tab-button,#sync-button[status])) > .toolbarbutton-icon:not(:-moz-lwtheme) {
     list-style-image: url("chrome://browser/skin/Toolbar-inverted.png");
+  }
+
+  #toolbar-menubar .toolbarbutton-1 > .toolbarbutton-menu-dropmarker:not(:-moz-lwtheme),
+  #toolbar-menubar .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker:not(:-moz-lwtheme),
+  #TabsToolbar[tabsontop=true] .toolbarbutton-1 > .toolbarbutton-menu-dropmarker:not(:-moz-lwtheme),
+  #TabsToolbar[tabsontop=true] .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker:not(:-moz-lwtheme),
+  #navigator-toolbox[tabsontop=false] > #nav-bar .toolbarbutton-1 > .toolbarbutton-menu-dropmarker:not(:-moz-lwtheme),
+  #navigator-toolbox[tabsontop=false] > #nav-bar .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker:not(:-moz-lwtheme),
+  #nav-bar + #customToolbars + #PersonalToolbar[collapsed=true] + #TabsToolbar[tabsontop=false]:last-child .toolbarbutton-1 > .toolbarbutton-menu-dropmarker:not(:-moz-lwtheme),
+  #nav-bar + #customToolbars + #PersonalToolbar[collapsed=true] + #TabsToolbar[tabsontop=false]:last-child .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker:not(:-moz-lwtheme) {
+    list-style-image: url("chrome://browser/skin/toolbarbutton-dropdown-arrow-inverted.png");
   }
 
   /* Vertical toolbar border */

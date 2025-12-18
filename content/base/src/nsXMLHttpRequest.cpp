@@ -612,10 +612,8 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsXMLHttpRequest)
       NS_UNMARK_LISTENER_WRAPPER(UploadProgress)
       NS_UNMARK_LISTENER_WRAPPER(Readystatechange)
     }
-    if (!isBlack) {
-      xpc_UnmarkGrayObject(tmp->PreservingWrapper() ? 
-                           tmp->GetWrapperPreserveColor() :
-                           tmp->GetExpandoObjectPreserveColor());
+    if (!isBlack && tmp->PreservingWrapper()) {
+      xpc_UnmarkGrayObject(tmp->GetWrapperPreserveColor());
     }
     return true;
   }
@@ -2780,6 +2778,10 @@ nsXMLHttpRequest::Send(nsIVariant *aBody)
       return NS_ERROR_OUT_OF_MEMORY;
     }
   }
+
+  // Blocking gets are common enough out of XHR that we should mark
+  // the channel slow by default for pipeline purposes
+  AddLoadFlags(mChannel, nsIRequest::INHIBIT_PIPELINE);
 
   if (!IsSystemXHR()) {
     // Always create a nsCORSListenerProxy here even if it's

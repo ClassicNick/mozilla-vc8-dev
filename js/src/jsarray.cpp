@@ -120,7 +120,6 @@
 #include "jsnum.h"
 #include "jsobj.h"
 #include "jsscope.h"
-#include "jsstr.h"
 #include "jswrapper.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/StubCalls.h"
@@ -128,7 +127,7 @@
 
 #include "vm/ArgumentsObject.h"
 #include "vm/MethodGuard.h"
-#include "vm/StringBuffer-inl.h"
+#include "vm/StringBuffer.h"
 
 #include "ds/Sort.h"
 
@@ -140,6 +139,7 @@
 #include "jsstrinlines.h"
 
 #include "vm/ArgumentsObject-inl.h"
+#include "vm/ObjectImpl-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace mozilla;

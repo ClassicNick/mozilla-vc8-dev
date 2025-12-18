@@ -146,15 +146,16 @@ bool CanRecord();
 
 /**
  * Records slow SQL statements for Telemetry reporting.
- * For privacy reasons, only prepared statements are reported.
  *
  * @param statement - offending SQL statement to record
- * @param dbName - DB filename; reporting is only done for whitelisted DBs
+ * @param dbName - DB filename
  * @param delay - execution time in milliseconds
+ * @param isDynamicString - prepared statement or a dynamic string
  */
 void RecordSlowSQLStatement(const nsACString &statement,
                             const nsACString &dbName,
-                            PRUint32 delay);
+                            PRUint32 delay,
+                            bool isDynamicString);
 
 /**
  * Threshold for a statement to be considered slow, in milliseconds
@@ -166,7 +167,6 @@ const PRUint32 kSlowStatementThreshold = 100;
  */
 typedef nsTArray<uintptr_t> HangStack;
 
-#if defined(MOZ_ENABLE_PROFILER_SPS)
 /**
  * Record the main thread's call stack after it hangs.
  *
@@ -174,6 +174,7 @@ typedef nsTArray<uintptr_t> HangStack;
  * @param callStack - Array of PCs from the hung call stack
  * @param moduleMap - Array of info about modules in memory (for symbolication)
  */
+#if defined(MOZ_ENABLE_PROFILER_SPS)
 void RecordChromeHang(PRUint32 duration,
                       const HangStack &callStack,
                       SharedLibraryInfo &moduleMap);

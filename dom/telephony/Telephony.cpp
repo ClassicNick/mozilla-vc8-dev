@@ -53,11 +53,13 @@
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "SystemWorkerManager.h"
+#include "nsTArrayHelpers.h"
 
 #include "CallEvent.h"
 #include "TelephonyCall.h"
 
 USING_TELEPHONY_NAMESPACE
+using namespace mozilla::dom::gonk;
 using mozilla::Preferences;
 
 #define DOM_TELEPHONY_APP_PHONE_URL_PREF "dom.telephony.app.phone.url"
@@ -67,53 +69,6 @@ namespace {
 typedef nsAutoTArray<Telephony*, 2> TelephonyList;
 
 TelephonyList* gTelephonyList;
-
-template <class T>
-inline nsresult
-nsTArrayToJSArray(JSContext* aCx, JSObject* aGlobal,
-                  const nsTArray<nsRefPtr<T> >& aSourceArray,
-                  JSObject** aResultArray)
-{
-  NS_ASSERTION(aCx, "Null context!");
-  NS_ASSERTION(aGlobal, "Null global!");
-
-  JSAutoRequest ar(aCx);
-  JSAutoEnterCompartment ac;
-  if (!ac.enter(aCx, aGlobal)) {
-    NS_WARNING("Failed to enter compartment!");
-    return NS_ERROR_FAILURE;
-  }
-
-  JSObject* arrayObj;
-
-  if (aSourceArray.IsEmpty()) {
-    arrayObj = JS_NewArrayObject(aCx, 0, nsnull);
-  } else {
-    nsTArray<jsval> valArray;
-    valArray.SetLength(aSourceArray.Length());
-
-    for (PRUint32 index = 0; index < valArray.Length(); index++) {
-      nsISupports* obj = aSourceArray[index]->ToISupports();
-      nsresult rv =
-        nsContentUtils::WrapNative(aCx, aGlobal, obj, &valArray[index]);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-
-    arrayObj = JS_NewArrayObject(aCx, valArray.Length(), valArray.Elements());
-  }
-
-  if (!arrayObj) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  // XXX This is not what Jonas wants. He wants it to be live.
-  if (!JS_FreezeObject(aCx, arrayObj)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  *aResultArray = arrayObj;
-  return NS_OK;
-}
 
 } // anonymous namespace
 
@@ -164,8 +119,8 @@ Telephony::Create(nsPIDOMWindow* aOwner, nsIRadioInterfaceLayer* aRIL)
 
   nsRefPtr<Telephony> telephony = new Telephony();
 
-  telephony->mOwner = aOwner;
-  telephony->mScriptContext.swap(scriptContext);
+  telephony->BindToOwner(aOwner);
+
   telephony->mRIL = aRIL;
   telephony->mRILTelephonyCallback = new RILTelephonyCallback(telephony);
 
@@ -328,12 +283,16 @@ Telephony::GetActive(jsval* aActive)
     return NS_OK;
   }
 
-  nsresult rv =
-    nsContentUtils::WrapNative(mScriptContext->GetNativeContext(),
-                               mScriptContext->GetNativeGlobal(),
-                               mActiveCall->ToISupports(), aActive);
+  nsresult rv;
+  nsIScriptContext* sc = GetContextForEventHandlers(&rv);
   NS_ENSURE_SUCCESS(rv, rv);
-
+  if (sc) {
+    rv =
+      nsContentUtils::WrapNative(sc->GetNativeContext(),
+                                 sc->GetNativeGlobal(),
+                                 mActiveCall->ToISupports(), aActive);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   return NS_OK;
 }
 
@@ -342,17 +301,23 @@ Telephony::GetCalls(jsval* aCalls)
 {
   JSObject* calls = mCallsArray;
   if (!calls) {
-    nsresult rv =
-      nsTArrayToJSArray(mScriptContext->GetNativeContext(),
-                        mScriptContext->GetNativeGlobal(), mCalls, &calls);
+    nsresult rv;
+    nsIScriptContext* sc = GetContextForEventHandlers(&rv);
     NS_ENSURE_SUCCESS(rv, rv);
+    if (sc) {
+      rv =
+        nsTArrayToJSArray(mScriptContext->GetNativeContext(), mCalls, &calls);
+      NS_ENSURE_SUCCESS(rv, rv);
 
-    if (!mRooted) {
-      NS_HOLD_JS_OBJECTS(this, Telephony);
-      mRooted = true;
+      if (!mRooted) {
+        NS_HOLD_JS_OBJECTS(this, Telephony);
+        mRooted = true;
+      }
+
+      mCallsArray = calls;
+    } else {
+      NS_ENSURE_SUCCESS(rv, rv);
     }
-
-    mCallsArray = calls;
   }
 
   aCalls->setObject(*calls);

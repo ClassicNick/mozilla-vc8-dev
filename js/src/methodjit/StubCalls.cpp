@@ -339,8 +339,6 @@ stubs::DefFun(VMFrame &f, JSFunction *fun)
          */
         obj2 = &fp->scopeChain();
     } else {
-        JS_ASSERT(!fun->isFlatClosure());
-
         obj2 = GetScopeChain(cx, fp);
         if (!obj2)
             THROW();
@@ -907,8 +905,12 @@ stubs::NewInitArray(VMFrame &f, uint32_t count)
         THROW();
 
     TypeObject *type = (TypeObject *) f.scratch;
-    if (type)
+    if (type) {
         obj->setType(type);
+    } else {
+        if (!SetInitializerObjectType(f.cx, f.script(), f.pc(), obj))
+            THROW();
+    }
 
     f.regs.sp[0].setObject(*obj);
 }
@@ -919,22 +921,25 @@ stubs::NewInitObject(VMFrame &f, JSObject *baseobj)
     JSContext *cx = f.cx;
     TypeObject *type = (TypeObject *) f.scratch;
 
-    if (!baseobj) {
-        gc::AllocKind kind = GuessObjectGCKind(0);
-        JSObject *obj = NewBuiltinClassInstance(cx, &ObjectClass, kind);
-        if (!obj)
-            THROW();
-        if (type)
-            obj->setType(type);
-        f.regs.sp[0].setObject(*obj);
-        return;
-    }
+    JSObject *obj;
 
-    JS_ASSERT(type);
-    JSObject *obj = CopyInitializerObject(cx, baseobj, type);
+    if (baseobj) {
+        obj = CopyInitializerObject(cx, baseobj);
+    } else {
+        gc::AllocKind kind = GuessObjectGCKind(0);
+        obj = NewBuiltinClassInstance(cx, &ObjectClass, kind);
+    }
 
     if (!obj)
         THROW();
+
+    if (type) {
+        obj->setType(type);
+    } else {
+        if (!SetInitializerObjectType(cx, f.script(), f.pc(), obj))
+            THROW();
+    }
+
     f.regs.sp[0].setObject(*obj);
 }
 
@@ -976,16 +981,6 @@ stubs::InitElem(VMFrame &f, uint32_t last)
     }
 }
 
-void JS_FASTCALL
-stubs::GetUpvar(VMFrame &f, uint32_t ck)
-{
-    /* :FIXME: We can do better, this stub isn't needed. */
-    uint32_t staticLevel = f.script()->staticLevel;
-    UpvarCookie cookie;
-    cookie.fromInteger(ck);
-    f.regs.sp[0] = GetUpvar(f.cx, staticLevel, cookie);
-}
-
 JSObject * JS_FASTCALL
 stubs::DefLocalFun(VMFrame &f, JSFunction *fun)
 {
@@ -997,7 +992,6 @@ stubs::DefLocalFun(VMFrame &f, JSFunction *fun)
      * activation.
      */
     JS_ASSERT(fun->isInterpreted());
-    JS_ASSERT(!fun->isFlatClosure());
 
     JSObject *parent;
     if (fun->isNullClosure()) {
@@ -1013,15 +1007,6 @@ stubs::DefLocalFun(VMFrame &f, JSFunction *fun)
 
     JS_ASSERT_IF(f.script()->compileAndGo, obj->global() == fun->global());
 
-    return obj;
-}
-
-JSObject * JS_FASTCALL
-stubs::DefLocalFun_FC(VMFrame &f, JSFunction *fun)
-{
-    JSObject *obj = js_NewFlatClosure(f.cx, fun);
-    if (!obj)
-        THROWV(NULL);
     return obj;
 }
 
@@ -1283,22 +1268,19 @@ stubs::Throw(VMFrame &f)
     THROW();
 }
 
-JSObject * JS_FASTCALL
-stubs::FlatLambda(VMFrame &f, JSFunction *fun)
-{
-    JSObject *obj = js_NewFlatClosure(f.cx, fun);
-    if (!obj)
-        THROWV(NULL);
-    return obj;
-}
-
 void JS_FASTCALL
 stubs::Arguments(VMFrame &f)
 {
-    ArgumentsObject *arguments = js_GetArgsObject(f.cx, f.fp());
-    if (!arguments)
-        THROW();
-    f.regs.sp[0] = ObjectValue(*arguments);
+    if (!f.fp()->hasArgsObj()) {
+        /*
+         * This case occurs when checkCallApplySpeculation detects that
+         * 'f.apply' is not actually js_fun_apply. In this case, we need to
+         * report the mis-speculation which will bail
+         */
+        if (!f.fp()->script()->applySpeculationFailed(f.cx))
+            THROW();
+    }
+    f.regs.sp[0] = ObjectValue(f.fp()->argsObj());
 }
 
 JSBool JS_FASTCALL

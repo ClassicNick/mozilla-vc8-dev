@@ -34,6 +34,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/Hal.h"
+#include "mozilla/HalSensor.h"
+
 #include "nsDeviceMotion.h"
 
 #include "nsAutoPtr.h"
@@ -44,11 +47,14 @@
 #include "nsIDOMEventTarget.h"
 #include "nsIServiceManager.h"
 #include "nsIPrivateDOMEvent.h"
-#include "nsIDOMDeviceOrientationEvent.h"
-#include "nsIDOMDeviceMotionEvent.h"
 #include "nsIServiceManager.h"
 #include "nsIPrefService.h"
-#include "nsDOMDeviceMotionEvent.h"
+
+using namespace mozilla;
+using namespace hal;
+
+// also see sDefaultSensorHint in mobile/android/base/GeckoAppShell.java
+#define DEFAULT_SENSOR_POLL 100
 
 static const nsTArray<nsIDOMWindow*>::index_type NoIndex =
     nsTArray<nsIDOMWindow*>::NoIndex;
@@ -113,29 +119,29 @@ NS_IMETHODIMP nsDeviceMotionData::GetZ(double *aZ)
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS2(nsDeviceMotion, nsIDeviceMotion, nsIDeviceMotionUpdate)
+NS_IMPL_ISUPPORTS1(nsDeviceMotion, nsIDeviceMotion)
 
 nsDeviceMotion::nsDeviceMotion()
 : mStarted(false),
-  mUpdateInterval(50), /* default to 50 ms */
   mEnabled(true)
 {
+  mLastDOMMotionEventTime = TimeStamp::Now();
+
   nsCOMPtr<nsIPrefBranch> prefSrv = do_GetService(NS_PREFSERVICE_CONTRACTID);
   if (prefSrv) {
-    PRInt32 value;
-    nsresult rv = prefSrv->GetIntPref("device.motion.update.interval", &value);
-    if (NS_SUCCEEDED(rv))
-      mUpdateInterval = value;
-
     bool bvalue;
-    rv = prefSrv->GetBoolPref("device.motion.enabled", &bvalue);
+    nsresult rv = prefSrv->GetBoolPref("device.motion.enabled", &bvalue);
     if (NS_SUCCEEDED(rv) && bvalue == false)
       mEnabled = false;
   }
+  mLastDOMMotionEventTime = TimeStamp::Now();
 }
 
 nsDeviceMotion::~nsDeviceMotion()
 {
+  if (mStarted)
+    Shutdown();
+
   if (mTimeoutTimer)
     mTimeoutTimer->Cancel();
 }
@@ -221,11 +227,17 @@ NS_IMETHODIMP nsDeviceMotion::RemoveWindowListener(nsIDOMWindow *aWindow)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDeviceMotion::DeviceMotionChanged(PRUint32 type, double x, double y, double z)
+void 
+nsDeviceMotion::Notify(const mozilla::hal::SensorData& aSensorData)
 {
   if (!mEnabled)
-    return NS_ERROR_NOT_INITIALIZED;
+    return;
+
+  PRUint32 type = aSensorData.sensor();
+
+  double x = aSensorData.values()[0];
+  double y = aSensorData.values()[1];
+  double z = aSensorData.values()[2];
 
   nsCOMArray<nsIDeviceMotionListener> listeners = mListeners;
   for (PRUint32 i = listeners.Count(); i > 0 ; ) {
@@ -255,13 +267,14 @@ nsDeviceMotion::DeviceMotionChanged(PRUint32 type, double x, double y, double z)
 
     if (domdoc) {
       nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(windowListeners[i]);
-      if (type == nsIDeviceMotionData::TYPE_ACCELERATION)
-        FireDOMMotionEvent(domdoc, target, x, y, z);
+      if (type == nsIDeviceMotionData::TYPE_ACCELERATION || 
+        type == nsIDeviceMotionData::TYPE_LINEAR_ACCELERATION || 
+	type == nsIDeviceMotionData::TYPE_GYROSCOPE)
+        FireDOMMotionEvent(domdoc, target, type, x, y, z);
       else if (type == nsIDeviceMotionData::TYPE_ORIENTATION)
         FireDOMOrientationEvent(domdoc, target, x, y, z);
     }
   }
-  return NS_OK;
 }
 
 void
@@ -300,34 +313,74 @@ nsDeviceMotion::FireDOMOrientationEvent(nsIDOMDocument *domdoc,
 void
 nsDeviceMotion::FireDOMMotionEvent(nsIDOMDocument *domdoc,
                                    nsIDOMEventTarget *target,
+                                   PRUint32 type,
                                    double x,
                                    double y,
                                    double z) {
+  // Attempt to coalesce events
+  bool fireEvent = TimeStamp::Now() > mLastDOMMotionEventTime + TimeDuration::FromMilliseconds(DEFAULT_SENSOR_POLL);
+
+  switch (type) {
+  case nsIDeviceMotionData::TYPE_LINEAR_ACCELERATION:
+      mLastAcceleration = new nsDOMDeviceAcceleration(x, y, z);
+      break;
+  case nsIDeviceMotionData::TYPE_ACCELERATION:
+      mLastAccelerationIncluduingGravity = new nsDOMDeviceAcceleration(x, y, z);
+      break;
+  case nsIDeviceMotionData::TYPE_GYROSCOPE:
+      mLastRotationRate = new nsDOMDeviceRotationRate(x, y, z);
+      break;
+  }
+
+  if (!fireEvent && (!mLastAcceleration || !mLastAccelerationIncluduingGravity || !mLastRotationRate)) {
+      return;
+  }
+
   nsCOMPtr<nsIDOMEvent> event;
-  bool defaultActionEnabled = true;
   domdoc->CreateEvent(NS_LITERAL_STRING("DeviceMotionEvent"), getter_AddRefs(event));
 
   nsCOMPtr<nsIDOMDeviceMotionEvent> me = do_QueryInterface(event);
 
   if (!me) {
     return;
-}
-
-  // Currently acceleration as determined includes gravity.
-  nsRefPtr<nsDOMDeviceAcceleration> acceleration = new nsDOMDeviceAcceleration(x, y, z);
+  }
 
   me->InitDeviceMotionEvent(NS_LITERAL_STRING("devicemotion"),
                             true,
                             false,
-                            nsnull,
-                            acceleration,
-                            nsnull,
-                            0);
+                            mLastAcceleration,
+                            mLastAccelerationIncluduingGravity,
+                            mLastRotationRate,
+                            DEFAULT_SENSOR_POLL);
 
   nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event);
   if (privateEvent)
     privateEvent->SetTrusted(true);
   
+  bool defaultActionEnabled = true;
   target->DispatchEvent(event, &defaultActionEnabled);
+
+  mLastRotationRate = nsnull;
+  mLastAccelerationIncluduingGravity = nsnull;
+  mLastAcceleration = nsnull;
+  mLastDOMMotionEventTime = TimeStamp::Now();
+}
+
+void nsDeviceMotion::Startup()
+{
+  // Bug 734855 - we probably can make this finer grain
+  // based on the DOM APIs that are being invoked.
+  RegisterSensorObserver(SENSOR_ACCELERATION, this);
+  RegisterSensorObserver(SENSOR_ORIENTATION, this);
+  RegisterSensorObserver(SENSOR_LINEAR_ACCELERATION, this);
+  RegisterSensorObserver(SENSOR_GYROSCOPE, this);
+}
+
+void nsDeviceMotion::Shutdown()
+{
+  UnregisterSensorObserver(SENSOR_ACCELERATION, this);
+  UnregisterSensorObserver(SENSOR_ORIENTATION, this);
+  UnregisterSensorObserver(SENSOR_LINEAR_ACCELERATION, this);
+  UnregisterSensorObserver(SENSOR_GYROSCOPE, this);
 }
 

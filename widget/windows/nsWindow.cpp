@@ -5244,6 +5244,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
     break;
   }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   /* Gesture support events */
   case WM_TABLET_QUERYSYSTEMGESTURESTATUS:
     // According to MS samples, this must be handled to enable
@@ -5252,7 +5253,6 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
     *aRetValue = TABLET_ROTATE_GESTURE_ENABLE;
     break;
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   case WM_TOUCH:
     result = OnTouch(wParam, lParam);
     if (result) {
@@ -5810,6 +5810,22 @@ nsWindow::SynthesizeNativeMouseEvent(nsIntPoint aPoint,
   ::SendInput(1, &input, sizeof(INPUT));
 
   return NS_OK;
+}
+
+nsresult
+nsWindow::SynthesizeNativeMouseScrollEvent(nsIntPoint aPoint,
+                                           PRUint32 aNativeMessage,
+                                           double aDeltaX,
+                                           double aDeltaY,
+                                           double aDeltaZ,
+                                           PRUint32 aModifierFlags,
+                                           PRUint32 aAdditionalFlags)
+{
+  return MouseScrollHandler::SynthesizeNativeMouseScrollEvent(
+           this, aPoint, aNativeMessage,
+           (aNativeMessage == WM_MOUSEWHEEL || aNativeMessage == WM_VSCROLL) ?
+             static_cast<PRInt32>(aDeltaY) : static_cast<PRInt32>(aDeltaX),
+           aModifierFlags, aAdditionalFlags);
 }
 
 /**************************************************************

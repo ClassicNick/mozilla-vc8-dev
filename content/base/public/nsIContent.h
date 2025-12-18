@@ -93,8 +93,7 @@ public:
   // nsIContent is that it exists with an IID
 
   nsIContent(already_AddRefed<nsINodeInfo> aNodeInfo)
-    : nsINode(aNodeInfo),
-      mPrimaryFrame(nsnull)
+    : nsINode(aNodeInfo)
   {
     NS_ASSERTION(mNodeInfo,
                  "No nsINodeInfo passed to nsIContent, PREPARE TO CRASH!!!");
@@ -115,8 +114,9 @@ public:
    * @param aParent The new parent for the content node.  May be null if the
    *                node is being bound as a direct child of the document.
    * @param aBindingParent The new binding parent for the content node.
-   *                       This is allowed to be null.  In that case, the
-   *                       binding parent of aParent, if any, will be used.
+   *                       This is must either be non-null if a particular
+   *                       binding parent is desired or match aParent's binding
+   *                       parent.
    * @param aCompileEventHandlers whether to initialize the event handlers in
    *        the document (used by nsXULElement)
    * @note either aDocument or aParent must be non-null.  If both are null,
@@ -859,8 +859,12 @@ public:
    * In the case of absolutely positioned elements and floated elements, this
    * frame is the out of flow frame, not the placeholder.
    */
-  nsIFrame* GetPrimaryFrame() const { return mPrimaryFrame; }
+  nsIFrame* GetPrimaryFrame() const
+  {
+    return IsInDoc() ? mPrimaryFrame : nsnull;
+  }
   void SetPrimaryFrame(nsIFrame* aFrame) {
+    NS_ASSERTION(IsInDoc(), "This will end badly!");
     NS_PRECONDITION(!aFrame || !mPrimaryFrame || aFrame == mPrimaryFrame,
                     "Losing track of existing primary frame");
     mPrimaryFrame = aFrame;
@@ -961,11 +965,6 @@ private:
    * called if the NODE_MAY_HAVE_CLASS flag is set.
    */
   virtual const nsAttrValue* DoGetClasses() const = 0;
-
-  /**
-   * Pointer to our primary frame.  Might be null.
-   */
-  nsIFrame* mPrimaryFrame;
 
 public:
 #ifdef DEBUG

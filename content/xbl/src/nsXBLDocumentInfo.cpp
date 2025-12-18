@@ -97,6 +97,8 @@ public:
 
   void ClearGlobalObjectOwner();
 
+  void UnmarkScriptContext();
+
 protected:
   virtual ~nsXBLDocGlobalObject();
 
@@ -360,6 +362,14 @@ nsXBLDocGlobalObject::ClearGlobalObjectOwner()
   mGlobalObjectOwner = nsnull;
 }
 
+void
+nsXBLDocGlobalObject::UnmarkScriptContext()
+{
+  if (mScriptContext) {
+    xpc_UnmarkGrayObject(mScriptContext->GetNativeGlobal());
+  }
+}
+
 JSObject *
 nsXBLDocGlobalObject::GetGlobalJSObject()
 {
@@ -509,8 +519,12 @@ nsXBLDocumentInfo::MarkInCCGeneration(PRUint32 aGeneration)
   if (mDocument) {
     mDocument->MarkUncollectableForCCGeneration(aGeneration);
   }
+  // Unmark any JS we hold
   if (mBindingTable) {
     mBindingTable->Enumerate(UnmarkProtos, nsnull);
+  }
+  if (mGlobalObject) {
+    mGlobalObject->UnmarkScriptContext();
   }
 }
 
@@ -668,7 +682,8 @@ nsXBLDocumentInfo::ReadPrototypeBindings(nsIURI* aURI, nsXBLDocumentInfo** aDocI
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIDocument> doc = do_QueryInterface(domdoc);
-  nsRefPtr<nsXBLDocumentInfo> docInfo = NS_NewXBLDocumentInfo(doc);
+  NS_ASSERTION(doc, "Must have a document!");
+  nsRefPtr<nsXBLDocumentInfo> docInfo = new nsXBLDocumentInfo(doc);
 
   while (1) {
     PRUint8 flags;
@@ -768,15 +783,4 @@ nsXBLDocumentInfo::GetScriptGlobalObject()
   }
 
   return mGlobalObject;
-}
-
-nsXBLDocumentInfo* NS_NewXBLDocumentInfo(nsIDocument* aDocument)
-{
-  NS_PRECONDITION(aDocument, "Must have a document!");
-
-  nsXBLDocumentInfo* result;
-
-  result = new nsXBLDocumentInfo(aDocument);
-  NS_ADDREF(result);
-  return result;
 }

@@ -78,7 +78,6 @@
 
 #include "jsdbgapi.h"           // for JS_ClearWatchPointsForObject
 #include "jswrapper.h"
-#include "jsxdrapi.h"
 #include "nsIArray.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
@@ -992,8 +991,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
   // In debug builds, warnings are enabled in chrome context if
   // javascript.options.strict.debug is true
   bool strictDebug = Preferences::GetBool(js_strict_debug_option_str);
-  // Note this callback is also called from context's InitClasses thus we don't
-  // need to enable this directly from InitContext
   if (strictDebug && (newDefaultJSOptions & JSOPTION_STRICT) == 0) {
     if (chromeWindow)
       newDefaultJSOptions |= JSOPTION_STRICT;
@@ -1965,119 +1962,23 @@ nsJSContext::BindCompiledEventHandler(nsISupports* aTarget, JSObject* aScope,
 nsresult
 nsJSContext::Serialize(nsIObjectOutputStream* aStream, JSScript* aScriptObject)
 {
-    if (!aScriptObject)
-        return NS_ERROR_FAILURE;
+  if (!aScriptObject)
+    return NS_ERROR_FAILURE;
 
-    nsresult rv;
-
-    JSContext* cx = mContext;
-    JSXDRState *xdr = ::JS_XDRNewMem(cx, JSXDR_ENCODE);
-    if (! xdr)
-        return NS_ERROR_OUT_OF_MEMORY;
-    xdr->userdata = (void*) aStream;
-
-    JSAutoRequest ar(cx);
-    if (! ::JS_XDRScript(xdr, &aScriptObject)) {
-        rv = NS_ERROR_FAILURE;  // likely to be a principals serialization error
-    } else {
-        // Get the encoded JSXDRState data and write it.  The JSXDRState owns
-        // this buffer memory and will free it beneath ::JS_XDRDestroy.
-        //
-        // If an XPCOM object needs to be written in the midst of the JS XDR
-        // encoding process, the C++ code called back from the JS engine (e.g.,
-        // nsEncodeJSPrincipals in caps/src/nsJSPrincipals.cpp) will flush data
-        // from the JSXDRState to aStream, then write the object, then return
-        // to JS XDR code with xdr reset so new JS data is encoded at the front
-        // of the xdr's data buffer.
-        //
-        // However many XPCOM objects are interleaved with JS XDR data in the
-        // stream, when control returns here from ::JS_XDRScript, we'll have
-        // one last buffer of data to write to aStream.
-
-        uint32_t size;
-        const char* data = reinterpret_cast<const char*>
-                                           (::JS_XDRMemGetData(xdr, &size));
-        NS_ASSERTION(data, "no decoded JSXDRState data!");
-
-        rv = aStream->Write32(size);
-        if (NS_SUCCEEDED(rv))
-            rv = aStream->WriteBytes(data, size);
-    }
-
-    ::JS_XDRDestroy(xdr);
-    if (NS_FAILED(rv)) return rv;
-
-    return rv;
+  return nsContentUtils::XPConnect()->WriteScript(aStream, mContext, aScriptObject);
 }
 
 nsresult
 nsJSContext::Deserialize(nsIObjectInputStream* aStream,
                          nsScriptObjectHolder<JSScript>& aResult)
 {
-    NS_TIME_FUNCTION_MIN(1.0);
-
-    PRUint32 size;
-    nsresult rv = aStream->Read32(&size);
-    if (NS_FAILED(rv)) return rv;
-
-    char* data;
-    rv = aStream->ReadBytes(size, &data);
-    if (NS_FAILED(rv)) return rv;
-
-    JSContext* cx = mContext;
-
-    JSXDRState *xdr = ::JS_XDRNewMem(cx, JSXDR_DECODE);
-    JSScript *result = nsnull;
-    if (! xdr) {
-        rv = NS_ERROR_OUT_OF_MEMORY;
-    } else {
-        xdr->userdata = (void*) aStream;
-        JSAutoRequest ar(cx);
-        ::JS_XDRMemSetData(xdr, data, size);
-
-        if (! ::JS_XDRScript(xdr, &result)) {
-            rv = NS_ERROR_FAILURE;  // principals deserialization error?
-        }
-
-        // Update data in case ::JS_XDRScript called back into C++ code to
-        // read an XPCOM object.
-        //
-        // In that case, the serialization process must have flushed a run
-        // of counted bytes containing JS data at the point where the XPCOM
-        // object starts, after which an encoding C++ callback from the JS
-        // XDR code must have written the XPCOM object directly into the
-        // nsIObjectOutputStream.
-        //
-        // The deserialization process will XDR-decode counted bytes up to
-        // but not including the XPCOM object, then call back into C++ to
-        // read the object, then read more counted bytes and hand them off
-        // to the JSXDRState, so more JS data can be decoded.
-        //
-        // This interleaving of JS XDR data and XPCOM object data may occur
-        // several times beneath the call to ::JS_XDRScript, above.  At the
-        // end of the day, we need to free (via nsMemory) the data owned by
-        // the JSXDRState.  So we steal it back, nulling xdr's buffer so it
-        // doesn't get passed to ::JS_free by ::JS_XDRDestroy.
-
-        uint32_t junk;
-        data = (char*) ::JS_XDRMemGetData(xdr, &junk);
-        if (data)
-            ::JS_XDRMemSetData(xdr, NULL, 0);
-        ::JS_XDRDestroy(xdr);
-    }
-
-    // If data is null now, it must have been freed while deserializing an
-    // XPCOM object (e.g., a principal) beneath ::JS_XDRScript.
-    if (data)
-        nsMemory::Free(data);
-    NS_ASSERTION(aResult.getScriptTypeID()==JAVASCRIPT,
-                 "Expecting JS script object holder");
-
-    // Now that we've cleaned up, handle the case when rv is a failure
-    // code, which could happen for all sorts of reasons above.
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    return aResult.set(result);
+  NS_TIME_FUNCTION_MIN(1.0);
+  
+  JSScript *script;
+  nsresult rv = nsContentUtils::XPConnect()->ReadScript(aStream, mContext, &script);
+  if (NS_FAILED(rv)) return rv;
+    
+  return aResult.set(script);
 }
 
 nsIScriptGlobalObject *
@@ -2201,6 +2102,8 @@ nsJSContext::InitContext()
     return NS_ERROR_OUT_OF_MEMORY;
 
   ::JS_SetErrorReporter(mContext, NS_ScriptErrorReporter);
+
+  JSOptionChangedCallback(js_options_dot_str, this);
 
   return NS_OK;
 }
@@ -2924,8 +2827,6 @@ nsJSContext::InitClasses(JSObject* aGlobalObj)
   ::JS_DefineFunctions(mContext, aGlobalObj, DMDFunctions);
 #endif
 
-  JSOptionChangedCallback(js_options_dot_str, this);
-
   return rv;
 }
 
@@ -3160,6 +3061,45 @@ nsJSContext::CycleCollectNow(nsICycleCollectorListener *aListener,
       do_GetService(NS_CONSOLESERVICE_CONTRACTID);
     if (cs) {
       cs->LogStringMessage(msg.get());
+    }
+
+    NS_NAMED_MULTILINE_LITERAL_STRING(kJSONFmt,
+       NS_LL("{ \"timestamp\": %llu, ")
+         NS_LL("\"duration\": %llu, ")
+         NS_LL("\"suspected\": %lu, ")
+         NS_LL("\"visited\": { ")
+             NS_LL("\"RCed\": %lu, ")
+             NS_LL("\"GCed\": %lu }, ")
+         NS_LL("\"collected\": { ")
+             NS_LL("\"RCed\": %lu, ")
+             NS_LL("\"GCed\": %lu }, ")
+         NS_LL("\"waiting_for_gc\": %lu, ")
+         NS_LL("\"forced_gc\": %d, ")
+         NS_LL("\"forget_skippable\": { ")
+             NS_LL("\"times_before_cc\": %lu, ")
+             NS_LL("\"min\": %lu, ")
+             NS_LL("\"max\": %lu, ")
+             NS_LL("\"avg\": %lu, ")
+             NS_LL("\"total\": %lu, ")
+             NS_LL("\"removed\": %lu } ")
+       NS_LL("}"));
+    nsString json;
+    json.Adopt(nsTextFormatter::smprintf(kJSONFmt.get(),
+                                         now, (now - start) / PR_USEC_PER_MSEC, suspected,
+                                         ccResults.mVisitedRefCounted, ccResults.mVisitedGCed,
+                                         ccResults.mFreedRefCounted, ccResults.mFreedGCed,
+                                         sCCollectedWaitingForGC,
+                                         ccResults.mForcedGC,
+                                         sForgetSkippableBeforeCC,
+                                         sMinForgetSkippableTime / PR_USEC_PER_MSEC,
+                                         sMaxForgetSkippableTime / PR_USEC_PER_MSEC,
+                                         (sTotalForgetSkippableTime / cleanups) /
+                                           PR_USEC_PER_MSEC,
+                                         sTotalForgetSkippableTime / PR_USEC_PER_MSEC,
+                                         sRemovedPurples));
+    nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
+    if (observerService) {
+      observerService->NotifyObservers(nsnull, "cycle-collection-statistics", json.get());
     }
   }
   sMinForgetSkippableTime = PR_UINT32_MAX;
@@ -3417,12 +3357,39 @@ nsJSContext::GC(js::gcreason::Reason aReason)
   PokeGC(aReason);
 }
 
+class NotifyGCEndRunnable : public nsRunnable
+{
+  nsString mMessage;
+
+public:
+  NotifyGCEndRunnable(const nsString& aMessage) : mMessage(aMessage) {}
+
+  NS_DECL_NSIRUNNABLE
+};
+
+NS_IMETHODIMP
+NotifyGCEndRunnable::Run()
+{
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsIObserverService> observerService = mozilla::services::GetObserverService();
+  if (!observerService) {
+    return NS_OK;
+  }
+
+  const jschar oomMsg[3] = { '{', '}', 0 };
+  const jschar *toSend = mMessage.get() ? mMessage.get() : oomMsg;
+  observerService->NotifyObservers(nsnull, "garbage-collection-statistics", toSend);
+
+  return NS_OK;
+}
+
 static void
 DOMGCSliceCallback(JSRuntime *aRt, js::GCProgress aProgress, const js::GCDescription &aDesc)
 {
   NS_ASSERTION(NS_IsMainThread(), "GCs must run on the main thread");
 
-  if (aDesc.logMessage && sPostGCEventsToConsole) {
+  if (aProgress == js::GC_CYCLE_END && sPostGCEventsToConsole) {
     PRTime now = PR_Now();
     PRTime delta = 0;
     if (sFirstCollectionTime) {
@@ -3431,15 +3398,21 @@ DOMGCSliceCallback(JSRuntime *aRt, js::GCProgress aProgress, const js::GCDescrip
       sFirstCollectionTime = now;
     }
 
-    NS_NAMED_LITERAL_STRING(kFmt, "GC(T+%.1f) %s");
-    nsString msg;
-    msg.Adopt(nsTextFormatter::smprintf(kFmt.get(),
-                                        double(delta) / PR_USEC_PER_SEC,
-                                        aDesc.logMessage));
+    NS_NAMED_LITERAL_STRING(kFmt, "GC(T+%.1f) ");
+    nsString prefix, gcstats;
+    gcstats.Adopt(aDesc.formatMessage(aRt));
+    prefix.Adopt(nsTextFormatter::smprintf(kFmt.get(),
+                                           double(delta) / PR_USEC_PER_SEC));
+    nsString msg = prefix + gcstats;
     nsCOMPtr<nsIConsoleService> cs = do_GetService(NS_CONSOLESERVICE_CONTRACTID);
     if (cs) {
       cs->LogStringMessage(msg.get());
     }
+
+    nsString json;
+    json.Adopt(aDesc.formatJSON(aRt, now));
+    nsRefPtr<NotifyGCEndRunnable> notify = new NotifyGCEndRunnable(json);
+    NS_DispatchToMainThread(notify);
   }
 
   // Prevent cycle collections and shrinking during incremental GC.
