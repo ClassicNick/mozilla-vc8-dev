@@ -324,7 +324,7 @@ class CGHeaders(CGWrapper):
             for t in types:
                 if t.unroll().isInterface():
                     if t.unroll().isArrayBuffer():
-                        bindingHeaders.add("jstypedarray.h")
+                        bindingHeaders.add("jsfriendapi.h")
                     else:
                         typeDesc = d.getDescriptor(t.unroll().inner.identifier.name)
                         if typeDesc is not None:
@@ -1189,7 +1189,7 @@ def getArgumentConversionTemplate(type, descriptor):
     if type.isArrayBuffer():
         template = (
             "  JSObject* ${name};\n"
-            "  if (${argVal}.isObject() && JS_IsArrayBufferObject(&${argVal}.toObject())) {\n"
+            "  if (${argVal}.isObject() && JS_IsArrayBufferObject(&${argVal}.toObject(), cx)) {\n"
             "    ${name} = &${argVal}.toObject();\n"
             "  }")
         if type.nullable():
@@ -1324,13 +1324,13 @@ def getArgumentConversionTemplate(type, descriptor):
     elif tag is IDLType.Tags.int64:
         # XXXbz this may not match what WebIDL says to do in terms of reducing
         # mod 2^64.  Should we check?
-        replacements["jstype"] = "PRInt64"
-        replacements["converter"] = "xpc_qsValueToInt64"
+        replacements["jstype"] = "int64_t"
+        replacements["converter"] = "xpc::ValueToInt64"
     elif tag is IDLType.Tags.uint64:
         # XXXbz this may not match what WebIDL says to do in terms of reducing
         # mod 2^64.  Should we check?
-        replacements["jstype"] = "PRUint64"
-        replacements["converter"] = "xpc_qsValueToUint64"
+        replacements["jstype"] = "uint64_t"
+        replacements["converter"] = "xpc::ValueToUint64"
     elif tag in [IDLType.Tags.float, IDLType.Tags.double]:
         replacements["jstype"] = "double"
         replacements["converter"] = "JS::ToNumber"
@@ -1895,22 +1895,12 @@ class CGMethodCall(CGThing):
             pickFirstSignature("%s.isNullOrUndefined()" % distinguishingArg,
                                lambda s: s[1][distinguishingIndex].type.nullable())
 
-            # XXXbz Now we're supposed to check for distinguishingArg being
-            # an array or a platform object that supports indexed
-            # properties... skip that last for now.  It's a bit of a pain.
-            pickFirstSignature("%s.isObject() && IsArrayLike(cx, &%s.toObject()" %
-                               (distinguishingArg, distinguishingArg),
-                               lambda s:
-                                   (s[1][distinguishingIndex].type.isArray() or
-                                    s[1][distinguishingIndex].type.isSequence() or
-                                    s[1][distinguishingIndex].type.isObject()))
-
             # Now check for distinguishingArg being a platform object.
             # We can actually check separately for array buffers and
             # other things.
             # XXXbz Do we need to worry about security
             # wrappers around the array buffer?
-            pickFirstSignature("%s.isObject() && JS_IsArrayBufferObject(&%s.toObject())" %
+            pickFirstSignature("%s.isObject() && JS_IsArrayBufferObject(&%s.toObject(), cx)" %
                                (distinguishingArg, distinguishingArg),
                                lambda s: (s[1][distinguishingIndex].type.isArrayBuffer() or
                                           s[1][distinguishingIndex].type.isObject()))
@@ -1992,6 +1982,16 @@ class CGMethodCall(CGThing):
                     caseBody.append(CGIndenter(CGGeneric("} while (0);")))
 
                 caseBody.append(CGGeneric("}"))
+
+            # XXXbz Now we're supposed to check for distinguishingArg being
+            # an array or a platform object that supports indexed
+            # properties... skip that last for now.  It's a bit of a pain.
+            pickFirstSignature("%s.isObject() && IsArrayLike(cx, &%s.toObject()" %
+                               (distinguishingArg, distinguishingArg),
+                               lambda s:
+                                   (s[1][distinguishingIndex].type.isArray() or
+                                    s[1][distinguishingIndex].type.isSequence() or
+                                    s[1][distinguishingIndex].type.isObject()))
 
             # Check for Date objects
             # XXXbz Do we need to worry about security wrappers around the Date?

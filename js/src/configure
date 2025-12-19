@@ -13218,15 +13218,15 @@ EOF
 
 fi
 
-# Check whether --enable-gcrootanalysis or --disable-gcrootanalysis was given.
-if test "${enable_gcrootanalysis+set}" = set; then
-  enableval="$enable_gcrootanalysis"
+# Check whether --enable-root-analysis or --disable-root-analysis was given.
+if test "${enable_root_analysis+set}" = set; then
+  enableval="$enable_root_analysis"
   if test "$enableval" = "yes"; then
     JSGC_ROOT_ANALYSIS=1
   elif test "$enableval" = "no"; then
     JSGC_ROOT_ANALYSIS= 
   else
-    { echo "configure: error: Option, gcrootanalysis, does not take an argument ($enableval)." 1>&2; exit 1; }
+    { echo "configure: error: Option, root-analysis, does not take an argument ($enableval)." 1>&2; exit 1; }
   fi
 fi
 

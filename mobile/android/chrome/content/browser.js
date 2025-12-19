@@ -193,6 +193,7 @@ var BrowserApp = {
     Services.obs.addObserver(this, "Preferences:Set", false);
     Services.obs.addObserver(this, "ScrollTo:FocusedInput", false);
     Services.obs.addObserver(this, "Sanitize:ClearAll", false);
+    Services.obs.addObserver(this, "Telemetry:Add", false);
     Services.obs.addObserver(this, "PanZoom:PanZoom", false);
     Services.obs.addObserver(this, "FullScreen:Exit", false);
     Services.obs.addObserver(this, "Viewport:Change", false);
@@ -252,6 +253,7 @@ var BrowserApp = {
     let loadParams = {};
     let url = "about:home";
     let forceRestore = false;
+    let pinned = false;
     if ("arguments" in window) {
       if (window.arguments[0])
         url = window.arguments[0];
@@ -261,6 +263,8 @@ var BrowserApp = {
         gScreenWidth = window.arguments[2];
       if (window.arguments[3])
         gScreenHeight = window.arguments[3];
+      if (window.arguments[4])
+        pinned = window.arguments[4];
     }
 
     if (url == "about:empty")
@@ -288,6 +292,7 @@ var BrowserApp = {
 
       // Open any commandline URLs, except the homepage
       if (url && url != "about:home") {
+        loadParams.pinned = pinned;
         this.addTab(url, loadParams);
       } else {
         // Let the session make a restored tab active
@@ -318,6 +323,7 @@ var BrowserApp = {
       ss.restoreLastSession(restoreToFront, forceRestore);
     } else {
       loadParams.showProgress = (url != "about:home");
+      loadParams.pinned = pinned;
       this.addTab(url, loadParams);
 
       // show telemetry door hanger if we aren't restoring a session
@@ -569,6 +575,12 @@ var BrowserApp = {
     if (selected)
       this.selectedTab = newTab;
 
+    let pinned = "pinned" in aParams ? aParams.pinned : false;
+    if (pinned) {
+      let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
+      ss.setTabValue(newTab, "appOrigin", aURI);
+    }
+
     let evt = document.createEvent("UIEvents");
     evt.initUIEvent("TabOpen", true, false, window, null);
     newTab.browser.dispatchEvent(evt);
@@ -753,12 +765,18 @@ var BrowserApp = {
             case Ci.nsIPrefBranch.PREF_STRING:
             default:
               pref.type = "string";
-              pref.value = Services.prefs.getComplexValue(prefName, Ci.nsIPrefLocalizedString).data;
+              try {
+                // Try in case it's a localized string (will throw an exception if not)
+                pref.value = Services.prefs.getComplexValue(prefName, Ci.nsIPrefLocalizedString).data;
+              } catch (e) {
+                pref.value = Services.prefs.getCharPref(prefName);
+              }
               break;
           }
         } catch (e) {
-            // preference does not exist; do not send it
-            continue;
+          dump("Error reading pref [" + prefName + "]: " + e);
+          // preference does not exist; do not send it
+          continue;
         }
 
         // some preferences use integers or strings instead of booleans for
@@ -788,19 +806,29 @@ var BrowserApp = {
     } catch (e) {}
   },
 
+  addTelemetry: function addTelemetry(aData) {
+    let json = JSON.parse(aData);
+    var telemetry = Cc["@mozilla.org/base/telemetry;1"]
+          .getService(Ci.nsITelemetry);
+    let histogram = telemetry.getHistogramById(json.name);
+    histogram.add(json.value);
+  },
+
   setPreferences: function setPreferences(aPref) {
     let json = JSON.parse(aPref);
 
-    // The plugin pref is actually two separate prefs, so
-    // we need to handle it differently
     if (json.name == "plugin.enable") {
+      // The plugin pref is actually two separate prefs, so
+      // we need to handle it differently
       PluginHelper.setPluginPreference(json.value);
       return;
-    } else if(json.name == MasterPassword.pref) {
+    } else if (json.name == MasterPassword.pref) {
+      // MasterPassword pref is not real, we just need take action and leave
       if (MasterPassword.enabled)
         MasterPassword.removePassword(json.value);
       else
         MasterPassword.setPassword(json.value);
+      return;
     }
 
     // when sending to java, we normalized special preferences that use
@@ -817,11 +845,11 @@ var BrowserApp = {
         break;
     }
 
-    if (json.type == "bool")
+    if (json.type == "bool") {
       Services.prefs.setBoolPref(json.name, json.value);
-    else if (json.type == "int")
+    } else if (json.type == "int") {
       Services.prefs.setIntPref(json.name, json.value);
-    else {
+    } else {
       let pref = Cc["@mozilla.org/pref-localizedstring;1"].createInstance(Ci.nsIPrefLocalizedString);
       pref.data = json.value;
       Services.prefs.setComplexValue(json.name, Ci.nsISupportsString, pref);
@@ -832,6 +860,7 @@ var BrowserApp = {
     let doc = aBrowser.contentDocument;
     if (!doc)
       return;
+
     let focused = doc.activeElement;
     if ((focused instanceof HTMLInputElement && focused.mozIsTextField(false)) || (focused instanceof HTMLTextAreaElement)) {
       let tab = BrowserApp.getTabForBrowser(aBrowser);
@@ -973,6 +1002,8 @@ var BrowserApp = {
       } else {
         profiler.StartProfiler(100000, 25, ["stackwalk"], 1);
       }
+    } else if (aTopic == "Telemetry:Add") {
+      this.addTelemetry(aData);
     }
   },
 
@@ -1426,11 +1457,30 @@ nsBrowserAccess.prototype = {
       } catch(e) { }
     }
 
-    let newTab = (aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW || aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB);
+    let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
+    let pinned = false;
+
+    if (aURI && aWhere == Ci.nsIBrowserDOMWindow.OPEN_SWITCHTAB) {
+      pinned = true;
+      let spec = aURI.spec;
+      let tabs = BrowserApp.tabs;
+      for (let i = 0; i < tabs.length; i++) {
+        let appOrigin = ss.getTabValue(tabs[i], "appOrigin");
+        if (appOrigin == spec) {
+          let tab = tabs[i];
+          BrowserApp.selectTab(tab);
+          return tab.browser;
+        }
+      }
+    }
+
+    let newTab = (aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW ||
+                  aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB ||
+                  aWhere == Ci.nsIBrowserDOMWindow.OPEN_SWITCHTAB);
 
     if (newTab) {
       let parentId = -1;
-      if (!isExternal) {
+      if (!isExternal && aOpener) {
         let parent = BrowserApp.getTabForWindow(aOpener.top);
         if (parent)
           parentId = parent.id;
@@ -1441,7 +1491,9 @@ nsBrowserAccess.prototype = {
                                                                       referrerURI: referrer,
                                                                       external: isExternal,
                                                                       parentId: parentId,
-                                                                      selected: true });
+                                                                      selected: true,
+                                                                      pinned: pinned });
+
       return tab.browser;
     }
 
@@ -1487,7 +1539,6 @@ function Tab(aURL, aParams) {
   this.contentDocumentIsDisplayed = true;
   this.clickToPlayPluginDoorhangerShown = false;
   this.clickToPlayPluginsActivated = false;
-  this.loadEventProcessed = false;
 }
 
 Tab.prototype = {
@@ -1501,6 +1552,9 @@ Tab.prototype = {
     this.browser.setAttribute("type", "content-targetable");
     this.setBrowserSize(kDefaultCSSViewportWidth, kDefaultCSSViewportHeight);
     BrowserApp.deck.appendChild(this.browser);
+
+    // Must be called after appendChild so the docshell has been created.
+    this.setActive(false);
 
     this.browser.stop();
 
@@ -1540,7 +1594,6 @@ Tab.prototype = {
     this.browser.sessionHistory.addSHistoryListener(this);
 
     this.browser.addEventListener("DOMContentLoaded", this, true);
-    this.browser.addEventListener("load", this, true);
     this.browser.addEventListener("DOMLinkAdded", this, true);
     this.browser.addEventListener("DOMTitleChanged", this, true);
     this.browser.addEventListener("DOMWindowClose", this, true);
@@ -1585,7 +1638,6 @@ Tab.prototype = {
 
     this.browser.removeProgressListener(this);
     this.browser.removeEventListener("DOMContentLoaded", this, true);
-    this.browser.removeEventListener("load", this, true);
     this.browser.removeEventListener("DOMLinkAdded", this, true);
     this.browser.removeEventListener("DOMTitleChanged", this, true);
     this.browser.removeEventListener("DOMWindowClose", this, true);
@@ -1607,7 +1659,7 @@ Tab.prototype = {
 
   // This should be called to update the browser when the tab gets selected/unselected
   setActive: function setActive(aActive) {
-    if (!this.browser)
+    if (!this.browser || !this.browser.docShell)
       return;
 
     if (aActive) {
@@ -1661,6 +1713,7 @@ Tab.prototype = {
 
     // finally, we set the display port, taking care to convert everything into the CSS-pixel
     // coordinate space, because that is what the function accepts.
+    cwu = this.browser.contentWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
     cwu.setDisplayPortForElement((aDisplayPort.left / resolution) - (aViewportX / zoom),
                                  (aDisplayPort.top / resolution) - (aViewportY / zoom),
                                  (aDisplayPort.right - aDisplayPort.left) / resolution,
@@ -1715,22 +1768,30 @@ Tab.prototype = {
     let viewport = {
       width: gScreenWidth,
       height: gScreenHeight,
+      cssWidth: gScreenWidth / this._zoom,
+      cssHeight: gScreenHeight / this._zoom,
       pageWidth: gScreenWidth,
       pageHeight: gScreenHeight,
+      // We make up matching css page dimensions
+      cssPageWidth: gScreenWidth / this._zoom,
+      cssPageHeight: gScreenHeight / this._zoom,
       zoom: this._zoom
     };
 
     // Set the viewport offset to current scroll offset
-    viewport.x = this.browser.contentWindow.scrollX || 0;
-    viewport.y = this.browser.contentWindow.scrollY || 0;
+    viewport.cssX = this.browser.contentWindow.scrollX || 0;
+    viewport.cssY = this.browser.contentWindow.scrollY || 0;
 
     // Transform coordinates based on zoom
-    viewport.x = Math.round(viewport.x * viewport.zoom);
-    viewport.y = Math.round(viewport.y * viewport.zoom);
+    viewport.x = Math.round(viewport.cssX * viewport.zoom);
+    viewport.y = Math.round(viewport.cssY * viewport.zoom);
 
     let doc = this.browser.contentDocument;
     if (doc != null) {
-      let [pageWidth, pageHeight] = this.getPageSize(doc, viewport.width, viewport.height);
+      let [pageWidth, pageHeight] = this.getPageSize(doc, viewport.cssWidth, viewport.cssHeight);
+
+      let cssPageWidth = pageWidth;
+      let cssPageHeight = pageHeight;
 
       /* Transform the page width and height based on the zoom factor. */
       pageWidth *= viewport.zoom;
@@ -1742,6 +1803,8 @@ Tab.prototype = {
        * send updates regardless of page size; we'll zoom to fit the content as needed.
        */
       if (doc.readyState === 'complete' || (pageWidth >= gScreenWidth && pageHeight >= gScreenHeight)) {
+        viewport.cssPageWidth = cssPageWidth;
+        viewport.cssPageHeight = cssPageHeight;
         viewport.pageWidth = pageWidth;
         viewport.pageHeight = pageHeight;
       }
@@ -1817,25 +1880,6 @@ Tab.prototype = {
             this.browser.removeEventListener("pagehide", listener, true);
           }.bind(this), true);
         }
-        break;
-      }
-
-      case "load": {
-        this.loadEventProcessed = true;
-        // Show a plugin doorhanger if there are no clickable overlays showing
-        let contentWindow = this.browser.contentWindow;
-        let cwu = contentWindow.QueryInterface(Ci.nsIInterfaceRequestor)
-                               .getInterface(Ci.nsIDOMWindowUtils);
-        // XXX not sure if we should enable plugins for the parent documents...
-        let plugins = cwu.plugins;
-        let isAnyPluginVisible = false;
-        for (let plugin of plugins) {
-          let overlay = plugin.ownerDocument.getAnonymousElementByAttribute(plugin, "class", "mainBox");
-          if (overlay && !PluginHelper.isTooSmall(plugin, overlay))
-            isAnyPluginVisible = true;
-        }
-        if (plugins && plugins.length && !isAnyPluginVisible)
-          PluginHelper.showDoorHanger(this);
         break;
       }
 
@@ -1953,11 +1997,13 @@ Tab.prototype = {
           return;
         }
 
-        // If the overlay is too small, hide the overlay and act like this
-        // is a hidden plugin object
+        // Force a style flush, so that we ensure our binding is attached.
+        plugin.clientTop;
+
+        // If the plugin is hidden, or if the overlay is too small, show a doorhanger notification
         let overlay = plugin.ownerDocument.getAnonymousElementByAttribute(plugin, "class", "mainBox");
         if (!overlay || PluginHelper.isTooSmall(plugin, overlay)) {
-          if (this.loadEventProcessed && !this.clickToPlayPluginDoorhangerShown)
+          if (!this.clickToPlayPluginDoorhangerShown)
             PluginHelper.showDoorHanger(this);
 
           if (!overlay)
@@ -1975,6 +2021,9 @@ Tab.prototype = {
           let tab = BrowserApp.getTabForWindow(win);
           tab.clickToPlayPluginsActivated = true;
           PluginHelper.playAllPlugins(win);
+
+          if (tab.clickToPlayPluginDoorhangerShown)
+            NativeWindow.doorhanger.hide("ask-to-play-plugins", tab.id);
         }, true);
         break;
       }
@@ -1994,11 +2043,6 @@ Tab.prototype = {
         return;
       }
 
-      let browser = BrowserApp.getBrowserForWindow(aWebProgress.DOMWindow);
-      let uri = "";
-      if (browser)
-        uri = browser.currentURI.spec;
-
       // Check to see if we restoring the content from a previous presentation (session)
       // since there should be no real network activity
       let restoring = aStateFlags & Ci.nsIWebProgressListener.STATE_RESTORING;
@@ -2006,6 +2050,10 @@ Tab.prototype = {
 
       // true if the page loaded successfully (i.e., no 404s or other errors)
       let success = false; 
+      let uri = "";
+      try {
+        uri = aRequest.QueryInterface(Components.interfaces.nsIChannel).originalURI.spec;
+      } catch (e) { }
       try {
         success = aRequest.QueryInterface(Components.interfaces.nsIHttpChannel).requestSucceeded;
       } catch (e) { }
@@ -2036,6 +2084,7 @@ Tab.prototype = {
     let uri = browser.currentURI.spec;
     let documentURI = "";
     let contentType = "";
+    let sameDocument = (aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) != 0;
     if (browser.contentDocument) {
       documentURI = browser.contentDocument.documentURIObject.spec;
       contentType = browser.contentDocument.contentType;
@@ -2044,7 +2093,6 @@ Tab.prototype = {
     // Reset state of click-to-play plugin notifications.
     this.clickToPlayPluginDoorhangerShown = false;
     this.clickToPlayPluginsActivated = false;
-    this.loadEventProcessed = false;
 
     let message = {
       gecko: {
@@ -2052,13 +2100,14 @@ Tab.prototype = {
         tabID: this.id,
         uri: uri,
         documentURI: documentURI,
-        contentType: contentType
+        contentType: contentType,
+        sameDocument: sameDocument
       }
     };
 
     sendMessageToJava(message);
 
-    if ((aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) == 0) {
+    if (!sameDocument) {
       // XXX This code assumes that this is the earliest hook we have at which
       // browser.contentDocument is changed to the new document we're loading
       this.contentDocumentIsDisplayed = false;
@@ -2474,16 +2523,14 @@ var BrowserEventHandler = {
       let rect = ElementTouchHelper.getBoundingContentRect(element);
 
       let viewport = BrowserApp.selectedTab.getViewport();
-      let vRect = new Rect(viewport.x, viewport.y, viewport.width, viewport.height);
-
-      let zoom = viewport.zoom;
+      let vRect = new Rect(viewport.cssX, viewport.cssY, viewport.cssWidth, viewport.cssHeight);
       let bRect = new Rect(Math.max(0,rect.x - margin),
                            rect.y,
                            rect.w + 2*margin,
                            rect.h);
+
       // constrict the rect to the screen width
-      bRect.width = Math.min(bRect.width, viewport.pageWidth/zoom - bRect.x);
-      bRect.scale(zoom, zoom);
+      bRect.width = Math.min(bRect.width, viewport.cssPageWidth - bRect.x);
 
       let overlap = vRect.intersect(bRect);
       let overlapArea = overlap.width*overlap.height;
@@ -2491,8 +2538,8 @@ var BrowserEventHandler = {
       // on the screen at any time and if its already stretching the width of the screen
       let availHeight = Math.min(bRect.width*vRect.height/vRect.width, bRect.height);
       let showing = overlapArea/(bRect.width*availHeight);
-      let dw = (bRect.width - vRect.width)/zoom;
-      let dx = (bRect.x - vRect.x)/zoom;
+      let dw = (bRect.width - vRect.width);
+      let dx = (bRect.x - vRect.x);
 
       if (showing > 0.9 &&
           dx > minDifference && dx < maxDifference &&
@@ -2953,9 +3000,7 @@ var FormAssistant = {
         if (!this._currentInputElement)
           break;
 
-        // Remove focus from the textbox to avoid some bad IME interactions
-        this._currentInputElement.blur();
-        this._currentInputElement.value = aData;
+        this._currentInputElement.QueryInterface(Ci.nsIDOMNSEditableElement).setUserInput(aData);
 
         let event = this._currentInputElement.ownerDocument.createEvent("Events");
         event.initEvent("DOMAutoComplete", true, true);
@@ -3023,7 +3068,7 @@ var FormAssistant = {
 
   // We only want to show autocomplete suggestions for certain elements
   _isAutoComplete: function _isAutoComplete(aElement) {
-    if (!(aElement instanceof HTMLInputElement) ||
+    if (!(aElement instanceof HTMLInputElement) || aElement.readOnly ||
         (aElement.getAttribute("type") == "password") ||
         (aElement.hasAttribute("autocomplete") &&
          aElement.getAttribute("autocomplete").toLowerCase() == "off"))
@@ -4615,22 +4660,12 @@ var WebappsUI = {
   },
   
   openURL: function(aURI, aOrigin) {
-    let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
+    let uri = Services.io.newURI(aURI, null, null);
+    if (!uri)
+      return;
 
-    let tabs = BrowserApp.tabs;
-    let tab = null;
-    for (let i = 0; i < tabs.length; i++) {
-      let appOrigin = ss.getTabValue(tabs[i], "appOrigin");
-      if (appOrigin == aOrigin)
-        tab = tabs[i];
-    }
-
-    if (tab) {
-      BrowserApp.selectTab(tab);
-    } else {
-      tab = BrowserApp.addTab(aURI);
-      ss.setTabValue(tab, "appOrigin", aOrigin);
-    }
+    let bwin = window.QueryInterface(Ci.nsIDOMChromeWindow).browserDOMWindow;
+    bwin.openURI(uri, null, Ci.nsIBrowserDOMWindow.OPEN_SWITCHTAB, Ci.nsIBrowserDOMWindow.OPEN_NEW);
   }
 }
 

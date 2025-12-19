@@ -52,8 +52,6 @@ import android.graphics.RectF;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.View.OnTouchListener;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The layer controller manages a tile that represents the visible page. It does panning and
@@ -91,12 +89,10 @@ public class LayerController {
     private GeckoLayerClient mLayerClient;          /* The layer client. */
 
     /* The new color for the checkerboard. */
-    private int mCheckerboardColor;
+    private int mCheckerboardColor = Color.WHITE;
     private boolean mCheckerboardShouldShowChecks;
 
     private boolean mForceRedraw;
-
-    private static Pattern sColorPattern;
 
     public LayerController(Context context) {
         mContext = context;
@@ -128,12 +124,20 @@ public class LayerController {
         return mViewportMetrics.getViewport();
     }
 
+    public RectF getCssViewport() {
+        return mViewportMetrics.getCssViewport();
+    }
+
     public FloatSize getViewportSize() {
         return mViewportMetrics.getSize();
     }
 
     public FloatSize getPageSize() {
         return mViewportMetrics.getPageSize();
+    }
+
+    public FloatSize getCssPageSize() {
+        return mViewportMetrics.getCssPageSize();
     }
 
     public PointF getOrigin() {
@@ -194,12 +198,12 @@ public class LayerController {
     }
 
     /** Sets the current page size. You must hold the monitor while calling this. */
-    public void setPageSize(FloatSize size) {
-        if (mViewportMetrics.getPageSize().fuzzyEquals(size))
+    public void setPageSize(FloatSize size, FloatSize cssSize) {
+        if (mViewportMetrics.getCssPageSize().equals(cssSize))
             return;
 
         ViewportMetrics viewportMetrics = new ViewportMetrics(mViewportMetrics);
-        viewportMetrics.setPageSize(size);
+        viewportMetrics.setPageSize(size, cssSize);
         mViewportMetrics = new ImmutableViewportMetrics(viewportMetrics);
 
         // Page size is owned by the layer client, so no need to notify it of
@@ -351,29 +355,4 @@ public class LayerController {
         mCheckerboardColor = newColor;
         mView.requestRender();
     }
-
-    /** Parses and sets a new color for the checkerboard. */
-    public void setCheckerboardColor(String newColor) {
-        setCheckerboardColor(parseColorFromGecko(newColor));
-    }
-
-    // Parses a color from an RGB triple of the form "rgb([0-9]+, [0-9]+, [0-9]+)". If the color
-    // cannot be parsed, returns white.
-    private static int parseColorFromGecko(String string) {
-        if (sColorPattern == null) {
-            sColorPattern = Pattern.compile("rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)");
-        }
-
-        Matcher matcher = sColorPattern.matcher(string);
-        if (!matcher.matches()) {
-            return Color.WHITE;
-        }
-
-        int r = Integer.parseInt(matcher.group(1));
-        int g = Integer.parseInt(matcher.group(2));
-        int b = Integer.parseInt(matcher.group(3));
-        return Color.rgb(r, g, b);
-    } 
-
 }
-

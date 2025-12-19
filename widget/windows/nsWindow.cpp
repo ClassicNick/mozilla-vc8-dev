@@ -3200,7 +3200,8 @@ nsWindow::GetLayerManager(PLayersChild* aShadowManager,
     if (eTransparencyTransparent == mTransparencyMode ||
         prefs.mDisableAcceleration ||
         windowRect.right - windowRect.left > MAX_ACCELERATED_DIMENSION ||
-        windowRect.bottom - windowRect.top > MAX_ACCELERATED_DIMENSION)
+        windowRect.bottom - windowRect.top > MAX_ACCELERATED_DIMENSION ||
+        mWindowType == eWindowType_popup)
       mUseAcceleratedRendering = false;
     else if (prefs.mAccelerateByDefault)
       mUseAcceleratedRendering = true;

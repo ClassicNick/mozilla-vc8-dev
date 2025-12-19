@@ -40,6 +40,7 @@ package org.mozilla.gecko;
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.AsyncTask;
@@ -58,6 +59,8 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 public final class Tab {
     private static final String LOGTAG = "GeckoTab";
@@ -68,6 +71,7 @@ public final class Tab {
     private static float sDensity = 1;
     private static int sMinScreenshotWidth = 0;
     private static int sMinScreenshotHeight = 0;
+    private static Pattern sColorPattern;
     private int mId;
     private String mUrl;
     private String mTitle;
@@ -82,7 +86,6 @@ public final class Tab {
     private boolean mBookmark;
     private HashMap<String, DoorHanger> mDoorHangers;
     private long mFaviconLoadId;
-    private CheckBookmarkTask mCheckBookmarkTask;
     private String mDocumentURI;
     private String mContentType;
     private boolean mHasTouchListeners;
@@ -90,6 +93,7 @@ public final class Tab {
     private HashMap<Surface, Layer> mPluginLayers;
     private ContentResolver mContentResolver;
     private ContentObserver mContentObserver;
+    private int mCheckerboardColor = Color.WHITE;
     private int mState;
 
     public static final int STATE_DELAYED = 0;
@@ -373,17 +377,16 @@ public final class Tab {
     }
 
     private void updateBookmark() {
-        GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+        final String url = getURL();
+        if (url == null)
+            return;
+
+        GeckoBackgroundThread.getHandler().post(new Runnable() {
             public void run() {
-                if (mCheckBookmarkTask != null)
-                    mCheckBookmarkTask.cancel(false);
-
-                String url = getURL();
-                if (url == null)
-                    return;
-
-                mCheckBookmarkTask = new CheckBookmarkTask(url);
-                mCheckBookmarkTask.execute();
+                boolean bookmark = BrowserDB.isBookmark(mContentResolver, url);
+                if (url.equals(getURL())) {
+                    mBookmark = bookmark;
+                }
             }
         });
     }
@@ -524,40 +527,6 @@ public final class Tab {
         }
     }
 
-    private final class CheckBookmarkTask extends AsyncTask<Void, Void, Boolean> {
-        private final String mUrl;
-
-        public CheckBookmarkTask(String url) {
-            mUrl = url;
-        }
-
-        @Override
-        protected Boolean doInBackground(Void... unused) {
-            return BrowserDB.isBookmark(mContentResolver, mUrl);
-        }
-
-        @Override
-        protected void onCancelled() {
-            mCheckBookmarkTask = null;
-        }
-
-        @Override
-        protected void onPostExecute(final Boolean isBookmark) {
-            mCheckBookmarkTask = null;
-
-            GeckoApp.mAppContext.runOnUiThread(new Runnable() {
-                public void run() {
-                    // Ignore this task if it's not about the current
-                    // tab URL anymore.
-                    if (!mUrl.equals(getURL()))
-                        return;
-
-                    mBookmark = isBookmark.booleanValue();
-                }
-            });
-        }
-    }
-
     private void saveThumbnailToDB(BitmapDrawable thumbnail) {
         try {
             String url = getURL();
@@ -596,5 +565,37 @@ public final class Tab {
 
     public Layer removePluginLayer(Surface surface) {
         return mPluginLayers.remove(surface);
+    }
+
+    public int getCheckerboardColor() {
+        return mCheckerboardColor;
+    }
+
+    /** Sets a new color for the checkerboard. */
+    public void setCheckerboardColor(int color) {
+        mCheckerboardColor = color;
+    }
+
+    /** Parses and sets a new color for the checkerboard. */
+    public void setCheckerboardColor(String newColor) {
+        setCheckerboardColor(parseColorFromGecko(newColor));
+    }
+
+    // Parses a color from an RGB triple of the form "rgb([0-9]+, [0-9]+, [0-9]+)". If the color
+    // cannot be parsed, returns white.
+    private static int parseColorFromGecko(String string) {
+        if (sColorPattern == null) {
+            sColorPattern = Pattern.compile("rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)");
+        }
+
+        Matcher matcher = sColorPattern.matcher(string);
+        if (!matcher.matches()) {
+            return Color.WHITE;
+        }
+
+        int r = Integer.parseInt(matcher.group(1));
+        int g = Integer.parseInt(matcher.group(2));
+        int b = Integer.parseInt(matcher.group(3));
+        return Color.rgb(r, g, b);
     }
 }

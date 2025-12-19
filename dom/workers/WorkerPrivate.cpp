@@ -79,6 +79,7 @@
 #include "Events.h"
 #include "Exceptions.h"
 #include "File.h"
+#include "ImageData.h"
 #include "Principal.h"
 #include "RuntimeService.h"
 #include "ScriptLoader.h"
@@ -100,10 +101,10 @@ using mozilla::MutexAutoLock;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 using mozilla::dom::workers::exceptions::ThrowDOMExceptionForCode;
-using mozilla::xpconnect::memory::ReportJSRuntimeExplicitTreeStats;
 
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::workers::events;
+using namespace mozilla::dom;
 
 namespace {
 
@@ -263,12 +264,8 @@ public:
 
     // Always report, even if we're disabled, so that we at least get an entry
     // in about::memory.
-    rv = ReportJSRuntimeExplicitTreeStats(rtStats, mPathPrefix, aCallback, aClosure);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    return NS_OK;
+    return xpc::ReportJSRuntimeExplicitTreeStats(rtStats, mPathPrefix,
+                                                 aCallback, aClosure);
   }
 
   NS_IMETHOD
@@ -338,6 +335,25 @@ struct WorkerStructuredCloneCallbacks
         return jsBlob;
       }
     }
+    // See if the object is an ImageData.
+    else if (aTag == SCTAG_DOM_IMAGEDATA) {
+      JS_ASSERT(!aData);
+
+      // Read the information out of the stream.
+      uint32_t width, height;
+      jsval dataArray;
+      if (!JS_ReadUint32Pair(aReader, &width, &height) ||
+          !JS_ReadTypedArray(aReader, &dataArray))
+      {
+        return nsnull;
+      }
+      MOZ_ASSERT(dataArray.isObject());
+
+      // Construct the ImageData.
+      JSObject* obj = imagedata::Create(aCx, width, height,
+                                        JSVAL_TO_OBJECT(dataArray));
+      return obj;
+    }
 
     Error(aCx, 0);
     return nsnull;
@@ -377,6 +393,19 @@ struct WorkerStructuredCloneCallbacks
           return true;
         }
       }
+    }
+
+    // See if this is an ImageData object.
+    if (imagedata::IsImageData(aObj)) {
+      // Pull the properties off the object.
+      uint32_t width = imagedata::GetWidth(aObj);
+      uint32_t height = imagedata::GetHeight(aObj);
+      JSObject* data = imagedata::GetData(aObj);
+
+      // Write the structured clone.
+      return JS_WriteUint32Pair(aWriter, SCTAG_DOM_IMAGEDATA, 0) &&
+             JS_WriteUint32Pair(aWriter, width, height) &&
+             JS_WriteTypedArray(aWriter, OBJECT_TO_JSVAL(data));
     }
 
     Error(aCx, 0);
@@ -471,12 +500,6 @@ struct MainThreadWorkerStructuredCloneCallbacks
       }
     }
 
-    JSObject* clone =
-      WorkerStructuredCloneCallbacks::Read(aCx, aReader, aTag, aData, aClosure);
-    if (clone) {
-      return clone;
-    }
-
     JS_ClearPendingException(aCx);
     return NS_DOMReadStructuredClone(aCx, aReader, aTag, aData, nsnull);
   }
@@ -530,12 +553,6 @@ struct MainThreadWorkerStructuredCloneCallbacks
           }
         }
       }
-    }
-
-    JSBool ok =
-      WorkerStructuredCloneCallbacks::Write(aCx, aWriter, aObj, aClosure);
-    if (ok) {
-      return ok;
     }
 
     JS_ClearPendingException(aCx);
