@@ -1500,23 +1500,24 @@ struct GlyphBufferAzure {
 
                 if (invFontMatrix) {
                     // The brush matrix needs to be multiplied with the inverted matrix
-	                // as well, to move the brush into the space of the glyphs. Before
-	                // the render target transformation
+                    // as well, to move the brush into the space of the glyphs. Before
+                    // the render target transformation
 
                     // This relies on the returned Pattern not to be reused by
                     // others, but regenerated on GetPattern calls. This is true!
-                    Matrix *mat;
+                    Matrix *mat = nsnull;
                     if (pat->GetType() == PATTERN_LINEAR_GRADIENT) {
                         mat = &static_cast<LinearGradientPattern*>(pat)->mMatrix;
                     } else if (pat->GetType() == PATTERN_RADIAL_GRADIENT) {
-                        mat = &static_cast<LinearGradientPattern*>(pat)->mMatrix;
+                        mat = &static_cast<RadialGradientPattern*>(pat)->mMatrix;
                     } else if (pat->GetType() == PATTERN_SURFACE) {
-                        mat = &static_cast<LinearGradientPattern*>(pat)->mMatrix;
+                        mat = &static_cast<SurfacePattern*>(pat)->mMatrix;
                     }
 
-                    *mat = (*mat) * (*invFontMatrix);
+                    if (mat) {
+                        *mat = (*mat) * (*invFontMatrix);
+                    }
                 }
-
 
                 aDT->FillGlyphs(aFont, buf, *pat,
                                 DrawOptions(), aOptions);
@@ -2129,6 +2130,12 @@ gfxFont::GetShapedWord(gfxContext *aContext,
                        PRInt32 aAppUnitsPerDevUnit,
                        PRUint32 aFlags)
 {
+    // if the cache is getting too big, flush it and start over
+    if (mWordCache.Count() > 10000) {
+        NS_WARNING("flushing shaped-word cache");
+        ClearCachedWords();
+    }
+
     // if there's a cached entry for this word, just return it
     CacheHashKey key(aText, aLength, aHash,
                      aRunScript,

@@ -245,6 +245,8 @@ pref("gfx.canvas.azure.enabled", true);
 pref("gfx.textures.poweroftwo.force-enabled", false);
 #endif
 
+pref("gfx.work-around-driver-bugs", true);
+
 pref("accessibility.browsewithcaret", false);
 pref("accessibility.warn_on_browsewithcaret", true);
 
@@ -297,9 +299,6 @@ pref("accessibility.typeaheadfind.prefillwithselection", true);
 
 // use Mac OS X Appearance panel text smoothing setting when rendering text, disabled by default
 pref("gfx.use_text_smoothing_setting", false);
-
-// show checkerboard pattern on android, enabled by default (option exists for image analysis testing)
-pref("gfx.show_checkerboard_pattern", true);
 
 // loading and rendering of framesets and iframes
 pref("browser.frames.enabled", true);
@@ -425,7 +424,7 @@ pref("extensions.spellcheck.inline.max-misspellings", 500);
 
 pref("editor.use_custom_colors", false);
 pref("editor.singleLine.pasteNewlines",      2);
-pref("editor.use_css",                       true);
+pref("editor.use_css",                       false);
 pref("editor.css.default_length_unit",       "px");
 pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
@@ -818,7 +817,12 @@ pref("network.http.pipelining.max-optimistic-requests" , 4);
 
 pref("network.http.pipelining.aggressive", false);
 pref("network.http.pipelining.maxsize" , 300000);
-pref("network.http.pipelining.read-timeout", 10000);
+pref("network.http.pipelining.reschedule-on-timeout", true);
+pref("network.http.pipelining.reschedule-timeout", 1500);
+
+// The read-timeout is a ms timer that causes the transaction to be completely
+// restarted without pipelining.
+pref("network.http.pipelining.read-timeout", 30000);
 
 // Prompt for 307 redirects
 pref("network.http.prompt-temp-redirect", true);
@@ -3487,6 +3491,7 @@ pref("full-screen-api.allow-trusted-requests-only", true);
 pref("full-screen-api.key-input-restricted", true);
 pref("full-screen-api.warning.enabled", true);
 pref("full-screen-api.exit-on-deactivate", true);
+pref("full-screen-api.pointer-lock.enabled", true);
 
 // Time limit, in milliseconds, for nsEventStateManager::IsHandlingUserInput().
 // Used to detect long running handlers of user-generated events.
@@ -3524,6 +3529,7 @@ pref("profiler.entries", 100000);
 // Network API
 pref("dom.network.enabled", true);
 pref("dom.network.metered", false);
+
 #ifdef XP_WIN
 // On 32-bit Windows, fire a low-memory notification if we have less than this
 // many mb of virtual address space available.
@@ -3542,3 +3548,8 @@ pref("memory.low_physical_memory_threshold_mb", 0);
 // low_memory_notification_interval_ms.
 pref("memory.low_memory_notification_interval_ms", 10000);
 #endif
+
+// How long must we wait before declaring that a window is a "ghost" (i.e., a
+// likely leak)?  This should be longer than it usually takes for an eligible
+// window to be collected via the GC/CC.
+pref("memory.ghost_window_timeout_seconds", 60);

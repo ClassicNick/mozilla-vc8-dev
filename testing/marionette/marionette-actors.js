@@ -16,6 +16,9 @@ let loader = Cc["@mozilla.org/moz/jssubscript-loader;1"]
 loader.loadSubScript("chrome://marionette/content/marionette-simpletest.js");
 loader.loadSubScript("chrome://marionette/content/marionette-log-obj.js");
 Cu.import("chrome://marionette/content/marionette-elements.js");
+let utils = {};
+loader.loadSubScript("chrome://marionette/content/EventUtils.js", utils);
+loader.loadSubScript("chrome://marionette/content/ChromeUtils.js", utils);
 
 let prefs = Cc["@mozilla.org/preferences-service;1"]
             .getService(Ci.nsIPrefBranch);
@@ -24,6 +27,7 @@ prefs.setBoolPref("marionette.contentListener", false);
 let xulAppInfo = Cc["@mozilla.org/xre/app-info;1"]
                  .getService(Ci.nsIXULAppInfo);
 let appName = xulAppInfo.name;
+loader.loadSubScript("chrome://marionette/content/atoms.js", utils);
 
 // import logger
 Cu.import("resource://gre/modules/services-sync/log4moz.js");
@@ -112,7 +116,6 @@ function MarionetteDriverActor(aConnection)
   this.curBrowser = null; // points to current browser
   this.context = "content";
   this.scriptTimeout = null;
-  this.elementManager = new ElementManager([SELECTOR, NAME, LINK_TEXT, PARTIAL_LINK_TEXT]);
   this.timer = null;
   this.marionetteLog = new MarionetteLogObj();
   this.command_id = null;
@@ -141,7 +144,7 @@ MarionetteDriverActor.prototype = {
    *        Object to send to the listener
    */
   sendAsync: function MDA_sendAsync(name, values) {
-    this.messageManager.sendAsyncMessage("Marionette:" + name + this.browsers[this.curBrowser].curFrameId, values);
+    this.messageManager.sendAsyncMessage("Marionette:" + name + this.curBrowser.curFrameId, values);
   },
 
   /**
@@ -216,7 +219,7 @@ MarionetteDriverActor.prototype = {
    */
   getCurrentWindow: function MDA_getCurrentWindow() {
     let type = null;
-    if (appName != "B2G") {
+    if (appName != "B2G" && this.context == "content") {
       type = 'navigator:browser';
     }
     return this.windowMediator.getMostRecentWindow(type);
@@ -229,7 +232,7 @@ MarionetteDriverActor.prototype = {
    */
   getWinEnumerator: function MDA_getWinEnumerator() {
     let type = null;
-    if (appName != "B2G") {
+    if (appName != "B2G" && this.context == "content") {
       type = 'navigator:browser';
     }
     return this.windowMediator.getEnumerator(type);
@@ -249,9 +252,11 @@ MarionetteDriverActor.prototype = {
     let winId = win.QueryInterface(Ci.nsIInterfaceRequestor).
                     getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
     winId = winId + ((appName == "B2G") ? '-b2g' : '');
-    if (this.elementManager.seenItems[winId] == undefined) {
+    this.browsers[winId] = browser;
+    this.curBrowser = this.browsers[winId];
+    if (this.curBrowser.elementManager.seenItems[winId] == undefined) {
       //add this to seenItems so we can guarantee the user will get winId as this window's id
-      this.elementManager.seenItems[winId] = win;
+      this.curBrowser.elementManager.seenItems[winId] = win;
     }
     this.browsers[winId] = browser;
     return winId;
@@ -270,11 +275,44 @@ MarionetteDriverActor.prototype = {
    *        True if this is the first time we're talking to this browser
    */
   startBrowser: function MDA_startBrowser(win, newSession) {
-    let winId = this.addBrowser(win);
-    this.curBrowser = winId;
-    this.browsers[this.curBrowser].newSession = newSession;
-    this.browsers[this.curBrowser].startSession(newSession);
-    this.browsers[this.curBrowser].loadFrameScript("chrome://marionette/content/marionette-listener.js", win);
+    this.addBrowser(win);
+    this.curBrowser.newSession = newSession;
+    this.curBrowser.startSession(newSession);
+    try {
+      this.curBrowser.loadFrameScript("chrome://marionette/content/marionette-listener.js", win);
+    }
+    catch (e) {
+      //there may not always be a content process
+      logger.info("could not load listener into content for page: " + win.location.href);
+    }
+    utils.window = win;
+  },
+
+  /**
+   * Recursively get all labeled text
+   *
+   * @param nsIDOMElement el
+   *        The parent element
+   * @param array lines
+   *        Array that holds the text lines
+   */
+  getVisibleText: function MDA_getVisibleText(el, lines) {
+    let nodeName = el.nodeName;
+    try {
+      if (utils.isElementDisplayed(el)) {
+        if (el.value) {
+          lines.push(el.value);
+        }
+        for (var child in el.childNodes) {
+          this.getVisibleText(el.childNodes[child], lines);
+        };
+      }
+    }
+    catch (e) {
+      if (nodeName == "#text") {
+        lines.push(el.textContent);
+      }
+    }
   },
 
   /**
@@ -292,11 +330,10 @@ MarionetteDriverActor.prototype = {
     if (!prefs.getBoolPref("marionette.contentListener")) {
       this.startBrowser(this.getCurrentWindow(), true);
     }
-    else if ((appName == "B2G")&& (this.curBrowser == null)) {
+    else if ((appName == "B2G") && (this.curBrowser == null)) {
       //if there is a content listener, then we just wake it up
-      let winId = this.addBrowser(this.getCurrentWindow());
-      this.curBrowser = winId;
-      this.browsers[this.curBrowser].startSession(false);
+      this.addBrowser(this.getCurrentWindow());
+      this.curBrowser.startSession(false);
       this.messageManager.sendAsyncMessage("Marionette:restart", {});
     }
     else {
@@ -354,7 +391,7 @@ MarionetteDriverActor.prototype = {
    */
   createExecuteSandbox: function MDA_createExecuteSandbox(aWindow, marionette, args) {
     try {
-      args = this.elementManager.convertWrappedArguments(args, aWindow);
+      args = this.curBrowser.elementManager.convertWrappedArguments(args, aWindow);
     }
     catch(e) {
       this.sendError(e.message, e.num, e.stack);
@@ -363,8 +400,9 @@ MarionetteDriverActor.prototype = {
 
     let _chromeSandbox = new Cu.Sandbox(aWindow,
        { sandboxPrototype: aWindow, wantXrays: false, sandboxName: ''});
-    _chromeSandbox.__namedArgs = this.elementManager.applyNamedArgs(args);
+    _chromeSandbox.__namedArgs = this.curBrowser.elementManager.applyNamedArgs(args);
     _chromeSandbox.__marionetteParams = args;
+    _chromeSandbox.testUtils = utils;
 
     marionette.exports.forEach(function(fn) {
       _chromeSandbox[fn] = marionette[fn].bind(marionette);
@@ -405,7 +443,7 @@ MarionetteDriverActor.prototype = {
       }
 
       if (!async) {
-        this.sendResponse(this.elementManager.wrapValue(res));
+        this.sendResponse(this.curBrowser.elementManager.wrapValue(res));
       }
     }
     catch (e) {
@@ -542,7 +580,7 @@ MarionetteDriverActor.prototype = {
         curWindow.onerror = original_onerror;
 
         if (status == 0 || status == undefined) {
-          that.sendToClient({from: that.actorID, value: that.elementManager.wrapValue(value), status: status},
+          that.sendToClient({from: that.actorID, value: that.curBrowser.elementManager.wrapValue(value), status: status},
                             marionette.command_id);
         }
         else {
@@ -602,6 +640,10 @@ MarionetteDriverActor.prototype = {
    *        'value' member holds the url to navigate to
    */
   goUrl: function MDA_goUrl(aRequest) {
+    if (this.context == "chrome") {
+      this.getCurrentWindow().location.href = aRequest.value;
+      this.sendOk();
+    }
     this.sendAsync("goUrl", aRequest);
   },
 
@@ -642,7 +684,11 @@ MarionetteDriverActor.prototype = {
    * Get the current window's server-assigned ID
    */
   getWindow: function MDA_getWindow() {
-    this.sendResponse(this.curBrowser);
+    for (let i in this.browsers) {
+      if (this.curBrowser == this.browsers[i]) {
+        this.sendResponse(i);
+      }
+    }
   },
 
   /**
@@ -678,15 +724,16 @@ MarionetteDriverActor.prototype = {
           //enable Marionette in that browser window
           this.startBrowser(foundWin, false);
         }
+        utils.window = foundWin;
         foundWin.focus();
-        this.curBrowser = winId;
+        this.curBrowser = this.browsers[winId];
         this.sendOk();
         return;
       }
     }
     this.sendError("Unable to locate window " + aRequest.value, 23, null);
   },
-
+ 
   /**
    * Switch to a given frame within the current window
    *
@@ -706,7 +753,7 @@ MarionetteDriverActor.prototype = {
   setSearchTimeout: function MDA_setSearchTimeout(aRequest) {
     if (this.context == "chrome") {
       try {
-        this.elementManager.setSearchTimeout(aRequest.value);
+        this.curBrowser.elementManager.setSearchTimeout(aRequest.value);
         this.sendOk();
       }
       catch (e) {
@@ -730,7 +777,7 @@ MarionetteDriverActor.prototype = {
       let id;
       try {
         let notify = this.sendResponse.bind(this);
-        id = this.elementManager.find(aRequest, this.getCurrentWindow().document, notify, false);
+        id = this.curBrowser.elementManager.find(this.getCurrentWindow(),aRequest, notify, false);
       }
       catch (e) {
         this.sendError(e.message, e.num, e.stack);
@@ -754,7 +801,7 @@ MarionetteDriverActor.prototype = {
       let id;
       try {
         let notify = this.sendResponse.bind(this);
-        id = this.elementManager.find(aRequest, this.getCurrentWindow().document, notify, true);
+        id = this.curBrowser.elementManager.find(this.getCurrentWindow(), aRequest, notify, true);
       }
       catch (e) {
         this.sendError(e.message, e.num, e.stack);
@@ -774,7 +821,204 @@ MarionetteDriverActor.prototype = {
    *        the element that will be clicked
    */
   clickElement: function MDA_clickElement(aRequest) {
-    this.sendAsync("clickElement", {element: aRequest.element});
+    if (this.context == "chrome") {
+      try {
+        //NOTE: click atom fails, fall back to click() action
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        el.click();
+        this.sendOk();
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("clickElement", {element: aRequest.element});
+    }
+  },
+
+  /**
+   * Get a given attribute of an element
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be inspected
+   *        'name' member holds the name of the attribute to retrieve
+   */
+  getAttributeValue: function MDA_getAttributeValue(aRequest) {
+    if (this.context == "chrome") {
+      try {
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        this.sendResponse(utils.getAttributeValue(el, aRequest.name));
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("getAttributeValue", {element: aRequest.element, name: aRequest.name});
+    }
+  },
+
+  /**
+   * Get the text of an element, if any. Includes the text of all child elements.
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be inspected 
+   */
+  getElementText: function MDA_getElementText(aRequest) {
+    if (this.context == "chrome") {
+      //Note: for chrome, we look at text nodes, and any node with a "label" field
+      try {
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        let lines = [];
+        this.getVisibleText(el, lines);
+        lines = lines.join("\n");
+        this.sendResponse(lines);
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("getElementText", {element: aRequest.element});
+    }
+  },
+
+  /**
+   * Check if element is displayed
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be checked 
+   */
+  isElementDisplayed: function MDA_isElementDisplayed(aRequest) {
+    if (this.context == "chrome") {
+      try {
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        this.sendResponse(utils.isElementDisplayed(el));
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("isElementDisplayed", {element:aRequest.element});
+    }
+  },
+
+  /**
+   * Check if element is enabled
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be checked
+   */
+  isElementEnabled: function MDA_isElementEnabled(aRequest) {
+    if (this.context == "chrome") {
+      try {
+        //Selenium atom doesn't quite work here
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        if (el.disabled != undefined) {
+          this.sendResponse(!!!el.disabled);
+        }
+        else {
+        this.sendResponse(true);
+        }
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("isElementEnabled", {element:aRequest.element});
+    }
+  },
+
+  /**
+   * Check if element is selected
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be checked
+   */
+  isElementSelected: function MDA_isElementSelected(aRequest) {
+    if (this.context == "chrome") {
+      try {
+        //Selenium atom doesn't quite work here
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        if (el.checked != undefined) {
+          this.sendResponse(!!el.checked);
+        }
+        else if (el.selected != undefined) {
+          this.sendResponse(!!el.selected);
+        }
+        else {
+          this.sendResponse(true);
+        }
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("isElementSelected", {element:aRequest.element});
+    }
+  },
+
+  /**
+   * Send key presses to element after focusing on it
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be checked
+   *        'value' member holds the value to send to the element
+   */
+  sendKeysToElement: function MDA_sendKeysToElement(aRequest) {
+    if (this.context == "chrome") {
+      try {
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        el.focus();
+        utils.sendString(aRequest.value, utils.window);
+        this.sendOk();
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("sendKeysToElement", {element:aRequest.element, value: aRequest.value});
+    }
+  },
+
+  /**
+   * Clear the text of an element
+   *
+   * @param object aRequest
+   *        'element' member holds the reference id to
+   *        the element that will be cleared 
+   */
+  clearElement: function MDA_clearElement(aRequest) {
+    if (this.context == "chrome") {
+      //the selenium atom doesn't work here
+      try {
+        let el = this.curBrowser.elementManager.getKnownElement(aRequest.element, this.getCurrentWindow());
+        if (el.nodeName == "textbox") {
+          el.value = "";
+        }
+        else if (el.nodeName == "checkbox") {
+          el.checked = false;
+        }
+        this.sendOk();
+      }
+      catch (e) {
+        this.sendError(e.message, e.num, e.stack);
+      }
+    }
+    else {
+      this.sendAsync("clearElement", {element:aRequest.element});
+    }
   },
 
   /**
@@ -787,16 +1031,16 @@ MarionetteDriverActor.prototype = {
    * and can safely be reused.
    */
   deleteSession: function MDA_deleteSession() {
-    if (this.browsers[this.curBrowser] != null) {
+    if (this.curBrowser != null) {
       if (appName == "B2G") {
-        this.messageManager.sendAsyncMessage("Marionette:sleepSession" + this.browsers[this.curBrowser].mainContentId, {});
-        this.browsers[this.curBrowser].knownFrames.splice(this.browsers[this.curBrowser].knownFrames.indexOf(this.browsers[this.curBrowser].mainContentId), 1);
+        this.messageManager.sendAsyncMessage("Marionette:sleepSession" + this.curBrowser.mainContentId, {});
+        this.curBrowser.knownFrames.splice(this.curBrowser.knownFrames.indexOf(this.curBrowser.mainContentId), 1);
       }
       else {
         //don't set this pref for B2G since the framescript can be safely reused
         prefs.setBoolPref("marionette.contentListener", false);
       }
-      this.browsers[this.curBrowser].closeTab();
+      this.curBrowser.closeTab();
       //delete session in each frame in each browser
       for (let win in this.browsers) {
         for (let i in this.browsers[win].knownFrames) {
@@ -817,7 +1061,6 @@ MarionetteDriverActor.prototype = {
     this.messageManager.removeMessageListener("Marionette:register", this);
     this.messageManager.removeMessageListener("Marionette:goUrl", this);
     this.curBrowser = null;
-    this.elementManager.reset();
   },
 
   /**
@@ -849,15 +1092,15 @@ MarionetteDriverActor.prototype = {
       case "Marionette:register":
         // This code processes the content listener's registration information
         // and either accepts the listener, or ignores it
-        let nullPrevious= (this.browsers[this.curBrowser].curFrameId == null);
+        let nullPrevious = (this.curBrowser.curFrameId == null);
         let curWin = this.getCurrentWindow();
         let frameObject = curWin.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIDOMWindowUtils).getOuterWindowWithId(message.json.value);
-        let reg = this.browsers[this.curBrowser].register(message.json.value, message.json.href);
+        let reg = this.curBrowser.register(message.json.value, message.json.href);
         if (reg) {
-          this.elementManager.seenItems[reg] = frameObject; //add to seenItems
-          if (nullPrevious && (this.browsers[this.curBrowser].curFrameId != null)) {
+          this.curBrowser.elementManager.seenItems[reg] = frameObject; //add to seenItems
+          if (nullPrevious && (this.curBrowser.curFrameId != null)) {
             this.sendAsync("newSession", {B2G: (appName == "B2G")});
-            if (this.browsers[this.curBrowser].newSession) {
+            if (this.curBrowser.newSession) {
               this.sendResponse(reg);
             }
           }
@@ -866,7 +1109,7 @@ MarionetteDriverActor.prototype = {
       case "Marionette:goUrl":
         // if content determines that the goUrl call is directed at a top level window (not an iframe)
         // it calls back into chrome to load the uri.
-        this.browsers[this.curBrowser].loadURI(message.json.value, this);
+        this.curBrowser.loadURI(message.json.value, this);
         break;
     }
   },
@@ -876,7 +1119,7 @@ MarionetteDriverActor.prototype = {
   handleEvent: function MDA_handleEvent(evt) {
     if (evt.type == "DOMContentLoaded") {
       this.sendOk();
-      this.browsers[this.curBrowser].browser.removeEventListener("DOMContentLoaded", this, false);
+      this.curBrowser.browser.removeEventListener("DOMContentLoaded", this, false);
     }
   },
 };
@@ -894,6 +1137,13 @@ MarionetteDriverActor.prototype.requestTypes = {
   "findElement": MarionetteDriverActor.prototype.findElement,
   "findElements": MarionetteDriverActor.prototype.findElements,
   "clickElement": MarionetteDriverActor.prototype.clickElement,
+  "getAttributeValue": MarionetteDriverActor.prototype.getAttributeValue,
+  "getElementText": MarionetteDriverActor.prototype.getElementText,
+  "isElementDisplayed": MarionetteDriverActor.prototype.isElementDisplayed,
+  "isElementEnabled": MarionetteDriverActor.prototype.isElementEnabled,
+  "isElementSelected": MarionetteDriverActor.prototype.isElementSelected,
+  "sendKeysToElement": MarionetteDriverActor.prototype.sendKeysToElement,
+  "clearElement": MarionetteDriverActor.prototype.clearElement,
   "goUrl": MarionetteDriverActor.prototype.goUrl,
   "getUrl": MarionetteDriverActor.prototype.getUrl,
   "goBack": MarionetteDriverActor.prototype.goBack,
@@ -918,7 +1168,6 @@ function BrowserObj(win) {
   this.DESKTOP = "desktop";
   this.B2G = "B2G";
   this.browser;
-  this.browser_mm;
   this.tab = null;
   this.knownFrames = [];
   this.curFrameId = null;
@@ -927,6 +1176,7 @@ function BrowserObj(win) {
   this.messageManager = Cc["@mozilla.org/globalmessagemanager;1"].
                              getService(Ci.nsIChromeFrameMessageManager);
   this.newSession = true; //used to set curFrameId upon new session
+  this.elementManager = new ElementManager([SELECTOR, NAME, LINK_TEXT, PARTIAL_LINK_TEXT]);
   this.setBrowser(win);
 }
 
@@ -967,8 +1217,9 @@ BrowserObj.prototype = {
     }
     else {
       //set this.tab to the currently focused tab
-      this.tab = this.browser.selectedTab;
-      this.browser_mm = this.browser.getBrowserForTab(this.tab).messageManager;
+      if (this.browser != undefined && this.browser.selectedTab != undefined) {
+        this.tab = this.browser.selectedTab;
+      }
     }
   },
 

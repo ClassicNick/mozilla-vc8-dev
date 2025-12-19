@@ -148,7 +148,6 @@
 #include "nsIJSContextStack.h"
 #include "nsIJSRuntimeService.h"
 #include "nsIMarkupDocumentViewer.h"
-#include "nsIPrefBranch.h"
 #include "nsIPresShell.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsIProgrammingLanguage.h"
@@ -809,7 +808,7 @@ public:
     return true;
   }
   JSString *obj_toString(JSContext *cx, JSObject *wrapper);
-  void finalize(JSContext *cx, JSObject *proxy);
+  void finalize(JSFreeOp *fop, JSObject *proxy);
 
   static nsOuterWindowProxy singleton;
 };
@@ -824,7 +823,7 @@ nsOuterWindowProxy::obj_toString(JSContext *cx, JSObject *proxy)
 }
 
 void
-nsOuterWindowProxy::finalize(JSContext *cx, JSObject *proxy)
+nsOuterWindowProxy::finalize(JSFreeOp *fop, JSObject *proxy)
 {
   nsISupports *global =
     static_cast<nsISupports*>(js::GetProxyExtra(proxy, 0).toPrivate());
@@ -1224,6 +1223,7 @@ nsGlobalWindow::CleanUp(bool aIgnoreModalDialog)
   mLocation = nsnull;
   mHistory = nsnull;
   mFrames = nsnull;
+  mWindowUtils = nsnull;
   mApplicationCache = nsnull;
   mIndexedDB = nsnull;
   mPendingStorageEventsObsolete = nsnull;
@@ -1439,6 +1439,11 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsGlobalWindow)
     if (tmp->mCachedXBLPrototypeHandlers.IsInitialized()) {
       tmp->mCachedXBLPrototypeHandlers.EnumerateRead(MarkXBLHandlers, nsnull);
     }
+    nsEventListenerManager* elm = tmp->GetListenerManager(false);
+    if (elm) {
+      elm->UnmarkGrayJSListeners();
+    }
+    tmp->UnmarkGrayTimers();
     return true;
   }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
@@ -1475,6 +1480,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsGlobalWindow)
     cb.NoteNativeChild(timeout, &NS_CYCLE_COLLECTION_NAME(nsTimeout));
   }
 
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mLocalStorage)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mSessionStorage)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mApplicationCache)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDocumentPrincipal)
@@ -1512,6 +1518,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
     tmp->mListenerManager->Disconnect();
     NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mListenerManager)
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mLocalStorage)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mSessionStorage)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mApplicationCache)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDocumentPrincipal)
@@ -5962,8 +5969,7 @@ nsGlobalWindow::GetFrames(nsIDOMWindow** aFrames)
   return NS_OK;
 }
 
-nsGlobalWindow*
-nsGlobalWindow::CallerInnerWindow()
+JSObject* nsGlobalWindow::CallerGlobal()
 {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (!cx) {
@@ -5987,6 +5993,21 @@ nsGlobalWindow::CallerInnerWindow()
 
   if (!scope)
     scope = JS_GetGlobalForScopeChain(cx);
+
+  return scope;
+}
+
+nsGlobalWindow*
+nsGlobalWindow::CallerInnerWindow()
+{
+  JSContext *cx = nsContentUtils::GetCurrentJSContext();
+  if (!cx) {
+    NS_ERROR("Please don't call this method from C++!");
+
+    return nsnull;
+  }
+
+  JSObject *scope = CallerGlobal();
 
   JSAutoEnterCompartment ac;
   if (!ac.enter(cx, scope))
@@ -6310,21 +6331,30 @@ nsGlobalWindow::PostMessageMoz(const jsval& aMessage,
 
   // First, get the caller's window
   nsRefPtr<nsGlobalWindow> callerInnerWin = CallerInnerWindow();
-  if (!callerInnerWin)
-    return NS_OK;
-  NS_ABORT_IF_FALSE(callerInnerWin->IsInnerWindow(),
-                    "should have gotten an inner window here");
+  nsIPrincipal* callerPrin;
+  if (callerInnerWin) {
+    NS_ABORT_IF_FALSE(callerInnerWin->IsInnerWindow(),
+                      "should have gotten an inner window here");
 
-  // Compute the caller's origin either from its principal or, in the case the
-  // principal doesn't carry a URI (e.g. the system principal), the caller's
-  // document.  We must get this now instead of when the event is created and
-  // dispatched, because ultimately it is the identity of the calling window
-  // *now* that determines who sent the message (and not an identity which might
-  // have changed due to intervening navigations).
-  nsIPrincipal* callerPrin = callerInnerWin->GetPrincipal();
+    // Compute the caller's origin either from its principal or, in the case the
+    // principal doesn't carry a URI (e.g. the system principal), the caller's
+    // document.  We must get this now instead of when the event is created and
+    // dispatched, because ultimately it is the identity of the calling window
+    // *now* that determines who sent the message (and not an identity which might
+    // have changed due to intervening navigations).
+    callerPrin = callerInnerWin->GetPrincipal();
+  }
+  else {
+    // In case the global is not a window, it can be a sandbox, and the sandbox's
+    // principal can be used for the security check.
+    JSObject *global = CallerGlobal();
+    NS_ASSERTION(global, "Why is there no global object?");
+    JSCompartment *compartment = js::GetObjectCompartment(global);
+    callerPrin = xpc::GetCompartmentPrincipal(compartment);
+  }
   if (!callerPrin)
     return NS_OK;
-  
+
   nsCOMPtr<nsIURI> callerOuterURI;
   if (NS_FAILED(callerPrin->GetURI(getter_AddRefs(callerOuterURI))))
     return NS_OK;
@@ -6334,14 +6364,19 @@ nsGlobalWindow::PostMessageMoz(const jsval& aMessage,
     // if the principal has a URI, use that to generate the origin
     nsContentUtils::GetUTFOrigin(callerPrin, origin);
   }
-  else {
+  else if (callerInnerWin) {
     // otherwise use the URI of the document to generate origin
-    nsCOMPtr<nsIDocument> doc = do_QueryInterface(callerInnerWin->mDocument);
+    nsCOMPtr<nsIDocument> doc = do_QueryInterface(callerInnerWin->GetExtantDocument());
     if (!doc)
       return NS_OK;
     callerOuterURI = doc->GetDocumentURI();
     // if the principal has a URI, use that to generate the origin
     nsContentUtils::GetUTFOrigin(callerOuterURI, origin);
+  }
+  else {
+    // in case of a sandbox with a system principal origin can be empty
+    if (!nsContentUtils::IsSystemPrincipal(callerPrin))
+      return NS_OK;
   }
 
   // Convert the provided origin string into a URI for comparison purposes.
@@ -6358,7 +6393,7 @@ nsGlobalWindow::PostMessageMoz(const jsval& aMessage,
   // Create and asynchronously dispatch a runnable which will handle actual DOM
   // event creation and dispatch.
   nsRefPtr<PostMessageEvent> event =
-    new PostMessageEvent(nsContentUtils::IsCallerChrome()
+    new PostMessageEvent(nsContentUtils::IsCallerChrome() || !callerInnerWin
                          ? nsnull
                          : callerInnerWin->GetOuterWindowInternal(),
                          origin,
@@ -7153,6 +7188,8 @@ nsGlobalWindow::ShowModalDialog(const nsAString& aURI, nsIVariant *aArgs,
   options.AppendLiteral(",scrollbars=1,centerscreen=1,resizable=0");
 
   nsCOMPtr<nsIDOMWindow> callerWin = EnterModalState();
+  PRUint32 oldMicroTaskLevel = nsContentUtils::MicroTaskLevel();
+  nsContentUtils::SetMicroTaskLevel(0);
   nsresult rv = OpenInternal(aURI, EmptyString(), options,
                              false,          // aDialog
                              true,           // aContentModal
@@ -7162,6 +7199,7 @@ nsGlobalWindow::ShowModalDialog(const nsAString& aURI, nsIVariant *aArgs,
                              GetPrincipal(),    // aCalleePrincipal
                              nsnull,            // aJSCallerContext
                              getter_AddRefs(dlgWin));
+  nsContentUtils::SetMicroTaskLevel(oldMicroTaskLevel);
   LeaveModalState(callerWin);
 
   NS_ENSURE_SUCCESS(rv, rv);
@@ -8368,20 +8406,12 @@ nsGlobalWindow::GetInterface(const nsIID & aIID, void **aSink)
   else if (aIID.Equals(NS_GET_IID(nsIDOMWindowUtils))) {
     FORWARD_TO_OUTER(GetInterface, (aIID, aSink), NS_ERROR_NOT_INITIALIZED);
 
-    nsCOMPtr<nsISupports> utils(do_QueryReferent(mWindowUtils));
-    if (utils) {
-      *aSink = utils;
-      NS_ADDREF(((nsISupports *) *aSink));
-    } else {
-      nsDOMWindowUtils *utilObj = new nsDOMWindowUtils(this);
-      nsCOMPtr<nsISupports> utilsIfc =
-                              NS_ISUPPORTS_CAST(nsIDOMWindowUtils *, utilObj);
-      if (utilsIfc) {
-        mWindowUtils = do_GetWeakReference(utilsIfc);
-        *aSink = utilsIfc;
-        NS_ADDREF(((nsISupports *) *aSink));
-      }
+    if (!mWindowUtils) {
+      mWindowUtils = new nsDOMWindowUtils(this);
     }
+
+    *aSink = mWindowUtils;
+    NS_ADDREF(((nsISupports *) *aSink));
   }
   else {
     return QueryInterface(aIID, aSink);
@@ -8458,15 +8488,6 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       if (NS_FAILED(rv)) {
         return NS_OK;
       }
-
-      if (!nsDOMStorageList::CanAccessDomain(NS_ConvertUTF16toUTF8(aData),
-                                             currentDomain)) {
-        // This window can't reach the global storage object for the
-        // domain for which the change happened, so don't fire any
-        // events in this window.
-
-        return NS_OK;
-      }
     }
 
     nsAutoString domain(aData);
@@ -8530,17 +8551,12 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
     nsCOMPtr<nsPIDOMStorage> pistorage = do_QueryInterface(changingStorage);
     nsPIDOMStorage::nsDOMStorageType storageType = pistorage->StorageType();
 
+    bool fireMozStorageChanged = false;
     principal = GetPrincipal();
     switch (storageType)
     {
     case nsPIDOMStorage::SessionStorage:
     {
-      if (SameCOMIdentity(mSessionStorage, changingStorage)) {
-        // Do not fire any events for the same storage object, it's not shared
-        // among windows, see nsGlobalWindow::GetSessionStoarge()
-        return NS_OK;
-      }
-
       nsCOMPtr<nsIDOMStorage> storage = mSessionStorage;
       if (!storage) {
         nsIDocShell* docShell = GetDocShell();
@@ -8566,16 +8582,11 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       }
 #endif
 
+      fireMozStorageChanged = SameCOMIdentity(mSessionStorage, changingStorage);
       break;
     }
     case nsPIDOMStorage::LocalStorage:
     {
-      if (SameCOMIdentity(mLocalStorage, changingStorage)) {
-        // Do not fire any events for the same storage object, it's not shared
-        // among windows, see nsGlobalWindow::GetLocalStoarge()
-        return NS_OK;
-      }
-
       // Allow event fire only for the same principal storages
       // XXX We have to use EqualsIgnoreDomain after bug 495337 lands
       nsIPrincipal *storagePrincipal = pistorage->Principal();
@@ -8587,10 +8598,29 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       if (!equals)
         return NS_OK;
 
+      fireMozStorageChanged = SameCOMIdentity(mLocalStorage, changingStorage);
       break;
     }
     default:
       return NS_OK;
+    }
+
+    // Clone the storage event included in the observer notification. We want
+    // to dispatch clones rather than the original event.
+    rv = CloneStorageEvent(fireMozStorageChanged ?
+                           NS_LITERAL_STRING("MozStorageChanged") :
+                           NS_LITERAL_STRING("storage"),
+                           event);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsCOMPtr<nsIPrivateDOMEvent> privateEvent = do_QueryInterface(event, &rv);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    privateEvent->SetTrusted(true);
+
+    if (fireMozStorageChanged) {
+      nsEvent *internalEvent = privateEvent->GetInternalNSEvent();
+      internalEvent->flags |= NS_EVENT_FLAG_ONLY_CHROME_DISPATCH;
     }
 
     if (IsFrozen()) {
@@ -8626,6 +8656,38 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
 
   NS_WARNING("unrecognized topic in nsGlobalWindow::Observe");
   return NS_ERROR_FAILURE;
+}
+
+nsresult
+nsGlobalWindow::CloneStorageEvent(const nsAString& aType,
+                                  nsCOMPtr<nsIDOMStorageEvent>& aEvent)
+{
+  nsresult rv;
+
+  bool canBubble;
+  bool cancelable;
+  nsAutoString key;
+  nsAutoString oldValue;
+  nsAutoString newValue;
+  nsAutoString url;
+  nsCOMPtr<nsIDOMStorage> storageArea;
+
+  nsCOMPtr<nsIDOMEvent> domEvent = do_QueryInterface(aEvent, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  domEvent->GetBubbles(&canBubble);
+  domEvent->GetCancelable(&cancelable);
+
+  aEvent->GetKey(key);
+  aEvent->GetOldValue(oldValue);
+  aEvent->GetNewValue(newValue);
+  aEvent->GetUrl(url);
+  aEvent->GetStorageArea(getter_AddRefs(storageArea));
+
+  aEvent = new nsDOMStorageEvent();
+  return aEvent->InitStorageEvent(aType, canBubble, cancelable,
+                                  key, oldValue, newValue,
+                                  url, storageArea);
 }
 
 static PLDHashOperator

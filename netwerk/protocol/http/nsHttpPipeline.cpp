@@ -172,7 +172,13 @@ nsHttpPipeline::PipelinePosition()
     nsAHttpTransaction *trans = Response(0);
     if (trans)
         return trans->PipelinePosition();
-    return 2;
+
+    // The response queue is empty, so return oldest request
+    if (mRequestQ.Length())
+        return Request(mRequestQ.Length() - 1)->PipelinePosition();
+    
+    // No transactions in the pipeline
+    return 0;
 }
 
 nsHttpPipeline *
@@ -288,9 +294,10 @@ nsHttpPipeline::CloseTransaction(nsAHttpTransaction *trans, nsresult reason)
     trans->Close(reason);
     NS_RELEASE(trans);
 
-    if (killPipeline)
+    if (killPipeline) {
         // reschedule anything from this pipeline onto a different connection
         CancelPipeline(reason);
+    }
 }
 
 void
@@ -764,10 +771,14 @@ nsHttpPipeline::WriteSegments(nsAHttpSegmentWriter *writer,
 
         if (rv == NS_BASE_STREAM_CLOSED || trans->IsDone()) {
             trans->Close(NS_OK);
-            NS_RELEASE(trans);
-            mResponseQ.RemoveElementAt(0);
-            mResponseIsPartial = false;
-            ++mHttp1xTransactionCount;
+
+            // Release the transaction if it is not IsProxyConnectInProgress()
+            if (trans == Response(0)) {
+                NS_RELEASE(trans);
+                mResponseQ.RemoveElementAt(0);
+                mResponseIsPartial = false;
+                ++mHttp1xTransactionCount;
+            }
 
             // ask the connection manager to add additional transactions
             // to our pipeline.
@@ -833,7 +844,9 @@ nsHttpPipeline::CancelPipeline(nsresult originalReason)
     mRequestQ.Clear();
 
     // any pending responses can be restarted except for the first one,
-    // that we might want to finish on this pipeline or cancel individually
+    // that we might want to finish on this pipeline or cancel individually.
+    // Higher levels of callers ensure that we don't process non-idempotent
+    // tranasction with the NS_HTTP_ALLOW_PIPELINING bit set
     for (i = 1; i < respLen; ++i) {
         trans = Response(i);
         trans->Close(NS_ERROR_NET_RESET);

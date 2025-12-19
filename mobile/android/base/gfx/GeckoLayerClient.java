@@ -58,7 +58,7 @@ import android.util.Log;
 import android.view.View;
 
 public class GeckoLayerClient implements GeckoEventResponder,
-                                         FlexibleGLSurfaceView.Listener {
+                                         LayerView.Listener {
     private static final String LOGTAG = "GeckoLayerClient";
     private static final String PREF_DISPLAYPORT_STRATEGY = "gfx.displayport.strategy";
 
@@ -173,16 +173,21 @@ public class GeckoLayerClient implements GeckoEventResponder,
         GeckoAppShell.viewSizeChanged();
     }
 
-    private void adjustViewport() {
-        ViewportMetrics viewportMetrics =
-            new ViewportMetrics(mLayerController.getViewportMetrics());
+    void adjustViewport(DisplayPortMetrics displayPort) {
+        ImmutableViewportMetrics metrics = mLayerController.getViewportMetrics();
 
-        viewportMetrics.setViewport(viewportMetrics.getClampedViewport());
+        ViewportMetrics clampedMetrics = new ViewportMetrics(metrics);
+        clampedMetrics.setViewport(clampedMetrics.getClampedViewport());
 
-        mDisplayPort = DisplayPortCalculator.calculate(mLayerController.getViewportMetrics(),
-                mLayerController.getPanZoomController().getVelocityVector());
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createViewportEvent(viewportMetrics, mDisplayPort));
-        mGeckoViewport = viewportMetrics;
+        if (displayPort == null) {
+            displayPort = DisplayPortCalculator.calculate(metrics,
+                    mLayerController.getPanZoomController().getVelocityVector());
+        }
+
+        mDisplayPort = displayPort;
+        mGeckoViewport = clampedMetrics;
+
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createViewportEvent(clampedMetrics, displayPort));
     }
 
     /**
@@ -211,8 +216,12 @@ public class GeckoLayerClient implements GeckoEventResponder,
                 mLayerController.abortPanZoomAnimation();
                 break;
             case PAGE_SIZE:
+                // adjust the page dimensions to account for differences in zoom
+                // between the rendered content (which is what Gecko tells us)
+                // and our zoom level (which may have diverged).
+                float scaleFactor = oldMetrics.zoomFactor / messageMetrics.getZoomFactor();
                 newMetrics = new ViewportMetrics(oldMetrics);
-                newMetrics.setPageSize(messageMetrics.getPageSize());
+                newMetrics.setPageSize(messageMetrics.getPageSize().scale(scaleFactor));
                 break;
             }
 
@@ -277,7 +286,7 @@ public class GeckoLayerClient implements GeckoEventResponder,
         /* Let Gecko know if the screensize has changed */
         sendResizeEventIfNecessary(false);
         if (mLayerController.getRedrawHint())
-            adjustViewport();
+            adjustViewport(null);
     }
 
     /*
@@ -398,19 +407,19 @@ public class GeckoLayerClient implements GeckoEventResponder,
         mLayerRenderer.deactivateDefaultProgram();
     }
 
-    /** Implementation of FlexibleGLSurfaceView.Listener */
+    /** Implementation of LayerView.Listener */
     public void renderRequested() {
         GeckoAppShell.scheduleComposite();
     }
 
-    /** Implementation of FlexibleGLSurfaceView.Listener */
+    /** Implementation of LayerView.Listener */
     public void compositionPauseRequested() {
         // We need to coordinate with Gecko when pausing composition, to ensure
         // that Gecko never executes a draw event while the compositor is paused.
         GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorPauseEvent());
     }
 
-    /** Implementation of FlexibleGLSurfaceView.Listener */
+    /** Implementation of LayerView.Listener */
     public void compositionResumeRequested() {
         // Asking Gecko to resume the compositor takes too long (see
         // https://bugzilla.mozilla.org/show_bug.cgi?id=735230#c23), so we
@@ -420,7 +429,7 @@ public class GeckoLayerClient implements GeckoEventResponder,
         GeckoAppShell.sendEventToGecko(GeckoEvent.createCompositorResumeEvent());
     }
 
-    /** Implementation of FlexibleGLSurfaceView.Listener */
+    /** Implementation of LayerView.Listener */
     public void surfaceChanged(int width, int height) {
         mLayerController.setViewportSize(new FloatSize(width, height));
 

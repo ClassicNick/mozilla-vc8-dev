@@ -143,7 +143,7 @@ class Type
     static inline Type Int32Type()     { return Type(JSVAL_TYPE_INT32); }
     static inline Type DoubleType()    { return Type(JSVAL_TYPE_DOUBLE); }
     static inline Type StringType()    { return Type(JSVAL_TYPE_STRING); }
-    static inline Type LazyArgsType()  { return Type(JSVAL_TYPE_MAGIC); }
+    static inline Type MagicArgType()  { return Type(JSVAL_TYPE_MAGIC); }
     static inline Type AnyObjectType() { return Type(JSVAL_TYPE_OBJECT); }
     static inline Type UnknownType()   { return Type(JSVAL_TYPE_UNKNOWN); }
 
@@ -366,7 +366,7 @@ class TypeSet
 
     void print(JSContext *cx);
 
-    inline void sweep(JSContext *cx, JSCompartment *compartment);
+    inline void sweep(JSCompartment *compartment);
     inline size_t computedSizeOfExcludingThis();
 
     /* Whether this set contains a specific type. */
@@ -468,7 +468,7 @@ class TypeSet
     /* Get any type tag which all values in this set must have. */
     JSValueType getKnownTypeTag(JSContext *cx);
 
-    bool isLazyArguments(JSContext *cx) { return getKnownTypeTag(cx) == JSVAL_TYPE_MAGIC; }
+    bool isMagicArguments(JSContext *cx) { return getKnownTypeTag(cx) == JSVAL_TYPE_MAGIC; }
 
     /* Whether the type set or a particular object has any of a set of flags. */
     bool hasObjectFlags(JSContext *cx, TypeObjectFlags flags);
@@ -864,7 +864,7 @@ struct TypeObject : gc::Cell
     void print(JSContext *cx);
 
     inline void clearProperties();
-    inline void sweep(JSContext *cx);
+    inline void sweep(FreeOp *fop);
 
     inline size_t computedSizeOfExcludingThis();
 
@@ -875,7 +875,7 @@ struct TypeObject : gc::Cell
      * object pending deletion is released when weak references are sweeped
      * from all the compartment's type objects.
      */
-    void finalize(JSContext *cx, bool background) {}
+    void finalize(FreeOp *fop) {}
 
     static inline void writeBarrierPre(TypeObject *type);
     static inline void writeBarrierPost(TypeObject *type, void *addr);
@@ -1121,7 +1121,7 @@ class TypeScript
     static inline void SetArgument(JSContext *cx, JSScript *script, unsigned arg, Type type);
     static inline void SetArgument(JSContext *cx, JSScript *script, unsigned arg, const js::Value &value);
 
-    static void Sweep(JSContext *cx, JSScript *script);
+    static void Sweep(FreeOp *fop, JSScript *script);
     inline void trace(JSTracer *trc);
     void destroy();
 };
@@ -1244,11 +1244,12 @@ struct TypeCompartment
     /* Make an object for an allocation site. */
     TypeObject *newAllocationSiteTypeObject(JSContext *cx, const AllocationSiteKey &key);
 
-    void nukeTypes(JSContext *cx);
-    void processPendingRecompiles(JSContext *cx);
+    void nukeTypes(FreeOp *fop);
+    void processPendingRecompiles(FreeOp *fop);
 
     /* Mark all types as needing destruction once inference has 'finished'. */
     void setPendingNukeTypes(JSContext *cx);
+    void setPendingNukeTypesNoReport();
 
     /* Mark a script as needing recompilation once inference has finished. */
     void addPendingRecompile(JSContext *cx, const RecompileInfo &info);
@@ -1261,7 +1262,7 @@ struct TypeCompartment
     /* Mark any type set containing obj as having a generic object type. */
     void markSetsUnknown(JSContext *cx, TypeObject *obj);
 
-    void sweep(JSContext *cx);
+    void sweep(FreeOp *fop);
     void finalizeObjects();
 };
 

@@ -428,9 +428,12 @@ js::RunScript(JSContext *cx, JSScript *script, StackFrame *fp)
     JS_ASSERT(script);
     JS_ASSERT(fp == cx->fp());
     JS_ASSERT(fp->script() == script);
+    JS_ASSERT_IF(!fp->isGeneratorFrame(), cx->regs().pc == script->code);
 #ifdef JS_METHODJIT_SPEW
     JMCheckLogging();
 #endif
+
+    JS_CHECK_RECURSION(cx, return false);
 
     /* FIXME: Once bug 470510 is fixed, make this an assert. */
     if (script->compileAndGo) {
@@ -512,7 +515,8 @@ js::InvokeKernel(JSContext *cx, CallArgs args, MaybeConstruct construct)
     if (fun->isNative())
         return CallJSNative(cx, fun->native(), args);
 
-    TypeMonitorCall(cx, args, construct);
+    if (!TypeMonitorCall(cx, args, construct))
+        return false;
 
     /* Get pointer to new frame/slots, prepare arguments. */
     InvokeFrameGuard ifg;
@@ -948,7 +952,6 @@ LeaveWith(JSContext *cx)
 {
     WithObject &withobj = cx->fp()->scopeChain().asWith();
     JS_ASSERT(withobj.maybeStackFrame() == js_FloatingFrameIfGenerator(cx, cx->fp()));
-    JS_ASSERT(withobj.stackDepth() >= 0);
     withobj.setStackFrame(NULL);
     cx->fp()->setScopeChainNoCallObj(withobj.enclosingScope());
 }
@@ -1090,6 +1093,55 @@ DoIncDec(JSContext *cx, JSScript *script, jsbytecode *pc, const Value &v, Value 
 
     TypeScript::MonitorOverflow(cx, script, pc);
     return true;
+}
+
+static inline void
+CheckLocalAccess(StackFrame *fp, unsigned index, bool aliased = false)
+{
+#ifdef DEBUG
+    if (index < fp->numFixed()) {
+        JS_ASSERT(fp->script()->varIsAliased(index) == aliased);
+    } else {
+        unsigned depth = index - fp->numFixed();
+        for (StaticBlockObject *b = fp->maybeBlockChain(); b; b = b->enclosingBlock()) {
+            if (b->containsVarAtDepth(depth)) {
+                JS_ASSERT(b->isAliased(depth - b->stackDepth()) == aliased);
+                return;
+            }
+        }
+        /*
+         * Unfortunately, strange uses of JSOP_GETLOCAL (e.g., comprehensions
+         * and group assignment) access slots above script->nfixed and not in
+         * any block so we cannot use JS_NOT_REACHED here.
+         */
+    }
+#endif
+}
+
+static inline void
+CheckArgAccess(StackFrame *fp, unsigned index)
+{
+    JS_ASSERT(fp->script()->argLivesInArgumentsObject(index) == fp->script()->needsArgsObj());
+}
+
+/*
+ * This function is temporary. Bug 659577 will change all ALIASEDVAR
+ * access to use the scope chain instead.
+ */
+static inline Value &
+AliasedVar(StackFrame *fp, ScopeCoordinate sc)
+{
+    JSScript *script = fp->script();
+#ifdef DEBUG
+    JS_ASSERT(sc.hops == 0);  /* Temporary */
+    if (script->bindings.bindingIsArg(sc.binding))
+        JS_ASSERT(script->argLivesInCallObject(script->bindings.bindingToArg(sc.binding)));
+    else
+        CheckLocalAccess(fp, script->bindings.bindingToLocal(sc.binding), true);
+#endif
+    return script->bindings.bindingIsArg(sc.binding)
+           ? fp->formalArg(script->bindings.bindingToArg(sc.binding))
+           : fp->localSlot(script->bindings.bindingToLocal(sc.binding));
 }
 
 #define PUSH_COPY(v)             do { *regs.sp++ = v; assertSameCompartment(cx, regs.sp[-1]); } while (0)
@@ -1288,9 +1340,9 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
     JS_ASSERT(!cx->compartment->activeAnalysis);
 
 #if JS_THREADED_INTERP
-#define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->pcCounters, jumpTable == interruptJumpTable)
+#define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->hasScriptCounts, jumpTable == interruptJumpTable)
 #else
-#define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->pcCounters, switchMask == -1)
+#define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->hasScriptCounts, switchMask == -1)
 #endif
 
     /*
@@ -1366,6 +1418,9 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 # define END_CASE_LEN5      len = 5; goto advance_pc;
 # define END_CASE_LEN6      len = 6; goto advance_pc;
 # define END_CASE_LEN7      len = 7; goto advance_pc;
+# define END_CASE_LEN8      len = 8; goto advance_pc;
+# define END_CASE_LEN9      len = 9; goto advance_pc;
+# define END_CASE_LEN10     len = 10; goto advance_pc;
 # define END_VARLEN_CASE    goto advance_pc;
 # define ADD_EMPTY_CASE(OP) BEGIN_CASE(OP)
 # define END_EMPTY_CASES    goto advance_pc_by_one;
@@ -1465,7 +1520,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
         script = (s);                                                         \
         if (script->hasAnyBreakpointsOrStepMode())                            \
             ENABLE_INTERRUPTS();                                              \
-        if (script->pcCounters)                                               \
+        if (script->hasScriptCounts)                                          \
             ENABLE_INTERRUPTS();                                              \
         JS_ASSERT_IF(interpMode == JSINTERP_SKIP_TRAP,                        \
                      script->hasAnyBreakpointsOrStepMode());                  \
@@ -1507,7 +1562,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
      * access. For less frequent object loads we have to recover the segment
      * from atoms pointer first.
      */
-    JSAtom **atoms = script->atoms;
+    HeapPtrAtom *atoms = script->atoms;
 
 #if JS_HAS_GENERATORS
     if (JS_UNLIKELY(regs.fp()->isGeneratorFrame())) {
@@ -1567,9 +1622,6 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
     int32_t len;
     len = 0;
 
-    /* Check for too deep of a native thread stack. */
-    JS_CHECK_RECURSION(cx, goto error);
-
     DO_NEXT_OP(len);
 
 #if JS_THREADED_INTERP
@@ -1609,14 +1661,14 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
         bool moreInterrupts = false;
 
         if (cx->runtime->profilingScripts) {
-            if (!script->pcCounters)
-                script->initCounts(cx);
+            if (!script->hasScriptCounts)
+                script->initScriptCounts(cx);
             moreInterrupts = true;
         }
 
-        if (script->pcCounters) {
-            OpcodeCounts counts = script->getCounts(regs.pc);
-            counts.get(OpcodeCounts::BASE_INTERP)++;
+        if (script->hasScriptCounts) {
+            PCCounts counts = script->getPCCounts(regs.pc);
+            counts.get(PCCounts::BASE_INTERP)++;
             moreInterrupts = true;
         }
 
@@ -1687,10 +1739,6 @@ ADD_EMPTY_CASE(JSOP_UNUSED0)
 ADD_EMPTY_CASE(JSOP_UNUSED1)
 ADD_EMPTY_CASE(JSOP_UNUSED2)
 ADD_EMPTY_CASE(JSOP_UNUSED3)
-ADD_EMPTY_CASE(JSOP_UNUSED4)
-ADD_EMPTY_CASE(JSOP_UNUSED5)
-ADD_EMPTY_CASE(JSOP_UNUSED6)
-ADD_EMPTY_CASE(JSOP_UNUSED7)
 ADD_EMPTY_CASE(JSOP_UNUSED8)
 ADD_EMPTY_CASE(JSOP_UNUSED9)
 ADD_EMPTY_CASE(JSOP_UNUSED10)
@@ -1709,9 +1757,6 @@ ADD_EMPTY_CASE(JSOP_UNUSED22)
 ADD_EMPTY_CASE(JSOP_UNUSED23)
 ADD_EMPTY_CASE(JSOP_UNUSED24)
 ADD_EMPTY_CASE(JSOP_UNUSED25)
-ADD_EMPTY_CASE(JSOP_UNUSED26)
-ADD_EMPTY_CASE(JSOP_UNUSED27)
-ADD_EMPTY_CASE(JSOP_UNUSED28)
 ADD_EMPTY_CASE(JSOP_UNUSED29)
 ADD_EMPTY_CASE(JSOP_UNUSED30)
 ADD_EMPTY_CASE(JSOP_UNUSED31)
@@ -2537,12 +2582,21 @@ BEGIN_CASE(JSOP_GNAMEDEC)
     /* No-op */
 END_CASE(JSOP_INCPROP)
 
+BEGIN_CASE(JSOP_DECALIASEDVAR)
+BEGIN_CASE(JSOP_ALIASEDVARDEC)
+BEGIN_CASE(JSOP_INCALIASEDVAR)
+BEGIN_CASE(JSOP_ALIASEDVARINC)
+    /* No-op */
+END_CASE(JSOP_ALIASEDVARINC)
+
 BEGIN_CASE(JSOP_DECARG)
 BEGIN_CASE(JSOP_ARGDEC)
 BEGIN_CASE(JSOP_INCARG)
 BEGIN_CASE(JSOP_ARGINC)
 {
-    Value &arg = regs.fp()->formalArg(GET_ARGNO(regs.pc));
+    unsigned i = GET_ARGNO(regs.pc);
+    CheckArgAccess(regs.fp(), i);
+    Value &arg = regs.fp()->formalArg(i);
     if (!DoIncDec(cx, script, regs.pc, arg, &arg, &regs.sp[0]))
         goto error;
     regs.sp++;
@@ -2554,7 +2608,9 @@ BEGIN_CASE(JSOP_LOCALDEC)
 BEGIN_CASE(JSOP_INCLOCAL)
 BEGIN_CASE(JSOP_LOCALINC)
 {
-    Value &local = regs.fp()->localSlot(GET_SLOTNO(regs.pc));
+    unsigned i = GET_SLOTNO(regs.pc);
+    CheckLocalAccess(regs.fp(), i);
+    Value &local = regs.fp()->localSlot(i);
     if (!DoIncDec(cx, script, regs.pc, local, &local, &regs.sp[0]))
         goto error;
     regs.sp++;
@@ -2655,15 +2711,8 @@ BEGIN_CASE(JSOP_EVAL)
 END_CASE(JSOP_EVAL)
 
 BEGIN_CASE(JSOP_FUNAPPLY)
-    if (regs.sp[-1].isMagic(JS_OPTIMIZED_ARGUMENTS)) {
-        CallArgs args = CallArgsFromSp(GET_ARGC(regs.pc), regs.sp);
-        if (!IsNativeFunction(args.calleev(), js_fun_apply)) {
-            JS_ASSERT(args.length() == 2);
-            if (!script->applySpeculationFailed(cx))
-                goto error;
-            args[1] = ObjectValue(regs.fp()->argsObj());
-        }
-    }
+    if (!GuardFunApplySpeculation(cx, regs))
+        goto error;
     /* FALL THROUGH */
 
 BEGIN_CASE(JSOP_NEW)
@@ -2694,7 +2743,8 @@ BEGIN_CASE(JSOP_FUNCALL)
         DO_NEXT_OP(len);
     }
 
-    TypeMonitorCall(cx, args, construct);
+    if (!TypeMonitorCall(cx, args, construct))
+        goto error;
 
     InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
 
@@ -2982,24 +3032,56 @@ END_VARLEN_CASE
 }
 
 BEGIN_CASE(JSOP_ARGUMENTS)
-    if (script->needsArgsObj())
-        PUSH_COPY(ObjectValue(regs.fp()->argsObj()));
-    else
+    if (script->needsArgsObj()) {
+        ArgumentsObject *obj = ArgumentsObject::create(cx, regs.fp());
+        if (!obj)
+            goto error;
+        PUSH_COPY(ObjectValue(*obj));
+    } else {
         PUSH_COPY(MagicValue(JS_OPTIMIZED_ARGUMENTS));
+    }
 END_CASE(JSOP_ARGUMENTS)
+
+BEGIN_CASE(JSOP_CALLALIASEDVAR)
+BEGIN_CASE(JSOP_GETALIASEDVAR)
+{
+    ScopeCoordinate sc = ScopeCoordinate(regs.pc);
+    Value &var = AliasedVar(regs.fp(), sc);
+    PUSH_COPY(var);
+}
+END_CASE(JSOP_GETALIASEDVAR)
+
+BEGIN_CASE(JSOP_SETALIASEDVAR)
+{
+    ScopeCoordinate sc = ScopeCoordinate(regs.pc);
+    Value &var = AliasedVar(regs.fp(), sc);
+    var = regs.sp[-1];
+}
+END_CASE(JSOP_SETALIASEDVAR)
 
 BEGIN_CASE(JSOP_GETARG)
 BEGIN_CASE(JSOP_CALLARG)
-    PUSH_COPY(regs.fp()->formalArg(GET_ARGNO(regs.pc)));
+{
+    unsigned i = GET_ARGNO(regs.pc);
+    CheckArgAccess(regs.fp(), i);
+    PUSH_COPY(regs.fp()->formalArg(i));
+}
 END_CASE(JSOP_GETARG)
 
 BEGIN_CASE(JSOP_SETARG)
-    regs.fp()->formalArg(GET_ARGNO(regs.pc)) = regs.sp[-1];
+{
+    unsigned i = GET_ARGNO(regs.pc);
+    CheckArgAccess(regs.fp(), i);
+    regs.fp()->formalArg(i) = regs.sp[-1];
+}
 END_CASE(JSOP_SETARG)
 
 BEGIN_CASE(JSOP_GETLOCAL)
 BEGIN_CASE(JSOP_CALLLOCAL)
-    PUSH_COPY_SKIP_CHECK(regs.fp()->localSlot(GET_SLOTNO(regs.pc)));
+{
+    unsigned i = GET_SLOTNO(regs.pc);
+    CheckLocalAccess(regs.fp(), i);
+    PUSH_COPY_SKIP_CHECK(regs.fp()->localSlot(i));
 
     /*
      * Skip the same-compartment assertion if the local will be immediately
@@ -3009,10 +3091,15 @@ BEGIN_CASE(JSOP_CALLLOCAL)
      */
     if (regs.pc[JSOP_GETLOCAL_LENGTH] != JSOP_POP)
         assertSameCompartment(cx, regs.sp[-1]);
+}
 END_CASE(JSOP_GETLOCAL)
 
 BEGIN_CASE(JSOP_SETLOCAL)
-    regs.fp()->localSlot(GET_SLOTNO(regs.pc)) = regs.sp[-1];
+{
+    unsigned i = GET_SLOTNO(regs.pc);
+    CheckLocalAccess(regs.fp(), i);
+    regs.fp()->localSlot(i) = regs.sp[-1];
+}
 END_CASE(JSOP_SETLOCAL)
 
 BEGIN_CASE(JSOP_DEFCONST)
@@ -3955,6 +4042,7 @@ BEGIN_CASE(JSOP_ARRAYPUSH)
     uint32_t slot = GET_UINT16(regs.pc);
     JS_ASSERT(script->nfixed <= slot);
     JS_ASSERT(slot < script->nslots);
+    CheckLocalAccess(regs.fp(), slot);
     JSObject *obj = &regs.fp()->slots()[slot].toObject();
     if (!js_NewbornArrayPush(cx, obj, regs.sp[-1]))
         goto error;
@@ -4027,6 +4115,9 @@ END_CASE(JSOP_ARRAYPUSH)
   error:
     JS_ASSERT(&cx->regs() == &regs);
     JS_ASSERT(uint32_t(regs.pc - script->code) < script->length);
+
+    /* When rejoining, we must not err before finishing Interpret's prologue. */
+    JS_ASSERT(interpMode != JSINTERP_REJOIN);
 
     if (cx->isExceptionPending()) {
         /* Restore atoms local in case we will resume. */
@@ -4132,6 +4223,8 @@ END_CASE(JSOP_ARRAYPUSH)
   forced_return:
     UnwindScope(cx, 0);
     regs.sp = regs.fp()->base();
+    regs.pc = script->code + script->length - JSOP_STOP_LENGTH;
+    JS_ASSERT(*regs.pc == JSOP_STOP);
 
     if (entryFrame != regs.fp())
         goto inline_return;

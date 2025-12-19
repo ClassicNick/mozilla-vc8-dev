@@ -251,19 +251,17 @@ xpc::CompartmentPrivate::~CompartmentPrivate()
     MOZ_COUNT_DTOR(xpc::CompartmentPrivate);
 }
 
-static JSBool
-CompartmentCallback(JSContext *cx, JSCompartment *compartment, unsigned op)
+static void
+CompartmentDestroyedCallback(JSFreeOp *fop, JSCompartment *compartment)
 {
-    JS_ASSERT(op == JSCOMPARTMENT_DESTROY);
-
     XPCJSRuntime* self = nsXPConnect::GetRuntimeInstance();
     if (!self)
-        return true;
+        return;
 
     nsAutoPtr<xpc::CompartmentPrivate>
         priv(static_cast<xpc::CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment)));
     if (!priv)
-        return true;
+        return;
 
     JS_SetCompartmentPrivate(compartment, nsnull);
 
@@ -275,8 +273,6 @@ CompartmentCallback(JSContext *cx, JSCompartment *compartment, unsigned op)
     NS_ASSERTION(current == compartment, "compartment mismatch");
 #endif
     map.Remove(key);
-
-    return true;
 }
 
 struct ObjectHolder : public JSDHashEntryHdr
@@ -703,7 +699,7 @@ XPCJSRuntime::GCCallback(JSRuntime *rt, JSGCStatus status)
 }
 
 /* static */ void
-XPCJSRuntime::FinalizeCallback(JSContext *cx, JSFinalizeStatus status)
+XPCJSRuntime::FinalizeCallback(JSFreeOp *fop, JSFinalizeStatus status)
 {
     XPCJSRuntime* self = nsXPConnect::GetRuntimeInstance();
     if (!self)
@@ -734,7 +730,7 @@ XPCJSRuntime::FinalizeCallback(JSContext *cx, JSFinalizeStatus status)
                 Enumerate(WrappedJSDyingJSObjectFinder, dyingWrappedJSArray);
 
             // Find dying scopes.
-            XPCWrappedNativeScope::FinishedMarkPhaseOfGC(cx, self);
+            XPCWrappedNativeScope::StartFinalizationPhaseOfGC(fop, self);
 
             // Sweep compartments.
             self->GetCompartmentMap().EnumerateRead((XPCCompartmentMap::EnumReadFunction)
@@ -850,7 +846,7 @@ XPCJSRuntime::FinalizeCallback(JSContext *cx, JSFinalizeStatus status)
 #endif
 
             // Sweep scopes needing cleanup
-            XPCWrappedNativeScope::FinishedFinalizationPhaseOfGC(cx);
+            XPCWrappedNativeScope::FinishedFinalizationPhaseOfGC();
 
             // Now we are going to recycle any unused WrappedNativeTearoffs.
             // We do this by iterating all the live callcontexts (on all
@@ -1200,15 +1196,6 @@ XPCJSRuntime::~XPCJSRuntime()
             printf("deleting XPCJSRuntime with %d live detached XPCWrappedNativeProto\n", (int)count);
 #endif
         delete mDetachedWrappedNativeProtoMap;
-    }
-
-    if (mExplicitNativeWrapperMap) {
-#ifdef XPC_DUMP_AT_SHUTDOWN
-        uint32_t count = mExplicitNativeWrapperMap->Count();
-        if (count)
-            printf("deleting XPCJSRuntime with %d live explicit XPCNativeWrapper\n", (int)count);
-#endif
-        delete mExplicitNativeWrapperMap;
     }
 
     if (mJSHolders.ops) {
@@ -1703,7 +1690,7 @@ class JSCompartmentsMultiReporter : public nsIMemoryMultiReporter
         for (size_t i = 0; i < paths.length(); i++)
             // These ones don't need a description, hence the "".
             REPORT(nsCString(paths[i]),
-                   nsIMemoryReporter::KIND_OTHER,
+                   nsIMemoryReporter::KIND_SUMMARY,
                    nsIMemoryReporter::UNITS_COUNT,
                    1, "");
 
@@ -1961,7 +1948,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    mNativeScriptableSharedMap(XPCNativeScriptableSharedMap::newMap(XPC_NATIVE_JSCLASS_MAP_SIZE)),
    mDyingWrappedNativeProtoMap(XPCWrappedNativeProtoMap::newMap(XPC_DYING_NATIVE_PROTO_MAP_SIZE)),
    mDetachedWrappedNativeProtoMap(XPCWrappedNativeProtoMap::newMap(XPC_DETACHED_NATIVE_PROTO_MAP_SIZE)),
-   mExplicitNativeWrapperMap(XPCNativeWrapperMap::newMap(XPC_NATIVE_WRAPPER_MAP_SIZE)),
    mMapLock(XPCAutoLock::NewLock("XPCJSRuntime::mMapLock")),
    mThreadRunningGC(nsnull),
    mWrappedJSToReleaseArray(),
@@ -2011,7 +1997,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     JS_SetNativeStackQuota(mJSRuntime, 128 * sizeof(size_t) * 1024);
 #endif
     JS_SetContextCallback(mJSRuntime, ContextCallback);
-    JS_SetCompartmentCallback(mJSRuntime, CompartmentCallback);
+    JS_SetDestroyCompartmentCallback(mJSRuntime, CompartmentDestroyedCallback);
     JS_SetGCCallback(mJSRuntime, GCCallback);
     JS_SetFinalizeCallback(mJSRuntime, FinalizeCallback);
     JS_SetExtraGCRootsTracer(mJSRuntime, TraceBlackJS, this);
@@ -2080,7 +2066,6 @@ XPCJSRuntime::newXPCJSRuntime(nsXPConnect* aXPConnect)
         self->GetThisTranslatorMap()          &&
         self->GetNativeScriptableSharedMap()  &&
         self->GetDyingWrappedNativeProtoMap() &&
-        self->GetExplicitNativeWrapperMap()   &&
         self->GetMapLock()                    &&
         self->mWatchdogThread) {
         return self;

@@ -286,6 +286,12 @@ struct JS_FRIEND_API(TypedArray) {
 extern bool
 IsFastTypedArrayClass(const Class *clasp);
 
+extern bool
+IsSlowTypedArrayClass(const Class *clasp);
+
+extern bool
+IsFastOrSlowTypedArray(JSObject *obj);
+
 } // namespace js
 
 /* Friend API methods */
@@ -325,9 +331,6 @@ JS_FRIEND_API(JSObject *)
 js_CreateTypedArrayWithBuffer(JSContext *cx, int atype, JSObject *bufArg,
                               int byteoffset, int length);
 
-extern int32_t JS_FASTCALL
-js_TypedArray_uint8_clamp_double(const double x);
-
 JS_FRIEND_API(JSBool)
 JS_IsArrayBufferObject(JSObject *obj);
 
@@ -351,9 +354,6 @@ JS_GetTypedArrayByteLength(JSObject *obj);
 
 JS_FRIEND_API(uint32_t)
 JS_GetTypedArrayType(JSObject *obj);
-
-JS_FRIEND_API(JSObject *)
-JS_GetTypedArrayBuffer(JSObject *obj);
 
 JS_FRIEND_API(void *)
 JS_GetTypedArrayData(JSObject *obj);

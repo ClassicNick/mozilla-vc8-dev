@@ -52,6 +52,11 @@ XPCOMUtils.defineLazyGetter(this, "PluralForm", function() {
   return PluralForm;
 });
 
+XPCOMUtils.defineLazyGetter(this, "DebuggerServer", function() {
+  Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
+  return DebuggerServer;
+});
+
 // Lazily-loaded browser scripts:
 [
   ["SelectHelper", "chrome://browser/content/SelectHelper.js"],
@@ -237,12 +242,14 @@ var BrowserApp = {
     SearchEngines.init();
     ActivityObserver.init();
     WebappsUI.init();
+    RemoteDebugger.init();
 
     // Init LoginManager
     Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
     // Init FormHistory
     Cc["@mozilla.org/satchel/form-history;1"].getService(Ci.nsIFormHistory2);
 
+    let loadParams = {};
     let url = "about:home";
     let forceRestore = false;
     if ("arguments" in window) {
@@ -255,6 +262,9 @@ var BrowserApp = {
       if (window.arguments[3])
         gScreenHeight = window.arguments[3];
     }
+
+    if (url == "about:empty")
+      loadParams.flags = Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY;
 
     // XXX maybe we don't do this if the launch was kicked off from external
     Services.io.offline = false;
@@ -278,7 +288,7 @@ var BrowserApp = {
 
       // Open any commandline URLs, except the homepage
       if (url && url != "about:home") {
-        this.addTab(url);
+        this.addTab(url, loadParams);
       } else {
         // Let the session make a restored tab active
         restoreToFront = true;
@@ -307,7 +317,8 @@ var BrowserApp = {
       // Start the restore
       ss.restoreLastSession(restoreToFront, forceRestore);
     } else {
-      this.addTab(url, { showProgress: url != "about:home" });
+      loadParams.showProgress = (url != "about:home");
+      this.addTab(url, loadParams);
 
       // show telemetry door hanger if we aren't restoring a session
       this._showTelemetryPrompt();
@@ -417,6 +428,7 @@ var BrowserApp = {
     CharacterEncoding.uninit();
     SearchEngines.uninit();
     WebappsUI.uninit();
+    RemoteDebugger.uninit();
   },
 
   // This function returns false during periods where the browser displayed document is
@@ -1470,6 +1482,7 @@ function Tab(aURL, aParams) {
   this.showProgress = true;
   this.create(aURL, aParams);
   this._zoom = 1.0;
+  this._drawZoom = 1.0;
   this.userScrollPos = { x: 0, y: 0 };
   this.contentDocumentIsDisplayed = true;
   this.clickToPlayPluginDoorhangerShown = false;
@@ -1637,10 +1650,14 @@ Tab.prototype = {
     // visible zoom. for foreground tabs, however, if we are drawing at some other
     // resolution, we need to set the resolution as specified.
     let cwu = window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-    if (BrowserApp.selectedTab == this)
-      cwu.setResolution(resolution, resolution);
-    else if (resolution != zoom)
+    if (BrowserApp.selectedTab == this) {
+      if (resolution != this._drawZoom) {
+        this._drawZoom = resolution;
+        cwu.setResolution(resolution, resolution);
+      }
+    } else if (resolution != zoom) {
       dump("Warning: setDisplayPort resolution did not match zoom for background tab!");
+    }
 
     // finally, we set the display port, taking care to convert everything into the CSS-pixel
     // coordinate space, because that is what the function accepts.
@@ -1671,6 +1688,7 @@ Tab.prototype = {
       this._zoom = aZoom;
       if (BrowserApp.selectedTab == this) {
         let cwu = window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+        this._drawZoom = aZoom;
         cwu.setResolution(aZoom, aZoom);
       }
     }
@@ -1927,7 +1945,10 @@ Tab.prototype = {
       case "PluginClickToPlay": {
         let plugin = aEvent.target;
 
-        if (this.clickToPlayPluginsActivated) {
+        // Check if plugins have already been activated for this page, or if the user
+        // has set a permission to always play plugins on the site
+        if (this.clickToPlayPluginsActivated ||
+            Services.perms.testPermission(this.browser.currentURI, "plugins") == Services.perms.ALLOW_ACTION) {
           PluginHelper.playPlugin(plugin);
           return;
         }
@@ -1936,11 +1957,11 @@ Tab.prototype = {
         // is a hidden plugin object
         let overlay = plugin.ownerDocument.getAnonymousElementByAttribute(plugin, "class", "mainBox");
         if (!overlay || PluginHelper.isTooSmall(plugin, overlay)) {
-          if (overlay)
-            overlay.style.visibility = "hidden";
           if (this.loadEventProcessed && !this.clickToPlayPluginDoorhangerShown)
             PluginHelper.showDoorHanger(this);
-          return;
+
+          if (!overlay)
+            return;
         }
 
         // Add click to play listener to the overlay
@@ -1965,8 +1986,14 @@ Tab.prototype = {
     if (contentWin != contentWin.top)
         return;
 
+    // Filter optimization: Only really send NETWORK state changes to Java listener
     if (aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK) {
-      // Filter optimization: Only really send NETWORK state changes to Java listener
+      if ((aStateFlags & Ci.nsIWebProgressListener.STATE_STOP) && aWebProgress.isLoadingDocument) {
+        // We may receive a document stop event while a document is still loading
+        // (such as when doing URI fixup). Don't notify Java UI in these cases.
+        return;
+      }
+
       let browser = BrowserApp.getBrowserForWindow(aWebProgress.DOMWindow);
       let uri = "";
       if (browser)
@@ -2703,8 +2730,11 @@ const ElementTouchHelper = {
                                                true,   /* ignore root scroll frame*/
                                                false); /* don't flush layout */
 
-    // if this element is clickable we return quickly
-    if (this.isElementClickable(target))
+    // if this element is clickable we return quickly. also, if it isn't,
+    // use a cache to speed up future calls to isElementClickable in the
+    // loop below.
+    let unclickableCache = new Array();
+    if (this.isElementClickable(target, unclickableCache))
       return target;
 
     let target = null;
@@ -2716,7 +2746,7 @@ const ElementTouchHelper = {
     let threshold = Number.POSITIVE_INFINITY;
     for (let i = 0; i < nodes.length; i++) {
       let current = nodes[i];
-      if (!current.mozMatchesSelector || !this.isElementClickable(current))
+      if (!current.mozMatchesSelector || !this.isElementClickable(current, unclickableCache))
         continue;
 
       let rect = current.getBoundingClientRect();
@@ -2735,13 +2765,17 @@ const ElementTouchHelper = {
     return target;
   },
 
-  isElementClickable: function isElementClickable(aElement) {
+  isElementClickable: function isElementClickable(aElement, aUnclickableCache) {
     const selector = "a,:link,:visited,[role=button],button,input,select,textarea,label";
     for (let elem = aElement; elem; elem = elem.parentNode) {
+      if (aUnclickableCache && aUnclickableCache.indexOf(elem) != -1)
+        continue;
       if (this._hasMouseListener(elem))
         return true;
       if (elem.mozMatchesSelector && elem.mozMatchesSelector(selector))
         return true;
+      if (aUnclickableCache)
+        aUnclickableCache.push(elem);
     }
     return false;
   },
@@ -3506,7 +3540,11 @@ var PopupBlockerObserver = {
           },
           {
             label: strings.GetStringFromName("popupButtonAlwaysAllow2"),
-            callback: function() { PopupBlockerObserver.allowPopupsForSite(true); }
+            callback: function() {
+              // Set permission before opening popup windows
+              PopupBlockerObserver.allowPopupsForSite(true);
+              PopupBlockerObserver.showPopupsForSite();
+            }
           },
           {
             label: strings.GetStringFromName("popupButtonNeverWarn2"),
@@ -4593,5 +4631,71 @@ var WebappsUI = {
       tab = BrowserApp.addTab(aURI);
       ss.setTabValue(tab, "appOrigin", aOrigin);
     }
+  }
+}
+
+var RemoteDebugger = {
+  init: function rd_init() {
+    Services.prefs.addObserver("remote-debugger.", this, false);
+
+    if (this._isEnabled())
+      this._start();
+  },
+
+  observe: function rd_observe(aSubject, aTopic, aData) {
+    if (aTopic != "nsPref:changed")
+      return;
+
+    switch (aData) {
+      case "remote-debugger.enabled":
+        if (this._isEnabled())
+          this._start();
+        else
+          this._stop();
+        break;
+
+      case "remote-debugger.port":
+        if (this._isEnabled())
+          this._restart();
+        break;
+    }
+  },
+
+  uninit: function rd_uninit() {
+    Services.prefs.removeObserver("remote-debugger.", this);
+    this._stop();
+  },
+
+  _getPort: function _rd_getPort() {
+    return Services.prefs.getIntPref("remote-debugger.port");
+  },
+
+  _isEnabled: function rd_isEnabled() {
+    return Services.prefs.getBoolPref("remote-debugger.enabled");
+  },
+
+  _restart: function rd_restart() {
+    this._stop();
+    this._start();
+  },
+
+  _start: function rd_start() {
+    try {
+      if (!DebuggerServer.initialized) {
+        DebuggerServer.init();
+        DebuggerServer.addActors("chrome://browser/content/dbg-browser-actors.js");
+      }
+
+      let port = this._getPort();
+      DebuggerServer.openListener(port, false);
+      dump("Remote debugger listening on port " + port);
+    } catch(e) {
+      dump("Remote debugger didn't start: " + e);
+    }
+  },
+
+  _stop: function rd_start() {
+    DebuggerServer.closeListener();
+    dump("Remote debugger stopped");
   }
 }

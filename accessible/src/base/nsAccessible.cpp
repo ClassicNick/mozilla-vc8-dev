@@ -821,7 +821,7 @@ nsAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
     // point. Skip offscreen or invisible accessibles. This takes care of cases
     // where layout won't walk into things for us, such as image map areas and
     // sub documents (XXX: subdocuments should be handled by methods of
-    // nsOuterDocAccessibles).
+    // OuterDocAccessibles).
     PRInt32 childCount = GetChildCount();
     for (PRInt32 childIdx = 0; childIdx < childCount; childIdx++) {
       nsAccessible *child = GetChildAt(childIdx);
@@ -1609,8 +1609,13 @@ nsAccessible::State()
 void
 nsAccessible::ApplyARIAState(PRUint64* aState)
 {
+  if (!mContent->IsElement())
+    return;
+
+  dom::Element* element = mContent->AsElement();
+
   // Test for universal states first
-  *aState |= nsARIAMap::UniversalStatesFor(mContent);
+  *aState |= nsARIAMap::UniversalStatesFor(element);
 
   if (mRoleMapEntry) {
 
@@ -1650,28 +1655,31 @@ nsAccessible::ApplyARIAState(PRUint64* aState)
     return;
 
   *aState |= mRoleMapEntry->state;
-  if (nsStateMapEntry::MapToStates(mContent, aState,
-                                   mRoleMapEntry->attributeMap1) &&
-      nsStateMapEntry::MapToStates(mContent, aState,
-                                   mRoleMapEntry->attributeMap2)) {
-    nsStateMapEntry::MapToStates(mContent, aState,
-                                 mRoleMapEntry->attributeMap3);
-  }
+
+  if (aria::MapToState(mRoleMapEntry->attributeMap1, element, aState) &&
+      aria::MapToState(mRoleMapEntry->attributeMap2, element, aState))
+    aria::MapToState(mRoleMapEntry->attributeMap3, element, aState);
 }
 
-// Not implemented by this class
-
-/* DOMString getValue (); */
 NS_IMETHODIMP
 nsAccessible::GetValue(nsAString& aValue)
 {
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
+  nsAutoString value;
+  Value(value);
+  aValue.Assign(value);
+
+  return NS_OK;
+}
+
+void
+nsAccessible::Value(nsString& aValue)
+{
   if (mRoleMapEntry) {
-    if (mRoleMapEntry->valueRule == eNoValue) {
-      return NS_OK;
-    }
+    if (mRoleMapEntry->valueRule == eNoValue)
+      return;
 
     // aria-valuenow is a number, and aria-valuetext is the optional text equivalent
     // For the string value, we will try the optional text equivalent first
@@ -1683,18 +1691,16 @@ nsAccessible::GetValue(nsAString& aValue)
   }
 
   if (!aValue.IsEmpty())
-    return NS_OK;
+    return;
 
   // Check if it's a simple xlink.
   if (nsCoreUtils::IsXLink(mContent)) {
     nsIPresShell* presShell = mDoc->PresShell();
     if (presShell) {
       nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
-      return presShell->GetLinkLocation(DOMNode, aValue);
+      presShell->GetLinkLocation(DOMNode, aValue);
     }
   }
-
-  return NS_OK;
 }
 
 // nsIAccessibleValue
@@ -2234,7 +2240,7 @@ nsAccessible::DispatchClickEvent(nsIContent *aContent, PRUint32 aActionIndex)
 NS_IMETHODIMP
 nsAccessible::ScrollTo(PRUint32 aHow)
 {
-  nsAccessNode::ScrollTo(aHow);
+  nsCoreUtils::ScrollTo(mDoc->PresShell(), mContent, aHow);
   return NS_OK;
 }
 
@@ -2825,9 +2831,9 @@ nsAccessible::IsSelect()
   // accessible so that we can follow COM identity rules.
 
   return mRoleMapEntry &&
-    (mRoleMapEntry->attributeMap1 == eARIAMultiSelectable ||
-     mRoleMapEntry->attributeMap2 == eARIAMultiSelectable ||
-     mRoleMapEntry->attributeMap3 == eARIAMultiSelectable);
+    (mRoleMapEntry->attributeMap1 == aria::eARIAMultiSelectable ||
+     mRoleMapEntry->attributeMap2 == aria::eARIAMultiSelectable ||
+     mRoleMapEntry->attributeMap3 == aria::eARIAMultiSelectable);
 }
 
 already_AddRefed<nsIArray>

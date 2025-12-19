@@ -338,6 +338,8 @@ gfxPlatform::Init()
     gPlatform->mFontPrefsObserver = new FontPrefsObserver();
     Preferences::AddStrongObservers(gPlatform->mFontPrefsObserver, kObservedPrefs);
 
+    gPlatform->mWorkAroundDriverBugs = Preferences::GetBool("gfx.work-around-driver-bugs", true);
+
     // Force registration of the gfx component, thus arranging for
     // ::Shutdown to be called.
     nsCOMPtr<nsISupports> forceReg
@@ -647,6 +649,16 @@ gfxPlatform::CreateOffscreenDrawTarget(const IntSize& aSize, SurfaceFormat aForm
   } else {
     return Factory::CreateDrawTarget(backend, aSize, aFormat);
   }
+}
+
+RefPtr<DrawTarget>
+gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize, int32_t aStride, SurfaceFormat aFormat)
+{
+  BackendType backend;
+  if (!SupportsAzure(backend)) {
+    return NULL;
+  }
+  return Factory::CreateDrawTargetForData(backend, aData, aSize, aStride, aFormat); 
 }
 
 nsresult

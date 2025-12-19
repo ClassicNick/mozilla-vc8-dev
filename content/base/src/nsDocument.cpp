@@ -1719,7 +1719,13 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_DESTROY(nsDocument,
                                               nsNodeUtils::LastRelease(this))
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsDocument)
-  return nsGenericElement::CanSkip(tmp, aRemovingAllowed);
+  if (nsGenericElement::CanSkip(tmp, aRemovingAllowed)) {
+    nsEventListenerManager* elm = tmp->GetListenerManager(false);
+    if (elm) {
+      elm->UnmarkGrayJSListeners();
+    }
+    return true;
+  }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsDocument)
@@ -3153,8 +3159,10 @@ nsDocument::TryChannelCharset(nsIChannel *aChannel,
     nsCAutoString charsetVal;
     nsresult rv = aChannel->GetContentCharset(charsetVal);
     if (NS_SUCCEEDED(rv)) {
-      rv = nsCharsetAlias::GetPreferred(charsetVal, aCharset);
+      nsCAutoString preferred;
+      rv = nsCharsetAlias::GetPreferred(charsetVal, preferred);
       if(NS_SUCCEEDED(rv)) {
+        aCharset = preferred;
         aCharsetSource = kCharsetFromChannel;
         return true;
       } else if (aExecutor && !charsetVal.IsEmpty()) {
@@ -4813,21 +4821,19 @@ nsDocument::ImportNode(nsIDOMNode* aImportedNode,
                        PRUint8 aArgc,
                        nsIDOMNode** aResult)
 {
-  NS_ENSURE_ARG(aImportedNode);
   if (aArgc == 0) {
     aDeep = true;
   }
 
   *aResult = nsnull;
 
-  nsresult rv = nsContentUtils::CheckSameOrigin(this, aImportedNode);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsCOMPtr<nsINode> imported = do_QueryInterface(aImportedNode);
+  NS_ENSURE_TRUE(imported, NS_ERROR_UNEXPECTED);
 
-  PRUint16 nodeType;
-  aImportedNode->GetNodeType(&nodeType);
-  switch (nodeType) {
+  nsresult rv = nsContentUtils::CheckSameOrigin(this, imported);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  switch (imported->NodeType()) {
     case nsIDOMNode::ATTRIBUTE_NODE:
     case nsIDOMNode::DOCUMENT_FRAGMENT_NODE:
     case nsIDOMNode::ELEMENT_NODE:
@@ -4837,9 +4843,6 @@ nsDocument::ImportNode(nsIDOMNode* aImportedNode,
     case nsIDOMNode::COMMENT_NODE:
     case nsIDOMNode::DOCUMENT_TYPE_NODE:
     {
-      nsCOMPtr<nsINode> imported = do_QueryInterface(aImportedNode);
-      NS_ENSURE_TRUE(imported, NS_ERROR_FAILURE);
-
       nsCOMPtr<nsIDOMNode> newNode;
       nsCOMArray<nsINode> nodesWithProperties;
       rv = nsNodeUtils::Clone(imported, aDeep, mNodeInfoManager,
@@ -4855,12 +4858,6 @@ nsDocument::ImportNode(nsIDOMNode* aImportedNode,
       newNode.swap(*aResult);
 
       return NS_OK;
-    }
-    case nsIDOMNode::ENTITY_NODE:
-    case nsIDOMNode::ENTITY_REFERENCE_NODE:
-    case nsIDOMNode::NOTATION_NODE:
-    {
-      return NS_ERROR_NOT_IMPLEMENTED;
     }
     default:
     {
@@ -5063,24 +5060,19 @@ nsDocument::CreateNodeIterator(nsIDOMNode *aRoot,
     aWhatToShow = nsIDOMNodeFilter::SHOW_ALL;
   }
 
-  if (!aRoot)
+  if (!aRoot) {
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
-
-  nsresult rv = nsContentUtils::CheckSameOrigin(this, aRoot);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  NS_ENSURE_ARG_POINTER(_retval);
+  }
 
   nsCOMPtr<nsINode> root = do_QueryInterface(aRoot);
-  NS_ENSURE_TRUE(root, NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+  NS_ENSURE_TRUE(root, NS_ERROR_UNEXPECTED);
 
-  nsNodeIterator *iterator = new nsNodeIterator(root,
-                                                aWhatToShow,
-                                                aFilter);
-  NS_ENSURE_TRUE(iterator, NS_ERROR_OUT_OF_MEMORY);
+  nsresult rv = nsContentUtils::CheckSameOrigin(this, root);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_ADDREF(*_retval = iterator);
-
+  nsRefPtr<nsNodeIterator> iterator = new nsNodeIterator(root, aWhatToShow,
+                                                         aFilter);
+  iterator.forget(_retval);
   return NS_OK;
 }
 
@@ -6020,6 +6012,75 @@ private:
   nsCOMPtr<nsIDocument> mOwnerDoc;
 };
 
+/**
+ * Get a scope from aNewDocument. Also get a context through the scope of one
+ * of the documents, from the stack or the safe context.
+ *
+ * @param aOldDocument The document to try to get a context from.
+ * @param aNewDocument The document to get aNewScope from.
+ * @param aCx [out] Context gotten through one of the scopes, from the stack
+ *                  or the safe context.
+ * @param aNewScope [out] Scope gotten from aNewDocument.
+ */
+static nsresult
+GetContextAndScope(nsIDocument* aOldDocument, nsIDocument* aNewDocument,
+                   JSContext** aCx, JSObject** aNewScope)
+{
+  MOZ_ASSERT(aOldDocument);
+  MOZ_ASSERT(aNewDocument);
+
+  *aCx = nsnull;
+  *aNewScope = nsnull;
+
+  JSObject* newScope = aNewDocument->GetWrapper();
+  JSObject* global;
+  if (!newScope) {
+    nsIScriptGlobalObject *newSGO = aNewDocument->GetScopeObject();
+    if (!newSGO || !(global = newSGO->GetGlobalJSObject())) {
+      return NS_OK;
+    }
+  }
+
+  JSContext* cx = nsContentUtils::GetContextFromDocument(aOldDocument);
+  if (!cx) {
+    cx = nsContentUtils::GetContextFromDocument(aNewDocument);
+
+    if (!cx) {
+      // No context reachable from the old or new document, use the
+      // calling context, or the safe context if no caller can be
+      // found.
+
+      nsIThreadJSContextStack* stack = nsContentUtils::ThreadJSContextStack();
+      stack->Peek(&cx);
+
+      if (!cx) {
+        stack->GetSafeJSContext(&cx);
+
+        if (!cx) {
+          // No safe context reachable, bail.
+          NS_WARNING("No context reachable in GetContextAndScopes()!");
+
+          return NS_ERROR_NOT_AVAILABLE;
+        }
+      }
+    }
+  }
+
+  if (!newScope && cx) {
+    JS::Value v;
+    nsresult rv = nsContentUtils::WrapNative(cx, global, aNewDocument,
+                                             aNewDocument, &v);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    newScope = JSVAL_TO_OBJECT(v);
+  }
+
+  *aCx = cx;
+  *aNewScope = newScope;
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
 {
@@ -6027,10 +6088,11 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
 
   *aResult = nsnull;
 
-  nsresult rv = nsContentUtils::CheckSameOrigin(this, aAdoptedNode);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsCOMPtr<nsINode> adoptedNode = do_QueryInterface(aAdoptedNode);
+  NS_ENSURE_TRUE(adoptedNode, NS_ERROR_UNEXPECTED);
+
+  nsresult rv = nsContentUtils::CheckSameOrigin(this, adoptedNode);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // Scope firing mutation events so that we don't carry any state that
   // might be stale
@@ -6044,9 +6106,7 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
 
   nsAutoScriptBlocker scriptBlocker;
 
-  PRUint16 nodeType;
-  aAdoptedNode->GetNodeType(&nodeType);
-  switch (nodeType) {
+  switch (adoptedNode->NodeType()) {
     case nsIDOMNode::ATTRIBUTE_NODE:
     {
       // Remove from ownerElement.
@@ -6101,13 +6161,7 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
 
       break;
     }
-    case nsIDOMNode::ENTITY_REFERENCE_NODE:
-    {
-      return NS_ERROR_NOT_IMPLEMENTED;
-    }
     case nsIDOMNode::DOCUMENT_NODE:
-    case nsIDOMNode::ENTITY_NODE:
-    case nsIDOMNode::NOTATION_NODE:
     {
       return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
     }
@@ -6125,7 +6179,7 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
   JSContext *cx = nsnull;
   JSObject *newScope = nsnull;
   if (!sameDocument) {
-    rv = nsContentUtils::GetContextAndScope(oldDocument, this, &cx, &newScope);
+    rv = GetContextAndScope(oldDocument, this, &cx, &newScope);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -6182,7 +6236,8 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
   NS_ASSERTION(adoptedNode->OwnerDoc() == this,
                "Should still be in the document we just got adopted into");
 
-  return CallQueryInterface(adoptedNode, aResult);
+  NS_ADDREF(*aResult = aAdoptedNode);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -8629,6 +8684,13 @@ nsDocument::ExitFullScreen()
   // dispatch to so that we dispatch in the specified order.
   nsAutoTArray<nsIDocument*, 8> changed;
 
+  // We may also need to unlock the pointer, if it's locked.
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (pointerLockedElement) {
+    UnlockPointer();
+  }
+
   // Walk the tree of full-screen documents, and reset their full-screen state.
   ResetFullScreen(root, static_cast<void*>(&changed));
 
@@ -8659,12 +8721,20 @@ nsDocument::RestorePreviousFullScreenState()
     return;
   }
 
+  // If fullscreen mode is updated the pointer should be unlocked
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (pointerLockedElement) {
+    UnlockPointer();
+  }
+
   // Clear full-screen stacks in all descendant documents, bottom up.
   nsCOMPtr<nsIDocument> fullScreenDoc(do_QueryReferent(sFullScreenDoc));
   nsIDocument* doc = fullScreenDoc;
   while (doc != this) {
     NS_ASSERTION(doc->IsFullScreenDoc(), "Should be full-screen doc");
     static_cast<nsDocument*>(doc)->ClearFullScreenStack();
+    UnlockPointer();
     DispatchFullScreenChange(doc);
     doc = doc->GetParentDocument();
   }
@@ -8673,6 +8743,7 @@ nsDocument::RestorePreviousFullScreenState()
   NS_ASSERTION(doc == this, "Must have reached this doc.");
   while (doc != nsnull) {
     static_cast<nsDocument*>(doc)->FullScreenStackPop();
+    UnlockPointer();
     DispatchFullScreenChange(doc);
     if (static_cast<nsDocument*>(doc)->mFullScreenStack.IsEmpty()) {
       // Full-screen stack in document is empty. Go back up to the parent
@@ -8948,7 +9019,22 @@ nsDocument::RequestFullScreen(Element* aElement, bool aWasCallerChrome)
 
   // Remember the root document, so that if a full-screen document is hidden
   // we can reset full-screen state in the remaining visible full-screen documents.
-  sFullScreenRootDoc = do_GetWeakReference(nsContentUtils::GetRootDocument(this));
+  nsIDocument* fullScreenDoc = nsContentUtils::GetRootDocument(this);
+  sFullScreenRootDoc = do_GetWeakReference(fullScreenDoc);
+
+  // If a document is already in fullscreen, then unlock the mouse pointer
+  // before setting a new document to fullscreen
+  if (fullScreenDoc) {
+    UnlockPointer();
+  }
+
+  // If a document is already in fullscreen, then unlock the mouse pointer
+  // before setting a new document to fullscreen
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (pointerLockedElement) {
+    UnlockPointer();
+  }
 
   // Set the full-screen element. This sets the full-screen style on the
   // element, and the full-screen-ancestor styles on ancestors of the element
@@ -9110,6 +9196,223 @@ nsDocument::IsFullScreenEnabled(bool aCallerIsChrome, bool aLogFailure)
   } while (node);
 
   return true;
+}
+
+static void
+DispatchPointerLockChange(nsIDocument* aTarget)
+{
+  nsRefPtr<nsAsyncDOMEvent> e =
+    new nsAsyncDOMEvent(aTarget,
+                        NS_LITERAL_STRING("mozpointerlockchange"),
+                        true,
+                        false);
+  e->PostDOMEvent();
+}
+
+static void
+DispatchPointerLockError(nsIDocument* aTarget)
+{
+  nsRefPtr<nsAsyncDOMEvent> e =
+    new nsAsyncDOMEvent(aTarget,
+                        NS_LITERAL_STRING("mozpointerlockerror"),
+                        true,
+                        false);
+  e->PostDOMEvent();
+}
+
+void
+nsDocument::RequestPointerLock(Element* aElement)
+{
+  NS_ASSERTION(aElement,
+    "Must pass non-null element to nsDocument::RequestPointerLock");
+
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (aElement == pointerLockedElement) {
+    DispatchPointerLockChange(this);
+    return;
+  }
+
+  if (!ShouldLockPointer(aElement) ||
+      !SetPointerLock(aElement, NS_STYLE_CURSOR_NONE)) {
+    DispatchPointerLockError(this);
+    return;
+  }
+
+  aElement->SetPointerLock();
+  nsEventStateManager::sPointerLockedElement = do_GetWeakReference(aElement);
+  nsEventStateManager::sPointerLockedDoc =
+    do_GetWeakReference(static_cast<nsIDocument*>(this));
+  DispatchPointerLockChange(this);
+}
+
+bool
+nsDocument::ShouldLockPointer(Element* aElement)
+{
+  // Check if pointer lock pref is enabled
+  if (!Preferences::GetBool("full-screen-api.pointer-lock.enabled")) {
+    NS_WARNING("ShouldLockPointer(): Pointer Lock pref not enabled");
+    return false;
+  }
+
+  if (aElement != GetFullScreenElement()) {
+    NS_WARNING("ShouldLockPointer(): Element not in fullscreen");
+    return false;
+  }
+
+  if (!aElement->IsInDoc()) {
+    NS_WARNING("ShouldLockPointer(): Element without Document");
+    return false;
+  }
+
+  // Check if the element is in a document with a docshell.
+  nsCOMPtr<nsIDocument> ownerDoc = aElement->OwnerDoc();
+  if (!ownerDoc) {
+    return false;
+  }
+  if (!nsCOMPtr<nsISupports>(ownerDoc->GetContainer())) {
+    return false;
+  }
+  nsCOMPtr<nsPIDOMWindow> ownerWindow = ownerDoc->GetWindow();
+  if (!ownerWindow) {
+    return false;
+  }
+  nsCOMPtr<nsPIDOMWindow> ownerInnerWindow = ownerDoc->GetInnerWindow();
+  if (!ownerInnerWindow) {
+    return false;
+  }
+  if (ownerWindow->GetCurrentInnerWindow() != ownerInnerWindow) {
+    return false;
+  }
+
+  return true;
+}
+
+bool
+nsDocument::SetPointerLock(Element* aElement, int aCursorStyle)
+{
+  // NOTE: aElement will be nsnull when unlocking.
+  nsCOMPtr<nsPIDOMWindow> window = GetWindow();
+  if (!window) {
+    NS_WARNING("SetPointerLock(): No Window");
+    return false;
+  }
+
+  nsIDocShell *docShell = window->GetDocShell();
+  if (!docShell) {
+    NS_WARNING("SetPointerLock(): No DocShell (window already closed?)");
+    return false;
+  }
+
+  nsRefPtr<nsPresContext> presContext;
+  docShell->GetPresContext(getter_AddRefs(presContext));
+  if (!presContext) {
+    NS_WARNING("SetPointerLock(): Unable to get presContext in \
+                domWindow->GetDocShell()->GetPresContext()");
+    return false;
+  }
+
+  nsCOMPtr<nsIPresShell> shell = presContext->PresShell();
+  if (!shell) {
+    NS_WARNING("SetPointerLock(): Unable to find presContext->PresShell()");
+    return false;
+  }
+
+  nsIFrame* rootFrame = shell->GetRootFrame();
+  if (!rootFrame) {
+    NS_WARNING("SetPointerLock(): Unable to get root frame");
+    return false;
+  }
+
+  nsCOMPtr<nsIWidget> widget = rootFrame->GetNearestWidget();
+  if (!widget) {
+    NS_WARNING("SetPointerLock(): Unable to find widget in \
+                shell->GetRootFrame()->GetNearestWidget();");
+    return false;
+  }
+
+  if (aElement && (aElement->OwnerDoc() != this)) {
+    NS_WARNING("SetPointerLock(): Element not in this document.");
+    return false;
+  }
+
+  // Hide the cursor and set pointer lock for future mouse events
+  nsRefPtr<nsEventStateManager> esm = presContext->EventStateManager();
+  esm->SetCursor(aCursorStyle, nsnull, false,
+                 0.0f, 0.0f, widget, true);
+  esm->SetPointerLock(widget, aElement);
+
+  return true;
+}
+
+void
+nsDocument::UnlockPointer()
+{
+  if (!nsEventStateManager::sIsPointerLocked) {
+    return;
+  }
+
+  nsCOMPtr<nsIDocument> pointerLockedDoc =
+    do_QueryReferent(nsEventStateManager::sPointerLockedDoc);
+  if (!pointerLockedDoc) {
+    return;
+  }
+  nsDocument* doc = static_cast<nsDocument*>(pointerLockedDoc.get());
+  if (!doc->SetPointerLock(nsnull, NS_STYLE_CURSOR_AUTO)) {
+    return;
+  }
+
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (!pointerLockedElement) {
+    return;
+  }
+
+  nsEventStateManager::sPointerLockedElement = nsnull;
+  nsEventStateManager::sPointerLockedDoc = nsnull;
+  pointerLockedElement->ClearPointerLock();
+  DispatchPointerLockChange(pointerLockedDoc);
+}
+
+void
+nsIDocument::UnlockPointer()
+{
+  nsDocument::UnlockPointer();
+}
+
+NS_IMETHODIMP
+nsDocument::MozExitPointerLock()
+{
+  UnlockPointer();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocument::GetMozPointerLockElement(nsIDOMElement** aPointerLockedElement)
+{
+  NS_ENSURE_ARG_POINTER(aPointerLockedElement);
+  *aPointerLockedElement = nsnull;
+  nsCOMPtr<Element> pointerLockedElement =
+    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+  if (!pointerLockedElement) {
+    return NS_OK;
+  }
+
+  // Make sure pointer locked element is in the same document and domain.
+  nsCOMPtr<nsIDocument> pointerLockedDoc =
+    do_QueryReferent(nsEventStateManager::sPointerLockedDoc);
+  nsDocument* doc = static_cast<nsDocument*>(pointerLockedDoc.get());
+  if (doc != this) {
+    return NS_OK;
+  }
+  nsCOMPtr<nsIDOMNode> pointerLockedNode =
+    do_QueryInterface(pointerLockedElement);
+  nsresult rv = nsContentUtils::CheckSameOrigin(this, pointerLockedNode.get());
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
+
+  return CallQueryInterface(pointerLockedElement, aPointerLockedElement);
 }
 
 #define EVENT(name_, id_, type_, struct_)                                 \

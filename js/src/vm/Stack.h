@@ -544,7 +544,7 @@ class StackFrame
 
     Value &varSlot(unsigned i) {
         JS_ASSERT(i < script()->nfixed);
-        JS_ASSERT_IF(maybeFun(), i < script()->bindings.countVars());
+        JS_ASSERT_IF(maybeFun(), i < script()->bindings.numVars());
         return slots()[i];
     }
 
@@ -725,6 +725,8 @@ class StackFrame
     template <class Op>
     inline bool forEachCanonicalActualArg(Op op, unsigned start = 0, unsigned count = unsigned(-1));
     template <class Op> inline bool forEachFormalArg(Op op);
+
+    /* XXX: all these argsObj functions will be removed with bug 659577. */
 
     bool hasArgsObj() const {
         /*
@@ -1690,6 +1692,7 @@ class ContextStack
 
     /* Get the topmost script and optional pc on the stack. */
     inline JSScript *currentScript(jsbytecode **pc = NULL) const;
+    inline JSScript *currentScriptWithDiagnostics(jsbytecode **pc = NULL) const;
 
     /* Get the scope chain for the topmost scripted call on the stack. */
     inline JSObject *currentScriptedScopeChain() const;

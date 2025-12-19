@@ -355,9 +355,6 @@ StackFrame::functionPrologue(JSContext *cx)
     JSFunction *fun = this->fun();
     JSScript *script = fun->script();
 
-    if (script->needsArgsObj() && !ArgumentsObject::create(cx, this))
-        return false;
-
     if (fun->isHeavyweight()) {
         if (!CallObject::createForFunction(cx, this))
             return false;
@@ -606,6 +603,45 @@ ContextStack::currentScript(jsbytecode **ppc) const
 
     if (ppc)
         *ppc = fp->pcQuadratic(*this);
+    return script;
+}
+
+inline JSScript *
+ContextStack::currentScriptWithDiagnostics(jsbytecode **ppc) const
+{
+    if (ppc)
+        *ppc = NULL;
+
+    FrameRegs *regs = maybeRegs();
+    StackFrame *fp = regs ? regs->fp() : NULL;
+    while (fp && fp->isDummyFrame())
+        fp = fp->prev();
+    if (!fp)
+        *(int *) 0x10 = 0;
+
+#ifdef JS_METHODJIT
+    mjit::CallSite *inlined = regs->inlined();
+    if (inlined) {
+        mjit::JITChunk *chunk = fp->jit()->chunk(regs->pc);
+        JS_ASSERT(inlined->inlineIndex < chunk->nInlineFrames);
+        mjit::InlineFrame *frame = &chunk->inlineFrames()[inlined->inlineIndex];
+        JSScript *script = frame->fun->script();
+        if (script->compartment() != cx_->compartment)
+            *(int *) 0x20 = 0;
+        if (ppc)
+            *ppc = script->code + inlined->pcOffset;
+        return script;
+    }
+#endif
+
+    JSScript *script = fp->script();
+    if (script->compartment() != cx_->compartment)
+        *(int *) 0x30 = 0;
+
+    if (ppc)
+        *ppc = fp->pcQuadratic(*this);
+    if (!script)
+        *(int *) 0x40 = 0;
     return script;
 }
 

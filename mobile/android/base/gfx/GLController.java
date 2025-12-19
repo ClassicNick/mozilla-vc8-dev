@@ -53,8 +53,9 @@ public class GLController {
     private static final int EGL_CONTEXT_CLIENT_VERSION = 0x3098;
     private static final String LOGTAG = "GeckoGLController";
 
-    private FlexibleGLSurfaceView mView;
+    private LayerView mView;
     private int mGLVersion;
+    private boolean mSurfaceValid;
     private int mWidth, mHeight;
 
     private EGL10 mEGL;
@@ -76,9 +77,10 @@ public class GLController {
         EGL10.EGL_NONE
     };
 
-    public GLController(FlexibleGLSurfaceView view) {
+    public GLController(LayerView view) {
         mView = view;
         mGLVersion = 2;
+        mSurfaceValid = false;
     }
 
     public void setGLVersion(int version) {
@@ -90,7 +92,7 @@ public class GLController {
     public EGLConfig getEGLConfig()         { return mEGLConfig;          }
     public EGLContext getEGLContext()       { return mEGLContext;         }
     public EGLSurface getEGLSurface()       { return mEGLSurface;         }
-    public FlexibleGLSurfaceView getView()  { return mView;               }
+    public LayerView getView()              { return mView;               }
 
     public boolean hasSurface() {
         return mEGLSurface != null;
@@ -113,12 +115,34 @@ public class GLController {
         return true;
     }
 
+    // Wait until we are allowed to use EGL functions on the Surface backing
+    // this window.
+    public synchronized void waitForValidSurface() {
+        while (!mSurfaceValid) {
+            try {
+                wait();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     public synchronized int getWidth() {
         return mWidth;
     }
 
     public synchronized int getHeight() {
         return mHeight;
+    }
+
+    synchronized void surfaceCreated() {
+        mSurfaceValid = true;
+        notifyAll();
+    }
+
+    synchronized void surfaceDestroyed() {
+        mSurfaceValid = false;
+        notifyAll();
     }
 
     synchronized void sizeChanged(int newWidth, int newHeight) {

@@ -222,6 +222,7 @@ class EqualityICLinker : public LinkerHelper
             return false;
         JS_ASSERT(!f.regs.inlined());
         if (!f.chunk()->execPools.append(pool)) {
+            markVerified();
             pool->release();
             js_ReportOutOfMemory(cx);
             return false;
@@ -438,6 +439,7 @@ NativeStubLinker::init(JSContext *cx)
     stub.pool = pool;
     stub.jump = locationOf(done);
     if (!chunk->nativeCallStubs.append(stub)) {
+        markVerified();
         pool->release();
         return false;
     }
@@ -555,6 +557,9 @@ mjit::NativeStubEpilogue(VMFrame &f, Assembler &masm, NativeStubLinker::FinalJum
  * scripted native, then a small stub is generated which inlines the native
  * invocation.
  */
+namespace js {
+namespace mjit {
+
 class CallCompiler : public BaseCompiler
 {
     VMFrame &f;
@@ -607,16 +612,20 @@ class CallCompiler : public BaseCompiler
         Address scriptAddr(ic.funObjReg, JSFunction::offsetOfNativeOrScript());
         masm.loadPtr(scriptAddr, t0);
 
-        /*
-         * Test if script->nmap is NULL - same as checking ncode, but faster
-         * here since ncode has two failure modes and we need to load out of
-         * nmap anyway.
-         */
-        size_t offset = callingNew
-                        ? offsetof(JSScript, jitArityCheckCtor)
-                        : offsetof(JSScript, jitArityCheckNormal);
+        // Test that:
+        // - script->jitHandle{Ctor,Normal}->value is neither NULL nor UNJITTABLE, and
+        // - script->jitHandle{Ctor,Normal}->value->arityCheckEntry is not NULL.
+        //
+        size_t offset = JSScript::jitHandleOffset(callingNew);
         masm.loadPtr(Address(t0, offset), t0);
-        Jump hasCode = masm.branchPtr(Assembler::Above, t0, ImmPtr(JS_UNJITTABLE_SCRIPT));
+        Jump hasNoJitCode = masm.branchPtr(Assembler::BelowOrEqual, t0,
+                                           ImmPtr(JSScript::JITScriptHandle::UNJITTABLE));
+
+        masm.loadPtr(Address(t0, offsetof(JITScript, arityCheckEntry)), t0);
+
+        Jump hasCode = masm.branchPtr(Assembler::NotEqual, t0, ImmPtr(0));
+
+        hasNoJitCode.linkTo(masm.label(), &masm);
 
         /*
          * Write the rejoin state to indicate this is a compilation call made
@@ -626,7 +635,7 @@ class CallCompiler : public BaseCompiler
         masm.storePtr(ImmPtr((void *) ic.frameSize.rejoinState(f.pc(), false)),
                       FrameAddress(offsetof(VMFrame, stubRejoin)));
 
-        masm.bumpStubCounter(f.script(), f.pc(), Registers::tempCallReg());
+        masm.bumpStubCount(f.script(), f.pc(), Registers::tempCallReg());
 
         /* Try and compile. On success we get back the nmap pointer. */
         void *compilePtr = JS_FUNC_TO_DATA_PTR(void *, stubs::CompileFunction);
@@ -850,7 +859,7 @@ class CallCompiler : public BaseCompiler
 
         /* N.B. After this call, the frame will have a dynamic frame size. */
         if (ic.frameSize.isDynamic()) {
-            masm.bumpStubCounter(f.script(), f.pc(), Registers::tempCallReg());
+            masm.bumpStubCount(f.script(), f.pc(), Registers::tempCallReg());
             masm.fallibleVMCall(cx->typeInferenceEnabled(),
                                 JS_FUNC_TO_DATA_PTR(void *, ic::SplatApplyArgs),
                                 f.regs.pc, NULL, initialFrameDepth);
@@ -858,7 +867,7 @@ class CallCompiler : public BaseCompiler
 
         Registers tempRegs = Registers::tempCallRegMask();
         RegisterID t0 = tempRegs.takeAnyReg().reg();
-        masm.bumpStubCounter(f.script(), f.pc(), t0);
+        masm.bumpStubCount(f.script(), f.pc(), t0);
 
         int32_t storeFrameDepth = ic.frameSize.isStatic() ? initialFrameDepth : -1;
         masm.setupFallibleABICall(cx->typeInferenceEnabled(), f.regs.pc, storeFrameDepth);
@@ -952,6 +961,8 @@ class CallCompiler : public BaseCompiler
         bool lowered = ic.frameSize.lowered(f.pc());
         JS_ASSERT_IF(lowered, !callingNew);
 
+        StackFrame *initialFp = f.fp();
+
         stubs::UncachedCallResult ucr;
         if (callingNew)
             stubs::UncachedNewHelper(f, ic.frameSize.staticArgc(), &ucr);
@@ -960,8 +971,9 @@ class CallCompiler : public BaseCompiler
 
         // Watch out in case the IC was invalidated by a recompilation on the calling
         // script. This can happen either if the callee is executed or if it compiles
-        // and the compilation has a static overflow.
-        if (monitor.recompiled())
+        // and the compilation has a static overflow. Also watch for cases where
+        // an exception is thrown and the callee frame hasn't unwound yet.
+        if (monitor.recompiled() || f.fp() != initialFp)
             return ucr.codeAddr;
 
         // If the function cannot be jitted (generally unjittable or empty script),
@@ -1009,6 +1021,9 @@ class CallCompiler : public BaseCompiler
         return ucr.codeAddr;
     }
 };
+
+} // namespace mjit
+} // namespace js
 
 void * JS_FASTCALL
 ic::Call(VMFrame &f, CallICInfo *ic)
@@ -1061,25 +1076,18 @@ ic::SplatApplyArgs(VMFrame &f)
 {
     JSContext *cx = f.cx;
     JS_ASSERT(!f.regs.inlined());
-    JS_ASSERT(GET_ARGC(f.regs.pc) == 2);
 
-    /*
-     * The lazyArgsObj flag indicates an optimized call |f.apply(x, arguments)|
-     * where the args obj has not been created or pushed on the stack. Thus,
-     * if lazyArgsObj is set, the stack for |f.apply(x, arguments)| is:
-     *
-     *  | Function.prototype.apply | f | x |
-     *
-     * Otherwise, if !lazyArgsObj, the stack is a normal 2-argument apply:
-     *
-     *  | Function.prototype.apply | f | x | arguments |
-     */
-    if (f.u.call.lazyArgsObj) {
+    CallArgs args = CallArgsFromSp(GET_ARGC(f.regs.pc), f.regs.sp);
+    JS_ASSERT(args.length() == 2);
+    JS_ASSERT(IsNativeFunction(args.calleev(), js_fun_apply));
+
+    if (args[1].isMagic(JS_OPTIMIZED_ARGUMENTS)) {
         /* Mirror isMagic(JS_OPTIMIZED_ARGUMENTS) case in js_fun_apply. */
         /* Steps 4-6. */
         unsigned length = f.regs.fp()->numActualArgs();
         JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
 
+        f.regs.sp--;
         if (!BumpStack(f, length))
             THROWV(false);
 
@@ -1091,29 +1099,26 @@ ic::SplatApplyArgs(VMFrame &f)
         return true;
     }
 
-    Value *vp = f.regs.sp - 4;
-    JS_ASSERT(JS_CALLEE(cx, vp).toObject().toFunction()->native() == js_fun_apply);
-
     /*
      * This stub should mimic the steps taken by js_fun_apply. Step 1 and part
      * of Step 2 have already been taken care of by calling jit code.
      */
 
     /* Step 2 (part 2). */
-    if (vp[3].isNullOrUndefined()) {
+    if (args[1].isNullOrUndefined()) {
         f.regs.sp--;
         f.u.call.dynamicArgc = 0;
         return true;
     }
 
     /* Step 3. */
-    if (!vp[3].isObject()) {
+    if (!args[1].isObject()) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_APPLY_ARGS, js_apply_str);
         THROWV(false);
     }
 
     /* Steps 4-5. */
-    JSObject *aobj = &vp[3].toObject();
+    JSObject *aobj = &args[1].toObject();
     uint32_t length;
     if (!js_GetLengthProperty(cx, aobj, &length))
         THROWV(false);

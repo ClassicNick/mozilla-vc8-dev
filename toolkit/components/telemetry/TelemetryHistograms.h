@@ -60,11 +60,11 @@
 /**
  * a11y telemetry
  */
-HISTOGRAM_BOOLEAN(A11Y_INSTANTIATED, "has accessibility support been instantiated")
+HISTOGRAM_FLAG(A11Y_INSTANTIATED_FLAG, "has accessibility support been instantiated")
 HISTOGRAM_ENUMERATED_VALUES(A11Y_CONSUMERS, 9, "Accessibility client by enum id")
-HISTOGRAM_BOOLEAN(A11Y_ISIMPLEDOM_USAGE, "have the ISimpleDOM* accessibility interfaces been used")
-HISTOGRAM_BOOLEAN(A11Y_IATABLE_USAGE, "has the IAccessibleTable accessibility interface been used")
-HISTOGRAM_BOOLEAN(A11Y_XFORMS_USAGE, "has XForms accessibility been instantiated")
+HISTOGRAM_FLAG(A11Y_ISIMPLEDOM_USAGE_FLAG, "have the ISimpleDOM* accessibility interfaces been used")
+HISTOGRAM_FLAG(A11Y_IATABLE_USAGE_FLAG, "has the IAccessibleTable accessibility interface been used")
+HISTOGRAM_FLAG(A11Y_XFORMS_USAGE_FLAG, "has XForms accessibility been instantiated")
 
 /**
  * Cycle collector telemetry
@@ -102,6 +102,7 @@ HISTOGRAM(MEMORY_STORAGE_SQLITE, 1024, 512 * 1024, 50, EXPONENTIAL, "Memory used
 HISTOGRAM(MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED, 1024, 1024 * 1024, 50, EXPONENTIAL, "Memory used for uncompressed, in-use content images (KB)")
 HISTOGRAM(MEMORY_HEAP_ALLOCATED, 1024, 1024 * 1024, 50, EXPONENTIAL, "Heap memory allocated (KB)")
 HISTOGRAM(MEMORY_EXPLICIT, 1024, 1024 * 1024, 50, EXPONENTIAL, "Explicit memory allocations (KB)")
+HISTOGRAM(GHOST_WINDOWS, 1, 128, 8, EXPONENTIAL, "Number of ghost windows")
 #if defined(XP_MACOSX)
 HISTOGRAM(MEMORY_FREE_PURGED_PAGES_MS, 1, 1024, 10, EXPONENTIAL, "Time(ms) to purge MADV_FREE'd heap pages.")
 #elif defined(XP_WIN)
@@ -225,6 +226,7 @@ HISTOGRAM(SPDY_SETTINGS_IW, 1, 1000, 50, EXPONENTIAL,  "SPDY: Settings IW (round
 #undef HTTP_HISTOGRAMS
 
 HISTOGRAM(HTTP_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Cache Hit, Reval, Failed-Reval, Miss")
+HISTOGRAM(DISK_CACHE_CORRUPT, 0, 1, 2, BOOLEAN, "Was the HTTP disk cache corrupt at startup?")
 HISTOGRAM(HTTP_DISK_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Disk Cache Hit, Reval, Failed-Reval, Miss")
 HISTOGRAM(HTTP_MEMORY_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Memory Cache Hit, Reval, Failed-Reval, Miss")
 HISTOGRAM(HTTP_OFFLINE_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Offline Cache Hit, Reval, Failed-Reval, Miss")
@@ -233,6 +235,7 @@ HISTOGRAM(CACHE_MEMORY_SEARCH, 1, 100, 100, LINEAR, "Time to search memory cache
 HISTOGRAM(CACHE_DISK_SEARCH, 1, 100, 100, LINEAR, "Time to search disk cache (ms)")
 HISTOGRAM(CACHE_OFFLINE_SEARCH, 1, 100, 100, LINEAR, "Time to search offline cache (ms)")
 HISTOGRAM(HTTP_DISK_CACHE_OVERHEAD, 1, 32000000, 100, EXPONENTIAL, "HTTP Disk cache memory overhead (bytes)")
+HISTOGRAM(CACHE_LM_INCONSISTENT, 0, 1, 2, BOOLEAN,  "Cache discovered inconsistent last-modified entry")
 HISTOGRAM(CACHE_SERVICE_LOCK_WAIT, 1, 10000, 10000, LINEAR, "Time spent waiting on the cache service lock (ms)")
 HISTOGRAM(CACHE_SERVICE_LOCK_WAIT_MAINTHREAD, 1, 10000, 10000, LINEAR, "Time spent waiting on the cache service lock on the main thread (ms)")
 

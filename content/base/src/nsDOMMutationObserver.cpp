@@ -145,12 +145,35 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsMutationReceiver)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsMutationReceiver)
-  tmp->Disconnect();
+  tmp->Disconnect(false);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsMutationReceiver)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
+void
+nsMutationReceiver::Disconnect(bool aRemoveFromObserver)
+{
+  if (mRegisterTarget) {
+    mRegisterTarget->RemoveMutationObserver(this);
+    mRegisterTarget = nsnull;
+  }
+
+  mParent = nsnull;
+  nsINode* target = mTarget;
+  mTarget = nsnull;
+  nsIDOMMozMutationObserver* observer = mObserver;
+  mObserver = nsnull;
+  RemoveClones();
+
+  if (target && observer) {
+    if (aRemoveFromObserver) {
+      static_cast<nsDOMMutationObserver*>(observer)->RemoveReceiver(this);
+    }
+    // UnbindObject may delete 'this'!
+    target->UnbindObject(observer);
+  }
+}
 
 void
 nsMutationReceiver::AttributeWillChange(nsIDocument* aDocument,
@@ -362,6 +385,12 @@ nsMutationReceiver::ContentRemoved(nsIDocument* aDocument,
   Observer()->ScheduleForRun();
 }
 
+void nsMutationReceiver::NodeWillBeDestroyed(const nsINode *aNode)
+{
+  NS_ASSERTION(!mParent, "Shouldn't have mParent here!");
+  Disconnect(true);
+}
+
 // Observer
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsDOMMutationObserver)
@@ -382,7 +411,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDOMMutationObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mScriptContext)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOwner)
   for (PRInt32 i = 0; i < tmp->mReceivers.Count(); ++i) {
-    tmp->mReceivers[i]->Disconnect();
+    tmp->mReceivers[i]->Disconnect(false);
   }
   tmp->mReceivers.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMARRAY(mPendingMutations)
@@ -418,6 +447,12 @@ nsDOMMutationObserver::GetReceiverFor(nsINode* aNode, bool aMayCreate)
   nsMutationReceiver* r = new nsMutationReceiver(aNode, this);
   mReceivers.AppendObject(r);
   return r;
+}
+
+void
+nsDOMMutationObserver::RemoveReceiver(nsMutationReceiver* aReceiver)
+{
+  mReceivers.RemoveObject(aReceiver);
 }
 
 void
@@ -527,6 +562,14 @@ nsDOMMutationObserver::Observe(nsIDOMNode* aTarget,
   r->SetAttributeFilter(filters);
   r->SetAllAttributes(allAttrs);
   r->RemoveClones();
+
+#ifdef DEBUG
+  for (PRInt32 i = 0; i < mReceivers.Count(); ++i) {
+    NS_WARN_IF_FALSE(mReceivers[i]->Target(),
+                     "All the receivers should have a target!");
+  }
+#endif
+
   return NS_OK;
 }
 
@@ -534,17 +577,44 @@ NS_IMETHODIMP
 nsDOMMutationObserver::Disconnect()
 {
   for (PRInt32 i = 0; i < mReceivers.Count(); ++i) {
-    mReceivers[i]->Disconnect();
+    mReceivers[i]->Disconnect(false);
   }
   mReceivers.Clear();
-  for (PRUint32 i = 0; i < mCurrentMutations.Length(); ++i) {
-    nsDOMMutationRecord* r = mCurrentMutations[i];
-  }
   mCurrentMutations.Clear();
   mPendingMutations.Clear();
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDOMMutationObserver::TakeRecords(nsIVariant** aRetVal)
+{
+  *aRetVal = TakeRecords().get();
+  return NS_OK;
+}
+
+already_AddRefed<nsIVariant>
+nsDOMMutationObserver::TakeRecords()
+{
+  nsCOMPtr<nsIWritableVariant> mutations =
+    do_CreateInstance("@mozilla.org/variant;1");
+  PRInt32 len = mPendingMutations.Count();
+  if (len == 0) {
+    mutations->SetAsEmptyArray();
+  } else {
+    nsTArray<nsIDOMMutationRecord*> mods(len);
+    for (PRInt32 i = 0; i < len; ++i) {
+      mods.AppendElement((nsIDOMMutationRecord*) mPendingMutations[i]);
+    }
+
+    mutations->SetAsArray(nsIDataType::VTYPE_INTERFACE,
+                          &NS_GET_IID(nsIDOMMutationRecord),
+                          mods.Length(),
+                          const_cast<void*>(
+                            static_cast<const void*>(mods.Elements())));
+    mPendingMutations.Clear();
+  }
+  return mutations.forget();
+}
 
 NS_IMETHODIMP
 nsDOMMutationObserver::Initialize(nsISupports* aOwner, JSContext* cx,
@@ -573,28 +643,11 @@ nsDOMMutationObserver::Initialize(nsISupports* aOwner, JSContext* cx,
   return NS_OK;
 }
 
-static PLDHashOperator
-TransientReceiverTraverser(nsISupports* aKey,
-                           nsCOMArray<nsMutationReceiver>* aArray,
-                           void* aUserArg)
-{
-  PRInt32 count = aArray->Count();
-  for (PRInt32 i = 0; i < count; ++i) {
-    nsMutationReceiver* r = aArray->ObjectAt(i);
-    nsMutationReceiver* p = r->GetParent();
-    if (p) {
-      p->RemoveClones();
-    }
-    r->Disconnect();
-  }
-  return PL_DHASH_NEXT;
-}
-
 void
 nsDOMMutationObserver::HandleMutation()
 {
   NS_ASSERTION(nsContentUtils::IsSafeToRunScript(), "Whaat!");
-  NS_ASSERTION(mCurrentMutations.Length() == 0,
+  NS_ASSERTION(mCurrentMutations.IsEmpty(),
                "Still generating MutationRecords?");
 
   mWaitingForRun = false;
@@ -616,21 +669,8 @@ nsDOMMutationObserver::HandleMutation()
     mPendingMutations.Clear();
     return;
   }
-  
-  PRInt32 len = mPendingMutations.Count();
-  nsTArray<nsIDOMMutationRecord*> mods(len);
-  for (PRInt32 i = 0; i < len; ++i) {
-    mods.AppendElement(mPendingMutations[i]);
-  }
-  
-  nsCOMPtr<nsIWritableVariant> mutations =
-    do_CreateInstance("@mozilla.org/variant;1");
-  mutations->SetAsArray(nsIDataType::VTYPE_INTERFACE,
-                        &NS_GET_IID(nsIDOMMutationRecord),
-                        mods.Length(),
-                        const_cast<void*>(
-                          static_cast<const void*>(mods.Elements())));
-  mPendingMutations.Clear();
+
+  nsCOMPtr<nsIVariant> mutations = TakeRecords();
   nsAutoMicroTask mt;
   sCurrentObserver = this; // For 'this' handling.
   mCallback->HandleMutations(mutations, this);
@@ -749,7 +789,6 @@ nsDOMMutationObserver::LeaveMutationHandling()
         static_cast<nsDOMMutationObserver*>(obs[i]);
       if (o->mCurrentMutations.Length() == sMutationLevel) {
         // It is already in pending mutations.
-        nsDOMMutationRecord* r = o->mCurrentMutations[sMutationLevel - 1];
         o->mCurrentMutations.RemoveElementAt(sMutationLevel - 1);
       }
     }
@@ -858,8 +897,10 @@ nsAutoMutationBatch::Done()
       m->mAddedNodes = addedList;
       m->mPreviousSibling = mPrevSibling;
       m->mNextSibling = mNextSibling;
-      ob->ScheduleForRun();
     }
+    // Always schedule the observer so that transient receivers are
+    // removed correctly.
+    ob->ScheduleForRun();
   }
   nsDOMMutationObserver::LeaveMutationHandling();
 }

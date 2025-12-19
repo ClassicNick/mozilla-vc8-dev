@@ -1526,6 +1526,16 @@ public:
     virtual void SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
                                      FontCacheSizes*   aSizes) const;
 
+    typedef enum {
+        FONT_TYPE_DWRITE,
+        FONT_TYPE_GDI,
+        FONT_TYPE_FT2,
+        FONT_TYPE_MAC,
+        FONT_TYPE_OS2
+    } FontType;
+
+    virtual FontType GetType() const = 0;
+
 protected:
     // Call the appropriate shaper to generate glyphs for aText and store
     // them into aShapedWord.
@@ -2336,19 +2346,19 @@ public:
     }
 
     bool CharIsSpace(PRUint32 aPos) {
-        NS_ASSERTION(0 <= aPos && aPos < mCharacterCount, "aPos out of range");
+        NS_ASSERTION(aPos < mCharacterCount, "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsSpace();
     }
     bool CharIsTab(PRUint32 aPos) {
-        NS_ASSERTION(0 <= aPos && aPos < mCharacterCount, "aPos out of range");
+        NS_ASSERTION(aPos < mCharacterCount, "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsTab();
     }
     bool CharIsNewline(PRUint32 aPos) {
-        NS_ASSERTION(0 <= aPos && aPos < mCharacterCount, "aPos out of range");
+        NS_ASSERTION(aPos < mCharacterCount, "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsNewline();
     }
     bool CharIsLowSurrogate(PRUint32 aPos) {
-        NS_ASSERTION(0 <= aPos && aPos < mCharacterCount, "aPos out of range");
+        NS_ASSERTION(aPos < mCharacterCount, "aPos out of range");
         return mCharacterGlyphs[aPos].CharIsLowSurrogate();
     }
 

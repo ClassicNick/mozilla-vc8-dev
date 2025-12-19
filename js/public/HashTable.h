@@ -619,23 +619,20 @@ class HashTable : private AllocPolicy
 
     bool checkOverloaded()
     {
-        if (overloaded()) {
-            /* Compress if a quarter or more of all entries are removed. */
-            int deltaLog2;
-            if (removedCount >= (capacity() >> 2)) {
-                METER(stats.compresses++);
-                deltaLog2 = 0;
-            } else {
-                METER(stats.grows++);
-                deltaLog2 = 1;
-            }
+        if (!overloaded())
+            return false;
 
-            (void) changeTableSize(deltaLog2);
-
-            return true;
+        /* Compress if a quarter or more of all entries are removed. */
+        int deltaLog2;
+        if (removedCount >= (capacity() >> 2)) {
+            METER(stats.compresses++);
+            deltaLog2 = 0;
+        } else {
+            METER(stats.grows++);
+            deltaLog2 = 1;
         }
 
-        return false;
+        return changeTableSize(deltaLog2);
     }
 
     void remove(Entry &e)
@@ -985,12 +982,14 @@ class HashMap
     Impl impl;
 
   public:
+    const static unsigned sDefaultInitSize = Impl::sDefaultInitSize;
+
     /*
      * HashMap construction is fallible (due to OOM); thus the user must call
      * init after constructing a HashMap and check the return value.
      */
-    HashMap(AllocPolicy a = AllocPolicy()) : impl(a) {}
-    bool init(uint32_t len = detail::HashTable<Entry, MapHashPolicy, AllocPolicy>::sDefaultInitSize)  { return impl.init(len); }
+    HashMap(AllocPolicy a = AllocPolicy()) : impl(a)  {}
+    bool init(uint32_t len = sDefaultInitSize)        { return impl.init(len); }
     bool initialized() const                          { return impl.initialized(); }
 
     /*
@@ -1151,15 +1150,15 @@ class HashMap
         return impl.lookup(l) != NULL;
     }
 
-    /* Overwrite existing value with v. Return NULL on oom. */
+    /* Overwrite existing value with v. Return false on oom. */
     template<typename KeyInput, typename ValueInput>
-    Entry *put(const KeyInput &k, const ValueInput &v) {
+    bool put(const KeyInput &k, const ValueInput &v) {
         AddPtr p = lookupForAdd(k);
         if (p) {
             p->value = v;
-            return &*p;
+            return true;
         }
-        return add(p, k, v) ? &*p : NULL;
+        return add(p, k, v);
     }
 
     /* Like put, but assert that the given key is not already present. */
@@ -1223,12 +1222,14 @@ class HashSet
     Impl impl;
 
   public:
+    const static unsigned sDefaultInitSize = Impl::sDefaultInitSize;
+
     /*
      * HashSet construction is fallible (due to OOM); thus the user must call
      * init after constructing a HashSet and check the return value.
      */
-    HashSet(AllocPolicy a = AllocPolicy()) : impl(a) {}
-    bool init(uint32_t len = detail::HashTable<const T, SetOps, AllocPolicy>::sDefaultInitSize)  { return impl.init(len); }
+    HashSet(AllocPolicy a = AllocPolicy()) : impl(a)  {}
+    bool init(uint32_t len = sDefaultInitSize)        { return impl.init(len); }
     bool initialized() const                          { return impl.initialized(); }
 
     /*
@@ -1362,10 +1363,10 @@ class HashSet
         return impl.lookup(l) != NULL;
     }
 
-    /* Overwrite existing value with v. Return NULL on oom. */
-    const T *put(const T &t) {
+    /* Overwrite existing value with v. Return false on oom. */
+    bool put(const T &t) {
         AddPtr p = lookupForAdd(t);
-        return p ? &*p : (add(p, t) ? &*p : NULL);
+        return p ? true : add(p, t);
     }
 
     /* Like put, but assert that the given key is not already present. */

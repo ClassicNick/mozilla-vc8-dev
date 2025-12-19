@@ -68,6 +68,8 @@ nsXULTreeAccessible::
   nsXULTreeAccessible(nsIContent* aContent, nsDocAccessible* aDoc) :
   nsAccessibleWrap(aContent, aDoc)
 {
+  mFlags |= eXULTreeAccessible;
+
   mTree = nsCoreUtils::GetTreeBoxObject(aContent);
   if (mTree)
     mTree->GetView(getter_AddRefs(mTreeView));
@@ -105,7 +107,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXULTreeAccessible,
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsXULTreeAccessible)
-NS_INTERFACE_MAP_STATIC_AMBIGUOUS(nsXULTreeAccessible)
 NS_INTERFACE_MAP_END_INHERITING(nsAccessible)
 
 NS_IMPL_ADDREF_INHERITED(nsXULTreeAccessible, nsAccessible)
@@ -141,20 +142,17 @@ nsXULTreeAccessible::NativeState()
   return state;
 }
 
-NS_IMETHODIMP
-nsXULTreeAccessible::GetValue(nsAString& aValue)
+void
+nsXULTreeAccessible::Value(nsString& aValue)
 {
   // Return the value is the first selected child.
 
   aValue.Truncate();
 
-  if (IsDefunct() || !mTreeView)
-    return NS_ERROR_FAILURE;
-
   nsCOMPtr<nsITreeSelection> selection;
   mTreeView->GetSelection(getter_AddRefs(selection));
   if (!selection)
-    return NS_ERROR_FAILURE;
+    return;
 
   PRInt32 currentIndex;
   nsCOMPtr<nsIDOMElement> selectItem;
@@ -167,10 +165,9 @@ nsXULTreeAccessible::GetValue(nsAString& aValue)
     if (cols)
       cols->GetKeyColumn(getter_AddRefs(keyCol));
 
-    return mTreeView->GetCellText(currentIndex, keyCol, aValue);
+    mTreeView->GetCellText(currentIndex, keyCol, aValue);
   }
 
-  return NS_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -688,7 +685,7 @@ nsXULTreeAccessible::TreeViewInvalidated(PRInt32 aStartRow, PRInt32 aEndRow,
 }
 
 void
-nsXULTreeAccessible::TreeViewChanged()
+nsXULTreeAccessible::TreeViewChanged(nsITreeView* aView)
 {
   if (IsDefunct())
     return;
@@ -704,7 +701,7 @@ nsXULTreeAccessible::TreeViewChanged()
 
   // Clear cache.
   ClearCache(mAccessibleCache);
-  mTree->GetView(getter_AddRefs(mTreeView));
+  mTreeView = aView;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -805,7 +802,7 @@ nsXULTreeItemAccessibleBase::GetBounds(PRInt32 *aX, PRInt32 *aY,
   x = tcX;
   y += tcY;
 
-  nsPresContext *presContext = GetPresContext();
+  nsPresContext* presContext = mDoc->PresContext();
   *aX = presContext->CSSPixelsToDevPixels(x);
   *aY = presContext->CSSPixelsToDevPixels(y);
   *aWidth = presContext->CSSPixelsToDevPixels(width);
@@ -863,7 +860,7 @@ nsXULTreeItemAccessibleBase::RelationByType(PRUint32 aType)
   if (parentIndex == -1)
     return Relation(mParent);
 
-  nsRefPtr<nsXULTreeAccessible> treeAcc = do_QueryObject(mParent);
+  nsXULTreeAccessible* treeAcc = mParent->AsXULTree();
   return Relation(treeAcc->GetTreeItemAccessible(parentIndex));
 }
 
@@ -1283,7 +1280,7 @@ nsXULTreeColumnsAccessible::GetSiblingAtOffset(PRInt32 aOffset,
       PRInt32 rowCount = 0;
       treeView->GetRowCount(&rowCount);
       if (rowCount > 0 && aOffset <= rowCount) {
-        nsRefPtr<nsXULTreeAccessible> treeAcc = do_QueryObject(Parent());
+        nsXULTreeAccessible* treeAcc = Parent()->AsXULTree();
 
         if (treeAcc)
           return treeAcc->GetTreeItemAccessible(aOffset - 1);

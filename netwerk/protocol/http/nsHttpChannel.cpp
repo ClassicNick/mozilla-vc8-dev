@@ -72,6 +72,7 @@
 #include "nsAlgorithm.h"
 #include "sampler.h"
 #include "nsIConsoleService.h"
+#include "base/compiler_specific.h"
 
 using namespace mozilla;
 
@@ -121,7 +122,7 @@ AutoRedirectVetoNotifier::ReportRedirectResult(bool succeeded)
 //-----------------------------------------------------------------------------
 
 nsHttpChannel::nsHttpChannel()
-    : HttpAsyncAborter<nsHttpChannel>(this)
+    : ALLOW_THIS_IN_INITIALIZER_LIST(HttpAsyncAborter<nsHttpChannel>(this))
     , mLogicalOffset(0)
     , mCacheAccess(0)
     , mPostID(0)
@@ -134,7 +135,6 @@ nsHttpChannel::nsHttpChannel()
     , mResuming(false)
     , mInitedCacheEntry(false)
     , mCacheForOfflineUse(false)
-    , mCachingOpportunistically(false)
     , mFallbackChannel(false)
     , mCustomConditionalRequest(false)
     , mFallingBack(false)
@@ -1149,6 +1149,11 @@ nsHttpChannel::ProcessResponse()
 nsresult
 nsHttpChannel::ContinueProcessResponse(nsresult rv)
 {
+    if (rv == NS_ERROR_CORRUPTED_CONTENT) {
+        // don't ever render responses we've flagged as suspect content
+        return NS_ERROR_CORRUPTED_CONTENT;
+    }
+
     if (rv == NS_ERROR_DOM_BAD_URI && mRedirectURI) {
 
         bool isHTTP = false;
@@ -1986,17 +1991,20 @@ nsHttpChannel::ProcessNotModified()
     // that cache entry so there is a fighting chance of getting things on the
     // right track as well as disabling pipelining for that host.
 
-    nsCAutoString lastModified;
+    nsCAutoString lastModifiedCached;
     nsCAutoString lastModified304;
 
     rv = mCachedResponseHead->GetHeader(nsHttp::Last_Modified,
-                                        lastModified);
-    if (NS_SUCCEEDED(rv))
+                                        lastModifiedCached);
+    if (NS_SUCCEEDED(rv)) {
         rv = mResponseHead->GetHeader(nsHttp::Last_Modified, 
                                       lastModified304);
-    if (NS_SUCCEEDED(rv) && !lastModified304.Equals(lastModified)) {
+    }
+
+    if (NS_SUCCEEDED(rv) && !lastModified304.Equals(lastModifiedCached)) {
         LOG(("Cache Entry and 304 Last-Modified Headers Do Not Match "
-             "%s and %s\n", lastModified.get(), lastModified304.get()));
+             "[%s] and [%s]\n",
+             lastModifiedCached.get(), lastModified304.get()));
 
         mCacheEntry->Doom();
         if (mConnectionInfo)
@@ -2004,6 +2012,7 @@ nsHttpChannel::ProcessNotModified()
                 PipelineFeedbackInfo(mConnectionInfo,
                                      nsHttpConnectionMgr::RedCorruptedContent,
                                      nsnull, 0);
+        Telemetry::Accumulate(Telemetry::CACHE_LM_INCONSISTENT, true);
     }
 
     // merge any new headers with the cached response headers
@@ -2072,8 +2081,8 @@ nsHttpChannel::ProcessFallback(bool *waitingForRedirectCallback)
     NS_ASSERTION(fallbackEntryType & nsIApplicationCache::ITEM_FALLBACK,
                  "Fallback entry not marked correctly!");
 
-    // Kill any opportunistic cache entry, and disable opportunistic
-    // caching for the fallback.
+    // Kill any offline cache entry, and disable offline caching for the
+    // fallback.
     if (mOfflineCacheEntry) {
         mOfflineCacheEntry->Doom();
         mOfflineCacheEntry = 0;
@@ -2081,7 +2090,6 @@ nsHttpChannel::ProcessFallback(bool *waitingForRedirectCallback)
     }
 
     mCacheForOfflineUse = false;
-    mCachingOpportunistically = false;
     mOfflineCacheClientID.Truncate();
     mOfflineCacheEntry = 0;
     mOfflineCacheAccess = 0;
@@ -2334,12 +2342,10 @@ nsHttpChannel::OnOfflineCacheEntryAvailable(nsICacheEntryDescriptor *aEntry,
             NS_FAILED(namespaceEntry->GetItemType(&namespaceType)) ||
             (namespaceType &
              (nsIApplicationCacheNamespace::NAMESPACE_FALLBACK |
-              nsIApplicationCacheNamespace::NAMESPACE_OPPORTUNISTIC |
               nsIApplicationCacheNamespace::NAMESPACE_BYPASS)) == 0) {
             // When loading from an application cache, only items
             // on the whitelist or matching a
-            // fallback/opportunistic namespace should hit the
-            // network...
+            // fallback namespace should hit the network...
             mLoadFlags |= LOAD_ONLY_FROM_CACHE;
 
             // ... and if there were an application cache entry,
@@ -2351,19 +2357,6 @@ nsHttpChannel::OnOfflineCacheEntryAvailable(nsICacheEntryDescriptor *aEntry,
             nsIApplicationCacheNamespace::NAMESPACE_FALLBACK) {
             rv = namespaceEntry->GetData(mFallbackKey);
             NS_ENSURE_SUCCESS(rv, rv);
-        }
-
-        if ((namespaceType &
-             nsIApplicationCacheNamespace::NAMESPACE_OPPORTUNISTIC) &&
-            mLoadFlags & LOAD_DOCUMENT_URI) {
-            // Document loads for items in an opportunistic namespace
-            // should be placed in the offline cache.
-            nsCString clientID;
-            mApplicationCache->GetClientID(clientID);
-
-            mCacheForOfflineUse = !clientID.IsEmpty();
-            SetOfflineCacheClientID(clientID);
-            mCachingOpportunistically = true;
         }
     }
 
@@ -2386,11 +2379,13 @@ nsHttpChannel::OpenNormalCacheEntry()
     nsCOMPtr<nsICacheSession> session;
     rv = gHttpHandler->GetCacheSession(storagePolicy,
                                        getter_AddRefs(session));
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv))
+        return rv;
 
-    nsCacheAccessMode accessRequested;
+    nsCacheAccessMode accessRequested = 0;
     rv = DetermineCacheAccess(&accessRequested);
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv))
+        return rv;
 
     mOnCacheEntryAvailableCallback =
         &nsHttpChannel::OnNormalCacheEntryAvailable;
@@ -3104,17 +3099,6 @@ nsHttpChannel::CloseOfflineCacheEntry()
 
     mOfflineCacheEntry = 0;
     mOfflineCacheAccess = 0;
-
-    if (mCachingOpportunistically) {
-        nsCOMPtr<nsIApplicationCacheService> appCacheService =
-            do_GetService(NS_APPLICATIONCACHESERVICE_CONTRACTID);
-        if (appCacheService) {
-            nsCAutoString cacheKey;
-            GenerateCacheKey(mPostID, cacheKey);
-            appCacheService->CacheOpportunistically(mApplicationCache,
-                                                    cacheKey);
-        }
-    }
 }
 
 
@@ -3549,7 +3533,11 @@ nsHttpChannel::AsyncProcessRedirection(PRUint32 redirectType)
 
     nsresult rv = CreateNewURI(location, getter_AddRefs(mRedirectURI));
 
-    if (NS_FAILED(rv)) return rv;
+    if (NS_FAILED(rv)) {
+        LOG(("Invalid URI for redirect: Location: %s\n", location));
+        Cancel(NS_ERROR_CORRUPTED_CONTENT);
+        return NS_ERROR_CORRUPTED_CONTENT;
+    }
 
     if (mApplicationCache) {
         // if we are redirected to a different origin check if there is a fallback
@@ -4155,7 +4143,7 @@ nsHttpChannel::Get##name##Time(PRTime* _retval) {              \
         return NS_OK;                                          \
     }                                                          \
     *_retval = mChannelCreationTime +                          \
-        (stamp - mChannelCreationTimestamp).ToSeconds() * 1e6; \
+        (PRTime) ((stamp - mChannelCreationTimestamp).ToSeconds() * 1e6); \
     return NS_OK;                                              \
 }
 
@@ -4601,10 +4589,18 @@ nsHttpChannel::OnDataAvailable(nsIRequest *request, nsISupports *ctxt,
         // already streamed some data from another source (see, for example,
         // OnDoneReadingPartialCacheEntry).
         //
+
+        // report the current stream offset to our listener... if we've
+        // streamed more than PR_UINT32_MAX, then avoid overflowing the
+        // stream offset.  it's the best we can do without a 64-bit stream
+        // listener API. (Copied from nsInputStreamPump::OnStateTransfer.)
+        PRUint32 odaOffset = mLogicalOffset > PR_UINT32_MAX
+                           ? PR_UINT32_MAX : PRUint32(mLogicalOffset);
+
         nsresult rv =  mListener->OnDataAvailable(this,
                                                   mListenerContext,
                                                   input,
-                                                  mLogicalOffset,
+                                                  odaOffset,
                                                   count);
         if (NS_SUCCEEDED(rv))
             mLogicalOffset = progress;

@@ -851,20 +851,16 @@ public:
         mUpdateFormat = gfxASurface::FormatFromContent(GetContentType());
 
         if (gUseBackingSurface) {
-            if (mUpdateFormat == gfxASurface::ImageFormatRGB24) {
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-                mUpdateFormat = gfxASurface::ImageFormatRGB16_565;
+            if (mUpdateFormat != gfxASurface::ImageFormatARGB32) {
                 mShaderType = RGBXLayerProgramType;
-#else
-                mUpdateFormat = gfxASurface::ImageFormatARGB32;
-                mShaderType = RGBALayerProgramType;
-#endif
             } else {
                 mShaderType = RGBALayerProgramType;
             }
             Resize(aSize);
         } else {
-            if (mUpdateFormat == gfxASurface::ImageFormatRGB24) {
+            if (mUpdateFormat == gfxASurface::ImageFormatRGB16_565) {
+                mShaderType = RGBXLayerProgramType;
+            } else if (mUpdateFormat == gfxASurface::ImageFormatRGB24) {
                 // RGB24 means really RGBX for Thebes, which means we have to
                 // use the right shader and ignore the uninitialized alpha
                 // value.
@@ -878,7 +874,7 @@ public:
     virtual ~TextureImageEGL()
     {
         GLContext *ctx = mGLContext;
-        if (ctx->IsDestroyed() || !NS_IsMainThread()) {
+        if (ctx->IsDestroyed() || !ctx->IsOwningThreadCurrent()) {
             ctx = ctx->GetSharedContext();
         }
 
@@ -1397,7 +1393,7 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
         // Create dummy GLContextEGL class
         nsRefPtr<GLContextEGL> glContext =
             new GLContextEGL(ContextFormat(DepthToGLFormat(context->device()->depth())),
-                             NULL,
+                             gGlobalContext,
                              NULL,
                              sEGLLibrary.fGetCurrentSurface(LOCAL_EGL_DRAW), // just use same surface for read and draw
                              sEGLLibrary.fGetCurrentContext(),
@@ -1409,7 +1405,9 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
         glContext->SetIsDoubleBuffered(context->format().doubleBuffer());
 
         glContext->SetPlatformContext(context);
-        gGlobalContext = glContext;
+        if (!gGlobalContext) {
+            gGlobalContext = glContext;
+        }
 
         return glContext.forget();
     }
@@ -1446,20 +1444,9 @@ static const EGLint kEGLConfigAttribsRGBA32[] = {
     LOCAL_EGL_NONE
 };
 
-// Return true if a suitable EGLConfig was found and pass it out
-// through aConfig.  Return false otherwise.
-//
-// NB: It's entirely legal for the returned EGLConfig to be valid yet
-// have the value null.
 static bool
-CreateConfig(EGLConfig* aConfig)
+CreateConfig(EGLConfig* aConfig, PRInt32 depth)
 {
-    nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
-    nsCOMPtr<nsIScreen> screen;
-    screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
-    PRInt32 depth = 24;
-    screen->GetColorDepth(&depth);
-
     EGLConfig configs[64];
     gfxASurface::gfxImageFormat format;
     const EGLint* attribs = depth == 16 ? kEGLConfigAttribsRGB16 :
@@ -1492,6 +1479,34 @@ CreateConfig(EGLConfig* aConfig)
         }
     }
     return false;
+}
+
+// Return true if a suitable EGLConfig was found and pass it out
+// through aConfig.  Return false otherwise.
+//
+// NB: It's entirely legal for the returned EGLConfig to be valid yet
+// have the value null.
+static bool
+CreateConfig(EGLConfig* aConfig)
+{
+    nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
+    nsCOMPtr<nsIScreen> screen;
+    screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
+    PRInt32 depth = 24;
+    screen->GetColorDepth(&depth);
+
+    if (!CreateConfig(aConfig, depth)) {
+#ifdef MOZ_WIDGET_ANDROID
+        // Bug 736005
+        // Android doesn't always support 16 bit so also try 24 bit
+        if (depth == 16) {
+            return CreateConfig(aConfig, 24);
+        }
+#endif
+        return false;
+    } else {
+        return true;
+    }
 }
 
 static EGLSurface

@@ -784,6 +784,12 @@ public:
    */
   static void ExitFullScreen(bool aRunAsync);
 
+
+  virtual void RequestPointerLock(Element* aElement) = 0;
+
+  static void UnlockPointer();
+
+
   //----------------------------------------------------------------------
 
   // Document notification API's
@@ -1642,7 +1648,7 @@ public:
   // declaration of nsINode::SizeOfIncludingThis.
   virtual void DocSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const;
 
-  PRBool MayHaveDOMMutationObservers()
+  bool MayHaveDOMMutationObservers()
   {
     return mMayHaveDOMMutationObservers;
   }
