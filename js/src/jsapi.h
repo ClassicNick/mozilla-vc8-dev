@@ -59,6 +59,8 @@
 #include "gc/Root.h"
 
 #ifdef __cplusplus
+#include <limits> /* for std::numeric_limits */
+
 #include "jsalloc.h"
 #include "js/Vector.h"
 #endif
@@ -704,11 +706,101 @@ MagicValue(JSWhyMagic why)
 }
 
 static JS_ALWAYS_INLINE Value
+NumberValue(float f)
+{
+    Value v;
+    v.setNumber(f);
+    return v;
+}
+
+static JS_ALWAYS_INLINE Value
 NumberValue(double dbl)
 {
     Value v;
     v.setNumber(dbl);
     return v;
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(int8_t i)
+{
+    return Int32Value(i);
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(uint8_t i)
+{
+    return Int32Value(i);
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(int16_t i)
+{
+    return Int32Value(i);
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(uint16_t i)
+{
+    return Int32Value(i);
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(int32_t i)
+{
+    return Int32Value(i);
+}
+
+static JS_ALWAYS_INLINE Value
+NumberValue(uint32_t i)
+{
+    Value v;
+    v.setNumber(i);
+    return v;
+}
+
+namespace detail {
+
+template <bool Signed>
+class MakeNumberValue
+{
+  public:
+    template<typename T>
+    static inline Value create(const T t)
+    {
+        Value v;
+        if (JSVAL_INT_MIN <= t && t <= JSVAL_INT_MAX)
+            v.setInt32(int32_t(t));
+        else
+            v.setDouble(double(t));
+        return v;
+    }
+};
+
+template <>
+class MakeNumberValue<false>
+{
+  public:
+    template<typename T>
+    static inline Value create(const T t)
+    {
+        Value v;
+        if (t <= JSVAL_INT_MAX)
+            v.setInt32(int32_t(t));
+        else
+            v.setDouble(double(t));
+        return v;
+    }
+};
+
+} /* namespace detail */
+
+template <typename T>
+static JS_ALWAYS_INLINE Value
+NumberValue(const T t)
+{
+    MOZ_ASSERT(T(double(t)) == t, "value creation would be lossy");
+    return detail::MakeNumberValue<std::numeric_limits<T>::is_signed>::create(t);
 }
 
 static JS_ALWAYS_INLINE Value
@@ -978,7 +1070,7 @@ class AutoArrayRooter : private AutoGCRooter {
   public:
     AutoArrayRooter(JSContext *cx, size_t len, Value *vec
                     JS_GUARD_OBJECT_NOTIFIER_PARAM)
-      : AutoGCRooter(cx, len), array(vec)
+      : AutoGCRooter(cx, len), array(vec), skip(cx, array, len)
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
         JS_ASSERT(tag >= 0);
@@ -1000,6 +1092,8 @@ class AutoArrayRooter : private AutoGCRooter {
 
   private:
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
+
+    SkipRoot skip;
 };
 
 /* The auto-root for enumeration object and its state. */
@@ -2289,8 +2383,10 @@ JS_ALWAYS_INLINE bool
 ToNumber(JSContext *cx, const Value &v, double *out)
 {
     AssertArgumentsAreSane(cx, v);
+
     if (v.isNumber()) {
         *out = v.toNumber();
+        MaybeCheckStackRoots(cx);
         return true;
     }
     return js::ToNumberSlow(cx, v, out);
@@ -3993,11 +4089,11 @@ JS_LookupPropertyWithFlagsById(JSContext *cx, JSObject *obj, jsid id,
 
 struct JSPropertyDescriptor {
     JSObject           *obj;
-    unsigned              attrs;
+    unsigned           attrs;
+    unsigned           shortid;
     JSPropertyOp       getter;
     JSStrictPropertyOp setter;
     jsval              value;
-    unsigned              shortid;
 };
 
 /*

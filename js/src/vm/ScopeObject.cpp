@@ -176,10 +176,9 @@ CallObject::create(JSContext *cx, JSScript *script, HandleObject enclosing, Hand
      * whose call objects do not have a consistent global variable and need
      * to be updated dynamically.
      */
-    JSObject &global = enclosing->global();
-    if (&global != obj->getParent()) {
+    if (&enclosing->global() != obj->getParent()) {
         JS_ASSERT(obj->getParent() == NULL);
-        if (!obj->setParent(cx, &global))
+        if (!JSObject::setParent(cx, obj, RootedVarObject(cx, &enclosing->global())))
             return NULL;
     }
 
@@ -218,7 +217,7 @@ CallObject::createForFunction(JSContext *cx, StackFrame *fp)
     JS_ASSERT(fp->isNonEvalFunctionFrame());
     JS_ASSERT(!fp->hasCallObj());
 
-    RootedVarObject scopeChain(cx, &fp->scopeChain());
+    RootedVarObject scopeChain(cx, fp->scopeChain());
     JS_ASSERT_IF(scopeChain->isWith() || scopeChain->isBlock() || scopeChain->isCall(),
                  scopeChain->getPrivate() != fp);
 
@@ -226,7 +225,8 @@ CallObject::createForFunction(JSContext *cx, StackFrame *fp)
      * For a named function expression Call's parent points to an environment
      * object holding function's name.
      */
-    if (JSAtom *lambdaName = CallObjectLambdaName(fp->fun())) {
+    RootedVarAtom lambdaName(cx, CallObjectLambdaName(fp->fun()));
+    if (lambdaName) {
         scopeChain = DeclEnvObject::create(cx, fp);
         if (!scopeChain)
             return NULL;
@@ -250,9 +250,7 @@ CallObject::createForFunction(JSContext *cx, StackFrame *fp)
 CallObject *
 CallObject::createForStrictEval(JSContext *cx, StackFrame *fp)
 {
-    CallObject *callobj = create(cx, fp->script(),
-                                 RootedVarObject(cx, &fp->scopeChain()),
-                                 RootedVarObject(cx));
+    CallObject *callobj = create(cx, fp->script(), fp->scopeChain(), RootedVarObject(cx));
     if (!callobj)
         return NULL;
 
@@ -421,17 +419,16 @@ DeclEnvObject::create(JSContext *cx, StackFrame *fp)
 
     RootedVarShape emptyDeclEnvShape(cx);
     emptyDeclEnvShape = EmptyShape::getInitialShape(cx, &DeclEnvClass, NULL,
-                                                    &fp->scopeChain().global(),
-                                                    FINALIZE_KIND);
+                                                    &fp->global(), FINALIZE_KIND);
     if (!emptyDeclEnvShape)
         return NULL;
 
-    JSObject *obj = JSObject::create(cx, FINALIZE_KIND, emptyDeclEnvShape, type, NULL);
+    RootedVarObject obj(cx, JSObject::create(cx, FINALIZE_KIND, emptyDeclEnvShape, type, NULL));
     if (!obj)
         return NULL;
 
     obj->setPrivate(fp);
-    if (!obj->asScope().setEnclosingScope(cx, RootedVarObject(cx, &fp->scopeChain())))
+    if (!obj->asScope().setEnclosingScope(cx, fp->scopeChain()))
         return NULL;
 
     return &obj->asDeclEnv();
@@ -452,7 +449,7 @@ WithObject::create(JSContext *cx, StackFrame *fp, HandleObject proto, HandleObje
     if (!emptyWithShape)
         return NULL;
 
-    JSObject *obj = JSObject::create(cx, FINALIZE_KIND, emptyWithShape, type, NULL);
+    RootedVarObject obj(cx, JSObject::create(cx, FINALIZE_KIND, emptyWithShape, type, NULL));
     if (!obj)
         return NULL;
 
@@ -691,43 +688,41 @@ Class js::WithClass = {
         with_DeleteSpecial,
         with_Enumerate,
         with_TypeOf,
-        NULL,             /* fix   */
         with_ThisObject,
         NULL,             /* clear */
     }
 };
 
 ClonedBlockObject *
-ClonedBlockObject::create(JSContext *cx, StaticBlockObject &block, StackFrame *fp)
+ClonedBlockObject::create(JSContext *cx, Handle<StaticBlockObject*> block, StackFrame *fp)
 {
     RootedVarTypeObject type(cx);
-    type = block.getNewType(cx);
+    type = block->getNewType(cx);
     if (!type)
         return NULL;
 
     HeapSlot *slots;
-    if (!PreallocateObjectDynamicSlots(cx, block.lastProperty(), &slots))
+    if (!PreallocateObjectDynamicSlots(cx, block->lastProperty(), &slots))
         return NULL;
 
     RootedVarShape shape(cx);
-    shape = block.lastProperty();
+    shape = block->lastProperty();
 
-    JSObject *obj = JSObject::create(cx, FINALIZE_KIND, shape, type, slots);
+    RootedVarObject obj(cx, JSObject::create(cx, FINALIZE_KIND, shape, type, slots));
     if (!obj)
         return NULL;
 
     /* Set the parent if necessary, as for call objects. */
-    JSObject &global = fp->scopeChain().global();
-    if (&global != obj->getParent()) {
+    if (&fp->global() != obj->getParent()) {
         JS_ASSERT(obj->getParent() == NULL);
-        if (!obj->setParent(cx, &global))
+        if (!JSObject::setParent(cx, obj, RootedVarObject(cx, &fp->global())))
             return NULL;
     }
 
     JS_ASSERT(!obj->inDictionaryMode());
-    JS_ASSERT(obj->slotSpan() >= block.slotCount() + RESERVED_SLOTS);
+    JS_ASSERT(obj->slotSpan() >= block->slotCount() + RESERVED_SLOTS);
 
-    obj->setReservedSlot(DEPTH_SLOT, PrivateUint32Value(block.stackDepth()));
+    obj->setReservedSlot(DEPTH_SLOT, PrivateUint32Value(block->stackDepth()));
     obj->setPrivate(js_FloatingFrameIfGenerator(cx, fp));
 
     if (obj->lastProperty()->extensibleParents() && !obj->generateOwnShape(cx))
@@ -883,7 +878,7 @@ Class js::BlockClass = {
 #define NO_PARENT_INDEX UINT32_MAX
 
 static uint32_t
-FindObjectIndex(JSObjectArray *array, JSObject *obj)
+FindObjectIndex(ObjectArray *array, JSObject *obj)
 {
     size_t i;
 
@@ -911,7 +906,7 @@ js::XDRStaticBlockObject(XDRState<mode> *xdr, JSScript *script, StaticBlockObjec
     uint32_t depthAndCount = 0;
     if (mode == XDR_ENCODE) {
         obj = *objp;
-        parentId = JSScript::isValidOffset(script->objectsOffset)
+        parentId = script->hasObjects()
                    ? FindObjectIndex(script->objects(), obj->enclosingBlock())
                    : NO_PARENT_INDEX;
         uint32_t depth = obj->stackDepth();

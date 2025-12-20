@@ -2140,10 +2140,10 @@ AutoGCRooter::trace(JSTracer *trc)
             static_cast<AutoPropDescArrayRooter *>(this)->descriptors;
         for (size_t i = 0, len = descriptors.length(); i < len; i++) {
             PropDesc &desc = descriptors[i];
-            MarkValueRoot(trc, &desc.pd, "PropDesc::pd");
-            MarkValueRoot(trc, &desc.value, "PropDesc::value");
-            MarkValueRoot(trc, &desc.get, "PropDesc::get");
-            MarkValueRoot(trc, &desc.set, "PropDesc::set");
+            MarkValueRoot(trc, &desc.pd_, "PropDesc::pd_");
+            MarkValueRoot(trc, &desc.value_, "PropDesc::value_");
+            MarkValueRoot(trc, &desc.get_, "PropDesc::get_");
+            MarkValueRoot(trc, &desc.set_, "PropDesc::set_");
         }
         return;
       }
@@ -3942,6 +3942,9 @@ SetDeterministicGC(JSContext *cx, bool enabled)
 #endif
 }
 
+} /* namespace gc */
+} /* namespace js */
+
 #if defined(DEBUG) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
 
 static void
@@ -3955,7 +3958,6 @@ CheckStackRoot(JSTracer *trc, uintptr_t *w)
     ConservativeGCTest test = MarkIfGCThingWord(trc, *w);
 
     if (test == CGCT_VALID) {
-        JSContext *iter = NULL;
         bool matched = false;
         JSRuntime *rt = trc->runtime;
         for (ContextIter cx(rt); !cx.done(); cx.next()) {
@@ -3994,20 +3996,27 @@ CheckStackRootsRange(JSTracer *trc, uintptr_t *begin, uintptr_t *end)
         CheckStackRoot(trc, i);
 }
 
+static void
+EmptyMarkCallback(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
+{}
+
 void
-CheckStackRoots(JSContext *cx)
+JS::CheckStackRoots(JSContext *cx)
 {
-    AutoCopyFreeListToArenas copy(cx->runtime);
+    JSRuntime *rt = cx->runtime;
+
+    if (!rt->gcExactScanningEnabled)
+        return;
+
+    AutoCopyFreeListToArenas copy(rt);
 
     JSTracer checker;
-    JS_TracerInit(&checker, cx, EmptyMarkCallback);
+    JS_TracerInit(&checker, rt, EmptyMarkCallback);
 
-    ThreadData *td = JS_THREAD_DATA(cx);
+    ConservativeGCData *cgcd = &rt->conservativeGC;
+    cgcd->recordStackTop();
 
-    ConservativeGCThreadData *ctd = &td->conservativeGC;
-    ctd->recordStackTop();
-
-    JS_ASSERT(ctd->hasStackToScan());
+    JS_ASSERT(cgcd->hasStackToScan());
     uintptr_t *stackMin, *stackEnd;
 #if JS_STACK_GROWTH_DIRECTION > 0
     stackMin = rt->nativeStackBase;
@@ -4015,6 +4024,39 @@ CheckStackRoots(JSContext *cx)
 #else
     stackMin = cgcd->nativeStackTop + 1;
     stackEnd = reinterpret_cast<uintptr_t *>(rt->nativeStackBase);
+
+    uintptr_t *&oldStackMin = cgcd->oldStackMin, *&oldStackEnd = cgcd->oldStackEnd;
+    uintptr_t *&oldStackData = cgcd->oldStackData;
+    uintptr_t &oldStackCapacity = cgcd->oldStackCapacity;
+
+    /*
+     * Adjust the stack to remove regions which have not changed since the
+     * stack was last scanned, and update the last scanned state.
+     */
+    if (stackEnd != oldStackEnd) {
+        rt->free_(oldStackData);
+        oldStackCapacity = rt->nativeStackQuota / sizeof(uintptr_t);
+        oldStackData = (uintptr_t *) rt->malloc_(oldStackCapacity * sizeof(uintptr_t));
+        if (!oldStackData) {
+            oldStackCapacity = 0;
+        } else {
+            uintptr_t *existing = stackEnd - 1, *copy = oldStackData;
+            while (existing >= stackMin && size_t(copy - oldStackData) < oldStackCapacity)
+                *copy++ = *existing--;
+            oldStackEnd = stackEnd;
+            oldStackMin = existing + 1;
+        }
+    } else {
+        uintptr_t *existing = stackEnd - 1, *copy = oldStackData;
+        while (existing >= stackMin && existing >= oldStackMin && *existing == *copy) {
+            copy++;
+            existing--;
+        }
+        stackEnd = existing + 1;
+        while (existing >= stackMin && size_t(copy - oldStackData) < oldStackCapacity)
+            *copy++ = *existing--;
+        oldStackMin = existing + 1;
+    }
 #endif
 
     JS_ASSERT(stackMin <= stackEnd);
@@ -4024,6 +4066,9 @@ CheckStackRoots(JSContext *cx)
 }
 
 #endif /* DEBUG && JSGC_ROOT_ANALYSIS && !JS_THREADSAFE */
+
+namespace js {
+namespace gc {
 
 #ifdef JS_GC_ZEAL
 
@@ -4193,7 +4238,8 @@ StartVerifyBarriers(JSRuntime *rt)
     trc->edgeptr = (char *)trc->root;
     trc->term = trc->edgeptr + size;
 
-    trc->nodemap.init();
+    if (!trc->nodemap.init())
+        return;
 
     /* Create the root node. */
     trc->curnode = MakeNode(trc, NULL, JSGCTraceKind(0));

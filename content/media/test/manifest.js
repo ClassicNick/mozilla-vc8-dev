@@ -23,6 +23,14 @@ var gProgressTests = [
   { name:"bogus.duh", type:"bogus/duh" }
 ];
 
+// Used by test_played.html
+var gPlayedTests = [
+  { name:"big.wav", type:"audio/x-wav", duration:9.0 },
+  { name:"sound.ogg", type:"audio/ogg", duration:4.0 },
+  { name:"seek.ogv", type:"video/ogg", duration:3.966 },
+  { name:"seek.webm", type:"video/webm", duration:3.966 },
+];
+
 // Used by test_mozLoadFrom.  Need one test file per decoder backend, plus
 // anything for testing clone-specific bugs.
 var cloneKey = Math.floor(Math.random()*100000000);
@@ -46,6 +54,15 @@ var gPausedAfterEndedTests = gSmallTests.concat([
   { name:"r11025_u8_c1.wav", type:"audio/x-wav", duration:1.0 },
   { name:"small-shot.ogg", type:"video/ogg", duration:0.276 }
 ]);
+
+// Test the mozHasAudio property
+var gMozHasAudioTests = [
+  { name:"big.wav", type:"audio/x-wav", duration:9.278981, size:102444, hasAudio:undefined },
+  { name:"320x240.ogv", type:"video/ogg", width:320, height:240, duration:0.233, size:28942, hasAudio:false },
+  { name:"short-video.ogv", type:"video/ogg", duration:1.081, hasAudio:true },
+  { name:"seek.webm", type:"video/webm", duration:3.966, size:215529, hasAudio:false },
+  { name:"bogus.duh", type:"bogus/duh" }
+];
 
 // These are files that we want to make sure we can play through.  We can
 // also check metadata.  Put files of the same type together in this list so if

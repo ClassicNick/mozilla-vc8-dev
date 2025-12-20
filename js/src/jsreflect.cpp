@@ -2825,7 +2825,7 @@ ASTSerializer::literal(ParseNode *pn, Value *dst)
         LOCAL_ASSERT(re1 && re1->isRegExp());
 
         JSObject *proto;
-        if (!js_GetClassPrototype(cx, &cx->fp()->scopeChain(), JSProto_RegExp, &proto))
+        if (!js_GetClassPrototype(cx, cx->fp()->scopeChain(), JSProto_RegExp, &proto))
             return false;
 
         JSObject *re2 = CloneRegExpObject(cx, re1, proto);
@@ -3102,6 +3102,8 @@ ASTSerializer::functionBody(ParseNode *pn, TokenPos *pos, Value *dst)
 static JSBool
 reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
 {
+    cx->runtime->gcExactScanningEnabled = false;
+
     if (argc < 1) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_MORE_ARGS_NEEDED,
                              "Reflect.parse", "0", "s");

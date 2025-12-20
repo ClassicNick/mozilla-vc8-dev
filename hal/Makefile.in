@@ -98,11 +98,19 @@ CPPSRCS += UPowerClient.cpp
 endif
 else ifeq (WINNT,$(OS_TARGET))
 ifneq ($(_MSC_VER), 1310)
+ifeq ($(_MSC_VER), 1600)
+CPPSRCS += \
+  WindowsHal.cpp \
+  WindowsBattery.cpp \
+  WindowsSensor.cpp \
+  $(NULL)
+else
 CPPSRCS += \
   WindowsHal.cpp \
   WindowsBattery.cpp \
   FallbackSensor.cpp \
   $(NULL)
+endif
 else ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
 CPPSRCS += \
   FallbackHal.cpp \

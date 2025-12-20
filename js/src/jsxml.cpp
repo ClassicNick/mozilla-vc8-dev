@@ -1722,7 +1722,7 @@ static JSObject *
 GetCurrentScopeChain(JSContext *cx)
 {
     if (cx->hasfp())
-        return &cx->fp()->scopeChain();
+        return cx->fp()->scopeChain();
     return JS_ObjectToInnerObject(cx, cx->globalObject);
 }
 
@@ -1783,12 +1783,12 @@ ParseXMLSource(JSContext *cx, JSString *src)
     xml = NULL;
     filename = NULL;
     lineno = 1;
-    FrameRegsIter i(cx);
+    ScriptFrameIter i(cx);
     if (!i.done()) {
         op = (JSOp) *i.pc();
         if (op == JSOP_TOXML || op == JSOP_TOXMLLIST) {
-            filename = i.fp()->script()->filename;
-            lineno = PCToLineNumber(i.fp()->script(), i.pc());
+            filename = i.script()->filename;
+            lineno = PCToLineNumber(i.script(), i.pc());
             for (endp = srcp + srclen; srcp < endp; srcp++) {
                 if (*srcp == '\n')
                     --lineno;
@@ -4772,7 +4772,7 @@ xml_lookupGeneric(JSContext *cx, JSObject *obj, jsid id, JSObject **objp, JSProp
         *propp = NULL;
     } else {
         const Shape *shape =
-            js_AddNativeProperty(cx, obj, id, GetProperty, PutProperty,
+            js_AddNativeProperty(cx, RootedVarObject(cx, obj), id, GetProperty, PutProperty,
                                  SHAPE_INVALID_SLOT, JSPROP_ENUMERATE,
                                  0, 0);
         if (!shape)
@@ -4807,7 +4807,7 @@ xml_lookupElement(JSContext *cx, JSObject *obj, uint32_t index, JSObject **objp,
         return false;
 
     const Shape *shape =
-        js_AddNativeProperty(cx, obj, id, GetProperty, PutProperty,
+        js_AddNativeProperty(cx, RootedVarObject(cx, obj), id, GetProperty, PutProperty,
                              SHAPE_INVALID_SLOT, JSPROP_ENUMERATE,
                              0, 0);
     if (!shape)
@@ -5164,14 +5164,6 @@ xml_trace(JSTracer *trc, JSObject *obj)
     }
 }
 
-static JSBool
-xml_fix(JSContext *cx, JSObject *obj, bool *success, AutoIdVector *props)
-{
-    JS_ASSERT(obj->isExtensible());
-    *success = false;
-    return true;
-}
-
 static void
 xml_clear(JSContext *cx, JSObject *obj)
 {
@@ -5412,7 +5404,6 @@ JS_FRIEND_DATA(Class) js::XMLClass = {
         xml_deleteSpecial,
         xml_enumerate,
         xml_typeOf,
-        xml_fix,
         NULL,       /* thisObject     */
         xml_clear
     }
@@ -7268,6 +7259,8 @@ uint32_t  xml_serial;
 JSXML *
 js_NewXML(JSContext *cx, JSXMLClass xml_class)
 {
+    cx->runtime->gcExactScanningEnabled = false;
+
     JSXML *xml = js_NewGCXML(cx);
     if (!xml)
         return NULL;
@@ -7400,8 +7393,9 @@ js_GetXMLObject(JSContext *cx, JSXML *xml)
 JSObject *
 js_InitNamespaceClass(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(obj->isNative());
+    cx->runtime->gcExactScanningEnabled = false;
 
+    JS_ASSERT(obj->isNative());
     GlobalObject *global = &obj->asGlobal();
 
     JSObject *namespaceProto = global->createBlankPrototype(cx, &NamespaceClass);
@@ -7432,8 +7426,9 @@ js_InitNamespaceClass(JSContext *cx, JSObject *obj)
 JSObject *
 js_InitQNameClass(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(obj->isNative());
+    cx->runtime->gcExactScanningEnabled = false;
 
+    JS_ASSERT(obj->isNative());
     GlobalObject *global = &obj->asGlobal();
 
     JSObject *qnameProto = global->createBlankPrototype(cx, &QNameClass);
@@ -7464,8 +7459,9 @@ js_InitQNameClass(JSContext *cx, JSObject *obj)
 JSObject *
 js_InitXMLClass(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(obj->isNative());
+    cx->runtime->gcExactScanningEnabled = false;
 
+    JS_ASSERT(obj->isNative());
     GlobalObject *global = &obj->asGlobal();
 
     JSObject *xmlProto = global->createBlankPrototype(cx, &XMLClass);
@@ -7703,7 +7699,7 @@ js_ValueToXMLString(JSContext *cx, const Value &v)
 JSBool
 js_GetAnyName(JSContext *cx, jsid *idp)
 {
-    JSObject *global = cx->hasfp() ? &cx->fp()->scopeChain().global() : cx->globalObject;
+    JSObject *global = cx->hasfp() ? &cx->fp()->global() : cx->globalObject;
     Value v = global->getReservedSlot(JSProto_AnyName);
     if (v.isUndefined()) {
         JSObject *obj = NewObjectWithGivenProto(cx, &AnyNameClass, NULL, global);

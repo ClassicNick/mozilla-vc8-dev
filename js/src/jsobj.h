@@ -255,6 +255,7 @@ extern Class WithClass;
 extern Class XMLFilterClass;
 
 class ArgumentsObject;
+class ArrayBufferObject;
 class BlockObject;
 class BooleanObject;
 class ClonedBlockObject;
@@ -520,7 +521,7 @@ struct JSObject : public js::ObjectImpl
 
     /* Access the parent link of an object. */
     inline JSObject *getParent() const;
-    bool setParent(JSContext *cx, JSObject *newParent);
+    static bool setParent(JSContext *cx, js::HandleObject obj, js::HandleObject newParent);
 
     /*
      * Get the enclosing scope of an object. When called on non-scope object,
@@ -558,7 +559,7 @@ struct JSObject : public js::ObjectImpl
     static inline unsigned getSealedOrFrozenAttributes(unsigned attrs, ImmutabilityType it);
 
   public:
-    bool preventExtensions(JSContext *cx, js::AutoIdVector *props);
+    bool preventExtensions(JSContext *cx);
 
     /* ES5 15.2.3.8: non-extensible, all props non-configurable */
     inline bool seal(JSContext *cx) { return sealOrFreeze(cx, SEAL); }
@@ -626,11 +627,6 @@ struct JSObject : public js::ObjectImpl
      * true. On OOM, report it and return false.
      */
     bool arrayGetOwnDataElement(JSContext *cx, size_t i, js::Value *vp);
-
-  public:
-    bool allocateArrayBufferSlots(JSContext *cx, uint32_t size, uint8_t *contents = NULL);
-    inline uint32_t arrayBufferByteLength();
-    inline uint8_t * arrayBufferDataOffset();
 
   public:
     /*
@@ -965,6 +961,7 @@ struct JSObject : public js::ObjectImpl
     inline bool isCrossCompartmentWrapper() const;
 
     inline js::ArgumentsObject &asArguments();
+    inline js::ArrayBufferObject &asArrayBuffer();
     inline const js::ArgumentsObject &asArguments() const;
     inline js::BlockObject &asBlock();
     inline js::BooleanObject &asBoolean();
@@ -1042,7 +1039,7 @@ class ValueArray {
 
 /* For manipulating JSContext::sharpObjectMap. */
 extern bool
-js_EnterSharpObject(JSContext *cx, JSObject *obj, JSIdArray **idap, bool *alreadySeen, bool *isSharp);
+js_EnterSharpObject(JSContext *cx, js::HandleObject obj, JSIdArray **idap, bool *alreadySeen, bool *isSharp);
 
 extern void
 js_LeaveSharpObject(JSContext *cx, JSIdArray **idap);
@@ -1216,7 +1213,7 @@ js_CheckForStringIndex(jsid id);
  * and setter, slot, attributes, and other members.
  */
 extern js::Shape *
-js_AddNativeProperty(JSContext *cx, JSObject *obj, jsid id,
+js_AddNativeProperty(JSContext *cx, js::HandleObject obj, jsid id,
                      JSPropertyOp getter, JSStrictPropertyOp setter, uint32_t slot,
                      unsigned attrs, unsigned flags, int shortid);
 
@@ -1311,7 +1308,7 @@ FindProperty(JSContext *cx, HandlePropertyName name, HandleObject scopeChain,
              JSObject **objp, JSObject **pobjp, JSProperty **propp);
 
 extern JSObject *
-FindIdentifierBase(JSContext *cx, JSObject *scopeChain, PropertyName *name);
+FindIdentifierBase(JSContext *cx, HandleObject scopeChain, HandlePropertyName name);
 
 }
 
@@ -1467,7 +1464,7 @@ js_GetClassPrototype(JSContext *cx, JSObject *scope, JSProtoKey protoKey,
 namespace js {
 
 extern bool
-SetProto(JSContext *cx, JSObject *obj, JSObject *proto, bool checkForCycles);
+SetProto(JSContext *cx, HandleObject obj, HandleObject proto, bool checkForCycles);
 
 extern JSString *
 obj_toStringHelper(JSContext *cx, JSObject *obj);

@@ -520,7 +520,13 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
 
         case SCREENSHOT: {
             mMetaState = jenv->GetIntField(jobj, jMetaStateField);
-            ReadPointArray(mPoints, jenv, jPoints, 2);
+            mFlags = jenv->GetIntField(jobj, jFlagsField);
+            ReadPointArray(mPoints, jenv, jPoints, 4);
+            break;
+        }
+
+        case PAINT_LISTEN_START_EVENT: {
+            mMetaState = jenv->GetIntField(jobj, jMetaStateField);
             break;
         }
 
@@ -740,7 +746,11 @@ AndroidGeckoSurfaceView::GetSurface()
 jobject
 AndroidGeckoSurfaceView::GetSurfaceHolder()
 {
-    return GetJNIForThread()->CallObjectMethod(wrapped_obj, jGetHolderMethod);
+    JNIEnv *env = GetJNIForThread();
+    if (!env)
+        return nsnull;
+
+    return env->CallObjectMethod(wrapped_obj, jGetHolderMethod);
 }
 
 void
@@ -880,8 +890,13 @@ nsJNIString::nsJNIString(jstring jstr, JNIEnv *jenv)
         return;
     }
     JNIEnv *jni = jenv;
-    if (!jni)
+    if (!jni) {
         jni = AndroidBridge::GetJNIEnv();
+        if (!jni) {
+            SetIsVoid(true);
+            return;
+        }
+    }
     const jchar* jCharPtr = jni->GetStringChars(jstr, NULL);
 
     if (!jCharPtr) {

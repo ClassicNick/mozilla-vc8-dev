@@ -28,7 +28,6 @@ MAKE_FRAMEWORK=1
 endif
 
 VPATH += $(topsrcdir)/build/
-CPPSRCS += $(STDCXX_COMPAT)
 
 ifeq ($(OS_ARCH)_$(GNU_CC),WINNT_)
 CPPSRCS += dlldeps-xul.cpp
@@ -523,7 +522,11 @@ endif
 endif
 
 ifeq ($(OS_ARCH),WINNT)
+ifneq ($(_MSC_VER), 1600)
 OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 uuid version winspool comdlg32 imm32 winmm wsock32 msimg32 shlwapi psapi ws2_32 dbghelp rasapi32 rasdlg iphlpapi iphlpapi uxtheme setupapi secur32)
+else
+OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 uuid version winspool comdlg32 imm32 winmm wsock32 msimg32 shlwapi psapi ws2_32 dbghelp rasapi32 rasdlg iphlpapi iphlpapi uxtheme setupapi secur32 sensorsapi portabledeviceguids)
+endif
 ifdef MOZ_CRASHREPORTER
 OS_LIBS += $(call EXPAND_LIBNAME,wininet)
 endif
