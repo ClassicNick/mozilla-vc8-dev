@@ -55,7 +55,6 @@
 #include "jsexn.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsgcmark.h"
 #include "jsinterp.h"
 #include "jslock.h"
 #include "jsnum.h"
@@ -70,6 +69,7 @@
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/BytecodeEmitter.h"
 #include "frontend/TokenStream.h"
+#include "gc/Marking.h"
 #include "vm/Debugger.h"
 #include "vm/MethodGuard.h"
 #include "vm/ScopeObject.h"
@@ -374,6 +374,7 @@ template<XDRMode mode>
 bool
 js::XDRInterpretedFunction(XDRState<mode> *xdr, JSObject **objp, JSScript *parentScript)
 {
+    /* NB: Keep this in sync with CloneInterpretedFunction. */
     JSFunction *fun;
     JSAtom *atom;
     uint32_t firstword;           /* flag telling whether fun->atom is non-null,
@@ -441,6 +442,35 @@ js::XDRInterpretedFunction(XDRState<XDR_ENCODE> *xdr, JSObject **objp, JSScript 
 
 template bool
 js::XDRInterpretedFunction(XDRState<XDR_DECODE> *xdr, JSObject **objp, JSScript *parentScript);
+
+JSObject *
+js::CloneInterpretedFunction(JSContext *cx, JSFunction *srcFun)
+{
+    /* NB: Keep this in sync with XDRInterpretedFunction. */
+
+    RootedVarObject parent(cx, NULL);
+    JSFunction *clone = js_NewFunction(cx, NULL, NULL, 0, JSFUN_INTERPRETED, parent, NULL);
+    if (!clone)
+        return NULL;
+    if (!clone->clearParent(cx))
+        return NULL;
+    if (!clone->clearType(cx))
+        return NULL;
+
+    JSScript *clonedScript = CloneScript(cx, srcFun->script());
+    if (!clonedScript)
+        return NULL;
+
+    clone->nargs = srcFun->nargs;
+    clone->flags = srcFun->flags;
+    clone->atom.init(srcFun->atom);
+    clone->initScript(clonedScript);
+    if (!clonedScript->typeSetFunction(cx, clone))
+        return NULL;
+
+    js_CallNewScriptHook(cx, clone->script(), clone);
+    return clone;
+}
 
 /*
  * [[HasInstance]] internal method for Function objects: fetch the .prototype
@@ -523,6 +553,36 @@ JS_FRIEND_DATA(Class) js::FunctionClass = {
 };
 
 JSString *
+ToSourceCache::lookup(JSFunction *fun)
+{
+    if (!map_)
+        return NULL;
+    if (Map::Ptr p = map_->lookup(fun))
+        return p->value;
+    return NULL;
+}
+
+void
+ToSourceCache::put(JSFunction *fun, JSString *str)
+{
+    if (!map_) {
+        map_ = OffTheBooks::new_<Map>();
+        if (!map_)
+            return;
+        map_->init();
+    }
+
+    (void) map_->put(fun, str);
+}
+
+void
+ToSourceCache::purge()
+{
+    Foreground::delete_(map_);
+    map_ = NULL;
+}
+
+JSString *
 fun_toStringHelper(JSContext *cx, JSObject *obj, unsigned indent)
 {
     if (!obj->isFunction()) {
@@ -539,28 +599,17 @@ fun_toStringHelper(JSContext *cx, JSObject *obj, unsigned indent)
     if (!fun)
         return NULL;
 
-    if (!indent && !cx->compartment->toSourceCache.empty()) {
-        ToSourceCache::Ptr p = cx->compartment->toSourceCache.ref().lookup(fun);
-        if (p)
-            return p->value;
+    if (!indent) {
+        if (JSString *str = cx->runtime->toSourceCache.lookup(fun))
+            return str;
     }
 
     JSString *str = JS_DecompileFunction(cx, fun, indent);
     if (!str)
         return NULL;
 
-    if (!indent) {
-        Maybe<ToSourceCache> &lazy = cx->compartment->toSourceCache;
-
-        if (lazy.empty()) {
-            lazy.construct();
-            if (!lazy.ref().init())
-                return NULL;
-        }
-
-        if (!lazy.ref().put(fun, str))
-            return NULL;
-    }
+    if (!indent)
+        cx->runtime->toSourceCache.put(fun, str);
 
     return str;
 }

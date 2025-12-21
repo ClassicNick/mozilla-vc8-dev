@@ -38,5 +38,6 @@ MOZ_OBJDIR=j:/Browsers/VC71Compat/objdir/obj-fxvc71-release
 # --disable-updater is used by configure (not client.mk)
 # --disable-cubeb is used by configure (not client.mk)
 # --disable-websms-backend is used by configure (not client.mk)
+# --disable-webapp-runtime is used by configure (not client.mk)
 # --with-windows-version=502 is used by configure (not client.mk)
 export FOUND_MOZCONFIG := j:/browsers/vc71compat/mozilla-vc71-dev/.mozconfig

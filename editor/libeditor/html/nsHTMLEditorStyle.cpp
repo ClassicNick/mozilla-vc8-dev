@@ -278,9 +278,9 @@ nsHTMLEditor::SetInlinePropertyOnTextNode( nsIDOMCharacterData *aTextNode,
   nsresult res = aTextNode->GetParentNode(getter_AddRefs(parent));
   NS_ENSURE_SUCCESS(res, res);
 
-  nsAutoString tagString;
-  aProperty->ToString(tagString);
-  if (!CanContainTag(parent, tagString)) return NS_OK;
+  if (!CanContainTag(parent, aProperty)) {
+    return NS_OK;
+  }
   
   // don't need to do anything if no characters actually selected
   if (aStartOffset == aEndOffset) return NS_OK;
@@ -302,8 +302,7 @@ nsHTMLEditor::SetInlinePropertyOnTextNode( nsIDOMCharacterData *aTextNode,
   }
   else
   {
-    nsCOMPtr<nsIDOMNode> styleNode;
-    IsTextPropertySetByContent(node, aProperty, aAttribute, aValue, bHasProp, getter_AddRefs(styleNode));
+    IsTextPropertySetByContent(node, aProperty, aAttribute, aValue, bHasProp);
   }
 
   if (bHasProp) return NS_OK;
@@ -370,7 +369,7 @@ nsHTMLEditor::SetInlinePropertyOnNodeImpl(nsIDOMNode *aNode,
 
   // If this is an element that can't be contained in a span, we have to
   // recurse to its children.
-  if (!TagCanContain(NS_LITERAL_STRING("span"), aNode)) {
+  if (!TagCanContain(nsGkAtoms::span, aNode)) {
     nsCOMPtr<nsIDOMNodeList> childNodes;
     res = aNode->GetChildNodes(getter_AddRefs(childNodes));
     NS_ENSURE_SUCCESS(res, res);
@@ -995,8 +994,6 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
   *aFirst = false;
   bool first = true;
 
-  bool useCSS = IsCSSEnabled();
-
   nsCOMPtr<nsISelection> selection;
   result = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(result, result);
@@ -1024,9 +1021,9 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
       range->GetStartContainer(getter_AddRefs(collapsedNode));
       NS_ENSURE_TRUE(collapsedNode, NS_ERROR_FAILURE);
       bool isSet, theSetting;
+      nsString tOutString;
       if (aAttribute) {
-        nsString tString(*aAttribute); //MJUDGE SCC NEED HELP
-        nsString tOutString; //MJUDGE SCC NEED HELP
+        nsString tString(*aAttribute);
         mTypeInState->GetTypingState(isSet, theSetting, aProperty, tString,
                                      &tOutString);
         if (outValue) {
@@ -1039,28 +1036,41 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
         *aFirst = *aAny = *aAll = theSetting;
         return NS_OK;
       }
-      if (!useCSS) {
-        nsCOMPtr<nsIDOMNode> resultNode;
-        IsTextPropertySetByContent(collapsedNode, aProperty, aAttribute, aValue,
-                                   isSet, getter_AddRefs(resultNode), outValue);
-        *aFirst = *aAny = *aAll = isSet;
 
-        if (!isSet && aCheckDefaults) {
-          // style not set, but if it is a default then it will appear if
-          // content is inserted, so we should report it as set (analogous to
-          // TypeInState).
-          PRInt32 index;
-          if (aAttribute && TypeInState::FindPropInList(aProperty, *aAttribute,
-                                                        outValue, mDefaultStyles,
-                                                        index)) {
-            *aFirst = *aAny = *aAll = true;
-            if (outValue) {
-              outValue->Assign(mDefaultStyles[index]->value);
-            }
-          }
+      // Bug 747889: we don't support CSS for fontSize values
+      if ((aProperty != nsEditProperty::font ||
+           !aAttribute->EqualsLiteral("size")) &&
+          mHTMLCSSUtils->IsCSSEditableProperty(collapsedNode, aProperty,
+                                               aAttribute)) {
+        mHTMLCSSUtils->IsCSSEquivalentToHTMLInlineStyleSet(
+          collapsedNode, aProperty, aAttribute, isSet, tOutString,
+          COMPUTED_STYLE_TYPE);
+        if (outValue) {
+          outValue->Assign(tOutString);
         }
+        *aFirst = *aAny = *aAll = isSet;
         return NS_OK;
       }
+
+      IsTextPropertySetByContent(collapsedNode, aProperty, aAttribute, aValue,
+                                 isSet, outValue);
+      *aFirst = *aAny = *aAll = isSet;
+
+      if (!isSet && aCheckDefaults) {
+        // style not set, but if it is a default then it will appear if
+        // content is inserted, so we should report it as set (analogous to
+        // TypeInState).
+        PRInt32 index;
+        if (aAttribute && TypeInState::FindPropInList(aProperty, *aAttribute,
+                                                      outValue, mDefaultStyles,
+                                                      index)) {
+          *aFirst = *aAny = *aAll = true;
+          if (outValue) {
+            outValue->Assign(mDefaultStyles[index]->value);
+          }
+        }
+      }
+      return NS_OK;
     }
 
     // non-collapsed selection
@@ -1111,7 +1121,6 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
       }
       if (node) {
         bool isSet = false;
-        nsCOMPtr<nsIDOMNode> resultNode;
         if (first) {
           if (mHTMLCSSUtils->IsCSSEditableProperty(node, aProperty,
                                                    aAttribute) &&
@@ -1129,7 +1138,7 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
                                                                COMPUTED_STYLE_TYPE);
           } else {
             IsTextPropertySetByContent(node, aProperty, aAttribute, aValue, isSet,
-                                       getter_AddRefs(resultNode), &firstValue);
+                                       &firstValue);
           }
           *aFirst = isSet;
           first = false;
@@ -1152,7 +1161,7 @@ nsHTMLEditor::GetInlinePropertyBase(nsIAtom *aProperty,
                                                                COMPUTED_STYLE_TYPE);
           } else {
             IsTextPropertySetByContent(node, aProperty, aAttribute, aValue, isSet,
-                                       getter_AddRefs(resultNode), &theValue);
+                                       &theValue);
           }
           if (firstValue != theValue) {
             *aAll = false;
@@ -1454,9 +1463,9 @@ nsHTMLEditor::RelativeFontChange( PRInt32 aSizeChange)
       NS_ENSURE_SUCCESS(res, res);
       selectedNode = parent;
     }
-    nsAutoString tag;
-    atom->ToString(tag);
-    if (!CanContainTag(selectedNode, tag)) return NS_OK;
+    if (!CanContainTag(selectedNode, atom)) {
+      return NS_OK;
+    }
 
     // manipulating text attributes on a collapsed selection only sets state for the next text insertion
     return mTypeInState->SetProp(atom, EmptyString(), EmptyString());
@@ -1599,7 +1608,9 @@ nsHTMLEditor::RelativeFontChangeOnTextNode( PRInt32 aSizeChange,
   nsCOMPtr<nsIDOMNode> parent;
   res = aTextNode->GetParentNode(getter_AddRefs(parent));
   NS_ENSURE_SUCCESS(res, res);
-  if (!CanContainTag(parent, NS_LITERAL_STRING("big"))) return NS_OK;
+  if (!CanContainTag(parent, nsGkAtoms::big)) {
+    return NS_OK;
+  }
 
   nsCOMPtr<nsIDOMNode> tmp, node = do_QueryInterface(aTextNode);
 
@@ -1730,9 +1741,12 @@ nsHTMLEditor::RelativeFontChangeOnNode( PRInt32 aSizeChange,
 
   nsresult res = NS_OK;
   nsCOMPtr<nsIDOMNode> tmp;
-  nsAutoString tag;
-  if (aSizeChange == 1) tag.AssignLiteral("big");
-  else tag.AssignLiteral("small");
+  nsIAtom* atom;
+  if (aSizeChange == 1) {
+    atom = nsGkAtoms::big;
+  } else {
+    atom = nsGkAtoms::small;
+  }
   
   // is it the opposite of what we want?  
   if ( ((aSizeChange == 1) && nsHTMLEditUtils::IsSmall(aNode)) || 
@@ -1746,8 +1760,7 @@ nsHTMLEditor::RelativeFontChangeOnNode( PRInt32 aSizeChange,
     return res;
   }
   // can it be put inside a "big" or "small"?
-  if (TagCanContain(tag, aNode))
-  {
+  if (TagCanContain(atom, aNode)) {
     // first populate any nested font tags that have the size attr set
     res = RelativeFontChangeHelper(aSizeChange, aNode);
     NS_ENSURE_SUCCESS(res, res);
@@ -1771,7 +1784,7 @@ nsHTMLEditor::RelativeFontChangeOnNode( PRInt32 aSizeChange,
       return res;
     }
     // else insert it above aNode
-    res = InsertContainerAbove(aNode, address_of(tmp), tag);
+    res = InsertContainerAbove(aNode, address_of(tmp), nsAtomString(atom));
     return res;
   }
   // none of the above?  then cycle through the children.

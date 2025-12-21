@@ -45,9 +45,9 @@
 #include "nsIAccessibleRelation.h"
 #include "nsIAccessibleText.h"
 #include "nsIAccessibleEditableText.h"
-#include "nsRootAccessible.h"
 #include "Relation.h"
 #include "Role.h"
+#include "RootAccessible.h"
 
 #include "mozilla/Services.h"
 #include "nsRect.h"
@@ -353,7 +353,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   // (which might be the owning NSWindow in the application, for example).
   //
   // get the native root accessible, and tell it to return its first parent unignored accessible.
-  nsRootAccessible* root = mGeckoAccessible->RootAccessible();
+  RootAccessible* root = mGeckoAccessible->RootAccessible();
   id nativeParent = GetNativeFromGeckoAccessible(static_cast<nsIAccessible*>(root));
   NSAssert1 (nativeParent, @"!!! we can't find a parent for %@", self);
   
@@ -514,7 +514,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   nsAutoString title;
-  mGeckoAccessible->GetName (title);
+  mGeckoAccessible->Name(title);
   return title.IsEmpty() ? nil : [NSString stringWithCharacters:title.BeginReading() length:title.Length()];
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;

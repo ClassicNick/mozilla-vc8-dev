@@ -340,8 +340,13 @@ public:
                                             nsDisplayListBuilder* aBuilder,
                                             bool* aShouldFixToViewport = nsnull);
 
-  static bool ScrolledByViewportScrolling(nsIFrame* aActiveScrolledRoot,
-                                            nsDisplayListBuilder* aBuilder);
+  /**
+   * Returns true if aActiveScrolledRoot is in a content document,
+   * and its topmost content document ancestor has a root scroll frame with
+   * a displayport set, and aActiveScrolledRoot is scrolled by that scrollframe.
+   */
+  static bool IsScrolledByRootContentDocumentDisplayportScrolling(nsIFrame* aActiveScrolledRoot,
+                                                                  nsDisplayListBuilder* aBuilder);
 
   /**
     * GetScrollableFrameFor returns the scrollable frame for a scrolled frame
@@ -1501,6 +1506,12 @@ public:
    * background.
    */
   static bool UseBackgroundNearestFiltering();
+
+  /**
+   * Checks whether we want to use the GPU to scale images when
+   * possible.
+   */
+  static bool GPUImageScalingEnabled();
 
   /**
    * Unions the overflow areas of all non-popup children of aFrame with

@@ -110,6 +110,13 @@ struct Shape;
 
 enum BindingKind { NONE, ARGUMENT, VARIABLE, CONSTANT };
 
+struct BindingName {
+    JSAtom *maybeAtom;
+    BindingKind kind;
+};
+
+typedef Vector<BindingName, 32> BindingNames;
+
 /*
  * Formal parameters and local variables are stored in a shape tree
  * path encapsulated within this class.  This class represents bindings for
@@ -238,7 +245,7 @@ class Bindings
      * The name at an element will be null when the element is for an argument
      * corresponding to a destructuring pattern.
      */
-    bool getLocalNameArray(JSContext *cx, Vector<JSAtom *> *namesp);
+    bool getLocalNameArray(JSContext *cx, BindingNames *namesp);
 
     /*
      * Protect stored bindings from mutation.  Subsequent attempts to add
@@ -584,6 +591,8 @@ struct JSScript : public js::gc::Cell
                                uint16_t nClosedArgs, uint16_t nClosedVars, uint32_t nTypeSets,
                                JSVersion version);
     static JSScript *NewScriptFromEmitter(JSContext *cx, js::BytecodeEmitter *bce);
+
+    void setVersion(JSVersion v) { version = v; }
 
     /* See TCF_ARGUMENTS_HAS_LOCAL_BINDING comment. */
     bool argumentsHasLocalBinding() const { return argsHasLocalBinding_; }
@@ -941,14 +950,37 @@ CallDestroyScriptHook(FreeOp *fop, JSScript *script);
 extern const char *
 SaveScriptFilename(JSContext *cx, const char *filename);
 
-extern void
-MarkScriptFilename(const char *filename);
+struct ScriptFilenameEntry
+{
+    bool marked;
+    char filename[1];
+
+    static ScriptFilenameEntry *fromFilename(const char *filename) {
+        return (ScriptFilenameEntry *)(filename - offsetof(ScriptFilenameEntry, filename));
+    }
+};
+
+struct ScriptFilenameHasher
+{
+    typedef const char *Lookup;
+    static HashNumber hash(const char *l) { return JS_HashString(l); }
+    static bool match(const ScriptFilenameEntry *e, const char *l) {
+        return strcmp(e->filename, l) == 0;
+    }
+};
+
+typedef HashSet<ScriptFilenameEntry *,
+                ScriptFilenameHasher,
+                SystemAllocPolicy> ScriptFilenameTable;
+
+inline void
+MarkScriptFilename(JSRuntime *rt, const char *filename);
 
 extern void
-SweepScriptFilenames(JSCompartment *comp);
+SweepScriptFilenames(JSRuntime *rt);
 
 extern void
-FreeScriptFilenames(JSCompartment *comp);
+FreeScriptFilenames(JSRuntime *rt);
 
 struct ScriptAndCounts
 {

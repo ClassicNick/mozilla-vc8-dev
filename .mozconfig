@@ -44,6 +44,7 @@ ac_add_options --disable-maintenance-service
 ac_add_options --disable-updater
 ac_add_options --disable-cubeb
 ac_add_options --disable-websms-backend
+ac_add_options --disable-webapp-runtime
 ac_add_options --with-windows-version=502
 
 # Branding Options

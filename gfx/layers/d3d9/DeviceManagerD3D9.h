@@ -52,6 +52,7 @@ class LayerD3D9;
 class ThebesLayerD3D9;
 class CanvasLayerD3D9;
 class Nv3DVUtils;
+class Layer;
 
 // Shader Constant locations
 const int CBmLayerTransform = 0;
@@ -150,7 +151,7 @@ public:
     SOLIDCOLORLAYER
   };
 
-  void SetShaderMode(ShaderMode aMode);
+  void SetShaderMode(ShaderMode aMode, Layer* aMask, bool aIs2D);
 
   /** 
    * Return pointer to the Nv3DVUtils instance 
@@ -227,6 +228,17 @@ private:
 
   /* Pixel shader used for solid colors */
   nsRefPtr<IDirect3DPixelShader9> mSolidColorPS;
+
+  /* As above, but using a mask layer */
+  nsRefPtr<IDirect3DVertexShader9> mLayerVSMask;
+  nsRefPtr<IDirect3DVertexShader9> mLayerVSMask3D;
+  nsRefPtr<IDirect3DPixelShader9> mRGBPSMask;
+  nsRefPtr<IDirect3DPixelShader9> mRGBAPSMask;
+  nsRefPtr<IDirect3DPixelShader9> mRGBAPSMask3D;
+  nsRefPtr<IDirect3DPixelShader9> mComponentPass1PSMask;
+  nsRefPtr<IDirect3DPixelShader9> mComponentPass2PSMask;
+  nsRefPtr<IDirect3DPixelShader9> mYCbCrPSMask;
+  nsRefPtr<IDirect3DPixelShader9> mSolidColorPSMask;
 
   /* Vertex buffer containing our basic vertex structure */
   nsRefPtr<IDirect3DVertexBuffer9> mVB;

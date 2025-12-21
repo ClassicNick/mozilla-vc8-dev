@@ -50,10 +50,10 @@
 #include "nsAccTreeWalker.h"
 #include "nsIAccessibleRelation.h"
 #include "nsEventShell.h"
-#include "nsRootAccessible.h"
 #include "nsTextEquivUtils.h"
 #include "Relation.h"
 #include "Role.h"
+#include "RootAccessible.h"
 #include "States.h"
 #include "StyleInfo.h"
 
@@ -209,9 +209,8 @@ nsAccessible::nsAccessible(nsIContent* aContent, nsDocAccessible* aDoc) :
              NS_ConvertUTF16toUTF8(content->NodeInfo()->QualifiedName()).get(),
              (void *)content.get());
       nsAutoString buf;
-      if (NS_SUCCEEDED(GetName(buf))) {
-        printf(" Name:[%s]", NS_ConvertUTF16toUTF8(buf).get());
-       }
+      Name(buf);
+      printf(" Name:[%s]", NS_ConvertUTF16toUTF8(buf).get());
      }
      printf("\n");
    }
@@ -258,8 +257,7 @@ nsAccessible::GetRootDocument(nsIAccessibleDocument **aRootDocument)
 {
   NS_ENSURE_ARG_POINTER(aRootDocument);
 
-  nsRootAccessible* rootDocument = RootAccessible();
-  NS_IF_ADDREF(*aRootDocument = rootDocument);
+  NS_IF_ADDREF(*aRootDocument = RootAccessible());
   return NS_OK;
 }
 
@@ -278,45 +276,52 @@ nsAccessible::GetName(nsAString& aName)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
+  nsAutoString name;
+  Name(name);
+  aName.Assign(name);
+
+  return NS_OK;
+}
+
+ENameValueFlag
+nsAccessible::Name(nsString& aName)
+{
+  aName.Truncate();
+
   GetARIAName(aName);
   if (!aName.IsEmpty())
-    return NS_OK;
+    return eNameOK;
 
   nsCOMPtr<nsIXBLAccessible> xblAccessible(do_QueryInterface(mContent));
   if (xblAccessible) {
     xblAccessible->GetAccessibleName(aName);
     if (!aName.IsEmpty())
-      return NS_OK;
+      return eNameOK;
   }
 
   nsresult rv = GetNameInternal(aName);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   if (!aName.IsEmpty())
-    return NS_OK;
+    return eNameOK;
 
   // In the end get the name from tooltip.
-  nsIAtom *tooltipAttr = nsnull;
-
-  if (mContent->IsHTML())
-    tooltipAttr = nsGkAtoms::title;
-  else if (mContent->IsXUL())
-    tooltipAttr = nsGkAtoms::tooltiptext;
-  else
-    return NS_OK;
-
-  // XXX: if CompressWhiteSpace worked on nsAString we could avoid a copy.
-  nsAutoString name;
-  if (mContent->GetAttr(kNameSpaceID_None, tooltipAttr, name)) {
-    name.CompressWhitespace();
-    aName = name;
-    return NS_OK_NAME_FROM_TOOLTIP;
+  if (mContent->IsHTML()) {
+    if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::title, aName)) {
+      aName.CompressWhitespace();
+      return eNameFromTooltip;
+    }
+  } else if (mContent->IsXUL()) {
+    if (mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::tooltiptext, aName)) {
+      aName.CompressWhitespace();
+      return eNameFromTooltip;
+    }
+  } else {
+    return eNameOK;
   }
 
   if (rv != NS_OK_EMPTY_NAME)
     aName.SetIsVoid(true);
 
-  return NS_OK;
+  return eNameOK;
 }
 
 NS_IMETHODIMP
@@ -364,7 +369,7 @@ nsAccessible::Description(nsString& aDescription)
                                     nsGkAtoms::title;
         if (mContent->GetAttr(kNameSpaceID_None, descAtom, aDescription)) {
           nsAutoString name;
-          GetName(name);
+          Name(name);
           if (name.IsEmpty() || aDescription == name)
             // Don't use tooltip for a description if this object
             // has no name or the tooltip is the same as the name
