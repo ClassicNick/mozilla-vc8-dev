@@ -2165,6 +2165,7 @@ AutoGCRooter::trace(JSTracer *trc)
         return;
       }
 
+#if JS_HAS_XML_SUPPORT
       case NAMESPACES: {
         JSXMLArray<JSObject> &array = static_cast<AutoNamespaceArray *>(this)->array;
         MarkObjectRange(trc, array.length, array.vector, "JSXMLArray.vector");
@@ -2175,6 +2176,7 @@ AutoGCRooter::trace(JSTracer *trc)
       case XML:
         js_TraceXML(trc, static_cast<AutoXMLRooter *>(this)->xml);
         return;
+#endif
 
       case OBJECT:
         if (static_cast<AutoObjectRooter *>(this)->obj)
@@ -3541,24 +3543,24 @@ BudgetIncrementalGC(JSRuntime *rt, int64_t *budget)
         return;
     }
 
+    bool reset = false;
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
         if (c->gcBytes > c->gcTriggerBytes) {
             *budget = SliceBudget::Unlimited;
             rt->gcStats.nonincremental("allocation trigger");
-            return;
         }
 
         if (c->isTooMuchMalloc()) {
             *budget = SliceBudget::Unlimited;
             rt->gcStats.nonincremental("malloc bytes trigger");
-            return;
         }
 
-        if (c->isCollecting() != c->needsBarrier()) {
-            ResetIncrementalGC(rt, "compartment change");
-            return;
-        }
+        if (c->isCollecting() != c->needsBarrier())
+            reset = true;
     }
+
+    if (reset)
+        ResetIncrementalGC(rt, "compartment change");
 }
 
 /*

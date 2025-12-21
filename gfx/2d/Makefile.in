@@ -120,8 +120,10 @@ endif
 
 # Are we targeting x86 or x64?  If so, build SSE2 files.
 ifneq (,$(INTEL_ARCHITECTURE))
+ifneq ($(_MSC_VER), 1310)
 CPPSRCS += ImageScalingSSE2.cpp
 DEFINES += -DUSE_SSE2
+endif
 endif
 
 ifeq ($(MOZ_WIDGET_TOOLKIT),windows)

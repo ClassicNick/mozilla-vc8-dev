@@ -79,6 +79,8 @@
 #include "frontend/TreeContext-inl.h"
 #include "vm/RegExpObject-inl.h"
 
+#include "frontend/TreeContext-inl.h"
+
 using namespace js;
 using namespace js::gc;
 using namespace js::frontend;
@@ -1257,7 +1259,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     mainLength = bce->offset();
     prologLength = bce->prologOffset();
 
-    if (!bce->bindings.ensureShape(cx))
+    if (!bce->sc->bindings.ensureShape(cx))
         return NULL;
 
     uint32_t nsrcnotes = uint32_t(bce->countFinalSourceNotes());
@@ -1272,13 +1274,13 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     if (!script)
         return NULL;
 
-    bce->bindings.makeImmutable();
+    bce->sc->bindings.makeImmutable();
 
     JS_ASSERT(script->mainOffset == 0);
     script->mainOffset = prologLength;
     PodCopy<jsbytecode>(script->code, bce->prologBase(), prologLength);
     PodCopy<jsbytecode>(script->main(), bce->base(), mainLength);
-    nfixed = bce->inFunction() ? bce->bindings.numVars() : 0;
+    nfixed = bce->sc->inFunction ? bce->sc->bindings.numVars() : 0;
     JS_ASSERT(nfixed < SLOTNO_LIMIT);
     script->nfixed = uint16_t(nfixed);
     InitAtomMap(cx, bce->atomIndices.getMap(), script->atoms);
@@ -1296,7 +1298,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         return NULL;
     }
     script->nslots = script->nfixed + bce->maxStackDepth;
-    script->staticLevel = uint16_t(bce->staticLevel);
+    script->staticLevel = uint16_t(bce->sc->staticLevel);
     script->principals = bce->parser->principals;
 
     if (script->principals)
@@ -1327,27 +1329,28 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         bce->regexpList.finish(script->regexps());
     if (bce->constList.length() != 0)
         bce->constList.finish(script->consts());
-    if (bce->flags & TCF_NO_SCRIPT_RVAL)
-        script->noScriptRval = true;
-    if (bce->flags & TCF_STRICT_MODE_CODE)
-        script->strictModeCode = true;
-    if (bce->flags & TCF_COMPILE_N_GO) {
+    script->strictModeCode = bce->sc->inStrictMode();
+    if (bce->parser->compileAndGo) {
         script->compileAndGo = true;
         const StackFrame *fp = bce->parser->callerFrame;
         if (fp && fp->isFunctionFrame())
             script->savedCallerFun = true;
     }
-    if (bce->bindingsAccessedDynamically())
-        script->bindingsAccessedDynamically = true;
-    if (bce->flags & TCF_HAS_SINGLETONS)
-        script->hasSingletons = true;
-    if (bce->flags & TCF_FUN_IS_GENERATOR)
-        script->isGenerator = true;
+    script->bindingsAccessedDynamically = bce->sc->bindingsAccessedDynamically();
+    script->hasSingletons = bce->hasSingletons;
 
-    if (bce->argumentsHasLocalBinding()) {
-        script->setArgumentsHasLocalBinding(bce->argumentsLocalSlot());
-        if (bce->definitelyNeedsArgsObj())
-            script->setNeedsArgsObj(true);
+    if (bce->sc->inFunction) {
+        if (bce->sc->funArgumentsHasLocalBinding()) {
+            // This must precede the script->bindings.transfer() call below.
+            script->setArgumentsHasLocalBinding(bce->sc->argumentsLocalSlot());
+            if (bce->sc->funDefinitelyNeedsArgsObj())
+                script->setNeedsArgsObj(true);
+        } else {
+            JS_ASSERT(!bce->sc->funDefinitelyNeedsArgsObj());
+        }
+    } else {
+        JS_ASSERT(!bce->sc->funArgumentsHasLocalBinding());
+        JS_ASSERT(!bce->sc->funDefinitelyNeedsArgsObj());
     }
 
     if (nClosedArgs)
@@ -1355,18 +1358,23 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     if (nClosedVars)
         PodCopy<uint32_t>(script->closedVars()->vector, &bce->closedVars[0], nClosedVars);
 
-    script->bindings.transfer(cx, &bce->bindings);
+    script->bindings.transfer(cx, &bce->sc->bindings);
 
     fun = NULL;
-    if (bce->inFunction()) {
+    if (bce->sc->inFunction) {
+        JS_ASSERT(!bce->noScriptRval);
+        JS_ASSERT(!bce->needScriptGlobal);
+
+        script->isGenerator = bce->sc->funIsGenerator();
+
         /*
          * We initialize fun->script() to be the script constructed above
          * so that the debugger has a valid fun->script().
          */
-        fun = bce->fun();
+        fun = bce->sc->fun();
         JS_ASSERT(fun->isInterpreted());
         JS_ASSERT(!fun->script());
-        if (bce->flags & TCF_FUN_HEAVYWEIGHT)
+        if (bce->sc->funIsHeavyweight())
             fun->flags |= JSFUN_HEAVYWEIGHT;
 
         /*
@@ -1375,20 +1383,27 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         bool singleton =
             cx->typeInferenceEnabled() &&
             bce->parent &&
-            bce->parentBCE()->checkSingletonContext();
+            bce->parent->checkSingletonContext();
 
         if (!script->typeSetFunction(cx, fun, singleton))
             return NULL;
 
         fun->setScript(script);
         script->globalObject = fun->getParent() ? &fun->getParent()->global() : NULL;
+
     } else {
+        // It'd be nice to JS_ASSERT(!bce->sc->funIsHeavyweight()) here, but
+        // Parser.cpp is sloppy and sometimes applies it to non-functions.
+        JS_ASSERT(!bce->sc->funIsGenerator());
+
         /*
          * Initialize script->object, if necessary, so that the debugger has a
          * valid holder object.
          */
-        if (bce->flags & TCF_NEED_SCRIPT_GLOBAL)
+        if (bce->needScriptGlobal)
             script->globalObject = GetCurrentGlobal(cx);
+
+        script->noScriptRval = bce->noScriptRval;
     }
 
     /* Tell the debugger about this compiled script. */
@@ -1398,7 +1413,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         if (script->compileAndGo) {
             compileAndGoGlobal = script->globalObject;
             if (!compileAndGoGlobal)
-                compileAndGoGlobal = &bce->scopeChain()->global();
+                compileAndGoGlobal = &bce->sc->scopeChain()->global();
         }
         Debugger::onNewScript(cx, script, compileAndGoGlobal);
     }
@@ -1445,6 +1460,7 @@ JS_FRIEND_API(void)
 js_CallNewScriptHook(JSContext *cx, JSScript *script, JSFunction *fun)
 {
     JS_ASSERT(!script->callDestroyHook);
+    JS_ASSERT(!script->isActiveEval);
     if (JSNewScriptHook hook = cx->runtime->debugHooks.newScriptHook) {
         AutoKeepAtoms keep(cx->runtime);
         hook(cx, script->filename, script->lineno, script, fun,

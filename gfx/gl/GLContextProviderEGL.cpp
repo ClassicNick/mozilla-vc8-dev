@@ -129,8 +129,6 @@ public:
 #endif
 
 #include "mozilla/Preferences.h"
-#include "nsIScreen.h"
-#include "nsIScreenManager.h"
 #include "gfxUtils.h"
 #include "gfxFailure.h"
 #include "gfxASurface.h"
@@ -420,7 +418,7 @@ public:
         return true;
     }
 
-    bool MakeCurrentImpl() {
+    bool MakeCurrentImpl(bool aForce = false) {
         bool succeeded = true;
 
         // Assume that EGL has the same problem as WGL does,
@@ -442,24 +440,25 @@ public:
             return succeeded;
         }
 #endif
-
+        if (aForce || sEGLLibrary.fGetCurrentContext() != mContext) {
 #ifdef MOZ_WIDGET_QT
-        // Shared Qt GL context need to be informed about context switch
-        if (mSharedContext) {
-            QGLContext* qglCtx = static_cast<QGLContext*>(static_cast<GLContextEGL*>(mSharedContext.get())->mPlatformContext);
-            if (qglCtx) {
-                qglCtx->doneCurrent();
+            // Shared Qt GL context need to be informed about context switch
+            if (mSharedContext) {
+                QGLContext* qglCtx = static_cast<QGLContext*>(static_cast<GLContextEGL*>(mSharedContext.get())->mPlatformContext);
+                if (qglCtx) {
+                    qglCtx->doneCurrent();
+                }
             }
-        }
 #endif
-        succeeded = sEGLLibrary.fMakeCurrent(EGL_DISPLAY(),
-                                                mSurface, mSurface,
-                                                mContext);
-        if (!succeeded && sEGLLibrary.fGetError() == LOCAL_EGL_CONTEXT_LOST) {
-            mContextLost = true;
-            NS_WARNING("EGL context has been lost.");
+            succeeded = sEGLLibrary.fMakeCurrent(EGL_DISPLAY(),
+                                                 mSurface, mSurface,
+                                                 mContext);
+            if (!succeeded && sEGLLibrary.fGetError() == LOCAL_EGL_CONTEXT_LOST) {
+                mContextLost = true;
+                NS_WARNING("EGL context has been lost.");
+            }
+            NS_ASSERTION(succeeded, "Failed to make GL context current!");
         }
-        NS_ASSERTION(succeeded, "Failed to make GL context current!");
 
         return succeeded;
     }
@@ -1400,17 +1399,6 @@ CreateConfig(EGLConfig* aConfig, PRInt32 depth)
     return false;
 }
 
-static int
-GetScreenDepth()
-{
-    nsCOMPtr<nsIScreenManager> screenMgr = do_GetService("@mozilla.org/gfx/screenmanager;1");
-    nsCOMPtr<nsIScreen> screen;
-    screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
-    PRInt32 depth = 24;
-    screen->GetColorDepth(&depth);
-    return depth;
-}
-
 // Return true if a suitable EGLConfig was found and pass it out
 // through aConfig.  Return false otherwise.
 //
@@ -1419,7 +1407,7 @@ GetScreenDepth()
 static bool
 CreateConfig(EGLConfig* aConfig)
 {
-    PRInt32 depth = GetScreenDepth();
+    PRInt32 depth = gfxPlatform::GetPlatform()->GetScreenDepth();
     if (!CreateConfig(aConfig, depth)) {
 #ifdef MOZ_WIDGET_ANDROID
         // Bug 736005
@@ -1491,7 +1479,7 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
 
     void* currentContext = sEGLLibrary.fGetCurrentContext();
     if (aWidget->HasGLContext() && currentContext) {
-        PRInt32 depth = GetScreenDepth();
+        PRInt32 depth = gfxPlatform::GetPlatform()->GetScreenDepth();
         void* platformContext = currentContext;
 #ifdef MOZ_WIDGET_QT
         QGLContext* context = const_cast<QGLContext*>(QGLContext::currentContext());

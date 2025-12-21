@@ -425,7 +425,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     // If incrementing the generation would cause overflow,
     // don't allow it.  Allowing this would allow us to use
     // resource handles created from older context generations.
-    if (!(mGeneration+1).valid())
+    if (!(mGeneration + 1).isValid())
         return NS_ERROR_FAILURE; // exit without changing the value of mGeneration
 
     gl::ContextFormat format(gl::ContextFormat::BasicRGBA32);
@@ -1403,19 +1403,7 @@ NAME_NOT_SUPPORTED(WebGLRenderbuffer)
 
 // WebGLExtension
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(WebGLExtension)
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(WebGLExtension)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WebGLExtension)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebGLExtension)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(WebGLExtension)
   
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebGLExtension)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

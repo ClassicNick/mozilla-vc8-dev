@@ -260,6 +260,7 @@
 #include "nsLocation.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsDOMEventTargetHelper.h"
+#include "nsIAppsService.h"
 
 #ifdef ANDROID
 #include <android/log.h>
@@ -1827,13 +1828,11 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
       nsWindowSH::InvalidateGlobalScopePolluter(cx, currentInner->mJSObject);
     }
 
-    // The API we're really looking for here is to go clear all of the
-    // Xray wrappers associated with our outer window. However, we
-    // don't expose that API because the implementation would be
-    // identical to that of JS_TransplantObject, so we just call that
-    // instead.
+    // We're reusing the inner window, but this still counts as a navigation,
+    // so all expandos and such defined on the outer window should go away. Force
+    // all Xray wrappers to be recomputed.
     xpc_UnmarkGrayObject(mJSObject);
-    if (!JS_TransplantObject(cx, mJSObject, mJSObject)) {
+    if (!JS_RefreshCrossCompartmentWrappers(cx, mJSObject)) {
       return NS_ERROR_FAILURE;
     }
   } else {
@@ -5330,12 +5329,7 @@ nsGlobalWindow::ScrollTo(PRInt32 aXScroll, PRInt32 aYScroll)
     if (aYScroll > maxpx) {
       aYScroll = maxpx;
     }
-    nsPoint pt(nsPresContext::CSSPixelsToAppUnits(aXScroll),
-               nsPresContext::CSSPixelsToAppUnits(aYScroll));
-    nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
-    // Don't allow pt.x/y + halfPixel since that would round up to the next CSS pixel.
-    nsRect range(pt.x - halfPixel, pt.y - halfPixel, halfPixel*2 - 1, halfPixel*2 - 1);
-    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT, &range);
+    sf->ScrollToCSSPixels(nsIntPoint(aXScroll, aYScroll));
   }
 
   return NS_OK;
@@ -10021,6 +10015,9 @@ nsGlobalWindow::SetIsApp(bool aValue)
 {
   FORWARD_TO_OUTER_VOID(SetIsApp, (aValue));
 
+  // You shouldn't call SetIsApp() more than once.
+  MOZ_ASSERT(mIsApp == TriState_Unknown);
+
   mIsApp = aValue ? TriState_True : TriState_False;
 }
 
@@ -10034,6 +10031,8 @@ nsGlobalWindow::IsPartOfApp()
   for (nsGlobalWindow* w = this; w;
        w = static_cast<nsGlobalWindow*>(w->GetParentInternal())) {
     if (w->mIsApp == TriState_True) {
+      // The window should be part of an application.
+      MOZ_ASSERT(w->mApp);
       return true;
     } else if (w->mIsApp == TriState_False) {
       return false;
@@ -10041,6 +10040,33 @@ nsGlobalWindow::IsPartOfApp()
   }
 
   return false;
+}
+
+nsresult
+nsGlobalWindow::SetApp(const nsAString& aManifestURL)
+{
+  // SetIsApp(true) should be called before calling SetApp().
+  if (mIsApp != TriState_True) {
+    MOZ_ASSERT(false);
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIAppsService> appsService = do_GetService(APPS_SERVICE_CONTRACTID);
+  if (!appsService) {
+    NS_ERROR("Apps Service is not available!");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<mozIDOMApplication> app;
+  appsService->GetAppByManifestURL(aManifestURL, getter_AddRefs(app));
+  if (!app) {
+    NS_WARNING("No application found with the specified manifest URL");
+    return NS_ERROR_FAILURE;
+  }
+
+  mApp = app.forget();
+
+  return NS_OK;
 }
 
 // nsGlobalChromeWindow implementation

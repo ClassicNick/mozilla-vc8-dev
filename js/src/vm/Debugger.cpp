@@ -3399,12 +3399,14 @@ EvaluateInEnv(JSContext *cx, Handle<Env*> env, StackFrame *fp, const jschar *cha
      * variable references made by this frame.
      */
     JSPrincipals *prin = fp->scopeChain()->principals(cx);
+    bool compileAndGo = true;
+    bool noScriptRval = false;
+    bool needScriptGlobal = true;
     JSScript *script = frontend::CompileScript(cx, env, fp, prin, prin,
-                                               TCF_COMPILE_N_GO | TCF_NEED_SCRIPT_GLOBAL,
+                                               compileAndGo, noScriptRval, needScriptGlobal,
                                                chars, length, filename, lineno,
                                                cx->findVersion(), NULL,
                                                UpvarCookie::UPVAR_LEVEL_LIMIT);
-
     if (!script)
         return false;
 
@@ -4257,6 +4259,8 @@ DebuggerEnv_getType(JSContext *cx, unsigned argc, Value *vp)
     const char *s;
     if (env->isCall() || env->isBlock() || env->isDeclEnv())
         s = "declarative";
+    else if (env->isWith())
+        s = "with";
     else
         s = "object";
 

@@ -1400,11 +1400,22 @@ nsFrameLoader::ShouldUseRemoteProcess()
     return false;
   }
 
-  return OwnerIsBrowserFrame() ||
-         (bool) mOwnerContent->AttrValueIs(kNameSpaceID_None,
-                                           nsGkAtoms::Remote,
-                                           nsGkAtoms::_true,
-                                           eCaseMatters);
+  // If we're an <iframe mozbrowser> and we don't have a "remote" attribute,
+  // fall back to the default.
+  if (OwnerIsBrowserFrame() &&
+      !mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::Remote)) {
+
+    return Preferences::GetBool("dom.ipc.browser_frames.oop_by_default", false);
+  }
+
+  // Otherwise, we're remote if we have "remote=true" and we're either a
+  // browser frame or a XUL element.
+  return (OwnerIsBrowserFrame() ||
+          mOwnerContent->GetNameSpaceID() == kNameSpaceID_XUL) &&
+         mOwnerContent->AttrValueIs(kNameSpaceID_None,
+                                    nsGkAtoms::Remote,
+                                    nsGkAtoms::_true,
+                                    eCaseMatters);
 }
 
 nsresult
@@ -2171,19 +2182,6 @@ nsFrameLoader::GetRootContentView(nsIContentView** aContentView)
   return NS_OK;
 }
 
-static already_AddRefed<nsIDocShell>
-GetRootDocShell(nsIDocument *aDocument)
-{
-  nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(aDocument->GetWindow());
-  nsCOMPtr<nsIDocShellTreeItem> treeItem = do_QueryInterface(webNav);
-  NS_ENSURE_TRUE(treeItem, NULL);
-
-  nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  treeItem->GetRootTreeItem(getter_AddRefs(rootItem));
-  nsCOMPtr<nsIDocShell> rootDocShell = do_QueryInterface(rootItem);
-  return rootDocShell.forget();
-}
-
 nsresult
 nsFrameLoader::EnsureMessageManager()
 {
@@ -2212,14 +2210,11 @@ nsFrameLoader::EnsureMessageManager()
   NS_ENSURE_STATE(cx);
 
   nsCOMPtr<nsIDOMChromeWindow> chromeWindow =
-    do_QueryInterface(OwnerDoc()->GetWindow());
-  if (!chromeWindow) {
-    nsCOMPtr<nsIDocShell> rootDocShell = GetRootDocShell(OwnerDoc());
-    nsCOMPtr<nsIDOMWindow> rootWindow = do_GetInterface(rootDocShell);
-    chromeWindow = do_GetInterface(rootWindow);
-  }
+    do_QueryInterface(GetOwnerDoc()->GetWindow());
   nsCOMPtr<nsIChromeFrameMessageManager> parentManager;
-  chromeWindow->GetMessageManager(getter_AddRefs(parentManager));
+  if (chromeWindow) {
+    chromeWindow->GetMessageManager(getter_AddRefs(parentManager));
+  }
 
   if (ShouldUseRemoteProcess()) {
     mMessageManager = new nsFrameMessageManager(true,

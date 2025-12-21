@@ -103,7 +103,7 @@ class Marionette(object):
     CONTEXT_CONTENT = 'content'
 
     def __init__(self, host='localhost', port=2828, b2gbin=False,
-                 emulator=False, connectToRunningEmulator=False,
+                 emulator=None, emulatorBinary=None, connectToRunningEmulator=False,
                  homedir=None, baseurl=None, noWindow=False, logcat_dir=None):
         self.host = host
         self.port = self.local_port = port
@@ -124,7 +124,9 @@ class Marionette(object):
         if emulator:
             self.emulator = Emulator(homedir=homedir,
                                      noWindow=self.noWindow,
-                                     logcat_dir=self.logcat_dir)
+                                     logcat_dir=self.logcat_dir,
+                                     arch=emulator,
+                                     emulatorBinary=emulatorBinary)
             self.emulator.start()
             self.port = self.emulator.setup_port_forwarding(self.port)
             assert(self.emulator.wait_for_port())
@@ -294,7 +296,7 @@ class Marionette(object):
         elif type(args) == HTMLElement:
             wrapped = {'ELEMENT': args.id }
         elif (isinstance(args, bool) or isinstance(args, basestring) or
-              isinstance(args, int) or args is None):
+              isinstance(args, int) or isinstance(args, float) or args is None):
             wrapped = args
 
         return wrapped

@@ -528,8 +528,8 @@ struct JSScript : public js::gc::Cell
                                        expression statement */
     bool            savedCallerFun:1; /* can call getCallerFunction() */
     bool            strictModeCode:1; /* code is in strict mode */
-    bool            compileAndGo:1;   /* script was compiled with TCF_COMPILE_N_GO */
-    bool            bindingsAccessedDynamically:1; /* see TCF_BINDINGS_ACCESSED_DYNAMICALLY */
+    bool            compileAndGo:1;   /* see Parser::compileAndGo */
+    bool            bindingsAccessedDynamically:1; /* see ContextFlags' field of the same name */
     bool            warnedAboutTwoArgumentEval:1; /* have warned about use of
                                                      obsolete eval(s, o) in
                                                      this script */
@@ -589,7 +589,7 @@ struct JSScript : public js::gc::Cell
 
     void setVersion(JSVersion v) { version = v; }
 
-    /* See TCF_ARGUMENTS_HAS_LOCAL_BINDING comment. */
+    /* See ContextFlags::funArgumentsHasLocalBinding comment. */
     bool argumentsHasLocalBinding() const { return argsHasLocalBinding_; }
     jsbytecode *argumentsBytecode() const { JS_ASSERT(code[0] == JSOP_ARGUMENTS); return code; }
     unsigned argumentsLocalSlot() const { JS_ASSERT(argsHasLocalBinding_); return argsSlot_; }
@@ -660,7 +660,7 @@ struct JSScript : public js::gc::Cell
 
     /* Return creation time global or null. */
     js::GlobalObject *getGlobalObjectOrNull() const {
-        return isCachedEval ? NULL : globalObject.get();
+        return (isCachedEval || isActiveEval) ? NULL : globalObject.get();
     }
 
   private:

@@ -316,6 +316,8 @@ IsTypedArrayProto(JSObject *obj)
 
 class DataViewObject : public JSObject
 { 
+    static Class protoClass;
+
     static const size_t BYTEOFFSET_SLOT = 0;
     static const size_t BYTELENGTH_SLOT = 1;
     static const size_t BUFFER_SLOT     = 2;
@@ -328,9 +330,12 @@ class DataViewObject : public JSObject
     static JSBool prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp);
 
     static JSBool class_constructor(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool constructWithProto(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool construct(JSContext *cx, JSObject *bufobj, const CallArgs &args, JSObject *proto);
 
     static inline DataViewObject *
-    create(JSContext *cx, uint32_t byteOffset, uint32_t byteLength, Handle<ArrayBufferObject*> arrayBuffer);
+    create(JSContext *cx, uint32_t byteOffset, uint32_t byteLength,
+           Handle<ArrayBufferObject*> arrayBuffer, JSObject *proto);
 
     static JSBool fun_getInt8(JSContext *cx, unsigned argc, Value *vp);
     static JSBool fun_getUint8(JSContext *cx, unsigned argc, Value *vp);

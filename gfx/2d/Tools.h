@@ -39,6 +39,13 @@
 #define MOZILLA_GFX_TOOLS_H_
 
 #include "Types.h"
+#if defined(_MSC_VER) && (_MSC_VER < 1600)
+#define hypotf _hypotf
+#endif
+
+#if defined(_MSC_VER) && (_MSC_VER <= 1310)
+_CRTIMP float  __cdecl _hypotf(float, float);
+#endif
 
 namespace mozilla {
 namespace gfx {

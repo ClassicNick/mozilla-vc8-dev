@@ -67,17 +67,17 @@ BrowserElementParent.prototype = {
     }
   },
 
-  _observeInProcessBrowserFrameShown: function(frameLoader, isMozApp) {
+  _observeInProcessBrowserFrameShown: function(frameLoader) {
     debug("In-process browser frame shown " + frameLoader);
-    this._setUpMessageManagerListeners(frameLoader, isMozApp);
+    this._setUpMessageManagerListeners(frameLoader);
   },
 
-  _observeRemoteBrowserFrameShown: function(frameLoader, isMozApp) {
+  _observeRemoteBrowserFrameShown: function(frameLoader) {
     debug("Remote browser frame shown " + frameLoader);
-    this._setUpMessageManagerListeners(frameLoader, isMozApp);
+    this._setUpMessageManagerListeners(frameLoader);
   },
 
-  _setUpMessageManagerListeners: function(frameLoader, isMozApp) {
+  _setUpMessageManagerListeners: function(frameLoader) {
     let frameElement = frameLoader.QueryInterface(Ci.nsIFrameLoader).ownerElement;
     if (!frameElement) {
       debug("No frame element?");
@@ -89,8 +89,9 @@ BrowserElementParent.prototype = {
     // Messages we receive are handled by functions with parameters
     // (frameElement, data), where |data| is the message manager's data object.
 
+    let self = this;
     function addMessageListener(msg, handler) {
-      mm.addMessageListener('browser-element-api:' + msg, handler.bind(this, frameElement));
+      mm.addMessageListener('browser-element-api:' + msg, handler.bind(self, frameElement));
     }
 
     addMessageListener("hello", this._recvHello);
@@ -99,15 +100,10 @@ BrowserElementParent.prototype = {
     addMessageListener("loadend", this._fireEventFromMsg);
     addMessageListener("titlechange", this._fireEventFromMsg);
     addMessageListener("iconchange", this._fireEventFromMsg);
+    addMessageListener("get-mozapp-manifest-url", this._sendMozAppManifestURL);
 
     mm.loadFrameScript("chrome://global/content/BrowserElementChild.js",
                        /* allowDelayedLoad = */ true);
-    if (isMozApp) {
-      mm.loadFrameScript("data:,content.QueryInterface(Ci.nsIInterfaceRequestor)" +
-                         "             .getInterface(Components.interfaces.nsIDOMWindowUtils)" +
-                         "             .setIsApp(true);",
-                         /* allowDelayedLoad = */ true);
-    }
   },
 
   _recvHello: function(frameElement, data) {
@@ -139,6 +135,10 @@ BrowserElementParent.prototype = {
     frameElement.dispatchEvent(evt);
   },
 
+  _sendMozAppManifestURL: function(frameElement, data) {
+    return frameElement.getAttribute('mozapp');
+  },
+
   observe: function(subject, topic, data) {
     switch(topic) {
     case 'app-startup':
@@ -150,10 +150,10 @@ BrowserElementParent.prototype = {
       }
       break;
     case 'remote-browser-frame-shown':
-      this._observeRemoteBrowserFrameShown(subject, data == "is-moz-app:true");
+      this._observeRemoteBrowserFrameShown(subject);
       break;
     case 'in-process-browser-frame-shown':
-      this._observeInProcessBrowserFrameShown(subject, data == "is-moz-app:true");
+      this._observeInProcessBrowserFrameShown(subject);
       break;
     case 'content-document-global-created':
       this._observeContentGlobalCreated(subject);

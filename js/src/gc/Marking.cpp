@@ -7,6 +7,7 @@
 #include "jsprf.h"
 #include "jsscope.h"
 #include "jsstr.h"
+#include "jsxml.h"
 
 #include "gc/Marking.h"
 #include "methodjit/MethodJIT.h"
@@ -49,8 +50,10 @@
 namespace js {
 namespace gc {
 
+#if JS_HAS_XML_SUPPORT
 static inline void
 PushMarkStack(GCMarker *gcmarker, JSXML *thing);
+#endif
 
 static inline void
 PushMarkStack(GCMarker *gcmarker, JSObject *thing);
@@ -114,10 +117,8 @@ MarkInternal(JSTracer *trc, T **thingp)
         JS_SET_TRACING_LOCATION(trc, NULL);
     }
 
-#ifdef DEBUG
     trc->debugPrinter = NULL;
     trc->debugPrintArg = NULL;
-#endif
 }
 
 #define JS_ROOT_MARKING_ASSERT(trc)                                     \
@@ -393,7 +394,7 @@ MarkObjectSlots(JSTracer *trc, JSObject *obj, uint32_t start, uint32_t nslots)
 {
     JS_ASSERT(obj->isNative());
     for (uint32_t i = start; i < (start + nslots); ++i) {
-        JS_SET_TRACING_DETAILS(trc, js_PrintObjectSlotName, obj, i);
+        JS_SET_TRACING_DETAILS(trc, js_GetObjectSlotName, obj, i);
         MarkValueInternal(trc, obj->nativeGetSlotRef(i).unsafeGet());
     }
 }
@@ -453,6 +454,7 @@ MarkValueUnbarriered(JSTracer *trc, Value *v, const char *name)
     JS_ASSERT((thing)->compartment()->isCollecting() ||                 \
               (thing)->compartment() == (rt)->atomsCompartment);
 
+#if JS_HAS_XML_SUPPORT
 static void
 PushMarkStack(GCMarker *gcmarker, JSXML *thing)
 {
@@ -461,6 +463,7 @@ PushMarkStack(GCMarker *gcmarker, JSXML *thing)
     if (thing->markIfUnmarked(gcmarker->getMarkColor()))
         gcmarker->pushXML(thing);
 }
+#endif
 
 static void
 PushMarkStack(GCMarker *gcmarker, JSObject *thing)
@@ -817,7 +820,7 @@ MarkChildren(JSTracer *trc, types::TypeObject *type)
         MarkObject(trc, &type->interpretedFunction, "type_function");
 }
 
-#ifdef JS_HAS_XML_SUPPORT
+#if JS_HAS_XML_SUPPORT
 static void
 MarkChildren(JSTracer *trc, JSXML *xml)
 {
@@ -997,10 +1000,13 @@ GCMarker::processMarkStackOther(uintptr_t tag, uintptr_t addr)
             pushValueArray(obj, vp, end);
         else
             pushObject(obj);
-    } else {
+    }
+#if JS_HAS_XML_SUPPORT
+    else {
         JS_ASSERT(tag == XmlTag);
         MarkChildren(this, reinterpret_cast<JSXML *>(addr));
     }
+#endif
 }
 
 inline void

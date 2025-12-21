@@ -7,6 +7,7 @@
 let Cu = Components.utils;
 let Ci = Components.interfaces;
 let Cc = Components.classes;
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 function debug(msg) {
   //dump("BrowserElementChild - " + msg + "\n");
@@ -14,6 +15,10 @@ function debug(msg) {
 
 function sendAsyncMsg(msg, data) {
   sendAsyncMessage('browser-element-api:' + msg, data);
+}
+
+function sendSyncMsg(msg, data) {
+  return sendSyncMessage('browser-element-api:' + msg, data);
 }
 
 /**
@@ -48,9 +53,18 @@ BrowserElementChild.prototype = {
     //
     // This is because mozapp iframes have some privileges which we don't want
     // to extend to untrusted mozbrowser content.
-    content.QueryInterface(Ci.nsIInterfaceRequestor)
-           .getInterface(Components.interfaces.nsIDOMWindowUtils)
-           .setIsApp(false);
+    //
+    // Get the app manifest from the parent, if our frame has one.
+    let appManifestURL = sendSyncMsg('get-mozapp-manifest-url')[0];
+    let windowUtils = content.QueryInterface(Ci.nsIInterfaceRequestor)
+                             .getInterface(Components.interfaces.nsIDOMWindowUtils);
+
+    if (!!appManifestURL) {
+      windowUtils.setIsApp(true);
+      windowUtils.setApp(mozApp);
+    } else {
+      windowUtils.setIsApp(false);
+    }
 
     addEventListener('DOMTitleChanged',
                      this._titleChangedHandler.bind(this),

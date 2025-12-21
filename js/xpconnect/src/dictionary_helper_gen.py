@@ -146,6 +146,10 @@ def print_header_file(fd, conf):
              "#include \"nsString.h\"\n"
              "#include \"nsCOMPtr.h\"\n\n")
 
+    # win32 namespace issues
+    fd.write("#undef near\n"
+             "\n\n")
+
     forwards = []
     attrnames = []
     for d in conf.dictionaries:
@@ -460,7 +464,7 @@ if __name__ == '__main__':
                  help="Quick stub header output file", metavar="FILE")
     o.add_option('--makedepend-output', type='string', default=None,
                  help="gnumake dependencies output file", metavar="FILE")
-    o.add_option('--cachedir', dest='cachedir', default='',
+    o.add_option('--cachedir', dest='cachedir', default=None,
                  help="Directory in which to cache lex/parse tables.")
     (options, filenames) = o.parse_args()
     if len(filenames) != 1:

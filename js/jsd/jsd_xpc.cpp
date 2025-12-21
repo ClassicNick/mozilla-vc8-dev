@@ -55,6 +55,7 @@
 #include "jsdebug.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
+#include "nsCycleCollectionParticipant.h"
 
 /* XXX DOM dependency */
 #include "nsIScriptContext.h"
@@ -2240,7 +2241,7 @@ jsdValue::GetJsType (PRUint32 *_rval)
         *_rval = TYPE_VOID;
     else if (JSD_IsValueFunction (mCx, mValue))
         *_rval = TYPE_FUNCTION;
-    else if (JSVAL_IS_OBJECT(val))
+    else if (!JSVAL_IS_PRIMITIVE(val))
         *_rval = TYPE_OBJECT;
     else
         NS_ASSERTION (0, "Value has no discernible type.");
@@ -2450,7 +2451,42 @@ jsdValue::GetScript(jsdIScript **_rval)
 /******************************************************************************
  * debugger service implementation
  ******************************************************************************/
-NS_IMPL_THREADSAFE_ISUPPORTS1(jsdService, jsdIDebuggerService)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(jsdService)
+  NS_INTERFACE_MAP_ENTRY(jsdIDebuggerService)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, jsdIDebuggerService)
+NS_INTERFACE_MAP_END
+
+/* NS_IMPL_CYCLE_COLLECTION_10(jsdService, ...) */
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(jsdService)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(jsdService)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mErrorHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mBreakpointHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDebugHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mDebuggerHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mInterruptHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mScriptHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mThrowHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTopLevelHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFunctionHook)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mActivationCallback)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(jsdService)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mErrorHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mBreakpointHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDebugHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mDebuggerHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mInterruptHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mScriptHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mThrowHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTopLevelHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mFunctionHook)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mActivationCallback)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(jsdService)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(jsdService)
 
 NS_IMETHODIMP
 jsdService::GetJSDContext(JSDContext **_rval)

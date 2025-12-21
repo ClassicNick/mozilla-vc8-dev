@@ -52,7 +52,7 @@ using namespace js;
 using namespace js::frontend;
 
 static void
-FlagHeavyweights(Definition *dn, FunctionBox *funbox, uint32_t *tcflags)
+FlagHeavyweights(Definition *dn, FunctionBox *funbox, bool *isHeavyweight, bool topInFunction)
 {
     unsigned dnLevel = dn->frameLevel();
 
@@ -64,17 +64,17 @@ FlagHeavyweights(Definition *dn, FunctionBox *funbox, uint32_t *tcflags)
          * funbox whose body contains the dn definition.
          */
         if (funbox->level + 1U == dnLevel || (dnLevel == 0 && dn->isLet())) {
-            funbox->tcflags |= TCF_FUN_HEAVYWEIGHT;
+            funbox->setFunIsHeavyweight();
             break;
         }
     }
 
-    if (!funbox && (*tcflags & TCF_IN_FUNCTION))
-        *tcflags |= TCF_FUN_HEAVYWEIGHT;
+    if (!funbox && topInFunction)
+        *isHeavyweight = true;
 }
 
 static void
-SetFunctionKinds(FunctionBox *funbox, uint32_t *tcflags, bool isDirectEval)
+SetFunctionKinds(FunctionBox *funbox, bool *isHeavyweight, bool topInFunction, bool isDirectEval)
 {
     for (; funbox; funbox = funbox->siblings) {
         ParseNode *fn = funbox->node;
@@ -86,13 +86,13 @@ SetFunctionKinds(FunctionBox *funbox, uint32_t *tcflags, bool isDirectEval)
             continue;
 
         if (funbox->kids)
-            SetFunctionKinds(funbox->kids, tcflags, isDirectEval);
+            SetFunctionKinds(funbox->kids, isHeavyweight, topInFunction, isDirectEval);
 
         JSFunction *fun = funbox->function();
 
         JS_ASSERT(fun->kind() == JSFUN_INTERPRETED);
 
-        if (funbox->tcflags & TCF_FUN_HEAVYWEIGHT) {
+        if (funbox->funIsHeavyweight()) {
             /* nothing to do */
         } else if (isDirectEval || funbox->inAnyDynamicScope()) {
             /*
@@ -134,7 +134,7 @@ SetFunctionKinds(FunctionBox *funbox, uint32_t *tcflags, bool isDirectEval)
              * ensure that its containing function has been flagged as
              * heavyweight.
              *
-             * The emitter must see TCF_FUN_HEAVYWEIGHT accurately before
+             * The emitter must see funIsHeavyweight() accurately before
              * generating any code for a tree of nested functions.
              */
             AtomDefnMapPtr upvars = pn->pn_names;
@@ -144,7 +144,7 @@ SetFunctionKinds(FunctionBox *funbox, uint32_t *tcflags, bool isDirectEval)
                 Definition *defn = r.front().value();
                 Definition *lexdep = defn->resolve();
                 if (!lexdep->isFreeVar())
-                    FlagHeavyweights(lexdep, funbox, tcflags);
+                    FlagHeavyweights(lexdep, funbox, isHeavyweight, topInFunction);
             }
         }
     }
@@ -179,7 +179,9 @@ MarkExtensibleScopeDescendants(JSContext *context, FunctionBox *funbox, bool has
 
         if (funbox->kids) {
             if (!MarkExtensibleScopeDescendants(context, funbox->kids,
-                                                hasExtensibleParent || funbox->scopeIsExtensible())) {
+                                                hasExtensibleParent ||
+                                                funbox->funHasExtensibleScope()))
+            {
                 return false;
             }
         }
@@ -191,12 +193,15 @@ MarkExtensibleScopeDescendants(JSContext *context, FunctionBox *funbox, bool has
 bool
 frontend::AnalyzeFunctions(Parser *parser)
 {
-    TreeContext *tc = parser->tc;
-    if (!tc->functionList)
+    SharedContext *sc = parser->tc->sc;
+    if (!sc->functionList)
         return true;
-    if (!MarkExtensibleScopeDescendants(tc->context, tc->functionList, false))
+    if (!MarkExtensibleScopeDescendants(sc->context, sc->functionList, false))
         return false;
     bool isDirectEval = !!parser->callerFrame;
-    SetFunctionKinds(tc->functionList, &tc->flags, isDirectEval);
+    bool isHeavyweight = false;
+    SetFunctionKinds(sc->functionList, &isHeavyweight, sc->inFunction, isDirectEval);
+    if (isHeavyweight)
+        sc->setFunIsHeavyweight();
     return true;
 }
