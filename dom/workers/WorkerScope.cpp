@@ -47,6 +47,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "mozilla/dom/XMLHttpRequestUploadBinding.h"
+#include "mozilla/OSFileConstants.h"
 #include "nsTraceRefcnt.h"
 #include "xpcpublic.h"
 
@@ -177,12 +178,12 @@ private:
       return false;
     }
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
 
     JSObject* listener =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to get event listener!");
       return false;
     }
@@ -209,10 +210,10 @@ private:
       return false;
     }
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
     scope->SetEventListener(NS_ConvertASCIItoUTF16(name + 2),
                             JSVAL_TO_OBJECT(*aVp), rv);
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to set event listener!");
       return false;
     }
@@ -341,12 +342,12 @@ private:
       return false;
     }
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
 
     JSObject* adaptor =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to get event listener!");
       return false;
     }
@@ -394,11 +395,11 @@ private:
                                   OBJECT_TO_JSVAL(aObj));
     js::SetFunctionNativeReserved(listener, SLOT_wrappedFunction, *aVp);
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
 
     scope->SetEventListener(NS_ConvertASCIItoUTF16(name + 2), listener, rv);
 
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to set event listener!");
       return false;
     }
@@ -745,12 +746,12 @@ private:
       return false;
     }
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
 
     JSObject* listener =
       scope->GetEventListener(NS_ConvertASCIItoUTF16(name + 2), rv);
 
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to get event listener!");
       return false;
     }
@@ -777,12 +778,12 @@ private:
       return false;
     }
 
-    nsresult rv = NS_OK;
+    ErrorResult rv;
 
     scope->SetEventListener(NS_ConvertASCIItoUTF16(name + 2),
                             JSVAL_TO_OBJECT(*aVp), rv);
 
-    if (NS_FAILED(rv)) {
+    if (rv.Failed()) {
       JS_ReportError(aCx, "Failed to set event listener!");
       return false;
     }
@@ -988,7 +989,8 @@ CreateDedicatedWorkerGlobalScope(JSContext* aCx)
 
   if (worker->IsChromeWorker() &&
       (!chromeworker::InitClass(aCx, global, workerProto, false) ||
-       !DefineChromeWorkerFunctions(aCx, global))) {
+       !DefineChromeWorkerFunctions(aCx, global)) ||
+       !DefineOSFileConstants(aCx, global)) {
     return NULL;
   }
 

@@ -43,7 +43,6 @@
 #include "jslibmath.h"
 #include "jsscope.h"
 
-#include "frontend/BytecodeEmitter.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/Compiler.h"
 #include "methodjit/StubCalls.h"
@@ -2664,13 +2663,13 @@ mjit::Compiler::jsop_initprop()
 {
     FrameEntry *obj = frame.peek(-2);
     FrameEntry *fe = frame.peek(-1);
-    JSAtom *atom = script->getAtom(GET_UINT32_INDEX(PC));
+    PropertyName *name = script->getName(GET_UINT32_INDEX(PC));
 
     JSObject *baseobj = frame.extra(obj).initObject;
 
     if (!baseobj || monitored(PC)) {
         prepareStubCall(Uses(2));
-        masm.move(ImmPtr(atom), Registers::ArgReg1);
+        masm.move(ImmPtr(name), Registers::ArgReg1);
         INLINE_STUBCALL(stubs::InitProp, REJOIN_FALLTHROUGH);
         return;
     }
@@ -2680,7 +2679,7 @@ mjit::Compiler::jsop_initprop()
 #ifdef DEBUG
     bool res =
 #endif
-    LookupPropertyWithFlags(cx, baseobj, ATOM_TO_JSID(atom),
+    LookupPropertyWithFlags(cx, baseobj, NameToId(name),
                             JSRESOLVE_QUALIFIED, &holder, &prop);
     JS_ASSERT(res && prop && holder == baseobj);
 

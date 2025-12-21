@@ -827,8 +827,8 @@ void JS_FASTCALL
 stubs::RecompileForInline(VMFrame &f)
 {
     ExpandInlineFrames(f.cx->compartment);
-    Recompiler::clearStackReferencesAndChunk(f.cx->runtime->defaultFreeOp(), f.script(), f.jit(),
-                                             f.chunkIndex(), /* resetUses = */ false);
+    Recompiler::clearStackReferences(f.cx->runtime->defaultFreeOp(), f.script());
+    f.jit()->destroyChunk(f.cx->runtime->defaultFreeOp(), f.chunkIndex(), /* resetUses = */ false);
 }
 
 void JS_FASTCALL
@@ -1087,7 +1087,7 @@ InitPropOrMethod(VMFrame &f, PropertyName *name, JSOp op)
     JS_ASSERT(obj->isNative());
 
     /* Get the immediate property name into id. */
-    jsid id = ATOM_TO_JSID(name);
+    jsid id = NameToId(name);
 
     if (JS_UNLIKELY(name == cx->runtime->atomState.protoAtom)
         ? !js_SetPropertyHelper(cx, obj, id, 0, &rval, false)

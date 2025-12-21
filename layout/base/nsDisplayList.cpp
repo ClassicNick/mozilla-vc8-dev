@@ -148,7 +148,8 @@ static bool IsFixedItem(nsDisplayItem *aItem, nsDisplayListBuilder* aBuilder)
   nsIFrame* activeScrolledRoot =
     nsLayoutUtils::GetActiveScrolledRootFor(aItem, aBuilder);
   return activeScrolledRoot &&
-    !nsLayoutUtils::IsScrolledByRootContentDocumentDisplayportScrolling(activeScrolledRoot, aBuilder);
+         !nsLayoutUtils::ScrolledByViewportScrolling(activeScrolledRoot,
+                                                     aBuilder);
 }
 
 static bool ForceVisiblityForFixedItem(nsDisplayListBuilder* aBuilder,
@@ -390,6 +391,29 @@ nsDisplayListBuilder::MarkFramesForDisplayList(nsIFrame* aDirtyFrame,
   for (nsFrameList::Enumerator e(aFrames); !e.AtEnd(); e.Next()) {
     mFramesMarkedForDisplay.AppendElement(e.get());
     MarkOutOfFlowFrameForDisplay(aDirtyFrame, e.get(), aDirtyRect);
+  }
+}
+
+void
+nsDisplayListBuilder::MarkPreserve3DFramesForDisplayList(nsIFrame* aDirtyFrame, const nsRect& aDirtyRect) 
+{
+  nsAutoTArray<nsIFrame::ChildList,4> childListArray;
+  aDirtyFrame->GetChildLists(&childListArray);
+  nsIFrame::ChildListArrayIterator lists(childListArray);
+  for (; !lists.IsDone(); lists.Next()) {
+    nsFrameList::Enumerator childFrames(lists.CurrentList());
+    for (; !childFrames.AtEnd(); childFrames.Next()) {
+      nsIFrame *child = childFrames.get();
+      if (child->Preserves3D()) {
+        mFramesMarkedForDisplay.AppendElement(child);
+        nsRect dirty = aDirtyRect - child->GetOffsetTo(aDirtyFrame);
+
+        child->Properties().Set(nsDisplayListBuilder::Preserve3DDirtyRectProperty(),
+                           new nsRect(dirty));
+
+        MarkFrameForDisplay(child, aDirtyFrame);
+      }
+    }
   }
 }
 
@@ -1294,9 +1318,7 @@ nsDisplayBackground::GetInsideClipRegion(nsPresContext* aPresContext,
     *aSnap = false;
     result = nsLayoutUtils::RoundedRectIntersectRect(clipRect, radii, aRect);
   } else {
-    nsRect r;
-    r.IntersectRect(clipRect, aRect);
-    result = r;
+    result = clipRect.Intersect(aRect);
   }
   return result;
 }
@@ -1631,6 +1653,7 @@ nsDisplayBoxShadowOuter::Paint(nsDisplayListBuilder* aBuilder,
   nsAutoTArray<nsRect,10> rects;
   ComputeDisjointRectangles(mVisibleRegion, &rects);
 
+  SAMPLE_LABEL("nsDisplayBoxShadowOuter", "Paint");
   for (PRUint32 i = 0; i < rects.Length(); ++i) {
     aCtx->PushState();
     aCtx->IntersectClip(rects[i]);
@@ -1683,6 +1706,7 @@ nsDisplayBoxShadowInner::Paint(nsDisplayListBuilder* aBuilder,
   nsAutoTArray<nsRect,10> rects;
   ComputeDisjointRectangles(mVisibleRegion, &rects);
 
+  SAMPLE_LABEL("nsDisplayBoxShadowInner", "Paint");
   for (PRUint32 i = 0; i < rects.Length(); ++i) {
     aCtx->PushState();
     aCtx->IntersectClip(rects[i]);
@@ -1964,8 +1988,7 @@ nsDisplayOpacity::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   nsRect bounds = GetBounds(aBuilder, &snap);
   nsRegion visibleUnderChildren;
   visibleUnderChildren.And(*aVisibleRegion, bounds);
-  nsRect allowExpansion;
-  allowExpansion.IntersectRect(bounds, aAllowVisibleRegionExpansion);
+  nsRect allowExpansion = bounds.Intersect(aAllowVisibleRegionExpansion);
   return
     nsDisplayWrapList::ComputeVisibility(aBuilder, &visibleUnderChildren,
                                          allowExpansion);
@@ -2105,10 +2128,9 @@ nsDisplayScrollLayer::ComputeVisibility(nsDisplayListBuilder* aBuilder,
 
     nsRegion childVisibleRegion = displayport + aBuilder->ToReferenceFrame(mScrollFrame);
 
-    nsRect boundedRect;
-    boundedRect.IntersectRect(childVisibleRegion.GetBounds(), mList.GetBounds(aBuilder));
-    nsRect allowExpansion;
-    allowExpansion.IntersectRect(allowExpansion, boundedRect);
+    nsRect boundedRect =
+      childVisibleRegion.GetBounds().Intersect(mList.GetBounds(aBuilder));
+    nsRect allowExpansion = boundedRect.Intersect(aAllowVisibleRegionExpansion);
     bool visible = mList.ComputeVisibilityForSublist(
       aBuilder, &childVisibleRegion, boundedRect, allowExpansion);
     mVisibleRect = boundedRect;
@@ -2257,8 +2279,7 @@ nsDisplayClip::nsDisplayClip(nsDisplayListBuilder* aBuilder,
 nsRect nsDisplayClip::GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) {
   nsRect r = nsDisplayWrapList::GetBounds(aBuilder, aSnap);
   *aSnap = false;
-  r.IntersectRect(mClip, r);
-  return r;
+  return mClip.Intersect(r);
 }
 
 #ifdef NS_BUILD_REFCNT_LOGGING
@@ -2279,8 +2300,7 @@ bool nsDisplayClip::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   clipped.And(*aVisibleRegion, mClip);
 
   nsRegion finalClipped(clipped);
-  nsRect allowExpansion;
-  allowExpansion.IntersectRect(mClip, aAllowVisibleRegionExpansion);
+  nsRect allowExpansion = mClip.Intersect(aAllowVisibleRegionExpansion);
   bool anyVisible =
     nsDisplayWrapList::ComputeVisibility(aBuilder, &finalClipped,
                                          allowExpansion);
@@ -3190,8 +3210,7 @@ bool nsDisplaySVGEffects::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   // Our children may be made translucent or arbitrarily deformed so we should
   // not allow them to subtract area from aVisibleRegion.
   nsRegion childrenVisible(dirtyRect);
-  nsRect r;
-  r.IntersectRect(dirtyRect, mList.GetBounds(aBuilder));
+  nsRect r = dirtyRect.Intersect(mList.GetBounds(aBuilder));
   mList.ComputeVisibilityForSublist(aBuilder, &childrenVisible, r, nsRect());
   return true;
 }

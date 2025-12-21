@@ -209,7 +209,8 @@ destroy_loads(nsIFrame* aKey, nsRefPtr<nsImageLoader>& aData, void* closure)
 
 nsPresContext::nsPresContext(nsIDocument* aDocument, nsPresContextType aType)
   : mType(aType), mDocument(aDocument), mMinFontSize(0),
-    mTextZoom(1.0), mFullZoom(1.0), mPageSize(-1, -1), mPPScale(1.0f),
+    mTextZoom(1.0), mFullZoom(1.0), mLastFontInflationScreenWidth(-1.0),
+    mPageSize(-1, -1), mPPScale(1.0f),
     mViewportStyleOverflow(NS_STYLE_OVERFLOW_AUTO, NS_STYLE_OVERFLOW_AUTO),
     mImageAnimationModePref(imgIContainer::kNormalAnimMode)
 {
@@ -1200,10 +1201,10 @@ nsPresContext::Observe(nsISupports* aSubject,
   return NS_ERROR_FAILURE;
 }
 
-nsPresContext*
-nsPresContext::GetParentPresContext()
+static nsPresContext*
+GetParentPresContext(nsPresContext* aPresContext)
 {
-  nsIPresShell* shell = GetPresShell();
+  nsIPresShell* shell = aPresContext->GetPresShell();
   if (shell) {
     nsIFrame* rootFrame = shell->FrameManager()->GetRootFrame();
     if (rootFrame) {
@@ -1215,27 +1216,13 @@ nsPresContext::GetParentPresContext()
   return nsnull;
 }
 
-nsPresContext*
-nsPresContext::GetToplevelContentDocumentPresContext()
-{
-  if (IsChrome())
-    return nsnull;
-  nsPresContext* pc = this;
-  for (;;) {
-    nsPresContext* parent = pc->GetParentPresContext();
-    if (!parent || parent->IsChrome())
-      return pc;
-    pc = parent;
-  }
-}
-
 // We may want to replace this with something faster, maybe caching the root prescontext
 nsRootPresContext*
 nsPresContext::GetRootPresContext()
 {
   nsPresContext* pc = this;
   for (;;) {
-    nsPresContext* parent = pc->GetParentPresContext();
+    nsPresContext* parent = GetParentPresContext(pc);
     if (!parent)
       break;
     pc = parent;
@@ -1424,6 +1411,34 @@ nsPresContext::SetFullZoom(float aZoom)
   mSupressResizeReflow = false;
 
   mCurAppUnitsPerDevPixel = AppUnitsPerDevPixel();
+}
+
+float
+nsPresContext::ScreenWidthInchesForFontInflation(bool* aChanged)
+{
+  if (aChanged) {
+    *aChanged = false;
+  }
+
+  nsDeviceContext *dx = DeviceContext();
+  nsRect clientRect;
+  dx->GetClientRect(clientRect); // FIXME: GetClientRect looks expensive
+  float deviceWidthInches =
+    float(clientRect.width) / float(dx->AppUnitsPerPhysicalInch());
+
+  if (deviceWidthInches != mLastFontInflationScreenWidth) {
+    if (mLastFontInflationScreenWidth != -1.0) {
+      if (aChanged) {
+        *aChanged = true;
+      } else {
+        NS_NOTREACHED("somebody should have checked for screen width change "
+                      "and triggered a reflow");
+      }
+    }
+    mLastFontInflationScreenWidth = deviceWidthInches;
+  }
+
+  return deviceWidthInches;
 }
 
 void
@@ -2157,7 +2172,7 @@ nsPresContext::NotifyInvalidation(const nsRect& aRect, PRUint32 aFlags)
     return;
 
   nsPresContext* pc;
-  for (pc = this; pc; pc = pc->GetParentPresContext()) {
+  for (pc = this; pc; pc = GetParentPresContext(pc)) {
     if (pc->mFireAfterPaintEvents)
       break;
     pc->mFireAfterPaintEvents = true;

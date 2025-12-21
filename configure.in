@@ -291,7 +291,16 @@ if test -n "$gonkdir" ; then
     STLPORT_CPPFLAGS="-I$gonkdir/ndk/sources/cxx-stl/stlport/stlport/"
     STLPORT_LIBS="-lstlport"
 
-    CPPFLAGS="-DANDROID -isystem $gonkdir/bionic/libc/include/ -isystem $gonkdir/bionic/libc/kernel/common -isystem $gonkdir/bionic/libc/arch-arm/include -isystem $gonkdir/bionic/libc/kernel/arch-arm -isystem $gonkdir/bionic/libm/include -I$gonkdir/frameworks/base/opengl/include -I$gonkdir/frameworks/base/native/include -I$gonkdir/hardware/libhardware/include -I$gonkdir/hardware/libhardware_legacy/include -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/frameworks/base/include $CPPFLAGS -I$gonkdir/frameworks/base/services/sensorservice"
+    case "$target_cpu" in
+    arm)
+        ARCH_DIR=arch-arm
+        ;;
+    i?86)
+        ARCH_DIR=arch-x86
+        ;;
+    esac
+
+    CPPFLAGS="-DANDROID -isystem $gonkdir/bionic/libc/$ARCH_DIR/include -isystem $gonkdir/bionic/libc/include/ -isystem $gonkdir/bionic/libc/kernel/common -isystem $gonkdir/bionic/libc/kernel/$ARCH_DIR -isystem $gonkdir/bionic/libm/include -I$gonkdir/frameworks/base/opengl/include -I$gonkdir/frameworks/base/native/include -I$gonkdir/hardware/libhardware/include -I$gonkdir/hardware/libhardware_legacy/include -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/frameworks/base/include -I$gonkdir/external/dbus $CPPFLAGS -I$gonkdir/frameworks/base/services/sensorservice"
     CFLAGS="-mandroid -fno-short-enums -fno-exceptions $CFLAGS"
     CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions $CXXFLAGS $STLPORT_CPPFLAGS"
     LIBS="$LIBS $STLPORT_LIBS"
@@ -1739,6 +1748,19 @@ if test "$GNU_CC"; then
     DSO_CFLAGS=''
     DSO_PIC_CFLAGS='-fPIC'
     ASFLAGS="$ASFLAGS -fPIC"
+    AC_MSG_CHECKING([for --noexecstack option to as])
+    _SAVE_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS -Wa,--noexecstack"
+    AC_TRY_COMPILE(,,AC_MSG_RESULT([yes])
+                     [ASFLAGS="$ASFLAGS -Wa,--noexecstack"],
+                     AC_MSG_RESULT([no]))
+    CFLAGS=$_SAVE_CFLAGS
+    AC_MSG_CHECKING([for -z noexecstack option to ld])
+    _SAVE_LDFLAGS=$LDFLAGS
+    LDFLAGS="$LDFLAGS -Wl,-z,noexecstack"
+    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
+                  AC_MSG_RESULT([no])
+                  LDFLAGS=$_SAVE_LDFLAGS)
     _MOZ_RTTI_FLAGS_ON=-frtti
     _MOZ_RTTI_FLAGS_OFF=-fno-rtti
 
@@ -1750,11 +1772,15 @@ if test "$GNU_CC"; then
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
     # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
-    #
+    # -Werror=unused-result - enforces __attribute__((warn_unused_result));
+    #     Seldom used in system headers, but frequently in Mozilla code to
+    #     enforce checking of fallible methods.
+
     _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wall -Wpointer-arith -Wdeclaration-after-statement"
     MOZ_C_SUPPORTS_WARNING(-W, error=return-type, ac_c_has_werror_return_type)
     MOZ_C_SUPPORTS_WARNING(-W, type-limits, ac_c_has_wtype_limits)
     MOZ_C_SUPPORTS_WARNING(-W, empty-body, ac_c_has_wempty_body)
+    MOZ_C_SUPPORTS_WARNING(-W, error=unused-result, ac_c_has_werror_unused_result)
     
     # Turn off the following warnings that -Wall/-pedantic turn on:
     # -Wno-unused - lots of violations in third-party code
@@ -1817,11 +1843,13 @@ if test "$GNU_CXX"; then
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
     # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
-    #
+    # -Werror=unused-result - see above
+
     _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wall -Wpointer-arith -Woverloaded-virtual"
     MOZ_CXX_SUPPORTS_WARNING(-W, error=return-type, ac_cxx_has_werror_return_type)
     MOZ_CXX_SUPPORTS_WARNING(-W, type-limits, ac_cxx_has_wtype_limits)
     MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
+    MOZ_CXX_SUPPORTS_WARNING(-W, error=unused-result, ac_cxx_has_werror_unused_result)
 
     # Turn off the following warnings that -Wall/-pedantic turn on:
     # -Wno-ctor-dtor-privacy - ???
@@ -1940,6 +1968,11 @@ MOZ_ARG_ENABLE_BOOL(profiling,
 [  --enable-profiling      Set compile flags necessary for using sampling profilers (e.g. shark, perf)],
     MOZ_PROFILING=1,
     MOZ_PROFILING= )
+
+# For profiling builds keep the symbol information
+if test "$MOZ_PROFILING" -a -z "$STRIP_FLAGS"; then
+    STRIP_FLAGS="--strip-debug"
+fi
 
 dnl ========================================================
 dnl = Use Valgrind
@@ -2251,8 +2284,6 @@ case "$target" in
     if test "$HAVE_64BIT_OS"; then
         MOZ_MEMORY=1
     fi
-    CFLAGS="$CFLAGS -fno-common"
-    CXXFLAGS="$CXXFLAGS -fno-common"
     DLL_SUFFIX=".dylib"
     DSO_LDOPTS=''
     STRIP="$STRIP -x -S"
@@ -3602,15 +3633,15 @@ dnl check for clock_gettime(), the CLOCK_MONOTONIC clock
 AC_CACHE_CHECK(for clock_gettime(CLOCK_MONOTONIC),
                ac_cv_clock_monotonic,
                [for libs in "" -lrt; do
-                    _SAVE_LDFLAGS="$LDFLAGS"
-                    LDFLAGS="$LDFLAGS $libs"
+                    _SAVE_LIBS="$LIBS"
+                    LIBS="$LIBS $libs"
                     AC_TRY_LINK([#include <time.h>],
                                  [ struct timespec ts;
                                    clock_gettime(CLOCK_MONOTONIC, &ts); ],
                                  ac_cv_clock_monotonic=$libs
                                  break,
                                  ac_cv_clock_monotonic=no)
-                    LDFLAGS="$_SAVE_LDFLAGS"
+                    LIBS="$_SAVE_LIBS"
                 done])
 if test "$ac_cv_clock_monotonic" != "no"; then
     HAVE_CLOCK_MONOTONIC=1
@@ -6011,10 +6042,6 @@ MOZ_ARG_DISABLE_BOOL(angle,
     MOZ_ANGLE=1)
 
 if test -n "$MOZ_ANGLE"; then
-  if test -z "$_WIN32_MSVC"; then
-    AC_MSG_ERROR([Building ANGLE requires MSVC.  To build without ANGLE, reconfigure with --disable-angle.])
-  fi
-
   # Get the SDK path from the registry.
   # First try to get the June 2010 SDK
   MOZ_DIRECTX_SDK_REG_KEY=`reg query 'HKLM\Software\Microsoft\DirectX' //s | grep 'Microsoft DirectX SDK (June 2010)' | head -n 1`
@@ -7195,7 +7222,7 @@ else
   dnl On other Unix systems, where mozglue is a static library, jemalloc is
   dnl separated for the SDK, so we need to add it here.
   if test "$MOZ_MEMORY" = 1; then
-    MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS "'$(call EXPAND_LIBNAME_PATH,jemalloc,$(LIBXUL_DIST)/lib)'
+    MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS "'$(call EXPAND_LIBNAME_PATH,memory,$(LIBXUL_DIST)/lib)'
   fi
   MOZ_GLUE_PROGRAM_LDFLAGS="$MOZ_GLUE_PROGRAM_LDFLAGS "'$(MKSHLIB_UNFORCE_ALL)'
   if test -n "$GNU_CC"; then
@@ -7481,6 +7508,13 @@ MOZ_ARG_DISABLE_BOOL(elf-hack,
     USE_ELF_HACK=,
     USE_ELF_HACK=1)
 
+# Disable elf hack for profiling because the built in profiler
+# doesn't read the segments properly with elf hack. This is
+# temporary and should be fixed soon in the profiler.
+if test "$MOZ_PROFILING" = 1; then
+  USE_ELF_HACK=
+fi
+
 # Only enable elfhack where supported
 if test "$USE_ELF_HACK" = 1; then
     case "${HOST_OS_ARCH},${OS_ARCH}" in
@@ -7592,14 +7626,6 @@ if test -n "$_ENABLE_CODESIGHS"; then
         AC_MSG_ERROR([Codesighs directory $srcdir/tools/codesighs required.])
     fi
 fi
-
-dnl ========================================================
-dnl = Support for Quantify (Windows)
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(quantify,
-[  --enable-quantify       Enable Quantify support (Windows only) ],
-    MOZ_QUANTIFY=1,
-    MOZ_QUANTIFY= )
 
 dnl ========================================================
 dnl = Enable Radio Interface for B2G (Gonk usually)

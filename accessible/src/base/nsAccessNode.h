@@ -69,9 +69,6 @@ class nsPresContext;
 class nsIFrame;
 class nsIDocShellTreeItem;
 
-#define ACCESSIBLE_BUNDLE_URL "chrome://global-platform/locale/accessible.properties"
-#define PLATFORM_KEYS_BUNDLE_URL "chrome://global-platform/locale/platformKeys.properties"
-
 class nsAccessNode: public nsISupports
 {
 public:
@@ -79,11 +76,10 @@ public:
   nsAccessNode(nsIContent* aContent, nsDocAccessible* aDoc);
   virtual ~nsAccessNode();
 
-    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-    NS_DECL_CYCLE_COLLECTION_CLASS(nsAccessNode)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(nsAccessNode)
 
-    static void InitXPAccessibility();
-    static void ShutdownXPAccessibility();
+  static void ShutdownXPAccessibility();
 
   /**
    * Return an application accessible.
@@ -163,16 +159,6 @@ protected:
 
   nsCOMPtr<nsIContent> mContent;
   nsDocAccessible* mDoc;
-
-  /**
-   * Notify global nsIObserver's that a11y is getting init'd or shutdown.
-   */
-  static void NotifyA11yInitOrShutdown(bool aIsInit);
-
-  // Static data, we do our own refcounting for our static data.
-  static nsIStringBundle* gStringBundle;
-
-  static bool gIsFormFillEnabled;
 
 private:
   nsAccessNode() MOZ_DELETE;

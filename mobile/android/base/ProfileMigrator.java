@@ -67,6 +67,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.RemoteException;
 import android.provider.Browser;
 import android.text.TextUtils;
@@ -74,9 +75,12 @@ import android.util.Log;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -95,7 +99,6 @@ import org.json.JSONException;
 public class ProfileMigrator {
     private static final String LOGTAG = "ProfileMigrator";
     private static final String PREFS_NAME = "ProfileMigrator";
-    private File mProfileDir;
     private ContentResolver mCr;
     private Context mContext;
     private Runnable mLongOperationStartCallback;
@@ -115,6 +118,10 @@ public class ProfileMigrator {
     private static final String PREFS_MIGRATE_HISTORY_COUNT = "history_count";
     private static final String PREFS_MIGRATE_SYNC_DONE = "sync_done";
 
+    // Profile has been moved to internal storage?
+    private static final String PREFS_MIGRATE_MOVE_PROFILE_DONE
+        = "move_profile_done";
+
     /*
        These queries are derived from the low-level Places schema
        https://developer.mozilla.org/en/The_Places_database
@@ -126,6 +133,14 @@ public class ProfileMigrator {
 
     // We use this to ignore the tags folder during migration.
     private static final String ROOT_TAGS_FOLDER_NAME = "tags";
+
+    // Find the Mobile bookmarks root in places (bug 746860).
+    // We cannot rely on the name as that is locale-dependent.
+    // If it exists, it will have Id=6, fk=null, type=folder.
+    private static final String MOBILE_ROOT_QUERY =
+        "SELECT id FROM moz_bookmarks " +
+        "WHERE id=6 AND type=2 AND fk IS NULL AND parent=1";
+    private static final String MOBILE_ROOT_ID = "id";
 
     private static final String BOOKMARK_QUERY_SELECT =
         "SELECT places.url             AS p_url,"         +
@@ -262,8 +277,7 @@ public class ProfileMigrator {
     };
 
 
-    public ProfileMigrator(Context context, File profileDir) {
-        mProfileDir = profileDir;
+    public ProfileMigrator(Context context) {
         mContext = context;
         mCr = mContext.getContentResolver();
         mLongOperationStartCallback = null;
@@ -279,7 +293,7 @@ public class ProfileMigrator {
         mLongOperationStartRun = false;
     }
 
-    public void launchPlaces() {
+    public void launchPlaces(File profileDir) {
         boolean timeThisRun = false;
         Telemetry.Timer timer = null;
         // First run, time things
@@ -287,21 +301,26 @@ public class ProfileMigrator {
             timeThisRun = true;
             timer = new Telemetry.Timer("BROWSERPROVIDER_XUL_IMPORT_TIME");
         }
-        launchPlaces(DEFAULT_HISTORY_MIGRATE_COUNT);
+        launchPlaces(profileDir, DEFAULT_HISTORY_MIGRATE_COUNT);
         if (timeThisRun)
             timer.stop();
     }
 
-    public void launchPlaces(int maxEntries) {
+    public void launchPlaces(File profileDir, int maxEntries) {
         mLongOperationStartRun = false;
         // Places migration is heavy on the phone, allow it to block
         // other processing.
-        new PlacesRunnable(maxEntries).run();
+        new PlacesRunnable(profileDir, maxEntries).run();
     }
 
     public void launchSyncPrefs() {
         // Sync settings will post a runnable, no need for a seperate thread.
         new SyncTask().run();
+    }
+
+    public void launchMoveProfile() {
+        // Make sure the profile is on internal storage.
+        new MoveProfileTask().run();
     }
 
     public boolean areBookmarksMigrated() {
@@ -315,6 +334,12 @@ public class ProfileMigrator {
     // Have Sync settings been transferred?
     public boolean hasSyncMigrated() {
         return getPreferences().getBoolean(PREFS_MIGRATE_SYNC_DONE, false);
+    }
+
+    // Has the profile been moved from an SDcard to internal storage?
+    public boolean isProfileMoved() {
+        return getPreferences().getBoolean(PREFS_MIGRATE_MOVE_PROFILE_DONE,
+                                           false);
     }
 
     // Has migration run before?
@@ -342,22 +367,138 @@ public class ProfileMigrator {
         editor.commit();
     }
 
-    protected void setMigratedHistory() {
+    protected void setBooleanPrefTrue(String prefName) {
         SharedPreferences.Editor editor = getPreferences().edit();
-        editor.putBoolean(PREFS_MIGRATE_HISTORY_DONE, true);
+        editor.putBoolean(prefName, true);
         editor.commit();
+    }
+
+    protected void setMigratedHistory() {
+        setBooleanPrefTrue(PREFS_MIGRATE_BOOKMARKS_DONE);
     }
 
     protected void setMigratedBookmarks() {
-        SharedPreferences.Editor editor = getPreferences().edit();
-        editor.putBoolean(PREFS_MIGRATE_BOOKMARKS_DONE, true);
-        editor.commit();
+        setBooleanPrefTrue(PREFS_MIGRATE_BOOKMARKS_DONE);
     }
 
     protected void setMigratedSync() {
-        SharedPreferences.Editor editor = getPreferences().edit();
-        editor.putBoolean(PREFS_MIGRATE_SYNC_DONE, true);
-        editor.commit();
+        setBooleanPrefTrue(PREFS_MIGRATE_SYNC_DONE);
+    }
+
+    protected void setMovedProfile() {
+        setBooleanPrefTrue(PREFS_MIGRATE_MOVE_PROFILE_DONE);
+    }
+
+    private class MoveProfileTask implements Runnable {
+
+        protected void moveProfilesToAppInstallLocation() {
+            if (Build.VERSION.SDK_INT >= 8) {
+                // if we're on API >= 8, it's possible that
+                // we were previously on external storage, check there for profiles to pull in
+                moveProfilesFrom(mContext.getExternalFilesDir(null));
+            }
+
+            // Maybe it worked. Maybe it didn't. We won't try again.
+            setMovedProfile();
+        }
+
+        protected void moveProfilesFrom(File oldFilesDir) {
+            if (oldFilesDir == null) {
+                return;
+            }
+            File oldMozDir = new File(oldFilesDir, "mozilla");
+            if (! (oldMozDir.exists() && oldMozDir.isDirectory())) {
+                return;
+            }
+
+            // if we get here, we know that oldMozDir exists
+            File currentMozDir;
+            try {
+                currentMozDir = GeckoProfile.ensureMozillaDirectory(mContext);
+                if (currentMozDir.equals(oldMozDir)) {
+                    return;
+                }
+            } catch (IOException ioe) {
+                Log.e(LOGTAG, "Unable to create a profile directory!", ioe);
+                return;
+            }
+
+            Log.d(LOGTAG, "Moving old profile directories from " + oldMozDir.getAbsolutePath());
+
+            // if we get here, we know that oldMozDir != currentMozDir, so we have some stuff to move
+            moveDirContents(oldMozDir, currentMozDir);
+    }
+
+        protected void moveDirContents(File src, File dst) {
+            File[] files = src.listFiles();
+            if (files == null) {
+                src.delete();
+                return;
+            }
+            for (File f : files) {
+                File target = new File(dst, f.getName());
+                try {
+                    if (f.renameTo(target)) {
+                        continue;
+                    }
+                } catch (SecurityException se) {
+                    Log.w(LOGTAG, "Unable to rename file to " + target.getAbsolutePath() + " while moving profiles", se);
+                }
+                // rename failed, try moving manually
+                if (f.isDirectory()) {
+                    if (target.exists() || target.mkdirs()) {
+                        moveDirContents(f, target);
+                    } else {
+                        Log.e(LOGTAG, "Unable to create folder " + target.getAbsolutePath() + " while moving profiles");
+                    }
+                } else {
+                    if (!moveFile(f, target)) {
+                        Log.e(LOGTAG, "Unable to move file " + target.getAbsolutePath() + " while moving profiles");
+                    }
+                }
+            }
+            src.delete();
+        }
+
+        protected boolean moveFile(File src, File dst) {
+            boolean success = false;
+            long lastModified = src.lastModified();
+            try {
+                FileInputStream fis = new FileInputStream(src);
+                try {
+                    FileOutputStream fos = new FileOutputStream(dst);
+                    try {
+                        FileChannel inChannel = fis.getChannel();
+                        long size = inChannel.size();
+                        if (size == inChannel.transferTo(0, size, fos.getChannel())) {
+                            success = true;
+                        }
+                    } finally {
+                        fos.close();
+                    }
+                } finally {
+                    fis.close();
+                }
+            } catch (IOException ioe) {
+                Log.e(LOGTAG, "Exception while attempting to move file to " + dst.getAbsolutePath(), ioe);
+            }
+
+            if (success) {
+                dst.setLastModified(lastModified);
+                src.delete();
+            } else {
+                dst.delete();
+            }
+            return success;
+        }
+
+        @Override
+        public void run() {
+            if (isProfileMoved()) {
+                return;
+            }
+            moveProfilesToAppInstallLocation();
+        }
     }
 
     private class SyncTask implements Runnable, GeckoEventListener {
@@ -385,7 +526,12 @@ public class ProfileMigrator {
                     // This includes personal info, so don't log.
                     // Log.d(LOGTAG, "Message: " + message.toString());
                     JSONArray jsonPrefs = message.getJSONArray("preferences");
-                    parsePrefs(jsonPrefs);
+
+                    // Check that the batch of preferences we got notified of are in
+                    // the ones we requested and not those requested by other java code.
+                    if (!parsePrefs(jsonPrefs))
+                        return;
+
                     GeckoAppShell.unregisterGeckoEventListener("Preferences:Data",
                                                                (GeckoEventListener)this);
 
@@ -443,12 +589,18 @@ public class ProfileMigrator {
             return result;
         }
 
-        protected void parsePrefs(JSONArray jsonPrefs) {
+        // Returns true if we sucessfully got the preferences we requested.
+        protected boolean parsePrefs(JSONArray jsonPrefs) {
             try {
                 final int length = jsonPrefs.length();
                 for (int i = 0; i < length; i++) {
                     JSONObject jPref = jsonPrefs.getJSONObject(i);
                     final String prefName = jPref.getString("name");
+
+                    // Check to make sure we're working with preferences we requested.
+                    if (!mSyncSettingsList.contains(prefName))
+                        return false;
+
                     final String prefType = jPref.getString("type");
                     if ("bool".equals(prefType)) {
                         final boolean value = jPref.getBoolean("value");
@@ -466,7 +618,10 @@ public class ProfileMigrator {
             } catch (JSONException e) {
                 Log.e(LOGTAG, "Exception handling preferences answer: "
                       + e.getMessage());
+                return false;
             }
+
+            return true;
         }
 
         protected void configureSync() {
@@ -559,6 +714,7 @@ public class ProfileMigrator {
     }
 
     private class PlacesRunnable implements Runnable {
+        private File mProfileDir;
         private Map<Long, Long> mRerootMap;
         private Long mTagsPlacesFolderId;
         private ArrayList<ContentProviderOperation> mOperations;
@@ -568,7 +724,8 @@ public class ProfileMigrator {
         // is whether there is a GUID on favicons or not.
         private boolean mHasFaviconGUID;
 
-        public PlacesRunnable(int limit) {
+        public PlacesRunnable(File profileDir, int limit) {
+            mProfileDir = profileDir;
             mMaxEntries = limit;
         }
 
@@ -657,6 +814,22 @@ public class ProfileMigrator {
                     cursor.moveToNext();
                 }
                 cursor.close();
+
+                // XUL Fennec doesn't mark the Mobile folder as a root,
+                // so fix that up here.
+                cursor = db.rawQuery(MOBILE_ROOT_QUERY, null);
+                if (cursor.moveToFirst()) {
+                    Log.v(LOGTAG, "Mobile root found, adding to known roots.");
+                    final int idCol = cursor.getColumnIndex(MOBILE_ROOT_ID);
+                    final long mobileRootId = cursor.getLong(idCol);
+                    mRerootMap.put(mobileRootId, getFolderId(Bookmarks.MOBILE_FOLDER_GUID));
+                    Log.v(LOGTAG, "Name: mobile, pid=" + mobileRootId
+                          + ", nid=" + mRerootMap.get(mobileRootId));
+                } else {
+                    Log.v(LOGTAG, "Mobile root not found, is this a desktop profile?");
+                }
+                cursor.close();
+
             } catch (SQLiteBridgeException e) {
                 Log.e(LOGTAG, "Failed to get bookmark roots: ", e);
                 // Do not try again.

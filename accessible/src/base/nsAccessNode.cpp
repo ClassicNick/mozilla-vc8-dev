@@ -49,12 +49,8 @@
 #include "nsIDOMWindow.h"
 #include "nsIFrame.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIObserverService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIPresShell.h"
 #include "nsIServiceManager.h"
-#include "nsIStringBundle.h"
 #include "nsFocusManager.h"
 #include "nsPresContext.h"
 #include "mozilla/Services.h"
@@ -64,10 +60,6 @@ using namespace mozilla::a11y;
 /* For documentation of the accessibility architecture, 
  * see http://lxr.mozilla.org/seamonkey/source/accessible/accessible-docs.html
  */
-
-nsIStringBundle *nsAccessNode::gStringBundle = 0;
-
-bool nsAccessNode::gIsFormFillEnabled = false;
 
 ApplicationAccessible* nsAccessNode::gApplicationAccessible = nsnull;
 
@@ -154,46 +146,11 @@ nsAccessNode::GetApplicationAccessible()
   return gApplicationAccessible;
 }
 
-void nsAccessNode::InitXPAccessibility()
-{
-  nsCOMPtr<nsIStringBundleService> stringBundleService =
-    mozilla::services::GetStringBundleService();
-  if (stringBundleService) {
-    // Static variables are released in ShutdownAllXPAccessibility();
-    stringBundleService->CreateBundle(ACCESSIBLE_BUNDLE_URL, 
-                                      &gStringBundle);
-  }
-
-  nsCOMPtr<nsIPrefBranch> prefBranch(do_GetService(NS_PREFSERVICE_CONTRACTID));
-  if (prefBranch) {
-    prefBranch->GetBoolPref("browser.formfill.enable", &gIsFormFillEnabled);
-  }
-
-  NotifyA11yInitOrShutdown(true);
-}
-
-// nsAccessNode protected static
-void nsAccessNode::NotifyA11yInitOrShutdown(bool aIsInit)
-{
-  nsCOMPtr<nsIObserverService> obsService =
-    mozilla::services::GetObserverService();
-  NS_ASSERTION(obsService, "No observer service to notify of a11y init/shutdown");
-  if (!obsService)
-    return;
-
-  static const PRUnichar kInitIndicator[] = { '1', 0 };
-  static const PRUnichar kShutdownIndicator[] = { '0', 0 }; 
-  obsService->NotifyObservers(nsnull, "a11y-init-or-shutdown",
-                              aIsInit ? kInitIndicator  : kShutdownIndicator);
-}
-
 void nsAccessNode::ShutdownXPAccessibility()
 {
   // Called by nsAccessibilityService::Shutdown()
   // which happens when xpcom is shutting down
   // at exit of program
-
-  NS_IF_RELEASE(gStringBundle);
 
   // Release gApplicationAccessible after everything else is shutdown
   // so we don't accidently create it again while tearing down root accessibles
@@ -202,8 +159,6 @@ void nsAccessNode::ShutdownXPAccessibility()
     gApplicationAccessible->Shutdown();
     NS_RELEASE(gApplicationAccessible);
   }
-
-  NotifyA11yInitOrShutdown(false);
 }
 
 RootAccessible*

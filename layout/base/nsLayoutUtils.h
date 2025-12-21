@@ -340,13 +340,8 @@ public:
                                             nsDisplayListBuilder* aBuilder,
                                             bool* aShouldFixToViewport = nsnull);
 
-  /**
-   * Returns true if aActiveScrolledRoot is in a content document,
-   * and its topmost content document ancestor has a root scroll frame with
-   * a displayport set, and aActiveScrolledRoot is scrolled by that scrollframe.
-   */
-  static bool IsScrolledByRootContentDocumentDisplayportScrolling(nsIFrame* aActiveScrolledRoot,
-                                                                  nsDisplayListBuilder* aBuilder);
+  static bool ScrolledByViewportScrolling(nsIFrame* aActiveScrolledRoot,
+                                            nsDisplayListBuilder* aBuilder);
 
   /**
     * GetScrollableFrameFor returns the scrollable frame for a scrolled frame
@@ -1573,6 +1568,22 @@ public:
   static bool FontSizeInflationEnabled(nsPresContext *aPresContext);
 
   /**
+   * See comment above "font.size.inflation.emPerLine" in
+   * modules/libpref/src/init/all.js .
+   */
+  static PRUint32 FontSizeInflationEmPerLine() {
+    return sFontSizeInflationEmPerLine;
+  }
+
+  /**
+   * See comment above "font.size.inflation.minTwips" in
+   * modules/libpref/src/init/all.js .
+   */
+  static PRUint32 FontSizeInflationMinTwips() {
+    return sFontSizeInflationMinTwips;
+  }
+
+  /**
    * See comment above "font.size.inflation.lineThreshold" in
    * modules/libpref/src/init/all.js .
    */
@@ -1660,6 +1671,8 @@ public:
 #endif
 
 private:
+  static PRUint32 sFontSizeInflationEmPerLine;
+  static PRUint32 sFontSizeInflationMinTwips;
   static PRUint32 sFontSizeInflationLineThreshold;
 };
 

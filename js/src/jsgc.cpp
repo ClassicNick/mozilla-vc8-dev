@@ -1085,9 +1085,7 @@ MarkWordConservatively(JSTracer *trc, uintptr_t w)
     MarkIfGCThingWord(trc, w);
 }
 
-#ifdef MOZ_ASAN
-JS_NEVER_INLINE
-#endif
+MOZ_ASAN_BLACKLIST
 static void
 MarkRangeConservatively(JSTracer *trc, const uintptr_t *begin, const uintptr_t *end)
 {
@@ -1668,7 +1666,8 @@ ArenaLists::refillFreeList(JSContext *cx, AllocKind thingKind)
     JSRuntime *rt = comp->rt;
     JS_ASSERT(!rt->gcRunning);
 
-    bool runGC = rt->gcIncrementalState != NO_INCREMENTAL && comp->gcBytes > comp->gcTriggerBytes;
+    bool runGC = rt->gcIncrementalState != NO_INCREMENTAL &&
+            (comp->gcBytes > comp->gcTriggerBytes || comp->isTooMuchMalloc());
     for (;;) {
         if (JS_UNLIKELY(runGC)) {
             PrepareCompartmentForGC(comp);
@@ -2294,8 +2293,10 @@ MarkRuntime(JSTracer *trc, bool useSavedRoots = false)
         if (IS_GC_MARKING_TRACER(trc) && !c->isCollecting())
             continue;
 
-        if (c->activeAnalysis)
+        if ((c->activeAnalysis || c->isPreservingCode()) && IS_GC_MARKING_TRACER(trc)) {
+            gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_MARK_TYPES);
             c->markTypes(trc);
+        }
 
         /* During a GC, these are treated as weak pointers. */
         if (!IS_GC_MARKING_TRACER(trc)) {
@@ -2899,13 +2900,34 @@ PurgeRuntime(JSTracer *trc)
         acx->purge();
 }
 
+static bool
+ShouldPreserveJITCode(JSCompartment *c, int64_t currentTime)
+{
+    if (!c->rt->hasContexts() || !c->types.inferenceEnabled)
+        return false;
+
+    if (c->rt->alwaysPreserveCode)
+        return true;
+    if (c->lastAnimationTime + PRMJ_USEC_PER_SEC >= currentTime &&
+        c->lastCodeRelease + (PRMJ_USEC_PER_SEC * 300) >= currentTime) {
+        return true;
+    }
+
+    c->lastCodeRelease = currentTime;
+    return false;
+}
+
 static void
 BeginMarkPhase(JSRuntime *rt)
 {
+    int64_t currentTime = PRMJ_Now();
+
     rt->gcIsFull = true;
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
         if (!c->isCollecting())
             rt->gcIsFull = false;
+        if (ShouldPreserveJITCode(c, currentTime))
+            c->setPreservingCode(true);
     }
 
     rt->gcMarker.start(rt);
@@ -3069,6 +3091,7 @@ ValidateIncrementalMarking(JSRuntime *rt)
         r.front()->bitmap.clear();
 
     MarkRuntime(gcmarker, true);
+
     SliceBudget budget;
     rt->gcMarker.drainMarkStack(budget);
     MarkGrayAndWeak(rt);
@@ -3309,18 +3332,14 @@ AutoGCSession::AutoGCSession(JSRuntime *rt)
     runtime->gcInterFrameGC = true;
 
     runtime->gcNumber++;
-
-    runtime->resetGCMallocBytes();
-
-    /* Clear gcMallocBytes for all compartments */
-    for (CompartmentsIter c(runtime); !c.done(); c.next())
-        c->resetGCMallocBytes();
 }
 
 AutoGCSession::~AutoGCSession()
 {
-    for (GCCompartmentsIter c(runtime); !c.done(); c.next())
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
         c->setCollecting(false);
+        c->setPreservingCode(false);
+    }
 
     runtime->gcNextFullGCTime = PRMJ_Now() + GC_IDLE_FULL_SPAN;
     runtime->gcChunkAllocationSinceLastGC = false;
@@ -3329,6 +3348,10 @@ AutoGCSession::~AutoGCSession()
     /* Keeping these around after a GC is dangerous. */
     runtime->gcSelectedForMarking.clearAndFree();
 #endif
+
+    /* Clear gcMallocBytes for all compartments */
+    for (CompartmentsIter c(runtime); !c.done(); c.next())
+        c->resetGCMallocBytes();
 }
 
 static void
@@ -3338,7 +3361,7 @@ ResetIncrementalGC(JSRuntime *rt, const char *reason)
         return;
 
     for (CompartmentsIter c(rt); !c.done(); c.next())
-        c->needsBarrier_ = false;
+        c->setNeedsBarrier(false);
 
     rt->gcMarker.reset();
     rt->gcMarker.stop();
@@ -3372,9 +3395,9 @@ AutoGCSlice::AutoGCSlice(JSRuntime *rt)
     for (GCCompartmentsIter c(rt); !c.done(); c.next()) {
         /* Clear this early so we don't do any write barriers during GC. */
         if (rt->gcIncrementalState == MARK)
-            c->needsBarrier_ = false;
+            c->setNeedsBarrier(false);
         else
-            JS_ASSERT(!c->needsBarrier_);
+            JS_ASSERT(!c->needsBarrier());
     }
 }
 
@@ -3382,11 +3405,11 @@ AutoGCSlice::~AutoGCSlice()
 {
     for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
         if (runtime->gcIncrementalState == MARK) {
-            c->needsBarrier_ = true;
+            c->setNeedsBarrier(true);
             c->arenas.prepareForIncrementalGC(runtime);
         } else {
             JS_ASSERT(runtime->gcIncrementalState == NO_INCREMENTAL);
-            c->needsBarrier_ = false;
+            c->setNeedsBarrier(false);
         }
     }
 }
@@ -3426,7 +3449,6 @@ IncrementalMarkSlice(JSRuntime *rt, int64_t budget, JSGCInvocationKind gckind, b
 
     *shouldSweep = false;
     if (rt->gcIncrementalState == MARK) {
-        gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_MARK);
         SliceBudget sliceBudget(budget);
 
         /* If we needed delayed marking for gray roots, then collect until done. */
@@ -3443,7 +3465,11 @@ IncrementalMarkSlice(JSRuntime *rt, int64_t budget, JSGCInvocationKind gckind, b
         }
 #endif
 
-        bool finished = rt->gcMarker.drainMarkStack(sliceBudget);
+        bool finished;
+        {
+            gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_MARK);
+            finished = rt->gcMarker.drainMarkStack(sliceBudget);
+        }
         if (finished) {
             JS_ASSERT(rt->gcMarker.isDrained());
             if (initialState == MARK && !rt->gcLastMarkSlice && budget != SliceBudget::Unlimited) {
@@ -3515,17 +3541,16 @@ BudgetIncrementalGC(JSRuntime *rt, int64_t *budget)
         return;
     }
 
-#ifdef ANDROID
-    JS_ASSERT(rt->gcIncrementalState == NO_INCREMENTAL);
-    *budget = SliceBudget::Unlimited;
-    rt->gcStats.nonincremental("Android");
-    return;
-#endif
-
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
         if (c->gcBytes > c->gcTriggerBytes) {
             *budget = SliceBudget::Unlimited;
             rt->gcStats.nonincremental("allocation trigger");
+            return;
+        }
+
+        if (c->isTooMuchMalloc()) {
+            *budget = SliceBudget::Unlimited;
+            rt->gcStats.nonincremental("malloc bytes trigger");
             return;
         }
 
@@ -3599,7 +3624,7 @@ GCCycle(JSRuntime *rt, bool incremental, int64_t budget, JSGCInvocationKind gcki
 #ifdef DEBUG
         if (rt->gcIncrementalState == NO_INCREMENTAL) {
             for (CompartmentsIter c(rt); !c.done(); c.next())
-                JS_ASSERT(!c->needsBarrier_);
+                JS_ASSERT(!c->needsBarrier());
         }
 #endif
         if (shouldSweep)
@@ -3690,16 +3715,18 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
                 callback(rt, JSGC_BEGIN);
         }
 
-        {
-            rt->gcPoke = false;
-            GCCycle(rt, incremental, budget, gckind);
-        }
+        rt->gcPoke = false;
+        GCCycle(rt, incremental, budget, gckind);
 
         if (rt->gcIncrementalState == NO_INCREMENTAL) {
             gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_GC_END);
             if (JSGCCallback callback = rt->gcCallback)
                 callback(rt, JSGC_END);
         }
+
+        /* Need to re-schedule all compartments for GC. */
+        if (!rt->hasContexts() && rt->gcPoke)
+            PrepareForFullGC(rt);
 
         /*
          * On shutdown, iterate until finalizers or the JSGC_END callback
@@ -4222,9 +4249,6 @@ StartVerifyBarriers(JSRuntime *rt)
     for (GCChunkSet::Range r(rt->gcChunkSet.all()); !r.empty(); r.popFront())
         r.front()->bitmap.clear();
 
-    for (CompartmentsIter c(rt); !c.done(); c.next())
-        c->discardJitCode(rt->defaultFreeOp());
-
     VerifyTracer *trc = new (js_malloc(sizeof(VerifyTracer))) VerifyTracer;
 
     rt->gcNumber++;
@@ -4277,7 +4301,7 @@ StartVerifyBarriers(JSRuntime *rt)
     rt->gcIncrementalState = MARK;
     rt->gcMarker.start(rt);
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
-        c->needsBarrier_ = true;
+        c->setNeedsBarrier(true);
         c->arenas.prepareForIncrementalGC(rt);
     }
 
@@ -4287,12 +4311,6 @@ oom:
     rt->gcIncrementalState = NO_INCREMENTAL;
     trc->~VerifyTracer();
     js_free(trc);
-}
-
-static void
-MarkFromAutorooter(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
-{
-    static_cast<Cell *>(*thingp)->markIfUnmarked();
 }
 
 static bool
@@ -4327,21 +4345,6 @@ CheckEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
             return;
         }
     }
-
-    /*
-     * Anything that is reachable now should have been reachable before, or else
-     * it should be marked.
-     */
-    NodeMap::Ptr p = trc->nodemap.lookup(*thingp);
-    JS_ASSERT_IF(!p, IsMarkedOrAllocated(static_cast<Cell *>(*thingp)));
-}
-
-static void
-CheckReachable(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
-{
-    VerifyTracer *trc = (VerifyTracer *)jstrc;
-    NodeMap::Ptr p = trc->nodemap.lookup(*thingp);
-    JS_ASSERT_IF(!p, IsMarkedOrAllocated(static_cast<Cell *>(*thingp)));
 }
 
 static void
@@ -4368,10 +4371,10 @@ EndVerifyBarriers(JSRuntime *rt)
 
     /* We need to disable barriers before tracing, which may invoke barriers. */
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
-        if (!c->needsBarrier_)
+        if (!c->needsBarrier())
             compartmentCreated = true;
 
-        c->needsBarrier_ = false;
+        c->setNeedsBarrier(false);
     }
 
     /*
@@ -4381,24 +4384,10 @@ EndVerifyBarriers(JSRuntime *rt)
     JS_ASSERT(trc->number == rt->gcNumber);
     rt->gcNumber++;
 
-    for (CompartmentsIter c(rt); !c.done(); c.next())
-        c->discardJitCode(rt->defaultFreeOp());
-
     rt->gcVerifyData = NULL;
     rt->gcIncrementalState = NO_INCREMENTAL;
 
-    JS_TracerInit(trc, rt, MarkFromAutorooter);
-
-    AutoGCRooter::traceAll(trc);
-
     if (!compartmentCreated && IsIncrementalGCSafe(rt)) {
-        /*
-         * Verify that all the current roots were reachable previously, or else
-         * are marked.
-         */
-        JS_TracerInit(trc, rt, CheckReachable);
-        MarkRuntime(trc, true);
-
         JS_TracerInit(trc, rt, CheckEdge);
 
         /* Start after the roots. */

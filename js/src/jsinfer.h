@@ -107,10 +107,7 @@ class Type
         return data > JSVAL_TYPE_UNKNOWN;
     }
 
-    TypeObjectKey *objectKey() const {
-        JS_ASSERT(isObject());
-        return (TypeObjectKey *) data;
-    }
+    inline TypeObjectKey *objectKey() const;
 
     /* Accessors for JSObject types */
 
@@ -118,10 +115,7 @@ class Type
         return isObject() && !!(data & 1);
     }
 
-    JSObject *singleObject() const {
-        JS_ASSERT(isSingleObject());
-        return (JSObject *) (data ^ 1);
-    }
+    inline JSObject *singleObject() const;
 
     /* Accessors for TypeObject types */
 
@@ -129,10 +123,7 @@ class Type
         return isObject() && !(data & 1);
     }
 
-    TypeObject *typeObject() const {
-        JS_ASSERT(isTypeObject());
-        return (TypeObject *) data;
-    }
+    inline TypeObject *typeObject() const;
 
     bool operator == (Type o) const { return data == o.data; }
     bool operator != (Type o) const { return data != o.data; }
@@ -934,8 +925,8 @@ struct TypeCallsite
     bool isNew;
 
     /* Types of each argument to the call. */
-    TypeSet **argumentTypes;
     unsigned argumentCount;
+    TypeSet **argumentTypes;
 
     /* Types of the this variable. */
     TypeSet *thisTypes;
@@ -1139,28 +1130,51 @@ typedef HashMap<AllocationSiteKey,ReadBarriered<TypeObject>,AllocationSiteKey,Sy
 struct RecompileInfo
 {
     JSScript *script;
-    bool constructing:1;
-    uint32_t chunkIndex:31;
+    bool constructing : 1;
+    bool barriers : 1;
+    uint32_t chunkIndex:30;
 
     bool operator == (const RecompileInfo &o) const {
-        return script == o.script && constructing == o.constructing && chunkIndex == o.chunkIndex;
+        return script == o.script
+            && constructing == o.constructing
+            && barriers == o.barriers
+            && chunkIndex == o.chunkIndex;
     }
 };
 
 /* Type information for a compartment. */
 struct TypeCompartment
 {
+    /* Constraint solving worklist structures. */
+
+    /*
+     * Worklist of types which need to be propagated to constraints. We use a
+     * worklist to avoid blowing the native stack.
+     */
+    struct PendingWork
+    {
+        TypeConstraint *constraint;
+        TypeSet *source;
+        Type type;
+    };
+    PendingWork *pendingArray;
+    unsigned pendingCount;
+    unsigned pendingCapacity;
+
+    /* Whether we are currently resolving the pending worklist. */
+    bool resolving;
+
     /* Whether type inference is enabled in this compartment. */
     bool inferenceEnabled;
-
-    /* Number of scripts in this compartment. */
-    unsigned scriptCount;
 
     /*
      * Bit set if all current types must be marked as unknown, and all scripts
      * recompiled. Caused by OOM failure within inference operations.
      */
     bool pendingNukeTypes;
+
+    /* Number of scripts in this compartment. */
+    unsigned scriptCount;
 
     /* Pending recompilations to perform before execution of JIT code can resume. */
     Vector<RecompileInfo> *pendingRecompiles;
@@ -1190,25 +1204,6 @@ struct TypeCompartment
 
     void fixArrayType(JSContext *cx, JSObject *obj);
     void fixObjectType(JSContext *cx, JSObject *obj);
-
-    /* Constraint solving worklist structures. */
-
-    /*
-     * Worklist of types which need to be propagated to constraints. We use a
-     * worklist to avoid blowing the native stack.
-     */
-    struct PendingWork
-    {
-        TypeConstraint *constraint;
-        TypeSet *source;
-        Type type;
-    };
-    PendingWork *pendingArray;
-    unsigned pendingCount;
-    unsigned pendingCapacity;
-
-    /* Whether we are currently resolving the pending worklist. */
-    bool resolving;
 
     /* Logging fields */
 

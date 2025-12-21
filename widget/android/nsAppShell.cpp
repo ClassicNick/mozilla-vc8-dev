@@ -329,13 +329,13 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
           case hal::SENSOR_LINEAR_ACCELERATION:
           case hal::SENSOR_ACCELERATION:
           case hal::SENSOR_GYROSCOPE:
+          case hal::SENSOR_PROXIMITY:
             values.AppendElement(curEvent->X());
             values.AppendElement(curEvent->Y()); 
             values.AppendElement(curEvent->Z());
             break;
 
         case hal::SENSOR_LIGHT:
-        case hal::SENSOR_PROXIMITY:
             values.AppendElement(curEvent->X());
             break;
 
@@ -470,11 +470,6 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
             break;
 
         float scale = 1.0;
-        if (token == AndroidBridge::SCREENSHOT_THUMBNAIL) {
-            if (NS_FAILED(tab->GetScale(&scale)))
-                break;
-        }
-
         nsTArray<nsIntPoint> points = curEvent->Points();
         NS_ASSERTION(points.Length() == 4, "Screenshot event does not have enough coordinates");
         bridge->TakeScreenshot(domWindow, points[0].x, points[0].y, points[1].x, points[1].y, points[3].x, points[3].y, curEvent->MetaState(), scale, curEvent->Flags());
@@ -567,7 +562,28 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
     }
 
     case AndroidGeckoEvent::SCREENORIENTATION_CHANGED: {
-        hal::NotifyScreenOrientationChange(static_cast<dom::ScreenOrientation>(curEvent->ScreenOrientation()));
+        nsresult rv;
+        nsCOMPtr<nsIScreenManager> screenMgr =
+            do_GetService("@mozilla.org/gfx/screenmanager;1", &rv);
+        if (NS_FAILED(rv)) {
+            NS_ERROR("Can't find nsIScreenManager!");
+            break;
+        }
+
+        nsIntRect rect;
+        PRInt32 colorDepth, pixelDepth;
+        dom::ScreenOrientation orientation;
+        nsCOMPtr<nsIScreen> screen;
+
+        screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
+        screen->GetRect(&rect.x, &rect.y, &rect.width, &rect.height);
+        screen->GetColorDepth(&colorDepth);
+        screen->GetPixelDepth(&pixelDepth);
+        orientation =
+            static_cast<dom::ScreenOrientation>(curEvent->ScreenOrientation());
+
+        hal::NotifyScreenConfigurationChange(
+            hal::ScreenConfiguration(rect, orientation, colorDepth, pixelDepth));
         break;
     }
 

@@ -300,10 +300,6 @@ public:
 
   virtual nsIScriptContext *GetScriptContext();
 
-  // Set a new script language context for this global.  The native global
-  // for the context is created by the context's GetNativeGlobal() method.
-  virtual nsresult SetScriptContext(nsIScriptContext *aContext);
-  
   virtual void OnFinalize(JSObject* aObject);
   virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts);
 
@@ -562,15 +558,35 @@ public:
   void AddEventTargetObject(nsDOMEventTargetHelper* aObject);
   void RemoveEventTargetObject(nsDOMEventTargetHelper* aObject);
 
+  /**
+   * Returns if the window is part of an application.
+   * It will check for the window app state and its parents until a window has
+   * an app state different from |TriState_Unknown|.
+   */
+  bool IsPartOfApp();
+
 protected:
   friend class HashchangeCallback;
   friend class nsBarProp;
+
+  enum TriState {
+    TriState_Unknown = -1,
+    TriState_False,
+    TriState_True
+  };
 
   // Object Management
   virtual ~nsGlobalWindow();
   void CleanUp(bool aIgnoreModalDialog);
   void ClearControllers();
   nsresult FinalClose();
+
+  inline void MaybeClearInnerWindow(nsGlobalWindow* aExpectedInner)
+  {
+    if(mInnerWindow == aExpectedInner) {
+      mInnerWindow = nsnull;
+    }
+  }
 
   void FreeInnerObjects();
   JSObject *CallerGlobal();
@@ -808,6 +824,8 @@ protected:
   nsresult CloneStorageEvent(const nsAString& aType,
                              nsCOMPtr<nsIDOMStorageEvent>& aEvent);
 
+  void SetIsApp(bool aValue);
+
   // When adding new member variables, be careful not to create cycles
   // through JavaScript.  If there is any chance that a member variable
   // could own objects that are implemented in JavaScript, then those
@@ -874,6 +892,11 @@ protected:
 
   // whether we've sent the destroy notification for our window id
   bool                   mNotifiedIDDestroyed : 1;
+
+  // Whether the window is the window of an application frame.
+  // This is TriState_Unknown if the object is the content window of an
+  // iframe which is neither mozBrowser nor mozApp.
+  TriState               mIsApp : 2;
 
   nsCOMPtr<nsIScriptContext>    mContext;
   nsWeakPtr                     mOpener;

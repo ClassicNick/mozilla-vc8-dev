@@ -67,7 +67,6 @@
 #include "jsstr.h"
 
 #include "frontend/BytecodeCompiler.h"
-#include "frontend/BytecodeEmitter.h"
 #include "frontend/TokenStream.h"
 #include "gc/Marking.h"
 #include "vm/Debugger.h"
@@ -204,8 +203,8 @@ fun_getProperty(JSContext *cx, JSObject *obj, jsid id, Value *vp)
 /* NB: no sentinels at ends -- use ArrayLength to bound loops.
  * Properties censored into [[ThrowTypeError]] in strict mode. */
 static const uint16_t poisonPillProps[] = {
-    ATOM_OFFSET(arguments),
-    ATOM_OFFSET(caller),
+    NAME_OFFSET(arguments),
+    NAME_OFFSET(caller),
 };
 
 static JSBool
@@ -219,22 +218,22 @@ fun_enumerate(JSContext *cx, JSObject *obj)
     bool found;
 
     if (!obj->isBoundFunction()) {
-        id = ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
+        id = NameToId(cx->runtime->atomState.classPrototypeAtom);
         if (!obj->hasProperty(cx, id, &found, JSRESOLVE_QUALIFIED))
             return false;
     }
 
-    id = ATOM_TO_JSID(cx->runtime->atomState.lengthAtom);
+    id = NameToId(cx->runtime->atomState.lengthAtom);
     if (!obj->hasProperty(cx, id, &found, JSRESOLVE_QUALIFIED))
         return false;
         
-    id = ATOM_TO_JSID(cx->runtime->atomState.nameAtom);
+    id = NameToId(cx->runtime->atomState.nameAtom);
     if (!obj->hasProperty(cx, id, &found, JSRESOLVE_QUALIFIED))
         return false;
 
     for (unsigned i = 0; i < ArrayLength(poisonPillProps); i++) {
         const uint16_t offset = poisonPillProps[i];
-        id = ATOM_TO_JSID(OFFSET_TO_ATOM(cx->runtime, offset));
+        id = NameToId(OFFSET_TO_NAME(cx->runtime, offset));
         if (!obj->hasProperty(cx, id, &found, JSRESOLVE_QUALIFIED))
             return false;
     }
@@ -341,7 +340,7 @@ fun_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags,
     for (unsigned i = 0; i < ArrayLength(poisonPillProps); i++) {
         const uint16_t offset = poisonPillProps[i];
 
-        if (JSID_IS_ATOM(id, OFFSET_TO_ATOM(cx->runtime, offset))) {
+        if (JSID_IS_ATOM(id, OFFSET_TO_NAME(cx->runtime, offset))) {
             JS_ASSERT(!IsInternalFunctionObject(fun));
 
             PropertyOp getter;
@@ -547,8 +546,8 @@ JS_FRIEND_DATA(Class) js::FunctionClass = {
     NULL,                    /* finalize    */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
-    NULL,                    /* construct   */
     fun_hasInstance,
+    NULL,                    /* construct   */
     fun_trace
 };
 
@@ -1212,12 +1211,12 @@ LookupInterpretedFunctionPrototype(JSContext *cx, RootedVarObject funobj)
     JS_ASSERT(!funobj->isBoundFunction());
 #endif
 
-    jsid id = ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
+    jsid id = NameToId(cx->runtime->atomState.classPrototypeAtom);
     RootedVar<const Shape*> shape(cx, funobj->nativeLookup(cx, id));
     if (!shape) {
         if (!ResolveInterpretedFunctionPrototype(cx, funobj))
             return NULL;
-        id = ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
+        id = NameToId(cx->runtime->atomState.classPrototypeAtom);
         shape = funobj->nativeLookup(cx, id);
     }
     JS_ASSERT(!shape->configurable());
@@ -1279,6 +1278,7 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
 {
     JS_ASSERT(parent);
     JS_ASSERT(proto);
+    JS_ASSERT(!fun->isBoundFunction());
 
     JSObject *cloneobj = NewObjectWithClassProto(cx, &FunctionClass, NULL, SkipScopeParent(parent), kind);
     if (!cloneobj)

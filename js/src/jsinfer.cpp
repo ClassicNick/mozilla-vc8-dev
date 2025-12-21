@@ -84,44 +84,44 @@ using namespace js::analyze;
 
 static inline jsid
 id_prototype(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
+    return NameToId(cx->runtime->atomState.classPrototypeAtom);
 }
 
 static inline jsid
 id_arguments(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.argumentsAtom);
+    return NameToId(cx->runtime->atomState.argumentsAtom);
 }
 
 static inline jsid
 id_length(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.lengthAtom);
+    return NameToId(cx->runtime->atomState.lengthAtom);
 }
 
 static inline jsid
 id___proto__(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.protoAtom);
+    return NameToId(cx->runtime->atomState.protoAtom);
 }
 
 static inline jsid
 id_constructor(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.constructorAtom);
+    return NameToId(cx->runtime->atomState.constructorAtom);
 }
 
 static inline jsid
 id_caller(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.callerAtom);
+    return NameToId(cx->runtime->atomState.callerAtom);
 }
 
 static inline jsid
 id_toString(JSContext *cx)
 {
-    return ATOM_TO_JSID(cx->runtime->atomState.toStringAtom);
+    return NameToId(cx->runtime->atomState.toStringAtom);
 }
 
 static inline jsid
 id_toSource(JSContext *cx)
 {
-    return ATOM_TO_JSID(cx->runtime->atomState.toSourceAtom);
+    return NameToId(cx->runtime->atomState.toSourceAtom);
 }
 
 #ifdef DEBUG
@@ -1978,8 +1978,8 @@ TypeCompartment::newAllocationSiteTypeObject(JSContext *cx, const AllocationSite
 static inline jsid
 GetAtomId(JSContext *cx, JSScript *script, const jsbytecode *pc, unsigned offset)
 {
-    JSAtom *atom = script->getAtom(GET_UINT32_INDEX(pc + offset));
-    return MakeTypeId(cx, ATOM_TO_JSID(atom));
+    PropertyName *name = script->getName(GET_UINT32_INDEX(pc + offset));
+    return MakeTypeId(cx, NameToId(name));
 }
 
 bool
@@ -2097,9 +2097,11 @@ TypeCompartment::processPendingRecompiles(FreeOp *fop)
 
     for (unsigned i = 0; i < pending->length(); i++) {
         const RecompileInfo &info = (*pending)[i];
-        mjit::JITScript *jit = info.script->getJIT(info.constructing);
-        if (jit && jit->chunkDescriptor(info.chunkIndex).chunk)
-            mjit::Recompiler::clearStackReferencesAndChunk(fop, info.script, jit, info.chunkIndex);
+        mjit::JITScript *jit = info.script->getJIT(info.constructing, info.barriers);
+        if (jit && jit->chunkDescriptor(info.chunkIndex).chunk) {
+            mjit::Recompiler::clearStackReferences(fop, info.script);
+            jit->destroyChunk(fop, info.chunkIndex);
+        }
     }
 
 #endif /* JS_METHODJIT */
@@ -2172,7 +2174,7 @@ void
 TypeCompartment::addPendingRecompile(JSContext *cx, const RecompileInfo &info)
 {
 #ifdef JS_METHODJIT
-    mjit::JITScript *jit = info.script->getJIT(info.constructing);
+    mjit::JITScript *jit = info.script->getJIT(info.constructing, info.barriers);
     if (!jit || !jit->chunkDescriptor(info.chunkIndex).chunk) {
         /* Scripts which haven't been compiled yet don't need to be recompiled. */
         return;
@@ -2205,16 +2207,15 @@ TypeCompartment::addPendingRecompile(JSContext *cx, JSScript *script, jsbytecode
     RecompileInfo info;
     info.script = script;
 
-    if (script->jitHandleNormal.isValid()) {
-        info.constructing = false;
-        info.chunkIndex = script->jitHandleNormal.getValid()->chunkIndex(pc);
-        addPendingRecompile(cx, info);
-    }
-
-    if (script->jitHandleCtor.isValid()) {
-        info.constructing = true;
-        info.chunkIndex = script->jitHandleCtor.getValid()->chunkIndex(pc);
-        addPendingRecompile(cx, info);
+    for (int constructing = 0; constructing <= 1; constructing++) {
+        for (int barriers = 0; barriers <= 1; barriers++) {
+            if (mjit::JITScript *jit = script->getJIT((bool) constructing, (bool) barriers)) {
+                info.constructing = constructing;
+                info.barriers = barriers;
+                info.chunkIndex = jit->chunkIndex(pc);
+                addPendingRecompile(cx, info);
+            }
+        }
     }
 #endif
 }
@@ -2902,7 +2903,7 @@ TypeObject::addPropertyType(JSContext *cx, const char *name, Type type)
             cx->compartment->types.setPendingNukeTypes(cx);
             return;
         }
-        id = ATOM_TO_JSID(atom);
+        id = AtomToId(atom);
     }
     InlineAddTypeProperty(cx, this, id, type);
 }
@@ -3520,11 +3521,11 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
          * the types of global properties the script can access. In a few cases
          * the method JIT will bypass this, and we need to add the types direclty.
          */
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.typeAtoms[JSTYPE_VOID]))
+        if (id == NameToId(cx->runtime->atomState.typeAtoms[JSTYPE_VOID]))
             seen->addType(cx, Type::UndefinedType());
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.NaNAtom))
+        if (id == NameToId(cx->runtime->atomState.NaNAtom))
             seen->addType(cx, Type::DoubleType());
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.InfinityAtom))
+        if (id == NameToId(cx->runtime->atomState.InfinityAtom))
             seen->addType(cx, Type::DoubleType());
 
         /* Handle as a property access. */
@@ -4392,7 +4393,7 @@ AnalyzeNewScriptProperties(JSContext *cx, TypeObject *type, JSFunction *fun, JSO
              * integer properties and bail out. We can't mark the aggregate
              * JSID_VOID type property as being in a definite slot.
              */
-            jsid id = ATOM_TO_JSID(script->getAtom(GET_UINT32_INDEX(pc)));
+            jsid id = NameToId(script->getName(GET_UINT32_INDEX(pc)));
             if (MakeTypeId(cx, id) != id)
                 return false;
             if (id == id_prototype(cx) || id == id___proto__(cx) || id == id_constructor(cx))

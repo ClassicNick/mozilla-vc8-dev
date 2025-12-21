@@ -692,6 +692,7 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
     mShowFocusRingForContent(false),
     mFocusByKeyOccurred(false),
     mNotifiedIDDestroyed(false),
+    mIsApp(TriState_Unknown),
     mTimeoutInsertionPoint(nsnull),
     mTimeoutPublicIdCounter(1),
     mTimeoutFiringDepth(0),
@@ -899,8 +900,8 @@ nsGlobalWindow::~nsGlobalWindow()
     // If our outer window's inner window is this window, null out the
     // outer window's reference to this window that's being deleted.
     nsGlobalWindow *outer = GetOuterWindowInternal();
-    if (outer && outer->mInnerWindow == this) {
-      outer->mInnerWindow = nsnull;
+    if (outer) {
+      outer->MaybeClearInnerWindow(this);
     }
   }
 
@@ -1164,18 +1165,6 @@ nsGlobalWindow::FreeInnerObjects()
 
   NotifyWindowIDDestroyed("inner-window-destroyed");
 
-  JSObject* obj = FastGetGlobalJSObject();
-  if (obj) {
-    if (!cx) {
-      nsContentUtils::ThreadJSContextStack()->GetSafeJSContext(&cx);
-    }
-
-    JSAutoRequest ar(cx);
-
-    js::NukeChromeCrossCompartmentWrappersForGlobal(cx, obj,
-                                                    js::DontNukeForGlobalObject);
-  }
-
   CleanupCachedXBLHandlers(this);
 
 #ifdef DEBUG
@@ -1315,7 +1304,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mArgumentsLast)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mInnerWindowHolder)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOuterWindow)
+  if (tmp->mOuterWindow) {
+    static_cast<nsGlobalWindow*>(tmp->mOuterWindow.get())->MaybeClearInnerWindow(tmp);
+    NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOuterWindow)
+  }
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOpenerScriptPrincipal)
   if (tmp->mListenerManager) {
@@ -1391,43 +1383,13 @@ nsGlobalWindow::UnmarkGrayTimers()
 //*****************************************************************************
 
 nsresult
-nsGlobalWindow::SetScriptContext(nsIScriptContext *aScriptContext)
-{
-  NS_ASSERTION(IsOuterWindow(), "Uh, SetScriptContext() called on inner window!");
-
-  NS_ASSERTION(!aScriptContext || !mContext, "Bad call to SetContext()!");
-
-  if (aScriptContext) {
-    // should probably assert the context is clean???
-    aScriptContext->WillInitializeContext();
-
-    // We need point the context to the global window before initializing it
-    // so that it can make various decisions properly.
-    aScriptContext->SetGlobalObject(this);
-
-    nsresult rv = aScriptContext->InitContext();
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (IsFrame()) {
-      // This window is a [i]frame, don't bother GC'ing when the
-      // frame's context is destroyed since a GC will happen when the
-      // frameset or host document is destroyed anyway.
-
-      aScriptContext->SetGCOnDestruction(false);
-    }
-  }
-
-  mContext = aScriptContext;
-  return NS_OK;
-}
-
-nsresult
 nsGlobalWindow::EnsureScriptEnvironment()
 {
   FORWARD_TO_OUTER(EnsureScriptEnvironment, (), NS_ERROR_NOT_INITIALIZED);
 
-  if (mJSObject)
-      return NS_OK;
+  if (mJSObject) {
+    return NS_OK;
+  }
 
   NS_ASSERTION(!GetCurrentInnerWindowInternal(),
                "mJSObject is null, but we have an inner window?");
@@ -1437,7 +1399,29 @@ nsGlobalWindow::EnsureScriptEnvironment()
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIScriptContext> context = scriptRuntime->CreateContext();
-  return SetScriptContext(context);
+
+  NS_ASSERTION(!mContext, "Will overwrite mContext!");
+
+  // should probably assert the context is clean???
+  context->WillInitializeContext();
+
+  // We need point the context to the global window before initializing it
+  // so that it can make various decisions properly.
+  context->SetGlobalObject(this);
+
+  rv = context->InitContext();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (IsFrame()) {
+    // This window is a [i]frame, don't bother GC'ing when the
+    // frame's context is destroyed since a GC will happen when the
+    // frameset or host document is destroyed anyway.
+
+    context->SetGCOnDestruction(false);
+  }
+
+  mContext = context;
+  return NS_OK;
 }
 
 nsIScriptContext *
@@ -2242,17 +2226,6 @@ nsGlobalWindow::SetDocShell(nsIDocShell* aDocShell)
     nsGlobalWindow *currentInner = GetCurrentInnerWindowInternal();
 
     if (currentInner) {
-      JSObject* obj = currentInner->FastGetGlobalJSObject();
-      if (obj) {
-        JSContext* cx;
-        nsContentUtils::ThreadJSContextStack()->GetSafeJSContext(&cx);
-
-        JSAutoRequest ar(cx);
-
-        js::NukeChromeCrossCompartmentWrappersForGlobal(cx, obj,
-                                                        js::NukeForGlobalObject);
-      }
-
       NS_ASSERTION(mDoc, "Must have doc!");
       
       // Remember the document's principal.
@@ -2349,19 +2322,46 @@ nsGlobalWindow::SetOpenerWindow(nsIDOMWindow* aOpener,
 #endif
 }
 
+static
+already_AddRefed<nsIDOMEventTarget>
+TryGetTabChildGlobalAsEventTarget(nsISupports *aFrom)
+{
+  nsCOMPtr<nsIFrameLoaderOwner> frameLoaderOwner = do_QueryInterface(aFrom);
+  if (!frameLoaderOwner) {
+    return NULL;
+  }
+
+  nsRefPtr<nsFrameLoader> frameLoader = frameLoaderOwner->GetFrameLoader();
+  if (!frameLoader) {
+    return NULL;
+  }
+
+  nsCOMPtr<nsIDOMEventTarget> eventTarget =
+    frameLoader->GetTabChildGlobalAsEventTarget();
+  return eventTarget.forget();
+}
+
 void
 nsGlobalWindow::UpdateParentTarget()
 {
-  nsCOMPtr<nsIFrameLoaderOwner> flo = do_QueryInterface(mChromeEventHandler);
-  if (flo) {
-    nsRefPtr<nsFrameLoader> fl = flo->GetFrameLoader();
-    if (fl) {
-      mParentTarget = fl->GetTabChildGlobalAsEventTarget();
-    }
+  // Try to get our frame element's tab child global (its in-process message
+  // manager).  If that fails, fall back to the chrome event handler's tab
+  // child global, and if it doesn't have one, just use the chrome event
+  // handler itself.
+
+  nsCOMPtr<nsIDOMElement> frameElement = GetFrameElementInternal();
+  nsCOMPtr<nsIDOMEventTarget> eventTarget =
+    TryGetTabChildGlobalAsEventTarget(frameElement);
+
+  if (!eventTarget) {
+    eventTarget = TryGetTabChildGlobalAsEventTarget(mChromeEventHandler);
   }
-  if (!mParentTarget) {
-    mParentTarget = mChromeEventHandler;
+
+  if (!eventTarget) {
+    eventTarget = mChromeEventHandler;
   }
+
+  mParentTarget = eventTarget;
 }
 
 bool
@@ -3753,6 +3753,9 @@ nsGlobalWindow::MozRequestAnimationFrame(nsIFrameRequestCallback* aCallback,
     mDoc->WarnOnceAbout(nsIDocument::eMozBeforePaint);
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
+
+  if (mJSObject)
+    js::NotifyAnimationActivity(mJSObject);
 
   return mDoc->ScheduleFrameRequestCallback(aCallback, aHandle);
 }
@@ -5327,9 +5330,12 @@ nsGlobalWindow::ScrollTo(PRInt32 aXScroll, PRInt32 aYScroll)
     if (aYScroll > maxpx) {
       aYScroll = maxpx;
     }
-    sf->ScrollTo(nsPoint(nsPresContext::CSSPixelsToAppUnits(aXScroll),
-                         nsPresContext::CSSPixelsToAppUnits(aYScroll)),
-                 nsIScrollableFrame::INSTANT);
+    nsPoint pt(nsPresContext::CSSPixelsToAppUnits(aXScroll),
+               nsPresContext::CSSPixelsToAppUnits(aYScroll));
+    nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
+    // Don't allow pt.x/y + halfPixel since that would round up to the next CSS pixel.
+    nsRect range(pt.x - halfPixel, pt.y - halfPixel, halfPixel*2 - 1, halfPixel*2 - 1);
+    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT, &range);
   }
 
   return NS_OK;
@@ -5981,7 +5987,7 @@ PostMessageEvent::Run()
     // we need to find a JSContext.
     nsIThreadJSContextStack* cxStack = nsContentUtils::ThreadJSContextStack();
     if (cxStack) {
-      cxStack->GetSafeJSContext(&cx);
+      cx = cxStack->GetSafeJSContext();
     }
 
     if (!cx) {
@@ -6644,8 +6650,12 @@ nsGlobalWindow::NotifyDOMWindowDestroyed(nsGlobalWindow* aWindow) {
 class WindowDestroyedEvent : public nsRunnable
 {
 public:
-  WindowDestroyedEvent(PRUint64 aID, const char* aTopic) :
-    mID(aID), mTopic(aTopic) {}
+  WindowDestroyedEvent(nsPIDOMWindow* aWindow, PRUint64 aID,
+                       const char* aTopic) :
+    mID(aID), mTopic(aTopic)
+  {
+    mWindow = do_GetWeakReference(aWindow);
+  }
 
   NS_IMETHOD Run()
   {
@@ -6659,18 +6669,40 @@ public:
         observerService->NotifyObservers(wrapper, mTopic.get(), nsnull);
       }
     }
+
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    if (window) {
+      nsGlobalWindow* currentInner = 
+        window->IsInnerWindow() ? static_cast<nsGlobalWindow*>(window.get()) :
+                                  static_cast<nsGlobalWindow*>(window->GetCurrentInnerWindow());
+      NS_ENSURE_TRUE(currentInner, NS_OK);
+
+      JSObject* obj = currentInner->FastGetGlobalJSObject();
+      if (obj) {
+        JSContext* cx =
+          nsContentUtils::ThreadJSContextStack()->GetSafeJSContext();
+
+        JSAutoRequest ar(cx);
+
+        js::NukeChromeCrossCompartmentWrappersForGlobal(cx, obj,
+                                                        window->IsInnerWindow() ? js::DontNukeForGlobalObject :
+                                                                                  js::NukeForGlobalObject);
+      }
+    }
+
     return NS_OK;
   }
 
 private:
   PRUint64 mID;
   nsCString mTopic;
+  nsWeakPtr mWindow;
 };
 
 void
 nsGlobalWindow::NotifyWindowIDDestroyed(const char* aTopic)
 {
-  nsRefPtr<nsIRunnable> runnable = new WindowDestroyedEvent(mWindowID, aTopic);
+  nsRefPtr<nsIRunnable> runnable = new WindowDestroyedEvent(this, mWindowID, aTopic);
   nsresult rv = NS_DispatchToCurrentThread(runnable);
   if (NS_SUCCEEDED(rv)) {
     mNotifiedIDDestroyed = true;
@@ -9708,7 +9740,7 @@ nsGlobalWindow::SuspendTimeouts(PRUint32 aIncrease,
   if (!suspended) {
     nsCOMPtr<nsIDeviceSensors> ac = do_GetService(NS_DEVICE_SENSORS_CONTRACTID);
     if (ac) {
-      for (int i = 0; i < mEnabledSensors.Length(); i++)
+      for (PRUint32 i = 0; i < mEnabledSensors.Length(); i++)
         ac->RemoveWindowListener(mEnabledSensors[i], this);
     }
 
@@ -9788,7 +9820,7 @@ nsGlobalWindow::ResumeTimeouts(bool aThawChildren)
   if (shouldResume) {
     nsCOMPtr<nsIDeviceSensors> ac = do_GetService(NS_DEVICE_SENSORS_CONTRACTID);
     if (ac) {
-      for (int i = 0; i < mEnabledSensors.Length(); i++)
+      for (PRUint32 i = 0; i < mEnabledSensors.Length(); i++)
         ac->AddWindowListener(mEnabledSensors[i], this);
     }
 
@@ -9896,7 +9928,7 @@ void
 nsGlobalWindow::EnableDeviceSensor(PRUint32 aType)
 {
   bool alreadyEnabled = false;
-  for (int i = 0; i < mEnabledSensors.Length(); i++) {
+  for (PRUint32 i = 0; i < mEnabledSensors.Length(); i++) {
     if (mEnabledSensors[i] == aType) {
       alreadyEnabled = true;
       break;
@@ -9916,8 +9948,8 @@ nsGlobalWindow::EnableDeviceSensor(PRUint32 aType)
 void
 nsGlobalWindow::DisableDeviceSensor(PRUint32 aType)
 {
-  PRUint32 doomedElement = -1;
-  for (int i = 0; i < mEnabledSensors.Length(); i++) {
+  PRInt32 doomedElement = -1;
+  for (PRUint32 i = 0; i < mEnabledSensors.Length(); i++) {
     if (mEnabledSensors[i] == aType) {
       doomedElement = i;
       break;
@@ -9982,6 +10014,33 @@ nsGlobalWindow::SizeOfIncludingThis(nsWindowSizes* aWindowSizes) const
   aWindowSizes->mDOM +=
     mNavigator ?
       mNavigator->SizeOfIncludingThis(aWindowSizes->mMallocSizeOf) : 0;
+}
+
+void
+nsGlobalWindow::SetIsApp(bool aValue)
+{
+  FORWARD_TO_OUTER_VOID(SetIsApp, (aValue));
+
+  mIsApp = aValue ? TriState_True : TriState_False;
+}
+
+bool
+nsGlobalWindow::IsPartOfApp()
+{
+  FORWARD_TO_OUTER(IsPartOfApp, (), TriState_False);
+
+  // We go trough all window parents until we find one with |mIsApp| set to
+  // something. If none is found, we are not part of an application.
+  for (nsGlobalWindow* w = this; w;
+       w = static_cast<nsGlobalWindow*>(w->GetParentInternal())) {
+    if (w->mIsApp == TriState_True) {
+      return true;
+    } else if (w->mIsApp == TriState_False) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 // nsGlobalChromeWindow implementation

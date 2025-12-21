@@ -618,6 +618,7 @@ static const struct JSOption {
     {"typeinfer",       JSOPTION_TYPE_INFERENCE},
     {"werror",          JSOPTION_WERROR},
     {"xml",             JSOPTION_XML},
+    {"strict_mode",     JSOPTION_STRICT_MODE},
 };
 
 static uint32_t
@@ -822,7 +823,7 @@ EvaluateWithLocation(JSContext *cx, unsigned argc, jsval *vp)
 }
 
 static JSBool
-Evaluate(JSContext *cx, unsigned argc, jsval *vp)
+EvaluateCommon(JSContext *cx, unsigned argc, jsval *vp, bool compileAndGo)
 {
     if (argc != 1 || !JSVAL_IS_STRING(JS_ARGV(cx, vp)[0])) {
         JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL,
@@ -848,7 +849,30 @@ Evaluate(JSContext *cx, unsigned argc, jsval *vp)
         return false;
     }
 
-    return JS_EvaluateUCScript(cx, thisobj, codeChars, codeLength, "@evaluate", 0, vp);
+    if (compileAndGo) {
+        // JS_EvaluateUCScript always enables the compile-and-go option.
+        return JS_EvaluateUCScript(cx, thisobj, codeChars, codeLength, "@evaluate", 1, vp);
+    } else {
+        uint32_t saved = JS_GetOptions(cx);
+
+        JS_SetOptions(cx, saved & ~JSOPTION_COMPILE_N_GO);
+        JSScript *script = JS_CompileUCScript(cx, thisobj, codeChars, codeLength, "@evaluate", 1);
+        JS_SetOptions(cx, saved);
+
+        return script && JS_ExecuteScript(cx, thisobj, script, vp);
+    }
+}
+
+static JSBool
+Evaluate(JSContext *cx, unsigned argc, jsval *vp)
+{
+    return EvaluateCommon(cx, argc, vp, true);
+}
+
+static JSBool
+EvaluateNonCompileAndGo(JSContext *cx, unsigned argc, jsval *vp)
+{
+    return EvaluateCommon(cx, argc, vp, false);
 }
 
 static JSString *
@@ -1215,8 +1239,7 @@ AssertJit(JSContext *cx, unsigned argc, jsval *vp)
          * with METHODJIT_ALWAYS recompilation can happen and discard the
          * script's jitcode.
          */
-        if (!cx->typeInferenceEnabled() &&
-            !cx->fp()->script()->getJIT(cx->fp()->isConstructing())) {
+        if (!cx->typeInferenceEnabled() && !cx->fp()->jit()) {
             JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_ASSERT_JIT_FAILED);
             return JS_FALSE;
         }
@@ -3485,6 +3508,10 @@ static JSFunctionSpecWithHelp shell_functions[] = {
 "evaluate(code)",
 "  Evaluate code as though it were the contents of a file."),
 
+    JS_FN_HELP("evaluateNonCompileAndGo", EvaluateNonCompileAndGo, 1, 0,
+"evaluateNonCompileAndGo(code)",
+"  Evaluate code like evaluate() but with compile-and-go turned off."),
+
     JS_FN_HELP("evalWithLocation", EvaluateWithLocation, 3, 0,
 "evalWithLocation(code, filename, lineno)",
 "  Eval code as if loaded from the given filename and line number."),
@@ -3850,7 +3877,7 @@ Help(JSContext *cx, unsigned argc, jsval *vp)
  */
 enum its_tinyid {
     ITS_COLOR, ITS_HEIGHT, ITS_WIDTH, ITS_FUNNY, ITS_ARRAY, ITS_RDONLY,
-    ITS_CUSTOM, ITS_CUSTOMRDONLY
+    ITS_CUSTOM, ITS_CUSTOMRDONLY, ITS_CUSTOMNATIVE
 };
 
 static JSBool
@@ -3858,6 +3885,12 @@ its_getter(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
 
 static JSBool
 its_setter(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp);
+
+static JSBool
+its_get_customNative(JSContext *cx, unsigned argc, jsval *vp);
+
+static JSBool
+its_set_customNative(JSContext *cx, unsigned argc, jsval *vp);
 
 static JSPropertySpec its_props[] = {
     {"color",           ITS_COLOR,      JSPROP_ENUMERATE,       NULL, NULL},
@@ -3870,6 +3903,10 @@ static JSPropertySpec its_props[] = {
                         its_getter,     its_setter},
     {"customRdOnly",    ITS_CUSTOMRDONLY, JSPROP_ENUMERATE | JSPROP_READONLY,
                         its_getter,     its_setter},
+    {"customNative",    ITS_CUSTOMNATIVE,
+                        JSPROP_ENUMERATE | JSPROP_NATIVE_ACCESSORS,
+                        (JSPropertyOp)its_get_customNative,
+                        (JSStrictPropertyOp)its_set_customNative },
     {NULL,0,0,NULL,NULL}
 };
 
@@ -4068,6 +4105,58 @@ its_setter(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
 
     *val = *vp;
     return JS_TRUE;
+}
+
+static JSBool
+its_get_customNative(JSContext *cx, unsigned argc, jsval *vp)
+{
+    JSObject *obj = JS_THIS_OBJECT(cx, vp);
+    if (!obj)
+        return false;
+
+    if (JS_GetClass(obj) == &its_class) {
+        jsval *val = (jsval *) JS_GetPrivate(obj);
+        *vp = val ? *val : JSVAL_VOID;
+    } else {
+        *vp = JSVAL_VOID;
+    }
+
+    return true;
+}
+
+static JSBool
+its_set_customNative(JSContext *cx, unsigned argc, jsval *vp)
+{
+    JSObject *obj = JS_THIS_OBJECT(cx, vp);
+    if (!obj)
+        return false;
+
+    if (JS_GetClass(obj) != &its_class)
+        return true;
+
+    jsval *argv = JS_ARGV(cx, vp);
+
+    jsval *val = (jsval *) JS_GetPrivate(obj);
+    if (val) {
+        *val = *argv;
+        return true;
+    }
+
+    val = new jsval;
+    if (!val) {
+        JS_ReportOutOfMemory(cx);
+        return false;
+    }
+
+    if (!JS_AddValueRoot(cx, val)) {
+        delete val;
+        return false;
+    }
+
+    JS_SetPrivate(obj, (void *)val);
+
+    *val = *argv;
+    return true;
 }
 
 JSErrorFormatString jsShell_ErrorFormatString[JSShellErr_Limit] = {
@@ -4316,11 +4405,11 @@ global_resolve(JSContext *cx, JSObject *obj_, jsid id, unsigned flags,
 }
 
 JSClass global_class = {
-    "global", JSCLASS_NEW_RESOLVE | JSCLASS_GLOBAL_FLAGS | JSCLASS_HAS_PRIVATE,
+    "global", JSCLASS_NEW_RESOLVE | JSCLASS_GLOBAL_FLAGS,
     JS_PropertyStub,  JS_PropertyStub,
     JS_PropertyStub,  JS_StrictPropertyStub,
     global_enumerate, (JSResolveOp) global_resolve,
-    JS_ConvertStub,   its_finalize
+    JS_ConvertStub,   NULL
 };
 
 static JSBool
@@ -4852,14 +4941,6 @@ main(int argc, char **argv, char **envp)
         || !op.addBoolOption('O', "print-alloc", "Print the number of allocations at exit")
 #endif
         || !op.addBoolOption('U', "utf8", "C strings passed to the JSAPI are UTF-8 encoded")
-#ifdef JS_GC_ZEAL
-        || !op.addStringOption('Z', "gc-zeal", "N[,F[,C]]",
-                               "N indicates \"zealousness\":\n"
-                               "  0: no additional GCs\n"
-                               "  1: additional GCs at common danger points\n"
-                               "  2: GC every F allocations (default: 100)\n"
-                               "If C is 1, compartmental GCs are performed; otherwise, full")
-#endif
         || !op.addOptionalStringArg("script", "A script to execute (after all options)")
         || !op.addOptionalMultiStringArg("scriptArgs",
                                          "String arguments to bind as |arguments| in the "
@@ -4927,6 +5008,9 @@ main(int argc, char **argv, char **envp)
 
     JS_SetGCParameter(rt, JSGC_MODE, JSGC_MODE_INCREMENTAL);
     JS_SetGCParameterForThread(cx, JSGC_MAX_CODE_CACHE_BYTES, 16 * 1024 * 1024);
+#ifdef JS_GC_ZEAL
+    JS_SetGCZeal(cx, 0, 0);
+#endif
 
     /* Must be done before creating the global object */
     if (op.getBoolOption('D'))

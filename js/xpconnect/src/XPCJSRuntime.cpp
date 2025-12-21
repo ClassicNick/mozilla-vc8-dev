@@ -1197,30 +1197,24 @@ XPCJSRuntime::~XPCJSRuntime()
 }
 
 static void
-GetCompartmentName(JSCompartment *c, bool getAddress, nsCString &name)
+GetCompartmentName(JSCompartment *c, nsCString &name)
 {
     if (js::IsAtomsCompartment(c)) {
         name.AssignLiteral("atoms");
     } else if (JSPrincipals *principals = JS_GetCompartmentPrincipals(c)) {
         nsJSPrincipals::get(principals)->GetScriptLocation(name);
 
-        // For system compartments we append the location, if there is one.
-        // And we append the address if |getAddress| is true, so that
-        // multiple system compartments (and there can be many) can be
-        // distinguished.
-        if (js::IsSystemCompartment(c)) {
-            xpc::CompartmentPrivate *compartmentPrivate =
-                static_cast<xpc::CompartmentPrivate*>(JS_GetCompartmentPrivate(c));
-            if (compartmentPrivate && !compartmentPrivate->location.IsEmpty()) {
-                name.AppendLiteral(", ");
-                name.Append(compartmentPrivate->location);
-            }
-            
-            if (getAddress) {
-                // ample; 64-bit address max is 18 chars
-                nsPrintfCString address(", 0x%llx", PRUint64(c));
-                name.Append(address);
-            }
+        // If the compartment's location (name) differs from the principal's
+        // script location, append the compartment's location to allow
+        // differentiation of multiple compartments owned by the same principal
+        // (e.g. components owned by the system or null principal).
+        xpc::CompartmentPrivate *compartmentPrivate =
+            static_cast<xpc::CompartmentPrivate*>(JS_GetCompartmentPrivate(c));
+        if (compartmentPrivate &&
+            !compartmentPrivate->location.IsEmpty() &&
+            !compartmentPrivate->location.Equals(name)) {
+            name.AppendLiteral(", ");
+            name.Append(compartmentPrivate->location);
         }
         
         // A hack: replace forward slashes with '\\' so they aren't
@@ -1641,7 +1635,7 @@ class JSCompartmentsMultiReporter : public nsIMemoryMultiReporter
         // silently ignore OOM errors
         Paths *paths = static_cast<Paths *>(data);
         nsCString path;
-        GetCompartmentName(c, /* getAddress = */ false, path);
+        GetCompartmentName(c, path);
         path.Insert(js::IsSystemCompartment(c)
                     ? NS_LITERAL_CSTRING("compartments/system/")
                     : NS_LITERAL_CSTRING("compartments/user/"),
@@ -1698,7 +1692,7 @@ struct XPCJSRuntimeStats : public JS::RuntimeStats {
     virtual void initExtraCompartmentStats(JSCompartment *c,
                                            JS::CompartmentStats *cstats) MOZ_OVERRIDE {
         nsCAutoString name;
-        GetCompartmentName(c, /* getAddress = */ true, name);
+        GetCompartmentName(c, name);
         cstats->extra = strdup(name.get());
     }
 };

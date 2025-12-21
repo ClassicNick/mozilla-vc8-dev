@@ -117,6 +117,7 @@ xpcshell-tests:
 	  --symbols-path=$(DIST)/crashreporter-symbols \
 	  --build-info-json=$(DEPTH)/mozinfo.json \
 	  --tests-root-dir=$(testxpcobjdir) \
+	  --testing-modules-dir=$(DEPTH)/_tests/modules \
 	  --xunit-file=$(testxpcobjdir)/$(relativesrcdir)/results.xml \
 	  --xunit-suite-name=xpcshell \
 	  $(EXTRA_TEST_ARGS) \
@@ -147,6 +148,7 @@ check-interactive:
 	  --symbols-path=$(DIST)/crashreporter-symbols \
 	  --build-info-json=$(DEPTH)/mozinfo.json \
 	  --test-path=$(SOLO_FILE) \
+	  --testing-modules-dir=$(DEPTH)/_tests/modules \
 	  --profile-name=$(MOZ_APP_NAME) \
 	  --interactive \
 	  $(LIBXUL_DIST)/bin/xpcshell \
@@ -160,6 +162,7 @@ check-one:
 	  --symbols-path=$(DIST)/crashreporter-symbols \
 	  --build-info-json=$(DEPTH)/mozinfo.json \
 	  --test-path=$(SOLO_FILE) \
+	  --testing-modules-dir=$(DEPTH)/_tests/modules \
 	  --profile-name=$(MOZ_APP_NAME) \
 	  --verbose \
 	  $(EXTRA_TEST_ARGS) \
@@ -495,9 +498,6 @@ TAG_PROGRAM		= xargs etags -a
 # (moved this from config.mk so that config.mk can be included
 #  before the CPPSRCS are defined)
 #
-ifneq ($(CPPSRCS)$(CMMSRCS),)
-CPP_PROG_LINK		= 1
-endif
 ifneq ($(HOST_CPPSRCS)$(HOST_CMMSRCS),)
 HOST_CPP_PROG_LINK	= 1
 endif
@@ -952,31 +952,6 @@ ifneq (,$(HOST_CPPSRCS)$(USE_HOST_CXX))
 else
 	$(HOST_CC) $(HOST_OUTOPTION)$@ $(HOST_CFLAGS) $(INCLUDES) $< $(HOST_LIBS) $(HOST_EXTRA_LIBS)
 endif
-endif
-
-#
-# Purify target.  Solaris/sparc only to start.
-# Purify does not recognize "egcs" or "c++" so we go with
-# "gcc" and "g++" for now.
-#
-pure:	$(PROGRAM)
-ifeq ($(CPP_PROG_LINK),1)
-	$(PURIFY) $(CCC) -o $^.pure $(CXXFLAGS) $(PROGOBJS) $(LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS)
-else
-	$(PURIFY) $(CC) -o $^.pure $(CFLAGS) $(PROGOBJS) $(LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS)
-endif
-ifndef NO_DIST_INSTALL
-	$(INSTALL) $(IFLAGS2) $^.pure $(FINAL_TARGET)
-endif
-
-quantify: $(PROGRAM)
-ifeq ($(CPP_PROG_LINK),1)
-	$(QUANTIFY) $(CCC) -o $^.quantify $(CXXFLAGS) $(PROGOBJS) $(LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS)
-else
-	$(QUANTIFY) $(CC) -o $^.quantify $(CFLAGS) $(PROGOBJS) $(LDFLAGS) $(LIBS_DIR) $(LIBS) $(OS_LIBS) $(EXTRA_LIBS)
-endif
-ifndef NO_DIST_INSTALL
-	$(INSTALL) $(IFLAGS2) $^.quantify $(FINAL_TARGET)
 endif
 
 ifdef DTRACE_PROBE_OBJ
@@ -1573,6 +1548,25 @@ ifndef NO_DIST_INSTALL
 	  $(RM) -f $$dest; \
 	  $(PYTHON) $(topsrcdir)/config/Preprocessor.py $(DEFINES) $(ACDEFINES) $(XULPPFLAGS) $$i > $$dest; \
 	done
+endif
+
+endif
+
+################################################################################
+# Copy testing-only JS modules to appropriate destination.
+#
+# For each file defined in TESTING_JS_MODULES, copy it to
+# objdir/_tests/modules/. If TESTING_JS_MODULE_DIR is defined, that path
+# wlll be appended to the output directory.
+
+ifdef TESTING_JS_MODULES
+testmodulesdir = $(DEPTH)/_tests/modules/$(TESTING_JS_MODULE_DIR)
+
+GENERATED_DIRS += $(testmodulesdir)
+
+libs:: $(TESTING_JS_MODULES)
+ifndef NO_DIST_INSTALL
+	$(INSTALL) $(IFLAGS) $^ $(testmodulesdir)
 endif
 
 endif

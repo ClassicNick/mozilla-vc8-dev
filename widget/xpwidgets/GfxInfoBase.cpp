@@ -344,7 +344,7 @@ BlacklistComparatorToComparisonOp(const nsAString& op)
   else if (op == NS_LITERAL_STRING("BETWEEN_INCLUSIVE_START"))
     return DRIVER_BETWEEN_INCLUSIVE_START;
 
-  return DRIVER_UNKNOWN_COMPARISON;
+  return DRIVER_COMPARISON_IGNORED;
 }
 
 // Arbitrarily returns the first |tagname| child of |element|.
@@ -633,6 +633,10 @@ GfxInfoBase::FindBlocklistedDeviceInList(const nsTArray<GfxDriverInfo>& info,
       break;
     case DRIVER_BETWEEN_INCLUSIVE_START:
       match = driverVersion >= info[i].mDriverVersion && driverVersion < info[i].mDriverVersionMax;
+      break;
+    case DRIVER_COMPARISON_IGNORED:
+      // We don't have a comparison op, so we match everything.
+      match = true;
       break;
     default:
       NS_WARNING("Bogus op in GfxDriverInfo");

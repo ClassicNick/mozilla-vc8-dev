@@ -191,7 +191,7 @@ var wrongBrowserNotification;
 var tests = [
   { // Test #0
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       showNotification(this.notifyObj);
     },
     onShown: function (popup) {
@@ -206,7 +206,7 @@ var tests = [
   },
   { // Test #1
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       showNotification(this.notifyObj);
     },
     onShown: function (popup) {
@@ -221,7 +221,7 @@ var tests = [
   },
   { // Test #2
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       this.notification = showNotification(this.notifyObj);
     },
     onShown: function (popup) {
@@ -261,7 +261,6 @@ var tests = [
 
       // switch back to the old browser
       gBrowser.selectedTab = this.oldSelectedTab;
-
     },
     onHidden: function (popup) {
       // actually remove the notification to prevent it from reappearing
@@ -285,7 +284,7 @@ var tests = [
   // notification.
   { // Test #6
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       // Show the same notification twice
       this.notification1 = showNotification(this.notifyObj);
       this.notification2 = showNotification(this.notifyObj);
@@ -332,7 +331,7 @@ var tests = [
   // Test notification without mainAction
   { // Test #8
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       this.notifyObj.mainAction = null;
       this.notification = showNotification(this.notifyObj);
     },
@@ -568,7 +567,7 @@ var tests = [
   // Test notification "Not Now" menu item
   { // Test #17
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       this.notification = showNotification(this.notifyObj);
     },
     onShown: function (popup) {
@@ -584,7 +583,7 @@ var tests = [
   // Test notification close button
   { // Test #18
     run: function () {
-      this.notifyObj = new basicNotification(),
+      this.notifyObj = new basicNotification();
       this.notification = showNotification(this.notifyObj);
     },
     onShown: function (popup) {
@@ -601,14 +600,10 @@ var tests = [
   // Test notification when chrome is hidden
   { // Test #19
     run: function () {
-      this.oldSelectedTab = gBrowser.selectedTab;
-      gBrowser.selectedTab = gBrowser.addTab("about:blank");
-
-      let self = this;
-      loadURI("about:addons", function() {
-        self.notifyObj = new basicNotification();
-        self.notification = showNotification(self.notifyObj);
-      });
+      window.locationbar.visible = false;
+      this.notifyObj = new basicNotification();
+      this.notification = showNotification(this.notifyObj);
+      window.locationbar.visible = true;
     },
     onShown: function (popup) {
       checkPopup(popup, this.notifyObj);
@@ -619,9 +614,6 @@ var tests = [
       ok(this.notifyObj.dismissalCallbackTriggered, "dismissal callback triggered");
       this.notification.remove();
       ok(this.notifyObj.removedCallbackTriggered, "removed callback triggered");
-
-      gBrowser.removeTab(gBrowser.selectedTab);
-      gBrowser.selectedTab = this.oldSelectedTab;
     }
   },
   // Test notification is removed when dismissed if removeOnDismissal is true
@@ -677,7 +669,7 @@ var tests = [
         this.notification2.remove();
         ok(this.notifyObj2.removedCallbackTriggered, "removed callback triggered");
       }
-    ],
+    ]
   },
   // Test that multiple notification icons are removed when switching tabs
   { // Test #22
@@ -718,7 +710,7 @@ var tests = [
         gBrowser.selectedTab = this.oldSelectedTab;
         this.notificationOld.remove();
       }
-    ],
+    ]
   }
 ];
 

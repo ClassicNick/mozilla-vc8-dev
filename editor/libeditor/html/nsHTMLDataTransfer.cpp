@@ -189,7 +189,7 @@ NS_IMETHODIMP nsHTMLEditor::LoadHTML(const nsAString & aInputString)
   nsresult rv = GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kLoadHTML);
+  nsTextRulesInfo ruleInfo(kOpLoadHTML);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -314,7 +314,9 @@ nsHTMLEditor::DoInsertHTMLWithContext(const nsAString & aInputString,
     // fetch the paste insertion point from our selection
     rv = GetStartNodeAndOffset(selection, getter_AddRefs(targetNode), &targetOffset);
     NS_ENSURE_SUCCESS(rv, rv);
-    NS_ENSURE_TRUE(targetNode, NS_ERROR_FAILURE);
+    if (!targetNode || !IsEditable(targetNode)) {
+      return NS_ERROR_FAILURE;
+    }
   }
   else
   {
@@ -420,7 +422,7 @@ nsHTMLEditor::DoInsertHTMLWithContext(const nsAString & aInputString,
   }
 
   // give rules a chance to handle or cancel
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
+  nsTextRulesInfo ruleInfo(kOpInsertElement);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1764,7 +1766,7 @@ NS_IMETHODIMP nsHTMLEditor::PasteAsCitedQuotation(const nsAString & aCitation,
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 
   // give rules a chance to handle or cancel
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
+  nsTextRulesInfo ruleInfo(kOpInsertElement);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1966,7 +1968,7 @@ nsHTMLEditor::InsertAsPlaintextQuotation(const nsAString & aQuotedText,
   nsAutoRules beginRulesSniffing(this, kOpInsertQuotation, nsIEditor::eNext);
 
   // give rules a chance to handle or cancel
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
+  nsTextRulesInfo ruleInfo(kOpInsertElement);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2060,7 +2062,7 @@ nsHTMLEditor::InsertAsCitedQuotation(const nsAString & aQuotedText,
   nsAutoRules beginRulesSniffing(this, kOpInsertQuotation, nsIEditor::eNext);
 
   // give rules a chance to handle or cancel
-  nsTextRulesInfo ruleInfo(nsTextEditRules::kInsertElement);
+  nsTextRulesInfo ruleInfo(kOpInsertElement);
   bool cancel, handled;
   rv = mRules->WillDoAction(selection, &ruleInfo, &cancel, &handled);
   NS_ENSURE_SUCCESS(rv, rv);

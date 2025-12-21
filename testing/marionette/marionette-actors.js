@@ -336,8 +336,21 @@ MarionetteDriverActor.prototype = {
    *
    */
   newSession: function MDA_newSession() {
+
+    function waitForWindow() {
+      let checkTimer = Cc["@mozilla.org/timer;1"].
+                       createInstance(Ci.nsITimer);
+      let win = this.getCurrentWindow();
+      if (!win || (appName != "B2G" && !win.gBrowser)) { 
+        checkTimer.initWithCallback(waitForWindow.bind(this), 100, Ci.nsITimer.TYPE_ONE_SHOT);
+      }
+      else {
+        this.startBrowser(win, true);
+      }
+    }
+
     if (!prefs.getBoolPref("marionette.contentListener")) {
-      this.startBrowser(this.getCurrentWindow(), true);
+      waitForWindow.call(this);
     }
     else if ((appName == "B2G") && (this.curBrowser == null)) {
       //if there is a content listener, then we just wake it up
@@ -472,8 +485,16 @@ MarionetteDriverActor.prototype = {
    *        function body
    */
   execute: function MDA_execute(aRequest, directInject) {
+    logger.info("newSandbox: " + aRequest.newSandbox);
+    if (aRequest.newSandbox == undefined) {
+      //if client does not send a value in newSandbox, 
+      //then they expect the same behaviour as webdriver
+      aRequest.newSandbox = true;
+    }
     if (this.context == "content") {
-      this.sendAsync("executeScript", {value: aRequest.value, args: aRequest.args});
+      this.sendAsync("executeScript", {value: aRequest.value,
+                                       args: aRequest.args,
+                                       newSandbox:aRequest.newSandbox});
       return;
     }
 
@@ -533,6 +554,11 @@ MarionetteDriverActor.prototype = {
    */
   executeJSScript: function MDA_executeJSScript(aRequest) {
     //all pure JS scripts will need to call Marionette.finish() to complete the test.
+    if (aRequest.newSandbox == undefined) {
+      //if client does not send a value in newSandbox, 
+      //then they expect the same behaviour as webdriver
+      aRequest.newSandbox = true;
+    }
     if (this.context == "chrome") {
       if (aRequest.timeout) {
         this.executeWithCallback(aRequest, aRequest.timeout);
@@ -562,12 +588,18 @@ MarionetteDriverActor.prototype = {
    *        function body
    */
   executeWithCallback: function MDA_executeWithCallback(aRequest, directInject) {
+    if (aRequest.newSandbox == undefined) {
+      //if client does not send a value in newSandbox, 
+      //then they expect the same behaviour as webdriver
+      aRequest.newSandbox = true;
+    }
     this.command_id = this.uuidGen.generateUUID().toString();
 
     if (this.context == "content") {
       this.sendAsync("executeAsyncScript", {value: aRequest.value,
                                             args: aRequest.args,
-                                            id: this.command_id});
+                                            id: this.command_id,
+                                            newSandbox: aRequest.newSandbox});
       return;
     }
 

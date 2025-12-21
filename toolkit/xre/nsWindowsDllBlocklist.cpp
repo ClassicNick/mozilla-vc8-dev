@@ -196,6 +196,18 @@ private:
 };
 
 bool
+IsVistaOrLater()
+{
+  OSVERSIONINFO info;
+
+  ZeroMemory(&info, sizeof(OSVERSIONINFO));
+  info.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+  GetVersionEx(&info);
+
+  return info.dwMajorVersion >= 6;
+}
+
+bool
 CheckASLR(const wchar_t* path)
 {
   bool retval = false;
@@ -458,7 +470,7 @@ continue_loading:
       return STATUS_DLL_NOT_FOUND;
     }
 
-    if (!CheckASLR(full_fname)) {
+    if (IsVistaOrLater() && !CheckASLR(full_fname)) {
       printf_stderr("LdrLoadDll: Blocking load of '%s'.  XPCOM components must support ASLR.\n", dllName);
 	  // Do not return a value here, unless you want to see a
 	  // "The address isn't valid, The URL is not valid and cannot be loaded" error!

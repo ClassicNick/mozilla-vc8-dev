@@ -275,7 +275,7 @@ MarkIdInternal(JSTracer *trc, jsid *id)
     if (JSID_IS_STRING(*id)) {
         JSString *str = JSID_TO_STRING(*id);
         MarkInternal(trc, &str);
-        *id = ATOM_TO_JSID(reinterpret_cast<JSAtom *>(str));
+        *id = NON_INTEGER_ATOM_TO_JSID(reinterpret_cast<JSAtom *>(str));
     } else if (JS_UNLIKELY(JSID_IS_OBJECT(*id))) {
         JSObject *obj = JSID_TO_OBJECT(*id);
         MarkInternal(trc, &obj);
@@ -322,20 +322,22 @@ MarkIdRootRange(JSTracer *trc, size_t len, jsid *vec, const char *name)
 static inline void
 MarkValueInternal(JSTracer *trc, Value *v)
 {
-    JS_SET_TRACING_LOCATION(trc, (void *)v);
     if (v->isMarkable()) {
         JS_ASSERT(v->toGCThing());
         void *thing = v->toGCThing();
+        JS_SET_TRACING_LOCATION(trc, (void *)v);
         MarkKind(trc, &thing, v->gcKind());
         if (v->isString())
             v->setString((JSString *)thing);
         else
             v->setObjectOrNull((JSObject *)thing);
+    } else {
+        JS_SET_TRACING_LOCATION(trc, NULL);
     }
 }
 
 void
-MarkValue(JSTracer *trc, HeapValue *v, const char *name)
+MarkValue(JSTracer *trc, EncapsulatedValue *v, const char *name)
 {
     JS_SET_TRACING_NAME(trc, name);
     MarkValueInternal(trc, v->unsafeGet());
@@ -350,7 +352,7 @@ MarkValueRoot(JSTracer *trc, Value *v, const char *name)
 }
 
 void
-MarkValueRange(JSTracer *trc, size_t len, HeapValue *vec, const char *name)
+MarkValueRange(JSTracer *trc, size_t len, EncapsulatedValue *vec, const char *name)
 {
     for (size_t i = 0; i < len; ++i) {
         JS_SET_TRACING_INDEX(trc, name, i);

@@ -264,6 +264,7 @@ struct AutoEnterCompilation
         JS_ASSERT(!info.script);
         info.script = script;
         info.constructing = constructing;
+        info.barriers = cx->compartment->needsBarrier();
         info.chunkIndex = chunkIndex;
     }
 
@@ -272,6 +273,7 @@ struct AutoEnterCompilation
         JS_ASSERT(info.script);
         info.script = NULL;
         info.constructing = false;
+        info.barriers = false;
         info.chunkIndex = 0;
     }
 };
@@ -1014,6 +1016,33 @@ HashSetLookup(U **values, unsigned count, T key)
     return NULL;
 }
 
+inline TypeObjectKey *
+Type::objectKey() const
+{
+    JS_ASSERT(isObject());
+    if (isTypeObject())
+        TypeObject::readBarrier((TypeObject *) data);
+    else
+        JSObject::readBarrier((JSObject *) (data ^ 1));
+    return (TypeObjectKey *) data;
+}
+
+inline JSObject *
+Type::singleObject() const
+{
+    JS_ASSERT(isSingleObject());
+    JSObject::readBarrier((JSObject *) (data ^ 1));
+    return (JSObject *) (data ^ 1);
+}
+
+inline TypeObject *
+Type::typeObject() const
+{
+    JS_ASSERT(isTypeObject());
+    TypeObject::readBarrier((TypeObject *) data);
+    return (TypeObject *) data;
+}
+
 inline bool
 TypeSet::hasType(Type type)
 {
@@ -1249,8 +1278,11 @@ TypeObject::getProperty(JSContext *cx, jsid id, bool assign)
 
     if (!*pprop) {
         setBasePropertyCount(propertyCount);
-        if (!addProperty(cx, id, pprop))
+        if (!addProperty(cx, id, pprop)) {
+            setBasePropertyCount(0);
+            propertySet = NULL;
             return NULL;
+        }
         if (propertyCount == OBJECT_FLAG_PROPERTY_COUNT_LIMIT) {
             markUnknown(cx);
             TypeSet *types = TypeSet::make(cx, "propertyOverflow");

@@ -144,6 +144,23 @@ js::PrepareForFullGC(JSRuntime *rt)
         c->scheduleGC();
 }
 
+JS_FRIEND_API(bool)
+js::IsGCScheduled(JSRuntime *rt)
+{
+    for (CompartmentsIter c(rt); !c.done(); c.next()) {
+        if (c->isGCScheduled())
+            return true;
+    }
+
+    return false;
+}
+
+JS_FRIEND_API(void)
+js::SkipCompartmentForGC(JSCompartment *comp)
+{
+    comp->unscheduleGC();
+}
+
 JS_FRIEND_API(void)
 js::GCForReason(JSRuntime *rt, gcreason::Reason reason)
 {
@@ -213,8 +230,8 @@ JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *obj, const JSFunctionSpecWit
             return false;
 
         RootedVarFunction fun(cx);
-        fun = js_DefineFunction(cx, objRoot,
-                                ATOM_TO_JSID(atom), fs->call, fs->nargs, fs->flags);
+        fun = js_DefineFunction(cx, objRoot, AtomToId(atom),
+                                fs->call, fs->nargs, fs->flags);
         if (!fun)
             return false;
 
@@ -230,19 +247,6 @@ JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *obj, const JSFunctionSpecWit
     }
 
     return true;
-}
-
-AutoPreserveCompartment::AutoPreserveCompartment(JSContext *cx
-                                                 JS_GUARD_OBJECT_NOTIFIER_PARAM_NO_INIT)
-  : cx(cx), oldCompartment(cx->compartment)
-{
-    JS_GUARD_OBJECT_NOTIFIER_INIT;
-}
-
-AutoPreserveCompartment::~AutoPreserveCompartment()
-{
-    /* The old compartment may have been destroyed, so we can't use cx->setCompartment. */
-    cx->compartment = oldCompartment;
 }
 
 AutoSwitchCompartment::AutoSwitchCompartment(JSContext *cx, JSCompartment *newCompartment
@@ -297,6 +301,12 @@ js::GetGlobalForObjectCrossCompartment(JSObject *obj)
     return &obj->global();
 }
 
+JS_FRIEND_API(void)
+js::NotifyAnimationActivity(JSObject *obj)
+{
+    obj->compartment()->lastAnimationTime = PRMJ_Now();
+}
+
 JS_FRIEND_API(uint32_t)
 js::GetObjectSlotSpan(JSObject *obj)
 {
@@ -327,7 +337,8 @@ js::DefineFunctionWithReserved(JSContext *cx, JSObject *obj, const char *name, J
     JSAtom *atom = js_Atomize(cx, name, strlen(name));
     if (!atom)
         return NULL;
-    return js_DefineFunction(cx, objRoot, ATOM_TO_JSID(atom), call, nargs, attrs,
+    return js_DefineFunction(cx, objRoot, AtomToId(atom),
+                             call, nargs, attrs,
                              JSFunction::ExtendedFinalizeKind);
 }
 
@@ -742,7 +753,7 @@ NotifyDidPaint(JSRuntime *rt)
 extern JS_FRIEND_API(bool)
 IsIncrementalGCEnabled(JSRuntime *rt)
 {
-    return rt->gcIncrementalEnabled;
+    return rt->gcIncrementalEnabled && rt->gcMode == JSGC_MODE_INCREMENTAL;
 }
 
 extern JS_FRIEND_API(void)
@@ -786,6 +797,14 @@ IncrementalReferenceBarrier(void *ptr)
         JSObject::writeBarrierPre((JSObject *) ptr);
     else if (kind == JSTRACE_STRING)
         JSString::writeBarrierPre((JSString *) ptr);
+    else if (kind == JSTRACE_SCRIPT)
+        JSScript::writeBarrierPre((JSScript *) ptr);
+    else if (kind == JSTRACE_SHAPE)
+        Shape::writeBarrierPre((Shape *) ptr);
+    else if (kind == JSTRACE_BASE_SHAPE)
+        BaseShape::writeBarrierPre((BaseShape *) ptr);
+    else if (kind == JSTRACE_TYPE_OBJECT)
+        types::TypeObject::writeBarrierPre((types::TypeObject *) ptr);
     else
         JS_NOT_REACHED("invalid trace kind");
 }

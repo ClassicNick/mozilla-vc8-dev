@@ -82,6 +82,7 @@
 
 #include "nsLayoutUtils.h"
 #include "nsIPresShell.h"
+#include "nsIStringBundle.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
 #include "nsIView.h"
@@ -626,12 +627,24 @@ nsAccessible::GetIndexInParent(PRInt32 *aIndexInParent)
 }
 
 void 
-nsAccessible::TranslateString(const nsAString& aKey, nsAString& aStringOut)
+nsAccessible::TranslateString(const nsString& aKey, nsAString& aStringOut)
 {
-  nsXPIDLString xsValue;
+  nsCOMPtr<nsIStringBundleService> stringBundleService =
+    services::GetStringBundleService();
+  if (!stringBundleService)
+    return;
 
-  gStringBundle->GetStringFromName(PromiseFlatString(aKey).get(), getter_Copies(xsValue));
-  aStringOut.Assign(xsValue);
+  nsCOMPtr<nsIStringBundle> stringBundle;
+  stringBundleService->CreateBundle(
+    "chrome://global-platform/locale/accessible.properties", 
+    getter_AddRefs(stringBundle));
+  if (!stringBundle)
+    return;
+
+  nsXPIDLString xsValue;
+  nsresult rv = stringBundle->GetStringFromName(aKey.get(), getter_Copies(xsValue));
+  if (NS_SUCCEEDED(rv))
+    aStringOut.Assign(xsValue);
 }
 
 PRUint64
@@ -914,7 +927,7 @@ void nsAccessible::GetBoundsRect(nsRect& aTotalBounds, nsIFrame** aBoundingFrame
 
   // Initialization area
   *aBoundingFrame = nsnull;
-  nsIFrame *firstFrame = GetBoundsFrame();
+  nsIFrame* firstFrame = GetFrame();
   if (!firstFrame)
     return;
 
@@ -1027,13 +1040,6 @@ nsAccessible::GetBounds(PRInt32* aX, PRInt32* aY,
   *aY += orgRectPixels.y;
 
   return NS_OK;
-}
-
-// helpers
-
-nsIFrame* nsAccessible::GetBoundsFrame()
-{
-  return GetFrame();
 }
 
 NS_IMETHODIMP nsAccessible::SetSelected(bool aSelect)
@@ -2109,7 +2115,7 @@ nsAccessible::RelationByType(PRUint32 aType)
           if (form) {
             nsCOMPtr<nsIContent> formContent =
               do_QueryInterface(form->GetDefaultSubmitElement());
-            return Relation(formContent);
+            return Relation(mDoc, formContent);
           }
         }
       } else {
@@ -2150,13 +2156,13 @@ nsAccessible::RelationByType(PRUint32 aType)
             }
           }
           nsCOMPtr<nsIContent> relatedContent(do_QueryInterface(buttonEl));
-          return Relation(relatedContent);
+          return Relation(mDoc, relatedContent);
         }
       }
       return Relation();
     }
     case nsIAccessibleRelation::RELATION_MEMBER_OF:
-      return Relation(GetAtomicRegion());
+      return Relation(mDoc, GetAtomicRegion());
     case nsIAccessibleRelation::RELATION_SUBWINDOW_OF:
     case nsIAccessibleRelation::RELATION_EMBEDS:
     case nsIAccessibleRelation::RELATION_EMBEDDED_BY:
@@ -2245,6 +2251,9 @@ nsAccessible::DispatchClickEvent(nsIContent *aContent, PRUint32 aActionIndex)
 NS_IMETHODIMP
 nsAccessible::ScrollTo(PRUint32 aHow)
 {
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
   nsCoreUtils::ScrollTo(mDoc->PresShell(), mContent, aHow);
   return NS_OK;
 }
@@ -3297,8 +3306,9 @@ KeyBinding::ToPlatformFormat(nsAString& aValue) const
   nsCOMPtr<nsIStringBundleService> stringBundleService =
       mozilla::services::GetStringBundleService();
   if (stringBundleService)
-    stringBundleService->CreateBundle(PLATFORM_KEYS_BUNDLE_URL,
-                                      getter_AddRefs(keyStringBundle));
+    stringBundleService->CreateBundle(
+      "chrome://global-platform/locale/platformKeys.properties",
+      getter_AddRefs(keyStringBundle));
 
   if (!keyStringBundle)
     return;

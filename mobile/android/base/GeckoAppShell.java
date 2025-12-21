@@ -73,7 +73,6 @@ import android.webkit.MimeTypeMap;
 import android.media.MediaScannerConnection;
 import android.media.MediaScannerConnection.MediaScannerConnectionClient;
 import android.provider.Settings;
-import android.view.accessibility.AccessibilityManager;
 import android.opengl.GLES20;
 
 import android.util.*;
@@ -233,8 +232,6 @@ public class GeckoAppShell
     public static native void schedulePauseComposition();
     public static native void scheduleResumeComposition(int width, int height);
 
-    public static native void unlockDatabaseFile(String databasePath);
-
     public static native SurfaceBits getSurfaceBits(Surface surface);
 
     private static class GeckoMediaScannerClient implements MediaScannerConnectionClient {
@@ -380,7 +377,6 @@ public class GeckoAppShell
 
     public static void setupGeckoEnvironment(Context context) {
         GeckoProfile profile = GeckoProfile.get(context);
-        profile.moveProfilesToAppInstallLocation();
 
         setupPluginEnvironment((GeckoApp) context);
         setupDownloadEnvironment((GeckoApp) context);
@@ -410,9 +406,6 @@ public class GeckoAppShell
         // setup the downloads path
         f = Environment.getDownloadCacheDirectory();
         GeckoAppShell.putenv("EXTERNAL_STORAGE=" + f.getPath());
-
-        // Enable fixed position layers
-        GeckoAppShell.putenv("MOZ_ENABLE_FIXED_POSITION_LAYERS=1");
 
         putLocaleEnv();
     }
@@ -1848,16 +1841,6 @@ public class GeckoAppShell
                 return promptServiceResult;
             }
 
-            if (type.equals("Accessibility:IsEnabled")) {
-                JSONObject ret = new JSONObject();
-                AccessibilityManager accessibilityManager =
-                    (AccessibilityManager) GeckoApp.mAppContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
-                try {
-                    ret.put("enabled", accessibilityManager.isEnabled());
-                } catch (Exception ex) { }
-                return ret.toString();
-            }
-
             CopyOnWriteArrayList<GeckoEventListener> listeners;
             synchronized (mEventListeners) {
                 listeners = mEventListeners.get(type);
@@ -2149,7 +2132,7 @@ public class GeckoAppShell
 
     public static void pumpMessageLoop() {
         // We're going to run the Looper below, but we need a way to break out, so
-        // we post this Runnable that throws a RuntimeException. This causes the loop
+        // we post this Runnable that throws an AssertionError. This causes the loop
         // to exit without marking the Looper as dead. The Runnable is added to the
         // end of the queue, so it will be executed after anything
         // else that has been added prior.
@@ -2160,13 +2143,13 @@ public class GeckoAppShell
         // here we are.
         sGeckoHandler.post(new Runnable() {
             public void run() {
-                throw new RuntimeException();
+                throw new AssertionError();
             }
         });
         
         try {
             Looper.loop();
-        } catch(Exception ex) {}
+        } catch(Throwable ex) {}
     }
 
     static class AsyncResultHandler extends GeckoApp.FilePickerResultHandler {
@@ -2248,6 +2231,9 @@ public class GeckoAppShell
     }
 
     public static void screenshotWholePage(Tab tab) {
+        if (GeckoApp.mAppContext.isApplicationInBackground())
+            return;
+
         if (sMaxTextureSize == 0) {
             int[] maxTextureSize = new int[1];
             GLES20.glGetIntegerv(GLES20.GL_MAX_TEXTURE_SIZE, maxTextureSize, 0);

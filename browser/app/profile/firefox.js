@@ -631,6 +631,9 @@ pref("browser.preferences.animateFadeIn", true);
 pref("browser.preferences.animateFadeIn", false);
 #endif
 
+// Toggles between the two Preferences implementations, pop-up window and in-content
+pref("browser.preferences.inContent", false);
+
 pref("browser.download.show_plugins_in_list", true);
 pref("browser.download.hide_plugins_without_extensions", true);
 
@@ -873,12 +876,6 @@ pref("places.frecency.unvisitedTypedBonus", 200);
 // 2 - pre-populate site URL and pre-fetch certificate
 pref("browser.ssl_override_behavior", 2);
 
-// Controls the display of domain in the identity box for SSL connections.
-// 0 - do not show domain
-// 1 - show effectiveTLD + 1 (e.g. mozilla.org)
-// 2 - show full domain (e.g. bugzilla.mozilla.org)
-pref("browser.identity.ssl_domain_display", 0);
-
 // True if the user should be prompted when a web application supports
 // offline apps.
 pref("browser.offline-apps.notify", true);
@@ -1058,9 +1055,17 @@ pref("devtools.layoutview.open", false);
 
 // Enable the Debugger
 pref("devtools.debugger.enabled", false);
+pref("devtools.debugger.remote-enabled", false);
+pref("devtools.debugger.remote-host", "localhost");
+pref("devtools.debugger.remote-port", 6000);
+pref("devtools.debugger.remote-autoconnect", false);
+pref("devtools.debugger.remote-connection-retries", 3);
+pref("devtools.debugger.remote-timeout", 3000);
 
 // The default Debugger UI height
 pref("devtools.debugger.ui.height", 250);
+pref("devtools.debugger.ui.remote-win.width", 900);
+pref("devtools.debugger.ui.remote-win.height", 400);
 
 // Enable the style inspector
 pref("devtools.styleinspector.enabled", true);
@@ -1145,8 +1150,13 @@ pref("browser.newtab.url", "about:newtab");
 // Toggles the content of 'about:newtab'. Shows the grid when enabled.
 pref("browser.newtabpage.enabled", true);
 
-// Enable the DOM full-screen API.
+// Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
+
+// True if the fullscreen API requires approval upon a domain entering fullscreen.
+// Domains that have already had fullscreen permission granted won't re-request
+// approval.
+pref("full-screen-api.approval-required", true);
 
 // Startup Crash Tracking
 // number of startup crashes that can occur before starting into safe mode automatically

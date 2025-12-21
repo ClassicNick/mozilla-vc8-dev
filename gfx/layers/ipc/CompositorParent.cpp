@@ -41,6 +41,7 @@
 #include "CompositorParent.h"
 #include "RenderTrace.h"
 #include "ShadowLayersParent.h"
+#include "BasicLayers.h"
 #include "LayerManagerOGL.h"
 #include "nsIWidget.h"
 #include "nsGkAtoms.h"
@@ -56,7 +57,9 @@ using base::Thread;
 namespace mozilla {
 namespace layers {
 
-CompositorParent::CompositorParent(nsIWidget* aWidget, MessageLoop* aMsgLoop, PlatformThreadId aThreadID)
+CompositorParent::CompositorParent(nsIWidget* aWidget, MessageLoop* aMsgLoop,
+                                   PlatformThreadId aThreadID, bool aRenderToEGLSurface,
+                                   int aSurfaceWidth, int aSurfaceHeight)
   : mWidget(aWidget)
   , mCurrentCompositeTask(NULL)
   , mPaused(false)
@@ -66,6 +69,8 @@ CompositorParent::CompositorParent(nsIWidget* aWidget, MessageLoop* aMsgLoop, Pl
   , mLayersUpdated(false)
   , mCompositorLoop(aMsgLoop)
   , mThreadID(aThreadID)
+  , mRenderToEGLSurface(aRenderToEGLSurface)
+  , mEGLSurfaceSize(aSurfaceWidth, aSurfaceHeight)
 {
   MOZ_COUNT_CTOR(CompositorParent);
 }
@@ -163,11 +168,19 @@ CompositorParent::ResumeComposition()
 }
 
 void
+CompositorParent::SetEGLSurfaceSize(int width, int height)
+{
+  NS_ASSERTION(mRenderToEGLSurface, "Compositor created without RenderToEGLSurface ar provided");
+  mEGLSurfaceSize.SizeTo(width, height);
+  if (mLayerManager) {
+    static_cast<LayerManagerOGL*>(mLayerManager.get())->SetSurfaceSize(mEGLSurfaceSize.width, mEGLSurfaceSize.height);
+  }
+}
+
+void
 CompositorParent::ResumeCompositionAndResize(int width, int height)
 {
-  static_cast<LayerManagerOGL*>(mLayerManager.get())->SetSurfaceSize(width, height);
-  mWidgetSize.width = width;
-  mWidgetSize.height = height;
+  SetEGLSurfaceSize(width, height);
   ResumeComposition();
 }
 
@@ -294,33 +307,6 @@ CompositorParent::GetPrimaryScrollableLayer()
   return root;
 }
 
-static void
-ReverseViewTranslation(gfx3DMatrix& aTransform,
-                       const ViewTransform& aViewTransform)
-{
-  aTransform._41 -= aViewTransform.mTranslation.x / aViewTransform.mXScale;
-  aTransform._42 -= aViewTransform.mTranslation.y / aViewTransform.mYScale;
-}
-
-void
-CompositorParent::UntranslateFixedLayers(Layer* aLayer,
-                                         const ViewTransform& aTransform)
-{
-  if (aLayer->GetIsFixedPosition() &&
-      !aLayer->GetParent()->GetIsFixedPosition()) {
-    gfx3DMatrix layerTransform = aLayer->GetTransform();
-    ReverseViewTranslation(layerTransform, aTransform);
-
-    ShadowLayer* shadow = aLayer->AsShadowLayer();
-    shadow->SetShadowTransform(layerTransform);
-  }
-
-  for (Layer* child = aLayer->GetFirstChild();
-       child; child = child->GetNextSibling()) {
-    UntranslateFixedLayers(child, aTransform);
-  }
-}
-
 // Go down shadow layer tree, setting properties to match their non-shadow
 // counterparts.
 static void
@@ -403,17 +389,6 @@ CompositorParent::TransformShadowTree()
       (mScrollOffset.y / tempScaleDiffY - metricsScrollOffset.y) * mYScale);
     ViewTransform treeTransform(-scrollCompensation, mXScale, mYScale);
     shadow->SetShadowTransform(gfx3DMatrix(treeTransform) * currentTransform);
-
-    // Alter the scroll offset so that fixed position layers remain within
-    // the page area.
-    int offsetX = NS_MAX(0, NS_MIN(mScrollOffset.x, mContentSize.width - mWidgetSize.width));
-    int offsetY = NS_MAX(0, NS_MIN(mScrollOffset.y, mContentSize.height - mWidgetSize.height));
-    treeTransform.mTranslation.x =
-      -(offsetX / tempScaleDiffX - metricsScrollOffset.x) * mXScale;
-    treeTransform.mTranslation.y =
-      -(offsetY / tempScaleDiffY - metricsScrollOffset.y) * mYScale;
-
-    UntranslateFixedLayers(layer, treeTransform);
   } else {
     ViewTransform treeTransform(nsIntPoint(0,0), mXScale, mYScale);
     shadow->SetShadowTransform(gfx3DMatrix(treeTransform) * currentTransform);
@@ -473,18 +448,9 @@ PLayersParent*
 CompositorParent::AllocPLayers(const LayersBackend &backendType)
 {
   if (backendType == LayerManager::LAYERS_OPENGL) {
-    nsIntRect rect;
-    mWidget->GetBounds(rect);
-    mWidgetSize.width = rect.width;
-    mWidgetSize.height = rect.height;
-#ifdef MOZ_JAVA_COMPOSITOR
-    nsRefPtr<LayerManagerOGL> layerManager =
-      new LayerManagerOGL(mWidget, rect.width, rect.height, true);
-#else
-    nsRefPtr<LayerManagerOGL> layerManager = new LayerManagerOGL(mWidget);
-#endif
-    // mWidget doesn't belong to the compositor thread, so set it to NULL here
-    // to avoid accessing it.
+    nsRefPtr<LayerManagerOGL> layerManager;
+    layerManager =
+      new LayerManagerOGL(mWidget, mEGLSurfaceSize.width, mEGLSurfaceSize.height, mRenderToEGLSurface);
     mWidget = NULL;
     mLayerManager = layerManager;
 
@@ -493,6 +459,16 @@ CompositorParent::AllocPLayers(const LayersBackend &backendType)
       return NULL;
     }
 
+    ShadowLayerManager* slm = layerManager->AsShadowManager();
+    if (!slm) {
+      return NULL;
+    }
+    return new ShadowLayersParent(slm, this);
+  } else if (backendType == LayerManager::LAYERS_BASIC) {
+    // This require Cairo to be thread-safe
+    nsRefPtr<LayerManager> layerManager = new BasicShadowLayerManager(mWidget);
+    mWidget = NULL;
+    mLayerManager = layerManager;
     ShadowLayerManager* slm = layerManager->AsShadowManager();
     if (!slm) {
       return NULL;

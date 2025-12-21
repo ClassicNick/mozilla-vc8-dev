@@ -378,7 +378,6 @@ DOMCI_CLASS(StorageObsolete)
 DOMCI_CLASS(Storage)
 DOMCI_CLASS(StorageItem)
 DOMCI_CLASS(StorageEvent)
-DOMCI_CLASS(StorageEventObsolete)
 
 // DOMParser, XMLSerializer
 DOMCI_CLASS(DOMParser)
@@ -490,6 +489,7 @@ DOMCI_CLASS(WebGLExtension)
 DOMCI_CLASS(WebGLExtensionStandardDerivatives)
 DOMCI_CLASS(WebGLExtensionTextureFilterAnisotropic)
 DOMCI_CLASS(WebGLExtensionLoseContext)
+DOMCI_CLASS(WebGLExtensionCompressedTextureS3TC)
 
 DOMCI_CLASS(PaintRequest)
 DOMCI_CLASS(PaintRequestList)
