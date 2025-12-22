@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:id="@+id/browser_toolbar"
               style="@style/BrowserToolbar">
@@ -6,7 +10,13 @@
     <RelativeLayout android:id="@+id/address_bar"
                     style="@style/AddressBar"
                     android:background="@drawable/address_bar_bg">
-        
+
+        <ImageButton android:id="@+id/back"
+                     style="@style/AddressBar.ImageButton.Unused"/>
+
+        <ImageButton android:id="@+id/forward"
+                     style="@style/AddressBar.ImageButton.Unused"/>
+                      
         <Button android:id="@+id/awesome_bar"
                 style="@style/AddressBar.Button"
                 android:layout_width="fill_parent"

@@ -1,46 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
  * vim: set ts=2 sw=2 et tw=78:
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Steve Clark <buster@netscape.com>
- *   Håkan Waara <hwaara@chello.se>
- *   Dan Rosen <dr@netscape.com>
- *   Daniel Glazman <glazman@netscape.com>
- *   Mats Palmgren <matspal@gmail.com>
- *   Mihai Sucan <mihai.sucan@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK *****
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * This Original Code has been modified by IBM Corporation.
  * Modifications made by IBM described herein are
@@ -155,6 +117,8 @@
 #include "nsHTMLMediaElement.h"
 #endif
 #include "nsSMILAnimationController.h"
+#include "nsSVGUtils.h"
+#include "SVGFragmentIdentifier.h"
 
 #include "nsRefreshDriver.h"
 
@@ -765,9 +729,7 @@ PresShell::Init(nsIDocument* aDocument,
     return NS_ERROR_ALREADY_INITIALIZED;
   }
 
-  if (!mFramesToDirty.Init()) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  mFramesToDirty.Init();
 
   mDocument = aDocument;
   NS_ADDREF(mDocument);
@@ -2748,6 +2710,15 @@ PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll)
     return NS_ERROR_FAILURE;
   }
   
+  const Element *root = mDocument->GetRootElement();
+  if (root && root->IsSVG(nsGkAtoms::svg)) {
+    // We need to execute this even if there is an empty anchor name
+    // so that any existing SVG fragment identifier effect is removed
+    if (SVGFragmentIdentifier::ProcessFragmentIdentifier(mDocument, aAnchorName)) {
+      return NS_OK;
+    }
+  }
+
   // Hold a reference to the ESM in case event dispatch tears us down.
   nsRefPtr<nsEventStateManager> esm = mPresContext->EventStateManager();
 
@@ -2879,6 +2850,11 @@ PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll)
       if (SameCOMIdentity(win, focusedWindow)) {
         fm->ClearFocus(focusedWindow);
       }
+    }
+
+    // If the target is an animation element, activate the animation
+    if (content->IsNodeOfType(nsINode::eANIMATION)) {
+      nsSVGUtils::ActivateByHyperlink(content.get());
     }
   } else {
     rv = NS_ERROR_FAILURE;
@@ -3357,38 +3333,6 @@ PresShell::GetRectVisibility(nsIFrame* aFrame,
     return nsRectVisibility_kRightOfViewport;
 
   return nsRectVisibility_kVisible;
-}
-
-// GetLinkLocation: copy link location to clipboard
-nsresult PresShell::GetLinkLocation(nsIDOMNode* aNode, nsAString& aLocationString) const
-{
-#ifdef DEBUG_dr
-  printf("dr :: PresShell::GetLinkLocation\n");
-#endif
-
-  NS_ENSURE_ARG_POINTER(aNode);
-
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aNode));
-  if (content) {
-    nsCOMPtr<nsIURI> hrefURI = content->GetHrefURI();
-    if (hrefURI) {
-      nsCAutoString specUTF8;
-      nsresult rv = hrefURI->GetSpec(specUTF8);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsAutoString anchorText;
-      CopyUTF8toUTF16(specUTF8, anchorText);
-
-      // Remove all the '\t', '\r' and '\n' from 'anchorText'
-      static const char strippedChars[] = "\t\r\n";
-      anchorText.StripChars(strippedChars);
-      aLocationString = anchorText;
-      return NS_OK;
-    }
-  }
-
-  // if no link, fail.
-  return NS_ERROR_FAILURE;
 }
 
 void
@@ -7315,20 +7259,6 @@ PresShell::DoReflow(nsIFrame* target, bool aInterruptible)
   if (!rcx) {
     NS_NOTREACHED("CreateRenderingContext failure");
     return false;
-  }
-
-  NS_ASSERTION(!mPresContext->mCurrentInflationContainer,
-               "current inflation container should be null");
-  AutoRestore<nsIFrame*> restoreInflationContainer(mPresContext->
-                           mCurrentInflationContainer);
-  for (nsIFrame *f = target->GetParent(); f; f = f->GetParent()) {
-    if (nsLayoutUtils::IsContainerForFontSizeInflation(f)) {
-      NS_ASSERTION(!(f->GetStateBits() & NS_FRAME_IN_REFLOW),
-                   "a frame outside should not be in reflow");
-      mPresContext->mCurrentInflationContainer = f;
-      mPresContext->mCurrentInflationContainerWidth = f->GetContentRect().width;
-      break;
-    }
   }
 
 #ifdef DEBUG

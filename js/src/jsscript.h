@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=4 sw=4 et tw=79 ft=cpp:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jsscript_h___
 #define jsscript_h___
@@ -208,7 +175,7 @@ class Bindings
     }
     bool addDestructuring(JSContext *cx, uint16_t *slotp) {
         *slotp = nargs;
-        return add(cx, RootedVarAtom(cx), ARGUMENT);
+        return add(cx, RootedAtom(cx), ARGUMENT);
     }
 
     void noteDup() { hasDup_ = true; }
@@ -259,12 +226,23 @@ class Bindings
 
     void trace(JSTracer *trc);
 
-    /* Rooter for stack allocated Bindings. */
-    struct StackRoot {
-        RootShape root;
-        StackRoot(JSContext *cx, Bindings *bindings)
-            : root(cx, (Shape **) &bindings->lastBinding)
-        {}
+    class AutoRooter : private AutoGCRooter
+    {
+      public:
+        explicit AutoRooter(JSContext *cx, Bindings *bindings_
+                            JS_GUARD_OBJECT_NOTIFIER_PARAM)
+          : AutoGCRooter(cx, BINDINGS), bindings(bindings_), skip(cx, bindings_)
+        {
+            JS_GUARD_OBJECT_NOTIFIER_INIT;
+        }
+
+        friend void AutoGCRooter::trace(JSTracer *trc);
+        void trace(JSTracer *trc);
+
+      private:
+        Bindings *bindings;
+        SkipRoot skip;
+        JS_DECL_USE_GUARD_OBJECT_NOTIFIER
     };
 };
 
@@ -352,8 +330,6 @@ typedef HashMap<JSScript *,
 
 } /* namespace js */
 
-static const uint32_t JS_SCRIPT_COOKIE = 0xc00cee;
-
 struct JSScript : public js::gc::Cell
 {
   private:
@@ -403,6 +379,26 @@ struct JSScript : public js::gc::Cell
 
         static void staticAsserts();
     };
+
+    // All the possible JITScripts that can simultaneously exist for a script.
+    struct JITScriptSet
+    {
+        JITScriptHandle jitHandleNormal;          // JIT info for normal scripts
+        JITScriptHandle jitHandleNormalBarriered; // barriered JIT info for normal scripts
+        JITScriptHandle jitHandleCtor;            // JIT info for constructors
+        JITScriptHandle jitHandleCtorBarriered;   // barriered JIT info for constructors
+
+        static size_t jitHandleOffset(bool constructing, bool barriers) {
+            return constructing
+                ? (barriers
+                   ? offsetof(JITScriptSet, jitHandleCtorBarriered)
+                   : offsetof(JITScriptSet, jitHandleCtor))
+                : (barriers
+                   ? offsetof(JITScriptSet, jitHandleNormalBarriered)
+                   : offsetof(JITScriptSet, jitHandleNormal));
+        }
+    };
+
 #endif  // JS_METHODJIT
 
     //
@@ -420,7 +416,7 @@ struct JSScript : public js::gc::Cell
 
   public:
     jsbytecode      *code;      /* bytecodes and their immediate operands */
-    uint8_t         *data;      /* pointer to variable-length data array (see 
+    uint8_t         *data;      /* pointer to variable-length data array (see
                                    comment above NewScript() for details) */
 
     const char      *filename;  /* source filename or null */
@@ -445,15 +441,11 @@ struct JSScript : public js::gc::Cell
     /* Persistent type information retained across GCs. */
     js::types::TypeScript *types;
 
-  public:
+  private:
 #ifdef JS_METHODJIT
-    JITScriptHandle jitHandleNormal;          // JIT info for normal scripts
-    JITScriptHandle jitHandleNormalBarriered; // barriered JIT info for normal scripts
-    JITScriptHandle jitHandleCtor;            // JIT info for constructors
-    JITScriptHandle jitHandleCtorBarriered;   // barriered JIT info for constructors
+    JITScriptSet *jitInfo;
 #endif
 
-  private:
     js::HeapPtrFunction function_;
 
     // 32-bit fields.
@@ -472,6 +464,10 @@ struct JSScript : public js::gc::Cell
     uint32_t        useCount;   /* Number of times the script has been called
                                  * or has had backedges taken. Reset if the
                                  * script's JIT code is forcibly discarded. */
+
+#if JS_BITS_PER_WORD == 32
+    uint32_t        pad32;
+#endif
 
 #ifdef DEBUG
     // Unique identifier within the compartment for this script, used for
@@ -610,6 +606,19 @@ struct JSScript : public js::gc::Cell
     void setNeedsArgsObj(bool needsArgsObj);
     static bool applySpeculationFailed(JSContext *cx, JSScript *script);
 
+    /*
+     * Arguments access (via JSOP_*ARG* opcodes) must access the canonical
+     * location for the argument. If an arguments object exists AND this is a
+     * non-strict function (where 'arguments' aliases formals), then all access
+     * must go through the arguments object. Otherwise, the local slot is the
+     * canonical location for the arguments. Note: if a formal is aliased
+     * through the scope chain, then script->argLivesInCallObject and
+     * JSOP_*ARG* opcodes won't be emitted at all.
+     */
+    bool argsObjAliasesFormals() const {
+        return needsArgsObj() && !strictModeCode;
+    }
+
     /* Hash table chaining for JSCompartment::evalCache. */
     JSScript *&evalHashLink() { return *globalObject.unsafeGetUnioned(); }
 
@@ -673,27 +682,26 @@ struct JSScript : public js::gc::Cell
     // accesses jitHandleNormal/jitHandleCtor, via jitHandleOffset().
     friend class js::mjit::CallCompiler;
 
-    static size_t jitHandleOffset(bool constructing, bool barriers) {
-        return constructing
-            ? (barriers ? offsetof(JSScript, jitHandleCtorBarriered) : offsetof(JSScript, jitHandleCtor))
-            : (barriers ? offsetof(JSScript, jitHandleNormalBarriered) : offsetof(JSScript, jitHandleNormal));
+  public:
+    bool hasJITInfo() {
+        return jitInfo != NULL;
     }
 
-  public:
-    bool hasJITCode() {
-        return jitHandleNormal.isValid()
-            || jitHandleNormalBarriered.isValid()
-            || jitHandleCtor.isValid()
-            || jitHandleCtorBarriered.isValid();
-    }
+    static size_t offsetOfJITInfo() { return offsetof(JSScript, jitInfo); }
+
+    inline bool ensureHasJITInfo(JSContext *cx);
+    inline void destroyJITInfo(js::FreeOp *fop);
 
     JITScriptHandle *jitHandle(bool constructing, bool barriers) {
+        JS_ASSERT(jitInfo);
         return constructing
-               ? (barriers ? &jitHandleCtorBarriered : &jitHandleCtor)
-               : (barriers ? &jitHandleNormalBarriered : &jitHandleNormal);
+               ? (barriers ? &jitInfo->jitHandleCtorBarriered : &jitInfo->jitHandleCtor)
+               : (barriers ? &jitInfo->jitHandleNormalBarriered : &jitInfo->jitHandleNormal);
     }
 
     js::mjit::JITScript *getJIT(bool constructing, bool barriers) {
+        if (!jitInfo)
+            return NULL;
         JITScriptHandle *jith = jitHandle(constructing, barriers);
         return jith->isValid() ? jith->getValid() : NULL;
     }
@@ -855,9 +863,9 @@ struct JSScript : public js::gc::Cell
 
 #ifdef DEBUG
     bool varIsAliased(unsigned varSlot);
-    bool argIsAliased(unsigned argSlot);
-    bool argLivesInArgumentsObject(unsigned argSlot);
-    bool argLivesInCallObject(unsigned argSlot);
+    bool formalIsAliased(unsigned argSlot);
+    bool formalLivesInArgumentsObject(unsigned argSlot);
+    bool formalLivesInCallObject(unsigned argSlot);
 #endif
   private:
     /*

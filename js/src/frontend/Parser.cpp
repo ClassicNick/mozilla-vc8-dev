@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS parser.
@@ -110,16 +77,16 @@ using namespace js::frontend;
 #define MUST_MATCH_TOKEN(tt, errno) MUST_MATCH_TOKEN_WITH_FLAGS(tt, errno, 0)
 
 Parser::Parser(JSContext *cx, JSPrincipals *prin, JSPrincipals *originPrin,
+               const jschar *chars, size_t length, const char *fn, unsigned ln, JSVersion v,
                StackFrame *cfp, bool foldConstants, bool compileAndGo)
   : AutoGCRooter(cx, PARSER),
     context(cx),
-    tokenStream(cx, prin, originPrin),
+    tokenStream(cx, prin, originPrin, chars, length, fn, ln, v),
+    tempPoolMark(NULL),
     principals(NULL),
     originPrincipals(NULL),
     callerFrame(cfp),
-    callerVarObj(cfp ? &cfp->varObj() : NULL),
     allocator(cx),
-    functionCount(0),
     traceListHead(NULL),
     tc(NULL),
     keepAtoms(cx->runtime),
@@ -127,25 +94,16 @@ Parser::Parser(JSContext *cx, JSPrincipals *prin, JSPrincipals *originPrin,
     compileAndGo(compileAndGo)
 {
     cx->activeCompilations++;
-    PodArrayZero(tempFreeList);
     setPrincipals(prin, originPrin);
     JS_ASSERT_IF(cfp, cfp->isScriptFrame());
 }
 
 bool
-Parser::init(const jschar *base, size_t length, const char *filename, unsigned lineno,
-             JSVersion version)
+Parser::init()
 {
-    JSContext *cx = context;
-    if (!cx->ensureParseMapPool())
+    if (!context->ensureParseMapPool())
         return false;
-    tempPoolMark = cx->tempLifoAlloc().mark();
-    if (!tokenStream.init(base, length, filename, lineno, version)) {
-        cx->tempLifoAlloc().release(tempPoolMark);
-        return false;
-    }
-    if (context->hasRunOption(JSOPTION_STRICT_MODE))
-        tokenStream.setStrictMode();
+    tempPoolMark = context->tempLifoAlloc().mark();
     return true;
 }
 
@@ -172,6 +130,14 @@ Parser::setPrincipals(JSPrincipals *prin, JSPrincipals *originPrin)
         JS_HoldPrincipals(originPrincipals);
 }
 
+ObjectBox::ObjectBox(ObjectBox* traceLink, JSObject *obj)
+  : traceLink(traceLink),
+    emitLink(NULL),
+    object(obj),
+    isFunctionBox(false)
+{
+}
+
 ObjectBox *
 Parser::newObjectBox(JSObject *obj)
 {
@@ -184,17 +150,47 @@ Parser::newObjectBox(JSObject *obj)
      * scanning, parsing and code generation for the whole script or top-level
      * function.
      */
-    ObjectBox *objbox = context->tempLifoAlloc().new_<ObjectBox>();
+
+    ObjectBox *objbox = context->tempLifoAlloc().new_<ObjectBox>(traceListHead, obj);
     if (!objbox) {
         js_ReportOutOfMemory(context);
         return NULL;
     }
-    objbox->traceLink = traceListHead;
+
     traceListHead = objbox;
-    objbox->emitLink = NULL;
-    objbox->object = obj;
-    objbox->isFunctionBox = false;
+
     return objbox;
+}
+
+FunctionBox::FunctionBox(ObjectBox* traceListHead, JSObject *obj, ParseNode *fn, TreeContext *tc)
+  : ObjectBox(traceListHead, obj),
+    node(fn),
+    siblings(tc->sc->functionList),
+    kids(NULL),
+    parent(tc->sc->funbox),
+    bindings(tc->sc->context),
+    level(tc->sc->staticLevel),
+    queued(false),
+    inLoop(false),
+    inWith(!!tc->innermostWith),
+    inGenexpLambda(false),
+    cxFlags(tc->sc->context)     // the cxFlags are set in LeaveFunction
+{
+    isFunctionBox = true;
+    for (StmtInfo *stmt = tc->sc->topStmt; stmt; stmt = stmt->down) {
+        if (STMT_IS_LOOP(stmt)) {
+            inLoop = true;
+            break;
+        }
+    }
+    if (!tc->sc->inFunction) {
+        JSObject *scope = tc->sc->scopeChain();
+        while (scope) {
+            if (scope->isWith())
+                inWith = true;
+            scope = scope->enclosingScope();
+        }
+    }
 }
 
 FunctionBox *
@@ -210,44 +206,13 @@ Parser::newFunctionBox(JSObject *obj, ParseNode *fn, TreeContext *tc)
      * scanning, parsing and code generation for the whole script or top-level
      * function.
      */
-    FunctionBox *funbox = context->tempLifoAlloc().newPod<FunctionBox>();
+    FunctionBox *funbox = context->tempLifoAlloc().new_<FunctionBox>(traceListHead, obj, fn, tc);
     if (!funbox) {
         js_ReportOutOfMemory(context);
         return NULL;
     }
-    funbox->traceLink = traceListHead;
-    traceListHead = funbox;
-    funbox->emitLink = NULL;
-    funbox->object = obj;
-    funbox->isFunctionBox = true;
-    funbox->node = fn;
-    funbox->siblings = tc->sc->functionList;
-    tc->sc->functionList = funbox;
-    ++functionCount;
-    funbox->kids = NULL;
-    funbox->parent = tc->sc->funbox;
-    new (&funbox->bindings) Bindings(context);
-    funbox->queued = false;
-    funbox->inLoop = false;
-    for (StmtInfo *stmt = tc->sc->topStmt; stmt; stmt = stmt->down) {
-        if (STMT_IS_LOOP(stmt)) {
-            funbox->inLoop = true;
-            break;
-        }
-    }
-    funbox->level = tc->sc->staticLevel;
-    funbox->inWith = !!tc->innermostWith;
-    if (!tc->sc->inFunction) {
-        JSObject *scope = tc->sc->scopeChain();
-        while (scope) {
-            if (scope->isWith())
-                funbox->inWith = true;
-            scope = scope->enclosingScope();
-        }
-    }
-    funbox->inGenexpLambda = false;
-    
-    new (&funbox->cxFlags) ContextFlags(context);  // the cxFlags are set in LeaveFunction
+
+    traceListHead = tc->sc->functionList = funbox;
 
     return funbox;
 }
@@ -295,7 +260,7 @@ Parser::parse(JSObject *chain)
      */
     SharedContext globalsc(context, /* inFunction = */ false);
     TreeContext globaltc(this, &globalsc);
-    if (!globaltc.init(context))
+    if (!globaltc.init())
         return NULL;
     globalsc.setScopeChain(chain);
     if (!GenerateBlockId(&globalsc, globalsc.bodyid))
@@ -590,7 +555,7 @@ BindLocalVariable(JSContext *cx, SharedContext *sc, ParseNode *pn, BindingKind k
     JS_ASSERT(kind == VARIABLE || kind == CONSTANT);
 
     unsigned index = sc->bindings.numVars();
-    if (!sc->bindings.add(cx, RootedVarAtom(cx, pn->pn_atom), kind))
+    if (!sc->bindings.add(cx, RootedAtom(cx, pn->pn_atom), kind))
         return false;
 
     pn->pn_cookie.set(sc->staticLevel, index);
@@ -653,7 +618,7 @@ Parser::functionBody(FunctionBodyType type)
     if (!CheckStrictParameters(context, this))
         return NULL;
 
-    RootedVar<PropertyName*> const arguments(context, context->runtime->atomState.argumentsAtom);
+    Rooted<PropertyName*> const arguments(context, context->runtime->atomState.argumentsAtom);
 
     /*
      * Non-top-level functions use JSOP_DEFFUN which is a dynamic scope
@@ -698,22 +663,36 @@ Parser::functionBody(FunctionBodyType type)
         }
     }
 
-    /*
-     * Even if 'arguments' isn't explicitly mentioned, dynamic name lookup
-     * forces an 'arguments' binding.
-     */
-    if (tc->sc->bindingsAccessedDynamically() && !tc->sc->bindings.hasBinding(context, arguments)) {
+    bool hasRest = tc->sc->fun()->hasRest();
+    BindingKind bindKind = tc->sc->bindings.lookup(context, arguments, NULL);
+    switch (bindKind) {
+      case NONE:
+        /* Functions with rest parameters are free from arguments. */
+        if (hasRest)
+            break;
+
+        /*
+         * Even if 'arguments' isn't explicitly mentioned, dynamic name lookup
+         * forces an 'arguments' binding.
+         */
+        if (!tc->sc->bindingsAccessedDynamically())
+            break;
         if (!tc->sc->bindings.addVariable(context, arguments))
             return NULL;
-    }
 
-    /*
-     * Now that all possible 'arguments' bindings have been added, note whether
-     * 'arguments' has a local binding and whether it unconditionally needs an
-     * arguments object.
-     */
-    BindingKind bindKind = tc->sc->bindings.lookup(context, arguments, NULL);
-    if (bindKind == VARIABLE || bindKind == CONSTANT) {
+        /* 'arguments' is now bound, so fall through. */
+      case VARIABLE:
+      case CONSTANT:        
+        if (hasRest) {
+            reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_ARGUMENTS_AND_REST);
+            return NULL;
+        }
+
+        /*
+         * Now that all possible 'arguments' bindings have been added, note whether
+         * 'arguments' has a local binding and whether it unconditionally needs an
+         * arguments object.
+         */
         tc->sc->setFunArgumentsHasLocalBinding();
 
         /* Dynamic scope access destroys all hope of optimization. */
@@ -734,11 +713,32 @@ Parser::functionBody(FunctionBodyType type)
                     tc->sc->setFunDefinitelyNeedsArgsObj();
                     break;
                 }
-             }
+            }
         }
+        break;
+      case ARGUMENT:
+        break;
     }
 
     return pn;
+}
+
+bool
+Parser::checkForArgumentsAndRest()
+{
+    JS_ASSERT(!tc->sc->inFunction);
+    if (callerFrame && callerFrame->isFunctionFrame() && callerFrame->fun()->hasRest()) {
+        PropertyName *arguments = context->runtime->atomState.argumentsAtom;
+        for (AtomDefnRange r = tc->lexdeps->all(); !r.empty(); r.popFront()) {
+            if (r.front().key() == arguments) {
+                reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_ARGUMENTS_AND_REST);
+                return false;
+            }
+        }
+        /* We're not in a function context, so we don't expect any bindings. */
+        JS_ASSERT(tc->sc->bindings.lookup(context, arguments, NULL) == NONE);
+    }
+    return true;
 }
 
 // Create a placeholder Definition node for |atom|.
@@ -966,7 +966,7 @@ struct BindData {
     struct LetData {
         LetData(JSContext *cx) : blockObj(cx) {}
         VarContext varContext;
-        RootedVar<StaticBlockObject*> blockObj;
+        Rooted<StaticBlockObject*> blockObj;
         unsigned   overflow;
     } let;
 
@@ -1047,10 +1047,10 @@ Parser::newFunction(TreeContext *tc, JSAtom *atom, FunctionSyntaxKind kind)
     while (tc->parent)
         tc = tc->parent;
 
-    RootedVarObject parent(context);
+    RootedObject parent(context);
     parent = tc->sc->inFunction ? NULL : tc->sc->scopeChain();
 
-    RootedVarFunction fun(context);
+    RootedFunction fun(context);
     fun = js_NewFunction(context, NULL, NULL, 0,
                          JSFUN_INTERPRETED | (kind == Expression ? JSFUN_LAMBDA : 0),
                          parent, atom);
@@ -1279,12 +1279,14 @@ LeaveFunction(ParseNode *fn, Parser *parser, PropertyName *funName = NULL,
 }
 
 bool
-Parser::functionArguments(ParseNode **listp)
+Parser::functionArguments(ParseNode **listp, bool &hasRest)
 {
     if (tokenStream.getToken() != TOK_LP) {
         reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_PAREN_BEFORE_FORMAL);
         return false;
     }
+
+    hasRest = false;
 
     if (!tokenStream.matchToken(TOK_RP)) {
 #if JS_HAS_DESTRUCTURING
@@ -1294,6 +1296,10 @@ Parser::functionArguments(ParseNode **listp)
 #endif
 
         do {
+            if (hasRest) {
+                reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_PARAMETER_AFTER_REST);
+                return false;
+            }
             switch (TokenKind tt = tokenStream.getToken()) {
 #if JS_HAS_DESTRUCTURING
               case TOK_LB:
@@ -1355,9 +1361,21 @@ Parser::functionArguments(ParseNode **listp)
               }
 #endif /* JS_HAS_DESTRUCTURING */
 
+              case TOK_TRIPLEDOT:
+              {
+                hasRest = true;
+                tt = tokenStream.getToken();
+                if (tt != TOK_NAME) {
+                    if (tt != TOK_ERROR)
+                        reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_NO_REST_NAME);
+                    return false;
+                }
+                /* Fall through */
+              }
+
               case TOK_NAME:
               {
-                RootedVar<PropertyName*> name(context, tokenStream.currentToken().name());
+                Rooted<PropertyName*> name(context, tokenStream.currentToken().name());
 
 #ifdef JS_HAS_DESTRUCTURING
                 /*
@@ -1534,7 +1552,7 @@ Parser::functionDef(HandlePropertyName funName, FunctionType type, FunctionSynta
     /* Initialize early for possible flags mutation via destructuringExpr. */
     SharedContext funsc(context, /* inFunction = */ true);
     TreeContext funtc(this, &funsc);
-    if (!funtc.init(context))
+    if (!funtc.init())
         return NULL;
 
     FunctionBox *funbox = EnterFunction(pn, this, funName, kind);
@@ -1544,14 +1562,17 @@ Parser::functionDef(HandlePropertyName funName, FunctionType type, FunctionSynta
     if (outertc->sc->inStrictMode())
         funsc.setInStrictMode();    // inherit strict mode from parent
 
-    RootedVarFunction fun(context, funbox->function());
+    RootedFunction fun(context, funbox->function());
 
     /* Now parse formal argument list and compute fun->nargs. */
     ParseNode *prelude = NULL;
-    if (!functionArguments(&prelude))
+    bool hasRest;
+    if (!functionArguments(&prelude, hasRest))
         return NULL;
 
     fun->setArgCount(funsc.bindings.numArgs());
+    if (hasRest)
+        fun->setHasRest();
 
 #if JS_HAS_DESTRUCTURING
     /*
@@ -1731,7 +1752,7 @@ Parser::functionDef(HandlePropertyName funName, FunctionType type, FunctionSynta
 ParseNode *
 Parser::functionStmt()
 {
-    RootedVarPropertyName name(context);
+    RootedPropertyName name(context);
     if (tokenStream.getToken(TSF_KEYWORD_IS_NAME) == TOK_NAME) {
         name = tokenStream.currentToken().name();
     } else {
@@ -1752,7 +1773,7 @@ Parser::functionStmt()
 ParseNode *
 Parser::functionExpr()
 {
-    RootedVarPropertyName name(context);
+    RootedPropertyName name(context);
     if (tokenStream.getToken(TSF_KEYWORD_IS_NAME) == TOK_NAME)
         name = tokenStream.currentToken().name();
     else
@@ -1976,7 +1997,7 @@ BindLet(JSContext *cx, BindData *data, JSAtom *atom, Parser *parser)
     if (!CheckStrictBinding(cx, parser, atom->asPropertyName(), pn))
         return false;
 
-    RootedVar<StaticBlockObject *> blockObj(cx, data->let.blockObj);
+    Rooted<StaticBlockObject *> blockObj(cx, data->let.blockObj);
     unsigned blockCount = blockObj->slotCount();
     if (blockCount == JS_BIT(16)) {
         ReportCompileErrorNumber(cx, TS(parser), pn,
@@ -2493,7 +2514,7 @@ CheckDestructuring(JSContext *cx, BindData *data, ParseNode *left, Parser *parse
         return false;
     }
 
-    RootedVar<StaticBlockObject *> blockObj(cx);
+    Rooted<StaticBlockObject *> blockObj(cx);
     blockObj = data && data->binder == BindLet ? data->let.blockObj.reference() : NULL;
     uint32_t blockCountBefore = blockObj ? blockObj->slotCount() : 0;
 
@@ -2796,7 +2817,7 @@ Parser::letBlock(LetContext letContext)
     if (!pnlet)
         return NULL;
 
-    RootedVar<StaticBlockObject*> blockObj(context, StaticBlockObject::create(context));
+    Rooted<StaticBlockObject*> blockObj(context, StaticBlockObject::create(context));
     if (!blockObj)
         return NULL;
 
@@ -3088,7 +3109,7 @@ Parser::forStatement()
     bool forDecl = false;
 
     /* Non-null when forDecl is true for a 'for (let ...)' statement. */
-    RootedVar<StaticBlockObject*> blockObj(context);
+    Rooted<StaticBlockObject*> blockObj(context);
 
     /* Set to 'x' in 'for (x ;... ;...)' or 'for (x in ...)'. */
     ParseNode *pn1;
@@ -4124,6 +4145,7 @@ Parser::statement()
         if (!pn)
             return NULL;
         tc->sc->setFunIsHeavyweight();
+        tc->sc->setBindingsAccessedDynamically();
         break;
 
 #if JS_HAS_XML_SUPPORT
@@ -4910,7 +4932,7 @@ class GenexpGuard {
         TreeContext *tc = parser->tc;
         if (tc->parenDepth == 0) {
             tc->yieldCount = 0;
-            tc->yieldNode = tc->argumentsNode = NULL;
+            tc->yieldNode = NULL;
         }
         startYieldCount = tc->yieldCount;
         tc->parenDepth++;
@@ -5269,7 +5291,7 @@ Parser::comprehensionTail(ParseNode *kid, unsigned blockid, bool isGenexp,
 
         GenexpGuard guard(this);
 
-        RootedVarPropertyName name(context);
+        RootedPropertyName name(context);
         tt = tokenStream.getToken();
         switch (tt) {
 #if JS_HAS_DESTRUCTURING
@@ -5456,7 +5478,7 @@ Parser::generatorExpr(ParseNode *kid)
         TreeContext *outertc = tc;
         SharedContext gensc(context, /* inFunction = */ true);
         TreeContext gentc(this, &gensc);
-        if (!gentc.init(context))
+        if (!gentc.init())
             return NULL;
 
         FunctionBox *funbox = EnterFunction(genfn, this);
@@ -6257,7 +6279,7 @@ Parser::xmlElementOrList(JSBool allowList)
 
     ParseNode *pn, *pn2, *list;
     TokenKind tt;
-    RootedVarAtom startAtom(context), endAtom(context);
+    RootedAtom startAtom(context), endAtom(context);
 
     JS_CHECK_RECURSION(context, return NULL);
 
@@ -6415,7 +6437,7 @@ Parser::parseXMLText(JSObject *chain, bool allowList)
      */
     SharedContext xmlsc(context, /* inFunction = */ false);
     TreeContext xmltc(this, &xmlsc);
-    if (!xmltc.init(context))
+    if (!xmltc.init())
         return NULL;
     JS_ASSERT(!xmlsc.inStrictMode());
     xmlsc.setScopeChain(chain);
@@ -6796,7 +6818,7 @@ Parser::primaryExpr(TokenKind tt, bool afterDoubleDot)
                     pn->pn_xflags |= PNX_NONCONST;
 
                     /* NB: Getter function in { get x(){} } is unnamed. */
-                    pn2 = functionDef(RootedVarPropertyName(context, NULL),
+                    pn2 = functionDef(RootedPropertyName(context, NULL),
                                       op == JSOP_GETTER ? Getter : Setter, Expression);
                     if (!pn2)
                         return NULL;
@@ -7013,7 +7035,7 @@ Parser::primaryExpr(TokenKind tt, bool afterDoubleDot)
         RegExpFlag flags = tokenStream.currentToken().regExpFlags();
         RegExpStatics *res = context->regExpStatics();
 
-        RootedVar<RegExpObject*> reobj(context);
+        Rooted<RegExpObject*> reobj(context);
         if (context->hasfp())
             reobj = RegExpObject::create(context, res, chars, length, flags, &tokenStream);
         else

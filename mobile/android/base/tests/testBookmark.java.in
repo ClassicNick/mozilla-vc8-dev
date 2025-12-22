@@ -30,8 +30,12 @@ public class testBookmark extends BaseTest  {
         "https://addons.mozilla.org/en-US/android/"
     };
 
+    @Override
+    protected int getTestType() {
+        return TEST_MOCHITEST;
+    }
+
     public void testBookmark() {
-        setTestType("mochitest");
         BOOKMARK_URL = getAbsoluteUrl(BOOKMARK_URL);
 
         mClassLoader = getActivity().getApplicationContext().getClassLoader();
@@ -154,10 +158,12 @@ public class testBookmark extends BaseTest  {
         mSolo.clickOnText("Bookmarks");
 
         Element bookmarkList = mDriver.findElement(awesomeBarActivity, "bookmarks_list");
-        ArrayList<ListView> lists = mSolo.getCurrentListViews();
-        for (ListView list : lists) {
-            if (list.getId() == bookmarkList.getId())
-                return list;
+        if (bookmarkList != null) {
+            ArrayList<ListView> lists = mSolo.getCurrentListViews();
+            for (ListView list : lists) {
+                if (list.getId() == bookmarkList.getId())
+                    return list;
+            }
         }
 
         // Just return null if we can't find the bookmarks list view

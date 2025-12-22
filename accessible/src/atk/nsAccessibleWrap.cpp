@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Sun Microsystems, Inc.
- * Portions created by the Initial Developer are Copyright (C) 2002
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Bolian Yin (bolian.yin@sun.com)
- *   John Sun (john.sun@sun.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAccessibleWrap.h"
 
@@ -396,73 +362,59 @@ nsAccessibleWrap::GetAtkObject(nsIAccessible * acc)
 PRUint16
 nsAccessibleWrap::CreateMaiInterfaces(void)
 {
-    PRUint16 interfacesBits = 0;
+  PRUint16 interfacesBits = 0;
     
-    // Add Interfaces for each nsIAccessible.ext interfaces
-
-    // the Component interface are supported by all nsIAccessible
-    interfacesBits |= 1 << MAI_INTERFACE_COMPONENT;
+  // The Component interface is supported by all accessibles.
+  interfacesBits |= 1 << MAI_INTERFACE_COMPONENT;
 
   // Add Action interface if the action count is more than zero.
   if (ActionCount() > 0)
     interfacesBits |= 1 << MAI_INTERFACE_ACTION;
 
-    //nsIAccessibleText
-    nsCOMPtr<nsIAccessibleText> accessInterfaceText;
-    QueryInterface(NS_GET_IID(nsIAccessibleText),
-                   getter_AddRefs(accessInterfaceText));
-    if (accessInterfaceText) {
-        interfacesBits |= 1 << MAI_INTERFACE_TEXT;
-    }
+  // Text, Editabletext, and Hypertext interface.
+  nsHyperTextAccessible* hyperText = AsHyperText();
+  if (hyperText && hyperText->IsTextRole()) {
+    interfacesBits |= 1 << MAI_INTERFACE_TEXT;
+    interfacesBits |= 1 << MAI_INTERFACE_EDITABLE_TEXT;
+    if (!nsAccUtils::MustPrune(this))
+      interfacesBits |= 1 << MAI_INTERFACE_HYPERTEXT;
+  }
 
-    //nsIAccessibleEditableText
-    nsCOMPtr<nsIAccessibleEditableText> accessInterfaceEditableText;
-    QueryInterface(NS_GET_IID(nsIAccessibleEditableText),
-                   getter_AddRefs(accessInterfaceEditableText));
-    if (accessInterfaceEditableText) {
-        interfacesBits |= 1 << MAI_INTERFACE_EDITABLE_TEXT;
-    }
+  // Value interface.
+  nsCOMPtr<nsIAccessibleValue> accessInterfaceValue;
+  QueryInterface(NS_GET_IID(nsIAccessibleValue),
+                 getter_AddRefs(accessInterfaceValue));
+  if (accessInterfaceValue) {
+    interfacesBits |= 1 << MAI_INTERFACE_VALUE; 
+  }
 
-    //nsIAccessibleValue
-    nsCOMPtr<nsIAccessibleValue> accessInterfaceValue;
-    QueryInterface(NS_GET_IID(nsIAccessibleValue),
-                   getter_AddRefs(accessInterfaceValue));
-    if (accessInterfaceValue) {
-       interfacesBits |= 1 << MAI_INTERFACE_VALUE; 
-    }
+  // Document interface.
+  if (IsDoc())
+    interfacesBits |= 1 << MAI_INTERFACE_DOCUMENT;
 
-    // document accessible
-    if (IsDoc())
-        interfacesBits |= 1 << MAI_INTERFACE_DOCUMENT;
+  if (IsImage())
+    interfacesBits |= 1 << MAI_INTERFACE_IMAGE;
 
-    if (IsImageAccessible())
-        interfacesBits |= 1 << MAI_INTERFACE_IMAGE;
-
-  // HyperLinkAccessible
+  // HyperLink interface.
   if (IsLink())
     interfacesBits |= 1 << MAI_INTERFACE_HYPERLINK_IMPL;
 
-    if (!nsAccUtils::MustPrune(this)) {  // These interfaces require children
-      //nsIAccessibleHypertext
-      if (IsHyperText()) {
-          interfacesBits |= 1 << MAI_INTERFACE_HYPERTEXT;
-      }
-
-      //nsIAccessibleTable
-      nsCOMPtr<nsIAccessibleTable> accessInterfaceTable;
-      QueryInterface(NS_GET_IID(nsIAccessibleTable),
-                     getter_AddRefs(accessInterfaceTable));
-      if (accessInterfaceTable) {
-          interfacesBits |= 1 << MAI_INTERFACE_TABLE;
-      }
-      
-      //nsIAccessibleSelection
-      if (IsSelect()) {
-          interfacesBits |= 1 << MAI_INTERFACE_SELECTION;
-      }
+  if (!nsAccUtils::MustPrune(this)) {  // These interfaces require children
+    // Table interface.
+    nsCOMPtr<nsIAccessibleTable> accessInterfaceTable;
+    QueryInterface(NS_GET_IID(nsIAccessibleTable),
+                   getter_AddRefs(accessInterfaceTable));
+    if (accessInterfaceTable) {
+      interfacesBits |= 1 << MAI_INTERFACE_TABLE;
     }
+      
+    // Selection interface.
+    if (IsSelect()) {
+      interfacesBits |= 1 << MAI_INTERFACE_SELECTION;
+    }
+  }
 
-    return interfacesBits;
+  return interfacesBits;
 }
 
 static GType
@@ -840,7 +792,7 @@ getChildCountCB(AtkObject *aAtkObj)
         return 0;
     }
 
-    return accWrap->GetEmbeddedChildCount();
+    return static_cast<gint>(accWrap->EmbeddedChildCount());
 }
 
 AtkObject *

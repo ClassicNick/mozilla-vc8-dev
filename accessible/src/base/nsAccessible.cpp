@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Gaunt (jgaunt@netscape.com)
- *   Aaron Leventhal (aaronl@netscape.com)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Accessible-inl.h"
 
@@ -57,6 +23,7 @@
 #include "States.h"
 #include "StyleInfo.h"
 
+#include "nsContentUtils.h"
 #include "nsIDOMCSSValue.h"
 #include "nsIDOMCSSPrimitiveValue.h"
 #include "nsIDOMElement.h"
@@ -519,12 +486,7 @@ nsAccessible::GetFirstChild(nsIAccessible **aFirstChild)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRInt32 childCount = GetChildCount();
-  NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
-
-  if (childCount > 0)
-    NS_ADDREF(*aFirstChild = GetChildAt(0));
-
+  NS_IF_ADDREF(*aFirstChild = FirstChild());
   return NS_OK;
 }
 
@@ -538,10 +500,7 @@ nsAccessible::GetLastChild(nsIAccessible **aLastChild)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRInt32 childCount = GetChildCount();
-  NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
-
-  NS_IF_ADDREF(*aLastChild = GetChildAt(childCount - 1));
+  NS_IF_ADDREF(*aLastChild = LastChild());
   return NS_OK;
 }
 
@@ -554,13 +513,10 @@ nsAccessible::GetChildAt(PRInt32 aChildIndex, nsIAccessible **aChild)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRInt32 childCount = GetChildCount();
-  NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
-
   // If child index is negative, then return last child.
   // XXX: do we really need this?
   if (aChildIndex < 0)
-    aChildIndex = childCount - 1;
+    aChildIndex = ChildCount() - 1;
 
   nsAccessible* child = GetChildAt(aChildIndex);
   if (!child)
@@ -580,15 +536,13 @@ nsAccessible::GetChildren(nsIArray **aOutChildren)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  PRInt32 childCount = GetChildCount();
-  NS_ENSURE_TRUE(childCount != -1, NS_ERROR_FAILURE);
-
   nsresult rv = NS_OK;
   nsCOMPtr<nsIMutableArray> children =
     do_CreateInstance(NS_ARRAY_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  for (PRInt32 childIdx = 0; childIdx < childCount; childIdx++) {
+  PRUint32 childCount = ChildCount();
+  for (PRUint32 childIdx = 0; childIdx < childCount; childIdx++) {
     nsIAccessible* child = GetChildAt(childIdx);
     children->AppendElement(child, false);
   }
@@ -612,8 +566,8 @@ nsAccessible::GetChildCount(PRInt32 *aChildCount)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  *aChildCount = GetChildCount();
-  return *aChildCount != -1 ? NS_OK : NS_ERROR_FAILURE;  
+  *aChildCount = ChildCount();
+  return NS_OK;
 }
 
 /* readonly attribute long indexInParent; */
@@ -746,11 +700,19 @@ nsAccessible::NativeState()
     if (mContent->HasAttr(kNameSpaceID_None, nsGkAtoms::popup))
       state |= states::HASPOPUP;
 
-  // Add 'linked' state for simple xlink.
-  if (nsCoreUtils::IsXLink(mContent))
-    state |= states::LINKED;
+  // Bypass the link states specialization for non links.
+  if (!mRoleMapEntry || mRoleMapEntry->roleRule == kUseNativeRole ||
+      mRoleMapEntry->role == roles::LINK)
+    state |= NativeLinkState();
 
   return state;
+}
+
+PRUint64
+nsAccessible::NativeLinkState() const
+{
+  // Expose linked state for simple xlink.
+  return nsCoreUtils::IsXLink(mContent) ? states::LINKED : 0;
 }
 
   /* readonly attribute boolean focusedChild; */
@@ -813,7 +775,7 @@ nsAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
   nsPoint offset(presContext->DevPixelsToAppUnits(aX) - screenRect.x,
                  presContext->DevPixelsToAppUnits(aY) - screenRect.y);
 
-  nsCOMPtr<nsIPresShell> presShell = presContext->PresShell();
+  nsIPresShell* presShell = presContext->PresShell();
   nsIFrame *foundFrame = presShell->GetFrameForPoint(frame, offset);
 
   nsIContent* content = nsnull;
@@ -840,9 +802,9 @@ nsAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
     // where layout won't walk into things for us, such as image map areas and
     // sub documents (XXX: subdocuments should be handled by methods of
     // OuterDocAccessibles).
-    PRInt32 childCount = GetChildCount();
-    for (PRInt32 childIdx = 0; childIdx < childCount; childIdx++) {
-      nsAccessible *child = GetChildAt(childIdx);
+    PRUint32 childCount = ChildCount();
+    for (PRUint32 childIdx = 0; childIdx < childCount; childIdx++) {
+      nsAccessible* child = GetChildAt(childIdx);
 
       PRInt32 childX, childY, childWidth, childHeight;
       child->GetBounds(&childX, &childY, &childWidth, &childHeight);
@@ -1618,7 +1580,7 @@ nsAccessible::State()
 }
 
 void
-nsAccessible::ApplyARIAState(PRUint64* aState)
+nsAccessible::ApplyARIAState(PRUint64* aState) const
 {
   if (!mContent->IsElement())
     return;
@@ -1705,13 +1667,8 @@ nsAccessible::Value(nsString& aValue)
     return;
 
   // Check if it's a simple xlink.
-  if (nsCoreUtils::IsXLink(mContent)) {
-    nsIPresShell* presShell = mDoc->PresShell();
-    if (presShell) {
-      nsCOMPtr<nsIDOMNode> DOMNode(do_QueryInterface(mContent));
-      presShell->GetLinkLocation(DOMNode, aValue);
-    }
-  }
+  if (nsCoreUtils::IsXLink(mContent))
+    nsContentUtils::GetLinkLocation(mContent->AsElement(), aValue);
 }
 
 // nsIAccessibleValue
@@ -2700,8 +2657,8 @@ nsAccessible::GetChildAt(PRUint32 aIndex)
   return child;
 }
 
-PRInt32
-nsAccessible::GetChildCount()
+PRUint32
+nsAccessible::ChildCount() const
 {
   return mChildren.Length();
 }
@@ -2718,16 +2675,16 @@ nsAccessible::IndexInParent() const
   return mIndexInParent;
 }
 
-PRInt32
-nsAccessible::GetEmbeddedChildCount()
+PRUint32
+nsAccessible::EmbeddedChildCount()
 {
   if (IsChildrenFlag(eMixedChildren)) {
     if (!mEmbeddedObjCollector)
       mEmbeddedObjCollector = new EmbeddedObjCollector(this);
-    return mEmbeddedObjCollector ? mEmbeddedObjCollector->Count() : -1;
+    return mEmbeddedObjCollector->Count();
   }
 
-  return GetChildCount();
+  return ChildCount();
 }
 
 nsAccessible*
@@ -3104,7 +3061,8 @@ nsAccessible::GetSiblingAtOffset(PRInt32 aOffset, nsresult* aError) const
     return nsnull;
   }
 
-  if (aError && mIndexInParent + aOffset >= mParent->GetChildCount()) {
+  if (aError &&
+      mIndexInParent + aOffset >= static_cast<PRInt32>(mParent->ChildCount())) {
     *aError = NS_OK; // fail peacefully
     return nsnull;
   }
@@ -3279,8 +3237,8 @@ nsAccessible::GetLevelInternal()
       // If this listitem is on top of nested lists then expose 'level'
       // attribute.
       parent = Parent();
-      PRInt32 siblingCount = parent->GetChildCount();
-      for (PRInt32 siblingIdx = 0; siblingIdx < siblingCount; siblingIdx++) {
+      PRUint32 siblingCount = parent->ChildCount();
+      for (PRUint32 siblingIdx = 0; siblingIdx < siblingCount; siblingIdx++) {
         nsAccessible* sibling = parent->GetChildAt(siblingIdx);
 
         nsAccessible* siblingChild = sibling->LastChild();

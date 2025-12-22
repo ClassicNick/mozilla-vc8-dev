@@ -39,12 +39,12 @@ var AccessFu = {
     this.presenters = [];
 
     this.prefsBranch = Cc['@mozilla.org/preferences-service;1']
-      .getService(Ci.nsIPrefService).getBranch('accessibility.');
-    this.prefsBranch.addObserver('accessfu', this, false);
+      .getService(Ci.nsIPrefService).getBranch('accessibility.accessfu.');
+    this.prefsBranch.addObserver('activate', this, false);
 
     let accessPref = ACCESSFU_DISABLE;
     try {
-      accessPref = this.prefsBranch.getIntPref('accessfu');
+      accessPref = this.prefsBranch.getIntPref('activate');
     } catch (x) {
     }
 
@@ -74,6 +74,7 @@ var AccessFu = {
     this.chromeWin.addEventListener('resize', this, true);
     this.chromeWin.addEventListener('scroll', this, true);
     this.chromeWin.addEventListener('TabOpen', this, true);
+    this.chromeWin.addEventListener('focus', this, true);
   },
 
   /**
@@ -96,6 +97,7 @@ var AccessFu = {
     this.chromeWin.removeEventListener('resize', this, true);
     this.chromeWin.removeEventListener('scroll', this, true);
     this.chromeWin.removeEventListener('TabOpen', this, true);
+    this.chromeWin.removeEventListener('focus', this, true);
   },
 
   _processPreferences: function _processPreferences(aPref) {
@@ -130,6 +132,19 @@ var AccessFu = {
 
   handleEvent: function handleEvent(aEvent) {
     switch (aEvent.type) {
+      case 'focus':
+      {
+        if (aEvent.target instanceof Ci.nsIDOMWindow) {
+          let docAcc = getAccessible(aEvent.target.document);
+          let docContext = new PresenterContext(docAcc, null);
+          let cursorable = docAcc.QueryInterface(Ci.nsIAccessibleCursorable);
+          let vcContext = new PresenterContext(
+            (cursorable) ? cursorable.virtualCursor.position : null, null);
+          this.presenters.forEach(
+            function(p) { p.tabSelected(docContext, vcContext); });
+        }
+        break;
+      }
       case 'TabOpen':
       {
         let browser = aEvent.target.linkedBrowser || aEvent.target;
@@ -176,8 +191,8 @@ var AccessFu = {
           this._disable();
         break;
       case 'nsPref:changed':
-        if (aData == 'accessfu')
-          this._processPreferences(this.prefsBranch.getIntPref('accessfu'));
+        if (aData == 'activate')
+          this._processPreferences(this.prefsBranch.getIntPref('activate'));
         break;
       case 'accessible-event':
         let event;
@@ -202,7 +217,8 @@ var AccessFu = {
           let position = pivot.position;
           let doc = aEvent.DOMNode;
 
-          if (doc instanceof Ci.nsIDOMDocument && position.DOMNode) {
+          if (position && position.DOMNode &&
+              doc instanceof Ci.nsIDOMDocument) {
             // Set the caret to the start of the pivot position, and move
             // the focus in the same manner as browse with caret mode.
             // This blurs the focus on the previous pivot position (if it
@@ -215,12 +231,10 @@ var AccessFu = {
                 doc.defaultView, null, Ci.nsIFocusManager.MOVEFOCUS_CARET, 0);
           }
 
-          let newContext = this.getNewContext(event.oldAccessible,
-                                              pivot.position);
+          let presenterContext = new PresenterContext(pivot.position,
+                                                      event.oldAccessible);
           this.presenters.forEach(
-            function(p) {
-              p.pivotChanged(pivot.position, newContext);
-            });
+            function(p) { p.pivotChanged(presenterContext); });
           break;
         }
       case Ci.nsIAccessibleEvent.EVENT_STATE_CHANGE:
@@ -309,15 +323,6 @@ var AccessFu = {
           );
           break;
         }
-      case Ci.nsIAccessibleEvent.EVENT_FOCUS:
-        {
-          if (this._isBrowserDoc(aEvent.accessible)) {
-            // The document recieved focus, call tabSelected to present current tab.
-            this.presenters.forEach(
-              function(p) { p.tabSelected(aEvent.accessible); });
-          }
-          break;
-        }
       case Ci.nsIAccessibleEvent.EVENT_TEXT_INSERTED:
       case Ci.nsIAccessibleEvent.EVENT_TEXT_REMOVED:
       {
@@ -381,41 +386,6 @@ var AccessFu = {
       return false;
 
     return location.protocol != "about:";
-  },
-
-  getNewContext: function getNewContext(aOldObject, aNewObject) {
-    let newLineage = [];
-    let oldLineage = [];
-
-    let parent = aNewObject;
-    while ((parent = parent.parent))
-      newLineage.push(parent);
-
-    if (aOldObject) {
-      parent = aOldObject;
-      while ((parent = parent.parent))
-        oldLineage.push(parent);
-    }
-
-//    newLineage.reverse();
-//    oldLineage.reverse();
-
-    let i = 0;
-    let newContext = [];
-
-    while (true) {
-      let newAncestor = newLineage.pop();
-      let oldAncestor = oldLineage.pop();
-
-      if (newAncestor == undefined)
-        break;
-
-      if (newAncestor != oldAncestor)
-        newContext.push(newAncestor);
-      i++;
-    }
-
-    return newContext;
   },
 
   // A hash of documents that don't yet have an accessible tree.

@@ -1,43 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Nick Fitzgerald <nfitzgerald@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS script operations.
@@ -150,7 +116,7 @@ Bindings::add(JSContext *cx, HandleAtom name, BindingKind kind)
         slot += nargs + nvars;
     }
 
-    RootedVarId id(cx);
+    RootedId id(cx);
     if (!name) {
         JS_ASSERT(kind == ARGUMENT); /* destructuring */
         id = INT_TO_JSID(nargs);
@@ -207,7 +173,7 @@ Bindings::callObjectShape(JSContext *cx) const
     /*
      * Now build the Shape without duplicate properties.
      */
-    RootedVarShape shape(cx);
+    RootedShape shape(cx);
     shape = initialShape(cx);
     for (int i = shapes.length() - 1; i >= 0; --i) {
         shape = shape->getChildBinding(cx, shapes[i]);
@@ -436,7 +402,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
     if (mode == XDR_ENCODE) {
         script = *scriptp;
         JS_ASSERT_IF(parentScript, parentScript->compartment() == script->compartment());
-    
+
         nargs = script->bindings.numArgs();
         nvars = script->bindings.numVars();
         argsVars = (nargs << 16) | nvars;
@@ -451,7 +417,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
     JS_ASSERT(nvars != Bindings::BINDING_COUNT_LIMIT);
 
     Bindings bindings(cx);
-    Bindings::StackRoot bindingsRoot(cx, &bindings);
+    Bindings::AutoRooter bindingsRoot(cx, &bindings);
 
     uint32_t nameCount = nargs + nvars;
     if (nameCount > 0) {
@@ -501,7 +467,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
                 continue;
             }
 
-            RootedVarAtom name(cx);
+            RootedAtom name(cx);
             if (mode == XDR_ENCODE)
                 name = names[i].maybeAtom;
             if (!XDRAtom(xdr, name.address()))
@@ -1032,9 +998,9 @@ js::FreeScriptFilenames(JSRuntime *rt)
  * ClosedSlotArray  ClosedArgs      closedArgs()
  * ClosedSlotArray  ClosedVars      closedVars()
  *
- * Then are the elements of several arrays.  
+ * Then are the elements of several arrays.
  * - Most of these arrays have headers listed above (if present).  For each of
- *   these, the array pointer and the array length is stored in the header.  
+ *   these, the array pointer and the array length is stored in the header.
  * - The remaining arrays have pointers and lengths that are stored directly in
  *   JSScript.  This is because, unlike the others, they are nearly always
  *   non-zero length and so the optional-header space optimization isn't
@@ -1050,7 +1016,7 @@ js::FreeScriptFilenames(JSRuntime *rt)
  * Closed args      closedArgs()->vector  closedArgs()->length
  * Closed vars      closedVars()->vector  closedVars()->length
  * Bytecodes        code                  length
- * Source notes     notes()               numNotes() * sizeof(jssrcnote)  
+ * Source notes     notes()               numNotes() * sizeof(jssrcnote)
  *
  * IMPORTANT: This layout has two key properties.
  * - It ensures that everything has sufficient alignment;  in particular, the
@@ -1247,7 +1213,7 @@ JSScript *
 JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
 {
     uint32_t mainLength, prologLength, nfixed;
-    RootedVar<JSScript*> script(cx);
+    Rooted<JSScript*> script(cx);
     const char *filename;
     JSFunction *fun;
 
@@ -1338,6 +1304,10 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     }
     script->bindingsAccessedDynamically = bce->sc->bindingsAccessedDynamically();
     script->hasSingletons = bce->hasSingletons;
+#ifdef JS_METHODJIT
+    if (cx->compartment->debugMode())
+        script->debugMode = true;
+#endif
 
     if (bce->sc->inFunction) {
         if (bce->sc->funArgumentsHasLocalBinding()) {
@@ -1750,7 +1720,7 @@ js::CloneScript(JSContext *cx, JSScript *src)
 
     for (unsigned i = 0; i < names.length(); ++i) {
         if (JSAtom *atom = names[i].maybeAtom) {
-            if (!bindings.add(cx, RootedVarAtom(cx, atom), names[i].kind))
+            if (!bindings.add(cx, RootedAtom(cx, atom), names[i].kind))
                 return NULL;
         } else {
             uint16_t _;
@@ -1972,7 +1942,7 @@ void
 JSScript::recompileForStepMode(FreeOp *fop)
 {
 #ifdef JS_METHODJIT
-    if (hasJITCode()) {
+    if (hasJITInfo()) {
         mjit::Recompiler::clearStackReferences(fop, this);
         mjit::ReleaseScriptCode(fop, this);
     }
@@ -2183,7 +2153,7 @@ JSScript::setNeedsArgsObj(bool needsArgsObj)
 /* static */ bool
 JSScript::applySpeculationFailed(JSContext *cx, JSScript *script_)
 {
-    RootedVar<JSScript*> script(cx, script_);
+    Rooted<JSScript*> script(cx, script_);
 
     JS_ASSERT(script->analyzedArgsUsage());
     JS_ASSERT(script->argumentsHasLocalBinding());
@@ -2236,7 +2206,7 @@ JSScript::applySpeculationFailed(JSContext *cx, JSScript *script_)
     }
 
 #ifdef JS_METHODJIT
-    if (script->hasJITCode()) {
+    if (script->hasJITInfo()) {
         mjit::Recompiler::clearStackReferences(cx->runtime->defaultFreeOp(), script);
         mjit::ReleaseScriptCode(cx->runtime->defaultFreeOp(), script);
     }
@@ -2268,19 +2238,19 @@ JSScript::varIsAliased(unsigned varSlot)
 }
 
 bool
-JSScript::argIsAliased(unsigned argSlot)
+JSScript::formalIsAliased(unsigned argSlot)
 {
-    return argLivesInCallObject(argSlot) || needsArgsObj();
+    return formalLivesInCallObject(argSlot) || argsObjAliasesFormals();
 }
 
 bool
-JSScript::argLivesInArgumentsObject(unsigned argSlot)
+JSScript::formalLivesInArgumentsObject(unsigned argSlot)
 {
-    return needsArgsObj() && !argLivesInCallObject(argSlot);
+    return argsObjAliasesFormals() && !formalLivesInCallObject(argSlot);
 }
 
 bool
-JSScript::argLivesInCallObject(unsigned argSlot)
+JSScript::formalLivesInCallObject(unsigned argSlot)
 {
     if (bindingsAccessedDynamically)
         return true;

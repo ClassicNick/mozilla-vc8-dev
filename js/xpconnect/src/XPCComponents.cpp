@@ -1,50 +1,16 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Bandhauer <jband@netscape.com> (original author)
- *   Pierre Phaneuf <pp@ludusdesign.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* The "Components" xpcom objects for JavaScript. */
 
 #include "mozilla/unused.h"
 
 #include "xpcprivate.h"
+#include "XPCQuickStubs.h"
 #include "nsReadableUtils.h"
 #include "xpcIJSModuleLoader.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -65,6 +31,7 @@
 
 using namespace mozilla;
 using namespace js;
+using namespace xpc;
 
 using mozilla::dom::DestroyProtoOrIfaceCache;
 
@@ -2977,13 +2944,13 @@ SandboxImport(JSContext *cx, unsigned argc, jsval *vp)
 }
 
 static JSBool
-sandbox_enumerate(JSContext *cx, JSObject *obj)
+sandbox_enumerate(JSContext *cx, JSHandleObject obj)
 {
     return JS_EnumerateStandardClasses(cx, obj);
 }
 
 static JSBool
-sandbox_resolve(JSContext *cx, JSObject *obj, jsid id)
+sandbox_resolve(JSContext *cx, JSHandleObject obj, JSHandleId id)
 {
     JSBool resolved;
     return JS_ResolveStandardClass(cx, obj, id, &resolved);
@@ -2999,7 +2966,7 @@ sandbox_finalize(JSFreeOp *fop, JSObject *obj)
 }
 
 static JSBool
-sandbox_convert(JSContext *cx, JSObject *obj, JSType type, jsval *vp)
+sandbox_convert(JSContext *cx, JSHandleObject obj, JSType type, jsval *vp)
 {
     if (type == JSTYPE_OBJECT) {
         *vp = OBJECT_TO_JSVAL(obj);
@@ -3098,16 +3065,18 @@ bool BindPropertyOp(JSContext *cx, JSObject *targetObj, Op& op,
 }
 
 extern JSBool
-XPC_WN_Helper_GetProperty(JSContext *cx, JSObject *obj, jsid id, jsval *vp);
+XPC_WN_Helper_GetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
 extern JSBool
-XPC_WN_Helper_SetProperty(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp);
+XPC_WN_Helper_SetProperty(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
 
 bool
 xpc::SandboxProxyHandler::getPropertyDescriptor(JSContext *cx, JSObject *proxy,
-                                                jsid id, bool set,
+                                                jsid id_, bool set,
                                                 PropertyDescriptor *desc)
 {
-    JSObject *obj = wrappedObject(proxy);
+    JS::RootedObject obj(cx, wrappedObject(proxy));
+    JS::RootedId id(cx, id_);
+
     JS_ASSERT(js::GetObjectCompartment(obj) == js::GetObjectCompartment(proxy));
     // XXXbz Not sure about the JSRESOLVE_QUALIFIED here, but we have
     // no way to tell for sure whether to use it.
@@ -3167,7 +3136,7 @@ xpc::SandboxProxyHandler::getOwnPropertyDescriptor(JSContext *cx,
 
 nsresult
 xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSObject *proto,
-                        bool wantXrays, const nsACString &sandboxName)
+                        bool wantXrays, bool wantComponents, const nsACString &sandboxName)
 {
     // Create the sandbox global object
     nsresult rv;
@@ -3250,12 +3219,28 @@ xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSOb
         // Pass on ownership of sop to |sandbox|.
         JS_SetPrivate(sandbox, sop.forget().get());
 
-        rv = xpc->InitClasses(cx, sandbox);
-        if (NS_SUCCEEDED(rv) &&
-            !JS_DefineFunctions(cx, sandbox, SandboxFunctions)) {
-            rv = NS_ERROR_FAILURE;
+        XPCCallContext ccx(NATIVE_CALLER, cx);
+        if (!ccx.IsValid())
+            return NS_ERROR_XPC_UNEXPECTED;
+        
+        {
+          JSAutoEnterCompartment ac;
+          if (!ac.enter(ccx, sandbox))
+              return NS_ERROR_XPC_UNEXPECTED;
+          XPCWrappedNativeScope* scope =
+              XPCWrappedNativeScope::GetNewOrUsed(ccx, sandbox);
+
+          if (!scope)
+              return NS_ERROR_XPC_UNEXPECTED;
+
+          if (wantComponents && !nsXPCComponents::AttachComponentsObject(ccx, scope, sandbox))
+              return NS_ERROR_XPC_UNEXPECTED;
+
+          if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, sandbox))
+              return NS_ERROR_XPC_UNEXPECTED;
         }
-        if (NS_FAILED(rv))
+
+        if (!JS_DefineFunctions(cx, sandbox, SandboxFunctions))
             return NS_ERROR_XPC_UNEXPECTED;
     }
 
@@ -3266,9 +3251,9 @@ xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSOb
         }
     }
 
-    xpc::CompartmentPrivate *compartmentPrivate =
-        static_cast<xpc::CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
-    compartmentPrivate->location = sandboxName;
+    // Set the location information for the new global, so that tools like
+    // about:memory may use that information
+    xpc::SetLocationForGlobal(sandbox, sandboxName);
 
     return NS_OK;
 }
@@ -3381,6 +3366,7 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
 
     JSObject *proto = nsnull;
     bool wantXrays = true;
+    bool wantComponents = true;
     nsCString sandboxName;
 
     if (argc > 1) {
@@ -3413,6 +3399,18 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
             }
 
             wantXrays = option.toBoolean();
+        }
+
+        if (!JS_HasProperty(cx, optionsObject, "wantComponents", &found))
+            return NS_ERROR_INVALID_ARG;
+
+        if (found) {
+            if (!JS_GetProperty(cx, optionsObject, "wantComponents", &option) ||
+                !option.isBoolean()) {
+                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
+            }
+
+            wantComponents = option.toBoolean();
         }
 
         if (!JS_HasProperty(cx, optionsObject, "sandboxName", &found))
@@ -3456,7 +3454,7 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
             frame->GetFilename(getter_Copies(sandboxName));
     }
 
-    rv = xpc_CreateSandboxObject(cx, vp, prinOrSop, proto, wantXrays, sandboxName);
+    rv = xpc_CreateSandboxObject(cx, vp, prinOrSop, proto, wantXrays, wantComponents, sandboxName);
 
     if (NS_FAILED(rv)) {
         return ThrowAndFail(rv, cx, _retval);
@@ -3737,9 +3735,7 @@ xpc_EvalInSandbox(JSContext *cx, JSObject *sandbox, const nsAString& source,
                 v = STRING_TO_JSVAL(str);
             }
 
-            xpc::CompartmentPrivate *sandboxdata =
-                static_cast<xpc::CompartmentPrivate *>
-                           (JS_GetCompartmentPrivate(js::GetObjectCompartment(sandbox)));
+            CompartmentPrivate *sandboxdata = GetCompartmentPrivate(sandbox);
             if (!ac.enter(cx, callingScope) ||
                 !WrapForSandbox(cx, sandboxdata->wantXrays, &v)) {
                 rv = NS_ERROR_FAILURE;
@@ -3924,7 +3920,7 @@ nsXPCComponents_Utils::GetGlobalForObject(const JS::Value& object,
 
   // Outerize if necessary.
   if (JSObjectOp outerize = js::GetObjectClass(obj)->ext.outerObject)
-      *retval = OBJECT_TO_JSVAL(outerize(cx, obj));
+      *retval = OBJECT_TO_JSVAL(outerize(cx, JS::RootedObject(cx, obj)));
 
   return NS_OK;
 }

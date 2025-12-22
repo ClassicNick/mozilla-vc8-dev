@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RootAccessible.h"
 
@@ -134,17 +102,10 @@ role
 RootAccessible::NativeRole()
 {
   // If it's a <dialog> or <wizard>, use roles::DIALOG instead
-  dom::Element *root = mDocument->GetRootElement();
-  if (root) {
-    nsCOMPtr<nsIDOMElement> rootElement(do_QueryInterface(root));
-    if (rootElement) {
-      nsAutoString name;
-      rootElement->GetLocalName(name);
-      if (name.EqualsLiteral("dialog") || name.EqualsLiteral("wizard")) {
-        return roles::DIALOG; // Always at the root
-      }
-    }
-  }
+  dom::Element* rootElm = mDocument->GetRootElement();
+  if (rootElm && (rootElm->Tag() == nsGkAtoms::dialog ||
+                  rootElm->Tag() == nsGkAtoms::wizard))
+    return roles::DIALOG;
 
   return nsDocAccessibleWrap::NativeRole();
 }
@@ -176,33 +137,28 @@ RootAccessible::GetChromeFlags()
 PRUint64
 RootAccessible::NativeState()
 {
-  PRUint64 states = nsDocAccessibleWrap::NativeState();
+  PRUint64 state = nsDocAccessibleWrap::NativeState();
+  if (state & states::DEFUNCT)
+    return state;
 
 #ifdef MOZ_XUL
   PRUint32 chromeFlags = GetChromeFlags();
   if (chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE)
-    states |= states::SIZEABLE;
+    state |= states::SIZEABLE;
     // If it has a titlebar it's movable
     // XXX unless it's minimized or maximized, but not sure
     //     how to detect that
   if (chromeFlags & nsIWebBrowserChrome::CHROME_TITLEBAR)
-    states |= states::MOVEABLE;
+    state |= states::MOVEABLE;
   if (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL)
-    states |= states::MODAL;
+    state |= states::MODAL;
 #endif
 
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
-  if (fm) {
-    nsCOMPtr<nsIDOMWindow> rootWindow;
-    GetWindow(getter_AddRefs(rootWindow));
+  if (fm && fm->GetActiveWindow() == mDocument->GetWindow())
+    state |= states::ACTIVE;
 
-    nsCOMPtr<nsIDOMWindow> activeWindow;
-    fm->GetActiveWindow(getter_AddRefs(activeWindow));
-    if (activeWindow == rootWindow)
-      states |= states::ACTIVE;
-  }
-
-  return states;
+  return state;
 }
 
 const char* const docEvents[] = {
@@ -633,8 +589,8 @@ RootAccessible::HandlePopupHidingEvent(nsINode* aPopupNode)
     if (!popupContainer)
       return;
 
-    PRInt32 childCount = popupContainer->GetChildCount();
-    for (PRInt32 idx = 0; idx < childCount; idx++) {
+    PRUint32 childCount = popupContainer->ChildCount();
+    for (PRUint32 idx = 0; idx < childCount; idx++) {
       nsAccessible* child = popupContainer->GetChildAt(idx);
       if (child->IsAutoCompletePopup()) {
         popup = child;

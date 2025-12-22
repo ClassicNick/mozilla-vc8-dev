@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=79:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef TreeContext_h__
 #define TreeContext_h__
@@ -61,8 +28,8 @@ struct StmtInfo;
 class ContextFlags {
 
     // This class's data is all private and so only visible to these friends.
-    friend class SharedContext;
-    friend class FunctionBox;
+    friend struct SharedContext;
+    friend struct FunctionBox;
 
     // This function/global/eval code body contained a Use Strict Directive.
     // Treat certain strict warnings as errors, and forbid the use of 'with'.
@@ -99,7 +66,7 @@ class ContextFlags {
     // false.
 
     // The function needs Call object per call.
-    bool            funIsHeavyweight:1; 
+    bool            funIsHeavyweight:1;
 
     // We parsed a yield statement in the function.
     bool            funIsGenerator:1;
@@ -172,15 +139,15 @@ struct SharedContext {
 
     StmtInfo        *topStmt;       /* top of statement info stack */
     StmtInfo        *topScopeStmt;  /* top lexical scope statement */
-    RootedVar<StaticBlockObject *> blockChain;
+    Rooted<StaticBlockObject *> blockChain;
                                     /* compile time block scope chain (NB: one
                                        deeper than the topScopeStmt/downScope
                                        chain when in head of let block/expr) */
 
   private:
-    RootedVarFunction fun_;         /* function to store argument and variable
+    RootedFunction  fun_;           /* function to store argument and variable
                                        names when inFunction is set */
-    RootedVarObject   scopeChain_;  /* scope chain object for the script */
+    RootedObject    scopeChain_;    /* scope chain object for the script */
 
   public:
     unsigned        staticLevel;    /* static compilation unit nesting level */
@@ -192,7 +159,7 @@ struct SharedContext {
 
     Bindings        bindings;       /* bindings in this code, including
                                        arguments if we're compiling a function */
-    Bindings::StackRoot bindingsRoot; /* root for stack allocated bindings. */
+    Bindings::AutoRooter bindingsRoot; /* root for stack allocated bindings. */
 
     const bool      inFunction:1;   /* parsing/emitting inside function body */
 
@@ -258,10 +225,10 @@ struct SharedContext {
 
 typedef HashSet<JSAtom *> FuncStmtSet;
 struct Parser;
- 
+
 struct TreeContext {                /* tree context for semantic checks */
     SharedContext   *sc;            /* context shared between parsing and bytecode generation */
- 
+
     uint32_t        parenDepth;     /* nesting depth of parens that might turn out
                                        to be generator expressions */
     uint32_t        yieldCount;     /* number of |yield| tokens encountered at
@@ -272,9 +239,6 @@ struct TreeContext {                /* tree context for semantic checks */
     ParseNode       *yieldNode;     /* parse node for a yield expression that might
                                        be an error if we turn out to be inside a
                                        generator expression */
-    ParseNode       *argumentsNode; /* parse node for an arguments variable that
-                                       might be an error if we turn out to be
-                                       inside a generator expression */
 
   private:
     TreeContext     **parserTC;     /* this points to the Parser's active tc
@@ -315,7 +279,7 @@ struct TreeContext {                /* tree context for semantic checks */
     inline TreeContext(Parser *prs, SharedContext *sc);
     inline ~TreeContext();
 
-    inline bool init(JSContext *cx);
+    inline bool init();
 };
 
 /*
@@ -396,8 +360,8 @@ struct StmtInfo {
     ptrdiff_t       update;         /* loop update offset (top if none) */
     ptrdiff_t       breaks;         /* offset of last break in loop */
     ptrdiff_t       continues;      /* offset of last continue in loop */
-    RootedVarAtom   label;          /* name of LABEL */
-    RootedVar<StaticBlockObject *> blockObj; /* block scope object */
+    RootedAtom      label;          /* name of LABEL */
+    Rooted<StaticBlockObject *> blockObj; /* block scope object */
     StmtInfo        *down;          /* info for enclosing statement */
     StmtInfo        *downScope;     /* next enclosing lexical scope */
 

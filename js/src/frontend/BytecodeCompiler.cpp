@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "frontend/BytecodeCompiler.h"
 
@@ -55,12 +22,12 @@ using namespace js;
 using namespace js::frontend;
 
 bool
-MarkInnerAndOuterFunctions(JSContext *cx, JSScript* script)
+MarkInnerAndOuterFunctions(JSContext *cx, JSScript* script_)
 {
-    Root<JSScript*> root(cx, &script);
+    Rooted<JSScript*> script(cx, script_);
 
     Vector<JSScript *, 16> worklist(cx);
-    if (!worklist.append(script))
+    if (!worklist.append(script.reference()))
         return false;
 
     while (worklist.length()) {
@@ -107,9 +74,18 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
                         JSString *source /* = NULL */,
                         unsigned staticLevel /* = 0 */)
 {
-    TokenKind tt;
-    ParseNode *pn;
-    bool inDirectivePrologue;
+    class ProbesManager
+    {
+        const char* filename;
+        unsigned lineno;
+
+      public:
+        ProbesManager(const char *f, unsigned l) : filename(f), lineno(l) {
+			js::Probes::compileScriptBegin(filename, lineno);
+        }
+		~ProbesManager() { js::Probes::compileScriptEnd(filename, lineno); }
+    };
+    ProbesManager probesManager(filename, lineno);
 
     /*
      * The scripted callerFrame can only be given for compile-and-go scripts
@@ -118,25 +94,20 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     JS_ASSERT_IF(callerFrame, compileAndGo);
     JS_ASSERT_IF(staticLevel != 0, callerFrame);
 
-    bool foldConstants = true;
-    Parser parser(cx, principals, originPrincipals, callerFrame, foldConstants, compileAndGo);
-    if (!parser.init(chars, length, filename, lineno, version))
+    Parser parser(cx, principals, originPrincipals, chars, length, filename, lineno, version,
+                  callerFrame, /* foldConstants = */ true, compileAndGo);
+    if (!parser.init())
         return NULL;
-
-    TokenStream &tokenStream = parser.tokenStream;
 
     SharedContext sc(cx, /* inFunction = */ false);
 
     TreeContext tc(&parser, &sc);
-    if (!tc.init(cx))
+    if (!tc.init())
         return NULL;
 
-    BytecodeEmitter bce(&parser, &sc, tokenStream.getLineno(), noScriptRval, needScriptGlobal);
+    BytecodeEmitter bce(&parser, &sc, lineno, noScriptRval, needScriptGlobal);
     if (!bce.init())
         return NULL;
-
-    Probes::compileScriptBegin(cx, filename, lineno);
-    MUST_FLOW_THROUGH("out");
 
     // We can specialize a bit for the given scope chain if that scope chain is the global object.
     JSObject *globalObj = scopeChain && scopeChain == &scopeChain->global()
@@ -146,13 +117,11 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     JS_ASSERT_IF(globalObj, globalObj->isNative());
     JS_ASSERT_IF(globalObj, JSCLASS_HAS_GLOBAL_FLAG_AND_SLOTS(globalObj->getClass()));
 
-    RootedVar<JSScript*> script(cx);
-
     GlobalScope globalScope(cx, globalObj);
     bce.sc->setScopeChain(scopeChain);
     bce.globalScope = &globalScope;
     if (!SetStaticLevel(bce.sc, staticLevel))
-        goto out;
+        return NULL;
 
     /* If this is a direct call to eval, inherit the caller's strictness.  */
     if (callerFrame &&
@@ -160,7 +129,7 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
         callerFrame->script()->strictModeCode)
     {
         bce.sc->setInStrictMode();
-        tokenStream.setStrictMode();
+        parser.tokenStream.setStrictMode();
     }
 
 #ifdef DEBUG
@@ -176,7 +145,7 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
             JSAtom *atom = js_AtomizeString(cx, source);
             jsatomid _;
             if (!atom || !bce.makeAtomIndex(atom, &_))
-                goto out;
+                return NULL;
         }
 
         if (callerFrame && callerFrame->isFunctionFrame()) {
@@ -187,7 +156,7 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
              */
             ObjectBox *funbox = parser.newObjectBox(callerFrame->fun());
             if (!funbox)
-                goto out;
+                return NULL;
             funbox->emitLink = bce.objectList.lastbox;
             bce.objectList.lastbox = funbox;
             bce.objectList.length++;
@@ -203,42 +172,44 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
      */
     uint32_t bodyid;
     if (!GenerateBlockId(bce.sc, bodyid))
-        goto out;
+        return NULL;
     bce.sc->bodyid = bodyid;
 
+    ParseNode *pn;
 #if JS_HAS_XML_SUPPORT
     pn = NULL;
     bool onlyXML;
     onlyXML = true;
 #endif
 
-    inDirectivePrologue = true;
+    bool inDirectivePrologue = true;
+    TokenStream &tokenStream = parser.tokenStream;
     tokenStream.setOctalCharacterEscape(false);
     for (;;) {
-        tt = tokenStream.peekToken(TSF_OPERAND);
+        TokenKind tt = tokenStream.peekToken(TSF_OPERAND);
         if (tt <= TOK_EOF) {
             if (tt == TOK_EOF)
                 break;
             JS_ASSERT(tt == TOK_ERROR);
-            goto out;
+            return NULL;
         }
 
         pn = parser.statement();
         if (!pn)
-            goto out;
+            return NULL;
 
         if (inDirectivePrologue && !parser.recognizeDirectivePrologue(pn, &inDirectivePrologue))
-            goto out;
+            return NULL;
 
         if (!FoldConstants(cx, pn, bce.parser))
-            goto out;
+            return NULL;
 
         if (!AnalyzeFunctions(bce.parser))
-            goto out;
+            return NULL;
         bce.sc->functionList = NULL;
 
         if (!EmitTree(cx, &bce, pn))
-            goto out;
+            return NULL;
 
 #if JS_HAS_XML_SUPPORT
         if (!pn->isKind(PNK_SEMI) || !pn->pn_kid || !pn->pn_kid->isXMLItem())
@@ -256,30 +227,32 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
      */
     if (pn && onlyXML && !callerFrame) {
         parser.reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_XML_WHOLE_PROGRAM);
-        goto out;
+        return NULL;
     }
 #endif
+
+    if (!parser.checkForArgumentsAndRest())
+        return NULL;
 
     /*
      * Nowadays the threaded interpreter needs a stop instruction, so we
      * do have to emit that here.
      */
     if (Emit1(cx, &bce, JSOP_STOP) < 0)
-        goto out;
+        return NULL;
 
     JS_ASSERT(bce.version() == version);
 
+    Rooted<JSScript*> script(cx);
     script = JSScript::NewScriptFromEmitter(cx, &bce);
     if (!script)
-        goto out;
+        return NULL;
 
     JS_ASSERT(script->savedCallerFun == savedCallerFun);
 
     if (!MarkInnerAndOuterFunctions(cx, script))
-        script = NULL;
+        return NULL;
 
-  out:
-    Probes::compileScriptEnd(cx, script, filename, lineno);
     return script;
 }
 
@@ -293,8 +266,9 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
                               Bindings *bindings, const jschar *chars, size_t length,
                               const char *filename, unsigned lineno, JSVersion version)
 {
-    Parser parser(cx, principals, originPrincipals);
-    if (!parser.init(chars, length, filename, lineno, version))
+    Parser parser(cx, principals, originPrincipals, chars, length, filename, lineno, version,
+                  /* cfp = */ NULL, /* foldConstants = */ true, /* compileAndGo = */ false);
+    if (!parser.init())
         return false;
 
     TokenStream &tokenStream = parser.tokenStream;
@@ -302,10 +276,10 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
     SharedContext funsc(cx, /* inFunction = */ true);
 
     TreeContext funtc(&parser, &funsc);
-    if (!funtc.init(cx))
+    if (!funtc.init())
         return NULL;
 
-    BytecodeEmitter funbce(&parser, &funsc, tokenStream.getLineno(),
+    BytecodeEmitter funbce(&parser, &funsc, lineno,
                            /* noScriptRval = */ false, /* needsScriptGlobal = */ false);
     if (!funbce.init())
         return false;

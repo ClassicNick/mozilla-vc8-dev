@@ -1,41 +1,8 @@
 /* -*- Mode: c++; c-basic-offset: 4; tab-width: 40; indent-tabs-mode: nil -*- */
 /* vim: set ts=40 sw=4 et tw=99: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla WebGL impl
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Foundation
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vladimir Vukicevic <vladimir@pobox.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <string.h>
 
@@ -149,7 +116,7 @@ getArrayBuffer(JSObject *obj)
 }
 
 JSBool
-ArrayBufferObject::prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+ArrayBufferObject::prop_getByteLength(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
     ArrayBufferObject *buffer = getArrayBuffer(obj);
     if (!buffer) {
@@ -283,7 +250,7 @@ ArrayBufferObject::create(JSContext *cx, uint32_t nbytes, uint8_t *contents)
 {
     SkipRoot skip(cx, &contents);
 
-    RootedVarObject obj(cx, NewBuiltinClassInstance(cx, &ArrayBufferObject::protoClass));
+    RootedObject obj(cx, NewBuiltinClassInstance(cx, &ArrayBufferObject::protoClass));
     if (!obj)
         return NULL;
 #ifdef JS_THREADSAFE
@@ -343,19 +310,16 @@ ArrayBufferObject::obj_trace(JSTracer *trc, JSObject *obj)
 static JSProperty * const PROPERTY_FOUND = reinterpret_cast<JSProperty *>(1);
 
 JSBool
-ArrayBufferObject::obj_lookupGeneric(JSContext *cx, JSObject *obj_, jsid id_,
+ArrayBufferObject::obj_lookupGeneric(JSContext *cx, HandleObject obj, HandleId id,
                                      JSObject **objp, JSProperty **propp)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVarId id(cx, id_);
-
     if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom)) {
         *propp = PROPERTY_FOUND;
         *objp = getArrayBuffer(obj);
         return true;
     }
 
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
 
@@ -386,19 +350,17 @@ ArrayBufferObject::obj_lookupGeneric(JSContext *cx, JSObject *obj_, jsid id_,
 }
 
 JSBool
-ArrayBufferObject::obj_lookupProperty(JSContext *cx, JSObject *obj, PropertyName *name,
+ArrayBufferObject::obj_lookupProperty(JSContext *cx, HandleObject obj, HandlePropertyName name,
                                       JSObject **objp, JSProperty **propp)
 {
-    return obj_lookupGeneric(cx, obj, NameToId(name), objp, propp);
+    return obj_lookupGeneric(cx, obj, RootedId(cx, NameToId(name)), objp, propp);
 }
 
 JSBool
-ArrayBufferObject::obj_lookupElement(JSContext *cx, JSObject *obj_, uint32_t index,
+ArrayBufferObject::obj_lookupElement(JSContext *cx, HandleObject obj, uint32_t index,
                                      JSObject **objp, JSProperty **propp)
 {
-    RootedVarObject obj(cx, obj_);
-
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
 
@@ -426,84 +388,80 @@ ArrayBufferObject::obj_lookupElement(JSContext *cx, JSObject *obj_, uint32_t ind
 }
 
 JSBool
-ArrayBufferObject::obj_lookupSpecial(JSContext *cx, JSObject *obj, SpecialId sid,
+ArrayBufferObject::obj_lookupSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid,
                                      JSObject **objp, JSProperty **propp)
 {
-    return obj_lookupGeneric(cx, obj, SPECIALID_TO_JSID(sid), objp, propp);
+    return obj_lookupGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), objp, propp);
 }
 
 JSBool
-ArrayBufferObject::obj_defineGeneric(JSContext *cx, JSObject *obj_, jsid id_, const Value *v,
+ArrayBufferObject::obj_defineGeneric(JSContext *cx, HandleObject obj, HandleId id, const Value *v,
                                      PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    if (JSID_IS_ATOM(id_, cx->runtime->atomState.byteLengthAtom))
+    if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom))
         return true;
 
-    RootedVarObject obj(cx, obj_);
-    RootedVarId id(cx, id_);
-    RootGetterSetter gsRoot(cx, attrs, &getter, &setter);
+    AutoRooterGetterSetter gsRoot(cx, attrs, &getter, &setter);
 
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_DefineProperty(cx, delegate, id, v, getter, setter, attrs);
+    return baseops::DefineProperty(cx, delegate, id, v, getter, setter, attrs);
 }
 
 JSBool
-ArrayBufferObject::obj_defineProperty(JSContext *cx, JSObject *obj,
-                                      PropertyName *name, const Value *v,
+ArrayBufferObject::obj_defineProperty(JSContext *cx, HandleObject obj,
+                                      HandlePropertyName name, const Value *v,
                                       PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    return obj_defineGeneric(cx, obj, NameToId(name), v, getter, setter, attrs);
+    return obj_defineGeneric(cx, obj, RootedId(cx, NameToId(name)), v, getter, setter, attrs);
 }
 
 JSBool
-ArrayBufferObject::obj_defineElement(JSContext *cx, JSObject *obj_, uint32_t index, const Value *v,
+ArrayBufferObject::obj_defineElement(JSContext *cx, HandleObject obj, uint32_t index, const Value *v,
                                      PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    RootedVarObject obj(cx, obj_);
-    RootGetterSetter gsRoot(cx, attrs, &getter, &setter);
+    AutoRooterGetterSetter gsRoot(cx, attrs, &getter, &setter);
 
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_DefineElement(cx, delegate, index, v, getter, setter, attrs);
+    return baseops::DefineElement(cx, delegate, index, v, getter, setter, attrs);
 }
 
 JSBool
-ArrayBufferObject::obj_defineSpecial(JSContext *cx, JSObject *obj, SpecialId sid, const Value *v,
+ArrayBufferObject::obj_defineSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid, const Value *v,
                                      PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    return obj_defineGeneric(cx, obj, SPECIALID_TO_JSID(sid), v, getter, setter, attrs);
+    return obj_defineGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)),
+                             v, getter, setter, attrs);
 }
 
 JSBool
-ArrayBufferObject::obj_getGeneric(JSContext *cx, JSObject *obj_, JSObject *receiver_, jsid id_, Value *vp)
+ArrayBufferObject::obj_getGeneric(JSContext *cx, HandleObject obj, HandleObject receiver,
+                                  HandleId id, Value *vp)
 {
-    RootedVarObject obj(cx, obj_), receiver(cx, receiver_);
-    RootedVarId id(cx, id_);
+    RootedObject nobj(cx, getArrayBuffer(obj));
+    JS_ASSERT(nobj);
 
-    obj = getArrayBuffer(obj);
-    JS_ASSERT(obj);
     if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom)) {
-        vp->setInt32(obj->asArrayBuffer().byteLength());
+        vp->setInt32(nobj->asArrayBuffer().byteLength());
         return true;
     }
 
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
-    if (!delegate)
+    nobj = DelegateObject(cx, nobj);
+    if (!nobj)
         return false;
-    return js_GetProperty(cx, delegate, receiver, id, vp);
+    return baseops::GetProperty(cx, nobj, receiver, id, vp);
 }
 
 JSBool
-ArrayBufferObject::obj_getProperty(JSContext *cx, JSObject *obj_,
-                                   JSObject *receiver_, PropertyName *name_, Value *vp)
+ArrayBufferObject::obj_getProperty(JSContext *cx, HandleObject obj,
+                                   HandleObject receiver, HandlePropertyName name, Value *vp)
 {
-    RootedVarObject obj(cx, obj_), receiver(cx, receiver_);
-    RootedVarPropertyName name(cx, name_);
+    RootedObject nobj(cx, getArrayBuffer(obj));
 
-    if (!(obj = getArrayBuffer(obj))) {
+    if (!nobj) {
         JSAutoByteString bs(cx, name);
         if (!bs)
             return false;
@@ -513,57 +471,50 @@ ArrayBufferObject::obj_getProperty(JSContext *cx, JSObject *obj_,
     }
 
     if (name == cx->runtime->atomState.byteLengthAtom) {
-        vp->setInt32(obj->asArrayBuffer().byteLength());
+        vp->setInt32(nobj->asArrayBuffer().byteLength());
         return true;
     }
 
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
-    if (!delegate)
+    nobj = DelegateObject(cx, nobj);
+    if (!nobj)
         return false;
-    return js_GetProperty(cx, delegate, receiver, NameToId(name), vp);
+    return baseops::GetProperty(cx, nobj, receiver, RootedId(cx, NameToId(name)), vp);
 }
 
 JSBool
-ArrayBufferObject::obj_getElement(JSContext *cx, JSObject *obj,
-                                  JSObject *receiver_, uint32_t index, Value *vp)
+ArrayBufferObject::obj_getElement(JSContext *cx, HandleObject obj,
+                                  HandleObject receiver, uint32_t index, Value *vp)
 {
-    RootedVarObject receiver(cx, receiver_);
-
-    RootedVarObject delegate(cx, DelegateObject(cx, RootedVarObject(cx, getArrayBuffer(obj))));
+    RootedObject delegate(cx, DelegateObject(cx, RootedObject(cx, getArrayBuffer(obj))));
     if (!delegate)
         return false;
-    return js_GetElement(cx, delegate, receiver, index, vp);
+    return baseops::GetElement(cx, delegate, receiver, index, vp);
 }
 
 JSBool
-ArrayBufferObject::obj_getElementIfPresent(JSContext *cx, JSObject *obj, JSObject *receiver_,
+ArrayBufferObject::obj_getElementIfPresent(JSContext *cx, HandleObject obj, HandleObject receiver,
                                            uint32_t index, Value *vp, bool *present)
 {
-    RootedVarObject receiver(cx, receiver_);
-
-    JSObject *delegate = DelegateObject(cx, RootedVarObject(cx, getArrayBuffer(obj)));
+    JSObject *delegate = DelegateObject(cx, RootedObject(cx, getArrayBuffer(obj)));
     if (!delegate)
         return false;
     return delegate->getElementIfPresent(cx, receiver, index, vp, present);
 }
 
 JSBool
-ArrayBufferObject::obj_getSpecial(JSContext *cx, JSObject *obj,
-                                  JSObject *receiver, SpecialId sid, Value *vp)
+ArrayBufferObject::obj_getSpecial(JSContext *cx, HandleObject obj,
+                                  HandleObject receiver, HandleSpecialId sid, Value *vp)
 {
-    return obj_getGeneric(cx, obj, receiver, SPECIALID_TO_JSID(sid), vp);
+    return obj_getGeneric(cx, obj, receiver, RootedId(cx, SPECIALID_TO_JSID(sid)), vp);
 }
 
 JSBool
-ArrayBufferObject::obj_setGeneric(JSContext *cx, JSObject *obj_, jsid id_, Value *vp, JSBool strict)
+ArrayBufferObject::obj_setGeneric(JSContext *cx, HandleObject obj, HandleId id, Value *vp, JSBool strict)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVarId id(cx, id_);
-
     if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom))
         return true;
 
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
 
@@ -587,9 +538,9 @@ ArrayBufferObject::obj_setGeneric(JSContext *cx, JSObject *obj_, jsid id_, Value
         // since obj_getProperty will fetch it as a plain
         // property from the delegate.
 
-        RootedVarObject oldDelegateProto(cx, delegate->getProto());
+        RootedObject oldDelegateProto(cx, delegate->getProto());
 
-        if (!js_SetPropertyHelper(cx, delegate, id, 0, vp, strict))
+        if (!baseops::SetPropertyHelper(cx, delegate, id, 0, vp, strict))
             return false;
 
         if (delegate->getProto() != oldDelegateProto) {
@@ -599,7 +550,7 @@ ArrayBufferObject::obj_setGeneric(JSContext *cx, JSObject *obj_, jsid id_, Value
                 obj->reportNotExtensible(cx);
                 return false;
             }
-            if (!SetProto(cx, obj, RootedVarObject(cx, vp->toObjectOrNull()), true)) {
+            if (!SetProto(cx, obj, RootedObject(cx, vp->toObjectOrNull()), true)) {
                 // this can be caused for example by setting x.__proto__ = x
                 // restore delegate prototype chain
                 SetProto(cx, delegate, oldDelegateProto, true);
@@ -609,170 +560,150 @@ ArrayBufferObject::obj_setGeneric(JSContext *cx, JSObject *obj_, jsid id_, Value
         return true;
     }
 
-    return js_SetPropertyHelper(cx, delegate, id, 0, vp, strict);
+    return baseops::SetPropertyHelper(cx, delegate, id, 0, vp, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_setProperty(JSContext *cx, JSObject *obj,
-                                   PropertyName *name, Value *vp, JSBool strict)
+ArrayBufferObject::obj_setProperty(JSContext *cx, HandleObject obj,
+                                   HandlePropertyName name, Value *vp, JSBool strict)
 {
-    return obj_setGeneric(cx, obj, NameToId(name), vp, strict);
+    return obj_setGeneric(cx, obj, RootedId(cx, NameToId(name)), vp, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_setElement(JSContext *cx, JSObject *obj_,
+ArrayBufferObject::obj_setElement(JSContext *cx, HandleObject obj,
                                   uint32_t index, Value *vp, JSBool strict)
 {
-    RootedVarObject obj(cx, obj_);
-
-    RootedVarObject delegate(cx, DelegateObject(cx, obj));
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
 
-    return js_SetElementHelper(cx, delegate, index, 0, vp, strict);
+    return baseops::SetElementHelper(cx, delegate, index, 0, vp, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_setSpecial(JSContext *cx, JSObject *obj,
-                                  SpecialId sid, Value *vp, JSBool strict)
+ArrayBufferObject::obj_setSpecial(JSContext *cx, HandleObject obj,
+                                  HandleSpecialId sid, Value *vp, JSBool strict)
 {
-    return obj_setGeneric(cx, obj, SPECIALID_TO_JSID(sid), vp, strict);
+    return obj_setGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), vp, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_getGenericAttributes(JSContext *cx, JSObject *obj_,
-                                            jsid id_, unsigned *attrsp)
+ArrayBufferObject::obj_getGenericAttributes(JSContext *cx, HandleObject obj,
+                                            HandleId id, unsigned *attrsp)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVarId id(cx, id_);
-
     if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom)) {
         *attrsp = JSPROP_PERMANENT | JSPROP_READONLY;
         return true;
     }
 
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_GetAttributes(cx, delegate, id, attrsp);
+    return baseops::GetAttributes(cx, delegate, id, attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_getPropertyAttributes(JSContext *cx, JSObject *obj,
-                                             PropertyName *name, unsigned *attrsp)
+ArrayBufferObject::obj_getPropertyAttributes(JSContext *cx, HandleObject obj,
+                                             HandlePropertyName name, unsigned *attrsp)
 {
-    return obj_getGenericAttributes(cx, obj, NameToId(name), attrsp);
+    return obj_getGenericAttributes(cx, obj, RootedId(cx, NameToId(name)), attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_getElementAttributes(JSContext *cx, JSObject *obj_,
+ArrayBufferObject::obj_getElementAttributes(JSContext *cx, HandleObject obj,
                                             uint32_t index, unsigned *attrsp)
 {
-    RootedVarObject obj(cx, obj_);
-
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_GetElementAttributes(cx, delegate, index, attrsp);
+    return baseops::GetElementAttributes(cx, delegate, index, attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_getSpecialAttributes(JSContext *cx, JSObject *obj,
-                                            SpecialId sid, unsigned *attrsp)
+ArrayBufferObject::obj_getSpecialAttributes(JSContext *cx, HandleObject obj,
+                                            HandleSpecialId sid, unsigned *attrsp)
 {
-    return obj_getGenericAttributes(cx, obj, SPECIALID_TO_JSID(sid), attrsp);
+    return obj_getGenericAttributes(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_setGenericAttributes(JSContext *cx, JSObject *obj_,
-                                            jsid id_, unsigned *attrsp)
+ArrayBufferObject::obj_setGenericAttributes(JSContext *cx, HandleObject obj,
+                                            HandleId id, unsigned *attrsp)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVarId id(cx, id_);
-
     if (JSID_IS_ATOM(id, cx->runtime->atomState.byteLengthAtom)) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_CANT_SET_ARRAY_ATTRS);
         return false;
     }
 
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_SetAttributes(cx, delegate, id, attrsp);
+    return baseops::SetAttributes(cx, delegate, id, attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_setPropertyAttributes(JSContext *cx, JSObject *obj,
-                                             PropertyName *name, unsigned *attrsp)
+ArrayBufferObject::obj_setPropertyAttributes(JSContext *cx, HandleObject obj,
+                                             HandlePropertyName name, unsigned *attrsp)
 {
-    return obj_setGenericAttributes(cx, obj, NameToId(name), attrsp);
+    return obj_setGenericAttributes(cx, obj, RootedId(cx, NameToId(name)), attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_setElementAttributes(JSContext *cx, JSObject *obj_,
+ArrayBufferObject::obj_setElementAttributes(JSContext *cx, HandleObject obj,
                                             uint32_t index, unsigned *attrsp)
 {
-    RootedVarObject obj(cx, obj_);
-
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_SetElementAttributes(cx, delegate, index, attrsp);
+    return baseops::SetElementAttributes(cx, delegate, index, attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_setSpecialAttributes(JSContext *cx, JSObject *obj,
-                                            SpecialId sid, unsigned *attrsp)
+ArrayBufferObject::obj_setSpecialAttributes(JSContext *cx, HandleObject obj,
+                                            HandleSpecialId sid, unsigned *attrsp)
 {
-    return obj_setGenericAttributes(cx, obj, SPECIALID_TO_JSID(sid), attrsp);
+    return obj_setGenericAttributes(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), attrsp);
 }
 
 JSBool
-ArrayBufferObject::obj_deleteProperty(JSContext *cx, JSObject *obj_,
-                                      PropertyName *name_, Value *rval, JSBool strict)
+ArrayBufferObject::obj_deleteProperty(JSContext *cx, HandleObject obj,
+                                      HandlePropertyName name, Value *rval, JSBool strict)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVarPropertyName name(cx, name_);
-
     if (name == cx->runtime->atomState.byteLengthAtom) {
         rval->setBoolean(false);
         return true;
     }
 
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_DeleteProperty(cx, delegate, name, rval, strict);
+    return baseops::DeleteProperty(cx, delegate, name, rval, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_deleteElement(JSContext *cx, JSObject *obj_,
+ArrayBufferObject::obj_deleteElement(JSContext *cx, HandleObject obj,
                                      uint32_t index, Value *rval, JSBool strict)
 {
-    RootedVarObject obj(cx, obj_);
-
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_DeleteElement(cx, delegate, index, rval, strict);
+    return baseops::DeleteElement(cx, delegate, index, rval, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_deleteSpecial(JSContext *cx, JSObject *obj_,
-                                     SpecialId sid_, Value *rval, JSBool strict)
+ArrayBufferObject::obj_deleteSpecial(JSContext *cx, HandleObject obj,
+                                     HandleSpecialId sid, Value *rval, JSBool strict)
 {
-    RootedVarObject obj(cx, obj_);
-    RootedVar<SpecialId> sid(cx, sid_);
-
-    JSObject *delegate = DelegateObject(cx, obj);
+    RootedObject delegate(cx, DelegateObject(cx, obj));
     if (!delegate)
         return false;
-    return js_DeleteSpecial(cx, delegate, sid, rval, strict);
+    return baseops::DeleteSpecial(cx, delegate, sid, rval, strict);
 }
 
 JSBool
-ArrayBufferObject::obj_enumerate(JSContext *cx, JSObject *obj,
+ArrayBufferObject::obj_enumerate(JSContext *cx, HandleObject obj,
                                  JSIterateOp enum_op, Value *statep, jsid *idp)
 {
     statep->setNull();
@@ -780,7 +711,7 @@ ArrayBufferObject::obj_enumerate(JSContext *cx, JSObject *obj,
 }
 
 JSType
-ArrayBufferObject::obj_typeOf(JSContext *cx, JSObject *obj)
+ArrayBufferObject::obj_typeOf(JSContext *cx, HandleObject obj)
 {
     return JSTYPE_OBJECT;
 }
@@ -793,10 +724,9 @@ static JSObject *
 GetProtoForClass(JSContext *cx, Class *clasp)
 {
     // Pass in the proto from this compartment
-    GlobalObject *parent = GetCurrentGlobal(cx);
-    Root<GlobalObject*> parentRoot(cx, &parent);
+    Rooted<GlobalObject*> parent(cx, GetCurrentGlobal(cx));
     JSObject *proto;
-    if (!FindProto(cx, clasp, parentRoot, &proto))
+    if (!FindProto(cx, clasp, parent, &proto))
         return NULL;
     return proto;
 }
@@ -845,59 +775,67 @@ js::IsDataView(JSObject* obj)
  * slots data element points to the JSObject representing the ArrayBuffer.
  */
 JSBool
-TypedArray::prop_getBuffer(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+TypedArray::prop_getBuffer(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
-    if (!(obj = getTypedArray(obj))) {
+    JSObject *tarray = getTypedArray(obj);
+
+    if (!tarray) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_INCOMPATIBLE_PROTO, "TypedArray", "buffer", "object");
         return false;
     }
 
-    JS_SET_RVAL(cx, vp, ObjectValue(*TypedArray::getBuffer(obj)));
+    JS_SET_RVAL(cx, vp, ObjectValue(*TypedArray::getBuffer(tarray)));
     return true;
 }
 
 JSBool
-TypedArray::prop_getByteOffset(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+TypedArray::prop_getByteOffset(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
-    if (!(obj = getTypedArray(obj))) {
+    JSObject *tarray = getTypedArray(obj);
+
+    if (!tarray) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_INCOMPATIBLE_PROTO, "TypedArray", "byteOffset", "object");
         return false;
     }
 
-    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getByteOffset(obj)));
+    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getByteOffset(tarray)));
     return true;
 }
 
 JSBool
-TypedArray::prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+TypedArray::prop_getByteLength(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
-    if (!(obj = getTypedArray(obj))) {
+    JSObject *tarray = getTypedArray(obj);
+
+    if (!tarray) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_INCOMPATIBLE_PROTO, "TypedArray", "byteLength", "object");
         return false;
     }
 
-    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getByteLength(obj)));
+    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getByteLength(tarray)));
     return true;
 }
 
 JSBool
-TypedArray::prop_getLength(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+TypedArray::prop_getLength(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
-    if (!(obj = getTypedArray(obj))) {
+    JSObject *tarray = getTypedArray(obj);
+
+    if (!tarray) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_INCOMPATIBLE_PROTO, "TypedArray", "length", "object");
         return false;
     }
 
-    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getLength(obj)));
+    JS_SET_RVAL(cx, vp, Int32Value(TypedArray::getLength(tarray)));
     return true;
 }
 
 JSBool
-TypedArray::obj_lookupGeneric(JSContext *cx, JSObject *obj, jsid id,
+TypedArray::obj_lookupGeneric(JSContext *cx, HandleObject obj, HandleId id,
                               JSObject **objp, JSProperty **propp)
 {
     JSObject *tarray = getTypedArray(obj);
@@ -920,14 +858,14 @@ TypedArray::obj_lookupGeneric(JSContext *cx, JSObject *obj, jsid id,
 }
 
 JSBool
-TypedArray::obj_lookupProperty(JSContext *cx, JSObject *obj, PropertyName *name,
+TypedArray::obj_lookupProperty(JSContext *cx, HandleObject obj, HandlePropertyName name,
                                JSObject **objp, JSProperty **propp)
 {
-    return obj_lookupGeneric(cx, obj, NameToId(name), objp, propp);
+    return obj_lookupGeneric(cx, obj, RootedId(cx, NameToId(name)), objp, propp);
 }
 
 JSBool
-TypedArray::obj_lookupElement(JSContext *cx, JSObject *obj, uint32_t index,
+TypedArray::obj_lookupElement(JSContext *cx, HandleObject obj, uint32_t index,
                               JSObject **objp, JSProperty **propp)
 {
     JSObject *tarray = getTypedArray(obj);
@@ -948,14 +886,14 @@ TypedArray::obj_lookupElement(JSContext *cx, JSObject *obj, uint32_t index,
 }
 
 JSBool
-TypedArray::obj_lookupSpecial(JSContext *cx, JSObject *obj, SpecialId sid,
+TypedArray::obj_lookupSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid,
                               JSObject **objp, JSProperty **propp)
 {
-    return obj_lookupGeneric(cx, obj, SPECIALID_TO_JSID(sid), objp, propp);
+    return obj_lookupGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), objp, propp);
 }
 
 JSBool
-TypedArray::obj_getGenericAttributes(JSContext *cx, JSObject *obj, jsid id, unsigned *attrsp)
+TypedArray::obj_getGenericAttributes(JSContext *cx, HandleObject obj, HandleId id, unsigned *attrsp)
 {
     *attrsp = (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom))
               ? JSPROP_PERMANENT | JSPROP_READONLY
@@ -964,48 +902,48 @@ TypedArray::obj_getGenericAttributes(JSContext *cx, JSObject *obj, jsid id, unsi
 }
 
 JSBool
-TypedArray::obj_getPropertyAttributes(JSContext *cx, JSObject *obj, PropertyName *name, unsigned *attrsp)
+TypedArray::obj_getPropertyAttributes(JSContext *cx, HandleObject obj, HandlePropertyName name, unsigned *attrsp)
 {
     *attrsp = JSPROP_PERMANENT | JSPROP_ENUMERATE;
     return true;
 }
 
 JSBool
-TypedArray::obj_getElementAttributes(JSContext *cx, JSObject *obj, uint32_t index, unsigned *attrsp)
+TypedArray::obj_getElementAttributes(JSContext *cx, HandleObject obj, uint32_t index, unsigned *attrsp)
 {
     *attrsp = JSPROP_PERMANENT | JSPROP_ENUMERATE;
     return true;
 }
 
 JSBool
-TypedArray::obj_getSpecialAttributes(JSContext *cx, JSObject *obj, SpecialId sid, unsigned *attrsp)
+TypedArray::obj_getSpecialAttributes(JSContext *cx, HandleObject obj, HandleSpecialId sid, unsigned *attrsp)
 {
-    return obj_getGenericAttributes(cx, obj, SPECIALID_TO_JSID(sid), attrsp);
+    return obj_getGenericAttributes(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), attrsp);
 }
 
 JSBool
-TypedArray::obj_setGenericAttributes(JSContext *cx, JSObject *obj, jsid id, unsigned *attrsp)
-{
-    JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_SET_ARRAY_ATTRS);
-    return false;
-}
-
-JSBool
-TypedArray::obj_setPropertyAttributes(JSContext *cx, JSObject *obj, PropertyName *name, unsigned *attrsp)
+TypedArray::obj_setGenericAttributes(JSContext *cx, HandleObject obj, HandleId id, unsigned *attrsp)
 {
     JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_SET_ARRAY_ATTRS);
     return false;
 }
 
 JSBool
-TypedArray::obj_setElementAttributes(JSContext *cx, JSObject *obj, uint32_t index, unsigned *attrsp)
+TypedArray::obj_setPropertyAttributes(JSContext *cx, HandleObject obj, HandlePropertyName name, unsigned *attrsp)
 {
     JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_SET_ARRAY_ATTRS);
     return false;
 }
 
 JSBool
-TypedArray::obj_setSpecialAttributes(JSContext *cx, JSObject *obj, SpecialId sid, unsigned *attrsp)
+TypedArray::obj_setElementAttributes(JSContext *cx, HandleObject obj, uint32_t index, unsigned *attrsp)
+{
+    JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_SET_ARRAY_ATTRS);
+    return false;
+}
+
+JSBool
+TypedArray::obj_setSpecialAttributes(JSContext *cx, HandleObject obj, HandleSpecialId sid, unsigned *attrsp)
 {
     JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_SET_ARRAY_ATTRS);
     return false;
@@ -1111,7 +1049,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_getProperty(JSContext *cx, JSObject *obj, JSObject *receiver, PropertyName *name,
+    obj_getProperty(JSContext *cx, HandleObject obj, HandleObject receiver, HandlePropertyName name,
                     Value *vp)
     {
         JSObject *tarray = getTypedArray(obj);
@@ -1131,7 +1069,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_getElement(JSContext *cx, JSObject *obj, JSObject *receiver, uint32_t index, Value *vp)
+    obj_getElement(JSContext *cx, HandleObject obj, HandleObject receiver, uint32_t index, Value *vp)
     {
         JSObject *tarray = getTypedArray(obj);
 
@@ -1150,7 +1088,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_getSpecial(JSContext *cx, JSObject *obj, JSObject *receiver, SpecialId sid, Value *vp)
+    obj_getSpecial(JSContext *cx, HandleObject obj, HandleObject receiver, HandleSpecialId sid, Value *vp)
     {
         JSObject *proto = obj->getProto();
         if (!proto) {
@@ -1162,7 +1100,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_getGeneric(JSContext *cx, JSObject *obj, JSObject *receiver, jsid id, Value *vp)
+    obj_getGeneric(JSContext *cx, HandleObject obj, HandleObject receiver, HandleId id, Value *vp)
     {
         Value idval = IdToValue(id);
 
@@ -1172,7 +1110,7 @@ class TypedArrayTemplate
 
         SpecialId sid;
         if (ValueIsSpecial(obj, &idval, &sid, cx))
-            return obj_getSpecial(cx, obj, receiver, sid, vp);
+            return obj_getSpecial(cx, obj, receiver, Rooted<SpecialId>(cx, sid), vp);
 
         JSAtom *atom;
         if (!js_ValueToAtom(cx, idval, &atom))
@@ -1181,11 +1119,11 @@ class TypedArrayTemplate
         if (atom->isIndex(&index))
             return obj_getElement(cx, obj, receiver, index, vp);
 
-        return obj_getProperty(cx, obj, receiver, atom->asPropertyName(), vp);
+        return obj_getProperty(cx, obj, receiver, RootedPropertyName(cx, atom->asPropertyName()), vp);
     }
 
     static JSBool
-    obj_getElementIfPresent(JSContext *cx, JSObject *obj, JSObject *receiver, uint32_t index, Value *vp, bool *present)
+    obj_getElementIfPresent(JSContext *cx, HandleObject obj, HandleObject receiver, uint32_t index, Value *vp, bool *present)
     {
         // Fast-path the common case of index < length
         JSObject *tarray = getTypedArray(obj);
@@ -1271,9 +1209,9 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_setGeneric(JSContext *cx, JSObject *obj, jsid id, Value *vp, JSBool strict)
+    obj_setGeneric(JSContext *cx, HandleObject obj, HandleId id, Value *vp, JSBool strict)
     {
-        RootedVarObject tarray(cx, getTypedArray(obj));
+        RootedObject tarray(cx, getTypedArray(obj));
         JS_ASSERT(tarray);
 
         if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
@@ -1297,15 +1235,15 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_setProperty(JSContext *cx, JSObject *obj, PropertyName *name, Value *vp, JSBool strict)
+    obj_setProperty(JSContext *cx, HandleObject obj, HandlePropertyName name, Value *vp, JSBool strict)
     {
-        return obj_setGeneric(cx, obj, NameToId(name), vp, strict);
+        return obj_setGeneric(cx, obj, RootedId(cx, NameToId(name)), vp, strict);
     }
 
     static JSBool
-    obj_setElement(JSContext *cx, JSObject *obj, uint32_t index, Value *vp, JSBool strict)
+    obj_setElement(JSContext *cx, HandleObject obj, uint32_t index, Value *vp, JSBool strict)
     {
-        RootedVarObject tarray(cx, getTypedArray(obj));
+        RootedObject tarray(cx, getTypedArray(obj));
         JS_ASSERT(tarray);
 
         if (index >= getLength(tarray)) {
@@ -1322,13 +1260,13 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_setSpecial(JSContext *cx, JSObject *obj, SpecialId sid, Value *vp, JSBool strict)
+    obj_setSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid, Value *vp, JSBool strict)
     {
-        return obj_setGeneric(cx, obj, SPECIALID_TO_JSID(sid), vp, strict);
+        return obj_setGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), vp, strict);
     }
 
     static JSBool
-    obj_defineGeneric(JSContext *cx, JSObject *obj, jsid id, const Value *v,
+    obj_defineGeneric(JSContext *cx, HandleObject obj, HandleId id, const Value *v,
                       PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
     {
         if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom))
@@ -1339,14 +1277,14 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_defineProperty(JSContext *cx, JSObject *obj, PropertyName *name, const Value *v,
+    obj_defineProperty(JSContext *cx, HandleObject obj, HandlePropertyName name, const Value *v,
                        PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
     {
-        return obj_defineGeneric(cx, obj, NameToId(name), v, getter, setter, attrs);
+        return obj_defineGeneric(cx, obj, RootedId(cx, NameToId(name)), v, getter, setter, attrs);
     }
 
     static JSBool
-    obj_defineElement(JSContext *cx, JSObject *obj, uint32_t index, const Value *v,
+    obj_defineElement(JSContext *cx, HandleObject obj, uint32_t index, const Value *v,
                        PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
     {
         Value tmp = *v;
@@ -1354,14 +1292,14 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_defineSpecial(JSContext *cx, JSObject *obj, SpecialId sid, const Value *v,
+    obj_defineSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid, const Value *v,
                       PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
     {
-        return obj_defineGeneric(cx, obj, SPECIALID_TO_JSID(sid), v, getter, setter, attrs);
+        return obj_defineGeneric(cx, obj, RootedId(cx, SPECIALID_TO_JSID(sid)), v, getter, setter, attrs);
     }
 
     static JSBool
-    obj_deleteProperty(JSContext *cx, JSObject *obj, PropertyName *name, Value *rval, JSBool strict)
+    obj_deleteProperty(JSContext *cx, HandleObject obj, HandlePropertyName name, Value *rval, JSBool strict)
     {
         if (name == cx->runtime->atomState.lengthAtom) {
             rval->setBoolean(false);
@@ -1373,7 +1311,7 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_deleteElement(JSContext *cx, JSObject *obj, uint32_t index, Value *rval, JSBool strict)
+    obj_deleteElement(JSContext *cx, HandleObject obj, uint32_t index, Value *rval, JSBool strict)
     {
         JSObject *tarray = getTypedArray(obj);
         JS_ASSERT(tarray);
@@ -1388,14 +1326,14 @@ class TypedArrayTemplate
     }
 
     static JSBool
-    obj_deleteSpecial(JSContext *cx, JSObject *obj, SpecialId sid, Value *rval, JSBool strict)
+    obj_deleteSpecial(JSContext *cx, HandleObject obj, HandleSpecialId sid, Value *rval, JSBool strict)
     {
         rval->setBoolean(true);
         return true;
     }
 
     static JSBool
-    obj_enumerate(JSContext *cx, JSObject *obj, JSIterateOp enum_op,
+    obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp enum_op,
                   Value *statep, jsid *idp)
     {
         JSObject *tarray = getTypedArray(obj);
@@ -1444,7 +1382,7 @@ class TypedArrayTemplate
     }
 
     static JSType
-    obj_typeOf(JSContext *cx, JSObject *obj)
+    obj_typeOf(JSContext *cx, HandleObject obj)
     {
         return JSTYPE_OBJECT;
     }
@@ -1453,7 +1391,7 @@ class TypedArrayTemplate
     makeInstance(JSContext *cx, HandleObject bufobj, uint32_t byteOffset, uint32_t len,
                  HandleObject proto)
     {
-        RootedVarObject obj(cx, NewBuiltinClassInstance(cx, protoClass()));
+        RootedObject obj(cx, NewBuiltinClassInstance(cx, protoClass()));
         if (!obj)
             return NULL;
 #ifdef JS_THREADSAFE
@@ -1536,8 +1474,8 @@ class TypedArrayTemplate
     fromBuffer(JSContext *cx, unsigned argc, Value *vp)
     {
         CallArgs args = CallArgsFromVp(argc, vp);
-        JSObject *obj = fromBuffer(cx, RootedVarObject(cx, &args[0].toObject()),
-                                   args[1].toInt32(), args[2].toInt32(), RootedVarObject(cx, &args[3].toObject()));
+        JSObject *obj = fromBuffer(cx, RootedObject(cx, &args[0].toObject()),
+                                   args[1].toInt32(), args[2].toInt32(), RootedObject(cx, &args[3].toObject()));
         if (!obj)
             return false;
         vp->setObject(*obj);
@@ -1560,7 +1498,7 @@ class TypedArrayTemplate
             return NULL;
         }
 
-        RootedVarObject dataObj(cx, &argv[0].toObject());
+        RootedObject dataObj(cx, &argv[0].toObject());
 
         /*
          * (typedArray)
@@ -1597,7 +1535,7 @@ class TypedArrayTemplate
             }
         }
 
-        return fromBuffer(cx, dataObj, byteOffset, length, RootedVarObject(cx));
+        return fromBuffer(cx, dataObj, byteOffset, length, RootedObject(cx));
     }
 
     /* subarray(start[, end]) */
@@ -1646,11 +1584,11 @@ class TypedArrayTemplate
         CallArgs args = CallArgsFromVp(argc, vp);
 
         bool ok;
-        RootedVarObject obj(cx, NonGenericMethodGuard(cx, args, fun_set, fastClass(), &ok));
+        RootedObject obj(cx, NonGenericMethodGuard(cx, args, fun_set, fastClass(), &ok));
         if (!obj)
             return ok;
 
-        RootedVarObject tarray(cx, getTypedArray(obj));
+        RootedObject tarray(cx, getTypedArray(obj));
         if (!tarray)
             return true;
 
@@ -1677,8 +1615,8 @@ class TypedArrayTemplate
             return false;
         }
 
-        RootedVarObject arg0(cx, args[0].toObjectOrNull());
-        RootedVarObject src(cx, getTypedArray(arg0));
+        RootedObject arg0(cx, args[0].toObjectOrNull());
+        RootedObject src(cx, getTypedArray(arg0));
         if (src) {
             if (getLength(src) > getLength(tarray) - offset) {
                 JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_ARRAY_LENGTH);
@@ -1802,10 +1740,10 @@ class TypedArrayTemplate
     static JSObject *
     fromLength(JSContext *cx, int32_t nelements)
     {
-        RootedVarObject buffer(cx, createBufferWithSizeAndCount(cx, nelements));
+        RootedObject buffer(cx, createBufferWithSizeAndCount(cx, nelements));
         if (!buffer)
             return NULL;
-        return makeInstance(cx, buffer, 0, nelements, RootedVarObject(cx, NULL));
+        return makeInstance(cx, buffer, 0, nelements, RootedObject(cx, NULL));
     }
 
     static JSObject *
@@ -1815,11 +1753,11 @@ class TypedArrayTemplate
         if (!js_GetLengthProperty(cx, other, &len))
             return NULL;
 
-        RootedVarObject bufobj(cx, createBufferWithSizeAndCount(cx, len));
+        RootedObject bufobj(cx, createBufferWithSizeAndCount(cx, len));
         if (!bufobj)
             return NULL;
 
-        RootedVarObject obj(cx, makeInstance(cx, bufobj, 0, len, RootedVarObject(cx)));
+        RootedObject obj(cx, makeInstance(cx, bufobj, 0, len, RootedObject(cx)));
         if (!obj || !copyFromArray(cx, obj, other, len))
             return NULL;
         return obj;
@@ -1847,7 +1785,7 @@ class TypedArrayTemplate
         JS_ASSERT(begin <= getLength(tarray));
         JS_ASSERT(end <= getLength(tarray));
 
-        RootedVarObject bufobj(cx, getBuffer(tarray));
+        RootedObject bufobj(cx, getBuffer(tarray));
         JS_ASSERT(bufobj);
 
         JS_ASSERT(begin <= end);
@@ -1857,7 +1795,7 @@ class TypedArrayTemplate
         JS_ASSERT(UINT32_MAX - begin * sizeof(NativeType) >= getByteOffset(tarray));
         uint32_t byteOffset = getByteOffset(tarray) + begin * sizeof(NativeType);
 
-        return makeInstance(cx, bufobj, byteOffset, length, RootedVarObject(cx));
+        return makeInstance(cx, bufobj, byteOffset, length, RootedObject(cx));
     }
 
   protected:
@@ -2236,7 +2174,7 @@ DataViewObject::construct(JSContext *cx, JSObject *bufobj, const CallArgs &args,
         return false;
     }
 
-    RootedVar<ArrayBufferObject*> buffer(cx, &bufobj->asArrayBuffer());
+    Rooted<ArrayBufferObject*> buffer(cx, &bufobj->asArrayBuffer());
     uint32_t bufferLength = buffer->byteLength();
     uint32_t byteOffset = 0;
     uint32_t byteLength = bufferLength;
@@ -2285,7 +2223,7 @@ DataViewObject::construct(JSContext *cx, JSObject *bufobj, const CallArgs &args,
 }
 
 JSBool
-DataViewObject::prop_getBuffer(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+DataViewObject::prop_getBuffer(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
     if (!obj->isDataView()) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
@@ -2302,7 +2240,7 @@ DataViewObject::prop_getBuffer(JSContext *cx, JSObject *obj, jsid id, Value *vp)
 }
 
 JSBool
-DataViewObject::prop_getByteOffset(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+DataViewObject::prop_getByteOffset(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
     if (!obj->isDataView()) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
@@ -2360,7 +2298,7 @@ DataViewObject::class_constructor(JSContext *cx, unsigned argc, Value *vp)
 }
 
 JSBool
-DataViewObject::prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp)
+DataViewObject::prop_getByteLength(JSContext *cx, HandleObject obj, HandleId id, Value *vp)
 {
     if (!obj->isDataView()) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
@@ -2934,13 +2872,13 @@ JSFunctionSpec _typedArray::jsfuncs[] = {                                      \
   }                                                                                          \
   JS_FRIEND_API(JSObject *) JS_New ## Name ## ArrayFromArray(JSContext *cx, JSObject *other) \
   {                                                                                          \
-      return TypedArrayTemplate<NativeType>::fromArray(cx, RootedVarObject(cx, other));      \
+      return TypedArrayTemplate<NativeType>::fromArray(cx, RootedObject(cx, other));      \
   }                                                                                          \
   JS_FRIEND_API(JSObject *) JS_New ## Name ## ArrayWithBuffer(JSContext *cx,                 \
                                JSObject *arrayBuffer, uint32_t byteoffset, int32_t length)   \
   {                                                                                          \
       MOZ_ASSERT(byteoffset <= INT32_MAX);                                                   \
-      return TypedArrayTemplate<NativeType>::fromBuffer(cx, RootedVarObject(cx, arrayBuffer), byteoffset, length, RootedVarObject(cx)); \
+      return TypedArrayTemplate<NativeType>::fromBuffer(cx, RootedObject(cx, arrayBuffer), byteoffset, length, RootedObject(cx)); \
   }                                                                                          \
   JS_FRIEND_API(JSBool) JS_Is ## Name ## Array(JSObject *obj, JSContext *cx)                 \
   {                                                                                          \
@@ -3043,11 +2981,11 @@ template<class ArrayType>
 static inline JSObject *
 InitTypedArrayClass(JSContext *cx, Handle<GlobalObject*> global)
 {
-    RootedVarObject proto(cx, global->createBlankPrototype(cx, ArrayType::protoClass()));
+    RootedObject proto(cx, global->createBlankPrototype(cx, ArrayType::protoClass()));
     if (!proto)
         return NULL;
 
-    RootedVarFunction ctor(cx);
+    RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, ArrayType::class_constructor,
                                      cx->runtime->atomState.classAtoms[ArrayType::key], 3);
     if (!ctor)
@@ -3114,11 +3052,11 @@ Class TypedArray::protoClasses[TYPE_MAX] = {
 static JSObject *
 InitArrayBufferClass(JSContext *cx, Handle<GlobalObject*> global)
 {
-    RootedVarObject arrayBufferProto(cx, global->createBlankPrototype(cx, &ArrayBufferObject::protoClass));
+    RootedObject arrayBufferProto(cx, global->createBlankPrototype(cx, &ArrayBufferObject::protoClass));
     if (!arrayBufferProto)
         return NULL;
 
-    RootedVarFunction ctor(cx);
+    RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, ArrayBufferObject::class_constructor,
                                      CLASS_NAME(cx, ArrayBuffer), 1);
     if (!ctor)
@@ -3237,7 +3175,7 @@ js_InitTypedArrayClasses(JSContext *cx, JSObject *obj)
 {
     JS_ASSERT(obj->isNative());
 
-    RootedVar<GlobalObject*> global(cx, &obj->asGlobal());
+    Rooted<GlobalObject*> global(cx, &obj->asGlobal());
 
     /* Idempotency required: we initialize several things, possibly lazily. */
     JSObject *stop;

@@ -9,6 +9,15 @@ let Ci = Components.interfaces;
 let Cc = Components.classes;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
+// Event whitelisted for bubbling.
+let whitelistedEvents = [
+  Ci.nsIDOMKeyEvent.DOM_VK_ESCAPE,   // Back button.
+  Ci.nsIDOMKeyEvent.DOM_VK_CONTEXT_MENU,
+  Ci.nsIDOMKeyEvent.DOM_VK_F5,       // Search button.
+  Ci.nsIDOMKeyEvent.DOM_VK_PAGE_UP,  // Volume up.
+  Ci.nsIDOMKeyEvent.DOM_VK_PAGE_DOWN // Volume down.
+];
+
 function debug(msg) {
   //dump("BrowserElementChild - " + msg + "\n");
 }
@@ -31,6 +40,8 @@ function sendSyncMsg(msg, data) {
  * Our job here is to listen for events within this frame and bubble them up to
  * the parent process.
  */
+
+var global = this;
 
 function BrowserElementChild() {
   this._init();
@@ -57,11 +68,11 @@ BrowserElementChild.prototype = {
     // Get the app manifest from the parent, if our frame has one.
     let appManifestURL = sendSyncMsg('get-mozapp-manifest-url')[0];
     let windowUtils = content.QueryInterface(Ci.nsIInterfaceRequestor)
-                             .getInterface(Components.interfaces.nsIDOMWindowUtils);
+                             .getInterface(Ci.nsIDOMWindowUtils);
 
     if (!!appManifestURL) {
       windowUtils.setIsApp(true);
-      windowUtils.setApp(mozApp);
+      windowUtils.setApp(appManifestURL);
     } else {
       windowUtils.setIsApp(false);
     }
@@ -75,6 +86,24 @@ BrowserElementChild.prototype = {
                      this._iconChangedHandler.bind(this),
                      /* useCapture = */ true,
                      /* wantsUntrusted = */ false);
+
+    addMessageListener("browser-element-api:get-screenshot",
+                       this._recvGetScreenshot.bind(this));
+
+    let els = Cc["@mozilla.org/eventlistenerservice;1"]
+                .getService(Ci.nsIEventListenerService);
+
+    // We are using the system group for those events so if something in the
+    // content called .stopPropagation() this will still be called.
+    els.addSystemEventListener(global, 'keydown',
+                               this._keyEventHandler.bind(this),
+                               /* useCapture = */ true);
+    els.addSystemEventListener(global, 'keypress',
+                               this._keyEventHandler.bind(this),
+                               /* useCapture = */ true);
+    els.addSystemEventListener(global, 'keyup',
+                               this._keyEventHandler.bind(this),
+                               /* useCapture = */ true);
   },
 
   _titleChangedHandler: function(e) {
@@ -107,6 +136,32 @@ BrowserElementChild.prototype = {
       else {
         debug("Not top level!");
       }
+    }
+  },
+
+  _recvGetScreenshot: function(data) {
+    debug("Received getScreenshot message: (" + data.json.id + ")");
+    var canvas = content.document
+      .createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+    var ctx = canvas.getContext("2d");
+    canvas.mozOpaque = true;
+    canvas.height = content.innerHeight;
+    canvas.width = content.innerWidth;
+    ctx.drawWindow(content, 0, 0, content.innerWidth,
+                   content.innerHeight, "rgb(255,255,255)");
+    sendAsyncMsg('got-screenshot', {
+      id: data.json.id,
+      screenshot: canvas.toDataURL("image/png")
+    });
+  },
+
+  _keyEventHandler: function(e) {
+    if (whitelistedEvents.indexOf(e.keyCode) != -1 && !e.defaultPrevented) {
+      sendAsyncMsg('keyevent', {
+        type: e.type,
+        code: e.keyCode,
+        charCode: e.charCode,
+      });
     }
   },
 

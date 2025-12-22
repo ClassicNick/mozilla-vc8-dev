@@ -1,3 +1,7 @@
+; This Source Code Form is subject to the terms of the Mozilla Public
+; License, v. 2.0. If a copy of the MPL was not distributed with this
+; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 ; Package file for the Firefox build. 
 ;
 ; Packaging manifest is used to copy files from dist/bin
@@ -20,6 +24,7 @@
 @APPNAME@/Contents/Info.plist
 @APPNAME@/Contents/PkgInfo
 @APPNAME@/Contents/Resources/
+@APPNAME@/Contents/_CodeSignature/CodeResources
 #endif
 
 [@AB_CD@]
@@ -164,6 +169,7 @@
 @BINPATH@/components/dom_contacts.xpt
 @BINPATH@/components/dom_core.xpt
 @BINPATH@/components/dom_css.xpt
+@BINPATH@/components/dom_devicestorage.xpt
 @BINPATH@/components/dom_events.xpt
 @BINPATH@/components/dom_geolocation.xpt
 @BINPATH@/components/dom_network.xpt
@@ -476,9 +482,10 @@
 ; [Browser Chrome Files]
 @BINPATH@/chrome/browser@JAREXT@
 @BINPATH@/chrome/browser.manifest
+@BINPATH@/chrome/pdfjs.manifest
+@BINPATH@/chrome/pdfjs/*
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/install.rdf
 @BINPATH@/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/icon.png
-@BINPATH@/extensions/uriloader@pdf.js.xpi
 #ifdef SHIP_FEEDBACK
 @BINPATH@/distribution/extensions/testpilot@labs.mozilla.com.xpi
 #endif

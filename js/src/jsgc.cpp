@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* JS Mark-and-Sweep Garbage Collector. */
 
@@ -106,6 +73,7 @@
 #include "jsxml.h"
 #endif
 
+#include "builtin/MapObject.h"
 #include "frontend/Parser.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
@@ -854,6 +822,7 @@ PickChunk(JSCompartment *comp)
     return chunk;
 }
 
+
 JS_FRIEND_API(bool)
 IsAboutToBeFinalized(const Cell *thing)
 {
@@ -1142,8 +1111,8 @@ MarkConservativeStackRoots(JSTracer *trc, bool useSavedRoots)
 void
 MarkStackRangeConservatively(JSTracer *trc, Value *beginv, Value *endv)
 {
-    const uintptr_t *begin = beginv->payloadWord();
-    const uintptr_t *end = endv->payloadWord();
+    const uintptr_t *begin = beginv->payloadUIntPtr();
+    const uintptr_t *end = endv->payloadUIntPtr();
 #ifdef JS_NUNBOX32
     /*
      * With 64-bit jsvals on 32-bit systems, we can optimize a bit by
@@ -1666,8 +1635,7 @@ ArenaLists::refillFreeList(JSContext *cx, AllocKind thingKind)
     JSRuntime *rt = comp->rt;
     JS_ASSERT(!rt->gcRunning);
 
-    bool runGC = rt->gcIncrementalState != NO_INCREMENTAL &&
-            (comp->gcBytes > comp->gcTriggerBytes || comp->isTooMuchMalloc());
+    bool runGC = rt->gcIncrementalState != NO_INCREMENTAL && comp->gcBytes > comp->gcTriggerBytes;
     for (;;) {
         if (JS_UNLIKELY(runGC)) {
             PrepareCompartmentForGC(comp);
@@ -2231,6 +2199,75 @@ AutoGCRooter::trace(JSTracer *trc)
             MarkScriptRoot(trc, &vector[i], "AutoScriptVector element");
         return;
       }
+
+      case PROPDESC: {
+        PropDesc::AutoRooter *rooter = static_cast<PropDesc::AutoRooter *>(this);
+        MarkValueRoot(trc, &rooter->pd->pd_, "PropDesc::AutoRooter pd");
+        MarkValueRoot(trc, &rooter->pd->value_, "PropDesc::AutoRooter value");
+        MarkValueRoot(trc, &rooter->pd->get_, "PropDesc::AutoRooter get");
+        MarkValueRoot(trc, &rooter->pd->set_, "PropDesc::AutoRooter set");
+        return;
+      }
+
+      case SHAPERANGE: {
+        Shape::Range::AutoRooter *rooter = static_cast<Shape::Range::AutoRooter *>(this);
+        rooter->trace(trc);
+        return;
+      }
+
+      case STACKSHAPE: {
+        StackShape::AutoRooter *rooter = static_cast<StackShape::AutoRooter *>(this);
+        if (rooter->shape->base)
+            MarkBaseShapeRoot(trc, (BaseShape**) &rooter->shape->base, "StackShape::AutoRooter base");
+        MarkIdRoot(trc, (jsid*) &rooter->shape->propid, "StackShape::AutoRooter id");
+        return;
+      }
+
+      case STACKBASESHAPE: {
+        StackBaseShape::AutoRooter *rooter = static_cast<StackBaseShape::AutoRooter *>(this);
+        if (rooter->base->parent)
+            MarkObjectRoot(trc, (JSObject**) &rooter->base->parent, "StackBaseShape::AutoRooter parent");
+        if ((rooter->base->flags & BaseShape::HAS_GETTER_OBJECT) && rooter->base->rawGetter) {
+            MarkObjectRoot(trc, (JSObject**) &rooter->base->rawGetter,
+                           "StackBaseShape::AutoRooter getter");
+        }
+        if ((rooter->base->flags & BaseShape::HAS_SETTER_OBJECT) && rooter->base->rawSetter) {
+            MarkObjectRoot(trc, (JSObject**) &rooter->base->rawSetter,
+                           "StackBaseShape::AutoRooter setter");
+        }
+        return;
+      }
+
+      case BINDINGS: {
+        Bindings::AutoRooter *rooter = static_cast<Bindings::AutoRooter *>(this);
+        rooter->trace(trc);
+        return;
+      }
+
+      case GETTERSETTER: {
+        AutoRooterGetterSetter::Inner *rooter = static_cast<AutoRooterGetterSetter::Inner *>(this);
+        if ((rooter->attrs & JSPROP_GETTER) && *rooter->pgetter)
+            MarkObjectRoot(trc, (JSObject**) rooter->pgetter, "AutoRooterGetterSetter getter");
+        if ((rooter->attrs & JSPROP_SETTER) && *rooter->psetter)
+            MarkObjectRoot(trc, (JSObject**) rooter->psetter, "AutoRooterGetterSetter setter");
+        return;
+      }
+
+      case REGEXPSTATICS: {
+          /*
+        RegExpStatics::AutoRooter *rooter = static_cast<RegExpStatics::AutoRooter *>(this);
+        rooter->trace(trc);
+          */
+        return;
+      }
+
+      case HASHABLEVALUE: {
+          /*
+        HashableValue::AutoRooter *rooter = static_cast<HashableValue::AutoRooter *>(this);
+        rooter->trace(trc);
+          */
+        return;
+      }
     }
 
     JS_ASSERT(tag >= 0);
@@ -2243,6 +2280,38 @@ AutoGCRooter::traceAll(JSTracer *trc)
 {
     for (js::AutoGCRooter *gcr = trc->runtime->autoGCRooters; gcr; gcr = gcr->down)
         gcr->trace(trc);
+}
+
+void
+Shape::Range::AutoRooter::trace(JSTracer *trc)
+{
+    if (r->cursor)
+        MarkShapeRoot(trc, const_cast<Shape**>(&r->cursor), "Shape::Range::AutoRooter");
+}
+
+void
+Bindings::AutoRooter::trace(JSTracer *trc)
+{
+    if (bindings->lastBinding)
+        MarkShapeRoot(trc, reinterpret_cast<Shape**>(&bindings->lastBinding),
+                      "Bindings::AutoRooter lastBinding");
+}
+
+void
+RegExpStatics::AutoRooter::trace(JSTracer *trc)
+{
+    if (statics->matchPairsInput)
+        MarkStringRoot(trc, reinterpret_cast<JSString**>(&statics->matchPairsInput),
+                       "RegExpStatics::AutoRooter matchPairsInput");
+    if (statics->pendingInput)
+        MarkStringRoot(trc, reinterpret_cast<JSString**>(&statics->pendingInput),
+                       "RegExpStatics::AutoRooter pendingInput");
+}
+
+void
+HashableValue::AutoRooter::trace(JSTracer *trc)
+{
+    MarkValueRoot(trc, reinterpret_cast<Value*>(&v->value), "HashableValue::AutoRooter");
 }
 
 namespace js {
@@ -2325,6 +2394,7 @@ MarkRuntime(JSTracer *trc, bool useSavedRoots = false)
 #endif
 
     rt->stackSpace.mark(trc);
+    rt->debugScopes->mark(trc);
 
     /* The embedding can register additional roots here. */
     if (JSTraceDataOp op = rt->gcBlackRootsTraceOp)
@@ -2905,7 +2975,7 @@ PurgeRuntime(JSTracer *trc)
 static bool
 ShouldPreserveJITCode(JSCompartment *c, int64_t currentTime)
 {
-    if (!c->rt->hasContexts() || !c->types.inferenceEnabled)
+    if (c->rt->gcShouldCleanUpEverything || !c->types.inferenceEnabled)
         return false;
 
     if (c->rt->alwaysPreserveCode)
@@ -2928,8 +2998,8 @@ BeginMarkPhase(JSRuntime *rt)
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
         if (!c->isCollecting())
             rt->gcIsFull = false;
-        if (ShouldPreserveJITCode(c, currentTime))
-            c->setPreservingCode(true);
+
+        c->setPreservingCode(ShouldPreserveJITCode(c, currentTime));
     }
 
     rt->gcMarker.start(rt);
@@ -3159,6 +3229,16 @@ SweepPhase(JSRuntime *rt, JSGCInvocationKind gckind, bool *startBackgroundSweep)
      */
     gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_SWEEP);
 
+    /*
+     * Although there is a runtime-wide gcIsFull flag, it is set in
+     * BeginMarkPhase. More compartments may have been created since then.
+     */
+    bool isFull = true;
+    for (CompartmentsIter c(rt); !c.done(); c.next()) {
+        if (!c->isCollecting())
+            isFull = false;
+    }
+
 #ifdef JS_THREADSAFE
     *startBackgroundSweep = (rt->hasContexts() && rt->gcHelperThread.prepareForBackgroundSweep());
 #else
@@ -3173,11 +3253,12 @@ SweepPhase(JSRuntime *rt, JSGCInvocationKind gckind, bool *startBackgroundSweep)
     {
         gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_FINALIZE_START);
         if (rt->gcFinalizeCallback)
-            rt->gcFinalizeCallback(&fop, JSFINALIZE_START);
+            rt->gcFinalizeCallback(&fop, JSFINALIZE_START, !isFull);
     }
 
     /* Finalize unreachable (key,value) pairs in all weak maps. */
     WeakMapBase::sweepAll(&rt->gcMarker);
+    rt->debugScopes->sweep();
 
     SweepAtomState(rt);
 
@@ -3259,7 +3340,7 @@ SweepPhase(JSRuntime *rt, JSGCInvocationKind gckind, bool *startBackgroundSweep)
     {
         gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_FINALIZE_END);
         if (rt->gcFinalizeCallback)
-            rt->gcFinalizeCallback(&fop, JSFINALIZE_END);
+            rt->gcFinalizeCallback(&fop, JSFINALIZE_END, !isFull);
     }
 
     for (CompartmentsIter c(rt); !c.done(); c.next())
@@ -3338,10 +3419,8 @@ AutoGCSession::AutoGCSession(JSRuntime *rt)
 
 AutoGCSession::~AutoGCSession()
 {
-    for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next())
         c->setCollecting(false);
-        c->setPreservingCode(false);
-    }
 
     runtime->gcNextFullGCTime = PRMJ_Now() + GC_IDLE_FULL_SPAN;
     runtime->gcChunkAllocationSinceLastGC = false;
@@ -3354,6 +3433,8 @@ AutoGCSession::~AutoGCSession()
     /* Clear gcMallocBytes for all compartments */
     for (CompartmentsIter c(runtime); !c.done(); c.next())
         c->resetGCMallocBytes();
+
+    runtime->resetGCMallocBytes();
 }
 
 static void
@@ -3543,9 +3624,14 @@ BudgetIncrementalGC(JSRuntime *rt, int64_t *budget)
         return;
     }
 
+    if (rt->isTooMuchMalloc()) {
+        *budget = SliceBudget::Unlimited;
+        rt->gcStats.nonincremental("malloc bytes trigger");
+    }
+
     bool reset = false;
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
-        if (c->gcBytes > c->gcTriggerBytes) {
+        if (c->gcBytes >= c->gcTriggerBytes) {
             *budget = SliceBudget::Unlimited;
             rt->gcStats.nonincremental("allocation trigger");
         }
@@ -3632,7 +3718,7 @@ GCCycle(JSRuntime *rt, bool incremental, int64_t budget, JSGCInvocationKind gcki
         if (shouldSweep)
             SweepPhase(rt, gckind, &startBackgroundSweep);
     }
-        
+
 #ifdef JS_THREADSAFE
     if (startBackgroundSweep)
         rt->gcHelperThread.startBackgroundSweep(gckind == GC_SHRINK);
@@ -3652,6 +3738,12 @@ IsDeterministicGCReason(gcreason::Reason reason)
     return true;
 }
 #endif
+
+static bool
+ShouldCleanUpEverything(JSRuntime *rt, gcreason::Reason reason)
+{
+    return !rt->hasContexts() || reason == gcreason::CC_FORCED;
+}
 
 static void
 Collect(JSRuntime *rt, bool incremental, int64_t budget,
@@ -3704,6 +3796,8 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
             collectedCount++;
     }
 
+    rt->gcShouldCleanUpEverything = ShouldCleanUpEverything(rt, reason);
+
     gcstats::AutoGCSlice agc(rt->gcStats, collectedCount, compartmentCount, reason);
 
     do {
@@ -3727,14 +3821,14 @@ Collect(JSRuntime *rt, bool incremental, int64_t budget,
         }
 
         /* Need to re-schedule all compartments for GC. */
-        if (!rt->hasContexts() && rt->gcPoke)
+        if (rt->gcPoke && rt->gcShouldCleanUpEverything)
             PrepareForFullGC(rt);
 
         /*
          * On shutdown, iterate until finalizers or the JSGC_END callback
          * stop creating garbage.
          */
-    } while (!rt->hasContexts() && rt->gcPoke);
+    } while (rt->gcPoke && rt->gcShouldCleanUpEverything);
 }
 
 namespace js {
@@ -3994,7 +4088,7 @@ CheckStackRoot(JSTracer *trc, uintptr_t *w)
         JSRuntime *rt = trc->runtime;
         for (ContextIter cx(rt); !cx.done(); cx.next()) {
             for (unsigned i = 0; i < THING_ROOT_LIMIT; i++) {
-                Root<void*> *rooter = cx->thingGCRooters[i];
+                Rooted<void*> *rooter = cx->thingGCRooters[i];
                 while (rooter) {
                     if (rooter->address() == static_cast<void*>(w))
                         matched = true;
@@ -4350,6 +4444,19 @@ CheckEdge(JSTracer *jstrc, void **thingp, JSGCTraceKind kind)
 }
 
 static void
+AssertMarkedOrAllocated(const EdgeValue &edge)
+{
+    if (!edge.thing || IsMarkedOrAllocated(static_cast<Cell *>(edge.thing)))
+        return;
+
+    char msgbuf[1024];
+    const char *label = edge.label ? edge.label : "<unknown>";
+
+    JS_snprintf(msgbuf, sizeof(msgbuf), "[barrier verifier] Unmarked edge: %s", label);
+    MOZ_Assert(msgbuf, __FILE__, __LINE__);
+}
+
+static void
 EndVerifyBarriers(JSRuntime *rt)
 {
     AutoLockGC lock(rt);
@@ -4399,10 +4506,8 @@ EndVerifyBarriers(JSRuntime *rt)
             JS_TraceChildren(trc, node->thing, node->kind);
 
             if (node->count <= MAX_VERIFIER_EDGES) {
-                for (uint32_t i = 0; i < node->count; i++) {
-                    void *thing = node->edges[i].thing;
-                    JS_ASSERT_IF(thing, IsMarkedOrAllocated(static_cast<Cell *>(thing)));
-                }
+                for (uint32_t i = 0; i < node->count; i++)
+                    AssertMarkedOrAllocated(node->edges[i]);
             }
 
             node = NextNode(node);
@@ -4603,4 +4708,3 @@ js_NewGCXML(JSContext *cx)
     return NewGCThing<JSXML>(cx, js::gc::FINALIZE_XML, sizeof(JSXML));
 }
 #endif
-

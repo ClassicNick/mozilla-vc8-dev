@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 sw=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Mats Palmgren <matspal@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * Implementation of selection: nsISelection,nsISelectionPrivate and nsFrameSelection
@@ -505,7 +472,6 @@ nsSelectionIterator::IsDone()
 ////////////BEGIN nsFrameSelection methods
 
 nsFrameSelection::nsFrameSelection()
-  : mDelayedMouseEvent(false, 0, nsnull, nsMouseEvent::eReal)
 {
   PRInt32 i;
   for (i = 0;i<nsISelectionController::NUM_SELECTIONTYPES;i++){
@@ -543,9 +509,14 @@ nsFrameSelection::nsFrameSelection()
   }
 
   mDisplaySelection = nsISelectionController::SELECTION_OFF;
+  mSelectionChangeReason = nsISelectionListener::NO_REASON;
 
   mDelayedMouseEventValid = false;
-  mSelectionChangeReason = nsISelectionListener::NO_REASON;
+  // These values are not used since they are only valid when
+  // mDelayedMouseEventValid is true, and setting mDelayedMouseEventValid
+  //alwaysoverrides these values.
+  mDelayedMouseEventIsShift = false;
+  mDelayedMouseEventClickCount = 0;
 }
 
 
@@ -3151,25 +3122,13 @@ nsFrameSelection::DeleteFromDocument()
 void
 nsFrameSelection::SetDelayedCaretData(nsMouseEvent *aMouseEvent)
 {
-  if (aMouseEvent)
-  {
+  if (aMouseEvent) {
     mDelayedMouseEventValid = true;
-    mDelayedMouseEvent      = *aMouseEvent;
-
-    // Don't cache the widget.  We don't need it and it could go away.
-    mDelayedMouseEvent.widget = nsnull;
-  }
-  else
+    mDelayedMouseEventIsShift = aMouseEvent->IsShift();
+    mDelayedMouseEventClickCount = aMouseEvent->clickCount;
+  } else {
     mDelayedMouseEventValid = false;
-}
-
-nsMouseEvent*
-nsFrameSelection::GetDelayedCaretData()
-{
-  if (mDelayedMouseEventValid)
-    return &mDelayedMouseEvent;
-  
-  return nsnull;
+  }
 }
 
 void
@@ -4762,26 +4721,34 @@ nsTypedSelection::CollapseToEnd()
 /*
  * IsCollapsed -- is the whole selection just one point, or unset?
  */
+bool
+nsTypedSelection::IsCollapsed()
+{
+  PRUint32 cnt = mRanges.Length();
+  if (cnt == 0) {
+    return true;
+  }
+
+  if (cnt != 1) {
+    return false;
+  }
+
+  return mRanges[0].mRange->Collapsed();
+}
+
+/* virtual */
+bool
+nsTypedSelection::Collapsed()
+{
+  return IsCollapsed();
+}
+
 NS_IMETHODIMP
 nsTypedSelection::GetIsCollapsed(bool* aIsCollapsed)
 {
-  if (!aIsCollapsed)
-    return NS_ERROR_NULL_POINTER;
+  NS_ENSURE_TRUE(aIsCollapsed, NS_ERROR_NULL_POINTER);
 
-  PRInt32 cnt = (PRInt32)mRanges.Length();;
-  if (cnt == 0)
-  {
-    *aIsCollapsed = true;
-    return NS_OK;
-  }
-
-  if (cnt != 1)
-  {
-    *aIsCollapsed = false;
-    return NS_OK;
-  }
-
-  *aIsCollapsed = mRanges[0].mRange->Collapsed();
+  *aIsCollapsed = IsCollapsed();
   return NS_OK;
 }
 
@@ -4879,6 +4846,12 @@ nsTypedSelection::Extend(nsIDOMNode* aParentNode, PRInt32 aOffset)
 {
   nsCOMPtr<nsINode> parentNode = do_QueryInterface(aParentNode);
   return Extend(parentNode, aOffset);
+}
+
+NS_IMETHODIMP
+nsTypedSelection::ExtendNative(nsINode* aParentNode, PRInt32 aOffset)
+{
+  return Extend(aParentNode, aOffset);
 }
 
 nsresult

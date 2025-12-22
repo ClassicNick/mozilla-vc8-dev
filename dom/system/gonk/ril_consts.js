@@ -1,41 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is RIL JS Worker.
- *
- * The Initial Developer of the Original Code is
- * the Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Kyle Machulis <kyle@nonpolynomial.com>
- *   Philipp von Weitershausen <philipp@weitershausen.de>
- *   Fernando Jimenez <ferjmoreno@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const REQUEST_GET_SIM_STATUS = 1;
 const REQUEST_ENTER_SIM_PIN = 2;
@@ -388,6 +353,7 @@ const ICC_COMMAND_UPDATE_RECORD = 0xdc;
 // ICC constants, GSM SIM file ids from TS 51.011
 const ICC_EF_ICCID  = 0x2fe2;
 const ICC_EF_IMG    = 0x4f20;
+const ICC_EF_PBR    = 0x4f30;
 const ICC_EF_SST    = 0x6f38;
 const ICC_EF_UST    = 0x6f38; // For USIM
 const ICC_EF_ADN    = 0x6f3a;
@@ -457,6 +423,39 @@ const ICC_STATUS_WITH_RESPONSE_DATA = 0x9f;
 const ICC_STATUS_ERROR_WRONG_LENGTH = 0x67;
 const ICC_STATUS_ERROR_COMMAND_NOT_ALLOWED = 0x69;
 const ICC_STATUS_ERROR_WRONG_PARAMETERS = 0x6a;
+
+// ICC call barring facility.
+// TS 27.007, clause 7.4, +CLCK
+const ICC_CB_FACILITY_SIM = "SC";
+
+// ICC service class
+// TS 27.007, clause 7.4, +CLCK
+const ICC_SERVICE_CLASS_NONE = 0; // no user input
+const ICC_SERVICE_CLASS_VOICE = (1 << 0);
+const ICC_SERVICE_CLASS_DATA = (1 << 1);
+const ICC_SERVICE_CLASS_FAX = (1 << 2);
+const ICC_SERVICE_CLASS_SMS = (1 << 3);
+const ICC_SERVICE_CLASS_DATA_SYNC = (1 << 4);
+const ICC_SERVICE_CLASS_DATA_ASYNC = (1 << 5);
+const ICC_SERVICE_CLASS_PACKET = (1 << 6);
+const ICC_SERVICE_CLASS_PAD = (1 << 7);
+const ICC_SERVICE_CLASS_MAX = (1 << 7); // Max ICC_SERVICE_CLASS value
+
+const ICC_USIM_TYPE1_TAG   = 0xa8;
+const ICC_USIM_TYPE2_TAG   = 0xa9;
+const ICC_USIM_TYPE3_TAG   = 0xaa;
+const ICC_USIM_EFADN_TAG   = 0xc0;
+const ICC_USIM_EFIAP_TAG   = 0xc1;
+const ICC_USIM_EFEXT1_TAG  = 0xc2;
+const ICC_USIM_EFSNE_TAG   = 0xc3;
+const ICC_USIM_EFANR_TAG   = 0xc4;
+const ICC_USIM_EFPBC_TAG   = 0xc5;
+const ICC_USIM_EFGRP_TAG   = 0xc6;
+const ICC_USIM_EFAAS_TAG   = 0xc7;
+const ICC_USIM_EFGSD_TAG   = 0xc8;
+const ICC_USIM_EFUID_TAG   = 0xc9;
+const ICC_USIM_EFEMAIL_TAG = 0xca;
+const ICC_USIM_EFCCP1_TAG  = 0xcb;
 
 /**
  * GSM PDU constants

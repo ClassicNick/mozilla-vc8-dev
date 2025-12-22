@@ -1,42 +1,7 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Aaron Leventhal <aaronl@netscape.com> (original author)
- *   Kyle Yuan <kyle.yuan@sun.com>
- *   Alexander Surkov <surkov.alexander@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXULListboxAccessible.h"
 
@@ -279,32 +244,26 @@ nsXULListboxAccessible::RowCount()
   return itemCount;
 }
 
-NS_IMETHODIMP
-nsXULListboxAccessible::GetCellAt(PRInt32 aRow, PRInt32 aColumn,
-                                  nsIAccessible **aAccessibleCell)
-{
-  NS_ENSURE_ARG_POINTER(aAccessibleCell);
-  *aAccessibleCell = nsnull;
-
-  if (IsDefunct())
-    return NS_OK;
-
+nsAccessible*
+nsXULListboxAccessible::CellAt(PRUint32 aRowIndex, PRUint32 aColumnIndex)
+{ 
   nsCOMPtr<nsIDOMXULSelectControlElement> control =
     do_QueryInterface(mContent);
+  NS_ENSURE_TRUE(control, nsnull);
 
   nsCOMPtr<nsIDOMXULSelectControlItemElement> item;
-  control->GetItemAtIndex(aRow, getter_AddRefs(item));
-  NS_ENSURE_TRUE(item, NS_ERROR_INVALID_ARG);
+  control->GetItemAtIndex(aRowIndex, getter_AddRefs(item));
+  if (!item)
+    return nsnull;
 
   nsCOMPtr<nsIContent> itemContent(do_QueryInterface(item));
-  NS_ENSURE_TRUE(mDoc, NS_ERROR_FAILURE);
-  nsAccessible *row = mDoc->GetAccessible(itemContent);
-  NS_ENSURE_STATE(row);
+  if (!itemContent)
+    return nsnull;
 
-  nsresult rv = row->GetChildAt(aColumn, aAccessibleCell);
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_INVALID_ARG);
+  nsAccessible* row = mDoc->GetAccessible(itemContent);
+  NS_ENSURE_TRUE(row, nsnull);
 
-  return NS_OK;
+  return row->GetChildAt(aColumnIndex);
 }
 
 NS_IMETHODIMP
@@ -569,9 +528,9 @@ nsXULListboxAccessible::GetSelectedCells(nsIArray **aCells)
     nsAccessible *item = mDoc->GetAccessible(itemContent);
 
     if (item) {
-      PRInt32 cellCount = item->GetChildCount();
-      for (PRInt32 cellIdx = 0; cellIdx < cellCount; cellIdx++) {
-        nsAccessible *cell = mChildren[cellIdx];
+      PRUint32 cellCount = item->ChildCount();
+      for (PRUint32 cellIdx = 0; cellIdx < cellCount; cellIdx++) {
+        nsAccessible* cell = mChildren[cellIdx];
         if (cell->Role() == roles::CELL)
           selCells->AppendElement(static_cast<nsIAccessible*>(cell), false);
       }
@@ -1121,8 +1080,8 @@ nsXULListCellAccessible::GetColumnHeaderCells(nsIArray **aHeaderCells)
   nsAccessible *list = nsnull;
 
   nsRefPtr<nsAccessible> tableAcc(do_QueryObject(table));
-  PRInt32 tableChildCount = tableAcc->GetChildCount();
-  for (PRInt32 childIdx = 0; childIdx < tableChildCount; childIdx++) {
+  PRUint32 tableChildCount = tableAcc->ChildCount();
+  for (PRUint32 childIdx = 0; childIdx < tableChildCount; childIdx++) {
     nsAccessible *child = tableAcc->GetChildAt(childIdx);
     if (child->Role() == roles::LIST) {
       list = child;

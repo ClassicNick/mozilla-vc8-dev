@@ -1,39 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Corporation code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Robert O'Callahan <robert@ocallahan.org>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FrameLayerBuilder.h"
 
@@ -917,6 +885,7 @@ ContainerState::CreateOrRecycleMaskImageLayerFor(Layer* aLayer)
     if (!result)
       return nsnull;
     result->SetUserData(&gMaskLayerUserData, new MaskLayerUserData());
+    result->SetForceSingleTile(true);
   }
   
   return result.forget();
@@ -1162,7 +1131,11 @@ ContainerState::ThebesLayerData::UpdateCommonClipCount(
 already_AddRefed<ImageContainer>
 ContainerState::ThebesLayerData::CanOptimizeImageLayer()
 {
+#ifdef MOZ_ENABLE_MASK_LAYERS
   if (!mImage) {
+#else
+  if (!mImage || !mItemClip.mRoundedClipRects.IsEmpty()) {
+#endif
     return nsnull;
   }
 
@@ -1192,6 +1165,10 @@ ContainerState::PopThebesLayerData()
       gfx3DMatrix transform = imageLayer->GetTransform()*
         gfx3DMatrix::ScalingMatrix(mParameters.mXScale, mParameters.mYScale, 1.0f);
       imageLayer->SetTransform(transform);
+#ifndef MOZ_ENABLE_MASK_LAYERS
+      NS_ASSERTION(data->mItemClip.mRoundedClipRects.IsEmpty(),
+                   "How did we get rounded clip rects here?");
+#endif
       if (data->mItemClip.mHaveClipRect) {
         nsIntRect clip = ScaleToNearestPixels(data->mItemClip.mClipRect);
         imageLayer->IntersectClipRect(clip);
@@ -1273,6 +1250,7 @@ ContainerState::PopThebesLayerData()
     }
     userData->mForcedBackgroundColor = backgroundColor;
 
+#ifdef MOZ_ENABLE_MASK_LAYERS
     // use a mask layer for rounded rect clipping
     PRInt32 commonClipCount = data->mCommonClipCount;
     NS_ASSERTION(commonClipCount >= 0, "Inconsistent clip count.");
@@ -1284,6 +1262,7 @@ ContainerState::PopThebesLayerData()
   } else {
     // mask layer for image and color layers
     SetupMaskLayer(layer, data->mItemClip);
+#endif
   }
   PRUint32 flags;
   if (isOpaque && !data->mForceTransparentSurface) {
@@ -1646,7 +1625,13 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
     // Assign the item to a layer
     if (layerState == LAYER_ACTIVE_FORCE ||
         layerState == LAYER_ACTIVE_EMPTY ||
+#ifdef MOZ_ENABLE_MASK_LAYERS
         layerState == LAYER_ACTIVE) {
+#else
+        (layerState == LAYER_ACTIVE &&
+         (aClip.mRoundedClipRects.IsEmpty() ||
+          !aClip.IsRectClippedByRoundedCorner(item->GetVisibleRect())))) {
+#endif
 
       // LAYER_ACTIVE_EMPTY means the layer is created just for its metadata.
       // We should never see an empty layer with any visible content!
@@ -1679,7 +1664,8 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
         ownLayer->SetTransform(transform);
       }
 
-      ownLayer->SetIsFixedPosition(!nsLayoutUtils::ScrolledByViewportScrolling(
+      ownLayer->SetIsFixedPosition(
+        !nsLayoutUtils::IsScrolledByRootContentDocumentDisplayportScrolling(
                                       activeScrolledRoot, mBuilder));
 
       // Update that layer's clip and visible rects.
@@ -1707,11 +1693,13 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       }
       RestrictVisibleRegionForLayer(ownLayer, itemVisibleRect);
 
+#ifdef MOZ_ENABLE_MASK_LAYERS
       // rounded rectangle clipping using mask layers
       // (must be done after visible rect is set on layer)
       if (aClip.IsRectClippedByRoundedCorner(itemContent)) {
           SetupMaskLayer(ownLayer, aClip);
       }
+#endif
 
       ContainerLayer* oldContainer = ownLayer->GetParent();
       if (oldContainer && oldContainer != mContainerLayer) {
@@ -1729,8 +1717,9 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
         FindThebesLayerFor(item, itemVisibleRect, itemDrawRect, aClip,
                            activeScrolledRoot);
 
-      data->mLayer->SetIsFixedPosition(!nsLayoutUtils::ScrolledByViewportScrolling(
-                                         activeScrolledRoot, mBuilder));
+      data->mLayer->SetIsFixedPosition(
+        !nsLayoutUtils::IsScrolledByRootContentDocumentDisplayportScrolling(
+                                       activeScrolledRoot, mBuilder));
 
       InvalidateForLayerChange(item, data->mLayer);
 
@@ -2802,6 +2791,7 @@ void
 ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aClip,
                                PRUint32 aRoundedRectClipCount) 
 {
+#ifdef MOZ_ENABLE_MASK_LAYERS
   // don't build an unnecessary mask
   if (aClip.mRoundedClipRects.IsEmpty() ||
       aRoundedRectClipCount <= 0) {
@@ -2817,8 +2807,8 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   nsRefPtr<ImageLayer> maskLayer =  CreateOrRecycleMaskImageLayerFor(aLayer);
   MaskLayerUserData* userData = GetMaskLayerUserData(maskLayer);
   if (ArrayRangeEquals(userData->mRoundedClipRects,
-                        aClip.mRoundedClipRects,
-                        aRoundedRectClipCount) &&
+                       aClip.mRoundedClipRects,
+                       aRoundedRectClipCount) &&
       userData->mRoundedClipRects.Length() <= aRoundedRectClipCount &&
       layerTransform == userData->mTransform &&
       boundingRect == userData->mBounds) {
@@ -2836,9 +2826,14 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
     return;
   }
   
-   nsRefPtr<gfxASurface> surface =
-     aLayer->Manager()->CreateOptimalSurface(boundingRect.Size(),
-                                             aLayer->Manager()->MaskImageFormat());
+  PRUint32 maxSize = mManager->GetMaxTextureSize();
+  NS_ASSERTION(maxSize > 0, "Invalid max texture size");
+  nsIntSize surfaceSize(NS_MIN<PRInt32>(boundingRect.Width(), maxSize),
+                        NS_MIN<PRInt32>(boundingRect.Height(), maxSize));
+
+  nsRefPtr<gfxASurface> surface =
+    aLayer->Manager()->CreateOptimalSurface(surfaceSize,
+                                            aLayer->Manager()->MaskImageFormat());
 
   // fail if we can't get the right surface
   if (!surface || surface->CairoStatus()) {
@@ -2849,12 +2844,15 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   nsRefPtr<gfxContext> context = new gfxContext(surface);
 
   gfxMatrix visRgnTranslation;
+  visRgnTranslation.Scale(float(surfaceSize.width)/float(boundingRect.Width()),
+                          float(surfaceSize.height)/float(boundingRect.Height()));
   visRgnTranslation.Translate(-boundingRect.TopLeft());
   context->Multiply(visRgnTranslation);
+
   gfxMatrix scale;
   scale.Scale(mParameters.mXScale, mParameters.mYScale);
   context->Multiply(scale);
-  
+
   // useful for debugging, make masked areas semi-opaque
   //context->SetColor(gfxRGBA(0, 0, 0, 0.3));
   //context->Paint();
@@ -2874,7 +2872,7 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   NS_ASSERTION(image, "Could not create image container for mask layer.");
   CairoImage::Data data;
   data.mSurface = surface;
-  data.mSize = boundingRect.Size();
+  data.mSize = surfaceSize;
   static_cast<CairoImage*>(image.get())->SetData(data);
   container->SetCurrentImage(image);
 
@@ -2890,6 +2888,7 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   userData->mBounds = aLayer->GetEffectiveVisibleRegion().GetBounds();
 
   aLayer->SetMaskLayer(maskLayer);
+#endif
   return;
 }
 

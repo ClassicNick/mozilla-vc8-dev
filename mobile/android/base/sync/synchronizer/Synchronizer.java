@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.sync.synchronizer;
 
@@ -28,6 +28,7 @@ import android.util.Log;
  * updated bundle information.
  */
 public class Synchronizer {
+  protected String configSyncID; // Used to pass syncID from load() back into save().
 
   /**
    * I translate the fine-grained feedback of a SynchronizerSessionDelegate into
@@ -109,8 +110,7 @@ public class Synchronizer {
   }
 
   public SynchronizerConfiguration save() {
-    String syncID = null;      // TODO: syncID.
-    return new SynchronizerConfiguration(syncID, bundleA, bundleB);
+    return new SynchronizerConfiguration(configSyncID, bundleA, bundleB);
   }
 
   /**
@@ -123,6 +123,6 @@ public class Synchronizer {
   public void load(SynchronizerConfiguration config) {
     bundleA = config.remoteBundle;
     bundleB = config.localBundle;
-    // TODO: syncID.
+    configSyncID  = config.syncID;
   }
 }

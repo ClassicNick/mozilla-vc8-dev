@@ -1,42 +1,7 @@
 /* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Android code.
- *
- * The Initial Developer of the Original Code is Mozilla Foundation.
- * Portions created by the Initial Developer are Copyright (C) 2009-2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vladimir Vukicevic <vladimir@pobox.com>
- *   Matt Brubeck <mbrubeck@mozilla.com>
- *   Vivien Nicolas <vnicolas@mozilla.com>
- *   Lucas Rocha <lucasr@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko;
 
@@ -55,6 +20,7 @@ import android.util.Log;
 import android.view.animation.TranslateAnimation;
 import android.view.Gravity;
 import android.view.ContextThemeWrapper;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
@@ -63,24 +29,26 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout.LayoutParams;
 import android.widget.TextView;
 import android.widget.TextSwitcher;
-import android.widget.ViewSwitcher.ViewFactory;
+import android.widget.ViewSwitcher;
 
-public class BrowserToolbar {
+public class BrowserToolbar implements ViewSwitcher.ViewFactory {
     private static final String LOGTAG = "GeckoToolbar";
     private LinearLayout mLayout;
     private Button mAwesomeBar;
     private ImageButton mTabs;
+    private ImageView mBack;
+    private ImageView mForward;
     public ImageButton mFavicon;
     public ImageButton mStop;
     public ImageButton mSiteSecurity;
     private AnimationDrawable mProgressSpinner;
     private TextSwitcher mTabsCount;
     private ImageView mShadow;
+    private LayoutInflater mInflater;
 
     final private Context mContext;
     private Handler mHandler;
     private int mColor;
-    private int mCounterColor;
     private int[] mPadding;
     private boolean mTitleCanExpand;
 
@@ -94,6 +62,7 @@ public class BrowserToolbar {
 
     public BrowserToolbar(Context context) {
         mContext = context;
+        mInflater = LayoutInflater.from(context);
     }
 
     public void from(LinearLayout layout) {
@@ -145,31 +114,25 @@ public class BrowserToolbar {
         });
         mTabs.setImageLevel(0);
 
-        mCounterColor = 0xFFC7D1DB;
-
         mTabsCount = (TextSwitcher) mLayout.findViewById(R.id.tabs_count);
         mTabsCount.removeAllViews();
-        mTabsCount.setFactory(new ViewFactory() {
-            public View makeView() {
-                TextView text = new TextView(mContext);
-                text.setGravity(Gravity.CENTER);
-
-                if (Build.VERSION.SDK_INT >= 11) {
-                    if (GeckoApp.mOrientation == Configuration.ORIENTATION_PORTRAIT)
-                        text.setTextSize(24);
-                    else
-                        text.setTextSize(20);
-                } else {
-                    text.setTextSize(22);
-                }
-
-                text.setTextColor(mCounterColor);
-                text.setShadowLayer(1.0f, 0f, 1.0f, Color.BLACK);
-                return text;
-            }
-        }); 
+        mTabsCount.setFactory(this);
         mTabsCount.setText("0");
         mCount = 0;
+
+        mBack = (ImageButton) mLayout.findViewById(R.id.back);
+        mBack.setOnClickListener(new Button.OnClickListener() {
+            public void onClick(View view) {
+                Tabs.getInstance().getSelectedTab().doBack();
+            }
+        });
+
+        mForward = (ImageButton) mLayout.findViewById(R.id.forward);
+        mForward.setOnClickListener(new Button.OnClickListener() {
+            public void onClick(View view) {
+                Tabs.getInstance().getSelectedTab().doForward();
+            }
+        });
 
         mFavicon = (ImageButton) mLayout.findViewById(R.id.favicon);
         mSiteSecurity = (ImageButton) mLayout.findViewById(R.id.site_security);
@@ -209,6 +172,12 @@ public class BrowserToolbar {
         mSlideUpOut.setDuration(mDuration);
         mSlideDownIn.setDuration(mDuration);
         mSlideDownOut.setDuration(mDuration);
+    }
+
+    @Override
+    public View makeView() {
+        // This returns a TextView for the TextSwitcher.
+        return mInflater.inflate(R.layout.tabs_counter, null);
     }
 
     private void onAwesomeBarSearch() {
@@ -266,7 +235,7 @@ public class BrowserToolbar {
                     mTabsCount.setVisibility(View.GONE);
                     mTabs.setContentDescription(mContext.getString(R.string.new_tab));
                 }
-                ((TextView) mTabsCount.getCurrentView()).setTextColor(mCounterColor);
+                ((TextView) mTabsCount.getCurrentView()).setTextColor(mContext.getResources().getColor(R.color.tabs_counter_color));
             }
         }, 2 * mDuration);
     }
@@ -359,6 +328,16 @@ public class BrowserToolbar {
         mLayout.requestFocusFromTouch();
     }
 
+    public void updateBackButton(boolean enabled) {
+         mBack.setColorFilter(enabled ? 0 : 0xFF999999);
+         mBack.setEnabled(enabled);
+    }
+
+    public void updateForwardButton(boolean enabled) {
+         mForward.setColorFilter(enabled ? 0 : 0xFF999999);
+         mForward.setEnabled(enabled);
+    }
+
     public void show() {
         if (Build.VERSION.SDK_INT >= 11)
             GeckoActionBar.show(GeckoApp.mAppContext);
@@ -383,6 +362,8 @@ public class BrowserToolbar {
             setProgressVisibility(tab.getState() == Tab.STATE_LOADING);
             setShadowVisibility((url == null) || !url.startsWith("about:"));
             updateTabCount(Tabs.getInstance().getCount());
+            updateBackButton(tab.canDoBack());
+            updateForwardButton(tab.canDoForward());
         }
     }
 }

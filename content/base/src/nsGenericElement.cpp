@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 sw=2 et tw=79: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Ms2ger <ms2ger@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * Base class for all element classes; this provides an implementation
@@ -98,7 +65,6 @@
 
 #include "nsBindingManager.h"
 #include "nsXBLBinding.h"
-#include "nsIXBLService.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIBoxObject.h"
 #include "nsClientRect.h"
@@ -153,7 +119,7 @@
 #include "nsWrapperCacheInlines.h"
 #include "nsCycleCollector.h"
 #include "xpcpublic.h"
-#include "xpcprivate.h"
+#include "nsIScriptError.h"
 #include "nsLayoutStatics.h"
 #include "mozilla/Telemetry.h"
 
@@ -1512,7 +1478,12 @@ nsIContent::IMEState
 nsIContent::GetDesiredIMEState()
 {
   if (!IsEditableInternal()) {
-    return IMEState(IMEState::DISABLED);
+    // Check for the special case where we're dealing with elements which don't
+    // have the editable flag set, but are readwrite (such as text controls).
+    if (!IsElement() ||
+        !AsElement()->State().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
+      return IMEState(IMEState::DISABLED);
+    }
   }
   // NOTE: The content for independent editors (e.g., input[type=text],
   // textarea) must override this method, so, we don't need to worry about
@@ -2648,10 +2619,6 @@ nsGenericElement::GetAttributes(nsIDOMNamedNodeMap** aAttributes)
 
   if (!slots->mAttributeMap) {
     slots->mAttributeMap = new nsDOMAttributeMap(this);
-    if (!slots->mAttributeMap->Init()) {
-      slots->mAttributeMap = nsnull;
-      return NS_ERROR_FAILURE;
-    }
   }
 
   NS_ADDREF(*aAttributes = slots->mAttributeMap);
@@ -5199,7 +5166,13 @@ nsGenericElement::MaybeCheckSameAttrVal(PRInt32 aNamespaceID,
       }
       bool valueMatches = aValue.EqualsAsStrings(*info.mValue);
       if (valueMatches && aPrefix == info.mName->GetPrefix()) {
-        return !OwnerDoc()->MayHaveDOMMutationObservers();
+        if (OwnerDoc()->MayHaveDOMMutationObservers()) {
+          // For backward compatibility, don't fire mutation events
+          // when setting an attribute to its old value.
+          *aHasListeners = false;
+        } else {
+          return true;
+        }
       }
       modification = true;
     }

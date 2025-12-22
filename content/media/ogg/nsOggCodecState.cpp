@@ -1,41 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim:set ts=2 sw=2 sts=2 et cindent: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla code.
- *
- * The Initial Developer of the Original Code is the Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2010
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *  Chris Double <chris.double@double.co.nz>
- *  Chris Pearce <chris@pearce.org.nz>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsDebug.h"
 #include "nsOggCodecState.h"
 #include "nsOggDecoder.h"
@@ -45,6 +12,9 @@
 #include "nsBuiltinDecoderReader.h"
 
 #include "mozilla/StandardInteger.h"
+#include "mozilla/Util.h" // DebugOnly
+
+using namespace mozilla;
 
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gBuiltinDecoderLog;
@@ -848,13 +818,21 @@ bool nsOpusState::DecodeHeader(ogg_packet* aPacket)
   }
 
   // Otherwise, parse as the id header.
-  if (aPacket->bytes < 19 || memcmp(aPacket->packet, "OpusHead\0", 9)) {
+  if (aPacket->bytes < 19 || memcmp(aPacket->packet, "OpusHead", 8)) {
     LOG(PR_LOG_DEBUG, ("Invalid Opus file: unrecognized header"));
     mActive = false;
     return true;
   }
 
   mRate = 48000; // The Opus decoder runs at 48 kHz regardless.
+
+  int version = aPacket->packet[8];
+  // Accept file format versions 0.x.
+  if ((version & 0xf0) != 0) {
+    LOG(PR_LOG_DEBUG, ("Rejecting unknown Opus file version %d", version));
+    mActive = false;
+    return true;
+  }
 
   mChannels= aPacket->packet[9];
   mPreSkip = LEUint16(aPacket->packet + 10);
@@ -890,7 +868,7 @@ PRInt64 nsOpusState::Time(PRInt64 granulepos)
 bool nsOpusState::IsHeader(ogg_packet* aPacket)
 {
   return aPacket->bytes >= 16 &&
-         (!memcmp(aPacket->packet, "OpusHead\0", 9) ||
+         (!memcmp(aPacket->packet, "OpusHead", 8) ||
           !memcmp(aPacket->packet, "OpusTags", 8));
 }
 
@@ -921,7 +899,7 @@ nsresult nsOpusState::PageIn(ogg_page* aPage)
 void nsOpusState::ReconstructGranulepos(void)
 {
   NS_ASSERTION(mUnstamped.Length() > 0, "Must have unstamped packets");
-  ogg_packet* last = mUnstamped[mUnstamped.Length()-1];
+  DebugOnly<ogg_packet*> last = mUnstamped[mUnstamped.Length()-1];
   NS_ASSERTION(last->e_o_s || last->granulepos > 0,
       "Must know last granulepos!");
 
@@ -1260,12 +1238,7 @@ bool nsSkeletonState::DecodeHeader(ogg_packet* aPacket)
     LOG(PR_LOG_DEBUG, ("Skeleton segment length: %lld", mLength));
 
     // Initialize the serianlno-to-index map.
-    bool init = mIndex.Init();
-    if (!init) {
-      NS_WARNING("Failed to initialize Ogg skeleton serialno-to-index map");
-      mActive = false;
-      return mDoneReadingHeaders = true;
-    }
+    mIndex.Init();
     mActive = true;
   } else if (IsSkeletonIndex(aPacket) && mVersion >= SKELETON_VERSION(4,0)) {
     if (!DecodeIndex(aPacket)) {
