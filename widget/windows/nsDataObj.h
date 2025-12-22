@@ -16,7 +16,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsIInputStream.h"
 #include "nsIStreamListener.h"

@@ -12,11 +12,12 @@
 #include <unistd.h>
 
 // Mozilla headers
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsINIParser.h"
 #include "nsXPCOMGlue.h"
 #include "nsXPCOMPrivate.h"              // for MAXPATHLEN and XPCOM_DLL
 #include "nsXULAppAPI.h"
+#include "BinaryPath.h"
 
 const char kAPP_INI[] = "application.ini";
 const char kWEBAPP_INI[] = "webapp.ini";
@@ -134,6 +135,12 @@ bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
     return false;
   }
 
+  // Override the class name part of the WM_CLASS property, so that the
+  // DE can match our window to the correct launcher
+  char programClass[MAXPATHLEN];
+  snprintf(programClass, MAXPATHLEN, "owa-%s", profile);
+  gdk_set_program_class(programClass);
+
   // NOTE: The GRE has successfully loaded, so we can use XPCOM now
   { // Scope for any XPCOM stuff we create
     ScopedLogging log;
@@ -147,7 +154,7 @@ bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
     snprintf(rtIniPath, MAXPATHLEN, "%s/%s", rtPath, kWEBAPPRT_INI);
 
     // Load the runtime's INI from its path
-    nsCOMPtr<nsILocalFile> rtINI;
+    nsCOMPtr<nsIFile> rtINI;
     if (NS_FAILED(XRE_GetFileFromPath(rtIniPath, getter_AddRefs(rtINI)))) {
       ErrorDialog("Couldn't load the runtime INI");
       return false;
@@ -167,14 +174,15 @@ bool GRELoadAndLaunch(const char* firefoxDir, const char* profile)
     }
 
     SetAllocatedString(webShellAppData->profile, profile);
+    SetAllocatedString(webShellAppData->name, profile);
 
-    nsCOMPtr<nsILocalFile> directory;
+    nsCOMPtr<nsIFile> directory;
     if (NS_FAILED(XRE_GetFileFromPath(rtPath, getter_AddRefs(directory)))) {
       ErrorDialog("Couldn't open runtime directory");
       return false;
     }
 
-    nsCOMPtr<nsILocalFile> xreDir;
+    nsCOMPtr<nsIFile> xreDir;
     if (NS_FAILED(XRE_GetFileFromPath(firefoxDir, getter_AddRefs(xreDir)))) {
       ErrorDialog("Couldn't open XRE directory");
       return false;
@@ -221,7 +229,7 @@ int main(int argc, char *argv[])
 
   // Get current executable path
   char curExePath[MAXPATHLEN];
-  if (readlink("/proc/self/exe", curExePath, MAXPATHLEN) == -1) {
+  if (NS_FAILED(mozilla::BinaryPath::Get(argv[0], curExePath))) {
     ErrorDialog("Couldn't read current executable path");
     return 255;
   }

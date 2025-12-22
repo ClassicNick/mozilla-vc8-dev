@@ -46,14 +46,13 @@
 #define FILE_COPY_BUFFER_SIZE 32768
 
 USING_INDEXEDDB_NAMESPACE
+using namespace mozilla::dom::indexedDB::ipc;
 
 namespace {
 
 class ObjectStoreHelper : public AsyncConnectionHelper
 {
 public:
-  typedef mozilla::dom::indexedDB::ipc::ObjectStoreRequestParams ObjectStoreRequestParams;
-
   ObjectStoreHelper(IDBTransaction* aTransaction,
                     IDBRequest* aRequest,
                     IDBObjectStore* aObjectStore)
@@ -677,15 +676,15 @@ IDBObjectStore::Create(IDBTransaction* aTransaction,
     IndexedDBTransactionChild* transactionActor = aTransaction->GetActorChild();
     NS_ASSERTION(transactionActor, "Must have an actor here!");
 
-    ipc::ObjectStoreConstructorParams params;
+    ObjectStoreConstructorParams params;
 
     if (aCreating) {
-      ipc::CreateObjectStoreParams createParams;
+      CreateObjectStoreParams createParams;
       createParams.info() = *aStoreInfo;
       params = createParams;
     }
     else {
-      ipc::GetObjectStoreParams getParams;
+      GetObjectStoreParams getParams;
       getParams.name() = aStoreInfo->name;
       params = getParams;
     }
@@ -837,6 +836,7 @@ IDBObjectStore::UpdateIndexes(IDBTransaction* aTransaction,
       "WHERE object_data_id = :object_data_id; "
       "DELETE FROM index_data "
       "WHERE object_data_id = :object_data_id");
+    NS_ENSURE_TRUE(stmt, NS_ERROR_FAILURE);
 
     mozStorageStatementScoper scoper(stmt);
 
@@ -2778,18 +2778,18 @@ AddHelper::ReleaseMainThreadObjects()
 nsresult
 AddHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
-  mozilla::dom::indexedDB::ipc::AddPutParams commonParams;
+  AddPutParams commonParams;
   commonParams.cloneInfo() = mCloneWriteInfo;
   commonParams.key() = mKey;
   commonParams.indexUpdateInfos().AppendElements(mIndexUpdateInfo);
 
   if (mOverwrite) {
-    mozilla::dom::indexedDB::ipc::PutParams putParams;
+    PutParams putParams;
     putParams.commonParams() = commonParams;
     aParams = putParams;
   }
   else {
-    mozilla::dom::indexedDB::ipc::AddParams addParams;
+    AddParams addParams;
     addParams.commonParams() = commonParams;
     aParams = addParams;
   }
@@ -2808,17 +2808,17 @@ AddHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Success_NotSent;
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response =  aResultCode;
   }
   else if (mOverwrite) {
-    mozilla::dom::indexedDB::ipc::PutResponse putResponse;
+    PutResponse putResponse;
     putResponse.key() = mKey;
     response = putResponse;
   }
   else {
-    mozilla::dom::indexedDB::ipc::AddResponse addResponse;
+    AddResponse addResponse;
     addResponse.key() = mKey;
     response = addResponse;
   }
@@ -2908,7 +2908,7 @@ GetHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
   NS_ASSERTION(mKeyRange, "This should never be null!");
 
-  mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::GetParams params;
+  FIXME_Bug_521898_objectstore::GetParams params;
 
   mKeyRange->ToSerializedKeyRange(params.keyRange());
 
@@ -2932,14 +2932,14 @@ GetHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Error;
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
     SerializedStructuredCloneReadInfo readInfo;
     readInfo = mCloneReadInfo;
-    mozilla::dom::indexedDB::ipc::GetResponse getResponse = readInfo;
+    GetResponse getResponse = readInfo;
     response = getResponse;
   }
 
@@ -3016,7 +3016,7 @@ DeleteHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
   NS_ASSERTION(mKeyRange, "This should never be null!");
 
-  mozilla::dom::indexedDB::ipc::DeleteParams params;
+  DeleteParams params;
 
   mKeyRange->ToSerializedKeyRange(params.keyRange());
 
@@ -3035,12 +3035,12 @@ DeleteHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Success_NotSent;
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    response = mozilla::dom::indexedDB::ipc::DeleteResponse();
+    response = DeleteResponse();
   }
 
   if (!actor->Send__delete__(actor, response)) {
@@ -3086,7 +3086,7 @@ ClearHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
 nsresult
 ClearHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
-  aParams = mozilla::dom::indexedDB::ipc::ClearParams();
+  aParams = ClearParams();
   return NS_OK;
 }
 
@@ -3101,12 +3101,12 @@ ClearHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Success_NotSent;
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    response = mozilla::dom::indexedDB::ipc::ClearResponse();
+    response = ClearResponse();
   }
 
   if (!actor->Send__delete__(actor, response)) {
@@ -3308,10 +3308,10 @@ nsresult
 OpenCursorHelper::PackArgumentsForParentProcess(
                                               ObjectStoreRequestParams& aParams)
 {
-  mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::OpenCursorParams params;
+  FIXME_Bug_521898_objectstore::OpenCursorParams params;
 
   if (mKeyRange) {
-    mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::KeyRange keyRange;
+    FIXME_Bug_521898_objectstore::KeyRange keyRange;
     mKeyRange->ToSerializedKeyRange(keyRange);
     params.optionalKeyRange() = keyRange;
   }
@@ -3351,12 +3351,12 @@ OpenCursorHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     }
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    mozilla::dom::indexedDB::ipc::OpenCursorResponse openCursorResponse;
+    OpenCursorResponse openCursorResponse;
 
     if (!mCursor) {
       openCursorResponse = mozilla::void_t();
@@ -3373,7 +3373,7 @@ OpenCursorHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
                    mSerializedCloneReadInfo.dataLength,
                    "Shouldn't be possible!");
 
-      mozilla::dom::indexedDB::ipc::ObjectStoreCursorConstructorParams params;
+      ObjectStoreCursorConstructorParams params;
       params.requestParent() = requestActor;
       params.direction() = mDirection;
       params.key() = mKey;
@@ -3406,20 +3406,20 @@ OpenCursorHelper::UnpackResponseFromParentProcess(
   NS_ASSERTION(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
                "Bad response type!");
   NS_ASSERTION(aResponseValue.get_OpenCursorResponse().type() ==
-               ipc::OpenCursorResponse::Tvoid_t ||
+               OpenCursorResponse::Tvoid_t ||
                aResponseValue.get_OpenCursorResponse().type() ==
-               ipc::OpenCursorResponse::TPIndexedDBCursorChild,
+               OpenCursorResponse::TPIndexedDBCursorChild,
                "Bad response union type!");
   NS_ASSERTION(!mCursor, "Shouldn't have this yet!");
 
-  const mozilla::dom::indexedDB::ipc::OpenCursorResponse& response =
+  const OpenCursorResponse& response =
     aResponseValue.get_OpenCursorResponse();
 
   switch (response.type()) {
-    case mozilla::dom::indexedDB::ipc::OpenCursorResponse::Tvoid_t:
+    case OpenCursorResponse::Tvoid_t:
       break;
 
-    case mozilla::dom::indexedDB::ipc::OpenCursorResponse::TPIndexedDBCursorChild: {
+    case OpenCursorResponse::TPIndexedDBCursorChild: {
       IndexedDBCursorChild* actor =
         static_cast<IndexedDBCursorChild*>(
           response.get_PIndexedDBCursorChild());
@@ -3749,10 +3749,10 @@ GetAllHelper::ReleaseMainThreadObjects()
 nsresult
 GetAllHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
-  mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::GetAllParams params;
+  FIXME_Bug_521898_objectstore::GetAllParams params;
 
   if (mKeyRange) {
-    mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::KeyRange keyRange;
+    FIXME_Bug_521898_objectstore::KeyRange keyRange;
     mKeyRange->ToSerializedKeyRange(keyRange);
     params.optionalKeyRange() = keyRange;
   }
@@ -3784,12 +3784,12 @@ GetAllHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     }
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    mozilla::dom::indexedDB::ipc::GetAllResponse getAllResponse;
+    GetAllResponse getAllResponse;
 
     InfallibleTArray<SerializedStructuredCloneReadInfo>& infos =
       getAllResponse.cloneInfos();
@@ -3923,10 +3923,10 @@ CountHelper::ReleaseMainThreadObjects()
 nsresult
 CountHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
 {
-  mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::CountParams params;
+  FIXME_Bug_521898_objectstore::CountParams params;
 
   if (mKeyRange) {
-    mozilla::dom::indexedDB::ipc::FIXME_Bug_521898_objectstore::KeyRange keyRange;
+    FIXME_Bug_521898_objectstore::KeyRange keyRange;
     mKeyRange->ToSerializedKeyRange(keyRange);
     params.optionalKeyRange() = keyRange;
   }
@@ -3949,12 +3949,12 @@ CountHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
     return Success_NotSent;
   }
 
-  mozilla::dom::indexedDB::ipc::ResponseValue response;
+  ResponseValue response;
   if (NS_FAILED(aResultCode)) {
     response = aResultCode;
   }
   else {
-    mozilla::dom::indexedDB::ipc::CountResponse countResponse = mCount;
+    CountResponse countResponse = mCount;
     response = countResponse;
   }
 
