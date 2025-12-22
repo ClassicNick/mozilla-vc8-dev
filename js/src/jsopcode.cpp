@@ -2543,6 +2543,7 @@ Decompile(SprintStack *ss, jsbytecode *pc, int nb)
     JSString *str;
     JSBool ok;
     JSBool foreach;
+    JSBool defaultsSwitch = false;
 #if JS_HAS_XML_SUPPORT
     JSBool inXML, quoteAttr;
 #else
@@ -4835,6 +4836,19 @@ Decompile(SprintStack *ss, jsbytecode *pc, int nb)
                 int32_t j, n, low, high;
                 TableEntry *table, *tmp;
 
+                if (defaultsSwitch) {
+                    defaultsSwitch = false;
+                    len = GET_JUMP_OFFSET(pc);
+                    if (jp->fun->hasRest()) {
+                        // Jump over rest parameter things.
+                        len += GetBytecodeLength(pc + len);
+                        LOCAL_ASSERT(pc[len] == JSOP_POP);
+                        len += GetBytecodeLength(pc + len);
+                    }
+                    todo = -2;
+                    break;
+                }
+
                 sn = js_GetSrcNote(jp->script, pc);
                 LOCAL_ASSERT(sn && SN_TYPE(sn) == SRC_SWITCH);
                 len = js_GetSrcNoteOffset(sn, 0);
@@ -5315,6 +5329,24 @@ Decompile(SprintStack *ss, jsbytecode *pc, int nb)
                 break;
 #endif /* JS_HAS_XML_SUPPORT */
 
+              case JSOP_ACTUALSFILLED:
+                JS_ASSERT(!defaultsSwitch);
+                defaultsSwitch = true;
+                todo = -2;
+                break;
+
+              case JSOP_REST:
+                // Ignore bytecode related to handling rest.
+                pc += GetBytecodeLength(pc);
+                if (*pc == JSOP_UNDEFINED)
+                    pc += GetBytecodeLength(pc);
+                LOCAL_ASSERT(*pc == JSOP_SETALIASEDVAR || *pc == JSOP_SETARG);
+                pc += GetBytecodeLength(pc);
+                LOCAL_ASSERT(*pc == JSOP_POP);
+                len = GetBytecodeLength(pc);
+                todo = -2;
+                break;
+
               default:
                 todo = -2;
                 break;
@@ -5532,12 +5564,37 @@ js_DecompileFunction(JSPrinter *jp)
         ss.printer = NULL;
         jp->script = script;
 #endif
+        
+        jsbytecode *deftable = NULL;
+        jsbytecode *defbegin = NULL;
+        int32_t deflen = 0;
+        uint16_t defstart = 0;
+        unsigned nformal = fun->nargs - fun->hasRest();
+
+        if (fun->hasDefaults()) {
+            jsbytecode *defpc;
+            for (defpc = pc; defpc < endpc; defpc += GetBytecodeLength(defpc)) {
+                if (*defpc == JSOP_ACTUALSFILLED)
+                    break;
+            }
+            LOCAL_ASSERT_RV(defpc < endpc, JS_FALSE);
+            defpc += GetBytecodeLength(defpc);
+            LOCAL_ASSERT_RV(*defpc == JSOP_TABLESWITCH, JS_FALSE);
+            defbegin = defpc;
+            deflen = GET_JUMP_OFFSET(defpc);
+            defpc += JUMP_OFFSET_LEN;
+            defstart = GET_JUMP_OFFSET(defpc);
+            defpc += JUMP_OFFSET_LEN;
+            defpc += JUMP_OFFSET_LEN; // Skip high
+            deftable = defpc;
+        }
 
         for (unsigned i = 0; i < fun->nargs; i++) {
             if (i > 0)
                 js_puts(jp, ", ");
 
-            if (i == unsigned(fun->nargs) - 1 && fun->hasRest())
+            bool isRest = fun->hasRest() && i == unsigned(fun->nargs) - 1;
+            if (isRest)
                 js_puts(jp, "...");
             JSAtom *param = GetArgOrVarAtom(jp, i);
 
@@ -5572,10 +5629,18 @@ js_DecompileFunction(JSPrinter *jp)
                 continue;
             }
 
-#undef LOCAL_ASSERT
 #endif
+#undef LOCAL_ASSERT
 
-            if (!QuoteString(&jp->sprinter, param, 0)) {
+            if (fun->hasDefaults() && deflen && i >= defstart && !isRest) {
+#define TABLE_OFF(off) GET_JUMP_OFFSET(&deftable[(off)*JUMP_OFFSET_LEN])
+                jsbytecode *casestart = defbegin + TABLE_OFF(i - defstart);
+                jsbytecode *caseend = defbegin + ((i < nformal - 1) ? TABLE_OFF(i - defstart + 1) : deflen);
+#undef TABLE_OFF
+                unsigned exprlength = caseend - casestart - js_CodeSpec[JSOP_POP].length;
+                if (!DecompileCode(jp, script, casestart, exprlength, 0))
+                    return JS_FALSE;
+            } else if (!QuoteString(&jp->sprinter, param, 0)) {
                 ok = JS_FALSE;
                 break;
             }

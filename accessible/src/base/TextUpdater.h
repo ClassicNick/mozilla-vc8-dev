@@ -7,7 +7,7 @@
 #define TextUpdater_h_
 
 #include "AccEvent.h"
-#include "nsHyperTextAccessible.h"
+#include "HyperTextAccessible.h"
 
 /**
  * Used to find a difference between old and new text and fire text change
@@ -19,12 +19,12 @@ public:
   /**
    * Start text of the text leaf update.
    */
-  static void Run(nsDocAccessible* aDocument,
+  static void Run(DocAccessible* aDocument,
                   mozilla::a11y::TextLeafAccessible* aTextLeaf,
                   const nsAString& aNewText);
 
 private:
-  TextUpdater(nsDocAccessible* aDocument,
+  TextUpdater(DocAccessible* aDocument,
               mozilla::a11y::TextLeafAccessible* aTextLeaf) :
     mDocument(aDocument), mTextLeaf(aTextLeaf), mHyperText(nsnull),
     mTextOffset(-1) { }
@@ -83,9 +83,9 @@ private:
   const static PRUint32 kMaxStrLen = 1 << 6;
 
 private:
-  nsDocAccessible* mDocument;
+  DocAccessible* mDocument;
   mozilla::a11y::TextLeafAccessible* mTextLeaf;
-  nsHyperTextAccessible* mHyperText;
+  HyperTextAccessible* mHyperText;
   PRInt32 mTextOffset;
 };
 

@@ -120,14 +120,6 @@ IsPermitted(const char *name, JSFlatString *prop, bool set)
     if (!propLength)
         return false;
     switch (name[0]) {
-        NAME('D', "DOMException",
-             PROP('c', RW("code"))
-             PROP('m', RW("message"))
-             PROP('n', RW("name"))
-             PROP('r', RW("result"))
-             PROP('t', R("toString")))
-        NAME('E', "Error",
-             PROP('m', R("message")))
         NAME('H', "History",
              PROP('b', R("back"))
              PROP('f', R("forward"))
@@ -501,7 +493,8 @@ ExposedPropertiesOnly::check(JSContext *cx, JSObject *wrapper, jsid id, Wrapper:
                 nsCOMPtr<nsIDocument> doc =
                     do_QueryInterface(win->GetExtantDocument());
                 if (doc) {
-                    doc->WarnOnceAbout(nsIDocument::eNoExposedProps);
+                    doc->WarnOnceAbout(nsIDocument::eNoExposedProps,
+                                       /* asError = */ true);
                 }
             }
 

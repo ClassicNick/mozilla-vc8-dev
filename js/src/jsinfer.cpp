@@ -138,10 +138,17 @@ static bool InferSpewActive(SpewChannel channel)
 static bool InferSpewColorable()
 {
     /* Only spew colors on xterm-color to not screw up emacs. */
-    const char *env = getenv("TERM");
-    if (!env)
-        return false;
-    return strcmp(env, "xterm-color") == 0;
+    static bool colorable = false;
+    static bool checked = false;
+    if (!checked) {
+        checked = true;
+        const char *env = getenv("TERM");
+        if (!env)
+            return false;
+        if (strcmp(env, "xterm-color") == 0 || strcmp(env, "xterm-256color") == 0)
+            colorable = true;
+    }
+    return colorable;
 }
 
 const char *
@@ -3388,6 +3395,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
       case JSOP_RSH:
       case JSOP_LSH:
       case JSOP_URSH:
+      case JSOP_ACTUALSFILLED:
         pushed[0].addType(cx, Type::Int32Type());
         break;
       case JSOP_FALSE:

@@ -26,11 +26,9 @@ CPPSRCS = \
   nsAccDocManager.cpp \
   nsAccessNode.cpp \
   nsARIAMap.cpp \
-  nsDocAccessible.cpp \
   nsCoreUtils.cpp \
   nsAccUtils.cpp \
   nsAccessibilityService.cpp \
-  nsAccessible.cpp \
   nsAccessiblePivot.cpp \
   nsAccTreeWalker.cpp \
   nsBaseWidgetAccessible.cpp \
@@ -53,7 +51,6 @@ EXPORTS = \
   a11yGeneric.h \
   nsAccDocManager.h \
   nsAccessibilityService.h \
-  nsAccessible.h \
   nsAccessNode.h \
   $(NULL)
 

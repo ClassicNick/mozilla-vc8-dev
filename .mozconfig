@@ -3,7 +3,7 @@
 #
 
 # Make Options
-mk_add_options MOZ_MAKE_FLAGS="-j1"
+mk_add_options MOZ_MAKE_FLAGS="-j3"
 
 # Set line below to your desired object directory
 mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/obj-fxvc71-release"

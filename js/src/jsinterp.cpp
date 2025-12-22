@@ -2547,11 +2547,9 @@ BEGIN_CASE(JSOP_FUNCALL)
 #ifdef JS_METHODJIT
     if (!newType) {
         /* Try to ensure methods are method JIT'd.  */
-        mjit::CompileRequest request = (interpMode == JSINTERP_NORMAL)
-                                       ? mjit::CompileRequest_Interpreter
-                                       : mjit::CompileRequest_JIT;
         mjit::CompileStatus status = mjit::CanMethodJIT(cx, script, script->code,
-                                                        construct, request);
+                                                        construct,
+                                                        mjit::CompileRequest_Interpreter);
         if (status == mjit::Compile_Error)
             goto error;
         if (status == mjit::Compile_Okay) {
@@ -2811,6 +2809,12 @@ BEGIN_CASE(JSOP_LOOKUPSWITCH)
 }
 END_VARLEN_CASE
 }
+
+BEGIN_CASE(JSOP_ACTUALSFILLED)
+{
+    PUSH_INT32(JS_MAX(regs.fp()->numActualArgs(), GET_UINT16(regs.pc)));
+}
+END_CASE(JSOP_ACTUALSFILLED)
 
 BEGIN_CASE(JSOP_ARGUMENTS)
     JS_ASSERT(!regs.fp()->fun()->hasRest());

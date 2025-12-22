@@ -1870,16 +1870,10 @@ STRING_TO_JSVAL(JSString *str)
     return IMPL_TO_JSVAL(STRING_TO_JSVAL_IMPL(str));
 }
 
-static JS_ALWAYS_INLINE JSBool
-JSVAL_IS_OBJECT(jsval v)
-{
-    return JSVAL_IS_OBJECT_OR_NULL_IMPL(JSVAL_TO_IMPL(v));
-}
-
 static JS_ALWAYS_INLINE JSObject *
 JSVAL_TO_OBJECT(jsval v)
 {
-    JS_ASSERT(JSVAL_IS_OBJECT(v));
+    JS_ASSERT(JSVAL_IS_OBJECT_OR_NULL_IMPL(JSVAL_TO_IMPL(v)));
     return JSVAL_TO_OBJECT_IMPL(JSVAL_TO_IMPL(v));
 }
 
@@ -2200,8 +2194,10 @@ class AutoIdRooter : private AutoGCRooter
 #define JSFUN_HEAVYWEIGHT_TEST(f)  ((f) & JSFUN_HEAVYWEIGHT)
 
 #define JSFUN_HAS_REST          0x0100  /* function has a rest (...) parameter */
-#define JSFUN_CONSTRUCTOR     0x0200    /* native that can be called as a ctor
+#define JSFUN_CONSTRUCTOR       0x0200  /* native that can be called as a ctor
                                            without creating a this object */
+#define JSFUN_HAS_DEFAULTS      0x0400  /* function has at least one default
+                                           parameter */
 
 #define JSFUN_FLAGS_MASK      0x07f8    /* overlay JSFUN_* attributes --
                                            bits 12-15 are used internally to
@@ -2728,12 +2724,17 @@ JS_StringToVersion(const char *string);
                                                    option supported for the
                                                    XUL preprocessor and kindred
                                                    beasts. */
-#define JSOPTION_XML            JS_BIT(6)       /* EMCAScript for XML support:
+#define JSOPTION_ALLOW_XML      JS_BIT(6)       /* enable E4X syntax (deprecated)
+                                                   and define the E4X-related
+                                                   globals: XML, XMLList,
+                                                   Namespace, etc. */
+#define JSOPTION_MOAR_XML       JS_BIT(7)       /* enable E4X even in versions
+                                                   that don't normally get it;
                                                    parse <!-- --> as a token,
                                                    not backward compatible with
                                                    the comment-hiding hack used
                                                    in HTML script tags. */
-#define JSOPTION_DONT_REPORT_UNCAUGHT \
+#define JSOPTION_DONT_REPORT_UNCAUGHT                                   \
                                 JS_BIT(8)       /* When returning from the
                                                    outermost API call, prevent
                                                    uncaught exceptions from
@@ -2775,7 +2776,7 @@ JS_StringToVersion(const char *string);
                                                    "use strict" annotations. */
 
 /* Options which reflect compile-time properties of scripts. */
-#define JSCOMPILEOPTION_MASK    (JSOPTION_XML)
+#define JSCOMPILEOPTION_MASK    (JSOPTION_ALLOW_XML | JSOPTION_MOAR_XML)
 
 #define JSRUNOPTION_MASK        (JS_BITMASK(20) & ~JSCOMPILEOPTION_MASK)
 #define JSALLOPTION_MASK        (JSCOMPILEOPTION_MASK | JSRUNOPTION_MASK)
