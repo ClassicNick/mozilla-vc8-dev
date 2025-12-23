@@ -47,6 +47,7 @@ CPPSRCS += \
   AndroidHal.cpp \
   AndroidSensor.cpp \
   FallbackPower.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 else ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
 CPPSRCS += \
@@ -62,6 +63,7 @@ CPPSRCS += \
   FallbackScreenConfiguration.cpp \
   FallbackSensor.cpp \
   FallbackVibration.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 ifdef MOZ_ENABLE_DBUS
 CPPSRCS += UPowerClient.cpp
@@ -77,6 +79,7 @@ CPPSRCS += \
   FallbackVibration.cpp \
   FallbackScreenConfiguration.cpp \
   FallbackPower.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 else
 CPPSRCS += \
@@ -91,6 +94,7 @@ CPPSRCS += \
   FallbackVibration.cpp \
   FallbackPower.cpp \
   FallbackScreenConfiguration.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 CMMSRCS += \
   CocoaSensor.mm \
@@ -102,6 +106,7 @@ CPPSRCS += \
   FallbackVibration.cpp \
   FallbackPower.cpp \
   FallbackScreenConfiguration.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 ifdef MOZ_ENABLE_DBUS
 CPPSRCS += UPowerClient.cpp
@@ -115,6 +120,7 @@ CPPSRCS += \
   FallbackVibration.cpp \
   FallbackPower.cpp \
   FallbackScreenConfiguration.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 endif
 else

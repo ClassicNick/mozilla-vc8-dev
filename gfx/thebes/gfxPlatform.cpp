@@ -17,7 +17,7 @@
 #endif
 #elif defined(XP_MACOSX)
 #include "gfxPlatformMac.h"
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
 #include "gfxPlatformGtk.h"
 #elif defined(MOZ_WIDGET_QT)
 #include "gfxQtPlatform.h"
@@ -261,7 +261,7 @@ gfxPlatform::Init()
     gPlatform = new gfxWindowsPlatform;
 #elif defined(XP_MACOSX)
     gPlatform = new gfxPlatformMac;
-#elif defined(MOZ_WIDGET_GTK2)
+#elif defined(MOZ_WIDGET_GTK)
     gPlatform = new gfxPlatformGtk;
 #elif defined(MOZ_WIDGET_QT)
     gPlatform = new gfxQtPlatform;

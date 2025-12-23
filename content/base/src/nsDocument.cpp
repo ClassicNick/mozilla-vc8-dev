@@ -160,7 +160,6 @@
 #include "nsHTMLCSSStyleSheet.h"
 
 #include "mozilla/dom/Link.h"
-#include "nsIHTMLDocument.h"
 #include "nsXULAppAPI.h"
 #include "nsDOMTouchEvent.h"
 
@@ -8991,6 +8990,7 @@ nsDocument::RequestFullScreen(Element* aElement, bool aWasCallerChrome)
   // to the document's principal's host, if it has one.
   if (!mIsApprovedForFullscreen) {
     mIsApprovedForFullscreen =
+      GetWindow()->IsPartOfApp() ||
       nsContentUtils::IsSitePermAllow(NodePrincipal(), "fullscreen");
   }
 

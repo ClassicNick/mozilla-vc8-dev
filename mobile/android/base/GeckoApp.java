@@ -822,6 +822,10 @@ abstract public class GeckoApp
         if (tab == null)
             return;
 
+        // Only remove doorhangers if the popup is hidden or if we're navigating to a new URL
+        if (!mDoorHangerPopup.isShowing() || !uri.equals(tab.getURL()))
+            tab.removeTransientDoorHangers();
+
         tab.updateURL(uri);
         tab.setDocumentURI(documentURI);
 
@@ -829,7 +833,6 @@ abstract public class GeckoApp
         tab.clearFavicon();
         tab.updateIdentityData(null);
         tab.setReaderEnabled(false);
-        tab.removeTransientDoorHangers();
         tab.setAllowZoom(true);
         tab.setDefaultZoom(0);
         tab.setMinZoom(0);
@@ -875,7 +878,10 @@ abstract public class GeckoApp
 
     void handlePageShow(final int tabId) { }
 
-    void handleClearHistory() { }
+    void handleClearHistory() {
+        BrowserDB.clearHistory(getContentResolver());
+        mFavicons.clearFavicons();
+    }
 
     public StartupMode getStartupMode() {
         // This function might touch the disk and should not
@@ -1249,6 +1255,8 @@ abstract public class GeckoApp
             } else if (event.equals("Share:Text")) {
                 String text = message.getString("text");
                 GeckoAppShell.openUriExternal(text, "text/plain", "", "", Intent.ACTION_SEND, "");
+            } else if (event.equals("Sanitize:ClearHistory")) {
+                handleClearHistory();
             }
         } catch (Exception e) {
             Log.e(LOGTAG, "Exception handling message \"" + event + "\":", e);
@@ -1784,11 +1792,31 @@ abstract public class GeckoApp
         Intent intent = getIntent();
         String action = intent.getAction();
         String args = intent.getStringExtra("args");
-        if (args != null && args.contains("-profile")) {
-            Pattern p = Pattern.compile("(?:-profile\\s*)(\\w*)(\\s*)");
-            Matcher m = p.matcher(args);
-            if (m.find()) {
-                mProfile = GeckoProfile.get(this, m.group(1));
+
+        String profileName = null;
+        String profilePath = null;
+        if (args != null) {
+            if (args.contains("-P")) {
+                Pattern p = Pattern.compile("(?:-P\\s*)(\\w*)(\\s*)");
+                Matcher m = p.matcher(args);
+                if (m.find()) {
+                    profileName = m.group(1);
+                }
+            }
+            if (args.contains("-profile")) {
+                Pattern p = Pattern.compile("(?:-profile\\s*)(\\S*)(\\s*)");
+                Matcher m = p.matcher(args);
+                if (m.find()) {
+                    profilePath =  m.group(1);
+                }
+                if (profileName == null) {
+                    profileName = getDefaultProfileName();
+                    if (profileName == null)
+                        profileName = "default";
+                }
+            }
+            if (profileName != null || profilePath != null) {
+                mProfile = GeckoProfile.get(this, profileName, profilePath);
             }
         }
 
@@ -1927,6 +1955,7 @@ abstract public class GeckoApp
         GeckoAppShell.registerGeckoEventListener("WebApps:Uninstall", GeckoApp.mAppContext);
         GeckoAppShell.registerGeckoEventListener("DesktopMode:Changed", GeckoApp.mAppContext);
         GeckoAppShell.registerGeckoEventListener("Share:Text", GeckoApp.mAppContext);
+        GeckoAppShell.registerGeckoEventListener("Sanitize:ClearHistory", GeckoApp.mAppContext);
 
         if (SmsManager.getInstance() != null) {
           SmsManager.getInstance().start();
@@ -2152,7 +2181,7 @@ abstract public class GeckoApp
             return uri;
 
         final String action = intent.getAction();
-        if (action.startsWith(ACTION_WEBAPP_PREFIX) || ACTION_BOOKMARK.equals(action)) {
+        if ((action != null && action.startsWith(ACTION_WEBAPP_PREFIX)) || ACTION_BOOKMARK.equals(action)) {
             uri = intent.getStringExtra("args");
             if (uri != null && uri.startsWith("--url=")) {
                 uri.replace("--url=", "");
@@ -2271,6 +2300,7 @@ abstract public class GeckoApp
         GeckoAppShell.unregisterGeckoEventListener("WebApps:Uninstall", GeckoApp.mAppContext);
         GeckoAppShell.unregisterGeckoEventListener("DesktopMode:Changed", GeckoApp.mAppContext);
         GeckoAppShell.unregisterGeckoEventListener("Share:Text", GeckoApp.mAppContext);
+        GeckoAppShell.unregisterGeckoEventListener("Sanitize:ClearHistory", GeckoApp.mAppContext);
 
         if (mFavicons != null)
             mFavicons.close();
