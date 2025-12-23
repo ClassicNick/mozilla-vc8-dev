@@ -26,18 +26,6 @@
 
 namespace js {
 
-/*
- * To reuse space in StmtInfoBCE, rename breaks and continues for use during
- * try/catch/finally code generation and backpatching. To match most common
- * use cases, the macro argument is a struct, not a struct pointer. Only a
- * loop, switch, or label statement info record can have breaks and continues,
- * and only a for loop has an update backpatch chain, so it's safe to overlay
- * these for the "trying" StmtTypes.
- */
-#define CATCHNOTE(stmt)  ((stmt).update)
-#define GOSUBS(stmt)     ((stmt).breaks)
-#define GUARDJUMP(stmt)  ((stmt).continues)
-
 struct TryNode {
     JSTryNote       note;
     TryNode       *prev;
@@ -63,6 +51,8 @@ class GCConstList {
     void finish(ConstArray *array);
 };
 
+class StmtInfoBCE;
+
 struct BytecodeEmitter
 {
     typedef StmtInfoBCE StmtInfo;
@@ -71,7 +61,7 @@ struct BytecodeEmitter
 
     BytecodeEmitter *const parent;  /* enclosing function or global context */
 
-    const Rooted<JSScript*> script;       /* the JSScript we're ultimately producing */
+    Rooted<JSScript*> script;       /* the JSScript we're ultimately producing */
 
     struct {
         jsbytecode  *base;          /* base of JS bytecode vector */
@@ -163,16 +153,7 @@ struct BytecodeEmitter
         return true;
     }
 
-    bool checkSingletonContext() {
-        if (!script->compileAndGo || sc->inFunction())
-            return false;
-        for (StmtInfoBCE *stmt = topStmt; stmt; stmt = stmt->down) {
-            if (STMT_IS_LOOP(stmt))
-                return false;
-        }
-        hasSingletons = true;
-        return true;
-    }
+    bool checkSingletonContext();
 
     bool needsImplicitThis();
 

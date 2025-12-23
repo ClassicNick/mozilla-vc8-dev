@@ -24,7 +24,7 @@ var _nextPortId = 1;
 // Retrieves a reference to a WorkerHandle associated with a FrameWorker and a
 // new ClientPort.
 function getFrameWorkerHandle(url, clientWindow, name) {
-  // first create the client port we are going to use.  Laster we will
+  // first create the client port we are going to use.  Later we will
   // message the worker to create the worker port.
   let portid = _nextPortId++;
   let clientPort = new ClientPort(portid, clientWindow);
@@ -209,14 +209,12 @@ FrameWorker.prototype = {
       }
     }
 
+    delete workerCache[this.url];
+
     // let pending events get delivered before actually removing the frame
     Services.tm.mainThread.dispatch(function deleteWorkerFrame() {
       // now nuke the iframe itself and forget everything about this worker.
-      let doc = Cc["@mozilla.org/appshell/appShellService;1"]
-                      .getService(Ci.nsIAppShellService)
-                      .hiddenDOMWindow.document;
-      doc.documentElement.removeChild(this.frame);
-      delete workerCache[this.url];
+      this.frame.parentNode.removeChild(this.frame);
     }.bind(this), Ci.nsIThread.DISPATCH_NORMAL);
   }
 };

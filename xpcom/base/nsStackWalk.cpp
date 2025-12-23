@@ -51,7 +51,7 @@ malloc_logger_t(uint32_t type, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3,
 extern malloc_logger_t *malloc_logger;
 
 static void
-stack_callback(void *pc, void *closure)
+stack_callback(void *pc, void *sp, void *closure)
 {
   const char *name = reinterpret_cast<char *>(closure);
   Dl_info info;
@@ -173,6 +173,7 @@ StackWalkInitCriticalAddress()
 #include <windows.h>
 #include <process.h>
 #include <stdio.h>
+#include <malloc.h>
 #include "plstr.h"
 #include "mozilla/FunctionTimer.h"
 
@@ -315,6 +316,9 @@ struct WalkStackData {
   void **pcs;
   PRUint32 pc_size;
   PRUint32 pc_count;
+  void **sps;
+  PRUint32 sp_size;
+  PRUint32 sp_count;
 };
 
 void PrintError(char *prefix, WalkStackData* data);
@@ -534,6 +538,7 @@ WalkStackMain64(struct WalkStackData* data)
     HANDLE myProcess = data->process;
     HANDLE myThread = data->thread;
     DWORD64 addr;
+    DWORD64 spaddr;
     STACKFRAME64 frame64;
     // skip our own stack walking frames
     int skip = (data->walkCallingThread ? 3 : 0) + data->skipFrames;
@@ -595,10 +600,12 @@ WalkStackMain64(struct WalkStackData* data)
         );
         LeaveCriticalSection(&gDbgHelpCS);
 
-        if (ok)
+        if (ok) {
             addr = frame64.AddrPC.Offset;
-        else {
+            spaddr = frame64.AddrStack.Offset;
+         } else {
             addr = 0;
+            spaddr = 0;
             PrintError("WalkStack64");
         }
 
@@ -613,6 +620,10 @@ WalkStackMain64(struct WalkStackData* data)
         if (data->pc_count < data->pc_size)
             data->pcs[data->pc_count] = (void*)addr;
         ++data->pc_count;
+
+        if (data->sp_count < data->sp_size)
+            data->sps[data->sp_count] = (void*)spaddr;
+        ++data->sp_count;
 
         if (frame64.AddrReturn.Offset == 0)
             break;
@@ -783,7 +794,8 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
              void *aClosure, uintptr_t aThread)
 {
     MOZ_ASSERT(gCriticalAddress.mInit);
-    HANDLE myProcess, myThread;
+    static HANDLE myProcess = NULL;
+    HANDLE myThread;
     DWORD walkerReturn;
     struct WalkStackData data;
 
@@ -800,13 +812,15 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     }
 
     // Have to duplicate handle to get a real handle.
-    if (!::DuplicateHandle(::GetCurrentProcess(),
-                           ::GetCurrentProcess(),
-                           ::GetCurrentProcess(),
-                           &myProcess,
-                           PROCESS_ALL_ACCESS, FALSE, 0)) {
-        PrintError("DuplicateHandle (process)");
-        return NS_ERROR_FAILURE;
+    if (!myProcess) {
+        if (!::DuplicateHandle(::GetCurrentProcess(),
+                               ::GetCurrentProcess(),
+                               ::GetCurrentProcess(),
+                               &myProcess,
+                               PROCESS_ALL_ACCESS, FALSE, 0)) {
+            PrintError("DuplicateHandle (process)");
+            return NS_ERROR_FAILURE;
+        }
     }
     if (!::DuplicateHandle(::GetCurrentProcess(),
                            targetThread,
@@ -814,7 +828,6 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
                            &myThread,
                            THREAD_ALL_ACCESS, FALSE, 0)) {
         PrintError("DuplicateHandle (thread)");
-        ::CloseHandle(myProcess);
         return NS_ERROR_FAILURE;
     }
 
@@ -825,11 +838,29 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     data.pcs = local_pcs;
     data.pc_count = 0;
     data.pc_size = ArrayLength(local_pcs);
+    void *local_sps[1024];
+    data.sps = local_sps;
+    data.sp_count = 0;
+    data.sp_size = ArrayLength(local_pcs);
 
     if (aThread) {
         // If we're walking the stack of another thread, we don't need to
         // use a separate walker thread.
+<<<<<<< HEAD
         PerformStackWalk(&data);
+=======
+        WalkStackMain64(&data);
+
+        if (data.pc_count > data.pc_size) {
+            data.pcs = (void**) _alloca(data.pc_count * sizeof(void*));
+            data.pc_size = data.pc_count;
+            data.pc_count = 0;
+            data.sps = (void**) _alloca(data.sp_count * sizeof(void*));
+            data.sp_size = data.sp_count;
+            data.sp_count = 0;
+            WalkStackMain64(&data);
+        }
+>>>>>>> 8c55cde9
     } else {
         data.eventStart = ::CreateEvent(NULL, FALSE /* auto-reset*/,
                               FALSE /* initially non-signaled */, NULL);
@@ -843,9 +874,12 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
         if (walkerReturn != WAIT_OBJECT_0)
             PrintError("SignalObjectAndWait (1)");
         if (data.pc_count > data.pc_size) {
-            data.pcs = (void**) malloc(data.pc_count * sizeof(void*));
+            data.pcs = (void**) _alloca(data.pc_count * sizeof(void*));
             data.pc_size = data.pc_count;
             data.pc_count = 0;
+            data.sps = (void**) _alloca(data.sp_count * sizeof(void*));
+            data.sp_size = data.sp_count;
+            data.sp_count = 0;
             ::PostThreadMessage(gStackWalkThread, WM_USER, 0, (LPARAM)&data);
             walkerReturn = ::SignalObjectAndWait(data.eventStart,
                                data.eventEnd, INFINITE, FALSE);
@@ -858,13 +892,9 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     }
 
     ::CloseHandle(myThread);
-    ::CloseHandle(myProcess);
 
     for (PRUint32 i = 0; i < data.pc_count; ++i)
-        (*aCallback)(data.pcs[i], aClosure);
-
-    if (data.pc_size > ArrayLength(local_pcs))
-        free(data.pcs);
+        (*aCallback)(data.pcs[i], data.sps[i], aClosure);
 
     return NS_OK;
 }
@@ -1319,9 +1349,9 @@ static struct bucket * newbucket ( void * pc );
 static struct frame * cs_getmyframeptr ( void );
 static void   cs_walk_stack ( void * (*read_func)(char * address),
                               struct frame * fp,
-                              int (*operate_func)(void *, void *),
+                              int (*operate_func)(void *, void *, void *),
                               void * usrarg );
-static void   cs_operate ( void (*operate_func)(void *, void *),
+static void   cs_operate ( void (*operate_func)(void *, void *, void *),
                            void * usrarg );
 
 #ifndef STACK_BIAS
@@ -1449,13 +1479,13 @@ csgetframeptr()
 
 
 static void
-cswalkstack(struct frame *fp, int (*operate_func)(void *, void *),
+cswalkstack(struct frame *fp, int (*operate_func)(void *, void *, void *),
     void *usrarg)
 {
 
     while (fp != 0 && fp->fr_savpc != 0) {
 
-        if (operate_func((void *)fp->fr_savpc, usrarg) != 0)
+        if (operate_func((void *)fp->fr_savpc, NULL, usrarg) != 0)
             break;
         /*
          * watch out - libthread stacks look funny at the top
@@ -1469,7 +1499,7 @@ cswalkstack(struct frame *fp, int (*operate_func)(void *, void *),
 
 
 static void
-cs_operate(int (*operate_func)(void *, void *), void * usrarg)
+cs_operate(int (*operate_func)(void *, void *, void *), void * usrarg)
 {
     cswalkstack(csgetframeptr(), operate_func, usrarg);
 }
@@ -1575,15 +1605,21 @@ FramePointerStackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
 #if (defined(__ppc__) && defined(XP_MACOSX)) || defined(__powerpc64__)
     // ppc mac or powerpc64 linux
     void *pc = *(bp+2);
+    bp += 3;
 #else // i386 or powerpc32 linux
     void *pc = *(bp+1);
+    bp += 2;
 #endif
     if (IsCriticalAddress(pc)) {
       printf("Aborting stack trace, PC is critical\n");
       return NS_ERROR_UNEXPECTED;
     }
     if (--skip < 0) {
-      (*aCallback)(pc, aClosure);
+      // Assume that the SP points to the BP of the function
+      // it called. We can't know the exact location of the SP
+      // but this should be sufficient for our use the SP
+      // to order elements on the stack.
+      (*aCallback)(pc, bp, aClosure);
     }
     bp = next;
   }
@@ -1640,6 +1676,7 @@ unwind_callback (struct _Unwind_Context *context, void *closure)
 {
     unwind_info *info = static_cast<unwind_info *>(closure);
     void *pc = reinterpret_cast<void *>(_Unwind_GetIP(context));
+    // TODO Use something like '_Unwind_GetGR()' to get the stack pointer.
     if (IsCriticalAddress(pc)) {
         printf("Aborting stack trace, PC is critical\n");
         /* We just want to stop the walk, so any error code will do.
@@ -1648,7 +1685,7 @@ unwind_callback (struct _Unwind_Context *context, void *closure)
         return _URC_FOREIGN_EXCEPTION_CAUGHT;
     }
     if (--info->skip < 0)
-        (*info->callback)(pc, info->closure);
+        (*info->callback)(pc, NULL, info->closure);
     return _URC_NO_REASON;
 }
 
