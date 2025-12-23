@@ -75,7 +75,7 @@
 // and a printf argument to be computed if profiling is enabled.
 // NOTE: This will store the formated string on the stack and consume
 //       over 128 bytes on the stack.
-#define SAMPLE_LABEL_PRINTF(name_space, info, format, ...)
+#define SAMPLE_LABEL_PRINTF(name_space, info, format, a)
 #define SAMPLE_LABEL_FN(name_space, info)
 #define SAMPLE_MARKER(info)
 
