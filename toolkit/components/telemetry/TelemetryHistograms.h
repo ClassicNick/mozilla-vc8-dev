@@ -48,7 +48,7 @@ HISTOGRAM(FORGET_SKIPPABLE_MAX, 1, 10000, 50, EXPONENTIAL, "Max time spent on on
 /**
  * GC telemetry
  */
-HISTOGRAM(GC_REASON, 1, 20, 20, LINEAR, "Reason (enum value) for initiating a GC")
+HISTOGRAM_ENUMERATED_VALUES(GC_REASON_2, js::gcreason::NUM_TELEMETRY_REASONS, "Reason (enum value) for initiating a GC")
 HISTOGRAM_BOOLEAN(GC_IS_COMPARTMENTAL, "Is it a compartmental GC?")
 HISTOGRAM(GC_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running JS GC (ms)")
 HISTOGRAM(GC_MARK_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running JS GC mark phase (ms)")
@@ -114,13 +114,11 @@ HISTOGRAM(SYSTEM_FONT_FALLBACK_SCRIPT, 1, 110, 111, LINEAR, "System font fallbac
 HISTOGRAM(STARTUP_CACHE_AGE_HOURS, 1, 3000, 20, EXPONENTIAL, "Startup cache age (hours)")
 
 /**
- * Word cache - one count for overall lookups, the other for the number of times a word is found
+ * Word cache - one count cache hits, another for misses
  * Note: range and number of buckets must match
  */
-HISTOGRAM(WORD_CACHE_LOOKUP_LEN, 1, 256, 30, EXPONENTIAL, "Word cache lookup (chars)")
-HISTOGRAM(WORD_CACHE_HIT_LEN, 1, 256, 30, EXPONENTIAL, "Word cache hit (chars)")
-HISTOGRAM(WORD_CACHE_LOOKUP_SCRIPT, 1, 110, 111, LINEAR, "Word cache lookup (script)")
-HISTOGRAM(WORD_CACHE_HIT_SCRIPT, 1, 110, 111, LINEAR, "Word cache hit (script)")
+HISTOGRAM(WORD_CACHE_HITS, 1, 256, 30, EXPONENTIAL, "Word cache hits (chars)")
+HISTOGRAM(WORD_CACHE_MISSES, 1, 256, 30, EXPONENTIAL, "Word cache misses (chars)")
 
 HISTOGRAM_BOOLEAN(FONT_CACHE_HIT, "font cache hit")
 HISTOGRAM_BOOLEAN(BAD_FALLBACK_FONT, "system fallback font can't be used")
@@ -197,11 +195,11 @@ HISTOGRAM(SPDY_SETTINGS_IW, 1, 1000, 50, EXPONENTIAL,  "SPDY: Settings IW (round
 #undef _HTTP_HIST
 #undef HTTP_HISTOGRAMS
 
-HISTOGRAM(HTTP_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Cache Hit, Reval, Failed-Reval, Miss")
 HISTOGRAM(DISK_CACHE_CORRUPT, 0, 1, 2, BOOLEAN, "Was the HTTP disk cache corrupt at startup?")
-HISTOGRAM(HTTP_DISK_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Disk Cache Hit, Reval, Failed-Reval, Miss")
-HISTOGRAM(HTTP_MEMORY_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Memory Cache Hit, Reval, Failed-Reval, Miss")
-HISTOGRAM(HTTP_OFFLINE_CACHE_DISPOSITION, 1, 5, 5, LINEAR, "HTTP Offline Cache Hit, Reval, Failed-Reval, Miss")
+HISTOGRAM_ENUMERATED_VALUES(HTTP_CACHE_DISPOSITION_2,         5, "HTTP Cache Hit, Reval, Failed-Reval, Miss")
+HISTOGRAM_ENUMERATED_VALUES(HTTP_DISK_CACHE_DISPOSITION_2,    5, "HTTP Disk Cache Hit, Reval, Failed-Reval, Miss")
+HISTOGRAM_ENUMERATED_VALUES(HTTP_MEMORY_CACHE_DISPOSITION_2,  5, "HTTP Memory Cache Hit, Reval, Failed-Reval, Miss")
+HISTOGRAM_ENUMERATED_VALUES(HTTP_OFFLINE_CACHE_DISPOSITION_2, 5, "HTTP Offline Cache Hit, Reval, Failed-Reval, Miss")
 HISTOGRAM(CACHE_DEVICE_SEARCH, 1, 100, 100, LINEAR, "Time to search cache (ms)")
 HISTOGRAM(CACHE_MEMORY_SEARCH, 1, 100, 100, LINEAR, "Time to search memory cache (ms)")
 HISTOGRAM(CACHE_DISK_SEARCH, 1, 100, 100, LINEAR, "Time to search disk cache (ms)")
@@ -321,6 +319,7 @@ HISTOGRAM_BOOLEAN(UPDATER_UPDATES_AUTOMATIC, "Updater: Whether or not updates ar
 HISTOGRAM_BOOLEAN(UPDATER_SERVICE_ENABLED, "Updater: Whether or not the MozillaMaintenance service is enabled")
 HISTOGRAM(UPDATER_SERVICE_ERRORS, 1, 30, 31, LINEAR, "Updater: The number of MozillaMaintenance service errors that have occurred")
 HISTOGRAM_BOOLEAN(UPDATER_SERVICE_INSTALLED, "Updater: Whether or not the MozillaMaintenance service is installed")
+HISTOGRAM_BOOLEAN(UPDATER_SERVICE_MANUALLY_UNINSTALLED, "Updater: Whether or not someone manually uninstalled the service.")
 HISTOGRAM_BOOLEAN(UPDATER_STAGE_ENABLED, "Updater: Whether or not staging updates are enabled")
 HISTOGRAM_BOOLEAN(UPDATER_HAS_PERMISSIONS, "Updater: Whether or not the updater has permissions")
 

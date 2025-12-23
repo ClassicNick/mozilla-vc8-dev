@@ -570,14 +570,17 @@ abstract public class BrowserApp extends GeckoApp
         MenuItem bookmark = aMenu.findItem(R.id.bookmark);
         MenuItem forward = aMenu.findItem(R.id.forward);
         MenuItem share = aMenu.findItem(R.id.share);
+        MenuItem readingList = aMenu.findItem(R.id.reading_list);
         MenuItem saveAsPDF = aMenu.findItem(R.id.save_as_pdf);
         MenuItem charEncoding = aMenu.findItem(R.id.char_encoding);
         MenuItem findInPage = aMenu.findItem(R.id.find_in_page);
+        MenuItem desktopMode = aMenu.findItem(R.id.desktop_mode);
 
         if (tab == null || tab.getURL() == null) {
             bookmark.setEnabled(false);
             forward.setEnabled(false);
             share.setEnabled(false);
+            readingList.setEnabled(false);
             saveAsPDF.setEnabled(false);
             findInPage.setEnabled(false);
             return true;
@@ -594,7 +597,19 @@ abstract public class BrowserApp extends GeckoApp
             bookmark.setIcon(R.drawable.ic_menu_bookmark_add);
         }
 
+        readingList.setEnabled(tab.getReaderEnabled());
+        readingList.setCheckable(true);
+
+        if (tab.isReadingListItem()) {
+            readingList.setChecked(true);
+            readingList.setIcon(R.drawable.ic_menu_reading_list_remove);
+        } else {
+            readingList.setChecked(false);
+            readingList.setIcon(R.drawable.ic_menu_reading_list_add);
+        }
+
         forward.setEnabled(tab.canDoForward());
+        desktopMode.setChecked(tab.getDesktopMode());
 
         // Disable share menuitem for about:, chrome:, file:, and resource: URIs
         String scheme = Uri.parse(tab.getURL()).getScheme();
@@ -606,8 +621,7 @@ abstract public class BrowserApp extends GeckoApp
                                tab.getContentType().equals("application/vnd.mozilla.xul+xml")));
 
         // Disable find in page for about:home, since it won't work on Java content
-        if (!tab.getURL().equals("about:home"))
-            findInPage.setEnabled(true);
+        findInPage.setEnabled(!tab.getURL().equals("about:home"));
 
         charEncoding.setVisible(GeckoPreferences.getCharEncodingState());
 
