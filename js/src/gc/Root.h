@@ -8,13 +8,11 @@
 #ifndef jsgc_root_h__
 #define jsgc_root_h__
 
-#ifdef __cplusplus
-
-#include "mozilla/TypeTraits.h"
-
 #include "jspubtd.h"
 
 #include "js/Utility.h"
+
+#ifdef __cplusplus
 
 namespace JS {
 
@@ -75,11 +73,9 @@ template <typename T>
 class Handle
 {
   public:
-    /* Creates a handle from a handle of a type convertible to T. */
-    template <typename S>
-    Handle(Handle<S> handle,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
-    {
+    /* Copy handles of different types, with implicit coercion. */
+    template <typename S> Handle(Handle<S> handle) {
+        testAssign<S>();
         ptr = reinterpret_cast<const T *>(handle.address());
     }
 
@@ -100,10 +96,7 @@ class Handle
      * Construct a handle from an explicitly rooted location. This is the
      * normal way to create a handle, and normally happens implicitly.
      */
-    template <typename S>
-    inline
-    Handle(Rooted<S> &root,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
+    template <typename S> inline Handle(Rooted<S> &root);
 
     const T *address() const { return ptr; }
     T value() const { return *ptr; }
@@ -115,6 +108,16 @@ class Handle
     Handle() {}
 
     const T *ptr;
+
+    template <typename S>
+    void testAssign() {
+#ifdef DEBUG
+        T a = RootMethods<T>::initial();
+        S b = RootMethods<S>::initial();
+        a = b;
+        (void)a;
+#endif
+    }
 };
 
 typedef Handle<JSObject*>    HandleObject;
@@ -205,9 +208,9 @@ class Rooted
 
 template<typename T> template <typename S>
 inline
-Handle<T>::Handle(Rooted<S> &root,
-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
+Handle<T>::Handle(Rooted<S> &root)
 {
+    testAssign<S>();
     ptr = reinterpret_cast<const T *>(root.address());
 }
 
