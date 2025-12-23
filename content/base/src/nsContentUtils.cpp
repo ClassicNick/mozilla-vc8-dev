@@ -181,6 +181,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsICharsetDetector.h"
 #include "nsICharsetDetectionObserver.h"
 #include "nsIPlatformCharset.h"
+#include "mozilla/Attributes.h"
 
 extern "C" int MOZ_XMLTranslateEntity(const char* ptr, const char* end,
                                       const char** next, PRUnichar* result);
@@ -307,15 +308,15 @@ EventListenerManagerHashClearEntry(PLDHashTable *table, PLDHashEntryHdr *entry)
   lm->~EventListenerManagerMapEntry();
 }
 
-class SameOriginChecker : public nsIChannelEventSink,
-                          public nsIInterfaceRequestor
+class SameOriginChecker MOZ_FINAL : public nsIChannelEventSink,
+                                    public nsIInterfaceRequestor
 {
   NS_DECL_ISUPPORTS
   NS_DECL_NSICHANNELEVENTSINK
   NS_DECL_NSIINTERFACEREQUESTOR
 };
 
-class CharsetDetectionObserver : public nsICharsetDetectionObserver
+class CharsetDetectionObserver MOZ_FINAL : public nsICharsetDetectionObserver
 {
 public:
   NS_DECL_ISUPPORTS
@@ -5451,6 +5452,13 @@ nsContentUtils::GetCurrentJSContext()
   sThreadJSContextStack->Peek(&cx);
 
   return cx;
+}
+
+/* static */
+JSContext *
+nsContentUtils::GetSafeJSContext()
+{
+  return sThreadJSContextStack->GetSafeJSContext();
 }
 
 /* static */

@@ -17,6 +17,7 @@
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
 #include "nsDataObj.h"
+#include "mozilla/Attributes.h"
 
 class CEnumFormatEtc;
 
@@ -37,7 +38,7 @@ public:
  * associated with instances via SetDragDrop().
  */
  
-class nsDataObjCollection : public nsIDataObjCollection, public nsDataObj
+class nsDataObjCollection MOZ_FINAL : public nsIDataObjCollection, public nsDataObj
 {
   public:
     nsDataObjCollection();

@@ -16,6 +16,8 @@
 #endif  // MingW
 #endif
 
+#include "mozilla/Attributes.h"
+
 class nsIDragService;
 class nsIWidget;
 
@@ -26,7 +28,7 @@ struct IDataObject;
  * behavior from the associated adapter (m_dragDrop).
  */
 
-class nsNativeDragTarget : public IDropTarget
+class nsNativeDragTarget MOZ_FINAL : public IDropTarget
 {
 public:
   nsNativeDragTarget(nsIWidget * aWnd);

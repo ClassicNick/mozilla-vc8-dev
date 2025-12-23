@@ -24,6 +24,7 @@
 #include "nsIObserver.h"
 #include "nsIFaviconService.h"
 #include "nsThreadUtils.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 namespace widget {
@@ -57,7 +58,7 @@ private:
 };
 
 
-class AsyncFaviconDataReady : public nsIFaviconDataCallback
+class AsyncFaviconDataReady MOZ_FINAL : public nsIFaviconDataCallback
 {
 public:
   NS_DECL_ISUPPORTS

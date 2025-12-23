@@ -156,7 +156,7 @@ obj_setProto(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Value 
 static bool
 MarkSharpObjects(JSContext *cx, HandleObject obj, JSIdArray **idap, JSSharpInfo *value)
 {
-    JS_CHECK_RECURSION(cx, return NULL);
+    JS_CHECK_RECURSION(cx, return false);
 
     JSIdArray *ida;
 
@@ -870,7 +870,7 @@ class EvalScriptGuard
     }
 
     void setNewScript(JSScript *script) {
-        /* NewScriptFromEmitter has already called js_CallNewScriptHook. */
+        /* JSScript::initFromEmitter has already called js_CallNewScriptHook. */
         JS_ASSERT(!script_ && script);
         script_ = script;
         script_->isActiveEval = true;
@@ -1436,6 +1436,17 @@ obj_lookupGetter(JSContext *cx, unsigned argc, Value *vp)
     RootedObject obj(cx, ToObject(cx, &vp[1]));
     if (!obj)
         return JS_FALSE;
+    if (obj->isProxy()) {
+        // The vanilla getter lookup code below requires that the object is
+        // native. Handle proxies separately.
+        vp->setUndefined();
+        PropertyDescriptor desc;
+        if (!Proxy::getPropertyDescriptor(cx, obj, id, false, &desc))
+            return JS_FALSE;
+        if (desc.obj && (desc.attrs & JSPROP_GETTER) && desc.getter)
+            *vp = CastAsObjectJsval(desc.getter);
+        return JS_TRUE;
+    }
     JSObject *pobj;
     JSProperty *prop;
     if (!obj->lookupGeneric(cx, id, &pobj, &prop))
@@ -1460,6 +1471,17 @@ obj_lookupSetter(JSContext *cx, unsigned argc, Value *vp)
     RootedObject obj(cx, ToObject(cx, &vp[1]));
     if (!obj)
         return JS_FALSE;
+    if (obj->isProxy()) {
+        // The vanilla setter lookup code below requires that the object is
+        // native. Handle proxies separately.
+        vp->setUndefined();
+        PropertyDescriptor desc;
+        if (!Proxy::getPropertyDescriptor(cx, obj, id, false, &desc))
+            return JS_FALSE;
+        if (desc.obj && (desc.attrs & JSPROP_SETTER) && desc.setter)
+            *vp = CastAsObjectJsval(desc.setter);
+        return JS_TRUE;
+    }
     JSObject *pobj;
     JSProperty *prop;
     if (!obj->lookupGeneric(cx, id, &pobj, &prop))
@@ -1689,7 +1711,7 @@ obj_keys(JSContext *cx, unsigned argc, Value *vp)
         if (JSID_IS_STRING(id)) {
             vals.infallibleAppend(StringValue(JSID_TO_STRING(id)));
         } else if (JSID_IS_INT(id)) {
-            JSString *str = js_IntToString(cx, JSID_TO_INT(id));
+            JSString *str = Int32ToString(cx, JSID_TO_INT(id));
             if (!str)
                 return false;
             vals.infallibleAppend(StringValue(str));
@@ -2473,7 +2495,7 @@ obj_getOwnPropertyNames(JSContext *cx, unsigned argc, Value *vp)
     for (size_t i = 0, len = keys.length(); i < len; i++) {
          jsid id = keys[i];
          if (JSID_IS_INT(id)) {
-             JSString *str = js_IntToString(cx, JSID_TO_INT(id));
+             JSString *str = Int32ToString(cx, JSID_TO_INT(id));
              if (!str)
                  return false;
              vals[i].setString(str);
@@ -2577,7 +2599,7 @@ JSObject::sealOrFreeze(JSContext *cx, ImmutabilityType it)
 
             last = cx->propertyTree().getChild(cx, last, self->numFixedSlots(), child);
             if (!last)
-                return NULL;
+                return false;
         }
 
         JS_ASSERT(self->lastProperty()->slotSpan() == last->slotSpan());
@@ -3157,8 +3179,8 @@ JSObject::deleteByValue(JSContext *cx, const Value &property, Value *rval, bool 
 
     RootedObject self(cx, this);
 
-    JSAtom *name;
-    if (!js_ValueToAtom(cx, propval, &name))
+    JSAtom *name = ToAtom(cx, propval);
+    if (!name)
         return false;
 
     if (name->isIndex(&index))

@@ -111,7 +111,7 @@ Accessible::QueryInterface(REFNSIID aIID, void** aInstancePtr)
   *aInstancePtr = nsnull;
 
   if (aIID.Equals(NS_GET_IID(nsXPCOMCycleCollectionParticipant))) {
-    *aInstancePtr = &NS_CYCLE_COLLECTION_NAME(Accessible);
+    *aInstancePtr = NS_CYCLE_COLLECTION_PARTICIPANT(Accessible);
     return NS_OK;
   }
 
@@ -649,8 +649,7 @@ Accessible::NativeState()
 {
   PRUint64 state = 0;
 
-  DocAccessible* document = Document();
-  if (!document || !document->IsInDocument(this))
+  if (!IsInDocument())
     state |= states::STALE;
 
   if (mContent->IsElement()) {
