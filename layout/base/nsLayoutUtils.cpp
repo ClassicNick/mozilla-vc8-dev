@@ -83,6 +83,8 @@
 #endif
 
 #include "sampler.h"
+#include "nsAnimationManager.h"
+#include "nsTransitionManager.h"
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -113,6 +115,32 @@ static ContentMap& GetContentMap() {
   return *sContentMap;
 }
 
+bool
+nsLayoutUtils::HasAnimationsForCompositor(nsIContent* aContent,
+                                          nsCSSProperty aProperty)
+{
+  if (!aContent->MayHaveAnimations())
+    return false;
+  ElementAnimations* animations =
+    static_cast<ElementAnimations*>(aContent->GetProperty(nsGkAtoms::animationsProperty));
+  if (animations) {
+    bool propertyMatches = animations->HasAnimationOfProperty(aProperty);
+    if (propertyMatches && animations->CanPerformOnCompositorThread()) {
+      return true;
+    }
+  }
+
+  ElementTransitions* transitions =
+    static_cast<ElementTransitions*>(aContent->GetProperty(nsGkAtoms::transitionsProperty));
+  if (transitions) {
+    bool propertyMatches = transitions->HasTransitionOfProperty(aProperty);
+    if (propertyMatches && transitions->CanPerformOnCompositorThread()) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 bool
 nsLayoutUtils::Are3DTransformsEnabled()
@@ -1805,7 +1833,13 @@ nsLayoutUtils::PaintFrame(nsRenderingContext* aRenderingContext, nsIFrame* aFram
     nsFrame::PrintDisplayList(&builder, list, gfxUtils::sDumpPaintFile);
 
     fprintf(gfxUtils::sDumpPaintFile, "Painting --- retained layer tree:\n");
-    builder.LayerBuilder()->DumpRetainedLayerTree(gfxUtils::sDumpPaintFile);
+    nsIWidget* widget = aFrame->GetNearestWidget();
+    if (widget) {
+      nsRefPtr<LayerManager> layerManager = widget->GetLayerManager();
+      if (layerManager) {
+        FrameLayerBuilder::DumpRetainedLayerTree(layerManager, gfxUtils::sDumpPaintFile);
+      }
+    }
     fprintf(gfxUtils::sDumpPaintFile, "</body></html>");
     
     if (gfxUtils::sDumpPaintingToFile) {

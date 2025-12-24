@@ -92,6 +92,8 @@
 #include "CSSCalc.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsFontInflationData.h"
+#include "nsAnimationManager.h"
+#include "nsTransitionManager.h"
 
 #include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
@@ -250,6 +252,15 @@ void
 nsIFrame::MarkAsAbsoluteContainingBlock() {
   AddStateBits(NS_FRAME_HAS_ABSPOS_CHILDREN);
   Properties().Set(AbsoluteContainingBlockProperty(), new nsAbsoluteContainingBlock(GetAbsoluteListID()));
+}
+
+void
+nsIFrame::ClearDisplayItemCache()
+{
+  if (GetStateBits() & NS_FRAME_HAS_CACHED_BACKGROUND) {
+    Properties().Delete(CachedBackgroundImage());
+    RemoveStateBits(NS_FRAME_HAS_CACHED_BACKGROUND);
+  }
 }
 
 bool
@@ -926,9 +937,20 @@ nsIFrame::GetPaddingRect() const
 bool
 nsIFrame::IsTransformed() const
 {
-  return (mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
+  return ((mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
           (GetStyleDisplay()->HasTransform() ||
-           IsSVGTransformed());
+           IsSVGTransformed() ||
+           (mContent &&
+            nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                      eCSSProperty_transform))));
+}
+
+bool
+nsIFrame::HasOpacity() const
+{
+  return GetStyleDisplay()->mOpacity < 1.0f || (mContent &&
+           nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                     eCSSProperty_opacity));
 }
 
 bool
@@ -1331,15 +1353,22 @@ nsFrame::DisplaySelectionOverlay(nsDisplayListBuilder*   aBuilder,
   SelectionDetails *details;
   //look up to see what selection(s) are on this frame
   details = frameSelection->LookUpSelection(newContent, offset, 1, false);
-  // XXX is the above really necessary? We don't actually DO anything
-  // with the details other than test that they're non-null
   if (!details)
     return NS_OK;
   
+  bool normal = false;
   while (details) {
+    if (details->mType == nsISelectionController::SELECTION_NORMAL) {
+      normal = true;
+    }
     SelectionDetails *next = details->mNext;
     delete details;
     details = next;
+  }
+
+  if (!normal && aContentType == nsISelectionDisplay::DISPLAY_IMAGES) {
+    // Don't overlay an image if it's not in the primary selection.
+    return NS_OK;
   }
 
   return aList->AppendNewToTop(new (aBuilder)
@@ -1444,15 +1473,28 @@ nsFrame::DisplayBorderBackgroundOutline(nsDisplayListBuilder*   aBuilder,
   return DisplayOutlineUnconditional(aBuilder, aLists);
 }
 
+inline static bool IsSVGContentWithCSSClip(const nsIFrame *aFrame)
+{
+  // The CSS spec says that the 'clip' property only applies to absolutely
+  // positioned elements, whereas the SVG spec says that it applies to SVG
+  // elements regardless of the value of the 'position' property. Here we obey
+  // the CSS spec for outer-<svg> (since that's what we generally do), but
+  // obey the SVG spec for other SVG elements to which 'clip' applies.
+  nsIAtom *tag = aFrame->GetContent()->Tag();
+  return (aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
+    (tag == nsGkAtoms::svg || tag == nsGkAtoms::foreignObject);
+}
+
 bool
 nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp, nsRect* aRect,
                               const nsSize& aSize) const
 {
   NS_PRECONDITION(aRect, "Must have aRect out parameter");
 
-  if (!aDisp->IsAbsolutelyPositioned() ||
-      !(aDisp->mClipFlags & NS_STYLE_CLIP_RECT))
+  if (!(aDisp->mClipFlags & NS_STYLE_CLIP_RECT) ||
+      !(aDisp->IsAbsolutelyPositioned() || IsSVGContentWithCSSClip(this))) {
     return false;
+  }
 
   *aRect = aDisp->mClip;
   if (NS_STYLE_CLIP_RIGHT_AUTO & aDisp->mClipFlags) {
@@ -1726,7 +1768,6 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
                                              nsDisplayList*        aList) {
   if (GetStateBits() & NS_FRAME_TOO_DEEP_IN_FRAME_TREE)
     return NS_OK;
-
   // Replaced elements have their visibility handled here, because
   // they're visually atomic
   if (IsFrameOfType(eReplaced) && !IsVisibleForPainting(aBuilder))
@@ -1734,18 +1775,20 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
 
   nsRect clipPropClip;
   const nsStyleDisplay* disp = GetStyleDisplay();
-  // We can stop right away if this is a zero-opacity stacking context and
-  // we're painting.
-  if (disp->mOpacity == 0.0 && aBuilder->IsForPainting())
+  // We can stop right away if this is a zero-opacity stacking context,
+  // we're painting, and we're not animating opacity.
+  if (disp->mOpacity == 0.0 && aBuilder->IsForPainting() &&
+      !nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                 eCSSProperty_opacity)) {
     return NS_OK;
+  }
 
   bool applyClipPropClipping =
       ApplyClipPropClipping(aBuilder, disp, this, &clipPropClip);
   nsRect dirtyRect = aDirtyRect;
 
   bool inTransform = aBuilder->IsInTransform();
-  if ((mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
-      disp->HasTransform()) {
+  if (IsTransformed()) {
     if (aBuilder->IsForPainting() &&
         nsDisplayTransform::ShouldPrerenderTransformedContent(aBuilder, this)) {
       dirtyRect = GetVisualOverflowRectRelativeToSelf();
@@ -1755,7 +1798,7 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
         // gives us really weird results. I believe this is from points that lie beyond the
         // vanishing point. As a workaround we transform the overflow rect into screen space
         // and compare in that coordinate system.
-        
+
         // Transform the overflow rect into screen space
         nsRect overflow = GetVisualOverflowRectRelativeToSelf();
         nsPoint offset = aBuilder->ToReferenceFrame(this);
@@ -1796,8 +1839,8 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
       nsSVGIntegrationUtils::GetRequiredSourceForInvalidArea(this, dirtyRect);
   }
 
-  // Mark the display list items for absolutely positioned children
   MarkAbsoluteFramesForDisplayList(aBuilder, dirtyRect);
+
   // Preserve3DChildren() also guarantees that applyAbsPosClipping and usingSVGEffects are false
   // We only modify the preserve-3d rect if we are the top of a preserve-3d heirarchy
   if (Preserves3DChildren()) {
@@ -1892,7 +1935,6 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     // resultList was emptied
     resultList.AppendToTop(item);
   }
-
   /* If there are any SVG effects, wrap the list up in an SVG effects item
    * (which also handles CSS group opacity). Note that we create an SVG effects
    * item even if resultList is empty, since a filter can produce graphical
@@ -1908,7 +1950,9 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   /* Else, if the list is non-empty and there is CSS group opacity without SVG
    * effects, wrap it up in an opacity item.
    */
-  else if (disp->mOpacity < 1.0f && !resultList.IsEmpty()) {
+  else if (HasOpacity() &&
+           !nsSVGUtils::CanOptimizeOpacity(this) &&
+           !resultList.IsEmpty()) {
     rv = resultList.AppendNewToTop(
         new (aBuilder) nsDisplayOpacity(aBuilder, this, &resultList));
     if (NS_FAILED(rv))
@@ -1926,8 +1970,7 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
    * We also traverse into sublists created by nsDisplayWrapList or nsDisplayOpacity, so that
    * we find all the correct children.
    */
-  if ((mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
-      disp->HasTransform() && !resultList.IsEmpty()) {
+  if (IsTransformed() && !resultList.IsEmpty()) {
     if (Preserves3DChildren()) {
       rv = WrapPreserve3DList(this, aBuilder, &resultList);
       if (NS_FAILED(rv))
@@ -1958,11 +2001,14 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   nsIFrame* child = aChild;
   if (child->GetStateBits() & NS_FRAME_TOO_DEEP_IN_FRAME_TREE)
     return NS_OK;
+  
+  bool isSVG = (child->GetStateBits() & NS_FRAME_SVG_LAYOUT);
 
   // true if this is a real or pseudo stacking context
   bool pseudoStackingContext =
     (aFlags & DISPLAY_CHILD_FORCE_PSEUDO_STACKING_CONTEXT) != 0;
-  if ((aFlags & DISPLAY_CHILD_INLINE) &&
+  if (!isSVG &&
+      (aFlags & DISPLAY_CHILD_INLINE) &&
       !child->IsFrameOfType(eLineParticipant)) {
     // child is a non-inline frame in an inline context, i.e.,
     // it acts like inline-block or inline-table. Therefore it is a
@@ -2013,7 +2059,6 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
     }
   }
 
-  // Mark the display list items for absolutely positioned children
   child->MarkAbsoluteFramesForDisplayList(aBuilder, dirty);
 
   if (childType != nsGkAtoms::placeholderFrame &&
@@ -2059,12 +2104,14 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   // Child is composited if it's transformed, partially transparent, or has
   // SVG effects.
   const nsStyleDisplay* disp = child->GetStyleDisplay();
-  bool isVisuallyAtomic = disp->mOpacity != 1.0f
+  bool isVisuallyAtomic = child->HasOpacity()
     || child->IsTransformed()
     || nsSVGIntegrationUtils::UsingEffectsForFrame(child);
 
-  bool isPositioned = disp->IsPositioned();
-  if (isVisuallyAtomic || isPositioned || disp->IsFloating() ||
+  bool isPositioned = !isSVG && disp->IsPositioned();
+  if (isVisuallyAtomic || isPositioned || (!isSVG && disp->IsFloating()) ||
+      ((disp->mClipFlags & NS_STYLE_CLIP_RECT) &&
+       IsSVGContentWithCSSClip(this)) ||
       (aFlags & DISPLAY_CHILD_FORCE_STACKING_CONTEXT)) {
     // If you change this, also change IsPseudoStackingContextFromStyle()
     pseudoStackingContext = true;
@@ -2171,16 +2218,20 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
       // Make sure the root of a fixed position frame sub-tree gets the
       // correct displaylist item type.
       nsDisplayItem* item;
-      if (!child->GetParent()->GetParent() &&
+      if (!isSVG && !child->GetParent()->GetParent() &&
           disp->mPosition == NS_STYLE_POSITION_FIXED) {
         item = new (aBuilder) nsDisplayFixedPosition(aBuilder, child, &list);
       } else {
         item = new (aBuilder) nsDisplayWrapList(aBuilder, child, &list);
       }
-      rv = aLists.PositionedDescendants()->AppendNewToTop(item);
+      if (isSVG) {
+        rv = aLists.Content()->AppendNewToTop(item);
+      } else {
+        rv = aLists.PositionedDescendants()->AppendNewToTop(item);
+      }
       NS_ENSURE_SUCCESS(rv, rv);
     }
-  } else if (disp->IsFloating()) {
+  } else if (!isSVG && disp->IsFloating()) {
     if (!list.IsEmpty()) {
       rv = aLists.Floats()->AppendNewToTop(new (aBuilder)
           nsDisplayWrapList(aBuilder, child, &list));
@@ -4667,6 +4718,7 @@ void
 nsIFrame::InvalidateInternal(const nsRect& aDamageRect, nscoord aX, nscoord aY,
                              nsIFrame* aForChild, PRUint32 aFlags)
 {
+  ClearDisplayItemCache();
   nsSVGEffects::InvalidateDirectRenderingObservers(this);
   if (nsSVGIntegrationUtils::UsingEffectsForFrame(this)) {
     nsRect r = nsSVGIntegrationUtils::AdjustInvalidAreaForSVGEffects(this,
@@ -4701,8 +4753,8 @@ nsIFrame::GetTransformMatrix(nsIFrame* aStopAtAncestor,
     PRInt32 scaleFactor = PresContext()->AppUnitsPerDevPixel();
 
     gfx3DMatrix result =
-      nsDisplayTransform::GetResultingTransformMatrix(this, nsPoint(0, 0),
-                                                      scaleFactor, nsnull, aOutAncestor);
+      nsDisplayTransform::GetResultingTransformMatrix(this, nsPoint(0, 0), scaleFactor, nsnull, 
+                                                      nsnull, nsnull, nsnull, nsnull, aOutAncestor);
     // XXXjwatt: seems like this will double count offsets in the face of preserve-3d:
     nsPoint delta = GetOffsetToCrossDoc(*aOutAncestor);
     /* Combine the raw transform with a translation to our parent. */
@@ -6900,7 +6952,7 @@ nsIFrame::FinishAndStoreOverflow(nsOverflowAreas& aOverflowAreas,
       Invalidate(aOverflowAreas.VisualOverflow());
     }
   }
-  // XXXSDL For SVG the invalidation happens in UpdateBounds for now, so we
+  // XXXSDL For SVG the invalidation happens in ReflowSVG for now, so we
   // don't currently invalidate SVG here:
   if (anyOverflowChanged && hasTransform &&
       !(GetStateBits() & NS_FRAME_SVG_LAYOUT)) {

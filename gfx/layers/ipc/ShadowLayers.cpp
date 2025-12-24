@@ -22,6 +22,7 @@
 #include "RenderTrace.h"
 #include "sampler.h"
 #include "nsXULAppAPI.h"
+#include "LayersBackend.h"
 
 using namespace mozilla::ipc;
 
@@ -109,7 +110,7 @@ struct AutoTxnEnd {
 ShadowLayerForwarder::ShadowLayerForwarder()
  : mShadowManager(NULL)
  , mMaxTextureSize(0)
- , mParentBackend(LayerManager::LAYERS_NONE)
+ , mParentBackend(mozilla::layers::LAYERS_NONE)
  , mIsFirstPaint(false)
 {
   mTxn = new Transaction();
@@ -166,6 +167,11 @@ void
 ShadowLayerForwarder::CreatedCanvasLayer(ShadowableLayer* aCanvas)
 {
   CreatedLayer<OpCreateCanvasLayer>(mTxn, aCanvas);
+}
+void
+ShadowLayerForwarder::CreatedRefLayer(ShadowableLayer* aRef)
+{
+  CreatedLayer<OpCreateRefLayer>(mTxn, aRef);
 }
 
 void
@@ -286,6 +292,8 @@ ShadowLayerForwarder::EndTransaction(InfallibleTArray<EditReply>* aReplies)
     CommonLayerAttributes& common = attrs.common();
     common.visibleRegion() = mutant->GetVisibleRegion();
     common.transform() = mutant->GetTransform();
+    common.xScale() = mutant->GetXScale();
+    common.yScale() = mutant->GetYScale();
     common.contentFlags() = mutant->GetContentFlags();
     common.opacity() = mutant->GetOpacity();
     common.useClipRect() = !!mutant->GetClipRect();
@@ -299,6 +307,7 @@ ShadowLayerForwarder::EndTransaction(InfallibleTArray<EditReply>* aReplies)
       common.maskLayerChild() = NULL;
     }
     common.maskLayerParent() = NULL;
+    common.animations() = mutant->GetAnimations();
     attrs.specific() = null_t();
     mutant->FillSpecificAttributes(attrs.specific());
 
@@ -551,7 +560,6 @@ ShadowLayerManager::DestroySharedSurface(SurfaceDescriptor* aSurface,
   }
 }
 
-
 #if !defined(MOZ_HAVE_PLATFORM_SPECIFIC_LAYER_BUFFERS)
 
 bool
@@ -611,6 +619,14 @@ bool
 ShadowLayerManager::PlatformDestroySharedSurface(SurfaceDescriptor*)
 {
   return false;
+}
+
+/*static*/ already_AddRefed<TextureImage>
+ShadowLayerManager::OpenDescriptorForDirectTexturing(GLContext*,
+                                                     const SurfaceDescriptor&,
+                                                     GLenum)
+{
+  return nsnull;
 }
 
 /*static*/ void

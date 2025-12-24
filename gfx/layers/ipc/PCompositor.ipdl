@@ -9,7 +9,7 @@ include protocol PLayers;
 
 include "mozilla/ipc/RPCChannel.h";
 
-using mozilla::LayersBackend;
+using mozilla::layers::LayersBackend;
 using mozilla::null_t;
 using mozilla::ipc::RPCChannel;
 
@@ -41,8 +41,8 @@ parent:
   sync Pause();
   sync Resume();
 
-  sync PLayers(LayersBackend backend)
-    returns (int maxTextureSize);
+  sync PLayers(LayersBackend backendHint, uint64_t id)
+    returns (LayersBackend backend, int32_t maxTextureSize);
 };
 
 } // layers

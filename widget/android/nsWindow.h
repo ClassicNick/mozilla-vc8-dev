@@ -76,7 +76,7 @@ public:
     virtual float GetDPI();
     NS_IMETHOD Show(bool aState);
     NS_IMETHOD SetModal(bool aModal);
-    NS_IMETHOD IsVisible(bool & aState);
+    virtual bool IsVisible() const;
     NS_IMETHOD ConstrainPosition(bool aAllowSlop,
                                  PRInt32 *aX,
                                  PRInt32 *aY);
@@ -96,7 +96,7 @@ public:
                            bool aActivate);
     NS_IMETHOD SetSizeMode(PRInt32 aMode);
     NS_IMETHOD Enable(bool aState);
-    NS_IMETHOD IsEnabled(bool *aState);
+    virtual bool IsEnabled() const;
     NS_IMETHOD Invalidate(const nsIntRect &aRect);
     NS_IMETHOD SetFocus(bool aRaise = false);
     NS_IMETHOD GetScreenBounds(nsIntRect &aRect);
@@ -140,9 +140,9 @@ public:
     NS_IMETHOD OnIMESelectionChange(void);
     virtual nsIMEUpdatePreference GetIMEUpdatePreference();
 
-    LayerManager* GetLayerManager (PLayersChild* aShadowManager = nsnull, 
-                                   LayersBackend aBackendHint = LayerManager::LAYERS_NONE, 
-                                   LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT, 
+    LayerManager* GetLayerManager (PLayersChild* aShadowManager = nsnull,
+                                   LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
+                                   LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                    bool* aAllowRetaining = nsnull);
 
     NS_IMETHOD ReparentNativeWidget(nsIWidget* aNewParent);

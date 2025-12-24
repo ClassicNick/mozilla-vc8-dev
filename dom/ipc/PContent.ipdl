@@ -6,6 +6,7 @@
 
 include protocol PAudio;
 include protocol PBrowser;
+include protocol PCompositor;
 include protocol PCrashReporter;
 include protocol PExternalHelperApp;
 include protocol PDeviceStorageRequest;
@@ -99,6 +100,8 @@ union DeviceStorageParams
 };
 rpc protocol PContent
 {
+    parent opens PCompositor;
+
     manages PAudio;
     manages PBrowser;
     manages PCrashReporter;
@@ -119,7 +122,7 @@ both:
     // The child creates the PBrowser as part of
     // TabChild::BrowserFrameProvideWindow, and the parent creates the PBrowser
     // as part of ContentParent::CreateTab.
-    async PBrowser(PRUint32 chromeFlags, bool isBrowserFrame);
+    async PBrowser(PRUint32 chromeFlags, bool isBrowserElement, PRUint32 appId);
 
 child:
     PMemoryReportRequest();

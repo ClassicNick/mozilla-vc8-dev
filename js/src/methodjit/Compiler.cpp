@@ -504,7 +504,11 @@ mjit::Compiler::performCompilation()
     JS_ASSERT(cx->compartment->activeInference);
 
     {
-        types::AutoEnterCompilation enter(cx, outerScript, isConstructing, chunkIndex);
+        types::AutoEnterCompilation enter(cx);
+        if (!enter.init(outerScript, isConstructing, chunkIndex)) {
+            js_ReportOutOfMemory(cx);
+            return Compile_Error;
+        }
 
         CHECK_STATUS(checkAnalysis(outerScript));
         if (inlining())
@@ -917,7 +921,13 @@ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
     if (!cx->methodJitEnabled)
         return Compile_Abort;
 
-    if (frame->hasPushedSPSFrame())
+    /*
+     * If an SPS frame has already been pushed and profiling has since been
+     * turned off, then we can't enter the jit because the epilogue of a pop
+     * will not be emitted. Otherwise, we're safe with respect to balancing the
+     * push/pops to the SPS sampling stack.
+     */
+    if (frame->hasPushedSPSFrame() && !cx->runtime->spsProfiler.enabled())
         return Compile_Skipped;
 
     if (script->hasJITInfo()) {
@@ -2826,8 +2836,6 @@ mjit::Compiler::generateMethod()
 
           BEGIN_CASE(JSOP_GETLOCAL)
           BEGIN_CASE(JSOP_CALLLOCAL)
-          BEGIN_CASE(JSOP_GETALIASEDVAR)
-          BEGIN_CASE(JSOP_CALLALIASEDVAR)
           {
             /*
              * Update the var type unless we are about to pop the variable.
@@ -2839,26 +2847,27 @@ mjit::Compiler::generateMethod()
                 restoreVarType();
             if (JSObject *singleton = pushedSingleton(0))
                 frame.push(ObjectValue(*singleton));
-            else if (JOF_OPTYPE(*PC) == JOF_SCOPECOORD)
-                jsop_aliasedVar(ScopeCoordinate(PC), /* get = */ true);
             else
                 frame.pushLocal(GET_SLOTNO(PC));
-
-            PC += GetBytecodeLength(PC);
-            break;
           }
           END_CASE(JSOP_GETLOCAL)
+
+          BEGIN_CASE(JSOP_GETALIASEDVAR)
+          BEGIN_CASE(JSOP_CALLALIASEDVAR)
+            jsop_aliasedVar(ScopeCoordinate(PC), /* get = */ true);
+          END_CASE(JSOP_GETALIASEDVAR);
 
           BEGIN_CASE(JSOP_SETLOCAL)
           BEGIN_CASE(JSOP_SETALIASEDVAR)
           {
             jsbytecode *next = &PC[GetBytecodeLength(PC)];
             bool pop = JSOp(*next) == JSOP_POP && !analysis->jumpTarget(next);
-            if (JOF_OPTYPE(*PC) == JOF_SCOPECOORD)
+            if (JOF_OPTYPE(*PC) == JOF_SCOPECOORD) {
                 jsop_aliasedVar(ScopeCoordinate(PC), /* get = */ false, pop);
-            else
+            } else {
                 frame.storeLocal(GET_SLOTNO(PC), pop);
-            updateVarType();
+                updateVarType();
+            }
 
             if (pop) {
                 frame.pop();
@@ -3813,7 +3822,9 @@ void
 mjit::Compiler::interruptCheckHelper()
 {
     Jump jump;
-    if (cx->runtime->gcZeal() == js::gc::ZealVerifierValue) {
+    if (cx->runtime->gcZeal() == js::gc::ZealVerifierPreValue ||
+        cx->runtime->gcZeal() == js::gc::ZealVerifierPostValue)
+    {
         /* For barrier verification, always take the interrupt so we can verify. */
         jump = masm.jump();
     } else {
@@ -4234,8 +4245,8 @@ mjit::Compiler::inlineCallHelper(uint32_t argc, bool callingNew, FrameSize &call
 
         /* Test if the function is scripted. */
         stubcc.masm.load16(Address(icCalleeData, offsetof(JSFunction, flags)), tmp);
-        stubcc.masm.and32(Imm32(JSFUN_KINDMASK), tmp);
-        Jump isNative = stubcc.masm.branch32(Assembler::Below, tmp, Imm32(JSFUN_INTERPRETED));
+        Jump isNative = stubcc.masm.branchTest32(Assembler::Zero, tmp,
+                                                 Imm32(JSFUN_INTERPRETED));
         tempRegs.putReg(tmp);
 
         /*
@@ -5798,12 +5809,7 @@ mjit::Compiler::jsop_aliasedVar(ScopeCoordinate sc, bool get, bool poppedAfter)
     for (unsigned i = 0; i < sc.hops; i++)
         masm.loadPayload(Address(reg, ScopeObject::offsetOfEnclosingScope()), reg);
 
-    Shape *shape;
-    if (StaticBlockObject *block = ScopeCoordinateBlockChain(script, PC))
-        shape = block->lastProperty();
-    else
-        shape = script->bindings.lastShape();
-
+    Shape *shape = ScopeCoordinateToStaticScope(script, PC).scopeShape();
     Address addr;
     if (shape->numFixedSlots() <= sc.slot) {
         masm.loadPtr(Address(reg, JSObject::offsetOfSlots()), reg);
@@ -5813,12 +5819,15 @@ mjit::Compiler::jsop_aliasedVar(ScopeCoordinate sc, bool get, bool poppedAfter)
     }
 
     if (get) {
-        unsigned index;
-        FrameEntry *fe = ScopeCoordinateToFrameIndex(script, PC, &index) == FrameIndex_Local
-                         ? frame.getLocal(index)
-                         : frame.getArg(index);
-        JSValueType type = fe->isTypeKnown() ? fe->getKnownType() : JSVAL_TYPE_UNKNOWN;
-        frame.push(addr, type, true /* = reuseBase */);
+        JSValueType type = knownPushedType(0);
+        RegisterID typeReg, dataReg;
+        frame.loadIntoRegisters(addr, /* reuseBase = */ true, &typeReg, &dataReg);
+        frame.pushRegs(typeReg, dataReg, type);
+        BarrierState barrier = testBarrier(typeReg, dataReg,
+                                           /* testUndefined = */ false,
+                                           /* testReturn */ false,
+                                           /* force */ true);
+        finishBarrier(barrier, REJOIN_FALLTHROUGH, 0);
     } else {
 #ifdef JSGC_INCREMENTAL_MJ
         if (cx->compartment->needsBarrier()) {
@@ -6022,7 +6031,8 @@ mjit::Compiler::iterNext(ptrdiff_t offset)
     frame.unpinReg(reg);
 
     /* Test clasp */
-    Jump notFast = masm.testObjClass(Assembler::NotEqual, reg, T1, &IteratorClass);
+    Jump notFast = masm.testObjClass(Assembler::NotEqual, reg, T1,
+                                     &PropertyIteratorObject::class_);
     stubcc.linkExit(notFast, Uses(1));
 
     /* Get private from iter obj. */
@@ -6073,7 +6083,8 @@ mjit::Compiler::iterMore(jsbytecode *target)
     RegisterID tempreg = frame.allocReg();
 
     /* Test clasp */
-    Jump notFast = masm.testObjClass(Assembler::NotEqual, reg, tempreg, &IteratorClass);
+    Jump notFast = masm.testObjClass(Assembler::NotEqual, reg, tempreg,
+                                     &PropertyIteratorObject::class_);
     stubcc.linkExitForBranch(notFast);
 
     /* Get private from iter obj. */
@@ -6112,7 +6123,8 @@ mjit::Compiler::iterEnd()
     frame.unpinReg(reg);
 
     /* Test clasp */
-    Jump notIterator = masm.testObjClass(Assembler::NotEqual, reg, T1, &IteratorClass);
+    Jump notIterator = masm.testObjClass(Assembler::NotEqual, reg, T1,
+                                         &PropertyIteratorObject::class_);
     stubcc.linkExit(notIterator, Uses(1));
 
     /* Get private from iter obj. */

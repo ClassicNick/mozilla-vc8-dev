@@ -16,6 +16,7 @@
 #include "mozilla/mozalloc.h"
 #include "mozilla/Mutex.h"
 #include "gfxPlatform.h"
+#include "LayersBackend.h"
 
 #ifdef XP_MACOSX
 #include "nsIOSurface.h"
@@ -26,6 +27,9 @@ struct ID3D10Device;
 struct ID3D10ShaderResourceView;
 
 typedef void* HANDLE;
+#endif
+#ifdef MOZ_WIDGET_GONK
+# include <ui/GraphicBuffer.h>
 #endif
 
 namespace mozilla {
@@ -107,9 +111,21 @@ public:
     MAC_IO_SURFACE,
 
     /**
+     * The GONK_IO_SURFACE format creates a GonkIOSurfaceImage.
+     *
+     * It wraps an GraphicBuffer object and binds it directly to a GL texture.
+     */
+    GONK_IO_SURFACE,
+
+    /**
      * An bitmap image that can be shared with a remote process.
      */
     REMOTE_IMAGE_BITMAP,
+
+    /**
+     * A OpenGL texture that can be shared across threads or processes
+     */
+    SHARED_TEXTURE,
 
     /**
      * An DXGI shared surface handle that can be shared with a remote process.
@@ -123,9 +139,9 @@ public:
   virtual already_AddRefed<gfxASurface> GetAsSurface() = 0;
   virtual gfxIntSize GetSize() = 0;
 
-  ImageBackendData* GetBackendData(LayerManager::LayersBackend aBackend)
+  ImageBackendData* GetBackendData(LayersBackend aBackend)
   { return mBackendData[aBackend]; }
-  void SetBackendData(LayerManager::LayersBackend aBackend, ImageBackendData* aData)
+  void SetBackendData(LayersBackend aBackend, ImageBackendData* aData)
   { mBackendData[aBackend] = aData; }
 
 protected:
@@ -134,7 +150,7 @@ protected:
     mFormat(aFormat)
   {}
 
-  nsAutoPtr<ImageBackendData> mBackendData[LayerManager::LAYERS_LAST];
+  nsAutoPtr<ImageBackendData> mBackendData[mozilla::layers::LAYERS_LAST];
 
   void* mImplData;
   Format mFormat;
@@ -921,6 +937,82 @@ private:
   void* mPluginInstanceOwner;
   UpdateSurfaceCallback mUpdateCallback;
   DestroyCallback mDestroyCallback;
+};
+#endif
+
+#ifdef MOZ_WIDGET_GONK
+/**
+ * The gralloc buffer maintained by android GraphicBuffer can be
+ * shared between the compositor thread and the producer thread. The
+ * mGraphicBuffer is owned by the producer thread, but when it is
+ * wrapped by GraphicBufferLocked and passed to the compositor, the
+ * buffer content is guaranteed to not change until Unlock() is
+ * called. Each producer must maintain their own buffer queue and
+ * implement the GraphicBufferLocked::Unlock() interface.
+ */
+class GraphicBufferLocked {
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GraphicBufferLocked)
+
+public:
+  GraphicBufferLocked(android::GraphicBuffer* aGraphicBuffer)
+    : mGraphicBuffer(aGraphicBuffer)
+  {}
+
+  virtual ~GraphicBufferLocked() {}
+
+  virtual void Unlock() {}
+
+  virtual void* GetNativeBuffer()
+  {
+    return mGraphicBuffer->getNativeBuffer();
+  }   
+
+protected:
+  android::GraphicBuffer* mGraphicBuffer;
+};
+
+class THEBES_API GonkIOSurfaceImage : public Image {
+public:
+  struct Data {
+    nsRefPtr<GraphicBufferLocked> mGraphicBuffer;
+    gfxIntSize mPicSize;
+  };
+
+  GonkIOSurfaceImage()
+    : Image(NULL, GONK_IO_SURFACE)
+    , mSize(0, 0)
+    {}
+
+  virtual ~GonkIOSurfaceImage()
+  {
+    mGraphicBuffer->Unlock();
+  }
+
+  virtual void SetData(const Data& aData)
+  {
+    mGraphicBuffer = aData.mGraphicBuffer;
+    mSize = aData.mPicSize;
+  }
+
+  virtual gfxIntSize GetSize()
+  {
+    return mSize;
+  }
+
+  virtual already_AddRefed<gfxASurface> GetAsSurface()
+  {
+    // We need to fix this and return a ASurface at some point.
+    return nsnull;
+  }
+
+  void* GetNativeBuffer()
+  {
+    return mGraphicBuffer->GetNativeBuffer();
+  }
+
+private:
+  nsRefPtr<GraphicBufferLocked> mGraphicBuffer;
+  gfxIntSize mSize;
 };
 #endif
 
