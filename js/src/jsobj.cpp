@@ -3902,7 +3902,7 @@ js_FindClassObject(JSContext *cx, HandleObject start, JSProtoKey protoKey,
     JS_ASSERT(obj->isNative());
     RootedObject pobj(cx);
     RootedShape shape(cx);
-    if (!LookupPropertyWithFlags(cx, obj, id, 0, &pobj, &shape))
+    if (!LookupPropertyWithFlagsId(cx, obj, id, 0, &pobj, &shape))
         return false;
     RootedValue v(cx, UndefinedValue());
     if (shape && pobj->isNative()) {
@@ -4371,7 +4371,7 @@ baseops::LookupElement(JSContext *cx, HandleObject obj, uint32_t index,
 }
 
 bool
-js::LookupPropertyWithFlags(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
+js::LookupPropertyWithFlagsId(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
                             MutableHandleObject objp, MutableHandleShape propp)
 {
     return LookupPropertyWithFlagsInline(cx, obj, id, flags, objp, propp);
@@ -4397,7 +4397,7 @@ js::FindPropertyHelper(JSContext *cx,
          ? IsCacheableNonGlobalScope(obj)
          : !obj->getOps()->lookupProperty;
          ++scopeIndex) {
-        if (!LookupPropertyWithFlags(cx, obj, id, cx->resolveFlags, &pobj, &prop))
+        if (!LookupPropertyWithFlagsId(cx, obj, id, cx->resolveFlags, &pobj, &prop))
             return false;
 
         if (prop) {
@@ -4504,7 +4504,7 @@ js::FindIdentifierBase(JSContext *cx, HandleObject scopeChain, HandlePropertyNam
     {
         RootedObject pobj(cx);
         RootedShape shape(cx);
-        if (!LookupPropertyWithFlags(cx, obj, name, cx->resolveFlags, &pobj, &shape))
+        if (!LookupPropertyWithFlagsName(cx, obj, name, cx->resolveFlags, &pobj, &shape))
             return NULL;
         if (shape) {
             if (!pobj->isNative()) {
@@ -4576,7 +4576,7 @@ js_NativeGetInline(JSContext *cx, Handle<JSObject*> receiver, JSObject *obj, JSO
         return false;
 
     /* Update slotful shapes according to the value produced by the getter. */
-    if (shapeRoot->hasSlot() && pobjRoot->nativeContains(cx, shapeRoot))
+    if (shapeRoot->hasSlot() && pobjRoot->nativeContainsShape(cx, shapeRoot))
         pobjRoot->nativeSetSlot(shapeRoot->slot(), *vp);
 
     return true;
@@ -4628,7 +4628,7 @@ js_NativeSet(JSContext *cx, Handle<JSObject*> obj, Handle<JSObject*> receiver,
      */
     if (shapeRoot->hasSlot() &&
         (JS_LIKELY(cx->runtime->propertyRemovals == sample) ||
-         obj->nativeContains(cx, shapeRoot))) {
+         obj->nativeContainsShape(cx, shapeRoot))) {
         obj->setSlot(shapeRoot->slot(), *vp);
     }
 
@@ -4754,7 +4754,7 @@ baseops::GetPropertyDefault(JSContext *cx, HandleObject obj, HandleId id, const 
 {
     RootedShape prop(cx);
     RootedObject obj2(cx);
-    if (!LookupPropertyWithFlags(cx, obj, id, JSRESOLVE_QUALIFIED, &obj2, &prop))
+    if (!LookupPropertyWithFlagsId(cx, obj, id, JSRESOLVE_QUALIFIED, &obj2, &prop))
         return false;
 
     if (!prop) {
@@ -4861,7 +4861,7 @@ baseops::SetPropertyHelper(JSContext *cx, HandleObject obj, HandleObject receive
 
     RootedObject pobj(cx);
     RootedShape shape(cx);
-    if (!LookupPropertyWithFlags(cx, obj, id, cx->resolveFlags, &pobj, &shape))
+    if (!LookupPropertyWithFlagsId(cx, obj, id, cx->resolveFlags, &pobj, &shape))
         return false;
     if (shape) {
         if (!pobj->isNative()) {

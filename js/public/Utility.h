@@ -556,6 +556,37 @@ JS_END_EXTERN_C
         }\
     }
 
+template <class T>
+static JS_ALWAYS_INLINE T *
+js_pod_malloc()
+{
+    return (T *)js_malloc(sizeof(T));
+}
+
+template <class T>
+static JS_ALWAYS_INLINE T *
+js_pod_calloc()
+{
+    return (T *)js_calloc(sizeof(T));
+}
+
+template <class T>
+static JS_ALWAYS_INLINE T *
+js_pod_malloc(size_t numElems)
+{
+    if (numElems & js::tl::MulOverflowMask<sizeof(T)>::result)
+        return NULL;
+    return (T *)js_malloc(numElems * sizeof(T));
+}
+
+template <class T>
+static JS_ALWAYS_INLINE T *
+js_pod_calloc(size_t numElems)
+{
+    if (numElems & js::tl::MulOverflowMask<sizeof(T)>::result)
+        return NULL;
+    return (T *)js_calloc(numElems * sizeof(T));
+}
 
 /*
  * In general, all allocations should go through a JSContext or JSRuntime, so

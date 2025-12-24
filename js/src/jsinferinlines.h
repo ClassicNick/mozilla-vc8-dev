@@ -1490,7 +1490,7 @@ JSCompartment::getEmptyType(JSContext *cx)
 {
     JS::MaybeCheckStackRoots(cx);
 
-    if (!emptyTypeObject) {
+	if (!(js::types::TypeObject*)emptyTypeObject) {
         JS::RootedObject nullproto(cx, NULL);
         emptyTypeObject = types.newTypeObject(cx, NULL, JSProto_Object, nullproto, true);
     }

@@ -965,13 +965,13 @@ JSObject::nativeSetSlotWithType(JSContext *cx, js::Shape *shape, const js::Value
 }
 
 inline bool
-JSObject::nativeContains(JSContext *cx, js::HandleId id)
+JSObject::nativeContainsId(JSContext *cx, js::HandleId id)
 {
     return nativeLookup(cx, id) != NULL;
 }
 
 inline bool
-JSObject::nativeContains(JSContext *cx, js::HandleShape shape)
+JSObject::nativeContainsShape(JSContext *cx, js::HandleShape shape)
 {
     return nativeLookup(cx, shape->propid()) == shape;
 }

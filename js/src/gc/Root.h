@@ -145,6 +145,7 @@ class Handle : public HandleBase<T>
         (void)a;
 #endif
     }
+	template <typename S>
     void operator =(S v) MOZ_DELETE;
 };
 

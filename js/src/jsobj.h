@@ -307,8 +307,8 @@ struct JSObject : public js::ObjectImpl
      */
     bool setSlotSpan(JSContext *cx, uint32_t span);
 
-    inline bool nativeContains(JSContext *cx, js::HandleId id);
-    inline bool nativeContains(JSContext *cx, js::HandleShape shape);
+    inline bool nativeContainsId(JSContext *cx, js::HandleId id);
+    inline bool nativeContainsShape(JSContext *cx, js::HandleShape shape);
 
     inline bool nativeContainsNoAllocation(jsid id);
     inline bool nativeContainsNoAllocation(const js::Shape &shape);
@@ -1175,15 +1175,15 @@ DefineNativeProperty(JSContext *cx, HandleObject obj, PropertyName *name, const 
  * Specialized subroutine that allows caller to preset JSRESOLVE_* flags.
  */
 extern bool
-LookupPropertyWithFlags(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
+LookupPropertyWithFlagsId(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
                         js::MutableHandleObject objp, js::MutableHandleShape propp);
 
 inline bool
-LookupPropertyWithFlagsInline(JSContext *cx, HandleObject obj, PropertyName *name, unsigned flags,
+LookupPropertyWithFlagsName(JSContext *cx, HandleObject obj, PropertyName *name, unsigned flags,
                         js::MutableHandleObject objp, js::MutableHandleShape propp)
 {
     Rooted<jsid> id(cx, NameToId(name));
-    return LookupPropertyWithFlags(cx, obj, id, flags, objp, propp);
+    return LookupPropertyWithFlagsId(cx, obj, id, flags, objp, propp);
 }
 
 /*

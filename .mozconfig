@@ -6,7 +6,7 @@
 mk_add_options MOZ_MAKE_FLAGS="-j3"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/obj-fxvc71-release"
+mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/fxesr17/obj-fxvc71-release"
 WIN32_REDIST_DIR=/h/browsers/VC71Compat/mozilla6-Test/redist/VC71
 
 
@@ -45,6 +45,8 @@ ac_add_options --disable-updater
 ac_add_options --disable-cubeb
 ac_add_options --disable-websms-backend
 ac_add_options --disable-webapp-runtime
+ac_add_options --disable-webrtc
+ac_add_options --disable-jsd
 ac_add_options --with-windows-version=502
 
 # Branding Options

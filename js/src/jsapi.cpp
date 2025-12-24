@@ -2015,7 +2015,7 @@ JS_EnumerateStandardClasses(JSContext *cx, JSObject *obj_)
      */
     RootedPropertyName undefinedName(cx, cx->runtime->atomState.typeAtoms[JSTYPE_VOID]);
     RootedId undefinedId(cx, NameToId(undefinedName));
-    if (!obj->nativeContains(cx, undefinedId) &&
+    if (!obj->nativeContainsId(cx, undefinedId) &&
         !obj->defineProperty(cx, undefinedName, UndefinedValue(),
                              JS_PropertyStub, JS_StrictPropertyStub,
                              JSPROP_PERMANENT | JSPROP_READONLY)) {
@@ -2094,7 +2094,7 @@ EnumerateIfResolved(JSContext *cx, JSObject *obj, PropertyName *name, JSIdArray 
                     int *ip, JSBool *foundp)
 {
     RootedId id(cx, NameToId(name));
-    *foundp = obj->nativeContains(cx, id);
+    *foundp = obj->nativeContainsId(cx, id);
     if (*foundp)
         ida = AddNameToArray(cx, name, ida, ip);
     return ida;
@@ -3576,7 +3576,7 @@ JS_LookupPropertyWithFlagsById(JSContext *cx, JSObject *obj_, jsid id_, unsigned
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, id);
     if (!(obj->isNative()
-          ? LookupPropertyWithFlags(cx, obj, id, flags, &objp, &prop)
+          ? LookupPropertyWithFlagsId(cx, obj, id, flags, &objp, &prop)
           : obj->lookupGeneric(cx, id, &objp, &prop)))
         return false;
 
@@ -3656,7 +3656,7 @@ JS_AlreadyHasOwnPropertyById(JSContext *cx, JSObject *obj_, jsid id_, JSBool *fo
         return JS_TRUE;
     }
 
-    *foundp = obj->nativeContains(cx, id);
+    *foundp = obj->nativeContainsId(cx, id);
     return JS_TRUE;
 }
 

@@ -846,10 +846,7 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
     if (aThread) {
         // If we're walking the stack of another thread, we don't need to
         // use a separate walker thread.
-<<<<<<< HEAD
         PerformStackWalk(&data);
-=======
-        WalkStackMain64(&data);
 
         if (data.pc_count > data.pc_size) {
             data.pcs = (void**) _alloca(data.pc_count * sizeof(void*));
@@ -858,9 +855,8 @@ NS_StackWalk(NS_WalkStackCallback aCallback, PRUint32 aSkipFrames,
             data.sps = (void**) _alloca(data.sp_count * sizeof(void*));
             data.sp_size = data.sp_count;
             data.sp_count = 0;
-            WalkStackMain64(&data);
+            PerformStackWalk(&data);
         }
->>>>>>> 8c55cde9
     } else {
         data.eventStart = ::CreateEvent(NULL, FALSE /* auto-reset*/,
                               FALSE /* initially non-signaled */, NULL);

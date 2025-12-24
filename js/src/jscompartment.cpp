@@ -490,7 +490,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepNewTypeObjectTable(newTypeObjects);
         sweepNewTypeObjectTable(lazyTypeObjects);
 
-        if (emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
+		if ((js::types::TypeObject*)emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
             emptyTypeObject = NULL;
 
         sweepBreakpoints(fop);
