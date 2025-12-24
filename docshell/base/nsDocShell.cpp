@@ -4902,6 +4902,13 @@ nsDocShell::SetParentNativeWindow(nativeWindow parentNativeWindow)
 }
 
 NS_IMETHODIMP
+nsDocShell::GetNativeHandle(nsAString& aNativeHandle)
+{
+    // the nativeHandle should be accessed from nsIXULWindow
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetVisibility(bool * aVisibility)
 {
     NS_ENSURE_ARG_POINTER(aVisibility);
@@ -8307,19 +8314,16 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         
         bool isNewWindow = false;
         if (!targetDocShell) {
-            nsCOMPtr<nsPIDOMWindow> win =
+            nsCOMPtr<nsIDOMWindow> win =
                 do_GetInterface(GetAsSupports(this));
             NS_ENSURE_TRUE(win, NS_ERROR_NOT_AVAILABLE);
 
             nsDependentString name(aWindowTarget);
             nsCOMPtr<nsIDOMWindow> newWin;
-            nsCAutoString spec;
-            if (aURI)
-                aURI->GetSpec(spec);
-            rv = win->OpenNoNavigate(NS_ConvertUTF8toUTF16(spec),
-                                     name,          // window name
-                                     EmptyString(), // Features
-                                     getter_AddRefs(newWin));
+            rv = win->Open(EmptyString(), // URL to load
+                           name,          // window name
+                           EmptyString(), // Features
+                           getter_AddRefs(newWin));
 
             // In some cases the Open call doesn't actually result in a new
             // window being opened.  We can detect these cases by examining the

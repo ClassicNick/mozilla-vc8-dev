@@ -119,16 +119,18 @@ ShadowLayersParent::Destroy()
 /* virtual */
 bool
 ShadowLayersParent::RecvUpdateNoSwap(const InfallibleTArray<Edit>& cset,
-                 const bool& isFirstPaint)
+                                     const TargetConfig& targetConfig,
+                                     const bool& isFirstPaint)
 {
   InfallibleTArray<EditReply> noReplies;
-  bool success = RecvUpdate(cset, isFirstPaint, &noReplies);
+  bool success = RecvUpdate(cset, targetConfig, isFirstPaint, &noReplies);
   NS_ABORT_IF_FALSE(noReplies.Length() == 0, "RecvUpdateNoSwap requires a sync Update to carry Edits");
   return success;
 }
 
 bool
 ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
+                               const TargetConfig& targetConfig,
                                const bool& isFirstPaint,
                                InfallibleTArray<EditReply>* reply)
 {
@@ -212,10 +214,9 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       const CommonLayerAttributes& common = attrs.common();
       layer->SetVisibleRegion(common.visibleRegion());
       layer->SetContentFlags(common.contentFlags());
-      layer->SetOpacity(common.opacity().value());
+      layer->SetOpacity(common.opacity());
       layer->SetClipRect(common.useClipRect() ? &common.clipRect() : NULL);
-      layer->SetTransform(common.transform().value());
-      layer->SetScale(common.xScale(), common.yScale());
+      layer->SetTransform(common.transform());
       static bool fixedPositionLayersEnabled = getenv("MOZ_ENABLE_FIXED_POSITION_LAYERS") != 0;
       if (fixedPositionLayersEnabled) {
         layer->SetIsFixedPosition(common.isFixedPosition());
@@ -226,7 +227,6 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
       } else {
         layer->SetMaskLayer(NULL);
       }
-      layer->SetAnimations(common.animations());
 
       typedef SpecificLayerAttributes Specific;
       const SpecificLayerAttributes& specific = attrs.specific();
@@ -257,7 +257,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
         MOZ_LAYERS_LOG(("[ParentSide]   color layer"));
 
         static_cast<ColorLayer*>(layer)->SetColor(
-          specific.get_ColorLayerAttributes().color().value());
+          specific.get_ColorLayerAttributes().color());
         break;
 
       case Specific::TCanvasLayerAttributes:
@@ -419,7 +419,7 @@ ShadowLayersParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
   // other's buffer contents.
   ShadowLayerManager::PlatformSyncBeforeReplyUpdate();
 
-  mShadowLayersManager->ShadowLayersUpdated(this, isFirstPaint);
+  mShadowLayersManager->ShadowLayersUpdated(this, targetConfig, isFirstPaint);
 
 #ifdef COMPOSITOR_PERFORMANCE_WARNING
   int compositeTime = (int)(mozilla::TimeStamp::Now() - updateStart).ToMilliseconds();

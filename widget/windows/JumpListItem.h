@@ -50,8 +50,6 @@ protected:
   short Type() { return mItemType; }
   short mItemType;
 
-  static nsresult HashURI(nsCOMPtr<nsICryptoHash> &aCryptoHash,
-                          nsIURI *aUri, nsACString& aUriHash);
 };
 
 class JumpListSeparator : public JumpListItem, public nsIJumpListSeparator

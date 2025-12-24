@@ -14,6 +14,7 @@
 #include "ImageLayers.h"
 #include "LayersBackend.h"
 #include "mozilla/ipc/SharedMemory.h"
+#include "mozilla/WidgetUtils.h"
 
 class gfxSharedImageSurface;
 
@@ -116,7 +117,8 @@ public:
    * Begin recording a transaction to be forwarded atomically to a
    * ShadowLayerManager.
    */
-  void BeginTransaction();
+  void BeginTransaction(const nsIntRect& aTargetBounds,
+                        ScreenRotation aRotation);
 
   /**
    * The following methods may only be called after BeginTransaction()
@@ -522,11 +524,6 @@ public:
     mShadowVisibleRegion = aRegion;
   }
 
-  void SetShadowOpacity(float aOpacity)
-  {
-    mShadowOpacity = aOpacity;
-  }
-
   void SetShadowClipRect(const nsIntRect* aRect)
   {
     mUseShadowClipRect = aRect != nsnull;
@@ -541,7 +538,6 @@ public:
   }
 
   // These getters can be used anytime.
-  float GetShadowOpacity() { return mShadowOpacity; }
   const nsIntRect* GetShadowClipRect() { return mUseShadowClipRect ? &mShadowClipRect : nsnull; }
   const nsIntRegion& GetShadowVisibleRegion() { return mShadowVisibleRegion; }
   const gfx3DMatrix& GetShadowTransform() { return mShadowTransform; }
@@ -551,7 +547,6 @@ public:
 protected:
   ShadowLayer()
     : mAllocator(nsnull)
-    , mShadowOpacity(1.0)
     , mUseShadowClipRect(false)
   {}
 
@@ -559,7 +554,6 @@ protected:
   nsIntRegion mShadowVisibleRegion;
   gfx3DMatrix mShadowTransform;
   nsIntRect mShadowClipRect;
-  float mShadowOpacity;
   bool mUseShadowClipRect;
 };
 

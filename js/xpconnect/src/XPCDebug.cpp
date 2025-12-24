@@ -20,7 +20,7 @@ static void DebugDump(const char* fmt, ...)
   char buffer[2048];
   va_list ap;
   va_start(ap, fmt);
-#ifdef XPWIN
+#if defined XPWIN || defined (_MSC_VER)
   _vsnprintf(buffer, sizeof(buffer), fmt, ap);
 #else
   vsnprintf(buffer, sizeof(buffer), fmt, ap);

@@ -31,7 +31,7 @@ struct IDataObject;
 class nsNativeDragTarget MOZ_FINAL : public IDropTarget
 {
 public:
-  nsNativeDragTarget(nsIWidget * aWnd);
+  nsNativeDragTarget(nsIWidget * aWidget);
   ~nsNativeDragTarget();
 
   // IUnknown members - see iunknown.h for documentation
@@ -87,7 +87,7 @@ protected:
   bool             mTookOwnRef;
 
   // Gecko Stuff
-  nsIWidget      * mWindow;
+  nsIWidget      * mWidget;
   nsIDragService * mDragService;
   // Drag target helper 
   IDropTargetHelper * GetDropTargetHelper();
