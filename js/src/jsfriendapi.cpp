@@ -127,7 +127,7 @@ js::PrepareForIncrementalGC(JSRuntime *rt)
         return;
 
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
-        if (c->needsBarrier())
+        if (c->wasGCStarted())
             PrepareCompartmentForGC(c);
     }
 }
@@ -162,9 +162,9 @@ js::ShrinkingGC(JSRuntime *rt, gcreason::Reason reason)
 }
 
 JS_FRIEND_API(void)
-js::IncrementalGC(JSRuntime *rt, gcreason::Reason reason)
+js::IncrementalGC(JSRuntime *rt, gcreason::Reason reason, int64_t millis)
 {
-    GCSlice(rt, GC_NORMAL, reason);
+    GCSlice(rt, GC_NORMAL, reason, millis);
 }
 
 JS_FRIEND_API(void)
@@ -437,6 +437,19 @@ JS_FRIEND_API(void)
 js::SetReservedSlotWithBarrier(JSObject *obj, size_t slot, const js::Value &value)
 {
     obj->setSlot(slot, value);
+}
+
+JS_FRIEND_API(bool)
+js::GetGeneric(JSContext *cx, JSObject *obj, JSObject *receiver_, jsid id_,
+               Value *vp)
+{
+    RootedObject receiver(cx, receiver_);
+    RootedId id(cx, id_);
+    RootedValue value(cx);
+    if (!obj->getGeneric(cx, receiver, id, &value))
+        return false;
+    *vp = value;
+    return true;
 }
 
 void

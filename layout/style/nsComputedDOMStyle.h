@@ -333,6 +333,7 @@ private:
 
   /* Column properties */
   nsIDOMCSSValue* DoGetColumnCount();
+  nsIDOMCSSValue* DoGetColumnFill();
   nsIDOMCSSValue* DoGetColumnWidth();
   nsIDOMCSSValue* DoGetColumnGap();
   nsIDOMCSSValue* DoGetColumnRuleWidth();
@@ -435,8 +436,8 @@ private:
   void SetValueToCoord(nsROCSSPrimitiveValue* aValue,
                        const nsStyleCoord& aCoord,
                        bool aClampNegativeCalc,
-                       PercentageBaseGetter aPercentageBaseGetter = nsnull,
-                       const PRInt32 aTable[] = nsnull,
+                       PercentageBaseGetter aPercentageBaseGetter = nullptr,
+                       const PRInt32 aTable[] = nullptr,
                        nscoord aMinAppUnits = nscoord_MIN,
                        nscoord aMaxAppUnits = nscoord_MAX);
 

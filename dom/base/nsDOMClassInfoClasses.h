@@ -43,12 +43,10 @@ DOMCI_CLASS(DragEvent)
 DOMCI_CLASS(KeyboardEvent)
 DOMCI_CLASS(CompositionEvent)
 DOMCI_CLASS(PopupBlockedEvent)
-DOMCI_CLASS(DeviceLightEvent)
 #define MOZ_GENERATED_EVENT_LIST
 #define MOZ_GENERATED_EVENT(_event_interface) DOMCI_CLASS(_event_interface)
 #include "GeneratedEvents.h"
 #undef MOZ_GENERATED_EVENT_LIST
-DOMCI_CLASS(DeviceOrientationEvent)
 DOMCI_CLASS(DeviceMotionEvent)
 DOMCI_CLASS(DeviceAcceleration)
 DOMCI_CLASS(DeviceRotationRate)
@@ -369,6 +367,8 @@ DOMCI_CLASS(FileList)
 DOMCI_CLASS(Blob)
 DOMCI_CLASS(File)
 DOMCI_CLASS(FileReader)
+DOMCI_CLASS(ArchiveReader)
+DOMCI_CLASS(ArchiveRequest)
 DOMCI_CLASS(MozURLProperty)
 DOMCI_CLASS(MozBlobBuilder)
 
@@ -509,8 +509,6 @@ DOMCI_CLASS(MutationRecord)
 
 DOMCI_CLASS(MozSettingsEvent)
 
-DOMCI_CLASS(MozApplicationEvent)
-
 #ifdef MOZ_B2G_RIL
 DOMCI_CLASS(MozWifiStatusChangeEvent)
 DOMCI_CLASS(MozWifiConnectionInfoEvent)
@@ -527,6 +525,10 @@ DOMCI_CLASS(BluetoothAdapter)
 DOMCI_CLASS(BluetoothDevice)
 DOMCI_CLASS(BluetoothDeviceEvent)
 #endif
+
+DOMCI_CLASS(CameraManager)
+DOMCI_CLASS(CameraControl)
+DOMCI_CLASS(CameraCapabilities)
 
 DOMCI_CLASS(DOMError)
 DOMCI_CLASS(DOMRequest)

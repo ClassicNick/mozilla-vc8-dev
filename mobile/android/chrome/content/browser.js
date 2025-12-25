@@ -1565,10 +1565,8 @@ var SelectionHandler = {
         break;
       }
       case "after-viewport-change": {
-        // Update the cache and reposition the handles after the viewport
-        // changes (e.g. panning, zooming).
+        // Update the cache after the viewport changes (e.g. panning, zooming).
         this.updateCacheForSelection();
-        this.positionHandles();
         break;
       }
       case "TextSelection:Move": {
@@ -1871,13 +1869,15 @@ var SelectionHandler = {
     // Translate coordinates to account for selections in sub-frames. We can't cache
     // this because the top-level page may have scrolled since selection started.
     let offset = this._getViewOffset();
+    let scrollX = {}, scrollY = {};
+    this._view.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).getScrollXY(false, scrollX, scrollY);
     sendMessageToJava({
       gecko: {
         type: "TextSelection:PositionHandles",
-        startLeft: this.cache.start.x + offset.x,
-        startTop: this.cache.start.y + offset.y,
-        endLeft: this.cache.end.x + offset.x,
-        endTop: this.cache.end.y + offset.y
+        startLeft: this.cache.start.x + offset.x + scrollX.value,
+        startTop: this.cache.start.y + offset.y + scrollY.value,
+        endLeft: this.cache.end.x + offset.x + scrollX.value,
+        endTop: this.cache.end.y + offset.y + scrollY.value
       }
     });
   },
@@ -1959,13 +1959,6 @@ var UserAgent = {
         let tab = BrowserApp.getTabForWindow(channelWindow);
         if (tab == null)
           break;
-
-        if (channel.URI.host.indexOf("youtube") != -1) {
-          let ua = Cc["@mozilla.org/network/protocol;1?name=http"].getService(Ci.nsIHttpProtocolHandler).userAgent;
-#expand let version = "__MOZ_APP_VERSION__";
-          ua += " Fennec/" + version;
-          channel.setRequestHeader("User-Agent", ua, false);
-        }
 
         // Send desktop UA if "Request Desktop Site" is enabled
         if (tab.desktopMode)
@@ -2161,6 +2154,7 @@ Tab.prototype = {
     this.browser.addEventListener("scroll", this, true);
     this.browser.addEventListener("MozScrolledAreaChanged", this, true);
     this.browser.addEventListener("PluginClickToPlay", this, true);
+    this.browser.addEventListener("PluginNotFound", this, true);
     this.browser.addEventListener("pageshow", this, true);
 
     Services.obs.addObserver(this, "before-first-paint", false);
@@ -2253,6 +2247,7 @@ Tab.prototype = {
     this.browser.removeEventListener("DOMWillOpenModalDialog", this, true);
     this.browser.removeEventListener("scroll", this, true);
     this.browser.removeEventListener("PluginClickToPlay", this, true);
+    this.browser.removeEventListener("PluginNotFound", this, true);
     this.browser.removeEventListener("MozScrolledAreaChanged", this, true);
 
     Services.obs.removeObserver(this, "before-first-paint");
@@ -2587,8 +2582,8 @@ Tab.prototype = {
       case "DOMContentLoaded": {
         let target = aEvent.originalTarget;
 
-        // ignore on frames
-        if (target.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (target != this.browser.contentDocument)
           return;
 
         // Sample the background color of the page and pass it along. (This is used to draw the
@@ -2633,8 +2628,8 @@ Tab.prototype = {
         if (!target.href || target.disabled)
           return;
 
-        // ignore on frames
-        if (target.ownerDocument.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (target.ownerDocument != this.browser.contentDocument)
           return;
 
         // sanitize the rel string
@@ -2687,8 +2682,8 @@ Tab.prototype = {
         if (!aEvent.isTrusted)
           return;
 
-        // ignore on frames
-        if (aEvent.target.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (aEvent.originalTarget != this.browser.contentDocument)
           return;
 
         sendMessageToJava({
@@ -2798,6 +2793,21 @@ Tab.prototype = {
 
           NativeWindow.doorhanger.hide("ask-to-play-plugins", tab.id);
         }, true);
+        break;
+      }
+
+      case "PluginNotFound": {
+        let plugin = aEvent.target;
+        plugin.clientTop; // force style flush
+
+        // On devices where we don't support Flash, there will be a "Learn More..." link in
+        // the missing plugin error message.
+        let learnMoreLink = plugin.ownerDocument.getAnonymousElementByAttribute(plugin, "class", "unsupportedLearnMoreLink");
+        if (learnMoreLink) {
+          let learnMoreUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
+          learnMoreUrl += "why-cant-firefox-mobile-play-flash-on-my-device";
+          learnMoreLink.href = learnMoreUrl;
+        }
         break;
       }
 
@@ -3216,8 +3226,6 @@ Tab.prototype = {
   ])
 };
 
-const kTapHighlightDelay = 50; // milliseconds
-
 var BrowserEventHandler = {
   init: function init() {
     Services.obs.addObserver(this, "Gesture:SingleTap", false);
@@ -3455,22 +3463,12 @@ var BrowserEventHandler = {
 
   _highlightElement: null,
 
-  _highlightTimeout: null,
-
   _doTapHighlight: function _doTapHighlight(aElement) {
-    this._cancelTapHighlight();
-    this._highlightTimeout = setTimeout(function(self) {
-      DOMUtils.setContentState(aElement, kStateActive);
-      self._highlightElement = aElement;
-    }, kTapHighlightDelay, this);
+    DOMUtils.setContentState(aElement, kStateActive);
+    this._highlightElement = aElement;
   },
 
   _cancelTapHighlight: function _cancelTapHighlight() {
-    if (this._highlightTimeout) {
-      clearTimeout(this._highlightTimeout);
-      this._highlightTimeout = null;
-    }
-
     if (!this._highlightElement)
       return;
 
@@ -5892,6 +5890,12 @@ var WebappsUI = {
             return;
           let manifest = new DOMApplicationManifest(aManifest, data.origin);
 
+          // The manifest is stored as UTF-8, sendMessageToJava expects UTF-16. Convert before sending
+          let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].createInstance(Ci.nsIScriptableUnicodeConverter);
+          converter.charset = "UTF-8";
+          let name = manifest.name ? converter.ConvertToUnicode(manifest.name) :
+                                     converter.ConvertToUnicode(manifest.fullLaunchPath());
+
           // Add a homescreen shortcut -- we can't use createShortcut, since we need to pass
           // a unique ID for Android webapp allocation
           this.makeBase64Icon(this.getBiggestIcon(manifest.icons, Services.io.newURI(data.origin, null, null)),
@@ -5899,7 +5903,7 @@ var WebappsUI = {
                                 sendMessageToJava({
                                   gecko: {
                                     type: "WebApps:Install",
-                                    name: manifest.name,
+                                    name: name,
                                     launchPath: manifest.fullLaunchPath(),
                                     iconURL: icon,
                                     uniqueURI: data.origin
@@ -6098,6 +6102,7 @@ var RemoteDebugger = {
     try {
       if (!DebuggerServer.initialized) {
         DebuggerServer.init(this._allowConnection);
+        DebuggerServer.addBrowserActors();
         DebuggerServer.addActors("chrome://browser/content/dbg-browser-actors.js");
       }
 
@@ -6320,18 +6325,18 @@ let Reader = {
         let doc = tab.browser.contentWindow.document.cloneNode(true);
 
         let readability = new Readability(uri, doc);
-        article = readability.parse();
+        readability.parse(function (article) {
+          if (!article) {
+            this.log("Failed to parse page");
+            callback(null);
+            return;
+          }
 
-        if (!article) {
-          this.log("Failed to parse page");
-          callback(null);
-          return;
-        }
+          // Append URL to the article data
+          article.url = url;
 
-        // Append URL to the article data
-        article.url = url;
-
-        callback(article);
+          callback(article);
+        }.bind(this));
       }.bind(this));
     } catch (e) {
       this.log("Error parsing document from tab: " + e);
@@ -6358,7 +6363,7 @@ let Reader = {
         let doc = tab.browser.contentWindow.document;
 
         let readability = new Readability(uri, doc);
-        callback(readability.check());
+        readability.check(callback);
       }.bind(this));
     } catch (e) {
       this.log("Error checking tab readability: " + e);
@@ -6501,9 +6506,6 @@ let Reader = {
       }
 
       callback(doc);
-
-      // Request has finished, remove browser element
-      browser.parentNode.removeChild(browser);
     }.bind(this));
 
     browser.loadURIWithFlags(url, Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
@@ -6519,33 +6521,37 @@ let Reader = {
       request.browser = this._downloadDocument(url, function(doc) {
         this.log("Finished loading page: " + doc);
 
-        // Delete reference to the browser element as we're
-        // now done with this request.
-        delete request.browser;
-
         if (!doc) {
           this.log("Error loading page");
           this._runCallbacksAndFinish(request, null);
+          return;
         }
 
         this.log("Parsing response with Readability");
 
         let uri = Services.io.newURI(url, null, null);
         let readability = new Readability(uri, doc);
-        let article = readability.parse();
+        readability.parse(function (article) {
+          // Delete reference to the browser element as we've finished parsing.
+          let browser = request.browser;
+          if (browser) {
+            browser.parentNode.removeChild(browser);
+            delete request.browser;
+          }
 
-        if (!article) {
-          this.log("Failed to parse page");
-          this._runCallbacksAndFinish(request, null);
-          return;
-        }
+          if (!article) {
+            this.log("Failed to parse page");
+            this._runCallbacksAndFinish(request, null);
+            return;
+          }
 
-        this.log("Parsing has been successful");
+          this.log("Parsing has been successful");
 
-        // Append URL to the article data
-        article.url = url;
+          // Append URL to the article data
+          article.url = url;
 
-        this._runCallbacksAndFinish(request, article);
+          this._runCallbacksAndFinish(request, article);
+        }.bind(this));
       }.bind(this));
     } catch (e) {
       this.log("Error downloading and parsing document: " + e);

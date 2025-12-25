@@ -68,8 +68,12 @@ public class LayerController {
         mForceRedraw = true;
         mViewportMetrics = new ImmutableViewportMetrics(new ViewportMetrics());
         mPanZoomController = new PanZoomController(this);
-        mView = new LayerView(context, this);
         mCheckerboardShouldShowChecks = true;
+    }
+
+    public void setView(LayerView v) {
+        mView = v;
+        mView.connect(this);
     }
 
     public void setRoot(Layer layer) { mRootLayer = layer; }
@@ -120,7 +124,7 @@ public class LayerController {
         return mViewportMetrics.zoomFactor;
     }
 
-    public Bitmap getBackgroundPattern()    { return getDrawable("background"); }
+    public Bitmap getBackgroundPattern()    { return getDrawable("tabs_tray_selected_bg"); }
     public Bitmap getShadowPattern()        { return getDrawable("shadow"); }
 
     public PanZoomController getPanZoomController()                                 { return mPanZoomController; }
@@ -298,28 +302,6 @@ public class LayerController {
                 ((viewPoint.y + origin.y) / zoom) - (geckoOrigin.y / geckoZoom));
 
         return layerPoint;
-    }
-
-    /**
-     * Does the opposite of convertViewPointToLayerPoint.
-     */
-    public PointF convertLayerPointToViewPoint(PointF layerPoint) {
-        if (mLayerClient == null) {
-            return null;
-        }
-
-        ImmutableViewportMetrics viewportMetrics = mViewportMetrics;
-        PointF origin = viewportMetrics.getOrigin();
-        float zoom = viewportMetrics.zoomFactor;
-        ViewportMetrics geckoViewport = mLayerClient.getGeckoViewportMetrics();
-        PointF geckoOrigin = geckoViewport.getOrigin();
-        float geckoZoom = geckoViewport.getZoomFactor();
-
-        PointF viewPoint = new PointF(
-                ((layerPoint.x + (geckoOrigin.x / geckoZoom)) * zoom - origin.x),
-                ((layerPoint.y + (geckoOrigin.y / geckoZoom)) * zoom - origin.y));
-
-        return viewPoint;
     }
 
     /** Retrieves whether we should show checkerboard checks or not. */

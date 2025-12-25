@@ -233,7 +233,7 @@ VirtualKey::MatchingDeadKeyTable(const DeadKeyEntry* aDeadKeyArray,
                                  PRUint32 aEntries) const
 {
   if (!mIsDeadKey) {
-    return nsnull;
+    return nullptr;
   }
 
   for (ShiftState shiftState = 0; shiftState < 16; shiftState++) {
@@ -246,7 +246,7 @@ VirtualKey::MatchingDeadKeyTable(const DeadKeyEntry* aDeadKeyArray,
     }
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 void
@@ -278,7 +278,7 @@ VirtualKey::SetDeadChar(ShiftState aShiftState, PRUnichar aDeadChar)
   SetDeadKey(aShiftState, true);
 
   mShiftStates[aShiftState].DeadKey.DeadChar = aDeadChar;
-  mShiftStates[aShiftState].DeadKey.Table = nsnull;
+  mShiftStates[aShiftState].DeadKey.Table = nullptr;
 }
 
 UniCharsAndModifiers
@@ -631,7 +631,7 @@ NativeKey::GetKeyLocation() const
 KeyboardLayout::KeyboardLayout() :
   mKeyboardLayout(0), mPendingKeyboardLayout(0)
 {
-  mDeadKeyTableListHead = nsnull;
+  mDeadKeyTableListHead = nullptr;
 
   // Note: Don't call LoadLayout from here. Because an instance of this class
   // can be static. In that case, we cannot use any services in LoadLayout,
@@ -1075,7 +1075,7 @@ KeyboardLayout::GetDeadKeyCombinations(PRUint8 aDeadKey,
   }
 
   NS_QuickSort(aDeadKeyArray, entries, sizeof(DeadKeyEntry),
-               CompareDeadKeyEntries, nsnull);
+               CompareDeadKeyEntries, nullptr);
   return entries;
 }
 

@@ -302,7 +302,7 @@ nsresult JumpListSeparator::GetSeparator(nsRefPtr<IShellLinkW>& aShellLink)
   if (FAILED(hr))
     return NS_ERROR_UNEXPECTED;
 
-  IPropertyStore* pPropStore = nsnull;
+  IPropertyStore* pPropStore = nullptr;
   hr = psl->QueryInterface(IID_IPropertyStore, (LPVOID*)&pPropStore);
   if (FAILED(hr))
     return NS_ERROR_UNEXPECTED;
@@ -393,7 +393,7 @@ nsresult JumpListShortcut::GetShellLink(nsCOMPtr<nsIJumpListItem>& item,
 
   // Store the title of the app
   if (appTitle.Length() > 0) {
-    IPropertyStore* pPropStore = nsnull;
+    IPropertyStore* pPropStore = nullptr;
     hr = psl->QueryInterface(IID_IPropertyStore, (LPVOID*)&pPropStore);
     if (FAILED(hr))
       return NS_ERROR_UNEXPECTED;
@@ -551,7 +551,7 @@ nsresult JumpListShortcut::GetJumpListShortcut(IShellLinkW *pLink, nsCOMPtr<nsIJ
 // but more support could be added, such as local file and directory links.
 nsresult JumpListLink::GetShellItem(nsCOMPtr<nsIJumpListItem>& item, nsRefPtr<IShellItem2>& aShellItem)
 {
-  IShellItem2 *psi = nsnull;
+  IShellItem2 *psi = nullptr;
   nsresult rv;
 
   PRInt16 type; 
@@ -582,7 +582,7 @@ nsresult JumpListLink::GetShellItem(nsCOMPtr<nsIJumpListItem>& item, nsRefPtr<IS
   nsAutoString linkTitle;
   link->GetUriTitle(linkTitle);
 
-  IPropertyStore* pPropStore = nsnull;
+  IPropertyStore* pPropStore = nullptr;
   HRESULT hres = psi->GetPropertyStore(GPS_DEFAULT, IID_IPropertyStore, (void**)&pPropStore);
   if (FAILED(hres))
     return NS_ERROR_UNEXPECTED;

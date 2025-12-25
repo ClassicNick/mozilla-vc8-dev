@@ -62,6 +62,7 @@ namespace JS {
  *   separate rooting analysis.
  */
 
+template <typename T> class MutableHandle;
 template <typename T> class Rooted;
 
 template <typename T>
@@ -132,6 +133,11 @@ class Handle : public HandleBase<T>
      * normal way to create a handle, and normally happens implicitly.
      */
     template <typename S> inline Handle(Rooted<S> &root);
+
+    /* Construct a read only handle from a mutable handle. */
+    template <typename S>
+    inline
+    Handle(MutableHandle<S> &root);
 
     const T *address() const { return ptr; }
     T get() const { return *ptr; }
@@ -229,6 +235,9 @@ class MutableHandle : public MutableHandleBase<T>
         (void)a;
 #endif
     }
+
+    template <typename S>
+    void operator =(S v) MOZ_DELETE;
 };
 
 typedef MutableHandle<JSObject*>    MutableHandleObject;
@@ -335,6 +344,14 @@ Handle<T>::Handle(Rooted<S> &root)
 
 template<typename T> template <typename S>
 inline
+Handle<T>::Handle(MutableHandle<S> &root)
+{
+	testAssign<S>();
+    ptr = reinterpret_cast<const T *>(root.address());
+}
+
+template<typename T> template <typename S>
+inline
 MutableHandle<T>::MutableHandle(Rooted<S> *root)
 {
 	testAssign<S>();
@@ -407,6 +424,12 @@ class SkipRoot
 
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
+
+/*
+ * This typedef is to annotate parameters that we have manually verified do not
+ * need rooting, as opposed to parameters that have not yet been considered.
+ */
+typedef JSObject *RawObject;
 
 #ifdef DEBUG
 JS_FRIEND_API(bool) IsRootingUnnecessaryForContext(JSContext *cx);

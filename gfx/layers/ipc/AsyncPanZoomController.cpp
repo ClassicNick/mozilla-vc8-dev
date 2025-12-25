@@ -13,6 +13,7 @@
 #include "GestureEventListener.h"
 #include "nsIThreadManager.h"
 #include "nsThreadUtils.h"
+#include "Layers.h"
 
 namespace mozilla {
 namespace layers {
@@ -54,7 +55,8 @@ AsyncPanZoomController::AsyncPanZoomController(GeckoContentController* aGeckoCon
      mMonitor("AsyncPanZoomController"),
      mLastSampleTime(TimeStamp::Now()),
      mState(NOTHING),
-     mDPI(72)
+     mDPI(72),
+     mContentPainterStatus(CONTENT_IDLE)
 {
   if (aGestures == USE_GESTURE_DETECTOR) {
     mGestureEventListener = new GestureEventListener(this);
@@ -454,7 +456,6 @@ void AsyncPanZoomController::StartPanning(const MultiTouchInput& aEvent) {
   mX.StartTouch(touch.mScreenPoint.x);
   mY.StartTouch(touch.mScreenPoint.y);
   mState = PANNING;
-  mLastRepaint = aEvent.mTime;
 
   if (angle < AXIS_LOCK_ANGLE || angle > (M_PI - AXIS_LOCK_ANGLE)) {
     mY.LockPanning();
@@ -504,10 +505,7 @@ void AsyncPanZoomController::TrackTouch(const MultiTouchInput& aEvent) {
     ScrollBy(nsIntPoint(xDisplacement, yDisplacement));
     ScheduleComposite();
 
-    if (aEvent.mTime - mLastRepaint >= PAN_REPAINT_INTERVAL) {
-      RequestContentRepaint();
-      mLastRepaint = aEvent.mTime;
-    }
+    RequestContentRepaint();
   }
 }
 
@@ -654,14 +652,9 @@ const nsIntRect AsyncPanZoomController::CalculatePendingDisplayPort() {
   }
 
   gfx::Rect shiftedDisplayPort = displayPort;
-  // Both the scroll offset and displayport are in CSS pixels.  We're scaling
-  // the scroll offset because Gecko will internally scale the displayport by
-  // the resolution, so we'll get clipping at the far bottom or far right if we
-  // directly get the intersection of the displayport offset by the scroll
-  // offset and the CSS content rect.
-  shiftedDisplayPort.MoveBy(scrollOffset.x / scale, scrollOffset.y / scale);
+  shiftedDisplayPort.MoveBy(scrollOffset.x, scrollOffset.y);
   displayPort = shiftedDisplayPort.Intersect(mFrameMetrics.mCSSContentRect);
-  displayPort.MoveBy(-scrollOffset.x / scale, -scrollOffset.y / scale);
+  displayPort.MoveBy(-scrollOffset.x, -scrollOffset.y);
 
   // Round the displayport so we don't get any truncation, then get the nsIntRect
   // from this.
@@ -681,12 +674,31 @@ void AsyncPanZoomController::ScheduleComposite() {
 
 void AsyncPanZoomController::RequestContentRepaint() {
   mFrameMetrics.mDisplayPort = CalculatePendingDisplayPort();
-  mGeckoContentController->RequestContentRepaint(mFrameMetrics);
+
+  // If we're trying to paint what we already think is painted, discard this
+  // request since it's a pointless paint.
+  nsIntRect oldDisplayPort = mLastPaintRequestMetrics.mDisplayPort,
+            newDisplayPort = mFrameMetrics.mDisplayPort;
+  oldDisplayPort.MoveBy(mLastPaintRequestMetrics.mViewportScrollOffset);
+  newDisplayPort.MoveBy(mFrameMetrics.mViewportScrollOffset);
+
+  if (oldDisplayPort.IsEqualEdges(newDisplayPort) &&
+      mFrameMetrics.mResolution.width == mLastPaintRequestMetrics.mResolution.width) {
+    return;
+  }
+
+  if (mContentPainterStatus == CONTENT_IDLE) {
+    mContentPainterStatus = CONTENT_PAINTING;
+    mLastPaintRequestMetrics = mFrameMetrics;
+    mGeckoContentController->RequestContentRepaint(mFrameMetrics);
+  } else {
+    mContentPainterStatus = CONTENT_PAINTING_AND_PAINT_PENDING;
+  }
 }
 
 bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSampleTime,
                                                             const FrameMetrics& aFrame,
-                                                            const gfx3DMatrix& aCurrentTransform,
+                                                            Layer* aLayer,
                                                             gfx3DMatrix* aNewTransform) {
   // The eventual return value of this function. The compositor needs to know
   // whether or not to advance by a frame as soon as it can. For example, if a
@@ -695,9 +707,11 @@ bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSa
   // responsibility to schedule a composite.
   bool requestAnimationFrame = false;
 
+  const gfx3DMatrix& currentTransform = aLayer->GetTransform();
+
   // Scales on the root layer, on what's currently painted.
-  float rootScaleX = aCurrentTransform.GetXScale(),
-        rootScaleY = aCurrentTransform.GetYScale();
+  float rootScaleX = currentTransform.GetXScale(),
+        rootScaleY = currentTransform.GetYScale();
 
   nsIntPoint metricsScrollOffset(0, 0);
   nsIntPoint scrollOffset;
@@ -729,7 +743,14 @@ bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSa
     (scrollOffset.y / rootScaleY - metricsScrollOffset.y) * localScaleY);
 
   ViewTransform treeTransform(-scrollCompensation, localScaleX, localScaleY);
-  *aNewTransform = gfx3DMatrix(treeTransform) * aCurrentTransform;
+  *aNewTransform = gfx3DMatrix(treeTransform) * currentTransform;
+
+  // The transform already takes the resolution scale into account.  Since we
+  // will apply the resolution scale again when computing the effective
+  // transform, we must apply the inverse resolution scale here.
+  aNewTransform->Scale(1.0f/aLayer->GetXScale(),
+                       1.0f/aLayer->GetYScale(),
+                       1);
 
   mLastSampleTime = aSampleTime;
 
@@ -741,7 +762,18 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aViewportFr
 
   mLastContentPaintMetrics = aViewportFrame;
 
+  if (mContentPainterStatus != CONTENT_IDLE) {
+    if (mContentPainterStatus == CONTENT_PAINTING_AND_PAINT_PENDING) {
+      mContentPainterStatus = CONTENT_IDLE;
+      RequestContentRepaint();
+    } else {
+      mContentPainterStatus = CONTENT_IDLE;
+    }
+  }
+
   if (aIsFirstPaint || mFrameMetrics.IsDefault()) {
+    mContentPainterStatus = CONTENT_IDLE;
+
     mX.StopTouch();
     mY.StopTouch();
     mFrameMetrics = aViewportFrame;

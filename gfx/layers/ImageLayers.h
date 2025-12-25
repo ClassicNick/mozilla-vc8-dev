@@ -16,10 +16,9 @@
 #include "mozilla/mozalloc.h"
 #include "mozilla/Mutex.h"
 #include "gfxPlatform.h"
-#include "LayersBackend.h"
 
 #ifdef XP_MACOSX
-#include "nsIOSurface.h"
+#include "mozilla/gfx/MacIOSurface.h"
 #endif
 #ifdef XP_WIN
 struct ID3D10Texture2D;
@@ -223,7 +222,7 @@ public:
  * image container. This is usually done by the layer system internally and
  * not explicitly by users. For PlanarYCbCr or Cairo images the default
  * implementation will creates images whose data lives in system memory, for
- * MacIOSurfaces the default implementation will be a simple nsIOSurface
+ * MacIOSurfaces the default implementation will be a simple MacIOSurface
  * wrapper.
  */
 
@@ -434,7 +433,7 @@ public:
    * image.
    */
   already_AddRefed<gfxASurface> LockCurrentAsSurface(gfxIntSize* aSizeResult,
-                                                     Image** aCurrentImage = nsnull);
+                                                     Image** aCurrentImage = nullptr);
 
   /**
    * Returns the size of the image in pixels.
@@ -608,9 +607,9 @@ public:
 
   void Unlock() { 
     if (mContainer) {
-      mImage = nsnull;
+      mImage = nullptr;
       mContainer->UnlockCurrentImage();
-      mContainer = nsnull;
+      mContainer = nullptr;
     }
   }
 
@@ -687,8 +686,8 @@ public:
     // was drawn into a ThebesLayer (gfxContext would snap using the local
     // transform, then we'd snap again when compositing the ThebesLayer).
     mEffectiveTransform =
-        SnapTransform(GetLocalTransform(), snap, nsnull)*
-        SnapTransform(aTransformToSurface, gfxRect(0, 0, 0, 0), nsnull);
+        SnapTransform(GetLocalTransform(), snap, nullptr)*
+        SnapTransform(aTransformToSurface, gfxRect(0, 0, 0, 0), nullptr);
     ComputeEffectiveTransformForMaskLayer(aTransformToSurface);
   }
 
@@ -874,7 +873,7 @@ public:
 class THEBES_API MacIOSurfaceImage : public Image {
 public:
   struct Data {
-    nsIOSurface* mIOSurface;
+    MacIOSurface* mIOSurface;
   };
 
   MacIOSurfaceImage()
@@ -922,7 +921,7 @@ public:
     return mSize;
   }
 
-  nsIOSurface* GetIOSurface()
+  MacIOSurface* GetIOSurface()
   {
     return mIOSurface;
   }
@@ -933,7 +932,7 @@ public:
 
 private:
   gfxIntSize mSize;
-  nsRefPtr<nsIOSurface> mIOSurface;
+  RefPtr<MacIOSurface> mIOSurface;
   void* mPluginInstanceOwner;
   UpdateSurfaceCallback mUpdateCallback;
   DestroyCallback mDestroyCallback;
@@ -1002,7 +1001,7 @@ public:
   virtual already_AddRefed<gfxASurface> GetAsSurface()
   {
     // We need to fix this and return a ASurface at some point.
-    return nsnull;
+    return nullptr;
   }
 
   void* GetNativeBuffer()

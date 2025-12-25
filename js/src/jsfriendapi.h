@@ -114,7 +114,7 @@ extern JS_FRIEND_API(JSObject *)
 JS_CloneObject(JSContext *cx, JSObject *obj, JSObject *proto, JSObject *parent);
 
 extern JS_FRIEND_API(JSBool)
-js_GetterOnlyPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
+js_GetterOnlyPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
 
 JS_FRIEND_API(void)
 js_ReportOverRecursed(JSContext *maybecx);
@@ -491,6 +491,9 @@ JS_FRIEND_API(bool)
 GetPropertyNames(JSContext *cx, JSObject *obj, unsigned flags, js::AutoIdVector *props);
 
 JS_FRIEND_API(bool)
+GetGeneric(JSContext *cx, JSObject *obj, JSObject *receiver, jsid id, Value *vp);
+
+JS_FRIEND_API(bool)
 StringIsArrayIndex(JSLinearString *str, uint32_t *indexp);
 
 JS_FRIEND_API(void)
@@ -632,6 +635,7 @@ SizeOfJSContext();
     D(DEBUG_GC)                                 \
     D(DEBUG_MODE_GC)                            \
     D(TRANSPLANT)                               \
+    D(RESET)                                    \
                                                 \
     /* Reasons from Firefox */                  \
     D(DOM_WINDOW_UTILS)                         \
@@ -703,7 +707,7 @@ extern JS_FRIEND_API(void)
 ShrinkingGC(JSRuntime *rt, gcreason::Reason reason);
 
 extern JS_FRIEND_API(void)
-IncrementalGC(JSRuntime *rt, gcreason::Reason reason);
+IncrementalGC(JSRuntime *rt, gcreason::Reason reason, int64_t millis = 0);
 
 extern JS_FRIEND_API(void)
 FinishIncrementalGC(JSRuntime *rt, gcreason::Reason reason);
@@ -1088,6 +1092,35 @@ extern JS_FRIEND_API(JSBool)
 JS_IsFloat32Array(JSObject *obj, JSContext *cx);
 extern JS_FRIEND_API(JSBool)
 JS_IsFloat64Array(JSObject *obj, JSContext *cx);
+
+
+/*
+ * Unwrap Typed arrays all at once. Return NULL without throwing if the object
+ * cannot be viewed as the correct typed array, or the typed array object on
+ * success, filling both outparameters.
+ */
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsInt8Array(JSContext *cx, JSObject *obj, uint32_t *length, int8_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsUint8Array(JSContext *cx, JSObject *obj, uint32_t *length, uint8_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsUint8ClampedArray(JSContext *cx, JSObject *obj, uint32_t *length, uint8_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsInt16Array(JSContext *cx, JSObject *obj, uint32_t *length, int16_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsUint16Array(JSContext *cx, JSObject *obj, uint32_t *length, uint16_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsInt32Array(JSContext *cx, JSObject *obj, uint32_t *length, int32_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsUint32Array(JSContext *cx, JSObject *obj, uint32_t *length, uint32_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsFloat32Array(JSContext *cx, JSObject *obj, uint32_t *length, float **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsFloat64Array(JSContext *cx, JSObject *obj, uint32_t *length, double **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsArrayBufferView(JSContext *cx, JSObject *obj, uint32_t *length, uint8_t **data);
+extern JS_FRIEND_API(JSObject *)
+JS_GetObjectAsArrayBuffer(JSContext *cx, JSObject *obj, uint32_t *length, uint8_t **data);
 
 /*
  * Get the type of elements in a typed array.

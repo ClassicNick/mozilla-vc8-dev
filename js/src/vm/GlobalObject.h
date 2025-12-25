@@ -93,14 +93,17 @@ class GlobalObject : public JSObject
     /* One-off properties stored after slots for built-ins. */
     static const unsigned ELEMENT_ITERATOR_PROTO  = FROM_BUFFER_UINT8CLAMPED + 1;
     static const unsigned GENERATOR_PROTO         = ELEMENT_ITERATOR_PROTO + 1;
-    static const unsigned REGEXP_STATICS          = GENERATOR_PROTO + 1;
+    static const unsigned MAP_ITERATOR_PROTO      = GENERATOR_PROTO + 1;
+    static const unsigned SET_ITERATOR_PROTO      = MAP_ITERATOR_PROTO + 1;
+    static const unsigned REGEXP_STATICS          = SET_ITERATOR_PROTO + 1;
     static const unsigned FUNCTION_NS             = REGEXP_STATICS + 1;
     static const unsigned RUNTIME_CODEGEN_ENABLED = FUNCTION_NS + 1;
     static const unsigned FLAGS                   = RUNTIME_CODEGEN_ENABLED + 1;
     static const unsigned DEBUGGERS               = FLAGS + 1;
+    static const unsigned INTRINSICS              = DEBUGGERS + 1;
 
     /* Total reserved-slot count for global objects. */
-    static const unsigned RESERVED_SLOTS = DEBUGGERS + 1;
+    static const unsigned RESERVED_SLOTS = INTRINSICS + 1;
 
     void staticAsserts() {
         /*
@@ -132,6 +135,8 @@ class GlobalObject : public JSObject
     inline void setThrowTypeError(JSFunction *fun);
     inline void setOriginalEval(JSObject *evalobj);
     inline void setProtoGetter(JSFunction *protoGetter);
+
+    inline void setIntrinsicsHolder(JSObject *obj);
 
     Value getConstructor(JSProtoKey key) const {
         JS_ASSERT(key <= JSProto_LIMIT);
@@ -316,23 +321,37 @@ class GlobalObject : public JSObject
     }
 
   private:
-    JSObject *getOrCreateIteratorSubclassPrototype(JSContext *cx, unsigned slot) {
+    typedef bool (*ObjectInitOp)(JSContext *cx, Handle<GlobalObject*> global);
+
+    JSObject *getOrCreateObject(JSContext *cx, unsigned slot, ObjectInitOp init) {
         Value v = getSlotRef(slot);
         if (v.isObject())
             return &v.toObject();
         Rooted<GlobalObject*> self(cx, this);
-        if (!initIteratorClasses(cx, self))
+        if (!init(cx, self))
             return NULL;
         return &self->getSlot(slot).toObject();
     }
 
   public:
+    JSObject *getOrCreateIteratorPrototype(JSContext *cx) {
+        return getOrCreateObject(cx, JSProto_LIMIT + JSProto_Iterator, initIteratorClasses);
+    }
+
     JSObject *getOrCreateElementIteratorPrototype(JSContext *cx) {
-        return getOrCreateIteratorSubclassPrototype(cx, ELEMENT_ITERATOR_PROTO);
+        return getOrCreateObject(cx, ELEMENT_ITERATOR_PROTO, initIteratorClasses);
     }
 
     JSObject *getOrCreateGeneratorPrototype(JSContext *cx) {
-        return getOrCreateIteratorSubclassPrototype(cx, GENERATOR_PROTO);
+        return getOrCreateObject(cx, GENERATOR_PROTO, initIteratorClasses);
+    }
+
+    JSObject *getOrCreateMapIteratorPrototype(JSContext *cx) {
+        return getOrCreateObject(cx, MAP_ITERATOR_PROTO, initMapIteratorProto);
+    }
+
+    JSObject *getOrCreateSetIteratorPrototype(JSContext *cx) {
+        return getOrCreateObject(cx, SET_ITERATOR_PROTO, initSetIteratorProto);
     }
 
     JSObject *getOrCreateDataViewPrototype(JSContext *cx) {
@@ -342,6 +361,20 @@ class GlobalObject : public JSObject
         if (!js_InitTypedArrayClasses(cx, this))
             return NULL;
         return &self->getPrototype(JSProto_DataView).toObject();
+    }
+
+    bool hasIntrinsicFunction(JSContext *cx, PropertyName *name) {
+        RootedObject holder(cx, &getSlotRef(INTRINSICS).toObject());
+        Value fun = NullValue();
+        return HasDataProperty(cx, holder, NameToId(name), &fun);
+    }
+
+    JSFunction *getIntrinsicFunction(JSContext *cx, PropertyName *name) {
+        RootedObject holder(cx, &getSlotRef(INTRINSICS).toObject());
+        Value fun = NullValue();
+        DebugOnly<bool> ok = HasDataProperty(cx, holder, NameToId(name), &fun);
+        JS_ASSERT(ok);
+        return fun.toObject().toFunction();
     }
 
     inline RegExpStatics *getRegExpStatics() const;
@@ -386,6 +419,10 @@ class GlobalObject : public JSObject
 
     // Implemented in jsiter.cpp.
     static bool initIteratorClasses(JSContext *cx, Handle<GlobalObject*> global);
+
+    // Implemented in builtin/MapObject.cpp.
+    static bool initMapIteratorProto(JSContext *cx, Handle<GlobalObject*> global);
+    static bool initSetIteratorProto(JSContext *cx, Handle<GlobalObject*> global);
 
     static bool initStandardClasses(JSContext *cx, Handle<GlobalObject*> global);
 

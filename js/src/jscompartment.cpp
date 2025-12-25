@@ -47,6 +47,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     needsBarrier_(false),
     gcState(NoGCScheduled),
     gcPreserveCode(false),
+    gcStarted(false),
     gcBytes(0),
     gcTriggerBytes(0),
     gcHeapGrowthFactor(3.0),
@@ -69,7 +70,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     sourceMapMap(NULL),
     debugScriptMap(NULL)
 {
-    setGCMaxMallocBytes(rt->gcMaxMallocBytes * 0.9);
+    setGCMaxMallocBytes(rt->gcMaxMallocBytes);
 }
 
 JSCompartment::~JSCompartment()
@@ -232,7 +233,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
         if (vp->isObject()) {
             RootedObject obj(cx, &vp->toObject());
             JS_ASSERT(obj->isCrossCompartmentWrapper());
-            if (global->getClass() != &dummy_class && obj->getParent() != global) {
+            if (obj->getParent() != global) {
                 do {
                     if (!JSObject::setParent(cx, obj, global))
                         return false;
@@ -286,9 +287,6 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     JS_ASSERT(Wrapper::wrappedObject(wrapper) == &key.get().toObject());
 
     vp->setObject(*wrapper);
-
-    if (wrapper->getProto() != proto && !SetProto(cx, wrapper, proto, false))
-        return false;
 
     if (!crossCompartmentWrappers.put(key, *vp))
         return false;
@@ -570,7 +568,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
 
         {
             gcstats::AutoPhase ap2(rt->gcStats, gcstats::PHASE_FREE_TI_ARENA);
-            oldAlloc.freeAll();
+            rt->freeLifoAlloc.transferFrom(&oldAlloc);
             if (types.constrainedOutputs) {
                 fop->delete_(types.constrainedOutputs);
                 types.constrainedOutputs = NULL;

@@ -41,7 +41,9 @@
 @BINPATH@/@PREF_DIR@/firefox-l10n.js
 @BINPATH@/searchplugins/*
 #ifdef XP_WIN32
+#ifdef MOZ_UPDATER
 @BINPATH@/uninstall/helper.exe
+#endif
 #endif
 #ifdef MOZ_UPDATER
 @BINPATH@/update.locale
@@ -493,10 +495,6 @@
 @BINPATH@/modules/*
 
 ; Safe Browsing
-#ifdef MOZ_SAFE_BROWSING
-@BINPATH@/components/nsSafebrowsingApplication.manifest
-@BINPATH@/components/nsSafebrowsingApplication.js
-#endif
 #ifdef MOZ_URL_CLASSIFIER
 @BINPATH@/components/nsURLClassifier.manifest
 @BINPATH@/components/nsUrlClassifierHashCompleter.js

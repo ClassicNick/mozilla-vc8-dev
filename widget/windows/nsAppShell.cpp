@@ -242,7 +242,7 @@ nsAppShell::Run(void)
 #endif
 
   // Don't forget to null this out!
-  sLoadedModules = nsnull;
+  sLoadedModules = nullptr;
 
   return rv;
 }
@@ -276,7 +276,7 @@ nsAppShell::DoProcessMoreGeckoEvents()
   // if we need it, which insures NS_ProcessPendingEvents gets called and all
   // gecko events get processed.
   if (mEventloopNestingLevel < 2) {
-    OnDispatchedEvent(nsnull);
+    OnDispatchedEvent(nullptr);
     mNativeCallbackPending = false;
   } else {
     mNativeCallbackPending = true;

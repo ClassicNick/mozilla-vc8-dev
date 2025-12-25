@@ -140,6 +140,14 @@ XPCOMUtils.defineLazyGetter(this, "Social", function() {
   return tmp.Social;
 });
 
+#ifdef MOZ_SAFE_BROWSING
+XPCOMUtils.defineLazyGetter(this, "SafeBrowsing", function() {
+  let tmp = {};
+  Cu.import("resource://gre/modules/SafeBrowsing.jsm", tmp);
+  return tmp.SafeBrowsing;
+});
+#endif
+
 let gInitialPages = [
   "about:blank",
   "about:newtab",
@@ -154,6 +162,7 @@ let gInitialPages = [
 #include browser-fullZoom.js
 #include browser-places.js
 #include browser-plugins.js
+#include browser-safebrowsing.js
 #include browser-social.js
 #include browser-tabPreviews.js
 #include browser-tabview.js
@@ -637,12 +646,6 @@ const gFormSubmitObserver = {
   init: function()
   {
     this.panel = document.getElementById('invalid-form-popup');
-  },
-
-  panelIsOpen: function()
-  {
-    return this.panel && this.panel.state != "hiding" &&
-           this.panel.state != "closed";
   },
 
   notifyInvalidSubmit : function (aFormElement, aInvalidElements)
@@ -1241,6 +1244,11 @@ var gBrowserInit = {
     TelemetryTimestamps.add("delayedStartupStarted");
     gDelayedStartupTimeoutId = null;
 
+#ifdef MOZ_SAFE_BROWSING
+    // Bug 778855 - Perf regression if we do this here. To be addressed in bug 779008.
+    setTimeout(function() { SafeBrowsing.init(); }, 2000);
+#endif
+
     Services.obs.addObserver(gSessionHistoryObserver, "browser:purge-session-history", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-disabled", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-started", false);
@@ -1402,9 +1410,9 @@ var gBrowserInit = {
     // Enable developer toolbar?
     let devToolbarEnabled = gPrefService.getBoolPref("devtools.toolbar.enabled");
     if (devToolbarEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_DevToolbar");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:DevToolbar");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
       document.getElementById("Tools:DevToolbarFocus").removeAttribute("disabled");
 
       // Show the toolbar if it was previously visible
@@ -1416,25 +1424,25 @@ var gBrowserInit = {
     // Enable Inspector?
     let enabled = gPrefService.getBoolPref("devtools.inspector.enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Inspect");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Inspect");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Debugger?
     let enabled = gPrefService.getBoolPref("devtools.debugger.enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Debugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Debugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Remote Debugger?
     let enabled = gPrefService.getBoolPref("devtools.debugger.remote-enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_RemoteDebugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:RemoteDebugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Chrome Debugger?
@@ -1442,34 +1450,34 @@ var gBrowserInit = {
                   gPrefService.getBoolPref("devtools.debugger.chrome-enabled") &&
                   gPrefService.getBoolPref("devtools.debugger.remote-enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ChromeDebugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ChromeDebugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Error Console?
     // XXX Temporarily always-enabled, see bug 601201
     let consoleEnabled = true || gPrefService.getBoolPref("devtools.errorconsole.enabled");
     if (consoleEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ErrorConsole");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ErrorConsole");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Scratchpad in the UI, if the preference allows this.
     let scratchpadEnabled = gPrefService.getBoolPref(Scratchpad.prefEnabledName);
     if (scratchpadEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Scratchpad");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Scratchpad");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Style Editor?
     let styleEditorEnabled = gPrefService.getBoolPref(StyleEditor.prefEnabledName);
     if (styleEditorEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_StyleEditor");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:StyleEditor");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
 #ifdef MENUBAR_CAN_AUTOHIDE
@@ -1484,9 +1492,9 @@ var gBrowserInit = {
     // Enable Responsive UI?
     let responsiveUIEnabled = gPrefService.getBoolPref("devtools.responsiveUI.enabled");
     if (responsiveUIEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ResponsiveUI");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ResponsiveUI");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     let appMenuButton = document.getElementById("appmenu-button");
@@ -2486,26 +2494,42 @@ function BrowserOnAboutPageLoad(document) {
 /**
  * Handle command events bubbling up from error page content
  */
-function BrowserOnClick(event) {
-    if (!event.isTrusted || // Don't trust synthetic events
-        event.button == 2 || event.target.localName != "button")
+let BrowserOnClick = {
+  handleEvent: function BrowserOnClick_handleEvent(aEvent) {
+    if (!aEvent.isTrusted || // Don't trust synthetic events
+        aEvent.button == 2 || aEvent.target.localName != "button") {
       return;
+    }
 
-    var ot = event.originalTarget;
-    var ownerDoc = ot.ownerDocument;
+    let originalTarget = aEvent.originalTarget;
+    let ownerDoc = originalTarget.ownerDocument;
 
     // If the event came from an ssl error page, it is probably either the "Add
     // Exception…" or "Get me out of here!" button
     if (/^about:certerror/.test(ownerDoc.documentURI)) {
-      if (ot == ownerDoc.getElementById('exceptionDialogButton')) {
-        var params = { exceptionAdded : false, handlePrivateBrowsing : true };
+      this.onAboutCertError(originalTarget, ownerDoc);
+    }
+    else if (/^about:blocked/.test(ownerDoc.documentURI)) {
+      this.onAboutBlocked(originalTarget, ownerDoc);
+    }
+    else if (/^about:home$/i.test(ownerDoc.documentURI)) {
+      this.onAboutHome(originalTarget, ownerDoc);
+    }
+  },
+
+  onAboutCertError: function BrowserOnClick_onAboutCertError(aTargetElm, aOwnerDoc) {
+    let elmId = aTargetElm.getAttribute("id");
+
+    switch (elmId) {
+      case "exceptionDialogButton":
+        let params = { exceptionAdded : false, handlePrivateBrowsing : true };
 
         try {
-          switch (gPrefService.getIntPref("browser.ssl_override_behavior")) {
+          switch (Services.prefs.getIntPref("browser.ssl_override_behavior")) {
             case 2 : // Pre-fetch & pre-populate
               params.prefetchCert = true;
             case 1 : // Pre-populate
-              params.location = ownerDoc.location.href;
+              params.location = aOwnerDoc.location.href;
           }
         } catch (e) {
           Components.utils.reportError("Couldn't get ssl_override pref: " + e);
@@ -2515,23 +2539,31 @@ function BrowserOnClick(event) {
                           '','chrome,centerscreen,modal', params);
 
         // If the user added the exception cert, attempt to reload the page
-        if (params.exceptionAdded)
-          ownerDoc.location.reload();
-      }
-      else if (ot == ownerDoc.getElementById('getMeOutOfHereButton')) {
-        getMeOutOfHere();
-      }
-    }
-    else if (/^about:blocked/.test(ownerDoc.documentURI)) {
-      // The event came from a button on a malware/phishing block page
-      // First check whether it's malware or phishing, so that we can
-      // use the right strings/links
-      var isMalware = /e=malwareBlocked/.test(ownerDoc.documentURI);
+        if (params.exceptionAdded) {
+          aOwnerDoc.location.reload();
+        }
+        break;
 
-      if (ot == ownerDoc.getElementById('getMeOutButton')) {
+      case "getMeOutOfHereButton":
         getMeOutOfHere();
-      }
-      else if (ot == ownerDoc.getElementById('reportButton')) {
+        break;
+    }
+  },
+
+  onAboutBlocked: function BrowserOnClick_onAboutBlocked(aTargetElm, aOwnerDoc) {
+    let elmId = aTargetElm.getAttribute("id");
+
+    // The event came from a button on a malware/phishing block page
+    // First check whether it's malware or phishing, so that we can
+    // use the right strings/links
+    let isMalware = /e=malwareBlocked/.test(aOwnerDoc.documentURI);
+
+    switch (elmId) {
+      case "getMeOutButton":
+        getMeOutOfHere();
+        break;
+
+      case "reportButton":
         // This is the "Why is this site blocked" button.  For malware,
         // we can fetch a site-specific report, for phishing, we redirect
         // to the generic page describing phishing protection.
@@ -2541,7 +2573,7 @@ function BrowserOnClick(event) {
           // append the current url, and go there.
           try {
             let reportURL = formatURL("browser.safebrowsing.malware.reportURL", true);
-            reportURL += ownerDoc.location.href;
+            reportURL += aOwnerDoc.location.href;
             content.location = reportURL;
           } catch (e) {
             Components.utils.reportError("Couldn't get malware report URL: " + e);
@@ -2554,96 +2586,116 @@ function BrowserOnClick(event) {
             Components.utils.reportError("Couldn't get phishing info URL: " + e);
           }
         }
-      }
-      else if (ot == ownerDoc.getElementById('ignoreWarningButton')) {
-        // Allow users to override and continue through to the site,
-        // but add a notify bar as a reminder, so that they don't lose
-        // track after, e.g., tab switching.
-        gBrowser.loadURIWithFlags(content.location.href,
-                                  nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
-                                  null, null, null);
+        break;
 
-        Services.perms.add(makeURI(content.location.href), "safe-browsing",
-                           Ci.nsIPermissionManager.ALLOW_ACTION,
-                           Ci.nsIPermissionManager.EXPIRE_SESSION);
-
-        let buttons = [{
-          label: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.label"),
-          accessKey: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.accessKey"),
-          callback: function() { getMeOutOfHere(); }
-        }];
-
-        let title;
-        if (isMalware) {
-          title = gNavigatorBundle.getString("safebrowsing.reportedAttackSite");
-          buttons[1] = {
-            label: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.label"),
-            accessKey: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.accessKey"),
-            callback: function() {
-              openUILinkIn(safebrowsing.getReportURL('MalwareError'), 'tab');
-            }
-          };
-        } else {
-          title = gNavigatorBundle.getString("safebrowsing.reportedWebForgery");
-          buttons[1] = {
-            label: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.label"),
-            accessKey: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.accessKey"),
-            callback: function() {
-              openUILinkIn(safebrowsing.getReportURL('Error'), 'tab');
-            }
-          };
-        }
-
-        let notificationBox = gBrowser.getNotificationBox();
-        let value = "blocked-badware-page";
-
-        let previousNotification = notificationBox.getNotificationWithValue(value);
-        if (previousNotification)
-          notificationBox.removeNotification(previousNotification);
-
-        let notification = notificationBox.appendNotification(
-          title,
-          value,
-          "chrome://global/skin/icons/blacklist_favicon.png",
-          notificationBox.PRIORITY_CRITICAL_HIGH,
-          buttons
-        );
-        // Persist the notification until the user removes so it
-        // doesn't get removed on redirects.
-        notification.persistence = -1;
-      }
+      case "ignoreWarningButton":
+        this.ignoreWarningButton(isMalware);
+        break;
     }
-    else if (/^about:home$/i.test(ownerDoc.documentURI)) {
-      if (ot == ownerDoc.getElementById("restorePreviousSession")) {
+  },
+
+  ignoreWarningButton: function BrowserOnClick_ignoreWarningButton(aIsMalware) {
+    // Allow users to override and continue through to the site,
+    // but add a notify bar as a reminder, so that they don't lose
+    // track after, e.g., tab switching.
+    gBrowser.loadURIWithFlags(content.location.href,
+                              nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
+                              null, null, null);
+
+    Services.perms.add(makeURI(content.location.href), "safe-browsing",
+                       Ci.nsIPermissionManager.ALLOW_ACTION,
+                       Ci.nsIPermissionManager.EXPIRE_SESSION);
+
+    let buttons = [{
+      label: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.label"),
+      accessKey: gNavigatorBundle.getString("safebrowsing.getMeOutOfHereButton.accessKey"),
+      callback: function() { getMeOutOfHere(); }
+    }];
+
+    let title;
+    if (aIsMalware) {
+      title = gNavigatorBundle.getString("safebrowsing.reportedAttackSite");
+      buttons[1] = {
+        label: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.label"),
+        accessKey: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.accessKey"),
+        callback: function() {
+          openUILinkIn(gSafeBrowsing.getReportURL('MalwareError'), 'tab');
+        }
+      };
+    } else {
+      title = gNavigatorBundle.getString("safebrowsing.reportedWebForgery");
+      buttons[1] = {
+        label: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.label"),
+        accessKey: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.accessKey"),
+        callback: function() {
+          openUILinkIn(gSafeBrowsing.getReportURL('Error'), 'tab');
+        }
+      };
+    }
+
+    let notificationBox = gBrowser.getNotificationBox();
+    let value = "blocked-badware-page";
+
+    let previousNotification = notificationBox.getNotificationWithValue(value);
+    if (previousNotification) {
+      notificationBox.removeNotification(previousNotification);
+    }
+
+    let notification = notificationBox.appendNotification(
+      title,
+      value,
+      "chrome://global/skin/icons/blacklist_favicon.png",
+      notificationBox.PRIORITY_CRITICAL_HIGH,
+      buttons
+    );
+    // Persist the notification until the user removes so it
+    // doesn't get removed on redirects.
+    notification.persistence = -1;
+  },
+
+  onAboutHome: function BrowserOnClick_onAboutHome(aTargetElm, aOwnerDoc) {
+    let elmId = aTargetElm.getAttribute("id");
+
+    switch (elmId) {
+      case "restorePreviousSession":
         let ss = Cc["@mozilla.org/browser/sessionstore;1"].
                  getService(Ci.nsISessionStore);
-        if (ss.canRestoreLastSession)
+        if (ss.canRestoreLastSession) {
           ss.restoreLastSession();
-        ownerDoc.getElementById("launcher").removeAttribute("session");
-      }
-      else if (ot == ownerDoc.getElementById("downloads")) {
+        }
+        aOwnerDoc.getElementById("launcher").removeAttribute("session");
+        break;
+
+      case "downloads":
         BrowserDownloadsUI();
-      }
-      else if (ot == ownerDoc.getElementById("bookmarks")) {
+        break;
+
+      case "bookmarks":
         PlacesCommandHook.showPlacesOrganizer("AllBookmarks");
-      }
-      else if (ot == ownerDoc.getElementById("history")) {
+        break;
+
+      case "history":
         PlacesCommandHook.showPlacesOrganizer("History");
-      }
-      else if (ot == ownerDoc.getElementById("apps")) {
+        break;
+
+      case "apps":
         openUILinkIn("https://marketplace.mozilla.org/", "tab");
-      }
-      else if (ot == ownerDoc.getElementById("addons")) {
+        break;
+
+      case "addons":
         BrowserOpenAddonsMgr();
-      }
-      else if (ot == ownerDoc.getElementById("sync")) {
+        break;
+
+      case "sync":
         openPreferences("paneSync");
-      }
-      else if (ot == ownerDoc.getElementById("settings")) {
+        break;
+
+      case "settings":
         openPreferences();
-      }
+        break;
     }
-}
+  },
+};
 
 /**
  * Re-direct the browser to a known-safe page.  This function is
@@ -3936,7 +3988,7 @@ var XULBrowserWindow = {
     this._hostChanged = true;
 
     // Hide the form invalid popup.
-    if (gFormSubmitObserver.panelIsOpen()) {
+    if (gFormSubmitObserver.panel) {
       gFormSubmitObserver.panel.hidePopup();
     }
 
@@ -4681,15 +4733,9 @@ var TabsInTitlebar = {
     this._readPref();
     Services.prefs.addObserver(this._prefName, this, false);
 
-    // Don't trust the initial value of the sizemode attribute; wait for the resize event.
+    // Don't trust the initial value of the sizemode attribute; wait for
+    // the resize event (handled in tabbrowser.xml).
     this.allowedBy("sizemode", false);
-    window.addEventListener("resize", function (event) {
-      if (event.target != window)
-        return;
-      let sizemode = document.documentElement.getAttribute("sizemode");
-      TabsInTitlebar.allowedBy("sizemode",
-                               sizemode == "maximized" || sizemode == "fullscreen");
-    }, false);
 
     this._initialized = true;
 #endif

@@ -90,8 +90,8 @@ public:
 
 TabChild::TabChild(PRUint32 aChromeFlags, bool aIsBrowserElement,
                    PRUint32 aAppId)
-  : mRemoteFrame(nsnull)
-  , mTabChildGlobal(nsnull)
+  : mRemoteFrame(nullptr)
+  , mTabChildGlobal(nullptr)
   , mChromeFlags(aChromeFlags)
   , mOuterRect(0, 0, 0, 0)
   , mLastBackgroundColor(NS_RGB(255, 255, 255))
@@ -334,7 +334,7 @@ TabChild::ProvideWindow(nsIDOMWindow* aParent, PRUint32 aChromeFlags,
                         const nsACString& aFeatures, bool* aWindowIsNew,
                         nsIDOMWindow** aReturn)
 {
-    *aReturn = nsnull;
+    *aReturn = nullptr;
 
     // If aParent is inside an <iframe mozbrowser> and this isn't a request to
     // open a modal-type window, we're going to create a new <iframe mozbrowser>
@@ -378,14 +378,16 @@ TabChild::BrowserFrameProvideWindow(nsIDOMWindow* aOpener,
                                     bool* aWindowIsNew,
                                     nsIDOMWindow** aReturn)
 {
-  *aReturn = nsnull;
+  *aReturn = nullptr;
 
   nsRefPtr<TabChild> newChild =
     static_cast<TabChild*>(Manager()->SendPBrowserConstructor(
       /* aChromeFlags = */ 0, mIsBrowserElement, mAppId));
 
   nsCAutoString spec;
-  aURI->GetSpec(spec);
+  if (aURI) {
+    aURI->GetSpec(spec);
+  }
 
   NS_ConvertUTF8toUTF16 url(spec);
   nsString name(aName);
@@ -496,7 +498,7 @@ TabChild::DestroyWindow()
 
     if (mRemoteFrame) {
         mRemoteFrame->Destroy();
-        mRemoteFrame = nsnull;
+        mRemoteFrame = nullptr;
     }
 }
 
@@ -514,7 +516,7 @@ TabChild::ActorDestroy(ActorDestroyReason why)
     // no longer exists.
     static_cast<nsFrameMessageManager*>
       (mTabChildGlobal->mMessageManager.get())->Disconnect();
-    mTabChildGlobal->mMessageManager = nsnull;
+    mTabChildGlobal->mMessageManager = nullptr;
   }
 }
 
@@ -522,7 +524,7 @@ TabChild::~TabChild()
 {
     nsCOMPtr<nsIWebBrowser> webBrowser = do_QueryInterface(mWebNav);
     if (webBrowser) {
-      webBrowser->SetContainerWindow(nsnull);
+      webBrowser->SetContainerWindow(nullptr);
     }
     if (mCx) {
       DestroyCx();
@@ -533,7 +535,7 @@ TabChild::~TabChild()
       if (elm) {
         elm->Disconnect();
       }
-      mTabChildGlobal->mTabChild = nsnull;
+      mTabChildGlobal->mTabChild = nullptr;
     }
 }
 
@@ -895,7 +897,7 @@ PContentPermissionRequestChild*
 TabChild::AllocPContentPermissionRequest(const nsCString& aType, const IPC::URI&)
 {
   NS_RUNTIMEABORT("unused");
-  return nsnull;
+  return nullptr;
 }
 
 bool
@@ -931,7 +933,7 @@ TabChild::AllocPOfflineCacheUpdate(const URI& manifestURI,
             const bool& stickDocument)
 {
   NS_RUNTIMEABORT("unused");
-  return nsnull;
+  return nullptr;
 }
 
 bool
@@ -963,7 +965,7 @@ TabChild::RecvAsyncMessage(const nsString& aMessage,
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mTabChildGlobal->mMessageManager.get());
     mm->ReceiveMessage(static_cast<nsIDOMEventTarget*>(mTabChildGlobal),
-                       aMessage, false, aJSON, nsnull, nsnull);
+                       aMessage, false, aJSON, nullptr, nullptr);
   }
   return true;
 }
@@ -978,7 +980,7 @@ public:
   NS_IMETHOD Run()
   {
     nsCOMPtr<nsIDOMEvent> event;
-    NS_NewDOMEvent(getter_AddRefs(event), nsnull, nsnull);
+    NS_NewDOMEvent(getter_AddRefs(event), nullptr, nullptr);
     if (event) {
       event->InitEvent(NS_LITERAL_STRING("unload"), false, false);
       event->SetTrusted(true);
@@ -1074,10 +1076,10 @@ TabChild::InitWidget(const nsIntSize& size)
         return false;
     }
     mWidget->Create(
-        nsnull, 0,              // no parents
+        nullptr, 0,              // no parents
         nsIntRect(nsIntPoint(0, 0), size),
-        nsnull,                 // HandleWidgetEvent
-        nsnull                  // nsDeviceContext
+        nullptr,                 // HandleWidgetEvent
+        nullptr                  // nsDeviceContext
         );
 
     LayersBackend be;
@@ -1091,7 +1093,7 @@ TabChild::InitWidget(const nsIntSize& size)
       return false;
     }
 
-    PLayersChild* shadowManager = nsnull;
+    PLayersChild* shadowManager = nullptr;
     if (id != 0) {
         // Pushing layers transactions directly to a separate
         // compositor context.
@@ -1161,7 +1163,7 @@ TabChild::GetMessageManager(nsIContentFrameMessageManager** aResult)
     NS_ADDREF(*aResult = mTabChildGlobal);
     return NS_OK;
   }
-  *aResult = nsnull;
+  *aResult = nullptr;
   return NS_ERROR_FAILURE;
 }
 
@@ -1211,9 +1213,9 @@ TabChildGlobal::Init()
   mMessageManager = new nsFrameMessageManager(false,
                                               SendSyncMessageToParent,
                                               SendAsyncMessageToParent,
-                                              nsnull,
+                                              nullptr,
                                               mTabChild,
-                                              nsnull,
+                                              nullptr,
                                               mTabChild->GetJSContext());
 }
 
@@ -1244,7 +1246,7 @@ NS_IMPL_RELEASE_INHERITED(TabChildGlobal, nsDOMEventTargetHelper)
 NS_IMETHODIMP
 TabChildGlobal::GetContent(nsIDOMWindow** aContent)
 {
-  *aContent = nsnull;
+  *aContent = nullptr;
   if (!mTabChild)
     return NS_ERROR_NULL_POINTER;
   nsCOMPtr<nsIDOMWindow> window = do_GetInterface(mTabChild->WebNavigation());
@@ -1262,7 +1264,7 @@ TabChildGlobal::PrivateNoteIntentionalCrash()
 NS_IMETHODIMP
 TabChildGlobal::GetDocShell(nsIDocShell** aDocShell)
 {
-  *aDocShell = nsnull;
+  *aDocShell = nullptr;
   if (!mTabChild)
     return NS_ERROR_NULL_POINTER;
   nsCOMPtr<nsIDocShell> docShell = do_GetInterface(mTabChild->WebNavigation());
@@ -1288,7 +1290,7 @@ JSContext*
 TabChildGlobal::GetJSContextForEventHandlers()
 {
   if (!mTabChild)
-    return nsnull;
+    return nullptr;
   return mTabChild->GetJSContext();
 }
 
@@ -1296,6 +1298,6 @@ nsIPrincipal*
 TabChildGlobal::GetPrincipal()
 {
   if (!mTabChild)
-    return nsnull;
+    return nullptr;
   return mTabChild->GetPrincipal();
 }

@@ -23,10 +23,10 @@ using namespace js::frontend;
 
 class AutoAttachToRuntime {
     JSRuntime *rt;
-  public:
     ScriptSource *ss;
-    AutoAttachToRuntime(JSRuntime *rt)
-      : rt(rt), ss(NULL) {}
+  public:
+    AutoAttachToRuntime(JSRuntime *rt, ScriptSource *ss)
+      : rt(rt), ss(ss) {}
     ~AutoAttachToRuntime() {
         // This makes the source visible to the GC. If compilation fails, and no
         // script refers to it, it will be collected.
@@ -50,10 +50,8 @@ CheckLength(JSContext *cx, size_t length)
 
 JSScript *
 frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *callerFrame,
-                        JSPrincipals *principals, JSPrincipals *originPrincipals,
-                        bool compileAndGo, bool noScriptRval,
+                        const CompileOptions &options,
                         const jschar *chars, size_t length,
-                        const char *filename, unsigned lineno, JSVersion version,
                         JSString *source_ /* = NULL */,
                         unsigned staticLevel /* = 0 */)
 {
@@ -70,31 +68,31 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
         }
 		~ProbesManager() { js::Probes::compileScriptEnd(filename, lineno); }
     };
-    ProbesManager probesManager(filename, lineno);
+    ProbesManager probesManager(options.filename, options.lineno);
 
     /*
      * The scripted callerFrame can only be given for compile-and-go scripts
      * and non-zero static level requires callerFrame.
      */
-    JS_ASSERT_IF(callerFrame, compileAndGo);
+    JS_ASSERT_IF(callerFrame, options.compileAndGo);
     JS_ASSERT_IF(staticLevel != 0, callerFrame);
 
     if (!CheckLength(cx, length))
         return NULL;
-    AutoAttachToRuntime attacher(cx->runtime);
-    SourceCompressionToken sct(cx->runtime);
-    ScriptSource *ss = NULL;
-    if (!cx->hasRunOption(JSOPTION_ONLY_CNG_SOURCE) || compileAndGo) {
-        ss = ScriptSource::createFromSource(cx, chars, length, false, &sct);
-        if (!ss)
+    ScriptSource *ss = cx->new_<ScriptSource>();
+    if (!ss)
+        return NULL;
+    AutoAttachToRuntime attacher(cx->runtime, ss);
+    SourceCompressionToken sct(cx);
+    if (!cx->hasRunOption(JSOPTION_ONLY_CNG_SOURCE) || options.compileAndGo) {
+        if (!ss->setSource(cx, chars, length, false, &sct))
             return NULL;
-        attacher.ss = ss;
     }
 
-    Parser parser(cx, principals, originPrincipals, chars, length, filename, lineno, version,
-                  /* foldConstants = */ true, compileAndGo);
+    Parser parser(cx, options, chars, length, /* foldConstants = */ true);
     if (!parser.init())
         return NULL;
+    parser.sct = &sct;
 
     SharedContext sc(cx, scopeChain, /* fun = */ NULL, /* funbox = */ NULL, StrictModeFromContext(cx));
 
@@ -102,19 +100,9 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
     if (!tc.init())
         return NULL;
 
-    bool savedCallerFun = compileAndGo && callerFrame && callerFrame->isFunctionFrame();
-    Rooted<JSScript*> script(cx, JSScript::Create(cx,
-                                                  /* enclosingScope = */ NullPtr(),
-                                                  savedCallerFun,
-                                                  principals,
-                                                  originPrincipals,
-                                                  compileAndGo,
-                                                  noScriptRval,
-                                                  version,
-                                                  staticLevel,
-                                                  ss,
-                                                  0,
-                                                  length));
+    bool savedCallerFun = options.compileAndGo && callerFrame && callerFrame->isFunctionFrame();
+    Rooted<JSScript*> script(cx, JSScript::Create(cx, NullPtr(), savedCallerFun,
+                                                  options, staticLevel, ss, 0, length));
     if (!script)
         return NULL;
 
@@ -124,7 +112,7 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
     JS_ASSERT_IF(globalScope, JSCLASS_HAS_GLOBAL_FLAG_AND_SLOTS(globalScope->getClass()));
 
     BytecodeEmitter bce(/* parent = */ NULL, &parser, &sc, script, callerFrame, !!globalScope,
-                        lineno);
+                        options.lineno);
     if (!bce.init())
         return NULL;
 
@@ -132,7 +120,7 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
     if (callerFrame && callerFrame->isScriptFrame() && callerFrame->script()->strictModeCode)
         sc.strictModeState = StrictMode::STRICT;
 
-    if (compileAndGo) {
+    if (options.compileAndGo) {
         if (source) {
             /*
              * Save eval program source in script->atoms[0] for the
@@ -252,24 +240,24 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
 // Compile a JS function body, which might appear as the value of an event
 // handler attribute in an HTML <INPUT> tag, or in a Function() constructor.
 bool
-frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun,
-                              JSPrincipals *principals, JSPrincipals *originPrincipals,
-                              Bindings *bindings, const jschar *chars, size_t length,
-                              const char *filename, unsigned lineno, JSVersion version)
+frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions options,
+                              Bindings *bindings, const jschar *chars, size_t length)
 {
     if (!CheckLength(cx, length))
-        return false;
-    AutoAttachToRuntime attacher(cx->runtime);
-    SourceCompressionToken sct(cx->runtime);
-    ScriptSource *ss = ScriptSource::createFromSource(cx, chars, length, true, &sct);
+        return NULL;
+    ScriptSource *ss = cx->new_<ScriptSource>();
     if (!ss)
         return NULL;
-    attacher.ss = ss;
+    AutoAttachToRuntime attacher(cx->runtime, ss);
+    SourceCompressionToken sct(cx);
+    if (!ss->setSource(cx, chars, length, true, &sct))
+        return NULL;
 
-    Parser parser(cx, principals, originPrincipals, chars, length, filename, lineno, version,
-                  /* foldConstants = */ true, /* compileAndGo = */ false);
+    options.setCompileAndGo(false);
+    Parser parser(cx, options, chars, length, /* foldConstants = */ true);
     if (!parser.init())
         return false;
+    parser.sct = &sct;
 
     JS_ASSERT(fun);
     SharedContext funsc(cx, /* scopeChain = */ NULL, fun, /* funbox = */ NULL,
@@ -282,24 +270,14 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun,
     if (!funtc.init())
         return false;
 
-    Rooted<JSScript*> script(cx, JSScript::Create(cx,
-                                                  /* enclosingScope = */ NullPtr(),
-                                                  /* savedCallerFun = */ false,
-                                                  principals,
-                                                  originPrincipals,
-                                                  /* compileAndGo = */ false,
-                                                  /* noScriptRval = */ false,
-                                                  version,
-                                                  staticLevel,
-                                                  ss,
-                                                  0,
-                                                  length));
+    Rooted<JSScript*> script(cx, JSScript::Create(cx, NullPtr(), false, options,
+                                                  staticLevel, ss, 0, length));
     if (!script)
         return false;
 
     StackFrame *nullCallerFrame = NULL;
     BytecodeEmitter funbce(/* parent = */ NULL, &parser, &funsc, script, nullCallerFrame,
-                           /* hasGlobalScope = */ false, lineno);
+                           /* hasGlobalScope = */ false, options.lineno);
     if (!funbce.init())
         return false;
 

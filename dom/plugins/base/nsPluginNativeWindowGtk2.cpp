@@ -18,6 +18,7 @@
 
 #include "gtk2compat.h"
 #include "gtk2xtbin.h"
+#include "mozilla/X11Util.h"
 
 class nsPluginNativeWindowGtk2 : public nsPluginNativeWindow {
 public: 
@@ -43,7 +44,7 @@ static void socket_unrealize_cb   (GtkWidget *widget, gpointer data);
 nsPluginNativeWindowGtk2::nsPluginNativeWindowGtk2() : nsPluginNativeWindow()
 {
   // initialize the struct fields
-  window = nsnull; 
+  window = nullptr; 
   x = 0; 
   y = 0; 
   width = 0; 
@@ -53,8 +54,8 @@ nsPluginNativeWindowGtk2::nsPluginNativeWindowGtk2() : nsPluginNativeWindow()
   type = NPWindowTypeWindow;
   mSocketWidget = 0;
   mWsInfo.type = 0;
-  mWsInfo.display = nsnull;
-  mWsInfo.visual = nsnull;
+  mWsInfo.display = nullptr;
+  mWsInfo.visual = nullptr;
   mWsInfo.colormap = 0;
   mWsInfo.depth = 0;
 }
@@ -140,7 +141,7 @@ nsresult nsPluginNativeWindowGtk2::CallSetWindow(nsRefPtr<nsNPAPIPluginInstance>
     aPluginInstance->SetWindow(this);
   }
   else if (mPluginInstance)
-    mPluginInstance->SetWindow(nsnull);
+    mPluginInstance->SetWindow(nullptr);
 
   SetPluginInstance(aPluginInstance);
   return NS_OK;
@@ -307,6 +308,6 @@ socket_unrealize_cb(GtkWidget *widget, gpointer data)
 
   if (children) XFree(children);
 
-  XSync(display, False);
+  mozilla::FinishX(display);
   gdk_error_trap_pop();
 }
