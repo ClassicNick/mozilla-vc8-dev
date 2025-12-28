@@ -84,7 +84,7 @@
 #include "nsIObserverService.h"
 #include "nsIDocShell.h"        // for reflow observation
 #include "nsIBaseWindow.h"
-#include "nsLayoutErrors.h"
+#include "nsError.h"
 #include "nsLayoutUtils.h"
 #include "nsCSSRendering.h"
   // for |#ifdef DEBUG| code
@@ -172,6 +172,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "sampler.h"
+#include "mozilla/css/ImageLoader.h"
 
 #include "Layers.h"
 #include "nsAsyncDOMEvent.h"
@@ -1956,11 +1957,10 @@ PresShell::FireResizeEvent()
 void
 PresShell::SetIgnoreFrameDestruction(bool aIgnore)
 {
-  if (mPresContext) {
-    // We need to destroy the image loaders first, as they won't be
-    // notified when frames are destroyed once this setting takes effect.
-    // (See bug 673984)
-    mPresContext->DestroyImageLoaders();
+  if (mDocument) {
+    // We need to tell the ImageLoader to drop all its references to frames
+    // because they're about to go away and it won't get notifications of that.
+    mDocument->StyleImageLoader()->ClearAll();
   }
   mIgnoreFrameDestruction = aIgnore;
 }
@@ -1973,7 +1973,7 @@ PresShell::NotifyDestroyingFrame(nsIFrame* aFrame)
   mPresContext->ForgetUpdatePluginGeometryFrame(aFrame);
 
   if (!mIgnoreFrameDestruction) {
-    mPresContext->StopImagesFor(aFrame);
+    mDocument->StyleImageLoader()->DropRequestsForFrame(aFrame);
 
     mFrameConstructor->NotifyDestroyingFrame(aFrame);
 
@@ -5249,9 +5249,8 @@ private:
 
 void
 PresShell::Paint(nsIView*           aViewToPaint,
-                 nsIWidget*         aWidgetToPaint,
                  const nsRegion&    aDirtyRegion,
-                 const nsIntRegion& aIntDirtyRegion,
+                 PaintType          aType,
                  bool               aWillSendDidPaint)
 {
 #ifdef NS_FUNCTION_TIMER
@@ -5268,7 +5267,6 @@ PresShell::Paint(nsIView*           aViewToPaint,
   SAMPLE_LABEL("Paint", "PresShell::Paint");
   NS_ASSERTION(!mIsDestroying, "painting a destroyed PresShell");
   NS_ASSERTION(aViewToPaint, "null view");
-  NS_ASSERTION(aWidgetToPaint, "Can't paint without a widget");
 
   nsAutoNotifyDidPaint notifyDidPaint(aWillSendDidPaint);
 
@@ -5279,14 +5277,13 @@ PresShell::Paint(nsIView*           aViewToPaint,
 
   bool isRetainingManager;
   LayerManager* layerManager =
-    aWidgetToPaint->GetLayerManager(&isRetainingManager);
+    aViewToPaint->GetWidget()->GetLayerManager(&isRetainingManager);
   NS_ASSERTION(layerManager, "Must be in paint event");
 
   if (mIsFirstPaint) {
     layerManager->SetIsFirstPaint();
     mIsFirstPaint = false;
   }
-  layerManager->BeginTransaction();
 
   if (frame && isRetainingManager) {
     // Try to do an empty transaction, if the frame tree does not
@@ -5295,21 +5292,39 @@ PresShell::Paint(nsIView*           aViewToPaint,
     // draws the window title bar on Mac), because a) it won't work
     // and b) below we don't want to clear NS_FRAME_UPDATE_LAYER_TREE,
     // that will cause us to forget to update the real layer manager!
-    if (!(frame->GetStateBits() & NS_FRAME_UPDATE_LAYER_TREE)) {
+    if (aType == PaintType_Composite) {
+      if (layerManager->HasShadowManager()) {
+        return;
+      }
+      layerManager->BeginTransaction();
       if (layerManager->EndEmptyTransaction()) {
+        return;
+      }
+      NS_WARNING("Must complete empty transaction when compositing!");
+    } else  if (!(frame->GetStateBits() & NS_FRAME_UPDATE_LAYER_TREE)) {
+      layerManager->BeginTransaction();
+      if (layerManager->EndEmptyTransaction(LayerManager::END_NO_COMPOSITE)) {
         frame->UpdatePaintCountForPaintedPresShells();
         presContext->NotifyDidPaintForSubtree();
         return;
       }
+    } else {
+      layerManager->BeginTransaction();
     }
 
     frame->RemoveStateBits(NS_FRAME_UPDATE_LAYER_TREE);
+  } else {
+    layerManager->BeginTransaction();
   }
   if (frame) {
     frame->ClearPresShellsFromLastPaint();
   }
 
   nscolor bgcolor = ComputeBackstopColor(aViewToPaint);
+  PRUint32 flags = nsLayoutUtils::PAINT_WIDGET_LAYERS | nsLayoutUtils::PAINT_EXISTING_TRANSACTION;
+  if (aType == PaintType_NoComposite) {
+    flags |= nsLayoutUtils::PAINT_NO_COMPOSITE;
+  }
 
   if (frame) {
     // Defer invalidates that are triggered during painting, and discard
@@ -5319,12 +5334,12 @@ PresShell::Paint(nsIView*           aViewToPaint,
     frame->BeginDeferringInvalidatesForDisplayRoot(aDirtyRegion);
 
     // We can paint directly into the widget using its layer manager.
-    nsLayoutUtils::PaintFrame(nullptr, frame, aDirtyRegion, bgcolor,
-                              nsLayoutUtils::PAINT_WIDGET_LAYERS |
-                              nsLayoutUtils::PAINT_EXISTING_TRANSACTION);
+    nsLayoutUtils::PaintFrame(nullptr, frame, aDirtyRegion, bgcolor, flags);
 
     frame->EndDeferringInvalidatesForDisplayRoot();
-    presContext->NotifyDidPaintForSubtree();
+    if (aType != PaintType_Composite) {
+      presContext->NotifyDidPaintForSubtree();
+    }
     return;
   }
 
@@ -5338,9 +5353,13 @@ PresShell::Paint(nsIView*           aViewToPaint,
     root->SetVisibleRegion(bounds);
     layerManager->SetRoot(root);
   }
-  layerManager->EndTransaction(NULL, NULL);
+  layerManager->EndTransaction(NULL, NULL, aType == PaintType_NoComposite ?
+                                             LayerManager::END_NO_COMPOSITE :
+                                             LayerManager::END_DEFAULT);
 
-  presContext->NotifyDidPaintForSubtree();
+  if (aType != PaintType_Composite) {
+    presContext->NotifyDidPaintForSubtree();
+  }
 }
 
 // static
@@ -5643,16 +5662,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
 
   RecordMouseLocation(aEvent);
 
-#ifdef ACCESSIBILITY
-  if (aEvent->eventStructType == NS_ACCESSIBLE_EVENT) {
-    NS_TIME_FUNCTION_MIN(1.0);
-
-    // Accessibility events come through OS requests and not from scripts,
-    // so it is safe to handle here
-    return HandleEventInternal(aEvent, aEventStatus);
-  }
-#endif
-
   if (!nsContentUtils::IsSafeToRunScript())
     return NS_OK;
 
@@ -5724,30 +5733,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
         return shell->HandleEvent(frame, aEvent, true, aEventStatus);
       }
     }
-  }
-
-  // Check for a theme change up front, since the frame type is irrelevant
-  if (aEvent->message == NS_THEMECHANGED && mPresContext) {
-    mPresContext->ThemeChanged();
-    return NS_OK;
-  }
-
-  if (aEvent->message == NS_UISTATECHANGED && mDocument) {
-    nsPIDOMWindow* win = mDocument->GetWindow();
-    if (win) {
-      nsUIStateChangeEvent* event = (nsUIStateChangeEvent*)aEvent;
-      win->SetKeyboardIndicators(event->showAccelerators, event->showFocusRings);
-    }
-    return NS_OK;
-  }
-
-  // Check for a system color change up front, since the frame type is
-  // irrelevant
-  if ((aEvent->message == NS_SYSCOLORCHANGED) && mPresContext &&
-      aFrame == mFrameConstructor->GetRootFrame()) {
-    *aEventStatus = nsEventStatus_eConsumeDoDefault;
-    mPresContext->SysColorChanged();
-    return NS_OK;
   }
 
   if (aEvent->eventStructType == NS_KEY_EVENT &&
@@ -6245,13 +6230,6 @@ PresShell::HandleEventWithTarget(nsEvent* aEvent, nsIFrame* aFrame,
   return rv;
 }
 
-static inline bool
-IsSynthesizedMouseEvent(nsEvent* aEvent)
-{
-  return aEvent->eventStructType == NS_MOUSE_EVENT &&
-         static_cast<nsMouseEvent*>(aEvent)->reason != nsMouseEvent::eReal;
-}
-
 static bool CanHandleContextMenuEvent(nsMouseEvent* aMouseEvent,
                                         nsIFrame* aFrame)
 {
@@ -6286,32 +6264,6 @@ nsresult
 PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
 {
   NS_TIME_FUNCTION_MIN(1.0);
-
-#ifdef ACCESSIBILITY
-  if (aEvent->eventStructType == NS_ACCESSIBLE_EVENT)
-  {
-    nsAccessibleEvent *accEvent = static_cast<nsAccessibleEvent*>(aEvent);
-    accEvent->mAccessible = nullptr;
-
-    nsCOMPtr<nsIAccessibilityService> accService =
-      do_GetService("@mozilla.org/accessibilityService;1");
-    if (accService) {
-      nsCOMPtr<nsISupports> container = mPresContext->GetContainer();
-      if (!container) {
-        // This presshell is not active. This often happens when a
-        // preshell is being held onto for fastback.
-        return NS_OK;
-      }
-
-      // Accessible creation might be not safe so we make sure it's not created
-      // at unsafe times.
-      accEvent->mAccessible =
-        accService->GetRootDocumentAccessible(this, nsContentUtils::IsSafeToRunScript());
-
-      return NS_OK;
-    }
-  }
-#endif
 
   nsRefPtr<nsEventStateManager> manager = mPresContext->EventStateManager();
   nsresult rv = NS_OK;
@@ -6483,11 +6435,7 @@ PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
       if (aEvent->eventStructType == NS_KEY_EVENT) {
         nsContentUtils::SetIsHandlingKeyBoardEvent(true);
       }
-      // We want synthesized mouse moves to cause mouseover and mouseout
-      // DOM events (PreHandleEvent above), but not mousemove DOM events.
-      // Synthesized button up events also do not cause DOM events
-      // because they do not have a reliable refPoint.
-      if (!IsSynthesizedMouseEvent(aEvent)) {
+      if (NS_IsAllowedToDispatchDOMEvent(aEvent)) {
         nsPresShellEventCB eventCB(this);
         if (aEvent->eventStructType == NS_TOUCH_EVENT) {
           DispatchTouchEvent(aEvent, aStatus, &eventCB, touchIsNew);
@@ -7689,6 +7637,15 @@ PresShell::ProcessReflowCommands(bool aInterruptible)
   }
 
   return !interrupted;
+}
+
+void
+PresShell::WindowSizeMoveDone()
+{
+  if (mPresContext) {
+    nsEventStateManager::ClearGlobalActiveContent(nullptr);
+    ClearMouseCapture(nullptr);
+  }
 }
 
 #ifdef MOZ_XUL

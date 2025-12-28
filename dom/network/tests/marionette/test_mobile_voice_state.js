@@ -3,9 +3,7 @@
 
 MARIONETTE_TIMEOUT = 30000;
 
-const WHITELIST_PREF = "dom.mobileconnection.whitelist";
-let uriPrePath = window.location.protocol + "//" + window.location.host;
-SpecialPowers.setCharPref(WHITELIST_PREF, uriPrePath);
+SpecialPowers.addPermission("mobileconnection", true, document);
 
 let connection = navigator.mozMobileConnection;
 ok(connection instanceof MozMobileConnection,
@@ -17,6 +15,12 @@ function setEmulatorVoiceState(state) {
   });
 }
 
+function setEmulatorGsmLocation(lac, cid) {
+  runEmulatorCmd("gsm location " + lac + " " + cid, function (result) {
+    is(result[0], "OK");
+  });
+}
+
 function testConnectionInfo() {
   let voice = connection.voice;
   is(voice.connected, true);
@@ -24,7 +28,31 @@ function testConnectionInfo() {
   is(voice.emergencyCallsOnly, false);
   is(voice.roaming, false);
 
-  testUnregistered();
+  testCellLocation();
+}
+
+function testCellLocation() {
+  let voice = connection.voice;
+
+  // Emulator always reports valid lac/cid value because its AT command parser
+  // insists valid value for every complete response. See source file
+  // hardare/ril/reference-ril/at_tok.c, function at_tok_nexthexint().
+  ok(voice.cell, "location available");
+
+  // Initial LAC/CID. Android emulator initializes both value to -1.
+  is(voice.cell.gsmLocationAreaCode, 65535);
+  is(voice.cell.gsmCellId, 268435455);
+
+  connection.addEventListener("voicechange", function onvoicechange() {
+    connection.removeEventListener("voicechange", onvoicechange);
+
+    is(voice.cell.gsmLocationAreaCode, 100);
+    is(voice.cell.gsmCellId, 100);
+
+    testUnregistered();
+  });
+
+  setEmulatorGsmLocation(100, 100);
 }
 
 function testUnregistered() {
@@ -108,7 +136,7 @@ function testHome() {
 }
 
 function cleanUp() {
-  SpecialPowers.clearUserPref(WHITELIST_PREF);
+  SpecialPowers.removePermission("mobileconnection", document);
   finish();
 }
 

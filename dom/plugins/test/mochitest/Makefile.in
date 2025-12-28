@@ -64,6 +64,7 @@ MOCHITEST_FILES = \
   test_bug771202.html \
   file_bug771202.html \
   test_bug777098.html \
+  test_bug751809.html \
   test_enumerate.html \
   test_npruntime_construct.html \
   307-xo-redirect.sjs \
@@ -80,6 +81,7 @@ MOCHITEST_FILES = \
   test_pluginstream_src_referer.html \
   plugin-stream-referer.sjs \
   test_src_url_change.html \
+  test_secondPlugin.html \
   $(NULL)
 
 #  test_plugin_scroll_painting.html \ bug 596491

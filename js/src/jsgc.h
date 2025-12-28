@@ -1128,6 +1128,9 @@ RunDebugGC(JSContext *cx);
 void
 SetDeterministicGC(JSContext *cx, bool enabled);
 
+void
+SetValidateGC(JSContext *cx, bool enabled);
+
 const int ZealPokeValue = 1;
 const int ZealAllocValue = 2;
 const int ZealFrameGCValue = 3;

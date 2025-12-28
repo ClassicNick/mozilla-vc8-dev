@@ -6,7 +6,7 @@
 #include "base/histogram.h"
 #include "nsComponentManagerUtils.h"
 #include "imgIContainerObserver.h"
-#include "ImageErrors.h"
+#include "nsError.h"
 #include "Decoder.h"
 #include "imgIDecoderObserver.h"
 #include "RasterImage.h"
@@ -93,7 +93,7 @@ InitPrefCaches()
 #define CONTAINER_ENSURE_SUCCESS(status)      \
   PR_BEGIN_MACRO                              \
   nsresult _status = status; /* eval once */  \
-  if (_status) {                              \
+  if (NS_FAILED(_status)) {                   \
     LOG_CONTAINER_ERROR;                      \
     DoError();                                \
     return _status;                           \

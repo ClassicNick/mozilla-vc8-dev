@@ -18,7 +18,7 @@
 #include "nsIFrame.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsNodeInfoManager.h"
 #include "nsNetUtil.h"
 #include "nsXPCOMStrings.h"
@@ -44,7 +44,6 @@
 #include "nsIDOMHTMLVideoElement.h"
 #include "nsIContentPolicy.h"
 #include "nsContentPolicyUtils.h"
-#include "nsContentErrors.h"
 #include "nsCrossSiteListenerProxy.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsICachingChannel.h"
@@ -214,7 +213,7 @@ public:
                                                 mSource,
                                                 NS_LITERAL_STRING("error"),
                                                 false,
-                                                true);
+                                                false);
   }
 };
 
@@ -3070,7 +3069,7 @@ nsresult nsHTMLMediaElement::DispatchAudioAvailableEvent(float* aFrameBuffer,
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = audioavailableEvent->InitAudioAvailableEvent(NS_LITERAL_STRING("MozAudioAvailable"),
-                                                    true, true, frameBuffer.forget(), aFrameBufferLength,
+                                                    false, false, frameBuffer.forget(), aFrameBufferLength,
                                                     aTime, mAllowAudioData);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -3094,7 +3093,7 @@ nsresult nsHTMLMediaElement::DispatchEvent(const nsAString& aName)
                                               static_cast<nsIContent*>(this),
                                               aName,
                                               false,
-                                              true);
+                                              false);
 }
 
 nsresult nsHTMLMediaElement::DispatchAsyncEvent(const nsAString& aName)

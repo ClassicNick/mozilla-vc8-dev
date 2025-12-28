@@ -21,6 +21,12 @@
 #include "nsSurfaceTexture.h"
 #endif
 
+#ifdef MOZ_WIDGET_GONK
+# include "GonkIOSurfaceImage.h"
+# include <ui/GraphicBuffer.h>
+using namespace android;
+#endif
+
 using namespace mozilla::gfx;
 using namespace mozilla::gl;
 
@@ -225,7 +231,7 @@ ImageLayerOGL::RenderLayer(int,
 {
   nsRefPtr<ImageContainer> container = GetContainer();
 
-  if (!container)
+  if (!container || mOGLManager->CompositingDisabled())
     return;
 
   mOGLManager->MakeCurrent();
@@ -875,6 +881,9 @@ void
 ShadowImageLayerOGL::RenderLayer(int aPreviousFrameBuffer,
                                  const nsIntPoint& aOffset)
 {
+  if (mOGLManager->CompositingDisabled()) {
+    return;
+  }
   mOGLManager->MakeCurrent();
   if (mImageContainerID) {
     ImageContainerParent::SetCompositorIDForImage(mImageContainerID,
@@ -886,6 +895,21 @@ ShadowImageLayerOGL::RenderLayer(int aPreviousFrameBuffer,
         UploadSharedYUVToTexture(img->get_YUVImage());
   
         mImageVersion = imgVersion;
+#ifdef MOZ_WIDGET_GONK
+      } else if (img
+                 && (img->type() == SharedImage::TSurfaceDescriptor)
+                 && (img->get_SurfaceDescriptor().type() == SurfaceDescriptor::TSurfaceDescriptorGralloc)) {
+        const SurfaceDescriptorGralloc& desc = img->get_SurfaceDescriptor().get_SurfaceDescriptorGralloc();
+        sp<GraphicBuffer> graphicBuffer = GrallocBufferActor::GetFrom(desc);
+        mSize = gfxIntSize(graphicBuffer->getWidth(), graphicBuffer->getHeight());
+        if (!mExternalBufferTexture.IsAllocated()) {
+          mExternalBufferTexture.Allocate(gl());
+        }
+        gl()->MakeCurrent();
+        gl()->fActiveTexture(LOCAL_GL_TEXTURE0);
+        gl()->BindExternalBuffer(mExternalBufferTexture.GetTextureID(), graphicBuffer->getNativeBuffer());
+        mImageVersion = imgVersion;
+#endif
       }
     }
   }
@@ -926,6 +950,25 @@ ShadowImageLayerOGL::RenderLayer(int aPreviousFrameBuffer,
                                                     mTexImage->GetTileRect().Size());
       } while (mTexImage->NextTile());
     }
+#ifdef MOZ_WIDGET_GONK
+  } else if (mExternalBufferTexture.IsAllocated()) {
+    ShaderProgramOGL *program = mOGLManager->GetProgram(RGBAExternalLayerProgramType, GetMaskLayer());
+
+    gl()->ApplyFilterToBoundTexture(mFilter);
+
+    program->Activate();
+    program->SetLayerQuadRect(nsIntRect(0, 0,
+                                        mSize.width, mSize.height));
+    program->SetLayerTransform(GetEffectiveTransform());
+    program->SetLayerOpacity(GetEffectiveOpacity());
+    program->SetRenderOffset(aOffset);
+    program->SetTextureUnit(0);
+    program->LoadMask(GetMaskLayer());
+
+    mOGLManager->BindAndDrawQuadWithTextureRect(program,
+                                                GetVisibleRegion().GetBounds(),
+                                                nsIntSize(mSize.width, mSize.height));
+#endif
   } else if (mSharedHandle) {
     GLContext::SharedHandleDetails handleDetails;
     if (!gl()->GetSharedHandleDetails(mShareType, mSharedHandle, handleDetails)) {
@@ -1015,6 +1058,7 @@ ShadowImageLayerOGL::CleanupResources()
     mSharedHandle = NULL;
   }
 
+  mExternalBufferTexture.Release();
   mYUVTexture[0].Release();
   mYUVTexture[1].Release();
   mYUVTexture[2].Release();

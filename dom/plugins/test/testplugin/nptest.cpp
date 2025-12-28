@@ -59,19 +59,13 @@
 
 using namespace std;
 
-#define PLUGIN_NAME        "Test Plug-in"
-#define PLUGIN_DESCRIPTION "Plug-in for testing purposes.\xE2\x84\xA2 "          \
-    "(\xe0\xa4\xb9\xe0\xa4\xbf\xe0\xa4\xa8\xe0\xa5\x8d\xe0\xa4\xa6\xe0\xa5\x80 " \
-    "\xe4\xb8\xad\xe6\x96\x87 "                                                  \
-    "\xd8\xa7\xd9\x84\xd8\xb9\xd8\xb1\xd8\xa8\xd9\x8a\xd8\xa9)"
 #define PLUGIN_VERSION     "1.0.0.0"
-
 #define ARRAY_LENGTH(a) (sizeof(a)/sizeof(a[0]))
 #define STATIC_ASSERT(condition)                                \
     extern void np_static_assert(int arg[(condition) ? 1 : -1])
 
-static char sPluginName[] = PLUGIN_NAME; 
-static char sPluginDescription[] = PLUGIN_DESCRIPTION;
+extern const char *sPluginName;
+extern const char *sPluginDescription;
 static char sPluginVersion[] = PLUGIN_VERSION;
 
 //
@@ -169,6 +163,7 @@ static bool setSitesWithData(NPObject* npobj, const NPVariant* args, uint32_t ar
 static bool setSitesWithDataCapabilities(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getLastKeyText(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 static bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
+static bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result);
 
 static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "npnEvaluateTest",
@@ -228,7 +223,8 @@ static const NPUTF8* sPluginMethodIdentifierNames[] = {
   "setSitesWithData",
   "setSitesWithDataCapabilities",
   "getLastKeyText",
-  "getNPNVdocumentOrigin"
+  "getNPNVdocumentOrigin",
+  "getMouseUpEventCount"
 };
 static NPIdentifier sPluginMethodIdentifiers[ARRAY_LENGTH(sPluginMethodIdentifierNames)];
 static const ScriptableFunction sPluginMethodFunctions[] = {
@@ -289,7 +285,8 @@ static const ScriptableFunction sPluginMethodFunctions[] = {
   setSitesWithData,
   setSitesWithDataCapabilities,
   getLastKeyText,
-  getNPNVdocumentOrigin
+  getNPNVdocumentOrigin,
+  getMouseUpEventCount
 };
 
 STATIC_ASSERT(ARRAY_LENGTH(sPluginMethodIdentifierNames) ==
@@ -603,7 +600,7 @@ NP_GetPluginVersion()
 }
 #endif
 
-static char sMimeDescription[] = "application/x-test:tst:Test mimetype";
+extern const char *sMimeDescription;
 
 #if defined(XP_UNIX)
 NP_EXPORT(const char*) NP_GetMIMEDescription()
@@ -619,10 +616,10 @@ NP_EXPORT(NPError)
 NP_GetValue(void* future, NPPVariable aVariable, void* aValue) {
   switch (aVariable) {
     case NPPVpluginNameString:
-      *((char**)aValue) = sPluginName;
+      *((const char**)aValue) = sPluginName;
       break;
     case NPPVpluginDescriptionString:
-      *((char**)aValue) = sPluginDescription;
+      *((const char**)aValue) = sPluginDescription;
       break;
     default:
       return NPERR_INVALID_PARAM;
@@ -783,6 +780,7 @@ NPP_New(NPMIMEType pluginType, NPP instance, uint16_t mode, int16_t argc, char* 
   instanceData->asyncDrawing = AD_NONE;
   instanceData->frontBuffer = NULL;
   instanceData->backBuffer = NULL;
+  instanceData->mouseUpEventCount = 0;
   instance->pdata = instanceData;
 
   TestNPObject* scriptableObject = (TestNPObject*)NPN_CreateObject(instance, &sNPClass);
@@ -1960,7 +1958,7 @@ scriptableInvokeDefault(NPObject* npobj, const NPVariant* args, uint32_t argCoun
   }
 
   ostringstream value;
-  value << PLUGIN_NAME;
+  value << sPluginName;
   for (uint32_t i = 0; i < argCount; i++) {
     switch(args[i].type) {
       case NPVariantType_Int32:
@@ -3653,5 +3651,17 @@ bool getNPNVdocumentOrigin(NPObject* npobj, const NPVariant* args, uint32_t argC
   }
 
   STRINGZ_TO_NPVARIANT(origin, *result);
+  return true;
+}
+
+bool getMouseUpEventCount(NPObject* npobj, const NPVariant* args, uint32_t argCount, NPVariant* result)
+{
+  if (argCount != 0) {
+    return false;
+  }
+  
+  NPP npp = static_cast<TestNPObject*>(npobj)->npp;
+  InstanceData* id = static_cast<InstanceData*>(npp->pdata);
+  INT32_TO_NPVARIANT(id->mouseUpEventCount, *result);
   return true;
 }

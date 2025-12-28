@@ -139,7 +139,11 @@ class THEBES_API LayerManager {
   NS_INLINE_DECL_REFCOUNTING(LayerManager)
 
 public:
-  LayerManager() : mDestroyed(false), mSnapEffectiveTransforms(true), mId(0)
+  LayerManager()
+    : mDestroyed(false)
+    , mSnapEffectiveTransforms(true)
+    , mId(0)
+    , mInTransaction(false)
   {
     InitLog();
   }
@@ -181,6 +185,13 @@ public:
    * EndTransaction returns.
    */
   virtual void BeginTransactionWithTarget(gfxContext* aTarget) = 0;
+  
+  enum EndTransactionFlags {
+    END_DEFAULT = 0,
+    END_NO_IMMEDIATE_REDRAW = 1 << 0,  // Do not perform the drawing phase
+    END_NO_COMPOSITE = 1 << 1 // Do not composite after drawing thebes layer contents.
+  };
+
   /**
    * Attempts to end an "empty transaction". There must have been no
    * changes to the layer tree since the BeginTransaction().
@@ -189,7 +200,7 @@ public:
    * returns false, and the caller must proceed with a normal layer tree
    * update and EndTransaction.
    */
-  virtual bool EndEmptyTransaction() = 0;
+  virtual bool EndEmptyTransaction(EndTransactionFlags aFlags = END_DEFAULT) = 0;
 
   /**
    * Function called to draw the contents of each ThebesLayer.
@@ -223,11 +234,6 @@ public:
                                            const nsIntRegion& aRegionToInvalidate,
                                            void* aCallbackData);
 
-  enum EndTransactionFlags {
-    END_DEFAULT = 0,
-    END_NO_IMMEDIATE_REDRAW = 1 << 0  // Do not perform the drawing phase
-  };
-
   /**
    * Finish the construction phase of the transaction, perform the
    * drawing phase, and end the transaction.
@@ -238,6 +244,9 @@ public:
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT) = 0;
+
+  virtual bool HasShadowManagerInternal() const { return false; }
+  bool HasShadowManager() const { return HasShadowManagerInternal(); }
 
   bool IsSnappingEffectiveTransforms() { return mSnapEffectiveTransforms; } 
 
@@ -450,6 +459,8 @@ public:
 
   virtual bool IsCompositingCheap() { return true; }
 
+  bool IsInTransaction() const { return mInTransaction; }
+
 protected:
   nsRefPtr<Layer> mRoot;
   gfx::UserData mUserData;
@@ -463,6 +474,7 @@ protected:
   static void InitLog();
   static PRLogModuleInfo* sLog;
   uint64_t mId;
+  bool mInTransaction;
 private:
   TimeStamp mLastFrameTime;
   nsTArray<float> mFrameTimes;
@@ -539,8 +551,10 @@ public:
     NS_ASSERTION((aFlags & (CONTENT_OPAQUE | CONTENT_COMPONENT_ALPHA)) !=
                  (CONTENT_OPAQUE | CONTENT_COMPONENT_ALPHA),
                  "Can't be opaque and require component alpha");
-    mContentFlags = aFlags;
-    Mutated();
+    if (mContentFlags != aFlags) {
+      mContentFlags = aFlags;
+      Mutated();
+    }
   }
   /**
    * CONSTRUCTION PHASE ONLY
@@ -557,8 +571,10 @@ public:
    */
   virtual void SetVisibleRegion(const nsIntRegion& aRegion)
   {
-    mVisibleRegion = aRegion;
-    Mutated();
+    if (!mVisibleRegion.IsEqual(aRegion)) {
+      mVisibleRegion = aRegion;
+      Mutated();
+    }
   }
 
   /**
@@ -568,8 +584,10 @@ public:
    */
   void SetOpacity(float aOpacity)
   {
-    mOpacity = aOpacity;
-    Mutated();
+    if (mOpacity != aOpacity) {
+      mOpacity = aOpacity;
+      Mutated();
+    }
   }
 
   /**
@@ -584,11 +602,25 @@ public:
    */
   void SetClipRect(const nsIntRect* aRect)
   {
-    mUseClipRect = aRect != nullptr;
-    if (aRect) {
-      mClipRect = *aRect;
+    if (mUseClipRect) {
+      if (!aRect) {
+        mUseClipRect = false;
+        Mutated();
+      } else {
+        if (!aRect->IsEqualEdges(mClipRect)) {
+          mClipRect = *aRect;
+          Mutated();
+        }
+      }
+    } else {
+      if (aRect) {
+        Mutated();
+        mUseClipRect = true;
+        if (!aRect->IsEqualEdges(mClipRect)) {
+          mClipRect = *aRect;
+        }
+      }
     }
-    Mutated();
   }
 
   /**
@@ -637,8 +669,10 @@ public:
     }
 #endif
 
-    mMaskLayer = aMaskLayer;
-    Mutated();
+    if (mMaskLayer != aMaskLayer) {
+      mMaskLayer = aMaskLayer;
+      Mutated();
+    }
   }
 
   /**
@@ -650,6 +684,9 @@ public:
    */
   void SetBaseTransform(const gfx3DMatrix& aMatrix)
   {
+    if (mTransform == aMatrix) {
+      return;
+    }
     mTransform = aMatrix;
     Mutated();
   }
@@ -1104,8 +1141,10 @@ public:
    */
   void SetFrameMetrics(const FrameMetrics& aFrameMetrics)
   {
-    mFrameMetrics = aFrameMetrics;
-    Mutated();
+    if (mFrameMetrics != aFrameMetrics) {
+      mFrameMetrics = aFrameMetrics;
+      Mutated();
+    }
   }
 
   void SetPreScale(float aXScale, float aYScale)
@@ -1395,7 +1434,10 @@ public:
   void SetReferentId(uint64_t aId)
   {
     MOZ_ASSERT(aId != 0);
-    mId = aId;
+    if (mId != aId) {
+      mId = aId;
+      Mutated();
+    }
   }
   /**
    * CONSTRUCTION PHASE ONLY

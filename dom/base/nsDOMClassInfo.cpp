@@ -103,7 +103,7 @@
 #include "nsIDOMHTMLPropertiesCollection.h"
 
 // DOM core includes
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsIDOMDOMException.h"
 #include "nsIDOMNode.h"
 #include "nsIDOMNamedNodeMap.h"
@@ -520,6 +520,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "BluetoothDevice.h"
 #include "BluetoothDeviceEvent.h"
 #include "BluetoothPropertyEvent.h"
+#include "BluetoothPairingEvent.h"
 #endif
 
 #include "nsIDOMNavigatorSystemMessages.h"
@@ -540,6 +541,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "LockedFile.h"
 #include "GeneratedEvents.h"
 #include "mozilla/Likely.h"
+#include "nsDebug.h"
 
 #undef None // something included above defines this preprocessor symbol, maybe Xlib headers
 #include "WebGLContext.h"
@@ -1580,6 +1582,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTextureS3TC, WebGLExtensionSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS |
                            nsIXPCScriptable::WANT_ADDPROPERTY)
+  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionDepthTexture, WebGLExtensionSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
+                           nsIXPCScriptable::WANT_ADDPROPERTY)
 
   NS_DEFINE_CLASSINFO_DATA(PaintRequest, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1679,6 +1684,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(BluetoothDeviceEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(BluetoothPropertyEvent, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(BluetoothPairingEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
 
@@ -2073,8 +2080,10 @@ SetParentToWindow(nsGlobalWindow *win, JSObject **parent)
 
   if (MOZ_UNLIKELY(!*parent)) {
     // The only known case where this can happen is when the inner window has
-    // been torn down. See bug 691178 comment 11.
-    MOZ_ASSERT(win->IsClosedOrClosing());
+    // been torn down. See bug 691178 comment 11. Should be a fatal MOZ_ASSERT,
+    // but we've found a way to hit it too often in mochitests. See bugs 777875
+    // 778424, 781078.
+    NS_ASSERTION(win->IsClosedOrClosing(), "win should be closed or closing");
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -4276,6 +4285,10 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTextureS3TC)
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionDepthTexture, nsIWebGLExtensionDepthTexture)
+    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionDepthTexture)
+  DOM_CLASSINFO_MAP_END
+
   DOM_CLASSINFO_MAP_BEGIN(PaintRequest, nsIDOMPaintRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMPaintRequest)
    DOM_CLASSINFO_MAP_END
@@ -4478,6 +4491,12 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothPropertyEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEvent)
   DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(BluetoothPairingEvent, nsIDOMBluetoothPairingEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothPairingEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEvent)
+  DOM_CLASSINFO_MAP_END
+
 #endif
 
   DOM_CLASSINFO_MAP_BEGIN(CameraManager, nsIDOMCameraManager)

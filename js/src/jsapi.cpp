@@ -55,6 +55,7 @@
 #include "builtin/Eval.h"
 #include "builtin/MapObject.h"
 #include "builtin/RegExp.h"
+#include "builtin/ParallelArray.h"
 #include "ds/LifoAlloc.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/TreeContext.h"
@@ -596,10 +597,12 @@ JS_ValueToUint64(JSContext *cx, jsval v, uint64_t *ip)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_ValueToInt32(JSContext *cx, jsval v, int32_t *ip)
+JS_ValueToInt32(JSContext *cx, jsval vArg, int32_t *ip)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
+
+    RootedValue v(cx, vArg);
     assertSameCompartment(cx, v);
 
     if (v.isInt32()) {
@@ -616,7 +619,7 @@ JS_ValueToInt32(JSContext *cx, jsval v, int32_t *ip)
 
     if (MOZ_DOUBLE_IS_NaN(d) || d <= -2147483649.0 || 2147483648.0 <= d) {
         js_ReportValueError(cx, JSMSG_CANT_CONVERT,
-                            JSDVG_SEARCH_STACK, v, NULL);
+                            JSDVG_SEARCH_STACK, v, NullPtr());
         return false;
     }
 
@@ -731,6 +734,7 @@ JSRuntime::JSRuntime()
 #ifdef JS_METHODJIT
     jaegerRuntime_(NULL),
 #endif
+    selfHostedGlobal_(NULL),
     nativeStackBase(0),
     nativeStackQuota(0),
     interpreterFrames(NULL),
@@ -799,6 +803,7 @@ JSRuntime::JSRuntime()
     gcDeterministicOnly(false),
     gcIncrementalLimit(0),
 #endif
+    gcValidate(true),
     gcCallback(NULL),
     gcSliceCallback(NULL),
     gcFinalizeCallback(NULL),
@@ -887,7 +892,8 @@ JSRuntime::init(uint32_t maxbytes)
 
     if (!(atomsCompartment = this->new_<JSCompartment>(this)) ||
         !atomsCompartment->init(NULL) ||
-        !compartments.append(atomsCompartment)) {
+        !compartments.append(atomsCompartment))
+    {
         Foreground::delete_(atomsCompartment);
         return false;
     }
@@ -1862,6 +1868,7 @@ static JSStdName standard_class_atoms[] = {
     {js_InitWeakMapClass,               EAGER_CLASS_ATOM(WeakMap), &js::WeakMapClass},
     {js_InitMapClass,                   EAGER_CLASS_ATOM(Map), &js::MapObject::class_},
     {js_InitSetClass,                   EAGER_CLASS_ATOM(Set), &js::SetObject::class_},
+    {js_InitParallelArrayClass,         EAGER_CLASS_ATOM(ParallelArray), &js::ParallelArrayObject::class_},
     {NULL,                              0, NULL}
 };
 
@@ -2299,7 +2306,7 @@ JS_GetGlobalForCompartmentOrNull(JSContext *cx, JSCompartment *c)
 JS_PUBLIC_API(JSObject *)
 JS_GetGlobalForScopeChain(JSContext *cx)
 {
-    AssertHeapIsIdle(cx);
+    AssertHeapIsIdleOrIterating(cx);
     CHECK_REQUEST(cx);
     return GetGlobalForScopeChain(cx);
 }
@@ -4879,22 +4886,19 @@ JS_CloneFunctionObject(JSContext *cx, JSObject *funobjArg, JSRawObject parentArg
     }
 
     /*
-     * If a function was compiled as compile-and-go or was compiled to be
-     * lexically nested inside some other script, we cannot clone it without
-     * breaking the compiler's assumptions.
+     * If a function was compiled to be lexically nested inside some other
+     * script, we cannot clone it without breaking the compiler's assumptions.
      */
     RootedFunction fun(cx, funobj->toFunction());
-    if (fun->isInterpreted() &&
-        (fun->script()->compileAndGo || fun->script()->enclosingStaticScope()))
+    if (fun->isInterpreted() && (fun->script()->enclosingStaticScope() ||
+        (fun->script()->compileAndGo && !parent->isGlobal())))
     {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
-                             JSMSG_BAD_CLONE_FUNOBJ_SCOPE);
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_CLONE_FUNOBJ_SCOPE);
         return NULL;
     }
 
     if (fun->isBoundFunction()) {
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
-                             JSMSG_CANT_CLONE_OBJECT);
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_CLONE_OBJECT);
         return NULL;
     }
 
@@ -4957,12 +4961,14 @@ JS_BindCallable(JSContext *cx, JSObject *targetArg, JSRawObject newThis)
 JSBool
 js_generic_native_method_dispatcher(JSContext *cx, unsigned argc, Value *vp)
 {
+    CallArgs args = CallArgsFromVp(argc, vp);
+
     JSFunctionSpec *fs = (JSFunctionSpec *)
         vp->toObject().toFunction()->getExtendedSlot(0).toPrivate();
     JS_ASSERT((fs->flags & JSFUN_GENERIC_NATIVE) != 0);
 
     if (argc < 1) {
-        js_ReportMissingArg(cx, *vp, 0);
+        js_ReportMissingArg(cx, args.calleev(), 0);
         return JS_FALSE;
     }
 
@@ -5014,7 +5020,7 @@ JS_DefineFunctions(JSContext *cx, JSObject *objArg, JSFunctionSpec *fs)
 
             flags &= ~JSFUN_GENERIC_NATIVE;
             fun = js_DefineFunction(cx, ctor, id, js_generic_native_method_dispatcher,
-                                    fs->nargs + 1, flags, JSFunction::ExtendedFinalizeKind);
+                                    fs->nargs + 1, flags, NULL, JSFunction::ExtendedFinalizeKind);
             if (!fun)
                 return JS_FALSE;
 
@@ -5025,7 +5031,7 @@ JS_DefineFunctions(JSContext *cx, JSObject *objArg, JSFunctionSpec *fs)
             fun->setExtendedSlot(0, PrivateValue(fs));
         }
 
-        fun = js_DefineFunction(cx, obj, id, fs->call.op, fs->nargs, flags);
+        fun = js_DefineFunction(cx, obj, id, fs->call.op, fs->nargs, flags, fs->selfHostedName);
         if (!fun)
             return JS_FALSE;
         if (fs->call.info)
@@ -5191,7 +5197,7 @@ JS::CompileOptions::CompileOptions(JSContext *cx)
       lineno(1),
       compileAndGo(cx->hasRunOption(JSOPTION_COMPILE_N_GO)),
       noScriptRval(cx->hasRunOption(JSOPTION_NO_SCRIPT_RVAL)),
-      allowIntrinsicsCalls(false),
+      selfHostingMode(false),
       sourcePolicy(SAVE_SOURCE)
 {
 }
@@ -5483,11 +5489,10 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
             return NULL;
     }
 
-    Bindings bindings;
+    AutoNameVector formals(cx);
     for (unsigned i = 0; i < nargs; i++) {
-        uint16_t dummy;
         RootedAtom argAtom(cx, Atomize(cx, argnames[i], strlen(argnames[i])));
-        if (!argAtom || !bindings.addArgument(cx, argAtom, &dummy))
+        if (!argAtom || !formals.append(argAtom->asPropertyName()))
             return NULL;
     }
 
@@ -5495,7 +5500,7 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
     if (!fun)
         return NULL;
 
-    if (!frontend::CompileFunctionBody(cx, fun, options, &bindings, chars, length))
+    if (!frontend::CompileFunctionBody(cx, fun, options, formals, chars, length))
         return NULL;
 
     if (obj && funAtom) {
@@ -5918,8 +5923,8 @@ JS_New(JSContext *cx, JSObject *ctorArg, unsigned argc, jsval *argv)
     if (!cx->stack.pushInvokeArgs(cx, argc, &args))
         return NULL;
 
-    args.calleev().setObject(*ctor);
-    args.thisv().setNull();
+    args.setCallee(ObjectValue(*ctor));
+    args.setThis(NullValue());
     PodCopy(args.array(), argv, argc);
 
     if (!InvokeConstructor(cx, args))
@@ -7103,17 +7108,25 @@ JS_SetGCZeal(JSContext *cx, uint8_t zeal, uint32_t frequency)
         frequency = p ? atoi(p + 1) : JS_DEFAULT_ZEAL_FREQ;
     }
 
+    JSRuntime *rt = cx->runtime;
+
     if (zeal == 0) {
-        if (cx->runtime->gcVerifyPreData)
-            VerifyBarriers(cx->runtime, PreBarrierVerifier);
-        if (cx->runtime->gcVerifyPostData)
-            VerifyBarriers(cx->runtime, PostBarrierVerifier);
+        if (rt->gcVerifyPreData)
+            VerifyBarriers(rt, PreBarrierVerifier);
+        if (rt->gcVerifyPostData)
+            VerifyBarriers(rt, PostBarrierVerifier);
     }
 
     bool schedule = zeal >= js::gc::ZealAllocValue;
-    cx->runtime->gcZeal_ = zeal;
-    cx->runtime->gcZealFrequency = frequency;
-    cx->runtime->gcNextScheduled = schedule ? frequency : 0;
+    rt->gcZeal_ = zeal;
+    rt->gcZealFrequency = frequency;
+    rt->gcNextScheduled = schedule ? frequency : 0;
+
+#ifdef JS_METHODJIT
+    /* In case JSCompartment::compileBarriers() changed... */
+    for (CompartmentsIter c(rt); !c.done(); c.next())
+        mjit::ClearAllFrames(c);
+#endif
 }
 
 JS_PUBLIC_API(void)

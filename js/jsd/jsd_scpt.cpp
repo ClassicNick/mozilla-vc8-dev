@@ -661,6 +661,8 @@ jsd_NewScriptHookProc(
     /* local in case jsdc->scriptHook gets cleared on another thread */
     JSD_LOCK();
     hook = jsdc->scriptHook;
+    if( hook )
+        jsdscript->flags = jsdscript->flags | JSD_SCRIPT_CALL_DESTROY_HOOK_BIT;
     hookData = jsdc->scriptHookData;
     JSD_UNLOCK();
 
@@ -699,7 +701,7 @@ jsd_DestroyScriptHookProc(
 
     /* local in case hook gets cleared on another thread */
     JSD_LOCK();
-    hook = jsdc->scriptHook;
+    hook = (jsdscript->flags & JSD_SCRIPT_CALL_DESTROY_HOOK_BIT) ? jsdc->scriptHook : NULL;
     hookData = jsdc->scriptHookData;
     JSD_UNLOCK();
 
