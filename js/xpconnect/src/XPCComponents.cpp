@@ -32,6 +32,7 @@
 #include "nsPrincipal.h"
 #include "mozilla/Attributes.h"
 #include "nsIScriptContext.h"
+#include "nsJSEnvironment.h"
 
 using namespace mozilla;
 using namespace js;
@@ -3002,10 +3003,10 @@ static JSClass SandboxClass = {
 };
 
 static JSFunctionSpec SandboxFunctions[] = {
-    {"dump",    SandboxDump,    1,0},
-    {"debug",   SandboxDebug,   1,0},
-    {"importFunction", SandboxImport, 1,0},
-    {nullptr,nullptr,0,0}
+    JS_FS("dump",    SandboxDump,    1,0),
+    JS_FS("debug",   SandboxDebug,   1,0),
+    JS_FS("importFunction", SandboxImport, 1,0),
+    JS_FS_END
 };
 
 /***************************************************************************/
@@ -4045,6 +4046,14 @@ nsXPCComponents_Utils::ForceGC()
     JSRuntime* rt = nsXPConnect::GetRuntimeInstance()->GetJSRuntime();
     js::PrepareForFullGC(rt);
     js::GCForReason(rt, js::gcreason::COMPONENT_UTILS);
+    return NS_OK;
+}
+
+/* void forceCC (); */
+NS_IMETHODIMP
+nsXPCComponents_Utils::ForceCC()
+{
+    nsJSContext::CycleCollectNow(nullptr, 0);
     return NS_OK;
 }
 

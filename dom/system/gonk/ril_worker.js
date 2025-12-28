@@ -62,6 +62,9 @@ let RILQUIRKS_REQUEST_USE_DIAL_EMERGENCY_CALL = false;
 let RILQUIRKS_MODEM_DEFAULTS_TO_EMERGENCY_MODE = false;
 let RILQUIRKS_SIM_APP_STATE_EXTRA_FIELDS = false;
 
+// Marker object.
+let PENDING_NETWORK_TYPE = {};
+
 /**
  * This object contains helpers buffering incoming data & deconstructing it
  * into parcels as well as buffering outgoing data & constructing parcels.
@@ -615,6 +618,8 @@ let RIL = {
    */
   aid: null,
 
+  networkSelectionMode: null,
+
   voiceRegistrationState: {},
   dataRegistrationState: {},
 
@@ -669,7 +674,7 @@ let RIL = {
   /**
    * Pending messages to be send in batch from requestNetworkInfo()
    */
-  _pendingNetworkInfo: {type: "networkinfochanged"},
+  _pendingNetworkInfo: {rilMessageType: "networkinfochanged"},
 
   /**
    * Mute or unmute the radio.
@@ -777,9 +782,9 @@ let RIL = {
    * Outgoing requests to the RIL. These can be triggered from the
    * main thread via messages that look like this:
    *
-   *   {type:  "methodName",
-   *    extra: "parameters",
-   *    go:    "here"}
+   *   {rilMessageType: "methodName",
+   *    extra:          "parameters",
+   *    go:             "here"}
    *
    * So if one of the following methods takes arguments, it takes only one,
    * an object, which then contains all of the parameters as attributes.
@@ -1051,7 +1056,7 @@ let RIL = {
    * Update the ICC information to RadioInterfaceLayer.
    */
   _handleICCInfoChange: function _handleICCInfoChange() {
-    this.iccInfo.type = "iccinfochange";
+    this.iccInfo.rilMessageType = "iccinfochange";
     this.sendDOMMessage(this.iccInfo);
   },
 
@@ -1283,7 +1288,7 @@ let RIL = {
                                 " number = " + this.iccInfo.fdn[i].number);
           }
         }
-        this.sendDOMMessage({type: "icccontacts",
+        this.sendDOMMessage({rilMessageType: "icccontacts",
                              contactType: "FDN",
                              contacts: this.iccInfo.fdn,
                              requestId: options.requestId});
@@ -1328,7 +1333,7 @@ let RIL = {
                                 " number = " + this.iccInfo.adn[i].number);
           }
         }
-        this.sendDOMMessage({type: "icccontacts",
+        this.sendDOMMessage({rilMessageType: "icccontacts",
                              contactType: "ADN",
                              contacts: this.iccInfo.adn,
                              requestId: options.requestId});
@@ -1366,7 +1371,7 @@ let RIL = {
         }
         if (this.iccInfo.mbdn != contact.number) {
           this.iccInfo.mbdn = contact.number;
-          contact.type = "iccmbdn";
+          contact.rilMessageType = "iccmbdn";
           this.sendDOMMessage(contact);
         }
       };
@@ -1504,10 +1509,7 @@ let RIL = {
    */
   requestNetworkInfo: function requestNetworkInfo() {
     if (this._processingNetworkInfo) {
-      if (DEBUG) {
-        debug("Already requesting network info: " +
-              JSON.stringify(this._pendingNetworkInfo));
-      }
+      if (DEBUG) debug("Network info requested, but we're already requesting network info.");
       return;
     }
 
@@ -1606,7 +1608,7 @@ let RIL = {
       if (!this._isEmergencyNumber(options.number)) {
         // Notify error in establishing the call with an invalid number.
         options.callIndex = -1;
-        options.type = "callError";
+        options.rilMessageType = "callError";
         options.error =
           RIL_CALL_FAILCAUSE_TO_GECKO_CALL_ERROR[CALL_FAIL_UNOBTAINABLE_NUMBER];
         this.sendDOMMessage(options);
@@ -1975,7 +1977,7 @@ let RIL = {
         return;
       }
       this.cardState = GECKO_CARDSTATE_ABSENT;
-      this.sendDOMMessage({type: "cardstatechange",
+      this.sendDOMMessage({rilMessageType: "cardstatechange",
                            cardState: this.cardState});
       return;
     }
@@ -1990,7 +1992,7 @@ let RIL = {
       }
       this.cardState = GECKO_CARDSTATE_ABSENT;
       this.operator = null;
-      this.sendDOMMessage({type: "cardstatechange",
+      this.sendDOMMessage({rilMessageType: "cardstatechange",
                            cardState: this.cardState});
       return;
     }
@@ -2030,7 +2032,7 @@ let RIL = {
     this.fetchICCRecords();
 
     this.cardState = newCardState;
-    this.sendDOMMessage({type: "cardstatechange",
+    this.sendDOMMessage({rilMessageType: "cardstatechange",
                          cardState: this.cardState});
   },
 
@@ -2172,19 +2174,21 @@ let RIL = {
       return;
     }
 
+    if (DEBUG) debug("Queuing " + type + " network info message: " + JSON.stringify(message));
     this._pendingNetworkInfo[type] = message;
   },
 
   _receivedNetworkInfo: function _receivedNetworkInfo(type) {
+    if (DEBUG) debug("Received " + type + " network info.");
     if (!this._processingNetworkInfo) {
       return;
     }
 
     let pending = this._pendingNetworkInfo;
 
-    // We still need to track states for events that aren't fired
+    // We still need to track states for events that aren't fired.
     if (!(type in pending)) {
-      pending[type] = true;
+      pending[type] = PENDING_NETWORK_TYPE;
     }
 
     // Pending network info is ready to be sent when no more messages
@@ -2192,58 +2196,77 @@ let RIL = {
     for (let i = 0; i < NETWORK_INFO_MESSAGE_TYPES.length; i++) {
       let type = NETWORK_INFO_MESSAGE_TYPES[i];
       if (!(type in pending)) {
+        if (DEBUG) debug("Still missing some more network info, not notifying main thread.");
         return;
       }
     }
 
     // Do a pass to clean up the processed messages that didn't create
     // a response message, so we don't have unused keys in the outbound
-    // networkinfochanged message
-    let keys = Object.keys(pending);
-    for (let i = 0; i < keys.length; i++) {
-      let key = keys[i];
-      if (pending[key] === true) {
+    // networkinfochanged message.
+    for (let key in pending) {
+      if (pending[key] == PENDING_NETWORK_TYPE) {
         delete pending[key];
       }
     }
 
+    if (DEBUG) debug("All pending network info has been received: " + JSON.stringify(pending));
+
     // Send the message on the next tick of the worker's loop, so we give the
     // last message a chance to call _sendNetworkInfoMessage first.
-    setTimeout(this._sendPendingNetworkInfo.bind(this), 0);
+    setTimeout(this._sendPendingNetworkInfo, 0);
   },
 
   _sendPendingNetworkInfo: function _sendPendingNetworkInfo() {
-    this.sendDOMMessage(this._pendingNetworkInfo);
+    RIL.sendDOMMessage(RIL._pendingNetworkInfo);
 
-    this._processingNetworkInfo = false;
+    RIL._processingNetworkInfo = false;
     for (let i = 0; i < NETWORK_INFO_MESSAGE_TYPES.length; i++) {
-      delete this._pendingNetworkInfo[NETWORK_INFO_MESSAGE_TYPES[i]];
+      delete RIL._pendingNetworkInfo[NETWORK_INFO_MESSAGE_TYPES[i]];
     }
+  },
+
+  /**
+   * Process the network registration flags.
+   *
+   * @return true if the state changed, false otherwise.
+   */
+  _processCREG: function _processCREG(curState, newState) {
+    let changed = false;
+
+    let regState = RIL.parseInt(newState[0], NETWORK_CREG_STATE_UNKNOWN);
+    if (curState.regState != regState) {
+      changed = true;
+      curState.regState = regState;
+
+      curState.state = NETWORK_CREG_TO_GECKO_MOBILE_CONNECTION_STATE[regState];
+      curState.connected = regState == NETWORK_CREG_STATE_REGISTERED_HOME ||
+                           regState == NETWORK_CREG_STATE_REGISTERED_ROAMING;
+      curState.roaming = regState == NETWORK_CREG_STATE_REGISTERED_ROAMING;
+      curState.emergencyCallsOnly =
+        (regState >= NETWORK_CREG_STATE_NOT_SEARCHING_EMERGENCY_CALLS) &&
+        (regState <= NETWORK_CREG_STATE_UNKNOWN_EMERGENCY_CALLS);
+      if (RILQUIRKS_MODEM_DEFAULTS_TO_EMERGENCY_MODE) {
+        curState.emergencyCallsOnly = !curState.connected;
+      }
+    }
+
+    let radioTech = RIL.parseInt(newState[3], NETWORK_CREG_TECH_UNKNOWN);
+    if (curState.radioTech != radioTech) {
+      changed = true;
+      curState.radioTech = radioTech;
+      curState.type = GECKO_RADIO_TECH[radioTech] || null;
+    }
+    return changed;
   },
 
   _processVoiceRegistrationState: function _processVoiceRegistrationState(state) {
     this.initRILQuirks();
 
     let rs = this.voiceRegistrationState;
-    let stateChanged = false;
-
-    let regState = RIL.parseInt(state[0], NETWORK_CREG_STATE_UNKNOWN);
-    if (rs.regState != regState) {
-      rs.regState = regState;
-      if (RILQUIRKS_MODEM_DEFAULTS_TO_EMERGENCY_MODE) {
-        rs.emergencyCallsOnly =
-          (regState != NETWORK_CREG_STATE_REGISTERED_HOME) &&
-          (regState != NETWORK_CREG_STATE_REGISTERED_ROAMING);
-      } else {
-        rs.emergencyCallsOnly =
-          (regState >= NETWORK_CREG_STATE_NOT_SEARCHING_EMERGENCY_CALLS) &&
-          (regState <= NETWORK_CREG_STATE_UNKNOWN_EMERGENCY_CALLS);
-      }
-      stateChanged = true;
-      if (regState == NETWORK_CREG_STATE_REGISTERED_HOME ||
-          regState == NETWORK_CREG_STATE_REGISTERED_ROAMING) {
-        RIL.getSMSCAddress();
-      }
+    let stateChanged = this._processCREG(rs, state);
+    if (stateChanged && rs.connected) {
+      RIL.getSMSCAddress();
     }
 
     let cell = this.cellLocation;
@@ -2264,14 +2287,8 @@ let RIL = {
     }
 
     if (cellChanged) {
-      cell.type = "celllocationchanged";
+      cell.rilMessageType = "celllocationchanged";
       this.sendDOMMessage(cell);
-    }
-
-    let radioTech = RIL.parseInt(state[3], NETWORK_CREG_TECH_UNKNOWN);
-    if (rs.radioTech != radioTech) {
-      rs.radioTech = radioTech;
-      stateChanged = true;
     }
 
     // TODO: This zombie code branch that will be raised from the dead once
@@ -2294,29 +2311,16 @@ let RIL = {
     }
 
     if (stateChanged) {
-      rs.type = "voiceregistrationstatechange";
+      rs.rilMessageType = "voiceregistrationstatechange";
       this._sendNetworkInfoMessage(NETWORK_INFO_VOICE_REGISTRATION_STATE, rs);
     }
   },
 
   _processDataRegistrationState: function _processDataRegistrationState(state) {
     let rs = this.dataRegistrationState;
-    let stateChanged = false;
-
-    let regState = RIL.parseInt(state[0], NETWORK_CREG_STATE_UNKNOWN);
-    if (rs.regState != regState) {
-      rs.regState = regState;
-      stateChanged = true;
-    }
-
-    let radioTech = RIL.parseInt(state[3], NETWORK_CREG_TECH_UNKNOWN);
-    if (rs.radioTech != radioTech) {
-      rs.radioTech = radioTech;
-      stateChanged = true;
-    }
-
+    let stateChanged = this._processCREG(rs, state);
     if (stateChanged) {
-      rs.type = "dataregistrationstatechange";
+      rs.rilMessageType = "dataregistrationstatechange";
       this._sendNetworkInfoMessage(NETWORK_INFO_DATA_REGISTRATION_STATE, rs);
     }
   },
@@ -2329,11 +2333,11 @@ let RIL = {
     }
 
     if (!this.operator) {
-      this.operator = {type: "operatorchange"};
+      this.operator = {rilMessageType: "operatorchange"};
     }
 
     let [longName, shortName, networkTuple] = operatorData;
-    let thisTuple = String(this.operator.mcc) + this.operator.mnc;
+    let thisTuple = "" + this.operator.mcc + this.operator.mnc;
 
     if (this.operator.longName !== longName ||
         this.operator.shortName !== shortName ||
@@ -2424,13 +2428,13 @@ let RIL = {
   },
 
   _handleChangedCallState: function _handleChangedCallState(changedCall) {
-    let message = {type: "callStateChange",
+    let message = {rilMessageType: "callStateChange",
                    call: changedCall};
     this.sendDOMMessage(message);
   },
 
   _handleDisconnectedCall: function _handleDisconnectedCall(disconnectedCall) {
-    let message = {type: "callDisconnected",
+    let message = {rilMessageType: "callDisconnected",
                    call: disconnectedCall};
     this.sendDOMMessage(message);
   },
@@ -2464,7 +2468,7 @@ let RIL = {
       if (!updatedDataCall) {
         delete this.currentDataCalls[currentDataCall.callIndex];
         currentDataCall.state = GECKO_NETWORK_STATE_DISCONNECTED;
-        currentDataCall.type = "datacallstatechange";
+        currentDataCall.rilMessageType = "datacallstatechange";
         this.sendDOMMessage(currentDataCall);
         continue;
       }
@@ -2474,7 +2478,7 @@ let RIL = {
         currentDataCall.status = updatedDataCall.status;
         currentDataCall.active = updatedDataCall.active;
         currentDataCall.state = updatedDataCall.state;
-        currentDataCall.type = "datacallstatechange";
+        currentDataCall.rilMessageType = "datacallstatechange";
         this.sendDOMMessage(currentDataCall);
       }
     }
@@ -2493,7 +2497,7 @@ let RIL = {
       } else if (DEBUG) {
         debug("Unexpected new data call: " + JSON.stringify(newDataCall));
       }
-      newDataCall.type = "datacallstatechange";
+      newDataCall.rilMessageType = "datacallstatechange";
       this.sendDOMMessage(newDataCall);
     }
   },
@@ -2636,7 +2640,7 @@ let RIL = {
     }
 
     if (message) {
-      message.type = "sms-received";
+      message.rilMessageType = "sms-received";
       this.sendDOMMessage(message);
     }
 
@@ -2699,7 +2703,7 @@ let RIL = {
     } else {
       // Last segment delivered with success. Report it.
       this.sendDOMMessage({
-        type: "sms-delivered",
+        rilMessageType: "sms-delivered",
         envelopeId: options.envelopeId,
       });
     }
@@ -2801,7 +2805,7 @@ let RIL = {
    */
   handleDOMMessage: function handleMessage(message) {
     if (DEBUG) debug("Received DOM message " + JSON.stringify(message));
-    let method = this[message.type];
+    let method = this[message.rilMessageType];
     if (typeof method != "function") {
       if (DEBUG) {
         debug("Don't know what to do with message " + JSON.stringify(message));
@@ -2820,7 +2824,7 @@ let RIL = {
     for each (let call in this.currentCalls) {
       calls.push(call);
     }
-    this.sendDOMMessage({type: "enumerateCalls", calls: calls});
+    this.sendDOMMessage({rilMessageType: "enumerateCalls", calls: calls});
   },
 
   /**
@@ -2831,7 +2835,7 @@ let RIL = {
     for each (let datacall in this.currentDataCalls) {
       datacall_list.push(datacall);
     }
-    this.sendDOMMessage({type: "datacalllist",
+    this.sendDOMMessage({rilMessageType: "datacalllist",
                          datacalls: datacall_list});
   },
 
@@ -2900,42 +2904,42 @@ RIL[REQUEST_GET_SIM_STATUS] = function REQUEST_GET_SIM_STATUS(length, options) {
   this._processICCStatus(iccStatus);
 };
 RIL[REQUEST_ENTER_SIM_PIN] = function REQUEST_ENTER_SIM_PIN(length, options) {
-  this.sendDOMMessage({type: "iccunlockcardlock",
+  this.sendDOMMessage({rilMessageType: "iccunlockcardlock",
                        lockType: "pin",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
                        requestId: options.requestId});
 };
 RIL[REQUEST_ENTER_SIM_PUK] = function REQUEST_ENTER_SIM_PUK(length, options) {
-  this.sendDOMMessage({type: "iccunlockcardlock",
+  this.sendDOMMessage({rilMessageType: "iccunlockcardlock",
                        lockType: "puk",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
                        requestId: options.requestId});
 };
 RIL[REQUEST_ENTER_SIM_PIN2] = function REQUEST_ENTER_SIM_PIN2(length, options) {
-  this.sendDOMMessage({type: "iccunlockcardlock",
+  this.sendDOMMessage({rilMessageType: "iccunlockcardlock",
                        lockType: "pin2",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
                        requestId: options.requestId});
 };
 RIL[REQUEST_ENTER_SIM_PUK2] = function REQUEST_ENTER_SIM_PUK(length, options) {
-  this.sendDOMMessage({type: "iccunlockcardlock",
+  this.sendDOMMessage({rilMessageType: "iccunlockcardlock",
                        lockType: "puk2",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
                        requestId: options.requestId});
 };
 RIL[REQUEST_CHANGE_SIM_PIN] = function REQUEST_CHANGE_SIM_PIN(length, options) {
-  this.sendDOMMessage({type: "iccsetcardlock",
+  this.sendDOMMessage({rilMessageType: "iccsetcardlock",
                        lockType: "pin",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
                        requestId: options.requestId});
 };
 RIL[REQUEST_CHANGE_SIM_PIN2] = function REQUEST_CHANGE_SIM_PIN2(length, options) {
-  this.sendDOMMessage({type: "iccsetcardlock",
+  this.sendDOMMessage({rilMessageType: "iccsetcardlock",
                        lockType: "pin2",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
@@ -3081,7 +3085,7 @@ RIL[REQUEST_LAST_CALL_FAIL_CAUSE] = function REQUEST_LAST_CALL_FAIL_CAUSE(length
     case CALL_FAIL_IMSI_UNKNOWN_IN_VLR:
     case CALL_FAIL_IMEI_NOT_ACCEPTED:
     case CALL_FAIL_ERROR_UNSPECIFIED:
-      options.type = "callError";
+      options.rilMessageType = "callError";
       options.error = RIL_CALL_FAILCAUSE_TO_GECKO_CALL_ERROR[failCause];
       this.sendDOMMessage(options);
       break;
@@ -3147,7 +3151,7 @@ RIL[REQUEST_SIGNAL_STRENGTH] = function REQUEST_SIGNAL_STRENGTH(length, options)
   }
 
   if (DEBUG) debug("Signal strength " + JSON.stringify(obj));
-  obj.type = "signalstrengthchange";
+  obj.rilMessageType = "signalstrengthchange";
   this.sendDOMMessage(obj);
 };
 RIL[REQUEST_VOICE_REGISTRATION_STATE] = function REQUEST_VOICE_REGISTRATION_STATE(length, options) {
@@ -3180,11 +3184,8 @@ RIL[REQUEST_OPERATOR] = function REQUEST_OPERATOR(length, options) {
   }
 
   let operatorData = Buf.readStringList();
-  if (DEBUG) debug("operator: " + operatorData);
-
+  if (DEBUG) debug("Operator: " + operatorData);
   this._processOperator(operatorData);
-
-
 };
 RIL[REQUEST_RADIO_POWER] = null;
 RIL[REQUEST_DTMF] = null;
@@ -3202,7 +3203,7 @@ RIL[REQUEST_SEND_SMS] = function REQUEST_SEND_SMS(length, options) {
         // Fallback to default error handling if it meets max retry count.
       default:
         this.sendDOMMessage({
-          type: "sms-send-failed",
+          rilMessageType: "sms-send-failed",
           envelopeId: options.envelopeId,
           error: options.rilRequestError,
         });
@@ -3229,7 +3230,7 @@ RIL[REQUEST_SEND_SMS] = function REQUEST_SEND_SMS(length, options) {
   } else {
     // Last segment sent with success. Report it.
     this.sendDOMMessage({
-      type: "sms-sent",
+      rilMessageType: "sms-sent",
       envelopeId: options.envelopeId,
     });
   }
@@ -3253,7 +3254,7 @@ RIL.readSetupDataCall_v5 = function readSetupDataCall_v5(options) {
 
 RIL[REQUEST_SETUP_DATA_CALL] = function REQUEST_SETUP_DATA_CALL(length, options) {
   if (options.rilRequestError) {
-    options.type = "datacallerror";
+    options.rilMessageType = "datacallerror";
     this.sendDOMMessage(options);
     return;
   }
@@ -3263,7 +3264,7 @@ RIL[REQUEST_SETUP_DATA_CALL] = function REQUEST_SETUP_DATA_CALL(length, options)
     // we retain the APN and other info about how the data call was set up.
     this.readSetupDataCall_v5(options);
     this.currentDataCalls[options.cid] = options;
-    options.type = "datacallstatechange";
+    options.rilMessageType = "datacallstatechange";
     this.sendDOMMessage(options);
     // Let's get the list of data calls to ensure we know whether it's active
     // or not.
@@ -3295,7 +3296,7 @@ RIL[REQUEST_SEND_USSD] = function REQUEST_SEND_USSD(length, options) {
   if (DEBUG) {
     debug("REQUEST_SEND_USSD " + JSON.stringify(options)); 
   }
-  options.type = "sendussd";
+  options.rilMessageType = "sendussd";
   options.success = options.rilRequestError == 0 ? true : false;
   this.sendDOMMessage(options);
 };
@@ -3303,7 +3304,7 @@ RIL[REQUEST_CANCEL_USSD] = function REQUEST_CANCEL_USSD(length, options) {
   if (DEBUG) {
     debug("REQUEST_CANCEL_USSD" + JSON.stringify(options));
   }
-  options.type = "cancelussd";
+  options.rilMessageType = "cancelussd";
   options.success = options.rilRequestError == 0 ? true : false;
   this.sendDOMMessage(options);
 };
@@ -3337,7 +3338,7 @@ RIL[REQUEST_DEACTIVATE_DATA_CALL] = function REQUEST_DEACTIVATE_DATA_CALL(length
   let datacall = this.currentDataCalls[options.cid];
   delete this.currentDataCalls[options.cid];
   datacall.state = GECKO_NETWORK_STATE_DISCONNECTED;
-  datacall.type = "datacallstatechange";
+  datacall.rilMessageType = "datacallstatechange";
   this.sendDOMMessage(datacall);
 };
 RIL[REQUEST_QUERY_FACILITY_LOCK] = function REQUEST_QUERY_FACILITY_LOCK(length, options) {
@@ -3346,13 +3347,13 @@ RIL[REQUEST_QUERY_FACILITY_LOCK] = function REQUEST_QUERY_FACILITY_LOCK(length, 
   }
 
   let response = Buf.readUint32List()[0];
-  this.sendDOMMessage({type: "iccgetcardlock",
+  this.sendDOMMessage({rilMessageType: "iccgetcardlock",
                        lockType: "pin",
                        enabled: response == 0 ? false : true,
                        requestId: options.requestId});
 };
 RIL[REQUEST_SET_FACILITY_LOCK] = function REQUEST_SET_FACILITY_LOCK(length, options) {
-  this.sendDOMMessage({type: "iccsetcardlock",
+  this.sendDOMMessage({rilMessageType: "iccsetcardlock",
                        lockType: "pin",
                        result: options.rilRequestError == 0 ? true : false,
                        retryCount: length ? Buf.readUint32List()[0] : -1,
@@ -3383,9 +3384,9 @@ RIL[REQUEST_QUERY_NETWORK_SELECTION_MODE] = function REQUEST_QUERY_NETWORK_SELEC
       break;
   }
 
-  if (this.mode != selectionMode) {
-    this.mode = options.mode = selectionMode;
-    options.type = "networkselectionmodechange";
+  if (this.networkSelectionMode != selectionMode) {
+    this.networkSelectionMode = options.mode = selectionMode;
+    options.rilMessageType = "networkselectionmodechange";
     this._sendNetworkInfoMessage(NETWORK_INFO_NETWORK_SELECTION_MODE, options);
   }
 };
@@ -3603,7 +3604,7 @@ RIL[UNSOLICITED_RESPONSE_RADIO_STATE_CHANGED] = function UNSOLICITED_RESPONSE_RA
 
   this.radioState = newState;
   this.sendDOMMessage({
-    type: "radiostatechange",
+    rilMessageType: "radiostatechange",
     radioState: newState
   });
 
@@ -3644,7 +3645,7 @@ RIL[UNSOLICITED_ON_USSD] = function UNSOLICITED_ON_USSD() {
   if (!message || message == "") {
     return;
   }
-  this.sendDOMMessage({type: "ussdreceived",
+  this.sendDOMMessage({rilMessageType: "ussdreceived",
                        message: message});
 };
 RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = function UNSOLICITED_NITZ_TIME_RECEIVED() {
@@ -3679,7 +3680,7 @@ RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = function UNSOLICITED_NITZ_TIME_RECEIVED() 
     return;
   }
 
-  this.sendDOMMessage({type: "nitzTime",
+  this.sendDOMMessage({rilMessageType: "nitzTime",
                        networkTimeInSeconds: timeInSeconds,
                        networkTimeZoneInMinutes: tz * 15,
                        dstFlag: dst,
@@ -4072,10 +4073,57 @@ let GsmPDUHelper = {
   },
 
   /**
+   * Read GSM 8-bit unpacked octets,
+   * which are SMS default 7-bit alphabets with bit 8 set to 0.
+   *
+   * @param numOctets
+   *        Number of octets to be read.
+   */
+  read8BitUnpackedToString: function read8BitUnpackedToString(numOctets) {
+    let ret = "";
+    let escapeFound = false;
+    let i;
+    const langTable = PDU_NL_LOCKING_SHIFT_TABLES[PDU_NL_IDENTIFIER_DEFAULT];
+    const langShiftTable = PDU_NL_SINGLE_SHIFT_TABLES[PDU_NL_IDENTIFIER_DEFAULT];
+
+    for(i = 0; i < numOctets; i++) {
+      let octet = this.readHexOctet();
+      if (octet == 0xff) {
+        i++;
+        break;
+      }
+
+      if (escapeFound) {
+        escapeFound = false;
+        if (octet == PDU_NL_EXTENDED_ESCAPE) {
+          // According to 3GPP TS 23.038, section 6.2.1.1, NOTE 1, "On
+          // receipt of this code, a receiving entity shall display a space
+          // until another extensiion table is defined."
+          ret += " ";
+        } else if (octet == PDU_NL_RESERVED_CONTROL) {
+          // According to 3GPP TS 23.038 B.2, "This code represents a control
+          // character and therefore must not be used for language specific
+          // characters."
+          ret += " ";
+        } else {
+          ret += langShiftTable[octet];
+        }
+      } else if (octet == PDU_NL_EXTENDED_ESCAPE) {
+        escapeFound = true;
+      } else {
+        ret += langTable[octet];
+      }
+    }
+
+    Buf.seekIncoming((numOctets - i) * PDU_HEX_OCTET_SIZE);
+    return ret;
+  },
+
+  /**
    * Read user data and decode as a UCS2 string.
    *
    * @param numOctets
-   *        num of octets to read as UCS2 string.
+   *        Number of octets to be read as UCS2 string.
    *
    * @return a string.
    */
@@ -4104,6 +4152,103 @@ let GsmPDUHelper = {
       this.writeHexOctet((code >> 8) & 0xFF);
       this.writeHexOctet(code & 0xFF);
     }
+  },
+
+  /**
+   * Read UCS2 String on UICC.
+   *
+   * @see TS 101.221, Annex A.
+   * @param scheme
+   *        Coding scheme for UCS2 on UICC. One of 0x80, 0x81 or 0x82.
+   * @param numOctets
+   *        Number of octets to be read as UCS2 string.
+   */
+  readICCUCS2String: function readICCUCS2String(scheme, numOctets) {
+    let str = "";
+    switch (scheme) {
+      /**
+       * +------+---------+---------+---------+---------+------+------+
+       * | 0x80 | Ch1_msb | Ch1_lsb | Ch2_msb | Ch2_lsb | 0xff | 0xff |
+       * +------+---------+---------+---------+---------+------+------+
+       */
+      case 0x80:
+        let isOdd = numOctets % 2;
+        let i;
+        for (i = 0; i < numOctets - isOdd; i += 2) {
+          let code = (this.readHexOctet() << 8) | this.readHexOctet();
+          if (code == 0xffff) {
+            i += 2;
+            break;
+          }
+          str += String.fromCharCode(code);
+        }
+
+        // Skip trailing 0xff
+        Buf.seekIncoming((numOctets - i) * PDU_HEX_OCTET_SIZE);
+        break;
+      case 0x81: // Fall through
+      case 0x82:
+        /**
+         * +------+-----+--------+-----+-----+-----+--------+------+
+         * | 0x81 | len | offset | Ch1 | Ch2 | ... | Ch_len | 0xff |
+         * +------+-----+--------+-----+-----+-----+--------+------+
+         *
+         * len : The length of characters.
+         * offset : 0hhh hhhh h000 0000
+         * Ch_n: bit 8 = 0
+         *       GSM default alphabets
+         *       bit 8 = 1
+         *       UCS2 character whose char code is (Ch_n & 0x7f) + offset
+         *
+         * +------+-----+------------+------------+-----+-----+-----+--------+
+         * | 0x82 | len | offset_msb | offset_lsb | Ch1 | Ch2 | ... | Ch_len |
+         * +------+-----+------------+------------+-----+-----+-----+--------+
+         *
+         * len : The length of characters.
+         * offset_msb, offset_lsn: offset
+         * Ch_n: bit 8 = 0
+         *       GSM default alphabets
+         *       bit 8 = 1
+         *       UCS2 character whose char code is (Ch_n & 0x7f) + offset
+         */
+        let len = this.readHexOctet();
+        let offset, headerLen;
+        if (scheme == 0x81) {
+          offset = this.readHexOctet() << 7;
+          headerLen = 2;
+        } else {
+          offset = (this.readHexOctet() << 8) | this.readHexOctet();
+          headerLen = 3;
+        }
+
+        for (let i = 0; i < len; i++) {
+          let ch = this.readHexOctet();
+          if (ch & 0x80) {
+            // UCS2
+            str += String.fromCharCode((ch & 0x7f) + offset);
+          } else {
+            // GSM 8bit
+            let count = 0, gotUCS2 = 0;
+            while ((i + count + 1 < len)) {
+              count++;
+              if (this.readHexOctet() & 0x80) {
+                gotUCS2 = 1;
+                break;
+              };
+            }
+            // Unread.
+            // +1 for the GSM alphabet indexed at i,
+            Buf.seekIncoming(-1 * (count + 1) * PDU_HEX_OCTET_SIZE);
+            str += this.read8BitUnpackedToString(count + 1 - gotUCS2);
+            i += count - gotUCS2;
+          }
+        }
+
+        // Skipping trailing 0xff
+        Buf.seekIncoming((numOctets - len - headerLen) * PDU_HEX_OCTET_SIZE);
+        break;
+    }
+    return str;
   },
 
   /**
@@ -4354,40 +4499,28 @@ let GsmPDUHelper = {
    *
    * @see TS 131.102
    *
-   * @param len
-   *        The length of Alpha Identifier in bytes.
+   * @param numOctets
+   *        Number of octets to be read.
    *
-   * it uses either
+   * It uses either
    *  1. SMS default 7-bit alphabet with bit 8 set to 0.
    *  2. UCS2 string.
    *
    * Unused bytes should be set to 0xff.
    */
-  readAlphaIdentifier: function readAlphaIdentifier(len) {
-    let temp, isUCS2 = false;
-    let alphaId = "";
+  readAlphaIdentifier: function readAlphaIdentifier(numOctets) {
+    let temp;
 
-    // Read the 1st byte to determine the encoding.
-    if ((temp = GsmPDUHelper.readHexOctet()) == 0x80) {
-      isUCS2 = true;
-    } else if (temp != 0xff) {
-      alphaId += String.fromCharCode(temp);
+    // Read the 1st octet to determine the encoding.
+    if ((temp = GsmPDUHelper.readHexOctet()) == 0x80 ||
+         temp == 0x81 ||
+         temp == 0x82) {
+      numOctets--;
+      return this.readICCUCS2String(temp, numOctets);
+    } else {
+      Buf.seekIncoming(-1 * PDU_HEX_OCTET_SIZE);
+      return this.read8BitUnpackedToString(numOctets);
     }
-    len--;
-
-    while (len) {
-      if ((temp = GsmPDUHelper.readHexOctet()) != 0xff) {
-        if (isUCS2) {
-          let temp2 = GsmPDUHelper.readHexOctet();
-          len--;
-          alphaId += String.fromCharCode((temp << 8) | temp2);
-        } else {
-          alphaId += String.fromCharCode(temp);
-        }
-      }
-      len--;
-    }
-    return alphaId;
   },
 
   /**

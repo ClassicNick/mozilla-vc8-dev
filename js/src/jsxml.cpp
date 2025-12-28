@@ -197,9 +197,9 @@ JS_FRIEND_DATA(Class) js::NamespaceClass = {
     (JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT | JSPROP_SHARED)
 
 static JSPropertySpec namespace_props[] = {
-    {js_prefix_str, 0, NAMESPACE_ATTRS, NamePrefix_getter, 0},
-    {js_uri_str,    0, NAMESPACE_ATTRS, NameURI_getter,    0},
-    {0,0,0,0,0}
+    {js_prefix_str, 0, NAMESPACE_ATTRS, JSOP_WRAPPER(NamePrefix_getter), JSOP_NULLWRAPPER},
+    {js_uri_str,    0, NAMESPACE_ATTRS, JSOP_WRAPPER(NameURI_getter), JSOP_NULLWRAPPER},
+    {0,0,0,JSOP_NULLWRAPPER, JSOP_NULLWRAPPER}
 };
 
 static JSBool
@@ -341,9 +341,9 @@ JS_FRIEND_DATA(Class) js::AnyNameClass = {
 #define QNAME_ATTRS (JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT | JSPROP_SHARED)
 
 static JSPropertySpec qname_props[] = {
-    {js_uri_str,       0, QNAME_ATTRS, QNameNameURI_getter,   0},
-    {js_localName_str, 0, QNAME_ATTRS, QNameLocalName_getter, 0},
-    {0,0,0,0,0}
+    {js_uri_str,       0, QNAME_ATTRS, JSOP_WRAPPER(QNameNameURI_getter),   JSOP_NULLWRAPPER},
+    {js_localName_str, 0, QNAME_ATTRS, JSOP_WRAPPER(QNameLocalName_getter), JSOP_NULLWRAPPER},
+    {0,0,0,JSOP_NULLWRAPPER,JSOP_NULLWRAPPER}
 };
 
 static JSString *
@@ -1114,12 +1114,12 @@ static const char js_prettyIndent_str[]     = "prettyIndent";
 #define XSF_PRETTY_PRINTING                JS_BIT(3)
 
 static JSPropertySpec xml_static_props[] = {
-    {js_ignoreComments_str, 0, JSPROP_PERMANENT, NULL, NULL},
-    {js_ignoreProcessingInstructions_str, 0, JSPROP_PERMANENT, NULL, NULL},
-    {js_ignoreWhitespace_str, 0, JSPROP_PERMANENT, NULL, NULL},
-    {js_prettyPrinting_str, 0, JSPROP_PERMANENT, NULL, NULL},
-    {js_prettyIndent_str, 0, JSPROP_PERMANENT, NULL, NULL},
-    {0,0,0,0,0}
+    {js_ignoreComments_str, 0, JSPROP_PERMANENT, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER},
+    {js_ignoreProcessingInstructions_str, 0, JSPROP_PERMANENT, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER},
+    {js_ignoreWhitespace_str, 0, JSPROP_PERMANENT, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER},
+    {js_prettyPrinting_str, 0, JSPROP_PERMANENT, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER},
+    {js_prettyIndent_str, 0, JSPROP_PERMANENT, JSOP_NULLWRAPPER, JSOP_NULLWRAPPER},
+    {0,0,0,JSOP_NULLWRAPPER, JSOP_NULLWRAPPER}
 };
 
 /* Macros for special-casing xml:, xmlns= and xmlns:foo= in ParseNodeToQName. */
@@ -1232,7 +1232,7 @@ ParseNodeToQName(Parser *parser, ParseNode *pn,
             return NULL;
         }
 
-        localName = js_AtomizeChars(parser->context, colon + 1, length - (offset + 1));
+        localName = AtomizeChars(parser->context, colon + 1, length - (offset + 1));
         if (!localName)
             return NULL;
     } else {
@@ -2887,7 +2887,7 @@ ToXMLName(JSContext *cx, jsval v, jsid *funidp)
             return NULL;
     }
 
-    atomizedName = js_AtomizeString(cx, name);
+    atomizedName = AtomizeString(cx, name);
     if (!atomizedName)
         return NULL;
 
@@ -5548,7 +5548,7 @@ ValueToIdForXML(JSContext *cx, jsval v, jsid *idp)
         else if (!ValueToId(cx, v, idp))
             return JS_FALSE;
     } else if (JSVAL_IS_STRING(v)) {
-        JSAtom *atom = js_AtomizeString(cx, JSVAL_TO_STRING(v));
+        JSAtom *atom = AtomizeString(cx, JSVAL_TO_STRING(v));
         if (!atom)
             return JS_FALSE;
         *idp = AtomToId(atom);
@@ -8000,7 +8000,7 @@ js_NewXMLSpecialObject(JSContext *cx, JSXMLClass xml_class, JSString *name,
         return NULL;
     xml = (JSXML *) obj->getPrivate();
     if (name) {
-        JSAtom *atomName = js_AtomizeString(cx, name);
+        JSAtom *atomName = AtomizeString(cx, name);
         if (!atomName)
             return NULL;
         qn = NewXMLQName(cx, cx->runtime->emptyString, NULL, atomName);

@@ -786,11 +786,16 @@ gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
         NativeFont nativeFont;
         nativeFont.mType = NATIVE_FONT_DWRITE_FONT_FACE;
         nativeFont.mFont = font->GetFontFace();
-        RefPtr<ScaledFont> scaledFont =
-            mozilla::gfx::Factory::CreateScaledFontForNativeFont(nativeFont, font->GetAdjustedSize());
 
-		return scaledFont;
-	}
+		if (aTarget->GetType() == BACKEND_CAIRO) {
+          return Factory::CreateScaledFontWithCairo(nativeFont,
+                                                    font->GetAdjustedSize(),
+                                                    font->GetCairoScaledFont());
+        }
+
+        return Factory::CreateScaledFontForNativeFont(nativeFont,
+                                                      font->GetAdjustedSize());
+    }
 #endif
 
     NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_GDI,

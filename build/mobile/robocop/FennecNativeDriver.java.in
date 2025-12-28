@@ -88,14 +88,14 @@ public class FennecNativeDriver implements Driver {
         // Set up reflexive access of java classes and methods.
         try {
             mClassLoader = activity.getClassLoader();
-            mGel = mClassLoader.loadClass("org.mozilla.gecko.GeckoEventListener");
+            mGel = mClassLoader.loadClass("org.mozilla.gecko.util.GeckoEventListener");
             mGe = mClassLoader.loadClass("org.mozilla.gecko.GeckoEvent");
             mGas = mClassLoader.loadClass("org.mozilla.gecko.GeckoAppShell");
             Class [] parameters = new Class[2];
             parameters[0] = String.class;
             parameters[1] = mGel;
-            mRegisterGEL = mGas.getMethod("registerGeckoEventListener", parameters);
-            mUnregisterGEL = mGas.getMethod("unregisterGeckoEventListener", parameters);
+            mRegisterGEL = mGas.getMethod("registerEventListener", parameters);
+            mUnregisterGEL = mGas.getMethod("unregisterEventListener", parameters);
             parameters = new Class[1];
             parameters[0] = mGe;
             mSendGE = mGas.getMethod("sendEventToGecko", parameters);
