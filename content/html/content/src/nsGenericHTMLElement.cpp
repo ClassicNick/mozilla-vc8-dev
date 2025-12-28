@@ -58,7 +58,6 @@
 #include "nsGkAtoms.h"
 #include "nsEventStateManager.h"
 #include "nsIDOMEvent.h"
-#include "nsIDOMNSEvent.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsITextControlFrame.h"
 #include "nsIForm.h"
@@ -488,16 +487,15 @@ nsGenericHTMLElement::GetOffsetRect(nsRect& aRect, nsIContent** aOffsetParent)
     parent = frame;
   }
   else {
-    const bool isPositioned = frame->GetStyleDisplay()->IsPositioned();
-    const bool isAbsolutelyPositioned =
-      frame->GetStyleDisplay()->IsAbsolutelyPositioned();
+    const bool isPositioned = frame->IsPositioned();
+    const bool isAbsolutelyPositioned = frame->IsAbsolutelyPositioned();
     origin += frame->GetPositionIgnoringScrolling();
 
     for ( ; parent ; parent = parent->GetParent()) {
       content = parent->GetContent();
 
       // Stop at the first ancestor that is positioned.
-      if (parent->GetStyleDisplay()->IsPositioned()) {
+      if (parent->IsPositioned()) {
         *aOffsetParent = content;
         NS_IF_ADDREF(*aOffsetParent);
         break;

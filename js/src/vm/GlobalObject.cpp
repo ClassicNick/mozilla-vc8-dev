@@ -243,7 +243,8 @@ GlobalObject::initFunctionAndObjectClasses(JSContext *cx)
             cx->free_(source);
             return NULL;
         }
-        JS_ALWAYS_TRUE(ss->setSource(cx, source, sourceLen, false, NULL, true));
+        ScriptSourceHolder ssh(cx->runtime, ss);
+        ss->setSource(source, sourceLen);
 
         CompileOptions options(cx);
         options.setNoScriptRval(true)
@@ -256,7 +257,6 @@ GlobalObject::initFunctionAndObjectClasses(JSContext *cx)
                                                       ss,
                                                       0,
                                                       ss->length()));
-        ss->attachToRuntime(cx->runtime);
         if (!script || !JSScript::fullyInitTrivial(cx, script))
             return NULL;
 

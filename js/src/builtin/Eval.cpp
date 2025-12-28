@@ -131,7 +131,7 @@ class EvalScriptGuard
         return !!script_;
     }
 
-    JSScript *script() const {
+    HandleScript script() {
         JS_ASSERT(script_);
         return script_;
     }
@@ -170,7 +170,7 @@ EvalKernel(JSContext *cx, const CallArgs &args, EvalType evalType, StackFrame *c
         args.rval().set(args[0]);
         return true;
     }
-    JSString *str = args[0].toString();
+    RootedString str(cx, args[0].toString());
 
     // ES5 15.1.2.1 steps 2-8.
 

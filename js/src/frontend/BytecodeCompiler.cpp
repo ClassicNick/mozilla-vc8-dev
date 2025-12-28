@@ -21,20 +21,6 @@
 using namespace js;
 using namespace js::frontend;
 
-class AutoAttachToRuntime {
-    JSRuntime *rt;
-    ScriptSource *ss;
-  public:
-    AutoAttachToRuntime(JSRuntime *rt, ScriptSource *ss)
-      : rt(rt), ss(ss) {}
-    ~AutoAttachToRuntime() {
-        // This makes the source visible to the GC. If compilation fails, and no
-        // script refers to it, it will be collected.
-        if (ss)
-            ss->attachToRuntime(rt);
-    }
-};
-
 static bool
 CheckLength(JSContext *cx, size_t length)
 {
@@ -82,10 +68,10 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
     ScriptSource *ss = cx->new_<ScriptSource>();
     if (!ss)
         return NULL;
-    AutoAttachToRuntime attacher(cx->runtime, ss);
+    ScriptSourceHolder ssh(cx->runtime, ss);
     SourceCompressionToken sct(cx);
     if (!cx->hasRunOption(JSOPTION_ONLY_CNG_SOURCE) || options.compileAndGo) {
-        if (!ss->setSource(cx, chars, length, false, &sct))
+        if (!ss->setSourceCopy(cx, chars, length, false, &sct))
             return NULL;
     }
 
@@ -248,9 +234,9 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
     ScriptSource *ss = cx->new_<ScriptSource>();
     if (!ss)
         return NULL;
-    AutoAttachToRuntime attacher(cx->runtime, ss);
+    ScriptSourceHolder ssh(cx->runtime, ss);
     SourceCompressionToken sct(cx);
-    if (!ss->setSource(cx, chars, length, true, &sct))
+    if (!ss->setSourceCopy(cx, chars, length, true, &sct))
         return NULL;
 
     options.setCompileAndGo(false);

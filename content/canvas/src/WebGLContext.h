@@ -424,11 +424,7 @@ protected:
 
 struct WebGLContextOptions {
     // these are defaults
-    WebGLContextOptions()
-        : alpha(true), depth(true), stencil(false),
-          premultipliedAlpha(true), antialias(true),
-          preserveDrawingBuffer(false)
-    { }
+    WebGLContextOptions();
 
     bool operator==(const WebGLContextOptions& other) const {
         return
@@ -1366,6 +1362,11 @@ protected:
     bool ShouldGenerateWarnings() const {
         return mAlreadyGeneratedWarnings < 32;
     }
+
+    uint64_t mLastUseIndex;
+
+    void LoseOldestWebGLContextIfLimitExceeded();
+    void UpdateLastUseIndex();
 
 #ifdef XP_MACOSX
     // see bug 713305. This RAII helper guarantees that we're on the discrete GPU, during its lifetime
@@ -3180,12 +3181,14 @@ class WebGLMemoryMultiReporterWrapper
     // WebGLContexts ever created.
     typedef nsTArray<const WebGLContext*> ContextsArrayType;
     ContextsArrayType mContexts;
-    
+
     nsCOMPtr<nsIMemoryMultiReporter> mReporter;
 
     static WebGLMemoryMultiReporterWrapper* UniqueInstance();
 
     static ContextsArrayType & Contexts() { return UniqueInstance()->mContexts; }
+
+    friend class WebGLContext;
 
   public:
 

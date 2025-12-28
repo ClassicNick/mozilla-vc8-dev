@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsDOMError.h"
 #include "nsJSEnvironment.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -2412,8 +2413,7 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, jsval *aArgv)
 
       p->GetData(&data);
 
-      JSBool ok = ::JS_NewNumberValue(cx, data, aArgv);
-      NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
+      *aArgv = ::JS_NumberValue(data);
 
       break;
     }
@@ -2425,8 +2425,7 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, jsval *aArgv)
 
       p->GetData(&data);
 
-      JSBool ok = ::JS_NewNumberValue(cx, data, aArgv);
-      NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
+      *aArgv = ::JS_NumberValue(data);
 
       break;
     }
@@ -3658,29 +3657,6 @@ nsJSRuntime::CreateContext()
 {
   nsCOMPtr<nsIScriptContext> scriptContext = new nsJSContext(sRuntime);
   return scriptContext.forget();
-}
-
-nsresult
-nsJSRuntime::ParseVersion(const nsString &aVersionStr, PRUint32 *flags)
-{
-    NS_PRECONDITION(flags, "Null flags param?");
-    JSVersion jsVersion = JSVERSION_UNKNOWN;
-    if (aVersionStr.Length() != 3 || aVersionStr[0] != '1' || aVersionStr[1] != '.')
-        jsVersion = JSVERSION_UNKNOWN;
-    else switch (aVersionStr[2]) {
-        case '0': jsVersion = JSVERSION_1_0; break;
-        case '1': jsVersion = JSVERSION_1_1; break;
-        case '2': jsVersion = JSVERSION_1_2; break;
-        case '3': jsVersion = JSVERSION_1_3; break;
-        case '4': jsVersion = JSVERSION_1_4; break;
-        case '5': jsVersion = JSVERSION_1_5; break;
-        case '6': jsVersion = JSVERSION_1_6; break;
-        case '7': jsVersion = JSVERSION_1_7; break;
-        case '8': jsVersion = JSVERSION_1_8; break;
-        default:  jsVersion = JSVERSION_UNKNOWN;
-    }
-    *flags = (PRUint32)jsVersion;
-    return NS_OK;
 }
 
 //static

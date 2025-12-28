@@ -545,7 +545,7 @@ nsEventDispatcher::Dispatch(nsISupports* aTarget,
     return NS_ERROR_FAILURE;
   }
 
-  // Make sure that nsIDOMEvent::target and nsIDOMNSEvent::originalTarget
+  // Make sure that nsIDOMEvent::target and nsIDOMEvent::originalTarget
   // point to the last item in the chain.
   if (!aEvent->target) {
     // Note, CurrentTarget() points always to the object returned by
@@ -682,10 +682,8 @@ nsEventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
     if (innerEvent->flags & NS_EVENT_DISPATCHED) {
       innerEvent->target = nullptr;
       innerEvent->originalTarget = nullptr;
-    }
-    else {
-      nsCOMPtr<nsIDOMNSEvent> nsevent(do_QueryInterface(aDOMEvent));
-      nsevent->GetIsTrusted(&dontResetTrusted);
+    } else {
+      aDOMEvent->GetIsTrusted(&dontResetTrusted);
     }
 
     if (!dontResetTrusted) {
@@ -866,8 +864,7 @@ nsEventDispatcher::CreateEvent(nsPresContext* aPresContext,
   if (aEventType.LowerCaseEqualsLiteral("mozsmsevent"))
     return NS_NewDOMSmsEvent(aDOMEvent, aPresContext, nullptr);
   if (aEventType.LowerCaseEqualsLiteral("storageevent")) {
-    NS_ADDREF(*aDOMEvent = static_cast<nsDOMEvent*>(new nsDOMStorageEvent()));
-    return NS_OK;
+    return NS_NewDOMStorageEvent(aDOMEvent, aPresContext, nsnull);
   }
     
 

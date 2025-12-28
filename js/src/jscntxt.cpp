@@ -105,10 +105,6 @@ JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, RuntimeSizes *run
     for (ScriptFilenameTable::Range r = scriptFilenameTable.all(); !r.empty(); r.popFront())
         runtime->scriptFilenames += mallocSizeOf(r.front());
 
-    runtime->scriptSources = 0;
-    for (ScriptSource *n = scriptSources; n; n = n->next)
-        runtime->scriptSources += n->sizeOfIncludingThis(mallocSizeOf);
-
     runtime->compartmentObjects = 0;
     CallbackData data(mallocSizeOf);
     JS_IterateCompartments(this, &data, CompartmentCallback);
@@ -542,7 +538,7 @@ namespace js {
 
 /* |callee| requires a usage string provided by JS_DefineFunctionsWithHelp. */
 void
-ReportUsageError(JSContext *cx, JSObject *callee, const char *msg)
+ReportUsageError(JSContext *cx, HandleObject callee, const char *msg)
 {
     const char *usageStr = "usage";
     PropertyName *usageAtom = js_Atomize(cx, usageStr, strlen(usageStr))->asPropertyName();

@@ -96,12 +96,7 @@ nsAccessNode::GetApplicationAccessible()
     // Addref on create. Will Release in ShutdownXPAccessibility()
     NS_ADDREF(gApplicationAccessible);
 
-    nsresult rv = gApplicationAccessible->Init();
-    if (NS_FAILED(rv)) {
-      gApplicationAccessible->Shutdown();
-      NS_RELEASE(gApplicationAccessible);
-      return nullptr;
-    }
+    gApplicationAccessible->Init();
   }
 
   return gApplicationAccessible;
@@ -146,6 +141,18 @@ nsIFrame*
 nsAccessNode::GetFrame() const
 {
   return mContent ? mContent->GetPrimaryFrame() : nullptr;
+}
+
+nsINode*
+nsAccessNode::GetNode() const
+{
+  return mContent;
+}
+
+nsIDocument*
+nsAccessNode::GetDocumentNode() const
+{
+  return mContent ? mContent->OwnerDoc() : nullptr;
 }
 
 bool

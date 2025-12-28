@@ -87,13 +87,13 @@ Class js::ObjectClass = {
 };
 
 JS_FRIEND_API(JSObject *)
-JS_ObjectToInnerObject(JSContext *cx, JSObject *obj_)
+JS_ObjectToInnerObject(JSContext *cx, JSObject *objArg)
 {
-    if (!obj_) {
+    RootedObject obj(cx, objArg);
+    if (!obj) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INACTIVE);
         return NULL;
     }
-    Rooted<JSObject*> obj(cx, obj_);
     return GetInnerObject(cx, obj);
 }
 
@@ -335,6 +335,7 @@ obj_toSource(JSContext *cx, unsigned argc, Value *vp)
     size_t vlength;
     Value *val;
     JSString *gsop[2];
+    SkipRoot skipGsop(cx, &gsop, 2);
 
     JS_CHECK_RECURSION(cx, return JS_FALSE);
 
@@ -2291,7 +2292,7 @@ js_Object(JSContext *cx, unsigned argc, Value *vp)
         obj = NULL;
     } else {
         /* If argv[0] is null or undefined, obj comes back null. */
-        if (!js_ValueToObjectOrNull(cx, vp[2], obj.address()))
+        if (!js_ValueToObjectOrNull(cx, vp[2], &obj))
             return JS_FALSE;
     }
     if (!obj) {
@@ -3617,7 +3618,7 @@ JSObject::growElements(JSContext *cx, unsigned newcap)
                       ? oldcap * 2
                       : oldcap + (oldcap >> 3);
 
-    uint32_t actualCapacity = JS_MAX(newcap, nextsize);
+    uint32_t actualCapacity = Max(newcap, nextsize);
     if (actualCapacity >= CAPACITY_CHUNK)
         actualCapacity = JS_ROUNDUP(actualCapacity, CAPACITY_CHUNK);
     else if (actualCapacity < SLOT_CAPACITY_MIN)
@@ -3800,7 +3801,7 @@ SetProto(JSContext *cx, HandleObject obj, HandleObject proto, bool checkForCycle
 }
 
 bool
-js_GetClassObject(JSContext *cx, HandleObject obj, JSProtoKey key,
+js_GetClassObject(JSContext *cx, RawObject obj, JSProtoKey key,
                   MutableHandleObject objp)
 {
 
@@ -5468,7 +5469,7 @@ js_PrimitiveToObject(JSContext *cx, Value *vp)
 }
 
 JSBool
-js_ValueToObjectOrNull(JSContext *cx, const Value &v, JSObject **objp)
+js_ValueToObjectOrNull(JSContext *cx, const Value &v, MutableHandleObject objp)
 {
     JSObject *obj;
 
@@ -5481,7 +5482,7 @@ js_ValueToObjectOrNull(JSContext *cx, const Value &v, JSObject **objp)
         if (!obj)
             return false;
     }
-    *objp = obj;
+    objp.set(obj);
     return true;
 }
 
@@ -5511,7 +5512,7 @@ ToObjectSlow(JSContext *cx, Value *vp)
 JSObject *
 js_ValueToNonNullObject(JSContext *cx, const Value &v)
 {
-    JSObject *obj;
+    RootedObject obj(cx);
 
     if (!js_ValueToObjectOrNull(cx, v, &obj))
         return NULL;

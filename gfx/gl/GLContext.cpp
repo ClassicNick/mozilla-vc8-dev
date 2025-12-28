@@ -1333,6 +1333,11 @@ GLContext::ChooseGLFormats(ContextFormat& aCF, ColorByteOrder aByteOrder)
         fGetIntegerv(LOCAL_GL_MAX_SAMPLES, (GLint*)&maxSamples);
     samples = NS_MIN(samples, maxSamples);
 
+    // bug 778765
+    if (WorkAroundDriverBugs() && samples == 1) {
+        samples = 0;
+    }
+
     formats.samples = samples;
     aCF.samples = samples;
 
@@ -1380,8 +1385,10 @@ GLContext::CreateTextureForOffscreen(const GLFormats& aFormats, const gfxIntSize
     GLuint boundTexture = 0;
     fGetIntegerv(LOCAL_GL_TEXTURE_BINDING_2D, (GLint*)&boundTexture);
 
-    texture = 0;
-    fGenTextures(1, &texture);
+    if (texture == 0) {
+        fGenTextures(1, &texture);
+    }
+
     fBindTexture(LOCAL_GL_TEXTURE_2D, texture);
     fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
     fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
@@ -3034,8 +3041,13 @@ GLContext::SharedContextDestroyed(GLContext *aChild)
 }
 
 static void
-ReportArrayContents(const nsTArray<GLContext::NamedResource>& aArray)
+ReportArrayContents(const char *title, const nsTArray<GLContext::NamedResource>& aArray)
 {
+    if (aArray.Length() == 0)
+        return;
+
+    printf_stderr("%s:\n", title);
+
     nsTArray<GLContext::NamedResource> copy(aArray);
     copy.Sort();
 
@@ -3055,21 +3067,17 @@ ReportArrayContents(const nsTArray<GLContext::NamedResource>& aArray)
 void
 GLContext::ReportOutstandingNames()
 {
-    if (DebugMode()) {
-        printf_stderr("== GLContext %p ==\n", this);
-        printf_stderr("Outstanding Textures:\n");
-        ReportArrayContents(mTrackedTextures);
-        printf_stderr("Outstanding Buffers:\n");
-        ReportArrayContents(mTrackedBuffers);
-        printf_stderr("Outstanding Programs:\n");
-        ReportArrayContents(mTrackedPrograms);
-        printf_stderr("Outstanding Shaders:\n");
-        ReportArrayContents(mTrackedShaders);
-        printf_stderr("Outstanding Framebuffers:\n");
-        ReportArrayContents(mTrackedFramebuffers);
-        printf_stderr("Outstanding Renderbuffers:\n");
-        ReportArrayContents(mTrackedRenderbuffers);
-    }
+    if (!DebugMode())
+        return;
+
+    printf_stderr("== GLContext %p Outstanding ==\n", this);
+
+    ReportArrayContents("Outstanding Textures", mTrackedTextures);
+    ReportArrayContents("Outstanding Buffers", mTrackedBuffers);
+    ReportArrayContents("Outstanding Programs", mTrackedPrograms);
+    ReportArrayContents("Outstanding Shaders", mTrackedShaders);
+    ReportArrayContents("Outstanding Framebuffers", mTrackedFramebuffers);
+    ReportArrayContents("Outstanding Renderbuffers", mTrackedRenderbuffers);
 }
 
 #endif /* DEBUG */

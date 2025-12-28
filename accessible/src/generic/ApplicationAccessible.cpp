@@ -19,6 +19,7 @@
 #include "nsIWindowMediator.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Services.h"
+#include "nsIStringBundle.h"
 
 using namespace mozilla::a11y;
 
@@ -267,11 +268,10 @@ ApplicationAccessible::GetPlatformVersion(nsAString& aVersion)
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode public methods
 
-bool
+void
 ApplicationAccessible::Init()
 {
   mAppInfo = do_GetService("@mozilla.org/xre/app-info;1");
-  return true;
 }
 
 void

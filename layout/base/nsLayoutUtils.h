@@ -1311,8 +1311,8 @@ public:
    * and prefs indicate we should be optimizing for speed over quality
    */
   static PRUint32 GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
-                                          const nsStyleText* aStyleText,
-                                          const nsStyleFont* aStyleFont);
+                                          const nsStyleFont* aStyleFont,
+                                          nscoord aLetterSpacing);
 
   /**
    * Takes two rectangles whose origins must be the same, and computes
@@ -1514,6 +1514,11 @@ public:
    */
   static bool AreOpacityAnimationsEnabled();
   static bool AreTransformAnimationsEnabled();
+
+  /**
+   * Checks if we should warn about animations that can't be async
+   */
+  static bool IsAnimationLoggingEnabled();
 
   /**
    * Checks if we should forcibly use nearest pixel filtering for the

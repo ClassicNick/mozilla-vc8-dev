@@ -192,6 +192,9 @@
 #include "mozilla/StartupTimeline.h"
 #include "nsIFrameMessageManager.h"
 
+#include "mozilla/Telemetry.h"
+#include "nsISecurityUITelemetry.h"
+
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
@@ -948,11 +951,9 @@ NS_IMETHODIMP nsDocShell::GetInterface(const nsIID & aIID, void **aSink)
     }
     else if (aIID.Equals(NS_GET_IID(nsIDocument)) &&
              NS_SUCCEEDED(EnsureContentViewer())) {
-        nsCOMPtr<nsIDOMDocument> domDoc;
-        mContentViewer->GetDOMDocument(getter_AddRefs(domDoc));
-        if (!domDoc)
-            return NS_NOINTERFACE;
-        return domDoc->QueryInterface(aIID, aSink);
+        nsCOMPtr<nsIDocument> doc = mContentViewer->GetDocument();
+        doc.forget(aSink);
+        return *aSink ? NS_OK : NS_NOINTERFACE;
     }
     else if (aIID.Equals(NS_GET_IID(nsIApplicationCacheContainer))) {
         *aSink = nullptr;
@@ -4040,8 +4041,16 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
                 rv = stss->IsStsURI(aURI, &isStsHost);
                 NS_ENSURE_SUCCESS(rv, rv);
 
-                if (isStsHost)
+                PRUint32 bucketId;
+                if (isStsHost) {
                   cssClass.AssignLiteral("badStsCert");
+                  //measuring STS separately allows us to measure click through
+                  //rates easily
+                  bucketId = nsISecurityUITelemetry::WARNING_BAD_CERT_STS;
+                } else {
+                  bucketId = nsISecurityUITelemetry::WARNING_BAD_CERT;
+                }
+
 
                 if (Preferences::GetBool(
                         "browser.xul.error_pages.expert_bad_cert", false)) {
@@ -4054,6 +4063,10 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
                         "security.alternate_certificate_error_page");
                 if (alternateErrorPage)
                     errorPage.Assign(alternateErrorPage);
+
+                if (errorPage.EqualsIgnoreCase("certerror")) 
+                    mozilla::Telemetry::Accumulate(mozilla::Telemetry::SECURITY_UI, bucketId);
+
             } else {
                 error.AssignLiteral("nssFailure2");
             }
@@ -4071,10 +4084,19 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
         if (alternateErrorPage)
             errorPage.Assign(alternateErrorPage);
 
-        if (NS_ERROR_PHISHING_URI == aError)
+        PRUint32 bucketId;
+        if (NS_ERROR_PHISHING_URI == aError) {
             error.AssignLiteral("phishingBlocked");
-        else
+            bucketId = nsISecurityUITelemetry::WARNING_PHISHING_PAGE;
+        } else {
             error.AssignLiteral("malwareBlocked");
+            bucketId = nsISecurityUITelemetry::WARNING_MALWARE_PAGE;
+        }
+
+        if (errorPage.EqualsIgnoreCase("blocked"))
+            mozilla::Telemetry::Accumulate(mozilla::Telemetry::SECURITY_UI,
+                                           bucketId);
+
         cssClass.AssignLiteral("blacklist");
     }
     else {
@@ -11381,7 +11403,7 @@ nsDocShell::GetExtendedOrigin(nsIURI *aUri, nsACString &aResult)
 
     nsCOMPtr<nsIScriptSecurityManager> ssmgr =
       do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
-    NS_ENSURE_TRUE(ssmgr, false);
+    NS_ENSURE_TRUE(ssmgr, NS_ERROR_FAILURE);
 
     return ssmgr->GetExtendedOrigin(aUri, mAppId, isInBrowserElement, aResult);
 }

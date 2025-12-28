@@ -5,6 +5,13 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.gfx.Layer;
+import org.mozilla.gecko.mozglue.DirectBufferAllocator;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import android.content.ContentResolver;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
@@ -15,18 +22,13 @@ import android.net.Uri;
 import android.util.Log;
 import android.view.View;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.mozilla.gecko.db.BrowserDB;
-import org.mozilla.gecko.gfx.Layer;
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class Tab {
     private static final String LOGTAG = "GeckoTab";
@@ -47,7 +49,6 @@ public final class Tab {
     private boolean mExternal;
     private boolean mBookmark;
     private boolean mReadingListItem;
-    private HashMap<String, DoorHanger> mDoorHangers;
     private long mFaviconLoadId;
     private String mDocumentURI;
     private String mContentType;
@@ -87,7 +88,6 @@ public final class Tab {
         mHistorySize = 0;
         mBookmark = false;
         mReadingListItem = false;
-        mDoorHangers = new HashMap<String, DoorHanger>();
         mFaviconLoadId = 0;
         mDocumentURI = "";
         mContentType = "";
@@ -104,7 +104,6 @@ public final class Tab {
     }
 
     public void onDestroy() {
-        mDoorHangers = new HashMap<String, DoorHanger>();
         BrowserDB.unregisterContentObserver(mContentResolver, mContentObserver);
     }
 
@@ -141,9 +140,9 @@ public final class Tab {
         int capacity = getThumbnailWidth() * getThumbnailHeight() * 2 /* 16 bpp */;
         if (mThumbnailBuffer != null && mThumbnailBuffer.capacity() == capacity)
             return mThumbnailBuffer;
-        if (mThumbnailBuffer != null)
-            GeckoAppShell.freeDirectBuffer(mThumbnailBuffer); // not calling freeBuffer() because it would deadlock
-        return mThumbnailBuffer = GeckoAppShell.allocateDirectBuffer(capacity);
+        freeBuffer();
+        mThumbnailBuffer = DirectBufferAllocator.allocate(capacity);
+        return mThumbnailBuffer;
     }
 
     public Bitmap getThumbnailBitmap() {
@@ -157,8 +156,7 @@ public final class Tab {
     }
 
     synchronized void freeBuffer() {
-        if (mThumbnailBuffer != null)
-            GeckoAppShell.freeDirectBuffer(mThumbnailBuffer);
+        DirectBufferAllocator.free(mThumbnailBuffer);
         mThumbnailBuffer = null;
     }
 
@@ -453,99 +451,62 @@ public final class Tab {
         GeckoApp.mAppContext.loadUrl("about:reader?url=" + Uri.encode(getURL()));
     }
 
-    public boolean doReload() {
+    public void doReload() {
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Reload", "");
         GeckoAppShell.sendEventToGecko(e);
-        return true;
     }
 
+    // Our version of nsSHistory::GetCanGoBack
     public boolean canDoBack() {
-        return (mHistoryIndex < 1 ? false : true);
+        return mHistoryIndex > 0;
     }
 
     public boolean doBack() {
-        if (mHistoryIndex < 1) {
+        if (!canDoBack())
             return false;
-        }
+
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Back", "");
         GeckoAppShell.sendEventToGecko(e);
         return true;
     }
 
-    public boolean doStop() {
+    public void doStop() {
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Stop", "");
         GeckoAppShell.sendEventToGecko(e);
-        return true;
     }
 
+    // Our version of nsSHistory::GetCanGoForward
     public boolean canDoForward() {
-        return (mHistoryIndex + 1 < mHistorySize);
+        return mHistoryIndex < mHistorySize - 1;
     }
 
     public boolean doForward() {
-        if (mHistoryIndex + 1 >= mHistorySize) {
+        if (!canDoForward())
             return false;
-        }
+
         GeckoEvent e = GeckoEvent.createBroadcastEvent("Session:Forward", "");
         GeckoAppShell.sendEventToGecko(e);
         return true;
     }
 
-    public void addDoorHanger(String value, DoorHanger dh) {
-        mDoorHangers.put(value, dh);
-    }
-
-    public void removeDoorHanger(String value) {
-        mDoorHangers.remove(value);
-    }
-
-    public void removeTransientDoorHangers() {
-        // Make a temporary set to avoid a ConcurrentModificationException
-        final HashSet<String> valuesToRemove = new HashSet<String>(); 
-
-        for (String value : mDoorHangers.keySet()) {
-            DoorHanger dh = mDoorHangers.get(value);
-            if (dh.shouldRemove())
-                valuesToRemove.add(value);
-        }
-
-        for (String value : valuesToRemove) {
-            mDoorHangers.remove(value);
-        }
-    }
-
-    public DoorHanger getDoorHanger(String value) {
-        if (mDoorHangers == null)
-            return null;
-
-        if (mDoorHangers.containsKey(value))
-            return mDoorHangers.get(value);
-
-        return null;
-    }
-
-    public HashMap<String, DoorHanger> getDoorHangers() {
-        return mDoorHangers;
-    }
-
     void handleSessionHistoryMessage(String event, JSONObject message) throws JSONException {
         if (event.equals("New")) {
-            final String uri = message.getString("uri");
+            final String url = message.getString("url");
             mHistoryIndex++;
             mHistorySize = mHistoryIndex + 1;
             GeckoAppShell.getHandler().post(new Runnable() {
                 public void run() {
-                    GlobalHistory.getInstance().add(uri);
+                    GlobalHistory.getInstance().add(url);
                 }
             });
         } else if (event.equals("Back")) {
-            if (mHistoryIndex - 1 < 0) {
+            if (!canDoBack()) {
                 Log.e(LOGTAG, "Received unexpected back notification");
                 return;
             }
             mHistoryIndex--;
         } else if (event.equals("Forward")) {
-            if (mHistoryIndex + 1 >= mHistorySize) {
+            if (!canDoForward()) {
                 Log.e(LOGTAG, "Received unexpected forward notification");
                 return;
             }
@@ -558,14 +519,20 @@ public final class Tab {
             }
             mHistoryIndex = index;
         } else if (event.equals("Purge")) {
-            int numEntries = message.getInt("index");
+            int numEntries = message.getInt("numEntries");
+            if (numEntries > mHistorySize) {
+                Log.e(LOGTAG, "Received unexpectedly large number of history entries to purge");
+                mHistoryIndex = -1;
+                mHistorySize = 0;
+                return;
+            }
+
             mHistorySize -= numEntries;
             mHistoryIndex -= numEntries;
-            if (mHistorySize < 0 || mHistoryIndex < -1) {
-                Log.e(LOGTAG, "Unexpected history state: index = " + mHistoryIndex + ", size = " + mHistorySize);
-                mHistorySize = 0;
-                mHistoryIndex = -1;
-            }
+
+            // If we weren't at the last history entry, mHistoryIndex may have become too small
+            if (mHistoryIndex < -1)
+                 mHistoryIndex = -1;
         }
     }
 

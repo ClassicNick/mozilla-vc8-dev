@@ -14,8 +14,8 @@
 #include "nsIAccessibleHyperLink.h"
 #include "nsIAccessibleSelectable.h"
 #include "nsIAccessibleValue.h"
-#include "nsIAccessibleRole.h"
 #include "nsIAccessibleStates.h"
+#include "nsIContent.h"
 
 #include "nsStringGlue.h"
 #include "nsTArray.h"
@@ -129,7 +129,7 @@ public:
   /**
    * Initialize the accessible.
    */
-  virtual bool Init();
+  virtual void Init();
 
   /**
    * Get the description of this accessible.
