@@ -1375,8 +1375,12 @@ NS_METHOD nsWindow::Resize(int32_t aWidth, int32_t aHeight, bool aRepaint)
   ConstrainSize(&aWidth, &aHeight);
 
   // Avoid unnecessary resizing calls
-  if (mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+  if (mBounds.width == aWidth && mBounds.height == aHeight) {
+    if (aRepaint) {
+      Invalidate();
+    }
     return NS_OK;
+  }
 
 #ifdef MOZ_XUL
   if (eTransparencyTransparent == mTransparencyMode)
@@ -1415,8 +1419,12 @@ NS_METHOD nsWindow::Resize(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeig
 
   // Avoid unnecessary resizing calls
   if (mBounds.x == aX && mBounds.y == aY &&
-      mBounds.width == aWidth && mBounds.height == aHeight && !aRepaint)
+      mBounds.width == aWidth && mBounds.height == aHeight) {
+    if (aRepaint) {
+      Invalidate();
+    }
     return NS_OK;
+  }
 
 #ifdef MOZ_XUL
   if (eTransparencyTransparent == mTransparencyMode)
@@ -2679,7 +2687,7 @@ NS_METHOD nsWindow::Invalidate(bool aEraseBackground,
   debug_DumpInvalidate(stdout,
                        this,
                        nullptr,
-                       nsCAutoString("noname"),
+                       nsAutoCString("noname"),
                        (int32_t) mWnd);
 #endif // WIDGET_DEBUG_OUTPUT
 
@@ -2707,7 +2715,7 @@ NS_METHOD nsWindow::Invalidate(const nsIntRect & aRect)
     debug_DumpInvalidate(stdout,
                          this,
                          &aRect,
-                         nsCAutoString("noname"),
+                         nsAutoCString("noname"),
                          (int32_t) mWnd);
 #endif // WIDGET_DEBUG_OUTPUT
 
@@ -3550,7 +3558,7 @@ NS_IMETHODIMP nsWindow::DispatchEvent(nsGUIEvent* event, nsEventStatus & aStatus
   debug_DumpEvent(stdout,
                   event->widget,
                   event,
-                  nsCAutoString("something"),
+                  nsAutoCString("something"),
                   (int32_t) mWnd);
 #endif // WIDGET_DEBUG_OUTPUT
 
@@ -6271,9 +6279,11 @@ bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam)
     }
 
     if (mDisplayPanFeedback) {
-      mGesture.UpdatePanFeedbackX(mWnd, RoundDown(wheelEvent.overflowDeltaX),
+      mGesture.UpdatePanFeedbackX(mWnd,
+                                  NS_ABS(RoundDown(wheelEvent.overflowDeltaX)),
                                   endFeedback);
-      mGesture.UpdatePanFeedbackY(mWnd, RoundDown(wheelEvent.overflowDeltaY),
+      mGesture.UpdatePanFeedbackY(mWnd,
+                                  NS_ABS(RoundDown(wheelEvent.overflowDeltaY)),
                                   endFeedback);
       mGesture.PanFeedbackFinalize(mWnd, endFeedback);
     }

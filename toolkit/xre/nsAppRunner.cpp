@@ -268,7 +268,7 @@ SaveFileToEnv(const char *name, nsIFile *file)
   file->GetPath(path);
   SetEnvironmentVariableW(NS_ConvertASCIItoUTF16(name).get(), path.get());
 #else
-  nsCAutoString path;
+  nsAutoCString path;
   file->GetNativePath(path);
   SaveWordToEnv(name, path);
 #endif
@@ -792,7 +792,7 @@ nsXULAppInfo::InvalidateCachesOnRestart()
     return NS_OK;
   }
   
-  nsCAutoString buf;
+  nsAutoCString buf;
   rv = parser.GetString("Compatibility", "InvalidateCaches", buf);
   
   if (NS_FAILED(rv)) {
@@ -810,7 +810,7 @@ nsXULAppInfo::InvalidateCachesOnRestart()
 }
 
 NS_IMETHODIMP
-nsXULAppInfo::GetReplacedLockTime(int64_t *aReplacedLockTime)
+nsXULAppInfo::GetReplacedLockTime(PRTime *aReplacedLockTime)
 {
   if (!gProfileLock)
     return NS_ERROR_NOT_AVAILABLE;
@@ -924,7 +924,7 @@ nsXULAppInfo::GetServerURL(nsIURL** aServerURL)
   if (!CrashReporter::GetEnabled())
     return NS_ERROR_NOT_INITIALIZED;
 
-  nsCAutoString data;
+  nsAutoCString data;
   if (!CrashReporter::GetServerURL(data)) {
     return NS_ERROR_FAILURE;
   }
@@ -954,7 +954,7 @@ nsXULAppInfo::SetServerURL(nsIURL* aServerURL)
     if (!schemeOk)
       return NS_ERROR_INVALID_ARG;
   }
-  nsCAutoString spec;
+  nsAutoCString spec;
   rv = aServerURL->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
   
@@ -1346,11 +1346,46 @@ DumpHelp()
   DumpArbitraryHelp();
 }
 
+#if defined(DEBUG) && defined(XP_WIN)
 #ifdef DEBUG_warren
-#ifdef XP_WIN
 #define _CRTDBG_MAP_ALLOC
-#include <crtdbg.h>
 #endif
+// Set a CRT ReportHook function to capture and format MSCRT
+// warnings, errors and assertions.
+// See http://msdn.microsoft.com/en-US/library/74kabxyx(v=VS.80).aspx
+#include <stdio.h>
+#include <crtdbg.h>
+#include "mozilla/mozalloc_abort.h"
+static int MSCRTReportHook( int aReportType, char *aMessage, int *oReturnValue)
+{
+  *oReturnValue = 0; // continue execution
+
+  // Do not use fprintf or other functions which may allocate
+  // memory from the heap which may be corrupted. Instead,
+  // use fputs to output the leading portion of the message
+  // and use mozalloc_abort to emit the remainder of the
+  // message.
+
+  switch(aReportType) {
+  case 0:
+    fputs("\nWARNING: CRT WARNING", stderr);
+    fputs(aMessage, stderr);
+    fputs("\n", stderr);
+    break;
+  case 1:
+    fputs("\n###!!! ABORT: CRT ERROR ", stderr);
+    mozalloc_abort(aMessage);
+    break;
+  case 2:
+    fputs("\n###!!! ABORT: CRT ASSERT ", stderr);
+    mozalloc_abort(aMessage);
+    break;
+  }
+
+  // do not invoke the debugger
+  return 1;
+}
+
 #endif
 
 #if defined(FREEBSD)
@@ -1378,7 +1413,7 @@ HandleRemoteArgument(const char* remote, const char* aDesktopStartupID)
   ArgResult ar;
 
   const char *profile = 0;
-  nsCAutoString program(gAppData->name);
+  nsAutoCString program(gAppData->name);
   ToLowerCase(program);
   const char *username = getenv("LOGNAME");
 
@@ -1435,7 +1470,7 @@ RemoteCommandLine(const char* aDesktopStartupID)
   nsresult rv;
   ArgResult ar;
 
-  nsCAutoString program(gAppData->name);
+  nsAutoCString program(gAppData->name);
   ToLowerCase(program);
   const char *username = getenv("LOGNAME");
 
@@ -1630,7 +1665,7 @@ static nsresult LaunchChild(nsINativeAppSupport* aNative,
     return NS_ERROR_FAILURE;
 
 #else
-  nsCAutoString exePath;
+  nsAutoCString exePath;
   rv = lf->GetNativePath(exePath);
   if (NS_FAILED(rv))
     return rv;
@@ -1828,7 +1863,7 @@ ShowProfileManager(nsIToolkitProfileService* aProfileSvc,
 
   nsCOMPtr<nsIFile> profD, profLD;
   PRUnichar* profileNamePtr;
-  nsCAutoString profileName;
+  nsAutoCString profileName;
 
   {
     ScopedXPCOMStartup xpcom;
@@ -2149,7 +2184,7 @@ SelectProfile(nsIProfileLock* *aResult, nsIToolkitProfileService* aProfileSvc, n
     nsCOMPtr<nsIFile> prefsJSFile;
     profile->GetRootDir(getter_AddRefs(prefsJSFile));
     prefsJSFile->AppendNative(NS_LITERAL_CSTRING("prefs.js"));
-    nsCAutoString pathStr;
+    nsAutoCString pathStr;
     prefsJSFile->GetNativePath(pathStr);
     PR_fprintf(PR_STDERR, "Success: created profile '%s' at '%s'\n", arg, pathStr.get());
     bool exists;
@@ -2303,7 +2338,7 @@ CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   if (NS_FAILED(rv))
     return false;
 
-  nsCAutoString buf;
+  nsAutoCString buf;
   rv = parser.GetString("Compatibility", "LastVersion", buf);
   if (NS_FAILED(rv) || !aVersion.Equals(buf))
     return false;
@@ -2375,10 +2410,10 @@ WriteVersion(nsIFile* aProfileDir, const nsCString& aVersion,
     return;
   file->AppendNative(FILE_COMPATIBILITY_INFO);
 
-  nsCAutoString platformDir;
+  nsAutoCString platformDir;
   aXULRunnerDir->GetNativePath(platformDir);
 
-  nsCAutoString appDir;
+  nsAutoCString appDir;
   if (aAppDir)
     aAppDir->GetNativePath(appDir);
 
@@ -2746,8 +2781,8 @@ public:
   ScopedXPCOMStartup* mScopedXPCom;
   ScopedAppData* mAppData;
   nsXREDirProvider mDirProvider;
-  nsCAutoString mProfileName;
-  nsCAutoString mDesktopStartupID;
+  nsAutoCString mProfileName;
+  nsAutoCString mDesktopStartupID;
 
   bool mStartOffline;
   bool mShuttingDown;
@@ -2993,7 +3028,7 @@ XREMain::XRE_mainInit(const nsXREAppData* aAppData, bool* aExitFlag)
         overrideini->GetPath(overridePathW);
         NS_ConvertUTF16toUTF8 overridePath(overridePathW);
 #else
-        nsCAutoString overridePath;
+        nsAutoCString overridePath;
         overrideini->GetNativePath(overridePath);
 #endif
 
@@ -3222,7 +3257,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
 
   // Set program name to the one defined in application.ini.
   {
-    nsCAutoString program(gAppData->name);
+    nsAutoCString program(gAppData->name);
     ToLowerCase(program);
     g_set_prgname(program.get());
   }
@@ -3347,7 +3382,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   // DESKTOP_STARTUP_ID is cleared now,
   // we recover it in case we need a restart.
   if (!mDesktopStartupID.IsEmpty()) {
-    nsCAutoString desktopStartupEnv;
+    nsAutoCString desktopStartupEnv;
     desktopStartupEnv.AssignLiteral("DESKTOP_STARTUP_ID=");
     desktopStartupEnv.Append(mDesktopStartupID);
     // Leak it with extreme prejudice!
@@ -3355,7 +3390,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
   }
 #endif
 
-#if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
+#if defined(USE_MOZ_UPDATER)
   // Check for and process any available updates
   nsCOMPtr<nsIFile> updRoot;
   bool persistent;
@@ -3448,7 +3483,7 @@ XREMain::XRE_mainStartup(bool* aExitFlag)
       MakeOrSetMinidumpPath(mProfD);
 #endif
 
-  nsCAutoString version;
+  nsAutoCString version;
   BuildVersion(version);
 
 #ifdef TARGET_OS_ABI
@@ -3627,7 +3662,7 @@ XREMain::XRE_mainRun()
     nsINIParser parser;
     nsresult rv = parser.Init(file);
     if (NS_SUCCEEDED(rv)) {
-      nsCAutoString buf;
+      nsAutoCString buf;
       rv = parser.GetString("XRE", "EnableProfileMigrator", buf);
       if (NS_SUCCEEDED(rv)) {
         if (buf[0] == '0' || buf[0] == 'f' || buf[0] == 'F') {
@@ -3653,7 +3688,7 @@ XREMain::XRE_mainRun()
       gDoMigration = false;
       nsCOMPtr<nsIProfileMigrator> pm(do_CreateInstance(NS_PROFILEMIGRATOR_CONTRACTID));
       if (pm) {
-        nsCAutoString aKey;
+        nsAutoCString aKey;
         if (gDoProfileReset) {
           // Automatically migrate from the current application if we just
           // reset the profile.
@@ -3973,7 +4008,7 @@ XRE_InitCommandLine(int aArgc, char* aArgv[])
   if (NS_FAILED(rv))
     return NS_ERROR_FAILURE;
 
-  nsCAutoString canonBinPath;
+  nsAutoCString canonBinPath;
   rv = binFile->GetNativePath(canonBinPath);
   if (NS_FAILED(rv))
     return NS_ERROR_FAILURE;
@@ -4078,6 +4113,21 @@ SetupErrorHandling(const char* progname)
 
   SetErrorMode(realMode);
 
+#endif
+
+#if defined (DEBUG) && defined(XP_WIN)
+  // Send MSCRT Warnings, Errors and Assertions to stderr.
+  // See http://msdn.microsoft.com/en-us/library/1y71x448(v=VS.80).aspx
+  // and http://msdn.microsoft.com/en-us/library/a68f826y(v=VS.80).aspx.
+
+  _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+  _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+  _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+  _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+  _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+  _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+
+  _CrtSetReportHook(MSCRTReportHook);
 #endif
 
 #ifndef XP_OS2

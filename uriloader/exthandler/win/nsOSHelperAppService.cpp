@@ -523,7 +523,7 @@ already_AddRefed<nsMIMEInfoWin> nsOSHelperAppService::GetByExtension(const nsAFl
   if (NS_FAILED(rv))
     return nullptr; 
 
-  nsCAutoString typeToUse;
+  nsAutoCString typeToUse;
   if (aTypeHint && *aTypeHint) {
     typeToUse.Assign(aTypeHint);
   }

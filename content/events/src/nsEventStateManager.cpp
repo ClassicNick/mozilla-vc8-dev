@@ -188,7 +188,7 @@ PrintDocTree(nsIDocShellTreeItem* aParentItem, int aLevel)
     static_cast<void*>(presContext ? presContext->EventStateManager() : nullptr),
     uri ? ' ' : '\n');
   if (uri) {
-    nsCAutoString spec;
+    nsAutoCString spec;
     uri->GetSpec(spec);
     printf("\"%s\"\n", spec.get());
   }
@@ -2840,6 +2840,16 @@ nsEventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
     DeltaAccumulator::GetInstance()->
       ComputeScrollAmountForDefaultAction(aEvent, scrollAmountInDevPixels);
 
+  // Don't scroll around the axis whose overflow style is hidden.
+  nsPresContext::ScrollbarStyles overflowStyle =
+                                   aScrollableFrame->GetScrollbarStyles();
+  if (overflowStyle.mHorizontal == NS_STYLE_OVERFLOW_HIDDEN) {
+    actualDevPixelScrollAmount.x = 0;
+  }
+  if (overflowStyle.mVertical == NS_STYLE_OVERFLOW_HIDDEN) {
+    actualDevPixelScrollAmount.y = 0;
+  }
+
   nsIAtom* origin = nullptr;
   switch (aEvent->deltaMode) {
     case nsIDOMWheelEvent::DOM_DELTA_LINE:
@@ -2898,6 +2908,12 @@ nsEventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
       return;
   }
 
+  // XXX When the scroll target came from the wheel transaction manager, there
+  //     may be another scrollable element in its ancestors.  Then, probably we
+  //     shouldn't set overflowDelta even if the event doesn't cause scroll
+  //     actually because the non-zero overflowDelta could cause another action
+  //     such as "back" or "forward" in the history.
+
   nsIntPoint overflow;
   aScrollableFrame->ScrollBy(actualDevPixelScrollAmount,
                              nsIScrollableFrame::DEVICE_PIXELS,
@@ -2912,6 +2928,24 @@ nsEventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
     aEvent->overflowDeltaY =
       static_cast<double>(overflow.y) / scrollAmountInDevPixels.height;
   }
+
+  // If CSS overflow properties caused not to scroll, the overflowDelta* values
+  // should be same as delta* values since they may be used as gesture event by
+  // widget.
+  if (overflowStyle.mHorizontal == NS_STYLE_OVERFLOW_HIDDEN) {
+    aEvent->overflowDeltaX = aEvent->deltaX;
+  }
+  if (overflowStyle.mVertical == NS_STYLE_OVERFLOW_HIDDEN) {
+    aEvent->overflowDeltaY = aEvent->deltaY;
+  }
+
+  NS_ASSERTION(aEvent->overflowDeltaX == 0 ||
+    (aEvent->overflowDeltaX > 0) == (actualDevPixelScrollAmount.x > 0),
+    "The sign of overflowDeltaX is different from the scroll direction");
+  NS_ASSERTION(aEvent->overflowDeltaY == 0 ||
+    (aEvent->overflowDeltaY > 0) == (actualDevPixelScrollAmount.y > 0),
+    "The sign of overflowDeltaY is different from the scroll direction");
+
   WheelPrefs::GetInstance()->CancelApplyingUserPrefsFromOverflowDelta(aEvent);
 }
 
@@ -4840,7 +4874,8 @@ nsEventStateManager::UnregisterAccessKey(nsIContent* aContent, uint32_t aKey)
 uint32_t
 nsEventStateManager::GetRegisteredAccessKey(nsIContent* aContent)
 {
-  NS_ENSURE_ARG(aContent);
+  NS_ASSERTION(aContent, "Null pointer passed to GetRegisteredAccessKey");
+  NS_ENSURE_TRUE(aContent, 0);
 
   if (mAccessKeys.IndexOf(aContent) == -1)
     return 0;
@@ -5324,25 +5359,25 @@ nsEventStateManager::WheelPrefs::Init(
   }
   mInit[aIndex] = true;
 
-  nsCAutoString basePrefName;
+  nsAutoCString basePrefName;
   GetBasePrefName(aIndex, basePrefName);
 
-  nsCAutoString prefNameX(basePrefName);
+  nsAutoCString prefNameX(basePrefName);
   prefNameX.AppendLiteral("delta_multiplier_x");
   mMultiplierX[aIndex] =
     static_cast<double>(Preferences::GetInt(prefNameX.get(), 100)) / 100;
 
-  nsCAutoString prefNameY(basePrefName);
+  nsAutoCString prefNameY(basePrefName);
   prefNameY.AppendLiteral("delta_multiplier_y");
   mMultiplierY[aIndex] =
     static_cast<double>(Preferences::GetInt(prefNameY.get(), 100)) / 100;
 
-  nsCAutoString prefNameZ(basePrefName);
+  nsAutoCString prefNameZ(basePrefName);
   prefNameZ.AppendLiteral("delta_multiplier_z");
   mMultiplierZ[aIndex] =
     static_cast<double>(Preferences::GetInt(prefNameZ.get(), 100)) / 100;
 
-  nsCAutoString prefNameAction(basePrefName);
+  nsAutoCString prefNameAction(basePrefName);
   prefNameAction.AppendLiteral("action");
   mActions[aIndex] =
     static_cast<Action>(Preferences::GetInt(prefNameAction.get(),
@@ -5386,6 +5421,12 @@ nsEventStateManager::WheelPrefs::CancelApplyingUserPrefsFromOverflowDelta(
 {
   Index index = GetIndexFor(aEvent);
   Init(index);
+
+  // XXX If the multiplier pref value is negative, the scroll direction was
+  //     changed and caused to scroll different direction.  In such case,
+  //     this method reverts the sign of overflowDelta.  Does it make widget
+  //     happy?  Although, widget can know the pref applied delta values by
+  //     referrencing the deltaX and deltaY of the event.
 
   if (mMultiplierX[index]) {
     aEvent->overflowDeltaX /= mMultiplierX[index];

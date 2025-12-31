@@ -110,15 +110,11 @@ FileRequest::GetLockedFile(nsIDOMLockedFile** aLockedFile)
 NS_IMPL_CYCLE_COLLECTION_CLASS(FileRequest)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(FileRequest, DOMRequest)
-  // Don't need NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS because
-  // nsDOMEventTargetHelper does it for us.
-  NS_CYCLE_COLLECTION_TRAVERSE_EVENT_HANDLER(progress)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR_AMBIGUOUS(mLockedFile,
                                                        nsIDOMLockedFile)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(FileRequest, DOMRequest)
-  NS_CYCLE_COLLECTION_UNLINK_EVENT_HANDLER(progress)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mLockedFile)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -159,15 +155,4 @@ FileRequest::FireProgressEvent(uint64_t aLoaded, uint64_t aTotal)
   if (NS_FAILED(rv)) {
     return;
   }
-}
-
-void
-FileRequest::RootResultVal()
-{
-  NS_ASSERTION(!mRooted, "Don't call me if already rooted!");
-  nsXPCOMCycleCollectionParticipant *participant;
-  CallQueryInterface(this, &participant);
-  nsContentUtils::HoldJSObjects(NS_CYCLE_COLLECTION_UPCAST(this, DOMRequest),
-                                participant);
-  mRooted = true;
 }

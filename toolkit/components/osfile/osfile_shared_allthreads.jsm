@@ -31,7 +31,25 @@
          getService(Components.interfaces.nsIOSFileConstantsService).init();
      }
 
+     // Define a lazy getter for a property
+     let defineLazyGetter = function(object, name, getter) {
+       Object.defineProperty(object, name, {
+         configurable: true,
+         get: function lazy() {
+           delete this[name];
+           let value = getter.call(this);
+           Object.defineProperty(object, name, {
+             value: value
+           });
+           return value;
+         }
+       });
+     };
 
+     /**
+      * A variable controlling whether we should printout logs.
+      */
+     exports.OS.Shared.DEBUG = false;
      let LOG;
      if (typeof console != "undefined" && console.log) {
        LOG = console.log.bind(console, "OS");
@@ -315,8 +333,10 @@
      };
 
      function projector(type, signed) {
-       LOG("Determining best projection for", type,
+       if (exports.OS.Shared.DEBUG) {
+         LOG("Determining best projection for", type,
              "(size: ", type.size, ")", signed?"signed":"unsigned");
+       }
        if (type instanceof Type) {
          type = type.implementation;
        }
@@ -334,14 +354,20 @@
            || type == ctypes.uintptr_t
            || type == ctypes.off_t){
           if (signed) {
-            LOG("Projected as a large signed integer");
+	    if (exports.OS.Shared.DEBUG) {
+             LOG("Projected as a large signed integer");
+	    }
             return projectLargeInt;
           } else {
-            LOG("Projected as a large unsigned integer");
+	    if (exports.OS.Shared.DEBUG) {
+             LOG("Projected as a large unsigned integer");
+	    }
             return projectLargeUInt;
           }
        }
-       LOG("Projected as a regular number");
+       if (exports.OS.Shared.DEBUG) {
+         LOG("Projected as a regular number");
+       }
        return projectValue;
      };
      exports.OS.Shared.projectValue = projectValue;
@@ -744,7 +770,9 @@
         // thread
      let declareFFI = function declareFFI(lib, symbol, abi,
                                           returnType /*, argTypes ...*/) {
-       LOG("Attempting to declare FFI ", symbol);
+       if (exports.OS.Shared.DEBUG) {
+         LOG("Attempting to declare FFI ", symbol);
+       }
        // We guard agressively, to avoid any late surprise
        if (typeof symbol != "string") {
          throw new TypeError("declareFFI expects as first argument a string");
@@ -782,12 +810,16 @@
          if (exports.OS.Shared.DEBUG) {
            result.fun = fun; // Also return the raw FFI function.
          }
-         LOG("Function", symbol, "declared");
+	 if (exports.OS.Shared.DEBUG) {
+          LOG("Function", symbol, "declared");
+	 }
          return result;
        } catch (x) {
          // Note: Not being able to declare a function is normal.
          // Some functions are OS (or OS version)-specific.
-         LOG("Could not declare function " + symbol, x);
+	 if (exports.OS.Shared.DEBUG) {
+          LOG("Could not declare function " + symbol, x);
+	 }
          return null;
        }
      };
@@ -798,8 +830,11 @@
       * Libxul-based utilities, shared by all back-ends.
       */
 
-     let libxul = ctypes.open(OS.Constants.Path.libxul);
-     exports.OS.Shared.libxul = libxul;
+     // Lazy getter for libxul
+     defineLazyGetter(exports.OS.Shared, "libxul",
+       function init_libxul() {
+         return ctypes.open(OS.Constants.Path.libxul);
+       });
 
      exports.OS.Shared.Utils = {};
 
@@ -861,49 +896,61 @@
      };
 
 
-     let NS_Free = libxul.declare("osfile_ns_free", ctypes.default_abi,
-       /*return*/ Types.void_t.implementation,
-       /*ptr*/ Types.voidptr_t.implementation);
+     let Pointers = {};
+     defineLazyGetter(Pointers, "NS_Free",
+       function init_NS_Free() {
+         return exports.OS.Shared.libxul.declare("osfile_ns_free",
+           ctypes.default_abi,
+          /*return*/ Types.void_t.implementation,
+          /*ptr*/ Types.voidptr_t.implementation);
+       });
 
-     let wstrdup = declareFFI(libxul, "osfile_wstrdup", ctypes.default_abi,
-       /*return*/ Types.out_wstring.releaseWith(NS_Free),
-       /*ptr*/ Types.wstring);
-
-
-      /**
-        * Export a string as a wide string (e.g. a |jschar.ptr|).
-        *
-        * @param {string} string A JavaScript String.
-        * @return {CData} The C representation of that string, as a |jschar*|.
-        * This value will be automatically garbage-collected once it is
-        * not referenced anymore.
-        */
-      Strings.exportWString = function exportWString(string) {
-        return wstrdup(string);
-      };
+     /**
+      * Export a string as a wide string (e.g. a |jschar.ptr|).
+      *
+      * @param {string} string A JavaScript String.
+      * @return {CData} The C representation of that string, as a |jschar*|.
+      * This value will be automatically garbage-collected once it is
+      * not referenced anymore.
+      */
+     defineLazyGetter(Strings, "exportWString",
+       function init_exportWString() {
+         return declareFFI(exports.OS.Shared.libxul,
+           "osfile_wstrdup",
+           ctypes.default_abi,
+           /*return*/ Types.out_wstring.releaseWith(Pointers.NS_Free),
+           /*ptr*/ Types.wstring);
+       });
 
 // Encodings
 
-     Strings.encodeAll = declareFFI(libxul, "osfile_EncodeAll",
-        ctypes.default_abi,
-         /*return*/     Types.void_t.out_ptr.releaseWith(NS_Free),
-         /*encoding*/   Types.cstring,
-         /*source*/     Types.wstring,
-         /*bytes*/      Types.uint32_t.out_ptr);
+     defineLazyGetter(Strings, "encodeAll",
+       function init_encodeAll() {
+         return declareFFI(exports.OS.Shared.libxul,
+           "osfile_EncodeAll",
+           ctypes.default_abi,
+           /*return*/     Types.void_t.out_ptr.releaseWith(Pointers.NS_Free),
+           /*encoding*/   Types.cstring,
+           /*source*/     Types.wstring,
+           /*bytes*/      Types.uint32_t.out_ptr);
+       });
 
-     let _decodeAll = declareFFI(libxul, "osfile_DecodeAll",
-        ctypes.default_abi,
-         /*return*/     Types.out_wstring.releaseWith(NS_Free),
-         /*encoding*/   Types.cstring,
-         /*source*/     Types.void_t.in_ptr,
-         /*bytes*/      Types.uint32_t);
-
-     Strings.decodeAll = function decodeAll(encoding, source, bytes) {
-       let decoded = _decodeAll(encoding, source, bytes);
-       if (!decoded) {
-         return null;
-       }
-       return Strings.importWString(decoded);
-     };
+     defineLazyGetter(Strings, "decodeAll",
+       function init_decodeAll() {
+         let _decodeAll = declareFFI(exports.OS.Shared.libxul, "osfile_DecodeAll",
+           ctypes.default_abi,
+            /*return*/     Types.out_wstring.releaseWith(Pointers.NS_Free),
+            /*encoding*/   Types.cstring,
+            /*source*/     Types.void_t.in_ptr,
+            /*bytes*/      Types.uint32_t);
+         return function decodeAll(encoding, source, bytes) {
+           let decoded = _decodeAll(encoding, source, bytes);
+           if (!decoded) {
+             return null;
+           }
+           return Strings.importWString(decoded);
+          };
+        }
+     );
    })(this);
 }

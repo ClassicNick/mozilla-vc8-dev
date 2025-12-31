@@ -1087,9 +1087,14 @@ PropertyAccess(JSContext *cx, JSScript *script, jsbytecode *pc, TypeObject *obje
         }
     }
 
-    /* Capture the effects of a standard property access. Never mark the
-     * property as own, as it may have inherited accessors. */
-    HeapTypeSet *types = object->getProperty(cx, id, false);
+    /*
+     * Capture the effects of a standard property access.  For assignments, we do not
+     * automatically update the 'own' bit on accessed properties, except for indexed
+     * elements in dense arrays.  The latter exception allows for JIT fast paths to avoid
+     * testing the array's type when assigning to dense array elements.
+     */
+    bool markOwn = access == PROPERTY_WRITE && JSID_IS_VOID(id);
+    HeapTypeSet *types = object->getProperty(cx, id, markOwn);
     if (!types)
         return;
     if (access == PROPERTY_WRITE) {
@@ -1130,7 +1135,7 @@ UnknownPropertyAccess(JSScript *script, Type type)
 {
     return type.isUnknown()
         || type.isAnyObject()
-        || (!type.isObject() && !script->hasGlobal());
+        || (!type.isObject() && !script->compileAndGo);
 }
 
 template <PropertyAccessKind access>
@@ -1443,7 +1448,7 @@ TypeConstraintTransformThis::newType(JSContext *cx, TypeSet *source, Type type)
      * Note: if |this| is null or undefined, the pushed value is the outer window. We
      * can't use script->getGlobalType() here because it refers to the inner window.
      */
-    if (!script->hasGlobal() ||
+    if (!script->compileAndGo ||
         type.isPrimitive(JSVAL_TYPE_NULL) ||
         type.isPrimitive(JSVAL_TYPE_UNDEFINED)) {
         target->addType(cx, Type::UnknownType());
@@ -2136,7 +2141,7 @@ types::UseNewTypeForInitializer(JSContext *cx, JSScript *script, jsbytecode *pc,
 bool
 types::ArrayPrototypeHasIndexedProperty(JSContext *cx, JSScript *script)
 {
-    if (!cx->typeInferenceEnabled() || !script->hasGlobal())
+    if (!cx->typeInferenceEnabled() || !script->compileAndGo)
         return true;
 
     JSObject *proto = script->global().getOrCreateArrayPrototype(cx);
@@ -2160,14 +2165,14 @@ bool
 TypeCompartment::growPendingArray(JSContext *cx)
 {
     unsigned newCapacity = js::Max(unsigned(100), pendingCapacity * 2);
-    PendingWork *newArray = (PendingWork *) OffTheBooks::calloc_(newCapacity * sizeof(PendingWork));
+    PendingWork *newArray = js_pod_calloc<PendingWork>(newCapacity);
     if (!newArray) {
         cx->compartment->types.setPendingNukeTypes(cx);
         return false;
     }
 
     PodCopy(newArray, pendingArray, pendingCount);
-    cx->free_(pendingArray);
+    js_free(pendingArray);
 
     pendingArray = newArray;
     pendingCapacity = newCapacity;
@@ -2787,13 +2792,13 @@ TypeCompartment::fixObjectType(JSContext *cx, JSObject *obj_)
             return;
         }
 
-        jsid *ids = (jsid *) cx->calloc_(obj->slotSpan() * sizeof(jsid));
+        jsid *ids = cx->pod_calloc<jsid>(obj->slotSpan());
         if (!ids) {
             cx->compartment->types.setPendingNukeTypes(cx);
             return;
         }
 
-        Type *types = (Type *) cx->calloc_(obj->slotSpan() * sizeof(Type));
+        Type *types = cx->pod_calloc<Type>(obj->slotSpan());
         if (!types) {
             cx->compartment->types.setPendingNukeTypes(cx);
             return;
@@ -3236,7 +3241,7 @@ TypeObject::clearNewScript(JSContext *cx)
     /* We NULL out newScript *before* freeing it so the write barrier works. */
     TypeNewScript *savedNewScript = newScript;
     newScript = NULL;
-    cx->free_(savedNewScript);
+    js_free(savedNewScript);
 
     markStateChange(cx);
 }
@@ -3315,7 +3320,7 @@ CheckNextTest(jsbytecode *pc)
 static inline TypeObject *
 GetInitializerType(JSContext *cx, JSScript *script, jsbytecode *pc)
 {
-    if (!script->hasGlobal())
+    if (!script->compileAndGo)
         return NULL;
 
     JSOp op = JSOp(*pc);
@@ -3498,7 +3503,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
         break;
 
       case JSOP_REGEXP:
-        if (script->hasGlobal()) {
+        if (script->compileAndGo) {
             TypeObject *object = TypeScript::StandardType(cx, script, JSProto_RegExp);
             if (!object)
                 return false;
@@ -3710,7 +3715,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
 
       case JSOP_REST: {
         StackTypeSet *types = script->analysis()->bytecodeTypes(pc);
-        if (script->hasGlobal()) {
+        if (script->compileAndGo) {
             TypeObject *rest = TypeScript::InitObject(cx, script, pc, JSProto_Array);
             if (!rest)
                 return false;
@@ -3845,7 +3850,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
             res = &pushed[0];
 
         if (res) {
-            if (script->hasGlobal() && !UseNewTypeForClone(obj->toFunction()))
+            if (script->compileAndGo && !UseNewTypeForClone(obj->toFunction()))
                 res->addType(cx, Type::ObjectType(obj));
             else
                 res->addType(cx, Type::UnknownType());
@@ -3888,10 +3893,6 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
         if (op == JSOP_FUNCALL || op == JSOP_FUNAPPLY)
             cx->compartment->types.monitorBytecode(cx, script, pc - script->code);
 
-        /* Speculate that calls whose result is ignored may return undefined. */
-        if (JSOP_POP == *(pc + GetBytecodeLength(pc)))
-            seen->addType(cx, Type::UndefinedType());
-
         poppedTypes(pc, argCount + 1)->addCall(cx, callsite);
         break;
       }
@@ -3911,7 +3912,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
         }
 
         TypeObject *initializer = GetInitializerType(cx, script, pc);
-        if (script->hasGlobal()) {
+        if (script->compileAndGo) {
             if (!initializer)
                 return false;
             types->addType(cx, Type::ObjectType(initializer));
@@ -4095,7 +4096,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
 
       case JSOP_GENERATOR:
           if (script->function()) {
-            if (script->hasGlobal()) {
+            if (script->compileAndGo) {
                 JSObject *proto = script->global().getOrCreateGeneratorPrototype(cx);
                 if (!proto)
                     return false;
@@ -4148,7 +4149,7 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
 
       case JSOP_CALLEE: {
         JSFunction *fun = script->function();
-        if (script->hasGlobal() && !UseNewTypeForClone(fun))
+        if (script->compileAndGo && !UseNewTypeForClone(fun))
             pushed[0].addType(cx, Type::ObjectType(fun));
         else
             pushed[0].addType(cx, Type::UnknownType());
@@ -4173,17 +4174,6 @@ ScriptAnalysis::analyzeTypes(JSContext *cx)
         cx->compartment->types.setPendingNukeTypes(cx);
         return;
     }
-
-    /*
-     * Refuse to analyze the types in a script which is compileAndGo but is
-     * running against a global with a cleared scope. Per GlobalObject::clear,
-     * we won't be running anymore compileAndGo code against the global
-     * (moreover, after clearing our analysis results will be wrong for the
-     * script and trying to reanalyze here can cause reentrance problems if we
-     * try to reinitialize standard classes that were cleared).
-     */
-    if (script->hasClearedGlobal())
-        return;
 
     if (!ranSSA()) {
         analyzeSSA(cx);
@@ -4408,9 +4398,6 @@ AnalyzeNewScriptProperties(JSContext *cx, TypeObject *type, JSFunction *fun, JSO
         cx->compartment->types.setPendingNukeTypes(cx);
         return false;
     }
-
-    if (script->hasClearedGlobal())
-        return false;
 
     ScriptAnalysis *analysis = script->analysis();
 
@@ -5121,7 +5108,9 @@ TypeDynamicResult(JSContext *cx, JSScript *script, jsbytecode *pc, Type type)
      */
 
     jsbytecode *ignorePC = pc + GetBytecodeLength(pc);
-    if (*ignorePC == JSOP_INT8 && GET_INT8(ignorePC) == -1) {
+    if (*ignorePC == JSOP_POP) {
+        /* Value is ignored. */
+    } if (*ignorePC == JSOP_INT8 && GET_INT8(ignorePC) == -1) {
         ignorePC += JSOP_INT8_LENGTH;
         if (*ignorePC != JSOP_BITAND)
             ignorePC = NULL;
@@ -5256,7 +5245,7 @@ JSScript::makeTypes(JSContext *cx)
     JS_ASSERT(!types);
 
     if (!cx->typeInferenceEnabled()) {
-        types = (TypeScript *) cx->calloc_(sizeof(TypeScript));
+        types = cx->pod_calloc<TypeScript>();
         if (!types) {
             js_ReportOutOfMemory(cx);
             return false;
@@ -5941,8 +5930,8 @@ TypeCompartment::sweep(FreeOp *fop)
             }
 
             if (remove) {
-                Foreground::free_(key.ids);
-                Foreground::free_(entry.types);
+                js_free(key.ids);
+                js_free(entry.types);
                 e.removeFront();
             }
         }
@@ -6026,16 +6015,16 @@ JSCompartment::sweepNewTypeObjectTable(TypeObjectSet &table)
 TypeCompartment::~TypeCompartment()
 {
     if (pendingArray)
-        Foreground::free_(pendingArray);
+        js_free(pendingArray);
 
     if (arrayTypeTable)
-        Foreground::delete_(arrayTypeTable);
+        js_delete(arrayTypeTable);
 
     if (objectTypeTable)
-        Foreground::delete_(objectTypeTable);
+        js_delete(objectTypeTable);
 
     if (allocationSiteTable)
-        Foreground::delete_(allocationSiteTable);
+        js_delete(allocationSiteTable);
 }
 
 /* static */ void
@@ -6078,11 +6067,11 @@ TypeScript::destroy()
 {
     while (dynamicList) {
         TypeResult *next = dynamicList->next;
-        Foreground::delete_(dynamicList);
+        js_delete(dynamicList);
         dynamicList = next;
     }
 
-    Foreground::free_(this);
+    js_free(this);
 }
 
 /* static */ void

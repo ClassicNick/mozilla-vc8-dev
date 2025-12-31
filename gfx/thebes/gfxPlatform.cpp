@@ -537,8 +537,23 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
       dt->Flush();
     }
     srcBuffer = aTarget->CreateSourceSurfaceFromNativeSurface(surf);
-  }
+  } else
 #endif
+  if (aSurface->CairoSurface() && aTarget->GetType() == BACKEND_CAIRO) {
+    // If this is an xlib cairo surface we don't want to fetch it into memory
+    // because this is a major slow down.
+    NativeSurface surf;
+    surf.mFormat = format;
+    surf.mType = NATIVE_SURFACE_CAIRO_SURFACE;
+    surf.mSurface = aSurface->CairoSurface();
+    srcBuffer = aTarget->CreateSourceSurfaceFromNativeSurface(surf);
+
+    if (srcBuffer) {
+      // It's cheap enough to make a new one so we won't keep it around and
+      // keeping it creates a cycle.
+      return srcBuffer;
+    }
+  }
 
   if (!srcBuffer) {
     nsRefPtr<gfxImageSurface> imgSurface = aSurface->GetAsImageSurface();
@@ -844,11 +859,11 @@ AppendGenericFontFromPref(nsString& aFonts, nsIAtom *aLangGroup, const char *aGe
 {
     NS_ENSURE_TRUE(Preferences::GetRootBranch(), );
 
-    nsCAutoString prefName, langGroupString;
+    nsAutoCString prefName, langGroupString;
 
     aLangGroup->ToUTF8String(langGroupString);
 
-    nsCAutoString genericDotLang;
+    nsAutoCString genericDotLang;
     if (aGenericName) {
         genericDotLang.Assign(aGenericName);
     } else {
@@ -901,7 +916,7 @@ bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], uint32_t aLangArra
         eFontPrefLang prefLang = aLangArray[i];
         const char *langGroup = GetPrefLangName(prefLang);
         
-        nsCAutoString prefName;
+        nsAutoCString prefName;
     
         prefName.AssignLiteral("font.default.");
         prefName.Append(langGroup);
@@ -926,7 +941,7 @@ bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], uint32_t aLangArra
         if (nameListValue && !nameListValue.Equals(nameValue)) {
             const char kComma = ',';
             const char *p, *p_end;
-            nsCAutoString list(nameListValue);
+            nsAutoCString list(nameListValue);
             list.BeginReading(p);
             list.EndReading(p_end);
             while (p < p_end) {
@@ -939,7 +954,7 @@ bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], uint32_t aLangArra
                 const char *start = p;
                 while (++p != p_end && *p != kComma)
                     /* nothing */ ;
-                nsCAutoString fontName(Substring(start, p));
+                nsAutoCString fontName(Substring(start, p));
                 fontName.CompressWhitespace(false, true);
                 if (!aCallback(prefLang, NS_ConvertUTF8toUTF16(fontName), aClosure))
                     return false;
@@ -968,7 +983,7 @@ gfxPlatform::GetFontPrefLangFor(nsIAtom *aLang)
 {
     if (!aLang)
         return eFontPrefLang_Others;
-    nsCAutoString lang;
+    nsAutoCString lang;
     aLang->ToUTF8String(lang);
     return GetFontPrefLangFor(lang.get());
 }
@@ -1078,7 +1093,7 @@ gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], uint32_t &aLen, eFon
                 const char *start = p;
                 while (++p != p_end && *p != kComma)
                     /* nothing */ ;
-                nsCAutoString lang(Substring(start, p));
+                nsAutoCString lang(Substring(start, p));
                 lang.CompressWhitespace(false, true);
                 eFontPrefLang fpl = gfxPlatform::GetFontPrefLangFor(lang.get());
                 switch (fpl) {

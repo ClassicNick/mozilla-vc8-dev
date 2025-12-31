@@ -641,10 +641,7 @@ nsDOMWindowUtils::SendWheelEvent(float aX,
   nsEventStatus status;
   nsresult rv = widget->DispatchEvent(&wheelEvent, status);
   NS_ENSURE_SUCCESS(rv, rv);
-  // ESM must not return negative values for overflow.
-  NS_ENSURE_TRUE(wheelEvent.overflowDeltaX >= 0.0, NS_ERROR_FAILURE);
-  NS_ENSURE_TRUE(wheelEvent.overflowDeltaY >= 0.0, NS_ERROR_FAILURE);
-  return rv;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2145,7 +2142,7 @@ nsDOMWindowUtils::GoOnline()
   nsCOMPtr<nsIURI> documentURI;
   documentURI = doc->GetDocumentURI();
 
-  nsCAutoString spec;
+  nsAutoCString spec;
   documentURI->GetSpec(spec);
   if (!StringBeginsWith(spec,  NS_LITERAL_CSTRING("about:neterror?")))
     return NS_ERROR_DOM_SECURITY_ERR;

@@ -563,7 +563,7 @@ nsIDOMHTMLDocument_Write_customMethodCallCode = """
 nsIDOMStorage_Clear_customMethodCallCode = """
     rv = self->Clear();
     if (NS_SUCCEEDED(rv))
-        JS_ClearScope(cx, obj);
+        JS_ClearNonGlobalObject(cx, obj);
 """
 
 CUSTOM_QS = {
@@ -798,13 +798,10 @@ customMethodCalls = {
     'nsIDOMNodeSelector_QuerySelector': {
         'thisType': 'nsINode',
         'code': '    nsIContent* result = '
-                'nsGenericElement::doQuerySelector(self, arg0, &rv);'
+                'self->QuerySelector(arg0, &rv);'
         },
     'nsIDOMNodeSelector_QuerySelectorAll': {
-        'thisType': 'nsINode',
-        'code': '    nsCOMPtr<nsIDOMNodeList> result;\n'
-                '    rv = nsGenericElement::doQuerySelectorAll(self, '
-                'arg0, getter_AddRefs(result));'
+        'thisType': 'nsINode'
         },
     'nsIDOMNode_Normalize': {
         'thisType': 'nsINode',

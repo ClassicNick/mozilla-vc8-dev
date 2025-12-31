@@ -10,6 +10,7 @@
  */
 
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/ThreadLocal.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -412,7 +413,7 @@ JS_AddArgumentFormatter(JSContext *cx, const char *format, JSArgumentFormatter f
             goto out;
         mpp = &map->next;
     }
-    map = (JSArgumentFormatMap *) cx->malloc_(sizeof *map);
+    map = cx->pod_malloc<JSArgumentFormatMap>();
     if (!map)
         return JS_FALSE;
     map->format = format;
@@ -435,7 +436,7 @@ JS_RemoveArgumentFormatter(JSContext *cx, const char *format)
     while ((map = *mpp) != NULL) {
         if (map->length == length && !strcmp(map->format, format)) {
             *mpp = map->next;
-            cx->free_(map);
+            js_free(map);
             return;
         }
         mpp = &map->next;
@@ -719,6 +720,13 @@ JS_IsBuiltinFunctionConstructor(JSFunction *fun)
  */
 static JSBool js_NewRuntimeWasCalled = JS_FALSE;
 
+/*
+ * Thread Local Storage slot for storing the runtime for a thread.
+ */
+namespace JS {
+mozilla::ThreadLocal<JSRuntime *> TlsRuntime;
+}
+
 static const JSSecurityCallbacks NullSecurityCallbacks = { };
 
 JSRuntime::JSRuntime()
@@ -847,7 +855,6 @@ JSRuntime::JSRuntime()
     waiveGCQuota(false),
     mathCache_(NULL),
     dtoaState(NULL),
-    pendingProxyOperation(NULL),
     trustedPrincipals_(NULL),
     wrapObjectCallback(TransparentObjectWrapper),
     sameCompartmentWrapObjectCallback(NULL),
@@ -878,6 +885,8 @@ JSRuntime::init(uint32_t maxbytes)
     ownerThread_ = PR_GetCurrentThread();
 #endif
 
+    JS::TlsRuntime.set(this);
+
 #ifdef JS_METHODJIT_SPEW
     JMCheckLogging();
 #endif
@@ -896,7 +905,7 @@ JSRuntime::init(uint32_t maxbytes)
         !atomsCompartment->init(NULL) ||
         !compartments.append(atomsCompartment))
     {
-        Foreground::delete_(atomsCompartment);
+        js_delete(atomsCompartment);
         return false;
     }
 
@@ -929,7 +938,7 @@ JSRuntime::init(uint32_t maxbytes)
 
     debugScopes = this->new_<DebugScopes>(this);
     if (!debugScopes || !debugScopes->init()) {
-        Foreground::delete_(debugScopes);
+        js_delete(debugScopes);
         return false;
     }
 
@@ -939,9 +948,11 @@ JSRuntime::init(uint32_t maxbytes)
 
 JSRuntime::~JSRuntime()
 {
-    JS_ASSERT(onOwnerThread());
+#ifdef JS_THREADSAFE
+    clearOwnerThread();
+#endif
 
-    delete_(debugScopes);
+    js_delete(debugScopes);
 
     /*
      * Even though all objects in the compartment are dead, we may have keep
@@ -981,12 +992,12 @@ JSRuntime::~JSRuntime()
         PR_DestroyLock(gcLock);
 #endif
 
-    delete_(bumpAlloc_);
-    delete_(mathCache_);
+    js_delete(bumpAlloc_);
+    js_delete(mathCache_);
 #ifdef JS_METHODJIT
-    delete_(jaegerRuntime_);
+    js_delete(jaegerRuntime_);
 #endif
-    delete_(execAlloc_);  /* Delete after jaegerRuntime_. */
+    js_delete(execAlloc_);  /* Delete after jaegerRuntime_. */
 }
 
 #ifdef JS_THREADSAFE
@@ -995,7 +1006,10 @@ JSRuntime::setOwnerThread()
 {
     JS_ASSERT(ownerThread_ == (void *)0xc1ea12);  /* "clear" */
     JS_ASSERT(requestDepth == 0);
+    JS_ASSERT(js_NewRuntimeWasCalled);
+    JS_ASSERT(JS::TlsRuntime.get() == NULL);
     ownerThread_ = PR_GetCurrentThread();
+    JS::TlsRuntime.set(this);
     nativeStackBase = GetNativeStackBase();
     if (nativeStackQuota)
         JS_SetNativeStackQuota(this, nativeStackQuota);
@@ -1004,9 +1018,11 @@ JSRuntime::setOwnerThread()
 void
 JSRuntime::clearOwnerThread()
 {
-    JS_ASSERT(onOwnerThread());
+    assertValidThread();
     JS_ASSERT(requestDepth == 0);
+    JS_ASSERT(js_NewRuntimeWasCalled);
     ownerThread_ = (void *)0xc1ea12;  /* "clear" */
+    JS::TlsRuntime.set(NULL);
     nativeStackBase = 0;
 #if JS_STACK_GROWTH_DIRECTION > 0
     nativeStackLimit = UINTPTR_MAX;
@@ -1015,10 +1031,20 @@ JSRuntime::clearOwnerThread()
 #endif
 }
 
-JS_FRIEND_API(bool)
-JSRuntime::onOwnerThread() const
+JS_FRIEND_API(void)
+JSRuntime::abortIfWrongThread() const
 {
-    return ownerThread_ == PR_GetCurrentThread();
+    if (ownerThread_ != PR_GetCurrentThread())
+        MOZ_CRASH();
+    if (this != JS::TlsRuntime.get())
+        MOZ_CRASH();
+}
+
+JS_FRIEND_API(void)
+JSRuntime::assertValidThread() const
+{
+    JS_ASSERT(ownerThread_ == PR_GetCurrentThread());
+    JS_ASSERT(this == JS::TlsRuntime.get());
 }
 #endif  /* JS_THREADSAFE */
 
@@ -1055,10 +1081,13 @@ JS_NewRuntime(uint32_t maxbytes)
 
         InitMemorySubsystem();
 
+        if (!JS::TlsRuntime.init())
+            return NULL;
+
         js_NewRuntimeWasCalled = JS_TRUE;
     }
 
-    JSRuntime *rt = OffTheBooks::new_<JSRuntime>();
+    JSRuntime *rt = js_new<JSRuntime>();
     if (!rt)
         return NULL;
 
@@ -1075,7 +1104,7 @@ JS_PUBLIC_API(void)
 JS_DestroyRuntime(JSRuntime *rt)
 {
     Probes::destroyRuntime(rt);
-    Foreground::delete_(rt);
+    js_delete(rt);
 }
 
 JS_PUBLIC_API(void)
@@ -1102,7 +1131,7 @@ static void
 StartRequest(JSContext *cx)
 {
     JSRuntime *rt = cx->runtime;
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
 
     if (rt->requestDepth) {
         rt->requestDepth++;
@@ -1119,7 +1148,7 @@ static void
 StopRequest(JSContext *cx)
 {
     JSRuntime *rt = cx->runtime;
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
     JS_ASSERT(rt->requestDepth != 0);
     if (rt->requestDepth != 1) {
         rt->requestDepth--;
@@ -1167,7 +1196,7 @@ JS_SuspendRequest(JSContext *cx)
 {
 #ifdef JS_THREADSAFE
     JSRuntime *rt = cx->runtime;
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
 
     unsigned saveDepth = rt->requestDepth;
     if (!saveDepth)
@@ -1187,7 +1216,7 @@ JS_ResumeRequest(JSContext *cx, unsigned saveDepth)
 {
 #ifdef JS_THREADSAFE
     JSRuntime *rt = cx->runtime;
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
     if (saveDepth == 0)
         return;
     JS_ASSERT(saveDepth >= 1);
@@ -1203,7 +1232,7 @@ JS_PUBLIC_API(JSBool)
 JS_IsInRequest(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
     return rt->requestDepth != 0;
 #else
     return false;
@@ -1214,7 +1243,7 @@ JS_PUBLIC_API(JSBool)
 JS_IsInSuspendedRequest(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
-    JS_ASSERT(rt->onOwnerThread());
+    rt->assertValidThread();
     return rt->suspendCount != 0;
 #else
     return false;
@@ -1436,54 +1465,32 @@ JS_SetWrapObjectCallbacks(JSRuntime *rt,
     return old;
 }
 
-struct JSCrossCompartmentCall
-{
-    JSContext *context;
-    JSCompartment *oldCompartment;
-};
-
-JS_PUBLIC_API(JSCrossCompartmentCall *)
-JS_EnterCrossCompartmentCall(JSContext *cx, JSRawObject target)
+JS_PUBLIC_API(JSCompartment *)
+JS_EnterCompartment(JSContext *cx, JSRawObject target)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
-    JSCrossCompartmentCall *call = OffTheBooks::new_<JSCrossCompartmentCall>();
-    if (!call)
-        return NULL;
-
-    call->context = cx;
-    call->oldCompartment = cx->compartment;
-
+    JSCompartment *oldCompartment = cx->compartment;
     cx->enterCompartment(target->compartment());
-    return call;
+    return oldCompartment;
 }
 
-JS_PUBLIC_API(JSCrossCompartmentCall *)
-JS_EnterCrossCompartmentCallScript(JSContext *cx, JSScript *target)
+JS_PUBLIC_API(JSCompartment *)
+JS_EnterCompartmentOfScript(JSContext *cx, JSScript *target)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     GlobalObject &global = target->global();
-    return JS_EnterCrossCompartmentCall(cx, &global);
-}
-
-JS_PUBLIC_API(JSCrossCompartmentCall *)
-JS_EnterCrossCompartmentCallStackFrame(JSContext *cx, JSStackFrame *target)
-{
-    AssertHeapIsIdle(cx);
-    CHECK_REQUEST(cx);
-    HandleObject global(HandleObject::fromMarkedLocation((JSObject**) &Valueify(target)->global()));
-    return JS_EnterCrossCompartmentCall(cx, global);
+    return JS_EnterCompartment(cx, &global);
 }
 
 JS_PUBLIC_API(void)
-JS_LeaveCrossCompartmentCall(JSCrossCompartmentCall *call)
+JS_LeaveCompartment(JSContext *cx, JSCompartment *oldCompartment)
 {
-    AssertHeapIsIdle(call->context);
-    CHECK_REQUEST(call->context);
-    call->context->leaveCompartment(call->oldCompartment);
-    Foreground::delete_(call);
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+    cx->leaveCompartment(oldCompartment);
 }
 
 JSAutoCompartment::JSAutoCompartment(JSContext *cx, JSRawObject target)
@@ -1494,33 +1501,25 @@ JSAutoCompartment::JSAutoCompartment(JSContext *cx, JSRawObject target)
     cx_->enterCompartment(target->compartment());
 }
 
+JSAutoCompartment::JSAutoCompartment(JSContext *cx, JSScript *target)
+  : cx_(cx),
+    oldCompartment_(cx->compartment)
+{
+    AssertHeapIsIdleOrIterating(cx_);
+    cx_->enterCompartment(target->compartment());
+}
+
+JSAutoCompartment::JSAutoCompartment(JSContext *cx, JSStackFrame *target)
+  : cx_(cx),
+    oldCompartment_(cx->compartment)
+{
+    AssertHeapIsIdleOrIterating(cx_);
+    cx_->enterCompartment(Valueify(target)->global().compartment());
+}
+
 JSAutoCompartment::~JSAutoCompartment()
 {
     cx_->leaveCompartment(oldCompartment_);
-}
-
-bool
-AutoEnterScriptCompartment::enter(JSContext *cx, JSScript *target)
-{
-    JS_ASSERT(!call);
-    if (cx->compartment == target->compartment()) {
-        call = reinterpret_cast<JSCrossCompartmentCall*>(1);
-        return true;
-    }
-    call = JS_EnterCrossCompartmentCallScript(cx, target);
-    return call != NULL;
-}
-
-bool
-AutoEnterFrameCompartment::enter(JSContext *cx, JSStackFrame *target)
-{
-    JS_ASSERT(!call);
-    if (cx->compartment == Valueify(target)->scopeChain()->compartment()) {
-        call = reinterpret_cast<JSCrossCompartmentCall*>(1);
-        return true;
-    }
-    call = JS_EnterCrossCompartmentCallStackFrame(cx, target);
-    return call != NULL;
 }
 
 JS_PUBLIC_API(void)
@@ -2311,7 +2310,7 @@ JS_realloc(JSContext *cx, void *p, size_t nbytes)
 JS_PUBLIC_API(void)
 JS_free(JSContext *cx, void *p)
 {
-    return cx->free_(p);
+    return js_free(p);
 }
 
 JS_PUBLIC_API(void)
@@ -2473,7 +2472,7 @@ JS_RemoveObjectRootRT(JSRuntime *rt, JSObject **rp)
 }
 
 JS_PUBLIC_API(void)
-JS_RemoveScriptRoot(JSRuntime *rt, JSScript **rp)
+JS_RemoveScriptRootRT(JSRuntime *rt, JSScript **rp)
 {
     js_RemoveRoot(rt, (void *)rp);
 }
@@ -2773,7 +2772,7 @@ DumpNotify(JSTracer *trc, void **thingp, JSGCTraceKind kind)
     const char *edgeName = JS_GetTraceEdgeName(&dtrc->base, dtrc->buffer, sizeof(dtrc->buffer));
     size_t edgeNameSize = strlen(edgeName) + 1;
     size_t bytes = offsetof(JSHeapDumpNode, edgeName) + edgeNameSize;
-    JSHeapDumpNode *node = (JSHeapDumpNode *) OffTheBooks::malloc_(bytes);
+    JSHeapDumpNode *node = (JSHeapDumpNode *) js_malloc(bytes);
     if (!node) {
         dtrc->ok = false;
         return;
@@ -2917,7 +2916,7 @@ JS_DumpHeap(JSRuntime *rt, FILE *fp, void* startThing, JSGCTraceKind startKind,
         for (;;) {
             next = node->next;
             parent = node->parent;
-            Foreground::free_(node);
+            js_free(node);
             node = next;
             if (node)
                 break;
@@ -4483,26 +4482,64 @@ JS_DeleteProperty(JSContext *cx, JSObject *objArg, const char *name)
     return JS_DeleteProperty2(cx, objArg, name, &junk);
 }
 
+static Shape *
+LastConfigurableShape(JSObject *obj)
+{
+    for (Shape::Range r(obj->lastProperty()->all()); !r.empty(); r.popFront()) {
+        Shape *shape = &r.front();
+        if (shape->configurable())
+            return shape;
+    }
+    return NULL;
+}
+
 JS_PUBLIC_API(void)
-JS_ClearScope(JSContext *cx, JSObject *objArg)
+JS_ClearNonGlobalObject(JSContext *cx, JSObject *objArg)
 {
     RootedObject obj(cx, objArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
 
-    ClearOp clearOp = obj->getOps()->clear;
-    if (clearOp)
-        clearOp(cx, obj);
+    JS_ASSERT(!obj->isGlobal());
 
-    if (obj->isNative())
-        js_ClearNative(cx, obj);
+    if (!obj->isNative())
+        return;
 
-    /* Clear cached class objects on the global object. */
-    if (obj->isGlobal())
-        obj->asGlobal().clear(cx);
+    /* Remove all configurable properties from obj. */
+    while (Shape *shape = LastConfigurableShape(obj)) {
+        if (!obj->removeProperty(cx, shape->propid()))
+            return;
+    }
 
-    js_InitRandom(cx);
+    /* Set all remaining writable plain data properties to undefined. */
+    for (Shape::Range r(obj->lastProperty()->all()); !r.empty(); r.popFront()) {
+        Shape *shape = &r.front();
+        if (shape->isDataDescriptor() &&
+            shape->writable() &&
+            shape->hasDefaultSetter() &&
+            shape->hasSlot()) {
+            obj->nativeSetSlot(shape->slot(), UndefinedValue());
+        }
+    }
+}
+
+JS_PUBLIC_API(void)
+JS_SetAllNonReservedSlotsToUndefined(JSContext *cx, JSObject *objArg)
+{
+    RootedObject obj(cx, objArg);
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+    assertSameCompartment(cx, obj);
+
+    if (!obj->isNative())
+        return;
+
+    Class *clasp = obj->getClass();
+    unsigned numReserved = JSCLASS_RESERVED_SLOTS(clasp);
+    unsigned numSlots = obj->slotSpan();
+    for (unsigned i = numReserved; i < numSlots; i++)
+        obj->setSlot(i, UndefinedValue());
 }
 
 JS_PUBLIC_API(JSIdArray *)
@@ -5190,7 +5227,7 @@ JS::Compile(JSContext *cx, HandleObject obj, CompileOptions options,
         return NULL;
 
     JSScript *script = Compile(cx, obj, options, chars, length);
-    cx->free_(chars);
+    js_free(chars);
     return script;
 }
 
@@ -5358,7 +5395,7 @@ JS_BufferIsCompilableUnit(JSContext *cx, JSBool bytes_are_utf8, JSObject *objArg
             JS_SetErrorReporter(cx, older);
         }
     }
-    cx->free_(chars);
+    js_free(chars);
     JS_RestoreExceptionState(cx, exnState);
     return result;
 }
@@ -5482,7 +5519,7 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
         return NULL;
 
     JSFunction *fun = CompileFunction(cx, obj, options, name, nargs, argnames, chars, length);
-    cx->free_(chars);
+    js_free(chars);
     return fun;
 }
 
@@ -5678,7 +5715,7 @@ JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
         return false;
 
     bool ok = Evaluate(cx, obj, options, chars, length, rval);
-    cx->free_(chars);
+    js_free(chars);
     return ok;
 }
 
@@ -5983,7 +6020,7 @@ JS_NewStringCopyZ(JSContext *cx, const char *s)
         return NULL;
     str = js_NewString(cx, js, n);
     if (!str)
-        cx->free_(js);
+        js_free(js);
     return str;
 }
 
@@ -6226,14 +6263,6 @@ JS_UndependString(JSContext *cx, JSString *str)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_MakeStringImmutable(JSContext *cx, JSString *str)
-{
-    AssertHeapIsIdle(cx);
-    CHECK_REQUEST(cx);
-    return !!str->ensureFixed(cx);
-}
-
-JS_PUBLIC_API(JSBool)
 JS_EncodeCharacters(JSContext *cx, const jschar *src, size_t srclen, char *dst, size_t *dstlenp)
 {
     AssertHeapIsIdle(cx);
@@ -6432,7 +6461,7 @@ void
 JSAutoStructuredCloneBuffer::clear()
 {
     if (data_) {
-        Foreground::free_(data_);
+        js_free(data_);
         data_ = NULL;
         nbytes_ = 0;
         version_ = 0;
@@ -6451,7 +6480,7 @@ JSAutoStructuredCloneBuffer::adopt(uint64_t *data, size_t nbytes, uint32_t versi
 bool
 JSAutoStructuredCloneBuffer::copy(const uint64_t *srcData, size_t nbytes, uint32_t version)
 {
-    uint64_t *newData = static_cast<uint64_t *>(OffTheBooks::malloc_(nbytes));
+    uint64_t *newData = static_cast<uint64_t *>(js_malloc(nbytes));
     if (!newData)
         return false;
 
@@ -6747,7 +6776,7 @@ JS_NewRegExpObject(JSContext *cx, JSObject *objArg, char *bytes, size_t length, 
 
     RegExpStatics *res = obj->asGlobal().getRegExpStatics();
     RegExpObject *reobj = RegExpObject::create(cx, res, chars, length, RegExpFlag(flags), NULL);
-    cx->free_(chars);
+    js_free(chars);
     return reobj;
 }
 
@@ -6806,7 +6835,7 @@ JS_NewRegExpObjectNoStatics(JSContext *cx, char *bytes, size_t length, unsigned 
     if (!chars)
         return NULL;
     RegExpObject *reobj = RegExpObject::createNoStatics(cx, chars, length, RegExpFlag(flags), NULL);
-    cx->free_(chars);
+    js_free(chars);
     return reobj;
 }
 
@@ -6933,7 +6962,7 @@ JS_SaveExceptionState(JSContext *cx)
 
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    state = (JSExceptionState *) cx->malloc_(sizeof(JSExceptionState));
+    state = cx->pod_malloc<JSExceptionState>();
     if (state) {
         state->throwing = JS_GetPendingException(cx, &state->exception);
         if (state->throwing && JSVAL_IS_GCTHING(state->exception))
@@ -6966,7 +6995,7 @@ JS_DropExceptionState(JSContext *cx, JSExceptionState *state)
             assertSameCompartment(cx, state->exception);
             JS_RemoveValueRoot(cx, &state->exception);
         }
-        cx->free_(state);
+        js_free(state);
     }
 }
 
@@ -7026,10 +7055,7 @@ JS_SetRuntimeThread(JSRuntime *rt)
 extern JS_NEVER_INLINE JS_PUBLIC_API(void)
 JS_AbortIfWrongThread(JSRuntime *rt)
 {
-#ifdef JS_THREADSAFE
-    if (!rt->onOwnerThread())
-        MOZ_CRASH();
-#endif
+    rt->abortIfWrongThread();
 }
 
 #ifdef JS_GC_ZEAL

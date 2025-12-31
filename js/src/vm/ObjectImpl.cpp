@@ -489,7 +489,7 @@ ArrayBufferElementsHeader::defineElement(JSContext *cx, Handle<ObjectImpl*> obj,
 }
 
 bool
-js::GetOwnProperty(JSContext *cx, Handle<ObjectImpl*> obj, PropertyId pid_, unsigned resolveFlags,
+js::GetOwnPropertyId(JSContext *cx, Handle<ObjectImpl*> obj, PropertyId pid_, unsigned resolveFlags,
                    PropDesc *desc)
 {
     NEW_OBJECT_REPRESENTATION_ONLY();
@@ -579,6 +579,73 @@ js::GetOwnElement(JSContext *cx, Handle<ObjectImpl*> obj, uint32_t index, unsign
     }
 
     MOZ_NOT_REACHED("bad elements kind!");
+    return false;
+}
+
+bool
+js::GetPropertyId(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+                Handle<PropertyId> pid, unsigned resolveFlags, MutableHandle<Value> vp)
+{
+    NEW_OBJECT_REPRESENTATION_ONLY();
+
+    MOZ_ASSERT(receiver);
+
+    Rooted<ObjectImpl*> current(cx, obj);
+
+    do {
+        MOZ_ASSERT(obj);
+
+        if (Downcast(current)->isProxy()) {
+            MOZ_NOT_REACHED("NYI: proxy [[GetP]]");
+            return false;
+        }
+
+        PropDesc desc;
+        if (!GetOwnPropertyId(cx, current, pid, resolveFlags, &desc))
+            return false;
+
+        /* No property?  Recur or bottom out. */
+        if (desc.isUndefined()) {
+            current = current->getProto();
+            if (current)
+                continue;
+
+            vp.setUndefined();
+            return true;
+        }
+
+        /* If it's a data property, return the value. */
+        if (desc.isDataDescriptor()) {
+            vp.set(desc.value());
+            return true;
+        }
+
+        /* If it's an accessor property, call its [[Get]] with the receiver. */
+        if (desc.isAccessorDescriptor()) {
+            Rooted<Value> get(cx, desc.getterValue());
+            if (get.isUndefined()) {
+                vp.setUndefined();
+                return true;
+            }
+
+            InvokeArgsGuard args;
+            if (!cx->stack.pushInvokeArgs(cx, 0, &args))
+                return false;
+
+            args.setCallee(get);
+            args.setThis(ObjectValue(*receiver));
+
+            bool ok = Invoke(cx, args);
+            vp.set(args.rval());
+            return ok;
+        }
+
+        /* Otherwise it's a PropertyOp-based property.  XXX handle this! */
+        MOZ_NOT_REACHED("NYI: handle PropertyOp'd properties here");
+        return false;
+    } while (false);
+
+    MOZ_NOT_REACHED("buggy control flow");
     return false;
 }
 
@@ -821,6 +888,8 @@ js::SetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
     NEW_OBJECT_REPRESENTATION_ONLY();
 
     Rooted<ObjectImpl*> current(cx, obj);
+
+    MOZ_ASSERT(receiver);
 
     do {
         MOZ_ASSERT(current);

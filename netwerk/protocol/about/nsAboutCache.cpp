@@ -106,13 +106,13 @@ nsAboutCache::NewChannel(nsIURI *aURI, nsIChannel **result)
     rv = storageStream->NewInputStream(0, getter_AddRefs(inStr));
     if (NS_FAILED(rv)) return rv;
 
-    nsIChannel* channel;
-    rv = NS_NewInputStreamChannel(&channel, aURI, inStr,
+    nsCOMPtr<nsIChannel> channel;
+    rv = NS_NewInputStreamChannel(getter_AddRefs(channel), aURI, inStr,
                                   NS_LITERAL_CSTRING("text/html"),
                                   NS_LITERAL_CSTRING("utf-8"));
     if (NS_FAILED(rv)) return rv;
 
-    *result = channel;
+    channel.forget(result);
     return rv;
 }
 
@@ -234,7 +234,7 @@ nsAboutCache::VisitEntry(const char *deviceID,
 
     nsresult        rv;
     uint32_t        bytesWritten;
-    nsCAutoString   key;
+    nsAutoCString   key;
     nsXPIDLCString  clientID;
     bool            streamBased;
     
@@ -248,7 +248,7 @@ nsAboutCache::VisitEntry(const char *deviceID,
     if (NS_FAILED(rv)) return rv;
 
     // Generate a about:cache-entry URL for this entry...
-    nsCAutoString url;
+    nsAutoCString url;
     url.AssignLiteral("about:cache-entry?client=");
     url += clientID;
     url.AppendLiteral("&amp;sb=");
@@ -327,7 +327,7 @@ nsAboutCache::ParseURI(nsIURI * uri, nsCString &deviceID)
 
     deviceID.Truncate();
 
-    nsCAutoString path;
+    nsAutoCString path;
     rv = uri->GetPath(path);
     if (NS_FAILED(rv)) return rv;
 

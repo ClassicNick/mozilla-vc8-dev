@@ -25,6 +25,7 @@ DOM_SRCDIRS = \
   content/base/src \
   content/html/content/src \
   content/html/document/src \
+  content/media/webaudio \
   content/svg/content/src \
   layout/generic \
   layout/style \
@@ -38,6 +39,7 @@ DOM_SRCDIRS += \
   dom/system/gonk \
   dom/telephony \
   dom/wifi \
+  dom/icc/src \
   $(NULL)
 endif
 
