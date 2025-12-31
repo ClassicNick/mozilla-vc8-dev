@@ -174,14 +174,14 @@ ListBase<LC>::getListObject(JSObject *obj)
 {
     if (xpc::WrapperFactory::IsXrayWrapper(obj))
         obj = js::UnwrapObject(obj);
-    JS_ASSERT(objIsList(obj));
+    MOZ_ASSERT(objIsList(obj));
     return getNative(obj);
 }
 
 static JSBool
 UnwrapSecurityWrapper(JSContext *cx, JSObject *obj, JSObject *callee, JSObject **unwrapped)
 {
-    JS_ASSERT(XPCWrapper::IsSecurityWrapper(obj));
+    MOZ_ASSERT(XPCWrapper::IsSecurityWrapper(obj));
 
     if (callee && JS_GetGlobalForObject(cx, obj) == JS_GetGlobalForObject(cx, callee)) {
         *unwrapped = js::UnwrapObject(obj);
@@ -210,14 +210,17 @@ ListBase<LC>::instanceIsListObject(JSContext *cx, JSObject *obj, JSObject *calle
 
 template<class LC>
 JSBool
-ListBase<LC>::length_getter(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp)
+ListBase<LC>::length_getter(JSContext *cx, unsigned argc, JS::Value *vp)
 {
+    JSObject *obj = JS_THIS_OBJECT(cx, vp);
+    if (!obj)
+        return false;
     if (!instanceIsListObject(cx, obj, NULL))
         return false;
     uint32_t length;
     getListObject(obj)->GetLength(&length);
-    JS_ASSERT(int32_t(length) >= 0);
-    vp.set(UINT_TO_JSVAL(length));
+    MOZ_ASSERT(int32_t(length) >= 0);
+    JS_SET_RVAL(cx, vp, UINT_TO_JSVAL(length));
     return true;
 }
 
@@ -359,14 +362,18 @@ ListBase<LC>::getPrototype(JSContext *cx, XPCWrappedNativeScope *scope,
         return NULL;
 
     for (size_t n = 0; n < sProtoPropertiesCount; ++n) {
-        JS_ASSERT(sProtoProperties[n].getter);
+        MOZ_ASSERT(sProtoProperties[n].getter);
         jsid id = sProtoProperties[n].id;
-        unsigned attrs = JSPROP_ENUMERATE | JSPROP_SHARED;
+        unsigned attrs = JSPROP_ENUMERATE | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS;
         if (!sProtoProperties[n].setter)
             attrs |= JSPROP_READONLY;
         if (!JS_DefinePropertyById(cx, interfacePrototype, id, JSVAL_VOID,
-                                   sProtoProperties[n].getter, sProtoProperties[n].setter, attrs))
+                                   (JSPropertyOp) sProtoProperties[n].getter,
+                                   (JSStrictPropertyOp) sProtoProperties[n].setter,
+                                   attrs))
+        {
             return NULL;
+        }
     }
 
     for (size_t n = 0; n < sProtoMethodsCount; ++n) {
@@ -657,7 +664,7 @@ ListBase<LC>::getOwnPropertyNames(JSContext *cx, JSObject *proxy, AutoIdVector &
 {
     uint32_t length;
     getListObject(proxy)->GetLength(&length);
-    JS_ASSERT(int32_t(length) >= 0);
+    MOZ_ASSERT(int32_t(length) >= 0);
     for (int32_t i = 0; i < int32_t(length); ++i) {
         if (!props.append(INT_TO_JSID(i)))
             return false;
@@ -759,16 +766,16 @@ template<class LC>
 bool
 ListBase<LC>::resolveNativeName(JSContext *cx, JSObject *proxy, jsid id, JSPropertyDescriptor *desc)
 {
-    JS_ASSERT(xpc::WrapperFactory::IsXrayWrapper(proxy));
+    MOZ_ASSERT(xpc::WrapperFactory::IsXrayWrapper(proxy));
 
     for (size_t n = 0; n < sProtoPropertiesCount; ++n) {
         if (id == sProtoProperties[n].id) {
-            desc->attrs = JSPROP_ENUMERATE | JSPROP_SHARED;
+            desc->attrs = JSPROP_ENUMERATE | JSPROP_SHARED | JSPROP_NATIVE_ACCESSORS;
             if (!sProtoProperties[n].setter)
                 desc->attrs |= JSPROP_READONLY;
             desc->obj = proxy;
-            desc->setter = sProtoProperties[n].setter;
-            desc->getter = sProtoProperties[n].getter;
+            desc->setter = (JSStrictPropertyOp) sProtoProperties[n].setter;
+            desc->getter = (JSPropertyOp) sProtoProperties[n].getter;
             return true;
         }
     }
@@ -821,7 +828,7 @@ ListBase<LC>::hasPropertyOnPrototype(JSContext *cx, JSObject *proxy, jsid id)
         proxy = js::UnwrapObject(proxy);
         ac.construct(cx, proxy);
     }
-    JS_ASSERT(objIsList(proxy));
+    MOZ_ASSERT(objIsList(proxy));
 
     bool found = false;
     // We ignore an error from getPropertyOnPrototype.
@@ -956,9 +963,10 @@ ListBase<LC>::iterate(JSContext *cx, JSObject *proxy, unsigned flags, Value *vp)
 
 template<class LC>
 bool
-ListBase<LC>::hasInstance(JSContext *cx, JSObject *proxy, const Value *vp, bool *bp)
+ListBase<LC>::hasInstance(JSContext *cx, JS::HandleObject proxy, JS::MutableHandleValue vp,
+                          bool *bp)
 {
-    *bp = vp->isObject() && js::GetObjectClass(&vp->toObject()) == &sInterfaceClass;
+    *bp = vp.isObject() && js::GetObjectClass(&vp.toObject()) == &sInterfaceClass;
     return true;
 }
 

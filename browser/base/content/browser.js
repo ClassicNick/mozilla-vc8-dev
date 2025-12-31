@@ -63,26 +63,26 @@ XPCOMUtils.defineLazyGetter(window, "gFindBar", function() {
   return findbar;
 });
 
-__defineGetter__("gPrefService", function() {
+this.__defineGetter__("gPrefService", function() {
   delete this.gPrefService;
   return this.gPrefService = Services.prefs;
 });
 
-__defineGetter__("AddonManager", function() {
+this.__defineGetter__("AddonManager", function() {
   let tmp = {};
   Cu.import("resource://gre/modules/AddonManager.jsm", tmp);
   return this.AddonManager = tmp.AddonManager;
 });
-__defineSetter__("AddonManager", function (val) {
+this.__defineSetter__("AddonManager", function (val) {
   delete this.AddonManager;
   return this.AddonManager = val;
 });
 
-__defineGetter__("PluralForm", function() {
+this.__defineGetter__("PluralForm", function() {
   Cu.import("resource://gre/modules/PluralForm.jsm");
   return this.PluralForm;
 });
-__defineSetter__("PluralForm", function (val) {
+this.__defineSetter__("PluralForm", function (val) {
   delete this.PluralForm;
   return this.PluralForm = val;
 });
@@ -154,11 +154,8 @@ XPCOMUtils.defineLazyGetter(this, "SafeBrowsing", function() {
 });
 #endif
 
-XPCOMUtils.defineLazyGetter(this, "gBrowserNewTabPreloader", function () {
-  let tmp = {};
-  Cu.import("resource:///modules/BrowserNewTabPreloader.jsm", tmp);
-  return new tmp.BrowserNewTabPreloader();
-});
+XPCOMUtils.defineLazyModuleGetter(this, "gBrowserNewTabPreloader",
+  "resource:///modules/BrowserNewTabPreloader.jsm", "BrowserNewTabPreloader");
 
 let gInitialPages = [
   "about:blank",
@@ -1126,7 +1123,7 @@ var gBrowserInit = {
       else if (window.arguments.length >= 3) {
         loadURI(uriToLoad, window.arguments[2], window.arguments[3] || null,
                 window.arguments[4] || false);
-        content.focus();
+        window.focus();
       }
       // Note: loadOneOrMoreURIs *must not* be called if window.arguments.length >= 3.
       // Such callers expect that window.arguments[0] is handled as a single URI.
@@ -1409,12 +1406,6 @@ var gBrowserInit = {
     gSyncUI.init();
 #endif
 
-    // Don't preload new tab pages when the toolbar is hidden
-    // (i.e. when the current window is a popup window).
-    if (window.toolbar.visible) {
-      gBrowserNewTabPreloader.init(window);
-    }
-
     gBrowserThumbnails.init();
     TabView.init();
 
@@ -1548,7 +1539,7 @@ var gBrowserInit = {
     if (!gStartupRan)
       return;
 
-    if (!__lookupGetter__("InspectorUI"))
+    if (!window.__lookupGetter__("InspectorUI"))
       InspectorUI.destroy();
 
     // First clean up services initialized in gBrowserInit.onLoad (or those whose
@@ -1562,10 +1553,6 @@ var gBrowserInit = {
     FullScreen.cleanup();
 
     Services.obs.removeObserver(gPluginHandler.pluginCrashed, "plugin-crashed");
-
-    if (!__lookupGetter__("gBrowserNewTabPreloader")) {
-      gBrowserNewTabPreloader.uninit();
-    }
 
     try {
       gBrowser.removeProgressListener(window.XULBrowserWindow);
@@ -1983,11 +1970,9 @@ function focusAndSelectUrlBar() {
     if (window.fullScreen)
       FullScreen.mouseoverToggle(true);
 
-    gURLBar.focus();
-    if (document.activeElement == gURLBar.inputField) {
-      gURLBar.select();
+    gURLBar.select();
+    if (document.activeElement == gURLBar.inputField)
       return true;
-    }
   }
   return false;
 }
@@ -2091,21 +2076,28 @@ function BrowserOpenFileWindow()
 {
   // Get filepicker component.
   try {
-    const nsIFilePicker = Components.interfaces.nsIFilePicker;
-    var fp = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
-    fp.init(window, gNavigatorBundle.getString("openFile"), nsIFilePicker.modeOpen);
-    fp.appendFilters(nsIFilePicker.filterAll | nsIFilePicker.filterText | nsIFilePicker.filterImages |
-                     nsIFilePicker.filterXML | nsIFilePicker.filterHTML);
-    fp.displayDirectory = gLastOpenDirectory.path;
-
-    if (fp.show() == nsIFilePicker.returnOK) {
-      try {
-        if (fp.file)
-          gLastOpenDirectory.path = fp.file.parent.QueryInterface(Ci.nsILocalFile);
-      } catch(e) {
+    const nsIFilePicker = Ci.nsIFilePicker;
+    let fp = Cc["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
+    let fpCallback = function fpCallback_done(aResult) {
+      if (aResult == nsIFilePicker.returnOK) {
+        try {
+          if (fp.file) {
+            gLastOpenDirectory.path =
+              fp.file.parent.QueryInterface(Ci.nsILocalFile);
+          }
+        } catch (ex) {
+        }
+        openUILinkIn(fp.fileURL.spec, "current");
       }
-      openUILinkIn(fp.fileURL.spec, "current");
-    }
+    };
+
+    fp.init(window, gNavigatorBundle.getString("openFile"),
+            nsIFilePicker.modeOpen);
+    fp.appendFilters(nsIFilePicker.filterAll | nsIFilePicker.filterText |
+                     nsIFilePicker.filterImages | nsIFilePicker.filterXML |
+                     nsIFilePicker.filterHTML);
+    fp.displayDirectory = gLastOpenDirectory.path;
+    fp.open(fpCallback);
   } catch (ex) {
   }
 }
@@ -2529,13 +2521,13 @@ let BrowserOnClick = {
 
     // If the event came from an ssl error page, it is probably either the "Add
     // Exception…" or "Get me out of here!" button
-    if (/^about:certerror/.test(ownerDoc.documentURI)) {
+    if (ownerDoc.documentURI.startsWith("about:certerror")) {
       this.onAboutCertError(originalTarget, ownerDoc);
     }
-    else if (/^about:blocked/.test(ownerDoc.documentURI)) {
+    else if (ownerDoc.documentURI.startsWith("about:blocked")) {
       this.onAboutBlocked(originalTarget, ownerDoc);
     }
-    else if (/^about:neterror/.test(ownerDoc.documentURI)) {
+    else if (ownerDoc.documentURI.startsWith("about:neterror")) {
       this.onAboutNetError(originalTarget, ownerDoc);
     }
     else if (/^about:home$/i.test(ownerDoc.documentURI)) {
@@ -3329,12 +3321,9 @@ const BrowserSearch = {
     if (searchBar && window.fullScreen)
       FullScreen.mouseoverToggle(true);
     if (searchBar)
-      searchBar.focus();
-    if (searchBar && document.activeElement == searchBar.textbox.inputField) {
       searchBar.select();
-    } else {
+    if (!searchBar || document.activeElement != searchBar.textbox.inputField)
       openUILinkIn(Services.search.defaultEngine.searchForm, "current");
-    }
   },
 
   /**
@@ -3625,7 +3614,7 @@ function BrowserToolboxCustomizeDone(aToolboxChanged) {
     // Hacky: update the PopupNotifications' object's reference to the iconBox,
     // if it already exists, since it may have changed if the URL bar was
     // added/removed.
-    if (!__lookupGetter__("PopupNotifications"))
+    if (!window.__lookupGetter__("PopupNotifications"))
       PopupNotifications.iconBox = document.getElementById("notification-popup-box");
   }
 
@@ -3660,7 +3649,7 @@ function BrowserToolboxCustomizeDone(aToolboxChanged) {
   if (!getBoolPref("ui.click_hold_context_menus", false))
     SetClickAndHoldHandlers();
 
-  window.content.focus();
+  gBrowser.selectedBrowser.focus();
 }
 
 function BrowserToolboxCustomizeChange(aType) {
@@ -4084,7 +4073,7 @@ var XULBrowserWindow = {
         // Only need to call locationChange if the PopupNotifications object
         // for this window has already been initialized (i.e. its getter no
         // longer exists)
-        if (!__lookupGetter__("PopupNotifications"))
+        if (!window.__lookupGetter__("PopupNotifications"))
           PopupNotifications.locationChange();
       }
     }
@@ -4492,7 +4481,7 @@ var TabsProgressListener = {
 
     if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
         Components.isSuccessCode(aStatus) &&
-        /^about:/.test(aWebProgress.DOMWindow.document.documentURI)) {
+        aWebProgress.DOMWindow.document.documentURI.startsWith("about:")) {
       aBrowser.addEventListener("click", BrowserOnClick, true);
       aBrowser.addEventListener("pagehide", function onPageHide(event) {
         if (event.target.defaultView.frameElement)
@@ -4648,7 +4637,7 @@ nsBrowserAccess.prototype = {
           gBrowser.loadURIWithFlags(aURI.spec, loadflags, referrer, null, null);
         }
         if (!gPrefService.getBoolPref("browser.tabs.loadDivertedInBackground"))
-          content.focus();
+          window.focus();
     }
     return newWindow;
   },
@@ -4966,7 +4955,7 @@ function toggleSidebar(commandID, forceOpen) {
       sidebarTitle.value = "";
       sidebarBox.hidden = true;
       sidebarSplitter.hidden = true;
-      content.focus();
+      gBrowser.selectedBrowser.focus();
     } else {
       fireSidebarFocusedEvent();
     }

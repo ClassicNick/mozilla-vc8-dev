@@ -612,8 +612,8 @@ ProfilingGetPC(JSRuntime *rt, JSScript *script, void *ip);
 JS_FRIEND_API(void *)
 GetOwnerThread(const JSContext *cx);
 
-JS_FRIEND_API(unsigned)
-GetContextOutstandingRequests(const JSContext *cx);
+JS_FRIEND_API(bool)
+ContextHasOutstandingRequests(const JSContext *cx);
 #endif
 
 JS_FRIEND_API(JSCompartment *)
@@ -808,6 +808,9 @@ NotifyDidPaint(JSRuntime *rt);
 
 extern JS_FRIEND_API(bool)
 IsIncrementalGCEnabled(JSRuntime *rt);
+
+JS_FRIEND_API(bool)
+IsIncrementalGCInProgress(JSRuntime *rt);
 
 extern JS_FRIEND_API(void)
 DisableIncrementalGC(JSRuntime *rt);
@@ -1024,6 +1027,8 @@ typedef uint32_t JSArrayBufferViewType;
 
 /*
  * Create a new typed array with nelements elements.
+ *
+ * These functions (except the WithBuffer variants) fill in the array with zeros.
  */
 
 extern JS_FRIEND_API(JSObject *)

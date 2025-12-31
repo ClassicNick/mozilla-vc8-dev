@@ -117,8 +117,8 @@ private:
 
     struct Properties {
         jsid &id;
-        JSPropertyOp getter;
-        JSStrictPropertyOp setter;
+        JSNative getter;
+        JSNative setter;
     };
     struct Methods {
         jsid &id;
@@ -133,7 +133,7 @@ private:
 
     static JSObject *ensureExpandoObject(JSContext *cx, JSObject *obj);
 
-    static JSBool length_getter(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
+    static JSBool length_getter(JSContext *cx, unsigned argc, JS::Value *vp);
 
     static inline bool getItemAt(ListType *list, uint32_t i, IndexGetterType &item);
     static inline bool setItemAt(JSContext *cx, ListType *list, uint32_t i, IndexSetterType item);
@@ -180,7 +180,7 @@ public:
     bool iterate(JSContext *cx, JSObject *proxy, unsigned flags, JS::Value *vp);
 
     /* Spidermonkey extensions. */
-    bool hasInstance(JSContext *cx, JSObject *proxy, const JS::Value *vp, bool *bp);
+    bool hasInstance(JSContext *cx, JS::HandleObject proxy, JS::MutableHandleValue vp, bool *bp);
     JSString *obj_toString(JSContext *cx, JSObject *proxy);
     void finalize(JSFreeOp *fop, JSObject *proxy);
 

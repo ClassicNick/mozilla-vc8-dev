@@ -16,6 +16,8 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIURI.h"
 
+#define INTERNET_PER_CONN_FLAGS_UI 10
+
 class nsWindowsSystemProxySettings : public nsISystemProxySettings
 {
 public:

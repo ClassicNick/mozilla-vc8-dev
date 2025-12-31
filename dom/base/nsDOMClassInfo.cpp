@@ -174,6 +174,7 @@
 #include "nsEventSource.h"
 #include "nsIDOMSettingsManager.h"
 #include "nsIDOMContactManager.h"
+#include "nsIDOMPermissionSettings.h"
 #include "nsIDOMApplicationRegistry.h"
 
 #ifdef MOZ_B2G_RIL
@@ -457,7 +458,6 @@
 
 // Simple gestures include
 #include "nsIDOMSimpleGestureEvent.h"
-#include "nsIDOMMozTouchEvent.h"
 
 #include "nsIEventListenerService.h"
 #include "nsIMessageManager.h"
@@ -505,6 +505,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMMobileConnection.h"
 #endif
 #include "USSDReceivedEvent.h"
+#include "DataErrorEvent.h"
 #include "mozilla/dom/network/Utils.h"
 
 #ifdef MOZ_B2G_RIL
@@ -515,6 +516,10 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMVoicemailEvent.h"
 #include "nsIDOMIccManager.h"
 #include "StkCommandEvent.h"
+#endif
+
+#ifdef MOZ_B2G_FM
+#include "FMRadio.h"
 #endif
 
 #ifdef MOZ_B2G_BT
@@ -1430,8 +1435,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozURLProperty, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozBlobBuilder, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(DOMStringMap, nsDOMStringMapSH,
                            DOMSTRINGMAP_SCRIPTABLE_FLAGS)
@@ -1505,6 +1508,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(USSDReceivedEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
+  NS_DEFINE_CLASSINFO_DATA(DataErrorEvent, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
   NS_DEFINE_CLASSINFO_DATA(CSSFontFaceRule, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CSSFontFaceStyleDecl, nsCSSStyleDeclSH,
@@ -1545,13 +1551,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(SimpleGestureEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA(MozTouchEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA_WITH_NAME(MathMLElement, Element, nsElementSH,
                                      ELEMENT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA(WebGLRenderingContext, nsWebGLViewportHandlerSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(WebGLBuffer, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(WebGLTexture, nsDOMGenericSH,
@@ -1584,6 +1586,12 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS |
                            nsIXPCScriptable::WANT_ADDPROPERTY)
   NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTextureS3TC, WebGLExtensionSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
+                           nsIXPCScriptable::WANT_ADDPROPERTY)
+  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTextureATC, WebGLExtensionSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
+                           nsIXPCScriptable::WANT_ADDPROPERTY)
+  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTexturePVRTC, WebGLExtensionSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS |
                            nsIXPCScriptable::WANT_ADDPROPERTY)
   NS_DEFINE_CLASSINFO_DATA(WebGLExtensionDepthTexture, WebGLExtensionSH,
@@ -1683,6 +1691,11 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozStkCommandEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+#endif
+
+#ifdef MOZ_B2G_FM
+  NS_DEFINE_CLASSINFO_DATA(FMRadio, nsEventTargetSH,
+                           EVENTTARGET_SCRIPTABLE_FLAGS)
 #endif
 
 #ifdef MOZ_B2G_BT
@@ -1803,7 +1816,6 @@ static const nsConstructorFuncMapData kConstructorFuncMap[] =
 {
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(Blob, nsDOMMultipartFile::NewBlob)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(File, nsDOMFileFile::NewFile)
-  NS_DEFINE_CONSTRUCTOR_FUNC_DATA(MozBlobBuilder, NS_NewBlobBuilder)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(Event)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(UIEvent)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(MouseEvent)
@@ -2484,6 +2496,7 @@ nsDOMClassInfo::Init()
                                         battery::BatteryManager::HasSupport())
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozNavigatorSms)
 #ifdef MOZ_MEDIA_NAVIGATOR
+    DOM_CLASSINFO_MAP_ENTRY(nsINavigatorUserMedia)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigatorUserMedia)
 #endif
 #ifdef MOZ_B2G_RIL
@@ -4043,10 +4056,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozURLProperty)
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(MozBlobBuilder, nsIDOMMozBlobBuilder)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozBlobBuilder)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(DOMStringMap, nsIDOMDOMStringMap)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMStringMap)
   DOM_CLASSINFO_MAP_END
@@ -4153,6 +4162,11 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEvent)
   DOM_CLASSINFO_MAP_END
  
+  DOM_CLASSINFO_MAP_BEGIN(DataErrorEvent, nsIDOMDataErrorEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMDataErrorEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEvent)
+  DOM_CLASSINFO_MAP_END
+
   DOM_CLASSINFO_MAP_BEGIN(CSSFontFaceRule, nsIDOMCSSFontFaceRule)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMCSSFontFaceRule)
   DOM_CLASSINFO_MAP_END
@@ -4217,12 +4231,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_UI_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(MozTouchEvent, nsIDOMMozTouchEvent)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozTouchEvent)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMouseEvent)
-    DOM_CLASSINFO_UI_EVENT_MAP_ENTRIES
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(MathMLElement, nsIDOMElement)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMElement)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
@@ -4230,10 +4238,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)
     DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,
                                         nsDOMTouchEvent::PrefEnabled())
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLRenderingContext, nsIDOMWebGLRenderingContext)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMWebGLRenderingContext)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(WebGLBuffer, nsIWebGLBuffer)
@@ -4290,6 +4294,14 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTextureS3TC, nsIWebGLExtensionCompressedTextureS3TC)
     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTextureS3TC)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTextureATC, nsIWebGLExtensionCompressedTextureATC)
+    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTextureATC)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTexturePVRTC, nsIWebGLExtensionCompressedTexturePVRTC)
+    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTexturePVRTC)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionDepthTexture, nsIWebGLExtensionDepthTexture)
@@ -4493,6 +4505,13 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
+#endif
+
+#ifdef MOZ_B2G_FM
+  DOM_CLASSINFO_MAP_BEGIN(FMRadio, nsIFMRadio)
+    DOM_CLASSINFO_MAP_ENTRY(nsIFMRadio)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
 #endif
 
 #ifdef MOZ_B2G_BT
@@ -7451,8 +7470,6 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
       nsIScriptContext *script_cx = win->GetContext();
       if (script_cx) {
-        JSAutoSuspendRequest asr(cx);
-
         // Make nsJSContext::SetProperty()'s magic argument array
         // handling happen.
         rv = script_cx->SetProperty(obj, "dialogArguments", args);

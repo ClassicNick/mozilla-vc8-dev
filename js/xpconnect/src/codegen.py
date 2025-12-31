@@ -161,7 +161,7 @@ argumentUnboxingTemplates = {
 # `null`; this behavior is from XPCWrappedNative::CallMethod. The 'jsval' type,
 # however, defaults to 'undefined'.
 #
-def writeArgumentUnboxing(f, i, name, type, haveCcx, optional, rvdeclared,
+def writeArgumentUnboxing(f, i, name, type, optional, rvdeclared,
                           nullBehavior, undefinedBehavior):
     # f - file to write to
     # i - int or None - Indicates the source jsval.  If i is an int, the source
@@ -178,8 +178,8 @@ def writeArgumentUnboxing(f, i, name, type, haveCcx, optional, rvdeclared,
     isSetter = (i is None)
 
     if isSetter:
-        argPtr = "vp"
-        argVal = "*vp"
+        argPtr = "argv"
+        argVal = "*argv"
     elif optional:
         if typeName == "[jsval]":
             val = "JSVAL_VOID"
@@ -208,12 +208,11 @@ def writeArgumentUnboxing(f, i, name, type, haveCcx, optional, rvdeclared,
     elif isInterfaceType(type):
         if type.name == 'nsIVariant':
             # Totally custom.
-            assert haveCcx
             template = (
                 "    nsCOMPtr<nsIVariant> ${name}(already_AddRefed<nsIVariant>("
-                "XPCVariant::newVariant(ccx, ${argVal})));\n"
+                "XPCVariant::newVariant(cx, ${argVal})));\n"
                 "    if (!${name}) {\n"
-                "        xpc_qsThrowBadArgWithCcx(ccx, NS_ERROR_XPC_BAD_CONVERT_JS, %d);\n"
+                "        xpc_qsThrowBadArg(cx, NS_ERROR_INVALID_ARG, vp, %d);\n"
                 "        return JS_FALSE;\n"
                 "    }\n") % i
             f.write(string.Template(template).substitute(params))
@@ -233,8 +232,6 @@ def writeArgumentUnboxing(f, i, name, type, haveCcx, optional, rvdeclared,
             if isSetter:
                 f.write("        xpc_qsThrowBadSetterValue("
                         "cx, rv, JSVAL_TO_OBJECT(*tvr.jsval_addr()), id);\n")
-            elif haveCcx:
-                f.write("        xpc_qsThrowBadArgWithCcx(ccx, rv, %d);\n" % i)
             else:
                 f.write("        xpc_qsThrowBadArgWithDetails(cx, rv, %d, %s, %s);\n" % (i, "\"\"", "\"\""))
             f.write("        return JS_FALSE;\n"
@@ -391,15 +388,6 @@ def writeResultConv(f, type, interfaceResultTemplate, jsvalPtr, jsvalRef):
             % jsvalRef)
     f.write("    return xpc_qsThrow(cx, NS_ERROR_UNEXPECTED); // FIXME\n")
 
-def anyParamRequiresCcx(member):
-    for p in member.params:
-        if isVariantType(p.realtype):
-            return True
-    return False
-
-def memberNeedsCcx(member):
-    return member.kind == 'method' and anyParamRequiresCcx(member)
-
 def validateParam(member, param):
     def pfail(msg):
         raise UserError(
@@ -441,16 +429,8 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
     isNotxpcom = isMethod and member.notxpcom
     isGetter = isAttr and not isSetter
 
-    signature = "static JSBool\n"
-    if isAttr:
-        # JSPropertyOp signature.
-        if isSetter:
-            signature += "%s(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict,%s JSMutableHandleValue vp_)\n"
-        else:
-            signature += "%s(JSContext *cx, JSHandleObject obj, JSHandleId id,%s JSMutableHandleValue vp_)\n"
-    else:
-        # JSFastNative.
-        signature += "%s(JSContext *cx, unsigned argc,%s jsval *vp)\n"
+    signature = ("static JSBool\n"
+                 "%s(JSContext *cx, unsigned argc,%s jsval *vp)\n")
 
     customMethodCall = customMethodCalls.get(stubName, None)
 
@@ -482,7 +462,7 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
             argumentValues = (customMethodCall['additionalArgumentValues']
                               % header.methodNativeName(member))
             if isAttr:
-                callTemplate += ("    return %s(cx, obj, id%s, %s, vp_);\n"
+                callTemplate += ("    return %s(cx, obj, id%s, %s, vp);\n"
                                  % (templateName, ", strict" if isSetter else "", argumentValues))
             else:
                 callTemplate += ("    return %s(cx, argc, %s, vp);\n"
@@ -516,25 +496,12 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
     f.write("{\n")
     f.write("    XPC_QS_ASSERT_CONTEXT_OK(cx);\n")
 
-    # Convert JSMutableHandleValue to jsval*
-    if isAttr:
-        f.write("    jsval *vp = vp_.address();\n")
+    # Compute "this".
+    f.write("    JSObject *obj = JS_THIS_OBJECT(cx, vp);\n"
+            "    if (!obj)\n"
+            "        return JS_FALSE;\n")
 
-    # For methods, compute "this".
-    if isMethod:
-        f.write("    JSObject *obj = JS_THIS_OBJECT(cx, vp);\n"
-                "    if (!obj)\n"
-                "        return JS_FALSE;\n")
-
-    # Create ccx if needed.
-    haveCcx = memberNeedsCcx(member)
-    if haveCcx:
-        f.write("    XPCCallContext ccx(JS_CALLER, cx, obj, "
-                "JSVAL_TO_OBJECT(JS_CALLEE(cx, vp)));\n")
-        if isInterfaceType(member.realtype):
-            f.write("    XPCLazyCallContext lccx(ccx);\n")
-
-    selfname = writeThisUnwrapping(f, member, isMethod, isGetter, customMethodCall, haveCcx)
+    selfname = writeThisUnwrapping(f, member, isMethod, isGetter, customMethodCall)
 
     rvdeclared = False
     if isMethod:
@@ -543,14 +510,20 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
         requiredArgs = inArgs
         while requiredArgs and member.params[requiredArgs-1].optional:
             requiredArgs -= 1
-        if requiredArgs:
-            f.write("    if (argc < %d)\n" % requiredArgs)
-            f.write("        return xpc_qsThrow(cx, "
-                    "NS_ERROR_XPC_NOT_ENOUGH_ARGS);\n")
+    elif isSetter:
+        inArgs = requiredArgs = 1
+    else:
+        inArgs = requiredArgs = 0
 
-        # Convert in-parameters.
-        if inArgs > 0:
-            f.write("    jsval *argv = JS_ARGV(cx, vp);\n")
+    if requiredArgs:
+        f.write("    if (argc < %d)\n" % requiredArgs)
+        f.write("        return xpc_qsThrow(cx, "
+                "NS_ERROR_XPC_NOT_ENOUGH_ARGS);\n")
+
+    # Convert in-parameters.
+    if inArgs > 0:
+        f.write("    jsval *argv = JS_ARGV(cx, vp);\n")
+    if isMethod:
         for i in range(inArgs):
             param = member.params[i]
             argName = 'arg%d' % i
@@ -564,7 +537,6 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
             # Emit code to convert this argument from jsval.
             rvdeclared = writeArgumentUnboxing(
                 f, i, argName, realtype,
-                haveCcx=haveCcx,
                 optional=param.optional,
                 rvdeclared=rvdeclared,
                 nullBehavior=param.null,
@@ -573,7 +545,7 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
             f.write("    nsWrapperCache *cache;\n")
     elif isSetter:
         rvdeclared = writeArgumentUnboxing(f, None, 'arg0', member.realtype,
-                                           haveCcx=False, optional=False,
+                                           optional=False,
                                            rvdeclared=rvdeclared,
                                            nullBehavior=member.null,
                                            undefinedBehavior=member.undefined)
@@ -647,13 +619,14 @@ def writeStub(f, customMethodCalls, member, stubName, writeThisUnwrapping, write
 
     if canFail:
         # Check for errors.
-        writeCheckForFailure(f, isMethod, isGetter, haveCcx)
+        writeCheckForFailure(f, isMethod, isGetter)
 
     # Convert the return value.
     if isMethod or isGetter:
         writeResultWrapping(f, member, 'vp', '*vp')
     else:
-        f.write("    return JS_TRUE;\n")
+        f.write("    JS_SET_RVAL(cx, vp, JS::UndefinedValue());\n"
+                "    return JS_TRUE;\n")
 
     # Epilog.
     f.write("}\n\n")

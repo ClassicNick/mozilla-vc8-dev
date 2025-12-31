@@ -67,7 +67,6 @@
 #include "TexturePoolOGL.h"
 #endif
 
-#include "mozilla/FunctionTimer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -353,6 +352,11 @@ gfxPlatform::Init()
     // ::Shutdown to be called.
     nsCOMPtr<nsISupports> forceReg
         = do_CreateInstance("@mozilla.org/gfx/init;1");
+
+    if (Preferences::GetBool("gfx.2d.recording", false)) {
+      gPlatform->mRecorder = Factory::CreateEventRecorderForFile("browserrecording.aer");
+      Factory::SetGlobalEventRecorder(gPlatform->mRecorder);
+    }
 }
 
 void
@@ -627,7 +631,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   return srcBuffer;
 }
 
-RefPtr<ScaledFont>
+TemporaryRef<ScaledFont>
 gfxPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
   NativeFont nativeFont;
@@ -1363,8 +1367,6 @@ qcms_profile *
 gfxPlatform::GetCMSOutputProfile()
 {
     if (!gCMSOutputProfile) {
-        NS_TIME_FUNCTION;
-
         /* Determine if we're using the internal override to force sRGB as
            an output profile for reftests. See Bug 452125.
 

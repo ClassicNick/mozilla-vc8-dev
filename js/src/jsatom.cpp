@@ -159,16 +159,16 @@ js::InitCommonNames(JSContext *cx)
 #undef COMMON_NAME_INFO
     };
 
-    PropertyName **names = &cx->runtime->firstCachedName;
+    FixedHeapPtr<PropertyName> *names = &cx->runtime->firstCachedName;
     for (size_t i = 0; i < ArrayLength(cachedNames); i++, names++) {
         JSAtom *atom = Atomize(cx, cachedNames[i].str, cachedNames[i].length, InternAtom);
         if (!atom)
             return false;
-        *names = atom->asPropertyName();
+        names->init(atom->asPropertyName());
     }
     JS_ASSERT(uintptr_t(names) == uintptr_t(&cx->runtime->atomState + 1));
 
-    cx->runtime->emptyString = cx->runtime->atomState.emptyAtom;
+    cx->runtime->emptyString = cx->names().empty;
     return true;
 }
 
@@ -263,18 +263,16 @@ AtomizeInline(JSContext *cx, const jschar **pchars, size_t length,
     /* Workaround for hash values in AddPtr being inadvertently poisoned. */
     SkipRoot skip2(cx, &p);
 
-    JSFixedString *key;
+    JSFlatString *key;
     if (ocb == TakeCharOwnership) {
         key = js_NewString(cx, const_cast<jschar *>(chars), length);
-        if (!key)
-            return NULL;
         *pchars = NULL; /* Called should not free *pchars. */
     } else {
         JS_ASSERT(ocb == CopyChars);
         key = js_NewStringCopyN(cx, chars, length);
-        if (!key)
-            return NULL;
     }
+    if (!key)
+        return NULL;
 
     /*
      * We have to relookup the key as the last ditch GC invoked from the
@@ -310,11 +308,12 @@ js::AtomizeString(JSContext *cx, JSString *str, InternBehavior ib)
         return &atom;
     }
 
-    size_t length = str->length();
-    const jschar *chars = str->getChars(cx);
-    if (!chars)
+    JSStableString *stable = str->ensureStable(cx);
+    if (!stable)
         return NULL;
 
+    const jschar *chars = stable->chars();
+    size_t length = stable->length();
     JS_ASSERT(length <= JSString::MAX_LENGTH);
     return AtomizeInline(cx, &chars, length, ib);
 }

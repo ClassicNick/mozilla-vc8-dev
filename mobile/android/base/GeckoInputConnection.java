@@ -39,6 +39,7 @@ import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 
+import java.util.Locale;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -88,6 +89,7 @@ class GeckoInputConnection
     private static String mIMETypeHint = "";
     private static String mIMEModeHint = "";
     private static String mIMEActionHint = "";
+    private static Boolean sIsPreJellyBeanAsusTransformer;
 
     private String mCurrentInputMethod;
 
@@ -154,15 +156,22 @@ class GeckoInputConnection
 
     @Override
     public boolean finishComposingText() {
-        // finishComposingText() is sometimes called even when we are not composing text.
-        if (hasCompositionString()) {
-            if (DEBUG) Log.d(LOGTAG, ". . . finishComposingText: endComposition");
-            endComposition();
-        }
-
-        beginBatchEdit();
-        removeComposingSpans(mEditable);
-        endBatchEdit();
+        // finishComposingText() is called by the input method manager from the main
+        // thread so we have to make sure it's run in the ui thread.
+        postToUiThread(new Runnable() {
+            public void run() {
+                if (hasCompositionString()) {
+                    if (DEBUG) Log.d(LOGTAG, ". . . finishComposingText: endComposition");
+                    endComposition();
+                }
+                final Editable content = getEditable();
+                if (content != null) {
+                    beginBatchEdit();
+                    removeComposingSpans(content);
+                    endBatchEdit();
+                }
+            }
+        });
         return true;
     }
 
@@ -234,6 +243,12 @@ class GeckoInputConnection
                                                                  newSelection.start,
                                                                  newSelection.length));
         return super.setSelection(newSelection.start, newSelection.end);
+    }
+
+    private static void postToUiThread(Runnable runnable) {
+        // postToUiThread() is called by the Gecko and TimerTask threads.
+        // The UI thread does not need to post Runnables to itself.
+        GeckoApp.mAppContext.mMainHandler.post(runnable);
     }
 
     @Override
@@ -792,16 +807,10 @@ class GeckoInputConnection
             outAttrs.inputType = InputType.TYPE_CLASS_NUMBER
                                  | InputType.TYPE_NUMBER_FLAG_SIGNED
                                  | InputType.TYPE_NUMBER_FLAG_DECIMAL;
-        else if (mIMETypeHint.equalsIgnoreCase("datetime") ||
-                 mIMETypeHint.equalsIgnoreCase("datetime-local"))
-            outAttrs.inputType = InputType.TYPE_CLASS_DATETIME
-                                 | InputType.TYPE_DATETIME_VARIATION_NORMAL;
-        else if (mIMETypeHint.equalsIgnoreCase("date"))
-            outAttrs.inputType = InputType.TYPE_CLASS_DATETIME
-                                 | InputType.TYPE_DATETIME_VARIATION_DATE;
-        else if (mIMETypeHint.equalsIgnoreCase("time"))
-            outAttrs.inputType = InputType.TYPE_CLASS_DATETIME
-                                 | InputType.TYPE_DATETIME_VARIATION_TIME;
+        else if (mIMETypeHint.equalsIgnoreCase("week") ||
+                 mIMETypeHint.equalsIgnoreCase("month"))
+             outAttrs.inputType = InputType.TYPE_CLASS_DATETIME
+                                  | InputType.TYPE_DATETIME_VARIATION_DATE;
         else if (mIMEModeHint.equalsIgnoreCase("numeric"))
             outAttrs.inputType = InputType.TYPE_CLASS_NUMBER |
                                  InputType.TYPE_NUMBER_FLAG_SIGNED |
@@ -885,6 +894,9 @@ class GeckoInputConnection
             Log.d(LOGTAG, "IME: processKeyDown(keyCode=" + keyCode + ", event=" + event + ")");
         }
 
+        if (hasBuggyHardwareKeyboardLayout())
+            return false;
+
         if (keyCode > KeyEvent.getMaxKeyCode())
             return false;
 
@@ -939,6 +951,9 @@ class GeckoInputConnection
             Log.d(LOGTAG, "IME: processKeyUp(keyCode=" + keyCode + ", event=" + event + ")");
         }
 
+        if (hasBuggyHardwareKeyboardLayout())
+            return false;
+
         if (keyCode > KeyEvent.getMaxKeyCode())
             return false;
 
@@ -966,6 +981,8 @@ class GeckoInputConnection
     }
 
     public boolean onKeyMultiple(int keyCode, int repeatCount, KeyEvent event) {
+        if (hasBuggyHardwareKeyboardLayout())
+            return false;
         GeckoAppShell.sendEventToGecko(GeckoEvent.createKeyEvent(event));
         return true;
     }
@@ -1037,6 +1054,16 @@ class GeckoInputConnection
     }
 
     public void notifyIMEEnabled(int state, String typeHint, final String modeHint, String actionHint) {
+        // For some input type we will use a  widget to display the ui, for those we must not
+        // display the ime. We can display a widget for date and time types and, if the sdk version
+        // is greater than 11, for datetime/month/week as well.
+        if (typeHint.equals("date") || typeHint.equals("time") ||
+            (Build.VERSION.SDK_INT > 10 &&
+            (typeHint.equals("datetime") || typeHint.equals("month") ||
+            typeHint.equals("week") || typeHint.equals("datetime-local")))) {
+            return;
+        }
+
         View v = getView();
 
         if (v == null)
@@ -1150,6 +1177,18 @@ class GeckoInputConnection
         return "\"" + s.toString().replace('\n', UNICODE_CRARR) + "\"";
     }
 
+    private static boolean hasBuggyHardwareKeyboardLayout() {
+        // Asus Transformers generate en-US keycodes for HKB keys, regardless of system locale or
+        // keyboard layout. This bug is reportedly fixed in JB. See bug 669361 and bug 712018.
+        if (sIsPreJellyBeanAsusTransformer == null) {
+            sIsPreJellyBeanAsusTransformer = Build.VERSION.SDK_INT < 16 &&
+                                             "asus".equals(Build.BRAND) &&
+                                             "EeePad".equals(Build.BOARD);
+        }
+        // The locale may change while Firefox is running, but the device and OS should not. :)
+        return sIsPreJellyBeanAsusTransformer && !Locale.getDefault().equals(Locale.US);
+    }
+
     private static final class Span {
         public final int start;
         public final int end;
@@ -1231,6 +1270,8 @@ private static final class DebugGeckoInputConnection extends GeckoInputConnectio
     @Override
     public boolean finishComposingText() {
         Log.d(LOGTAG, "IME: finishComposingText");
+        // finishComposingText will post itself to the ui thread,
+        // no need to assert it.
         return super.finishComposingText();
     }
 

@@ -322,11 +322,11 @@ class NodeBuilder
 
     bool newArray(NodeVector &elts, MutableHandleValue dst);
 
-    bool newNode(ASTType type, TokenPos *pos, MutableHandleObject dst);
+    bool newNodeObject(ASTType type, TokenPos *pos, MutableHandleObject dst);
 
-    bool newNode(ASTType type, TokenPos *pos, MutableHandleValue dst) {
+    bool newNodeValue(ASTType type, TokenPos *pos, MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setResult(node, dst);
     }
 
@@ -334,7 +334,7 @@ class NodeBuilder
                  const char *childName, HandleValue child,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName, child) &&
                setResult(node, dst);
     }
@@ -344,7 +344,7 @@ class NodeBuilder
                  const char *childName2, HandleValue child2,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName1, child1) &&
                setProperty(node, childName2, child2) &&
                setResult(node, dst);
@@ -356,7 +356,7 @@ class NodeBuilder
                  const char *childName3, HandleValue child3,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName1, child1) &&
                setProperty(node, childName2, child2) &&
                setProperty(node, childName3, child3) &&
@@ -370,7 +370,7 @@ class NodeBuilder
                  const char *childName4, HandleValue child4,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName1, child1) &&
                setProperty(node, childName2, child2) &&
                setProperty(node, childName3, child3) &&
@@ -386,7 +386,7 @@ class NodeBuilder
                  const char *childName5, HandleValue child5,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName1, child1) &&
                setProperty(node, childName2, child2) &&
                setProperty(node, childName3, child3) &&
@@ -405,7 +405,7 @@ class NodeBuilder
                  const char *childName7, HandleValue child7,
                  MutableHandleValue dst) {
         RootedObject node(cx);
-        return newNode(type, pos, &node) &&
+        return newNodeObject(type, pos, &node) &&
                setProperty(node, childName1, child1) &&
                setProperty(node, childName2, child2) &&
                setProperty(node, childName3, child3) &&
@@ -658,7 +658,7 @@ class NodeBuilder
 };
 
 bool
-NodeBuilder::newNode(ASTType type, TokenPos *pos, MutableHandleObject dst)
+NodeBuilder::newNodeObject(ASTType type, TokenPos *pos, MutableHandleObject dst)
 {
     JS_ASSERT(type > AST_ERROR && type < AST_LIMIT);
 
@@ -794,7 +794,7 @@ NodeBuilder::emptyStatement(TokenPos *pos, MutableHandleValue dst)
     if (!cb.isNull())
         return callback(cb, pos, dst);
 
-    return newNode(AST_EMPTY_STMT, pos, dst);
+    return newNodeValue(AST_EMPTY_STMT, pos, dst);
 }
 
 bool
@@ -1005,7 +1005,7 @@ NodeBuilder::debuggerStatement(TokenPos *pos, MutableHandleValue dst)
     if (!cb.isNull())
         return callback(cb, pos, dst);
 
-    return newNode(AST_DEBUGGER_STMT, pos, dst);
+    return newNodeValue(AST_DEBUGGER_STMT, pos, dst);
 }
 
 bool
@@ -1256,7 +1256,7 @@ NodeBuilder::thisExpression(TokenPos *pos, MutableHandleValue dst)
     if (!cb.isNull())
         return callback(cb, pos, dst);
 
-    return newNode(AST_THIS_EXPR, pos, dst);
+    return newNodeValue(AST_THIS_EXPR, pos, dst);
 }
 
 bool
@@ -1499,7 +1499,7 @@ NodeBuilder::xmlAnyName(TokenPos *pos, MutableHandleValue dst)
     if (!cb.isNull())
         return callback(cb, pos, dst);
 
-    return newNode(AST_XMLANYNAME, pos, dst);
+    return newNodeValue(AST_XMLANYNAME, pos, dst);
 }
 
 bool
@@ -1696,7 +1696,7 @@ class ASTSerializer
     DebugOnly<uint32_t> lineno;
 
     RawValue unrootedAtomContents(RawAtom atom) {
-        return StringValue(atom ? atom : cx->runtime->atomState.emptyAtom);
+        return StringValue(atom ? atom : cx->names().empty);
     }
 
     BinaryOperator binop(ParseNodeKind kind, JSOp op);
@@ -3418,7 +3418,7 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
         RootedValue prop(cx);
 
         /* config.loc */
-        RootedId locId(cx, NameToId(cx->runtime->atomState.locAtom));
+        RootedId locId(cx, NameToId(cx->names().loc));
         RootedValue trueVal(cx, BooleanValue(true));
         if (!baseops::GetPropertyDefault(cx, config, locId, trueVal, &prop))
             return JS_FALSE;
@@ -3427,7 +3427,7 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
 
         if (loc) {
             /* config.source */
-            RootedId sourceId(cx, NameToId(cx->runtime->atomState.sourceAtom));
+            RootedId sourceId(cx, NameToId(cx->names().source));
             RootedValue nullVal(cx, NullValue());
             if (!baseops::GetPropertyDefault(cx, config, sourceId, nullVal, &prop))
                 return JS_FALSE;
@@ -3449,7 +3449,7 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
             }
 
             /* config.line */
-            RootedId lineId(cx, NameToId(cx->runtime->atomState.lineAtom));
+            RootedId lineId(cx, NameToId(cx->names().line));
             RootedValue oneValue(cx, Int32Value(1));
             if (!baseops::GetPropertyDefault(cx, config, lineId, oneValue, &prop) ||
                 !ToUint32(cx, prop, &lineno)) {
@@ -3458,7 +3458,7 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
         }
 
         /* config.builder */
-        RootedId builderId(cx, NameToId(cx->runtime->atomState.builderAtom));
+        RootedId builderId(cx, NameToId(cx->names().builder));
         RootedValue nullVal(cx, NullValue());
         if (!baseops::GetPropertyDefault(cx, config, builderId, nullVal, &prop))
             return JS_FALSE;
@@ -3478,11 +3478,12 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
     if (!serialize.init(builder))
         return JS_FALSE;
 
-    size_t length = src->length();
-    const jschar *chars = src->getChars(cx);
-    if (!chars)
+    JSStableString *stable = src->ensureStable(cx);
+    if (!stable)
         return JS_FALSE;
 
+    const jschar *chars = stable->chars();
+    size_t length = stable->length();
     CompileOptions options(cx);
     options.setFileAndLine(filename, lineno);
     Parser parser(cx, options, chars, length, /* foldConstants = */ false);

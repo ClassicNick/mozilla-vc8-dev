@@ -39,7 +39,7 @@ JS_FRIEND_API(JSString *)
 JS_GetAnonymousString(JSRuntime *rt)
 {
     JS_ASSERT(rt->hasContexts());
-    return rt->atomState.anonymousAtom;
+    return rt->atomState.anonymous;
 }
 
 JS_FRIEND_API(JSObject *)
@@ -127,7 +127,7 @@ js::PrepareForFullGC(JSRuntime *rt)
 JS_FRIEND_API(void)
 js::PrepareForIncrementalGC(JSRuntime *rt)
 {
-    if (rt->gcIncrementalState == gc::NO_INCREMENTAL)
+    if (!IsIncrementalGCInProgress(rt))
         return;
 
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
@@ -704,10 +704,10 @@ GetOwnerThread(const JSContext *cx)
     return cx->runtime->ownerThread();
 }
 
-JS_FRIEND_API(unsigned)
-GetContextOutstandingRequests(const JSContext *cx)
+JS_FRIEND_API(bool)
+ContextHasOutstandingRequests(const JSContext *cx)
 {
-    return cx->outstandingRequests;
+    return cx->outstandingRequests > 0;
 }
 #endif
 
@@ -795,7 +795,7 @@ NotifyDidPaint(JSRuntime *rt)
         return;
     }
 
-    if (rt->gcIncrementalState != gc::NO_INCREMENTAL && !rt->gcInterFrameGC) {
+    if (IsIncrementalGCInProgress(rt) && !rt->gcInterFrameGC) {
         PrepareForIncrementalGC(rt);
         GCSlice(rt, GC_NORMAL, gcreason::REFRESH_FRAME);
     }
@@ -807,6 +807,12 @@ extern JS_FRIEND_API(bool)
 IsIncrementalGCEnabled(JSRuntime *rt)
 {
     return rt->gcIncrementalEnabled && rt->gcMode == JSGC_MODE_INCREMENTAL;
+}
+
+JS_FRIEND_API(bool)
+IsIncrementalGCInProgress(JSRuntime *rt)
+{
+    return (rt->gcIncrementalState != gc::NO_INCREMENTAL && !rt->gcVerifyPreData);
 }
 
 extern JS_FRIEND_API(void)

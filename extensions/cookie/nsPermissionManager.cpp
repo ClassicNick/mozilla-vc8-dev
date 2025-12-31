@@ -26,6 +26,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsIAppsService.h"
 #include "mozIApplication.h"
+#include "mozilla/Attributes.h"
 
 static nsPermissionManager *gPermissionManager = nullptr;
 
@@ -123,7 +124,7 @@ GetHostForPrincipal(nsIPrincipal* aPrincipal, nsACString& aHost)
   return NS_OK;
 }
 
-class AppUninstallObserver : public nsIObserver {
+class AppUninstallObserver MOZ_FINAL : public nsIObserver {
 public:
   NS_DECL_ISUPPORTS
 
@@ -722,10 +723,6 @@ nsPermissionManager::AddInternal(nsIPrincipal* aPrincipal,
       id = oldPermissionEntry.mID;
       entry->GetPermissions().RemoveElementAt(index);
 
-      // If no more types are present, remove the entry
-      if (entry->GetPermissions().IsEmpty())
-        mPermissionTable.RawRemoveEntry(entry);
-
       if (aDBOperation == eWriteToDB)
         // We care only about the id here so we pass dummy values for all other
         // parameters.
@@ -741,6 +738,11 @@ nsPermissionManager::AddInternal(nsIPrincipal* aPrincipal,
                                       oldPermissionEntry.mExpireType,
                                       oldPermissionEntry.mExpireTime,
                                       NS_LITERAL_STRING("deleted").get());
+      }
+
+      // If there are no more permissions stored for that entry, clear it.
+      if (entry->GetPermissions().IsEmpty()) {
+        mPermissionTable.RawRemoveEntry(entry);
       }
 
       break;
@@ -908,6 +910,26 @@ nsPermissionManager::TestPermission(nsIURI     *aURI,
 }
 
 NS_IMETHODIMP
+nsPermissionManager::TestPermissionFromWindow(nsIDOMWindow* aWindow,
+                                              const char* aType,
+                                              uint32_t* aPermission)
+{
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aWindow);
+  NS_ENSURE_TRUE(window, NS_NOINTERFACE);
+
+  nsPIDOMWindow* innerWindow = window->IsInnerWindow() ?
+    window.get() :
+    window->GetCurrentInnerWindow();
+
+  // Get the document for security check
+  nsCOMPtr<nsIDocument> document = innerWindow->GetExtantDoc();
+  NS_ENSURE_TRUE(document, NS_NOINTERFACE);
+
+  nsCOMPtr<nsIPrincipal> principal = document->NodePrincipal();
+  return TestPermissionFromPrincipal(principal, aType, aPermission);
+}
+
+NS_IMETHODIMP
 nsPermissionManager::TestPermissionFromPrincipal(nsIPrincipal* aPrincipal,
                                                  const char* aType,
                                                  uint32_t* aPermission)
@@ -999,15 +1021,6 @@ nsPermissionManager::GetPermissionHashKey(const nsACString& aHost,
   do {
     nsRefPtr<PermissionKey> key = new PermissionKey(Substring(aHost, offset), aAppId, aIsInBrowserElement);
     entry = mPermissionTable.GetEntry(key);
-
-    if (!entry) {
-      // This is a temporary fix to have Gaia working and allow a time frame to
-      // update profiles. With this hack, if a permission isn't found for an app
-      // the check will be done for the same host outside of any app.
-      // TODO: remove this with bug 785632.
-      key = new PermissionKey(Substring(aHost, offset), nsIScriptSecurityManager::NO_APP_ID, false);
-      entry = mPermissionTable.GetEntry(key);
-    }
 
     if (entry) {
       PermissionEntry permEntry = entry->GetPermission(aType);

@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsHttp.h"
 #include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
 #include "nsStandardURL.h"
@@ -407,11 +408,7 @@ nsHttpChannel::Connect()
     // Consider opening a TCP connection right away
     SpeculativeConnect();
 
-    // are we offline?
-    bool offline = gIOService->IsOffline();
-    if (offline)
-        mLoadFlags |= LOAD_ONLY_FROM_CACHE;
-    else if (PL_strcmp(mConnectionInfo->ProxyType(), "unknown") == 0)
+    if (PL_strcmp(mConnectionInfo->ProxyType(), "unknown") == 0)
         return ResolveProxy();  // Lazily resolve proxy info
 
     // Don't allow resuming when cache must be used
@@ -2425,8 +2422,14 @@ nsHttpChannel::OpenCacheEntry(bool usingSSL)
         nsCOMPtr<nsIApplicationCacheService> appCacheService =
             do_GetService(NS_APPLICATIONCACHESERVICE_CONTRACTID);
         if (appCacheService) {
+            nsCOMPtr<nsILoadContext> loadContext;
+            GetCallback(loadContext);
+
+            if (!loadContext)
+                LOG(("  no load context while choosing application cache"));
+
             nsresult rv = appCacheService->ChooseApplicationCache
-                (cacheKey, getter_AddRefs(mApplicationCache));
+                (cacheKey, loadContext, getter_AddRefs(mApplicationCache));
             NS_ENSURE_SUCCESS(rv, rv);
         }
     }
@@ -4083,12 +4086,12 @@ nsHttpChannel::ContinueProcessRedirectionAfterFallback(nsresult rv)
         }
     }
 
-    bool rewriteToGET = HttpBaseChannel::ShouldRewriteRedirectToGET(
-        mRedirectType, mRequestHead.Method());
+    bool rewriteToGET = nsHttp::ShouldRewriteRedirectToGET(
+                                    mRedirectType, mRequestHead.Method());
       
     // prompt if the method is not safe (such as POST, PUT, DELETE, ...)
     if (!rewriteToGET &&
-        !HttpBaseChannel::IsSafeMethod(mRequestHead.Method())) {
+        !nsHttp::IsSafeMethod(mRequestHead.Method())) {
         rv = PromptTempRedirect();
         if (NS_FAILED(rv)) return rv;
     }
@@ -4105,7 +4108,7 @@ nsHttpChannel::ContinueProcessRedirectionAfterFallback(nsresult rv)
     if (NS_FAILED(rv)) return rv;
 
     uint32_t redirectFlags;
-    if (mRedirectType == 301) // Moved Permanently
+    if (nsHttp::IsPermanentRedirect(mRedirectType))
         redirectFlags = nsIChannelEventSink::REDIRECT_PERMANENT;
     else
         redirectFlags = nsIChannelEventSink::REDIRECT_TEMPORARY;

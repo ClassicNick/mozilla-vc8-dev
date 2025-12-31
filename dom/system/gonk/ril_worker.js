@@ -1063,7 +1063,8 @@ let RIL = {
     this.getIMSI();
     this.getMSISDN();
     this.getAD();
-    this.getUST();
+    this.getSPN();
+    this.getSST();
     this.getMBDN();
   },
 
@@ -1195,47 +1196,125 @@ let RIL = {
   },
 
   /**
-   * Get whether specificed USIM service is available.
-   *
-   * @param service
-   *        Service id, valid in 1..N. See 3GPP TS 31.102 4.2.8.
-   * @return
-   *        true if the service is enabled,
-   *        false otherwise.
+   * Read the SPN (Service Provider Name) from the ICC.
    */
-  isUSTServiceAvailable: function isUSTServiceAvailable(service) {
-    service -= 1;
-    let index = service / 8;
-    let bitmask = 1 << (service % 8);
-    return this.iccInfo.ust &&
-           (index < this.iccInfo.ust.length) &&
-           (this.iccInfo.ust[index] & bitmask);
-  },
-
-  /**
-   * Read the UST from the ICC.
-   */
-  getUST: function getUST() {
+  getSPN: function getSPN() {
     function callback() {
       let length = Buf.readUint32();
       // Each octet is encoded into two chars.
-      let len = length / 2;
-      this.iccInfo.ust = GsmPDUHelper.readHexOctetArray(len);
+      // Minus 1 because first is used to store display condition
+      let len = (length / 2) - 1;
+      let spnDisplayCondition = GsmPDUHelper.readHexOctet();
+      this.iccInfo.spn = GsmPDUHelper.readAlphaIdentifier(len);
       Buf.readStringDelimiter(length);
-      
+
       if (DEBUG) {
-        let str = "";
-        for (let i = 0; i < this.iccInfo.ust.length; i++) {
-          str += this.iccInfo.ust[i] + ", ";
-        }
-        debug("UST: " + str);
+        debug("SPN: spn=" + this.iccInfo.spn + ", spnDisplayCondition=" + spnDisplayCondition);
       }
+      this._handleICCInfoChange();
     }
 
     this.iccIO({
       command:   ICC_COMMAND_GET_RESPONSE,
-      fileId:    ICC_EF_UST,
-      pathId:    this._getPathIdForICCRecord(ICC_EF_UST),
+      fileId:    ICC_EF_SPN,
+      pathId:    this._getPathIdForICCRecord(ICC_EF_SPN),
+      p1:        0, // For GET_RESPONSE, p1 = 0
+      p2:        0, // For GET_RESPONSE, p2 = 0
+      p3:        GET_RESPONSE_EF_SIZE_BYTES,
+      data:      null,
+      pin2:      null,
+      type:      EF_TYPE_TRANSPARENT,
+      callback:  callback,
+    });
+  },
+
+  /**
+   * Get whether specificed (U)SIM service is available.
+   *
+   * @param geckoService
+   *        Service name like "ADN", "BDN", etc.
+   *
+   * @return true if the service is enabled, false otherwise.
+   */
+  isICCServiceAvailable: function isICCServiceAvailable(geckoService) {
+    let serviceTable = this.iccInfo.sst;
+    let index, bitmask;
+    if (this.appType == CARD_APPTYPE_SIM) {
+      /**
+       * Service id is valid in 1..N, and 2 bits are used to code each service.
+       *
+       * +----+--  --+----+----+
+       * | b8 | ...  | b2 | b1 |
+       * +----+--  --+----+----+
+       *
+       * b1 = 0, service not allocated.
+       *      1, service allocated.
+       * b2 = 0, service not activatd.
+       *      1, service allocated.
+       *
+       * @see 3GPP TS 51.011 10.3.7.
+       */
+      let simService = GECKO_ICC_SERVICES.sim[geckoService];
+      if (!simService) {
+        return false;
+      }
+      simService -= 1;
+      index = Math.floor(simService / 4);
+      bitmask = 2 << ((simService % 4) << 1);
+    } else {
+      /**
+       * Service id is valid in 1..N, and 1 bit is used to code each service.
+       *
+       * +----+--  --+----+----+
+       * | b8 | ...  | b2 | b1 |
+       * +----+--  --+----+----+
+       *
+       * b1 = 0, service not avaiable.
+       *      1, service available.
+       * b2 = 0, service not avaiable.
+       *      1, service available.
+       *
+       * @see 3GPP TS 31.102 4.2.8.
+       */
+      let usimService = GECKO_ICC_SERVICES.usim[geckoService];
+      if (!usimService) {
+        return false;
+      }
+      usimService -= 1;
+      index = Math.floor(usimService / 8);
+      bitmask = 1 << ((usimService % 8) << 0);
+    }
+
+    return (serviceTable &&
+           (index < serviceTable.length) &&
+           (serviceTable[index] & bitmask)) != 0;
+  },
+
+  /**
+   * Read the (U)SIM Service Table from the ICC.
+   */
+  getSST: function getSST() {
+    function callback() {
+      let length = Buf.readUint32();
+      // Each octet is encoded into two chars.
+      let len = length / 2;
+      this.iccInfo.sst = GsmPDUHelper.readHexOctetArray(len);
+      Buf.readStringDelimiter(length);
+
+      if (DEBUG) {
+        let str = "";
+        for (let i = 0; i < this.iccInfo.sst.length; i++) {
+          str += this.iccInfo.sst[i] + ", ";
+        }
+        debug("SST: " + str);
+      }
+    }
+
+    // ICC_EF_UST has the same value with ICC_EF_SST.
+    this.iccIO({
+      command:   ICC_COMMAND_GET_RESPONSE,
+      fileId:    ICC_EF_SST,
+      pathId:    this._getPathIdForICCRecord(ICC_EF_SST),
       p1:        0, // For GET_RESPONSE, p1 = 0
       p2:        0, // For GET_RESPONSE, p2 = 0
       p3:        GET_RESPONSE_EF_SIZE_BYTES,
@@ -1382,11 +1461,10 @@ let RIL = {
     }
 
     function error(options) {
-      // TODO: Error handling should be addressed in Bug 787477
       delete options.callback;
       delete options.onerror;
       options.rilMessageType = "icccontacts";
-      options.contacts = [];
+      options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
       this.sendDOMMessage(options);
     }
 
@@ -1475,9 +1553,8 @@ let RIL = {
    */
   getICCContacts: function getICCContacts(options) {
     if (!this.appType) {
-      // TODO: Error handling should be addressed in Bug 787477
       options.rilMessageType = "icccontacts";
-      options.contacts = [];
+      options.errorMsg = GECKO_ERROR_REQUEST_NOT_SUPPORTED;
       this.sendDOMMessage(options);
     }
 
@@ -1523,11 +1600,10 @@ let RIL = {
     }
 
     function error(options) {
-      // TODO: Error handling should be addressed in Bug 787477
       delete options.callback;
       delete options.onerror;
       options.rilMessageType = "icccontacts";
-      options.contacts = [];
+      options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
       this.sendDOMMessage(options);
     }
 
@@ -2068,8 +2144,6 @@ let RIL = {
    * @param [optional] itemIdentifier
    * @param [optional] input
    * @param [optional] isYesNo
-   * @param [optional] isUCS2
-   * @param [optional] isPacked
    * @param [optional] hasConfirmed
    */
   sendStkTerminalResponse: function sendStkTerminalResponse(response) {
@@ -2080,13 +2154,14 @@ let RIL = {
 
     let token = Buf.newParcel(REQUEST_STK_SEND_TERMINAL_RESPONSE);
     let textLen = 0;
+    let command = response.command;
     if (response.resultCode != STK_RESULT_HELP_INFO_REQUIRED) {
       if (response.isYesNo) {
         textLen = 1;
       } else if (response.input) {
-        if (response.isUCS2) {
+        if (command.options.isUCS2) {
           textLen = response.input.length * 2;
-        } else if (response.isPacked) {
+        } else if (command.options.isPacked) {
           let bits = response.input.length * 7;
           textLen = bits * 7 / 8 + (bits % 8 ? 1 : 0);
         } else {
@@ -2108,9 +2183,9 @@ let RIL = {
                                COMPREHENSIONTLV_FLAG_CR);
     GsmPDUHelper.writeHexOctet(3);
     if (response.command) {
-      GsmPDUHelper.writeHexOctet(response.command.commandNumber);
-      GsmPDUHelper.writeHexOctet(response.command.typeOfCommand);
-      GsmPDUHelper.writeHexOctet(response.command.commandQualifier);
+      GsmPDUHelper.writeHexOctet(command.commandNumber);
+      GsmPDUHelper.writeHexOctet(command.typeOfCommand);
+      GsmPDUHelper.writeHexOctet(command.commandQualifier);
     } else {
       GsmPDUHelper.writeHexOctet(0x00);
       GsmPDUHelper.writeHexOctet(0x00);
@@ -2161,8 +2236,10 @@ let RIL = {
         GsmPDUHelper.writeHexOctet(COMPREHENSIONTLV_TAG_TEXT_STRING |
                                    COMPREHENSIONTLV_FLAG_CR);
         GsmPDUHelper.writeHexOctet(textLen + 1); // +1 for coding
-        let coding = response.isUCS2 ? STK_TEXT_CODING_UCS2 :
-                       (response.isPacked ? STK_TEXT_CODING_GSM_7BIT_PACKED :
+        let coding = command.options.isUCS2 ?
+                       STK_TEXT_CODING_UCS2 :
+                       (command.options.isPacked ?
+                          STK_TEXT_CODING_GSM_7BIT_PACKED :
                           STK_TEXT_CODING_GSM_8BIT);
         GsmPDUHelper.writeHexOctet(coding);
 
@@ -2194,12 +2271,19 @@ let RIL = {
    * @param helpRequested
    */
   sendStkMenuSelection: function sendStkMenuSelection(command) {
+    command.tag = BER_MENU_SELECTION_TAG;
+    command.deviceId = {
+      sourceId :STK_DEVICE_ID_KEYPAD,
+      destinationId: STK_DEVICE_ID_SIM
+    };
     this.sendICCEnvelopeCommand(command);
   },
 
   /**
    * Send REQUEST_STK_SEND_ENVELOPE_COMMAND to ICC.
    *
+   * @param tag
+   * @patam deviceId
    * @param [optioanl] itemIdentifier
    * @param [optional] helpRequested
    */
@@ -2213,15 +2297,15 @@ let RIL = {
     Buf.writeUint32(size);
 
     // Write a BER-TLV
-    GsmPDUHelper.writeHexOctet(BER_MENU_SELECTION_TAG);
+    GsmPDUHelper.writeHexOctet(options.tag);
     GsmPDUHelper.writeHexOctet(berLen);
 
     // Device Identifies
     GsmPDUHelper.writeHexOctet(COMPREHENSIONTLV_TAG_DEVICE_ID |
                                COMPREHENSIONTLV_FLAG_CR);
     GsmPDUHelper.writeHexOctet(2);
-    GsmPDUHelper.writeHexOctet(STK_DEVICE_ID_KEYPAD);
-    GsmPDUHelper.writeHexOctet(STK_DEVICE_ID_SIM);
+    GsmPDUHelper.writeHexOctet(options.deviceId.sourceId);
+    GsmPDUHelper.writeHexOctet(options.deviceId.destinationId);
 
     // Item Identifier
     if (options.itemIdentifier) {
@@ -2379,7 +2463,8 @@ let RIL = {
 
           case ICC_EF_AD:
           case ICC_EF_MBDN:
-          case ICC_EF_UST:
+          case ICC_EF_SPN:
+          case ICC_EF_SST:
             return EF_PATH_MF_SIM + EF_PATH_DF_GSM;
         }
       case CARD_APPTYPE_USIM:
@@ -2389,6 +2474,7 @@ let RIL = {
           case ICC_EF_MBDN:
           case ICC_EF_UST:
           case ICC_EF_MSISDN:
+          case ICC_EF_SPN:
             return EF_PATH_MF_SIM + EF_PATH_ADF_USIM;
 
           default:
@@ -2814,7 +2900,26 @@ let RIL = {
     }
   },
 
+  _sendDataCallError: function _sendDataCallError(message, errorCode) {
+    message.rilMessageType = "datacallerror";
+    if (errorCode == ERROR_GENERIC_FAILURE) {
+      message.error = RIL_ERROR_TO_GECKO_ERROR[errorCode];
+    } else {
+      message.error = RIL_DATACALL_FAILCAUSE_TO_GECKO_DATACALL_ERROR[errorCode];
+    }
+    this.sendDOMMessage(message);
+  },
+
   _processDataCallList: function _processDataCallList(datacalls, newDataCallOptions) {
+    // Check for possible PDP errors: We check earlier because the datacall
+    // can be removed if is the same as the current one.
+    for each (let newDataCall in datacalls) {
+      if (newDataCall.status != DATACALL_FAIL_NONE) {
+        newDataCall.apn = newDataCallOptions.apn;
+        this._sendDataCallError(newDataCall, newDataCall.status);
+      }
+    }
+
     for each (let currentDataCall in this.currentDataCalls) {
       let updatedDataCall;
       if (datacalls) {
@@ -3619,8 +3724,8 @@ RIL.readSetupDataCall_v5 = function readSetupDataCall_v5(options) {
 
 RIL[REQUEST_SETUP_DATA_CALL] = function REQUEST_SETUP_DATA_CALL(length, options) {
   if (options.rilRequestError) {
-    options.rilMessageType = "datacallerror";
-    this.sendDOMMessage(options);
+    // On Data Call generic errors, we shall notify caller
+    this._sendDataCallError(options, options.rilRequestError);
     return;
   }
 
@@ -4961,6 +5066,21 @@ let GsmPDUHelper = {
   },
 
   /**
+   * Write Dialling Number.
+   *
+   * @param number  The Dialling number
+   */
+  writeDiallingNumber: function writeDiallingNumber(number) {
+    let toa = PDU_TOA_ISDN; // 81
+    if (number[0] == '+') {
+      toa = PDU_TOA_INTERNATIONAL | PDU_TOA_ISDN; // 91
+      number = number.substring(1);
+    }
+    this.writeHexOctet(toa);
+    this.writeSwappedNibbleBCD(number);
+  },
+
+  /**
    * Read TP-Protocol-Indicator(TP-PID).
    *
    * @param msg
@@ -5517,6 +5637,9 @@ let StkCommandParamsFactory = {
   createParam: function createParam(cmdDetails, ctlvs) {
     let param;
     switch (cmdDetails.typeOfCommand) {
+      case STK_CMD_SET_UP_EVENT_LIST:
+        param = this.processSetUpEventList(cmdDetails, ctlvs);
+        break;
       case STK_CMD_SET_UP_MENU:
       case STK_CMD_SELECT_ITEM:
         param = this.processSelectItem(cmdDetails, ctlvs);
@@ -5550,6 +5673,27 @@ let StkCommandParamsFactory = {
         break;
     }
     return param;
+  },
+
+  /**
+   * Construct a param for Set Up Event list.
+   *
+   * @param cmdDetails
+   *        The value object of CommandDetails TLV.
+   * @param ctlvs
+   *        The all TLVs in this proactive command.
+   */
+  processSetUpEventList: function processSetUpEventList(cmdDetails, ctlvs) {
+    let ctlv = StkProactiveCmdHelper.searchForTag(
+        COMPREHENSIONTLV_TAG_EVENT_LIST, ctlvs);
+    if (!ctlv) {
+      RIL.sendStkTerminalResponse({
+        command: cmdDetails,
+        resultCode: STK_RESULT_REQUIRED_VALUES_MISSING});
+      throw new Error("Stk Event List: Required value missing : Event List");
+    }
+
+    return ctlv.value || {eventList: null};
   },
 
   /**
@@ -5820,6 +5964,8 @@ let StkProactiveCmdHelper = {
         return this.retrieveResponseLength(length);
       case COMPREHENSIONTLV_TAG_DEFAULT_TEXT:
         return this.retrieveDefaultText(length);
+      case COMPREHENSIONTLV_TAG_EVENT_LIST:
+        return this.retrieveEventList(length);
       case COMPREHENSIONTLV_TAG_IMMEDIATE_RESPONSE:
         return this.retrieveImmediaResponse(length);
       case COMPREHENSIONTLV_TAG_URL:
@@ -5992,6 +6138,21 @@ let StkProactiveCmdHelper = {
    */
   retrieveDefaultText: function retrieveDefaultText(length) {
     return this.retrieveTextString(length);
+  },
+
+  /**
+   * Event List.
+   */
+  retrieveEventList: function retrieveEventList(length) {
+    if (!length) {
+      // null means an indication to ME to remove the existing list of events
+      // in ME.
+      return null;
+    }
+
+    return {
+      eventList: GsmPDUHelper.readHexOctetArray(length)
+    };
   },
 
   /**

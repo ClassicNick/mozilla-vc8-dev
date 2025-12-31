@@ -55,7 +55,6 @@
 #include "nsLayoutUtils.h"
 #include "nsNPAPIPluginInstance.h"
 #include "nsObjectFrame.h"
-#include "mozilla/FunctionTimer.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -82,12 +81,12 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 nsAccessibilityService *nsAccessibilityService::gAccessibilityService = nullptr;
+ApplicationAccessible* nsAccessibilityService::gApplicationAccessible = nullptr;
 bool nsAccessibilityService::gIsShutdown = true;
 
 nsAccessibilityService::nsAccessibilityService() :
   nsAccDocManager(), FocusManager()
 {
-  NS_TIME_FUNCTION;
 }
 
 nsAccessibilityService::~nsAccessibilityService()
@@ -602,7 +601,8 @@ nsAccessibilityService::GetApplicationAccessible(nsIAccessible** aAccessibleAppl
 {
   NS_ENSURE_ARG_POINTER(aAccessibleApplication);
 
-  NS_IF_ADDREF(*aAccessibleApplication = nsAccessNode::GetApplicationAccessible());
+  NS_IF_ADDREF(*aAccessibleApplication = ApplicationAcc());
+
   return NS_OK;
 }
 
@@ -997,13 +997,16 @@ nsAccessibilityService::GetOrCreateAccessible(nsINode* aNode,
   }
 
   nsRoleMapEntry* roleMapEntry = aria::GetRoleMap(aNode);
+
+  // If the element is focusable or global ARIA attribute is applied to it or
+  // it is referenced by ARIA relationship then treat role="presentation" on
+  // the element as the role is not there.
   if (roleMapEntry && roleMapEntry->Is(nsGkAtoms::presentation)) {
-    // Ignore presentation role if element is focusable (focus event shouldn't
-    // be ever lost and should be sensible).
-    if (content->IsFocusable())
-      roleMapEntry = nullptr;
-    else
+    if (!content->IsFocusable() && !HasUniversalAriaProperty(content) &&
+        !HasRelatedContent(content))
       return nullptr;
+
+    roleMapEntry = nullptr;
   }
 
   if (weakFrame.IsAlive() && !newAcc && isHTML) {  // HTML accessibles
@@ -1200,6 +1203,12 @@ nsAccessibilityService::Init()
   logging::CheckEnv();
 #endif
 
+  // Create and initialize the application accessible.
+  ApplicationAccessibleWrap::PreCreate();
+  gApplicationAccessible = new ApplicationAccessibleWrap();
+  NS_ADDREF(gApplicationAccessible); // will release in Shutdown()
+  gApplicationAccessible->Init();
+
   // Initialize accessibility.
   nsAccessNodeWrap::InitAccessibility();
 
@@ -1239,6 +1248,11 @@ nsAccessibilityService::Shutdown()
   gIsShutdown = true;
 
   nsAccessNodeWrap::ShutdownAccessibility();
+
+  ApplicationAccessibleWrap::Unload();
+  gApplicationAccessible->Shutdown();
+  NS_RELEASE(gApplicationAccessible);
+  gApplicationAccessible = nullptr;
 }
 
 bool
@@ -1669,8 +1683,7 @@ Accessible*
 nsAccessibilityService::AddNativeRootAccessible(void* aAtkAccessible)
 {
 #ifdef MOZ_ACCESSIBILITY_ATK
-  ApplicationAccessible* applicationAcc =
-    nsAccessNode::GetApplicationAccessible();
+  ApplicationAccessible* applicationAcc = ApplicationAcc();
   if (!applicationAcc)
     return nullptr;
 
@@ -1690,8 +1703,7 @@ void
 nsAccessibilityService::RemoveNativeRootAccessible(Accessible* aAccessible)
 {
 #ifdef MOZ_ACCESSIBILITY_ATK
-  ApplicationAccessible* applicationAcc =
-    nsAccessNode::GetApplicationAccessible();
+  ApplicationAccessible* applicationAcc = ApplicationAcc();
 
   if (applicationAcc)
     applicationAcc->RemoveChild(aAccessible);
@@ -1808,6 +1820,12 @@ FocusManager*
 FocusMgr()
 {
   return nsAccessibilityService::gAccessibilityService;
+}
+
+ApplicationAccessible*
+ApplicationAcc()
+{
+  return nsAccessibilityService::gApplicationAccessible;
 }
 
 EPlatformDisabledState

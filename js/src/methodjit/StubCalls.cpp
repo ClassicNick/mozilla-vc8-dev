@@ -138,9 +138,9 @@ stubs::SetElem(VMFrame &f)
                     if (js_PrototypeHasIndexedProperties(cx, obj))
                         break;
                     if ((uint32_t)i >= obj->getArrayLength())
-                        obj->setArrayLength(cx, i + 1);
+                        JSObject::setArrayLength(cx, obj, i + 1);
                 }
-                obj->setDenseArrayElementWithType(cx, i, rval);
+                JSObject::setDenseArrayElementWithType(cx, obj, i, rval);
                 goto end_setelem;
             } else {
                 if (f.script()->hasAnalysis())
@@ -1033,7 +1033,7 @@ stubs::GetPropNoCache(VMFrame &f, PropertyName *name)
 
     // Uncached lookups are only used for .prototype accesses at the start of constructors.
     JS_ASSERT(lval.isObject());
-    JS_ASSERT(name == cx->runtime->atomState.classPrototypeAtom);
+    JS_ASSERT(name == cx->names().classPrototype);
 
     RootedObject obj(cx, &lval.toObject());
     RootedValue rval(cx);
@@ -1081,7 +1081,7 @@ InitPropOrMethod(VMFrame &f, PropertyName *name, JSOp op)
     /* Get the immediate property name into id. */
     RootedId id(cx, NameToId(name));
 
-    if (JS_UNLIKELY(name == cx->runtime->atomState.protoAtom)
+    if (JS_UNLIKELY(name == cx->names().proto)
         ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, false)
         : !DefineNativeProperty(cx, obj, id, rval, NULL, NULL,
                                 JSPROP_ENUMERATE, 0, 0, 0)) {
@@ -1101,7 +1101,7 @@ stubs::IterNext(VMFrame &f)
     JS_ASSERT(f.regs.stackDepth() >= 1);
     JS_ASSERT(f.regs.sp[-1].isObject());
 
-    JSObject *iterobj = &f.regs.sp[-1].toObject();
+    RootedObject iterobj(f.cx, &f.regs.sp[-1].toObject());
     f.regs.sp[0].setNull();
     f.regs.sp++;
     if (!js_IteratorNext(f.cx, iterobj, MutableHandleValue::fromMarkedLocation(&f.regs.sp[-1])))
@@ -1126,7 +1126,8 @@ void JS_FASTCALL
 stubs::EndIter(VMFrame &f)
 {
     JS_ASSERT(f.regs.stackDepth() >= 1);
-    if (!CloseIterator(f.cx, &f.regs.sp[-1].toObject()))
+    RootedObject obj(f.cx, &f.regs.sp[-1].toObject());
+    if (!CloseIterator(f.cx, obj))
         THROW();
 }
 

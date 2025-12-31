@@ -656,7 +656,7 @@ js::math_tan(JSContext *cx, unsigned argc, Value *vp)
 static JSBool
 math_toSource(JSContext *cx, unsigned argc, Value *vp)
 {
-    vp->setString(cx->runtime->atomState.MathAtom);
+    vp->setString(cx->names().Math);
     return JS_TRUE;
 }
 #endif
@@ -687,9 +687,8 @@ static JSFunctionSpec math_static_methods[] = {
 };
 
 JSObject *
-js_InitMathClass(JSContext *cx, JSObject *obj_)
+js_InitMathClass(JSContext *cx, HandleObject obj)
 {
-    RootedObject obj(cx, obj_);
     RootedObject Math(cx, NewObjectWithClassProto(cx, &MathClass, NULL, obj));
     if (!Math || !JSObject::setSingletonType(cx, Math))
         return NULL;

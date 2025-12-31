@@ -412,6 +412,34 @@ var Scratchpad = {
   },
 
   /**
+   * Reload the current page and execute the entire editor content when
+   * the page finishes loading. Note that this operation should be available
+   * only in the content context.
+   */
+  reloadAndRun: function SP_reloadAndRun()
+  {
+    if (this.executionContext !== SCRATCHPAD_CONTEXT_CONTENT) {
+      Cu.reportError(this.strings.
+          GetStringFromName("scratchpadContext.invalid"));
+      return;
+    }
+
+    let browser = this.gBrowser.selectedBrowser;
+
+    this._reloadAndRunEvent = function onLoad(evt) {
+      if (evt.target !== browser.contentDocument) {
+        return;
+      }
+
+      browser.removeEventListener("load", this._reloadAndRunEvent, true);
+      this.run();
+    }.bind(this);
+
+    browser.addEventListener("load", this._reloadAndRunEvent, true);
+    browser.contentWindow.location.reload();
+  },
+
+  /**
    * Execute the selected text (if any) or the entire editor content in the
    * current context. The evaluation result is inserted into the editor after
    * the selected text, or at the end of the editor content if there is no
@@ -640,15 +668,7 @@ var Scratchpad = {
    */
   openFile: function SP_openFile(aIndex)
   {
-    let fp;
-    if (!aIndex && aIndex !== 0) {
-      fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
-      fp.init(window, this.strings.GetStringFromName("openFile.title"),
-              Ci.nsIFilePicker.modeOpen);
-      fp.defaultString = "";
-    }
-
-    if (aIndex > -1 || fp.show() != Ci.nsIFilePicker.returnCancel) {
+    let promptCallback = function(aFile) {
       this.promptSave(function(aCloseFile, aSaved, aStatus) {
         let shouldOpen = aCloseFile;
         if (aSaved && !Components.isSuccessCode(aStatus)) {
@@ -659,8 +679,8 @@ var Scratchpad = {
           this._skipClosePrompt = true;
 
           let file;
-          if (fp) {
-            file = fp.file;
+          if (aFile) {
+            file = aFile;
           } else {
             file = Components.classes["@mozilla.org/file/local;1"].
                    createInstance(Components.interfaces.nsILocalFile);
@@ -673,6 +693,22 @@ var Scratchpad = {
           this.setRecentFile(file);
         }
       }.bind(this));
+    }.bind(this);
+
+    if (aIndex > -1) {
+      promptCallback();
+    } else {
+      let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+      let fpCallback = function fpCallback_done(aResult) {
+        if (aResult != Ci.nsIFilePicker.returnCancel) {
+          promptCallback(fp.file);
+        }
+      };
+
+      fp.init(window, this.strings.GetStringFromName("openFile.title"),
+              Ci.nsIFilePicker.modeOpen);
+      fp.defaultString = "";
+      fp.open(fpCallback);
     }
   },
 
@@ -866,22 +902,25 @@ var Scratchpad = {
   saveFileAs: function SP_saveFileAs(aCallback)
   {
     let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+    let fpCallback = function fpCallback_done(aResult) {
+      if (aResult != Ci.nsIFilePicker.returnCancel) {
+        this.setFilename(fp.file.path);
+        this.exportToFile(fp.file, true, false, function(aStatus) {
+          if (Components.isSuccessCode(aStatus)) {
+            this.editor.dirty = false;
+            this.setRecentFile(fp.file);
+          }
+          if (aCallback) {
+            aCallback(aStatus);
+          }
+        });
+      }
+    }.bind(this);
+
     fp.init(window, this.strings.GetStringFromName("saveFileAs"),
             Ci.nsIFilePicker.modeSave);
     fp.defaultString = "scratchpad.js";
-    if (fp.show() != Ci.nsIFilePicker.returnCancel) {
-      this.setFilename(fp.file.path);
-
-      this.exportToFile(fp.file, true, false, function(aStatus) {
-        if (Components.isSuccessCode(aStatus)) {
-          this.editor.dirty = false;
-          this.setRecentFile(fp.file);
-        }
-        if (aCallback) {
-          aCallback(aStatus);
-        }
-      });
-    }
+    fp.open(fpCallback);
   },
 
   /**
@@ -979,6 +1018,7 @@ var Scratchpad = {
 
     let content = document.getElementById("sp-menu-content");
     document.getElementById("sp-menu-browser").removeAttribute("checked");
+    document.getElementById("sp-cmd-reloadAndRun").removeAttribute("disabled");
     content.setAttribute("checked", true);
     this.executionContext = SCRATCHPAD_CONTEXT_CONTENT;
     this.notificationBox.removeAllNotifications(false);
@@ -995,8 +1035,12 @@ var Scratchpad = {
     }
 
     let browser = document.getElementById("sp-menu-browser");
+    let reloadAndRun = document.getElementById("sp-cmd-reloadAndRun");
+
     document.getElementById("sp-menu-content").removeAttribute("checked");
+    reloadAndRun.setAttribute("disabled", true);
     browser.setAttribute("checked", true);
+
     this.executionContext = SCRATCHPAD_CONTEXT_BROWSER;
     this.notificationBox.appendNotification(
       this.strings.GetStringFromName("browserContext.notification"),
@@ -1173,6 +1217,8 @@ var Scratchpad = {
     }
 
     this.resetContext();
+    this.gBrowser.selectedBrowser.removeEventListener("load",
+        this._reloadAndRunEvent, true);
     this.editor.removeEventListener(SourceEditor.EVENTS.DIRTY_CHANGED,
                                     this._onDirtyChanged);
     PreferenceObserver.uninit();

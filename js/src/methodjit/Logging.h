@@ -11,8 +11,6 @@
 #include "assembler/wtf/Platform.h"
 #include "prmjtime.h"
 
-#if defined(JS_METHODJIT) || ENABLE_YARR_JIT
-
 namespace js {
 
 #define JSPEW_CHAN_MAP(_)   \
@@ -92,8 +90,6 @@ static inline void JaegerSpew(JaegerSpewChannel channel, const char *fmt, ...)
 #endif
 
 }
-
-#endif
 
 #endif
 

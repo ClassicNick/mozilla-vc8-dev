@@ -53,6 +53,7 @@ let SocialUI = {
       case "social:profile-changed":
         SocialToolbar.updateProfile();
         SocialShareButton.updateProfileInfo();
+        SocialChatBar.update();
         break;
       case "nsPref:changed":
         SocialSidebar.updateSidebar();
@@ -158,6 +159,10 @@ let SocialUI = {
   undoActivation: function SocialUI_undoActivation() {
     Social.active = false;
     this.notificationPanel.hidePopup();
+  },
+
+  haveLoggedInUser: function SocialUI_haveLoggedInUser() {
+    return !!(Social.provider && Social.provider.profile && Social.provider.profile.userName);
   }
 }
 
@@ -167,6 +172,8 @@ let SocialChatBar = {
   },
   // Whether the chats can be shown for this window.
   get canShow() {
+    if (!SocialUI.haveLoggedInUser())
+      return false;
     let docElem = document.documentElement;
     let chromeless = docElem.getAttribute("disablechrome") ||
                      docElem.getAttribute("chromehidden").indexOf("extrachrome") >= 0;
@@ -289,7 +296,18 @@ let SocialFlyout = {
 
     sizeSocialPanelToContent(iframe);
     let anchor = document.getElementById("social-sidebar-browser");
-    panel.openPopup(anchor, "start_before", 0, yOffset, false, false);
+    if (panel.state == "open") {
+      // this is painful - there is no way to say "move to a new anchor offset",
+      // only "move to new screen pos".  So we remember the last yOffset,
+      // calculate the adjustment needed to the new yOffset, then calc the
+      // screen Y position.
+      let yAdjust = yOffset - this.yOffset;
+      let box = panel.boxObject;
+      panel.moveTo(box.screenX, box.screenY + yAdjust);
+    } else {
+      panel.openPopup(anchor, "start_before", 0, yOffset, false, false);
+    }
+    this.yOffset = yOffset;
   }
 }
 
@@ -307,14 +325,14 @@ let SocialShareButton = {
   },
 
   updateProfileInfo: function SSB_updateProfileInfo() {
-    let profileRow = document.getElementById("editSharePopupHeader");
+    let profileRow = document.getElementById("unsharePopupHeader");
     let profile = Social.provider.profile;
     this.promptImages = null;
     this.promptMessages = null;
     if (profile && profile.displayName) {
       profileRow.hidden = false;
       let portrait = document.getElementById("socialUserPortrait");
-      portrait.setAttribute("src", profile.portrait || "chrome://browser/skin/social/social.png");
+      portrait.setAttribute("src", profile.portrait || "chrome://global/skin/icons/information-32.png");
       let displayName = document.getElementById("socialUserDisplayName");
       displayName.setAttribute("label", profile.displayName);
     } else {
@@ -366,7 +384,11 @@ let SocialShareButton = {
       }
       promptImages[sub] = url;
     }
-    for (let sub of ["shareTooltip", "unshareTooltip", "sharedLabel", "unsharedLabel"]) {
+    for (let sub of ["shareTooltip", "unshareTooltip",
+                     "sharedLabel", "unsharedLabel", "unshareLabel",
+                     "portraitLabel", 
+                     "unshareConfirmLabel", "unshareConfirmAccessKey",
+                     "unshareCancelLabel", "unshareCancelAccessKey"]) {
       if (typeof data.messages[sub] != "string" || data.messages[sub].length == 0) {
         return reportError('messages["' + sub + '"] is not a valid string');
       }
@@ -380,19 +402,19 @@ let SocialShareButton = {
   get shareButton() {
     return document.getElementById("share-button");
   },
-  get sharePopup() {
-    return document.getElementById("editSharePopup");
+  get unsharePopup() {
+    return document.getElementById("unsharePopup");
   },
 
-  dismissSharePopup: function SSB_dismissSharePopup() {
-    this.sharePopup.hidePopup();
+  dismissUnsharePopup: function SSB_dismissUnsharePopup() {
+    this.unsharePopup.hidePopup();
   },
 
   updateButtonHiddenState: function SSB_updateButtonHiddenState() {
     let shareButton = this.shareButton;
     if (shareButton)
       shareButton.hidden = !Social.uiVisible || this.promptImages == null ||
-                           !Social.provider.profile || !Social.provider.profile.userName;
+                           !SocialUI.haveLoggedInUser();
   },
 
   onClick: function SSB_onClick(aEvent) {
@@ -406,27 +428,42 @@ let SocialShareButton = {
   },
 
   panelShown: function SSB_panelShown(aEvent) {
-    let sharePopupOkButton = document.getElementById("editSharePopupOkButton");
-    if (sharePopupOkButton)
-      sharePopupOkButton.focus();
+    function updateElement(id, attrs) {
+      let el = document.getElementById(id);
+      Object.keys(attrs).forEach(function(attr) {
+        el.setAttribute(attr, attrs[attr]);
+      });
+    }
+    let continueSharingButton = document.getElementById("unsharePopupContinueSharingButton");
+    continueSharingButton.focus();
+    updateElement("unsharePopupContinueSharingButton",
+                  {label: this.promptMessages.unshareCancelLabel,
+                   accesskey: this.promptMessages.unshareCancelAccessKey});
+    updateElement("unsharePopupStopSharingButton",
+                  {label: this.promptMessages.unshareConfirmLabel,
+                  accesskey: this.promptMessages.unshareConfirmAccessKey});
+    updateElement("socialUserPortrait",
+                  {"aria-label": this.promptMessages.portraitLabel});
+    updateElement("socialUserRecommendedText",
+                  {value: this.promptMessages.unshareLabel});
   },
 
   sharePage: function SSB_sharePage() {
-    this.sharePopup.hidden = false;
+    this.unsharePopup.hidden = false;
 
     let uri = gBrowser.currentURI;
     if (!Social.isPageShared(uri)) {
       Social.sharePage(uri);
       this.updateShareState();
     } else {
-      this.sharePopup.openPopup(this.shareButton, "bottomcenter topright");
+      this.unsharePopup.openPopup(this.shareButton, "bottomcenter topright");
     }
   },
 
   unsharePage: function SSB_unsharePage() {
     Social.unsharePage(gBrowser.currentURI);
     this.updateShareState();
-    this.dismissSharePopup();
+    this.dismissUnsharePopup();
   },
 
   updateShareState: function SSB_updateShareState() {
@@ -488,7 +525,7 @@ var SocialToolbar = {
 
   updateButtonHiddenState: function SocialToolbar_updateButtonHiddenState() {
     this.button.hidden = !Social.uiVisible;
-    if (!Social.provider || !Social.provider.profile || !Social.provider.profile.userName) {
+    if (!SocialUI.haveLoggedInUser()) {
       ["social-notification-box",
        "social-status-iconbox"].forEach(function removeChildren(parentId) {
         let parent = document.getElementById(parentId);
@@ -503,7 +540,7 @@ var SocialToolbar = {
     // response. In that case we'll be called again when it's available, via
     // social:profile-changed
     let profile = Social.provider.profile || {};
-    let userPortrait = profile.portrait || "chrome://browser/skin/social/social.png";
+    let userPortrait = profile.portrait || "chrome://global/skin/icons/information-32.png";
     document.getElementById("social-statusarea-user-portrait").setAttribute("src", userPortrait);
 
     let notLoggedInLabel = document.getElementById("social-statusarea-notloggedin");

@@ -396,14 +396,16 @@ struct JSScript : public js::gc::Cell
     uint32_t        idpad;
 #endif
 
-    uint32_t        PADDING;
-
     // 16-bit fields.
 
   private:
+    uint16_t        PADDING;
+
     uint16_t        version;    /* JS version under which script was compiled */
 
   public:
+    uint16_t        ndefaults;  /* number of defaults the function has */
+
     uint16_t        nfixed;     /* number of slots besides stack operands in
                                    slot array */
 
@@ -557,7 +559,7 @@ struct JSScript : public js::gc::Cell
     JSFunction *function() const { return function_; }
     void setFunction(JSFunction *fun);
 
-    JSFixedString *sourceData(JSContext *cx);
+    JSFlatString *sourceData(JSContext *cx);
 
     bool loadSource(JSContext *cx, bool *worked);
 
@@ -659,11 +661,20 @@ struct JSScript : public js::gc::Cell
     inline void **nativeMap(bool constructing);
     inline void *nativeCodeForPC(bool constructing, jsbytecode *pc);
 
-    uint32_t getUseCount() const  { return useCount; }
+    /*
+     * Size of the JITScript and all sections.  If |mallocSizeOf| is NULL, the
+     * size is computed analytically.  (This method is implemented in
+     * MethodJIT.cpp.)
+     */
+    size_t sizeOfJitScripts(JSMallocSizeOfFun mallocSizeOf);
+#endif
+
+	uint32_t getUseCount() const  { return useCount; }
     uint32_t incUseCount() { return ++useCount; }
     uint32_t *addressOfUseCount() { return &useCount; }
     void resetUseCount() { useCount = 0; }
 
+  public:
     void resetLoopCount() {
         if (loopCount > maxLoopCount)
             maxLoopCount = loopCount;
@@ -680,15 +691,6 @@ struct JSScript : public js::gc::Cell
         return maxLoopCount;
     }
 
-    /*
-     * Size of the JITScript and all sections.  If |mallocSizeOf| is NULL, the
-     * size is computed analytically.  (This method is implemented in
-     * MethodJIT.cpp.)
-     */
-    size_t sizeOfJitScripts(JSMallocSizeOfFun mallocSizeOf);
-#endif
-
-  public:
     bool initScriptCounts(JSContext *cx);
     js::PCCounts getPCCounts(jsbytecode *pc);
     js::ScriptCounts releaseScriptCounts();
@@ -1031,7 +1033,7 @@ struct ScriptSource
         JS_ASSERT(hasSourceData());
         return argumentsNotIncluded_;
     }
-    JSFixedString *substring(JSContext *cx, uint32_t start, uint32_t stop);
+    JSFlatString *substring(JSContext *cx, uint32_t start, uint32_t stop);
     size_t sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf);
 
     // XDR handling

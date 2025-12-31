@@ -1223,7 +1223,6 @@ MarkConservativeStackRoots(JSTracer *trc, bool useSavedRoots)
     ConservativeGCData *cgcd = &rt->conservativeGC;
     if (!cgcd->hasStackToScan()) {
 #ifdef JS_THREADSAFE
-        JS_ASSERT(!rt->suspendCount);
         JS_ASSERT(!rt->requestDepth);
 #endif
         return;
@@ -3775,6 +3774,9 @@ PartitionCompartments::processNode(Node v)
 void
 PartitionCompartments::partition()
 {
+    if (failed())
+        return;
+
     for (Node n = 0; n < runtime->compartments.length(); n++) {
         if (discoveryTime[n] == Undefined)
             processNode(n);
@@ -3836,6 +3838,9 @@ BeginSweepPhase(JSRuntime *rt)
     /* Finalize unreachable (key,value) pairs in all weak maps. */
     WeakMapBase::sweepAll(&rt->gcMarker);
     rt->debugScopes->sweep();
+
+    /* Prune out dead views from ArrayBuffer's view lists. */
+    ArrayBufferObject::sweepAll(rt);
 
     /* Collect watch points associated with unreachable objects. */
     WatchpointMap::sweepAll(rt);
@@ -4319,7 +4324,8 @@ IncrementalCollectSlice(JSRuntime *rt,
 
       case MARK_ROOTS:
         BeginMarkPhase(rt);
-        PushZealSelectedObjects(rt);
+        if (rt->hasContexts())
+            PushZealSelectedObjects(rt);
 
         rt->gcIncrementalState = MARK;
 
@@ -5856,13 +5862,7 @@ PurgeJITCaches(JSCompartment *c)
         JSScript *script = i.get<JSScript>();
 
         /* Discard JM caches. */
-        for (int constructing = 0; constructing <= 1; constructing++) {
-            for (int barriers = 0; barriers <= 1; barriers++) {
-                mjit::JITScript *jit = script->getJIT((bool) constructing, (bool) barriers);
-                if (jit)
-                    jit->purgeCaches();
-            }
-        }
+        mjit::PurgeCaches(script);
 
 #ifdef JS_ION
 

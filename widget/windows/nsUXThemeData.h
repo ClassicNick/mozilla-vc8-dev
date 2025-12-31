@@ -137,7 +137,7 @@ public:
                                             const RECT* pClipRect);
   typedef HRESULT (WINAPI*DrawThemeEdgePtr)(HANDLE hTheme, HDC hdc, int iPartId, 
                                             int iStateId, const RECT *pDestRect,
-                                            uint uEdge, uint uFlags,
+                                            UINT uEdge, UINT uFlags,
                                             const RECT* pContentRect);
   typedef HRESULT (WINAPI*GetThemeContentRectPtr)(HANDLE hTheme, HDC hdc, int iPartId,
                                             int iStateId, const RECT* pRect,

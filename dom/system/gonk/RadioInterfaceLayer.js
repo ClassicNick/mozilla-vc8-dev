@@ -381,10 +381,7 @@ RadioInterfaceLayer.prototype = {
         this.updateDataConnection(message);
         break;
       case "datacallerror":
-        // 3G Network revoked the data connection, possible unavailable APN
-        debug("Received data registration error message. Failed APN " +
-              this.dataCallSettings["apn"]);
-        RILNetworkInterface.reset();
+        this.handleDataCallError(message);
         break;
       case "signalstrengthchange":
         this.handleSignalStrengthChange(message);
@@ -448,7 +445,9 @@ RadioInterfaceLayer.prototype = {
         let callback = this._contactsCallbacks[message.requestId];
         if (callback) {
           delete this._contactsCallbacks[message.requestId];
-          callback.receiveContactsList(message.contactType, message.contacts);
+          callback.receiveContactsList(message.errorMsg,
+                                       message.contactType,
+                                       message.contacts);
         }
         break;
       case "iccmbdn":
@@ -527,6 +526,9 @@ RadioInterfaceLayer.prototype = {
       }
     }
 
+    this.checkRoamingBetweenOperators(voice);
+    this.checkRoamingBetweenOperators(data);
+
     if (voiceMessage || operatorMessage) {
       ppmm.broadcastAsyncMessage("RIL:VoiceInfoChanged", voice);
     }
@@ -537,6 +539,32 @@ RadioInterfaceLayer.prototype = {
     if (selectionMessage) {
       this.updateNetworkSelectionMode(selectionMessage);
     }
+  },
+
+  /**
+    * Fix the roaming. RIL can report roaming in some case it is not
+    * really the case. See bug 787967
+    *
+    * @param registration  The voiceMessage or dataMessage from which the
+    *                      roaming state will be changed (maybe, if needed).
+    */
+  checkRoamingBetweenOperators: function checkRoamingBetweenOperators(registration) {
+    let icc = this.rilContext.icc;
+    if (!icc || !registration.connected) {
+      return;
+    }
+
+    let spn = icc.spn;
+    let operator = registration.network;
+    let longName = operator.longName;
+    let shortName = operator.shortName;
+
+    let equalsLongName = longName && (spn == longName);
+    let equalsShortName = shortName && (spn == shortName);
+    let equalsMcc = icc.mcc == operator.mcc;
+
+    registration.roaming = registration.roaming &&
+                           !(equalsMcc && (equalsLongName || equalsShortName));
   },
 
   /**
@@ -612,6 +640,20 @@ RadioInterfaceLayer.prototype = {
       ppmm.broadcastAsyncMessage("RIL:DataInfoChanged", dataInfo);
     }
     this.updateRILNetworkInterface();
+  },
+
+  /**
+   * Handle data errors
+   */
+  handleDataCallError: function handleDataCallError(message) {
+    if (message.apn != this.dataCallSettings["apn"]) {
+      return;
+    }
+
+    // 3G Network revoked the data connection, possible unavailable APN
+    RILNetworkInterface.reset();
+    // Notify datacall error
+    ppmm.broadcastAsyncMessage("RIL:DataError", message);
   },
 
   handleSignalStrengthChange: function handleSignalStrengthChange(message) {
@@ -973,6 +1015,14 @@ RadioInterfaceLayer.prototype = {
                                            message.timestamp,
                                            false);
 
+    gSystemMessenger.broadcastMessage("sms-received",
+                                      {id: id,
+                                       delivery: DOM_SMS_DELIVERY_RECEIVED,
+                                       sender: message.sender || null,
+                                       receiver: message.receiver || null,
+                                       body: message.fullBody || null,
+                                       timestamp: message.timestamp,
+                                       read: false});
     Services.obs.notifyObservers(sms, kSmsReceivedObserverTopic, null);
   },
 
@@ -1327,9 +1377,6 @@ RadioInterfaceLayer.prototype = {
     if (value == this.microphoneMuted) {
       return;
     }
-    gAudioManager.phoneState = value ?
-      nsIAudioManager.PHONE_STATE_IN_COMMUNICATION :
-      nsIAudioManager.PHONE_STATE_IN_CALL;  //XXX why is this needed?
     gAudioManager.microphoneMuted = value;
 
     if (!this._activeCall) {
@@ -1345,7 +1392,6 @@ RadioInterfaceLayer.prototype = {
     if (value == this.speakerEnabled) {
       return;
     }
-    gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_IN_CALL; // XXX why is this needed?
     let force = value ? nsIAudioManager.FORCE_SPEAKER :
                         nsIAudioManager.FORCE_NONE;
     gAudioManager.setForceForUse(nsIAudioManager.USE_COMMUNICATION, force);
@@ -1831,7 +1877,7 @@ RadioInterfaceLayer.prototype = {
   getICCContacts: function getICCContacts(contactType, callback) {
     if (!this._contactsCallbacks) {
       this._contactsCallbacks = {};
-    } 
+    }
     let requestId = Math.floor(Math.random() * 1000);
     this._contactsCallbacks[requestId] = callback;
     this.worker.postMessage({rilMessageType: "getICCContacts",
