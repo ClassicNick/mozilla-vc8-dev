@@ -337,7 +337,7 @@ DeviceStorageFile::Remove()
 
 void
 DeviceStorageFile::CollectFiles(nsTArray<nsRefPtr<DeviceStorageFile> > &aFiles,
-                                uint64_t aSince)
+                                PRTime aSince)
 {
   nsString rootPath;
   nsresult rv = mFile->GetPath(rootPath);
@@ -350,7 +350,7 @@ DeviceStorageFile::CollectFiles(nsTArray<nsRefPtr<DeviceStorageFile> > &aFiles,
 
 void
 DeviceStorageFile::collectFilesInternal(nsTArray<nsRefPtr<DeviceStorageFile> > &aFiles,
-                                        uint64_t aSince,
+                                        PRTime aSince,
                                         nsAString& aRootPath)
 {
   nsCOMPtr<nsISimpleEnumerator> e;
@@ -518,7 +518,7 @@ nsDOMDeviceStorage::SetRootDirectoryForType(const nsAString& aType)
 #elif defined (XP_UNIX)
     dirService->Get(NS_UNIX_XDG_PICTURES_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #elif defined (XP_WIN)
-    dirService->Get(NS_WIN_PERSONAL_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
+    dirService->Get(NS_WIN_PICTURES_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #endif
   }
 
@@ -531,7 +531,7 @@ nsDOMDeviceStorage::SetRootDirectoryForType(const nsAString& aType)
 #elif defined (XP_UNIX)
     dirService->Get(NS_UNIX_XDG_VIDEOS_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #elif defined (XP_WIN)
-    dirService->Get(NS_WIN_PERSONAL_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
+    dirService->Get(NS_WIN_VIDEOS_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #endif
   }
 
@@ -544,7 +544,7 @@ nsDOMDeviceStorage::SetRootDirectoryForType(const nsAString& aType)
 #elif defined (XP_UNIX)
     dirService->Get(NS_UNIX_XDG_MUSIC_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #elif defined (XP_WIN)
-    dirService->Get(NS_WIN_PERSONAL_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
+    dirService->Get(NS_WIN_MUSIC_DIR, NS_GET_IID(nsIFile), getter_AddRefs(f));
 #endif
   }
 
@@ -847,7 +847,7 @@ NS_IMPL_RELEASE_INHERITED(nsDOMDeviceStorageCursor, DOMRequest)
 nsDOMDeviceStorageCursor::nsDOMDeviceStorageCursor(nsIDOMWindow* aWindow,
                                                    nsIPrincipal* aPrincipal,
                                                    DeviceStorageFile* aFile,
-                                                   uint64_t aSince)
+                                                   PRTime aSince)
   : DOMRequest(aWindow)
   , mOkToCallContinue(false)
   , mSince(aSince)

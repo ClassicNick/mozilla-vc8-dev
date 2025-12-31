@@ -1806,6 +1806,9 @@ already_AddRefed<ImageContainer> nsPluginInstanceOwner::GetImageContainerForVide
 
 nsIntRect nsPluginInstanceOwner::GetVisibleRect()
 {
+  if (!mObjectFrame || !mPluginWindow)
+    return nsIntRect(0, 0, 0, 0);
+  
   gfxRect r = nsIntRect(0, 0, mPluginWindow->width, mPluginWindow->height);
 
   float xResolution = mObjectFrame->PresContext()->GetRootPresContext()->PresShell()->GetXResolution();
@@ -3224,6 +3227,7 @@ nsresult nsPluginInstanceOwner::Init(nsIContent* aContent)
     // document is destroyed before we try to create the new one.
     objFrame->PresContext()->EnsureVisible();
   } else {
+    NS_NOTREACHED("Should not be initializing plugin without a frame");
     return NS_ERROR_FAILURE;
   }
 
