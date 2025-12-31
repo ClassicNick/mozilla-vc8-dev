@@ -3,10 +3,10 @@
 #
 
 # Make Options
-mk_add_options MOZ_MAKE_FLAGS="-j3"
+mk_add_options MOZ_MAKE_FLAGS="-j1"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/fxesr17/obj-fxvc71-release"
+mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/fxupdates/central/obj-fxvc71-release"
 WIN32_REDIST_DIR=/h/browsers/VC71Compat/mozilla6-Test/redist/VC71
 
 
@@ -38,6 +38,7 @@ ac_add_options --disable-tracejit
 ac_add_options --disable-jit
 ac_add_options --enable-ipc
 ac_add_options --disable-webm
+ac_add_options --disable-ogg
 ac_add_options --disable-sps
 ac_add_options --disable-skia
 ac_add_options --disable-maintenance-service

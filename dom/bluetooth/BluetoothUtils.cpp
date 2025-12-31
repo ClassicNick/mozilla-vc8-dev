@@ -21,11 +21,7 @@ mozilla::dom::bluetooth::StringArrayToJSArray(JSContext* aCx, JSObject* aGlobal,
   NS_ASSERTION(aGlobal, "Null global!");
 
   JSAutoRequest ar(aCx);
-  JSAutoEnterCompartment ac;
-  if (!ac.enter(aCx, aGlobal)) {
-    NS_WARNING("Failed to enter compartment!");
-    return NS_ERROR_FAILURE;
-  }
+  JSAutoCompartment ac(aCx, aGlobal);
 
   JSObject* arrayObj;
 
@@ -34,8 +30,8 @@ mozilla::dom::bluetooth::StringArrayToJSArray(JSContext* aCx, JSObject* aGlobal,
   } else {
     uint32_t valLength = aSourceArray.Length();
     mozilla::ScopedDeleteArray<jsval> valArray(new jsval[valLength]);
-    JS::AutoArrayRooter tvr(aCx, valLength, valArray);
-    for (PRUint32 index = 0; index < valLength; index++) {
+    JS::AutoArrayRooter tvr(aCx, 0, valArray);
+    for (uint32_t index = 0; index < valLength; index++) {
       JSString* s = JS_NewUCStringCopyN(aCx, aSourceArray[index].BeginReading(),
                                         aSourceArray[index].Length());
       if(!s) {
@@ -43,6 +39,7 @@ mozilla::dom::bluetooth::StringArrayToJSArray(JSContext* aCx, JSObject* aGlobal,
         return NS_ERROR_OUT_OF_MEMORY;
       }
       valArray[index] = STRING_TO_JSVAL(s);
+      tvr.changeLength(index + 1);
     }
     arrayObj = JS_NewArrayObject(aCx, valLength, valArray);
   }
@@ -70,11 +67,7 @@ mozilla::dom::bluetooth::BluetoothDeviceArrayToJSArray(JSContext* aCx, JSObject*
   NS_ASSERTION(aGlobal, "Null global!");
 
   JSAutoRequest ar(aCx);
-  JSAutoEnterCompartment ac;
-  if (!ac.enter(aCx, aGlobal)) {
-    NS_WARNING("Failed to enter compartment!");
-    return NS_ERROR_FAILURE;
-  }
+  JSAutoCompartment ac(aCx, aGlobal);
 
   JSObject* arrayObj;
 
@@ -83,14 +76,14 @@ mozilla::dom::bluetooth::BluetoothDeviceArrayToJSArray(JSContext* aCx, JSObject*
   } else {
     uint32_t valLength = aSourceArray.Length();
     mozilla::ScopedDeleteArray<jsval> valArray(new jsval[valLength]);
-    JS::AutoArrayRooter tvr(aCx, valLength, valArray);
-    for (PRUint32 index = 0; index < valLength; index++) {
+    JS::AutoArrayRooter tvr(aCx, 0, valArray);
+    for (uint32_t index = 0; index < valLength; index++) {
       nsISupports* obj = aSourceArray[index]->ToISupports();
       nsresult rv =
         nsContentUtils::WrapNative(aCx, aGlobal, obj, &valArray[index]);
       NS_ENSURE_SUCCESS(rv, rv);
+      tvr.changeLength(index + 1);
     }
-
     arrayObj = JS_NewArrayObject(aCx, valLength, valArray);
   }
 

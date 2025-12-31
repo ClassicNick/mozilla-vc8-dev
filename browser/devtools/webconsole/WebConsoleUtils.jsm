@@ -162,31 +162,6 @@ var WebConsoleUtils = {
   },
 
   /**
-   * Gets the window that has the given inner ID.
-   *
-   * @param integer aInnerId
-   * @param nsIDOMWindow [aHintWindow]
-   *        Optional, the window object used to QueryInterface to
-   *        nsIDOMWindowUtils. If this is not given,
-   *        Services.wm.getMostRecentWindow() is used.
-   * @return nsIDOMWindow|null
-   *         The window object with the given inner ID.
-   */
-  getWindowByInnerId: function WCU_getWindowByInnerId(aInnerId, aHintWindow)
-  {
-    let someWindow = aHintWindow || Services.wm.getMostRecentWindow(null);
-    let content = null;
-
-    if (someWindow) {
-      let windowUtils = someWindow.QueryInterface(Ci.nsIInterfaceRequestor).
-                                   getInterface(Ci.nsIDOMWindowUtils);
-      content = windowUtils.getInnerWindowWithId(aInnerId);
-    }
-
-    return content;
-  },
-
-  /**
    * Abbreviates the given source URL so that it can be displayed flush-right
    * without being too distracting.
    *
@@ -909,48 +884,63 @@ function JSPropertyProvider(aScope, aInputValue)
     return null;
   }
 
-  let properties = completionPart.split(".");
-  let matchProp;
-  if (properties.length > 1) {
-    matchProp = properties.pop().trimLeft();
-    for (let i = 0; i < properties.length; i++) {
-      let prop = properties[i].trim();
-      if (!prop) {
-        return null;
-      }
+  let matches = null;
+  let matchProp = "";
 
-      // If obj is undefined or null (which is what "== null" does),
-      // then there is no chance to run completion on it. Exit here.
-      if (obj == null) {
-        return null;
-      }
+  let lastDot = completionPart.lastIndexOf(".");
+  if (lastDot > 0 &&
+      (completionPart[0] == "'" || completionPart[0] == '"') &&
+      completionPart[lastDot - 1] == completionPart[0]) {
+    // We are completing a string literal.
+    obj = obj.String.prototype;
+    matchProp = completionPart.slice(lastDot + 1);
 
-      // Check if prop is a getter function on obj. Functions can change other
-      // stuff so we can't execute them to get the next object. Stop here.
-      if (WCU.isNonNativeGetter(obj, prop)) {
-        return null;
-      }
-      try {
-        obj = obj[prop];
-      }
-      catch (ex) {
-        return null;
-      }
-    }
   }
   else {
-    matchProp = properties[0].trimLeft();
-  }
+    // We are completing a variable / a property lookup.
 
-  // If obj is undefined or null (which is what "== null" does),
-  // then there is no chance to run completion on it. Exit here.
-  if (obj == null) {
-    return null;
-  }
+    let properties = completionPart.split(".");
+    if (properties.length > 1) {
+      matchProp = properties.pop().trimLeft();
+      for (let i = 0; i < properties.length; i++) {
+        let prop = properties[i].trim();
+        if (!prop) {
+          return null;
+        }
 
-  // Skip Iterators and Generators.
-  if (WCU.isIteratorOrGenerator(obj)) {
-    return null;
+        // If obj is undefined or null (which is what "== null" does),
+        // then there is no chance to run completion on it. Exit here.
+        if (obj == null) {
+          return null;
+        }
+
+        // Check if prop is a getter function on obj. Functions can change other
+        // stuff so we can't execute them to get the next object. Stop here.
+        if (WCU.isNonNativeGetter(obj, prop)) {
+          return null;
+        }
+        try {
+          obj = obj[prop];
+        }
+        catch (ex) {
+          return null;
+        }
+      }
+    }
+    else {
+      matchProp = properties[0].trimLeft();
+    }
+
+    // If obj is undefined or null (which is what "== null" does),
+    // then there is no chance to run completion on it. Exit here.
+    if (obj == null) {
+      return null;
+    }
+
+    // Skip Iterators and Generators.
+    if (WCU.isIteratorOrGenerator(obj)) {
+      return null;
+    }
   }
 
   let matches = Object.keys(getMatchedProps(obj, {matchProp:matchProp}));

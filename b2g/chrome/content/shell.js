@@ -16,7 +16,9 @@ Cu.import('resource://gre/modules/SettingsChangeNotifier.jsm');
 Cu.import('resource://gre/modules/Webapps.jsm');
 Cu.import('resource://gre/modules/AlarmService.jsm');
 Cu.import('resource://gre/modules/ActivitiesService.jsm');
-Cu.import("resource://gre/modules/PermissionPromptHelper.jsm");
+Cu.import('resource://gre/modules/PermissionPromptHelper.jsm');
+Cu.import('resource://gre/modules/ObjectWrapper.jsm');
+Cu.import("resource://gre/modules/accessibility/AccessFu.jsm");
 
 XPCOMUtils.defineLazyServiceGetter(Services, 'env',
                                    '@mozilla.org/process/environment;1',
@@ -47,7 +49,7 @@ XPCOMUtils.defineLazyGetter(this, 'DebuggerServer', function() {
 
 XPCOMUtils.defineLazyGetter(this, "ppmm", function() {
   return Cc["@mozilla.org/parentprocessmessagemanager;1"]
-         .getService(Ci.nsIFrameMessageManager);
+         .getService(Ci.nsIMessageListenerManager);
 });
 
 function getContentWindow() {
@@ -63,8 +65,11 @@ var shell = {
   },
 
   reportCrash: function shell_reportCrash() {
-    let crashID = Cc["@mozilla.org/xre/app-info;1"]
-      .getService(Ci.nsIXULRuntime).lastRunCrashID;
+    let crashID;
+    try {
+      crashID = Cc["@mozilla.org/xre/app-info;1"]
+                .getService(Ci.nsIXULRuntime).lastRunCrashID;
+    } catch(e) { }
     if (Services.prefs.getBoolPref('app.reportCrashes') &&
         crashID) {
       this.CrashSubmit().submit(crashID)
@@ -145,6 +150,7 @@ var shell = {
 
     CustomEventManager.init();
     WebappsHelper.init();
+    AccessFu.attach(window);
 
     // XXX could factor out into a settings->pref map.  Not worth it yet.
     SettingsListener.observe("debug.fps.enabled", false, function(value) {
@@ -315,7 +321,8 @@ var shell = {
   },
 
   sendChromeEvent: function shell_sendChromeEvent(details) {
-    this.sendEvent(getContentWindow(), "mozChromeEvent", details);
+    this.sendEvent(getContentWindow(), "mozChromeEvent",
+                   ObjectWrapper.wrap(details, getContentWindow()));
   },
 
   receiveMessage: function shell_receiveMessage(message) {
@@ -379,9 +386,8 @@ Services.obs.addObserver(function onSystemMessage(subject, topic, data) {
 }, 'system-messages-open-app', false);
 
 Services.obs.addObserver(function(aSubject, aTopic, aData) {
-  shell.sendEvent(shell.contentBrowser.contentWindow,
-                  "mozChromeEvent", { type: "fullscreenoriginchange",
-                                      fullscreenorigin: aData } );
+  shell.sendChromeEvent({ type: "fullscreenoriginchange",
+                          fullscreenorigin: aData });
 }, "fullscreen-origin-change", false);
 
 (function Repl() {
@@ -614,7 +620,11 @@ window.addEventListener('ContentStart', function ss_onContentStart() {
       context.drawWindow(window, 0, 0, width, height,
                          'rgb(255,255,255)', flags);
 
-      shell.sendChromeEvent({
+      // I can't use sendChromeEvent() here because it doesn't wrap
+      // the blob in the detail object correctly. So I use __exposedProps__
+      // instead to safely send the chrome detail object to content.
+      shell.sendEvent(getContentWindow(), 'mozChromeEvent', {
+        __exposedProps__: { type: 'r', file: 'r' },
         type: 'take-screenshot-success',
         file: canvas.mozGetAsFile('screenshot', 'image/png')
       });
@@ -647,4 +657,25 @@ window.addEventListener('ContentStart', function ss_onContentStart() {
       });
     }
 }, "geolocation-device-events", false);
+})();
+
+(function recordingStatusTracker() {
+  let gRecordingActiveCount = 0;
+
+  Services.obs.addObserver(function(aSubject, aTopic, aData) {
+    let oldCount = gRecordingActiveCount;
+    if (aData == "starting") {
+      gRecordingActiveCount += 1;
+    } else if (aData == "shutdown") {
+      gRecordingActiveCount -= 1;
+    }
+
+    // We need to track changes from 1 <-> 0
+    if (gRecordingActiveCount + oldCount == 1) {
+      shell.sendChromeEvent({
+        type: 'recording-status',
+        active: (gRecordingActiveCount == 1)
+      });
+    }
+}, "recording-device-events", false);
 })();

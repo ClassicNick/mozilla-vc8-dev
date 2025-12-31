@@ -81,7 +81,7 @@ class DeleteObjectStoreHelper : public NoRequestDatabaseHelper
 {
 public:
   DeleteObjectStoreHelper(IDBTransaction* aTransaction,
-                          PRInt64 aObjectStoreId)
+                          int64_t aObjectStoreId)
   : NoRequestDatabaseHelper(aTransaction), mObjectStoreId(aObjectStoreId)
   { }
 
@@ -90,7 +90,7 @@ public:
 
 private:
   // In-params.
-  PRInt64 mObjectStoreId;
+  int64_t mObjectStoreId;
 };
 
 class CreateFileHelper : public AsyncConnectionHelper
@@ -441,7 +441,7 @@ IDBDatabase::GetName(nsAString& aName)
 }
 
 NS_IMETHODIMP
-IDBDatabase::GetVersion(PRUint64* aVersion)
+IDBDatabase::GetVersion(uint64_t* aVersion)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
 
@@ -465,8 +465,8 @@ IDBDatabase::GetObjectStoreNames(nsIDOMDOMStringList** aObjectStores)
   }
 
   nsRefPtr<nsDOMStringList> list(new nsDOMStringList());
-  PRUint32 count = objectStoreNames.Length();
-  for (PRUint32 index = 0; index < count; index++) {
+  uint32_t count = objectStoreNames.Length();
+  for (uint32_t index = 0; index < count; index++) {
     NS_ENSURE_TRUE(list->Add(objectStoreNames[index]),
                    NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
   }
@@ -585,7 +585,7 @@ NS_IMETHODIMP
 IDBDatabase::Transaction(const jsval& aStoreNames,
                          const nsAString& aMode,
                          JSContext* aCx,
-                         PRUint8 aOptionalArgCount,
+                         uint8_t aOptionalArgCount,
                          nsIIDBTransaction** _retval)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
@@ -664,7 +664,7 @@ IDBDatabase::Transaction(const jsval& aStoreNames,
         // We only accept DOMStringList.
         nsCOMPtr<nsIDOMDOMStringList> list = do_QueryInterface(wrappedObject);
         if (list) {
-          PRUint32 length;
+          uint32_t length;
           rv = list->GetLength(&length);
           NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
@@ -674,7 +674,7 @@ IDBDatabase::Transaction(const jsval& aStoreNames,
 
           storesToOpen.SetCapacity(length);
 
-          for (PRUint32 index = 0; index < length; index++) {
+          for (uint32_t index = 0; index < length; index++) {
             nsString* item = storesToOpen.AppendElement();
             NS_ASSERTION(item, "This should never fail!");
 
@@ -705,7 +705,7 @@ IDBDatabase::Transaction(const jsval& aStoreNames,
 
   // Now check to make sure the object store names we collected actually exist.
   DatabaseInfo* info = Info();
-  for (PRUint32 index = 0; index < storesToOpen.Length(); index++) {
+  for (uint32_t index = 0; index < storesToOpen.Length(); index++) {
     if (!info->ContainsStoreName(storesToOpen[index])) {
       return NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR;
     }
@@ -905,13 +905,24 @@ CreateFileHelper::DoDatabaseWork(mozIStorageConnection* aConnection)
   mFileInfo = fileManager->GetNewFileInfo();
   NS_ENSURE_TRUE(mFileInfo, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
-  nsCOMPtr<nsIFile> directory = fileManager->GetDirectory();
-  NS_ENSURE_TRUE(directory, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  const int64_t& fileId = mFileInfo->Id();
 
-  nsCOMPtr<nsIFile> file = fileManager->GetFileForId(directory, mFileInfo->Id());
-  NS_ENSURE_TRUE(file, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  nsCOMPtr<nsIFile> directory = fileManager->EnsureJournalDirectory();
+  NS_ENSURE_TRUE(directory, NS_ERROR_FAILURE);
+
+  nsCOMPtr<nsIFile> file = fileManager->GetFileForId(directory, fileId);
+  NS_ENSURE_TRUE(file, NS_ERROR_FAILURE);
 
   nsresult rv = file->Create(nsIFile::NORMAL_FILE_TYPE, 0644);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  directory = fileManager->GetDirectory();
+  NS_ENSURE_TRUE(directory, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  file = fileManager->GetFileForId(directory, fileId);
+  NS_ENSURE_TRUE(file, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+
+  rv = file->Create(nsIFile::NORMAL_FILE_TYPE, 0644);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
   return NS_OK;

@@ -8,9 +8,12 @@
 
 #include "FrameLayerBuilder.h"
 #include "nsPresContext.h"
-#include "ImageLayers.h"
 
 namespace mozilla {
+
+namespace layers {
+class ImageContainer;
+}
 
 /**
  * Keeps a record of image containers for mask layers, containers are mapped
@@ -29,10 +32,8 @@ class MaskLayerImageCache
 {
   typedef mozilla::layers::ImageContainer ImageContainer;
 public:
-  MaskLayerImageCache()
-  {
-    mMaskImageContainers.Init();
-  }
+  MaskLayerImageCache();
+  ~MaskLayerImageCache();
 
   /**
    * Representation of a rounded rectangle in device pixel coordinates, in
@@ -130,7 +131,7 @@ public:
     {
       PLDHashNumber hash = 0;
 
-      for (PRUint32 i = 0; i < mRoundedClipRects.Length(); ++i) {
+      for (uint32_t i = 0; i < mRoundedClipRects.Length(); ++i) {
         hash = AddToHash(hash, mRoundedClipRects[i].Hash());
       }
       hash = AddToHash(hash, mBackend);
@@ -144,7 +145,7 @@ public:
     }
 
     layers::LayersBackend mBackend;
-    mutable PRUint32 mLayerCount;
+    mutable uint32_t mLayerCount;
     nsTArray<PixelRoundedRect> mRoundedClipRects;
   };
 

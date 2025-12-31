@@ -1636,15 +1636,8 @@ richlistitem[type~="action"][actiontype="switchtab"] > .ac-url-box > .ac-action-
 /* social recommending panel */
 
 #share-button {
-  list-style-image: url(chrome://browser/skin/share-button.png);
-}
-
-#share-button:not([shared]):not([disabled]):hover {
-  list-style-image: url(chrome://browser/skin/share-button-active.png);
-}
-
-#share-button[shared] {
-  list-style-image: url(chrome://browser/skin/share-button-shared.png);
+  width: 16px;
+  height: 16px;
 }
 
 #socialUserPortrait {
@@ -2652,19 +2645,15 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 
 /* Highlighter */
 
-.highlighter-veil {
-  background-color: rgba(25, 25, 25, 0.5);
-}
-
-#highlighter-veil-transparentbox {
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
-  outline: 1px dashed rgba(255,255,255,0.5);
+#highlighter-outline {
+  box-shadow: 0 0 0 1px black;
+  outline: 1px dashed white;
   outline-offset: -1px;
 }
 
-#highlighter-veil-container[locked] > #highlighter-veil-middlebox > #highlighter-veil-transparentbox {
-  box-shadow: 0 0 0 1px black;
-  outline-color: white;
+#highlighter-outline[locked]  {
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  outline-color: rgba(255,255,255,0.7);
 }
 
 /* Highlighter toolbar */
@@ -2675,18 +2664,6 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
 }
 
 #inspector-inspect-toolbutton[checked=true] {
-  -moz-image-region: rect(0px 32px 16px 16px);
-}
-
-#inspector-option-toolbarbutton {
-  -moz-appearance: none;
-  -moz-margin-end: 6px;
-  list-style-image: url("chrome://browser/skin/devtools/inspector-option-icon.png");
-  -moz-image-region: rect(0px 16px 16px 0px);
-  border: none;
-}
-
-#inspector-option-toolbarbutton[open] {
   -moz-image-region: rect(0px 32px 16px 16px);
 }
 
@@ -3245,10 +3222,6 @@ stack[anonid=browserStack][responsivemode] {
   transition: height 100ms;
 }
 
-.web-console-splitter {
-  border-top: none;
-}
-
 /* Developer Toolbar */
 
 .developer-toolbar-button {
@@ -3444,9 +3417,132 @@ stack[anonid=browserStack][responsivemode] {
   text-decoration: underline;
 }
 
-#social-notification-panel {
-  min-height: 100px;
-  min-width: 100px;
-  max-height: 600px;
-  max-width: 400px;
+.chat-status-icon {
+  max-height: 16px;
+  max-width: 16px;
+  padding: 0;
+}
+
+.chat-toolbarbutton {
+  -moz-appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+
+.chat-toolbarbutton > .toolbarbutton-text {
+  display: none;
+}
+
+.chat-close-button {
+  list-style-image: url("chrome://global/skin/icons/Close.gif");
+  padding: 2px 4px;
+}
+
+.chat-close-button:hover {
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
+}
+
+.chat-close-button:hover:active {
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
+}
+
+
+.chat-toggle-button {
+  /* XXX get a real image for this */
+  list-style-image: url("chrome://global/skin/icons/expand.png");
+}
+
+.chat-toggle-button:hover {
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
+}
+
+.chat-toggle-button[minimized="true"] {
+  list-style-image: url("chrome://global/skin/icons/collapse.png");
+}
+
+.chat-toggle-button[minimized="true"]:hover {
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
+}
+
+.chat-title {
+  font-weight: bold;
+  color: -moz-dialogtext;
+}
+
+.chat-titlebar {
+  background-image: linear-gradient(white, #ddd);
+  height: 20px;
+  min-height: 20px;
+  width: 100%;
+  margin: 0;
+  padding: 2px;
+  border: none;
+  border-bottom: 1px solid gray;
+}
+
+.chat-titlebar[minimized="true"] {
+  border-bottom: none;
+}
+
+.chat-frame {
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.chatbar-button {
+  /* XXX get a real image for this */
+  -moz-appearance: none;
+  list-style-image: url("chrome://browser/skin/social/social.png");
+  background-image: linear-gradient(white, #ddd);
+  border: none;
+  margin: 0;
+  padding: 2px;
+  height: 21px;
+  width: 21px;
+  border-top: 1px solid gray;
+  -moz-border-end: 1px solid gray;
+}
+
+.chatbar-button > .button-box > .box-inherit > .button-icon {
+  max-height: 16px;
+  max-width: 16px;
+  padding: 2px;
+}
+
+.chatbar-button[open="true"],
+.chatbar-button:hover,
+.chatbar-button:active:hover {
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.6), 0 1px rgba(255,255,255,0.2);
+}
+
+.chatbar-button > .toolbarbutton-text,
+.chatbar-button > .toolbarbutton-menu-dropmarker {
+  display: none;
+}
+
+.chatbar-innerbox {
+  background: transparent;
+  margin: -285px -1px 0 -1px;
+  overflow: hidden;
+}
+
+chatbar {
+  -moz-margin-end: 20px;
+}
+
+chatbox {
+  height: 285px;
+  width: 260px;
+  -moz-margin-start: 4px;
+  background-color: white;
+  border: 1px solid gray;
+  border-bottom: none;
+}
+
+chatbox[minimized="true"] {
+  width: 160px;
+  height: 20px;
 }

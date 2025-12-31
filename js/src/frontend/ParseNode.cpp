@@ -12,6 +12,7 @@
 
 #include "frontend/ParseMaps-inl.h"
 #include "frontend/ParseNode-inl.h"
+#include "frontend/Parser-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -53,11 +54,7 @@ ParseNode::become(ParseNode *pn2)
      * If any pointers are pointing to pn2, change them to point to this
      * instead, since pn2 will be cleared and probably recycled.
      */
-    if (this->isKind(PNK_FUNCTION) && isArity(PN_FUNC)) {
-        /* Function node: fix up the pn_funbox->node back-pointer. */
-        JS_ASSERT(pn_funbox->node == pn2);
-        pn_funbox->node = this;
-    } else if (pn_arity == PN_LIST && !pn_head) {
+    if (pn_arity == PN_LIST && !pn_head) {
         /* Empty list: fix up the pn_tail pointer. */
         JS_ASSERT(pn_count == 0);
         JS_ASSERT(pn_tail == &pn2->pn_head);
@@ -96,16 +93,6 @@ ParseNode::checkListConsistency()
     JS_ASSERT(pn_count == count);
 }
 #endif
-
-bool
-FunctionBox::inAnyDynamicScope() const
-{
-    for (const FunctionBox *funbox = this; funbox; funbox = funbox->parent) {
-        if (funbox->inWith || funbox->funHasExtensibleScope())
-            return true;
-    }
-    return false;
-}
 
 /* Add |node| to |parser|'s free node list. */
 void
@@ -258,24 +245,6 @@ void
 ParseNodeAllocator::prepareNodeForMutation(ParseNode *pn)
 {
     if (!pn->isArity(PN_NULLARY)) {
-        if (pn->isArity(PN_FUNC)) {
-            /*
-             * Since this node could be turned into anything, we can't
-             * ensure it won't be subsequently recycled, so we must
-             * disconnect it from the funbox tree entirely.
-             *
-             * Note that pn_funbox may legitimately be NULL. functionDef
-             * applies MakeDefIntoUse to definition nodes, which can come
-             * from prior iterations of the big loop in compileScript. In
-             * such cases, the defn nodes have been visited by the recycler
-             * (but not actually recycled!), and their funbox pointers
-             * cleared. But it's fine to mutate them into uses of some new
-             * definition.
-             */
-            if (pn->pn_funbox)
-                pn->pn_funbox->node = NULL;
-        }
-
         /* Put |pn|'s children (but not |pn| itself) on a work stack. */
         NodeStack stack;
         PushNodeChildren(pn, &stack);
@@ -296,9 +265,9 @@ ParseNodeAllocator::prepareNodeForMutation(ParseNode *pn)
  * reallocation.
  *
  * Note that all functions in |pn| that are not enclosed by other functions
- * in |pn| must be direct children of |tc|, because we only clean up |tc|'s
+ * in |pn| must be direct children of |pc|, because we only clean up |pc|'s
  * function and method lists. You must not reach into a function and
- * recycle some part of it (unless you've updated |tc|->functionList, the
+ * recycle some part of it (unless you've updated |pc|->functionList, the
  * way js_FoldConstants does).
  */
 ParseNode *
@@ -421,15 +390,15 @@ ParseNode::newBinaryOrAppend(ParseNodeKind kind, JSOp op, ParseNode *left, Parse
 }
 
 // Nb: unlike most functions that are passed a Parser, this one gets a
-// SharedContext passed in separately, because in this case |tc| may not equal
-// |parser->tc|.
+// SharedContext passed in separately, because in this case |pc| may not equal
+// |parser->pc|.
 NameNode *
-NameNode::create(ParseNodeKind kind, JSAtom *atom, Parser *parser, TreeContext *tc)
+NameNode::create(ParseNodeKind kind, JSAtom *atom, Parser *parser, ParseContext *pc)
 {
     ParseNode *pn = ParseNode::create(kind, PN_NAME, parser);
     if (pn) {
         pn->pn_atom = atom;
-        ((NameNode *)pn)->initCommon(tc);
+        ((NameNode *)pn)->initCommon(pc);
     }
     return (NameNode *)pn;
 }
@@ -459,9 +428,9 @@ Definition::kindString(Kind kind)
 static ParseNode *
 CloneParseTree(ParseNode *opn, Parser *parser)
 {
-    TreeContext *tc = parser->tc;
+    ParseContext *pc = parser->pc;
 
-    JS_CHECK_RECURSION(tc->sc->context, return NULL);
+    JS_CHECK_RECURSION(pc->sc->context, return NULL);
 
     ParseNode *pn = parser->new_<ParseNode>(opn->getKind(), opn->getOp(), opn->getArity(),
                                             opn->pn_pos);
@@ -476,7 +445,7 @@ CloneParseTree(ParseNode *opn, Parser *parser)
 
       case PN_FUNC:
         NULLCHECK(pn->pn_funbox =
-                  parser->newFunctionBox(opn->pn_funbox->object, pn, tc, opn->pn_funbox->strictModeState));
+                  parser->newFunctionBox(opn->pn_funbox->object, pc, opn->pn_funbox->strictModeState));
         NULLCHECK(pn->pn_body = CloneParseTree(opn->pn_body, parser));
         pn->pn_cookie = opn->pn_cookie;
         pn->pn_dflags = opn->pn_dflags;

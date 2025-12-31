@@ -250,7 +250,7 @@ Snapshot(JSContext *cx, RawObject obj_, unsigned flags, AutoIdVector *props)
             }
             Value state;
             JSIterateOp op = (flags & JSITER_HIDDEN) ? JSENUMERATE_INIT_ALL : JSENUMERATE_INIT;
-            if (!pobj->enumerate(cx, op, &state, NULL))
+            if (!JSObject::enumerate(cx, pobj, op, &state, NULL))
                 return false;
             if (state.isMagic(JS_NATIVE_ENUMERATE)) {
                 if (!EnumerateNativeProperties(cx, obj, pobj, flags, ht, props))
@@ -258,7 +258,7 @@ Snapshot(JSContext *cx, RawObject obj_, unsigned flags, AutoIdVector *props)
             } else {
                 while (true) {
                     jsid id;
-                    if (!pobj->enumerate(cx, JSENUMERATE_NEXT, &state, &id))
+                    if (!JSObject::enumerate(cx, pobj, JSENUMERATE_NEXT, &state, &id))
                         return false;
                     if (state.isNull())
                         break;
@@ -344,7 +344,7 @@ GetCustomIterator(JSContext *cx, HandleObject obj, unsigned flags, MutableHandle
 
     /* Check whether we have a valid __iterator__ method. */
     RootedPropertyName name(cx, cx->runtime->atomState.iteratorIntrinsicAtom);
-    if (!GetMethod(cx, obj, name, 0, vp))
+    if (!GetMethodName(cx, obj, name, 0, vp))
         return false;
 
     /* If there is no custom __iterator__ method, we are done here. */
@@ -572,7 +572,7 @@ GetIterator(JSContext *cx, HandleObject obj, unsigned flags, MutableHandleValue 
     if (flags == JSITER_FOR_OF) {
         // for-of loop. The iterator is simply |obj.iterator()|.
         RootedValue method(cx);
-        if (!obj->getProperty(cx, obj, cx->runtime->atomState.iteratorAtom, &method))
+        if (!JSObject::getProperty(cx, obj, obj, cx->runtime->atomState.iteratorAtom, &method))
             return false;
 
         // Throw if obj.iterator isn't callable. js::Invoke is about to check
@@ -724,7 +724,7 @@ js_ThrowStopIteration(JSContext *cx)
 {
     JS_ASSERT(!JS_IsExceptionPending(cx));
     RootedValue v(cx);
-    if (js_FindClassObject(cx, NullPtr(), JSProto_StopIteration, &v))
+    if (js_FindClassObject(cx, JSProto_StopIteration, &v))
         cx->setPendingException(v);
     return JS_FALSE;
 }
@@ -850,11 +850,10 @@ const uint32_t CLOSED_INDEX = UINT32_MAX;
 JSObject *
 ElementIteratorObject::create(JSContext *cx, Handle<Value> target)
 {
-    Rooted<GlobalObject*> global(cx, GetCurrentGlobal(cx));
-    Rooted<JSObject*> proto(cx, global->getOrCreateElementIteratorPrototype(cx));
+    Rooted<JSObject*> proto(cx, cx->global()->getOrCreateElementIteratorPrototype(cx));
     if (!proto)
         return NULL;
-    JSObject *iterobj = NewObjectWithGivenProto(cx, &ElementIteratorClass, proto, global);
+    JSObject *iterobj = NewObjectWithGivenProto(cx, &ElementIteratorClass, proto, cx->global());
     if (iterobj) {
         iterobj->setReservedSlot(TargetSlot, target);
         iterobj->setReservedSlot(IndexSlot, Int32Value(0));
@@ -890,7 +889,7 @@ ElementIteratorObject::next_impl(JSContext *cx, CallArgs args)
         obj = ToObjectFromStack(cx, target);
         if (!obj)
             goto close;
-        if (!js_GetLengthProperty(cx, obj, &length))
+        if (!GetLengthProperty(cx, obj, &length))
             goto close;
     }
 
@@ -909,7 +908,7 @@ ElementIteratorObject::next_impl(JSContext *cx, CallArgs args)
             goto close;
         args.rval().setString(c);
     } else {
-        if (!obj->getElement(cx, obj, i, args.rval()))
+        if (!JSObject::getElement(cx, obj, obj, i, args.rval()))
             goto close;
     }
 
@@ -1079,19 +1078,18 @@ SuppressDeletedPropertyHelper(JSContext *cx, HandleObject obj, StringPredicate p
                      * became visible as a result of this deletion.
                      */
                     if (obj->getProto()) {
-                        JSObject *proto = obj->getProto();
-                        RootedObject obj2(cx);
+                        RootedObject proto(cx, obj->getProto()), obj2(cx);
                         RootedShape prop(cx);
                         RootedId id(cx);
                         if (!ValueToId(cx, StringValue(*idp), id.address()))
                             return false;
-                        if (!proto->lookupGeneric(cx, id, &obj2, &prop))
+                        if (!JSObject::lookupGeneric(cx, proto, id, &obj2, &prop))
                             return false;
                         if (prop) {
                             unsigned attrs;
                             if (obj2->isNative())
                                 attrs = prop->attributes();
-                            else if (!obj2->getGenericAttributes(cx, id, &attrs))
+                            else if (!JSObject::getGenericAttributes(cx, obj2, id, &attrs))
                                 return false;
 
                             if (attrs & JSPROP_ENUMERATE)
@@ -1217,13 +1215,14 @@ js_IteratorMore(JSContext *cx, HandleObject iterobj, MutableHandleValue rval)
         if (!ValueToId(cx, StringValue(*ni->current()), id.address()))
             return false;
         ni->incCursor();
-        if (!ni->obj->getGeneric(cx, id, rval))
+        RootedObject obj(cx, ni->obj);
+        if (!JSObject::getGeneric(cx, obj, obj, id, rval))
             return false;
         if ((ni->flags & JSITER_KEYVALUE) && !NewKeyValuePair(cx, id, rval, rval))
             return false;
     } else {
         /* Call the iterator object's .next method. */
-        if (!GetMethod(cx, iterobj, cx->runtime->atomState.nextAtom, 0, rval))
+        if (!GetMethodName(cx, iterobj, cx->runtime->atomState.nextAtom, 0, rval))
             return false;
         if (!Invoke(cx, ObjectValue(*iterobj), rval, 0, NULL, rval.address())) {
             /* Check for StopIteration. */
@@ -1788,7 +1787,7 @@ GlobalObject::initIteratorClasses(JSContext *cx, Handle<GlobalObject *> global)
 
     if (global->getPrototype(JSProto_StopIteration).isUndefined()) {
         proto = global->createBlankPrototype(cx, &StopIterationClass);
-        if (!proto || !proto->freeze(cx))
+        if (!proto || !JSObject::freeze(cx, proto))
             return false;
 
         /* This should use a non-JSProtoKey'd slot, but this is easier for now. */

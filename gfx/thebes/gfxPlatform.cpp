@@ -7,6 +7,7 @@
 #define FORCE_PR_LOG /* Allow logging in the release build */
 #endif
 
+#include "mozilla/layers/CompositorChild.h"
 #include "mozilla/layers/CompositorParent.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 
@@ -227,7 +228,7 @@ gfxPlatform::gfxPlatform()
 #endif
     mBidiNumeralOption = UNINITIALIZED_VALUE;
 
-    PRUint32 backendMask = (1 << BACKEND_CAIRO) | (1 << BACKEND_SKIA);
+    uint32_t backendMask = (1 << BACKEND_CAIRO) | (1 << BACKEND_SKIA);
     InitCanvasBackend(backendMask);
 }
 
@@ -811,21 +812,21 @@ gfxPlatform::UseGraphiteShaping()
 #endif
 
 bool
-gfxPlatform::UseHarfBuzzForScript(PRInt32 aScriptCode)
+gfxPlatform::UseHarfBuzzForScript(int32_t aScriptCode)
 {
     if (mUseHarfBuzzScripts == UNINITIALIZED_VALUE) {
         mUseHarfBuzzScripts = Preferences::GetInt(GFX_PREF_HARFBUZZ_SCRIPTS, HARFBUZZ_SCRIPTS_DEFAULT);
     }
 
-    PRInt32 shapingType = mozilla::unicode::ScriptShapingType(aScriptCode);
+    int32_t shapingType = mozilla::unicode::ScriptShapingType(aScriptCode);
 
     return (mUseHarfBuzzScripts & shapingType) != 0;
 }
 
 gfxFontEntry*
 gfxPlatform::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
-                              const PRUint8 *aFontData,
-                              PRUint32 aLength)
+                              const uint8_t *aFontData,
+                              uint32_t aLength)
 {
     // Default implementation does not handle activating downloaded fonts;
     // just free the data and return.
@@ -890,12 +891,12 @@ gfxPlatform::GetPrefFonts(nsIAtom *aLanguage, nsString& aFonts, bool aAppendUnic
         AppendGenericFontFromPref(aFonts, nsGkAtoms::Unicode, nullptr);
 }
 
-bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], PRUint32 aLangArrayLen, PrefFontCallback aCallback,
+bool gfxPlatform::ForEachPrefFont(eFontPrefLang aLangArray[], uint32_t aLangArrayLen, PrefFontCallback aCallback,
                                     void *aClosure)
 {
     NS_ENSURE_TRUE(Preferences::GetRootBranch(), false);
 
-    PRUint32    i;
+    uint32_t    i;
     for (i = 0; i < aLangArrayLen; i++) {
         eFontPrefLang prefLang = aLangArray[i];
         const char *langGroup = GetPrefLangName(prefLang);
@@ -955,7 +956,7 @@ gfxPlatform::GetFontPrefLangFor(const char* aLang)
 {
     if (!aLang || !aLang[0])
         return eFontPrefLang_Others;
-    for (PRUint32 i = 0; i < PRUint32(eFontPrefLang_LangCount); ++i) {
+    for (uint32_t i = 0; i < uint32_t(eFontPrefLang_LangCount); ++i) {
         if (!PL_strcasecmp(gPrefLangNames[i], aLang))
             return eFontPrefLang(i);
     }
@@ -975,13 +976,13 @@ gfxPlatform::GetFontPrefLangFor(nsIAtom *aLang)
 const char*
 gfxPlatform::GetPrefLangName(eFontPrefLang aLang)
 {
-    if (PRUint32(aLang) < PRUint32(eFontPrefLang_AllCount))
-        return gPrefLangNames[PRUint32(aLang)];
+    if (uint32_t(aLang) < uint32_t(eFontPrefLang_AllCount))
+        return gPrefLangNames[uint32_t(aLang)];
     return nullptr;
 }
 
 eFontPrefLang
-gfxPlatform::GetFontPrefLangFor(PRUint8 aUnicodeRange)
+gfxPlatform::GetFontPrefLangFor(uint8_t aUnicodeRange)
 {
     switch (aUnicodeRange) {
         case kRangeSetLatin:   return eFontPrefLang_Western;
@@ -1034,7 +1035,7 @@ gfxPlatform::IsLangCJK(eFontPrefLang aLang)
 }
 
 void 
-gfxPlatform::GetLangPrefs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
+gfxPlatform::GetLangPrefs(eFontPrefLang aPrefLangs[], uint32_t &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
 {
     if (IsLangCJK(aCharLang)) {
         AppendCJKPrefLangs(aPrefLangs, aLen, aCharLang, aPageLang);
@@ -1046,7 +1047,7 @@ gfxPlatform::GetLangPrefs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFontPrefL
 }
 
 void
-gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
+gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], uint32_t &aLen, eFontPrefLang aCharLang, eFontPrefLang aPageLang)
 {
     // prefer the lang specified by the page *if* CJK
     if (IsLangCJK(aPageLang)) {
@@ -1058,7 +1059,7 @@ gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFon
     
         // temp array
         eFontPrefLang tempPrefLangs[kMaxLenPrefLangList];
-        PRUint32 tempLen = 0;
+        uint32_t tempLen = 0;
         
         // Add the CJK pref fonts from accept languages, the order should be same order
         nsAdoptingCString list = Preferences::GetLocalizedCString("intl.accept_languages");
@@ -1138,14 +1139,14 @@ gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFon
         AppendPrefLang(tempPrefLangs, tempLen, eFontPrefLang_ChineseTW);
         
         // copy into the cached array
-        PRUint32 j;
+        uint32_t j;
         for (j = 0; j < tempLen; j++) {
             mCJKPrefLangs.AppendElement(tempPrefLangs[j]);
         }
     }
     
     // append in cached CJK langs
-    PRUint32  i, numCJKlangs = mCJKPrefLangs.Length();
+    uint32_t  i, numCJKlangs = mCJKPrefLangs.Length();
     
     for (i = 0; i < numCJKlangs; i++) {
         AppendPrefLang(aPrefLangs, aLen, (eFontPrefLang) (mCJKPrefLangs[i]));
@@ -1154,12 +1155,12 @@ gfxPlatform::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[], PRUint32 &aLen, eFon
 }
 
 void 
-gfxPlatform::AppendPrefLang(eFontPrefLang aPrefLangs[], PRUint32& aLen, eFontPrefLang aAddLang)
+gfxPlatform::AppendPrefLang(eFontPrefLang aPrefLangs[], uint32_t& aLen, eFontPrefLang aAddLang)
 {
     if (aLen >= kMaxLenPrefLangList) return;
     
     // make sure
-    PRUint32  i = 0;
+    uint32_t  i = 0;
     while (i < aLen && aPrefLangs[i] != aAddLang) {
         i++;
     }
@@ -1171,7 +1172,7 @@ gfxPlatform::AppendPrefLang(eFontPrefLang aPrefLangs[], PRUint32& aLen, eFontPre
 }
 
 void
-gfxPlatform::InitCanvasBackend(PRUint32 aBackendBitmask)
+gfxPlatform::InitCanvasBackend(uint32_t aBackendBitmask)
 {
     if (!Preferences::GetBool("gfx.canvas.azure.enabled", false)) {
         mPreferredCanvasBackend = BACKEND_NONE;
@@ -1184,7 +1185,7 @@ gfxPlatform::InitCanvasBackend(PRUint32 aBackendBitmask)
 }
 
 /* static */ BackendType
-gfxPlatform::GetCanvasBackendPref(PRUint32 aBackendBitmask)
+gfxPlatform::GetCanvasBackendPref(uint32_t aBackendBitmask)
 {
     if (!gBackendList) {
         gBackendList = new nsTArray<nsCString>();
@@ -1194,7 +1195,7 @@ gfxPlatform::GetCanvasBackendPref(PRUint32 aBackendBitmask)
         }
     }
 
-    for (PRUint32 i = 0; i < gBackendList->Length(); ++i) {
+    for (uint32_t i = 0; i < gBackendList->Length(); ++i) {
         BackendType result = BackendTypeForName((*gBackendList)[i]);
         if ((1 << result) & aBackendBitmask) {
             return result;
@@ -1234,6 +1235,14 @@ gfxPlatform::UseAzureContentDrawing()
   return sAzureContentDrawingEnabled;
 }
 
+bool
+gfxPlatform::OffMainThreadCompositingEnabled()
+{
+  return XRE_GetProcessType() == GeckoProcessType_Default ?
+    CompositorParent::CompositorLoop() != nullptr :
+    CompositorChild::ChildProcessHasCompositor();
+}
+
 eCMSMode
 gfxPlatform::GetCMSMode()
 {
@@ -1241,7 +1250,7 @@ gfxPlatform::GetCMSMode()
         gCMSInitialized = true;
         nsresult rv;
 
-        PRInt32 mode;
+        int32_t mode;
         rv = Preferences::GetInt("gfx.color_management.mode", &mode);
         if (NS_SUCCEEDED(rv) && (mode >= 0) && (mode < eCMSMode_AllCount)) {
             gCMSMode = static_cast<eCMSMode>(mode);
@@ -1269,7 +1278,7 @@ gfxPlatform::GetRenderingIntent()
     if (gCMSIntent == -2) {
 
         /* Try to query the pref system for a rendering intent. */
-        PRInt32 pIntent;
+        int32_t pIntent;
         if (NS_SUCCEEDED(Preferences::GetInt("gfx.color_management.rendering_intent", &pIntent))) {
             /* If the pref is within range, use it as an override. */
             if ((pIntent >= INTENT_MIN) && (pIntent <= INTENT_MAX)) {
@@ -1296,18 +1305,18 @@ gfxPlatform::TransformPixel(const gfxRGBA& in, gfxRGBA& out, qcms_transform *tra
         /* we want the bytes in RGB order */
 #ifdef IS_LITTLE_ENDIAN
         /* ABGR puts the bytes in |RGBA| order on little endian */
-        PRUint32 packed = in.Packed(gfxRGBA::PACKED_ABGR);
+        uint32_t packed = in.Packed(gfxRGBA::PACKED_ABGR);
         qcms_transform_data(transform,
-                       (PRUint8 *)&packed, (PRUint8 *)&packed,
+                       (uint8_t *)&packed, (uint8_t *)&packed,
                        1);
         out.~gfxRGBA();
         new (&out) gfxRGBA(packed, gfxRGBA::PACKED_ABGR);
 #else
         /* ARGB puts the bytes in |ARGB| order on big endian */
-        PRUint32 packed = in.Packed(gfxRGBA::PACKED_ARGB);
+        uint32_t packed = in.Packed(gfxRGBA::PACKED_ARGB);
         /* add one to move past the alpha byte */
         qcms_transform_data(transform,
-                       (PRUint8 *)&packed + 1, (PRUint8 *)&packed + 1,
+                       (uint8_t *)&packed + 1, (uint8_t *)&packed + 1,
                        1);
         out.~gfxRGBA();
         new (&out) gfxRGBA(packed, gfxRGBA::PACKED_ARGB);
@@ -1482,7 +1491,7 @@ static void MigratePrefs()
        color_management.mode. */
     if (Preferences::HasUserValue("gfx.color_management.enabled")) {
         if (Preferences::GetBool("gfx.color_management.enabled", false)) {
-            Preferences::SetInt("gfx.color_management.mode", static_cast<PRInt32>(eCMSMode_All));
+            Preferences::SetInt("gfx.color_management.mode", static_cast<int32_t>(eCMSMode_All));
         }
         Preferences::ClearUser("gfx.color_management.enabled");
     }
@@ -1507,7 +1516,7 @@ gfxPlatform::SetupClusterBoundaries(gfxTextRun *aTextRun, const PRUnichar *aStri
                                           aString, aTextRun->GetLength());
 }
 
-PRInt32
+int32_t
 gfxPlatform::GetBidiNumeralOption()
 {
     if (mBidiNumeralOption == UNINITIALIZED_VALUE) {

@@ -507,6 +507,10 @@ public:
         return succeeded;
     }
 
+    virtual bool IsCurrent() {
+        return sEGLLibrary.fGetCurrentContext() == mContext;
+    }
+
 #ifdef MOZ_WIDGET_QT
     virtual bool
     RenewSurface() {
@@ -2027,7 +2031,7 @@ static const EGLint kEGLConfigAttribsRGBA32[] = {
 };
 
 static bool
-CreateConfig(EGLConfig* aConfig, PRInt32 depth)
+CreateConfig(EGLConfig* aConfig, int32_t depth)
 {
     EGLConfig configs[64];
     const EGLint* attribs;
@@ -2085,7 +2089,7 @@ CreateConfig(EGLConfig* aConfig, PRInt32 depth)
 static bool
 CreateConfig(EGLConfig* aConfig)
 {
-    PRInt32 depth = gfxPlatform::GetPlatform()->GetScreenDepth();
+    int32_t depth = gfxPlatform::GetPlatform()->GetScreenDepth();
     if (!CreateConfig(aConfig, depth)) {
 #ifdef MOZ_WIDGET_ANDROID
         // Bug 736005
@@ -2155,7 +2159,7 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
 
     void* currentContext = sEGLLibrary.fGetCurrentContext();
     if (aWidget->HasGLContext() && currentContext) {
-        PRInt32 depth = gfxPlatform::GetPlatform()->GetScreenDepth();
+        int32_t depth = gfxPlatform::GetPlatform()->GetScreenDepth();
         void* platformContext = currentContext;
 #ifdef MOZ_WIDGET_QT
         QGLContext* context = const_cast<QGLContext*>(QGLContext::currentContext());

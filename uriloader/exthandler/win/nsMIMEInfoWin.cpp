@@ -341,7 +341,7 @@ bool nsMIMEInfoWin::GetAppsVerbCommandHandler(const nsAString& appExeName,
     return false;
 
   // Check for the NoOpenWith flag, if it exists
-  PRUint32 value;
+  uint32_t value;
   if (NS_SUCCEEDED(appKey->ReadIntValue(
       NS_LITERAL_STRING("NoOpenWith"), &value)) &&
       value == 1)
@@ -415,7 +415,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
     return false;
 
   // Check for the NoOpenWith flag, if it exists
-  PRUint32 value;
+  uint32_t value;
   rv = appKey->ReadIntValue(NS_LITERAL_STRING("NoOpenWith"), &value);
   if (NS_SUCCEEDED(rv) && value == 1)
     return false;
@@ -445,7 +445,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
   if (NS_SUCCEEDED(appKey->ReadStringValue(EmptyString(),
                                            appFilesystemCommand))) {
     // Replace embedded environment variables.
-    PRUint32 bufLength = 
+    uint32_t bufLength = 
       ::ExpandEnvironmentStringsW(appFilesystemCommand.get(),
                                   L"", 0);
     if (bufLength == 0) // Error
@@ -465,7 +465,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
     // Photo Gallery\PhotoViewer.dll", ImageView_Fullscreen %1
     nsAutoString params;
     NS_NAMED_LITERAL_STRING(rundllSegment, "rundll32.exe ");
-    PRInt32 index = appFilesystemCommand.Find(rundllSegment);
+    int32_t index = appFilesystemCommand.Find(rundllSegment);
     if (index > kNotFound) {
       params.Append(Substring(appFilesystemCommand,
                     index + rundllSegment.Length()));
@@ -539,9 +539,9 @@ void nsMIMEInfoWin::ProcessPath(nsCOMPtr<nsIMutableArray>& appList,
 
   // Don't include firefox.exe in the list
   WCHAR exe[MAX_PATH+1];
-  PRUint32 len = GetModuleFileNameW(NULL, exe, MAX_PATH);
+  uint32_t len = GetModuleFileNameW(NULL, exe, MAX_PATH);
   if (len < MAX_PATH && len != 0) {
-    PRUint32 index = lower.Find(exe);
+    uint32_t index = lower.Find(exe);
     if (index != -1)
       return;
   }
@@ -565,7 +565,7 @@ static bool IsPathInList(nsAString& appPath,
   nsAutoString tmp(appPath);
   ToLowerCase(tmp);
 
-  for (PRUint32 i = 0; i < trackList.Length(); i++) {
+  for (uint32_t i = 0; i < trackList.Length(); i++) {
     if (tmp.Equals(trackList[i]))
       return true;
   }
@@ -679,9 +679,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appName;
           if (NS_FAILED(regKey->GetValueName(index, appName)))
             continue;
@@ -710,9 +710,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           // HKEY_CLASSES_ROOT\.ext\OpenWithProgids\Windows.XPSReachViewer
           nsAutoString appProgId;
           if (NS_FAILED(regKey->GetValueName(index, appProgId)))
@@ -744,9 +744,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                       workingRegistryPath,
                       nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appName, appValue;
           if (NS_FAILED(regKey->GetValueName(index, appName)))
             continue;
@@ -782,9 +782,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                  workingRegistryPath,
                  nsIWindowsRegKey::ACCESS_QUERY_VALUE);
     if (NS_SUCCEEDED(rv)) {
-      PRUint32 count = 0;
+      uint32_t count = 0;
       if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-        for (PRUint32 index = 0; index < count; index++) {
+        for (uint32_t index = 0; index < count; index++) {
           nsAutoString appIndex, appProgId;
           if (NS_FAILED(regKey->GetValueName(index, appProgId)))
             continue;
@@ -824,9 +824,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                                    openWithListPath,
                                    nsIWindowsRegKey::ACCESS_QUERY_VALUE);
         if (NS_SUCCEEDED(rv)) {
-          PRUint32 count = 0;
+          uint32_t count = 0;
           if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-            for (PRUint32 index = 0; index < count; index++) {
+            for (uint32_t index = 0; index < count; index++) {
               nsAutoString appName;
               if (NS_FAILED(regKey->GetValueName(index, appName)))
                 continue;
@@ -855,9 +855,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                     workingRegistryPath,
                     nsIWindowsRegKey::ACCESS_QUERY_VALUE);
   if (NS_SUCCEEDED(rv)) {
-    PRUint32 count = 0;
+    uint32_t count = 0;
     if (NS_SUCCEEDED(regKey->GetValueCount(&count)) && count > 0) {
-      for (PRUint32 index = 0; index < count; index++) {
+      for (uint32_t index = 0; index < count; index++) {
         nsAutoString appName;
         if (NS_FAILED(regKey->GetValueName(index, appName)))
           continue;
@@ -883,9 +883,9 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
                     nsIWindowsRegKey::ACCESS_ENUMERATE_SUB_KEYS|
                     nsIWindowsRegKey::ACCESS_QUERY_VALUE);
   if (NS_SUCCEEDED(rv)) {
-    PRUint32 count = 0;
+    uint32_t count = 0;
     if (NS_SUCCEEDED(regKey->GetChildCount(&count)) && count > 0) {
-      for (PRUint32 index = 0; index < count; index++) {
+      for (uint32_t index = 0; index < count; index++) {
         nsAutoString appName;
         if (NS_FAILED(regKey->GetChildName(index, appName)))
           continue;

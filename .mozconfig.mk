@@ -3,8 +3,8 @@
 # Do not edit. Edit /c/Documents and Settings/Nicholas/.mozconfig instead.
 
 # PATH=/local/bin:/h/mozilla-build/Version1.8/wget:/h/mozilla-build/Version1.8/7zip:/h/mozilla-build/Version1.8/blat261/full:/h/mozilla-build/Version1.8/python:/h/mozilla-build/Version1.8/svn-win32-1.6.3/bin:/h/mozilla-build/Version1.8/upx203w:/h/mozilla-build/Version1.8/emacs-24.3/bin:/h/mozilla-build/Version1.8/info-zip:/h/mozilla-build/Version1.8/nsis-2.33u:/h/mozilla-build/Version1.8/nsis-2.46u:/h/mozilla-build/Version1.8/wix-351728:/h/mozilla-build/Version1.8/hg:/h/mozilla-build/Version1.8/python/Scripts:/h/mozilla-build/Version1.8/kdiff3:/h/mozilla-build/Version1.8/yasm:.:/local/bin:/mingw/bin:/bin:/c/Program Files/Microsoft SDKs/Windows/v6.0A/bin:/c/Program Files/Microsoft Platform SDK for Windows Server 2003 R2/bin:/c/Program Files/Microsoft Visual Studio .NET 2003/Common7/IDE:/c/Program Files/Microsoft Visual Studio .NET 2003/VC7/BIN:/c/Program Files/Microsoft Visual Studio .NET 2003/Common7/Tools:/c/Program Files/Microsoft Visual Studio .NET 2003/Common7/Tools/bin/prerelease:/c/Program Files/Microsoft Visual Studio .NET 2003/Common7/Tools/bin:/c/Program Files/Microsoft Visual Studio .NET 2003/SDK/v1.1/bin:/c/WINDOWS/Microsoft.NET/Framework/v1.1.4322:/c/WINDOWS/System32:/c/WINDOWS:/c/WINDOWS/System32/Wbem:/h/mozilla-build/Version1.8/moztools/bin:.:/h/mozilla-build/Version1.8/vim/vim72
-MOZ_MAKE_FLAGS=-j3
-MOZ_OBJDIR=j:/Browsers/VC71Compat/objdir/obj-fxvc71-release
+MOZ_MAKE_FLAGS=-j1
+MOZ_OBJDIR=j:/Browsers/VC71Compat/fxupdates/central/obj-fxvc71-release
 # --target=i686-pc-mingw32 is used by configure (not client.mk)
 # --enable-application=browser is used by configure (not client.mk)
 # --enable-optimize is used by configure (not client.mk)
@@ -32,6 +32,7 @@ MOZ_OBJDIR=j:/Browsers/VC71Compat/objdir/obj-fxvc71-release
 # --disable-jit is used by configure (not client.mk)
 # --enable-ipc is used by configure (not client.mk)
 # --disable-webm is used by configure (not client.mk)
+# --disable-ogg is used by configure (not client.mk)
 # --disable-sps is used by configure (not client.mk)
 # --disable-skia is used by configure (not client.mk)
 # --disable-maintenance-service is used by configure (not client.mk)

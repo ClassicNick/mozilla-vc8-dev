@@ -190,7 +190,7 @@ nsFilePicker::~nsFilePicker()
 
 NS_IMPL_ISUPPORTS1(nsFilePicker, nsIFilePicker)
 
-NS_IMETHODIMP nsFilePicker::Init(nsIDOMWindow *aParent, const nsAString& aTitle, PRInt16 aMode)
+NS_IMETHODIMP nsFilePicker::Init(nsIDOMWindow *aParent, const nsAString& aTitle, int16_t aMode)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aParent);
   nsIDocShell* docShell = window ? window->GetDocShell() : NULL;  
@@ -807,7 +807,7 @@ nsFilePicker::ShowXPFilePicker(const nsString& aInitialDir)
     return false;
 
   // Remember what filter type the user selected
-  mSelectedType = (PRInt16)ofn.nFilterIndex;
+  mSelectedType = (int16_t)ofn.nFilterIndex;
 
   // Single file selection, we're done
   if (mMode != modeOpenMultiple) {
@@ -993,7 +993,7 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir, bool &aWasInitError)
   // Remember what filter type the user selected
   UINT filterIdxResult;
   if (SUCCEEDED(dialog->GetFileTypeIndex(&filterIdxResult))) {
-    mSelectedType = (PRInt16)filterIdxResult;
+    mSelectedType = (int16_t)filterIdxResult;
   }
 
   // single selection
@@ -1039,7 +1039,7 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir, bool &aWasInitError)
 // nsIFilePicker impl.
 
 NS_IMETHODIMP
-nsFilePicker::ShowW(PRInt16 *aReturnVal)
+nsFilePicker::ShowW(int16_t *aReturnVal)
 {
   NS_ENSURE_ARG_POINTER(aReturnVal);
 
@@ -1093,7 +1093,7 @@ nsFilePicker::ShowW(PRInt16 *aReturnVal)
 
   RememberLastUsedDirectory();
 
-  PRInt16 retValue = returnOK;
+  int16_t retValue = returnOK;
   if (mMode == modeSave) {
     // Windows does not return resultReplace, we must check if file
     // already exists.
@@ -1110,7 +1110,7 @@ nsFilePicker::ShowW(PRInt16 *aReturnVal)
 }
 
 NS_IMETHODIMP
-nsFilePicker::Show(PRInt16 *aReturnVal)
+nsFilePicker::Show(int16_t *aReturnVal)
 {
   return ShowW(aReturnVal);
 }
@@ -1161,8 +1161,8 @@ nsFilePicker::SetDefaultString(const nsAString& aString)
   mDefaultFilePath = aString;
 
   // First, make sure the file name is not too long.
-  PRInt32 nameLength;
-  PRInt32 nameIndex = mDefaultFilePath.RFind("\\");
+  int32_t nameLength;
+  int32_t nameIndex = mDefaultFilePath.RFind("\\");
   if (nameIndex == kNotFound)
     nameIndex = 0;
   else
@@ -1171,12 +1171,12 @@ nsFilePicker::SetDefaultString(const nsAString& aString)
   mDefaultFilename.Assign(Substring(mDefaultFilePath, nameIndex));
   
   if (nameLength > MAX_PATH) {
-    PRInt32 extIndex = mDefaultFilePath.RFind(".");
+    int32_t extIndex = mDefaultFilePath.RFind(".");
     if (extIndex == kNotFound)
       extIndex = mDefaultFilePath.Length();
 
     // Let's try to shave the needed characters from the name part.
-    PRInt32 charsToRemove = nameLength - MAX_PATH;
+    int32_t charsToRemove = nameLength - MAX_PATH;
     if (extIndex - nameIndex >= charsToRemove) {
       mDefaultFilePath.Cut(extIndex - charsToRemove, charsToRemove);
     }
@@ -1212,7 +1212,7 @@ nsFilePicker::SetDefaultExtension(const nsAString& aExtension)
 
 // Set the filter index
 NS_IMETHODIMP
-nsFilePicker::GetFilterIndex(PRInt32 *aFilterIndex)
+nsFilePicker::GetFilterIndex(int32_t *aFilterIndex)
 {
   // Windows' filter index is 1-based, we use a 0-based system.
   *aFilterIndex = mSelectedType - 1;
@@ -1220,7 +1220,7 @@ nsFilePicker::GetFilterIndex(PRInt32 *aFilterIndex)
 }
 
 NS_IMETHODIMP
-nsFilePicker::SetFilterIndex(PRInt32 aFilterIndex)
+nsFilePicker::SetFilterIndex(int32_t aFilterIndex)
 {
   // Windows' filter index is 1-based, we use a 0-based system.
   mSelectedType = aFilterIndex + 1;
@@ -1230,7 +1230,7 @@ nsFilePicker::SetFilterIndex(PRInt32 aFilterIndex)
 void
 nsFilePicker::InitNative(nsIWidget *aParent,
                          const nsAString& aTitle,
-                         PRInt16 aMode)
+                         int16_t aMode)
 {
   mParentWidget = aParent;
   mTitle.Assign(aTitle);
@@ -1334,7 +1334,7 @@ nsFilePicker::IsDefaultPathLink()
 bool
 nsFilePicker::IsDefaultPathHtml()
 {
-  PRInt32 extIndex = mDefaultFilePath.RFind(".");
+  int32_t extIndex = mDefaultFilePath.RFind(".");
   if (extIndex >= 0) {
     nsAutoString ext;
     mDefaultFilePath.Right(ext, mDefaultFilePath.Length() - extIndex);

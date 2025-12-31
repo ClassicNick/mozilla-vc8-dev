@@ -177,7 +177,8 @@ class BasicShadowableImageLayer : public BasicImageLayer,
 public:
   BasicShadowableImageLayer(BasicShadowLayerManager* aManager) :
     BasicImageLayer(aManager),
-    mBufferIsOpaque(false)
+    mBufferIsOpaque(false),
+    mLastPaintedImageSerial(0)
   {
     MOZ_COUNT_CTOR(BasicShadowableImageLayer);
   }
@@ -246,6 +247,7 @@ private:
   SurfaceDescriptor mBackBufferU;
   SurfaceDescriptor mBackBufferV;
   gfxIntSize mCbCrSize;
+  int32_t mLastPaintedImageSerial;
 };
  
 void
@@ -261,7 +263,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
   }
 
   if (mContainer->IsAsync()) {
-    PRUint32 containerID = mContainer->GetAsyncContainerID();
+    uint32_t containerID = mContainer->GetAsyncContainerID();
     BasicManager()->PaintedImage(BasicManager()->Hold(this), 
                                  SharedImageID(containerID));
     return;
@@ -281,7 +283,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
       ->Paint(aContext, nullptr);
   }
 
-  if (image->GetFormat() == Image::SHARED_TEXTURE &&
+  if (image->GetFormat() == SHARED_TEXTURE &&
       BasicManager()->GetParentBackendType() == mozilla::layers::LAYERS_OPENGL) {
     SharedTextureImage *sharedImage = static_cast<SharedTextureImage*>(image);
     const SharedTextureImage::Data *data = sharedImage->GetData();
@@ -292,7 +294,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
     return;
   }
 
-  if (image->GetFormat() == Image::PLANAR_YCBCR && BasicManager()->IsCompositingCheap()) {
+  if (image->GetFormat() == PLANAR_YCBCR && BasicManager()->IsCompositingCheap()) {
     PlanarYCbCrImage *YCbCrImage = static_cast<PlanarYCbCrImage*>(image);
     const PlanarYCbCrImage::Data *data = YCbCrImage->GetData();
     NS_ASSERTION(data, "Must be able to retrieve yuv data from image!");
@@ -374,6 +376,8 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 
     if (!BasicManager()->AllocBuffer(mSize, type, &mBackBuffer))
       NS_RUNTIMEABORT("creating ImageLayer 'front buffer' failed!");
+  } else if (mLastPaintedImageSerial == image->GetSerial()) {
+    return;
   }
 
   AutoOpenSurface backSurface(OPEN_READ_WRITE, mBackBuffer);
@@ -385,6 +389,7 @@ BasicShadowableImageLayer::Paint(gfxContext* aContext, Layer* aMaskLayer)
 
   BasicManager()->PaintedImage(BasicManager()->Hold(this),
                                mBackBuffer);
+  mLastPaintedImageSerial = image->GetSerial();
 }
 
 class BasicShadowImageLayer : public ShadowImageLayer, public BasicImplData {

@@ -13,6 +13,7 @@
 #include "imgIRequest.h"
 #include "imgIOnloadBlocker.h"
 #include "nsStubImageDecoderObserver.h"
+#include "mozilla/Attributes.h"
 
 class nsIFrame;
 class nsIDocument;
@@ -23,12 +24,13 @@ class nsIPrincipal;
 namespace mozilla {
 namespace css {
 
-class ImageLoader : public nsStubImageDecoderObserver,
-                    public imgIOnloadBlocker {
+class ImageLoader MOZ_FINAL : public nsStubImageDecoderObserver,
+                              public imgIOnloadBlocker {
 public:
+  typedef mozilla::css::ImageValue Image;
+
   ImageLoader(nsIDocument* aDocument)
   : mDocument(aDocument),
-    mHavePainted(false),
     mInClone(false)
   {
     MOZ_ASSERT(mDocument);
@@ -43,7 +45,7 @@ public:
 
   // imgIDecoderObserver (override nsStubImageDecoderObserver)
   NS_IMETHOD OnStartContainer(imgIRequest *aRequest, imgIContainer *aImage);
-  NS_IMETHOD OnStopFrame(imgIRequest *aRequest, PRUint32 aFrame);
+  NS_IMETHOD OnStopFrame(imgIRequest *aRequest, uint32_t aFrame);
   NS_IMETHOD OnImageIsAnimated(imgIRequest *aRequest);
   // Do not override OnDataAvailable since background images are not
   // displayed incrementally; they are displayed after the entire image
@@ -54,15 +56,10 @@ public:
                           imgIContainer *aContainer,
                           const nsIntRect *aDirtyRect);
 
-  inline void NotifyPaint()
-  {
-    mHavePainted = true;
-  }
-
   void DropDocumentReference();
 
-  void MaybeRegisterCSSImage(nsCSSValue::Image* aImage);
-  void DeregisterCSSImage(nsCSSValue::Image* aImage);
+  void MaybeRegisterCSSImage(Image* aImage);
+  void DeregisterCSSImage(Image* aImage);
 
   void AssociateRequestToFrame(imgIRequest* aRequest,
                                nsIFrame* aFrame);
@@ -72,12 +69,12 @@ public:
 
   void DropRequestsForFrame(nsIFrame* aFrame);
 
-  void SetAnimationMode(PRUint16 aMode);
+  void SetAnimationMode(uint16_t aMode);
 
   void ClearAll();
 
   void LoadImage(nsIURI* aURI, nsIPrincipal* aPrincipal, nsIURI* aReferrer,
-                 nsCSSValue::Image* aCSSValue);
+                 Image* aCSSValue);
 
   void DestroyRequest(imgIRequest* aRequest);
 
@@ -89,14 +86,14 @@ private:
 
   typedef nsTArray<nsIFrame*> FrameSet;
   typedef nsTArray<nsCOMPtr<imgIRequest> > RequestSet;
-  typedef nsTHashtable<nsPtrHashKey<nsCSSValue::Image> > ImageHashSet;
+  typedef nsTHashtable<nsPtrHashKey<Image> > ImageHashSet;
   typedef nsClassHashtable<nsISupportsHashKey,
                            FrameSet> RequestToFrameMap;
   typedef nsClassHashtable<nsPtrHashKey<nsIFrame>,
                            RequestSet> FrameToRequestMap;
 
-  void AddImage(nsCSSValue::Image* aCSSImage);
-  void RemoveImage(nsCSSValue::Image* aCSSImage);
+  void AddImage(Image* aCSSImage);
+  void RemoveImage(Image* aCSSImage);
 
   nsPresContext* GetPresContext();
 
@@ -119,9 +116,6 @@ private:
   // not).  We'll need this when we go away to remove any requests associated
   // with our document from those Images.
   ImageHashSet mImages;
-
-  // Have we painted yet? If not, no need to deliver notifications.
-  bool mHavePainted;
 
   // Are we cloning?  If so, ignore any notifications we get.
   bool mInClone;

@@ -55,7 +55,7 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(JumpListShortcut)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(JumpListShortcut)
 
 /* attribute short type; */
-NS_IMETHODIMP JumpListItem::GetType(PRInt16 *aType)
+NS_IMETHODIMP JumpListItem::GetType(int16_t *aType)
 {
   NS_ENSURE_ARG_POINTER(aType);
 
@@ -71,7 +71,7 @@ NS_IMETHODIMP JumpListItem::Equals(nsIJumpListItem *aItem, bool *aResult)
 
   *aResult = false;
 
-  PRInt16 theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
+  int16_t theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
   if (NS_FAILED(aItem->GetType(&theType)))
     return NS_OK;
 
@@ -158,7 +158,7 @@ NS_IMETHODIMP JumpListLink::Equals(nsIJumpListItem *aItem, bool *aResult)
 
   *aResult = false;
 
-  PRInt16 theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
+  int16_t theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
   if (NS_FAILED(aItem->GetType(&theType)))
     return NS_OK;
 
@@ -215,7 +215,7 @@ NS_IMETHODIMP JumpListShortcut::SetApp(nsILocalHandlerApp *aApp)
 }
 
 /* attribute long iconIndex; */
-NS_IMETHODIMP JumpListShortcut::GetIconIndex(PRInt32 *aIconIndex)
+NS_IMETHODIMP JumpListShortcut::GetIconIndex(int32_t *aIconIndex)
 {
   NS_ENSURE_ARG_POINTER(aIconIndex);
 
@@ -223,7 +223,7 @@ NS_IMETHODIMP JumpListShortcut::GetIconIndex(PRInt32 *aIconIndex)
   return NS_OK;
 }
 
-NS_IMETHODIMP JumpListShortcut::SetIconIndex(PRInt32 aIconIndex)
+NS_IMETHODIMP JumpListShortcut::SetIconIndex(int32_t aIconIndex)
 {
   mIconIndex = aIconIndex;
   return NS_OK;
@@ -252,7 +252,7 @@ NS_IMETHODIMP JumpListShortcut::Equals(nsIJumpListItem *aItem, bool *aResult)
 
   *aResult = false;
 
-  PRInt16 theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
+  int16_t theType = nsIJumpListItem::JUMPLIST_ITEM_EMPTY;
   if (NS_FAILED(aItem->GetType(&theType)))
     return NS_OK;
 
@@ -265,7 +265,7 @@ NS_IMETHODIMP JumpListShortcut::Equals(nsIJumpListItem *aItem, bool *aResult)
     return rv;
 
   // Check the icon index
-  //PRInt32 idx;
+  //int32_t idx;
   //shortcut->GetIconIndex(&idx);
   //if (mIconIndex != idx)
   //  return NS_OK;
@@ -334,7 +334,7 @@ nsresult JumpListShortcut::GetShellLink(nsCOMPtr<nsIJumpListItem>& item,
   // http://msdn.microsoft.com/en-us/library/bb776891(VS.85).aspx
   // http://msdn.microsoft.com/en-us/library/bb774950(VS.85).aspx
 
-  PRInt16 type;
+  int16_t type;
   if (NS_FAILED(item->GetType(&type)))
     return NS_ERROR_INVALID_ARG;
 
@@ -356,7 +356,7 @@ nsresult JumpListShortcut::GetShellLink(nsCOMPtr<nsIJumpListItem>& item,
 
   // Retrieve the app path, title, description and optional command line args.
   nsAutoString appPath, appTitle, appDescription, appArgs;
-  PRInt32 appIconIndex = 0;
+  int32_t appIconIndex = 0;
 
   // Path
   nsCOMPtr<nsIFile> executable;
@@ -366,9 +366,9 @@ nsresult JumpListShortcut::GetShellLink(nsCOMPtr<nsIJumpListItem>& item,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Command line parameters
-  PRUint32 count = 0;
+  uint32_t count = 0;
   handlerApp->GetParameterCount(&count);
-  for (PRUint32 idx = 0; idx < count; idx++) {
+  for (uint32_t idx = 0; idx < count; idx++) {
     if (idx > 0)
       appArgs.Append(NS_LITERAL_STRING(" "));
     nsAutoString param;
@@ -503,8 +503,8 @@ nsresult JumpListShortcut::GetJumpListShortcut(IShellLinkW *pLink, nsCOMPtr<nsIJ
   hres = pLink->GetArguments((LPWSTR)&buf, MAX_PATH);
   if (SUCCEEDED(hres)) {
     LPWSTR *arglist;
-    PRInt32 numArgs;
-    PRInt32 idx;
+    int32_t numArgs;
+    int32_t idx;
 
     arglist = ::CommandLineToArgvW(buf, &numArgs);
     if(arglist) {
@@ -554,7 +554,7 @@ nsresult JumpListLink::GetShellItem(nsCOMPtr<nsIJumpListItem>& item, nsRefPtr<IS
   IShellItem2 *psi = nullptr;
   nsresult rv;
 
-  PRInt16 type; 
+  int16_t type; 
   if (NS_FAILED(item->GetType(&type)))
     return NS_ERROR_INVALID_ARG;
 

@@ -78,14 +78,14 @@ static void FreeDynamicLibraries(void)
 {
     if (sIPHelper)
     {
-        sGetAdaptersAddresses = nsnull;
-        sGetAdaptersInfo = nsnull;
-        sGetIfEntry = nsnull;
-        sGetIpAddrTable = nsnull;
-        sNotifyAddrChange = nsnull;
+        sGetAdaptersAddresses = nullptr;
+        sGetAdaptersInfo = nullptr;
+        sGetIfEntry = nullptr;
+        sGetIpAddrTable = nullptr;
+        sNotifyAddrChange = nullptr;
 
         FreeLibrary(sIPHelper);
-        sIPHelper = nsnull;
+        sIPHelper = nullptr;
     }
 
     if (sNetshell) {
@@ -134,7 +134,7 @@ nsNotifyAddrListener::GetLinkStatusKnown(bool *aIsUp)
 }
 
 NS_IMETHODIMP
-nsNotifyAddrListener::GetLinkType(PRUint32 *aLinkType)
+nsNotifyAddrListener::GetLinkType(uint32_t *aLinkType)
 {
   NS_ENSURE_ARG_POINTER(aLinkType);
 
@@ -300,7 +300,7 @@ nsNotifyAddrListener::CheckIPAddrTable(void)
         return ERROR_CALL_NOT_IMPLEMENTED;
 
     ULONG size = 0;
-    DWORD ret = sGetIpAddrTable(nsnull, &size, FALSE);
+    DWORD ret = sGetIpAddrTable(nullptr, &size, FALSE);
     if (ret == ERROR_INSUFFICIENT_BUFFER && size > 0) {
         PMIB_IPADDRTABLE table = (PMIB_IPADDRTABLE) malloc(size);
         if (!table)

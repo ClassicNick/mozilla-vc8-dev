@@ -19,11 +19,13 @@ EXPORTS_mozilla += \
   HashFunctions.h \
   Likely.h \
   LinkedList.h \
+  MathAlgorithms.h \
   MSStdInt.h \
   RangedPtr.h \
   RefPtr.h \
   Scoped.h \
   StandardInteger.h \
+  SHA1.h \
   ThreadLocal.h \
   TypeTraits.h \
   Types.h \

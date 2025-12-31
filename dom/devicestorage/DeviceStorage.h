@@ -13,7 +13,6 @@
 
 class nsDOMDeviceStorage MOZ_FINAL
   : public nsIDOMDeviceStorage
-  , public nsIFileUpdateListener
   , public nsDOMEventTargetHelper
   , public nsIObserver
 {
@@ -21,7 +20,6 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMDEVICESTORAGE
 
-  NS_DECL_NSIFILEUPDATELISTENER
   NS_DECL_NSIOBSERVER
   NS_DECL_NSIDOMEVENTTARGET
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMDeviceStorage, nsDOMEventTargetHelper)
@@ -49,19 +47,22 @@ private:
   nsresult EnumerateInternal(const JS::Value & aName,
                              const JS::Value & aOptions,
                              JSContext* aCx,
-                             PRUint8 aArgc, 
+                             uint8_t aArgc, 
                              bool aEditable, 
                              nsIDOMDeviceStorageCursor** aRetval);
 
-  PRInt32 mStorageType;
+  int32_t mStorageType;
   nsCOMPtr<nsIFile> mFile;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
 
+  bool mIsWatchingFile;
+  bool mAllowedToWatchFile;
+
+  nsresult Notify(const char* aReason, nsIFile* aFile);
+
   friend class WatchFileEvent;
   friend class DeviceStorageRequest;
-
-  bool  mIsWatchingFile;
 
 #ifdef MOZ_WIDGET_GONK
   void DispatchMountChangeEvent(nsAString& aType);

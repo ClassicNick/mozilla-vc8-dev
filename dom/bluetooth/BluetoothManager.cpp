@@ -1,5 +1,5 @@
 /* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 40 -*- */
-/* vim: set ts=2 et sw=2 tw=40: */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +21,7 @@
 #include "nsXPCOMCIDInternal.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/Util.h"
+#include "nsIDOMDOMRequest.h"
 
 using namespace mozilla;
 
@@ -287,7 +288,7 @@ NS_NewBluetoothManager(nsPIDOMWindow* aWindow,
     do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
   NS_ENSURE_TRUE(permMgr, NS_ERROR_UNEXPECTED);
 
-  PRUint32 permission;
+  uint32_t permission;
   nsresult rv =
     permMgr->TestPermissionFromPrincipal(principal, "mozBluetooth", &permission);
   NS_ENSURE_SUCCESS(rv, rv);

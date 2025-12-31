@@ -401,8 +401,8 @@ nsresult nsAutodial::GetDefaultEntryName(PRUnichar* entryName, int bufferSize)
     //              or HKLM/Software/Microsoft/RAS Autodial/Default/DefaultInternet.
     // For Windows 2K: HKCU/RemoteAccess/InternetProfile.
 
-    const PRUnichar* key = nsnull;
-    const PRUnichar* val = nsnull;
+    const PRUnichar* key = nullptr;
+    const PRUnichar* val = nullptr;
 
     HKEY hKey = 0;
     LONG result = 0;

@@ -3,7 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CameraPreview.h"
-
+#include "Layers.h"
+#include "ImageContainer.h"
 #define DOM_CAMERA_LOG_LEVEL  3
 #include "CameraCommon.h"
 
@@ -62,7 +63,7 @@ protected:
   nsCOMPtr<CameraPreview> mPreview;
 };
 
-CameraPreview::CameraPreview(nsIThread* aCameraThread, PRUint32 aWidth, PRUint32 aHeight)
+CameraPreview::CameraPreview(nsIThread* aCameraThread, uint32_t aWidth, uint32_t aHeight)
   : nsDOMMediaStream()
   , mWidth(aWidth)
   , mHeight(aHeight)
@@ -80,7 +81,7 @@ CameraPreview::CameraPreview(nsIThread* aCameraThread, PRUint32 aWidth, PRUint32
 }
 
 void
-CameraPreview::SetFrameRate(PRUint32 aFramesPerSecond)
+CameraPreview::SetFrameRate(uint32_t aFramesPerSecond)
 {
   mFramesPerSecond = aFramesPerSecond;
   mInput->AddTrack(TRACK_VIDEO, mFramesPerSecond, 0, new VideoSegment());
