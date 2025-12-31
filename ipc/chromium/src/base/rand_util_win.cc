@@ -11,7 +11,7 @@
 
 namespace {
 
-uint32 RandUint32() {
+uint32_t RandUint32() {
   return rand();
 }
 
@@ -19,10 +19,10 @@ uint32 RandUint32() {
 
 namespace base {
 
-uint64 RandUint64() {
-  uint32 first_half = RandUint32();
-  uint32 second_half = RandUint32();
-  return (static_cast<uint64>(first_half) << 32) + second_half;
+uint64_t RandUint64() {
+  uint32_t first_half = RandUint32();
+  uint32_t second_half = RandUint32();
+  return (static_cast<uint64_t>(first_half) << 32) + second_half;
 }
 
 }  // namespace base

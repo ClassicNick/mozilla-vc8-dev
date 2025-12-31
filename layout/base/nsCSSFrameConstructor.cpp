@@ -119,6 +119,7 @@
 
 #include "nsRefreshDriver.h"
 #include "nsRuleProcessorData.h"
+#include "sampler.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -5691,6 +5692,9 @@ AdjustAppendParentForAfterContent(nsPresContext* aPresContext,
   if (nsLayoutUtils::HasPseudoStyle(aContainer, parentStyle,
                                     nsCSSPseudoElements::ePseudo_after,
                                     aPresContext)) {
+    // Ensure that the :after frame is on the principal child list.
+    aParentFrame->DrainSelfOverflowList();
+
     nsIFrame* afterFrame = nsLayoutUtils::GetAfterFrame(aParentFrame);
     if (afterFrame) {
       *aAfterFrame = afterFrame;
@@ -5733,8 +5737,13 @@ FindAppendPrevSibling(nsIFrame* aParentFrame, nsIFrame* aAfterFrame)
 {
   if (aAfterFrame) {
     NS_ASSERTION(aAfterFrame->GetParent() == aParentFrame, "Wrong parent");
+    NS_ASSERTION(aAfterFrame->GetPrevSibling() ||
+                 aParentFrame->GetFirstPrincipalChild() == aAfterFrame,
+                 ":after frame must be on the principal child list here");
     return aAfterFrame->GetPrevSibling();
   }
+
+  aParentFrame->DrainSelfOverflowList();
 
   return aParentFrame->GetLastChild(kPrincipalList);
 }
@@ -8012,6 +8021,8 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
   if (!count)
     return NS_OK;
 
+  SAMPLE_LABEL("CSS", "ProcessRestyledFrames");
+
   // Make sure to not rebuild quote or counter lists while we're
   // processing restyles
   BeginUpdate();
@@ -9556,7 +9567,7 @@ nsCSSFrameConstructor::CreateNeededAnonFlexItems(
                                 true);
 
     newItem->mIsAllInline = newItem->mHasInlineEnds =
-      newItem->mStyleContext->GetStyleDisplay()->IsInlineOutside();
+      newItem->mStyleContext->GetStyleDisplay()->IsInlineOutsideStyle();
     newItem->mIsBlock = !newItem->mIsAllInline;
 
     NS_ABORT_IF_FALSE(!newItem->mIsAllInline && newItem->mIsBlock,

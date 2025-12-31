@@ -176,10 +176,26 @@ Submitter.prototype = {
       return false;
     }
 
+    let serverURL = reportData.ServerURL;
+    delete reportData.ServerURL;
+
+    // Override the submission URL from the environment or prefs.
+
+    var envOverride = Cc['@mozilla.org/process/environment;1'].
+      getService(Ci.nsIEnvironment).get("MOZ_CRASHREPORTER_URL");
+    if (envOverride != '') {
+      serverURL = envOverride;
+    }
+    else if ('PluginHang' in reportData) {
+      try {
+        serverURL = Services.prefs.
+          getCharPref("toolkit.crashreporter.pluginHangSubmitURL");
+      } catch(e) { }
+    }
+
     let xhr = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
               .createInstance(Ci.nsIXMLHttpRequest);
-    xhr.open("POST", reportData.ServerURL, true);
-    delete reportData.ServerURL;
+    xhr.open("POST", serverURL, true);
 
     let formData = Cc["@mozilla.org/files/formdata;1"]
                    .createInstance(Ci.nsIDOMFormData);
@@ -258,7 +274,7 @@ Submitter.prototype = {
     let reportData = parseKeyValuePairsFromFile(extra);
     let additionalDumps = [];
     if ("additional_minidumps" in reportData) {
-      let names = extraData.additional_minidumps.split(',');
+      let names = reportData.additional_minidumps.split(',');
       for (let name in names) {
         let [dump, extra] = getPendingMiniDump(this.id + "-" + name);
         if (!dump.exists()) {

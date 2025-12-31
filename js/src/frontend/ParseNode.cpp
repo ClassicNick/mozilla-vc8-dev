@@ -403,16 +403,11 @@ NameNode::create(ParseNodeKind kind, JSAtom *atom, Parser *parser, ParseContext 
     return (NameNode *)pn;
 }
 
-const char js_argument_str[] = "argument";
-const char js_variable_str[] = "variable";
-const char js_unknown_str[]  = "unknown";
-
 const char *
 Definition::kindString(Kind kind)
 {
     static const char *table[] = {
-        js_var_str, js_const_str, js_let_str,
-        js_function_str, js_argument_str, js_unknown_str
+        js_var_str, js_const_str, js_let_str, js_function_str, "argument", "unknown"
     };
 
     JS_ASSERT(unsigned(kind) <= unsigned(ARG));
@@ -445,7 +440,7 @@ CloneParseTree(ParseNode *opn, Parser *parser)
 
       case PN_FUNC:
         NULLCHECK(pn->pn_funbox =
-                  parser->newFunctionBox(opn->pn_funbox->object, pc, opn->pn_funbox->strictModeState));
+                  parser->newFunctionBox(opn->pn_funbox->fun(), pc, opn->pn_funbox->strictModeState));
         NULLCHECK(pn->pn_body = CloneParseTree(opn->pn_body, parser));
         pn->pn_cookie = opn->pn_cookie;
         pn->pn_dflags = opn->pn_dflags;

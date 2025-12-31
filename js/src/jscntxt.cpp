@@ -42,6 +42,9 @@
 #include "jsscope.h"
 #include "jsscript.h"
 #include "jsstr.h"
+#include "jsworkers.h"
+#include "ion/Ion.h"
+#include "ion/IonFrames.h"
 
 #ifdef JS_METHODJIT
 # include "assembler/assembler/MacroAssembler.h"
@@ -116,7 +119,7 @@ JSRuntime::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, RuntimeSizes *run
 {
     runtime->object = mallocSizeOf(this);
 
-    runtime->atomsTable = atomState.atoms.sizeOfExcludingThis(mallocSizeOf);
+    runtime->atomsTable = atoms.sizeOfExcludingThis(mallocSizeOf);
 
     runtime->contexts = 0;
     for (ContextIter acx(this); !acx.done(); acx.next())
@@ -162,6 +165,14 @@ JSRuntime::sizeOfExplicitNonHeap()
 void
 JSRuntime::triggerOperationCallback()
 {
+    /*
+     * Invalidate ionTop to trigger its over-recursion check. Note this must be
+     * set before interrupt, to avoid racing with js_InvokeOperationCallback,
+     * into a weird state where interrupt is stuck at 0 but ionStackLimit is
+     * MAXADDR.
+     */
+    ionStackLimit = -1;
+
     /*
      * Use JS_ATOMIC_SET in the hope that it ensures the write will become
      * immediately visible to other processors polling the flag.
@@ -368,7 +379,7 @@ js::NewContext(JSRuntime *rt, size_t stackChunkSize)
 #endif
         bool ok = rt->staticStrings.init(cx);
         if (ok)
-            ok = InitCommonAtoms(cx);
+            ok = InitCommonNames(cx);
         if (ok)
             ok = rt->initSelfHosting(cx);
 
@@ -424,8 +435,12 @@ js::DestroyContext(JSContext *cx, DestroyContextMode mode)
         for (CompartmentsIter c(rt); !c.done(); c.next())
             c->types.print(cx, false);
 
-        /* Unpin all common atoms before final GC. */
-        FinishCommonAtoms(rt);
+        /* Off thread ion compilations depend on atoms still existing. */
+        for (CompartmentsIter c(rt); !c.done(); c.next())
+            CancelOffThreadIonCompile(c, NULL);
+
+        /* Unpin all common names before final GC. */
+        FinishCommonNames(rt);
 
         /* Clear debugging state to remove GC roots. */
         for (CompartmentsIter c(rt); !c.done(); c.next())
@@ -1109,8 +1124,19 @@ js_InvokeOperationCallback(JSContext *cx)
      */
     JS_ATOMIC_SET(&rt->interrupt, 0);
 
+    /* IonMonkey sets its stack limit to NULL to trigger operaton callbacks. */
+    rt->resetIonStackLimit();
+
     if (rt->gcIsNeeded)
         GCSlice(rt, GC_NORMAL, rt->gcTriggerReason);
+
+#ifdef JS_ION
+    /*
+     * A worker thread may have set the callback after finishing an Ion
+     * compilation.
+     */
+    ion::AttachFinishedCompilations(cx);
+#endif
 
     /*
      * Important: Additional callbacks can occur inside the callback handler
@@ -1181,7 +1207,6 @@ JSContext::JSContext(JSRuntime *rt)
     stack(thisDuringConstruction()),
     parseMapPool_(NULL),
     cycleDetectorSet(thisDuringConstruction()),
-    argumentFormatMap(NULL),
     lastMessage(NULL),
     errorReporter(NULL),
     operationCallback(NULL),
@@ -1223,14 +1248,6 @@ JSContext::~JSContext()
 
     if (lastMessage)
         js_free(lastMessage);
-
-    /* Remove any argument formatters. */
-    JSArgumentFormatMap *map = argumentFormatMap;
-    while (map) {
-        JSArgumentFormatMap *temp = map;
-        map = map->next;
-        js_free(temp);
-    }
 
     JS_ASSERT(!resolvingList);
 }

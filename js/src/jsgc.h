@@ -43,6 +43,10 @@ class GCHelperThread;
 struct Shape;
 struct SliceBudget;
 
+namespace ion {
+    class IonCode;
+}
+
 namespace gc {
 
 enum State {
@@ -111,6 +115,7 @@ MapAllocToTraceKind(AllocKind thingKind)
         JSTRACE_STRING,     /* FINALIZE_SHORT_STRING */
         JSTRACE_STRING,     /* FINALIZE_STRING */
         JSTRACE_STRING,     /* FINALIZE_EXTERNAL_STRING */
+        JSTRACE_IONCODE,    /* FINALIZE_IONCODE */
     };
     return map[thingKind];
 }
@@ -419,6 +424,7 @@ struct ArenaLists {
     void queueStringsForSweep(FreeOp *fop);
     void queueShapesForSweep(FreeOp *fop);
     void queueScriptsForSweep(FreeOp *fop);
+    void queueIonCodeForSweep(FreeOp *fop);
 
     bool foregroundFinalize(FreeOp *fop, AllocKind thingKind, SliceBudget &sliceBudget);
     static void backgroundFinalize(FreeOp *fop, ArenaHeader *listHead, bool onBackgroundThread);
@@ -930,7 +936,8 @@ struct GCMarker : public JSTracer {
         XmlTag,
         ArenaTag,
         SavedValueArrayTag,
-        LastTag = SavedValueArrayTag
+        IonCodeTag,
+        LastTag = IonCodeTag
     };
 
     static const uintptr_t StackTagMask = 7;
@@ -967,7 +974,12 @@ struct GCMarker : public JSTracer {
     void pushXML(JSXML *xml) {
         pushTaggedPtr(XmlTag, xml);
     }
+
 #endif
+
+    void pushIonCode(ion::IonCode *code) {
+        pushTaggedPtr(IonCodeTag, code);
+    }
 
     uint32_t getMarkColor() const {
         return color;
@@ -1215,6 +1227,9 @@ GetObjectCompartment(JSObject *obj)
 {
     return GetGCThingCompartment(obj);
 }
+
+void
+PurgeJITCaches(JSCompartment *c);
 
 } /* namespace js */
 

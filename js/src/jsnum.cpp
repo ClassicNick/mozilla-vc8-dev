@@ -1136,7 +1136,8 @@ js_InitNumberClass(JSContext *cx, JSObject *obj)
         return NULL;
     numberProto->asNumber().setPrimitiveValue(0);
 
-    RootedFunction ctor(cx, global->createConstructor(cx, Number, CLASS_NAME(cx, Number), 1));
+    RootedFunction ctor(cx);
+    ctor = global->createConstructor(cx, Number, cx->runtime->atomState.NumberAtom, 1);
     if (!ctor)
         return NULL;
 
@@ -1272,7 +1273,7 @@ js_NumberToStringWithBase(JSContext *cx, double d, int base)
     return s;
 }
 
-JSString * JS_FASTCALL
+JSString *
 js_NumberToString(JSContext *cx, double d)
 {
     return js_NumberToStringWithBase(cx, d, 10);

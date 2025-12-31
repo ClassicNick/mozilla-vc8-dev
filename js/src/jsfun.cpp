@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=8 sw=4 et tw=99:
+/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=4 sw=4 et tw=99:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -51,12 +51,19 @@
 #include "jsatominlines.h"
 #include "jsfuninlines.h"
 #include "jsinferinlines.h"
+#include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
 #include "vm/ArgumentsObject-inl.h"
 #include "vm/ScopeObject-inl.h"
 #include "vm/Stack-inl.h"
+
+#ifdef JS_ION
+#include "ion/Ion.h"
+#include "ion/IonFrameIterator.h"
+#include "ion/IonFrameIterator-inl.h"
+#endif
 
 using namespace mozilla;
 using namespace js;
@@ -117,11 +124,24 @@ fun_getProperty(JSContext *cx, HandleObject obj_, HandleId id, MutableHandleValu
         if (!argsobj)
             return false;
 
+#ifdef JS_ION
+        // If this script hasn't been compiled yet, make sure it will never
+        // be compiled. IonMonkey does not guarantee |f.arguments| can be
+        // fully recovered, so we try to mitigate observing this behavior by
+        // detecting its use early.
+        JSScript *script = iter.script();
+        if (!script->hasIonScript())
+            ion::ForbidCompilation(script);
+#endif
+
         vp.setObject(*argsobj);
         return true;
     }
 
 #ifdef JS_METHODJIT
+    if (iter.isScript() && iter.isIon())
+        fp = NULL;
+
     if (JSID_IS_ATOM(id, cx->runtime->atomState.callerAtom) && fp && fp->prev()) {
         /*
          * If the frame was called from within an inlined frame, mark the
@@ -268,18 +288,18 @@ fun_resolve(JSContext *cx, HandleObject obj, HandleId id, unsigned flags,
 
     if (JSID_IS_ATOM(id, cx->runtime->atomState.classPrototypeAtom)) {
         /*
-         * Native or "built-in" functions do not have a .prototype property per
-         * ECMA-262, or (Object.prototype, Function.prototype, etc.) have that
-         * property created eagerly.
+         * Built-in functions do not have a .prototype property per ECMA-262,
+         * or (Object.prototype, Function.prototype, etc.) have that property
+         * created eagerly.
          *
          * ES5 15.3.4: the non-native function object named Function.prototype
          * does not have a .prototype property.
          *
          * ES5 15.3.4.5: bound functions don't have a prototype property. The
-         * isNative() test covers this case because bound functions are native
-         * functions by definition/construction.
+         * isBuiltin() test covers this case because bound functions are native
+         * (and thus built-in) functions by definition/construction.
          */
-        if (fun->isNative() || fun->isFunctionPrototype())
+        if (fun->isBuiltin() || fun->isFunctionPrototype())
             return true;
 
         if (!ResolveInterpretedFunctionPrototype(cx, fun))
@@ -852,18 +872,48 @@ js_fun_apply(JSContext *cx, unsigned argc, Value *vp)
          * N.B. Changes here need to be propagated to stubs::SplatApplyArgs.
          */
         /* Steps 4-6. */
-        unsigned length = cx->fp()->numActualArgs();
-        JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
+        StackFrame *fp = cx->fp();
 
-        if (!cx->stack.pushInvokeArgs(cx, length, &args))
-            return false;
+#ifdef JS_ION
+        // We do not want to use StackIter to abstract here because this is
+        // supposed to be a fast path as opposed to StackIter which is doing
+        // complex logic to settle on the next frame twice.
+        if (fp->beginsIonActivation()) {
+            ion::IonActivationIterator activations(cx);
+            ion::IonFrameIterator frame(activations);
+            JS_ASSERT(frame.isNative());
+            // Stop on the next Ion JS Frame.
+            ++frame;
+            ion::InlineFrameIterator iter(&frame);
 
-        /* Push fval, obj, and aobj's elements as args. */
-        args.setCallee(fval);
-        args.setThis(vp[2]);
+            unsigned length = iter.numActualArgs();
+            JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
 
-        /* Steps 7-8. */
-        cx->fp()->forEachUnaliasedActual(CopyTo(args.array()));
+            if (!cx->stack.pushInvokeArgs(cx, length, &args))
+                return false;
+
+            /* Push fval, obj, and aobj's elements as args. */
+            args.setCallee(fval);
+            args.setThis(vp[2]);
+
+            /* Steps 7-8. */
+            iter.forEachCanonicalActualArg(CopyTo(args.array()), 0, -1);
+        } else
+#endif
+        {
+            unsigned length = fp->numActualArgs();
+            JS_ASSERT(length <= StackSpace::ARGS_LENGTH_MAX);
+
+            if (!cx->stack.pushInvokeArgs(cx, length, &args))
+                return false;
+
+            /* Push fval, obj, and aobj's elements as args. */
+            args.setCallee(fval);
+            args.setThis(vp[2]);
+
+            /* Steps 7-8. */
+            fp->forEachUnaliasedActual(CopyTo(args.array()));
+        }
     } else {
         /* Step 3. */
         if (!vp[3].isObject()) {
@@ -1568,3 +1618,31 @@ js::ReportIncompatible(JSContext *cx, CallReceiver call)
         }
     }
 }
+
+bool
+JSObject::hasIdempotentProtoChain() const
+{
+    // Return false if obj (or an object on its proto chain) is non-native or
+    // has a resolve or lookup hook.
+    const JSObject *obj = this;
+    while (true) {
+        if (!obj->isNative())
+            return false;
+
+        JSResolveOp resolve = obj->getClass()->resolve;
+        if (resolve != JS_ResolveStub && resolve != (JSResolveOp) fun_resolve)
+            return false;
+
+        if (obj->getOps()->lookupProperty || obj->getOps()->lookupGeneric || obj->getOps()->lookupElement)
+            return false;
+
+        const JSObject *proto = obj->getProto();
+        if (!proto)
+            return true;
+        obj = proto;
+    }
+
+    JS_NOT_REACHED("Should not get here");
+    return false;
+}
+

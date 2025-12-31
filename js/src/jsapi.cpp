@@ -49,6 +49,7 @@
 #include "jsstr.h"
 #include "prmjtime.h"
 #include "jsweakmap.h"
+#include "jsworkers.h"
 #include "jswrapper.h"
 #include "jstypedarray.h"
 #include "jsxml.h"
@@ -69,6 +70,7 @@
 
 #include "jsatominlines.h"
 #include "jsinferinlines.h"
+#include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsscopeinlines.h"
 #include "jsscriptinlines.h"
@@ -82,6 +84,10 @@
 #if ENABLE_YARR_JIT
 #include "assembler/jit/ExecutableAllocator.h"
 #include "methodjit/Logging.h"
+#endif
+
+#ifdef JS_METHODJIT
+#include "ion/Ion.h"
 #endif
 
 using namespace js;
@@ -217,23 +223,6 @@ JS_GetEmptyString(JSRuntime *rt)
 {
     JS_ASSERT(rt->hasContexts());
     return rt->emptyString;
-}
-
-static JSBool
-TryArgumentFormatter(JSContext *cx, const char **formatp, JSBool fromJS, jsval **vpp, va_list *app)
-{
-    const char *format;
-    JSArgumentFormatMap *map;
-
-    format = *formatp;
-    for (map = cx->argumentFormatMap; map; map = map->next) {
-        if (!strncmp(format, map->format, map->length)) {
-            *formatp = format + map->length;
-            return map->formatter(cx, format, fromJS, vpp, app);
-        }
-    }
-    JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_CHAR, format);
-    return JS_FALSE;
 }
 
 static void
@@ -384,63 +373,12 @@ JS_ConvertArgumentsVA(JSContext *cx, unsigned argc, jsval *argv, const char *for
           case '*':
             break;
           default:
-            format--;
-            if (!TryArgumentFormatter(cx, &format, JS_TRUE, &sp,
-                                      JS_ADDRESSOF_VA_LIST(ap))) {
-                return JS_FALSE;
-            }
-            /* NB: the formatter already updated sp, so we continue here. */
-            continue;
+            JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_BAD_CHAR, format);
+            return JS_FALSE;
         }
         sp++;
     }
     return JS_TRUE;
-}
-
-JS_PUBLIC_API(JSBool)
-JS_AddArgumentFormatter(JSContext *cx, const char *format, JSArgumentFormatter formatter)
-{
-    size_t length;
-    JSArgumentFormatMap **mpp, *map;
-
-    length = strlen(format);
-    mpp = &cx->argumentFormatMap;
-    while ((map = *mpp) != NULL) {
-        /* Insert before any shorter string to match before prefixes. */
-        if (map->length < length)
-            break;
-        if (map->length == length && !strcmp(map->format, format))
-            goto out;
-        mpp = &map->next;
-    }
-    map = cx->pod_malloc<JSArgumentFormatMap>();
-    if (!map)
-        return JS_FALSE;
-    map->format = format;
-    map->length = length;
-    map->next = *mpp;
-    *mpp = map;
-out:
-    map->formatter = formatter;
-    return JS_TRUE;
-}
-
-JS_PUBLIC_API(void)
-JS_RemoveArgumentFormatter(JSContext *cx, const char *format)
-{
-    size_t length;
-    JSArgumentFormatMap **mpp, *map;
-
-    length = strlen(format);
-    mpp = &cx->argumentFormatMap;
-    while ((map = *mpp) != NULL) {
-        if (map->length == length && !strcmp(map->format, format)) {
-            *mpp = map->next;
-            js_free(map);
-            return;
-        }
-        mpp = &map->next;
-    }
 }
 
 JS_PUBLIC_API(JSBool)
@@ -666,7 +604,7 @@ JS_GetTypeName(JSContext *cx, JSType type)
 {
     if ((unsigned)type >= (unsigned)JSTYPE_LIMIT)
         return NULL;
-    return JS_TYPE_STR(type);
+    return TypeStrings[type];
 }
 
 JS_PUBLIC_API(JSBool)
@@ -916,7 +854,12 @@ JSRuntime::JSRuntime()
     noGCOrAllocationCheck(0),
 #endif
     inOOMReport(0),
-    jitHardening(false)
+    jitHardening(false),
+    ionTop(NULL),
+    ionJSContext(NULL),
+    ionStackLimit(0),
+    ionActivation(NULL),
+    ionReturnOverride_(MagicValue(JS_ARG_POISON))
 {
     /* Initialize infallibly first, so we can goto bad and JS_DestroyRuntime. */
     JS_INIT_CLIST(&contextList);
@@ -968,7 +911,7 @@ JSRuntime::init(uint32_t maxbytes)
     atomsCompartment->isSystemCompartment = true;
     atomsCompartment->setGCLastBytes(8192, 8192, GC_NORMAL);
 
-    if (!InitAtomState(this))
+    if (!InitAtoms(this))
         return false;
 
     if (!InitRuntimeNumberState(this))
@@ -985,6 +928,12 @@ JSRuntime::init(uint32_t maxbytes)
         return false;
 
 #ifdef JS_THREADSAFE
+# ifdef JS_ION
+    workerThreadState = this->new_<WorkerThreadState>();
+    if (!workerThreadState || !workerThreadState->init(this))
+        return false;
+# endif
+
     if (!sourceCompressorThread.init())
         return false;
 #endif
@@ -1017,6 +966,9 @@ JSRuntime::~JSRuntime()
     FreeScriptFilenames(this);
 
 #ifdef JS_THREADSAFE
+# ifdef JS_ION
+    js_delete(workerThreadState);
+# endif
     sourceCompressorThread.finish();
 #endif
 
@@ -1037,7 +989,7 @@ JSRuntime::~JSRuntime()
 #endif
 
     FinishRuntimeNumberState(this);
-    FinishAtomState(this);
+    FinishAtoms(this);
 
     if (dtoaState)
         js_DestroyDtoaState(dtoaState);
@@ -1146,6 +1098,11 @@ JS_NewRuntime(uint32_t maxbytes)
     JSRuntime *rt = js_new<JSRuntime>();
     if (!rt)
         return NULL;
+
+#if defined(JS_METHODJIT) && defined(JS_ION)
+    if (!ion::InitializeIon())
+        return NULL;
+#endif
 
     if (!rt->init(maxbytes)) {
         JS_DestroyRuntime(rt);
@@ -1840,7 +1797,7 @@ JS_InitStandardClasses(JSContext *cx, JSObject *objArg)
 #define CLASP(name)                 (&name##Class)
 #define TYPED_ARRAY_CLASP(type)     (&TypedArray::classes[TypedArray::type])
 #define EAGER_ATOM(name)            NAME_OFFSET(name)
-#define EAGER_CLASS_ATOM(name)      CLASS_NAME_OFFSET(name)
+#define EAGER_CLASS_ATOM(name)      NAME_OFFSET(name)
 #define EAGER_ATOM_AND_CLASP(name)  EAGER_CLASS_ATOM(name), CLASP(name)
 
 typedef struct JSStdName {
@@ -1999,7 +1956,7 @@ JS_ResolveStandardClass(JSContext *cx, JSObject *objArg, jsid id, JSBool *resolv
     idstr = JSID_TO_STRING(id);
 
     /* Check whether we're resolving 'undefined', and define it if so. */
-    atom = rt->atomState.typeAtoms[JSTYPE_VOID];
+    atom = rt->atomState.undefinedAtom;
     if (idstr == atom) {
         *resolved = true;
         RootedValue undefinedValue(cx, UndefinedValue());
@@ -2092,7 +2049,7 @@ JS_EnumerateStandardClasses(JSContext *cx, JSObject *objArg)
      * Check whether we need to bind 'undefined' and define it if so.
      * Since ES5 15.1.1.3 undefined can't be deleted.
      */
-    RootedPropertyName undefinedName(cx, cx->runtime->atomState.typeAtoms[JSTYPE_VOID]);
+    RootedPropertyName undefinedName(cx, cx->runtime->atomState.undefinedAtom);
     RootedValue undefinedValue(cx, UndefinedValue());
     if (!obj->nativeContainsName(cx, undefinedName) &&
         !JSObject::defineProperty(cx, obj, undefinedName, undefinedValue,
@@ -2201,7 +2158,7 @@ JS_EnumerateResolvedStandardClasses(JSContext *cx, JSObject *objArg, JSIdArray *
     }
 
     /* Check whether 'undefined' has been resolved and enumerate it if so. */
-    Rooted<PropertyName*> name(cx, rt->atomState.typeAtoms[JSTYPE_VOID]);
+    Rooted<PropertyName*> name(cx, rt->atomState.undefinedAtom);
     ida = EnumerateIfResolved(cx, obj, name, ida, &i, &found);
     if (!ida)
         return NULL;
@@ -2648,6 +2605,10 @@ JS_GetTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc, void *thing,
         name = "script";
         break;
 
+      case JSTRACE_IONCODE:
+        name = "ioncode";
+        break;
+
       case JSTRACE_SHAPE:
         name = "shape";
         break;
@@ -2721,6 +2682,7 @@ JS_GetTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc, void *thing,
             break;
           }
 
+          case JSTRACE_IONCODE:
           case JSTRACE_SHAPE:
           case JSTRACE_BASE_SHAPE:
           case JSTRACE_TYPE_OBJECT:
@@ -3335,7 +3297,7 @@ JS_HasInstance(JSContext *cx, JSObject *objArg, jsval valueArg, JSBool *bp)
     RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
     assertSameCompartment(cx, obj, value);
-    return HasInstance(cx, obj, &value, bp);
+    return HasInstance(cx, obj, value, bp);
 }
 
 JS_PUBLIC_API(void *)
@@ -7140,7 +7102,7 @@ JS_SetGCZeal(JSContext *cx, uint8_t zeal, uint32_t frequency)
                    "  3: GC when the window paints (browser only)\n"
                    "  4: Verify pre write barriers between instructions\n"
                    "  5: Verify pre write barriers between paints\n"
-                   "  6: Verify stack rooting (ignoring XML and Reflect)\n"
+                   "  6: Verify stack rooting (ignoring XML)\n"
                    "  7: Verify stack rooting (all roots)\n"
                    "  8: Incremental GC in two slices: 1) mark roots 2) finish collection\n"
                    "  9: Incremental GC in two slices: 1) mark all 2) new marking and finish\n"

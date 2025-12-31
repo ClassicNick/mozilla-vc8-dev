@@ -1,5 +1,5 @@
-/* -*- Mode: c++; c-basic-offset: 4; tab-width: 40; indent-tabs-mode: nil -*- */
-/* vim: set ts=40 sw=4 et tw=99: */
+/* -*- Mode: C++; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil -*- */
+/* vim: set ts=4 sw=4 et tw=99: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +35,8 @@
 #include "jstypedarrayinlines.h"
 
 #include "vm/GlobalObject-inl.h"
+
+#define ENABLE_TYPEDARRAY_MOVE
 
 using namespace mozilla;
 using namespace js;
@@ -820,12 +822,6 @@ ArrayBufferObject::obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp en
     return true;
 }
 
-JSType
-ArrayBufferObject::obj_typeOf(JSContext *cx, HandleObject obj)
-{
-    return JSTYPE_OBJECT;
-}
-
 /*
  * TypedArray
  *
@@ -1400,12 +1396,6 @@ class TypedArrayTemplate
         }
 
         return true;
-    }
-
-    static JSType
-    obj_typeOf(JSContext *cx, HandleObject obj)
-    {
-        return JSTYPE_OBJECT;
     }
 
     static JSObject *
@@ -3018,7 +3008,7 @@ Class js::ArrayBufferClass = {
         ArrayBufferObject::obj_deleteElement,
         ArrayBufferObject::obj_deleteSpecial,
         ArrayBufferObject::obj_enumerate,
-        ArrayBufferObject::obj_typeOf,
+        NULL,       /* typeOf          */
         NULL,       /* thisObject      */
     }
 };
@@ -3032,7 +3022,8 @@ JSFunctionSpec ArrayBufferObject::jsfuncs[] = {
  * TypedArray boilerplate
  */
 
-#define IMPL_TYPED_ARRAY_STATICS(_typedArray)                                  \
+#ifdef ENABLE_TYPEDARRAY_MOVE
+# define IMPL_TYPED_ARRAY_STATICS(_typedArray)                                 \
 JSFunctionSpec _typedArray::jsfuncs[] = {                                      \
     JS_FN("iterator", JS_ArrayIterator, 0, 0),                                 \
     JS_FN("subarray", _typedArray::fun_subarray, 2, JSFUN_GENERIC_NATIVE),     \
@@ -3040,6 +3031,15 @@ JSFunctionSpec _typedArray::jsfuncs[] = {                                      \
     JS_FN("move", _typedArray::fun_move, 3, JSFUN_GENERIC_NATIVE),             \
     JS_FS_END                                                                  \
 }
+#else
+# define IMPL_TYPED_ARRAY_STATICS(_typedArray)                                 \
+JSFunctionSpec _typedArray::jsfuncs[] = {                                      \
+    JS_FN("iterator", JS_ArrayIterator, 0, 0),                                 \
+    JS_FN("subarray", _typedArray::fun_subarray, 2, JSFUN_GENERIC_NATIVE),     \
+    JS_FN("set", _typedArray::fun_set, 2, JSFUN_GENERIC_NATIVE),               \
+    JS_FS_END                                                                  \
+}
+#endif
 
 #define IMPL_TYPED_ARRAY_JSAPI_CONSTRUCTORS(Name,NativeType)                                 \
   JS_FRIEND_API(JSObject *) JS_New ## Name ## Array(JSContext *cx, uint32_t nelements)       \
@@ -3189,7 +3189,7 @@ IMPL_TYPED_ARRAY_COMBINED_UNWRAPPERS(Float64, double, double)
         _typedArray::obj_deleteElement,                                        \
         _typedArray::obj_deleteSpecial,                                        \
         _typedArray::obj_enumerate,                                            \
-        _typedArray::obj_typeOf,                                               \
+        NULL,                /* typeOf      */                                 \
         NULL,                /* thisObject  */                                 \
     }                                                                          \
 }
@@ -3205,7 +3205,7 @@ InitTypedArrayClass(JSContext *cx)
 
     RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, ArrayType::class_constructor,
-                                     cx->runtime->atomState.classAtoms[ArrayType::key], 3);
+                                     ClassName(ArrayType::key, cx), 3);
     if (!ctor)
         return NULL;
 
@@ -3291,7 +3291,7 @@ InitArrayBufferClass(JSContext *cx)
         return NULL;
 
     RootedFunction ctor(cx, global->createConstructor(cx, ArrayBufferObject::class_constructor,
-                                                      CLASS_NAME(cx, ArrayBuffer), 1));
+                                                      cx->runtime->atomState.ArrayBufferAtom, 1));
     if (!ctor)
         return NULL;
 
@@ -3420,7 +3420,7 @@ DataViewObject::initClass(JSContext *cx)
         return NULL;
 
     RootedFunction ctor(cx, global->createConstructor(cx, DataViewObject::class_constructor,
-                                                      CLASS_NAME(cx, DataView), 3));
+                                                      cx->runtime->atomState.DataViewAtom, 3));
     if (!ctor)
         return NULL;
 

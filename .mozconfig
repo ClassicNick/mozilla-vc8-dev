@@ -34,8 +34,7 @@ ac_add_options --disable-webgl
 ac_add_options --disable-angle
 ac_add_options --disable-gamepad
 ac_add_options --disable-methodjit
-ac_add_options --disable-tracejit
-ac_add_options --disable-jit
+ac_add_options --disable-ion
 ac_add_options --enable-ipc
 ac_add_options --disable-webm
 ac_add_options --disable-ogg
