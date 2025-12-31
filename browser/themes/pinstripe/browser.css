@@ -1261,11 +1261,10 @@ window[tabsontop="false"] richlistitem[type~="action"][actiontype="switchtab"][s
 
 #socialUserDisplayName {
   -moz-appearance: none;
-  color: #fff;
   border: none;
   background-color: transparent;
-  margin-top: 0;
-  padding-top: 0;
+  margin: 1px;
+  padding: 0;
   font-size: 130%;
   font-weight: bold;
 }
@@ -3206,13 +3205,13 @@ html|*#gcli-output-frame {
 
 /* Responsive Mode */
 
-vbox[anonid=browserContainer][responsivemode] {
+.browserContainer[responsivemode] {
   background: #2a3643 url("chrome://browser/skin/devtools/responsive-background.png");
   box-shadow: 0 0 7px black inset;
   padding: 0 20px 20px 20px;
 }
 
-stack[anonid=browserStack][responsivemode] {
+.browserStack[responsivemode] {
   box-shadow: 0 0 7px black;
 }
 

@@ -6191,9 +6191,8 @@ var WebappsUI = {
 
   isMarketplace: function isMarketplace(aUri) {
     try {
-      return aUri.host == this.MARKETPLACE.URI.host;
+      return !aUri.schemeIs("about") && aUri.host == this.MARKETPLACE.URI.host;
     } catch(ex) {
-      // this can fail for uri's that don't have a host (i.e. about urls)
       console.log("could not find host for " + aUri.spec + ", " + ex);
     }
     return false;
@@ -6564,6 +6563,10 @@ let Reader = {
 
   DEBUG: 1,
 
+  // Don't try to parse the page if it has too many elements (for memory and
+  // performance reasons)
+  MAX_ELEMS_TO_PARSE: 3000,
+
   init: function Reader_init() {
     this.log("Init()");
     this._requests = {};
@@ -6672,8 +6675,7 @@ let Reader = {
       let url = tab.browser.contentWindow.location.href;
       let uri = Services.io.newURI(url, null, null);
 
-      if (!(uri.schemeIs("http") || uri.schemeIs("https") || uri.schemeIs("file"))) {
-        this.log("Not parsing URI scheme: " + uri.scheme);
+      if (!this._shouldCheckUri(uri)) {
         callback(null);
         return;
       }
@@ -6800,7 +6802,28 @@ let Reader = {
       dump("Reader: " + msg);
   },
 
+  _shouldCheckUri: function Reader_shouldCheckUri(uri) {
+    if ((uri.prePath + "/") === uri.spec) {
+      this.log("Not parsing home page: " + uri.spec);
+      return false;
+    }
+
+    if (!(uri.schemeIs("http") || uri.schemeIs("https") || uri.schemeIs("file"))) {
+      this.log("Not parsing URI scheme: " + uri.scheme);
+      return false;
+    }
+
+    return true;
+  },
+
   _readerParse: function Reader_readerParse(uri, doc, callback) {
+    let numTags = doc.getElementsByTagName("*").length;
+    if (numTags > this.MAX_ELEMS_TO_PARSE) {
+      this.log("Aborting parse for " + uri.spec + "; " + numTags + " elements found");
+      callback(null);
+      return;
+    }
+
     let worker = new ChromeWorker("readerWorker.js");
     worker.onmessage = function (evt) {
       let article = evt.data;

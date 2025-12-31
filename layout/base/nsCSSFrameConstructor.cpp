@@ -5511,7 +5511,7 @@ nsCSSFrameConstructor::ConstructFramesFromItem(nsFrameConstructorState& aState,
     // We don't do it for SVG text, since we might need to position and
     // measure the white space glyphs due to x/y/dx/dy attributes.
     if (AtLineBoundary(aIter) &&
-        !styleContext->GetStyleText()->NewlineIsSignificant() &&
+        !styleContext->GetStyleText()->WhiteSpaceOrNewlineIsSignificant() &&
         aIter.List()->ParentHasNoXBLChildren() &&
         !(aState.mAdditionalStateBits & NS_FRAME_GENERATED_CONTENT) &&
         (item.mFCData->mBits & FCDATA_IS_LINE_PARTICIPANT) &&
@@ -8178,10 +8178,9 @@ nsCSSFrameConstructor::ProcessRestyledFrames(nsStyleChangeList& aChangeList)
     // RepaintFrame changes can indicate changes in opacity etc which
     // can require plugin clipping to change. If we requested a reflow,
     // we don't need to do this since the reflow will do it for us.
-    nsIFrame* rootFrame = GetRootFrame();
     nsRootPresContext* rootPC = presContext->GetRootPresContext();
     if (rootPC) {
-      rootPC->RequestUpdatePluginGeometry(rootFrame);
+      rootPC->RequestUpdatePluginGeometry();
     }
   }
 

@@ -18,17 +18,6 @@
 #include <ieeefp.h>
 #endif
 
-//A trick to handle IEEE floating point exceptions on FreeBSD - E.D.
-#ifdef __FreeBSD__
-#include <ieeefp.h>
-#if !defined(__i386__) && !defined(__x86_64__)
-static fp_except_t allmask = FP_X_INV|FP_X_OFL|FP_X_UFL|FP_X_DZ|FP_X_IMP;
-#else
-static fp_except_t allmask = FP_X_INV|FP_X_OFL|FP_X_UFL|FP_X_DZ|FP_X_IMP|FP_X_DNML;
-#endif
-static fp_except_t oldmask = fpsetmask(~allmask);
-#endif
-
 #include "nsAString.h"
 #include "nsIStatefulFrame.h"
 #include "nsNodeInfoManager.h"
@@ -46,6 +35,8 @@ static fp_except_t oldmask = fpsetmask(~allmask);
 #include "nsThreadUtils.h"
 #include "nsIContent.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "gfxContext.h"
+#include "gfxFont.h"
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/GuardObjects.h"
@@ -113,6 +104,7 @@ struct nsIntMargin;
 class nsPIDOMWindow;
 class nsIDocumentLoaderFactory;
 class nsIDOMHTMLInputElement;
+class gfxTextObjectPaint;
 
 namespace mozilla {
 
@@ -1989,18 +1981,6 @@ public:
   static bool IsAutocompleteEnabled(nsIDOMHTMLInputElement* aInput);
 
   /**
-   * If the URI is chrome, return true unconditionarlly.
-   *
-   * Otherwise, get the contents of the given pref, and treat it as a
-   * comma-separated list of URIs.  Return true if the given URI's prepath is
-   * in the list, and false otherwise.
-   *
-   * Comparisons are case-insensitive, and whitespace between elements of the
-   * comma-separated list is ignored.
-   */
-  static bool URIIsChromeOrInPref(nsIURI *aURI, const char *aPref);
-
-  /**
    * This will parse aSource, to extract the value of the pseudo attribute
    * with the name specified in aName. See
    * http://www.w3.org/TR/xml-stylesheet/#NT-StyleSheetPI for the specification
@@ -2077,24 +2057,6 @@ public:
    */
   static nsresult IsUserIdle(uint32_t aRequestedIdleTimeInMS, bool* aUserIsIdle);
 
-  /** 
-   * Takes a window and a string to check prefs against. Assumes that
-   * the window is an app window, and that the pref is a comma
-   * seperated list of app urls that have permission to use whatever
-   * the preference refers to (for example, does the current window
-   * have access to mozTelephony). Chrome is always given permissions
-   * for the requested preference. Sets aAllowed based on preference.
-   *
-   * @param aWindow Current window asking for preference permission
-   * @param aPrefURL Preference name
-   * @param aAllowed [out] outparam on whether or not window is allowed
-   *                       to access pref
-   *
-   * @return NS_OK on successful preference lookup, error code otherwise
-   */
-  static nsresult IsOnPrefWhitelist(nsPIDOMWindow* aWindow,
-                                    const char* aPrefURL, bool *aAllowed);
-
   /**
    * Takes a selection, and a text control element (<input> or <textarea>), and
    * returns the offsets in the text content corresponding to the selection.
@@ -2112,6 +2074,13 @@ public:
                                         int32_t& aOutEndOffset);
 
   static nsIEditor* GetHTMLEditor(nsPresContext* aPresContext);
+
+  static bool PaintSVGGlyph(Element *aElement, gfxContext *aContext,
+                            gfxFont::DrawMode aDrawMode,
+                            gfxTextObjectPaint *aObjectPaint);
+
+  static bool GetSVGGlyphExtents(Element *aElement, const gfxMatrix& aSVGToAppSpace,
+                                 gfxRect *aResult);
 
 private:
   static bool InitializeEventTable();

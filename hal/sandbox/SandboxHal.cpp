@@ -195,6 +195,14 @@ SetTimezone(const nsCString& aTimezoneSpec)
   Hal()->SendSetTimezone(nsCString(aTimezoneSpec));
 } 
 
+nsCString
+GetTimezone()
+{
+  nsCString timezone;
+  Hal()->SendGetTimezone(&timezone);
+  return timezone;
+}
+
 void
 Reboot()
 {
@@ -296,6 +304,21 @@ class HalParent : public PHalParent
                 , public SwitchObserver
 {
 public:
+  virtual void
+  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE
+  {
+    // NB: you *must* unconditionally unregister your observer here,
+    // if it *may* be registered below.
+    hal::UnregisterBatteryObserver(this);
+    hal::UnregisterNetworkObserver(this);
+    hal::UnregisterScreenConfigurationObserver(this);
+    for (int32_t sensor = SENSOR_UNKNOWN + 1;
+         sensor < NUM_SENSOR_TYPE; ++sensor) {
+      hal::UnregisterSensorObserver(SensorType(sensor), this);
+    }
+    hal::UnregisterWakeLockObserver(this);
+  }
+
   virtual bool
   RecvVibrate(const InfallibleTArray<unsigned int>& pattern,
               const InfallibleTArray<uint64_t> &id,
@@ -529,6 +552,16 @@ public:
     }
     hal::SetTimezone(aTimezoneSpec);
     return true;  
+  }
+
+  virtual bool
+  RecvGetTimezone(nsCString *aTimezoneSpec) MOZ_OVERRIDE
+  {
+    if (!AppProcessHasPermission(this, "systemclock-read")) {
+      return false;
+    }
+    *aTimezoneSpec = hal::GetTimezone();
+    return true;
   }
 
   virtual bool

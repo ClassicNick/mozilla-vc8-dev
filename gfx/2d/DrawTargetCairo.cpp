@@ -196,6 +196,16 @@ GfxPatternToCairoPattern(const Pattern& aPattern, Float aAlpha)
       cairo_surface_t* surf = GetCairoSurfaceForSourceSurface(pattern.mSurface);
 
       pat = cairo_pattern_create_for_surface(surf);
+
+      // The pattern matrix is a matrix that transforms the pattern into user
+      // space. Cairo takes a matrix that converts from user space to pattern
+      // space. Cairo therefore needs the inverse.
+
+      cairo_matrix_t mat;
+      GfxMatrixToCairoMatrix(pattern.mMatrix, mat);
+      cairo_matrix_invert(&mat);
+      cairo_pattern_set_matrix(pat, &mat);
+
       cairo_pattern_set_filter(pat, GfxFilterToCairoFilter(pattern.mFilter));
       cairo_pattern_set_extend(pat, GfxExtendToCairoExtend(pattern.mExtendMode));
 
@@ -281,12 +291,13 @@ NeedIntermediateSurface(const Pattern& aPattern, const DrawOptions& aOptions)
 
 DrawTargetCairo::DrawTargetCairo()
   : mContext(nullptr)
+  , mPathObserver(nullptr)
 {
 }
 
 DrawTargetCairo::~DrawTargetCairo()
 {
-  MarkSnapshotsIndependent();
+  MarkSnapshotIndependent();
   if (mPathObserver) {
     mPathObserver->ForgetDrawTarget();
   }
@@ -305,14 +316,18 @@ DrawTargetCairo::GetSize()
 TemporaryRef<SourceSurface>
 DrawTargetCairo::Snapshot()
 {
+  if (mSnapshot) {
+    return mSnapshot;
+  }
+
   IntSize size = GetSize();
 
   cairo_content_t content = cairo_surface_get_content(mSurface);
-  RefPtr<SourceSurfaceCairo> surf = new SourceSurfaceCairo(mSurface, size,
-                                                           CairoContentToGfxFormat(content),
-                                                           this);
-  AppendSnapshot(surf);
-  return surf;
+  mSnapshot = new SourceSurfaceCairo(mSurface,
+                                     size,
+                                     CairoContentToGfxFormat(content),
+                                     this);
+  return mSnapshot;
 }
 
 void
@@ -687,11 +702,6 @@ DrawTargetCairo::CreatePathBuilder(FillRule aFillRule /* = FILL_WINDING */) cons
                                                           const_cast<DrawTargetCairo*>(this),
                                                           aFillRule);
 
-  // Creating a PathBuilder implicitly resets our mPathObserver, as it calls
-  // SetPathObserver() on us. Since this guarantees our old path is saved off,
-  // it's safe to reset the path here.
-  cairo_new_path(mContext);
-
   return builder;
 }
 
@@ -862,45 +872,21 @@ DrawTargetCairo::GetNativeSurface(NativeSurfaceType aType)
 }
 
 void
-DrawTargetCairo::MarkSnapshotsIndependent()
+DrawTargetCairo::MarkSnapshotIndependent()
 {
-  // Make a copy of the vector, since MarkIndependent implicitly modifies mSnapshots.
-  std::vector<SourceSurfaceCairo*> snapshots = mSnapshots;
-  for (std::vector<SourceSurfaceCairo*>::iterator iter = snapshots.begin();
-       iter != snapshots.end();
-       ++iter) {
-    (*iter)->MarkIndependent();
-  }
-}
-
-void
-DrawTargetCairo::AppendSnapshot(SourceSurfaceCairo* aSnapshot)
-{
-  mSnapshots.push_back(aSnapshot);
-}
-
-void
-DrawTargetCairo::RemoveSnapshot(SourceSurfaceCairo* aSnapshot)
-{
-  std::vector<SourceSurfaceCairo*>::iterator iter = std::find(mSnapshots.begin(),
-                                                              mSnapshots.end(),
-                                                              aSnapshot);
-  if (iter != mSnapshots.end()) {
-    mSnapshots.erase(iter);
+  if (mSnapshot) {
+    if (mSnapshot->refCount() > 1) {
+      // We only need to worry about snapshots that someone else knows about
+      mSnapshot->DrawTargetWillChange();
+    }
+    mSnapshot = nullptr;
   }
 }
 
 void
 DrawTargetCairo::WillChange(const Path* aPath /* = nullptr */)
 {
-  if (!mSnapshots.empty()) {
-    for (std::vector<SourceSurfaceCairo*>::iterator iter = mSnapshots.begin();
-         iter != mSnapshots.end(); ++iter) {
-      (*iter)->DrawTargetWillChange();
-    }
-    // All snapshots will now have copied data.
-    mSnapshots.clear();
-  }
+  MarkSnapshotIndependent();
 
   if (mPathObserver &&
       (!aPath || !mPathObserver->ContainsPath(aPath))) {
@@ -921,12 +907,6 @@ DrawTargetCairo::SetPathObserver(CairoPathContext* aPathObserver)
 void
 DrawTargetCairo::SetTransform(const Matrix& aTransform)
 {
-  // We're about to logically change our transformation. Our current path will
-  // need to change, because Cairo stores paths in device space.
-  if (mPathObserver) {
-    mPathObserver->MatrixWillChange(aTransform);
-  }
-
   mTransform = aTransform;
 
   cairo_matrix_t mat;

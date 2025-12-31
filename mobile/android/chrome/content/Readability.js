@@ -119,9 +119,10 @@ Readability.prototype = {
 
       // Prepath-rooted relative URI.
       if (uri[0] == "/")
-        return prePath + "/" + uri;
+        return prePath + uri;
 
-      // Standard relative URI; add entire path.
+      // Standard relative URI; add entire path. pathBase already includes a
+      // trailing "/".
       return pathBase + uri;
     }
 
@@ -1407,11 +1408,6 @@ Readability.prototype = {
    * @return void
    **/
   parse: function () {
-    let uri = this._uri;
-    if ((uri.prePath + "/") === uri.spec) {
-      return null;
-    }
-
     // Remove script tags from the document.
     this._removeScripts(this._doc);
 

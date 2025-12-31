@@ -230,7 +230,7 @@
                  aria-label="&social.sharePopup.portrait.arialabel;"/>
         </vbox>
         <vbox id="editSharePopupText">
-          <button id="socialUserDisplayName"
+          <button id="socialUserDisplayName" pack="start"
                   oncommand="SocialUI.showProfile();"/>
           <spacer flex="1"/>
           <label id="socialUserRecommendedText"
@@ -398,10 +398,6 @@
         </vbox>
       </hbox>
     </panel>
-
-    <tooltip id="urlTooltip">
-      <label crop="center" flex="1" class="tooltip-label"/>
-    </tooltip>
 
     <panel id="ctrlTab-panel" class="KUI-panel" hidden="true" norestorefocus="true" level="top">
       <hbox>
