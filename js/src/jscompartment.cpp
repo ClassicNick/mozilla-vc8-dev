@@ -66,7 +66,6 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     lastAnimationTime(0),
     regExps(rt),
     propertyTree(thisForCtor()),
-    emptyTypeObject(NULL),
     gcMallocAndFreeBytes(0),
     gcTriggerMallocAndFreeBytes(0),
     gcMallocBytes(0),
@@ -273,13 +272,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
         if (vp->isObject()) {
             RootedObject obj(cx, &vp->toObject());
             JS_ASSERT(obj->isCrossCompartmentWrapper());
-            if (obj->getParent() != global) {
-                do {
-                    if (!JSObject::setParent(cx, obj, global))
-                        return false;
-                    obj = obj->getProto();
-                } while (obj && obj->isCrossCompartmentWrapper());
-            }
+            JS_ASSERT(obj->getParent() == global);
         }
         return true;
     }
@@ -298,19 +291,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
 
     RootedObject obj(cx, &vp->toObject());
 
-    /*
-     * Recurse to wrap the prototype. Long prototype chains will run out of
-     * stack, causing an error in CHECK_RECURSE.
-     *
-     * Wrapping the proto before creating the new wrapper and adding it to the
-     * cache helps avoid leaving a bad entry in the cache on OOM. But note that
-     * if we wrapped both proto and parent, we would get infinite recursion
-     * here (since Object.prototype->parent->proto leads to Object.prototype
-     * itself).
-     */
-    RootedObject proto(cx, obj->getProto());
-    if (!wrap(cx, proto.address()))
-        return false;
+    JSObject *proto = Proxy::LazyProto;
 
     /*
      * We hand in the original wrapped object into the wrap hook to allow
@@ -560,9 +541,6 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepNewTypeObjectTable(newTypeObjects);
         sweepNewTypeObjectTable(lazyTypeObjects);
 
-		if ((js::types::TypeObject*)emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
-            emptyTypeObject = NULL;
-
         sweepBreakpoints(fop);
 
         if (global_ && !IsObjectMarked(&global_))
@@ -604,7 +582,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
             gcstats::AutoPhase ap2(rt->gcStats, gcstats::PHASE_DISCARD_TI);
 
             for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
-                JSScript *script = i.get<JSScript>();
+                RawScript script = i.get<JSScript>();
                 if (script->types) {
                     types::TypeScript::Sweep(fop, script);
 

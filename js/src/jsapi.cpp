@@ -842,7 +842,6 @@ JSRuntime::JSRuntime()
     thousandsSeparator(0),
     decimalSeparator(0),
     numGrouping(0),
-    waiveGCQuota(false),
     mathCache_(NULL),
     dtoaState(NULL),
     trustedPrincipals_(NULL),
@@ -859,6 +858,7 @@ JSRuntime::JSRuntime()
     ionJSContext(NULL),
     ionStackLimit(0),
     ionActivation(NULL),
+    ionPcScriptCache(NULL),
     ionReturnOverride_(MagicValue(JS_ARG_POISON))
 {
     /* Initialize infallibly first, so we can goto bad and JS_DestroyRuntime. */
@@ -1006,6 +1006,9 @@ JSRuntime::~JSRuntime()
     js_delete(jaegerRuntime_);
 #endif
     js_delete(execAlloc_);  /* Delete after jaegerRuntime_. */
+
+    if (ionPcScriptCache)
+        js_delete(ionPcScriptCache);
 }
 
 #ifdef JS_THREADSAFE
@@ -1576,7 +1579,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
         // When we remove origv from the wrapper map, its wrapper, newIdentity,
         // must immediately cease to be a cross-compartment wrapper. Neuter it.
         map.remove(p);
-        NukeCrossCompartmentWrapper(newIdentity);
+        NukeCrossCompartmentWrapper(cx, newIdentity);
 
         if (!newIdentity->swap(cx, target))
             return NULL;
@@ -1649,7 +1652,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
         // When we remove origv from the wrapper map, its wrapper, newWrapper,
         // must immediately cease to be a cross-compartment wrapper. Neuter it.
         map.remove(p);
-        NukeCrossCompartmentWrapper(newWrapper);
+        NukeCrossCompartmentWrapper(cx, newWrapper);
 
         if (!newWrapper->swap(cx, targetwrapper))
             return NULL;
@@ -1931,7 +1934,10 @@ JS_ResolveStandardClass(JSContext *cx, JSObject *objArg, jsid id, JSBool *resolv
             }
         }
 
-        if (!stdnm && !obj->getProto()) {
+        RootedObject proto(cx);
+        if (!JSObject::getProto(cx, obj, &proto))
+            return false;
+        if (!stdnm && !proto) {
             /*
              * Try even less frequently used names delegated from the global
              * object to Object.prototype, but only if the Object class hasn't
@@ -3265,10 +3271,14 @@ JS_GetInstancePrivate(JSContext *cx, JSObject *objArg, JSClass *clasp, jsval *ar
     return obj->getPrivate();
 }
 
-JS_PUBLIC_API(JSObject *)
-JS_GetPrototype(RawObject obj)
+JS_PUBLIC_API(JSBool)
+JS_GetPrototype(JSContext *cx, JSObject *objArg, JSObject **protop)
 {
-    return obj->getProto();
+    RootedObject obj(cx, objArg);
+    RootedObject proto(cx);
+    bool rv = JSObject::getProto(cx, obj, &proto);
+    *protop = proto;
+    return rv;
 }
 
 JS_PUBLIC_API(JSBool)
@@ -4530,7 +4540,7 @@ JS_Enumerate(JSContext *cx, JSObject *objArg)
 const uint32_t JSSLOT_ITER_INDEX = 0;
 
 static void
-prop_iter_finalize(FreeOp *fop, JSObject *obj)
+prop_iter_finalize(FreeOp *fop, RawObject obj)
 {
     void *pdata = obj->getPrivate();
     if (!pdata)
@@ -4544,7 +4554,7 @@ prop_iter_finalize(FreeOp *fop, JSObject *obj)
 }
 
 static void
-prop_iter_trace(JSTracer *trc, JSObject *obj)
+prop_iter_trace(JSTracer *trc, RawObject obj)
 {
     void *pdata = obj->getPrivate();
     if (!pdata)

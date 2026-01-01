@@ -91,10 +91,6 @@ public:
     DeallocPPluginStream(PPluginStreamParent* stream);
 
     virtual bool
-    AnswerNPN_GetValue_NPNVjavascriptEnabledBool(bool* value, NPError* result);
-    virtual bool
-    AnswerNPN_GetValue_NPNVisOfflineBool(bool* value, NPError* result);
-    virtual bool
     AnswerNPN_GetValue_NPNVnetscapeWindow(NativeWindowHandle* value,
                                           NPError* result);
     virtual bool

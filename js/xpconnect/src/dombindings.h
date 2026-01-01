@@ -117,8 +117,8 @@ private:
 
     struct Properties {
         jsid &id;
-        JSNative getter;
-        JSNative setter;
+        JSPropertyOp getter;
+        JSStrictPropertyOp setter;
     };
     struct Methods {
         jsid &id;
@@ -133,7 +133,7 @@ private:
 
     static JSObject *ensureExpandoObject(JSContext *cx, JSObject *obj);
 
-    static JSBool length_getter(JSContext *cx, unsigned argc, JS::Value *vp);
+    static JSBool length_getter(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
 
     static inline bool getItemAt(ListType *list, uint32_t i, IndexGetterType &item);
     static inline bool setItemAt(JSContext *cx, ListType *list, uint32_t i, IndexSetterType item);
@@ -151,14 +151,10 @@ private:
 
 public:
     static JSObject *create(JSContext *cx, JSObject *scope, ListType *list,
-                            nsWrapperCache* cache, bool *triedToWrap);
+                            nsWrapperCache* cache);
 
-    static JSObject *getPrototype(JSContext *cx, JSObject *receiver, bool *enabled);
-    static bool DefineDOMInterface(JSContext *cx, JSObject *receiver, bool *enabled)
-    {
-        return !!getPrototype(cx, receiver, enabled);
-    }
-
+    static JSObject *getPrototype(JSContext *cx, JSObject *receiver);
+    static bool DefineDOMInterface(JSContext *cx, JSObject *receiver, bool *enabled);
     bool getPropertyDescriptor(JSContext *cx, JSObject *proxy, jsid id, bool set,
                                JSPropertyDescriptor *desc);
     bool getOwnPropertyDescriptor(JSContext *cx, JSObject *proxy, jsid id, bool set,

@@ -505,9 +505,9 @@ js::ExecuteKernel(JSContext *cx, HandleScript script, JSObject &scopeChain, cons
         return false;
     TypeScript::SetThis(cx, script, efg.fp()->thisValue());
 
-    Probes::startExecution(cx, script);
+    Probes::startExecution(script);
     bool ok = RunScript(cx, script, efg.fp());
-    Probes::stopExecution(cx, script);
+    Probes::stopExecution(script);
 
     /* Propgate the return value out. */
     if (result)
@@ -1048,11 +1048,13 @@ IteratorNext(JSContext *cx, HandleObject iterobj, MutableHandleValue rval)
  * types of the pushed values are consistent with type inference information.
  */
 static inline void
-TypeCheckNextBytecode(JSContext *cx, JSScript *script, unsigned n, const FrameRegs &regs)
+TypeCheckNextBytecode(JSContext *cx, JSScript *script_, unsigned n, const FrameRegs &regs)
 {
 #ifdef DEBUG
     if (cx->typeInferenceEnabled() &&
-        n == GetBytecodeLength(regs.pc)) {
+        n == GetBytecodeLength(regs.pc))
+    {
+        RootedScript script(cx, script_);
         TypeScript::CheckBytecode(cx, script, regs.pc, regs.sp);
     }
 #endif
@@ -1884,8 +1886,9 @@ BEGIN_CASE(JSOP_BINDNAME)
     RootedPropertyName &name = rootName0;
     name = script->getName(regs.pc);
 
+    /* Assigning to an undeclared name adds a property to the global object. */
     RootedObject &scope = rootObject1;
-    if (!LookupNameForSet(cx, name, scopeChain, &scope))
+    if (!LookupNameWithGlobalDefault(cx, name, scopeChain, &scope))
         goto error;
 
     PUSH_OBJECT(*scope);
@@ -2553,9 +2556,7 @@ BEGIN_CASE(JSOP_IMPLICITTHIS)
     scopeObj = cx->stack.currentScriptedScopeChain();
 
     RootedObject &scope = rootObject1;
-    RootedObject &pobj = rootObject2;
-    RootedShape &prop = rootShape0;
-    if (!LookupName(cx, name, scopeObj, &scope, &pobj, &prop))
+    if (!LookupNameWithGlobalDefault(cx, name, scopeObj, &scope))
         goto error;
 
     Value v;
@@ -2585,7 +2586,7 @@ BEGIN_CASE(JSOP_CALLINTRINSIC)
 {
     RootedValue &rval = rootValue0;
 
-    if (!IntrinsicNameOperation(cx, script, regs.pc, rval.address()))
+    if (!IntrinsicNameOperation(cx, script, regs.pc, &rval))
         goto error;
 
     PUSH_COPY(rval);

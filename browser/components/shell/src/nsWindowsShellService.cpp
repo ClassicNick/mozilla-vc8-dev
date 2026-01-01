@@ -642,6 +642,7 @@ nsWindowsShellService::LaunchControlPanelDefaultPrograms()
 nsresult
 nsWindowsShellService::LaunchHTTPHandlerPane()
 {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   OPENASINFO info;
   info.pcszFile = L"http";
   info.pcszClass = NULL;
@@ -649,6 +650,9 @@ nsWindowsShellService::LaunchHTTPHandlerPane()
                      OAIF_URL_PROTOCOL |
                      OAIF_REGISTER_EXT;
   return DynSHOpenWithDialog(NULL, &info);
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
 }
 
 NS_IMETHODIMP

@@ -53,7 +53,7 @@ using namespace js::types;
 static const uint8_t ARRAYBUFFER_RESERVED_SLOTS = JSObject::MAX_FIXED_SLOTS - 1;
 
 static bool
-ValueIsLength(JSContext *cx, const Value &v, uint32_t *len)
+ValueIsLength(const Value &v, uint32_t *len)
 {
     if (v.isInt32()) {
         int32_t i = v.toInt32();
@@ -108,17 +108,6 @@ ToClampedIndex(JSContext *cx, const Value &v, uint32_t length, uint32_t *out)
  * access.  It can be created explicitly and passed to a TypedArray, or
  * can be created implicitly by constructing a TypedArray with a size.
  */
-
-/**
- * Walks up the prototype chain to find the actual ArrayBuffer data, if any.
- */
-static ArrayBufferObject *
-getArrayBuffer(JSObject *obj)
-{
-    while (obj && !obj->isArrayBuffer())
-        obj = obj->getProto();
-    return obj ? &obj->asArrayBuffer() : NULL;
-}
 
 JS_ALWAYS_INLINE bool
 IsArrayBuffer(const Value &v)
@@ -365,7 +354,7 @@ SetBufferLink(JSObject *view, JSObject *buffer)
 }
 
 void
-ArrayBufferObject::addView(JSContext *cx, RawObject view)
+ArrayBufferObject::addView(RawObject view)
 {
     // This view should never have been associated with a buffer before
     JS_ASSERT(BufferLink(view) == UNSET_BUFFER_LINK);
@@ -499,13 +488,13 @@ ArrayBufferObject::stealContents(JSContext *cx, JSObject *obj, void **contents)
     ArrayBufferObject::setElementsHeader(header, 0);
     *GetViewList(&buffer) = views;
     for (JSObject *view = views; view; view = NextView(view))
-        TypedArray::neuter(cx, view);
+        TypedArray::neuter(view);
 
     return true;
 }
 
 void
-ArrayBufferObject::obj_trace(JSTracer *trc, JSObject *obj)
+ArrayBufferObject::obj_trace(JSTracer *trc, RawObject obj)
 {
     /*
      * If this object changes, it will get marked via the private data barrier,
@@ -562,7 +551,6 @@ ArrayBufferObject::sweepAll(JSRuntime *rt)
         JSObject **views = GetViewList(&buffer->asArrayBuffer());
         JS_ASSERT(*views);
         JSObject *nextBuffer = BufferLink(*views);
-        SetBufferLink(*views, UNSET_BUFFER_LINK);
 
         // Rebuild the list of views of the ArrayBuffer, discarding dead views
         JSObject *prevLiveView = NULL;
@@ -577,6 +565,8 @@ ArrayBufferObject::sweepAll(JSRuntime *rt)
             view = nextView;
         }
         *views = prevLiveView;
+        if (*views)
+            SetBufferLink(*views, UNSET_BUFFER_LINK);
 
         buffer = nextBuffer;
     }
@@ -711,43 +701,31 @@ JSBool
 ArrayBufferObject::obj_getGeneric(JSContext *cx, HandleObject obj, HandleObject receiver,
                                   HandleId id, MutableHandleValue vp)
 {
-    RootedObject nobj(cx, getArrayBuffer(obj));
-    JS_ASSERT(nobj);
-
-    nobj = ArrayBufferDelegate(cx, nobj);
-    if (!nobj)
+    JS_ASSERT(obj->isArrayBuffer());
+    RootedObject delegate(cx, ArrayBufferDelegate(cx, obj));
+    if (!delegate)
         return false;
-    return baseops::GetProperty(cx, nobj, receiver, id, vp);
+    return baseops::GetProperty(cx, delegate, receiver, id, vp);
 }
 
 JSBool
 ArrayBufferObject::obj_getProperty(JSContext *cx, HandleObject obj,
                                    HandleObject receiver, HandlePropertyName name, MutableHandleValue vp)
 {
-    RootedObject nobj(cx, getArrayBuffer(obj));
-
-    if (!nobj) {
-        JSAutoByteString bs(cx, name);
-        if (!bs)
-            return false;
-        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
-                             JSMSG_INCOMPATIBLE_PROTO, "ArrayBuffer", bs.ptr(), "object");
-        return false;
-    }
-
-    nobj = ArrayBufferDelegate(cx, nobj);
-    if (!nobj)
+    JS_ASSERT(obj->isArrayBuffer());
+    RootedObject delegate(cx, ArrayBufferDelegate(cx, obj));
+    if (!delegate)
         return false;
     Rooted<jsid> id(cx, NameToId(name));
-    return baseops::GetProperty(cx, nobj, receiver, id, vp);
+    return baseops::GetProperty(cx, delegate, receiver, id, vp);
 }
 
 JSBool
 ArrayBufferObject::obj_getElement(JSContext *cx, HandleObject obj,
                                   HandleObject receiver, uint32_t index, MutableHandleValue vp)
 {
-    RootedObject buffer(cx, getArrayBuffer(obj));
-    RootedObject delegate(cx, ArrayBufferDelegate(cx, buffer));
+    JS_ASSERT(obj->isArrayBuffer());
+    RootedObject delegate(cx, ArrayBufferDelegate(cx, obj));
     if (!delegate)
         return false;
     return baseops::GetElement(cx, delegate, receiver, index, vp);
@@ -757,8 +735,8 @@ JSBool
 ArrayBufferObject::obj_getElementIfPresent(JSContext *cx, HandleObject obj, HandleObject receiver,
                                            uint32_t index, MutableHandleValue vp, bool *present)
 {
-    RootedObject buffer(cx, getArrayBuffer(obj));
-    RootedObject delegate(cx, ArrayBufferDelegate(cx, buffer));
+    JS_ASSERT(obj->isArrayBuffer());
+    RootedObject delegate(cx, ArrayBufferDelegate(cx, obj));
     if (!delegate)
         return false;
     return JSObject::getElementIfPresent(cx, delegate, receiver, index, vp, present);
@@ -930,7 +908,7 @@ ArrayBufferObject::obj_enumerate(JSContext *cx, HandleObject obj, JSIterateOp en
  */
 
 inline bool
-TypedArray::isArrayIndex(JSContext *cx, JSObject *obj, jsid id, uint32_t *ip)
+TypedArray::isArrayIndex(JSObject *obj, jsid id, uint32_t *ip)
 {
     uint32_t index;
     if (js_IdIsIndex(id, &index) && index < length(obj)) {
@@ -950,7 +928,7 @@ js::IsDataView(JSObject* obj)
 }
 
 void
-TypedArray::neuter(JSContext *cx, RawObject tarray)
+TypedArray::neuter(RawObject tarray)
 {
     JS_ASSERT(tarray->isTypedArray());
     tarray->setSlot(LENGTH_SLOT, Int32Value(0));
@@ -965,7 +943,7 @@ TypedArray::obj_lookupGeneric(JSContext *cx, HandleObject tarray, HandleId id,
 {
     JS_ASSERT(tarray->isTypedArray());
 
-    if (isArrayIndex(cx, tarray, id)) {
+    if (isArrayIndex(tarray, id)) {
         MarkNonNativePropertyFound(tarray, propp);
         objp.set(tarray);
         return true;
@@ -1172,7 +1150,7 @@ class TypedArrayTemplate
     }
 
     static void
-    obj_trace(JSTracer *trc, JSObject *obj)
+    obj_trace(JSTracer *trc, RawObject obj)
     {
         MarkSlot(trc, &obj->getFixedSlotRef(BUFFER_SLOT), "typedarray.buffer");
     }
@@ -1197,7 +1175,7 @@ class TypedArrayTemplate
         JS_ASSERT(tarray->isTypedArray());
 
         if (index < length(tarray)) {
-            copyIndexToValue(cx, tarray, index, vp);
+            copyIndexToValue(tarray, index, vp);
             return true;
         }
 
@@ -1257,7 +1235,7 @@ class TypedArrayTemplate
         // Fast-path the common case of index < length
         if (index < length(tarray)) {
             // this inline function is specialized for each type
-            copyIndexToValue(cx, tarray, index, vp);
+            copyIndexToValue(tarray, index, vp);
             *present = true;
             return true;
         }
@@ -1344,7 +1322,7 @@ class TypedArrayTemplate
 
         uint32_t index;
         // We can't just chain to js_SetPropertyHelper, because we're not a normal object.
-        if (!isArrayIndex(cx, tarray, id, &index)) {
+        if (!isArrayIndex(tarray, id, &index)) {
             // Silent ignore is better than an exception here, because
             // at some point we may want to support other properties on
             // these objects.  This is especially true when these arrays
@@ -1555,7 +1533,7 @@ class TypedArrayTemplate
         JS_ASSERT(obj->numFixedSlots() == DATA_SLOT);
 #endif
 
-        buffer->addView(cx, obj);
+        buffer->addView(obj);
 
         return obj;
     }
@@ -1591,7 +1569,7 @@ class TypedArrayTemplate
 
         /* () or (number) */
         uint32_t len = 0;
-        if (argc == 0 || ValueIsLength(cx, argv[0], &len))
+        if (argc == 0 || ValueIsLength(argv[0], &len))
             return fromLength(cx, len);
 
         /* (not an object) */
@@ -2011,8 +1989,7 @@ class TypedArrayTemplate
         *(static_cast<NativeType*>(viewData(obj)) + index) = val;
     }
 
-    static void copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
-                                 MutableHandleValue vp);
+    static void copyIndexToValue(JSObject *tarray, uint32_t index, MutableHandleValue vp);
 
     static JSObject *
     createSubarray(JSContext *cx, HandleObject tarray, uint32_t begin, uint32_t end)
@@ -2368,7 +2345,7 @@ ArrayBufferObject::createTypedArrayFromBuffer(JSContext *cx, unsigned argc, Valu
 // less than 32-bits in size.
 template<typename NativeType>
 void
-TypedArrayTemplate<NativeType>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<NativeType>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                                  MutableHandleValue vp)
 {
     JS_STATIC_ASSERT(sizeof(NativeType) < 4);
@@ -2379,7 +2356,7 @@ TypedArrayTemplate<NativeType>::copyIndexToValue(JSContext *cx, JSObject *tarray
 // and we need to specialize for 32-bit integers and floats
 template<>
 void
-TypedArrayTemplate<int32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<int32_t>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                               MutableHandleValue vp)
 {
     int32_t val = getIndex(tarray, index);
@@ -2388,7 +2365,7 @@ TypedArrayTemplate<int32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, u
 
 template<>
 void
-TypedArrayTemplate<uint32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<uint32_t>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                                MutableHandleValue vp)
 {
     uint32_t val = getIndex(tarray, index);
@@ -2397,7 +2374,7 @@ TypedArrayTemplate<uint32_t>::copyIndexToValue(JSContext *cx, JSObject *tarray, 
 
 template<>
 void
-TypedArrayTemplate<float>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<float>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                             MutableHandleValue vp)
 {
     float val = getIndex(tarray, index);
@@ -2418,7 +2395,7 @@ TypedArrayTemplate<float>::copyIndexToValue(JSContext *cx, JSObject *tarray, uin
 
 template<>
 void
-TypedArrayTemplate<double>::copyIndexToValue(JSContext *cx, JSObject *tarray, uint32_t index,
+TypedArrayTemplate<double>::copyIndexToValue(JSObject *tarray, uint32_t index,
                                              MutableHandleValue vp)
 {
     double val = getIndex(tarray, index);

@@ -67,6 +67,9 @@ onconnect = function(e) {
       case "flyout-visibility":
         testPort.postMessage({topic:"got-flyout-visibility", result: event.data.result});
         break;
+      case "test-flyout-close":
+        sidebarPort.postMessage({topic:"test-flyout-close"});
+        break;
       case "test-worker-chat":
         apiPort.postMessage({topic: "social.request-chat", data: event.data.data });
         break;
@@ -84,7 +87,7 @@ onconnect = function(e) {
       case "test-ambient-notification":
         let icon = {
           name: "testIcon",
-          iconURL: "chrome://branding/content/icon48.png",
+          iconURL: "chrome://browser/skin/Info.png",
           contentPanel: "https://example.com/browser/browser/base/content/test/social_panel.html",
           counter: 1
         };
