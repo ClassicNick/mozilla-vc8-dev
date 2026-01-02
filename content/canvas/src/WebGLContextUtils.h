@@ -8,6 +8,7 @@
 
 #include "WebGLContext.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/dom/BindingUtils.h"
 
 namespace mozilla {
 
@@ -22,7 +23,7 @@ WebGLContext::WebGLObjectAsJSValue(JSContext *cx, const WebGLObjectType *object,
     JS::Value v;
     JSObject* wrapper = GetWrapper();
     JSAutoCompartment ac(cx, wrapper);
-    if (!WrapNewBindingObject(cx, wrapper, const_cast<WebGLObjectType*>(object), &v)) {
+    if (!dom::WrapNewBindingObject(cx, wrapper, const_cast<WebGLObjectType*>(object), &v)) {
         rv.Throw(NS_ERROR_FAILURE);
         return JS::NullValue();
     }

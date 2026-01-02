@@ -64,7 +64,7 @@ namespace js {
 template <typename T> class Rooted;
 
 template <typename T>
-struct RootMethods { };
+struct RootMethods {};
 
 template <typename T>
 class HandleBase {};
@@ -589,6 +589,19 @@ public:
     }
 };
 
+/*
+ * AssertCanGC will assert if it is called inside of an AutoAssertNoGC region.
+ */
+#ifdef DEBUG
+JS_ALWAYS_INLINE void
+AssertCanGC()
+{
+    JS_ASSERT(!InNoGCScope());
+}
+#else
+# define AssertCanGC()
+#endif
+
 #if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
 extern void
 CheckStackRoots(JSContext *cx);
@@ -606,13 +619,11 @@ namespace js {
  */
 inline void MaybeCheckStackRoots(JSContext *cx, bool relax = true)
 {
-#ifdef DEBUG
-    JS_ASSERT(!InNoGCScope());
-# if defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
+    AssertCanGC();
+#if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
     if (relax && NeedRelaxedRootChecks())
         return;
     CheckStackRoots(cx);
-# endif
 #endif
 }
 
