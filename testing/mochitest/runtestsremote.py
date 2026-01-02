@@ -199,6 +199,7 @@ class MochiRemote(Mochitest):
         self.remoteProfile = options.remoteTestRoot + "/profile"
         self._automation.setRemoteProfile(self.remoteProfile)
         self.remoteLog = options.remoteLogFile
+        self.localLog = options.logFile
 
     def cleanup(self, manifest, options):
         self._dm.getFile(self.remoteLog, self.localLog)
@@ -283,8 +284,11 @@ class MochiRemote(Mochitest):
         manifest = Mochitest.buildProfile(self, options)
         self.localProfile = options.profilePath
         self._dm.removeDir(self.remoteProfile)
-        if self._dm.pushDir(options.profilePath, self.remoteProfile) == None:
-            raise devicemanager.FileError("Unable to copy profile to device.")
+        try:
+            self._dm.pushDir(options.profilePath, self.remoteProfile)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to copy profile to device."
+            raise
 
         options.profilePath = self.remoteProfile
         return manifest
@@ -295,8 +299,11 @@ class MochiRemote(Mochitest):
         options.profilePath = self.localProfile
         retVal = Mochitest.buildURLOptions(self, options, env)
         #we really need testConfig.js (for browser chrome)
-        if self._dm.pushDir(options.profilePath, self.remoteProfile) == None:
-            raise devicemanager.FileError("Unable to copy profile to device.")
+        try:
+            self._dm.pushDir(options.profilePath, self.remoteProfile)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to copy profile to device."
+            raise
 
         options.profilePath = self.remoteProfile
         options.logFile = self.localLog
@@ -308,8 +315,12 @@ class MochiRemote(Mochitest):
           return "NO_CHROME_ON_DROID"
         path = '/'.join(parts[:-1])
         manifest = path + "/chrome/" + os.path.basename(filename)
-        if self._dm.pushFile(filename, manifest) == False:
-            raise devicemanager.FileError("Unable to install Chrome files on device.")
+        try:
+            self._dm.pushFile(filename, manifest)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to install Chrome files on device."
+            raise
+
         return manifest
 
     def getLogFilePath(self, logFile):             
@@ -441,7 +452,7 @@ def main():
         options.extraPrefs.append('robocop.logfile="%s/robocop.log"' % deviceRoot)
 
         if (options.dm_trans == 'adb' and options.robocopPath):
-          dm.checkCmd(["install", "-r", os.path.join(options.robocopPath, "robocop.apk")])
+          dm._checkCmd(["install", "-r", os.path.join(options.robocopPath, "robocop.apk")])
 
         appname = options.app
         retVal = None

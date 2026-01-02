@@ -4225,7 +4225,7 @@ ENABLE_SYSTEM_EXTENSION_DIRS=1
 MOZ_BRANDING_DIRECTORY=
 MOZ_OFFICIAL_BRANDING=
 MOZ_FEEDS=1
-MOZ_FLEXBOX=
+MOZ_FLEXBOX=1
 MOZ_WEBAPP_RUNTIME=
 MOZ_JSDEBUGGER=1
 MOZ_AUTH_EXTENSION=1
@@ -5111,7 +5111,7 @@ fi
 
 
 dnl ========================================================
-dnl = Build with the Android Java compositor
+dnl = Build with the Android compositor
 dnl ========================================================
 if test -n "$MOZ_ANDROID_OMTC"; then
      dnl Do this if defined in confvars.sh

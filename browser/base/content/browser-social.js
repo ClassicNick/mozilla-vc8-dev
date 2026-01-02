@@ -535,9 +535,13 @@ let SocialShareButton = {
 var SocialToolbar = {
   // Called once, after window load, when the Social.provider object is initialized
   init: function SocialToolbar_init() {
-    document.getElementById("social-provider-button").setAttribute("image", Social.provider.iconURL);
+    this.button.setAttribute("image", Social.provider.iconURL);
     this.updateButton();
     this.updateProfile();
+  },
+
+  get button() {
+    return document.getElementById("social-provider-button");
   },
 
   updateButtonHiddenState: function SocialToolbar_updateButtonHiddenState() {
@@ -617,7 +621,10 @@ var SocialToolbar = {
         let box = document.createElement("box");
         box.classList.add("toolbarbutton-1");
         box.setAttribute("id", iconId);
-        box.addEventListener("mousedown", function (e) { SocialToolbar.showAmbientPopup(box); }, false);
+        box.addEventListener("mousedown", function (e) {
+          if (e.button == 0)
+            SocialToolbar.showAmbientPopup(box);
+        }, false);
         box.setAttribute("notificationFrameId", notificationFrameId);
         stack = document.createElement("stack");
         stack.setAttribute("id", stackId);
@@ -724,7 +731,7 @@ var SocialSidebar = {
   get chromeless() {
     let docElem = document.documentElement;
     return docElem.getAttribute('disablechrome') ||
-           docElem.getAttribute('chromehidden').indexOf("extrachrome") >= 0;
+           docElem.getAttribute('chromehidden').contains("toolbar");
   },
 
   // Whether the user has toggled the sidebar on (for windows where it can appear)

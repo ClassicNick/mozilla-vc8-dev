@@ -377,28 +377,6 @@ ShadowLayerForwarder::EndTransaction(InfallibleTArray<EditReply>* aReplies)
   return true;
 }
 
-bool
-ShadowLayerForwarder::ShadowDrawToTarget(gfxContext* aTarget) {
-
-  SurfaceDescriptor descriptorIn, descriptorOut;
-  AllocBuffer(aTarget->OriginalSurface()->GetSize(),
-              aTarget->OriginalSurface()->GetContentType(),
-              &descriptorIn);
-  if (!mShadowManager->SendDrawToSurface(descriptorIn, &descriptorOut)) {
-    return false;
-  }
-
-  nsRefPtr<gfxASurface> surface = OpenDescriptor(OPEN_READ_WRITE, descriptorOut);
-  aTarget->SetOperator(gfxContext::OPERATOR_SOURCE);
-  aTarget->DrawSurface(surface, surface->GetSize());
-
-  surface = nullptr;
-  DestroySharedSurface(&descriptorOut);
-
-  return true;
-}
-
-
 SharedMemory::SharedMemoryType
 OptimalShmemType()
 {
@@ -479,40 +457,6 @@ ShadowLayerForwarder::OpenDescriptor(OpenMode aMode,
   case SurfaceDescriptor::TShmem: {
     surf = gfxSharedImageSurface::Open(aSurface.get_Shmem());
     return surf.forget();
-  }
-  default:
-    NS_RUNTIMEABORT("unexpected SurfaceDescriptor type!");
-    return nullptr;
-  }
-}
-
-/*static*/ TemporaryRef<mozilla::gfx::DrawTarget>
-ShadowLayerForwarder::OpenDescriptorForDrawTarget(OpenMode aMode,
-                                                  const SurfaceDescriptor& aSurface)
-{
-  switch (aSurface.type()) {
-  case SurfaceDescriptor::TShmem: {
-    mozilla::ipc::Shmem shm = aSurface.get_Shmem();
-    if (!shm.IsWritable()) {
-      NS_RUNTIMEABORT("shmem not writable!");
-      return nullptr;
-    }
-
-    SharedImageInfo* shmInfo = gfxSharedImageSurface::GetShmInfoPtr(shm);
-    unsigned char* data = shm.get<unsigned char>();
-
-    gfxASurface::gfxImageFormat imgFormat =
-        static_cast<gfxASurface::gfxImageFormat>(shmInfo->format);
-
-    mozilla::gfx::SurfaceFormat surfFormat =
-      mozilla::gfx::SurfaceFormatForImageFormat(imgFormat);
-
-    mozilla::gfx::IntSize size(shmInfo->width, shmInfo->height);
-
-    int stride = gfxASurface::FormatStrideForWidth(imgFormat, size.width);
-
-    return gfxPlatform::GetPlatform()->CreateDrawTargetForData(data, size,
-                                                               stride, surfFormat);
   }
   default:
     NS_RUNTIMEABORT("unexpected SurfaceDescriptor type!");
@@ -742,15 +686,6 @@ AutoOpenSurface::Get()
     mSurface = ShadowLayerForwarder::OpenDescriptor(mMode, mDescriptor);
   }
   return mSurface.get();
-}
-
-mozilla::gfx::DrawTarget*
-AutoOpenSurface::GetDrawTarget()
-{
-  if (!mDrawTarget) {
-    mDrawTarget = ShadowLayerForwarder::OpenDescriptorForDrawTarget(mMode, mDescriptor);
-  }
-  return mDrawTarget.get();
 }
 
 gfxImageSurface*

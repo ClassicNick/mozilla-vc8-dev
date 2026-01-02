@@ -356,7 +356,7 @@ var BrowserApp = {
 
 #ifdef MOZ_SAFE_BROWSING
     // Bug 778855 - Perf regression if we do this here. To be addressed in bug 779008.
-    setTimeout(function() { SafeBrowsing.init(); }, 2000);
+    setTimeout(function() { SafeBrowsing.init(); }, 5000);
 #endif
   },
 
@@ -502,7 +502,8 @@ var BrowserApp = {
            contentDisposition = "";
            type = "";
         }
-        ContentAreaUtils.internalSave(aTarget.currentURI.spec, null, null, contentDisposition, type, false, "SaveImageTitle", null, aTarget.ownerDocument.documentURIObject, true, null);
+        ContentAreaUtils.internalSave(aTarget.currentURI.spec, null, null, contentDisposition, type, false, "SaveImageTitle", null,
+                                      aTarget.ownerDocument.documentURIObject, aTarget.ownerDocument, true, null);
       });
   },
 

@@ -9,7 +9,6 @@
 #define mozilla_layers_ShadowLayers_h 1
 
 #include "gfxASurface.h"
-#include "mozilla/gfx/2D.h"
 #include "GLDefs.h"
 
 #include "ImageLayers.h"
@@ -227,11 +226,6 @@ public:
   bool EndTransaction(InfallibleTArray<EditReply>* aReplies);
 
   /**
-   * Composite ShadowLayerManager's layer tree into aTarget.
-   */
-  bool ShadowDrawToTarget(gfxContext* aTarget);
-
-  /**
    * Set an actor through which layer updates will be pushed.
    */
   void SetShadowManager(PLayersChild* aShadowManager)
@@ -368,9 +362,6 @@ private:
 
   static already_AddRefed<gfxASurface>
   OpenDescriptor(OpenMode aMode, const SurfaceDescriptor& aSurface);
-
-  static TemporaryRef<mozilla::gfx::DrawTarget>
-  OpenDescriptorForDrawTarget(OpenMode aMode, const SurfaceDescriptor& aSurface);
 
   static already_AddRefed<gfxASurface>
   PlatformOpenDescriptor(OpenMode aMode, const SurfaceDescriptor& aDescriptor);

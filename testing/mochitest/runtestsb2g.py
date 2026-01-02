@@ -19,6 +19,7 @@ from runtests import Mochitest
 from runtests import MochitestOptions
 from runtests import MochitestServer
 
+import devicemanager
 import devicemanagerADB
 import manifestparser
 
@@ -215,9 +216,9 @@ class B2GMochitest(Mochitest):
 
     def copyRemoteFile(self, src, dest):
         if self._dm.useDDCopy:
-            self._dm.checkCmdAs(['shell', 'dd', 'if=%s' % src,'of=%s' % dest])
+            self._dm._checkCmdAs(['shell', 'dd', 'if=%s' % src,'of=%s' % dest])
         else:
-            self._dm.checkCmdAs(['shell', 'cp', src, dest])
+            self._dm._checkCmdAs(['shell', 'cp', src, dest])
 
     def origUserJSExists(self):
         return self._dm.fileExists('/data/local/user.js.orig')
@@ -229,7 +230,7 @@ class B2GMochitest(Mochitest):
 
         if not options.emulator:
             # Remove the test profile
-            self._dm.checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
+            self._dm._checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
 
             if self.origUserJSExists():
                 # Restore the original user.js
@@ -387,9 +388,12 @@ user_pref("network.dns.localDomains","app://system.gaiamobile.org");\n
         f.close()
 
         # Copy the profile to the device.
-        self._dm.checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
-        if self._dm.pushDir(options.profilePath, self.remoteProfile) == None:
-            raise devicemanager.FileError("Unable to copy profile to device.")
+        self._dm._checkCmdAs(['shell', 'rm', '-r', self.remoteProfile])
+        try:
+            self._dm.pushDir(options.profilePath, self.remoteProfile)
+        except devicemanager.DMError:
+            print "Automation Error: Unable to copy profile to device."
+            raise
 
         # In B2G, user.js is always read from /data/local, not the profile
         # directory.  Backup the original user.js first so we can restore it.

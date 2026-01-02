@@ -261,6 +261,8 @@ pref("gfx.content.azure.enabled", true);
 #else
 #ifdef XP_MACOSX
 pref("gfx.canvas.azure.backends", "cg");
+// Accelerated cg canvas where available (10.7+)
+pref("gfx.canvas.azure.accelerated", false);
 #else
 pref("gfx.canvas.azure.backends", "cairo");
 pref("gfx.content.azure.backends", "cairo");
@@ -3539,7 +3541,7 @@ pref("image.http.accept", "image/png,image/*;q=0.8,*/*;q=0.5");
 #ifdef XP_MACOSX
 pref("image.high_quality_downscaling.enabled", false);
 #else
-pref("image.high_quality_downscaling.enabled", true);
+pref("image.high_quality_downscaling.enabled", false);
 #endif
 
 // The minimum percent downscaling we'll use high-quality downscaling on,
@@ -3673,10 +3675,7 @@ pref("network.buffer.cache.size",  32768);
 // Desktop Notification
 pref("notification.feature.enabled", false);
 
-// Alert sliding effect
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 4000);
+// Alert animation effect, name is disableSlidingEffect for backwards-compat.
 pref("alerts.disableSlidingEffect", false);
 
 // DOM full-screen API.

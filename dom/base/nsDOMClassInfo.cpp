@@ -550,6 +550,10 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "mozilla/Likely.h"
 #include "nsDebug.h"
 
+#ifdef MOZ_WEBRTC
+#include "nsIDOMDataChannel.h"
+#endif
+
 #undef None // something included above defines this preprocessor symbol, maybe Xlib headers
 #include "WebGLContext.h"
 #include "nsICanvasRenderingContextInternal.h"
@@ -1555,49 +1559,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA_WITH_NAME(MathMLElement, Element, nsElementSH,
                                      ELEMENT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA(WebGLBuffer, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLTexture, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLProgram, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLShader, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLFramebuffer, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLRenderbuffer, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLUniformLocation,
-                           nsNewDOMBindingNoWrapperCacheSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLShaderPrecisionFormat, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(WebGLActiveInfo, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtension, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionStandardDerivatives, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionTextureFilterAnisotropic, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionLoseContext, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTextureS3TC, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTextureATC, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionCompressedTexturePVRTC, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
-  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionDepthTexture, WebGLExtensionSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_ADDPROPERTY)
 
   NS_DEFINE_CLASSINFO_DATA(PaintRequest, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1736,6 +1699,11 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   NS_DEFINE_CLASSINFO_DATA(MozTimeManager, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
+#ifdef MOZ_WEBRTC
+  NS_DEFINE_CLASSINFO_DATA(DataChannel, nsEventTargetSH,
+                           EVENTTARGET_SCRIPTABLE_FLAGS)
+#endif
 };
 
 // Objects that should be constructable through |new Name();|
@@ -4236,72 +4204,8 @@ nsDOMClassInfo::Init()
                                         nsDOMTouchEvent::PrefEnabled())
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(WebGLBuffer, nsIWebGLBuffer)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLBuffer)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLTexture, nsIWebGLTexture)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLTexture)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLProgram, nsIWebGLProgram)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLProgram)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLShader, nsIWebGLShader)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLShader)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLFramebuffer, nsIWebGLFramebuffer)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLFramebuffer)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLRenderbuffer, nsIWebGLRenderbuffer)
-     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLRenderbuffer)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLShaderPrecisionFormat, nsIWebGLShaderPrecisionFormat)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLShaderPrecisionFormat)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLUniformLocation, nsIWebGLUniformLocation)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLUniformLocation)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(WebGLActiveInfo, nsIWebGLActiveInfo)
     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLActiveInfo)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtension, nsIWebGLExtension)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtension)
-  DOM_CLASSINFO_MAP_END
-  
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionStandardDerivatives, nsIWebGLExtensionStandardDerivatives)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionStandardDerivatives)
-  DOM_CLASSINFO_MAP_END
-  
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionTextureFilterAnisotropic, nsIWebGLExtensionTextureFilterAnisotropic)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionTextureFilterAnisotropic)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionLoseContext, nsIWebGLExtensionLoseContext)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionLoseContext)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTextureS3TC, nsIWebGLExtensionCompressedTextureS3TC)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTextureS3TC)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTextureATC, nsIWebGLExtensionCompressedTextureATC)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTextureATC)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionCompressedTexturePVRTC, nsIWebGLExtensionCompressedTexturePVRTC)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionCompressedTexturePVRTC)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionDepthTexture, nsIWebGLExtensionDepthTexture)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionDepthTexture)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(PaintRequest, nsIDOMPaintRequest)
@@ -4578,6 +4482,13 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(MozTimeManager, nsIDOMMozTimeManager)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozTimeManager)
   DOM_CLASSINFO_MAP_END
+
+#ifdef MOZ_WEBRTC
+  DOM_CLASSINFO_MAP_BEGIN(DataChannel, nsIDOMDataChannel)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMDataChannel)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
+#endif
 
 #ifdef DEBUG
   {
@@ -10847,35 +10758,6 @@ nsSVGStringListSH::GetStringAt(nsISupports *aNative, int32_t aIndex,
     rv = NS_OK;
   }
   return rv;
-}
-
-NS_IMETHODIMP
-WebGLExtensionSH::AddProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                              JSObject *obj, jsid id, jsval *vp, bool *_retval)
-{
-  WebGLExtensionSH::PreserveWrapper(GetNative(wrapper, obj));
-
-  return NS_OK;
-}
-
-void
-WebGLExtensionSH::PreserveWrapper(nsISupports *aNative)
-{
-  WebGLExtension* ext = static_cast<WebGLExtension*>(aNative);
-  nsContentUtils::PreserveWrapper(aNative, ext);
-}
-
-nsresult
-WebGLExtensionSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
-                            JSObject *globalObj, JSObject **parentObj)
-{
-  *parentObj = globalObj;
-
-  WebGLExtension *ext = static_cast<WebGLExtension*>(nativeObj);
-  WebGLContext *webgl = ext->Context();
-  nsINode *node = webgl->GetParentObject();
-
-  return WrapNativeParent(cx, globalObj, node, parentObj);
 }
 
 nsresult

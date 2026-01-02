@@ -263,8 +263,10 @@ nsNPAPIPlugin::RunPluginOOP(const nsPluginTag *aPluginTag)
   // pref for them to disable oop Flash (refer to bug 785047 for details).
   bool useA11yPref = false;
 
+#ifdef XP_WIN
   useA11yPref =  a11y::Compatibility::IsJAWS();
-  #endif
+#endif
+#endif
 
 #ifdef XP_WIN
   // On Windows Vista+, we force Flash to run in OOPP mode because Adobe

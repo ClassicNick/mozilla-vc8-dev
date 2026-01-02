@@ -21,6 +21,7 @@ EXPORTS = \
 	CustomQS_Canvas2D.h \
 	WebGLContext.h \
 	WebGLElementArrayCache.h \
+	WebGLExtensions.h \
 	$(NULL)
 
 EXPORTS_NAMESPACES = mozilla/dom
@@ -42,20 +43,28 @@ CPPSRCS	= \
 ifdef MOZ_WEBGL
 
 CPPSRCS += \
+	WebGLBuffer.cpp \
 	WebGLContext.cpp \
 	WebGLContextGL.cpp \
 	WebGLContextUtils.cpp \
 	WebGLContextReporter.cpp \
 	WebGLContextValidate.cpp \
-	WebGLExtensionStandardDerivatives.cpp \
-	WebGLExtensionTextureFilterAnisotropic.cpp \
-	WebGLExtensionLoseContext.cpp \
-	WebGLTexelConversions.cpp \
-	WebGLExtensionCompressedTextureS3TC.cpp \
+	WebGLElementArrayCache.cpp \
+	WebGLExtensionBase.cpp \
 	WebGLExtensionCompressedTextureATC.cpp \
 	WebGLExtensionCompressedTexturePVRTC.cpp \
+	WebGLExtensionCompressedTextureS3TC.cpp \
 	WebGLExtensionDepthTexture.cpp \
-	WebGLElementArrayCache.cpp \
+	WebGLExtensionLoseContext.cpp \
+	WebGLExtensionStandardDerivatives.cpp \
+	WebGLExtensionTextureFilterAnisotropic.cpp \
+	WebGLExtensionTextureFloat.cpp \
+	WebGLFramebuffer.cpp \
+	WebGLProgram.cpp \
+	WebGLRenderbuffer.cpp \
+	WebGLShader.cpp \
+	WebGLTexelConversions.cpp \
+	WebGLTexture.cpp \
 	$(NULL)
 
 DEFINES += -DUSE_ANGLE
