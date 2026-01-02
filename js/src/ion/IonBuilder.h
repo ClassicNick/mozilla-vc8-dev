@@ -370,6 +370,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineArray(uint32 argc, bool constructing);
     InliningStatus inlineArrayPopShift(MArrayPopShift::Mode mode, uint32 argc, bool constructing);
     InliningStatus inlineArrayPush(uint32 argc, bool constructing);
+    InliningStatus inlineArrayConcat(uint32 argc, bool constructing);
 
     // Math natives.
     InliningStatus inlineMathAbs(uint32 argc, bool constructing);
@@ -378,6 +379,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineMathSqrt(uint32 argc, bool constructing);
     InliningStatus inlineMathMinMax(bool max, uint32 argc, bool constructing);
     InliningStatus inlineMathPow(uint32 argc, bool constructing);
+    InliningStatus inlineMathRandom(uint32 argc, bool constructing);
     InliningStatus inlineMathFunction(MMathFunction::Function function, uint32 argc,
                                       bool constructing);
 

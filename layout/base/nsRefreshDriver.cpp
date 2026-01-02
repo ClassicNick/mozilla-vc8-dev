@@ -51,7 +51,7 @@ using namespace mozilla;
 static PRLogModuleInfo *gLog = nullptr;
 #define LOG(...) PR_LOG(gLog, PR_LOG_NOTICE, (__VA_ARGS__))
 #else
-#define LOG(...) do { } while(0)
+#define LOG(a) do { } while(0)
 #endif
 
 #define DEFAULT_FRAME_RATE 60
