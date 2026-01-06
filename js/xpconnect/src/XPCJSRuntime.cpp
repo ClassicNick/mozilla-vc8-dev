@@ -557,7 +557,7 @@ ReleaseSliceNow(int32_t slice, void* data)
 {
     nsTArray<nsISupports *>* items =
         static_cast<nsTArray<nsISupports *>*>(data);
-    uint32_t counter = 0;
+    int32_t counter = 0;
     while (1) {
         uint32_t count = items->Length();
         if (!count) {
@@ -1615,9 +1615,21 @@ ReportCompartmentStats(const JS::CompartmentStats &cStats,
                   "Memory used by the IonMonkey JIT for compilation data: "
                   "IonScripts.");
 
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("compartment-object"),
+                  cStats.compartmentObject,
+                  "Memory used for the JSCompartment object itself.");
+
     CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("cross-compartment-wrappers"),
                   cStats.crossCompartmentWrappers,
                   "Memory used by cross-compartment wrappers.");
+
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("regexp-compartment"),
+                  cStats.regexpCompartment,
+                  "Memory used by the regexp compartment.");
+
+    CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("debuggees-set"),
+                  cStats.debuggeesSet,
+                  "Memory used by the debuggees set.");
 
     CREPORT_BYTES(cJSPathPrefix + NS_LITERAL_CSTRING("type-inference/script-main"),
                   cStats.typeInferenceSizes.scripts,
@@ -1731,11 +1743,15 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   "Memory allocated by one of the JITs to hold the "
                   "runtime's code, but which is currently unused.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack-committed"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stackCommitted,
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stack,
                   "Memory used for the JS call stack.  This is the committed "
-                  "portion of the stack; the uncommitted portion is not "
-                  "measured because it hardly costs anything.");
+                  "portion of the stack on Windows; on *nix, it is the resident "
+                  "portion of the stack.  Therefore, on *nix, if part of the "
+                  "stack is swapped out to disk, we do not count it here.\n\n"
+                  "Note that debug builds usually have stack poisoning enabled, "
+                  "which causes the whole stack to be committed (and likely "
+                  "resident).");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/gc-marker"),
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.gcMarker,
@@ -1752,12 +1768,6 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/script-sources"),
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.scriptSources,
                   "Memory use for storing JavaScript source code.");
-
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/compartment-objects"),
-                  nsIMemoryReporter::KIND_HEAP, rtStats.runtime.compartmentObjects,
-                  "Memory used for JSCompartment objects.  These are fairly "
-                  "small and all the same size, so they're not worth reporting "
-                  "on a per-compartment basis.");
 
     if (rtTotalOut) {
         *rtTotalOut = rtTotal;

@@ -64,7 +64,7 @@ class nsIParserService;
 class nsIIOService;
 class nsIURI;
 class imgIContainer;
-class imgIDecoderObserver;
+class imgINotificationObserver;
 class imgIRequest;
 class imgILoader;
 class imgICache;
@@ -199,14 +199,6 @@ public:
    * Get a JSContext from the document's scope object.
    */
   static JSContext* GetContextFromDocument(nsIDocument *aDocument);
-
-  /**
-   * When a document's scope changes (e.g., from document.open(), call this
-   * function to move all content wrappers from the old scope to the new one.
-   */
-  static nsresult ReparentContentWrappersInScope(JSContext *cx,
-                                                 nsIScriptGlobalObject *aOldScope,
-                                                 nsIScriptGlobalObject *aNewScope);
 
   static bool     IsCallerChrome();
 
@@ -661,7 +653,7 @@ public:
                             nsIDocument* aLoadingDocument,
                             nsIPrincipal* aLoadingPrincipal,
                             nsIURI* aReferrer,
-                            imgIDecoderObserver* aObserver,
+                            imgINotificationObserver* aObserver,
                             int32_t aLoadFlags,
                             imgIRequest** aRequest);
 
@@ -1295,8 +1287,9 @@ public:
 #ifdef DEBUG
   static bool AreJSObjectsHeld(void* aScriptObjectHolder); 
 
-  static void CheckCCWrapperTraversal(nsISupports* aScriptObjectHolder,
-                                      nsWrapperCache* aCache);
+  static void CheckCCWrapperTraversal(void* aScriptObjectHolder,
+                                      nsWrapperCache* aCache,
+                                      nsScriptObjectTracer* aTracer);
 #endif
 
   static void PreserveWrapper(nsISupports* aScriptObjectHolder,
@@ -1309,15 +1302,23 @@ public:
       MOZ_ASSERT(ccISupports);
       nsXPCOMCycleCollectionParticipant* participant;
       CallQueryInterface(ccISupports, &participant);
-      HoldJSObjects(ccISupports, participant);
+      PreserveWrapper(ccISupports, aCache, participant);
+    }
+  }
+  static void PreserveWrapper(void* aScriptObjectHolder,
+                              nsWrapperCache* aCache,
+                              nsScriptObjectTracer* aTracer)
+  {
+    if (!aCache->PreservingWrapper()) {
+      HoldJSObjects(aScriptObjectHolder, aTracer);
       aCache->SetPreservingWrapper(true);
 #ifdef DEBUG
       // Make sure the cycle collector will be able to traverse to the wrapper.
-      CheckCCWrapperTraversal(ccISupports, aCache);
+      CheckCCWrapperTraversal(aScriptObjectHolder, aCache, aTracer);
 #endif
     }
   }
-  static void ReleaseWrapper(nsISupports* aScriptObjectHolder,
+  static void ReleaseWrapper(void* aScriptObjectHolder,
                              nsWrapperCache* aCache);
   static void TraceWrapper(nsWrapperCache* aCache, TraceCallback aCallback,
                            void *aClosure);
@@ -1571,6 +1572,13 @@ public:
                                       uint32_t aDisplayHeight);
 
   /**
+   * Constrain the viewport calculations from the GetViewportInfo() function
+   * in order to always return sane minimum/maximum values. This modifies the
+   * ViewportInfo struct passed as an input parameter, in place.
+   */
+  static void ConstrainViewportValues(ViewportInfo& aViewInfo);
+
+  /**
    * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.
    */
   static double GetDevicePixelsPerMetaViewportPixel(nsIWidget* aWidget);
@@ -1807,11 +1815,22 @@ public:
                                          nsIDOMNodeList** aReturn);
 
   /**
+   * Returns a presshell for this document, if there is one. This will be
+   * aDoc's direct presshell if there is one, otherwise we'll look at all
+   * ancestor documents to try to find a presshell, so for example this can
+   * still find a presshell for documents in display:none frames that have
+   * no presentation. So you have to be careful how you use this presshell ---
+   * getting generic data like a device context or widget from it is OK, but it
+   * might not be this document's actual presentation.
+   */
+  static nsIPresShell* FindPresShellForDocument(nsIDocument* aDoc);
+
+  /**
    * Returns the widget for this document if there is one. Looks at all ancestor
    * documents to try to find a widget, so for example this can still find a
    * widget for documents in display:none frames that have no presentation.
    */
-  static nsIWidget *WidgetForDocument(nsIDocument *aDoc);
+  static nsIWidget* WidgetForDocument(nsIDocument* aDoc);
 
   /**
    * Returns a layer manager to use for the given document. Basically we
@@ -2118,6 +2137,18 @@ public:
 
   static bool GetSVGGlyphExtents(Element *aElement, const gfxMatrix& aSVGToAppSpace,
                                  gfxRect *aResult);
+
+  /**
+   * Check whether a spec feature/version is supported.
+   * @param aObject the object, which should support the feature,
+   *        for example nsIDOMNode or nsIDOMDOMImplementation
+   * @param aFeature the feature ("Views", "Core", "HTML", "Range" ...)
+   * @param aVersion the version ("1.0", "2.0", ...)
+   * @return whether the feature is supported or not
+   */
+  static bool InternalIsSupported(nsISupports* aObject,
+                                  const nsAString& aFeature,
+                                  const nsAString& aVersion);
 
 private:
   static bool InitializeEventTable();

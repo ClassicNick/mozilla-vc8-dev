@@ -61,6 +61,18 @@
 #define MINVALUE_GL_MAX_RENDERBUFFER_SIZE             1024  // Different from the spec, which sets it to 1 on page 164
 #define MINVALUE_GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS  8     // Page 164
 
+// Manual reflection of WebIDL typedefs
+typedef uint32_t WebGLenum;
+typedef uint32_t WebGLbitfield;
+typedef int32_t WebGLint;
+typedef int32_t WebGLsizei;
+typedef int64_t WebGLsizeiptr;
+typedef int64_t WebGLintptr;
+typedef uint32_t WebGLuint;
+typedef float WebGLfloat;
+typedef float WebGLclampf;
+typedef bool WebGLboolean;
+
 class nsIPropertyBag;
 
 namespace mozilla {
@@ -3094,7 +3106,7 @@ protected:
 };
 
 class WebGLActiveInfo MOZ_FINAL
-    : public nsIWebGLActiveInfo
+    : public nsISupports
 {
 public:
     WebGLActiveInfo(WebGLint size, WebGLenum type, const nsACString& name) :
@@ -3103,8 +3115,24 @@ public:
         mName(NS_ConvertASCIItoUTF16(name))
     {}
 
+    // WebIDL attributes
+
+    WebGLint Size() const {
+        return mSize;
+    }
+
+    WebGLenum Type() const {
+        return mType;
+    }
+
+    void GetName(nsString& retval) const {
+        retval = mName;
+    }
+
+    virtual JSObject* WrapObject(JSContext *cx, JSObject *scope);
+
     NS_DECL_ISUPPORTS
-    NS_DECL_NSIWEBGLACTIVEINFO
+
 protected:
     WebGLint mSize;
     WebGLenum mType;

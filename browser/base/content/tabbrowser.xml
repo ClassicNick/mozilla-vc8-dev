@@ -686,7 +686,7 @@
                 aURI = makeURI(aURI);
               this.mFaviconService.setAndFetchFaviconForPage(browser.currentURI,
                                                              aURI, false,
-                                                             gPrivateBrowsingUI.privateWindow ?
+                                                             PrivateBrowsingUtils.isWindowPrivate(window) ?
                                                                this.mFaviconService.FAVICON_LOAD_PRIVATE :
                                                                this.mFaviconService.FAVICON_LOAD_NON_PRIVATE);
             }
@@ -836,8 +836,11 @@
             if (this.mCurrentBrowser == newBrowser && !aForceUpdate)
               return;
 
-            if (!aForceUpdate)
+            if (!aForceUpdate) {
               TelemetryStopwatch.start("FX_TAB_SWITCH_UPDATE_MS");
+              window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils)
+                                                             .beginTabSwitch();
+            }
 
             var oldTab = this.mCurrentTab;
 

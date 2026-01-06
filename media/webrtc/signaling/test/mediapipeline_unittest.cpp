@@ -10,6 +10,7 @@
 
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
+#include "nss.h"
 #include "ssl.h"
 #include "sslproto.h"
 
@@ -105,7 +106,7 @@ class TestAgent {
     test_utils.sts_target()->Dispatch(
         WrapRunnable(this, &TestAgent::StopInt),
         NS_DISPATCH_SYNC);
-    
+
     PR_Sleep(1000); // Deal with race condition
   }
 

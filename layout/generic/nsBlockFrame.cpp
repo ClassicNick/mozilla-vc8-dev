@@ -43,7 +43,6 @@
 #include "nsIScrollableFrame.h"
 #ifdef ACCESSIBILITY
 #include "nsIDOMHTMLDocument.h"
-#include "nsAccessibilityService.h"
 #endif
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
@@ -279,10 +278,8 @@ nsBlockFrame::DestroyFrom(nsIFrame* aDestructRoot)
   DestroyAbsoluteFrames(aDestructRoot);
   mFloats.DestroyFramesFrom(aDestructRoot);
   nsPresContext* presContext = PresContext();
-  nsLineBox::DeleteLineList(presContext, mLines, aDestructRoot);
-
-  // Now clear mFrames, since we've destroyed all the frames in it.
-  mFrames.Clear();
+  nsLineBox::DeleteLineList(presContext, mLines, aDestructRoot,
+                            &mFrames);
 
   nsFrameList* pushedFloats = RemovePushedFloats();
   if (pushedFloats) {
@@ -293,7 +290,7 @@ nsBlockFrame::DestroyFrom(nsIFrame* aDestructRoot)
   FrameLines* overflowLines = RemoveOverflowLines();
   if (overflowLines) {
     nsLineBox::DeleteLineList(presContext, overflowLines->mLines,
-                              aDestructRoot);
+                              aDestructRoot, &overflowLines->mFrames);
     delete overflowLines;
   }
 
@@ -1236,7 +1233,7 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
     int32_t numLines = mLines.size();
     if (!numLines) numLines = 1;
     PRTime delta, perLineDelta, lines;
-    LL_I2L(lines, numLines);
+    lines = int64_t(numLines);
     delta = end - start;
     perLineDelta = delta / lines;
 
@@ -1553,13 +1550,13 @@ IsAlignedLeft(uint8_t aAlignment,
               uint8_t aUnicodeBidi,
               nsIFrame* aFrame)
 {
-  return (aFrame->IsSVGText() ||
-          NS_STYLE_TEXT_ALIGN_LEFT == aAlignment ||
-          ((NS_STYLE_TEXT_ALIGN_DEFAULT == aAlignment &&
-            NS_STYLE_DIRECTION_LTR == aDirection) ||
-           (NS_STYLE_TEXT_ALIGN_END == aAlignment &&
-            NS_STYLE_DIRECTION_RTL == aDirection)) &&
-          !(NS_STYLE_UNICODE_BIDI_PLAINTEXT & aUnicodeBidi));
+  return aFrame->IsSVGText() ||
+         NS_STYLE_TEXT_ALIGN_LEFT == aAlignment ||
+         (((NS_STYLE_TEXT_ALIGN_DEFAULT == aAlignment &&
+           NS_STYLE_DIRECTION_LTR == aDirection) ||
+          (NS_STYLE_TEXT_ALIGN_END == aAlignment &&
+           NS_STYLE_DIRECTION_RTL == aDirection)) &&
+         !(NS_STYLE_UNICODE_BIDI_PLAINTEXT & aUnicodeBidi));
 }
 
 nsresult
@@ -5408,8 +5405,8 @@ nsBlockFrame::DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags)
         // XXX We need to do this if we're removing a frame as a result of
         // a call to RemoveFrame(), but we may not need to do this in all
         // cases...
-        nsRect visOverflow(cur->GetVisualOverflowArea());
 #ifdef NOISY_BLOCK_INVALIDATE
+        nsRect visOverflow(cur->GetVisualOverflowArea());
         printf("%p invalidate 10 (%d, %d, %d, %d)\n",
                this, visOverflow.x, visOverflow.y,
                visOverflow.width, visOverflow.height);
@@ -6207,7 +6204,7 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     int32_t numLines = mLines.size();
     if (!numLines) numLines = 1;
     PRTime lines, deltaPerLine, delta;
-    LL_I2L(lines, numLines);
+    lines = int64_t(numLines);
     delta = end - start;
     deltaPerLine = delta / lines;
 
@@ -6225,27 +6222,19 @@ nsBlockFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 }
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsBlockFrame::CreateAccessible()
+a11y::AccType
+nsBlockFrame::AccessibleType()
 {
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (!accService) {
-    return nullptr;
-  }
-
-  nsPresContext* presContext = PresContext();
-
   // block frame may be for <hr>
   if (mContent->Tag() == nsGkAtoms::hr) {
-    return accService->CreateHTMLHRAccessible(mContent,
-                                              presContext->PresShell());
+    return a11y::eHTMLHRAccessible;
   }
 
-  if (!HasBullet() || !presContext) {
+  if (!HasBullet() || !PresContext()) {
     if (!mContent->GetParent()) {
       // Don't create accessible objects for the root content node, they are redundant with
       // the nsDocAccessible object created with the document node
-      return nullptr;
+      return a11y::eNoAccessible;
     }
     
     nsCOMPtr<nsIDOMHTMLDocument> htmlDoc =
@@ -6256,17 +6245,16 @@ nsBlockFrame::CreateAccessible()
       if (SameCOMIdentity(body, mContent)) {
         // Don't create accessible objects for the body, they are redundant with
         // the nsDocAccessible object created with the document node
-        return nullptr;
+        return a11y::eNoAccessible;
       }
     }
 
     // Not a bullet, treat as normal HTML container
-    return accService->CreateHyperTextAccessible(mContent,
-                                                 presContext->PresShell());
+    return a11y::eHyperTextAccessible;
   }
 
   // Create special list bullet accessible
-  return accService->CreateHTMLLIAccessible(mContent, presContext->PresShell());
+  return a11y::eHTMLLiAccessible;
 }
 #endif
 

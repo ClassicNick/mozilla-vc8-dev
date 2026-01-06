@@ -128,6 +128,8 @@
         './src/softphonewrapper/CC_SIPCCLineInfo.h',
         './src/softphonewrapper/CC_SIPCCService.h',
         # PeerConnection
+        './src/peerconnection/MediaStreamList.cpp',
+        './src/peerconnection/MediaStreamList.h',
         './src/peerconnection/PeerConnectionCtx.cpp',
         './src/peerconnection/PeerConnectionCtx.h',
         './src/peerconnection/PeerConnectionImpl.cpp',
@@ -184,7 +186,6 @@
           ],
           
           'cflags_mozilla': [
-            '-Werror',
           ],
         }],
         ['OS=="win"', {
@@ -212,8 +213,6 @@
           ],
           
           'cflags_mozilla': [
-            '-Werror',
-            '-Wno-error=conversion'
           ],
         }],
       ],
@@ -633,7 +632,6 @@
           ],
 
           'cflags_mozilla': [
-            '-Werror',
           ],
         }],
         ['OS=="win"', {
@@ -752,8 +750,6 @@
           ],
           
           'cflags_mozilla': [
-            '-Werror',
-            '-Wno-error=conversion'
           ],
         }],
       ],

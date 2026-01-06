@@ -485,6 +485,9 @@ MAKEFILES_xulapp="
   toolkit/components/viewsource/Makefile
   toolkit/devtools/Makefile
   toolkit/devtools/sourcemap/Makefile
+  toolkit/forgetaboutsite/Makefile
+  toolkit/forgetaboutsite/test/Makefile
+  toolkit/forgetaboutsite/test/browser/Makefile
   toolkit/identity/Makefile
   toolkit/locales/Makefile
   toolkit/mozapps/downloads/Makefile
@@ -1580,6 +1583,12 @@ fi
 if [ ! "$MOZ_NATIVE_PNG" ]; then
   add_makefiles "
     media/libpng/Makefile
+  "
+fi
+
+if [ "$MOZ_DMDV" ]; then
+  add_makefiles "
+    tools/dmdv/Makefile
   "
 fi
 

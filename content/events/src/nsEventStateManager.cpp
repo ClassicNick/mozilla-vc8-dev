@@ -65,6 +65,7 @@
 #include "nsCaret.h"
 
 #include "nsSubDocumentFrame.h"
+#include "nsIFrameTraversal.h"
 #include "nsLayoutCID.h"
 #include "nsLayoutUtils.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -112,6 +113,8 @@ using namespace mozilla::dom;
 #define NS_USER_INTERACTION_INTERVAL 5000 // ms
 
 static const nsIntPoint kInvalidRefPoint = nsIntPoint(-1,-1);
+
+static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 
 static bool sLeftClickOnly = true;
 static bool sKeyCausesActivation = true;
@@ -3257,11 +3260,17 @@ nsEventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         if (mDocument && fm) {
           nsCOMPtr<nsIDOMWindow> currentWindow;
           fm->GetFocusedWindow(getter_AddRefs(currentWindow));
-          if (currentWindow && currentWindow != mDocument->GetWindow() &&
+          if (currentWindow && mDocument->GetWindow() &&
+              currentWindow != mDocument->GetWindow() &&
               !nsContentUtils::IsChromeDoc(mDocument)) {
+            nsCOMPtr<nsIDOMWindow> currentTop;
+            nsCOMPtr<nsIDOMWindow> newTop;
+            currentWindow->GetTop(getter_AddRefs(currentTop));
+            mDocument->GetWindow()->GetTop(getter_AddRefs(newTop));
             nsCOMPtr<nsPIDOMWindow> win = do_QueryInterface(currentWindow);
             nsCOMPtr<nsIDocument> currentDoc = do_QueryInterface(win->GetExtantDocument());
-            if (nsContentUtils::IsChromeDoc(currentDoc)) {
+            if (nsContentUtils::IsChromeDoc(currentDoc) ||
+                (currentTop && newTop && currentTop != newTop)) {
               fm->SetFocusedWindow(mDocument->GetWindow());
             }
           }
@@ -3936,7 +3945,7 @@ public:
       aTarget ? aTarget->OwnerDoc()->GetInnerWindow() : nullptr;
     if (win && win->HasMouseEnterLeaveEventListeners()) {
       mRelatedTarget = aRelatedTarget ?
-        aRelatedTarget->FindFirstNonNativeAnonymous() : nullptr;
+        aRelatedTarget->FindFirstNonChromeOnlyAccessContent() : nullptr;
       nsINode* commonParent = nullptr;
       if (aTarget && aRelatedTarget) {
         commonParent =
@@ -3945,7 +3954,7 @@ public:
       nsIContent* current = aTarget;
       // Note, it is ok if commonParent is null!
       while (current && current != commonParent) {
-        if (!current->IsInNativeAnonymousSubtree()) {
+        if (!current->ChromeOnlyAccess()) {
           mTargets.AppendObject(current);
         }
         // mouseenter/leave is fired only on elements.

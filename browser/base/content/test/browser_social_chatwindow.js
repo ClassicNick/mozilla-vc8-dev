@@ -10,7 +10,7 @@ function test() {
     origin: "https://example.com",
     sidebarURL: "https://example.com/browser/browser/base/content/test/social_sidebar.html",
     workerURL: "https://example.com/browser/browser/base/content/test/social_worker.js",
-    iconURL: "chrome://branding/content/icon48.png"
+    iconURL: "https://example.com/browser/browser/base/content/test/moz.png"
   };
   runSocialTestWithProvider(manifest, function (finishcb) {
     runSocialTests(tests, undefined, undefined, function () {
@@ -104,6 +104,7 @@ var tests = {
         case "got-chatbox-message":
           ok(true, "got a chat window opened");
           let chats = document.getElementById("pinnedchats");
+          ok(chats.selectedChat.minimized, "chatbox from worker opened as minimized");
           while (chats.selectedChat) {
             chats.selectedChat.close();
           }

@@ -291,7 +291,7 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
         JSStableString *str = vp->toString()->ensureStable(cx);
         if (!str)
             return false;
-        JSString *wrapped = js_NewStringCopyN(cx, str->chars(), str->length());
+        JSString *wrapped = js_NewStringCopyN(cx, str->chars().get(), str->length());
         if (!wrapped)
             return false;
         vp->setString(wrapped);
@@ -684,10 +684,21 @@ JSCompartment::onTooMuchMalloc()
 bool
 JSCompartment::hasScriptsOnStack()
 {
-    for (AllFramesIter i(rt->stackSpace); !i.done(); ++i) {
-        if (i.fp()->script()->compartment() == this)
+    for (AllFramesIter afi(rt->stackSpace); !afi.done(); ++afi) {
+#ifdef JS_ION
+        // If this is an Ion frame, check the IonActivation instead
+        if (afi.isIon())
+            continue;
+#endif
+        if (afi.interpFrame()->script()->compartment() == this)
             return true;
     }
+#ifdef JS_ION
+    for (ion::IonActivationIterator iai(rt); iai.more(); ++iai) {
+        if (iai.activation()->compartment() == this)
+            return true;
+    }
+#endif
     return false;
 }
 
@@ -849,11 +860,19 @@ JSCompartment::sweepBreakpoints(FreeOp *fop)
     }
 }
 
-size_t
-JSCompartment::sizeOfShapeTable(JSMallocSizeOfFun mallocSizeOf)
+void
+JSCompartment::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *compartmentObject,
+                                   TypeInferenceSizes *tiSizes, size_t *shapesCompartmentTables,
+                                   size_t *crossCompartmentWrappersArg, size_t *regexpCompartment,
+                                   size_t *debuggeesSet)
 {
-    return baseShapes.sizeOfExcludingThis(mallocSizeOf)
-         + initialShapes.sizeOfExcludingThis(mallocSizeOf)
-         + newTypeObjects.sizeOfExcludingThis(mallocSizeOf)
-         + lazyTypeObjects.sizeOfExcludingThis(mallocSizeOf);
+    *compartmentObject = mallocSizeOf(this);
+    sizeOfTypeInferenceData(tiSizes, mallocSizeOf);
+    *shapesCompartmentTables = baseShapes.sizeOfExcludingThis(mallocSizeOf)
+                             + initialShapes.sizeOfExcludingThis(mallocSizeOf)
+                             + newTypeObjects.sizeOfExcludingThis(mallocSizeOf)
+                             + lazyTypeObjects.sizeOfExcludingThis(mallocSizeOf);
+    *crossCompartmentWrappersArg = crossCompartmentWrappers.sizeOfExcludingThis(mallocSizeOf);
+    *regexpCompartment = regExps.sizeOfExcludingThis(mallocSizeOf);
+    *debuggeesSet = debuggees.sizeOfExcludingThis(mallocSizeOf);
 }

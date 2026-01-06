@@ -41,7 +41,7 @@ MDefinition::earlyAbortCheck()
 {
     if (isPhi())
         return false;
-    for (int i = 0; i < numOperands(); i++) {
+    for (size_t i = 0; i < numOperands(); i++) {
         if (getOperand(i)->block()->earlyAbort()) {
             block()->setEarlyAbort();
             IonSpew(IonSpew_Range, "Ignoring value from block %d because instruction %d is in a block that aborts", block()->id(), getOperand(i)->id());
@@ -482,7 +482,9 @@ MPhi::recomputeRange()
     if (type() != MIRType_Int32)
         return false;
 
-    Range r;
+    // Use RangeUpdater rather than Range because it needs to
+    // track if it has been updated yet.
+    RangeUpdater r;
     JS_ASSERT(getOperand(0)->op() != MDefinition::Op_OsrValue);
     bool updated = false;
     for (size_t i = 0; i < numOperands(); i++) {
@@ -492,17 +494,14 @@ MPhi::recomputeRange()
         }
 
         if (!isOSRLikeValue(getOperand(i))) {
-            if (block()->isLoopHeader())
+            if (block()->isLoopHeader()) {
+                IonSpew(IonSpew_Range, "    Updating input #%d (inst %d)", i, getOperand(i)->id());
                 changeCounts_[i].updateRange(getOperand(i)->range());
-            if (updated) {
-                if (block()->isLoopHeader())
-                    r.unionWith(&changeCounts_[i]);
-                else
-                    r.unionWith(getOperand(i)->range());
+                r.unionWith(&changeCounts_[i]);
             } else {
-                r.update(getOperand(0)->range());
-                updated = true;
+                r.unionWith(getOperand(i)->range());
             }
+
 #ifdef DEBUG
             if (IonSpewEnabled(IonSpew_Range)) {
                 fprintf(IonSpewFile, "    %d:", getOperand(i)->id());
@@ -521,8 +520,7 @@ MPhi::recomputeRange()
          block()->setEarlyAbort();
          return false;
      }
-
-     return range()->update(&r);
+     return range()->update(r.getRange());
 }
 
 uint32
