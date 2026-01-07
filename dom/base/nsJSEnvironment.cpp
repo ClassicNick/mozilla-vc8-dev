@@ -56,6 +56,7 @@
 #include "nsScriptNameSpaceManager.h"
 #include "StructuredCloneTags.h"
 #include "mozilla/dom/ImageData.h"
+#include "mozilla/dom/ImageDataBinding.h"
 
 #include "nsJSPrincipals.h"
 #include "jsdbgapi.h"
@@ -933,7 +934,6 @@ static const char js_strict_option_str[] = JS_OPTIONS_DOT_STR "strict";
 static const char js_strict_debug_option_str[] = JS_OPTIONS_DOT_STR "strict.debug";
 #endif
 static const char js_werror_option_str[] = JS_OPTIONS_DOT_STR "werror";
-static const char js_relimit_option_str[]= JS_OPTIONS_DOT_STR "relimit";
 #ifdef JS_GC_ZEAL
 static const char js_zeal_option_str[]        = JS_OPTIONS_DOT_STR "gczeal";
 static const char js_zeal_frequency_str[]     = JS_OPTIONS_DOT_STR "gczeal.frequency";
@@ -1053,12 +1053,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
   else
     newDefaultJSOptions &= ~JSOPTION_WERROR;
 
-  bool relimit = Preferences::GetBool(js_relimit_option_str);
-  if (relimit)
-    newDefaultJSOptions |= JSOPTION_RELIMIT;
-  else
-    newDefaultJSOptions &= ~JSOPTION_RELIMIT;
-
   ::JS_SetOptions(context->mContext,
                   newDefaultJSOptions & (JSRUNOPTION_MASK | JSOPTION_ALLOW_XML));
 
@@ -1118,7 +1112,6 @@ nsJSContext::nsJSContext(JSRuntime *aRuntime)
   mOperationCallbackTime = 0;
   mModalStateTime = 0;
   mModalStateDepth = 0;
-  mProcessingScriptTag = false;
 }
 
 nsJSContext::~nsJSContext()
@@ -2468,10 +2461,7 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, jsval *aArgv)
 static JSBool
 CheckUniversalXPConnectForTraceMalloc(JSContext *cx)
 {
-    bool hasCap = false;
-    nsresult rv = nsContentUtils::GetSecurityManager()->
-                    IsCapabilityEnabled("UniversalXPConnect", &hasCap);
-    if (NS_SUCCEEDED(rv) && hasCap)
+    if (nsContentUtils::IsCallerChrome())
         return JS_TRUE;
     JS_ReportError(cx, "trace-malloc functions require UniversalXPConnect");
     return JS_FALSE;
@@ -2844,18 +2834,6 @@ nsJSContext::SetScriptsEnabled(bool aEnabled, bool aFireTimeouts)
   }
 }
 
-
-bool
-nsJSContext::GetProcessingScriptTag()
-{
-  return mProcessingScriptTag;
-}
-
-void
-nsJSContext::SetProcessingScriptTag(bool aFlag)
-{
-  mProcessingScriptTag = aFlag;
-}
 
 bool
 nsJSContext::GetExecutingScript()
@@ -3801,22 +3779,14 @@ NS_DOMReadStructuredClone(JSContext* cx,
     MOZ_ASSERT(dataArray.isObject());
 
     // Construct the ImageData.
-    nsCOMPtr<nsIDOMImageData> imageData = new ImageData(width, height,
-                                                        dataArray.toObject());
+    nsRefPtr<ImageData> imageData = new ImageData(width, height,
+                                                  dataArray.toObject());
     // Wrap it in a jsval.
     JSObject* global = JS_GetGlobalForScopeChain(cx);
     if (!global) {
       return nullptr;
     }
-    nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
-    JS::Value val;
-    nsresult rv =
-      nsContentUtils::WrapNative(cx, global, imageData, &val,
-                                 getter_AddRefs(wrapper));
-    if (NS_FAILED(rv)) {
-      return nullptr;
-    }
-    return val.toObjectOrNull();
+    return imageData->WrapObject(cx, global);
   }
 
   // Don't know what this is. Bail.
@@ -3830,32 +3800,23 @@ NS_DOMWriteStructuredClone(JSContext* cx,
                            JSObject* obj,
                            void *closure)
 {
-  nsCOMPtr<nsIXPConnectWrappedNative> wrappedNative;
-  nsContentUtils::XPConnect()->
-    GetWrappedNativeOfJSObject(cx, obj, getter_AddRefs(wrappedNative));
-  nsISupports *native = wrappedNative ? wrappedNative->Native() : nullptr;
-
-  nsCOMPtr<nsIDOMImageData> imageData = do_QueryInterface(native);
-  if (imageData) {
-    // Prepare the ImageData internals.
-    uint32_t width, height;
-    JS::Value dataArray;
-    if (NS_FAILED(imageData->GetWidth(&width)) ||
-        NS_FAILED(imageData->GetHeight(&height)) ||
-        NS_FAILED(imageData->GetData(cx, &dataArray)))
-    {
-      return false;
-    }
-
-    // Write the internals to the stream.
-    return JS_WriteUint32Pair(writer, SCTAG_DOM_IMAGEDATA, 0) &&
-           JS_WriteUint32Pair(writer, width, height) &&
-           JS_WriteTypedArray(writer, dataArray);
+  ImageData* imageData;
+  nsresult rv = UnwrapObject<ImageData>(cx, obj, imageData);
+  if (NS_FAILED(rv)) {
+    // Don't know what this is. Bail.
+    xpc::Throw(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
+    return JS_FALSE;
   }
 
-  // Don't know what this is. Bail.
-  xpc::Throw(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
-  return JS_FALSE;
+  // Prepare the ImageData internals.
+  uint32_t width = imageData->Width();
+  uint32_t height = imageData->Height();
+  JS::Value dataArray = JS::ObjectValue(*imageData->GetDataObject());
+
+  // Write the internals to the stream.
+  return JS_WriteUint32Pair(writer, SCTAG_DOM_IMAGEDATA, 0) &&
+         JS_WriteUint32Pair(writer, width, height) &&
+         JS_WriteTypedArray(writer, dataArray);
 }
 
 void

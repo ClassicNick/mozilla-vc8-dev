@@ -19,7 +19,6 @@ DOMCI_CLASS(DOMConstructor)
 // Core classes
 DOMCI_CLASS(XMLDocument)
 DOMCI_CLASS(DocumentType)
-DOMCI_CLASS(DOMImplementation)
 DOMCI_CLASS(DOMException)
 DOMCI_CLASS(DOMTokenList)
 DOMCI_CLASS(DOMSettableTokenList)
@@ -317,11 +316,9 @@ DOMCI_CLASS(SVGZoomEvent)
 
 // Canvas
 DOMCI_CLASS(HTMLCanvasElement)
-DOMCI_CLASS(CanvasRenderingContext2D)
 DOMCI_CLASS(CanvasGradient)
 DOMCI_CLASS(CanvasPattern)
 DOMCI_CLASS(TextMetrics)
-DOMCI_CLASS(ImageData)
 DOMCI_CLASS(MozCanvasPrintState)
 
 // SmartCard Events
@@ -491,8 +488,6 @@ DOMCI_CLASS(MutationObserver)
 DOMCI_CLASS(MutationRecord)
 
 #ifdef MOZ_B2G_RIL
-DOMCI_CLASS(MozWifiStatusChangeEvent)
-DOMCI_CLASS(MozWifiConnectionInfoEvent)
 DOMCI_CLASS(Telephony)
 DOMCI_CLASS(TelephonyCall)
 DOMCI_CLASS(CallEvent)

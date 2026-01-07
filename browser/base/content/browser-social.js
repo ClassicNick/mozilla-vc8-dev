@@ -103,21 +103,9 @@ let SocialUI = {
 
   updateToggleCommand: function SocialUI_updateToggleCommand() {
     let toggleCommand = this.toggleCommand;
+    // We only need to update the command itself - all our menu items use it.
     toggleCommand.setAttribute("checked", Services.prefs.getBoolPref("social.enabled"));
-
-    // FIXME: bug 772808: menu items don't inherit the "hidden" state properly,
-    // need to update them manually.
-    // This should just be: toggleCommand.hidden = !Social.active;
-    for (let id of ["appmenu_socialToggle", "menu_socialToggle", "menu_socialAmbientMenu"]) {
-      let el = document.getElementById(id);
-      if (!el)
-        continue;
-
-      if (Social.active)
-        el.removeAttribute("hidden");
-      else
-        el.setAttribute("hidden", "true");
-    }
+    toggleCommand.setAttribute("hidden", Social.active ? "false" : "true");
   },
 
   // This handles "ActivateSocialFeature" events fired against content documents
@@ -178,6 +166,24 @@ let SocialUI = {
 
   haveLoggedInUser: function SocialUI_haveLoggedInUser() {
     return !!(Social.provider && Social.provider.profile && Social.provider.profile.userName);
+  },
+
+  closeSocialPanelForLinkTraversal: function (target, linkNode) {
+    // No need to close the panel if this traversal was not retargeted
+    if (target == "" || target == "_self")
+      return;
+
+    // Check to see whether this link traversal was in a social panel
+    let win = linkNode.ownerDocument.defaultView;
+    let container = win.QueryInterface(Ci.nsIInterfaceRequestor)
+                                  .getInterface(Ci.nsIWebNavigation)
+                                  .QueryInterface(Ci.nsIDocShell)
+                                  .chromeEventHandler;
+    let containerParent = container.parentNode;
+    if (containerParent.classList.contains("social-panel") &&
+        containerParent instanceof Ci.nsIDOMXULPopupElement) {
+      containerParent.hidePopup();
+    }
   }
 }
 
@@ -346,6 +352,9 @@ let SocialFlyout = {
   },
 
   open: function(aURL, yOffset, aCallback) {
+    // Hide any other social panels that may be open.
+    document.getElementById("social-notification-panel").hidePopup();
+
     if (!Social.provider)
       return;
     let panel = this.panel;
@@ -627,7 +636,7 @@ var SocialToolbar = {
     let tbi = document.getElementById("social-toolbar-item");
     tbi.hidden = !Social.uiVisible;
     if (!SocialUI.haveLoggedInUser()) {
-      let parent = document.getElementById("social-notification-box");
+      let parent = document.getElementById("social-notification-panel");
       while (parent.hasChildNodes())
         parent.removeChild(parent.firstChild);
 
@@ -662,7 +671,6 @@ var SocialToolbar = {
     let icons = provider.ambientNotificationIcons;
     let iconNames = Object.keys(icons);
     let iconBox = document.getElementById("social-toolbar-item");
-    let notifBox = document.getElementById("social-notification-box");
     let panel = document.getElementById("social-notification-panel");
     panel.hidden = false;
 
@@ -672,11 +680,12 @@ var SocialToolbar = {
     const CACHE_PREF_NAME = "social.cached.notificationIcons";
     // provider.profile == undefined means no response yet from the provider
     // to tell us whether the user is logged in or not.
-    if (!SocialUI.haveLoggedInUser() && provider.profile !== undefined) {
-      // The provider has responded with a profile and the user isn't logged
-      // in.  The icons etc have already been removed by
-      // updateButtonHiddenState, so we want to nuke any cached icons we
-      // have and get out of here!
+    if (!Social.provider || !Social.provider.enabled ||
+        (!SocialUI.haveLoggedInUser() && provider.profile !== undefined)) {
+      // Either no enabled provider, or there is a provider and it has
+      // responded with a profile and the user isn't loggedin.  The icons
+      // etc have already been removed by updateButtonHiddenState, so we want
+      // to nuke any cached icons we have and get out of here!
       Services.prefs.clearUserPref(CACHE_PREF_NAME);
       return;
     }
@@ -780,7 +789,7 @@ var SocialToolbar = {
       if (image.getAttribute("src") != icon.iconURL)
         image.setAttribute("src", icon.iconURL);
     }
-    notifBox.appendChild(notificationFrames);
+    panel.appendChild(notificationFrames);
     iconBox.appendChild(iconContainers);
 
     for (let frame of createdFrames) {
@@ -796,14 +805,16 @@ var SocialToolbar = {
   },
 
   showAmbientPopup: function SocialToolbar_showAmbientPopup(aToolbarButtonBox) {
+    // Hide any other social panels that may be open.
+    SocialFlyout.panel.hidePopup();
+
     let panel = document.getElementById("social-notification-panel");
-    let notifBox = document.getElementById("social-notification-box");
     let notificationFrameId = aToolbarButtonBox.getAttribute("notificationFrameId");
     let notificationFrame = document.getElementById(notificationFrameId);
 
     // Clear dimensions on all browsers so the panel size will
     // only use the selected browser.
-    let frameIter = notifBox.firstElementChild;
+    let frameIter = panel.firstElementChild;
     while (frameIter) {
       frameIter.collapsed = (frameIter != notificationFrame);
       frameIter = frameIter.nextElementSibling;
@@ -901,7 +912,7 @@ var SocialSidebar = {
   updateSidebar: function SocialSidebar_updateSidebar() {
     // Hide the toggle menu item if the sidebar cannot appear
     let command = document.getElementById("Social:ToggleSidebar");
-    command.hidden = !this.canShow;
+    command.setAttribute("hidden", this.canShow ? "false" : "true");
 
     // Hide the sidebar if it cannot appear, or has been toggled off.
     // Also set the command "checked" state accordingly.

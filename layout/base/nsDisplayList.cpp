@@ -448,7 +448,8 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mHasDisplayPort(false),
       mHasFixedItems(false),
       mIsInFixedPosition(false),
-      mIsCompositingCheap(false)
+      mIsCompositingCheap(false),
+      mContainsPluginItem(false)
 {
   MOZ_COUNT_CTOR(nsDisplayListBuilder);
   PL_InitArenaPool(&mPool, "displayListArena", 1024,
@@ -1013,6 +1014,9 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
     layerManager = new BasicLayerManager();
   }
 
+  // Store the existing layer builder to reinstate it on return.
+  FrameLayerBuilder *oldBuilder = layerManager->GetLayerBuilder();
+
   FrameLayerBuilder *layerBuilder = new FrameLayerBuilder();
   layerBuilder->Init(aBuilder, layerManager);
 
@@ -1049,13 +1053,13 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
   nsRefPtr<ContainerLayer> root = layerBuilder->
     BuildContainerLayerFor(aBuilder, layerManager, aForFrame, nullptr, *this,
                            containerParameters, nullptr);
-  
+
   if (widgetTransaction) {
     aForFrame->ClearInvalidationStateBits();
   }
 
   if (!root) {
-    layerManager->RemoveUserData(&gLayerManagerLayerBuilder);
+    layerManager->SetUserData(&gLayerManagerLayerBuilder, oldBuilder);
     return;
   }
   // Root is being scaled up by the X/Y resolution. Scale it back down.
@@ -1134,7 +1138,7 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
   }
 
   nsCSSRendering::DidPaint();
-  layerManager->RemoveUserData(&gLayerManagerLayerBuilder);
+  layerManager->SetUserData(&gLayerManagerLayerBuilder, oldBuilder);
 }
 
 uint32_t nsDisplayList::Count() const {

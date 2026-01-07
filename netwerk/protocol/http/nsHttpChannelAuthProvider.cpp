@@ -92,19 +92,8 @@ nsHttpChannelAuthProvider::ProcessAuthentication(uint32_t httpStatus,
         if (!mProxyInfo) return NS_ERROR_NO_INTERFACE;
     }
 
-    uint32_t loadFlags;
-    rv = mAuthChannel->GetLoadFlags(&loadFlags);
-    if (NS_FAILED(rv)) return rv;
-
     nsAutoCString challenges;
     mProxyAuth = (httpStatus == 407);
-
-    // Do proxy auth even if we're LOAD_ANONYMOUS
-    if ((loadFlags & nsIRequest::LOAD_ANONYMOUS) &&
-        (!mProxyAuth || !UsingHttpProxy())) {
-        LOG(("Skipping authentication for anonymous non-proxy request\n"));
-        return NS_ERROR_NOT_AVAILABLE;
-    }
 
     rv = PrepareForAuthentication(mProxyAuth);
     if (NS_FAILED(rv))
@@ -676,6 +665,10 @@ nsHttpChannelAuthProvider::GetCredentialsForChallenge(const char *challenge,
                                  path, ident, continuationState);
     if (NS_FAILED(rv)) return rv;
 
+    uint32_t loadFlags;
+    rv = mAuthChannel->GetLoadFlags(&loadFlags);
+    if (NS_FAILED(rv)) return rv;
+
     if (!proxyAuth) {
         // if this is the first challenge, then try using the identity
         // specified in the URL.
@@ -683,6 +676,18 @@ nsHttpChannelAuthProvider::GetCredentialsForChallenge(const char *challenge,
             GetIdentityFromURI(authFlags, mIdent);
             identFromURI = !mIdent.IsEmpty();
         }
+
+        if ((loadFlags & nsIRequest::LOAD_ANONYMOUS) && !identFromURI) {
+            LOG(("Skipping authentication for anonymous non-proxy request\n"));
+            return NS_ERROR_NOT_AVAILABLE;
+        }
+
+        // Let explicit URL credentials pass
+        // regardless of the LOAD_ANONYMOUS flag
+    }
+    else if ((loadFlags & nsIRequest::LOAD_ANONYMOUS) && !UsingHttpProxy()) {
+        LOG(("Skipping authentication for anonymous non-proxy request\n"));
+        return NS_ERROR_NOT_AVAILABLE;
     }
 
     //
@@ -718,17 +723,20 @@ nsHttpChannelAuthProvider::GetCredentialsForChallenge(const char *challenge,
     if (identityInvalid) {
         if (entry) {
             if (ident->Equals(entry->Identity())) {
-                LOG(("  clearing bad auth cache entry\n"));
-                // ok, we've already tried this user identity, so clear the
-                // corresponding entry from the auth cache.
-                authCache->ClearAuthEntry(scheme.get(), host,
-                                          port, realm.get());
-                entry = nullptr;
-                ident->Clear();
+                if (!identFromURI) {
+                    LOG(("  clearing bad auth cache entry\n"));
+                    // ok, we've already tried this user identity, so clear the
+                    // corresponding entry from the auth cache.
+                    authCache->ClearAuthEntry(scheme.get(), host,
+                                              port, realm.get());
+                    entry = nullptr;
+                    ident->Clear();
+                }
             }
             else if (!identFromURI ||
-                     nsCRT::strcmp(ident->User(),
-                                   entry->Identity().User()) == 0) {
+                     (nsCRT::strcmp(ident->User(),
+                                    entry->Identity().User()) == 0 &&
+                     !(loadFlags && nsIChannel::LOAD_ANONYMOUS))) {
                 LOG(("  taking identity from auth cache\n"));
                 // the password from the auth cache is more likely to be
                 // correct than the one in the URL.  at least, we know that it
@@ -1394,13 +1402,14 @@ nsHttpChannelAuthProvider::DNSCallback::OnLookupComplete(nsICancelable *request,
         LOG(("nsHttpChannelAuthProvider::OnLookupComplete this=%p "
              "resolved to %s\n", mAuthProvider.get(), cname.get()));
         mAuthProvider->SetCanonicalizedHost(cname);
-        mAuthProvider->OnAuthAvailable(nullptr, nullptr);
     }
     else {
         LOG(("nsHttpChannelAuthProvider::OnLookupComplete this=%p "
              "GetCanonicalName failed\n", mAuthProvider.get()));
-        mAuthProvider->OnAuthCancelled(nullptr, false);
     }
+
+    // Proceed whether or not DNS canonicalization succeeded
+    mAuthProvider->OnAuthAvailable(nullptr, nullptr);
     return NS_OK;
 }
 

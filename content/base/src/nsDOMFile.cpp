@@ -36,7 +36,6 @@
 #include "plbase64.h"
 #include "prmem.h"
 #include "mozilla/dom/FileListBinding.h"
-#include "dombindings.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -171,6 +170,14 @@ NS_IMETHODIMP
 nsDOMFileBase::GetType(nsAString &aType)
 {
   aType = mContentType;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMFileBase::GetMozLastModifiedDate(uint64_t* aLastModifiedDate)
+{
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+  *aLastModifiedDate = mLastModificationDate;
   return NS_OK;
 }
 
@@ -498,10 +505,20 @@ nsDOMFileFile::GetMozFullPathInternal(nsAString &aFilename)
 }
 
 NS_IMETHODIMP
-nsDOMFileFile::GetLastModifiedDate(JSContext* cx, JS::Value *aLastModifiedDate)
+nsDOMFileFile::GetLastModifiedDate(JSContext* cx, JS::Value* aLastModifiedDate)
 {
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+
   PRTime msecs;
   mFile->GetLastModifiedTime(&msecs);
+  if (IsDateUnknown()) {
+    nsresult rv = mFile->GetLastModifiedTime(&msecs);
+    NS_ENSURE_SUCCESS(rv, rv);
+    mLastModificationDate = msecs;
+  } else {
+    msecs = mLastModificationDate;
+  }
+
   JSObject* date = JS_NewDateObjectMsec(cx, msecs);
   if (date) {
     aLastModifiedDate->setObject(*date);
@@ -559,6 +576,14 @@ nsDOMFileFile::GetType(nsAString &aType)
 
   aType = mContentType;
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMFileFile::GetMozLastModifiedDate(uint64_t* aLastModifiedDate)
+{
+  NS_ASSERTION(mIsFile, "Should only be called on files");
+  *aLastModifiedDate = mLastModificationDate;
   return NS_OK;
 }
 
@@ -683,19 +708,7 @@ JSObject*
 nsDOMFileList::WrapObject(JSContext *cx, JSObject *scope,
                           bool *triedToWrap)
 {
-  JSObject* obj = FileListBinding::Wrap(cx, scope, this, triedToWrap);
-  if (obj || *triedToWrap) {
-    return obj;
-  }
-
-  *triedToWrap = true;
-  return oldproxybindings::FileList::create(cx, scope, this);
-}
-
-nsIDOMFile*
-nsDOMFileList::GetItemAt(uint32_t aIndex)
-{
-  return Item(aIndex);
+  return FileListBinding::Wrap(cx, scope, this, triedToWrap);
 }
 
 NS_IMETHODIMP

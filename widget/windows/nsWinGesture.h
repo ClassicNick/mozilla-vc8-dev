@@ -12,7 +12,9 @@
 
 #include "nsdefs.h"
 #include <winuser.h>
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #include <tpcshrd.h>
+#endif
 #include "nsPoint.h"
 #include "nsGUIEvent.h"
 

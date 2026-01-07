@@ -538,7 +538,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CanvasRenderingContext2D)
   NS_INTERFACE_MAP_ENTRY(nsICanvasRenderingContextInternal)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports,
                                    nsICanvasRenderingContextInternal)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(CanvasRenderingContext2D)
 NS_INTERFACE_MAP_END
 
 /**
@@ -2605,8 +2604,6 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
   }
   nsIDocument* document = presShell->GetDocument();
 
-  nsCOMArray<nsIStyleRule> rules;
-
   nsRefPtr<css::StyleRule> rule;
   error = CreateFontStyleRule(font, document, getter_AddRefs(rule));
 
@@ -2630,7 +2627,8 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
     return;
   }
 
-  rules.AppendObject(rule);
+  nsTArray< nsCOMPtr<nsIStyleRule> > rules;
+  rules.AppendElement(rule);
 
   nsStyleSet* styleSet = presShell->StyleSet();
 
@@ -2655,8 +2653,8 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
       return;
     }
 
-    nsCOMArray<nsIStyleRule> parentRules;
-    parentRules.AppendObject(parentRule);
+    nsTArray< nsCOMPtr<nsIStyleRule> > parentRules;
+    parentRules.AppendElement(parentRule);
     parentContext = styleSet->ResolveStyleForRules(nullptr, parentRules);
   }
 
@@ -4196,7 +4194,7 @@ NS_IMETHODIMP
 CanvasRenderingContext2D::GetImageData(double aSx, double aSy,
                                        double aSw, double aSh,
                                        JSContext* aCx,
-                                       nsIDOMImageData** aRetval)
+                                       nsISupports** aRetval)
 {
   ErrorResult rv;
   *aRetval = GetImageData(aCx, aSx, aSy, aSw, aSh, rv).get();
@@ -4339,7 +4337,7 @@ CanvasRenderingContext2D::FillRuleChanged()
 
 void
 CanvasRenderingContext2D::PutImageData(JSContext* cx,
-                                       ImageData* imageData, double dx,
+                                       ImageData& imageData, double dx,
                                        double dy, ErrorResult& error)
 {
   if (!FloatValidate(dx, dy)) {
@@ -4347,16 +4345,16 @@ CanvasRenderingContext2D::PutImageData(JSContext* cx,
     return;
   }
 
-  dom::Uint8ClampedArray arr(cx, imageData->GetDataObject());
+  dom::Uint8ClampedArray arr(cx, imageData.GetDataObject());
 
   error = PutImageData_explicit(JS_DoubleToInt32(dx), JS_DoubleToInt32(dy),
-                                imageData->GetWidth(), imageData->GetHeight(),
+                                imageData.Width(), imageData.Height(),
                                 arr.Data(), arr.Length(), false, 0, 0, 0, 0);
 }
 
 void
 CanvasRenderingContext2D::PutImageData(JSContext* cx,
-                                       ImageData* imageData, double dx,
+                                       ImageData& imageData, double dx,
                                        double dy, double dirtyX,
                                        double dirtyY, double dirtyWidth,
                                        double dirtyHeight,
@@ -4367,10 +4365,10 @@ CanvasRenderingContext2D::PutImageData(JSContext* cx,
     return;
   }
 
-  dom::Uint8ClampedArray arr(cx, imageData->GetDataObject());
+  dom::Uint8ClampedArray arr(cx, imageData.GetDataObject());
 
   error = PutImageData_explicit(JS_DoubleToInt32(dx), JS_DoubleToInt32(dy),
-                                imageData->GetWidth(), imageData->GetHeight(),
+                                imageData.Width(), imageData.Height(),
                                 arr.Data(), arr.Length(), true,
                                 JS_DoubleToInt32(dirtyX),
                                 JS_DoubleToInt32(dirtyY),
@@ -4578,11 +4576,11 @@ CanvasRenderingContext2D::CreateImageData(JSContext* cx, double sw,
 
 already_AddRefed<ImageData>
 CanvasRenderingContext2D::CreateImageData(JSContext* cx,
-                                          ImageData* imagedata,
+                                          ImageData& imagedata,
                                           ErrorResult& error)
 {
-  return mozilla::dom::CreateImageData(cx, this, imagedata->GetWidth(),
-                                       imagedata->GetHeight(), error);
+  return mozilla::dom::CreateImageData(cx, this, imagedata.Width(),
+                                       imagedata.Height(), error);
 }
 
 NS_IMETHODIMP
@@ -4590,7 +4588,7 @@ CanvasRenderingContext2D::CreateImageData(const JS::Value &arg1,
                                           const JS::Value &arg2,
                                           JSContext* cx,
                                           uint8_t optional_argc,
-                                          nsIDOMImageData** retval)
+                                          nsISupports** retval)
 {
   /* Should never be called; handled entirely in new bindings */
   return NS_ERROR_NOT_IMPLEMENTED;

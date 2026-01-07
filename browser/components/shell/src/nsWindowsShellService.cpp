@@ -319,6 +319,7 @@ IsWin8OrLater()
          osInfo.dwMajorVersion >= 6 && osInfo.dwMinorVersion >= 2;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 static bool
 IsAARDefaultHTTP(IApplicationAssociationRegistration* pAAR,
                  bool* aIsDefaultBrowser)
@@ -353,6 +354,7 @@ IsAARDefaultHTML(IApplicationAssociationRegistration* pAAR,
   }
   return SUCCEEDED(hr);
 }
+#endif
 
 bool
 nsWindowsShellService::IsDefaultBrowserVista(bool aCheckAllTypes,

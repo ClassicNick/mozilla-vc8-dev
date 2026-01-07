@@ -34,7 +34,7 @@ interface OnlyForUseInConstructor {
 
 [Constructor,
  Constructor(DOMString str),
- Constructor(unsigned long num, boolean? bool),
+ Constructor(unsigned long num, boolean? boolArg),
  Constructor(TestInterface? iface),
  Constructor(TestNonCastableInterface iface)
  // , Constructor(long arg1, long arg2, (TestInterface or OnlyForUseInConstructor) arg3)
@@ -311,6 +311,7 @@ interface TestInterface {
   attribute byte attributeRenamedFrom;
 
   void passDictionary(optional Dict x);
+  Dict receiveDictionary();
   void passOtherDictionary(optional GrandparentDict x);
   void passSequenceOfDictionaries(sequence<Dict> x);
   void passDictionaryOrLong(optional Dict x);
@@ -332,6 +333,8 @@ interface TestInterface {
 
   // Miscellania
   [LenientThis] attribute long attrWithLenientThis;
+
+  // If you add things here, add them to TestExampleGen as well
 };
 
 interface TestNonWrapperCacheInterface {

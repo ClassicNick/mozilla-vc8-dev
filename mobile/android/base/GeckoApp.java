@@ -6,6 +6,7 @@
 package org.mozilla.gecko;
 
 import org.mozilla.gecko.db.BrowserDB;
+import org.mozilla.gecko.db.BrowserContract;
 import org.mozilla.gecko.gfx.Layer;
 import org.mozilla.gecko.gfx.LayerView;
 import org.mozilla.gecko.gfx.PluginLayer;
@@ -140,6 +141,7 @@ abstract public class GeckoApp
     public static final String ACTION_BOOKMARK      = "org.mozilla.gecko.BOOKMARK";
     public static final String ACTION_LOAD          = "org.mozilla.gecko.LOAD";
     public static final String ACTION_INIT_PW       = "org.mozilla.gecko.INIT_PW";
+    public static final String ACTION_WIDGET        = "org.mozilla.gecko.WIDGET";
     public static final String SAVED_STATE_TITLE         = "title";
     public static final String SAVED_STATE_IN_BACKGROUND = "inBackground";
     public static final String SAVED_STATE_PRIVATE_SESSION = "privateSession";
@@ -1355,15 +1357,15 @@ abstract public class GeckoApp
 
         // We need do do this on the next iteration in order to avoid
         // a deadlock, see comment below in FullScreenHolder
-        mMainHandler.post(new Runnable() { 
+        mMainHandler.post(new Runnable() {
             public void run() {
-                mLayerView.setVisibility(View.VISIBLE);
+                mLayerView.show();
             }
         });
 
         FrameLayout decor = (FrameLayout)getWindow().getDecorView();
         decor.removeView(mFullScreenPluginContainer);
-        
+
         mFullScreenPluginView = null;
 
         GeckoScreenOrientationListener.getInstance().unlockScreenOrientation();
@@ -1555,7 +1557,7 @@ abstract public class GeckoApp
         });
     }
 
-    void initializeChrome(String uri, Boolean isExternalURL) {
+    protected void initializeChrome(String uri, Boolean isExternalURL) {
         mDoorHangerPopup = new DoorHangerPopup(this, null);
     }
 
@@ -1610,8 +1612,6 @@ abstract public class GeckoApp
         }
 
         boolean isExternalURL = passedUri != null && !passedUri.equals("about:home");
-        initializeChrome(uri, isExternalURL);
-
         StartupAction startupAction;
         if (isExternalURL) {
             startupAction = StartupAction.URL;
@@ -1635,11 +1635,20 @@ abstract public class GeckoApp
                 // loading it twice
                 intent.setAction(Intent.ACTION_MAIN);
                 intent.setData(null);
-                passedUri = "about:empty";
+                passedUri = null;
             } else {
                 startupAction = StartupAction.PREFETCH;
                 GeckoAppShell.getHandler().post(new PrefetchRunnable(copy));
             }
+        }
+
+        Tabs.registerOnTabsChangedListener(this);
+
+        initializeChrome(passedUri, isExternalURL);
+
+        if (mRestoreMode == GeckoAppShell.RESTORE_NONE) {
+            // show telemetry door hanger if we aren't restoring a session
+            GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Telemetry:Prompt", null));
         }
 
         Telemetry.HistogramAdd("FENNEC_STARTUP_GECKOAPP_ACTION", startupAction.ordinal());
@@ -1661,8 +1670,6 @@ abstract public class GeckoApp
             }, 1000 * 5 /* 5 seconds */);
             Log.i(LOGTAG, "Intent : ACTION_DEBUG - waiting 5s before launching");
         }
-
-        Tabs.registerOnTabsChangedListener(this);
 
         if (cameraView == null) {
             cameraView = new SurfaceView(this);
@@ -1992,6 +1999,9 @@ abstract public class GeckoApp
             }
             handleNotification(ACTION_ALERT_CALLBACK, alertName, alertCookie);
         }
+        else if (ACTION_WIDGET.equals(action)) {
+            addTab();
+        }
     }
 
     /*
@@ -2092,6 +2102,9 @@ abstract public class GeckoApp
                 SharedPreferences.Editor editor = prefs.edit();
                 editor.putBoolean(GeckoApp.PREFS_WAS_STOPPED, true);
                 editor.commit();
+
+                BrowserDB.expireHistory(getContentResolver(),
+                                        BrowserContract.ExpirePriority.NORMAL);
             }
         });
 
@@ -2327,13 +2340,20 @@ abstract public class GeckoApp
                         !profileMigrator.hasMigrationRun()) {
                         // Show the "Setting up Fennec" screen if this takes
                         // a while.
-                        final SetupScreen setupScreen = new SetupScreen(app);
+
+                        // Create a "final" holder for the setup screen so that we can
+                        // create it in startCallback and still find a reference to it
+                        // in stopCallback. (We must create it on the UI thread to fix
+                        // bug 788216). Note that synchronization is not a problem here
+                        // since it is only ever touched on the UI thread.
+                        final SetupScreen[] setupScreenHolder = new SetupScreen[1];
 
                         final Runnable startCallback = new Runnable() {
                             public void run() {
                                 GeckoApp.mAppContext.runOnUiThread(new Runnable() {
                                     public void run() {
-                                       setupScreen.show();
+                                        setupScreenHolder[0] = new SetupScreen(app);
+                                        setupScreenHolder[0].show();
                                     }
                                 });
                             }
@@ -2343,7 +2363,12 @@ abstract public class GeckoApp
                             public void run() {
                                 GeckoApp.mAppContext.runOnUiThread(new Runnable() {
                                     public void run() {
-                                        setupScreen.dismiss();
+                                        SetupScreen screen = setupScreenHolder[0];
+                                        // screen will never be null if this code runs, but
+                                        // stranger things have happened...
+                                        if (screen != null) {
+                                            screen.dismiss();
+                                        }
                                     }
                                 });
                             }
@@ -2638,7 +2663,7 @@ abstract public class GeckoApp
 
             mMainHandler.post(new Runnable() { 
                 public void run() {
-                    mLayerView.setVisibility(View.INVISIBLE);
+                    mLayerView.hide();
                 }
             });
         }

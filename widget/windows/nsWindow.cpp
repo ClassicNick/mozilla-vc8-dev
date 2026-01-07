@@ -163,6 +163,9 @@
 
 #include "nsIContent.h"
 
+#include "mozilla/HangMonitor.h"
+#include "nsIMM32Handler.h"
+
 using namespace mozilla::widget;
 using namespace mozilla::layers;
 using namespace mozilla;
@@ -485,8 +488,13 @@ nsWindow::Create(nsIWidget *aParent,
   DWORD extendedStyle = WindowExStyle();
 
   if (mWindowType == eWindowType_popup) {
-    if (!aParent)
+	  if (!aParent) {
       parent = NULL;
+    }
+
+    if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION) {
+      extendedStyle |= WS_EX_COMPOSITED;
+    }
 
     if (aInitData->mIsDragPopup) {
       // This flag makes the window transparent to mouse events
@@ -1080,6 +1088,13 @@ NS_METHOD nsWindow::Show(bool bState)
         ::SetClassLongA(mWnd, GCL_STYLE, CS_DROPSHADOW);
         sDropShadowEnabled = true;
       }
+    }
+
+    // WS_EX_COMPOSITED conflicts with the WS_EX_LAYERED style and causes
+    // some popup menus to become invisible.
+    LONG_PTR exStyle = ::GetWindowLongPtrW(mWnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_LAYERED) {
+      ::SetWindowLongPtrW(mWnd, GWL_EXSTYLE, exStyle & ~WS_EX_COMPOSITED);
     }
   }
 
@@ -4279,11 +4294,27 @@ DisplaySystemMenu(HWND hWnd, nsSizeMode sizeMode, bool isRtl, int32_t x, int32_t
   return false;
 }
 
+inline static mozilla::HangMonitor::ActivityType ActivityTypeForMessage(UINT msg)
+{
+  if ((msg >= WM_KEYFIRST && msg <= WM_IME_KEYLAST) ||
+      (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) ||
+      (msg >= MOZ_WM_MOUSEWHEEL_FIRST && msg <= MOZ_WM_MOUSEWHEEL_LAST) ||
+      (msg >= NS_WM_IMEFIRST && msg <= NS_WM_IMELAST)) {
+    return mozilla::HangMonitor::kUIActivity;
+  }
+
+  // This may not actually be right, but we don't want to reset the timer if
+  // we're not actually processing a UI message.
+  return mozilla::HangMonitor::kActivityUIAVail;
+}
+
 // The WndProc procedure for all nsWindows in this toolkit. This merely catches
 // exceptions and passes the real work to WindowProcInternal. See bug 587406
 // and http://msdn.microsoft.com/en-us/library/ms633573%28VS.85%29.aspx
 LRESULT CALLBACK nsWindow::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+  HangMonitor::NotifyActivity(ActivityTypeForMessage(msg));
+
   return mozilla::CallWindowProcCrashProtected(WindowProcInternal, hWnd, msg, wParam, lParam);
 }
 

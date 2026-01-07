@@ -324,7 +324,7 @@ nsFocusManager::GetRedirectedFocus(nsIContent* aContent)
 
         nsINodeList* children = doc->BindingManager()->GetXBLChildNodesFor(aContent);
         if (children) {
-          nsIContent* child = children->GetNodeAt(0);
+          nsIContent* child = children->Item(0);
           if (child && child->Tag() == nsGkAtoms::slider)
             return child;
         }
@@ -811,13 +811,6 @@ nsFocusManager::ContentRemoved(nsIDocument* aDocument, nsIContent* aContent)
   if (content && nsContentUtils::ContentIsDescendantOf(content, aContent)) {
     bool shouldShowFocusRing = window->ShouldShowFocusRing();
     window->SetFocusedNode(nullptr);
-
-    nsCOMPtr<nsIDocShell> docShell = window->GetDocShell();
-    if (docShell) {
-      nsCOMPtr<nsIPresShell> presShell;
-      docShell->GetPresShell(getter_AddRefs(presShell));
-      nsIMEStateManager::OnRemoveContent(presShell->GetPresContext(), content);
-    }
 
     // if this window is currently focused, clear the global focused
     // element as well, but don't fire any events.
@@ -1781,7 +1774,7 @@ nsFocusManager::Focus(nsPIDOMWindow* aWindow,
     mFocusedContent = aContent;
 
     nsIContent* focusedNode = aWindow->GetFocusedNode();
-    bool isRefocus = focusedNode && focusedNode->IsEqualTo(aContent);
+    bool isRefocus = focusedNode && focusedNode->IsEqualNode(aContent);
 
     aWindow->SetFocusedNode(aContent, focusMethod);
 
