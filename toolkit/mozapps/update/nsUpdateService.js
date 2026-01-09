@@ -752,6 +752,26 @@ function writeVersionFile(dir, version) {
 }
 
 /**
+ * Removes the MozUpdater folders that bgupdates/staged updates creates.
+ */
+function cleanUpMozUpdaterDirs() {
+  try {
+    var tmpDir = Components.classes["@mozilla.org/file/directory_service;1"].
+                            getService(Components.interfaces.nsIProperties).
+                            get("TmpD", Components.interfaces.nsIFile);
+    // All temp unique subfolders are inside MozUpdater, delete it recursively.
+    var mozUpdaterDir = tmpDir.clone();
+    mozUpdaterDir.append("MozUpdater");
+    if (mozUpdaterDir.exists()) {
+      LOG("cleanUpMozUpdaterDirs - Cleaning MozUpdater folder");
+      mozUpdaterDir.remove(true);
+    }
+  } catch (e) {
+    LOG("cleanUpMozUpdaterDirs - Exception: " + e);
+  }
+}
+
+/**
  * Removes the contents of the Updates Directory
  *
  * @param aBackgroundUpdate Whether the update has been performed in the
@@ -1697,6 +1717,9 @@ UpdateService.prototype = {
 
       prompter.showUpdateError(update);
     }
+
+    // Now trash the MozUpdater folders which staged/bgupdates uses.
+    cleanUpMozUpdaterDirs();
   },
 
   /**
@@ -3839,7 +3862,7 @@ UpdatePrompt.prototype = {
 };
 
 var components = [UpdateService, Checker, UpdatePrompt, UpdateManager];
-var NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
+this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
 
 #if 0
 /**

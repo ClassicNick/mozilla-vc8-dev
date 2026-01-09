@@ -890,6 +890,10 @@ nsScriptSecurityManager::CheckSameOriginPrincipal(nsIPrincipal* aSubject,
     if (aSubject == aObject)
         return NS_OK;
 
+    if (!AppAttributesEqual(aSubject, aObject)) {
+        return NS_ERROR_DOM_PROP_ACCESS_DENIED;
+    }
+
     // Default to false, and change if that turns out wrong.
     bool subjectSetDomain = false;
     bool objectSetDomain = false;
@@ -948,6 +952,26 @@ nsScriptSecurityManager::HashPrincipalByOrigin(nsIPrincipal* aPrincipal)
     if (!uri)
         aPrincipal->GetURI(getter_AddRefs(uri));
     return SecurityHashURI(uri);
+}
+
+/* static */ bool
+nsScriptSecurityManager::AppAttributesEqual(nsIPrincipal* aFirst,
+                                            nsIPrincipal* aSecond)
+{
+    MOZ_ASSERT(aFirst && aSecond, "Don't pass null pointers!");
+
+    uint32_t firstAppId = nsIScriptSecurityManager::UNKNOWN_APP_ID;
+    if (!aFirst->GetUnknownAppId()) {
+        firstAppId = aFirst->GetAppId();
+    }
+
+    uint32_t secondAppId = nsIScriptSecurityManager::UNKNOWN_APP_ID;
+    if (!aSecond->GetUnknownAppId()) {
+        secondAppId = aSecond->GetAppId();
+    }
+
+    return ((firstAppId == secondAppId) &&
+            (aFirst->GetIsInBrowserElement() == aSecond->GetIsInBrowserElement()));
 }
 
 nsresult
@@ -1851,6 +1875,13 @@ nsScriptSecurityManager::GetNoAppCodebasePrincipal(nsIURI* aURI,
 }
 
 NS_IMETHODIMP
+nsScriptSecurityManager::GetCodebasePrincipal(nsIURI* aURI,
+                                              nsIPrincipal** aPrincipal)
+{
+  return GetNoAppCodebasePrincipal(aURI, aPrincipal);
+}
+
+NS_IMETHODIMP
 nsScriptSecurityManager::GetAppCodebasePrincipal(nsIURI* aURI,
                                                  uint32_t aAppId,
                                                  bool aInMozBrowser,
@@ -1900,27 +1931,6 @@ nsScriptSecurityManager::GetCodebasePrincipalInternal(nsIURI *aURI,
                                  getter_AddRefs(principal));
     NS_ENSURE_SUCCESS(rv, rv);
     NS_IF_ADDREF(*result = principal);
-
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsScriptSecurityManager::GetPrincipalFromContext(JSContext *cx,
-                                                 nsIPrincipal **result)
-{
-    *result = nullptr;
-
-    nsIScriptContextPrincipal* scp =
-        GetScriptContextPrincipalFromJSContext(cx);
-
-    if (!scp)
-    {
-        return NS_ERROR_FAILURE;
-    }
-
-    nsIScriptObjectPrincipal* globalData = scp->GetObjectPrincipal();
-    if (globalData)
-        NS_IF_ADDREF(*result = globalData->GetPrincipal());
 
     return NS_OK;
 }
@@ -2010,86 +2020,6 @@ nsScriptSecurityManager::GetFunctionObjectPrincipal(JSContext *cx,
     }
 
     return GetScriptPrincipal(script, rv);
-}
-
-nsIPrincipal*
-nsScriptSecurityManager::GetFramePrincipal(JSContext *cx,
-                                           JSStackFrame *fp,
-                                           nsresult *rv)
-{
-    NS_PRECONDITION(rv, "Null out param");
-    JSObject *obj = JS_GetFrameFunctionObject(cx, fp);
-    if (!obj)
-    {
-        // Must be in a top-level script. Get principal from the script.
-        JSScript *script = JS_GetFrameScript(cx, fp);
-        return GetScriptPrincipal(script, rv);
-    }
-
-    nsIPrincipal* result = GetFunctionObjectPrincipal(cx, obj, fp, rv);
-
-#ifdef DEBUG
-    if (NS_SUCCEEDED(*rv) && !result)
-    {
-        JSFunction *fun = JS_GetObjectFunction(obj);
-        JSScript *script = JS_GetFunctionScript(cx, fun);
-
-        NS_ASSERTION(!script, "Null principal for non-native function!");
-    }
-#endif
-
-    return result;
-}
-
-nsIPrincipal*
-nsScriptSecurityManager::GetPrincipalAndFrame(JSContext *cx,
-                                              JSStackFrame **frameResult,
-                                              nsresult* rv)
-{
-    NS_PRECONDITION(rv, "Null out param");
-    //-- If there's no principal on the stack, look at the global object
-    //   and return the innermost frame for annotations.
-    *rv = NS_OK;
-
-    if (cx)
-    {
-        // Get principals from innermost JavaScript frame.
-        JSStackFrame *fp = nullptr; // tell JS_BrokenFrameIterator to start at innermost
-        for (fp = JS_BrokenFrameIterator(cx, &fp); fp; fp = JS_BrokenFrameIterator(cx, &fp))
-        {
-            nsIPrincipal* result = GetFramePrincipal(cx, fp, rv);
-            if (result)
-            {
-                NS_ASSERTION(NS_SUCCEEDED(*rv), "Weird return");
-                *frameResult = fp;
-                return result;
-            }
-        }
-
-        nsIScriptContextPrincipal* scp =
-            GetScriptContextPrincipalFromJSContext(cx);
-        if (scp)
-        {
-            nsIScriptObjectPrincipal* globalData = scp->GetObjectPrincipal();
-            if (!globalData)
-            {
-                *rv = NS_ERROR_FAILURE;
-                return nullptr;
-            }
-
-            // Note that we're not in a loop or anything, and nothing comes
-            // after this point in the function, so we can just return here.
-            nsIPrincipal* result = globalData->GetPrincipal();
-            if (result)
-            {
-                JSStackFrame *inner = nullptr;
-                *frameResult = JS_BrokenFrameIterator(cx, &inner);
-                return result;
-            }
-        }
-    }
-
-    return nullptr;
 }
 
 nsIPrincipal*
@@ -2992,11 +2922,13 @@ GetExtendedOrigin(nsIURI* aURI, uint32_t aAppId, bool aInMozBrowser,
     return;
   }
 
-  // aExtendedOrigin = appId + "+" + origin + "+" + { 't', 'f' }
+  // aExtendedOrigin = appId + "+" + { 't', 'f' } "+" + origin;
   aExtendedOrigin.Truncate();
   aExtendedOrigin.AppendInt(aAppId);
-  aExtendedOrigin.Append(NS_LITERAL_CSTRING("+") + origin + NS_LITERAL_CSTRING("+"));
+  aExtendedOrigin.Append('+');
   aExtendedOrigin.Append(aInMozBrowser ? 't' : 'f');
+  aExtendedOrigin.Append('+');
+  aExtendedOrigin.Append(origin);
 
   return;
 }

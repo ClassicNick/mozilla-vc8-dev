@@ -128,6 +128,15 @@ TiledThebesLayerOGL::~TiledThebesLayerOGL()
 }
 
 void
+TiledThebesLayerOGL::MemoryPressure()
+{
+  if (mReusableTileStore) {
+    delete mReusableTileStore;
+    mReusableTileStore = new ReusableTileStoreOGL(gl(), 1);
+  }
+}
+
+void
 TiledThebesLayerOGL::PaintedTiledLayerBuffer(const BasicTiledLayerBuffer* mTiledBuffer)
 {
   mMainMemoryTiledBuffer.ReadUnlock();
@@ -152,7 +161,7 @@ TiledThebesLayerOGL::ProcessUploadQueue()
     mReusableTileStore = nullptr;
   } else if (!mReusableTileStore && !mIsFixedPosition) {
     // XXX Add a pref for reusable tile store size
-    mReusableTileStore = new ReusableTileStoreOGL(gl(), 1);
+    mReusableTileStore = new ReusableTileStoreOGL(gl(), 2);
   }
 
   gfxSize resolution(1, 1);
@@ -197,12 +206,12 @@ TiledThebesLayerOGL::ProcessUploadQueue()
 }
 
 void
-TiledThebesLayerOGL::RenderTile(TiledTexture aTile,
+TiledThebesLayerOGL::RenderTile(const TiledTexture& aTile,
                                 const gfx3DMatrix& aTransform,
                                 const nsIntPoint& aOffset,
-                                nsIntRegion aScreenRegion,
-                                nsIntPoint aTextureOffset,
-                                nsIntSize aTextureBounds,
+                                const nsIntRegion& aScreenRegion,
+                                const nsIntPoint& aTextureOffset,
+                                const nsIntSize& aTextureBounds,
                                 Layer* aMaskLayer)
 {
     gl()->fBindTexture(LOCAL_GL_TEXTURE_2D, aTile.mTextureHandle);
@@ -217,7 +226,7 @@ TiledThebesLayerOGL::RenderTile(TiledTexture aTile,
     program->SetLayerOpacity(GetEffectiveOpacity());
     program->SetLayerTransform(aTransform);
     program->SetRenderOffset(aOffset);
-    program->LoadMask(GetMaskLayer());
+    program->LoadMask(aMaskLayer);
 
     nsIntRegionRectIterator it(aScreenRegion);
     for (const nsIntRect* rect = it.Next(); rect != nullptr; rect = it.Next()) {

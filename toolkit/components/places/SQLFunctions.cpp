@@ -19,6 +19,7 @@
 #include "nsIRandomGenerator.h"
 #endif
 #include "mozilla/Telemetry.h"
+#include "mozilla/Likely.h"
 
 using namespace mozilla::storage;
 
@@ -44,7 +45,7 @@ namespace {
    * @return a pointer to the next word boundary after aStart
    */
   static
-  NS_ALWAYS_INLINE const_char_iterator
+  MOZ_ALWAYS_INLINE const_char_iterator
   nextWordBoundary(const_char_iterator const aStart,
                    const_char_iterator const aNext,
                    const_char_iterator const aEnd) {
@@ -76,7 +77,7 @@ namespace {
    * findAnywhere and findOnBoundary do almost the same thing, so it's natural
    * to implement them in terms of a single function.  They're both
    * performance-critical functions, however, and checking aBehavior makes them
-   * a bit slower.  Our solution is to define findInString as NS_ALWAYS_INLINE
+   * a bit slower.  Our solution is to define findInString as MOZ_ALWAYS_INLINE
    * and rely on the compiler to optimize out the aBehavior check.
    *
    * @param aToken
@@ -91,7 +92,7 @@ namespace {
    * @return true if aToken was found in aSourceString, false otherwise.
    */
   static
-  NS_ALWAYS_INLINE bool
+  MOZ_ALWAYS_INLINE bool
   findInString(const nsDependentCSubstring &aToken,
                const nsACString &aSourceString,
                FindInStringBehavior aBehavior)
@@ -151,7 +152,7 @@ namespace {
       }
 
       // If something went wrong above, get out of here!
-      if (NS_UNLIKELY(error)) {
+      if (MOZ_UNLIKELY(error)) {
         return false;
       }
 

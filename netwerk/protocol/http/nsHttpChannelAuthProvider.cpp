@@ -23,6 +23,7 @@
 
 nsHttpChannelAuthProvider::nsHttpChannelAuthProvider()
     : mAuthChannel(nullptr)
+    , mIsPrivate(false)
     , mProxyAuthContinuationState(nullptr)
     , mAuthContinuationState(nullptr)
     , mProxyAuth(false)
@@ -67,6 +68,9 @@ nsHttpChannelAuthProvider::Init(nsIHttpAuthenticableChannel *channel)
 
     rv = mURI->GetPort(&mPort);
     if (NS_FAILED(rv)) return rv;
+
+    nsCOMPtr<nsIChannel> bareChannel = do_QueryInterface(channel);
+    mIsPrivate = NS_UsePrivateBrowsing(bareChannel);
 
     return NS_OK;
 }
@@ -160,7 +164,7 @@ nsHttpChannelAuthProvider::AddAuthorizationHeaders()
     if (NS_FAILED(rv)) return rv;
 
     // this getter never fails
-    nsHttpAuthCache *authCache = gHttpHandler->AuthCache();
+    nsHttpAuthCache *authCache = gHttpHandler->AuthCache(mIsPrivate);
 
     // check if proxy credentials should be sent
     const char *proxyHost = ProxyHost();
@@ -366,7 +370,7 @@ nsHttpChannelAuthProvider::GenCredsAndSetEntry(nsIHttpAuthenticator *auth,
         0 == (generateFlags & nsIHttpAuthenticator::USING_INTERNAL_IDENTITY);
 
     // this getter never fails
-    nsHttpAuthCache *authCache = gHttpHandler->AuthCache();
+    nsHttpAuthCache *authCache = gHttpHandler->AuthCache(mIsPrivate);
 
     // create a cache entry.  we do this even though we don't yet know that
     // these credentials are valid b/c we need to avoid prompting the user
@@ -631,7 +635,7 @@ nsHttpChannelAuthProvider::GetCredentialsForChallenge(const char *challenge,
         this, mAuthChannel, proxyAuth, challenge));
 
     // this getter never fails
-    nsHttpAuthCache *authCache = gHttpHandler->AuthCache();
+    nsHttpAuthCache *authCache = gHttpHandler->AuthCache(mIsPrivate);
 
     uint32_t authFlags;
     nsresult rv = auth->GetAuthFlags(&authFlags);
@@ -736,7 +740,9 @@ nsHttpChannelAuthProvider::GetCredentialsForChallenge(const char *challenge,
             else if (!identFromURI ||
                      (nsCRT::strcmp(ident->User(),
                                     entry->Identity().User()) == 0 &&
-                     !(loadFlags && nsIChannel::LOAD_ANONYMOUS))) {
+                     !(loadFlags &
+                       (nsIChannel::LOAD_ANONYMOUS |
+                        nsIChannel::LOAD_EXPLICIT_CREDENTIALS)))) {
                 LOG(("  taking identity from auth cache\n"));
                 // the password from the auth cache is more likely to be
                 // correct than the one in the URL.  at least, we know that it
@@ -1051,7 +1057,7 @@ NS_IMETHODIMP nsHttpChannelAuthProvider::OnAuthAvailable(nsISupports *aContext,
     nsAutoCString realm;
     ParseRealm(mCurrentChallenge.get(), realm);
 
-    nsHttpAuthCache *authCache = gHttpHandler->AuthCache();
+    nsHttpAuthCache *authCache = gHttpHandler->AuthCache(mIsPrivate);
     nsHttpAuthEntry *entry = nullptr;
     authCache->GetAuthEntryForDomain(scheme.get(), host, port,
                                      realm.get(), &entry);
@@ -1299,8 +1305,15 @@ nsHttpChannelAuthProvider::SetAuthorizationHeader(nsHttpAuthCache    *authCache,
             GetIdentityFromURI(0, ident);
             // if the usernames match, then clear the ident so we will pick
             // up the one from the auth cache instead.
-            if (nsCRT::strcmp(ident.User(), entry->User()) == 0)
-                ident.Clear();
+            // when this is undesired, specify LOAD_EXPLICIT_CREDENTIALS load
+            // flag.
+            if (nsCRT::strcmp(ident.User(), entry->User()) == 0) {
+                uint32_t loadFlags;
+                if (NS_SUCCEEDED(mAuthChannel->GetLoadFlags(&loadFlags)) &&
+                    !(loadFlags && nsIChannel::LOAD_EXPLICIT_CREDENTIALS)) {
+                    ident.Clear();
+                }
+            }
         }
         bool identFromURI;
         if (ident.IsEmpty()) {

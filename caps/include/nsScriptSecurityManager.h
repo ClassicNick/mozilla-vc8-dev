@@ -348,6 +348,22 @@ public:
         return sStrictFileOriginPolicy;
     }
 
+    /**
+     * Returns true if the two principals share the same app attributes.
+     *
+     * App attributes are appId and the inBrowserElement flag.
+     * Two principals have the same app attributes if those information are
+     * equals.
+     * This method helps keeping principals from different apps isolated from
+     * each other. Also, it helps making sure mozbrowser (web views) and their
+     * parent are isolated from each other. All those entities do not share the
+     * same data (cookies, IndexedDB, localStorage, etc.) so we shouldn't allow
+     * violating that principle.
+     */
+    static bool
+    AppAttributesEqual(nsIPrincipal* aFirst,
+                       nsIPrincipal* aSecond);
+
 private:
 
     // GetScriptSecurityManager is the only call that can make one
@@ -415,12 +431,6 @@ private:
     GetSubjectPrincipal(JSContext* cx, nsresult* rv);
 
     // Returns null if a principal cannot be found.  Note that rv can be NS_OK
-    // when this happens -- this means that there was no script for the frame.
-    // Callers MUST pass in a non-null rv here.
-    nsIPrincipal*
-    GetFramePrincipal(JSContext* cx, JSStackFrame* fp, nsresult* rv);
-
-    // Returns null if a principal cannot be found.  Note that rv can be NS_OK
     // when this happens -- this means that there was no script.  Callers MUST
     // pass in a non-null rv here.
     static nsIPrincipal*
@@ -435,14 +445,6 @@ private:
     static nsIPrincipal*
     GetFunctionObjectPrincipal(JSContext* cx, JSObject* obj, JSStackFrame *fp,
                                nsresult* rv);
-
-    // Returns null if a principal cannot be found.  Note that rv can be NS_OK
-    // when this happens -- this means that there was no script
-    // running.  Callers MUST pass in a non-null rv here.
-    nsIPrincipal*
-    GetPrincipalAndFrame(JSContext *cx,
-                         JSStackFrame** frameResult,
-                         nsresult* rv);
 
     /**
      * Check capability levels for an |aObj| that implements
