@@ -69,6 +69,7 @@
 #include "nsDataHashtable.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Attributes.h"
+#include "nsGenericElement.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -839,7 +840,7 @@ public:
   virtual NS_HIDDEN_(void)
     EnumerateExternalResources(nsSubDocEnumFunc aCallback, void* aData);
 
-  nsTArray<nsCString> mFileDataUris;
+  nsTArray<nsCString> mHostObjectURIs;
 
   // Returns our (lazily-initialized) animation controller.
   // If HasAnimationController is true, this is guaranteed to return non-null.
@@ -891,8 +892,8 @@ public:
 
   virtual nsEventStates GetDocumentState();
 
-  virtual void RegisterFileDataUri(const nsACString& aUri);
-  virtual void UnregisterFileDataUri(const nsACString& aUri);
+  virtual void RegisterHostObjectUri(const nsACString& aUri);
+  virtual void UnregisterHostObjectUri(const nsACString& aUri);
 
   // Only BlockOnload should call this!
   void AsyncBlockOnload();

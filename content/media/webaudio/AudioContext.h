@@ -27,8 +27,11 @@ class AudioBuffer;
 class AudioBufferSourceNode;
 class AudioDestinationNode;
 class AudioListener;
+class BiquadFilterNode;
 class DelayNode;
+class DynamicsCompressorNode;
 class GainNode;
+class PannerNode;
 
 class AudioContext MOZ_FINAL : public nsWrapperCache,
                                public EnableWebAudioCheck
@@ -70,7 +73,16 @@ public:
   CreateGain();
 
   already_AddRefed<DelayNode>
-  CreateDelay(float aMaxDelayTime);
+  CreateDelay(float aMaxDelayTime, ErrorResult& aRv);
+
+  already_AddRefed<PannerNode>
+  CreatePanner();
+
+  already_AddRefed<DynamicsCompressorNode>
+  CreateDynamicsCompressor();
+
+  already_AddRefed<BiquadFilterNode>
+  CreateBiquadFilter();
 
 private:
   nsCOMPtr<nsIDOMWindow> mWindow;

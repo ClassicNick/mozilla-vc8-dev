@@ -17,7 +17,6 @@
 #include "nsNetCID.h"
 #include "nsCExternalHandlerService.h"
 #include "nsCycleCollectionParticipant.h"
-#include "mozIAsyncFavicons.h"
 #include "mozilla/Preferences.h"
 #include "JumpListBuilder.h"
 #include "WinUtils.h"

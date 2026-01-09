@@ -16,6 +16,8 @@
 using namespace js;
 using namespace js::ion;
 
+using mozilla::DebugOnly;
+
 CodeGeneratorX86::CodeGeneratorX86(MIRGenerator *gen, LIRGraph &graph)
   : CodeGeneratorX86Shared(gen, graph)
 {
@@ -65,6 +67,14 @@ CodeGeneratorX86::ToOutValue(LInstruction *ins)
 {
     Register typeReg = ToRegister(ins->getDef(TYPE_INDEX));
     Register payloadReg = ToRegister(ins->getDef(PAYLOAD_INDEX));
+    return ValueOperand(typeReg, payloadReg);
+}
+
+ValueOperand
+CodeGeneratorX86::ToTempValue(LInstruction *ins, size_t pos)
+{
+    Register typeReg = ToRegister(ins->getTemp(pos + TYPE_INDEX));
+    Register payloadReg = ToRegister(ins->getTemp(pos + PAYLOAD_INDEX));
     return ValueOperand(typeReg, payloadReg);
 }
 

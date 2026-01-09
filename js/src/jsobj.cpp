@@ -68,11 +68,12 @@
 
 #include "jsautooplen.h"
 
-using namespace mozilla;
 using namespace js;
 using namespace js::gc;
 using namespace js::types;
+
 using js::frontend::IsIdentifier;
+using mozilla::ArrayLength;
 
 JS_STATIC_ASSERT(int32_t((JSObject::NELEMENTS_LIMIT - 1) * sizeof(Value)) == int64_t((JSObject::NELEMENTS_LIMIT - 1) * sizeof(Value)));
 
@@ -891,7 +892,7 @@ bool
 GetOwnPropertyDescriptor(JSContext *cx, HandleObject obj, HandleId id, PropertyDescriptor *desc)
 {
     // FIXME: Call TrapGetOwnProperty directly once ScriptedIndirectProxies is removed
-    if (obj->isProxy()) 
+    if (obj->isProxy())
         return Proxy::getOwnPropertyDescriptor(cx, obj, id, false, desc);
 
     RootedObject pobj(cx);
@@ -2941,6 +2942,9 @@ JSObject::swap(JSContext *cx, JSObject *other_)
     RootedObject self(cx, this);
     RootedObject other(cx, other_);
 
+    AutoMarkInDeadCompartment adc1(self->compartment());
+    AutoMarkInDeadCompartment adc2(other->compartment());
+
     // Ensure swap doesn't cause a finalizer to not be run.
     JS_ASSERT(IsBackgroundFinalized(getAllocKind()) ==
               IsBackgroundFinalized(other->getAllocKind()));
@@ -3085,8 +3089,8 @@ DefineConstructorAndPrototype(JSContext *cx, HandleObject obj, JSProtoKey key, H
          * (FIXME: remove this dependency on the exact identity of the parent,
          * perhaps as part of bug 638316.)
          */
-        RootedFunction fun(cx, js_NewFunction(cx, NullPtr(), constructor, nargs, JSFUN_CONSTRUCTOR,
-                                              obj, atom, ctorKind));
+        RootedFunction fun(cx, js_NewFunction(cx, NullPtr(), constructor, nargs,
+                                              JSFunction::NATIVE_CTOR, obj, atom, ctorKind));
         if (!fun)
             goto bad;
 
@@ -3509,7 +3513,7 @@ js_InitNullClass(JSContext *cx, HandleObject obj)
 }
 
 #define DECLARE_PROTOTYPE_CLASS_INIT(name,code,init) \
-    extern JSObject *init(JSContext *cx, JSObject *obj);
+    extern JSObject *init(JSContext *cx, Handle<JSObject*> obj);
 JS_FOR_EACH_PROTOTYPE(DECLARE_PROTOTYPE_CLASS_INIT)
 #undef DECLARE_PROTOTYPE_CLASS_INIT
 
@@ -4279,7 +4283,7 @@ js_NativeSet(JSContext *cx, Handle<JSObject*> obj, Handle<JSObject*> receiver,
 
     RootedValue nvp(cx, *vp);
 
-    int32_t sample = cx->runtime->propertyRemovals;
+    uint32_t sample = cx->runtime->propertyRemovals;
     if (!shape->set(cx, obj, receiver, strict, &nvp))
         return false;
 

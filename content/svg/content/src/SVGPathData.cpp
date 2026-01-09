@@ -15,6 +15,10 @@
 #include "SVGContentUtils.h"
 #include "SVGPathSegUtils.h"
 
+#ifndef M_PI
+#define M_PI 3.141592653589793
+#endif
+
 using namespace mozilla;
 
 static bool IsMoveto(uint16_t aSegType)

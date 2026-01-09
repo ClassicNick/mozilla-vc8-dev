@@ -1434,8 +1434,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(ArchiveRequest, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozURLProperty, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(ModalContentWindow, nsWindowSH,
                            DEFAULT_SCRIPTABLE_FLAGS |
@@ -2375,6 +2373,21 @@ nsDOMClassInfo::RegisterExternalClasses()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMUIEvent)                                    \
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
 
+#ifdef MOZ_B2G
+#define DOM_CLASSINFO_WINDOW_MAP_ENTRIES(_support_indexed_db)                  \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)                                        \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindowB2G)                                     \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)                                      \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)                                   \
+  DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)                              \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMStorageIndexedDB,                  \
+                                      _support_indexed_db)                     \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMWindowPerformance,                 \
+                                      nsGlobalWindow::HasPerformanceSupport()) \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,                   \
+                                      nsDOMTouchEvent::PrefEnabled())          \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIWindowCrypto, domCryptoEnabled)
+#else // !MOZ_B2G
 #define DOM_CLASSINFO_WINDOW_MAP_ENTRIES(_support_indexed_db)                  \
   DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)                                        \
   DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)                                      \
@@ -2387,6 +2400,7 @@ nsDOMClassInfo::RegisterExternalClasses()
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,                   \
                                       nsDOMTouchEvent::PrefEnabled())          \
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIWindowCrypto, domCryptoEnabled)
+#endif // MOZ_B2G
 
 nsresult
 nsDOMClassInfo::Init()
@@ -3990,10 +4004,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(ArchiveRequest, nsIDOMArchiveRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMArchiveRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMRequest)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(MozURLProperty, nsIDOMMozURLProperty)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozURLProperty)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ModalContentWindow, nsIDOMWindow)
@@ -6667,6 +6677,14 @@ ConstructorEnabled(const nsGlobalNameStruct *aStruct, nsGlobalWindow *aWin)
     }
   }
 
+  // Don't expose ArchiveReader unless user has explicitly enabled it
+  if (aStruct->mDOMClassInfoID == eDOMClassInfo_ArchiveReader_id ||
+      aStruct->mDOMClassInfoID == eDOMClassInfo_ArchiveRequest_id) {
+    if (!dom::file::ArchiveReader::PrefEnabled()) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -8087,38 +8105,6 @@ IDBEventTargetSH::PreCreate(nsISupports *aNativeObj, JSContext *aCx,
 
 // Element helper
 
-static bool
-GetBindingURL(Element *aElement, nsIDocument *aDocument,
-              mozilla::css::URLValue **aResult)
-{
-  // If we have a frame the frame has already loaded the binding.  And
-  // otherwise, don't do anything else here unless we're dealing with
-  // XUL or an HTML element that may have a plugin-related overlay
-  // (i.e. object, embed, or applet).
-  bool isXULorPluginElement = (aElement->IsXUL() ||
-                               aElement->IsHTML(nsGkAtoms::object) ||
-                               aElement->IsHTML(nsGkAtoms::embed) ||
-                               aElement->IsHTML(nsGkAtoms::applet));
-  nsIPresShell *shell = aDocument->GetShell();
-  if (!shell || aElement->GetPrimaryFrame() || !isXULorPluginElement) {
-    *aResult = nullptr;
-
-    return true;
-  }
-
-  // Get the computed -moz-binding directly from the style context
-  nsPresContext *pctx = shell->GetPresContext();
-  NS_ENSURE_TRUE(pctx, false);
-
-  nsRefPtr<nsStyleContext> sc = pctx->StyleSet()->ResolveStyleFor(aElement,
-                                                                  nullptr);
-  NS_ENSURE_TRUE(sc, false);
-
-  *aResult = sc->GetStyleDisplay()->mBinding;
-
-  return true;
-}
-
 NS_IMETHODIMP
 nsElementSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
                        JSObject *globalObj, JSObject **parentObj)
@@ -8154,7 +8140,7 @@ nsElementSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
   }
 
   mozilla::css::URLValue *bindingURL;
-  bool ok = GetBindingURL(element, doc, &bindingURL);
+  bool ok = element->GetBindingURL(doc, &bindingURL);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
   // Only allow slim wrappers if there's no binding.
@@ -8219,7 +8205,7 @@ nsElementSH::PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   // Make sure the style context goes away _before_ we load the binding
   // since that can destroy the relevant presshell.
   mozilla::css::URLValue *bindingURL;
-  bool ok = GetBindingURL(element, doc, &bindingURL);
+  bool ok = element->GetBindingURL(doc, &bindingURL);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
   if (!bindingURL) {
@@ -8529,7 +8515,7 @@ nsNamedNodeMapSH::GetNamedItem(nsISupports *aNative, const nsAString& aName,
   nsDOMAttributeMap* map = nsDOMAttributeMap::FromSupports(aNative);
 
   nsINode *attr;
-  *aCache = attr = map->GetNamedItem(aName, aResult);
+  *aCache = attr = map->GetNamedItem(aName);
   return attr;
 }
 

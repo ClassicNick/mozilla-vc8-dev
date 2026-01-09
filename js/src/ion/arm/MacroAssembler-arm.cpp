@@ -1555,13 +1555,6 @@ MacroAssemblerARMCompat::load16ZeroExtend(const Address &address, const Register
 }
 
 void
-MacroAssemblerARMCompat::load16ZeroExtend_mask(const Address &address, Imm32 mask, const Register &dest)
-{
-    load16ZeroExtend(address, dest);
-    ma_and(mask, dest, dest);
-}
-
-void
 MacroAssemblerARMCompat::load16ZeroExtend(const BaseIndex &src, const Register &dest)
 {
     Register index = src.index;
@@ -2235,6 +2228,12 @@ MacroAssemblerARMCompat::boxDouble(const FloatRegister &src, const ValueOperand 
     as_vxfer(dest.payloadReg(), dest.typeReg(), VFPRegister(src), FloatToCore);
 }
 
+void
+MacroAssemblerARMCompat::boxNonDouble(JSValueType type, const Register &src, const ValueOperand &dest) {
+    if (src != dest.payloadReg())
+        ma_mov(src, dest.payloadReg());
+    ma_mov(ImmType(type), dest.typeReg());
+}
 
 void
 MacroAssemblerARMCompat::boolValueToDouble(const ValueOperand &operand, const FloatRegister &dest)
