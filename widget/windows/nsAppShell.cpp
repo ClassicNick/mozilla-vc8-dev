@@ -22,13 +22,11 @@
 const PRUnichar* kAppShellEventId = L"nsAppShell:EventID";
 const PRUnichar* kTaskbarButtonEventId = L"TaskbarButtonCreated";
 
-// The maximum time we allow before forcing a native event callback
-#define NATIVE_EVENT_STARVATION_LIMIT mozilla::TimeDuration::FromSeconds(1)
-
 static UINT sMsgId;
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 static UINT sTaskbarButtonCreatedMsg;
+UINT sTaskbarButtonCreatedMsg;
 
 /* static */
 UINT nsAppShell::GetTaskbarButtonCreatedMessage() {
@@ -248,6 +246,12 @@ nsAppShell::Run(void)
 }
 
 #endif
+
+NS_IMETHODIMP
+nsAppShell::Exit(void)
+{
+  return nsBaseAppShell::Exit();
+}
 
 void
 nsAppShell::DoProcessMoreGeckoEvents()

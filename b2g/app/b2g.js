@@ -190,9 +190,6 @@ pref("app.privacyURL", "http://www.mozilla.com/%LOCALE%/m/privacy.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/b2g/features/");
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/b2g/faq/");
-// Whether we want to report crashes (headless)
-//XXX Remove this pref when bug 801932 is fixed
-pref("app.reportCrashes", true);
 
 // Name of alternate about: page for certificate errors (when undefined, defaults to about:neterror)
 pref("security.alternate_certificate_error_page", "certerror");
@@ -239,7 +236,10 @@ pref("ui.dragThresholdY", 25);
 
 // Layers Acceleration
 pref("layers.acceleration.disabled", false);
+#ifndef XP_WIN
+//TODO: turn this on for Windows in bug 808016
 pref("layers.offmainthreadcomposition.enabled", true);
+#endif
 pref("layers.offmainthreadcomposition.animate-opacity", true);
 pref("layers.offmainthreadcomposition.animate-transform", true);
 pref("layers.async-video.enabled", true);
@@ -315,7 +315,7 @@ pref("urlclassifier.alternate_error_page", "blocked");
 pref("urlclassifier.gethashnoise", 4);
 
 // Randomize all UrlClassifier data with a per-client key.
-pref("urlclassifier.randomizeclient", true);
+pref("urlclassifier.randomizeclient", false);
 
 // The list of tables that use the gethash request to confirm partial results.
 pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
@@ -530,9 +530,18 @@ pref("ui.showHideScrollbars", 1);
 // background.
 pref("dom.ipc.processPriorityManager.enabled", true);
 pref("dom.ipc.processPriorityManager.gracePeriodMS", 1000);
+
+// Kernel parameters for how processes are killed on low-memory.
+pref("gonk.systemMemoryPressureRecoveryPollMS", 5000);
 pref("hal.processPriorityManager.gonk.masterOomScoreAdjust", 0);
+pref("hal.processPriorityManager.gonk.masterKillUnderMB", 1);
 pref("hal.processPriorityManager.gonk.foregroundOomScoreAdjust", 67);
+pref("hal.processPriorityManager.gonk.foregroundKillUnderMB", 4);
 pref("hal.processPriorityManager.gonk.backgroundOomScoreAdjust", 400);
+pref("hal.processPriorityManager.gonk.backgroundKillUnderMB", 8);
+pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 10);
+
+// Niceness values (i.e., CPU priorities) for B2G processes.
 pref("hal.processPriorityManager.gonk.masterNice", -1);
 pref("hal.processPriorityManager.gonk.foregroundNice", 0);
 pref("hal.processPriorityManager.gonk.backgroundNice", 10);

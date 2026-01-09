@@ -482,7 +482,7 @@ class XPCShellTests(object):
     if name is None:
       name = "xpcshell"
     else:
-      assert isinstance(name, str)
+      assert isinstance(name, basestring)
 
     if filename is not None:
       fh = open(filename, 'wb')
@@ -637,7 +637,7 @@ class XPCShellTests(object):
         testdirs = []
 
     if xunitFilename is not None or xunitName is not None:
-        if not isinstance(testsRootDir, str):
+        if not isinstance(testsRootDir, basestring):
             raise Exception("testsRootDir must be a str when outputting xUnit.")
 
         if not os.path.isabs(testsRootDir):
@@ -895,7 +895,7 @@ class XPCShellTests(object):
           try:
             self.removeDir(self.profileDir)
           except Exception:
-            message = "TEST-UNEXPECTED-FAIL | %s | Failed to clean up the test profile directory: %s" % (name, sys.exc_info()[0])
+            message = "TEST-UNEXPECTED-FAIL | %s | Failed to clean up the test profile directory: %s" % (name, sys.exc_info()[1])
             self.log.error(message)
             print_stdout(stdout)
             print_stdout(traceback.format_exc())

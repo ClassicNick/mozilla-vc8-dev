@@ -78,7 +78,9 @@ const RIL_IPC_MOBILECONNECTION_MSG_NAMES = [
   "RIL:SendStkResponse",
   "RIL:SendStkMenuSelection",
   "RIL:SendStkEventDownload",
-  "RIL:RegisterMobileConnectionMsg"
+  "RIL:RegisterMobileConnectionMsg",
+  "RIL:SetCallForwardingOption",
+  "RIL:GetCallForwardingOption"
 ];
 
 const RIL_IPC_VOICEMAIL_MSG_NAMES = [
@@ -430,6 +432,14 @@ RadioInterfaceLayer.prototype = {
       case "RIL:RegisterVoicemailMsg":
         this.registerMessageTarget("voicemail", msg.target);
         break;
+      case "RIL:SetCallForwardingOption":
+        this.saveRequestTarget(msg);
+        this.setCallForwardingOption(msg.json);
+        break;
+      case "RIL:GetCallForwardingOption":
+        this.saveRequestTarget(msg);
+        this.getCallForwardingOption(msg.json);
+        break;
     }
   },
 
@@ -570,13 +580,11 @@ RadioInterfaceLayer.prototype = {
       case "setPreferredNetworkType":
         this.handleSetPreferredNetworkType(message);
         break;
-      case "stkcallsetup":
-        // A call has been placed by the STK app. We shall launch the dialer
-        // app by sending a system message, in order to further control the
-        // call, e.g. hang it up.
-        debug("STK app has placed a call no. " + message.command.options.address);
-        gSystemMessenger.broadcastMessage("icc-dialing", {state: "dialing",
-          number: message.command.options.address});
+      case "queryCallForwardStatus":
+        this.handleQueryCallForwardStatus(message);
+        break;
+      case "setCallForward":
+        this.handleSetCallForward(message);
         break;
       default:
         throw new Error("Don't know about this message type: " +
@@ -1088,8 +1096,10 @@ RadioInterfaceLayer.prototype = {
     debug("handleCallStateChange: " + JSON.stringify(call));
     call.state = convertRILCallState(call.state);
 
-    if (call.state == nsIRadioInterfaceLayer.CALL_STATE_INCOMING) {
-      gSystemMessenger.broadcastMessage("telephony-incoming", {number: call.number});
+    if (call.state == nsIRadioInterfaceLayer.CALL_STATE_INCOMING ||
+        call.state == nsIRadioInterfaceLayer.CALL_STATE_DIALING) {
+      gSystemMessenger.broadcastMessage("telephony-new-call", {number: call.number,
+                                                               state: call.state});
     }
 
     if (call.isActive) {
@@ -1230,9 +1240,10 @@ RadioInterfaceLayer.prototype = {
     }
 
     let id = -1;
-    if (message.messageClass != RIL.PDU_DCS_MSG_CLASS_0) {
+    if (message.messageClass != RIL.GECKO_SMS_MESSAGE_CLASSES[RIL.PDU_DCS_MSG_CLASS_0]) {
       id = gSmsDatabaseService.saveReceivedMessage(message.sender || null,
                                                    message.fullBody || null,
+                                                   message.messageClass,
                                                    message.timestamp);
     }
     let sms = gSmsService.createSmsMessage(id,
@@ -1241,6 +1252,7 @@ RadioInterfaceLayer.prototype = {
                                            message.sender || null,
                                            message.receiver || null,
                                            message.fullBody || null,
+                                           message.messageClass,
                                            message.timestamp,
                                            false);
 
@@ -1251,6 +1263,7 @@ RadioInterfaceLayer.prototype = {
                                        sender: message.sender || null,
                                        receiver: message.receiver || null,
                                        body: message.fullBody || null,
+                                       messageClass: message.messageClass,
                                        timestamp: message.timestamp,
                                        read: false});
     Services.obs.notifyObservers(sms, kSmsReceivedObserverTopic, null);
@@ -1280,6 +1293,7 @@ RadioInterfaceLayer.prototype = {
     }
 
     let timestamp = Date.now();
+    let messageClass = RIL.GECKO_SMS_MESSAGE_CLASSES[RIL.PDU_DCS_MSG_CLASS_NORMAL];
     let id = gSmsDatabaseService.saveSentMessage(options.number,
                                                  options.fullBody,
                                                  timestamp);
@@ -1289,6 +1303,7 @@ RadioInterfaceLayer.prototype = {
                                            null,
                                            options.number,
                                            options.fullBody,
+                                           messageClass,
                                            timestamp,
                                            true);
 
@@ -1314,6 +1329,7 @@ RadioInterfaceLayer.prototype = {
     }
     delete this._sentSmsEnvelopes[message.envelopeId];
 
+    let messageClass = RIL.GECKO_SMS_MESSAGE_CLASSES[RIL.PDU_DCS_MSG_CLASS_NORMAL];
     gSmsDatabaseService.setMessageDeliveryStatus(options.id,
                                                  message.deliveryStatus);
     let sms = gSmsService.createSmsMessage(options.id,
@@ -1322,6 +1338,7 @@ RadioInterfaceLayer.prototype = {
                                            null,
                                            options.number,
                                            options.fullBody,
+                                           messageClass,
                                            options.timestamp,
                                            true);
 
@@ -1458,6 +1475,16 @@ RadioInterfaceLayer.prototype = {
     debug("handleStkProactiveCommand " + JSON.stringify(message));
     gSystemMessenger.broadcastMessage("icc-stkcommand", message);
     this._sendTargetMessage("mobileconnection", "RIL:StkCommand", message);
+  },
+
+  handleQueryCallForwardStatus: function handleQueryCallForwardStatus(message) {
+    debug("handleQueryCallForwardStatus: " + JSON.stringify(message));
+    this._sendRequestResults("RIL:GetCallForwardingOption", message);
+  },
+
+  handleSetCallForward: function handleSetCallForward(message) {
+    debug("handleSetCallForward: " + JSON.stringify(message));
+    this._sendRequestResults("RIL:SetCallForwardingOption", message);
   },
 
   // nsIObserver
@@ -1725,6 +1752,21 @@ RadioInterfaceLayer.prototype = {
 
   sendStkEventDownload: function sendStkEventDownload(message) {
     message.rilMessageType = "sendStkEventDownload";
+    this.worker.postMessage(message);
+  },
+
+  setCallForwardingOption: function setCallForwardingOption(message) {
+    debug("setCallForwardingOption: " + JSON.stringify(message));
+    message.rilMessageType = "setCallForward";
+    message.serviceClass = RIL.ICC_SERVICE_CLASS_VOICE;
+    this.worker.postMessage(message);
+  },
+
+  getCallForwardingOption: function getCallForwardingOption(message) {
+    debug("getCallForwardingOption: " + JSON.stringify(message));
+    message.rilMessageType = "queryCallForwardStatus";
+    message.serviceClass = RIL.ICC_SERVICE_CLASS_NONE;
+    message.number = null;
     this.worker.postMessage(message);
   },
 

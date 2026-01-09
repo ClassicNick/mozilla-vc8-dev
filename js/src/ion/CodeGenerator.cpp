@@ -842,7 +842,7 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
     masm.freeStack(unusedStack);
 
     // Construct the IonFramePrefix.
-    uint32 descriptor = MakeFrameDescriptor(masm.framePushed(), IonFrame_JS);
+    uint32 descriptor = MakeFrameDescriptor(masm.framePushed(), IonFrame_OptimizedJS);
     masm.Push(Imm32(call->numActualArgs()));
     masm.Push(calleereg);
     masm.Push(Imm32(descriptor));
@@ -935,7 +935,7 @@ CodeGenerator::visitCallKnown(LCallKnown *call)
     masm.freeStack(unusedStack);
 
     // Construct the IonFramePrefix.
-    uint32 descriptor = MakeFrameDescriptor(masm.framePushed(), IonFrame_JS);
+    uint32 descriptor = MakeFrameDescriptor(masm.framePushed(), IonFrame_OptimizedJS);
     masm.Push(Imm32(call->numActualArgs()));
     masm.Push(calleereg);
     masm.Push(Imm32(descriptor));
@@ -1151,7 +1151,7 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
         // Create the frame descriptor.
         unsigned pushed = masm.framePushed();
         masm.addPtr(Imm32(pushed), copyreg);
-        masm.makeFrameDescriptor(copyreg, IonFrame_JS);
+        masm.makeFrameDescriptor(copyreg, IonFrame_OptimizedJS);
 
         masm.Push(argcreg);
         masm.Push(calleereg);
@@ -2997,6 +2997,11 @@ CodeGenerator::generate()
     uint32 scriptFrameSize = frameClass_ == FrameSizeClass::None()
                            ? frameDepth_
                            : FrameSizeClass::FromDepth(frameDepth_).frameSize();
+
+    // Check to make sure we didn't have a mid-build invalidation. If so, we
+    // will trickle to ion::Compile() and return Method_Skipped.
+    if (cx->compartment->types.compiledInfo.compilerOutput(cx)->isInvalidated())
+        return true;
 
     script->ion = IonScript::New(cx, slots, scriptFrameSize, snapshots_.size(),
                                  bailouts_.length(), graph.numConstants(),

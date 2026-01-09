@@ -14,7 +14,7 @@ const RIL_SMSDATABASESERVICE_CID = Components.ID("{a1fa610c-eb6c-4ac2-878f-b005d
 
 const DEBUG = false;
 const DB_NAME = "sms";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = "sms";
 
 const DELIVERY_SENT = "sent";
@@ -24,6 +24,8 @@ const DELIVERY_STATUS_NOT_APPLICABLE = "not-applicable";
 const DELIVERY_STATUS_SUCCESS = "success";
 const DELIVERY_STATUS_PENDING = "pending";
 const DELIVERY_STATUS_ERROR = "error";
+
+const MESSAGE_CLASS_NORMAL = "normal";
 
 const FILTER_TIMESTAMP = "timestamp";
 const FILTER_NUMBERS = "numbers";
@@ -161,22 +163,29 @@ SmsDatabaseService.prototype = {
 
       let db = event.target.result;
 
-      switch (event.oldVersion) {
-        case 0:
-          if (DEBUG) debug("New database");
-          self.createSchema(db);
-          break;
-
-        case 1:
-          if (DEBUG) debug("Upgrade to version 2. Including `read` index");
-          let objectStore = event.target.transaction.objectStore(STORE_NAME); 
-          self.upgradeSchema(objectStore);
-          break;
-
-        default:
-          event.target.transaction.abort();
-          callback("Old database version: " + event.oldVersion, null);
-          break;
+      let currentVersion = event.oldVersion;
+      while (currentVersion != event.newVersion) {
+        switch (currentVersion) {
+          case 0:
+            if (DEBUG) debug("New database");
+            self.createSchema(db);
+            break;
+          case 1:
+            if (DEBUG) debug("Upgrade to version 2. Including `read` index");
+            let objectStore = event.target.transaction.objectStore(STORE_NAME);
+            self.upgradeSchema(objectStore);
+            break;
+          case 2:
+            if (DEBUG) debug("Upgrade to version 3. Fix existing entries.")
+            objectStore = event.target.transaction.objectStore(STORE_NAME);
+            self.upgradeSchema2(objectStore);
+            break;
+          default:
+            event.target.transaction.abort();
+            callback("Old database version: " + event.oldVersion, null);
+            break;
+        }
+        currentVersion++;
       }
     };
     request.onerror = function (event) {
@@ -235,7 +244,6 @@ SmsDatabaseService.prototype = {
     objectStore.createIndex("sender", "sender", { unique: false });
     objectStore.createIndex("receiver", "receiver", { unique: false });
     objectStore.createIndex("timestamp", "timestamp", { unique: false });
-    objectStore.createIndex("read", "read", { unique: false });
     if (DEBUG) debug("Created object stores and indexes");
   },
 
@@ -245,6 +253,21 @@ SmsDatabaseService.prototype = {
   upgradeSchema: function upgradeSchema(objectStore) {
     // For now, the only possible upgrade is to version 2.
     objectStore.createIndex("read", "read", { unique: false });  
+  },
+
+  upgradeSchema2: function upgradeSchema2(objectStore) {
+    objectStore.openCursor().onsuccess = function(event) {
+      let cursor = event.target.result;
+      if (!cursor) {
+        return;
+      }
+
+      let message = cursor.value;
+      message.messageClass = MESSAGE_CLASS_NORMAL;
+      message.deliveryStatus = DELIVERY_STATUS_NOT_APPLICABLE;
+      cursor.update(message);
+      cursor.continue();
+    }
   },
 
   /**
@@ -326,6 +349,7 @@ SmsDatabaseService.prototype = {
                                                message.sender,
                                                message.receiver,
                                                message.body,
+                                               message.messageClass,
                                                message.timestamp,
                                                message.read);
         gSmsRequestManager.notifyCreateMessageList(requestId,
@@ -354,7 +378,7 @@ SmsDatabaseService.prototype = {
    * nsISmsDatabaseService API
    */
 
-  saveReceivedMessage: function saveReceivedMessage(sender, body, date) {
+  saveReceivedMessage: function saveReceivedMessage(sender, body, messageClass, date) {
     let receiver = this.mRIL.rilContext.icc ? this.mRIL.rilContext.icc.msisdn : null;
 
     let message = {delivery:       DELIVERY_RECEIVED,
@@ -362,6 +386,7 @@ SmsDatabaseService.prototype = {
                    sender:         sender,
                    receiver:       receiver,
                    body:           body,
+                   messageClass:   messageClass,
                    timestamp:      date,
                    read:           FILTER_READ_UNREAD};
     return this.saveMessage(message);
@@ -375,6 +400,7 @@ SmsDatabaseService.prototype = {
                    sender:         sender,
                    receiver:       receiver,
                    body:           body,
+                   messageClass:   MESSAGE_CLASS_NORMAL,
                    timestamp:      date,
                    read:           FILTER_READ_READ};
     return this.saveMessage(message);
@@ -469,6 +495,7 @@ SmsDatabaseService.prototype = {
                                                    data.sender,
                                                    data.receiver,
                                                    data.body,
+                                                   data.messageClass,
                                                    data.timestamp,
                                                    data.read);
         gSmsRequestManager.notifyGotSms(requestId, message);
@@ -694,6 +721,7 @@ SmsDatabaseService.prototype = {
                                                message.sender,
                                                message.receiver,
                                                message.body,
+                                               message.messageClass,
                                                message.timestamp,
                                                message.read);
         gSmsRequestManager.notifyGotNextMessage(requestId, sms);
