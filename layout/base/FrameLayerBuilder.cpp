@@ -368,7 +368,7 @@ protected:
      * supports being optimized to an ImageLayer (TYPE_RASTER only) returns
      * an ImageContainer for the image.
      */
-    already_AddRefed<ImageContainer> CanOptimizeImageLayer();
+    already_AddRefed<ImageContainer> CanOptimizeImageLayer(nsDisplayListBuilder* aBuilder);
 
     /**
      * The region of visible content in the layer, relative to the
@@ -1124,7 +1124,10 @@ FrameLayerBuilder::IterateRetainedDataFor(nsIFrame* aFrame, DisplayItemDataCallb
   }
   
   for (uint32_t i = 0; i < array->Length(); i++) {
-    aCallback(aFrame, array->ElementAt(i));
+    DisplayItemData* data = array->ElementAt(i);
+    if (data->mDisplayItemKey != nsDisplayItem::TYPE_ZERO) {
+      aCallback(aFrame, data);
+    }
   }
 }
 
@@ -1525,13 +1528,13 @@ ContainerState::ThebesLayerData::UpdateCommonClipCount(
 }
 
 already_AddRefed<ImageContainer>
-ContainerState::ThebesLayerData::CanOptimizeImageLayer()
+ContainerState::ThebesLayerData::CanOptimizeImageLayer(nsDisplayListBuilder* aBuilder)
 {
   if (!mImage) {
     return nullptr;
   }
 
-  return mImage->GetContainer();
+  return mImage->GetContainer(aBuilder);
 }
 
 void
@@ -1543,7 +1546,7 @@ ContainerState::PopThebesLayerData()
   ThebesLayerData* data = mThebesLayerDataStack[lastIndex];
 
   nsRefPtr<Layer> layer;
-  nsRefPtr<ImageContainer> imageContainer = data->CanOptimizeImageLayer();
+  nsRefPtr<ImageContainer> imageContainer = data->CanOptimizeImageLayer(mBuilder);
 
   if ((data->mIsSolidColorInVisibleRegion || imageContainer) &&
       data->mLayer->GetValidRegion().IsEmpty()) {
@@ -1735,8 +1738,7 @@ ContainerState::ThebesLayerData::Accumulate(ContainerState* aState,
    * we are the first visible item in the ThebesLayerData object.
    */
   if (mVisibleRegion.IsEmpty() &&
-      (aItem->GetType() == nsDisplayItem::TYPE_IMAGE ||
-       aItem->GetType() == nsDisplayItem::TYPE_XUL_IMAGE)) {
+      aItem->SupportsOptimizingToImage()) {
     mImage = static_cast<nsDisplayImageContainer*>(aItem);
   } else {
     mImage = nullptr;
@@ -2052,6 +2054,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
 
     // Assign the item to a layer
     if (layerState == LAYER_ACTIVE_FORCE ||
+        (layerState == LAYER_INACTIVE && !mManager->IsWidgetLayerManager()) ||
         (!forceInactive &&
          (layerState == LAYER_ACTIVE_EMPTY ||
           layerState == LAYER_ACTIVE))) {
@@ -2311,33 +2314,6 @@ ContainerState::InvalidateForLayerChange(nsDisplayItem* aItem,
         combined.ScaleToOutsidePixels(data->mXScale, data->mYScale, mAppUnitsPerDevPixel),
         GetTranslationForThebesLayer(newThebesLayer));
   }
-}
-
-bool
-FrameLayerBuilder::NeedToInvalidateFixedDisplayItem(nsDisplayListBuilder* aBuilder,
-                                                    nsDisplayItem* aItem)
-{
-  if (!aItem->ShouldFixToViewport(aBuilder)) {
-    return true;
-  }
-
-  nsRefPtr<LayerManager> layerManager;
-  nsIFrame* referenceFrame = aBuilder->RootReferenceFrame();
-  NS_ASSERTION(referenceFrame == nsLayoutUtils::GetDisplayRootFrame(referenceFrame),
-               "Reference frame must be a display root for us to use the layer manager");
-  nsIWidget* window = referenceFrame->GetNearestWidget();
-  if (window) {
-    layerManager = window->GetLayerManager();
-  }
-
-  if (layerManager) {
-    DisplayItemData* data = GetDisplayItemDataForManager(aItem, layerManager);
-    if (data) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 void
@@ -2696,7 +2672,7 @@ ChooseScaleAndSetTransform(FrameLayerBuilder* aLayerBuilder,
   gfxMatrix transform2d;
   bool canDraw2D = transform.CanDraw2D(&transform2d);
   gfxSize scale;
-  bool isRetained = aLayerBuilder->GetRetainingLayerManager() == aLayer->Manager();
+  bool isRetained = aLayer->Manager()->IsWidgetLayerManager();
   // Only fiddle with scale factors for the retaining layer manager, since
   // it only matters for retained layers
   // XXX Should we do something for 3D transforms?
@@ -2802,7 +2778,7 @@ FrameLayerBuilder::BuildContainerLayerFor(nsDisplayListBuilder* aBuilder,
                                           const gfx3DMatrix* aTransform)
 {
   uint32_t containerDisplayItemKey =
-    aContainerItem ? aContainerItem->GetPerFrameKey() : 0;
+    aContainerItem ? aContainerItem->GetPerFrameKey() : nsDisplayItem::TYPE_ZERO;
   NS_ASSERTION(aContainerFrame, "Container display items here should have a frame");
   NS_ASSERTION(!aContainerItem ||
                aContainerItem->GetUnderlyingFrame() == aContainerFrame,
@@ -3021,8 +2997,10 @@ PredictScaleForContent(nsIFrame* aFrame, nsIFrame* aAncestorWithScale,
 {
   gfx3DMatrix transform =
     gfx3DMatrix::ScalingMatrix(aScale.width, aScale.height, 1.0);
-  // aTransform is applied first, then the scale is applied to the result
-  transform = nsLayoutUtils::GetTransformToAncestor(aFrame, aAncestorWithScale)*transform;
+  if (aFrame != aAncestorWithScale) {
+    // aTransform is applied first, then the scale is applied to the result
+    transform = nsLayoutUtils::GetTransformToAncestor(aFrame, aAncestorWithScale)*transform;
+  }
   gfxMatrix transform2d;
   if (transform.CanDraw2D(&transform2d)) {
      return transform2d.ScaleFactors(true);
@@ -3036,6 +3014,13 @@ FrameLayerBuilder::GetThebesLayerScaleForFrame(nsIFrame* aFrame)
   nsIFrame* last;
   for (nsIFrame* f = aFrame; f; f = nsLayoutUtils::GetCrossDocParentFrame(f)) {
     last = f;
+
+    if (nsLayoutUtils::IsPopup(f)) {
+      // Don't examine ancestors of a popup. It won't make sense to check
+      // the transform from some content inside the popup to some content
+      // which is an ancestor of the popup.
+      break;
+    }
   
     nsTArray<DisplayItemData*> *array = 
       reinterpret_cast<nsTArray<DisplayItemData*>*>(aFrame->Properties().Get(LayerManagerDataProperty()));
