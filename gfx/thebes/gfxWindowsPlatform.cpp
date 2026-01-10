@@ -391,6 +391,10 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
     }
 #endif
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
+    mozilla::gfx::Factory::D2DCleanup();
+#endif
+
     /* 
      * Uninitialize COM 
      */ 

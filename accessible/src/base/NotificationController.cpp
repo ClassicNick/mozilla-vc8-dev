@@ -60,12 +60,12 @@ NS_IMPL_CYCLE_COLLECTING_NATIVE_RELEASE(NotificationController)
 
 NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(NotificationController)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(NotificationController)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(NotificationController)
   if (tmp->mDocument)
     tmp->Shutdown();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(NotificationController)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(NotificationController)
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mDocument");
   cb.NoteXPCOMChild(static_cast<nsIAccessible*>(tmp->mDocument.get()));
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHangingChildDocuments)
@@ -385,7 +385,7 @@ NotificationController::CoalesceEvents()
         AccEvent* accEvent = mEvents[index];
         if (accEvent->mEventType == tailEvent->mEventType &&
             accEvent->mEventRule == tailEvent->mEventRule &&
-            accEvent->mNode == tailEvent->mNode) {
+            accEvent->mAccessible == tailEvent->mAccessible) {
           tailEvent->mEventRule = AccEvent::eDoNotEmit;
           return;
         }
@@ -705,12 +705,11 @@ NotificationController::ProcessEventQueue()
 
       // Dispatch caret moved and text selection change events.
       if (event->mEventType == nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED) {
+        AccCaretMoveEvent* caretMoveEvent = downcast_accEvent(event);
         HyperTextAccessible* hyperText = target->AsHyperText();
-        int32_t caretOffset = -1;
         if (hyperText &&
-          NS_SUCCEEDED(hyperText->GetCaretOffset(&caretOffset))) {
-          nsRefPtr<AccEvent> caretMoveEvent =
-            new AccCaretMoveEvent(hyperText, caretOffset);
+            NS_SUCCEEDED(hyperText->GetCaretOffset(&caretMoveEvent->mCaretOffset))) {
+
           nsEventShell::FireEvent(caretMoveEvent);
 
           // There's a selection so fire selection change as well.
@@ -867,11 +866,11 @@ NotificationController::ContentInsertion::
 
 NS_IMPL_CYCLE_COLLECTION_NATIVE_CLASS(NotificationController::ContentInsertion)
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_NATIVE(NotificationController::ContentInsertion)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(NotificationController::ContentInsertion)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mContainer)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(NotificationController::ContentInsertion)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(NotificationController::ContentInsertion)
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mContainer");
   cb.NoteXPCOMChild(static_cast<nsIAccessible*>(tmp->mContainer.get()));
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END

@@ -469,14 +469,17 @@ StackFrames.prototype = {
     if (this.currentBreakpointLocation) {
       let { url, line } = this.currentBreakpointLocation;
       let breakpointClient = DebuggerController.Breakpoints.getBreakpoint(url, line);
-      let conditionalExpression = breakpointClient.conditionalExpression;
-      if (conditionalExpression) {
-        // Evaluating the current breakpoint's conditional expression will
-        // cause the stack frames to be cleared and active thread to pause,
-        // sending a 'clientEvaluated' packed and adding the frames again.
-        this.evaluate(conditionalExpression, 0);
-        this._isConditionalBreakpointEvaluation = true;
-        return;
+      if (breakpointClient) {
+        // Make sure a breakpoint actually exists at the specified url and line.
+        let conditionalExpression = breakpointClient.conditionalExpression;
+        if (conditionalExpression) {
+          // Evaluating the current breakpoint's conditional expression will
+          // cause the stack frames to be cleared and active thread to pause,
+          // sending a 'clientEvaluated' packed and adding the frames again.
+          this.evaluate(conditionalExpression, 0);
+          this._isConditionalBreakpointEvaluation = true;
+          return;
+        }
       }
     }
     // Got our evaluation of the current breakpoint's conditional expression.
@@ -506,7 +509,7 @@ StackFrames.prototype = {
       // If an error was thrown during the evaluation of the watch expressions,
       // then at least one expression evaluation could not be performed.
       if (this.currentEvaluation.throw) {
-        DebuggerView.WatchExpressions.removeExpression(0);
+        DebuggerView.WatchExpressions.removeExpressionAt(0);
         DebuggerController.StackFrames.syncWatchExpressions();
         return;
       }
@@ -597,11 +600,15 @@ StackFrames.prototype = {
 
     // If watch expressions evaluation results are available, create a scope
     // to contain all the values.
-    if (watchExpressionsEvaluation) {
+    if (this.syncedWatchExpressions && watchExpressionsEvaluation) {
       let label = L10N.getStr("watchExpressionsScopeLabel");
       let arrow = L10N.getStr("watchExpressionsSeparatorLabel");
       let scope = DebuggerView.Variables.addScope(label);
       scope.separator = arrow;
+      scope.allowNameInput = true;
+      scope.allowDeletion = true;
+      scope.switch = DebuggerView.WatchExpressions.switchExpression;
+      scope.delete = DebuggerView.WatchExpressions.deleteExpression;
 
       // The evaluation hasn't thrown, so display the returned results and
       // always expand the watch expressions scope by default.
@@ -924,15 +931,19 @@ StackFrames.prototype = {
     if (list.length) {
       this.syncedWatchExpressions =
         this.currentWatchExpressions = "[" + list.map(function(str)
-          "(function() {" +
+          // Avoid yielding an empty pseudo-array when evaluating `arguments`,
+          // since they're overridden by the expression's closure scope.
+          "(function(arguments) {" +
+            // Make sure all the quotes are escaped in the expression's syntax.
             "try { return eval(\"" + str.replace(/"/g, "\\$&") + "\"); }" +
             "catch(e) { return e.name + ': ' + e.message; }" +
-          "})()"
+          "})(arguments)"
         ).join(",") + "]";
     } else {
       this.syncedWatchExpressions =
         this.currentWatchExpressions = null;
     }
+    this.currentFrame = null;
     this._onFrames();
   },
 
@@ -1315,11 +1326,10 @@ Breakpoints.prototype = {
     this.activeThread.setBreakpoint(aLocation, function(aResponse, aBreakpointClient) {
       let { url, line } = aResponse.actualLocation || aLocation;
 
-      // Prevent this new breakpoint from being repositioned on top of an
-      // already existing one.
+      // If the response contains a breakpoint that exists in the cache, prevent
+      // it from being shown in the source editor at an incorrect position.
       if (this.getBreakpoint(url, line)) {
         this._hideBreakpoint(aBreakpointClient);
-        aBreakpointClient.remove();
         return;
       }
 

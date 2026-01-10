@@ -125,7 +125,7 @@ ApplicationAccessible* nsAccessibilityService::gApplicationAccessible = nullptr;
 bool nsAccessibilityService::gIsShutdown = true;
 
 nsAccessibilityService::nsAccessibilityService() :
-  nsAccDocManager(), FocusManager()
+  DocManager(), FocusManager()
 {
 }
 
@@ -139,7 +139,7 @@ nsAccessibilityService::~nsAccessibilityService()
 // nsISupports
 
 NS_IMPL_ISUPPORTS_INHERITED3(nsAccessibilityService,
-                             nsAccDocManager,
+                             DocManager,
                              nsIAccessibilityService,
                              nsIAccessibleRetrieval,
                              nsIObserver)
@@ -621,7 +621,7 @@ nsAccessibilityService::GetAccessibleFromCache(nsIDOMNode* aNode,
   // caches. If we don't find it, and the given node is itself a document, check
   // our cache of document accessibles (document cache). Note usually shutdown
   // document accessibles are not stored in the document cache, however an
-  // "unofficially" shutdown document (i.e. not from nsAccDocManager) can still
+  // "unofficially" shutdown document (i.e. not from DocManager) can still
   // exist in the document cache.
   Accessible* accessible = FindAccessibleInCache(node);
   if (!accessible) {
@@ -901,26 +901,9 @@ nsAccessibilityService::GetOrCreateAccessible(nsINode* aNode,
       newAcc = CreateHTMLAccessibleByMarkup(frame, content, aDoc,
                                             legalPartOfHTMLTable);
 
-      if (!newAcc && (!partOfHTMLTable || legalPartOfHTMLTable)) {
-        // Do not create accessible object subtrees for non-rendered table
-        // captions. This could not be done in
-        // nsTableCaptionFrame::GetAccessible() because the descendants of
-        // the table caption would still be created. By setting
-        // *aIsSubtreeHidden = true we ensure that no descendant accessibles
-        // are created.
-        if (frame->GetType() == nsGkAtoms::tableCaptionFrame &&
-            frame->GetRect().IsEmpty()) {
-          // XXX This is not the ideal place for this code, but right now there
-          // is no better place:
-          if (aIsSubtreeHidden)
-            *aIsSubtreeHidden = true;
-
-          return nullptr;
-        }
-
-        // Try using frame to do it.
+      // Try using frame to do it.
+      if (!newAcc && (!partOfHTMLTable || legalPartOfHTMLTable))
         newAcc = CreateAccessibleByFrameType(frame, content, aDoc);
-      }
     }
   }
 
@@ -975,7 +958,7 @@ bool
 nsAccessibilityService::Init()
 {
   // Initialize accessible document manager.
-  if (!nsAccDocManager::Init())
+  if (!DocManager::Init())
     return false;
 
   // Add observers.
@@ -1026,7 +1009,7 @@ nsAccessibilityService::Shutdown()
   }
 
   // Stop accessible document loader.
-  nsAccDocManager::Shutdown();
+  DocManager::Shutdown();
 
   // Application is going to be closed, shutdown accessibility and mark
   // accessibility service as shutdown to prevent calls of its methods.

@@ -124,6 +124,8 @@ ModifierKeyState::InitInputEvent(nsInputEvent& aInputEvent) const
     case NS_SIMPLE_GESTURE_EVENT:
       InitMouseEvent(aInputEvent);
       break;
+    default:
+      break;
   }
 }
 

@@ -186,7 +186,7 @@ nsPluginInstanceOwner::GetImageContainer()
 
   SharedTextureImage::Data data;
   data.mHandle = mInstance->CreateSharedHandle();
-  data.mShareType = mozilla::gl::TextureImage::ThreadShared;
+  data.mShareType = mozilla::gl::GLContext::SameProcess;
   data.mInverted = mInstance->Inverted();
 
   gfxRect r = GetPluginRect();
@@ -1723,8 +1723,10 @@ already_AddRefed<ImageContainer> nsPluginInstanceOwner::GetImageContainerForVide
 
   SharedTextureImage::Data data;
 
-  data.mHandle = mInstance->GLContext()->CreateSharedHandle(gl::TextureImage::ThreadShared, aVideoInfo->mSurfaceTexture, gl::GLContext::SurfaceTexture);
-  data.mShareType = mozilla::gl::TextureImage::ThreadShared;
+  data.mShareType = gl::GLContext::SameProcess;
+  data.mHandle = mInstance->GLContext()->CreateSharedHandle(data.mShareType,
+                                                            aVideoInfo->mSurfaceTexture,
+                                                            gl::GLContext::SurfaceTexture);
 
   // The logic below for Honeycomb is just a guess, but seems to work. We don't have a separate
   // inverted flag for video.
@@ -2569,6 +2571,10 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(const nsGUIEvent& anEvent)
          mInstance->HandleEvent(pluginEvent, nullptr);
        }
      }
+     break;
+
+    default:
+      break;
     }
     rv = nsEventStatus_eConsumeNoDefault;
 #endif
@@ -3471,8 +3477,7 @@ nsObjectFrame* nsPluginInstanceOwner::GetFrame()
 // |value| for certain inputs of |name|
 void nsPluginInstanceOwner::FixUpURLS(const nsString &name, nsAString &value)
 {
-  if (name.LowerCaseEqualsLiteral("pluginurl") ||
-      name.LowerCaseEqualsLiteral("pluginspage")) {        
+  if (name.LowerCaseEqualsLiteral("pluginspage")) {
     nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
     nsAutoString newURL;
     NS_MakeAbsoluteURI(newURL, value, baseURI);

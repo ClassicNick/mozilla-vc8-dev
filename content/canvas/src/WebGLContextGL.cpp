@@ -1418,11 +1418,11 @@ WebGLContext::DrawArrays(GLenum mode, WebGLint first, WebGLsizei count)
     if (!mCurrentProgram)
         return;
 
-    int32_t maxAllowedCount = 0;
+    uint32_t maxAllowedCount = 0;
     if (!ValidateBuffers(&maxAllowedCount, "drawArrays"))
         return;
 
-    CheckedInt32 checked_firstPlusCount = CheckedInt32(first) + count;
+    CheckedUint32 checked_firstPlusCount = CheckedUint32(first) + count;
 
     if (!checked_firstPlusCount.isValid())
         return ErrorInvalidOperation("drawArrays: overflow in first+count");
@@ -1511,13 +1511,13 @@ WebGLContext::DrawElements(WebGLenum mode, WebGLsizei count, WebGLenum type,
     if (checked_neededByteCount.value() > mBoundElementArrayBuffer->ByteLength())
         return ErrorInvalidOperation("drawElements: bound element array buffer is too small for given count and offset");
 
-    int32_t maxAllowedCount = 0;
+    uint32_t maxAllowedCount = 0;
     if (!ValidateBuffers(&maxAllowedCount, "drawElements"))
-      return;
+        return;
 
-    int32_t maxAllowedIndex = NS_MAX(maxAllowedCount - 1, 0);
-
-    if (!mBoundElementArrayBuffer->Validate(type, maxAllowedIndex, first, count)) {
+    if (!maxAllowedCount ||
+        !mBoundElementArrayBuffer->Validate(type, maxAllowedCount - 1, first, count))
+    {
         return ErrorInvalidOperation(
             "DrawElements: bound vertex attribute buffers do not have sufficient "
             "size for given indices from the bound element array");
@@ -3156,7 +3156,6 @@ WebGLContext::ReadPixels(WebGLint x, WebGLint y, WebGLsizei width,
     WebGLsizei framebufferWidth = framebufferRect ? framebufferRect->Width() : 0;
     WebGLsizei framebufferHeight = framebufferRect ? framebufferRect->Height() : 0;
 
-    void* data = pixels->Data();
     uint32_t dataByteLen = JS_GetTypedArrayByteLength(pixels->Obj());
     int dataType = JS_GetTypedArrayType(pixels->Obj());
 
@@ -3214,6 +3213,12 @@ WebGLContext::ReadPixels(WebGLint x, WebGLint y, WebGLsizei width,
 
     if (checked_neededByteLength.value() > dataByteLen)
         return ErrorInvalidOperation("readPixels: buffer too small");
+
+    void* data = pixels->Data();
+    if (!data) {
+        ErrorOutOfMemory("readPixels: buffer storage is null. Did we run out of memory?");
+        return rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+    }
 
     // Check the format and type params to assure they are an acceptable pair (as per spec)
     switch (format) {

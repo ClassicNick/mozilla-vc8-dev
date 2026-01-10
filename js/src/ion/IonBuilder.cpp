@@ -204,7 +204,7 @@ IonBuilder::canInlineTarget(JSFunction *target)
         return false;
     }
 
-    RootedScript inlineScript(cx, target->script());
+    RootedScript inlineScript(cx, target->nonLazyScript());
     ExecutionMode executionMode = info().executionMode();
     if (!CanIonCompile(inlineScript, executionMode)) {
         IonSpew(IonSpew_Inlining, "Cannot inline due to disable Ion compilation");
@@ -500,7 +500,14 @@ IonBuilder::rewriteParameters()
 
     for (uint32 i = START_SLOT; i < CountArgSlots(info().fun()); i++) {
         MParameter *param = current->getSlot(i)->toParameter();
-        types::StackTypeSet *types = param->typeSet();
+
+        // Find the original (not cloned) type set for the MParameter, as we
+        // will be adding constraints to it.
+        types::StackTypeSet *types;
+        if (param->index() == MParameter::THIS_SLOT)
+            types = oracle->thisTypeSet(script_);
+        else
+            types = oracle->parameterTypeSet(script_, param->index());
         if (!types)
             continue;
 
@@ -544,7 +551,7 @@ IonBuilder::initParameters()
         return true;
 
     MParameter *param = MParameter::New(MParameter::THIS_SLOT,
-                                        oracle->thisTypeSet(script_));
+                                        cloneTypeSet(oracle->thisTypeSet(script_)));
     current->add(param);
     current->initSlot(info().thisSlot(), param);
 
@@ -2835,7 +2842,7 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32 argc, bool constructi
 
     // Compilation information is allocated for the duration of the current tempLifoAlloc
     // lifetime.
-    RootedScript calleeScript(cx, callee->script());
+    RootedScript calleeScript(cx, callee->nonLazyScript());
     CompileInfo *info = cx->tempLifoAlloc().new_<CompileInfo>(calleeScript.get(), callee,
                                                               (jsbytecode *)NULL, constructing,
                                                               SequentialExecution);
@@ -2930,7 +2937,7 @@ IonBuilder::makeInliningDecision(AutoObjectVector &targets, uint32 argc)
         if (!target->isInterpreted())
             return false;
 
-        script = target->script();
+        script = target->nonLazyScript();
         uint32_t calleeUses = script->getUseCount();
 
         if (target->nargs < argc) {
@@ -3549,7 +3556,7 @@ IonBuilder::createThisScriptedSingleton(HandleFunction target, HandleObject prot
     types::TypeObject *type = proto->getNewType(cx, target);
     if (!type)
         return NULL;
-    if (!types::TypeScript::ThisTypes(target->script().unsafeGet())->hasType(types::Type::ObjectType(type)))
+    if (!types::TypeScript::ThisTypes(target->nonLazyScript().unsafeGet())->hasType(types::Type::ObjectType(type)))
         return NULL;
 
     RootedObject templateObject(cx, js_CreateThisForFunctionWithProto(cx, target, proto));
@@ -3572,24 +3579,27 @@ IonBuilder::createThisScriptedSingleton(HandleFunction target, HandleObject prot
 MDefinition *
 IonBuilder::createThis(HandleFunction target, MDefinition *callee)
 {
+    // Create this for unknown target
+    if (!target)
+        return createThisScripted(callee);
+
+    // Create this for native function
     if (target->isNative()) {
         if (!target->isNativeConstructor())
             return NULL;
         return createThisNative();
     }
 
-    MDefinition *createThis = NULL;
+    // Create this with known prototype.
     RootedObject proto(cx, getSingletonPrototype(target));
-
-    // Try baking in the prototype.
-    if (proto)
-        createThis = createThisScriptedSingleton(target, proto, callee);
+    if (proto) {
+        MDefinition *createThis = createThisScriptedSingleton(target, proto, callee);
+        if (createThis)
+            return createThis;
+    }
 
     // If the prototype could not be hardcoded, emit a GETPROP.
-    if (!createThis)
-        createThis = createThisScripted(callee);
-
-    return createThis;
+    return createThisScripted(callee);
 }
 
 bool
@@ -3790,8 +3800,8 @@ IonBuilder::makeCallHelper(HandleFunction target, uint32 argc, bool constructing
 
     MPassArg *thisArg = current->pop()->toPassArg();
 
-    // If the target is known, inline the constructor on the caller-side.
-    if (constructing && target) {
+    // Inline the constructor on the caller-side.
+    if (constructing) {
         MDefinition *callee = current->peek(-1);
         MDefinition *create = createThis(target, callee);
         if (!create) {
@@ -4536,7 +4546,7 @@ IonBuilder::pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual,
       case JSVAL_TYPE_UNKNOWN:
       case JSVAL_TYPE_UNDEFINED:
       case JSVAL_TYPE_NULL:
-        barrier = MTypeBarrier::New(ins, observed);
+        barrier = MTypeBarrier::New(ins, cloneTypeSet(observed));
         current->add(barrier);
 
         if (type == JSVAL_TYPE_UNDEFINED)
@@ -4569,7 +4579,7 @@ IonBuilder::monitorResult(MInstruction *ins, types::TypeSet *barrier, types::Typ
     if (!types || types->unknown())
         return;
 
-    MInstruction *monitor = MMonitorTypes::New(ins, types);
+    MInstruction *monitor = MMonitorTypes::New(ins, cloneTypeSet(types));
     current->add(monitor);
 }
 
@@ -6498,9 +6508,37 @@ IonBuilder::jsop_in_dense()
 bool
 IonBuilder::jsop_instanceof()
 {
-    MDefinition *proto = current->pop();
+    MDefinition *rhs = current->pop();
     MDefinition *obj = current->pop();
-    MInstanceOf *ins = new MInstanceOf(obj, proto);
+
+    TypeOracle::BinaryTypes types = oracle->binaryTypes(script_, pc);
+
+    // If this is an 'x instanceof function' operation and we can determine the
+    // exact function and prototype object being tested for, use a typed path.
+    do {
+        RawObject rhsObject = types.rhsTypes ? types.rhsTypes->getSingleton() : NULL;
+        if (!rhsObject || !rhsObject->isFunction() || rhsObject->isBoundFunction())
+            break;
+
+        types::TypeObject *rhsType = rhsObject->getType(cx);
+        if (!rhsType || rhsType->unknownProperties())
+            break;
+
+        types::HeapTypeSet *protoTypes =
+            rhsType->getProperty(cx, NameToId(cx->names().classPrototype), false);
+        RawObject protoObject = protoTypes ? protoTypes->getSingleton(cx) : NULL;
+        if (!protoObject)
+            break;
+
+        MInstanceOf *ins = new MInstanceOf(obj, protoObject);
+
+        current->add(ins);
+        current->push(ins);
+
+        return resumeAfter(ins);
+    } while (false);
+
+    MCallInstanceOf *ins = new MCallInstanceOf(obj, rhs);
 
     current->add(ins);
     current->push(ins);
@@ -6532,4 +6570,17 @@ IonBuilder::addShapeGuard(MDefinition *obj, const Shape *shape, BailoutKind bail
         guard->setNotMovable();
 
     return guard;
+}
+
+const types::TypeSet *
+IonBuilder::cloneTypeSet(const types::TypeSet *types)
+{
+    if (!js_IonOptions.parallelCompilation)
+        return types;
+
+    // Clone a type set so that it can be stored into the MIR and accessed
+    // during off thread compilation. This is necessary because main thread
+    // updates to type sets can race with reads in the compiler backend, and
+    // after bug 804676 this code can be removed.
+    return types->clone(GetIonContext()->temp->lifoAlloc());
 }

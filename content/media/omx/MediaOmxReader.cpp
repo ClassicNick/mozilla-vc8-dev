@@ -12,19 +12,23 @@
 #include "MediaResource.h"
 #include "VideoUtils.h"
 #include "MediaOmxDecoder.h"
+#include "AbstractMediaDecoder.h"
+
+#define MAX_DROPPED_FRAMES 25
 
 using namespace android;
 
 namespace mozilla {
 
-MediaOmxReader::MediaOmxReader(MediaDecoder *aDecoder) :
+MediaOmxReader::MediaOmxReader(AbstractMediaDecoder *aDecoder) :
   MediaDecoderReader(aDecoder),
   mOmxDecoder(nullptr),
   mHasVideo(false),
   mHasAudio(false),
   mVideoSeekTimeUs(-1),
   mAudioSeekTimeUs(-1),
-  mLastVideoFrame(nullptr)
+  mLastVideoFrame(nullptr),
+  mSkipCount(0)
 {
 }
 
@@ -55,7 +59,7 @@ nsresult MediaOmxReader::ReadMetadata(nsVideoInfo* aInfo,
   mOmxDecoder->GetDuration(&durationUs);
   if (durationUs) {
     ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-    mDecoder->GetStateMachine()->SetDuration(durationUs);
+    mDecoder->SetMediaDuration(durationUs);
   }
 
   if (mOmxDecoder->HasVideo()) {
@@ -124,7 +128,7 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
   // Record number of frames decoded and parsed. Automatically update the
   // stats counters using the AutoNotifyDecoded stack-based class.
   uint32_t parsed = 0, decoded = 0;
-  MediaDecoder::AutoNotifyDecoded autoNotify(mDecoder, parsed, decoded);
+  AbstractMediaDecoder::AutoNotifyDecoded autoNotify(mDecoder, parsed, decoded);
 
   // Throw away the currently buffered frame if we are seeking.
   if (mLastVideoFrame && mVideoSeekTimeUs != -1) {
@@ -141,6 +145,7 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
   while (true) {
     MPAPI::VideoFrame frame;
     frame.mGraphicBuffer = nullptr;
+    frame.mShouldSkip = false;
     if (!mOmxDecoder->ReadVideo(&frame, aTimeThreshold, aKeyframeSkip, doSeek)) {
       // We reached the end of the video stream. If we have a buffered
       // video frame, push it the video queue using the total duration
@@ -157,6 +162,14 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
       mVideoQueue.Finish();
       return false;
     }
+
+    parsed++;
+    if (frame.mShouldSkip && mSkipCount < MAX_DROPPED_FRAMES) {
+      mSkipCount++;
+      return true;
+    }
+
+    mSkipCount = 0;
 
     mVideoSeekTimeUs = -1;
     doSeek = aKeyframeSkip = false;
@@ -228,7 +241,6 @@ bool MediaOmxReader::DecodeVideoFrame(bool &aKeyframeSkip,
       return false;
     }
 
-    parsed++;
     decoded++;
     NS_ASSERTION(decoded <= parsed, "Expect to decode fewer frames than parsed in MediaPlugin...");
 
