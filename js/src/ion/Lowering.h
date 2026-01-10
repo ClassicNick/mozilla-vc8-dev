@@ -81,6 +81,7 @@ class LIRGenerator : public LIRGeneratorSpecific
     bool visitNewSlots(MNewSlots *ins);
     bool visitNewArray(MNewArray *ins);
     bool visitNewObject(MNewObject *ins);
+    bool visitNewDeclEnvObject(MNewDeclEnvObject *ins);
     bool visitNewCallObject(MNewCallObject *ins);
     bool visitNewStringObject(MNewStringObject *ins);
     bool visitInitProp(MInitProp *ins);
@@ -88,6 +89,7 @@ class LIRGenerator : public LIRGeneratorSpecific
     bool visitDefVar(MDefVar *ins);
     bool visitPrepareCall(MPrepareCall *ins);
     bool visitPassArg(MPassArg *arg);
+    bool visitCreateThisWithTemplate(MCreateThisWithTemplate *ins);
     bool visitCreateThis(MCreateThis *ins);
     bool visitReturnFromCtor(MReturnFromCtor *ins);
     bool visitCall(MCall *call);

@@ -10,14 +10,15 @@
 /*
  * JS script descriptor.
  */
-#include "jsprvtd.h"
 #include "jsdbgapi.h"
-#include "jsclist.h"
 #include "jsinfer.h"
 #include "jsopcode.h"
 #include "jsscope.h"
 
 #include "gc/Barrier.h"
+#include "gc/Root.h"
+
+ForwardDeclareJS(Script);
 
 namespace js {
 
@@ -928,7 +929,7 @@ struct JSScript : public js::gc::Cell
 JS_STATIC_ASSERT(sizeof(JSScript::ArrayBitsT) * 8 >= JSScript::LIMIT);
 
 /* If this fails, add/remove padding within JSScript. */
-JS_STATIC_ASSERT(sizeof(JSScript) % js::gc::Cell::CellSize == 0);
+JS_STATIC_ASSERT(sizeof(JSScript) % js::gc::CellSize == 0);
 
 namespace js {
 

@@ -30,7 +30,7 @@ using namespace mozilla;
 
 #if defined(MOZ_MEMORY)
 #  define HAVE_JEMALLOC_STATS 1
-#  include "jemalloc.h"
+#  include "mozmemory.h"
 #endif  // MOZ_MEMORY
 
 #ifdef XP_UNIX
@@ -715,7 +715,7 @@ struct MemoryReport {
     int64_t amount;
 };
 
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(MOZ_DMD)
 // This is just a wrapper for int64_t that implements nsISupports, so it can be
 // passed to nsIMemoryMultiReporter::CollectReports.
 class Int64Wrapper MOZ_FINAL : public nsISupports {
@@ -751,7 +751,7 @@ NS_IMPL_ISUPPORTS1(
   ExplicitNonHeapCountingCallback
 , nsIMemoryMultiReporterCallback
 )
-#endif
+#endif  // defined(DEBUG) && !defined(MOZ_DMD)
 
 NS_IMETHODIMP
 nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
@@ -810,7 +810,9 @@ nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
     // (Actually, in debug builds we also do it the slow way and compare the
     // result to the result obtained from GetExplicitNonHeap().  This
     // guarantees the two measurement paths are equivalent.  This is wise
-    // because it's easy for memory reporters to have bugs.)
+    // because it's easy for memory reporters to have bugs.  But there's an
+    // exception if DMD is enabled, because that makes DMD think that all the
+    // blocks are double-counted.)
 
     int64_t explicitNonHeapMultiSize = 0;
     nsCOMPtr<nsISimpleEnumerator> e2;
@@ -824,7 +826,7 @@ nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
       explicitNonHeapMultiSize += n;
     }
 
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(MOZ_DMD)
     nsRefPtr<ExplicitNonHeapCountingCallback> cb =
       new ExplicitNonHeapCountingCallback();
     nsRefPtr<Int64Wrapper> wrappedExplicitNonHeapMultiSize2 =
@@ -847,7 +849,7 @@ nsMemoryReporterManager::GetExplicit(int64_t *aExplicit)
                                    explicitNonHeapMultiSize,
                                    explicitNonHeapMultiSize2).get());
     }
-#endif  // DEBUG
+#endif  // defined(DEBUG) && !defined(MOZ_DMD)
 
     *aExplicit = heapAllocated + explicitNonHeapNormalSize + explicitNonHeapMultiSize;
     return NS_OK;
@@ -1022,9 +1024,10 @@ NS_UnregisterMemoryMultiReporter (nsIMemoryMultiReporter *reporter)
     return mgr->UnregisterMultiReporter(reporter);
 }
 
-namespace mozilla {
+#if defined(MOZ_DMDV) || defined(MOZ_DMD)
 
-#ifdef MOZ_DMDV
+namespace mozilla {
+namespace dmd {
 
 class NullMultiReporterCallback : public nsIMemoryMultiReporterCallback
 {
@@ -1046,7 +1049,7 @@ NS_IMPL_ISUPPORTS1(
 )
 
 void
-DMDVCheckAndDump()
+RunReporters()
 {
     nsCOMPtr<nsIMemoryReporterManager> mgr =
         do_GetService("@mozilla.org/memory-reporter-manager;1");
@@ -1094,10 +1097,25 @@ DMDVCheckAndDump()
       e2->GetNext(getter_AddRefs(r));
       r->CollectReports(cb, nullptr);
     }
+}
 
+} // namespace dmd
+} // namespace mozilla
+
+#endif  // defined(MOZ_DMDV) || defined(MOZ_DMD)
+
+#ifdef MOZ_DMDV
+namespace mozilla {
+namespace dmdv {
+
+void
+Dump()
+{
     VALGRIND_DMDV_CHECK_REPORTING;
 }
 
+} // namespace dmdv
+} // namespace mozilla
+
 #endif  /* defined(MOZ_DMDV) */
 
-}

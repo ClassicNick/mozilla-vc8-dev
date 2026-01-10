@@ -41,12 +41,13 @@ CodeGenerator::visitValueToInt32(LValueToInt32 *lir)
     ValueOperand operand = ToValue(lir, LValueToInt32::Input);
     Register output = ToRegister(lir->output());
 
-    Label done, simple, isInt32, isBool, notDouble;
+    Register tag = masm.splitTagForTest(operand);
 
+    Label done, simple, isInt32, isBool, notDouble;
     // Type-check switch.
-    masm.branchTestInt32(Assembler::Equal, operand, &isInt32);
-    masm.branchTestBoolean(Assembler::Equal, operand, &isBool);
-    masm.branchTestDouble(Assembler::NotEqual, operand, &notDouble);
+    masm.branchTestInt32(Assembler::Equal, tag, &isInt32);
+    masm.branchTestBoolean(Assembler::Equal, tag, &isBool);
+    masm.branchTestDouble(Assembler::NotEqual, tag, &notDouble);
 
     // If the value is a double, see if it fits in a 32-bit int. We need to ask
     // the platform-specific codegenerator to do this.
@@ -71,12 +72,12 @@ CodeGenerator::visitValueToInt32(LValueToInt32 *lir)
     if (lir->mode() == LValueToInt32::NORMAL) {
         // If the value is not null, it's a string, object, or undefined,
         // which we can't handle here.
-        masm.branchTestNull(Assembler::NotEqual, operand, &fails);
+        masm.branchTestNull(Assembler::NotEqual, tag, &fails);
     } else {
         // Test for string or object - then fallthrough to null, which will
         // also handle undefined.
-        masm.branchTestObject(Assembler::Equal, operand, &fails);
-        masm.branchTestString(Assembler::Equal, operand, &fails);
+        masm.branchTestObject(Assembler::Equal, tag, &fails);
+        masm.branchTestString(Assembler::Equal, tag, &fails);
     }
 
     if (fails.used() && !bailoutFrom(&fails, lir->snapshot()))
@@ -108,15 +109,16 @@ CodeGenerator::visitValueToDouble(LValueToDouble *lir)
     ValueOperand operand = ToValue(lir, LValueToDouble::Input);
     FloatRegister output = ToFloatRegister(lir->output());
 
+    Register tag = masm.splitTagForTest(operand);
+
     Label isDouble, isInt32, isBool, isNull, done;
-
     // Type-check switch.
-    masm.branchTestDouble(Assembler::Equal, operand, &isDouble);
-    masm.branchTestInt32(Assembler::Equal, operand, &isInt32);
-    masm.branchTestBoolean(Assembler::Equal, operand, &isBool);
-    masm.branchTestNull(Assembler::Equal, operand, &isNull);
+    masm.branchTestDouble(Assembler::Equal, tag, &isDouble);
+    masm.branchTestInt32(Assembler::Equal, tag, &isInt32);
+    masm.branchTestBoolean(Assembler::Equal, tag, &isBool);
+    masm.branchTestNull(Assembler::Equal, tag, &isNull);
 
-    Assembler::Condition cond = masm.testUndefined(Assembler::NotEqual, operand);
+    Assembler::Condition cond = masm.testUndefined(Assembler::NotEqual, tag);
     if (!bailoutIf(cond, lir->snapshot()))
         return false;
     masm.loadStaticDouble(&js_NaN, output);
@@ -168,7 +170,7 @@ CodeGenerator::visitTestVAndBranch(LTestVAndBranch *lir)
     masm.jump(lir->ifFalse());
     return true;
 }
- 
+
 bool
 CodeGenerator::visitPolyInlineDispatch(LPolyInlineDispatch *lir)
 {
@@ -311,7 +313,7 @@ CodeGenerator::visitLambda(LLambda *lir)
 
     JS_STATIC_ASSERT(offsetof(JSFunction, flags) == offsetof(JSFunction, nargs) + 2);
     masm.store32(Imm32(u.word), Address(output, offsetof(JSFunction, nargs)));
-    masm.storePtr(ImmGCPtr(fun->nonLazyScript().unsafeGet()),
+    masm.storePtr(ImmGCPtr(fun->nonLazyScript()),
                   Address(output, JSFunction::offsetOfNativeOrScript()));
     masm.storePtr(scopeChain, Address(output, JSFunction::offsetOfEnvironment()));
     masm.storePtr(ImmGCPtr(fun->displayAtom()), Address(output, JSFunction::offsetOfAtom()));
@@ -831,8 +833,6 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
 
     // Known-target case is handled by LCallKnown.
     JS_ASSERT(!call->hasSingleTarget());
-    // Unknown constructor case is handled by LCallConstructor.
-    JS_ASSERT(!call->mir()->isConstructing());
 
     // Generate an ArgumentsRectifier.
     IonCompartment *ion = gen->ionCompartment();
@@ -903,6 +903,16 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
         return false;
 
     masm.bind(&end);
+
+    // If the return value of the constructing function is Primitive,
+    // replace the return value with the Object from CreateThis.
+    if (call->mir()->isConstructing()) {
+        Label notPrimitive;
+        masm.branchTestPrimitive(Assembler::NotEqual, JSReturnOperand, &notPrimitive);
+        masm.loadValue(Address(StackPointer, unusedStack), JSReturnOperand);
+        masm.bind(&notPrimitive);
+    }
+
     dropArguments(call->numStackArgs() + 1);
     return true;
 }
@@ -923,6 +933,10 @@ CodeGenerator::visitCallKnown(LCallKnown *call)
     JS_ASSERT(target->nargs <= call->numStackArgs());
 
     masm.checkStackAlignment();
+
+    // Make sure the function has a JSScript
+    if (target->isInterpretedLazy() && !target->getOrCreateScript(cx))
+        return false;
 
     // If the function is known to be uncompilable, only emit the call to InvokeFunction.
     ExecutionMode executionMode = gen->info().executionMode();
@@ -988,39 +1002,6 @@ CodeGenerator::visitCallKnown(LCallKnown *call)
         masm.loadValue(Address(StackPointer, unusedStack), JSReturnOperand);
         masm.bind(&notPrimitive);
     }
-
-    dropArguments(call->numStackArgs() + 1);
-    return true;
-}
-
-typedef bool (*InvokeConstructorFn)(JSContext *, JSObject *, uint32_t, Value *, Value *);
-static const VMFunction InvokeConstructorInfo =
-    FunctionInfo<InvokeConstructorFn>(ion::InvokeConstructor);
-
-bool
-CodeGenerator::visitCallConstructor(LCallConstructor *call)
-{
-    JS_ASSERT(call->mir()->isConstructing());
-
-    // Holds the function object.
-    const LAllocation *callee = call->getFunction();
-    Register calleereg = ToRegister(callee);
-
-    uint32_t callargslot = call->argslot();
-    uint32_t unusedStack = StackOffsetOfPassedArg(callargslot);
-
-    // Nestle %esp up to the argument vector.
-    masm.freeStack(unusedStack);
-
-    pushArg(StackPointer);                  // argv.
-    pushArg(Imm32(call->numActualArgs()));  // argc.
-    pushArg(calleereg);                     // JSFunction *.
-
-    if (!callVM(InvokeConstructorInfo, call))
-        return false;
-
-    // Un-nestle %esp from the argument vector. No prefix was pushed.
-    masm.reserveStack(unusedStack);
 
     dropArguments(call->numStackArgs() + 1);
     return true;
@@ -1726,6 +1707,30 @@ CodeGenerator::visitOutOfLineNewObject(OutOfLineNewObject *ool)
     return true;
 }
 
+typedef js::DeclEnvObject *(*NewDeclEnvObjectFn)(JSContext *, HandleFunction);
+static const VMFunction NewDeclEnvObjectInfo =
+    FunctionInfo<NewDeclEnvObjectFn>(DeclEnvObject::createTemplateObject);
+
+bool
+CodeGenerator::visitNewDeclEnvObject(LNewDeclEnvObject *lir)
+{
+    Register obj = ToRegister(lir->output());
+    JSObject *templateObj = lir->mir()->templateObj();
+    CompileInfo &info = lir->mir()->block()->info();
+
+    // If we have a template object, we can inline call object creation.
+    OutOfLineCode *ool = oolCallVM(NewDeclEnvObjectInfo, lir,
+                                   (ArgList(), ImmGCPtr(info.fun())),
+                                   StoreRegisterTo(obj));
+    if (!ool)
+        return false;
+
+    masm.newGCThing(obj, templateObj, ool->entry());
+    masm.initGCThing(obj, templateObj);
+    masm.bind(ool->rejoin());
+    return true;
+}
+
 typedef JSObject *(*NewCallObjectFn)(JSContext *, HandleShape,
                                      HandleTypeObject, HeapSlot *);
 static const VMFunction NewCallObjectInfo =
@@ -1816,10 +1821,8 @@ static const VMFunction NewGCThingInfo =
     FunctionInfo<NewGCThingFn>(js::ion::NewGCThing);
 
 bool
-CodeGenerator::visitCreateThis(LCreateThis *lir)
+CodeGenerator::visitCreateThisWithTemplate(LCreateThisWithTemplate *lir)
 {
-    JS_ASSERT(lir->mir()->hasTemplateObject());
-
     JSObject *templateObject = lir->mir()->getTemplateObject();
     gc::AllocKind allocKind = templateObject->getAllocKind();
     int thingSize = (int)gc::Arena::thingSize(allocKind);
@@ -1846,12 +1849,10 @@ static const VMFunction CreateThisInfo =
     FunctionInfo<CreateThisFn>(js_CreateThisForFunctionWithProto);
 
 bool
-CodeGenerator::visitCreateThisVM(LCreateThisVM *lir)
+CodeGenerator::emitCreateThisVM(LInstruction *lir,
+                                const LAllocation *proto,
+                                const LAllocation *callee)
 {
-    const LAllocation *proto = lir->getPrototype();
-    const LAllocation *callee = lir->getCallee();
-
-    // Push arguments.
     if (proto->isConstant())
         pushArg(ImmGCPtr(&proto->toConstant()->toObject()));
     else
@@ -1862,9 +1863,38 @@ CodeGenerator::visitCreateThisVM(LCreateThisVM *lir)
     else
         pushArg(ToRegister(callee));
 
-    if (!callVM(CreateThisInfo, lir))
+    return callVM(CreateThisInfo, lir);
+}
+
+bool
+CodeGenerator::visitCreateThisV(LCreateThisV *lir)
+{
+    Label done, vm;
+
+    const LAllocation *proto = lir->getPrototype();
+    const LAllocation *callee = lir->getCallee();
+
+    // When callee could be a native, put MagicValue in return operand.
+    // Use the VMCall when callee turns out to not be a native.
+    masm.branchIfInterpreted(ToRegister(callee), &vm);
+    masm.moveValue(MagicValue(JS_IS_CONSTRUCTING), GetValueOutput(lir));
+    masm.jump(&done);
+
+    masm.bind(&vm);
+    if (!emitCreateThisVM(lir, proto, callee))
         return false;
+
+    masm.tagValue(JSVAL_TYPE_OBJECT, ReturnReg, GetValueOutput(lir));
+
+    masm.bind(&done);
+
     return true;
+}
+
+bool
+CodeGenerator::visitCreateThisO(LCreateThisO *lir)
+{
+    return emitCreateThisVM(lir, lir->getPrototype(), lir->getCallee());
 }
 
 bool

@@ -51,7 +51,7 @@ using namespace js::ion;
 IonOptions ion::js_IonOptions;
 
 // Assert that IonCode is gc::Cell aligned.
-JS_STATIC_ASSERT(sizeof(IonCode) % gc::Cell::CellSize == 0);
+JS_STATIC_ASSERT(sizeof(IonCode) % gc::CellSize == 0);
 
 #ifdef JS_THREADSAFE
 static bool IonTLSInitialized = false;
@@ -1170,7 +1170,7 @@ SequentialCompileContext::compile(IonBuilder *builder, MIRGraph *graph,
     JS_ASSERT(!builder->script()->ion);
     JSContext *cx = GetIonContext()->cx;
 
-    IonSpewNewFunction(graph, builder->script().unsafeGet());
+    IonSpewNewFunction(graph, builder->script());
 
     if (!builder->build()) {
         IonSpew(IonSpew_Abort, "Builder failed to build.");
@@ -1183,7 +1183,7 @@ SequentialCompileContext::compile(IonBuilder *builder, MIRGraph *graph,
     // incremental read barriers.
     if (js_IonOptions.parallelCompilation &&
         OffThreadCompilationAvailable(cx) &&
-        !IsIncrementalGCInProgress(cx->runtime))
+        cx->runtime->gcIncrementalState == gc::NO_INCREMENTAL)
     {
         builder->script()->ion = ION_COMPILING_SCRIPT;
 
@@ -1288,7 +1288,7 @@ CheckScriptSize(JSScript *script)
     if (!js_IonOptions.limitScriptSize)
         return true;
 
-    static const uint32_t MAX_SCRIPT_SIZE = 1500;
+    static const uint32_t MAX_SCRIPT_SIZE = 2000;
     static const uint32_t MAX_LOCALS_AND_ARGS = 256;
 
     if (script->length > MAX_SCRIPT_SIZE) {
@@ -1510,7 +1510,7 @@ EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
         }
         calleeToken = CalleeToToken(&fp->callee());
     } else {
-        calleeToken = CalleeToToken(fp->script().unsafeGet());
+        calleeToken = CalleeToToken(fp->script());
     }
 
     // Caller must construct |this| before invoking the Ion function.
@@ -1527,7 +1527,7 @@ EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
     }
 
     if (result.isMagic() && result.whyMagic() == JS_ION_BAILOUT) {
-        if (!EnsureHasCallObject(cx, cx->fp()))
+        if (!EnsureHasScopeObjects(cx, cx->fp()))
             return IonExec_Error;
         return IonExec_Bailout;
     }
@@ -1817,6 +1817,7 @@ void
 ion::Invalidate(types::TypeCompartment &types, FreeOp *fop,
                 const Vector<types::RecompileInfo> &invalid, bool resetUses)
 {
+    AutoAssertNoGC nogc;
     IonSpew(IonSpew_Invalidate, "Start invalidation.");
     AutoFlushCache afc ("Invalidate");
 
@@ -1855,12 +1856,11 @@ ion::Invalidate(types::TypeCompartment &types, FreeOp *fop,
     // until its last invalidated frame is destroyed.
     for (size_t i = 0; i < invalid.length(); i++) {
         types::CompilerOutput &co = *invalid[i].compilerOutput(types);
-        ExecutionMode executionMode;
+        ExecutionMode executionMode = SequentialExecution;
         switch (co.kind()) {
           case types::CompilerOutput::MethodJIT:
             continue;
           case types::CompilerOutput::Ion:
-            executionMode = SequentialExecution;
             break;
           case types::CompilerOutput::ParallelIon:
             executionMode = ParallelExecution;

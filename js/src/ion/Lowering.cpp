@@ -159,6 +159,13 @@ LIRGenerator::visitNewObject(MNewObject *ins)
 }
 
 bool
+LIRGenerator::visitNewDeclEnvObject(MNewDeclEnvObject *ins)
+{
+    LNewDeclEnvObject *lir = new LNewDeclEnvObject();
+    return define(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitNewCallObject(MNewCallObject *ins)
 {
     LAllocation slots;
@@ -229,17 +236,24 @@ LIRGenerator::visitPassArg(MPassArg *arg)
 }
 
 bool
+LIRGenerator::visitCreateThisWithTemplate(MCreateThisWithTemplate *ins)
+{
+    LCreateThisWithTemplate *lir = new LCreateThisWithTemplate();
+    return define(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
 LIRGenerator::visitCreateThis(MCreateThis *ins)
 {
-    // Template objects permit fast initialization.
-    if (ins->hasTemplateObject()) {
-        LCreateThis *lir = new LCreateThis();
-        return define(lir, ins) && assignSafepoint(lir, ins);
+    if (ins->needNativeCheck()) {
+        JS_ASSERT(ins->type() == MIRType_Value);
+        LCreateThisV *lir = new LCreateThisV(useRegisterAtStart(ins->getCallee()),
+                                             useRegisterOrConstantAtStart(ins->getPrototype()));
+        return defineReturn(lir, ins) && assignSafepoint(lir, ins);
     }
 
-    LCreateThisVM *lir = new LCreateThisVM(useRegisterOrConstantAtStart(ins->getCallee()),
-                                           useRegisterOrConstantAtStart(ins->getPrototype()));
-
+    LCreateThisO *lir = new LCreateThisO(useRegisterOrConstantAtStart(ins->getCallee()),
+                                         useRegisterOrConstantAtStart(ins->getPrototype()));
     return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
@@ -287,13 +301,6 @@ LIRGenerator::visitCall(MCall *call)
 
         LCallKnown *lir = new LCallKnown(useFixed(call->getFunction(), CallTempReg0),
                                          argslot, tempFixed(CallTempReg2));
-        return (defineReturn(lir, call) && assignSafepoint(lir, call));
-    }
-
-    // Call unknown constructors.
-    if (call->isConstructing()) {
-        LCallConstructor *lir = new LCallConstructor(useFixed(call->getFunction(),
-                                                     CallTempReg0), argslot);
         return (defineReturn(lir, call) && assignSafepoint(lir, call));
     }
 
@@ -732,7 +739,7 @@ LIRGenerator::visitAbs(MAbs *ins)
     if (num->type() == MIRType_Int32) {
         LAbsI *lir = new LAbsI(useRegisterAtStart(num));
         // needed to handle abs(INT32_MIN)
-        if (!ins->range()->isFinite() && !assignSnapshot(lir))
+        if (ins->fallible() && !assignSnapshot(lir))
             return false;
         return defineReuseInput(lir, ins, 0);
     }
@@ -1481,9 +1488,13 @@ LIRGenerator::visitLoadElement(MLoadElement *ins)
         return false;
 
       default:
-        JS_ASSERT(!ins->fallible());
-        return define(new LLoadElementT(useRegister(ins->elements()),
-                                        useRegisterOrConstant(ins->index())), ins);
+      {
+        LLoadElementT *lir = new LLoadElementT(useRegister(ins->elements()),
+                                               useRegisterOrConstant(ins->index()));
+        if (ins->fallible() && !assignSnapshot(lir))
+            return false;
+        return define(lir, ins);
+      }
     }
 }
 

@@ -1280,6 +1280,9 @@ IsPropertySetterCallInlineable(JSContext *cx, HandleObject obj, HandleObject hol
     if (shape->hasDefaultSetter())
         return false;
 
+    if (!shape->writable())
+        return false;
+
     // We only handle propertyOps for now, so fail if we have SetterValue
     // (which implies JSNative setter).
     if (shape->hasSetterValue())
@@ -1626,7 +1629,7 @@ GenerateScopeChainGuard(MacroAssembler &masm, JSObject *scopeObj,
         CallObject *callObj = &scopeObj->asCall();
         if (!callObj->isForEval()) {
             RawFunction fun = &callObj->callee();
-            RawScript script = fun->nonLazyScript().get(nogc);
+            UnrootedScript script = fun->nonLazyScript();
             if (!script->funHasExtensibleScope)
                 return;
         }

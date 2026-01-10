@@ -11,7 +11,8 @@
 #include "nsISupports.h"
 
 #include "AudioChannelCommon.h"
-#include "nsHTMLMediaElement.h"
+#include "AudioChannelAgent.h"
+#include "nsDataHashtable.h"
 
 namespace mozilla {
 namespace dom {
@@ -34,34 +35,54 @@ public:
   static void Shutdown();
 
   /**
-   * Any MediaElement that starts playing should register itself to
+   * Any audio channel agent that starts playing should register itself to
    * this service, sharing the AudioChannelType.
    */
-  void RegisterMediaElement(nsHTMLMediaElement* aMediaElement,
-                            AudioChannelType aType);
+  virtual void RegisterAudioChannelAgent(AudioChannelAgent* aAgent,
+                                         AudioChannelType aType);
 
   /**
-   * Any MediaElement that stops playing should unregister itself to
+   * Any  audio channel agent that stops playing should unregister itself to
    * this service.
    */
-  void UnregisterMediaElement(nsHTMLMediaElement* aMediaElement);
+  virtual void UnregisterAudioChannelAgent(AudioChannelAgent* aAgent);
 
   /**
    * Return true if this type should be muted.
    */
   virtual bool GetMuted(AudioChannelType aType, bool aElementHidden);
 
-  void Notify();
+  /**
+   * Sync the phone status with telephony
+   */
+#ifdef MOZ_WIDGET_GONK
+  void SetPhoneInCall(bool aActive);
+#endif
 
 protected:
+  void Notify();
+
+  /* Register/Unregister IPC types: */
+  void RegisterType(AudioChannelType aType);
+  void UnregisterType(AudioChannelType aType);
+
   AudioChannelService();
   virtual ~AudioChannelService();
 
   bool ChannelsActiveWithHigherPriorityThan(AudioChannelType aType);
 
-  nsDataHashtable< nsPtrHashKey<nsHTMLMediaElement>, AudioChannelType > mMediaElements;
+  const char* ChannelName(AudioChannelType aType);
+
+  nsDataHashtable< nsPtrHashKey<AudioChannelAgent>, AudioChannelType > mAgents;
 
   int32_t* mChannelCounters;
+
+  AudioChannelType mCurrentHigherChannel;
+
+  // This is needed for IPC comunication between
+  // AudioChannelServiceChild and this class.
+  friend class ContentParent;
+  friend class ContentChild;
 };
 
 } // namespace dom
