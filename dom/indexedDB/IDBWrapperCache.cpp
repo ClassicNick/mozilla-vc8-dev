@@ -20,8 +20,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBWrapperCache,
                                                 nsDOMEventTargetHelper)
   if (tmp->mScriptOwner) {
-    NS_DROP_JS_OBJECTS(tmp, IDBWrapperCache);
     tmp->mScriptOwner = nullptr;
+    NS_DROP_JS_OBJECTS(tmp, IDBWrapperCache);
   }
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -40,9 +40,9 @@ NS_IMPL_RELEASE_INHERITED(IDBWrapperCache, nsDOMEventTargetHelper)
 
 IDBWrapperCache::~IDBWrapperCache()
 {
-  if (mScriptOwner) {
-    NS_DROP_JS_OBJECTS(this, IDBWrapperCache);
-  }
+  mScriptOwner = nullptr;
+  nsContentUtils::ReleaseWrapper(this, this);
+  NS_DROP_JS_OBJECTS(this, IDBWrapperCache);
 }
 
 bool
@@ -55,12 +55,7 @@ IDBWrapperCache::SetScriptOwner(JSObject* aScriptOwner)
   nsISupports* thisSupports = NS_CYCLE_COLLECTION_UPCAST(this, IDBWrapperCache);
   nsXPCOMCycleCollectionParticipant* participant;
   CallQueryInterface(this, &participant);
-  nsresult rv = nsContentUtils::HoldJSObjects(thisSupports, participant);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("nsContentUtils::HoldJSObjects failed.");
-    mScriptOwner = nullptr;
-    return false;
-  }
+  nsContentUtils::HoldJSObjects(thisSupports, participant);
 
   return true;
 }

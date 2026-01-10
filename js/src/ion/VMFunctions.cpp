@@ -46,7 +46,7 @@ ShouldMonitorReturnType(JSFunction *fun)
 }
 
 bool
-InvokeFunction(JSContext *cx, JSFunction *fun, uint32 argc, Value *argv, Value *rval)
+InvokeFunction(JSContext *cx, JSFunction *fun, uint32_t argc, Value *argv, Value *rval)
 {
     Value fval = ObjectValue(*fun);
 
@@ -67,6 +67,11 @@ InvokeFunction(JSContext *cx, JSFunction *fun, uint32 argc, Value *argv, Value *
                 ForbidCompilation(cx, script);
             }
         }
+
+        // When caller runs in IM, but callee not, we take a slow path to the interpreter.
+        // This has a significant overhead. In order to decrease the number of times this happens,
+        // the useCount gets incremented faster to compile this function in IM and use the fastpath.
+        fun->nonLazyScript()->incUseCount(js_IonOptions.slowCallIncUseCount);
     }
 
     // TI will return false for monitorReturnTypes, meaning there is no
@@ -82,6 +87,35 @@ InvokeFunction(JSContext *cx, JSFunction *fun, uint32 argc, Value *argv, Value *
 
     // Run the function in the interpreter.
     bool ok = Invoke(cx, thisv, fval, argc, argvWithoutThis, rval);
+    if (ok && needsMonitor)
+        types::TypeScript::Monitor(cx, *rval);
+
+    return ok;
+}
+
+bool
+InvokeConstructor(JSContext *cx, JSObject *obj, uint32_t argc, Value *argv, Value *rval)
+{
+    Value fval = ObjectValue(*obj);
+
+    // See the comment in InvokeFunction.
+    bool needsMonitor;
+
+    if (obj->isFunction()) {
+        if (obj->toFunction()->isInterpretedLazy() &&
+            !obj->toFunction()->getOrCreateScript(cx).unsafeGet())
+        {
+            return false;
+        }
+        needsMonitor = ShouldMonitorReturnType(obj->toFunction());
+    } else {
+        needsMonitor = true;
+    }
+
+    // Data in the argument vector is arranged for a JIT -> JIT call.
+    Value *argvWithoutThis = argv + 1;
+
+    bool ok = js::InvokeConstructor(cx, fval, argc, argvWithoutThis, rval);
     if (ok && needsMonitor)
         types::TypeScript::Monitor(cx, *rval);
 

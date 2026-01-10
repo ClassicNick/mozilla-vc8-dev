@@ -33,9 +33,7 @@ public:
 #endif
 
 protected:
-#if defined(_MSC_VER) && defined(_M_IX86)
   NS_IMETHOD Run();
-#endif
   NS_IMETHOD Exit();
   virtual void ScheduleNativeEventCallback();
   virtual bool ProcessNextNativeEvent(bool mayWait);

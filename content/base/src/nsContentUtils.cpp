@@ -208,7 +208,6 @@ nsIContentPolicy *nsContentUtils::sContentPolicyService;
 bool nsContentUtils::sTriedToGetContentPolicy = false;
 nsILineBreaker *nsContentUtils::sLineBreaker;
 nsIWordBreaker *nsContentUtils::sWordBreaker;
-uint32_t nsContentUtils::sJSGCThingRootCount;
 #ifdef IBMBIDI
 nsIBidiKeyboard *nsContentUtils::sBidiKeyboard = nullptr;
 #endif
@@ -4513,34 +4512,23 @@ nsContentUtils::DestroyAnonymousContent(nsCOMPtr<nsIContent>* aContent)
 }
 
 /* static */
-nsresult
+void
 nsContentUtils::HoldJSObjects(void* aScriptObjectHolder,
                               nsScriptObjectTracer* aTracer)
 {
-  NS_ENSURE_TRUE(sXPConnect, NS_ERROR_UNEXPECTED);
-
-  nsresult rv = sXPConnect->AddJSHolder(aScriptObjectHolder, aTracer);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (sJSGCThingRootCount++ == 0) {
-    nsLayoutStatics::AddRef();
+  MOZ_ASSERT(sXPConnect, "Tried to HoldJSObjects when there was no XPConnect");
+  if (sXPConnect) {
+    sXPConnect->AddJSHolder(aScriptObjectHolder, aTracer);
   }
-  NS_LOG_ADDREF(sXPConnect, sJSGCThingRootCount, "HoldJSObjects",
-                sizeof(void*));
-
-  return NS_OK;
 }
 
 /* static */
-nsresult
+void
 nsContentUtils::DropJSObjects(void* aScriptObjectHolder)
 {
-  NS_LOG_RELEASE(sXPConnect, sJSGCThingRootCount - 1, "HoldJSObjects");
-  nsresult rv = sXPConnect->RemoveJSHolder(aScriptObjectHolder);
-  if (--sJSGCThingRootCount == 0) {
-    nsLayoutStatics::Release();
+  if (sXPConnect) {
+    sXPConnect->RemoveJSHolder(aScriptObjectHolder);
   }
-  return rv;
 }
 
 #ifdef DEBUG
@@ -4548,9 +4536,7 @@ nsContentUtils::DropJSObjects(void* aScriptObjectHolder)
 bool
 nsContentUtils::AreJSObjectsHeld(void* aScriptHolder)
 {
-  bool isHeld = false;
-  sXPConnect->TestJSHolder(aScriptHolder, &isHeld);
-  return isHeld;
+  return sXPConnect->TestJSHolder(aScriptHolder);
 }
 #endif
 
@@ -4674,7 +4660,6 @@ nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
 
   if (!aClick) {
     handler->OnOverLink(aContent, aLinkURI, aTargetSpec.get());
-
     return;
   }
 
@@ -4692,9 +4677,25 @@ nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
   }
 
   // Only pass off the click event if the script security manager says it's ok.
+  // We need to rest aTargetSpec for forced downloads.
   if (NS_SUCCEEDED(proceed)) {
-    handler->OnLinkClick(aContent, aLinkURI, aTargetSpec.get(), nullptr, nullptr,
-                         aIsTrusted);
+
+    // A link/area element with a download attribute is allowed to set
+    // a pseudo Content-Disposition header.
+    // For security reasons we only allow websites to declare same-origin resources
+    // as downloadable. If this check fails we will just do the normal thing
+    // (i.e. navigate to the resource).
+    nsAutoString fileName;
+    if ((!aContent->IsHTML(nsGkAtoms::a) && !aContent->IsHTML(nsGkAtoms::area) &&
+         !aContent->IsSVG(nsGkAtoms::a)) ||
+        !aContent->GetAttr(kNameSpaceID_None, nsGkAtoms::download, fileName) ||
+        NS_FAILED(aContent->NodePrincipal()->CheckMayLoad(aLinkURI, false, true))) {
+      fileName.SetIsVoid(true); // No actionable download attribute was found.
+    }
+
+    handler->OnLinkClick(aContent, aLinkURI,
+                         fileName.IsVoid() ? aTargetSpec.get() : EmptyString().get(),
+                         fileName, nullptr, nullptr, aIsTrusted);
   }
 }
 
@@ -6877,9 +6878,8 @@ nsContentUtils::ReleaseWrapper(void* aScriptObjectHolder,
     if (aCache->IsDOMBinding() && obj) {
       xpc::GetObjectScope(obj)->RemoveDOMExpandoObject(obj);
     }
-    DropJSObjects(aScriptObjectHolder);
-
     aCache->SetPreservingWrapper(false);
+    DropJSObjects(aScriptObjectHolder);
   }
 }
 

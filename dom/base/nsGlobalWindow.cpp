@@ -7034,11 +7034,7 @@ nsGlobalWindow::CacheXBLPrototypeHandler(nsXBLPrototypeHandler* aKey,
                    reinterpret_cast<void**>(&thisSupports));
     NS_ASSERTION(thisSupports, "Failed to QI to nsCycleCollectionISupports!");
 
-    nsresult rv = nsContentUtils::HoldJSObjects(thisSupports, participant);
-    if (NS_FAILED(rv)) {
-      NS_ERROR("nsContentUtils::HoldJSObjects failed!");
-      return;
-    }
+    nsContentUtils::HoldJSObjects(thisSupports, participant);
   }
 
   mCachedXBLPrototypeHandlers.Put(aKey, aHandler.get());
@@ -11092,11 +11088,9 @@ nsGlobalChromeWindow::GetMessageManager(nsIMessageBroadcaster** aManager)
 // nsGlobalModalWindow implementation
 
 // QueryInterface implementation for nsGlobalModalWindow
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsGlobalModalWindow)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsGlobalModalWindow,
-                                                  nsGlobalWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReturnValue)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(nsGlobalModalWindow,
+                                     nsGlobalWindow,
+                                     mReturnValue)
 
 DOMCI_DATA(ModalContentWindow, nsGlobalModalWindow)
 
@@ -11107,12 +11101,6 @@ NS_INTERFACE_MAP_END_INHERITING(nsGlobalWindow)
 
 NS_IMPL_ADDREF_INHERITED(nsGlobalModalWindow, nsGlobalWindow)
 NS_IMPL_RELEASE_INHERITED(nsGlobalModalWindow, nsGlobalWindow)
-
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsGlobalModalWindow,
-                                                nsGlobalWindow)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReturnValue)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 
 NS_IMETHODIMP

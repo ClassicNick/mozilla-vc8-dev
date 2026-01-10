@@ -223,6 +223,8 @@ pref("general.autoScroll", false);
 pref("general.autoScroll", true);
 #endif
 
+pref("general.useragent.complexOverride.moodle", false); // bug 797703
+
 // At startup, check if we're the default browser and prompt user if not.
 pref("browser.shell.checkDefaultBrowser", true);
 
@@ -529,12 +531,17 @@ pref("browser.gesture.tap", "cmd_fullZoomReset");
 // scrolling to shift+wheel.
 pref("mousewheel.with_alt.action", 2);
 pref("mousewheel.with_shift.action", 1);
+// On MacOS X, control+wheel is typically handled by system and we don't
+// receive the event.  So, command key which is the main modifier key for
+// acceleration is the best modifier for zoom-in/out.  However, we should keep
+// the control key setting for backward compatibility.
+pref("mousewheel.with_meta.action", 3); // command key on Mac
 #else
 pref("mousewheel.with_alt.action", 1);
 pref("mousewheel.with_shift.action", 2);
+pref("mousewheel.with_meta.action", 1); // win key on Win, Super/Hyper on Linux
 #endif
 pref("mousewheel.with_control.action",3);
-pref("mousewheel.with_meta.action", 1);  // command key on Mac
 pref("mousewheel.with_win.action", 1);
 
 pref("browser.xul.error_pages.enabled", true);
@@ -996,11 +1003,16 @@ pref("devtools.toolbar.visible", false);
 pref("devtools.gcli.allowSet", false);
 pref("devtools.commands.dir", "");
 
+// Toolbox preferences
+pref("devtools.toolbox.footer.height", 250);
+pref("devtools.toolbox.sidebar.width", 500);
+pref("devtools.toolbox.host", "bottom");
+pref("devtools.toolbox.selectedTool", "webconsole");
+pref("devtools.toolbox.toolbarSpec", '["tilt toggle","scratchpad","resize toggle"]');
+pref("devtools.toolbox.sideEnabled", false);
+
 // Enable the Inspector
 pref("devtools.inspector.enabled", true);
-pref("devtools.inspector.htmlHeight", 112);
-pref("devtools.inspector.htmlPanelOpen", false);
-pref("devtools.inspector.sidebarOpen", false);
 pref("devtools.inspector.activeSidebar", "ruleview");
 pref("devtools.inspector.markupPreview", false);
 
@@ -1029,19 +1041,13 @@ pref("devtools.debugger.ui.stackframes-width", 200);
 pref("devtools.debugger.ui.variables-width", 300);
 pref("devtools.debugger.ui.panes-visible-on-startup", false);
 pref("devtools.debugger.ui.variables-sorting-enabled", true);
-pref("devtools.debugger.ui.variables-non-enum-visible", true);
+pref("devtools.debugger.ui.variables-only-enum-visible", false);
 pref("devtools.debugger.ui.variables-searchbox-visible", false);
-
-// Enable the style inspector
-pref("devtools.styleinspector.enabled", true);
 
 // Enable the Tilt inspector
 pref("devtools.tilt.enabled", true);
 pref("devtools.tilt.intro_transition", true);
 pref("devtools.tilt.outro_transition", true);
-
-// Enable the rules view
-pref("devtools.ruleview.enabled", true);
 
 // Enable the Scratchpad tool.
 pref("devtools.scratchpad.enabled", true);
@@ -1066,17 +1072,6 @@ pref("devtools.gcli.eagerHelper", 2);
 
 // Do we allow the 'pref set' command
 pref("devtools.gcli.allowSet", false);
-
-// The last Web Console height. This is initially 0 which means that the Web
-// Console will use the default height next time it shows.
-// Change to -1 if you do not want the Web Console to remember its last height.
-pref("devtools.hud.height", 0);
-
-// Remember the Web Console position. Possible values:
-//   above - above the web page,
-//   below - below the web page,
-//   window - in a separate window/popup panel.
-pref("devtools.webconsole.position", "below");
 
 // Remember the Web Console filters
 pref("devtools.webconsole.filter.network", true);

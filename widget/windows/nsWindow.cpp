@@ -117,6 +117,8 @@
 #include "WidgetUtils.h"
 #include "nsIWidgetListener.h"
 #include "nsDOMTouchEvent.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #ifdef MOZ_ENABLE_D3D9_LAYER
 #include "LayerManagerD3D9.h"
@@ -487,7 +489,8 @@ nsWindow::Create(nsIWidget *aParent,
       parent = NULL;
     }
 
-    if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION) {
+    if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION &&
+        WinUtils::GetWindowsVersion() <= WinUtils::WIN7_VERSION) {
       extendedStyle |= WS_EX_COMPOSITED;
     }
 
@@ -3440,7 +3443,7 @@ nsWindow::OverrideSystemMouseScrollSpeed(int32_t aOriginalDelta,
   // on the document of SystemParametersInfo in MSDN.
   const uint32_t kSystemDefaultScrollingSpeed = 3;
 
-  int32_t absOriginDelta = NS_ABS(aOriginalDelta);
+  int32_t absOriginDelta = std::abs(aOriginalDelta);
 
   // Compute the simple overridden speed.
   int32_t absComputedOverriddenDelta;
@@ -5457,37 +5460,53 @@ nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my)
   if (mSizeMode == nsSizeMode_Maximized)
     isResizable = false;
 
+  // Ensure being accessible to borders of window.  Even if contents are in
+  // this area, the area must behave as border.
+  nsIntMargin nonClientSize(NS_MAX(mHorResizeMargin - mNonClientOffset.left,
+                                   kResizableBorderMinSize),
+                            NS_MAX(mCaptionHeight - mNonClientOffset.top,
+                                   kResizableBorderMinSize),
+                            NS_MAX(mHorResizeMargin - mNonClientOffset.right,
+                                   kResizableBorderMinSize),
+                            NS_MAX(mVertResizeMargin - mNonClientOffset.bottom,
+                                   kResizableBorderMinSize));
+
+  bool allowContentOverride = mSizeMode == nsSizeMode_Maximized ||
+                              (mx >= winRect.left + nonClientSize.left &&
+                               mx <= winRect.right - nonClientSize.right &&
+                               my >= winRect.top + nonClientSize.top &&
+                               my <= winRect.bottom - nonClientSize.bottom);
+
+  // The border size.  If there is no content under mouse cursor, the border
+  // size should be larger than the values in system settings.  Otherwise,
+  // contents under the mouse cursor should be able to override the behavior.
+  // E.g., user must expect that Firefox button always opens the popup menu
+  // even when the user clicks on the above edge of it.
+  nsIntMargin borderSize(NS_MAX(nonClientSize.left, mHorResizeMargin),
+                         NS_MAX(nonClientSize.top, mVertResizeMargin),
+                         NS_MAX(nonClientSize.right, mHorResizeMargin),
+                         NS_MAX(nonClientSize.bottom, mVertResizeMargin));
+
   bool top    = false;
   bool bottom = false;
   bool left   = false;
   bool right  = false;
 
-  int topOffset = NS_MAX(mCaptionHeight - mNonClientOffset.top,
-                         kResizableBorderMinSize);
-  int bottomOffset = NS_MAX(mVertResizeMargin - mNonClientOffset.bottom,
-                            kResizableBorderMinSize);
-  int topBounds = winRect.top + topOffset;
-  int bottomBounds = winRect.bottom - bottomOffset;
-
-  if (my >= winRect.top && my < topBounds)
+  if (my >= winRect.top && my < winRect.top + borderSize.top) {
     top = true;
-  else if (my <= winRect.bottom && my > bottomBounds)
+  } else if (my <= winRect.bottom && my > winRect.bottom - borderSize.bottom) {
     bottom = true;
+  }
 
-  int leftOffset = NS_MAX(mHorResizeMargin - mNonClientOffset.left,
-                          kResizableBorderMinSize);
-  int rightOffset = NS_MAX(mHorResizeMargin - mNonClientOffset.right,
-                           kResizableBorderMinSize);
   // (the 2x case here doubles the resize area for corners)
-  int leftBounds = winRect.left +
-                   (bottom ? (2*leftOffset) : leftOffset);
-  int rightBounds = winRect.right -
-                    (bottom ? (2*rightOffset) : rightOffset);
-
-  if (mx >= winRect.left && mx < leftBounds)
+  int multiplier = (top || bottom) ? 2 : 1;
+  if (mx >= winRect.left &&
+      mx < winRect.left + (multiplier * borderSize.left)) {
     left = true;
-  else if (mx <= winRect.right && mx > rightBounds)
+  } else if (mx <= winRect.right &&
+             mx > winRect.right - (multiplier * borderSize.right)) {
     right = true;
+  }
 
   if (isResizable) {
     if (top) {
@@ -5515,22 +5534,7 @@ nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my)
       testResult = HTBORDER;
   }
 
-  bool contentOverlap = true;
-
-  if (mSizeMode != nsSizeMode_Maximized) {
-    contentOverlap = mx >= winRect.left + leftOffset &&
-                     mx <= winRect.right - rightOffset &&
-                     my >= winRect.top + topOffset &&
-                     my <= winRect.bottom - bottomOffset;
-  }
-
-  if (!sIsInMouseCapture &&
-      contentOverlap &&
-      (testResult == HTCLIENT ||
-       testResult == HTTOP ||
-       testResult == HTBORDER ||
-       testResult == HTTOPLEFT ||
-       testResult == HTCAPTION)) {
+  if (!sIsInMouseCapture && allowContentOverride) {
     LPARAM lParam = MAKELPARAM(mx, my);
     LPARAM lParamClient = lParamToClient(lParam);
     bool result = DispatchMouseEvent(NS_MOUSE_MOZHITTEST, 0, lParamClient,
@@ -6351,10 +6355,10 @@ bool nsWindow::OnGesture(WPARAM wParam, LPARAM lParam)
 
     if (mDisplayPanFeedback) {
       mGesture.UpdatePanFeedbackX(mWnd,
-                                  NS_ABS(RoundDown(wheelEvent.overflowDeltaX)),
+                                  std::abs(RoundDown(wheelEvent.overflowDeltaX)),
                                   endFeedback);
       mGesture.UpdatePanFeedbackY(mWnd,
-                                  NS_ABS(RoundDown(wheelEvent.overflowDeltaY)),
+                                  std::abs(RoundDown(wheelEvent.overflowDeltaY)),
                                   endFeedback);
       mGesture.PanFeedbackFinalize(mWnd, endFeedback);
     }
@@ -6997,15 +7001,13 @@ CreateHRGNFromArray(const nsTArray<nsIntRect>& aRects)
   return ::ExtCreateRegion(NULL, buf.Length(), data);
 }
 
-static const nsTArray<nsIntRect>
-ArrayFromRegion(const nsIntRegion& aRegion)
+static void
+ArrayFromRegion(const nsIntRegion& aRegion, nsTArray<nsIntRect>& aRects)
 {
-  nsTArray<nsIntRect> rects;
   const nsIntRect* r;
   for (nsIntRegionRectIterator iter(aRegion); (r = iter.Next());) {
-    rects.AppendElement(*r);
+    aRects.AppendElement(*r);
   }
-  return rects;
 }
 
 nsresult
@@ -7035,7 +7037,8 @@ nsWindow::SetWindowClipRegion(const nsTArray<nsIntRect>& aRects,
     nsIntRegion intersection;
     intersection.And(currentRegion, newRegion);
     // create int rect array from intersection
-    nsTArray<nsIntRect> rects = ArrayFromRegion(intersection);
+    nsTArray<nsIntRect> rects;
+    ArrayFromRegion(intersection, rects);
     // store
     if (!StoreWindowClipRegion(rects))
       return NS_OK;

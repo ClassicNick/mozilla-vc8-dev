@@ -97,6 +97,8 @@
 #include "nsHTMLImageElement.h"
 #include "nsHTMLVideoElement.h"
 #include "mozilla/dom/CanvasRenderingContext2DBinding.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #ifdef XP_WIN
 #include "gfxWindowsPlatform.h"
@@ -1853,7 +1855,7 @@ CanvasRenderingContext2D::EnsureWritablePath()
 }
 
 void
-CanvasRenderingContext2D::EnsureUserSpacePath(bool aCommitTransform /* = true */)
+CanvasRenderingContext2D::EnsureUserSpacePath()
 {
   FillRule fillRule = CurrentState().fillRule;
 
@@ -1867,8 +1869,7 @@ CanvasRenderingContext2D::EnsureUserSpacePath(bool aCommitTransform /* = true */
     mPathBuilder = nullptr;
   }
 
-  if (aCommitTransform &&
-      mPath &&
+  if (mPath &&
       mPathTransformWillUpdate) {
     mDSPathBuilder =
       mPath->TransformedCopyToBuilder(mPathToDS, fillRule);
@@ -2848,7 +2849,7 @@ CanvasRenderingContext2D::IsPointInPath(double x, double y)
     return false;
   }
 
-  EnsureUserSpacePath(false);
+  EnsureUserSpacePath();
   if (!mPath) {
     return false;
   }
@@ -2865,7 +2866,7 @@ CanvasRenderingContext2D::MozIsPointInStroke(double x, double y)
     return false;
   }
 
-  EnsureUserSpacePath(false);
+  EnsureUserSpacePath();
   if (!mPath) {
     return false;
   }
@@ -3741,8 +3742,8 @@ CanvasRenderingContext2D::CreateImageData(JSContext* cx, double sw,
   int32_t wi = JS_DoubleToInt32(sw);
   int32_t hi = JS_DoubleToInt32(sh);
 
-  uint32_t w = NS_ABS(wi);
-  uint32_t h = NS_ABS(hi);
+  uint32_t w = std::abs(wi);
+  uint32_t h = std::abs(hi);
   return mozilla::dom::CreateImageData(cx, this, w, h, error);
 }
 

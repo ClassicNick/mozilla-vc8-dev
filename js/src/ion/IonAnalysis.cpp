@@ -40,6 +40,95 @@ ion::SplitCriticalEdges(MIRGraph &graph)
     return true;
 }
 
+// Operands to a resume point which are dead at the point of the resume can be
+// replaced with undefined values. This analysis supports limited detection of
+// dead operands, pruning those which are defined in the resume point's basic
+// block and have no uses outside the block or at points later than the resume
+// point.
+//
+// This is intended to ensure that extra resume points within a basic block
+// will not artificially extend the lifetimes of any SSA values. This could
+// otherwise occur if the new resume point captured a value which is created
+// between the old and new resume point and is dead at the new resume point.
+bool
+ion::EliminateDeadResumePointOperands(MIRGenerator *mir, MIRGraph &graph)
+{
+    for (PostorderIterator block = graph.poBegin(); block != graph.poEnd(); block++) {
+        if (mir->shouldCancel("Eliminate Dead Resume Point Operands (main loop)"))
+            return false;
+
+        // The logic below can get confused on infinite loops.
+        if (block->isLoopHeader() && block->backedge() == *block)
+            continue;
+
+        for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
+            // No benefit to replacing constant operands with other constants.
+            if (ins->isConstant())
+                continue;
+
+            // Scanning uses does not give us sufficient information to tell
+            // where instructions that are involved in box/unbox operations or
+            // parameter passing might be live. Rewriting uses of these terms
+            // in resume points may affect the interpreter's behavior. Rather
+            // than doing a more sophisticated analysis, just ignore these.
+            if (ins->isUnbox() || ins->isParameter())
+                continue;
+
+            // Check if this instruction's result is only used within the
+            // current block, and keep track of its last use in a definition
+            // (not resume point). This requires the instructions in the block
+            // to be numbered, ensured by running this immediately after alias
+            // analysis.
+            uint32_t maxDefinition = 0;
+            for (MUseDefIterator uses(*ins); uses; uses++) {
+                if (uses.def()->block() != *block || uses.def()->isBox() || uses.def()->isPassArg()) {
+                    maxDefinition = UINT32_MAX;
+                    break;
+                }
+                maxDefinition = Max(maxDefinition, uses.def()->id());
+            }
+            if (maxDefinition == UINT32_MAX)
+                continue;
+
+            // Walk the uses a second time, removing any in resume points after
+            // the last use in a definition.
+            for (MUseIterator uses(ins->usesBegin()); uses != ins->usesEnd(); ) {
+                if (uses->node()->isDefinition()) {
+                    uses++;
+                    continue;
+                }
+                MResumePoint *mrp = uses->node()->toResumePoint();
+                if (mrp->block() != *block ||
+                    !mrp->instruction() ||
+                    mrp->instruction() == *ins ||
+                    mrp->instruction()->id() <= maxDefinition)
+                {
+                    uses++;
+                    continue;
+                }
+
+                // Store an undefined value in place of all dead resume point
+                // operands. Making any such substitution can in general alter
+                // the interpreter's behavior, even though the code is dead, as
+                // the interpreter will still execute opcodes whose effects
+                // cannot be observed. If the undefined value were to flow to,
+                // say, a dead property access the interpreter could throw an
+                // exception; we avoid this problem by removing dead operands
+                // before removing dead code.
+                MConstant *constant = MConstant::New(UndefinedValue());
+                block->insertBefore(*(block->begin()), constant);
+                uses = mrp->replaceOperand(uses, constant);
+            }
+
+            MResumePoint *mrp = ins->resumePoint();
+            if (!mrp)
+                continue;
+        }
+    }
+
+    return true;
+}
+
 // Instructions are useless if they are unused and have no side effects.
 // This pass eliminates useless instructions.
 // The graph itself is unchanged.
@@ -54,7 +143,8 @@ ion::EliminateDeadCode(MIRGenerator *mir, MIRGraph &graph)
 
         // Remove unused instructions.
         for (MInstructionReverseIterator inst = block->rbegin(); inst != block->rend(); ) {
-            if (!inst->isEffectful() && !inst->hasUses() && !inst->isGuard() &&
+            if (!inst->isEffectful() && !inst->resumePoint() &&
+                !inst->hasUses() && !inst->isGuard() &&
                 !inst->isControlInstruction()) {
                 inst = block->discardAt(inst);
             } else {
@@ -83,7 +173,7 @@ IsPhiObservable(MPhi *phi)
     }
 
     // If the Phi is of the |this| value, it must always be observable.
-    uint32 slot = phi->slot();
+    uint32_t slot = phi->slot();
     if (slot == 1)
         return true;
 
@@ -91,7 +181,7 @@ IsPhiObservable(MPhi *phi)
     if (info.fun() && info.hasArguments()) {
         // We do not support arguments object inside inline frames yet.
         JS_ASSERT(!phi->block()->callerResumePoint());
-        uint32 first = info.firstArgSlot();
+        uint32_t first = info.firstArgSlot();
         if (first <= slot && slot - first < info.nargs())
             return true;
     }
@@ -787,7 +877,7 @@ ion::AssertGraphCoherency(MIRGraph &graph)
             JS_ASSERT(CheckPredecessorImpliesSuccessor(*block, block->getPredecessor(i)));
 
         for (MInstructionIterator ins = block->begin(); ins != block->end(); ins++) {
-            for (uint32 i = 0; i < ins->numOperands(); i++)
+            for (uint32_t i = 0; i < ins->numOperands(); i++)
                 JS_ASSERT(CheckMarkedAsUse(*ins, ins->getOperand(i)));
         }
     }
@@ -800,12 +890,12 @@ ion::AssertGraphCoherency(MIRGraph &graph)
 struct BoundsCheckInfo
 {
     MBoundsCheck *check;
-    uint32 validUntil;
+    uint32_t validUntil;
 };
 
-typedef HashMap<uint32,
+typedef HashMap<uint32_t,
                 BoundsCheckInfo,
-                DefaultHasher<uint32>,
+                DefaultHasher<uint32_t>,
                 IonAllocPolicy> BoundsCheckMap;
 
 // Compute a hash for bounds checks which ignores constant offsets in the index.
@@ -865,12 +955,12 @@ ion::ExtractLinearSum(MDefinition *ins)
 
             // Check if this is of the form <SUM> + n, n + <SUM> or <SUM> - n.
             if (ins->isAdd()) {
-                int32 constant;
+                int32_t constant;
                 if (!SafeAdd(lsum.constant, rsum.constant, &constant))
                     return SimpleLinearSum(ins, 0);
                 return SimpleLinearSum(lsum.term ? lsum.term : rsum.term, constant);
             } else if (lsum.term) {
-                int32 constant;
+                int32_t constant;
                 if (!SafeSub(lsum.constant, rsum.constant, &constant))
                     return SimpleLinearSum(ins, 0);
                 return SimpleLinearSum(lsum.term, constant);
@@ -962,7 +1052,7 @@ TryEliminateBoundsCheck(MBoundsCheck *dominating, MBoundsCheck *dominated, bool 
     *eliminated = true;
 
     // Normalize the ranges according to the constant offsets in the two indexes.
-    int32 minimumA, maximumA, minimumB, maximumB;
+    int32_t minimumA, maximumA, minimumB, maximumB;
     if (!SafeAdd(sumA.constant, dominating->minimum(), &minimumA) ||
         !SafeAdd(sumA.constant, dominating->maximum(), &maximumA) ||
         !SafeAdd(sumB.constant, dominated->minimum(), &minimumB) ||
@@ -973,7 +1063,7 @@ TryEliminateBoundsCheck(MBoundsCheck *dominating, MBoundsCheck *dominated, bool 
 
     // Update the dominating check to cover both ranges, denormalizing the
     // result per the constant offset in the index.
-    int32 newMinimum, newMaximum;
+    int32_t newMinimum, newMaximum;
     if (!SafeSub(Min(minimumA, minimumB), sumA.constant, &newMinimum) ||
         !SafeSub(Max(maximumA, maximumB), sumA.constant, &newMaximum))
     {
@@ -1074,7 +1164,7 @@ ion::EliminateRedundantBoundsChecks(MIRGraph &graph)
 }
 
 bool
-LinearSum::multiply(int32 scale)
+LinearSum::multiply(int32_t scale)
 {
     for (size_t i = 0; i < terms_.length(); i++) {
         if (!SafeMul(scale, terms_[i].scale, &terms_[i].scale))
@@ -1094,7 +1184,7 @@ LinearSum::add(const LinearSum &other)
 }
 
 bool
-LinearSum::add(MDefinition *term, int32 scale)
+LinearSum::add(MDefinition *term, int32_t scale)
 {
     JS_ASSERT(term);
 
@@ -1102,7 +1192,7 @@ LinearSum::add(MDefinition *term, int32 scale)
         return true;
 
     if (term->isConstant()) {
-        int32 constant = term->toConstant()->value().toInt32();
+        int32_t constant = term->toConstant()->value().toInt32();
         if (!SafeMul(constant, scale, &constant))
             return false;
         return add(constant);
@@ -1125,7 +1215,7 @@ LinearSum::add(MDefinition *term, int32 scale)
 }
 
 bool
-LinearSum::add(int32 constant)
+LinearSum::add(int32_t constant)
 {
     return SafeAdd(constant, constant_, &constant_);
 }
@@ -1134,8 +1224,8 @@ void
 LinearSum::print(Sprinter &sp) const
 {
     for (size_t i = 0; i < terms_.length(); i++) {
-        int32 scale = terms_[i].scale;
-        int32 id = terms_[i].term->id();
+        int32_t scale = terms_[i].scale;
+        int32_t id = terms_[i].term->id();
         JS_ASSERT(scale);
         if (scale > 0) {
             if (i)

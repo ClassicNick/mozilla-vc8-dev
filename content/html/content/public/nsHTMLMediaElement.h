@@ -25,6 +25,7 @@
 #include "nsIDOMWakeLock.h"
 #include "AudioChannelCommon.h"
 #include "DecoderTraits.h"
+#include "MediaMetadataManager.h"
 
 // Define to output information on decoding and painting framerate
 /* #define DEBUG_FRAME_RATE 1 */
@@ -112,17 +113,17 @@ public:
 
   /**
    * Call this to reevaluate whether we should start/stop due to our owner
-   * document being active or inactive.
+   * document being active, inactive, visible or hidden.
    */
   void NotifyOwnerDocumentActivityChanged();
 
   // Called by the video decoder object, on the main thread,
   // when it has read the metadata containing video dimensions,
   // etc.
-  virtual void MetadataLoaded(uint32_t aChannels,
-                              uint32_t aRate,
+  virtual void MetadataLoaded(int aChannels,
+                              int aRate,
                               bool aHasAudio,
-                              const mozilla::MetadataTags* aTags) MOZ_FINAL MOZ_OVERRIDE;
+                              const MetadataTags* aTags) MOZ_FINAL MOZ_OVERRIDE;
 
   // Called by the video decoder object, on the main thread,
   // when it has read the first frame of the video
@@ -324,6 +325,9 @@ public:
     NS_ASSERTION(mSrcStream, "Don't call this when not playing a stream");
     return mSrcStream->GetStream();
   }
+
+  // Notification from the AudioChannelService.
+   nsresult NotifyAudioChannelStateChanged();
 
 protected:
   class MediaLoadListener;
@@ -604,6 +608,15 @@ protected:
     return isPaused;
   }
 
+  // Check the permissions for audiochannel.
+  bool CheckAudioChannelPermissions(const nsAString& aType);
+
+  // This method does the check for muting/unmuting the audio channel.
+  nsresult UpdateChannelMuteState();
+
+  // Update the audio channel playing state
+  void UpdateAudioChannelPlayingState();
+
   // The current decoder. Load() has been called on this decoder.
   // At most one of mDecoder and mSrcStream can be non-null.
   nsRefPtr<MediaDecoder> mDecoder;
@@ -693,7 +706,7 @@ protected:
   static PLDHashOperator BuildObjectFromTags(nsCStringHashKey::KeyType aKey,
                                              nsCString aValue,
                                              void* aUserArg);
-  nsAutoPtr<const mozilla::MetadataTags> mTags;
+  nsAutoPtr<const MetadataTags> mTags;
 
   // URI of the resource we're attempting to load. This stores the value we
   // return in the currentSrc attribute. Use GetCurrentSrc() to access the
@@ -878,6 +891,12 @@ protected:
 
   // Audio Channel Type.
   mozilla::dom::AudioChannelType mAudioChannelType;
+
+  // The audiochannel has been muted
+  bool mChannelMuted;
+
+  // Is this media element playing?
+  bool mPlayingThroughTheAudioChannel;
 };
 
 #endif

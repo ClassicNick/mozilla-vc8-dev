@@ -2491,8 +2491,8 @@ void
 nsXULPrototypeScript::UnlinkJSObjects()
 {
     if (mScriptObject.mObject) {
-        nsContentUtils::DropJSObjects(this);
         mScriptObject.mObject = nullptr;
+        nsContentUtils::DropJSObjects(this);
     }
 }
 
@@ -2505,11 +2505,9 @@ nsXULPrototypeScript::Set(JSScript* aObject)
         return;
     }
 
-    nsresult rv = nsContentUtils::HoldJSObjects(
+    nsContentUtils::HoldJSObjects(
         this, NS_CYCLE_COLLECTION_PARTICIPANT(nsXULPrototypeNode));
-    if (NS_SUCCEEDED(rv)) {
-        mScriptObject.mObject = aObject;
-    }
+    mScriptObject.mObject = aObject;
 }
 
 //----------------------------------------------------------------------

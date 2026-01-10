@@ -688,8 +688,6 @@ public:
   nsXMLHttpRequestXPCOMifier* mXPCOMifier;
 };
 
-#undef IMPL_EVENT_HANDLER
-
 // A shim class designed to expose the non-DOM interfaces of
 // XMLHttpRequest via XPCOM stuff.
 class nsXMLHttpRequestXPCOMifier MOZ_FINAL : public nsIStreamListener,

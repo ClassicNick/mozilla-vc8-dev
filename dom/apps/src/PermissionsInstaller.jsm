@@ -50,12 +50,7 @@ function mapSuffixes(aPermName, aSuffixes)
 // battery-status, network-information, vibration,
 // device-capabilities
 
-this.PermissionsTable =  { "resource-lock": {
-                             app: ALLOW_ACTION,
-                             privileged: ALLOW_ACTION,
-                             certified: ALLOW_ACTION
-                           },
-                           geolocation: {
+this.PermissionsTable =  { geolocation: {
                              app: PROMPT_ACTION,
                              privileged: PROMPT_ACTION,
                              certified: ALLOW_ACTION
@@ -136,27 +131,12 @@ this.PermissionsTable =  { "resource-lock": {
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
                            },
-                           wifi: {
-                             app: DENY_ACTION,
-                             privileged: PROMPT_ACTION,
-                             certified: ALLOW_ACTION
-                           },
-                           keyboard: {
-                             app: DENY_ACTION,
-                             privileged: DENY_ACTION,
-                             certified: ALLOW_ACTION
-                           },
                            mobileconnection: {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
                            },
                            power: {
-                             app: DENY_ACTION,
-                             privileged: DENY_ACTION,
-                             certified: ALLOW_ACTION
-                           },
-                           push: {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
@@ -199,11 +179,6 @@ this.PermissionsTable =  { "resource-lock": {
                              certified: ALLOW_ACTION
                            },
                            "networkstats-manage": {
-                             app: DENY_ACTION,
-                             privileged: DENY_ACTION,
-                             certified: ALLOW_ACTION
-                           },
-                           "mozBluetooth": {
                              app: DENY_ACTION,
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
@@ -258,6 +233,18 @@ this.PermissionsTable =  { "resource-lock": {
                              privileged: DENY_ACTION,
                              certified: ALLOW_ACTION
                            },
+                           cellbroadcast: {
+                             app: DENY_ACTION,
+                             privileged: DENY_ACTION,
+                             certified: ALLOW_ACTION
+                           },
+                           audio: {
+                             app: DENY_ACTION,
+                             privileged: ALLOW_ACTION,
+                             certified: ALLOW_ACTION,
+                             channels: ["normal", "content", "notification",
+                               "alarm", "telephony", "ringer", "publicnotification"]
+                           },
                          };
 
 /**
@@ -268,7 +255,7 @@ this.PermissionsTable =  { "resource-lock": {
  * @param string aAccess
  * @returns Array
  **/
-this.expandPermissions = function expandPermissions(aPermName, aAccess) {
+this.expandPermissions = function expandPermissions(aPermName, aAccess, aChannels) {
   if (!PermissionsTable[aPermName]) {
     Cu.reportError("PermissionsTable.jsm: expandPermissions: Unknown Permission: " + aPermName);
     dump("PermissionsTable.jsm: expandPermissions: Unknown Permission: " + aPermName);
@@ -332,6 +319,19 @@ this.expandPermissions = function expandPermissions(aPermName, aAccess) {
   }
   } else if (tableEntry.substitute) {
     expandedPerms = expandedPerms.concat(tableEntry.substitute);
+  } else if (tableEntry.channels) {
+    if ("audio" == aPermName && aChannels) {
+      let allowChannels = tableEntry.channels;
+
+      for (let idx in aChannels) {
+        let candidate = aChannels[idx];
+        if (allowChannels.indexOf(candidate) == -1) {
+              continue;
+        }
+        let permAttr = aPermName + "-channel-" + candidate;
+        expandedPerms.push(permAttr);
+      }
+    }
   } else {
     expandedPerms.push(aPermName);
     // Include each of the additions exactly as they appear in the table.
@@ -349,6 +349,8 @@ for (let permName in PermissionsTable) {
   if (PermissionsTable[permName].access) {
     AllPossiblePermissions =
       AllPossiblePermissions.concat(expandPermissions(permName, READWRITE));
+  } else if (PermissionsTable[permName].channels) {
+      AllPossiblePermissions.concat(expandPermissions(permName, null, PermissionsTable[permName].channels));
   } else {
     AllPossiblePermissions =
       AllPossiblePermissions.concat(expandPermissions(permName));
@@ -383,7 +385,8 @@ this.PermissionsInstaller = {
           let newPerms = [];
           for (let perm in newManifest.permissions) {
             let _perms = expandPermissions(perm,
-                                           newManifest.permissions[perm].access);
+                                           newManifest.permissions[perm].access,
+                                           newManifest.permissions[perm].channels);
             newPerms = newPerms.concat(_perms);
           }
 
@@ -432,9 +435,9 @@ this.PermissionsInstaller = {
                " is not a valid Webapps permission type.");
           continue;
         }
-
         let perms = expandPermissions(permName,
-                                      newManifest.permissions[permName].access);
+                                      newManifest.permissions[permName].access,
+                                      newManifest.permissions[permName].channels);
         for (let idx in perms) {
           let perm = PermissionsTable[permName][installPermType];
           let permValue = PERM_TO_STRING[perm];

@@ -4133,7 +4133,11 @@ nsJSArgArray::nsJSArgArray(JSContext *aContext, uint32_t argc, jsval *argv,
       mArgv[i] = argv[i];
   }
 
-  *prv = argc > 0 ? NS_HOLD_JS_OBJECTS(this, nsJSArgArray) : NS_OK;
+  if (argc > 0) {
+    NS_HOLD_JS_OBJECTS(this, nsJSArgArray);
+  }
+
+  *prv = NS_OK;
 }
 
 nsJSArgArray::~nsJSArgArray()
@@ -4144,12 +4148,13 @@ nsJSArgArray::~nsJSArgArray()
 void
 nsJSArgArray::ReleaseJSObjects()
 {
-  if (mArgc > 0)
-    NS_DROP_JS_OBJECTS(this, nsJSArgArray);
   if (mArgv) {
     PR_DELETE(mArgv);
   }
-  mArgc = 0;
+  if (mArgc > 0) {
+    mArgc = 0;
+    NS_DROP_JS_OBJECTS(this, nsJSArgArray);
+  }
 }
 
 // QueryInterface implementation for nsJSArgArray

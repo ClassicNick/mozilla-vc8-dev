@@ -59,6 +59,9 @@
 #include "nsIScriptableRegion.h"
 
 #include "mozilla/Likely.h"
+#include "mozilla/Util.h"
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"
@@ -1305,7 +1308,7 @@ nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText,
   nscoord maxWidth = aTextRect.width;
 
   if (aColumn->Overflow()) {
-    nsresult rv;
+    DebugOnly<nsresult> rv;
     nsTreeColumn* nextColumn = aColumn->GetNext();
     while (nextColumn && width > maxWidth) {
       while (nextColumn) {
@@ -1821,7 +1824,7 @@ nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount)
   NS_ASSERTION(rowCount == mRowCount, "row count did not change by the amount suggested, check caller");
 #endif
 
-  int32_t count = NS_ABS(aCount);
+  int32_t count = std::abs(aCount);
   int32_t last = GetLastVisibleRow();
   if (aIndex >= mTopRowIndex && aIndex <= last)
     InvalidateRange(aIndex, last);

@@ -20,6 +20,7 @@
 #include "jscompartment.h"
 #include "jsscope.h"
 #include "ion/Ion.h"
+#include "ion/IonCode.h"
 #include "ion/IonCompartment.h"
 #include "methodjit/Retcon.h"
 
@@ -38,12 +39,6 @@ using namespace js::mjit;
 #else
 # define CFI(str)
 #endif
-
-// Put manually-inserted call frame unwinding information into .debug_frame
-// rather than .eh_frame, because we compile with -fno-exceptions which might
-// discard the .eh_frame section. (See
-// http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43232).
-CFI(asm(".cfi_sections .debug_frame");)
 
 js::mjit::CompilerAllocPolicy::CompilerAllocPolicy(JSContext *cx, Compiler &compiler)
 : TempAllocPolicy(cx),
@@ -1036,6 +1031,7 @@ mjit::EnterMethodJIT(JSContext *cx, StackFrame *fp, void *code, Value *stackLimi
 #ifdef JS_ION
         ion::IonContext ictx(cx, cx->compartment, NULL);
         ion::IonActivation activation(cx, NULL);
+        ion::AutoFlushInhibitor afi(cx->compartment->ionCompartment());
 #endif
 
         JSAutoResolveFlags rf(cx, RESOLVE_INFER);

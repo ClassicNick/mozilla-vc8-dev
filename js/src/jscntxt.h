@@ -26,14 +26,15 @@
 #include "jsprototypes.h"
 #include "jsutil.h"
 #include "prmjtime.h"
-#include "vm/threadpool.h"
 
 #include "ds/LifoAlloc.h"
 #include "gc/Statistics.h"
 #include "js/HashTable.h"
 #include "js/Vector.h"
-#include "vm/Stack.h"
+#include "vm/DateTime.h"
 #include "vm/SPSProfiler.h"
+#include "vm/Stack.h"
+#include "vm/ThreadPool.h"
 
 #include "ion/PcScriptCache.h"
 
@@ -650,6 +651,12 @@ struct JSRuntime : js::RuntimeFriendFields
     bool                gcShouldCleanUpEverything;
 
     /*
+     * The gray bits can become invalid if UnmarkGray overflows the stack. A
+     * full GC will reset this bit, since it fills in all the gray bits.
+     */
+    bool                gcGrayBitsValid;
+
+    /*
      * These flags must be kept separate so that a thread requesting a
      * compartment GC doesn't cancel another thread's concurrent request for a
      * full GC.
@@ -765,17 +772,11 @@ struct JSRuntime : js::RuntimeFriendFields
 
     bool                gcPoke;
 
-    enum HeapState {
-        Idle,       // doing nothing with the GC heap
-        Tracing,    // tracing the GC heap without collecting, e.g. IterateCompartments()
-        Collecting  // doing a GC of the heap
-    };
+    js::HeapState       heapState;
 
-    HeapState           heapState;
+    bool isHeapBusy() { return heapState != js::Idle; }
 
-    bool isHeapBusy() { return heapState != Idle; }
-
-    bool isHeapCollecting() { return heapState == Collecting; }
+    bool isHeapCollecting() { return heapState == js::Collecting; }
 
     /*
      * These options control the zealousness of the GC. The fundamental values
@@ -896,13 +897,13 @@ struct JSRuntime : js::RuntimeFriendFields
     bool                alwaysPreserveCode;
 
     /* Had an out-of-memory error which did not populate an exception. */
-    JSBool              hadOutOfMemory;
+    bool                hadOutOfMemory;
 
     /*
      * Linked list of all js::Debugger objects. This may be accessed by the GC
      * thread, if any, or a thread that is in a request and holds gcLock.
      */
-    JSCList             debuggerList;
+    mozilla::LinkedList<js::Debugger> debuggerList;
 
     /*
      * Head of circular list of all enabled Debuggers that have
@@ -975,6 +976,8 @@ struct JSRuntime : js::RuntimeFriendFields
 
     /* State used by jsdtoa.cpp. */
     DtoaState           *dtoaState;
+
+    js::DateTimeInfo    dateTimeInfo;
 
     js::ConservativeGCData conservativeGC;
 
@@ -1346,7 +1349,7 @@ struct JSContext : js::ContextFriendFields,
     bool                hasVersionOverride;
 
     /* Exception state -- the exception member is a GC root by definition. */
-    JSBool              throwing;            /* is there a pending exception? */
+    bool                throwing;            /* is there a pending exception? */
     js::Value           exception;           /* most-recently-thrown exception */
 
     /* Per-context run options. */
@@ -1606,8 +1609,6 @@ struct JSContext : js::ContextFriendFields,
             functionCallback(fun, scr, this, entering);
     }
 #endif
-
-    DSTOffsetCache dstOffsetCache;
 
     /* List of currently active non-escaping enumerators (for-in). */
     js::PropertyIteratorObject *enumerators;

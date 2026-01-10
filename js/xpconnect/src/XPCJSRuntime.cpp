@@ -246,29 +246,57 @@ CompartmentDestroyedCallback(JSFreeOp *fop, JSCompartment *compartment)
     JS_SetCompartmentPrivate(compartment, nullptr);
 }
 
-nsresult
+void
 XPCJSRuntime::AddJSHolder(void* aHolder, nsScriptObjectTracer* aTracer)
 {
     MOZ_ASSERT(aTracer->Trace, "AddJSHolder needs a non-null Trace function");
+    bool wasEmpty = mJSHolders.Count() == 0;
     mJSHolders.Put(aHolder, aTracer);
-
-    return NS_OK;
+    if (wasEmpty && mJSHolders.Count() == 1) {
+      nsLayoutStatics::AddRef();
+    }
 }
 
-nsresult
+#ifdef DEBUG
+static void
+AssertNoGcThing(void* aGCThing, const char* aName, void* aClosure)
+{
+    MOZ_ASSERT(!aGCThing);
+}
+
+void
+XPCJSRuntime::AssertNoObjectsToTrace(void* aPossibleJSHolder)
+{
+    nsScriptObjectTracer* tracer = mJSHolders.Get(aPossibleJSHolder);
+    if (tracer && tracer->Trace) {
+        tracer->Trace(aPossibleJSHolder, AssertNoGcThing, nullptr);
+    }
+}
+#endif
+
+void
 XPCJSRuntime::RemoveJSHolder(void* aHolder)
 {
+#ifdef DEBUG
+    // Assert that the holder doesn't try to keep any GC things alive.
+    // In case of unlinking cycle collector calls AssertNoObjectsToTrace
+    // manually because we don't want to check the holder before we are
+    // finished unlinking it
+    if (aHolder != mObjectToUnlink) {
+        AssertNoObjectsToTrace(aHolder);
+    }
+#endif
+    bool hadOne = mJSHolders.Count() == 1;
     mJSHolders.Remove(aHolder);
-
-    return NS_OK;
+    if (hadOne && mJSHolders.Count() == 0) {
+      nsLayoutStatics::Release();
+    }
 }
 
-nsresult
-XPCJSRuntime::TestJSHolder(void* aHolder, bool* aRetval)
+bool
+XPCJSRuntime::TestJSHolder(void* aHolder)
 {
-    *aRetval = mJSHolders.Get(aHolder, nullptr);
-
-    return NS_OK;
+    return mJSHolders.Get(aHolder, nullptr);
 }
 
 // static
@@ -714,7 +742,6 @@ XPCJSRuntime::GCCallback(JSRuntime *rt, JSGCStatus status)
                     }
                 }
             }
-            self->GetXPConnect()->ClearGCBeforeCC();
             break;
         }
     }
@@ -2403,6 +2430,9 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    mWatchdogHibernating(false),
    mLastActiveTime(-1),
    mExceptionManagerNotAvailable(false)
+#ifdef DEBUG
+   , mObjectToUnlink(nullptr)
+#endif
 {
 #ifdef XPC_CHECK_WRAPPERS_AT_SHUTDOWN
     DEBUG_WrappedNativeHashtable =

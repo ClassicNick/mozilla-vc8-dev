@@ -26,7 +26,7 @@ LIRGraph::LIRGraph(MIRGraph *mir)
 }
 
 bool
-LIRGraph::addConstantToPool(const Value &v, uint32 *index)
+LIRGraph::addConstantToPool(const Value &v, uint32_t *index)
 {
     *index = constantPool_.length();
     return constantPool_.append(v);
@@ -48,7 +48,7 @@ LBlock::label()
     return begin()->toLabel()->label();
 }
 
-uint32
+uint32_t
 LBlock::firstId()
 {
     if (phis_.length()) {
@@ -61,7 +61,7 @@ LBlock::firstId()
     }
     return 0;
 }
-uint32
+uint32_t
 LBlock::lastId()
 {
     LInstruction *last = *instructions_.rbegin();
@@ -128,6 +128,17 @@ LSnapshot::New(MIRGenerator *gen, MResumePoint *mir, BailoutKind kind)
             (void *)snapshot, (void *)mir);
 
     return snapshot;
+}
+
+void
+LSnapshot::rewriteRecoveredInput(LUse input)
+{
+    // Mark any operands to this snapshot with the same value as input as being
+    // equal to the instruction's result.
+    for (size_t i = 0; i < numEntries(); i++) {
+        if (getEntry(i)->isUse() && getEntry(i)->toUse()->virtualRegister() == input.virtualRegister())
+            setEntry(i, LUse(input.virtualRegister(), LUse::RECOVERED_INPUT));
+    }
 }
 
 bool

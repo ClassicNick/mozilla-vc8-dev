@@ -1410,6 +1410,7 @@ nsDocument::~nsDocument()
   }
   indx = mCatalogSheets.Count();
   while (--indx >= 0) {
+    static_cast<nsCSSStyleSheet*>(mCatalogSheets[indx])->SetOwningNode(nullptr);
     mCatalogSheets[indx]->SetOwningDocument(nullptr);
   }
   if (mAttrStyleSheet) {
@@ -2107,7 +2108,7 @@ AppendAuthorSheet(nsIStyleSheet *aSheet, void *aData)
 static void
 AppendSheetsToStyleSet(nsStyleSet* aStyleSet,
                        const nsCOMArray<nsIStyleSheet>& aSheets,
-                       nsStyleSet::sheetType aType) 
+                       nsStyleSet::sheetType aType)
 {
   for (int32_t i = aSheets.Count() - 1; i >= 0; --i) {
     aStyleSet->AppendStyleSheet(aType, aSheets[i]);
@@ -3549,10 +3550,11 @@ nsDocument::GetCatalogStyleSheetAt(int32_t aIndex) const
 }
 
 void
-nsDocument::AddCatalogStyleSheet(nsIStyleSheet* aSheet)
+nsDocument::AddCatalogStyleSheet(nsCSSStyleSheet* aSheet)
 {
   mCatalogSheets.AppendObject(aSheet);
   aSheet->SetOwningDocument(this);
+  aSheet->SetOwningNode(this);
 
   if (aSheet->IsApplicable()) {
     // This is like |AddStyleSheetToStyleSets|, but for an agent sheet.
@@ -6774,7 +6776,7 @@ nsDocument::Destroy()
   mLayoutHistoryState = nullptr;
 
   // Shut down our external resource map.  We might not need this for
-  // leak-fixing if we fix DocumentViewerImpl to do cycle-collection, but
+  // leak-fixing if we fix nsDocumentViewer to do cycle-collection, but
   // tearing down all those frame trees right now is the right thing to do.
   mExternalResourceMap.Shutdown();
 
@@ -7288,7 +7290,7 @@ nsDocument::CloneDocHelper(nsDocument* clone) const
 
   if (mCreatingStaticClone) {
     nsCOMPtr<nsILoadGroup> loadGroup;
-    
+
     // |mDocumentContainer| is the container of the document that is being
     // created and not the original container. See CreateStaticClone function().
     nsCOMPtr<nsIDocumentLoader> docLoader = do_QueryReferent(mDocumentContainer);
@@ -9494,6 +9496,8 @@ nsDocument::UpdateVisibilityState()
                                          NS_LITERAL_STRING("mozvisibilitychange"),
                                          /* bubbles = */ true,
                                          /* cancelable = */ false);
+
+    EnumerateFreezableElements(NotifyActivityChanged, nullptr);
   }
 }
 

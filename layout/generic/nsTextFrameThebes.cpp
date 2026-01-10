@@ -75,6 +75,8 @@
 #include "mozilla/Likely.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Util.h" // for DebugOnly
+#include <cstdlib> // for std::abs(int/long)
+#include <cmath> // for std::abs(float/double)
 
 #include "sampler.h"
 
@@ -638,7 +640,7 @@ int32_t nsTextFrame::GetInFlowContentLength() {
   return endFlow - mContentOffset;
 }
 
-// Smarter versions of XP_IS_SPACE.
+// Smarter versions of dom::IsSpaceCharacter.
 // Unicode is really annoying; sometimes a space character isn't whitespace ---
 // when it combines with another character
 // So we have several versions of IsSpace for use in different contexts.
@@ -5585,7 +5587,7 @@ nsTextFrame::PaintTextSelectionDecorations(gfxContext* aCtx,
     if (type == aSelectionType) {
       pt.x = (aFramePt.x + xOffset -
              (mTextRun->IsRightToLeft() ? advance : 0)) / app;
-      gfxFloat width = NS_ABS(advance) / app;
+      gfxFloat width = std::abs(advance) / app;
       gfxFloat xInFrame = pt.x - (aFramePt.x / app);
       DrawSelectionDecorations(aCtx, dirtyRect, aSelectionType, this,
                                aTextPaintStyle, selectedStyle, pt, xInFrame,

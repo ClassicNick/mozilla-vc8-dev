@@ -76,9 +76,10 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitMonitorTypes(LMonitorTypes *lir);
     bool visitCallNative(LCallNative *call);
     bool emitCallInvokeFunction(LInstruction *call, Register callereg,
-                                uint32 argc, uint32 unusedStack);
+                                uint32_t argc, uint32_t unusedStack);
     bool visitCallGeneric(LCallGeneric *call);
     bool visitCallKnown(LCallKnown *call);
+    bool visitCallConstructor(LCallConstructor *call);
     bool emitCallInvokeFunction(LApplyArgsGeneric *apply, Register extraStackSize);
     void emitPushArguments(LApplyArgsGeneric *apply, Register extraStackSpace);
     void emitPopArguments(LApplyArgsGeneric *apply, Register extraStackSize);

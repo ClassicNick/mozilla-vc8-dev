@@ -143,8 +143,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         branchPtr(cond, Address(scratch, BaseShape::offsetOfClass()), ImmWord(clasp), label);
     }
     void branchTestObjShape(Condition cond, Register obj, const Shape *shape, Label *label) {
-        branchPtr(Assembler::NotEqual, Address(obj, JSObject::offsetOfShape()),
-                  ImmGCPtr(shape), label);
+        branchPtr(cond, Address(obj, JSObject::offsetOfShape()), ImmGCPtr(shape), label);
     }
 
     void loadObjPrivate(Register obj, uint32_t nfixed, Register dest) {
@@ -552,28 +551,28 @@ class MacroAssembler : public MacroAssemblerSpecific
     }
 
     // see above comment for what is returned
-    uint32 callIon(const Register &callee) {
+    uint32_t callIon(const Register &callee) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callIon(callee);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }
 
     // see above comment for what is returned
-    uint32 callWithExitFrame(IonCode *target) {
+    uint32_t callWithExitFrame(IonCode *target) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callWithExitFrame(target);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }
 
     // see above comment for what is returned
-    uint32 callWithExitFrame(IonCode *target, Register dynStack) {
+    uint32_t callWithExitFrame(IonCode *target, Register dynStack) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callWithExitFrame(target, dynStack);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }
@@ -658,7 +657,58 @@ class MacroAssembler : public MacroAssemblerSpecific
         movePtr(ImmWord(p->sizePointer()), temp);
         add32(Imm32(-1), Address(temp, 0));
     }
+
+    void printf(const char *output);
+    void printf(const char *output, Register value);
 };
+
+static inline Assembler::Condition
+JSOpToCondition(JSOp op)
+{
+    switch (op) {
+      case JSOP_EQ:
+      case JSOP_STRICTEQ:
+        return Assembler::Equal;
+      case JSOP_NE:
+      case JSOP_STRICTNE:
+        return Assembler::NotEqual;
+      case JSOP_LT:
+        return Assembler::LessThan;
+      case JSOP_LE:
+        return Assembler::LessThanOrEqual;
+      case JSOP_GT:
+        return Assembler::GreaterThan;
+      case JSOP_GE:
+        return Assembler::GreaterThanOrEqual;
+      default:
+        JS_NOT_REACHED("Unrecognized comparison operation");
+        return Assembler::Equal;
+    }
+}
+
+static inline Assembler::DoubleCondition
+JSOpToDoubleCondition(JSOp op)
+{
+    switch (op) {
+      case JSOP_EQ:
+      case JSOP_STRICTEQ:
+        return Assembler::DoubleEqual;
+      case JSOP_NE:
+      case JSOP_STRICTNE:
+        return Assembler::DoubleNotEqualOrUnordered;
+      case JSOP_LT:
+        return Assembler::DoubleLessThan;
+      case JSOP_LE:
+        return Assembler::DoubleLessThanOrEqual;
+      case JSOP_GT:
+        return Assembler::DoubleGreaterThan;
+      case JSOP_GE:
+        return Assembler::DoubleGreaterThanOrEqual;
+      default:
+        JS_NOT_REACHED("Unexpected comparison operation");
+        return Assembler::DoubleEqual;
+    }
+}
 
 } // namespace ion
 } // namespace js
