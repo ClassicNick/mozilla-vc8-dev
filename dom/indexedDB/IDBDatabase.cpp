@@ -188,10 +188,7 @@ IDBDatabase::Create(IDBWrapperCache* aOwnerCache,
   nsRefPtr<IDBDatabase> db(new IDBDatabase());
 
   db->BindToOwner(aOwnerCache);
-  if (!db->SetScriptOwner(aOwnerCache->GetScriptOwner())) {
-    return nullptr;
-  }
-
+  db->SetScriptOwner(aOwnerCache->GetScriptOwner());
   db->mFactory = aFactory;
   db->mDatabaseId = databaseInfo->id;
   db->mName = databaseInfo->name;
@@ -780,6 +777,12 @@ IDBDatabase::Close()
 
   NS_ASSERTION(mClosed, "Should have set the closed flag!");
   return NS_OK;
+}
+
+const nsACString&
+IDBDatabase::StorageOrigin()
+{
+  return Origin();
 }
 
 nsISupports*

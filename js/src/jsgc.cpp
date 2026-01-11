@@ -8,6 +8,7 @@
 /* JS Mark-and-Sweep Garbage Collector. */
 
 #include "mozilla/Attributes.h"
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Util.h"
 
 /*
@@ -1548,7 +1549,7 @@ SliceBudget::checkOverBudget()
     return over;
 }
 
-GCMarker::GCMarker()
+GCMarker::GCMarker(JSRuntime *rt)
   : stack(size_t(-1)),
     color(BLACK),
     started(false),
@@ -1556,6 +1557,7 @@ GCMarker::GCMarker()
     markLaterArenas(0),
     grayFailed(false)
 {
+    InitTracer(this, rt, NULL);
 }
 
 bool
@@ -1565,18 +1567,14 @@ GCMarker::init()
 }
 
 void
-GCMarker::start(JSRuntime *rt)
+GCMarker::start()
 {
-    InitTracer(this, rt, NULL);
     JS_ASSERT(!started);
     started = true;
     color = BLACK;
 
     JS_ASSERT(!unmarkedArenaStackTop);
     JS_ASSERT(markLaterArenas == 0);
-
-    JS_ASSERT(grayRoots.empty());
-    JS_ASSERT(!grayFailed);
 
     /*
      * The GC is recomputing the liveness of WeakMap entries, so we delay
@@ -1596,11 +1594,10 @@ GCMarker::stop()
     JS_ASSERT(!unmarkedArenaStackTop);
     JS_ASSERT(markLaterArenas == 0);
 
-    grayRoots.clearAndFree();
-    grayFailed = false;
-
     /* Free non-ballast stack memory. */
     stack.reset();
+
+    resetBufferedGrayRoots();
 }
 
 void
@@ -1623,9 +1620,6 @@ GCMarker::reset()
     }
     JS_ASSERT(isDrained());
     JS_ASSERT(!markLaterArenas);
-
-    grayRoots.clearAndFree();
-    grayFailed = false;
 }
 
 /*
@@ -1738,6 +1732,10 @@ GCMarker::hasBufferedGrayRoots() const
 void
 GCMarker::startBufferingGrayRoots()
 {
+    JS_ASSERT(!grayFailed);
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next())
+        JS_ASSERT(c->gcGrayRoots.empty());
+
     JS_ASSERT(!callback);
     callback = GrayCallback;
     JS_ASSERT(IS_GC_MARKING_TRACER(this));
@@ -1752,42 +1750,29 @@ GCMarker::endBufferingGrayRoots()
 }
 
 void
-GCMarker::markBufferedGrayRoots()
+GCMarker::resetBufferedGrayRoots()
+{
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next())
+        c->gcGrayRoots.clearAndFree();
+    grayFailed = false;
+}
+
+void
+GCMarker::markBufferedGrayRoots(JSCompartment *comp)
 {
     JS_ASSERT(!grayFailed);
+    JS_ASSERT(comp->isGCMarkingGray());
 
-    unsigned markCount = 0;
-
-    GrayRoot *elem = grayRoots.begin();
-    GrayRoot *write = elem;
-    for (; elem != grayRoots.end(); elem++) {
+    for (GrayRoot *elem = comp->gcGrayRoots.begin(); elem != comp->gcGrayRoots.end(); elem++) {
 #ifdef DEBUG
         debugPrinter = elem->debugPrinter;
         debugPrintArg = elem->debugPrintArg;
         debugPrintIndex = elem->debugPrintIndex;
 #endif
         void *tmp = elem->thing;
-        if (static_cast<Cell *>(tmp)->compartment()->isGCMarkingGray()) {
-            JS_SET_TRACING_LOCATION(this, (void *)&elem->thing);
-            MarkKind(this, &tmp, elem->kind);
-            JS_ASSERT(tmp == elem->thing);
-            ++markCount;
-        } else {
-            if (write != elem)
-                *write = *elem;
-            ++write;
-        }
-    }
-    JS_ASSERT(markCount == elem - write);
-    grayRoots.shrinkBy(elem - write);
-}
-
-void
-GCMarker::markBufferedGrayRootCompartmentsAlive()
-{
-    for (GrayRoot *elem = grayRoots.begin(); elem != grayRoots.end(); elem++) {
-        Cell *thing = static_cast<Cell *>(elem->thing);
-        thing->compartment()->maybeAlive = true;
+        JS_SET_TRACING_LOCATION(this, (void *)&elem->thing);
+        MarkKind(this, &tmp, elem->kind);
+        JS_ASSERT(tmp == elem->thing);
     }
 }
 
@@ -1806,9 +1791,13 @@ GCMarker::appendGrayRoot(void *thing, JSGCTraceKind kind)
     root.debugPrintIndex = debugPrintIndex;
 #endif
 
-    if (!grayRoots.append(root)) {
-        grayRoots.clearAndFree();
-        grayFailed = true;
+    JSCompartment *comp = static_cast<Cell *>(thing)->compartment();
+    if (comp->isCollecting()) {
+        comp->maybeAlive = true;
+        if (!comp->gcGrayRoots.append(root)) {
+            grayFailed = true;
+            resetBufferedGrayRoots();
+        }
     }
 }
 
@@ -1822,8 +1811,10 @@ GCMarker::GrayCallback(JSTracer *trc, void **thingp, JSGCTraceKind kind)
 size_t
 GCMarker::sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf) const
 {
-    return stack.sizeOfExcludingThis(mallocSizeOf) +
-           grayRoots.sizeOfExcludingThis(mallocSizeOf);
+    size_t size = stack.sizeOfExcludingThis(mallocSizeOf);
+    for (CompartmentsIter c(runtime); !c.done(); c.next())
+        size += c->gcGrayRoots.sizeOfExcludingThis(mallocSizeOf);
+    return size;
 }
 
 void
@@ -2613,7 +2604,7 @@ BeginMarkPhase(JSRuntime *rt)
             c->arenas.purge();
     }
 
-    rt->gcMarker.start(rt);
+    rt->gcMarker.start();
     JS_ASSERT(!rt->gcMarker.callback);
     JS_ASSERT(IS_GC_MARKING_TRACER(&rt->gcMarker));
 
@@ -2658,6 +2649,7 @@ BeginMarkPhase(JSRuntime *rt)
     }
 
     MarkRuntime(gcmarker);
+    BufferGrayRoots(gcmarker);
 
     /*
      * This code ensures that if a compartment is "dead", then it will be
@@ -2669,6 +2661,8 @@ BeginMarkPhase(JSRuntime *rt)
      * If the maybeAlive is false, then we set the scheduledForDestruction flag.
      * At any time later in the GC, if we try to mark an object whose
      * compartment is scheduled for destruction, we will assert.
+     * NOTE: Due to bug 811587, we only assert if gcManipulatingDeadCompartments
+     * is true (e.g., if we're doing a brain transplant).
      *
      * The purpose of this check is to ensure that a compartment that we would
      * normally destroy is not resurrected by a read barrier or an
@@ -2698,9 +2692,6 @@ BeginMarkPhase(JSRuntime *rt)
             c->maybeAlive = true;
     }
 
-    /* Set the maybeAlive flag based on gray roots. */
-    rt->gcMarker.markBufferedGrayRootCompartmentsAlive();
-
     /*
      * For black roots, code in gc/Marking.cpp will already have set maybeAlive
      * during MarkRuntime.
@@ -2715,7 +2706,8 @@ BeginMarkPhase(JSRuntime *rt)
     return true;
 }
 
-void
+template <class CompartmentIterT>
+static void
 MarkWeakReferences(JSRuntime *rt, gcstats::Phase phase)
 {
     GCMarker *gcmarker = &rt->gcMarker;
@@ -2726,7 +2718,7 @@ MarkWeakReferences(JSRuntime *rt, gcstats::Phase phase)
 
     for (;;) {
         bool markedAny = false;
-        for (GCCompartmentGroupIter c(rt); !c.done(); c.next()) {
+        for (CompartmentIterT c(rt); !c.done(); c.next()) {
             markedAny |= WatchpointMap::markCompartmentIteratively(c, gcmarker);
             markedAny |= WeakMapBase::markCompartmentIteratively(c, gcmarker);
         }
@@ -2742,6 +2734,13 @@ MarkWeakReferences(JSRuntime *rt, gcstats::Phase phase)
 }
 
 static void
+MarkWeakReferencesInCurrentGroup(JSRuntime *rt, gcstats::Phase phase)
+{
+    MarkWeakReferences<GCCompartmentGroupIter>(rt, phase);
+}
+
+template <class CompartmentIterT>
+static void
 MarkGrayReferences(JSRuntime *rt)
 {
     GCMarker *gcmarker = &rt->gcMarker;
@@ -2751,8 +2750,10 @@ MarkGrayReferences(JSRuntime *rt)
         gcstats::AutoPhase ap1(rt->gcStats, gcstats::PHASE_SWEEP_MARK_GRAY);
         gcmarker->setMarkColorGray();
         if (gcmarker->hasBufferedGrayRoots()) {
-            gcmarker->markBufferedGrayRoots();
+            for (CompartmentIterT c(rt); !c.done(); c.next())
+                gcmarker->markBufferedGrayRoots(c);
         } else {
+            JS_ASSERT(!rt->gcIsIncremental);
             if (JSTraceDataOp op = rt->gcGrayRootsTraceOp)
                 (*op)(gcmarker, rt->gcGrayRootsData);
         }
@@ -2760,78 +2761,196 @@ MarkGrayReferences(JSRuntime *rt)
         gcmarker->drainMarkStack(budget);
     }
 
-    MarkWeakReferences(rt, gcstats::PHASE_SWEEP_MARK_GRAY_WEAK);
+    MarkWeakReferences<CompartmentIterT>(rt, gcstats::PHASE_SWEEP_MARK_GRAY_WEAK);
 
     JS_ASSERT(gcmarker->isDrained());
 
     gcmarker->setMarkColorBlack();
 }
 
-#if 0
-#ifdef DEBUG
 static void
-ValidateIncrementalMarking(JSRuntime *rt)
+MarkGrayReferencesInCurrentGroup(JSRuntime *rt)
 {
-    typedef HashMap<Chunk *, uintptr_t *, GCChunkHasher, SystemAllocPolicy> BitmapMap;
+    MarkGrayReferences<GCCompartmentGroupIter>(rt);
+}
+
+#ifdef DEBUG
+
+static void
+MarkAllWeakReferences(JSRuntime *rt, gcstats::Phase phase)
+{
+    MarkWeakReferences<GCCompartmentsIter>(rt, phase);
+}
+
+static void
+MarkAllGrayReferences(JSRuntime *rt)
+{
+    MarkGrayReferences<GCCompartmentsIter>(rt);
+}
+
+class js::gc::MarkingValidator
+{
+  public:
+    MarkingValidator(JSRuntime *rt);
+    ~MarkingValidator();
+    void nonIncrementalMark();
+    void validate();
+
+  private:
+    JSRuntime *runtime;
+    bool initialized;
+
+    typedef HashMap<Chunk *, ChunkBitmap *, GCChunkHasher, SystemAllocPolicy> BitmapMap;
     BitmapMap map;
+};
+
+js::gc::MarkingValidator::MarkingValidator(JSRuntime *rt)
+  : runtime(rt),
+    initialized(false)
+{}
+
+js::gc::MarkingValidator::~MarkingValidator()
+{
+    if (!map.initialized())
+        return;
+
+    for (BitmapMap::Range r(map.all()); !r.empty(); r.popFront())
+        js_delete(r.front().value);
+}
+
+void
+js::gc::MarkingValidator::nonIncrementalMark()
+{
+    /*
+     * Perform a non-incremental mark for all collecting compartments and record
+     * the results for later comparison.
+     *
+     * Currently this does not validate gray marking.
+     */
+
     if (!map.init())
         return;
 
-    GCMarker *gcmarker = &rt->gcMarker;
+    GCMarker *gcmarker = &runtime->gcMarker;
 
     /* Save existing mark bits. */
-    for (GCChunkSet::Range r(rt->gcChunkSet.all()); !r.empty(); r.popFront()) {
+    for (GCChunkSet::Range r(runtime->gcChunkSet.all()); !r.empty(); r.popFront()) {
         ChunkBitmap *bitmap = &r.front()->bitmap;
-        uintptr_t *entry = (uintptr_t *)js_malloc(sizeof(bitmap->bitmap));
+	ChunkBitmap *entry = js_new<ChunkBitmap>();
         if (!entry)
             return;
 
-        memcpy(entry, bitmap->bitmap, sizeof(bitmap->bitmap));
+        memcpy(entry->bitmap, bitmap->bitmap, sizeof(bitmap->bitmap));
         if (!map.putNew(r.front(), entry))
             return;
     }
 
-    /* Save and reset the lists of live weakmaps for the compartments we are collecting. */
+    /*
+     * Save the lists of live weakmaps and array buffers for the compartments we
+     * are collecting.
+     */
     WeakMapVector weakmaps;
-    for (GCCompartmentsIter c(rt); !c.done(); c.next()) {
-        if (!WeakMapBase::saveCompartmentWeakMapList(c, weakmaps))
+    ArrayBufferVector arrayBuffers;
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+        if (!WeakMapBase::saveCompartmentWeakMapList(c, weakmaps) ||
+            !ArrayBufferObject::saveArrayBufferList(c, arrayBuffers))
+        {
             return;
+        }
     }
-    for (GCCompartmentsIter c(rt); !c.done(); c.next())
-        WeakMapBase::resetCompartmentWeakMapList(c);
 
     /*
      * After this point, the function should run to completion, so we shouldn't
      * do anything fallible.
      */
+    initialized = true;
+
+    /*
+     * Reset the lists of live weakmaps and array buffers for the compartments we
+     * are collecting.
+     */
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+        WeakMapBase::resetCompartmentWeakMapList(c);
+        ArrayBufferObject::resetArrayBufferList(c);
+    }
 
     /* Re-do all the marking, but non-incrementally. */
-    js::gc::State state = rt->gcIncrementalState;
-    rt->gcIncrementalState = MARK_ROOTS;
+    js::gc::State state = runtime->gcIncrementalState;
+    runtime->gcIncrementalState = MARK_ROOTS;
 
     JS_ASSERT(gcmarker->isDrained());
     gcmarker->reset();
 
-    for (GCChunkSet::Range r(rt->gcChunkSet.all()); !r.empty(); r.popFront())
+    for (GCChunkSet::Range r(runtime->gcChunkSet.all()); !r.empty(); r.popFront())
         r.front()->bitmap.clear();
 
-    MarkRuntime(gcmarker, true);
+    {
+        gcstats::AutoPhase ap1(runtime->gcStats, gcstats::PHASE_MARK);
+        gcstats::AutoPhase ap2(runtime->gcStats, gcstats::PHASE_MARK_ROOTS);
+        MarkRuntime(gcmarker, true);
+    }
 
     SliceBudget budget;
-    rt->gcIncrementalState = MARK;
-    rt->gcMarker.drainMarkStack(budget);
-    MarkWeakReferences(rt, gcstats::PHASE_SWEEP_MARK_WEAK);
-    MarkGrayReferences(rt);
+    runtime->gcIncrementalState = MARK;
+    runtime->gcMarker.drainMarkStack(budget);
 
-    /* Now verify that we have the same mark bits as before. */
-    for (GCChunkSet::Range r(rt->gcChunkSet.all()); !r.empty(); r.popFront()) {
+    {
+        gcstats::AutoPhase ap(runtime->gcStats, gcstats::PHASE_SWEEP);
+        MarkAllWeakReferences(runtime, gcstats::PHASE_SWEEP_MARK_WEAK);
+
+        /* Update compartment state for gray marking. */
+        for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+            JS_ASSERT(c->isGCMarkingBlack());
+            c->setGCState(JSCompartment::MarkGray);
+        }
+
+        MarkAllGrayReferences(runtime);
+
+        /* Restore compartment state. */
+        for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+            JS_ASSERT(c->isGCMarkingGray());
+            c->setGCState(JSCompartment::Mark);
+        }
+    }
+
+    /* Take a copy of the non-incremental mark state and restore the original. */
+    for (GCChunkSet::Range r(runtime->gcChunkSet.all()); !r.empty(); r.popFront()) {
         Chunk *chunk = r.front();
         ChunkBitmap *bitmap = &chunk->bitmap;
-        uintptr_t *entry = map.lookup(r.front())->value;
-        ChunkBitmap incBitmap;
+        ChunkBitmap *entry = map.lookup(chunk)->value;
+        js::Swap(*entry, *bitmap);
+    }
 
-        memcpy(incBitmap.bitmap, entry, sizeof(incBitmap.bitmap));
-        js_free(entry);
+    /* Restore the weak map and array buffer lists. */
+    for (GCCompartmentsIter c(runtime); !c.done(); c.next()) {
+        WeakMapBase::resetCompartmentWeakMapList(c);
+        ArrayBufferObject::resetArrayBufferList(c);
+    }
+    WeakMapBase::restoreCompartmentWeakMapLists(weakmaps);
+    ArrayBufferObject::restoreArrayBufferLists(arrayBuffers);
+
+    runtime->gcIncrementalState = state;
+}
+
+void
+js::gc::MarkingValidator::validate()
+{
+    /*
+     * Validates the incremental marking for a single compartment by comparing
+     * the mark bits to those previously recorded for a non-incremental mark.
+     */
+
+    if (!initialized)
+        return;
+
+    for (GCChunkSet::Range r(runtime->gcChunkSet.all()); !r.empty(); r.popFront()) {
+        Chunk *chunk = r.front();
+        BitmapMap::Ptr ptr = map.lookup(chunk);
+        if (!ptr)
+            continue;  /* Allocated after we did the non-incremental mark. */
+
+        ChunkBitmap *bitmap = ptr->value;
+        ChunkBitmap *incBitmap = &chunk->bitmap;
 
         for (size_t i = 0; i < ArenasPerChunk; i++) {
             if (chunk->decommittedArenas.get(i))
@@ -2839,7 +2958,7 @@ ValidateIncrementalMarking(JSRuntime *rt)
             Arena *arena = &chunk->arenas[i];
             if (!arena->aheader.allocated())
                 continue;
-            if (!arena->aheader.compartment->isCollecting())
+            if (!arena->aheader.compartment->isGCSweeping())
                 continue;
             if (arena->aheader.allocatedDuringIncremental)
                 continue;
@@ -2854,31 +2973,52 @@ ValidateIncrementalMarking(JSRuntime *rt)
                  * If a non-incremental GC wouldn't have collected a cell, then
                  * an incremental GC won't collect it.
                  */
-                JS_ASSERT_IF(bitmap->isMarked(cell, BLACK), incBitmap.isMarked(cell, BLACK));
+                JS_ASSERT_IF(bitmap->isMarked(cell, BLACK), incBitmap->isMarked(cell, BLACK));
 
                 /*
                  * If the cycle collector isn't allowed to collect an object
                  * after a non-incremental GC has run, then it isn't allowed to
                  * collected it after an incremental GC.
                  */
-                JS_ASSERT_IF(!bitmap->isMarked(cell, GRAY), !incBitmap.isMarked(cell, GRAY));
+                JS_ASSERT_IF(!bitmap->isMarked(cell, GRAY), !incBitmap->isMarked(cell, GRAY));
 
                 thing += Arena::thingSize(kind);
             }
         }
-
-        memcpy(bitmap->bitmap, incBitmap.bitmap, sizeof(incBitmap.bitmap));
     }
-
-    /* Restore the weak map lists. */
-    for (GCCompartmentsIter c(rt); !c.done(); c.next())
-        WeakMapBase::resetCompartmentWeakMapList(c);
-    WeakMapBase::restoreCompartmentWeakMapLists(weakmaps);
-
-    rt->gcIncrementalState = state;
 }
+
 #endif
+
+static void
+ComputeNonIncrementalMarkingForValidation(JSRuntime *rt)
+{
+#ifdef DEBUG
+    JS_ASSERT(!rt->gcMarkingValidator);
+    if (rt->gcIsIncremental && rt->gcValidate)
+        rt->gcMarkingValidator = js_new<MarkingValidator>(rt);
+    if (rt->gcMarkingValidator)
+        rt->gcMarkingValidator->nonIncrementalMark();
 #endif
+}
+
+static void
+ValidateIncrementalMarking(JSRuntime *rt)
+{
+#ifdef DEBUG
+    if (rt->gcMarkingValidator)
+        rt->gcMarkingValidator->validate();
+#endif
+}
+
+static void
+FinishMarkingValidation(JSRuntime *rt)
+{
+#ifdef DEBUG
+    js_delete(rt->gcMarkingValidator);
+    rt->gcMarkingValidator = NULL;
+#endif
+}
 
 static void
 DropStringWrappers(JSRuntime *rt)
@@ -3223,7 +3363,7 @@ EndMarkingCompartmentGroup(JSRuntime *rt)
      */
     MarkIncomingCrossCompartmentPointers(rt, BLACK);
 
-    MarkWeakReferences(rt, gcstats::PHASE_SWEEP_MARK_WEAK);
+    MarkWeakReferencesInCurrentGroup(rt, gcstats::PHASE_SWEEP_MARK_WEAK);
 
     /*
      * Change state of current group to MarkGray to restrict marking to this
@@ -3242,7 +3382,7 @@ EndMarkingCompartmentGroup(JSRuntime *rt)
     rt->gcMarker.setMarkColorBlack();
 
     /* Mark gray roots and mark transitively inside the current compartment group. */
-    MarkGrayReferences(rt);
+    MarkGrayReferencesInCurrentGroup(rt);
 
     /* Restore marking state. */
     for (GCCompartmentGroupIter c(rt); !c.done(); c.next()) {
@@ -3273,6 +3413,8 @@ BeginSweepingCompartmentGroup(JSRuntime *rt)
         if (c == rt->atomsCompartment)
             sweepingAtoms = true;
     }
+
+    ValidateIncrementalMarking(rt);
 
     FreeOp fop(rt, rt->gcSweepOnBackgroundThread);
 
@@ -3375,6 +3517,9 @@ BeginSweepPhase(JSRuntime *rt)
      * true so that any attempt to allocate a GC-thing from a finalizer will
      * fail, rather than nest badly and leave the unmarked newborn to be swept.
      */
+
+    ComputeNonIncrementalMarkingForValidation(rt);
+
     gcstats::AutoPhase ap(rt->gcStats, gcstats::PHASE_SWEEP);
 
 #ifdef JS_THREADSAFE
@@ -3584,6 +3729,8 @@ EndSweepPhase(JSRuntime *rt, JSGCInvocationKind gckind, bool lastGC)
 #endif
     }
 
+    FinishMarkingValidation(rt);
+
     rt->gcLastGCTime = PRMJ_Now();
 }
 
@@ -3671,6 +3818,10 @@ ResetIncrementalGC(JSRuntime *rt, const char *reason)
       case MARK: {
         /* Cancel any ongoing marking. */
         AutoCopyFreeListToArenas copy(rt);
+
+        rt->gcMarker.reset();
+        rt->gcMarker.stop();
+
         for (GCCompartmentsIter c(rt); !c.done(); c.next()) {
             if (c->isGCMarking()) {
                 c->setNeedsBarrier(false, JSCompartment::UpdateIon);
@@ -3678,9 +3829,6 @@ ResetIncrementalGC(JSRuntime *rt, const char *reason)
                 ArrayBufferObject::resetArrayBufferList(c);
             }
         }
-
-        rt->gcMarker.reset();
-        rt->gcMarker.stop();
 
         rt->gcIncrementalState = NO_INCREMENTAL;
 
@@ -4443,7 +4591,7 @@ js::StopPCCountProfiling(JSContext *cx)
 
     for (CompartmentsIter c(rt); !c.done(); c.next()) {
         for (CellIter i(c, FINALIZE_SCRIPT); !i.done(); i.next()) {
-            JSScript *script = i.get<JSScript>();
+            RawScript script = i.get<JSScript>();
             if (script->hasScriptCounts && script->types) {
                 ScriptAndCounts sac;
                 sac.script = script;

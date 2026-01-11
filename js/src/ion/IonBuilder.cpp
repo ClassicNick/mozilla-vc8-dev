@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "IonAnalysis.h"
 #include "IonBuilder.h"
 #include "Lowering.h"
@@ -921,8 +923,8 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_newobject(baseObj);
       }
 
-      case JSOP_INITELEM:
-        return jsop_initelem();
+      case JSOP_INITELEM_ARRAY:
+        return jsop_initelem_array();
 
       case JSOP_INITPROP:
       {
@@ -972,11 +974,11 @@ IonBuilder::inspectOpcode(JSOp op)
         return jsop_getname(name);
       }
 
-      case JSOP_INTRINSICNAME:
+      case JSOP_GETINTRINSIC:
       case JSOP_CALLINTRINSIC:
       {
         RootedPropertyName name(cx, info().getAtom(pc)->asPropertyName());
-        return jsop_intrinsicname(name);
+        return jsop_intrinsic(name);
       }
 
       case JSOP_BINDNAME:
@@ -2348,7 +2350,8 @@ IonBuilder::lookupSwitch(JSOp op, jssrcnote *sn)
             current->end(MGoto::New(cond));
         } else {
             // End previous conditional block with an MTest.
-            prevCond->end(MTest::New(prevCmpIns, prevBody, cond));
+            MTest *test = MTest::New(prevCmpIns, prevBody, cond);
+            prevCond->end(test);
 
             // If the previous cond shared its body with a prior cond, then
             // add the previous cond as a predecessor to its body (since it's
@@ -2386,7 +2389,8 @@ IonBuilder::lookupSwitch(JSOp op, jssrcnote *sn)
     } else {
         // Last conditional block has body that is distinct from
         // the default block.
-        prevCond->end(MTest::New(prevCmpIns, prevBody, defaultBody));
+        MTest *test = MTest::New(prevCmpIns, prevBody, defaultBody);
+        prevCond->end(test);
 
         // Add the cond as a predecessor as a default, but only if
         // the default is shared with another block, because otherwise
@@ -2718,6 +2722,8 @@ IonBuilder::processCondSwitchBody(CFGState &state)
 bool
 IonBuilder::jsop_andor(JSOp op)
 {
+    JS_ASSERT(op == JSOP_AND || op == JSOP_OR);
+
     jsbytecode *rhsStart = pc + js_CodeSpec[op].length;
     jsbytecode *joinStart = pc + GetJumpOffset(pc);
     JS_ASSERT(joinStart > pc);
@@ -2730,12 +2736,12 @@ IonBuilder::jsop_andor(JSOp op)
     if (!evalRhs || !join)
         return false;
 
-    if (op == JSOP_AND) {
-        current->end(MTest::New(lhs, evalRhs, join));
-    } else {
-        JS_ASSERT(op == JSOP_OR);
-        current->end(MTest::New(lhs, join, evalRhs));
-    }
+    MTest *test = (op == JSOP_AND)
+                  ? MTest::New(lhs, evalRhs, join)
+                  : MTest::New(lhs, join, evalRhs);
+    TypeOracle::UnaryTypes types = oracle->unaryTypes(script(), pc);
+    test->infer(types, cx);
+    current->end(test);
 
     if (!cfgStack_.append(CFGState::AndOr(joinStart, join)))
         return false;
@@ -2785,7 +2791,8 @@ IonBuilder::jsop_ifeq(JSOp op)
     if (!ifTrue || !ifFalse)
         return false;
 
-    current->end(MTest::New(ins, ifTrue, ifFalse));
+    MTest *test = MTest::New(ins, ifTrue, ifFalse);
+    current->end(test);
 
     // The bytecode for if/ternary gets emitted either like this:
     //
@@ -2957,7 +2964,8 @@ IonBuilder::jsop_bitop(JSOp op)
     }
 
     current->add(ins);
-    ins->infer(oracle->binaryTypes(script(), pc));
+    TypeOracle::BinaryTypes types = oracle->binaryTypes(script(), pc);
+    ins->infer(types);
 
     current->push(ins);
     if (ins->isEffectful() && !resumeAfter(ins))
@@ -3010,7 +3018,7 @@ IonBuilder::jsop_binary(JSOp op, MDefinition *left, MDefinition *right)
 
     TypeOracle::BinaryTypes types = oracle->binaryTypes(script(), pc);
     current->add(ins);
-    ins->infer(cx, types);
+    ins->infer(types, cx);
     current->push(ins);
 
     if (ins->isEffectful())
@@ -3096,9 +3104,12 @@ IonBuilder::jsop_call_inline(HandleFunction callee, uint32_t argc, bool construc
 {
     AssertCanGC();
 
+    int calleePos = -((int) argc + 2);
+    current->peek(calleePos)->setFoldedUnchecked();
+
     // Rewrite the stack position containing the function with the constant
     // function definition, before we take the inlineResumePoint
-    current->rewriteAtDepth(-((int) argc + 2), constFun);
+    current->rewriteAtDepth(calleePos, constFun);
 
     // This resume point collects outer variables only.  It is used to recover
     // the stack state before the current bytecode.
@@ -3504,6 +3515,7 @@ IonBuilder::inlineScriptedCall(AutoObjectVector &targets, uint32_t argc, bool co
         MPassArg *passArg = top->peek(argSlotDepth)->toPassArg();
         MBasicBlock *block = passArg->block();
         MDefinition *wrapped = passArg->getArgument();
+        wrapped->setFoldedUnchecked();
         passArg->replaceAllUsesWith(wrapped);
         top->rewriteAtDepth(argSlotDepth, wrapped);
         block->discard(passArg);
@@ -4200,7 +4212,7 @@ IonBuilder::jsop_compare(JSOp op)
     current->push(ins);
 
     TypeOracle::BinaryTypes b = oracle->binaryTypes(script(), pc);
-    ins->infer(cx, b);
+    ins->infer(b, cx);
 
     if (ins->isEffectful() && !resumeAfter(ins))
         return false;
@@ -4283,22 +4295,13 @@ IonBuilder::jsop_newobject(HandleObject baseObj)
 }
 
 bool
-IonBuilder::jsop_initelem()
-{
-    if (oracle->propertyWriteCanSpecialize(script(), pc)) {
-        if (oracle->elementWriteIsDenseArray(script(), pc))
-            return jsop_initelem_dense();
-    }
-
-    return abort("NYI: JSOP_INITELEM supports for non dense objects/arrays.");
-}
-
-bool
-IonBuilder::jsop_initelem_dense()
+IonBuilder::jsop_initelem_array()
 {
     MDefinition *value = current->pop();
-    MDefinition *id = current->pop();
     MDefinition *obj = current->peek(-1);
+
+    MConstant *id = MConstant::New(Int32Value(GET_UINT24(pc)));
+    current->add(id);
 
     // Get the elements vector.
     MElements *elements = MElements::New(obj);
@@ -4853,6 +4856,8 @@ bool
 IonBuilder::pushTypeBarrier(MInstruction *ins, types::StackTypeSet *actual,
                             types::StackTypeSet *observed)
 {
+    AutoAssertNoGC nogc;
+
     // If the instruction has no side effects, we'll resume the entire operation.
     // The actual type barrier will occur in the interpreter. If the
     // instruction is effectful, even if it has a singleton type, there
@@ -4970,7 +4975,7 @@ IonBuilder::jsop_getgname(HandlePropertyName name)
 
     // For the fastest path, the property must be found, and it must be found
     // as a normal data property on exactly the global object.
-    const js::Shape *shape = globalObj->nativeLookup(cx, id);
+    RootedShape shape(cx, globalObj->nativeLookup(cx, id));
     if (!shape || !shape->hasDefaultGetter() || !shape->hasSlot())
         return jsop_getname(name);
 
@@ -5047,7 +5052,7 @@ IonBuilder::jsop_setgname(HandlePropertyName name)
 
     // For the fastest path, the property must be found, and it must be found
     // as a normal data property on exactly the global object.
-    const js::Shape *shape = globalObj->nativeLookup(cx, id);
+    RootedShape shape(cx, globalObj->nativeLookup(cx, id));
     if (!shape || !shape->hasDefaultSetter() || !shape->writable() || !shape->hasSlot())
         return jsop_setprop(name);
 
@@ -5133,7 +5138,7 @@ IonBuilder::jsop_getname(HandlePropertyName name)
 }
 
 bool
-IonBuilder::jsop_intrinsicname(HandlePropertyName name)
+IonBuilder::jsop_intrinsic(HandlePropertyName name)
 {
     types::StackTypeSet *types = oracle->propertyRead(script(), pc);
     JSValueType type = types->getKnownTypeTag();
@@ -5454,7 +5459,8 @@ bool
 IonBuilder::jsop_setelem()
 {
     if (oracle->propertyWriteCanSpecialize(script(), pc)) {
-        if (oracle->elementWriteIsDenseArray(script(), pc))
+        RootedScript scriptRoot(cx, script());
+        if (oracle->elementWriteIsDenseArray(scriptRoot, pc))
             return jsop_setelem_dense();
 
         int arrayType = TypedArray::TYPE_MAX;
@@ -5730,6 +5736,8 @@ IonBuilder::jsop_not()
     MNot *ins = new MNot(value);
     current->add(ins);
     current->push(ins);
+    TypeOracle::UnaryTypes types = oracle->unaryTypes(script(), pc);
+    ins->infer(types, cx);
     return true;
 }
 
@@ -5940,7 +5948,8 @@ IonBuilder::TestCommonPropFunc(JSContext *cx, types::StackTypeSet *types, Handle
 }
 
 static bool
-TestShouldDOMCall(JSContext *cx, types::TypeSet *inTypes, HandleFunction func)
+TestShouldDOMCall(JSContext *cx, types::TypeSet *inTypes, HandleFunction func,
+                  JSJitInfo::OpType opType)
 {
     if (!func->isNative() || !func->jitInfo())
         return false;
@@ -5951,6 +5960,8 @@ TestShouldDOMCall(JSContext *cx, types::TypeSet *inTypes, HandleFunction func)
         GetDOMCallbacks(cx->runtime)->instanceClassMatchesProto;
 
     const JSJitInfo *jinfo = func->jitInfo();
+    if (jinfo->type != opType)
+        return false;
 
     for (unsigned i = 0; i < inTypes->getObjectCount(); i++) {
         types::TypeObject *curType = inTypes->getTypeObject(i);
@@ -6144,7 +6155,7 @@ IonBuilder::invalidatedIdempotentCache()
 }
 
 bool
-IonBuilder::loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType)
+IonBuilder::loadSlot(MDefinition *obj, HandleShape shape, MIRType rvalType)
 {
     JS_ASSERT(shape->hasDefaultGetter());
     JS_ASSERT(shape->hasSlot());
@@ -6174,7 +6185,7 @@ IonBuilder::loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType)
 }
 
 bool
-IonBuilder::storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool needsBarrier)
+IonBuilder::storeSlot(MDefinition *obj, UnrootedShape shape, MDefinition *value, bool needsBarrier)
 {
     JS_ASSERT(shape->hasDefaultSetter());
     JS_ASSERT(shape->writable());
@@ -6300,7 +6311,7 @@ IonBuilder::getPropTryConstant(bool *emitted, HandleId id, types::StackTypeSet *
     if (singleton->isFunction()) {
         RootedFunction singletonFunc(cx, singleton->toFunction());
         if (TestAreKnownDOMTypes(cx, unaryTypes.inTypes) &&
-            TestShouldDOMCall(cx, unaryTypes.inTypes, singletonFunc))
+            TestShouldDOMCall(cx, unaryTypes.inTypes, singletonFunc, JSJitInfo::Method))
         {
             FreezeDOMTypes(cx, unaryTypes.inTypes);
             known->setDOMFunction();
@@ -6366,7 +6377,7 @@ IonBuilder::getPropTryCommonGetter(bool *emitted, HandleId id, types::StackTypeS
     MDefinition *obj = current->pop();
     RootedFunction getter(cx, commonGetter);
 
-    if (isDOM && TestShouldDOMCall(cx, unaryTypes.inTypes, getter)) {
+    if (isDOM && TestShouldDOMCall(cx, unaryTypes.inTypes, getter, JSJitInfo::Getter)) {
         const JSJitInfo *jitinfo = getter->jitInfo();
         MGetDOMProperty *get = MGetDOMProperty::New(jitinfo, obj, guard);
         current->add(get);
@@ -6399,13 +6410,14 @@ bool
 IonBuilder::getPropTryMonomorphic(bool *emitted, HandleId id, types::StackTypeSet *barrier,
                                   TypeOracle::Unary unary, TypeOracle::UnaryTypes unaryTypes)
 {
+    AssertCanGC();
     JS_ASSERT(*emitted == false);
     bool accessGetter = oracle->propertyReadAccessGetter(script(), pc);
 
     if (unary.ival != MIRType_Object)
         return true;
 
-    Shape *objShape = mjit::GetPICSingleShape(cx, script(), pc, info().constructing());
+    RootedShape objShape(cx, mjit::GetPICSingleShape(cx, script(), pc, info().constructing()));
     if (!objShape || objShape->inDictionary()) {
         spew("GETPROP not monomorphic");
         return true;
@@ -6420,7 +6432,7 @@ IonBuilder::getPropTryMonomorphic(bool *emitted, HandleId id, types::StackTypeSe
     obj = addShapeGuard(obj, objShape, Bailout_CachedShapeGuard);
 
     spew("Inlining monomorphic GETPROP");
-    Shape *shape = objShape->search(cx, id);
+    RootedShape shape(cx, objShape->search(cx, id));
     JS_ASSERT(shape);
 
     MIRType rvalType = unary.rval;
@@ -6522,7 +6534,7 @@ IonBuilder::jsop_setprop(HandlePropertyName name)
         return false;
     if (!monitored && commonSetter) {
         RootedFunction setter(cx, commonSetter);
-        if (isDOM && TestShouldDOMCall(cx, types, setter)) {
+        if (isDOM && TestShouldDOMCall(cx, types, setter, JSJitInfo::Setter)) {
             MSetDOMProperty *set = MSetDOMProperty::New(setter->jitInfo()->op, obj, value);
             if (!set)
                 return false;
@@ -6558,9 +6570,9 @@ IonBuilder::jsop_setprop(HandlePropertyName name)
 
     MSetPropertyInstruction *ins;
     if (monitored) {
-        ins = MCallSetProperty::New(obj, value, name, script()->strictModeCode);
+        ins = MCallSetProperty::New(obj, value, name, script()->strict);
     } else {
-        Shape *objShape;
+        UnrootedShape objShape;
         if ((objShape = mjit::GetPICSingleShape(cx, script(), pc, info().constructing())) &&
             !objShape->inDictionary())
         {
@@ -6570,7 +6582,7 @@ IonBuilder::jsop_setprop(HandlePropertyName name)
             // on dictionary mode shapes that aren't lastProperty is invalid.
             obj = addShapeGuard(obj, objShape, Bailout_CachedShapeGuard);
 
-            Shape *shape = objShape->search(cx, NameToId(name));
+            UnrootedShape shape = DropUnrooted(objShape)->search(cx, NameToId(name));
             JS_ASSERT(shape);
 
             spew("Inlining monomorphic SETPROP");
@@ -6578,12 +6590,12 @@ IonBuilder::jsop_setprop(HandlePropertyName name)
             jsid typeId = types::MakeTypeId(cx, id);
             bool needsBarrier = oracle->propertyWriteNeedsBarrier(script(), pc, typeId);
 
-            return storeSlot(obj, shape, value, needsBarrier);
+            return storeSlot(obj, DropUnrooted(shape), value, needsBarrier);
         }
 
         spew("SETPROP not monomorphic");
 
-        ins = MSetPropertyCache::New(obj, value, name, script()->strictModeCode);
+        ins = MSetPropertyCache::New(obj, value, name, script()->strict);
 
         if (!binaryTypes.lhsTypes || binaryTypes.lhsTypes->propertyNeedsBarrier(cx, id))
             ins->setNeedsBarrier();
@@ -6686,7 +6698,7 @@ IonBuilder::jsop_this()
     if (!info().fun())
         return abort("JSOP_THIS outside of a JSFunction.");
 
-    if (script()->strictModeCode) {
+    if (script()->strict) {
         current->pushSlot(info().thisSlot());
         return true;
     }
@@ -6861,7 +6873,8 @@ IonBuilder::jsop_setaliasedvar(ScopeCoordinate sc)
 bool
 IonBuilder::jsop_in()
 {
-    if (oracle->inObjectIsDenseArray(script(), pc))
+    RootedScript scriptRoot(cx, script());
+    if (oracle->inObjectIsDenseArray(scriptRoot, pc))
         return jsop_in_dense();
 
     MDefinition *obj = current->pop();
@@ -6961,7 +6974,7 @@ IonBuilder::addBoundsCheck(MDefinition *index, MDefinition *length)
 }
 
 MInstruction *
-IonBuilder::addShapeGuard(MDefinition *obj, const Shape *shape, BailoutKind bailoutKind)
+IonBuilder::addShapeGuard(MDefinition *obj, const UnrootedShape shape, BailoutKind bailoutKind)
 {
     MGuardShape *guard = MGuardShape::New(obj, shape, bailoutKind);
     current->add(guard);

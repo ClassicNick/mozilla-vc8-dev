@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Util.h"
+#include "mozilla/DebugOnly.h"
 
 #ifdef MOZ_LOGGING
 #define FORCE_PR_LOG /* Allow logging in the release build */
@@ -534,8 +534,7 @@ GDIFontFamily::FamilyAddStylesProc(const ENUMLOGFONTEXW *lpelfe,
 
     // We can't set the hasItalicFace flag correctly here,
     // because we might not have seen the family's italic face(s) yet.
-    // Later code does _not_ rely on this flag for platform fonts;
-    // it is only needed for fonts loaded with src:local
+    // So we'll set that flag for all members after loading all the faces.
     fe = GDIFontEntry::CreateFontEntry(nsDependentString(lpelfe->elfFullName),
                                        feType, (logFont.lfItalic == 0xFF),
                                        (uint16_t) (logFont.lfWeight), 0,
@@ -611,8 +610,23 @@ GDIFontFamily::FindStyleVariations()
 
     ReleaseDC(nullptr, hdc);
 
-    if (mIsBadUnderlineFamily)
+    if (mIsBadUnderlineFamily) {
         SetBadUnderlineFonts();
+    }
+
+    // check for existence of italic face(s); if present, set the
+    // FamilyHasItalic flag on all faces so that we'll know *not*
+    // to use GDI's fake-italic effect with them
+    size_t count = mAvailableFonts.Length();
+    for (size_t i = 0; i < count; ++i) {
+        if (mAvailableFonts[i]->IsItalic()) {
+            for (uint32_t j = 0; j < count; ++j) {
+                static_cast<GDIFontEntry*>(mAvailableFonts[j].get())->
+                    mFamilyHasItalicFace = true;
+            }
+            break;
+        }
+    }
 }
 
 /***************************************************************
@@ -800,7 +814,7 @@ gfxGDIFontList::LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
         gfxWindowsFontType(isCFF ? GFX_FONT_TYPE_PS_OPENTYPE : GFX_FONT_TYPE_TRUETYPE) /*type*/, 
         lookup->mItalic ? NS_FONT_STYLE_ITALIC : NS_FONT_STYLE_NORMAL,
         lookup->mWeight, aProxyEntry->mStretch, nullptr,
-        lookup->Family()->HasItalicFace());
+        static_cast<GDIFontEntry*>(lookup)->mFamilyHasItalicFace);
         
     if (!fe)
         return nullptr;

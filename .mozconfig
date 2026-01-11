@@ -38,6 +38,7 @@ ac_add_options --disable-ion
 ac_add_options --enable-ipc
 ac_add_options --disable-webm
 ac_add_options --disable-dash
+ac_add_options --disable-wmf
 ac_add_options --disable-ogg
 ac_add_options --disable-sps
 ac_add_options --disable-skia

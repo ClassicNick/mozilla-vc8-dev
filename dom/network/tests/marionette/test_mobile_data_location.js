@@ -6,6 +6,8 @@ MARIONETTE_TIMEOUT = 20000;
 SpecialPowers.addPermission("mobileconnection", true, document);
 
 let mobileConnection = navigator.mozMobileConnection;
+let emulatorStartLac = 0;
+let emulatorStartCid = 0;
 
 function verifyInitialState() {
   log("Verifying initial state.");
@@ -24,9 +26,9 @@ function testStartingCellLocation() {
     is(result[1].substring(0,2), "ci", "ci output");
     is(result[2], "OK", "emulator ok");
 
-    let emulatorStartLac = result[0].substring(5);
+    emulatorStartLac = result[0].substring(5);
     log("Emulator GSM location LAC is '" + emulatorStartLac + "'.");
-    let emulatorStartCid = result[1].substring(4);
+    emulatorStartCid = result[1].substring(4);
     log("Emulator GSM location CID is '" + emulatorStartCid + "'.");
 
     log("mobileConnection.data.cell.gsmLocationAreaCode is '"
@@ -58,7 +60,7 @@ function testStartingCellLocation() {
   });
 }
 
-function testChangeCellLocation(emulatorStartLac, emulatorStartCid) {
+function testChangeCellLocation() {
   // Change emulator GSM location and verify mobileConnection.data.cell values
   let newLac = 1000;
   let newCid = 2000;
@@ -79,7 +81,7 @@ function testChangeCellLocation(emulatorStartLac, emulatorStartCid) {
     is(mobileConnection.data.cell.gsmLocationAreaCode, newLac,
         "data.cell.gsmLocationAreaCode");
     is(mobileConnection.data.cell.gsmCellId, newCid, "data.cell.gsmCellId");
-    waitFor(restoreLocation(emulatorStartLac, emulatorStartCid), function() {
+    waitFor(restoreLocation, function() {
       return(gotCallback);
     });
   });
@@ -90,16 +92,18 @@ function testChangeCellLocation(emulatorStartLac, emulatorStartCid) {
   gotCallback = false;
   runEmulatorCmd("gsm location " + newLac + " " + newCid, function(result) {
     is(result[0], "OK");
-    log("Emulator callback.");
+    log("Emulator callback on location change.");
     gotCallback = true;
   });
 }
 
-function restoreLocation(lac, cid) {
+function restoreLocation() {
   // Restore the emulator GSM location back to what it was originally
-  log("Restoring emulator GSM location back to '" + lac + ", " + cid + "'.");
-  runEmulatorCmd("gsm location " + lac + " " + cid, function(result) {
-    log("Emulator callback.");
+  log("Restoring emulator GSM location back to '" + emulatorStartLac + ", "
+      + emulatorStartCid + "'.");
+  runEmulatorCmd("gsm location " + emulatorStartLac + " " + emulatorStartCid,
+      function(result) {
+    log("Emulator callback on restore.");
     is(result[0], "OK");
     cleanUp();
   });

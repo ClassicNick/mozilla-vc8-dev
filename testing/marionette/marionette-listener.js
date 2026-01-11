@@ -40,7 +40,7 @@ let listenerId = null; //unique ID of this listener
 let activeFrame = null;
 let curWindow = content;
 let elementManager = new ElementManager([]);
-let importedScripts = FileUtils.getFile('TmpD', ['marionettescript']);
+let importedScripts = null;
 
 // The sandbox we execute test scripts in. Gets lazily created in
 // createExecuteContentSandbox().
@@ -65,7 +65,8 @@ function registerSelf() {
   let register = sendSyncMessage("Marionette:register", msg);
 
   if (register[0]) {
-    listenerId = register[0];
+    listenerId = register[0].id;
+    importedScripts = FileUtils.File(register[0].importedScripts);
     startListeners();
   }
 }
@@ -215,11 +216,6 @@ function deleteSession(msg) {
   // reset frame to the top-most frame
   curWindow = content;
   curWindow.focus();
-  try {
-    importedScripts.remove(false);
-  }
-  catch (e) {
-  }
 }
 
 /*
@@ -864,7 +860,9 @@ function switchToFrame(msg) {
                      .getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
   if ((msg.json.value == null) && (msg.json.element == null)) {
     curWindow = content;
-    curWindow.focus();
+    if(msg.json.focus == true) {
+      curWindow.focus();
+    }
     checkTimer.initWithCallback(checkLoad, 100, Ci.nsITimer.TYPE_ONE_SHOT);
     return;
   }
@@ -925,7 +923,9 @@ function switchToFrame(msg) {
   }
   else {
     curWindow = curWindow.contentWindow;
-    curWindow.focus();
+    if(msg.json.focus == true) {
+      curWindow.focus();
+    }
     checkTimer.initWithCallback(checkLoad, 100, Ci.nsITimer.TYPE_ONE_SHOT);
   }
 }

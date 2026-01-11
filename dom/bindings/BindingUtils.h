@@ -374,9 +374,8 @@ DefineWebIDLBindingPropertiesOnXPCProto(JSContext* cx, JSObject* proto, const Na
 inline bool
 MaybeWrapValue(JSContext* cx, JSObject* obj, JS::Value* vp)
 {
-  MOZ_ASSERT(js::GetObjectCompartment(obj) == js::GetContextCompartment(cx));
   if (vp->isObject() &&
-      js::GetObjectCompartment(&vp->toObject()) != js::GetObjectCompartment(obj)) {
+      js::GetObjectCompartment(&vp->toObject()) != js::GetContextCompartment(cx)) {
     return JS_WrapValue(cx, vp);
   }
 
@@ -488,7 +487,7 @@ WrapNewBindingObject(JSContext* cx, JSObject* scope, T* value, JS::Value* vp)
   JSObject* obj = value->GetWrapperPreserveColor();
   if (obj) {
     xpc_UnmarkNonNullGrayObject(obj);
-    if (js::GetObjectCompartment(obj) == js::GetObjectCompartment(scope)) {
+    if (js::GetObjectCompartment(obj) == js::GetContextCompartment(cx)) {
       *vp = JS::ObjectValue(*obj);
       return true;
     }
@@ -1203,6 +1202,23 @@ protected:
 #ifdef DEBUG
   bool inited;
 #endif
+};
+
+class NonNullLazyRootedObject : public Maybe<js::RootedObject>
+{
+public:
+  operator JSObject&() const {
+    MOZ_ASSERT(!empty() && ref(), "Can not alias null.");
+    return *ref();
+  }
+};
+
+class LazyRootedObject : public Maybe<js::RootedObject>
+{
+public:
+  operator JSObject*() const {
+    return empty() ? (JSObject*) nullptr : ref();
+  }
 };
 
 // A struct that has the same layout as an nsDependentString but much

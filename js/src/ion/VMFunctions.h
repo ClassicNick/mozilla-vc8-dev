@@ -219,7 +219,7 @@ template <> struct TypeToArgProperties<HandleFunction> {
     static const uint32_t result = TypeToArgProperties<JSFunction *>::result | VMFunction::ByRef;
 };
 template <> struct TypeToArgProperties<HandleScript> {
-    static const uint32_t result = TypeToArgProperties<JSScript *>::result | VMFunction::ByRef;
+    static const uint32_t result = TypeToArgProperties<RawScript>::result | VMFunction::ByRef;
 };
 template <> struct TypeToArgProperties<HandleValue> {
     static const uint32_t result = TypeToArgProperties<Value>::result | VMFunction::ByRef;
@@ -432,7 +432,7 @@ bool GreaterThanOrEqual(JSContext *cx, HandleValue lhs, HandleValue rhs, JSBool 
 template<bool Equal>
 bool StringsEqual(JSContext *cx, HandleString left, HandleString right, JSBool *res);
 
-bool ValueToBooleanComplement(JSContext *cx, const Value &input, JSBool *output);
+JSBool ObjectEmulatesUndefined(RawObject obj);
 
 bool IteratorMore(JSContext *cx, HandleObject obj, JSBool *res);
 
@@ -445,6 +445,7 @@ bool ArrayPushDense(JSContext *cx, HandleObject obj, HandleValue v, uint32_t *le
 bool ArrayShiftDense(JSContext *cx, HandleObject obj, MutableHandleValue rval);
 JSObject *ArrayConcatDense(JSContext *cx, HandleObject obj1, HandleObject obj2, HandleObject res);
 
+bool CharCodeAt(JSContext *cx, HandleString str, int32_t index, uint32_t *code);
 JSFlatString *StringFromCharCode(JSContext *cx, int32_t code);
 
 bool SetProperty(JSContext *cx, HandleObject obj, HandlePropertyName name, HandleValue value,

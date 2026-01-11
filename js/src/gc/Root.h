@@ -12,6 +12,7 @@
 
 #include "mozilla/GuardObjects.h"
 
+#include "js/Utility.h"
 #include "js/TemplateLib.h"
 
 #include "jspubtd.h"
@@ -236,6 +237,8 @@ class Handle : public js::HandleBase<T>
     operator T() const { return get(); }
     T operator->() const { return get(); }
 
+    bool operator!=(const T &other) { return *ptr != other; }
+
   private:
     Handle() {}
 
@@ -281,13 +284,15 @@ class MutableHandle : public js::MutableHandleBase<T>
     }
 
     template <typename S>
-    inline
-		MutableHandle(js::Rooted<S> *root);
+	inline MutableHandle(js::Rooted<S> *root);
 
     void set(T v) {
         JS_ASSERT(!js::RootMethods<T>::poisoned(v));
         *ptr = v;
     }
+
+    template <typename S>
+    inline void set(const js::Unrooted<S> &v);
 
     /*
      * This may be called only if the location of the T is guaranteed
@@ -343,11 +348,9 @@ namespace js {
  * rooted.
  */
 typedef JSObject *                  RawObject;
-typedef JSFunction *                RawFunction;
-typedef JSScript *                  RawScript;
 typedef JSString *                  RawString;
 typedef jsid                        RawId;
-typedef Value                       RawValue;
+typedef JS::Value                   RawValue;
 
 /*
  * InternalHandle is a handle to an internal pointer into a gcthing. Use
@@ -402,7 +405,7 @@ class InternalHandle<T*>
      * fromMarkedLocation().
      */
     InternalHandle(T *field)
-      : holder(reinterpret_cast<void * const *>(&NullPtr::constNullValue)),
+      : holder(reinterpret_cast<void * const *>(&JS::NullPtr::constNullValue)),
         offset(uintptr_t(field))
     {}
 };
@@ -437,7 +440,7 @@ class Unrooted
       : ptr_(root.get())
     {
         JS_ASSERT(ptr_ != UninitializedTag());
-        EnterAssertNoGCScope();
+        JS::EnterAssertNoGCScope();
     }
 
     /*
@@ -453,31 +456,31 @@ class Unrooted
       : ptr_(static_cast<T>(static_cast<S>(other)))
     {
         if (ptr_ != UninitializedTag())
-            EnterAssertNoGCScope();
+            JS::EnterAssertNoGCScope();
     }
 
     Unrooted(const Unrooted &other) : ptr_(other.ptr_) {
         if (ptr_ != UninitializedTag())
-            EnterAssertNoGCScope();
+            JS::EnterAssertNoGCScope();
     }
 
     Unrooted(const T &p) : ptr_(p) {
         JS_ASSERT(ptr_ != UninitializedTag());
-        EnterAssertNoGCScope();
+        JS::EnterAssertNoGCScope();
     }
 
     Unrooted(const JS::NullPtr &) : ptr_(NULL) {
-        EnterAssertNoGCScope();
+        JS::EnterAssertNoGCScope();
     }
 
     ~Unrooted() {
         if (ptr_ != UninitializedTag())
-            LeaveAssertNoGCScope();
+            JS::LeaveAssertNoGCScope();
     }
 
     void drop() {
         if (ptr_ != UninitializedTag())
-            LeaveAssertNoGCScope();
+            JS::LeaveAssertNoGCScope();
         ptr_ = UninitializedTag();
     }
 
@@ -485,8 +488,15 @@ class Unrooted
     Unrooted &operator=(T other) {
         JS_ASSERT(other != UninitializedTag());
         if (ptr_ == UninitializedTag())
-            EnterAssertNoGCScope();
+            JS::EnterAssertNoGCScope();
         ptr_ = other;
+        return *this;
+    }
+    Unrooted &operator=(Unrooted other) {
+        JS_ASSERT(other.ptr_ != UninitializedTag());
+        if (ptr_ == UninitializedTag())
+            JS::EnterAssertNoGCScope();
+        ptr_ = other.ptr_;
         return *this;
     }
 
@@ -517,18 +527,18 @@ class Unrooted
  * This macro simplifies declaration of the required matching raw-pointer for
  * optimized builds and Unrooted<T> template for debug builds.
  */
-# define ForwardDeclare(type)                                                 \
-    class type;                                                               \
-    typedef Unrooted<type*> Unrooted##type;                                   \
+# define ForwardDeclare(type)                        \
+    class type;                                      \
+    typedef Unrooted<type*> Unrooted##type;          \
     typedef type * Raw##type
 
-# define ForwardDeclareJS(type)                                               \
-    struct JS##type;                                                          \
-    namespace js {                                                            \
-        typedef Unrooted<JS##type*> Unrooted##type;                           \
-        typedef JS##type * Raw##type;                                         \
-    }                                                                         \
-    struct JS##type
+# define ForwardDeclareJS(type)                      \
+    class JS##type;                                  \
+    namespace js {                                   \
+        typedef js::Unrooted<JS##type*> Unrooted##type; \
+        typedef JS##type * Raw##type;                \
+    }                                                \
+    class JS##type
 
 template <typename T>
 T DropUnrooted(Unrooted<T> &unrooted)
@@ -552,18 +562,18 @@ inline RawId DropUnrooted(RawId &id) { return id; }
 #else /* NDEBUG */
 
 /* In opt builds |UnrootedFoo| is a real |Foo*|. */
-# define ForwardDeclare(type)                                                 \
-    class type;                                                               \
-    typedef type * Unrooted##type;                                            \
+# define ForwardDeclare(type)        \
+    class type;                      \
+    typedef type * Unrooted##type;   \
     typedef type * Raw##type
 
 # define ForwardDeclareJS(type)                                               \
-    struct JS##type;                                                          \
+    class JS##type;                                                           \
     namespace js {                                                            \
         typedef JS##type * Unrooted##type;                                    \
         typedef JS##type * Raw##type;                                         \
     }                                                                         \
-    struct JS##type
+    class JS##type
 
 template <typename T>
 class Unrooted
@@ -773,7 +783,7 @@ Unrooted<T>::Unrooted(const Rooted<S> &root,
   : ptr_(root.get())
 {
     JS_ASSERT(ptr_ != UninitializedTag());
-    EnterAssertNoGCScope();
+    JS::EnterAssertNoGCScope();
 }
 #endif /* DEBUG */
 
@@ -782,7 +792,7 @@ typedef Rooted<JSFunction*>  RootedFunction;
 typedef Rooted<JSScript*>    RootedScript;
 typedef Rooted<JSString*>    RootedString;
 typedef Rooted<jsid>         RootedId;
-typedef Rooted<Value>        RootedValue;
+typedef Rooted<JS::Value>    RootedValue;
 
 /*
  * Mark a stack location as a root for the rooting analysis, without actually
@@ -870,6 +880,13 @@ MutableHandle<T>::MutableHandle(js::Rooted<S> *root)
     ptr = root->address();
 }
 
+template <typename T> template <typename S>
+inline void MutableHandle<T>::set(const js::Unrooted<S> &v)
+{
+    JS_ASSERT(!js::RootMethods<T>::poisoned(v));
+    *ptr = static_cast<S>(v);
+}
+
 /*
  * The scoped guard object AutoAssertNoGC forces the GC to assert if a GC is
  * attempted while the guard object is live.  If you have a GC-unsafe operation
@@ -920,7 +937,7 @@ namespace js {
  */
 inline void MaybeCheckStackRoots(JSContext *cx, bool relax = true)
 {
-    AssertCanGC();
+    JS::AssertCanGC();
 #if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
     if (relax && NeedRelaxedRootChecks())
         return;
@@ -949,6 +966,9 @@ class CompilerRootNode
 };
 
 }  /* namespace js */
+
+ForwardDeclareJS(Script);
+ForwardDeclareJS(Function);
 
 #endif  /* __cplusplus */
 

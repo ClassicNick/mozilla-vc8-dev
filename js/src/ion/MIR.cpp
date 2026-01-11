@@ -189,6 +189,26 @@ MDefinition::analyzeTruncateBackward()
     return;
 }
 
+static bool
+MaybeEmulatesUndefined(types::StackTypeSet *types, JSContext *cx)
+{
+    if (!types->maybeObject())
+        return false;
+    return types->hasObjectFlags(cx, types::OBJECT_FLAG_EMULATES_UNDEFINED);
+}
+
+void
+MTest::infer(const TypeOracle::UnaryTypes &u, JSContext *cx)
+{
+    if (!u.inTypes)
+        return;
+
+    JS_ASSERT(operandMightEmulateUndefined());
+
+    if (!MaybeEmulatesUndefined(u.inTypes, cx))
+        markOperandCantEmulateUndefined();
+}
+
 MDefinition *
 MTest::foldsTo(bool useValueNumbers)
 {
@@ -432,6 +452,26 @@ MPhi *
 MPhi::New(uint32_t slot)
 {
     return new MPhi(slot);
+}
+
+void
+MPhi::removeOperand(size_t index)
+{
+    JS_ASSERT(index < inputs_.length());
+    JS_ASSERT(inputs_.length() > 1);
+
+    // If we have phi(..., a, b, c, d, ..., z) and we plan
+    // on removing a, then first shift downward so that we have
+    // phi(..., b, c, d, ..., z, z):
+    size_t length = inputs_.length();
+    for (size_t i = index + 1; i < length; i++)
+        replaceOperand(i - 1, getOperand(i));
+
+    // remove the final operand that now appears twice:
+    replaceOperand(length - 1, NULL);
+
+    // truncate the inputs_ list:
+    inputs_.shrinkBy(1);
 }
 
 MDefinition *
@@ -971,7 +1011,7 @@ MMul::canOverflow()
 }
 
 void
-MBinaryArithInstruction::infer(JSContext *cx, const TypeOracle::BinaryTypes &b)
+MBinaryArithInstruction::infer(const TypeOracle::BinaryTypes &b, JSContext *cx)
 {
     // Retrieve type information of lhs and rhs
     // Rhs is defaulted to int32 first,
@@ -1045,10 +1085,15 @@ SafelyCoercesToDouble(JSContext *cx, types::StackTypeSet *types)
 }
 
 void
-MCompare::infer(JSContext *cx, const TypeOracle::BinaryTypes &b)
+MCompare::infer(const TypeOracle::BinaryTypes &b, JSContext *cx)
 {
     if (!b.lhsTypes || !b.rhsTypes)
         return;
+
+    JS_ASSERT(operandMightEmulateUndefined());
+
+    if (!MaybeEmulatesUndefined(b.lhsTypes, cx) && !MaybeEmulatesUndefined(b.rhsTypes, cx))
+        markNoOperandEmulatesUndefined();
 
     MIRType lhs = MIRTypeFromValueType(b.lhsTypes->getKnownTypeTag());
     MIRType rhs = MIRTypeFromValueType(b.rhsTypes->getKnownTypeTag());
@@ -1104,14 +1149,12 @@ MCompare::infer(JSContext *cx, const TypeOracle::BinaryTypes &b)
             return;
         }
 
+        // Swap null/undefined lhs to rhs so we can test for it only on lhs.
         if (IsNullOrUndefined(lhs)) {
-            // Lowering expects the rhs to be null/undefined, so we have to
-            // swap the operands. This is necessary since we may not know which
-            // operand was null/undefined during lowering (both operands may have
-            // MIRType_Value).
-            specialization_ = lhs;
+            MIRType tmp = lhs;
+            lhs = rhs;
+            rhs = tmp;
             swapOperands();
-            return;
         }
 
         if (IsNullOrUndefined(rhs)) {
@@ -1371,10 +1414,13 @@ MCompare::tryFold(bool *result)
                 *result = (op == JSOP_EQ || op == JSOP_STRICTNE);
             }
             return true;
+          case MIRType_Object:
+            if ((op == JSOP_EQ || op == JSOP_NE) && operandMightEmulateUndefined())
+                return false;
+            /* FALL THROUGH */
           case MIRType_Int32:
           case MIRType_Double:
           case MIRType_String:
-          case MIRType_Object:
           case MIRType_Boolean:
             *result = (op == JSOP_NE || op == JSOP_STRICTNE);
             return true;
@@ -1506,23 +1552,35 @@ MCompare::foldsTo(bool useValueNumbers)
     return this;
 }
 
+void
+MNot::infer(const TypeOracle::UnaryTypes &u, JSContext *cx)
+{
+    if (!u.inTypes)
+        return;
+
+    JS_ASSERT(operandMightEmulateUndefined());
+
+    if (!MaybeEmulatesUndefined(u.inTypes, cx))
+        markOperandCantEmulateUndefined();
+}
+
 MDefinition *
 MNot::foldsTo(bool useValueNumbers)
 {
     // Fold if the input is constant
     if (operand()->isConstant()) {
        const Value &v = operand()->toConstant()->value();
-        // ValueToBoolean can cause no side-effects, so this is safe.
+        // ToBoolean can cause no side effects, so this is safe.
         return MConstant::New(BooleanValue(!ToBoolean(v)));
     }
-
-    // NOT of an object is always false
-    if (operand()->type() == MIRType_Object)
-        return MConstant::New(BooleanValue(false));
 
     // NOT of an undefined or null value is always true
     if (operand()->type() == MIRType_Undefined || operand()->type() == MIRType_Null)
         return MConstant::New(BooleanValue(true));
+
+    // NOT of an object that can't emulate undefined is always false.
+    if (operand()->type() == MIRType_Object && !operandMightEmulateUndefined())
+        return MConstant::New(BooleanValue(false));
 
     return this;
 }

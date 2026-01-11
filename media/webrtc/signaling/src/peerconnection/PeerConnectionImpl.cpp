@@ -278,7 +278,7 @@ PeerConnectionImpl::CreateRemoteSourceStreamInfo(uint32_t aHint, RemoteSourceStr
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
 
   nsIDOMMediaStream* stream;
-  
+
   nsresult res = MakeMediaStream(aHint, &stream);
   if (NS_FAILED(res)) {
     return res;
@@ -480,10 +480,15 @@ PeerConnectionImpl::ConnectDataConnection(uint16_t aLocalport,
     return NS_ERROR_FAILURE;
   }
   // XXX Fix! Get the correct flow for DataChannel. Also error handling.
-  nsRefPtr<TransportFlow> flow = mMedia->GetTransportFlow(1,false).get();
-  CSFLogDebugS(logTag, "Transportflow[1] = " << flow.get());
-  if (!mDataConnection->ConnectDTLS(flow, aLocalport, aRemoteport)) {
-    return NS_ERROR_FAILURE;
+  for (int i = 2; i >= 0; i--) {
+    nsRefPtr<TransportFlow> flow = mMedia->GetTransportFlow(i,false).get();
+    CSFLogDebugS(logTag, "Transportflow[" << i << "] = " << flow.get());
+    if (flow) {
+      if (!mDataConnection->ConnectDTLS(flow, aLocalport, aRemoteport)) {
+        return NS_ERROR_FAILURE;
+      }
+      break;
+    }
   }
   return NS_OK;
 #else
@@ -920,6 +925,7 @@ PeerConnectionImpl::CheckApiState(bool assert_ice_ready) const
 NS_IMETHODIMP
 PeerConnectionImpl::Close(bool aIsSynchronous)
 {
+  CSFLogDebugS(logTag, __FUNCTION__);
   PC_AUTO_ENTER_API_CALL(false);
 
   return CloseInt(aIsSynchronous);
@@ -929,13 +935,15 @@ PeerConnectionImpl::Close(bool aIsSynchronous)
 nsresult
 PeerConnectionImpl::CloseInt(bool aIsSynchronous)
 {
-  PC_AUTO_ENTER_API_CALL(true);
+  PC_AUTO_ENTER_API_CALL_NO_CHECK();
 
   if (mCall != nullptr)
     mCall->endCall();
 #ifdef MOZILLA_INTERNAL_API
-  if (mDataConnection)
-    mDataConnection->CloseAll();
+  if (mDataConnection) {
+    mDataConnection->Destroy();
+    mDataConnection = nullptr; // it may not go away until the runnables are dead
+  }
 #endif
 
   ShutdownMedia(aIsSynchronous);
@@ -1028,7 +1036,8 @@ PeerConnectionImpl::ChangeReadyState(PeerConnectionImpl::ReadyState aReadyState)
   // keeps the observer live.
   RUN_ON_THREAD(mThread, WrapRunnable(mPCObserver,
                                       &IPeerConnectionObserver::OnStateChange,
-                                      IPeerConnectionObserver::kReadyState),
+                                      // static_cast needed to work around old Android NDK r5c compiler
+                                      static_cast<int>(IPeerConnectionObserver::kReadyState)),
     NS_DISPATCH_NORMAL);
 }
 
@@ -1039,7 +1048,12 @@ PeerConnectionWrapper::PeerConnectionWrapper(const std::string& handle)
     return;
   }
 
-  impl_ = PeerConnectionCtx::GetInstance()->mPeerConnections[handle];
+  PeerConnectionImpl *impl = PeerConnectionCtx::GetInstance()->mPeerConnections[handle];
+
+  if (!impl->media())
+    return;
+
+  impl_ = impl;
 }
 
 const std::string&
@@ -1076,7 +1090,8 @@ PeerConnectionImpl::IceGatheringCompleted_m(NrIceCtx *aCtx)
     RUN_ON_THREAD(mThread,
                   WrapRunnable(mPCObserver,
                                &IPeerConnectionObserver::OnStateChange,
-                               IPeerConnectionObserver::kIceState),
+                               // static_cast required to work around old C++ compiler on Android NDK r5c
+                               static_cast<int>(IPeerConnectionObserver::kIceState)),
                   NS_DISPATCH_NORMAL);
   }
 #endif
@@ -1107,7 +1122,8 @@ PeerConnectionImpl::IceCompleted_m(NrIceCtx *aCtx)
     RUN_ON_THREAD(mThread,
                   WrapRunnable(mPCObserver,
                                &IPeerConnectionObserver::OnStateChange,
-                               IPeerConnectionObserver::kIceState),
+                               // static_cast required to work around old C++ compiler on Android NDK r5c
+			       static_cast<int>(IPeerConnectionObserver::kIceState)),
                   NS_DISPATCH_NORMAL);
   }
 #endif

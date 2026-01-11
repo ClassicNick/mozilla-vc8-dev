@@ -14,16 +14,16 @@ this.EXPORTED_SYMBOLS = ["ObjectWrapper"];
 
 this.ObjectWrapper = {
   getObjectKind: function objWrapper_getObjectKind(aObject) {
-    if (!aObject) {
-      return "null";
-    }
-
-    if (Array.isArray(aObject)) {
+    if (aObject === null || aObject === undefined) {
+      return "primitive";
+    } else if (Array.isArray(aObject)) {
       return "array";
     } else if (aObject instanceof Ci.nsIDOMFile) {
       return "file";
     } else if (aObject instanceof Ci.nsIDOMBlob) {
       return "blob";
+    } else if (aObject instanceof Date) {
+      return "date";
     } else if (typeof aObject == "object") {
       return "object";
     } else {
@@ -34,9 +34,7 @@ this.ObjectWrapper = {
   wrap: function objWrapper_wrap(aObject, aCtxt) {
     // First check wich kind of object we have.
     let kind = this.getObjectKind(aObject);
-    if (kind == "null") {
-      return null;
-    } else if (kind == "array") {
+    if (kind == "array") {
       let res = Cu.createArrayIn(aCtxt);
       aObject.forEach(function(aObj) {
         res.push(this.wrap(aObj, aCtxt));
@@ -47,7 +45,9 @@ this.ObjectWrapper = {
                             { name: aObject.name,
                               type: aObject.type });
     } else if (kind == "blob") {
-      return new aCtxt.Blob([aObject]);
+      return new aCtxt.Blob([aObject], { type: aObject.type });
+    } else if (kind == "date") {
+      return Cu.createDateIn(aCtxt, aObject.getTime());
     } else if (kind == "primitive") {
       return aObject;
     }

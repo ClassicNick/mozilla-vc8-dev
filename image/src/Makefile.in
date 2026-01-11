@@ -21,10 +21,12 @@ FAIL_ON_WARNINGS = 1
 
 EXPORTS		=  imgLoader.h \
 		   imgRequest.h \
+		   imgRequestProxy.h \
 		   $(NULL)
 
 CPPSRCS		= \
 			Image.cpp \
+			ImageFactory.cpp \
 			Decoder.cpp \
 			DiscardTracker.cpp \
 			RasterImage.cpp \

@@ -213,7 +213,7 @@ IonBuilder::inlineArray(uint32_t argc, bool constructing)
         current->add(elements);
 
         // Store all values, no need to initialize the length after each as
-        // jsop_initelem_dense is doing because we do not expect to bailout
+        // jsop_initelem_array is doing because we do not expect to bailout
         // because the memory is supposed to be allocated by now.
         MConstant *id = NULL;
         for (uint32_t i = 0; i < initLength; i++) {
@@ -713,7 +713,8 @@ IonBuilder::inlineStrCharCodeAt(uint32_t argc, bool constructing)
         return InliningStatus_NotInlined;
     if (getInlineArgType(argc, 0) != MIRType_String)
         return InliningStatus_NotInlined;
-    if (getInlineArgType(argc, 1) != MIRType_Int32)
+    MIRType argType = getInlineArgType(argc, 1);
+    if (argType != MIRType_Int32 && argType != MIRType_Double)
         return InliningStatus_NotInlined;
 
     MDefinitionVector argv;
@@ -768,7 +769,8 @@ IonBuilder::inlineStrCharAt(uint32_t argc, bool constructing)
         return InliningStatus_NotInlined;
     if (getInlineArgType(argc, 0) != MIRType_String)
         return InliningStatus_NotInlined;
-    if (getInlineArgType(argc, 1) != MIRType_Int32)
+    MIRType argType = getInlineArgType(argc, 1);
+    if (argType != MIRType_Int32 && argType != MIRType_Double)
         return InliningStatus_NotInlined;
 
     MDefinitionVector argv;

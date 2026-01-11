@@ -6,6 +6,14 @@
 
 /* utility functions for drawing borders and backgrounds */
 
+#include <cmath> // for std::abs(float/double)
+#include <cstdlib> // for std::abs(int/long)
+#include <ctime>
+
+#include "mozilla/DebugOnly.h"
+#include "mozilla/HashFunctions.h"
+#include "mozilla/Types.h"
+
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
@@ -47,15 +55,18 @@
 #include "nsCSSRenderingBorders.h"
 #include "mozilla/css/ImageLoader.h"
 #include "ImageContainer.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Types.h"
-#include <ctime>
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
 
 using namespace mozilla;
 using namespace mozilla::css;
+
+#ifndef M_PI_2
+#define M_PI_2     1.57079632679489661923
+#endif
+
+#ifndef M_SQRT2
+#define M_SQRT2    1.41421356237309504880
+#endif
 
 static int gFrameTreeLockCount = 0;
 
@@ -2845,8 +2856,7 @@ nsCSSRendering::ComputeBackgroundPositioningArea(nsPresContext* aPresContext,
   }
 
   nsIFrame* attachedToFrame = aForFrame;
-  if (NS_STYLE_BG_ATTACHMENT_FIXED == aLayer.mAttachment &&
-      !aLayer.mImage.IsEmpty()) {
+  if (NS_STYLE_BG_ATTACHMENT_FIXED == aLayer.mAttachment) {
     // If it's a fixed background attachment, then the image is placed
     // relative to the viewport, which is the area of the root frame
     // in a screen context or the page content frame in a print context.

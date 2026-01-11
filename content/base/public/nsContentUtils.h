@@ -63,7 +63,7 @@ class nsIIOService;
 class nsIURI;
 class imgIContainer;
 class imgINotificationObserver;
-class imgIRequest;
+class imgRequestProxy;
 class imgLoader;
 class imgICache;
 class nsIImageLoadingContent;
@@ -101,6 +101,8 @@ class nsPIDOMWindow;
 class nsIDocumentLoaderFactory;
 class nsIDOMHTMLInputElement;
 
+class nsViewportInfo;
+
 namespace mozilla {
 
 class Selection;
@@ -128,40 +130,6 @@ enum EventNameType {
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
-};
-
-/**
- * Information retrieved from the <meta name="viewport"> tag. See
- * GetViewportInfo for more information on this functionality.
- */
-struct ViewportInfo
-{
-    // Default zoom indicates the level at which the display is 'zoomed in'
-    // initially for the user, upon loading of the page.
-    double defaultZoom;
-
-    // The minimum zoom level permitted by the page.
-    double minZoom;
-
-    // The maximum zoom level permitted by the page.
-    double maxZoom;
-
-    // The width of the viewport, specified by the <meta name="viewport"> tag,
-    // in CSS pixels.
-    uint32_t width;
-
-    // The height of the viewport, specified by the <meta name="viewport"> tag,
-    // in CSS pixels.
-    uint32_t height;
-
-    // Whether or not we should automatically size the viewport to the device's
-    // width. This is true if the document has been optimized for mobile, and
-    // the width property of a specified <meta name="viewport"> tag is either
-    // not specified, or is set to the special value 'device-width'.
-    bool autoSize;
-
-    // Whether or not the user can zoom in and out on the page. Default is true.
-    bool allowZoom;
 };
 
 struct EventNameMapping
@@ -196,6 +164,7 @@ public:
   static JSContext* GetContextFromDocument(nsIDocument *aDocument);
 
   static bool     IsCallerChrome();
+  static bool     IsCallerXBL();
 
   static bool     IsImageSrcSetDisabled();
 
@@ -639,7 +608,7 @@ public:
                             nsIURI* aReferrer,
                             imgINotificationObserver* aObserver,
                             int32_t aLoadFlags,
-                            imgIRequest** aRequest);
+                            imgRequestProxy** aRequest);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy status.
@@ -665,7 +634,7 @@ public:
   /**
    * Helper method to call imgIRequest::GetStaticRequest.
    */
-  static already_AddRefed<imgIRequest> GetStaticRequest(imgIRequest* aRequest);
+  static already_AddRefed<imgRequestProxy> GetStaticRequest(imgRequestProxy* aRequest);
 
   /**
    * Method that decides whether a content node is draggable
@@ -1548,16 +1517,9 @@ public:
    * NOTE: If the site is optimized for mobile (via the doctype), this
    * will return viewport information that specifies default information.
    */
-  static ViewportInfo GetViewportInfo(nsIDocument* aDocument,
-                                      uint32_t aDisplayWidth,
-                                      uint32_t aDisplayHeight);
-
-  /**
-   * Constrain the viewport calculations from the GetViewportInfo() function
-   * in order to always return sane minimum/maximum values. This modifies the
-   * ViewportInfo struct passed as an input parameter, in place.
-   */
-  static void ConstrainViewportValues(ViewportInfo& aViewInfo);
+  static nsViewportInfo GetViewportInfo(nsIDocument* aDocument,
+                                        uint32_t aDisplayWidth,
+                                        uint32_t aDisplayHeight);
 
   /**
    * The device-pixel-to-CSS-px ratio used to adjust meta viewport values.

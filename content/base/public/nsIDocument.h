@@ -79,8 +79,8 @@ class Element;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0xcc604bdc, 0xd55e, 0x4918, \
- { 0xaa, 0x82, 0xb2, 0xde, 0xbf, 0x01, 0x09, 0x5d } }
+{ 0x1517f31a, 0x0ef9, 0x4629, \
+ { 0xb4, 0x7f, 0x56, 0x31, 0x0d, 0x80, 0x61, 0xaf } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -398,6 +398,22 @@ public:
   void SetBidiOptions(uint32_t aBidiOptions)
   {
     mBidiOptions = aBidiOptions;
+  }
+
+  /**
+   * Get the has mixed active content loaded flag for this document.
+   */
+  bool GetHasMixedActiveContentLoaded()
+  {
+    return mHasMixedActiveContentLoaded;
+  }
+
+  /**
+   * Set the has mixed active content loaded flag for this document.
+   */
+  void SetHasMixedActiveContentLoaded(bool aHasMixedActiveContentLoaded)
+  {
+    mHasMixedActiveContentLoaded = aHasMixedActiveContentLoaded;
   }
 
 
@@ -1669,9 +1685,7 @@ public:
 #undef DEPRECATED_OPERATION
   void WarnOnceAbout(DeprecatedOperations aOperation, bool asError = false);
 
-  // This method may fire a DOM event; if it does so it will happen
-  // synchronously if aFireEventSync is true, asynchronously otherwise.
-  virtual void UpdateVisibilityState(bool aFireEventSync) = 0;
+  virtual void PostVisibilityUpdateEvent() = 0;
   
   bool IsSyntheticDocument() { return mIsSyntheticDocument; }
 
@@ -1898,6 +1912,9 @@ protected:
 
   // True if a DOMMutationObserver is perhaps attached to a node in the document.
   bool mMayHaveDOMMutationObservers;
+
+  // True if a document has loaded Mixed Active Script (see nsMixedContentBlocker.cpp)
+  bool mHasMixedActiveContentLoaded;
 
   // The document's script global object, the object from which the
   // document can get its script context and scope. This is the

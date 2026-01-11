@@ -13,13 +13,14 @@
 
 #include "jsalloc.h"
 #include "jsfriendapi.h"
-#include "jsprvtd.h"
 
 #include "ds/LifoAlloc.h"
 #include "gc/Barrier.h"
 #include "gc/Heap.h"
 #include "js/HashTable.h"
 #include "js/Vector.h"
+
+ForwardDeclareJS(Script);
 
 namespace JS {
 struct TypeInferenceSizes;
@@ -401,8 +402,11 @@ enum {
     /* For a global object, whether flags were set on the RegExpStatics. */
     OBJECT_FLAG_REGEXP_FLAGS_SET      = 0x00800000,
 
+    /* Whether any objects emulate undefined; see EmulatesUndefined. */
+    OBJECT_FLAG_EMULATES_UNDEFINED    = 0x01000000,
+
     /* Flags which indicate dynamic properties of represented objects. */
-    OBJECT_FLAG_DYNAMIC_MASK          = 0x00ff0000,
+    OBJECT_FLAG_DYNAMIC_MASK          = 0x01ff0000,
 
     /*
      * Whether all properties of this object are considered unknown.
@@ -906,6 +910,8 @@ struct TypeObject : gc::Cell
     /* Flags for this object. */
     TypeObjectFlags flags;
 
+    static inline size_t offsetOfFlags() { return offsetof(TypeObject, flags); }
+
     /*
      * Estimate of the contribution of this object to the type sets it appears in.
      * This is the sum of the sizes of those sets at the point when the object
@@ -1105,7 +1111,7 @@ struct TypeCallsite
     /* Type set receiving the return value of this call. */
     StackTypeSet *returnTypes;
 
-    inline TypeCallsite(JSContext *cx, JSScript *script, jsbytecode *pc,
+    inline TypeCallsite(JSContext *cx, UnrootedScript script, jsbytecode *pc,
                         bool isNew, unsigned argumentCount);
 };
 
@@ -1131,7 +1137,7 @@ class TypeScript
     /* Array of type type sets for variables and JOF_TYPESET ops. */
     TypeSet *typeArray() { return (TypeSet *) (uintptr_t(this) + sizeof(TypeScript)); }
 
-    static inline unsigned NumTypeSets(RawScript script);
+    static inline unsigned NumTypeSets(UnrootedScript script);
 
     static inline HeapTypeSet  *ReturnTypes(RawScript script);
     static inline StackTypeSet *ThisTypes(RawScript script);

@@ -32,6 +32,7 @@ MOZ_OBJDIR=j:/Browsers/VC71Compat/fxupdates/central/obj-fxvc71-release
 # --enable-ipc is used by configure (not client.mk)
 # --disable-webm is used by configure (not client.mk)
 # --disable-dash is used by configure (not client.mk)
+# --disable-wmf is used by configure (not client.mk)
 # --disable-ogg is used by configure (not client.mk)
 # --disable-sps is used by configure (not client.mk)
 # --disable-skia is used by configure (not client.mk)
