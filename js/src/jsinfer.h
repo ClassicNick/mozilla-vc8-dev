@@ -22,10 +22,6 @@
 
 ForwardDeclareJS(Script);
 
-namespace JS {
-struct TypeInferenceSizes;
-}
-
 namespace js {
 
 class TaggedProto
@@ -474,7 +470,7 @@ class TypeSet
      * Clone a type set into an arbitrary allocator. The result should not be
      * modified further.
      */
-    const TypeSet *clone(LifoAlloc *alloc) const;
+    const StackTypeSet *clone(LifoAlloc *alloc) const;
 
     /*
      * Add a type to this set, calling any constraint handlers if this is a new
@@ -609,10 +605,26 @@ class StackTypeSet : public TypeSet
     bool propertyNeedsBarrier(JSContext *cx, jsid id);
 
     /*
+     * Whether this set contains all types in other, except (possibly) the
+     * specified type.
+     */
+    bool filtersType(const StackTypeSet *other, Type type) const;
+
+    /*
      * Get whether this type only contains non-string primitives:
      * null/undefined/int/double, or some combination of those.
      */
     bool knownNonStringPrimitive();
+
+    bool knownPrimitiveOrObject() {
+        TypeFlags flags = TYPE_FLAG_UNDEFINED | TYPE_FLAG_NULL | TYPE_FLAG_DOUBLE |
+                          TYPE_FLAG_INT32 | TYPE_FLAG_BOOLEAN | TYPE_FLAG_STRING |
+                          TYPE_FLAG_ANYOBJECT;
+        if (baseFlags() & (~flags & TYPE_FLAG_BASE_MASK))
+            return false;
+
+        return true;
+    }
 };
 
 /*
@@ -1036,7 +1048,7 @@ struct TypeObject : gc::Cell
     inline void clearProperties();
     inline void sweep(FreeOp *fop);
 
-    void sizeOfExcludingThis(TypeInferenceSizes *sizes, JSMallocSizeOfFun mallocSizeOf);
+    size_t sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf);
 
     /*
      * Type objects don't have explicit finalizers. Memory owned by a type
@@ -1118,7 +1130,7 @@ struct TypeCallsite
 /* Persistent type information for a script, retained across GCs. */
 class TypeScript
 {
-    friend struct ::JSScript;
+    friend class ::JSScript;
 
     /* Analysis information for the script, cleared on each GC. */
     analyze::ScriptAnalysis *analysis;

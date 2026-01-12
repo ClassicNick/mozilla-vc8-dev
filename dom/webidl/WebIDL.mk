@@ -26,6 +26,8 @@ webidl_files = \
   CSSValue.webidl \
   CSSValueList.webidl \
   DelayNode.webidl \
+  Document.webidl \
+  DocumentFragment.webidl \
   DOMImplementation.webidl \
   DOMParser.webidl \
   DOMSettableTokenList.webidl \
@@ -35,6 +37,7 @@ webidl_files = \
   Element.webidl \
   EventHandler.webidl \
   EventListener.webidl \
+  EventSource.webidl \
   EventTarget.webidl \
   File.webidl \
   FileHandle.webidl \
@@ -43,14 +46,23 @@ webidl_files = \
   FormData.webidl \
   Function.webidl \
   GainNode.webidl \
+  HTMLBodyElement.webidl \
   HTMLCollection.webidl \
+  HTMLDataListElement.webidl \
+  HTMLDivElement.webidl \
   HTMLElement.webidl \
+  HTMLFontElement.webidl \
+  HTMLFrameSetElement.webidl \
+  HTMLLabelElement.webidl \
   HTMLOptionsCollection.webidl \
   HTMLPropertiesCollection.webidl \
   ImageData.webidl \
+  Location.webidl \
+  MutationObserver.webidl \
   Node.webidl \
   NodeFilter.webidl \
   NodeList.webidl \
+  PaintRequest.webidl \
   PaintRequestList.webidl \
   PannerNode.webidl \
   Performance.webidl \
@@ -58,10 +70,23 @@ webidl_files = \
   PerformanceTiming.webidl \
   RGBColor.webidl \
   Screen.webidl \
+  SVGAngle.webidl \
+  SVGAnimatedAngle.webidl \
+  SVGAnimatedBoolean.webidl \
+  SVGAnimatedLengthList.webidl \
+  SVGAnimatedNumberList.webidl \
+  SVGAnimatedPreserveAspectRatio.webidl \
+  SVGAnimatedTransformList.webidl \
+  SVGElement.webidl \
   SVGLengthList.webidl \
+  SVGMatrix.webidl \
   SVGNumberList.webidl \
+  SVGPathSeg.webidl \
   SVGPathSegList.webidl \
+  SVGPoint.webidl \
   SVGPointList.webidl \
+  SVGPreserveAspectRatio.webidl \
+  SVGTransform.webidl \
   SVGTransformList.webidl \
   TextDecoder.webidl \
   TextEncoder.webidl \

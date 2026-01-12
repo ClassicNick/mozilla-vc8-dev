@@ -3006,7 +3006,7 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   text-decoration: none;
 }
 
-.geolocation-text-link {
+#geolocation-learnmore-link {
   -moz-margin-start: 0; /* override default label margin to match description margin */
 }
 
@@ -3815,6 +3815,10 @@ html|*#gcli-output-frame {
 
 .social-status-button {
   list-style-image: none;
+}
+
+#social-provider-button {
+  -moz-image-region: rect(0, 16px, 16px, 0);
 }
 
 #social-provider-button > .toolbarbutton-menu-dropmarker {

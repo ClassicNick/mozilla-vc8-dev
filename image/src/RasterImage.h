@@ -24,7 +24,6 @@
 #include "nsIProperties.h"
 #include "nsITimer.h"
 #include "nsIRequest.h"
-#include "nsWeakReference.h"
 #include "nsTArray.h"
 #include "imgFrame.h"
 #include "nsThreadUtils.h"
@@ -39,8 +38,6 @@
   #include "imgIContainerDebug.h"
 #endif
 
-class imgIDecoder;
-class imgIContainerObserver;
 class nsIInputStream;
 
 #define NS_RASTERIMAGE_CID \
@@ -138,7 +135,7 @@ namespace image {
 
 class Decoder;
 
-class RasterImage : public Image
+class RasterImage : public ImageResource
                   , public nsIProperties
                   , public SupportsWeakPtr<RasterImage>
 #ifdef DEBUG
@@ -160,9 +157,8 @@ public:
   virtual nsresult StopAnimation();
 
   // Methods inherited from Image
-  nsresult Init(imgIDecoderObserver* aObserver,
+  nsresult Init(imgDecoderObserver* aObserver,
                 const char* aMimeType,
-                const char* aURIString,
                 uint32_t aFlags);
   virtual void  GetCurrentFrameRect(nsIntRect& aRect) MOZ_OVERRIDE;
 
@@ -642,8 +638,7 @@ private: // data
   //! # loops remaining before animation stops (-1 no stop)
   int32_t                    mLoopCount;
   
-  //! imgIDecoderObserver
-  nsWeakPtr                  mObserver;
+  mozilla::WeakPtr<imgDecoderObserver> mObserver;
 
   // Discard members
   uint32_t                   mLockCount;
@@ -733,7 +728,7 @@ private: // data
   bool StoringSourceData() const;
 
 protected:
-  RasterImage(imgStatusTracker* aStatusTracker = nullptr);
+  RasterImage(imgStatusTracker* aStatusTracker = nullptr, nsIURI* aURI = nullptr);
 
   bool ShouldAnimate();
 

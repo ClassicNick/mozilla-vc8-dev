@@ -479,14 +479,6 @@ nsROCSSPrimitiveValue::GetRectValue(nsIDOMRect** aRect)
   return error.ErrorCode();
 }
 
-NS_IMETHODIMP
-nsROCSSPrimitiveValue::GetRGBColorValue(nsIDOMRGBColor** aColor)
-{
-  ErrorResult error;
-  NS_IF_ADDREF(*aColor = GetRGBColorValue(error));
-  return error.ErrorCode();
-}
-
 nsDOMCSSRGBColor*
 nsROCSSPrimitiveValue::GetRGBColorValue(ErrorResult& aRv)
 {
@@ -656,4 +648,6 @@ nsROCSSPrimitiveValue::Reset()
       NS_RELEASE(mValue.mColor);
       break;
   }
+
+  mType = CSS_UNKNOWN;
 }

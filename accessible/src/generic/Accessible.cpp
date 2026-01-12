@@ -1589,17 +1589,44 @@ Accessible::GetValue(nsAString& aValue)
 void
 Accessible::Value(nsString& aValue)
 {
-  if (mRoleMapEntry) {
-    if (mRoleMapEntry->valueRule == eNoValue)
-      return;
+  if (!mRoleMapEntry)
+    return;
 
-    // aria-valuenow is a number, and aria-valuetext is the optional text equivalent
-    // For the string value, we will try the optional text equivalent first
+  if (mRoleMapEntry->valueRule != eNoValue) {
+    // aria-valuenow is a number, and aria-valuetext is the optional text
+    // equivalent. For the string value, we will try the optional text
+    // equivalent first.
     if (!mContent->GetAttr(kNameSpaceID_None,
                            nsGkAtoms::aria_valuetext, aValue)) {
       mContent->GetAttr(kNameSpaceID_None, nsGkAtoms::aria_valuenow,
                         aValue);
     }
+    return;
+  }
+
+  // Value of combobox is a text of current or selected item.
+  if (mRoleMapEntry->Is(nsGkAtoms::combobox)) {
+    Accessible* option = CurrentItem();
+    if (!option) {
+      Accessible* listbox = nullptr;
+      IDRefsIterator iter(mDoc, mContent, nsGkAtoms::aria_owns);
+      while ((listbox = iter.Next()) && !listbox->IsListControl());
+
+      if (!listbox) {
+        uint32_t childCount = ChildCount();
+        for (uint32_t idx = 0; idx < childCount; idx++) {
+          Accessible* child = mChildren.ElementAt(idx);
+          if (child->IsListControl())
+            listbox = child;
+        }
+      }
+
+      if (listbox)
+        option = listbox->GetSelectedItem(0);
+    }
+
+    if (option)
+      nsTextEquivUtils::GetNameFromSubtree(option, aValue);
   }
 }
 
@@ -2164,10 +2191,8 @@ Accessible::ScrollToPoint(uint32_t aCoordinateType, int32_t aX, int32_t aY)
   if (!frame)
     return NS_ERROR_FAILURE;
 
-  nsIntPoint coords;
-  nsresult rv = nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType,
-                                                  this, &coords);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsIntPoint coords = nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType,
+                                                        this);
 
   nsIFrame *parentFrame = frame;
   while ((parentFrame = parentFrame->GetParent()))

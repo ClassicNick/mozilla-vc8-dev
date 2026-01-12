@@ -2902,17 +2902,23 @@ nsGlobalWindow::GetPerformance(nsISupports** aPerformance)
 {
   FORWARD_TO_INNER(GetPerformance, (aPerformance), NS_ERROR_NOT_INITIALIZED);
 
-  *aPerformance = nullptr;
-
-  if (nsGlobalWindow::HasPerformanceSupport()) {
-    CreatePerformanceObjectIfNeeded();
-    NS_IF_ADDREF(*aPerformance = mPerformance);
-  }
+  NS_IF_ADDREF(*aPerformance = nsPIDOMWindow::GetPerformance());
   return NS_OK;
 }
 
+nsPerformance*
+nsPIDOMWindow::GetPerformance()
+{
+  MOZ_ASSERT(IsInnerWindow());
+  if (HasPerformanceSupport()) {
+    CreatePerformanceObjectIfNeeded();
+    return mPerformance;
+  }
+  return nullptr;
+}
+
 void
-nsGlobalWindow::CreatePerformanceObjectIfNeeded()
+nsPIDOMWindow::CreatePerformanceObjectIfNeeded()
 {
   if (mPerformance || !mDoc) {
     return;
@@ -8103,8 +8109,7 @@ nsGlobalWindow::FireHashchange(const nsAString &aOldURL,
                                             aOldURL, aNewURL);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = domEvent->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  domEvent->SetTrusted(true);
 
   bool dummy;
   return DispatchEvent(hashchangeEvent, &dummy);
@@ -8158,8 +8163,7 @@ nsGlobalWindow::DispatchSyncPopState()
                                         stateObj);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = domEvent->SetTrusted(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  domEvent->SetTrusted(true);
 
   nsCOMPtr<nsIDOMEventTarget> outerWindow =
     do_QueryInterface(GetOuterWindow());
@@ -9142,8 +9146,7 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       false, false);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = event->SetTrusted(true);
-    NS_ENSURE_SUCCESS(rv, rv);
+    event->SetTrusted(true);
 
     bool dummy;
     return DispatchEvent(event, &dummy);
@@ -10768,7 +10771,7 @@ nsGlobalWindow::HasIndexedDBSupport()
 
 // static
 bool
-nsGlobalWindow::HasPerformanceSupport() 
+nsPIDOMWindow::HasPerformanceSupport()
 {
   return Preferences::GetBool("dom.enable_performance", false);
 }

@@ -237,26 +237,6 @@ nsEventStatus AsyncPanZoomController::HandleInputEvent(const InputData& aEvent) 
       return rv;
   }
 
-  if (mDelayPanning && aEvent.mInputType == MULTITOUCH_INPUT) {
-    const MultiTouchInput& multiTouchInput = aEvent.AsMultiTouchInput();
-    if (multiTouchInput.mType == MultiTouchInput::MULTITOUCH_MOVE) {
-      // Let BrowserElementScrolling perform panning gesture first.
-      SetState(WAITING_LISTENERS);
-      mTouchQueue.AppendElement(multiTouchInput);
-
-      if (!mTouchListenerTimeoutTask) {
-        mTouchListenerTimeoutTask =
-          NewRunnableMethod(this, &AsyncPanZoomController::TimeoutTouchListeners);
-
-        MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          mTouchListenerTimeoutTask,
-          TOUCH_LISTENER_TIMEOUT);
-      }
-      return nsEventStatus_eConsumeNoDefault;
-    }
-  }
-
   switch (aEvent.mInputType) {
   case MULTITOUCH_INPUT: {
     const MultiTouchInput& multiTouchInput = aEvent.AsMultiTouchInput();
@@ -1001,7 +981,7 @@ void AsyncPanZoomController::RequestContentRepaint() {
 
 bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSampleTime,
                                                             ContainerLayer* aLayer,
-                                                            gfx3DMatrix* aNewTransform) {
+                                                            ViewTransform* aNewTransform) {
   // The eventual return value of this function. The compositor needs to know
   // whether or not to advance by a frame as soon as it can. For example, if a
   // fling is happening, it has to keep compositing so that the animation is
@@ -1012,12 +992,12 @@ bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSa
   const gfx3DMatrix& currentTransform = aLayer->GetTransform();
 
   // Scales on the root layer, on what's currently painted.
-  float rootScaleX = currentTransform.GetXScale(),
-        rootScaleY = currentTransform.GetYScale();
+  gfxSize rootScale(currentTransform.GetXScale(),
+                    currentTransform.GetYScale());
 
-  gfx::Point metricsScrollOffset(0, 0);
-  gfx::Point scrollOffset;
-  float localScaleX, localScaleY;
+  gfxPoint metricsScrollOffset(0, 0);
+  gfxPoint scrollOffset;
+  gfxSize localScale;
   const FrameMetrics& frame = aLayer->GetFrameMetrics();
   {
     MonitorAutoLock mon(mMonitor);
@@ -1069,33 +1049,19 @@ bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSa
     // what PZC has transformed due to touches like panning or
     // pinching. Eventually, the root layer transform will become this
     // during runtime, but we must wait for Gecko to repaint.
-    gfxSize localScale = CalculateResolution(mFrameMetrics);
-    localScaleX = localScale.width;
-    localScaleY = localScale.height;
+    localScale = CalculateResolution(mFrameMetrics);
 
     if (frame.IsScrollable()) {
       metricsScrollOffset = frame.GetScrollOffsetInLayerPixels();
     }
 
-    scrollOffset = mFrameMetrics.mScrollOffset;
+    scrollOffset = gfxPoint(mFrameMetrics.mScrollOffset.x, mFrameMetrics.mScrollOffset.y);
   }
 
   nsIntPoint scrollCompensation(
-    NS_lround((scrollOffset.x / rootScaleX - metricsScrollOffset.x) * localScaleX),
-    NS_lround((scrollOffset.y / rootScaleY - metricsScrollOffset.y) * localScaleY));
-
-  ViewTransform treeTransform(-scrollCompensation, localScaleX, localScaleY);
-  *aNewTransform = gfx3DMatrix(treeTransform) * currentTransform;
-
-  // The transform already takes the resolution scale into account.  Since we
-  // will apply the resolution scale again when computing the effective
-  // transform, we must apply the inverse resolution scale here.
-  aNewTransform->Scale(1.0f/aLayer->GetPreXScale(),
-                       1.0f/aLayer->GetPreYScale(),
-                       1);
-  aNewTransform->ScalePost(1.0f/aLayer->GetPostXScale(),
-                           1.0f/aLayer->GetPostYScale(),
-                           1);
+    ((scrollOffset / rootScale - metricsScrollOffset) * localScale)
+    .RoundedAwayFromZero());
+  *aNewTransform = ViewTransform(-scrollCompensation, localScale);
 
   mLastSampleTime = aSampleTime;
 
@@ -1109,7 +1075,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aViewportFr
 
   mLastContentPaintMetrics = aViewportFrame;
 
-  mFrameMetrics.mMayHaveTouchListeners = aViewportFrame.mMayHaveTouchListeners;
   if (mWaitingForContentToPaint) {
     // Remove the oldest sample we have if adding a new sample takes us over our
     // desired number of samples.
@@ -1203,10 +1168,6 @@ void AsyncPanZoomController::CancelDefaultPanZoom() {
   }
 }
 
-void AsyncPanZoomController::DetectScrollableSubframe() {
-  mDelayPanning = true;
-}
-
 void AsyncPanZoomController::ZoomToRect(const gfxRect& aRect) {
   gfx::Rect zoomToRect(gfx::Rect(aRect.x, aRect.y, aRect.width, aRect.height));
 
@@ -1293,7 +1254,7 @@ void AsyncPanZoomController::ZoomToRect(const gfxRect& aRect) {
 }
 
 void AsyncPanZoomController::ContentReceivedTouch(bool aPreventDefault) {
-  if (!mFrameMetrics.mMayHaveTouchListeners && !mDelayPanning) {
+  if (!mFrameMetrics.mMayHaveTouchListeners) {
     mTouchQueue.Clear();
     return;
   }
@@ -1305,21 +1266,12 @@ void AsyncPanZoomController::ContentReceivedTouch(bool aPreventDefault) {
 
   if (mState == WAITING_LISTENERS) {
     if (!aPreventDefault) {
-      // Delayed scrolling gesture is pending at TOUCHING state.
-      if (mDelayPanning) {
-        SetState(TOUCHING);
-      } else {
-        SetState(NOTHING);
-      }
+      SetState(NOTHING);
     }
 
     mHandlingTouchQueue = true;
 
     while (!mTouchQueue.IsEmpty()) {
-      // we need to reset mDelayPanning before handling scrolling gesture.
-      if (mTouchQueue[0].mType == MultiTouchInput::MULTITOUCH_MOVE) {
-        mDelayPanning = false;
-      }
       if (!aPreventDefault) {
         HandleInputEvent(mTouchQueue[0]);
       }

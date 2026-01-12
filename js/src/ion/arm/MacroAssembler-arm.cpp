@@ -69,6 +69,12 @@ MacroAssemblerARM::branchTruncateDouble(const FloatRegister &src, const Register
 }
 
 void
+MacroAssemblerARM::negateDouble(FloatRegister reg)
+{
+    ma_vneg(reg, reg);
+}
+
+void
 MacroAssemblerARM::inc64(AbsoluteAddress dest)
 {
 
@@ -2645,6 +2651,12 @@ MacroAssemblerARMCompat::breakpoint()
 }
 
 void
+MacroAssemblerARMCompat::breakpoint(Condition cc)
+{
+    ma_ldr(DTRAddr(r12, DtrRegImmShift(r12, LSL, 0, IsDown)), r12, Offset, cc);
+}
+
+void
 MacroAssemblerARMCompat::setupABICall(uint32_t args)
 {
     JS_ASSERT(!inCall_);
@@ -2770,11 +2782,8 @@ MacroAssemblerARMCompat::passABIArg(const FloatRegister &freg)
 void MacroAssemblerARMCompat::checkStackAlignment()
 {
 #ifdef DEBUG
-    Label good;
     ma_tst(sp, Imm32(StackAlignment - 1));
-    ma_b(&good, Equal);
-    breakpoint();
-    bind(&good);
+    breakpoint(Equal);
 #endif
 }
 

@@ -165,7 +165,7 @@ ComputeShadowTreeTransform(nsIFrame* aContainerFrame,
   nsIntPoint scrollOffset =
     aConfig.mScrollOffset.ToNearestPixels(auPerDevPixel);
   // metricsScrollOffset is in layer coordinates.
-  gfx::Point metricsScrollOffset = aMetrics->GetScrollOffsetInLayerPixels();
+  gfxPoint metricsScrollOffset = aMetrics->GetScrollOffsetInLayerPixels();
   nsIntPoint roundedMetricsScrollOffset =
     nsIntPoint(NS_lround(metricsScrollOffset.x), NS_lround(metricsScrollOffset.y));
 
@@ -806,15 +806,6 @@ RenderFrameParent::RecvCancelDefaultPanZoom()
 {
   if (mPanZoomController) {
     mPanZoomController->CancelDefaultPanZoom();
-  }
-  return true;
-}
-
-bool
-RenderFrameParent::RecvDetectScrollableSubframe()
-{
-  if (mPanZoomController) {
-    mPanZoomController->DetectScrollableSubframe();
   }
   return true;
 }

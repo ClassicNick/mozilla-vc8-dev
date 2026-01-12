@@ -601,21 +601,23 @@ public:
       NS_ENSURE_SUCCESS(rv, rv);                                              \
     } while (0)
 
-    REPORT("explicit/dmd/stack-traces",
-           sizes.mStackTraces,
-           "Memory used by DMD's stack traces.");
+    REPORT("explicit/dmd/stack-traces/used",
+           sizes.mStackTracesUsed,
+           "Memory used by stack traces which correspond to at least "
+           "one heap block DMD is tracking.");
 
-    REPORT("explicit/dmd/stack-trace-table",
+    REPORT("explicit/dmd/stack-traces/unused",
+           sizes.mStackTracesUnused,
+           "Memory used by stack traces which don't correspond to any heap "
+           "blocks DMD is currently tracking.");
+
+    REPORT("explicit/dmd/stack-traces/table",
            sizes.mStackTraceTable,
            "Memory used by DMD's stack trace table.");
 
-    REPORT("explicit/dmd/live-block-table",
-           sizes.mLiveBlockTable,
+    REPORT("explicit/dmd/block-table",
+           sizes.mBlockTable,
            "Memory used by DMD's live block table.");
-
-    REPORT("explicit/dmd/double-report-table",
-           sizes.mDoubleReportTable,
-           "Memory used by DMD's double-report table.");
 
 #undef REPORT
 
