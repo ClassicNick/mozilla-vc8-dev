@@ -200,6 +200,7 @@ void gsmsdp_process_cap_constraint(cc_media_cap_t *cap,
     cap->support_direction &= ~SDP_DIRECTION_FLAG_RECV;
   } else if (constraint[0] == 'T') {
     cap->support_direction |= SDP_DIRECTION_FLAG_RECV;
+    cap->enabled = TRUE;
   }
 }
 
@@ -208,7 +209,7 @@ void gsmsdp_process_cap_constraint(cc_media_cap_t *cap,
  * OfferToReceiveAudio, OfferToReceiveVideo
  */
 void gsmsdp_process_cap_constraints(fsmdef_dcb_t *dcb,
-                                    const cc_media_constraints_t* constraints) {
+                                    cc_media_constraints_t* constraints) {
   int i = 0;
 
   for (i=0; i<constraints->constraint_count; i++) {
@@ -220,6 +221,12 @@ void gsmsdp_process_cap_constraints(fsmdef_dcb_t *dcb,
                constraints->constraints[i]->name) == 0) {
       gsmsdp_process_cap_constraint(&dcb->media_cap_tbl->cap[CC_VIDEO_1],
                                     constraints->constraints[i]->value);
+    } else if (strcmp(constraints_table[MozDontOfferDataChannel].name,
+               constraints->constraints[i]->name) == 0) {
+      /* Hack to suppress data channel */
+      if (constraints->constraints[i]->value[0] == 'T') {
+        dcb->media_cap_tbl->cap[CC_DATACHANNEL_1].enabled = FALSE;
+      }
     }
   }
 }
@@ -2965,7 +2972,7 @@ gsmsdp_negotiate_codec (fsmdef_dcb_t *dcb_p, cc_sdp_t *sdp_p,
                 codec = slave_list_p[j];
                 payload_info = &(media->payloads[media->num_payloads]);
 
-                if (master_list_p == remote_payload_types) {
+                if (master_list_p == remote_codecs) {
                     remote_pt = remote_payload_types[i];
                 } else {
                     remote_pt = remote_payload_types[j];

@@ -93,7 +93,7 @@
 #include "nsEventDispatcher.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIControllers.h"
-#include "nsIView.h"
+#include "nsView.h"
 #include "nsIViewManager.h"
 #include "nsIScrollableFrame.h"
 #include "nsXBLInsertionPoint.h"
@@ -1616,7 +1616,7 @@ Element::DispatchClickEvent(nsPresContext* aPresContext,
   event.modifiers = aSourceEvent->modifiers;
   if (aExtraEventFlags) {
     // Be careful not to overwrite existing flags!
-    event.mFlags |= *aExtraEventFlags;
+    event.mFlags.Union(*aExtraEventFlags);
   }
 
   return DispatchEvent(aPresContext, &event, aTarget, aFullDispatch, aStatus);

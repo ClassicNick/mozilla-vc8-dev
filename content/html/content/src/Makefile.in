@@ -13,7 +13,9 @@ include $(DEPTH)/config/autoconf.mk
 MODULE		= content
 LIBRARY_NAME	= gkconhtmlcon_s
 LIBXUL_LIBRARY	= 1
+ifndef _MSC_VER
 FAIL_ON_WARNINGS = 1
+endif # !_MSC_VER
 
 
 EXPORTS		= \
@@ -33,7 +35,10 @@ EXPORTS_mozilla/dom = \
 		HTMLDivElement.h \
 		HTMLFontElement.h \
 		HTMLFrameSetElement.h \
+		HTMLHeadingElement.h \
+		HTMLImageElement.h \
 		HTMLLabelElement.h \
+		HTMLTitleElement.h \
 		HTMLUnknownElement.h
 
 CPPSRCS		= \
@@ -59,9 +64,9 @@ CPPSRCS		= \
 		nsHTMLFrameElement.cpp \
 		HTMLFrameSetElement.cpp \
 		nsHTMLHRElement.cpp \
-		nsHTMLHeadingElement.cpp \
+		HTMLHeadingElement.cpp \
 		nsHTMLIFrameElement.cpp \
-		nsHTMLImageElement.cpp \
+		HTMLImageElement.cpp \
 		nsHTMLInputElement.cpp \
 		nsHTMLLIElement.cpp \
 		HTMLLabelElement.cpp \
@@ -94,7 +99,7 @@ CPPSRCS		= \
 		nsHTMLTableRowElement.cpp \
 		nsHTMLTableSectionElement.cpp \
 		nsHTMLTextAreaElement.cpp \
-		nsHTMLTitleElement.cpp \
+		HTMLTitleElement.cpp \
 		HTMLUnknownElement.cpp \
 		nsDOMValidityState.cpp \
 		nsIConstraintValidation.cpp \

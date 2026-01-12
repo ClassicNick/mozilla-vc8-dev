@@ -11,6 +11,7 @@
 #endif
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
+#include "mozilla/StandardInteger.h"
 
 /*
  * To add error code to your module, you need to do the following:

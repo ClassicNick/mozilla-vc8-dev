@@ -238,7 +238,7 @@ ac_help="$ac_help
 ac_help="$ac_help
   --enable-trace-malloc   Enable malloc tracing"
 ac_help="$ac_help
-  --enable-dmd            Enable DMD; also enables jemalloc and replace-malloc and disables DMDV"
+  --enable-dmd            Enable DMD; also enables jemalloc and replace-malloc"
 ac_help="$ac_help
   --enable-jemalloc       Replace memory allocator with jemalloc"
 ac_help="$ac_help

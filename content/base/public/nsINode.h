@@ -1874,86 +1874,86 @@ extern const nsIID kThisPtrOffsetsSID;
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsINode, NS_INODE_IID)
 
-#define NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(_final) \
-  NS_IMETHOD GetNodeName(nsAString& aNodeName) _final \
+#define NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(a) \
+  NS_IMETHOD GetNodeName(nsAString& aNodeName) a \
   { \
     nsINode::GetNodeName(aNodeName); \
     return NS_OK; \
   } \
-  NS_IMETHOD GetNodeValue(nsAString& aNodeValue) _final \
+  NS_IMETHOD GetNodeValue(nsAString& aNodeValue) a \
   { \
     nsINode::GetNodeValue(aNodeValue); \
     return NS_OK; \
   } \
-  NS_IMETHOD SetNodeValue(const nsAString& aNodeValue) _final \
+  NS_IMETHOD SetNodeValue(const nsAString& aNodeValue) a \
   { \
     mozilla::ErrorResult rv; \
     nsINode::SetNodeValue(aNodeValue, rv); \
     return rv.ErrorCode(); \
   } \
-  NS_IMETHOD GetNodeType(uint16_t* aNodeType) _final \
+  NS_IMETHOD GetNodeType(uint16_t* aNodeType) a \
   { \
     *aNodeType = nsINode::NodeType(); \
     return NS_OK; \
   } \
-  NS_IMETHOD GetParentNode(nsIDOMNode** aParentNode) _final \
+  NS_IMETHOD GetParentNode(nsIDOMNode** aParentNode) a \
   { \
     return nsINode::GetParentNode(aParentNode); \
   } \
-  NS_IMETHOD GetParentElement(nsIDOMElement** aParentElement) _final \
+  NS_IMETHOD GetParentElement(nsIDOMElement** aParentElement) a \
   { \
     return nsINode::GetParentElement(aParentElement); \
   } \
-  NS_IMETHOD GetChildNodes(nsIDOMNodeList** aChildNodes) _final \
+  NS_IMETHOD GetChildNodes(nsIDOMNodeList** aChildNodes) a \
   { \
     return nsINode::GetChildNodes(aChildNodes); \
   } \
-  NS_IMETHOD GetFirstChild(nsIDOMNode** aFirstChild) _final \
+  NS_IMETHOD GetFirstChild(nsIDOMNode** aFirstChild) a \
   { \
     return nsINode::GetFirstChild(aFirstChild); \
   } \
-  NS_IMETHOD GetLastChild(nsIDOMNode** aLastChild) _final \
+  NS_IMETHOD GetLastChild(nsIDOMNode** aLastChild) a \
   { \
     return nsINode::GetLastChild(aLastChild); \
   } \
-  NS_IMETHOD GetPreviousSibling(nsIDOMNode** aPreviousSibling) _final \
+  NS_IMETHOD GetPreviousSibling(nsIDOMNode** aPreviousSibling) a \
   { \
     return nsINode::GetPreviousSibling(aPreviousSibling); \
   } \
-  NS_IMETHOD GetNextSibling(nsIDOMNode** aNextSibling) _final \
+  NS_IMETHOD GetNextSibling(nsIDOMNode** aNextSibling) a \
   { \
     return nsINode::GetNextSibling(aNextSibling); \
   } \
-  NS_IMETHOD GetAttributes(nsIDOMNamedNodeMap** aAttributes) _final \
+  NS_IMETHOD GetAttributes(nsIDOMNamedNodeMap** aAttributes) a \
   { \
     return nsINode::GetAttributes(aAttributes); \
   } \
-  NS_IMETHOD GetOwnerDocument(nsIDOMDocument** aOwnerDocument) _final \
+  NS_IMETHOD GetOwnerDocument(nsIDOMDocument** aOwnerDocument) a \
   { \
     return nsINode::GetOwnerDocument(aOwnerDocument); \
   } \
-  NS_IMETHOD InsertBefore(nsIDOMNode* aNewChild, nsIDOMNode* aRefChild, nsIDOMNode** aResult) _final \
+  NS_IMETHOD InsertBefore(nsIDOMNode* aNewChild, nsIDOMNode* aRefChild, nsIDOMNode** aResult) a \
   { \
     return ReplaceOrInsertBefore(false, aNewChild, aRefChild, aResult); \
   } \
-  NS_IMETHOD ReplaceChild(nsIDOMNode* aNewChild, nsIDOMNode* aOldChild, nsIDOMNode** aResult) _final \
+  NS_IMETHOD ReplaceChild(nsIDOMNode* aNewChild, nsIDOMNode* aOldChild, nsIDOMNode** aResult) a \
   { \
     return ReplaceOrInsertBefore(true, aNewChild, aOldChild, aResult); \
   } \
-  NS_IMETHOD RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aResult) _final \
+  NS_IMETHOD RemoveChild(nsIDOMNode* aOldChild, nsIDOMNode** aResult) a \
   { \
     return nsINode::RemoveChild(aOldChild, aResult); \
   } \
-  NS_IMETHOD AppendChild(nsIDOMNode* aNewChild, nsIDOMNode** aResult) _final \
+  NS_IMETHOD AppendChild(nsIDOMNode* aNewChild, nsIDOMNode** aResult) a \
   { \
     return InsertBefore(aNewChild, nullptr, aResult); \
   } \
-  NS_IMETHOD HasChildNodes(bool* aResult) _final \
+  NS_IMETHOD HasChildNodes(bool* aResult) a \
   { \
     *aResult = nsINode::HasChildNodes(); \
     return NS_OK; \
   } \
-  NS_IMETHOD CloneNode(bool aDeep, uint8_t aArgc, nsIDOMNode** aResult) _final \
+  NS_IMETHOD CloneNode(bool aDeep, uint8_t aArgc, nsIDOMNode** aResult) a \
   { \
     if (aArgc == 0) { \
       aDeep = true; \
@@ -1966,86 +1966,86 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsINode, NS_INODE_IID)
     *aResult = clone.forget().get()->AsDOMNode(); \
     return NS_OK; \
   } \
-  NS_IMETHOD Normalize() _final \
+  NS_IMETHOD Normalize() a \
   { \
     nsINode::Normalize(); \
     return NS_OK; \
   } \
-  NS_IMETHOD IsSupported(const nsAString& aFeature, const nsAString& aVersion, bool* aResult) _final \
+  NS_IMETHOD IsSupported(const nsAString& aFeature, const nsAString& aVersion, bool* aResult) a \
   { \
     *aResult = nsINode::IsSupported(aFeature, aVersion); \
     return NS_OK; \
   } \
-  NS_IMETHOD GetNamespaceURI(nsAString& aNamespaceURI) _final \
+  NS_IMETHOD GetNamespaceURI(nsAString& aNamespaceURI) a \
   { \
     mozilla::ErrorResult rv; \
     nsINode::GetNamespaceURI(aNamespaceURI, rv); \
     return rv.ErrorCode(); \
   } \
-  NS_IMETHOD GetPrefix(nsAString& aPrefix) _final \
+  NS_IMETHOD GetPrefix(nsAString& aPrefix) a \
   { \
     nsINode::GetPrefix(aPrefix); \
     return NS_OK; \
   } \
-  NS_IMETHOD GetLocalName(nsAString& aLocalName) _final \
+  NS_IMETHOD GetLocalName(nsAString& aLocalName) a \
   { \
     nsINode::GetLocalName(aLocalName); \
     return NS_OK; \
   } \
   using nsINode::HasAttributes; \
-  NS_IMETHOD HasAttributes(bool* aResult) _final \
+  NS_IMETHOD HasAttributes(bool* aResult) a \
   { \
     *aResult = nsINode::HasAttributes(); \
     return NS_OK; \
   } \
-  NS_IMETHOD GetDOMBaseURI(nsAString& aBaseURI) _final \
+  NS_IMETHOD GetDOMBaseURI(nsAString& aBaseURI) a \
   { \
     nsINode::GetBaseURI(aBaseURI); \
     return NS_OK; \
   } \
-  NS_IMETHOD CompareDocumentPosition(nsIDOMNode* aOther, uint16_t* aResult) _final \
+  NS_IMETHOD CompareDocumentPosition(nsIDOMNode* aOther, uint16_t* aResult) a \
   { \
     return nsINode::CompareDocumentPosition(aOther, aResult); \
   } \
-  NS_IMETHOD GetTextContent(nsAString& aTextContent) _final \
+  NS_IMETHOD GetTextContent(nsAString& aTextContent) a \
   { \
     nsINode::GetTextContent(aTextContent); \
     return NS_OK; \
   } \
-  NS_IMETHOD SetTextContent(const nsAString& aTextContent) _final \
+  NS_IMETHOD SetTextContent(const nsAString& aTextContent) a \
   { \
     mozilla::ErrorResult rv; \
     nsINode::SetTextContent(aTextContent, rv); \
     return rv.ErrorCode(); \
   } \
-  NS_IMETHOD LookupPrefix(const nsAString& aNamespaceURI, nsAString& aResult) _final \
+  NS_IMETHOD LookupPrefix(const nsAString& aNamespaceURI, nsAString& aResult) a \
   { \
     nsINode::LookupPrefix(aNamespaceURI, aResult); \
     return NS_OK; \
   } \
-  NS_IMETHOD IsDefaultNamespace(const nsAString& aNamespaceURI, bool* aResult) _final \
+  NS_IMETHOD IsDefaultNamespace(const nsAString& aNamespaceURI, bool* aResult) a \
   { \
     *aResult = nsINode::IsDefaultNamespace(aNamespaceURI); \
     return NS_OK; \
   } \
-  NS_IMETHOD LookupNamespaceURI(const nsAString& aPrefix, nsAString& aResult) _final \
+  NS_IMETHOD LookupNamespaceURI(const nsAString& aPrefix, nsAString& aResult) a \
   { \
     nsINode::LookupNamespaceURI(aPrefix, aResult); \
     return NS_OK; \
   } \
-  NS_IMETHOD IsEqualNode(nsIDOMNode* aArg, bool* aResult) _final \
+  NS_IMETHOD IsEqualNode(nsIDOMNode* aArg, bool* aResult) a \
   { \
     return nsINode::IsEqualNode(aArg, aResult); \
   } \
-  NS_IMETHOD SetUserData(const nsAString& aKey, nsIVariant* aData, nsIDOMUserDataHandler* aHandler, nsIVariant** aResult) _final \
+  NS_IMETHOD SetUserData(const nsAString& aKey, nsIVariant* aData, nsIDOMUserDataHandler* aHandler, nsIVariant** aResult) a \
   { \
     return nsINode::SetUserData(aKey, aData, aHandler, aResult); \
   } \
-  NS_IMETHOD GetUserData(const nsAString& aKey, nsIVariant** aResult) _final \
+  NS_IMETHOD GetUserData(const nsAString& aKey, nsIVariant** aResult) a \
   { \
     return nsINode::GetUserData(aKey, aResult); \
   } \
-  NS_IMETHOD Contains(nsIDOMNode* aOther, bool* aResult) _final \
+  NS_IMETHOD Contains(nsIDOMNode* aOther, bool* aResult) a \
   { \
     return nsINode::Contains(aOther, aResult); \
   }

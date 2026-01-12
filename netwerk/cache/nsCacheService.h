@@ -237,9 +237,11 @@ private:
      * Internal Methods
      */
 
+public:
     static void      Lock(::mozilla::Telemetry::ID mainThreadLockerID);
     static void      Unlock();
 
+private:
     nsresult         CreateDiskDevice();
     nsresult         CreateOfflineDevice();
     nsresult         CreateCustomOfflineDevice(nsIFile *aProfileDir,

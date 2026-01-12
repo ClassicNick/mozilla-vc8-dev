@@ -496,6 +496,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "DOMError.h"
 #include "DOMRequest.h"
 #include "nsIOpenWindowEventDetail.h"
+#include "nsIAsyncScrollEventDetail.h"
 #include "nsIDOMGlobalObjectConstructor.h"
 #include "nsIDOMCanvasRenderingContext2D.h"
 #include "DOMFileHandle.h"
@@ -1543,6 +1544,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(DOMRequest, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(OpenWindowEventDetail, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(AsyncScrollEventDetail, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA_WITH_NAME(DOMFileHandle, FileHandle, nsEventTargetSH,
@@ -2630,6 +2633,7 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(HTMLImageElement, nsIDOMHTMLImageElement)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMHTMLImageElement)
+    DOM_CLASSINFO_MAP_ENTRY(nsIImageLoadingContent)
     DOM_CLASSINFO_GENERIC_HTML_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
@@ -4016,6 +4020,10 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIOpenWindowEventDetail)
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(AsyncScrollEventDetail, nsIAsyncScrollEventDetail)
+    DOM_CLASSINFO_MAP_ENTRY(nsIAsyncScrollEventDetail)
+  DOM_CLASSINFO_MAP_END
+
   DOM_CLASSINFO_MAP_BEGIN(DOMFileHandle, nsIDOMFileHandle)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMFileHandle)
   DOM_CLASSINFO_MAP_END
@@ -4416,7 +4424,7 @@ nsDOMClassInfo::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                            JSObject *obj, jsid id, uint32_t flags,
                            JSObject **objp, bool *_retval)
 {
-  if (id == sConstructor_id && !(flags & JSRESOLVE_ASSIGNING)) {
+  if (id == sConstructor_id) {
     return ResolveConstructor(cx, obj, objp);
   }
 
@@ -4900,8 +4908,8 @@ nsWindowSH::GlobalScopePolluterNewResolve(JSContext *cx, JSHandleObject obj,
                                           JSHandleId id, unsigned flags,
                                           JSMutableHandleObject objp)
 {
-  if ((flags & JSRESOLVE_ASSIGNING) || !JSID_IS_STRING(id)) {
-    // Nothing to do if we're assigning or resolving a non-string property.
+  if (!JSID_IS_STRING(id)) {
+    // Nothing to do if we're resolving a non-string property.
     return JS_TRUE;
   }
 
@@ -5160,13 +5168,6 @@ nsWindowSH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
         return NS_SUCCESS_I_DID_SOMETHING;
       }
     }
-  }
-
-  if (id == sWrappedJSObject_id &&
-      xpc::AccessCheck::isChrome(js::GetContextCompartment(cx))) {
-    obj = JS_ObjectToOuterObject(cx, obj);
-    *vp = OBJECT_TO_JSVAL(obj);
-    return NS_SUCCESS_I_DID_SOMETHING;
   }
 
   return NS_OK;
@@ -6725,13 +6726,11 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     }
   }
 
-  if (!(flags & JSRESOLVE_ASSIGNING)) {
-    // We want this code to be before the child frame lookup code
-    // below so that a child frame named 'constructor' doesn't
-    // shadow the window's constructor property.
-    if (sConstructor_id == id) {
-      return ResolveConstructor(cx, obj, objp);
-    }
+  // We want this code to be before the child frame lookup code
+  // below so that a child frame named 'constructor' doesn't
+  // shadow the window's constructor property.
+  if (sConstructor_id == id) {
+    return ResolveConstructor(cx, obj, objp);
   }
 
   if (!my_context || !my_context->IsContextInitialized()) {
@@ -6776,7 +6775,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     return NS_OK;
   }
 
-  if (sTop_id == id && !(flags & JSRESOLVE_ASSIGNING)) {
+  if (sTop_id == id) {
     nsCOMPtr<nsIDOMWindow> top;
     rv = win->GetScriptableTop(getter_AddRefs(top));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -7187,7 +7186,7 @@ nsNavigatorSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                           JSObject *obj, jsid id, uint32_t flags,
                           JSObject **objp, bool *_retval)
 {
-  if (!JSID_IS_STRING(id) || (flags & JSRESOLVE_ASSIGNING)) {
+  if (!JSID_IS_STRING(id)) {
     return NS_OK;
   }
 
@@ -8381,12 +8380,6 @@ JSBool
 nsHTMLDocumentSH::DocumentAllNewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id,
                                         unsigned flags, JSMutableHandleObject objp)
 {
-  if (flags & JSRESOLVE_ASSIGNING) {
-    // Nothing to do here if we're assigning
-
-    return JS_TRUE;
-  }
-
   js::RootedValue v(cx);
 
   if (sItem_id == id || sNamedItem_id == id) {

@@ -155,6 +155,7 @@ let gInitialPages = [
 #include browser-tabPreviews.js
 #include browser-tabview.js
 #include browser-thumbnails.js
+#include browser-webrtcUI.js
 
 #ifdef MOZ_SERVICES_SYNC
 #include browser-syncui.js
@@ -1254,6 +1255,7 @@ var gBrowserInit = {
     gFormSubmitObserver.init();
     SocialUI.init();
     AddonManager.addAddonListener(AddonsMgrListener);
+    WebrtcIndicator.init();
 
     gBrowser.addEventListener("pageshow", function(event) {
       // Filter out events that are not about the document load we are interested in
@@ -1748,7 +1750,6 @@ var nonBrowserWindowShutdown       = gBrowserInit.nonBrowserWindowShutdown.bind(
 
 
 function HandleAppCommandEvent(evt) {
-  evt.stopPropagation();
   switch (evt.command) {
   case "Back":
     BrowserBack();
@@ -1772,9 +1773,35 @@ function HandleAppCommandEvent(evt) {
   case "Home":
     BrowserHome();
     break;
-  default:
+  case "New":
+    BrowserOpenTab();
     break;
+  case "Close":
+    BrowserCloseTabOrWindow();
+    break;
+  case "Find":
+    gFindBar.onFindCommand();
+    break;
+  case "Help":
+    openHelpLink('firefox-help');
+    break;
+  case "Open":
+    BrowserOpenFileWindow();
+    break;
+  case "Print":
+    PrintUtils.print();
+    break;
+  case "Save":
+    saveDocument(window.content.document);
+    break;
+  case "SendMail":
+    MailIntegration.sendLinkForWindow(window.content);
+    break;
+  default:
+    return;
   }
+  evt.stopPropagation();
+  evt.preventDefault();
 }
 
 function gotoHistoryIndex(aEvent) {
@@ -3772,7 +3799,7 @@ var XULBrowserWindow = {
   startTime: 0,
   statusText: "",
   isBusy: false,
-  inContentWhitelist: ["about:addons", "about:permissions",
+  inContentWhitelist: ["about:addons", "about:downloads", "about:permissions",
                        "about:sync-progress", "about:preferences"],
 
   QueryInterface: function (aIID) {

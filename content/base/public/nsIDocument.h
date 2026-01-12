@@ -46,7 +46,6 @@ class nsIDocumentObserver;
 class nsIDOMDocument;
 class nsIDOMDocumentFragment;
 class nsIDOMDocumentType;
-class nsDOMDocumentType;
 class nsXMLProcessingInstruction;
 class nsIDOMElement;
 class nsIDOMEventTarget;
@@ -87,6 +86,7 @@ class ImageLoader;
 namespace dom {
 class Comment;
 class DocumentFragment;
+class DocumentType;
 class DOMImplementation;
 class Element;
 class Link;
@@ -553,7 +553,7 @@ public:
   /**
    * Return the doctype for this document.
    */
-  nsDOMDocumentType* GetDoctype() const;
+  mozilla::dom::DocumentType* GetDoctype() const;
 
   /**
    * Return the root element for this document.
@@ -1941,8 +1941,10 @@ public:
                 int32_t aScreenX, int32_t aScreenY, int32_t aClientX,
                 int32_t aClientY, int32_t aRadiusX, int32_t aRadiusY,
                 float aRotationAngle, float aForce);
+  already_AddRefed<nsIDOMTouchList> CreateTouchList();
   already_AddRefed<nsIDOMTouchList>
-    CreateTouchList(nsIDOMTouch* aTouch);
+    CreateTouchList(nsIDOMTouch* aTouch,
+                    const mozilla::dom::Sequence<nsRefPtr<nsIDOMTouch> >& aTouches);
   already_AddRefed<nsIDOMTouchList>
     CreateTouchList(const mozilla::dom::Sequence<nsRefPtr<nsIDOMTouch> >& aTouches);
 
