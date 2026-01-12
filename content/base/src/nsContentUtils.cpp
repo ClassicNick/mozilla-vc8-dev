@@ -115,7 +115,7 @@
 #include "nsTextEditorState.h"
 #include "nsIPluginHost.h"
 #include "nsICategoryManager.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "nsEventStateManager.h"
 #include "nsIDOMHTMLInputElement.h"
 #include "nsParserConstants.h"
@@ -247,6 +247,25 @@ static NS_DEFINE_CID(kParserServiceCID, NS_PARSERSERVICE_CID);
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
 static PLDHashTable sEventListenerManagersHash;
+static nsCOMPtr<nsIMemoryReporter> sEventListenerManagersHashReporter;
+
+NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(EventListenerManagersHashMallocSizeOf)
+
+static int64_t GetEventListenerManagersHash()
+{
+  // We don't measure the |nsEventListenerManager| objects pointed to by the
+  // entries because those references are non-owning.
+  return PL_DHashTableSizeOfExcludingThis(&sEventListenerManagersHash,
+                                          nullptr,
+                                          EventListenerManagersHashMallocSizeOf);
+}
+
+NS_MEMORY_REPORTER_IMPLEMENT(EventListenerManagersHash,
+  "explicit/dom/event-listener-managers-hash",
+  KIND_HEAP,
+  UNITS_BYTES,
+  GetEventListenerManagersHash,
+  "Memory used by the event listener manager's hash table.")
 
 class EventListenerManagerMapEntry : public PLDHashEntryHdr
 {
@@ -383,6 +402,10 @@ nsContentUtils::Init()
 
       return NS_ERROR_OUT_OF_MEMORY;
     }
+
+    sEventListenerManagersHashReporter =
+      new NS_MEMORY_REPORTER_NAME(EventListenerManagersHash);
+    (void)::NS_RegisterMemoryReporter(sEventListenerManagersHashReporter);
   }
 
   sBlockedScriptRunners = new nsTArray< nsCOMPtr<nsIRunnable> >;
@@ -1464,6 +1487,9 @@ nsContentUtils::Shutdown()
     if (sEventListenerManagersHash.entryCount == 0) {
       PL_DHashTableFinish(&sEventListenerManagersHash);
       sEventListenerManagersHash.ops = nullptr;
+
+      (void)::NS_UnregisterMemoryReporter(sEventListenerManagersHashReporter);
+      sEventListenerManagersHashReporter = nullptr;
     }
   }
 
@@ -6392,8 +6418,7 @@ nsContentUtils::FindPresShellForDocument(nsIDocument* aDoc)
     // Walk the docshell tree to find the nearest container that has a presshell,
     // and return that.
     nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(docShellTreeItem);
-    nsCOMPtr<nsIPresShell> presShell;
-    docShell->GetPresShell(getter_AddRefs(presShell));
+    nsIPresShell* presShell = docShell->GetPresShell();
     if (presShell) {
       return presShell;
     }
@@ -6410,11 +6435,11 @@ nsContentUtils::WidgetForDocument(nsIDocument* aDoc)
 {
   nsIPresShell* shell = FindPresShellForDocument(aDoc);
   if (shell) {
-    nsIViewManager* VM = shell->GetViewManager();
+    nsViewManager* VM = shell->GetViewManager();
     if (VM) {
       nsView* rootView = VM->GetRootView();
       if (rootView) {
-        nsView* displayRoot = nsIViewManager::GetDisplayRootFor(rootView);
+        nsView* displayRoot = nsViewManager::GetDisplayRootFor(rootView);
         if (displayRoot) {
           return displayRoot->GetNearestWidget(nullptr);
         }

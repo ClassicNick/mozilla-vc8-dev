@@ -328,7 +328,7 @@ var BrowserApp = {
         NativeWindow.toast.show(label, "short");
       });
 
-    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInNewPrivateTab"),
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInPrivateTab"),
       NativeWindow.contextmenus.linkOpenableContext,
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
@@ -1381,6 +1381,7 @@ var NativeWindow = {
   },
   contextmenus: {
     items: {}, //  a list of context menu items that we may show
+    _nativeItemsSeparator: 0, // the index to insert native context menu items at
     _contextId: 0, // id to assign to new context menu items if they are added
 
     init: function() {
@@ -1552,6 +1553,62 @@ var NativeWindow = {
       else this._targetRef = null;
     },
 
+    _addHTMLContextMenuItems: function cm_addContextMenuItems(aMenu, aParent) {
+      for (let i = 0; i < aMenu.childNodes.length; i++) {
+        let item = aMenu.childNodes[i];
+        if (!item.label || item.hasAttribute("hidden"))
+          continue;
+
+        let id = this._contextId++;
+        let menuitem = {
+          id: id,
+          isGroup: false,
+          callback: (function(aTarget, aX, aY) {
+            // If this is a menu item, show a new context menu with the submenu in it
+            if (item instanceof Ci.nsIDOMHTMLMenuElement) {
+              this.menuitems = [];
+              this._nativeItemsSeparator = 0;
+
+              this._addHTMLContextMenuItems(item, id);
+              this._innerShow(aTarget, aX, aY);
+            } else {
+              // oltherwise just click the item
+              item.click();
+            }
+          }).bind(this),
+
+          getValue: function(aElt) {
+            return {
+              icon: item.icon,
+              label: item.label,
+              id: id,
+              isGroup: false,
+              inGroup: false,
+              disabled: item.disabled,
+              isParent: item instanceof Ci.nsIDOMHTMLMenuElement
+            }
+          }
+        };
+
+        this.menuitems.splice(this._nativeItemsSeparator, 0, menuitem);
+        this._nativeItemsSeparator++;
+      }
+    },
+
+    _getMenuItemForId: function(aId) {
+      if (!this.menuitems)
+        return null;
+
+      for (let i = 0; i < this.menuitems.length; i++) {
+        if (this.menuitems[i].id == aId)
+          return this.menuitems[i];
+      }
+      return null;
+    },
+
+    // Checks if there are context menu items to show, and if it finds them
+    // sends a contextmenu event to content. We also send showing events to
+    // any html5 context menus we are about to show
     _sendToContent: function(aX, aY) {
       // find and store the top most element this context menu is being shown for
       // use the highlighted element if possible, otherwise look for nearby clickable elements
@@ -1566,27 +1623,37 @@ var NativeWindow = {
       // store a weakref to the target to be used when the context menu event returns
       this._target = target;
 
-      this.menuitems = {};
+      this.menuitems = [];
       let menuitemsSet = false;
 
       // now walk up the tree and for each node look for any context menu items that apply
       let element = target;
-
+      this._nativeItemsSeparator = 0;
       while (element) {
-        for each (let item in this.items) {
-          if (!this.menuitems[item.id] && item.matches(element, aX, aY)) {
-            this.menuitems[item.id] = item;
-            menuitemsSet = true;
+        // first check for any html5 context menus that might exist
+        let contextmenu = element.contextMenu;
+        if (contextmenu) {
+          // send this before we build the list to make sure the site can update the menu
+          contextmenu.QueryInterface(Components.interfaces.nsIHTMLMenu);
+          contextmenu.sendShowEvent();
+          this._addHTMLContextMenuItems(contextmenu, null);
+        }
+
+        // then check for any context menu items registered in the ui
+         for each (let item in this.items) {
+          if (!this._getMenuItemForId(item.id) && item.matches(element, aX, aY)) {
+            this.menuitems.push(item);
           }
         }
 
+        // if we reach a link or a text node, stop digging up through the node hierarchy
         if (this.linkOpenableContext.matches(element) || this.textContext.matches(element))
           break;
         element = element.parentNode;
       }
 
       // only send the contextmenu event to content if we are planning to show a context menu (i.e. not on every long tap)
-      if (menuitemsSet) {
+      if (this.menuitems.length > 0) {
         let event = target.ownerDocument.createEvent("MouseEvent");
         event.initMouseEvent("contextmenu", true, true, content,
                              0, aX, aY, aX, aY, false, false, false, false,
@@ -1602,21 +1669,26 @@ var NativeWindow = {
       }
     },
 
+    // Actually shows the native context menu by passing a list of context menu items to
+    // show to the Java.
     _show: function(aEvent) {
       let popupNode = this._target;
       this._target = null;
       if (aEvent.defaultPrevented || !popupNode) {
         return;
       }
+      this._innerShow(popupNode, aEvent.clientX, aEvent.clientY);
+    },
 
+    _innerShow: function(aTarget, aX, aY) {
       Haptic.performSimpleAction(Haptic.LongPress);
 
       // spin through the tree looking for a title for this context menu
-      let node = popupNode;
+      let node = aTarget;
       let title ="";
       while(node && !title) {
         if (node.hasAttribute && node.hasAttribute("title")) {
-          title = node.getAttribute("title")
+          title = node.getAttribute("title");
         } else if ((node instanceof Ci.nsIDOMHTMLAnchorElement && node.href) ||
                 (node instanceof Ci.nsIDOMHTMLAreaElement && node.href)) {
           title = this._getLinkURL(node);
@@ -1630,8 +1702,8 @@ var NativeWindow = {
 
       // convert this.menuitems object to an array for sending to native code
       let itemArray = [];
-      for each (let item in this.menuitems) {
-        itemArray.push(item.getValue(popupNode));
+      for (let i = 0; i < this.menuitems.length; i++) {
+        itemArray.push(this.menuitems[i].getValue(aTarget));
       }
 
       let msg = {
@@ -1643,18 +1715,25 @@ var NativeWindow = {
       };
       let data = JSON.parse(sendMessageToJava(msg));
       let selectedId = itemArray[data.button].id;
-      let selectedItem = this.menuitems[selectedId];
+      let selectedItem = this._getMenuItemForId(selectedId);
 
+      this.menuitems = null;
       if (selectedItem && selectedItem.callback) {
-        while (popupNode) {
-          if (selectedItem.matches(popupNode, aEvent.clientX, aEvent.clientY)) {
-            selectedItem.callback.call(selectedItem, popupNode, aEvent.clientX, aEvent.clientY);
-            break;
+        if (selectedItem.matches) {
+          // for menuitems added using the native UI, pass the dom element that matched that item to the callback
+          while (aTarget) {
+            if (selectedItem.matches(aTarget, aX, aY)) {
+              selectedItem.callback.call(selectedItem, aTarget, aX, aY);
+              foundNode = true;
+              break;
+            }
+            aTarget = aTarget.parentNode;
           }
-          popupNode = popupNode.parentNode;
+        } else {
+          // if this was added using the html5 context menu api, just click on the context menu item
+          selectedItem.callback.call(selectedItem, aTarget, aX, aY);
         }
       }
-      this.menuitems = null;
     },
 
     handleEvent: function(aEvent) {
@@ -2371,38 +2450,7 @@ var LightWeightThemeWebInstaller = {
   },
 
   _install: function (newLWTheme) {
-    let previousLWTheme = this._manager.currentTheme;
-
-    let listener = {
-      onEnabled: function(aAddon) {
-        LightWeightThemeWebInstaller._postInstallNotification(newLWTheme, previousLWTheme);
-      }
-    };
-
-    AddonManager.addAddonListener(listener);
     this._manager.currentTheme = newLWTheme;
-    AddonManager.removeAddonListener(listener);
-  },
-
-  _postInstallNotification: function (newTheme, previousTheme) {
-    let buttons = [{
-      label: Strings.browser.GetStringFromName("lwthemePostInstallNotification.undoButton"),
-      callback: function () {
-        LightWeightThemeWebInstaller._manager.forgetUsedTheme(newTheme.id);
-        LightWeightThemeWebInstaller._manager.currentTheme = previousTheme;
-      }
-    }, {
-      label: Strings.browser.GetStringFromName("lwthemePostInstallNotification.manageButton"),
-      callback: function () {
-        BrowserApp.addTab("about:addons", {
-          showProgress: false,
-          selected: true
-        });
-      }
-    }];
-
-    let message = Strings.browser.GetStringFromName("lwthemePostInstallNotification.message"); 
-    NativeWindow.doorhanger.show(message, "Personas", buttons, BrowserApp.selectedTab.id);
   },
 
   _previewWindow: null,
@@ -3955,77 +4003,103 @@ var BrowserEventHandler = {
   },
 
   handleUserEvent: function(aTopic, aData) {
-    if (aTopic == "Gesture:Scroll") {
-      // If we've lost our scrollable element, return. Don't cancel the
-      // override, as we probably don't want Java to handle panning until the
-      // user releases their finger.
-      if (this._scrollableElement == null)
-        return;
+    switch (aTopic) {
 
-      // If this is the first scroll event and we can't scroll in the direction
-      // the user wanted, and neither can any non-root sub-frame, cancel the
-      // override so that Java can handle panning the main document.
-      let data = JSON.parse(aData);
-
-      // round the scroll amounts because they come in as floats and might be
-      // subject to minor rounding errors because of zoom values. I've seen values
-      // like 0.99 come in here and get truncated to 0; this avoids that problem.
-      let zoom = BrowserApp.selectedTab._zoom;
-      data.x = Math.round(data.x / zoom);
-      data.y = Math.round(data.y / zoom);
-
-      if (this._firstScrollEvent) {
-        while (this._scrollableElement != null && !this._elementCanScroll(this._scrollableElement, data.x, data.y))
-          this._scrollableElement = this._findScrollableElement(this._scrollableElement, false);
-
-        let doc = BrowserApp.selectedBrowser.contentDocument;
-        if (this._scrollableElement == null || this._scrollableElement == doc.body || this._scrollableElement == doc.documentElement) {
-          sendMessageToJava({ gecko: { type: "Panning:CancelOverride" } });
+      case "Gesture:Scroll": {
+        // If we've lost our scrollable element, return. Don't cancel the
+        // override, as we probably don't want Java to handle panning until the
+        // user releases their finger.
+        if (this._scrollableElement == null)
           return;
-        }
 
-        this._firstScrollEvent = false;
-      }
+        // If this is the first scroll event and we can't scroll in the direction
+        // the user wanted, and neither can any non-root sub-frame, cancel the
+        // override so that Java can handle panning the main document.
+        let data = JSON.parse(aData);
 
-      // Scroll the scrollable element
-      if (this._elementCanScroll(this._scrollableElement, data.x, data.y)) {
-        this._scrollElementBy(this._scrollableElement, data.x, data.y);
-        sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: true } });
-        SelectionHandler.subdocumentScrolled(this._scrollableElement);
-      } else {
-        sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: false } });
-      }
-    } else if (aTopic == "Gesture:CancelTouch") {
-      this._cancelTapHighlight();
-    } else if (aTopic == "Gesture:SingleTap") {
-      let element = this._highlightElement;
-      if (element) {
-        try {
-          let data = JSON.parse(aData);
-          if (ElementTouchHelper.isElementClickable(element)) {
-            [data.x, data.y] = this._moveClickPoint(element, data.x, data.y);
-            element = ElementTouchHelper.anyElementFromPoint(data.x, data.y);
+        // round the scroll amounts because they come in as floats and might be
+        // subject to minor rounding errors because of zoom values. I've seen values
+        // like 0.99 come in here and get truncated to 0; this avoids that problem.
+        let zoom = BrowserApp.selectedTab._zoom;
+        let x = Math.round(data.x / zoom);
+        let y = Math.round(data.y / zoom);
+
+        if (this._firstScrollEvent) {
+          while (this._scrollableElement != null &&
+                 !this._elementCanScroll(this._scrollableElement, x, y))
+            this._scrollableElement = this._findScrollableElement(this._scrollableElement, false);
+
+          let doc = BrowserApp.selectedBrowser.contentDocument;
+          if (this._scrollableElement == null ||
+              this._scrollableElement == doc.body ||
+              this._scrollableElement == doc.documentElement) {
+            sendMessageToJava({ gecko: { type: "Panning:CancelOverride" } });
+            return;
           }
 
-          this._sendMouseEvent("mousemove", element, data.x, data.y);
-          this._sendMouseEvent("mousedown", element, data.x, data.y);
-          this._sendMouseEvent("mouseup",   element, data.x, data.y);
-
-          // See if its a input element
-          if ((element instanceof HTMLInputElement && element.mozIsTextField(false)) || (element instanceof HTMLTextAreaElement))
-             SelectionHandler.showThumb(element);
-        } catch(e) {
-          Cu.reportError(e);
+          this._firstScrollEvent = false;
         }
+
+        // Scroll the scrollable element
+        if (this._elementCanScroll(this._scrollableElement, x, y)) {
+          this._scrollElementBy(this._scrollableElement, x, y);
+          sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: true } });
+          SelectionHandler.subdocumentScrolled(this._scrollableElement);
+        } else {
+          sendMessageToJava({ gecko: { type: "Gesture:ScrollAck", scrolled: false } });
+        }
+
+        break;
       }
-      this._cancelTapHighlight();
-    } else if (aTopic == "Gesture:DoubleTap") {
-      this._cancelTapHighlight();
-      this.onDoubleTap(aData);
-    } else if (aTopic == "MozMagnifyGestureStart" || aTopic == "MozMagnifyGestureUpdate") {
-      this.onPinch(aData);
-    } else if (aTopic == "MozMagnifyGesture") {
-      this.onPinchFinish(aData, this._mLastPinchPoint.x, this._mLastPinchPoint.y);
+
+      case "Gesture:CancelTouch":
+        this._cancelTapHighlight();
+        break;
+
+      case "Gesture:SingleTap": {
+        let element = this._highlightElement;
+        if (element) {
+          try {
+            let data = JSON.parse(aData);
+            let [x, y] = [data.x, data.y];
+            if (ElementTouchHelper.isElementClickable(element)) {
+              [x, y] = this._moveClickPoint(element, x, y);
+              element = ElementTouchHelper.anyElementFromPoint(x, y);
+            }
+
+            this._sendMouseEvent("mousemove", element, x, y);
+            this._sendMouseEvent("mousedown", element, x, y);
+            this._sendMouseEvent("mouseup",   element, x, y);
+
+            // See if its a input element
+            if ((element instanceof HTMLInputElement && element.mozIsTextField(false)) ||
+                (element instanceof HTMLTextAreaElement))
+               SelectionHandler.showThumb(element);
+          } catch(e) {
+            Cu.reportError(e);
+          }
+        }
+        this._cancelTapHighlight();
+        break;
+      }
+
+      case"Gesture:DoubleTap":
+        this._cancelTapHighlight();
+        this.onDoubleTap(aData);
+        break;
+
+      case "MozMagnifyGestureStart":
+      case "MozMagnifyGestureUpdate":
+        this.onPinch(aData);
+        break;
+
+      case "MozMagnifyGesture":
+        this.onPinchFinish(aData, this._mLastPinchPoint.x, this._mLastPinchPoint.y);
+        break;
+
+      default:
+        dump('BrowserEventHandler.handleUserEvent: unexpected topic "' + aTopic + '"');
+        break;
     }
   },
 

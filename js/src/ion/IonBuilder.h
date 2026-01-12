@@ -275,9 +275,8 @@ class IonBuilder : public MIRGenerator
 
     JSObject *getSingletonPrototype(JSFunction *target);
 
-    MDefinition *createThisNative();
     MDefinition *createThisScripted(MDefinition *callee);
-    MDefinition *createThisScriptedSingleton(HandleFunction target, HandleObject proto, MDefinition *callee);
+    MDefinition *createThisScriptedSingleton(HandleFunction target, MDefinition *callee);
     MDefinition *createThis(HandleFunction target, MDefinition *callee);
     MInstruction *createDeclEnvObject(MDefinition *callee, MDefinition *scopeObj);
     MInstruction *createCallObject(MDefinition *callee, MDefinition *scopeObj);
@@ -402,6 +401,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineMathMinMax(bool max, uint32_t argc, bool constructing);
     InliningStatus inlineMathPow(uint32_t argc, bool constructing);
     InliningStatus inlineMathRandom(uint32_t argc, bool constructing);
+    InliningStatus inlineMathImul(uint32_t argc, bool constructing);
     InliningStatus inlineMathFunction(MMathFunction::Function function, uint32_t argc,
                                       bool constructing);
 
