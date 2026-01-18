@@ -864,7 +864,6 @@ template <typename T>
 inline
 MutableHandle<T>::MutableHandle(js::Rooted<T> *root)
 {
-	testAssign<S>();
     ptr = root->address();
 }
 
