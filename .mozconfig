@@ -6,8 +6,8 @@
 mk_add_options MOZ_MAKE_FLAGS="-j1"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR=/j/Browsers/VC71Compat/objdir/obj-fxvc71-release
-WIN32_REDIST_DIR=/h/browsers/VC71Compat/mozilla6-Test/redist/VC71
+mk_add_options MOZ_OBJDIR=/j/Browsers/VC71Compat/objdir/fxupdates/central/obj-fxvc71-ipc-release
+WIN32_REDIST_DIR=/j/Browsers/VC71Compat/redist/VC71/SP1
 
 
 # Configure Options

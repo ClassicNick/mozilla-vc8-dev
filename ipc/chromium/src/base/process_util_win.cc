@@ -34,6 +34,25 @@ typedef struct _PSAPI_WORKING_SET_INFORMATION {
     ULONG_PTR NumberOfEntries;
     PSAPI_WORKING_SET_BLOCK WorkingSetInfo[1];
 } PSAPI_WORKING_SET_INFORMATION, *PPSAPI_WORKING_SET_INFORMATION;
+
+#if (_WIN32_WINNT >= 0x0501)
+
+typedef struct _PROCESS_MEMORY_COUNTERS_EX {
+    DWORD cb;
+    DWORD PageFaultCount;
+    SIZE_T PeakWorkingSetSize;
+    SIZE_T WorkingSetSize;
+    SIZE_T QuotaPeakPagedPoolUsage;
+    SIZE_T QuotaPagedPoolUsage;
+    SIZE_T QuotaPeakNonPagedPoolUsage;
+    SIZE_T QuotaNonPagedPoolUsage;
+    SIZE_T PagefileUsage;
+    SIZE_T PeakPagefileUsage;
+    SIZE_T PrivateUsage;
+} PROCESS_MEMORY_COUNTERS_EX;
+typedef PROCESS_MEMORY_COUNTERS_EX *PPROCESS_MEMORY_COUNTERS_EX;
+
+#endif
 #endif
 
 namespace {
@@ -554,14 +573,12 @@ size_t ProcessMetrics::GetPrivateBytes() const {
   // GetProcessMemoryInfo() will simply fail on prior OS. So the requested
   // information is simply not available. Hence, we will return 0 on unsupported
   // OSes. Unlike most Win32 API, we don't need to initialize the "cb" member.
-#if defined (_MSC_VER) && _MSC_VER >= 1400
   PROCESS_MEMORY_COUNTERS_EX pmcx;
   if (GetProcessMemoryInfo(process_,
                           reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmcx),
                           sizeof(pmcx))) {
       return pmcx.PrivateUsage;
   }
-#endif
   return 0;
 }
 

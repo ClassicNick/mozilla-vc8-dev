@@ -2954,7 +2954,7 @@ EOF
 
                         MSMT_TOOL=`mt 2>&1|grep 'Microsoft (R) Manifest Tool'`
         if test -z "$MSMT_TOOL"; then
-          { echo "configure: error: Microsoft (R) Manifest Tool must be in your \$PATH." 1>&2; exit 1; }
+          echo "configure: warning: Microsoft (R) Manifest Tool must be in your \$PATH." 1>&2
         fi
 
         

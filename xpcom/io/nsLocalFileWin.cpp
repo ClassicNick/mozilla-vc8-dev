@@ -1492,13 +1492,8 @@ nsLocalFile::CopySingleFile(nsIFile *sourceFile, nsIFile *destParent,
             {
                 copyOK = CopyFileExW(filePath.get(), destPath.get(), NULL, NULL, NULL, dwCopyFlags);
             
-#ifdef MOZ_IPC
                 if (copyOK)
                     DeleteFile(filePath.get());
-#else
-				if (copyOK)
-                    DeleteFile((LPCSTR)filePath.get());
-#endif
             }
         }
 #else

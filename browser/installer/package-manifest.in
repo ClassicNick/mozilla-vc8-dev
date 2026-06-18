@@ -60,7 +60,10 @@
 @BINPATH@/mozce_shunt.dll
 #elifdef XP_WIN32
 #ifndef MOZ_MEMORY
-#if _MSC_VER == 1400
+#if _MSC_VER == 1310
+@BINPATH@/msvcp71.dll
+@BINPATH@/msvcr71.dll
+#elif _MSC_VER == 1400
 @BINPATH@/Microsoft.VC80.CRT.manifest
 @BINPATH@/msvcm80.dll
 @BINPATH@/msvcp80.dll

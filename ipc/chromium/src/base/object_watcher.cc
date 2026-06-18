@@ -74,25 +74,6 @@ bool ObjectWatcher::StartWatching(HANDLE object, Delegate* delegate) {
   return true;
 }
 
-#if defined(_MSC_VER) && (_MSC_VER < 1400)
-#pragma warning( push )
-#pragma warning( disable : 4793 )
-namespace InlMemBarrier {
-FORCEINLINE
-VOID
-MemoryBarrier (
-    VOID
-    )
-{
-    LONG Barrier;
-    __asm {
-        xchg Barrier, eax
-    }
-}
-}
-#pragma warning( pop )
-#endif
-
 bool ObjectWatcher::StopWatching() {
   if (!watch_)
     return false;
@@ -107,10 +88,12 @@ bool ObjectWatcher::StopWatching() {
     return false;
   }
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
   // Make sure that we see any mutation to did_signal.  This should be a no-op
   // since we expect that UnregisterWaitEx resulted in a memory barrier, but
   // just to be sure, we're going to be explicit.
-  InlMemBarrier::MemoryBarrier();
+  ::MemoryBarrier();
+#endif
 
   // If the watch has been posted, then we need to make sure it knows not to do
   // anything once it is run.

@@ -111,6 +111,7 @@ class ObserverListThreadSafe
       delete list;
   }
 
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
   // Notify methods.
   // Make a thread-safe callback to each Observer in the list.
   // Note, these calls are effectively asynchronous.  You cannot assume
@@ -127,14 +128,26 @@ class ObserverListThreadSafe
     UnboundMethod<ObserverType, Method, Tuple1<A> > method(m, MakeTuple(a));
     Notify<Method, Tuple1<A> >(method);
   }
+#endif
 
   // TODO(mbelshe):  Add more wrappers for Notify() with more arguments.
 
  private:
+#if !defined(_MSC_VER) || _MSC_VER >= 1400
   template <class Method, class Params>
   void Notify(const UnboundMethod<ObserverType, Method, Params>& method) {
-    NS_ERROR_NOT_IMPLEMENTED;
+    AutoLock lock(list_lock_);
+    typename ObserversListMap::iterator it;
+    for (it = observer_lists_.begin(); it != observer_lists_.end(); ++it) {
+      MessageLoop* loop = (*it).first;
+      ObserverList<ObserverType>* list = (*it).second;
+      loop->PostTask(FROM_HERE,
+          NewRunnableMethod(this,
+              &ObserverListThreadSafe<ObserverType>::
+                 template NotifyWrapper<Method, Params>, list, method));
+    }
   }
+#endif
 
   // Wrapper which is called to fire the notifications for each thread's
   // ObserverList.  This function MUST be called on the thread which owns

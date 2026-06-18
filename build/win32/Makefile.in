@@ -64,6 +64,13 @@ include $(topsrcdir)/config/rules.mk
 
 ifdef WIN32_REDIST_DIR
 
+ifeq (1310,$(_MSC_VER))
+REDIST_FILES = \
+	msvcp71.dll \
+	msvcr71.dll \
+	$(NULL)
+endif
+
 ifeq (1400,$(_MSC_VER))
 REDIST_FILES = \
 	Microsoft.VC80.CRT.manifest \
