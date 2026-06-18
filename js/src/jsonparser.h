@@ -159,7 +159,9 @@ class JSONSourceParser
         return Number;
     }
 
+public:
     enum StringType { PropertyName, LiteralValue };
+private:
     template<StringType ST> Token readString();
 
     Token readNumber();

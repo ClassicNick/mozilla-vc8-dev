@@ -460,7 +460,7 @@ static void vpx_internal_error(struct vpx_internal_error_info *info,
 
         info->has_detail = 1;
         va_start(ap, fmt);
-        vsnprintf(info->detail, sz - 1, fmt, ap);
+        _vsnprintf(info->detail, sz - 1, fmt, ap);
         va_end(ap);
         info->detail[sz-1] = '\0';
     }

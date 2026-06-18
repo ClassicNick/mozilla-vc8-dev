@@ -130,28 +130,23 @@ LayerManagerOGL::CleanupResources()
 
   for (unsigned int j = 0; j < mColorPrograms.Length(); ++j)
     delete mColorPrograms[j];
-
   mColorPrograms.Clear();
 
   for (unsigned int k = 0; k < mSolidColorPrograms.Length(); ++k)
     delete mSolidColorPrograms[k];
-
   mSolidColorPrograms.Clear();
 
   for (unsigned int l = 0; l < mYCbCrTexturePrograms.Length(); ++l)
     delete mYCbCrTexturePrograms[l];
-
   mYCbCrTexturePrograms.Clear();
 
   for (unsigned int q = 0; q < mCopyPrograms.Length(); ++q)
     delete mCopyPrograms[q];
-
   mCopyPrograms.Clear();
 
   for (unsigned int r = 0; r < mAlphaPrograms.Length(); ++r)
     delete mAlphaPrograms[q];
-
-  mCopyPrograms.Clear();
+  mAlphaPrograms.Clear();
 
   ctx->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, 0);
 
