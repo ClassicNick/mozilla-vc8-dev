@@ -262,7 +262,7 @@ nsWifiMonitor::CallWifiListeners(const nsCOMArray<nsWifiAccessPoint> &aAccessPoi
         return NS_ERROR_OUT_OF_MEMORY;
 
       for (PRUint32 i = 0; i < resultCount; i++)
-        accessPoints->AppendElement(aAccessPoints[i]);
+        accessPoints->AppendElement((nsIWifiAccessPoint*) aAccessPoints[i]);
 
       nsCOMPtr<nsIThread> thread = do_GetMainThread();
       if (!thread)

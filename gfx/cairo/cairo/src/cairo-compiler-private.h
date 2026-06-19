@@ -220,21 +220,10 @@
 /* Add a definition of ffs */
 #if defined(_MSC_VER) && _MSC_VER >= 1400
 #include <intrin.h>
-#pragma intrinsic(_BitScanForward)
-static __forceinline int
-ffs(int x)
-{
-    unsigned long i;
-
-    if (_BitScanForward(&i, x) != 0)
-	return i + 1;
-
-    return 0;
-}
 #else
-
-#pragma intrinsic(_BitScanForward)
 unsigned char _BitScanForward(unsigned long * Index, unsigned long Mask);
+#endif
+#pragma intrinsic(_BitScanForward)
 static __forceinline int
 ffs(int x)
 {
@@ -245,7 +234,6 @@ ffs(int x)
 
     return 0;
 }
-#endif
 #endif
 
 #endif

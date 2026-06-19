@@ -494,8 +494,10 @@ protected:
     
     bool  ValidateGLSLIdentifier(const nsAString& name, const char *info);
 
+public:
     static PRUint32 GetTexelSize(WebGLenum format, WebGLenum type);
 
+protected:
     void Invalidate();
     void DestroyResourcesAndContext();
 

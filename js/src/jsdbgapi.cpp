@@ -1234,7 +1234,7 @@ UnsafeError(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    (void) vsnprintf(gLastError, sizeof(gLastError), format, args);
+    (void) _vsnprintf(gLastError, sizeof(gLastError), format, args);
     va_end(args);
 
     gLastError[sizeof(gLastError) - 1] = '\0';
