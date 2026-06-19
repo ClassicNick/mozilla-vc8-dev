@@ -35,6 +35,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#define CreateEvent CreateEventA
+#include "nsIDOMDocument.h"
+
 #include "States.h"
 #include "nsAccessibilityService.h"
 #include "nsApplicationAccessibleWrap.h"
@@ -48,7 +51,6 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeNode.h"
 #include "nsIDocShellTreeOwner.h"
-#include "nsIDOMDocument.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMEventListener.h"
 #include "nsIDOMEventTarget.h"
@@ -76,11 +78,8 @@
 #include "nsReadableUtils.h"
 #include "nsRootAccessible.h"
 #include "nsIDOMNSEventTarget.h"
-#include "nsIDOMDocumentEvent.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsFocusManager.h"
-#include "mozilla/dom/Element.h"
-
 
 #ifdef MOZ_XUL
 #include "nsXULTreeAccessible.h"
@@ -193,15 +192,15 @@ nsRootAccessible::NativeState()
 
 #ifdef MOZ_XUL
   PRUint32 chromeFlags = GetChromeFlags();
-  if (chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE) {
+  if (chromeFlags & nsIWebBrowserChrome::CHROME_WINDOW_RESIZE)
     states |= states::SIZEABLE;
-  }
-  if (chromeFlags & nsIWebBrowserChrome::CHROME_TITLEBAR) {
     // If it has a titlebar it's movable
     // XXX unless it's minimized or maximized, but not sure
     //     how to detect that
+  if (chromeFlags & nsIWebBrowserChrome::CHROME_TITLEBAR)
     states |= states::MOVEABLE;
-  }
+  if (chromeFlags & nsIWebBrowserChrome::CHROME_MODAL)
+    states |= states::MODAL;
 #endif
 
   nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
@@ -214,12 +213,6 @@ nsRootAccessible::NativeState()
     if (activeWindow == rootWindow)
       states |= states::ACTIVE;
   }
-
-#ifdef MOZ_XUL
-  if (GetChromeFlags() & nsIWebBrowserChrome::CHROME_MODAL) {
-    states |= states::MODAL;
-  }
-#endif
 
   return states;
 }
@@ -270,7 +263,7 @@ nsresult nsRootAccessible::AddEventListeners()
                    * const* e_end = docEvents + NS_ARRAY_LENGTH(docEvents);
          e < e_end; ++e) {
       nsresult rv = nstarget->AddEventListener(NS_ConvertASCIItoUTF16(*e),
-                                               this, PR_TRUE, PR_TRUE, 1);
+                                               this, PR_TRUE, PR_TRUE, 2);
       NS_ENSURE_SUCCESS(rv, rv);
     }
   }
@@ -421,11 +414,11 @@ nsRootAccessible::FireCurrentFocusEvent()
     return; // No current focus
   }
 
-  nsCOMPtr<nsIDOMDocumentEvent> docEvent = do_QueryInterface(mDocument);
-  if (docEvent) {
+  nsCOMPtr<nsIDOMDocument> domDoc = do_QueryInterface(mDocument);
+  if (domDoc) {
     nsCOMPtr<nsIDOMEvent> event;
-    if (NS_SUCCEEDED(docEvent->CreateEvent(NS_LITERAL_STRING("Events"),
-                                           getter_AddRefs(event))) &&
+    if (NS_SUCCEEDED(domDoc->CreateEvent(NS_LITERAL_STRING("Events"),
+                                         getter_AddRefs(event))) &&
         NS_SUCCEEDED(event->InitEvent(NS_LITERAL_STRING("focus"), PR_TRUE, PR_TRUE))) {
 
       nsCOMPtr<nsIPrivateDOMEvent> privateEvent(do_QueryInterface(event));

@@ -280,16 +280,6 @@ nsXULMenuitemAccessible::
 {
 }
 
-PRBool
-nsXULMenuitemAccessible::Init()
-{
-  if (!nsAccessibleWrap::Init())
-    return PR_FALSE;
-
-  nsCoreUtils::GeneratePopupTree(mContent);
-  return PR_TRUE;
-}
-
 PRUint64
 nsXULMenuitemAccessible::NativeState()
 {
@@ -388,16 +378,11 @@ nsXULMenuitemAccessible::GetNameInternal(nsAString& aName)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXULMenuitemAccessible::GetDescription(nsAString& aDescription)
+void
+nsXULMenuitemAccessible::Description(nsString& aDescription)
 {
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
   mContent->GetAttr(kNameSpaceID_None, nsAccessibilityAtoms::description,
                     aDescription);
-
-  return NS_OK;
 }
 
 //return menu accesskey: N or Alt+F
@@ -411,7 +396,7 @@ nsXULMenuitemAccessible::GetKeyboardShortcut(nsAString& aAccessKey)
   static PRInt32 gMenuAccesskeyModifier = -1;  // magic value of -1 indicates unitialized state
 
   // We do not use nsCoreUtils::GetAccesskeyFor() because accesskeys for
-  // menu are't registered by nsIEventStateManager.
+  // menu are't registered by nsEventStateManager.
   nsAutoString accesskey;
   mContent->GetAttr(kNameSpaceID_None, nsAccessibilityAtoms::accesskey,
                     accesskey);

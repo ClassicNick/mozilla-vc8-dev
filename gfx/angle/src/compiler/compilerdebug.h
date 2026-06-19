@@ -21,7 +21,7 @@
 #ifdef  __cplusplus
 extern "C" {
 #endif  // __cplusplus
-void Trace(const char* format, a);
+void Trace(const char* format, ...);
 #ifdef  __cplusplus
 }
 #endif  // __cplusplus

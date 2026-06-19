@@ -24,7 +24,7 @@ function test() {
   ////////////////////////////
   // setWindowValue, et al. //
   ////////////////////////////
-  let key = "Unique name: " + Math.floor(Date.now());
+  let key = "Unique name: " + Date.now();
   let value = "Unique value: " + Math.random();
   
   // test adding
@@ -39,11 +39,14 @@ function test() {
   // value should not exist post-delete
   is(ss.getWindowValue(window, key), "", "window value was deleted");
   
+  // test deleting a non-existent value
+  ok(test(function() ss.deleteWindowValue(window, key)), "delete non-existent window value");
+  
   /////////////////////////
   // setTabValue, et al. //
   /////////////////////////
   key = "Unique name: " + Math.random();
-  value = "Unique value: " + Math.floor(Date.now());
+  value = "Unique value: " + Date.now();
   let tab = tabbrowser.addTab();
   tab.linkedBrowser.stop();
   
@@ -55,8 +58,12 @@ function test() {
   
   // test deleting 
   ok(test(function() ss.deleteTabValue(tab, key)), "delete the tab value");
+  
   // value should not exist post-delete
   is(ss.getTabValue(tab, key), "", "tab value was deleted");
+  
+  // test deleting a non-existent value
+  ok(test(function() ss.deleteTabValue(tab, key)), "delete non-existent tab value");
   
   // clean up
   tabbrowser.removeTab(tab);

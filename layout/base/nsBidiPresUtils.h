@@ -175,8 +175,6 @@ public:
    *  @lina 06/18/2000
    */
   nsresult Resolve(nsBlockFrame* aBlockFrame);
-  void ResolveParagraph(nsBlockFrame* aBlockFrame);
-  void ResolveParagraphWithinBlock(nsBlockFrame* aBlockFrame);
 
   /**
    * Reorder this line using Bidi engine.
@@ -221,8 +219,8 @@ public:
                       PRInt32                aLength,
                       nsBidiDirection        aBaseDirection,
                       nsPresContext*         aPresContext,
-                      nsIRenderingContext&   aRenderingContext,
-                      nsIRenderingContext&   aTextRunConstructionContext,
+                      nsRenderingContext&    aRenderingContext,
+                      nsRenderingContext&    aTextRunConstructionContext,
                       nscoord                aX,
                       nscoord                aY,
                       nsBidiPositionResolve* aPosResolve = nsnull,
@@ -236,7 +234,7 @@ public:
                            PRInt32              aLength,
                            nsBidiDirection      aBaseDirection,
                            nsPresContext*       aPresContext,
-                           nsIRenderingContext& aRenderingContext)
+                           nsRenderingContext&  aRenderingContext)
   {
     nscoord length;
     nsresult rv = ProcessTextForRenderingContext(aText, aLength, aBaseDirection, aPresContext,
@@ -354,8 +352,8 @@ private:
                                           PRInt32                aLength,
                                           nsBidiDirection        aBaseDirection,
                                           nsPresContext*         aPresContext,
-                                          nsIRenderingContext&   aRenderingContext,
-                                          nsIRenderingContext&   aTextRunConstructionContext,
+                                          nsRenderingContext&    aRenderingContext,
+                                          nsRenderingContext&    aTextRunConstructionContext,
                                           Mode                   aMode,
                                           nscoord                aX, // DRAW only
                                           nscoord                aY, // DRAW only
@@ -364,14 +362,18 @@ private:
                                           nscoord*               aWidth /* may be null */);
 
   /**
-   * Traverse the child frames of the block element and:
-   *  Set up an array of the frames in logical order
-   *  Create a string containing the text content of all the frames
-   *  If we encounter content that requires us to split the element into more
-   *  than one paragraph for bidi resolution, resolve the paragraph up to that
-   *  point.
+   *  Create a string containing entire text content of this block.
+   *
+   *  @lina 05/02/2000
    */
-  void TraverseFrames(nsBlockFrame* aBlockFrame, nsIFrame* aCurrentFrame);
+  void CreateBlockBuffer();
+
+  /**
+   * Set up an array of the frames after splitting frames so that each frame has
+   * consistent directionality. At this point the frames are still in logical
+   * order
+   */
+  void InitLogicalArray(nsIFrame* aCurrentFrame);
 
   /**
    * Initialize the logically-ordered array of frames
@@ -511,8 +513,7 @@ private:
                           PRUint32 aSrcLength,
                           PRUnichar* aDest);
 
-  nsString        mBuffer;
-  nsTArray<PRUnichar> mEmbeddingStack;
+  nsAutoString    mBuffer;
   nsTArray<nsIFrame*> mLogicalFrames;
   nsTArray<nsIFrame*> mVisualFrames;
   nsDataHashtable<nsISupportsHashKey, PRInt32> mContentToFrameIndex;
@@ -520,12 +521,7 @@ private:
   PRInt32*        mIndexMap;
   PRUint8*        mLevels;
   nsresult        mSuccess;
-  PRPackedBool    mIsVisual;
-  nsBidiLevel     mParaLevel;
-  nsIFrame*       mPrevFrame;
-  nsIContent*     mPrevContent;
 
-  nsAutoPtr<nsBlockInFlowLineIterator> mLineIter;
   nsBidi*         mBidiEngine;
 };
 

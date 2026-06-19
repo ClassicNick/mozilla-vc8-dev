@@ -65,17 +65,17 @@
 #include "nsIDOMHTMLOptionElement.h"
 #include "nsIDOMXULElement.h"
 #include "nsIHTMLDocument.h"
-#include "nsIImageFrame.h"
+#include "nsImageFrame.h"
 #include "nsILink.h"
 #include "nsIObserverService.h"
-#include "nsIPluginInstance.h"
+#include "nsNPAPIPluginInstance.h"
 #include "nsISupportsUtils.h"
 #include "nsObjectFrame.h"
 #include "nsOuterDocAccessible.h"
 #include "nsRootAccessibleWrap.h"
 #include "nsTextFragment.h"
 #include "mozilla/Services.h"
-#include "nsIEventStateManager.h"
+#include "nsEventStates.h"
 
 #ifdef MOZ_XUL
 #include "nsXULAlertAccessible.h"
@@ -93,6 +93,11 @@
 // For native window support for object/embed/applet tags
 #ifdef XP_WIN
 #include "nsHTMLWin32ObjectAccessible.h"
+#endif
+
+// For embedding plugin accessibles
+#ifdef MOZ_ACCESSIBILITY_ATK
+#include "AtkSocketAccessible.h"
 #endif
 
 #ifndef DISABLE_XFORMS_HOOKS
@@ -339,11 +344,12 @@ nsAccessibilityService::CreateHTMLObjectFrameAccessible(nsObjectFrame* aFrame,
       return CreateOuterDocAccessible(aContent, aPresShell);
   }
 
-#ifdef XP_WIN
+#if defined(XP_WIN) || defined(MOZ_ACCESSIBILITY_ATK)
   // 2) for plugins
-  nsCOMPtr<nsIPluginInstance> pluginInstance ;
-  aFrame->GetPluginInstance(*getter_AddRefs(pluginInstance));
-  if (pluginInstance) {
+  nsRefPtr<nsNPAPIPluginInstance> pluginInstance;
+  if (NS_SUCCEEDED(aFrame->GetPluginInstance(getter_AddRefs(pluginInstance))) &&
+      pluginInstance) {
+#ifdef XP_WIN
     // Note: pluginPort will be null if windowless.
     HWND pluginPort = nsnull;
     aFrame->GetPluginPort(&pluginPort);
@@ -353,6 +359,22 @@ nsAccessibilityService::CreateHTMLObjectFrameAccessible(nsObjectFrame* aFrame,
                                                                     pluginPort);
     NS_IF_ADDREF(accessible);
     return accessible;
+
+#elif MOZ_ACCESSIBILITY_ATK
+    if (!AtkSocketAccessible::gCanEmbed)
+      return nsnull;
+
+    nsCString plugId;
+    nsresult rv = pluginInstance->GetValueFromPlugin(
+      NPPVpluginNativeAccessibleAtkPlugId, &plugId);
+    if (NS_SUCCEEDED(rv) && !plugId.IsVoid()) {
+      AtkSocketAccessible* socketAccessible =
+        new AtkSocketAccessible(aContent, weakShell, plugId);
+
+      NS_IF_ADDREF(socketAccessible);
+      return socketAccessible;
+    }
+#endif
   }
 #endif
 
@@ -820,6 +842,8 @@ nsAccessibilityService::GetAccessibleInShell(nsINode* aNode,
 nsAccessible*
 nsAccessibilityService::GetAccessible(nsINode* aNode)
 {
+  NS_PRECONDITION(aNode, "Getting an accessible for null node! Crash.");
+
   nsDocAccessible* document = GetDocAccessible(aNode->GetOwnerDoc());
   return document ? document->GetAccessible(aNode) : nsnull;
 }
@@ -1244,7 +1268,7 @@ nsAccessibilityService::GetAreaAccessible(nsIFrame* aImageFrame,
                                           nsAccessible** aImageAccessible)
 {
   // Check if frame is an image frame, and content is <area>.
-  nsIImageFrame *imageFrame = do_QueryFrame(aImageFrame);
+  nsImageFrame *imageFrame = do_QueryFrame(aImageFrame);
   if (!imageFrame)
     return nsnull;
 
@@ -1410,7 +1434,7 @@ nsAccessibilityService::CreateAccessibleByType(nsIContent* aContent,
       break;
 
     case nsIAccessibleProvider::XULProgressMeter:
-      accessible = new nsXULProgressMeterAccessible(aContent, aWeakShell);
+      accessible = new XULProgressMeterAccessible(aContent, aWeakShell);
       break;
 
     case nsIAccessibleProvider::XULStatusBar:
@@ -1665,6 +1689,13 @@ nsAccessibilityService::CreateHTMLAccessibleByMarkup(nsIFrame* aFrame,
 
   if (tag == nsAccessibilityAtoms::output) {
     nsAccessible* accessible = new nsHTMLOutputAccessible(aContent, aWeakShell);
+    NS_IF_ADDREF(accessible);
+    return accessible;
+  }
+
+  if (tag == nsAccessibilityAtoms::progress) {
+    nsAccessible* accessible =
+      new HTMLProgressMeterAccessible(aContent, aWeakShell);
     NS_IF_ADDREF(accessible);
     return accessible;
   }

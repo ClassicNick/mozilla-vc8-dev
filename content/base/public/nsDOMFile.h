@@ -40,10 +40,12 @@
 #define nsDOMFile_h__
 
 #include "nsICharsetDetectionObserver.h"
+#include "nsIFile.h"
 #include "nsIDOMFile.h"
 #include "nsIDOMFileList.h"
 #include "nsIDOMFileError.h"
 #include "nsIInputStream.h"
+#include "nsIJSNativeInitializer.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "mozilla/AutoRestore.h"
@@ -55,10 +57,15 @@
 class nsIFile;
 class nsIInputStream;
 class nsIClassInfo;
+class nsIBlobBuilder;
+
+nsresult NS_NewBlobBuilder(nsISupports* *aSupports);
+void ParseSize(PRInt64 aSize, PRInt64& aStart, PRInt64& aEnd);
 
 class nsDOMFile : public nsIDOMFile,
                   public nsIXHRSendable,
-                  public nsICharsetDetectionObserver
+                  public nsICharsetDetectionObserver,
+                  public nsIJSNativeInitializer
 {
 public:
   NS_DECL_ISUPPORTS
@@ -95,6 +102,17 @@ public:
 
   // from nsICharsetDetectionObserver
   NS_IMETHOD Notify(const char *aCharset, nsDetectionConfident aConf);
+
+  // nsIJSNativeInitializer
+  NS_IMETHOD Initialize(nsISupports* aOwner,
+                        JSContext* aCx,
+                        JSObject* aObj,
+                        PRUint32 aArgc,
+                        jsval* aArgv);
+
+  // DOMClassInfo constructor (for File("foo"))
+  static nsresult
+  NewFile(nsISupports* *aNewObject);
 
 protected:
   nsCOMPtr<nsIFile> mFile;
@@ -149,8 +167,9 @@ public:
   NS_IMETHOD GetSize(PRUint64*);
   NS_IMETHOD GetInternalStream(nsIInputStream**);
   NS_IMETHOD GetMozFullPathInternal(nsAString&);
-  NS_IMETHOD Slice(PRUint64 aStart, PRUint64 aLength,
-                   const nsAString& aContentType, nsIDOMBlob **aBlob);
+  NS_IMETHOD MozSlice(PRInt64 aStart, PRInt64 aEnd,
+                      const nsAString& aContentType, PRUint8 optional_argc,
+                      nsIDOMBlob **aBlob);
 
 protected:
   friend class DataOwnerAdapter; // Needs to see DataOwner

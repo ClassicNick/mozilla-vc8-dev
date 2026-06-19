@@ -47,18 +47,15 @@
 
 #include "nsIClipboard.h"
 #include "nsContentCID.h"
-#include "nsIDOMAbstractView.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIDOMDocument.h"
 #include "nsPIDOMWindow.h"        
-#include "nsIDOMDocumentView.h"
 #include "nsIDOMRange.h"
 #include "nsIDOMNSRange.h"
 #include "nsIDOMWindowInternal.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIEditingSession.h"
 #include "nsIEditor.h"
-#include "nsIFontMetrics.h"
 #include "nsIFrame.h"
 #include "nsFrameSelection.h"
 #include "nsILineIterator.h"
@@ -311,7 +308,7 @@ nsHyperTextAccessible::GetPosAndText(PRInt32& aStartOffset, PRInt32& aEndOffset,
     *aEndFrame = nsnull;
   }
   if (aBoundsRect) {
-    aBoundsRect->Empty();
+    aBoundsRect->SetEmpty();
   }
   if (aStartAcc)
     *aStartAcc = nsnull;
@@ -919,7 +916,7 @@ nsresult nsHyperTextAccessible::GetTextHelper(EGetTextType aType, nsAccessibleTe
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryInterface(domSel));
-      nsCOMPtr<nsFrameSelection> frameSelection;
+      nsRefPtr<nsFrameSelection> frameSelection;
       rv = privateSelection->GetFrameSelection(getter_AddRefs(frameSelection));
       NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1017,7 +1014,7 @@ nsresult nsHyperTextAccessible::GetTextHelper(EGetTextType aType, nsAccessibleTe
   }
 
   if (aType == eGetBefore) {
-    endOffset = aOffset;
+    finalEndOffset = aOffset;
   }
   else {
     // Start moving forward from the start so that we don't get 
@@ -1683,7 +1680,7 @@ PRInt32 nsHyperTextAccessible::GetCaretLineNumber()
                 getter_AddRefs(domSel));
   nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryInterface(domSel));
   NS_ENSURE_TRUE(privateSelection, -1);
-  nsCOMPtr<nsFrameSelection> frameSelection;
+  nsRefPtr<nsFrameSelection> frameSelection;
   privateSelection->GetFrameSelection(getter_AddRefs(frameSelection));
   NS_ENSURE_TRUE(frameSelection, -1);
 

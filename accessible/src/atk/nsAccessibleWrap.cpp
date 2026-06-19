@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2: */
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
@@ -342,9 +341,7 @@ void nsAccessibleWrap::SetMaiHyperlink(MaiHyperlink* aMaiHyperlink)
         if (!maiHyperlink && !aMaiHyperlink) {
             return; // Never set and we're shutting down
         }
-        if (maiHyperlink) {
-            delete maiHyperlink;
-        }
+        delete maiHyperlink;
         g_object_set_qdata(G_OBJECT(mAtkObject), quark_mai_hyperlink,
                            aMaiHyperlink);
     }
@@ -719,20 +716,18 @@ const gchar *
 getDescriptionCB(AtkObject *aAtkObj)
 {
     nsAccessibleWrap *accWrap = GetAccessibleWrap(aAtkObj);
-    if (!accWrap) {
+    if (!accWrap || accWrap->IsDefunct())
         return nsnull;
-    }
 
     /* nsIAccessible is responsible for the non-NULL description */
     nsAutoString uniDesc;
-    nsresult rv = accWrap->GetDescription(uniDesc);
-    NS_ENSURE_SUCCESS(rv, nsnull);
+    accWrap->Description(uniDesc);
 
     NS_ConvertUTF8toUTF16 objDesc(aAtkObj->description);
-    if (!uniDesc.Equals(objDesc)) {
+    if (!uniDesc.Equals(objDesc))
         atk_object_set_description(aAtkObj,
                                    NS_ConvertUTF16toUTF8(uniDesc).get());
-    }
+
     return aAtkObj->description;
 }
 
@@ -1361,14 +1356,27 @@ nsAccessibleWrap::FireAtkTextChangedEvent(AccEvent* aEvent,
     PRInt32 start = event->GetStartOffset();
     PRUint32 length = event->GetLength();
     PRBool isInserted = event->IsTextInserted();
-
     PRBool isFromUserInput = aEvent->IsFromUserInput();
+    char* signal_name = nsnull;
 
-    char *signal_name = g_strconcat(isInserted ? "text_changed::insert" : "text_changed::delete",
-                                    isFromUserInput ? "" : kNonUserInputEvent, NULL);
-    g_signal_emit_by_name(aObject, signal_name, start, length);
-    g_free (signal_name);
+    if (gHaveNewTextSignals) {
+        nsAutoString text;
+        event->GetModifiedText(text);
+        signal_name = g_strconcat(isInserted ? "text-insert" : "text-remove",
+                                  isFromUserInput ? "" : "::system", NULL);
+        g_signal_emit_by_name(aObject, signal_name, start, length,
+                              NS_ConvertUTF16toUTF8(text).get());
+    } else {
+        // XXX remove this code and the gHaveNewTextSignals check when we can
+        // stop supporting old atk since it doesn't really work anyway
+        // see bug 619002
+        signal_name = g_strconcat(isInserted ? "text_changed::insert" :
+                                  "text_changed::delete",
+                                  isFromUserInput ? "" : kNonUserInputEvent, NULL);
+        g_signal_emit_by_name(aObject, signal_name, start, length);
+    }
 
+    g_free(signal_name);
     return NS_OK;
 }
 

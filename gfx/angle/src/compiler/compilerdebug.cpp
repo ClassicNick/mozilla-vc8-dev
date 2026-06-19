@@ -25,7 +25,7 @@ void Trace(const char *format, ...) {
         char buf[kTraceBufferLen];
         va_list args;
         va_start(args, format);
-        vsnprintf(buf, kTraceBufferLen, format, args);
+        _vsnprintf(buf, kTraceBufferLen, format, args);
         va_end(args);
 
         parseContext->infoSink.debug << buf;
