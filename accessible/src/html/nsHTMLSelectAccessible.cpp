@@ -57,6 +57,8 @@
 #include "nsIServiceManager.h"
 #include "nsIMutableArray.h"
 
+using namespace mozilla::a11y;
+
 ////////////////////////////////////////////////////////////////////////////////
 // nsHTMLSelectListAccessible
 ////////////////////////////////////////////////////////////////////////////////
@@ -369,10 +371,10 @@ NS_IMETHODIMP nsHTMLSelectOptionAccessible::GetActionName(PRUint8 aIndex, nsAStr
   return NS_ERROR_INVALID_ARG;
 }
 
-NS_IMETHODIMP nsHTMLSelectOptionAccessible::GetNumActions(PRUint8 *_retval)
+PRUint8
+nsHTMLSelectOptionAccessible::ActionCount()
 {
-  *_retval = 1;
-  return NS_OK;
+  return 1;
 }
 
 NS_IMETHODIMP nsHTMLSelectOptionAccessible::DoAction(PRUint8 index)
@@ -614,9 +616,10 @@ NS_IMETHODIMP nsHTMLSelectOptGroupAccessible::GetActionName(PRUint8 aIndex, nsAS
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP nsHTMLSelectOptGroupAccessible::GetNumActions(PRUint8 *_retval)
+PRUint8
+nsHTMLSelectOptGroupAccessible::ActionCount()
 {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  return 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -771,11 +774,10 @@ NS_IMETHODIMP nsHTMLComboboxAccessible::GetValue(nsAString& aValue)
   return option ? option->GetName(aValue) : NS_OK;
 }
 
-/** Just one action ( click ). */
-NS_IMETHODIMP nsHTMLComboboxAccessible::GetNumActions(PRUint8 *aNumActions)
+PRUint8
+nsHTMLComboboxAccessible::ActionCount()
 {
-  *aNumActions = 1;
-  return NS_OK;
+  return 1;
 }
 
 /**

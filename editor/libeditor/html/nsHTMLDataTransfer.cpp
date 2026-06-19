@@ -43,18 +43,12 @@
 #include "nsHTMLEditUtils.h"
 #include "nsWSRunObject.h"
 
-#include "nsIDOMText.h"
-#include "nsIDOMNodeList.h"
+#include "nsIDOMNode.h"
 #include "nsIDOMDocument.h"
-#include "nsIDOMAttr.h"
-#include "nsIDocument.h"
-#include "nsIDOMEventTarget.h" 
-#include "nsIDOMNSEvent.h"
-#include "nsIDOMKeyEvent.h"
-#include "nsIDOMKeyListener.h" 
-#include "nsIDOMMouseListener.h"
-#include "nsIDOMMouseEvent.h"
 #include "nsIDOMComment.h"
+#include "nsIDOMNodeList.h"
+#include "nsIDocument.h"
+#include "nsIDOMMouseEvent.h"
 #include "nsISelection.h"
 #include "nsISelectionPrivate.h"
 #include "nsIDOMHTMLAnchorElement.h"
@@ -84,7 +78,6 @@
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
 #include "nsLinebreakConverter.h"
-#include "nsAHtml5FragmentParser.h"
 #include "nsHtml5Module.h"
 #include "nsTreeSanitizer.h"
 
@@ -120,7 +113,6 @@
 #include "nsIDOMHTMLBodyElement.h"
 
 // Misc
-#include "TextEditorTest.h"
 #include "nsEditorUtils.h"
 #include "nsIContentFilter.h"
 #include "nsEventDispatcher.h"
@@ -130,6 +122,7 @@
 #include "nsIPrincipal.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 
 using namespace mozilla;
@@ -2689,24 +2682,17 @@ nsresult nsHTMLEditor::ParseFragment(const nsAString & aFragStr,
                                      nsCOMPtr<nsIDOMNode> *outNode,
                                      PRBool aTrustedInput)
 {
-  // The old code created a new parser every time. This is inefficient.
-  // However, the target document is not required to be an HTML document,
-  // So avoid using the cached parser of aDocument. Once bug 596182 is fixed,
-  // use the global parser here.
-  nsCOMPtr<nsIParser> parser = nsHtml5Module::NewHtml5Parser();
-  nsAHtml5FragmentParser* asFragmentParser =
-      static_cast<nsAHtml5FragmentParser*> (parser.get());
   nsCOMPtr<nsIDOMDocumentFragment> frag;
   NS_NewDocumentFragment(getter_AddRefs(frag),
                          aTargetDocument->NodeInfoManager());
   nsCOMPtr<nsIContent> fragment = do_QueryInterface(frag);
-  asFragmentParser->ParseHtml5Fragment(aFragStr,
-                                      fragment,
-                                      aContextLocalName ?
-                                          aContextLocalName : nsGkAtoms::body,
-                                      kNameSpaceID_XHTML,
-                                      PR_FALSE,
-                                      PR_TRUE);
+  nsContentUtils::ParseFragmentHTML(aFragStr,
+                                    fragment,
+                                    aContextLocalName ?
+                                        aContextLocalName : nsGkAtoms::body,
+                                    kNameSpaceID_XHTML,
+                                    PR_FALSE,
+                                    PR_TRUE);
   if (!aTrustedInput) {
     nsTreeSanitizer sanitizer(!!aContextLocalName, !aContextLocalName);
     sanitizer.Sanitize(fragment);

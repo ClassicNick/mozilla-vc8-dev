@@ -90,6 +90,7 @@ public:
 
   virtual PRUint32 GetDecodedHeapSize();
   virtual PRUint32 GetDecodedNonheapSize();
+  virtual PRUint32 GetDecodedOutOfProcessSize();
   virtual PRUint32 GetSourceHeapSize();
 
   // Callback for SVGRootRenderingObserver
@@ -98,7 +99,7 @@ public:
 protected:
   virtual nsresult StartAnimation();
   virtual nsresult StopAnimation();
-  virtual PRBool   ShouldAnimate();
+  virtual bool     ShouldAnimate();
 
 private:
   nsWeakPtr                          mObserver;   //! imgIDecoderObserver

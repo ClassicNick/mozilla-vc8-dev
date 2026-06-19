@@ -835,7 +835,7 @@ IDBObjectStore::GetStructuredCloneDataFromStatement(
   nsresult rv = aStatement->GetSharedBlob(aIndex, &dataLength, &data);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
-  return aBuffer.copy(reinterpret_cast<const uint64 *>(data), dataLength) ?
+  return aBuffer.copy(reinterpret_cast<const uint64_t *>(data), dataLength) ?
          NS_OK :
          NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
 }
@@ -2209,7 +2209,11 @@ class ThreadLocalJSRuntime
   static JSClass sGlobalClass;
   static const unsigned sRuntimeHeapSize = 64 * 1024;  // should be enough for anyone
 
-  ThreadLocalJSRuntime() : mRuntime(NULL), mContext(NULL), mGlobal(NULL) {}
+  ThreadLocalJSRuntime()
+  : mRuntime(NULL), mContext(NULL), mGlobal(NULL)
+  {
+      MOZ_COUNT_CTOR(ThreadLocalJSRuntime);
+  }
 
   nsresult Init()
   {
@@ -2249,6 +2253,8 @@ class ThreadLocalJSRuntime
 
   ~ThreadLocalJSRuntime()
   {
+    MOZ_COUNT_DTOR(ThreadLocalJSRuntime);
+
     if (mContext) {
       JS_DestroyContext(mContext);
     }

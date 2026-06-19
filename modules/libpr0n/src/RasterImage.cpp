@@ -747,22 +747,15 @@ RasterImage::GetFrame(PRUint32 aWhichFrame,
 
 namespace {
 
-enum DecodedSizeType {
-  DECODED_SIZE_HEAP,
-  DECODED_SIZE_NONHEAP
-};
-
 PRUint32
-GetDecodedSize(const nsTArray<imgFrame *> &aFrames, DecodedSizeType aType)
+GetDecodedSize(const nsTArray<imgFrame *> &aFrames,
+               gfxASurface::MemoryLocation aLocation)
 {
   PRUint32 val = 0;
   for (PRUint32 i = 0; i < aFrames.Length(); ++i) {
     imgFrame *frame = aFrames.SafeElementAt(i, nsnull);
     NS_ABORT_IF_FALSE(frame, "Null frame in frame array!");
-    if (aType == DECODED_SIZE_HEAP)
-      val += frame->EstimateHeapMemoryUsed();
-    else
-      val += frame->EstimateNonheapMemoryUsed();
+    val += frame->EstimateMemoryUsed(aLocation);
   }
 
   return val;
@@ -771,15 +764,21 @@ GetDecodedSize(const nsTArray<imgFrame *> &aFrames, DecodedSizeType aType)
 } // anonymous namespace
 
 PRUint32
-RasterImage::GetDecodedNonheapSize()
+RasterImage::GetDecodedHeapSize()
 {
-  return GetDecodedSize(mFrames, DECODED_SIZE_NONHEAP);
+  return GetDecodedSize(mFrames, gfxASurface::MEMORY_IN_PROCESS_HEAP);
 }
 
 PRUint32
-RasterImage::GetDecodedHeapSize()
+RasterImage::GetDecodedNonheapSize()
 {
-  return GetDecodedSize(mFrames, DECODED_SIZE_HEAP);
+  return GetDecodedSize(mFrames, gfxASurface::MEMORY_IN_PROCESS_NONHEAP);
+}
+
+PRUint32
+RasterImage::GetDecodedOutOfProcessSize()
+{
+  return GetDecodedSize(mFrames, gfxASurface::MEMORY_OUT_OF_PROCESS);
 }
 
 PRUint32
@@ -866,8 +865,7 @@ RasterImage::InternalAddFrame(PRUint32 framenum,
 
   if (mFrames.Length() == 1) {
     // Since we're about to add our second frame, initialize animation stuff
-    if (!ensureAnimExists())
-      return NS_ERROR_OUT_OF_MEMORY;
+    EnsureAnimExists();
     
     // If we dispose of the first frame by clearing it, then the
     // First Frame's refresh area is all of itself.
@@ -1137,8 +1135,7 @@ RasterImage::StartAnimation()
 
   NS_ABORT_IF_FALSE(ShouldAnimate(), "Should not animate!");
 
-  if (!ensureAnimExists())
-    return NS_ERROR_OUT_OF_MEMORY;
+  EnsureAnimExists();
 
   NS_ABORT_IF_FALSE(mAnim && !mAnim->timer, "Anim must exist and not have a timer yet");
   
@@ -1474,12 +1471,10 @@ RasterImage::Notify(nsITimer *timer)
   // before they're filled in.
   NS_ABORT_IF_FALSE(mDecoder || nextFrameIndex <= mFrames.Length(),
                     "How did we get 2 indicies too far by incrementing?");
-  bool haveFullNextFrame = !mDecoder || nextFrameIndex < mDecoder->GetCompleteFrameCount();
 
-  // If we don't have the next full frame, it had better be in the pipe.
-  NS_ABORT_IF_FALSE(haveFullNextFrame ||
-                    (mDecoder && mFrames.Length() > mDecoder->GetCompleteFrameCount()),
-                    "What is the next frame supposed to be?");
+  // If we don't have a decoder, we know we've got everything we're going to get.
+  // If we do, we only display fully-downloaded frames; everything else gets delayed.
+  bool haveFullNextFrame = !mDecoder || nextFrameIndex < mDecoder->GetCompleteFrameCount();
 
   // If we're done decoding the next frame, go ahead and display it now and
   // reinit the timer with the next frame's delay time.
@@ -2121,7 +2116,7 @@ RasterImage::Discard(bool force)
 }
 
 // Helper method to determine if we can discard an image
-PRBool
+bool
 RasterImage::CanDiscard() {
   return (DiscardingEnabled() && // Globally enabled...
           mDiscardable &&        // ...Enabled at creation time...
@@ -2130,7 +2125,7 @@ RasterImage::CanDiscard() {
           mDecoded);             // ...and have something to discard.
 }
 
-PRBool
+bool
 RasterImage::CanForciblyDiscard() {
   return mDiscardable &&         // ...Enabled at creation time...
          mHasSourceData;         // ...have the source data...
@@ -2138,14 +2133,14 @@ RasterImage::CanForciblyDiscard() {
 
 // Helper method to tell us whether the clock is currently running for
 // discarding this image. Mainly for assertions.
-PRBool
+bool
 RasterImage::DiscardingActive() {
   return !!(mDiscardTrackerNode.prev || mDiscardTrackerNode.next);
 }
 
 // Helper method to determine if we're storing the source data in a buffer
 // or just writing it directly to the decoder
-PRBool
+bool
 RasterImage::StoringSourceData() {
   return (mDecodeOnDraw || mDiscardable);
 }
@@ -2502,6 +2497,10 @@ RasterImage::Draw(gfxContext *aContext,
     mFrameDecodeFlags = DECODE_FLAGS_DEFAULT;
   }
 
+  if (!mDecoded) {
+      mDrawStartTime = TimeStamp::Now();
+  }
+
   // If a synchronous draw is requested, flush anything that might be sitting around
   if (aFlags & FLAG_SYNC_DECODE) {
     nsresult rv = SyncDecode();
@@ -2520,6 +2519,12 @@ RasterImage::Draw(gfxContext *aContext,
 
   frame->Draw(aContext, aFilter, aUserSpaceToImageSpace, aFill, padding, aSubimage);
 
+  if (mDecoded && !mDrawStartTime.IsNull()) {
+      TimeDuration drawLatency = TimeStamp::Now() - mDrawStartTime;
+      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_ON_DRAW_LATENCY, PRInt32(drawLatency.ToMicroseconds()));
+      // clear the value of mDrawStartTime
+      mDrawStartTime = TimeStamp();
+  }
   return NS_OK;
 }
 
@@ -2714,6 +2719,7 @@ imgDecodeWorker::Run()
 
   // Loop control
   bool haveMoreData = true;
+  PRInt32 chunkCount = 0;
   TimeStamp start = TimeStamp::Now();
   TimeStamp deadline = start + TimeDuration::FromMilliseconds(gMaxMSBeforeYield);
 
@@ -2725,6 +2731,7 @@ imgDecodeWorker::Run()
          (TimeStamp::Now() < deadline)) {
 
     // Decode a chunk of data
+    chunkCount++;
     rv = image->DecodeSomeData(maxBytes);
     if (NS_FAILED(rv)) {
       image->DoError();
@@ -2737,7 +2744,12 @@ imgDecodeWorker::Run()
   }
 
   TimeDuration decodeLatency = TimeStamp::Now() - start;
-  Telemetry::Accumulate(Telemetry::IMAGE_DECODE_LATENCY, PRInt32(decodeLatency.ToMicroseconds()));
+  if (chunkCount) {
+      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_LATENCY, PRInt32(decodeLatency.ToMicroseconds()));
+      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_CHUNKS, chunkCount);
+  }
+  // accumulate the total decode time
+  mDecodeTime += decodeLatency;
 
   // Flush invalidations _after_ we've written everything we're going to.
   // Furthermore, if this is a redecode, we don't want to do progressive
@@ -2751,6 +2763,7 @@ imgDecodeWorker::Run()
 
   // If the decode finished, shutdown the decoder
   if (image->mDecoder && image->IsDecodeFinished()) {
+    Telemetry::Accumulate(Telemetry::IMAGE_DECODE_TIME, PRInt32(mDecodeTime.ToMicroseconds()));
     rv = image->ShutdownDecoder(RasterImage::eShutdownIntent_Done);
     if (NS_FAILED(rv)) {
       image->DoError();
@@ -2818,7 +2831,7 @@ RasterImage::WriteToRasterImage(nsIInputStream* /* unused */,
   return NS_OK;
 }
 
-PRBool
+bool
 RasterImage::ShouldAnimate()
 {
   return Image::ShouldAnimate() && mFrames.Length() >= 2 &&

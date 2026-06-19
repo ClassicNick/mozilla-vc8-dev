@@ -69,6 +69,7 @@
 #include "nsIAnimationFrameListener.h"
 #include "nsEventStates.h"
 #include "nsIStructuredCloneContainer.h"
+#include "nsIBFCacheEntry.h"
 #include "nsDOMMemoryReporter.h"
 
 class nsIContent;
@@ -125,9 +126,9 @@ class Element;
 } // namespace mozilla
 
 
-#define NS_IDOCUMENT_IID \
-{ 0xe4bc7342, 0x6528, 0x4979, \
- { 0x9e, 0xb5, 0x12, 0xef, 0x4a, 0x97, 0xe1, 0xea } }
+#define NS_IDOCUMENT_IID      \
+{ 0x455e4d79, 0x756b, 0x4f73,  \
+ { 0x95, 0xea, 0x3f, 0xf6, 0x0c, 0x6a, 0x8c, 0xa6 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -480,11 +481,15 @@ public:
     return GetBFCacheEntry() ? nsnull : mPresShell;
   }
 
-  void SetBFCacheEntry(nsISHEntry* aSHEntry) {
-    mSHEntry = aSHEntry;
+  void SetBFCacheEntry(nsIBFCacheEntry* aEntry)
+  {
+    mBFCacheEntry = aEntry;
   }
 
-  nsISHEntry* GetBFCacheEntry() const { return mSHEntry; }
+  nsIBFCacheEntry* GetBFCacheEntry() const
+  {
+    return mBFCacheEntry;
+  }
 
   /**
    * Return the parent document of this document. Will return null
@@ -1147,16 +1152,6 @@ public:
     mMayStartLayout = aMayStartLayout;
   }
 
-  // This method should return an addrefed nsIParser* or nsnull. Implementations
-  // should transfer ownership of the parser to the caller.
-  virtual already_AddRefed<nsIParser> GetFragmentParser() {
-    return nsnull;
-  }
-
-  virtual void SetFragmentParser(nsIParser* aParser) {
-    // Do nothing.
-  }
-
   already_AddRefed<nsIDocumentEncoder> GetCachedEncoder()
   {
     return mCachedEncoder.forget();
@@ -1335,6 +1330,10 @@ public:
   virtual void UnsuppressEventHandlingAndFireEvents(PRBool aFireEvents) = 0;
 
   PRUint32 EventHandlingSuppressed() const { return mEventsSuppressed; }
+
+  bool IsEventHandlingEnabled() {
+    return !EventHandlingSuppressed() && mScriptGlobalObject;
+  }
 
   /**
    * Increment the number of external scripts being evaluated.
@@ -1693,6 +1692,10 @@ protected:
   // True if we're an SVG document being used as an image.
   PRPackedBool mIsBeingUsedAsImage;
 
+  // True is this document is synthetic : stand alone image, video, audio
+  // file, etc.
+  PRPackedBool mIsSyntheticDocument;
+
   // The document's script global object, the object from which the
   // document can get its script context and scope. This is the
   // *inner* window object.
@@ -1748,9 +1751,9 @@ protected:
 
   AnimationListenerList mAnimationFrameListeners;
 
-  // The session history entry in which we're currently bf-cached. Non-null
-  // if and only if we're currently in the bfcache.
-  nsISHEntry* mSHEntry;
+  // This object allows us to evict ourself from the back/forward cache.  The
+  // pointer is non-null iff we're currently in the bfcache.
+  nsIBFCacheEntry *mBFCacheEntry;
 
   // Our base target.
   nsString mBaseTarget;

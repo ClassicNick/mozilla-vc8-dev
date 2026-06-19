@@ -103,6 +103,7 @@
 #include "nsHTMLDNSPrefetch.h"
 #include "nsISupportsPrimitives.h"
 #include "mozilla/Preferences.h"
+#include "nsParserConstants.h"
 
 using namespace mozilla;
 
@@ -335,6 +336,7 @@ nsContentSink::StyleSheetLoaded(nsCSSStyleSheet* aSheet,
                                 PRBool aWasAlternate,
                                 nsresult aStatus)
 {
+  NS_ASSERTION(!mFragmentMode, "How come a fragment parser observed sheets?");
   if (!aWasAlternate) {
     NS_ASSERTION(mPendingSheetCount > 0, "How'd that happen?");
     --mPendingSheetCount;
@@ -607,6 +609,9 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
 {
   nsresult rv = NS_OK;
 
+  // keep track where we are within the header field
+  PRBool seenParameters = PR_FALSE;
+
   // parse link content and call process style link
   nsAutoString href;
   nsAutoString rel;
@@ -702,12 +707,15 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
       if ((*start == kLessThan) && (*last == kGreaterThan)) {
         *last = kNullCh;
 
-        if (href.IsEmpty()) { // first one wins
+        // first instance of <...> wins
+        // also, do not allow hrefs after the first param was seen
+        if (href.IsEmpty() && !seenParameters) {
           href = (start + 1);
           href.StripWhitespace();
         }
       } else {
         PRUnichar* equals = start;
+        seenParameters = PR_TRUE;
 
         while ((*equals != kNullCh) && (*equals != kEqual)) {
           equals++;
@@ -789,6 +797,8 @@ nsContentSink::ProcessLinkHeader(nsIContent* aElement,
       type.Truncate();
       media.Truncate();
       anchor.Truncate();
+      
+      seenParameters = PR_FALSE;
     }
 
     start = ++end;
@@ -873,12 +883,13 @@ nsContentSink::ProcessStyleLink(nsIContent* aElement,
     return NS_OK;
   }
 
+  // If this is a fragment parser, we don't want to observe.
   PRBool isAlternate;
   rv = mCSSLoader->LoadStyleLink(aElement, url, aTitle, aMedia, aAlternate,
-                                 this, &isAlternate);
+                                 mFragmentMode ? nsnull : this, &isAlternate);
   NS_ENSURE_SUCCESS(rv, rv);
   
-  if (!isAlternate) {
+  if (!isAlternate && !mFragmentMode) {
     ++mPendingSheetCount;
     mScriptLoader->AddExecuteBlocker();
   }

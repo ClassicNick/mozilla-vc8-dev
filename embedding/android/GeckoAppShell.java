@@ -62,6 +62,7 @@ import android.telephony.*;
 import android.webkit.MimeTypeMap;
 import android.media.MediaScannerConnection;
 import android.media.MediaScannerConnection.MediaScannerConnectionClient;
+import android.provider.Settings;
 
 import android.util.*;
 import android.net.Uri;
@@ -682,14 +683,20 @@ public class GeckoAppShell
     }
 
     // "Installs" an application by creating a shortcut
-    static void installWebApplication(String aURI, String aTitle, String aIconData) {
-        Log.w("GeckoAppJava", "installWebApplication for " + aURI + " [" + aTitle + "]");
+    static void createShortcut(String aTitle, String aURI, String aIconData, String aType) {
+        Log.w("GeckoAppJava", "createShortcut for " + aURI + " [" + aTitle + "]");
 
         // the intent to be launched by the shortcut
-        Intent shortcutIntent = new Intent("org.mozilla.gecko.WEBAPP");
+        Intent shortcutIntent = new Intent();
+        if (aType == "webapp") {
+            shortcutIntent.setAction("org.mozilla.gecko.WEBAPP");
+            shortcutIntent.putExtra("args", "--webapp=" + aURI);
+        } else {
+            shortcutIntent.setAction("org.mozilla.gecko.BOOKMARK");
+            shortcutIntent.putExtra("args", "--url=" + aURI);
+        }
         shortcutIntent.setClassName(GeckoApp.mAppContext,
                                     GeckoApp.mAppContext.getPackageName() + ".App");
-        shortcutIntent.putExtra("args", "--webapp=" + aURI);
 
         Intent intent = new Intent();
         intent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
@@ -835,7 +842,7 @@ public class GeckoAppShell
         getHandler().post(new Runnable() { 
             public void run() {
                 Context context = GeckoApp.surfaceView.getContext();
-                ClipboardManager cm = (ClipboardManager)
+                android.text.ClipboardManager cm = (android.text.ClipboardManager)
                     context.getSystemService(Context.CLIPBOARD_SERVICE);
                 try {
                     sClipboardQueue.put(cm.hasText() ? cm.getText().toString() : "");
@@ -852,7 +859,7 @@ public class GeckoAppShell
         getHandler().post(new Runnable() { 
             public void run() {
                 Context context = GeckoApp.surfaceView.getContext();
-                ClipboardManager cm = (ClipboardManager)
+                android.text.ClipboardManager cm = (android.text.ClipboardManager)
                     context.getSystemService(Context.CLIPBOARD_SERVICE);
                 cm.setText(text);
             }});
@@ -1165,6 +1172,52 @@ public class GeckoAppShell
         return result;
     }
 
+    public static void putChildInBackground() {
+        try {
+            File cgroupFile = new File("/proc/" + android.os.Process.myPid() + "/cgroup");
+            BufferedReader br = new BufferedReader(new FileReader(cgroupFile));
+            String[] cpuLine = br.readLine().split("/");
+            br.close();
+            final String backgroundGroup = cpuLine.length == 2 ? cpuLine[1] : "";
+            GeckoProcessesVisitor visitor = new GeckoProcessesVisitor() {
+                public boolean callback(int pid) {
+                    if (pid != android.os.Process.myPid()) {
+                        try {
+                            FileOutputStream fos = new FileOutputStream(
+                                new File("/dev/cpuctl/" + backgroundGroup +"/tasks"));
+                            fos.write(new Integer(pid).toString().getBytes());
+                            fos.close();
+                        } catch(Exception e) {
+                            Log.e("GeckoAppShell", "error putting child in the background", e);
+                        }
+                    }
+                    return true;
+                }
+            };
+            EnumerateGeckoProcesses(visitor);
+        } catch (Exception e) {
+            Log.e("GeckoInputStream", "error reading cgroup", e);
+        }
+    }
+
+    public static void putChildInForeground() {
+        GeckoProcessesVisitor visitor = new GeckoProcessesVisitor() {
+            public boolean callback(int pid) {
+                if (pid != android.os.Process.myPid()) {
+                    try {
+                        FileOutputStream fos = new FileOutputStream(new File("/dev/cpuctl/tasks"));
+                        fos.write(new Integer(pid).toString().getBytes());
+                        fos.close();
+                    } catch(Exception e) {
+                        Log.e("GeckoAppShell", "error putting child in the foreground", e);
+                    }
+                }
+                return true;
+            }
+        };   
+        EnumerateGeckoProcesses(visitor);
+    }
+
     public static void killAnyZombies() {
         GeckoProcessesVisitor visitor = new GeckoProcessesVisitor() {
             public boolean callback(int pid) {
@@ -1313,5 +1366,17 @@ public class GeckoAppShell
         ActivityInfo activityInfo = resolveInfo.activityInfo;
 
         return activityInfo.loadIcon(pm);
+    }
+
+    public static boolean getShowPasswordSetting() {
+        try {
+            int showPassword =
+                Settings.System.getInt(GeckoApp.mAppContext.getContentResolver(),
+                                       Settings.System.TEXT_SHOW_PASSWORD);
+            return (showPassword > 0);
+        }
+        catch (Exception e) {
+            return false;
+        }
     }
 }

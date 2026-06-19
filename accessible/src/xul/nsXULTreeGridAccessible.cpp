@@ -46,6 +46,9 @@
 #include "States.h"
 
 #include "nsITreeSelection.h"
+#include "nsComponentManagerUtils.h"
+
+using namespace mozilla::a11y;
 
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridAccessible
@@ -848,13 +851,10 @@ NS_IMPL_RELEASE_INHERITED(nsXULTreeGridCellAccessible, nsLeafAccessible)
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeGridCellAccessible: nsIAccessible implementation
 
-NS_IMETHODIMP
-nsXULTreeGridCellAccessible::GetFocusedChild(nsIAccessible **aFocusedChild) 
+nsAccessible*
+nsXULTreeGridCellAccessible::FocusedChild()
 {
-  NS_ENSURE_ARG_POINTER(aFocusedChild);
-  *aFocusedChild = nsnull;
-
-  return IsDefunct() ? NS_ERROR_FAILURE : NS_OK;
+  return nsnull;
 }
 
 NS_IMETHODIMP
@@ -920,28 +920,20 @@ nsXULTreeGridCellAccessible::GetBounds(PRInt32 *aX, PRInt32 *aY,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXULTreeGridCellAccessible::GetNumActions(PRUint8 *aActionsCount)
+PRUint8
+nsXULTreeGridCellAccessible::ActionCount()
 {
-  NS_ENSURE_ARG_POINTER(aActionsCount);
-  *aActionsCount = 0;
-
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
   PRBool isCycler = PR_FALSE;
   mColumn->GetCycler(&isCycler);
-  if (isCycler) {
-    *aActionsCount = 1;
-    return NS_OK;
-  }
+  if (isCycler)
+    return 1;
 
   PRInt16 type;
   mColumn->GetType(&type);
   if (type == nsITreeColumn::TYPE_CHECKBOX && IsEditable())
-    *aActionsCount = 1;
+    return 1;
 
-  return NS_OK;
+  return 0;
 }
 
 NS_IMETHODIMP

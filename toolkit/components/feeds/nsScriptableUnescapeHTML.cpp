@@ -47,7 +47,7 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsParserCIID.h"
-#include "nsParserCIID.h"
+#include "nsContentUtils.h"
 #include "nsIContentSink.h"
 #include "nsIHTMLToTextSink.h"
 #include "nsIDocumentEncoder.h"
@@ -66,7 +66,6 @@
 #include "nsScriptableUnescapeHTML.h"
 #include "nsAutoPtr.h"
 #include "nsTreeSanitizer.h"
-#include "nsAHtml5FragmentParser.h"
 #include "nsHtml5Module.h"
 
 #define XHTML_DIV_TAG "div xmlns=\"http://www.w3.org/1999/xhtml\""
@@ -171,51 +170,38 @@ nsScriptableUnescapeHTML::ParseFragment(const nsAString &aFragment,
   if (NS_SUCCEEDED(rv)) {
     nsCOMPtr<nsIContent> fragment;
     if (aIsXML) {
-      nsCAutoString contentType;
-      nsCOMPtr<nsIFragmentContentSink> sink;
-      contentType = NS_LITERAL_CSTRING("application/xhtml+xml");
-      sink = do_CreateInstance(NS_XMLFRAGMENTSINK_CONTRACTID);
-      if (sink) {
-        sink->SetTargetDocument(document);
-        nsCOMPtr<nsIContentSink> contentsink(do_QueryInterface(sink));
-        parser->SetContentSink(contentsink);
-        rv = parser->ParseFragment(aFragment, nsnull, tagStack,
-                                   aIsXML, contentType,
-                                   eDTDMode_full_standards);
-        if (NS_SUCCEEDED(rv)) {
-          rv = sink->GetFragment(PR_TRUE, aReturn);
-          fragment = do_QueryInterface(*aReturn);
-        }
-      } else {
-        rv = NS_ERROR_FAILURE;
-      }
+      rv = nsContentUtils::ParseFragmentXML(aFragment,
+                                            document,
+                                            tagStack,
+                                            PR_TRUE,
+                                            aReturn);
+      fragment = do_QueryInterface(*aReturn);
     } else {
-      nsCOMPtr<nsIParser> parser = nsHtml5Module::NewHtml5Parser();
-      nsAHtml5FragmentParser* asFragmentParser =
-          static_cast<nsAHtml5FragmentParser*> (parser.get());
       NS_NewDocumentFragment(aReturn,
                              document->NodeInfoManager());
       fragment = do_QueryInterface(*aReturn);
-      asFragmentParser->ParseHtml5Fragment(aFragment,
-                                          fragment,
-                                          nsGkAtoms::body,
-                                          kNameSpaceID_XHTML,
-                                          PR_FALSE,
-                                          PR_TRUE);
+      nsContentUtils::ParseFragmentHTML(aFragment,
+                                        fragment,
+                                        nsGkAtoms::body,
+                                        kNameSpaceID_XHTML,
+                                        PR_FALSE,
+                                        PR_TRUE);
       // Now, set the base URI on all subtree roots.
-      aBaseURI->GetSpec(spec);
-      nsAutoString spec16;
-      CopyUTF8toUTF16(spec, spec16);
-      nsIContent* node = fragment->GetFirstChild();
-      while (node) {
-        if (node->IsElement()) {
-          node->SetAttr(kNameSpaceID_XML,
-                        nsGkAtoms::base,
-                        nsGkAtoms::xml,
-                        spec16,
-                        PR_FALSE);
+      if (aBaseURI) {
+        aBaseURI->GetSpec(spec);
+        nsAutoString spec16;
+        CopyUTF8toUTF16(spec, spec16);
+        nsIContent* node = fragment->GetFirstChild();
+        while (node) {
+          if (node->IsElement()) {
+            node->SetAttr(kNameSpaceID_XML,
+                          nsGkAtoms::base,
+                          nsGkAtoms::xml,
+                          spec16,
+                          PR_FALSE);
+          }
+          node = node->GetNextSibling();
         }
-        node = node->GetNextSibling();
       }
     }
     if (fragment) {

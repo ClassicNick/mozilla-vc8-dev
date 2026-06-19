@@ -259,6 +259,8 @@ var Browser = {
       if (fullscreen && w != screen.width)
         return;
 
+      BrowserUI.updateTabletLayout();
+
       let toolbarHeight = Math.round(document.getElementById("toolbar-main").getBoundingClientRect().height);
 
       Browser.styles["window-width"].width = w + "px";
@@ -353,10 +355,12 @@ var Browser = {
         // Initial window resizes call functions that assume a tab is in the tab list
         // and restored tabs are added too late. We add a dummy to to satisfy the resize
         // code and then remove the dummy after the session has been restored.
-        let dummy = this.addTab("about:blank");
+        let dummy = this.addTab("about:blank", true);
         let dummyCleanup = {
-          observe: function() {
+          observe: function(aSubject, aTopic, aData) {
             Services.obs.removeObserver(dummyCleanup, "sessionstore-windows-restored");
+            if (aData == "fail")
+              Browser.addTab(commandURL || Browser.getHomePage(), true);
             dummy.chromeTab.ignoreUndo = true;
             Browser.closeTab(dummy, { forceClose: true });
           }
@@ -377,6 +381,7 @@ var Browser = {
     messageManager.addMessageListener("scroll", this);
     messageManager.addMessageListener("Browser:CertException", this);
     messageManager.addMessageListener("Browser:BlockedSite", this);
+    messageManager.addMessageListener("Browser:ErrorPage", this);
 
     // Broadcast a UIReady message so add-ons know we are finished with startup
     let event = document.createEvent("Events");
@@ -479,6 +484,7 @@ var Browser = {
     messageManager.removeMessageListener("scroll", this);
     messageManager.removeMessageListener("Browser:CertException", this);
     messageManager.removeMessageListener("Browser:BlockedSite", this);
+    messageManager.removeMessageListener("Browser:ErrorPage", this);
 
     var os = Services.obs;
     os.removeObserver(XPInstallObserver, "addon-install-blocked");
@@ -932,6 +938,14 @@ var Browser = {
   },
 
   /**
+   * Handle error page message from the content.
+   */
+  _handleErrorPage: function _handleErrorPage(aMessage) {
+    let tab = this.getTabForBrowser(aMessage.target);
+    tab.updateThumbnail({ force: true });
+  },
+
+  /**
    * Compute the sidebar percentage visibility.
    *
    * @param [optional] dx
@@ -1221,6 +1235,9 @@ var Browser = {
       case "Browser:BlockedSite":
         this._handleBlockedSite(aMessage);
         break;
+      case "Browser:ErrorPage":
+        this._handleErrorPage(aMessage);
+        break;
     }
   }
 };
@@ -1249,6 +1266,7 @@ Browser.MainDragger.prototype = {
     let bcr = browser.getBoundingClientRect();
     this._contentView = browser.getViewAt(clientX - bcr.left, clientY - bcr.top);
     this._stopAtSidebar = 0;
+    this._panToolbars = !Elements.urlbarState.getAttribute("tablet");
     if (this._sidebarTimeout) {
       clearTimeout(this._sidebarTimeout);
       this._sidebarTimeout = null;
@@ -1265,23 +1283,28 @@ Browser.MainDragger.prototype = {
 
   dragMove: function dragMove(dx, dy, scroller, aIsKinetic) {
     let doffset = new Point(dx, dy);
+    let sidebarOffset = null;
 
-    // If the sidebars are showing, we pan them out of the way before panning the content.
-    // The panning distance that should be used for the sidebars in is stored in sidebarOffset,
-    // and subtracted from doffset.
-    let sidebarOffset = this._getSidebarOffset(doffset);
+    if (this._panToolbars) {
+      // If the sidebars are showing, we pan them out of the way before panning the content.
+      // The panning distance that should be used for the sidebars in is stored in sidebarOffset,
+      // and subtracted from doffset.
+      sidebarOffset = this._getSidebarOffset(doffset);
 
-    // If we started with one sidebar open, stop when we get to the other.
-    if (sidebarOffset.x != 0)
-      this._blockSidebars(sidebarOffset);
+      // If we started with one sidebar open, stop when we get to the other.
+      if (sidebarOffset.x != 0)
+        this._blockSidebars(sidebarOffset);
+    }
 
     if (!this.contentMouseCapture)
       this._panContent(doffset);
 
-    if (aIsKinetic && doffset.x != 0)
-      return false;
+    if (this._panToolbars) {
+      if (aIsKinetic && doffset.x != 0)
+        return false;
 
-    this._panChrome(doffset, sidebarOffset);
+      this._panChrome(doffset, sidebarOffset);
+    }
 
     this._updateScrollbars();
 
@@ -1621,7 +1644,6 @@ nsBrowserAccess.prototype = {
       if (isExternal)
         tab.closeOnExit = true;
       browser = tab.browser;
-      BrowserUI.hidePanel();
     } else if (aWhere == OPEN_APPTAB) {
       Browser.tabs.forEach(function(aTab) {
         if ("appURI" in aTab.browser && aTab.browser.appURI.spec == aURI.spec) {
@@ -1639,7 +1661,6 @@ nsBrowserAccess.prototype = {
         // Just use the existing browser, but return null to keep the system from trying to load the URI again
         browser = null;
       }
-      BrowserUI.hidePanel();
     } else { // OPEN_CURRENTWINDOW and illegal values
       browser = Browser.selectedBrowser;
     }
@@ -1656,7 +1677,10 @@ nsBrowserAccess.prototype = {
       browser.focus();
     } catch(e) { }
 
+    // We are loading web content into this window, so make sure content is visible
+    BrowserUI.hidePanel();
     BrowserUI.closeAutoComplete();
+    Browser.hideSidebars();
     return browser;
   },
 
@@ -1858,7 +1882,8 @@ const ContentTouchHandler = {
     // Check if the user touched near to one of the edges of the browser area
     // or if the urlbar is showing
     this.canCancelPan = (aX >= rect.left + kSafetyX) && (aX <= rect.right - kSafetyX) &&
-                        (aY >= rect.top  + kSafetyY) && bcr.top == 0;
+                        (aY >= rect.top  + kSafetyY) &&
+                        (bcr.top == 0 || Elements.urlbarState.getAttribute("tablet"));
   },
 
   tapDown: function tapDown(aX, aY) {
@@ -2731,8 +2756,8 @@ Tab.prototype = {
 
     // Make sure the viewport height is not shorter than the window when
     // the page is zoomed out to show its full width.
-    let minScale = this.clampZoomLevel(this.getPageZoomLevel());
-    viewportH = Math.max(viewportH, screenH / minScale);
+    if (viewportH * this.clampZoomLevel(this.getPageZoomLevel()) < screenH)
+      viewportH = Math.max(viewportH, screenH * (browser.contentDocumentWidth / screenW));
 
     if (browser.contentWindowWidth != viewportW || browser.contentWindowHeight != viewportH)
       browser.setWindowSize(viewportW, viewportH);
@@ -2865,13 +2890,10 @@ Tab.prototype = {
   },
 
   clampZoomLevel: function clampZoomLevel(aScale) {
-    let md = this.metadata;
-    if (!this.allowZoom)
-      return (md && md.defaultZoom) ? md.defaultZoom : this.getPageZoomLevel();
-
     let browser = this._browser;
     let bounded = Util.clamp(aScale, ZoomManager.MIN, ZoomManager.MAX);
 
+    let md = this.metadata;
     if (md && md.minZoom)
       bounded = Math.max(bounded, md.minZoom);
     if (md && md.maxZoom)
@@ -2963,7 +2985,8 @@ Tab.prototype = {
     return this.metadata.allowZoom && !Util.isURLEmpty(this.browser.currentURI.spec);
   },
 
-  updateThumbnail: function updateThumbnail() {
+  updateThumbnail: function updateThumbnail(options) {
+    let options = options || {};
     let browser = this._browser;
 
     if (this._loading) {
@@ -2971,9 +2994,11 @@ Tab.prototype = {
       return;
     }
 
+    let forceUpdate = ("force" in options && options.force);
+
     // Do not repaint thumbnail if we already painted for this load. Bad things
     // happen when we do async canvas draws in quick succession.
-    if (!browser || this._thumbnailWindowId == browser.contentWindowId)
+    if (!forceUpdate && (!browser || this._thumbnailWindowId == browser.contentWindowId))
       return;
 
     // Do not try to paint thumbnails if contentWindowWidth/Height have not been
@@ -3066,7 +3091,12 @@ var ViewableAreaObserver = {
   },
 
   get height() {
-    return (this._height || window.innerHeight);
+    let height = (this._height || window.innerHeight);
+    if (Elements.urlbarState.getAttribute("tablet")) {
+      let toolbarHeight = Math.round(document.getElementById("toolbar-main").getBoundingClientRect().height);
+      height -= toolbarHeight;
+    }
+    return height;
   },
 
   _isKeyboardOpened: true,

@@ -80,14 +80,17 @@
 #include "methodjit/MethodJIT-inl.h"
 #include "methodjit/Logging.h"
 #endif
+#include "vm/Debugger.h"
+
 #include "jsatominlines.h"
 #include "jsinterpinlines.h"
 #include "jsobjinlines.h"
+#include "jsopcodeinlines.h"
 #include "jsprobes.h"
 #include "jspropertycacheinlines.h"
 #include "jsscopeinlines.h"
 #include "jsscriptinlines.h"
-#include "jsopcodeinlines.h"
+#include "jstypedarrayinlines.h"
 
 #include "vm/Stack-inl.h"
 #include "vm/String-inl.h"
@@ -153,6 +156,19 @@ js::GetBlockChain(JSContext *cx, StackFrame *fp)
 
     JSScript *script = fp->script();
     jsbytecode *start = script->code;
+
+    /*
+     * If the debugger asks for the scope chain at a pc where we are about to
+     * fix it up, advance target past the fixup. See bug 672804.
+     */
+    JSOp op = js_GetOpcode(cx, script, target);
+    while (op == JSOP_NOP || op == JSOP_INDEXBASE || op == JSOP_INDEXBASE1 ||
+           op == JSOP_INDEXBASE2 || op == JSOP_INDEXBASE3 ||
+           op == JSOP_BLOCKCHAIN || op == JSOP_NULLBLOCKCHAIN)
+    {
+        target += js_CodeSpec[op].length;
+        op = js_GetOpcode(cx, script, target);
+    }
     JS_ASSERT(target >= start && target < start + script->length);
 
     JSObject *blockChain = NULL;
@@ -405,23 +421,10 @@ ReportIncompatibleMethod(JSContext *cx, Value *vp, Class *clasp)
 #endif
 
     if (JSFunction *fun = js_ValueToFunction(cx, &vp[0], 0)) {
-        const char *name = thisv.isObject()
-                           ? thisv.toObject().getClass()->name
-                           : thisv.isString()
-                           ? "string"
-                           : thisv.isNumber()
-                           ? "number"
-                           : thisv.isBoolean()
-                           ? "boolean"
-                           : thisv.isNull()
-                           ? js_null_str
-                           : thisv.isUndefined()
-                           ? js_undefined_str
-                           : "value";
         JSAutoByteString funNameBytes;
         if (const char *funName = GetFunctionNameBytes(cx, fun, &funNameBytes)) {
             JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_INCOMPATIBLE_PROTO,
-                                 clasp->name, funName, name);
+                                 clasp->name, funName, InformalValueTypeName(thisv));
         }
     }
 }
@@ -535,9 +538,7 @@ js_OnUnknownMethod(JSContext *cx, Value *vp)
         /* Extract the function name from function::name qname. */
         if (vp[0].isObject()) {
             obj = &vp[0].toObject();
-            if (!js_IsFunctionQName(cx, obj, &id))
-                return false;
-            if (!JSID_IS_VOID(id))
+            if (js_GetLocalNameFromFunctionQName(obj, &id, cx))
                 vp[0] = IdToValue(id);
         }
 #endif
@@ -708,6 +709,9 @@ InvokeSessionGuard::start(JSContext *cx, const Value &calleev, const Value &this
     /* Callees may clobber 'this' or 'callee'. */
     savedCallee_ = args_.calleev() = calleev;
     savedThis_ = args_.thisv() = thisv;
+
+    /* If anyone (through jsdbgapi) finds this frame, make it safe. */
+    MakeRangeGCSafe(args_.argv(), args_.argc());
 
     do {
         /* Hoist dynamic checks from scripted Invoke. */
@@ -2359,15 +2363,19 @@ BEGIN_CASE(JSOP_STOP)
         argv = regs.fp()->maybeFormalArgs();
         atoms = FrameAtomBase(cx, regs.fp());
 
+        JS_ASSERT(*regs.pc == JSOP_TRAP || *regs.pc == JSOP_NEW || *regs.pc == JSOP_CALL ||
+                  *regs.pc == JSOP_FUNCALL || *regs.pc == JSOP_FUNAPPLY);
+
         /* Resume execution in the calling frame. */
         RESET_USE_METHODJIT();
         if (JS_LIKELY(interpReturnOK)) {
-            JS_ASSERT(js_CodeSpec[js_GetOpcode(cx, script, regs.pc)].length
-                      == JSOP_CALL_LENGTH);
             TRACE_0(LeaveFrame);
             len = JSOP_CALL_LENGTH;
             DO_NEXT_OP(len);
         }
+
+        /* Increment pc so that |sp - fp->slots == ReconstructStackDepth(pc)|. */
+        regs.pc += JSOP_CALL_LENGTH;
         goto error;
     } else {
         JS_ASSERT(regs.sp == regs.fp()->base());
@@ -3557,8 +3565,8 @@ BEGIN_CASE(JSOP_LENGTH)
             }
 
             if (js_IsTypedArray(obj)) {
-                TypedArray *tarray = TypedArray::fromJSObject(obj);
-                regs.sp[-1].setNumber(tarray->length);
+                JSObject *tarray = TypedArray::getTypedArray(obj);
+                regs.sp[-1].setInt32(TypedArray::getLength(tarray));
                 len = JSOP_LENGTH_LENGTH;
                 DO_NEXT_OP(len);
             }
@@ -4403,7 +4411,7 @@ END_VARLEN_CASE
 BEGIN_CASE(JSOP_TRAP)
 {
     Value rval;
-    JSTrapStatus status = JS_HandleTrap(cx, script, regs.pc, Jsvalify(&rval));
+    JSTrapStatus status = Debugger::onTrap(cx, &rval);
     switch (status) {
       case JSTRAP_ERROR:
         goto error;
@@ -5396,25 +5404,27 @@ END_CASE(JSOP_INSTANCEOF)
 
 BEGIN_CASE(JSOP_DEBUGGER)
 {
-    JSDebuggerHandler handler = cx->debugHooks->debuggerHandler;
-    if (handler) {
-        Value rval;
-        switch (handler(cx, script, regs.pc, Jsvalify(&rval), cx->debugHooks->debuggerHandlerData)) {
-        case JSTRAP_ERROR:
-            goto error;
-        case JSTRAP_CONTINUE:
-            break;
-        case JSTRAP_RETURN:
-            regs.fp()->setReturnValue(rval);
-            interpReturnOK = JS_TRUE;
-            goto forced_return;
-        case JSTRAP_THROW:
-            cx->setPendingException(rval);
-            goto error;
-        default:;
-        }
-        CHECK_INTERRUPT_HANDLER();
+    JSTrapStatus st = JSTRAP_CONTINUE;
+    Value rval;
+    if (JSDebuggerHandler handler = cx->debugHooks->debuggerHandler)
+        st = handler(cx, script, regs.pc, Jsvalify(&rval), cx->debugHooks->debuggerHandlerData);
+    if (st == JSTRAP_CONTINUE)
+        st = Debugger::onDebuggerStatement(cx, &rval);
+    switch (st) {
+      case JSTRAP_ERROR:
+        goto error;
+      case JSTRAP_CONTINUE:
+        break;
+      case JSTRAP_RETURN:
+        regs.fp()->setReturnValue(rval);
+        interpReturnOK = JS_TRUE;
+        goto forced_return;
+      case JSTRAP_THROW:
+        cx->setPendingException(rval);
+        goto error;
+      default:;
     }
+    CHECK_INTERRUPT_HANDLER();
 }
 END_CASE(JSOP_DEBUGGER)
 
@@ -5926,11 +5936,16 @@ END_CASE(JSOP_ARRAYPUSH)
         atoms = script->atomMap.vector;
 
         /* Call debugger throw hook if set. */
-        handler = cx->debugHooks->throwHook;
-        if (handler) {
+        if (cx->debugHooks->throwHook || !cx->compartment->getDebuggees().empty()) {
             Value rval;
-            switch (handler(cx, script, regs.pc, Jsvalify(&rval),
-                            cx->debugHooks->throwHookData)) {
+            JSTrapStatus st = Debugger::onExceptionUnwind(cx, &rval);
+            if (st == JSTRAP_CONTINUE) {
+                handler = cx->debugHooks->throwHook;
+                if (handler)
+                    st = handler(cx, script, regs.pc, Jsvalify(&rval), cx->debugHooks->throwHookData);
+            }
+
+            switch (st) {
               case JSTRAP_ERROR:
                 cx->clearPendingException();
                 goto error;

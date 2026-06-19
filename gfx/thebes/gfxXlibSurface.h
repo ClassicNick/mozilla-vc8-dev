@@ -44,6 +44,10 @@
 #include <X11/extensions/Xrender.h>
 #include <X11/Xlib.h>
 
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+#include "GLXLibrary.h"
+#endif
+
 class THEBES_API gfxXlibSurface : public gfxASurface {
 public:
     // construct a wrapper around the specified drawable with dpy/visual.
@@ -104,6 +108,10 @@ public:
     // server, not the main application.
     virtual gfxASurface::MemoryLocation GetMemoryLocation() const;
 
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+    GLXPixmap GetGLXPixmap();
+#endif
+
 protected:
     // if TakePixmap() has been called on this
     PRBool mPixmapTaken;
@@ -114,6 +122,10 @@ protected:
     void DoSizeQuery();
 
     gfxIntSize mSize;
+
+#if defined(MOZ_WIDGET_GTK2) && !defined(MOZ_PLATFORM_MAEMO)
+    GLXPixmap mGLXPixmap;
+#endif
 };
 
 #endif /* GFX_XLIBSURFACE_H */

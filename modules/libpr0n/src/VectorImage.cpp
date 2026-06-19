@@ -262,6 +262,12 @@ VectorImage::GetDecodedNonheapSize()
 }
 
 PRUint32
+VectorImage::GetDecodedOutOfProcessSize()
+{
+  return 0;
+}
+
+PRUint32
 VectorImage::GetSourceHeapSize()
 {
   // We're not storing the source data -- we just feed that directly to
@@ -295,7 +301,7 @@ VectorImage::StopAnimation()
   return NS_OK;
 }
 
-PRBool
+bool
 VectorImage::ShouldAnimate()
 {
   return Image::ShouldAnimate() && mIsFullyLoaded && mHaveAnimations;

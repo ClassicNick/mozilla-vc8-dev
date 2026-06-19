@@ -56,12 +56,7 @@
 #include "nsIDOMNode.h" // for Find
 #include "nsIDOMNodeList.h"
 #include "nsIDOMElement.h"
-#include "nsIDOMText.h"
-#include "nsIDOMComment.h"
-#include "nsIDOMDOMImplementation.h"
-#include "nsIDOMDocumentType.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMHTMLFormElement.h"
 #include "nsDOMString.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
@@ -285,7 +280,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLDocument, nsDocument)
                                                        nsIDOMNodeList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mWyciwygChannel)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mMidasCommandManager)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mFragmentParser)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLDocument, nsDocument)
@@ -298,7 +292,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLDocument, nsDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFormControls)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mWyciwygChannel)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mMidasCommandManager)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFragmentParser)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ADDREF_INHERITED(nsHTMLDocument, nsDocument)
@@ -1499,6 +1492,7 @@ nsHTMLDocument::SetCookie(const nsAString& aCookie)
       window->GetPrompter(getter_AddRefs(prompt));
     }
 
+    // The for getting the URI matches nsNavigator::GetCookieEnabled
     nsCOMPtr<nsIURI> codebaseURI;
     NodePrincipal()->GetURI(getter_AddRefs(codebaseURI));
 

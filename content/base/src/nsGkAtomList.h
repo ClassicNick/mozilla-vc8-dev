@@ -44,7 +44,7 @@
   This file is designed to be used as inline input to nsGkAtoms.cpp and nsGkAtoms.h
   *only* through the magic of C preprocessing.
 
-  All entires must be enclosed in the macro GK_ATOM which will have cruel
+  All entries must be enclosed in the macro GK_ATOM which will have cruel
   and unusual things done to it
 
   The first argument to GK_ATOM is the C++ name of the atom
@@ -567,6 +567,7 @@ GK_ATOM(menuButton, "menu-button")
 GK_ATOM(menuitem, "menuitem")
 GK_ATOM(menulist, "menulist")
 GK_ATOM(menupopup, "menupopup")
+GK_ATOM(menuseparator, "menuseparator")
 GK_ATOM(message, "message")
 GK_ATOM(meta, "meta")
 GK_ATOM(meter, "meter")
@@ -723,6 +724,7 @@ GK_ATOM(onresize, "onresize")
 GK_ATOM(onscroll, "onscroll")
 GK_ATOM(onselect, "onselect")
 GK_ATOM(onset, "onset")
+GK_ATOM(onshow, "onshow")
 GK_ATOM(onsubmit, "onsubmit")
 GK_ATOM(ontext, "ontext")
 GK_ATOM(ontouchstart, "ontouchstart")
@@ -1792,7 +1794,6 @@ GK_ATOM(svgTextFrame, "SVGTextFrame")
 GK_ATOM(svgTextPathFrame, "SVGTextPathFrame")
 GK_ATOM(svgTSpanFrame, "SVGTSpanFrame")
 GK_ATOM(svgUseFrame, "SVGUseFrame")
-#ifdef MOZ_MEDIA
 GK_ATOM(HTMLVideoFrame, "VideoFrame")
 GK_ATOM(onloadstart, "onloadstart")
 GK_ATOM(onprogress, "onprogress")
@@ -1834,7 +1835,6 @@ GK_ATOM(canplaythrough, "canplaythrough")
 GK_ATOM(ratechange, "ratechange")
 GK_ATOM(durationchange, "durationchange")
 GK_ATOM(volumechange, "volumechange")
-#endif
 
 // Content property names
 GK_ATOM(animationsProperty, "AnimationsProperty")        // FrameAnimations*

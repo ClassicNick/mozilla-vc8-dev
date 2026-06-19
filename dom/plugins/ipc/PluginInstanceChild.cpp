@@ -1289,10 +1289,6 @@ PluginInstanceChild::PluginWindowProcInternal(HWND hWnd,
     if ((InSendMessageEx(NULL)&(ISMEX_REPLIED|ISMEX_SEND)) == ISMEX_SEND) {
         switch(message) {
             case WM_KILLFOCUS:
-            case WM_MOUSEHWHEEL:
-            case WM_MOUSEWHEEL:
-            case WM_HSCROLL:
-            case WM_VSCROLL:
             ReplyMessage(0);
             break;
         }
@@ -3522,7 +3518,13 @@ PluginInstanceChild::SwapSurfaces()
 
         mDoubleBufferCARenderer.ClearFrontSurface();
     }
-#endif //MOZ_WIDGET_COCOA
+#else
+    if (mCurrentSurface && mBackSurface &&
+        (mCurrentSurface->GetSize() != mBackSurface->GetSize() ||
+         mCurrentSurface->GetContentType() != mBackSurface->GetContentType())) {
+        ClearCurrentSurface();
+    }
+#endif
 }
 
 void
