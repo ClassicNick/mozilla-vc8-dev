@@ -850,49 +850,39 @@ static JSHashAllocOps sftbl_alloc_ops = {
     js_alloc_sftbl_entry,   js_free_sftbl_entry
 };
 
-static void
-FinishRuntimeScriptState(JSRuntime *rt)
-{
-    if (rt->scriptFilenameTable) {
-        JS_HashTableDestroy(rt->scriptFilenameTable);
-        rt->scriptFilenameTable = NULL;
-    }
-#ifdef JS_THREADSAFE
-    if (rt->scriptFilenameTableLock) {
-        JS_DESTROY_LOCK(rt->scriptFilenameTableLock);
-        rt->scriptFilenameTableLock = NULL;
-    }
-#endif
-}
+namespace js {
 
-JSBool
-js_InitRuntimeScriptState(JSRuntime *rt)
+bool
+InitRuntimeScriptState(JSRuntime *rt)
 {
 #ifdef JS_THREADSAFE
     JS_ASSERT(!rt->scriptFilenameTableLock);
     rt->scriptFilenameTableLock = JS_NEW_LOCK();
     if (!rt->scriptFilenameTableLock)
-        return JS_FALSE;
+        return false;
 #endif
     JS_ASSERT(!rt->scriptFilenameTable);
     rt->scriptFilenameTable =
         JS_NewHashTable(16, JS_HashString, js_compare_strings, NULL,
                         &sftbl_alloc_ops, NULL);
-    if (!rt->scriptFilenameTable) {
-        FinishRuntimeScriptState(rt);       /* free lock if threadsafe */
-        return JS_FALSE;
-    }
-    return JS_TRUE;
+    if (!rt->scriptFilenameTable)
+        return false;
+
+    return true;
 }
 
 void
-js_FreeRuntimeScriptState(JSRuntime *rt)
+FreeRuntimeScriptState(JSRuntime *rt)
 {
-    if (!rt->scriptFilenameTable)
-        return;
-
-    FinishRuntimeScriptState(rt);
+    if (rt->scriptFilenameTable)
+        JS_HashTableDestroy(rt->scriptFilenameTable);
+#ifdef JS_THREADSAFE
+    if (rt->scriptFilenameTableLock)
+        JS_DESTROY_LOCK(rt->scriptFilenameTableLock);
+#endif
 }
+
+} /* namespace js */
 
 static const char *
 SaveScriptFilename(JSContext *cx, const char *filename)
@@ -915,16 +905,6 @@ SaveScriptFilename(JSContext *cx, const char *filename)
         sfe->key = strcpy(sfe->filename, filename);
         sfe->mark = JS_FALSE;
     }
-
-#ifdef DEBUG
-    if (rt->functionMeterFilename) {
-        size_t len = strlen(sfe->filename);
-        if (len >= sizeof rt->lastScriptFilename)
-            len = sizeof rt->lastScriptFilename - 1;
-        memcpy(rt->lastScriptFilename, sfe->filename, len);
-        rt->lastScriptFilename[len] = '\0';
-    }
-#endif
 
     return sfe->filename;
 }
@@ -1073,7 +1053,7 @@ JSScript::NewScript(JSContext *cx, uint32 length, uint32 nsrcnotes, uint32 natom
 
     size = sizeof(JSScript) +
            sizeof(JSAtom *) * natoms;
-    
+
     if (nobjects != 0)
         size += sizeof(JSObjectArray) + nobjects * sizeof(JSObject *);
     if (nupvars != 0)
@@ -1260,7 +1240,7 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
     JSFunction *fun;
 
     /* The counts of indexed things must be checked during code generation. */
-    JS_ASSERT(cg->atomList.count <= INDEX_LIMIT);
+    JS_ASSERT(cg->atomIndices->count() <= INDEX_LIMIT);
     JS_ASSERT(cg->objectList.length <= INDEX_LIMIT);
     JS_ASSERT(cg->regexpList.length <= INDEX_LIMIT);
 
@@ -1272,9 +1252,10 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
     JS_ASSERT(nClosedArgs == cg->closedArgs.length());
     uint16 nClosedVars = uint16(cg->closedVars.length());
     JS_ASSERT(nClosedVars == cg->closedVars.length());
+    size_t upvarIndexCount = cg->upvarIndices.hasMap() ? cg->upvarIndices->count() : 0;
     script = NewScript(cx, prologLength + mainLength, nsrcnotes,
-                       cg->atomList.count, cg->objectList.length,
-                       cg->upvarList.count, cg->regexpList.length,
+                       cg->atomIndices->count(), cg->objectList.length,
+                       upvarIndexCount, cg->regexpList.length,
                        cg->ntrynotes, cg->constList.length(),
                        cg->globalUses.length(), nClosedArgs, nClosedVars, cg->version());
     if (!script)
@@ -1292,7 +1273,7 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
              : cg->sharpSlots();
     JS_ASSERT(nfixed < SLOTNO_LIMIT);
     script->nfixed = (uint16) nfixed;
-    js_InitAtomMap(cx, &script->atomMap, &cg->atomList);
+    js_InitAtomMap(cx, &script->atomMap, cg->atomIndices.getMap());
 
     filename = cg->parser->tokenStream.getFilename();
     if (filename) {
@@ -1336,11 +1317,11 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
     if (cg->flags & TCF_HAS_SINGLETONS)
         script->hasSingletons = true;
 
-    if (cg->upvarList.count != 0) {
-        JS_ASSERT(cg->upvarList.count <= cg->upvarMap.length);
+    if (cg->hasUpvarIndices()) {
+        JS_ASSERT(cg->upvarIndices->count() <= cg->upvarMap.length);
         memcpy(script->upvars()->vector, cg->upvarMap.vector,
-               cg->upvarList.count * sizeof(uint32));
-        cg->upvarList.clear();
+               cg->upvarIndices->count() * sizeof(uint32));
+        cg->upvarIndices->clear();
         cx->free_(cg->upvarMap.vector);
         cg->upvarMap.vector = NULL;
     }
@@ -1384,31 +1365,6 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
 
     /* Tell the debugger about this compiled script. */
     js_CallNewScriptHook(cx, script, fun);
-#ifdef DEBUG
-    {
-        jsrefcount newEmptyLive, newLive, newTotal;
-        if (script->isEmpty()) {
-            newEmptyLive = JS_RUNTIME_METER(cx->runtime, liveEmptyScripts);
-            newLive = cx->runtime->liveScripts;
-            newTotal =
-                JS_RUNTIME_METER(cx->runtime, totalEmptyScripts) + cx->runtime->totalScripts;
-        } else {
-            newEmptyLive = cx->runtime->liveEmptyScripts;
-            newLive = JS_RUNTIME_METER(cx->runtime, liveScripts);
-            newTotal =
-                cx->runtime->totalEmptyScripts + JS_RUNTIME_METER(cx->runtime, totalScripts);
-        }
-
-        jsrefcount oldHigh = cx->runtime->highWaterLiveScripts;
-        if (newEmptyLive + newLive > oldHigh) {
-            JS_ATOMIC_SET(&cx->runtime->highWaterLiveScripts, newEmptyLive + newLive);
-            if (getenv("JS_DUMP_LIVE_SCRIPTS")) {
-                fprintf(stderr, "high water script count: %d empty, %d not (total %d)\n",
-                        newEmptyLive, newLive, newTotal);
-            }
-        }
-    }
-#endif
 
     return script;
 
@@ -1467,13 +1423,6 @@ js_CallDestroyScriptHook(JSContext *cx, JSScript *script)
 static void
 DestroyScript(JSContext *cx, JSScript *script)
 {
-#ifdef DEBUG
-    if (script->isEmpty())
-        JS_RUNTIME_UNMETER(cx->runtime, liveEmptyScripts);
-    else
-        JS_RUNTIME_UNMETER(cx->runtime, liveScripts);
-#endif
-
     if (script->principals)
         JSPRINCIPALS_DROP(cx, script->principals);
 
@@ -1518,7 +1467,8 @@ DestroyScript(JSContext *cx, JSScript *script)
     }
 
 #ifdef JS_TRACER
-    PurgeScriptFragments(&script->compartment->traceMonitor, script);
+    if (script->compartment->hasTraceMonitor())
+        PurgeScriptFragments(script->compartment->traceMonitor(), script);
 #endif
 
 #ifdef JS_METHODJIT
@@ -1615,19 +1565,12 @@ namespace js {
 static const uint32 GSN_CACHE_THRESHOLD = 100;
 static const uint32 GSN_CACHE_MAP_INIT_SIZE = 20;
 
-#ifdef JS_GSNMETER
-# define GSN_CACHE_METER(cache,cnt) (++(cache)->stats.cnt)
-#else
-# define GSN_CACHE_METER(cache,cnt) ((void) 0)
-#endif
-
 void
 GSNCache::purge()
 {
     code = NULL;
     if (map.initialized())
         map.finish();
-    GSN_CACHE_METER(this, purges);
 }
 
 } /* namespace js */
@@ -1641,13 +1584,11 @@ js_GetSrcNoteCached(JSContext *cx, JSScript *script, jsbytecode *pc)
 
     GSNCache *cache = GetGSNCache(cx);
     if (cache->code == script->code) {
-        GSN_CACHE_METER(cache, hits);
         JS_ASSERT(cache->map.initialized());
         GSNCache::Map::Ptr p = cache->map.lookup(pc);
         return p ? p->value : NULL;
     }
 
-    GSN_CACHE_METER(cache, misses);
     size_t offset = 0;
     jssrcnote *result;
     for (jssrcnote *sn = script->notes(); ; sn = SN_NEXT(sn)) {
@@ -1683,7 +1624,6 @@ js_GetSrcNoteCached(JSContext *cx, JSScript *script, jsbytecode *pc)
                     JS_ALWAYS_TRUE(cache->map.put(pc, sn));
             }
             cache->code = script->code;
-            GSN_CACHE_METER(cache, fills);
         }
     }
 

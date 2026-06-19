@@ -178,6 +178,10 @@ XPCOMUtils.defineLazyGetter(this, "gABI", function aus_gABI() {
 
   if (macutils.isUniversalBinary)
     abi += "-u-" + macutils.architecturesInBinary;
+#ifdef MOZ_SHARK
+  // Disambiguate optimised and shark nightlies
+  abi += "-shark"
+#endif
 #endif
   return abi;
 });
@@ -2138,7 +2142,11 @@ Checker.prototype = {
       cleanUpUpdatesDir();
 
     this._request = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"].
-                    createInstance(Ci.nsIXMLHttpRequest);
+                    createInstance(Ci.nsISupports);
+    // This is here to let unit test code override XHR
+    if (this._request.wrappedJSObject) {
+      this._request = this._request.wrappedJSObject;
+    }
     this._request.open("GET", url, true);
     var allowNonBuiltIn = !getPref("getBoolPref",
                                    PREF_APP_UPDATE_CERT_REQUIREBUILTIN, true);

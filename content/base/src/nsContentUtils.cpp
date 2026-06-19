@@ -65,7 +65,6 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMNode.h"
-#include "nsIDOM3Node.h"
 #include "nsIIOService.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -131,7 +130,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsXBLPrototypeBinding.h"
 #include "nsEscape.h"
 #include "nsICharsetConverterManager.h"
-#include "nsIEventListenerManager.h"
+#include "nsEventListenerManager.h"
 #include "nsAttrName.h"
 #include "nsIDOMUserDataHandler.h"
 #include "nsContentCreatorFunctions.h"
@@ -278,7 +277,7 @@ private:
   const void *mKey; // must be first, to look like PLDHashEntryStub
 
 public:
-  nsCOMPtr<nsIEventListenerManager> mListenerManager;
+  nsRefPtr<nsEventListenerManager> mListenerManager;
 };
 
 static PRBool
@@ -565,13 +564,13 @@ nsContentUtils::InitializeEventTable() {
     { nsGkAtoms::onMozTouchMove,                NS_MOZTOUCH_MOVE, EventNameType_None, NS_MOZTOUCH_EVENT },
     { nsGkAtoms::onMozTouchUp,                  NS_MOZTOUCH_UP, EventNameType_None, NS_MOZTOUCH_EVENT },
 
-    { nsGkAtoms::ontransitionend,               NS_TRANSITION_END, EventNameType_None, NS_TRANSITION_EVENT }
-#ifdef MOZ_CSS_ANIMATIONS
-    ,
+    { nsGkAtoms::ondevicemotion,                NS_DEVICE_MOTION, EventNameType_None, NS_EVENT },
+    { nsGkAtoms::ondeviceorientation,           NS_DEVICE_ORIENTATION, EventNameType_None, NS_EVENT },
+
+    { nsGkAtoms::ontransitionend,               NS_TRANSITION_END, EventNameType_None, NS_TRANSITION_EVENT },
     { nsGkAtoms::onanimationstart,              NS_ANIMATION_START, EventNameType_None, NS_ANIMATION_EVENT },
     { nsGkAtoms::onanimationend,                NS_ANIMATION_END, EventNameType_None, NS_ANIMATION_EVENT },
     { nsGkAtoms::onanimationiteration,          NS_ANIMATION_ITERATION, EventNameType_None, NS_ANIMATION_EVENT },
-#endif
     { nsGkAtoms::onbeforeprint,                 NS_BEFOREPRINT, EventNameType_HTMLXUL, NS_EVENT },
     { nsGkAtoms::onafterprint,                  NS_AFTERPRINT, EventNameType_HTMLXUL, NS_EVENT }
   };
@@ -1133,7 +1132,9 @@ nsContentUtils::CheckSameOrigin(nsINode *aTrustedNode,
   NS_PRECONDITION(aTrustedNode, "There must be a trusted node");
 
   PRBool isSystem = PR_FALSE;
-  sSecurityManager->SubjectPrincipalIsSystem(&isSystem);
+  nsresult rv = sSecurityManager->SubjectPrincipalIsSystem(&isSystem);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   if (isSystem) {
     // we're running as system, grant access to the node.
 
@@ -1199,7 +1200,8 @@ nsContentUtils::CanCallerAccess(nsIDOMNode *aNode)
   // with the system principal games?  But really, there should be a simpler
   // API here, dammit.
   nsCOMPtr<nsIPrincipal> subjectPrincipal;
-  sSecurityManager->GetSubjectPrincipal(getter_AddRefs(subjectPrincipal));
+  nsresult rv = sSecurityManager->GetSubjectPrincipal(getter_AddRefs(subjectPrincipal));
+  NS_ENSURE_SUCCESS(rv, PR_FALSE);
 
   if (!subjectPrincipal) {
     // we're running as system, grant access to the node.
@@ -1221,7 +1223,8 @@ nsContentUtils::CanCallerAccess(nsPIDOMWindow* aWindow)
   // with the system principal games?  But really, there should be a simpler
   // API here, dammit.
   nsCOMPtr<nsIPrincipal> subjectPrincipal;
-  sSecurityManager->GetSubjectPrincipal(getter_AddRefs(subjectPrincipal));
+  nsresult rv = sSecurityManager->GetSubjectPrincipal(getter_AddRefs(subjectPrincipal));
+  NS_ENSURE_SUCCESS(rv, PR_FALSE);
 
   if (!subjectPrincipal) {
     // we're running as system, grant access to the node.
@@ -2085,6 +2088,7 @@ nsresult
 nsContentUtils::GetNodeInfoFromQName(const nsAString& aNamespaceURI,
                                      const nsAString& aQualifiedName,
                                      nsNodeInfoManager* aNodeInfoManager,
+                                     PRUint16 aNodeType,
                                      nsINodeInfo** aNodeInfo)
 {
   nsIParserService* parserService = GetParserService();
@@ -2104,11 +2108,11 @@ nsContentUtils::GetNodeInfoFromQName(const nsAString& aNamespaceURI,
     nsCOMPtr<nsIAtom> prefix = do_GetAtom(Substring(qName.get(), colon));
 
     rv = aNodeInfoManager->GetNodeInfo(Substring(colon + 1, end), prefix,
-                                       nsID, aNodeInfo);
+                                       nsID, aNodeType, aNodeInfo);
   }
   else {
     rv = aNodeInfoManager->GetNodeInfo(aQualifiedName, nsnull, nsID,
-                                       aNodeInfo);
+                                       aNodeType, aNodeInfo);
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2508,7 +2512,7 @@ IsContextOnStack(nsIJSContextStack *aStack, JSContext *aContext)
 }
 
 PRBool
-nsCxPusher::Push(nsPIDOMEventTarget *aCurrentTarget)
+nsCxPusher::Push(nsIDOMEventTarget *aCurrentTarget)
 {
   if (mPushedSomething) {
     NS_ERROR("Whaaa! No double pushing with nsCxPusher::Push()!");
@@ -2550,7 +2554,7 @@ nsCxPusher::Push(nsPIDOMEventTarget *aCurrentTarget)
 }
 
 PRBool
-nsCxPusher::RePush(nsPIDOMEventTarget *aCurrentTarget)
+nsCxPusher::RePush(nsIDOMEventTarget *aCurrentTarget)
 {
   if (!mPushedSomething) {
     return Push(aCurrentTarget);
@@ -3049,7 +3053,7 @@ nsContentUtils::DispatchChromeEvent(nsIDocument *aDoc,
   if (!aDoc->GetWindow())
     return NS_ERROR_INVALID_ARG;
 
-  nsPIDOMEventTarget* piTarget = aDoc->GetWindow()->GetChromeEventHandler();
+  nsIDOMEventTarget* piTarget = aDoc->GetWindow()->GetChromeEventHandler();
   if (!piTarget)
     return NS_ERROR_INVALID_ARG;
 
@@ -3057,7 +3061,7 @@ nsContentUtils::DispatchChromeEvent(nsIDocument *aDoc,
   if (flo) {
     nsRefPtr<nsFrameLoader> fl = flo->GetFrameLoader();
     if (fl) {
-      nsPIDOMEventTarget* t = fl->GetTabChildGlobalAsEventTarget();
+      nsIDOMEventTarget* t = fl->GetTabChildGlobalAsEventTarget();
       piTarget = t ? t : piTarget;
     }
   }
@@ -3241,15 +3245,11 @@ nsContentUtils::HasMutationListeners(nsINode* aNode,
 
   // If we have a window, we can check it for mutation listeners now.
   if (aNode->IsInDoc()) {
-    nsCOMPtr<nsPIDOMEventTarget> piTarget(do_QueryInterface(window));
+    nsCOMPtr<nsIDOMEventTarget> piTarget(do_QueryInterface(window));
     if (piTarget) {
-      nsIEventListenerManager* manager = piTarget->GetListenerManager(PR_FALSE);
-      if (manager) {
-        PRBool hasListeners = PR_FALSE;
-        manager->HasMutationListeners(&hasListeners);
-        if (hasListeners) {
-          return PR_TRUE;
-        }
+      nsEventListenerManager* manager = piTarget->GetListenerManager(PR_FALSE);
+      if (manager && manager->HasMutationListeners()) {
+        return PR_TRUE;
       }
     }
   }
@@ -3258,13 +3258,9 @@ nsContentUtils::HasMutationListeners(nsINode* aNode,
   // might not be in our chain.  If we don't have a window, we might have a
   // mutation listener.  Check quickly to see.
   while (aNode) {
-    nsIEventListenerManager* manager = aNode->GetListenerManager(PR_FALSE);
-    if (manager) {
-      PRBool hasListeners = PR_FALSE;
-      manager->HasMutationListeners(&hasListeners);
-      if (hasListeners) {
-        return PR_TRUE;
-      }
+    nsEventListenerManager* manager = aNode->GetListenerManager(PR_FALSE);
+    if (manager && manager->HasMutationListeners()) {
+      return PR_TRUE;
     }
 
     if (aNode->IsNodeOfType(nsINode::eCONTENT)) {
@@ -3354,12 +3350,13 @@ nsContentUtils::TraverseListenerManager(nsINode *aNode,
                (PL_DHashTableOperate(&sEventListenerManagersHash, aNode,
                                         PL_DHASH_LOOKUP));
   if (PL_DHASH_ENTRY_IS_BUSY(entry)) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "[via hash] mListenerManager");
-    cb.NoteXPCOMChild(entry->mListenerManager);
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_PTR(entry->mListenerManager,
+                                                 nsEventListenerManager,
+                                  "[via hash] mListenerManager")
   }
 }
 
-nsIEventListenerManager*
+nsEventListenerManager*
 nsContentUtils::GetListenerManager(nsINode *aNode,
                                    PRBool aCreateIfNotFound)
 {
@@ -3395,16 +3392,7 @@ nsContentUtils::GetListenerManager(nsINode *aNode,
   }
 
   if (!entry->mListenerManager) {
-    nsresult rv =
-      NS_NewEventListenerManager(getter_AddRefs(entry->mListenerManager));
-
-    if (NS_FAILED(rv)) {
-      PL_DHashTableRawRemove(&sEventListenerManagersHash, entry);
-
-      return nsnull;
-    }
-
-    entry->mListenerManager->SetListenerTarget(aNode);
+    entry->mListenerManager = new nsEventListenerManager(aNode);
 
     aNode->SetFlags(NODE_HAS_LISTENERMANAGER);
   }
@@ -3422,7 +3410,7 @@ nsContentUtils::RemoveListenerManager(nsINode *aNode)
                  (PL_DHashTableOperate(&sEventListenerManagersHash, aNode,
                                           PL_DHASH_LOOKUP));
     if (PL_DHASH_ENTRY_IS_BUSY(entry)) {
-      nsCOMPtr<nsIEventListenerManager> listenerManager;
+      nsRefPtr<nsEventListenerManager> listenerManager;
       listenerManager.swap(entry->mListenerManager);
       // Remove the entry and *then* do operations that could cause further
       // modification of sEventListenerManagersHash.  See bug 334177.
@@ -4088,7 +4076,8 @@ nsContentUtils::IsSystemPrincipal(nsIPrincipal* aPrincipal)
 void
 nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
                             nsIURI *aLinkURI, const nsString &aTargetSpec,
-                            PRBool aClick, PRBool aIsUserTriggered)
+                            PRBool aClick, PRBool aIsUserTriggered,
+                            PRBool aIsTrusted)
 {
   NS_ASSERTION(aPresContext, "Need a nsPresContext");
   NS_PRECONDITION(aLinkURI, "No link URI");
@@ -4123,7 +4112,8 @@ nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
 
   // Only pass off the click event if the script security manager says it's ok.
   if (NS_SUCCEEDED(proceed)) {
-    handler->OnLinkClick(aContent, aLinkURI, aTargetSpec.get());
+    handler->OnLinkClick(aContent, aLinkURI, aTargetSpec.get(), nsnull, nsnull,
+                         aIsTrusted);
   }
 }
 
@@ -5377,10 +5367,14 @@ public:
     mFlags = WANT_ALL_TRACES;
   }
 
-  NS_IMETHOD_(void) DescribeNode(CCNodeType type,
-                                 nsrefcnt refcount,
-                                 size_t objsz,
-                                 const char* objname)
+  NS_IMETHOD_(void) DescribeRefCountedNode(nsrefcnt refCount,
+                                           size_t objSz,
+                                           const char *objName)
+  {
+  }
+  NS_IMETHOD_(void) DescribeGCedNode(PRBool isMarked,
+                                     size_t objSz,
+                                     const char *objName)
   {
   }
   NS_IMETHOD_(void) NoteXPCOMRoot(nsISupports *root)

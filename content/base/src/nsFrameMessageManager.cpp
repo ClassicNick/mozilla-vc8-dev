@@ -369,7 +369,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
         jsval targetv;
         nsContentUtils::WrapNative(ctx,
                                    JS_GetGlobalForObject(ctx, object),
-                                   aTarget, &targetv);
+                                   aTarget, &targetv, nsnull, PR_TRUE);
 
         // To keep compatibility with e10s message manager,
         // define empty objects array.
@@ -381,6 +381,11 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
             return NS_ERROR_OUT_OF_MEMORY;
           }
         }
+
+        js::AutoValueRooter objectsv(ctx);
+        objectsv.set(OBJECT_TO_JSVAL(aObjectsArray));
+        if (!JS_WrapValue(ctx, objectsv.jsval_addr()))
+            return NS_ERROR_UNEXPECTED;
 
         jsval json = JSVAL_NULL;
         if (!aJSON.IsEmpty()) {
@@ -400,8 +405,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
         JS_DefineProperty(ctx, param, "sync",
                           BOOLEAN_TO_JSVAL(aSync), NULL, NULL, JSPROP_ENUMERATE);
         JS_DefineProperty(ctx, param, "json", json, NULL, NULL, JSPROP_ENUMERATE);
-        JS_DefineProperty(ctx, param, "objects", OBJECT_TO_JSVAL(aObjectsArray),
-                          NULL, NULL, JSPROP_ENUMERATE);
+        JS_DefineProperty(ctx, param, "objects", objectsv.jsval_value(), NULL, NULL, JSPROP_ENUMERATE);
 
         jsval thisValue = JSVAL_VOID;
 
@@ -421,7 +425,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
           }
           nsContentUtils::WrapNative(ctx,
                                      JS_GetGlobalForObject(ctx, object),
-                                     defaultThisValue, &thisValue);
+                                     defaultThisValue, &thisValue, nsnull, PR_TRUE);
         } else {
           // If the listener is a JS object which has receiveMessage function:
           NS_ENSURE_STATE(JS_GetProperty(ctx, object, "receiveMessage",
@@ -461,6 +465,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
       }
     }
   }
+  nsRefPtr<nsFrameMessageManager> kungfuDeathGrip = mParentManager;
   return mParentManager ? mParentManager->ReceiveMessage(aTarget, aMessage,
                                                          aSync, aJSON, aObjectsArray,
                                                          aJSONRetVal, mContext) : NS_OK;
@@ -600,11 +605,18 @@ nsFrameScriptExecutor::DidCreateCx()
 void
 nsFrameScriptExecutor::DestroyCx()
 {
-  nsIXPConnect* xpc = nsContentUtils::XPConnect();
-  if (xpc) {
-    xpc->ReleaseJSContext(mCx, PR_TRUE);
-  } else {
-    JS_DestroyContext(mCx);
+  if (mCxStackRefCnt) {
+    mDelayedCxDestroy = PR_TRUE;
+    return;
+  }
+  mDelayedCxDestroy = PR_FALSE;
+  if (mCx) {
+    nsIXPConnect* xpc = nsContentUtils::XPConnect();
+    if (xpc) {
+      xpc->ReleaseJSContext(mCx, PR_TRUE);
+    } else {
+      JS_DestroyContext(mCx);
+    }
   }
   mCx = nsnull;
   mGlobal = nsnull;

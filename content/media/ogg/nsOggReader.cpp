@@ -118,6 +118,7 @@ nsOggReader::nsOggReader(nsBuiltinDecoder* aDecoder)
     mPageOffset(0)
 {
   MOZ_COUNT_CTOR(nsOggReader);
+  memset(&mTheoraInfo, 0, sizeof(mTheoraInfo));
 }
 
 nsOggReader::~nsOggReader()
@@ -258,27 +259,34 @@ nsresult nsOggReader::ReadMetadata(nsVideoInfo* aInfo)
   }
 
   if (mTheoraState && ReadHeaders(mTheoraState)) {
-    mInfo.mHasVideo = PR_TRUE;
-    mInfo.mPixelAspectRatio = mTheoraState->mPixelAspectRatio;
-    mInfo.mPicture = nsIntRect(mTheoraState->mInfo.pic_x,
-                               mTheoraState->mInfo.pic_y,
-                               mTheoraState->mInfo.pic_width,
-                               mTheoraState->mInfo.pic_height);
-    mInfo.mFrame = nsIntSize(mTheoraState->mInfo.frame_width,
-                              mTheoraState->mInfo.frame_height);
-    mInfo.mDisplay = nsIntSize(mInfo.mPicture.width,
-                               mInfo.mPicture.height);
-    gfxIntSize sz(mTheoraState->mInfo.pic_width,
-                  mTheoraState->mInfo.pic_height);
-    mDecoder->SetVideoData(sz,
-                           mTheoraState->mPixelAspectRatio,
-                           nsnull,
-                           TimeStamp::Now());
-    // Copy Theora info data for time computations on other threads.
-    memcpy(&mTheoraInfo, &mTheoraState->mInfo, sizeof(mTheoraInfo));
-    mTheoraSerial = mTheoraState->mSerial;
-  } else {
-    memset(&mTheoraInfo, 0, sizeof(mTheoraInfo));
+    nsIntRect picture = nsIntRect(mTheoraState->mInfo.pic_x,
+                                  mTheoraState->mInfo.pic_y,
+                                  mTheoraState->mInfo.pic_width,
+                                  mTheoraState->mInfo.pic_height);
+
+    nsIntSize displaySize = nsIntSize(mTheoraState->mInfo.pic_width,
+                                      mTheoraState->mInfo.pic_height);
+
+    // Apply the aspect ratio to produce the intrinsic display size we report
+    // to the element.
+    ScaleDisplayByAspectRatio(displaySize, mTheoraState->mPixelAspectRatio);
+
+    nsIntSize frameSize(mTheoraState->mInfo.frame_width,
+                        mTheoraState->mInfo.frame_height);
+    if (nsVideoInfo::ValidateVideoRegion(frameSize, picture, displaySize)) {
+      // Video track's frame sizes will not overflow. Activate the video track.
+      mInfo.mHasVideo = PR_TRUE;
+      mInfo.mDisplay = displaySize;
+      mPicture = picture;
+
+      mDecoder->SetVideoData(gfxIntSize(displaySize.width, displaySize.height),
+                             nsnull,
+                             TimeStamp::Now());
+
+      // Copy Theora info data for time computations on other threads.
+      memcpy(&mTheoraInfo, &mTheoraState->mInfo, sizeof(mTheoraInfo));
+      mTheoraSerial = mTheoraState->mSerial;
+    }
   }
 
   if (mVorbisState && ReadHeaders(mVorbisState)) {
@@ -482,7 +490,8 @@ nsresult nsOggReader::DecodeTheora(ogg_packet* aPacket, PRInt64 aTimeThreshold)
                                      endTime,
                                      b,
                                      isKeyframe,
-                                     aPacket->granulepos);
+                                     aPacket->granulepos,
+                                     mPicture);
     if (!v) {
       // There may be other reasons for this error, but for
       // simplicity just assume the worst case: out of memory.
@@ -1487,11 +1496,11 @@ nsresult nsOggReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
 
       PRUint32 serial = ogg_page_serialno(&page);
       if (mVorbisState && serial == mVorbisSerial) {
-        startTime = nsVorbisState::Time(&mVorbisInfo, granulepos) - aStartTime;
+        startTime = nsVorbisState::Time(&mVorbisInfo, granulepos);
         NS_ASSERTION(startTime > 0, "Must have positive start time");
       }
       else if (mTheoraState && serial == mTheoraSerial) {
-        startTime = nsTheoraState::Time(&mTheoraInfo, granulepos) - aStartTime;
+        startTime = nsTheoraState::Time(&mTheoraInfo, granulepos);
         NS_ASSERTION(startTime > 0, "Must have positive start time");
       }
       else if (IsKnownStream(serial)) {
@@ -1512,7 +1521,7 @@ nsresult nsOggReader::GetBuffered(nsTimeRanges* aBuffered, PRInt64 aStartTime)
       // find an end time.
       PRInt64 endTime = RangeEndTime(startOffset, endOffset, PR_TRUE);
       if (endTime != -1) {
-        aBuffered->Add(startTime / static_cast<double>(USECS_PER_S),
+        aBuffered->Add((startTime - aStartTime) / static_cast<double>(USECS_PER_S),
                        (endTime - aStartTime) / static_cast<double>(USECS_PER_S));
       }
     }

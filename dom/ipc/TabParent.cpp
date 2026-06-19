@@ -514,8 +514,10 @@ bool
 TabParent::RecvGetIMEEnabled(PRUint32* aValue)
 {
   nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (!widget)
+  if (!widget) {
+    *aValue = nsIWidget::IME_STATUS_DISABLED;
     return true;
+  }
 
   IMEContext context;
   widget->GetInputMode(context);
@@ -586,7 +588,8 @@ TabParent::ReceiveMessage(const nsString& aMessage,
 {
   nsRefPtr<nsFrameLoader> frameLoader = GetFrameLoader();
   if (frameLoader && frameLoader->GetFrameMessageManager()) {
-    nsFrameMessageManager* manager = frameLoader->GetFrameMessageManager();
+    nsRefPtr<nsFrameMessageManager> manager =
+      frameLoader->GetFrameMessageManager();
     JSContext* ctx = manager->GetJSContext();
     JSAutoRequest ar(ctx);
     PRUint32 len = 0; //TODO: obtain a real value in bug 572685

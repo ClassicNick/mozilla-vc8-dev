@@ -939,6 +939,10 @@ var gViewController = {
           return;
         }
         var optionsURL = aAddon.optionsURL;
+        if (aAddon.optionsType == AddonManager.OPTIONS_TYPE_TAB &&
+            openOptionsInTab(optionsURL)) {
+          return;
+        }
         var windows = Services.wm.getEnumerator(null);
         while (windows.hasMoreElements()) {
           var win = windows.getNext();
@@ -1198,6 +1202,18 @@ var gViewController = {
   onEvent: function() {}
 };
 
+function openOptionsInTab(optionsURL) {
+  var mainWindow = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                         .getInterface(Ci.nsIWebNavigation)
+                         .QueryInterface(Ci.nsIDocShellTreeItem)
+                         .rootTreeItem.QueryInterface(Ci.nsIInterfaceRequestor)
+                         .getInterface(Ci.nsIDOMWindow); 
+  if ("switchToTabHavingURI" in mainWindow) {
+    mainWindow.switchToTabHavingURI(optionsURL, true);
+    return true;
+  }
+  return false;
+}
 
 function formatDate(aDate) {
   return Cc["@mozilla.org/intl/scriptabledateformat;1"]
@@ -2846,10 +2862,8 @@ var gDetailView = {
     var xml = xhr.responseXML;
     var settings = xml.querySelectorAll(":root > setting");
 
-    for (var i = 0; i < settings.length; i++) {
+    for (var i = 0, first = true; i < settings.length; i++) {
       var setting = settings[i];
-      if (i == 0)
-        setting.setAttribute("first-row", true);
 
       // Remove setting description, for replacement later
       var desc = stripTextNodes(setting).trim();
@@ -2858,11 +2872,23 @@ var gDetailView = {
         setting.removeAttribute("desc");
       }
 
+      var type = setting.getAttribute("type");
+      if (type == "file" || type == "directory")
+        setting.setAttribute("fullpath", "true");
+
       rows.appendChild(setting);
+      var visible = window.getComputedStyle(setting, null).getPropertyValue("display") != "none";
+      if (first && visible) {
+        setting.setAttribute("first-row", true);
+        first = false;
+      }
 
       // Add a new row containing the description
       if (desc) {
         var row = document.createElement("row");
+        if (!visible) {
+          row.setAttribute("unsupported", "true");
+        }
         var label = document.createElement("label");
         label.className = "preferences-description";
         label.textContent = desc;

@@ -34,11 +34,14 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
+ 
+ include "mozilla/ipc/RPCChannel.h";
 
 include protocol PHandle;
 
 using mozilla::void_t;
 using mozilla::null_t;
+using mozilla::ipc::RPCChannel;
 
 namespace mozilla {
 namespace jetpack {

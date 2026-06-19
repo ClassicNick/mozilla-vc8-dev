@@ -48,6 +48,7 @@ include protocol PMemoryReportRequest;
 include "mozilla/chrome/RegistryMessageUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
 
+include "mozilla/ipc/RPCChannel.h";
 include "nsGeoPositionIPCSerialiser.h";
 include "PPrefTuple.h";
 
@@ -60,6 +61,7 @@ using OverrideMapping;
 using IPC::URI;
 using IPC::Permission;
 using mozilla::null_t;
+using mozilla::ipc::RPCChannel;
 using gfxIntSize;
 
 namespace mozilla {
@@ -123,7 +125,7 @@ child:
     // nsIPermissionManager messages
     AddPermission(Permission permission);
 
-    AccelerationChanged(double x, double y, double z);
+    DeviceMotionChanged(long type, double x, double y, double z);
 
     ScreenSizeChanged(gfxIntSize size);
 
@@ -172,8 +174,8 @@ parent:
     
     AddGeolocationListener();
     RemoveGeolocationListener();
-    AddAccelerometerListener();
-    RemoveAccelerometerListener();
+    AddDeviceMotionListener();
+    RemoveDeviceMotionListener();
 
     ConsoleMessage(nsString message);
     ScriptError(nsString message, nsString sourceName, nsString sourceLine,
@@ -196,6 +198,9 @@ parent:
 
     sync GetSystemColors(PRUint32 colorsCount)
         returns (PRUint32[] colors);
+
+    sync GetIconForExtension(nsCString aFileExt, PRUint32 aIconSize)
+        returns (PRUint8[] bits);
 
 both:
      AsyncMessage(nsString aMessage, nsString aJSON);
