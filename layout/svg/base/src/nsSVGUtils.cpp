@@ -69,7 +69,6 @@
 #include "nsGenericElement.h"
 #include "nsSVGGraphicElement.h"
 #include "nsAttrValue.h"
-#include "nsSVGGeometryFrame.h"
 #include "nsIScriptError.h"
 #include "gfxContext.h"
 #include "gfxMatrix.h"
@@ -85,6 +84,7 @@
 #include "nsSVGGeometryFrame.h"
 #include "nsComputedDOMStyle.h"
 #include "nsSVGPathGeometryFrame.h"
+#include "nsSVGPathGeometryElement.h"
 #include "prdtoa.h"
 #include "mozilla/dom/Element.h"
 #include "gfxUtils.h"
@@ -874,7 +874,7 @@ nsSVGUtils::GetCanvasTM(nsIFrame *aFrame)
 void 
 nsSVGUtils::NotifyChildrenOfSVGChange(nsIFrame *aFrame, PRUint32 aFlags)
 {
-  nsIFrame *kid = aFrame->GetFirstChild(nsnull);
+  nsIFrame *kid = aFrame->GetFirstPrincipalChild();
 
   while (kid) {
     nsISVGChildFrame* SVGFrame = do_QueryFrame(kid);
@@ -1087,7 +1087,7 @@ nsSVGUtils::HitTestChildren(nsIFrame *aFrame, const nsPoint &aPoint)
   // Traverse the list in reverse order, so that if we get a hit we know that's
   // the topmost frame that intersects the point; then we can just return it.
   nsIFrame* result = nsnull;
-  for (nsIFrame* current = aFrame->GetChildList(nsnull).LastChild();
+  for (nsIFrame* current = aFrame->PrincipalChildList().LastChild();
        current;
        current = current->GetPrevSibling()) {
     nsISVGChildFrame* SVGFrame = do_QueryFrame(current);
@@ -1431,26 +1431,14 @@ nsSVGUtils::WritePPM(const char *fname, gfxImageSurface *aSurface)
 }
 #endif
 
-/*static*/ gfxRect
-nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                          nsSVGGeometryFrame* aFrame)
+// The logic here comes from _cairo_stroke_style_max_distance_from_path
+static gfxRect
+PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                              nsSVGGeometryFrame* aFrame,
+                              double styleExpansionFactor)
 {
-  // The logic here comes from _cairo_stroke_style_max_distance_from_path
-
-  double style_expansion = 0.5;
-
-  const nsStyleSVG* style = aFrame->GetStyleSVG();
-
-  if (style->mStrokeLinecap == NS_STYLE_STROKE_LINECAP_SQUARE) {
-    style_expansion = M_SQRT1_2;
-  }
-
-  if (style->mStrokeLinejoin == NS_STYLE_STROKE_LINEJOIN_MITER &&
-      style_expansion < style->mStrokeMiterlimit) {
-    style_expansion = style->mStrokeMiterlimit;
-  }
-
-  style_expansion *= aFrame->GetStrokeWidth();
+  double style_expansion =
+    styleExpansionFactor * aFrame->GetStrokeWidth();
 
   gfxMatrix ctm = aFrame->GetCanvasTM();
 
@@ -1460,6 +1448,38 @@ nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
   gfxRect strokeExtents = aPathExtents;
   strokeExtents.Inflate(dx, dy);
   return strokeExtents;
+}
+
+/*static*/ gfxRect
+nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                          nsSVGGeometryFrame* aFrame)
+{
+  return ::PathExtentsToMaxStrokeExtents(aPathExtents, aFrame, 0.5);
+}
+
+/*static*/ gfxRect
+nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
+                                          nsSVGPathGeometryFrame* aFrame)
+{
+  double styleExpansionFactor = 0.5;
+
+  if (static_cast<nsSVGPathGeometryElement*>(aFrame->GetContent())->IsMarkable()) {
+    const nsStyleSVG* style = aFrame->GetStyleSVG();
+
+    if (style->mStrokeLinecap == NS_STYLE_STROKE_LINECAP_SQUARE) {
+      styleExpansionFactor = M_SQRT1_2;
+    }
+
+    if (style->mStrokeLinejoin == NS_STYLE_STROKE_LINEJOIN_MITER &&
+        styleExpansionFactor < style->mStrokeMiterlimit &&
+        aFrame->GetContent()->Tag() != nsGkAtoms::line) {
+      styleExpansionFactor = style->mStrokeMiterlimit;
+    }
+  }
+
+  return ::PathExtentsToMaxStrokeExtents(aPathExtents,
+                                         aFrame,
+                                         styleExpansionFactor);
 }
 
 // ----------------------------------------------------------------------

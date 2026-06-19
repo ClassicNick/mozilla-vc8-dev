@@ -798,12 +798,6 @@ pref("accessibility.blockautorefresh", false);
 // Whether history is enabled or not.
 pref("places.history.enabled", true);
 
-// The percentage of system memory that the Places database can use.  Out of the
-// allowed cache size it will at most use the size of the database file.
-// Changes to this value are effective after an application restart.
-// Acceptable values are between 0 and 50.
-pref("places.database.cache_to_memory_percentage", 6);
-
 // the (maximum) number of the recent visits to sample
 // when calculating frecency
 pref("places.frecency.numVisits", 10);
@@ -881,7 +875,7 @@ pref("browser.privatebrowsing.dont_prompt_on_enter", false);
 pref("browser.bookmarks.editDialog.firstEditField", "namePicker");
 
 // base url for the wifi geolocation network provider
-pref("geo.wifi.uri", "https://www.google.com/loc/json");
+pref("geo.wifi.uri", "https://maps.googleapis.com/maps/api/browserlocation/json");
 pref("geo.wifi.protocol", 0);
 
 // Whether to use a panel that looks like an OS X sheet for customization
@@ -1015,6 +1009,9 @@ pref("devtools.errorconsole.enabled", false);
 // Enable the Inspector
 pref("devtools.inspector.enabled", true);
 
+// Enable the style inspector
+pref("devtools.styleinspector.enabled", true);
+
 // Enable the Scratchpad tool.
 pref("devtools.scratchpad.enabled", true);
 
@@ -1054,7 +1051,7 @@ pref("devtools.editor.expandtab", true);
 //   provides programmer-specific editor features such as syntax highlighting,
 //   indenting and bracket recognition. It may not be appropriate for all
 //   locales (esp. RTL) or a11y situations.
-pref("devtools.editor.component", "textarea");
+pref("devtools.editor.component", "orion");
 
 // Whether the character encoding menu is under the main Firefox button. This
 // preference is a string so that localizers can alter it.

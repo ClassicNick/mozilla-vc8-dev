@@ -47,7 +47,6 @@
 #include "nsPIPlacesHistoryListenersNotifier.h"
 #include "nsIBrowserHistory.h"
 #include "nsIGlobalHistory.h"
-#include "nsIGlobalHistory3.h"
 #include "nsIDownloadHistory.h"
 
 #include "nsIPrefService.h"
@@ -97,9 +96,6 @@
 // Fired after autocomplete feedback has been updated.
 #define TOPIC_AUTOCOMPLETE_FEEDBACK_UPDATED "places-autocomplete-feedback-updated"
 #endif
-
-// Fired after frecency has been updated.
-#define TOPIC_FRECENCY_UPDATED "places-frecency-updated"
 
 // Fired after frecency has been updated.
 #define TOPIC_FRECENCY_UPDATED "places-frecency-updated"
@@ -171,7 +167,6 @@ class nsNavHistory : public nsSupportsWeakReference
                    , public nsINavHistoryService
                    , public nsIObserver
                    , public nsIBrowserHistory
-                   , public nsIGlobalHistory3
                    , public nsIDownloadHistory
                    , public nsICharsetResolver
                    , public nsPIPlacesDatabase
@@ -187,7 +182,6 @@ public:
 
   NS_DECL_NSINAVHISTORYSERVICE
   NS_DECL_NSIGLOBALHISTORY2
-  NS_DECL_NSIGLOBALHISTORY3
   NS_DECL_NSIDOWNLOADHISTORY
   NS_DECL_NSIBROWSERHISTORY
   NS_DECL_NSIOBSERVER
@@ -274,9 +268,14 @@ public:
   nsresult FixInvalidFrecencies();
 
   /**
-   * Set the frecencies of excluded places so they don't show up in queries
+   * Invalidate the frecencies of a list of places so they will be recalculated
+   * at the first idle-daily notification.
+   *
+   * @param aPlacesIdsQueryString
+   *        Query string containing list of places to be invalidated.  If it's
+   *        an empty string all places will be invalidated.
    */
-  nsresult FixInvalidFrecenciesForExcludedPlaces();
+  nsresult invalidateFrecencies(const nsCString& aPlaceIdsQueryString);
 
   /**
    * Returns a pointer to the storage connection used by history. This
@@ -734,7 +733,6 @@ protected:
   nsresult MigrateV11Up(mozIStorageConnection *aDBConn);
 
   nsresult RemovePagesInternal(const nsCString& aPlaceIdsQueryString);
-  nsresult PreparePlacesForVisitsDelete(const nsCString& aPlaceIdsQueryString);
   nsresult CleanupPlacesOnVisitsDelete(const nsCString& aPlaceIdsQueryString);
 
   nsresult AddURIInternal(nsIURI* aURI, PRTime aTime, PRBool aRedirect,
@@ -849,19 +847,6 @@ protected:
   PRBool CheckIsRecentEvent(RecentEventHash* hashTable,
                             const nsACString& url);
   void ExpireNonrecentEvents(RecentEventHash* hashTable);
-
-  // redirect tracking. See GetRedirectFor for a description of how this works.
-  struct RedirectInfo {
-    nsCString mSourceURI;
-    PRTime mTimeCreated;
-    PRUint32 mType; // one of TRANSITION_REDIRECT_[TEMPORARY,PERMANENT]
-  };
-  typedef nsDataHashtable<nsCStringHashKey, RedirectInfo> RedirectHash;
-  RedirectHash mRecentRedirects;
-  static PLDHashOperator ExpireNonrecentRedirects(
-      nsCStringHashKey::KeyType aKey, RedirectInfo& aData, void* aUserArg);
-  PRBool GetRedirectFor(const nsACString& aDestination, nsACString& aSource,
-                        PRTime* aTime, PRUint32* aRedirectType);
 
   // Sessions tracking.
   PRInt64 mLastSessionID;

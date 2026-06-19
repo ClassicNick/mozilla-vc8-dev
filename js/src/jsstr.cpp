@@ -76,18 +76,19 @@
 #include "jsvector.h"
 #include "jsversion.h"
 
-#include "vm/GlobalObject.h"
-
+#include "jsinferinlines.h"
 #include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsregexpinlines.h"
 #include "jsautooplen.h"        // generated headers last
 
+#include "vm/GlobalObject.h"
 #include "vm/StringObject-inl.h"
 #include "vm/String-inl.h"
 
 using namespace js;
 using namespace js::gc;
+using namespace js::types;
 using namespace js::unicode;
 
 #ifdef JS_TRACER
@@ -383,7 +384,7 @@ str_resolve(JSContext *cx, JSObject *obj, jsid id, uintN flags,
     return JS_TRUE;
 }
 
-Class js_StringClass = {
+Class js::StringClass = {
     js_String_str,
     JSCLASS_HAS_RESERVED_SLOTS(StringObject::RESERVED_SLOTS) |
     JSCLASS_NEW_RESOLVE | JSCLASS_HAS_CACHED_PROTO(JSProto_String),
@@ -400,7 +401,7 @@ Class js_StringClass = {
  * Returns a JSString * for the |this| value associated with vp, or throws a
  * TypeError if |this| is null or undefined.  This algorithm is the same as
  * calling CheckObjectCoercible(this), then returning ToString(this), as all
- * String.prototype.* methods do.
+ * String.prototype.* methods do (other than toString and valueOf).
  */
 static JS_ALWAYS_INLINE JSString *
 ThisToStringForStringProto(JSContext *cx, Value *vp)
@@ -412,9 +413,9 @@ ThisToStringForStringProto(JSContext *cx, Value *vp)
 
     if (vp[1].isObject()) {
         JSObject *obj = &vp[1].toObject();
-        if (obj->getClass() == &js_StringClass &&
+        if (obj->isString() &&
             ClassMethodIsNative(cx, obj,
-                                &js_StringClass,
+                                &StringClass,
                                 ATOM_TO_JSID(cx->runtime->atomState.toStringAtom),
                                 js_str_toString))
         {
@@ -1621,8 +1622,7 @@ struct ReplaceData
     jsint              leftIndex;      /* left context index in str->chars */
     JSSubString        dollarStr;      /* for "$$" InterpretDollar result */
     bool               calledBack;     /* record whether callback has been called */
-    InvokeSessionGuard session;        /* arguments for repeated lambda Invoke call */
-    InvokeArgsGuard    singleShot;     /* arguments for single lambda Invoke call */
+    InvokeArgsGuard    args;           /* arguments for lambda call */
     StringBuffer       sb;             /* buffer built during DoMatch */
 };
 
@@ -1749,6 +1749,10 @@ FindReplaceLength(JSContext *cx, RegExpStatics *res, ReplaceData &rdata, size_t 
 
     JSObject *lambda = rdata.lambda;
     if (lambda) {
+        PreserveRegExpStatics staticsGuard(res);
+        if (!staticsGuard.init(cx))
+            return false;
+
         /*
          * In the lambda case, not only do we find the replacement string's
          * length, we compute repstr and return it via rdata for use within
@@ -1760,36 +1764,33 @@ FindReplaceLength(JSContext *cx, RegExpStatics *res, ReplaceData &rdata, size_t 
         uintN p = res->parenCount();
         uintN argc = 1 + p + 2;
 
-        InvokeSessionGuard &session = rdata.session;
-        if (!session.started()) {
-            Value lambdav = ObjectValue(*lambda);
-            if (!session.start(cx, lambdav, UndefinedValue(), argc))
-                return false;
-        }
-
-        PreserveRegExpStatics staticsGuard(res);
-        if (!staticsGuard.init(cx))
+        InvokeArgsGuard &args = rdata.args;
+        if (!args.pushed() && !cx->stack.pushInvokeArgs(cx, argc, &args))
             return false;
+
+        args.calleeHasBeenReset();
+        args.calleev() = ObjectValue(*lambda);
+        args.thisv() = UndefinedValue();
 
         /* Push $&, $1, $2, ... */
         uintN argi = 0;
-        if (!res->createLastMatch(cx, &session[argi++]))
+        if (!res->createLastMatch(cx, &args[argi++]))
             return false;
 
         for (size_t i = 0; i < res->parenCount(); ++i) {
-            if (!res->createParen(cx, i + 1, &session[argi++]))
+            if (!res->createParen(cx, i + 1, &args[argi++]))
                 return false;
         }
 
         /* Push match index and input string. */
-        session[argi++].setInt32(res->matchStart());
-        session[argi].setString(rdata.str);
+        args[argi++].setInt32(res->matchStart());
+        args[argi].setString(rdata.str);
 
-        if (!session.invoke(cx))
+        if (!Invoke(cx, args))
             return false;
 
         /* root repstr: rdata is on the stack, so scanned by conservative gc. */
-        JSString *repstr = ValueToString_TestForStringInline(cx, session.rval());
+        JSString *repstr = ValueToString_TestForStringInline(cx, args.rval());
         if (!repstr)
             return false;
         rdata.repstr = repstr->ensureLinear(cx);
@@ -2073,7 +2074,6 @@ str_replace_flat_lambda(JSContext *cx, uintN argc, Value *vp, ReplaceData &rdata
                         const FlatMatch &fm)
 {
     JS_ASSERT(fm.match() >= 0);
-    LeaveTrace(cx);
 
     JSString *matchStr = js_NewDependentString(cx, rdata.str, fm.match(), fm.patternLength());
     if (!matchStr)
@@ -2081,10 +2081,10 @@ str_replace_flat_lambda(JSContext *cx, uintN argc, Value *vp, ReplaceData &rdata
 
     /* lambda(matchStr, matchStart, textstr) */
     static const uint32 lambdaArgc = 3;
-    if (!cx->stack.pushInvokeArgs(cx, lambdaArgc, &rdata.singleShot))
+    if (!cx->stack.pushInvokeArgs(cx, lambdaArgc, &rdata.args))
         return false;
 
-    CallArgs &args = rdata.singleShot;
+    CallArgs &args = rdata.args;
     args.calleev().setObject(*rdata.lambda);
     args.thisv().setUndefined();
 
@@ -2093,7 +2093,7 @@ str_replace_flat_lambda(JSContext *cx, uintN argc, Value *vp, ReplaceData &rdata
     sp[1].setInt32(fm.match());
     sp[2].setString(rdata.str);
 
-    if (!Invoke(cx, rdata.singleShot))
+    if (!Invoke(cx, rdata.args))
         return false;
 
     JSString *repstr = js_ValueToString(cx, args.rval());
@@ -2252,7 +2252,7 @@ class SplitMatchResult {
 
 template<class Matcher>
 static JSObject *
-SplitHelper(JSContext *cx, JSLinearString *str, uint32 limit, Matcher splitMatch)
+SplitHelper(JSContext *cx, JSLinearString *str, uint32 limit, Matcher splitMatch, TypeObject *type)
 {
     size_t strLength = str->length();
     SplitMatchResult result;
@@ -2351,6 +2351,8 @@ SplitHelper(JSContext *cx, JSLinearString *str, uint32 limit, Matcher splitMatch
                     if (!sub || !splits.append(StringValue(sub)))
                         return NULL;
                 } else {
+                    /* Only string entries have been accounted for so far. */
+                    AddTypeProperty(cx, type, NULL, UndefinedValue());
                     if (!splits.append(UndefinedValue()))
                         return NULL;
                 }
@@ -2444,6 +2446,11 @@ str_split(JSContext *cx, uintN argc, Value *vp)
     if (!str)
         return false;
 
+    TypeObject *type = GetTypeCallerInitObject(cx, JSProto_Array);
+    if (!type)
+        return false;
+    AddTypeProperty(cx, type, NULL, Type::StringType());
+
     /* Step 5: Use the second argument as the split limit, if given. */
     uint32 limit;
     if (argc > 1 && !vp[3].isUndefined()) {
@@ -2479,6 +2486,7 @@ str_split(JSContext *cx, uintN argc, Value *vp)
         JSObject *aobj = NewDenseEmptyArray(cx);
         if (!aobj)
             return false;
+        aobj->setType(type);
         vp->setObject(*aobj);
         return true;
     }
@@ -2489,6 +2497,7 @@ str_split(JSContext *cx, uintN argc, Value *vp)
         JSObject *aobj = NewDenseCopiedArray(cx, 1, &v);
         if (!aobj)
             return false;
+        aobj->setType(type);
         vp->setObject(*aobj);
         return true;
     }
@@ -2499,15 +2508,16 @@ str_split(JSContext *cx, uintN argc, Value *vp)
     /* Steps 11-15. */
     JSObject *aobj;
     if (re) {
-        aobj = SplitHelper(cx, strlin, limit, SplitRegExpMatcher(re, cx->regExpStatics()));
+        aobj = SplitHelper(cx, strlin, limit, SplitRegExpMatcher(re, cx->regExpStatics()), type);
     } else {
         // NB: sepstr is anchored through its storage in vp[2].
-        aobj = SplitHelper(cx, strlin, limit, SplitStringMatcher(sepstr));
+        aobj = SplitHelper(cx, strlin, limit, SplitStringMatcher(sepstr), type);
     }
     if (!aobj)
         return false;
 
     /* Step 16. */
+    aobj->setType(type);
     vp->setObject(*aobj);
     return true;
 }
@@ -2884,6 +2894,8 @@ static JSFunctionSpec string_methods[] = {
     JS_FS_END
 };
 
+#ifdef JS_HAS_STATIC_STRINGS
+
 /*
  * Set up some tools to make it easier to generate large tables. After constant
  * folding, for each n, Rn(0) is the comma-separated list R(0), R(1), ..., R(2^n-1).
@@ -3078,6 +3090,8 @@ const JSString::Data *const JSAtom::intStaticTable[] = { R8(0) };
 #undef R3
 #undef R7
 
+#endif  /* defined(JS_HAS_STATIC_STRINGS) */
+
 JSBool
 js_String(JSContext *cx, uintN argc, Value *vp)
 {
@@ -3176,12 +3190,12 @@ js_InitStringClass(JSContext *cx, JSObject *obj)
 
     GlobalObject *global = obj->asGlobal();
 
-    JSObject *proto = global->createBlankPrototype(cx, &js_StringClass);
+    JSObject *proto = global->createBlankPrototype(cx, &StringClass);
     if (!proto || !proto->asString()->init(cx, cx->runtime->emptyString))
         return NULL;
 
     /* Now create the String function. */
-    JSFunction *ctor = global->createConstructor(cx, js_String, &js_StringClass,
+    JSFunction *ctor = global->createConstructor(cx, js_String, &StringClass,
                                                  CLASS_ATOM(cx, String), 1);
     if (!ctor)
         return NULL;
@@ -3194,6 +3208,12 @@ js_InitStringClass(JSContext *cx, JSObject *obj)
     {
         return NULL;
     }
+
+    /* Capture normal data properties pregenerated for String objects. */
+    TypeObject *type = proto->getNewType(cx);
+    if (!type)
+        return NULL;
+    AddTypeProperty(cx, type, "length", Type::Int32Type());
 
     if (!DefineConstructorAndPrototype(cx, global, JSProto_String, ctor, proto))
         return NULL;
@@ -3504,7 +3524,7 @@ js_ValueToSource(JSContext *cx, const Value &v)
     if (!js_GetMethod(cx, &v.toObject(), id, JSGET_NO_METHOD_BARRIER, &fval))
         return false;
     if (js_IsCallable(fval)) {
-        if (!ExternalInvoke(cx, v, fval, 0, NULL, &rval))
+        if (!Invoke(cx, v, fval, 0, NULL, &rval))
             return false;
     }
 

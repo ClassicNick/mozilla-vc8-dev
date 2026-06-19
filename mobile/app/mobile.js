@@ -72,6 +72,7 @@ pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.
 
 // Device pixel to CSS px ratio, in percent. Set to -1 to calculate based on display density.
 pref("browser.viewport.scaleRatio", -1);
+pref("browser.viewport.desktopWidth", 980);
 
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
@@ -163,6 +164,9 @@ pref("alerts.slideIncrementTime", 10);
 pref("alerts.totalOpenTime", 6000);
 pref("alerts.height", 50);
 
+/* download helper */
+pref("browser.helperApps.deleteTempFileOnExit", false);
+
 /* password manager */
 pref("signon.rememberSignons", true);
 pref("signon.expireMasterPassword", false);
@@ -213,6 +217,7 @@ pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/%LOCAL
 
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
+pref("extensions.compatability.locales.buildid", "0");
 
 /* blocklist preferences */
 pref("extensions.blocklist.enabled", true);
@@ -369,7 +374,7 @@ pref("plugins.force.wmode", "opaque");
 pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
 // base url for the wifi geolocation network provider
-pref("geo.wifi.uri", "https://www.google.com/loc/json");
+pref("geo.wifi.uri", "https://maps.googleapis.com/maps/api/browserlocation/json");
 
 // enable geo
 pref("geo.enabled", true);
@@ -380,6 +385,9 @@ pref("content.sink.enable_perf_mode",  2); // 0 - switch, 1 - interactive, 2 - p
 pref("content.sink.pending_event_mode", 0);
 pref("content.sink.perf_deflect_count", 1000000);
 pref("content.sink.perf_parse_time", 50000000);
+
+// Disable methodjit in chrome to save memory
+pref("javascript.options.methodjit.chrome",  false);
 
 pref("javascript.options.mem.high_water_mark", 32);
 
@@ -393,7 +401,7 @@ pref("dom.max_script_run_time", 20);
 // JS error console
 pref("devtools.errorconsole.enabled", false);
 
-pref("browser.ui.layout.tablet", 0); // on: 1, off: 0, auto: -1
+pref("browser.ui.layout.tablet", -1); // on: 1, off: 0, auto: -1
 
 // kinetic tweakables
 pref("browser.ui.kinetic.updateInterval", 16);
@@ -554,6 +562,7 @@ pref("services.sync.prefs.sync.lightweightThemes.isThemeSelected", true);
 pref("services.sync.prefs.sync.lightweightThemes.usedThemes", true);
 pref("services.sync.prefs.sync.network.cookie.cookieBehavior", true);
 pref("services.sync.prefs.sync.permissions.default.image", true);
+pref("services.sync.prefs.sync.privacy.donottrackheader.enabled", true);
 pref("services.sync.prefs.sync.signon.rememberSignons", true);
 #endif
 
@@ -563,6 +572,8 @@ pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
 #if MOZ_PLATFORM_MAEMO == 6
+pref("layers.acceleration.disabled", false);
+#elifdef ANDROID
 pref("layers.acceleration.disabled", false);
 #else
 pref("layers.acceleration.disabled", true);

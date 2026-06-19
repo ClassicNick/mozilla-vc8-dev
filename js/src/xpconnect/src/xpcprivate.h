@@ -546,10 +546,6 @@ public:
                         nsCycleCollectionTraversalCallback &cb);
     
     // nsCycleCollectionLanguageRuntime
-    virtual void NotifyLeaveMainThread();
-    virtual void NotifyEnterCycleCollectionThread();
-    virtual void NotifyLeaveCycleCollectionThread();
-    virtual void NotifyEnterMainThread();
     virtual nsresult BeginCycleCollection(nsCycleCollectionTraversalCallback &cb,
                                           bool explainExpectedLiveGarbage);
     virtual nsresult FinishTraverse();
@@ -3828,30 +3824,6 @@ private:
     nsXPCComponents_Utils*          mUtils;
 };
 
-/***************************************************************************/
-
-class nsXPCComponents_Interfaces :
-            public nsIScriptableInterfaces,
-            public nsIXPCScriptable,
-            public nsIClassInfo,
-            public nsISecurityCheckedComponent
-{
-public:
-    // all the interface method declarations...
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSISCRIPTABLEINTERFACES
-    NS_DECL_NSIXPCSCRIPTABLE
-    NS_DECL_NSICLASSINFO
-    NS_DECL_NSISECURITYCHECKEDCOMPONENT
-
-public:
-    nsXPCComponents_Interfaces();
-    virtual ~nsXPCComponents_Interfaces();
-
-private:
-    nsCOMPtr<nsIInterfaceInfoManager> mManager;
-};
-
 
 /***************************************************************************/
 
@@ -3913,7 +3885,9 @@ private:
     PRUint32 mColumnNumber;
     PRUint32 mFlags;
     nsCString mCategory;
-    PRUint64 mWindowID;
+    PRUint64 mOuterWindowID;
+    PRUint64 mInnerWindowID;
+    PRUint64 mTimeStamp;
 };
 
 /***************************************************************************/
@@ -4343,7 +4317,7 @@ xpc_GetJSPrivate(JSObject *obj)
 // and used.
 nsresult
 xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop,
-                        JSObject *proto, bool preferXray);
+                        JSObject *proto, bool preferXray, const nsACString &sandboxName);
 
 // Helper for evaluating scripts in a sandbox object created with
 // xpc_CreateSandboxObject(). The caller is responsible of ensuring
@@ -4373,10 +4347,12 @@ inline jsval
 GetRTStringByIndex(JSContext *cx, uintN index);
 
 // Wrapper for JS_NewObject to mark the new object as system when parent is
-// also a system object.
+// also a system object. If uniqueType is specified then a new type object will
+// be created which is used only by the result, so that its property types
+// will be tracked precisely.
 inline JSObject*
 xpc_NewSystemInheritingJSObject(JSContext *cx, JSClass *clasp, JSObject *proto,
-                                JSObject *parent);
+                                bool uniqueType, JSObject *parent);
 
 inline JSBool
 xpc_SameScope(XPCWrappedNativeScope *objectscope,
@@ -4422,6 +4398,7 @@ struct CompartmentPrivate
     JSObject2JSObjectMap *waiverWrapperMap;
     // NB: we don't want this map to hold a strong reference to the wrapper.
     nsDataHashtable<nsPtrHashKey<XPCWrappedNative>, JSObject *> *expandoMap;
+    nsCString location;
 
     bool RegisterExpandoObject(XPCWrappedNative *wn, JSObject *expando) {
         if (!expandoMap) {

@@ -56,9 +56,9 @@
 #include "jsscan.h"
 #include "jsstr.h"
 #include "jsvector.h"
-
 #include "vm/GlobalObject.h"
 
+#include "jsinferinlines.h"
 #include "jsobjinlines.h"
 #include "jsregexpinlines.h"
 
@@ -69,6 +69,7 @@ using namespace nanojit;
 
 using namespace js;
 using namespace js::gc;
+using namespace js::types;
 
 /*
  * RegExpStatics allocates memory -- in order to keep the statics stored
@@ -140,11 +141,10 @@ SwapObjectRegExp(JSContext *cx, JSObject *obj, AlreadyIncRefed<RegExp> newRegExp
 JSObject * JS_FASTCALL
 js_CloneRegExpObject(JSContext *cx, JSObject *obj, JSObject *proto)
 {
-    JS_ASSERT(obj->getClass() == &js_RegExpClass);
-    JS_ASSERT(proto);
-    JS_ASSERT(proto->getClass() == &js_RegExpClass);
+    JS_ASSERT(obj->isRegExp());
+    JS_ASSERT(proto->isRegExp());
 
-    JSObject *clone = NewNativeClassInstance(cx, &js_RegExpClass, proto, proto->getParent());
+    JSObject *clone = NewNativeClassInstance(cx, &RegExpClass, proto, proto->getParent());
     if (!clone)
         return NULL;
 
@@ -431,11 +431,11 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
     if (!JS_XDRString(xdr, &source) || !JS_XDRUint32(xdr, &flagsword))
         return false;
     if (xdr->mode == JSXDR_DECODE) {
-        JSObject *obj = NewBuiltinClassInstance(xdr->cx, &js_RegExpClass);
+        JSObject *obj = NewBuiltinClassInstance(xdr->cx, &RegExpClass);
         if (!obj)
             return false;
         obj->clearParent();
-        obj->clearProto();
+        obj->clearType();
 
         /*
          * initRegExp can GC before storing re in the private field of the
@@ -459,7 +459,7 @@ js_XDRRegExpObject(JSXDRState *xdr, JSObject **objp)
 
 #endif /* !JS_HAS_XDR */
 
-js::Class js_RegExpClass = {
+Class js::RegExpClass = {
     js_RegExp_str,
     JSCLASS_HAS_PRIVATE |
     JSCLASS_HAS_RESERVED_SLOTS(JSObject::REGEXP_CLASS_RESERVED_SLOTS) |
@@ -489,7 +489,7 @@ JSBool
 js_regexp_toString(JSContext *cx, JSObject *obj, Value *vp)
 {
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -608,7 +608,7 @@ ExecuteRegExp(JSContext *cx, ExecType execType, uintN argc, Value *vp)
     if (!obj)
         return false;
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -702,7 +702,7 @@ CompileRegExpAndSwap(JSContext *cx, JSObject *obj, uintN argc, Value *argv, Valu
         return SwapRegExpInternals(cx, obj, rval, cx->runtime->emptyString);
 
     Value sourceValue = argv[0];
-    if (sourceValue.isObject() && sourceValue.toObject().getClass() == &js_RegExpClass) {
+    if (sourceValue.isObject() && sourceValue.toObject().isRegExp()) {
         /*
          * If we get passed in a RegExp object we return a new object with the
          * same RegExp (internal matcher program) guts.
@@ -758,7 +758,7 @@ regexp_compile(JSContext *cx, uintN argc, Value *vp)
     if (!obj)
         return false;
     if (!obj->isRegExp()) {
-        ReportIncompatibleMethod(cx, vp, &js_RegExpClass);
+        ReportIncompatibleMethod(cx, vp, &RegExpClass);
         return false;
     }
 
@@ -783,7 +783,7 @@ regexp_construct(JSContext *cx, uintN argc, Value *vp)
         }
     }
 
-    JSObject *obj = NewBuiltinClassInstance(cx, &js_RegExpClass);
+    JSObject *obj = NewBuiltinClassInstance(cx, &RegExpClass);
     if (!obj)
         return false;
 
@@ -808,7 +808,7 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
 
     GlobalObject *global = obj->asGlobal();
 
-    JSObject *proto = global->createBlankPrototype(cx, &js_RegExpClass);
+    JSObject *proto = global->createBlankPrototype(cx, &RegExpClass);
     if (!proto)
         return NULL;
 
@@ -830,7 +830,7 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
     if (!DefinePropertiesAndBrand(cx, proto, NULL, regexp_methods))
         return NULL;
 
-    JSFunction *ctor = global->createConstructor(cx, regexp_construct, &js_RegExpClass,
+    JSFunction *ctor = global->createConstructor(cx, regexp_construct, &RegExpClass,
                                                  CLASS_ATOM(cx, RegExp), 2);
     if (!ctor)
         return NULL;
@@ -841,6 +841,17 @@ js_InitRegExpClass(JSContext *cx, JSObject *obj)
     /* Add static properties to the RegExp constructor. */
     if (!JS_DefineProperties(cx, ctor, regexp_static_props))
         return NULL;
+
+    /* Capture normal data properties pregenerated for RegExp objects. */
+    TypeObject *type = proto->getNewType(cx);
+    if (!type)
+        return NULL;
+    AddTypeProperty(cx, type, "source", Type::StringType());
+    AddTypeProperty(cx, type, "global", Type::BooleanType());
+    AddTypeProperty(cx, type, "ignoreCase", Type::BooleanType());
+    AddTypeProperty(cx, type, "multiline", Type::BooleanType());
+    AddTypeProperty(cx, type, "sticky", Type::BooleanType());
+    AddTypeProperty(cx, type, "lastIndex", Type::Int32Type());
 
     if (!DefineConstructorAndPrototype(cx, global, JSProto_RegExp, ctor, proto))
         return NULL;

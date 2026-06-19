@@ -141,7 +141,6 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsUnicharUtilCIID.h"
 #include "nsCompressedCharMap.h"
 #include "nsINativeKeyBindings.h"
-#include "nsIDOMNSUIEvent.h"
 #include "nsIDOMNSEvent.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsXULPopupManager.h"
@@ -177,6 +176,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsIPluginHost.h"
 #include "nsICategoryManager.h"
 #include "nsIViewManager.h"
+#include "nsEventStateManager.h"
 
 #ifdef IBMBIDI
 #include "nsIBidiKeyboard.h"
@@ -201,6 +201,7 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #endif
 #include "nsDOMTouchEvent.h"
 #include "nsIScriptElement.h"
+#include "prdtoa.h"
 
 #include "mozilla/Preferences.h"
 
@@ -262,6 +263,11 @@ nsString* nsContentUtils::sAltText = nsnull;
 nsString* nsContentUtils::sModifierSeparator = nsnull;
 
 PRBool nsContentUtils::sInitialized = PR_FALSE;
+PRBool nsContentUtils::sIsFullScreenApiEnabled = PR_FALSE;
+PRBool nsContentUtils::sTrustedFullScreenOnly = PR_TRUE;
+PRBool nsContentUtils::sFullScreenKeyInputRestricted = PR_TRUE;
+
+PRUint32 nsContentUtils::sHandlingInputTimeout = 1000;
 
 nsHtml5Parser* nsContentUtils::sHTMLFragmentParser = nsnull;
 nsIParser* nsContentUtils::sXMLFragmentParser = nsnull;
@@ -315,6 +321,13 @@ class nsSameOriginChecker : public nsIChannelEventSink,
   NS_DECL_NSICHANNELEVENTSINK
   NS_DECL_NSIINTERFACEREQUESTOR
 };
+
+/* static */
+TimeDuration
+nsContentUtils::HandlingUserInputTimeout()
+{
+  return TimeDuration::FromMilliseconds(sHandlingInputTimeout);
+}
 
 // static
 nsresult
@@ -384,6 +397,19 @@ nsContentUtils::Init()
 
   Preferences::AddBoolVarCache(&sAllowXULXBL_for_file,
                                "dom.allow_XUL_XBL_for_file");
+
+  Preferences::AddBoolVarCache(&sIsFullScreenApiEnabled,
+                               "full-screen-api.enabled");
+
+  Preferences::AddBoolVarCache(&sTrustedFullScreenOnly,
+                               "full-screen-api.allow-trusted-requests-only");
+
+  Preferences::AddBoolVarCache(&sFullScreenKeyInputRestricted,
+                               "full-screen-api.key-input-restricted");
+
+  Preferences::AddUintVarCache(&sHandlingInputTimeout,
+                               "dom.event.handling-user-input-time-limit",
+                               1000);
 
   sInitialized = PR_TRUE;
 
@@ -2734,7 +2760,7 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                 PRUint32 aColumnNumber,
                                 PRUint32 aErrorFlags,
                                 const char *aCategory,
-                                PRUint64 aWindowId)
+                                PRUint64 aInnerWindowId)
 {
   NS_ASSERTION((aParams && aParamsLength) || (!aParams && !aParamsLength),
                "Supply either both parameters and their number or no"
@@ -2768,7 +2794,8 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                      NS_ConvertUTF8toUTF16(spec).get(), // file name
                                      aSourceLine.get(),
                                      aLineNumber, aColumnNumber,
-                                     aErrorFlags, aCategory, aWindowId);
+                                     aErrorFlags, aCategory,
+                                     aInnerWindowId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIScriptError> logError = do_QueryInterface(errorObject);
@@ -2789,17 +2816,17 @@ nsContentUtils::ReportToConsole(PropertiesFile aFile,
                                 nsIDocument* aDocument)
 {
   nsIURI* uri = aURI;
-  PRUint64 windowID = 0;
+  PRUint64 innerWindowID = 0;
   if (aDocument) {
     if (!uri) {
       uri = aDocument->GetDocumentURI();
     }
-    windowID = aDocument->OuterWindowID();
+    innerWindowID = aDocument->InnerWindowID();
   }
 
   return ReportToConsole(aFile, aMessageName, aParams, aParamsLength, uri,
                          aSourceLine, aLineNumber, aColumnNumber, aErrorFlags,
-                         aCategory, windowID);
+                         aCategory, innerWindowID);
 }
 
 PRBool
@@ -4137,13 +4164,12 @@ nsContentUtils::DOMEventToNativeKeyEvent(nsIDOMKeyEvent* aKeyEvent,
                                          nsNativeKeyEvent* aNativeEvent,
                                          PRBool aGetCharCode)
 {
-  nsCOMPtr<nsIDOMNSUIEvent> uievent = do_QueryInterface(aKeyEvent);
+  nsCOMPtr<nsIDOMNSEvent> nsevent = do_QueryInterface(aKeyEvent);
   PRBool defaultPrevented;
-  uievent->GetPreventDefault(&defaultPrevented);
+  nsevent->GetPreventDefault(&defaultPrevented);
   if (defaultPrevented)
     return PR_FALSE;
 
-  nsCOMPtr<nsIDOMNSEvent> nsevent = do_QueryInterface(aKeyEvent);
   PRBool trusted = PR_FALSE;
   nsevent->GetIsTrusted(&trusted);
   if (!trusted)
@@ -5696,4 +5722,21 @@ nsContentUtils::IsPatternMatching(nsAString& aValue, nsAString& aPattern,
                                   aValue.Length(), &idx, JS_TRUE, &rval);
 
   return res == JS_FALSE || rval != JSVAL_NULL;
+}
+
+PRBool
+nsContentUtils::IsFullScreenApiEnabled()
+{
+  return sIsFullScreenApiEnabled;
+}
+
+PRBool nsContentUtils::IsRequestFullScreenAllowed()
+{
+  return !sTrustedFullScreenOnly || nsEventStateManager::IsHandlingUserInput();
+}
+
+PRBool
+nsContentUtils::IsFullScreenKeyInputRestricted()
+{
+  return sFullScreenKeyInputRestricted;
 }

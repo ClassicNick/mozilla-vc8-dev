@@ -930,10 +930,6 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
     }
   }
 
-  if (!gEntropyCollector) {
-    CallGetService(NS_ENTROPYCOLLECTOR_CONTRACTID, &gEntropyCollector);
-  }
-
   mSerial = ++gSerialCounter;
 
 #ifdef DEBUG
@@ -945,29 +941,39 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
 #endif
 
 #ifdef PR_LOGGING
-  if (!gDOMLeakPRLog)
-    gDOMLeakPRLog = PR_NewLogModule("DOMLeak");
-
   if (gDOMLeakPRLog)
     PR_LOG(gDOMLeakPRLog, PR_LOG_DEBUG,
            ("DOMWINDOW %p created outer=%p", this, aOuterWindow));
 #endif
 
-  // TODO: could be moved to a ::Init() method, see bug 667183.
-  if (!sWindowsById) {
-    sWindowsById = new WindowByIdTable();
-    if (!sWindowsById->Init()) {
-      delete sWindowsById;
-      sWindowsById = nsnull;
-      NS_ERROR("sWindowsById initialization failed!");
-    }
-  }
+  NS_ASSERTION(sWindowsById, "Windows hash table must be created!");
+  NS_ASSERTION(!sWindowsById->Get(mWindowID),
+               "This window shouldn't be in the hash table yet!");
+  sWindowsById->Put(mWindowID, this);
+}
 
-  if (sWindowsById) {
-    NS_ASSERTION(!sWindowsById->Get(mWindowID),
-                 "This window shouldn't be in the hash table yet!");
-    sWindowsById->Put(mWindowID, this);
-  }
+/* static */
+void
+nsGlobalWindow::Init()
+{
+  CallGetService(NS_ENTROPYCOLLECTOR_CONTRACTID, &gEntropyCollector);
+  NS_ASSERTION(gEntropyCollector,
+               "gEntropyCollector should have been initialized!");
+
+#ifdef PR_LOGGING
+  gDOMLeakPRLog = PR_NewLogModule("DOMLeak");
+  NS_ASSERTION(gDOMLeakPRLog, "gDOMLeakPRLog should have been initialized!");
+#endif
+
+  sWindowsById = new WindowByIdTable();
+  // There are two reasons to have Init() failing: if we were not able to
+  // alloc the memory or if the size we want to init is too high. None of them
+  // should happen.
+#ifdef DEBUG
+  NS_ASSERTION(sWindowsById->Init(), "Init() should not fail!");
+#else
+  sWindowsById->Init();
+#endif
 }
 
 nsGlobalWindow::~nsGlobalWindow()
@@ -979,9 +985,9 @@ nsGlobalWindow::~nsGlobalWindow()
                  "This window should be in the hash table");
     sWindowsById->Remove(mWindowID);
   }
-  if (!--gRefCnt) {
-    NS_IF_RELEASE(gEntropyCollector);
-  }
+
+  --gRefCnt;
+
 #ifdef DEBUG
   if (!PR_GetEnv("MOZ_QUIET")) {
     nsCAutoString url;
@@ -1037,8 +1043,6 @@ nsGlobalWindow::~nsGlobalWindow()
 
   CleanUp(PR_TRUE);
 
-  NS_ASSERTION(!mHasDeviceMotion, "Window still registered with device motion.");
-
 #ifdef DEBUG
   nsCycleCollector_DEBUG_wasFreed(static_cast<nsIScriptGlobalObject*>(this));
 #endif
@@ -1046,6 +1050,9 @@ nsGlobalWindow::~nsGlobalWindow()
   if (mURLProperty) {
     mURLProperty->ClearWindowReference();
   }
+
+  DisableDeviceMotionUpdates();
+  mHasDeviceMotion = PR_FALSE;
 
   nsLayoutStatics::Release();
 }
@@ -1060,6 +1067,8 @@ nsGlobalWindow::ShutDown()
     fclose(gDumpFile);
   }
   gDumpFile = nsnull;
+
+  NS_IF_RELEASE(gEntropyCollector);
 
   delete sWindowsById;
   sWindowsById = nsnull;
@@ -1100,8 +1109,7 @@ nsGlobalWindow::CleanUp(PRBool aIgnoreModalDialog)
 {
   if (IsOuterWindow() && !aIgnoreModalDialog) {
     nsGlobalWindow* inner = GetCurrentInnerWindowInternal();
-    nsCOMPtr<nsIDOMModalContentWindow>
-      dlg(do_QueryInterface(static_cast<nsPIDOMWindow*>(inner)));
+    nsCOMPtr<nsIDOMModalContentWindow> dlg(do_QueryObject(inner));
     if (dlg) {
       // The window we're trying to clean up is the outer window of a
       // modal dialog.  Defer cleanup until the window closes, and let
@@ -1164,9 +1172,6 @@ nsGlobalWindow::CleanUp(PRBool aIgnoreModalDialog)
   if (inner) {
     inner->CleanUp(aIgnoreModalDialog);
   }
-
-  DisableDeviceMotionUpdates();
-  mHasDeviceMotion = PR_FALSE;
 
   if (mCleanMessageManager) {
     NS_ABORT_IF_FALSE(mIsChrome, "only chrome should have msg manager cleaned");
@@ -1368,6 +1373,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsGlobalWindow)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIDOMWindowPerformance)
+  NS_INTERFACE_MAP_ENTRY(nsITouchEventReceiver)
+  NS_INTERFACE_MAP_ENTRY(nsIInlineEventHandlers)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Window)
   OUTER_WINDOW_ONLY
     NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -4401,9 +4408,11 @@ nsGlobalWindow::SetFullScreen(PRBool aFullScreen)
 
   PRBool rootWinFullScreen;
   GetFullScreen(&rootWinFullScreen);
-  // Only chrome can change our fullScreen mode.
-  if (aFullScreen == rootWinFullScreen || 
-      !nsContentUtils::IsCallerTrustedForWrite()) {
+  // Only chrome can change our fullScreen mode, unless the DOM full-screen
+  // API is enabled.
+  if ((aFullScreen == rootWinFullScreen || 
+      !nsContentUtils::IsCallerTrustedForWrite()) &&
+      !nsContentUtils::IsFullScreenApiEnabled()) {
     return NS_OK;
   }
 
@@ -4452,6 +4461,14 @@ nsGlobalWindow::SetFullScreen(PRBool aFullScreen)
   nsCOMPtr<nsIWidget> widget = GetMainWidget();
   if (widget)
     widget->MakeFullScreen(aFullScreen);
+
+  if (!mFullScreen && mDocument) {
+    // Notify the document that we've left full-screen mode. This is so that
+    // if we're in full-screen mode and the user exits full-screen mode with
+    // the browser full-screen mode toggle keyboard-shortcut, we detect that
+    // and leave DOM API full-screen mode too.
+    mDocument->MozCancelFullScreen();
+  }
 
   return NS_OK;
 }
@@ -7376,8 +7393,8 @@ nsGlobalWindow::AddEventListener(const nsAString& aType,
 
   nsEventListenerManager* manager = GetListenerManager(PR_TRUE);
   NS_ENSURE_STATE(manager);
-  return manager->AddEventListener(aType, aListener, aUseCapture,
-                                   aWantsUntrusted);
+  manager->AddEventListener(aType, aListener, aUseCapture, aWantsUntrusted);
+  return NS_OK;
 }
 
 nsEventListenerManager*
@@ -7981,7 +7998,7 @@ static nsCanvasFrame* FindCanvasFrame(nsIFrame* aFrame)
         return canvasFrame;
     }
 
-    nsIFrame* kid = aFrame->GetFirstChild(nsnull);
+    nsIFrame* kid = aFrame->GetFirstPrincipalChild();
     while (kid) {
         canvasFrame = FindCanvasFrame(kid);
         if (canvasFrame) {
@@ -8222,19 +8239,21 @@ NS_IMETHODIMP
 nsGlobalWindow::GetMozIndexedDB(nsIIDBFactory** _retval)
 {
   if (!mIndexedDB) {
-    nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-      do_GetService(THIRDPARTYUTIL_CONTRACTID);
-    NS_ENSURE_TRUE(thirdPartyUtil, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    if (!IsChromeWindow()) {
+      nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
+        do_GetService(THIRDPARTYUTIL_CONTRACTID);
+      NS_ENSURE_TRUE(thirdPartyUtil, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
-    PRBool isThirdParty;
-    nsresult rv = thirdPartyUtil->IsThirdPartyWindow(this, nsnull,
-                                                     &isThirdParty);
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+      PRBool isThirdParty;
+      nsresult rv = thirdPartyUtil->IsThirdPartyWindow(this, nsnull,
+                                                       &isThirdParty);
+      NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
-    if (isThirdParty) {
-      NS_WARNING("IndexedDB is not permitted in a third-party window.");
-      *_retval = nsnull;
-      return NS_OK;
+      if (isThirdParty) {
+        NS_WARNING("IndexedDB is not permitted in a third-party window.");
+        *_retval = nsnull;
+        return NS_OK;
+      }
     }
 
     mIndexedDB = indexedDB::IDBFactory::Create(this);
@@ -9777,8 +9796,7 @@ nsGlobalWindow::BuildURIfromBase(const char *aURL, nsIURI **aBuiltURI,
   if (!scx || !mDocument)
     return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIDOMChromeWindow> chrome_win =
-    do_QueryInterface(static_cast<nsIDOMWindow *>(this));
+  nsCOMPtr<nsIDOMChromeWindow> chrome_win = do_QueryObject(this);
 
   if (nsContentUtils::IsCallerChrome() && !chrome_win) {
     // If open() is called from chrome on a non-chrome window, we'll
@@ -10201,8 +10219,15 @@ nsGlobalWindow::SizeOf() const
 {
   PRInt64 size = sizeof(*this);
 
-  if (IsInnerWindow() && mDoc) {
-    size += mDoc->SizeOf();
+  if (IsInnerWindow()) {
+    nsEventListenerManager* elm =
+      const_cast<nsGlobalWindow*>(this)->GetListenerManager(PR_FALSE);
+    if (elm) {
+      size += elm->SizeOf();
+    }
+    if (mDoc) {
+      size += mDoc->SizeOf();
+    }
   }
 
   size += mNavigator ? mNavigator->SizeOf() : 0;
@@ -11129,13 +11154,6 @@ nsNavigator::JavaEnabled(PRBool *aReturn)
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsNavigator::TaintEnabled(PRBool *aReturn)
-{
-  *aReturn = PR_FALSE;
-  return NS_OK;
-}
-
 void
 nsNavigator::LoadingNewDocument()
 {
@@ -11361,6 +11379,37 @@ NS_IMETHODIMP nsNavigator::GetMozNotification(nsIDOMDesktopNotificationCenter **
   NS_ADDREF(*aRetVal = mNotification);    
   return NS_OK; 
 }
+
+#define EVENT(name_, id_, type_, struct_)                                    \
+  NS_IMETHODIMP nsGlobalWindow::GetOn##name_(JSContext *cx,                  \
+                                             jsval *vp) {                    \
+    nsEventListenerManager *elm = GetListenerManager(PR_FALSE);              \
+    if (elm) {                                                               \
+      elm->GetJSEventListener(nsGkAtoms::on##name_, vp);                     \
+    } else {                                                                 \
+      *vp = JSVAL_NULL;                                                      \
+    }                                                                        \
+    return NS_OK;                                                            \
+  }                                                                          \
+  NS_IMETHODIMP nsGlobalWindow::SetOn##name_(JSContext *cx,                  \
+                                             const jsval &v) {               \
+    nsEventListenerManager *elm = GetListenerManager(PR_TRUE);               \
+    if (!elm) {                                                              \
+      return NS_ERROR_OUT_OF_MEMORY;                                         \
+    }                                                                        \
+                                                                             \
+    JSObject *obj = mJSObject;                                               \
+    if (!obj) {                                                              \
+      return NS_ERROR_UNEXPECTED;                                            \
+    }                                                                        \
+    return elm->SetJSEventListenerToJsval(nsGkAtoms::on##name_, cx, obj, v); \
+  }
+#define WINDOW_ONLY_EVENT EVENT
+#define TOUCH_EVENT EVENT
+#include "nsEventNameList.h"
+#undef TOUCH_EVENT
+#undef WINDOW_ONLY_EVENT
+#undef EVENT
 
 PRInt64
 nsNavigator::SizeOf() const

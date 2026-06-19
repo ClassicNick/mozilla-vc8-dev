@@ -374,6 +374,10 @@ toolbarbutton.urlbar-button {
   list-style-image: url("chrome://browser/skin/images/settings-default-hdpi.png");
 }
 
+#tool-menu {
+  list-style-image: url("chrome://browser/skin/images/menu-hdpi.png");
+}
+
 %ifndef ANDROID
 /* MAEMO (and desktop) only */
 .panel-close {
@@ -420,24 +424,34 @@ toolbarbutton.choice-remotetabs {
 }
 
 /* awesomescreen panels ---------------------------------------------------- */
-historylist > hbox.history-throbber-box,
-remotetabslist > hbox.remotetabs-throbber-box {
-  display: none;
-}
-
-.history-throbber-box > image,
-.remotetabs-throbber-box > image {
+.history-throbber-box,
+.remotetabs-throbber-box {
   list-style-image: url("chrome://browser/skin/images/throbber.png");
 }
 
-historylist[loading="true"] > hbox.history-throbber-box,
-remotetabslist[loading="true"] > hbox.remotetabs-throbber-box {
+.remotetabs-message-box {
+  font-size: @font_small@ !important;
+  font-weight: normal;
+  text-align: center;
+  color: grey;
+}
+
+.history-throbber-box,
+.remotetabs-throbber-box,
+.remotetabs-message-box {
+  display: none;
+}
+
+historylist[loading="true"] > .history-throbber-box,
+remotetabslist[loading="true"] > .remotetabs-throbber-box,
+remotetabslist[message] > .remotetabs-message-box {
   background-color: white;
   display: -moz-box;
 }
 
-historylist[loading="true"] > richlistbox.history-list-children,
-remotetabslist[loading="true"] > richlistbox.remotetabs-list-children {
+historylist[loading="true"] > .history-list-children,
+remotetabslist[loading="true"] > .remotetabs-list-children,
+remotetabslist[message] > .remotetabs-list-children {
   visibility: collapse;
 }
 
@@ -716,6 +730,7 @@ remotetabslist autocompleteresult:hover:active:not([selected="true"]):not([class
 .bookmark-item-container {
   margin: 0;
   padding: 0;
+  -moz-box-align: center;
 }
 
 .autocomplete-item-label,
@@ -1334,12 +1349,6 @@ setting {
   font-size: @font_small@ !important;
 }
 
-/* full-screen video ------------------------------------------------------- */
-.full-screen {
-  position: absolute;
-  z-index: 500;
-}
-
 /* openwebapps capabilities ------------------------------------------------------------ */
 .webapps-noperm description.webapps-perm-requested-hint {
   display: block;
@@ -1461,7 +1470,7 @@ setting {
   margin: @margin_xxxnormal@ @margin_xxxnormal@ 0 @margin_xxxnormal@;
 }
 
-#appmenu-overflow-commands > .appmenu-button {
+#appmenu-overflow-appcommands > .appmenu-button {
   color: #000;
   background: transparent;
   font-size: @font_normal@ !important;
@@ -1471,9 +1480,13 @@ setting {
   -moz-box-align: center;
 }
 
-#appmenu-overflow-commands > .appmenu-button:hover:active {
+#appmenu-overflow-appcommands > .appmenu-button:hover:active {
   background-image: url("chrome://browser/skin/images/appmenu-active-hdpi.png");
   background-size: 100% 100%;
+}
+
+#appmenu-popup-sitecommands {
+  -moz-box-orient: vertical;
 }
 
 /* Sync setup ------------------------------------------------------------- */
@@ -1564,6 +1577,7 @@ setting {
 
 /* Tablet mode */
 
+.spacer-actionbar,
 .button-actionbar {
   visibility: collapse;
 }
@@ -1576,11 +1590,9 @@ setting {
   background-color: #8db8d8;
 }
 
+#toolbar-main[tablet="true"] > .spacer-actionbar,
 #toolbar-main[tablet="true"] > .button-actionbar {
   visibility: visible;
-}
-#toolbar-main[tablet="true"][mode="edit"] > .button-actionbar {
-  visibility: collapse;
 }
 
 #controls-scrollbox[tablet="true"] > #controls-sidebar {
@@ -1621,3 +1633,11 @@ setting {
   list-style-image: url("chrome://browser/skin/images/handle-end.png");
 }
 
+@media (min-width: @tablet_panel_minwidth@) {
+  #awesome-panels {
+    -moz-box-shadow: 0px 0px @shadow_width_small@ black;
+  }
+  #search-engines-popup {
+    max-width: -moz-calc(@tablet_panel_minwidth@);
+  }
+}

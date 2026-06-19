@@ -69,10 +69,14 @@ ifeq (Darwin,$(OS_ARCH))
 ifeq (86,$(findstring 86,$(OS_TEST)))
 ifneq (x86_64,$(OS_TEST))
 # If we compile xptcinvoke_unixish_x86.cpp with -fomit-frame-pointer
-# we end up crashing on startup, presumably because of the %esp munging we do
-# when KEEP_STACK_16_BYTE_ALIGNED.  So let's not use that flag here.
-# NOTE: MODULE_OPTIMIZE_FLAGS must be set before including config.mk
-MODULE_OPTIMIZE_FLAGS=-O3
+# we end up crashing on startup. This is because
+# "movl  %5, %%eax\n\t"   /* function index */
+# becomes
+# mov    0x1c(%esp),%eax
+# but we have modified esp.
+# NOTE: MOZ_FRAMEPTR_FLAGS must be set before including config.mk
+# FIXME: change the file instead of using this hack.
+MOZ_FRAMEPTR_FLAGS=-fno-omit-frame-pointer
 endif
 endif
 endif
@@ -280,24 +284,6 @@ endif
 ifeq ($(OS_ARCH),Linux)
 ifeq ($(OS_TEST),m68k)
 CPPSRCS		:= xptcinvoke_linux_m68k.cpp xptcstubs_linux_m68k.cpp
-endif
-endif
-
-######################################################################
-# MIPS
-######################################################################
-#
-# IRIX/MIPS
-#
-ifeq ($(OS_ARCH),IRIX)
-ifneq ($(basename $(OS_RELEASE)),5)
-CPPSRCS		:= xptcinvoke_irix.cpp xptcstubs_irix.cpp
-ASFILES		:= xptcinvoke_asm_irix.s xptcstubs_asm_irix.s
-ifdef GNU_CC
-ASFLAGS		+= -Wa,-D__GNUC__
-else
-CXXFLAGS	:= $(shell echo $(CXXFLAGS) | sed 's/-O\(3\|fast\)/-O2/g')
-endif
 endif
 endif
 
@@ -517,18 +503,6 @@ xptcstubs_asm_ppc_aix.o: xptcstubs_asm_ppc_aix.s.m4 $(DIST)/include/xptcstubsdef
 	$(AS) -o $@ $(ASFLAGS) $(AS_DASH_C_FLAG) ./xptcstubs_asm_ppc_aix.s
 	$(RM) ./xptcstubs_asm_ppc_aix.s
 endif
-endif
-
-ifeq ($(OS_ARCH),IRIX)
-# The assembler on IRIX (6.3 only?) seems to have trouble with the default command,
-# but works fine if we first copy the header and source file into the current dir.
-xptcstubs_asm_irix.o: $(DIST)/include/xptcstubsdef.inc $(srcdir)/xptcstubs_asm_irix.s
-	@rm -f ./xptcstubsdef.inc
-	@cp $(DIST)/include/xptcstubsdef.inc .
-	@if test ! -f ./Makefile.in; then rm -f ./xptcstubs_asm_irix.s; cp $(srcdir)/xptcstubs_asm_irix.s .; else true; fi
-	$(AS) -o $@ $(ASFLAGS) $(AS_DASH_C_FLAG) ./xptcstubs_asm_irix.s
-	@rm -f ./xptcstubsdef.inc
-	@if test ! -f ./Makefile.in; then rm -f ./xptcstubs_asm_irix.s; else true; fi
 endif
 
 ifeq ($(OS_ARCH),SunOS)

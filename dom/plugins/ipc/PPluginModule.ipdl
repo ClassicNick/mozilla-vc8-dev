@@ -114,6 +114,8 @@ child:
                             nsString aDisplayName,
                             nsString aIconPath);
 
+  async SetParentHangTimeout(uint32_t seconds);
+
 parent:
   /**
    * This message is only used on X11 platforms.

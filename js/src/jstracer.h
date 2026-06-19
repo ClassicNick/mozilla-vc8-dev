@@ -1242,7 +1242,7 @@ class TraceRecorder
      * entries of the tracker accordingly.
      */
     JS_REQUIRES_STACK void checkForGlobalObjectReallocation() {
-        if (global_slots != globalObj->getSlots())
+        if (global_slots != globalObj->getRawSlots())
             checkForGlobalObjectReallocationHelper();
     }
     JS_REQUIRES_STACK void checkForGlobalObjectReallocationHelper();
@@ -1398,10 +1398,12 @@ class TraceRecorder
     JS_REQUIRES_STACK RecordingStatus getCharCodeAt(JSString *str,
                                                     nanojit::LIns* str_ins, nanojit::LIns* idx_ins,
                                                     nanojit::LIns** out_ins);
+#ifdef JS_HAS_STATIC_STRINGS
     JS_REQUIRES_STACK nanojit::LIns* getUnitString(nanojit::LIns* str_ins, nanojit::LIns* idx_ins);
     JS_REQUIRES_STACK RecordingStatus getCharAt(JSString *str,
                                                 nanojit::LIns* str_ins, nanojit::LIns* idx_ins,
                                                 JSOp mode, nanojit::LIns** out_ins);
+#endif
 
     JS_REQUIRES_STACK RecordingStatus initOrSetPropertyByName(nanojit::LIns* obj_ins,
                                                               Value* idvalp, Value* rvalp,
@@ -1638,7 +1640,7 @@ class TraceRecorder
              * Do slot arithmetic manually to avoid getSlotRef assertions which
              * do not need to be satisfied for this purpose.
              */
-            const Value *vp = &globalObj->getSlot(slot);
+            const Value *vp = globalObj->getRawSlot(slot, globalObj->getRawSlots());
 
             /* If this global is definitely being tracked, then the write is unexpected. */
             if (tracker.has(vp))
@@ -1658,7 +1660,8 @@ class TraceRecorder
     }
 };
 
-#define TRACING_ENABLED(cx)       ((cx)->traceJitEnabled)
+/* :FIXME: bug 637856 disabling traceJit if inference is enabled */
+#define TRACING_ENABLED(cx)       ((cx)->traceJitEnabled && !(cx)->typeInferenceEnabled())
 #define REGEX_JIT_ENABLED(cx)     ((cx)->traceJitEnabled || (cx)->methodJitEnabled)
 
 #define JSOP_IN_RANGE(op,lo,hi)   (uintN((op) - (lo)) <= uintN((hi) - (lo)))

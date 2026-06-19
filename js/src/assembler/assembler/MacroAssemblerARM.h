@@ -1124,6 +1124,7 @@ public:
 
     void loadDouble(ImplicitAddress address, FPRegisterID dest)
     {
+        // Load a double from base+offset.
         m_assembler.doubleTransfer(true, dest, address.base, address.offset);
     }
 
@@ -1137,7 +1138,7 @@ public:
     DataLabelPtr loadDouble(const void* address, FPRegisterID dest)
     {
         DataLabelPtr label = moveWithPatch(ImmPtr(address), ARMRegisters::S0);
-        m_assembler.fdtr_u(true, dest, ARMRegisters::S0, 0);
+        m_assembler.doubleTransfer(true, dest, ARMRegisters::S0, 0);
         return label;
     }
 
@@ -1150,8 +1151,7 @@ public:
         // as long as this is a sane mapping, (*2) should just work
         dest = (FPRegisterID) (dest * 2);
         ASSERT((address.offset & 0x3) == 0);
-        // address.offset is the offset in bytes, fmem_imm_off is expecting the offset in words.
-        m_assembler.fmem_imm_off(true, false, true, dest, address.base, address.offset >> 2);
+        m_assembler.floatTransfer(true, dest, address.base, address.offset);
         m_assembler.vcvt(m_assembler.FloatReg32, m_assembler.FloatReg64, (FPRegisterID)(dest*2), dest);
     }
     void loadFloat(BaseIndex address, FPRegisterID dest)
@@ -1172,12 +1172,13 @@ public:
  
     void storeDouble(FPRegisterID src, ImplicitAddress address)
     {
+        // Store a double at base+offset.
         m_assembler.doubleTransfer(false, src, address.base, address.offset);
     }
 
-    void storeDouble(FPRegisterID dest, BaseIndex address)
+    void storeDouble(FPRegisterID src, BaseIndex address)
     {
-        m_assembler.baseIndexFloatTransfer(false, true, dest,
+        m_assembler.baseIndexFloatTransfer(false, true, src,
                                            address.base, address.index,
                                            address.scale, address.offset);
     }
@@ -1200,7 +1201,7 @@ public:
 
     void storeFloat(FPRegisterID src, ImplicitAddress address)
     {
-        m_assembler.fmem_imm_off(false, false, true, src, address.base, address.offset);
+        m_assembler.floatTransfer(false, src, address.base, address.offset);
     }
 
     void storeFloat(FPRegisterID src, BaseIndex address)
@@ -1277,6 +1278,11 @@ public:
     void negDouble(FPRegisterID src, FPRegisterID dest)
     {
         m_assembler.fnegd_r(dest, src);
+    }
+
+    void absDouble(FPRegisterID src, FPRegisterID dest)
+    {
+        m_assembler.fabsd_r(dest, src);
     }
 
     void sqrtDouble(FPRegisterID src, FPRegisterID dest)

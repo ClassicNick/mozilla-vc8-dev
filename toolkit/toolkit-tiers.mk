@@ -111,7 +111,6 @@ endif
 
 tier_platform_dirs	+= \
 		modules/libjar \
-		db \
 		storage \
 		$(NULL)
 
@@ -224,6 +223,8 @@ endif
 tier_platform_dirs += services/crypto/component
 
 tier_platform_dirs += startupcache
+
+tier_platform_dirs += js/ductwork
 
 ifdef APP_LIBXUL_STATICDIRS
 # Applications can cheat and ask for code to be

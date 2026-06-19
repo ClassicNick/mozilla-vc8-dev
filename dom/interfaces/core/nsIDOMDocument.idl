@@ -48,6 +48,7 @@ interface nsIDOMNodeIterator;
 interface nsIDOMNodeFilter;
 interface nsIDOMTreeWalker;
 interface nsIDOMLocation;
+interface nsIDOMCaretPosition;
 
 /**
  * The nsIDOMDocument interface represents the entire HTML or XML document.
@@ -62,7 +63,7 @@ interface nsIDOMLocation;
  * http://dvcs.w3.org/hg/domcore/raw-file/tip/Overview.html
  */
 
-[scriptable, uuid(10034b87-384e-4e19-902c-c4edafb899be)]
+[scriptable, uuid(903493d3-72b6-4416-b930-fbfc17ef1d87)]
 interface nsIDOMDocument : nsIDOMNode
 {
   readonly attribute nsIDOMDocumentType         doctype;
@@ -368,4 +369,30 @@ interface nsIDOMDocument : nsIDOMNode
    */
   void mozSetImageElement(in DOMString aImageElementId,
                           in nsIDOMElement aImageElement);
+
+  nsIDOMCaretPosition caretPositionFromPoint(in float x, in float y);
+  
+  /**
+   * Element which is currently the full-screen element as per the DOM
+   * full-screen api.
+   *
+   * @see <https://wiki.mozilla.org/index.php?title=Gecko:FullScreenAPI>
+   */
+  readonly attribute nsIDOMHTMLElement mozFullScreenElement;
+
+  /**
+   * Causes the document to leave DOM full-screen mode, if it's in
+   * full-screen mode, as per the DOM full-screen api.
+   *
+   * @see <https://wiki.mozilla.org/index.php?title=Gecko:FullScreenAPI>
+   */
+  void mozCancelFullScreen();   
+  
+  /**
+   * Denotes whether this document is in DOM full-screen mode, as per the DOM
+   * full-screen api.
+   *
+   * @see <https://wiki.mozilla.org/index.php?title=Gecko:FullScreenAPI>
+   */
+  readonly attribute boolean mozFullScreen;  
 };

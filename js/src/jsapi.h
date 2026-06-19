@@ -88,15 +88,6 @@ extern JS_PUBLIC_DATA(jsval) JSVAL_VOID;
 
 #endif
 
-/*
- * Different "run modes" used for execution accounting (JSOPTION_PCCOUNT)
- */
-
-#define JSRUNMODE_INTERP    0
-#define JSRUNMODE_TRACEJIT  1
-#define JSRUNMODE_METHODJIT 2
-#define JSRUNMODE_COUNT     3
-
 /************************************************************************/
 
 static JS_ALWAYS_INLINE JSBool
@@ -992,10 +983,12 @@ JS_StringToVersion(const char *string);
                                                    don't tune at run-time. */
 #define JSOPTION_PCCOUNT        JS_BIT(17)      /* Collect per-op execution counts */
 
+#define JSOPTION_TYPE_INFERENCE JS_BIT(18)      /* Perform type inference. */
+
 /* Options which reflect compile-time properties of scripts. */
 #define JSCOMPILEOPTION_MASK    (JSOPTION_XML)
 
-#define JSRUNOPTION_MASK        (JS_BITMASK(18) & ~JSCOMPILEOPTION_MASK)
+#define JSRUNOPTION_MASK        (JS_BITMASK(19) & ~JSCOMPILEOPTION_MASK)
 #define JSALLOPTION_MASK        (JSCOMPILEOPTION_MASK | JSRUNOPTION_MASK)
 
 extern JS_PUBLIC_API(uint32)
@@ -1608,16 +1601,25 @@ JS_SetExtraGCRoots(JSRuntime *rt, JSTraceDataOp traceOp, void *data);
  * other strong ref identified for debugging purposes by name or index or
  * a naming callback.
  *
- * By definition references to traceable things include non-null pointers
- * to JSObject, JSString and jsdouble and corresponding jsvals.
- *
  * See the JSTraceOp typedef in jspubtd.h.
  */
 
-/* Trace kinds to pass to JS_Tracing. */
-#define JSTRACE_OBJECT  0
-#define JSTRACE_STRING  1
-#define JSTRACE_SHAPE   2
+typedef enum {
+    JSTRACE_OBJECT,
+    JSTRACE_STRING,
+    JSTRACE_SCRIPT,
+
+    /*
+     * Trace kinds internal to the engine. The embedding can only them if it
+     * implements JSTraceCallback.
+     */ 
+#if JS_HAS_XML_SUPPORT
+    JSTRACE_XML,
+#endif
+    JSTRACE_SHAPE,
+    JSTRACE_TYPE_OBJECT,
+    JSTRACE_LAST = JSTRACE_TYPE_OBJECT
+} JSGCTraceKind;
 
 /*
  * Use the following macros to check if a particular jsval is a traceable
@@ -1637,14 +1639,29 @@ JSVAL_TO_TRACEABLE(jsval v)
     return JSVAL_TO_GCTHING(v);
 }
 
-static JS_ALWAYS_INLINE uint32
+static JS_ALWAYS_INLINE JSGCTraceKind
 JSVAL_TRACE_KIND(jsval v)
 {
     jsval_layout l;
     JS_ASSERT(JSVAL_IS_GCTHING(v));
     l.asBits = JSVAL_BITS(v);
-    return JSVAL_TRACE_KIND_IMPL(l);
+    return (JSGCTraceKind) JSVAL_TRACE_KIND_IMPL(l);
 }
+
+/*
+ * Tracer callback, called for each traceable thing directly referenced by a
+ * particular object or runtime structure. It is the callback responsibility
+ * to ensure the traversal of the full object graph via calling eventually
+ * JS_TraceChildren on the passed thing. In this case the callback must be
+ * prepared to deal with cycles in the traversal graph.
+ *
+ * kind argument is one of JSTRACE_OBJECT, JSTRACE_STRING or a tag denoting
+ * internal implementation-specific traversal kind. In the latter case the only
+ * operations on thing that the callback can do is to call JS_TraceChildren or
+ * DEBUG-only JS_PrintTraceThingInfo.
+ */
+typedef void
+(* JSTraceCallback)(JSTracer *trc, void *thing, JSGCTraceKind kind);
 
 struct JSTracer {
     JSContext           *context;
@@ -1661,7 +1678,7 @@ struct JSTracer {
  * describing the reference using the macros below.
  */
 extern JS_PUBLIC_API(void)
-JS_CallTracer(JSTracer *trc, void *thing, uint32 kind);
+JS_CallTracer(JSTracer *trc, void *thing, JSGCTraceKind kind);
 
 /*
  * Set debugging information about a reference to a traceable thing to prepare
@@ -1754,7 +1771,7 @@ JS_CallTracer(JSTracer *trc, void *thing, uint32 kind);
     JS_END_MACRO
 
 extern JS_PUBLIC_API(void)
-JS_TraceChildren(JSTracer *trc, void *thing, uint32 kind);
+JS_TraceChildren(JSTracer *trc, void *thing, JSGCTraceKind kind);
 
 extern JS_PUBLIC_API(void)
 JS_TraceRuntime(JSTracer *trc);
@@ -1763,7 +1780,7 @@ JS_TraceRuntime(JSTracer *trc);
 
 extern JS_PUBLIC_API(void)
 JS_PrintTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc,
-                       void *thing, uint32 kind, JSBool includeDetails);
+                       void *thing, JSGCTraceKind kind, JSBool includeDetails);
 
 /*
  * DEBUG-only method to dump the object graph of heap-allocated things.
@@ -1772,8 +1789,8 @@ JS_PrintTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc,
  * start:           when non-null, dump only things reachable from start
  *                  thing. Otherwise dump all things reachable from the
  *                  runtime roots.
- * startKind:       trace kind of start if start is not null. Must be 0 when
- *                  start is null.
+ * startKind:       trace kind of start if start is not null. Must be
+ *                  JSTRACE_OBJECT when start is null.
  * thingToFind:     dump only paths in the object graph leading to thingToFind
  *                  when non-null.
  * maxDepth:        the upper bound on the number of edges to descend from the
@@ -1781,7 +1798,7 @@ JS_PrintTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc,
  * thingToIgnore:   thing to ignore during the graph traversal when non-null.
  */
 extern JS_PUBLIC_API(JSBool)
-JS_DumpHeap(JSContext *cx, FILE *fp, void* startThing, uint32 startKind,
+JS_DumpHeap(JSContext *cx, FILE *fp, void* startThing, JSGCTraceKind kind,
             void *thingToFind, size_t maxDepth, void *thingToIgnore);
 
 #endif
@@ -3730,51 +3747,6 @@ JS_SetContextThread(JSContext *cx);
 
 extern JS_PUBLIC_API(jsword)
 JS_ClearContextThread(JSContext *cx);
-
-/*
- * A JS runtime always has an "owner thread". The owner thread is set when the
- * runtime is created (to the current thread) and practically all entry points
- * into the JS engine check that a runtime (or anything contained in the
- * runtime: context, compartment, object, etc) is only touched by its owner
- * thread. Embeddings may check this invariant outside the JS engine by calling
- * JS_AbortIfWrongThread (which will abort if not on the owner thread, even for
- * non-debug builds).
- *
- * It is possible to "move" a runtime between threads. This is accomplished by
- * calling JS_ClearRuntimeThread on a runtime's owner thread and then calling
- * JS_SetRuntimeThread on the new owner thread. The runtime must not be
- * accessed between JS_ClearRuntimeThread and JS_SetRuntimeThread. Also, the
- * caller is responsible for synchronizing the calls to Set/Clear.
- */
-
-extern JS_PUBLIC_API(void)
-JS_AbortIfWrongThread(JSRuntime *rt);
-
-extern JS_PUBLIC_API(void)
-JS_ClearRuntimeThread(JSRuntime *rt);
-
-extern JS_PUBLIC_API(void)
-JS_SetRuntimeThread(JSRuntime *rt);
-
-#ifdef __cplusplus
-JS_END_EXTERN_C
-
-class JSAutoSetRuntimeThread
-{
-    JSRuntime *runtime;
-
-  public:
-    JSAutoSetRuntimeThread(JSRuntime *runtime) : runtime(runtime) {
-        JS_SetRuntimeThread(runtime);
-    }
-
-    ~JSAutoSetRuntimeThread() {
-        JS_ClearRuntimeThread(runtime);
-    }
-};
-
-JS_BEGIN_EXTERN_C
-#endif
 
 /************************************************************************/
 

@@ -223,7 +223,7 @@ nsXPConnect::ReleaseXPConnectSingleton()
                                      : fopen(dumpName, "w");
                     if(dumpFile)
                     {
-                        JS_DumpHeap(ccx, dumpFile, nsnull, 0, nsnull,
+                        JS_DumpHeap(ccx, dumpFile, nsnull, JSTRACE_OBJECT, nsnull,
                                     static_cast<size_t>(-1), nsnull);
                         if(dumpFile != stdout)
                             fclose(dumpFile);
@@ -532,34 +532,6 @@ nsXPConnect::BeginCycleCollection(nsCycleCollectionTraversalCallback &cb,
     return NS_OK;
 }
 
-void
-nsXPConnect::NotifyLeaveMainThread()
-{
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "Off main thread");
-    JS_ClearRuntimeThread(mRuntime->GetJSRuntime());
-}
-
-void
-nsXPConnect::NotifyEnterCycleCollectionThread()
-{
-    NS_ABORT_IF_FALSE(!NS_IsMainThread(), "On main thread");
-    JS_SetRuntimeThread(mRuntime->GetJSRuntime());
-}
-
-void
-nsXPConnect::NotifyLeaveCycleCollectionThread()
-{
-    NS_ABORT_IF_FALSE(!NS_IsMainThread(), "On main thread");
-    JS_ClearRuntimeThread(mRuntime->GetJSRuntime());
-}
-
-void
-nsXPConnect::NotifyEnterMainThread()
-{
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "Off main thread");
-    JS_SetRuntimeThread(mRuntime->GetJSRuntime());
-}
-
 nsresult 
 nsXPConnect::FinishTraverse()
 {
@@ -647,7 +619,7 @@ xpc_GCThingIsGrayCCThing(void *thing)
  * re-coloring.
  */
 static void
-UnmarkGrayChildren(JSTracer *trc, void *thing, uint32 kind)
+UnmarkGrayChildren(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     int stackDummy;
     if (!JS_CHECK_STACK_SIZE(trc->context->stackLimit, &stackDummy)) {
@@ -703,7 +675,7 @@ struct TraversalTracer : public JSTracer
 };
 
 static void
-NoteJSChild(JSTracer *trc, void *thing, uint32 kind)
+NoteJSChild(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     if(AddToCCKind(kind))
     {
@@ -760,9 +732,9 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
 {
     JSContext *cx = mCycleCollectionContext->GetJSContext();
 
-    uint32 traceKind = js_GetGCThingTraceKind(p);
-    JSObject *obj;
-    js::Class *clazz;
+    JSGCTraceKind traceKind = js_GetGCThingTraceKind(p);
+    JSObject *obj = nsnull;
+    js::Class *clazz = nsnull;
 
     // We do not want to add wrappers to the cycle collector if they're not
     // explicitly marked as main thread only, because the cycle collector isn't
@@ -822,8 +794,6 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
         char name[72];
         if(traceKind == JSTRACE_OBJECT)
         {
-            JSObject *obj = static_cast<JSObject*>(p);
-            js::Class *clazz = obj->getClass();
             XPCNativeScriptableInfo* si = nsnull;
             if(IS_PROTO_CLASS(clazz))
             {
@@ -836,7 +806,7 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
                 JS_snprintf(name, sizeof(name), "JS Object (%s - %s)",
                             clazz->name, si->GetJSClass()->name);
             }
-            else if(clazz == &js_ScriptClass)
+            else if(clazz == &js::ScriptClass)
             {
                 JSScript* script = (JSScript*) xpc_GetJSPrivate(obj);
                 if(script->filename)
@@ -850,7 +820,7 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
                     JS_snprintf(name, sizeof(name), "JS Object (Script)");
                 }
             }
-            else if(clazz == &js_FunctionClass)
+            else if(clazz == &js::FunctionClass)
             {
                 JSFunction* fun = (JSFunction*) xpc_GetJSPrivate(obj);
                 JSString* str = JS_GetFunctionId(fun);
@@ -873,11 +843,15 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
         }
         else
         {
-            static const char trace_types[JSTRACE_LIMIT][7] = {
+            static const char trace_types[][11] = {
                 "Object",
                 "String",
-                "Xml"
+                "Script",
+                "Xml",
+                "Shape",
+                "TypeObject",
             };
+            JS_STATIC_ASSERT(JS_ARRAY_LENGTH(trace_types) == JSTRACE_LAST + 1);
             JS_snprintf(name, sizeof(name), "JS %s", trace_types[traceKind]);
         }
 
@@ -1273,7 +1247,8 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
     {
         if(protoJSObject != globalJSObj)
             JS_SetParent(aJSContext, protoJSObject, globalJSObj);
-        JS_SetPrototype(aJSContext, protoJSObject, scope->GetPrototypeJSObject());
+        if (!JS_SplicePrototype(aJSContext, protoJSObject, scope->GetPrototypeJSObject()))
+            return UnexpectedFailure(NS_ERROR_FAILURE);
     }
 
     if(!(aFlags & nsIXPConnect::OMIT_COMPONENTS_OBJECT)) {
@@ -2101,7 +2076,8 @@ nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
     jsval rval = JSVAL_VOID;
     AUTO_MARK_JSVAL(ccx, &rval);
 
-    nsresult rv = xpc_CreateSandboxObject(cx, &rval, principal, NULL, false);
+    nsresult rv = xpc_CreateSandboxObject(cx, &rval, principal, NULL, false, 
+                                          EmptyCString());
     NS_ASSERTION(NS_FAILED(rv) || !JSVAL_IS_PRIMITIVE(rval),
                  "Bad return value from xpc_CreateSandboxObject()!");
 
@@ -2472,9 +2448,7 @@ nsXPConnect::GetRuntime(JSRuntime **runtime)
     if(!runtime)
         return NS_ERROR_NULL_POINTER;
 
-    JSRuntime *rt = GetRuntime()->GetJSRuntime();
-    JS_AbortIfWrongThread(rt);
-    *runtime = rt;
+    *runtime = GetRuntime()->GetJSRuntime();
     return NS_OK;
 }
 

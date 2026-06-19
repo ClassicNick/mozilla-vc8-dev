@@ -181,6 +181,7 @@
 #include "nsGlobalWindow.h"
 #include "mozilla/dom/indexedDB/IndexedDatabaseManager.h"
 #include "nsDOMNavigationTiming.h"
+#include "nsEventStateManager.h"
 
 #ifdef MOZ_SMIL
 #include "nsSMILAnimationController.h"
@@ -202,8 +203,12 @@
 #include "nsDOMTouchEvent.h"
 
 #include "mozilla/Preferences.h"
+#include "nsFrame.h"
 
 #include "imgILoader.h"
+
+#include "nsDOMCaretPosition.h"
+#include "nsIDOMHTMLTextAreaElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1540,6 +1545,7 @@ nsDOMImplementation::CreateHTMLDocument(const nsAString& aTitle,
 nsDocument::nsDocument(const char* aContentType)
   : nsIDocument()
   , mAnimatingImages(PR_TRUE)
+  , mIsFullScreen(PR_FALSE)
 {
   SetContentTypeInternal(nsDependentCString(aContentType));
   
@@ -1697,6 +1703,8 @@ NS_INTERFACE_TABLE_HEAD(nsDocument)
     NS_INTERFACE_TABLE_ENTRY(nsDocument, nsIMutationObserver)
     NS_INTERFACE_TABLE_ENTRY(nsDocument, nsIApplicationCacheContainer)
     NS_INTERFACE_TABLE_ENTRY(nsDocument, nsIDOMDocumentTouch)
+    NS_INTERFACE_TABLE_ENTRY(nsDocument, nsITouchEventReceiver)
+    NS_INTERFACE_TABLE_ENTRY(nsDocument, nsIInlineEventHandlers)
   NS_OFFSET_AND_INTERFACE_TABLE_END
   NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(nsDocument)
@@ -1819,7 +1827,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
   // if we're uncollectable.
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 
-  if (nsCCUncollectableMarker::InGeneration(cb, tmp->GetMarkedCCGeneration())) {
+  if (!nsINode::Traverse(tmp, cb)) {
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
   }
 
@@ -1827,15 +1835,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
 
   tmp->mExternalResourceMap.Traverse(&cb);
 
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mNodeInfo)
-
   // Traverse the mChildren nsAttrAndChildArray.
   for (PRInt32 indx = PRInt32(tmp->mChildren.ChildCount()); indx > 0; --indx) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mChildren[i]");
     cb.NoteXPCOMChild(tmp->mChildren.ChildAt(indx - 1));
   }
-
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_USERDATA
 
   // Traverse all nsIDocument pointer members.
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mCachedRootElement)
@@ -1869,6 +1873,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
                                                        nsIDOMNodeList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOriginalDocument)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mCachedEncoder)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mFullScreenElement)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mStateObjectCached)
 
   // Traverse all our nsCOMArrays.
@@ -1895,7 +1900,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsDocument)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
+  nsINode::Trace(tmp, aCallback, aClosure);
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 
@@ -1906,6 +1911,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
   tmp->mExternalResourceMap.Shutdown();
 
   nsAutoScriptBlocker scriptBlocker;
+
+  nsINode::Unlink(tmp);
 
   // Unlink the mChildren nsAttrAndChildArray.
   for (PRInt32 indx = PRInt32(tmp->mChildren.ChildCount()) - 1; 
@@ -1923,9 +1930,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mImageMaps)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOriginalDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mCachedEncoder)
-
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_USERDATA
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mFullScreenElement)
 
   tmp->mParentDocument = nsnull;
 
@@ -2738,8 +2743,7 @@ nsDocument::GetActiveElement(nsIDOMElement **aElement)
   }
 
   // No focused element anywhere in this document.  Try to get the BODY.
-  nsCOMPtr<nsIDOMHTMLDocument> htmlDoc =
-    do_QueryInterface(static_cast<nsIDocument*>(this));
+  nsCOMPtr<nsIDOMHTMLDocument> htmlDoc = do_QueryObject(this);
   if (htmlDoc) {
     nsCOMPtr<nsIDOMHTMLElement> bodyElement;
     htmlDoc->GetBody(getter_AddRefs(bodyElement));
@@ -5875,6 +5879,12 @@ nsDocument::GetUserData(const nsAString & key,
 }
 
 NS_IMETHODIMP
+nsDocument::Contains(nsIDOMNode* aOther, PRBool* aReturn)
+{
+  return nsINode::Contains(aOther, aReturn);
+}
+
+NS_IMETHODIMP
 nsDocument::GetInputEncoding(nsAString& aInputEncoding)
 {
   if (mHaveInputEncoding) {
@@ -6121,7 +6131,7 @@ nsDocument::AdoptNode(nsIDOMNode *aAdoptedNode, nsIDOMNode **aResult)
       } while ((doc = doc->GetParentDocument()));
 
       // Remove from parent.
-      nsINode* parent = adoptedNode->GetNodeParent();
+      nsCOMPtr<nsINode> parent = adoptedNode->GetNodeParent();
       if (parent) {
         rv = parent->RemoveChildAt(parent->IndexOf(adoptedNode), PR_TRUE);
         NS_ENSURE_SUCCESS(rv, rv);
@@ -8394,10 +8404,62 @@ nsDocument::CreateTouchList(nsIVariant* aPoints,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDocument::CaretPositionFromPoint(float aX, float aY, nsIDOMCaretPosition** aCaretPos)
+{
+  NS_ENSURE_ARG_POINTER(aCaretPos);
+  *aCaretPos = nsnull;
+  
+  nscoord x = nsPresContext::CSSPixelsToAppUnits(aX);
+  nscoord y = nsPresContext::CSSPixelsToAppUnits(aY);
+  nsPoint pt(x, y);
+
+  nsIPresShell *ps = GetShell();
+  if (!ps) {
+    return NS_OK;
+  }
+
+  nsIFrame *rootFrame = ps->GetRootFrame();
+
+  // XUL docs, unlike HTML, have no frame tree until everything's done loading
+  if (!rootFrame) {
+    return NS_OK; // return null to premature XUL callers as a reminder to wait
+  }
+
+  nsIFrame *ptFrame = nsLayoutUtils::GetFrameForPoint(rootFrame, pt, PR_TRUE,
+                                                      PR_FALSE);
+  if (!ptFrame) {
+    return NS_OK;
+  }
+
+  nsFrame::ContentOffsets offsets = ptFrame->GetContentOffsetsFromPoint(pt);
+  nsCOMPtr<nsIDOMNode> node = do_QueryInterface(offsets.content);
+  nsIContent* ptContent = offsets.content;
+  PRInt32 offset = offsets.offset;
+  if (ptContent && ptContent->IsInNativeAnonymousSubtree()) {
+    nsIContent* nonanon = ptContent->FindFirstNonNativeAnonymous();
+    nsCOMPtr<nsIDOMHTMLInputElement> input = do_QueryInterface(nonanon);
+    nsCOMPtr<nsIDOMHTMLTextAreaElement> textArea = do_QueryInterface(nonanon);
+    PRBool isText;
+    if (textArea || (input &&
+                     NS_SUCCEEDED(input->MozIsTextField(PR_FALSE, &isText)) && 
+                     isText)) {
+      node = do_QueryInterface(nonanon);
+    } else {
+      node = nsnull;
+      offset = 0;
+    }
+  }
+
+  *aCaretPos = new nsDOMCaretPosition(node, offset);
+  NS_ADDREF(*aCaretPos);
+  return NS_OK;
+}
+
 PRInt64
 nsIDocument::SizeOf() const
 {
-  PRInt64 size = sizeof(*this);
+  PRInt64 size = MemoryReporter::GetBasicSize<nsIDocument, nsINode>(this);
 
   for (nsIContent* node = GetFirstChild(); node;
        node = node->GetNextNode(this)) {
@@ -8405,6 +8467,221 @@ nsIDocument::SizeOf() const
   }
 
   return size;
+}
+
+// Returns the root document in a document hierarchy.
+static nsIDocument*
+GetRootDocument(nsIDocument* aDoc)
+{
+  if (!aDoc) {
+    return nsnull;
+  }
+  nsCOMPtr<nsIPresShell> shell = aDoc->GetShell();
+  if (!shell) {
+    return nsnull;
+  }
+  nsPresContext* ctx = shell->GetPresContext();
+  if (!ctx) {
+    return nsnull;
+  }
+  nsRootPresContext* rpc = ctx->GetRootPresContext();
+  if (!rpc) {
+    return nsnull;
+  }
+  return rpc->Document();
+}
+
+class nsDispatchFullScreenChange : public nsRunnable
+{
+public:
+  nsDispatchFullScreenChange(nsIDocument *aDoc)
+    : mDoc(aDoc)
+  {
+    mTarget = aDoc->GetFullScreenElement();
+    if (!mTarget) {
+      mTarget = aDoc;
+    }
+  }
+
+  NS_IMETHOD Run()
+  {
+    nsContentUtils::DispatchTrustedEvent(mDoc,
+                                         mTarget,
+                                         NS_LITERAL_STRING("mozfullscreenchange"),
+                                         PR_TRUE,
+                                         PR_FALSE);
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIDocument> mDoc;
+  nsCOMPtr<nsISupports> mTarget;
+};
+
+void
+nsDocument::UpdateFullScreenStatus(PRBool aIsFullScreen)
+{
+  if (mIsFullScreen != aIsFullScreen) {
+    nsCOMPtr<nsIRunnable> event(new nsDispatchFullScreenChange(this));
+    NS_DispatchToCurrentThread(event);
+  }
+  mIsFullScreen = aIsFullScreen;
+  if (!mIsFullScreen) {
+    // Full-screen is being turned off. Reset the full-screen element, to
+    // save us from having to traverse the document hierarchy again in
+    // MozCancelFullScreen().
+    ResetFullScreenElement();
+  }
+}
+
+static PRBool
+UpdateFullScreenStatus(nsIDocument* aDocument, void* aData)
+{
+  aDocument->UpdateFullScreenStatus(*static_cast<PRBool*>(aData));
+  aDocument->EnumerateSubDocuments(UpdateFullScreenStatus, aData);
+  return PR_TRUE;
+}
+
+static void
+UpdateFullScreenStatusInDocTree(nsIDocument* aDoc, PRBool aIsFullScreen)
+{
+  nsIDocument* root = GetRootDocument(aDoc);
+  if (root) {
+    UpdateFullScreenStatus(root, static_cast<void*>(&aIsFullScreen));
+  }
+}
+
+void
+nsDocument::ResetFullScreenElement()
+{
+  if (mFullScreenElement) {
+    nsEventStateManager::SetFullScreenState(mFullScreenElement, PR_FALSE);
+  }
+  mFullScreenElement = nsnull;
+}
+
+static PRBool
+ResetFullScreenElement(nsIDocument* aDocument, void* aData)
+{
+  aDocument->ResetFullScreenElement();
+  aDocument->EnumerateSubDocuments(ResetFullScreenElement, aData);
+  return PR_TRUE;
+}
+
+static void
+ResetFullScreenElementInDocTree(nsIDocument* aDoc)
+{
+  nsIDocument* root = GetRootDocument(aDoc);
+  if (root) {
+    ResetFullScreenElement(root, nsnull);
+  }
+}
+
+NS_IMETHODIMP
+nsDocument::MozCancelFullScreen()
+{
+  if (!nsContentUtils::IsRequestFullScreenAllowed()) {
+    return NS_OK;
+  }
+  CancelFullScreen();
+  return NS_OK;
+}
+
+void
+nsDocument::CancelFullScreen()
+{
+  if (!nsContentUtils::IsFullScreenApiEnabled() ||
+      !IsFullScreenDoc() ||
+      !GetWindow()) {
+    return;
+  }
+
+  // Disable full-screen mode in all documents in this hierarchy.
+  UpdateFullScreenStatusInDocTree(this, PR_FALSE);
+
+  // Move the window out of full-screen mode.
+  GetWindow()->SetFullScreen(PR_FALSE);
+
+  return;
+}
+
+PRBool
+nsDocument::IsFullScreenDoc()
+{
+  return nsContentUtils::IsFullScreenApiEnabled() && mIsFullScreen;
+}
+
+void
+nsDocument::RequestFullScreen(Element* aElement)
+{
+  if (!aElement || !nsContentUtils::IsFullScreenApiEnabled() || !GetWindow()) {
+    return;
+  }
+
+  // Reset the full-screen elements of every document in this document
+  // hierarchy.
+  ResetFullScreenElementInDocTree(this);
+  
+  if (aElement->IsInDoc()) {
+    // Propagate up the document hierarchy, setting the full-screen element as
+    // the element's container in ancestor documents. Note we don't propagate
+    // down the document hierarchy, the full-screen element (or its container)
+    // is not visible there.
+    mFullScreenElement = aElement;
+    // Set the full-screen state on the element, so the css-pseudo class
+    // applies to the element.
+    nsEventStateManager::SetFullScreenState(mFullScreenElement, PR_TRUE);
+    nsIDocument* child = this;
+    nsIDocument* parent;
+    while (parent = child->GetParentDocument()) {
+      nsIContent* content = parent->FindContentForSubDocument(child);
+      nsCOMPtr<Element> element(do_QueryInterface(content));
+      // Containing frames also need the css-pseudo class applied.
+      nsEventStateManager::SetFullScreenState(element, PR_TRUE);
+      static_cast<nsDocument*>(parent)->mFullScreenElement = element;
+      child = parent;
+    }
+  }
+
+  // Set all documents in hierarchy to full-screen mode.
+  UpdateFullScreenStatusInDocTree(this, PR_TRUE);
+
+  // Make the window full-screen. Note we must make the state changes above
+  // before making the window full-screen, as then the document reports as
+  // being in full-screen mode when the Chrome "fullscreen" event fires,
+  // enabling browser.js to distinguish between browser and dom full-screen
+  // modes.
+  GetWindow()->SetFullScreen(PR_TRUE);
+}
+
+NS_IMETHODIMP
+nsDocument::GetMozFullScreenElement(nsIDOMHTMLElement **aFullScreenElement)
+{
+  NS_ENSURE_ARG_POINTER(aFullScreenElement);
+  if (!nsContentUtils::IsFullScreenApiEnabled() || !IsFullScreenDoc()) {
+    *aFullScreenElement = nsnull;
+    return NS_OK;
+  }
+  nsCOMPtr<nsIDOMHTMLElement> e(do_QueryInterface(GetFullScreenElement()));
+  NS_IF_ADDREF(*aFullScreenElement = e);
+  return NS_OK;
+}
+
+Element*
+nsDocument::GetFullScreenElement()
+{
+  if (!nsContentUtils::IsFullScreenApiEnabled() ||
+      (mFullScreenElement && !mFullScreenElement->IsInDoc())) {
+    return nsnull;
+  }
+  return mFullScreenElement;
+}
+
+NS_IMETHODIMP
+nsDocument::GetMozFullScreen(PRBool *aFullScreen)
+{
+  NS_ENSURE_ARG_POINTER(aFullScreen);
+  *aFullScreen = nsContentUtils::IsFullScreenApiEnabled() && IsFullScreenDoc();
+  return NS_OK;
 }
 
 PRInt64
@@ -8415,3 +8692,14 @@ nsDocument::SizeOf() const
   return size;
 }
 
+#define EVENT(name_, id_, type_, struct_)                                 \
+  NS_IMETHODIMP nsDocument::GetOn##name_(JSContext *cx, jsval *vp) {      \
+    return nsINode::GetOn##name_(cx, vp);                                 \
+  }                                                                       \
+  NS_IMETHODIMP nsDocument::SetOn##name_(JSContext *cx, const jsval &v) { \
+    return nsINode::SetOn##name_(cx, v);                                  \
+  }
+#define TOUCH_EVENT EVENT
+#include "nsEventNameList.h"
+#undef TOUCH_EVENT
+#undef EVENT

@@ -49,6 +49,7 @@
 #include "jsapi.h"
 #include "jscntxt.h"
 #include "jsdbgapi.h"
+#include "jsfriendapi.h"
 #include "jsprf.h"
 #include "nsXULAppAPI.h"
 #include "nsServiceManagerUtils.h"
@@ -575,7 +576,7 @@ static JSBool
 DumpHeap(JSContext *cx, uintN argc, jsval *vp)
 {
     void* startThing = NULL;
-    uint32 startTraceKind = 0;
+    JSGCTraceKind startTraceKind = JSTRACE_OBJECT;
     void *thingToFind = NULL;
     size_t maxDepth = (size_t)-1;
     void *thingToIgnore = NULL;
@@ -878,8 +879,7 @@ env_setProperty(JSContext *cx, JSObject *obj, jsid id, JSBool strict, jsval *vp)
     JSAutoByteString value(cx, valstr);
     if (!value)
         return JS_FALSE;
-#if defined XP_WIN || defined HPUX || defined OSF1 || defined IRIX \
-    || defined SCO
+#if defined XP_WIN || defined HPUX || defined OSF1 || defined SCO
     {
         char *waste = JS_smprintf("%s=%s", name.ptr(), value.ptr());
         if (!waste) {
@@ -1237,9 +1237,7 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
                 if (!JS_DeepFreezeObject(cx, obj))
                     return JS_FALSE;
                 gobj = JS_NewGlobalObject(cx, &global_class);
-                if (!gobj)
-                    return JS_FALSE;
-                if (!JS_SetPrototype(cx, gobj, obj))
+                if (!gobj || !JS_SplicePrototype(cx, gobj, obj))
                     return JS_FALSE;
                 JS_SetParent(cx, gobj, NULL);
                 JS_SetGlobalObject(cx, gobj);
@@ -1287,6 +1285,9 @@ ProcessArgs(JSContext *cx, JSObject *obj, char **argv, int argc)
             break;
         case 'p':
             JS_ToggleOptions(cx, JSOPTION_PROFILING);
+            break;
+        case 'n':
+            JS_ToggleOptions(cx, JSOPTION_TYPE_INFERENCE);
             break;
         default:
             return usage();
@@ -1837,7 +1838,9 @@ main(int argc, char **argv, char **envp)
                 XRE_GetFileFromPath(argv[4], getter_AddRefs(appOmni));
                 argc-=2;
                 argv+=2;
-            } 
+            } else {
+                appOmni = greOmni;
+            }
             
             XRE_InitOmnijar(greOmni, appOmni);
             argc-=2;

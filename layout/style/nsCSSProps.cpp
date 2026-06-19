@@ -351,6 +351,12 @@ nsCSSProps::LookupProperty(const nsACString& aProperty)
       }
     }
   }
+  
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || 
+      res == eCSSProperty_backface_visibility || res == eCSSProperty_transform_style) {
+    return eCSSProperty_UNKNOWN;
+  }
+
   return res;
 }
 
@@ -372,6 +378,12 @@ nsCSSProps::LookupProperty(const nsAString& aProperty)
       }
     }
   }
+  
+  if (res == eCSSProperty_perspective || res == eCSSProperty_perspective_origin || 
+      res == eCSSProperty_backface_visibility || res == eCSSProperty_transform_style) {
+    return eCSSProperty_UNKNOWN;
+  }
+
   return res;
 }
 
@@ -584,6 +596,11 @@ const PRInt32 nsCSSProps::kAppearanceKTable[] = {
 const PRInt32 nsCSSProps::kBackfaceVisibilityKTable[] = {
   eCSSKeyword_visible, NS_STYLE_BACKFACE_VISIBILITY_VISIBLE,
   eCSSKeyword_hidden, NS_STYLE_BACKFACE_VISIBILITY_HIDDEN
+};
+
+const PRInt32 nsCSSProps::kTransformStyleKTable[] = {
+  eCSSKeyword_flat, NS_STYLE_TRANSFORM_STYLE_FLAT,
+  eCSSKeyword_preserve_3d, NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D
 };
 
 const PRInt32 nsCSSProps::kBackgroundAttachmentKTable[] = {
@@ -1965,6 +1982,12 @@ static const nsCSSProperty gOutlineSubpropTable[] = {
   eCSSProperty_outline_width,
   eCSSProperty_outline_style,
   eCSSProperty_outline_color,
+  eCSSProperty_UNKNOWN
+};
+
+static const nsCSSProperty gColumnsSubpropTable[] = {
+  eCSSProperty__moz_column_count,
+  eCSSProperty__moz_column_width,
   eCSSProperty_UNKNOWN
 };
 

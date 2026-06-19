@@ -47,6 +47,7 @@
 #include "jsatom.h"
 #include "jsbool.h"
 #include "jscntxt.h"
+#include "jsinfer.h"
 #include "jsversion.h"
 #include "jslock.h"
 #include "jsnum.h"
@@ -54,13 +55,15 @@
 #include "jsstr.h"
 #include "jsvector.h"
 
+#include "jsinferinlines.h"
 #include "jsinterpinlines.h"
 #include "jsobjinlines.h"
 #include "jsstrinlines.h"
 
 using namespace js;
+using namespace js::types;
 
-Class js_BooleanClass = {
+Class js::BooleanClass = {
     "Boolean",
     JSCLASS_HAS_RESERVED_SLOTS(1) |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Boolean),
@@ -135,7 +138,7 @@ Boolean(JSContext *cx, uintN argc, Value *vp)
     bool b = argc != 0 ? js_ValueToBoolean(argv[0]) : false;
 
     if (IsConstructing(vp)) {
-        JSObject *obj = NewBuiltinClassInstance(cx, &js_BooleanClass);
+        JSObject *obj = NewBuiltinClassInstance(cx, &BooleanClass);
         if (!obj)
             return false;
         obj->setPrimitiveThis(BooleanValue(b));
@@ -149,10 +152,8 @@ Boolean(JSContext *cx, uintN argc, Value *vp)
 JSObject *
 js_InitBooleanClass(JSContext *cx, JSObject *obj)
 {
-    JSObject *proto;
-
-    proto = js_InitClass(cx, obj, NULL, &js_BooleanClass, Boolean, 1,
-                         NULL, boolean_methods, NULL, NULL);
+    JSObject *proto = js_InitClass(cx, obj, NULL, &BooleanClass, Boolean, 1,
+                                   NULL, boolean_methods, NULL, NULL);
     if (!proto)
         return NULL;
     proto->setPrimitiveThis(BooleanValue(false));

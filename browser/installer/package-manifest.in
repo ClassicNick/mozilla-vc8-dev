@@ -61,14 +61,8 @@
 #endif
 #ifdef XP_WIN32
 #ifdef MOZ_MEMORY
-#ifdef WIN32_OLD_STYLE_JEMALLOC
-@BINPATH@/mozcrt19.dll
-@BINPATH@/mozcpp19.dll
-#else
 @BINPATH@/jemalloc.dll
 #endif
-#endif
-#else
 #if _MSC_VER == 1310
 @BINPATH@/msvcp71.dll
 @BINPATH@/msvcr71.dll
@@ -188,6 +182,7 @@
 @BINPATH@/components/jar.xpt
 @BINPATH@/components/jetpack.xpt
 @BINPATH@/components/jsdservice.xpt
+@BINPATH@/components/jsdebugger.xpt
 @BINPATH@/components/layout_base.xpt
 @BINPATH@/components/layout_forms.xpt
 #ifdef NS_PRINTING

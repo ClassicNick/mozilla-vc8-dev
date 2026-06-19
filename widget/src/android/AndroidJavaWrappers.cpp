@@ -439,7 +439,7 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             break;
     }
 
-#ifndef ANDROID_DEBUG_EVENTS
+#ifndef DEBUG_ANDROID_EVENTS
     ALOG("AndroidGeckoEvent: %p : %d", (void*)jobj, mType);
 #endif
 }
@@ -455,6 +455,19 @@ AndroidGeckoEvent::Init(int x1, int y1, int x2, int y2)
 {
     mType = DRAW;
     mRect.SetEmpty();
+}
+
+void
+AndroidGeckoEvent::Init(AndroidGeckoEvent *aResizeEvent)
+{
+    NS_ASSERTION(aResizeEvent->Type() == SIZE_CHANGED, "Init called on non-SIZE_CHANGED event");
+
+    mType = FORCED_RESIZE;
+    mTime = aResizeEvent->mTime;
+    mP0.x = aResizeEvent->mP0.x;
+    mP0.y = aResizeEvent->mP0.y;
+    mP1.x = aResizeEvent->mP1.x;
+    mP1.y = aResizeEvent->mP1.y;
 }
 
 void

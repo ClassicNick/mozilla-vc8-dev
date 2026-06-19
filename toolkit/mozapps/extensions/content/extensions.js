@@ -1486,7 +1486,7 @@ var gCategories = {
     // If there was no last view or no existing category matched the last view
     // then the list will default to selecting the search category and we never
     // want to show that as the first view so switch to the default category
-    if (this.node.selectedItem == this._search)
+    if (!this.node.selectedItem || this.node.selectedItem == this._search)
       this.node.value = VIEW_DEFAULT;
 
     var self = this;
@@ -2546,10 +2546,16 @@ var gDetailView = {
 
     var screenshot = document.getElementById("detail-screenshot");
     if (aAddon.screenshots && aAddon.screenshots.length > 0) {
-      if (aAddon.screenshots[0].thumbnailURL)
+      if (aAddon.screenshots[0].thumbnailURL) {
         screenshot.src = aAddon.screenshots[0].thumbnailURL;
-      else
+        screenshot.width = aAddon.screenshots[0].thumbnailWidth;
+        screenshot.height = aAddon.screenshots[0].thumbnailHeight;
+      } else {
         screenshot.src = aAddon.screenshots[0].url;
+        screenshot.width = aAddon.screenshots[0].width;
+        screenshot.height = aAddon.screenshots[0].height;
+      }
+      screenshot.setAttribute("loading", "true");
       screenshot.hidden = false;
     } else {
       screenshot.hidden = true;

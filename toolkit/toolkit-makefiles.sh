@@ -39,7 +39,6 @@
 # This file contains makefiles that will be generated for every XUL app.
 
 MAKEFILES_db="
-  db/Makefile
   db/sqlite3/src/Makefile
 "
 
@@ -322,7 +321,6 @@ MAKEFILES_libvorbis="
 MAKEFILES_libtremor="
   media/libtremor/Makefile
   media/libtremor/lib/Makefile
-  media/libtremor/include/Makefile
   media/libtremor/include/tremor/Makefile
 "
 
@@ -685,6 +683,12 @@ MAKEFILES_jsreflect="
   toolkit/components/reflect/Makefile
 "
 
+MAKEFILES_jsductwork="
+  js/ductwork/Makefile
+  js/ductwork/debugger/Makefile
+  js/ductwork/debugger/tests/Makefile
+"
+
 MAKEFILES_libpr0n="
   modules/libpr0n/Makefile
   modules/libpr0n/build/Makefile
@@ -752,6 +756,7 @@ add_makefiles "
   $MAKEFILES_jsdebugger
   $MAKEFILES_jsctypes
   $MAKEFILES_jsreflect
+  $MAKEFILES_jsductwork
   $MAKEFILES_content
   $MAKEFILES_layout
   $MAKEFILES_libimg
@@ -765,7 +770,6 @@ add_makefiles "
   $MAKEFILES_uriloader
   $MAKEFILES_profile
   $MAKEFILES_rdf
-  $MAKEFILES_sun_java
   $MAKEFILES_caps
   $MAKEFILES_chrome
   $MAKEFILES_view

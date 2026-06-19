@@ -77,6 +77,7 @@
 
 #include "vm/GlobalObject.h"
 
+#include "jsinferinlines.h"
 #include "jsobjinlines.h"
 
 #include "vm/Stack-inl.h"
@@ -89,7 +90,7 @@ static void iterator_finalize(JSContext *cx, JSObject *obj);
 static void iterator_trace(JSTracer *trc, JSObject *obj);
 static JSObject *iterator_iterator(JSContext *cx, JSObject *obj, JSBool keysonly);
 
-Class js_IteratorClass = {
+Class js::IteratorClass = {
     "Iterator",
     JSCLASS_HAS_PRIVATE |
     JSCLASS_CONCURRENT_FINALIZER |
@@ -129,7 +130,7 @@ NativeIterator::mark(JSTracer *trc)
 static void
 iterator_finalize(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(obj->getClass() == &js_IteratorClass);
+    JS_ASSERT(obj->isIterator());
 
     NativeIterator *ni = obj->getNativeIterator();
     if (ni) {
@@ -230,9 +231,9 @@ EnumerateDenseArrayProperties(JSContext *cx, JSObject *obj, JSObject *pobj, uint
     }
 
     if (pobj->getArrayLength() > 0) {
-        size_t capacity = pobj->getDenseArrayCapacity();
+        size_t initlen = pobj->getDenseArrayInitializedLength();
         const Value *vp = pobj->getDenseArrayElements();
-        for (size_t i = 0; i < capacity; ++i, ++vp) {
+        for (size_t i = 0; i < initlen; ++i, ++vp) {
             if (!vp->isMagic(JS_ARRAY_HOLE)) {
                 /* Dense arrays never get so large that i would not fit into an integer id. */
                 if (!Enumerate(cx, obj, pobj, INT_TO_JSID(i), true, flags, ht, props))
@@ -362,7 +363,7 @@ GetCustomIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
     /* Otherwise call it and return that object. */
     LeaveTrace(cx);
     Value arg = BooleanValue((flags & JSITER_FOREACH) == 0);
-    if (!ExternalInvoke(cx, ObjectValue(*obj), *vp, 1, &arg, vp))
+    if (!Invoke(cx, ObjectValue(*obj), *vp, 1, &arg, vp))
         return false;
     if (vp->isPrimitive()) {
         /*
@@ -417,13 +418,12 @@ NewIteratorObject(JSContext *cx, uintN flags)
         EmptyShape *emptyEnumeratorShape = EmptyShape::getEmptyEnumeratorShape(cx);
         if (!emptyEnumeratorShape)
             return NULL;
-
-        obj->init(cx, &js_IteratorClass, NULL, NULL, NULL, false);
+        obj->init(cx, &IteratorClass, &types::emptyTypeObject, NULL, NULL, false);
         obj->setMap(emptyEnumeratorShape);
         return obj;
     }
 
-    return NewBuiltinClassInstance(cx, &js_IteratorClass);
+    return NewBuiltinClassInstance(cx, &IteratorClass);
 }
 
 NativeIterator *
@@ -469,6 +469,11 @@ VectorToKeyIterator(JSContext *cx, JSObject *obj, uintN flags, AutoIdVector &key
                     uint32 slength, uint32 key, Value *vp)
 {
     JS_ASSERT(!(flags & JSITER_FOREACH));
+
+    if (obj) {
+        obj->flags |= JSObject::ITERATED;
+        types::MarkTypeObjectFlags(cx, obj, types::OBJECT_FLAG_ITERATED);
+    }
 
     JSObject *iterobj = NewIteratorObject(cx, flags);
     if (!iterobj)
@@ -517,6 +522,11 @@ VectorToValueIterator(JSContext *cx, JSObject *obj, uintN flags, AutoIdVector &k
 {
     JS_ASSERT(flags & JSITER_FOREACH);
 
+    if (obj) {
+        obj->flags |= JSObject::ITERATED;
+        types::MarkTypeObjectFlags(cx, obj, types::OBJECT_FLAG_ITERATED);
+    }
+
     JSObject *iterobj = NewIteratorObject(cx, flags);
     if (!iterobj)
         return false;
@@ -561,11 +571,12 @@ GetIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
     if (obj) {
         /* Enumerate Iterator.prototype directly. */
         JSIteratorOp op = obj->getClass()->ext.iteratorObject;
-        if (op && (obj->getClass() != &js_IteratorClass || obj->getNativeIterator())) {
+        if (op && (obj->getClass() != &IteratorClass || obj->getNativeIterator())) {
             JSObject *iterobj = op(cx, obj, !(flags & JSITER_FOREACH));
             if (!iterobj)
                 return false;
             vp->setObject(*iterobj);
+            types::MarkIteratorUnknown(cx);
             return true;
         }
 
@@ -633,12 +644,16 @@ GetIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
         }
 
       miss:
-        if (obj->isProxy())
+        if (obj->isProxy()) {
+            types::MarkIteratorUnknown(cx);
             return JSProxy::iterate(cx, obj, flags, vp);
+        }
         if (!GetCustomIterator(cx, obj, flags, vp))
             return false;
-        if (!vp->isUndefined())
+        if (!vp->isUndefined()) {
+            types::MarkIteratorUnknown(cx);
             return true;
+        }
     }
 
     /* NB: for (var p in null) succeeds by iterating over no properties. */
@@ -703,8 +718,8 @@ iterator_next(JSContext *cx, uintN argc, Value *vp)
     JSObject *obj = ToObject(cx, &vp[1]);
     if (!obj)
         return false;
-    if (obj->getClass() != &js_IteratorClass) {
-        ReportIncompatibleMethod(cx, vp, &js_IteratorClass);
+    if (!obj->isIterator()) {
+        ReportIncompatibleMethod(cx, vp, &IteratorClass);
         return false;
     }
 
@@ -777,8 +792,7 @@ js_CloseIterator(JSContext *cx, JSObject *obj)
 {
     cx->iterValue.setMagic(JS_NO_ITER_VALUE);
 
-    Class *clasp = obj->getClass();
-    if (clasp == &js_IteratorClass) {
+    if (obj->isIterator()) {
         /* Remove enumerators from the active list, which is a stack. */
         NativeIterator *ni = obj->getNativeIterator();
 
@@ -797,7 +811,7 @@ js_CloseIterator(JSContext *cx, JSObject *obj)
         }
     }
 #if JS_HAS_GENERATORS
-    else if (clasp == &js_GeneratorClass) {
+    else if (obj->isGenerator()) {
         return CloseGenerator(cx, obj);
     }
 #endif
@@ -928,7 +942,7 @@ js_IteratorMore(JSContext *cx, JSObject *iterobj, Value *rval)
 {
     /* Fast path for native iterators */
     NativeIterator *ni = NULL;
-    if (iterobj->getClass() == &js_IteratorClass) {
+    if (iterobj->isIterator()) {
         /* Key iterators are handled by fast-paths. */
         ni = iterobj->getNativeIterator();
         if (ni) {
@@ -954,9 +968,9 @@ js_IteratorMore(JSContext *cx, JSObject *iterobj, Value *rval)
         jsid id = ATOM_TO_JSID(cx->runtime->atomState.nextAtom);
         if (!js_GetMethod(cx, iterobj, id, JSGET_METHOD_BARRIER, rval))
             return false;
-        if (!ExternalInvoke(cx, ObjectValue(*iterobj), *rval, 0, NULL, rval)) {
+        if (!Invoke(cx, ObjectValue(*iterobj), *rval, 0, NULL, rval)) {
             /* Check for StopIteration. */
-            if (!cx->isExceptionPending() || !js_ValueIsStopIteration(cx->getPendingException()))
+            if (!cx->isExceptionPending() || !IsStopIteration(cx->getPendingException()))
                 return false;
 
             cx->clearPendingException();
@@ -985,7 +999,7 @@ JSBool
 js_IteratorNext(JSContext *cx, JSObject *iterobj, Value *rval)
 {
     /* Fast path for native iterators */
-    if (iterobj->getClass() == &js_IteratorClass) {
+    if (iterobj->isIterator()) {
         /*
          * Implement next directly as all the methods of the native iterator are
          * read-only and permanent.
@@ -1024,11 +1038,11 @@ js_IteratorNext(JSContext *cx, JSObject *iterobj, Value *rval)
 static JSBool
 stopiter_hasInstance(JSContext *cx, JSObject *obj, const Value *v, JSBool *bp)
 {
-    *bp = js_ValueIsStopIteration(*v);
+    *bp = IsStopIteration(*v);
     return JS_TRUE;
 }
 
-Class js_StopIterationClass = {
+Class js::StopIterationClass = {
     js_StopIteration_str,
     JSCLASS_HAS_CACHED_PROTO(JSProto_StopIteration) |
     JSCLASS_FREEZE_PROTO,
@@ -1096,7 +1110,7 @@ generator_trace(JSTracer *trc, JSObject *obj)
     MarkStackRangeConservatively(trc, fp->slots(), gen->regs.sp);
 }
 
-Class js_GeneratorClass = {
+Class js::GeneratorClass = {
     js_Generator_str,
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_CACHED_PROTO(JSProto_Generator) |
     JSCLASS_IS_ANONYMOUS,
@@ -1135,7 +1149,7 @@ Class js_GeneratorClass = {
 JS_REQUIRES_STACK JSObject *
 js_NewGenerator(JSContext *cx)
 {
-    JSObject *obj = NewBuiltinClassInstance(cx, &js_GeneratorClass);
+    JSObject *obj = NewBuiltinClassInstance(cx, &GeneratorClass);
     if (!obj)
         return NULL;
 
@@ -1294,7 +1308,7 @@ SendToGenerator(JSContext *cx, JSGeneratorOp op, JSObject *obj,
 static JS_REQUIRES_STACK JSBool
 CloseGenerator(JSContext *cx, JSObject *obj)
 {
-    JS_ASSERT(obj->getClass() == &js_GeneratorClass);
+    JS_ASSERT(obj->isGenerator());
 
     JSGenerator *gen = (JSGenerator *) obj->getPrivate();
     if (!gen) {
@@ -1319,8 +1333,8 @@ generator_op(JSContext *cx, JSGeneratorOp op, Value *vp, uintN argc)
     JSObject *obj = ToObject(cx, &vp[1]);
     if (!obj)
         return JS_FALSE;
-    if (obj->getClass() != &js_GeneratorClass) {
-        ReportIncompatibleMethod(cx, vp, &js_GeneratorClass);
+    if (!obj->isGenerator()) {
+        ReportIncompatibleMethod(cx, vp, &GeneratorClass);
         return JS_FALSE;
     }
 
@@ -1411,11 +1425,11 @@ static JSFunctionSpec generator_methods[] = {
 static bool
 InitIteratorClass(JSContext *cx, GlobalObject *global)
 {
-    JSObject *iteratorProto = global->createBlankPrototype(cx, &js_IteratorClass);
+    JSObject *iteratorProto = global->createBlankPrototype(cx, &IteratorClass);
     if (!iteratorProto)
         return false;
 
-    JSFunction *ctor = global->createConstructor(cx, Iterator, &js_IteratorClass,
+    JSFunction *ctor = global->createConstructor(cx, Iterator, &IteratorClass,
                                                  CLASS_ATOM(cx, Iterator), 2);
     if (!ctor)
         return false;
@@ -1433,7 +1447,7 @@ static bool
 InitGeneratorClass(JSContext *cx, GlobalObject *global)
 {
 #if JS_HAS_GENERATORS
-    JSObject *proto = global->createBlankPrototype(cx, &js_GeneratorClass);
+    JSObject *proto = global->createBlankPrototype(cx, &GeneratorClass);
     if (!proto)
         return false;
 
@@ -1450,7 +1464,7 @@ InitGeneratorClass(JSContext *cx, GlobalObject *global)
 static JSObject *
 InitStopIterationClass(JSContext *cx, GlobalObject *global)
 {
-    JSObject *proto = global->createBlankPrototype(cx, &js_StopIterationClass);
+    JSObject *proto = global->createBlankPrototype(cx, &StopIterationClass);
     if (!proto || !proto->freeze(cx))
         return NULL;
 
@@ -1458,7 +1472,7 @@ InitStopIterationClass(JSContext *cx, GlobalObject *global)
     if (!DefineConstructorAndPrototype(cx, global, JSProto_StopIteration, proto, proto))
         return NULL;
 
-    MarkStandardClassInitializedNoProto(global, &js_StopIterationClass);
+    MarkStandardClassInitializedNoProto(global, &StopIterationClass);
 
     return proto;
 }

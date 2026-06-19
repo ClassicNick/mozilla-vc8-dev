@@ -90,7 +90,20 @@ JSSHELL_BINS  = \
 ifndef MOZ_NATIVE_NSPR
 JSSHELL_BINS += $(DIST)/bin/$(LIB_PREFIX)nspr4$(DLL_SUFFIX)
 ifeq ($(OS_ARCH),WINNT)
-JSSHELL_BINS += $(DIST)/bin/mozcrt19$(DLL_SUFFIX)
+ifdef MOZ_MEMORY
+JSSHELL_BINS += $(DIST)/bin/jemalloc$(DLL_SUFFIX)
+endif
+ifeq ($(_MSC_VER),1400)
+JSSHELL_BINS += $(DIST)/bin/Microsoft.VC80.CRT.manifest
+JSSHELL_BINS += $(DIST)/bin/msvcr80.dll
+endif
+ifeq ($(_MSC_VER),1500)
+JSSHELL_BINS += $(DIST)/bin/Microsoft.VC90.CRT.manifest
+JSSHELL_BINS += $(DIST)/bin/msvcr90.dll
+endif
+ifeq ($(_MSC_VER),1600)
+JSSHELL_BINS += $(DIST)/bin/msvcr100.dll
+endif
 else
 JSSHELL_BINS += \
   $(DIST)/bin/$(LIB_PREFIX)plds4$(DLL_SUFFIX) \
@@ -384,8 +397,18 @@ endif
 
 ifdef MOZ_OMNIJAR
 
+# Set MOZ_CAN_RUN_PROGRAMS for trivial cases.
+ifndef MOZ_CAN_RUN_PROGRAMS
+ifdef UNIVERSAL_BINARY
+MOZ_CAN_RUN_PROGRAMS=1
+endif
+ifndef CROSS_COMPILE
+MOZ_CAN_RUN_PROGRAMS=1
+endif
+endif # MOZ_CAN_RUN_PROGRAMS
+
 ifdef GENERATE_CACHE
-ifneq (1_,$(if $(CROSS_COMPILE),1,0)_$(UNIVERSAL_BINARY))
+ifdef MOZ_CAN_RUN_PROGRAMS
 ifdef RUN_TEST_PROGRAM
 _ABS_RUN_TEST_PROGRAM = $(call core_abspath,$(RUN_TEST_PROGRAM))
 endif
@@ -401,11 +424,13 @@ PRECOMPILE_GRE=$$PWD
 endif
 
 GENERATE_CACHE = \
-  $(_ABS_RUN_TEST_PROGRAM) $(LIBXUL_DIST)/bin/xpcshell$(BIN_SUFFIX) -g "$(PRECOMPILE_GRE)" -a "$$PWD" -f $(MOZILLA_DIR)/toolkit/mozapps/installer/precompile_cache.js -e "populate_startupcache('$(PRECOMPILE_DIR)', 'omni.jar', 'startupCache.zip');" && \
+  $(_ABS_RUN_TEST_PROGRAM) $(LIBXUL_DIST)/bin/xpcshell$(BIN_SUFFIX) -g "$(PRECOMPILE_GRE)" -a "$$PWD" -f $(call core_abspath,$(MOZILLA_DIR)/toolkit/mozapps/installer/precompile_cache.js) -e "populate_startupcache('$(PRECOMPILE_DIR)', 'omni.jar', 'startupCache.zip');" && \
   rm -rf jsloader && \
   $(UNZIP) startupCache.zip && \
   rm startupCache.zip && \
   $(ZIP) -r9m omni.jar jsloader/resource/$(PRECOMPILE_RESOURCE)
+else
+GENERATE_CACHE =
 endif
 endif
 
@@ -462,7 +487,7 @@ endif
 
 # dummy macro if we don't have PSM built
 SIGN_NSS		=
-ifneq (1_,$(if $(CROSS_COMPILE),1,0)_$(UNIVERSAL_BINARY))
+ifdef MOZ_CAN_RUN_PROGRAMS
 ifdef MOZ_PSM
 SIGN_NSS		= @echo signing nss libraries;
 
@@ -505,7 +530,6 @@ endif # !CROSS_COMPILE
 NO_PKG_FILES += \
 	core \
 	bsdecho \
-	gtscc \
 	js \
 	js-config \
 	jscpucfg \
@@ -560,9 +584,6 @@ endif
 
 GARBAGE		+= $(DIST)/$(PACKAGE) $(PACKAGE)
 
-ifeq ($(OS_ARCH),IRIX)
-STRIP_FLAGS	= -f
-endif
 ifeq ($(OS_ARCH),OS2)
 STRIP		= $(MOZILLA_DIR)/toolkit/mozapps/installer/os2/strip.cmd
 endif

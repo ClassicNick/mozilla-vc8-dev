@@ -99,7 +99,7 @@
 #include "nsIDOMMouseScrollEvent.h"
 #include "nsIDOMDragEvent.h"
 #include "nsIDOMEventTarget.h"
-#include "nsIDOMNSUIEvent.h"
+#include "nsIDOMUIEvent.h"
 #include "nsDOMDragEvent.h"
 #include "nsIDOMNSEditableElement.h"
 
@@ -174,6 +174,8 @@ static PRUint32 gPixelScrollDeltaTimeout = 0;
 
 static nscoord
 GetScrollableLineHeight(nsIFrame* aTargetFrame);
+
+TimeStamp nsEventStateManager::sHandlingInputStart;
 
 static inline PRBool
 IsMouseEventReal(nsEvent* aEvent)
@@ -2645,8 +2647,8 @@ nsEventStateManager::ComputeWheelDeltaFor(nsMouseScrollEvent* aMouseEvent)
   }
 
   if (ComputeWheelActionFor(aMouseEvent, useSysNumLines) == MOUSE_SCROLL_PAGE) {
-    delta = (delta > 0) ? PRInt32(nsIDOMNSUIEvent::SCROLL_PAGE_DOWN) :
-                          PRInt32(nsIDOMNSUIEvent::SCROLL_PAGE_UP);
+    delta = (delta > 0) ? PRInt32(nsIDOMUIEvent::SCROLL_PAGE_DOWN) :
+                          PRInt32(nsIDOMUIEvent::SCROLL_PAGE_UP);
   }
 
   return delta;
@@ -4382,6 +4384,14 @@ static nsIContent* FindCommonAncestor(nsIContent *aNode1, nsIContent *aNode2)
     }
   }
   return nsnull;
+}
+
+/* static */
+void
+nsEventStateManager::SetFullScreenState(Element* aElement,
+                                        PRBool aIsFullScreen)
+{
+  DoStateChange(aElement, NS_EVENT_STATE_FULL_SCREEN, aIsFullScreen);
 }
 
 /* static */
