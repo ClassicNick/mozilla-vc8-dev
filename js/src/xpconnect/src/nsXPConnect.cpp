@@ -101,6 +101,7 @@ nsXPConnect::nsXPConnect()
         mDefaultSecurityManager(nsnull),
         mDefaultSecurityManagerFlags(0),
         mShuttingDown(JS_FALSE),
+        mNeedGCBeforeCC(JS_TRUE),
         mCycleCollectionContext(nsnull)
 {
     mRuntime = XPCJSRuntime::newXPCJSRuntime(this);
@@ -339,6 +340,12 @@ nsXPConnect::GetInfoForName(const char * name, nsIInterfaceInfo** info)
     return FindInfo(NameTester, name, mInterfaceInfoManager, info);
 }
 
+bool
+nsXPConnect::NeedCollect()
+{
+    return !!mNeedGCBeforeCC;
+}
+
 void
 nsXPConnect::Collect()
 {
@@ -385,11 +392,11 @@ nsXPConnect::Collect()
     // To improve debugging, if DEBUG_CC is defined all JS objects are
     // traversed.
 
+    mNeedGCBeforeCC = JS_FALSE;
+
     XPCCallContext ccx(NATIVE_CALLER);
     if(!ccx.IsValid())
         return;
-
-    nsXPConnect::GetRuntimeInstance()->ClearWeakRoots();
 
     JSContext *cx = ccx.GetJSContext();
 
@@ -576,9 +583,35 @@ xpc_GCThingIsGrayCCThing(void *thing)
     return ADD_TO_CC(kind) && xpc_IsGrayGCThing(thing);
 }
 
+/*
+ * The GC and CC are run independently. Consequently, the following sequence of
+ * events can occur:
+ * 1. GC runs and marks an object gray.
+ * 2. Some JS code runs that creates a pointer from a JS root to the gray
+ *    object. If we re-ran a GC at this point, the object would now be black.
+ * 3. Now we run the CC. It may think it can collect the gray object, even
+ *    though it's reachable from the JS heap.
+ *
+ * To prevent this badness, we unmark the gray bit of an object when it is
+ * accessed by callers outside XPConnect. This would cause the object to go
+ * black in step 2 above. This must be done on everything reachable from the
+ * object being returned. The following code takes care of the recursive
+ * re-coloring.
+ */
 static void
 UnmarkGrayChildren(JSTracer *trc, void *thing, uint32 kind)
 {
+    int stackDummy;
+    if (!JS_CHECK_STACK_SIZE(trc->context->stackLimit, &stackDummy)) {
+        /*
+         * If we run out of stack, we take a more drastic measure: require that
+         * we GC again before the next CC.
+         */
+        nsXPConnect* xpc = nsXPConnect::GetXPConnect();
+        xpc->EnsureGCBeforeCC();
+        return;
+    }
+
     // If this thing is not a CC-kind or already non-gray then we're done.
     if(!ADD_TO_CC(kind) || !xpc_IsGrayGCThing(thing))
         return;
@@ -933,23 +966,6 @@ inline nsresult UnexpectedFailure(nsresult rv)
     NS_ERROR("This is not supposed to fail!");
     return rv;
 }
-
-class SaveFrame
-{
-public:
-    SaveFrame(JSContext *cx)
-        : mJSContext(cx) {
-        mFrame = JS_SaveFrameChain(mJSContext);
-    }
-
-    ~SaveFrame() {
-        JS_RestoreFrameChain(mJSContext, mFrame);
-    }
-
-private:
-    JSContext *mJSContext;
-    JSStackFrame *mFrame;
-};
 
 /* void initClasses (in JSContextPtr aJSContext, in JSObjectPtr aGlobalJSObj); */
 NS_IMETHODIMP
@@ -2159,7 +2175,6 @@ nsXPConnect::ReleaseJSContext(JSContext * aJSContext, PRBool noGC)
                    (void *)aJSContext);
 #endif
             ccx->SetDestroyJSContextInDestructor(JS_TRUE);
-            JS_ClearNewbornRoots(aJSContext);
             return NS_OK;
         }
         // else continue on and synchronously destroy the JSContext ...

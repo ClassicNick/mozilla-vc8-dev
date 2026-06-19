@@ -536,11 +536,9 @@ protected:
     {
         ContextState& state = CurrentState();
 
-        // The spec says we should not draw shadows when the alpha value is 0,
-        // regardless of the operator being used.
         return state.StyleIsColor(STYLE_SHADOW) &&
                NS_GET_A(state.colorStyles[STYLE_SHADOW]) > 0 &&
-               (state.shadowOffset != gfxPoint(0, 0) || state.shadowBlur != 0);
+               mThebes->CurrentOperator() == gfxContext::OPERATOR_OVER;
     }
 
     /**
@@ -1037,9 +1035,7 @@ nsCanvasRenderingContext2D::Redraw()
         return NS_OK;
     }
 
-#ifdef MOZ_SVG
     nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
-#endif
 
     HTMLCanvasElement()->InvalidateCanvasContent(nsnull);
 
@@ -1064,9 +1060,7 @@ nsCanvasRenderingContext2D::Redraw(const gfxRect& r)
         return NS_OK;
     }
 
-#ifdef MOZ_SVG
     nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
-#endif
 
     HTMLCanvasElement()->InvalidateCanvasContent(&r);
 
@@ -1188,6 +1182,7 @@ nsCanvasRenderingContext2D::InitializeWithSurface(nsIDocShell *docShell, gfxASur
     mThebes->SetMiterLimit(10.0);
     mThebes->SetLineCap(gfxContext::LINE_CAP_BUTT);
     mThebes->SetLineJoin(gfxContext::LINE_JOIN_MITER);
+    mThebes->SetFillRule(gfxContext::FILL_RULE_WINDING);
 
     mThebes->NewPath();
 
@@ -1430,7 +1425,7 @@ NS_IMETHODIMP
 nsCanvasRenderingContext2D::SetTransform(float m11, float m12, float m21, float m22, float dx, float dy)
 {
     if (!FloatValidate(m11,m12,m21,m22,dx,dy))
-        return NS_ERROR_DOM_SYNTAX_ERR;
+        return NS_OK;
 
     gfxMatrix matrix(m11, m12, m21, m22, dx, dy);
     mThebes->SetMatrix(matrix);
@@ -1604,6 +1599,37 @@ NS_IMETHODIMP
 nsCanvasRenderingContext2D::GetFillStyle_multi(nsAString& aStr, nsISupports **aInterface, PRInt32 *aType)
 {
     return GetStyleAsStringOrInterface(aStr, aInterface, aType, STYLE_FILL);
+}
+
+NS_IMETHODIMP
+nsCanvasRenderingContext2D::SetMozFillRule(const nsAString& aString)
+{
+    gfxContext::FillRule rule;
+
+    if (aString.EqualsLiteral("evenodd"))
+        rule = gfxContext::FILL_RULE_EVEN_ODD;
+    else if (aString.EqualsLiteral("nonzero"))
+        rule = gfxContext::FILL_RULE_WINDING;
+    else
+        // XXX ERRMSG we need to report an error to developers here! (bug 329026)
+        return NS_OK;
+
+    mThebes->SetFillRule(rule);
+    return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCanvasRenderingContext2D::GetMozFillRule(nsAString& aString)
+{
+    switch (mThebes->CurrentFillRule()) {
+    case gfxContext::FILL_RULE_WINDING:
+        aString.AssignLiteral("nonzero"); break;
+    case gfxContext::FILL_RULE_EVEN_ODD:
+        aString.AssignLiteral("evenodd"); break;
+    default:
+        return NS_ERROR_FAILURE;
+    }
+    return NS_OK;
 }
 
 //
@@ -2002,6 +2028,9 @@ nsCanvasRenderingContext2D::FillRect(float x, float y, float w, float h)
 NS_IMETHODIMP
 nsCanvasRenderingContext2D::StrokeRect(float x, float y, float w, float h)
 {
+    if (w == 0.f && h == 0.f) {
+        return NS_OK;
+    }
     return DrawRect(gfxRect(x, y, w, h), STYLE_STROKE);
 }
 
@@ -2097,7 +2126,7 @@ nsCanvasRenderingContext2D::BezierCurveTo(float cp1x, float cp1y,
                                           float x, float y)
 {
     if (!FloatValidate(cp1x,cp1y,cp2x,cp2y,x,y))
-        return NS_ERROR_DOM_SYNTAX_ERR;
+        return NS_OK;
 
     mHasPath = PR_TRUE;
     mThebes->CurveTo(gfxPoint(cp1x, cp1y),
@@ -2111,7 +2140,7 @@ NS_IMETHODIMP
 nsCanvasRenderingContext2D::ArcTo(float x1, float y1, float x2, float y2, float radius)
 {
     if (!FloatValidate(x1,y1,x2,y2,radius))
-        return NS_ERROR_DOM_SYNTAX_ERR;
+        return NS_OK;
 
     if (radius < 0)
         return NS_ERROR_DOM_INDEX_SIZE_ERR;
@@ -3239,7 +3268,8 @@ nsCanvasRenderingContext2D::IsPointInPath(float x, float y, PRBool *retVal)
         return NS_OK;
     }
 
-    *retVal = mThebes->PointInFill(gfxPoint(x,y));
+    gfxPoint pt(x, y);
+    *retVal = mThebes->PointInFill(mThebes->DeviceToUser(pt));
     return NS_OK;
 }
 
@@ -3264,8 +3294,14 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
         return NS_ERROR_DOM_TYPE_MISMATCH_ERR;
     }
 
-    double sx,sy,sw,sh;
-    double dx,dy,dw,dh;
+    nsCOMPtr<nsIContent> content = do_QueryInterface(imgElt);
+    nsHTMLCanvasElement* canvas = nsHTMLCanvasElement::FromContent(content);
+    if (canvas) {
+        nsIntSize size = canvas->GetSize();
+        if (size.width == 0 || size.height == 0) {
+            return NS_ERROR_DOM_INVALID_STATE_ERR;
+        }
+    }
 
     gfxMatrix matrix;
     nsRefPtr<gfxPattern> pattern;
@@ -3307,6 +3343,8 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
         }
     }
 
+    double sx,sy,sw,sh;
+    double dx,dy,dw,dh;
     if (optional_argc == 0) {
         dx = a1;
         dy = a2;
@@ -3399,8 +3437,6 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
         gfxContextMatrixAutoSaveRestore autoMatrixSR(mThebes);
 
         mThebes->Translate(gfxPoint(dx, dy));
-        mThebes->SetPattern(pattern);
-        DirtyAllStyles();
 
         gfxRect clip(0, 0, dw, dh);
 
@@ -3412,6 +3448,7 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
 
             if (ctx) {
                 CopyContext(ctx, mThebes);
+                ctx->SetPattern(pattern);
                 ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
                 ctx->Clip(clip);
                 ctx->Paint();
@@ -3419,6 +3456,9 @@ nsCanvasRenderingContext2D::DrawImage(nsIDOMElement *imgElt, float a1,
                 ShadowFinalize(blur);
             }
         }
+
+        mThebes->SetPattern(pattern);
+        DirtyAllStyles();
 
         PRBool doUseIntermediateSurface = NeedToUseIntermediateSurface();
         if (doUseIntermediateSurface) {
@@ -3463,8 +3503,7 @@ nsCanvasRenderingContext2D::SetGlobalCompositeOperation(const nsAString& op)
     if (op.EqualsLiteral(cvsop))   \
         thebes_op = gfxContext::OPERATOR_##thebesop;
 
-    CANVAS_OP_TO_THEBES_OP("clear", CLEAR)
-    else CANVAS_OP_TO_THEBES_OP("copy", SOURCE)
+    CANVAS_OP_TO_THEBES_OP("copy", SOURCE)
     else CANVAS_OP_TO_THEBES_OP("destination-atop", DEST_ATOP)
     else CANVAS_OP_TO_THEBES_OP("destination-in", DEST_IN)
     else CANVAS_OP_TO_THEBES_OP("destination-out", DEST_OUT)
@@ -3475,8 +3514,6 @@ nsCanvasRenderingContext2D::SetGlobalCompositeOperation(const nsAString& op)
     else CANVAS_OP_TO_THEBES_OP("source-out", OUT)
     else CANVAS_OP_TO_THEBES_OP("source-over", OVER)
     else CANVAS_OP_TO_THEBES_OP("xor", XOR)
-    // not part of spec, kept here for compat
-    else CANVAS_OP_TO_THEBES_OP("over", OVER)
     // XXX ERRMSG we need to report an error to developers here! (bug 329026)
     else return NS_OK;
 
@@ -3495,10 +3532,7 @@ nsCanvasRenderingContext2D::GetGlobalCompositeOperation(nsAString& op)
     if (thebes_op == gfxContext::OPERATOR_##thebesop) \
         op.AssignLiteral(cvsop);
 
-    // XXX "darker" isn't really correct
-    CANVAS_OP_TO_THEBES_OP("clear", CLEAR)
-    else CANVAS_OP_TO_THEBES_OP("copy", SOURCE)
-    else CANVAS_OP_TO_THEBES_OP("darker", SATURATE)  // XXX
+    CANVAS_OP_TO_THEBES_OP("copy", SOURCE)
     else CANVAS_OP_TO_THEBES_OP("destination-atop", DEST_ATOP)
     else CANVAS_OP_TO_THEBES_OP("destination-in", DEST_IN)
     else CANVAS_OP_TO_THEBES_OP("destination-out", DEST_OUT)

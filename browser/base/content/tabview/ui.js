@@ -128,8 +128,7 @@ let UI = {
   _storageBusyCount: 0,
 
   // Variable: isDOMWindowClosing
-  // Tells wether we already received the "domwindowclosed" event and the parent
-  // windows is about to close.
+  // Tells wether the parent window is about to close
   isDOMWindowClosing: false,
 
   // Variable: _browserKeys
@@ -156,6 +155,9 @@ let UI = {
 
       // initialize the direction of the page
       this._initPageDirection();
+
+      // ___ thumbnail storage
+      ThumbnailStorage.init();
 
       // ___ storage
       Storage.init();
@@ -254,21 +256,19 @@ let UI = {
         self._resize();
       });
 
-      // ___ setup observer to save canvas images
-      function domWinClosedObserver(subject, topic, data) {
-        if (topic == "domwindowclosed" && subject == gWindow) {
-          self.isDOMWindowClosing = true;
-          if (self.isTabViewVisible())
-            GroupItems.removeHiddenGroups();
-          TabItems.saveAll(true);
-          self._save();
-        }
-      }
-      Services.obs.addObserver(
-        domWinClosedObserver, "domwindowclosed", false);
-      this._cleanupFunctions.push(function() {
-        Services.obs.removeObserver(domWinClosedObserver, "domwindowclosed");
-      });
+      // ___ setup event listener to save canvas images
+      gWindow.addEventListener("SSWindowClosing", function onWindowClosing() {
+        gWindow.removeEventListener("SSWindowClosing", onWindowClosing, false);
+
+        self.isDOMWindowClosing = true;
+
+        if (self.isTabViewVisible())
+          GroupItems.removeHiddenGroups();
+
+        Storage.saveActiveGroupName(gWindow);
+        TabItems.saveAll(true);
+        self._save();
+      }, false);
 
       // ___ Done
       this._frameInitialized = true;
@@ -278,7 +278,7 @@ let UI = {
       // initialized.
       let event = document.createEvent("Events");
       event.initEvent("tabviewframeinitialized", true, false);
-      dispatchEvent(event);      
+      dispatchEvent(event);
     } catch(e) {
       Utils.log(e);
     } finally {
@@ -286,6 +286,8 @@ let UI = {
     }
   },
 
+  // Function: uninit
+  // Should be called when window is unloaded.
   uninit: function UI_uninit() {
     // call our cleanup functions
     this._cleanupFunctions.forEach(function(func) {
@@ -297,6 +299,7 @@ let UI = {
     TabItems.uninit();
     GroupItems.uninit();
     Storage.uninit();
+    ThumbnailStorage.uninit();
 
     this._removeTabActionHandlers();
     this._currentTab = null;
@@ -680,22 +683,22 @@ let UI = {
     // don't reenter Panorama due to all of the session restore tab
     // manipulation (which otherwise we might). When transitioning away from
     // PB, we reenter Panorama if we had been there directly before PB.
-    function pbObserver(aSubject, aTopic, aData) {
-      if (aTopic == "private-browsing") {
+    function pbObserver(subject, topic, data) {
+      if (topic == "private-browsing") {
         // We could probably do this in private-browsing-change-granted, but
         // this seems like a nicer spot, right in the middle of the process.
-        if (aData == "enter") {
+        if (data == "enter") {
           // If we are in Tab View, exit. 
           self._privateBrowsing.wasInTabView = self.isTabViewVisible();
           if (self.isTabViewVisible())
             self.goToTab(gBrowser.selectedTab);
         }
-      } else if (aTopic == "private-browsing-change-granted") {
-        if (aData == "enter" || aData == "exit") {
-          self._privateBrowsing.transitionMode = aData;
+      } else if (topic == "private-browsing-change-granted") {
+        if (data == "enter" || data == "exit") {
+          self._privateBrowsing.transitionMode = data;
           self.storageBusy();
         }
-      } else if (aTopic == "private-browsing-transition-complete") {
+      } else if (topic == "private-browsing-transition-complete") {
         // We use .transitionMode here, as aData is empty.
         if (self._privateBrowsing.transitionMode == "exit" &&
             self._privateBrowsing.wasInTabView)
@@ -749,8 +752,7 @@ let UI = {
         if (gBrowser.tabs.length > 1) {
           // Don't return to TabView if there are any app tabs
           for (let a = 0; a < gBrowser._numPinnedTabs; a++) {
-            let theTab = gBrowser.tabs[a]; 
-            if (gBrowser._removingTabs.indexOf(theTab) == -1) 
+            if (!gBrowser.tabs[a].closing)
               return;
           }
 
@@ -956,12 +958,11 @@ let UI = {
   
   // ----------
   updateTabButton: function UI__updateTabButton() {
-    let groupsNumber = gWindow.document.getElementById("tabviewGroupsNumber");
     let exitButton = document.getElementById("exit-button");
     let numberOfGroups = GroupItems.groupItems.length;
 
-    groupsNumber.setAttribute("groups", numberOfGroups);
     exitButton.setAttribute("groups", numberOfGroups);
+    gTabView.updateGroupNumberBroadcaster(numberOfGroups);
   },
 
   // ----------
@@ -991,20 +992,28 @@ let UI = {
     [
 #ifdef XP_UNIX
       "quitApplication",
+#else
+      "redo",
 #endif
 #ifdef XP_MACOSX
-      "preferencesCmdMac", "minimizeWindow",
+      "preferencesCmdMac", "minimizeWindow", "hideThisAppCmdMac",
 #endif
-      "newNavigator", "newNavigatorTab", "find"
-     ].forEach(function(key) {
+      "newNavigator", "newNavigatorTab", "undo", "cut", "copy", "paste", 
+      "selectAll", "find"
+    ].forEach(function(key) {
       let element = gWindow.document.getElementById("key_" + key);
       keys[key] = element.getAttribute("key").toLocaleLowerCase().charCodeAt(0);
     });
 
     // for key combinations with shift key, the charCode of upper case letters 
     // are different to the lower case ones so need to handle them differently.
-    ["closeWindow", "tabview", "undoCloseTab", "undoCloseWindow",
-     "privatebrowsing"].forEach(function(key) {
+    [
+#ifdef XP_UNIX
+      "redo",
+#endif
+      "closeWindow", "tabview", "undoCloseTab", "undoCloseWindow",
+      "privatebrowsing"
+    ].forEach(function(key) {
       let element = gWindow.document.getElementById("key_" + key);
       keys[key] = element.getAttribute("key").toLocaleUpperCase().charCodeAt(0);
     });
@@ -1031,6 +1040,10 @@ let UI = {
         Keys.meta = true;
 
       function processBrowserKeys(evt) {
+        // let any keys with alt to pass through
+        if (evt.altKey)
+          return;
+
 #ifdef XP_MACOSX
         if (evt.metaKey) {
 #else
@@ -1039,14 +1052,17 @@ let UI = {
           let preventDefault = true;
           if (evt.shiftKey) {
             switch (evt.charCode) {
-              case self._browserKeys.privatebrowsing:
-              case self._browserKeys.undoCloseTab:
-              case self._browserKeys.undoCloseWindow:
-              case self._browserKeys.closeWindow:
-                preventDefault = false;
-                break;
               case self._browserKeys.tabview:
                 self.exit();
+                break;
+#ifdef XP_UNIX
+              case self._browserKeys.redo:
+#endif
+              case self._browserKeys.closeWindow:
+              case self._browserKeys.undoCloseTab:
+              case self._browserKeys.undoCloseWindow:
+              case self._browserKeys.privatebrowsing:
+                preventDefault = false;
                 break;
             }
           } else {
@@ -1054,21 +1070,25 @@ let UI = {
               case self._browserKeys.find:
                 self.enableSearch();
                 break;
-              case self._browserKeys.newNavigator:
-              case self._browserKeys.newNavigatorTab:
-                preventDefault = false;
-                break;
 #ifdef XP_UNIX
               case self._browserKeys.quitApplication:
-                preventDefault = false;
-                break;
+#else
+              case self._browserKeys.redo:
 #endif
 #ifdef XP_MACOSX
               case self._browserKeys.preferencesCmdMac:
               case self._browserKeys.minimizeWindow:
+              case self._browserKeys.hideThisAppCmdMac:
+#endif
+              case self._browserKeys.newNavigator:
+              case self._browserKeys.newNavigatorTab:
+              case self._browserKeys.undo:
+              case self._browserKeys.cut:
+              case self._browserKeys.copy:
+              case self._browserKeys.paste:
+              case self._browserKeys.selectAll:
                 preventDefault = false;
                 break;
-#endif
             }
           }
           if (preventDefault) {

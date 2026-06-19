@@ -36,11 +36,9 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-
 #include "nsCOMPtr.h"
 #include "nsTextControlFrame.h"
 #include "nsIDocument.h"
-#include "nsIDOMNSHTMLTextAreaElement.h"
 #include "nsIFormControl.h"
 #include "nsIServiceManager.h"
 #include "nsFrameSelection.h"
@@ -456,12 +454,13 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
       initializer->Revoke();
     }
     initializer = new EditorInitializer(this);
+    Properties().Set(TextControlInitializer(),initializer);
     if (!nsContentUtils::AddScriptRunner(initializer)) {
       initializer->Revoke(); // paranoia
+      Properties().Delete(TextControlInitializer());
       delete initializer;
       return NS_ERROR_OUT_OF_MEMORY;
     }
-    Properties().Set(TextControlInitializer(),initializer);
   }
 
   return NS_OK;
@@ -1488,7 +1487,7 @@ nsTextControlFrame::UpdateValueDisplay(PRBool aNotify,
   }
 
   if (aBeforeEditorInit && value.IsEmpty()) {
-    rootNode->RemoveChildAt(0, PR_TRUE, PR_FALSE);
+    rootNode->RemoveChildAt(0, PR_TRUE);
     return NS_OK;
   }
 

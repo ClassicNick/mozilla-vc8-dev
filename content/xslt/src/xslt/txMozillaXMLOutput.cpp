@@ -44,7 +44,6 @@
 #include "nsIDOMDocument.h"
 #include "nsIDOMDocumentType.h"
 #include "nsIScriptElement.h"
-#include "nsIDOMNSDocument.h"
 #include "nsIParser.h"
 #include "nsIRefreshURI.h"
 #include "nsPIDOMWindow.h"
@@ -685,7 +684,7 @@ txMozillaXMLOutput::createTxWrapper()
             // The new documentElement should go after the document type.
             // This is needed for cases when there is no existing
             // documentElement in the document.
-            rootLocation = PR_MAX(rootLocation, j + 1);
+            rootLocation = NS_MAX(rootLocation, j + 1);
 #endif
             ++j;
         }
@@ -1079,8 +1078,9 @@ txTransformNotifier::SetOutputDocument(nsIDocument* aDocument)
 void
 txTransformNotifier::SignalTransformEnd(nsresult aResult)
 {
-    if (mInTransform || (NS_SUCCEEDED(aResult) &&
-        mScriptElements.Count() > 0 || mPendingStylesheetCount > 0)) {
+    if (mInTransform ||
+        (NS_SUCCEEDED(aResult) &&
+         (mScriptElements.Count() > 0 || mPendingStylesheetCount > 0))) {
         return;
     }
 

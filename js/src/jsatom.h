@@ -48,7 +48,6 @@
 #include "jsprvtd.h"
 #include "jshash.h"
 #include "jshashtable.h"
-#include "jsnum.h"
 #include "jspubtd.h"
 #include "jsstr.h"
 #include "jslock.h"
@@ -109,16 +108,6 @@ static JS_ALWAYS_INLINE jsval
 IdToJsval(jsid id)
 {
     return Jsvalify(IdToValue(id));
-}
-
-static JS_ALWAYS_INLINE JSString *
-IdToString(JSContext *cx, jsid id)
-{
-    if (JSID_IS_STRING(id))
-        return JSID_TO_STRING(id);
-    if (JS_LIKELY(JSID_IS_INT(id)))
-        return js_IntToString(cx, JSID_TO_INT(id));
-    return js_ValueToString(cx, IdToValue(id));
 }
 
 template<>
@@ -468,6 +457,8 @@ struct JSAtomState
 
     JSAtom              *WeakMapAtom;
 
+    JSAtom              *byteLengthAtom;
+
     /* Less frequently used atoms, pinned lazily by JS_ResolveStandardClass. */
     struct {
         JSAtom          *XMLListAtom;
@@ -647,7 +638,8 @@ js_AtomizeString(JSContext *cx, JSString *str, js::InternBehavior ib = js::DoNot
 
 extern JSAtom *
 js_Atomize(JSContext *cx, const char *bytes, size_t length,
-           js::InternBehavior ib = js::DoNotInternAtom, bool useCESU8 = false);
+           js::InternBehavior ib = js::DoNotInternAtom,
+           js::FlationCoding fc = js::NormalEncoding);
 
 extern JSAtom *
 js_AtomizeChars(JSContext *cx, const jschar *chars, size_t length,

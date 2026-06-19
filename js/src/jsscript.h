@@ -395,6 +395,42 @@ struct JITScript;
 }
 #endif
 
+class JSPCCounters {
+    size_t numBytecodes;
+    int *counts;
+
+ public:
+    JSPCCounters() : numBytecodes(0), counts(NULL) {
+    }
+
+    ~JSPCCounters() {
+        JS_ASSERT(!counts);
+    }
+
+    bool init(JSContext *cx, size_t numBytecodes);
+    void destroy(JSContext *cx);
+
+    // Boolean conversion, for 'if (counters) ...'
+    operator void*() const {
+        return counts;
+    }
+
+    int *get(int runmode) {
+        JS_ASSERT(runmode >= 0 && runmode < JSRUNMODE_COUNT);
+        return counts ? &counts[numBytecodes * runmode] : NULL;
+    }
+
+    int& get(int runmode, size_t offset) {
+        JS_ASSERT(offset < numBytecodes);
+        JS_ASSERT(counts);
+        return get(runmode)[offset];
+    }
+
+    size_t numRunmodes() const {
+        return JSRUNMODE_COUNT;
+    }
+};
+
 struct JSScript {
     /*
      * Two successively less primitive ways to make a new JSScript.  The first
@@ -422,16 +458,17 @@ struct JSScript {
   private:
     uint16          version;    /* JS version under which script was compiled */
 
-    size_t          callCount_; /* Number of times the script has been called. */
-
   public:
     uint16          nfixed;     /* number of slots besides stack operands in
                                    slot array */
+  private:
+    size_t          callCount_; /* Number of times the script has been called. */
 
     /*
      * Offsets to various array structures from the end of this script, or
      * JSScript::INVALID_OFFSET if the array has length 0.
      */
+  public:
     uint8           objectsOffset;  /* offset to the array of nested function,
                                        block, scope, xml and one-time regexps
                                        objects */
@@ -499,6 +536,9 @@ struct JSScript {
 
     uint32          *closedSlots; /* vector of closed slots; args first, then vars. */
 
+    /* array of execution counters for every JSOp in the script, by runmode */
+    JSPCCounters    pcCounters;
+
   public:
 #ifdef JS_METHODJIT
     // Fast-cached pointers to make calls faster. These are also used to
@@ -536,6 +576,9 @@ struct JSScript {
         return JITScript_Valid;
     }
 #endif
+
+    JS_FRIEND_API(size_t) totalSize();  /* Size of the JSScript and all sections */
+    uint32 numNotes();                  /* Number of srcnote slots in the srcnotes section */
 
     /* Script notes are allocated right after the code. */
     jssrcnote *notes() { return (jssrcnote *)(code + length); }
@@ -738,7 +781,7 @@ js_GetSrcNoteCached(JSContext *cx, JSScript *script, jsbytecode *pc);
  * fp->imacpc may be non-null, indicating an active imacro.
  */
 extern uintN
-js_FramePCToLineNumber(JSContext *cx, js::StackFrame *fp);
+js_FramePCToLineNumber(JSContext *cx, js::StackFrame *fp, jsbytecode *pc);
 
 extern uintN
 js_PCToLineNumber(JSContext *cx, JSScript *script, jsbytecode *pc);
@@ -750,6 +793,9 @@ extern JS_FRIEND_API(uintN)
 js_GetScriptLineExtent(JSScript *script);
 
 namespace js {
+
+extern uintN
+CurrentLine(JSContext *cx);
 
 /*
  * This function returns the file and line number of the script currently

@@ -92,18 +92,17 @@
 #include "nsCOMPtr.h"
 #include "nsListControlFrame.h"
 #include "ImageLayers.h"
+#include "mozilla/arm.h"
 #include "mozilla/dom/Element.h"
 #include "nsCanvasFrame.h"
 #include "gfxDrawable.h"
 #include "gfxUtils.h"
 #include "nsDataHashtable.h"
 
-#ifdef MOZ_SVG
 #include "nsSVGUtils.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGForeignObjectFrame.h"
 #include "nsSVGOuterSVGFrame.h"
-#endif
 
 #ifdef MOZ_XUL
 #include "nsXULPopupManager.h"
@@ -1777,13 +1776,11 @@ struct BoxToBorderRect : public nsLayoutUtils::BoxCallback {
     : mRelativeTo(aRelativeTo), mCallback(aCallback) {}
 
   virtual void AddBox(nsIFrame* aFrame) {
-#ifdef MOZ_SVG
     nsRect r;
     nsIFrame* outer = nsSVGUtils::GetOuterSVGFrameAndCoveredRegion(aFrame, &r);
     if (outer) {
       mCallback->AddRect(r + outer->GetOffsetTo(mRelativeTo));
     } else
-#endif
       mCallback->AddRect(nsRect(aFrame->GetOffsetTo(mRelativeTo), aFrame->GetSize()));
   }
 };
@@ -2589,26 +2586,26 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(
   PRBool hasIntrinsicWidth, hasIntrinsicHeight;
   nscoord intrinsicWidth, intrinsicHeight;
 
-  if (aIntrinsicSize.width.GetUnit() == eStyleUnit_Coord ||
-      aIntrinsicSize.width.GetUnit() == eStyleUnit_Percent) {
+  if (aIntrinsicSize.width.GetUnit() == eStyleUnit_Coord) {
     hasIntrinsicWidth = PR_TRUE;
-    intrinsicWidth = nsLayoutUtils::ComputeWidthValue(aRenderingContext,
-                           aFrame, aCBSize.width, 0, boxSizingAdjust.width +
-                           boxSizingToMarginEdgeWidth, aIntrinsicSize.width);
+    intrinsicWidth = aIntrinsicSize.width.GetCoordValue();
+    if (intrinsicWidth < 0)
+      intrinsicWidth = 0;
   } else {
+    NS_ASSERTION(aIntrinsicSize.width.GetUnit() == eStyleUnit_None,
+                 "unexpected unit");
     hasIntrinsicWidth = PR_FALSE;
     intrinsicWidth = 0;
   }
 
-  if (aIntrinsicSize.height.GetUnit() == eStyleUnit_Coord ||
-      (aIntrinsicSize.height.GetUnit() == eStyleUnit_Percent &&
-       aCBSize.height != NS_AUTOHEIGHT)) {
+  if (aIntrinsicSize.height.GetUnit() == eStyleUnit_Coord) {
     hasIntrinsicHeight = PR_TRUE;
-    intrinsicHeight = nsLayoutUtils::
-      ComputeHeightDependentValue(aCBSize.height, aIntrinsicSize.height);
+    intrinsicHeight = aIntrinsicSize.height.GetCoordValue();
     if (intrinsicHeight < 0)
       intrinsicHeight = 0;
   } else {
+    NS_ASSERTION(aIntrinsicSize.height.GetUnit() == eStyleUnit_None,
+                 "unexpected unit");
     hasIntrinsicHeight = PR_FALSE;
     intrinsicHeight = 0;
   }
@@ -3061,12 +3058,12 @@ nsLayoutUtils::GetClosestLayer(nsIFrame* aFrame)
 GraphicsFilter
 nsLayoutUtils::GetGraphicsFilterForFrame(nsIFrame* aForFrame)
 {
-#ifdef MOZ_GFX_OPTIMIZE_MOBILE
-  GraphicsFilter defaultFilter = gfxPattern::FILTER_NEAREST;
-#else
   GraphicsFilter defaultFilter = gfxPattern::FILTER_GOOD;
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
+  if (!mozilla::supports_neon()) {
+    defaultFilter = gfxPattern::FILTER_NEAREST;
+  }
 #endif
-#ifdef MOZ_SVG
   nsIFrame *frame = nsCSSRendering::IsCanvasFrame(aForFrame) ?
     nsCSSRendering::FindBackgroundStyleFrame(aForFrame) : aForFrame;
 
@@ -3080,9 +3077,6 @@ nsLayoutUtils::GetGraphicsFilterForFrame(nsIFrame* aForFrame)
   default:
     return defaultFilter;
   }
-#else
-  return defaultFilter;
-#endif
 }
 
 /**
@@ -3654,7 +3648,6 @@ nsLayoutUtils::GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
   if (IsNonzeroCoord(aStyleText->mLetterSpacing)) {
     result |= gfxTextRunFactory::TEXT_DISABLE_OPTIONAL_LIGATURES;
   }
-#ifdef MOZ_SVG
   switch (aStyleContext->GetStyleSVG()->mTextRendering) {
   case NS_STYLE_TEXT_RENDERING_OPTIMIZESPEED:
     result |= gfxTextRunFactory::TEXT_OPTIMIZE_SPEED;
@@ -3668,7 +3661,6 @@ nsLayoutUtils::GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
   default:
     break;
   }
-#endif
   return result;
 }
 

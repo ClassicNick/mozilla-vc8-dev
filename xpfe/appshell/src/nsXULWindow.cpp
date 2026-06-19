@@ -1225,16 +1225,29 @@ PRBool nsXULWindow::LoadMiscPersistentAttributesFromXUL()
           sizeMode = nsSizeMode_Fullscreen;
       }
     }
-    
+
+    // If we are told to ignore the size mode attribute update the
+    // document so the attribute and window are in sync.
+    if (mIgnoreXULSizeMode) {
+      nsAutoString sizeString;
+      if (sizeMode == nsSizeMode_Maximized)
+        sizeString.Assign(SIZEMODE_MAXIMIZED);
+      else if (sizeMode == nsSizeMode_Fullscreen)
+        sizeString.Assign(SIZEMODE_FULLSCREEN);
+      else if (sizeMode == nsSizeMode_Normal)
+        sizeString.Assign(SIZEMODE_NORMAL);
+      if (!sizeString.IsEmpty()) {
+        windowElement->SetAttribute(MODE_ATTRIBUTE, sizeString);
+      }
+    }
+
     if (sizeMode == nsSizeMode_Fullscreen) {
       nsCOMPtr<nsIDOMWindowInternal> ourWindow;
       GetWindowDOMWindow(getter_AddRefs(ourWindow));
       ourWindow->SetFullScreen(PR_TRUE);
-    }
-    else
+    } else {
       mWindow->SetSizeMode(sizeMode);
-
-    
+    }
     gotState = PR_TRUE;
   }
 
@@ -1329,8 +1342,8 @@ void nsXULWindow::StaggerPosition(PRInt32 &aRequestedX, PRInt32 &aRequestedY,
         nsCOMPtr<nsIBaseWindow> listBaseWindow(do_QueryInterface(supportsWindow));
         listBaseWindow->GetPosition(&listX, &listY);
 
-        if (PR_ABS(listX - aRequestedX) <= kSlop &&
-            PR_ABS(listY - aRequestedY) <= kSlop) {
+        if (NS_ABS(listX - aRequestedX) <= kSlop &&
+            NS_ABS(listY - aRequestedY) <= kSlop) {
           // collision! offset and start over
           if (bouncedX & 0x1)
             aRequestedX -= kOffset;

@@ -54,7 +54,7 @@
 #include "nsIDOMXULElement.h"
 #include "nsIDOMNSUIEvent.h"
 #include "nsIURI.h"
-#include "nsIDOMNSHTMLTextAreaElement.h"
+#include "nsIDOMHTMLTextAreaElement.h"
 #include "nsIDOMHTMLInputElement.h"
 #include "nsIDOMText.h"
 #include "nsFocusManager.h"
@@ -80,6 +80,9 @@
 #include "nsCRT.h"
 #include "nsXBLEventHandler.h"
 #include "nsEventDispatcher.h"
+#include "mozilla/Preferences.h"
+
+using namespace mozilla;
 
 static NS_DEFINE_CID(kDOMScriptObjectFactoryCID,
                      NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
@@ -206,8 +209,8 @@ nsXBLPrototypeHandler::InitAccessKeys()
 
   // Get the menu access key value from prefs, overriding the default:
   kMenuAccessKey =
-    nsContentUtils::GetIntPref("ui.key.menuAccessKey", kMenuAccessKey);
-  kAccelKey = nsContentUtils::GetIntPref("ui.key.accelKey", kAccelKey);
+    Preferences::GetInt("ui.key.menuAccessKey", kMenuAccessKey);
+  kAccelKey = Preferences::GetInt("ui.key.accelKey", kAccelKey);
 }
 
 nsresult
@@ -555,7 +558,7 @@ nsXBLPrototypeHandler::GetController(nsPIDOMEventTarget* aTarget)
     xulElement->GetControllers(getter_AddRefs(controllers));
 
   if (!controllers) {
-    nsCOMPtr<nsIDOMNSHTMLTextAreaElement> htmlTextArea(do_QueryInterface(aTarget));
+    nsCOMPtr<nsIDOMHTMLTextAreaElement> htmlTextArea(do_QueryInterface(aTarget));
     if (htmlTextArea)
       htmlTextArea->GetControllers(getter_AddRefs(controllers));
   }

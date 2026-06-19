@@ -2159,13 +2159,6 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
     return NPERR_GENERIC_ERROR;
   }
 
-#if (MOZ_PLATFORM_MAEMO == 5)
-  case NPNVSupportsWindowlessLocal: {
-    *(NPBool*)result = PR_TRUE;
-    return NPERR_NO_ERROR;
-  }
-#endif
-
 #ifdef XP_MACOSX
   case NPNVpluginDrawingModel: {
     if (npp) {
@@ -2282,12 +2275,6 @@ _setvalue(NPP npp, NPPVariable variable, void *result)
       return inst->SetWindowless(bWindowless);
 #endif
     }
-#if (MOZ_PLATFORM_MAEMO == 5)
-    case NPPVpluginWindowlessLocalBool: {
-      NPBool bWindowlessLocal = (result != nsnull);
-      return inst->SetWindowlessLocal(bWindowlessLocal);
-    }
-#endif
     case NPPVpluginTransparentBool: {
       NPBool bTransparent = (result != nsnull);
       return inst->SetTransparent(bTransparent);
@@ -2315,11 +2302,6 @@ _setvalue(NPP npp, NPPVariable variable, void *result)
     case NPPVpluginKeepLibraryInMemory: {
       NPBool bCached = (result != nsnull);
       return inst->SetCached(bCached);
-    }
-
-    case NPPVpluginWantsAllNetworkStreams: {
-      PRBool bWantsAllNetworkStreams = (result != nsnull);
-      return inst->SetWantsAllNetworkStreams(bWantsAllNetworkStreams);
     }
 
     case NPPVpluginUsesDOMForCursorBool: {

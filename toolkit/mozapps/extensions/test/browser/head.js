@@ -2,8 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-Components.utils.import("resource://gre/modules/AddonManager.jsm");
-Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/NetUtil.jsm");
 
 var pathParts = gTestPath.split("/");
@@ -622,6 +620,8 @@ MockProvider.prototype = {
         }
         addon[prop] = aAddonProp[prop];
       }
+      if (!addon.optionsType && !!addon.optionsURL)
+        addon.optionsType = AddonManager.OPTIONS_TYPE_DIALOG;
       this.addAddon(addon);
       newAddons.push(addon);
     }, this);
