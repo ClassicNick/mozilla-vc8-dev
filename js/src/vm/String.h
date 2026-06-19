@@ -583,7 +583,7 @@ class JSExternalString : public JSFixedString
     intN externalType() const {
         JS_ASSERT(isExternal());
         JS_ASSERT(d.s.u2.externalType < TYPE_LIMIT);
-        return d.s.u2.externalType;
+        return intN(d.s.u2.externalType);
     }
 
     void *externalClosure() const {
@@ -659,6 +659,9 @@ class JSAtom : public JSFixedString
      * JSString 'str', it is more efficient to use 'str->isStaticAtom()'.
      */
     static inline bool isStatic(const void *ptr);
+
+    static inline bool hasUintStatic(uint32 u);
+    static inline JSStaticAtom &uintStatic(uint32 u);
 
     static inline bool hasIntStatic(int32 i);
     static inline JSStaticAtom &intStatic(jsint i);

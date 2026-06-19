@@ -215,9 +215,7 @@ nsFrameMessageManager::GetParamsForMessage(nsAString& aMessageName,
 
   if (argc >= 2) {
     jsval v = argv[1];
-    if (JS_TryJSON(ctx, &v)) {
-      JS_Stringify(ctx, &v, nsnull, JSVAL_NULL, JSONCreator, &aJSON);
-    }
+    JS_Stringify(ctx, &v, nsnull, JSVAL_NULL, JSONCreator, &aJSON);
   }
   return NS_OK;
 }
@@ -325,6 +323,20 @@ nsFrameMessageManager::GetDocShell(nsIDocShell** aDocShell)
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsFrameMessageManager::Btoa(const nsAString& aBinaryData,
+                            nsAString& aAsciiBase64String)
+{
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsFrameMessageManager::Atob(const nsAString& aAsciiString,
+                            nsAString& aBinaryData)
+{
+  return NS_OK;
+}
+
 nsresult
 nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
                                       const nsAString& aMessage,
@@ -410,7 +422,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
         jsval thisValue = JSVAL_VOID;
 
         jsval funval = JSVAL_VOID;
-        if (JS_ObjectIsFunction(ctx, object)) {
+        if (JS_ObjectIsCallable(ctx, object)) {
           // If the listener is a JS function:
           funval = OBJECT_TO_JSVAL(object);
 
@@ -433,7 +445,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
                           JSVAL_IS_OBJECT(funval) &&
                           !JSVAL_IS_NULL(funval));
           JSObject* funobject = JSVAL_TO_OBJECT(funval);
-          NS_ENSURE_STATE(JS_ObjectIsFunction(ctx, funobject));
+          NS_ENSURE_STATE(JS_ObjectIsCallable(ctx, funobject));
           thisValue = OBJECT_TO_JSVAL(object);
         }
 
@@ -455,8 +467,7 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
                                funval, 1, argv.jsval_addr(), &rval);
           if (aJSONRetVal) {
             nsString json;
-            if (JS_TryJSON(ctx, &rval) &&
-                JS_Stringify(ctx, &rval, nsnull, JSVAL_NULL,
+            if (JS_Stringify(ctx, &rval, nsnull, JSVAL_NULL,
                              JSONCreator, &json)) {
               aJSONRetVal->AppendElement(json);
             }
@@ -583,6 +594,34 @@ ContentScriptErrorReporter(JSContext* aCx,
   if (consoleService) {
     (void) consoleService->LogMessage(scriptError);
   }
+
+#ifdef DEBUG
+  // Print it to stderr as well, for the benefit of those invoking
+  // mozilla with -console.
+  nsCAutoString error;
+  error.Assign("JavaScript ");
+  if (JSREPORT_IS_STRICT(flags)) {
+    error.Append("strict ");
+  }
+  if (JSREPORT_IS_WARNING(flags)) {
+    error.Append("warning: ");
+  } else {
+    error.Append("error: ");
+  }
+  error.Append(aReport->filename);
+  error.Append(", line ");
+  error.AppendInt(lineNumber, 10);
+  error.Append(": ");
+  if (aReport->ucmessage) {
+    AppendUTF16toUTF8(reinterpret_cast<const PRUnichar*>(aReport->ucmessage),
+                      error);
+  } else {
+    error.Append(aMessage);
+  }
+
+  fprintf(stderr, "%s\n", error.get());
+  fflush(stderr);
+#endif
 }
 
 nsDataHashtable<nsStringHashKey, nsFrameScriptExecutorJSObjectHolder*>*

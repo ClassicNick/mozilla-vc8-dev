@@ -3552,9 +3552,6 @@ public:
 private:
     nsAutoTArray<XPCJSContextInfo, 16> mStack;
     JSContext*  mSafeJSContext;
-
-    // If non-null, we own it; same as mSafeJSContext if SetSafeJSContext
-    // not called.
     JSContext*  mOwnSafeJSContext;
 };
 
@@ -4393,6 +4390,7 @@ struct CompartmentPrivate
           waiverWrapperMap(nsnull),
           expandoMap(nsnull)
     {
+        MOZ_COUNT_CTOR(xpc::CompartmentPrivate);
     }
 
     CompartmentPrivate(nsISupports *ptr, bool wantXrays, bool cycleCollectionEnabled)
@@ -4403,6 +4401,7 @@ struct CompartmentPrivate
           waiverWrapperMap(nsnull),
           expandoMap(nsnull)
     {
+        MOZ_COUNT_CTOR(xpc::CompartmentPrivate);
     }
 
     ~CompartmentPrivate();

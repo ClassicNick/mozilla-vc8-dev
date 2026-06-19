@@ -57,6 +57,7 @@
 class AccEvent;
 class AccGroupInfo;
 class EmbeddedObjCollector;
+class KeyBinding;
 class nsAccessible;
 class nsHyperTextAccessible;
 class nsHTMLLIAccessible;
@@ -278,7 +279,7 @@ public:
   /**
    * Return parent accessible.
    */
-  nsAccessible* GetParent() const { return mParent; }
+  nsAccessible* Parent() const { return mParent; }
 
   /**
    * Return child accessible at the given index.
@@ -306,12 +307,20 @@ public:
   PRBool HasChildren() { return !!GetChildAt(0); }
 
   /**
-   * Return next/previous sibling of the accessible.
+   * Return first/last/next/previous sibling of the accessible.
    */
   inline nsAccessible* NextSibling() const
     {  return GetSiblingAtOffset(1); }
   inline nsAccessible* PrevSibling() const
     { return GetSiblingAtOffset(-1); }
+  inline nsAccessible* FirstChild()
+    { return GetChildCount() != 0 ? GetChildAt(0) : nsnull; }
+  inline nsAccessible* LastChild()
+  {
+    PRUint32 childCount = GetChildCount();
+    return childCount != 0 ? GetChildAt(childCount - 1) : nsnull;
+  }
+
 
   /**
    * Return embedded accessible children count.
@@ -400,6 +409,20 @@ public:
 
   inline bool IsTextLeaf() const { return mFlags & eTextLeafAccessible; }
   nsTextAccessible* AsTextLeaf();
+
+  //////////////////////////////////////////////////////////////////////////////
+  // ActionAccessible
+
+  /**
+   * Return access key, such as Alt+D.
+   */
+  virtual KeyBinding AccessKey() const;
+
+  /**
+   * Return global keyboard shortcut for default action, such as Ctrl+O for
+   * Open file menuitem.
+   */
+  virtual KeyBinding KeyboardShortcut() const;
 
   //////////////////////////////////////////////////////////////////////////////
   // HyperLinkAccessible
@@ -691,5 +714,62 @@ protected:
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAccessible,
                               NS_ACCESSIBLE_IMPL_IID)
+
+
+/**
+ * Represent key binding associated with accessible (such as access key and
+ * global keyboard shortcuts).
+ */
+class KeyBinding
+{
+public:
+  /**
+   * Modifier mask values.
+   */
+  static const PRUint32 kShift = 1;
+  static const PRUint32 kControl = 2;
+  static const PRUint32 kAlt = 4;
+  static const PRUint32 kMeta = 8;
+
+  KeyBinding() : mKey(0), mModifierMask(0) {}
+  KeyBinding(PRUint32 aKey, PRUint32 aModifierMask) :
+    mKey(aKey), mModifierMask(aModifierMask) {};
+
+  inline bool IsEmpty() const { return !mKey; }
+  inline PRUint32 Key() const { return mKey; }
+  inline PRUint32 ModifierMask() const { return mModifierMask; }
+
+  enum Format {
+    ePlatformFormat,
+    eAtkFormat
+  };
+
+  /**
+   * Return formatted string for this key binding depending on the given format.
+   */
+  inline void ToString(nsAString& aValue,
+                       Format aFormat = ePlatformFormat) const
+  {
+    aValue.Truncate();
+    AppendToString(aValue, aFormat);
+  }
+  inline void AppendToString(nsAString& aValue,
+                             Format aFormat = ePlatformFormat) const
+  {
+    if (mKey) {
+      if (aFormat == ePlatformFormat)
+        ToPlatformFormat(aValue);
+      else
+        ToAtkFormat(aValue);
+    }
+  }
+
+private:
+  void ToPlatformFormat(nsAString& aValue) const;
+  void ToAtkFormat(nsAString& aValue) const;
+
+  PRUint32 mKey;
+  PRUint32 mModifierMask;
+};
 
 #endif

@@ -49,10 +49,8 @@
 #include "nsContentCID.h"
 #include "nsIDOMCharacterData.h"
 #include "nsIDOMDocument.h"
-#include "nsPIDOMWindow.h"        
 #include "nsIDOMRange.h"
 #include "nsIDOMNSRange.h"
-#include "nsIDOMWindowInternal.h"
 #include "nsIDOMXULDocument.h"
 #include "nsIEditingSession.h"
 #include "nsIEditor.h"
@@ -623,9 +621,9 @@ nsHyperTextAccessible::DOMPointToHypertextOffset(nsINode *aNode,
   }
 
   // From the descendant, go up and get the immediate child of this hypertext
-  nsAccessible *childAccAtOffset = nsnull;
+  nsAccessible* childAccAtOffset = nsnull;
   while (descendantAcc) {
-    nsAccessible *parentAcc = descendantAcc->GetParent();
+    nsAccessible* parentAcc = descendantAcc->Parent();
     if (parentAcc == this) {
       childAccAtOffset = descendantAcc;
       break;

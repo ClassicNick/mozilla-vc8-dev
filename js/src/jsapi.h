@@ -1140,6 +1140,12 @@ JS_GetGlobalForObject(JSContext *cx, JSObject *obj);
 extern JS_PUBLIC_API(JSObject *)
 JS_GetGlobalForScopeChain(JSContext *cx);
 
+/*
+ * Initialize the 'Reflect' object on a global object.
+ */
+extern JS_PUBLIC_API(JSObject *)
+JS_InitReflect(JSContext *cx, JSObject *global);
+
 #ifdef JS_HAS_CTYPES
 /*
  * Initialize the 'ctypes' object on a global variable 'obj'. The 'ctypes'
@@ -1176,6 +1182,16 @@ typedef struct JSCTypesCallbacks JSCTypesCallbacks;
 extern JS_PUBLIC_API(JSBool)
 JS_SetCTypesCallbacks(JSContext *cx, JSObject *ctypesObj, JSCTypesCallbacks *callbacks);
 #endif
+
+typedef JSBool
+(* JSEnumerateDiagnosticMemoryCallback)(void *ptr, size_t length);
+
+/*
+ * Enumerate memory regions that contain diagnostic information
+ * intended to be included in crash report minidumps.
+ */
+extern JS_PUBLIC_API(void)
+JS_EnumerateDiagnosticMemoryRegions(JSEnumerateDiagnosticMemoryCallback callback);
 
 /*
  * Macros to hide interpreter stack layout details from a JSFastNative using
@@ -2471,9 +2487,6 @@ extern JS_PUBLIC_API(JSBool)
 JS_SetArrayLength(JSContext *cx, JSObject *obj, jsuint length);
 
 extern JS_PUBLIC_API(JSBool)
-JS_HasArrayLength(JSContext *cx, JSObject *obj, jsuint *lengthp);
-
-extern JS_PUBLIC_API(JSBool)
 JS_DefineElement(JSContext *cx, JSObject *obj, jsint index, jsval value,
                  JSPropertyOp getter, JSStrictPropertyOp setter, uintN attrs);
 
@@ -2590,6 +2603,21 @@ JS_SetContextSecurityCallbacks(JSContext *cx, JSSecurityCallbacks *callbacks);
 
 extern JS_PUBLIC_API(JSSecurityCallbacks *)
 JS_GetSecurityCallbacks(JSContext *cx);
+
+/*
+ * Code running with "trusted" principals will be given a deeper stack
+ * allocation than ordinary scripts. This allows trusted script to run after
+ * untrusted script has exhausted the stack. This function sets the
+ * runtime-wide trusted principal.
+ *
+ * This principals is not held (via JS_HoldPrincipals/JS_DropPrincipals) since
+ * there is no available JSContext. Instead, the caller must ensure that the
+ * given principals stays valid for as long as 'rt' may point to it. If the
+ * principals would be destroyed before 'rt', JS_SetTrustedPrincipals must be
+ * called again, passing NULL for 'prin'.
+ */
+extern JS_PUBLIC_API(void)
+JS_SetTrustedPrincipals(JSRuntime *rt, JSPrincipals *prin);
 
 /************************************************************************/
 
@@ -3307,12 +3335,6 @@ JS_Stringify(JSContext *cx, jsval *vp, JSObject *replacer, jsval space,
              JSONWriteCallback callback, void *data);
 
 /*
- * Retrieve a toJSON function. If found, set vp to its result.
- */
-JS_PUBLIC_API(JSBool)
-JS_TryJSON(JSContext *cx, jsval *vp);
-
-/*
  * JSON.parse as specified by ES5.
  */
 JS_PUBLIC_API(JSBool)
@@ -3352,119 +3374,62 @@ JS_StructuredClone(JSContext *cx, jsval v, jsval *vp,
                    void *closure);
 
 #ifdef __cplusplus
+JS_END_EXTERN_C
+
 /* RAII sugar for JS_WriteStructuredClone. */
-class JSAutoStructuredCloneBuffer {
-    JSContext *cx_;
-    uint64 *data_;
+class JS_PUBLIC_API(JSAutoStructuredCloneBuffer) {
+    JSUint64 *data_;
     size_t nbytes_;
-    uint32 version_;
+    JSUint32 version_;
 
   public:
     JSAutoStructuredCloneBuffer()
-        : cx_(NULL), data_(NULL), nbytes_(0), version_(JS_STRUCTURED_CLONE_VERSION) {}
+        : data_(NULL), nbytes_(0), version_(JS_STRUCTURED_CLONE_VERSION) {}
 
     ~JSAutoStructuredCloneBuffer() { clear(); }
 
-    JSContext *cx() const { return cx_; }
-    uint64 *data() const { return data_; }
+    JSUint64 *data() const { return data_; }
     size_t nbytes() const { return nbytes_; }
 
-    void clear(JSContext *cx=NULL) {
-        if (data_) {
-            if (!cx)
-                cx = cx_;
-            JS_ASSERT(cx);
-            JS_free(cx, data_);
-            cx_ = NULL;
-            data_ = NULL;
-            nbytes_ = 0;
-            version_ = 0;
-        }
-    }
+    void clear();
+
+    /* Copy some memory. It will be automatically freed by the destructor. */
+    bool copy(const JSUint64 *data, size_t nbytes, JSUint32 version=JS_STRUCTURED_CLONE_VERSION);
 
     /*
      * Adopt some memory. It will be automatically freed by the destructor.
-     * data must have been allocated using JS_malloc.
+     * data must have been allocated by the JS engine (e.g., extracted via
+     * JSAutoStructuredCloneBuffer::steal).
      */
-    void adopt(JSContext *cx, uint64 *data, size_t nbytes,
-               uint32 version=JS_STRUCTURED_CLONE_VERSION) {
-        clear(cx);
-        cx_ = cx;
-        data_ = data;
-        nbytes_ = nbytes;
-        version_ = version;
-    }
+    void adopt(JSUint64 *data, size_t nbytes, JSUint32 version=JS_STRUCTURED_CLONE_VERSION);
 
     /*
      * Remove the buffer so that it will not be automatically freed.
-     * After this, the caller is responsible for calling JS_free(*datap).
+     * After this, the caller is responsible for feeding the memory back to
+     * JSAutoStructuredCloneBuffer::adopt.
      */
-    void steal(uint64 **datap, size_t *nbytesp, JSContext **cxp=NULL,
-               uint32 *versionp=NULL) {
-        *datap = data_;
-        *nbytesp = nbytes_;
-        if (cxp)
-            *cxp = cx_;
-        if (versionp)
-            *versionp = version_;
+    void steal(JSUint64 **datap, size_t *nbytesp, JSUint32 *versionp=NULL);
 
-        cx_ = NULL;
-        data_ = NULL;
-        nbytes_ = 0;
-        version_ = 0;
-    }
-
-    bool read(jsval *vp, JSContext *cx=NULL,
+    bool read(JSContext *cx, jsval *vp,
               const JSStructuredCloneCallbacks *optionalCallbacks=NULL,
-              void *closure=NULL) const {
-        if (!cx)
-            cx = cx_;
-        JS_ASSERT(cx);
-        JS_ASSERT(data_);
-        return !!JS_ReadStructuredClone(cx, data_, nbytes_, version_, vp,
-                                        optionalCallbacks, closure);
-    }
+              void *closure=NULL) const;
 
     bool write(JSContext *cx, jsval v,
                const JSStructuredCloneCallbacks *optionalCallbacks=NULL,
-               void *closure=NULL) {
-        clear(cx);
-        cx_ = cx;
-        bool ok = !!JS_WriteStructuredClone(cx, v, &data_, &nbytes_,
-                                            optionalCallbacks, closure);
-        if (!ok) {
-            data_ = NULL;
-            nbytes_ = 0;
-            version_ = JS_STRUCTURED_CLONE_VERSION;
-        }
-        return ok;
-    }
+               void *closure=NULL);
 
     /**
      * Swap ownership with another JSAutoStructuredCloneBuffer.
      */
-    void swap(JSAutoStructuredCloneBuffer &other) {
-        JSContext *cx = other.cx_;
-        uint64 *data = other.data_;
-        size_t nbytes = other.nbytes_;
-        uint32 version = other.version_;
-
-        other.cx_ = this->cx_;
-        other.data_ = this->data_;
-        other.nbytes_ = this->nbytes_;
-        other.version_ = this->version_;
-
-        this->cx_ = cx;
-        this->data_ = data;
-        this->nbytes_ = nbytes;
-        this->version_ = version;
-    }
+    void swap(JSAutoStructuredCloneBuffer &other);
 
   private:
     /* Copy and assignment are not supported. */
     JSAutoStructuredCloneBuffer(const JSAutoStructuredCloneBuffer &other);
     JSAutoStructuredCloneBuffer &operator=(const JSAutoStructuredCloneBuffer &other);
 };
+
+JS_BEGIN_EXTERN_C
 #endif
 
 /* API for implementing custom serialization behavior (for ImageData, File, etc.) */

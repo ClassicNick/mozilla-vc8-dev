@@ -51,6 +51,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "mozilla/RangedPtr.h"
+
 #include "jstypes.h"
 #include "jsstdint.h"
 #include "jsutil.h"
@@ -70,6 +73,7 @@
 #include "jsstr.h"
 #include "jstracer.h"
 #include "jsvector.h"
+#include "jslibmath.h"
 
 #include "jsinterpinlines.h"
 #include "jsnuminlines.h"
@@ -79,6 +83,7 @@
 #include "vm/String-inl.h"
 
 using namespace js;
+using namespace mozilla;
 
 #ifndef JS_HAVE_STDINT_H /* Native support is innocent until proven guilty. */
 
@@ -284,7 +289,7 @@ num_isNaN(JSContext *cx, uintN argc, Value *vp)
         return JS_TRUE;
     }
     jsdouble x;
-    if (!ValueToNumber(cx, vp[2], &x))
+    if (!ToNumber(cx, vp[2], &x))
         return false;
     vp->setBoolean(JSDOUBLE_IS_NaN(x));
     return JS_TRUE;
@@ -298,7 +303,7 @@ num_isFinite(JSContext *cx, uintN argc, Value *vp)
         return JS_TRUE;
     }
     jsdouble x;
-    if (!ValueToNumber(cx, vp[2], &x))
+    if (!ToNumber(cx, vp[2], &x))
         return JS_FALSE;
     vp->setBoolean(JSDOUBLE_IS_FINITE(x));
     return JS_TRUE;
@@ -360,7 +365,7 @@ ParseIntStringHelper(JSContext *cx, const jschar *ws, const jschar *end, int may
     JS_ASSERT(maybeRadix == 0 || (2 <= maybeRadix && maybeRadix <= 36));
     JS_ASSERT(ws <= end);
 
-    const jschar *s = js_SkipWhiteSpace(ws, end);
+    const jschar *s = SkipSpace(ws, end);
     JS_ASSERT(ws <= s);
     JS_ASSERT(s <= end);
 
@@ -570,7 +575,7 @@ Number(JSContext *cx, uintN argc, Value *vp)
     bool isConstructing = IsConstructing(vp);
 
     if (argc > 0) {
-        if (!ValueToNumber(cx, &vp[2]))
+        if (!ToNumber(cx, &vp[2]))
             return false;
         vp[0] = vp[2];
     } else {
@@ -1263,6 +1268,41 @@ NumberToString(JSContext *cx, jsdouble d)
     return NULL;
 }
 
+JSFixedString *
+IndexToString(JSContext *cx, uint32 u)
+{
+    if (JSAtom::hasUintStatic(u))
+        return &JSAtom::uintStatic(u);
+
+    JSCompartment *c = cx->compartment;
+    if (JSFixedString *str = c->dtoaCache.lookup(10, u))
+        return str;
+
+    JSShortString *str = js_NewGCShortString(cx);
+    if (!str)
+        return NULL;
+
+    /* +1, since MAX_LENGTH does not count the null char. */
+    JS_STATIC_ASSERT(JSShortString::MAX_LENGTH + 1 >= sizeof("4294967295"));
+
+    jschar *storage = str->inlineStorageBeforeInit();
+    size_t length = JSShortString::MAX_SHORT_LENGTH;
+    const RangedPtr<jschar> end(storage + length, storage, length + 1);
+    RangedPtr<jschar> cp = end;
+    *cp = '\0';
+
+    do {
+        jsuint newu = u / 10, digit = u % 10;
+        *--cp = '0' + digit;
+        u = newu;
+    } while (u > 0);
+
+    str->initAtOffsetInBuffer(cp.get(), end - cp);
+
+    c->dtoaCache.cache(10, u, str);
+    return str;
+}
+
 bool JS_FASTCALL
 NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb)
 {
@@ -1289,7 +1329,7 @@ NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb)
 }
 
 bool
-ValueToNumberSlow(JSContext *cx, Value v, double *out)
+ToNumberSlow(JSContext *cx, Value v, double *out)
 {
     JS_ASSERT(!v.isNumber());
     goto skip_int_double;
@@ -1335,7 +1375,7 @@ ValueToECMAInt32Slow(JSContext *cx, const Value &v, int32_t *out)
     if (v.isDouble()) {
         d = v.toDouble();
     } else {
-        if (!ValueToNumberSlow(cx, v, &d))
+        if (!ToNumberSlow(cx, v, &d))
             return false;
     }
     *out = js_DoubleToECMAInt32(d);
@@ -1350,7 +1390,7 @@ ValueToECMAUint32Slow(JSContext *cx, const Value &v, uint32_t *out)
     if (v.isDouble()) {
         d = v.toDouble();
     } else {
-        if (!ValueToNumberSlow(cx, v, &d))
+        if (!ToNumberSlow(cx, v, &d))
             return false;
     }
     *out = js_DoubleToECMAUint32(d);
@@ -1397,7 +1437,7 @@ ValueToInt32Slow(JSContext *cx, const Value &v, int32_t *out)
     jsdouble d;
     if (v.isDouble()) {
         d = v.toDouble();
-    } else if (!ValueToNumberSlow(cx, v, &d)) {
+    } else if (!ToNumberSlow(cx, v, &d)) {
         return false;
     }
 
@@ -1417,7 +1457,7 @@ ValueToUint16Slow(JSContext *cx, const Value &v, uint16_t *out)
     jsdouble d;
     if (v.isDouble()) {
         d = v.toDouble();
-    } else if (!ValueToNumberSlow(cx, v, &d)) {
+    } else if (!ToNumberSlow(cx, v, &d)) {
         return false;
     }
 
@@ -1449,15 +1489,14 @@ JSBool
 js_strtod(JSContext *cx, const jschar *s, const jschar *send,
           const jschar **ep, jsdouble *dp)
 {
-    const jschar *s1;
-    size_t length, i;
+    size_t i;
     char cbuf[32];
     char *cstr, *istr, *estr;
     JSBool negative;
     jsdouble d;
 
-    s1 = js_SkipWhiteSpace(s, send);
-    length = send - s1;
+    const jschar *s1 = SkipSpace(s, send);
+    size_t length = send - s1;
 
     /* Use cbuf to avoid malloc */
     if (length >= sizeof cbuf) {

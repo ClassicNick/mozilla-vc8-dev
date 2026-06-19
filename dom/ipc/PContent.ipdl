@@ -131,6 +131,11 @@ child:
 
     FlushMemory(nsString reason);
 
+    /**
+     * Start accessibility engine in content process.
+     */
+    ActivateA11y();
+
 parent:
     PNecko();
     PCrashReporter();

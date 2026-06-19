@@ -240,6 +240,8 @@ public:
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
+  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
+
   /**
    * Called during QueryInterface to give the binding manager a chance to
    * get an interface for this element.
@@ -521,6 +523,7 @@ public:
                                      nsInputEvent* aSourceEvent,
                                      nsIContent* aTarget,
                                      PRBool aFullDispatch,
+                                     PRUint32 aFlags,
                                      nsEventStatus* aStatus);
 
   /**
@@ -781,10 +784,8 @@ protected:
    * Hook to allow subclasses to produce a different nsEventListenerManager if
    * needed for attachment of attribute-defined handlers
    */
-  virtual nsresult
-    GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                   nsISupports** aTarget,
-                                   PRBool* aDefer);
+  virtual nsEventListenerManager*
+    GetEventListenerManagerForAttr(PRBool* aDefer);
 
   /**
    * Copy attributes and state to another element

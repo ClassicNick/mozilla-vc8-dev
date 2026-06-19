@@ -105,6 +105,7 @@
 
 #include "mozilla/unused.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/Element.h"
 
 using namespace mozilla;
 
@@ -329,55 +330,6 @@ nsAccessible::Description(nsString& aDescription)
     aDescription.CompressWhitespace();
 }
 
-// mask values for ui.key.chromeAccess and ui.key.contentAccess
-#define NS_MODIFIER_SHIFT    1
-#define NS_MODIFIER_CONTROL  2
-#define NS_MODIFIER_ALT      4
-#define NS_MODIFIER_META     8
-
-// returns the accesskey modifier mask used in the given node's context
-// (i.e. chrome or content), or 0 if an error occurs
-static PRInt32
-GetAccessModifierMask(nsIContent* aContent)
-{
-  // use ui.key.generalAccessKey (unless it is -1)
-  switch (Preferences::GetInt("ui.key.generalAccessKey", -1)) {
-    case -1:                             break;
-    case nsIDOMKeyEvent::DOM_VK_SHIFT:   return NS_MODIFIER_SHIFT;
-    case nsIDOMKeyEvent::DOM_VK_CONTROL: return NS_MODIFIER_CONTROL;
-    case nsIDOMKeyEvent::DOM_VK_ALT:     return NS_MODIFIER_ALT;
-    case nsIDOMKeyEvent::DOM_VK_META:    return NS_MODIFIER_META;
-    default:                             return 0;
-  }
-
-  // get the docShell to this DOMNode, return 0 on failure
-  nsCOMPtr<nsIDocument> document = aContent->GetCurrentDoc();
-  if (!document)
-    return 0;
-  nsCOMPtr<nsISupports> container = document->GetContainer();
-  if (!container)
-    return 0;
-  nsCOMPtr<nsIDocShellTreeItem> treeItem(do_QueryInterface(container));
-  if (!treeItem)
-    return 0;
-
-  // determine the access modifier used in this context
-  nsresult rv = NS_ERROR_FAILURE;
-  PRInt32 itemType, accessModifierMask = 0;
-  treeItem->GetItemType(&itemType);
-  switch (itemType) {
-    case nsIDocShellTreeItem::typeChrome:
-      rv = Preferences::GetInt("ui.key.chromeAccess", &accessModifierMask);
-      break;
-
-    case nsIDocShellTreeItem::typeContent:
-      rv = Preferences::GetInt("ui.key.contentAccess", &accessModifierMask);
-      break;
-  }
-
-  return NS_SUCCEEDED(rv) ? accessModifierMask : 0;
-}
-
 NS_IMETHODIMP
 nsAccessible::GetKeyboardShortcut(nsAString& aAccessKey)
 {
@@ -386,6 +338,13 @@ nsAccessible::GetKeyboardShortcut(nsAString& aAccessKey)
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
+  AccessKey().ToString(aAccessKey);
+  return NS_OK;
+}
+
+KeyBinding
+nsAccessible::AccessKey() const
+{
   PRUint32 key = nsCoreUtils::GetAccessKeyFor(mContent);
   if (!key && mContent->IsElement()) {
     nsAccessible* label = nsnull;
@@ -408,40 +367,64 @@ nsAccessible::GetKeyboardShortcut(nsAString& aAccessKey)
   }
 
   if (!key)
-    return NS_OK;
+    return KeyBinding();
 
-  nsAutoString accesskey(key);
-
-  // Append the modifiers in reverse order, result: Control+Alt+Shift+Meta+<key>
-  nsAutoString propertyKey;
-  PRInt32 modifierMask = GetAccessModifierMask(mContent);
-  if (modifierMask & NS_MODIFIER_META) {
-    propertyKey.AssignLiteral("VK_META");
-    nsAccessible::GetFullKeyName(propertyKey, accesskey, accesskey);
-  }
-  if (modifierMask & NS_MODIFIER_SHIFT) {
-    propertyKey.AssignLiteral("VK_SHIFT");
-    nsAccessible::GetFullKeyName(propertyKey, accesskey, accesskey);
-  }
-  if (modifierMask & NS_MODIFIER_ALT) {
-    propertyKey.AssignLiteral("VK_ALT");
-    nsAccessible::GetFullKeyName(propertyKey, accesskey, accesskey);
-  }
-  if (modifierMask & NS_MODIFIER_CONTROL) {
-    propertyKey.AssignLiteral("VK_CONTROL");
-    nsAccessible::GetFullKeyName(propertyKey, accesskey, accesskey);
+  // Get modifier mask. Use ui.key.generalAccessKey (unless it is -1).
+  switch (Preferences::GetInt("ui.key.generalAccessKey", -1)) {
+  case -1:
+    break;
+  case nsIDOMKeyEvent::DOM_VK_SHIFT:
+    return KeyBinding(key, KeyBinding::kShift);
+  case nsIDOMKeyEvent::DOM_VK_CONTROL:
+    return KeyBinding(key, KeyBinding::kControl);
+  case nsIDOMKeyEvent::DOM_VK_ALT:
+    return KeyBinding(key, KeyBinding::kAlt);
+  case nsIDOMKeyEvent::DOM_VK_META:
+    return KeyBinding(key, KeyBinding::kMeta);
+  default:
+    return KeyBinding();
   }
 
-  aAccessKey = accesskey;
-  return NS_OK;
+  // Determine the access modifier used in this context.
+  nsIDocument* document = mContent->GetCurrentDoc();
+  if (!document)
+    return KeyBinding();
+  nsCOMPtr<nsISupports> container = document->GetContainer();
+  if (!container)
+    return KeyBinding();
+  nsCOMPtr<nsIDocShellTreeItem> treeItem(do_QueryInterface(container));
+  if (!treeItem)
+    return KeyBinding();
+
+  nsresult rv = NS_ERROR_FAILURE;
+  PRInt32 itemType = 0, modifierMask = 0;
+  treeItem->GetItemType(&itemType);
+  switch (itemType) {
+    case nsIDocShellTreeItem::typeChrome:
+      rv = Preferences::GetInt("ui.key.chromeAccess", &modifierMask);
+      break;
+    case nsIDocShellTreeItem::typeContent:
+      rv = Preferences::GetInt("ui.key.contentAccess", &modifierMask);
+      break;
+  }
+
+  return NS_SUCCEEDED(rv) ? KeyBinding(key, modifierMask) : KeyBinding();
+}
+
+KeyBinding
+nsAccessible::KeyboardShortcut() const
+{
+  return KeyBinding();
 }
 
 NS_IMETHODIMP
 nsAccessible::GetParent(nsIAccessible **aParent)
 {
   NS_ENSURE_ARG_POINTER(aParent);
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
 
-  NS_IF_ADDREF(*aParent = GetParent());
+  NS_IF_ADDREF(*aParent = Parent());
   return *aParent ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -604,22 +587,6 @@ nsresult nsAccessible::GetTranslatedString(const nsAString& aKey, nsAString& aSt
   return NS_OK;
 }
 
-nsresult nsAccessible::GetFullKeyName(const nsAString& aModifierName, const nsAString& aKeyName, nsAString& aStringOut)
-{
-  nsXPIDLString modifierName, separator;
-
-  if (!gKeyStringBundle ||
-      NS_FAILED(gKeyStringBundle->GetStringFromName(PromiseFlatString(aModifierName).get(), 
-                                                    getter_Copies(modifierName))) ||
-      NS_FAILED(gKeyStringBundle->GetStringFromName(NS_LITERAL_STRING("MODIFIER_SEPARATOR").get(), 
-                                                    getter_Copies(separator)))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  aStringOut = modifierName + separator + aKeyName; 
-  return NS_OK;
-}
-
 PRBool
 nsAccessible::IsVisible(PRBool* aIsOffscreen)
 {
@@ -764,7 +731,7 @@ nsAccessible::GetFocusedChild(nsIAccessible **aFocusedChild)
   }
   else if (gLastFocusedNode) {
     focusedChild = GetAccService()->GetAccessible(gLastFocusedNode);
-    if (focusedChild && focusedChild->GetParent() != this)
+    if (focusedChild && focusedChild->Parent() != this)
       focusedChild = nsnull;
   }
 
@@ -854,7 +821,7 @@ nsAccessible::ChildAtPoint(PRInt32 aX, PRInt32 aY,
   // ensure obtained accessible is a child of this accessible.
   nsAccessible* child = accessible;
   while (true) {
-    nsAccessible* parent = child->GetParent();
+    nsAccessible* parent = child->Parent();
     if (!parent) {
       // Reached the top of the hierarchy. These bounds were inside an
       // accessible that is not a descendant of this one.
@@ -1788,6 +1755,10 @@ NS_IMETHODIMP
 nsAccessible::GetDefaultKeyBinding(nsAString& aKeyBinding)
 {
   aKeyBinding.Truncate();
+  if (IsDefunct())
+    return NS_ERROR_FAILURE;
+
+  KeyboardShortcut().ToString(aKeyBinding);
   return NS_OK;
 }
 
@@ -2171,9 +2142,8 @@ nsAccessible::GetRelationByType(PRUint32 aRelationType,
         nsIView *view = frame->GetViewExternal();
         if (view) {
           nsIScrollableFrame *scrollFrame = do_QueryFrame(frame);
-          if (scrollFrame || view->GetWidget() || !frame->GetParent()) {
-            return nsRelUtils::AddTarget(aRelationType, aRelation, GetParent());
-          }
+          if (scrollFrame || view->GetWidget() || !frame->GetParent())
+            return nsRelUtils::AddTarget(aRelationType, aRelation, Parent());
         }
       }
 
@@ -2646,7 +2616,7 @@ nsAccessible::AppendTextTo(nsAString& aText, PRUint32 aStartOffset,
 
   if (frame->GetType() == nsAccessibilityAtoms::brFrame) {
     aText += kForcedNewLineChar;
-  } else if (nsAccUtils::MustPrune(GetParent())) {
+  } else if (nsAccUtils::MustPrune(Parent())) {
     // Expose the embedded object accessible as imaginary embedded object
     // character if its parent hypertext accessible doesn't expose children to
     // AT.
@@ -3141,16 +3111,7 @@ nsAccessible::EnsureChildren()
   // State is embedded children until text leaf accessible is appended.
   SetChildrenFlag(eEmbeddedChildren); // Prevent reentry
 
-  // Notify the document about caching status.
-  nsDocAccessible* document = GetDocAccessible();
-  if (document)
-    document->NotifyOfCachingStart(this);
-
   CacheChildren();
-
-  if (document)
-    document->NotifyOfCachingEnd(this);
-
   return false;
 }
 
@@ -3297,16 +3258,18 @@ nsAccessible::GetLevelInternal()
 {
   PRInt32 level = nsAccUtils::GetDefaultLevel(this);
 
-  PRUint32 role = Role();
-  nsAccessible* parent = GetParent();
+  if (!IsBoundToParent())
+    return level;
 
+  PRUint32 role = Role();
   if (role == nsIAccessibleRole::ROLE_OUTLINEITEM) {
     // Always expose 'level' attribute for 'outlineitem' accessible. The number
     // of nested 'grouping' accessibles containing 'outlineitem' accessible is
     // its level.
     level = 1;
 
-    while (parent) {
+    nsAccessible* parent = this;
+    while ((parent = parent->Parent())) {
       PRUint32 parentRole = parent->Role();
 
       if (parentRole == nsIAccessibleRole::ROLE_OUTLINE)
@@ -3314,7 +3277,6 @@ nsAccessible::GetLevelInternal()
       if (parentRole == nsIAccessibleRole::ROLE_GROUPING)
         ++ level;
 
-      parent = parent->GetParent();
     }
 
   } else if (role == nsIAccessibleRole::ROLE_LISTITEM) {
@@ -3325,8 +3287,8 @@ nsAccessible::GetLevelInternal()
 
     // Calculate 'level' attribute based on number of parent listitems.
     level = 0;
-
-    while (parent) {
+    nsAccessible* parent = this;
+    while ((parent = parent->Parent())) {
       PRUint32 parentRole = parent->Role();
 
       if (parentRole == nsIAccessibleRole::ROLE_LISTITEM)
@@ -3334,23 +3296,20 @@ nsAccessible::GetLevelInternal()
       else if (parentRole != nsIAccessibleRole::ROLE_LIST)
         break;
 
-      parent = parent->GetParent();
     }
 
     if (level == 0) {
       // If this listitem is on top of nested lists then expose 'level'
       // attribute.
-      nsAccessible* parent(GetParent());
+      parent = Parent();
       PRInt32 siblingCount = parent->GetChildCount();
       for (PRInt32 siblingIdx = 0; siblingIdx < siblingCount; siblingIdx++) {
         nsAccessible* sibling = parent->GetChildAt(siblingIdx);
 
-        nsCOMPtr<nsIAccessible> siblingChild;
-        sibling->GetLastChild(getter_AddRefs(siblingChild));
-        if (nsAccUtils::Role(siblingChild) == nsIAccessibleRole::ROLE_LIST) {
-          level = 1;
-          break;
-        }
+        nsAccessible* siblingChild = sibling->LastChild();
+        if (siblingChild &&
+            siblingChild->Role() == nsIAccessibleRole::ROLE_LIST)
+          return 1;
       }
     } else {
       ++ level; // level is 1-index based
@@ -3358,4 +3317,80 @@ nsAccessible::GetLevelInternal()
   }
 
   return level;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// KeyBinding class
+
+void
+KeyBinding::ToPlatformFormat(nsAString& aValue) const
+{
+  nsCOMPtr<nsIStringBundle> keyStringBundle;
+  nsCOMPtr<nsIStringBundleService> stringBundleService =
+      mozilla::services::GetStringBundleService();
+  if (stringBundleService)
+    stringBundleService->CreateBundle(PLATFORM_KEYS_BUNDLE_URL,
+                                      getter_AddRefs(keyStringBundle));
+
+  if (!keyStringBundle)
+    return;
+
+  nsAutoString separator;
+  keyStringBundle->GetStringFromName(NS_LITERAL_STRING("MODIFIER_SEPARATOR").get(),
+                                     getter_Copies(separator));
+
+  nsAutoString modifierName;
+  if (mModifierMask & kControl) {
+    keyStringBundle->GetStringFromName(NS_LITERAL_STRING("VK_CONTROL").get(),
+                                       getter_Copies(modifierName));
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kAlt) {
+    keyStringBundle->GetStringFromName(NS_LITERAL_STRING("VK_ALT").get(),
+                                       getter_Copies(modifierName));
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kShift) {
+    keyStringBundle->GetStringFromName(NS_LITERAL_STRING("VK_SHIFT").get(),
+                                       getter_Copies(modifierName));
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  if (mModifierMask & kMeta) {
+    keyStringBundle->GetStringFromName(NS_LITERAL_STRING("VK_META").get(),
+                                       getter_Copies(modifierName));
+
+    aValue.Append(modifierName);
+    aValue.Append(separator);
+  }
+
+  aValue.Append(mKey);
+}
+
+void
+KeyBinding::ToAtkFormat(nsAString& aValue) const
+{
+  nsAutoString modifierName;
+  if (mModifierMask & kControl)
+    aValue.Append(NS_LITERAL_STRING("<Control>"));
+
+  if (mModifierMask & kAlt)
+    aValue.Append(NS_LITERAL_STRING("<Alt>"));
+
+  if (mModifierMask & kShift)
+    aValue.Append(NS_LITERAL_STRING("<Shift>"));
+
+  if (mModifierMask & kMeta)
+      aValue.Append(NS_LITERAL_STRING("<Meta>"));
+
+  aValue.Append(mKey);
 }

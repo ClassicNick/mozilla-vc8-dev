@@ -46,6 +46,7 @@
 #include "nsFrameLoader.h"
 #include "nsGkAtoms.h"
 #include "nsContentCreatorFunctions.h"
+#include "nsDOMMemoryReporter.h"
 
 class nsIDOMAttr;
 class nsIDOMEventListener;
@@ -80,6 +81,9 @@ public:
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
   }
+
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsGenericHTMLElement,
+                                              nsGenericHTMLElementBase)
 
   /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
   static nsGenericHTMLElement* FromContent(nsIContent *aContent)
@@ -579,10 +583,8 @@ protected:
   virtual nsresult AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
                                 const nsAString* aValue, PRBool aNotify);
 
-  virtual nsresult
-    GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                   nsISupports** aTarget,
-                                   PRBool* aDefer);
+  virtual nsEventListenerManager*
+    GetEventListenerManagerForAttr(PRBool* aDefer);
 
   virtual const nsAttrName* InternalGetExistingAttrNameFromQName(const nsAString& aStr) const;
 
@@ -608,19 +610,6 @@ protected:
    * @param aResult  result value [out]
    */
   NS_HIDDEN_(nsresult) SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue);
-
-  /**
-   * Helper method for NS_IMPL_STRING_ATTR_DEFAULT_VALUE macro.
-   * Gets the value of an attribute, returns specified default value if the
-   * attribute isn't set. Only works for attributes in null namespace.
-   *
-   * @param aAttr    name of attribute.
-   * @param aDefault default-value to return if attribute isn't set.
-   * @param aResult  result value [out]
-   */
-  NS_HIDDEN_(nsresult) GetStringAttrWithDefault(nsIAtom* aAttr,
-                                                const char* aDefault,
-                                                nsAString& aResult);
 
   /**
    * Helper method for NS_IMPL_BOOL_ATTR macro.
@@ -833,6 +822,9 @@ public:
   nsGenericHTMLFormElement(already_AddRefed<nsINodeInfo> aNodeInfo);
   virtual ~nsGenericHTMLFormElement();
 
+  NS_DECL_AND_IMPL_DOM_MEMORY_REPORTER_SIZEOF(nsGenericHTMLFormElement,
+                                              nsGenericHTMLElement)
+
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
 
   virtual PRBool IsNodeOfType(PRUint32 aFlags) const;
@@ -959,6 +951,9 @@ protected:
   static PRBool FormIdUpdated(Element* aOldElement, Element* aNewElement,
                               void* aData);
 
+  // Returns true if the event should not be handled from PreHandleEvent
+  virtual PRBool IsElementDisabledForEvents(PRUint32 aMessage, nsIFrame* aFrame);
+
   // The focusability state of this form control.  eUnfocusable means that it
   // shouldn't be focused at all, eInactiveWindow means it's in an inactive
   // window, eActiveWindow means it's in an active window.
@@ -1015,6 +1010,8 @@ public:
     mNetworkCreated = aFromParser == mozilla::dom::FROM_PARSER_NETWORK;
   }
   virtual ~nsGenericHTMLFrameElement();
+
+  NS_DECL_DOM_MEMORY_REPORTER_SIZEOF
 
   // nsISupports
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr);
@@ -1082,23 +1079,6 @@ protected:
   _class::Set##_method(const nsAString& aValue)                      \
   {                                                                  \
     return SetAttrHelper(nsGkAtoms::_atom, aValue);                  \
-  }
-
-/**
- * A macro to implement the getter and setter for a given string
- * valued content property with a default value.
- * The method uses the generic GetAttr and SetAttr methods.
- */
-#define NS_IMPL_STRING_ATTR_DEFAULT_VALUE(_class, _method, _atom, _default) \
-  NS_IMETHODIMP                                                      \
-  _class::Get##_method(nsAString& aValue)                            \
-  {                                                                  \
-    return GetStringAttrWithDefault(nsGkAtoms::_atom, _default, aValue);\
-  }                                                                  \
-  NS_IMETHODIMP                                                      \
-  _class::Set##_method(const nsAString& aValue)                      \
-  {                                                                  \
-    return SetAttrHelper(nsGkAtoms::_atom, aValue);                \
   }
 
 /**
@@ -1562,7 +1542,6 @@ NS_DECLARE_NS_NEW_HTML_ELEMENT_AS_SHARED(Html)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(IFrame)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Image)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Input)
-NS_DECLARE_NS_NEW_HTML_ELEMENT(IsIndex)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(LI)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Label)
 NS_DECLARE_NS_NEW_HTML_ELEMENT(Legend)

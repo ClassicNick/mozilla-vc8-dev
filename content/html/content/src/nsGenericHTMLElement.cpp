@@ -1123,10 +1123,8 @@ nsGenericHTMLElement::AfterSetAttr(PRInt32 aNamespaceID, nsIAtom* aName,
                                                 aValue, aNotify);
 }
 
-nsresult
-nsGenericHTMLElement::GetEventListenerManagerForAttr(nsEventListenerManager** aManager,
-                                                     nsISupports** aTarget,
-                                                     PRBool* aDefer)
+nsEventListenerManager*
+nsGenericHTMLElement::GetEventListenerManagerForAttr(PRBool* aDefer)
 {
   // Attributes on the body and frameset tags get set on the global object
   if (mNodeInfo->Equals(nsGkAtoms::body) ||
@@ -1139,36 +1137,23 @@ nsGenericHTMLElement::GetEventListenerManagerForAttr(nsEventListenerManager** aM
     // XXXbz sXBL/XBL2 issue: should we instead use GetCurrentDoc() here,
     // override BindToTree for those classes and munge event listeners there?
     nsIDocument *document = GetOwnerDoc();
-    nsresult rv = NS_OK;
 
     // FIXME (https://bugzilla.mozilla.org/show_bug.cgi?id=431767)
     // nsDocument::GetInnerWindow can return an outer window in some cases,
     // we don't want to stick an event listener on an outer window, so
     // bail if it does.
+    *aDefer = PR_FALSE;
     if (document &&
         (win = document->GetInnerWindow()) && win->IsInnerWindow()) {
       nsCOMPtr<nsIDOMEventTarget> piTarget(do_QueryInterface(win));
-      NS_ENSURE_TRUE(piTarget, NS_ERROR_FAILURE);
 
-      *aManager = piTarget->GetListenerManager(PR_TRUE);
-
-      if (*aManager) {
-        NS_ADDREF(*aTarget = win);
-        NS_ADDREF(*aManager);
-      }
-      *aDefer = PR_FALSE;
-    } else {
-      *aManager = nsnull;
-      *aTarget = nsnull;
-      *aDefer = PR_FALSE;
+      return piTarget->GetListenerManager(PR_TRUE);
     }
 
-    return rv;
+    return nsnull;
   }
 
-  return nsGenericHTMLElementBase::GetEventListenerManagerForAttr(aManager,
-                                                                  aTarget,
-                                                                  aDefer);
+  return nsGenericHTMLElementBase::GetEventListenerManagerForAttr(aDefer);
 }
 
 nsresult
@@ -2104,17 +2089,6 @@ nsGenericHTMLElement::SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue)
 }
 
 nsresult
-nsGenericHTMLElement::GetStringAttrWithDefault(nsIAtom* aAttr,
-                                               const char* aDefault,
-                                               nsAString& aResult)
-{
-  if (!GetAttr(kNameSpaceID_None, aAttr, aResult)) {
-    CopyASCIItoUTF16(aDefault, aResult);
-  }
-  return NS_OK;
-}
-
-nsresult
 nsGenericHTMLElement::SetBoolAttr(nsIAtom* aAttr, PRBool aValue)
 {
   if (aValue) {
@@ -2886,6 +2860,20 @@ nsGenericHTMLFormElement::FormIdUpdated(Element* aOldElement,
   return PR_TRUE;
 }
 
+PRBool 
+nsGenericHTMLFormElement::IsElementDisabledForEvents(PRUint32 aMessage, 
+                                                    nsIFrame* aFrame)
+{
+  PRBool disabled = IsDisabled();
+  if (!disabled && aFrame) {
+    const nsStyleUserInterface* uiStyle = aFrame->GetStyleUserInterface();
+    disabled = uiStyle->mUserInput == NS_STYLE_USER_INPUT_NONE ||
+      uiStyle->mUserInput == NS_STYLE_USER_INPUT_DISABLED;
+
+  }
+  return disabled && aMessage != NS_MOUSE_MOVE;
+}
+
 void
 nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
                                           Element* aFormIdElement)
@@ -3223,6 +3211,16 @@ nsGenericHTMLFrameElement::CopyInnerTo(nsGenericElement* aDest) const
   }
 
   return rv;
+}
+
+PRInt64
+nsGenericHTMLFrameElement::SizeOf() const
+{
+  PRInt64 size = MemoryReporter::GetBasicSize<nsGenericHTMLFrameElement,
+                                              nsGenericHTMLElement>(this);
+  // TODO: need to implement SizeOf() in nsFrameLoader, bug 672539.
+  size += mFrameLoader ? sizeof(*mFrameLoader.get()) : 0;
+  return size;
 }
 
 //----------------------------------------------------------------------

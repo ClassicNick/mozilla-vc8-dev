@@ -266,7 +266,7 @@ already_AddRefed<nsIAccessibleTable>
 nsHTMLTableCellAccessible::GetTableAccessible()
 {
   nsAccessible* parent = this;
-  while ((parent = parent->GetParent())) {
+  while ((parent = parent->Parent())) {
     PRUint32 role = parent->Role();
     if (role == nsIAccessibleRole::ROLE_TABLE ||
         role == nsIAccessibleRole::ROLE_TREE_TABLE) {
@@ -511,7 +511,7 @@ nsHTMLTableAccessible::GetRelationByType(PRUint32 aRelationType,
                                                     aRelation);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aRelationType == nsIAccessibleRelation::RELATION_DESCRIBED_BY)
+  if (aRelationType == nsIAccessibleRelation::RELATION_LABELLED_BY)
     return nsRelUtils::AddTarget(aRelationType, aRelation, Caption());
 
   return NS_OK;
@@ -1528,10 +1528,8 @@ nsHTMLCaptionAccessible::GetRelationByType(PRUint32 aRelationType,
                                                          aRelation);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aRelationType == nsIAccessibleRelation::RELATION_DESCRIPTION_FOR) {
-    nsCOMPtr<nsIAccessible> accParent;
-    GetParent(getter_AddRefs(accParent));
-    return nsRelUtils::AddTarget(aRelationType, aRelation, accParent);
+  if (aRelationType == nsIAccessibleRelation::RELATION_LABEL_FOR) {
+      return nsRelUtils::AddTarget(aRelationType, aRelation, Parent());
   }
 
   return NS_OK;

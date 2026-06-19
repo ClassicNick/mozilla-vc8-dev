@@ -49,6 +49,7 @@
 #include "ImageLayers.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/Mutex.h"
+#include "nsIMemoryReporter.h"
 
 class nsHTMLMediaElement;
 class nsMediaStream;
@@ -64,20 +65,6 @@ class nsTimeRanges;
 // has to be within the following range.
 #define FRAMEBUFFER_LENGTH_MIN 512
 #define FRAMEBUFFER_LENGTH_MAX 16384
-
-// Shuts down a thread asynchronously.
-class ShutdownThreadEvent : public nsRunnable 
-{
-public:
-  ShutdownThreadEvent(nsIThread* aThread) : mThread(aThread) {}
-  ~ShutdownThreadEvent() {}
-  NS_IMETHOD Run() {
-    mThread->Shutdown();
-    return NS_OK;
-  }
-private:
-  nsCOMPtr<nsIThread> mThread;
-};
 
 // All methods of nsMediaDecoder must be called from the main thread only
 // with the exception of GetImageContainer, SetVideoData and GetStatistics,
@@ -383,6 +370,11 @@ public:
   // to buffer, given the current download and playback rates.
   PRBool CanPlayThrough();
 
+  // Returns the size, in bytes, of the heap memory used by the currently
+  // queued decoded video and audio data.
+  virtual PRInt64 VideoQueueMemoryInUse() = 0;
+  virtual PRInt64 AudioQueueMemoryInUse() = 0;
+
 protected:
 
   // Start timer to update download progress information.
@@ -472,4 +464,62 @@ protected:
   PRPackedBool mShuttingDown;
 };
 
+namespace mozilla {
+class MediaMemoryReporter
+{
+  MediaMemoryReporter();
+  ~MediaMemoryReporter();
+  static MediaMemoryReporter* sUniqueInstance;
+
+  static MediaMemoryReporter* UniqueInstance() {
+    if (!sUniqueInstance) {
+      sUniqueInstance = new MediaMemoryReporter;
+    }
+    return sUniqueInstance;
+  }
+
+  typedef nsTArray<nsMediaDecoder*> DecodersArray;
+  static DecodersArray& Decoders() {
+    return UniqueInstance()->mDecoders;
+  }
+
+  DecodersArray mDecoders;
+
+  nsCOMPtr<nsIMemoryReporter> mMediaDecodedVideoMemory;
+  nsCOMPtr<nsIMemoryReporter> mMediaDecodedAudioMemory;
+
+public:
+  static void AddMediaDecoder(nsMediaDecoder* aDecoder) {
+    Decoders().AppendElement(aDecoder);
+  }
+
+  static void RemoveMediaDecoder(nsMediaDecoder* aDecoder) {
+    DecodersArray& decoders = Decoders();
+    decoders.RemoveElement(aDecoder);
+    if (decoders.IsEmpty()) {
+      delete sUniqueInstance;
+      sUniqueInstance = nsnull;
+    }
+  }
+
+  static PRInt64 GetDecodedVideoMemory() {
+    DecodersArray& decoders = Decoders();
+    PRInt64 result = 0;
+    for (size_t i = 0; i < decoders.Length(); ++i) {
+      result += decoders[i]->VideoQueueMemoryInUse();
+    }
+    return result;
+  }
+
+  static PRInt64 GetDecodedAudioMemory() {
+    DecodersArray& decoders = Decoders();
+    PRInt64 result = 0;
+    for (size_t i = 0; i < decoders.Length(); ++i) {
+      result += decoders[i]->AudioQueueMemoryInUse();
+    }
+    return result;
+  }
+};
+
+} //namespace mozilla
 #endif
