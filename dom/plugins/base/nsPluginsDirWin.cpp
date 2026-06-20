@@ -43,6 +43,8 @@
   by Alex Musil
  */
 
+#include "mozilla/Util.h"
+
 #include "nsPluginsDir.h"
 #include "prlink.h"
 #include "plstr.h"
@@ -56,6 +58,8 @@
 #include "nsILocalFile.h"
 #include "nsUnicharUtils.h"
 #include "nsSetDllDirectory.h"
+
+using namespace mozilla;
 
 /* Local helper functions */
 

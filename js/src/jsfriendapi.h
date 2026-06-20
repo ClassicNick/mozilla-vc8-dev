@@ -46,6 +46,9 @@
 
 JS_BEGIN_EXTERN_C
 
+extern JS_FRIEND_API(void)
+JS_SetGrayGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data);
+
 extern JS_FRIEND_API(JSString *)
 JS_GetAnonymousString(JSRuntime *rt);
 
@@ -75,6 +78,24 @@ JS_SetProtoCalled(JSContext *cx);
 
 extern JS_FRIEND_API(size_t)
 JS_GetCustomIteratorCount(JSContext *cx);
+
+extern JS_FRIEND_API(JSBool)
+JS_NondeterministicGetWeakMapKeys(JSContext *cx, JSObject *obj, JSObject **ret);
+
+enum {
+    JS_TELEMETRY_GC_REASON,
+    JS_TELEMETRY_GC_IS_COMPARTMENTAL,
+    JS_TELEMETRY_GC_IS_SHAPE_REGEN,
+    JS_TELEMETRY_GC_MS,
+    JS_TELEMETRY_GC_MARK_MS,
+    JS_TELEMETRY_GC_SWEEP_MS
+};
+
+typedef void
+(* JSAccumulateTelemetryDataCallback)(int id, JSUint32 sample);
+
+extern JS_FRIEND_API(void)
+JS_SetAccumulateTelemetryCallback(JSRuntime *rt, JSAccumulateTelemetryDataCallback callback);
 
 /* Data for tracking analysis/inference memory usage. */
 typedef struct TypeInferenceMemoryStats
@@ -129,6 +150,16 @@ JS_END_EXTERN_C
 #ifdef __cplusplus
 
 namespace js {
+
+#ifdef DEBUG
+ /*
+  * DEBUG-only method to dump the complete object graph of heap-allocated things.
+  * fp is the file for the dump output.
+  */
+extern JS_FRIEND_API(void)
+DumpHeapComplete(JSContext *cx, FILE *fp);
+
+#endif
 
 class JS_FRIEND_API(AutoPreserveCompartment) {
   private:
@@ -312,6 +343,9 @@ CastAsJSStrictPropertyOp(JSObject *object)
 
 JS_FRIEND_API(bool)
 GetPropertyNames(JSContext *cx, JSObject *obj, uintN flags, js::AutoIdVector *props);
+
+JS_FRIEND_API(bool)
+StringIsArrayIndex(JSLinearString *str, jsuint *indexp);
 
 /*
  * NB: these flag bits are encoded into the bytecode stream in the immediate
