@@ -136,7 +136,7 @@ SpdySession::~SpdySession()
   
   mStreamTransactionHash.Enumerate(Shutdown, this);
   Telemetry::Accumulate(Telemetry::SPDY_PARALLEL_STREAMS, mConcurrentHighWater);
-  Telemetry::Accumulate(Telemetry::SPDY_TOTAL_STREAMS, (mNextStreamID - 1) / 2);
+  Telemetry::Accumulate(Telemetry::SPDY_REQUEST_PER_CONN, (mNextStreamID - 1) / 2);
   Telemetry::Accumulate(Telemetry::SPDY_SERVER_INITIATED_STREAMS,
                         mServerPushedResources);
 }
@@ -742,6 +742,15 @@ SpdySession::CleanupStream(SpdyStream *aStream, nsresult aResult)
     SpdyStream *stream = static_cast<SpdyStream *>(mUrgentForWrite.PopFront());
     if (stream != aStream)
       mUrgentForWrite.Push(stream);
+  }
+
+  // Check the streams queued for activation. Because we normally accept a high
+  // level of parallelization this should also be short.
+  size = mQueuedStreams.GetSize();
+  for (PRUint32 count = 0; count < size; ++count) {
+    SpdyStream *stream = static_cast<SpdyStream *>(mQueuedStreams.PopFront());
+    if (stream != aStream)
+      mQueuedStreams.Push(stream);
   }
 
   // Remove the stream from the ID hash table. (this one isn't short, which is
@@ -1720,7 +1729,7 @@ SpdySession::ResumeRecv(nsAHttpTransaction *caller)
 bool
 SpdySession::IsPersistent()
 {
-  return PR_TRUE;
+  return true;
 }
 
 nsresult
@@ -1778,7 +1787,7 @@ bool
 SpdySession::IsDone()
 {
   NS_ABORT_IF_FALSE(false, "SpdySession::IsDone()");
-  return PR_FALSE;
+  return false;
 }
 
 nsresult
@@ -1803,6 +1812,12 @@ SpdySession::RequestHead()
                     "SpdySession::RequestHead() "
                     "should not be called after SPDY is setup");
   return NULL;
+}
+
+PRUint32
+SpdySession::Http1xTransactionCount()
+{
+  return 0;
 }
 
 //-----------------------------------------------------------------------------

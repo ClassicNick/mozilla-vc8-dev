@@ -75,25 +75,29 @@ CPPSRCS	= \
 
 DEFINES += -DMOZ_GFX -DUSE_CAIRO
 
-ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
+ifdef MOZ_ENABLE_SKIA
 CPPSRCS	+= \
-		SourceSurfaceSkia.cpp \
-		DrawTargetSkia.cpp \
-		PathSkia.cpp \
+        SourceSurfaceSkia.cpp \
+        DrawTargetSkia.cpp \
+        PathSkia.cpp \
         ScaledFontSkia.cpp \
-		ScaledFontMac.cpp \
         $(NULL)
+
 DEFINES += -DUSE_SKIA
+
+endif
+
+ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
+ifdef MOZ_ENABLE_SKIA
+CPPSRCS += \
+        ScaledFontMac.cpp \
+        $(NULL)
+
+endif
 endif
 
 ifeq (android,$(MOZ_WIDGET_TOOLKIT))
-CPPSRCS	+= \
-		SourceSurfaceSkia.cpp \
-		DrawTargetSkia.cpp \
-        ScaledFontSkia.cpp \
-		PathSkia.cpp \
-        $(NULL)
-DEFINES += -DUSE_SKIA -DSK_BUILD_FOR_ANDROID_NDK
+DEFINES += -DSK_BUILD_FOR_ANDROID_NDK
 endif
 
 DEFINES += -DSK_A32_SHIFT=24 -DSK_R32_SHIFT=16 -DSK_G32_SHIFT=8 -DSK_B32_SHIFT=0
@@ -114,7 +118,6 @@ CPPSRCS	+= \
 endif
 
 DEFINES += -DWIN32
-endif
 
 ifdef MOZ_ENABLE_SKIA
 CPPSRCS += \
@@ -124,6 +127,8 @@ CPPSRCS += \
         ScaledFontSkia.cpp \
         ScaledFontWin.cpp \
         $(NULL)
+DEFINES += -DUSE_SKIA
+endif
 endif
 
 #ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)

@@ -197,6 +197,13 @@ void
 MarkChildren(JSTracer *trc, JSXML *xml);
 
 /*
+ * Trace through the shape and any shapes it contains to mark
+ * non-shape children.
+ */
+void
+MarkCycleCollectorChildren(JSTracer *trc, const Shape *shape);
+
+/*
  * Use function overloading to decide which function should be called based on
  * the type of the object. The static type is used at compile time to link to
  * the corresponding Mark/IsMarked function.

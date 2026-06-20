@@ -2302,6 +2302,27 @@ protected:
     nsString mName;
 };
 
+class WebGLShaderPrecisionFormat
+    : public nsIWebGLShaderPrecisionFormat
+{
+public:
+    WebGLShaderPrecisionFormat(WebGLint rangeMin, WebGLint rangeMax, WebGLint precision) :
+        mRangeMin(rangeMin),
+        mRangeMax(rangeMax),
+        mPrecision(precision)
+    {
+    
+    }
+
+    NS_DECL_ISUPPORTS
+    NS_DECL_NSIWEBGLSHADERPRECISIONFORMAT
+
+protected:
+    WebGLint mRangeMin;
+    WebGLint mRangeMax;
+    WebGLint mPrecision;
+};
+
 class WebGLExtension
     : public nsIWebGLExtension
     , public WebGLContextBoundObject

@@ -390,7 +390,6 @@ public:
     static jclass jAddressClass;
     static jmethodID jGetAddressLineMethod;
     static jmethodID jGetAdminAreaMethod;
-    static jmethodID jGetCountryCodeMethod;
     static jmethodID jGetCountryNameMethod;
     static jmethodID jGetFeatureNameMethod;
     static jmethodID jGetLocalityMethod;
@@ -531,7 +530,6 @@ public:
         GECKO_EVENT_SYNC = 15,
         FORCED_RESIZE = 16,
         ACTIVITY_START = 17,
-        SAVE_STATE = 18,
         BROADCAST = 19,
         dummy_java_enum_list_end
     };

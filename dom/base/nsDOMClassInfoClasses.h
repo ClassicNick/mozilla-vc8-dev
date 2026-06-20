@@ -293,6 +293,7 @@ DOMCI_CLASS(SVGTextElement)
 DOMCI_CLASS(SVGTextPathElement)
 DOMCI_CLASS(SVGTitleElement)
 DOMCI_CLASS(SVGTSpanElement)
+DOMCI_CLASS(SVGUnknownElement)
 DOMCI_CLASS(SVGUseElement)
 
 // other SVG classes
@@ -473,6 +474,7 @@ DOMCI_CLASS(WebGLShader)
 DOMCI_CLASS(WebGLFramebuffer)
 DOMCI_CLASS(WebGLRenderbuffer)
 DOMCI_CLASS(WebGLUniformLocation)
+DOMCI_CLASS(WebGLShaderPrecisionFormat)
 DOMCI_CLASS(WebGLActiveInfo)
 DOMCI_CLASS(WebGLExtension)
 DOMCI_CLASS(WebGLExtensionStandardDerivatives)
@@ -498,7 +500,7 @@ DOMCI_CLASS(DesktopNotification)
 DOMCI_CLASS(DesktopNotificationCenter)
 
 // WebSocket
-DOMCI_CLASS(MozWebSocket)
+DOMCI_CLASS(WebSocket)
 DOMCI_CLASS(CloseEvent)
 
 DOMCI_CLASS(IDBFactory)

@@ -80,6 +80,9 @@ const INSPECTOR_NOTIFICATIONS = {
   // Fires once the Inspector is closed.
   CLOSED: "inspector-closed",
 
+  // Fires once the Inspector is destroyed. Not fired on tab switch.
+  DESTROYED: "inspector-destroyed",
+
   // Fires when the Inspector is reopened after tab-switch.
   STATE_RESTORED: "inspector-state-restored",
 
@@ -925,6 +928,7 @@ InspectorUI.prototype = {
       this.chromeDoc.getElementById("inspector-inspect-toolbutton");
 
     this.initTools();
+    this.chromeWin.Tilt.setup();
 
     if (this.treePanelEnabled) {
       this.treePanel = new TreePanel(this.chromeWin, this);
@@ -1046,6 +1050,8 @@ InspectorUI.prototype = {
       return;
     }
 
+    let winId = new String(this.winID); // retain this to notify observers.
+
     this.closing = true;
     this.toolbar.hidden = true;
 
@@ -1104,6 +1110,8 @@ InspectorUI.prototype = {
     delete this.stylePanel;
     delete this.toolbar;
     Services.obs.notifyObservers(null, INSPECTOR_NOTIFICATIONS.CLOSED, null);
+    if (!aKeepStore)
+      Services.obs.notifyObservers(null, INSPECTOR_NOTIFICATIONS.DESTROYED, winId);
   },
 
   /**
@@ -1183,6 +1191,7 @@ InspectorUI.prototype = {
     }
 
     this.breadcrumbs.update();
+    this.chromeWin.Tilt.update(aNode);
 
     this.toolsSelect(aScroll);
   },
@@ -1663,6 +1672,7 @@ InspectorUI.prototype = {
     btn = this.chromeDoc.createElement("toolbarbutton");
     let buttonId = this.getToolbarButtonId(aRegObj.id);
     btn.setAttribute("id", buttonId);
+    btn.setAttribute("class", "devtools-toolbarbutton");
     btn.setAttribute("label", aRegObj.label);
     btn.setAttribute("tooltiptext", aRegObj.tooltiptext);
     btn.setAttribute("accesskey", aRegObj.accesskey);
@@ -1724,6 +1734,7 @@ InspectorUI.prototype = {
 
     btn.id = buttonId;
     btn.setAttribute("label", aRegObj.label);
+    btn.setAttribute("class", "devtools-toolbarbutton");
     btn.setAttribute("tooltiptext", aRegObj.tooltiptext);
     btn.setAttribute("accesskey", aRegObj.accesskey);
     btn.setAttribute("image", aRegObj.icon || "");

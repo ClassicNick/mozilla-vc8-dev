@@ -36,15 +36,21 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsIDOMEventTarget.idl"
+#include "nsIDOMEvent.idl"
 interface nsIDOMEventListener;
 interface mozIDOMTelephonyCall;
 
-[scriptable, uuid(24371c72-1631-477d-b26e-f14db369bc22)]
+[scriptable, uuid(c7b0046b-ee80-447c-8a95-a389003891bc)]
 interface mozIDOMTelephony : nsIDOMEventTarget {
 
   readonly attribute jsval liveCalls;
   mozIDOMTelephonyCall dial(in DOMString number);
+  void startTone(in DOMString dtmfChar);
+  void stopTone();
   attribute nsIDOMEventListener onincoming;
+
+  attribute boolean muted;
+  attribute boolean speakerOn;
 
   //XXX philikon's additions
   attribute nsIDOMEventListener onoperatorchange;
@@ -73,4 +79,9 @@ interface mozIDOMTelephonyCall : nsIDOMEventTarget {
   attribute nsIDOMEventListener onconnected;
   attribute nsIDOMEventListener ondisconnecting;
   attribute nsIDOMEventListener ondisconnected;
+};
+
+[scriptable, uuid(c8c42b0c-a0dd-4702-9425-a7a80b2075c3)]
+interface mozIDOMTelephonyCallEvent : nsIDOMEvent {
+  readonly attribute mozIDOMTelephonyCall call;
 };

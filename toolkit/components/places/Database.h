@@ -47,7 +47,7 @@
 
 // This is the schema version. Update it at any schema change and add a
 // corresponding migrateVxx method below.
-#define DATABASE_SCHEMA_VERSION 14
+#define DATABASE_SCHEMA_VERSION 15
 
 // Fired after Places inited.
 #define TOPIC_PLACES_INIT_COMPLETE "places-init-complete"
@@ -73,6 +73,8 @@
 #define TOPIC_PLACES_WILL_CLOSE_CONNECTION "places-will-close-connection"
 // Fired when the connection has gone, nothing will work from now on.
 #define TOPIC_PLACES_CONNECTION_CLOSED "places-connection-closed"
+
+class nsIStringBundle;
 
 namespace mozilla {
 namespace places {
@@ -271,6 +273,11 @@ protected:
   nsresult InitSchema(bool* aDatabaseMigrated);
 
   /**
+   * Creates bookmark roots in a new DB.
+   */
+  nsresult CreateBookmarkRoots();
+
+  /**
    * Initializes additionale SQLite functions, defined in SQLFunctions.h
    */
   nsresult InitFunctions();
@@ -290,7 +297,9 @@ protected:
   nsresult MigrateV11Up();
   nsresult MigrateV13Up();
   nsresult MigrateV14Up();
+  nsresult MigrateV15Up();
 
+  nsresult UpdateBookmarkRootTitles();
   nsresult CheckAndUpdateGUIDs();
 
 private:

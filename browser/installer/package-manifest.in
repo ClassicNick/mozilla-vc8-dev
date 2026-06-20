@@ -58,6 +58,7 @@
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
 #ifdef XP_WIN32
+@BINPATH@/@DLL_PREFIX@gkmedias@DLL_SUFFIX@
 #if _MSC_VER == 1310
 @BINPATH@/msvcp71.dll
 @BINPATH@/msvcr71.dll
@@ -141,7 +142,7 @@
 @BINPATH@/components/dom_base.xpt
 #ifdef MOZ_B2G_RIL
 @BINPATH@/components/dom_telephony.xpt
-@BINPATH@/components/dom_telephony_worker.xpt
+@BINPATH@/components/dom_system_b2g.xpt
 #endif
 @BINPATH@/components/dom_battery.xpt
 @BINPATH@/components/dom_canvas.xpt

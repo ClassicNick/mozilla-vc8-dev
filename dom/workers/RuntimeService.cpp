@@ -995,8 +995,7 @@ RuntimeService::Cleanup()
       Preferences::UnregisterCallback(PrefCallback, gPrefsToWatch[index], this);
     }
 
-    nsCOMPtr<nsIObserverService> obs =
-      do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
     NS_WARN_IF_FALSE(obs, "Failed to get observer service?!");
 
     if (obs) {
@@ -1081,7 +1080,7 @@ RuntimeService::SuspendWorkersForWindow(JSContext* aCx,
   GetWorkersForWindow(aWindow, workers);
 
   if (!workers.IsEmpty()) {
-    JSAutoRequest ar(aCx);
+    AutoSafeJSContext cx(aCx);
     for (PRUint32 index = 0; index < workers.Length(); index++) {
       if (!workers[index]->Suspend(aCx)) {
         NS_WARNING("Failed to cancel worker!");
@@ -1100,7 +1099,7 @@ RuntimeService::ResumeWorkersForWindow(JSContext* aCx,
   GetWorkersForWindow(aWindow, workers);
 
   if (!workers.IsEmpty()) {
-    JSAutoRequest ar(aCx);
+    AutoSafeJSContext cx(aCx);
     for (PRUint32 index = 0; index < workers.Length(); index++) {
       if (!workers[index]->Resume(aCx)) {
         NS_WARNING("Failed to cancel worker!");

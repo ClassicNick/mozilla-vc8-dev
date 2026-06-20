@@ -161,7 +161,7 @@ CopyErrorReport(JSContext *cx, JSErrorReport *report)
     size_t i, argsArraySize, argsCopySize, argSize;
     size_t mallocSize;
     JSErrorReport *copy;
-    uint8 *cursor;
+    uint8_t *cursor;
 
 #define JS_CHARS_SIZE(jschars) ((js_strlen(jschars) + 1) * sizeof(jschar))
 
@@ -189,7 +189,7 @@ CopyErrorReport(JSContext *cx, JSErrorReport *report)
      */
     mallocSize = sizeof(JSErrorReport) + argsArraySize + argsCopySize +
                  ucmessageSize + uclinebufSize + linebufSize + filenameSize;
-    cursor = (uint8 *)cx->malloc_(mallocSize);
+    cursor = (uint8_t *)cx->malloc_(mallocSize);
     if (!cursor)
         return NULL;
 
@@ -207,7 +207,7 @@ CopyErrorReport(JSContext *cx, JSErrorReport *report)
             cursor += argSize;
         }
         copy->messageArgs[i] = NULL;
-        JS_ASSERT(cursor == (uint8 *)copy->messageArgs[0] + argsCopySize);
+        JS_ASSERT(cursor == (uint8_t *)copy->messageArgs[0] + argsCopySize);
     }
 
     if (report->ucmessage) {
@@ -240,7 +240,10 @@ CopyErrorReport(JSContext *cx, JSErrorReport *report)
         copy->filename = (const char *)cursor;
         memcpy(cursor, report->filename, filenameSize);
     }
-    JS_ASSERT(cursor + filenameSize == (uint8 *)copy + mallocSize);
+    JS_ASSERT(cursor + filenameSize == (uint8_t *)copy + mallocSize);
+
+    /* HOLD called by the destination error object. */
+    copy->originPrincipals = report->originPrincipals;
 
     /* Copy non-pointer members. */
     copy->lineno = report->lineno;
@@ -294,6 +297,9 @@ struct AppendArg {
     }
 };
 
+static void
+SetExnPrivate(JSContext *cx, JSObject *exnObject, JSExnPrivate *priv);
+
 static bool
 InitExnPrivate(JSContext *cx, JSObject *exnObject, JSString *message,
                JSString *filename, uintN lineno, JSErrorReport *report, intN exnType)
@@ -340,7 +346,7 @@ InitExnPrivate(JSContext *cx, JSObject *exnObject, JSString *message,
             }
             if (fp->isScriptFrame()) {
                 frame.filename = fp->script()->filename;
-                frame.ulineno = js_FramePCToLineNumber(cx, fp, i.pc());
+                frame.ulineno = js_PCToLineNumber(cx, fp->script(), i.pc());
             } else {
                 frame.ulineno = 0;
                 frame.filename = NULL;
@@ -391,7 +397,7 @@ InitExnPrivate(JSContext *cx, JSObject *exnObject, JSString *message,
     PodCopy(framesDest, frames.begin(), frames.length());
     PodCopy(valuesDest, values.begin(), values.length());
 
-    exnObject->setPrivate(priv);
+    SetExnPrivate(cx, exnObject, priv);
     return true;
 }
 
@@ -434,12 +440,29 @@ exn_trace(JSTracer *trc, JSObject *obj)
     }
 }
 
+/* NB: An error object's private must be set through this function. */
+static void
+SetExnPrivate(JSContext *cx, JSObject *exnObject, JSExnPrivate *priv)
+{
+    JS_ASSERT(!exnObject->getPrivate());
+    JS_ASSERT(exnObject->isError());
+    if (JSErrorReport *report = priv->errorReport) {
+        if (JSPrincipals *prin = report->originPrincipals)
+            JSPRINCIPALS_HOLD(cx, prin);
+    }
+    exnObject->setPrivate(priv);
+}
+
 static void
 exn_finalize(JSContext *cx, JSObject *obj)
 {
     if (JSExnPrivate *priv = GetExnPrivate(obj)) {
-        if (JSErrorReport *report = priv->errorReport)
+        if (JSErrorReport *report = priv->errorReport) {
+            /* HOLD called by SetExnPrivate. */
+            if (JSPrincipals *prin = report->originPrincipals)
+                JSPRINCIPALS_DROP(cx, prin);
             cx->free_(report);
+        }
         cx->free_(priv);
     }
 }
@@ -729,7 +752,7 @@ Exception(JSContext *cx, uintN argc, Value *vp)
     /* Set the 'message' property. */
     JSString *message;
     if (args.length() != 0 && !args[0].isUndefined()) {
-        message = js_ValueToString(cx, args[0]);
+        message = ToString(cx, args[0]);
         if (!message)
             return false;
         args[0].setString(message);
@@ -745,7 +768,7 @@ Exception(JSContext *cx, uintN argc, Value *vp)
     /* Set the 'fileName' property. */
     JSString *filename;
     if (args.length() > 1) {
-        filename = js_ValueToString(cx, args[1]);
+        filename = ToString(cx, args[1]);
         if (!filename)
             return false;
         args[1].setString(filename);
@@ -762,10 +785,10 @@ Exception(JSContext *cx, uintN argc, Value *vp)
     /* Set the 'lineNumber' property. */
     uint32_t lineno;
     if (args.length() > 2) {
-        if (!ValueToECMAUint32(cx, args[2], &lineno))
+        if (!ToUint32(cx, args[2], &lineno))
             return false;
     } else {
-        lineno = iter.done() ? 0 : js_FramePCToLineNumber(cx, iter.fp(), iter.pc());
+        lineno = iter.done() ? 0 : js_PCToLineNumber(cx, iter.fp()->script(), iter.pc());
     }
 
     intN exnType = args.callee().toFunction()->getExtendedSlot(0).toInt32();
@@ -780,6 +803,7 @@ Exception(JSContext *cx, uintN argc, Value *vp)
 static JSBool
 exn_toString(JSContext *cx, uintN argc, Value *vp)
 {
+    JS_CHECK_RECURSION(cx, return false);
     CallArgs args = CallArgsFromVp(argc, vp);
 
     /* Step 2. */
@@ -801,7 +825,7 @@ exn_toString(JSContext *cx, uintN argc, Value *vp)
     if (nameVal.isUndefined()) {
         name = CLASS_ATOM(cx, Error);
     } else {
-        name = js_ValueToString(cx, nameVal);
+        name = ToString(cx, nameVal);
         if (!name)
             return false;
     }
@@ -816,7 +840,7 @@ exn_toString(JSContext *cx, uintN argc, Value *vp)
     if (msgVal.isUndefined()) {
         message = cx->runtime->emptyString;
     } else {
-        message = js_ValueToString(cx, msgVal);
+        message = ToString(cx, msgVal);
         if (!message)
             return false;
     }
@@ -858,19 +882,20 @@ exn_toString(JSContext *cx, uintN argc, Value *vp)
 static JSBool
 exn_toSource(JSContext *cx, uintN argc, Value *vp)
 {
+    JS_CHECK_RECURSION(cx, return false);
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    JSObject *obj = ToObject(cx, &vp[1]);
+    JSObject *obj = ToObject(cx, &args.thisv());
     if (!obj)
         return false;
 
-    if (!obj->getProperty(cx, cx->runtime->atomState.nameAtom, vp))
+    Value nameVal;
+    JSString *name;
+    if (!obj->getProperty(cx, cx->runtime->atomState.nameAtom, &nameVal) ||
+        !(name = ToString(cx, nameVal)))
+    {
         return false;
-
-    JSString *name = js_ValueToString(cx, *vp);
-    if (!name)
-        return false;
-    vp->setString(name);
+    }
 
     Value messageVal;
     JSString *message;
@@ -891,7 +916,7 @@ exn_toSource(JSContext *cx, uintN argc, Value *vp)
     Value linenoVal;
     uint32_t lineno;
     if (!obj->getProperty(cx, cx->runtime->atomState.lineNumberAtom, &linenoVal) ||
-        !ValueToECMAUint32(cx, linenoVal, &lineno))
+        !ToUint32(cx, linenoVal, &lineno))
     {
         return false;
     }
@@ -912,7 +937,7 @@ exn_toSource(JSContext *cx, uintN argc, Value *vp)
         if (filename->empty() && !sb.append(", \"\""))
                 return false;
 
-        JSString *linenumber = js_ValueToString(cx, linenoVal);
+        JSString *linenumber = ToString(cx, linenoVal);
         if (!linenumber)
             return false;
         if (!sb.append(", ") || !sb.append(linenumber))
@@ -925,7 +950,7 @@ exn_toSource(JSContext *cx, uintN argc, Value *vp)
     JSString *str = sb.finishString();
     if (!str)
         return false;
-    vp->setString(str);
+    args.rval().setString(str);
     return true;
 }
 #endif
@@ -987,7 +1012,7 @@ InitErrorClass(JSContext *cx, GlobalObject *global, intN type, JSObject &proto)
                                                  JSFunction::ExtendedFinalizeKind);
     if (!ctor)
         return NULL;
-    ctor->setExtendedSlot(0, Int32Value(int32(type)));
+    ctor->setExtendedSlot(0, Int32Value(int32_t(type)));
 
     if (!LinkConstructorAndPrototype(cx, ctor, errorProto))
         return NULL;
@@ -1179,10 +1204,10 @@ js_ReportUncaughtException(JSContext *cx)
     AutoArrayRooter tvr(cx, ArrayLength(roots), roots);
 
     /*
-     * Because js_ValueToString below could error and an exception object
-     * could become unrooted, we must root exnObject.  Later, if exnObject is
-     * non-null, we need to root other intermediates, so allocate an operand
-     * stack segment to protect all of these values.
+     * Because ToString below could error and an exception object could become
+     * unrooted, we must root exnObject.  Later, if exnObject is non-null, we
+     * need to root other intermediates, so allocate an operand stack segment
+     * to protect all of these values.
      */
     if (JSVAL_IS_PRIMITIVE(exn)) {
         exnObject = NULL;
@@ -1195,12 +1220,12 @@ js_ReportUncaughtException(JSContext *cx)
     reportp = js_ErrorFromException(cx, exn);
 
     /* XXX L10N angels cry once again. see also everywhere else */
-    str = js_ValueToString(cx, exn);
+    str = ToString(cx, exn);
     JSAutoByteString bytesStorage;
     if (!str) {
         bytes = "unknown (can't convert to string)";
     } else {
-        roots[1] = STRING_TO_JSVAL(str);
+        roots[1] = StringValue(str);
         if (!bytesStorage.encode(cx, str))
             return false;
         bytes = bytesStorage.ptr();
@@ -1219,14 +1244,14 @@ js_ReportUncaughtException(JSContext *cx)
 
         if (!JS_GetProperty(cx, exnObject, js_fileName_str, &roots[3]))
             return false;
-        str = js_ValueToString(cx, roots[3]);
+        str = ToString(cx, roots[3]);
         if (!str || !filename.encode(cx, str))
             return false;
 
         if (!JS_GetProperty(cx, exnObject, js_lineNumber_str, &roots[4]))
             return false;
         uint32_t lineno;
-        if (!ValueToECMAUint32(cx, roots[4], &lineno))
+        if (!ToUint32(cx, roots[4], &lineno))
             return false;
 
         reportp = &report;
@@ -1263,9 +1288,9 @@ js_CopyErrorObject(JSContext *cx, JSObject *errobj, JSObject *scope)
     assertSameCompartment(cx, scope);
     JSExnPrivate *priv = GetExnPrivate(errobj);
 
-    uint32 stackDepth = priv->stackDepth;
+    uint32_t stackDepth = priv->stackDepth;
     size_t valueCount = 0;
-    for (uint32 i = 0; i < stackDepth; i++)
+    for (uint32_t i = 0; i < stackDepth; i++)
         valueCount += priv->stackElems[i].argc;
 
     size_t size = offsetof(JSExnPrivate, stackElems) +
@@ -1312,7 +1337,7 @@ js_CopyErrorObject(JSContext *cx, JSObject *errobj, JSObject *scope)
     if (!js_GetClassPrototype(cx, scope->getGlobal(), GetExceptionProtoKey(copy->exnType), &proto))
         return NULL;
     JSObject *copyobj = NewObjectWithGivenProto(cx, &ErrorClass, proto, NULL);
-    copyobj->setPrivate(copy);
+    SetExnPrivate(cx, copyobj, copy);
     autoFree.p = NULL;
     return copyobj;
 }

@@ -91,13 +91,6 @@ BatteryManager::BatteryManager()
 {
 }
 
-BatteryManager::~BatteryManager()
-{
-  if (mListenerManager) {
-    mListenerManager->Disconnect();
-  }
-}
-
 void
 BatteryManager::Init(nsPIDOMWindow *aWindow, nsIScriptContext* aScriptContext)
 {
@@ -107,12 +100,10 @@ BatteryManager::Init(nsPIDOMWindow *aWindow, nsIScriptContext* aScriptContext)
 
   hal::RegisterBatteryObserver(this);
 
-  hal::BatteryInformation* batteryInfo = new hal::BatteryInformation();
-  hal::GetCurrentBatteryInformation(batteryInfo);
+  hal::BatteryInformation batteryInfo;
+  hal::GetCurrentBatteryInformation(&batteryInfo);
 
-  UpdateFromBatteryInfo(*batteryInfo);
-
-  delete batteryInfo;
+  UpdateFromBatteryInfo(batteryInfo);
 }
 
 void
@@ -175,7 +166,7 @@ BatteryManager::DispatchTrustedEventToSelf(const nsAString& aEventName)
   nsresult rv = event->InitEvent(aEventName, false, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = event->SetTrusted(PR_TRUE);
+  rv = event->SetTrusted(true);
   NS_ENSURE_SUCCESS(rv, rv);
 
   bool dummy;
