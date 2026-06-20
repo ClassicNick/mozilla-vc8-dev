@@ -403,21 +403,25 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
       //
       // base = <JSObject>
       // ins  = ldp.obj<field> base[offsetof(JSObject, <field>)]
-      #define OK_OBJ_FIELD(ldop, field) \
+      #define OK_OBJ_FIELD_OFF(ldop, fieldoff) \
             ((op == (ldop)) && \
-            (disp == offsetof(JSObject, field)) && \
+            (disp == fieldoff) && \
             couldBeObjectOrString(base))
 
+      #define OK_OBJ_FIELD(ldop, field) OK_OBJ_FIELD_OFF(ldop, offsetof(JSObject, field))
+
       case ACCSET_OBJ_CLASP:
-        ok = OK_OBJ_FIELD(LIR_ldp, clasp);
+        ok = false;
+        //ok = OK_OBJ_FIELD(LIR_ldp, clasp);
         break;
 
       case ACCSET_OBJ_FLAGS:
-        ok = OK_OBJ_FIELD(LIR_ldi, flags);
+        ok = false;
+        //ok = OK_OBJ_FIELD(LIR_ldi, flags);
         break;
 
       case ACCSET_OBJ_SHAPE:
-        ok = OK_OBJ_FIELD(LIR_ldi, objShape);
+        ok = true; // OK_OBJ_FIELD(LIR_ldi, objShape);
         break;
 
       case ACCSET_OBJ_TYPE:
@@ -428,20 +432,25 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
         break;
 
       case ACCSET_OBJ_PARENT:
-        ok = OK_OBJ_FIELD(LIR_ldp, parent);
+        ok = false;
+        //ok = OK_OBJ_FIELD(LIR_ldp, parent);
         break;
 
       case ACCSET_OBJ_PRIVATE:
         // base = <JSObject>
         // ins  = {ld,st}p.objprivate base[offsetof(JSObject, privateData)]
+        ok = false;
+        /*
         ok = (op == LIR_ldi || op == LIR_ldp ||
               op == LIR_sti || op == LIR_stp) &&
              disp == offsetof(JSObject, privateData) &&
              couldBeObjectOrString(base);
+        */
         break;
 
       case ACCSET_OBJ_CAPACITY:
-        ok = OK_OBJ_FIELD(LIR_ldi, capacity) || OK_OBJ_FIELD(LIR_ldi, initializedLength);
+        ok = false;
+        // OK_OBJ_FIELD(LIR_ldi, capacity) || OK_OBJ_FIELD(LIR_ldi, initializedLength);
         break;
 
       case ACCSET_OBJ_SLOTS:
@@ -494,9 +503,12 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
       case ACCSET_ITER:
         // base = ldp.objprivate ...[offsetof(JSObject, privateData)]
         // ins = {ld,st}p.iter base[<disp within NativeIterator>]
+        ok = false;
+        /*
         ok = (op == LIR_ldp || op == LIR_stp) &&
              dispWithin(NativeIterator) &&
              match(base, LIR_ldp, ACCSET_OBJ_PRIVATE, offsetof(JSObject, privateData));
+        */
         break;
 
       case ACCSET_ITER_PROPS:
@@ -547,7 +559,7 @@ void ValidateWriter::checkAccSet(LOpcode op, LIns *base, int32_t disp, AccSet ac
         //
         // base = <const private ptr slots[JSSLOT_FLAT_CLOSURE_UPVARS]>
         // ins = {ld,st}X.fcslots base[...]
-        ok = isConstPrivatePtr(base, JSObject::JSSLOT_FLAT_CLOSURE_UPVARS);
+        ok = false; // isConstPrivatePtr(base, JSObject::JSSLOT_FLAT_CLOSURE_UPVARS);
         break;
 
       case ACCSET_ARGS_DATA:

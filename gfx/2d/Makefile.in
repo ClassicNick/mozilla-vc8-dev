@@ -114,6 +114,16 @@ endif
 DEFINES += -DWIN32
 endif
 
+ifdef MOZ_SKIA
+CPPSRCS += \
+		SourceSurfaceSkia.cpp \
+        DrawTargetSkia.cpp \
+        PathSkia.cpp \
+        ScaledFontSkia.cpp \
+        ScaledFontWin.cpp \
+        $(NULL)
+endif
+
 #ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 #CPPSRCS	+= \
 #        DrawTargetCG.cpp \

@@ -177,7 +177,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
     LifoAlloc &tla = cx->typeLifoAlloc();
 
     unsigned length = script->length;
-    unsigned nargs = script->hasFunction ? script->function()->nargs : 0;
+    unsigned nargs = script->function() ? script->function()->nargs : 0;
 
     numSlots = TotalSlots(script);
 
@@ -229,15 +229,16 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
     if (cx->compartment->debugMode())
         usesReturnValue_ = true;
 
+    bool heavyweight = script->function() && script->function()->isHeavyweight();
+
     isInlineable = true;
-    if (script->nClosedArgs || script->nClosedVars ||
-        (script->hasFunction && script->function()->isHeavyweight()) ||
+    if (script->nClosedArgs || script->nClosedVars || heavyweight ||
         script->usesEval || script->usesArguments || cx->compartment->debugMode()) {
         isInlineable = false;
     }
 
     modifiesArguments_ = false;
-    if (script->nClosedArgs || (script->hasFunction && script->function()->isHeavyweight()))
+    if (script->nClosedArgs || heavyweight)
         modifiesArguments_ = true;
 
     canTrackVars = true;
@@ -568,18 +569,6 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
             unsigned newStackDepth = stackDepth;
 
             switch (op) {
-              case JSOP_OR:
-              case JSOP_AND:
-              case JSOP_ORX:
-              case JSOP_ANDX:
-                /*
-                 * OR/AND instructions push the operation result when branching.
-                 * We accounted for this in GetDefCount, so subtract the pushed value
-                 * for the fallthrough case.
-                 */
-                stackDepth--;
-                break;
-
               case JSOP_CASE:
               case JSOP_CASEX:
                 /* Case instructions do not push the lvalue back when branching. */

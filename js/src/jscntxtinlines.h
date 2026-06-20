@@ -115,7 +115,7 @@ class AutoNamespaceArray : protected AutoGCRooter {
   public:
     friend void AutoGCRooter::trace(JSTracer *trc);
 
-    JSXMLArray array;
+    JSXMLArray<JSObject> array;
 };
 
 #ifdef DEBUG
@@ -208,8 +208,8 @@ class CompartmentChecker
     void check(JSScript *script) {
         if (script) {
             check(script->compartment());
-            if (!script->isCachedEval && script->u.globalObject)
-                check(script->u.globalObject);
+            if (!script->isCachedEval && script->globalObject)
+                check(script->globalObject);
         }
     }
 
@@ -334,7 +334,7 @@ CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
     JS_ASSERT_IF(native != FunctionProxyClass.construct &&
                  native != CallableObjectClass.construct &&
                  native != js::CallOrConstructBoundFunction &&
-                 (!callee.isFunction() || callee.getFunctionPrivate()->u.n.clasp != &ObjectClass),
+                 (!callee.isFunction() || callee.toFunction()->u.n.clasp != &ObjectClass),
                  !args.rval().isPrimitive() && callee != args.rval().toObject());
 
     return true;
@@ -388,7 +388,7 @@ DeepBail(JSContext *cx);
 static JS_INLINE void
 LeaveTraceIfGlobalObject(JSContext *cx, JSObject *obj)
 {
-    if (!obj->getParent())
+    if (obj->isGlobal())
         LeaveTrace(cx);
 }
 
@@ -498,12 +498,6 @@ JSContext::ensureGeneratorStackSpace()
     if (!ok)
         js_ReportOutOfMemory(this);
     return ok;
-}
-
-inline js::RegExpStatics *
-JSContext::regExpStatics()
-{
-    return js::GetGlobalForScopeChain(this)->getRegExpStatics();
 }
 
 inline void

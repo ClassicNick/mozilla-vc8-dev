@@ -153,6 +153,8 @@ struct PendingProxyOperation {
 };
 
 struct ThreadData {
+    JSRuntime           *rt;
+
     /*
      * If non-zero, we were been asked to call the operation callback as soon
      * as possible.  If the thread has an active request, this contributes
@@ -198,23 +200,45 @@ struct ThreadData {
     LifoAlloc           tempLifoAlloc;
 
   private:
-    js::RegExpPrivateCache       *repCache;
+    /*
+     * Both of these allocators are used for regular expression code which is shared at the
+     * thread-data level.
+     */
+    JSC::ExecutableAllocator    *execAlloc;
+    WTF::BumpPointerAllocator   *bumpAlloc;
+    js::RegExpPrivateCache      *repCache;
 
-    js::RegExpPrivateCache *createRegExpPrivateCache(JSRuntime *rt);
+    JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
+    WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
+    js::RegExpPrivateCache *createRegExpPrivateCache(JSContext *cx);
 
   public:
-    js::RegExpPrivateCache *getRegExpPrivateCache() { return repCache; }
+    JSC::ExecutableAllocator *getOrCreateExecutableAllocator(JSContext *cx) {
+        if (execAlloc)
+            return execAlloc;
 
-    /* N.B. caller is responsible for reporting OOM. */
-    js::RegExpPrivateCache *getOrCreateRegExpPrivateCache(JSRuntime *rt) {
+        return createExecutableAllocator(cx);
+    }
+
+    WTF::BumpPointerAllocator *getOrCreateBumpPointerAllocator(JSContext *cx) {
+        if (bumpAlloc)
+            return bumpAlloc;
+
+        return createBumpPointerAllocator(cx);
+    }
+
+    js::RegExpPrivateCache *getRegExpPrivateCache() {
+        return repCache;
+    }
+    js::RegExpPrivateCache *getOrCreateRegExpPrivateCache(JSContext *cx) {
         if (repCache)
             return repCache;
 
-        return createRegExpPrivateCache(rt);
+        return createRegExpPrivateCache(cx);
     }
 
     /* Called at the end of the global GC sweep phase to deallocate repCache memory. */
-    void purgeRegExpPrivateCache(JSRuntime *rt);
+    void purgeRegExpPrivateCache();
 
     /*
      * The GSN cache is per thread since even multi-cx-per-thread embeddings
@@ -240,7 +264,7 @@ struct ThreadData {
     size_t              noGCOrAllocationCheck;
 #endif
 
-    ThreadData();
+    ThreadData(JSRuntime *rt);
     ~ThreadData();
 
     bool init();
@@ -297,12 +321,13 @@ struct JSThread {
     /* Factored out of JSThread for !JS_THREADSAFE embedding in JSRuntime. */
     js::ThreadData      data;
 
-    JSThread(void *id)
+    JSThread(JSRuntime *rt, void *id)
       : id(id),
-        suspendCount(0)
+        suspendCount(0),
 # ifdef DEBUG
-      , checkRequestDepth(0)
+        checkRequestDepth(0),
 # endif
+        data(rt)
     {
         JS_INIT_CLIST(&contextList);
     }
@@ -414,20 +439,6 @@ struct JSRuntime
     JSActivityCallback    activityCallback;
     void                 *activityCallbackArg;
 
-    /*
-     * Shape regenerated whenever a prototype implicated by an "add property"
-     * property cache fill and induced trace guard has a readonly property or a
-     * setter defined on it. This number proxies for the shapes of all objects
-     * along the prototype chain of all objects in the runtime on which such an
-     * add-property result has been cached/traced.
-     *
-     * See bug 492355 for more details.
-     *
-     * This comes early in JSRuntime to minimize the immediate format used by
-     * trace-JITted code that reads it.
-     */
-    uint32              protoHazardShape;
-
     /* Garbage collector state, used by jsgc.c. */
 
     /*
@@ -460,11 +471,13 @@ struct JSRuntime
     /* We access this without the GC lock, however a race will not affect correctness */
     volatile uint32     gcNumFreeArenas;
     uint32              gcNumber;
-    js::GCMarker        *gcMarkingTracer;
+    js::GCMarker        *gcIncrementalTracer;
+    void                *gcVerifyData;
     bool                gcChunkAllocationSinceLastGC;
     int64               gcNextFullGCTime;
     int64               gcJitReleaseTime;
     JSGCMode            gcMode;
+    volatile jsuword    gcBarrierFailed;
     volatile jsuword    gcIsNeeded;
     js::WeakMapBase     *gcWeakMapList;
     js::gcstats::Statistics gcStats;
@@ -503,7 +516,6 @@ struct JSRuntime
     bool                gcPoke;
     bool                gcMarkAndSweep;
     bool                gcRunning;
-    bool                gcRegenShapes;
 
     /*
      * These options control the zealousness of the GC. The fundamental values
@@ -522,6 +534,9 @@ struct JSRuntime
      * Additionally, if gzZeal_ == 1 then we perform GCs in select places
      * (during MaybeGC and whenever a GC poke happens). This option is mainly
      * useful to embedders.
+     *
+     * We use gcZeal_ == 4 to enable write barrier verification. See the comment
+     * in jsgc.cpp for more information about this.
      */
 #ifdef JS_GC_ZEAL
     int                 gcZeal_;
@@ -533,7 +548,7 @@ struct JSRuntime
 
     bool needZealousGC() {
         if (gcNextScheduled > 0 && --gcNextScheduled == 0) {
-            if (gcZeal() >= 2)
+            if (gcZeal() >= js::gc::ZealAllocThreshold && gcZeal() < js::gc::ZealVerifierThreshold)
                 gcNextScheduled = gcZealFrequency;
             return true;
         }
@@ -545,6 +560,7 @@ struct JSRuntime
 #endif
 
     JSGCCallback        gcCallback;
+    JSGCFinishedCallback gcFinishedCallback;
 
   private:
     /*
@@ -685,21 +701,6 @@ struct JSRuntime
   public:
     void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
     JSPrincipals *trustedPrincipals() const { return trustedPrincipals_; }
-
-    /*
-     * Object shape (property cache structural type) identifier generator.
-     *
-     * Type 0 stands for the empty scope, and must not be regenerated due to
-     * uint32 wrap-around. Since js_GenerateShape (in jsinterp.cpp) uses
-     * atomic pre-increment, the initial value for the first typed non-empty
-     * scope will be 1.
-     *
-     * If this counter overflows into SHAPE_OVERFLOW_BIT (in jsinterp.h), the
-     * cache is disabled, to avoid aliasing two different types. It stays
-     * disabled until a triggered GC at some later moment compresses live
-     * types, minimizing rt->shapeGen in the process.
-     */
-    volatile uint32     shapeGen;
 
     /* Literal table maintained by jsatom.c functions. */
     JSAtomState         atomState;
@@ -1127,6 +1128,7 @@ struct JSContext
     bool hasStrictOption() const { return hasRunOption(JSOPTION_STRICT); }
     bool hasWErrorOption() const { return hasRunOption(JSOPTION_WERROR); }
     bool hasAtLineOption() const { return hasRunOption(JSOPTION_ATLINE); }
+    bool hasJITHardeningOption() const { return !hasRunOption(JSOPTION_SOFTEN); }
 
     js::LifoAlloc &tempLifoAlloc() { return JS_THREAD_DATA(this)->tempLifoAlloc; }
     inline js::LifoAlloc &typeLifoAlloc();
@@ -2186,44 +2188,9 @@ enum FrameExpandKind {
     FRAME_EXPAND_ALL = 1
 };
 
-static JS_INLINE JSBool
-js_IsPropertyCacheDisabled(JSContext *cx)
-{
-    return cx->runtime->shapeGen >= js::SHAPE_OVERFLOW_BIT;
-}
-
-static JS_INLINE uint32
-js_RegenerateShapeForGC(JSRuntime *rt)
-{
-    JS_ASSERT(rt->gcRunning);
-    JS_ASSERT(rt->gcRegenShapes);
-
-    /*
-     * Under the GC, compared with js_GenerateShape, we don't need to use
-     * atomic increments but we still must make sure that after an overflow
-     * the shape stays such.
-     */
-    uint32 shape = rt->shapeGen;
-    shape = (shape + 1) | (shape & js::SHAPE_OVERFLOW_BIT);
-    rt->shapeGen = shape;
-    return shape;
-}
-
 namespace js {
 
 /************************************************************************/
-
-static JS_ALWAYS_INLINE void
-ClearValueRange(Value *vec, uintN len, bool useHoles)
-{
-    if (useHoles) {
-        for (uintN i = 0; i < len; i++)
-            vec[i].setMagic(JS_ARRAY_HOLE);
-    } else {
-        for (uintN i = 0; i < len; i++)
-            vec[i].setUndefined();
-    }
-}
 
 static JS_ALWAYS_INLINE void
 MakeRangeGCSafe(Value *vec, size_t len)
@@ -2414,25 +2381,22 @@ class AutoShapeVector : public AutoVectorRooter<const Shape *>
 
 class AutoValueArray : public AutoGCRooter
 {
-    js::Value *start_;
+    const js::Value *start_;
     unsigned length_;
 
   public:
-    AutoValueArray(JSContext *cx, js::Value *start, unsigned length
+    AutoValueArray(JSContext *cx, const js::Value *start, unsigned length
                    JS_GUARD_OBJECT_NOTIFIER_PARAM)
         : AutoGCRooter(cx, VALARRAY), start_(start), length_(length)
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
     }
 
-    Value *start() const { return start_; }
+    const Value *start() const { return start_; }
     unsigned length() const { return length_; }
 
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
-
-JSIdArray *
-NewIdArray(JSContext *cx, jsint length);
 
 /*
  * Allocation policy that uses JSRuntime::malloc_ and friends, so that

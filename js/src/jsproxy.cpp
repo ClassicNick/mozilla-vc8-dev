@@ -57,17 +57,27 @@
 using namespace js;
 using namespace js::gc;
 
-static inline const Value &
-GetCall(JSObject *proxy) {
+static inline const HeapValue &
+GetCall(JSObject *proxy)
+{
     JS_ASSERT(IsFunctionProxy(proxy));
-    return proxy->getSlot(JSSLOT_PROXY_CALL);
+    return proxy->getSlotRef(JSSLOT_PROXY_CALL);
 }
 
 static inline Value
-GetConstruct(JSObject *proxy) {
-    if (proxy->numSlots() <= JSSLOT_PROXY_CONSTRUCT)
+GetConstruct(JSObject *proxy)
+{
+    if (proxy->slotSpan() <= JSSLOT_PROXY_CONSTRUCT)
         return UndefinedValue();
     return proxy->getSlot(JSSLOT_PROXY_CONSTRUCT);
+}
+
+static inline const HeapValue &
+GetFunctionProxyConstruct(JSObject *proxy)
+{
+    JS_ASSERT(IsFunctionProxy(proxy));
+    JS_ASSERT(proxy->slotSpan() > JSSLOT_PROXY_CONSTRUCT);
+    return proxy->getSlotRef(JSSLOT_PROXY_CONSTRUCT);
 }
 
 static bool
@@ -1191,12 +1201,12 @@ static void
 proxy_TraceObject(JSTracer *trc, JSObject *obj)
 {
     GetProxyHandler(obj)->trace(trc, obj);
-    MarkCrossCompartmentValue(trc, GetProxyPrivate(obj), "private");
-    MarkCrossCompartmentValue(trc, GetProxyExtra(obj, 0), "extra0");
-    MarkCrossCompartmentValue(trc, GetProxyExtra(obj, 1), "extra1");
+    MarkCrossCompartmentValue(trc, obj->getReservedSlotRef(JSSLOT_PROXY_PRIVATE), "private");
+    MarkCrossCompartmentValue(trc, obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 0), "extra0");
+    MarkCrossCompartmentValue(trc, obj->getReservedSlotRef(JSSLOT_PROXY_EXTRA + 1), "extra1");
     if (IsFunctionProxy(obj)) {
         MarkCrossCompartmentValue(trc, GetCall(obj), "call");
-        MarkCrossCompartmentValue(trc, GetConstruct(obj), "construct");
+        MarkCrossCompartmentValue(trc, GetFunctionProxyConstruct(obj), "construct");
     }
 }
 
@@ -1205,7 +1215,7 @@ proxy_TraceFunction(JSTracer *trc, JSObject *obj)
 {
     proxy_TraceObject(trc, obj);
     MarkCrossCompartmentValue(trc, GetCall(obj), "call");
-    MarkCrossCompartmentValue(trc, GetConstruct(obj), "construct");
+    MarkCrossCompartmentValue(trc, GetFunctionProxyConstruct(obj), "construct");
 }
 
 static JSBool
@@ -1465,11 +1475,11 @@ js::NewProxyObject(JSContext *cx, ProxyHandler *handler, const Value &priv, JSOb
      * their properties and so that we don't need to walk the compartment if
      * their prototype changes later.
      */
-    if (proto)
-        proto->getNewType(cx, NULL, /* markUnknown = */ true);
+    if (proto && !proto->setNewTypeUnknown(cx))
+        return NULL;
 
-    JSObject *obj = NewNonFunction<WithProto::Given>(cx, clasp, proto, parent);
-    if (!obj || !obj->ensureInstanceReservedSlots(cx, 0))
+    JSObject *obj = NewObjectWithGivenProto(cx, clasp, proto, parent);
+    if (!obj)
         return NULL;
     obj->setSlot(JSSLOT_PROXY_HANDLER, PrivateValue(handler));
     obj->setSlot(JSSLOT_PROXY_PRIVATE, priv);
@@ -1648,7 +1658,7 @@ callable_Construct(JSContext *cx, uintN argc, Value *vp)
                 return false;
         }
 
-        JSObject *newobj = NewNativeClassInstance(cx, &ObjectClass, proto, proto->getParent());
+        JSObject *newobj = NewObjectWithGivenProto(cx, &ObjectClass, proto, NULL);
         if (!newobj)
             return false;
 
@@ -1715,7 +1725,7 @@ js::FixProxy(JSContext *cx, JSObject *proxy, JSBool *bp)
      * number of fixed slots as the proxy so that we can swap their contents.
      */
     gc::AllocKind kind = proxy->getAllocKind();
-    JSObject *newborn = NewNonFunction<WithProto::Given>(cx, clasp, proto, parent, kind);
+    JSObject *newborn = NewObjectWithGivenProto(cx, clasp, proto, parent, kind);
     if (!newborn)
         return false;
     AutoObjectRooter tvr2(cx, newborn);
@@ -1756,7 +1766,7 @@ Class js::ProxyClass = {
 JS_FRIEND_API(JSObject *)
 js_InitProxyClass(JSContext *cx, JSObject *obj)
 {
-    JSObject *module = NewNonFunction<WithProto::Class>(cx, &ProxyClass, NULL, obj);
+    JSObject *module = NewObjectWithClassProto(cx, &ProxyClass, NULL, obj);
     if (!module || !module->setSingletonType(cx))
         return NULL;
 

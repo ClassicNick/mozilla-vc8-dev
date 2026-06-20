@@ -45,45 +45,6 @@
 
 /***************************************************************************/
 
-/*
- * Helper that clones JS Function objects along with both of its
- * reserved slots.
- */
-
-JSObject *
-xpc_CloneJSFunction(XPCCallContext &ccx, JSObject *funobj, JSObject *parent)
-{
-    JSObject *clone = JS_CloneFunctionObject(ccx, funobj, parent);
-    if (!clone)
-        return nsnull;
-
-    AUTO_MARK_JSVAL(ccx, OBJECT_TO_JSVAL(clone));
-
-    XPCWrappedNativeScope *scope =
-        XPCWrappedNativeScope::FindInJSObjectScope(ccx, parent);
-
-    if (!scope) {
-        return nsnull;
-    }
-
-    // Make sure to break the prototype chain to the function object
-    // we cloned to prevent its scope from leaking into the clones
-    // scope.
-    JS_SetPrototype(ccx, clone, scope->GetPrototypeJSFunction());
-
-    // Copy the reserved slots to the clone.
-    jsval ifaceVal, memberVal;
-    if (!JS_GetReservedSlot(ccx, funobj, 0, &ifaceVal) ||
-        !JS_GetReservedSlot(ccx, funobj, 1, &memberVal))
-        return nsnull;
-
-    if (!JS_SetReservedSlot(ccx, clone, 0, ifaceVal) ||
-        !JS_SetReservedSlot(ccx, clone, 1, memberVal))
-        return nsnull;
-
-    return clone;
-}
-
 // XPCNativeMember
 
 // static
@@ -94,8 +55,8 @@ XPCNativeMember::GetCallInfo(XPCCallContext& ccx,
                              XPCNativeMember**    pMember)
 {
     funobj = js::UnwrapObject(funobj);
-    jsval ifaceVal = js::GetReservedSlot(funobj, 0);
-    jsval memberVal = js::GetReservedSlot(funobj, 1);
+    jsval ifaceVal = js::GetFunctionNativeReserved(funobj, 0);
+    jsval memberVal = js::GetFunctionNativeReserved(funobj, 1);
 
     *pInterface = (XPCNativeInterface*) JSVAL_TO_PRIVATE(ifaceVal);
     *pMember = (XPCNativeMember*) JSVAL_TO_PRIVATE(memberVal);
@@ -164,7 +125,7 @@ XPCNativeMember::Resolve(XPCCallContext& ccx, XPCNativeInterface* iface,
         callback = XPC_WN_GetterSetter;
     }
 
-    JSFunction *fun = JS_NewFunctionById(ccx, callback, argc, 0, parent, GetName());
+    JSFunction *fun = js::NewFunctionByIdWithReserved(ccx, callback, argc, 0, parent, GetName());
     if (!fun)
         return JS_FALSE;
 
@@ -172,9 +133,8 @@ XPCNativeMember::Resolve(XPCCallContext& ccx, XPCNativeInterface* iface,
     if (!funobj)
         return JS_FALSE;
 
-    if (!JS_SetReservedSlot(ccx, funobj, 0, PRIVATE_TO_JSVAL(iface))||
-        !JS_SetReservedSlot(ccx, funobj, 1, PRIVATE_TO_JSVAL(this)))
-        return JS_FALSE;
+    js::SetFunctionNativeReserved(funobj, 0, PRIVATE_TO_JSVAL(iface));
+    js::SetFunctionNativeReserved(funobj, 1, PRIVATE_TO_JSVAL(this));
 
     *vp = OBJECT_TO_JSVAL(funobj);
 

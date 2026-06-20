@@ -473,24 +473,28 @@ class Writer
     }
 
     nj::LIns *ldiRuntimeProtoHazardShape(nj::LIns *runtime) const {
-        return name(lir->insLoad(nj::LIR_ldi, runtime, offsetof(JSRuntime, protoHazardShape),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldi, runtime, 0,
                                  ACCSET_RUNTIME),
                     "protoHazardShape");
     }
 
     nj::LIns *ldpObjClasp(nj::LIns *obj, nj::LoadQual loadQual) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, JSObject::offsetOfClassPointer(), ACCSET_OBJ_CLASP,
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldp, obj, 0, ACCSET_OBJ_CLASP,
                                  loadQual),
                     "clasp");
     }
 
     nj::LIns *ldiObjFlags(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldi, obj, offsetof(JSObject, flags), ACCSET_OBJ_FLAGS),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldi, obj, 0, ACCSET_OBJ_FLAGS),
                     "flags");
     }
 
     nj::LIns *ldiObjShape(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldi, obj, offsetof(JSObject, objShape), ACCSET_OBJ_SHAPE),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldi, obj, 0, ACCSET_OBJ_SHAPE),
                     "objShape");
     }
 
@@ -502,36 +506,42 @@ class Writer
     }
 
     nj::LIns *ldpObjParent(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, offsetof(JSObject, parent), ACCSET_OBJ_PARENT),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldp, obj, 0, ACCSET_OBJ_PARENT),
                     "parent");
     }
 
     nj::LIns *ldpObjPrivate(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, offsetof(JSObject, privateData),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldp, obj, 0,
                                  ACCSET_OBJ_PRIVATE),
                     "private");
     }
 
     nj::LIns *lduiObjPrivate(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldi, obj, offsetof(JSObject, privateData),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldi, obj, 0,
                                  ACCSET_OBJ_PRIVATE),
                     "private_uint32");
     }
 
     nj::LIns *stuiObjPrivate(nj::LIns *obj, nj::LIns *value) const {
-        return name(lir->insStore(nj::LIR_sti, value, obj, offsetof(JSObject, privateData),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insStore(nj::LIR_sti, value, obj, 0,
                                   ACCSET_OBJ_PRIVATE),
                     "private_uint32");
     }
 
     nj::LIns *ldiDenseArrayInitializedLength(nj::LIns *array) const {
-        return name(lir->insLoad(nj::LIR_ldi, array, offsetof(JSObject, initializedLength),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldi, array, 0,
                                  ACCSET_OBJ_CAPACITY),
                     "capacity");
     }
 
     nj::LIns *ldpObjSlots(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, JSObject::offsetOfSlots(), ACCSET_OBJ_SLOTS),
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldp, obj, 0, ACCSET_OBJ_SLOTS),
                     "slots");
     }
 
@@ -552,7 +562,8 @@ class Writer
     }
 
     nj::LIns *ldpConstTypedArrayData(nj::LIns *obj) const {
-        return name(lir->insLoad(nj::LIR_ldp, obj, offsetof(JSObject, privateData), ACCSET_TARRAY, nj::LOAD_CONST), "typedArrayData");
+        JS_NOT_REACHED("FIXME");
+        return name(lir->insLoad(nj::LIR_ldp, obj, 0, ACCSET_TARRAY, nj::LOAD_CONST), "typedArrayData");
     }
 
     nj::LIns *ldc2iTypedArrayElement(nj::LIns *elems, nj::LIns *index) const {

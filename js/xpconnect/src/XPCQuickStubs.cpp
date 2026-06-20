@@ -1,6 +1,5 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- *
- * ***** BEGIN LICENSE BLOCK *****
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
  * The contents of this file are subject to the Mozilla Public License Version
@@ -148,15 +147,13 @@ PropertyOpForwarder(JSContext *cx, uintN argc, jsval *vp)
     JSObject *obj = JS_THIS_OBJECT(cx, vp);
     if (!obj)
         return JS_FALSE;
-    jsval v;
 
-    if (!JS_GetReservedSlot(cx, callee, 0, &v))
-        return JS_FALSE;
+    jsval v = js::GetFunctionNativeReserved(callee, 0);
+
     JSObject *ptrobj = JSVAL_TO_OBJECT(v);
     Op *popp = static_cast<Op *>(JS_GetPrivate(cx, ptrobj));
 
-    if (!JS_GetReservedSlot(cx, callee, 1, &v))
-        return JS_FALSE;
+    v = js::GetFunctionNativeReserved(callee, 1);
 
     jsval argval = (argc > 0) ? JS_ARGV(cx, vp)[0] : JSVAL_VOID;
     jsid id;
@@ -188,7 +185,7 @@ GeneratePropertyOp(JSContext *cx, JSObject *obj, jsid id, uintN argc, Op pop)
     // The JS engine provides two reserved slots on function objects for
     // XPConnect to use. Use them to stick the necessary info here.
     JSFunction *fun =
-        JS_NewFunctionById(cx, PropertyOpForwarder<Op>, argc, 0, obj, id);
+        js::NewFunctionByIdWithReserved(cx, PropertyOpForwarder<Op>, argc, 0, obj, id);
     if (!fun)
         return JS_FALSE;
 
@@ -207,8 +204,8 @@ GeneratePropertyOp(JSContext *cx, JSObject *obj, jsid id, uintN argc, Op pop)
     *popp = pop;
     JS_SetPrivate(cx, ptrobj, popp);
 
-    JS_SetReservedSlot(cx, funobj, 0, OBJECT_TO_JSVAL(ptrobj));
-    JS_SetReservedSlot(cx, funobj, 1, js::IdToJsval(id));
+    js::SetFunctionNativeReserved(funobj, 0, OBJECT_TO_JSVAL(ptrobj));
+    js::SetFunctionNativeReserved(funobj, 1, js::IdToJsval(id));
     return funobj;
 }
 
@@ -518,7 +515,7 @@ GetMethodInfo(JSContext *cx, jsval *vp, const char **ifaceNamep, jsid *memberIdp
     JSObject *funobj = JSVAL_TO_OBJECT(JS_CALLEE(cx, vp));
     NS_ASSERTION(JS_ObjectIsFunction(cx, funobj),
                  "JSNative callee should be Function object");
-    JSString *str = JS_GetFunctionId((JSFunction *) JS_GetPrivate(cx, funobj));
+    JSString *str = JS_GetFunctionId(JS_GetObjectFunction(funobj));
     jsid methodId = str ? INTERNED_STRING_TO_JSID(cx, str) : JSID_VOID;
     GetMemberInfo(JSVAL_TO_OBJECT(vp[1]), methodId, ifaceNamep);
     *memberIdp = methodId;
@@ -1001,7 +998,7 @@ xpc_qsJsvalToCharStr(JSContext *cx, jsval v, JSAutoByteString *bytes)
 }
 
 JSBool
-xpc_qsJsvalToWcharStr(JSContext *cx, jsval v, jsval *pval, PRUnichar **pstr)
+xpc_qsJsvalToWcharStr(JSContext *cx, jsval v, jsval *pval, const PRUnichar **pstr)
 {
     JSString *str;
 
@@ -1020,8 +1017,7 @@ xpc_qsJsvalToWcharStr(JSContext *cx, jsval v, jsval *pval, PRUnichar **pstr)
     if (!chars)
         return JS_FALSE;
 
-    // XXXbz this is casting away constness too...  That seems like a bad idea.
-    *pstr = const_cast<jschar *>(chars);
+    *pstr = static_cast<const PRUnichar *>(chars);
     return JS_TRUE;
 }
 

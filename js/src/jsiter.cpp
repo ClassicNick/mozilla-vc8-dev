@@ -93,7 +93,6 @@ static JSObject *iterator_iterator(JSContext *cx, JSObject *obj, JSBool keysonly
 Class js::IteratorClass = {
     "Iterator",
     JSCLASS_HAS_PRIVATE |
-    JSCLASS_CONCURRENT_FINALIZER |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Iterator),
     JS_PropertyStub,         /* addProperty */
     JS_PropertyStub,         /* delProperty */
@@ -119,12 +118,14 @@ Class js::IteratorClass = {
     }
 };
 
+static const gc::AllocKind ITERATOR_FINALIZE_KIND = gc::FINALIZE_OBJECT2;
+
 void
 NativeIterator::mark(JSTracer *trc)
 {
     MarkIdRange(trc, begin(), end(), "props");
     if (obj)
-        MarkObject(trc, *obj, "obj");
+        MarkObject(trc, obj, "obj");
 }
 
 static void
@@ -134,8 +135,8 @@ iterator_finalize(JSContext *cx, JSObject *obj)
 
     NativeIterator *ni = obj->getNativeIterator();
     if (ni) {
+        obj->setPrivate(NULL);
         cx->free_(ni);
-        obj->setNativeIterator(NULL);
     }
 }
 
@@ -221,8 +222,8 @@ EnumerateNativeProperties(JSContext *cx, JSObject *obj, JSObject *pobj, uintN fl
     for (Shape::Range r = pobj->lastProperty()->all(); !r.empty(); r.popFront()) {
         const Shape &shape = r.front();
 
-        if (!JSID_IS_DEFAULT_XML_NAMESPACE(shape.propid) &&
-            !Enumerate(cx, obj, pobj, shape.propid, shape.enumerable(), flags, ht, props))
+        if (!JSID_IS_DEFAULT_XML_NAMESPACE(shape.propid()) &&
+            !Enumerate(cx, obj, pobj, shape.propid(), shape.enumerable(), flags, ht, props))
         {
             return false;
         }
@@ -337,7 +338,9 @@ js::VectorToIdArray(JSContext *cx, AutoIdVector &props, JSIdArray **idap)
         return false;
 
     ida->length = static_cast<jsint>(len);
-    memcpy(ida->vector, props.begin(), idsz);
+    jsid *v = props.begin();
+    for (jsint i = 0; i < ida->length; i++)
+        ida->vector[i].init(v[i]);
     *idap = ida;
     return true;
 }
@@ -410,23 +413,21 @@ static inline JSObject *
 NewIteratorObject(JSContext *cx, uintN flags)
 {
     if (flags & JSITER_ENUMERATE) {
-        /*
-         * Non-escaping native enumerator objects do not need map, proto, or
-         * parent. However, code in jstracer.cpp and elsewhere may find such a
-         * native enumerator object via the stack and (as for all objects that
-         * are not stillborn, with the exception of "NoSuchMethod" internal
-         * helper objects) expect it to have a non-null map pointer, so we
-         * share an empty Enumerator scope in the runtime.
-         */
-        JSObject *obj = js_NewGCObject(cx, FINALIZE_OBJECT0);
+        types::TypeObject *type = cx->compartment->getEmptyType(cx);
+        if (!type)
+            return NULL;
+
+        Shape *emptyEnumeratorShape = EmptyShape::getInitialShape(cx, &IteratorClass, NULL, NULL,
+                                                                  ITERATOR_FINALIZE_KIND);
+        if (!emptyEnumeratorShape)
+            return NULL;
+
+        JSObject *obj = JSObject::create(cx, ITERATOR_FINALIZE_KIND,
+                                         emptyEnumeratorShape, type, NULL);
         if (!obj)
             return NULL;
 
-        EmptyShape *emptyEnumeratorShape = EmptyShape::getEmptyEnumeratorShape(cx);
-        if (!emptyEnumeratorShape)
-            return NULL;
-        obj->init(cx, &IteratorClass, &types::emptyTypeObject, NULL, NULL, false);
-        obj->setMap(emptyEnumeratorShape);
+        JS_ASSERT(obj->numFixedSlots() == JSObject::ITER_CLASS_NFIXED_SLOTS);
         return obj;
     }
 
@@ -438,22 +439,24 @@ NativeIterator::allocateIterator(JSContext *cx, uint32 slength, const AutoIdVect
 {
     size_t plength = props.length();
     NativeIterator *ni = (NativeIterator *)
-        cx->malloc_(sizeof(NativeIterator) + plength * sizeof(jsid) + slength * sizeof(uint32));
+        cx->malloc_(sizeof(NativeIterator) + plength * sizeof(jsid) + slength * sizeof(Shape *));
     if (!ni)
         return NULL;
-    ni->props_array = ni->props_cursor = (jsid *) (ni + 1);
-    ni->props_end = (jsid *)ni->props_array + plength;
-    if (plength)
-        memcpy(ni->props_array, props.begin(), plength * sizeof(jsid));
+    ni->props_array = ni->props_cursor = (HeapId *) (ni + 1);
+    ni->props_end = ni->props_array + plength;
+    if (plength) {
+        for (size_t i = 0; i < plength; i++)
+            ni->props_array[i].init(props[i]);
+    }
     return ni;
 }
 
 inline void
 NativeIterator::init(JSObject *obj, uintN flags, uint32 slength, uint32 key)
 {
-    this->obj = obj;
+    this->obj.init(obj);
     this->flags = flags;
-    this->shapes_array = (uint32 *) this->props_end;
+    this->shapes_array = (const Shape **) this->props_end;
     this->shapes_length = slength;
     this->shapes_key = key;
 }
@@ -478,7 +481,8 @@ VectorToKeyIterator(JSContext *cx, JSObject *obj, uintN flags, AutoIdVector &key
     JS_ASSERT(!(flags & JSITER_FOREACH));
 
     if (obj) {
-        obj->flags |= JSObject::ITERATED;
+        if (obj->hasSingletonType() && !obj->setIteratedSingleton(cx))
+            return false;
         types::MarkTypeObjectFlags(cx, obj, types::OBJECT_FLAG_ITERATED);
     }
 
@@ -502,7 +506,7 @@ VectorToKeyIterator(JSContext *cx, JSObject *obj, uintN flags, AutoIdVector &key
         JSObject *pobj = obj;
         size_t ind = 0;
         do {
-            ni->shapes_array[ind++] = pobj->shape();
+            ni->shapes_array[ind++] = pobj->lastProperty();
             pobj = pobj->getProto();
         } while (pobj);
         JS_ASSERT(ind == slength);
@@ -530,7 +534,8 @@ VectorToValueIterator(JSContext *cx, JSObject *obj, uintN flags, AutoIdVector &k
     JS_ASSERT(flags & JSITER_FOREACH);
 
     if (obj) {
-        obj->flags |= JSObject::ITERATED;
+        if (obj->hasSingletonType() && !obj->setIteratedSingleton(cx))
+            return false;
         types::MarkTypeObjectFlags(cx, obj, types::OBJECT_FLAG_ITERATED);
     }
 
@@ -570,7 +575,7 @@ UpdateNativeIterator(NativeIterator *ni, JSObject *obj)
 bool
 GetIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
 {
-    Vector<uint32, 8> shapes(cx);
+    Vector<const Shape *, 8> shapes(cx);
     uint32 key = 0;
 
     bool keysOnly = (flags == JSITER_ENUMERATE);
@@ -599,9 +604,9 @@ GetIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
                 NativeIterator *lastni = last->getNativeIterator();
                 if (!(lastni->flags & (JSITER_ACTIVE|JSITER_UNREUSABLE)) &&
                     obj->isNative() &&
-                    obj->shape() == lastni->shapes_array[0] &&
+                    obj->lastProperty() == lastni->shapes_array[0] &&
                     proto && proto->isNative() &&
-                    proto->shape() == lastni->shapes_array[1] &&
+                    proto->lastProperty() == lastni->shapes_array[1] &&
                     !proto->getProto()) {
                     vp->setObject(*last);
                     UpdateNativeIterator(lastni, obj);
@@ -624,9 +629,9 @@ GetIterator(JSContext *cx, JSObject *obj, uintN flags, Value *vp)
                     shapes.clear();
                     goto miss;
                 }
-                uint32 shape = pobj->shape();
-                key = (key + (key << 16)) ^ shape;
-                if (!shapes.append(shape))
+                const Shape *shape = pobj->lastProperty();
+                key = (key + (key << 16)) ^ ((jsuword)shape >> 3);
+                if (!shapes.append((Shape *) shape))
                     return false;
                 pobj = pobj->getProto();
             } while (pobj);
@@ -853,9 +858,9 @@ SuppressDeletedPropertyHelper(JSContext *cx, JSObject *obj, IdPredicate predicat
         /* This only works for identified surpressed keys, not values. */
         if (ni->isKeyIter() && ni->obj == obj && ni->props_cursor < ni->props_end) {
             /* Check whether id is still to come. */
-            jsid *props_cursor = ni->current();
-            jsid *props_end = ni->end();
-            for (jsid *idp = props_cursor; idp < props_end; ++idp) {
+            HeapId *props_cursor = ni->current();
+            HeapId *props_end = ni->end();
+            for (HeapId *idp = props_cursor; idp < props_end; ++idp) {
                 if (predicate(*idp)) {
                     /*
                      * Check whether another property along the prototype chain
@@ -894,7 +899,8 @@ SuppressDeletedPropertyHelper(JSContext *cx, JSObject *obj, IdPredicate predicat
                     if (idp == props_cursor) {
                         ni->incCursor();
                     } else {
-                        memmove(idp, idp + 1, (props_end - (idp + 1)) * sizeof(jsid));
+                        for (HeapId *p = idp; p + 1 != props_end; p++)
+                            *p = *(p + 1);
                         ni->props_end = ni->end() - 1;
                     }
 
@@ -1110,6 +1116,37 @@ generator_finalize(JSContext *cx, JSObject *obj)
 }
 
 static void
+MarkGenerator(JSTracer *trc, JSGenerator *gen)
+{
+    StackFrame *fp = gen->floatingFrame();
+
+    /*
+     * MarkGenerator should only be called when regs is based on the floating frame.
+     * See calls to RebaseRegsFromTo.
+     */
+    JS_ASSERT(size_t(gen->regs.sp - fp->slots()) <= fp->numSlots());
+
+    /*
+     * Currently, generators are not mjitted. Still, (overflow) args can be
+     * pushed by the mjit and need to be conservatively marked. Technically, the
+     * formal args and generator slots are safe for exact marking, but since the
+     * plan is to eventually mjit generators, it makes sense to future-proof
+     * this code and save someone an hour later.
+     */
+    MarkStackRangeConservatively(trc, gen->floatingStack, fp->formalArgsEnd());
+    js_TraceStackFrame(trc, fp);
+    MarkStackRangeConservatively(trc, fp->slots(), gen->regs.sp);
+}
+
+static void
+GeneratorWriteBarrierPre(JSContext *cx, JSGenerator *gen)
+{
+    JSCompartment *comp = cx->compartment;
+    if (comp->needsBarrier())
+        MarkGenerator(comp->barrierTracer(), gen);
+}
+
+static void
 generator_trace(JSTracer *trc, JSObject *obj)
 {
     JSGenerator *gen = (JSGenerator *) obj->getPrivate();
@@ -1123,19 +1160,8 @@ generator_trace(JSTracer *trc, JSObject *obj)
     if (gen->state == JSGEN_RUNNING || gen->state == JSGEN_CLOSING)
         return;
 
-    StackFrame *fp = gen->floatingFrame();
-    JS_ASSERT(gen->liveFrame() == fp);
-
-    /*
-     * Currently, generators are not mjitted. Still, (overflow) args can be
-     * pushed by the mjit and need to be conservatively marked. Technically, the
-     * formal args and generator slots are safe for exact marking, but since the
-     * plan is to eventually mjit generators, it makes sense to future-proof
-     * this code and save someone an hour later.
-     */
-    MarkStackRangeConservatively(trc, gen->floatingStack, fp->formalArgsEnd());
-    js_TraceStackFrame(trc, fp);
-    MarkStackRangeConservatively(trc, fp->slots(), gen->regs.sp);
+    JS_ASSERT(gen->liveFrame() == gen->floatingFrame());
+    MarkGenerator(trc, gen);
 }
 
 Class js::GeneratorClass = {
@@ -1185,7 +1211,7 @@ js_NewGenerator(JSContext *cx)
     JSObject *proto = global->getOrCreateGeneratorPrototype(cx);
     if (!proto)
         return NULL;
-    JSObject *obj = NewNonFunction<WithProto::Given>(cx, &GeneratorClass, proto, global);
+    JSObject *obj = NewObjectWithGivenProto(cx, &GeneratorClass, proto, global);
     if (!obj)
         return NULL;
 
@@ -1209,7 +1235,7 @@ js_NewGenerator(JSContext *cx)
     StackFrame *genfp = reinterpret_cast<StackFrame *>(genvp + vplen);
 
     /* Initialize JSGenerator. */
-    gen->obj = obj;
+    gen->obj.init(obj);
     gen->state = JSGEN_NEWBORN;
     gen->enumerators = NULL;
     gen->floating = genfp;
@@ -1257,6 +1283,19 @@ SendToGenerator(JSContext *cx, JSGeneratorOp op, JSObject *obj,
     /* Check for OOM errors here, where we can fail easily. */
     if (!cx->ensureGeneratorStackSpace())
         return JS_FALSE;
+
+    /*
+     * Write barrier is needed since the generator stack can be updated,
+     * and it's not barriered in any other way. We need to do it before
+     * gen->state changes, which can cause us to trace the generator
+     * differently.
+     *
+     * We could optimize this by setting a bit on the generator to signify
+     * that it has been marked. If this bit has already been set, there is no
+     * need to mark again. The bit would have to be reset before the next GC,
+     * or else some kind of epoch scheme would have to be used.
+     */
+    GeneratorWriteBarrierPre(cx, gen);
 
     JS_ASSERT(gen->state == JSGEN_NEWBORN || gen->state == JSGEN_OPEN);
     switch (op) {

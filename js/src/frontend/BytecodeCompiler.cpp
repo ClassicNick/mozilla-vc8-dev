@@ -93,7 +93,7 @@ DefineGlobals(JSContext *cx, GlobalScope &globalScope, JSScript *script)
                                  JSPROP_ENUMERATE | JSPROP_PERMANENT, 0, 0, DNP_SKIP_TYPE);
         if (!shape)
             return false;
-        def.knownSlot = shape->slot;
+        def.knownSlot = shape->slot();
     }
 
     Vector<JSScript *, 16> worklist(cx);
@@ -123,10 +123,10 @@ DefineGlobals(JSContext *cx, GlobalScope &globalScope, JSScript *script)
                 JSObject *obj = arr->vector[i];
                 if (!obj->isFunction())
                     continue;
-                JSFunction *fun = obj->getFunctionPrivate();
+                JSFunction *fun = obj->toFunction();
                 JS_ASSERT(fun->isInterpreted());
                 JSScript *inner = fun->script();
-                if (outer->isHeavyweightFunction) {
+                if (outer->function() && outer->function()->isHeavyweight()) {
                     outer->isOuterFunction = true;
                     inner->isInnerFunction = true;
                 }
@@ -295,7 +295,7 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
             goto out;
 
 #if JS_HAS_XML_SUPPORT
-        if (!pn->isKind(TOK_SEMI) || !pn->pn_kid || !TreeTypeIsXML(pn->pn_kid->getKind()))
+        if (!pn->isKind(PNK_SEMI) || !pn->pn_kid || !pn->pn_kid->isXMLItem())
             onlyXML = false;
 #endif
         bce.freeTree(pn);
@@ -403,8 +403,7 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun, JSPrincipals *prin
         return false;
 
     /* FIXME: make Function format the source for a function definition. */
-    tokenStream.mungeCurrentToken(TOK_NAME);
-    ParseNode *fn = FunctionNode::create(&funbce);
+    ParseNode *fn = FunctionNode::create(PNK_NAME, &funbce);
     if (fn) {
         fn->pn_body = NULL;
         fn->pn_cookie.makeFree();
@@ -451,7 +450,7 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun, JSPrincipals *prin
             pn = NULL;
         } else {
             if (fn->pn_body) {
-                JS_ASSERT(fn->pn_body->isKind(TOK_ARGSBODY));
+                JS_ASSERT(fn->pn_body->isKind(PNK_ARGSBODY));
                 fn->pn_body->append(pn);
                 fn->pn_body->pn_pos = pn->pn_pos;
                 pn = fn->pn_body;

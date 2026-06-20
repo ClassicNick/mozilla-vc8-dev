@@ -73,6 +73,35 @@ DoomCachedStatements(const nsACString& aQuery,
   return PL_DHASH_REMOVE;
 }
 
+// This runnable doesn't actually do anything beyond "prime the pump" and get
+// transactions in the right order on the transaction thread pool.
+class StartTransactionRunnable : public nsIRunnable
+{
+public:
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD Run()
+  {
+    // NOP
+    return NS_OK;
+  }
+};
+
+// Could really use those NS_REFCOUNTING_HAHA_YEAH_RIGHT macros here.
+NS_IMETHODIMP_(nsrefcnt) StartTransactionRunnable::AddRef()
+{
+  return 2;
+}
+
+NS_IMETHODIMP_(nsrefcnt) StartTransactionRunnable::Release()
+{
+  return 1;
+}
+
+NS_IMPL_QUERY_INTERFACE1(StartTransactionRunnable, nsIRunnable)
+
+StartTransactionRunnable gStartTransactionRunnable;
+
 } // anonymous namespace
 
 // static
@@ -80,7 +109,6 @@ already_AddRefed<IDBTransaction>
 IDBTransaction::Create(IDBDatabase* aDatabase,
                        nsTArray<nsString>& aObjectStoreNames,
                        PRUint16 aMode,
-                       PRUint32 aTimeout,
                        bool aDispatchDelayed)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
@@ -92,7 +120,6 @@ IDBTransaction::Create(IDBDatabase* aDatabase,
 
   transaction->mDatabase = aDatabase;
   transaction->mMode = aMode;
-  transaction->mTimeout = aTimeout;
 
   if (!transaction->mObjectStoreNames.AppendElements(aObjectStoreNames)) {
     NS_ERROR("Out of memory!");
@@ -123,13 +150,17 @@ IDBTransaction::Create(IDBDatabase* aDatabase,
     transaction->mCreating = true;
   }
 
+  if (aMode != nsIIDBTransaction::VERSION_CHANGE) {
+    TransactionThreadPool* pool = TransactionThreadPool::GetOrCreate();
+    pool->Dispatch(transaction, &gStartTransactionRunnable, false, nsnull);
+  }
+
   return transaction.forget();
 }
 
 IDBTransaction::IDBTransaction()
 : mReadyState(nsIIDBTransaction::INITIAL),
   mMode(nsIIDBTransaction::READ_ONLY),
-  mTimeout(0),
   mPendingRequests(0),
   mCreatedRecursionDepth(0),
   mSavepointCount(0),
@@ -524,7 +555,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(IDBTransaction,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOnErrorListener)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOnCompleteListener)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOnAbortListener)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mOnTimeoutListener)
 
   for (PRUint32 i = 0; i < tmp->mCreatedObjectStores.Length(); i++) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mCreatedObjectStores[i]");
@@ -540,7 +570,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(IDBTransaction,
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOnErrorListener)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOnCompleteListener)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOnAbortListener)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mOnTimeoutListener)
 
   tmp->mCreatedObjectStores.Clear();
 
@@ -722,23 +751,6 @@ IDBTransaction::SetOnabort(nsIDOMEventListener* aOnabort)
 
   return RemoveAddEventListener(NS_LITERAL_STRING(ABORT_EVT_STR),
                                 mOnAbortListener, aOnabort);
-}
-
-NS_IMETHODIMP
-IDBTransaction::GetOntimeout(nsIDOMEventListener** aOntimeout)
-{
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
-  return GetInnerEventListener(mOnTimeoutListener, aOntimeout);
-}
-
-NS_IMETHODIMP
-IDBTransaction::SetOntimeout(nsIDOMEventListener* aOntimeout)
-{
-  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
-
-  return RemoveAddEventListener(NS_LITERAL_STRING(TIMEOUT_EVT_STR),
-                                mOnTimeoutListener, aOntimeout);
 }
 
 nsresult

@@ -46,15 +46,13 @@
 #include "jsgc.h"
 #include "jsgcstats.h"
 #include "jsobj.h"
+#include "jsscope.h"
 #include "vm/GlobalObject.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable:4251) /* Silence warning about JS_FRIEND_API and data members. */
 #endif
-
-namespace JSC { class ExecutableAllocator; }
-namespace WTF { class BumpPointerAllocator; }
 
 namespace js {
 
@@ -397,6 +395,20 @@ struct JS_FRIEND_API(JSCompartment) {
 
     js::gc::ArenaLists           arenas;
 
+    bool                         needsBarrier_;
+    js::GCMarker                 *gcIncrementalTracer;
+
+    bool needsBarrier() {
+        return needsBarrier_;
+    }
+
+    js::GCMarker *barrierTracer() {
+        JS_ASSERT(needsBarrier_);
+        if (gcIncrementalTracer)
+            return gcIncrementalTracer;
+        return createBarrierTracer();
+    }
+
     uint32                       gcBytes;
     uint32                       gcTriggerBytes;
     size_t                       gcLastBytes;
@@ -409,7 +421,7 @@ struct JS_FRIEND_API(JSCompartment) {
      * Cleared on every GC, unless the GC happens during analysis (indicated
      * by activeAnalysis, which is implied by activeInference).
      */
-    static const size_t TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 1 << 12;
+    static const size_t TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 4 * 1024;
     js::LifoAlloc                typeLifoAlloc;
     bool                         activeAnalysis;
     bool                         activeInference;
@@ -459,7 +471,6 @@ struct JS_FRIEND_API(JSCompartment) {
 
     void getMjitCodeStats(size_t& method, size_t& regexp, size_t& unused) const;
 #endif
-    WTF::BumpPointerAllocator    *regExpAllocator;
 
     /*
      * Shared scope property tree, and arena-pool for allocating its nodes.
@@ -474,34 +485,28 @@ struct JS_FRIEND_API(JSCompartment) {
     jsrefcount                   liveDictModeNodes;
 #endif
 
-    /*
-     * Runtime-shared empty scopes for well-known built-in objects that lack
-     * class prototypes (the usual locus of an emptyShape). Mnemonic: ABCDEW
-     */
-    js::EmptyShape               *emptyArgumentsShape;
-    js::EmptyShape               *emptyBlockShape;
-    js::EmptyShape               *emptyCallShape;
-    js::EmptyShape               *emptyDeclEnvShape;
-    js::EmptyShape               *emptyEnumeratorShape;
-    js::EmptyShape               *emptyWithShape;
+    /* Set of all unowned base shapes in the compartment. */
+    js::BaseShapeSet             baseShapes;
+    void sweepBaseShapeTable(JSContext *cx);
 
-    typedef js::HashSet<js::EmptyShape *,
-                        js::DefaultHasher<js::EmptyShape *>,
-                        js::SystemAllocPolicy> EmptyShapeSet;
+    /* Set of initial shapes in the compartment. */
+    js::InitialShapeSet          initialShapes;
+    void sweepInitialShapeTable(JSContext *cx);
 
-    EmptyShapeSet                emptyShapes;
+    /* Set of default 'new' or lazy types in the compartment. */
+    js::types::TypeObjectSet     newTypeObjects;
+    js::types::TypeObjectSet     lazyTypeObjects;
+    void sweepNewTypeObjectTable(JSContext *cx, js::types::TypeObjectSet &table);
 
-    /*
-     * Initial shapes given to RegExp and String objects, encoding the initial
-     * sets of built-in instance properties and the fixed slots where they must
-     * be stored (see JSObject::JSSLOT_(REGEXP|STRING)_*). Later property
-     * additions may cause these shapes to not be used by a RegExp or String
-     * (even along the entire shape parent chain, should the object go into
-     * dictionary mode). But because all the initial properties are
-     * non-configurable, they will always map to fixed slots.
-     */
-    const js::Shape              *initialRegExpShape;
-    const js::Shape              *initialStringShape;
+    js::types::TypeObject        *emptyTypeObject;
+
+    /* Get the default 'new' type for objects with a NULL prototype. */
+    inline js::types::TypeObject *getEmptyType(JSContext *cx);
+
+    js::types::TypeObject *getLazyType(JSContext *cx, JSObject *proto);
+
+    /* Cache to speed up object creation. */
+    js::NewObjectCache           newObjectCache;
 
   private:
     enum { DebugFromC = 1, DebugFromJS = 2 };
@@ -526,6 +531,7 @@ struct JS_FRIEND_API(JSCompartment) {
 
     bool wrap(JSContext *cx, js::Value *vp);
     bool wrap(JSContext *cx, JSString **strp);
+    bool wrap(JSContext *cx, js::HeapPtrString *strp);
     bool wrap(JSContext *cx, JSObject **objp);
     bool wrapId(JSContext *cx, jsid *idp);
     bool wrap(JSContext *cx, js::PropertyOp *op);
@@ -623,6 +629,8 @@ struct JS_FRIEND_API(JSCompartment) {
 
   private:
     void sweepBreakpoints(JSContext *cx);
+
+    js::GCMarker *createBarrierTracer();
 
   public:
     js::WatchpointMap *watchpointMap;

@@ -205,6 +205,9 @@ JS_DEFINE_CALLINFO_3(extern, INT32, js_StringToInt32, CONTEXT, STRING, BOOLPTR,
 static inline JSBool
 AddPropertyHelper(JSContext* cx, JSObject* obj, Shape* shape, bool isDefinitelyAtom)
 {
+    JS_NOT_REACHED("FIXME");
+    return true;
+#if 0
     JS_ASSERT(shape->previous() == obj->lastProperty());
 
     if (obj->nativeEmpty()) {
@@ -213,7 +216,7 @@ AddPropertyHelper(JSContext* cx, JSObject* obj, Shape* shape, bool isDefinitelyA
     }
 
     uint32 slot;
-    slot = shape->slot;
+    slot = shape->slot();
     JS_ASSERT(slot == obj->slotSpan());
 
     if (slot < obj->numSlots()) {
@@ -221,11 +224,12 @@ AddPropertyHelper(JSContext* cx, JSObject* obj, Shape* shape, bool isDefinitelyA
     } else {
         if (!obj->allocSlot(cx, &slot))
             return false;
-        JS_ASSERT(slot == shape->slot);
+        JS_ASSERT(slot == shape->slot());
     }
 
     obj->extend(cx, shape, isDefinitelyAtom);
-    return !js_IsPropertyCacheDisabled(cx);
+    return true;
+#endif
 }
 
 JSBool FASTCALL
@@ -304,12 +308,14 @@ JS_DEFINE_CALLINFO_2(extern, STRING, js_BooleanIntToString, CONTEXT, INT32, 1, A
 JSObject* FASTCALL
 js_NewNullClosure(JSContext* cx, JSObject* funobj, JSObject* proto, JSObject* parent)
 {
+    JS_NOT_REACHED("FIXME");
+    return NULL;
+#if 0
     JS_ASSERT(funobj->isFunction());
     JS_ASSERT(proto->isFunction());
     JS_ASSERT(JS_ON_TRACE(cx));
 
     JSFunction *fun = (JSFunction*) funobj;
-    JS_ASSERT(funobj->getFunctionPrivate() == fun);
 
     types::TypeObject *type = proto->getNewType(cx);
     if (!type)
@@ -324,6 +330,7 @@ js_NewNullClosure(JSContext* cx, JSObject* funobj, JSObject* proto, JSObject* pa
         return NULL;
     }
     return closure;
+#endif
 }
 JS_DEFINE_CALLINFO_4(extern, OBJECT, js_NewNullClosure, CONTEXT, OBJECT, OBJECT, OBJECT,
                      0, ACCSET_STORE_ANY)

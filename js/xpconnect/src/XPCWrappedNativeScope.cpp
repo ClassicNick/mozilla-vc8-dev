@@ -431,6 +431,9 @@ XPCWrappedNativeScope::FinishedMarkPhaseOfGC(JSContext* cx, XPCJSRuntime* rt)
         if (cur->mGlobalJSObject &&
             JS_IsAboutToBeFinalized(cx, cur->mGlobalJSObject)) {
             cur->mGlobalJSObject = nsnull;
+            cur->mPrototypeJSObject = nsnull;
+            cur->mPrototypeJSFunction = nsnull;
+            cur->mPrototypeNoHelper = nsnull;
             cur->mScriptObjectPrincipal = nsnull;
             if (cur->GetCachedDOMPrototypes().IsInitialized())
                  cur->GetCachedDOMPrototypes().Clear();
@@ -947,9 +950,9 @@ XPCWrappedNativeScope::DebugDump(PRInt16 depth)
         XPC_LOG_ALWAYS(("mRuntime @ %x", mRuntime));
         XPC_LOG_ALWAYS(("mNext @ %x", mNext));
         XPC_LOG_ALWAYS(("mComponents @ %x", mComponents));
-        XPC_LOG_ALWAYS(("mGlobalJSObject @ %x", mGlobalJSObject));
-        XPC_LOG_ALWAYS(("mPrototypeJSObject @ %x", mPrototypeJSObject));
-        XPC_LOG_ALWAYS(("mPrototypeJSFunction @ %x", mPrototypeJSFunction));
+        XPC_LOG_ALWAYS(("mGlobalJSObject @ %x", mGlobalJSObject.get()));
+        XPC_LOG_ALWAYS(("mPrototypeJSObject @ %x", mPrototypeJSObject.get()));
+        XPC_LOG_ALWAYS(("mPrototypeJSFunction @ %x", mPrototypeJSFunction.get()));
         XPC_LOG_ALWAYS(("mPrototypeNoHelper @ %x", mPrototypeNoHelper));
 
         XPC_LOG_ALWAYS(("mWrappedNativeMap @ %x with %d wrappers(s)",         \

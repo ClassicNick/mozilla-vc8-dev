@@ -648,7 +648,6 @@ JS_GetFrameFunctionObject(JSContext *cx, JSStackFrame *fpArg)
         return NULL;
 
     JS_ASSERT(fp->callee().isFunction());
-    JS_ASSERT(fp->callee().getPrivate() == fp->fun());
     return &fp->callee();
 }
 
@@ -820,7 +819,7 @@ JS_PropertyIterator(JSObject *obj, JSScopeProperty **iteratorp)
         shape = shape->previous();
 
     if (!shape->previous()) {
-        JS_ASSERT(JSID_IS_EMPTY(shape->propid));
+        JS_ASSERT(shape->isEmptyShape());
         shape = NULL;
     }
 
@@ -833,7 +832,7 @@ JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *sprop,
 {
     assertSameCompartment(cx, obj);
     Shape *shape = (Shape *) sprop;
-    pd->id = IdToJsval(shape->propid);
+    pd->id = IdToJsval(shape->propid());
 
     JSBool wasThrowing = cx->isExceptionPending();
     Value lastException = UndefinedValue();
@@ -841,7 +840,7 @@ JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *sprop,
         lastException = cx->getPendingException();
     cx->clearPendingException();
 
-    if (!js_GetProperty(cx, obj, shape->propid, &pd->value)) {
+    if (!js_GetProperty(cx, obj, shape->propid(), &pd->value)) {
         if (!cx->isExceptionPending()) {
             pd->flags = JSPD_ERROR;
             pd->value = JSVAL_VOID;
@@ -861,21 +860,21 @@ JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *sprop,
               |  (!shape->configurable() ? JSPD_PERMANENT : 0);
     pd->spare = 0;
     if (shape->getter() == GetCallArg) {
-        pd->slot = shape->shortid;
+        pd->slot = shape->shortid();
         pd->flags |= JSPD_ARGUMENT;
     } else if (shape->getter() == GetCallVar) {
-        pd->slot = shape->shortid;
+        pd->slot = shape->shortid();
         pd->flags |= JSPD_VARIABLE;
     } else {
         pd->slot = 0;
     }
     pd->alias = JSVAL_VOID;
 
-    if (obj->containsSlot(shape->slot)) {
+    if (obj->containsSlot(shape->slot())) {
         for (Shape::Range r = obj->lastProperty()->all(); !r.empty(); r.popFront()) {
             const Shape &aprop = r.front();
-            if (&aprop != shape && aprop.slot == shape->slot) {
-                pd->alias = IdToJsval(aprop.propid);
+            if (&aprop != shape && aprop.slot() == shape->slot()) {
+                pd->alias = IdToJsval(aprop.propid());
                 break;
             }
         }
@@ -1106,8 +1105,7 @@ JS_IsSystemObject(JSContext *cx, JSObject *obj)
 JS_PUBLIC_API(JSBool)
 JS_MakeSystemObject(JSContext *cx, JSObject *obj)
 {
-    obj->setSystem();
-    return true;
+    return obj->setSystem(cx);
 }
 
 /************************************************************************/
@@ -2139,6 +2137,23 @@ JS_DumpBytecode(JSContext *cx, JSScript *script)
 #endif
 }
 
+extern JS_PUBLIC_API(void)
+JS_DumpPCCounts(JSContext *cx, JSScript *script)
+{
+#if defined(DEBUG)
+    JS_ASSERT(script->pcCounters);
+
+    LifoAlloc lifoAlloc(1024);
+    Sprinter sprinter;
+    INIT_SPRINTER(cx, &sprinter, &lifoAlloc, 0);
+
+    fprintf(stdout, "--- SCRIPT %s:%d ---\n", script->filename, script->lineno);
+    js_DumpPCCounts(cx, script, &sprinter);
+    fputs(sprinter.base, stdout);
+    fprintf(stdout, "--- END SCRIPT %s:%d ---\n", script->filename, script->lineno);
+#endif
+}
+
 static void
 DumpBytecodeScriptCallback(JSContext *cx, void *data, void *thing,
                            JSGCTraceKind traceKind, size_t thingSize)
@@ -2153,6 +2168,23 @@ JS_PUBLIC_API(void)
 JS_DumpCompartmentBytecode(JSContext *cx)
 {
     IterateCells(cx, cx->compartment, gc::FINALIZE_SCRIPT, NULL, DumpBytecodeScriptCallback);
+}
+
+static void
+DumpPCCountsScriptCallback(JSContext *cx, void *data, void *thing,
+                           JSGCTraceKind traceKind, size_t thingSize)
+{
+    JS_ASSERT(traceKind == JSTRACE_SCRIPT);
+    JS_ASSERT(!data);
+    JSScript *script = static_cast<JSScript *>(thing);
+    if (script->pcCounters)
+        JS_DumpPCCounts(cx, script);
+}
+
+JS_PUBLIC_API(void)
+JS_DumpCompartmentPCCounts(JSContext *cx)
+{
+    IterateCells(cx, cx->compartment, gc::FINALIZE_SCRIPT, NULL, DumpPCCountsScriptCallback);
 }
 
 JS_PUBLIC_API(JSObject *)
