@@ -65,6 +65,7 @@
 #include "prmjtime.h"
 
 #include "vm/Stack.h"
+#include "vm/String.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -655,6 +656,9 @@ struct JSRuntime {
     /* Literal table maintained by jsatom.c functions. */
     JSAtomState         atomState;
 
+    /* Tables of strings that are pre-allocated in the atomsCompartment. */
+    js::StaticStrings   staticStrings;
+
     JSWrapObjectCallback wrapObjectCallback;
     JSPreWrapCallback    preWrapObjectCallback;
 
@@ -1092,7 +1096,7 @@ struct JSContext
      * Return:
      * - The override version, if there is an override version.
      * - The newest scripted frame's version, if there is such a frame.
-     * - The default verion.
+     * - The default version.
      *
      * Note: if this ever shows up in a profile, just add caching!
      */
@@ -1488,8 +1492,7 @@ class AutoGCRooter {
         DESCRIPTOR =  -13, /* js::AutoPropertyDescriptorRooter */
         STRING =      -14, /* js::AutoStringRooter */
         IDVECTOR =    -15, /* js::AutoIdVector */
-        OBJVECTOR =   -16, /* js::AutoObjectVector */
-        TYPE =        -17  /* js::types::AutoTypeRooter */
+        OBJVECTOR =   -16  /* js::AutoObjectVector */
     };
 
     private:
@@ -1516,13 +1519,6 @@ class AutoValueRooter : private AutoGCRooter
         JS_GUARD_OBJECT_NOTIFIER_INIT;
     }
 
-    AutoValueRooter(JSContext *cx, jsval v
-                    JS_GUARD_OBJECT_NOTIFIER_PARAM)
-      : AutoGCRooter(cx, JSVAL), val(js::Valueify(v))
-    {
-        JS_GUARD_OBJECT_NOTIFIER_INIT;
-    }
-
     /*
      * If you are looking for Object* overloads, use AutoObjectRooter instead;
      * rooting Object*s as a js::Value requires discerning whether or not it is
@@ -1532,11 +1528,6 @@ class AutoValueRooter : private AutoGCRooter
     void set(Value v) {
         JS_ASSERT(tag == JSVAL);
         val = v;
-    }
-
-    void set(jsval v) {
-        JS_ASSERT(tag == JSVAL);
-        val = js::Valueify(v);
     }
 
     const Value &value() const {
@@ -1551,12 +1542,12 @@ class AutoValueRooter : private AutoGCRooter
 
     const jsval &jsval_value() const {
         JS_ASSERT(tag == JSVAL);
-        return Jsvalify(val);
+        return val;
     }
 
     jsval *jsval_addr() {
         JS_ASSERT(tag == JSVAL);
-        return Jsvalify(&val);
+        return &val;
     }
 
     friend void AutoGCRooter::trace(JSTracer *trc);
@@ -1629,14 +1620,6 @@ class AutoArrayRooter : private AutoGCRooter {
     AutoArrayRooter(JSContext *cx, size_t len, Value *vec
                     JS_GUARD_OBJECT_NOTIFIER_PARAM)
       : AutoGCRooter(cx, len), array(vec)
-    {
-        JS_GUARD_OBJECT_NOTIFIER_INIT;
-        JS_ASSERT(tag >= 0);
-    }
-
-    AutoArrayRooter(JSContext *cx, size_t len, jsval *vec
-                    JS_GUARD_OBJECT_NOTIFIER_PARAM)
-      : AutoGCRooter(cx, len), array(Valueify(vec))
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
         JS_ASSERT(tag >= 0);
@@ -2471,11 +2454,11 @@ class AutoValueVector : public AutoVectorRooter<Value>
         JS_GUARD_OBJECT_NOTIFIER_INIT;
     }
 
-    const jsval *jsval_begin() const { return Jsvalify(begin()); }
-    jsval *jsval_begin() { return Jsvalify(begin()); }
+    const jsval *jsval_begin() const { return begin(); }
+    jsval *jsval_begin() { return begin(); }
 
-    const jsval *jsval_end() const { return Jsvalify(end()); }
-    jsval *jsval_end() { return Jsvalify(end()); }
+    const jsval *jsval_end() const { return end(); }
+    jsval *jsval_end() { return end(); }
 
     JS_DECL_USE_GUARD_OBJECT_NOTIFIER
 };

@@ -140,6 +140,14 @@ class Bytecode
     /* Call whose result should be monitored. */
     bool monitoredTypesReturn : 1;
 
+    /*
+     * Dynamically observed state about the execution of this opcode. These are
+     * hints about the script for use during compilation.
+     */
+    bool arrayWriteHole: 1;  /* SETELEM which has written to an array hole. */
+    bool getStringElement:1; /* GETELEM which has accessed string properties. */
+    bool accessGetter: 1;    /* Property read on a shape with a getter hook. */
+
     /* Stack depth before this opcode. */
     uint32 stackDepth;
 
@@ -886,15 +894,18 @@ class ScriptAnalysis
 
     /* --------- Bytecode analysis --------- */
 
-    bool usesRval;
-    bool usesScope;
-    bool usesThis;
-    bool hasCalls;
-    bool canTrackVars;
-    bool isInlineable;
+    bool usesReturnValue_:1;
+    bool usesScopeChain_:1;
+    bool usesThisValue_:1;
+    bool hasFunctionCalls_:1;
+    bool modifiesArguments_:1;
+    bool extendsScope_:1;
+    bool addsScopeObjects_:1;
+    bool localsAliasStack_:1;
+    bool isInlineable:1;
+    bool canTrackVars:1;
+
     uint32 numReturnSites_;
-    bool modifiesArguments_;
-    bool localsAliasStack_;
 
     /* Offsets at which each local becomes unconditionally defined, or a value below. */
     uint32 *definedLocals;
@@ -928,13 +939,13 @@ class ScriptAnalysis
     bool inlineable(uint32 argc) { return isInlineable && argc == script->function()->nargs; }
 
     /* Whether there are POPV/SETRVAL bytecodes which can write to the frame's rval. */
-    bool usesReturnValue() const { return usesRval; }
+    bool usesReturnValue() const { return usesReturnValue_; }
 
     /* Whether there are NAME bytecodes which can access the frame's scope chain. */
-    bool usesScopeChain() const { return usesScope; }
+    bool usesScopeChain() const { return usesScopeChain_; }
 
-    bool usesThisValue() const { return usesThis; }
-    bool hasFunctionCalls() const { return hasCalls; }
+    bool usesThisValue() const { return usesThisValue_; }
+    bool hasFunctionCalls() const { return hasFunctionCalls_; }
     uint32 numReturnSites() const { return numReturnSites_; }
 
     /*
@@ -942,6 +953,15 @@ class ScriptAnalysis
      * object cannot escape, the arguments are never modified within the script.
      */
     bool modifiesArguments() { return modifiesArguments_; }
+
+    /*
+     * True if the script may extend declarations in its top level scope with
+     * dynamic fun/var declarations or through eval.
+     */
+    bool extendsScope() { return extendsScope_; }
+
+    /* True if the script may add block or with objects to its scope chain. */
+    bool addsScopeObjects() { return addsScopeObjects_; }
 
     /*
      * True if there are any LOCAL opcodes aliasing values on the stack (above
@@ -952,7 +972,6 @@ class ScriptAnalysis
     /* Accessors for bytecode information. */
 
     Bytecode& getCode(uint32 offset) {
-        JS_ASSERT(script->compartment()->activeAnalysis);
         JS_ASSERT(offset < script->length);
         JS_ASSERT(codeArray[offset]);
         return *codeArray[offset];
@@ -960,7 +979,6 @@ class ScriptAnalysis
     Bytecode& getCode(const jsbytecode *pc) { return getCode(pc - script->code); }
 
     Bytecode* maybeCode(uint32 offset) {
-        JS_ASSERT(script->compartment()->activeAnalysis);
         JS_ASSERT(offset < script->length);
         return codeArray[offset];
     }
@@ -1019,13 +1037,13 @@ class ScriptAnalysis
 
     bool hasPushedTypes(const jsbytecode *pc) { return getCode(pc).pushedTypes != NULL; }
 
-    types::TypeBarrier *typeBarriers(uint32 offset) {
+    types::TypeBarrier *typeBarriers(JSContext *cx, uint32 offset) {
         if (getCode(offset).typeBarriers)
-            pruneTypeBarriers(offset);
+            pruneTypeBarriers(cx, offset);
         return getCode(offset).typeBarriers;
     }
-    types::TypeBarrier *typeBarriers(const jsbytecode *pc) {
-        return typeBarriers(pc - script->code);
+    types::TypeBarrier *typeBarriers(JSContext *cx, const jsbytecode *pc) {
+        return typeBarriers(cx, pc - script->code);
     }
     void addTypeBarrier(JSContext *cx, const jsbytecode *pc,
                         types::TypeSet *target, types::Type type);
@@ -1033,7 +1051,7 @@ class ScriptAnalysis
                                  types::TypeSet *target, JSObject *singleton, jsid singletonId);
 
     /* Remove obsolete type barriers at the given offset. */
-    void pruneTypeBarriers(uint32 offset);
+    void pruneTypeBarriers(JSContext *cx, uint32 offset);
 
     /*
      * Remove still-active type barriers at the given offset. If 'all' is set,
@@ -1167,6 +1185,21 @@ class ScriptAnalysis
         JS_ASSERT(!slotEscapes(slot));
         return lifetimes[slot];
     }
+
+    /*
+     * If a NAME or similar opcode is definitely accessing a particular slot
+     * of a script this one is nested in, get that script/slot.
+     */
+    struct NameAccess {
+        JSScript *script;
+        types::TypeScriptNesting *nesting;
+        uint32 slot;
+
+        /* Decompose the slot above. */
+        bool arg;
+        uint32 index;
+    };
+    NameAccess resolveNameAccess(JSContext *cx, jsid id, bool addDependency = false);
 
     void printSSA(JSContext *cx);
     void printTypes(JSContext *cx);

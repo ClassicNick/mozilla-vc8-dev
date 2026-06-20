@@ -95,27 +95,27 @@ Class js::IteratorClass = {
     JSCLASS_HAS_PRIVATE |
     JSCLASS_CONCURRENT_FINALIZER |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Iterator),
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,
-    ResolveStub,
-    ConvertStub,
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
     iterator_finalize,
-    NULL,                 /* reserved    */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call        */
-    NULL,                 /* construct   */
-    NULL,                 /* xdrObject   */
-    NULL,                 /* hasInstance */
+    NULL,                    /* reserved    */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* xdrObject   */
+    NULL,                    /* hasInstance */
     iterator_trace,
     {
-        NULL,             /* equality       */
-        NULL,             /* outerObject    */
-        NULL,             /* innerObject    */
-        iterator_iterator,
-        NULL              /* unused  */
+        NULL,                /* equality       */
+        NULL,                /* outerObject    */
+        NULL,                /* innerObject    */
+        iterator_iterator,   
+        NULL                 /* unused  */
     }
 };
 
@@ -920,6 +920,16 @@ js_SuppressDeletedProperty(JSContext *cx, JSObject *obj, jsid id)
     return SuppressDeletedPropertyHelper(cx, obj, SingleIdPredicate(id));
 }
 
+bool
+js_SuppressDeletedElement(JSContext *cx, JSObject *obj, uint32 index)
+{
+    jsid id;
+    if (!IndexToId(cx, index, &id))
+        return false;
+    JS_ASSERT(id == js_CheckForStringIndex(id));
+    return SuppressDeletedPropertyHelper(cx, obj, SingleIdPredicate(id));
+}
+
 class IndexRangePredicate {
     jsint begin, end;
 public:
@@ -982,7 +992,7 @@ js_IteratorMore(JSContext *cx, JSObject *iterobj, Value *rval)
         JS_ASSERT(!ni->isKeyIter());
         jsid id = *ni->current();
         ni->incCursor();
-        if (!ni->obj->getProperty(cx, id, rval))
+        if (!ni->obj->getGeneric(cx, id, rval))
             return false;
         if ((ni->flags & JSITER_KEYVALUE) && !NewKeyValuePair(cx, id, *rval, rval))
             return false;
@@ -1015,8 +1025,8 @@ js_IteratorNext(JSContext *cx, JSObject *iterobj, Value *rval)
 
             JSString *str;
             jsint i;
-            if (rval->isInt32() && JSAtom::hasIntStatic(i = rval->toInt32())) {
-                str = &JSAtom::intStatic(i);
+            if (rval->isInt32() && StaticStrings::hasInt(i = rval->toInt32())) {
+                str = cx->runtime->staticStrings.getInt(i);
             } else {
                 str = js_ValueToString(cx, *rval);
                 if (!str)
@@ -1046,19 +1056,19 @@ Class js::StopIterationClass = {
     js_StopIteration_str,
     JSCLASS_HAS_CACHED_PROTO(JSProto_StopIteration) |
     JSCLASS_FREEZE_PROTO,
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,
-    ResolveStub,
-    ConvertStub,
-    NULL,                 /* finalize    */
-    NULL,                 /* reserved0   */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call        */
-    NULL,                 /* construct   */
-    NULL,                 /* xdrObject   */
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
+    NULL,                    /* finalize    */
+    NULL,                    /* reserved0   */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* xdrObject   */
     stopiter_hasInstance
 };
 
@@ -1111,30 +1121,29 @@ generator_trace(JSTracer *trc, JSObject *obj)
 }
 
 Class js::GeneratorClass = {
-    js_Generator_str,
-    JSCLASS_HAS_PRIVATE | JSCLASS_HAS_CACHED_PROTO(JSProto_Generator) |
-    JSCLASS_IS_ANONYMOUS,
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,
-    ResolveStub,
-    ConvertStub,
+    "Generator",
+    JSCLASS_HAS_PRIVATE,
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
     generator_finalize,
-    NULL,                 /* reserved    */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call        */
-    NULL,                 /* construct   */
-    NULL,                 /* xdrObject   */
-    NULL,                 /* hasInstance */
+    NULL,                    /* reserved    */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* xdrObject   */
+    NULL,                    /* hasInstance */
     generator_trace,
     {
-        NULL,             /* equality       */
-        NULL,             /* outerObject    */
-        NULL,             /* innerObject    */
-        iterator_iterator,
-        NULL              /* unused */
+        NULL,                /* equality       */
+        NULL,                /* outerObject    */
+        NULL,                /* innerObject    */
+        iterator_iterator,   
+        NULL                 /* unused */
     }
 };
 
@@ -1149,14 +1158,18 @@ Class js::GeneratorClass = {
 JS_REQUIRES_STACK JSObject *
 js_NewGenerator(JSContext *cx)
 {
-    JSObject *obj = NewBuiltinClassInstance(cx, &GeneratorClass);
-    if (!obj)
-        return NULL;
-
     FrameRegs &stackRegs = cx->regs();
     StackFrame *stackfp = stackRegs.fp();
     JS_ASSERT(stackfp->base() == cx->regs().sp);
     JS_ASSERT(stackfp->actualArgs() <= stackfp->formalArgs());
+
+    GlobalObject *global = stackfp->scopeChain().getGlobal();
+    JSObject *proto = global->getOrCreateGeneratorPrototype(cx);
+    if (!proto)
+        return NULL;
+    JSObject *obj = NewNonFunction<WithProto::Given>(cx, &GeneratorClass, proto, global);
+    if (!obj)
+        return NULL;
 
     /* Load and compute stack slot counts. */
     Value *stackvp = stackfp->actualArgs() - 2;
@@ -1443,22 +1456,16 @@ InitIteratorClass(JSContext *cx, GlobalObject *global)
     return DefineConstructorAndPrototype(cx, global, JSProto_Iterator, ctor, iteratorProto);
 }
 
-static bool
-InitGeneratorClass(JSContext *cx, GlobalObject *global)
+bool
+GlobalObject::initGeneratorClass(JSContext *cx)
 {
 #if JS_HAS_GENERATORS
-    JSObject *proto = global->createBlankPrototype(cx, &GeneratorClass);
-    if (!proto)
+    JSObject *proto = createBlankPrototype(cx, &GeneratorClass);
+    if (!proto || !DefinePropertiesAndBrand(cx, proto, NULL, generator_methods))
         return false;
-
-    if (!DefinePropertiesAndBrand(cx, proto, NULL, generator_methods))
-        return false;
-
-    /* This should use a non-JSProtoKey'd slot, but this is easier for now. */
-    return DefineConstructorAndPrototype(cx, global, JSProto_Generator, proto, proto);
-#else
-    return true;
+    setReservedSlot(GENERATOR_PROTO, ObjectValue(*proto));
 #endif
+    return true;
 }
 
 static JSObject *
@@ -1496,7 +1503,7 @@ js_InitIteratorClasses(JSContext *cx, JSObject *obj)
     if (iter)
         return iter;
 
-    if (!InitIteratorClass(cx, global) || !InitGeneratorClass(cx, global))
+    if (!InitIteratorClass(cx, global) || !global->initGeneratorClass(cx))
         return NULL;
     return InitStopIterationClass(cx, global);
 }

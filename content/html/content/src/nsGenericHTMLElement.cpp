@@ -785,6 +785,11 @@ nsGenericHTMLElement::SetInnerHTML(const nsAString& aInnerHTML)
                                                   getter_AddRefs(df));
     nsCOMPtr<nsINode> fragment = do_QueryInterface(df);
     if (NS_SUCCEEDED(rv)) {
+      // Suppress assertion about node removal mutation events that can't have
+      // listeners anyway, because no one has had the chance to register mutation
+      // listeners on the fragment that comes from the parser.
+      nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
+
       static_cast<nsINode*>(this)->AppendChild(fragment, &rv);
     }
   }
@@ -2500,7 +2505,7 @@ nsGenericHTMLFormElement::nsGenericHTMLFormElement(already_AddRefed<nsINodeInfo>
 nsGenericHTMLFormElement::~nsGenericHTMLFormElement()
 {
   if (mFieldSet) {
-    static_cast<nsHTMLFieldSetElement*>(mFieldSet)->RemoveElement(this);
+    mFieldSet->RemoveElement(this);
   }
 
   // Check that this element doesn't know anything about its form at this point.
@@ -2837,6 +2842,22 @@ nsGenericHTMLFormElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   return nsGenericHTMLElement::PreHandleEvent(aVisitor);
 }
 
+/* virtual */
+bool
+nsGenericHTMLFormElement::IsDisabled() const
+{
+  return HasAttr(kNameSpaceID_None, nsGkAtoms::disabled) ||
+         (mFieldSet && mFieldSet->IsDisabled());
+}
+
+void
+nsGenericHTMLFormElement::ForgetFieldSet(nsIContent* aFieldset)
+{
+  if (mFieldSet == aFieldset) {
+    mFieldSet = nsnull;
+  }
+}
+
 PRBool
 nsGenericHTMLFormElement::CanBeDisabled() const
 {
@@ -3087,32 +3108,30 @@ nsGenericHTMLFormElement::UpdateFieldSet(PRBool aNotify)
 
   for (parent = GetParent(); parent;
        prev = parent, parent = parent->GetParent()) {
-    if (parent->IsHTML(nsGkAtoms::fieldset)) {
-      nsHTMLFieldSetElement* fieldset =
-        static_cast<nsHTMLFieldSetElement*>(parent);
-
-      if (!prev || fieldset->GetFirstLegend() != prev) {
-        if (mFieldSet == fieldset) {
-          // We already have the right fieldset;
-          return;
-        }
-
-        if (mFieldSet) {
-          static_cast<nsHTMLFieldSetElement*>(mFieldSet)->RemoveElement(this);
-        }
-        mFieldSet = fieldset;
-        fieldset->AddElement(this);
-
-        // The disabled state may have changed
-        FieldSetDisabledChanged(aNotify);
+    nsHTMLFieldSetElement* fieldset =
+      nsHTMLFieldSetElement::FromContent(parent);
+    if (fieldset &&
+        (!prev || fieldset->GetFirstLegend() != prev)) {
+      if (mFieldSet == fieldset) {
+        // We already have the right fieldset;
         return;
       }
+
+      if (mFieldSet) {
+        mFieldSet->RemoveElement(this);
+      }
+      mFieldSet = fieldset;
+      fieldset->AddElement(this);
+
+      // The disabled state may have changed
+      FieldSetDisabledChanged(aNotify);
+      return;
     }
   }
 
   // No fieldset found.
   if (mFieldSet) {
-    static_cast<nsHTMLFieldSetElement*>(mFieldSet)->RemoveElement(this);
+    mFieldSet->RemoveElement(this);
     mFieldSet = nsnull;
     // The disabled state may have changed
     FieldSetDisabledChanged(aNotify);
@@ -3642,14 +3661,10 @@ nsGenericHTMLElement::SyncEditorsOnSubtree(nsIContent* content)
   }
 
   /* Sync all children */
-  PRUint32 childCount = content->GetChildCount();
-  for (PRUint32 i = 0; i < childCount; ++i) {
-    nsIContent* childContent = content->GetChildAt(i);
-    NS_ASSERTION(childContent,
-                 "DOM mutated unexpectedly while syncing editors!");
-    if (childContent) {
-      SyncEditorsOnSubtree(childContent);
-    }
+  for (nsIContent* child = content->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
+    SyncEditorsOnSubtree(child);
   }
 }
 

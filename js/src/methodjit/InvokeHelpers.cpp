@@ -361,7 +361,7 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
     PreserveRegsGuard regsGuard(cx, regs);
 
     /* Scope with a call object parented by callee's parent. */
-    if (newfun->isHeavyweight() && !js::CreateFunCallObject(cx, regs.fp()))
+    if (!regs.fp()->functionPrologue(cx))
         return false;
 
     /*
@@ -497,13 +497,6 @@ stubs::UncachedCallHelper(VMFrame &f, uint32 argc, bool lowered, UncachedCallRes
     return;
 }
 
-void JS_FASTCALL
-stubs::PutActivationObjects(VMFrame &f)
-{
-    JS_ASSERT(f.fp()->hasCallObj() || f.fp()->hasArgsObj());
-    f.fp()->putActivationObjects();
-}
-
 static void
 RemoveOrphanedNative(JSContext *cx, StackFrame *fp)
 {
@@ -569,7 +562,7 @@ js_InternalThrow(VMFrame &f)
                 Value rval;
                 JSTrapStatus st = Debugger::onExceptionUnwind(cx, &rval);
                 if (st == JSTRAP_CONTINUE && handler) {
-                    st = handler(cx, cx->fp()->script(), cx->regs().pc, Jsvalify(&rval),
+                    st = handler(cx, cx->fp()->script(), cx->regs().pc, &rval,
                                  cx->debugHooks->throwHookData);
                 }
 
@@ -634,7 +627,7 @@ js_InternalThrow(VMFrame &f)
          */
         cx->compartment->jaegerCompartment()->setLastUnfinished(Jaeger_Unfinished);
 
-        if (!script->ensureRanBytecode(cx)) {
+        if (!script->ensureRanAnalysis(cx)) {
             js_ReportOutOfMemory(cx);
             return NULL;
         }
@@ -668,14 +661,6 @@ js_InternalThrow(VMFrame &f)
     }
 
     return script->nativeCodeForPC(fp->isConstructing(), pc);
-}
-
-void JS_FASTCALL
-stubs::CreateFunCallObject(VMFrame &f)
-{
-    JS_ASSERT(f.fp()->fun()->isHeavyweight());
-    if (!js::CreateFunCallObject(f.cx, f.fp()))
-        THROW();
 }
 
 void JS_FASTCALL
@@ -1251,7 +1236,7 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
     JSOp op = JSOp(*pc);
     const JSCodeSpec *cs = &js_CodeSpec[op];
 
-    if (!script->ensureRanBytecode(cx)) {
+    if (!script->ensureRanAnalysis(cx)) {
         js_ReportOutOfMemory(cx);
         return js_InternalThrow(f);
     }
@@ -1347,22 +1332,34 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         break;
 
       case REJOIN_NATIVE:
-      case REJOIN_NATIVE_LOWERED: {
+      case REJOIN_NATIVE_LOWERED:
+      case REJOIN_NATIVE_GETTER: {
         /*
          * We don't rejoin until after the native stub finishes execution, in
          * which case the return value will be in memory. For lowered natives,
-         * the return value will be in the 'this' value's slot.
+         * the return value will be in the 'this' value's slot. For getters,
+         * the result is at nextsp[0] (see ic::CallProp).
          */
-        if (rejoin == REJOIN_NATIVE_LOWERED)
+        if (rejoin == REJOIN_NATIVE_LOWERED) {
             nextsp[-1] = nextsp[0];
+        } else if (rejoin == REJOIN_NATIVE_GETTER) {
+            if (js_CodeSpec[op].format & JOF_CALLOP) {
+                /*
+                 * If we went through jsop_callprop_obj then the 'this' value
+                 * is still in its original slot and hasn't been shifted yet,
+                 * so fix that now. Yuck.
+                 */
+                if (nextsp[-2].isObject())
+                    nextsp[-1] = nextsp[-2];
+                nextsp[-2] = nextsp[0];
+            } else {
+                nextsp[-1] = nextsp[0];
+            }
+        }
 
         /* Release this reference on the orphaned native stub. */
         RemoveOrphanedNative(cx, fp);
 
-        /*
-         * Note: there is no need to monitor the result of the native, the
-         * native stub will always do a type check before finishing.
-         */
         f.regs.pc = nextpc;
         break;
       }
@@ -1395,7 +1392,7 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         break;
       }
 
-      case REJOIN_CHECK_ARGUMENTS: {
+      case REJOIN_CHECK_ARGUMENTS:
         /*
          * Do all the work needed in arity check JIT prologues after the
          * arguments check occurs (FixupArity has been called if needed, but
@@ -1406,22 +1403,17 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
 
         SetValueRangeToUndefined(fp->slots(), script->nfixed);
 
-        if (fp->fun()->isHeavyweight()) {
-            if (!js::CreateFunCallObject(cx, fp))
-                return js_InternalThrow(f);
-        }
-
+        if (!fp->functionPrologue(cx))
+            return js_InternalThrow(f);
         /* FALLTHROUGH */
-      }
 
-      case REJOIN_CREATE_CALL_OBJECT: {
+      case REJOIN_FUNCTION_PROLOGUE:
         fp->scopeChain();
 
         /* Construct the 'this' object for the frame if necessary. */
         if (!ScriptPrologueOrGeneratorResume(cx, fp, types::UseNewTypeAtEntry(cx, fp)))
             return js_InternalThrow(f);
         break;
-      }
 
       case REJOIN_CALL_PROLOGUE:
       case REJOIN_CALL_PROLOGUE_LOWERED_CALL:
@@ -1483,7 +1475,6 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         switch (op) {
           case JSOP_NAME:
           case JSOP_GETGNAME:
-          case JSOP_GETGLOBAL:
           case JSOP_GETFCSLOT:
           case JSOP_GETPROP:
           case JSOP_GETXPROP:
@@ -1493,12 +1484,12 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
             break;
 
           case JSOP_CALLGNAME:
+          case JSOP_CALLNAME:
             if (!ComputeImplicitThis(cx, &fp->scopeChain(), nextsp[-2], &nextsp[-1]))
                 return js_InternalThrow(f);
             f.regs.pc = nextpc;
             break;
 
-          case JSOP_CALLGLOBAL:
           case JSOP_CALLFCSLOT:
             /* |this| is always undefined for CALLGLOBAL/CALLFCSLOT. */
             nextsp[-1].setUndefined();
@@ -1584,6 +1575,16 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
     if (nextDepth == uint32(-1))
         nextDepth = analysis->getCode(f.regs.pc).stackDepth;
     f.regs.sp = fp->base() + nextDepth;
+
+    /*
+     * Monitor the result of the previous op when finishing a JOF_TYPESET op.
+     * The result may not have been marked if we bailed out while inside a stub
+     * for the op.
+     */
+    if (f.regs.pc == nextpc && (js_CodeSpec[op].format & JOF_TYPESET)) {
+        int which = (js_CodeSpec[op].format & JOF_CALLOP) ? -2 : -1;  /* Yuck. */
+        types::TypeScript::Monitor(cx, script, pc, f.regs.sp[which]);
+    }
 
     /* Mark the entry frame as unfinished, and update the regs to resume at. */
     JaegerStatus status = skipTrap ? Jaeger_UnfinishedAtTrap : Jaeger_Unfinished;

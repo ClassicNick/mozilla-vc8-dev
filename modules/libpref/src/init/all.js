@@ -64,16 +64,16 @@ pref("browser.cache.disk.enable",           true);
 pref("browser.cache.disk.smart_size.first_run", true);
 // Does the user want smart-sizing?
 pref("browser.cache.disk.smart_size.enabled", true);
-// Size explicitly set by the user. Used when smart_size.enabled == false
+// Size (in KB) explicitly set by the user. Used when smart_size.enabled == false
 pref("browser.cache.disk.capacity",         256000);
-// User-controllable max-size for entries in disk-cache. Regardless of this
-// setting, no entries bigger than 1/8 of disk-cache will be cached
-pref("browser.cache.disk.max_entry_size",    5120);
+// Max-size (in KB) for entries in disk cache. Set to -1 for no limit.
+// (Note: entries bigger than 1/8 of disk-cache are never cached)
+pref("browser.cache.disk.max_entry_size",    51200);  // 50 MB
 pref("browser.cache.memory.enable",         true);
 // -1 = determine dynamically, 0 = none, n = memory capacity in kilobytes
 //pref("browser.cache.memory.capacity",     -1);
-// User-controllable max-size for entries in mem-cache. Regardless of this
-// setting, no entries bigger than 90% of the mem-cache will be cached
+// Max-size (in KB) for entries in memory cache. Set to -1 for no limit.  
+// (Note: entries bigger than than 90% of the mem-cache are never cached)
 pref("browser.cache.memory.max_entry_size",  5120);
 pref("browser.cache.disk_cache_ssl",        true);
 // 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
@@ -623,6 +623,8 @@ pref("javascript.options.methodjit.content", true);
 pref("javascript.options.methodjit.chrome",  true);
 pref("javascript.options.jitprofiling.content", true);
 pref("javascript.options.jitprofiling.chrome",  true);
+pref("javascript.options.pccounts.content", false);
+pref("javascript.options.pccounts.chrome",  false);
 pref("javascript.options.methodjit_always", false);
 pref("javascript.options.typeinference", true);
 // This preference limits the memory usage of javascript.
@@ -818,8 +820,10 @@ pref("network.websocket.timeout.ping.request", 0);
 pref("network.websocket.timeout.ping.response", 10);
 
 // Defines whether or not to try and negotiate the stream-deflate compression
-// extension with the websocket server
-pref("network.websocket.extensions.stream-deflate", true);
+// extension with the websocket server. Stream-Deflate has been removed from
+// the standards track document, but can still be used by servers who opt
+// into it.
+pref("network.websocket.extensions.stream-deflate", false);
 
 // the maximum number of concurrent websocket sessions. By specification there
 // is never more than one handshake oustanding to an individual host at
@@ -1110,6 +1114,7 @@ pref("font.language.group",                 "chrome://global/locale/intl.propert
 pref("intl.uidirection.ar", "rtl");
 pref("intl.uidirection.he", "rtl");
 pref("intl.uidirection.fa", "rtl");
+pref("intl.uidirection.ur", "rtl");
 
 // use en-US hyphenation by default for content tagged with plain lang="en"
 pref("intl.hyphenation-alias.en", "en-us");
@@ -3246,7 +3251,7 @@ pref("image.mem.discardable", true);
 
 // Prevents images from automatically being decoded on load, instead allowing
 // them to be decoded on demand when they are drawn.
-pref("image.mem.decodeondraw", false);
+pref("image.mem.decodeondraw", true);
 
 // Minimum timeout for image discarding (in milliseconds). The actual time in
 // which an image must inactive for it to be discarded will vary between this

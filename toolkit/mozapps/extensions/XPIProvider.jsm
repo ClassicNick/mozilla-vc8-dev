@@ -1707,6 +1707,9 @@ var XPIProvider = {
    * Shows the "Compatibility Updates" UI
    */
   showUpgradeUI: function XPI_showUpgradeUI() {
+    // Flip a flag to indicate that we interrupted startup with an interactive prompt
+    Services.startup.interrupted = true;
+
     if (!Prefs.getBoolPref(PREF_SHOWN_SELECTION_UI, false)) {
       // This *must* be modal as it has to block startup.
       var features = "chrome,centerscreen,dialog,titlebar,modal";
@@ -1751,9 +1754,6 @@ var XPIProvider = {
       Services.appinfo.annotateCrashReport("Add-ons", data);
     }
     catch (e) { }
-    
-    const TelemetryPing = Cc["@mozilla.org/base/telemetry-ping;1"].getService(Ci.nsIObserver);
-    TelemetryPing.observe(null, "Add-ons", data);
   },
 
   /**
@@ -3996,8 +3996,8 @@ var XPIDatabase = {
     getInstallLocations: "SELECT DISTINCT location FROM addon",
     getVisibleAddonForID: "SELECT " + FIELDS_ADDON + " FROM addon WHERE " +
                           "visible=1 AND id=:id",
-    getVisibleAddoForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
-                                   "WHERE visible=1 AND internalName=:internalName",
+    getVisibleAddonForInternalName: "SELECT " + FIELDS_ADDON + " FROM addon " +
+                                    "WHERE visible=1 AND internalName=:internalName",
     getVisibleAddons: "SELECT " + FIELDS_ADDON + " FROM addon WHERE visible=1",
     getVisibleAddonsWithPendingOperations: "SELECT " + FIELDS_ADDON + " FROM " +
                                            "addon WHERE visible=1 " +
@@ -4986,7 +4986,7 @@ var XPIDatabase = {
    * @return a DBAddonInternal
    */
   getVisibleAddonForInternalName: function XPIDB_getVisibleAddonForInternalName(aInternalName) {
-    let stmt = this.getStatement("getVisibleAddoForInternalName");
+    let stmt = this.getStatement("getVisibleAddonForInternalName");
 
     let addon = null;
     stmt.params.internalName = aInternalName;

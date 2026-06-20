@@ -37,7 +37,7 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "nsSVGTextFrame.h"
-#include "nsILookAndFeel.h"
+#include "mozilla/LookAndFeel.h"
 #include "nsTextFragment.h"
 #include "nsBidiPresUtils.h"
 #include "nsSVGUtils.h"
@@ -639,7 +639,11 @@ nsSVGGlyphFrame::FillCharacters(CharacterIterator *aIter,
 gfxRect
 nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace)
 {
-  mOverrideCanvasTM = NS_NewSVGMatrix(aToBBoxUserspace);
+  if (mOverrideCanvasTM) {
+    *mOverrideCanvasTM = aToBBoxUserspace;
+  } else {
+    mOverrideCanvasTM = new gfxMatrix(aToBBoxUserspace);
+  }
 
   nsRefPtr<gfxContext> tmpCtx = MakeTmpCtx();
   SetupGlobalTransform(tmpCtx);
@@ -660,7 +664,7 @@ gfxMatrix
 nsSVGGlyphFrame::GetCanvasTM()
 {
   if (mOverrideCanvasTM) {
-    return nsSVGUtils::ConvertSVGMatrixToThebes(mOverrideCanvasTM);
+    return *mOverrideCanvasTM;
   }
   NS_ASSERTION(mParent, "null parent");
   return static_cast<nsSVGContainerFrame*>(mParent)->GetCanvasTM();
@@ -1007,11 +1011,11 @@ nsSVGGlyphFrame::GetHighlight(PRUint32 *charnum, PRUint32 *nchars,
 
     *charnum=CompressIndex(details->mStart, fragment);
     *nchars=CompressIndex(details->mEnd, fragment)-*charnum;  
-    
-    nsILookAndFeel *look = presContext->LookAndFeel();
 
-    look->GetColor(nsILookAndFeel::eColor_TextSelectBackground, *background);
-    look->GetColor(nsILookAndFeel::eColor_TextSelectForeground, *foreground);
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectBackground,
+                          background);
+    LookAndFeel::GetColor(LookAndFeel::eColorID_TextSelectForeground,
+                          foreground);
 
     SelectionDetails *dp = details;
     while ((dp=details->mNext) != nsnull) {

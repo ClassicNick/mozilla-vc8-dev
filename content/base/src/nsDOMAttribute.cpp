@@ -364,6 +364,13 @@ nsDOMAttribute::GetParentNode(nsIDOMNode** aParentNode)
 }
 
 NS_IMETHODIMP
+nsDOMAttribute::GetParentElement(nsIDOMElement** aParentElement)
+{
+  *aParentElement = nsnull;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMAttribute::GetChildNodes(nsIDOMNodeList** aChildNodes)
 {
   nsIDocument* document = GetOwnerDoc();
@@ -653,6 +660,11 @@ nsDOMAttribute::SetTextContent(const nsAString& aTextContent)
 NS_IMETHODIMP
 nsDOMAttribute::IsSameNode(nsIDOMNode *other, PRBool *aResult)
 {
+  nsIDocument* document = GetOwnerDoc();
+  if (document) {
+    document->WarnOnceAbout(nsIDocument::eIsSameNode);
+  }
+
   *aResult = other == this;
   return NS_OK;
 }

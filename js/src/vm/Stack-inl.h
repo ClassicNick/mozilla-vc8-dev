@@ -46,7 +46,10 @@
 
 #include "Stack.h"
 
+#include "jsscriptinlines.h"
 #include "ArgumentsObject-inl.h"
+#include "CallObject-inl.h"
+
 #include "methodjit/MethodJIT.h"
 
 namespace js {
@@ -129,11 +132,6 @@ inline void
 StackFrame::resetCallFrame(JSScript *script)
 {
     JS_ASSERT(script == this->script());
-
-    /* Undo changes to frame made during execution; see also initCallFrame */
-
-    putActivationObjects();
-    markActivationObjectsAsPut();
 
     if (flags_ & UNDERFLOW_ARGS)
         SetValueRangeToUndefined(formalArgs() + numActualArgs(), formalArgsEnd());
@@ -344,15 +342,15 @@ StackFrame::setScopeChainNoCallObj(JSObject &obj)
 }
 
 inline void
-StackFrame::setScopeChainWithOwnCallObj(JSObject &obj)
+StackFrame::setScopeChainWithOwnCallObj(CallObject &obj)
 {
     JS_ASSERT(&obj != NULL);
-    JS_ASSERT(!hasCallObj() && obj.isCall() && obj.getPrivate() == this);
+    JS_ASSERT(!hasCallObj() && obj.maybeStackFrame() == this);
     scopeChain_ = &obj;
     flags_ |= HAS_SCOPECHAIN | HAS_CALL_OBJ;
 }
 
-inline JSObject &
+inline CallObject &
 StackFrame::callObj() const
 {
     JS_ASSERT_IF(isNonEvalFunctionFrame() || isStrictEvalFrame(), hasCallObj());
@@ -362,12 +360,47 @@ StackFrame::callObj() const
         JS_ASSERT(IsCacheableNonGlobalScope(pobj) || pobj->isWith());
         pobj = pobj->getParent();
     }
-    return *pobj;
+    return pobj->asCall();
+}
+
+inline bool
+StackFrame::maintainNestingState() const
+{
+    /*
+     * Whether to invoke the nesting epilogue/prologue to maintain active
+     * frame counts and check for reentrant outer functions.
+     */
+    return isNonEvalFunctionFrame() && !isGeneratorFrame() && script()->nesting();
+}
+
+inline bool
+StackFrame::functionPrologue(JSContext *cx)
+{
+    JS_ASSERT(isNonEvalFunctionFrame());
+
+    JSFunction *fun = this->fun();
+
+    if (fun->isHeavyweight()) {
+        if (!CreateFunCallObject(cx, this))
+            return false;
+    } else {
+        /* Force instantiation of the scope chain, for JIT frames. */
+        scopeChain();
+    }
+
+    if (script()->nesting()) {
+        JS_ASSERT(maintainNestingState());
+        types::NestingPrologue(cx, this);
+    }
+
+    return true;
 }
 
 inline void
-StackFrame::putActivationObjects()
+StackFrame::functionEpilogue()
 {
+    JS_ASSERT(isNonEvalFunctionFrame());
+
     if (flags_ & (HAS_ARGS_OBJ | HAS_CALL_OBJ)) {
         /* NB: there is an ordering dependency here. */
         if (hasCallObj())
@@ -375,17 +408,20 @@ StackFrame::putActivationObjects()
         else if (hasArgsObj())
             js_PutArgsObject(this);
     }
+
+    if (maintainNestingState())
+        types::NestingEpilogue(this);
 }
 
 inline void
-StackFrame::markActivationObjectsAsPut()
+StackFrame::markFunctionEpilogueDone()
 {
     if (flags_ & (HAS_ARGS_OBJ | HAS_CALL_OBJ)) {
-        if (hasArgsObj() && !argsObj().getPrivate()) {
+        if (hasArgsObj() && !argsObj().maybeStackFrame()) {
             args.nactual = args.obj->initialLength();
             flags_ &= ~HAS_ARGS_OBJ;
         }
-        if (hasCallObj() && !callObj().getPrivate()) {
+        if (hasCallObj() && !callObj().maybeStackFrame()) {
             /*
              * For function frames, the call object may or may not have have an
              * enclosing DeclEnv object, so we use the callee's parent, since
@@ -399,6 +435,14 @@ StackFrame::markActivationObjectsAsPut()
             flags_ &= ~HAS_CALL_OBJ;
         }
     }
+
+    /*
+     * For outer/inner function frames, undo the active frame balancing so that
+     * when we redo it in the epilogue we get the right final value. The other
+     * nesting epilogue changes (update active args/vars) are idempotent.
+     */
+    if (maintainNestingState())
+        script()->nesting()->activeFrames++;
 }
 
 /*****************************************************************************/
@@ -547,7 +591,7 @@ ContextStack::popInlineFrame(FrameRegs &regs)
     JS_ASSERT(&regs == &seg_->regs());
 
     StackFrame *fp = regs.fp();
-    fp->putActivationObjects();
+    fp->functionEpilogue();
 
     Value *newsp = fp->actualArgs() - 1;
     JS_ASSERT(newsp >= fp->prev()->base());
@@ -645,8 +689,7 @@ ArgumentsObject::getElement(uint32 i, Value *vp)
      * If this arguments object was created on trace the actual argument value
      * could be in a register or something, so we can't optimize.
      */
-    StackFrame *fp = reinterpret_cast<StackFrame *>(getPrivate());
-    if (fp == JS_ARGUMENTS_OBJECT_ON_TRACE)
+    if (onTrace())
         return false;
 
     /*
@@ -654,6 +697,7 @@ ArgumentsObject::getElement(uint32 i, Value *vp)
      * the canonical argument value.  Note that strict arguments objects do not
      * alias named arguments and never have a stack frame.
      */
+    StackFrame *fp = maybeStackFrame();
     JS_ASSERT_IF(isStrictArguments(), !fp);
     if (fp)
         *vp = fp->canonicalActualArg(i);
@@ -669,7 +713,7 @@ ArgumentsObject::getElements(uint32 start, uint32 count, Value *vp)
     if (start > length || start + count > length)
         return false;
 
-    StackFrame *fp = reinterpret_cast<StackFrame *>(getPrivate());
+    StackFrame *fp = maybeStackFrame();
 
     /* If there's no stack frame for this, argument values are in elements(). */
     if (!fp) {
@@ -685,7 +729,7 @@ ArgumentsObject::getElements(uint32 start, uint32 count, Value *vp)
     }
 
     /* If we're on trace, there's no canonical location for elements: fail. */
-    if (fp == JS_ARGUMENTS_OBJECT_ON_TRACE)
+    if (onTrace())
         return false;
 
     /* Otherwise, element values are on the stack. */

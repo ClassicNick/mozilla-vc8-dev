@@ -334,6 +334,7 @@ protected:
 
   nsresult GetIsElementContentWhitespace(PRBool *aReturn)
   {
+    GetOwnerDoc()->WarnOnceAbout(nsIDocument::eIsElementContentWhitespace);
     *aReturn = TextIsOnlyWhitespace();
     return NS_OK;
   }
@@ -364,8 +365,6 @@ protected:
   nsTextFragment mText;
 
 private:
-  void UpdateBidiStatus(const PRUnichar* aBuffer, PRUint32 aLength);
-
   already_AddRefed<nsIAtom> GetCurrentValueAtom();
 };
 

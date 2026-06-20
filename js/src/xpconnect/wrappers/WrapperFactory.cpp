@@ -38,7 +38,6 @@
  * ***** END LICENSE BLOCK ***** */
 
 #include "jsobj.h"
-#include "jsvalue.h"
 
 #include "WrapperFactory.h"
 #include "CrossOriginWrapper.h"
@@ -265,7 +264,8 @@ WrapperFactory::Rewrap(JSContext *cx, JSObject *obj, JSObject *wrappedProto, JSO
     JSObject *xrayHolder = nsnull;
 
     JSWrapper *wrapper;
-    CompartmentPrivate *targetdata = static_cast<CompartmentPrivate *>(target->data);
+    CompartmentPrivate *targetdata =
+        static_cast<CompartmentPrivate *>(JS_GetCompartmentPrivate(cx, target));
     if (AccessCheck::isChrome(target)) {
         if (AccessCheck::isChrome(origin)) {
             wrapper = &JSCrossCompartmentWrapper::singleton;

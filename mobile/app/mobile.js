@@ -74,6 +74,15 @@ pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.
 pref("browser.viewport.scaleRatio", -1);
 pref("browser.viewport.desktopWidth", 980);
 
+#ifndef ANDROID
+#ifndef MOZ_PLATFORM_MAEMO
+// On desktop builds, simulate an MDPI tablet by default.
+pref("layout.css.dpi", 160);
+#else
+// Maemo X11 lies about its dpi
+pref("layout.css.dpi", 240);
+#endif
+#endif
 /* allow scrollbars to float above chrome ui */
 pref("ui.scrollbarsCanOverlapContent", 1);
 
@@ -373,9 +382,6 @@ pref("plugins.force.wmode", "opaque");
 // URL to the Learn More link XXX this is the firefox one.  Bug 495578 fixes this.
 pref("browser.geolocation.warning.infoURL", "http://www.mozilla.com/%LOCALE%/firefox/geolocation/");
 
-// base url for the wifi geolocation network provider
-pref("geo.wifi.uri", "https://maps.googleapis.com/maps/api/browserlocation/json");
-
 // enable geo
 pref("geo.enabled", true);
 
@@ -453,6 +459,7 @@ pref("app.support.baseURL", "http://support.mozilla.com/mobile");
 pref("app.feedbackURL", "http://input.mozilla.com/feedback/");
 pref("app.privacyURL", "http://www.mozilla.com/%LOCALE%/m/privacy.html");
 pref("app.creditsURL", "http://www.mozilla.org/credits/");
+pref("app.channelURL", "http://www.mozilla.org/%LOCALE%/firefox/channel/");
 #if MOZ_UPDATE_CHANNEL == beta
 pref("app.featuresURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/features/");
 pref("app.faqURL", "http://www.mozilla.com/%LOCALE%/mobile/beta/faq/");
@@ -544,8 +551,6 @@ pref("font.default.x-western", "SwissA");
 #endif
 
 #ifdef MOZ_SERVICES_SYNC
-pref("browser.sync.enabled", true);
-
 // sync service
 pref("services.sync.client.type", "mobile");
 pref("services.sync.registerEngines", "Tab,Bookmarks,Form,History,Password,Prefs");
@@ -661,9 +666,6 @@ pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.goog
 pref("browser.firstrun.show.uidiscovery", true);
 pref("browser.firstrun.show.localepicker", true);
 
-// initiated by a user
-pref("content.ime.strict_policy", true);
-
 // True if you always want dump() to work
 //
 // On Android, you also need to do the following for the output
@@ -673,3 +675,7 @@ pref("content.ime.strict_policy", true);
 // $ adb shell setprop log.redirect-stdio true
 // $ adb shell start
 pref("browser.dom.window.dump.enabled", false);
+
+// controls if we want camera support
+pref("device.camera.enabled", true);
+pref("media.realtime_decoder.enabled", true);

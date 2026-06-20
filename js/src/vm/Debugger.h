@@ -50,7 +50,6 @@
 #include "jshashtable.h"
 #include "jsweakmap.h"
 #include "jswrapper.h"
-#include "jsvalue.h"
 #include "vm/GlobalObject.h"
 
 namespace js {
@@ -293,7 +292,7 @@ class Debugger {
      * them and returns true. If not, it returns false.
      */
     static void markCrossCompartmentDebuggerObjectReferents(JSTracer *tracer);
-    static bool markAllIteratively(GCMarker *trc, JSGCInvocationKind gckind);
+    static bool markAllIteratively(GCMarker *trc);
     static void sweepAll(JSContext *cx);
     static void detachAllDebuggersFromGlobal(JSContext *cx, GlobalObject *global,
                                              GlobalObjectSet::Enum *compartmentEnum);
@@ -403,7 +402,7 @@ class Debugger {
 
 class BreakpointSite {
     friend class js::Breakpoint;
-    friend class ::JSCompartment;
+    friend struct ::JSCompartment;
     friend class js::Debugger;
 
   public:
@@ -460,7 +459,7 @@ class BreakpointSite {
  * JSCompartment::sweepBreakpoints.
  */
 class Breakpoint {
-    friend class ::JSCompartment;
+    friend struct ::JSCompartment;
     friend class js::Debugger;
 
   public:

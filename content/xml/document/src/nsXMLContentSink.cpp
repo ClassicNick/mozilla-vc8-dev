@@ -306,9 +306,9 @@ nsXMLContentSink::DidBuildModel(PRBool aTerminated)
     mIsDocumentObserver = PR_FALSE;
 
     // Check for xslt-param and xslt-param-namespace PIs
-    PRUint32 i;
-    nsIContent* child;
-    for (i = 0; (child = mDocument->GetChildAt(i)); ++i) {
+    for (nsIContent* child = mDocument->GetFirstChild();
+         child;
+         child = child->GetNextSibling()) {
       if (child->IsNodeOfType(nsINode::ePROCESSING_INSTRUCTION)) {
         nsCOMPtr<nsIDOMProcessingInstruction> pi = do_QueryInterface(child);
         CheckXSLTParamPI(pi, mXSLTProcessor, mDocument);
@@ -1245,7 +1245,7 @@ nsXMLContentSink::HandleDoctypeDecl(const nsAString & aSubset,
 
   // Create a new doctype node
   nsCOMPtr<nsIDOMDocumentType> docType;
-  rv = NS_NewDOMDocumentType(getter_AddRefs(docType), mNodeInfoManager, nsnull,
+  rv = NS_NewDOMDocumentType(getter_AddRefs(docType), mNodeInfoManager,
                              name, aPublicId, aSystemId, aSubset);
   if (NS_FAILED(rv) || !docType) {
     return rv;

@@ -851,16 +851,31 @@ class StackFrame
         return ret;
     }
 
-    inline JSObject &callObj() const;
+    inline CallObject &callObj() const;
     inline void setScopeChainNoCallObj(JSObject &obj);
-    inline void setScopeChainWithOwnCallObj(JSObject &obj);
+    inline void setScopeChainWithOwnCallObj(CallObject &obj);
 
     /*
-     * NB: putActivationObjects does not mark activation objects as having been
-     * put (since the frame is about to be popped).
+     * Prologue for function frames: make a call object for heavyweight
+     * functions, and maintain type nesting invariants.
      */
-    inline void putActivationObjects();
-    inline void markActivationObjectsAsPut();
+    inline bool functionPrologue(JSContext *cx);
+
+    /*
+     * Epilogue for function frames: put any args or call object for the frame
+     * which may still be live, and maintain type nesting invariants. Note:
+     * this does not mark the epilogue as having been completed, since the
+     * frame is about to be popped. Use markFunctionEpilogueDone for this.
+     */
+    inline void functionEpilogue();
+
+    /*
+     * Mark any work needed in the function's epilogue as done. This call must
+     * be followed by a later functionEpilogue.
+     */
+    inline void markFunctionEpilogueDone();
+
+    inline bool maintainNestingState() const;
 
     /*
      * Variables object

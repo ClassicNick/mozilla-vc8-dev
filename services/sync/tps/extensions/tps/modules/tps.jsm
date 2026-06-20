@@ -143,7 +143,7 @@ var TPS =
             Weave.Service.logout();
             Utils.nextTick(this.RunNextTestAction, this);
           }
-          else {
+          else if (this._waitingForSync) {
             // ...otherwise abort the test
             this.DumpError("sync error; aborting test");
             return;
@@ -280,126 +280,144 @@ var TPS =
   },
 
   HandleHistory: function (entries, action) {
-    for each (entry in entries) {
-      Logger.logInfo("executing action " + action.toUpperCase() +
-                     " on history entry " + JSON.stringify(entry));
-      switch(action) {
-        case ACTION_ADD:
-          HistoryEntry.Add(entry, this._usSinceEpoch);
-          break;
-        case ACTION_DELETE:
-          HistoryEntry.Delete(entry, this._usSinceEpoch);
-          break;
-        case ACTION_VERIFY:
-          Logger.AssertTrue(HistoryEntry.Find(entry, this._usSinceEpoch),
-            "Uri visits not found in history database");
-          break;
-        case ACTION_VERIFY_NOT:
-          Logger.AssertTrue(!HistoryEntry.Find(entry, this._usSinceEpoch),
-            "Uri visits found in history database, but they shouldn't be");
-          break;
-        default:
-          Logger.AssertTrue(false, "invalid action: " + action);
+    try {
+      for each (entry in entries) {
+        Logger.logInfo("executing action " + action.toUpperCase() +
+                       " on history entry " + JSON.stringify(entry));
+        switch(action) {
+          case ACTION_ADD:
+            HistoryEntry.Add(entry, this._usSinceEpoch);
+            break;
+          case ACTION_DELETE:
+            HistoryEntry.Delete(entry, this._usSinceEpoch);
+            break;
+          case ACTION_VERIFY:
+            Logger.AssertTrue(HistoryEntry.Find(entry, this._usSinceEpoch),
+              "Uri visits not found in history database");
+            break;
+          case ACTION_VERIFY_NOT:
+            Logger.AssertTrue(!HistoryEntry.Find(entry, this._usSinceEpoch),
+              "Uri visits found in history database, but they shouldn't be");
+            break;
+          default:
+            Logger.AssertTrue(false, "invalid action: " + action);
+        }
       }
+      Logger.logPass("executing action " + action.toUpperCase() + 
+                     " on history");
     }
-    Logger.logPass("executing action " + action.toUpperCase() + 
-                   " on history");
+    catch(e) {
+      DumpHistory();
+      throw(e);
+    }
   },
 
   HandlePasswords: function (passwords, action) {
-    for each (password in passwords) {
-      let password_id = -1;
-      Logger.logInfo("executing action " + action.toUpperCase() + 
-                    " on password " + JSON.stringify(password));
-      var password = new Password(password);
-      switch (action) {
-        case ACTION_ADD:
-          Logger.AssertTrue(password.Create() > -1, "error adding password");
-          break;
-        case ACTION_VERIFY:
-          Logger.AssertTrue(password.Find() != -1, "password not found");
-          break;
-        case ACTION_VERIFY_NOT:
-          Logger.AssertTrue(password.Find() == -1, 
-            "password found, but it shouldn't exist");
-          break;
-        case ACTION_DELETE:
-          Logger.AssertTrue(password.Find() != -1, "password not found");
-          password.Remove();
-          break;
-        case ACTION_MODIFY:
-          if (password.updateProps != null) {
+    try {
+      for each (password in passwords) {
+        let password_id = -1;
+        Logger.logInfo("executing action " + action.toUpperCase() + 
+                      " on password " + JSON.stringify(password));
+        var password = new Password(password);
+        switch (action) {
+          case ACTION_ADD:
+            Logger.AssertTrue(password.Create() > -1, "error adding password");
+            break;
+          case ACTION_VERIFY:
             Logger.AssertTrue(password.Find() != -1, "password not found");
-            password.Update();
-          }
-          break;
-        default:
-          Logger.AssertTrue(false, "invalid action: " + action);
-      } 
+            break;
+          case ACTION_VERIFY_NOT:
+            Logger.AssertTrue(password.Find() == -1, 
+              "password found, but it shouldn't exist");
+            break;
+          case ACTION_DELETE:
+            Logger.AssertTrue(password.Find() != -1, "password not found");
+            password.Remove();
+            break;
+          case ACTION_MODIFY:
+            if (password.updateProps != null) {
+              Logger.AssertTrue(password.Find() != -1, "password not found");
+              password.Update();
+            }
+            break;
+          default:
+            Logger.AssertTrue(false, "invalid action: " + action);
+        } 
+      }
+      Logger.logPass("executing action " + action.toUpperCase() + 
+                     " on passwords");
     }
-    Logger.logPass("executing action " + action.toUpperCase() + 
-                   " on passwords");
+    catch(e) {
+      DumpPasswords();
+      throw(e);
+    }
   },
 
   HandleBookmarks: function (bookmarks, action) {
-    let items = [];
-    for (folder in bookmarks) {
-      let last_item_pos = -1;
-      for each (bookmark in bookmarks[folder]) {
-        Logger.clearPotentialError();
-        let placesItem;
-        bookmark['location'] = folder;
-        if (last_item_pos != -1)
-          bookmark['last_item_pos'] = last_item_pos;
-        let item_id = -1;
-        if (action != ACTION_MODIFY && action != ACTION_DELETE)
-          Logger.logInfo("executing action " + action.toUpperCase() + 
-                         " on bookmark " + JSON.stringify(bookmark));
-        if ("uri" in bookmark)
-          placesItem = new Bookmark(bookmark);
-        else if ("folder" in bookmark)
-          placesItem = new BookmarkFolder(bookmark);
-        else if ("livemark" in bookmark)
-          placesItem = new Livemark(bookmark);
-        else if ("separator" in bookmark)
-          placesItem = new Separator(bookmark);
-        if (action == ACTION_ADD) {
-          item_id = placesItem.Create();
-        }
-        else {
-          item_id = placesItem.Find();
-          if (action == ACTION_VERIFY_NOT) {
-            Logger.AssertTrue(item_id == -1,
-              "places item exists but it shouldn't: " +
-              JSON.stringify(bookmark));
+    try {
+      let items = [];
+      for (folder in bookmarks) {
+        let last_item_pos = -1;
+        for each (bookmark in bookmarks[folder]) {
+          Logger.clearPotentialError();
+          let placesItem;
+          bookmark['location'] = folder;
+          if (last_item_pos != -1)
+            bookmark['last_item_pos'] = last_item_pos;
+          let item_id = -1;
+          if (action != ACTION_MODIFY && action != ACTION_DELETE)
+            Logger.logInfo("executing action " + action.toUpperCase() + 
+                           " on bookmark " + JSON.stringify(bookmark));
+          if ("uri" in bookmark)
+            placesItem = new Bookmark(bookmark);
+          else if ("folder" in bookmark)
+            placesItem = new BookmarkFolder(bookmark);
+          else if ("livemark" in bookmark)
+            placesItem = new Livemark(bookmark);
+          else if ("separator" in bookmark)
+            placesItem = new Separator(bookmark);
+          if (action == ACTION_ADD) {
+            item_id = placesItem.Create();
           }
-          else
-            Logger.AssertTrue(item_id != -1, "places item not found", true);
-        }
-        
-        last_item_pos = placesItem.GetItemIndex();
-        items.push(placesItem);
-      }
-    }
-
-    if (action == ACTION_DELETE || action == ACTION_MODIFY) {
-      for each (item in items) {
-        Logger.logInfo("executing action " + action.toUpperCase() + 
-                       " on bookmark " + JSON.stringify(item));
-        switch(action) {
-          case ACTION_DELETE:
-            item.Remove();
-            break;
-          case ACTION_MODIFY:
-            if (item.updateProps != null)
-              item.Update();
-            break;
+          else {
+            item_id = placesItem.Find();
+            if (action == ACTION_VERIFY_NOT) {
+              Logger.AssertTrue(item_id == -1,
+                "places item exists but it shouldn't: " +
+                JSON.stringify(bookmark));
+            }
+            else
+              Logger.AssertTrue(item_id != -1, "places item not found", true);
+          }
+          
+          last_item_pos = placesItem.GetItemIndex();
+          items.push(placesItem);
         }
       }
-    }
 
-    Logger.logPass("executing action " + action.toUpperCase() +
-      " on bookmarks");
+      if (action == ACTION_DELETE || action == ACTION_MODIFY) {
+        for each (item in items) {
+          Logger.logInfo("executing action " + action.toUpperCase() + 
+                         " on bookmark " + JSON.stringify(item));
+          switch(action) {
+            case ACTION_DELETE:
+              item.Remove();
+              break;
+            case ACTION_MODIFY:
+              if (item.updateProps != null)
+                item.Update();
+              break;
+          }
+        }
+      }
+
+      Logger.logPass("executing action " + action.toUpperCase() +
+        " on bookmarks");
+    }
+    catch(e) {
+      DumpBookmarks();
+      throw(e);
+    }
   },
 
   MozmillEndTestListener: function TPS__MozmillEndTestListener(obj) {
@@ -471,7 +489,7 @@ var TPS =
         this.DumpError("Sync logged in on startup...profile may be dirty");
         return;
       }
-      
+
       // setup observers
       Services.obs.addObserver(this, "weave:service:sync:finish", true);
       Services.obs.addObserver(this, "weave:service:sync:error", true);
@@ -498,7 +516,18 @@ var TPS =
       // wipe the server at the end of the final test phase
       if (this.phases["phase" + (parseInt(this._currentPhase) + 1)] == undefined)
         this_phase.push([this.WipeServer]);
-      
+
+      // Store account details as prefs so they're accessible to the mozmill
+      // framework.
+      let prefs = CC["@mozilla.org/preferences-service;1"]
+                  .getService(CI.nsIPrefBranch);
+      prefs.setCharPref('tps.account.username', this.config.account.username);
+      prefs.setCharPref('tps.account.password', this.config.account.password);
+      prefs.setCharPref('tps.account.passphrase', this.config.account.passphrase);
+      if (this.config.account['serverURL']) {
+        prefs.setCharPref('tps.account.serverURL', this.config.account.serverURL);
+      }
+
       // start processing the test actions
       this._currentAction = 0;
     }

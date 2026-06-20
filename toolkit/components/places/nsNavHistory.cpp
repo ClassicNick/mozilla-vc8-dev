@@ -683,7 +683,7 @@ nsNavHistory::SetJournalMode(enum JournalMode aJournalMode)
   }
   else {
     NS_WARNING(nsPrintfCString(128, "Setting journal mode failed: %s",
-                               PromiseFlatCString(journalMode).get()).get());
+                               journalMode.get()).get());
     return NS_ERROR_FAILURE;
   }
 
@@ -3516,14 +3516,14 @@ PlacesSQLQueryBuilder::SelectAsSite()
     ") ",
     nsINavHistoryQueryOptions::RESULTS_AS_URI,
     mSortingMode,
-    PromiseFlatCString(timeConstraints).get(),
-    PromiseFlatCString(visitsJoin).get(),
-    PromiseFlatCString(additionalConditions).get(),
+    timeConstraints.get(),
+    visitsJoin.get(),
+    additionalConditions.get(),
     nsINavHistoryQueryOptions::RESULTS_AS_URI,
     mSortingMode,
-    PromiseFlatCString(timeConstraints).get(),
-    PromiseFlatCString(visitsJoin).get(),
-    PromiseFlatCString(additionalConditions).get()
+    timeConstraints.get(),
+    visitsJoin.get(),
+    additionalConditions.get()
   );
 
   return NS_OK;
@@ -3936,9 +3936,7 @@ nsNavHistory::GetQueryResults(nsNavHistoryQueryResultNode *aResultNode,
     PRInt32 lastError = 0;
     (void)mDBConn->GetLastError(&lastError);
     printf("Places failed to create a statement from this query:\n%s\nStorage error (%d): %s\n",
-           PromiseFlatCString(queryString).get(),
-           lastError,
-           PromiseFlatCString(lastErrorString).get());
+           queryString.get(), lastError, lastErrorString.get());
   }
 #endif
   NS_ENSURE_SUCCESS(rv, rv);
@@ -5130,23 +5128,23 @@ nsNavHistory::FinalizeInternalStatements()
   nsresult rv = FinalizeStatements();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // nsNavBookmarks
-  nsNavBookmarks *bookmarks = nsNavBookmarks::GetBookmarksService();
-  NS_ENSURE_TRUE(bookmarks, NS_ERROR_OUT_OF_MEMORY);
-  rv = bookmarks->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsNavBookmarks* bookmarks = nsNavBookmarks::GetBookmarksServiceIfAvailable();
+  if (bookmarks) {
+    rv = bookmarks->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
-  // nsAnnotationService
-  nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationService();
-  NS_ENSURE_TRUE(annosvc, NS_ERROR_OUT_OF_MEMORY);
-  rv = annosvc->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsAnnotationService* annosvc = nsAnnotationService::GetAnnotationServiceIfAvailable();
+  if (annosvc) {
+    rv = annosvc->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
-  // nsFaviconService
-  nsFaviconService* iconsvc = nsFaviconService::GetFaviconService();
-  NS_ENSURE_TRUE(iconsvc, NS_ERROR_OUT_OF_MEMORY);
-  rv = iconsvc->FinalizeStatements();
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsFaviconService* iconsvc = nsFaviconService::GetFaviconServiceIfAvailable();
+  if (iconsvc) {
+    rv = iconsvc->FinalizeStatements();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return NS_OK;
 }
@@ -5193,9 +5191,7 @@ nsNavHistory::AsyncExecuteLegacyQueries(nsINavHistoryQuery** aQueries,
     PRInt32 lastError = 0;
     (void)mDBConn->GetLastError(&lastError);
     printf("Places failed to create a statement from this query:\n%s\nStorage error (%d): %s\n",
-           PromiseFlatCString(queryString).get(),
-           lastError,
-           PromiseFlatCString(lastErrorString).get());
+           queryString.get(), lastError, lastErrorString.get());
   }
 #endif
   NS_ENSURE_SUCCESS(rv, rv);
@@ -5290,12 +5286,7 @@ nsNavHistory::Observe(nsISupports *aSubject, const char *aTopic,
     nsCOMPtr<nsIObserverService> os = services::GetObserverService();
     if (os) {
       (void)os->RemoveObserver(this, TOPIC_PROFILE_CHANGE);
-      // Double notification allows to correctly enqueue tasks without the need
-      // to enqueue notification events to the main-thread.  There is no
-      // guarantee that the event loop will spin before xpcom-shutdown indeed,
-      // see bug 580892.
       (void)os->NotifyObservers(nsnull, TOPIC_PLACES_WILL_CLOSE_CONNECTION, nsnull);
-      (void)os->NotifyObservers(nsnull, TOPIC_PLACES_CONNECTION_CLOSING, nsnull);
     }
 
     // Operations that are unlikely to create issues to implementers should go

@@ -75,7 +75,7 @@
 #include "nsThemeConstants.h"
 #include "nsContentErrors.h"
 #include "nsIMediaList.h"
-#include "nsILookAndFeel.h"
+#include "mozilla/LookAndFeel.h"
 #include "nsStyleUtil.h"
 #include "nsIPrincipal.h"
 #include "prprf.h"
@@ -89,7 +89,7 @@
 #include "nsMediaFeatures.h"
 #include "nsLayoutUtils.h"
 
-namespace css = mozilla::css;
+using namespace mozilla;
 
 // Flags for ParseVariant method
 #define VARIANT_KEYWORD         0x000001  // K
@@ -159,7 +159,9 @@ namespace css = mozilla::css;
 #define VARIANT_UK   (VARIANT_URL | VARIANT_KEYWORD)
 #define VARIANT_UO   (VARIANT_URL | VARIANT_NONE)
 #define VARIANT_ANGLE_OR_ZERO (VARIANT_ANGLE | VARIANT_ZERO_ANGLE)
-#define VARIANT_TRANSFORM_LPCALC (VARIANT_LP | VARIANT_CALC)
+#define VARIANT_LPCALC (VARIANT_LENGTH | VARIANT_CALC | VARIANT_PERCENT)
+#define VARIANT_LNCALC (VARIANT_LENGTH | VARIANT_CALC | VARIANT_NUMBER)
+#define VARIANT_LPNCALC (VARIANT_LNCALC | VARIANT_PERCENT)
 #define VARIANT_IMAGE (VARIANT_URL | VARIANT_NONE | VARIANT_GRADIENT | \
                        VARIANT_IMAGE_RECT | VARIANT_ELEMENT)
 
@@ -1222,13 +1224,11 @@ CSSParserImpl::ParseColorString(const nsSubstring& aBuffer,
   } else if (value.GetUnit() == eCSSUnit_EnumColor) {
     PRInt32 intValue = value.GetIntValue();
     if (intValue >= 0) {
-      nsCOMPtr<nsILookAndFeel> lfSvc = do_GetService("@mozilla.org/widget/lookandfeel;1");
-      if (lfSvc) {
-        nscolor rgba;
-        rv = lfSvc->GetColor((nsILookAndFeel::nsColorID) value.GetIntValue(), rgba);
-        if (NS_SUCCEEDED(rv))
-          (*aColor) = rgba;
-      }
+      nscolor rgba;
+      rv = LookAndFeel::GetColor((LookAndFeel::ColorID) value.GetIntValue(),
+                                 &rgba);
+      if (NS_SUCCEEDED(rv))
+        (*aColor) = rgba;
     } else {
       // XXX - this is NS_COLOR_CURRENTCOLOR, NS_COLOR_MOZ_HYPERLINKTEXT, etc.
       // which we don't handle as per the ParseColorString definition.  Should
@@ -4547,7 +4547,6 @@ CSSParserImpl::ParseVariant(nsCSSValue& aValue,
        eCSSToken_Number == tk->mType &&
        tk->mNumber == 0.0f)) {
     if ((aVariantMask & VARIANT_POSITIVE_LENGTH) != 0 && 
-        eCSSToken_Number == tk->mType &&
         tk->mNumber <= 0.0) {
         UngetToken();
         return PR_FALSE;
@@ -7346,10 +7345,10 @@ static PRBool GetFunctionParseInformation(nsCSSKeyword aToken,
          eNumVariantMasks };
   static const PRInt32 kMaxElemsPerFunction = 16;
   static const PRInt32 kVariantMasks[eNumVariantMasks][kMaxElemsPerFunction] = {
-    {VARIANT_TRANSFORM_LPCALC},
+    {VARIANT_LPCALC},
     {VARIANT_LENGTH|VARIANT_CALC},
-    {VARIANT_TRANSFORM_LPCALC, VARIANT_TRANSFORM_LPCALC},
-    {VARIANT_TRANSFORM_LPCALC, VARIANT_TRANSFORM_LPCALC, VARIANT_LENGTH|VARIANT_CALC},
+    {VARIANT_LPCALC, VARIANT_LPCALC},
+    {VARIANT_LPCALC, VARIANT_LPCALC, VARIANT_LENGTH|VARIANT_CALC},
     {VARIANT_ANGLE_OR_ZERO},
     {VARIANT_ANGLE_OR_ZERO, VARIANT_ANGLE_OR_ZERO},
     {VARIANT_NUMBER},
@@ -7358,11 +7357,11 @@ static PRBool GetFunctionParseInformation(nsCSSKeyword aToken,
     {VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER},
     {VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_ANGLE_OR_ZERO},
     {VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER,
-     VARIANT_TRANSFORM_LPCALC, VARIANT_TRANSFORM_LPCALC},
+     VARIANT_LPNCALC, VARIANT_LPNCALC},
     {VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER,
      VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER,
      VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER,
-     VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER, VARIANT_NUMBER}};
+     VARIANT_LPNCALC, VARIANT_LPNCALC, VARIANT_LNCALC, VARIANT_NUMBER}};
 
 #ifdef DEBUG
   static const PRUint8 kVariantMaskLengths[eNumVariantMasks] =

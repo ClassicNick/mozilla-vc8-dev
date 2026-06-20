@@ -88,7 +88,7 @@ Bindings::lookup(JSContext *cx, JSAtom *name, uintN *indexp) const
         return NONE;
 
     Shape *shape =
-        SHAPE_FETCH(Shape::search(cx->runtime, const_cast<Shape **>(&lastBinding),
+        SHAPE_FETCH(Shape::search(cx, const_cast<Shape **>(&lastBinding),
                     ATOM_TO_JSID(name)));
     if (!shape)
         return NONE;
@@ -120,7 +120,7 @@ Bindings::add(JSContext *cx, JSAtom *name, BindingKind kind)
     uint16 *indexp;
     PropertyOp getter;
     StrictPropertyOp setter;
-    uint32 slot = JSObject::CALL_RESERVED_SLOTS;
+    uint32 slot = CallObject::RESERVED_SLOTS;
 
     if (kind == ARGUMENT) {
         JS_ASSERT(nvars == 0);
@@ -732,7 +732,7 @@ js_XDRScript(JSXDRState *xdr, JSScript **scriptp)
     }
 
     for (i = 0; i != nconsts; ++i) {
-        if (!JS_XDRValue(xdr, Jsvalify(&script->consts()->vector[i])))
+        if (!JS_XDRValue(xdr, &script->consts()->vector[i]))
             goto error;
     }
 
@@ -782,20 +782,20 @@ Class js::ScriptClass = {
     "Script",
     JSCLASS_HAS_PRIVATE |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
-    PropertyStub,         /* addProperty */
-    PropertyStub,         /* delProperty */
-    PropertyStub,         /* getProperty */
-    StrictPropertyStub,   /* setProperty */
-    EnumerateStub,
-    ResolveStub,
-    ConvertStub,
-    NULL,                 /* finalize */
-    NULL,                 /* reserved0   */
-    NULL,                 /* checkAccess */
-    NULL,                 /* call        */
-    NULL,                 /* construct   */
-    NULL,                 /* xdrObject   */
-    NULL,                 /* hasInstance */
+    JS_PropertyStub,         /* addProperty */
+    JS_PropertyStub,         /* delProperty */
+    JS_PropertyStub,         /* getProperty */
+    JS_StrictPropertyStub,   /* setProperty */
+    JS_EnumerateStub,
+    JS_ResolveStub,
+    JS_ConvertStub,
+    NULL,                    /* finalize */
+    NULL,                    /* reserved0   */
+    NULL,                    /* checkAccess */
+    NULL,                    /* call        */
+    NULL,                    /* construct   */
+    NULL,                    /* xdrObject   */
+    NULL,                    /* hasInstance */
     script_trace
 };
 
@@ -1212,15 +1212,6 @@ JSScript::NewScriptFromCG(JSContext *cx, JSCodeGenerator *cg)
         cg->upvarMap.clear();
     }
 
-    /* Set global for compileAndGo scripts. */
-    if (script->compileAndGo) {
-        GlobalScope *globalScope = cg->compiler()->globalScope;
-        if (globalScope->globalObj && globalScope->globalObj->isGlobal())
-            script->where.global = globalScope->globalObj->asGlobal();
-        else if (cx->globalObject->isGlobal())
-            script->where.global = cx->globalObject->asGlobal();
-    }
-
     if (cg->globalUses.length()) {
         memcpy(script->globals()->vector, &cg->globalUses[0],
                cg->globalUses.length() * sizeof(GlobalSlotArray::Entry));
@@ -1296,6 +1287,18 @@ JSScript::dataSize()
     uint8 *dataEnd = code + length * sizeof(jsbytecode) + numNotes() * sizeof(jssrcnote);
     JS_ASSERT(dataEnd >= data);
     return dataEnd - data;
+}
+
+size_t
+JSScript::dataSize(JSUsableSizeFun usf)
+{
+#if JS_SCRIPT_INLINE_DATA_LIMIT
+    if (data == inlineData)
+        return 0;
+#endif
+
+    size_t usable = usf(data);
+    return usable ? usable : dataSize();
 }
 
 void

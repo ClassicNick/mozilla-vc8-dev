@@ -62,6 +62,7 @@
 #endif
 
 #include "WebGLTexelConversions.h"
+#include "WebGLValidateStrings.h"
 
 using namespace mozilla;
 
@@ -182,8 +183,8 @@ WebGLContext::BindAttribLocation(nsIWebGLProgram *pobj, WebGLuint location, cons
     if (!GetGLName<WebGLProgram>("bindAttribLocation: program", pobj, &progname))
         return NS_OK;
 
-    if (name.IsEmpty())
-        return ErrorInvalidValue("BindAttribLocation: name can't be null or empty");
+    if (!ValidateGLSLVariableName(name, "bindAttribLocation"))
+        return NS_OK;
 
     if (!ValidateAttribIndex(location, "bindAttribLocation"))
         return NS_OK;
@@ -888,15 +889,20 @@ WebGLContext::CopyTexImage2D(WebGLenum target,
     if (!tex)
         return ErrorInvalidOperation("copyTexImage2D: no texture bound to this target");
 
-    const WebGLTexture::ImageInfo& imageInfo = tex->ImageInfoAt(level, WebGLTexture::FaceForTarget(target));
-
     // copyTexImage2D only generates textures with type = UNSIGNED_BYTE
     GLenum type = LOCAL_GL_UNSIGNED_BYTE;
 
-    bool sizeMayChange = width != imageInfo.mWidth ||
-                         height != imageInfo.mHeight ||
-                         internalformat != imageInfo.mFormat ||
-                         type != imageInfo.mType;
+    // check if the memory size of this texture may change with this call
+    bool sizeMayChange = true;
+    size_t face = WebGLTexture::FaceForTarget(target);
+    if (tex->HasImageInfoAt(level, face)) {
+        const WebGLTexture::ImageInfo& imageInfo = tex->ImageInfoAt(level, face);
+
+        sizeMayChange = width != imageInfo.mWidth ||
+                        height != imageInfo.mHeight ||
+                        internalformat != imageInfo.mFormat ||
+                        type != imageInfo.mType;
+    }
 
     if (sizeMayChange) {
         UpdateWebGLErrorAndClearGLError();
@@ -957,7 +963,7 @@ WebGLContext::CopyTexSubImage2D(WebGLenum target,
 
     WebGLint face = WebGLTexture::FaceForTarget(target);
     if (!tex->HasImageInfoAt(level, face))
-        return ErrorInvalidOperation("copyTexSubImage2D: to texture image previously defined for this level and face");
+        return ErrorInvalidOperation("copyTexSubImage2D: no texture image previously defined for this level and face");
 
     WebGLsizei texWidth = tex->ImageInfoAt(level, face).mWidth;
     WebGLsizei texHeight = tex->ImageInfoAt(level, face).mHeight;
@@ -1273,15 +1279,23 @@ WebGLContext::WhatDoesVertexAttrib0Need()
                                                         : VertexAttrib0Status::EmulatedUninitializedArray;
 }
 
-void
+bool
 WebGLContext::DoFakeVertexAttrib0(WebGLuint vertexCount)
 {
     int whatDoesAttrib0Need = WhatDoesVertexAttrib0Need();
 
     if (whatDoesAttrib0Need == VertexAttrib0Status::Default)
-        return;
+        return true;
 
-    WebGLuint dataSize = sizeof(WebGLfloat) * 4 * vertexCount;
+    CheckedUint32 checked_dataSize = CheckedUint32(vertexCount) * 4 * sizeof(WebGLfloat);
+    
+    if (!checked_dataSize.valid()) {
+        ErrorOutOfMemory("Integer overflow trying to construct a fake vertex attrib 0 array for a draw-operation "
+                         "with %d vertices. Try reducing the number of vertices.", vertexCount);
+        return false;
+    }
+    
+    WebGLuint dataSize = checked_dataSize.value();
 
     if (!mFakeVertexAttrib0BufferObject) {
         gl->fGenBuffers(1, &mFakeVertexAttrib0BufferObject);
@@ -1310,7 +1324,8 @@ WebGLContext::DoFakeVertexAttrib0(WebGLuint vertexCount)
 
         gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mFakeVertexAttrib0BufferObject);
 
-        WebGLuint dataSize = sizeof(WebGLfloat) * 4 * vertexCount;
+        GLenum error = LOCAL_GL_NO_ERROR;
+        UpdateWebGLErrorAndClearGLError();
 
         if (mFakeVertexAttrib0BufferStatus == VertexAttrib0Status::EmulatedInitializedArray) {
             nsAutoArrayPtr<WebGLfloat> array(new WebGLfloat[4 * vertexCount]);
@@ -1324,12 +1339,22 @@ WebGLContext::DoFakeVertexAttrib0(WebGLuint vertexCount)
         } else {
             gl->fBufferData(LOCAL_GL_ARRAY_BUFFER, dataSize, nsnull, LOCAL_GL_DYNAMIC_DRAW);
         }
-
+        UpdateWebGLErrorAndClearGLError(&error);
+        
         gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mBoundArrayBuffer ? mBoundArrayBuffer->GLName() : 0);
+
+        // note that we do this error checking and early return AFTER having restored the buffer binding above
+        if (error) {
+            ErrorOutOfMemory("Ran out of memory trying to construct a fake vertex attrib 0 array for a draw-operation "
+                             "with %d vertices. Try reducing the number of vertices.", vertexCount);
+            return false;
+        }
     }
 
     gl->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mFakeVertexAttrib0BufferObject);
     gl->fVertexAttribPointer(0, 4, LOCAL_GL_FLOAT, LOCAL_GL_FALSE, 0, 0);
+    
+    return true;
 }
 
 void
@@ -1482,7 +1507,8 @@ WebGLContext::DrawArrays(GLenum mode, WebGLint first, WebGLsizei count)
     }
 
     BindFakeBlackTextures();
-    DoFakeVertexAttrib0(checked_firstPlusCount.value());
+    if (!DoFakeVertexAttrib0(checked_firstPlusCount.value()))
+        return NS_OK;
 
     gl->fDrawArrays(mode, first, count);
 
@@ -1588,7 +1614,8 @@ WebGLContext::DrawElements(WebGLenum mode, WebGLsizei count, WebGLenum type, Web
     }
 
     BindFakeBlackTextures();
-    DoFakeVertexAttrib0(checked_maxIndexPlusOne.value());
+    if (!DoFakeVertexAttrib0(checked_maxIndexPlusOne.value()))
+        return NS_OK;
 
     gl->fDrawElements(mode, count, type, (GLvoid*) (byteOffset));
 
@@ -1669,10 +1696,17 @@ WebGLContext::FramebufferTexture2D(WebGLenum target,
                                    nsIWebGLTexture *tobj,
                                    WebGLint level)
 {
-    if (mBoundFramebuffer)
-        return mBoundFramebuffer->FramebufferTexture2D(target, attachment, textarget, tobj, level);
-    else
+    if (!mBoundFramebuffer)
         return ErrorInvalidOperation("framebufferTexture2D: cannot modify framebuffer 0");
+
+    if (textarget != LOCAL_GL_TEXTURE_2D && WorkAroundCubeMapBug684882()) {
+        return ErrorInvalidOperation("framebufferTexture2D: Attaching a face of a cube map to a framebuffer is disabled "
+                                     "on Mac OS X on Intel GPUs to protect you from a bug causing random "
+                                     "video memory to be copied into cube maps attached to framebuffers "
+                                     "(Mozilla bug 684882, Apple bug 9129398)");
+    }
+    
+    return mBoundFramebuffer->FramebufferTexture2D(target, attachment, textarget, tobj, level);
 }
 
 GL_SAME_METHOD_0(Flush, Flush)
@@ -1750,7 +1784,18 @@ WebGLContext::GenerateMipmap(WebGLenum target)
     tex->SetGeneratedMipmap();
 
     MakeContextCurrent();
-    gl->fGenerateMipmap(target);
+
+    if (WorkAroundCubeMapBug684882()) {
+        if (target == LOCAL_GL_TEXTURE_2D) {
+            gl->fGenerateMipmap(target);
+        } else {
+            // do nothing! Accordingly we must make sure to never actually set texture parameters to something that requires mipmaps,
+            // or else we'll fail to render.
+        }
+    } else {
+        gl->fGenerateMipmap(target);
+    }
+
     return NS_OK;
 }
 
@@ -1856,7 +1901,7 @@ WebGLContext::GetAttribLocation(nsIWebGLProgram *pobj,
     if (!GetGLName<WebGLProgram>("getAttribLocation: program", pobj, &progname))
         return NS_OK;
 
-    if (!ValidateGLSLIdentifier(name, "getAttribLocation"))
+    if (!ValidateGLSLVariableName(name, "getAttribLocation"))
         return NS_OK; 
 
     MakeContextCurrent();
@@ -2482,12 +2527,33 @@ nsresult WebGLContext::TexParameter_base(WebGLenum target, WebGLenum pname,
             return ErrorInvalidEnum("texParameterf: pname %x and floating-point param %e are mutually incompatible",
                                     pname, floatParam);
     }
+    
+    WebGLint intParamForGL = intParam;
+    WebGLfloat floatParamForGL = floatParam;
+    
+    if (WorkAroundCubeMapBug684882()) {
+        // bug 684882 - we skip mipmap generation in this case to work around a Mac GL bug, so we have
+        // to tweak the minification filter to avoid requiring a mipmap
+        if (pname == LOCAL_GL_TEXTURE_MIN_FILTER) {
+            if (intParam == LOCAL_GL_NEAREST_MIPMAP_NEAREST ||
+                intParam == LOCAL_GL_NEAREST_MIPMAP_LINEAR)
+            {
+                intParamForGL = LOCAL_GL_NEAREST;
+                floatParamForGL = WebGLfloat(intParamForGL);
+            } else if (intParam == LOCAL_GL_LINEAR_MIPMAP_NEAREST ||
+                       intParam == LOCAL_GL_LINEAR_MIPMAP_LINEAR)
+            {
+                intParamForGL = LOCAL_GL_LINEAR;
+                floatParamForGL = WebGLfloat(intParamForGL);
+            }
+        }
+    }
 
     MakeContextCurrent();
     if (intParamPtr)
-        gl->fTexParameteri(target, pname, intParam);
+        gl->fTexParameteri(target, pname, intParamForGL);
     else
-        gl->fTexParameterf(target, pname, floatParam);
+        gl->fTexParameterf(target, pname, floatParamForGL);
 
     return NS_OK;
 }
@@ -2513,23 +2579,29 @@ WebGLContext::GetTexParameter(WebGLenum target, WebGLenum pname, nsIVariant **re
 
     if (!ValidateTextureTargetEnum(target, "getTexParameter: target"))
         return NS_OK;
+    
+    WebGLTexture *tex = activeBoundTextureForTarget(target);
 
-    if (!activeBoundTextureForTarget(target))
+    if (!tex)
         return ErrorInvalidOperation("getTexParameter: no texture bound");
 
     nsCOMPtr<nsIWritableVariant> wrval = do_CreateInstance("@mozilla.org/variant;1");
     NS_ENSURE_TRUE(wrval, NS_ERROR_FAILURE);
 
     switch (pname) {
+        // note that because of bug 684882, the minification filter for OpenGL is sometimes spoofed.
+        // here we want to return our own value, not OpenGL's value
         case LOCAL_GL_TEXTURE_MIN_FILTER:
+            wrval->SetAsInt32(tex->mMinFilter);
+            break;
         case LOCAL_GL_TEXTURE_MAG_FILTER:
+            wrval->SetAsInt32(tex->mMagFilter);
+            break;
         case LOCAL_GL_TEXTURE_WRAP_S:
+            wrval->SetAsInt32(tex->mWrapS);
+            break;
         case LOCAL_GL_TEXTURE_WRAP_T:
-        {
-            GLint i = 0;
-            gl->fGetTexParameteriv(target, pname, &i);
-            wrval->SetAsInt32(i);
-        }
+            wrval->SetAsInt32(tex->mWrapT);
             break;
 
         default:
@@ -2671,7 +2743,7 @@ WebGLContext::GetUniformLocation(nsIWebGLProgram *pobj, const nsAString& name, n
     if (!GetConcreteObjectAndGLName("getUniformLocation: program", pobj, &prog, &progname))
         return NS_OK;
 
-    if (!ValidateGLSLIdentifier(name, "getUniformLocation"))
+    if (!ValidateGLSLVariableName(name, "getUniformLocation"))
         return NS_OK; 
 
     MakeContextCurrent();
@@ -3582,21 +3654,13 @@ WebGLContext::DOMElementToImageSurface(nsIDOMElement *imageOrCanvas,
 
     // part 1: check that the DOM element is same-origin, or has otherwise been
     // validated for cross-domain use.
-    // if res.mPrincipal == null, no need for the origin check. See DoDrawImageSecurityCheck.
-    // this case happens in the mochitest for images served from mochi.test:8888
-    if (res.mPrincipal) {
+    if (!res.mCORSUsed) {
         PRBool subsumes;
         nsresult rv = HTMLCanvasElement()->NodePrincipal()->Subsumes(res.mPrincipal, &subsumes);
         if (NS_FAILED(rv) || !subsumes) {
-            PRInt32 corsmode;
-            if (!res.mImageRequest || NS_FAILED(res.mImageRequest->GetCORSMode(&corsmode))) {
-                corsmode = imgIRequest::CORS_NONE;
-            }
-            if (corsmode == imgIRequest::CORS_NONE) {
-                LogMessageIfVerbose("It is forbidden to load a WebGL texture from a cross-domain element that has not been validated with CORS. "
-                                    "See https://developer.mozilla.org/en/WebGL/Cross-Domain_Textures");
-                return NS_ERROR_DOM_SECURITY_ERR;
-            }
+            LogMessageIfVerbose("It is forbidden to load a WebGL texture from a cross-domain element that has not been validated with CORS. "
+                                "See https://developer.mozilla.org/en/WebGL/Cross-Domain_Textures");
+            return NS_ERROR_DOM_SECURITY_ERR;
         }
     }
 
@@ -3976,8 +4040,25 @@ WebGLContext::CompileShader(nsIWebGLShader *sobj)
                                        gl->IsGLES2() ? SH_ESSL_OUTPUT : SH_GLSL_OUTPUT,
                                        &resources);
 
-        nsPromiseFlatCString src(shader->Source());
-        const char *s = src.get();
+        // We're storing an actual instance of StripComments because, if we don't, the 
+        // cleanSource nsAString instance will be destroyed before the reference is
+        // actually used.
+        StripComments stripComments(shader->Source());
+        const nsAString& cleanSource = nsString(stripComments.result().Elements(), stripComments.length());
+        if (!ValidateGLSLString(cleanSource, "compileShader"))
+            return NS_OK;
+
+        const nsPromiseFlatString& flatSource = PromiseFlatString(cleanSource);
+
+        // shaderSource() already checks that the source stripped of comments is in the
+        // 7-bit ASCII range, so we can skip the NS_IsAscii() check.
+        const nsCString& sourceCString = NS_LossyConvertUTF16toASCII(flatSource);
+    
+        const PRUint32 maxSourceLength = (PRUint32(1)<<18) - 1;
+        if (sourceCString.Length() > maxSourceLength)
+            return ErrorInvalidValue("compileShader: source has more than %d characters", maxSourceLength);
+
+        const char *s = sourceCString.get();
 
         if (!ShCompile(compiler, &s, 1, SH_OBJECT_CODE)) {
             int len = 0;
@@ -4018,15 +4099,10 @@ WebGLContext::CompileShader(nsIWebGLShader *sobj)
         shader->SetTranslationSuccess();
 
         ShDestruct(compiler);
-    } else
-#endif
-    {
-        const char *s = nsDependentCString(shader->Source()).get();
-        gl->fShaderSource(shadername, 1, &s, NULL);
-        shader->SetTranslationSuccess();
-    }
 
-    gl->fCompileShader(shadername);
+        gl->fCompileShader(shadername);
+    }
+#endif
 
     return NS_OK;
 }
@@ -4125,7 +4201,7 @@ WebGLContext::GetShaderSource(nsIWebGLShader *sobj, nsAString& retval)
     if (!GetConcreteObjectAndGLName("getShaderSource: shader", sobj, &shader, &shadername))
         return NS_OK;
 
-    CopyASCIItoUTF16(shader->Source(), retval);
+    retval.Assign(shader->Source());
 
     return NS_OK;
 }
@@ -4137,19 +4213,16 @@ WebGLContext::ShaderSource(nsIWebGLShader *sobj, const nsAString& source)
     WebGLuint shadername;
     if (!GetConcreteObjectAndGLName("shaderSource: shader", sobj, &shader, &shadername))
         return NS_OK;
-    
-    const nsPromiseFlatString& flatSource = PromiseFlatString(source);
 
-    if (!NS_IsAscii(flatSource.get()))
-        return ErrorInvalidValue("shaderSource: non-ascii characters found in source");
+    // We're storing an actual instance of StripComments because, if we don't, the 
+    // cleanSource nsAString instance will be destroyed before the reference is
+    // actually used.
+    StripComments stripComments(source);
+    const nsAString& cleanSource = nsString(stripComments.result().Elements(), stripComments.length());
+    if (!ValidateGLSLString(cleanSource, "compileShader"))
+        return NS_OK;
 
-    const nsCString& sourceCString = NS_LossyConvertUTF16toASCII(flatSource);
-    
-    const PRUint32 maxSourceLength = (PRUint32(1)<<18) - 1;
-    if (sourceCString.Length() > maxSourceLength)
-        return ErrorInvalidValue("shaderSource: source has more than %d characters", maxSourceLength);
-    
-    shader->SetSource(sourceCString);
+    shader->SetSource(source);
 
     shader->SetNeedsTranslation();
 
@@ -4249,11 +4322,18 @@ GLenum WebGLContext::CheckedTexImage2D(GLenum target,
 {
     WebGLTexture *tex = activeBoundTextureForTarget(target);
     NS_ABORT_IF_FALSE(tex != nsnull, "no texture bound");
-    const WebGLTexture::ImageInfo& imageInfo = tex->ImageInfoAt(level, WebGLTexture::FaceForTarget(target));
-    bool sizeMayChange = width != imageInfo.mWidth ||
-                         height != imageInfo.mHeight ||
-                         format != imageInfo.mFormat ||
-                         type != imageInfo.mType;
+
+    bool sizeMayChange = true;
+    size_t face = WebGLTexture::FaceForTarget(target);
+    
+    if (tex->HasImageInfoAt(level, face)) {
+        const WebGLTexture::ImageInfo& imageInfo = tex->ImageInfoAt(level, face);
+        sizeMayChange = width != imageInfo.mWidth ||
+                        height != imageInfo.mHeight ||
+                        format != imageInfo.mFormat ||
+                        type != imageInfo.mType;
+    }
+    
     if (sizeMayChange) {
         UpdateWebGLErrorAndClearGLError();
         gl->fTexImage2D(target, level, internalFormat, width, height, border, format, type, data);
@@ -4551,6 +4631,10 @@ WebGLContext::TexSubImage2D_base(WebGLenum target, WebGLint level,
         return ErrorInvalidOperation("texSubImage2D: no texture is bound to this target");
 
     size_t face = WebGLTexture::FaceForTarget(target);
+    
+    if (!tex->HasImageInfoAt(level, face))
+        return ErrorInvalidOperation("texSubImage2D: no texture image previously defined for this level and face");
+    
     const WebGLTexture::ImageInfo &imageInfo = tex->ImageInfoAt(level, face);
     if (!CanvasUtils::CheckSaneSubrectSize(xoffset, yoffset, width, height, imageInfo.mWidth, imageInfo.mHeight))
         return ErrorInvalidValue("texSubImage2D: subtexture rectangle out of bounds");

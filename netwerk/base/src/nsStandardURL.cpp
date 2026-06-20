@@ -855,11 +855,23 @@ nsStandardURL::ParsePath(const char *spec, PRUint32 pathPos, PRInt32 pathLen)
 char *
 nsStandardURL::AppendToSubstring(PRUint32 pos,
                                  PRInt32 len,
-                                 const char *tail,
-                                 PRInt32 tailLen)
+                                 const char *tail)
 {
-    if (tailLen < 0)
-        tailLen = strlen(tail);
+    // Verify pos and length are within boundaries
+    if (pos > mSpec.Length())
+        return NULL;
+    if (len < 0)
+        return NULL;
+    if ((PRUint32)len > (mSpec.Length() - pos))
+        return NULL;
+    if (!tail)
+        return NULL;
+
+    PRUint32 tailLen = strlen(tail);
+
+    // Check for int overflow for proposed length of combined string
+    if (PR_UINT32_MAX - ((PRUint32)len + 1) < tailLen)
+        return NULL;
 
     char *result = (char *) NS_Alloc(len + tailLen + 1);
     if (result) {
@@ -2771,6 +2783,11 @@ nsStandardURL::Read(nsIObjectInputStream *stream)
     rv = ReadSegment(stream, mExtension);
     if (NS_FAILED(rv)) return rv;
 
+    // handle forward compatibility from older serializations that included mParam
+    URLSegment old_param;
+    rv = ReadSegment(stream, old_param);
+    if (NS_FAILED(rv)) return rv;
+
     rv = ReadSegment(stream, mQuery);
     if (NS_FAILED(rv)) return rv;
 
@@ -2806,6 +2823,18 @@ nsStandardURL::Read(nsIObjectInputStream *stream)
         return NS_ERROR_UNEXPECTED;
     }
     mHostEncoding = hostEncoding;
+
+    // wait until object is set up, then modify path to include the param
+    if (old_param.mLen >= 0) {  // note that mLen=0 is ";"
+        // If this wasn't empty, it marks characters between the end of the 
+        // file and start of the query - mPath should include the param,
+        // query and ref already.  Bump the mFilePath and 
+        // directory/basename/extension components to include this.
+        mFilepath.Merge(mSpec,  ';', old_param);
+        mDirectory.Merge(mSpec, ';', old_param);
+        mBasename.Merge(mSpec,  ';', old_param);
+        mExtension.Merge(mSpec, ';', old_param);
+    }
     
     return NS_OK;
 }
@@ -2855,6 +2884,14 @@ nsStandardURL::Write(nsIObjectOutputStream *stream)
     if (NS_FAILED(rv)) return rv;
 
     rv = WriteSegment(stream, mExtension);
+    if (NS_FAILED(rv)) return rv;
+
+    // for backwards compatibility since we removed mParam.  Note that this will mean that
+    // an older browser will read "" for mParam, and the param(s) will be part of mPath (as they
+    // after the removal of special handling).  It only matters if you downgrade a browser to before
+    // the patch.
+    URLSegment empty;
+    rv = WriteSegment(stream, empty);
     if (NS_FAILED(rv)) return rv;
 
     rv = WriteSegment(stream, mQuery);

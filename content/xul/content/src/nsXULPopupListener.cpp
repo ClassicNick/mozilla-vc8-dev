@@ -84,7 +84,7 @@ using namespace mozilla;
 
 // on win32 and os/2, context menus come up on mouse up. On other platforms,
 // they appear on mouse down. Certain bits of code care about this difference.
-#if !defined(XP_WIN) && !defined(XP_OS2)
+#if defined(XP_WIN) || defined(XP_OS2)
 #define NS_CONTEXT_MENU_IS_MOUSEUP 1
 #endif
 
@@ -316,21 +316,19 @@ nsXULPopupListener::ClosePopup()
   }
 } // ClosePopup
 
-static void
-GetImmediateChild(nsIContent* aContent, nsIAtom *aTag, nsIContent** aResult) 
+static already_AddRefed<nsIContent>
+GetImmediateChild(nsIContent* aContent, nsIAtom *aTag) 
 {
-  *aResult = nsnull;
-  PRInt32 childCount = aContent->GetChildCount();
-  for (PRInt32 i = 0; i < childCount; i++) {
-    nsIContent *child = aContent->GetChildAt(i);
+  for (nsIContent* child = aContent->GetFirstChild();
+       child;
+       child = child->GetNextSibling()) {
     if (child->Tag() == aTag) {
-      *aResult = child;
-      NS_ADDREF(*aResult);
-      return;
+      NS_ADDREF(child);
+      return child;
     }
   }
 
-  return;
+  return nsnull;
 }
 
 //
@@ -384,9 +382,7 @@ nsXULPopupListener::LaunchPopup(nsIDOMEvent* aEvent, nsIContent* aTargetContent)
   nsCOMPtr<nsIDOMElement> popupElement;
 
   if (identifier.EqualsLiteral("_child")) {
-    nsCOMPtr<nsIContent> popup;
-
-    GetImmediateChild(content, nsGkAtoms::menupopup, getter_AddRefs(popup));
+    nsCOMPtr<nsIContent> popup = GetImmediateChild(content, nsGkAtoms::menupopup);
     if (popup)
       popupElement = do_QueryInterface(popup);
     else {

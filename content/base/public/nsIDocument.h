@@ -1579,7 +1579,7 @@ public:
   void WarnOnceAbout(DeprecatedOperations aOperation);
 
 private:
-  PRUint32 mWarnedAbout;
+  PRUint64 mWarnedAbout;
 
 protected:
   ~nsIDocument()
@@ -1884,7 +1884,8 @@ NS_NewDOMDocument(nsIDOMDocument** aInstancePtrResult,
                   nsIURI* aDocumentURI,
                   nsIURI* aBaseURI,
                   nsIPrincipal* aPrincipal,
-                  PRBool aLoadedAsData);
+                  PRBool aLoadedAsData,
+                  nsIScriptGlobalObject* aEventObject);
 nsresult
 NS_NewPluginDocument(nsIDocument** aInstancePtrResult);
 

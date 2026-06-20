@@ -159,9 +159,9 @@ StackFrame::stealFrameAndSlots(Value *vp, StackFrame *otherfp,
     if (hasArgsObj()) {
         ArgumentsObject &argsobj = argsObj();
         if (argsobj.isNormalArguments())
-            argsobj.setPrivate(this);
+            argsobj.setStackFrame(this);
         else
-            JS_ASSERT(!argsobj.getPrivate());
+            JS_ASSERT(!argsobj.maybeStackFrame());
         otherfp->flags_ &= ~HAS_ARGS_OBJ;
     }
 }
@@ -779,7 +779,8 @@ ContextStack::popFrame(const FrameGuard &fg)
     JS_ASSERT(space().firstUnused() == fg.regs_.sp);
     JS_ASSERT(&fg.regs_ == &seg_->regs());
 
-    fg.regs_.fp()->putActivationObjects();
+    if (fg.regs_.fp()->isNonEvalFunctionFrame())
+        fg.regs_.fp()->functionEpilogue();
 
     seg_->popRegs(fg.prevRegs_);
     if (fg.pushedSeg_)

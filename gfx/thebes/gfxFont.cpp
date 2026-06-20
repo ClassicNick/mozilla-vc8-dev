@@ -540,15 +540,21 @@ gfxFontFamily::FindFontForStyle(const gfxFontStyle& aFontStyle,
 void
 gfxFontFamily::CheckForSimpleFamily()
 {
-    if (mAvailableFonts.Length() > 4 || mAvailableFonts.Length() == 0) {
+    PRUint32 count = mAvailableFonts.Length();
+    if (count > 4 || count == 0) {
         return; // can't be "simple" if there are >4 faces;
                 // if none then the family is unusable anyway
+    }
+
+    if (count == 1) {
+        mIsSimpleFamily = PR_TRUE;
+        return;
     }
 
     PRInt16 firstStretch = mAvailableFonts[0]->Stretch();
 
     gfxFontEntry *faces[4] = { 0 };
-    for (PRUint8 i = 0; i < mAvailableFonts.Length(); ++i) {
+    for (PRUint8 i = 0; i < count; ++i) {
         gfxFontEntry *fe = mAvailableFonts[i];
         if (fe->Stretch() != firstStretch) {
             return; // font-stretch doesn't match, don't treat as simple family
@@ -1111,10 +1117,10 @@ struct GlyphBuffer {
 
     void Flush(cairo_t *aCR, PRBool aDrawToPath, PRBool aReverse,
                PRBool aFinish = PR_FALSE) {
-        // Ensure there's enough room for at least two glyphs in the
-        // buffer (because we may allocate two glyphs between flushes)
-        if (!aFinish && mNumGlyphs + 2 <= GLYPH_BUFFER_SIZE)
+        // Ensure there's enough room for a glyph to be added to the buffer
+        if (!aFinish && mNumGlyphs < GLYPH_BUFFER_SIZE) {
             return;
+        }
 
         if (aReverse) {
             for (PRUint32 i = 0; i < mNumGlyphs/2; ++i) {
@@ -1222,6 +1228,7 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
             }
             glyph->x = ToDeviceUnits(glyphX, devUnitsPerAppUnit);
             glyph->y = ToDeviceUnits(y, devUnitsPerAppUnit);
+            glyphs.Flush(cr, aDrawToPath, isRTL);
             
             // synthetic bolding by multi-striking with 1-pixel offsets
             // at least once, more if there's room (large font sizes)
@@ -1237,10 +1244,9 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
                                       devUnitsPerAppUnit);
                     doubleglyph->y = glyph->y;
                     strikeOffset += synBoldOnePixelOffset;
+                    glyphs.Flush(cr, aDrawToPath, isRTL);
                 } while (--strikeCount > 0);
             }
-            
-            glyphs.Flush(cr, aDrawToPath, isRTL);
         } else {
             PRUint32 glyphCount = glyphData->GetGlyphCount();
             if (glyphCount > 0) {
@@ -1275,6 +1281,7 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
                         }
                         glyph->x = ToDeviceUnits(glyphX, devUnitsPerAppUnit);
                         glyph->y = ToDeviceUnits(y + details->mYOffset, devUnitsPerAppUnit);
+                        glyphs.Flush(cr, aDrawToPath, isRTL);
 
                         if (IsSyntheticBold()) {
                             double strikeOffset = synBoldOnePixelOffset;
@@ -1289,10 +1296,9 @@ gfxFont::Draw(gfxTextRun *aTextRun, PRUint32 aStart, PRUint32 aEnd,
                                                   devUnitsPerAppUnit);
                                 doubleglyph->y = glyph->y;
                                 strikeOffset += synBoldOnePixelOffset;
+                                glyphs.Flush(cr, aDrawToPath, isRTL);
                             } while (--strikeCount > 0);
                         }
-
-                        glyphs.Flush(cr, aDrawToPath, isRTL);
                     }
                     x += direction*advance;
                 }

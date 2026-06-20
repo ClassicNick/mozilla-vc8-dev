@@ -232,6 +232,7 @@
 #include "nsIDOMProcessingInstruction.h"
 #include "nsIDOMDataContainerEvent.h"
 #include "nsIDOMKeyEvent.h"
+#include "nsIDOMCompositionEvent.h"
 #include "nsIDOMMouseEvent.h"
 #include "nsIDOMMouseScrollEvent.h"
 #include "nsIDOMDragEvent.h"
@@ -486,6 +487,7 @@
 #include "DOMSVGNumberList.h"
 #include "DOMSVGPathSegList.h"
 #include "DOMSVGPointList.h"
+#include "DOMSVGTransformList.h"
 
 #include "mozilla/dom/indexedDB/IDBFactory.h"
 #include "mozilla/dom/indexedDB/IDBRequest.h"
@@ -519,16 +521,15 @@ static const char kDOMStringBundleURL[] =
  (nsIXPCScriptable::WANT_GETPROPERTY |                                        \
   nsIXPCScriptable::WANT_PRECREATE |                                          \
   nsIXPCScriptable::WANT_FINALIZE |                                           \
-  nsIXPCScriptable::WANT_EQUALITY |                                           \
   nsIXPCScriptable::WANT_ENUMERATE |                                          \
   nsIXPCScriptable::DONT_ENUM_QUERY_INTERFACE |                               \
+  nsIXPCScriptable::USE_STUB_EQUALITY_HOOK |                                  \
   nsIXPCScriptable::WANT_OUTER_OBJECT)
 
 #define NODE_SCRIPTABLE_FLAGS                                                 \
  ((DOM_DEFAULT_SCRIPTABLE_FLAGS |                                             \
-   nsIXPCScriptable::WANT_GETPROPERTY |                                       \
-   nsIXPCScriptable::WANT_ADDPROPERTY |                                       \
-   nsIXPCScriptable::WANT_SETPROPERTY) &                                      \
+   nsIXPCScriptable::USE_STUB_EQUALITY_HOOK |                                 \
+   nsIXPCScriptable::WANT_ADDPROPERTY) &                                      \
   ~nsIXPCScriptable::USE_JSSTUB_FOR_ADDPROPERTY)
 
 // We need to let JavaScript QI elements to interfaces that are not in
@@ -552,8 +553,6 @@ static const char kDOMStringBundleURL[] =
 #define DOCUMENT_SCRIPTABLE_FLAGS                                             \
   (NODE_SCRIPTABLE_FLAGS |                                                    \
    nsIXPCScriptable::WANT_POSTCREATE |                                        \
-   nsIXPCScriptable::WANT_ADDPROPERTY |                                       \
-   nsIXPCScriptable::WANT_GETPROPERTY |                                       \
    nsIXPCScriptable::WANT_ENUMERATE)
 
 #define ARRAY_SCRIPTABLE_FLAGS                                                \
@@ -665,7 +664,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   NS_DEFINE_CLASSINFO_DATA(Navigator, nsNavigatorSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS |
-                           nsIXPCScriptable::WANT_PRECREATE)
+                           nsIXPCScriptable::WANT_PRECREATE |
+                           nsIXPCScriptable::WANT_NEWRESOLVE)
   NS_DEFINE_CLASSINFO_DATA(Plugin, nsPluginSH,
                            ARRAY_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(PluginArray, nsPluginArraySH,
@@ -746,6 +746,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(KeyboardEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(CompositionEvent, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(PopupBlockedEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   // Device Orientation
@@ -760,7 +762,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   // Misc HTML classes
   NS_DEFINE_CLASSINFO_DATA(HTMLDocument, nsHTMLDocumentSH,
-                           DOCUMENT_SCRIPTABLE_FLAGS)
+                           DOCUMENT_SCRIPTABLE_FLAGS |
+                           nsIXPCScriptable::WANT_GETPROPERTY)
   NS_DEFINE_CLASSINFO_DATA(HTMLOptionsCollection,
                            nsHTMLOptionsCollectionSH,
                            ARRAY_SCRIPTABLE_FLAGS |
@@ -864,6 +867,7 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            ELEMENT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(HTMLSelectElement, nsHTMLSelectElementSH,
                            ELEMENT_SCRIPTABLE_FLAGS |
+                           nsIXPCScriptable::WANT_SETPROPERTY |
                            nsIXPCScriptable::WANT_GETPROPERTY)
   NS_DEFINE_CLASSINFO_DATA(HTMLSpanElement, nsElementSH,
                            ELEMENT_SCRIPTABLE_FLAGS)
@@ -1236,8 +1240,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(SVGTransform, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(SVGTransformList, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(SVGTransformList, nsSVGTransformListSH,
+                           ARRAY_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(SVGZoomEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
@@ -2014,7 +2018,8 @@ CutPrefix(const char *aName) {
 nsresult
 nsDOMClassInfo::RegisterClassName(PRInt32 aClassInfoID)
 {
-  nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
   NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
 
   nameSpaceManager->RegisterClassName(sClassInfoData[aClassInfoID].mName,
@@ -2030,7 +2035,8 @@ nsDOMClassInfo::RegisterClassName(PRInt32 aClassInfoID)
 nsresult
 nsDOMClassInfo::RegisterClassProtos(PRInt32 aClassInfoID)
 {
-  nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
   NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
   PRBool found_old;
 
@@ -2082,7 +2088,8 @@ nsDOMClassInfo::RegisterClassProtos(PRInt32 aClassInfoID)
 nsresult
 nsDOMClassInfo::RegisterExternalClasses()
 {
-  nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
   NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
 
   nsCOMPtr<nsIComponentRegistrar> registrar;
@@ -2204,6 +2211,18 @@ nsDOMClassInfo::RegisterExternalClasses()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMUIEvent)                                    \
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
 
+#define DOM_CLASSINFO_WINDOW_MAP_ENTRIES(_support_indexed_db)                  \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)                                        \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)                                      \
+  DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)                                   \
+  DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)                              \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMStorageIndexedDB,                  \
+                                      _support_indexed_db)                     \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMWindowPerformance,                 \
+                                      nsGlobalWindow::HasPerformanceSupport()) \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,                   \
+                                      nsDOMTouchEvent::PrefEnabled())
+
 nsresult
 nsDOMClassInfo::Init()
 {
@@ -2246,16 +2265,7 @@ nsDOMClassInfo::Init()
   NS_ENSURE_SUCCESS(rv, rv);
 
   DOM_CLASSINFO_MAP_BEGIN(Window, nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-    DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)
-    DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMStorageIndexedDB,
-                                        nsGlobalWindow::HasIndexedDBSupport())
-    DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMWindowPerformance,
-                                        nsGlobalWindow::HasPerformanceSupport())
-    DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,
-                                        nsDOMTouchEvent::PrefEnabled())
+    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(nsGlobalWindow::HasIndexedDBSupport())
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(WindowUtils, nsIDOMWindowUtils)
@@ -2395,6 +2405,7 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(ProcessingInstruction, nsIDOMProcessingInstruction)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMProcessingInstruction)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCharacterData)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
@@ -2455,6 +2466,11 @@ nsDOMClassInfo::Init()
   
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(KeyboardEvent, nsIDOMKeyEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMKeyEvent)
+    DOM_CLASSINFO_UI_EVENT_MAP_ENTRIES
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(CompositionEvent, nsIDOMCompositionEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCompositionEvent)
     DOM_CLASSINFO_UI_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
@@ -2942,15 +2958,9 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
-  // FIXME: bug 680903. Should ChromeWindow really not have touch,
-  // performance apis?
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ChromeWindow, nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)
+    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(PR_TRUE)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMChromeWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMStorageIndexedDB)
-    DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(RangeException, nsIDOMRangeException)
@@ -3830,15 +3840,9 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMStringMap)
   DOM_CLASSINFO_MAP_END
 
-  // FIXME: Bug 680903.  Should ModalContentWindow really not have
-  // touch, performance apis and have unconditional indexeddb??
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ModalContentWindow, nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMJSWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMStorageIndexedDB)
+    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(nsGlobalWindow::HasIndexedDBSupport())
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMModalContentWindow)
-    DOM_CLASSINFO_MAP_ENTRY(nsIInlineEventHandlers)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(DataContainerEvent, nsIDOMDataContainerEvent)
@@ -5531,7 +5535,8 @@ private:
   {
     *aNameStruct = nsnull;
 
-    nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+    nsScriptNameSpaceManager *nameSpaceManager =
+      nsJSRuntime::GetNameSpaceManager();
     if (!nameSpaceManager) {
       NS_ERROR("Can't get namespace manager.");
       return NS_ERROR_UNEXPECTED;
@@ -5739,7 +5744,8 @@ nsDOMConstructor::HasInstance(nsIXPConnectWrappedNative *wrapper,
     return NS_OK;
   }
 
-  nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
   NS_ASSERTION(nameSpaceManager, "Can't get namespace manager?");
 
   const nsIID *class_iid;
@@ -6092,7 +6098,8 @@ nsWindowSH::GlobalResolve(nsGlobalWindow *aWin, JSContext *cx,
 {
   *did_resolve = PR_FALSE;
 
-  nsScriptNameSpaceManager *nameSpaceManager = nsJSRuntime::GetNameSpaceManager();
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
   NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
 
   nsDependentJSString name(id);
@@ -6368,29 +6375,39 @@ LocationSetterGuts(JSContext *cx, JSObject *obj, jsval *vp)
     XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj);
 
   // The error checks duplicate code in THROW_AND_RETURN_IF_BAD_WRAPPER
-  NS_ENSURE_TRUE(wrapper, NS_ERROR_XPC_BAD_OP_ON_WN_PROTO);
-  NS_ENSURE_TRUE(wrapper->IsValid(), NS_ERROR_XPC_HAS_BEEN_SHUTDOWN);
+  NS_ENSURE_TRUE(!wrapper || wrapper->IsValid(), NS_ERROR_XPC_HAS_BEEN_SHUTDOWN);
 
-  nsCOMPtr<Interface> xpcomObj = do_QueryWrappedNative(wrapper);
+  nsCOMPtr<Interface> xpcomObj = do_QueryWrappedNative(wrapper, obj);
   NS_ENSURE_TRUE(xpcomObj, NS_ERROR_UNEXPECTED);
 
   nsCOMPtr<nsIDOMLocation> location;
   nsresult rv = xpcomObj->GetLocation(getter_AddRefs(location));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Grab the value we're being set to before we stomp on |vp|
   JSString *val = ::JS_ValueToString(cx, *vp);
   NS_ENSURE_TRUE(val, NS_ERROR_UNEXPECTED);
+
+  // Make sure |val| stays alive below
+  JS::Anchor<JSString *> anchor(val);
+
+  // We have to wrap location into vp before null-checking location, to
+  // avoid assigning the wrong thing into the slot.
+  nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
+  rv = WrapNative(cx, JS_GetGlobalForScopeChain(cx), location,
+                  &NS_GET_IID(nsIDOMLocation), PR_TRUE, vp,
+                  getter_AddRefs(holder));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (!location) {
+    // Make this a no-op
+    return NS_OK;
+  }
 
   nsDependentJSString depStr;
   NS_ENSURE_TRUE(depStr.init(cx, val), NS_ERROR_UNEXPECTED);
   
-  rv = location->SetHref(depStr);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
-  return WrapNative(cx, JS_GetGlobalForScopeChain(cx), location,
-                    &NS_GET_IID(nsIDOMLocation), PR_TRUE, vp,
-                    getter_AddRefs(holder));
+  return location->SetHref(depStr);
 }
 
 template<class Interface>
@@ -6473,7 +6490,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     if (!my_context) {
       my_cx = cx;
     } else {
-      my_cx = (JSContext *)my_context->GetNativeContext();
+      my_cx = my_context->GetNativeContext();
 
       if (my_cx != cx) {
         if (!ac.enter(my_cx, obj)) {
@@ -6901,37 +6918,6 @@ nsWindowSH::Finalize(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 }
 
 NS_IMETHODIMP
-nsWindowSH::Equality(nsIXPConnectWrappedNative *wrapper, JSContext * cx,
-                     JSObject * obj, const jsval &val, PRBool *bp)
-{
-  *bp = PR_FALSE;
-
-  if (JSVAL_IS_PRIMITIVE(val)) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIXPConnectWrappedNative> other_wrapper;
-  nsContentUtils::XPConnect()->
-    GetWrappedNativeOfJSObject(cx, JSVAL_TO_OBJECT(val),
-                               getter_AddRefs(other_wrapper));
-  if (!other_wrapper) {
-    // Not equal.
-
-    return NS_OK;
-  }
-
-  nsGlobalWindow *win = nsGlobalWindow::FromWrapper(wrapper);
-
-  nsCOMPtr<nsPIDOMWindow> other = do_QueryWrappedNative(other_wrapper);
-
-  if (other) {
-    *bp = win->GetOuterWindow() == other->GetOuterWindow();
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsWindowSH::OuterObject(nsIXPConnectWrappedNative *wrapper, JSContext * cx,
                         JSObject * obj, JSObject * *_retval)
 {
@@ -7020,6 +7006,77 @@ nsLocationSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
 }
 
 // DOM Navigator helper
+
+NS_IMETHODIMP
+nsNavigatorSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
+                          JSObject *obj, jsid id, PRUint32 flags,
+                          JSObject **objp, PRBool *_retval)
+{
+  if (!JSID_IS_STRING(id) || (flags & JSRESOLVE_ASSIGNING)) {
+    return NS_OK;
+  }
+
+  nsScriptNameSpaceManager *nameSpaceManager =
+    nsJSRuntime::GetNameSpaceManager();
+  NS_ENSURE_TRUE(nameSpaceManager, NS_ERROR_NOT_INITIALIZED);
+
+  nsDependentJSString name(id);
+
+  const nsGlobalNameStruct *name_struct = nsnull;
+
+  nameSpaceManager->LookupNavigatorName(name, &name_struct);
+
+  if (!name_struct) {
+    return NS_OK;
+  }
+  NS_ASSERTION(name_struct->mType == nsGlobalNameStruct::eTypeNavigatorProperty,
+               "unexpected type");
+
+  nsresult rv = NS_OK;
+
+  nsCOMPtr<nsISupports> native(do_CreateInstance(name_struct->mCID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  jsval prop_val = JSVAL_VOID; // Property value.
+
+  nsCOMPtr<nsIDOMGlobalPropertyInitializer> gpi(do_QueryInterface(native));
+
+  if (gpi) {
+    JSObject *global = JS_GetGlobalForObject(cx, obj);
+
+    nsISupports *globalNative = XPConnect()->GetNativeOfWrapper(cx, global);
+    nsCOMPtr<nsIDOMWindow> window = do_QueryInterface(globalNative);
+
+    if (!window) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    rv = gpi->Init(window, &prop_val);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (JSVAL_IS_PRIMITIVE(prop_val)) {
+    nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
+    rv = WrapNative(cx, obj, native, PR_TRUE, &prop_val,
+                    getter_AddRefs(holder));
+
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (!JS_WrapValue(cx, &prop_val)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  JSBool ok = ::JS_DefinePropertyById(cx, obj, id, prop_val, nsnull, nsnull,
+                                      JSPROP_ENUMERATE);
+
+  *_retval = PR_TRUE;
+  *objp = obj;
+
+  return ok ? NS_OK : NS_ERROR_FAILURE;
+}
+
+// static
 nsresult
 nsNavigatorSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
                          JSObject *globalObj, JSObject **parentObj)
@@ -7061,6 +7118,79 @@ nsNavigatorSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
 
 // DOM Node helper
 
+template<nsresult (*func)(JSContext *cx, JSObject *obj, jsval *vp)>
+static JSBool
+GetterShim(JSContext *cx, JSObject *obj, jsid /* unused */, jsval *vp)
+{
+  nsresult rv = (*func)(cx, obj, vp);
+  if (NS_FAILED(rv)) {
+    if (!::JS_IsExceptionPending(cx)) {
+      nsDOMClassInfo::ThrowJSException(cx, rv);
+    }
+    return JS_FALSE;
+  }
+
+  return JS_TRUE;  
+}
+
+// Can't be static so GetterShim will compile
+nsresult
+BaseURIObjectGetter(JSContext *cx, JSObject *obj, jsval *vp)
+{
+  // This function duplicates some of the logic in XPC_WN_HelperGetProperty
+  XPCWrappedNative *wrapper =
+    XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj);
+
+  // The error checks duplicate code in THROW_AND_RETURN_IF_BAD_WRAPPER
+  NS_ENSURE_TRUE(!wrapper || wrapper->IsValid(), NS_ERROR_XPC_HAS_BEEN_SHUTDOWN);
+
+  nsCOMPtr<nsINode> node = do_QueryWrappedNative(wrapper, obj);
+  NS_ENSURE_TRUE(node, NS_ERROR_UNEXPECTED);
+
+  nsCOMPtr<nsIURI> uri = node->GetBaseURI();
+  return WrapNative(cx, JS_GetGlobalForScopeChain(cx), uri,
+                    &NS_GET_IID(nsIURI), PR_TRUE, vp);
+}
+
+// Can't be static so GetterShim will compile
+nsresult
+NodePrincipalGetter(JSContext *cx, JSObject *obj, jsval *vp)
+{
+  // This function duplicates some of the logic in XPC_WN_HelperGetProperty
+  XPCWrappedNative *wrapper =
+    XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj);
+
+  // The error checks duplicate code in THROW_AND_RETURN_IF_BAD_WRAPPER
+  NS_ENSURE_TRUE(!wrapper || wrapper->IsValid(), NS_ERROR_XPC_HAS_BEEN_SHUTDOWN);
+
+  nsCOMPtr<nsINode> node = do_QueryWrappedNative(wrapper, obj);
+  NS_ENSURE_TRUE(node, NS_ERROR_UNEXPECTED);
+
+  return WrapNative(cx, JS_GetGlobalForScopeChain(cx), node->NodePrincipal(),
+                    &NS_GET_IID(nsIPrincipal), PR_TRUE, vp);
+}
+
+NS_IMETHODIMP
+nsNodeSH::PostCreatePrototype(JSContext * cx, JSObject * proto)
+{
+  // set up our proto first
+  nsresult rv = nsDOMGenericSH::PostCreatePrototype(cx, proto);
+
+  if (xpc::AccessCheck::isChrome(proto->compartment())) {
+    // Stick nodePrincipal and baseURIObject  properties on there
+    JS_DefinePropertyById(cx, proto, sNodePrincipal_id,
+                          JSVAL_VOID, GetterShim<NodePrincipalGetter>,
+                          nsnull,
+                          JSPROP_READONLY | JSPROP_SHARED);
+    JS_DefinePropertyById(cx, proto, sBaseURIObject_id,
+                          JSVAL_VOID, GetterShim<BaseURIObjectGetter>,
+                          nsnull,
+                          JSPROP_READONLY | JSPROP_SHARED);
+  }
+
+  return rv;
+}
+
 PRBool
 nsNodeSH::IsCapabilityEnabled(const char* aCapability)
 {
@@ -7068,26 +7198,6 @@ nsNodeSH::IsCapabilityEnabled(const char* aCapability)
   return sSecMan &&
     NS_SUCCEEDED(sSecMan->IsCapabilityEnabled(aCapability, &enabled)) &&
     enabled;
-}
-
-nsresult
-nsNodeSH::DefineVoidProp(JSContext* cx, JSObject* obj, jsid id,
-                         JSObject** objp)
-{
-  NS_ASSERTION(JSID_IS_STRING(id), "id must be a string");
-
-  // We want this to be as invisible to content script as possible.  So
-  // don't enumerate this, and set is as JSPROP_SHARED so it won't get
-  // cached on the object.
-  JSBool ok = ::JS_DefinePropertyById(cx, obj, id, JSVAL_VOID,
-                                      nsnull, nsnull, JSPROP_SHARED);
-
-  if (!ok) {
-    return NS_ERROR_FAILURE;
-  }
-
-  *objp = obj;
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -7237,11 +7347,6 @@ nsNodeSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                      JSObject *obj, jsid id, PRUint32 flags,
                      JSObject **objp, PRBool *_retval)
 {
-  if ((id == sBaseURIObject_id || id == sNodePrincipal_id) &&
-      IsPrivilegedScript()) {
-    return DefineVoidProp(cx, obj, id, objp);
-  }
-
   if (id == sOnload_id || id == sOnerror_id) {
     // Make sure that this node can't go away while waiting for a
     // network load that could fire an event handler.
@@ -7254,63 +7359,6 @@ nsNodeSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
   return nsDOMGenericSH::NewResolve(wrapper, cx, obj, id, flags, objp,
                                     _retval);
-}
-
-NS_IMETHODIMP
-nsNodeSH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                      JSObject *obj, jsid id, jsval *vp, PRBool *_retval)
-{
-  if (id == sBaseURIObject_id && IsPrivilegedScript()) {
-    // I wish GetBaseURI lived on nsINode
-    nsCOMPtr<nsIURI> uri;
-    nsCOMPtr<nsIContent> content = do_QueryWrappedNative(wrapper, obj);
-    if (content) {
-      uri = content->GetBaseURI();
-      NS_ENSURE_TRUE(uri, NS_ERROR_OUT_OF_MEMORY);
-    } else {
-      nsCOMPtr<nsIDocument> doc = do_QueryWrappedNative(wrapper, obj);
-      NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
-
-      uri = doc->GetBaseURI();
-      NS_ENSURE_TRUE(uri, NS_ERROR_NOT_AVAILABLE);
-    }
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
-    nsresult rv = WrapNative(cx, JS_GetGlobalForScopeChain(cx), uri,
-                             &NS_GET_IID(nsIURI), PR_TRUE, vp,
-                             getter_AddRefs(holder));
-    return NS_FAILED(rv) ? rv : NS_SUCCESS_I_DID_SOMETHING;
-  }
-
-  if (id == sNodePrincipal_id && IsPrivilegedScript()) {
-    nsCOMPtr<nsINode> node = do_QueryWrappedNative(wrapper, obj);
-    NS_ENSURE_TRUE(node, NS_ERROR_UNEXPECTED);
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
-    nsresult rv = WrapNative(cx, JS_GetGlobalForScopeChain(cx),
-                             node->NodePrincipal(), &NS_GET_IID(nsIPrincipal),
-                             PR_TRUE, vp, getter_AddRefs(holder));
-    return NS_FAILED(rv) ? rv : NS_SUCCESS_I_DID_SOMETHING;
-  }    
-
-  // Note: none of our ancestors want GetProperty
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNodeSH::SetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                      JSObject *obj, jsid id, jsval *vp, PRBool *_retval)
-{
-  if ((id == sBaseURIObject_id || id == sNodePrincipal_id) &&
-      IsPrivilegedScript()) {
-    // We don't want privileged script that can read this property to set it,
-    // but _do_ want to allow everyone else to set a value they can then read.
-    //
-    // XXXbz Is there a better error we could use here?
-    return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
-  }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -8061,7 +8109,7 @@ nsDOMStringMapSH::Enumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   NS_ENSURE_SUCCESS(rv, rv);
 
   for (PRUint32 i = 0; i < properties.Length(); ++i) {
-    nsDependentString prop(properties[i]);
+    nsString& prop(properties[i]);
     *_retval = JS_DefineUCProperty(cx, obj, prop.get(), prop.Length(),
                                    JSVAL_VOID, nsnull, nsnull,
                                    JSPROP_ENUMERATE | JSPROP_SHARED);
@@ -8179,6 +8227,41 @@ nsDOMStringMapSH::JSIDToProp(const jsid& aId, nsAString& aResult)
   return true;
 }
 
+// Can't be static so GetterShim will compile
+nsresult
+DocumentURIObjectGetter(JSContext *cx, JSObject *obj, jsval *vp)
+{
+  // This function duplicates some of the logic in XPC_WN_HelperGetProperty
+  XPCWrappedNative *wrapper =
+    XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj);
+
+  // The error checks duplicate code in THROW_AND_RETURN_IF_BAD_WRAPPER
+  NS_ENSURE_TRUE(!wrapper || wrapper->IsValid(), NS_ERROR_XPC_HAS_BEEN_SHUTDOWN);
+
+  nsCOMPtr<nsIDocument> doc = do_QueryWrappedNative(wrapper, obj);
+  NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
+
+  return WrapNative(cx, JS_GetGlobalForScopeChain(cx), doc->GetDocumentURI(),
+                    &NS_GET_IID(nsIURI), PR_TRUE, vp);
+}
+
+NS_IMETHODIMP
+nsDocumentSH::PostCreatePrototype(JSContext * cx, JSObject * proto)
+{
+  // set up our proto first
+  nsresult rv = nsNodeSH::PostCreatePrototype(cx, proto);
+
+  if (xpc::AccessCheck::isChrome(proto->compartment())) {
+    // Stick a documentURIObject property on there
+    JS_DefinePropertyById(cx, proto, sDocumentURIObject_id,
+                          JSVAL_VOID, GetterShim<DocumentURIObjectGetter>,
+                          nsnull,
+                          JSPROP_READONLY | JSPROP_SHARED);
+  }
+
+  return rv;
+}
+
 NS_IMETHODIMP
 nsDocumentSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                          JSObject *obj, jsid id, PRUint32 flags,
@@ -8205,8 +8288,6 @@ nsDocumentSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                     getter_AddRefs(holder));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    JSAutoRequest ar(cx);
-
     JSBool ok = ::JS_DefinePropertyById(cx, obj, id, v, nsnull,
                                         LocationSetter<nsIDOMDocument>,
                                         JSPROP_PERMANENT | JSPROP_ENUMERATE);
@@ -8220,48 +8301,7 @@ nsDocumentSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     return NS_OK;
   }
 
-  if (id == sDocumentURIObject_id && IsPrivilegedScript()) {
-    return DefineVoidProp(cx, obj, id, objp);
-  } 
-
   return nsNodeSH::NewResolve(wrapper, cx, obj, id, flags, objp, _retval);
-}
-
-NS_IMETHODIMP
-nsDocumentSH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                          JSObject *obj, jsid id, jsval *vp, PRBool *_retval)
-{
-  if (id == sDocumentURIObject_id && IsPrivilegedScript()) {
-    nsCOMPtr<nsIDocument> doc = do_QueryWrappedNative(wrapper);
-    NS_ENSURE_TRUE(doc, NS_ERROR_UNEXPECTED);
-
-    nsIURI* uri = doc->GetDocumentURI();
-    NS_ENSURE_TRUE(uri, NS_ERROR_NOT_AVAILABLE);
-
-    nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
-    nsresult rv = WrapNative(cx, JS_GetGlobalForScopeChain(cx), uri,
-                             &NS_GET_IID(nsIURI), PR_TRUE, vp,
-                             getter_AddRefs(holder));
-
-    return NS_FAILED(rv) ? rv : NS_SUCCESS_I_DID_SOMETHING;
-  }
-
-  return nsNodeSH::GetProperty(wrapper, cx, obj, id, vp, _retval);
-}
-
-NS_IMETHODIMP
-nsDocumentSH::SetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                          JSObject *obj, jsid id, jsval *vp, PRBool *_retval)
-{
-  if (id == sDocumentURIObject_id && IsPrivilegedScript()) {
-    // We don't want privileged script that can read this property to set it,
-    // but _do_ want to allow everyone else to set a value they can then read.
-    //
-    // XXXbz Is there a better error we could use here?
-    return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
-  }
-  
-  return nsNodeSH::SetProperty(wrapper, cx, obj, id, vp, _retval);
 }
 
 NS_IMETHODIMP
@@ -8929,7 +8969,7 @@ nsHTMLDocumentSH::GetProperty(nsIXPConnectWrappedNative *wrapper,
     }
   }
 
-  return nsDocumentSH::GetProperty(wrapper, cx, obj, id, vp, _retval);
+  return NS_OK;
 }
 
 // HTMLFormElement helper
@@ -9028,7 +9068,7 @@ nsHTMLFormElementSH::GetProperty(nsIXPConnectWrappedNative *wrapper,
     }
   }
 
-  return nsElementSH::GetProperty(wrapper, cx, obj, id, vp, _retval);;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -9162,7 +9202,7 @@ nsHTMLSelectElementSH::GetProperty(nsIXPConnectWrappedNative *wrapper,
     }
   }
 
-  return nsElementSH::GetProperty(wrapper, cx, obj, id, vp, _retval);;
+  return NS_OK;
 }
 
 // static
@@ -9213,7 +9253,7 @@ nsHTMLSelectElementSH::SetProperty(nsIXPConnectWrappedNative *wrapper,
     return NS_FAILED(rv) ? rv : NS_SUCCESS_I_DID_SOMETHING;
   }
 
-  return nsElementSH::SetProperty(wrapper, cx, obj, id, vp, _retval);
+  return NS_OK;
 }
 
 
@@ -9281,7 +9321,7 @@ public:
   {
     JSContext* cx = nsnull;
     if (mContext) {
-      cx = (JSContext*)mContext->GetNativeContext();
+      cx = mContext->GetNativeContext();
     } else {
       nsCOMPtr<nsIThreadJSContextStack> stack =
         do_GetService("@mozilla.org/js/xpc/ContextStack;1");
@@ -9486,7 +9526,7 @@ nsHTMLPluginObjElementSH::GetProperty(nsIXPConnectWrappedNative *wrapper,
     return *_retval ? NS_SUCCESS_I_DID_SOMETHING : NS_ERROR_FAILURE;
   }
 
-  return nsElementSH::GetProperty(wrapper, cx, obj, id, vp, _retval);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -9515,7 +9555,7 @@ nsHTMLPluginObjElementSH::SetProperty(nsIXPConnectWrappedNative *wrapper,
     return *_retval ? NS_SUCCESS_I_DID_SOMETHING : NS_ERROR_FAILURE;
   }
 
-  return nsElementSH::SetProperty(wrapper, cx, obj, id, vp, _retval);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

@@ -1848,9 +1848,15 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
     bool useUnpackRowLength = IsExtensionSupported(EXT_unpack_subimage);
 #endif
 
-    if (useUnpackRowLength)
-        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, stride/pixelsize);
-    else if (stride != width * pixelsize) {
+    // Don't use UNPACK_ROW_LENGTH if the length would be greater than the
+    // maximum texture size
+    int rowLength = stride/pixelsize;
+    if (rowLength > mMaxTextureSize)
+      useUnpackRowLength = false;
+
+    if (useUnpackRowLength) {
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, rowLength);
+    } else if (stride != width * pixelsize) {
         // Not using the whole row of texture data and GLES doesn't 
         // support GL_UNPACK_ROW_LENGTH. We need to upload each row
         // separately.
@@ -1910,9 +1916,18 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
                         GetAddressAlignment((ptrdiff_t)stride)));
 
 #ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, stride/pixelsize);
+    bool useUnpackRowLength = true;
 #else
-    if (stride != width * pixelsize) {
+    bool useUnpackRowLength = IsExtensionSupported(EXT_unpack_subimage);
+#endif
+
+    int rowLength = stride/pixelsize;
+    if (rowLength > mMaxTextureSize)
+      useUnpackRowLength = false;
+
+    if (useUnpackRowLength) {
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, rowLength);
+    } else if (stride != width * pixelsize) {
         // Not using the whole row of texture data and GLES doesn't 
         // support GL_UNPACK_ROW_LENGTH. We need to upload each row
         // separately.
@@ -1934,7 +1949,6 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
         fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
         return;
     }
-#endif
 
     fTexSubImage2D(target,
                    level,
@@ -1946,9 +1960,8 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
                    type,
                    pixels);
 
-#ifndef USE_GLES2
-    fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
-#endif
+    if (useUnpackRowLength)
+        fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);
     fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 4);
 }
 

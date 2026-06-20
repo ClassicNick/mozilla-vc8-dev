@@ -947,11 +947,20 @@ class FrameState
     void clearTemporaries();
     inline FrameEntry *getTemporary(uint32 which);
 
-    /* Return NULL or a new vector with all current copies of temporaries. */
-    Vector<TemporaryCopy> *getTemporaryCopies();
+    /*
+     * Return NULL or a new vector with all current copies of temporaries,
+     * excluding those about to be popped per 'uses'.
+     */
+    Vector<TemporaryCopy> *getTemporaryCopies(Uses uses);
 
     inline void syncAndForgetFe(FrameEntry *fe, bool markSynced = false);
     inline void forgetLoopReg(FrameEntry *fe);
+
+    /*
+     * Get an address for the specified name access in another script.
+     * The compiler owns the result's base register.
+     */
+    inline Address loadNameAddress(const analyze::ScriptAnalysis::NameAccess &access);
 
   private:
     inline AnyRegisterID allocAndLoadReg(FrameEntry *fe, bool fp, RematInfo::RematType type);

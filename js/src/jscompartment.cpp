@@ -207,10 +207,6 @@ JSCompartment::wrap(JSContext *cx, Value *vp)
     if (vp->isString()) {
         JSString *str = vp->toString();
 
-        /* Static atoms do not have to be wrapped. */
-        if (str->isStaticAtom())
-            return true;
-
         /* If the string is already in this compartment, we are done. */
         if (str->compartment() == this)
             return true;
@@ -545,17 +541,34 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
         traceMonitor()->sweep(cx);
 #endif
 
-# if defined JS_METHODJIT && defined JS_POLYIC
+#ifdef JS_METHODJIT
     /*
-     * Purge all PICs in the compartment. These can reference type data and
-     * need to know which types are pending collection.
+     * Purge PICs in the compartment, along with native call stubs for
+     * compartments which do not have such stubs on the stack. PICs can
+     * reference shapes and type data, and native call stubs are disassociated
+     * from the PIC or MIC they were generated for.
      */
+    bool canPurgeNativeCalls = true;
+    VMFrame *f = hasJaegerCompartment() ? jaegerCompartment()->activeFrame() : NULL;
+    for (; f; f = f->previous) {
+        if (f->stubRejoin)
+            canPurgeNativeCalls = false;
+    }
     for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
         JSScript *script = i.get<JSScript>();
-        if (script->hasJITCode())
+        if (script->hasJITCode()) {
+#ifdef JS_POLYIC
             mjit::ic::PurgePICs(cx, script);
+#endif
+            if (canPurgeNativeCalls) {
+                if (script->jitNormal)
+                    script->jitNormal->purgeNativeCallStubs();
+                if (script->jitCtor)
+                    script->jitCtor->purgeNativeCallStubs();
+            }
+        }
     }
-# endif
+#endif
 
     bool discardScripts = !active && (releaseInterval != 0 || hasDebugModeCodeToDrop);
 
@@ -585,9 +598,28 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
 
 #endif
 
-    if (!activeAnalysis) {
+#ifdef JS_METHODJIT
+    if (types.inferenceEnabled)
+        mjit::ClearAllFrames(this);
+#endif
+
+    if (activeAnalysis) {
         /*
-         * Clear the analysis pool, but don't releas its data yet. While
+         * Analysis information is in use, so don't clear the analysis pool.
+         * jitcode still needs to be released, if this is a shape-regenerating
+         * GC then shape numbers baked into the code may change.
+         */
+#ifdef JS_METHODJIT
+        if (types.inferenceEnabled) {
+            for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
+                JSScript *script = i.get<JSScript>();
+                mjit::ReleaseScriptCode(cx, script);
+            }
+        }
+#endif
+    } else {
+        /*
+         * Clear the analysis pool, but don't release its data yet. While
          * sweeping types any live data will be allocated into the pool.
          */
         JSArenaPool oldPool;
@@ -599,9 +631,6 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
          * enabled in the compartment.
          */
         if (types.inferenceEnabled) {
-#ifdef JS_METHODJIT
-            mjit::ClearAllFrames(this);
-#endif
             for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
                 JSScript *script = i.get<JSScript>();
                 if (script->types) {
@@ -615,6 +644,7 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
                     if (discardScripts) {
                         script->types->destroy();
                         script->types = NULL;
+                        script->typesPurged = true;
                     }
                 }
             }
@@ -624,8 +654,7 @@ JSCompartment::sweep(JSContext *cx, uint32 releaseInterval)
 
         for (CellIterUnderGC i(this, FINALIZE_SCRIPT); !i.done(); i.next()) {
             JSScript *script = i.get<JSScript>();
-            if (script->types)
-                script->types->analysis = NULL;
+            script->clearAnalysis();
         }
 
         /* Reset the analysis pool, releasing all analysis and intermediate type data. */

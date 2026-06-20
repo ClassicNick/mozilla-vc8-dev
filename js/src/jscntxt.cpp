@@ -406,7 +406,9 @@ js_NewContext(JSRuntime *rt, size_t stackChunkSize)
 #ifdef JS_THREADSAFE
         JS_BeginRequest(cx);
 #endif
-        JSBool ok = js_InitCommonAtoms(cx);
+        bool ok = rt->staticStrings.init(cx);
+        if (ok)
+            ok = js_InitCommonAtoms(cx);
 
 #ifdef JS_THREADSAFE
         JS_EndRequest(cx);
@@ -649,7 +651,7 @@ ReportError(JSContext *cx, const char *message, JSErrorReport *reportp,
      *
      * If an exception was raised, then we call the debugErrorHook
      * (if present) to give it a chance to see the error before it
-     * propagates out of scope.  This is needed for compatability
+     * propagates out of scope.  This is needed for compatibility
      * with the old scheme.
      */
     if (!JS_IsRunning(cx) ||

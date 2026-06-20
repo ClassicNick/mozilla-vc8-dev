@@ -21,6 +21,7 @@
  * Contributor(s):
  *  Marina Samuel <msamuel@mozilla.com>
  *  Philipp von Weitershausen <philipp@weitershausen.de>
+ *  Chenxia Liu <liuche@mozilla.com>
  *
  * Alternatively, the contents of this file may be used under the terms of
  * either the GNU General Public License Version 2 or later (the "GPL"), or
@@ -107,8 +108,10 @@ let SyncScheduler = {
   observe: function observe(subject, topic, data) {
     switch(topic) {
       case "weave:engine:score:updated":
-        Utils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
-                         "_scoreTimer");
+        if (Status.login == LOGIN_SUCCEEDED) {
+          Utils.namedTimer(this.calculateScore, SCORE_UPDATE_DELAY, this,
+                           "_scoreTimer");
+        }
         break;
       case "network:offline-status-changed":
         // Whether online or offline, we'll reschedule syncs
@@ -451,6 +454,7 @@ let ErrorHandler = {
   initLogs: function initLogs() {
     this._log = Log4Moz.repository.getLogger("Sync.ErrorHandler");
     this._log.level = Log4Moz.Level[Svc.Prefs.get("log.logger.service.main")];
+    this._cleaningUpFileLogs = false;
 
     let root = Log4Moz.repository.getLogger("Sync");
     root.level = Log4Moz.Level[Svc.Prefs.get("log.rootLogger")];
@@ -493,9 +497,9 @@ let ErrorHandler = {
         if (this.shouldReportError()) {
           this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
                             LOG_PREFIX_ERROR);
-          Svc.Obs.notify("weave:ui:login:error");
+          this.notifyOnNextTick("weave:ui:login:error");
         } else {
-          Svc.Obs.notify("weave:ui:clear-error");
+          this.notifyOnNextTick("weave:ui:clear-error");
         }
 
         this.dontIgnoreErrors = false;
@@ -508,9 +512,9 @@ let ErrorHandler = {
         if (this.shouldReportError()) {
           this.resetFileLog(Svc.Prefs.get("log.appender.file.logOnError"),
                             LOG_PREFIX_ERROR);
-          Svc.Obs.notify("weave:ui:sync:error");
+          this.notifyOnNextTick("weave:ui:sync:error");
         } else {
-          Svc.Obs.notify("weave:ui:sync:finish");
+          this.notifyOnNextTick("weave:ui:sync:finish");
         }
 
         this.dontIgnoreErrors = false;
@@ -523,7 +527,7 @@ let ErrorHandler = {
 
           if (this.shouldReportError()) {
             this.dontIgnoreErrors = false;
-            Svc.Obs.notify("weave:ui:sync:error");
+            this.notifyOnNextTick("weave:ui:sync:error");
             break;
           }
         } else {
@@ -531,9 +535,13 @@ let ErrorHandler = {
                             LOG_PREFIX_SUCCESS);
         }
         this.dontIgnoreErrors = false;
-        Svc.Obs.notify("weave:ui:sync:finish");
+        this.notifyOnNextTick("weave:ui:sync:finish");
         break;
     }
+  },
+
+  notifyOnNextTick: function notifyOnNextTick(topic) {
+    Utils.nextTick(function() Svc.Obs.notify(topic));
   },
 
   /**
@@ -544,6 +552,46 @@ let ErrorHandler = {
 
     this.dontIgnoreErrors = true;
     Utils.nextTick(Weave.Service.sync, Weave.Service);
+  },
+
+  /**
+   * Finds all logs older than maxErrorAge and deletes them without tying up I/O.
+   */
+  cleanupLogs: function cleanupLogs() {
+    let direntries = FileUtils.getDir("ProfD", ["weave", "logs"]).directoryEntries;
+    let oldLogs = [];
+    let index = 0;
+    let threshold = Date.now() - 1000 * Svc.Prefs.get("log.appender.file.maxErrorAge");
+
+    while (direntries.hasMoreElements()) {
+      let logFile = direntries.getNext().QueryInterface(Ci.nsIFile);
+      if (logFile.lastModifiedTime < threshold) {
+        oldLogs.push(logFile);
+      }
+    }
+
+    // Deletes a file from oldLogs each tick until there are none left.
+    function deleteFile() {
+      if (index >= oldLogs.length) {
+        ErrorHandler._cleaningUpFileLogs = false;
+        Svc.Obs.notify("weave:service:cleanup-logs");
+        return;
+      }
+      try {
+        oldLogs[index].remove(false);
+      } catch (ex) {
+        ErrorHandler._log._debug("Encountered error trying to clean up old log file '"
+                                 + oldLogs[index].leafName + "':"
+                                 + Utils.exceptionStr(ex));
+      }
+      index++;
+      Utils.nextTick(deleteFile);
+    }
+
+    if (oldLogs.length > 0) {
+      ErrorHandler._cleaningUpFileLogs = true;
+      Utils.nextTick(deleteFile);
+    }
   },
 
   /**
@@ -567,6 +615,10 @@ let ErrorHandler = {
         let outStream = FileUtils.openFileOutputStream(file);
         NetUtil.asyncCopy(inStream, outStream, function () {
           Svc.Obs.notify("weave:service:reset-file-log");
+          if (filenamePrefix == LOG_PREFIX_ERROR
+              && !ErrorHandler._cleaningUpFileLogs) {
+            Utils.nextTick(ErrorHandler.cleanupLogs, ErrorHandler);
+          }
         });
       } catch (ex) {
         Svc.Obs.notify("weave:service:reset-file-log");
@@ -623,7 +675,7 @@ let ErrorHandler = {
       return true;
     }
 
-    return (Status.sync != SERVER_MAINTENANCE &&
+    return ([Status.login, Status.sync].indexOf(SERVER_MAINTENANCE) == -1 &&
             [Status.login, Status.sync].indexOf(LOGIN_FAILED_NETWORK_ERROR) == -1);
   },
 
@@ -650,7 +702,11 @@ let ErrorHandler = {
       case 504:
         Status.enforceBackoff = true;
         if (resp.status == 503 && resp.headers["retry-after"]) {
-          Status.sync = SERVER_MAINTENANCE;
+          if (Weave.Service.isLoggedIn) {
+            Status.sync = SERVER_MAINTENANCE;
+          } else {
+            Status.login = SERVER_MAINTENANCE;
+          }
           Svc.Obs.notify("weave:service:backoff:interval",
                          parseInt(resp.headers["retry-after"], 10));
         }
@@ -666,7 +722,11 @@ let ErrorHandler = {
       case Cr.NS_ERROR_PROXY_CONNECTION_REFUSED:
         // The constant says it's about login, but in fact it just
         // indicates general network error.
-        Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+        if (Weave.Service.isLoggedIn) {
+          Status.sync = LOGIN_FAILED_NETWORK_ERROR;
+        } else {
+          Status.login = LOGIN_FAILED_NETWORK_ERROR;
+        }
         break;
     }
   },
