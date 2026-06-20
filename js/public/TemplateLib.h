@@ -168,12 +168,10 @@ template <> struct IsPodType<long long>             { static const bool result =
 template <> struct IsPodType<unsigned long long>    { static const bool result = true; };
 template <> struct IsPodType<float>                 { static const bool result = true; };
 template <> struct IsPodType<double>                { static const bool result = true; };
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
 template <> struct IsPodType<wchar_t>               { static const bool result = true; };
+#endif
 template <typename T> struct IsPodType<T *>         { static const bool result = true; };
-
-/* Return the size/end of an array without using macros. */
-template <class T, size_t N> inline T *ArraySize(T (&)[N]) { return N; }
-template <class T, size_t N> inline T *ArrayEnd(T (&arr)[N]) { return arr + N; }
 
 template <bool cond, typename T, T v1, T v2> struct If        { static const T result = v1; };
 template <typename T, T v1, T v2> struct If<false, T, v1, v2> { static const T result = v2; };

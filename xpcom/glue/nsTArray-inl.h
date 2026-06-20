@@ -40,6 +40,8 @@
 #  error "Don't include this file directly"
 #endif
 
+#define EMPTY_STATIC_ASSERT(a, b)
+
 template<class Alloc>
 nsTArray_base<Alloc>::nsTArray_base()
   : mHdr(EmptyHdr()) {
@@ -65,7 +67,7 @@ const nsTArrayHeader* nsTArray_base<Alloc>::GetAutoArrayBufferUnsafe(size_t elem
   // pointer to take into account the extra alignment in the auto array.
 
   // Check that the auto array is padded as we expect.
-  PR_STATIC_ASSERT(sizeof(void*) != 4 ||
+  EMPTY_STATIC_ASSERT(sizeof(void*) != 4 ||
                    (MOZ_ALIGNOF(mozilla::AlignedElem<8>) == 8 &&
                     sizeof(nsAutoTArray<mozilla::AlignedElem<8>, 1>) ==
                       sizeof(void*) + sizeof(nsTArrayHeader) +

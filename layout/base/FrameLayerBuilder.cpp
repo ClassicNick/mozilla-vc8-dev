@@ -88,11 +88,6 @@ public:
 
 namespace {
 
-/**
- * Active layers smaller than this in each dimension are treated as inactive.
- */
-static const int MIN_ACTIVE_LAYER_SIZE = 16;
-
 static void DestroyRegion(void* aPropertyValue)
 {
   delete static_cast<nsRegion*>(aPropertyValue);
@@ -975,6 +970,12 @@ ContainerState::PopThebesLayerData()
       nsRefPtr<ImageLayer> imageLayer = CreateOrRecycleImageLayer();
       imageLayer->SetContainer(imageContainer);
       data->mImage->ConfigureLayer(imageLayer);
+      if (mParameters.mInActiveTransformedSubtree) {
+        // The layer's current transform is applied first, then the result is scaled.
+        gfx3DMatrix transform = imageLayer->GetTransform()*
+          gfx3DMatrix::ScalingMatrix(mParameters.mXScale, mParameters.mYScale, 1.0f);
+        imageLayer->SetTransform(transform);
+      }
       NS_ASSERTION(data->mImageClip.mRoundedClipRects.IsEmpty(),
                    "How did we get rounded clip rects here?");
       if (data->mImageClip.mHaveClipRect) {
@@ -1129,6 +1130,17 @@ ContainerState::ThebesLayerData::Accumulate(ContainerState* aState,
 {
   nscolor uniformColor;
   bool isUniform = aItem->IsUniform(aState->mBuilder, &uniformColor);
+  
+  /* Mark as available for conversion to image layer if this is a nsDisplayImage and
+   * we are the first visible item in the ThebesLayerData object.
+   */
+  if (aItem->GetType() == nsDisplayItem::TYPE_IMAGE && mVisibleRegion.IsEmpty()) {
+    mImage = static_cast<nsDisplayImage*>(aItem);
+    mImageClip = aClip;
+  } else {
+    mImage = nsnull;
+  }
+
   // Some display items have to exist (so they can set forceTransparentSurface
   // below) but don't draw anything. They'll return true for isUniform but
   // a color with opacity 0.
@@ -1156,16 +1168,6 @@ ContainerState::ThebesLayerData::Accumulate(ContainerState* aState,
     mVisibleRegion.SimplifyOutward(4);
     mDrawRegion.Or(mDrawRegion, aDrawRect);
     mDrawRegion.SimplifyOutward(4);
-  }
-
-  /* Mark as available for conversion to image layer if this is a nsDisplayImage and
-   * we are the first visible item in the ThebesLayerData object.
-   */
-  if (aItem->GetType() == nsDisplayItem::TYPE_IMAGE && mVisibleRegion.IsEmpty()) {
-    mImage = static_cast<nsDisplayImage*>(aItem);
-    mImageClip = aClip;
-  } else {
-    mImage = nsnull;
   }
   
   bool forceTransparentSurface = false;
@@ -1333,7 +1335,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
     NS_ASSERTION(appUnitsPerDevPixel == AppUnitsPerDevPixel(item),
       "items in a container layer should all have the same app units per dev pixel");
 
-    nsIntRect itemVisibleRectPixels =
+    nsIntRect itemVisibleRect =
       item->GetVisibleRect().ScaleToOutsidePixels(
           mParameters.mXScale, mParameters.mYScale, appUnitsPerDevPixel);
     nsRect itemContent = item->GetBounds(mBuilder);
@@ -1351,24 +1353,22 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
     // Assign the item to a layer
     if (layerState == LAYER_ACTIVE_FORCE ||
         layerState == LAYER_ACTIVE_EMPTY ||
-        (layerState == LAYER_ACTIVE &&
-          (aClip.mRoundedClipRects.IsEmpty() ||
-           // We can use the visible rect here only because the item has its own
-           // layer, like the comment below.
-           !aClip.IsRectClippedByRoundedCorner(item->GetVisibleRect())) &&
-          !(itemVisibleRectPixels.Size() < nsIntSize(MIN_ACTIVE_LAYER_SIZE, MIN_ACTIVE_LAYER_SIZE)))) {
+        layerState == LAYER_ACTIVE && (aClip.mRoundedClipRects.IsEmpty() ||
+        // We can use the visible rect here only because the item has its own
+        // layer, like the comment below.
+        !aClip.IsRectClippedByRoundedCorner(item->GetVisibleRect()))) {
 
       // LAYER_ACTIVE_EMPTY means the layer is created just for its metadata.
       // We should never see an empty layer with any visible content!
       NS_ASSERTION(layerState != LAYER_ACTIVE_EMPTY ||
-                   itemVisibleRectPixels.IsEmpty(),
+                   itemVisibleRect.IsEmpty(),
                    "State is LAYER_ACTIVE_EMPTY but visible rect is not.");
 
       // If the item would have its own layer but is invisible, just hide it.
       // Note that items without their own layers can't be skipped this
       // way, since their ThebesLayer may decide it wants to draw them
       // into its buffer even if they're currently covered.
-      if (itemVisibleRectPixels.IsEmpty() && layerState != LAYER_ACTIVE_EMPTY) {
+      if (itemVisibleRect.IsEmpty() && layerState != LAYER_ACTIVE_EMPTY) {
         InvalidateForLayerChange(item, nsnull);
         continue;
       }
@@ -1406,14 +1406,14 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       }
       ThebesLayerData* data = GetTopThebesLayerData();
       if (data) {
-        data->mVisibleAboveRegion.Or(data->mVisibleAboveRegion, itemVisibleRectPixels);
+        data->mVisibleAboveRegion.Or(data->mVisibleAboveRegion, itemVisibleRect);
         // Add the entire bounds rect to the mDrawAboveRegion.
         // The visible region may be excluding opaque content above the
         // item, and we need to ensure that that content is not placed
         // in a ThebesLayer below the item!
         data->mDrawAboveRegion.Or(data->mDrawAboveRegion, itemDrawRect);
       }
-      RestrictVisibleRegionForLayer(ownLayer, itemVisibleRectPixels);
+      RestrictVisibleRegionForLayer(ownLayer, itemVisibleRect);
       ContainerLayer* oldContainer = ownLayer->GetParent();
       if (oldContainer && oldContainer != mContainerLayer) {
         oldContainer->RemoveChild(ownLayer);
@@ -1427,7 +1427,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
       mBuilder->LayerBuilder()->AddLayerDisplayItem(ownLayer, item, layerState);
     } else {
       nsRefPtr<ThebesLayer> thebesLayer =
-        FindThebesLayerFor(item, itemVisibleRectPixels, itemDrawRect, aClip,
+        FindThebesLayerFor(item, itemVisibleRect, itemDrawRect, aClip,
                            activeScrolledRoot);
 
       thebesLayer->SetIsFixedPosition(!nsLayoutUtils::ScrolledByViewportScrolling(
@@ -2113,6 +2113,10 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
     if (cdi->mInactiveLayer) {
       PaintInactiveLayer(builder, cdi->mItem, aContext);
     } else {
+      nsIFrame* frame = cdi->mItem->GetUnderlyingFrame();
+      if (frame) {
+        frame->AddStateBits(NS_FRAME_PAINTED_THEBES);
+      }
       cdi->mItem->Paint(builder, rc);
     }
 

@@ -124,6 +124,7 @@ struct Class;
 
 class RegExpObject;
 class RegExpPrivate;
+class RegExpObjectBuilder;
 class RegExpStatics;
 class MatchPairs;
 
@@ -161,8 +162,7 @@ class FrameRegsIter;
 class CallReceiver;
 class CallArgs;
 
-struct BytecodeCompiler;
-struct CodeGenerator;
+struct BytecodeEmitter;
 struct Definition;
 struct FunctionBox;
 struct ObjectBox;
@@ -232,6 +232,9 @@ typedef HashMap<jsbytecode *, BreakpointSite *, DefaultHasher<jsbytecode *>, Run
     BreakpointSiteMap;
 class Debugger;
 class WatchpointMap;
+
+typedef HashMap<JSAtom *, RegExpPrivate *, DefaultHasher<JSAtom *>, RuntimeAllocPolicy>
+    RegExpPrivateCache;
 
 typedef JSNative             Native;
 typedef JSPropertyOp         PropertyOp;

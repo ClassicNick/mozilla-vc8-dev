@@ -210,11 +210,11 @@ struct TokenPos {
     TokenPtr          begin;          /* first character and line of token */
     TokenPtr          end;            /* index 1 past last char, last line */
 
-    TokenPos() {}
-
-    TokenPos(const TokenPtr &begin, const TokenPtr &end) : begin(begin), end(end) {
-        // Assertion temporarily disabled by jorendorff. See bug 695922.
+    static TokenPos make(const TokenPtr &begin, const TokenPtr &end) {
+        // Assertions temporarily disabled by jorendorff. See bug 695922.
         //JS_ASSERT(begin <= end);
+        TokenPos pos = {begin, end};
+        return pos;
     }
 
     /* Return a TokenPos that covers left, right, and anything in between. */
@@ -223,7 +223,8 @@ struct TokenPos {
         //JS_ASSERT(left.begin <= left.end);
         //JS_ASSERT(left.end <= right.begin);
         //JS_ASSERT(right.begin <= right.end);
-        return TokenPos(left.begin, right.end);
+        TokenPos pos = {left.begin, right.end};
+        return pos;
     }
 
     bool operator==(const TokenPos& bpos) const {
@@ -598,6 +599,22 @@ class TokenStream
         sourceMap = NULL;
         return sm;
     }
+
+    /*
+     * If the name at s[0:length] is not a keyword in this version, return
+     * true with *ttp and *topp unchanged.
+     *
+     * If it is a reserved word in this version and strictness mode, and thus
+     * can't be present in correct code, report a SyntaxError and return false.
+     *
+     * If it is a keyword, like "if", the behavior depends on ttp/topp. If ttp
+     * and topp are null, report a SyntaxError ("if is a reserved identifier")
+     * and return false. If ttp and topp are non-null, return true with the
+     * keyword's TokenKind in *ttp and its JSOp in *topp.
+     *
+     * ttp and topp must be either both null or both non-null.
+     */
+    bool checkForKeyword(const jschar *s, size_t length, TokenKind *ttp, JSOp *topp);
 
   private:
     /*
