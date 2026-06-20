@@ -44,7 +44,7 @@
 
 #include "jscntxt.h"
 #include "nsContentUtils.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsDOMException.h"
 #include "nsJSON.h"
 #include "nsThreadUtils.h"
@@ -65,7 +65,7 @@ public:
   { }
 
   NS_IMETHOD Run() {
-    PRBool dummy;
+    bool dummy;
     return mTarget->DispatchEvent(mEvent, &dummy);
   }
 
@@ -78,7 +78,7 @@ private:
 
 already_AddRefed<nsDOMEvent>
 mozilla::dom::indexedDB::CreateGenericEvent(const nsAString& aType,
-                                            PRBool aBubblesAndCancelable)
+                                            bool aBubblesAndCancelable)
 {
   nsRefPtr<nsDOMEvent> event(new nsDOMEvent(nsnull, nsnull));
   nsresult rv = event->InitEvent(aType, aBubblesAndCancelable,

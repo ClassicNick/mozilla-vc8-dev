@@ -319,7 +319,7 @@ ThebesLayerD3D9::GetLayer()
   return this;
 }
 
-PRBool
+bool
 ThebesLayerD3D9::IsEmpty()
 {
   return !mTexture;
@@ -670,7 +670,7 @@ ShadowThebesLayerD3D9::GetLayer()
   return this;
 }
 
-PRBool
+bool
 ShadowThebesLayerD3D9::IsEmpty()
 {
   return !mBuffer;

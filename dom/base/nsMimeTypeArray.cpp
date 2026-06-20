@@ -43,7 +43,7 @@
 #include "nsIDOMNavigator.h"
 #include "nsIDOMPluginArray.h"
 #include "nsIDOMPlugin.h"
-#include "nsDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsIMIMEService.h"
 #include "nsIMIMEInfo.h"
 #include "nsIFile.h"
@@ -165,7 +165,7 @@ nsMimeTypeArray::GetNamedItem(const nsAString& aName, nsresult* aResult)
       nsHandlerInfoAction action = nsIHandlerInfo::saveToDisk;
       mimeInfo->GetPreferredAction(&action);
       if (action != nsIMIMEInfo::handleInternally) {
-        PRBool hasHelper = PR_FALSE;
+        bool hasHelper = false;
         mimeInfo->GetHasDefaultHandler(&hasHelper);
         if (!hasHelper) {
           nsCOMPtr<nsIHandlerApp> helper;

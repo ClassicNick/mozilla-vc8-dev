@@ -63,7 +63,7 @@ const PREF_GETADDONS_GETSEARCHRESULTS    = "extensions.getAddons.search.url";
 const XMLURI_PARSE_ERROR  = "http://www.mozilla.org/newlayout/xml/parsererror.xml";
 
 const API_VERSION = "1.5";
-const DEFAULT_CACHE_TYPES = "extension,theme,locale";
+const DEFAULT_CACHE_TYPES = "extension,theme,locale,dictionary";
 
 const KEY_PROFILEDIR = "ProfD";
 const FILE_DATABASE  = "addons.sqlite";
@@ -933,6 +933,9 @@ var AddonRepository = {
             case 2:
               addon.type = "theme";
               break;
+            case 3:
+              addon.type = "dictionary";
+              break;
             default:
               WARN("Unknown type id when parsing addon: " + id);
           }
@@ -1176,8 +1179,10 @@ var AddonRepository = {
     this._request.overrideMimeType("text/xml");
 
     let self = this;
-    this._request.onerror = function(aEvent) { self._reportFailure(); };
-    this._request.onload = function(aEvent) {
+    this._request.addEventListener("error", function(aEvent) {
+      self._reportFailure();
+    }, false);
+    this._request.addEventListener("load", function(aEvent) {
       let request = aEvent.target;
       let responseXML = request.responseXML;
 
@@ -1196,7 +1201,7 @@ var AddonRepository = {
         totalResults = parsedTotalResults;
 
       aHandleResults(elements, totalResults);
-    };
+    }, false);
     this._request.send(null);
   },
 
@@ -1326,7 +1331,7 @@ var AddonDatabase = {
     let dbfile = FileUtils.getFile(KEY_PROFILEDIR, [FILE_DATABASE], true);
     let dbMissing = !dbfile.exists();
 
-    function tryAgain() {
+    var tryAgain = (function() {
       LOG("Deleting database, and attempting openConnection again");
       this.initialized = false;
       if (this.connection.connectionReady)
@@ -1334,7 +1339,7 @@ var AddonDatabase = {
       if (dbfile.exists())
         dbfile.remove(false);
       return this.openConnection(true);
-    }
+    }).bind(this);
 
     try {
       this.connection = Services.storage.openUnsharedDatabase(dbfile);

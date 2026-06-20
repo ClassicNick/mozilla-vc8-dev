@@ -53,7 +53,7 @@
  *
  **********************************************************************/
 
-PRBool
+bool
 gfxGDIShaper::InitTextRun(gfxContext *aContext,
                           gfxTextRun *aTextRun,
                           const PRUnichar *aString,
@@ -109,7 +109,7 @@ gfxGDIShaper::InitTextRun(gfxContext *aContext,
         WCHAR glyph = glyphs[i];
         NS_ASSERTION(!gfxFontGroup::IsInvalidChar(aTextRun->GetChar(offset)),
                      "Invalid character detected!");
-        PRBool atClusterStart = aTextRun->IsClusterStart(offset);
+        bool atClusterStart = aTextRun->IsClusterStart(offset);
         if (advanceAppUnits >= 0 &&
             gfxTextRun::CompressedGlyph::IsSimpleAdvance(advanceAppUnits) &&
             gfxTextRun::CompressedGlyph::IsSimpleGlyphID(glyph) &&

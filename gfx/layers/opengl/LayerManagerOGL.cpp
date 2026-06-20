@@ -189,7 +189,7 @@ LayerManagerOGL::CreateContext()
   return context.forget();
 }
 
-PRBool
+bool
 LayerManagerOGL::Initialize(nsRefPtr<GLContext> aContext)
 {
   ScopedGfxFeatureReporter reporter("GL Layers");
@@ -601,7 +601,7 @@ LayerManagerOGL::RootLayer() const
   return static_cast<LayerOGL*>(mRoot->ImplData());
 }
 
-PRBool LayerManagerOGL::sDrawFPS = PR_FALSE;
+bool LayerManagerOGL::sDrawFPS = false;
 
 /* This function tries to stick to portable C89 as much as possible
  * so that it can be easily copied into other applications */
@@ -1317,21 +1317,6 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
 
   *aFBO = fbo;
   *aTexture = tex;
-}
-
-void 
-LayerOGL::ApplyFilter(gfxPattern::GraphicsFilter aFilter)
-{
-  if (aFilter == gfxPattern::FILTER_NEAREST) {
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_NEAREST);
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_NEAREST);
-  } else {
-    if (aFilter != gfxPattern::FILTER_GOOD) {
-      NS_WARNING("Unsupported filter type!");
-    }
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MIN_FILTER, LOCAL_GL_LINEAR);
-    gl()->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_MAG_FILTER, LOCAL_GL_LINEAR);
-  }
 }
 
 already_AddRefed<ShadowThebesLayer>

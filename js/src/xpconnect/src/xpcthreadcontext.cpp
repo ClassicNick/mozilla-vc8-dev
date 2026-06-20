@@ -155,7 +155,7 @@ XPCJSContextStack::Push(JSContext * cx)
                     if(nsIPrincipal* globalObjectPrincipal = GetPrincipalFromCx(cx))
                     {
                         nsIPrincipal* subjectPrincipal = ssm->GetCxSubjectPrincipal(cx);
-                        PRBool equals = PR_FALSE;
+                        bool equals = false;
                         globalObjectPrincipal->Equals(subjectPrincipal, &equals);
                         if(equals)
                         {
@@ -212,7 +212,7 @@ SafeFinalize(JSContext* cx, JSObject* obj)
 
 static JSClass global_class = {
     "global_for_XPCJSContextStack_SafeJSContext",
-    JSCLASS_HAS_PRIVATE | JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_GLOBAL_FLAGS,
+    XPCONNECT_GLOBAL_FLAGS,
     JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
     JS_EnumerateStub, SafeGlobalResolve, JS_ConvertStub, SafeFinalize,
     JSCLASS_NO_OPTIONAL_MEMBERS
@@ -359,7 +359,7 @@ XPCPerThreadData::~XPCPerThreadData()
     /* Be careful to ensure that both any update to |gThreads| and the
        decision about whether or not to destroy the lock, are done
        atomically.  See bug 557586. */
-    PRBool doDestroyLock = PR_FALSE;
+    bool doDestroyLock = false;
 
     MOZ_COUNT_DTOR(xpcPerThreadData);
 
@@ -557,7 +557,7 @@ nsXPCJSContextStackIterator::Reset(nsIJSContextStack *aStack)
 }
 
 NS_IMETHODIMP
-nsXPCJSContextStackIterator::Done(PRBool *aDone)
+nsXPCJSContextStackIterator::Done(bool *aDone)
 {
     *aDone = !mStack;
     return NS_OK;

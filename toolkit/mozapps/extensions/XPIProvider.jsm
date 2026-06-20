@@ -164,7 +164,8 @@ const TYPES = {
   extension: 2,
   theme: 4,
   locale: 8,
-  multipackage: 32
+  multipackage: 32,
+  dictionary: 64
 };
 
 const MSG_JAR_FLUSH = "AddonJarFlush";
@@ -712,6 +713,10 @@ function loadManifestFromRDF(aUri, aStream) {
     }
   }
   else {
+    // spell check dictionaries never require a restart
+    if (addon.type == "dictionary")
+      addon.bootstrap = true;
+
     // Only extensions are allowed to provide an optionsURL, optionsType or aboutURL. For
     // all other types they are silently ignored
     addon.optionsURL = null;
@@ -1621,7 +1626,8 @@ var XPIProvider = {
     for (let id in this.bootstrappedAddons) {
       let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
       file.persistentDescriptor = this.bootstrappedAddons[id].descriptor;
-      this.callBootstrapMethod(id, this.bootstrappedAddons[id].version, file,
+      this.callBootstrapMethod(id, this.bootstrappedAddons[id].version,
+                               this.bootstrappedAddons[id].type, file,
                                "startup", BOOTSTRAP_REASONS.APP_STARTUP);
     }
 
@@ -1635,7 +1641,7 @@ var XPIProvider = {
           let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
           file.persistentDescriptor = XPIProvider.bootstrappedAddons[id].descriptor;
           XPIProvider.callBootstrapMethod(id, XPIProvider.bootstrappedAddons[id].version,
-                                          file, "shutdown",
+                                          XPIProvider.bootstrappedAddons[id].type, file, "shutdown",
                                           BOOTSTRAP_REASONS.APP_SHUTDOWN);
         }
         Services.obs.removeObserver(this, "quit-application-granted");
@@ -1971,12 +1977,24 @@ var XPIProvider = {
         aManifests[aLocation.name][id] = null;
         let existingAddonID = id;
 
-        // Check for a cached AddonInternal for this add-on, it may contain
-        // updated compatibility information
         let jsonfile = stagingDir.clone();
         jsonfile.append(id + ".json");
+
+        try {
+          aManifests[aLocation.name][id] = loadManifestFromFile(stageDirEntry);
+        }
+        catch (e) {
+          ERROR("Unable to read add-on manifest from " + stageDirEntry.path, e);
+          // This add-on can't be installed so just remove it now
+          seenFiles.push(stageDirEntry.leafName);
+          seenFiles.push(jsonfile.leafName);
+          continue;
+        }
+
+        // Check for a cached metadata for this add-on, it may contain updated
+        // compatibility information
         if (jsonfile.exists()) {
-          LOG("Found updated manifest for " + id + " in " + aLocation.name);
+          LOG("Found updated metadata for " + id + " in " + aLocation.name);
           let fis = Cc["@mozilla.org/network/file-input-stream;1"].
                        createInstance(Ci.nsIFileInputStream);
           let json = Cc["@mozilla.org/dom/json;1"].
@@ -1984,13 +2002,14 @@ var XPIProvider = {
 
           try {
             fis.init(jsonfile, -1, 0, 0);
-            let addonObj = json.decodeFromStream(fis, jsonfile.fileSize);
-            aManifests[aLocation.name][id] = new AddonInternal();
-            aManifests[aLocation.name][id].fromJSON(addonObj);
-            existingAddonID = aManifests[aLocation.name][id].existingAddonID || id;
+            let metadata = json.decodeFromStream(fis, jsonfile.fileSize);
+            aManifests[aLocation.name][id].importMetadata(metadata);
           }
           catch (e) {
-            ERROR("Unable to read add-on manifest from " + jsonfile.path, e);
+            // If some data can't be recovered from the cached metadata then it
+            // is unlikely to be a problem big enough to justify throwing away
+            // the install, just log and error and continue
+            ERROR("Unable to read metadata from " + jsonfile.path, e);
           }
           finally {
             fis.close();
@@ -1998,19 +2017,7 @@ var XPIProvider = {
         }
         seenFiles.push(jsonfile.leafName);
 
-        // If there was no cached AddonInternal then load it directly
-        if (!aManifests[aLocation.name][id]) {
-          try {
-            aManifests[aLocation.name][id] = loadManifestFromFile(stageDirEntry);
-            existingAddonID = aManifests[aLocation.name][id].existingAddonID || id;
-          }
-          catch (e) {
-            ERROR("Unable to read add-on manifest from " + stageDirEntry.path, e);
-            // This add-on can't be installed so just remove it now
-            seenFiles.push(stageDirEntry.leafName);
-            continue;
-          }
-        }
+        existingAddonID = aManifests[aLocation.name][id].existingAddonID || id;
 
         var oldBootstrap = null;
         LOG("Processing install of " + id + " in " + aLocation.name);
@@ -2030,7 +2037,7 @@ var XPIProvider = {
                                     BOOTSTRAP_REASONS.ADDON_DOWNGRADE;
 
               this.callBootstrapMethod(existingAddonID, oldBootstrap.version,
-                                       existingAddon, "uninstall", uninstallReason);
+                                       oldBootstrap.type, existingAddon, "uninstall", uninstallReason);
               this.unloadBootstrapScope(existingAddonID);
               flushStartupCache();
             }
@@ -2059,7 +2066,7 @@ var XPIProvider = {
           if (oldBootstrap) {
             // Re-install the old add-on
             this.callBootstrapMethod(existingAddonID, oldBootstrap.version,
-                                     existingAddon, "install",
+                                     oldBootstrap.type, existingAddon, "install",
                                      BOOTSTRAP_REASONS.ADDON_INSTALL);
           }
           continue;
@@ -2321,7 +2328,7 @@ var XPIProvider = {
 
           let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
           file.persistentDescriptor = aAddonState.descriptor;
-          XPIProvider.callBootstrapMethod(newAddon.id, newAddon.version, file,
+          XPIProvider.callBootstrapMethod(newAddon.id, newAddon.version, newAddon.type, file,
                                           "install", installReason);
           return false;
         }
@@ -2397,7 +2404,7 @@ var XPIProvider = {
             // The add-on is bootstrappable so call its install script
             let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
             file.persistentDescriptor = aAddonState.descriptor;
-            XPIProvider.callBootstrapMethod(aOldAddon.id, aOldAddon.version, file,
+            XPIProvider.callBootstrapMethod(aOldAddon.id, aOldAddon.version, aOldAddon.type, file,
                                             "install",
                                             BOOTSTRAP_REASONS.ADDON_INSTALL);
 
@@ -2475,6 +2482,7 @@ var XPIProvider = {
       if (aOldAddon.visible && aOldAddon.active && aOldAddon.bootstrap) {
         XPIProvider.bootstrappedAddons[aOldAddon.id] = {
           version: aOldAddon.version,
+          type: aOldAddon.type,
           descriptor: aAddonState.descriptor
         };
       }
@@ -2681,7 +2689,7 @@ var XPIProvider = {
           oldAddonFile.persistentDescriptor = oldBootstrap.descriptor;
 
           XPIProvider.callBootstrapMethod(newAddon.id, oldBootstrap.version,
-                                          oldAddonFile, "uninstall",
+                                          oldBootstrap.type, oldAddonFile, "uninstall",
                                           installReason);
           XPIProvider.unloadBootstrapScope(newAddon.id);
 
@@ -2697,7 +2705,7 @@ var XPIProvider = {
         // Visible bootstrapped add-ons need to have their install method called
         let file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
         file.persistentDescriptor = aAddonState.descriptor;
-        XPIProvider.callBootstrapMethod(newAddon.id, newAddon.version, file,
+        XPIProvider.callBootstrapMethod(newAddon.id, newAddon.version, newAddon.type, file,
                                         "install", installReason);
         if (!newAddon.active)
           XPIProvider.unloadBootstrapScope(newAddon.id);
@@ -3449,11 +3457,12 @@ var XPIProvider = {
    *         The add-on's version
    * @return a JavaScript scope
    */
-  loadBootstrapScope: function XPI_loadBootstrapScope(aId, aFile, aVersion) {
+  loadBootstrapScope: function XPI_loadBootstrapScope(aId, aFile, aVersion, aType) {
     LOG("Loading bootstrap scope from " + aFile.path);
     // Mark the add-on as active for the crash reporter before loading
     this.bootstrappedAddons[aId] = {
       version: aVersion,
+      type: aType,
       descriptor: aFile.persistentDescriptor
     };
     this.addAddonsToCrashReporter();
@@ -3479,7 +3488,12 @@ var XPIProvider = {
       // As we don't want our caller to control the JS version used for the
       // bootstrap file, we run loadSubScript within the context of the
       // sandbox with the latest JS version set explicitly.
-      this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ = uri;
+      if (aType == "dictionary") {
+        this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ =
+            "resource://gre/modules/SpellCheckDictionaryBootstrap.js"
+      } else {
+        this.bootstrapScopes[aId].__SCRIPT_URI_SPEC__ = uri;
+      }
       Components.utils.evalInSandbox(
         "Components.classes['@mozilla.org/moz/jssubscript-loader;1'] \
                    .createInstance(Components.interfaces.mozIJSSubScriptLoader) \
@@ -3514,6 +3528,8 @@ var XPIProvider = {
    *         The ID of the add-on
    * @param  aVersion
    *         The version of the add-on
+   * @param  aType
+   *         The type for the add-on
    * @param  aFile
    *         The nsILocalFile for the add-on
    * @param  aMethod
@@ -3521,7 +3537,7 @@ var XPIProvider = {
    * @param  aReason
    *         The reason flag to pass to the bootstrap's startup method
    */
-  callBootstrapMethod: function XPI_callBootstrapMethod(aId, aVersion, aFile,
+  callBootstrapMethod: function XPI_callBootstrapMethod(aId, aVersion, aType, aFile,
                                                         aMethod, aReason) {
     // Never call any bootstrap methods in safe mode
     if (Services.appinfo.inSafeMode)
@@ -3529,7 +3545,7 @@ var XPIProvider = {
 
     // Load the scope if it hasn't already been loaded
     if (!(aId in this.bootstrapScopes))
-      this.loadBootstrapScope(aId, aFile, aVersion);
+      this.loadBootstrapScope(aId, aFile, aVersion, aType);
 
     if (!(aMethod in this.bootstrapScopes[aId])) {
       WARN("Add-on " + aId + " is missing bootstrap method " + aMethod);
@@ -3650,7 +3666,7 @@ var XPIProvider = {
         if (isDisabled) {
           if (aAddon.bootstrap) {
             let file = aAddon._installLocation.getLocationForID(aAddon.id);
-            this.callBootstrapMethod(aAddon.id, aAddon.version, file, "shutdown",
+            this.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file, "shutdown",
                                      BOOTSTRAP_REASONS.ADDON_DISABLE);
             this.unloadBootstrapScope(aAddon.id);
           }
@@ -3659,7 +3675,7 @@ var XPIProvider = {
         else {
           if (aAddon.bootstrap) {
             let file = aAddon._installLocation.getLocationForID(aAddon.id);
-            this.callBootstrapMethod(aAddon.id, aAddon.version, file, "startup",
+            this.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file, "startup",
                                      BOOTSTRAP_REASONS.ADDON_ENABLE);
           }
           AddonManagerPrivate.callAddonListeners("onEnabled", wrapper);
@@ -3727,11 +3743,11 @@ var XPIProvider = {
 
       if (aAddon.bootstrap) {
         let file = aAddon._installLocation.getLocationForID(aAddon.id);
-        XPIProvider.callBootstrapMethod(aAddon.id, aAddon.version, file,
+        XPIProvider.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file,
                                         "install", BOOTSTRAP_REASONS.ADDON_INSTALL);
 
         if (aAddon.active) {
-          XPIProvider.callBootstrapMethod(aAddon.id, aAddon.version, file,
+          XPIProvider.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file,
                                           "startup", BOOTSTRAP_REASONS.ADDON_INSTALL);
         }
         else {
@@ -3761,11 +3777,13 @@ var XPIProvider = {
       if (aAddon.bootstrap) {
         let file = aAddon._installLocation.getLocationForID(aAddon.id);
         if (aAddon.active) {
-          this.callBootstrapMethod(aAddon.id, aAddon.version, file, "shutdown",
+          this.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file,
+                                   "shutdown",
                                    BOOTSTRAP_REASONS.ADDON_UNINSTALL);
         }
 
-        this.callBootstrapMethod(aAddon.id, aAddon.version, file, "uninstall",
+        this.callBootstrapMethod(aAddon.id, aAddon.version, aAddon.type, file,
+                                 "uninstall",
                                  BOOTSTRAP_REASONS.ADDON_UNINSTALL);
         this.unloadBootstrapScope(aAddon.id);
         flushStartupCache();
@@ -6352,12 +6370,14 @@ AddonInstall.prototype = {
             if (this.existingAddon.active) {
               XPIProvider.callBootstrapMethod(this.existingAddon.id,
                                               this.existingAddon.version,
-                                              file, "shutdown", reason);
+                                              this.existingAddon.type, file,
+                                              "shutdown", reason);
             }
 
             XPIProvider.callBootstrapMethod(this.existingAddon.id,
                                             this.existingAddon.version,
-                                            file, "uninstall", reason);
+                                            this.existingAddon.type, file,
+                                            "uninstall", reason);
             XPIProvider.unloadBootstrapScope(this.existingAddon.id);
             flushStartupCache();
           }
@@ -6396,10 +6416,12 @@ AddonInstall.prototype = {
           self.addon = a;
           if (self.addon.bootstrap) {
             XPIProvider.callBootstrapMethod(self.addon.id, self.addon.version,
-                                            file, "install", reason);
+                                            self.addon.type, file, "install",
+                                            reason);
             if (self.addon.active) {
               XPIProvider.callBootstrapMethod(self.addon.id, self.addon.version,
-                                              file, "startup", reason);
+                                              self.addon.type, file, "startup",
+                                              reason);
             }
             else {
               XPIProvider.unloadBootstrapScope(self.addon.id);
@@ -6913,15 +6935,25 @@ AddonInternal.prototype = {
   },
 
   /**
-   * fromJSON should be called to set the properties of this AddonInternal to
-   * those from the passed in object. It is essentially the inverse of toJSON.
+   * When an add-on install is pending its metadata will be cached in a file.
+   * This method reads particular properties of that metadata that may be newer
+   * than that in the install manifest, like compatibility information.
    *
    * @param  aObj
-   *         A JS object containing properties to be set on this AddonInternal
+   *         A JS object containing the cached metadata
    */
-  fromJSON: function(aObj) {
-    for (let prop in aObj)
-      this[prop] = aObj[prop];
+  importMetadata: function(aObj) {
+    ["targetApplications", "userDisabled", "softDisabled", "existingAddonID",
+     "sourceURI", "releaseNotesURI", "installDate", "updateDate",
+     "applyBackgroundUpdates"].forEach(function(aProp) {
+      if (!(aProp in aObj))
+        return;
+
+      this[aProp] = aObj[aProp];
+    }, this);
+
+    // Compatibility info may have changed so update appDisabled
+    this.appDisabled = !isUsableAddon(this);
   }
 };
 
@@ -7955,8 +7987,12 @@ AddonManagerPrivate.registerProvider(XPIProvider, [
   new AddonManagerPrivate.AddonType("theme", URI_EXTENSION_STRINGS,
                                     STRING_TYPE_NAME,
                                     AddonManager.VIEW_TYPE_LIST, 5000),
+  new AddonManagerPrivate.AddonType("dictionary", URI_EXTENSION_STRINGS,
+                                    STRING_TYPE_NAME,
+                                    AddonManager.VIEW_TYPE_LIST, 7000,
+                                    AddonManager.TYPE_UI_HIDE_EMPTY),
   new AddonManagerPrivate.AddonType("locale", URI_EXTENSION_STRINGS,
                                     STRING_TYPE_NAME,
-                                    AddonManager.VIEW_TYPE_LIST, 2000,
+                                    AddonManager.VIEW_TYPE_LIST, 8000,
                                     AddonManager.TYPE_UI_HIDE_EMPTY)
 ]);

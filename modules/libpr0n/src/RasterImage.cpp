@@ -510,7 +510,7 @@ RasterImage::GetCurrentDrawableImgFrame()
 //******************************************************************************
 /* readonly attribute boolean currentFrameIsOpaque; */
 NS_IMETHODIMP
-RasterImage::GetCurrentFrameIsOpaque(PRBool *aIsOpaque)
+RasterImage::GetCurrentFrameIsOpaque(bool *aIsOpaque)
 {
   NS_ENSURE_ARG_POINTER(aIsOpaque);
 
@@ -572,7 +572,7 @@ RasterImage::GetNumFrames()
 //******************************************************************************
 /* readonly attribute boolean animated; */
 NS_IMETHODIMP
-RasterImage::GetAnimated(PRBool *aAnimated)
+RasterImage::GetAnimated(bool *aAnimated)
 {
   if (mError)
     return NS_ERROR_FAILURE;
@@ -1525,10 +1525,8 @@ RasterImage::Notify(nsITimer *timer)
   }
 
   nsIntRect dirtyRect;
-  imgFrame *frameToUse = nsnull;
 
   if (nextFrameIndex == 0) {
-    frameToUse = nextFrame;
     dirtyRect = mAnim->firstFrameRefreshArea;
   } else {
     imgFrame *prevFrame = mFrames[previousFrameIndex];
@@ -1536,7 +1534,7 @@ RasterImage::Notify(nsITimer *timer)
       return NS_OK;
 
     // Change frame and announce it
-    if (NS_FAILED(DoComposite(&frameToUse, &dirtyRect, prevFrame,
+    if (NS_FAILED(DoComposite(&dirtyRect, prevFrame,
                               nextFrame, nextFrameIndex))) {
       // something went wrong, move on to next
       NS_WARNING("RasterImage::Notify(): Composing Frame Failed\n");
@@ -1559,8 +1557,7 @@ RasterImage::Notify(nsITimer *timer)
 // DoComposite gets called when the timer for animation get fired and we have to
 // update the composited frame of the animation.
 nsresult
-RasterImage::DoComposite(imgFrame** aFrameToUse,
-                         nsIntRect* aDirtyRect,
+RasterImage::DoComposite(nsIntRect* aDirtyRect,
                          imgFrame* aPrevFrame,
                          imgFrame* aNextFrame,
                          PRInt32 aNextFrameIndex)
@@ -1568,7 +1565,6 @@ RasterImage::DoComposite(imgFrame** aFrameToUse,
   NS_ENSURE_ARG_POINTER(aDirtyRect);
   NS_ENSURE_ARG_POINTER(aPrevFrame);
   NS_ENSURE_ARG_POINTER(aNextFrame);
-  NS_ENSURE_ARG_POINTER(aFrameToUse);
 
   PRInt32 prevFrameDisposalMethod = aPrevFrame->GetFrameDisposalMethod();
   if (prevFrameDisposalMethod == kDisposeRestorePrevious &&
@@ -1597,7 +1593,6 @@ RasterImage::DoComposite(imgFrame** aFrameToUse,
     //               whole image
     if (prevFrameDisposalMethod == kDisposeClearAll) {
       aDirtyRect->SetRect(0, 0, mSize.width, mSize.height);
-      *aFrameToUse = aNextFrame;
       return NS_OK;
     }
   
@@ -1607,7 +1602,6 @@ RasterImage::DoComposite(imgFrame** aFrameToUse,
         (nextFrameDisposalMethod != kDisposeRestorePrevious) &&
         !aNextFrame->GetHasAlpha()) {
       aDirtyRect->SetRect(0, 0, mSize.width, mSize.height);
-      *aFrameToUse = aNextFrame;
       return NS_OK;
     }
   }
@@ -1648,7 +1642,6 @@ RasterImage::DoComposite(imgFrame** aFrameToUse,
   //    On the second loop, we do not need to rebuild the frame
   //    since it's still sitting in compositingFrame)
   if (mAnim->lastCompositedFrameIndex == aNextFrameIndex) {
-    *aFrameToUse = mAnim->compositingFrame;
     return NS_OK;
   }
 
@@ -1817,13 +1810,11 @@ RasterImage::DoComposite(imgFrame** aFrameToUse,
     if (CopyFrameImage(mAnim->compositingFrame, aNextFrame)) {
       aPrevFrame->SetFrameDisposalMethod(kDisposeClearAll);
       mAnim->lastCompositedFrameIndex = -1;
-      *aFrameToUse = aNextFrame;
       return NS_OK;
     }
   }
 
   mAnim->lastCompositedFrameIndex = aNextFrameIndex;
-  *aFrameToUse = mAnim->compositingFrame;
 
   return NS_OK;
 }
@@ -1878,7 +1869,7 @@ RasterImage::ClearFrame(imgFrame *aFrame, nsIntRect &aRect)
 //******************************************************************************
 // Whether we succeed or fail will not cause a crash, and there's not much
 // we can do about a failure, so there we don't return a nsresult
-PRBool
+bool
 RasterImage::CopyFrameImage(imgFrame *aSrcFrame,
                             imgFrame *aDstFrame)
 {
@@ -2041,7 +2032,7 @@ RasterImage::Set(const char *prop, nsISupports *value)
 }
 
 NS_IMETHODIMP
-RasterImage::Has(const char *prop, PRBool *_retval)
+RasterImage::Has(const char *prop, bool *_retval)
 {
   NS_ENSURE_ARG_POINTER(_retval);
   if (!mProperties) {
@@ -2167,35 +2158,35 @@ RasterImage::InitDecoder(bool aDoSizeDecode)
   eDecoderType type = GetDecoderType(mSourceDataMimeType.get());
   CONTAINER_ENSURE_TRUE(type != eDecoderType_unknown, NS_IMAGELIB_ERROR_NO_DECODER);
 
+  nsCOMPtr<imgIDecoderObserver> observer(do_QueryReferent(mObserver));
   // Instantiate the appropriate decoder
   switch (type) {
     case eDecoderType_png:
-      mDecoder = new nsPNGDecoder();
+      mDecoder = new nsPNGDecoder(this, observer);
       break;
     case eDecoderType_gif:
-      mDecoder = new nsGIFDecoder2();
+      mDecoder = new nsGIFDecoder2(this, observer);
       break;
     case eDecoderType_jpeg:
-      mDecoder = new nsJPEGDecoder();
+      mDecoder = new nsJPEGDecoder(this, observer);
       break;
     case eDecoderType_bmp:
-      mDecoder = new nsBMPDecoder();
+      mDecoder = new nsBMPDecoder(this, observer);
       break;
     case eDecoderType_ico:
-      mDecoder = new nsICODecoder();
+      mDecoder = new nsICODecoder(this, observer);
       break;
     case eDecoderType_icon:
-      mDecoder = new nsIconDecoder();
+      mDecoder = new nsIconDecoder(this, observer);
       break;
     default:
       NS_ABORT_IF_FALSE(0, "Shouldn't get here!");
   }
 
   // Initialize the decoder
-  nsCOMPtr<imgIDecoderObserver> observer(do_QueryReferent(mObserver));
   mDecoder->SetSizeDecode(aDoSizeDecode);
   mDecoder->SetDecodeFlags(mFrameDecodeFlags);
-  mDecoder->Init(this, observer);
+  mDecoder->Init();
   CONTAINER_ENSURE_SUCCESS(mDecoder->GetDecoderError());
 
   // Create a decode worker
@@ -2631,14 +2622,14 @@ RasterImage::DecodeSomeData(PRUint32 aMaxBytes)
 // task at hand and can shut down the decoder.
 //
 // This method may not be called if there is no decoder.
-PRBool
+bool
 RasterImage::IsDecodeFinished()
 {
   // Precondition
   NS_ABORT_IF_FALSE(mDecoder, "Can't call IsDecodeFinished() without decoder!");
 
   // Assume it's not finished
-  PRBool decodeFinished = PR_FALSE;
+  bool decodeFinished = false;
 
   // There shouldn't be any reason to call this if we're not storing
   // source data

@@ -132,7 +132,7 @@ GetNextSibling(LayerD3D9* aLayer)
                  : nsnull;
 }
 
-static PRBool
+static bool
 HasOpaqueAncestorLayer(Layer* aLayer)
 {
   for (Layer* l = aLayer->GetParent(); l; l = l->GetParent()) {
@@ -175,7 +175,7 @@ ContainerRender(Container* aContainer,
   readback.BuildUpdates(aContainer);
 
   nsIntRect visibleRect = aContainer->GetEffectiveVisibleRegion().GetBounds();
-  PRBool useIntermediate = aContainer->UseIntermediateSurface();
+  bool useIntermediate = aContainer->UseIntermediateSurface();
 
   aContainer->mSupportsComponentAlphaChildren = PR_FALSE;
   if (useIntermediate) {
@@ -247,12 +247,14 @@ ContainerRender(Container* aContainer,
          aContainer->mParent->SupportsComponentAlphaChildren());
   }
 
+  nsAutoTArray<Layer*, 12> children;
+  aContainer->SortChildrenBy3DZOrder(children);
+
   /*
    * Render this container's contents.
    */
-  for (LayerD3D9* layerToRender = aContainer->GetFirstChildD3D9();
-       layerToRender != nsnull;
-       layerToRender = GetNextSiblingD3D9(layerToRender)) {
+  for (PRUint32 i = 0; i < children.Length(); i++) {
+    LayerD3D9* layerToRender = static_cast<LayerD3D9*>(children.ElementAt(i)->ImplData());
 
     if (layerToRender->GetLayer()->GetEffectiveVisibleRegion().IsEmpty()) {
       continue;

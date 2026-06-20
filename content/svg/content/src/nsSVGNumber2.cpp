@@ -90,7 +90,7 @@ NS_INTERFACE_MAP_END
 
 static nsresult
 GetValueFromString(const nsAString &aValueAsString,
-                   PRBool aPercentagesAllowed,
+                   bool aPercentagesAllowed,
                    float *aValue)
 {
   NS_ConvertUTF16toUTF8 value(aValueAsString);
@@ -116,8 +116,7 @@ GetValueFromString(const nsAString &aValueAsString,
 
 nsresult
 nsSVGNumber2::SetBaseValueString(const nsAString &aValueAsString,
-                                 nsSVGElement *aSVGElement,
-                                 PRBool aDoSetAttr)
+                                 nsSVGElement *aSVGElement)
 {
   float val;
 
@@ -154,8 +153,7 @@ nsSVGNumber2::GetBaseValueString(nsAString & aValueAsString)
 
 void
 nsSVGNumber2::SetBaseValue(float aValue,
-                           nsSVGElement *aSVGElement,
-                           PRBool aDoSetAttr)
+                           nsSVGElement *aSVGElement)
 {
   mBaseVal = aValue;
   mIsBaseSet = PR_TRUE;
@@ -167,7 +165,7 @@ nsSVGNumber2::SetBaseValue(float aValue,
     aSVGElement->AnimationNeedsResample();
   }
 #endif
-  aSVGElement->DidChangeNumber(mAttrEnum, aDoSetAttr);
+  aSVGElement->DidChangeNumber(mAttrEnum, true);
 }
 
 void
@@ -201,7 +199,7 @@ nsresult
 nsSVGNumber2::SMILNumber::ValueFromString(const nsAString& aStr,
                                           const nsISMILAnimationElement* /*aSrcElement*/,
                                           nsSMILValue& aValue,
-                                          PRBool& aPreventCachingOfSandwich) const
+                                          bool& aPreventCachingOfSandwich) const
 {
   float value;
 

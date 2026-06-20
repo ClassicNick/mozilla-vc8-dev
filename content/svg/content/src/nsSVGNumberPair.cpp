@@ -103,8 +103,7 @@ ParseNumberOptionalNumber(const nsAString& aValue,
 
 nsresult
 nsSVGNumberPair::SetBaseValueString(const nsAString &aValueAsString,
-                                    nsSVGElement *aSVGElement,
-                                    PRBool aDoSetAttr)
+                                    nsSVGElement *aSVGElement)
 {
   float val[2];
 
@@ -145,8 +144,7 @@ nsSVGNumberPair::GetBaseValueString(nsAString &aValueAsString)
 
 void
 nsSVGNumberPair::SetBaseValue(float aValue, PairIndex aPairIndex,
-                              nsSVGElement *aSVGElement,
-                              PRBool aDoSetAttr)
+                              nsSVGElement *aSVGElement)
 {
   PRUint32 index = (aPairIndex == eFirst ? 0 : 1);
   mBaseVal[index] = aValue;
@@ -159,13 +157,12 @@ nsSVGNumberPair::SetBaseValue(float aValue, PairIndex aPairIndex,
     aSVGElement->AnimationNeedsResample();
   }
 #endif
-  aSVGElement->DidChangeNumberPair(mAttrEnum, aDoSetAttr);
+  aSVGElement->DidChangeNumberPair(mAttrEnum, true);
 }
 
 void
 nsSVGNumberPair::SetBaseValues(float aValue1, float aValue2,
-                               nsSVGElement *aSVGElement,
-                               PRBool aDoSetAttr)
+                               nsSVGElement *aSVGElement)
 {
   mBaseVal[0] = aValue1;
   mBaseVal[1] = aValue2;
@@ -179,7 +176,7 @@ nsSVGNumberPair::SetBaseValues(float aValue1, float aValue2,
     aSVGElement->AnimationNeedsResample();
   }
 #endif
-  aSVGElement->DidChangeNumberPair(mAttrEnum, aDoSetAttr);
+  aSVGElement->DidChangeNumberPair(mAttrEnum, true);
 }
 
 void
@@ -212,7 +209,7 @@ nsresult
 nsSVGNumberPair::SMILNumberPair::ValueFromString(const nsAString& aStr,
                                                  const nsISMILAnimationElement* /*aSrcElement*/,
                                                  nsSMILValue& aValue,
-                                                 PRBool& aPreventCachingOfSandwich) const
+                                                 bool& aPreventCachingOfSandwich) const
 {
   float values[2];
 

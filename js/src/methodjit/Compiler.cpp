@@ -1462,13 +1462,12 @@ public:
     JS_BEGIN_MACRO                                                            \
         if (IsJaegerSpewChannelActive(JSpew_JSOps)) {                         \
             JaegerSpew(JSpew_JSOps, "    %2d ", frame.stackDepth());          \
-            void *mark = JS_ARENA_MARK(&cx->tempPool);                        \
+            LifoAllocScope las(&cx->tempLifoAlloc());                         \
             Sprinter sprinter;                                                \
-            INIT_SPRINTER(cx, &sprinter, &cx->tempPool, 0);                   \
+            INIT_SPRINTER(cx, &sprinter, &cx->tempLifoAlloc(), 0);            \
             js_Disassemble1(cx, script, PC, PC - script->code,                \
                             JS_TRUE, &sprinter);                              \
             fprintf(stdout, "%s", sprinter.base);                             \
-            JS_ARENA_RELEASE(&cx->tempPool, mark);                            \
         }                                                                     \
     JS_END_MACRO;
 #else
@@ -1588,6 +1587,8 @@ mjit::Compiler::generateMethod()
                 /* All join points have synced state if we aren't doing cross-branch regalloc. */
                 opinfo->safePoint = true;
             }
+        } else if (opinfo->safePoint && !cx->typeInferenceEnabled()) {
+            frame.syncAndForgetEverything();
         }
         frame.assertValidRegisterState();
         a->jumpMap[uint32(PC - script->code)] = masm.label();
@@ -6683,7 +6684,7 @@ mjit::Compiler::jumpAndTrace(Jump j, jsbytecode *target, Jump *slow, bool *tramp
     if (cx->typeInferenceEnabled()) {
         RegisterAllocation *&alloc = analysis->getAllocation(target);
         if (!alloc) {
-            alloc = ArenaNew<RegisterAllocation>(cx->compartment->pool, false);
+            alloc = cx->typeLifoAlloc().new_<RegisterAllocation>(false);
             if (!alloc)
                 return false;
         }

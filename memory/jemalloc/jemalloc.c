@@ -82,6 +82,10 @@
  *   |                           |     ... |
  *   |=====================================|
  *
+ * NOTE: Due to Mozilla bug 691003, we cannot reserve less than one word for an
+ * allocation on Linux or Mac.  So on 32-bit *nix, the smallest bucket size is
+ * 4 bytes, and on 64-bit, the smallest bucket size is 8 bytes.
+ *
  * A different mechanism is used for each category:
  *
  *   Small : Each size class is segregated into its own set of runs.  Each run
@@ -426,7 +430,7 @@ static const bool __isthreaded = true;
 /* Size of stack-allocated buffer passed to strerror_r(). */
 #define	STRERROR_BUF		64
 
-/* Minimum alignment of allocations is 2^QUANTUM_2POW_MIN bytes. */
+/* Minimum alignment of non-tiny allocations is 2^QUANTUM_2POW_MIN bytes. */
 #  define QUANTUM_2POW_MIN      4
 #ifdef MOZ_MEMORY_SIZEOF_PTR_2POW
 #  define SIZEOF_PTR_2POW		MOZ_MEMORY_SIZEOF_PTR_2POW
@@ -515,8 +519,15 @@ static const bool __isthreaded = true;
 #define	CACHELINE_2POW		6
 #define	CACHELINE		((size_t)(1U << CACHELINE_2POW))
 
-/* Smallest size class to support. */
+/*
+ * Smallest size class to support.  On Linux and Mac, even malloc(1) must
+ * reserve a word's worth of memory (see Mozilla bug 691003).
+ */
+#ifdef MOZ_MEMORY_WINDOWS
 #define	TINY_MIN_2POW		1
+#else
+#define TINY_MIN_2POW           (sizeof(void*) == 8 ? 3 : 2)
+#endif
 
 /*
  * Maximum size class that is a multiple of the quantum, but not (necessarily)
@@ -1293,13 +1304,14 @@ static void	_malloc_postfork(void);
  * again, and need to dynamically account for this. By simply leaving
  * malloc_zone_t alone, we don't quite deal with the problem, because there
  * remain calls to jemalloc through the mozalloc interface. We check this
- * dynamically on each allocation, using the CHECK_DARWIN macro.
+ * dynamically on each allocation, using the CHECK_DARWIN macro and
+ * osx_use_jemalloc.
  *
  *
  * [1] Mozilla is built as a universal binary on Mac, supporting i386 and
  *     x86_64. The i386 target is built using the 10.5 SDK, even if it runs on
  *     10.6. The x86_64 target is built using the 10.6 SDK, even if it runs on
- *     10.7 or later.
+ *     10.7 or later, or 10.5.
  *
  * FIXME:
  *   When later versions of OSX come out (10.8 and up), we need to check their
@@ -1312,6 +1324,9 @@ static void	_malloc_postfork(void);
 #define LEOPARD_MALLOC_ZONE_T_VERSION 3
 #define SNOW_LEOPARD_MALLOC_ZONE_T_VERSION 6
 #define LION_MALLOC_ZONE_T_VERSION 8
+
+static bool osx_use_jemalloc = false;
+
 
 /*
  * Avoid lots of casts below by allowing access to l_jemalloc_zone through a
@@ -1331,10 +1346,6 @@ static malloc_zone_t *create_zone(unsigned version);
 static void szone2ozone(malloc_zone_t *zone, size_t size);
 static size_t zone_version_size(int version);
 #endif
-
-/* On unknown future versions of OSX, dynamically decide not to use jemalloc. */
-static bool use_jemalloc = false;
-
 
 /*
  * End function prototypes.
@@ -4668,9 +4679,7 @@ huge_malloc(size_t size, bool zero)
 {
 	void *ret;
 	size_t csize;
-#ifdef MALLOC_DECOMMIT
 	size_t psize;
-#endif
 	extent_node_t *node;
 
 	/* Allocate one or more contiguous chunks for this request. */
@@ -4694,22 +4703,33 @@ huge_malloc(size_t size, bool zero)
 
 	/* Insert node into huge. */
 	node->addr = ret;
-#ifdef MALLOC_DECOMMIT
 	psize = PAGE_CEILING(size);
 	node->size = psize;
-#else
-	node->size = csize;
-#endif
 
 	malloc_mutex_lock(&huge_mtx);
 	extent_tree_ad_insert(&huge, node);
 #ifdef MALLOC_STATS
 	huge_nmalloc++;
-#  ifdef MALLOC_DECOMMIT
+
+        /* Although we allocated space for csize bytes, we indicate that we've
+         * allocated only psize bytes.
+         *
+         * If DECOMMIT is defined, this is a reasonable thing to do, since
+         * we'll explicitly decommit the bytes in excess of psize.
+         *
+         * If DECOMMIT is not defined, then we're relying on the OS to be lazy
+         * about how it allocates physical pages to mappings.  If we never
+         * touch the pages in excess of psize, the OS won't allocate a physical
+         * page, and we won't use more than psize bytes of physical memory.
+         *
+         * A correct program will only touch memory in excess of how much it
+         * requested if it first calls malloc_usable_size and finds out how
+         * much space it has to play with.  But because we set node->size =
+         * psize above, malloc_usable_size will return psize, not csize, and
+         * the program will (hopefully) never touch bytes in excess of psize.
+         * Thus those bytes won't take up space in physical memory, and we can
+         * reasonably claim we never "allocated" them in the first place. */
 	huge_allocated += psize;
-#  else
-	huge_allocated += csize;
-#  endif
 #endif
 	malloc_mutex_unlock(&huge_mtx);
 
@@ -4750,9 +4770,7 @@ huge_palloc(size_t alignment, size_t size)
 {
 	void *ret;
 	size_t alloc_size, chunk_size, offset;
-#ifdef MALLOC_DECOMMIT
 	size_t psize;
-#endif
 	extent_node_t *node;
 	int pfd;
 
@@ -4821,22 +4839,16 @@ huge_palloc(size_t alignment, size_t size)
 #endif
 	/* Insert node into huge. */
 	node->addr = ret;
-#ifdef MALLOC_DECOMMIT
 	psize = PAGE_CEILING(size);
 	node->size = psize;
-#else
-	node->size = chunk_size;
-#endif
 
 	malloc_mutex_lock(&huge_mtx);
 	extent_tree_ad_insert(&huge, node);
 #ifdef MALLOC_STATS
 	huge_nmalloc++;
-#  ifdef MALLOC_DECOMMIT
+        /* See note in huge_alloc() for why huge_allocated += psize is correct
+         * here even when DECOMMIT is not defined. */
 	huge_allocated += psize;
-#  else
-	huge_allocated += chunk_size;
-#  endif
 #endif
 	malloc_mutex_unlock(&huge_mtx);
 
@@ -4886,9 +4898,7 @@ huge_ralloc(void *ptr, size_t size, size_t oldsize)
 
 	if (oldsize > arena_maxclass &&
 	    CHUNK_CEILING(size) == CHUNK_CEILING(oldsize)) {
-#ifdef MALLOC_DECOMMIT
 		size_t psize = PAGE_CEILING(size);
-#endif
 #ifdef MALLOC_FILL
 		if (opt_junk && size < oldsize) {
 			memset((void *)((uintptr_t)ptr + size), 0x5a, oldsize
@@ -4914,24 +4924,32 @@ huge_ralloc(void *ptr, size_t size, size_t oldsize)
 			node->size = psize;
 			malloc_mutex_unlock(&huge_mtx);
 		} else if (psize > oldsize) {
-			extent_node_t *node, key;
-
 			pages_commit((void *)((uintptr_t)ptr + oldsize),
 			    psize - oldsize);
-
-			/* Update recorded size. */
-			malloc_mutex_lock(&huge_mtx);
-			key.addr = __DECONST(void *, ptr);
-			node = extent_tree_ad_search(&huge, &key);
-			assert(node != NULL);
-			assert(node->size == oldsize);
-#  ifdef MALLOC_STATS
-			huge_allocated += psize - oldsize;
-#  endif
-			node->size = psize;
-			malloc_mutex_unlock(&huge_mtx);
-		}
+                }
 #endif
+
+                /* Although we don't have to commit or decommit anything if
+                 * DECOMMIT is not defined and the size class didn't change, we
+                 * do need to update the recorded size if the size increased,
+                 * so malloc_usable_size doesn't return a value smaller than
+                 * what was requested via realloc(). */
+
+                if (psize > oldsize) {
+                        /* Update recorded size. */
+                        extent_node_t *node, key;
+                        malloc_mutex_lock(&huge_mtx);
+                        key.addr = __DECONST(void *, ptr);
+                        node = extent_tree_ad_search(&huge, &key);
+                        assert(node != NULL);
+                        assert(node->size == oldsize);
+#  ifdef MALLOC_STATS
+                        huge_allocated += psize - oldsize;
+#  endif
+                        node->size = psize;
+                        malloc_mutex_unlock(&huge_mtx);
+                }
+
 #ifdef MALLOC_FILL
 		if (opt_zero && size > oldsize) {
 			memset((void *)((uintptr_t)ptr + oldsize), 0, size
@@ -4987,11 +5005,7 @@ huge_dalloc(void *ptr)
 	if (opt_junk)
 		memset(node->addr, 0x5a, node->size);
 #endif
-#ifdef MALLOC_DECOMMIT
 	chunk_dealloc(node->addr, CHUNK_CEILING(node->size));
-#else
-	chunk_dealloc(node->addr, node->size);
-#endif
 	VALGRIND_FREELIKE_BLOCK(node->addr, 0);
 
 	base_node_dealloc(node);
@@ -5832,14 +5846,20 @@ MALLOC_OUT:
      */
     default_zone = malloc_default_zone();
 
-    /* Don't use jemalloc on as-yet-unreleased versions of OSX. */
-    use_jemalloc = (default_zone->version <= LION_MALLOC_ZONE_T_VERSION);
+    /*
+     * We only use jemalloc with the 10.6 SDK:
+     *   - With the 10.5 SDK, madvise doesn't work, leading to a 20% memory
+     *     usage regression (bug 670492).
+     *   - With the 10.7 SDK, jemalloc causes the browser to hang (bug 670175).
+     */
+
+    osx_use_jemalloc = (default_zone->version == SNOW_LEOPARD_MALLOC_ZONE_T_VERSION);
 
     /* Allow us dynamically turn off jemalloc for testing. */
 	if (getenv("NO_MAC_JEMALLOC"))
-        use_jemalloc = false;
+        osx_use_jemalloc = false;
 
-    if (use_jemalloc) {
+    if (osx_use_jemalloc) {
         size_t size;
 
         /* Register the custom zone. */
@@ -5937,23 +5957,17 @@ wrap(strdup)(const char *src) {
 #endif
 
 /*
- * We are not able to assume that we can replace the OSX allocator with
- * jemalloc on future unreleased versions of OSX. Despite this, we call
- * jemalloc functions directly from mozalloc. Since it's pretty dangerous to
- * mix the allocators, we need to call the OSX allocators from the functions
- * below, when use_jemalloc is not (dynamically) set.
+ * Even though we compile with MOZ_MEMORY, we may have to dynamically decide
+ * not to use jemalloc, as discussed above. However, we call jemalloc
+ * functions directly from mozalloc. Since it's pretty dangerous to mix the
+ * allocators, we need to call the OSX allocators from the functions below,
+ * when osx_use_jemalloc is not (dynamically) set.
  *
- * We call memalign from mozalloc, but the 10.5 SDK doesn't have a memalign
- * function to forward the call to. However, use_jemalloc will _always_ be true
- * on 10.5, so we just omit these checks statically. This allows us to build
- * successfully on 10.5, and also makes it undetectably faster.
- *
- * FIXME:
- *   This may lead to problems when using 32-bit plugins with a 64-bit process,
- *   on OSX 10.8 or higher.
+ * memalign is unavailable on Leopard, so we can't dynamically do this there.
+ * However, we don't use jemalloc on Leopard, so we can ignore this.
  */
 #if defined(MOZ_MEMORY_DARWIN) && !defined(__i386__)
-#define DARWIN_ONLY(A) if (!use_jemalloc) { A; }
+#define DARWIN_ONLY(A) if (!osx_use_jemalloc) { A; }
 #else
 #define DARWIN_ONLY(A)
 #endif

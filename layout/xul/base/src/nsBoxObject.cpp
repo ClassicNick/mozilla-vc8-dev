@@ -46,7 +46,7 @@
 #include "nsIFrame.h"
 #include "nsIDocShell.h"
 #include "nsReadableUtils.h"
-#include "nsIDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsIView.h"
 #ifdef MOZ_XUL
 #include "nsIDOMXULElement.h"
@@ -144,7 +144,7 @@ nsBoxObject::ClearCachedValues()
 }
 
 nsIFrame*
-nsBoxObject::GetFrame(PRBool aFlushLayout)
+nsBoxObject::GetFrame(bool aFlushLayout)
 {
   nsIPresShell* shell = GetPresShell(aFlushLayout);
   if (!shell)
@@ -167,7 +167,7 @@ nsBoxObject::GetFrame(PRBool aFlushLayout)
 }
 
 nsIPresShell*
-nsBoxObject::GetPresShell(PRBool aFlushLayout)
+nsBoxObject::GetPresShell(bool aFlushLayout)
 {
   if (!mContent) {
     return nsnull;

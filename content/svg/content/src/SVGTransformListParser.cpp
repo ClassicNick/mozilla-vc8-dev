@@ -44,7 +44,7 @@
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
 #include "nsContentUtils.h"
-#include "nsIDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsIAtom.h"
 
 using namespace mozilla;
@@ -102,7 +102,7 @@ SVGTransformListParser::MatchTransforms()
 
 nsresult
 SVGTransformListParser::GetTransformToken(nsIAtom** aKeyAtom,
-                                          PRBool aAdvancePos)
+                                          bool aAdvancePos)
 {
   if (mTokenType != OTHER || *mTokenPos == '\0') {
     return NS_ERROR_FAILURE;
@@ -168,7 +168,7 @@ SVGTransformListParser::MatchTransform()
 }
 
 
-PRBool
+bool
 SVGTransformListParser::IsTokenTransformStarter()
 {
   nsCOMPtr<nsIAtom> keyatom;

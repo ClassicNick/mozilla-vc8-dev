@@ -46,7 +46,7 @@
 #include "nsTreeColumns.h"
 #include "nsTreeUtils.h"
 #include "nsStyleContext.h"
-#include "nsIDOMClassInfo.h"
+#include "nsDOMClassInfoID.h"
 #include "nsINodeInfo.h"
 #include "nsContentUtils.h"
 #include "nsTreeBodyFrame.h"
@@ -111,7 +111,7 @@ nsTreeColumn::GetFrame()
   return mContent->GetPrimaryFrame();
 }
 
-PRBool
+bool
 nsTreeColumn::IsLastVisible(nsTreeBodyFrame* aBodyFrame)
 {
   NS_ASSERTION(GetFrame(), "should have checked for this already");
@@ -142,7 +142,7 @@ nsTreeColumn::GetRect(nsTreeBodyFrame* aBodyFrame, nscoord aY, nscoord aHeight, 
     return NS_ERROR_FAILURE;
   }
 
-  PRBool isRTL = aBodyFrame->GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = aBodyFrame->GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
   *aResult = frame->GetRect();
   aResult->y = aY;
   aResult->height = aHeight;
@@ -246,28 +246,28 @@ nsTreeColumn::GetIndex(PRInt32* aIndex)
 }
 
 NS_IMETHODIMP
-nsTreeColumn::GetPrimary(PRBool* aPrimary)
+nsTreeColumn::GetPrimary(bool* aPrimary)
 {
   *aPrimary = IsPrimary();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsTreeColumn::GetCycler(PRBool* aCycler)
+nsTreeColumn::GetCycler(bool* aCycler)
 {
   *aCycler = IsCycler();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsTreeColumn::GetEditable(PRBool* aEditable)
+nsTreeColumn::GetEditable(bool* aEditable)
 {
   *aEditable = IsEditable();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsTreeColumn::GetSelectable(PRBool* aSelectable)
+nsTreeColumn::GetSelectable(bool* aSelectable)
 {
   *aSelectable = IsSelectable();
   return NS_OK;

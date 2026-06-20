@@ -180,7 +180,7 @@ gfx3DMatrix::From2D(const gfxMatrix &aMatrix)
   return matrix;
 }
 
-PRBool
+bool
 gfx3DMatrix::IsIdentity() const
 {
   return _11 == 1.0f && _12 == 0.0f && _13 == 0.0f && _14 == 0.0f &&
@@ -482,7 +482,7 @@ gfx3DMatrix::Inverse3x3() const
     return temp;
 }
 
-PRBool
+bool
 gfx3DMatrix::IsSingular() const
 {
   return Determinant() == 0.0;
@@ -667,7 +667,23 @@ gfx3DMatrix::TransformBounds(const gfxRect& rect) const
   return gfxRect(min_x, min_y, max_x - min_x, max_y - min_y);
 }
 
-PRBool
+gfxQuad 
+gfx3DMatrix::TransformRect(const gfxRect& aRect) const
+{
+  gfxPoint points[4];
+
+  points[0] = Transform(aRect.TopLeft());
+  points[1] = Transform(gfxPoint(aRect.X() + aRect.Width(), aRect.Y()));
+  points[2] = Transform(gfxPoint(aRect.X() + aRect.Width(),
+                                 aRect.Y() + aRect.Height()));
+  points[3] = Transform(gfxPoint(aRect.X(), aRect.Y() + aRect.Height()));
+
+
+  // Could this ever result in lines that intersect? I don't think so.
+  return gfxQuad(points[0], points[1], points[2], points[3]);
+}
+
+bool
 gfx3DMatrix::Is2D() const
 {
   if (_13 != 0.0f || _14 != 0.0f ||
@@ -679,7 +695,7 @@ gfx3DMatrix::Is2D() const
   return PR_TRUE;
 }
 
-PRBool
+bool
 gfx3DMatrix::Is2D(gfxMatrix* aMatrix) const
 {
   if (!Is2D()) {
@@ -696,7 +712,7 @@ gfx3DMatrix::Is2D(gfxMatrix* aMatrix) const
   return PR_TRUE;
 }
 
-PRBool
+bool
 gfx3DMatrix::CanDraw2D(gfxMatrix* aMatrix) const
 {
   if (_14 != 0.0f || _24 != 0.0f ||
@@ -712,6 +728,19 @@ gfx3DMatrix::CanDraw2D(gfxMatrix* aMatrix) const
     aMatrix->y0 = _42;
   }
   return PR_TRUE;
+}
+
+gfx3DMatrix&
+gfx3DMatrix::ProjectTo2D()
+{
+  _31 = 0.0f;
+  _32 = 0.0f;
+  _13 = 0.0f; 
+  _23 = 0.0f; 
+  _33 = 1.0f; 
+  _43 = 0.0f; 
+  _34 = 0.0f;
+  return *this;
 }
 
 gfxPoint gfx3DMatrix::ProjectPoint(const gfxPoint& aPoint) const
