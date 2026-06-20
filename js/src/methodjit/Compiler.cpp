@@ -58,7 +58,6 @@
 #include "jscompartment.h"
 #include "jsobjinlines.h"
 #include "jsopcodeinlines.h"
-#include "jshotloop.h"
 
 #include "builtin/RegExp.h"
 #include "frontend/BytecodeEmitter.h"
@@ -961,7 +960,8 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
         Bytecode *opinfo = analysis->maybeCode(i);
         if (opinfo && opinfo->safePoint) {
             /* loopEntries cover any safe points which are at loop heads. */
-            if (!cx->typeInferenceEnabled() || !opinfo->loopHead)
+            JSOp op = js_GetOpcode(cx, script, script->code + i);
+            if (!cx->typeInferenceEnabled() || op != JSOP_LOOPHEAD)
                 nNmapLive++;
         }
     }
@@ -1024,7 +1024,8 @@ mjit::Compiler::finishThisUp(JITScript **jitp)
         for (size_t i = 0; i < script->length; i++) {
             Bytecode *opinfo = analysis->maybeCode(i);
             if (opinfo && opinfo->safePoint) {
-                if (cx->typeInferenceEnabled() && opinfo->loopHead)
+                JSOp op = js_GetOpcode(cx, script, script->code + i);
+                if (cx->typeInferenceEnabled() && op == JSOP_LOOPHEAD)
                     continue;
                 Label L = jumpMap[i];
                 JS_ASSERT(L.isSet());
@@ -1583,7 +1584,7 @@ mjit::Compiler::generateMethod()
                  * of the loop so sync, branch, and fix it up after the loop
                  * has been processed.
                  */
-                if (cx->typeInferenceEnabled() && analysis->getCode(PC).loopHead) {
+                if (cx->typeInferenceEnabled() && op == JSOP_LOOPHEAD) {
                     frame.syncAndForgetEverything();
                     Jump j = masm.jump();
                     if (!startLoop(PC, j, PC))
@@ -1736,7 +1737,7 @@ mjit::Compiler::generateMethod()
              */
             jsbytecode *next = PC + js_CodeSpec[op].length;
             if (cx->typeInferenceEnabled() && analysis->maybeCode(next) &&
-                analysis->getCode(next).loopHead) {
+                js_GetOpcode(cx, script, next) == JSOP_LOOPHEAD) {
                 frame.syncAndForgetEverything();
                 Jump j = masm.jump();
                 if (!startLoop(next, j, target))
@@ -1745,7 +1746,7 @@ mjit::Compiler::generateMethod()
                 if (!frame.syncForBranch(target, Uses(0)))
                     return Compile_Error;
                 Jump j = masm.jump();
-                if (!jumpAndTrace(j, target))
+                if (!jumpAndRun(j, target))
                     return Compile_Error;
             }
             fallthrough = false;
@@ -2813,15 +2814,14 @@ mjit::Compiler::generateMethod()
           }
           END_CASE(JSOP_LAMBDA_FC)
 
-          BEGIN_CASE(JSOP_TRACE)
-          BEGIN_CASE(JSOP_NOTRACE)
+          BEGIN_CASE(JSOP_LOOPHEAD)
           {
             if (analysis->jumpTarget(PC)) {
                 interruptCheckHelper();
                 recompileCheckHelper();
             }
           }
-          END_CASE(JSOP_TRACE)
+          END_CASE(JSOP_LOOPHEAD)
 
           BEGIN_CASE(JSOP_DEBUGGER)
           {
@@ -3423,7 +3423,7 @@ mjit::Compiler::emitReturn(FrameEntry *fe)
     }
 
     /*
-     * Outside the mjit, activation objects are put by StackSpace::pop*
+     * Outside the mjit, activation objects are put by ContextStack::pop*
      * members. For JSOP_RETURN, the interpreter only calls popInlineFrame if
      * fp != entryFrame since the VM protocol is that Invoke/Execute are
      * responsible for pushing/popping the initial frame. The mjit does not
@@ -4429,7 +4429,7 @@ mjit::Compiler::constantFoldBranch(jsbytecode *target, bool taken)
         if (!frame.syncForBranch(target, Uses(0)))
             return false;
         Jump j = masm.jump();
-        if (!jumpAndTrace(j, target))
+        if (!jumpAndRun(j, target))
             return false;
     } else {
         /*
@@ -4463,7 +4463,7 @@ mjit::Compiler::emitStubCmpOp(BoolStub stub, jsbytecode *target, JSOp fused)
     JS_ASSERT(fused == JSOP_IFEQ || fused == JSOP_IFNE);
     Jump j = masm.branchTest32(GetStubCompareCondition(fused), Registers::ReturnReg,
                                Registers::ReturnReg);
-    return jumpAndTrace(j, target);
+    return jumpAndRun(j, target);
 }
 
 void
@@ -6056,8 +6056,8 @@ mjit::Compiler::iter(uintN flags)
     /* Compare shape of object with iterator. */
     masm.loadShape(reg, T1);
     masm.loadPtr(Address(nireg, offsetof(NativeIterator, shapes_array)), T2);
-    masm.load32(Address(T2, 0), T2);
-    Jump mismatchedObject = masm.branch32(Assembler::NotEqual, T1, T2);
+    masm.loadPtr(Address(T2, 0), T2);
+    Jump mismatchedObject = masm.branchPtr(Assembler::NotEqual, T1, T2);
     stubcc.linkExit(mismatchedObject, Uses(1));
 
     /* Compare shape of object's prototype with iterator. */
@@ -6065,8 +6065,8 @@ mjit::Compiler::iter(uintN flags)
     masm.loadPtr(Address(T1, offsetof(types::TypeObject, proto)), T1);
     masm.loadShape(T1, T1);
     masm.loadPtr(Address(nireg, offsetof(NativeIterator, shapes_array)), T2);
-    masm.load32(Address(T2, sizeof(uint32)), T2);
-    Jump mismatchedProto = masm.branch32(Assembler::NotEqual, T1, T2);
+    masm.loadPtr(Address(T2, sizeof(Shape *)), T2);
+    Jump mismatchedProto = masm.branchPtr(Assembler::NotEqual, T1, T2);
     stubcc.linkExit(mismatchedProto, Uses(1));
 
     /*
@@ -6221,7 +6221,7 @@ mjit::Compiler::iterMore(jsbytecode *target)
     stubcc.rejoin(Changes(1));
     frame.freeReg(tempreg);
 
-    return jumpAndTrace(jFast, target, &j);
+    return jumpAndRun(jFast, target, &j);
 }
 
 void
@@ -7035,7 +7035,7 @@ mjit::Compiler::finishLoop(jsbytecode *head)
     /*
      * We're done processing the current loop. Every loop has exactly one backedge
      * at the end ('continue' statements are forward jumps to the loop test),
-     * and after jumpAndTrace'ing on that edge we can pop it from the frame.
+     * and after jumpAndRun'ing on that edge we can pop it from the frame.
      */
     JS_ASSERT(loop && loop->headOffset() == uint32(head - script->code));
 
@@ -7144,11 +7144,6 @@ mjit::Compiler::finishLoop(jsbytecode *head)
 }
 
 /*
- * Note: This function emits tracer hooks into the OOL path. This means if
- * it is used in the middle of an in-progress slow path, the stream will be
- * hopelessly corrupted. Take care to only call this before linkExits() and
- * after rejoin()s.
- *
  * The state at the fast jump must reflect the frame's current state. If specified
  * the state at the slow jump must be fully synced.
  *
@@ -7159,7 +7154,7 @@ mjit::Compiler::finishLoop(jsbytecode *head)
  * inline caches).
  */
 bool
-mjit::Compiler::jumpAndTrace(Jump j, jsbytecode *target, Jump *slow, bool *trampoline)
+mjit::Compiler::jumpAndRun(Jump j, jsbytecode *target, Jump *slow, bool *trampoline)
 {
     if (trampoline)
         *trampoline = false;
@@ -7269,8 +7264,12 @@ mjit::Compiler::constructThis()
     JSFunction *fun = script->function();
 
     do {
-        if (!cx->typeInferenceEnabled() || fun->getType(cx)->unknownProperties())
+        if (!cx->typeInferenceEnabled() ||
+            !fun->hasSingletonType() ||
+            fun->getType(cx)->unknownProperties())
+        {
             break;
+        }
 
         jsid id = ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
         types::TypeSet *protoTypes = fun->getType(cx)->getProperty(cx, id, false);
@@ -7434,7 +7433,7 @@ mjit::Compiler::jsop_tableswitch(jsbytecode *pc)
         stubcc.masm.jump(Registers::ReturnReg);
     }
     frame.pop();
-    return jumpAndTrace(defaultCase, originalPC + defaultTarget);
+    return jumpAndRun(defaultCase, originalPC + defaultTarget);
 #endif
 }
 

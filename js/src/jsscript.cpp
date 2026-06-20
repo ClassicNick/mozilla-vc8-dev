@@ -62,7 +62,6 @@
 #include "jsopcode.h"
 #include "jsscope.h"
 #include "jsscript.h"
-#include "jstracer.h"
 #if JS_HAS_XDR
 #include "jsxdrapi.h"
 #endif
@@ -1287,15 +1286,14 @@ JSScript::dataSize()
 }
 
 size_t
-JSScript::dataSize(JSUsableSizeFun usf)
+JSScript::dataSize(JSMallocSizeOfFun mallocSizeOf)
 {
 #if JS_SCRIPT_INLINE_DATA_LIMIT
     if (data == inlineData)
         return 0;
 #endif
 
-    size_t usable = usf(data);
-    return usable ? usable : dataSize();
+    return mallocSizeOf(data, dataSize());
 }
 
 /*
@@ -1345,11 +1343,6 @@ JSScript::finalize(JSContext *cx, bool background)
 
     if (principals)
         JSPRINCIPALS_DROP(cx, principals);
-
-#ifdef JS_TRACER
-    if (compartment()->hasTraceMonitor())
-        PurgeScriptFragments(compartment()->traceMonitor(), this);
-#endif
 
     if (types)
         types->destroy();
@@ -1445,7 +1438,7 @@ js_GetSrcNoteCached(JSContext *cx, JSScript *script, jsbytecode *pc)
 uintN
 js_FramePCToLineNumber(JSContext *cx, StackFrame *fp, jsbytecode *pc)
 {
-    return js_PCToLineNumber(cx, fp->script(), fp->hasImacropc() ? fp->imacropc() : pc);
+    return js_PCToLineNumber(cx, fp->script(), pc);
 }
 
 uintN

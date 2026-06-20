@@ -462,10 +462,21 @@ class JaegerCompartment {
         return result;
     }
 
+    /*
+     * To force the top StackFrame in a VMFrame to return, when that VMFrame
+     * has called an extern "C" function (say, js_InternalThrow or
+     * js_InternalInterpret), change the extern "C" function's return address
+     * to the value this method returns.
+     */
     void *forceReturnFromExternC() const {
         return JS_FUNC_TO_DATA_PTR(void *, trampolines.forceReturn);
     }
 
+    /*
+     * To force the top StackFrame in a VMFrame to return, when that VMFrame has
+     * called a fastcall function (say, most stubs:: functions), change the
+     * fastcall function's return address to the value this method returns.
+     */
     void *forceReturnFromFastCall() const {
 #if (defined(JS_NO_FASTCALL) && defined(JS_CPU_X86)) || defined(_WIN64)
         return JS_FUNC_TO_DATA_PTR(void *, trampolines.forceReturnFast);
@@ -682,8 +693,8 @@ struct JITScript {
 
     void nukeScriptDependentICs();
 
-    /* |usf| can be NULL here, in which case the fallback size computation will be used. */
-    size_t scriptDataSize(JSUsableSizeFun usf);
+    /* |mallocSizeOf| can be NULL here, in which case the fallback size computation will be used. */
+    size_t scriptDataSize(JSMallocSizeOfFun mallocSizeOf);
 
     jsbytecode *nativeToPC(void *returnAddress, CallSite **pinline) const;
 

@@ -150,6 +150,10 @@
 @BINPATH@/components/docshell.xpt
 @BINPATH@/components/dom.xpt
 @BINPATH@/components/dom_base.xpt
+#ifdef MOZ_B2G_RIL
+@BINPATH@/components/dom_telephony.xpt
+@BINPATH@/components/dom_telephony_worker.xpt
+#endif
 @BINPATH@/components/dom_battery.xpt
 @BINPATH@/components/dom_canvas.xpt
 @BINPATH@/components/dom_core.xpt
@@ -164,6 +168,7 @@
 @BINPATH@/components/dom_range.xpt
 @BINPATH@/components/dom_sidebar.xpt
 @BINPATH@/components/dom_storage.xpt
+@BINPATH@/components/dom_sms.xpt
 @BINPATH@/components/dom_stylesheets.xpt
 @BINPATH@/components/dom_threads.xpt
 @BINPATH@/components/dom_traversal.xpt
@@ -276,7 +281,6 @@
 @BINPATH@/components/xuldoc.xpt
 @BINPATH@/components/xultmpl.xpt
 @BINPATH@/components/zipwriter.xpt
-@BINPATH@/components/openwebapps.xpt
 
 ; JavaScript components
 @BINPATH@/components/ConsoleAPI.manifest
@@ -330,7 +334,6 @@
 @BINPATH@/components/amContentHandler.js
 @BINPATH@/components/amWebInstallListener.js
 @BINPATH@/components/nsBlocklistService.js
-@BINPATH@/components/OpenWebapps.manifest
 
 #ifdef MOZ_UPDATER
 @BINPATH@/components/nsUpdateService.manifest
@@ -385,6 +388,12 @@
 @BINPATH@/components/messageWakeupService.manifest
 @BINPATH@/components/nsFilePicker.js
 @BINPATH@/components/nsFilePicker.manifest
+#ifdef MOZ_B2G_RIL
+@BINPATH@/components/nsTelephonyWorker.manifest
+@BINPATH@/components/nsTelephonyWorker.js
+@BINPATH@/components/Telephony.manifest
+@BINPATH@/components/Telephony.js
+#endif
 #ifdef XP_MACOSX
 @BINPATH@/components/libalerts_s.dylib
 #endif
@@ -606,7 +615,6 @@ bin/components/@DLL_PREFIX@nkgnomevfs@DLL_SUFFIX@
 @BINPATH@/components/PromptService.js
 @BINPATH@/components/SessionStore.js
 @BINPATH@/components/Sidebar.js
-@BINPATH@/components/OpenWebapps.js
 #ifdef MOZ_SAFE_BROWSING
 @BINPATH@/components/SafeBrowsing.js
 #endif

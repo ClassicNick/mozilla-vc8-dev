@@ -10,6 +10,10 @@
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
 
   <script type="text/javascript;version=1.7">
+    var abortFired = false;
+
+    function abortListener() { abortFired = true; }
+
     function testSteps()
     {
       const Ci = Components.interfaces;
@@ -33,6 +37,7 @@
       let event = yield;
 
       let db = event.target.result;
+      db.onabort = abortListener;
 
       let transaction;
       let objectStore;
@@ -52,7 +57,7 @@
       is(transaction.onabort, null, "No abort listener");
 
       is(objectStore.name, "foo", "Correct name");
-      is(objectStore.keyPath, "", "Correct keyPath");
+      is(objectStore.keyPath, null, "Correct keyPath");
 
       is(objectStore.indexNames.length, 1, "Correct indexNames length");
       is(objectStore.indexNames[0], "fooindex", "Correct indexNames name");
@@ -78,7 +83,7 @@
       }
 
       is(objectStore.name, "foo", "Correct name");
-      is(objectStore.keyPath, "", "Correct keyPath");
+      is(objectStore.keyPath, null, "Correct keyPath");
 
       is(objectStore.indexNames.length, 1, "Correct indexNames length");
       is(objectStore.indexNames[0], "fooindex", "Correct indexNames name");
@@ -397,6 +402,8 @@
       event = yield;
       is(event.type, "abort", "transaction should fail");
       is(event.target, transaction, "transaction should fail");
+
+      ok(abortFired, "Abort should have fired!");
 
       finishTest();
       yield;

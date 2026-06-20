@@ -272,7 +272,7 @@ typedef HeapPtr<JSString> HeapPtrString;
 typedef HeapPtr<JSScript> HeapPtrScript;
 typedef HeapPtr<Shape> HeapPtrShape;
 typedef HeapPtr<BaseShape> HeapPtrBaseShape;
-typedef HeapPtr<const Shape> HeapPtrConstShape;
+typedef HeapPtr<types::TypeObject> HeapPtrTypeObject;
 typedef HeapPtr<JSXML> HeapPtrXML;
 
 /* Useful for hashtables with a HeapPtr as key. */
@@ -336,7 +336,7 @@ class HeapValue
     bool toBoolean() const { return value.toBoolean(); }
     double toNumber() const { return value.toNumber(); }
 
-    unsigned gcKind() const { return value.gcKind(); }
+    JSGCTraceKind gcKind() const { return value.gcKind(); }
 
     inline void boxNonDoubleFrom(JSValueType type, uint64 *out);
 

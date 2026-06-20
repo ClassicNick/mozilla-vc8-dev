@@ -1498,18 +1498,14 @@ InlineGetProp(VMFrame &f)
         JSAtom *atom;
         JS_PROPERTY_CACHE(cx).test(cx, f.pc(), aobj, obj2, entry, atom);
         if (!atom) {
-            NATIVE_GET(cx, obj, obj2, entry->prop,
-                        f.fp()->hasImacropc() ? JSGET_NO_METHOD_BARRIER : JSGET_METHOD_BARRIER,
-                        &rval, return false);
+            NATIVE_GET(cx, obj, obj2, entry->prop, JSGET_METHOD_BARRIER, &rval, return false);
             break;
         }
 
         jsid id = ATOM_TO_JSID(atom);
         if (JS_LIKELY(!aobj->getOps()->getProperty)
                 ? !js_GetPropertyHelper(cx, obj, id,
-                    f.fp()->hasImacropc()
-                    ? JSGET_CACHE_RESULT | JSGET_NO_METHOD_BARRIER
-                    : JSGET_CACHE_RESULT | JSGET_METHOD_BARRIER,
+                    JSGET_CACHE_RESULT | JSGET_METHOD_BARRIER,
                     &rval)
                 : !obj->getGeneric(cx, id, &rval)) {
             return false;
@@ -2355,9 +2351,19 @@ stubs::FunctionFrameEpilogue(VMFrame &f)
 void JS_FASTCALL
 stubs::AnyFrameEpilogue(VMFrame &f)
 {
+    /*
+     * On the normal execution path, emitReturn calls ScriptDebugEpilogue
+     * and inlines ScriptEpilogue. This function implements forced early
+     * returns, so it must have the same effect.
+     */
+    bool ok = true;
+    if (f.cx->compartment->debugMode())
+        ok = js::ScriptDebugEpilogue(f.cx, f.fp(), ok);
+    ok = ScriptEpilogue(f.cx, f.fp(), ok);
+    if (!ok)
+        THROW();
     if (f.fp()->isNonEvalFunctionFrame())
         f.fp()->functionEpilogue();
-    stubs::ScriptDebugEpilogue(f);
 }
 
 template <bool Clamped>

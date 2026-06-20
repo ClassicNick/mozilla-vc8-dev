@@ -128,6 +128,11 @@
 
 using mozilla::dom::indexedDB::IndexedDatabaseManager;
 
+#ifdef MOZ_B2G_RIL
+#include "Radio.h"
+using mozilla::dom::telephony::Radio;
+#endif
+
 // Editor stuff
 #include "nsEditorCID.h"
 #include "nsEditor.h"
@@ -285,6 +290,10 @@ static void Shutdown();
 #endif
 #endif
 #include "nsCSPService.h"
+#include "nsISmsService.h"
+#include "mozilla/dom/sms/SmsServiceFactory.h"
+
+using namespace mozilla::dom::sms;
 
 // Transformiix
 /* 5d5d92cd-6bf8-11d9-bf4a-000a95dc234c */
@@ -311,6 +320,32 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsDOMStorageManager,
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsChannelPolicy)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(IndexedDatabaseManager,
                                          IndexedDatabaseManager::FactoryCreate)
+#ifdef MOZ_B2G_RIL
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(Radio, Radio::FactoryCreate)
+
+// The 'Radio' class controls the lifetime of the nsITelephonyWorker object
+// which is also an nsIRadioInterface, so we don't want to register it as a
+// global service on app-startup. Instead, we'll (ab)use createInstance()
+// to always return the one singleton that 'Radio' holds on to.
+static nsresult
+RadioInterfaceConstructor(nsISupports *aOuter, REFNSIID aIID, void **aResult)
+{
+  if (NULL != aOuter) {
+    return NS_ERROR_NO_AGGREGATION;
+  }
+
+  nsCOMPtr<nsIRadioInterface> inst = Radio::GetRadioInterface();
+  if (NULL == inst) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  *aResult = inst.get();
+  inst.forget();
+
+  return NS_OK;
+}
+#endif
+
 #ifndef MOZ_WIDGET_GONK
 #if defined(XP_UNIX)    || \
     defined(_WINDOWS)   || \
@@ -323,6 +358,7 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsHapticFeedback)
 #endif
 #endif
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(ThirdPartyUtil, Init)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsISmsService, SmsServiceFactory::Create)
 
 //-----------------------------------------------------------------------------
 
@@ -760,7 +796,6 @@ NS_DEFINE_NAMED_CID(NS_HTMLAUDIOELEMENT_CID);
 #endif
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2D_CID);
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2DTHEBES_CID);
-NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXT2DAZURE_CID);
 NS_DEFINE_NAMED_CID(NS_CANVASRENDERINGCONTEXTWEBGL_CID);
 NS_DEFINE_NAMED_CID(NS_TEXT_ENCODER_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLCOPY_TEXT_ENCODER_CID);
@@ -814,7 +849,11 @@ NS_DEFINE_NAMED_CID(NS_DOMSTORAGE2_CID);
 NS_DEFINE_NAMED_CID(NS_DOMSTORAGEMANAGER_CID);
 NS_DEFINE_NAMED_CID(NS_DOMJSON_CID);
 NS_DEFINE_NAMED_CID(NS_TEXTEDITOR_CID);
-NS_DEFINE_NAMED_CID(INDEXEDDB_MANAGER_CID );
+NS_DEFINE_NAMED_CID(INDEXEDDB_MANAGER_CID);
+#ifdef MOZ_B2G_RIL
+NS_DEFINE_NAMED_CID(TELEPHONYRADIO_CID);
+NS_DEFINE_NAMED_CID(TELEPHONYRADIOINTERFACE_CID);
+#endif
 #ifdef ENABLE_EDITOR_API_LOG
 NS_DEFINE_NAMED_CID(NS_HTMLEDITOR_CID);
 #else
@@ -851,6 +890,7 @@ NS_DEFINE_NAMED_CID(NS_DEVICE_MOTION_CID);
 NS_DEFINE_NAMED_CID(NS_HAPTICFEEDBACK_CID);
 #endif
 #endif
+NS_DEFINE_NAMED_CID(NS_SMSSERVICE_CID);
 
 static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   XPCONNECT_CIDENTRIES
@@ -949,6 +989,10 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
   { &kNS_DOMJSON_CID, false, NULL, NS_NewJSON },
   { &kNS_TEXTEDITOR_CID, false, NULL, nsPlaintextEditorConstructor },
   { &kINDEXEDDB_MANAGER_CID, false, NULL, IndexedDatabaseManagerConstructor },
+#ifdef MOZ_B2G_RIL
+  { &kTELEPHONYRADIO_CID, true, NULL, RadioConstructor },
+  { &kTELEPHONYRADIOINTERFACE_CID, true, NULL, RadioInterfaceConstructor },
+#endif
 #ifdef ENABLE_EDITOR_API_LOG
   { &kNS_HTMLEDITOR_CID, false, NULL, nsHTMLEditorLogConstructor },
 #else
@@ -984,6 +1028,7 @@ static const mozilla::Module::CIDEntry kLayoutCIDs[] = {
 #endif
   { &kTHIRDPARTYUTIL_CID, false, NULL, ThirdPartyUtilConstructor },
   { &kNS_STRUCTUREDCLONECONTAINER_CID, false, NULL, nsStructuredCloneContainerConstructor },
+  { &kNS_SMSSERVICE_CID, false, NULL, nsISmsServiceConstructor },
   { NULL }
 };
 
@@ -1077,6 +1122,10 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
   { "@mozilla.org/dom/json;1", &kNS_DOMJSON_CID },
   { "@mozilla.org/editor/texteditor;1", &kNS_TEXTEDITOR_CID },
   { INDEXEDDB_MANAGER_CONTRACTID, &kINDEXEDDB_MANAGER_CID },
+#ifdef MOZ_B2G_RIL  
+  { TELEPHONYRADIO_CONTRACTID, &kTELEPHONYRADIO_CID },
+  { TELEPHONYRADIOINTERFACE_CONTRACTID, &kTELEPHONYRADIOINTERFACE_CID },
+#endif
 #ifdef ENABLE_EDITOR_API_LOG
   { "@mozilla.org/editor/htmleditor;1", &kNS_HTMLEDITOR_CID },
 #else
@@ -1113,6 +1162,7 @@ static const mozilla::Module::ContractIDEntry kLayoutContracts[] = {
 #endif
   { THIRDPARTYUTIL_CONTRACTID, &kTHIRDPARTYUTIL_CID },
   { NS_STRUCTUREDCLONECONTAINER_CONTRACTID, &kNS_STRUCTUREDCLONECONTAINER_CID },
+  { SMSSERVICE_CONTRACTID, &kNS_SMSSERVICE_CID },
   { NULL }
 };
 
@@ -1133,6 +1183,12 @@ static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
   { JAVASCRIPT_GLOBAL_STATIC_NAMESET_CATEGORY, "PrivilegeManager", NS_SECURITYNAMESET_CONTRACTID },
   { "app-startup", "Script Security Manager", "service," NS_SCRIPTSECURITYMANAGER_CONTRACTID },
   CONTENTDLF_CATEGORIES
+
+  // This probably should be "app-startup" but we want our testing extension to
+  // be able to override the contractid so we wait until "profile-after-change"
+#ifdef MOZ_B2G_RIL
+  { "profile-after-change", "Telephony Radio", TELEPHONYRADIO_CONTRACTID },
+#endif
   { NULL }
 };
 

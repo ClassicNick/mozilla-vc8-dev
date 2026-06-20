@@ -69,6 +69,8 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
+#include "SmsManager.h"
+#include "nsISmsService.h"
 
 // This should not be in the namespace.
 DOMCI_DATA(Navigator, mozilla::dom::Navigator)
@@ -88,24 +90,16 @@ Navigator::Init()
                                false);
 }
 
-Navigator::Navigator(nsIDocShell* aDocShell)
-  : mDocShell(aDocShell)
+Navigator::Navigator(nsPIDOMWindow* aWindow)
+  : mWindow(do_GetWeakReference(aWindow))
 {
+  NS_ASSERTION(aWindow->IsInnerWindow(),
+               "Navigator must get an inner window!");
 }
 
 Navigator::~Navigator()
 {
-  if (mMimeTypes) {
-    mMimeTypes->Invalidate();
-  }
-
-  if (mPlugins) {
-    mPlugins->Invalidate();
-  }
-
-  if (mBatteryManager) {
-    mBatteryManager->Shutdown();
-  }
+  Invalidate();
 }
 
 NS_INTERFACE_MAP_BEGIN(Navigator)
@@ -113,8 +107,9 @@ NS_INTERFACE_MAP_BEGIN(Navigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigator)
   NS_INTERFACE_MAP_ENTRY(nsIDOMClientInformation)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorGeolocation)
-  NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorBattery)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorBattery)
   NS_INTERFACE_MAP_ENTRY(nsIDOMNavigatorDesktopNotification)
+  NS_INTERFACE_MAP_ENTRY(nsIDOMMozNavigatorSms)
   NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(Navigator)
 NS_INTERFACE_MAP_END
 
@@ -122,12 +117,13 @@ NS_IMPL_ADDREF(Navigator)
 NS_IMPL_RELEASE(Navigator)
 
 void
-Navigator::SetDocShell(nsIDocShell* aDocShell)
+Navigator::Invalidate()
 {
-  mDocShell = aDocShell;
+  mWindow = nsnull;
 
   if (mPlugins) {
-    mPlugins->SetDocShell(aDocShell);
+    mPlugins->Invalidate();
+    mPlugins = nsnull;
   }
 
   // If there is a page transition, make sure delete the geolocation object.
@@ -145,7 +141,21 @@ Navigator::SetDocShell(nsIDocShell* aDocShell)
     mBatteryManager->Shutdown();
     mBatteryManager = nsnull;
   }
+
+  if (mSmsManager) {
+    mSmsManager->Shutdown();
+    mSmsManager = nsnull;
+  }
 }
+
+nsPIDOMWindow *
+Navigator::GetWindow()
+{
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  return win;
+}
+
 
 //*****************************************************************************
 //    Navigator::nsIDOMNavigator
@@ -354,7 +364,9 @@ NS_IMETHODIMP
 Navigator::GetPlugins(nsIDOMPluginArray** aPlugins)
 {
   if (!mPlugins) {
-    mPlugins = new nsPluginArray(this, mDocShell);
+    nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+    mPlugins = new nsPluginArray(this, win ? win->GetDocShell() : nsnull);
   }
 
   NS_ADDREF(*aPlugins = mPlugins);
@@ -376,7 +388,13 @@ Navigator::GetCookieEnabled(bool* aCookieEnabled)
   // Check whether an exception overrides the global cookie behavior
   // Note that the code for getting the URI here matches that in
   // nsHTMLDocument::SetCookie.
-  nsCOMPtr<nsIDocument> doc = do_GetInterface(mDocShell);
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetDocShell()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(win->GetExtantDocument());
   if (!doc) {
     return NS_OK;
   }
@@ -496,45 +514,11 @@ Navigator::JavaEnabled(bool* aReturn)
 }
 
 void
-Navigator::LoadingNewDocument()
-{
-  // Release these so that they will be recreated for the
-  // new document (if requested).  The plugins or mime types
-  // arrays may have changed.  See bug 150087.
-  if (mMimeTypes) {
-    mMimeTypes->Invalidate();
-    mMimeTypes = nsnull;
-  }
-
-  if (mPlugins) {
-    mPlugins->Invalidate();
-    mPlugins = nsnull;
-  }
-
-  if (mGeolocation) {
-    mGeolocation->Shutdown();
-    mGeolocation = nsnull;
-  }
-
-  if (mNotification) {
-    mNotification->Shutdown();
-    mNotification = nsnull;
-  }
-
-  if (mBatteryManager) {
-    mBatteryManager->Shutdown();
-    mBatteryManager = nsnull;
-  }
-}
-
-nsresult
 Navigator::RefreshMIMEArray()
 {
   if (mMimeTypes) {
-    return mMimeTypes->Refresh();
+    mMimeTypes->Refresh();
   }
-
-  return NS_OK;
 }
 
 bool
@@ -552,7 +536,9 @@ Navigator::RegisterContentHandler(const nsAString& aMIMEType,
                                   const nsAString& aURI,
                                   const nsAString& aTitle)
 {
-  if (!mDocShell) {
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
     return NS_OK;
   }
 
@@ -562,13 +548,8 @@ Navigator::RegisterContentHandler(const nsAString& aMIMEType,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIDOMWindow> contentDOMWindow = do_GetInterface(mDocShell);
-  if (!contentDOMWindow) {
-    return NS_OK;
-  }
-
   return registrar->RegisterContentHandler(aMIMEType, aURI, aTitle,
-                                           contentDOMWindow);
+                                           win->GetOuterWindow());
 }
 
 NS_IMETHODIMP
@@ -576,7 +557,9 @@ Navigator::RegisterProtocolHandler(const nsAString& aProtocol,
                                    const nsAString& aURI,
                                    const nsAString& aTitle)
 {
-  if (!mDocShell) {
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
     return NS_OK;
   }
 
@@ -586,13 +569,8 @@ Navigator::RegisterProtocolHandler(const nsAString& aProtocol,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIDOMWindow> contentDOMWindow = do_GetInterface(mDocShell);
-  if (!contentDOMWindow) {
-    return NS_OK;
-  }
-
   return registrar->RegisterProtocolHandler(aProtocol, aURI, aTitle,
-                                            contentDOMWindow);
+                                            win->GetOuterWindow());
 }
 
 NS_IMETHODIMP
@@ -685,12 +663,9 @@ NS_IMETHODIMP Navigator::GetGeolocation(nsIDOMGeoGeolocation** _retval)
     return NS_OK;
   }
 
-  if (!mDocShell) {
-    return NS_ERROR_FAILURE;
-  }
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
 
-  nsCOMPtr<nsIDOMWindow> contentDOMWindow = do_GetInterface(mDocShell);
-  if (!contentDOMWindow) {
+  if (!win || !win->GetOuterWindow() || !win->GetDocShell()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -699,7 +674,7 @@ NS_IMETHODIMP Navigator::GetGeolocation(nsIDOMGeoGeolocation** _retval)
     return NS_ERROR_FAILURE;
   }
 
-  if (NS_FAILED(mGeolocation->Init(contentDOMWindow))) {
+  if (NS_FAILED(mGeolocation->Init(win->GetOuterWindow()))) {
     mGeolocation = nsnull;
     return NS_ERROR_FAILURE;
   }
@@ -722,20 +697,14 @@ NS_IMETHODIMP Navigator::GetMozNotification(nsIDOMDesktopNotificationCenter** aR
     return NS_OK;
   }
 
-  nsCOMPtr<nsPIDOMWindow> window = do_GetInterface(mDocShell);
-  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
-
-  nsCOMPtr<nsIDocument> document = do_GetInterface(mDocShell);
-  NS_ENSURE_TRUE(document, NS_ERROR_FAILURE);
-
-  nsIScriptGlobalObject* sgo = document->GetScopeObject();
-  NS_ENSURE_TRUE(sgo, NS_ERROR_FAILURE);
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+  nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(win));
+  NS_ENSURE_TRUE(sgo && win->GetDocShell(), NS_ERROR_FAILURE);
 
   nsIScriptContext* scx = sgo->GetContext();
   NS_ENSURE_TRUE(scx, NS_ERROR_FAILURE);
 
-  mNotification = new nsDesktopNotificationCenter(window->GetCurrentInnerWindow(),
-                                                  scx);
+  mNotification = new nsDesktopNotificationCenter(win, scx);
 
   NS_ADDREF(*aRetVal = mNotification);
   return NS_OK;
@@ -746,14 +715,122 @@ NS_IMETHODIMP Navigator::GetMozNotification(nsIDOMDesktopNotificationCenter** aR
 //*****************************************************************************
 
 NS_IMETHODIMP
-Navigator::GetMozBattery(nsIDOMBatteryManager** aBattery)
+Navigator::GetMozBattery(nsIDOMMozBatteryManager** aBattery)
 {
   if (!mBatteryManager) {
+    *aBattery = nsnull;
+
+    nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+    nsCOMPtr<nsIScriptGlobalObject> sgo(do_QueryInterface(win));
+    NS_ENSURE_TRUE(sgo && win->GetDocShell(), NS_OK);
+
+    nsIScriptContext* scx = sgo->GetContext();
+    NS_ENSURE_TRUE(scx, NS_OK);
+
     mBatteryManager = new battery::BatteryManager();
-    mBatteryManager->Init();
+    mBatteryManager->Init(win, scx);
   }
 
   NS_ADDREF(*aBattery = mBatteryManager);
+
+  return NS_OK;
+}
+
+//*****************************************************************************
+//    Navigator::nsIDOMNavigatorSms
+//*****************************************************************************
+
+bool
+Navigator::IsSmsAllowed() const
+{
+  static const bool defaultSmsPermission = false;
+
+  // First of all, the general pref has to be turned on.
+  if (!Preferences::GetBool("dom.sms.enabled", defaultSmsPermission)) {
+    return false;
+  }
+
+  // In addition of having 'dom.sms.enabled' set to true, we require the
+  // website to be whitelisted. This is a temporary 'security model'.
+  // 'dom.sms.whitelist' has to contain comma-separated values of URI prepath.
+  // For local files, "file://" must be listed.
+  // For data-urls: "moz-nullprincipal:".
+  // Chrome files also have to be whitelisted for the moment.
+  nsCOMPtr<nsPIDOMWindow> win(do_QueryReferent(mWindow));
+
+  if (!win || !win->GetDocShell()) {
+    return defaultSmsPermission;
+  }
+
+  nsCOMPtr<nsIDocument> doc = do_QueryInterface(win->GetExtantDocument());
+  if (!doc) {
+    return defaultSmsPermission;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  doc->NodePrincipal()->GetURI(getter_AddRefs(uri));
+
+  if (!uri) {
+    return defaultSmsPermission;
+  }
+
+  nsCAutoString uriPrePath;
+  uri->GetPrePath(uriPrePath);
+
+  const nsAdoptingString& whitelist =
+    Preferences::GetString("dom.sms.whitelist");
+
+  nsCharSeparatedTokenizer tokenizer(whitelist, ',',
+                                     nsCharSeparatedTokenizerTemplate<>::SEPARATOR_OPTIONAL);
+
+  while (tokenizer.hasMoreTokens()) {
+    const nsSubstring& whitelistItem = tokenizer.nextToken();
+
+    if (NS_ConvertUTF16toUTF8(whitelistItem).Equals(uriPrePath)) {
+      return true;
+    }
+  }
+
+  // The current page hasn't been whitelisted.
+  return false;
+}
+
+bool
+Navigator::IsSmsSupported() const
+{
+  nsCOMPtr<nsISmsService> smsService = do_GetService(SMSSERVICE_CONTRACTID);
+  NS_ENSURE_TRUE(smsService, false);
+
+  bool result = false;
+  smsService->HasSupport(&result);
+
+  return result;
+}
+
+NS_IMETHODIMP
+Navigator::GetMozSms(nsIDOMMozSmsManager** aSmsManager)
+{
+  *aSmsManager = nsnull;
+
+  if (!mSmsManager) {
+    if (!IsSmsSupported() || !IsSmsAllowed()) {
+      return NS_OK;
+    }
+
+    nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+    NS_ENSURE_TRUE(window && window->GetDocShell(), NS_OK);
+
+    nsCOMPtr<nsIScriptGlobalObject> sgo = do_QueryInterface(window);
+    NS_ENSURE_TRUE(sgo, NS_OK);
+
+    nsIScriptContext* scx = sgo->GetContext();
+    NS_ENSURE_TRUE(scx, NS_OK);
+
+    mSmsManager = new sms::SmsManager();
+    mSmsManager->Init(window, scx);
+  }
+
+  NS_ADDREF(*aSmsManager = mSmsManager);
 
   return NS_OK;
 }

@@ -125,7 +125,6 @@ public:
   NS_IMETHOD              Move(PRInt32 aX, PRInt32 aY);
   NS_IMETHOD              Resize(PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
   NS_IMETHOD              Resize(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
-  NS_IMETHOD              ResizeClient(PRInt32 aX, PRInt32 aY, PRInt32 aWidth, PRInt32 aHeight, bool aRepaint);
   NS_IMETHOD              BeginResizeDrag(nsGUIEvent* aEvent, PRInt32 aHorizontal, PRInt32 aVertical);
   NS_IMETHOD              PlaceBehind(nsTopLevelWidgetZPlacement aPlacement, nsIWidget *aWidget, bool aActivate);
   NS_IMETHOD              SetSizeMode(PRInt32 aMode);
@@ -179,10 +178,9 @@ public:
                                                      PRUint32 aNativeMessage,
                                                      PRUint32 aModifierFlags);
   NS_IMETHOD              ResetInputState();
-  NS_IMETHOD              SetIMEOpenState(bool aState);
-  NS_IMETHOD              GetIMEOpenState(bool* aState);
-  NS_IMETHOD              SetInputMode(const IMEContext& aContext);
-  NS_IMETHOD              GetInputMode(IMEContext& aContext);
+  NS_IMETHOD_(void)       SetInputContext(const InputContext& aContext,
+                                          const InputContextAction& aAction);
+  NS_IMETHOD_(InputContext) GetInputContext();
   NS_IMETHOD              CancelIMEComposition();
   NS_IMETHOD              GetToggledKeyState(PRUint32 aKeyCode, bool* aLEDState);
   NS_IMETHOD              RegisterTouchWindow();
@@ -262,7 +260,10 @@ public:
   virtual bool            AutoErase(HDC dc);
   nsIntPoint*             GetLastPoint() { return &mLastPoint; }
   // needed in nsIMM32Handler.cpp
-  bool                    PluginHasFocus() { return mIMEContext.mStatus == nsIWidget::IME_STATUS_PLUGIN; }
+  bool                    PluginHasFocus()
+  {
+    return (mInputContext.mIMEState.mEnabled == IMEState::PLUGIN);
+  }
   bool                    IsTopLevelWidget() { return mIsTopWidgetWindow; }
   /**
    * Start allowing Direct3D9 to be used by widgets when GetLayerManager is
@@ -443,6 +444,7 @@ protected:
                                                LPARAM aLParam,
                                                LRESULT *aRetValue);
   void                    OnWindowPosChanging(LPWINDOWPOS& info);
+  void                    OnSysColorChanged();
 
   /**
    * Function that registers when the user has been active (used for detecting
@@ -532,7 +534,7 @@ protected:
   PRUint32              mBlurSuppressLevel;
   DWORD_PTR             mOldStyle;
   DWORD_PTR             mOldExStyle;
-  IMEContext            mIMEContext;
+  InputContext mInputContext;
   nsNativeDragTarget*   mNativeDragTarget;
   HKL                   mLastKeyboardLayout;
   nsPopupType           mPopupType;

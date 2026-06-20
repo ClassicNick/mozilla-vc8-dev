@@ -41,7 +41,7 @@
 #ifndef String_h_
 #define String_h_
 
-#include "mozilla/Util.h"
+#include "mozilla/Attributes.h"
 
 #include "jsapi.h"
 #include "jscell.h"
@@ -407,7 +407,7 @@ class JSString : public js::gc::Cell
 
     /* Gets the number of bytes that the chars take on the heap. */
 
-    JS_FRIEND_API(size_t) charsHeapSize(JSUsableSizeFun usf);
+    JS_FRIEND_API(size_t) charsHeapSize(JSMallocSizeOfFun mallocSizeOf);
 
     /* Offsets for direct field from jit code. */
 
@@ -426,7 +426,9 @@ class JSString : public js::gc::Cell
 
 class JSRope : public JSString
 {
+public:
     enum UsingBarrier { WithBarrier, NoBarrier };
+private:
     template<UsingBarrier b>
     JSFlatString *flattenInternal(JSContext *cx);
 
@@ -462,8 +464,6 @@ class JSLinearString : public JSString
     JSLinearString &asLinear() const MOZ_DELETE;
 
   public:
-    void mark(JSTracer *trc);
-
     JS_ALWAYS_INLINE
     const jschar *chars() const {
         JS_ASSERT(JSString::isLinear());

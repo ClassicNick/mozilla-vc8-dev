@@ -214,6 +214,17 @@ IDBTransaction::OnRequestFinished()
 }
 
 void
+IDBTransaction::ReleaseCachedObjectStore(const nsAString& aName)
+{
+  for (PRUint32 i = 0; i < mCreatedObjectStores.Length(); i++) {
+    if (mCreatedObjectStores[i]->Name() == aName) {
+      mCreatedObjectStores.RemoveElementAt(i);
+      break;
+    }
+  }
+}
+
+void
 IDBTransaction::SetTransactionListener(IDBTransactionListener* aListener)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
@@ -394,63 +405,62 @@ IDBTransaction::AddStatement(bool aCreate,
 }
 
 already_AddRefed<mozIStorageStatement>
-IDBTransaction::IndexUpdateStatement(bool aAutoIncrement,
-                                     bool aUnique,
-                                     bool aOverwrite)
+IDBTransaction::IndexDataInsertStatement(bool aAutoIncrement,
+                                         bool aUnique)
 {
   if (aAutoIncrement) {
     if (aUnique) {
-      if (aOverwrite) {
-        return GetCachedStatement(
-          "INSERT OR REPLACE INTO ai_unique_index_data "
-            "(index_id, ai_object_data_id, value) "
-          "VALUES (:index_id, :object_data_id, :value)"
-        );
-      }
       return GetCachedStatement(
         "INSERT INTO ai_unique_index_data "
-          "(index_id, aI_object_data_id, value) "
-        "VALUES (:index_id, :object_data_id, :value)"
-      );
-    }
-    if (aOverwrite) {
-      return GetCachedStatement(
-        "INSERT OR REPLACE INTO ai_index_data "
           "(index_id, ai_object_data_id, value) "
         "VALUES (:index_id, :object_data_id, :value)"
       );
     }
     return GetCachedStatement(
-      "INSERT INTO ai_index_data "
+      "INSERT OR IGNORE INTO ai_index_data "
         "(index_id, ai_object_data_id, value) "
       "VALUES (:index_id, :object_data_id, :value)"
     );
   }
   if (aUnique) {
-    if (aOverwrite) {
-      return GetCachedStatement(
-        "INSERT OR REPLACE INTO unique_index_data "
-          "(index_id, object_data_id, object_data_key, value) "
-        "VALUES (:index_id, :object_data_id, :object_data_key, :value)"
-      );
-    }
     return GetCachedStatement(
       "INSERT INTO unique_index_data "
         "(index_id, object_data_id, object_data_key, value) "
       "VALUES (:index_id, :object_data_id, :object_data_key, :value)"
     );
   }
-  if (aOverwrite) {
+  return GetCachedStatement(
+    "INSERT OR IGNORE INTO index_data ("
+      "index_id, object_data_id, object_data_key, value) "
+    "VALUES (:index_id, :object_data_id, :object_data_key, :value)"
+  );
+}
+
+already_AddRefed<mozIStorageStatement>
+IDBTransaction::IndexDataDeleteStatement(bool aAutoIncrement,
+                                         bool aUnique)
+{
+  if (aAutoIncrement) {
+    if (aUnique) {
+      return GetCachedStatement(
+        "DELETE FROM ai_unique_index_data "
+        "WHERE ai_object_data_id = :object_data_id"
+      );
+    }
     return GetCachedStatement(
-      "INSERT INTO index_data ("
-        "index_id, object_data_id, object_data_key, value) "
-      "VALUES (:index_id, :object_data_id, :object_data_key, :value)"
+      "DELETE FROM ai_index_data "
+      "WHERE ai_object_data_id = :object_data_id"
+    );
+  }
+  if (aUnique) {
+    return GetCachedStatement(
+      "DELETE FROM unique_index_data "
+      "WHERE object_data_id = :object_data_id"
     );
   }
   return GetCachedStatement(
-    "INSERT INTO index_data ("
-      "index_id, object_data_id, object_data_key, value) "
-    "VALUES (:index_id, :object_data_id, :object_data_key, :value)"
+    "DELETE FROM index_data "
+    "WHERE object_data_id = :object_data_id"
   );
 }
 
@@ -854,10 +864,12 @@ CommitHelper::Run()
         }
       }
 
-      event = CreateGenericEvent(NS_LITERAL_STRING(ABORT_EVT_STR));
+      event = CreateGenericEvent(NS_LITERAL_STRING(ABORT_EVT_STR),
+                                 eDoesBubble, eNotCancelable);
     }
     else {
-      event = CreateGenericEvent(NS_LITERAL_STRING(COMPLETE_EVT_STR));
+      event = CreateGenericEvent(NS_LITERAL_STRING(COMPLETE_EVT_STR),
+                                 eDoesNotBubble, eNotCancelable);
     }
     NS_ENSURE_TRUE(event, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
 
@@ -886,7 +898,7 @@ CommitHelper::Run()
   }
 
   if (mConnection) {
-    IndexedDatabaseManager::SetCurrentDatabase(database);
+    IndexedDatabaseManager::SetCurrentWindow(database->Owner());
 
     if (!mAborted) {
       NS_NAMED_LITERAL_CSTRING(release, "COMMIT TRANSACTION");
@@ -922,7 +934,7 @@ CommitHelper::Run()
     mConnection->Close();
     mConnection = nsnull;
 
-    IndexedDatabaseManager::SetCurrentDatabase(nsnull);
+    IndexedDatabaseManager::SetCurrentWindow(nsnull);
   }
 
   return NS_OK;

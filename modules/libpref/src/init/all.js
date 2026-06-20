@@ -418,10 +418,6 @@ pref("capability.policy.default.Location.hash.set", "allAccess");
 pref("capability.policy.default.Location.href.set", "allAccess");
 pref("capability.policy.default.Location.replace.get", "allAccess");
 
-pref("capability.policy.default.Navigator.preference", "allAccess");
-pref("capability.policy.default.Navigator.preferenceinternal.get", "UniversalPreferencesRead");
-pref("capability.policy.default.Navigator.preferenceinternal.set", "UniversalPreferencesWrite");
-
 pref("capability.policy.default.Window.blur.get", "allAccess");
 pref("capability.policy.default.Window.close.get", "allAccess");
 pref("capability.policy.default.Window.closed.get", "allAccess");
@@ -626,12 +622,8 @@ pref("javascript.options.strict",           false);
 pref("javascript.options.strict.debug",     true);
 #endif
 pref("javascript.options.relimit",          true);
-pref("javascript.options.tracejit.content",  false);
-pref("javascript.options.tracejit.chrome",   false);
 pref("javascript.options.methodjit.content", true);
 pref("javascript.options.methodjit.chrome",  true);
-pref("javascript.options.jitprofiling.content", true);
-pref("javascript.options.jitprofiling.chrome",  true);
 pref("javascript.options.pccounts.content", false);
 pref("javascript.options.pccounts.chrome",  false);
 pref("javascript.options.methodjit_always", false);
@@ -794,6 +786,13 @@ pref("network.http.connection-retry-timeout", 250);
 // Disable IPv6 for backup connections to workaround problems about broken
 // IPv6 connectivity.
 pref("network.http.fast-fallback-to-IPv4", true);
+
+// Try and use SPDY when using SSL
+pref("network.http.spdy.enabled", false);
+pref("network.http.spdy.chunk-size", 4096);
+pref("network.http.spdy.timeout", 180);
+pref("network.http.spdy.coalesce-hostnames", true);
+pref("network.http.spdy.use-alternate-protocol", true);
 
 // default values for FTP
 // in a DSCP environment this should be 40 (0x28, or AF11), per RFC-4594,
@@ -1468,17 +1467,23 @@ pref("editor.positioning.offset",            0);
 pref("dom.max_chrome_script_run_time", 20);
 pref("dom.max_script_run_time", 10);
 
+// Hang monitor timeout after which we kill the browser, in seconds
+// (0 is disabled)
+// Disabled on all platforms per bug 705748 until the found issues are
+// resolved.
+pref("hangmonitor.timeout", 0);
+
 #ifndef DEBUG
 // How long a plugin is allowed to process a synchronous IPC message
 // before we consider it "hung".
-pref("dom.ipc.plugins.timeoutSecs", 45);
+pref("dom.ipc.plugins.timeoutSecs", 25);
 // How long a plugin process will wait for a response from the parent
 // to a synchronous request before terminating itself. After this
 // point the child assumes the parent is hung.
 pref("dom.ipc.plugins.parentTimeoutSecs", 15);
 // How long a plugin launch is allowed to take before
 // we consider it failed.
-pref("dom.ipc.plugins.processLaunchTimeoutSecs", 45);
+pref("dom.ipc.plugins.processLaunchTimeoutSecs", 25);
 #else
 // No timeout in DEBUG builds
 pref("dom.ipc.plugins.timeoutSecs", 0);
@@ -1537,6 +1542,29 @@ pref("font.minimum-size.x-cans", 0);
 pref("font.minimum-size.x-western", 0);
 pref("font.minimum-size.x-unicode", 0);
 pref("font.minimum-size.x-user-def", 0);
+
+/*
+ * A value greater than zero enables font size inflation for
+ * pan-and-zoom UIs, so that the fonts in a block are at least the size
+ * that, if a block's width is scaled to match the device's width, the
+ * fonts in the block are big enough that at most the pref value ems of
+ * text fit in *the width of the device*.
+ *
+ * When both this pref and the next are set, the larger inflation is
+ * used.
+ */
+pref("font.size.inflation.emPerLine", 0);
+/*
+ * A value greater than zero enables font size inflation for
+ * pan-and-zoom UIs, so that if a block's width is scaled to match the
+ * device's width, the fonts in a block are at least the font size
+ * given.  The value given is in twips, i.e., 1/20 of a point, or 1/1440
+ * of an inch.
+ *
+ * When both this pref and the previous are set, the larger inflation is
+ * used.
+ */
+pref("font.size.inflation.minTwips", 0);
 
 #ifdef XP_WIN
 
@@ -2686,7 +2714,6 @@ pref("print.print_paper_size", 0);
 // around the content of the page for Print Preview only
 pref("print.print_extra_margin", 0); // twips
 
-pref("font.allow_double_byte_special_chars", true);
 // font names
 
 pref("font.alias-list", "sans,sans-serif,serif,monospace");
@@ -2952,7 +2979,6 @@ pref("print.print_paper_size", 0);
 // around the content of the page for Print Preview only
 pref("print.print_extra_margin", 0); // twips
 
-pref("font.allow_double_byte_special_chars", true);
 // font names
 
 pref("font.alias-list", "sans,sans-serif,serif,monospace");
@@ -3366,3 +3392,10 @@ pref("layout.3d-transforms.enabled", true);
 
 // Battery API
 pref("dom.battery.enabled", true);
+
+// WebSMS
+pref("dom.sms.enabled", false);
+pref("dom.sms.whitelist", "");
+
+// enable JS dump() function.
+pref("browser.dom.window.dump.enabled", false);

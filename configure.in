@@ -2346,7 +2346,10 @@ case "$target" in
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MOZ_OPTIMIZE_FLAGS="-O3"
     _PEDANTIC=
-    MOZ_MEMORY=1
+    # Statically disable jemalloc on 10.5 and 32-bit 10.6.  See bug 702250.
+    if test "$HAVE_64BIT_OS"; then
+        MOZ_MEMORY=1
+    fi
     CFLAGS="$CFLAGS -fno-common"
     CXXFLAGS="$CXXFLAGS -fno-common"
     DLL_SUFFIX=".dylib"
@@ -2664,8 +2667,8 @@ ia64*-hpux*)
         fi
 
         if test -n "$GNU_CC"; then
-            CFLAGS="$CFLAGS -mstackrealign"
-            CXXFLAGS="$CXXFLAGS -mstackrealign"
+            CFLAGS="$CFLAGS -mstackrealign -fno-keep-inline-dllexport"
+            CXXFLAGS="$CXXFLAGS -mstackrealign -fno-keep-inline-dllexport"
         else
             AC_DEFINE(HAVE_STDCALL)
         fi
@@ -3402,12 +3405,7 @@ freebsd*|openbsd*)
     CPPFLAGS="${CPPFLAGS} ${X_CFLAGS}"
     ;;
 esac
-MOZ_CHECK_HEADERS(sys/byteorder.h compat.h getopt.h)
-MOZ_CHECK_HEADERS(sys/bitypes.h memory.h unistd.h)
-MOZ_CHECK_HEADERS(gnu/libc-version.h nl_types.h)
-MOZ_CHECK_HEADERS(malloc.h)
-MOZ_CHECK_HEADERS(X11/XKBlib.h)
-MOZ_CHECK_HEADERS(io.h)
+MOZ_CHECK_COMMON_HEADERS
 
 dnl These are all the places some variant of statfs can be hiding.
 MOZ_CHECK_HEADERS(sys/statvfs.h sys/statfs.h sys/vfs.h sys/mount.h)
@@ -4362,7 +4360,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.13.1, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.13.2, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSS"; then
@@ -4680,7 +4678,7 @@ MOZ_USE_NATIVE_POPUP_WINDOWS=
 MOZ_ANDROID_HISTORY=
 
 case "${target}" in
-*android*|*darwin*)
+*darwin*)
     ACCESSIBILITY=
     ;;
 *)
@@ -4979,6 +4977,7 @@ cairo-gonk)
     TK_LIBS='$(MOZ_CAIRO_LIBS)'
     MOZ_WEBGL=1
     MOZ_PDF_PRINTING=1
+    MOZ_B2G_RIL=1
     ;;
 
 esac
@@ -5932,12 +5931,11 @@ if test "$MOZ_XTF"; then
 fi
 
 dnl ========================================================
-dnl Pref extensions (autoconfig and system-pref)
+dnl Pref extensions (autoconfig)
 dnl ========================================================
 MOZ_ARG_DISABLE_BOOL(pref-extensions,
 [  --disable-pref-extensions
-                          Disable pref extensions such as autoconfig and
-                          system-pref],
+                          Disable pref extensions such as autoconfig],
   MOZ_PREF_EXTENSIONS=,
   MOZ_PREF_EXTENSIONS=1 )
 
@@ -7281,7 +7279,7 @@ dnl our own linker.
 if test "$OS_TARGET" = Android; then
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -L$_objdir/dist/lib -lmozutils"
     if test "$MOZ_WIDGET_TOOLKIT" = android; then
-        WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=dlopen,--wrap=dlclose,--wrap=dlerror,--wrap=dlsym,--wrap=dladdr"
+        WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=dlopen,--wrap=dlclose,--wrap=dlerror,--wrap=dlsym,--wrap=dladdr,--wrap=getaddrinfo,--wrap=freeaddrinfo,--wrap=gai_strerror"
     fi
 fi
 
@@ -7321,17 +7319,6 @@ MOZ_ARG_ENABLE_BOOL(trace-jscalls,
     MOZ_TRACE_JSCALLS= )
 if test -n "$MOZ_TRACE_JSCALLS"; then
     AC_DEFINE(MOZ_TRACE_JSCALLS)
-fi
-
-dnl ========================================================
-dnl = Use TraceVis
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(tracevis,
-[  --enable-tracevis       Enable TraceVis tracing tool (default=no)],
-    MOZ_TRACEVIS=1,
-    MOZ_TRACEVIS= )
-if test -n "$MOZ_TRACEVIS"; then
-    AC_DEFINE(MOZ_TRACEVIS)
 fi
 
 dnl ========================================================
@@ -7586,6 +7573,18 @@ MOZ_ARG_ENABLE_BOOL(quantify,
 [  --enable-quantify       Enable Quantify support (Windows only) ],
     MOZ_QUANTIFY=1,
     MOZ_QUANTIFY= )
+
+dnl ========================================================
+dnl = Enable Radio Interface for B2G (Gonk usually)
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(b2g-ril,
+[  --enable-b2g-ril      Set compile flags necessary for testing B2G Radio Interface Layer via network sockets ],
+    MOZ_B2G_RIL=1,
+    MOZ_B2G_RIL= )
+if test -n "$MOZ_B2G_RIL"; then
+   AC_DEFINE(MOZ_B2G_RIL)
+fi
+AC_SUBST(MOZ_B2G_RIL)
 
 dnl ========================================================
 dnl = Support for demangling undefined symbols
@@ -8500,10 +8499,15 @@ AC_SUBST(MOZ_POST_PROGRAM_COMMAND)
 # - MOZ_APP_DISPLAYNAME: Used in user-visible fields (DLL properties,
 # Mac Bundle name, Updater, Installer), it is typically used for nightly
 # builds (e.g. Aurora for Firefox).
+# - MOZ_APP_VERSION: Defines the application version number.
 # - MOZ_APP_NAME: Used for e.g. the binary program file name. If not set,
 # defaults to a lowercase form of MOZ_APP_BASENAME.
 # - MOZ_APP_PROFILE: When set, used for application.ini's
 # "Profile" field, which controls profile location.
+# - MOZ_APP_ID: When set, used for application.ini's "ID" field, and
+# crash reporter server url.
+# - MOZ_PROFILE_MIGRATOR: When set, enables profile migrator.
+# - MOZ_EXTENSION_MANAGER: When set, enabled extension manager.
 
 if test -z "$MOZ_APP_NAME"; then
    MOZ_APP_NAME=`echo $MOZ_APP_BASENAME | tr A-Z a-z`
@@ -8514,6 +8518,9 @@ AC_SUBST(MOZ_APP_DISPLAYNAME)
 AC_SUBST(MOZ_APP_BASENAME)
 AC_SUBST(MOZ_APP_VENDOR)
 AC_SUBST(MOZ_APP_PROFILE)
+AC_SUBST(MOZ_APP_ID)
+AC_SUBST(MOZ_PROFILE_MIGRATOR)
+AC_SUBST(MOZ_EXTENSION_MANAGER)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_NAME, "$MOZ_APP_UA_NAME")
 AC_SUBST(MOZ_APP_UA_NAME)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_VERSION, "$MOZ_APP_VERSION")
@@ -8523,6 +8530,13 @@ AC_DEFINE_UNQUOTED(FIREFOX_VERSION,$FIREFOX_VERSION)
 AC_SUBST(FIREFOX_VERSION)
 AC_DEFINE_UNQUOTED(MOZ_UA_BUILDID, "$MOZ_UA_BUILDID")
 AC_SUBST(MOZ_UA_BUILDID)
+
+# We can't use the static application.ini data when building against
+# a libxul SDK.
+if test -n "$LIBXUL_SDK"; then
+    MOZ_APP_STATIC_INI=
+fi
+AC_SUBST(MOZ_APP_STATIC_INI)
 
 AC_SUBST(MOZ_PKG_SPECIAL)
 
@@ -8743,8 +8757,8 @@ if test "$USE_FC_FREETYPE"; then
     if test "$COMPILE_ENVIRONMENT"; then
     	_SAVE_CPPFLAGS="$CPPFLAGS"
     	CPPFLAGS="$CPPFLAGS $FT2_CFLAGS $XCFLAGS"
-        AC_CHECK_HEADERS(fontconfig/fcfreetype.h, ,
-            [AC_MSG_ERROR(Can't find header fontconfig/fcfreetype.h.)])
+        MOZ_CHECK_HEADERS([fontconfig/fcfreetype.h], ,
+            [AC_MSG_ERROR(Can't find header fontconfig/fcfreetype.h.)], [#include <fontconfig/fontconfig.h>])
     	CPPFLAGS="$_SAVE_CPPFLAGS"
     else
         AC_DEFINE(HAVE_FONTCONFIG_FCFREETYPE_H)

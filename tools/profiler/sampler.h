@@ -89,11 +89,12 @@
 // before the sampler has been initialized (i.e. early start-up code)
 #define SAMPLER_INIT()
 #define SAMPLER_DEINIT()
+#define SAMPLER_RESPONSIVENESS(time)
 #define SAMPLE_CHECKPOINT(name_space, info)
 #define SAMPLE_MARKER(info)
 
 // Redefine the macros for platforms where SPS is supported.
-#ifdef ANDROID
+#if defined(ANDROID) || defined(XP_MACOSX)
 
 #include "sps_sampler.h"
 

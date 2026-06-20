@@ -72,18 +72,17 @@ public:
   Create(IDBTransaction* aTransaction,
          const ObjectStoreInfo* aInfo);
 
-  static nsresult
-  GetKeyPathValueFromStructuredData(const PRUint8* aData,
-                                    PRUint32 aDataLength,
-                                    const nsAString& aKeyPath,
-                                    JSContext* aCx,
-                                    Key& aValue);
+  static bool
+  IsValidKeyPath(JSContext* aCx, const nsAString& aKeyPath);
 
   static nsresult
-  GetIndexUpdateInfo(ObjectStoreInfo* aObjectStoreInfo,
-                     JSContext* aCx,
-                     jsval aObject,
-                     nsTArray<IndexUpdateInfo>& aUpdateInfoArray);
+  AppendIndexUpdateInfo(PRInt64 aIndexID,
+                        const nsAString& aKeyPath,
+                        bool aUnique,
+                        bool aMultiEntry,
+                        JSContext* aCx,
+                        jsval aObject,
+                        nsTArray<IndexUpdateInfo>& aUpdateInfoArray);
 
   static nsresult
   UpdateIndexes(IDBTransaction* aTransaction,
@@ -140,6 +139,11 @@ public:
   const nsString& KeyPath() const
   {
     return mKeyPath;
+  }
+
+  const bool HasKeyPath() const
+  {
+    return !mKeyPath.IsVoid();
   }
 
   IDBTransaction* Transaction()

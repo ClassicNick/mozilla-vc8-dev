@@ -62,8 +62,6 @@
 #include "gc/Barrier.h"
 #include "vm/String.h"
 
-namespace nanojit { class ValidateWriter; }
-
 namespace js {
 
 class AutoPropDescArrayRooter;
@@ -457,15 +455,6 @@ extern HeapValue *emptyObjectElements;
  */
 struct JSObject : js::gc::Cell
 {
-    /*
-     * TraceRecorder must be a friend because it generates code that
-     * manipulates JSObjects, which requires peeking under any encapsulation.
-     * ValidateWriter must be a friend because it works in tandem with
-     * TraceRecorder.
-     */
-    friend class js::TraceRecorder;
-    friend class nanojit::ValidateWriter;
-
   private:
     friend struct js::Shape;
 
@@ -484,7 +473,7 @@ struct JSObject : js::gc::Cell
      * set, this is the prototype's default 'new' type and can only be used
      * to get that prototype.
      */
-    js::HeapPtr<js::types::TypeObject> type_;
+    js::HeapPtrTypeObject type_;
 
     /* Make the type object to use for LAZY_TYPE objects. */
     void makeLazyType(JSContext *cx);
@@ -645,7 +634,7 @@ struct JSObject : js::gc::Cell
 
     inline size_t structSize() const;
     inline size_t slotsAndStructSize() const;
-    inline size_t dynamicSlotSize(JSUsableSizeFun usf) const;
+    inline size_t dynamicSlotSize(JSMallocSizeOfFun mallocSizeOf) const;
 
     inline size_t numFixedSlots() const;
 
@@ -836,6 +825,7 @@ struct JSObject : js::gc::Cell
     }
 
     static inline size_t offsetOfType() { return offsetof(JSObject, type_); }
+    inline js::HeapPtrTypeObject *addressOfType() { return &type_; }
 
     inline void setType(js::types::TypeObject *newType);
 

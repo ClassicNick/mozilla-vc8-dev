@@ -80,7 +80,6 @@
 #include "jsscope.h"
 #include "jsscript.h"
 #include "jsstr.h"
-#include "jstracer.h"
 
 #ifdef JS_METHODJIT
 # include "assembler/assembler/MacroAssembler.h"
@@ -104,12 +103,6 @@ ThreadData::ThreadData(JSRuntime *rt)
     interruptFlags(0),
 #ifdef JS_THREADSAFE
     requestDepth(0),
-#endif
-#ifdef JS_TRACER
-    onTraceCompartment(NULL),
-    recordingCompartment(NULL),
-    profilingCompartment(NULL),
-    maxCodeCacheBytes(DEFAULT_JIT_CACHE_SIZE),
 #endif
     waiveGCQuota(false),
     tempLifoAlloc(TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
@@ -143,6 +136,35 @@ ThreadData::init()
     JS_ASSERT(!repCache);
     return stackSpace.init() && !!(dtoaState = js_NewDtoaState());
 }
+
+#ifdef JS_THREADSAFE
+void
+ThreadData::sizeOfExcludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *normal, size_t *temporary,
+                                size_t *regexpCode, size_t *stackCommitted)
+{
+    /*
+     * There are other ThreadData members that could be measured; the ones
+     * below have been seen by DMD to be worth measuring.  More stuff may be
+     * added later.
+     */
+
+    /*
+     * The computedSize is 0 because sizeof(DtoaState) isn't available here and
+     * it's not worth making it available.
+     */
+    *normal = mallocSizeOf(dtoaState, /* sizeof(DtoaState) */0);
+
+    *temporary = tempLifoAlloc.sizeOfExcludingThis(mallocSizeOf);
+
+    size_t method = 0, regexp = 0, unused = 0;
+    if (execAlloc)
+        execAlloc->sizeOfCode(&method, &regexp, &unused);
+    JS_ASSERT(method == 0);     /* this execAlloc is only used for regexp code */
+    *regexpCode = regexp + unused;
+
+    *stackCommitted = stackSpace.sizeOfCommitted();
+}
+#endif
 
 void
 ThreadData::triggerOperationCallback(JSRuntime *rt)
@@ -220,18 +242,19 @@ ThreadData::purgeRegExpPrivateCache()
 JSScript *
 js_GetCurrentScript(JSContext *cx)
 {
-#ifdef JS_TRACER
-    VOUCH_DOES_NOT_REQUIRE_STACK();
-    if (JS_ON_TRACE(cx)) {
-        VMSideExit *bailExit = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit;
-        return bailExit ? bailExit->script : NULL;
-    }
-#endif
     return cx->hasfp() ? cx->fp()->maybeScript() : NULL;
 }
 
 
 #ifdef JS_THREADSAFE
+
+void
+JSThread::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf, size_t *normal, size_t *temporary,
+                              size_t *regexpCode, size_t *stackCommitted)
+{
+    data.sizeOfExcludingThis(mallocSizeOf, normal, temporary, regexpCode, stackCommitted);
+    *normal += mallocSizeOf(this, sizeof(JSThread));
+}
 
 JSThread *
 js_CurrentThreadAndLockGC(JSRuntime *rt)
@@ -585,20 +608,16 @@ js_DestroyContext(JSContext *cx, JSDestroyContextMode mode)
              */
             {
                 AutoLockGC lock(rt);
-                JSCompartment **compartment = rt->compartments.begin();
-                JSCompartment **end = rt->compartments.end();
-                while (compartment < end) {
-                    (*compartment)->types.print(cx, false);
-                    compartment++;
-                }
+                for (CompartmentsIter c(rt); !c.done(); c.next())
+                    c->types.print(cx, false);
             }
 
             /* Unpin all common atoms before final GC. */
             js_FinishCommonAtoms(cx);
 
             /* Clear debugging state to remove GC roots. */
-            for (JSCompartment **c = rt->compartments.begin(); c != rt->compartments.end(); c++)
-                (*c)->clearTraps(cx, NULL);
+            for (CompartmentsIter c(rt); !c.done(); c.next())
+                c->clearTraps(cx, NULL);
             JS_ClearAllWatchPoints(cx);
         }
 
@@ -753,15 +772,6 @@ PopulateReportBlame(JSContext *cx, JSErrorReport *report)
 void
 js_ReportOutOfMemory(JSContext *cx)
 {
-#ifdef JS_TRACER
-    /*
-     * If we are in a builtin called directly from trace, don't report an
-     * error. We will retry in the interpreter instead.
-     */
-    if (JS_ON_TRACE(cx) && !JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit)
-        return;
-#endif
-
     cx->runtime->hadOutOfMemory = true;
 
     JSErrorReport report;
@@ -802,6 +812,17 @@ js_ReportOutOfMemory(JSContext *cx)
 JS_FRIEND_API(void)
 js_ReportOverRecursed(JSContext *maybecx)
 {
+#ifdef JS_MORE_DETERMINISTIC
+    /*
+     * We cannot make stack depth deterministic across different
+     * implementations (e.g. JIT vs. interpreter will differ in
+     * their maximum stack depth).
+     * However, we can detect externally when we hit the maximum
+     * stack depth which is useful for external testing programs
+     * like fuzzers.
+     */
+    fprintf(stderr, "js_ReportOverRecursed called\n");
+#endif
     if (maybecx)
         JS_ReportErrorNumber(maybecx, js_GetErrorMessage, NULL, JSMSG_OVER_RECURSED);
 }
@@ -1351,41 +1372,7 @@ js_GetScriptedCaller(JSContext *cx, StackFrame *fp)
 jsbytecode*
 js_GetCurrentBytecodePC(JSContext* cx)
 {
-    jsbytecode *pc, *imacpc;
-
-#ifdef JS_TRACER
-    if (JS_ON_TRACE(cx)) {
-        pc = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->pc;
-        imacpc = JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->imacpc;
-    } else
-#endif
-    {
-        JS_ASSERT_NOT_ON_TRACE(cx);  /* for static analysis */
-        pc = cx->hasfp() ? cx->regs().pc : NULL;
-        if (!pc)
-            return NULL;
-        imacpc = cx->fp()->maybeImacropc();
-    }
-
-    /*
-     * If we are inside GetProperty_tn or similar, return a pointer to the
-     * current instruction in the script, not the CALL instruction in the
-     * imacro, for the benefit of callers doing bytecode inspection.
-     */
-    return (*pc == JSOP_CALL && imacpc) ? imacpc : pc;
-}
-
-bool
-js_CurrentPCIsInImacro(JSContext *cx)
-{
-#ifdef JS_TRACER
-    VOUCH_DOES_NOT_REQUIRE_STACK();
-    if (JS_ON_TRACE(cx))
-        return JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit->imacpc != NULL;
-    return cx->fp()->hasImacropc();
-#else
-    return false;
-#endif
+    return cx->hasfp() ? cx->regs().pc : NULL;
 }
 
 void
@@ -1453,12 +1440,8 @@ JSContext::JSContext(JSRuntime *rt)
     resolveFlags(0),
     rngSeed(0),
     iterValue(MagicValue(JS_NO_ITER_VALUE)),
-#ifdef JS_TRACER
-    traceJitEnabled(false),
-#endif
 #ifdef JS_METHODJIT
     methodJitEnabled(false),
-    profilingEnabled(false),
 #endif
     inferenceEnabled(false),
 #ifdef MOZ_TRACE_JSCALLS
@@ -1633,7 +1616,7 @@ JSContext::purge()
     }
 }
 
-#if defined(JS_TRACER) || defined(JS_METHODJIT)
+#if defined(JS_METHODJIT)
 static bool
 ComputeIsJITBroken()
 {
@@ -1709,18 +1692,6 @@ IsJITBrokenHere()
 void
 JSContext::updateJITEnabled()
 {
-#ifdef JS_TRACER
-    traceJitEnabled = false;
-    /*
-    traceJitEnabled = ((runOptions & JSOPTION_JIT) &&
-                       !IsJITBrokenHere() &&
-                       compartment &&
-                       !compartment->debugMode() &&
-                       (debugHooks == &js_NullDebugHooks ||
-                        (debugHooks == &runtime->globalDebugHooks &&
-                         !runtime->debuggerInhibitsJIT())));
-    */
-#endif
 #ifdef JS_METHODJIT
     methodJitEnabled = (runOptions & JSOPTION_METHODJIT) &&
                        !IsJITBrokenHere()
@@ -1729,33 +1700,22 @@ JSContext::updateJITEnabled()
                           JSC::MacroAssemblerX86Common::HasSSE2
 # endif
                         ;
-#ifdef JS_TRACER
-    profilingEnabled = (runOptions & JSOPTION_PROFILING) && traceJitEnabled && methodJitEnabled;
 #endif
-#endif
+}
+
+size_t
+JSContext::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf) const
+{
+    /*
+     * There are other JSContext members that could be measured; the following
+     * ones have been found by DMD to be worth measuring.  More stuff may be
+     * added later.
+     */
+    return mallocSizeOf(this, sizeof(JSContext)) +
+           busyArrays.sizeOfExcludingThis(mallocSizeOf);
 }
 
 namespace js {
-
-JS_FORCES_STACK JS_FRIEND_API(void)
-LeaveTrace(JSContext *cx)
-{
-#ifdef JS_TRACER
-    if (JS_ON_TRACE(cx))
-        DeepBail(cx);
-#endif
-}
-
-bool
-CanLeaveTrace(JSContext *cx)
-{
-    JS_ASSERT(JS_ON_TRACE(cx));
-#ifdef JS_TRACER
-    return JS_TRACE_MONITOR_ON_TRACE(cx)->bailExit != NULL;
-#else
-    return false;
-#endif
-}
 
 AutoEnumStateRooter::~AutoEnumStateRooter()
 {

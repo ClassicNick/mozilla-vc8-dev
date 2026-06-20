@@ -103,6 +103,8 @@ public:
   void OnNewRequest();
   void OnRequestFinished();
 
+  void ReleaseCachedObjectStore(const nsAString& aName);
+
   void SetTransactionListener(IDBTransactionListener* aListener);
 
   bool StartSavepoint();
@@ -118,9 +120,12 @@ public:
                bool aAutoIncrement);
 
   already_AddRefed<mozIStorageStatement>
-  IndexUpdateStatement(bool aAutoIncrement,
-                       bool aUnique,
-                       bool aOverwrite);
+  IndexDataInsertStatement(bool aAutoIncrement,
+                           bool aUnique);
+
+  already_AddRefed<mozIStorageStatement>
+  IndexDataDeleteStatement(bool aAutoIncrement,
+                           bool aUnique);
 
   already_AddRefed<mozIStorageStatement>
   GetCachedStatement(const nsACString& aQuery);

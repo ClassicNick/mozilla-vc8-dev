@@ -3478,11 +3478,29 @@ const BrowserSearch = {
     if (!submission)
       return;
 
+    let newTab;
+    function newTabHandler(event) {
+      newTab = event.target;
+    }
+    gBrowser.tabContainer.addEventListener("TabOpen", newTabHandler);
+
     openLinkIn(submission.uri.spec,
                useNewTab ? "tab" : "current",
                { postData: submission.postData,
-                 inBackground: false,
                  relatedToCurrent: true });
+
+    gBrowser.tabContainer.removeEventListener("TabOpen", newTabHandler);
+    if (newTab && !newTab.selected) {
+      let tabSelected = false;
+      function tabSelectHandler() {
+        tabSelected = true;
+      }
+      newTab.addEventListener("TabSelect", tabSelectHandler);
+      setTimeout(function () {
+        newTab.removeEventListener("TabSelect", tabSelectHandler);
+        Services.telemetry.getHistogramById("FX_CONTEXT_SEARCH_AND_TAB_SELECT").add(tabSelected);
+      }, 5000);
+    }
   },
 
   /**
@@ -3931,14 +3949,13 @@ var FullScreen = {
     // full-screen. Only add listeners and show warning etc when the event we
     // receive is targeted at the chrome document, i.e. only once every time
     // we enter DOM full-screen mode.
-    let targetDoc = event.target.ownerDocument ? event.target.ownerDocument : event.target;
-    if (targetDoc != document) {
+    if (event.target != document) {
       // However, if we receive a "mozfullscreenchange" event for a document
       // which is not a subdocument of the currently selected tab, we know that
       // we've switched tabs since the request to enter full-screen was made,
       // so we should exit full-screen since the "full-screen document" isn't
       // acutally visible.
-      if (targetDoc.defaultView.top != gBrowser.contentWindow) {
+      if (event.target.defaultView.top != gBrowser.contentWindow) {
         document.mozCancelFullScreen();
       }
       return;
@@ -3951,6 +3968,9 @@ var FullScreen = {
       document.mozCancelFullScreen();
       return;
     }
+
+    if (gFindBarInitialized)
+      gFindBar.close();
 
     this.showWarning(true);
 
@@ -7658,7 +7678,8 @@ var FeedHandler = {
     if (browserForLink == gBrowser.selectedBrowser) {
       // Batch updates to avoid updating the UI for multiple onLinkAdded events
       // fired within 100ms of each other.
-      clearTimeout(this._updateFeedTimeout);
+      if (this._updateFeedTimeout)
+        clearTimeout(this._updateFeedTimeout);
       this._updateFeedTimeout = setTimeout(this.updateFeeds.bind(this), 100);
     }
   }

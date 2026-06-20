@@ -59,7 +59,6 @@
 #include "jsarray.h"
 #include "jsatom.h"
 #include "jsbool.h"
-#include "jsbuiltins.h"
 #include "jscntxt.h"
 #include "jsgc.h"
 #include "jsinterp.h"
@@ -89,17 +88,6 @@ using namespace js;
 using namespace js::gc;
 using namespace js::types;
 using namespace js::unicode;
-
-#ifdef JS_TRACER
-
-JSBool JS_FASTCALL
-js_FlattenOnTrace(JSContext *cx, JSString* str)
-{
-    return !!str->ensureLinear(cx);
-}
-JS_DEFINE_CALLINFO_2(extern, BOOL, js_FlattenOnTrace, CONTEXT, STRING, 0, nanojit::ACCSET_STORE_ANY)
-
-#endif /* !JS_TRACER */
 
 static JSLinearString *
 ArgToRootedString(JSContext *cx, uintN argc, Value *vp, uintN arg)
@@ -261,11 +249,13 @@ str_unescape(JSContext *cx, uintN argc, Value *vp)
     size_t length = str->length();
     const jschar *chars = str->chars();
 
-    /* Don't bother allocating less space for the new string. */
+    /* Start by allocating the maximum required space for the new string. */
     jschar *newchars = (jschar *) cx->malloc_((length + 1) * sizeof(jschar));
     if (!newchars)
         return false;
+
     size_t ni = 0, i = 0;
+    bool escapeFound = false;
     while (i < length) {
         jschar ch = chars[i++];
         if (ch == '%') {
@@ -275,6 +265,7 @@ str_unescape(JSContext *cx, uintN argc, Value *vp)
             {
                 ch = JS7_UNHEX(chars[i]) * 16 + JS7_UNHEX(chars[i + 1]);
                 i += 2;
+                escapeFound = true;
             } else if (i + 4 < length && chars[i] == 'u' &&
                        JS7_ISHEX(chars[i + 1]) && JS7_ISHEX(chars[i + 2]) &&
                        JS7_ISHEX(chars[i + 3]) && JS7_ISHEX(chars[i + 4]))
@@ -284,19 +275,31 @@ str_unescape(JSContext *cx, uintN argc, Value *vp)
                       + JS7_UNHEX(chars[i + 3])) << 4)
                     + JS7_UNHEX(chars[i + 4]);
                 i += 5;
+                escapeFound = true;
             }
         }
         newchars[ni++] = ch;
     }
     newchars[ni] = 0;
 
+    /* If escapes were found, shrink the string. */
+    if (escapeFound) {
+        JS_ASSERT(ni < length);
+        jschar *tmpchars = (jschar *) cx->realloc_(newchars, (ni + 1) * sizeof(jschar));
+        if (!tmpchars) {
+            cx->free_(newchars);
+            return false;
+        }
+        newchars = tmpchars;
+    }
+
     JSString *retstr = js_NewString(cx, newchars, ni);
     if (!retstr) {
         cx->free_(newchars);
-        return JS_FALSE;
+        return false;
     }
     vp->setString(retstr);
-    return JS_TRUE;
+    return true;
 }
 
 #if JS_HAS_UNEVAL
@@ -467,34 +470,13 @@ str_toSource(JSContext *cx, uintN argc, Value *vp)
     if (!str)
         return false;
 
-    char buf[16];
-    size_t j = JS_snprintf(buf, sizeof buf, "(new String(");
-
-    JS::Anchor<JSString *> anchor(str);
-    size_t k = str->length();
-    const jschar *s = str->getChars(cx);
-    if (!s)
+    StringBuffer sb(cx);
+    if (!sb.append("(new String(") || !sb.append(str) || !sb.append("))"))
         return false;
 
-    size_t n = j + k + 2;
-    jschar *t = (jschar *) cx->malloc_((n + 1) * sizeof(jschar));
-    if (!t)
+    str = sb.finishString();
+    if (!str)
         return false;
-
-    size_t i;
-    for (i = 0; i < j; i++)
-        t[i] = buf[i];
-    for (j = 0; j < k; i++, j++)
-        t[i] = s[j];
-    t[i++] = ')';
-    t[i++] = ')';
-    t[i] = 0;
-
-    str = js_NewString(cx, t, n);
-    if (!str) {
-        cx->free_(t);
-        return false;
-    }
     args.rval().setString(str);
     return true;
 }
@@ -2845,20 +2827,6 @@ str_sub(JSContext *cx, uintN argc, Value *vp)
 }
 #endif /* JS_HAS_STR_HTML_HELPERS */
 
-#ifdef JS_TRACER
-JSString* FASTCALL
-js_String_getelem(JSContext* cx, JSString* str, int32 i)
-{
-    if ((size_t)i >= str->length())
-        return NULL;
-    return cx->runtime->staticStrings.getUnitStringForElement(cx, str, size_t(i));
-}
-#endif
-
-JS_DEFINE_TRCINFO_1(str_concat,
-    (3, (extern, STRING_RETRY, js_ConcatStrings, CONTEXT, THIS_STRING, STRING,
-         1, nanojit::ACCSET_NONE)))
-
 static JSFunctionSpec string_methods[] = {
 #if JS_HAS_TOSOURCE
     JS_FN("quote",             str_quote,             0,JSFUN_GENERIC_NATIVE),
@@ -2892,7 +2860,7 @@ static JSFunctionSpec string_methods[] = {
 #endif
 
     /* Python-esque sequence methods. */
-    JS_TN("concat",            str_concat,            1,JSFUN_GENERIC_NATIVE, &str_concat_trcinfo),
+    JS_FN("concat",            str_concat,            1,JSFUN_GENERIC_NATIVE),
     JS_FN("slice",             str_slice,             2,JSFUN_GENERIC_NATIVE),
 
     /* HTML string methods. */
@@ -2976,24 +2944,8 @@ js::str_fromCharCode(JSContext *cx, uintN argc, Value *vp)
     return JS_TRUE;
 }
 
-
-#ifdef JS_TRACER
-static JSString* FASTCALL
-String_fromCharCode(JSContext* cx, int32 i)
-{
-    JS_ASSERT(JS_ON_TRACE(cx));
-    jschar c = (jschar)i;
-    if (StaticStrings::hasUnit(c))
-        return cx->runtime->staticStrings.getUnit(c);
-    return js_NewStringCopyN(cx, &c, 1);
-}
-#endif
-
-JS_DEFINE_TRCINFO_1(str_fromCharCode,
-    (2, (static, STRING_RETRY, String_fromCharCode, CONTEXT, INT32, 1, nanojit::ACCSET_NONE)))
-
 static JSFunctionSpec string_static_methods[] = {
-    JS_TN("fromCharCode", js::str_fromCharCode, 1, 0, &str_fromCharCode_trcinfo),
+    JS_FN("fromCharCode", js::str_fromCharCode, 1, 0),
     JS_FS_END
 };
 
@@ -3394,15 +3346,6 @@ EqualStrings(JSLinearString *str1, JSLinearString *str2)
 
 }  /* namespace js */
 
-JSBool JS_FASTCALL
-js_EqualStringsOnTrace(JSContext *cx, JSString *str1, JSString *str2)
-{
-    JSBool result;
-    return EqualStrings(cx, str1, str2, &result) ? result : JS_NEITHER;
-}
-JS_DEFINE_CALLINFO_3(extern, BOOL, js_EqualStringsOnTrace,
-                     CONTEXT, STRING, STRING, 1, nanojit::ACCSET_NONE)
-
 namespace js {
 
 static bool
@@ -3444,18 +3387,6 @@ CompareStrings(JSContext *cx, JSString *str1, JSString *str2, int32 *result)
 }
 
 }  /* namespace js */
-
-int32 JS_FASTCALL
-js_CompareStringsOnTrace(JSContext *cx, JSString *str1, JSString *str2)
-{
-    int32 result;
-    if (!CompareStringsImpl(cx, str1, str2, &result))
-        return INT32_MIN;
-    JS_ASSERT(result != INT32_MIN);
-    return result;
-}
-JS_DEFINE_CALLINFO_3(extern, INT32, js_CompareStringsOnTrace,
-                     CONTEXT, STRING, STRING, 1, nanojit::ACCSET_NONE)
 
 namespace js {
 

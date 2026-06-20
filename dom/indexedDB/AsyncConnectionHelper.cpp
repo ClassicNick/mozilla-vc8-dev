@@ -279,7 +279,7 @@ AsyncConnectionHelper::Run()
   if (NS_SUCCEEDED(rv)) {
     bool hasSavepoint = false;
     if (mDatabase) {
-      IndexedDatabaseManager::SetCurrentDatabase(mDatabase);
+      IndexedDatabaseManager::SetCurrentWindow(mDatabase->Owner());
 
       // Make the first savepoint.
       if (mTransaction) {
@@ -292,7 +292,7 @@ AsyncConnectionHelper::Run()
     mResultCode = DoDatabaseWork(connection);
 
     if (mDatabase) {
-      IndexedDatabaseManager::SetCurrentDatabase(nsnull);
+      IndexedDatabaseManager::SetCurrentWindow(nsnull);
 
       // Release or roll back the savepoint depending on the error code.
       if (hasSavepoint) {
@@ -408,7 +408,8 @@ AsyncConnectionHelper::Init()
 already_AddRefed<nsDOMEvent>
 AsyncConnectionHelper::CreateSuccessEvent()
 {
-  return CreateGenericEvent(NS_LITERAL_STRING(SUCCESS_EVT_STR));
+  return CreateGenericEvent(NS_LITERAL_STRING(SUCCESS_EVT_STR),
+                            eDoesNotBubble, eNotCancelable);
 }
 
 nsresult
@@ -453,7 +454,8 @@ AsyncConnectionHelper::OnError()
 
   // Make an error event and fire it at the target.
   nsRefPtr<nsDOMEvent> event =
-    CreateGenericEvent(NS_LITERAL_STRING(ERROR_EVT_STR), true);
+    CreateGenericEvent(NS_LITERAL_STRING(ERROR_EVT_STR), eDoesBubble,
+                       eCancelable);
   if (!event) {
     NS_ERROR("Failed to create event!");
     return;

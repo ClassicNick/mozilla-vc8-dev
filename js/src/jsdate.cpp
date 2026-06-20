@@ -66,7 +66,6 @@
 #include "jsutil.h"
 #include "jsapi.h"
 #include "jsversion.h"
-#include "jsbuiltins.h"
 #include "jscntxt.h"
 #include "jsdate.h"
 #include "jsinterp.h"
@@ -79,6 +78,7 @@
 
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
+#include "jsstrinlines.h"
 
 #include "vm/Stack-inl.h"
 
@@ -1221,14 +1221,6 @@ date_now(JSContext *cx, uintN argc, Value *vp)
     return JS_TRUE;
 }
 
-#ifdef JS_TRACER
-static jsdouble FASTCALL
-date_now_tn(JSContext*)
-{
-    return NowAsMillis();
-}
-#endif
-
 /*
  * Set UTC time to a given time and invalidate cached local time.
  */
@@ -2152,7 +2144,6 @@ date_toJSON(JSContext *cx, uintN argc, Value *vp)
     }
 
     /* Step 6. */
-    LeaveTrace(cx);
     InvokeArgsGuard args;
     if (!cx->stack.pushInvokeArgs(cx, 0, &args))
         return false;
@@ -2465,9 +2456,6 @@ date_toDateString(JSContext *cx, uintN argc, Value *vp)
 }
 
 #if JS_HAS_TOSOURCE
-#include <string.h>
-#include "jsnum.h"
-
 static JSBool
 date_toSource(JSContext *cx, uintN argc, Value *vp)
 {
@@ -2478,23 +2466,14 @@ date_toSource(JSContext *cx, uintN argc, Value *vp)
     if (!obj)
         return ok;
 
-    double utctime = obj->getDateUTCTime().toNumber();
-
-    ToCStringBuf cbuf;
-    char *numStr = NumberToCString(cx, &cbuf, utctime);
-    if (!numStr) {
-        JS_ReportOutOfMemory(cx);
+    StringBuffer sb(cx);
+    if (!sb.append("(new Date(") || !NumberValueToStringBuffer(cx, obj->getDateUTCTime(), sb) ||
+        !sb.append("))"))
+    {
         return false;
     }
 
-    char *bytes = JS_smprintf("(new %s(%s))", js_Date_str, numStr);
-    if (!bytes) {
-        JS_ReportOutOfMemory(cx);
-        return false;
-    }
-
-    JSString *str = JS_NewStringCopyZ(cx, bytes);
-    cx->free_(bytes);
+    JSString *str = sb.finishString();
     if (!str)
         return false;
     args.rval().setString(str);
@@ -2546,14 +2525,10 @@ date_valueOf(JSContext *cx, uintN argc, Value *vp)
     return date_format(cx, obj->getDateUTCTime().toNumber(), FORMATSPEC_FULL, args);
 }
 
-// Don't really need an argument here, but we don't support arg-less builtins
-JS_DEFINE_TRCINFO_1(date_now,
-    (1, (static, DOUBLE, date_now_tn, CONTEXT, 0, nanojit::ACCSET_STORE_ANY)))
-
 static JSFunctionSpec date_static_methods[] = {
     JS_FN("UTC",                 date_UTC,                MAXARGS,0),
     JS_FN("parse",               date_parse,              1,0),
-    JS_TN("now",                 date_now,                0,0, &date_now_trcinfo),
+    JS_FN("now",                 date_now,                0,0),
     JS_FS_END
 };
 
