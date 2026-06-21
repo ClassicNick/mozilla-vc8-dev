@@ -39,9 +39,12 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+include "mozilla/ipc/RPCChannel.h";
+
 include protocol PLayers;
 
 using mozilla::LayersBackend;
+using mozilla::ipc::RPCChannel;
 using mozilla::null_t;
 
 namespace mozilla {

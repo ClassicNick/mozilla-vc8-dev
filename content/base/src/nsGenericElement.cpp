@@ -4418,7 +4418,7 @@ nsGenericElement::CanSkipInCC(nsINode* aNode)
     }
     if (NeedsScriptTraverse(node)) {
       // Gray nodes need real CC traverse.
-      grayNodes.AppendElement(node);
+      grayNodes.AppendElement((nsINode*) node);
     } else if (node->IsPurple()) {
       nodesToUnpurple.AppendElement(node);
     }

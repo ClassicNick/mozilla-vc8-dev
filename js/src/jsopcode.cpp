@@ -894,7 +894,7 @@ Sprinter::printf(const char *fmt, ...)
     do {
         va_list va;
         va_start(va, fmt);
-        int i = vsnprintf(base + offset, size - offset, fmt, va);
+        int i = _vsnprintf(base + offset, size - offset, fmt, va);
         va_end(va);
 
         if (i > -1 && (size_t) i < size - offset) {

@@ -101,7 +101,7 @@
       */
 #    define MOZ_STATIC_ASSERT(cond, reason) \
        extern char MOZ_STATIC_ASSERT_GLUE(moz_static_assert, __LINE__)[(cond) ? 1 : -1]
-#  elif defined(__COUNTER__)
+#  elif defined(__COUNTER__) && !defined (_MSC_VER) || _MSC_VER >= 1400
      /*
       * If there was no preferred alternative, use a compiler-agnostic version.
       *
@@ -205,7 +205,7 @@ JS_Assert(const char* s, const char* file, int ln);
 #  define MOZ_ASSERT(...) \
      MOZ_ASSERT_VAHELP(MOZ_COUNT_ASSERT_ARGS(__VA_ARGS__), __VA_ARGS__)
 #else
-#  define MOZ_ASSERT(...) ((void)0)
+#  define MOZ_ASSERT(a) ((void)0)
 #endif /* DEBUG */
 
 /*

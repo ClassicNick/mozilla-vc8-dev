@@ -111,7 +111,7 @@ PR_STATIC_ASSERT(MAX_WORKERS_PER_DOMAIN >= 1);
 #define GC_REQUEST_OBSERVER_TOPIC "child-gc-request"
 #define MEMORY_PRESSURE_OBSERVER_TOPIC "memory-pressure"
 
-#define BROADCAST_ALL_WORKERS(_func, ...)                                      \
+#define BROADCAST_ALL_WORKERS(_func, a)                                      \
   PR_BEGIN_MACRO                                                               \
     AssertIsOnMainThread();                                                    \
                                                                                \
@@ -125,7 +125,26 @@ PR_STATIC_ASSERT(MAX_WORKERS_PER_DOMAIN >= 1);
     if (!workers.IsEmpty()) {                                                  \
       AutoSafeJSContext cx;                                                    \
       for (PRUint32 index = 0; index < workers.Length(); index++) {            \
-        workers[index]-> _func (cx, ##__VA_ARGS__);                            \
+        workers[index]-> _func (cx, a);                            \
+      }                                                                        \
+    }                                                                          \
+  PR_END_MACRO
+
+#define BROADCAST_ALL_WORKERS2(_func, a, b)                                      \
+  PR_BEGIN_MACRO                                                               \
+    AssertIsOnMainThread();                                                    \
+                                                                               \
+    nsAutoTArray<WorkerPrivate*, 100> workers;                                 \
+    {                                                                          \
+      MutexAutoLock lock(mMutex);                                              \
+                                                                               \
+      mDomainMap.EnumerateRead(AddAllTopLevelWorkersToArray, &workers);        \
+    }                                                                          \
+                                                                               \
+    if (!workers.IsEmpty()) {                                                  \
+      AutoSafeJSContext cx;                                                    \
+      for (PRUint32 index = 0; index < workers.Length(); index++) {            \
+        workers[index]-> _func (cx, a, b);                            \
       }                                                                        \
     }                                                                          \
   PR_END_MACRO
