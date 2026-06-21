@@ -2781,7 +2781,7 @@ nsLocalFile::RevealUsingShell()
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // All of these shell32.dll related pointers should be non NULL 
   // on XP and later.
-  if (!sLibShell || !sILCreateFromPathW || !sSHOpenFolderAndSelectItems) {
+  if (!sILCreateFromPathW || !sSHOpenFolderAndSelectItems) {
     return NS_ERROR_FAILURE;
   }
 
@@ -3145,18 +3145,18 @@ nsLocalFile::GlobalInit()
 
     // shell32.dll should be loaded already, so we are not actually 
     // loading the library here.
-    sLibShell = PR_LoadLibrary("shell32.dll");
-    if (sLibShell) {
+    HMODULE hLibShell = GetModuleHandleW(L"shell32.dll");
+    if (hLibShell) {
       // ILCreateFromPathW is available in XP and up.
       sILCreateFromPathW = (ILCreateFromPathWPtr) 
-                           PR_FindFunctionSymbol(sLibShell, 
-                                                 "ILCreateFromPathW");
+                            GetProcAddress(hLibShell, 
+                                           "ILCreateFromPathW");
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
       // SHOpenFolderAndSelectItems is available in XP and up.
       sSHOpenFolderAndSelectItems = (SHOpenFolderAndSelectItemsPtr) 
-                                     PR_FindFunctionSymbol(sLibShell, 
-                                                           "SHOpenFolderAndSelectItems");
+                                     GetProcAddress(hLibShell, 
+                                                    "SHOpenFolderAndSelectItems");
 #endif
     }
 }
@@ -3164,9 +3164,6 @@ nsLocalFile::GlobalInit()
 void
 nsLocalFile::GlobalShutdown()
 {
-    if (sLibShell) {
-      PR_UnloadLibrary(sLibShell);
-    }
     NS_DestroyShortcutResolver();
 }
 

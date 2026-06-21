@@ -621,8 +621,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::InvalidateRect(NPRect *invalidRect)
   if (mWidget) {
     mWidget->Invalidate(nsIntRect(invalidRect->left, invalidRect->top,
                                   invalidRect->right - invalidRect->left,
-                                  invalidRect->bottom - invalidRect->top),
-                        false);
+                                  invalidRect->bottom - invalidRect->top));
     return NS_OK;
   }
 #endif
@@ -654,12 +653,6 @@ NS_IMETHODIMP nsPluginInstanceOwner::InvalidateRegion(NPRegion invalidRegion)
 
 NS_IMETHODIMP nsPluginInstanceOwner::ForceRedraw()
 {
-  NS_ENSURE_TRUE(mObjectFrame, NS_ERROR_NULL_POINTER);
-  nsIView* view = mObjectFrame->GetView();
-  if (view) {
-    return view->GetViewManager()->Composite();
-  }
-
   return NS_OK;
 }
 
@@ -1675,8 +1668,6 @@ void nsPluginInstanceOwner::ScrollPositionDidChange(nscoord aX, nscoord aY)
 #ifdef MOZ_WIDGET_ANDROID
 bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
 {
-  AndroidBridge::AutoLocalJNIFrame frame(1);
-
   void* javaSurface = mInstance->GetJavaSurface();
   if (!javaSurface) {
     mInstance->RequestJavaSurface();
@@ -1689,7 +1680,34 @@ bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
   }
 
   JNIEnv* env = GetJNIForThread();
+  if (!env)
+    return false;
+
+  AndroidBridge::AutoLocalJNIFrame frame(env, 1);
+
   jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
+
+#ifdef MOZ_JAVA_COMPOSITOR
+  nsAutoString metadata;
+  nsCOMPtr<nsIAndroidDrawMetadataProvider> metadataProvider =
+      AndroidBridge::Bridge()->GetDrawMetadataProvider();
+  metadataProvider->GetDrawMetadata(metadata);
+
+  jstring jMetadata = env->NewString(nsPromiseFlatString(metadata).get(), metadata.Length());
+
+  jmethodID method = env->GetStaticMethodID(cls,
+                                            "addPluginView",
+                                            "(Landroid/view/View;IIIILjava/lang/String;)V");
+
+  env->CallStaticVoidMethod(cls,
+                            method,
+                            javaSurface,
+                            (int)aRect.x,
+                            (int)aRect.y,
+                            (int)aRect.width,
+                            (int)aRect.height,
+                            jMetadata);
+#else
   jmethodID method = env->GetStaticMethodID(cls,
                                             "addPluginView",
                                             "(Landroid/view/View;DDDD)V");
@@ -1701,6 +1719,7 @@ bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
                             aRect.y,
                             aRect.width,
                             aRect.height);
+#endif
 
   if (!mPluginViewAdded) {
     ANPEvent event;
@@ -1717,31 +1736,32 @@ bool nsPluginInstanceOwner::AddPluginView(const gfxRect& aRect)
 
 void nsPluginInstanceOwner::RemovePluginView()
 {
-  AndroidBridge::AutoLocalJNIFrame frame(1);
+  if (!mInstance || !mObjectFrame | !mPluginViewAdded)
+    return;
 
-  if (mInstance && mObjectFrame && mPluginViewAdded) {
-    mPluginViewAdded = false;
+  mPluginViewAdded = false;
 
-    void* surface = mInstance->GetJavaSurface();
-    if (surface) {
-      JNIEnv* env = GetJNIForThread();
-      if (env) {
-        jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
-        jmethodID method = env->GetStaticMethodID(cls,
-                                                  "removePluginView",
-                                                  "(Landroid/view/View;)V");
-        env->CallStaticVoidMethod(cls, method, surface);
+  void* surface = mInstance->GetJavaSurface();
+  if (!surface)
+    return;
 
-        {
-          ANPEvent event;
-          event.inSize = sizeof(ANPEvent);
-          event.eventType = kLifecycle_ANPEventType;
-          event.data.lifecycle.action = kOffScreen_ANPLifecycleAction;
-          mInstance->HandleEvent(&event, nsnull);
-        }
-      }
-    }
-  }
+  JNIEnv* env = GetJNIForThread();
+  if (!env)
+    return;
+
+  AndroidBridge::AutoLocalJNIFrame frame(env, 1);
+
+  jclass cls = env->FindClass("org/mozilla/gecko/GeckoAppShell");
+  jmethodID method = env->GetStaticMethodID(cls,
+                                            "removePluginView",
+                                            "(Landroid/view/View;)V");
+  env->CallStaticVoidMethod(cls, method, surface);
+
+    ANPEvent event;
+    event.inSize = sizeof(ANPEvent);
+    event.eventType = kLifecycle_ANPEventType;
+    event.data.lifecycle.action = kOffScreen_ANPLifecycleAction;
+    mInstance->HandleEvent(&event, nsnull);
 }
 #endif
 
@@ -2875,8 +2895,7 @@ void nsPluginInstanceOwner::Paint(gfxContext* aContext,
   if (!mInstance || !mObjectFrame)
     return;
 
-  PRInt32 model;
-  mInstance->GetDrawingModel(&model);
+  PRInt32 model = mInstance->GetANPDrawingModel();
 
   if (model == kSurface_ANPDrawingModel) {
     if (!AddPluginView(aFrameRect)) {

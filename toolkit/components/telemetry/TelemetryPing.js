@@ -107,13 +107,27 @@ function getSimpleMeasurements() {
     uptime: Math.round((new Date() - si.process) / 60000)
   }
 
+  // Look for app-specific timestamps
+  var appTimestamps = {};
+  try {
+    let o = {};
+    Cu.import("resource:///modules/TelemetryTimestamps.jsm", o);
+    appTimestamps = o.TelemetryTimestamps.get();
+  } catch (ex) {}
+
   if (si.process) {
     for each (let field in ["main", "firstPaint", "sessionRestored"]) {
       if (!(field in si))
         continue;
       ret[field] = si[field] - si.process
     }
+
+    for (let p in appTimestamps) {
+      if (!(p in ret) && appTimestamps[p])
+        ret[p] = appTimestamps[p] - si.process;
+    }
   }
+
   ret.startupInterrupted = new Number(Services.startup.interrupted);
 
   ret.js = Cc["@mozilla.org/js/xpc/XPConnect;1"]
@@ -121,6 +135,42 @@ function getSimpleMeasurements() {
            .telemetryValue;
 
   return ret;
+}
+
+/**
+ * Read the update channel from defaults only.  We do this to ensure that
+ * the channel is tightly coupled with the application and does not apply
+ * to other installations of the application that may use the same profile.
+ */
+function getUpdateChannel() {
+  var channel = "default";
+  var prefName;
+  var prefValue;
+
+  var defaults = Services.prefs.getDefaultBranch(null);
+  try {
+    channel = defaults.getCharPref("app.update.channel");
+  } catch (e) {
+    // use default when pref not found
+  }
+
+  try {
+    var partners = Services.prefs.getChildList("app.partner.");
+    if (partners.length) {
+      channel += "-cck";
+      partners.sort();
+
+      for each (prefName in partners) {
+        prefValue = Services.prefs.getCharPref(prefName);
+        channel += "-" + prefValue;
+      }
+    }
+  }
+  catch (e) {
+    Cu.reportError(e);
+  }
+
+  return channel;
 }
 
 function TelemetryPing() {}
@@ -178,10 +228,10 @@ TelemetryPing.prototype = {
 
     for (let name in hls) {
       if (info[name]) {
-	processHistogram(name, hls[name]);
-	let startup_name = "STARTUP_" + name;
-	if (hls[startup_name])
-	  processHistogram(startup_name, hls[startup_name]);
+        processHistogram(name, hls[name]);
+        let startup_name = "STARTUP_" + name;
+        if (hls[startup_name])
+          processHistogram(startup_name, hls[startup_name]);
       }
     }
 
@@ -214,7 +264,8 @@ TelemetryPing.prototype = {
       appVersion: ai.version,
       appName: ai.name,
       appBuildID: ai.appBuildID,
-      platformBuildID: ai.platformBuildID,
+      appUpdateChannel: getUpdateChannel(),
+      platformBuildID: ai.platformBuildID
     };
 
     // sysinfo fields are not always available, get what we can.
@@ -236,6 +287,30 @@ TelemetryPing.prototype = {
         value = Math.round(value / 1024 / 1024)
       }
       ret[field] = value
+    }
+
+    // gfxInfo fields are not always available, get what we can.
+    let gfxInfo = Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo);
+    let gfxfields = ["adapterDescription", "adapterVendorID", "adapterDeviceID",
+                     "adapterRAM", "adapterDriver", "adapterDriverVersion",
+                     "adapterDriverDate", "adapterDescription2",
+                     "adapterVendorID2", "adapterDeviceID2", "adapterRAM2",
+                     "adapterDriver2", "adapterDriverVersion2",
+                     "adapterDriverDate2", "isGPU2Active", "D2DEnabled;",
+                     "DWriteEnabled", "DWriteVersion"
+                    ];
+
+    if (gfxInfo) {
+      for each (let field in gfxfields) {
+        try {
+          let value = "";
+          value = gfxInfo[field];
+          if (value != "")
+            ret[field] = value;
+        } catch (e) {
+          continue
+        }
+      }
     }
 
     let theme = LightweightThemeManager.currentTheme;
@@ -322,7 +397,7 @@ TelemetryPing.prototype = {
   send: function send(reason, server) {
     // populate histograms one last time
     this.gatherMemory();
-    let payload = {
+    let payloadObj = {
       ver: PAYLOAD_VERSION,
       info: this.getMetadata(reason),
       simpleMeasurements: getSimpleMeasurements(),
@@ -363,7 +438,7 @@ TelemetryPing.prototype = {
     request.addEventListener("error", function(aEvent) finishRequest(request.channel), false);
     request.addEventListener("load", function(aEvent) finishRequest(request.channel), false);
 
-    request.send(JSON.stringify(payload));
+    request.send(JSON.stringify(payloadObj));
   },
   
   attachObservers: function attachObservers() {
@@ -475,6 +550,12 @@ TelemetryPing.prototype = {
         idleService.addIdleObserver(this, IDLE_TIMEOUT_SECONDS);
         this._isIdleObserver = true;
       }).bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+      break;
+    case "get-payload":
+      this.gatherMemory();
+      let data = this.getSessionPayloadAndSlug("gather-payload");
+
+      aSubject.QueryInterface(Ci.nsISupportsString).data = data.payload;
       break;
     case "test-ping":
       server = aData;

@@ -142,9 +142,9 @@ JS_ENUM_HEADER(JSValueType, uint8_t)
     JSVAL_TYPE_NULL                = 0x06,
     JSVAL_TYPE_OBJECT              = 0x07,
 
-    /* This never appears in a jsval; it is only provided as an out-of-band value. */
-    JSVAL_TYPE_UNKNOWN             = 0x20
-
+    /* These never appear in a jsval; they are only provided as an out-of-band value. */
+    JSVAL_TYPE_UNKNOWN             = 0x20,
+    JSVAL_TYPE_MISSING             = 0x21
 } JS_ENUM_FOOTER(JSValueType);
 
 JS_STATIC_ASSERT(sizeof(JSValueType) == 1);
@@ -315,7 +315,7 @@ typedef union jsval_layout
     } s;
     double asDouble;
     void *asPtr;
-} jsval_layout;
+} JSVAL_ALIGNMENT jsval_layout;
 # elif JS_BITS_PER_WORD == 64
 typedef union jsval_layout
 {
@@ -337,7 +337,7 @@ typedef union jsval_layout
     double asDouble;
     void *asPtr;
     size_t asWord;
-} jsval_layout;
+} JSVAL_ALIGNMENT jsval_layout;
 # endif  /* JS_BITS_PER_WORD */
 #else   /* defined(IS_LITTLE_ENDIAN) */
 # if JS_BITS_PER_WORD == 32
@@ -359,7 +359,7 @@ typedef union jsval_layout
     } s;
     double asDouble;
     void *asPtr;
-} jsval_layout;
+} JSVAL_ALIGNMENT jsval_layout;
 # elif JS_BITS_PER_WORD == 64
 typedef union jsval_layout
 {
@@ -379,7 +379,7 @@ typedef union jsval_layout
     double asDouble;
     void *asPtr;
     size_t asWord;
-} jsval_layout;
+} JSVAL_ALIGNMENT jsval_layout;
 # endif /* JS_BITS_PER_WORD */
 #endif  /* defined(IS_LITTLE_ENDIAN) */
 

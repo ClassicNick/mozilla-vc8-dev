@@ -995,7 +995,7 @@ NS_NewCanvasRenderingContext2DAzure(nsIDOMCanvasRenderingContext2D** aResult)
       !Preferences::GetBool("gfx.canvas.azure.prefer-skia", false)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-#elif !defined(XP_MACOSX) && !defined(ANDROID)
+#elif !defined(XP_MACOSX) && !defined(ANDROID) && !defined(LINUX)
   return NS_ERROR_NOT_AVAILABLE;
 #else
   return NS_ERROR_NOT_AVAILABLE;
@@ -1167,8 +1167,10 @@ nsCanvasRenderingContext2DAzure::Redraw()
     return NS_OK;
   }
 
-  if (mThebesSurface)
-      mThebesSurface->MarkDirty();
+  if (!mThebesSurface)
+    mThebesSurface =
+      gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mTarget);
+  mThebesSurface->MarkDirty();
 
   nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
 
@@ -1197,8 +1199,10 @@ nsCanvasRenderingContext2DAzure::Redraw(const mgfx::Rect &r)
     return;
   }
 
-  if (mThebesSurface)
-      mThebesSurface->MarkDirty();
+  if (!mThebesSurface)
+    mThebesSurface =
+      gfxPlatform::GetPlatform()->GetThebesSurfaceForDrawTarget(mTarget);
+  mThebesSurface->MarkDirty();
 
   nsSVGEffects::InvalidateDirectRenderingObservers(HTMLCanvasElement());
 
@@ -2749,7 +2753,7 @@ nsCanvasRenderingContext2DAzure::SetFont(const nsAString& font)
 
   NS_ASSERTION(fontStyle, "Could not obtain font style");
 
-  nsIAtom* language = sc->GetStyleVisibility()->mLanguage;
+  nsIAtom* language = sc->GetStyleFont()->mLanguage;
   if (!language) {
     language = presShell->GetPresContext()->GetLanguageFromCharset();
   }
@@ -2757,7 +2761,12 @@ nsCanvasRenderingContext2DAzure::SetFont(const nsAString& font)
   // use CSS pixels instead of dev pixels to avoid being affected by page zoom
   const PRUint32 aupcp = nsPresContext::AppUnitsPerCSSPixel();
   // un-zoom the font size to avoid being affected by text-only zoom
-  const nscoord fontSize = nsStyleFont::UnZoomText(parentContext->PresContext(), fontStyle->mFont.size);
+  //
+  // Purposely ignore the font size that respects the user's minimum
+  // font preference (fontStyle->mFont.size) in favor of the computed
+  // size (fontStyle->mSize).  See
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=698652.
+  const nscoord fontSize = nsStyleFont::UnZoomText(parentContext->PresContext(), fontStyle->mSize);
 
   bool printerFont = (presShell->GetPresContext()->Type() == nsPresContext::eContext_PrintPreview ||
                         presShell->GetPresContext()->Type() == nsPresContext::eContext_Print);
@@ -3083,8 +3092,6 @@ struct NS_STACK_CLASS nsCanvasBidiProcessorAzure : public nsBidiPresUtils::BidiP
                       DrawOptions(mState->globalAlpha, mCtx->UsedOperation()));
       } else if (mOp == nsCanvasRenderingContext2DAzure::TEXT_DRAW_OPERATION_STROKE) {
         RefPtr<Path> path = scaledFont->GetPathForGlyphs(buffer, mCtx->mTarget);
-            
-        Matrix oldTransform = mCtx->mTarget->GetTransform();
 
         const ContextState& state = *mState;
         nsCanvasRenderingContext2DAzure::AdjustedTarget(mCtx)->
