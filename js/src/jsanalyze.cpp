@@ -197,6 +197,8 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
 
     bool heavyweight = script->function() && script->function()->isHeavyweight();
 
+    isCompileable = true;
+
     isInlineable = true;
     if (script->nClosedArgs || script->nClosedVars || heavyweight ||
         script->usesEval || script->usesArguments || cx->compartment->debugMode()) {
@@ -330,13 +332,14 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
             isInlineable = false;
             break;
 
+          case JSOP_QNAMEPART:
+          case JSOP_QNAMECONST:
+            isCompileable = false;
           case JSOP_NAME:
           case JSOP_CALLNAME:
           case JSOP_BINDNAME:
           case JSOP_SETNAME:
           case JSOP_DELNAME:
-          case JSOP_QNAMEPART:
-          case JSOP_QNAMECONST:
             checkAliasedName(cx, pc);
             usesScopeChain_ = true;
             isInlineable = false;
@@ -358,7 +361,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
 
           case JSOP_ENTERWITH:
             addsScopeObjects_ = true;
-            isInlineable = canTrackVars = false;
+            isCompileable = isInlineable = canTrackVars = false;
             break;
 
           case JSOP_ENTERLET0:
@@ -483,7 +486,8 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
           case JSOP_DECLOCAL:
           case JSOP_LOCALINC:
           case JSOP_LOCALDEC:
-          case JSOP_SETLOCAL: {
+          case JSOP_SETLOCAL:
+          case JSOP_SETLOCALPOP: {
             uint32_t local = GET_SLOTNO(pc);
             if (local >= script->nfixed) {
                 localsAliasStack_ = true;
@@ -517,7 +521,105 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
             isInlineable = false;
             break;
 
+          /* Additional opcodes which can be both compiled both normally and inline. */
+          case JSOP_NOP:
+          case JSOP_UNDEFINED:
+          case JSOP_GOTO:
+          case JSOP_DEFAULT:
+          case JSOP_IFEQ:
+          case JSOP_IFNE:
+          case JSOP_ITERNEXT:
+          case JSOP_DUP:
+          case JSOP_DUP2:
+          case JSOP_SWAP:
+          case JSOP_PICK:
+          case JSOP_BITOR:
+          case JSOP_BITXOR:
+          case JSOP_BITAND:
+          case JSOP_LT:
+          case JSOP_LE:
+          case JSOP_GT:
+          case JSOP_GE:
+          case JSOP_EQ:
+          case JSOP_NE:
+          case JSOP_LSH:
+          case JSOP_RSH:
+          case JSOP_URSH:
+          case JSOP_ADD:
+          case JSOP_SUB:
+          case JSOP_MUL:
+          case JSOP_DIV:
+          case JSOP_MOD:
+          case JSOP_NOT:
+          case JSOP_BITNOT:
+          case JSOP_NEG:
+          case JSOP_POS:
+          case JSOP_DELPROP:
+          case JSOP_DELELEM:
+          case JSOP_TYPEOF:
+          case JSOP_TYPEOFEXPR:
+          case JSOP_VOID:
+          case JSOP_GETPROP:
+          case JSOP_CALLPROP:
+          case JSOP_LENGTH:
+          case JSOP_GETELEM:
+          case JSOP_CALLELEM:
+          case JSOP_TOID:
+          case JSOP_SETELEM:
+          case JSOP_IMPLICITTHIS:
+          case JSOP_DOUBLE:
+          case JSOP_STRING:
+          case JSOP_ZERO:
+          case JSOP_ONE:
+          case JSOP_NULL:
+          case JSOP_FALSE:
+          case JSOP_TRUE:
+          case JSOP_OR:
+          case JSOP_AND:
+          case JSOP_CASE:
+          case JSOP_STRICTEQ:
+          case JSOP_STRICTNE:
+          case JSOP_ITER:
+          case JSOP_MOREITER:
+          case JSOP_ENDITER:
+          case JSOP_POP:
+          case JSOP_GETARG:
+          case JSOP_CALLARG:
+          case JSOP_BINDGNAME:
+          case JSOP_UINT16:
+          case JSOP_NEWINIT:
+          case JSOP_NEWARRAY:
+          case JSOP_NEWOBJECT:
+          case JSOP_ENDINIT:
+          case JSOP_INITMETHOD:
+          case JSOP_INITPROP:
+          case JSOP_INITELEM:
+          case JSOP_SETPROP:
+          case JSOP_SETMETHOD:
+          case JSOP_IN:
+          case JSOP_INSTANCEOF:
+          case JSOP_LINENO:
+          case JSOP_ENUMELEM:
+          case JSOP_CONDSWITCH:
+          case JSOP_LABEL:
+          case JSOP_RETRVAL:
+          case JSOP_GETGNAME:
+          case JSOP_CALLGNAME:
+          case JSOP_SETGNAME:
+          case JSOP_REGEXP:
+          case JSOP_OBJECT:
+          case JSOP_UINT24:
+          case JSOP_GETXPROP:
+          case JSOP_INT8:
+          case JSOP_INT32:
+          case JSOP_HOLE:
+          case JSOP_LOOPHEAD:
+          case JSOP_LOOPENTRY:
+            break;
+
           default:
+            if (!(js_CodeSpec[op].format & JOF_DECOMPOSE))
+                isCompileable = isInlineable = false;
             break;
         }
 
@@ -940,12 +1042,15 @@ ScriptAnalysis::killVariable(JSContext *cx, LifetimeVariable &var, unsigned offs
         /*
          * The variable is live even before the write, due to an enclosing try
          * block. We need to split the lifetime to indicate there was a write.
+         * We set the new interval's savedEnd to 0, since it will always be
+         * adjacent to the old interval, so it never needs to be extended.
          */
-        var.lifetime = cx->typeLifoAlloc().new_<Lifetime>(start, offset, var.lifetime);
+        var.lifetime = cx->typeLifoAlloc().new_<Lifetime>(start, 0, var.lifetime);
         if (!var.lifetime) {
             setOOM(cx);
             return;
         }
+        var.lifetime->end = offset;
     } else {
         var.saved = var.lifetime;
         var.savedEnd = 0;
@@ -973,25 +1078,43 @@ ScriptAnalysis::extendVariable(JSContext *cx, LifetimeVariable &var,
     var.lifetime->start = start;
 
     /*
-     * When walking backwards through loop bodies, we don't know which vars
-     * are live at the loop's backedge. We save the endpoints for lifetime
-     * segments which we *would* use if the variables were live at the backedge
-     * and extend the variable with new lifetimes if we find the variable is
-     * indeed live at the head of the loop.
+     * Consider this code:
      *
-     * while (...) {
-     *   if (x #1) { ... }
-     *   ...
-     *   if (... #2) { x = 0; #3}
-     * }
+     *   while (...) { (#1)
+     *       use x;    (#2)
+     *       ...
+     *       x = ...;  (#3)
+     *       ...
+     *   }             (#4)
      *
-     * If x is not live after the loop, we treat it as dead in the walk and
-     * make a point lifetime for the write at #3. At the beginning of that
-     * basic block (#2), we save the loop endpoint; if we knew x was live in
-     * the next iteration then a new lifetime would be made here. At #1 we
-     * mark x live again, make a segment between the head of the loop and #1,
-     * and then extend x with loop tail lifetimes from #1 to #2, and from #3
-     * to the back edge.
+     * Just before analyzing the while statement, there would be a live range
+     * from #1..#2 and a "point range" at #3. The job of extendVariable is to
+     * create a new live range from #3..#4.
+     *
+     * However, more extensions may be required if the definition of x is
+     * conditional. Consider the following.
+     *
+     *   while (...) {     (#1)
+     *       use x;        (#2)
+     *       ...
+     *       if (...)      (#5)
+     *           x = ...;  (#3)
+     *       ...
+     *   }                 (#4)
+     *
+     * Assume that x is not used after the loop. Then, before extendVariable is
+     * run, the live ranges would be the same as before (#1..#2 and #3..#3). We
+     * still need to create a range from #3..#4. But, since the assignment at #3
+     * may never run, we also need to create a range from #2..#3. This is done
+     * as follows.
+     *
+     * Each time we create a Lifetime, we store the start of the most recently
+     * seen sequence of conditional code in the Lifetime's savedEnd field. So,
+     * when creating the Lifetime at #2, we set the Lifetime's savedEnd to
+     * #5. (The start of the most recent conditional is cached in each
+     * variable's savedEnd field.) Consequently, extendVariable is able to
+     * create a new interval from #2..#5 using the savedEnd field of the
+     * existing #1..#2 interval.
      */
 
     Lifetime *segment = var.lifetime;

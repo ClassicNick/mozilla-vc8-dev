@@ -26,7 +26,16 @@
 #include <math.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
+#include <sys/syscall.h>
+#include <cutils/properties.h>
 #include "mozilla/dom/network/Constants.h"
+#include <android/log.h>
+
+#define LOG(args...)  __android_log_print(ANDROID_LOG_INFO, "Gonk", args)
+#define NsecPerMsec  1000000
+#define NsecPerSec   1000000000
+
 
 using mozilla::hal::WindowIdentifier;
 
@@ -256,6 +265,10 @@ DisableBatteryNotifications()
 void
 GetCurrentBatteryInformation(hal::BatteryInformation *aBatteryInfo)
 {
+  static const int BATTERY_NOT_CHARGING = 0;
+  static const int BATTERY_CHARGING_USB = 1;
+  static const int BATTERY_CHARGING_AC  = 2;
+
   FILE *capacityFile = fopen("/sys/class/power_supply/battery/capacity", "r");
   double capacity = dom::battery::kDefaultLevel * 100;
   if (capacityFile) {
@@ -264,14 +277,42 @@ GetCurrentBatteryInformation(hal::BatteryInformation *aBatteryInfo)
   }
 
   FILE *chargingFile = fopen("/sys/class/power_supply/battery/charging_source", "r");
-  int chargingSrc = 1;
+  int chargingSrc = BATTERY_CHARGING_USB;
+  bool done = false;
   if (chargingFile) {
     fscanf(chargingFile, "%d", &chargingSrc);
     fclose(chargingFile);
+    done = true;
   }
 
+  if (!done) {
+    // toro devices support
+    chargingFile = fopen("/sys/class/power_supply/battery/status", "r");
+    if (chargingFile) {
+      char status[16];
+      fscanf(chargingFile, "%s", &status);
+      if (!strcmp(status, "Charging") || !strcmp(status, "Full")) {
+        // no way here to know if we're charging from USB or AC.
+        chargingSrc = BATTERY_CHARGING_USB;
+      } else {
+        chargingSrc = BATTERY_NOT_CHARGING;
+      }
+      fclose(chargingFile);
+      done = true;
+    }
+  }
+
+  #ifdef DEBUG
+  if (chargingSrc != BATTERY_NOT_CHARGING &&
+      chargingSrc != BATTERY_CHARGING_USB &&
+      chargingSrc != BATTERY_CHARGING_AC) {
+    HAL_LOG(("charging_source contained unknown value: %d", chargingSrc));
+  }
+  #endif
+
   aBatteryInfo->level() = capacity / 100;
-  aBatteryInfo->charging() = chargingSrc == 1;
+  aBatteryInfo->charging() = (chargingSrc == BATTERY_CHARGING_USB ||
+                              chargingSrc == BATTERY_CHARGING_AC);
   aBatteryInfo->remainingTime() = dom::battery::kUnknownRemainingTime;
 }
 
@@ -477,6 +518,52 @@ GetLight(hal::LightType light, hal::LightConfiguration* aConfig)
 
   return true;
 }
+
+/**
+ * clock_settime() is not exposed through bionic. 
+ * we define the new function to set system time.
+ * The result is the same as using clock_settime() system call.     
+ */
+static int
+sys_clock_settime(clockid_t clk_id, const struct timespec *tp)
+{
+  return syscall(__NR_clock_settime, clk_id, tp);
+}
+
+void 
+AdjustSystemClock(int32_t aDeltaMilliseconds)
+{
+  struct timespec now;
+  
+  // Preventing context switch before setting system clock 
+  sched_yield();
+  clock_gettime(CLOCK_REALTIME, &now);
+  now.tv_sec += aDeltaMilliseconds/1000;
+  now.tv_nsec += (aDeltaMilliseconds%1000)*NsecPerMsec;
+  if (now.tv_nsec >= NsecPerSec)
+  {
+    now.tv_sec += 1;
+    now.tv_nsec -= NsecPerSec;
+  }
+
+  if (now.tv_nsec < 0)
+  {
+    now.tv_nsec += NsecPerSec;
+    now.tv_sec -= 1;  
+  }
+  // we need to have root privilege. 
+  sys_clock_settime(CLOCK_REALTIME, &now);   
+}
+
+void 
+SetTimezone(const nsCString& aTimezoneSpec)
+{ 
+  property_set("persist.sys.timezone", aTimezoneSpec.get());
+  // this function is automatically called by the other time conversion 
+  // functions that depend on the timezone. To be safe, we call it manually.  
+  tzset();
+}
+
 
 void
 EnableNetworkNotifications()

@@ -59,10 +59,15 @@ const nsIRadioInterfaceLayer = Ci.nsIRadioInterfaceLayer;
 
 const kSmsReceivedObserverTopic          = "sms-received";
 const DOM_SMS_DELIVERY_RECEIVED          = "received";
+const DOM_SMS_DELIVERY_SENT              = "sent";
 
 XPCOMUtils.defineLazyServiceGetter(this, "gSmsService",
                                    "@mozilla.org/sms/smsservice;1",
                                    "nsISmsService");
+
+XPCOMUtils.defineLazyServiceGetter(this, "gSmsRequestManager",
+                                   "@mozilla.org/sms/smsrequestmanager;1",
+                                   "nsISmsRequestManager");
 
 function convertRILCallState(state) {
   switch (state) {
@@ -180,6 +185,12 @@ RadioInterfaceLayer.prototype = {
         // This one will handle its own notifications.
         this.handleEnumerateCalls(message.calls);
         break;
+      case "registrationstatechange":
+        this.currentState.registrationState = message.registrationState;
+        break;
+      case "gprsregistrationstatechange":
+        this.currentState.gprsRegistrationState = message.gprsRegistrationState;
+        break;
       case "signalstrengthchange":
         this.currentState.signalStrength = message.signalStrength;
         break;
@@ -195,8 +206,11 @@ RadioInterfaceLayer.prototype = {
       case "sms-received":
         this.handleSmsReceived(message);
         return;
+      case "sms-sent":
+        this.handleSmsSent(message);
+        return;
       case "datacallstatechange":
-        this.handleDataCallState(message);
+        this.handleDataCallState(message.datacall);
         break;
       case "datacalllist":
         this.handleDataCallList(message);
@@ -304,13 +318,24 @@ RadioInterfaceLayer.prototype = {
     Services.obs.notifyObservers(sms, kSmsReceivedObserverTopic, null);
   },
 
+  handleSmsSent: function handleSmsSent(message) {
+    let sms = gSmsService.createSmsMessage(-1,
+                                           DOM_SMS_DELIVERY_SENT,
+                                           null,
+                                           message.number,
+                                           message.body,
+                                           Date.now());
+    //TODO At this point we should save the sms into the DB (bug 712809)
+    //TODO handle errors (bug 727319)
+    gSmsRequestManager.notifySmsSent(message.requestId, sms);
+  },
+
   /**
    * Handle data call state changes.
    */
-  handleDataCallState: function handleDataCallState(message) {
-    let ifname = message.ifname ? message.ifname : "";
+  handleDataCallState: function handleDataCallState(datacall) {
     this._deliverDataCallCallback("dataCallStateChanged",
-                                  [message.cid, ifname, message.state]);
+                                  [datacall.cid, datacall.ifname, datacall.state]);
   },
 
   /**
@@ -387,7 +412,7 @@ RadioInterfaceLayer.prototype = {
     gAudioManager.phoneState = nsIAudioManager.PHONE_STATE_IN_CALL; // XXX why is this needed?
     let force = value ? nsIAudioManager.FORCE_SPEAKER :
                         nsIAudioManager.FORCE_NONE;
-    gAudioManager.setForceUse(nsIAudioManager.USE_COMMUNICATION, force);
+    gAudioManager.setForceForUse(nsIAudioManager.USE_COMMUNICATION, force);
   },
 
   getNumberOfMessagesForText: function getNumberOfMessagesForText(text) {
@@ -397,10 +422,12 @@ RadioInterfaceLayer.prototype = {
     return Math.ceil(text.length / 160);
   },
 
-  sendSMS: function sendSMS(number, message) {
+  sendSMS: function sendSMS(number, message, requestId, processId) {
     this.worker.postMessage({type: "sendSMS",
                              number: number,
-                             body: message});
+                             body: message,
+                             requestId: requestId,
+                             processId: processId});
   },
 
   _callbacks: null,
@@ -515,7 +542,7 @@ RadioInterfaceLayer.prototype = {
     }
   },
 
-  setupDataCall: function(radioTech, apn, user, passwd, chappap, pdptype) {
+  setupDataCall: function setupDataCall(radioTech, apn, user, passwd, chappap, pdptype) {
     this.worker.postMessage({type: "setupDataCall",
                              radioTech: radioTech,
                              apn: apn,
@@ -523,19 +550,12 @@ RadioInterfaceLayer.prototype = {
                              passwd: passwd,
                              chappap: chappap,
                              pdptype: pdptype});
-    this._deliverDataCallCallback("dataCallStateChanged",
-                                  [message.cid, "",
-                                   RIL.GECKO_DATACALL_STATE_CONNECTING]);
   },
 
-  deactivateDataCall: function(cid, reason) {
+  deactivateDataCall: function deactivateDataCall(cid, reason) {
     this.worker.postMessage({type: "deactivateDataCall",
                              cid: cid,
                              reason: reason});
-    this._deliverDataCallCallback("dataCallStateChanged",
-                                  [message.cid,
-                                   "",
-                                   RIL.GECKO_DATACALL_STATE_DISCONNECTING]);
   },
 
   getDataCallList: function getDataCallList() {

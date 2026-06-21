@@ -79,6 +79,7 @@
 
 #ifdef JS_METHODJIT
 # include "assembler/assembler/MacroAssembler.h"
+# include "methodjit/MethodJIT.h"
 #endif
 #include "frontend/TokenStream.h"
 #include "frontend/ParseMaps.h"
@@ -124,13 +125,23 @@ JSRuntime::triggerOperationCallback()
     JS_ATOMIC_SET(&interrupt, 1);
 }
 
+void
+JSRuntime::setJitHardening(bool enabled)
+{
+    jitHardening = enabled;
+    if (execAlloc_)
+        execAlloc_->setRandomize(enabled);
+}
+
 JSC::ExecutableAllocator *
 JSRuntime::createExecutableAllocator(JSContext *cx)
 {
     JS_ASSERT(!execAlloc_);
     JS_ASSERT(cx->runtime == this);
 
-    execAlloc_ = new_<JSC::ExecutableAllocator>();
+    JSC::AllocationBehavior randomize =
+        jitHardening ? JSC::AllocationCanRandomize : JSC::AllocationDeterministic;
+    execAlloc_ = new_<JSC::ExecutableAllocator>(randomize);
     if (!execAlloc_)
         js_ReportOutOfMemory(cx);
     return execAlloc_;
@@ -146,23 +157,6 @@ JSRuntime::createBumpPointerAllocator(JSContext *cx)
     if (!bumpAlloc_)
         js_ReportOutOfMemory(cx);
     return bumpAlloc_;
-}
-
-RegExpCache *
-JSRuntime::createRegExpCache(JSContext *cx)
-{
-    JS_ASSERT(!reCache_);
-    JS_ASSERT(cx->runtime == this);
-
-    RegExpCache *newCache = new_<RegExpCache>(this);
-    if (!newCache || !newCache->init()) {
-        js_ReportOutOfMemory(cx);
-        delete_<RegExpCache>(newCache);
-        return NULL;
-    }
-
-    reCache_ = newCache;
-    return reCache_;
 }
 
 JSScript *
@@ -288,10 +282,10 @@ js_DestroyContext(JSContext *cx, JSDestroyContextMode mode)
                 c->clearTraps(cx);
             JS_ClearAllWatchPoints(cx);
 
-            js_GC(cx, NULL, GC_NORMAL, gcreason::LAST_CONTEXT);
+            GC(cx, NULL, GC_NORMAL, gcreason::LAST_CONTEXT);
 
         } else if (mode == JSDCM_FORCE_GC) {
-            js_GC(cx, NULL, GC_NORMAL, gcreason::DESTROY_CONTEXT);
+            GC(cx, NULL, GC_NORMAL, gcreason::DESTROY_CONTEXT);
         } else if (mode == JSDCM_MAYBE_GC) {
             JS_MaybeGC(cx);
         }
@@ -881,7 +875,7 @@ js_InvokeOperationCallback(JSContext *cx)
     JS_ATOMIC_SET(&rt->interrupt, 0);
 
     if (rt->gcIsNeeded)
-        js_GC(cx, rt->gcTriggerCompartment, GC_NORMAL, rt->gcTriggerReason);
+        GCSlice(cx, rt->gcTriggerCompartment, GC_NORMAL, rt->gcTriggerReason);
 
 #ifdef JS_THREADSAFE
     /*
@@ -976,6 +970,7 @@ JSContext::JSContext(JSRuntime *rt)
     stack(thisDuringConstruction()),  /* depends on cx->thread_ */
     parseMapPool_(NULL),
     globalObject(NULL),
+    sharpObjectMap(this),
     argumentFormatMap(NULL),
     lastMessage(NULL),
     errorReporter(NULL),
@@ -1170,9 +1165,6 @@ JSRuntime::purge(JSContext *cx)
 
     /* FIXME: bug 506341 */
     propertyCache.purge(cx);
-
-    delete_<RegExpCache>(reCache_);
-    reCache_ = NULL;
 }
 
 void
@@ -1261,6 +1253,9 @@ void
 JSContext::updateJITEnabled()
 {
 #ifdef JS_METHODJIT
+    // This allocator randomization is actually a compartment-wide option.
+    if (compartment && compartment->hasJaegerCompartment())
+        compartment->jaegerCompartment()->execAlloc()->setRandomize(runtime->getJitHardening());
     methodJitEnabled = (runOptions & JSOPTION_METHODJIT) && !IsJITBrokenHere();
 #endif
 }
@@ -1274,6 +1269,26 @@ JSContext::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf) const
      * added later.
      */
     return mallocSizeOf(this) + busyArrays.sizeOfExcludingThis(mallocSizeOf);
+}
+
+void
+JSContext::mark(JSTracer *trc)
+{
+    /* Stack frames and slots are traced by StackSpace::mark. */
+
+    /* Mark other roots-by-definition in the JSContext. */
+    if (globalObject && !hasRunOption(JSOPTION_UNROOTED_GLOBAL))
+        MarkObjectRoot(trc, &globalObject, "global object");
+    if (isExceptionPending())
+        MarkValueRoot(trc, &exception, "exception");
+
+    if (autoGCRooters)
+        autoGCRooters->traceAll(trc);
+
+    if (sharpObjectMap.depth > 0)
+        js_TraceSharpMap(trc, &sharpObjectMap);
+
+    MarkValueRoot(trc, &iterValue, "iterValue");
 }
 
 namespace JS {

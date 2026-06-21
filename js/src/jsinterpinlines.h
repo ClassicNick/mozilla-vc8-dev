@@ -439,27 +439,19 @@ NameOperation(JSContext *cx, jsbytecode *pc, Value *vp)
 }
 
 inline bool
-DefVarOrConstOperation(JSContext *cx, JSOp op, PropertyName *dn, StackFrame *fp)
+DefVarOrConstOperation(JSContext *cx, JSObject &varobj, PropertyName *dn, uintN attrs)
 {
-    /* ES5 10.5 step 8 (with subsequent errata). */
-    uintN attrs = JSPROP_ENUMERATE;
-    if (!fp->isEvalFrame())
-        attrs |= JSPROP_PERMANENT;
-    if (op == JSOP_DEFCONST)
-        attrs |= JSPROP_READONLY;
-
-    /* Step 8b. */
-    JSObject &obj = fp->varObj();
-    JS_ASSERT(!obj.getOps()->defineProperty);
+    JS_ASSERT(varobj.isVarObj());
+    JS_ASSERT(!varobj.getOps()->defineProperty);
 
     JSProperty *prop;
     JSObject *obj2;
-    if (!obj.lookupProperty(cx, dn, &obj2, &prop))
+    if (!varobj.lookupProperty(cx, dn, &obj2, &prop))
         return false;
 
     /* Steps 8c, 8d. */
-    if (!prop || (obj2 != &obj && obj.isGlobal())) {
-        if (!DefineNativeProperty(cx, &obj, dn, UndefinedValue(),
+    if (!prop || (obj2 != &varobj && varobj.isGlobal())) {
+        if (!DefineNativeProperty(cx, &varobj, dn, UndefinedValue(),
                                   JS_PropertyStub, JS_StrictPropertyStub, attrs, 0, 0))
         {
             return false;
@@ -470,7 +462,7 @@ DefVarOrConstOperation(JSContext *cx, JSOp op, PropertyName *dn, StackFrame *fp)
          * see a redeclaration that's |const|, we consider it a conflict.
          */
         uintN oldAttrs;
-        if (!obj.getPropertyAttributes(cx, dn, &oldAttrs))
+        if (!varobj.getPropertyAttributes(cx, dn, &oldAttrs))
             return false;
         if (attrs & JSPROP_READONLY) {
             JSAutoByteString bytes;
@@ -704,12 +696,29 @@ FetchElementId(JSContext *cx, JSObject *obj, const Value &idval, jsid &id, Value
 }
 
 static JS_ALWAYS_INLINE bool
+ToIdOperation(JSContext *cx, const Value &objval, const Value &idval, Value *res)
+{
+    if (idval.isInt32()) {
+        *res = idval;
+        return true;
+    }
+
+    JSObject *obj = ValueToObject(cx, objval);
+    if (!obj)
+        return false;
+
+    jsid dummy;
+    if (!js_InternNonIntElementId(cx, obj, idval, &dummy, res))
+        return false;
+
+    if (!res->isInt32())
+        types::TypeScript::MonitorUnknown(cx);
+    return true;
+}
+
+static JS_ALWAYS_INLINE bool
 GetObjectElementOperation(JSContext *cx, JSObject *obj, const Value &rref, Value *res)
 {
-    JSScript *script;
-    jsbytecode *pc;
-    types::TypeScript::GetPcScript(cx, &script, &pc);
-
     uint32_t index;
     if (IsDefinitelyIndex(rref, &index)) {
         do {
@@ -727,6 +736,10 @@ GetObjectElementOperation(JSContext *cx, JSObject *obj, const Value &rref, Value
                 return false;
         } while(0);
     } else {
+        JSScript *script;
+        jsbytecode *pc;
+        types::TypeScript::GetPcScript(cx, &script, &pc);
+
         if (script->hasAnalysis())
             script->analysis()->getCode(pc).getStringElement = true;
 
@@ -751,7 +764,6 @@ GetObjectElementOperation(JSContext *cx, JSObject *obj, const Value &rref, Value
     }
 
     assertSameCompartment(cx, *res);
-    types::TypeScript::Monitor(cx, script, pc, *res);
     return true;
 }
 
@@ -766,7 +778,6 @@ GetElementOperation(JSContext *cx, const Value &lref, const Value &rref, Value *
             if (!str)
                 return false;
             res->setString(str);
-            types::TypeScript::Monitor(cx, *res);
             return true;
         }
     }
@@ -774,7 +785,6 @@ GetElementOperation(JSContext *cx, const Value &lref, const Value &rref, Value *
     if (lref.isMagic(JS_LAZY_ARGUMENTS)) {
         if (rref.isInt32() && size_t(rref.toInt32()) < cx->regs().fp()->numActualArgs()) {
             *res = cx->regs().fp()->canonicalActualArg(rref.toInt32());
-            types::TypeScript::Monitor(cx, *res);
             return true;
         }
         types::MarkArgumentsCreated(cx, cx->fp()->script());

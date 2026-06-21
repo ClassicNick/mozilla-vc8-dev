@@ -218,17 +218,6 @@ nsAccessibilityService::CreateOuterDocAccessible(nsIContent* aContent,
 }
 
 already_AddRefed<nsAccessible>
-nsAccessibilityService::CreateHTML4ButtonAccessible(nsIContent* aContent,
-                                                    nsIPresShell* aPresShell)
-{
-  nsAccessible* accessible = 
-    new nsHTML4ButtonAccessible(aContent, 
-                                nsAccUtils::GetDocAccessibleFor(aPresShell));
-  NS_ADDREF(accessible);
-  return accessible;
-}
-
-already_AddRefed<nsAccessible>
 nsAccessibilityService::CreateHTMLButtonAccessible(nsIContent* aContent,
                                                    nsIPresShell* aPresShell)
 {
@@ -917,17 +906,6 @@ nsAccessibilityService::GetAccessible(nsINode* aNode, nsIPresShell* aPresShell)
   // XXX handle the presshell
   nsDocAccessible* document = GetDocAccessible(aNode->OwnerDoc());
   return document ? document->GetAccessible(aNode) : nsnull;
-}
-
-nsAccessible*
-nsAccessibilityService::GetAccessibleOrContainer(nsINode* aNode, nsDocAccessible* aDoc)
-{
-  if (!aNode)
-    return nsnull;
-
-  NS_PRECONDITION(aDoc, "Must pass a document accessible.");
-
-  return aDoc ? aDoc->GetAccessibleOrContainer(aNode) : nsnull;
 }
 
 static bool HasRelatedContent(nsIContent *aContent)

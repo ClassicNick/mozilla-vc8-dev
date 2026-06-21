@@ -1147,7 +1147,7 @@ js::AssertValidPropertyCacheHit(JSContext *cx,
     jsbytecode *pc;
     cx->stack.currentScript(&pc);
 
-    uint32_t sample = cx->runtime->gcNumber;
+    uint64_t sample = cx->runtime->gcNumber;
     PropertyCacheEntry savedEntry = *entry;
 
     PropertyName *name = GetNameFromBytecode(cx, pc, JSOp(*pc), js_CodeSpec[*pc]);
@@ -1254,7 +1254,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 {
     JSAutoResolveFlags rf(cx, RESOLVE_INFER);
 
-    gc::VerifyBarriers(cx, true);
+    gc::MaybeVerifyBarriers(cx, true);
 
     JS_ASSERT(!cx->compartment->activeAnalysis);
 
@@ -1289,7 +1289,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
 # define DO_OP()            JS_BEGIN_MACRO                                    \
                                 CHECK_PCCOUNT_INTERRUPTS();                   \
-                                js::gc::VerifyBarriers(cx);                   \
+                                js::gc::MaybeVerifyBarriers(cx);              \
                                 JS_EXTENSION_(goto *jumpTable[op]);           \
                             JS_END_MACRO
 # define DO_NEXT_OP(n)      JS_BEGIN_MACRO                                    \
@@ -1566,7 +1566,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
       do_op:
         CHECK_PCCOUNT_INTERRUPTS();
-        js::gc::VerifyBarriers(cx);
+        js::gc::MaybeVerifyBarriers(cx);
         switchOp = intN(op) | switchMask;
       do_switch:
         switch (switchOp) {
@@ -2453,18 +2453,10 @@ BEGIN_CASE(JSOP_TOID)
      * There must be an object value below the id, which will not be popped
      * but is necessary in interning the id for XML.
      */
- 
-    Value &idval = regs.sp[-1];
-    if (!idval.isInt32()) {
-        JSObject *obj;
-        FETCH_OBJECT(cx, -2, obj);
- 
-        jsid dummy;
-        if (!js_InternNonIntElementId(cx, obj, idval, &dummy, &idval))
-            goto error;
- 
-        TypeScript::MonitorUnknown(cx, script, regs.pc);
-    } 
+    Value objval = regs.sp[-2];
+    Value idval = regs.sp[-1];
+    if (!ToIdOperation(cx, objval, idval, &regs.sp[-1]))
+        goto error;
 }
 END_CASE(JSOP_TOID)
 
@@ -2604,6 +2596,7 @@ BEGIN_CASE(JSOP_GETELEM)
     Value &rref = regs.sp[-1];
     if (!GetElementOperation(cx, lref, rref, &regs.sp[-2]))
         goto error;
+    TypeScript::Monitor(cx, script, regs.pc, regs.sp[-2]);
     regs.sp--;
 }
 END_CASE(JSOP_GETELEM)
@@ -2882,7 +2875,7 @@ BEGIN_CASE(JSOP_REGEXP)
     JSObject *proto = regs.fp()->scopeChain().global().getOrCreateRegExpPrototype(cx);
     if (!proto)
         goto error;
-    JSObject *obj = js_CloneRegExpObject(cx, script->getRegExp(index), proto);
+    JSObject *obj = CloneRegExpObject(cx, script->getRegExp(index), proto);
     if (!obj)
         goto error;
     PUSH_OBJECT(*obj);
@@ -3078,7 +3071,18 @@ BEGIN_CASE(JSOP_DEFCONST)
 BEGIN_CASE(JSOP_DEFVAR)
 {
     PropertyName *dn = atoms[GET_INDEX(regs.pc)]->asPropertyName();
-    if (!DefVarOrConstOperation(cx, op, dn, regs.fp()))
+
+    /* ES5 10.5 step 8 (with subsequent errata). */
+    uintN attrs = JSPROP_ENUMERATE;
+    if (!regs.fp()->isEvalFrame())
+        attrs |= JSPROP_PERMANENT;
+    if (op == JSOP_DEFCONST)
+        attrs |= JSPROP_READONLY;
+
+    /* Step 8b. */
+    JSObject &obj = regs.fp()->varObj();
+
+    if (!DefVarOrConstOperation(cx, obj, dn, attrs))
         goto error;
 }
 END_CASE(JSOP_DEFVAR)
@@ -4421,6 +4425,6 @@ END_CASE(JSOP_ARRAYPUSH)
   leave_on_safe_point:
 #endif
 
-    gc::VerifyBarriers(cx, true);
+    gc::MaybeVerifyBarriers(cx, true);
     return interpReturnOK;
 }

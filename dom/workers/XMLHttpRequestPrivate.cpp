@@ -349,8 +349,7 @@ class LoadStartDetectionRunnable : public nsIRunnable,
         aWorkerPrivate->StopSyncLoop(mSyncQueueKey, true);
       }
 
-      mXMLHttpRequestPrivate->UnrootJSObject(aCx);
-      aWorkerPrivate->RemoveFeature(aCx, mXMLHttpRequestPrivate);
+      mXMLHttpRequestPrivate->Unpin(aCx);
 
       return true;
     }
@@ -917,11 +916,11 @@ public:
 
 class GetAllResponseHeadersRunnable : public WorkerThreadProxySyncRunnable
 {
-  nsCString& mResponseHeaders;
+  nsString& mResponseHeaders;
 
 public:
   GetAllResponseHeadersRunnable(WorkerPrivate* aWorkerPrivate, Proxy* aProxy,
-                                nsCString& aResponseHeaders)
+                                nsString& aResponseHeaders)
   : WorkerThreadProxySyncRunnable(aWorkerPrivate, aProxy),
     mResponseHeaders(aResponseHeaders)
   { }
@@ -930,7 +929,7 @@ public:
   MainThreadRun()
   {
     nsresult rv =
-      mProxy->mXHR->GetAllResponseHeaders(getter_Copies(mResponseHeaders));
+      mProxy->mXHR->GetAllResponseHeaders(mResponseHeaders);
     return GetDOMExceptionCodeFromResult(rv);
   }
 };
@@ -1183,6 +1182,29 @@ public:
   }
 };
 
+class AutoUnpinXHR {
+public:
+  AutoUnpinXHR(XMLHttpRequestPrivate* aXMLHttpRequestPrivate,
+               JSContext* aCx)
+  :  mXMLHttpRequestPrivate(aXMLHttpRequestPrivate), mCx(aCx)
+  { }
+
+  ~AutoUnpinXHR()
+  {
+    if (mXMLHttpRequestPrivate) {
+      mXMLHttpRequestPrivate->Unpin(mCx);
+    }
+  }
+
+  void Clear()
+  {
+    mXMLHttpRequestPrivate = nsnull;
+  }
+private:
+  XMLHttpRequestPrivate* mXMLHttpRequestPrivate;
+  JSContext* mCx;
+};
+
 } // anonymous namespace
 
 void
@@ -1346,13 +1368,19 @@ XMLHttpRequestPrivate::ReleaseProxy()
 }
 
 bool
-XMLHttpRequestPrivate::RootJSObject(JSContext* aCx)
+XMLHttpRequestPrivate::Pin(JSContext* aCx)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
   if (!mJSObjectRootCount) {
     if (!JS_AddNamedObjectRoot(aCx, &mJSObject,
                                "XMLHttpRequestPrivate mJSObject")) {
+      return false;
+    }
+    if (!mWorkerPrivate->AddFeature(aCx, this)) {
+      if (!JS_RemoveObjectRoot(aCx, &mJSObject)) {
+        NS_ERROR("JS_RemoveObjectRoot failed!");
+      }
       return false;
     }
   }
@@ -1362,16 +1390,22 @@ XMLHttpRequestPrivate::RootJSObject(JSContext* aCx)
 }
 
 void
-XMLHttpRequestPrivate::UnrootJSObject(JSContext* aCx)
+XMLHttpRequestPrivate::Unpin(JSContext* aCx)
 {
   mWorkerPrivate->AssertIsOnWorkerThread();
 
-  NS_ASSERTION(mJSObjectRootCount, "Mismatched calls to UnrootJSObject!");
+  NS_ASSERTION(mJSObjectRootCount, "Mismatched calls to Unpin!");
   mJSObjectRootCount--;
 
-  if (!mJSObjectRootCount && !JS_RemoveObjectRoot(aCx, &mJSObject)) {
+  if (mJSObjectRootCount) {
+    return;
+  }
+
+  if (!JS_RemoveObjectRoot(aCx, &mJSObject)) {
     NS_ERROR("JS_RemoveObjectRoot failed!");
   }
+
+  mWorkerPrivate->RemoveFeature(aCx, this);
 }
 
 bool
@@ -1579,15 +1613,15 @@ XMLHttpRequestPrivate::GetAllResponseHeaders(JSContext* aCx)
     return nsnull;
   }
 
-  nsCString responseHeaders;
+  nsString responseHeaders;
   nsRefPtr<GetAllResponseHeadersRunnable> runnable =
     new GetAllResponseHeadersRunnable(mWorkerPrivate, mProxy, responseHeaders);
   if (!runnable->Dispatch(aCx)) {
     return nsnull;
   }
 
-  return JS_NewStringCopyN(aCx, responseHeaders.get(),
-                           responseHeaders.Length());
+  return JS_NewUCStringCopyN(aCx, responseHeaders.get(),
+                             responseHeaders.Length());
 }
 
 JSString*
@@ -1704,14 +1738,11 @@ XMLHttpRequestPrivate::Send(JSContext* aCx, bool aHasBody, jsval aBody)
     hasUploadListeners = target->HasListeners();
   }
 
-  if (!RootJSObject(aCx)) {
+  if (!Pin(aCx)) {
     return false;
   }
 
-  if (!mWorkerPrivate->AddFeature(aCx, this)) {
-    UnrootJSObject(aCx);
-    return false;
-  }
+  AutoUnpinXHR autoUnpin(this, aCx);
 
   PRUint32 syncQueueKey = PR_UINT32_MAX;
   if (mProxy->mIsSyncXHR) {
@@ -1722,10 +1753,10 @@ XMLHttpRequestPrivate::Send(JSContext* aCx, bool aHasBody, jsval aBody)
     new SendRunnable(mWorkerPrivate, mProxy, buffer, syncQueueKey,
                      hasUploadListeners);
   if (!runnable->Dispatch(aCx)) {
-    UnrootJSObject(aCx);
-    mWorkerPrivate->RemoveFeature(aCx, this);
     return false;
   }
+
+  autoUnpin.Clear();
 
   // The event loop was spun above, make sure we aren't canceled already.
   if (mCanceled) {
@@ -1764,9 +1795,11 @@ XMLHttpRequestPrivate::SendAsBinary(JSContext* aCx, JSString* aBody)
     hasUploadListeners = target->HasListeners();
   }
 
-  if (!RootJSObject(aCx)) {
+  if (!Pin(aCx)) {
     return false;
   }
+
+  AutoUnpinXHR autoUnpin(this, aCx);
 
   PRUint32 syncQueueKey = PR_UINT32_MAX;
   if (mProxy->mIsSyncXHR) {
@@ -1777,9 +1810,10 @@ XMLHttpRequestPrivate::SendAsBinary(JSContext* aCx, JSString* aBody)
     new SendAsBinaryRunnable(mWorkerPrivate, mProxy, body, syncQueueKey,
                              hasUploadListeners);
   if (!runnable->Dispatch(aCx)) {
-    UnrootJSObject(aCx);
     return false;
   }
+
+  autoUnpin.Clear();
 
   // The event loop was spun above, make sure we aren't canceled already.
   if (mCanceled) {
@@ -1858,6 +1892,12 @@ XMLHttpRequestPrivate::MaybeDispatchPrematureAbortEvents(JSContext* aCx)
     JSVAL_VOID, JSVAL_VOID, JSVAL_VOID, INT_TO_JSVAL(4), JSVAL_VOID,
     false, false, false, false, false
   };
+
+  // If we never saw loadstart, we must Unpin ourselves or we will hang at
+  // shutdown.  Do that here before any early returns.
+  if (!mProxy->mSeenLoadStart && mProxy->mWorkerPrivate) {
+    Unpin(aCx);
+  }
 
   if (mProxy->mSeenUploadLoadStart) {
     JSObject* target = mProxy->mXMLHttpRequestPrivate->GetUploadJSObject();

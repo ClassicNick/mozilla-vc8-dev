@@ -76,6 +76,7 @@
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
 
+#include "vm/MethodGuard-inl.h"
 #include "vm/Stack-inl.h"
 #include "vm/String-inl.h"
 
@@ -89,7 +90,7 @@ static JSObject *iterator_iterator(JSContext *cx, JSObject *obj, JSBool keysonly
 
 Class js::IteratorClass = {
     "Iterator",
-    JSCLASS_HAS_PRIVATE |
+    JSCLASS_HAS_PRIVATE | JSCLASS_IMPLEMENTS_BARRIERS |
     JSCLASS_HAS_CACHED_PROTO(JSProto_Iterator),
     JS_PropertyStub,         /* addProperty */
     JS_PropertyStub,         /* delProperty */
@@ -99,11 +100,9 @@ Class js::IteratorClass = {
     JS_ResolveStub,
     JS_ConvertStub,
     iterator_finalize,
-    NULL,                    /* reserved    */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
-    NULL,                    /* xdrObject   */
     NULL,                    /* hasInstance */
     iterator_trace,
     {
@@ -126,11 +125,9 @@ Class js::ElementIteratorClass = {
     JS_ResolveStub,
     JS_ConvertStub,
     NULL,                    /* finalize    */
-    NULL,                    /* reserved    */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
-    NULL,                    /* xdrObject   */
     NULL,                    /* hasInstance */
     NULL,                    /* trace       */
     {
@@ -148,9 +145,9 @@ void
 NativeIterator::mark(JSTracer *trc)
 {
     for (HeapPtr<JSFlatString> *str = begin(); str < end(); str++)
-        MarkString(trc, *str, "prop");
+        MarkString(trc, str, "prop");
     if (obj)
-        MarkObject(trc, obj, "obj");
+        MarkObject(trc, &obj, "obj");
 }
 
 static void
@@ -1029,6 +1026,12 @@ SuppressDeletedPropertyHelper(JSContext *cx, JSObject *obj, StringPredicate pred
                         for (HeapPtr<JSFlatString> *p = idp; p + 1 != props_end; p++)
                             *p = *(p + 1);
                         ni->props_end = ni->end() - 1;
+
+                        /*
+                         * Invoke the write barrier on this element, since it's
+                         * no longer going to be marked.
+                         */
+                        ni->props_end->HeapPtr<JSFlatString>::~HeapPtr<JSFlatString>();
                     }
 
                     /* Don't reuse modified native iterators. */
@@ -1333,11 +1336,9 @@ Class js::StopIterationClass = {
     JS_ResolveStub,
     JS_ConvertStub,
     NULL,                    /* finalize    */
-    NULL,                    /* reserved0   */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
-    NULL,                    /* xdrObject   */
     stopiter_hasInstance
 };
 
@@ -1378,9 +1379,11 @@ MarkGenerator(JSTracer *trc, JSGenerator *gen)
      * plan is to eventually mjit generators, it makes sense to future-proof
      * this code and save someone an hour later.
      */
-    MarkStackRangeConservatively(trc, gen->floatingStack, fp->formalArgsEnd());
-    js_TraceStackFrame(trc, fp);
-    MarkStackRangeConservatively(trc, fp->slots(), gen->regs.sp);
+    MarkValueRange(trc, (HeapValue *)fp->formalArgsEnd() - gen->floatingStack,
+                   gen->floatingStack, "Generator Floating Args");
+    fp->mark(trc);
+    MarkValueRange(trc, gen->regs.sp - fp->slots(),
+                   (HeapValue *)fp->slots(), "Generator Floating Stack");
 }
 
 static void
@@ -1411,7 +1414,7 @@ generator_trace(JSTracer *trc, JSObject *obj)
 
 Class js::GeneratorClass = {
     "Generator",
-    JSCLASS_HAS_PRIVATE,
+    JSCLASS_HAS_PRIVATE | JSCLASS_IMPLEMENTS_BARRIERS,
     JS_PropertyStub,         /* addProperty */
     JS_PropertyStub,         /* delProperty */
     JS_PropertyStub,         /* getProperty */
@@ -1420,11 +1423,9 @@ Class js::GeneratorClass = {
     JS_ResolveStub,
     JS_ConvertStub,
     generator_finalize,
-    NULL,                    /* reserved    */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
     NULL,                    /* construct   */
-    NULL,                    /* xdrObject   */
     NULL,                    /* hasInstance */
     generator_trace,
     {
@@ -1469,14 +1470,18 @@ js_NewGenerator(JSContext *cx)
                    (-1 + /* one Value included in JSGenerator */
                     vplen +
                     VALUES_PER_STACK_FRAME +
-                    stackfp->numSlots()) * sizeof(Value);
+                    stackfp->numSlots()) * sizeof(HeapValue);
+
+    JS_ASSERT(nbytes % sizeof(Value) == 0);
+    JS_STATIC_ASSERT(sizeof(StackFrame) % sizeof(HeapValue) == 0);
 
     JSGenerator *gen = (JSGenerator *) cx->malloc_(nbytes);
     if (!gen)
         return NULL;
+    SetValueRangeToUndefined((Value *)gen, nbytes / sizeof(Value));
 
     /* Cut up floatingStack space. */
-    Value *genvp = gen->floatingStack;
+    HeapValue *genvp = gen->floatingStack;
     StackFrame *genfp = reinterpret_cast<StackFrame *>(genvp + vplen);
 
     /* Initialize JSGenerator. */
@@ -1487,7 +1492,8 @@ js_NewGenerator(JSContext *cx)
 
     /* Copy from the stack to the generator's floating frame. */
     gen->regs.rebaseFromTo(stackRegs, *genfp);
-    genfp->stealFrameAndSlots(genvp, stackfp, stackvp, stackRegs.sp);
+    genfp->stealFrameAndSlots<HeapValue, Value, StackFrame::DoPostBarrier>(
+                              genfp, genvp, stackfp, stackvp, stackRegs.sp);
     genfp->initFloatingGenerator();
 
     obj->setPrivate(gen);

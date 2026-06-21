@@ -3525,8 +3525,13 @@ const BrowserSearch = {
    * @param useNewTab
    *        Boolean indicating whether or not the search should load in a new
    *        tab.
+   *
+   * @param responseType [optional]
+   *        The MIME type that we'd like to receive in response
+   *        to this submission.  If null or the the response type is not supported
+   *        for the search engine, will fallback to "text/html".
    */
-  loadSearch: function BrowserSearch_search(searchText, useNewTab) {
+  loadSearch: function BrowserSearch_search(searchText, useNewTab, responseType) {
     var engine;
 
     // If the search bar is visible, use the current engine, otherwise, fall
@@ -3536,7 +3541,12 @@ const BrowserSearch = {
     else
       engine = Services.search.defaultEngine;
 
-    var submission = engine.getSubmission(searchText); // HTML response
+    var submission = engine.getSubmission(searchText, responseType);
+
+    // If a response type was specified and getSubmission returned null,
+    // fallback to the default response type.
+    if (!submission && responseType)
+      submission = engine.getSubmission(searchText);
 
     // getSubmission can return null if the engine doesn't have a URL
     // with a text/html response type.  This is unlikely (since
@@ -3545,29 +3555,12 @@ const BrowserSearch = {
     if (!submission)
       return;
 
-    let newTab;
-    function newTabHandler(event) {
-      newTab = event.target;
-    }
-    gBrowser.tabContainer.addEventListener("TabOpen", newTabHandler);
-
+    let inBackground = Services.prefs.getBoolPref("browser.search.context.loadInBackground");
     openLinkIn(submission.uri.spec,
                useNewTab ? "tab" : "current",
                { postData: submission.postData,
+                 inBackground: inBackground,
                  relatedToCurrent: true });
-
-    gBrowser.tabContainer.removeEventListener("TabOpen", newTabHandler);
-    if (newTab && !newTab.selected) {
-      let tabSelected = false;
-      function tabSelectHandler() {
-        tabSelected = true;
-      }
-      newTab.addEventListener("TabSelect", tabSelectHandler);
-      setTimeout(function () {
-        newTab.removeEventListener("TabSelect", tabSelectHandler);
-        Services.telemetry.getHistogramById("FX_CONTEXT_SEARCH_AND_TAB_SELECT").add(tabSelected);
-      }, 5000);
-    }
   },
 
   /**
@@ -4050,7 +4043,9 @@ var FullScreen = {
     gBrowser.tabContainer.addEventListener("TabSelect", this.exitDomFullScreen);
 
     // Exit DOM full-screen mode when the browser window loses focus (ALT+TAB, etc).
-    window.addEventListener("deactivate", this.exitDomFullScreen, true);
+    if (gPrefService.getBoolPref("full-screen-api.exit-on-deactivate")) {
+      window.addEventListener("deactivate", this.exitDomFullScreen, true);
+    }
 
     // Cancel any "hide the toolbar" animation which is in progress, and make
     // the toolbar hide immediately.
@@ -9060,7 +9055,14 @@ XPCOMUtils.defineLazyGetter(Scratchpad, "ScratchpadManager", function() {
 
 var StyleEditor = {
   prefEnabledName: "devtools.styleeditor.enabled",
-  openChrome: function SE_openChrome()
+  /**
+   * Opens the style editor. If the UI is already open, it will be focused.
+   *
+   * @param {CSSStyleSheet} [aSelectedStyleSheet] default Stylesheet.
+   * @param {Number} [aLine] Line to which the caret should be moved (one-indexed).
+   * @param {Number} [aCol] Column to which the caret should be moved (one-indexed).
+   */
+  openChrome: function SE_openChrome(aSelectedStyleSheet, aLine, aCol)
   {
     const CHROME_URL = "chrome://browser/content/styleeditor.xul";
     const CHROME_WINDOW_TYPE = "Tools:StyleEditor";
@@ -9074,14 +9076,23 @@ var StyleEditor = {
     while (enumerator.hasMoreElements()) {
       var win = enumerator.getNext();
       if (win.styleEditorChrome.contentWindowID == contentWindowID) {
+        if (aSelectedStyleSheet) {
+          win.styleEditorChrome.selectStyleSheet(aSelectedStyleSheet, aLine, aCol);
+        }
         win.focus();
         return win;
       }
     }
 
+    let args = {
+      contentWindow: contentWindow,
+      selectedStyleSheet: aSelectedStyleSheet,
+      line: aLine,
+      col: aCol
+    };
+    args.wrappedJSObject = args;
     let chromeWindow = Services.ww.openWindow(null, CHROME_URL, "_blank",
-                                              CHROME_WINDOW_FLAGS,
-                                              contentWindow);
+                                              CHROME_WINDOW_FLAGS, args);
     chromeWindow.focus();
     return chromeWindow;
   }

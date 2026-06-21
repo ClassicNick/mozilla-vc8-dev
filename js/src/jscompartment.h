@@ -46,10 +46,10 @@
 #include "jscntxt.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsgcstats.h"
 #include "jsobj.h"
 #include "jsscope.h"
 #include "vm/GlobalObject.h"
+#include "vm/RegExpObject.h"
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -162,6 +162,23 @@ typedef HashSet<ScriptFilenameEntry *,
                 ScriptFilenameHasher,
                 SystemAllocPolicy> ScriptFilenameTable;
 
+/* If HashNumber grows, need to change WrapperHasher. */
+JS_STATIC_ASSERT(sizeof(HashNumber) == 4);
+
+struct WrapperHasher
+{
+    typedef Value Lookup;
+
+    static HashNumber hash(Value key) {
+        uint64_t bits = JSVAL_TO_IMPL(key).asBits;
+        return uint32_t(bits) ^ uint32_t(bits >> 32);
+    }
+
+    static bool match(const Value &l, const Value &k) { return l == k; }
+};
+
+typedef HashMap<Value, ReadBarrieredValue, WrapperHasher, SystemAllocPolicy> WrapperMap;
+
 } /* namespace js */
 
 namespace JS {
@@ -176,7 +193,7 @@ struct JSCompartment
     js::gc::ArenaLists           arenas;
 
     bool                         needsBarrier_;
-    js::GCMarker                 *gcIncrementalTracer;
+    js::BarrierGCMarker          barrierMarker_;
 
     bool needsBarrier() {
         return needsBarrier_;
@@ -184,9 +201,7 @@ struct JSCompartment
 
     js::GCMarker *barrierTracer() {
         JS_ASSERT(needsBarrier_);
-        if (gcIncrementalTracer)
-            return gcIncrementalTracer;
-        return createBarrierTracer();
+        return &barrierMarker_;
     }
 
     size_t                       gcBytes;
@@ -243,6 +258,8 @@ struct JSCompartment
 
     size_t sizeOfMjitCode() const;
 #endif
+
+    js::RegExpCompartment        regExps;
 
     size_t sizeOfShapeTable(JSMallocSizeOfFun mallocSizeOf);
     void sizeOfTypeInferenceData(JSContext *cx, JS::TypeInferenceSizes *stats,
@@ -322,10 +339,11 @@ struct JSCompartment
     bool wrap(JSContext *cx, js::AutoIdVector &props);
 
     void markTypes(JSTracer *trc);
+    void discardJitCode(JSContext *cx);
     void sweep(JSContext *cx, bool releaseTypes);
     void purge(JSContext *cx);
 
-    void setGCLastBytes(size_t lastBytes, JSGCInvocationKind gckind);
+    void setGCLastBytes(size_t lastBytes, js::JSGCInvocationKind gckind);
     void reduceGCTriggerBytes(size_t amount);
     
     void resetGCMallocBytes();
@@ -393,8 +411,6 @@ struct JSCompartment
 
   private:
     void sweepBreakpoints(JSContext *cx);
-
-    js::GCMarker *createBarrierTracer();
 
   public:
     js::WatchpointMap *watchpointMap;

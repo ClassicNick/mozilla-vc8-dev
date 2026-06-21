@@ -89,13 +89,10 @@ public:
   // nsIAccessibilityService
   virtual nsAccessible* GetRootDocumentAccessible(nsIPresShell* aPresShell,
                                                   bool aCanCreate);
-
+  already_AddRefed<nsAccessible>
+    CreateHTMLButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
     CreateHTMLBRAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  virtual already_AddRefed<nsAccessible>
-    CreateHTML4ButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
-  virtual already_AddRefed<nsAccessible>
-    CreateHTMLButtonAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   already_AddRefed<nsAccessible>
     CreateHTMLCanvasAccessible(nsIContent* aContent, nsIPresShell* aPresShell);
   virtual already_AddRefed<nsAccessible>
@@ -196,24 +193,6 @@ public:
    * shell.
    */
   nsAccessible* GetAccessible(nsINode* aNode, nsIPresShell* aPresShell);
-
-  /**
-   * Return an accessible for the given DOM node or container accessible if
-   * the node is not accessible.
-   *
-   * @param aNode [in] the given node
-   * @param aDoc  [in] the document accessible. Can't be null.
-   */
-  nsAccessible* GetAccessibleOrContainer(nsINode* aNode, nsDocAccessible* aDoc);
-
-  /**
-   * Return a container accessible for the given DOM node.
-   */
-  nsAccessible* GetContainerAccessible(nsINode* aNode, nsDocAccessible* aDoc)
-  {
-    return aNode ?
-      GetAccessibleOrContainer(aNode->GetNodeParent(), aDoc) : nsnull;
-  }
 
 private:
   // nsAccessibilityService creation is controlled by friend

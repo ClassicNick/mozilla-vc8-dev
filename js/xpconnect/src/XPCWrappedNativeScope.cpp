@@ -214,11 +214,9 @@ js::Class XPC_WN_NoHelper_Proto_JSClass = {
     nsnull,                         // finalize;
 
     /* Optionally non-null members start here. */
-    nsnull,                         // reserved0;
     nsnull,                         // checkAccess;
     nsnull,                         // call;
     nsnull,                         // construct;
-    nsnull,                         // xdrObject;
     nsnull,                         // hasInstance;
     nsnull,                         // trace;
 
@@ -327,6 +325,8 @@ XPCWrappedNativeScope::GetPrototypeNoHelper(XPCCallContext& ccx)
 
         NS_ASSERTION(mPrototypeNoHelper,
                      "Failed to create prototype for wrappers w/o a helper");
+    } else {
+        xpc_UnmarkGrayObject(mPrototypeNoHelper);
     }
 
     return mPrototypeNoHelper;

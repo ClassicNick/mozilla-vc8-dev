@@ -4119,9 +4119,7 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI *aURI,
 
     // Display the error as a page or an alert prompt
     NS_ENSURE_FALSE(messageStr.IsEmpty(), NS_ERROR_FAILURE);
-    // Note: For now, display an alert instead of an error page if we have no
-    // URI object. Missing URI objects are handled badly by session history.
-    if (mUseErrorPages && aURI && aFailedChannel) {
+    if (mUseErrorPages) {
         // Display an error page
         LoadErrorPage(aURI, aURL, errorPage.get(), error.get(),
                       messageStr.get(), cssClass.get(), aFailedChannel);
@@ -4190,6 +4188,10 @@ nsDocShell::LoadErrorPage(nsIURI *aURI, const PRUnichar *aURL,
     }
     else if (aURL)
     {
+        // We need a URI object to store a session history entry, so make up a URI
+        nsresult rv = NS_NewURI(getter_AddRefs(mFailedURI), "about:blank");
+        NS_ENSURE_SUCCESS(rv, rv);
+
         CopyUTF16toUTF8(aURL, url);
     }
     else
@@ -8325,15 +8327,14 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                                   NS_SUCCEEDED(splitRv2) &&
                                   curBeforeHash.Equals(newBeforeHash);
 
-        // XXX rename
-        bool sameDocument = false;
+        bool historyNavBetweenSameDoc = false;
         if (mOSHE && aSHEntry) {
             // We're doing a history load.
 
-            mOSHE->SharesDocumentWith(aSHEntry, &sameDocument);
+            mOSHE->SharesDocumentWith(aSHEntry, &historyNavBetweenSameDoc);
 
 #ifdef DEBUG
-            if (sameDocument) {
+            if (historyNavBetweenSameDoc) {
                 nsCOMPtr<nsIInputStream> currentPostData;
                 mOSHE->GetPostData(getter_AddRefs(currentPostData));
                 NS_ASSERTION(currentPostData == aPostData,
@@ -8346,8 +8347,8 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         // for the same document.  We do a short-circuited load under two
         // circumstances.  Either
         //
-        //  a) we're navigating between two different SHEntries which have the
-        //     same document identifiers, or
+        //  a) we're navigating between two different SHEntries which share a
+        //     document, or
         //
         //  b) we're navigating to a new shentry whose URI differs from the
         //     current URI only in its hash, the new hash is non-empty, and
@@ -8356,15 +8357,10 @@ nsDocShell::InternalLoad(nsIURI * aURI,
         // The restriction tha the SHEntries in (a) must be different ensures
         // that history.go(0) and the like trigger full refreshes, rather than
         // short-circuited loads.
-        bool doShortCircuitedLoad = (sameDocument && mOSHE != aSHEntry) ||
-                                      (!aSHEntry && aPostData == nsnull &&
-                                       sameExceptHashes && !newHash.IsEmpty());
-
-        // Fire a hashchange event if we're doing a short-circuited load and the
-        // URIs differ only in their hashes.
-        bool doHashchange = doShortCircuitedLoad &&
-                              sameExceptHashes &&
-                              !curHash.Equals(newHash);
+        bool doShortCircuitedLoad =
+          (historyNavBetweenSameDoc && mOSHE != aSHEntry) ||
+          (!aSHEntry && aPostData == nsnull &&
+           sameExceptHashes && !newHash.IsEmpty());
 
         if (doShortCircuitedLoad) {
             // Save the current URI; we need it if we fire a hashchange later.
@@ -8494,27 +8490,21 @@ nsDocShell::InternalLoad(nsIURI * aURI,
                 }
             }
 
-            if (sameDocument) {
-                // Set the doc's URI according to the new history entry's URI
-                nsCOMPtr<nsIURI> newURI;
-                mOSHE->GetURI(getter_AddRefs(newURI));
-                NS_ENSURE_TRUE(newURI, NS_ERROR_FAILURE);
-                nsCOMPtr<nsIDocument> doc =
-                  do_GetInterface(GetAsSupports(this));
-                NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
-
-                doc->SetDocumentURI(newURI);
-            }
+            // Set the doc's URI according to the new history entry's URI.
+            nsCOMPtr<nsIDocument> doc =
+              do_GetInterface(GetAsSupports(this));
+            NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
+            doc->SetDocumentURI(aURI);
 
             SetDocCurrentStateObj(mOSHE);
 
             // Dispatch the popstate and hashchange events, as appropriate.
             nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(mScriptGlobal);
             if (window) {
-                // Need the doHashchange check here since sameDocument is
-                // false if we're navigating to a new shentry (i.e. a aSHEntry
-                // is null), such as when clicking a <a href="#foo">.
-                if (sameDocument || doHashchange) {
+                // Fire a hashchange event URIs differ, and only in their hashes.
+                bool doHashchange = sameExceptHashes && !curHash.Equals(newHash);
+
+                if (historyNavBetweenSameDoc || doHashchange) {
                   window->DispatchSyncPopState();
                 }
 

@@ -71,6 +71,8 @@ HISTOGRAM(CYCLE_COLLECTOR_COLLECTED, 1, 100000, 50, EXPONENTIAL, "Number of obje
 HISTOGRAM_BOOLEAN(CYCLE_COLLECTOR_NEED_GC, "Needed garbage collection before cycle collection.")
 HISTOGRAM(CYCLE_COLLECTOR_TIME_BETWEEN, 1, 120, 50, EXPONENTIAL, "Time spent in between cycle collections (seconds)")
 
+HISTOGRAM(FORGET_SKIPPABLE_MAX, 1, 10000, 50, EXPONENTIAL, "Max time spent on one forget skippable (ms)")
+
 /**
  * GC telemetry
  */
@@ -79,6 +81,10 @@ HISTOGRAM_BOOLEAN(GC_IS_COMPARTMENTAL, "Is it a compartmental GC?")
 HISTOGRAM(GC_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running JS GC (ms)")
 HISTOGRAM(GC_MARK_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running JS GC mark phase (ms)")
 HISTOGRAM(GC_SWEEP_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running JS GC sweep phase (ms)")
+HISTOGRAM(GC_SLICE_MS, 1, 10000, 50, EXPONENTIAL, "Time spent running a JS GC slice (ms)")
+HISTOGRAM(GC_MMU_50, 1, 100, 20, LINEAR, "Minimum percentage of time spent outside GC over any 50ms window")
+HISTOGRAM_BOOLEAN(GC_RESET, "Was an incremental GC canceled?")
+HISTOGRAM_BOOLEAN(GC_INCREMENTAL_DISABLED, "Is incremental GC permanently disabled?")
 
 HISTOGRAM(TELEMETRY_PING, 1, 3000, 10, EXPONENTIAL, "Time taken to submit telemetry info (ms)")
 HISTOGRAM_BOOLEAN(TELEMETRY_SUCCESS,  "Successful telemetry submission")
@@ -125,6 +131,18 @@ HISTOGRAM(MAC_INITFONTLIST_TOTAL, 1, 30000, 10, EXPONENTIAL, "gfxMacPlatformFont
 
 HISTOGRAM(SYSTEM_FONT_FALLBACK, 1, 100000, 50, EXPONENTIAL, "System font fallback (us)")
 HISTOGRAM(SYSTEM_FONT_FALLBACK_FIRST, 1, 40000, 20, EXPONENTIAL, "System font fallback, first call (ms)")
+HISTOGRAM(STARTUP_CACHE_AGE_HOURS, 1, 3000, 20, EXPONENTIAL, "Startup cache age (hours)")
+
+/**
+ * Word cache - one count for overall lookups, the other for the number of times a word is found
+ * Note: range and number of buckets must match
+ */
+HISTOGRAM(WORD_CACHE_LOOKUP_LEN, 1, 256, 30, EXPONENTIAL, "Word cache lookup (chars)")
+HISTOGRAM(WORD_CACHE_HIT_LEN, 1, 256, 30, EXPONENTIAL, "Word cache hit (chars)")
+HISTOGRAM(WORD_CACHE_LOOKUP_SCRIPT, 1, 110, 111, LINEAR, "Word cache lookup (script)")
+HISTOGRAM(WORD_CACHE_HIT_SCRIPT, 1, 110, 111, LINEAR, "Word cache hit (script)")
+
+HISTOGRAM_BOOLEAN(FONT_CACHE_HIT, "font cache hit")
 
 HISTOGRAM_BOOLEAN(SHUTDOWN_OK, "Did the browser start after a successful shutdown")
 
@@ -320,7 +338,6 @@ HISTOGRAM(THUNDERBIRD_INDEXING_RATE_MSG_PER_S, 1, 100, 20, LINEAR, "Gloda: index
 // #ifdef MOZ_PHOENIX
 HISTOGRAM(FX_TAB_ANIM_OPEN_MS, 1, 3000, 10, EXPONENTIAL, "Firefox: Time taken by the tab opening animation in milliseconds")
 HISTOGRAM(FX_TAB_ANIM_CLOSE_MS, 1, 3000, 10, EXPONENTIAL, "Firefox: Time taken by the tab closing animation in milliseconds")
-HISTOGRAM_BOOLEAN(FX_CONTEXT_SEARCH_AND_TAB_SELECT, "Firefox: Background tab was selected within 5 seconds of searching from the context menu")
 HISTOGRAM_BOOLEAN(FX_KEYWORD_URL_USERSET, "Firefox: keyword.URL has a user-set value")
 HISTOGRAM(FX_IDENTITY_POPUP_OPEN_MS, 1, 1000, 10, EXPONENTIAL, "Firefox: Time taken by the identity popup to open in milliseconds")
 HISTOGRAM(FX_APP_MENU_OPEN_MS, 1, 1000, 10, EXPONENTIAL, "Firefox: Time taken by the app-menu opening in milliseconds")
@@ -332,6 +349,15 @@ HISTOGRAM(FX_BOOKMARKS_TOOLBAR_INIT_MS, 50, 5000, 10, EXPONENTIAL, "Firefox: Tim
 HISTOGRAM(FX_THUMBNAILS_CAPTURE_TIME_MS, 1, 500, 15, EXPONENTIAL, "THUMBNAILS: Time (ms) it takes to capture a thumbnail")
 HISTOGRAM(FX_THUMBNAILS_STORE_TIME_MS, 1, 500, 15, EXPONENTIAL, "THUMBNAILS: Time (ms) it takes to store a thumbnail in the cache")
 HISTOGRAM(FX_THUMBNAILS_HIT_OR_MISS, 0, 1, 2, BOOLEAN, "THUMBNAILS: Thumbnail found")
+
+/**
+ * Session restore telemetry
+ */
+HISTOGRAM(FX_SESSION_RESTORE_COLLECT_DATA_MS, 1, 30000, 10, EXPONENTIAL, "Session restore: Time to collect all window and tab data (ms)")
+HISTOGRAM(FX_SESSION_RESTORE_SERIALIZE_DATA_MS, 1, 1000, 10, EXPONENTIAL, "Session restore: Time to JSON serialize session data (ms)")
+HISTOGRAM(FX_SESSION_RESTORE_READ_FILE_MS, 1, 3000, 10, EXPONENTIAL, "Session restore: Time to read the session data from the file on disk (ms)")
+HISTOGRAM(FX_SESSION_RESTORE_WRITE_FILE_MS, 1, 3000, 10, EXPONENTIAL, "Session restore: Time to write the session data to the file on disk (ms)")
+HISTOGRAM_BOOLEAN(FX_SESSION_RESTORE_CORRUPT_FILE, "Session restore: Whether the file read on startup contained parse-able JSON")
 // #endif
 
 HISTOGRAM_BOOLEAN(INNERWINDOWS_WITH_MUTATION_LISTENERS, "Deleted or to-be-reused innerwindow which has had mutation event listeners.")

@@ -171,7 +171,7 @@ XPCWrappedNative::NoteTearoffs(nsCycleCollectionTraversalCallback& cb)
     for (chunk = &mFirstChunk; chunk; chunk = chunk->mNextChunk) {
         XPCWrappedNativeTearOff* to = chunk->mTearOffs;
         for (int i = XPC_WRAPPED_NATIVE_TEAROFFS_PER_CHUNK-1; i >= 0; i--, to++) {
-            JSObject* jso = to->GetJSObject();
+            JSObject* jso = to->GetJSObjectPreserveColor();
             if (!jso) {
                 NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "tearoff's mNative");
                 cb.NoteXPCOMChild(to->GetNative());
@@ -1091,7 +1091,7 @@ XPCWrappedNative::Init(XPCCallContext& ccx,
 
     // create our flatJSObject
 
-    JSClass* jsclazz = si ? si->GetJSClass() : Jsvalify(&XPC_WN_NoHelper_JSClass);
+    JSClass* jsclazz = si ? si->GetJSClass() : Jsvalify(&XPC_WN_NoHelper_JSClass.base);
 
     if (isGlobal) {
         // Resolving a global object's class can cause us to create a global's
@@ -1259,7 +1259,7 @@ XPCWrappedNative::FlatJSObjectFinalized()
     for (chunk = &mFirstChunk; chunk; chunk = chunk->mNextChunk) {
         XPCWrappedNativeTearOff* to = chunk->mTearOffs;
         for (int i = XPC_WRAPPED_NATIVE_TEAROFFS_PER_CHUNK-1; i >= 0; i--, to++) {
-            JSObject* jso = to->GetJSObject();
+            JSObject* jso = to->GetJSObjectPreserveColor();
             if (jso) {
                 NS_ASSERTION(JS_IsAboutToBeFinalized(jso), "bad!");
                 JS_SetPrivate(jso, nsnull);
@@ -1363,8 +1363,8 @@ XPCWrappedNative::SystemIsBeingShutDown()
     for (chunk = &mFirstChunk; chunk; chunk = chunk->mNextChunk) {
         XPCWrappedNativeTearOff* to = chunk->mTearOffs;
         for (int i = XPC_WRAPPED_NATIVE_TEAROFFS_PER_CHUNK-1; i >= 0; i--, to++) {
-            if (to->GetJSObject()) {
-                JS_SetPrivate(to->GetJSObject(), nsnull);
+            if (JSObject *jso = to->GetJSObjectPreserveColor()) {
+                JS_SetPrivate(jso, nsnull);
                 to->SetJSObject(nsnull);
             }
             // We leak the tearoff mNative
@@ -1777,7 +1777,7 @@ XPCWrappedNative::FindTearOff(XPCCallContext& ccx,
              to < end;
              to++) {
             if (to->GetInterface() == aInterface) {
-                if (needJSObject && !to->GetJSObject()) {
+                if (needJSObject && !to->GetJSObjectPreserveColor()) {
                     AutoMarkingWrappedNativeTearOffPtr tearoff(ccx, to);
                     JSBool ok = InitTearOffJSObject(ccx, to);
                     // During shutdown, we don't sweep tearoffs.  So make sure
@@ -2917,9 +2917,18 @@ XPCWrappedNative::GetObjectPrincipal() const
 {
     nsIPrincipal* principal = GetScope()->GetPrincipal();
 #ifdef DEBUG
+    // Because of inner window reuse, we can have objects with one principal
+    // living in a scope with a different (but same-origin) principal. So
+    // just check same-origin here.
     nsCOMPtr<nsIScriptObjectPrincipal> objPrin(do_QueryInterface(mIdentity));
-    NS_ASSERTION(!objPrin || objPrin->GetPrincipal() == principal,
-                 "Principal mismatch.  Expect bad things to happen");
+    if (objPrin) {
+        bool equal;
+        if (!principal)
+            equal = !objPrin->GetPrincipal();
+        else
+            principal->Equals(objPrin->GetPrincipal(), &equal);
+        NS_ASSERTION(equal, "Principal mismatch.  Expect bad things to happen");
+    }
 #endif
     return principal;
 }

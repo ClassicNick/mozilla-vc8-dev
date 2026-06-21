@@ -349,7 +349,8 @@ class MMListenerRemover
 {
 public:
   MMListenerRemover(nsFrameMessageManager* aMM)
-  : mMM(aMM), mWasHandlingMessage(aMM->mHandlingMessage)
+    : mWasHandlingMessage(aMM->mHandlingMessage)
+    , mMM(aMM)
   {
     mMM->mHandlingMessage = true;
   }
@@ -1092,7 +1093,7 @@ NS_NewChildProcessMessageManager(nsISyncMessageSender** aResult)
 {
   NS_ASSERTION(!nsFrameMessageManager::sChildProcessManager,
                "Re-creating sChildProcessManager");
-  PRBool isChrome = IsChromeProcess();
+  bool isChrome = IsChromeProcess();
   nsFrameMessageManager* mm = new nsFrameMessageManager(false,
                                                         isChrome ? SendSyncMessageToSameProcessParent
                                                                  : SendSyncMessageToParentProcess,

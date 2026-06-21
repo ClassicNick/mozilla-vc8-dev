@@ -878,7 +878,7 @@ stubs::DebuggerStatement(VMFrame &f, jsbytecode *pc)
 void JS_FASTCALL
 stubs::Interrupt(VMFrame &f, jsbytecode *pc)
 {
-    gc::VerifyBarriers(f.cx);
+    gc::MaybeVerifyBarriers(f.cx);
 
     if (!js_HandleExecutionInterrupt(f.cx))
         THROW();
@@ -1104,7 +1104,7 @@ stubs::RegExp(VMFrame &f, JSObject *regex)
     if (!proto)
         THROW();
     JS_ASSERT(proto);
-    JSObject *obj = js_CloneRegExpObject(f.cx, regex, proto);
+    JSObject *obj = CloneRegExpObject(f.cx, regex, proto);
     if (!obj)
         THROW();
     f.regs.sp[0].setObject(*obj);
@@ -1363,9 +1363,10 @@ stubs::FlatLambda(VMFrame &f, JSFunction *fun)
 void JS_FASTCALL
 stubs::Arguments(VMFrame &f)
 {
-    f.regs.sp++;
-    if (!js_GetArgsValue(f.cx, f.fp(), &f.regs.sp[-1]))
+    Value argsobj;
+    if (!js_GetArgsValue(f.cx, f.fp(), &argsobj))
         THROW();
+    f.regs.sp[0] = argsobj;
 }
 
 JSBool JS_FASTCALL
@@ -1665,7 +1666,15 @@ stubs::DelElem(VMFrame &f)
 void JS_FASTCALL
 stubs::DefVarOrConst(VMFrame &f, PropertyName *dn)
 {
-    if (!DefVarOrConstOperation(f.cx, JSOp(*f.regs.pc), dn, f.fp()))
+    uintN attrs = JSPROP_ENUMERATE;
+    if (!f.fp()->isEvalFrame())
+        attrs |= JSPROP_PERMANENT;
+    if (JSOp(*f.regs.pc) == JSOP_DEFCONST)
+        attrs |= JSPROP_READONLY;
+
+    JSObject &obj = f.fp()->varObj();
+
+    if (!DefVarOrConstOperation(f.cx, obj, dn, attrs))
         THROW();
 }
 
@@ -1955,7 +1964,7 @@ stubs::ConvertToTypedFloat(JSContext *cx, Value *vp)
 void JS_FASTCALL
 stubs::WriteBarrier(VMFrame &f, Value *addr)
 {
-    js::gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), *addr, "write barrier");
+    gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), addr, "write barrier");
 }
 
 void JS_FASTCALL
@@ -1963,5 +1972,5 @@ stubs::GCThingWriteBarrier(VMFrame &f, Value *addr)
 {
     gc::Cell *cell = (gc::Cell *)addr->toGCThing();
     if (cell && !cell->isMarked())
-        gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), *addr, "write barrier");
+        gc::MarkValueUnbarriered(f.cx->compartment->barrierTracer(), addr, "write barrier");
 }

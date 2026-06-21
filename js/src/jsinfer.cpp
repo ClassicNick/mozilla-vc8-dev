@@ -349,7 +349,7 @@ types::TypeFailure(JSContext *cx, const char *fmt, ...)
     cx->compartment->types.print(cx, true);
 
     /* Always active, even in release builds */
-    JS_Assert(msgbuf, __FILE__, __LINE__);
+    MOZ_Assert(msgbuf, __FILE__, __LINE__);
     
     *((volatile int *)NULL) = 0;  /* Should never be reached */
 }
@@ -2195,7 +2195,7 @@ TypeCompartment::nukeTypes(JSContext *cx)
 
 #ifdef JS_THREADSAFE
     AutoLockGC maybeLock;
-    if (!cx->runtime->gcMarkAndSweep)
+    if (!cx->runtime->gcRunning)
         maybeLock.lock(cx->runtime);
 #endif
 
@@ -2618,7 +2618,7 @@ struct types::ObjectTableKey
     typedef JSObject * Lookup;
 
     static inline uint32_t hash(JSObject *obj) {
-        return (uint32_t) (JSID_BITS(obj->lastProperty()->propid()) ^
+        return (uint32_t) (JSID_BITS(obj->lastProperty()->propid().get()) ^
                          obj->slotSpan() ^ obj->numFixedSlots() ^
                          ((uint32_t)(size_t)obj->getProto() >> 2));
     }
@@ -3323,6 +3323,9 @@ ScriptAnalysis::resolveNameAccess(JSContext *cx, jsid id, bool addDependency)
                 if (TypeSet::HasObjectFlags(cx, obj, OBJECT_FLAG_REENTRANT_FUNCTION))
                     return access;
             }
+
+            if (!script->isOuterFunction)
+                return access;
 
             access.script = script;
             access.nesting = script->nesting();

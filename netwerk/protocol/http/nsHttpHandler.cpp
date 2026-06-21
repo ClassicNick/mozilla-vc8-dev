@@ -62,7 +62,7 @@
 #include "nsCategoryManagerUtils.h"
 #include "nsICacheService.h"
 #include "nsIPrefService.h"
-#include "nsIPrefBranch2.h"
+#include "nsIPrefBranch.h"
 #include "nsIPrefLocalizedString.h"
 #include "nsISocketProviderService.h"
 #include "nsISocketProvider.h"
@@ -258,7 +258,7 @@ nsHttpHandler::Init()
     InitUserAgentComponents();
 
     // monitor some preference changes
-    nsCOMPtr<nsIPrefBranch2> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
+    nsCOMPtr<nsIPrefBranch> prefBranch = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (prefBranch) {
         prefBranch->AddObserver(HTTP_PREF_PREFIX, this, true);
         prefBranch->AddObserver(UA_PREF_PREFIX, this, true);
@@ -270,7 +270,7 @@ nsHttpHandler::Init()
         PrefsChanged(prefBranch, nsnull);
     }
 
-    mMisc.AssignLiteral("rv:" MOZILLA_VERSION);
+    mMisc.AssignLiteral("rv:" MOZILLA_UAVERSION);
 
     nsCOMPtr<nsIXULAppInfo> appInfo =
         do_GetService("@mozilla.org/xre/app-info;1");
@@ -308,7 +308,7 @@ nsHttpHandler::Init()
     if (NS_FAILED(rv)) return rv;
 
 #ifdef ANDROID
-    mProductSub.AssignLiteral(MOZ_APP_UA_VERSION);
+    mProductSub.AssignLiteral(MOZILLA_UAVERSION);
 #else
     mProductSub.AssignLiteral(MOZ_UA_BUILDID);
 #endif
