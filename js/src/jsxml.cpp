@@ -1332,7 +1332,7 @@ ParseNodeToXML(Parser *parser, ParseNode *pn,
     JSXMLClass xml_class;
     int stackDummy;
 
-    if (!JS_CHECK_STACK_SIZE(cx->stackLimit, &stackDummy)) {
+    if (!JS_CHECK_STACK_SIZE(cx->runtime->nativeStackLimit, &stackDummy)) {
         ReportCompileErrorNumber(cx, &parser->tokenStream, pn, JSREPORT_ERROR,
                                  JSMSG_OVER_RECURSED);
         return NULL;
@@ -7718,8 +7718,7 @@ js_GetAnyName(JSContext *cx, jsid *idp)
             return false;
 
         v.setObject(*obj);
-        if (!js_SetReservedSlot(cx, global, JSProto_AnyName, v))
-            return false;
+        SetReservedSlot(global, JSProto_AnyName, v);
     }
     *idp = OBJECT_TO_JSID(&v.toObject());
     return true;

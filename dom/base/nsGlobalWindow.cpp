@@ -532,7 +532,7 @@ nsDummyJavaPluginOwner::GetWindow(NPWindow *&aWindow)
 }
 
 NS_IMETHODIMP
-nsDummyJavaPluginOwner::SetWindow()
+nsDummyJavaPluginOwner::CallSetWindow()
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -601,12 +601,6 @@ nsDummyJavaPluginOwner::InvalidateRect(NPRect *invalidRect)
 
 NS_IMETHODIMP
 nsDummyJavaPluginOwner::InvalidateRegion(NPRegion invalidRegion)
-{
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsDummyJavaPluginOwner::ForceRedraw()
 {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -1870,7 +1864,7 @@ ReparentWaiverWrappers(JSDHashTable *table, JSDHashEntryHdr *hdr,
 
     // We reparent wrappers that have as their parent an inner window whose
     // outer has the new inner window as its current inner.
-    JSObject *parent = JS_GetParent(closure->mCx, value);
+    JSObject *parent = JS_GetParent(value);
     JSObject *outer = JS_ObjectToOuterObject(closure->mCx, parent);
     if (outer) {
       JSObject *inner = JS_ObjectToInnerObject(closure->mCx, outer);
@@ -7680,9 +7674,9 @@ void nsGlobalWindow::UpdateTouchState()
 
     nsCOMPtr<nsIObserverService> observerService =
       do_GetService(NS_OBSERVERSERVICE_CONTRACTID);
+
     if (observerService) {
-      nsPIDOMWindow *inner = GetCurrentInnerWindowInternal();
-      observerService->NotifyObservers(mainWidget,
+      observerService->NotifyObservers(static_cast<nsIDOMWindow*>(this),
                                        DOM_TOUCH_LISTENER_ADDED,
                                        nsnull);
     }
@@ -9360,12 +9354,6 @@ nsGlobalWindow::RunTimeout(nsTimeout *aTimeout)
                           handler->GetScriptVersion(), nsnull,
                           &is_undefined);
     } else {
-      // Let the script handler know about the "secret" final argument that
-      // indicates timeout lateness in milliseconds
-      TimeDuration lateness = now - timeout->mWhen;
-
-      handler->SetLateness(lateness.ToMilliseconds());
-
       nsCOMPtr<nsIVariant> dummy;
       nsCOMPtr<nsISupports> me(static_cast<nsIDOMWindow *>(this));
       scx->CallEventHandler(me, FastGetGlobalJSObject(),
@@ -9981,7 +9969,7 @@ nsGlobalWindow::SaveWindowState(nsISupports **aState)
                                                getter_AddRefs(proto));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  JSObject *realProto = JS_GetPrototype(cx, mJSObject);
+  JSObject *realProto = JS_GetPrototype(mJSObject);
   nsCOMPtr<nsIXPConnectJSObjectHolder> realProtoHolder;
   if (realProto) {
     rv = xpc->HoldObject(cx, realProto, getter_AddRefs(realProtoHolder));
@@ -10294,6 +10282,16 @@ nsGlobalWindow::SizeOf() const
   size += mNavigator ? mNavigator->SizeOf() : 0;
 
   return size;
+}
+
+size_t
+nsGlobalWindow::SizeOfStyleSheets(nsMallocSizeOfFun aMallocSizeOf) const
+{
+  size_t n = 0;
+  if (IsInnerWindow() && mDoc) {
+    n += mDoc->SizeOfStyleSheets(aMallocSizeOf);
+  }
+  return n;
 }
 
 // nsGlobalChromeWindow implementation

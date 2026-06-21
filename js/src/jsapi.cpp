@@ -88,6 +88,7 @@
 #include "builtin/RegExp.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/BytecodeEmitter.h"
+#include "gc/Memory.h"
 #include "js/MemoryMetrics.h"
 #include "mozilla/Util.h"
 #include "yarr/BumpPointerAllocator.h"
@@ -694,15 +695,16 @@ JS_IsBuiltinFunctionConstructor(JSFunction *fun)
 static JSBool js_NewRuntimeWasCalled = JS_FALSE;
 
 JSRuntime::JSRuntime()
-  : interrupt(0),
-    atomsCompartment(NULL),
+  : atomsCompartment(NULL),
 #ifdef JS_THREADSAFE
     ownerThread_(NULL),
 #endif
     tempLifoAlloc(TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     execAlloc_(NULL),
     bumpAlloc_(NULL),
-    repCache_(NULL),
+    reCache_(NULL),
+    nativeStackBase(0),
+    nativeStackQuota(0),
     interpreterFrames(NULL),
     cxCallback(NULL),
     compartmentCallback(NULL),
@@ -795,6 +797,10 @@ JSRuntime::JSRuntime()
 
     PodZero(&globalDebugHooks);
     PodZero(&atomState);
+
+#if JS_STACK_GROWTH_DIRECTION > 0
+    nativeStackLimit = UINTPTR_MAX;
+#endif
 }
 
 bool
@@ -834,7 +840,7 @@ JSRuntime::init(uint32_t maxbytes)
     if (!stackSpace.init())
         return false;
 
-    conservativeGC.nativeStackBase = GetNativeStackBase();
+    nativeStackBase = GetNativeStackBase();
     return true;
 }
 
@@ -844,7 +850,7 @@ JSRuntime::~JSRuntime()
 
     delete_<JSC::ExecutableAllocator>(execAlloc_);
     delete_<WTF::BumpPointerAllocator>(bumpAlloc_);
-    JS_ASSERT(!repCache_);
+    JS_ASSERT(!reCache_);
 
 #ifdef DEBUG
     /* Don't hurt everyone in leaky ol' Mozilla with a fatal JS_ASSERT! */
@@ -883,7 +889,9 @@ JSRuntime::setOwnerThread()
     JS_ASSERT(ownerThread_ == (void *)0xc1ea12);  /* "clear" */
     JS_ASSERT(requestDepth == 0);
     ownerThread_ = PR_GetCurrentThread();
-    conservativeGC.nativeStackBase = GetNativeStackBase();
+    nativeStackBase = GetNativeStackBase();
+    if (nativeStackQuota)
+        JS_SetNativeStackQuota(this, nativeStackQuota);
 }
 
 void
@@ -892,7 +900,12 @@ JSRuntime::clearOwnerThread()
     JS_ASSERT(onOwnerThread());
     JS_ASSERT(requestDepth == 0);
     ownerThread_ = (void *)0xc1ea12;  /* "clear" */
-    conservativeGC.nativeStackBase = 0;
+    nativeStackBase = 0;
+#if JS_STACK_GROWTH_DIRECTION > 0
+    nativeStackLimit = UINTPTR_MAX;
+#else
+    nativeStackLimit = 0;
+#endif
 }
 
 JS_FRIEND_API(bool)
@@ -932,6 +945,8 @@ JS_NewRuntime(uint32_t maxbytes)
 #include "js.msg"
 #undef MSG_DEF
 #endif /* DEBUG */
+
+        InitMemorySubsystem();
 
         js_NewRuntimeWasCalled = JS_TRUE;
     }
@@ -2158,6 +2173,14 @@ JS_GetClassObject(JSContext *cx, JSObject *obj, JSProtoKey key, JSObject **objp)
 }
 
 JS_PUBLIC_API(JSObject *)
+JS_GetObjectPrototype(JSContext *cx, JSObject *forObj)
+{
+    CHECK_REQUEST(cx);
+    assertSameCompartment(cx, forObj);
+    return forObj->global().getOrCreateObjectPrototype(cx);
+}
+
+JS_PUBLIC_API(JSObject *)
 JS_GetGlobalForObject(JSContext *cx, JSObject *obj)
 {
     AssertNoGC(cx);
@@ -2885,11 +2908,11 @@ JS_SetGCCallbackRT(JSRuntime *rt, JSGCCallback cb)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_IsAboutToBeFinalized(JSContext *cx, void *thing)
+JS_IsAboutToBeFinalized(void *thing)
 {
-    JS_ASSERT(thing);
-    JS_ASSERT(!cx->runtime->gcIncrementalTracer);
-    return IsAboutToBeFinalized(cx, (gc::Cell *)thing);
+    gc::Cell *t = static_cast<gc::Cell *>(thing);
+    JS_ASSERT(!t->compartment()->rt->gcIncrementalTracer);
+    return IsAboutToBeFinalized(t);
 }
 
 JS_PUBLIC_API(void)
@@ -2954,81 +2977,49 @@ JS_FlushCaches(JSContext *cx)
 {
 }
 
-JS_PUBLIC_API(intN)
-JS_AddExternalStringFinalizer(JSStringFinalizeOp finalizer)
-{
-    return JSExternalString::changeFinalizer(NULL, finalizer);
-}
-
-JS_PUBLIC_API(intN)
-JS_RemoveExternalStringFinalizer(JSStringFinalizeOp finalizer)
-{
-    return JSExternalString::changeFinalizer(finalizer, NULL);
-}
-
 JS_PUBLIC_API(JSString *)
-JS_NewExternalString(JSContext *cx, const jschar *chars, size_t length, intN type)
+JS_NewExternalString(JSContext *cx, const jschar *chars, size_t length,
+                     const JSStringFinalizer *fin)
 {
     AssertNoGC(cx);
     CHECK_REQUEST(cx);
-    JSString *s = JSExternalString::new_(cx, chars, length, type, NULL);
+    JSString *s = JSExternalString::new_(cx, chars, length, fin);
     Probes::createString(cx, s, length);
     return s;
 }
 
-extern JS_PUBLIC_API(JSString *)
-JS_NewExternalStringWithClosure(JSContext *cx, const jschar *chars, size_t length,
-                                intN type, void *closure)
-{
-    AssertNoGC(cx);
-    CHECK_REQUEST(cx);
-    return JSExternalString::new_(cx, chars, length, type, closure);
-}
-
 extern JS_PUBLIC_API(JSBool)
-JS_IsExternalString(JSContext *cx, JSString *str)
+JS_IsExternalString(JSString *str)
 {
-    AssertNoGC(cx);
-    CHECK_REQUEST(cx);
     return str->isExternal();
 }
 
-extern JS_PUBLIC_API(void *)
-JS_GetExternalStringClosure(JSContext *cx, JSString *str)
+extern JS_PUBLIC_API(const JSStringFinalizer *)
+JS_GetExternalStringFinalizer(JSString *str)
 {
-    AssertNoGCOrFlatString(cx, str);
-    CHECK_REQUEST(cx);
-    return str->asExternal().externalClosure();
+    return str->asExternal().externalFinalizer();
 }
 
 JS_PUBLIC_API(void)
-JS_SetThreadStackLimit(JSContext *cx, uintptr_t limitAddr)
+JS_SetNativeStackQuota(JSRuntime *rt, size_t stackSize)
 {
-#if JS_STACK_GROWTH_DIRECTION > 0
-    if (limitAddr == 0)
-        limitAddr = UINTPTR_MAX;
-#endif
-    cx->stackLimit = limitAddr;
-}
+    rt->nativeStackQuota = stackSize;
+    if (!rt->nativeStackBase)
+        return;
 
-JS_PUBLIC_API(void)
-JS_SetNativeStackQuota(JSContext *cx, size_t stackSize)
-{
 #if JS_STACK_GROWTH_DIRECTION > 0
     if (stackSize == 0) {
-        cx->stackLimit = UINTPTR_MAX;
+        rt->nativeStackLimit = UINTPTR_MAX;
     } else {
-        uintptr_t stackBase = cx->runtime->nativeStackBase;
-        JS_ASSERT(stackBase <= size_t(-1) - stackSize);
-        cx->stackLimit = stackBase + stackSize - 1;
+        JS_ASSERT(rt->nativeStackBase <= size_t(-1) - stackSize);
+        rt->nativeStackLimit = rt->nativeStackBase + stackSize - 1;
     }
 #else
     if (stackSize == 0) {
-        cx->stackLimit = 0;
+        rt->nativeStackLimit = 0;
     } else {
-        uintptr_t stackBase = uintptr_t(cx->runtime->conservativeGC.nativeStackBase);
-        JS_ASSERT(stackBase >= stackSize);
-        cx->stackLimit = stackBase - (stackSize - 1);
+        JS_ASSERT(rt->nativeStackBase >= stackSize);
+        rt->nativeStackLimit = rt->nativeStackBase - (stackSize - 1);
     }
 #endif
 }
@@ -3133,19 +3124,17 @@ JS_InitClass(JSContext *cx, JSObject *obj, JSObject *parent_proto,
                         nargs, ps, fs, static_ps, static_fs);
 }
 
-#ifdef JS_THREADSAFE
-JS_PUBLIC_API(JSClass *)
-JS_GetClass(JSContext *cx, JSObject *obj)
+JS_PUBLIC_API(JSBool)
+JS_LinkConstructorAndPrototype(JSContext *cx, JSObject *ctor, JSObject *proto)
 {
-    return obj->getJSClass();
+    return LinkConstructorAndPrototype(cx, ctor, proto);
 }
-#else
+
 JS_PUBLIC_API(JSClass *)
 JS_GetClass(JSObject *obj)
 {
     return obj->getJSClass();
 }
-#endif
 
 JS_PUBLIC_API(JSBool)
 JS_InstanceOf(JSContext *cx, JSObject *obj, JSClass *clasp, jsval *argv)
@@ -3175,18 +3164,17 @@ JS_HasInstance(JSContext *cx, JSObject *obj, jsval v, JSBool *bp)
 }
 
 JS_PUBLIC_API(void *)
-JS_GetPrivate(JSContext *cx, JSObject *obj)
+JS_GetPrivate(JSObject *obj)
 {
     /* This function can be called by a finalizer. */
     return obj->getPrivate();
 }
 
-JS_PUBLIC_API(JSBool)
-JS_SetPrivate(JSContext *cx, JSObject *obj, void *data)
+JS_PUBLIC_API(void)
+JS_SetPrivate(JSObject *obj, void *data)
 {
     /* This function can be called by a finalizer. */
     obj->setPrivate(data);
-    return true;
 }
 
 JS_PUBLIC_API(void *)
@@ -3198,10 +3186,8 @@ JS_GetInstancePrivate(JSContext *cx, JSObject *obj, JSClass *clasp, jsval *argv)
 }
 
 JS_PUBLIC_API(JSObject *)
-JS_GetPrototype(JSContext *cx, JSObject *obj)
+JS_GetPrototype(JSObject *obj)
 {
-    CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj);
     return obj->getProto();
 }
 
@@ -3215,10 +3201,9 @@ JS_SetPrototype(JSContext *cx, JSObject *obj, JSObject *proto)
 }
 
 JS_PUBLIC_API(JSObject *)
-JS_GetParent(JSContext *cx, JSObject *obj)
+JS_GetParent(JSObject *obj)
 {
     JS_ASSERT(!obj->isScope());
-    assertSameCompartment(cx, obj);
     return obj->getParent();
 }
 
@@ -4408,22 +4393,39 @@ JS_NextProperty(JSContext *cx, JSObject *iterobj, jsid *idp)
     return JS_TRUE;
 }
 
-JS_PUBLIC_API(JSBool)
-JS_GetReservedSlot(JSContext *cx, JSObject *obj, uint32_t index, jsval *vp)
-{
-    /* This function can be called by a finalizer. */
-    CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj);
-    return js_GetReservedSlot(cx, obj, index, vp);
-}
-
-JS_PUBLIC_API(JSBool)
-JS_SetReservedSlot(JSContext *cx, JSObject *obj, uint32_t index, jsval v)
+JS_PUBLIC_API(JSObject *)
+JS_NewElementIterator(JSContext *cx, JSObject *obj)
 {
     AssertNoGC(cx);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj, v);
-    return js_SetReservedSlot(cx, obj, index, v);
+    assertSameCompartment(cx, obj);
+    return ElementIteratorObject::create(cx, obj);
+}
+
+JS_PUBLIC_API(JSObject *)
+JS_ElementIteratorStub(JSContext *cx, JSObject *obj, JSBool keysonly)
+{
+    JS_ASSERT(!keysonly);
+    return JS_NewElementIterator(cx, obj);
+}
+
+JS_PUBLIC_API(jsval)
+JS_GetReservedSlot(JSObject *obj, uint32_t index)
+{
+    if (!obj->isNative())
+        return UndefinedValue();
+
+    return GetReservedSlot(obj, index);
+}
+
+JS_PUBLIC_API(void)
+JS_SetReservedSlot(JSObject *obj, uint32_t index, jsval v)
+{
+    if (!obj->isNative())
+        return;
+
+    SetReservedSlot(obj, index, v);
+    GCPoke(obj->compartment()->rt, NullValue());
 }
 
 JS_PUBLIC_API(JSObject *)

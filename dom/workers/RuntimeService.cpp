@@ -312,6 +312,8 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate)
   JS_SetGCParameter(runtime, JSGC_MAX_BYTES,
                     aWorkerPrivate->GetJSRuntimeHeapSize());
 
+  JS_SetNativeStackQuota(runtime, WORKER_CONTEXT_NATIVE_STACK_LIMIT);
+
   JSContext* workerCx = JS_NewContext(runtime, 0);
   if (!workerCx) {
     JS_DestroyRuntime(runtime);
@@ -324,8 +326,6 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate)
   JS_SetErrorReporter(workerCx, ErrorReporter);
 
   JS_SetOperationCallback(workerCx, OperationCallback);
-
-  JS_SetNativeStackQuota(workerCx, WORKER_CONTEXT_NATIVE_STACK_LIMIT);
 
   NS_ASSERTION((aWorkerPrivate->GetJSContextOptions() &
                 kRequiredJSContextOptions) == kRequiredJSContextOptions,
@@ -531,7 +531,8 @@ class WorkerTaskRunnable : public WorkerRunnable
 {
 public:
   WorkerTaskRunnable(WorkerPrivate* aPrivate, WorkerTask* aTask)
-    : WorkerRunnable(aPrivate, WorkerThread, UnchangedBusyCount),
+    : WorkerRunnable(aPrivate, WorkerThread, UnchangedBusyCount,
+                     SkipWhenClearing),
       mTask(aTask)
   { }
 

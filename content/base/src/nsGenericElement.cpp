@@ -1375,6 +1375,103 @@ nsGenericElement::UpdateEditableState(bool aNotify)
   }
 }
 
+nsEventStates
+Element::StyleStateFromLocks() const
+{
+  nsEventStates locks = LockedStyleStates();
+  nsEventStates state = mState | locks;
+
+  if (locks.HasState(NS_EVENT_STATE_VISITED)) {
+    return state & ~NS_EVENT_STATE_UNVISITED;
+  }
+  if (locks.HasState(NS_EVENT_STATE_UNVISITED)) {
+    return state & ~NS_EVENT_STATE_VISITED;
+  }
+  return state;
+}
+
+nsEventStates
+Element::LockedStyleStates() const
+{
+  nsEventStates *locks =
+    static_cast<nsEventStates*> (GetProperty(nsGkAtoms::lockedStyleStates));
+  if (locks) {
+    return *locks;
+  }
+  return nsEventStates();
+}
+
+static void
+nsEventStatesPropertyDtor(void *aObject, nsIAtom *aProperty,
+                          void *aPropertyValue, void *aData)
+{
+  nsEventStates *states = static_cast<nsEventStates*>(aPropertyValue);
+  delete states;
+}
+
+void
+Element::NotifyStyleStateChange(nsEventStates aStates)
+{
+  nsIDocument* doc = GetCurrentDoc();
+  if (doc) {
+    nsIPresShell *presShell = doc->GetShell();
+    if (presShell) {
+      nsAutoScriptBlocker scriptBlocker;
+      presShell->ContentStateChanged(doc, this, aStates);
+    }
+  }
+}
+
+void
+Element::LockStyleStates(nsEventStates aStates)
+{
+  nsEventStates *locks = new nsEventStates(LockedStyleStates());
+
+  *locks |= aStates;
+
+  if (aStates.HasState(NS_EVENT_STATE_VISITED)) {
+    *locks &= ~NS_EVENT_STATE_UNVISITED;
+  }
+  if (aStates.HasState(NS_EVENT_STATE_UNVISITED)) {
+    *locks &= ~NS_EVENT_STATE_VISITED;
+  }
+
+  SetProperty(nsGkAtoms::lockedStyleStates, locks, nsEventStatesPropertyDtor);
+  SetHasLockedStyleStates();
+
+  NotifyStyleStateChange(aStates);
+}
+
+void
+Element::UnlockStyleStates(nsEventStates aStates)
+{
+  nsEventStates *locks = new nsEventStates(LockedStyleStates());
+
+  *locks &= ~aStates;
+
+  if (locks->IsEmpty()) {
+    DeleteProperty(nsGkAtoms::lockedStyleStates);
+    ClearHasLockedStyleStates();
+    delete locks;
+  }
+  else {
+    SetProperty(nsGkAtoms::lockedStyleStates, locks, nsEventStatesPropertyDtor);
+  }
+
+  NotifyStyleStateChange(aStates);
+}
+
+void
+Element::ClearStyleStateLocks()
+{
+  nsEventStates locks = LockedStyleStates();
+
+  DeleteProperty(nsGkAtoms::lockedStyleStates);
+  ClearHasLockedStyleStates();
+
+  NotifyStyleStateChange(locks);
+}
+
 nsIContent*
 nsIContent::FindFirstNonNativeAnonymous() const
 {
@@ -1537,6 +1634,12 @@ nsIContent::GetBaseURI() const
         }
       }
     }
+
+    nsIURI* explicitBaseURI = elem->GetExplicitBaseURI();
+    if (explicitBaseURI) {
+      base = explicitBaseURI;
+      break;
+    }
     
     // Otherwise check for xml:base attribute
     elem->GetAttr(kNameSpaceID_XML, nsGkAtoms::base, attr);
@@ -1564,6 +1667,27 @@ nsIContent::GetBaseURI() const
   }
 
   return base.forget();
+}
+
+static void
+ReleaseURI(void*, /* aObject*/
+           nsIAtom*, /* aPropertyName */
+           void* aPropertyValue,
+           void* /* aData */)
+{
+  nsIURI* uri = static_cast<nsIURI*>(aPropertyValue);
+  NS_RELEASE(uri);
+}
+
+nsresult
+nsINode::SetExplicitBaseURI(nsIURI* aURI)
+{
+  nsresult rv = SetProperty(nsGkAtoms::baseURIProperty, aURI, ReleaseURI);
+  if (NS_SUCCEEDED(rv)) {
+    SetHasExplicitBaseURI();
+    NS_ADDREF(aURI);
+  }
+  return rv;
 }
 
 //----------------------------------------------------------------------

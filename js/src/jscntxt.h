@@ -54,7 +54,6 @@
 #include "jsclist.h"
 #include "jsdhash.h"
 #include "jsgc.h"
-#include "jsgcchunk.h"
 #include "jspropertycache.h"
 #include "jspropertytree.h"
 #include "jsutil.h"
@@ -81,6 +80,8 @@ struct JSSharpObjectMap {
     jsrefcount  depth;
     uint32_t    sharpgen;
     JSHashTable *table;
+
+    JSSharpObjectMap() : depth(0), sharpgen(0), table(NULL) {}
 };
 
 namespace js {
@@ -94,6 +95,11 @@ class InterpreterFrames;
 
 class ScriptOpcodeCounts;
 struct ScriptOpcodeCountsPair;
+
+typedef HashMap<JSAtom *,
+                detail::RegExpCacheValue,
+                DefaultHasher<JSAtom *>,
+                RuntimeAllocPolicy> RegExpCache;
 
 /*
  * GetSrcNote cache to avoid O(n^2) growth in finding a source note for a
@@ -127,9 +133,6 @@ typedef Vector<ScriptOpcodeCountsPair, 0, SystemAllocPolicy> ScriptOpcodeCountsV
 
 struct ConservativeGCData
 {
-    /* Base address of the native stack for the current thread. */
-    uintptr_t           *nativeStackBase;
-
     /*
      * The GC scans conservatively between ThreadData::nativeStackBase and
      * nativeStackTop unless the latter is NULL.
@@ -149,7 +152,7 @@ struct ConservativeGCData
     unsigned requestThreshold;
 
     ConservativeGCData()
-      : nativeStackBase(NULL), nativeStackTop(NULL), requestThreshold(0)
+      : nativeStackTop(NULL), requestThreshold(0)
     {}
 
     ~ConservativeGCData() {
@@ -180,14 +183,8 @@ struct ConservativeGCData
 
 } /* namespace js */
 
-struct JSRuntime
+struct JSRuntime : js::RuntimeFriendFields
 {
-    /*
-     * If non-zero, we were been asked to call the operation callback as soon
-     * as possible.
-     */
-    volatile int32_t    interrupt;
-
     /* Default compartment. */
     JSCompartment       *atomsCompartment;
 
@@ -223,11 +220,11 @@ struct JSRuntime
      */
     JSC::ExecutableAllocator *execAlloc_;
     WTF::BumpPointerAllocator *bumpAlloc_;
-    js::RegExpPrivateCache *repCache_;
+    js::RegExpCache *reCache_;
 
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
-    js::RegExpPrivateCache *createRegExpPrivateCache(JSContext *cx);
+    js::RegExpCache *createRegExpCache(JSContext *cx);
 
   public:
     JSC::ExecutableAllocator *getExecutableAllocator(JSContext *cx) {
@@ -236,12 +233,18 @@ struct JSRuntime
     WTF::BumpPointerAllocator *getBumpPointerAllocator(JSContext *cx) {
         return bumpAlloc_ ? bumpAlloc_ : createBumpPointerAllocator(cx);
     }
-    js::RegExpPrivateCache *maybeRegExpPrivateCache() {
-        return repCache_;
+    js::RegExpCache *maybeRegExpCache() {
+        return reCache_;
     }
-    js::RegExpPrivateCache *getRegExpPrivateCache(JSContext *cx) {
-        return repCache_ ? repCache_ : createRegExpPrivateCache(cx);
+    js::RegExpCache *getRegExpCache(JSContext *cx) {
+        return reCache_ ? reCache_ : createRegExpCache(cx);
     }
+
+    /* Base address of the native stack for the current thread. */
+    uintptr_t           nativeStackBase;
+
+    /* The native stack size limit that runtime should not exceed. */
+    size_t              nativeStackQuota;
 
     /*
      * Frames currently running in js::Interpret. See InterpreterFrames for
@@ -428,7 +431,7 @@ struct JSRuntime
     bool hasContexts() const {
         return !JS_CLIST_IS_EMPTY(&contextList);
     }
-    
+
     /* Per runtime debug hooks -- see jsprvtd.h and jsdbgapi.h. */
     JSDebugHooks        globalDebugHooks;
 
@@ -764,7 +767,7 @@ typedef HashSet<JSObject *,
 
 } /* namespace js */
 
-struct JSContext
+struct JSContext : js::ContextFriendFields
 {
     explicit JSContext(JSRuntime *rt);
     JSContext *thisDuringConstruction() { return this; }
@@ -799,12 +802,6 @@ struct JSContext
      * NB: generatingError packs with throwing below.
      */
     JSPackedBool        generatingError;
-
-    /* Limit pointer for checking native stack consumption during recursion. */
-    uintptr_t           stackLimit;
-
-    /* Data shared by contexts and compartments in an address space. */
-    JSRuntime *const    runtime;
 
     /* GC heap compartment. */
     JSCompartment       *compartment;
