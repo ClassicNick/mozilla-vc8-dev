@@ -486,6 +486,7 @@ DOMCI_CLASS(WebGLShaderPrecisionFormat)
 DOMCI_CLASS(WebGLActiveInfo)
 DOMCI_CLASS(WebGLExtension)
 DOMCI_CLASS(WebGLExtensionStandardDerivatives)
+DOMCI_CLASS(WebGLExtensionTextureFilterAnisotropic)
 DOMCI_CLASS(WebGLExtensionLoseContext)
 
 DOMCI_CLASS(PaintRequest)
@@ -537,6 +538,7 @@ DOMCI_CLASS(CustomEvent)
 #ifdef MOZ_B2G_RIL
 DOMCI_CLASS(Telephony)
 DOMCI_CLASS(TelephonyCall)
+DOMCI_CLASS(TelephonyCallArray)
 DOMCI_CLASS(CallEvent)
 #endif
 

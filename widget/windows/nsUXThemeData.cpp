@@ -67,8 +67,8 @@ HMODULE
 nsUXThemeData::sDwmDLL = NULL;
 #endif
 
-BOOL
-nsUXThemeData::sFlatMenus = FALSE;
+bool
+nsUXThemeData::sFlatMenus = false;
 
 bool nsUXThemeData::sTitlebarInfoPopulatedAero = false;
 bool nsUXThemeData::sTitlebarInfoPopulatedThemed = false;
@@ -154,11 +154,11 @@ void
 nsUXThemeData::Invalidate() {
   for(int i = 0; i < eUXNumClasses; i++) {
     if(sThemes[i]) {
-      closeTheme(sThemes[i]);
+      CloseThemeData(sThemes[i]);
       sThemes[i] = NULL;
     }
   }
-  BOOL useFlat = false;
+  BOOL useFlat = FALSE;
   sFlatMenus = ::SystemParametersInfo(SPI_GETFLATMENU, 0, &useFlat, 0) ?
                    useFlat : false;
 }
@@ -166,11 +166,9 @@ nsUXThemeData::Invalidate() {
 HANDLE
 nsUXThemeData::GetTheme(nsUXThemeClass cls) {
   NS_ASSERTION(cls < eUXNumClasses, "Invalid theme class!");
-  if(!sThemeDLL)
-    return NULL;
   if(!sThemes[cls])
   {
-    sThemes[cls] = openTheme(NULL, GetClassName(cls));
+    sThemes[cls] = OpenThemeData(NULL, GetClassName(cls));
   }
   return sThemes[cls];
 }
@@ -391,14 +389,14 @@ nsUXThemeData::UpdateNativeThemeInfo()
   sIsDefaultWindowsTheme = false;
   sThemeId = LookAndFeel::eWindowsTheme_Generic;
 
-  if (!IsAppThemed() || !getCurrentThemeName) {
+  if (!IsAppThemed()) {
     sThemeId = LookAndFeel::eWindowsTheme_Classic;
     return;
   }
 
   WCHAR themeFileName[MAX_PATH + 1];
   WCHAR themeColor[MAX_PATH + 1];
-  if (FAILED(getCurrentThemeName(themeFileName,
+  if (FAILED(GetCurrentThemeName(themeFileName,
                                  MAX_PATH,
                                  themeColor,
                                  MAX_PATH,

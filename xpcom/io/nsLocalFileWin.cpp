@@ -2766,19 +2766,6 @@ nsLocalFile::SetPersistentDescriptor(const nsACString &aPersistentDescriptor)
 }   
 
 /* attrib unsigned long fileAttributesWin; */
-static bool IsXPOrGreater()
-{
-    OSVERSIONINFO osvi;
-
-    ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-
-    GetVersionEx(&osvi);
-
-    return ((osvi.dwMajorVersion > 5) ||
-       ((osvi.dwMajorVersion == 5) && (osvi.dwMinorVersion >= 1)));
-}
-
 NS_IMETHODIMP
 nsLocalFile::GetFileAttributesWin(PRUint32 *aAttribs)
 {
@@ -2800,18 +2787,16 @@ nsLocalFile::SetFileAttributesWin(PRUint32 aAttribs)
     if (dwAttrs == INVALID_FILE_ATTRIBUTES)
       return NS_ERROR_FILE_INVALID_PATH;
 
-    if (IsXPOrGreater()) {
-      if (aAttribs & WFA_SEARCH_INDEXED) {
-          dwAttrs &= ~FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
-      } else {
-          dwAttrs |= FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
-      }
+    if (aAttribs & WFA_SEARCH_INDEXED) {
+        dwAttrs &= ~FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+    } else {
+        dwAttrs |= FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
     }
 
     if (SetFileAttributesW(mWorkingPath.get(), dwAttrs) == 0)
       return NS_ERROR_FAILURE;
     return NS_OK;
-}   
+}
 
 
 NS_IMETHODIMP
@@ -2879,12 +2864,13 @@ nsLocalFile::RevealUsingShell()
 
   bool isDirectory;
   nsresult rv = IsDirectory(&isDirectory);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND)
+      return rv;
 
   HRESULT hr;
   if (isDirectory) {
     // We have a directory so we should open the directory itself.
-    ITEMIDLIST *dir = sILCreateFromPathW(mResolvedPath.get());
+    ITEMIDLIST *dir = ILCreateFromPathW(mResolvedPath.get());
     if (!dir) {
       return NS_ERROR_FAILURE;
     }
@@ -2893,7 +2879,7 @@ nsLocalFile::RevealUsingShell()
     UINT count = ArrayLength(selection);
 
     //Perform the open of the directory.
-    hr = sSHOpenFolderAndSelectItems(dir, count, selection, 0);
+    hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
     CoTaskMemFree(dir);
   }
   else {
@@ -2906,13 +2892,13 @@ nsLocalFile::RevealUsingShell()
     NS_ENSURE_SUCCESS(rv, rv);
 
     // We have a file so we should open the parent directory.
-    ITEMIDLIST *dir = sILCreateFromPathW(parentDirectoryPath.get());
+    ITEMIDLIST *dir = ILCreateFromPathW(parentDirectoryPath.get());
     if (!dir) {
       return NS_ERROR_FAILURE;
     }
 
     // Set the item in the directory to select to the file we want to reveal.
-    ITEMIDLIST *item = sILCreateFromPathW(mResolvedPath.get());
+    ITEMIDLIST *item = ILCreateFromPathW(mResolvedPath.get());
     if (!item) {
       CoTaskMemFree(dir);
       return NS_ERROR_FAILURE;
@@ -2922,7 +2908,7 @@ nsLocalFile::RevealUsingShell()
     UINT count = ArrayLength(selection);
 
     //Perform the selection of the file.
-    hr = sSHOpenFolderAndSelectItems(dir, count, selection, 0);
+    hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
 
     CoTaskMemFree(dir);
     CoTaskMemFree(item);

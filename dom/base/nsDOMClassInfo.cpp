@@ -529,6 +529,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #ifdef MOZ_B2G_RIL
 #include "Telephony.h"
 #include "TelephonyCall.h"
+#include "TelephonyCallArray.h"
 #include "CallEvent.h"
 #endif
 
@@ -1543,6 +1544,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(WebGLExtensionStandardDerivatives, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(WebGLExtensionTextureFilterAnisotropic, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(WebGLExtensionLoseContext, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
@@ -1627,6 +1630,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(TelephonyCall, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(TelephonyCallArray, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CallEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
@@ -4204,6 +4209,10 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionStandardDerivatives, nsIWebGLExtensionStandardDerivatives)
     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionStandardDerivatives)
   DOM_CLASSINFO_MAP_END
+  
+  DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionTextureFilterAnisotropic, nsIWebGLExtensionTextureFilterAnisotropic)
+    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionTextureFilterAnisotropic)
+  DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(WebGLExtensionLoseContext, nsIWebGLExtensionLoseContext)
     DOM_CLASSINFO_MAP_ENTRY(nsIWebGLExtensionLoseContext)
@@ -4363,6 +4372,10 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(TelephonyCall, nsIDOMTelephonyCall)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMTelephonyCall)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(TelephonyCallArray, nsIDOMTelephonyCallArray)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMTelephonyCallArray)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(CallEvent, nsIDOMCallEvent)
