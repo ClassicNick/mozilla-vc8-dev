@@ -56,10 +56,10 @@
  * a11y telemetry
  */
 HISTOGRAM_BOOLEAN(A11Y_INSTANTIATED, "has accessibility support been instantiated")
-HISTOGRAM(A11Y_CONSUMERS, 1, 6, 7, LINEAR, "Accessibility client by enum id")
-HISTOGRAM_BOOLEAN(ISIMPLE_DOM_USAGE, "have the ISimpleDOM* accessibility interfaces been used")
-HISTOGRAM_BOOLEAN(IACCESSIBLE_TABLE_USAGE, "has the IAccessibleTable accessibility interface been used")
-HISTOGRAM_BOOLEAN(XFORMS_ACCESSIBLE_USED, "has XForms accessibility been instantiated")
+HISTOGRAM(A11Y_CONSUMERS, 1, 9, 10, LINEAR, "Accessibility client by enum id")
+HISTOGRAM_BOOLEAN(A11Y_ISIMPLEDOM_USAGE, "have the ISimpleDOM* accessibility interfaces been used")
+HISTOGRAM_BOOLEAN(A11Y_IATABLE_USAGE, "has the IAccessibleTable accessibility interface been used")
+HISTOGRAM_BOOLEAN(A11Y_XFORMS_USAGE, "has XForms accessibility been instantiated")
 
 /**
  * Cycle collector telemetry
@@ -200,6 +200,8 @@ HISTOGRAM(SPDY_SYN_REPLY_RATIO, 1, 99, 20, LINEAR,  "SPDY: SYN Reply Header Rati
 HISTOGRAM(SPDY_NPN_CONNECT, 0, 1, 2, BOOLEAN,  "SPDY: NPN Negotiated")
 HISTOGRAM(SPDY_NPN_JOIN, 0, 1, 2, BOOLEAN,  "SPDY: Coalesce Succeeded")
 HISTOGRAM(SPDY_KBREAD_PER_CONN, 1, 3000, 50, EXPONENTIAL, "SPDY: KB read per connection")
+HISTOGRAM(SPDY_PING_EXPERIMENT_PASS, 10, 355, 64, LINEAR, "SPDY: Ping Interval Passed")
+HISTOGRAM(SPDY_PING_EXPERIMENT_FAIL, 10, 355, 64, LINEAR, "SPDY: Ping Interval Failed")
 
 HISTOGRAM(SPDY_SETTINGS_UL_BW, 1, 10000, 100, EXPONENTIAL,  "SPDY: Settings Upload Bandwidth")
 HISTOGRAM(SPDY_SETTINGS_DL_BW, 1, 10000, 100, EXPONENTIAL,  "SPDY: Settings Download Bandwidth")
