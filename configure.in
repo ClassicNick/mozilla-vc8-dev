@@ -5718,7 +5718,7 @@ MOZ_ARG_DISABLE_BOOL(ogg,
 if test -n "$MOZ_OGG"; then
     AC_DEFINE(MOZ_OGG)
     MOZ_SYDNEYAUDIO=1
-    MOZ_CUBEB=1
+    MOZ_CUBEB=
     MOZ_MEDIA=1
     case "$target_cpu" in
     arm*)
@@ -5836,7 +5836,7 @@ AC_SUBST(MOZ_LIBVPX_LIBS)
 
 if test -n "$MOZ_WEBM" -a -z "$MOZ_NATIVE_LIBVPX"; then
     MOZ_SYDNEYAUDIO=1
-    MOZ_CUBEB=1
+    MOZ_CUBEB=
     MOZ_MEDIA=1
     case "$target_cpu" in
     arm*)
@@ -5948,7 +5948,7 @@ MOZ_ARG_DISABLE_BOOL(wave,
 if test -n "$MOZ_WAVE"; then
     AC_DEFINE(MOZ_WAVE)
     MOZ_SYDNEYAUDIO=1
-    MOZ_CUBEB=1
+    MOZ_CUBEB=
     MOZ_MEDIA=1
 fi
 
