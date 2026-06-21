@@ -90,6 +90,7 @@ ifneq (,$(filter Android Linux,$(OS_TARGET)))
 DEFINES += -DMOZ_ENABLE_PROFILER_SPS
 
 CPPSRCS += \
+  shared-libraries-linux.cc \
   platform-linux.cc \
   TableTicker.cpp \
   $(NULL)
@@ -99,6 +100,7 @@ ifeq ($(OS_TARGET),Darwin)
 DEFINES += -DMOZ_ENABLE_PROFILER_SPS
 
 CPPSRCS += \
+  shared-libraries-macos.cc \
   platform-macos.cc \
   TableTicker.cpp \
   $(NULL)
@@ -110,6 +112,7 @@ ifdef MOZ_ENABLE_PROFILER_SPS
 DEFINES += -DMOZ_ENABLE_PROFILER_SPS
 
 CPPSRCS += \
+  shared-libraries-win32.cc \
   platform-win32.cc \
   TableTicker.cpp \
   $(NULL)

@@ -68,9 +68,12 @@ import android.widget.AdapterView;
 import android.widget.AdapterView.AdapterContextMenuInfo;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ExpandableListView;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.ListView;
+
+import java.util.Map;
 
 import org.mozilla.gecko.db.BrowserDB.URLColumns;
 import org.mozilla.gecko.db.BrowserDB;
@@ -98,10 +101,10 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
 
         Log.d(LOGTAG, "creating awesomebar");
 
-        setContentView(R.layout.awesomebar_search);
+        setContentView(R.layout.awesomebar);
 
         if (Build.VERSION.SDK_INT >= 11) {
-            RelativeLayout actionBarLayout = (RelativeLayout) getLayoutInflater().inflate(R.layout.awesomebar_search_actionbar, null);
+            RelativeLayout actionBarLayout = (RelativeLayout) getLayoutInflater().inflate(R.layout.awesomebar_search, null);
 
             GeckoActionBar.setBackgroundDrawable(this, getResources().getDrawable(R.drawable.gecko_actionbar_bg));
             GeckoActionBar.setDisplayOptions(this, ActionBar.DISPLAY_SHOW_CUSTOM, ActionBar.DISPLAY_SHOW_CUSTOM |
@@ -162,6 +165,11 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
             public boolean onKeyPreIme(View v, int keyCode, KeyEvent event) {
                 InputMethodManager imm =
                         (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+
+                if (keyCode == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN) {
+                    submitAndFinish(mText.getText().toString());
+                    return true;
+                }
 
                 // If input method is in fullscreen mode, we want to dismiss
                 // it instead of closing awesomebar straight away.
@@ -368,54 +376,88 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        if (mText != null && mText.getText() != null)
+            updateGoButton(mText.getText().toString());
+    }
+
+    @Override
     public void onDestroy() {
         super.onDestroy();
         mAwesomeTabs.destroy();
         GeckoAppShell.unregisterGeckoEventListener("SearchEngines:Data", this);
     }
 
-    private Cursor mContextMenuCursor = null;
+    private Object mContextMenuSubject = null;
 
     @Override
     public void onCreateContextMenu(ContextMenu menu, View view, ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, view, menuInfo);
-
-        AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo) menuInfo;
         ListView list = (ListView) view;
-        Object selecteditem = list.getItemAtPosition(info.position);
+        Object selectedItem = null;
+        String title = "";
 
-        if (!(selecteditem instanceof Cursor)) {
-            mContextMenuCursor = null;
+        if (view == (ListView)findViewById(R.id.history_list)) {
+            ExpandableListView.ExpandableListContextMenuInfo info = (ExpandableListView.ExpandableListContextMenuInfo) menuInfo;
+            ExpandableListView exList = (ExpandableListView)list;
+            int childPosition = exList.getPackedPositionChild(info.packedPosition);
+            int groupPosition = exList.getPackedPositionGroup(info.packedPosition);
+            selectedItem = exList.getExpandableListAdapter().getChild(groupPosition, childPosition);
+
+            Map map = (Map)selectedItem;
+            title = (String)map.get(URLColumns.TITLE);
+        } else {
+            AdapterView.AdapterContextMenuInfo info = (AdapterView.AdapterContextMenuInfo) menuInfo;
+            selectedItem = list.getItemAtPosition(info.position);
+
+            Cursor cursor = (Cursor)selectedItem;
+            title = cursor.getString(cursor.getColumnIndexOrThrow(URLColumns.TITLE));
+        }
+
+        if (selectedItem == null || !((selectedItem instanceof Cursor) || (selectedItem instanceof Map))) {
+            mContextMenuSubject = null;
             return;
         }
 
-        mContextMenuCursor = (Cursor) selecteditem;
+        mContextMenuSubject = selectedItem;
 
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.awesomebar_contextmenu, menu);
 
-        String title = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.TITLE));
         menu.setHeaderTitle(title);
     }
 
     @Override
     public boolean onContextItemSelected(MenuItem item) {
-        if (mContextMenuCursor == null)
+        if (mContextMenuSubject == null)
             return false;
 
-        AdapterContextMenuInfo info = (AdapterContextMenuInfo) item.getMenuInfo();
+        String url = "";
+        byte[] b = null;
+        String title = "";
+        if (mContextMenuSubject instanceof Cursor) {
+            Cursor cursor = (Cursor)mContextMenuSubject;
+            url = cursor.getString(cursor.getColumnIndexOrThrow(URLColumns.URL));
+            b = cursor.getBlob(cursor.getColumnIndexOrThrow(URLColumns.FAVICON));
+            title = cursor.getString(cursor.getColumnIndexOrThrow(URLColumns.TITLE));
+        } else if (mContextMenuSubject instanceof Map) {
+            Map map = (Map)mContextMenuSubject;
+            url = (String)map.get(URLColumns.URL);
+            b = (byte[]) map.get(URLColumns.FAVICON);
+            title = (String)map.get(URLColumns.TITLE);
+        } else {
+            return false;
+        }
+
+        mContextMenuSubject = null;
 
         switch (item.getItemId()) {
             case R.id.open_new_tab: {
-                String url = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.URL));
                 GeckoApp.mAppContext.loadUrl(url, AwesomeBar.Type.ADD);
                 break;
             }
             case R.id.add_to_launcher: {
-                String url = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.URL));
-                byte[] b = (byte[]) mContextMenuCursor.getBlob(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.FAVICON));
-                String title = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.TITLE));
-    
                 Bitmap bitmap = null;
                 if (b != null)
                     bitmap = BitmapFactory.decodeByteArray(b, 0, b.length);
@@ -424,18 +466,14 @@ public class AwesomeBar extends Activity implements GeckoEventListener {
                 break;
             }
             case R.id.share: {
-                String url = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.URL));
-                String title = mContextMenuCursor.getString(mContextMenuCursor.getColumnIndexOrThrow(URLColumns.TITLE));
                 GeckoAppShell.openUriExternal(url, "text/plain", "", "",
                                               Intent.ACTION_SEND, title);
                 break;
             }
             default: {
-                mContextMenuCursor = null;
                 return super.onContextItemSelected(item);
             }
         }
-        mContextMenuCursor = null;
         return true;
     }
 
