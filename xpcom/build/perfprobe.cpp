@@ -46,6 +46,10 @@
 #include "perfprobe.h"
 #include "nsAutoPtr.h"
 
+#ifndef TRACE_LEVEL_INFORMATION
+#define TRACE_LEVEL_INFORMATION 4   // Includes non-error cases(e.g.,Entry-Exit)
+#endif
+
 namespace mozilla {
 namespace probes {
 
@@ -209,7 +213,7 @@ nsresult ProbeManager::StartSession()
   return StartSession(mAllProbes);
 }
 
-nsresult ProbeManager::StartSession(nsTArray<nsRefPtr<Probe>> &aProbes)
+nsresult ProbeManager::StartSession(nsTArray<nsRefPtr<Probe> > &aProbes)
 {
   const size_t probesCount = aProbes.Length();
   _TRACE_GUID_REGISTRATION* probes = new _TRACE_GUID_REGISTRATION[probesCount];

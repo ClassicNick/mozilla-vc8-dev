@@ -57,6 +57,7 @@
 #include "nsString.h"
 #include "nsILocalFile.h"
 #include "nsUnicharUtils.h"
+#include "nsSetDllDirectory.h"
 
 using namespace mozilla;
 
@@ -291,7 +292,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   }
 
   if (protectCurrentDirectory) {
-    SetDllDirectory(NULL);
+    mozilla::NS_SetDllDirectory(NULL);
   }
 
   nsresult rv = plugin->Load(outLibrary);
@@ -299,7 +300,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
       *outLibrary = NULL;
 
   if (protectCurrentDirectory) {
-    SetDllDirectory(L"");
+    mozilla::NS_SetDllDirectory(L"");
   }
 
   if (restoreOrigDir) {

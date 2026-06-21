@@ -127,7 +127,7 @@ public:
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
    static const PRUnichar kDwmLibraryName[];
 #endif
-  static BOOL sFlatMenus;
+  static bool sFlatMenus;
   static bool sTitlebarInfoPopulatedAero;
   static bool sTitlebarInfoPopulatedThemed;
   static SIZE sCommandButtons[4];

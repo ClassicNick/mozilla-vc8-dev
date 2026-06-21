@@ -154,11 +154,11 @@ void
 nsUXThemeData::Invalidate() {
   for(int i = 0; i < eUXNumClasses; i++) {
     if(sThemes[i]) {
-      CloseThemeData(sThemes[i]);
+      closeTheme(sThemes[i]);
       sThemes[i] = NULL;
     }
   }
-  BOOL useFlat = FALSE;
+  BOOL useFlat = false;
   sFlatMenus = ::SystemParametersInfo(SPI_GETFLATMENU, 0, &useFlat, 0) ?
                    useFlat : false;
 }
@@ -166,9 +166,11 @@ nsUXThemeData::Invalidate() {
 HANDLE
 nsUXThemeData::GetTheme(nsUXThemeClass cls) {
   NS_ASSERTION(cls < eUXNumClasses, "Invalid theme class!");
+  if(!sThemeDLL)
+    return NULL;
   if(!sThemes[cls])
   {
-    sThemes[cls] = OpenThemeData(NULL, GetClassName(cls));
+    sThemes[cls] = openTheme(NULL, GetClassName(cls));
   }
   return sThemes[cls];
 }
@@ -389,14 +391,14 @@ nsUXThemeData::UpdateNativeThemeInfo()
   sIsDefaultWindowsTheme = false;
   sThemeId = LookAndFeel::eWindowsTheme_Generic;
 
-  if (!IsAppThemed()) {
+  if (!IsAppThemed() || !getCurrentThemeName) {
     sThemeId = LookAndFeel::eWindowsTheme_Classic;
     return;
   }
 
   WCHAR themeFileName[MAX_PATH + 1];
   WCHAR themeColor[MAX_PATH + 1];
-  if (FAILED(GetCurrentThemeName(themeFileName,
+  if (FAILED(getCurrentThemeName(themeFileName,
                                  MAX_PATH,
                                  themeColor,
                                  MAX_PATH,
