@@ -2939,29 +2939,61 @@ nsLocalFile::RevealUsingShell()
 NS_IMETHODIMP
 nsLocalFile::Launch()
 {
-    // This API should be main thread only
-    MOZ_ASSERT(NS_IsMainThread()); 
-
-    // make sure mResolvedPath is set
-    nsresult rv = Resolve();
-    if (NS_FAILED(rv))
-        return rv;
-
-    // To create a new thread, get the thread manager
-    nsCOMPtr<nsIThreadManager> tm = do_GetService(NS_THREADMANAGER_CONTRACTID);
-    nsCOMPtr<nsIThread> mythread;
-    rv = tm->NewThread(0, 0, getter_AddRefs(mythread));
-    if (NS_FAILED(rv)) {
-        return rv;
+    const nsString &path = mWorkingPath;
+    
+    // use the app registry name to launch a shell execute....
+    SHELLEXECUTEINFOW seinfo;
+    memset(&seinfo, 0, sizeof(seinfo));
+    seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+    seinfo.fMask  = NULL;
+    seinfo.hwnd   = NULL;
+    seinfo.lpVerb = NULL;
+    seinfo.lpFile = path.get();
+    seinfo.lpParameters =  NULL;
+    seinfo.lpDirectory  = NULL;
+    seinfo.nShow  = SW_SHOWNORMAL;
+    
+    if (ShellExecuteExW(&seinfo))
+        return NS_OK;
+    DWORD r = GetLastError();
+    // if the file has no association, we launch windows' "what do you want to do" dialog
+    if (r == SE_ERR_NOASSOC) {
+        nsAutoString shellArg;
+        shellArg.Assign(NS_LITERAL_STRING("shell32.dll,OpenAs_RunDLL ") + path);
+        seinfo.lpFile = L"RUNDLL32.EXE";
+        seinfo.lpParameters = shellArg.get();
+        if (ShellExecuteExW(&seinfo))
+            return NS_OK;
+        r = GetLastError();
     }
-
-    nsCOMPtr<nsIRunnable> runnable = 
-        new AsyncLocalFileWinOperation(AsyncLocalFileWinOperation::LaunchOp,
-                                       mResolvedPath);
-
-    // After the dispatch, the result runnable will shut down the worker
-    // thread, so we can let it go.
-    mythread->Dispatch(runnable, NS_DISPATCH_NORMAL);
+    if (r < 32) {
+        switch (r) {
+          case 0:
+          case SE_ERR_OOM:
+              return NS_ERROR_OUT_OF_MEMORY;
+          case ERROR_FILE_NOT_FOUND:
+              return NS_ERROR_FILE_NOT_FOUND;
+          case ERROR_PATH_NOT_FOUND:
+              return NS_ERROR_FILE_UNRECOGNIZED_PATH;
+          case ERROR_BAD_FORMAT:
+              return NS_ERROR_FILE_CORRUPTED;
+          case SE_ERR_ACCESSDENIED:
+              return NS_ERROR_FILE_ACCESS_DENIED;
+          case SE_ERR_ASSOCINCOMPLETE:
+          case SE_ERR_NOASSOC:
+              return NS_ERROR_UNEXPECTED;
+          case SE_ERR_DDEBUSY:
+          case SE_ERR_DDEFAIL:
+          case SE_ERR_DDETIMEOUT:
+              return NS_ERROR_NOT_AVAILABLE;
+          case SE_ERR_DLLNOTFOUND:
+              return NS_ERROR_FAILURE;
+          case SE_ERR_SHARE:
+              return NS_ERROR_FILE_IS_LOCKED;
+          default:
+              return NS_ERROR_FILE_EXECUTION_FAILED;
+        }
+    }
     return NS_OK;
 }
 
