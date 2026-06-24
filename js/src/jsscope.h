@@ -519,6 +519,10 @@ struct Shape : public js::gc::Cell
     static inline Shape *search(JSContext *cx, Shape *start, jsid id,
                                 Shape ***pspp, bool adding = false);
 
+#ifdef DEBUG
+    static inline Shape *searchNoAllocation(JSContext *cx, Shape *start, jsid id);
+#endif
+
     inline void removeFromDictionary(JSObject *obj);
     inline void insertIntoDictionary(HeapPtrShape *dictp);
 
@@ -802,7 +806,7 @@ struct Shape : public js::gc::Cell
      * care of making this work, but that suffices only because we require that
      * start points with the same shape have the same successor object in the
      * search path --- a cache hit means the starting shapes were equal, which
-     * means the seach path tail (everything but the first object in the path)
+     * means the search path tail (everything but the first object in the path)
      * was shared, which in turn means the effects of a purge will be seen by
      * all affected starting search points.
      *
@@ -1078,6 +1082,24 @@ Shape::search(JSContext *cx, Shape *start, jsid id, Shape ***pspp, bool adding)
 
     return NULL;
 }
+
+#ifdef DEBUG
+/* static */ inline Shape *
+Shape::searchNoAllocation(JSContext *cx, Shape *start, jsid id)
+{
+    if (start->hasTable()) {
+        Shape **spp = start->table().search(id, false);
+        return SHAPE_FETCH(spp);
+    }
+
+    for (Shape *shape = start; shape; shape = shape->parent) {
+        if (shape->propidRef() == id)
+            return shape;
+    }
+
+    return NULL;
+}
+#endif /* DEBUG */
 
 } // namespace js
 

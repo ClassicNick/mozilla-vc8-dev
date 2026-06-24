@@ -196,7 +196,7 @@ CanvasLayerD3D9::UpdateSurface()
                                           gfxASurface::ImageFormatARGB32);
       nsRefPtr<gfxContext> ctx = new gfxContext(sourceSurface);
       ctx->SetOperator(gfxContext::OPERATOR_SOURCE);
-      ctx->SetSource(mSurface);
+      ctx->SetSource(tempSurface);
       ctx->Paint();
     }
 

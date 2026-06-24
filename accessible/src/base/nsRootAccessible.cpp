@@ -40,6 +40,7 @@
 #define CreateEvent CreateEventA
 #include "nsIDOMDocument.h"
 
+#include "Accessible-inl.h"
 #include "nsAccessibilityService.h"
 #include "nsApplicationAccessibleWrap.h"
 #include "nsAccUtils.h"
@@ -92,17 +93,7 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 // nsISupports
 
-// Expanded version of NS_IMPL_ISUPPORTS_INHERITED2 
-// so we can QI directly to concrete nsRootAccessible
-NS_IMPL_QUERY_HEAD(nsRootAccessible)
-NS_IMPL_QUERY_BODY(nsIDOMEventListener)
-if (aIID.Equals(NS_GET_IID(nsRootAccessible)))
-  foundInterface = reinterpret_cast<nsISupports*>(this);
-else
-NS_IMPL_QUERY_TAIL_INHERITING(nsDocAccessible)
-
-NS_IMPL_ADDREF_INHERITED(nsRootAccessible, nsDocAccessible) 
-NS_IMPL_RELEASE_INHERITED(nsRootAccessible, nsDocAccessible)
+NS_IMPL_ISUPPORTS_INHERITED1(nsRootAccessible, nsDocAccessible, nsIAccessibleDocument)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Constructor/desctructor

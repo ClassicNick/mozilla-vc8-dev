@@ -73,6 +73,8 @@
 
 using namespace mozilla;
 
+NS_IMPL_THREADSAFE_ISUPPORTS0(nsFilePickerCallback)
+
 AndroidBridge *AndroidBridge::sBridge = 0;
 
 AndroidBridge *
@@ -134,12 +136,13 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jShowAlertNotification = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showAlertNotification", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
     jShowFilePickerForExtensions = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showFilePickerForExtensions", "(Ljava/lang/String;)Ljava/lang/String;");
     jShowFilePickerForMimeType = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showFilePickerForMimeType", "(Ljava/lang/String;)Ljava/lang/String;");
+    jShowFilePickerAsync = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showFilePickerAsync", "(Ljava/lang/String;J)V");
     jAlertsProgressListener_OnProgress = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "alertsProgressListener_OnProgress", "(Ljava/lang/String;JJLjava/lang/String;)V");
     jAlertsProgressListener_OnCancel = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "alertsProgressListener_OnCancel", "(Ljava/lang/String;)V");
     jGetDpi = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getDpi", "()I");
     jSetFullScreen = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "setFullScreen", "(Z)V");
     jShowInputMethodPicker = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "showInputMethodPicker", "()V");
-    jSetPreventPanning = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "setPreventPanning", "(Z)V");
+    jNotifyDefaultPrevented = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "notifyDefaultPrevented", "(Z)V");
     jHideProgressDialog = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "hideProgressDialog", "()V");
     jPerformHapticFeedback = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "performHapticFeedback", "(Z)V");
     jVibrate1 = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "vibrate", "(J)V");
@@ -162,8 +165,8 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jEnableBatteryNotifications = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "enableBatteryNotifications", "()V");
     jDisableBatteryNotifications = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "disableBatteryNotifications", "()V");
     jGetCurrentBatteryInformation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getCurrentBatteryInformation", "()[D");
+    jRemovePluginView = jEnv->GetStaticMethodID(jGeckoAppShellClass, "removePluginView", "(Landroid/view/View;)V");
 
-    jGetAccessibilityEnabled = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getAccessibilityEnabled", "()Z");
     jHandleGeckoMessage = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "handleGeckoMessage", "(Ljava/lang/String;)Ljava/lang/String;");
     jCheckUriVisited = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "checkUriVisited", "(Ljava/lang/String;)V");
     jMarkUriVisited = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "markUriVisited", "(Ljava/lang/String;)V");
@@ -180,7 +183,6 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jGetCurrentNetworkInformation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getCurrentNetworkInformation", "()[D");
     jEnableNetworkNotifications = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "enableNetworkNotifications", "()V");
     jDisableNetworkNotifications = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "disableNetworkNotifications", "()V");
-    jEmitGeckoAccessibilityEvent = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "emitGeckoAccessibilityEvent", "(I[Ljava/lang/String;Ljava/lang/String;ZZZ)V");
 
     jGetScreenOrientation = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "getScreenOrientation", "()S");
     jEnableScreenOrientationNotifications = (jmethodID) jEnv->GetStaticMethodID(jGeckoAppShellClass, "enableScreenOrientationNotifications", "()V");
@@ -198,7 +200,7 @@ AndroidBridge::Init(JNIEnv *jEnv,
     jStringClass = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("java/lang/String"));
 
 #ifdef MOZ_JAVA_COMPOSITOR
-    jFlexSurfaceView = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/gfx/FlexibleGLSurfaceView"));
+    jLayerView = (jclass) jEnv->NewGlobalRef(jEnv->FindClass("org/mozilla/gecko/gfx/LayerView"));
 
     AndroidGLController::Init(jEnv);
     AndroidEGLObject::Init(jEnv);
@@ -420,13 +422,13 @@ getHandlersFromStringArray(JNIEnv *aJNIEnv, jobjectArray jArr, jsize aLen,
     nsString empty = EmptyString();
     for (jsize i = 0; i < aLen; i+=4) {
         nsJNIString name( 
-            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i)));
+            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i)), aJNIEnv);
         nsJNIString isDefault(
-            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 1)));
+            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 1)), aJNIEnv);
         nsJNIString packageName( 
-            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 2)));
+            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 2)), aJNIEnv);
         nsJNIString className( 
-            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 3)));
+            static_cast<jstring>(aJNIEnv->GetObjectArrayElement(jArr, i + 3)), aJNIEnv);
         nsIHandlerApp* app = nsOSHelperAppService::
             CreateAndroidHandlerApp(name, className, packageName,
                                     className, aMimeType, aAction);
@@ -559,7 +561,7 @@ AndroidBridge::GetMimeTypeFromExtensions(const nsACString& aFileExt, nsCString& 
         env->CallStaticObjectMethod(mGeckoAppShellClass,
                                         jGetMimeTypeFromExtensions,
                                         jstrExt));
-    nsJNIString jniStr(jstrType);
+    nsJNIString jniStr(jstrType, env);
     aMimeType.Assign(NS_ConvertUTF16toUTF8(jniStr.get()));
 }
 
@@ -579,7 +581,7 @@ AndroidBridge::GetExtensionFromMimeType(const nsACString& aMimeType, nsACString&
         env->CallStaticObjectMethod(mGeckoAppShellClass,
                                         jGetExtensionFromMimeType,
                                         jstrType));
-    nsJNIString jniStr(jstrExt);
+    nsJNIString jniStr(jstrExt, env);
     aFileExt.Assign(NS_ConvertUTF16toUTF8(jniStr.get()));
 }
 
@@ -610,7 +612,7 @@ AndroidBridge::GetClipboardText(nsAString& aText)
                                                     jGetClipboardText));
     if (!jstrType)
         return false;
-    nsJNIString jniStr(jstrType);
+    nsJNIString jniStr(jstrType, env);
     aText.Assign(jniStr);
     return true;
 }
@@ -750,7 +752,7 @@ AndroidBridge::ShowFilePickerForExtensions(nsAString& aFilePath, const nsAString
     jstring jstr =  static_cast<jstring>(env->CallStaticObjectMethod(
                                          mGeckoAppShellClass,
                                          jShowFilePickerForExtensions, jstrFilers));
-    aFilePath.Assign(nsJNIString(jstr));
+    aFilePath.Assign(nsJNIString(jstr, env));
 }
 
 void
@@ -768,7 +770,21 @@ AndroidBridge::ShowFilePickerForMimeType(nsAString& aFilePath, const nsAString& 
     jstring jstr =  static_cast<jstring>(env->CallStaticObjectMethod(
                                              mGeckoAppShellClass,
                                              jShowFilePickerForMimeType, jstrFilers));
-    aFilePath.Assign(nsJNIString(jstr));
+    aFilePath.Assign(nsJNIString(jstr, env));
+}
+
+void
+AndroidBridge::ShowFilePickerAsync(const nsAString& aMimeType, nsFilePickerCallback* callback)
+{
+    JNIEnv *env = GetJNIEnv();
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env); 
+    jstring jMimeType = env->NewString(nsPromiseFlatString(aMimeType).get(),
+                                       aMimeType.Length());
+    callback->AddRef();
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jShowFilePickerAsync, jMimeType, (jlong) callback);
 }
 
 void
@@ -797,18 +813,6 @@ AndroidBridge::HideProgressDialogOnce()
         env->CallStaticVoidMethod(mGeckoAppShellClass, jHideProgressDialog);
         once = true;
     }
-}
-
-bool
-AndroidBridge::GetAccessibilityEnabled()
-{
-    ALOG_BRIDGE("AndroidBridge::GetAccessibilityEnabled");
-
-    JNIEnv *env = GetJNIEnv();
-    if (!env)
-        return false;
-
-    return env->CallStaticBooleanMethod(mGeckoAppShellClass, jGetAccessibilityEnabled);
 }
 
 void
@@ -1102,9 +1106,9 @@ AndroidBridge::RegisterCompositor()
 
     AutoLocalJNIFrame jniFrame(env, 3);
 
-    jmethodID registerCompositor = env->GetStaticMethodID(jFlexSurfaceView, "registerCxxCompositor", "()Lorg/mozilla/gecko/gfx/GLController;");
+    jmethodID registerCompositor = env->GetStaticMethodID(jLayerView, "registerCxxCompositor", "()Lorg/mozilla/gecko/gfx/GLController;");
 
-    jobject glController = env->CallStaticObjectMethod(jFlexSurfaceView, registerCompositor);
+    jobject glController = env->CallStaticObjectMethod(jLayerView, registerCompositor);
 
     sController.Acquire(env, glController);
     sController.SetGLVersion(2);
@@ -1161,7 +1165,7 @@ AndroidBridge::GetStaticStringField(const char *className, const char *fieldName
     if (!jstr)
         return false;
 
-    result.Assign(nsJNIString(jstr));
+    result.Assign(nsJNIString(jstr, env));
     return true;
 }
 
@@ -1522,7 +1526,7 @@ AndroidBridge::HandleGeckoMessage(const nsAString &aMessage, nsAString &aRet)
         env->ExceptionDescribe();
         env->ExceptionClear();
     }
-    nsJNIString jniStr(returnMessage);
+    nsJNIString jniStr(returnMessage, env);
     aRet.Assign(jniStr);
     ALOG_BRIDGE("leaving %s", __PRETTY_FUNCTION__);
 }
@@ -1557,19 +1561,6 @@ AndroidBridge::MarkURIVisited(const nsAString& aURI)
     AutoLocalJNIFrame jniFrame(env, 1);
     jstring jstrURI = env->NewString(nsPromiseFlatString(aURI).get(), aURI.Length());
     env->CallStaticVoidMethod(mGeckoAppShellClass, jMarkUriVisited, jstrURI);
-}
-
-void AndroidBridge::EmitGeckoAccessibilityEvent (PRInt32 eventType, const nsTArray<nsString>& text, const nsAString& description, bool enabled, bool checked, bool password) {
-    AutoLocalJNIFrame jniFrame;
-    jobjectArray jarrayText = mJNIEnv->NewObjectArray(text.Length(),
-                                                      jStringClass, 0);
-    for (PRUint32 i = 0; i < text.Length() ; i++) {
-        jstring jstrText = mJNIEnv->NewString(nsPromiseFlatString(text[i]).get(),
-                                              text[i].Length());
-        mJNIEnv->SetObjectArrayElement(jarrayText, i, jstrText);
-    }
-    jstring jstrDescription = mJNIEnv->NewString(nsPromiseFlatString(description).get(), description.Length());
-    mJNIEnv->CallStaticVoidMethod(mGeckoAppShellClass, jEmitGeckoAccessibilityEvent, eventType, jarrayText, jstrDescription, enabled, checked, password);
 }
 
 PRUint16
@@ -1879,23 +1870,24 @@ AndroidBridge::IsTablet()
 }
 
 void
-AndroidBridge::SetFirstPaintViewport(float aOffsetX, float aOffsetY, float aZoom, float aPageWidth, float aPageHeight)
+AndroidBridge::SetFirstPaintViewport(float aOffsetX, float aOffsetY, float aZoom, float aPageWidth, float aPageHeight,
+                                     float aCssPageWidth, float aCssPageHeight)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
         return;
 
-    client->SetFirstPaintViewport(aOffsetX, aOffsetY, aZoom, aPageWidth, aPageHeight);
+    client->SetFirstPaintViewport(aOffsetX, aOffsetY, aZoom, aPageWidth, aPageHeight, aCssPageWidth, aCssPageHeight);
 }
 
 void
-AndroidBridge::SetPageSize(float aZoom, float aPageWidth, float aPageHeight)
+AndroidBridge::SetPageSize(float aZoom, float aPageWidth, float aPageHeight, float aCssPageWidth, float aCssPageHeight)
 {
     AndroidGeckoLayerClient *client = mLayerClient;
     if (!client)
         return;
 
-    client->SetPageSize(aZoom, aPageWidth, aPageHeight);
+    client->SetPageSize(aZoom, aPageWidth, aPageHeight, aCssPageWidth, aCssPageHeight);
 }
 
 void
@@ -1944,12 +1936,12 @@ NS_IMETHODIMP nsAndroidBridge::SetDrawMetadataProvider(nsIAndroidDrawMetadataPro
 }
 
 void
-AndroidBridge::SetPreventPanning(bool aPreventPanning) {
+AndroidBridge::NotifyDefaultPrevented(bool aDefaultPrevented) {
     JNIEnv *env = GetJNIEnv();
     if (!env)
         return;
 
-    env->CallStaticVoidMethod(mGeckoAppShellClass, jSetPreventPanning, (jboolean)aPreventPanning);
+    env->CallStaticVoidMethod(mGeckoAppShellClass, jNotifyDefaultPrevented, (jboolean)aDefaultPrevented);
 }
 
 
@@ -2124,6 +2116,17 @@ NS_IMETHODIMP nsAndroidBridge::SetBrowserApp(nsIAndroidBrowserApp *aBrowserApp)
     if (nsAppShell::gAppShell)
         nsAppShell::gAppShell->SetBrowserApp(aBrowserApp);
     return NS_OK;
+}
+
+void
+AndroidBridge::RemovePluginView(void* surface) {
+  JNIEnv *env = AndroidBridge::GetJNIEnv();
+  if (!env)
+    return;
+
+  AndroidBridge::AutoLocalJNIFrame frame(env, 1);
+  env->CallStaticVoidMethod(sBridge->mGeckoAppShellClass,
+                            sBridge->jRemovePluginView, surface);
 }
 
 extern "C"

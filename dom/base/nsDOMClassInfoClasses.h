@@ -401,7 +401,6 @@ DOMCI_CLASS(OfflineResourceList)
 DOMCI_CLASS(FileList)
 DOMCI_CLASS(Blob)
 DOMCI_CLASS(File)
-DOMCI_CLASS(FileException)
 DOMCI_CLASS(FileReader)
 DOMCI_CLASS(MozURLProperty)
 DOMCI_CLASS(MozBlobBuilder)
@@ -437,6 +436,7 @@ DOMCI_CLASS(MozSmsFilter)
 DOMCI_CLASS(MozSmsCursor)
 
 DOMCI_CLASS(MozConnection)
+DOMCI_CLASS(MozMobileConnection)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
@@ -520,7 +520,6 @@ DOMCI_CLASS(IDBKeyRange)
 DOMCI_CLASS(IDBIndex)
 DOMCI_CLASS(IDBVersionChangeEvent)
 DOMCI_CLASS(IDBOpenDBRequest)
-DOMCI_CLASS(IDBDatabaseException)
 
 DOMCI_CLASS(Touch)
 DOMCI_CLASS(TouchList)

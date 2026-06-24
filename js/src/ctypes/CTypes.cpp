@@ -36,6 +36,8 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "mozilla/FloatingPoint.h"
+
 #include "CTypes.h"
 #include "Library.h"
 #include "jsnum.h"
@@ -411,6 +413,12 @@ static JSPropertySpec sFunctionProps[] = {
   { 0, 0, 0, NULL, NULL }
 };
 
+static JSFunctionSpec sFunctionInstanceFunctions[] = {
+  JS_FN("call", js_fun_call, 1, CDATAFN_FLAGS),
+  JS_FN("apply", js_fun_apply, 2, CDATAFN_FLAGS),
+  JS_FS_END
+};
+
 static JSClass sInt64ProtoClass = {
   "Int64",
   0,
@@ -484,14 +492,6 @@ static JSFunctionSpec sModuleFunctions[] = {
   JS_FN("libraryName", Library::Name, 1, CTYPESFN_FLAGS),
   JS_FS_END
 };
-
-static inline bool FloatIsFinite(double f) {
-#ifdef WIN32
-  return _finite(f) != 0;
-#else
-  return finite(f);
-#endif
-}
 
 JS_ALWAYS_INLINE JSString*
 NewUCString(JSContext* cx, const AutoString& from)
@@ -857,8 +857,8 @@ InitTypeClasses(JSContext* cx, JSObject* parent)
     return false;
   js::AutoObjectRooter sroot(cx, protos[SLOT_STRUCTDATAPROTO]);
 
-  if (!InitTypeConstructor(cx, parent, CTypeProto, CDataProto,
-         sFunctionFunction, NULL, sFunctionProps, NULL, NULL,
+  if (!InitTypeConstructor(cx, parent, CTypeProto, protos[SLOT_POINTERDATAPROTO],
+         sFunctionFunction, NULL, sFunctionProps, sFunctionInstanceFunctions, NULL,
          protos[SLOT_FUNCTIONPROTO], protos[SLOT_FUNCTIONDATAPROTO]))
     return false;
   js::AutoObjectRooter froot(cx, protos[SLOT_FUNCTIONDATAPROTO]);
@@ -1533,7 +1533,7 @@ jsvalToIntegerExplicit(jsval val, IntegerType* result)
   if (JSVAL_IS_DOUBLE(val)) {
     // Convert -Inf, Inf, and NaN to 0; otherwise, convert by C-style cast.
     double d = JSVAL_TO_DOUBLE(val);
-    *result = FloatIsFinite(d) ? IntegerType(d) : 0;
+    *result = MOZ_DOUBLE_IS_FINITE(d) ? IntegerType(d) : 0;
     return true;
   }
   if (!JSVAL_IS_PRIMITIVE(val)) {
@@ -3319,11 +3319,11 @@ PointerType::CreateInternal(JSContext* cx, JSObject* baseType)
     return JSVAL_TO_OBJECT(slot);
 
   // Get ctypes.PointerType.prototype and the common prototype for CData objects
-  // of this type.
-  JSObject* typeProto;
-  JSObject* dataProto;
-  typeProto = CType::GetProtoFromType(baseType, SLOT_POINTERPROTO);
-  dataProto = CType::GetProtoFromType(baseType, SLOT_POINTERDATAPROTO);
+  // of this type, or ctypes.FunctionType.prototype for function pointers.
+  CTypeProtoSlot slotId = CType::GetTypeCode(baseType) == TYPE_function ?
+    SLOT_FUNCTIONDATAPROTO : SLOT_POINTERDATAPROTO;
+  JSObject* dataProto = CType::GetProtoFromType(baseType, slotId);
+  JSObject* typeProto = CType::GetProtoFromType(baseType, SLOT_POINTERPROTO);
 
   // Create a new CType object with the common properties and slots.
   JSObject* typeObj = CType::Create(cx, typeProto, dataProto, TYPE_pointer,

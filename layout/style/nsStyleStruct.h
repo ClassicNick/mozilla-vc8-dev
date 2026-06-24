@@ -724,6 +724,14 @@ class nsCSSShadowArray {
       return &mArray[i];
     }
 
+    bool HasShadowWithInset(bool aInset) {
+      for (PRUint32 i = 0; i < mLength; ++i) {
+        if (mArray[i].mInset == aInset)
+          return true;
+      }
+      return false;
+    }
+
     NS_INLINE_DECL_REFCOUNTING(nsCSSShadowArray)
 
   private:
@@ -763,7 +771,10 @@ struct nsStyleBorder {
 #ifdef DEBUG
   static nsChangeHint MaxDifference();
 #endif
-  static bool ForceCompare() { return false; }
+  // ForceCompare is true, because a change to our border-style might
+  // change border-width on descendants (requiring reflow of those)
+  // but not our own border-width (thus not requiring us to reflow).
+  static bool ForceCompare() { return true; }
 
   void EnsureBorderColors() {
     if (!mBorderColors) {
@@ -813,6 +824,11 @@ struct nsStyleBorder {
   const nsMargin& GetComputedBorder() const
   {
     return mComputedBorder;
+  }
+
+  bool HasBorder() const
+  {
+    return mComputedBorder != nsMargin(0,0,0,0) || mBorderImageSource;
   }
 
   // Get the actual border width for a particular side, in appunits.  Note that

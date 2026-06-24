@@ -314,6 +314,10 @@ nsGenericHTMLElement::CopyInnerTo(nsGenericElement* aDst) const
   for (i = 0; i < count; ++i) {
     const nsAttrName *name = mAttrsAndChildren.AttrNameAt(i);
     const nsAttrValue *value = mAttrsAndChildren.AttrAt(i);
+
+    nsAutoString valStr;
+    value->ToString(valStr);
+
     if (name->Equals(nsGkAtoms::style, kNameSpaceID_None) &&
         value->Type() == nsAttrValue::eCSSStyleRule) {
       // We can't just set this as a string, because that will fail
@@ -323,14 +327,12 @@ nsGenericHTMLElement::CopyInnerTo(nsGenericElement* aDst) const
       nsRefPtr<mozilla::css::StyleRule> styleRule = do_QueryObject(ruleClone);
       NS_ENSURE_TRUE(styleRule, NS_ERROR_UNEXPECTED);
 
-      rv = aDst->SetInlineStyleRule(styleRule, false);
+      rv = aDst->SetInlineStyleRule(styleRule, &valStr, false);
       NS_ENSURE_SUCCESS(rv, rv);
 
       continue;
     }
 
-    nsAutoString valStr;
-    value->ToString(valStr);
     rv = aDst->SetAttr(name->NamespaceID(), name->LocalName(),
                        name->GetPrefix(), valStr, false);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -2262,13 +2264,6 @@ nsGenericHTMLElement::MapScrollingAttributeInto(const nsMappedAttributes* aAttri
 //----------------------------------------------------------------------
 
 nsresult
-nsGenericHTMLElement::GetAttrHelper(nsIAtom* aAttr, nsAString& aValue)
-{
-  GetAttr(kNameSpaceID_None, aAttr, aValue);
-  return NS_OK;
-}
-
-nsresult
 nsGenericHTMLElement::SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue)
 {
   return SetAttr(kNameSpaceID_None, aAttr, aValue, true);
@@ -2923,8 +2918,7 @@ nsGenericHTMLFormElement::CanBeDisabled() const
   return
     type != NS_FORM_LABEL &&
     type != NS_FORM_OBJECT &&
-    type != NS_FORM_OUTPUT &&
-    type != NS_FORM_PROGRESS;
+    type != NS_FORM_OUTPUT;
 }
 
 bool

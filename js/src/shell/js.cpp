@@ -652,25 +652,6 @@ MapContextOptionNameToFlag(JSContext* cx, const char* name)
 
 extern JSClass global_class;
 
-#ifdef JS_GC_ZEAL
-static void
-ParseZealArg(JSContext *cx, const char *arg)
-{
-    int zeal, freq = 1, compartment = 0;
-    const char *p = strchr(arg, ',');
-
-    zeal = atoi(arg);
-    if (p) {
-        freq = atoi(p + 1);
-        p = strchr(p + 1, ',');
-        if (p)
-            compartment = atoi(p + 1);
-    }
-
-    JS_SetGCZeal(cx, (uint8_t)zeal, freq, !!compartment);
-}
-#endif
-
 static JSBool
 Version(JSContext *cx, unsigned argc, jsval *vp)
 {
@@ -940,10 +921,10 @@ FileAsTypedArray(JSContext *cx, const char *pathname)
         if (fseek(file, 0, SEEK_SET) != 0) {
             JS_ReportError(cx, "can't seek start of %s", pathname);
         } else {
-            obj = js_CreateTypedArray(cx, TypedArray::TYPE_UINT8, len);
+            obj = JS_NewUint8Array(cx, len);
             if (!obj)
                 return NULL;
-            char *buf = (char *) TypedArray::getDataOffset(TypedArray::getTypedArray(obj));
+            char *buf = (char *) TypedArray::getDataOffset(obj);
             size_t cc = fread(buf, 1, len, file);
             if (cc != len) {
                 JS_ReportError(cx, "can't read %s: %s", pathname,
@@ -1562,12 +1543,8 @@ SrcNotes(JSContext *cx, JSScript *script, Sprinter *sp)
         const char *name = js_SrcNoteSpec[type].name;
         if (type == SRC_LABEL) {
             /* Check if the source note is for a switch case. */
-            if (switchTableStart <= offset && offset < switchTableEnd) {
+            if (switchTableStart <= offset && offset < switchTableEnd)
                 name = "case";
-            } else {
-                JSOp op = JSOp(script->code[offset]);
-                JS_ASSERT(op == JSOP_LABEL);
-            }
         }
         Sprint(sp, "%3u: %4u %5u [%4u] %-8s", unsigned(sn - notes), lineno, offset, delta, name);
         switch (type) {
@@ -1606,7 +1583,7 @@ SrcNotes(JSContext *cx, JSScript *script, Sprinter *sp)
             Sprint(sp, " atom %u (", index);
             size_t len = PutEscapedString(NULL, 0, atom, '\0');
             if (char *buf = sp->reserve(len)) {
-                PutEscapedString(buf, len, atom, 0);
+                PutEscapedString(buf, len + 1, atom, 0);
                 buf[len] = 0;
             }
             Sprint(sp, ")");
@@ -2162,22 +2139,18 @@ DumpStack(JSContext *cx, unsigned argc, Value *vp)
         return false;
 
     StackIter iter(cx);
-    JS_ASSERT(iter.nativeArgs().callee().toFunction()->native() == DumpStack);
+    JS_ASSERT(iter.isNativeCall() && iter.callee().toFunction()->native() == DumpStack);
     ++iter;
 
     uint32_t index = 0;
     for (; !iter.done(); ++index, ++iter) {
         Value v;
-        if (iter.isScript()) {
-            if (iter.fp()->isNonEvalFunctionFrame()) {
-                v = ObjectValue(iter.fp()->callee());
-            } else if (iter.fp()->isEvalFrame()) {
-                v = StringValue(evalStr);
-            } else {
-                v = StringValue(globalStr);
-            }
+        if (iter.isNonEvalFunctionFrame() || iter.isNativeCall()) {
+            v = iter.calleev();
+        } else if (iter.isEvalFrame()) {
+            v = StringValue(evalStr);
         } else {
-            v = iter.nativeArgs().calleev();
+            v = StringValue(globalStr);
         }
         if (!JS_SetElement(cx, arr, index, &v))
             return false;
@@ -2765,13 +2738,15 @@ ShapeOf(JSContext *cx, unsigned argc, jsval *vp)
  * non-native referent may be simplified to data properties.
  */
 static JSBool
-CopyProperty(JSContext *cx, JSObject *obj, JSObject *referent, jsid id,
+CopyProperty(JSContext *cx, JSObject *obj_, JSObject *referent, jsid id,
              unsigned lookupFlags, JSObject **objp)
 {
     JSProperty *prop;
     PropertyDescriptor desc;
     unsigned propFlags = 0;
     JSObject *obj2;
+
+    RootedVarObject obj(cx, obj_);
 
     *objp = NULL;
     if (referent->isNative()) {
@@ -3420,16 +3395,15 @@ Serialize(JSContext *cx, unsigned argc, jsval *vp)
     if (!JS_WriteStructuredClone(cx, v, &datap, &nbytes, NULL, NULL))
         return false;
 
-    JSObject *arrayobj = js_CreateTypedArray(cx, TypedArray::TYPE_UINT8, nbytes);
-    if (!arrayobj) {
+    JSObject *array = JS_NewUint8Array(cx, nbytes);
+    if (!array) {
         JS_free(cx, datap);
         return false;
     }
-    JSObject *array = TypedArray::getTypedArray(arrayobj);
     JS_ASSERT((uintptr_t(TypedArray::getDataOffset(array)) & 7) == 0);
     js_memcpy(TypedArray::getDataOffset(array), datap, nbytes);
     JS_free(cx, datap);
-    JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(arrayobj));
+    JS_SET_RVAL(cx, vp, OBJECT_TO_JSVAL(array));
     return true;
 }
 
@@ -3438,7 +3412,7 @@ Deserialize(JSContext *cx, unsigned argc, jsval *vp)
 {
     jsval v = argc > 0 ? JS_ARGV(cx, vp)[0] : JSVAL_VOID;
     JSObject *obj;
-    if (JSVAL_IS_PRIMITIVE(v) || !js_IsTypedArray((obj = JSVAL_TO_OBJECT(v)))) {
+    if (JSVAL_IS_PRIMITIVE(v) || !(obj = JSVAL_TO_OBJECT(v))->isTypedArray()) {
         JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_INVALID_ARGS, "deserialize");
         return false;
     }
@@ -4324,9 +4298,11 @@ global_enumerate(JSContext *cx, JSObject *obj)
 }
 
 static JSBool
-global_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags,
+global_resolve(JSContext *cx, JSObject *obj_, jsid id, unsigned flags,
                JSObject **objp)
 {
+    RootedVarObject obj(cx, obj_);
+
 #ifdef LAZY_STANDARD_CLASSES
     JSBool resolved;
 
@@ -4673,11 +4649,6 @@ ProcessArgs(JSContext *cx, JSObject *obj, OptionParser *op)
         enableMethodJit = true;
         JS_ToggleOptions(cx, JSOPTION_METHODJIT);
     }
-
-#ifdef JS_GC_ZEAL
-    if (const char *zeal = op->getStringOption('Z'))
-        ParseZealArg(cx, zeal);
-#endif
 
     if (op->getBoolOption('d')) {
         JS_SetRuntimeDebugMode(JS_GetRuntime(cx), true);

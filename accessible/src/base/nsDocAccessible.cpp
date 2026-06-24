@@ -36,6 +36,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
+#include "Accessible-inl.h"
 #include "AccIterator.h"
 #include "nsAccCache.h"
 #include "nsAccessibilityService.h"
@@ -175,7 +176,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsDocAccessible, nsAccessible)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsDocAccessible)
-  NS_INTERFACE_MAP_STATIC_AMBIGUOUS(nsDocAccessible)
   NS_INTERFACE_MAP_ENTRY(nsIAccessibleDocument)
   NS_INTERFACE_MAP_ENTRY(nsIDocumentObserver)
   NS_INTERFACE_MAP_ENTRY(nsIMutationObserver)
@@ -285,7 +285,7 @@ nsDocAccessible::SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry)
   // Allow use of ARIA role from outer to override
   nsIContent *ownerContent = parentDoc->FindContentForSubDocument(mDocument);
   if (ownerContent) {
-    nsRoleMapEntry *roleMapEntry = nsAccUtils::GetRoleMapEntry(ownerContent);
+    nsRoleMapEntry* roleMapEntry = aria::GetRoleMap(ownerContent);
     if (roleMapEntry)
       mRoleMapEntry = roleMapEntry; // Override
   }
@@ -1698,7 +1698,7 @@ nsDocAccessible::UpdateAccessibleOnAttrChange(dom::Element* aElement,
     // It is common for js libraries to set the role on the body element after
     // the document has loaded. In this case we just update the role map entry.
     if (mContent == aElement) {
-      SetRoleMapEntry(nsAccUtils::GetRoleMapEntry(aElement));
+      SetRoleMapEntry(aria::GetRoleMap(aElement));
       return true;
     }
 

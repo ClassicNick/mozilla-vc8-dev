@@ -25,15 +25,26 @@ function test()
 
 function testFrameParameters()
 {
+  dump("Started testFrameParameters!\n");
+
   gDebugger.addEventListener("Debugger:FetchedParameters", function test() {
+    dump("Entered Debugger:FetchedParameters!\n");
+
     gDebugger.removeEventListener("Debugger:FetchedParameters", test, false);
     Services.tm.currentThread.dispatch({ run: function() {
 
-      var frames = gDebugger.DebuggerView.Stackframes._frames,
+      dump("After currentThread.dispatch!\n");
+
+      var frames = gDebugger.DebuggerView.StackFrames._frames,
           localScope = gDebugger.DebuggerView.Properties.localScope,
           localNodes = localScope.querySelector(".details").childNodes;
 
-      is(gDebugger.StackFrames.activeThread.state, "paused",
+      dump("Got our variables:\n");
+      dump("frames     - " + frames.constructor + "\n");
+      dump("localScope - " + localScope.constructor + "\n");
+      dump("localNodes - " + localNodes.constructor + "\n");
+
+      is(gDebugger.DebuggerController.activeThread.state, "paused",
         "Should only be getting stack frames while paused.");
 
       is(frames.querySelectorAll(".dbg-stackframe").length, 3,
@@ -87,15 +98,15 @@ function testFrameParameters()
     }}, 0);
   }, false);
 
-  EventUtils.synthesizeMouseAtCenter(content.document.querySelector("button"),
-                                     {},
-                                     content.window);
+  EventUtils.sendMouseEvent({ type: "click" },
+    content.document.querySelector("button"),
+    content.window);
 }
 
 function resumeAndFinish() {
-  gPane.activeThread.addOneTimeListener("framescleared", function() {
+  gDebugger.DebuggerController.activeThread.addOneTimeListener("framescleared", function() {
     Services.tm.currentThread.dispatch({ run: function() {
-      var frames = gDebugger.DebuggerView.Stackframes._frames;
+      var frames = gDebugger.DebuggerView.StackFrames._frames;
 
       is(frames.querySelectorAll(".dbg-stackframe").length, 0,
         "Should have no frames.");
@@ -104,7 +115,7 @@ function resumeAndFinish() {
     }}, 0);
   });
 
-  gDebugger.StackFrames.activeThread.resume();
+  gDebugger.DebuggerController.activeThread.resume();
 }
 
 registerCleanupFunction(function() {

@@ -329,7 +329,7 @@ MarkIteratorUnknown(JSContext *cx)
  * Monitor a javascript call, either on entry to the interpreter or made
  * from within the interpreter.
  */
-inline void
+inline bool
 TypeMonitorCall(JSContext *cx, const js::CallArgs &args, bool constructing)
 {
     extern void TypeMonitorCallSlow(JSContext *cx, JSObject *callee,
@@ -341,11 +341,13 @@ TypeMonitorCall(JSContext *cx, const js::CallArgs &args, bool constructing)
         if (fun->isInterpreted()) {
             JSScript *script = fun->script();
             if (!script->ensureRanAnalysis(cx, fun->environment()))
-                return;
+                return false;
             if (cx->typeInferenceEnabled())
                 TypeMonitorCallSlow(cx, callee, args, constructing);
         }
     }
+
+    return true;
 }
 
 inline bool
@@ -1425,11 +1427,11 @@ inline bool
 JSScript::ensureRanAnalysis(JSContext *cx, JSObject *scope)
 {
     JSScript *self = this;
+    JS::SkipRoot root(cx, &self);
 
     if (!self->ensureHasTypes(cx))
         return false;
     if (!self->types->hasScope()) {
-        js::CheckRoot root(cx, &self);
         js::RootObject objRoot(cx, &scope);
         if (!js::types::TypeScript::SetScope(cx, self, scope))
             return false;

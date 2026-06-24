@@ -183,17 +183,8 @@ ProxyHandler::set(JSContext *cx, JSObject *proxy, JSObject *receiver, jsid id, b
     /* The control-flow here differs from ::get() because of the fall-through case below. */
     if (desc.obj) {
         // Check for read-only properties.
-        if (desc.attrs & JSPROP_READONLY) {
-            if (strict) {
-                JSAutoByteString bytes(cx, JSID_TO_STRING(id));
-                if (!bytes)
-                    return false;
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
-                                     JSMSG_CANT_REDEFINE_PROP, bytes.ptr());
-                return false;
-            }
-            return true;
-        }
+        if (desc.attrs & JSPROP_READONLY)
+            return strict ? Throw(cx, id, JSMSG_CANT_REDEFINE_PROP) : true;
         if (!desc.setter) {
             // Be wary of the odd explicit undefined setter case possible through
             // Object.defineProperty.
@@ -219,17 +210,8 @@ ProxyHandler::set(JSContext *cx, JSObject *proxy, JSObject *receiver, jsid id, b
         return false;
     if (desc.obj) {
         // Check for read-only properties.
-        if (desc.attrs & JSPROP_READONLY) {
-            if (strict) {
-                JSAutoByteString bytes(cx, JSID_TO_STRING(id));
-                if (!bytes)
-                    return false;
-                JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
-                                     JSMSG_CANT_REDEFINE_PROP, bytes.ptr());
-                return false;
-            }
-            return true;
-        }
+        if (desc.attrs & JSPROP_READONLY)
+            return strict ? Throw(cx, id, JSMSG_CANT_REDEFINE_PROP) : true;
         if (!desc.setter) {
             // Be wary of the odd explicit undefined setter case possible through
             // Object.defineProperty.
@@ -288,8 +270,10 @@ ProxyHandler::keys(JSContext *cx, JSObject *proxy, AutoIdVector &props)
 }
 
 bool
-ProxyHandler::iterate(JSContext *cx, JSObject *proxy, unsigned flags, Value *vp)
+ProxyHandler::iterate(JSContext *cx, JSObject *proxy_, unsigned flags, Value *vp)
 {
+    RootedVarObject proxy(cx, proxy_);
+
     JS_ASSERT(OperationInProgress(cx, proxy));
     AutoIdVector props(cx);
     if ((flags & JSITER_OWNONLY)
@@ -336,7 +320,7 @@ ProxyHandler::regexp_toShared(JSContext *cx, JSObject *proxy, RegExpGuard *g)
 bool
 ProxyHandler::defaultValue(JSContext *cx, JSObject *proxy, JSType hint, Value *vp)
 {
-    return DefaultValue(cx, proxy, hint, vp);
+    return DefaultValue(cx, RootedVarObject(cx, proxy), hint, vp);
 }
 
 bool
@@ -1774,7 +1758,8 @@ FixProxy(JSContext *cx, JSObject *proxy, JSBool *bp)
      * number of fixed slots as the proxy so that we can swap their contents.
      */
     gc::AllocKind kind = proxy->getAllocKind();
-    JSObject *newborn = NewObjectWithGivenProto(cx, clasp, proto, parent, kind);
+    RootedVarObject newborn(cx);
+    newborn = NewObjectWithGivenProto(cx, clasp, proto, parent, kind);
     if (!newborn)
         return false;
 

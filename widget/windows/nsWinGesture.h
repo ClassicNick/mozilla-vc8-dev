@@ -45,7 +45,12 @@
 
 #include "nsdefs.h"
 #include <winuser.h>
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #include <tpcshrd.h>
+#else
+#define WM_TABLET_QUERYSYSTEMGESTURESTATUS   (WM_TABLET_DEFBASE + 12)
+#define WM_TABLET_DEFBASE                    0x02C0
+#endif
 #include "nsPoint.h"
 #include "nsGUIEvent.h"
 

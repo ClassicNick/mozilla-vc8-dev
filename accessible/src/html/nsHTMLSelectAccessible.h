@@ -39,7 +39,7 @@
 #ifndef __nsHTMLSelectAccessible_h__
 #define __nsHTMLSelectAccessible_h__
 
-#include "nsHTMLFormControlAccessible.h"
+#include "HTMLFormControlAccessible.h"
 #include "nsIDOMHTMLOptionsCollection.h"
 #include "nsIDOMHTMLOptionElement.h"
 #include "nsIDOMNode.h"
@@ -187,7 +187,6 @@ public:
   virtual ~nsHTMLComboboxAccessible() {}
 
   // nsIAccessible
-  NS_IMETHOD GetValue(nsAString& _retval);
   NS_IMETHOD DoAction(PRUint8 index);
   NS_IMETHOD GetActionName(PRUint8 aIndex, nsAString& aName);
 
@@ -196,6 +195,7 @@ public:
 
   // nsAccessible
   virtual void Description(nsString& aDescription);
+  virtual void Value(nsString& aValue);
   virtual mozilla::a11y::role NativeRole();
   virtual PRUint64 NativeState();
   virtual void InvalidateChildren();

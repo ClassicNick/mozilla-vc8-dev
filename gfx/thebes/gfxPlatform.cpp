@@ -65,7 +65,7 @@
 #include "gfxImageSurface.h"
 #include "gfxUserFontSet.h"
 #include "nsUnicodeProperties.h"
-#include "harfbuzz/hb-unicode.h"
+#include "harfbuzz/hb.h"
 #ifdef MOZ_GRAPHITE
 #include "gfxGraphiteShaper.h"
 #endif
@@ -337,6 +337,8 @@ gfxPlatform::Init()
 
     gPlatform->mFontPrefsObserver = new FontPrefsObserver();
     Preferences::AddStrongObservers(gPlatform->mFontPrefsObserver, kObservedPrefs);
+
+    gPlatform->mWorkAroundDriverBugs = Preferences::GetBool("gfx.work-around-driver-bugs", true);
 
     // Force registration of the gfx component, thus arranging for
     // ::Shutdown to be called.

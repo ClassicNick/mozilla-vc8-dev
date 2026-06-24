@@ -53,7 +53,9 @@
 #include "jsdbgapi.h"
 #include "WrapperFactory.h"
 #include "AccessCheck.h"
+#include "XrayWrapper.h"
 
+#include "xpcpublic.h"
 #include "xpcprivate.h"
 #include "XPCWrapper.h"
 
@@ -84,8 +86,6 @@
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
 #include "nsDOMEventTargetHelper.h"
-#include "xpcprivate.h"
-#include "XrayWrapper.h"
 
 // General helper includes
 #include "nsGlobalWindow.h"
@@ -455,7 +455,6 @@
 
 #include "nsDOMFile.h"
 #include "nsDOMFileReader.h"
-#include "nsIDOMFileException.h"
 #include "nsIDOMFormData.h"
 
 #include "nsIDOMDOMStringMap.h"
@@ -495,7 +494,6 @@
 #include "mozilla/dom/indexedDB/IDBCursor.h"
 #include "mozilla/dom/indexedDB/IDBKeyRange.h"
 #include "mozilla/dom/indexedDB/IDBIndex.h"
-#include "nsIIDBDatabaseException.h"
 
 using mozilla::dom::indexedDB::IDBWrapperCache;
 
@@ -520,6 +518,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMSmsCursor.h"
 #include "nsIPrivateDOMEvent.h"
 #include "nsIDOMConnection.h"
+#include "nsIDOMMobileConnection.h"
 #include "mozilla/dom/network/Utils.h"
 
 #ifdef MOZ_B2G_RIL
@@ -1398,8 +1397,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(File, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(FileException, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(FileReader, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozURLProperty, nsDOMGenericSH,
@@ -1460,6 +1457,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(MozConnection, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
+  NS_DEFINE_CLASSINFO_DATA(MozMobileConnection, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(CSSFontFaceRule, nsDOMGenericSH,
@@ -1597,8 +1597,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(IDBOpenDBRequest, IDBEventTargetSH,
                            IDBEVENTTARGET_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(IDBDatabaseException, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(Touch, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1840,21 +1838,13 @@ PrintWarningOnConsole(JSContext *cx, const char *stringBundleProperty)
     return;
   }
 
-  JSStackFrame *fp, *iterator = nsnull;
-  fp = ::JS_FrameIterator(cx, &iterator);
-  PRUint32 lineno = 0;
+  unsigned lineno = 0;
+  JSScript *script;
   nsAutoString sourcefile;
-  if (fp) {
-    JSScript* script = ::JS_GetFrameScript(cx, fp);
-    if (script) {
-      const char* filename = ::JS_GetScriptFilename(cx, script);
-      if (filename) {
-        CopyUTF8toUTF16(nsDependentCString(filename), sourcefile);
-      }
-      jsbytecode* pc = ::JS_GetFramePC(cx, fp);
-      if (pc) {
-        lineno = ::JS_PCToLineNumber(cx, script, pc);
-      }
+
+  if (JS_DescribeScriptedCaller(cx, &script, &lineno)) {
+    if (const char *filename = ::JS_GetScriptFilename(cx, script)) {
+      CopyUTF8toUTF16(nsDependentCString(filename), sourcefile);
     }
   }
 
@@ -3632,7 +3622,7 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_SVG_TEXT_CONTENT_ELEMENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(SVGUnknownElement, nsIDOMSVGElement)
+  DOM_CLASSINFO_MAP_BEGIN(SVGUnknownElement, nsIDOMSVGElement)
     DOM_CLASSINFO_SVG_ELEMENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
@@ -3997,11 +3987,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMFile)
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(FileException, nsIDOMFileException)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMFileException)
-    DOM_CLASSINFO_MAP_ENTRY(nsIException)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(FileReader, nsIDOMFileReader)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMFileReader)
     DOM_CLASSINFO_MAP_ENTRY(nsIInterfaceRequestor)
@@ -4091,6 +4076,11 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(MozConnection, nsIDOMMozConnection)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozConnection)
+     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(MozMobileConnection, nsIDOMMozMobileConnection)
+     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozMobileConnection)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
@@ -4335,11 +4325,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIIDBOpenDBRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIIDBRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(IDBDatabaseException, nsIIDBDatabaseException)
-    DOM_CLASSINFO_MAP_ENTRY(nsIIDBDatabaseException)
-    DOM_CLASSINFO_MAP_ENTRY(nsIException)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN_MAYBE_DISABLE(Touch, nsIDOMTouch,
@@ -4940,8 +4925,7 @@ nsDOMClassInfo::PostCreatePrototype(JSContext * cx, JSObject * proto)
     count++;
   }
 
-  if (!sXPConnect->DefineDOMQuickStubs(cx, proto, flags,
-                                       count, mData->mInterfaces)) {
+  if (!xpc::DOM_DefineQuickStubs(cx, proto, flags, count, mData->mInterfaces)) {
     JS_ClearPendingException(cx);
   }
 
@@ -6116,7 +6100,10 @@ nsDOMConstructor::HasInstance(nsIXPConnectWrappedNative *wrapper,
       return NS_ERROR_UNEXPECTED;
     }
 
-    JS_ASSERT(!JSVAL_IS_PRIMITIVE(val));
+    if (JSVAL_IS_PRIMITIVE(val)) {
+      return NS_OK;
+    }
+
     JSObject *dot_prototype = JSVAL_TO_OBJECT(val);
 
     JSObject *proto = JS_GetPrototype(dom_obj);

@@ -193,6 +193,10 @@ pref("media.wave.enabled", true);
 #ifdef MOZ_WEBM
 pref("media.webm.enabled", true);
 #endif
+#ifdef MOZ_GSTREAMER
+pref("media.h264.enabled", true);
+#endif
+
 
 // Whether to autostart a media element with an |autoplay| attribute
 pref("media.autoplay.enabled", true);
@@ -207,6 +211,12 @@ pref("gfx.color_management.enablev4", false);
 pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.sanitize", true);
+
+#ifdef ANDROID
+pref("gfx.filter.nearest.force-enabled", true);
+#else
+pref("gfx.filter.nearest.force-enabled", false);
+#endif
 
 // whether to always search all font cmaps during system font fallback
 pref("gfx.font_rendering.fallback.always_use_cmaps", false);
@@ -244,6 +254,8 @@ pref("gfx.canvas.azure.enabled", true);
 #ifdef ANDROID
 pref("gfx.textures.poweroftwo.force-enabled", false);
 #endif
+
+pref("gfx.work-around-driver-bugs", true);
 
 pref("accessibility.browsewithcaret", false);
 pref("accessibility.warn_on_browsewithcaret", true);
@@ -297,9 +309,6 @@ pref("accessibility.typeaheadfind.prefillwithselection", true);
 
 // use Mac OS X Appearance panel text smoothing setting when rendering text, disabled by default
 pref("gfx.use_text_smoothing_setting", false);
-
-// show checkerboard pattern on android, enabled by default (option exists for image analysis testing)
-pref("gfx.show_checkerboard_pattern", true);
 
 // loading and rendering of framesets and iframes
 pref("browser.frames.enabled", true);
@@ -818,9 +827,11 @@ pref("network.http.pipelining.max-optimistic-requests" , 4);
 
 pref("network.http.pipelining.aggressive", false);
 pref("network.http.pipelining.maxsize" , 300000);
+pref("network.http.pipelining.reschedule-on-timeout", true);
+pref("network.http.pipelining.reschedule-timeout", 1500);
 
 // The read-timeout is a ms timer that causes the transaction to be completely
-// restarted without pipelining. Set to 0 to disable.
+// restarted without pipelining.
 pref("network.http.pipelining.read-timeout", 30000);
 
 // Prompt for 307 redirects
@@ -1671,6 +1682,28 @@ pref("font.size.inflation.emPerLine", 0);
  * used.
  */
 pref("font.size.inflation.minTwips", 0);
+/*
+ * Since the goal of font size inflation is to avoid having to
+ * repeatedly scroll side to side to read a block of text, and there are
+ * a number of page layouts where a relatively small chunk of text is
+ * better of not being inflated according to the same algorithm we use
+ * for larger chunks of text, we want a threshold for an amount of text
+ * that triggers font size inflation.  This preference controls that
+ * threshold.
+ *
+ * It controls the threshold used within an *approximation* of the
+ * number of lines of text we use.  In particular, if we assume that
+ * each character (collapsing collapsible whitespace) has a width the
+ * same as the em-size of the font (when, normally, it's actually quite
+ * a bit smaller on average), this preference gives the percentage of a
+ * number of lines of text we'd need to trigger inflation.  This means
+ * that a percentage of 100 means that we'd need a number of characters
+ * (we know the font size and the width) equivalent to one line of
+ * square text (which is actually a lot less than a real line of text).
+ *
+ * A value of 0 means there's no character length threshold.
+ */
+pref("font.size.inflation.lineThreshold", 400);
 
 #ifdef XP_WIN
 
@@ -3490,6 +3523,7 @@ pref("full-screen-api.allow-trusted-requests-only", true);
 pref("full-screen-api.key-input-restricted", true);
 pref("full-screen-api.warning.enabled", true);
 pref("full-screen-api.exit-on-deactivate", true);
+pref("full-screen-api.pointer-lock.enabled", true);
 
 // Time limit, in milliseconds, for nsEventStateManager::IsHandlingUserInput().
 // Used to detect long running handlers of user-generated events.

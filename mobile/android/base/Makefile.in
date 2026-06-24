@@ -115,6 +115,7 @@ FENNEC_JAVA_FILES = \
   Tabs.java \
   TabsTray.java \
   TabsAccessor.java \
+  Telemetry.java \
   gfx/BitmapUtils.java \
   gfx/BufferedCairoImage.java \
   gfx/CairoGLInfo.java \
@@ -123,7 +124,6 @@ FENNEC_JAVA_FILES = \
   gfx/CheckerboardImage.java \
   gfx/DisplayPortCalculator.java \
   gfx/DisplayPortMetrics.java \
-  gfx/FlexibleGLSurfaceView.java \
   gfx/FloatSize.java \
   gfx/GeckoLayerClient.java \
   gfx/GLController.java \
@@ -145,6 +145,7 @@ FENNEC_JAVA_FILES = \
   gfx/TextureGenerator.java \
   gfx/TextureReaper.java \
   gfx/TileLayer.java \
+  gfx/TouchEventHandler.java \
   gfx/ViewTransform.java \
   gfx/ViewportMetrics.java \
   gfx/VirtualLayer.java \
@@ -365,6 +366,7 @@ RES_DRAWABLE_BASE = \
   res/drawable/site_security_verified.png \
   res/drawable/urlbar_stop.png \
   res/drawable/validation_arrow.png \
+  res/drawable/validation_arrow_inverted.png \
   res/drawable/validation_bg.9.png \
   res/drawable/bookmarkdefaults_favicon_support.png \
   res/drawable/bookmarkdefaults_favicon_addons.png \
@@ -387,6 +389,7 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/abouthome_sync_bg.9.png \
   res/drawable-hdpi/abouthome_sync_pressed_bg.9.png \
   res/drawable-hdpi/abouthome_thumbnail.png \
+  res/drawable-hdpi/address_bar_bg_shadow.png \
   res/drawable-hdpi/awesomebar_tab.9.png \
   res/drawable-hdpi/awesomebar_tab_pressed.9.png \
   res/drawable-hdpi/ic_addons_empty.png \
@@ -418,6 +421,9 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/site_security_identified.png \
   res/drawable-hdpi/site_security_verified.png \
   res/drawable-hdpi/urlbar_stop.png \
+  res/drawable-hdpi/validation_arrow.png \
+  res/drawable-hdpi/validation_arrow_inverted.png \
+  res/drawable-hdpi/validation_bg.9.png \
   $(addprefix res/drawable-hdpi/,$(notdir $(SYNC_RES_DRAWABLE_HDPI))) \
   $(NULL)
 
@@ -451,6 +457,7 @@ RES_DRAWABLE_XHDPI_V11 = \
   res/drawable-xhdpi-v11/abouthome_sync_bg.9.png \
   res/drawable-xhdpi-v11/abouthome_sync_pressed_bg.9.png \
   res/drawable-xhdpi-v11/abouthome_thumbnail.png \
+  res/drawable-xhdpi-v11/address_bar_bg_shadow.png \
   res/drawable-xhdpi-v11/awesomebar_tab.9.png \
   res/drawable-xhdpi-v11/awesomebar_tab_pressed.9.png \
   res/drawable-xhdpi-v11/ic_addons_empty.png \
@@ -474,10 +481,17 @@ RES_DRAWABLE_XHDPI_V11 = \
   res/drawable-xhdpi-v11/address_bar_texture_port.png \
   res/drawable-xhdpi-v11/address_bar_url_bg.9.png \
   res/drawable-xhdpi-v11/address_bar_url_outline.9.png \
+  res/drawable-xhdpi-v11/doorhanger_arrow.png \
+  res/drawable-xhdpi-v11/doorhanger_bg.9.png \
+  res/drawable-xhdpi-v11/doorhanger_shadow_bg.9.png \
+  res/drawable-xhdpi-v11/doorhanger_popup_bg.9.png \
   res/drawable-xhdpi-v11/urlbar_stop.png \
   res/drawable-xhdpi-v11/site_security_identified.png \
   res/drawable-xhdpi-v11/site_security_verified.png \
   res/drawable-xhdpi-v11/tabs_button_tail.9.png \
+  res/drawable-xhdpi-v11/validation_arrow.png \
+  res/drawable-xhdpi-v11/validation_arrow_inverted.png \
+  res/drawable-xhdpi-v11/validation_bg.9.png \
   $(NULL)
 
 RES_DRAWABLE_LAND_V14 = \
@@ -551,7 +565,8 @@ MOZ_ANDROID_DRAWABLES += \
   mobile/android/base/resources/drawable/abouthome_sync_box.xml                 \
   mobile/android/base/resources/drawable/abouthome_topsites_bg_repeat.xml       \
   mobile/android/base/resources/drawable/address_bar_bg.xml                     \
-  mobile/android/base/resources/drawable/address_bar_bg_shadow.xml              \
+  mobile/android/base/resources/drawable/address_bar_bg_shadow.png              \
+  mobile/android/base/resources/drawable/address_bar_bg_shadow_repeat.xml       \
   mobile/android/base/resources/drawable/address_bar_url_default.xml            \
   mobile/android/base/resources/drawable/address_bar_url_pressed.xml            \
   mobile/android/base/resources/drawable/autocomplete_list_bg.9.png             \
@@ -679,7 +694,7 @@ res/values/defaults.xml: $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/res/values/defau
 	$(NSINSTALL) $^  res/values
 
 $(RES_DIRS):
-	rm -rf $@
+	$(RM) -r $@
 	$(NSINSTALL) -D $@
 
 $(RESOURCES): $(RES_DIRS) $(subst res/,$(srcdir)/resources/,$(RESOURCES))

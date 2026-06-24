@@ -49,10 +49,10 @@
 #include "nsReadableUtils.h"
 #include "nsNetUtil.h"
 #include "nsWindow.h"
+#include "nsILoadContext.h"
 #include "nsIServiceManager.h"
 #include "nsIPlatformCharset.h"
 #include "nsICharsetConverterManager.h"
-#include "nsIPrivateBrowsingService.h"
 #include "nsIURL.h"
 #include "nsIStringBundle.h"
 #include "nsEnumeratorUtils.h"
@@ -60,6 +60,7 @@
 #include "nsString.h"
 #include "nsToolkit.h"
 #include "WinUtils.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla::widget;
 
@@ -221,6 +222,15 @@ nsFilePicker::~nsFilePicker()
 }
 
 NS_IMPL_ISUPPORTS1(nsFilePicker, nsIFilePicker)
+
+NS_IMETHODIMP nsFilePicker::Init(nsIDOMWindow *aParent, const nsAString& aTitle, PRInt16 aMode)
+{
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aParent);
+  nsIDocShell* docShell = window ? window->GetDocShell() : NULL;  
+  mLoadContext = do_QueryInterface((nsILoadContext*) docShell);
+  
+  return nsBaseFilePicker::Init(aParent, aTitle, aMode);
+}
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 STDMETHODIMP nsFilePicker::QueryInterface(REFIID refiid, void** ppvResult)
@@ -1295,14 +1305,7 @@ nsFilePicker::RememberLastUsedDirectory()
 bool
 nsFilePicker::IsPrivacyModeEnabled()
 {
-  // Handle add to recent docs settings
-  nsCOMPtr<nsIPrivateBrowsingService> pbs =
-    do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-  bool privacyModeEnabled = false;
-  if (pbs) {
-    pbs->GetPrivateBrowsingEnabled(&privacyModeEnabled);
-  }
-  return privacyModeEnabled;
+  return mLoadContext && mLoadContext->UsePrivateBrowsing();
 }
 
 bool

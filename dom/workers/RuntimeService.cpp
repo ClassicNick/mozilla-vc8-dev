@@ -77,7 +77,6 @@ USING_WORKERS_NAMESPACE
 using mozilla::MutexAutoLock;
 using mozilla::MutexAutoUnlock;
 using mozilla::Preferences;
-using namespace mozilla::xpconnect::memory;
 
 // The size of the worker runtime heaps in bytes. May be changed via pref.
 #define WORKER_DEFAULT_RUNTIME_HEAPSIZE 32 * 1024 * 1024
@@ -339,7 +338,7 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate)
     NS_ASSERTION(zeal <= 3, "Bad zeal value!");
 
     PRUint32 frequency = zeal <= 2 ? JS_DEFAULT_ZEAL_FREQ : 1;
-    JS_SetGCZeal(workerCx, zeal, frequency, false);
+    JS_SetGCZeal(workerCx, zeal, frequency);
   }
 #endif
 

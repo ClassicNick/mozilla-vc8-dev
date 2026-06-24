@@ -241,6 +241,11 @@ const ERROR_SS_MODIFIED_TO_USSD = 24;
 const ERROR_SS_MODIFIED_TO_SS = 25;
 const ERROR_SUBSCRIPTION_NOT_SUPPORTED = 26;
 
+// 3GPP 23.040 clause 9.2.3.6 TP-Message-Reference(TP-MR):
+// The number of times the MS automatically repeats the SMS-SUBMIT shall be in
+// the range 1 to 3 but the precise number is an implementation matter.
+const SMS_RETRY_MAX = 3;
+
 const RADIO_STATE_OFF = 0;
 const RADIO_STATE_UNAVAILABLE = 1;
 const RADIO_STATE_ON = 2;
@@ -367,37 +372,36 @@ const CALL_PRESENTATION_RESTRICTED = 1;
 const CALL_PRESENTATION_UNKNOWN = 2;
 const CALL_PRESENTATION_PAYPHONE = 3;
 
-const SMS_HANDLED = 0;
-
 // ICC commands, see TS 27.007 +CRSM commands
-const ICC_COMMAND_READ_BINARY = 0xb0;
-const ICC_COMMAND_UPDATE_BINARY = 0xd6;
-const ICC_COMMAND_READ_RECORD = 0xb2;
-const ICC_COMMAND_UPDATE_RECORD = 0xdc;
 const ICC_COMMAND_SEEK = 0xa2;
+const ICC_COMMAND_READ_BINARY = 0xb0;
+const ICC_COMMAND_READ_RECORD = 0xb2;
 const ICC_COMMAND_GET_RESPONSE = 0xc0;
+const ICC_COMMAND_UPDATE_BINARY = 0xd6;
+const ICC_COMMAND_UPDATE_RECORD = 0xdc;
 
 // ICC constants, GSM SIM file ids from TS 51.011
-const ICC_EF_ADN = 0x6F3A;
-const ICC_EF_FDN = 0x6F3B;
-const ICC_EF_SDN = 0x6F49;
-const ICC_EF_EXT1 = 0x6F4A;
-const ICC_EF_EXT2 = 0x6F4B;
-const ICC_EF_EXT3 = 0x6F4C;
-const ICC_EF_EXT6 = 0x6fc8;   // Ext record for EF[MBDN]
-const ICC_EF_MWIS = 0x6FCA;
-const ICC_EF_MBDN = 0x6fc7;
-const ICC_EF_PNN = 0x6fc5;
-const ICC_EF_SPN = 0x6F46;
-const ICC_EF_SMS = 0x6F3C;
-const ICC_EF_ICCID = 0x2fe2;
-const ICC_EF_AD = 0x6FAD;
-const ICC_EF_MBI = 0x6fc9;
+const ICC_EF_ICCID  = 0x2fe2;
+const ICC_EF_IMG    = 0x4f20;
+const ICC_EF_SST    = 0x6f38;
+const ICC_EF_UST    = 0x6f38; // For USIM
+const ICC_EF_ADN    = 0x6f3a;
+const ICC_EF_FDN    = 0x6f3b;
+const ICC_EF_SMS    = 0x6f3c;
 const ICC_EF_MSISDN = 0x6f40;
-const ICC_EF_SPDI = 0x6fcd;
-const ICC_EF_SST = 0x6f38;
-const ICC_EF_CFIS = 0x6FCB;
-const ICC_EF_IMG = 0x4f20;
+const ICC_EF_SPN    = 0x6f46;
+const ICC_EF_SDN    = 0x6f49;
+const ICC_EF_EXT1   = 0x6f4a;
+const ICC_EF_EXT2   = 0x6f4b;
+const ICC_EF_EXT3   = 0x6f4c;
+const ICC_EF_AD     = 0x6fad;
+const ICC_EF_PNN    = 0x6fc5;
+const ICC_EF_MBDN   = 0x6fc7;
+const ICC_EF_EXT6   = 0x6fc8;   // Ext record for EF[MBDN]
+const ICC_EF_MBI    = 0x6fc9;
+const ICC_EF_MWIS   = 0x6fca;
+const ICC_EF_CFIS   = 0x6fcb;
+const ICC_EF_SPDI   = 0x6fcd;
 
 // Types of files  TS 11.11 9.3
 const TYPE_RFU = 0;
@@ -405,6 +409,7 @@ const TYPE_MF  = 1;
 const TYPE_DF  = 2;
 const TYPE_EF  = 4;
 
+const RESPONSE_DATA_FILE_SIZE = 2;
 const RESPONSE_DATA_FILE_ID_1 = 4;
 const RESPONSE_DATA_FILE_ID_2 = 5;
 const RESPONSE_DATA_FILE_TYPE = 6;
@@ -422,9 +427,9 @@ const EF_TYPE_TRANSPARENT = 0;
 const EF_TYPE_LINEAR_FIXED = 1;
 const EF_TYPE_CYCLIC = 3;
 
-// For retriveing MSISDN
-const FOOTER_SIZE_BYTES = 14;
-const MAX_NUMBER_SIZE_BYTES = 11;
+// For retrieving MSISDN, TS 151.011 clause 10.5.5
+const MSISDN_FOOTER_SIZE_BYTES = 14;
+const MSISDN_MAX_NUMBER_SIZE_BYTES = 10;
 
 // READ_RECORD mode,  TS 102.221
 const READ_RECORD_ABSOLUTE_MODE = 4;
@@ -436,6 +441,7 @@ const GET_RESPONSE_EF_SIZE_BYTES = 15;
 // EF path
 const EF_PATH_MF_SIM = "3f00";
 const EF_PATH_DF_TELECOM = "7f10";
+const EF_PATH_DF_GSM = "7f20";
 
 // Status code of sw1 for ICC I/O,
 // see GSM11.11 and TS 51.011 clause 9.4, and ISO 7816-4
@@ -521,9 +527,67 @@ const PDU_MMS_RD       = 0x04;// More messages to send. (SMS-DELIVER only) or
                               // Reject duplicates (SMS-SUBMIT only)
 
 // MTI - Message Type Indicator
-const PDU_MTI_SMS_STATUS_COMMAND  = 0x02;
+const PDU_MTI_SMS_RESERVED        = 0x03;
+const PDU_MTI_SMS_STATUS_REPORT   = 0x02;
+const PDU_MTI_SMS_COMMAND         = 0x02;
 const PDU_MTI_SMS_SUBMIT          = 0x01;
 const PDU_MTI_SMS_DELIVER         = 0x00;
+
+// PI - Parameter Indicator
+const PDU_PI_EXTENSION           = 0x80;
+const PDU_PI_USER_DATA_LENGTH    = 0x04;
+const PDU_PI_DATA_CODING_SCHEME  = 0x02;
+const PDU_PI_PROTOCOL_IDENTIFIER = 0x01;
+const PDU_PI_RESERVED            = 0x78;
+
+// FCS - Failure Cause
+const PDU_FCS_OK          = 0x00;
+const PDU_FCS_UNSPECIFIED = 0xFF;
+
+// ST - Status
+// Bit 7..0 = 000xxxxx, short message transaction completed
+const PDU_ST_0_RECEIVED             = 0x00;
+const PDU_ST_0_FORWARDED_NO_CONFIRM = 0x01;
+const PDU_ST_0_REPLACED_BY_SC       = 0x02;
+const PDU_ST_0_RESERVED_BEGIN       = 0x03;
+const PDU_ST_0_SC_SPECIFIC_BEGIN    = 0x10;
+const PDU_ST_0_SC_SPECIFIC_END      = 0x1F;
+// Bit 7..0 = 001xxxxx, temporary error, SC still trying to transfer SM
+const PDU_ST_1_CONGESTION        = 0x20;
+const PDU_ST_1_SME_BUSY          = 0x21;
+const PDU_ST_1_SME_NO_RESPONSE   = 0x22;
+const PDU_ST_1_SERVICE_REJECTED  = 0x23;
+const PDU_ST_1_QOS_UNAVAILABLE   = 0x24;
+const PDU_ST_1_SME_ERROR         = 0x25;
+const PDU_ST_1_RESERVED_BEGIN    = 0x26;
+const PDU_ST_1_SC_SPECIFIC_BEGIN = 0x30;
+const PDU_ST_1_SC_SPECIFIC_END   = 0x3F;
+// Bit 7..0 = 010xxxxx, permanent error, SC is not making any more transfer
+// attempts
+const PDU_ST_2_RPC_ERROR                = 0x40;
+const PDU_ST_2_DEST_INCOMPATIBLE        = 0x41;
+const PDU_ST_2_CONNECTION_REJECTED      = 0x42;
+const PDU_ST_2_NOT_OBTAINABLE           = 0x43;
+const PDU_ST_2_QOS_UNAVAILABLE          = 0x44;
+const PDU_ST_2_INTERWORKING_UNAVALIABLE = 0x45;
+const PDU_ST_2_VALIDITY_EXPIRED         = 0x46;
+const PDU_ST_2_DELETED_BY_SME           = 0x47;
+const PDU_ST_2_DELETED_BY_SC            = 0x48;
+const PDU_ST_2_SM_MISSING               = 0x49;
+const PDU_ST_2_RESERVED_BEGIN           = 0x4A;
+const PDU_ST_2_SC_SPECIFIC_BEGIN        = 0x50;
+const PDU_ST_2_SC_SPECIFIC_END          = 0x5F;
+// Bit 7..0 = 011xxxxx, temporary error, SC is not making any more transfer
+// attempts
+const PDU_ST_3_CONGESTION        = 0x60;
+const PDU_ST_3_SME_BUSY          = 0x61;
+const PDU_ST_3_SME_NO_RESPONSE   = 0x62;
+const PDU_ST_3_SERVICE_REJECTED  = 0x63;
+const PDU_ST_3_QOS_UNAVAILABLE   = 0x64;
+const PDU_ST_3_SME_ERROR         = 0x65;
+const PDU_ST_3_RESERVED_BEGIN    = 0x66;
+const PDU_ST_3_SC_SPECIFIC_BEGIN = 0x70;
+const PDU_ST_3_SC_SPECIFIC_END   = 0x7F;
 
 // User Data max length in septets
 const PDU_MAX_USER_DATA_7BIT = 160;
@@ -531,6 +595,24 @@ const PDU_MAX_USER_DATA_7BIT = 160;
 const PDU_MAX_USER_DATA_8BIT = 140;
 // User Data max length in chars
 const PDU_MAX_USER_DATA_UCS2 = 70;
+
+// PID - Protocol Indicator
+const PDU_PID_DEFAULT                      = 0x00;
+const PDU_PID_TELEMATIC_INTERWORKING       = 0x20;
+const PDU_PID_SHORT_MESSAGE_TYPE_0         = 0x40;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_1 = 0x41;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_2 = 0x42;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_3 = 0x43;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_4 = 0x44;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_5 = 0x45;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_6 = 0x46;
+const PDU_PID_REPLACE_SHORT_MESSAGE_TYPE_7 = 0x47;
+const PDU_PID_ENHANDED_MESSAGE_SERVICE     = 0x5E;
+const PDU_PID_RETURN_CALL_MESSAGE          = 0x5F
+const PDU_PID_ANSI_136_R_DATA              = 0x7C;
+const PDU_PID_ME_DATA_DOWNLOAD             = 0x7D;
+const PDU_PID_ME_DEPERSONALIZATION         = 0x7E;
+const PDU_PID_USIM_DATA_DOWNLOAD           = 0x7F;
 
 // DCS - Data Coding Scheme
 const PDU_DCS_MSG_CODING_7BITS_ALPHABET = 0x00;
@@ -575,6 +657,10 @@ const PDU_IEI_REPLY_ADDRESS_ELEMENT                    = 0x22;
 const PDU_IEI_ENHANCED_VOICE_MAIL_INFORMATION          = 0x23;
 const PDU_IEI_NATIONAL_LANGUAGE_SINGLE_SHIFT           = 0x24;
 const PDU_IEI_NATIONAL_LANGUAGE_LOCKING_SHIFT          = 0x25;
+
+// Application Port Addressing, see 3GPP TS 23.040 9.2.3.24.3
+const PDU_APA_RESERVED_8BIT_PORTS = 240;
+const PDU_APA_VALID_16BIT_PORTS   = 49152;
 
 // 7bit alphabet escape character. The encoded value of this code point is left
 // undefined in official spec. Its code value is internally assigned to \uffff,

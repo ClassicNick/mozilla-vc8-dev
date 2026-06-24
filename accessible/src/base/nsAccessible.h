@@ -50,7 +50,6 @@
 #include "nsIAccessibleRole.h"
 #include "nsIAccessibleStates.h"
 
-#include "nsARIAMap.h"
 #include "nsStringGlue.h"
 #include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
@@ -132,9 +131,14 @@ public:
   // Public methods
 
   /**
-   * get the description of this accessible
+   * Get the description of this accessible.
    */
   virtual void Description(nsString& aDescription);
+
+  /**
+   * Get the value of this accessible.
+   */
+  virtual void Value(nsString& aValue);
 
   /**
    * Return DOM node associated with this accessible.
@@ -176,33 +180,19 @@ public:
   /**
    * Return enumerated accessible role (see constants in Role.h).
    */
-  inline mozilla::a11y::role Role()
-  {
-    if (!mRoleMapEntry || mRoleMapEntry->roleRule != kUseMapRole)
-      return ARIATransformRole(NativeRole());
-
-    return ARIATransformRole(mRoleMapEntry->role);
-  }
+  mozilla::a11y::role Role();
 
   /**
    * Return true if ARIA role is specified on the element.
    */
-  inline bool HasARIARole() const
-  {
-    return mRoleMapEntry;
-  }
+  bool HasARIARole() const
+    { return mRoleMapEntry; }
 
   /**
    * Return accessible role specified by ARIA (see constants in
    * roles).
    */
-  inline mozilla::a11y::role ARIARole()
-  {
-    if (!mRoleMapEntry || mRoleMapEntry->roleRule != kUseMapRole)
-      return mozilla::a11y::roles::NOTHING;
-
-    return ARIATransformRole(mRoleMapEntry->role);
-  }
+  mozilla::a11y::role ARIARole();
 
   /**
    * Returns enumerated accessible role from native markup (see constants in
@@ -286,7 +276,7 @@ public:
    * @param aRoleMapEntry The ARIA nsRoleMapEntry* for the accessible, or 
    *                      nsnull if none.
    */
-  virtual void SetRoleMapEntry(nsRoleMapEntry *aRoleMapEntry);
+  virtual void SetRoleMapEntry(nsRoleMapEntry* aRoleMapEntry);
 
   /**
    * Update the children cache.
@@ -846,8 +836,11 @@ protected:
 
   nsAutoPtr<AccGroupInfo> mGroupInfo;
   friend class AccGroupInfo;
-
-  nsRoleMapEntry *mRoleMapEntry; // Non-null indicates author-supplied role; possibly state & value as well
+  
+  /**
+   * Non-null indicates author-supplied role; possibly state & value as well
+   */
+  nsRoleMapEntry* mRoleMapEntry;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAccessible,

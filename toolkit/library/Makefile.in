@@ -395,6 +395,7 @@ OS_LIBS += \
   -lhardware \
   -lutils \
   -lcutils \
+  -lsysutils \
   -lcamera_client \
   -lbinder \
   -lsensorservice \
@@ -533,6 +534,8 @@ ifdef _MSC_VER
 OS_LIBS += $(call EXPAND_LIBNAME,delayimp)
 EXTRA_DSO_LDOPTS += \
   -DELAYLOAD:gkmedias.dll \
+  -DELAYLOAD:psapi.dll \
+  -DELAYLOAD:dbghelp.dll \
   -DELAYLOAD:rasapi32.dll \
   -DELAYLOAD:rasdlg.dll \
   -DELAYLOAD:comdlg32.dll \
@@ -551,6 +554,10 @@ endif
 
 ifdef MOZ_ENABLE_QT
 EXTRA_DSO_LDOPTS += $(MOZ_QT_LDFLAGS) $(XEXT_LIBS)
+endif
+
+ifdef MOZ_GSTREAMER
+EXTRA_DSO_LDOPTS += $(GSTREAMER_LIBS)
 endif
 
 include $(topsrcdir)/config/rules.mk

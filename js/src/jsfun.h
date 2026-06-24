@@ -96,7 +96,6 @@ struct JSFunction : public JSObject
     } u;
     js::HeapPtrAtom  atom;        /* name for diagnostics and decompiling */
 
-    bool optimizedClosure()  const { return kind() > JSFUN_INTERPRETED; }
     bool isInterpreted()     const { return kind() >= JSFUN_INTERPRETED; }
     bool isNative()          const { return !isInterpreted(); }
     bool isNativeConstructor() const { return flags & JSFUN_CONSTRUCTOR; }
@@ -135,7 +134,12 @@ struct JSFunction : public JSObject
 
     static inline size_t offsetOfEnvironment() { return offsetof(JSFunction, u.i.env_); }
 
-    js::HeapPtrScript &script() const {
+    JSScript *script() const {
+        JS_ASSERT(isInterpreted());
+        return *(js::HeapPtrScript *)&u.i.script_;
+    }
+
+    js::HeapPtrScript &mutableScript() {
         JS_ASSERT(isInterpreted());
         return *(js::HeapPtrScript *)&u.i.script_;
     }
@@ -144,7 +148,7 @@ struct JSFunction : public JSObject
     inline void initScript(JSScript *script_);
 
     JSScript *maybeScript() const {
-        return isInterpreted() ? script().get() : NULL;
+        return isInterpreted() ? script() : NULL;
     }
 
     JSNative native() const {
@@ -240,7 +244,8 @@ js_NewFunction(JSContext *cx, JSObject *funobj, JSNative native, unsigned nargs,
                js::gc::AllocKind kind = JSFunction::FinalizeKind);
 
 extern JSFunction * JS_FASTCALL
-js_CloneFunctionObject(JSContext *cx, JSFunction *fun, JSObject *parent, JSObject *proto,
+js_CloneFunctionObject(JSContext *cx, js::HandleFunction fun,
+                       js::HandleObject parent, js::HandleObject proto,
                        js::gc::AllocKind kind = JSFunction::FinalizeKind);
 
 extern JSFunction *
@@ -316,5 +321,9 @@ js_fun_apply(JSContext *cx, unsigned argc, js::Value *vp);
 
 extern JSBool
 js_fun_call(JSContext *cx, unsigned argc, js::Value *vp);
+
+extern JSObject*
+js_fun_bind(JSContext *cx, js::HandleObject target, js::Value thisArg,
+            js::Value *boundArgs, unsigned argslen);
 
 #endif /* jsfun_h___ */

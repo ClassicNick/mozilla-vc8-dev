@@ -161,8 +161,9 @@ nsStyledElementNotElementCSSInlineStyle::AfterSetAttr(PRInt32 aNamespaceID,
                                         aNotify);
 }
 
-NS_IMETHODIMP
+nsresult
 nsStyledElementNotElementCSSInlineStyle::SetInlineStyleRule(css::StyleRule* aStyleRule,
+                                                            const nsAString* aSerialized,
                                                             bool aNotify)
 {
   SetMayHaveStyle();
@@ -193,7 +194,7 @@ nsStyledElementNotElementCSSInlineStyle::SetInlineStyleRule(css::StyleRule* aSty
     modification = !!mAttrsAndChildren.GetAttr(nsGkAtoms::style);
   }
 
-  nsAttrValue attrValue(aStyleRule, nsnull);
+  nsAttrValue attrValue(aStyleRule, aSerialized);
 
   // XXXbz do we ever end up with ADDITION here?  I doubt it.
   PRUint8 modType = modification ?

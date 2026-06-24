@@ -685,41 +685,41 @@ nsHTMLEditRules::GetListState(bool *aMixed, bool *aOL, bool *aUL, bool *aDL)
   nsresult res = GetListActionNodes(arrayOfNodes, false, true);
   NS_ENSURE_SUCCESS(res, res);
 
-  // examine list type for nodes in selection
+  // Examine list type for nodes in selection.
   PRInt32 listCount = arrayOfNodes.Count();
-  PRInt32 i;
-  for (i=listCount-1; i>=0; i--)
-  {
-    nsIDOMNode* curNode = arrayOfNodes[i];
-    
-    if (nsHTMLEditUtils::IsUnorderedList(curNode))
+  for (PRInt32 i = listCount - 1; i >= 0; --i) {
+    nsIDOMNode* curDOMNode = arrayOfNodes[i];
+    nsCOMPtr<dom::Element> curElement = do_QueryInterface(curDOMNode);
+
+    if (!curElement) {
+      bNonList = true;
+    } else if (curElement->IsHTML(nsGkAtoms::ul)) {
       *aUL = true;
-    else if (nsHTMLEditUtils::IsOrderedList(curNode))
+    } else if (curElement->IsHTML(nsGkAtoms::ol)) {
       *aOL = true;
-    else if (nsEditor::NodeIsType(curNode, nsEditProperty::li))
-    {
-      nsCOMPtr<nsIDOMNode> parent;
-      PRInt32 offset;
-      res = nsEditor::GetNodeLocation(curNode, address_of(parent), &offset);
-      NS_ENSURE_SUCCESS(res, res);
-      if (nsHTMLEditUtils::IsUnorderedList(parent))
-        *aUL = true;
-      else if (nsHTMLEditUtils::IsOrderedList(parent))
-        *aOL = true;
-    }
-    else if (nsEditor::NodeIsType(curNode, nsEditProperty::dl) ||
-             nsEditor::NodeIsType(curNode, nsEditProperty::dt) ||
-             nsEditor::NodeIsType(curNode, nsEditProperty::dd) )
-    {
+    } else if (curElement->IsHTML(nsGkAtoms::li)) {
+      if (nsINode* parent = curElement->GetElementParent()) {
+        if (parent->AsElement()->IsHTML(nsGkAtoms::ul)) {
+          *aUL = true;
+        } else if (parent->AsElement()->IsHTML(nsGkAtoms::ol)) {
+          *aOL = true;
+        }
+      }
+    } else if (curElement->IsHTML(nsGkAtoms::dl) ||
+               curElement->IsHTML(nsGkAtoms::dt) ||
+               curElement->IsHTML(nsGkAtoms::dd)) {
       *aDL = true;
+    } else {
+      bNonList = true;
     }
-    else bNonList = true;
   }  
   
   // hokey arithmetic with booleans
-  if ( (*aUL + *aOL + *aDL + bNonList) > 1) *aMixed = true;
-  
-  return res;
+  if ((*aUL + *aOL + *aDL + bNonList) > 1) {
+    *aMixed = true;
+  }
+
+  return NS_OK;
 }
 
 nsresult 
@@ -7683,7 +7683,17 @@ nsHTMLEditRules::CheckInterlinePosition(nsISelection *aSelection)
   PRInt32 selOffset;
   res = mHTMLEditor->GetStartNodeAndOffset(aSelection, getter_AddRefs(selNode), &selOffset);
   NS_ENSURE_SUCCESS(res, res);
-  
+
+  // First, let's check to see if we are after a <br>.  We take care of this
+  // special-case first so that we don't accidentally fall through into one
+  // of the other conditionals.
+  mHTMLEditor->GetPriorHTMLNode(selNode, selOffset, address_of(node), true);
+  if (node && nsTextEditUtils::IsBreak(node))
+  {
+    selPriv->SetInterlinePosition(true);
+    return NS_OK;
+  }
+
   // are we after a block?  If so try set caret to following content
   mHTMLEditor->GetPriorHTMLSibling(selNode, selOffset, address_of(node));
   if (node && IsBlockNode(node))
@@ -7695,15 +7705,7 @@ nsHTMLEditRules::CheckInterlinePosition(nsISelection *aSelection)
   // are we before a block?  If so try set caret to prior content
   mHTMLEditor->GetNextHTMLSibling(selNode, selOffset, address_of(node));
   if (node && IsBlockNode(node))
-  {
     selPriv->SetInterlinePosition(false);
-    return NS_OK;
-  }
-  
-  // are we after a <br>?  If so we want to stick to whatever is after <br>.
-  mHTMLEditor->GetPriorHTMLNode(selNode, selOffset, address_of(node), true);
-  if (node && nsTextEditUtils::IsBreak(node))
-      selPriv->SetInterlinePosition(true);
   return NS_OK;
 }
 

@@ -1352,7 +1352,7 @@ BrowserGlue.prototype = {
     // be set to the version it has been added in, we will compare its value
     // to users' smartBookmarksVersion and add new smart bookmarks without
     // recreating old deleted ones.
-    const SMART_BOOKMARKS_VERSION = 3;
+    const SMART_BOOKMARKS_VERSION = 4;
     const SMART_BOOKMARKS_ANNO = "Places/SmartBookmark";
     const SMART_BOOKMARKS_PREF = "browser.places.smartBookmarksVersion";
 
@@ -1380,9 +1380,7 @@ BrowserGlue.prototype = {
         let smartBookmarks = {
           MostVisited: {
             title: bundle.GetStringFromName("mostVisitedTitle"),
-            uri: NetUtil.newURI("place:redirectsMode=" +
-                                Ci.nsINavHistoryQueryOptions.REDIRECTS_MODE_TARGET +
-                                "&sort=" +
+            uri: NetUtil.newURI("place:sort=" +
                                 Ci.nsINavHistoryQueryOptions.SORT_BY_VISITCOUNT_DESCENDING +
                                 "&maxResults=" + MAX_RESULTS),
             parent: PlacesUtils.toolbarFolderId,
@@ -1415,7 +1413,7 @@ BrowserGlue.prototype = {
             parent: PlacesUtils.bookmarksMenuFolderId,
             position: menuIndex++,
             newInVersion: 1
-          },
+          }
         };
 
         // Set current itemId, parent and position if Smart Bookmark exists,
@@ -1426,9 +1424,9 @@ BrowserGlue.prototype = {
           let queryId = PlacesUtils.annotations.getItemAnnotation(itemId, SMART_BOOKMARKS_ANNO);
           if (queryId in smartBookmarks) {
             let smartBookmark = smartBookmarks[queryId];
-            smartBookmarks[queryId].itemId = itemId;
-            smartBookmarks[queryId].parent = PlacesUtils.bookmarks.getFolderIdForItem(itemId);
-            smartBookmarks[queryId].position = PlacesUtils.bookmarks.getItemIndex(itemId);
+            smartBookmark.itemId = itemId;
+            smartBookmark.parent = PlacesUtils.bookmarks.getFolderIdForItem(itemId);
+            smartBookmark.position = PlacesUtils.bookmarks.getItemIndex(itemId);
           }
           else {
             // We don't remove old Smart Bookmarks because user could still

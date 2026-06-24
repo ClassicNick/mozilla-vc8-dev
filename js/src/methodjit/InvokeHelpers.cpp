@@ -172,6 +172,9 @@ InlineReturn(VMFrame &f)
 void JS_FASTCALL
 stubs::SlowCall(VMFrame &f, uint32_t argc)
 {
+    if (*f.regs.pc == JSOP_FUNAPPLY && !GuardFunApplySpeculation(f.cx, f.regs))
+        THROW();
+
     CallArgs args = CallArgsFromSp(argc, f.regs.sp);
     if (!InvokeKernel(f.cx, args))
         THROW();
@@ -298,7 +301,8 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
     bool newType = construct && cx->typeInferenceEnabled() &&
         types::UseNewType(cx, f.script(), f.pc());
 
-    types::TypeMonitorCall(cx, args, construct);
+    if (!types::TypeMonitorCall(cx, args, construct))
+        return false;
 
     /* Try to compile if not already compiled. */
     CompileStatus status = CanMethodJIT(cx, newscript, newscript->code, construct, CompileRequest_Interpreter);
@@ -637,7 +641,7 @@ stubs::CreateThis(VMFrame &f, JSObject *proto)
 {
     JSContext *cx = f.cx;
     StackFrame *fp = f.fp();
-    JSObject *callee = &fp->callee();
+    RootedVarObject callee(cx, &fp->callee());
     JSObject *obj = js_CreateThisForFunctionWithProto(cx, callee, proto);
     if (!obj)
         THROW();
@@ -899,7 +903,7 @@ js_InternalInterpret(void *returnData, void *returnType, void *returnReg, js::VM
         break;
 
       case REJOIN_THIS_PROTOTYPE: {
-        JSObject *callee = &fp->callee();
+        RootedVarObject callee(cx, &fp->callee());
         JSObject *proto = f.regs.sp[0].isObject() ? &f.regs.sp[0].toObject() : NULL;
         JSObject *obj = js_CreateThisForFunctionWithProto(cx, callee, proto);
         if (!obj)

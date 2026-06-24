@@ -49,7 +49,7 @@
 #include "nsIObserver.h"
 #include "nsThreadUtils.h"
 
-#include "AndroidFlexViewWrapper.h"
+#include "AndroidLayerViewWrapper.h"
 #include "AndroidJavaWrappers.h"
 
 #include "nsIMutableArray.h"
@@ -111,6 +111,15 @@ typedef struct AndroidSystemColors {
     nscolor panelColorBackground;
 } AndroidSystemColors;
 
+class nsFilePickerCallback : nsISupports {
+public:
+    NS_DECL_ISUPPORTS
+    virtual void handleResult(nsAString& filePath) = 0;
+    nsFilePickerCallback() {}
+protected:
+    virtual ~nsFilePickerCallback() {}
+};
+
 class AndroidBridge
 {
 public:
@@ -171,6 +180,8 @@ public:
                                  const nsAString& aActionHint);
 
     static void NotifyIMEChange(const PRUnichar *aText, PRUint32 aTextLen, int aStart, int aEnd, int aNewEnd);
+
+    static void RemovePluginView(void* surface);
 
     nsresult TakeScreenshot(nsIDOMWindow *window, PRInt32 srcX, PRInt32 srcY, PRInt32 srcW, PRInt32 srcH, PRInt32 dstW, PRInt32 dstH, PRInt32 tabId, float scale);
 
@@ -242,6 +253,7 @@ public:
 
     void ShowFilePickerForExtensions(nsAString& aFilePath, const nsAString& aExtensions);
     void ShowFilePickerForMimeType(nsAString& aFilePath, const nsAString& aMimeType);
+    void ShowFilePickerAsync(const nsAString& aMimeType, nsFilePickerCallback* callback);
 
     void PerformHapticFeedback(bool aIsLongPress);
 
@@ -252,7 +264,7 @@ public:
 
     void ShowInputMethodPicker();
 
-    void SetPreventPanning(bool aPreventPanning);
+    void NotifyDefaultPrevented(bool aDefaultPrevented);
 
     void HideProgressDialogOnce();
 
@@ -269,8 +281,6 @@ public:
     bool GetShowPasswordSetting();
 
     void FireAndWaitForTracerEvent();
-
-    bool GetAccessibilityEnabled();
 
     class AutoLocalJNIFrame {
     public:
@@ -377,8 +387,6 @@ public:
 
     nsCOMPtr<nsIAndroidDrawMetadataProvider> GetDrawMetadataProvider();
 
-    void EmitGeckoAccessibilityEvent (PRInt32 eventType, const nsTArray<nsString>& text, const nsAString& description, bool enabled, bool checked, bool password);
-
     void CheckURIVisited(const nsAString& uri);
     void MarkURIVisited(const nsAString& uri);
 
@@ -405,8 +413,9 @@ public:
     void EnableNetworkNotifications();
     void DisableNetworkNotifications();
 
-    void SetFirstPaintViewport(float aOffsetX, float aOffsetY, float aZoom, float aPageWidth, float aPageHeight);
-    void SetPageSize(float aZoom, float aPageWidth, float aPageHeight);
+    void SetFirstPaintViewport(float aOffsetX, float aOffsetY, float aZoom, float aPageWidth, float aPageHeight,
+                               float aCssPageWidth, float aCssPageHeight);
+    void SetPageSize(float aZoom, float aPageWidth, float aPageHeight, float aCssPageWidth, float aCssPageHeight);
     void SyncViewportInfo(const nsIntRect& aDisplayPort, float aDisplayResolution, bool aLayersUpdated,
                           nsIntPoint& aScrollOffset, float& aScaleX, float& aScaleY);
 
@@ -482,12 +491,13 @@ protected:
     jmethodID jShowAlertNotification;
     jmethodID jShowFilePickerForExtensions;
     jmethodID jShowFilePickerForMimeType;
+    jmethodID jShowFilePickerAsync;
     jmethodID jAlertsProgressListener_OnProgress;
     jmethodID jAlertsProgressListener_OnCancel;
     jmethodID jGetDpi;
     jmethodID jSetFullScreen;
     jmethodID jShowInputMethodPicker;
-    jmethodID jSetPreventPanning;
+    jmethodID jNotifyDefaultPrevented;
     jmethodID jHideProgressDialog;
     jmethodID jPerformHapticFeedback;
     jmethodID jVibrate1;
@@ -510,11 +520,10 @@ protected:
     jmethodID jEnableBatteryNotifications;
     jmethodID jDisableBatteryNotifications;
     jmethodID jGetCurrentBatteryInformation;
-    jmethodID jGetAccessibilityEnabled;
     jmethodID jHandleGeckoMessage;
     jmethodID jCheckUriVisited;
     jmethodID jMarkUriVisited;
-    jmethodID jEmitGeckoAccessibilityEvent;
+    jmethodID jRemovePluginView;
 
     jmethodID jNumberOfMessages;
     jmethodID jSendMessage;
@@ -543,7 +552,7 @@ protected:
     jclass jEGLContextClass;
     jclass jEGL10Class;
 
-    jclass jFlexSurfaceView;
+    jclass jLayerView;
     jmethodID jRegisterCompositorMethod;
 
     // some convinient types to have around

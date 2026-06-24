@@ -409,27 +409,18 @@ nsXPConnect::Collect(PRUint32 reason, PRUint32 kind)
     // To improve debugging, if DEBUG_CC is defined all JS objects are
     // traversed.
 
-    XPCCallContext ccx(NATIVE_CALLER);
-    if (!ccx.IsValid())
-        return;
-
-    JSContext *cx = ccx.GetJSContext();
-
-    // We want to scan the current thread for GC roots only if it was in a
-    // request prior to the Collect call to avoid false positives during the
-    // cycle collection. So to compensate for JS_BeginRequest in
-    // XPCCallContext::Init we disable the conservative scanner if that call
-    // has started the request on this thread.
-    js::AutoSkipConservativeScan ascs(cx);
     MOZ_ASSERT(reason < js::gcreason::NUM_REASONS);
     js::gcreason::Reason gcreason = (js::gcreason::Reason)reason;
+
+    JSRuntime *rt = GetRuntime()->GetJSRuntime();
+    js::PrepareForFullGC(rt);
     if (kind == nsGCShrinking) {
-        js::ShrinkingGC(cx, gcreason);
+        js::ShrinkingGC(rt, gcreason);
     } else if (kind == nsGCIncremental) {
-        js::IncrementalGC(cx, gcreason);
+        js::IncrementalGC(rt, gcreason);
     } else {
         MOZ_ASSERT(kind == nsGCNormal);
-        js::GCForReason(cx, gcreason);
+        js::GCForReason(rt, gcreason);
     }
 }
 
@@ -1202,12 +1193,56 @@ TraceXPCGlobal(JSTracer *trc, JSObject *obj)
         scope->TraceDOMPrototypes(trc);
 }
 
+#ifdef DEBUG
+#include "mozilla/Preferences.h"
+#include "nsIXULRuntime.h"
+static void
+CheckTypeInference(JSContext *cx, JSClass *clasp, nsIPrincipal *principal)
+{
+    // Check that the global class isn't whitelisted.
+    if (strcmp(clasp->name, "Sandbox") ||
+        strcmp(clasp->name, "nsXBLPrototypeScript compilation scope") ||
+        strcmp(clasp->name, "nsXULPrototypeScript compilation scope"))
+        return;
+
+    // Check that the pref is on.
+    if (!mozilla::Preferences::GetBool("javascript.options.typeinference"))
+        return;
+
+    // Check that we're not chrome.
+    bool isSystem;
+    nsIScriptSecurityManager* ssm;
+    ssm = XPCWrapper::GetSecurityManager();
+    if (NS_FAILED(ssm->IsSystemPrincipal(principal, &isSystem)) || !isSystem)
+        return;
+
+    // Check that safe mode isn't on.
+    bool safeMode;
+    nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
+    if (!xr) {
+        NS_WARNING("Couldn't get XUL runtime!");
+        return;
+    }
+    if (NS_FAILED(xr->GetInSafeMode(&safeMode)) || safeMode)
+        return;
+
+    // Finally, do the damn assert.
+    MOZ_ASSERT(JS_GetOptions(cx) & JSOPTION_TYPE_INFERENCE);
+}
+#else
+#define CheckTypeInference(cx, clasp, principal) {}
+#endif
+
 nsresult
 xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
                        nsIPrincipal *principal, nsISupports *ptr,
                        bool wantXrays, JSObject **global,
                        JSCompartment **compartment)
 {
+    // Make sure that Type Inference is enabled for everything non-chrome.
+    // Sandboxes and compilation scopes are exceptions. See bug 744034.
+    CheckTypeInference(cx, clasp, principal);
+
     NS_ABORT_IF_FALSE(NS_IsMainThread(), "using a principal off the main thread?");
     NS_ABORT_IF_FALSE(principal, "bad key");
 
@@ -2370,18 +2405,6 @@ nsXPConnect::SetReportAllJSExceptions(bool newval)
     return NS_OK;
 }
 
-/* [noscript, notxpcom] bool defineDOMQuickStubs (in JSContextPtr cx, in JSObjectPtr proto, in PRUint32 flags, in PRUint32 interfaceCount, [array, size_is (interfaceCount)] in nsIIDPtr interfaceArray); */
-NS_IMETHODIMP_(bool)
-nsXPConnect::DefineDOMQuickStubs(JSContext * cx,
-                                 JSObject * proto,
-                                 PRUint32 flags,
-                                 PRUint32 interfaceCount,
-                                 const nsIID * *interfaceArray)
-{
-    return DOM_DefineQuickStubs(cx, proto, flags,
-                                interfaceCount, interfaceArray);
-}
-
 /* attribute JSRuntime runtime; */
 NS_IMETHODIMP
 nsXPConnect::GetRuntime(JSRuntime **runtime)
@@ -2801,17 +2824,7 @@ nsXPConnect::GetTelemetryValue(JSContext *cx, jsval *rval)
 NS_IMETHODIMP
 nsXPConnect::NotifyDidPaint()
 {
-    JSRuntime *rt = mRuntime->GetJSRuntime();
-    if (!js::WantGCSlice(rt))
-        return NS_OK;
-
-    XPCCallContext ccx(NATIVE_CALLER);
-    if (!ccx.IsValid())
-        return UnexpectedFailure(NS_ERROR_FAILURE);
-
-    JSContext *cx = ccx.GetJSContext();
-
-    js::NotifyDidPaint(cx);
+    js::NotifyDidPaint(GetRuntime()->GetJSRuntime());
     return NS_OK;
 }
 

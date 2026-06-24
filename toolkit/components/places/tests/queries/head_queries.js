@@ -107,6 +107,28 @@ function populateDB(aArray) {
             }
           }
 
+          if (qdata.isRedirect) {
+            // Redirect sources added through the docshell are properly marked
+            // as redirects and get hidden state, the API doesn't have that
+            // power (And actually doesn't make much sense to add redirects
+            // through the API).
+            // This must be async cause otherwise the updateFrecency call
+            // done by addVisits may randomly happen after it, overwriting the
+            // value.
+            let stmt = DBConn().createAsyncStatement(
+              "UPDATE moz_places SET hidden = 1 WHERE url = :url");
+            stmt.params.url = qdata.uri;
+            try {
+              stmt.executeAsync();
+            }
+            catch (ex) {
+              print("Error while setting hidden.");
+            }
+            finally {
+              stmt.finalize();
+            }
+          }
+
           if (qdata.isDetails) {
             // Then we add extraneous page details for testing
             PlacesUtils.history.addPageWithDetails(uri(qdata.uri),

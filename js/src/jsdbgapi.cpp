@@ -231,7 +231,7 @@ JS_ClearScriptTraps(JSContext *cx, JSScript *script)
 JS_PUBLIC_API(void)
 JS_ClearAllTrapsForCompartment(JSContext *cx)
 {
-    cx->compartment->clearTraps(cx);
+    cx->compartment->clearTraps(cx->runtime->defaultFreeOp());
 }
 
 JS_PUBLIC_API(JSBool)
@@ -427,7 +427,7 @@ JS_GetFunctionArgumentCount(JSContext *cx, JSFunction *fun)
 JS_PUBLIC_API(JSBool)
 JS_FunctionHasLocalNames(JSContext *cx, JSFunction *fun)
 {
-    return fun->script()->bindings.hasLocalNames();
+    return fun->script()->bindings.count() > 0;
 }
 
 extern JS_PUBLIC_API(uintptr_t *)
@@ -570,6 +570,9 @@ JS_GetFrameCallObject(JSContext *cx, JSStackFrame *fpArg)
     StackFrame *fp = Valueify(fpArg);
     JS_ASSERT(cx->stack.containsSlow(fp));
 
+    if (!fp->compartment()->debugMode())
+        return NULL;
+
     if (!fp->isFunctionFrame())
         return NULL;
 
@@ -684,7 +687,7 @@ JS_GetScriptFilename(JSContext *cx, JSScript *script)
 JS_PUBLIC_API(const jschar *)
 JS_GetScriptSourceMap(JSContext *cx, JSScript *script)
 {
-    return script->sourceMap;
+    return script->hasSourceMap ? script->getSourceMap() : NULL;
 }
 
 JS_PUBLIC_API(unsigned)
@@ -794,12 +797,14 @@ JS_PropertyIterator(JSObject *obj, JSScopeProperty **iteratorp)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *sprop,
+JS_GetPropertyDesc(JSContext *cx, JSObject *obj_, JSScopeProperty *sprop,
                    JSPropertyDesc *pd)
 {
-    assertSameCompartment(cx, obj);
+    assertSameCompartment(cx, obj_);
     Shape *shape = (Shape *) sprop;
     pd->id = IdToJsval(shape->propid());
+
+    RootedVarObject obj(cx, obj_);
 
     JSBool wasThrowing = cx->isExceptionPending();
     Value lastException = UndefinedValue();
@@ -1595,7 +1600,7 @@ extern JS_PUBLIC_API(void)
 JS_DumpPCCounts(JSContext *cx, JSScript *script)
 {
 #if defined(DEBUG)
-    JS_ASSERT(script->scriptCounts);
+    JS_ASSERT(script->hasScriptCounts);
 
     Sprinter sprinter(cx);
     if (!sprinter.init())
@@ -1638,7 +1643,7 @@ JS_DumpCompartmentPCCounts(JSContext *cx)
 {
     for (CellIter i(cx->compartment, gc::FINALIZE_SCRIPT); !i.done(); i.next()) {
         JSScript *script = i.get<JSScript>();
-        if (script->scriptCounts)
+        if (script->hasScriptCounts)
             JS_DumpPCCounts(cx, script);
     }
 }

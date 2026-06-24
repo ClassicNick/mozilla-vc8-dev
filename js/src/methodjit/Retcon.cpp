@@ -195,13 +195,13 @@ Recompiler::patchFrame(JSCompartment *compartment, VMFrame *f, JSScript *script)
             f->stubRejoin = 0;
         }
     } else {
-        if (script->jitCtor) {
-            JITChunk *chunk = script->jitCtor->findCodeChunk(*addr);
+        if (script->jitHandleCtor.isValid()) {
+            JITChunk *chunk = script->jitHandleCtor.getValid()->findCodeChunk(*addr);
             if (chunk)
                 patchCall(chunk, fp, addr);
         }
-        if (script->jitNormal) {
-            JITChunk *chunk = script->jitNormal->findCodeChunk(*addr);
+        if (script->jitHandleNormal.isValid()) {
+            JITChunk *chunk = script->jitHandleNormal.getValid()->findCodeChunk(*addr);
             if (chunk)
                 patchCall(chunk, fp, addr);
         }
@@ -361,6 +361,8 @@ ClearAllFrames(JSCompartment *compartment)
         return;
 
     ExpandInlineFrames(compartment);
+
+    compartment->types.recompilations++;
 
     for (VMFrame *f = compartment->jaegerCompartment()->activeFrame();
          f != NULL;

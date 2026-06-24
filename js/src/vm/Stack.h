@@ -544,7 +544,7 @@ class StackFrame
 
     Value &varSlot(unsigned i) {
         JS_ASSERT(i < script()->nfixed);
-        JS_ASSERT_IF(maybeFun(), i < script()->bindings.countVars());
+        JS_ASSERT_IF(maybeFun(), i < script()->bindings.numVars());
         return slots()[i];
     }
 
@@ -725,6 +725,8 @@ class StackFrame
     template <class Op>
     inline bool forEachCanonicalActualArg(Op op, unsigned start = 0, unsigned count = unsigned(-1));
     template <class Op> inline bool forEachFormalArg(Op op);
+
+    /* XXX: all these argsObj functions will be removed with bug 659577. */
 
     bool hasArgsObj() const {
         /*
@@ -1836,13 +1838,27 @@ class StackIter
     bool operator!=(const StackIter &rhs) const { return !(*this == rhs); }
 
     bool isScript() const { JS_ASSERT(!done()); return state_ == SCRIPTED; }
-    StackFrame *fp() const { JS_ASSERT(!done() && isScript()); return fp_; }
-    Value      *sp() const { JS_ASSERT(!done() && isScript()); return sp_; }
-    jsbytecode *pc() const { JS_ASSERT(!done() && isScript()); return pc_; }
-    JSScript   *script() const { JS_ASSERT(!done() && isScript()); return script_; }
+    bool isImplicitNativeCall() const {
+        JS_ASSERT(!done());
+        return state_ == IMPLICIT_NATIVE;
+    }
+    bool isNativeCall() const {
+        JS_ASSERT(!done());
+        return state_ == NATIVE || state_ == IMPLICIT_NATIVE;
+    }
 
-    bool isNativeCall() const { JS_ASSERT(!done()); return state_ != SCRIPTED; }
-    CallArgs nativeArgs() const { JS_ASSERT(!done() && isNativeCall()); return args_; }
+    bool isFunctionFrame() const;
+    bool isEvalFrame() const;
+    bool isNonEvalFunctionFrame() const;
+
+    StackFrame *fp() const { JS_ASSERT(isScript()); return fp_; }
+    Value      *sp() const { JS_ASSERT(isScript()); return sp_; }
+    jsbytecode *pc() const { JS_ASSERT(isScript()); return pc_; }
+    JSScript   *script() const { JS_ASSERT(isScript()); return script_; }
+    JSObject   &callee() const;
+    Value       calleev() const;
+
+    CallArgs nativeArgs() const { JS_ASSERT(isNativeCall()); return args_; }
 };
 
 /* A filtering of the StackIter to only stop at scripts. */

@@ -86,6 +86,8 @@
 #include "WrapperFactory.h"
 #include "nsGlobalWindow.h"
 #include "nsScriptNameSpaceManager.h"
+#include "StructuredCloneTags.h"
+#include "mozilla/dom/ImageData.h"
 
 #include "nsJSPrincipals.h"
 
@@ -113,6 +115,7 @@
 #include "sampler.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 const size_t gStackSize = 8192;
 
@@ -445,11 +448,8 @@ NS_ScriptErrorReporter(JSContext *cx,
   // We don't want to report exceptions too eagerly, but warnings in the
   // absence of werror are swallowed whole, so report those now.
   if (!JSREPORT_IS_WARNING(report->flags)) {
-    JSStackFrame * fp = nsnull;
-    while ((fp = JS_FrameIterator(cx, &fp))) {
-      if (JS_IsScriptFrame(cx, fp)) {
-        return;
-      }
+    if (JS_DescribeScriptedCaller(cx, nsnull, nsnull)) {
+      return;
     }
 
     nsIXPConnect* xpc = nsContentUtils::XPConnect();
@@ -487,10 +487,15 @@ NS_ScriptErrorReporter(JSContext *cx,
         fileName.AssignWithConversion(report->filename);
       }
 
-      const PRUnichar *m = reinterpret_cast<const PRUnichar*>
-                                             (report->ucmessage);
+      const PRUnichar* m = static_cast<const PRUnichar*>(report->ucmessage);
       if (m) {
-        msg.Assign(m);
+        const PRUnichar* n = static_cast<const PRUnichar*>
+            (js::GetErrorTypeNameFromNumber(cx, report->errorNumber));
+        if (n) {
+          msg.Assign(n);
+          msg.AppendLiteral(": ");
+        }
+        msg.Append(m);
       }
 
       if (msg.IsEmpty() && message) {
@@ -915,7 +920,6 @@ static const char js_relimit_option_str[]= JS_OPTIONS_DOT_STR "relimit";
 #ifdef JS_GC_ZEAL
 static const char js_zeal_option_str[]        = JS_OPTIONS_DOT_STR "gczeal";
 static const char js_zeal_frequency_str[]     = JS_OPTIONS_DOT_STR "gczeal.frequency";
-static const char js_zeal_compartment_str[]   = JS_OPTIONS_DOT_STR "gczeal.compartment_gc";
 #endif
 static const char js_methodjit_content_str[]  = JS_OPTIONS_DOT_STR "methodjit.content";
 static const char js_methodjit_chrome_str[]   = JS_OPTIONS_DOT_STR "methodjit.chrome";
@@ -941,7 +945,11 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
   else
     newDefaultJSOptions &= ~JSOPTION_STRICT;
 
-  nsIScriptGlobalObject *global = context->GetGlobalObject();
+  // The vanilla GetGlobalObject returns null if a global isn't set up on
+  // the context yet. We can sometimes be call midway through context init,
+  // So ask for the member directly instead.
+  nsIScriptGlobalObject *global = context->GetGlobalObjectRef();
+
   // XXX should we check for sysprin instead of a chrome window, to make
   // XXX components be covered by the chrome pref instead of the content one?
   nsCOMPtr<nsIDOMWindow> contentWindow(do_QueryInterface(global));
@@ -1022,9 +1030,8 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
 #ifdef JS_GC_ZEAL
   PRInt32 zeal = Preferences::GetInt(js_zeal_option_str, -1);
   PRInt32 frequency = Preferences::GetInt(js_zeal_frequency_str, JS_DEFAULT_ZEAL_FREQ);
-  bool compartment = Preferences::GetBool(js_zeal_compartment_str, false);
   if (zeal >= 0)
-    ::JS_SetGCZeal(context->mContext, (PRUint8)zeal, frequency, compartment);
+    ::JS_SetGCZeal(context->mContext, (PRUint8)zeal, frequency);
 #endif
 
   return 0;
@@ -3606,7 +3613,36 @@ NS_DOMReadStructuredClone(JSContext* cx,
                           uint32_t data,
                           void* closure)
 {
-  // We don't currently support any extensions to structured cloning.
+  if (tag == SCTAG_DOM_IMAGEDATA) {
+    // Read the information out of the stream.
+    uint32_t width, height;
+    JS::Value dataArray;
+    if (!JS_ReadUint32Pair(reader, &width, &height) ||
+        !JS_ReadTypedArray(reader, &dataArray)) {
+      return nsnull;
+    }
+    MOZ_ASSERT(dataArray.isObject());
+
+    // Construct the ImageData.
+    nsCOMPtr<nsIDOMImageData> imageData = new ImageData(width, height,
+                                                        dataArray.toObject());
+    // Wrap it in a jsval.
+    JSObject* global = JS_GetGlobalForScopeChain(cx);
+    if (!global) {
+      return nsnull;
+    }
+    nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
+    JS::Value val;
+    nsresult rv =
+      nsContentUtils::WrapNative(cx, global, imageData, &val,
+                                 getter_AddRefs(wrapper));
+    if (NS_FAILED(rv)) {
+      return nsnull;
+    }
+    return val.toObjectOrNull();
+  }
+
+  // Don't know what this is. Bail.
   nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
   return nsnull;
 }
@@ -3617,7 +3653,30 @@ NS_DOMWriteStructuredClone(JSContext* cx,
                            JSObject* obj,
                            void *closure)
 {
-  // We don't currently support any extensions to structured cloning.
+  nsCOMPtr<nsIXPConnectWrappedNative> wrappedNative;
+  nsContentUtils::XPConnect()->
+    GetWrappedNativeOfJSObject(cx, obj, getter_AddRefs(wrappedNative));
+  nsISupports *native = wrappedNative ? wrappedNative->Native() : nsnull;
+
+  nsCOMPtr<nsIDOMImageData> imageData = do_QueryInterface(native);
+  if (imageData) {
+    // Prepare the ImageData internals.
+    PRUint32 width, height;
+    JS::Value dataArray;
+    if (NS_FAILED(imageData->GetWidth(&width)) ||
+        NS_FAILED(imageData->GetHeight(&height)) ||
+        NS_FAILED(imageData->GetData(cx, &dataArray)))
+    {
+      return false;
+    }
+
+    // Write the internals to the stream.
+    return JS_WriteUint32Pair(writer, SCTAG_DOM_IMAGEDATA, 0) &&
+           JS_WriteUint32Pair(writer, width, height) &&
+           JS_WriteTypedArray(writer, dataArray);
+  }
+
+  // Don't know what this is. Bail.
   nsDOMClassInfo::ThrowJSException(cx, NS_ERROR_DOM_DATA_CLONE_ERR);
   return JS_FALSE;
 }

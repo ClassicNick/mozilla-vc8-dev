@@ -82,6 +82,10 @@
 #ifndef SAMPLER_H
 #define SAMPLER_H
 
+#if defined (_MSC_VER) && _MSC_VER <= 1310
+#undef MOZ_ENABLE_PROFILER_SPS
+#endif
+
 // Redefine the macros for platforms where SPS is supported.
 #ifdef MOZ_ENABLE_PROFILER_SPS
 

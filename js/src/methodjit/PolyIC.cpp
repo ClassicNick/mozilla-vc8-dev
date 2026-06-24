@@ -86,6 +86,7 @@ class PICLinker : public LinkerHelper
         if (!pool)
             return false;
         if (!ic.addPool(cx, pool)) {
+            markVerified();
             pool->release();
             js_ReportOutOfMemory(cx);
             return false;
@@ -694,13 +695,12 @@ struct GetPropHelper {
     // These fields are set in the constructor and describe a property lookup.
     JSContext   *cx;
     JSObject    *obj;
-    PropertyName *name;
+    RootedVarPropertyName name;
     IC          &ic;
     VMFrame     &f;
 
     // These fields are set by |bind| and |lookup|. After a call to either
     // function, these are set exactly as they are in JSOP_GETPROP or JSOP_NAME.
-    JSObject    *aobj;
     JSObject    *holder;
     JSProperty  *prop;
 
@@ -709,13 +709,13 @@ struct GetPropHelper {
     const Shape *shape;
 
     GetPropHelper(JSContext *cx, JSObject *obj, PropertyName *name, IC &ic, VMFrame &f)
-      : cx(cx), obj(obj), name(name), ic(ic), f(f), holder(NULL), prop(NULL), shape(NULL)
+      : cx(cx), obj(obj), name(cx, name), ic(ic), f(f), holder(NULL), prop(NULL), shape(NULL)
     { }
 
   public:
     LookupStatus bind() {
         RecompilationMonitor monitor(cx);
-        JSObject *scopeChain = cx->stack.currentScriptedScopeChain();
+        RootedVarObject scopeChain(cx, cx->stack.currentScriptedScopeChain());
         if (js_CodeSpec[*f.pc()].format & JOF_GNAME)
             scopeChain = &scopeChain->global();
         if (!FindProperty(cx, name, scopeChain, &obj, &holder, &prop))
@@ -733,7 +733,9 @@ struct GetPropHelper {
     }
 
     LookupStatus lookup() {
-        JSObject *aobj = js_GetProtoIfDenseArray(obj);
+        JSObject *aobj = obj;
+        if (obj->isDenseArray())
+            aobj = obj->getProto();
         if (!aobj->isNative())
             return ic.disable(f, "non-native");
 
@@ -2379,8 +2381,7 @@ GetElementIC::update(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *
     /*
      * Only treat this as a GETPROP for non-numeric string identifiers. The
      * GETPROP IC assumes the id has already gone through filtering for string
-     * indexes in the emitter, i.e. js_GetProtoIfDenseArray is only valid to
-     * use when looking up non-integer identifiers.
+     * indexes in the emitter.
      */
     uint32_t dummy;
     if (v.isString() && JSID_IS_ATOM(id) && !JSID_TO_ATOM(id)->isIndex(&dummy))
@@ -2397,7 +2398,7 @@ GetElementIC::update(VMFrame &f, JSObject *obj, const Value &v, jsid id, Value *
      * Since we can use type information to generate inline paths for typed
      * arrays, just don't generate these ICs with inference enabled.
      */
-    if (!f.cx->typeInferenceEnabled() && js_IsTypedArray(obj))
+    if (!f.cx->typeInferenceEnabled() && obj->isTypedArray())
         return attachTypedArray(f, obj, v, id, vp);
 #endif
 
@@ -2420,7 +2421,7 @@ ic::GetElement(VMFrame &f, ic::GetElementIC *ic)
 
     RecompilationMonitor monitor(cx);
 
-    JSObject *obj = ValueToObject(cx, f.regs.sp[-2]);
+    RootedVarObject obj(cx, ValueToObject(cx, f.regs.sp[-2]));
     if (!obj)
         THROW();
 
@@ -2719,7 +2720,7 @@ SetElementIC::update(VMFrame &f, const Value &objval, const Value &idval)
 
 #if defined JS_METHODJIT_TYPED_ARRAY
     /* Not attaching typed array stubs with linear scan allocator, see GetElementIC. */
-    if (!f.cx->typeInferenceEnabled() && js_IsTypedArray(obj))
+    if (!f.cx->typeInferenceEnabled() && obj->isTypedArray())
         return attachTypedArray(f, obj, key);
 #endif
 

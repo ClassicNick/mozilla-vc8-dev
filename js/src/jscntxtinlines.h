@@ -326,7 +326,7 @@ JS_ALWAYS_INLINE bool
 CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
 {
 #ifdef DEBUG
-    JSObject &callee = args.callee();
+    RootedVarObject callee(cx, &args.callee());
 #endif
 
     JS_ASSERT(args.thisv().isMagic());
@@ -351,8 +351,8 @@ CallJSNativeConstructor(JSContext *cx, Native native, const CallArgs &args)
     JS_ASSERT_IF(native != FunctionProxyClass.construct &&
                  native != CallableObjectClass.construct &&
                  native != js::CallOrConstructBoundFunction &&
-                 (!callee.isFunction() || callee.toFunction()->native() != js_Object),
-                 !args.rval().isPrimitive() && callee != args.rval().toObject());
+                 (!callee->isFunction() || callee->toFunction()->native() != js_Object),
+                 !args.rval().isPrimitive() && callee != &args.rval().toObject());
 
     return true;
 }
@@ -390,7 +390,7 @@ CallSetter(JSContext *cx, JSObject *obj, jsid id, StrictPropertyOp op, unsigned 
     return CallJSPropertyOpSetter(cx, op, obj, id, strict, vp);
 }
 
-static inline JSAtom **
+static inline HeapPtrAtom *
 FrameAtomBase(JSContext *cx, js::StackFrame *fp)
 {
     return fp->script()->atoms;

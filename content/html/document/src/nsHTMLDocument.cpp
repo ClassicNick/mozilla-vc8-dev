@@ -135,6 +135,7 @@
 #include "nsIRequest.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsHtml5Parser.h"
+#include "nsIDOMJSWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -559,15 +560,15 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
                                   nsIContentSink* aSink)
 {
   if (!aCommand) {
-    MOZ_NOT_REACHED("Command is mandatory");
+    MOZ_ASSERT(false, "Command is mandatory");
     return NS_ERROR_INVALID_POINTER;
   }
   if (aSink) {
-    MOZ_NOT_REACHED("Got a sink override. Should not happen for HTML doc.");
+    MOZ_ASSERT(false, "Got a sink override. Should not happen for HTML doc.");
     return NS_ERROR_INVALID_ARG;
   }
   if (!mIsRegularHTML) {
-    MOZ_NOT_REACHED("Must not set HTML doc to XHTML mode before load start.");
+    MOZ_ASSERT(false, "Must not set HTML doc to XHTML mode before load start.");
     return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
@@ -579,7 +580,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   bool viewSource = !strcmp(aCommand, "view-source");
   bool asData = !strcmp(aCommand, kLoadAsData);
   if(!(view || viewSource || asData)) {
-    MOZ_NOT_REACHED("Bad parser command");
+    MOZ_ASSERT(false, "Bad parser command");
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -594,7 +595,7 @@ nsHTMLDocument::StartDocumentLoad(const char* aCommand,
     contentType.EqualsLiteral(TEXT_JAVASCRIPT) ||
     contentType.EqualsLiteral(APPLICATION_JSON));
   if (!(html || xhtml || plainText || viewSource)) {
-    MOZ_NOT_REACHED("Channel with bad content type.");
+    MOZ_ASSERT(false, "Channel with bad content type.");
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -1326,9 +1327,10 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
     if (!window) {
       return NS_OK;
     }
+    nsCOMPtr<nsIDOMJSWindow> win = do_QueryInterface(window);
     nsCOMPtr<nsIDOMWindow> newWindow;
-    nsresult rv = window->Open(aContentTypeOrUrl, aReplaceOrName, aFeatures,
-                               getter_AddRefs(newWindow));
+    nsresult rv = win->OpenJS(aContentTypeOrUrl, aReplaceOrName, aFeatures,
+                              getter_AddRefs(newWindow));
     *aReturn = newWindow.forget().get();
     return rv;
   }
@@ -1575,6 +1577,8 @@ nsHTMLDocument::Open(const nsAString& aContentTypeOrUrl,
   CreateAndAddWyciwygChannel();
 
   --mWriteLevel;
+
+  SetReadyStateInternal(nsIDocument::READYSTATE_LOADING);
 
   NS_ENSURE_SUCCESS(rv, rv);
   return CallQueryInterface(this, aReturn);
@@ -2814,7 +2818,7 @@ static const struct MidasCommand gMidasCommandTable[] = {
   { "redo",          "cmd_redo",            "", true,  false },
   { "indent",        "cmd_indent",          "", true,  false },
   { "outdent",       "cmd_outdent",         "", true,  false },
-  { "backcolor",     "cmd_backgroundColor", "", false, false },
+  { "backcolor",     "cmd_highlight",       "", false, false },
   { "forecolor",     "cmd_fontColor",       "", false, false },
   { "hilitecolor",   "cmd_highlight",       "", false, false },
   { "fontname",      "cmd_fontFace",        "", false, false },
@@ -2949,7 +2953,9 @@ ConvertToMidasInternalCommandInner(const nsAString & inCommandID,
               }
             }
 
-            return j != ArrayLength(gBlocks);
+            if (j == ArrayLength(gBlocks)) {
+              outParam.Truncate();
+            }
           }
           else {
             CopyUTF16toUTF8(inParam, outParam);
@@ -3097,6 +3103,11 @@ nsHTMLDocument::ExecCommand(const nsAString & commandID,
                                      cmdToDispatch, paramStr, isBool, boolVal))
     return NS_OK;
 
+  if (cmdToDispatch.EqualsLiteral("cmd_paragraphState") && paramStr.IsEmpty()) {
+    // Invalid value
+    return NS_OK;
+  }
+
   if (!isBool && paramStr.IsEmpty()) {
     rv = cmdMgr->DoCommand(cmdToDispatch.get(), nsnull, window);
   } else {
@@ -3122,22 +3133,6 @@ nsHTMLDocument::ExecCommand(const nsAString & commandID,
   *_retval = NS_SUCCEEDED(rv);
 
   return rv;
-}
-
-/* TODO: don't let this call do anything if the page is not done loading */
-/* boolean execCommandShowHelp(in DOMString commandID); */
-NS_IMETHODIMP
-nsHTMLDocument::ExecCommandShowHelp(const nsAString & commandID,
-                                    bool *_retval)
-{
-  NS_ENSURE_ARG_POINTER(_retval);
-  *_retval = false;
-
-  // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
-
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 /* boolean queryCommandEnabled(in DOMString commandID); */
@@ -3191,10 +3186,8 @@ nsHTMLDocument::QueryCommandIndeterm(const nsAString & commandID,
   if (!window)
     return NS_ERROR_FAILURE;
 
-  nsCAutoString cmdToDispatch, paramToCheck;
-  bool dummy;
-  if (!ConvertToMidasInternalCommand(commandID, commandID,
-                                     cmdToDispatch, paramToCheck, dummy, dummy))
+  nsCAutoString cmdToDispatch;
+  if (!ConvertToMidasInternalCommand(commandID, cmdToDispatch))
     return NS_ERROR_NOT_IMPLEMENTED;
 
   nsresult rv;
@@ -3206,10 +3199,11 @@ nsHTMLDocument::QueryCommandIndeterm(const nsAString & commandID,
   if (NS_FAILED(rv))
     return rv;
 
-  // if command does not have a state_mixed value, this call fails, so we fail too,
-  // which is what is expected
-  rv = cmdParams->GetBooleanValue("state_mixed", _retval);
-  return rv;
+  // If command does not have a state_mixed value, this call fails and sets
+  // *_retval to false.  This is fine -- we want to return false in that case
+  // anyway (bug 738385), so we just return NS_OK regardless.
+  cmdParams->GetBooleanValue("state_mixed", _retval);
+  return NS_OK;
 }
 
 /* boolean queryCommandState(in DOMString commandID); */
@@ -3270,14 +3264,14 @@ nsHTMLDocument::QueryCommandState(const nsAString & commandID, bool *_retval)
     }
     if (actualAlignmentType)
       nsMemory::Free(actualAlignmentType);
-  }
-  else {
-    rv = cmdParams->GetBooleanValue("state_all", _retval);
-    if (NS_FAILED(rv))
-      *_retval = false;
+    return rv;
   }
 
-  return rv;
+  // If command does not have a state_all value, this call fails and sets
+  // *_retval to false.  This is fine -- we want to return false in that case
+  // anyway (bug 738385), so we just return NS_OK regardless.
+  cmdParams->GetBooleanValue("state_all", _retval);
+  return NS_OK;
 }
 
 /* boolean queryCommandSupported(in DOMString commandID); */
@@ -3304,20 +3298,6 @@ nsHTMLDocument::QueryCommandSupported(const nsAString & commandID,
     *_retval = true;
 
   return NS_OK;
-}
-
-/* DOMString queryCommandText(in DOMString commandID); */
-NS_IMETHODIMP
-nsHTMLDocument::QueryCommandText(const nsAString & commandID,
-                                 nsAString & _retval)
-{
-  _retval.SetLength(0);
-
-  // if editing is not on, bail
-  if (!IsEditingOnAfterFlush())
-    return NS_ERROR_FAILURE;
-
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 /* DOMString queryCommandValue(in DOMString commandID); */
@@ -3373,12 +3353,16 @@ nsHTMLDocument::QueryCommandValue(const nsAString & commandID,
   if (NS_FAILED(rv))
     return rv;
 
+  // If command does not have a state_attribute value, this call fails, and
+  // _retval will wind up being the empty string.  This is fine -- we want to
+  // return "" in that case anyway (bug 738385), so we just return NS_OK
+  // regardless.
   nsXPIDLCString cStringResult;
-  rv = cmdParams->GetCStringValue("state_attribute",
-                                  getter_Copies(cStringResult));
+  cmdParams->GetCStringValue("state_attribute",
+                             getter_Copies(cStringResult));
   CopyUTF8toUTF16(cStringResult, _retval);
 
-  return rv;
+  return NS_OK;
 }
 
 nsresult

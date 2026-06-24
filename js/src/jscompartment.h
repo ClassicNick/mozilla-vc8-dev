@@ -455,14 +455,20 @@ struct JSCompartment
                         js::GlobalObjectSet::Enum *debuggeesEnum = NULL);
     bool setDebugModeFromC(JSContext *cx, bool b);
 
-    void clearBreakpointsIn(JSContext *cx, js::Debugger *dbg, JSObject *handler);
-    void clearTraps(JSContext *cx);
+    void clearBreakpointsIn(js::FreeOp *fop, js::Debugger *dbg, JSObject *handler);
+    void clearTraps(js::FreeOp *fop);
 
   private:
     void sweepBreakpoints(js::FreeOp *fop);
 
   public:
     js::WatchpointMap *watchpointMap;
+
+    js::ScriptCountsMap *scriptCountsMap;
+
+    js::SourceMapMap *sourceMapMap;
+
+    js::DebugScriptMap *debugScriptMap;
 };
 
 #define JS_PROPERTY_TREE(cx)    ((cx)->compartment->propertyTree)

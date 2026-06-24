@@ -307,6 +307,7 @@ pref("ui.dragThresholdY", 25);
 
 // Layers Acceleration
 pref("layers.acceleration.disabled", false);
+pref("layers.offmainthreadcomposition.enabled", false);
 
 // Web Notifications
 pref("notification.feature.enabled", true);
@@ -379,6 +380,9 @@ pref("urlclassifier.gethashtables", "goog-phish-shavar,goog-malware-shavar");
 // the database.
 pref("urlclassifier.confirm-age", 2700);
 
+// Maximum size of the sqlite3 cache during an update, in bytes
+pref("urlclassifier.updatecachemax", 4194304);
+
 // URL for checking the reason for a malware warning.
 pref("browser.safebrowsing.malware.reportURL", "http://safebrowsing.clients.google.com/safebrowsing/diagnostic?client=%NAME%&hl=%LOCALE%&site=");
 #endif
@@ -428,6 +432,9 @@ pref("dom.mozBrowserFramesWhitelist", "http://homescreen.gaiamobile.org,http://b
 // Temporary permission hack for WebSMS
 pref("dom.sms.enabled", true);
 pref("dom.sms.whitelist", "file://,http://homescreen.gaiamobile.org,http://sms.gaiamobile.org");
+
+// Temporary permission hack for WebMobileConnection
+pref("dom.mobileconnection.whitelist", "http://homescreen.gaiamobile.org");
 
 // Temporary permission hack for WebContacts
 pref("dom.mozContacts.enabled", true);

@@ -83,7 +83,6 @@ CheckMarkedThing(JSTracer *trc, T *thing)
 
     DebugOnly<JSRuntime *> rt = trc->runtime;
 
-    JS_ASSERT_IF(rt->gcIsFull, IS_GC_MARKING_TRACER(trc));
     JS_ASSERT_IF(thing->compartment()->requireGCTracer(), IS_GC_MARKING_TRACER(trc));
 
     JS_ASSERT(thing->isAligned());
@@ -111,6 +110,7 @@ MarkInternal(JSTracer *trc, T **thingp)
             PushMarkStack(static_cast<GCMarker *>(trc), thing);
     } else {
         trc->callback(trc, (void **)thingp, GetGCThingTraceKind(thing));
+        JS_SET_TRACING_LOCATION(trc, NULL);
     }
 
 #ifdef DEBUG
@@ -270,6 +270,7 @@ MarkGCThingRoot(JSTracer *trc, void **thingp, const char *name)
 static inline void
 MarkIdInternal(JSTracer *trc, jsid *id)
 {
+    JS_SET_TRACING_LOCATION(trc, (void *)id);
     if (JSID_IS_STRING(*id)) {
         JSString *str = JSID_TO_STRING(*id);
         MarkInternal(trc, &str);
@@ -320,6 +321,7 @@ MarkIdRootRange(JSTracer *trc, size_t len, jsid *vec, const char *name)
 static inline void
 MarkValueInternal(JSTracer *trc, Value *v)
 {
+    JS_SET_TRACING_LOCATION(trc, (void *)v);
     if (v->isMarkable()) {
         JS_ASSERT(v->toGCThing());
         void *thing = v->toGCThing();
@@ -762,6 +764,7 @@ MarkCycleCollectorChildren(JSTracer *trc, Shape *shape)
 static void
 ScanTypeObject(GCMarker *gcmarker, types::TypeObject *type)
 {
+    /* Don't mark properties for singletons. They'll be purged by the GC. */
     if (!type->singleton) {
         unsigned count = type->getPropertyCount();
         for (unsigned i = 0; i < count; i++) {
@@ -789,13 +792,11 @@ ScanTypeObject(GCMarker *gcmarker, types::TypeObject *type)
 static void
 MarkChildren(JSTracer *trc, types::TypeObject *type)
 {
-    if (!type->singleton) {
-        unsigned count = type->getPropertyCount();
-        for (unsigned i = 0; i < count; i++) {
-            types::Property *prop = type->getProperty(i);
-            if (prop)
-                MarkId(trc, &prop->id, "type_prop");
-        }
+    unsigned count = type->getPropertyCount();
+    for (unsigned i = 0; i < count; i++) {
+        types::Property *prop = type->getProperty(i);
+        if (prop)
+            MarkId(trc, &prop->id, "type_prop");
     }
 
     if (type->proto)
@@ -917,7 +918,9 @@ GCMarker::saveValueRanges()
             } else {
                 HeapSlot *vp = obj->fixedSlots();
                 unsigned nfixed = obj->numFixedSlots();
-                if (arr->start >= vp && arr->start < vp + nfixed) {
+                if (arr->start == arr->end) {
+                    arr->index = obj->slotSpan();
+                } else if (arr->start >= vp && arr->start < vp + nfixed) {
                     JS_ASSERT(arr->end == vp + Min(nfixed, obj->slotSpan()));
                     arr->index = arr->start - vp;
                 } else {
@@ -976,6 +979,25 @@ GCMarker::restoreValueArray(JSObject *obj, void **vpp, void **endp)
     return true;
 }
 
+void
+GCMarker::processMarkStackOther(uintptr_t tag, uintptr_t addr)
+{
+    if (tag == TypeTag) {
+        ScanTypeObject(this, reinterpret_cast<types::TypeObject *>(addr));
+    } else if (tag == SavedValueArrayTag) {
+        JS_ASSERT(!(addr & Cell::CellMask));
+        JSObject *obj = reinterpret_cast<JSObject *>(addr);
+        HeapValue *vp, *end;
+        if (restoreValueArray(obj, (void **)&vp, (void **)&end))
+            pushValueArray(obj, vp, end);
+        else
+            pushObject(obj);
+    } else {
+        JS_ASSERT(tag == XmlTag);
+        MarkChildren(this, reinterpret_cast<JSXML *>(addr));
+    }
+}
+
 inline void
 GCMarker::processMarkStackTop(SliceBudget &budget)
 {
@@ -1010,31 +1032,12 @@ GCMarker::processMarkStackTop(SliceBudget &budget)
         goto scan_obj;
     }
 
-    if (tag == TypeTag) {
-        ScanTypeObject(this, reinterpret_cast<types::TypeObject *>(addr));
-    } else if (tag == SavedValueArrayTag) {
-        JS_ASSERT(!(addr & Cell::CellMask));
-        obj = reinterpret_cast<JSObject *>(addr);
-        if (restoreValueArray(obj, (void **)&vp, (void **)&end))
-            goto scan_value_array;
-        else
-            goto scan_obj;
-    } else {
-        JS_ASSERT(tag == XmlTag);
-        MarkChildren(this, reinterpret_cast<JSXML *>(addr));
-    }
-    budget.step();
+    processMarkStackOther(tag, addr);
     return;
 
   scan_value_array:
     JS_ASSERT(vp <= end);
     while (vp != end) {
-        budget.step();
-        if (budget.isOverBudget()) {
-            pushValueArray(obj, vp, end);
-            return;
-        }
-
         const Value &v = *vp++;
         if (v.isString()) {
             JSString *str = v.toString();

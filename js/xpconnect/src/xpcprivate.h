@@ -48,6 +48,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/StandardInteger.h"
 #include "mozilla/Util.h"
 
 #include <string.h>
@@ -2769,9 +2770,16 @@ public:
     void SetWrapper(JSObject *obj)
     {
         js::IncrementalReferenceBarrier(GetWrapperPreserveColor());
-        PRWord newval = PRWord(obj) | (mWrapperWord & FLAG_MASK);
+        intptr_t newval = intptr_t(obj) | (mWrapperWord & FLAG_MASK);
         mWrapperWord = newval;
     }
+
+    // Returns the relevant same-compartment security if applicable, or
+    // mFlatJSObject otherwise.
+    //
+    // This takes care of checking mWrapperWord to see if we already have such
+    // a wrapper.
+    JSObject *GetSameCompartmentSecurityWrapper(JSContext *cx);
 
     void NoteTearoffs(nsCycleCollectionTraversalCallback& cb);
 
@@ -2847,7 +2855,7 @@ private:
     JSObject*                    mFlatJSObject;
     XPCNativeScriptableInfo*     mScriptableInfo;
     XPCWrappedNativeTearOffChunk mFirstChunk;
-    PRWord                       mWrapperWord;
+    intptr_t                     mWrapperWord;
 
 #ifdef XPC_CHECK_WRAPPER_THREADSAFETY
 public:

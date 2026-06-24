@@ -67,6 +67,8 @@
 #include <commdlg.h>
 #include <shobjidl.h>
 
+class nsILoadContext;
+
 /**
  * Native Windows FileSelector wrapper
  */
@@ -81,6 +83,8 @@ public:
   nsFilePicker(); 
   virtual ~nsFilePicker();
 
+  NS_IMETHOD Init(nsIDOMWindow *aParent, const nsAString& aTitle, PRInt16 aMode);
+                  
   NS_DECL_ISUPPORTS
   
   // IUnknown's QueryInterface
@@ -141,6 +145,7 @@ protected:
   static UINT_PTR CALLBACK MultiFilePickerHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   static UINT_PTR CALLBACK FilePickerHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+  nsCOMPtr<nsILoadContext> mLoadContext;
   nsCOMPtr<nsIWidget>    mParentWidget;
   nsString               mTitle;
   PRInt16                mMode;

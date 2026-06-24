@@ -63,12 +63,6 @@ import android.provider.Browser;
 import android.util.Log;
 
 public class LocalBrowserDB implements BrowserDB.BrowserDBIface {
-    // Same as android.provider.Browser for consistency.
-    private static final int MAX_HISTORY_COUNT = 250;
-
-    // Same as android.provider.Browser for consistency.
-    public static final int TRUNCATE_N_OLDEST = 5;
-
     // Calculate these once, at initialization. isLoggable is too expensive to
     // have in-line in each log call.
     private static final String LOGTAG = "GeckoLocalBrowserDB";
@@ -91,6 +85,7 @@ public class LocalBrowserDB implements BrowserDB.BrowserDBIface {
     private final Uri mImagesUriWithProfile;
     private final Uri mCombinedUriWithProfile;
     private final Uri mDeletedHistoryUriWithProfile;
+    private final Uri mUpdateHistoryUriWithProfile;
 
     private static final String[] DEFAULT_BOOKMARK_COLUMNS =
             new String[] { Bookmarks._ID,
@@ -115,6 +110,10 @@ public class LocalBrowserDB implements BrowserDB.BrowserDBIface {
 
         mDeletedHistoryUriWithProfile = mHistoryUriWithProfile.buildUpon().
             appendQueryParameter(BrowserContract.PARAM_SHOW_DELETED, "1").build();
+
+        mUpdateHistoryUriWithProfile = mHistoryUriWithProfile.buildUpon().
+            appendQueryParameter(BrowserContract.PARAM_INCREMENT_VISITS, "true").
+            appendQueryParameter(BrowserContract.PARAM_INSERT_IF_NEEDED, "true").build();
     }
 
     // Invalidate cached data
@@ -202,79 +201,19 @@ public class LocalBrowserDB implements BrowserDB.BrowserDBIface {
                               BrowserDB.ABOUT_PAGES_URL_FILTER);
     }
 
-    private void truncateHistory(ContentResolver cr) {
-        Cursor cursor = null;
-
-        try {
-            cursor = cr.query(mHistoryUriWithProfile,
-                              new String[] { History._ID },
-                              null,
-                              null,
-                              History.DATE_LAST_VISITED + " ASC");
-
-            if (cursor.getCount() < MAX_HISTORY_COUNT)
-                return;
-
-            if (cursor.moveToFirst()) {
-                for (int i = 0; i < TRUNCATE_N_OLDEST; i++) {
-                    Uri historyUri = ContentUris.withAppendedId(History.CONTENT_URI, cursor.getLong(0)); 
-                    cr.delete(appendProfile(historyUri), null, null);
-
-                    if (!cursor.moveToNext())
-                        break;
-                }
-            }
-        } finally {
-            if (cursor != null)
-                cursor.close();
-        }
-    }
-
     public void updateVisitedHistory(ContentResolver cr, String uri) {
-        long now = System.currentTimeMillis();
-        Cursor cursor = null;
+        ContentValues values = new ContentValues();
 
-        try {
-            final String[] projection = new String[] {
-                    History._ID,    // 0
-                    History.VISITS, // 1
-            };
+        values.put(History.URL, uri);
+        values.put(History.DATE_LAST_VISITED, System.currentTimeMillis());
+        values.put(History.IS_DELETED, 0);
 
-            cursor = cr.query(mDeletedHistoryUriWithProfile,
-                              projection,
-                              History.URL + " = ?",
-                              new String[] { uri },
-                              null);
-
-            if (cursor.moveToFirst()) {
-                ContentValues values = new ContentValues();
-
-                values.put(History.VISITS, cursor.getInt(1) + 1);
-                values.put(History.DATE_LAST_VISITED, now);
-
-                // Restore deleted record if possible
-                values.put(History.IS_DELETED, 0);
-
-                Uri historyUri = ContentUris.withAppendedId(History.CONTENT_URI, cursor.getLong(0));
-                cr.update(appendProfile(historyUri), values, null, null);
-            } else {
-                // Ensure we don't blow up our database with too
-                // many history items.
-                truncateHistory(cr);
-
-                ContentValues values = new ContentValues();
-
-                values.put(History.URL, uri);
-                values.put(History.VISITS, 1);
-                values.put(History.DATE_LAST_VISITED, now);
-                values.put(History.TITLE, uri);
-
-                cr.insert(mHistoryUriWithProfile, values);
-            }
-        } finally {
-            if (cursor != null)
-                cursor.close();
-        }
+        // This will insert a new history entry if one for this URL
+        // doesn't already exist
+        cr.update(mUpdateHistoryUriWithProfile,
+                  values,
+                  History.URL + " = ?",
+                  new String[] { uri });
     }
 
     public void updateHistoryTitle(ContentResolver cr, String uri, String title) {
@@ -342,10 +281,6 @@ public class LocalBrowserDB implements BrowserDB.BrowserDBIface {
                             History.DATE_LAST_VISITED + " DESC");
 
         return new LocalDBCursor(c);
-    }
-
-    public int getMaxHistoryCount() {
-        return MAX_HISTORY_COUNT;
     }
 
     public void clearHistory(ContentResolver cr) {

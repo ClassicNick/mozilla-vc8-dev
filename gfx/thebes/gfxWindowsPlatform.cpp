@@ -718,28 +718,31 @@ RefPtr<ScaledFont>
 gfxWindowsPlatform::GetScaledFontForFont(gfxFont *aFont)
 {
 #ifdef CAIRO_HAS_DWRITE_FONT
-  if(mUseDirectWrite) {
-    gfxDWriteFont *font = static_cast<gfxDWriteFont*>(aFont);
+    if (aFont->GetType() == gfxFont::FONT_TYPE_DWRITE) {
+        gfxDWriteFont *font = static_cast<gfxDWriteFont*>(aFont);
 
-    NativeFont nativeFont;
-    nativeFont.mType = NATIVE_FONT_DWRITE_FONT_FACE;
-    nativeFont.mFont = font->GetFontFace();
-    RefPtr<ScaledFont> scaledFont =
-      mozilla::gfx::Factory::CreateScaledFontForNativeFont(nativeFont, font->GetAdjustedSize());
+        NativeFont nativeFont;
+        nativeFont.mType = NATIVE_FONT_DWRITE_FONT_FACE;
+        nativeFont.mFont = font->GetFontFace();
+        RefPtr<ScaledFont> scaledFont =
+            mozilla::gfx::Factory::CreateScaledFontForNativeFont(nativeFont, font->GetAdjustedSize());
 
-    return scaledFont;
-  }
+		return scaledFont;
+    }
 #endif
 
-  NativeFont nativeFont;
-  nativeFont.mType = NATIVE_FONT_GDI_FONT_FACE;
-  LOGFONT lf;
-  GetObject(static_cast<gfxGDIFont*>(aFont)->GetHFONT(), sizeof(LOGFONT), &lf);
-  nativeFont.mFont = &lf;
-  RefPtr<ScaledFont> scaledFont =
+    NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_GDI,
+        "Fonts on windows should be GDI or DWrite!");
+
+    NativeFont nativeFont;
+    nativeFont.mType = NATIVE_FONT_GDI_FONT_FACE;
+    LOGFONT lf;
+    GetObject(static_cast<gfxGDIFont*>(aFont)->GetHFONT(), sizeof(LOGFONT), &lf);
+    nativeFont.mFont = &lf;
+    RefPtr<ScaledFont> scaledFont =
     Factory::CreateScaledFontForNativeFont(nativeFont, aFont->GetAdjustedSize());
 
-  return scaledFont;
+    return scaledFont;
 }
 
 already_AddRefed<gfxASurface>
