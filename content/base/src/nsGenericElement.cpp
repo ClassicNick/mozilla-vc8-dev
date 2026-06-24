@@ -108,7 +108,6 @@
 #include "nsContentUtils.h"
 #include "nsIJSContextStack.h"
 
-#include "nsIServiceManager.h"
 #include "nsIDOMEventListener.h"
 #include "nsIWebNavigation.h"
 #include "nsIBaseWindow.h"
@@ -127,7 +126,6 @@
 #include "nsEventDispatcher.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIControllers.h"
-#include "nsLayoutUtils.h"
 #include "nsIView.h"
 #include "nsIViewManager.h"
 #include "nsIScrollableFrame.h"
@@ -172,18 +170,6 @@ PRUint32 nsMutationGuard::sMutationCount = 0;
 
 nsresult NS_NewContentIterator(nsIContentIterator** aInstancePtrResult);
 
-void
-nsWrapperCache::RemoveExpandoObject()
-{
-  JSObject *expando = GetExpandoObjectPreserveColor();
-  if (expando) {
-    JSCompartment *compartment = js::GetObjectCompartment(expando);
-    xpc::CompartmentPrivate *priv =
-      static_cast<xpc::CompartmentPrivate *>(JS_GetCompartmentPrivate(compartment));
-    priv->RemoveDOMExpandoObject(expando);
-  }
-}
-
 //----------------------------------------------------------------------
 
 nsINode::nsSlots::~nsSlots()
@@ -219,6 +205,7 @@ nsINode::nsSlots::Unlink()
 nsINode::~nsINode()
 {
   NS_ASSERTION(!HasSlots(), "nsNodeUtils::LastRelease was not called?");
+  NS_ASSERTION(mSubtreeRoot == this, "Didn't restore state properly?");
 }
 
 void*
@@ -1698,13 +1685,10 @@ nsINode::SetExplicitBaseURI(nsIURI* aURI)
 
 //----------------------------------------------------------------------
 
-static JSObject*
+static inline JSObject*
 GetJSObjectChild(nsWrapperCache* aCache)
 {
-  if (aCache->PreservingWrapper()) {
-    return aCache->GetWrapperPreserveColor();
-  }
-  return aCache->GetExpandoObjectPreserveColor();
+  return aCache->PreservingWrapper() ? aCache->GetWrapperPreserveColor() : NULL;
 }
 
 static bool
@@ -1758,7 +1742,7 @@ NS_INTERFACE_TABLE_HEAD(nsChildContentList)
 NS_INTERFACE_MAP_END
 
 JSObject*
-nsChildContentList::WrapObject(JSContext *cx, XPCWrappedNativeScope *scope,
+nsChildContentList::WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap)
 {
   return mozilla::dom::binding::NodeList::create(cx, scope, this, triedToWrap);
@@ -3164,6 +3148,10 @@ nsGenericElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
     //    aDocument->BindingManager()->ChangeDocumentFor(this, nsnull,
     //                                                   aDocument);
 
+    // We no longer need to track the subtree pointer (and in fact we'll assert
+    // if we do this any later).
+    ClearSubtreeRootPointer();
+
     // Being added to a document.
     SetInDocument();
 
@@ -3173,6 +3161,9 @@ nsGenericElement::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                NODE_NEEDS_FRAME | NODE_DESCENDANTS_NEED_FRAMES |
                // And the restyle bits
                ELEMENT_ALL_RESTYLE_FLAGS);
+  } else {
+    // If we're not in the doc, update our subtree pointer.
+    SetSubtreeRootPointer(aParent->SubtreeRoot());
   }
 
   // If NODE_FORCE_XBL_BINDINGS was set we might have anonymous children
@@ -3263,6 +3254,9 @@ nsGenericElement::UnbindFromTree(bool aDeep, bool aNullParent)
     SetParentIsContent(false);
   }
   ClearInDocument();
+
+  // Begin keeping track of our subtree root.
+  SetSubtreeRootPointer(aNullParent ? this : mParent->SubtreeRoot());
 
   if (document) {
     // Notify XBL- & nsIAnonymousContentCreator-generated
@@ -4622,16 +4616,16 @@ nsGenericElement::CanSkipInCC(nsINode* aNode)
     return false;
   }
 
-  // Bail out early if aNode is somewhere in anonymous content,
-  // or otherwise unusual.
-  if (UnoptimizableCCNode(aNode)) {
-    return false;
-  }
-
   nsIDocument* currentDoc = aNode->GetCurrentDoc();
   if (currentDoc &&
       nsCCUncollectableMarker::InGeneration(currentDoc->GetMarkedCCGeneration())) {
     return !NeedsScriptTraverse(aNode);
+  }
+
+  // Bail out early if aNode is somewhere in anonymous content,
+  // or otherwise unusual.
+  if (UnoptimizableCCNode(aNode)) {
+    return false;
   }
 
   nsINode* root =
@@ -4768,6 +4762,13 @@ NodeHasActiveFrame(nsIDocument* aCurrentDoc, nsINode* aNode)
          aNode->AsElement()->GetPrimaryFrame();
 }
 
+bool
+OwnedByBindingManager(nsIDocument* aCurrentDoc, nsINode* aNode)
+{
+  return aNode->IsElement() &&
+    aCurrentDoc->BindingManager()->GetBinding(aNode->AsElement());
+}
+
 // CanSkip checks if aNode is black, and if it is, returns
 // true. If aNode is in a black DOM tree, CanSkip may also remove other objects
 // from purple buffer and unmark event listeners and user data.
@@ -4786,10 +4787,12 @@ nsGenericElement::CanSkip(nsINode* aNode, bool aRemovingAllowed)
   nsIDocument* currentDoc = aNode->GetCurrentDoc();
   if (currentDoc &&
       nsCCUncollectableMarker::InGeneration(currentDoc->GetMarkedCCGeneration()) &&
-      (!unoptimizable || NodeHasActiveFrame(currentDoc, aNode))) {
+      (!unoptimizable || NodeHasActiveFrame(currentDoc, aNode) ||
+       OwnedByBindingManager(currentDoc, aNode))) {
     MarkNodeChildren(aNode);
     return true;
   }
+
   if (unoptimizable) {
     return false;
   }

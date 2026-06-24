@@ -454,8 +454,7 @@ WrapAndReturnHistogram(Histogram *h, JSContext *cx, jsval *ret)
     "JSHistogram",  /* name */
     JSCLASS_HAS_PRIVATE, /* flags */
     JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
-    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, JS_FinalizeStub,
-    JSCLASS_NO_OPTIONAL_MEMBERS
+    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub
   };
 
   JSObject *obj = JS_NewObject(cx, &JSHistogram_class, NULL, NULL);
@@ -1090,6 +1089,20 @@ TelemetryImpl::GetChromeHangs(JSContext *cx, jsval *ret)
       if (!JS_SetElement(cx, moduleInfoArray, 4, &val)) {
         return NS_ERROR_FAILURE;
       }
+
+      // Name of associated PDB file
+      const char *pdbName = "";
+#if defined(MOZ_PROFILING) && defined(XP_WIN)
+      pdbName = module.GetPdbName();
+#endif
+      str = JS_NewStringCopyZ(cx, pdbName);
+      if (!str) {
+        return NS_ERROR_FAILURE;
+      }
+      val = STRING_TO_JSVAL(str);
+      if (!JS_SetElement(cx, moduleInfoArray, 5, &val)) {
+        return NS_ERROR_FAILURE;
+      }
     }
 #endif
   }
@@ -1200,11 +1213,21 @@ TelemetrySessionData::SampleReflector(EntryType *entry, JSContext *cx,
     return false;
   }
   JS::AutoObjectRooter root(cx, snapshot);
-  return (ReflectHistogramAndSamples(cx, snapshot, h, entry->mData)
-          && JS_DefineProperty(cx, snapshots,
-                               h->histogram_name().c_str(),
-                               OBJECT_TO_JSVAL(snapshot), NULL, NULL,
-                               JSPROP_ENUMERATE));
+  switch (ReflectHistogramAndSamples(cx, snapshot, h, entry->mData)) {
+  case REFLECT_OK:
+    return JS_DefineProperty(cx, snapshots,
+                             h->histogram_name().c_str(),
+                             OBJECT_TO_JSVAL(snapshot), NULL, NULL,
+                             JSPROP_ENUMERATE);
+  case REFLECT_CORRUPT:
+    // Just ignore this one.
+    return true;
+  case REFLECT_FAILURE:
+    return false;
+  default:
+    MOZ_NOT_REACHED("unhandled reflection status");
+    return false;
+  }
 }
 
 NS_IMETHODIMP
@@ -1454,10 +1477,15 @@ private:
 
 NS_IMETHODIMP
 TelemetryImpl::LoadHistograms(nsIFile *file,
-                              nsITelemetryLoadSessionDataCallback *callback)
+                              nsITelemetryLoadSessionDataCallback *callback,
+                              bool isSynchronous)
 {
   nsCOMPtr<nsIRunnable> event = new LoadHistogramEvent(file, callback);
-  return NS_DispatchToCurrentThread(event);
+  if (isSynchronous) {
+    return event ? event->Run() : NS_ERROR_FAILURE;
+  } else {
+    return NS_DispatchToCurrentThread(event);
+  }
 }
 
 NS_IMETHODIMP

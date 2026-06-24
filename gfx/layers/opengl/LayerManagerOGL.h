@@ -80,8 +80,8 @@ class ShadowCanvasLayer;
 class ShadowColorLayer;
 
 /**
- * This is the LayerManager used for OpenGL 2.1. For now this will render on
- * the main thread.
+ * This is the LayerManager used for OpenGL 2.1 and OpenGL ES 2.0.
+ * This can be used either on the main thread or the compositor.
  */
 class THEBES_API LayerManagerOGL :
     public ShadowLayerManager
@@ -370,14 +370,15 @@ public:
   void BindAndDrawQuadWithTextureRect(LayerProgram *aProg,
                                       const nsIntRect& aTexCoordRect,
                                       const nsIntSize& aTexSize,
-                                      GLenum aWrapMode = LOCAL_GL_REPEAT);
-                                      
+                                      GLenum aWrapMode = LOCAL_GL_REPEAT,
+                                      bool aFlipped = false);
+
 
 #ifdef MOZ_LAYERS_HAVE_LOG
   virtual const char* Name() const { return "OGL"; }
 #endif // MOZ_LAYERS_HAVE_LOG
 
-  const nsIntSize& GetWigetSize() {
+  const nsIntSize& GetWidgetSize() {
     return mWidgetSize;
   }
 
@@ -391,7 +392,7 @@ public:
    * to a window of the given dimensions.
    */
   void SetupPipeline(int aWidth, int aHeight, WorldTransforPolicy aTransformPolicy);
-  
+
   /**
    * Setup World transform matrix.
    * Transform will be ignored if it is not PreservesAxisAlignedRectangles

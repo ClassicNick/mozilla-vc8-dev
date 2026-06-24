@@ -123,6 +123,7 @@ public:
   virtual void            GetWindowClipRegion(nsTArray<nsIntRect>* aRects);
   NS_IMETHOD              SetWindowShadowStyle(PRInt32 aStyle);
   virtual void            SetShowsToolbarButton(bool aShow) {}
+  virtual void            SetShowsFullScreenButton(bool aShow) {}
   virtual void            SetWindowAnimationType(WindowAnimationType aType) {}
   NS_IMETHOD              HideWindowChrome(bool aShouldHide);
   NS_IMETHOD              MakeFullScreen(bool aFullScreen);
@@ -133,6 +134,7 @@ public:
                                           bool* aAllowRetaining = nsnull);
 
   virtual void            CreateCompositor();
+  virtual void            DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) {}
   virtual gfxASurface*    GetThebesSurface();

@@ -119,6 +119,13 @@ struct ClearTypeParameterInfo {
 
 class THEBES_API gfxWindowsPlatform : public gfxPlatform {
 public:
+    enum TextRenderingMode {
+        TEXT_RENDERING_NO_CLEARTYPE,
+        TEXT_RENDERING_NORMAL,
+        TEXT_RENDERING_GDI_CLASSIC,
+        TEXT_RENDERING_COUNT
+    };
+
     gfxWindowsPlatform();
     virtual ~gfxWindowsPlatform();
     static gfxWindowsPlatform *GetPlatform() {
@@ -252,6 +259,9 @@ public:
     inline bool DWriteEnabled() { return mUseDirectWrite; }
     inline DWRITE_MEASURING_MODE DWriteMeasuringMode() { return mMeasuringMode; }
     IDWriteTextAnalyzer *GetDWriteAnalyzer() { return mDWriteAnalyzer; }
+
+    IDWriteRenderingParams *GetRenderingParams(TextRenderingMode aRenderMode)
+    { return mRenderingParams[aRenderMode]; }
 #else
     inline bool DWriteEnabled() { return false; }
 #endif
@@ -278,6 +288,7 @@ private:
 #ifdef CAIRO_HAS_DWRITE_FONT
     nsRefPtr<IDWriteFactory> mDWriteFactory;
     nsRefPtr<IDWriteTextAnalyzer> mDWriteAnalyzer;
+    nsRefPtr<IDWriteRenderingParams> mRenderingParams[TEXT_RENDERING_COUNT];
     DWRITE_MEASURING_MODE mMeasuringMode;
 #endif
 #ifdef CAIRO_HAS_D2D_SURFACE

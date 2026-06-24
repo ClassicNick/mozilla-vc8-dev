@@ -102,8 +102,8 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
    */
   public static String[] SPECIAL_GUIDS = new String[] {
     // Mobile and desktop places roots have to come first.
-    "mobile",
     "places",
+    "mobile",
     "toolbar",
     "menu",
     "unfiled"
@@ -196,8 +196,12 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
     dataAccessor = (AndroidBrowserBookmarksDataAccessor) dbHelper;
   }
 
-  private boolean rowIsFolder(Cursor cur) {
-    return RepoUtils.getLongFromCursor(cur, BrowserContract.Bookmarks.IS_FOLDER) == 1;
+  private static long getTypeFromCursor(Cursor cur) {
+    return RepoUtils.getLongFromCursor(cur, BrowserContract.Bookmarks.TYPE);
+  }
+
+  private static boolean rowIsFolder(Cursor cur) {
+    return getTypeFromCursor(cur) == BrowserContract.Bookmarks.TYPE_FOLDER;
   }
 
   private String getGUIDForID(long androidID) {
@@ -459,21 +463,26 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
   }
 
   @Override
-  protected boolean checkRecordType(Record record) {
+  protected boolean shouldIgnore(Record record) {
     if (!(record instanceof BookmarkRecord)) {
-      return false;
+      return true;
     }
     if (record.deleted) {
-      return true;
+      return false;
     }
     BookmarkRecord bmk = (BookmarkRecord) record;
 
-    if (bmk.isBookmark() ||
-        bmk.isFolder()) {
+    if (forbiddenGUID(bmk.guid)) {
+      Logger.debug(LOG_TAG, "Ignoring forbidden record with guid: " + bmk.guid);
       return true;
     }
-    Logger.info(LOG_TAG, "Ignoring record with guid: " + bmk.guid + " and type: " + bmk.type);
-    return false;
+
+    if (bmk.isBookmark() ||
+        bmk.isFolder()) {
+      return false;
+    }
+    Logger.debug(LOG_TAG, "Ignoring record with guid: " + bmk.guid + " and type: " + bmk.type);
+    return true;
   }
   
   @Override
@@ -832,7 +841,7 @@ public class AndroidBrowserBookmarksRepositorySession extends AndroidBrowserRepo
       return logBookmark(rec);
     }
 
-    boolean isFolder  = RepoUtils.getIntFromCursor(cur, BrowserContract.Bookmarks.IS_FOLDER) == 1;
+    boolean isFolder = rowIsFolder(cur);
 
     rec.title = RepoUtils.getStringFromCursor(cur, BrowserContract.Bookmarks.TITLE);
     rec.bookmarkURI = RepoUtils.getStringFromCursor(cur, BrowserContract.Bookmarks.URL);
