@@ -198,7 +198,8 @@ PlacesTreeView.prototype = {
    * @return [parentNode, parentRow]
    */
   _getParentByChildRow: function PTV__getParentByChildRow(aChildRow) {
-    let parent = this._getNodeForRow(aChildRow).parent;
+    let node = this._getNodeForRow(aChildRow);
+    let parent = (node === null) ? this._rootNode : node.parent;
 
     // The root node is never visible
     if (parent == this._rootNode)
@@ -212,6 +213,10 @@ PlacesTreeView.prototype = {
    * Gets the node at a given row.
    */
   _getNodeForRow: function PTV__getNodeForRow(aRow) {
+    if (aRow < 0) {
+      return null;
+    }
+  
     let node = this._rows[aRow];
     if (node !== undefined)
       return node;
@@ -891,7 +896,9 @@ PlacesTreeView.prototype = {
             aNode._feedURI = aLivemark.feedURI;
             if (aNewState == Components.interfaces.nsINavHistoryContainerResultNode.STATE_OPENED) {
               aLivemark.registerForUpdates(aNode, this);
+              // Prioritize the current livemark.
               aLivemark.reload();
+              PlacesUtils.livemarks.reloadLivemarks();
               if (shouldInvalidate)
                 this.invalidateContainer(aNode);
             }

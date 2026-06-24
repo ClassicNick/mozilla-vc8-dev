@@ -113,6 +113,13 @@ nsSVGInnerSVGFrame::PaintSVG(nsRenderingContext *aContext,
 void
 nsSVGInnerSVGFrame::NotifySVGChanged(PRUint32 aFlags)
 {
+  NS_ABORT_IF_FALSE(!(aFlags & DO_NOT_NOTIFY_RENDERING_OBSERVERS) ||
+                    (GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD),
+                    "Must be NS_STATE_SVG_NONDISPLAY_CHILD!");
+
+  NS_ABORT_IF_FALSE(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
+                    "Invalidation logic may need adjusting");
+
   if (aFlags & COORD_CONTEXT_CHANGED) {
 
     nsSVGSVGElement *svg = static_cast<nsSVGSVGElement*>(mContent);
@@ -164,14 +171,24 @@ nsSVGInnerSVGFrame::AttributeChanged(PRInt32  aNameSpaceID,
     if (aAttribute == nsGkAtoms::width ||
         aAttribute == nsGkAtoms::height) {
 
-      if (static_cast<nsSVGSVGElement*>(mContent)->mViewBox.IsValid()) {
+      nsSVGSVGElement* svg = static_cast<nsSVGSVGElement*>(mContent);
+      if (svg->mViewBox.IsValid()) {
 
         // make sure our cached transform matrix gets (lazily) updated
         mCanvasTM = nsnull;
 
         nsSVGUtils::NotifyChildrenOfSVGChange(this, TRANSFORM_CHANGED);
       } else {
-        nsSVGUtils::NotifyChildrenOfSVGChange(this, COORD_CONTEXT_CHANGED);
+
+        PRUint32 flags = COORD_CONTEXT_CHANGED;
+
+        if (mCanvasTM && mCanvasTM->IsSingular()) {
+
+          mCanvasTM = nsnull;
+
+          flags |= TRANSFORM_CHANGED;
+        }
+        nsSVGUtils::NotifyChildrenOfSVGChange(this, flags);
       }
 
     } else if (aAttribute == nsGkAtoms::transform ||

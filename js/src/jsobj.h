@@ -695,7 +695,7 @@ struct JSObject : public js::ObjectImpl
 
     inline js::types::TypeObject *getType(JSContext *cx);
 
-    js::HeapPtr<js::types::TypeObject> &typeFromGC() {
+    const js::HeapPtr<js::types::TypeObject> &typeFromGC() const {
         /* Direct field access for use by GC. */
         return type_;
     }
@@ -774,6 +774,7 @@ struct JSObject : public js::ObjectImpl
     inline bool hasPrivate() const;
     inline void *getPrivate() const;
     inline void setPrivate(void *data);
+    inline void setPrivateUnbarriered(void *data);
     inline void initPrivate(void *data);
 
     /* Access private data for an object with a known number of fixed slots. */

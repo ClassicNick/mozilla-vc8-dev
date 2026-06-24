@@ -57,10 +57,10 @@
 
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
-#include "jsstrinlines.h"
 
 #include "vm/BooleanObject-inl.h"
 #include "vm/MethodGuard-inl.h"
+#include "vm/StringBuffer-inl.h"
 
 using namespace js;
 using namespace js::types;
@@ -184,13 +184,6 @@ JSString *
 js_BooleanToString(JSContext *cx, JSBool b)
 {
     return cx->runtime->atomState.booleanAtoms[b ? 1 : 0];
-}
-
-/* This function implements E-262-3 section 9.8, toString. */
-bool
-js::BooleanToStringBuffer(JSContext *cx, JSBool b, StringBuffer &sb)
-{
-    return b ? sb.append("true") : sb.append("false");
 }
 
 namespace js {

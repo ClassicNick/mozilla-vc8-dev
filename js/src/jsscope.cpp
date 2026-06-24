@@ -451,8 +451,10 @@ JSObject::toDictionaryMode(JSContext *cx)
         JS_ASSERT(!shape->inDictionary());
 
         Shape *dprop = js_NewGCShape(cx);
-        if (!dprop)
+        if (!dprop) {
+            js_ReportOutOfMemory(cx);
             return false;
+        }
 
         HeapPtrShape *listp = dictionaryShape
                               ? &dictionaryShape->parent
@@ -466,8 +468,10 @@ JSObject::toDictionaryMode(JSContext *cx)
         shape = shape->previous();
     }
 
-    if (!root->hashify(cx))
+    if (!root->hashify(cx)) {
+        js_ReportOutOfMemory(cx);
         return false;
+    }
 
     JS_ASSERT((Shape **) root->listp == root.address());
     root->listp = &self->shape_;
@@ -644,7 +648,7 @@ JSObject::addPropertyInternal(JSContext *cx, jsid id,
     {
         shape = self->lastProperty();
 
-        jsuint index;
+        uint32_t index;
         bool indexed = js_IdIsIndex(id, &index);
         UnownedBaseShape *nbase;
         if (shape->base()->matchesGetterSetter(getter, setter) && !indexed) {
@@ -758,7 +762,7 @@ JSObject::putProperty(JSContext *cx, jsid id,
 
     RootedVar<UnownedBaseShape*> nbase(cx);
     {
-        jsuint index;
+        uint32_t index;
         bool indexed = js_IdIsIndex(id, &index);
         StackBaseShape base(self->lastProperty()->base());
         base.updateGetterSetter(attrs, getter, setter);
