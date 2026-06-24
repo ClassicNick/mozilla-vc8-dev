@@ -108,9 +108,16 @@ class StatisticsSerializer
         va_end(va);
     }
 
+    void appendDecimal(const char *name, const char *units, double d) {
+        if (asJSON_)
+            appendNumber(name, "%d.%d", units, (int)d, (int)(d * 10.) % 10);
+        else
+            appendNumber(name, "%.1f", units, d);
+    }
+
     void appendIfNonzeroMS(const char *name, double v) {
         if (asJSON_ || v >= 0.1)
-            appendNumber(name, "%.1f", "ms", v);
+            appendDecimal(name, "ms", v);
     }
 
     void beginObject(const char *name) {
@@ -327,13 +334,13 @@ Statistics::formatData(StatisticsSerializer &ss, uint64_t timestamp)
     ss.beginObject(NULL);
     if (ss.isJSON())
         ss.appendNumber("Timestamp", "%llu", "", (unsigned long long)timestamp);
-    ss.appendNumber("Total Time", "%.1f", "ms", t(total));
+    ss.appendDecimal("Total Time", "ms", t(total));
     ss.appendNumber("Compartments Collected", "%d", "", collectedCount);
     ss.appendNumber("Total Compartments", "%d", "", compartmentCount);
     ss.appendNumber("MMU (20ms)", "%d", "%", int(mmu20 * 100));
     ss.appendNumber("MMU (50ms)", "%d", "%", int(mmu50 * 100));
     if (slices.length() > 1 || ss.isJSON())
-        ss.appendNumber("Max Pause", "%.1f", "ms", t(longest));
+        ss.appendDecimal("Max Pause", "ms", t(longest));
     else
         ss.appendString("Reason", ExplainReason(slices[0].reason));
     if (nonincrementalReason || ss.isJSON()) {
@@ -358,9 +365,9 @@ Statistics::formatData(StatisticsSerializer &ss, uint64_t timestamp)
             ss.beginObject(NULL);
             ss.extra("    ");
             ss.appendNumber("Slice", "%d", "", i);
-            ss.appendNumber("Time", "%.1f", "ms", t(slices[i].end - slices[0].start));
+            ss.appendDecimal("Time", "ms", t(slices[i].end - slices[0].start));
             ss.extra(" (");
-            ss.appendNumber("Pause", "%.1f", "", t(width));
+            ss.appendDecimal("Pause", "", t(width));
             ss.appendString("Reason", ExplainReason(slices[i].reason));
             if (slices[i].resetReason)
                 ss.appendString("Reset", slices[i].resetReason);
@@ -399,6 +406,7 @@ Statistics::Statistics(JSRuntime *rt)
     startupTime(PRMJ_Now()),
     fp(NULL),
     fullFormat(false),
+    gcDepth(0),
     collectedCount(0),
     compartmentCount(0),
     nonincrementalReason(NULL)
@@ -525,9 +533,12 @@ Statistics::beginSlice(int collectedCount, int compartmentCount, gcreason::Reaso
     if (JSAccumulateTelemetryDataCallback cb = runtime->telemetryCallback)
         (*cb)(JS_TELEMETRY_GC_REASON, reason);
 
-    bool wasFullGC = collectedCount == compartmentCount;
-    if (GCSliceCallback cb = runtime->gcSliceCallback)
-        (*cb)(runtime, first ? GC_CYCLE_BEGIN : GC_SLICE_BEGIN, GCDescription(!wasFullGC));
+    // Slice callbacks should only fire for the outermost level
+    if (++gcDepth == 1) {
+        bool wasFullGC = collectedCount == compartmentCount;
+        if (GCSliceCallback cb = runtime->gcSliceCallback)
+            (*cb)(runtime, first ? GC_CYCLE_BEGIN : GC_SLICE_BEGIN, GCDescription(!wasFullGC));
+    }
 }
 
 void
@@ -544,12 +555,11 @@ Statistics::endSlice()
     if (last)
         endGC();
 
-    bool wasFullGC = collectedCount == compartmentCount;
-    if (GCSliceCallback cb = runtime->gcSliceCallback) {
-        if (last)
-            (*cb)(runtime, GC_CYCLE_END, GCDescription(!wasFullGC));
-        else
-            (*cb)(runtime, GC_SLICE_END, GCDescription(!wasFullGC));
+    // Slice callbacks should only fire for the outermost level
+    if (--gcDepth == 0) {
+        bool wasFullGC = collectedCount == compartmentCount;
+        if (GCSliceCallback cb = runtime->gcSliceCallback)
+            (*cb)(runtime, last ? GC_CYCLE_END : GC_SLICE_END, GCDescription(!wasFullGC));
     }
 
     /* Do this after the slice callback since it uses these values. */

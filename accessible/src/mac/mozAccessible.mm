@@ -40,15 +40,14 @@
 
 #import "MacUtils.h"
 #import "mozView.h"
-#import "nsRoleMap.h"
 
 #include "Accessible-inl.h"
 #include "nsIAccessibleRelation.h"
 #include "nsIAccessibleText.h"
 #include "nsIAccessibleEditableText.h"
-#include "nsRootAccessible.h"
 #include "Relation.h"
 #include "Role.h"
+#include "RootAccessible.h"
 
 #include "mozilla/Services.h"
 #include "nsRect.h"
@@ -121,10 +120,6 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
     mGeckoAccessible = geckoAccessible;
     mIsExpired = NO;
     mRole = geckoAccessible->Role();
-    
-    // Check for OS X "role skew"; the role constants in nsIAccessible.idl need to match the ones
-    // in nsRoleMap.h.
-    NS_ASSERTION([AXRoles[roles::LAST_ENTRY] isEqualToString:@"ROLE_LAST_ENTRY"], "Role skew in the role map!");
   }
    
   return self;
@@ -358,7 +353,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   // (which might be the owning NSWindow in the application, for example).
   //
   // get the native root accessible, and tell it to return its first parent unignored accessible.
-  nsRootAccessible* root = mGeckoAccessible->RootAccessible();
+  RootAccessible* root = mGeckoAccessible->RootAccessible();
   id nativeParent = GetNativeFromGeckoAccessible(static_cast<nsIAccessible*>(root));
   NSAssert1 (nativeParent, @"!!! we can't find a parent for %@", self);
   
@@ -462,41 +457,35 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_ASSERTION(nsAccUtils::IsTextInterfaceSupportCorrect(mGeckoAccessible),
                "Does not support nsIAccessibleText when it should");
 #endif
-  return (NSString*) AXRoles[mRole];
+
+#define ROLE(geckoRole, stringRole, atkRole, macRole, msaaRole, ia2Role) \
+  case roles::geckoRole: \
+    return macRole;
+
+  switch (mRole) {
+#include "RoleMap.h"
+    default:
+      NS_NOTREACHED("Unknown role.");
+      return NSAccessibilityUnknownRole;
+  }
+
+#undef ROLE
 }
 
 - (NSString*)subrole
 {
-  if (!mGeckoAccessible)
-    return nil;
-
-  nsIContent* content = mGeckoAccessible->GetContent();
-  if (!content || !content->IsHTML())
-    return nil;
-
-  nsIAtom* tag = content->Tag();
-
   switch (mRole) {
     case roles::LIST:
-      if ((tag == nsGkAtoms::ul) || (tag == nsGkAtoms::ol))
-        return NSAccessibilityContentListSubrole;
+      return NSAccessibilityContentListSubrole;
 
-      if (tag == nsGkAtoms::dl)
-        return NSAccessibilityDefinitionListSubrole;
+    case roles::DEFINITION_LIST:
+      return NSAccessibilityDefinitionListSubrole;
 
-      break;
+    case roles::TERM:
+      return @"AXTerm";
 
-    case roles::LISTITEM:
-      if (tag == nsGkAtoms::dt)
-        return @"AXTerm";
-
-      break;
-
-    case roles::PARAGRAPH:
-      if (tag == nsGkAtoms::dd)
-        return @"AXDefinition";
-
-      break;
+    case roles::DEFINITION:
+      return @"AXDefinition";
 
     default:
       break;
@@ -525,7 +514,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NIL;
 
   nsAutoString title;
-  mGeckoAccessible->GetName (title);
+  mGeckoAccessible->Name(title);
   return title.IsEmpty() ? nil : [NSString stringWithCharacters:title.BeginReading() length:title.Length()];
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NIL;

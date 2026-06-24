@@ -96,11 +96,13 @@ HISTOGRAM(TELEMETRY_PING, 1, 3000, 10, EXPONENTIAL, "Time taken to submit teleme
 HISTOGRAM_BOOLEAN(TELEMETRY_SUCCESS,  "Successful telemetry submission")
 HISTOGRAM(MEMORY_JS_COMPARTMENTS_SYSTEM, 1, 1000, 50, EXPONENTIAL, "Total JavaScript compartments used for add-ons and internals.")
 HISTOGRAM(MEMORY_JS_COMPARTMENTS_USER, 1, 1000, 50, EXPONENTIAL, "Total JavaScript compartments used for web pages")
-HISTOGRAM(MEMORY_JS_GC_HEAP_COMMITTED, 1024, 512 * 1024, 50, EXPONENTIAL, "Committed memory used by the garbage-collected JavaScript heap (KB)")
+HISTOGRAM(MEMORY_JS_GC_HEAP, 1024, 512 * 1024, 50, EXPONENTIAL, "Memory used by the garbage-collected JavaScript heap (KB)")
 HISTOGRAM(MEMORY_RESIDENT, 32 * 1024, 1024 * 1024, 50, EXPONENTIAL, "Resident memory size (KB)")
 HISTOGRAM(MEMORY_STORAGE_SQLITE, 1024, 512 * 1024, 50, EXPONENTIAL, "Memory used by SQLite (KB)")
 HISTOGRAM(MEMORY_IMAGES_CONTENT_USED_UNCOMPRESSED, 1024, 1024 * 1024, 50, EXPONENTIAL, "Memory used for uncompressed, in-use content images (KB)")
 HISTOGRAM(MEMORY_HEAP_ALLOCATED, 1024, 1024 * 1024, 50, EXPONENTIAL, "Heap memory allocated (KB)")
+HISTOGRAM(MEMORY_HEAP_COMMITTED_UNUSED, 1024, 512 * 1024, 50, EXPONENTIAL, "Committed, unused heap memory (KB)")
+HISTOGRAM(MEMORY_HEAP_COMMITTED_UNUSED_RATIO, 1, 100, 25, LINEAR, "Ratio of committed, unused memory to allocated memory in the heap (percentage).")
 HISTOGRAM(MEMORY_EXPLICIT, 1024, 1024 * 1024, 50, EXPONENTIAL, "Explicit memory allocations (KB)")
 HISTOGRAM(GHOST_WINDOWS, 1, 128, 8, EXPONENTIAL, "Number of ghost windows")
 #if defined(XP_MACOSX)
@@ -396,6 +398,14 @@ HISTOGRAM_BOOLEAN(XMLHTTPREQUEST_ASYNC_OR_SYNC, "Type of XMLHttpRequest, async o
 HISTOGRAM_BOOLEAN(MULTIPART_XHR_RESPONSE, "XMLHttpRequest response was of type multipart/x-mixed-replace.")
 
 /**
+ * Private browsing transition telemetry.
+ */
+HISTOGRAM(PRIVATE_BROWSING_TRANSITION_ENTER_PREPARATION_MS, 1, 3000, 10, EXPONENTIAL, "Time spent on private browsing enter transition, excluding session restore (ms)")
+HISTOGRAM(PRIVATE_BROWSING_TRANSITION_ENTER_TOTAL_MS, 1, 10000, 50, EXPONENTIAL, "Time spent on private browsing enter transition, including session restore (ms)")
+HISTOGRAM(PRIVATE_BROWSING_TRANSITION_EXIT_PREPARATION_MS, 1, 3000, 10, EXPONENTIAL, "Time spent on private browsing exit transition, excluding session restore (ms)")
+HISTOGRAM(PRIVATE_BROWSING_TRANSITION_EXIT_TOTAL_MS, 1, 10000, 50, EXPONENTIAL, "Time spent on private browsing exit transition, including session restore (ms)")
+
+/**
  * DOM telemetry.
  */
 HISTOGRAM(DOM_TIMERS_FIRED_PER_NATIVE_TIMEOUT, 1, 3000, 10, EXPONENTIAL, "DOM: Timer handlers called per native timer expiration")
@@ -433,6 +443,21 @@ HISTOGRAM_FLAG(TELEMETRY_TEST_FLAG, "a testing histogram; not meant to be touche
  */
 HISTOGRAM_FLAG(STARTUP_CRASH_DETECTED, "Whether there was a crash during the last startup")
 HISTOGRAM_ENUMERATED_VALUES(SAFE_MODE_USAGE, 3, "Whether the user is in safe mode (No, Yes, Forced)")
+
+/**
+ * New Tab Page telemetry.
+ */
+HISTOGRAM(NEWTAB_PAGE_ENABLED, 0, 1, 2, BOOLEAN, "New tab page is enabled.")
+HISTOGRAM(NEWTAB_PAGE_PINNED_SITES_COUNT, 1, 9, 10, EXPONENTIAL, "Number of pinned sites on the new tab page.")
+HISTOGRAM(NEWTAB_PAGE_BLOCKED_SITES_COUNT, 1, 100, 10, EXPONENTIAL, "Number of sites blocked from the new tab page.")
+
+/**
+ * Panorama telemetry.
+ */
+HISTOGRAM(PANORAMA_INITIALIZATION_TIME_MS, 1, 10000, 15, EXPONENTIAL, "Time it takes to initialize Panorama (ms)")
+HISTOGRAM(PANORAMA_GROUPS_COUNT, 1, 25, 15, EXPONENTIAL, "Number of groups in Panorama")
+HISTOGRAM(PANORAMA_STACKED_GROUPS_COUNT, 1, 25, 15, EXPONENTIAL, "Number of stacked groups in Panorama")
+HISTOGRAM(PANORAMA_MEDIAN_TABS_IN_GROUPS_COUNT, 1, 100, 15, EXPONENTIAL, "Median of tabs in groups in Panorama")
 
 /**
  * Native Fennec Telemetry

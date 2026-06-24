@@ -75,6 +75,7 @@
 #include "jslibmath.h"
 
 #include "vm/GlobalObject.h"
+#include "vm/NumericConversions.h"
 #include "vm/StringBuffer.h"
 
 #include "jsinferinlines.h"
@@ -614,7 +615,7 @@ date_msecFromArgs(JSContext *cx, CallArgs args, double *rval)
                 *rval = js_NaN;
                 return JS_TRUE;
             }
-            array[loop] = js_DoubleToInteger(d);
+            array[loop] = ToInteger(d);
         } else {
             if (loop == 2) {
                 array[loop] = 1; /* Default the date argument to 1. */
@@ -646,7 +647,7 @@ date_UTC(JSContext *cx, unsigned argc, Value *vp)
     if (!date_msecFromArgs(cx, args, &msec_time))
         return JS_FALSE;
 
-    msec_time = TIMECLIP(msec_time);
+    msec_time = TimeClip(msec_time);
 
     args.rval().setNumber(msec_time);
     return JS_TRUE;
@@ -1205,7 +1206,7 @@ date_parse(JSContext *cx, unsigned argc, Value *vp)
         return true;
     }
 
-    result = TIMECLIP(result);
+    result = TimeClip(result);
     vp->setNumber(result);
     return true;
 }
@@ -1733,7 +1734,7 @@ date_setTime(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, date_setTime, &DateClass, &ok);
+    RootedVarObject obj(cx, NonGenericMethodGuard(cx, args, date_setTime, &DateClass, &ok));
     if (!obj)
         return ok;
 
@@ -1746,7 +1747,7 @@ date_setTime(JSContext *cx, unsigned argc, Value *vp)
     if (!ToNumber(cx, args[0], &result))
         return false;
 
-    return SetUTCTime(cx, obj, TIMECLIP(result), &args.rval());
+    return SetUTCTime(cx, obj, TimeClip(result), &args.rval());
 }
 
 static JSBool
@@ -1755,7 +1756,7 @@ date_makeTime(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
     CallArgs args = CallArgsFromVp(argc, vp);
 
     bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, native, &DateClass, &ok);
+    RootedVarObject obj(cx, NonGenericMethodGuard(cx, args, native, &DateClass, &ok));
     if (!obj)
         return ok;
 
@@ -1785,7 +1786,7 @@ date_makeTime(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
         if (!MOZ_DOUBLE_IS_FINITE(nums[i])) {
             argIsNotFinite = true;
         } else {
-            nums[i] = js_DoubleToInteger(nums[i]);
+            nums[i] = ToInteger(nums[i]);
         }
     }
 
@@ -1842,7 +1843,7 @@ date_makeTime(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
     if (local)
         result = UTC(result, cx);
 
-    return SetUTCTime(cx, obj, TIMECLIP(result), &args.rval());
+    return SetUTCTime(cx, obj, TimeClip(result), &args.rval());
 }
 
 static JSBool
@@ -1899,7 +1900,7 @@ date_makeDate(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
     CallArgs args = CallArgsFromVp(argc, vp);
 
     bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, native, &DateClass, &ok);
+    RootedVarObject obj(cx, NonGenericMethodGuard(cx, args, native, &DateClass, &ok));
     if (!obj)
         return ok;
 
@@ -1921,7 +1922,7 @@ date_makeDate(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
         if (!MOZ_DOUBLE_IS_FINITE(nums[i])) {
             argIsNotFinite = true;
         } else {
-            nums[i] = js_DoubleToInteger(nums[i]);
+            nums[i] = ToInteger(nums[i]);
         }
     }
 
@@ -1972,7 +1973,7 @@ date_makeDate(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsi
     if (local)
         result = UTC(result, cx);
 
-    return SetUTCTime(cx, obj, TIMECLIP(result), &args.rval());
+    return SetUTCTime(cx, obj, TimeClip(result), &args.rval());
 }
 
 static JSBool
@@ -2017,7 +2018,7 @@ date_setYear(JSContext *cx, unsigned argc, Value *vp)
     CallArgs args = CallArgsFromVp(argc, vp);
 
     bool ok;
-    JSObject *obj = NonGenericMethodGuard(cx, args, date_setYear, &DateClass, &ok);
+    RootedVarObject obj(cx, NonGenericMethodGuard(cx, args, date_setYear, &DateClass, &ok));
     if (!obj)
         return ok;
 
@@ -2036,7 +2037,7 @@ date_setYear(JSContext *cx, unsigned argc, Value *vp)
         SetDateToNaN(cx, obj, &args.rval());
         return true;
     }
-    year = js_DoubleToInteger(year);
+    year = ToInteger(year);
     if (year >= 0 && year <= 99)
         year += 1900;
 
@@ -2045,7 +2046,7 @@ date_setYear(JSContext *cx, unsigned argc, Value *vp)
     result = MakeDate(day, TimeWithinDay(t));
     result = UTC(result, cx);
 
-    return SetUTCTime(cx, obj, TIMECLIP(result), &args.rval());
+    return SetUTCTime(cx, obj, TimeClip(result), &args.rval());
 }
 
 /* constants for toString, toUTCString */
@@ -2622,7 +2623,7 @@ js_Date(JSContext *cx, unsigned argc, Value *vp)
             /* the argument is a millisecond number */
             if (!ToNumber(cx, args[0], &d))
                 return false;
-            d = TIMECLIP(d);
+            d = TimeClip(d);
         } else {
             /* the argument is a string; parse it. */
             JSString *str = ToString(cx, args[0]);
@@ -2636,7 +2637,7 @@ js_Date(JSContext *cx, unsigned argc, Value *vp)
             if (!date_parseString(linearStr, &d, cx))
                 d = js_NaN;
             else
-                d = TIMECLIP(d);
+                d = TimeClip(d);
         }
     } else {
         double msec_time;
@@ -2645,7 +2646,7 @@ js_Date(JSContext *cx, unsigned argc, Value *vp)
 
         if (MOZ_DOUBLE_IS_FINITE(msec_time)) {
             msec_time = UTC(msec_time, cx);
-            msec_time = TIMECLIP(msec_time);
+            msec_time = TimeClip(msec_time);
         }
         d = msec_time;
     }
@@ -2674,7 +2675,7 @@ js_InitDateClass(JSContext *cx, JSObject *obj)
     SetDateToNaN(cx, dateProto);
 
     RootedVarFunction ctor(cx);
-    ctor = global->createConstructor(cx, js_Date, CLASS_ATOM(cx, Date), MAXARGS);
+    ctor = global->createConstructor(cx, js_Date, CLASS_NAME(cx, Date), MAXARGS);
     if (!ctor)
         return NULL;
 
@@ -2692,8 +2693,8 @@ js_InitDateClass(JSContext *cx, JSObject *obj)
     if (!JS_DefineFunctions(cx, dateProto, date_methods))
         return NULL;
     Value toUTCStringFun;
-    jsid toUTCStringId = ATOM_TO_JSID(cx->runtime->atomState.toUTCStringAtom);
-    jsid toGMTStringId = ATOM_TO_JSID(cx->runtime->atomState.toGMTStringAtom);
+    jsid toUTCStringId = NameToId(cx->runtime->atomState.toUTCStringAtom);
+    jsid toGMTStringId = NameToId(cx->runtime->atomState.toGMTStringAtom);
     if (!js_GetProperty(cx, dateProto, toUTCStringId, &toUTCStringFun) ||
         !js_DefineProperty(cx, dateProto, toGMTStringId, &toUTCStringFun,
                            JS_PropertyStub, JS_StrictPropertyStub, 0))

@@ -102,8 +102,9 @@ template <typename T>
 struct RootMethods { };
 
 /*
- * Reference to a stack location rooted for GC. See the "Moving GC Stack
- * Rooting" comment above.
+ * Reference to a T that has been rooted elsewhere. This is most useful
+ * as a parameter type, which guarantees that the T lvalue is properly
+ * rooted. See "Move GC Stack Rooting" above.
  */
 template <typename T>
 class Handle
@@ -115,18 +116,36 @@ class Handle
         ptr = reinterpret_cast<const T *>(handle.address());
     }
 
-    /* Get a handle from a rooted stack location, with implicit coercion. */
+    /*
+     * This may be called only if the location of the T is guaranteed
+     * to be marked (for some reason other than being a Root or RootedVar),
+     * e.g., if it is guaranteed to be reachable from an implicit root.
+     *
+     * Create a Handle from a raw location of a T.
+     */
+    static Handle fromMarkedLocation(const T *p) {
+        Handle h;
+        h.ptr = p;
+        return h;
+    }
+
+    /*
+     * Construct a handle from an explicitly rooted location. This is the
+     * normal way to create a handle.
+     */
     template <typename S> inline Handle(const Root<S> &root);
     template <typename S> inline Handle(const RootedVar<S> &root);
 
     const T *address() { return ptr; }
+    T value() { return *ptr; }
 
     operator T () { return value(); }
     T operator ->() { return value(); }
 
   private:
+    Handle() {}
+
     const T *ptr;
-    T value() { return *ptr; }
 
     template <typename S>
     void testAssign() {
@@ -177,9 +196,9 @@ class Root
         this->stack = reinterpret_cast<Root<T>**>(&cx->thingGCRooters[kind]);
         this->prev = *stack;
         *stack = this;
-#endif
 
         JS_ASSERT(!RootMethods<T>::poisoned(*ptr));
+#endif
 
         this->ptr = ptr;
 
@@ -238,18 +257,30 @@ class SkipRoot
     const uint8_t *start;
     const uint8_t *end;
 
-  public:
     template <typename T>
-    SkipRoot(JSContext *cx_, const T *ptr
-              JS_GUARD_OBJECT_NOTIFIER_PARAM)
+    void init(ContextFriendFields *cx, const T *ptr, size_t count)
     {
-        ContextFriendFields *cx = ContextFriendFields::get(cx_);
-
         this->stack = &cx->skipGCRooters;
         this->prev = *stack;
         *stack = this;
         this->start = (const uint8_t *) ptr;
-        this->end = this->start + sizeof(T);
+        this->end = this->start + (sizeof(T) * count);
+    }
+
+  public:
+    template <typename T>
+    SkipRoot(JSContext *cx, const T *ptr
+              JS_GUARD_OBJECT_NOTIFIER_PARAM)
+    {
+        init(ContextFriendFields::get(cx), ptr, 1);
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
+    }
+
+    template <typename T>
+    SkipRoot(JSContext *cx, const T *ptr, size_t count
+              JS_GUARD_OBJECT_NOTIFIER_PARAM)
+    {
+        init(ContextFriendFields::get(cx), ptr, count);
         JS_GUARD_OBJECT_NOTIFIER_INIT;
     }
 
@@ -270,6 +301,13 @@ class SkipRoot
   public:
     template <typename T>
     SkipRoot(JSContext *cx, const T *ptr
+              JS_GUARD_OBJECT_NOTIFIER_PARAM)
+    {
+        JS_GUARD_OBJECT_NOTIFIER_INIT;
+    }
+
+    template <typename T>
+    SkipRoot(JSContext *cx, const T *ptr, size_t count
               JS_GUARD_OBJECT_NOTIFIER_PARAM)
     {
         JS_GUARD_OBJECT_NOTIFIER_INIT;
@@ -343,6 +381,17 @@ typedef RootedVar<JSFunction*>  RootedVarFunction;
 typedef RootedVar<JSString*>    RootedVarString;
 typedef RootedVar<jsid>         RootedVarId;
 typedef RootedVar<Value>        RootedVarValue;
+
+/*
+ * Hook for dynamic root analysis. Checks the native stack and poisons
+ * references to GC things which have not been rooted.
+ */
+#if defined(JSGC_ROOT_ANALYSIS) && defined(DEBUG) && !defined(JS_THREADSAFE)
+void CheckStackRoots(JSContext *cx);
+inline void MaybeCheckStackRoots(JSContext *cx) { CheckStackRoots(cx); }
+#else
+inline void MaybeCheckStackRoots(JSContext *cx) {}
+#endif
 
 }  /* namespace JS */
 

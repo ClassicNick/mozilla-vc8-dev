@@ -470,7 +470,7 @@ class SetPropCompiler : public PICStubCompiler
         JS_ASSERT(pic.typeMonitored);
 
         RecompilationMonitor monitor(cx);
-        jsid id = ATOM_TO_JSID(name);
+        jsid id = NameToId(name);
 
         if (!obj->getType(cx)->unknownProperties()) {
             types::AutoEnterTypeInference enter(cx);
@@ -910,7 +910,7 @@ class GetPropCompiler : public PICStubCompiler
 
         RecompilationMonitor monitor(f.cx);
 
-        JSObject *obj = f.fp()->scopeChain().global().getOrCreateStringPrototype(f.cx);
+        JSObject *obj = f.fp()->global().getOrCreateStringPrototype(f.cx);
         if (!obj)
             return error();
 
@@ -1053,7 +1053,7 @@ class GetPropCompiler : public PICStubCompiler
         return Lookup_Cacheable;
     }
 
-    void generateGetterStub(Assembler &masm, const Shape *shape,
+    void generateGetterStub(Assembler &masm, const Shape *shape, jsid userid,
                             Label start, Vector<Jump, 8> &shapeMismatches)
     {
         /*
@@ -1115,7 +1115,7 @@ class GetPropCompiler : public PICStubCompiler
         masm.restoreStackBase();
         masm.setupABICall(Registers::NormalCall, 4);
         masm.storeArg(3, vpReg);
-        masm.storeArg(2, ImmPtr((void *) JSID_BITS(shape->getUserId())));
+        masm.storeArg(2, ImmPtr((void *) JSID_BITS(userid)));
         masm.storeArg(1, holdObjReg);
         masm.storeArg(0, cxReg);
 
@@ -1201,7 +1201,11 @@ class GetPropCompiler : public PICStubCompiler
         }
 
         if (!shape->hasDefaultGetter()) {
-            generateGetterStub(masm, shape, start, shapeMismatches);
+            jsid userid;
+            if (!shape->getUserId(cx, &userid))
+                return error();
+
+            generateGetterStub(masm, shape, userid, start, shapeMismatches);
             if (setStubShapeOffset)
                 pic.getPropLabels().setStubShapeJump(masm, start, stubShapeJumpLabel);
             return Lookup_Cacheable;
@@ -1302,8 +1306,8 @@ class ScopeNameCompiler : public PICStubCompiler
   private:
     typedef Vector<Jump, 8> JumpList;
 
-    JSObject *scopeChain;
-    PropertyName *name;
+    RootedVarObject scopeChain;
+    RootedVarPropertyName name;
     GetPropHelper<ScopeNameCompiler> getprop;
     ScopeNameCompiler *thisFromCtor() { return this; }
 
@@ -1360,7 +1364,7 @@ class ScopeNameCompiler : public PICStubCompiler
     ScopeNameCompiler(VMFrame &f, JSScript *script, JSObject *scopeChain, ic::PICInfo &pic,
                       PropertyName *name, VoidStubPIC stub)
       : PICStubCompiler("name", f, script, pic, JS_FUNC_TO_DATA_PTR(void *, stub)),
-        scopeChain(scopeChain), name(name),
+        scopeChain(f.cx, scopeChain), name(f.cx, name),
         getprop(f.cx, NULL, name, *thisFromCtor(), f)
     { }
 
@@ -1643,14 +1647,14 @@ class ScopeNameCompiler : public PICStubCompiler
 
 class BindNameCompiler : public PICStubCompiler
 {
-    JSObject *scopeChain;
-    PropertyName *name;
+    RootedVarObject scopeChain;
+    RootedVarPropertyName name;
 
   public:
     BindNameCompiler(VMFrame &f, JSScript *script, JSObject *scopeChain, ic::PICInfo &pic,
                      PropertyName *name, VoidStubPIC stub)
       : PICStubCompiler("bind", f, script, pic, JS_FUNC_TO_DATA_PTR(void *, stub)),
-        scopeChain(scopeChain), name(name)
+        scopeChain(f.cx, scopeChain), name(f.cx, name)
     { }
 
     static void reset(Repatcher &repatcher, ic::PICInfo &pic)
@@ -1953,7 +1957,7 @@ ic::Name(VMFrame &f, ic::PICInfo *pic)
 {
     JSScript *script = f.fp()->script();
 
-    ScopeNameCompiler cc(f, script, &f.fp()->scopeChain(), *pic, pic->name, DisabledNameIC);
+    ScopeNameCompiler cc(f, script, f.fp()->scopeChain(), *pic, pic->name, DisabledNameIC);
 
     LookupStatus status = cc.updateForName();
     if (status == Lookup_Error)
@@ -1977,7 +1981,7 @@ ic::BindName(VMFrame &f, ic::PICInfo *pic)
     JSScript *script = f.fp()->script();
 
     VoidStubPIC stub = DisabledBindNameIC;
-    BindNameCompiler cc(f, script, &f.fp()->scopeChain(), *pic, pic->name, stub);
+    BindNameCompiler cc(f, script, f.fp()->scopeChain(), *pic, pic->name, stub);
 
     JSObject *obj = cc.update();
     if (!obj)
@@ -2319,17 +2323,16 @@ GetElementIC::attachTypedArray(VMFrame &f, JSObject *obj, const Value &v, jsid i
                  ? Int32Key::FromConstant(v.toInt32())
                  : Int32Key::FromRegister(idRemat.dataReg());
 
-    JSObject *tarray = js::TypedArray::getTypedArray(obj);
     if (!masm.supportsFloatingPoint() &&
-        (TypedArray::getType(tarray) == js::TypedArray::TYPE_FLOAT32 ||
-         TypedArray::getType(tarray) == js::TypedArray::TYPE_FLOAT64 ||
-         TypedArray::getType(tarray) == js::TypedArray::TYPE_UINT32))
+        (TypedArray::getType(obj) == TypedArray::TYPE_FLOAT32 ||
+         TypedArray::getType(obj) == TypedArray::TYPE_FLOAT64 ||
+         TypedArray::getType(obj) == TypedArray::TYPE_UINT32))
     {
         return disable(f, "fpu not supported");
     }
 
     MaybeRegisterID tempReg;
-    masm.loadFromTypedArray(TypedArray::getType(tarray), objReg, key, typeReg, objReg, tempReg);
+    masm.loadFromTypedArray(TypedArray::getType(obj), objReg, key, typeReg, objReg, tempReg);
 
     Jump done = masm.jump();
 
@@ -2439,7 +2442,7 @@ ic::GetElement(VMFrame &f, ic::GetElementIC *ic)
     if (idval.isInt32() && INT_FITS_IN_JSID(idval.toInt32())) {
         id = INT_TO_JSID(idval.toInt32());
     } else {
-        if (!js_InternNonIntElementId(cx, obj, idval, &id))
+        if (!InternNonIntElementId(cx, obj, idval, &id))
             THROW();
     }
 
@@ -2633,18 +2636,17 @@ SetElementIC::attachTypedArray(VMFrame &f, JSObject *obj, int32_t key)
     // Load the array's packed data vector.
     masm.loadPtr(Address(objReg, TypedArray::dataOffset()), objReg);
 
-    JSObject *tarray = js::TypedArray::getTypedArray(obj);
     if (!masm.supportsFloatingPoint() &&
-        (TypedArray::getType(tarray) == js::TypedArray::TYPE_FLOAT32 ||
-         TypedArray::getType(tarray) == js::TypedArray::TYPE_FLOAT64))
+        (TypedArray::getType(obj) == TypedArray::TYPE_FLOAT32 ||
+         TypedArray::getType(obj) == TypedArray::TYPE_FLOAT64))
     {
         return disable(f, "fpu not supported");
     }
 
-    int shift = js::TypedArray::slotWidth(obj);
+    int shift = TypedArray::slotWidth(obj);
     if (hasConstantKey) {
         Address addr(objReg, keyValue * shift);
-        if (!StoreToTypedArray(cx, masm, tarray, addr, vr, volatileMask))
+        if (!StoreToTypedArray(cx, masm, obj, addr, vr, volatileMask))
             return error(cx);
     } else {
         Assembler::Scale scale = Assembler::TimesOne;
@@ -2660,7 +2662,7 @@ SetElementIC::attachTypedArray(VMFrame &f, JSObject *obj, int32_t key)
             break;
         }
         BaseIndex addr(objReg, keyReg, scale);
-        if (!StoreToTypedArray(cx, masm, tarray, addr, vr, volatileMask))
+        if (!StoreToTypedArray(cx, masm, obj, addr, vr, volatileMask))
             return error(cx);
     }
 

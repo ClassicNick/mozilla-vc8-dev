@@ -71,10 +71,13 @@ nsXULTreeAccessible::
   mFlags |= eXULTreeAccessible;
 
   mTree = nsCoreUtils::GetTreeBoxObject(aContent);
-  if (mTree)
-    mTree->GetView(getter_AddRefs(mTreeView));
+  NS_ASSERTION(mTree, "Can't get mTree!\n");
 
-  NS_ASSERTION(mTree && mTreeView, "Can't get mTree or mTreeView!\n");
+  if (mTree) {
+    nsCOMPtr<nsITreeView> treeView;
+    mTree->GetView(getter_AddRefs(treeView));
+    mTreeView = treeView;
+  }
 
   nsIContent* parentContent = mContent->GetParent();
   if (parentContent) {
@@ -95,14 +98,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULTreeAccessible)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULTreeAccessible,
                                                   nsAccessible)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTree)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTreeView)
   CycleCollectorTraverseCache(tmp->mAccessibleCache, &cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXULTreeAccessible,
                                                 nsAccessible)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTree)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTreeView)
   ClearCache(tmp->mAccessibleCache);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -145,10 +146,11 @@ nsXULTreeAccessible::NativeState()
 void
 nsXULTreeAccessible::Value(nsString& aValue)
 {
-  // Return the value is the first selected child.
-
   aValue.Truncate();
+  if (!mTreeView)
+    return;
 
+  // Return the value is the first selected child.
   nsCOMPtr<nsITreeSelection> selection;
   mTreeView->GetSelection(getter_AddRefs(selection));
   if (!selection)
@@ -739,13 +741,11 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULTreeItemAccessibleBase)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXULTreeItemAccessibleBase,
                                                   nsAccessible)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTree)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NSCOMPTR(mTreeView)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsXULTreeItemAccessibleBase,
                                                 nsAccessible)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTree)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_NSCOMPTR(mTreeView)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(nsXULTreeItemAccessibleBase)
@@ -1176,16 +1176,13 @@ NS_IMPL_RELEASE_INHERITED(nsXULTreeItemAccessible, nsXULTreeItemAccessibleBase)
 ////////////////////////////////////////////////////////////////////////////////
 // nsXULTreeItemAccessible: nsIAccessible implementation
 
-NS_IMETHODIMP
-nsXULTreeItemAccessible::GetName(nsAString& aName)
+ENameValueFlag
+nsXULTreeItemAccessible::Name(nsString& aName)
 {
   aName.Truncate();
 
-  if (IsDefunct())
-    return NS_ERROR_FAILURE;
-
   GetCellName(mColumn, aName);
-  return NS_OK;
+  return eNameOK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1197,7 +1194,7 @@ nsXULTreeItemAccessible::Init()
   if (!nsXULTreeItemAccessibleBase::Init())
     return false;
 
-  GetName(mCachedName);
+  Name(mCachedName);
   return true;
 }
 
@@ -1235,7 +1232,7 @@ nsXULTreeItemAccessible::RowInvalidated(PRInt32 aStartColIdx,
                                         PRInt32 aEndColIdx)
 {
   nsAutoString name;
-  GetName(name);
+  Name(name);
 
   if (name != mCachedName) {
     nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_NAME_CHANGE, this);

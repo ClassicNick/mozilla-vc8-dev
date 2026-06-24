@@ -42,6 +42,7 @@
 
 #include "jsapi.h"
 #include "jsclass.h"
+#include "jsobj.h"
 
 #include "gc/Barrier.h"
 
@@ -50,15 +51,17 @@ typedef struct JSProperty JSProperty;
 namespace js {
 
 /*
- * ArrayBuffer
+ * ArrayBufferObject
  *
- * This class holds the underlying raw buffer that the TypedArray
- * subclasses access.  It can be created explicitly and passed to a
- * TypedArray subclass, or can be created implicitly by constructing a
- * TypedArray with a size.
+ * This class holds the underlying raw buffer that the various ArrayBufferView
+ * subclasses (DataView and the TypedArrays) access. It can be created
+ * explicitly and passed to an ArrayBufferView subclass, or can be created
+ * implicitly by constructing a TypedArray with a size.
  */
-struct ArrayBuffer {
-    static Class slowClass;
+class ArrayBufferObject : public JSObject
+{
+  public:
+    static Class protoClass;
     static JSPropertySpec jsprops[];
     static JSFunctionSpec jsfuncs[];
 
@@ -68,16 +71,10 @@ struct ArrayBuffer {
 
     static JSBool class_constructor(JSContext *cx, unsigned argc, Value *vp);
 
-    static JSObject *create(JSContext *cx, int32_t nbytes, uint8_t *contents = NULL);
+    static JSObject *create(JSContext *cx, uint32_t nbytes, uint8_t *contents = NULL);
 
-    static JSObject *createSlice(JSContext *cx, JSObject *arrayBuffer,
+    static JSObject *createSlice(JSContext *cx, ArrayBufferObject &arrayBuffer,
                                  uint32_t begin, uint32_t end);
-
-    ArrayBuffer()
-    {
-    }
-
-    ~ArrayBuffer();
 
     static void
     obj_trace(JSTracer *trc, JSObject *obj);
@@ -165,8 +162,18 @@ struct ArrayBuffer {
     static JSType
     obj_typeOf(JSContext *cx, JSObject *obj);
 
-    static JSObject *
-    getArrayBuffer(JSObject *obj);
+    bool
+    allocateSlots(JSContext *cx, uint32_t size, uint8_t *contents = NULL);
+
+    inline uint32_t byteLength() const;
+
+    inline uint8_t * dataPointer() const;
+
+   /*
+     * Check if the arrayBuffer contains any data. This will return false for
+     * ArrayBuffer.prototype and neutered ArrayBuffers.
+     */
+    inline bool hasData() const;
 };
 
 /*
@@ -209,15 +216,13 @@ struct TypedArray {
     };
 
     // and MUST NOT be used to construct new objects.
-    static Class fastClasses[TYPE_MAX];
+    static Class classes[TYPE_MAX];
 
-    // These are the slow/original classes, used
+    // These are the proto/original classes, used
     // fo constructing new objects
-    static Class slowClasses[TYPE_MAX];
+    static Class protoClasses[TYPE_MAX];
 
     static JSPropertySpec jsprops[];
-
-    static JSObject *getTypedArray(JSObject *obj);
 
     static JSBool prop_getBuffer(JSContext *cx, JSObject *obj, jsid id, Value *vp);
     static JSBool prop_getByteOffset(JSContext *cx, JSObject *obj, jsid id, Value *vp);
@@ -247,7 +252,7 @@ struct TypedArray {
     static uint32_t getByteOffset(JSObject *obj);
     static uint32_t getByteLength(JSObject *obj);
     static uint32_t getType(JSObject *obj);
-    static JSObject * getBuffer(JSObject *obj);
+    static ArrayBufferObject * getBuffer(JSObject *obj);
     static void * getDataOffset(JSObject *obj);
 
   public:
@@ -283,14 +288,84 @@ struct TypedArray {
     static int dataOffset();
 };
 
-bool
-IsFastOrSlowTypedArray(JSObject *obj);
+inline bool
+IsTypedArrayClass(const Class *clasp)
+{
+    return &TypedArray::classes[0] <= clasp &&
+           clasp < &TypedArray::classes[TypedArray::TYPE_MAX];
+}
+
+inline bool
+IsTypedArrayProtoClass(const Class *clasp)
+{
+    return &TypedArray::protoClasses[0] <= clasp &&
+           clasp < &TypedArray::protoClasses[TypedArray::TYPE_MAX];
+}
+
+inline bool
+IsTypedArray(JSObject *obj)
+{
+    return IsTypedArrayClass(obj->getClass());
+}
+
+inline bool
+IsTypedArrayProto(JSObject *obj)
+{
+    return IsTypedArrayProtoClass(obj->getClass());
+}
+
+class DataViewObject : public JSObject
+{ 
+    static const size_t BYTEOFFSET_SLOT = 0;
+    static const size_t BYTELENGTH_SLOT = 1;
+    static const size_t BUFFER_SLOT     = 2;
+
+  public:
+    static const size_t RESERVED_SLOTS  = 3;
+
+    static JSBool prop_getBuffer(JSContext *cx, JSObject *obj, jsid id, Value *vp);
+    static JSBool prop_getByteOffset(JSContext *cx, JSObject *obj, jsid id, Value *vp);
+    static JSBool prop_getByteLength(JSContext *cx, JSObject *obj, jsid id, Value *vp);
+
+    static JSBool class_constructor(JSContext *cx, unsigned argc, Value *vp);
+
+    static inline DataViewObject *
+    create(JSContext *cx, uint32_t byteOffset, uint32_t byteLength, Handle<ArrayBufferObject*> arrayBuffer);
+
+    static JSBool fun_getInt8(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getUint8(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getInt16(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getUint16(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getInt32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getUint32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getFloat32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_getFloat64(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setInt8(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setUint8(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setInt16(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setUint16(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setInt32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setUint32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setFloat32(JSContext *cx, unsigned argc, Value *vp);
+    static JSBool fun_setFloat64(JSContext *cx, unsigned argc, Value *vp);
+    inline uint32_t byteLength();
+    inline uint32_t byteOffset();
+    inline JSObject & arrayBuffer();
+    inline void *dataPointer();
+    inline bool hasBuffer() const;
+    static JSObject *initClass(JSContext *cx, GlobalObject *global);
+    bool getDataPointer(JSContext *cx, CallArgs args, size_t typeSize, uint8_t **data);
+    template<typename NativeType>
+    bool read(JSContext *cx, CallArgs &args, NativeType *val, const char *method);
+    template<typename NativeType>
+    bool write(JSContext *cx, CallArgs &args, const char *method);
+  private:
+    static JSPropertySpec jsprops[];
+    static JSFunctionSpec jsfuncs[];
+};
 
 bool
-IsFastOrSlowTypedArrayClass(const Class *clasp);
-
-bool
-IsFastTypedArrayClass(const Class *clasp);
+IsDataView(JSObject *obj);
 
 } // namespace js
 

@@ -187,6 +187,9 @@ pref("media.raw.enabled", true);
 #ifdef MOZ_OGG
 pref("media.ogg.enabled", true);
 #endif
+#ifdef MOZ_OPUS
+pref("media.opus.enabled", false);
+#endif
 #ifdef MOZ_WAVE
 pref("media.wave.enabled", true);
 #endif
@@ -212,11 +215,7 @@ pref("gfx.downloadable_fonts.enabled", true);
 pref("gfx.downloadable_fonts.fallback_delay", 3000);
 pref("gfx.downloadable_fonts.sanitize", true);
 
-#ifdef ANDROID
-pref("gfx.filter.nearest.force-enabled", true);
-#else
 pref("gfx.filter.nearest.force-enabled", false);
-#endif
 
 // whether to always search all font cmaps during system font fallback
 pref("gfx.font_rendering.fallback.always_use_cmaps", false);
@@ -646,7 +645,7 @@ pref("dom.min_background_timeout_value", 1000);
 // Use the new DOM bindings (only affects any scopes created after the pref is
 // changed)
 pref("dom.new_bindings", true);
-pref("dom.paris_bindings", true);
+pref("dom.experimental_bindings", true);
 
 // Parsing perf prefs. For now just mimic what the old code did.
 #ifndef XP_WIN
@@ -960,6 +959,7 @@ pref("network.IDN.whitelist.dk", true);
 pref("network.IDN.whitelist.ee", true);
 pref("network.IDN.whitelist.es", true);
 pref("network.IDN.whitelist.fi", true);
+pref("network.IDN.whitelist.fr", true);
 pref("network.IDN.whitelist.gr", true);
 pref("network.IDN.whitelist.hu", true);
 pref("network.IDN.whitelist.il", true);
@@ -976,15 +976,20 @@ pref("network.IDN.whitelist.no", true);
 pref("network.IDN.whitelist.nu", true);
 pref("network.IDN.whitelist.nz", true);
 pref("network.IDN.whitelist.pl", true);
+pref("network.IDN.whitelist.pm", true);
 pref("network.IDN.whitelist.pr", true);
+pref("network.IDN.whitelist.re", true);
 pref("network.IDN.whitelist.se", true);
 pref("network.IDN.whitelist.sh", true);
 pref("network.IDN.whitelist.si", true);
+pref("network.IDN.whitelist.tf", true);
 pref("network.IDN.whitelist.th", true);
 pref("network.IDN.whitelist.tm", true);
 pref("network.IDN.whitelist.tw", true);
 pref("network.IDN.whitelist.ua", true);
 pref("network.IDN.whitelist.vn", true);
+pref("network.IDN.whitelist.wf", true);
+pref("network.IDN.whitelist.yt", true);
 
 // IDN ccTLDs
 // ae, UAE, .<Emarat>
@@ -3462,6 +3467,12 @@ pref("layers.acceleration.force-enabled", false);
 pref("layers.acceleration.draw-fps", false);
 
 pref("layers.offmainthreadcomposition.enabled", false);
+
+#ifdef MOZ_X11
+#ifdef MOZ_WIDGET_GTK2
+pref("gfx.xrender.enabled",true);
+#endif
+#endif
 
 #ifdef XP_WIN
 // Whether to disable the automatic detection and use of direct2d.

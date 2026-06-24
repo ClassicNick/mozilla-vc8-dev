@@ -143,7 +143,7 @@ protected:
   virtual already_AddRefed<nsAccessible> CreateTreeItemAccessible(PRInt32 aRow);
 
   nsCOMPtr<nsITreeBoxObject> mTree;
-  nsCOMPtr<nsITreeView> mTreeView;
+  nsITreeView* mTreeView;
   nsAccessibleHashtable mAccessibleCache;
 };
 
@@ -244,7 +244,7 @@ protected:
   void GetCellName(nsITreeColumn* aColumn, nsAString& aName);
 
   nsCOMPtr<nsITreeBoxObject> mTree;
-  nsCOMPtr<nsITreeView> mTreeView;
+  nsITreeView* mTreeView;
   PRInt32 mRow;
 };
 
@@ -267,13 +267,12 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsXULTreeItemAccessible,
                                            nsXULTreeItemAccessibleBase)
 
-  NS_IMETHOD GetName(nsAString& aName);
-
   // nsAccessNode
   virtual bool Init();
   virtual void Shutdown();
 
   // nsAccessible
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
   virtual mozilla::a11y::role NativeRole();
 
   // nsXULTreeItemAccessibleBase

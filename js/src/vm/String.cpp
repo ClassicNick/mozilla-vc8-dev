@@ -40,7 +40,7 @@
 
 #include "mozilla/RangedPtr.h"
 
-#include "jsgcmark.h"
+#include "gc/Marking.h"
 
 #include "String.h"
 #include "String-inl.h"
@@ -372,7 +372,7 @@ JSDependentString::undepend(JSContext *cx)
 }
 
 bool
-JSFlatString::isIndex(uint32_t *indexp) const
+JSFlatString::isIndexSlow(uint32_t *indexp) const
 {
     const jschar *s = charsZ();
     jschar ch = *s;

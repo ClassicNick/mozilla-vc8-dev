@@ -140,7 +140,6 @@ public:
 #include "GLLibraryEGL.h"
 #include "nsDebug.h"
 #include "nsThreadUtils.h"
-#include "EGLUtils.h"
 
 #include "nsIWidget.h"
 
@@ -182,7 +181,7 @@ CreateBasicEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig);
 #endif
 
 static EGLConfig
-CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig = nsnull, EGLenum aDepth = 0);
+CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig = nsnull);
 #endif
 
 static EGLint gContextAttribs[] = {
@@ -597,6 +596,10 @@ public:
         return h;
     }
 
+    virtual bool HasLockSurface() {
+        return sEGLLibrary.HasKHRLockSurface();
+    }
+
 protected:
     friend class GLContextProviderEGL;
 
@@ -724,7 +727,7 @@ GLContextEGL::ResizeOffscreen(const gfxIntSize& aNewSize)
             return false;
         }
 
-        if (!ResizeOffscreenFBO(pbsize, false))
+        if (!ResizeOffscreenFBOs(pbsize, false))
             return false;
 
         SetOffscreenSize(aNewSize, pbsize);
@@ -741,53 +744,14 @@ GLContextEGL::ResizeOffscreen(const gfxIntSize& aNewSize)
         return true;
     }
 
-#ifdef MOZ_X11
-    if (gUseBackingSurface && mThebesSurface) {
-        if (aNewSize == mThebesSurface->GetSize()) {
-            return true;
-        }
-
-        EGLNativePixmapType pixmap = 0;
-        nsRefPtr<gfxXlibSurface> xsurface =
-            gfxXlibSurface::Create(DefaultScreenOfDisplay(DefaultXDisplay()),
-                                   gfxXlibSurface::FindRenderFormat(DefaultXDisplay(),
-                                                                    gfxASurface::ImageFormatRGB24),
-                                   aNewSize);
-        // Make sure that pixmap created and ready for GL rendering
-        XSync(DefaultXDisplay(), False);
-
-        if (xsurface->CairoStatus() != 0) {
-            return false;
-        }
-        pixmap = (EGLNativePixmapType)xsurface->XDrawable();
-        if (!pixmap) {
-            return false;
-        }
-
-        EGLSurface surface;
-        EGLConfig config = 0;
-        int depth = gfxUtils::ImageFormatToDepth(gfxPlatform::GetPlatform()->GetOffscreenFormat());
-        surface = CreateEGLSurfaceForXSurface(xsurface, &config, depth);
-        if (!config) {
-            return false;
-        }
-        if (!ResizeOffscreenFBO(aNewSize, true))
-            return false;
-
-        mThebesSurface = xsurface;
-
-        return true;
-    }
-#endif
-
 #if defined(MOZ_X11) && defined(MOZ_EGL_XRENDER_COMPOSITE)
     if (ResizeOffscreenPixmapSurface(aNewSize)) {
-        if (ResizeOffscreenFBO(aNewSize, true))
+        if (ResizeOffscreenFBOs(aNewSize, true))
             return true;
     }
 #endif
 
-    return ResizeOffscreenFBO(aNewSize, true);
+    return ResizeOffscreenFBOs(aNewSize, true);
 }
 
 
@@ -1510,16 +1474,6 @@ CreateSurfaceForWindow(nsIWidget *aWidget, EGLConfig config)
     return surface;
 }
 
-const char*
-GetVendor()
-{
-    if (!sEGLLibrary.EnsureInitialized()) {
-        return nsnull;
-    }
-
-    return reinterpret_cast<const char*>(sEGLLibrary.fQueryString(EGL_DISPLAY(), LOCAL_EGL_VENDOR));
-}
-
 already_AddRefed<GLContext>
 GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
 {
@@ -1607,6 +1561,23 @@ GLContextProviderEGL::CreateForWindow(nsIWidget *aWidget)
 }
 
 static void
+FillPBufferAttribs_Minimal(nsTArray<EGLint>& aAttrs)
+{
+    aAttrs.Clear();
+
+#define A1(_x)      do { aAttrs.AppendElement(_x); } while (0)
+#define A2(_x,_y)   do { A1(_x); A1(_y); } while (0)
+
+    A2(LOCAL_EGL_RENDERABLE_TYPE, LOCAL_EGL_OPENGL_ES2_BIT);
+
+    A2(LOCAL_EGL_SURFACE_TYPE, LOCAL_EGL_PBUFFER_BIT);
+
+    A1(LOCAL_EGL_NONE);
+#undef A1
+#undef A2
+}
+
+static void
 FillPBufferAttribs(nsTArray<EGLint>& aAttrs,
                    const ContextFormat& aFormat,
                    bool aCanBindToTexture,
@@ -1619,6 +1590,8 @@ FillPBufferAttribs(nsTArray<EGLint>& aAttrs,
 #define A2(_x,_y)   do { A1(_x); A1(_y); } while (0)
 
     A2(LOCAL_EGL_RENDERABLE_TYPE, LOCAL_EGL_OPENGL_ES2_BIT);
+
+    A2(LOCAL_EGL_SURFACE_TYPE, LOCAL_EGL_PBUFFER_BIT);
 
     if (aColorBitsOverride == -1) {
         A2(LOCAL_EGL_RED_SIZE, aFormat.red);
@@ -1676,16 +1649,20 @@ GLContextEGL::CreateEGLPBufferOffscreenContext(const gfxIntSize& aSize,
     int tryDepthSize = (aFormat.depth > 0) ? 24 : 0;
 
 TRY_ATTRIBS_AGAIN:
-    switch (attribAttempt) {
-    case 0:
-        FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, 8, tryDepthSize);
-        break;
-    case 1:
-        FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, -1, tryDepthSize);
-        break;
-    case 2:
-        FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, -1, -1);
-        break;
+    if (bufferUnused) {
+        FillPBufferAttribs_Minimal(attribs);
+    } else {
+        switch (attribAttempt) {
+        case 0:
+            FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, 8, tryDepthSize);
+            break;
+        case 1:
+            FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, -1, tryDepthSize);
+            break;
+        case 2:
+            FillPBufferAttribs(attribs, aFormat, configCanBindToTexture, -1, -1);
+            break;
+        }
     }
 
     if (!sEGLLibrary.fChooseConfig(EGL_DISPLAY(),
@@ -1694,6 +1671,11 @@ TRY_ATTRIBS_AGAIN:
                                    &foundConfigs)
         || foundConfigs == 0)
     {
+        if (bufferUnused) {
+            NS_WARNING("No EGL Config for minimal PBuffer!");
+            return nsnull;
+        }
+
         if (attribAttempt < 3) {
             attribAttempt++;
             goto TRY_ATTRIBS_AGAIN;
@@ -1767,7 +1749,7 @@ TRY_ATTRIBS_AGAIN:
 
 #ifdef MOZ_X11
 EGLSurface
-CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig, EGLenum aDepth)
+CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig)
 {
     gfxXlibSurface* xsurface = static_cast<gfxXlibSurface*>(aSurface);
     bool opaque =
@@ -1806,7 +1788,7 @@ CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig, EGLenum a
     static EGLint pixmap_config[] = {
         LOCAL_EGL_SURFACE_TYPE,         LOCAL_EGL_PIXMAP_BIT,
         LOCAL_EGL_RENDERABLE_TYPE,      LOCAL_EGL_OPENGL_ES2_BIT,
-        LOCAL_EGL_DEPTH_SIZE,           aDepth,
+        LOCAL_EGL_DEPTH_SIZE,           0,
         LOCAL_EGL_BIND_TO_TEXTURE_RGB,  LOCAL_EGL_TRUE,
         LOCAL_EGL_NONE
     };
@@ -1814,7 +1796,7 @@ CreateEGLSurfaceForXSurface(gfxASurface* aSurface, EGLConfig* aConfig, EGLenum a
     static EGLint pixmap_lock_config[] = {
         LOCAL_EGL_SURFACE_TYPE,         LOCAL_EGL_PIXMAP_BIT | LOCAL_EGL_LOCK_SURFACE_BIT_KHR,
         LOCAL_EGL_RENDERABLE_TYPE,      LOCAL_EGL_OPENGL_ES2_BIT,
-        LOCAL_EGL_DEPTH_SIZE,           aDepth,
+        LOCAL_EGL_DEPTH_SIZE,           0,
         LOCAL_EGL_BIND_TO_TEXTURE_RGB,  LOCAL_EGL_TRUE,
         LOCAL_EGL_NONE
     };
@@ -1867,7 +1849,7 @@ GLContextEGL::CreateEGLPixmapOffscreenContext(const gfxIntSize& aSize,
         gfxXlibSurface::Create(DefaultScreenOfDisplay(DefaultXDisplay()),
                                gfxXlibSurface::FindRenderFormat(DefaultXDisplay(),
                                                                 gfxASurface::ImageFormatRGB24),
-                               gUseBackingSurface ? aSize : gfxIntSize(16, 16));
+                               aSize);
 
     // XSync required after gfxXlibSurface::Create, otherwise EGL will fail with BadDrawable error
     XSync(DefaultXDisplay(), False);
@@ -1886,8 +1868,7 @@ GLContextEGL::CreateEGLPixmapOffscreenContext(const gfxIntSize& aSize,
     EGLConfig config = 0;
 
 #ifdef MOZ_X11
-    int depth = gfxUtils::ImageFormatToDepth(gfxPlatform::GetPlatform()->GetOffscreenFormat());
-    surface = CreateEGLSurfaceForXSurface(thebesSurface, &config, gUseBackingSurface ? depth : 0);
+    surface = CreateEGLSurfaceForXSurface(thebesSurface, &config);
 #endif
     if (!config) {
         return nsnull;
@@ -1903,8 +1884,6 @@ GLContextEGL::CreateEGLPixmapOffscreenContext(const gfxIntSize& aSize,
                                       true);
 
     glContext->HoldSurface(thebesSurface);
-
-    glContext->mCanBindToTexture = true;
 
     return glContext.forget();
 }
@@ -1936,7 +1915,7 @@ GLContextProviderEGL::CreateOffscreen(const gfxIntSize& aSize,
         return nsnull;
 
     gfxIntSize fboSize = usePBuffers ? glContext->OffscreenActualSize() : aSize;
-    if (!(aFlags & GLContext::ContextFlagsGlobal) && !glContext->ResizeOffscreenFBO(fboSize, !usePBuffers))
+    if (!(aFlags & GLContext::ContextFlagsGlobal) && !glContext->ResizeOffscreenFBOs(fboSize, !usePBuffers))
         return nsnull;
 
     return glContext.forget();
@@ -1947,19 +1926,19 @@ GLContextProviderEGL::CreateOffscreen(const gfxIntSize& aSize,
     if (!glContext)
         return nsnull;
 
-    if (!(aFlags & GLContext::ContextFlagsGlobal) && !glContext->ResizeOffscreenFBO(glContext->OffscreenActualSize(), true))
+    if (!(aFlags & GLContext::ContextFlagsGlobal) && !glContext->ResizeOffscreenFBOs(glContext->OffscreenActualSize(), true))
         return nsnull;
 
     return glContext.forget();
 #elif defined(MOZ_X11)
     nsRefPtr<GLContextEGL> glContext =
-        GLContextEGL::CreateEGLPixmapOffscreenContext(aSize, aFormat, true);
+        GLContextEGL::CreateEGLPixmapOffscreenContext(gfxIntSize(16, 16), aFormat, true);
 
     if (!glContext) {
         return nsnull;
     }
 
-    if (!(aFlags & GLContext::ContextFlagsGlobal) && !gUseBackingSurface && !glContext->ResizeOffscreenFBO(glContext->OffscreenActualSize(), true)) {
+    if (!(aFlags & GLContext::ContextFlagsGlobal) && !glContext->ResizeOffscreenFBOs(aSize, true)) {
         // we weren't able to create the initial
         // offscreen FBO, so this is dead
         return nsnull;

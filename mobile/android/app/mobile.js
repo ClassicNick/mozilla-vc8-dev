@@ -91,6 +91,7 @@ pref("ui.scrollbarsCanOverlapContent", 1);
 /* cache prefs */
 pref("browser.cache.disk.enable", true);
 pref("browser.cache.disk.capacity", 20480); // kilobytes
+pref("browser.cache.disk.max_entry_size", 4096); // kilobytes
 pref("browser.cache.disk.smart_size.enabled", false);
 pref("browser.cache.disk.smart_size.first_run", false);
 
@@ -252,6 +253,7 @@ pref("privacy.popups.showBrowserMessage", true);
 pref("dom.disable_window_open_dialog_feature", true);
 pref("dom.disable_window_showModalDialog", true);
 pref("dom.disable_window_print", true);
+pref("dom.disable_window_find", true);
 
 pref("keyword.enabled", true);
 pref("keyword.URL", "https://www.google.com/m?ie=UTF-8&oe=UTF-8&sourceid=navclient&gfns=1&q=");
@@ -365,7 +367,7 @@ pref("places.frecency.unvisitedTypedBonus", 200);
 pref("gfx.color_management.mode", 0);
 
 #ifdef ANDROID
-// 0=fixed margin, 1=velocity bias, 2=dynamic resolution, 3=no margins
+// 0=fixed margin, 1=velocity bias, 2=dynamic resolution, 3=no margins, 4=prediction bias
 pref("gfx.displayport.strategy", 1);
 // all of the following displayport strategy prefs will be divided by 1000
 // to obtain some multiplier which is then used in the strategy.
@@ -375,12 +377,14 @@ pref("gfx.displayport.strategy_fm.danger_x", -1); // danger zone on x-axis when 
 pref("gfx.displayport.strategy_fm.danger_y", -1); // danger zone on y-axis when multiplied by viewport height
 // velocity bias strategy options
 pref("gfx.displayport.strategy_vb.multiplier", -1); // displayport dimension multiplier
-pref("gfx.displayport.strategy_vb.threshold", -1); // velocity threshold in pixels/frame when multiplied by screen DPI
+pref("gfx.displayport.strategy_vb.threshold", -1); // velocity threshold in inches/frame
 pref("gfx.displayport.strategy_vb.reverse_buffer", -1); // fraction of buffer to keep in reverse direction from scroll
 pref("gfx.displayport.strategy_vb.danger_x_base", -1); // danger zone on x-axis when multiplied by viewport width
 pref("gfx.displayport.strategy_vb.danger_y_base", -1); // danger zone on y-axis when multiplied by viewport height
 pref("gfx.displayport.strategy_vb.danger_x_incr", -1); // additional danger zone on x-axis when multiplied by viewport width and velocity
 pref("gfx.displayport.strategy_vb.danger_y_incr", -1); // additional danger zone on y-axis when multiplied by viewport height and velocity
+// prediction bias strategy options
+pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inches/frame
 #endif
 
 // don't allow JS to move and resize existing windows
@@ -477,6 +481,7 @@ pref("dom.ipc.plugins.enabled", true);
 #endif
 
 pref("plugins.click_to_play", true);
+pref("plugins.use_placeholder", 1);
 
 // process priority
 // higher values give content process less CPU time
@@ -728,7 +733,7 @@ pref("direct-texture.force.enabled", false);
 pref("direct-texture.force.disabled", false);
 
 // show checkerboard pattern on android; we use background colour instead
-pref("gfx.show_checkerboard_pattern", false);
+pref("gfx.show_checkerboard_pattern", true);
 
 pref("remote-debugger.enabled", false);
 pref("remote-debugger.port", 6000);
@@ -753,3 +758,6 @@ pref("ui.scrolling.min_scrollable_distance", -1);
 // A comma-separated list of float values in the range [0.0, 1.0) that are used as
 // interpolation frames for zoom animations.
 pref("ui.zooming.animation_frames", "");
+
+// Enable accessibility mode if platform accessibility is enabled.
+pref("accessibility.accessfu", 2);

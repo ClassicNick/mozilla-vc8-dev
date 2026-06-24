@@ -44,7 +44,6 @@
 #include "jsexn.h"
 #include "jsfriendapi.h"
 #include "jsgc.h"
-#include "jsgcmark.h"
 #include "jsinfer.h"
 #include "jsmath.h"
 #include "jsnum.h"
@@ -56,6 +55,7 @@
 #include "jsiter.h"
 
 #include "frontend/TokenStream.h"
+#include "gc/Marking.h"
 #include "js/MemoryMetrics.h"
 #include "methodjit/MethodJIT.h"
 #include "methodjit/Retcon.h"
@@ -84,44 +84,44 @@ using namespace js::analyze;
 
 static inline jsid
 id_prototype(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.classPrototypeAtom);
+    return NameToId(cx->runtime->atomState.classPrototypeAtom);
 }
 
 static inline jsid
 id_arguments(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.argumentsAtom);
+    return NameToId(cx->runtime->atomState.argumentsAtom);
 }
 
 static inline jsid
 id_length(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.lengthAtom);
+    return NameToId(cx->runtime->atomState.lengthAtom);
 }
 
 static inline jsid
 id___proto__(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.protoAtom);
+    return NameToId(cx->runtime->atomState.protoAtom);
 }
 
 static inline jsid
 id_constructor(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.constructorAtom);
+    return NameToId(cx->runtime->atomState.constructorAtom);
 }
 
 static inline jsid
 id_caller(JSContext *cx) {
-    return ATOM_TO_JSID(cx->runtime->atomState.callerAtom);
+    return NameToId(cx->runtime->atomState.callerAtom);
 }
 
 static inline jsid
 id_toString(JSContext *cx)
 {
-    return ATOM_TO_JSID(cx->runtime->atomState.toStringAtom);
+    return NameToId(cx->runtime->atomState.toStringAtom);
 }
 
 static inline jsid
 id_toSource(JSContext *cx)
 {
-    return ATOM_TO_JSID(cx->runtime->atomState.toSourceAtom);
+    return NameToId(cx->runtime->atomState.toSourceAtom);
 }
 
 #ifdef DEBUG
@@ -1778,7 +1778,7 @@ TypeSet::getTypedArrayType(JSContext *cx)
         if (!proto)
             continue;
 
-        int objArrayType = proto->getClass() - TypedArray::slowClasses;
+        int objArrayType = proto->getClass() - TypedArray::protoClasses;
         JS_ASSERT(objArrayType >= 0 && objArrayType < TypedArray::TYPE_MAX);
 
         /*
@@ -1978,8 +1978,8 @@ TypeCompartment::newAllocationSiteTypeObject(JSContext *cx, const AllocationSite
 static inline jsid
 GetAtomId(JSContext *cx, JSScript *script, const jsbytecode *pc, unsigned offset)
 {
-    JSAtom *atom = script->getAtom(GET_UINT32_INDEX(pc + offset));
-    return MakeTypeId(cx, ATOM_TO_JSID(atom));
+    PropertyName *name = script->getName(GET_UINT32_INDEX(pc + offset));
+    return MakeTypeId(cx, NameToId(name));
 }
 
 bool
@@ -2902,7 +2902,7 @@ TypeObject::addPropertyType(JSContext *cx, const char *name, Type type)
             cx->compartment->types.setPendingNukeTypes(cx);
             return;
         }
-        id = ATOM_TO_JSID(atom);
+        id = AtomToId(atom);
     }
     InlineAddTypeProperty(cx, this, id, type);
 }
@@ -3045,14 +3045,16 @@ TypeObject::clearNewScript(JSContext *cx)
      * script keeps track of where each property is initialized so we can walk
      * the stack and fix up any such objects.
      */
-    for (FrameRegsIter iter(cx); !iter.done(); ++iter) {
-        StackFrame *fp = iter.fp();
-        if (fp->isScriptFrame() && fp->isConstructing() &&
-            fp->fun() == newScript->fun && fp->thisValue().isObject() &&
-            !fp->thisValue().toObject().hasLazyType() &&
-            fp->thisValue().toObject().type() == this) {
-            JSObject *obj = &fp->thisValue().toObject();
-            jsbytecode *pc = iter.pc();
+    Vector<uint32_t, 32> pcOffsets(cx);
+    for (ScriptFrameIter iter(cx); !iter.done(); ++iter) {
+        pcOffsets.append(uint32_t(iter.pc() - iter.script()->code));
+        if (iter.isConstructing() &&
+            iter.callee() == newScript->fun &&
+            iter.thisv().isObject() &&
+            !iter.thisv().toObject().hasLazyType() &&
+            iter.thisv().toObject().type() == this)
+        {
+            JSObject *obj = &iter.thisv().toObject();
 
             /* Whether all identified 'new' properties have been initialized. */
             bool finished = false;
@@ -3065,9 +3067,10 @@ TypeObject::clearNewScript(JSContext *cx)
              * already finished.
              */
             size_t depth = 0;
+            size_t callDepth = pcOffsets.length() - 1;
+            uint32_t offset = pcOffsets[callDepth];
 
             for (TypeNewScript::Initializer *init = newScript->initializerList;; init++) {
-                uint32_t offset = uint32_t(pc - fp->script()->code);
                 if (init->kind == TypeNewScript::Initializer::SETPROP) {
                     if (!depth && init->offset > offset) {
                         /* Advanced past all properties which have been initialized. */
@@ -3081,11 +3084,9 @@ TypeObject::clearNewScript(JSContext *cx)
                         /* Advanced past all properties which have been initialized. */
                         break;
                     } else if (init->offset == offset) {
-                        StackSegment &seg = cx->stack.space().containingSegment(fp);
-                        if (seg.maybefp() == fp)
+                        if (!callDepth)
                             break;
-                        fp = seg.computeNextFrame(fp);
-                        pc = fp->pcQuadratic(cx->stack);
+                        offset = pcOffsets[--callDepth];
                     } else {
                         /* This call has already finished. */
                         depth = 1;
@@ -3519,11 +3520,11 @@ ScriptAnalysis::analyzeTypesBytecode(JSContext *cx, unsigned offset,
          * the types of global properties the script can access. In a few cases
          * the method JIT will bypass this, and we need to add the types direclty.
          */
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.typeAtoms[JSTYPE_VOID]))
+        if (id == NameToId(cx->runtime->atomState.typeAtoms[JSTYPE_VOID]))
             seen->addType(cx, Type::UndefinedType());
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.NaNAtom))
+        if (id == NameToId(cx->runtime->atomState.NaNAtom))
             seen->addType(cx, Type::DoubleType());
-        if (id == ATOM_TO_JSID(cx->runtime->atomState.InfinityAtom))
+        if (id == NameToId(cx->runtime->atomState.InfinityAtom))
             seen->addType(cx, Type::DoubleType());
 
         /* Handle as a property access. */
@@ -4391,7 +4392,7 @@ AnalyzeNewScriptProperties(JSContext *cx, TypeObject *type, JSFunction *fun, JSO
              * integer properties and bail out. We can't mark the aggregate
              * JSID_VOID type property as being in a definite slot.
              */
-            jsid id = ATOM_TO_JSID(script->getAtom(GET_UINT32_INDEX(pc)));
+            jsid id = NameToId(script->getName(GET_UINT32_INDEX(pc)));
             if (MakeTypeId(cx, id) != id)
                 return false;
             if (id == id_prototype(cx) || id == id___proto__(cx) || id == id_constructor(cx))
@@ -5185,7 +5186,7 @@ NestingPrologue(JSContext *cx, StackFrame *fp)
     TypeScriptNesting *nesting = script->nesting();
 
     if (nesting->parent)
-        CheckNestingParent(cx, &fp->scopeChain(), script);
+        CheckNestingParent(cx, fp->scopeChain(), script);
 
     if (script->isOuterFunction) {
         /*
@@ -5708,7 +5709,7 @@ JSObject::getNewType(JSContext *cx, JSFunction *fun)
 TypeObject *
 JSCompartment::getLazyType(JSContext *cx, JSObject *proto)
 {
-    gc::MaybeCheckStackRoots(cx);
+    MaybeCheckStackRoots(cx);
 
     TypeObjectSet &table = cx->compartment->lazyTypeObjects;
 

@@ -55,7 +55,6 @@
 #include "jsexn.h"
 #include "jsfun.h"
 #include "jsgc.h"
-#include "jsgcmark.h"
 #include "jsinterp.h"
 #include "jsnum.h"
 #include "jsobj.h"
@@ -64,6 +63,7 @@
 #include "jsscript.h"
 #include "jswrapper.h"
 
+#include "gc/Marking.h"
 #include "vm/GlobalObject.h"
 #include "vm/StringBuffer.h"
 
@@ -292,36 +292,31 @@ InitExnPrivate(JSContext *cx, HandleObject exnObject, HandleString message,
     Vector<JSStackTraceStackElem> frames(cx);
     {
         SuppressErrorsGuard seg(cx);
-        for (FrameRegsIter i(cx); !i.done(); ++i) {
+        for (ScriptFrameIter i(cx); !i.done(); ++i) {
             StackFrame *fp = i.fp();
 
             /*
              * Ask the crystal CAPS ball whether we can see across compartments.
              * NB: this means 'fp' may point to cross-compartment frames.
              */
-            if (checkAccess && fp->isNonEvalFunctionFrame()) {
+            if (checkAccess && i.isNonEvalFunctionFrame()) {
                 Value v = NullValue();
-                jsid callerid = ATOM_TO_JSID(cx->runtime->atomState.callerAtom);
-                if (!checkAccess(cx, &fp->callee(), callerid, JSACC_READ, &v))
+                jsid callerid = NameToId(cx->runtime->atomState.callerAtom);
+                if (!checkAccess(cx, i.callee(), callerid, JSACC_READ, &v))
                     break;
             }
 
             if (!frames.growBy(1))
                 return false;
             JSStackTraceStackElem &frame = frames.back();
-            if (fp->isNonEvalFunctionFrame())
+            if (i.isNonEvalFunctionFrame())
                 frame.funName = fp->fun()->atom ? fp->fun()->atom : cx->runtime->emptyString;
             else
                 frame.funName = NULL;
-            if (fp->isScriptFrame()) {
-                frame.filename = SaveScriptFilename(cx, fp->script()->filename);
-                if (!frame.filename)
-                    return false;
-                frame.ulineno = PCToLineNumber(fp->script(), i.pc());
-            } else {
-                frame.ulineno = 0;
-                frame.filename = NULL;
-            }
+            frame.filename = SaveScriptFilename(cx, i.script()->filename);
+            if (!frame.filename)
+                return false;
+            frame.ulineno = PCToLineNumber(i.script(), i.pc());
         }
     }
 
@@ -390,7 +385,7 @@ exn_trace(JSTracer *trc, JSObject *obj)
             if (elem.funName)
                 MarkString(trc, &elem.funName, "stack trace function name");
             if (IS_GC_MARKING_TRACER(trc) && elem.filename)
-                MarkScriptFilename(elem.filename);
+                MarkScriptFilename(trc->runtime, elem.filename);
         }
     }
 }
@@ -660,9 +655,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
     }
 
     /* Find the scripted caller. */
-    FrameRegsIter iter(cx);
-    while (!iter.done() && !iter.fp()->isScriptFrame())
-        ++iter;
+    ScriptFrameIter iter(cx);
 
     /* Set the 'fileName' property. */
     RootedVarString filename(cx);
@@ -673,7 +666,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
         args[1].setString(filename);
     } else {
         if (!iter.done()) {
-            filename = FilenameToString(cx, iter.fp()->script()->filename);
+            filename = FilenameToString(cx, iter.script()->filename);
             if (!filename)
                 return false;
         } else {
@@ -687,7 +680,7 @@ Exception(JSContext *cx, unsigned argc, Value *vp)
         if (!ToUint32(cx, args[2], &lineno))
             return false;
     } else {
-        lineno = iter.done() ? 0 : PCToLineNumber(iter.fp()->script(), iter.pc());
+        lineno = iter.done() ? 0 : PCToLineNumber(iter.script(), iter.pc());
     }
 
     int exnType = args.callee().toFunction()->getExtendedSlot(0).toInt32();
@@ -722,7 +715,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
     /* Step 4. */
     RootedVarString name(cx);
     if (nameVal.isUndefined()) {
-        name = CLASS_ATOM(cx, Error);
+        name = CLASS_NAME(cx, Error);
     } else {
         name = ToString(cx, nameVal);
         if (!name)
@@ -746,7 +739,7 @@ exn_toString(JSContext *cx, unsigned argc, Value *vp)
 
     /* Step 7. */
     if (name->empty() && message->empty()) {
-        args.rval().setString(CLASS_ATOM(cx, Error));
+        args.rval().setString(CLASS_NAME(cx, Error));
         return true;
     }
 
@@ -882,10 +875,10 @@ InitErrorClass(JSContext *cx, Handle<GlobalObject*> global, int type, HandleObje
         return NULL;
 
     RootedVarValue empty(cx, StringValue(cx->runtime->emptyString));
-    RootedVarId nameId(cx, ATOM_TO_JSID(cx->runtime->atomState.nameAtom));
-    RootedVarId messageId(cx, ATOM_TO_JSID(cx->runtime->atomState.messageAtom));
-    RootedVarId fileNameId(cx, ATOM_TO_JSID(cx->runtime->atomState.fileNameAtom));
-    RootedVarId lineNumberId(cx, ATOM_TO_JSID(cx->runtime->atomState.lineNumberAtom));
+    RootedVarId nameId(cx, NameToId(cx->runtime->atomState.nameAtom));
+    RootedVarId messageId(cx, NameToId(cx->runtime->atomState.messageAtom));
+    RootedVarId fileNameId(cx, NameToId(cx->runtime->atomState.fileNameAtom));
+    RootedVarId lineNumberId(cx, NameToId(cx->runtime->atomState.lineNumberAtom));
     if (!DefineNativeProperty(cx, errorProto, nameId, StringValue(name),
                               JS_PropertyStub, JS_StrictPropertyStub, 0, 0, 0) ||
         !DefineNativeProperty(cx, errorProto, messageId, empty,
@@ -1098,7 +1091,7 @@ js_ErrorToException(JSContext *cx, const char *message, JSErrorReport *reportp,
 }
 
 static bool
-IsDuckTypedErrorObject(JSContext *cx, JSObject *exnObject, const char **filename_strp)
+IsDuckTypedErrorObject(JSContext *cx, HandleObject exnObject, const char **filename_strp)
 {
     JSBool found;
     if (!JS_HasProperty(cx, exnObject, js_message_str, &found) || !found)
@@ -1122,10 +1115,9 @@ IsDuckTypedErrorObject(JSContext *cx, JSObject *exnObject, const char **filename
 JSBool
 js_ReportUncaughtException(JSContext *cx)
 {
-    JSObject *exnObject;
     jsval roots[6];
     JSErrorReport *reportp, report;
-    JSString *str;
+    RootedVarString str(cx);
 
     if (!JS_IsExceptionPending(cx))
         return true;
@@ -1143,6 +1135,7 @@ js_ReportUncaughtException(JSContext *cx)
      * need to root other intermediates, so allocate an operand stack segment
      * to protect all of these values.
      */
+    RootedVarObject exnObject(cx);
     if (JSVAL_IS_PRIMITIVE(exn)) {
         exnObject = NULL;
     } else {
@@ -1164,14 +1157,14 @@ js_ReportUncaughtException(JSContext *cx)
         (exnObject->isError() ||
          IsDuckTypedErrorObject(cx, exnObject, &filename_str)))
     {
-        JSString *name = NULL;
+        RootedVarString name(cx);
         if (JS_GetProperty(cx, exnObject, js_name_str, &roots[2]) &&
             JSVAL_IS_STRING(roots[2]))
         {
             name = JSVAL_TO_STRING(roots[2]);
         }
 
-        JSString *msg = NULL;
+        RootedVarString msg(cx);
         if (JS_GetProperty(cx, exnObject, js_message_str, &roots[3]) &&
             JSVAL_IS_STRING(roots[3]))
         {
@@ -1241,7 +1234,7 @@ js_ReportUncaughtException(JSContext *cx)
 }
 
 extern JSObject *
-js_CopyErrorObject(JSContext *cx, JSObject *errobj, JSObject *scope)
+js_CopyErrorObject(JSContext *cx, HandleObject errobj, HandleObject scope)
 {
     assertSameCompartment(cx, scope);
     JSExnPrivate *priv = GetExnPrivate(errobj);

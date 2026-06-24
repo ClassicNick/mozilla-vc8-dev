@@ -267,7 +267,7 @@ ARENA_POISON_init()
   bool enabled;
   if (cr && NS_SUCCEEDED(cr->GetEnabled(&enabled)) && enabled) {
     cr->AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonBase"),
-                            nsPrintfCString(17, "%.16llx", PRUint64(rgnbase)));
+                            nsPrintfCString("%.16llx", PRUint64(rgnbase)));
     cr->AnnotateCrashReport(NS_LITERAL_CSTRING("FramePoisonSize"),
                             nsPrintfCString("%lu", PRUint32(rgnsize)));
   }
@@ -469,15 +469,27 @@ nsPresArena::FreeBySize(size_t aSize, void* aPtr)
 }
 
 void*
-nsPresArena::AllocateByCode(nsQueryFrame::FrameIID aCode, size_t aSize)
+nsPresArena::AllocateByFrameID(nsQueryFrame::FrameIID aID, size_t aSize)
 {
-  return mState->Allocate(aCode, aSize);
+  return mState->Allocate(aID, aSize);
 }
 
 void
-nsPresArena::FreeByCode(nsQueryFrame::FrameIID aCode, void* aPtr)
+nsPresArena::FreeByFrameID(nsQueryFrame::FrameIID aID, void* aPtr)
 {
-  mState->Free(aCode, aPtr);
+  mState->Free(aID, aPtr);
+}
+
+void*
+nsPresArena::AllocateByObjectID(ObjectID aID, size_t aSize)
+{
+  return mState->Allocate(aID, aSize);
+}
+
+void
+nsPresArena::FreeByObjectID(ObjectID aID, void* aPtr)
+{
+  mState->Free(aID, aPtr);
 }
 
 /* static */ uintptr_t

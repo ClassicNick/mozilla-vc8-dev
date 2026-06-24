@@ -374,13 +374,6 @@ typedef struct JSPropertyDescArray {
 
 typedef struct JSScopeProperty JSScopeProperty;
 
-extern JS_PUBLIC_API(JSScopeProperty *)
-JS_PropertyIterator(JSObject *obj, JSScopeProperty **iteratorp);
-
-extern JS_PUBLIC_API(JSBool)
-JS_GetPropertyDesc(JSContext *cx, JSObject *obj, JSScopeProperty *shape,
-                   JSPropertyDesc *pd);
-
 extern JS_PUBLIC_API(JSBool)
 JS_GetPropertyDescArray(JSContext *cx, JSObject *obj, JSPropertyDescArray *pda);
 
@@ -532,6 +525,16 @@ js_ResumeVtune();
 
 #endif /* MOZ_VTUNE */
 
+#ifdef __linux__
+
+extern JS_FRIEND_API(JSBool)
+js_StartPerf();
+
+extern JS_FRIEND_API(JSBool)
+js_StopPerf();
+
+#endif /* __linux__ */
+
 extern JS_PUBLIC_API(void)
 JS_DumpBytecode(JSContext *cx, JSScript *script);
 
@@ -546,6 +549,9 @@ JS_DumpCompartmentPCCounts(JSContext *cx);
 
 extern JS_PUBLIC_API(JSObject *)
 JS_UnwrapObject(JSObject *obj);
+
+extern JS_PUBLIC_API(JSObject *)
+JS_UnwrapObjectAndInnerize(JSObject *obj);
 
 /* Call the context debug handler on the topmost scripted frame. */
 extern JS_FRIEND_API(JSBool)

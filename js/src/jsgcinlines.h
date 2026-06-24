@@ -399,7 +399,6 @@ class GCCompartmentsIter {
         end = rt->compartments.end();
         if (!(*it)->isCollecting())
             next();
-        JS_ASSERT(it < end);
     }
 
     bool done() const { return it == end; }
@@ -447,7 +446,7 @@ NewGCThing(JSContext *cx, js::gc::AllocKind kind, size_t thingSize)
         js::gc::RunDebugGC(cx);
 #endif
 
-    js::gc::MaybeCheckStackRoots(cx);
+    MaybeCheckStackRoots(cx);
 
     JSCompartment *comp = cx->compartment;
     void *t = comp->arenas.allocateFromFreeList(kind, thingSize);

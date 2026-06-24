@@ -60,12 +60,13 @@
 #include "nsContentUtils.h"
 #include "jsgc.h"
 #include "jsfriendapi.h"
-#include "mozilla/dom/bindings/Utils.h"
+#include "AccessCheck.h"
+#include "mozilla/dom/BindingUtils.h"
 
 using namespace mozilla;
 using namespace js;
 
-using mozilla::dom::bindings::DestroyProtoOrIfaceCache;
+using mozilla::dom::DestroyProtoOrIfaceCache;
 
 /***************************************************************************/
 // stuff used by all
@@ -3155,7 +3156,7 @@ xpc::SandboxProxyHandler::getOwnPropertyDescriptor(JSContext *cx,
 
 nsresult
 xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSObject *proto,
-                        bool wantXrays, const nsACString &sandboxName, nsISupports *identityPtr)
+                        bool wantXrays, const nsACString &sandboxName)
 {
     // Create the sandbox global object
     nsresult rv;
@@ -3192,13 +3193,8 @@ xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSOb
     JSCompartment *compartment;
     JSObject *sandbox;
 
-    nsRefPtr<Identity> identity;
-    if (!identityPtr) {
-      identity = new Identity();
-      identityPtr = identity;
-    }
-
-    rv = xpc_CreateGlobalObject(cx, &SandboxClass, principal, identityPtr,
+    nsRefPtr<Identity> identity = new Identity();
+    rv = xpc_CreateGlobalObject(cx, &SandboxClass, principal, identity,
                                 wantXrays, &sandbox, &compartment);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -3225,7 +3221,7 @@ xpc_CreateSandboxObject(JSContext * cx, jsval * vp, nsISupports *prinOrSop, JSOb
             JSObject *unwrappedProto = js::UnwrapObject(proto, false);
             js::Class *unwrappedClass = js::GetObjectClass(unwrappedProto);
             if (IS_WRAPPER_CLASS(unwrappedClass) ||
-                mozilla::dom::bindings::IsDOMClass(Jsvalify(unwrappedClass))) {
+                mozilla::dom::IsDOMClass(Jsvalify(unwrappedClass))) {
                 // Wrap it up in a proxy that will do the right thing in terms
                 // of this-binding for methods.
                 proto = js::NewProxyObject(cx, &xpc::sandboxProxyHandler,
@@ -3320,7 +3316,6 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
     nsCOMPtr<nsIScriptObjectPrincipal> sop;
     nsCOMPtr<nsIPrincipal> principal;
     nsISupports *prinOrSop = nsnull;
-    nsISupports *identity = nsnull;
     if (JSVAL_IS_STRING(argv[0])) {
         JSString *codebaseStr = JSVAL_TO_STRING(argv[0]);
         size_t codebaseLength;
@@ -3425,32 +3420,6 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
 
             sandboxName.Adopt(tmp, strlen(tmp));
         }
-
-        // see Bug 677294:
-        if (!JS_HasProperty(cx, optionsObject, "sameGroupAs", &found))
-            return NS_ERROR_INVALID_ARG;
-
-        if (found) {
-            if (!JS_GetProperty(cx, optionsObject, "sameGroupAs", &option) ||
-                JSVAL_IS_PRIMITIVE(option))
-                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
-
-            JSObject* unwrapped = UnwrapObject(JSVAL_TO_OBJECT(option));
-            JSObject* global = GetGlobalForObjectCrossCompartment(unwrapped);
-            if (GetObjectJSClass(unwrapped) != &SandboxClass &&
-                GetObjectJSClass(global) != &SandboxClass)
-                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
-
-            void* privateValue =
-                JS_GetCompartmentPrivate(GetObjectCompartment(unwrapped));
-            xpc::CompartmentPrivate *compartmentPrivate =
-                static_cast<xpc::CompartmentPrivate*>(privateValue);
-
-            if (!compartmentPrivate || !compartmentPrivate->key)
-                return ThrowAndFail(NS_ERROR_INVALID_ARG, cx, _retval);
-
-            identity = compartmentPrivate->key->GetPtr();
-        }
     }
 
     // If there is no options object given, or no sandboxName property
@@ -3476,7 +3445,7 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
             frame->GetFilename(getter_Copies(sandboxName));
     }
 
-    rv = xpc_CreateSandboxObject(cx, vp, prinOrSop, proto, wantXrays, sandboxName, identity);
+    rv = xpc_CreateSandboxObject(cx, vp, prinOrSop, proto, wantXrays, sandboxName);
 
     if (NS_FAILED(rv)) {
         return ThrowAndFail(rv, cx, _retval);
@@ -4123,6 +4092,7 @@ GENERATE_JSOPTION_GETTER_SETTER(Xml, JSOPTION_XML)
 GENERATE_JSOPTION_GETTER_SETTER(Relimit, JSOPTION_RELIMIT)
 GENERATE_JSOPTION_GETTER_SETTER(Methodjit, JSOPTION_METHODJIT)
 GENERATE_JSOPTION_GETTER_SETTER(Methodjit_always, JSOPTION_METHODJIT_ALWAYS)
+GENERATE_JSOPTION_GETTER_SETTER(Strict_mode, JSOPTION_STRICT_MODE)
 
 #undef GENERATE_JSOPTION_GETTER_SETTER
 
@@ -4193,7 +4163,8 @@ NS_IMETHODIMP
 nsXPCComponents::GetHelperForLanguage(PRUint32 language,
                                       nsISupports **retval)
 {
-    *retval = nsnull;
+    *retval = static_cast<nsIXPCComponents*>(this);
+    NS_ADDREF(this);
     return NS_OK;
 }
 
@@ -4245,8 +4216,9 @@ nsXPCComponents::GetClassIDNoAlloc(nsCID *aClassIDNoAlloc)
     return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents::nsXPCComponents()
-    :   mInterfaces(nsnull),
+nsXPCComponents::nsXPCComponents(XPCWrappedNativeScope* aScope)
+    :   mScope(aScope),
+        mInterfaces(nsnull),
         mInterfacesByID(nsnull),
         mClasses(nsnull),
         mClassesByID(nsnull),
@@ -4256,6 +4228,7 @@ nsXPCComponents::nsXPCComponents()
         mConstructor(nsnull),
         mUtils(nsnull)
 {
+    MOZ_ASSERT(aScope, "aScope must not be null");
 }
 
 nsXPCComponents::~nsXPCComponents()
@@ -4339,6 +4312,7 @@ nsXPCComponents::GetManager(nsIComponentManager * *aManager)
 #define                             XPC_MAP_WANT_NEWRESOLVE
 #define                             XPC_MAP_WANT_GETPROPERTY
 #define                             XPC_MAP_WANT_SETPROPERTY
+#define                             XPC_MAP_WANT_PRECREATE
 #define XPC_MAP_FLAGS               nsIXPCScriptable::ALLOW_PROP_MODS_DURING_RESOLVE
 #include "xpc_map_end.h" /* This will #undef the above */
 
@@ -4427,16 +4401,20 @@ nsXPCComponents::SetProperty(nsIXPConnectWrappedNative *wrapper,
 
 // static
 JSBool
-nsXPCComponents::AttachNewComponentsObject(XPCCallContext& ccx,
-                                           XPCWrappedNativeScope* aScope,
-                                           JSObject* aGlobal)
+nsXPCComponents::AttachComponentsObject(XPCCallContext& ccx,
+                                        XPCWrappedNativeScope* aScope,
+                                        JSObject* aGlobal)
 {
     if (!aGlobal)
         return false;
 
-    nsXPCComponents* components = new nsXPCComponents();
-    if (!components)
-        return false;
+    nsXPCComponents* components = aScope->GetComponents();
+    if (!components) {
+        components = new nsXPCComponents(aScope);
+        if (!components)
+            return false;
+        aScope->SetComponents(components);
+    }
 
     nsCOMPtr<nsIXPCComponents> cholder(components);
 
@@ -4452,15 +4430,14 @@ nsXPCComponents::AttachNewComponentsObject(XPCCallContext& ccx,
     if (!wrapper)
         return false;
 
-    aScope->SetComponents(components);
-
     jsid id = ccx.GetRuntime()->GetStringID(XPCJSRuntime::IDX_COMPONENTS);
-    JSObject* obj;
-
-    return NS_SUCCEEDED(wrapper->GetJSObject(&obj)) &&
-           obj && JS_DefinePropertyById(ccx, aGlobal, id, OBJECT_TO_JSVAL(obj),
-                                        nsnull, nsnull,
-                                        JSPROP_PERMANENT | JSPROP_READONLY);
+    JSObject* obj = wrapper->GetSameCompartmentSecurityWrapper(ccx);
+    if (!wrapper)
+        return false;
+   
+    return JS_DefinePropertyById(ccx, aGlobal, id, OBJECT_TO_JSVAL(obj),
+                                 nsnull, nsnull,
+                                 JSPROP_PERMANENT | JSPROP_READONLY);
 }
 
 /* void lookupMethod (); */
@@ -4527,4 +4504,16 @@ nsXPCComponents::CanSetProperty(const nsIID * iid, const PRUnichar *propertyName
     // If you have to ask, then the answer is NO
     *_retval = nsnull;
     return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXPCComponents::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj, JSObject **parentObj)
+{
+  // this should never happen
+  if (!mScope) {
+      NS_WARNING("mScope must not be null when nsXPCComponents::PreCreate is called");
+      return NS_ERROR_FAILURE;
+  }
+  *parentObj = mScope->GetGlobalJSObject();
+  return NS_OK;
 }

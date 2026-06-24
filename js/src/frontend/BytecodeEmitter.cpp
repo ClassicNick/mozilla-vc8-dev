@@ -768,7 +768,7 @@ frontend::LexicalLookup(TreeContext *tc, JSAtom *atom, int *slotp, StmtInfo *stm
             continue;
 
         StaticBlockObject &blockObj = *stmt->blockObj;
-        const Shape *shape = blockObj.nativeLookup(tc->parser->context, ATOM_TO_JSID(atom));
+        const Shape *shape = blockObj.nativeLookup(tc->parser->context, AtomToId(atom));
         if (shape) {
             JS_ASSERT(shape->hasShortID());
 
@@ -823,7 +823,7 @@ LookupCompileTimeConstant(JSContext *cx, BytecodeEmitter *bce, JSAtom *atom, Val
                 JS_ASSERT(bce->compileAndGo());
                 JSObject *obj = bce->scopeChain();
 
-                const Shape *shape = obj->nativeLookup(cx, ATOM_TO_JSID(atom));
+                const Shape *shape = obj->nativeLookup(cx, AtomToId(atom));
                 if (shape) {
                     /*
                      * We're compiling code that will be executed immediately,
@@ -1150,24 +1150,24 @@ EmitEnterBlock(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, JSOp op)
     if (!EmitObjectOp(cx, pn->pn_objbox, op, bce))
         return false;
 
-    StaticBlockObject &blockObj = pn->pn_objbox->object->asStaticBlock();
+    RootedVar<StaticBlockObject*> blockObj(cx, &pn->pn_objbox->object->asStaticBlock());
 
     int depth = bce->stackDepth -
-                (blockObj.slotCount() + ((op == JSOP_ENTERLET1) ? 1 : 0));
+                (blockObj->slotCount() + ((op == JSOP_ENTERLET1) ? 1 : 0));
     JS_ASSERT(depth >= 0);
 
-    blockObj.setStackDepth(depth);
+    blockObj->setStackDepth(depth);
 
     int depthPlusFixed = AdjustBlockSlot(cx, bce, depth);
     if (depthPlusFixed < 0)
         return false;
 
-    for (unsigned i = 0; i < blockObj.slotCount(); i++) {
-        Definition *dn = blockObj.maybeDefinitionParseNode(i);
+    for (unsigned i = 0; i < blockObj->slotCount(); i++) {
+        Definition *dn = blockObj->maybeDefinitionParseNode(i);
 
         /* Beware the empty destructuring dummy. */
         if (!dn) {
-            JS_ASSERT(i + 1 <= blockObj.slotCount());
+            JS_ASSERT(i + 1 <= blockObj->slotCount());
             continue;
         }
 
@@ -1183,7 +1183,7 @@ EmitEnterBlock(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, JSOp op)
 #endif
 
         bool aliased = bce->bindingsAccessedDynamically() || bce->shouldNoteClosedName(dn);
-        blockObj.setAliased(i, aliased);
+        blockObj->setAliased(i, aliased);
     }
 
     /*
@@ -1193,10 +1193,10 @@ EmitEnterBlock(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, JSOp op)
      */
     if ((bce->flags & TCF_FUN_EXTENSIBLE_SCOPE) ||
         bce->bindings.extensibleParents()) {
-        Shape *newShape = Shape::setExtensibleParents(cx, blockObj.lastProperty());
+        Shape *newShape = Shape::setExtensibleParents(cx, blockObj->lastProperty());
         if (!newShape)
             return false;
-        blockObj.setLastPropertyInfallible(newShape);
+        blockObj->setLastPropertyInfallible(newShape);
     }
 
     return true;
@@ -3938,7 +3938,7 @@ ParseNode::getConstantValue(JSContext *cx, bool strictChecks, Value *vp)
       case PNK_RB: {
         JS_ASSERT(isOp(JSOP_NEWINIT) && !(pn_xflags & PNX_NONCONST));
 
-        JSObject *obj = NewDenseAllocatedArray(cx, pn_count);
+        RootedVarObject obj(cx, NewDenseAllocatedArray(cx, pn_count));
         if (!obj)
             return false;
 
@@ -3975,14 +3975,14 @@ ParseNode::getConstantValue(JSContext *cx, bool strictChecks, Value *vp)
                 jsid id;
                 if (idvalue.isInt32() && INT_FITS_IN_JSID(idvalue.toInt32()))
                     id = INT_TO_JSID(idvalue.toInt32());
-                else if (!js_InternNonIntElementId(cx, obj, idvalue, &id))
+                else if (!InternNonIntElementId(cx, obj, idvalue, &id))
                     return false;
                 if (!obj->defineGeneric(cx, id, value, NULL, NULL, JSPROP_ENUMERATE))
                     return false;
             } else {
                 JS_ASSERT(pnid->isKind(PNK_NAME) || pnid->isKind(PNK_STRING));
                 JS_ASSERT(pnid->pn_atom != cx->runtime->atomState.protoAtom);
-                jsid id = ATOM_TO_JSID(pnid->pn_atom);
+                jsid id = AtomToId(pnid->pn_atom);
                 if (!DefineNativeProperty(cx, obj, id, value, NULL, NULL,
                                           JSPROP_ENUMERATE, 0, 0)) {
                     return false;
@@ -4488,7 +4488,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
     JS_ASSERT(varList->isArity(PN_LIST));
     ParseNode *letBody = pnLet->pn_right;
     JS_ASSERT(letBody->isLet() && letBody->isKind(PNK_LEXICALSCOPE));
-    StaticBlockObject &blockObj = letBody->pn_objbox->object->asStaticBlock();
+    RootedVar<StaticBlockObject*> blockObj(cx, &letBody->pn_objbox->object->asStaticBlock());
 
     ptrdiff_t letHeadOffset = bce->offset();
     int letHeadDepth = bce->stackDepth;
@@ -4499,7 +4499,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
 
     /* Push storage for hoisted let decls (e.g. 'let (x) { let y }'). */
     uint32_t alreadyPushed = unsigned(bce->stackDepth - letHeadDepth);
-    uint32_t blockObjCount = blockObj.slotCount();
+    uint32_t blockObjCount = blockObj->slotCount();
     for (uint32_t i = alreadyPushed; i < blockObjCount; ++i) {
         /* Tell the decompiler not to print the decl in the let head. */
         if (NewSrcNote(cx, bce, SRC_CONTINUE) < 0)
@@ -4509,7 +4509,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
     }
 
     StmtInfo stmtInfo(cx);
-    PushBlockScope(bce, &stmtInfo, blockObj, bce->offset());
+    PushBlockScope(bce, &stmtInfo, *blockObj, bce->offset());
 
     if (!letNotes.update(cx, bce, bce->offset()))
         return false;
@@ -4532,7 +4532,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
     }
 
     JS_ASSERT(leaveOp == JSOP_LEAVEBLOCK || leaveOp == JSOP_LEAVEBLOCKEXPR);
-    EMIT_UINT16_IMM_OP(leaveOp, blockObj.slotCount());
+    EMIT_UINT16_IMM_OP(leaveOp, blockObj->slotCount());
 
     ptrdiff_t bodyEnd = bce->offset();
     JS_ASSERT(bodyEnd > bodyBegin);
@@ -4637,6 +4637,7 @@ EmitLexicalScope(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     StmtInfo stmtInfo(cx);
     ObjectBox *objbox = pn->pn_objbox;
     StaticBlockObject &blockObj = objbox->object->asStaticBlock();
+    size_t slots = blockObj.slotCount();
     PushBlockScope(bce, &stmtInfo, blockObj, bce->offset());
 
     /*
@@ -4675,7 +4676,7 @@ EmitLexicalScope(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             return false;
     }
 
-    EMIT_UINT16_IMM_OP(JSOP_LEAVEBLOCK, blockObj.slotCount());
+    EMIT_UINT16_IMM_OP(JSOP_LEAVEBLOCK, slots);
 
     return PopStatementBCE(cx, bce);
 }
@@ -4710,7 +4711,7 @@ EmitForIn(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, ptrdiff_t top)
     bool letDecl = pn1 && pn1->isKind(PNK_LEXICALSCOPE);
     JS_ASSERT_IF(letDecl, pn1->isLet());
 
-    StaticBlockObject *blockObj = letDecl ? &pn1->pn_objbox->object->asStaticBlock() : NULL;
+    RootedVar<StaticBlockObject*> blockObj(cx, letDecl ? &pn1->pn_objbox->object->asStaticBlock() : NULL);
     uint32_t blockObjCount = blockObj ? blockObj->slotCount() : 0;
 
     if (letDecl) {
@@ -5978,7 +5979,7 @@ EmitObject(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
             if (obj) {
                 JS_ASSERT(!obj->inDictionaryMode());
-                if (!DefineNativeProperty(cx, obj, ATOM_TO_JSID(pn3->pn_atom),
+                if (!DefineNativeProperty(cx, obj, AtomToId(pn3->pn_atom),
                                           UndefinedValue(), NULL, NULL,
                                           JSPROP_ENUMERATE, 0, 0))
                 {
@@ -6981,7 +6982,7 @@ NewTryNote(JSContext *cx, BytecodeEmitter *bce, JSTryNoteKind kind, unsigned sta
 }
 
 void
-frontend::FinishTakingTryNotes(BytecodeEmitter *bce, JSTryNoteArray *array)
+frontend::FinishTakingTryNotes(BytecodeEmitter *bce, TryNoteArray *array)
 {
     TryNode *tryNode;
     JSTryNote *tn;
@@ -7047,7 +7048,7 @@ CGObjectList::index(ObjectBox *objbox)
 }
 
 void
-CGObjectList::finish(JSObjectArray *array)
+CGObjectList::finish(ObjectArray *array)
 {
     JS_ASSERT(length <= INDEX_LIMIT);
     JS_ASSERT(length == array->length);
@@ -7063,7 +7064,7 @@ CGObjectList::finish(JSObjectArray *array)
 }
 
 void
-GCConstList::finish(JSConstArray *array)
+GCConstList::finish(ConstArray *array)
 {
     JS_ASSERT(array->length == list.length());
     Value *src = list.begin(), *srcend = list.end();

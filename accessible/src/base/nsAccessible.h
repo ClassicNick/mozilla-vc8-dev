@@ -65,9 +65,25 @@ class nsHTMLImageMapAccessible;
 class nsHTMLLIAccessible;
 struct nsRoleMapEntry;
 class Relation;
+
 namespace mozilla {
 namespace a11y {
 class TableAccessible;
+
+/**
+ * Name type flags.
+ */
+enum ENameValueFlag {
+  /**
+   * Name either
+   *  a) present (not empty): !name.IsEmpty()
+   *  b) no name (was missed): name.IsVoid()
+   *  c) was left empty by the author on demand: name.IsEmpty() && !name.IsVoid()
+   */
+ eNameOK,
+ eNameFromTooltip // Tooltip was used as a name
+};
+
 }
 }
 class nsTextAccessible;
@@ -139,6 +155,11 @@ public:
    * Get the value of this accessible.
    */
   virtual void Value(nsString& aValue);
+
+  /**
+   * Get the name of this accessible.
+   */
+  virtual mozilla::a11y::ENameValueFlag Name(nsString& aName);
 
   /**
    * Return DOM node associated with this accessible.
@@ -468,7 +489,7 @@ public:
   inline bool IsMenuPopup() const { return mFlags & eMenuPopupAccessible; }
 
   inline bool IsRoot() const { return mFlags & eRootAccessible; }
-  nsRootAccessible* AsRoot();
+  mozilla::a11y::RootAccessible* AsRoot();
 
   virtual mozilla::a11y::TableAccessible* AsTable() { return nsnull; }
 

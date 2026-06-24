@@ -141,13 +141,13 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 #include "nsIMEStateManager.h"
 #include "nsContentErrors.h"
 #include "nsUnicharUtilCIID.h"
-#include "nsCompressedCharMap.h"
 #include "nsINativeKeyBindings.h"
 #include "nsIDOMNSEvent.h"
 #include "nsXULPopupManager.h"
 #include "nsIPermissionManager.h"
 #include "nsIContentPrefService.h"
 #include "nsIScriptObjectPrincipal.h"
+#include "nsNullPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsDOMJSUtils.h"
 #include "nsGenericHTMLElement.h"
@@ -212,7 +212,6 @@ static NS_DEFINE_CID(kXTFServiceCID, NS_XTFSERVICE_CID);
 
 #include "nsWrapperCacheInlines.h"
 #include "nsIDOMDocumentType.h"
-#include "nsIDOMWindowUtils.h"
 #include "nsCharSeparatedTokenizer.h"
 
 extern "C" int MOZ_XMLTranslateEntity(const char* ptr, const char* end,
@@ -1307,6 +1306,59 @@ nsContentUtils::ParseIntMarginValue(const nsAString& aString, nsIntMargin& resul
   return true;
 }
 
+// static
+PRInt32
+nsContentUtils::ParseLegacyFontSize(const nsAString& aValue)
+{
+  nsAString::const_iterator iter, end;
+  aValue.BeginReading(iter);
+  aValue.EndReading(end);
+
+  while (iter != end && nsContentUtils::IsHTMLWhitespace(*iter)) {
+    ++iter;
+  }
+
+  if (iter == end) {
+    return 0;
+  }
+
+  bool relative = false;
+  bool negate = false;
+  if (*iter == PRUnichar('-')) {
+    relative = true;
+    negate = true;
+    ++iter;
+  } else if (*iter == PRUnichar('+')) {
+    relative = true;
+    ++iter;
+  }
+
+  if (*iter < PRUnichar('0') || *iter > PRUnichar('9')) {
+    return 0;
+  }
+
+  // We don't have to worry about overflow, since we can bail out as soon as
+  // we're bigger than 7.
+  PRInt32 value = 0;
+  while (iter != end && *iter >= PRUnichar('0') && *iter <= PRUnichar('9')) {
+    value = 10*value + (*iter - PRUnichar('0'));
+    if (value >= 7) {
+      break;
+    }
+    ++iter;
+  }
+
+  if (relative) {
+    if (negate) {
+      value = 3 - value;
+    } else {
+      value = 3 + value;
+    }
+  }
+
+  return clamped(value, 1, 7);
+}
+
 /* static */
 void
 nsContentUtils::GetOfflineAppManifest(nsIDocument *aDocument, nsIURI **aURI)
@@ -1623,8 +1675,7 @@ nsContentUtils::TraceSafeJSContext(JSTracer* aTrc)
   if (!sThreadJSContextStack) {
     return;
   }
-  JSContext* cx = nsnull;
-  sThreadJSContextStack->GetSafeJSContext(&cx);
+  JSContext* cx = sThreadJSContextStack->GetSafeJSContext();
   if (!cx) {
     return;
   }
@@ -4069,7 +4120,7 @@ nsContentUtils::ConvertToPlainText(const nsAString& aSourceBuffer,
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), "about:blank");
   nsCOMPtr<nsIPrincipal> principal =
-    do_CreateInstance("@mozilla.org/nullprincipal;1");
+    do_CreateInstance(NS_NULLPRINCIPAL_CONTRACTID);
   nsCOMPtr<nsIDOMDocument> domDocument;
   nsresult rv = nsContentUtils::CreateDocument(EmptyString(),
                                                EmptyString(),
@@ -4415,6 +4466,29 @@ nsContentUtils::IsSystemPrincipal(nsIPrincipal* aPrincipal)
   return NS_SUCCEEDED(rv) && isSystem;
 }
 
+bool
+nsContentUtils::CombineResourcePrincipals(nsCOMPtr<nsIPrincipal>* aResourcePrincipal,
+                                          nsIPrincipal* aExtraPrincipal)
+{
+  if (!aExtraPrincipal) {
+    return false;
+  }
+  if (!*aResourcePrincipal) {
+    *aResourcePrincipal = aExtraPrincipal;
+    return true;
+  }
+  if (*aResourcePrincipal == aExtraPrincipal) {
+    return false;
+  }
+  bool subsumes;
+  if (NS_SUCCEEDED((*aResourcePrincipal)->Subsumes(aExtraPrincipal, &subsumes)) &&
+      subsumes) {
+    return false;
+  }
+  sSecurityManager->GetSystemPrincipal(getter_AddRefs(*aResourcePrincipal));
+  return true;
+}
+
 /* static */
 void
 nsContentUtils::TriggerLink(nsIContent *aContent, nsPresContext *aPresContext,
@@ -4590,7 +4664,7 @@ nsContentUtils::GetAccelKeyCandidates(nsIDOMKeyEvent* aDOMKeyEvent,
     }
 
     PRUint32 len = nativeKeyEvent->alternativeCharCodes.Length();
-    if (!nativeKeyEvent->isShift) {
+    if (!nativeKeyEvent->IsShift()) {
       for (PRUint32 i = 0; i < len; ++i) {
         PRUint32 ch =
           nativeKeyEvent->alternativeCharCodes[i].mUnshiftedCharCode;
@@ -4845,13 +4919,6 @@ nsContentUtils::GetViewportInfo(nsIDocument *aDocument)
 
   if (aDocument->IsXUL()) {
     ret.autoScale = false;
-    return ret;
-  }
-
-  nsIDOMWindow* window = aDocument->GetWindow();
-  nsCOMPtr<nsIDOMWindowUtils> windowUtils(do_GetInterface(window));
-
-  if (!windowUtils) {
     return ret;
   }
 
@@ -6011,17 +6078,21 @@ public:
                                      const char *objName)
   {
   }
+
   NS_IMETHOD_(void) NoteXPCOMRoot(nsISupports *root)
   {
   }
-  NS_IMETHOD_(void) NoteRoot(PRUint32 langID, void* root,
-                             nsCycleCollectionParticipant* helper)
+  NS_IMETHOD_(void) NoteJSRoot(void* root)
   {
   }
-  NS_IMETHOD_(void) NoteScriptChild(PRUint32 langID, void* child)
+  NS_IMETHOD_(void) NoteNativeRoot(void* root,
+                                   nsCycleCollectionParticipant* helper)
   {
-    if (langID == nsIProgrammingLanguage::JAVASCRIPT &&
-        child == mWrapper) {
+  }
+
+  NS_IMETHOD_(void) NoteJSChild(void* child)
+  {
+    if (child == mWrapper) {
       mFound = true;
     }
   }
@@ -6048,12 +6119,11 @@ private:
 };
 
 static void
-DebugWrapperTraceCallback(PRUint32 langID, void *p, const char *name,
-                          void *closure)
+DebugWrapperTraceCallback(void *p, const char *name, void *closure)
 {
   DebugWrapperTraversalCallback* callback =
     static_cast<DebugWrapperTraversalCallback*>(closure);
-  callback->NoteScriptChild(langID, p);
+  callback->NoteJSChild(p);
 }
 
 // static
@@ -6571,8 +6641,7 @@ nsContentUtils::TraceWrapper(nsWrapperCache* aCache, TraceCallback aCallback,
   if (aCache->PreservingWrapper()) {
     JSObject *wrapper = aCache->GetWrapperPreserveColor();
     if (wrapper) {
-      aCallback(nsIProgrammingLanguage::JAVASCRIPT, wrapper,
-                "Preserved wrapper", aClosure);
+      aCallback(wrapper, "Preserved wrapper", aClosure);
     }
   }
 }

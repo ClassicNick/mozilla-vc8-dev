@@ -463,6 +463,12 @@ IsFontSizeInflationContainer(nsIFrame* aFrame,
    * thing to count as a container, so we don't try, and blocks are
    * always containers.
    */
+
+  // The root frame should always be an inflation container.
+  if (!aFrame->GetParent()) {
+    return true;
+  }
+
   nsIContent *content = aFrame->GetContent();
   bool isInline = (aStyleDisplay->mDisplay == NS_STYLE_DISPLAY_INLINE ||
                    (aStyleDisplay->IsFloating() &&
@@ -470,13 +476,11 @@ IsFontSizeInflationContainer(nsIFrame* aFrame,
                    // Given multiple frames for the same node, only the
                    // outer one should be considered a container.
                    // (Important, e.g., for nsSelectsAreaFrame.)
-                   (aFrame->GetParent() &&
-                    aFrame->GetParent()->GetContent() == content) ||
+                   (aFrame->GetParent()->GetContent() == content) ||
                    (content && (content->IsHTML(nsGkAtoms::option) ||
                                 content->IsHTML(nsGkAtoms::optgroup) ||
                                 content->IsInNativeAnonymousSubtree()))) &&
-                  !(aFrame->IsBoxFrame() && aFrame->GetParent() &&
-                    aFrame->GetParent()->IsBoxFrame());
+                  !(aFrame->IsBoxFrame() && aFrame->GetParent()->IsBoxFrame());
   NS_ASSERTION(!aFrame->IsFrameOfType(nsIFrame::eLineParticipant) ||
                isInline ||
                // br frames and mathml frames report being line
@@ -2281,16 +2285,16 @@ nsFrame::GetDataForTableSelection(const nsFrameSelection *aFrameSelection,
      (aMouseEvent->message == NS_MOUSE_MOVE ||
       (aMouseEvent->message == NS_MOUSE_BUTTON_UP &&
        aMouseEvent->button == nsMouseEvent::eLeftButton) ||
-      aMouseEvent->isShift);
+      aMouseEvent->IsShift());
 
   if (!doTableSelection)
   {  
     // In Browser, special 'table selection' key must be pressed for table selection
     // or when just Shift is pressed and we're already in table/cell selection mode
 #ifdef XP_MACOSX
-    doTableSelection = aMouseEvent->isMeta || (aMouseEvent->isShift && selectingTableCells);
+    doTableSelection = aMouseEvent->IsMeta() || (aMouseEvent->IsShift() && selectingTableCells);
 #else
-    doTableSelection = aMouseEvent->isControl || (aMouseEvent->isShift && selectingTableCells);
+    doTableSelection = aMouseEvent->IsControl() || (aMouseEvent->IsShift() && selectingTableCells);
 #endif
   }
   if (!doTableSelection) 
@@ -2476,7 +2480,7 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   isEditor = isEditor == nsISelectionDisplay::DISPLAY_ALL;
 
   nsInputEvent* keyEvent = (nsInputEvent*)aEvent;
-  if (!keyEvent->isAlt) {
+  if (!keyEvent->IsAlt()) {
     
     for (nsIContent* content = mContent; content;
          content = content->GetParent()) {
@@ -2537,11 +2541,11 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   nsMouseEvent *me = (nsMouseEvent *)aEvent;
 
 #ifdef XP_MACOSX
-  if (me->isControl)
+  if (me->IsControl())
     return NS_OK;//short circuit. hard coded for mac due to time restraints.
-  bool control = me->isMeta;
+  bool control = me->IsMeta();
 #else
-  bool control = me->isControl;
+  bool control = me->IsControl();
 #endif
 
   nsRefPtr<nsFrameSelection> fc = const_cast<nsFrameSelection*>(frameselection);
@@ -2634,7 +2638,7 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   // Do not touch any nsFrame members after this point without adding
   // weakFrame checks.
   rv = fc->HandleClick(offsets.content, offsets.StartOffset(),
-                       offsets.EndOffset(), me->isShift, control,
+                       offsets.EndOffset(), me->IsShift(), control,
                        offsets.associateWithNext);
 
   if (NS_FAILED(rv))
@@ -2643,7 +2647,7 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   if (offsets.offset != offsets.secondaryOffset)
     fc->MaintainSelection();
 
-  if (isEditor && !me->isShift &&
+  if (isEditor && !me->IsShift() &&
       (offsets.EndOffset() - offsets.StartOffset()) == 1)
   {
     // A single node is selected and we aren't extending an existing
@@ -2912,7 +2916,7 @@ HandleFrameSelection(nsFrameSelection*         aFrameSelection,
       rv = aFrameSelection->HandleClick(aOffsets.content,
                                         aOffsets.StartOffset(),
                                         aOffsets.EndOffset(),
-                                        me->isShift, false,
+                                        me->IsShift(), false,
                                         aOffsets.associateWithNext);
       if (NS_FAILED(rv)) {
         return rv;
@@ -4553,6 +4557,10 @@ void
 nsIFrame::InvalidateInternalAfterResize(const nsRect& aDamageRect, nscoord aX,
                                         nscoord aY, PRUint32 aFlags)
 {
+  if (aDamageRect.IsEmpty()) {
+    return;
+  }
+
   /* If we're a transformed frame, then we need to apply our transform to the
    * damage rectangle so that the redraw correctly redraws the transformed
    * region.  We're moved over aX and aY from our origin, but since this aX

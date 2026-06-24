@@ -40,6 +40,7 @@
 
 // NOTE: alphabetically ordered
 #include "Accessible-inl.h"
+#include "ApplicationAccessibleWrap.h"
 #include "ARIAGridAccessibleWrap.h"
 #ifdef MOZ_ACCESSIBILITY_ATK
 #include "AtkSocketAccessible.h"
@@ -48,7 +49,6 @@
 #include "nsAccessiblePivot.h"
 #include "nsAccUtils.h"
 #include "nsARIAMap.h"
-#include "nsApplicationAccessibleWrap.h"
 #include "nsIAccessibleProvider.h"
 #include "nsHTMLCanvasAccessible.h"
 #include "nsHTMLImageMapAccessible.h"
@@ -57,11 +57,11 @@
 #include "nsHTMLTableAccessibleWrap.h"
 #include "nsHTMLTextAccessible.h"
 #include "nsHyperTextAccessibleWrap.h"
-#include "nsRootAccessibleWrap.h"
 #include "nsXFormsFormControlsAccessible.h"
 #include "nsXFormsWidgetsAccessible.h"
 #include "OuterDocAccessible.h"
 #include "Role.h"
+#include "RootAccessibleWrap.h"
 #include "States.h"
 #include "Statistics.h"
 #ifdef XP_WIN
@@ -427,6 +427,16 @@ nsAccessibilityService::CreateHTMLTableCellAccessible(nsIContent* aContent,
 }
 
 already_AddRefed<nsAccessible>
+nsAccessibilityService::CreateHTMLTableRowAccessible(nsIContent* aContent,
+                                                     nsIPresShell* aPresShell)
+{
+  nsAccessible* accessible =
+    new nsEnumRoleAccessible(aContent, GetDocAccessible(aPresShell), roles::ROW);
+  NS_ADDREF(accessible);
+  return accessible;
+}
+
+already_AddRefed<nsAccessible>
 nsAccessibilityService::CreateHTMLTextAccessible(nsIContent* aContent,
                                                  nsIPresShell* aPresShell)
 {
@@ -647,7 +657,7 @@ nsAccessibilityService::PresShellActivated(nsIPresShell* aPresShell)
   if (DOMDoc) {
     nsDocAccessible* document = GetDocAccessibleFromCache(DOMDoc);
     if (document) {
-      nsRootAccessible* rootDocument = document->RootAccessible();
+      RootAccessible* rootDocument = document->RootAccessible();
       NS_ASSERTION(rootDocument, "Entirely broken tree: no root document!");
       if (rootDocument)
         rootDocument->DocumentActivated(document);
@@ -668,7 +678,7 @@ nsAccessibilityService::RecreateAccessible(nsIPresShell* aPresShell,
 // nsIAccessibleRetrieval
 
 NS_IMETHODIMP
-nsAccessibilityService::GetApplicationAccessible(nsIAccessible **aAccessibleApplication)
+nsAccessibilityService::GetApplicationAccessible(nsIAccessible** aAccessibleApplication)
 {
   NS_ENSURE_ARG_POINTER(aAccessibleApplication);
 
@@ -696,13 +706,19 @@ nsAccessibilityService::GetAccessibleFor(nsIDOMNode *aNode,
 NS_IMETHODIMP
 nsAccessibilityService::GetStringRole(PRUint32 aRole, nsAString& aString)
 {
-  if ( aRole >= ArrayLength(kRoleNames)) {
-    aString.AssignLiteral("unknown");
+#define ROLE(geckoRole, stringRole, atkRole, macRole, msaaRole, ia2Role) \
+  case roles::geckoRole: \
+    CopyUTF8toUTF16(stringRole, aString); \
     return NS_OK;
+
+  switch (aRole) {
+#include "RoleMap.h"
+    default:
+      aString.AssignLiteral("unknown");
+      return NS_OK;
   }
 
-  CopyUTF8toUTF16(kRoleNames[aRole], aString);
-  return NS_OK;
+#undef ROLE
 }
 
 NS_IMETHODIMP
@@ -1255,6 +1271,9 @@ nsAccessibilityService::Init()
 
   observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
 
+  static const PRUnichar kInitIndicator[] = { '1', 0 };
+  observerService->NotifyObservers(nsnull, "a11y-init-or-shutdown", kInitIndicator);
+
   // Initialize accessibility.
   nsAccessNodeWrap::InitAccessibility();
 
@@ -1268,8 +1287,12 @@ nsAccessibilityService::Shutdown()
   // Remove observers.
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
-  if (observerService)
+  if (observerService) {
     observerService->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID);
+
+    static const PRUnichar kShutdownIndicator[] = { '0', 0 };
+    observerService->NotifyObservers(nsnull, "a11y-init-or-shutdown", kShutdownIndicator);
+  }
 
   // Stop accessible document loader.
   nsAccDocManager::Shutdown();
@@ -1684,13 +1707,6 @@ nsAccessibilityService::CreateHTMLAccessibleByMarkup(nsIFrame* aFrame,
     return accessible;
   }
 
-  if (tag == nsGkAtoms::tr) {
-    nsAccessible* accessible = new nsEnumRoleAccessible(aContent, aDoc,
-                                                        roles::ROW);
-    NS_IF_ADDREF(accessible);
-    return accessible;
-  }
-
   if (nsCoreUtils::IsHTMLTableHeader(aContent)) {
     nsAccessible* accessible = new nsHTMLTableHeaderCellAccessibleWrap(aContent,
                                                                        aDoc);
@@ -1719,15 +1735,15 @@ nsAccessibilityService::CreateHTMLAccessibleByMarkup(nsIFrame* aFrame,
 
 nsAccessible*
 nsAccessibilityService::AddNativeRootAccessible(void* aAtkAccessible)
- {
+{
 #ifdef MOZ_ACCESSIBILITY_ATK
-  nsApplicationAccessible* applicationAcc =
+  ApplicationAccessible* applicationAcc =
     nsAccessNode::GetApplicationAccessible();
   if (!applicationAcc)
     return nsnull;
 
-  nsRefPtr<nsNativeRootAccessibleWrap> nativeRootAcc =
-     new nsNativeRootAccessibleWrap((AtkObject*)aAtkAccessible);
+  nsRefPtr<NativeRootAccessibleWrap> nativeRootAcc =
+    new NativeRootAccessibleWrap(static_cast<AtkObject*>(aAtkAccessible));
   if (!nativeRootAcc)
     return nsnull;
 
@@ -1736,13 +1752,13 @@ nsAccessibilityService::AddNativeRootAccessible(void* aAtkAccessible)
 #endif
 
   return nsnull;
- }
+}
 
 void
 nsAccessibilityService::RemoveNativeRootAccessible(nsAccessible* aAccessible)
 {
 #ifdef MOZ_ACCESSIBILITY_ATK
-  nsApplicationAccessible* applicationAcc =
+  ApplicationAccessible* applicationAcc =
     nsAccessNode::GetApplicationAccessible();
 
   if (applicationAcc)

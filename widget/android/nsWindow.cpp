@@ -914,11 +914,15 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
 
             if (AndroidBridge::Bridge()->HasNativeWindowAccess()) {
                 AndroidGeckoSurfaceView& sview(AndroidBridge::Bridge()->SurfaceView());
-                jobject surface = sview.GetSurface();
-                if (surface) {
-                    sNativeWindow = AndroidBridge::Bridge()->AcquireNativeWindow(surface);
-                    if (sNativeWindow) {
-                        AndroidBridge::Bridge()->SetNativeWindowFormat(sNativeWindow, 0, 0, AndroidBridge::WINDOW_FORMAT_RGB_565);
+                JNIEnv *env = AndroidBridge::GetJNIEnv();
+                if (env) {
+                    AutoLocalJNIFrame jniFrame(env);
+                    jobject surface = sview.GetSurface(env, &jniFrame);
+                    if (surface) {
+                        sNativeWindow = AndroidBridge::Bridge()->AcquireNativeWindow(env, surface);
+                        if (sNativeWindow) {
+                            AndroidBridge::Bridge()->SetNativeWindowFormat(sNativeWindow, 0, 0, AndroidBridge::WINDOW_FORMAT_RGB_565);
+                        }
                     }
                 }
             }
@@ -1019,9 +1023,7 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
     // If we have no covering child, then we need to render this.
     if (coveringChildIndex == -1) {
         nsPaintEvent event(true, NS_PAINT, this);
-
-        nsIntRect tileRect(0, 0, gAndroidBounds.width, gAndroidBounds.height);
-        event.region = boundsRect.Intersect(invalidRect).Intersect(tileRect);
+        event.region = invalidRect;
 
         switch (GetLayerManager(nsnull)->GetBackendType()) {
             case LayerManager::LAYERS_BASIC: {
@@ -1111,30 +1113,16 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
 
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
 
-    AndroidBridge::AutoLocalJNIFrame jniFrame;
+    JNIEnv *env = AndroidBridge::GetJNIEnv();
+    if (!env)
+        return;
+    AutoLocalJNIFrame jniFrame;
+
 #ifdef MOZ_JAVA_COMPOSITOR
     // We're paused, or we haven't been given a window-size yet, so do nothing
     if (sCompositorPaused || gAndroidBounds.width <= 0 || gAndroidBounds.height <= 0) {
         return;
     }
-
-    /*
-     * Check to see whether the presentation shell corresponding to the document on the screen
-     * is suppressing painting. If it is, we bail out, as continuing would result in a mismatch
-     * between the content on the screen and the current viewport metrics.
-     */
-    nsCOMPtr<nsIAndroidDrawMetadataProvider> metadataProvider =
-        AndroidBridge::Bridge()->GetDrawMetadataProvider();
-
-    layers::renderTraceEventStart("Check supress", "424242");
-    bool paintingSuppressed = false;
-    if (metadataProvider) {
-        metadataProvider->PaintingSuppressed(&paintingSuppressed);
-    }
-    if (paintingSuppressed) {
-        return;
-    }
-    layers::renderTraceEventEnd("Check supress", "424242");
 
     layers::renderTraceEventStart("Get surface", "424545");
     static unsigned char bits2[32 * 32 * 2];
@@ -1144,11 +1132,10 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
     layers::renderTraceEventEnd("Get surface", "424545");
 
     layers::renderTraceEventStart("Widget draw to", "434646");
-    nsIntRect dirtyRect = ae->Rect().Intersect(nsIntRect(0, 0, gAndroidBounds.width, gAndroidBounds.height));
     if (targetSurface->CairoStatus()) {
         ALOG("### Failed to create a valid surface from the bitmap");
     } else {
-        DrawTo(targetSurface, dirtyRect);
+        DrawTo(targetSurface, ae->Rect());
     }
     layers::renderTraceEventEnd("Widget draw to", "434646");
     return;
@@ -1194,7 +1181,7 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
 
             AndroidBridge::Bridge()->UnlockWindow(sNativeWindow);
         } else if (AndroidBridge::Bridge()->HasNativeBitmapAccess()) {
-            jobject bitmap = sview.GetSoftwareDrawBitmap();
+            jobject bitmap = sview.GetSoftwareDrawBitmap(env, &jniFrame);
             if (!bitmap) {
                 ALOG("no bitmap to draw into - skipping draw");
                 return;
@@ -1223,15 +1210,11 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
             AndroidBridge::Bridge()->UnlockBitmap(bitmap);
             sview.Draw2D(bitmap, mBounds.width, mBounds.height);
         } else {
-            jobject bytebuf = sview.GetSoftwareDrawBuffer();
+            jobject bytebuf = sview.GetSoftwareDrawBuffer(env, &jniFrame);
             if (!bytebuf) {
                 ALOG("no buffer to draw into - skipping draw");
                 return;
             }
-
-            JNIEnv *env = AndroidBridge::GetJNIEnv();
-            if (!env)
-                return;
 
             void *buf = env->GetDirectBufferAddress(bytebuf);
             int cap = env->GetDirectBufferCapacity(bytebuf);
@@ -1462,10 +1445,7 @@ nsWindow::DispatchMultitouchEvent(nsTouchEvent &event, AndroidGeckoEvent *ae)
 {
     nsIntPoint offset = WidgetToScreenOffset();
 
-    event.isShift = false;
-    event.isControl = false;
-    event.isMeta = false;
-    event.isAlt = false;
+    event.modifiers = 0;
     event.time = ae->Time();
 
     int action = ae->Action() & AndroidMotionEvent::ACTION_MASK;
@@ -1580,10 +1560,7 @@ nsWindow::DispatchGestureEvent(PRUint32 msg, PRUint32 direction, double delta,
 {
     nsSimpleGestureEvent event(true, msg, this, direction, delta);
 
-    event.isShift = false;
-    event.isControl = false;
-    event.isMeta = false;
-    event.isAlt = false;
+    event.modifiers = 0;
     event.time = time;
     event.refPoint = refPoint;
 
@@ -1597,10 +1574,7 @@ nsWindow::DispatchMotionEvent(nsInputEvent &event, AndroidGeckoEvent *ae,
 {
     nsIntPoint offset = WidgetToScreenOffset();
 
-    event.isShift = false;
-    event.isControl = false;
-    event.isMeta = false;
-    event.isAlt = false;
+    event.modifiers = 0;
     event.time = ae->Time();
 
     // XXX possibly bound the range of event.refPoint here.
@@ -1624,12 +1598,14 @@ static unsigned int ConvertAndroidKeyCodeToDOMKeyCode(int androidKeyCode)
     }
 
     switch (androidKeyCode) {
-        // KEYCODE_UNKNOWN (0) ... KEYCODE_POUND (18)
+        // KEYCODE_UNKNOWN (0) ... KEYCODE_HOME (3)
+        case AndroidKeyEvent::KEYCODE_BACK:               return NS_VK_ESCAPE;
+        // KEYCODE_CALL (5) ... KEYCODE_POUND (18)
         case AndroidKeyEvent::KEYCODE_DPAD_UP:            return NS_VK_UP;
         case AndroidKeyEvent::KEYCODE_DPAD_DOWN:          return NS_VK_DOWN;
         case AndroidKeyEvent::KEYCODE_DPAD_LEFT:          return NS_VK_LEFT;
         case AndroidKeyEvent::KEYCODE_DPAD_RIGHT:         return NS_VK_RIGHT;
-        case AndroidKeyEvent::KEYCODE_DPAD_CENTER:        return NS_VK_RETURN;
+        case AndroidKeyEvent::KEYCODE_DPAD_CENTER:        return NS_VK_ENTER;
         // KEYCODE_VOLUME_UP (24) ... KEYCODE_Z (54)
         case AndroidKeyEvent::KEYCODE_COMMA:              return NS_VK_COMMA;
         case AndroidKeyEvent::KEYCODE_PERIOD:             return NS_VK_PERIOD;
@@ -1762,10 +1738,11 @@ nsWindow::InitKeyEvent(nsKeyEvent& event, AndroidGeckoEvent& key,
         event.pluginEvent = pluginEvent;
     }
 
-    event.isShift = key.IsShiftPressed();
-    event.isControl = gMenu;
-    event.isAlt = key.IsAltPressed();
-    event.isMeta = false;
+    event.InitBasicModifiers(gMenu,
+                             key.IsAltPressed(),
+                             key.IsShiftPressed(),
+                             false);
+    event.location = nsIDOMKeyEvent::DOM_KEY_LOCATION_MOBILE;
     event.time = key.Time();
 
     if (gMenu)
@@ -1893,7 +1870,7 @@ nsWindow::OnKeyEvent(AndroidGeckoEvent *ae)
         pressEvent.flags |= NS_EVENT_FLAG_NO_DEFAULT;
     }
 #ifdef DEBUG_ANDROID_WIDGET
-    __android_log_print(ANDROID_LOG_INFO, "Gecko", "Dispatching key pressEvent with keyCode %d charCode %d shift %d alt %d sym/ctrl %d metamask %d", pressEvent.keyCode, pressEvent.charCode, pressEvent.isShift, pressEvent.isAlt, pressEvent.isControl, ae->MetaState());
+    __android_log_print(ANDROID_LOG_INFO, "Gecko", "Dispatching key pressEvent with keyCode %d charCode %d shift %d alt %d sym/ctrl %d metamask %d", pressEvent.keyCode, pressEvent.charCode, pressEvent.IsShift(), pressEvent.IsAlt(), pressEvent.IsControl(), ae->MetaState());
 #endif
     DispatchEvent(&pressEvent);
 }
@@ -2246,32 +2223,52 @@ nsWindow::GetIMEUpdatePreference()
 
 #ifdef MOZ_JAVA_COMPOSITOR
 void
-nsWindow::DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) {
-    AndroidBridge::AutoLocalJNIFrame jniFrame(GetJNIForThread());
+nsWindow::DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect)
+{
+    JNIEnv *env = GetJNIForThread();
+    NS_ABORT_IF_FALSE(env, "No JNI environment at DrawWindowUnderlay()!");
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
 
     AndroidGeckoLayerClient& client = AndroidBridge::Bridge()->GetLayerClient();
-    client.CreateFrame(mLayerRendererFrame);
-
-    client.ActivateProgram();
-    mLayerRendererFrame.BeginDrawing();
-    mLayerRendererFrame.DrawBackground();
-    client.DeactivateProgram();
+    if (!client.CreateFrame(env, mLayerRendererFrame))
+        return;
+    client.ActivateProgram(env);
+    if (jniFrame.CheckForException()) return;
+    mLayerRendererFrame.BeginDrawing(env);
+    if (jniFrame.CheckForException()) return;
+    mLayerRendererFrame.DrawBackground(env);
+    if (jniFrame.CheckForException()) return;
+    client.DeactivateProgram(env);
 }
 
 void
-nsWindow::DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) {
-    AndroidBridge::AutoLocalJNIFrame jniFrame(GetJNIForThread());
+nsWindow::DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect)
+{
+    JNIEnv *env = GetJNIForThread();
+    NS_ABORT_IF_FALSE(env, "No JNI environment at DrawWindowOverlay()!");
+    if (!env)
+        return;
+
+    AutoLocalJNIFrame jniFrame(env);
+
     NS_ABORT_IF_FALSE(!mLayerRendererFrame.isNull(),
                       "Frame should have been created in DrawWindowUnderlay()!");
 
     AndroidGeckoLayerClient& client = AndroidBridge::Bridge()->GetLayerClient();
 
-    client.ActivateProgram();
-    mLayerRendererFrame.DrawForeground();
-    mLayerRendererFrame.EndDrawing();
-    client.DeactivateProgram();
+    client.ActivateProgram(env);
+    if (jniFrame.CheckForException()) return;
+    mLayerRendererFrame.DrawForeground(env);
+    if (jniFrame.CheckForException()) return;
+    mLayerRendererFrame.EndDrawing(env);
+    if (jniFrame.CheckForException()) return;
+    client.DeactivateProgram(env);
+    if (jniFrame.CheckForException()) return;
 
-    mLayerRendererFrame.Dispose();
+    mLayerRendererFrame.Dispose(env);
 }
 
 // off-main-thread compositor fields and functions

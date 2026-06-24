@@ -44,8 +44,12 @@
 #include "mozilla/Attributes.h"
 
 #include "jsapi.h"
-#include "jscell.h"
+#include "jsatom.h"
 #include "jsfriendapi.h"
+#include "jsstr.h"
+
+#include "gc/Barrier.h"
+#include "gc/Heap.h"
 
 class JSString;
 class JSDependentString;
@@ -510,6 +514,8 @@ class JSFlatString : public JSLinearString
     bool isFlat() const MOZ_DELETE;
     JSFlatString &asFlat() const MOZ_DELETE;
 
+    bool isIndexSlow(uint32_t *indexp) const;
+
   public:
     JS_ALWAYS_INLINE
     const jschar *charsZ() const {
@@ -523,7 +529,10 @@ class JSFlatString : public JSLinearString
      * calling isIndex returns true, js::IndexToString(cx, *indexp) will be a
      * string equal to this string.)
      */
-    bool isIndex(uint32_t *indexp) const;
+    inline bool isIndex(uint32_t *indexp) const {
+        const jschar *s = chars();
+        return JS7_ISDEC(*s) && isIndexSlow(indexp);
+    }
 
     /*
      * Returns a property name represented by this string, or null on failure.
@@ -675,6 +684,10 @@ class JSAtom : public JSFixedString
 
 JS_STATIC_ASSERT(sizeof(JSAtom) == sizeof(JSString));
 
+namespace js {
+typedef HeapPtr<JSAtom> HeapPtrAtom;
+}
+
 class JSInlineAtom : public JSInlineString /*, JSAtom */
 {
     /*
@@ -771,6 +784,12 @@ class PropertyName : public JSAtom
 {};
 
 JS_STATIC_ASSERT(sizeof(PropertyName) == sizeof(JSString));
+
+static JS_ALWAYS_INLINE jsid
+NameToId(PropertyName *name)
+{
+    return NON_INTEGER_ATOM_TO_JSID(name);
+}
 
 } /* namespace js */
 

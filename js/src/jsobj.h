@@ -58,9 +58,9 @@
 #include "jspubtd.h"
 #include "jsprvtd.h"
 #include "jslock.h"
-#include "jscell.h"
 
 #include "gc/Barrier.h"
+#include "gc/Heap.h"
 
 #include "vm/ObjectImpl.h"
 #include "vm/String.h"
@@ -134,7 +134,7 @@ inline bool
 LookupProperty(JSContext *cx, JSObject *obj, PropertyName *name,
                JSObject **objp, JSProperty **propp)
 {
-    return js_LookupProperty(cx, obj, ATOM_TO_JSID(name), objp, propp);
+    return js_LookupProperty(cx, obj, NameToId(name), objp, propp);
 }
 
 }
@@ -186,7 +186,7 @@ inline bool
 SetPropertyHelper(JSContext *cx, HandleObject obj, PropertyName *name, unsigned defineHow,
                   Value *vp, JSBool strict)
 {
-    return !!js_SetPropertyHelper(cx, obj, ATOM_TO_JSID(name), defineHow, vp, strict);
+    return !!js_SetPropertyHelper(cx, obj, NameToId(name), defineHow, vp, strict);
 }
 
 } /* namespace js */
@@ -233,6 +233,7 @@ extern Class ArrayBufferClass;
 extern Class BlockClass;
 extern Class BooleanClass;
 extern Class CallableObjectClass;
+extern Class DataViewClass;
 extern Class DateClass;
 extern Class ErrorClass;
 extern Class ElementIteratorClass;
@@ -255,9 +256,11 @@ extern Class WithClass;
 extern Class XMLFilterClass;
 
 class ArgumentsObject;
+class ArrayBufferObject;
 class BlockObject;
 class BooleanObject;
 class ClonedBlockObject;
+class DataViewObject;
 class DeclEnvObject;
 class ElementIteratorObject;
 class GlobalObject;
@@ -395,7 +398,7 @@ struct JSObject : public js::ObjectImpl
 
     inline uint32_t propertyCount() const;
 
-    inline bool hasPropertyTable() const;
+    inline bool hasShapeTable() const;
 
     inline size_t computedSizeOfThisSlotsElements() const;
 
@@ -520,7 +523,7 @@ struct JSObject : public js::ObjectImpl
 
     /* Access the parent link of an object. */
     inline JSObject *getParent() const;
-    bool setParent(JSContext *cx, JSObject *newParent);
+    static bool setParent(JSContext *cx, js::HandleObject obj, js::HandleObject newParent);
 
     /*
      * Get the enclosing scope of an object. When called on non-scope object,
@@ -558,7 +561,7 @@ struct JSObject : public js::ObjectImpl
     static inline unsigned getSealedOrFrozenAttributes(unsigned attrs, ImmutabilityType it);
 
   public:
-    bool preventExtensions(JSContext *cx, js::AutoIdVector *props);
+    bool preventExtensions(JSContext *cx);
 
     /* ES5 15.2.3.8: non-extensible, all props non-configurable */
     inline bool seal(JSContext *cx) { return sealOrFreeze(cx, SEAL); }
@@ -626,11 +629,6 @@ struct JSObject : public js::ObjectImpl
      * true. On OOM, report it and return false.
      */
     bool arrayGetOwnDataElement(JSContext *cx, size_t i, js::Value *vp);
-
-  public:
-    bool allocateArrayBufferSlots(JSContext *cx, uint32_t size, uint8_t *contents = NULL);
-    inline uint32_t arrayBufferByteLength();
-    inline uint8_t * arrayBufferDataOffset();
 
   public:
     /*
@@ -799,7 +797,7 @@ struct JSObject : public js::ObjectImpl
     putProperty(JSContext *cx, js::PropertyName *name,
                 JSPropertyOp getter, JSStrictPropertyOp setter,
                 uint32_t slot, unsigned attrs, unsigned flags, int shortid) {
-        return putProperty(cx, js_CheckForStringIndex(ATOM_TO_JSID(name)), getter, setter, slot, attrs, flags, shortid);
+        return putProperty(cx, js::NameToId(name), getter, setter, slot, attrs, flags, shortid);
     }
 
     /* Change the given property into a sibling with the same id in this scope. */
@@ -919,6 +917,7 @@ struct JSObject : public js::ObjectImpl
     /* Direct subtypes of JSObject: */
     inline bool isArguments() const;
     inline bool isArrayBuffer() const;
+    inline bool isDataView() const;
     inline bool isDate() const;
     inline bool isElementIterator() const;
     inline bool isError() const;
@@ -965,11 +964,13 @@ struct JSObject : public js::ObjectImpl
     inline bool isCrossCompartmentWrapper() const;
 
     inline js::ArgumentsObject &asArguments();
+    inline js::ArrayBufferObject &asArrayBuffer();
     inline const js::ArgumentsObject &asArguments() const;
     inline js::BlockObject &asBlock();
     inline js::BooleanObject &asBoolean();
     inline js::CallObject &asCall();
     inline js::ClonedBlockObject &asClonedBlock();
+    inline js::DataViewObject &asDataView();
     inline js::DeclEnvObject &asDeclEnv();
     inline js::GlobalObject &asGlobal();
     inline js::NestedScopeObject &asNestedScope();
@@ -1042,7 +1043,7 @@ class ValueArray {
 
 /* For manipulating JSContext::sharpObjectMap. */
 extern bool
-js_EnterSharpObject(JSContext *cx, JSObject *obj, JSIdArray **idap, bool *alreadySeen, bool *isSharp);
+js_EnterSharpObject(JSContext *cx, js::HandleObject obj, JSIdArray **idap, bool *alreadySeen, bool *isSharp);
 
 extern void
 js_LeaveSharpObject(JSContext *cx, JSIdArray **idap);
@@ -1081,83 +1082,6 @@ IsStandardClassResolved(JSObject *obj, js::Class *clasp);
 
 void
 MarkStandardClassInitializedNoProto(JSObject *obj, js::Class *clasp);
-
-/*
- * Cache for speeding up repetitive creation of objects in the VM.
- * When an object is created which matches the criteria in the 'key' section
- * below, an entry is filled with the resulting object.
- */
-class NewObjectCache
-{
-    struct Entry
-    {
-        /* Class of the constructed object. */
-        Class *clasp;
-
-        /*
-         * Key with one of three possible values:
-         *
-         * - Global for the object. The object must have a standard class for
-         *   which the global's prototype can be determined, and the object's
-         *   parent will be the global.
-         *
-         * - Prototype for the object (cannot be global). The object's parent
-         *   will be the prototype's parent.
-         *
-         * - Type for the object. The object's parent will be the type's
-         *   prototype's parent.
-         */
-        gc::Cell *key;
-
-        /* Allocation kind for the constructed object. */
-        gc::AllocKind kind;
-
-        /* Number of bytes to copy from the template object. */
-        uint32_t nbytes;
-
-        /*
-         * Template object to copy from, with the initial values of fields,
-         * fixed slots (undefined) and private data (NULL).
-         */
-        JSObject_Slots16 templateObject;
-    };
-
-    Entry entries[41];
-
-    void staticAsserts() {
-        JS_STATIC_ASSERT(gc::FINALIZE_OBJECT_LAST == gc::FINALIZE_OBJECT16_BACKGROUND);
-    }
-
-  public:
-
-    typedef int EntryIndex;
-
-    void reset() { PodZero(this); }
-
-    /*
-     * Get the entry index for the given lookup, return whether there was a hit
-     * on an existing entry.
-     */
-    inline bool lookupProto(Class *clasp, JSObject *proto, gc::AllocKind kind, EntryIndex *pentry);
-    inline bool lookupGlobal(Class *clasp, js::GlobalObject *global, gc::AllocKind kind, EntryIndex *pentry);
-    inline bool lookupType(Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, EntryIndex *pentry);
-
-    /* Return a new object from a cache hit produced by a lookup method. */
-    inline JSObject *newObjectFromHit(JSContext *cx, EntryIndex entry);
-
-    /* Fill an entry after a cache miss. */
-    inline void fillProto(EntryIndex entry, Class *clasp, JSObject *proto, gc::AllocKind kind, JSObject *obj);
-    inline void fillGlobal(EntryIndex entry, Class *clasp, js::GlobalObject *global, gc::AllocKind kind, JSObject *obj);
-    inline void fillType(EntryIndex entry, Class *clasp, js::types::TypeObject *type, gc::AllocKind kind, JSObject *obj);
-
-    /* Invalidate any entries which might produce an object with shape/proto. */
-    void invalidateEntriesForShape(JSContext *cx, Shape *shape, JSObject *proto);
-
-  private:
-    inline bool lookup(Class *clasp, gc::Cell *key, gc::AllocKind kind, EntryIndex *pentry);
-    inline void fill(EntryIndex entry, Class *clasp, gc::Cell *key, gc::AllocKind kind, JSObject *obj);
-    static inline void copyCachedToObject(JSObject *dst, JSObject *src);
-};
 
 } /* namespace js */
 
@@ -1208,15 +1132,12 @@ js_CreateThisForFunction(JSContext *cx, js::HandleObject callee, bool newType);
 extern JSObject *
 js_CreateThis(JSContext *cx, js::Class *clasp, JSObject *callee);
 
-extern jsid
-js_CheckForStringIndex(jsid id);
-
 /*
  * Find or create a property named by id in obj's scope, with the given getter
  * and setter, slot, attributes, and other members.
  */
 extern js::Shape *
-js_AddNativeProperty(JSContext *cx, JSObject *obj, jsid id,
+js_AddNativeProperty(JSContext *cx, js::HandleObject obj, jsid id,
                      JSPropertyOp getter, JSStrictPropertyOp setter, uint32_t slot,
                      unsigned attrs, unsigned flags, int shortid);
 
@@ -1249,7 +1170,7 @@ DefineNativeProperty(JSContext *cx, HandleObject obj, PropertyName *name, const 
                      PropertyOp getter, StrictPropertyOp setter, unsigned attrs,
                      unsigned flags, int shortid, unsigned defineHow = 0)
 {
-    return DefineNativeProperty(cx, obj, ATOM_TO_JSID(name), value, getter, setter, attrs, flags,
+    return DefineNativeProperty(cx, obj, NameToId(name), value, getter, setter, attrs, flags,
                                 shortid, defineHow);
 }
 
@@ -1264,7 +1185,7 @@ inline bool
 LookupPropertyWithFlags(JSContext *cx, JSObject *obj, PropertyName *name, unsigned flags,
                         JSObject **objp, JSProperty **propp)
 {
-    return LookupPropertyWithFlags(cx, obj, ATOM_TO_JSID(name), flags, objp, propp);
+    return LookupPropertyWithFlags(cx, obj, NameToId(name), flags, objp, propp);
 }
 
 /*
@@ -1311,7 +1232,7 @@ FindProperty(JSContext *cx, HandlePropertyName name, HandleObject scopeChain,
              JSObject **objp, JSObject **pobjp, JSProperty **propp);
 
 extern JSObject *
-FindIdentifierBase(JSContext *cx, JSObject *scopeChain, PropertyName *name);
+FindIdentifierBase(JSContext *cx, HandleObject scopeChain, HandlePropertyName name);
 
 }
 
@@ -1343,7 +1264,7 @@ GetPropertyHelper(JSContext *cx, HandleObject obj, jsid id, uint32_t getHow, Val
 inline bool
 GetPropertyHelper(JSContext *cx, HandleObject obj, PropertyName *name, uint32_t getHow, Value *vp)
 {
-    return GetPropertyHelper(cx, obj, ATOM_TO_JSID(name), getHow, vp);
+    return GetPropertyHelper(cx, obj, NameToId(name), getHow, vp);
 }
 
 bool
@@ -1365,7 +1286,7 @@ namespace js {
 inline bool
 GetMethod(JSContext *cx, HandleObject obj, PropertyName *name, unsigned getHow, Value *vp)
 {
-    return js_GetMethod(cx, obj, ATOM_TO_JSID(name), getHow, vp);
+    return js_GetMethod(cx, obj, NameToId(name), getHow, vp);
 }
 
 } /* namespace js */
@@ -1374,16 +1295,15 @@ namespace js {
 
 /*
  * If obj has an already-resolved data property for id, return true and
- * store the property value in *vp. This helper assumes the caller has already
- * called js_CheckForStringIndex.
+ * store the property value in *vp.
  */
 extern bool
 HasDataProperty(JSContext *cx, HandleObject obj, jsid id, Value *vp);
 
 inline bool
-HasDataProperty(JSContext *cx, HandleObject obj, JSAtom *atom, Value *vp)
+HasDataProperty(JSContext *cx, HandleObject obj, PropertyName *name, Value *vp)
 {
-    return HasDataProperty(cx, obj, js_CheckForStringIndex(ATOM_TO_JSID(atom)), vp);
+    return HasDataProperty(cx, obj, NameToId(name), vp);
 }
 
 extern JSBool
@@ -1467,7 +1387,7 @@ js_GetClassPrototype(JSContext *cx, JSObject *scope, JSProtoKey protoKey,
 namespace js {
 
 extern bool
-SetProto(JSContext *cx, JSObject *obj, JSObject *proto, bool checkForCycles);
+SetProto(JSContext *cx, HandleObject obj, HandleObject proto, bool checkForCycles);
 
 extern JSString *
 obj_toStringHelper(JSContext *cx, JSObject *obj);
@@ -1506,6 +1426,9 @@ InformalValueTypeName(const Value &v);
 
 inline void
 DestroyIdArray(FreeOp *fop, JSIdArray *ida);
+
+extern bool
+GetFirstArgumentAsObject(JSContext *cx, unsigned argc, Value *vp, const char *method, JSObject **objp);
 
 /* Helpers for throwing. These always return false. */
 extern bool

@@ -50,7 +50,6 @@ LIBXUL_LIBRARY = 1
   
 CMMSRCS = nsAccessNodeWrap.mm \
           nsDocAccessibleWrap.mm \
-          nsRootAccessibleWrap.mm \
           nsAccessibleWrap.mm \
           mozAccessible.mm \
           mozDocAccessible.mm \
@@ -58,6 +57,7 @@ CMMSRCS = nsAccessNodeWrap.mm \
           mozTextAccessible.mm \
           mozHTMLAccessible.mm \
           MacUtils.mm \
+          RootAccessibleWrap.mm \
           $(NULL)
 
 
@@ -67,20 +67,17 @@ EXPORTS = \
   nsTextAccessibleWrap.h \
   nsAccessibleWrap.h \
   nsDocAccessibleWrap.h \
-  nsRootAccessibleWrap.h \
   nsXULMenuAccessibleWrap.h \
   nsXULListboxAccessibleWrap.h \
   nsXULTreeGridAccessibleWrap.h \
   nsHyperTextAccessibleWrap.h \
   nsHTMLImageAccessibleWrap.h \
   nsHTMLTableAccessibleWrap.h \
-  nsApplicationAccessibleWrap.h \
   mozDocAccessible.h \
   mozAccessible.h \
   mozAccessibleProtocol.h \
   mozActionElements.h \
   mozTextAccessible.h \
-  nsRoleMap.h \
   $(NULL)
 
 # we don't want the shared lib, but we want to force the creation of a static lib.

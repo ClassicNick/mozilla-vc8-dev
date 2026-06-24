@@ -79,6 +79,7 @@
 
 #include "vm/GlobalObject.h"
 #include "vm/MethodGuard.h"
+#include "vm/NumericConversions.h"
 #include "vm/StringBuffer.h"
 
 #include "jsatominlines.h"
@@ -1025,7 +1026,7 @@ js_InitNumberClass(JSContext *cx, JSObject *obj)
     numberProto->asNumber().setPrimitiveValue(0);
 
     RootedVarFunction ctor(cx);
-    ctor = global->createConstructor(cx, Number, CLASS_ATOM(cx, Number), 1);
+    ctor = global->createConstructor(cx, Number, CLASS_NAME(cx, Number), 1);
     if (!ctor)
         return NULL;
 
@@ -1043,10 +1044,10 @@ js_InitNumberClass(JSContext *cx, JSObject *obj)
         return NULL;
 
     /* ES5 15.1.1.1, 15.1.1.2 */
-    if (!DefineNativeProperty(cx, global, ATOM_TO_JSID(cx->runtime->atomState.NaNAtom),
+    if (!DefineNativeProperty(cx, global, NameToId(cx->runtime->atomState.NaNAtom),
                               cx->runtime->NaNValue, JS_PropertyStub, JS_StrictPropertyStub,
                               JSPROP_PERMANENT | JSPROP_READONLY, 0, 0) ||
-        !DefineNativeProperty(cx, global, ATOM_TO_JSID(cx->runtime->atomState.InfinityAtom),
+        !DefineNativeProperty(cx, global, NameToId(cx->runtime->atomState.InfinityAtom),
                               cx->runtime->positiveInfinityValue,
                               JS_PropertyStub, JS_StrictPropertyStub,
                               JSPROP_PERMANENT | JSPROP_READONLY, 0, 0))
@@ -1227,6 +1228,25 @@ NumberValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb)
 JS_PUBLIC_API(bool)
 ToNumberSlow(JSContext *cx, Value v, double *out)
 {
+#ifdef DEBUG
+    /*
+     * MSVC bizarrely miscompiles this, complaining about the first brace below
+     * being unmatched (!).  The error message points at both this opening brace
+     * and at the corresponding SkipRoot constructor.  The error seems to derive
+     * from the presence guard-object macros on the SkipRoot class/constructor,
+     * which seems well in the weeds for an unmatched-brace syntax error.
+     * Otherwise the problem is inscrutable, and I haven't found a workaround.
+     * So for now just disable it when compiling with MSVC -- not ideal, but at
+     * least Windows debug shell builds complete again.
+     */
+#ifndef _MSC_VER
+    {
+        SkipRoot skip(cx, &v);
+        MaybeCheckStackRoots(cx);
+    }
+#endif
+#endif
+
     JS_ASSERT(!v.isNumber());
     goto skip_int_double;
     for (;;) {
@@ -1274,7 +1294,7 @@ ToInt32Slow(JSContext *cx, const Value &v, int32_t *out)
         if (!ToNumberSlow(cx, v, &d))
             return false;
     }
-    *out = js_DoubleToECMAInt32(d);
+    *out = ToInt32(d);
     return true;
 }
 
@@ -1289,7 +1309,7 @@ ToUint32Slow(JSContext *cx, const Value &v, uint32_t *out)
         if (!ToNumberSlow(cx, v, &d))
             return false;
     }
-    *out = js_DoubleToECMAUint32(d);
+    *out = ToUint32(d);
     return true;
 }
 

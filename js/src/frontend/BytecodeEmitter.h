@@ -426,6 +426,8 @@ struct TreeContext {                /* tree context for semantic checks */
     };
 
     bool init(JSContext *cx, InitBehavior ib = USED_AS_TREE_CONTEXT) {
+        if (cx->hasRunOption(JSOPTION_STRICT_MODE))
+            flags |= TCF_STRICT_MODE_CODE;
         if (ib == USED_AS_CODE_GENERATOR)
             return true;
         return decls.init() && lexdeps.ensureMap(cx);
@@ -537,16 +539,16 @@ struct CGObjectList {
     CGObjectList() : length(0), lastbox(NULL) {}
 
     unsigned index(ObjectBox *objbox);
-    void finish(JSObjectArray *array);
+    void finish(ObjectArray *array);
 };
 
 class GCConstList {
     Vector<Value> list;
   public:
     GCConstList(JSContext *cx) : list(cx) {}
-    bool append(Value v) { return list.append(v); }
+    bool append(Value v) { JS_ASSERT_IF(v.isString(), v.toString()->isAtom()); return list.append(v); }
     size_t length() const { return list.length(); }
-    void finish(JSConstArray *array);
+    void finish(ConstArray *array);
 };
 
 struct GlobalScope {
@@ -1004,7 +1006,7 @@ JSBool
 FinishTakingSrcNotes(JSContext *cx, BytecodeEmitter *bce, jssrcnote *notes);
 
 void
-FinishTakingTryNotes(BytecodeEmitter *bce, JSTryNoteArray *array);
+FinishTakingTryNotes(BytecodeEmitter *bce, TryNoteArray *array);
 
 } /* namespace frontend */
 

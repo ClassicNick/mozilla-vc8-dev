@@ -143,7 +143,7 @@ ValuePropertyBearer(JSContext *cx, StackFrame *fp, const Value &v, int spindex)
     if (v.isObject())
         return &v.toObject();
 
-    GlobalObject &global = fp->scopeChain().global();
+    GlobalObject &global = fp->global();
 
     if (v.isString())
         return global.getOrCreateStringPrototype(cx);
@@ -233,8 +233,7 @@ GetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, Value *vp
             }
 
             if (obj->isTypedArray()) {
-                JSObject *tarray = TypedArray::getTypedArray(obj);
-                *vp = Int32Value(TypedArray::getLength(tarray));
+                *vp = Int32Value(TypedArray::getLength(obj));
                 return true;
             }
         }
@@ -256,8 +255,7 @@ GetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, Value *vp
     }
 
     RootObject objRoot(cx, &obj);
-
-    jsid id = ATOM_TO_JSID(name);
+    RootedVarId id(cx, NameToId(name));
 
     if (obj->getOps()->getProperty) {
         if (!GetPropertyGenericMaybeCallXML(cx, op, objRoot, id, vp))
@@ -288,7 +286,7 @@ SetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, const Val
         return false;
 
     JS_ASSERT_IF(*pc == JSOP_SETNAME || *pc == JSOP_SETGNAME, lval.isObject());
-    JS_ASSERT_IF(*pc == JSOP_SETGNAME, obj == &cx->fp()->scopeChain().global());
+    JS_ASSERT_IF(*pc == JSOP_SETGNAME, obj == &cx->fp()->global());
 
     PropertyCacheEntry *entry;
     JSObject *obj2;
@@ -341,7 +339,7 @@ SetPropertyOperation(JSContext *cx, jsbytecode *pc, const Value &lval, const Val
 
     RootObject objRoot(cx, &obj);
 
-    jsid id = ATOM_TO_JSID(name);
+    jsid id = NameToId(name);
     if (JS_LIKELY(!obj->getOps()->setProperty)) {
         unsigned defineHow = (op == JSOP_SETNAME)
                              ? DNP_CACHE_RESULT | DNP_UNQUALIFIED
@@ -384,7 +382,7 @@ NameOperation(JSContext *cx, jsbytecode *pc, Value *vp)
         return true;
     }
 
-    jsid id = ATOM_TO_JSID(name);
+    jsid id = NameToId(name);
 
     RootPropertyName nameRoot(cx, &name);
     RootObject objRoot(cx, &obj);
@@ -610,48 +608,48 @@ AddOperation(JSContext *cx, const Value &lhs, const Value &rhs, Value *res)
 }
 
 static JS_ALWAYS_INLINE bool
-SubOperation(JSContext *cx, const Value &lhs, const Value &rhs, Value *res)
+SubOperation(JSContext *cx, HandleValue lhs, HandleValue rhs, Value *res)
 {
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     double d = d1 - d2;
-    if (!res->setNumber(d) && !(lhs.isDouble() || rhs.isDouble()))
+    if (!res->setNumber(d) && !(lhs.value().isDouble() || rhs.value().isDouble()))
         types::TypeScript::MonitorOverflow(cx);
     return true;
 }
 
 static JS_ALWAYS_INLINE bool
-MulOperation(JSContext *cx, const Value &lhs, const Value &rhs, Value *res)
+MulOperation(JSContext *cx, HandleValue lhs, HandleValue rhs, Value *res)
 {
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     double d = d1 * d2;
-    if (!res->setNumber(d) && !(lhs.isDouble() || rhs.isDouble()))
+    if (!res->setNumber(d) && !(lhs.value().isDouble() || rhs.value().isDouble()))
         types::TypeScript::MonitorOverflow(cx);
     return true;
 }
 
 static JS_ALWAYS_INLINE bool
-DivOperation(JSContext *cx, const Value &lhs, const Value &rhs, Value *res)
+DivOperation(JSContext *cx, HandleValue lhs, HandleValue rhs, Value *res)
 {
     double d1, d2;
     if (!ToNumber(cx, lhs, &d1) || !ToNumber(cx, rhs, &d2))
         return false;
     res->setNumber(NumberDiv(d1, d2));
 
-    if (d2 == 0 || (res->isDouble() && !(lhs.isDouble() || rhs.isDouble())))
+    if (d2 == 0 || (res->isDouble() && !(lhs.value().isDouble() || rhs.value().isDouble())))
         types::TypeScript::MonitorOverflow(cx);
     return true;
 }
 
 static JS_ALWAYS_INLINE bool
-ModOperation(JSContext *cx, const Value &lhs, const Value &rhs, Value *res)
+ModOperation(JSContext *cx, HandleValue lhs, HandleValue rhs, Value *res)
 {
     int32_t l, r;
-    if (lhs.isInt32() && rhs.isInt32() &&
-        (l = lhs.toInt32()) >= 0 && (r = rhs.toInt32()) > 0) {
+    if (lhs.value().isInt32() && rhs.value().isInt32() &&
+        (l = lhs.value().toInt32()) >= 0 && (r = rhs.value().toInt32()) > 0) {
         int32_t mod = l % r;
         res->setInt32(mod);
         return true;
@@ -677,7 +675,7 @@ FetchElementId(JSContext *cx, JSObject *obj, const Value &idval, jsid &id, Value
         id = INT_TO_JSID(i_);
         return true;
     }
-    return !!js_InternNonIntElementId(cx, obj, idval, &id, vp);
+    return !!InternNonIntElementId(cx, obj, idval, &id, vp);
 }
 
 static JS_ALWAYS_INLINE bool
@@ -693,7 +691,7 @@ ToIdOperation(JSContext *cx, const Value &objval, const Value &idval, Value *res
         return false;
 
     jsid dummy;
-    if (!js_InternNonIntElementId(cx, obj, idval, &dummy, res))
+    if (!InternNonIntElementId(cx, obj, idval, &dummy, res))
         return false;
 
     if (!res->isInt32())
@@ -838,6 +836,7 @@ SetObjectElementOperation(JSContext *cx, JSObject *obj, jsid id, const Value &va
         if (lval.isInt32() && rval.isInt32()) {                               \
             *res = lval.toInt32() OP rval.toInt32();                          \
         } else {                                                              \
+            RootValue lvalRoot(cx, &lval), rvalRoot(cx, &rval);               \
             if (!ToPrimitive(cx, JSTYPE_NUMBER, &lval))                       \
                 return false;                                                 \
             if (!ToPrimitive(cx, JSTYPE_NUMBER, &rval))                       \
@@ -886,7 +885,7 @@ GuardFunApplySpeculation(JSContext *cx, FrameRegs &regs)
     if (regs.sp[-1].isMagic(JS_OPTIMIZED_ARGUMENTS)) {
         CallArgs args = CallArgsFromSp(GET_ARGC(regs.pc), regs.sp);
         if (!IsNativeFunction(args.calleev(), js_fun_apply)) {
-            if (!regs.fp()->script()->applySpeculationFailed(cx))
+            if (!JSScript::applySpeculationFailed(cx, regs.fp()->script()))
                 return false;
             args[1] = ObjectValue(regs.fp()->argsObj());
         }
