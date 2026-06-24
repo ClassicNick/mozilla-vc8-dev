@@ -7,7 +7,8 @@ import tempfile
 
 class DeviceManagerADB(DeviceManager):
 
-  def __init__(self, host = None, port = 20701, retrylimit = 5, packageName = None):
+  def __init__(self, host=None, port=20701, retrylimit=5, packageName=None,
+               adbPath='adb'):
     self.host = host
     self.port = port
     self.retrylimit = retrylimit
@@ -19,6 +20,9 @@ class DeviceManagerADB(DeviceManager):
     self.useZip = False
     self.packageName = None
     self.tempDir = None
+
+    # the path to adb, or 'adb' to assume that it's on the PATH
+    self.adbPath = adbPath
 
     if packageName:
       self.packageName = packageName
@@ -96,7 +100,7 @@ class DeviceManagerADB(DeviceManager):
       cmdline = envstr + "; " + cmdline
 
     # all output should be in stdout
-    proc = subprocess.Popen(["adb", "shell", cmdline],
+    proc = subprocess.Popen([self.adbPath, "shell", cmdline],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (stdout, stderr) = proc.communicate()
     outputfile.write(stdout.rstrip('\n'))
@@ -376,16 +380,21 @@ class DeviceManagerADB(DeviceManager):
 
   # external function
   # returns:
-  #  success: output from testagent
-  #  failure: None
-  def killProcess(self, appname):
+  #  success: True
+  #  failure: False
+  def killProcess(self, appname, forceKill=False):
     procs = self.getProcessList()
+    didKillProcess = False
     for (pid, name, user) in procs:
       if name == appname:
-        p = self.runCmdAs(["shell", "kill", pid])
-        return p.stdout.read()
+         args = ["shell", "kill"]
+         if forceKill:
+           args.append("-9")
+         args.append(pid)
+         p = self.runCmdAs(args)
+         didKillProcess = True
 
-    return None
+    return didKillProcess
 
   # external function
   # returns:
@@ -418,25 +427,26 @@ class DeviceManagerADB(DeviceManager):
       outerr = self.runCmd(["pull",  remoteFile, localFile]).communicate()
 
       # Now check stderr for errors
-      errl = outerr[1].splitlines()
-      if (len(errl) == 1):
-        if (((errl[0].find("Permission denied") != -1)
-          or (errl[0].find("does not exist") != -1))
-          and self.useRunAs):
-          # If we lack permissions to read but have run-as, then we should try
-          # to copy the file to a world-readable location first before attempting
-          # to pull it again.
-          remoteTmpFile = self.getTempDir() + "/" + os.path.basename(remoteFile)
-          self.checkCmdAs(["shell", "dd", "if=" + remoteFile, "of=" + remoteTmpFile])
-          self.checkCmdAs(["shell", "chmod", "777", remoteTmpFile])
-          self.runCmd(["pull",  remoteTmpFile, localFile]).stdout.read()
-          # Clean up temporary file
-          self.checkCmdAs(["shell", "rm", remoteTmpFile])
+      if outerr[1]:
+        errl = outerr[1].splitlines()
+        if (len(errl) == 1):
+          if (((errl[0].find("Permission denied") != -1)
+            or (errl[0].find("does not exist") != -1))
+            and self.useRunAs):
+            # If we lack permissions to read but have run-as, then we should try
+            # to copy the file to a world-readable location first before attempting
+            # to pull it again.
+            remoteTmpFile = self.getTempDir() + "/" + os.path.basename(remoteFile)
+            self.checkCmdAs(["shell", "dd", "if=" + remoteFile, "of=" + remoteTmpFile])
+            self.checkCmdAs(["shell", "chmod", "777", remoteTmpFile])
+            self.runCmd(["pull",  remoteTmpFile, localFile]).stdout.read()
+            # Clean up temporary file
+            self.checkCmdAs(["shell", "rm", remoteTmpFile])
 
       f = open(localFile)
       ret = f.read()
       f.close()
-      return ret;      
+      return ret
     except:
       return None
 
@@ -668,7 +678,7 @@ class DeviceManagerADB(DeviceManager):
     if (not self.haveRoot and self.useRunAs and args[0] == "shell" and args[1] != "run-as"):
       args.insert(1, "run-as")
       args.insert(2, self.packageName)
-    args.insert(0, "adb")
+    args.insert(0, self.adbPath)
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
   def runCmdAs(self, args):
@@ -683,7 +693,7 @@ class DeviceManagerADB(DeviceManager):
     if (not self.haveRoot and self.useRunAs and args[0] == "shell" and args[1] != "run-as"):
       args.insert(1, "run-as")
       args.insert(2, self.packageName)
-    args.insert(0, "adb")
+    args.insert(0, self.adbPath)
     return subprocess.check_call(args)
 
   def checkCmdAs(self, args):
@@ -709,6 +719,10 @@ class DeviceManagerADB(DeviceManager):
 
   def verifyADB(self):
     # Check to see if adb itself can be executed.
+    if self.adbPath != 'adb':
+      if not os.access(self.adbPath, os.X_OK):
+        raise DMError("invalid adb path, or adb not executable: %s", self.adbPath)
+
     try:
       self.checkCmd(["version"])
     except os.error, err:
@@ -768,7 +782,8 @@ class DeviceManagerADB(DeviceManager):
                                              "is unknown" in runAsOut):
         raise DMError("run-as failed sanity check")
 
-      self.checkCmd(["push", os.path.abspath(sys.argv[0]), tmpDir + "/tmpfile"])
+      tmpfile = tempfile.NamedTemporaryFile()
+      self.checkCmd(["push", tmpfile.name, tmpDir + "/tmpfile"])
       if self.useDDCopy:
         self.checkCmd(["shell", "run-as", self.packageName, "dd", "if=" + tmpDir + "/tmpfile", "of=" + devroot + "/sanity/tmpfile"])
       else:

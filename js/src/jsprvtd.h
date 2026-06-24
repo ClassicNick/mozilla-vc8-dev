@@ -316,6 +316,16 @@ typedef Handle<JSAtom*>            HandleAtom;
 typedef Handle<jsid>               HandleId;
 typedef Handle<Value>              HandleValue;
 
+enum XDRMode {
+    XDR_ENCODE,
+    XDR_DECODE
+};
+
+template <XDRMode mode>
+class XDRState;
+
+class FreeOp;
+
 } /* namespace js */
 
 namespace JSC {
@@ -378,7 +388,7 @@ typedef void
 
 /* called just before script destruction */
 typedef void
-(* JSDestroyScriptHook)(JSContext *cx,
+(* JSDestroyScriptHook)(JSFreeOp *fop,
                         JSScript  *script,
                         void      *callerdata);
 

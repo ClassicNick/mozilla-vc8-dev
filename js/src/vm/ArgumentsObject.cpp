@@ -45,6 +45,7 @@
 #include "vm/GlobalObject.h"
 #include "vm/MethodGuard.h"
 #include "vm/Stack.h"
+#include "vm/Xdr.h"
 
 #include "jsobjinlines.h"
 
@@ -56,12 +57,14 @@ using namespace js::gc;
 
 struct PutArg
 {
-    PutArg(JSCompartment *comp, HeapValue *dst) : dst(dst), compartment(comp) {}
-    HeapValue *dst;
+    PutArg(JSCompartment *comp, ArgumentsObject &argsobj)
+      : compartment(comp), argsobj(argsobj), dst(argsobj.data()->slots) {}
     JSCompartment *compartment;
-    bool operator()(unsigned, Value *src) {
-        JS_ASSERT(dst->isMagic(JS_ARGS_HOLE) || dst->isUndefined());
-        if (!dst->isMagic(JS_ARGS_HOLE))
+    ArgumentsObject &argsobj;
+    HeapValue *dst;
+    bool operator()(unsigned i, Value *src) {
+        JS_ASSERT(dst->isUndefined());
+        if (!argsobj.isElementDeleted(i))
             dst->set(compartment, *src);
         ++dst;
         return true;
@@ -75,7 +78,7 @@ js_PutArgsObject(StackFrame *fp)
     if (argsobj.isNormalArguments()) {
         JS_ASSERT(argsobj.maybeStackFrame() == fp);
         JSCompartment *comp = fp->scopeChain().compartment();
-        fp->forEachCanonicalActualArg(PutArg(comp, argsobj.data()->slots));
+        fp->forEachCanonicalActualArg(PutArg(comp, argsobj));
         argsobj.setStackFrame(NULL);
     } else {
         JS_ASSERT(!argsobj.maybeStackFrame());
@@ -108,14 +111,20 @@ ArgumentsObject::create(JSContext *cx, uint32_t argc, JSObject &callee)
     if (!emptyArgumentsShape)
         return NULL;
 
-    ArgumentsData *data = (ArgumentsData *)
-        cx->malloc_(offsetof(ArgumentsData, slots) + argc * sizeof(Value));
+    unsigned numDeletedWords = NumWordsForBitArrayOfLength(argc);
+    unsigned numBytes = offsetof(ArgumentsData, slots) +
+                        numDeletedWords * sizeof(size_t) +
+                        argc * sizeof(Value);
+
+    ArgumentsData *data = (ArgumentsData *)cx->malloc_(numBytes);
     if (!data)
         return NULL;
 
     data->callee.init(ObjectValue(callee));
     for (HeapValue *vp = data->slots; vp != data->slots + argc; vp++)
         vp->init(UndefinedValue());
+    data->deletedBits = (size_t *)(data->slots + argc);
+    ClearAllBitArrayElements(data->deletedBits, numDeletedWords);
 
     /* We have everything needed to fill in the object, so make the object. */
     JSObject *obj = JSObject::create(cx, FINALIZE_KIND, emptyArgumentsShape, type, NULL);
@@ -151,7 +160,7 @@ ArgumentsObject::create(JSContext *cx, StackFrame *fp)
      * to retrieve up-to-date parameter values.
      */
     if (argsobj->isStrictArguments())
-        fp->forEachCanonicalActualArg(PutArg(cx->compartment, argsobj->data()->slots));
+        fp->forEachCanonicalActualArg(PutArg(cx->compartment, *argsobj));
     else
         argsobj->setStackFrame(fp);
 
@@ -166,7 +175,7 @@ ArgumentsObject::createUnexpected(JSContext *cx, StackFrame *fp)
     if (!argsobj)
         return NULL;
 
-    fp->forEachCanonicalActualArg(PutArg(cx->compartment, argsobj->data()->slots));
+    fp->forEachCanonicalActualArg(PutArg(cx->compartment, *argsobj));
     return argsobj;
 }
 
@@ -176,8 +185,10 @@ args_delProperty(JSContext *cx, JSObject *obj, jsid id, Value *vp)
     ArgumentsObject &argsobj = obj->asArguments();
     if (JSID_IS_INT(id)) {
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength())
-            argsobj.setElement(arg, MagicValue(JS_ARGS_HOLE));
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg)) {
+            argsobj.setElement(arg, UndefinedValue());
+            argsobj.markElementDeleted(arg);
+        }
     } else if (JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom)) {
         argsobj.markLengthOverridden();
     } else if (JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom)) {
@@ -199,8 +210,7 @@ ArgGetter(JSContext *cx, JSObject *obj, jsid id, Value *vp)
          * prototype to point to another Arguments object with a bigger argc.
          */
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength()) {
-            JS_ASSERT(!argsobj.element(arg).isMagic(JS_ARGS_HOLE));
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg)) {
             if (StackFrame *fp = argsobj.maybeStackFrame())
                 *vp = fp->canonicalActualArg(arg);
             else
@@ -212,7 +222,7 @@ ArgGetter(JSContext *cx, JSObject *obj, jsid id, Value *vp)
     } else {
         JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom));
         const Value &v = argsobj.callee();
-        if (!v.isMagic(JS_ARGS_HOLE))
+        if (!v.isMagic(JS_OVERWRITTEN_CALLEE))
             *vp = v;
     }
     return true;
@@ -267,7 +277,7 @@ args_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags,
     unsigned attrs = JSPROP_SHARED | JSPROP_SHADOWABLE;
     if (JSID_IS_INT(id)) {
         uint32_t arg = uint32_t(JSID_TO_INT(id));
-        if (arg >= argsobj.initialLength() || argsobj.element(arg).isMagic(JS_ARGS_HOLE))
+        if (arg >= argsobj.initialLength() || argsobj.isElementDeleted(arg))
             return true;
 
         attrs |= JSPROP_ENUMERATE;
@@ -278,7 +288,7 @@ args_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags,
         if (!JSID_IS_ATOM(id, cx->runtime->atomState.calleeAtom))
             return true;
 
-        if (argsobj.callee().isMagic(JS_ARGS_HOLE))
+        if (argsobj.callee().isMagic(JS_OVERWRITTEN_CALLEE))
             return true;
     }
 
@@ -375,11 +385,8 @@ StrictArgGetter(JSContext *cx, JSObject *obj, jsid id, Value *vp)
          * prototype to point to another Arguments object with a bigger argc.
          */
         unsigned arg = unsigned(JSID_TO_INT(id));
-        if (arg < argsobj.initialLength()) {
-            const Value &v = argsobj.element(arg);
-            if (!v.isMagic(JS_ARGS_HOLE))
-                *vp = v;
-        }
+        if (arg < argsobj.initialLength() && !argsobj.isElementDeleted(arg))
+            *vp = argsobj.element(arg);
     } else {
         JS_ASSERT(JSID_IS_ATOM(id, cx->runtime->atomState.lengthAtom));
         if (!argsobj.hasOverriddenLength())
@@ -430,7 +437,7 @@ strictargs_resolve(JSContext *cx, JSObject *obj, jsid id, unsigned flags, JSObje
 
     if (JSID_IS_INT(id)) {
         uint32_t arg = uint32_t(JSID_TO_INT(id));
-        if (arg >= argsobj.initialLength() || argsobj.element(arg).isMagic(JS_ARGS_HOLE))
+        if (arg >= argsobj.initialLength() || argsobj.isElementDeleted(arg))
             return true;
 
         attrs |= JSPROP_ENUMERATE;
@@ -489,9 +496,9 @@ strictargs_enumerate(JSContext *cx, JSObject *obj)
 }
 
 static void
-args_finalize(JSContext *cx, JSObject *obj)
+args_finalize(FreeOp *fop, JSObject *obj)
 {
-    cx->free_(reinterpret_cast<void *>(obj->asArguments().data()));
+    fop->free_(reinterpret_cast<void *>(obj->asArguments().data()));
 }
 
 static void

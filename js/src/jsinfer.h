@@ -366,7 +366,7 @@ class TypeSet
 
     void print(JSContext *cx);
 
-    inline void sweep(JSContext *cx, JSCompartment *compartment);
+    inline void sweep(JSCompartment *compartment);
     inline size_t computedSizeOfExcludingThis();
 
     /* Whether this set contains a specific type. */
@@ -441,7 +441,8 @@ class TypeSet
     void addSetElement(JSContext *cx, JSScript *script, jsbytecode *pc,
                        TypeSet *objectTypes, TypeSet *valueTypes);
     void addCall(JSContext *cx, TypeCallsite *site);
-    void addArith(JSContext *cx, TypeSet *target, TypeSet *other = NULL);
+    void addArith(JSContext *cx, JSScript *script, jsbytecode *pc,
+                  TypeSet *target, TypeSet *other = NULL);
     void addTransformThis(JSContext *cx, JSScript *script, TypeSet *target);
     void addPropagateThis(JSContext *cx, JSScript *script, jsbytecode *pc,
                           Type type, TypeSet *types = NULL);
@@ -863,7 +864,7 @@ struct TypeObject : gc::Cell
     void print(JSContext *cx);
 
     inline void clearProperties();
-    inline void sweep(JSContext *cx);
+    inline void sweep(FreeOp *fop);
 
     inline size_t computedSizeOfExcludingThis();
 
@@ -874,7 +875,7 @@ struct TypeObject : gc::Cell
      * object pending deletion is released when weak references are sweeped
      * from all the compartment's type objects.
      */
-    void finalize(JSContext *cx, bool background) {}
+    void finalize(FreeOp *fop) {}
 
     static inline void writeBarrierPre(TypeObject *type);
     static inline void writeBarrierPost(TypeObject *type, void *addr);
@@ -907,6 +908,10 @@ typedef HashSet<ReadBarriered<TypeObject>, TypeObjectEntry, SystemAllocPolicy> T
 /* Whether to use a new type object when calling 'new' at script/pc. */
 bool
 UseNewType(JSContext *cx, JSScript *script, jsbytecode *pc);
+
+/* Whether to use a new type object for an initializer opcode at script/pc. */
+bool
+UseNewTypeForInitializer(JSContext *cx, JSScript *script, jsbytecode *pc);
 
 /*
  * Whether Array.prototype, or an object on its proto chain, has an
@@ -1079,7 +1084,7 @@ class TypeScript
     static inline TypeObject *StandardType(JSContext *cx, JSScript *script, JSProtoKey kind);
 
     /* Get a type object for an allocation site in this script. */
-    static inline TypeObject *InitObject(JSContext *cx, JSScript *script, const jsbytecode *pc, JSProtoKey kind);
+    static inline TypeObject *InitObject(JSContext *cx, JSScript *script, jsbytecode *pc, JSProtoKey kind);
 
     /*
      * Monitor a bytecode pushing a value which is not accounted for by the
@@ -1116,7 +1121,7 @@ class TypeScript
     static inline void SetArgument(JSContext *cx, JSScript *script, unsigned arg, Type type);
     static inline void SetArgument(JSContext *cx, JSScript *script, unsigned arg, const js::Value &value);
 
-    static void Sweep(JSContext *cx, JSScript *script);
+    static void Sweep(FreeOp *fop, JSScript *script);
     inline void trace(JSTracer *trc);
     void destroy();
 };
@@ -1239,11 +1244,12 @@ struct TypeCompartment
     /* Make an object for an allocation site. */
     TypeObject *newAllocationSiteTypeObject(JSContext *cx, const AllocationSiteKey &key);
 
-    void nukeTypes(JSContext *cx);
-    void processPendingRecompiles(JSContext *cx);
+    void nukeTypes(FreeOp *fop);
+    void processPendingRecompiles(FreeOp *fop);
 
     /* Mark all types as needing destruction once inference has 'finished'. */
     void setPendingNukeTypes(JSContext *cx);
+    void setPendingNukeTypesNoReport();
 
     /* Mark a script as needing recompilation once inference has finished. */
     void addPendingRecompile(JSContext *cx, const RecompileInfo &info);
@@ -1256,7 +1262,7 @@ struct TypeCompartment
     /* Mark any type set containing obj as having a generic object type. */
     void markSetsUnknown(JSContext *cx, TypeObject *obj);
 
-    void sweep(JSContext *cx);
+    void sweep(FreeOp *fop);
     void finalizeObjects();
 };
 

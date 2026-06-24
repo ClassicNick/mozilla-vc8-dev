@@ -400,7 +400,7 @@ ProxyHandler::objectClassIs(JSObject *proxy, ESClassValue classValue, JSContext 
 }
 
 void
-ProxyHandler::finalize(JSContext *cx, JSObject *proxy)
+ProxyHandler::finalize(JSFreeOp *fop, JSObject *proxy)
 {
 }
 
@@ -1302,11 +1302,11 @@ proxy_Fix(JSContext *cx, JSObject *obj, bool *fixed, AutoIdVector *props)
 }
 
 static void
-proxy_Finalize(JSContext *cx, JSObject *obj)
+proxy_Finalize(FreeOp *fop, JSObject *obj)
 {
     JS_ASSERT(obj->isProxy());
     if (!obj->getSlot(JSSLOT_PROXY_HANDLER).isUndefined())
-        GetProxyHandler(obj)->finalize(cx, obj);
+        GetProxyHandler(obj)->finalize(fop, obj);
 }
 
 static JSBool
@@ -1686,10 +1686,6 @@ callable_Call(JSContext *cx, unsigned argc, Value *vp)
 JSBool
 callable_Construct(JSContext *cx, unsigned argc, Value *vp)
 {
-    JSObject *thisobj = js_CreateThis(cx, &JS_CALLEE(cx, vp).toObject());
-    if (!thisobj)
-        return false;
-
     JSObject *callable = &vp[0].toObject();
     JS_ASSERT(callable->getClass() == &CallableObjectClass);
     Value fval = callable->getSlot(JSSLOT_CALLABLE_CONSTRUCT);
@@ -1729,7 +1725,7 @@ callable_Construct(JSContext *cx, unsigned argc, Value *vp)
         return true;
     }
 
-    bool ok = Invoke(cx, ObjectValue(*thisobj), fval, argc, vp + 2, vp);
+    bool ok = Invoke(cx, UndefinedValue(), fval, argc, vp + 2, vp);
     return ok;
 }
 
