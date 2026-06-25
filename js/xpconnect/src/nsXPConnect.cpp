@@ -99,12 +99,13 @@ nsXPConnect::~nsXPConnect()
         // Create our own JSContext rather than an XPCCallContext, since
         // otherwise we will create a new safe JS context and attach a
         // components object that won't get GCed.
-        // And do this before calling CleanupAllThreads, so that we
-        // don't create an extra xpcPerThreadData.
         cx = JS_NewContext(mRuntime->GetJSRuntime(), 8192);
     }
 
-    XPCPerThreadData::CleanupAllThreads();
+    // This needs to happen exactly here, otherwise we leak at shutdown. I don't
+    // know why. :-(
+    mRuntime->DestroyJSContextStack();
+
     mShuttingDown = true;
     if (cx) {
         // XXX Call even if |mRuntime| null?
@@ -543,28 +544,33 @@ nsXPConnect::FinishTraverse()
     return NS_OK;
 }
 
+class nsXPConnectParticipant: public nsCycleCollectionParticipant
+{
+public:
+    static NS_METHOD RootImpl(void *n)
+    {
+        return NS_OK;
+    }
+    static NS_METHOD UnlinkImpl(void *n)
+    {
+        return NS_OK;
+    }
+    static NS_METHOD UnrootImpl(void *n)
+    {
+        return NS_OK;
+    }
+    static NS_METHOD TraverseImpl(nsXPConnectParticipant *that, void *n,
+                                  nsCycleCollectionTraversalCallback &cb);
+};
+
+static CCParticipantVTable<nsXPConnectParticipant>::Type XPConnect_cycleCollectorGlobal = {
+  NS_IMPL_CYCLE_COLLECTION_NATIVE_VTABLE(nsXPConnectParticipant)
+};
+
 nsCycleCollectionParticipant *
 nsXPConnect::GetParticipant()
 {
-    return this;
-}
-
-NS_IMETHODIMP
-nsXPConnect::Root(void *p)
-{
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPConnect::Unlink(void *p)
-{
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPConnect::Unroot(void *p)
-{
-    return NS_OK;
+    return XPConnect_cycleCollectorGlobal.GetParticipant();
 }
 
 JSBool
@@ -855,8 +861,9 @@ NoteGCThingXPCOMChildren(js::Class *clasp, JSObject *obj,
     }
 }
 
-NS_IMETHODIMP
-nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
+NS_METHOD
+nsXPConnectParticipant::TraverseImpl(nsXPConnectParticipant *that, void *p,
+                                     nsCycleCollectionTraversalCallback &cb)
 {
     JSGCTraceKind traceKind = js_GetGCThingTraceKind(p);
     JSObject *obj = nsnull;
@@ -897,7 +904,8 @@ nsXPConnect::Traverse(void *p, nsCycleCollectionTraversalCallback &cb)
     if (isMarked && !cb.WantAllTraces())
         return NS_OK;
 
-    NoteGCThingJSChildren(GetRuntime()->GetJSRuntime(), p, traceKind, cb);
+    NoteGCThingJSChildren(nsXPConnect::GetRuntimeInstance()->GetJSRuntime(),
+                          p, traceKind, cb);
 
     if (traceKind != JSTRACE_OBJECT || dontTraverse)
         return NS_OK;
@@ -924,11 +932,11 @@ nsXPConnect::GetOutstandingRequests(JSContext* cx)
 class JSContextParticipant : public nsCycleCollectionParticipant
 {
 public:
-    NS_IMETHOD Root(void *n)
+    static NS_METHOD RootImpl(void *n)
     {
         return NS_OK;
     }
-    NS_IMETHOD Unlink(void *n)
+    static NS_METHOD UnlinkImpl(void *n)
     {
         JSContext *cx = static_cast<JSContext*>(n);
         JSAutoRequest ar(cx);
@@ -936,11 +944,12 @@ public:
         JS_SetGlobalObject(cx, NULL);
         return NS_OK;
     }
-    NS_IMETHOD Unroot(void *n)
+    static NS_METHOD UnrootImpl(void *n)
     {
         return NS_OK;
     }
-    NS_IMETHODIMP Traverse(void *n, nsCycleCollectionTraversalCallback &cb)
+    static NS_METHOD TraverseImpl(JSContextParticipant *that, void *n,
+                                  nsCycleCollectionTraversalCallback &cb)
     {
         JSContext *cx = static_cast<JSContext*>(n);
 
@@ -959,20 +968,22 @@ public:
     }
 };
 
-static JSContextParticipant JSContext_cycleCollectorGlobal;
+static CCParticipantVTable<JSContextParticipant>::Type JSContext_cycleCollectorGlobal = {
+  NS_IMPL_CYCLE_COLLECTION_NATIVE_VTABLE(JSContextParticipant)
+};
 
 // static
 nsCycleCollectionParticipant*
 nsXPConnect::JSContextParticipant()
 {
-    return &JSContext_cycleCollectorGlobal;
+    return JSContext_cycleCollectorGlobal.GetParticipant();
 }
 
 NS_IMETHODIMP_(void)
 nsXPConnect::NoteJSContext(JSContext *aJSContext,
                            nsCycleCollectionTraversalCallback &aCb)
 {
-    aCb.NoteNativeChild(aJSContext, &JSContext_cycleCollectorGlobal);
+    aCb.NoteNativeChild(aJSContext, JSContext_cycleCollectorGlobal.GetParticipant());
 }
 
 
@@ -1013,25 +1024,23 @@ nsXPConnect::InitClasses(JSContext * aJSContext, JSObject * aGlobalJSObj)
     if (!nsXPCComponents::AttachComponentsObject(ccx, scope, aGlobalJSObj))
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
-    if (XPCPerThreadData::IsMainThread(ccx)) {
-        if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, aGlobalJSObj))
-            return UnexpectedFailure(NS_ERROR_FAILURE);
-    }
+    if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, aGlobalJSObj))
+        return UnexpectedFailure(NS_ERROR_FAILURE);
 
     return NS_OK;
 }
 
 static bool
-CreateNewCompartment(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
-                     xpc::CompartmentPrivate *priv, JSObject **global,
-                     JSCompartment **compartment)
+CreateNewGlobal(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
+                xpc::CompartmentPrivate *priv, JSObject **global,
+                JSCompartment **compartment)
 {
     // We take ownership of |priv|. Ensure that either we free it in the case
     // of failure or give ownership to the compartment in case of success (in
     // that case it will be free'd in CompartmentCallback during GC).
     nsAutoPtr<xpc::CompartmentPrivate> priv_holder(priv);
     JSObject *tempGlobal =
-        JS_NewCompartmentAndGlobalObject(cx, clasp, nsJSPrincipals::get(principal));
+        JS_NewGlobalObject(cx, clasp, nsJSPrincipals::get(principal));
 
     if (!tempGlobal)
         return false;
@@ -1129,7 +1138,7 @@ xpc_CreateGlobalObject(JSContext *cx, JSClass *clasp,
     NS_ABORT_IF_FALSE(NS_IsMainThread(), "using a principal off the main thread?");
 
     xpc::CompartmentPrivate *priv = new xpc::CompartmentPrivate(wantXrays);
-    if (!CreateNewCompartment(cx, clasp, principal, priv, global, compartment))
+    if (!CreateNewGlobal(cx, clasp, principal, priv, global, compartment))
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
     XPCCompartmentSet& set = nsXPConnect::GetRuntimeInstance()->GetCompartmentSet();
@@ -1203,10 +1212,8 @@ nsXPConnect::InitClassesWithNewWrappedGlobal(JSContext * aJSContext,
         if (!nsXPCComponents::AttachComponentsObject(ccx, wrappedGlobal->GetScope(), global))
             return UnexpectedFailure(NS_ERROR_FAILURE);
 
-        if (XPCPerThreadData::IsMainThread(ccx)) {
-            if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, global))
-                return UnexpectedFailure(NS_ERROR_FAILURE);
-        }
+        if (!XPCNativeWrapper::AttachNewConstructorObject(ccx, global))
+            return UnexpectedFailure(NS_ERROR_FAILURE);
     }
 
     // Stuff coming through this path always ends up as a DOM global.
@@ -1848,39 +1855,7 @@ nsXPConnect::GetCurrentNativeCallContext(nsAXPCNativeCallContext * *aCurrentNati
 {
     NS_ASSERTION(aCurrentNativeCallContext, "bad param");
 
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-    if (data) {
-        *aCurrentNativeCallContext = data->GetCallContext();
-        return NS_OK;
-    }
-    //else...
-    *aCurrentNativeCallContext = nsnull;
-    return UnexpectedFailure(NS_ERROR_FAILURE);
-}
-
-/* attribute nsIException PendingException; */
-NS_IMETHODIMP
-nsXPConnect::GetPendingException(nsIException * *aPendingException)
-{
-    NS_ASSERTION(aPendingException, "bad param");
-
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-    if (!data) {
-        *aPendingException = nsnull;
-        return UnexpectedFailure(NS_ERROR_FAILURE);
-    }
-
-    return data->GetException(aPendingException);
-}
-
-NS_IMETHODIMP
-nsXPConnect::SetPendingException(nsIException * aPendingException)
-{
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-    if (!data)
-        return UnexpectedFailure(NS_ERROR_FAILURE);
-
-    data->SetException(aPendingException);
+    *aCurrentNativeCallContext = XPCJSRuntime::Get()->GetCallContext();
     return NS_OK;
 }
 
@@ -2030,33 +2005,29 @@ NS_IMETHODIMP
 nsXPConnect::ReleaseJSContext(JSContext * aJSContext, bool noGC)
 {
     NS_ASSERTION(aJSContext, "bad param");
-    XPCPerThreadData* tls = XPCPerThreadData::GetData(aJSContext);
-    if (tls) {
-        XPCCallContext* ccx = nsnull;
-        for (XPCCallContext* cur = tls->GetCallContext();
-             cur;
-             cur = cur->GetPrevCallContext()) {
-            if (cur->GetJSContext() == aJSContext) {
-                ccx = cur;
-                // Keep looping to find the deepest matching call context.
-            }
+    XPCCallContext* ccx = nsnull;
+    for (XPCCallContext* cur = GetRuntime()->GetCallContext();
+         cur;
+         cur = cur->GetPrevCallContext()) {
+        if (cur->GetJSContext() == aJSContext) {
+            ccx = cur;
+            // Keep looping to find the deepest matching call context.
         }
-
-        if (ccx) {
-#ifdef DEBUG_xpc_hacker
-            printf("!xpc - deferring destruction of JSContext @ %p\n",
-                   (void *)aJSContext);
-#endif
-            ccx->SetDestroyJSContextInDestructor(true);
-            return NS_OK;
-        }
-        // else continue on and synchronously destroy the JSContext ...
-
-        NS_ASSERTION(!tls->GetJSContextStack() ||
-                     !tls->GetJSContextStack()->
-                     DEBUG_StackHasJSContext(aJSContext),
-                     "JSContext still in threadjscontextstack!");
     }
+
+    if (ccx) {
+#ifdef DEBUG_xpc_hacker
+        printf("!xpc - deferring destruction of JSContext @ %p\n",
+               (void *)aJSContext);
+#endif
+        ccx->SetDestroyJSContextInDestructor(true);
+        return NS_OK;
+    }
+    // else continue on and synchronously destroy the JSContext ...
+
+    NS_ASSERTION(!XPCJSRuntime::Get()->GetJSContextStack()->
+                 DEBUG_StackHasJSContext(aJSContext),
+                 "JSContext still in threadjscontextstack!");
 
     if (noGC)
         JS_DestroyContextNoGC(aJSContext);
@@ -2343,14 +2314,7 @@ nsXPConnect::GetCount(PRInt32 *aCount)
 {
     MOZ_ASSERT(aCount);
 
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-
-    if (!data) {
-        *aCount = 0;
-        return NS_ERROR_FAILURE;
-    }
-
-    *aCount = data->GetJSContextStack()->Count();
+    *aCount = XPCJSRuntime::Get()->GetJSContextStack()->Count();
     return NS_OK;
 }
 
@@ -2360,14 +2324,7 @@ nsXPConnect::Peek(JSContext * *_retval)
 {
     MOZ_ASSERT(_retval);
 
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-
-    if (!data) {
-        *_retval = nsnull;
-        return NS_ERROR_FAILURE;
-    }
-
-    *_retval = xpc_UnmarkGrayContext(data->GetJSContextStack()->Peek());
+    *_retval = xpc_UnmarkGrayContext(XPCJSRuntime::Get()->GetJSContextStack()->Peek());
     return NS_OK;
 }
 
@@ -2453,15 +2410,7 @@ xpc_ActivateDebugMode()
 NS_IMETHODIMP
 nsXPConnect::Pop(JSContext * *_retval)
 {
-    XPCPerThreadData* data = XPCPerThreadData::GetData(nsnull);
-
-    if (!data) {
-        if (_retval)
-            *_retval = NULL;
-        return NS_ERROR_FAILURE;
-    }
-
-    JSContext *cx = data->GetJSContextStack()->Pop();
+    JSContext *cx = XPCJSRuntime::Get()->GetJSContextStack()->Pop();
     if (_retval)
         *_retval = xpc_UnmarkGrayContext(cx);
     return NS_OK;
@@ -2471,13 +2420,9 @@ nsXPConnect::Pop(JSContext * *_retval)
 NS_IMETHODIMP
 nsXPConnect::Push(JSContext * cx)
 {
-    XPCPerThreadData* data = XPCPerThreadData::GetData(cx);
-
-    if (!data)
-        return NS_ERROR_FAILURE;
-
      if (gDebugMode != gDesiredDebugMode && NS_IsMainThread()) {
-         const InfallibleTArray<XPCJSContextInfo>* stack = data->GetJSContextStack()->GetStack();
+         const InfallibleTArray<XPCJSContextInfo>* stack =
+             XPCJSRuntime::Get()->GetJSContextStack()->GetStack();
          if (!gDesiredDebugMode) {
              /* Turn off debug mode immediately, even if JS code is currently running */
              CheckForDebugMode(mRuntime->GetJSRuntime());
@@ -2495,20 +2440,14 @@ nsXPConnect::Push(JSContext * cx)
          }
      }
 
-     return data->GetJSContextStack()->Push(cx) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+     return XPCJSRuntime::Get()->GetJSContextStack()->Push(cx) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
 }
 
 /* virtual */
 JSContext*
 nsXPConnect::GetSafeJSContext()
 {
-    XPCPerThreadData *data = XPCPerThreadData::GetData(NULL);
-
-    if (!data) {
-        return NULL;
-    }
-
-    return data->GetJSContextStack()->GetSafeJSContext();
+    return XPCJSRuntime::Get()->GetJSContextStack()->GetSafeJSContext();
 }
 
 nsIPrincipal*
@@ -2576,7 +2515,7 @@ nsXPConnect::HoldObject(JSContext *aJSContext, JSObject *aObject,
 NS_IMETHODIMP_(void)
 nsXPConnect::GetCaller(JSContext **aJSContext, JSObject **aObj)
 {
-    XPCCallContext *ccx = XPCPerThreadData::GetData(nsnull)->GetCallContext();
+    XPCCallContext *ccx = XPCJSRuntime::Get()->GetCallContext();
     *aJSContext = ccx->GetJSContext();
 
     // Set to the caller in XPC_WN_Helper_{Call,Construct}
