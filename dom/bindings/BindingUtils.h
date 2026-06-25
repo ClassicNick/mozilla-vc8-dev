@@ -63,7 +63,7 @@ IsDOMClass(const JSClass* clasp)
 inline bool
 IsDOMClass(const js::Class* clasp)
 {
-  return clasp->flags & JSCLASS_IS_DOMJSCLASS;
+  return IsDOMClass(Jsvalify(clasp));
 }
 
 template <class T>
@@ -211,6 +211,8 @@ TraceProtoOrIfaceCache(JSTracer* trc, JSObject* obj)
 {
   MOZ_ASSERT(js::GetObjectClass(obj)->flags & JSCLASS_DOM_GLOBAL);
 
+  if (!HasProtoOrIfaceArray(obj))
+    return;
   JSObject** protoOrIfaceArray = GetProtoOrIfaceArray(obj);
   for (size_t i = 0; i < kProtoOrIfaceCacheCount; ++i) {
     JSObject* proto = protoOrIfaceArray[i];
@@ -331,12 +333,48 @@ WrapNewBindingObject(JSContext* cx, JSObject* scope, T* value, JS::Value* vp)
 }
 
 // Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
-template <template <class> class SmartPtr, class T>
+template <template <typename> class SmartPtr, class T>
 inline bool
 WrapNewBindingObject(JSContext* cx, JSObject* scope, const SmartPtr<T>& value,
                      JS::Value* vp)
 {
   return WrapNewBindingObject(cx, scope, value.get(), vp);
+}
+
+template <class T>
+inline bool
+WrapNewBindingNonWrapperCachedObject(JSContext* cx, JSObject* scope, T* value,
+                                     JS::Value* vp)
+{
+  // We try to wrap in the compartment of the underlying object of "scope"
+  JSObject* obj;
+  {
+    // scope for the JSAutoEnterCompartment so that we restore the
+    // compartment before we call JS_WrapValue.
+    JSAutoEnterCompartment ac;
+    if (js::IsWrapper(scope)) {
+      scope = xpc::Unwrap(cx, scope, false);
+      if (!scope || !ac.enter(cx, scope)) {
+        return false;
+      }
+    }
+
+    obj = value->WrapObject(cx, scope);
+  }
+
+  // We can end up here in all sorts of compartments, per above.  Make
+  // sure to JS_WrapValue!
+  *vp = JS::ObjectValue(*obj);
+  return JS_WrapValue(cx, vp);
+}
+
+// Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
+template <template <typename> class SmartPtr, typename T>
+inline bool
+WrapNewBindingNonWrapperCachedObject(JSContext* cx, JSObject* scope,
+                                     const SmartPtr<T>& value, JS::Value* vp)
+{
+  return WrapNewBindingNonWrapperCachedObject(cx, scope, value.get(), vp);
 }
 
 /**
@@ -362,7 +400,7 @@ HandleNewBindingWrappingFailure(JSContext* cx, JSObject* scope, T* value,
 }
 
 // Helper for smart pointers (nsAutoPtr/nsRefPtr/nsCOMPtr).
-template <template <class> class SmartPtr, class T>
+template <template <typename> class SmartPtr, class T>
 MOZ_ALWAYS_INLINE bool
 HandleNewBindingWrappingFailure(JSContext* cx, JSObject* scope,
                                 const SmartPtr<T>& value, JS::Value* vp)
@@ -439,7 +477,7 @@ struct ParentObject {
     mWrapperCache(GetWrapperCache(aObject))
   {}
 
-  template<class T, template<class> class SmartPtr>
+  template<class T, template<typename> class SmartPtr>
   ParentObject(const SmartPtr<T>& aObject) :
     mObject(aObject.get()),
     mWrapperCache(GetWrapperCache(aObject.get()))
@@ -464,13 +502,13 @@ template<class T>
 inline nsISupports*
 GetParentPointer(T* aObject)
 {
-  return aObject;
+  return ToSupports(aObject);
 }
 
 inline nsISupports*
 GetParentPointer(const ParentObject& aObject)
 {
-  return aObject.mObject;
+  return ToSupports(aObject.mObject);
 }
 
 // Only set allowNativeWrapper to false if you really know you need it, if in

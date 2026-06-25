@@ -33,6 +33,7 @@
 #include "nsIConsoleService.h"
 #include "base/compiler_specific.h"
 #include "NullHttpTransaction.h"
+#include "mozilla/Attributes.h"
 
 namespace mozilla { namespace net {
  
@@ -712,8 +713,7 @@ nsHttpChannel::SetupTransaction()
     // does not count here). also, figure out what version we should be speaking.
     nsCAutoString buf, path;
     nsCString* requestURI;
-    if (mConnectionInfo->UsingSSL() ||
-        mConnectionInfo->ShouldForceConnectMethod() ||
+    if (mConnectionInfo->UsingConnect() ||
         !mConnectionInfo->UsingHttpProxy()) {
         rv = mURI->GetPath(path);
         if (NS_FAILED(rv)) return rv;
@@ -4633,9 +4633,7 @@ nsHttpChannel::GetIsSSL(bool *aIsSSL)
 NS_IMETHODIMP
 nsHttpChannel::GetProxyMethodIsConnect(bool *aProxyMethodIsConnect)
 {
-    *aProxyMethodIsConnect =
-        (mConnectionInfo->UsingHttpProxy() && mConnectionInfo->UsingSSL()) ||
-        mConnectionInfo->ShouldForceConnectMethod();
+    *aProxyMethodIsConnect = mConnectionInfo->UsingConnect();
     return NS_OK;
 }
 
@@ -5194,8 +5192,8 @@ nsHttpChannel::SetOfflineCacheToken(nsISupports *token)
     return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-class nsHttpChannelCacheKey : public nsISupportsPRUint32,
-                              public nsISupportsCString
+class nsHttpChannelCacheKey MOZ_FINAL : public nsISupportsPRUint32,
+                                        public nsISupportsCString
 {
     NS_DECL_ISUPPORTS
 

@@ -542,9 +542,6 @@ OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 uuid version winspool comdlg32 im
 else
 OS_LIBS += $(call EXPAND_LIBNAME,shell32 ole32 uuid version winspool comdlg32 imm32 winmm wsock32 msimg32 shlwapi psapi ws2_32 dbghelp rasapi32 rasdlg iphlpapi uxtheme setupapi secur32 sensorsapi portabledeviceguids windowscodecs wininet)
 endif
-ifdef MOZ_CRASHREPORTER
-OS_LIBS += $(call EXPAND_LIBNAME,wininet)
-endif
 ifdef ACCESSIBILITY
 OS_LIBS += $(call EXPAND_LIBNAME,oleacc)
 endif
@@ -559,6 +556,7 @@ EXTRA_DSO_LDOPTS += \
   -DELAYLOAD:comdlg32.dll \
   -DELAYLOAD:winspool.drv \
   -DELAYLOAD:secur32.dll \
+  -DELAYLOAD:wininet.dll \
   $(NULL)
 
 # See nsDllMain for an explanation

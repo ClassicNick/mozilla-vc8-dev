@@ -400,8 +400,10 @@ bool
 IndirectProxyHandler::defineProperty(JSContext *cx, JSObject *proxy, jsid id,
                                      PropertyDescriptor *desc)
 {
-    return JS_DefinePropertyById(cx, GetProxyTargetObject(proxy), id,
-                                 desc->value, desc->getter, desc->setter,
+    RootedObject obj(cx, GetProxyTargetObject(proxy));
+    return CheckDefineProperty(cx, obj, RootedId(cx, id), RootedValue(cx, desc->value),
+                               desc->getter, desc->setter, desc->attrs) &&
+           JS_DefinePropertyById(cx, obj, id, desc->value, desc->getter, desc->setter,
                                  desc->attrs);
 }
 
@@ -1459,7 +1461,7 @@ static void
 proxy_TraceObject(JSTracer *trc, JSObject *obj)
 {
 #ifdef DEBUG
-    if (obj->isWrapper()) {
+    if (!trc->runtime->gcDisableStrictProxyCheckingCount && obj->isWrapper()) {
         JSObject *referent = &GetProxyPrivate(obj).toObject();
         if (referent->compartment() != obj->compartment()) {
             /*

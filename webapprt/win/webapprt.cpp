@@ -18,6 +18,9 @@
 #include "nsXPCOMGlue.h"
 #include "nsXPCOMPrivate.h"     // for MAXPATHLEN and XPCOM_DLL
 #include "nsXULAppAPI.h"
+#include "mozilla/AppData.h"
+
+using namespace mozilla;
 
 #ifndef _countof
 #define _countof(a) sizeof(a) / sizeof(a[0])
@@ -44,19 +47,6 @@ namespace {
   char profile[MAXPATHLEN];
   int* pargc;
   char*** pargv;
-
-  // Copied from toolkit/xre/nsAppData.cpp.
-  void
-  SetAllocatedString(const char *&str, const char *newvalue)
-  {
-    NS_Free(const_cast<char*>(str));
-    if (newvalue) {
-      str = NS_strdup(newvalue);
-    }
-    else {
-      str = nsnull;
-    }
-  }
 
   nsresult
   joinPath(char* const dest,
@@ -270,7 +260,7 @@ namespace {
       // Get the path to the runtime.
       char rtPath[MAXPATHLEN];
       rv = joinPath(rtPath, greDir, kWEBAPPRT_PATH, MAXPATHLEN);
-      NS_ENSURE_SUCCESS(rv, rv);
+      NS_ENSURE_SUCCESS(rv, false);
 
       // Get the path to the runtime's INI file.
       char rtIniPath[MAXPATHLEN];
@@ -289,7 +279,7 @@ namespace {
 
       ScopedXREAppData webShellAppData;
       rv = webShellAppData.create(rtINI);
-      NS_ENSURE_SUCCESS(rv, rv);
+      NS_ENSURE_SUCCESS(rv, false);
 
       SetAllocatedString(webShellAppData->profile, profile);
       SetAllocatedString(webShellAppData->name, profile);
@@ -507,8 +497,7 @@ main(int argc, char* argv[])
 
   // Second attempt at loading Firefox binaries:
   //   Get the location of Firefox from the registry
-  rv = GetFirefoxDirFromRegistry(firefoxDir);
-  if (NS_SUCCEEDED(rv)) {
+  if (GetFirefoxDirFromRegistry(firefoxDir)) {
     if (AttemptLoadFromDir(firefoxDir)) {
       // XXX: Write gre dir location to webapp.ini
       return 0;
@@ -516,7 +505,7 @@ main(int argc, char* argv[])
   }
 
   // We've done all we know how to do to try to find and launch FF
-  Output("This app requires that Firefox version 14 or above is installed."
-         " Firefox 14+ has not been detected.");
+  Output("This app requires that Firefox version 15 or above is installed."
+         " Firefox 15+ has not been detected.");
   return 255;
 }

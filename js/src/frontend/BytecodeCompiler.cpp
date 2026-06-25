@@ -34,13 +34,6 @@ MarkInnerAndOuterFunctions(JSContext *cx, JSScript* script_)
         JSScript *outer = worklist.back();
         worklist.popBack();
 
-        /*
-         * If outer has an extensible scope, its slots may be resized which
-         * will invalidate nesting->varArray/argArray.
-         */
-        if (outer->funHasExtensibleScope)
-            continue;
-
         if (outer->hasObjects()) {
             ObjectArray *arr = outer->objects();
 
@@ -106,13 +99,21 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     if (!parser.init())
         return NULL;
 
-    SharedContext sc(cx, scopeChain, /* fun = */ NULL, /* funbox = */ NULL, staticLevel);
+    SharedContext sc(cx, scopeChain, /* fun = */ NULL, /* funbox = */ NULL);
 
-    TreeContext tc(&parser, &sc);
+    TreeContext tc(&parser, &sc, staticLevel);
     if (!tc.init())
         return NULL;
 
-    BytecodeEmitter bce(&parser, &sc, lineno, noScriptRval, needScriptGlobal);
+    bool savedCallerFun = compileAndGo && callerFrame && callerFrame->isFunctionFrame();
+    GlobalObject *globalObject = needScriptGlobal ? GetCurrentGlobal(cx) : NULL;
+    Rooted<JSScript*> script(cx);
+    script = JSScript::Create(cx, savedCallerFun, principals, originPrincipals, compileAndGo,
+                              noScriptRval, globalObject, version, staticLevel);
+    if (!script)
+        return NULL;
+
+    BytecodeEmitter bce(&parser, &sc, script, lineno);
     if (!bce.init())
         return NULL;
 
@@ -131,10 +132,6 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     if (callerFrame && callerFrame->isScriptFrame() && callerFrame->script()->strictModeCode)
         sc.setInStrictMode();
 
-#ifdef DEBUG
-    bool savedCallerFun;
-    savedCallerFun = false;
-#endif
     if (compileAndGo) {
         if (source) {
             /*
@@ -159,9 +156,6 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
             funbox->emitLink = bce.objectList.lastbox;
             bce.objectList.lastbox = funbox;
             bce.objectList.length++;
-#ifdef DEBUG
-            savedCallerFun = true;
-#endif
         }
     }
 
@@ -238,14 +232,8 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     if (Emit1(cx, &bce, JSOP_STOP) < 0)
         return NULL;
 
-    JS_ASSERT(bce.version() == version);
-
-    Rooted<JSScript*> script(cx);
-    script = JSScript::NewScriptFromEmitter(cx, &bce);
-    if (!script)
+    if (!script->fullyInitFromEmitter(cx, &bce))
         return NULL;
-
-    JS_ASSERT(script->savedCallerFun == savedCallerFun);
 
     if (!MarkInnerAndOuterFunctions(cx, script))
         return NULL;
@@ -253,10 +241,8 @@ frontend::CompileScript(JSContext *cx, JSObject *scopeChain, StackFrame *callerF
     return script;
 }
 
-/*
- * Compile a JS function body, which might appear as the value of an event
- * handler attribute in an HTML <INPUT> tag.
- */
+// Compile a JS function body, which might appear as the value of an event
+// handler attribute in an HTML <INPUT> tag, or in a Function() constructor.
 bool
 frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
                               JSPrincipals *principals, JSPrincipals *originPrincipals,
@@ -264,20 +250,28 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
                               const char *filename, unsigned lineno, JSVersion version)
 {
     Parser parser(cx, principals, originPrincipals, chars, length, filename, lineno, version,
-                  /* cfp = */ NULL, /* foldConstants = */ true, /* compileAndGo = */ false);
+                  /* callerFrame = */ NULL, /* foldConstants = */ true,
+                  /* compileAndGo = */ false);
     if (!parser.init())
         return false;
 
     JS_ASSERT(fun);
-    SharedContext funsc(cx, /* scopeChain = */ NULL, fun, /* funbox = */ NULL,
-                        /* staticLevel = */ 0);
+    SharedContext funsc(cx, /* scopeChain = */ NULL, fun, /* funbox = */ NULL);
 
-    TreeContext funtc(&parser, &funsc);
+    unsigned staticLevel = 0;
+    TreeContext funtc(&parser, &funsc, staticLevel);
     if (!funtc.init())
         return false;
 
-    BytecodeEmitter funbce(&parser, &funsc, lineno,
-                           /* noScriptRval = */ false, /* needsScriptGlobal = */ false);
+    GlobalObject *globalObject = fun->getParent() ? &fun->getParent()->global() : NULL;
+    Rooted<JSScript*> script(cx);
+    script = JSScript::Create(cx, /* savedCallerFun = */ false, principals, originPrincipals,
+                              /* compileAndGo = */ false, /* noScriptRval = */ false,
+                              globalObject, version, staticLevel);
+    if (!script)
+        return false;
+
+    BytecodeEmitter funbce(&parser, &funsc, script, lineno);
     if (!funbce.init())
         return false;
 
@@ -288,34 +282,32 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
 
     /* FIXME: make Function format the source for a function definition. */
     ParseNode *fn = FunctionNode::create(PNK_NAME, &parser);
-    if (fn) {
-        fn->pn_body = NULL;
-        fn->pn_cookie.makeFree();
+    if (!fn)
+        return false;
 
-        ParseNode *argsbody = ListNode::create(PNK_ARGSBODY, &parser);
-        if (!argsbody)
+    fn->pn_body = NULL;
+    fn->pn_cookie.makeFree();
+
+    ParseNode *argsbody = ListNode::create(PNK_ARGSBODY, &parser);
+    if (!argsbody)
+        return false;
+    argsbody->setOp(JSOP_NOP);
+    argsbody->makeEmpty();
+    fn->pn_body = argsbody;
+
+    unsigned nargs = fun->nargs;
+    if (nargs) {
+        /*
+         * NB: do not use AutoLocalNameArray because it will release space
+         * allocated from cx->tempLifoAlloc by DefineArg.
+         */
+        BindingNames names(cx);
+        if (!funsc.bindings.getLocalNameArray(cx, &names))
             return false;
-        argsbody->setOp(JSOP_NOP);
-        argsbody->makeEmpty();
-        fn->pn_body = argsbody;
 
-        unsigned nargs = fun->nargs;
-        if (nargs) {
-            /*
-             * NB: do not use AutoLocalNameArray because it will release space
-             * allocated from cx->tempLifoAlloc by DefineArg.
-             */
-            BindingNames names(cx);
-            if (!funsc.bindings.getLocalNameArray(cx, &names)) {
-                fn = NULL;
-            } else {
-                for (unsigned i = 0; i < nargs; i++) {
-                    if (!DefineArg(fn, names[i].maybeAtom, i, &parser)) {
-                        fn = NULL;
-                        break;
-                    }
-                }
-            }
+        for (unsigned i = 0; i < nargs; i++) {
+            if (!DefineArg(fn, names[i].maybeAtom, i, &parser))
+                return false;
         }
     }
 
@@ -324,28 +316,30 @@ frontend::CompileFunctionBody(JSContext *cx, JSFunction *fun,
      * functions, and generate code for this function, including a stop opcode
      * at the end.
      */
-    ParseNode *pn = fn ? parser.functionBody(Parser::StatementListBody) : NULL;
-    if (pn) {
-        if (!parser.tokenStream.matchToken(TOK_EOF)) {
-            parser.reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_SYNTAX_ERROR);
-            pn = NULL;
-        } else if (!FoldConstants(cx, pn, &parser)) {
-            /* FoldConstants reported the error already. */
-            pn = NULL;
-        } else if (!AnalyzeFunctions(&parser)) {
-            pn = NULL;
-        } else {
-            if (fn->pn_body) {
-                JS_ASSERT(fn->pn_body->isKind(PNK_ARGSBODY));
-                fn->pn_body->append(pn);
-                fn->pn_body->pn_pos = pn->pn_pos;
-                pn = fn->pn_body;
-            }
+    ParseNode *pn = parser.functionBody(Parser::StatementListBody);
+    if (!pn) 
+        return false;
 
-            if (!EmitFunctionScript(cx, &funbce, pn))
-                pn = NULL;
-        }
+    if (!parser.tokenStream.matchToken(TOK_EOF)) {
+        parser.reportErrorNumber(NULL, JSREPORT_ERROR, JSMSG_SYNTAX_ERROR);
+        return false;
     }
 
-    return pn != NULL;
+    if (!FoldConstants(cx, pn, &parser))
+        return false;
+
+    if (!AnalyzeFunctions(&parser))
+        return false;
+
+    if (fn->pn_body) {
+        JS_ASSERT(fn->pn_body->isKind(PNK_ARGSBODY));
+        fn->pn_body->append(pn);
+        fn->pn_body->pn_pos = pn->pn_pos;
+        pn = fn->pn_body;
+    }
+
+    if (!EmitFunctionScript(cx, &funbce, pn))
+        return false;
+
+    return true;
 }
