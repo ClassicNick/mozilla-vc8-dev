@@ -166,6 +166,7 @@ enum {
   PREF_methodjit,
   PREF_methodjit_always,
   PREF_typeinference,
+  PREF_allow_xml,
   PREF_jit_hardening,
   PREF_mem_max,
 
@@ -185,6 +186,7 @@ const char* gPrefsToWatch[] = {
   JS_OPTIONS_DOT_STR "methodjit.content",
   JS_OPTIONS_DOT_STR "methodjit_always",
   JS_OPTIONS_DOT_STR "typeinference",
+  JS_OPTIONS_DOT_STR "allow_xml",
   JS_OPTIONS_DOT_STR "jit_hardening",
   JS_OPTIONS_DOT_STR "mem.max"
 
@@ -233,7 +235,9 @@ PrefCallback(const char* aPrefName, void* aClosure)
     if (Preferences::GetBool(gPrefsToWatch[PREF_typeinference])) {
       newOptions |= JSOPTION_TYPE_INFERENCE;
     }
-    newOptions |= JSOPTION_ALLOW_XML;
+    if (Preferences::GetBool(gPrefsToWatch[PREF_allow_xml])) {
+      newOptions |= JSOPTION_ALLOW_XML;
+    }
 
     RuntimeService::SetDefaultJSContextOptions(newOptions);
     rts->UpdateAllWorkerJSContextOptions();
@@ -796,8 +800,9 @@ RuntimeService::ScheduleWorker(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   }
 
   if (!thread) {
-    if (NS_FAILED(NS_NewThread(getter_AddRefs(thread), nsnull,
-                               WORKER_STACK_SIZE))) {
+    if (NS_FAILED(NS_NewNamedThread("DOM Worker",
+                                    getter_AddRefs(thread), nsnull,
+                                    WORKER_STACK_SIZE))) {
       UnregisterWorker(aCx, aWorkerPrivate);
       JS_ReportError(aCx, "Could not create new thread!");
       return false;

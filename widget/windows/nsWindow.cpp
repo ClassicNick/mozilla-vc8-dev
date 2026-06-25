@@ -85,7 +85,6 @@
 #include "nsIClipboard.h"
 #include "nsIMM32Handler.h"
 #include "WinMouseScrollHandler.h"
-#include "nsILocalFile.h"
 #include "nsFontMetrics.h"
 #include "nsIFontEnumerator.h"
 #include "nsGUIEvent.h"
@@ -1886,7 +1885,7 @@ nsWindow::GetNonClientMargins(nsIntMargin &margins)
   margins.top = GetSystemMetrics(SM_CYCAPTION);
   margins.bottom = GetSystemMetrics(SM_CYFRAME);
   margins.top += margins.bottom;
-  margins.left = margins.right = GetSystemMetrics(SM_CYFRAME);
+  margins.left = margins.right = GetSystemMetrics(SM_CXFRAME);
 
   return NS_OK;
 }
@@ -2806,7 +2805,7 @@ NS_METHOD nsWindow::SetIcon(const nsAString& aIconSpec)
 {
   // Assume the given string is a local identifier for an icon file.
 
-  nsCOMPtr<nsILocalFile> iconFile;
+  nsCOMPtr<nsIFile> iconFile;
   ResolveIconName(aIconSpec, NS_LITERAL_STRING(".ico"),
                   getter_AddRefs(iconFile));
   if (!iconFile)

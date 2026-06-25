@@ -806,7 +806,7 @@ static bool
 EmitObjectOp(JSContext *cx, ObjectBox *objbox, JSOp op, BytecodeEmitter *bce)
 {
     JS_ASSERT(JOF_OPTYPE(op) == JOF_OBJECT);
-    return EmitIndex32(cx, op, bce->objectList.index(objbox), bce);
+    return EmitIndex32(cx, op, bce->objectList.add(objbox), bce);
 }
 
 static bool
@@ -834,43 +834,80 @@ EmitUnaliasedVarOp(JSContext *cx, JSOp op, uint16_t slot, BytecodeEmitter *bce)
 }
 
 static bool
-EmitAliasedVarOp(JSContext *cx, JSOp op, uint16_t binding, JSAtom *atom, BytecodeEmitter *bce)
+EmitAliasedVarOp(JSContext *cx, JSOp op, ScopeCoordinate sc, BytecodeEmitter *bce)
 {
     JS_ASSERT(JOF_OPTYPE(op) == JOF_SCOPECOORD);
 
-    /*
-     * XXX This is temporary: bug 659577 will need to compute the number of
-     * cloned block objects to hop over.
-     */
-    uint16_t hops = 0;
-
-    jsatomid atomIndex;
-    if (!bce->makeAtomIndex(atom, &atomIndex))
-        return false;
+    uint32_t maybeBlockIndex = UINT32_MAX;
+    if (bce->sc->blockChain)
+        maybeBlockIndex = bce->objectList.indexOf(bce->sc->blockChain);
 
     bool decomposed = js_CodeSpec[op].format & JOF_DECOMPOSE;
     unsigned n = 2 * sizeof(uint16_t) + sizeof(uint32_t) + (decomposed ? 1 : 0);
+    JS_ASSERT(int(n) + 1 /* op */ == js_CodeSpec[op].length);
 
     ptrdiff_t off = EmitN(cx, bce, op, n);
     if (off < 0)
         return false;
 
     jsbytecode *pc = bce->code(off);
-    SET_UINT16(pc, hops);
+    SET_UINT16(pc, sc.hops);
     pc += sizeof(uint16_t);
-    SET_UINT16(pc, binding);
+    SET_UINT16(pc, sc.slot);
     pc += sizeof(uint16_t);
-    SET_UINT32_INDEX(pc, atomIndex);
+    SET_UINT32_INDEX(pc, maybeBlockIndex);
     return true;
+}
+
+static unsigned
+ClonedBlockDepth(BytecodeEmitter *bce)
+{
+    unsigned clonedBlockDepth = 0;
+    for (StaticBlockObject *b = bce->sc->blockChain; b; b = b->enclosingBlock()) {
+        if (b->needsClone())
+            ++clonedBlockDepth;
+    }
+
+    return clonedBlockDepth;
 }
 
 static bool
 EmitAliasedVarOp(JSContext *cx, JSOp op, ParseNode *pn, BytecodeEmitter *bce)
 {
-    uint16_t binding = JOF_OPTYPE(pn->getOp()) == JOF_QARG
-                       ? bce->sc->bindings.argToBinding(pn->pn_cookie.slot())
-                       : bce->sc->bindings.localToBinding(pn->pn_cookie.slot());
-    return EmitAliasedVarOp(cx, op, binding, pn->atom(), bce);
+    /*
+     * The contents of the dynamic scope chain (fp->scopeChain) exactly reflect
+     * the needsClone-subset of the block chain. Use this to determine the
+     * number of ClonedBlockObjects on fp->scopeChain to skip to find the scope
+     * object containing the var to which pn is bound. ALIASEDVAR ops cannot
+     * reach across with scopes so ClonedBlockObjects is the only NestedScope
+     * on the scope chain.
+     */
+    ScopeCoordinate sc;
+    if (JOF_OPTYPE(pn->getOp()) == JOF_QARG) {
+        JS_ASSERT(bce->sc->funIsHeavyweight());
+        sc.hops = ClonedBlockDepth(bce);
+        sc.slot = bce->sc->bindings.argToSlot(pn->pn_cookie.slot());
+    } else {
+        JS_ASSERT(JOF_OPTYPE(pn->getOp()) == JOF_LOCAL || pn->isKind(PNK_FUNCTION));
+        unsigned local = pn->pn_cookie.slot();
+        if (local < bce->sc->bindings.numVars()) {
+            sc.hops = ClonedBlockDepth(bce);
+            sc.slot = bce->sc->bindings.localToSlot(local);
+        } else {
+            unsigned depth = local - bce->sc->bindings.numVars();
+            unsigned hops = 0;
+            StaticBlockObject *b = bce->sc->blockChain;
+            while (!b->containsVarAtDepth(depth)) {
+                if (b->needsClone())
+                    hops++;
+                b = b->enclosingBlock();
+            }
+            sc.hops = hops;
+            sc.slot = depth - b->stackDepth();
+        }
+    }
+
+    return EmitAliasedVarOp(cx, op, sc, bce);
 }
 
 static bool
@@ -1033,14 +1070,16 @@ EmitEnterBlock(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, JSOp op)
 
         /* Beware the empty destructuring dummy. */
         if (!dn) {
-            JS_ASSERT(i + 1 <= blockObj->slotCount());
             blockObj->setAliased(i, bce->sc->bindingsAccessedDynamically());
             continue;
         }
 
         JS_ASSERT(dn->isDefn());
         JS_ASSERT(unsigned(dn->frameSlot() + depthPlusFixed) < JS_BIT(16));
-        dn->pn_cookie.set(dn->pn_cookie.level(), uint16_t(dn->frameSlot() + depthPlusFixed));
+        if (!dn->pn_cookie.set(cx, dn->pn_cookie.level(),
+                               uint16_t(dn->frameSlot() + depthPlusFixed)))
+            return false;
+
 #ifdef DEBUG
         for (ParseNode *pnu = dn->dn_uses; pnu; pnu = pnu->pn_link) {
             JS_ASSERT(pnu->pn_lexdef == dn);
@@ -1121,10 +1160,10 @@ TryConvertToGname(BytecodeEmitter *bce, ParseNode *pn, JSOp *op)
  * and stores, given the compile-time information in bce and a PNK_NAME node pn.
  * It returns false on error, true on success.
  *
- * The caller can inspect pn->pn_cookie for FREE_UPVAR_COOKIE to tell whether
- * optimization occurred, in which case BindNameToSlot also updated pn->pn_op.
- * If pn->pn_cookie is still FREE_UPVAR_COOKIE on return, pn->pn_op still may
- * have been optimized, e.g., from JSOP_NAME to JSOP_CALLEE.  Whether or not
+ * The caller can test pn->pn_cookie.isFree() to tell whether optimization
+ * occurred, in which case BindNameToSlot also updated pn->pn_op.  If
+ * pn->pn_cookie.isFree() is still true on return, pn->pn_op still may have
+ * been optimized, e.g., from JSOP_NAME to JSOP_CALLEE.  Whether or not
  * pn->pn_op was modified, if this function finds an argument or local variable
  * name, PND_CONST will be set in pn_dflags for read-only properties after a
  * successful return.
@@ -1133,7 +1172,7 @@ TryConvertToGname(BytecodeEmitter *bce, ParseNode *pn, JSOp *op)
  * to update the special cases in EmitFor (for-in) and EmitAssignment (= and
  * op=, e.g. +=).
  */
-static JSBool
+static bool
 BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
     Definition *dn;
@@ -1144,7 +1183,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     /* Idempotency tests come first, since we may be called more than once. */
     if (pn->pn_dflags & PND_BOUND)
-        return JS_TRUE;
+        return true;
 
     /* No cookie initialized for callee; it is pre-bound by definition. */
     JS_ASSERT(!pn->isOp(JSOP_CALLEE));
@@ -1158,17 +1197,17 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         dn = pn->pn_lexdef;
         JS_ASSERT(dn->isDefn());
         if (pn->isDeoptimized())
-            return JS_TRUE;
+            return true;
         pn->pn_dflags |= (dn->pn_dflags & PND_CONST);
     } else {
         if (!pn->isDefn())
-            return JS_TRUE;
+            return true;
         dn = (Definition *) pn;
     }
 
     op = pn->getOp();
     if (op == JSOP_NOP)
-        return JS_TRUE;
+        return true;
 
     JS_ASSERT(JOF_OPTYPE(op) == JOF_ATOM);
     RootedAtom atom(cx, pn->pn_atom);
@@ -1195,7 +1234,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             else
                 pn->setOp(JSOP_FALSE);
             pn->pn_dflags |= PND_BOUND;
-            return JS_TRUE;
+            return true;
         }
         break;
       default:
@@ -1205,7 +1244,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
                 if (!js_AtomToPrintableString(cx, atom, &name) ||
                     !ReportStrictModeError(cx, bce->tokenStream(), pn, JSMSG_READ_ONLY, name.ptr()))
                 {
-                    return JS_FALSE;
+                    return false;
                 }
             }
             pn->setOp(op = JSOP_NAME);
@@ -1222,7 +1261,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
              * bug 470758.
              */
             if (bce->inForInit)
-                return JS_TRUE;
+                return true;
 
             JS_ASSERT(caller->isScriptFrame());
 
@@ -1233,24 +1272,24 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             if (caller->isGlobalFrame() && TryConvertToGname(bce, pn, &op)) {
                 pn->setOp(op);
                 pn->pn_dflags |= PND_BOUND;
-                return JS_TRUE;
+                return true;
             }
 
             /*
              * Out of tricks, so we must rely on PICs to optimize named
              * accesses from direct eval called from function code.
              */
-            return JS_TRUE;
+            return true;
         }
 
         /* Optimize accesses to undeclared globals. */
         if (!TryConvertToGname(bce, pn, &op))
-            return JS_TRUE;
+            return true;
 
         pn->setOp(op);
         pn->pn_dflags |= PND_BOUND;
 
-        return JS_TRUE;
+        return true;
     }
 
     uint16_t level = cookie.level();
@@ -1258,7 +1297,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     const unsigned skip = bce->sc->staticLevel - level;
     if (skip != 0)
-        return JS_TRUE;
+        return true;
 
     /*
      * We are compiling a function body and may be able to optimize name
@@ -1267,7 +1306,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
      */
     switch (dn_kind) {
       case Definition::UNKNOWN:
-        return JS_TRUE;
+        return true;
 
       case Definition::LET:
         switch (op) {
@@ -1331,7 +1370,7 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
             pn->setOp(op);
             pn->pn_dflags |= PND_BOUND;
-            return JS_TRUE;
+            return true;
         }
         /* FALL THROUGH */
 
@@ -1355,9 +1394,10 @@ BindNameToSlot(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     JS_ASSERT(!pn->isOp(op));
     pn->setOp(op);
-    pn->pn_cookie.set(0, cookie.slot());
+    if (!pn->pn_cookie.set(bce->sc->context, 0, cookie.slot()))
+        return false;
     pn->pn_dflags |= PND_BOUND;
-    return JS_TRUE;
+    return true;
 }
 
 /*
@@ -2595,12 +2635,13 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
         if (Emit1(cx, bce, JSOP_ARGUMENTS) < 0)
             return false;
         if (bce->sc->bindingsAccessedDynamically()) {
-            JSAtom *atom = cx->runtime->atomState.argumentsAtom;
-            uint16_t binding = bce->sc->bindings.localToBinding(bce->sc->argumentsLocalSlot());
-            if (!EmitAliasedVarOp(cx, JSOP_SETALIASEDVAR, binding, atom, bce))
+            ScopeCoordinate sc;
+            sc.hops = 0;
+            sc.slot = bce->sc->bindings.localToSlot(bce->sc->argumentsLocal());
+            if (!EmitAliasedVarOp(cx, JSOP_SETALIASEDVAR, sc, bce))
                 return false;
         } else {
-            if (!EmitUnaliasedVarOp(cx, JSOP_SETLOCAL, bce->sc->argumentsLocalSlot(), bce))
+            if (!EmitUnaliasedVarOp(cx, JSOP_SETLOCAL, bce->sc->argumentsLocal(), bce))
                 return false;
         }
         if (Emit1(cx, bce, JSOP_POP) < 0)
@@ -3686,6 +3727,8 @@ ParseNode::getConstantValue(JSContext *cx, bool strictChecks, Value *vp)
       case PNK_NULL:
         vp->setNull();
         return true;
+      case PNK_SPREAD:
+        return false;
       case PNK_RB: {
         JS_ASSERT(isOp(JSOP_NEWINIT) && !(pn_xflags & PNX_NONCONST));
 
@@ -4805,28 +4848,18 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
     {
         FunctionBox *funbox = pn->pn_funbox;
-        SharedContext sc(cx, /* scopeChain = */ NULL, fun, funbox);
+        SharedContext sc(cx, /* scopeChain = */ NULL, fun, funbox, bce->sc->staticLevel + 1);
+        sc.cxFlags = funbox->cxFlags;
+        if (bce->sc->funMightAliasLocals())
+            sc.setFunMightAliasLocals();  // inherit funMightAliasLocals from parent
+        sc.bindings.transfer(cx, &funbox->bindings);
+
         BytecodeEmitter bce2(bce->parser, &sc, pn->pn_pos.begin.lineno,
                              /* noScriptRval = */ false, /* needsScriptGlobal = */ false);
         if (!bce2.init())
             return false;
-
-        sc.cxFlags = funbox->cxFlags;
-        if (bce->sc->funMightAliasLocals())
-            sc.setFunMightAliasLocals();  // inherit funMightAliasLocals from parent
-
-        sc.bindings.transfer(cx, &funbox->bindings);
         bce2.parent = bce;
         bce2.globalScope = bce->globalScope;
-
-        /*
-         * js::frontend::SetStaticLevel limited static nesting depth to fit in
-         * 16 bits and to reserve the all-ones value, thereby reserving the
-         * magic FREE_UPVAR_COOKIE value. Note the bce2.staticLevel assignment
-         * below.
-         */
-        JS_ASSERT(bce->sc->staticLevel < JS_BITMASK(16) - 1);
-        sc.staticLevel = bce->sc->staticLevel + 1;
 
         /* We measured the max scope depth when we parsed the function. */
         if (!EmitFunctionScript(cx, &bce2, pn->pn_body))
@@ -4834,7 +4867,7 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     }
 
     /* Make the function object a literal in the outer script's pool. */
-    unsigned index = bce->objectList.index(pn->pn_funbox);
+    unsigned index = bce->objectList.add(pn->pn_funbox);
 
     /* Emit a bytecode pointing to the closure object in its immediate. */
     if (pn->getOp() != JSOP_NOP) {
@@ -5573,7 +5606,10 @@ EmitSyntheticStatements(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, ptrd
     JS_ASSERT(pn->isArity(PN_LIST));
     StmtInfo stmtInfo(cx);
     PushStatement(bce->sc, &stmtInfo, STMT_SEQ, top);
-    for (ParseNode *pn2 = pn->pn_head; pn2; pn2 = pn2->pn_next) {
+    ParseNode *pn2 = pn->pn_head;
+    if (pn->pn_xflags & PNX_DESTRUCT)
+        pn2 = pn2->pn_next;
+    for (; pn2; pn2 = pn2->pn_next) {
         if (!EmitTree(cx, bce, pn2))
             return false;
     }
@@ -5723,7 +5759,7 @@ EmitObject(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         ObjectBox *objbox = bce->parser->newObjectBox(obj);
         if (!objbox)
             return false;
-        unsigned index = bce->objectList.index(objbox);
+        unsigned index = bce->objectList.add(objbox);
         MOZ_STATIC_ASSERT(JSOP_NEWINIT_LENGTH == JSOP_NEWOBJECT_LENGTH,
                           "newinit and newobject must have equal length to edit in-place");
         EMIT_UINT32_IN_PLACE(offset, JSOP_NEWOBJECT, uint32_t(index));
@@ -5769,29 +5805,51 @@ EmitArray(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
     if (!(pn->pn_xflags & PNX_NONCONST) && pn->pn_head && bce->checkSingletonContext())
         return EmitSingletonInitialiser(cx, bce, pn);
 
+    int32_t nspread = 0;
+    for (ParseNode *elt = pn->pn_head; elt; elt = elt->pn_next) {
+        if (elt->isKind(PNK_SPREAD))
+            nspread++;
+    }
+
     ptrdiff_t off = EmitN(cx, bce, JSOP_NEWARRAY, 3);
     if (off < 0)
         return false;
     CheckTypeSet(cx, bce, JSOP_NEWARRAY);
     jsbytecode *pc = bce->code(off);
-    SET_UINT24(pc, pn->pn_count);
+
+    // For arrays with spread, this is a very pessimistic allocation, the
+    // minimum possible final size.
+    SET_UINT24(pc, pn->pn_count - nspread);
 
     ParseNode *pn2 = pn->pn_head;
     jsatomid atomIndex;
+    if (nspread && !EmitNumberOp(cx, 0, bce))
+        return false;
     for (atomIndex = 0; pn2; atomIndex++, pn2 = pn2->pn_next) {
-        if (!EmitNumberOp(cx, atomIndex, bce))
+        if (!nspread && !EmitNumberOp(cx, atomIndex, bce))
             return false;
         if (pn2->isKind(PNK_COMMA) && pn2->isArity(PN_NULLARY)) {
             if (Emit1(cx, bce, JSOP_HOLE) < 0)
                 return false;
         } else {
-            if (!EmitTree(cx, bce, pn2))
+            ParseNode *expr = pn2->isKind(PNK_SPREAD) ? pn2->pn_kid : pn2;
+            if (!EmitTree(cx, bce, expr))
                 return false;
         }
-        if (Emit1(cx, bce, JSOP_INITELEM) < 0)
+        if (pn2->isKind(PNK_SPREAD)) {
+            if (Emit1(cx, bce, JSOP_SPREAD) < 0)
+                return false;
+        } else if (Emit1(cx, bce, nspread ? JSOP_INITELEM_INC : JSOP_INITELEM) < 0) {
             return false;
+        }
     }
     JS_ASSERT(atomIndex == pn->pn_count);
+    if (nspread) {
+        if (NewSrcNote(cx, bce, SRC_CONTINUE) < 0)
+            return false;
+        if (Emit1(cx, bce, JSOP_POP) < 0)
+            return false;
+    }
 
     if (pn->pn_xflags & PNX_ENDCOMMA) {
         /* Emit a source note so we know to decompile an extra comma. */
@@ -6411,7 +6469,7 @@ frontend::EmitTree(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
       case PNK_REGEXP:
         JS_ASSERT(pn->isOp(JSOP_REGEXP));
-        ok = EmitRegExp(cx, bce->regexpList.index(pn->pn_objbox), bce);
+        ok = EmitRegExp(cx, bce->regexpList.add(pn->pn_objbox), bce);
         break;
 
 #if JS_HAS_XML_SUPPORT
@@ -6911,12 +6969,22 @@ frontend::FinishTakingTryNotes(BytecodeEmitter *bce, TryNoteArray *array)
  * the pre-compilation prototype, a pigeon-hole problem for instanceof tests.
  */
 unsigned
-CGObjectList::index(ObjectBox *objbox)
+CGObjectList::add(ObjectBox *objbox)
 {
     JS_ASSERT(!objbox->emitLink);
     objbox->emitLink = lastbox;
     lastbox = objbox;
     return length++;
+}
+
+unsigned
+CGObjectList::indexOf(JSObject *obj)
+{
+    JS_ASSERT(length > 0);
+    unsigned index = length - 1;
+    for (ObjectBox *box = lastbox; box->object != obj; box = box->emitLink)
+        index--;
+    return index;
 }
 
 void

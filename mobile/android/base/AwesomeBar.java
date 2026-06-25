@@ -11,6 +11,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.database.Cursor;
 import android.graphics.Bitmap;
@@ -42,6 +43,7 @@ import android.widget.TabWidget;
 import android.widget.Toast;
 
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Map;
 
 import org.mozilla.gecko.db.BrowserContract.Bookmarks;
@@ -54,19 +56,24 @@ import org.json.JSONObject;
 public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     private static final String LOGTAG = "GeckoAwesomeBar";
 
+    private static final int SUGGESTION_TIMEOUT = 2000;
+    private static final int SUGGESTION_MAX = 3;
+
     static final String URL_KEY = "url";
     static final String CURRENT_URL_KEY = "currenturl";
-    static final String TYPE_KEY = "type";
+    static final String TARGET_KEY = "target";
     static final String SEARCH_KEY = "search";
     static final String USER_ENTERED_KEY = "user_entered";
-    static enum Type { ADD, EDIT };
+    static enum Target { NEW_TAB, CURRENT_TAB };
 
-    private String mType;
+    private String mTarget;
     private AwesomeBarTabs mAwesomeTabs;
     private AwesomeBarEditText mText;
     private ImageButton mGoButton;
     private ContentResolver mResolver;
     private ContextMenuSubject mContextMenuSubject;
+    private SuggestClient mSuggestClient;
+    private AsyncTask<String, Void, ArrayList<String>> mSuggestTask;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -91,8 +98,20 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                 openUrlAndFinish(url);
             }
 
-            public void onSearch(String engine) {
-                openSearchAndFinish(mText.getText().toString(), engine);
+            public void onSearch(String engine, String text) {
+                openSearchAndFinish(text, engine);
+            }
+
+            public void onEditSuggestion(final String text) {
+                GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+                    public void run() {
+                        mText.setText(text);
+                        mText.setSelection(mText.getText().length());
+                        mText.requestFocus();
+                        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                        imm.showSoftInput(mText, InputMethodManager.SHOW_IMPLICIT);
+                    }
+                });
             }
         });
 
@@ -104,7 +123,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
         Intent intent = getIntent();
         String currentUrl = intent.getStringExtra(CURRENT_URL_KEY);
-        mType = intent.getStringExtra(TYPE_KEY);
+        mTarget = intent.getStringExtra(TARGET_KEY);
         if (currentUrl != null) {
             mText.setText(currentUrl);
             mText.selectAll();
@@ -159,6 +178,24 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
                 // no composition string. It is safe to update IME flags.
                 updateGoButton(text);
+
+                // cancel previous query
+                if (mSuggestTask != null) {
+                    mSuggestTask.cancel(true);
+                }
+
+                if (mSuggestClient != null) {
+                    mSuggestTask = new AsyncTask<String, Void, ArrayList<String>>() {
+                         protected ArrayList<String> doInBackground(String... query) {
+                             return mSuggestClient.query(query[0]);
+                         }
+
+                         protected void onPostExecute(ArrayList<String> suggestions) {
+                             mAwesomeTabs.setSuggestions(suggestions);
+                         }
+                    };
+                    mSuggestTask.execute(text);
+                }
             }
 
             public void beforeTextChanged(CharSequence s, int start, int count,
@@ -197,7 +234,11 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     public void handleMessage(String event, JSONObject message) {
         try {
             if (event.equals("SearchEngines:Data")) {
-                mAwesomeTabs.setSearchEngines(message.getJSONArray("searchEngines"));
+                final String suggestEngine =  message.isNull("suggestEngine") ? null : message.getString("suggestEngine");
+                final String suggestTemplate = message.isNull("suggestTemplate") ? null : message.getString("suggestTemplate");
+                if (suggestTemplate != null)
+                    mSuggestClient = new SuggestClient(GeckoApp.mAppContext, suggestTemplate, SUGGESTION_TIMEOUT, SUGGESTION_MAX);
+                mAwesomeTabs.setSearchEngines(suggestEngine, message.getJSONArray("searchEngines"));
             }
         } catch (Exception e) {
             // do nothing
@@ -284,7 +325,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     private void openUrlAndFinish(String url) {
         Intent resultIntent = new Intent();
         resultIntent.putExtra(URL_KEY, url);
-        resultIntent.putExtra(TYPE_KEY, mType);
+        resultIntent.putExtra(TARGET_KEY, mTarget);
         finishWithResult(resultIntent);
     }
 
@@ -300,7 +341,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
 
         Intent resultIntent = new Intent();
         resultIntent.putExtra(URL_KEY, url);
-        resultIntent.putExtra(TYPE_KEY, mType);
+        resultIntent.putExtra(TARGET_KEY, mTarget);
         resultIntent.putExtra(USER_ENTERED_KEY, true);
         finishWithResult(resultIntent);
     }
@@ -308,7 +349,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
     private void openSearchAndFinish(String url, String engine) {
         Intent resultIntent = new Intent();
         resultIntent.putExtra(URL_KEY, url);
-        resultIntent.putExtra(TYPE_KEY, mType);
+        resultIntent.putExtra(TARGET_KEY, mTarget);
         resultIntent.putExtra(SEARCH_KEY, engine);
         finishWithResult(resultIntent);
     }
@@ -505,7 +546,7 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                     break;
                 }
 
-                GeckoApp.mAppContext.loadUrl(url, AwesomeBar.Type.ADD);
+                GeckoApp.mAppContext.loadUrl(url, AwesomeBar.Target.NEW_TAB);
                 Toast.makeText(this, R.string.new_tab_opened, Toast.LENGTH_SHORT).show();
                 break;
             }
@@ -587,8 +628,12 @@ public class AwesomeBar extends GeckoActivity implements GeckoEventListener {
                     @Override
                     public void onPostExecute(Void result) {
                         int messageId = R.string.bookmark_removed;
-                        if (mInReadingList)
+                        if (mInReadingList) {
                             messageId = R.string.reading_list_removed;
+
+                            GeckoEvent e = GeckoEvent.createBroadcastEvent("Reader:Remove", url);
+                            GeckoAppShell.sendEventToGecko(e);
+                        }
 
                         Toast.makeText(AwesomeBar.this, messageId, Toast.LENGTH_SHORT).show();
                     }

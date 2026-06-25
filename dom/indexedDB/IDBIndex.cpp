@@ -373,15 +373,15 @@ IDBIndex::Create(IDBObjectStore* aObjectStore,
 
     nsAutoPtr<IndexedDBIndexChild> actor(new IndexedDBIndexChild(index));
 
-    ipc::IndexConstructorParams params;
+    IndexConstructorParams params;
 
     if (aCreating) {
-      ipc::CreateIndexParams createParams;
+      CreateIndexParams createParams;
       createParams.info() = *aIndexInfo;
       params = createParams;
     }
     else {
-      ipc::GetIndexParams getParams;
+      GetIndexParams getParams;
       getParams.name() = aIndexInfo->name;
       params = getParams;
     }
@@ -1908,9 +1908,9 @@ OpenKeyCursorHelper::UnpackResponseFromParentProcess(
   NS_ASSERTION(aResponseValue.type() == ResponseValue::TOpenCursorResponse,
                "Bad response type!");
   NS_ASSERTION(aResponseValue.get_OpenCursorResponse().type() ==
-               ipc::OpenCursorResponse::Tvoid_t ||
+               OpenCursorResponse::Tvoid_t ||
                aResponseValue.get_OpenCursorResponse().type() ==
-               ipc::OpenCursorResponse::TPIndexedDBCursorChild,
+               OpenCursorResponse::TPIndexedDBCursorChild,
                "Bad response union type!");
   NS_ASSERTION(!mCursor, "Shouldn't have this yet!");
 

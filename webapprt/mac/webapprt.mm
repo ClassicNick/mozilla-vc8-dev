@@ -26,7 +26,7 @@
 #include "nsXULAppAPI.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
-#include "nsILocalFile.h"
+#include "nsIFile.h"
 #include "nsStringGlue.h"
 
 const char WEBAPPRT_EXECUTABLE[] = "webapprt-stub";
@@ -223,21 +223,19 @@ main(int argc, char **argv)
         // directory.
         snprintf(rtINIPath, MAXPATHLEN, "%s%s%s%s", [firefoxPath UTF8String], APP_CONTENTS_PATH, WEBAPPRT_PATH, WEBRTINI_NAME);
         NSLog(@"WebappRT application.ini path: %s", rtINIPath);
-        if (![[NSFileManager defaultManager] fileExistsAtPath:[NSString stringWithFormat:@"%s", rtINIPath]]) {
-          NSString* msg = [NSString stringWithFormat: @"This copy of Firefox (%@) cannot run web applications, because it is missing important files", firefoxVersion];
-          @throw MakeException(@"Missing WebRT Files", msg);
-        }
 
         // Load the runtime's INI from its path.
-        nsCOMPtr<nsILocalFile> rtINI;
+        nsCOMPtr<nsIFile> rtINI;
         if (NS_FAILED(XRE_GetFileFromPath(rtINIPath, getter_AddRefs(rtINI)))) {
           NSLog(@"Runtime INI path not recognized: '%s'\n", rtINIPath);
           @throw MakeException(@"Error", @"Incorrect path to base INI file.");
         }
 
-        if (!rtINI) {
-          NSLog(@"Error: missing WebappRT application.ini");
-          @throw MakeException(@"Error", @"Missing base INI file.");
+        bool exists;
+        nsresult rv = rtINI->Exists(&exists);
+        if (NS_FAILED(rv) || !exists) {
+          NSString* msg = [NSString stringWithFormat: @"This copy of Firefox (%@) cannot run web applications, because it is missing WebappRT application.ini", firefoxVersion];
+          @throw MakeException(@"Missing WebappRT application.ini", msg);
         }
 
         nsXREAppData *webShellAppData;
@@ -254,13 +252,13 @@ main(int argc, char **argv)
         NSLog(@"setting app profile: %s", profile);
         SetAllocatedString(webShellAppData->profile, profile);
 
-        nsCOMPtr<nsILocalFile> directory;
+        nsCOMPtr<nsIFile> directory;
         if (NS_FAILED(XRE_GetFileFromPath(rtDir, getter_AddRefs(directory)))) {
           NSLog(@"Unable to open app dir");
           @throw MakeException(@"Error", @"Unable to open application directory.");
         }
 
-        nsCOMPtr<nsILocalFile> xreDir;
+        nsCOMPtr<nsIFile> xreDir;
         if (NS_FAILED(XRE_GetFileFromPath(greDir, getter_AddRefs(xreDir)))) {
           NSLog(@"Unable to open XRE dir");
           @throw MakeException(@"Error", @"Unable to open application XRE directory.");

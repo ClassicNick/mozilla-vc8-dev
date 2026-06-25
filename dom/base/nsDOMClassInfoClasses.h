@@ -58,6 +58,8 @@ DOMCI_CLASS(DeviceRotationRate)
 DOMCI_CLASS(HTMLDocument)
 DOMCI_CLASS(HTMLOptionsCollection)
 DOMCI_CLASS(HTMLCollection)
+DOMCI_CLASS(HTMLPropertiesCollection)
+DOMCI_CLASS(PropertyNodeList)
 
 // HTML element classes
 DOMCI_CLASS(HTMLElement)
@@ -93,6 +95,7 @@ DOMCI_CLASS(HTMLMapElement)
 DOMCI_CLASS(HTMLMenuElement)
 DOMCI_CLASS(HTMLMenuItemElement)
 DOMCI_CLASS(HTMLMetaElement)
+DOMCI_CLASS(HTMLMeterElement)
 DOMCI_CLASS(HTMLModElement)
 DOMCI_CLASS(HTMLOListElement)
 DOMCI_CLASS(HTMLObjectElement)
@@ -410,6 +413,8 @@ DOMCI_CLASS(MozSmsCursor)
 
 DOMCI_CLASS(MozConnection)
 DOMCI_CLASS(MozMobileConnection)
+
+DOMCI_CLASS(USSDReceivedEvent)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
