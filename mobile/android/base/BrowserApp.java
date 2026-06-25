@@ -586,7 +586,7 @@ abstract public class BrowserApp extends GeckoApp
             return true;
         }
 
-        bookmark.setEnabled(true);
+        bookmark.setEnabled(!tab.getURL().startsWith("about:reader"));
         bookmark.setCheckable(true);
         
         if (tab.isBookmark()) {
@@ -621,8 +621,7 @@ abstract public class BrowserApp extends GeckoApp
                                tab.getContentType().equals("application/vnd.mozilla.xul+xml")));
 
         // Disable find in page for about:home, since it won't work on Java content
-        if (!tab.getURL().equals("about:home"))
-            findInPage.setEnabled(true);
+        findInPage.setEnabled(!tab.getURL().equals("about:home"));
 
         charEncoding.setVisible(GeckoPreferences.getCharEncodingState());
 

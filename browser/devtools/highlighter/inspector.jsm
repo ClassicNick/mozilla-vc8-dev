@@ -893,7 +893,9 @@ InspectorUI.prototype = {
   clearPseudoClassLocks: function IUI_clearPseudoClassLocks()
   {
     this.breadcrumbs.nodeHierarchy.forEach(function(crumb) {
-      DOMUtils.clearPseudoClassLocks(crumb.node);
+      if (LayoutHelpers.isNodeConnected(crumb.node)) {
+        DOMUtils.clearPseudoClassLocks(crumb.node);
+      }
     });
   },
 
@@ -1104,7 +1106,7 @@ InspectorUI.prototype = {
    */
   copyInnerHTML: function IUI_copyInnerHTML()
   {
-    clipboardHelper.copyString(this.selection.innerHTML);
+    clipboardHelper.copyString(this.selection.innerHTML, this.selection.ownerDocument);
   },
 
   /**
@@ -1113,7 +1115,7 @@ InspectorUI.prototype = {
    */
   copyOuterHTML: function IUI_copyOuterHTML()
   {
-    clipboardHelper.copyString(this.selection.outerHTML);
+    clipboardHelper.copyString(this.selection.outerHTML, this.selection.ownerDocument);
   },
 
   /**

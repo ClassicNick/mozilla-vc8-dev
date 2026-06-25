@@ -591,12 +591,8 @@ nsSVGUtils::GetPostFilterVisualOverflowRect(nsIFrame *aFrame,
     return aPreFilterRect;
   }
 
-  PRInt32 appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-  nsIntRect preFilterRect =
-      aPreFilterRect.ToOutsidePixels(appUnitsPerDevPixel);
-  nsIntRect rect = filter->GetPostFilterBounds(aFrame, nsnull, &preFilterRect);
-  nsRect r = rect.ToAppUnits(appUnitsPerDevPixel) - aFrame->GetPosition();
-  return r;
+  return filter->GetPostFilterBounds(aFrame, nsnull, &aPreFilterRect) -
+           aFrame->GetPosition();
 }
 
 bool
@@ -609,7 +605,8 @@ void
 nsSVGUtils::InvalidateBounds(nsIFrame *aFrame, bool aDuringUpdate,
                              const nsRect *aBoundsSubArea, PRUint32 aFlags)
 {
-  NS_ABORT_IF_FALSE(aFrame->IsFrameOfType(nsIFrame::eSVG),
+  NS_ABORT_IF_FALSE(aFrame->IsFrameOfType(nsIFrame::eSVG) &&
+                    !(aFrame->GetStateBits() & NS_STATE_IS_OUTER_SVG),
                     "Passed bad frame!");
 
   NS_ASSERTION(aDuringUpdate == OuterSVGIsCallingUpdateBounds(aFrame),
@@ -658,7 +655,6 @@ nsSVGUtils::InvalidateBounds(nsIFrame *aFrame, bool aDuringUpdate,
     aFrame = aFrame->GetParent();
   }
 
-  PRInt32 appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
   PRInt32 appUnitsPerCSSPx = aFrame->PresContext()->AppUnitsPerCSSPixel();
 
   while (aFrame) {
@@ -689,9 +685,7 @@ nsSVGUtils::InvalidateBounds(nsIFrame *aFrame, bool aDuringUpdate,
     nsSVGFilterFrame *filterFrame = nsSVGEffects::GetFilterFrame(aFrame);
     if (filterFrame) {
       invalidArea =
-        filterFrame->GetPostFilterDirtyArea(aFrame,
-                            invalidArea.ToOutsidePixels(appUnitsPerDevPixel)).
-          ToAppUnits(appUnitsPerDevPixel);
+        filterFrame->GetPostFilterDirtyArea(aFrame, invalidArea);
     }
     if (aFrame->IsTransformed()) {
       invalidArea =
@@ -709,7 +703,6 @@ nsSVGUtils::InvalidateBounds(nsIFrame *aFrame, bool aDuringUpdate,
 
   NS_ASSERTION(aFrame->GetStateBits() & NS_STATE_IS_OUTER_SVG,
                "SVG frames must always have an nsSVGOuterSVGFrame ancestor!");
-  invalidArea.MoveBy(aFrame->GetContentRect().TopLeft() - aFrame->GetPosition());
 
   static_cast<nsSVGOuterSVGFrame*>(aFrame)->InvalidateWithFlags(invalidArea,
                                                                 aFlags);
@@ -838,7 +831,7 @@ nsSVGUtils::ComputeNormalizedHypotenuse(double aWidth, double aHeight)
 float
 nsSVGUtils::ObjectSpace(const gfxRect &aRect, const nsSVGLength2 *aLength)
 {
-  float fraction, axis;
+  float axis;
 
   switch (aLength->GetCtxType()) {
   case X:
@@ -855,15 +848,11 @@ nsSVGUtils::ObjectSpace(const gfxRect &aRect, const nsSVGLength2 *aLength)
     axis = 0.0f;
     break;
   }
-
   if (aLength->IsPercentage()) {
-    fraction = aLength->GetAnimValInSpecifiedUnits() / 100;
-  } else {
-    fraction = aLength->GetAnimValue(static_cast<nsSVGSVGElement*>
-                                                (nsnull));
+    // Multiply first to avoid precision errors:
+    return axis * aLength->GetAnimValInSpecifiedUnits() / 100;
   }
-
-  return fraction * axis;
+  return aLength->GetAnimValue(static_cast<nsSVGSVGElement*>(nsnull)) * axis;
 }
 
 float
@@ -1020,7 +1009,7 @@ nsSVGUtils::GetViewBoxTransform(const nsSVGElement* aElement,
 }
 
 gfxMatrix
-nsSVGUtils::GetCanvasTM(nsIFrame *aFrame)
+nsSVGUtils::GetCanvasTM(nsIFrame *aFrame, PRUint32 aFor)
 {
   // XXX yuck, we really need a common interface for GetCanvasTM
 
@@ -1028,17 +1017,45 @@ nsSVGUtils::GetCanvasTM(nsIFrame *aFrame)
     return nsSVGIntegrationUtils::GetCSSPxToDevPxMatrix(aFrame);
   }
 
+  if (!(aFrame->GetStateBits() & NS_STATE_SVG_NONDISPLAY_CHILD)) {
+    if ((aFor == nsISVGChildFrame::FOR_PAINTING &&
+         NS_SVGDisplayListPaintingEnabled()) ||
+        (aFor == nsISVGChildFrame::FOR_HIT_TESTING &&
+         NS_SVGDisplayListHitTestingEnabled())) {
+      return nsSVGIntegrationUtils::GetCSSPxToDevPxMatrix(aFrame);
+    }
+  }
+
   nsIAtom* type = aFrame->GetType();
   if (type == nsGkAtoms::svgForeignObjectFrame) {
-    return static_cast<nsSVGForeignObjectFrame*>(aFrame)->GetCanvasTM();
+    return static_cast<nsSVGForeignObjectFrame*>(aFrame)->GetCanvasTM(aFor);
   }
 
   nsSVGContainerFrame *containerFrame = do_QueryFrame(aFrame);
   if (containerFrame) {
-    return containerFrame->GetCanvasTM();
+    return containerFrame->GetCanvasTM(aFor);
   }
 
-  return static_cast<nsSVGGeometryFrame*>(aFrame)->GetCanvasTM();
+  return static_cast<nsSVGGeometryFrame*>(aFrame)->GetCanvasTM(aFor);
+}
+
+gfxMatrix
+nsSVGUtils::GetUserToCanvasTM(nsIFrame *aFrame, PRUint32 aFor)
+{
+  NS_ASSERTION(aFor == nsISVGChildFrame::FOR_OUTERSVG_TM,
+               "Unexpected aFor?");
+
+  nsISVGChildFrame* svgFrame = do_QueryFrame(aFrame);
+  NS_ASSERTION(svgFrame, "bad frame");
+
+  gfxMatrix tm;
+  if (svgFrame) {
+    nsSVGElement *content = static_cast<nsSVGElement*>(aFrame->GetContent());
+    tm = content->PrependLocalTransformsTo(
+                    GetCanvasTM(aFrame->GetParent(), aFor),
+                    nsSVGElement::eUserSpaceToParent);
+  }
+  return tm;
 }
 
 void 
@@ -1077,7 +1094,8 @@ public:
     // aDirtyRect is in user-space pixels, we need to convert to
     // outer-SVG-frame-relative device pixels.
     if (aDirtyRect) {
-      gfxMatrix userToDeviceSpace = nsSVGUtils::GetCanvasTM(aTarget);
+      gfxMatrix userToDeviceSpace =
+        nsSVGUtils::GetCanvasTM(aTarget, nsISVGChildFrame::FOR_PAINTING);
       if (userToDeviceSpace.IsSingular()) {
         return;
       }
@@ -1134,7 +1152,7 @@ nsSVGUtils::PaintFrameWithEffects(nsRenderingContext *aContext,
       overflowRect = overflowRect + aFrame->GetPosition();
     }
     PRUint32 appUnitsPerDevPx = aFrame->PresContext()->AppUnitsPerDevPixel();
-    gfxMatrix tm = GetCanvasTM(aFrame);
+    gfxMatrix tm = GetCanvasTM(aFrame, nsISVGChildFrame::FOR_PAINTING);
     if (aFrame->IsFrameOfType(nsIFrame::eSVG | nsIFrame::eSVGContainer)) {
       gfxMatrix childrenOnlyTM;
       if (static_cast<nsSVGContainerFrame*>(aFrame)->
@@ -1185,7 +1203,7 @@ nsSVGUtils::PaintFrameWithEffects(nsRenderingContext *aContext,
   
   gfxMatrix matrix;
   if (clipPathFrame || maskFrame)
-    matrix = GetCanvasTM(aFrame);
+    matrix = GetCanvasTM(aFrame, nsISVGChildFrame::FOR_PAINTING);
 
   /* Check if we need to do additional operations on this child's
    * rendering, which necessitates rendering into another surface. */
@@ -1196,7 +1214,7 @@ nsSVGUtils::PaintFrameWithEffects(nsRenderingContext *aContext,
       // aFrame has a valid visual overflow rect, so clip to it before calling
       // PushGroup() to minimize the size of the surfaces we'll composite:
       gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(gfx);
-      gfx->Multiply(GetCanvasTM(aFrame));
+      gfx->Multiply(GetCanvasTM(aFrame, nsISVGChildFrame::FOR_PAINTING));
       nsRect overflowRect = aFrame->GetVisualOverflowRectRelativeToSelf();
       if (aFrame->IsFrameOfType(nsIFrame::eSVGGeometry)) {
         // Unlike containers, leaf frames do not include GetPosition() in
@@ -1218,9 +1236,29 @@ nsSVGUtils::PaintFrameWithEffects(nsRenderingContext *aContext,
 
   /* Paint the child */
   if (filterFrame) {
+    nsRect* dirtyRect = nsnull;
+    nsRect tmpDirtyRect;
+    if (aDirtyRect) {
+      // aDirtyRect is in outer-<svg> device pixels, but the filter code needs
+      // it in frame space.
+      gfxMatrix userToDeviceSpace =
+        GetUserToCanvasTM(aFrame, nsISVGChildFrame::FOR_OUTERSVG_TM);
+      if (userToDeviceSpace.IsSingular()) {
+        return;
+      }
+      gfxMatrix deviceToUserSpace = userToDeviceSpace;
+      deviceToUserSpace.Invert();
+      gfxRect dirtyBounds = deviceToUserSpace.TransformBounds(
+                              gfxRect(aDirtyRect->x, aDirtyRect->y,
+                                      aDirtyRect->width, aDirtyRect->height));
+      tmpDirtyRect =
+        nsLayoutUtils::RoundGfxRectToAppRect(
+          dirtyBounds, aFrame->PresContext()->AppUnitsPerCSSPixel()) -
+        aFrame->GetPosition();
+      dirtyRect = &tmpDirtyRect;
+    }
     SVGPaintCallback paintCallback;
-    filterFrame->PaintFilteredFrame(aContext, aFrame, &paintCallback,
-                                    aDirtyRect);
+    filterFrame->PaintFilteredFrame(aContext, aFrame, &paintCallback, dirtyRect);
   } else {
     svgChildFrame->PaintSVG(aContext, aDirtyRect);
   }
@@ -1283,7 +1321,8 @@ nsSVGUtils::HitTestClip(nsIFrame *aFrame, const nsPoint &aPoint)
     return false;
   }
 
-  return clipPathFrame->ClipHitTest(aFrame, GetCanvasTM(aFrame), aPoint);
+  return clipPathFrame->ClipHitTest(aFrame, GetCanvasTM(aFrame,
+                                    nsISVGChildFrame::FOR_HIT_TESTING), aPoint);
 }
 
 nsIFrame *

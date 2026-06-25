@@ -138,7 +138,7 @@ namespace {
     wchar_t msg[1024];
     _vsnwprintf(msg, _countof(msg), fmt, ap);
 
-    MessageBoxW(NULL, msg, L"WebappRT", MB_OK);
+    MessageBoxW(NULL, msg, L"Web Runtime", MB_OK);
 
     va_end(ap);
   }

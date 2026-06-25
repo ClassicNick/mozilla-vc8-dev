@@ -39,6 +39,7 @@
 #include "mozilla/Telemetry.h"
 
 #include "nsIObserverService.h"
+#include "mozilla/Services.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 
 using namespace mozilla;
@@ -406,15 +407,32 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     }
 
     if (!mOptions.alpha) {
-        // Select 565; we won't/shouldn't hit this on the desktop,
-        // but let mobile know we're ok with it.
-        format.red = 5;
-        format.green = 6;
-        format.blue = 5;
-
         format.alpha = 0;
         format.minAlpha = 0;
     }
+
+    // Don't do this on Windows, since we might get a 565 config from ANGLE
+    // and end up causing problems with a surface depth mismatch
+#ifndef XP_WIN
+    if (gfxPlatform::GetPlatform()->GetScreenDepth() == 16) {
+        // Select 4444 or 565 on 16-bit displays; we won't/shouldn't
+        // hit this on the desktop, but let mobile know we're ok with
+        // it.  Note that we don't just set this to 4440 if no alpha,
+        // because that might cause us to choose 4444 anyway and we
+        // don't want that.
+        if (mOptions.alpha) {
+            format.red = 4;
+            format.green = 4;
+            format.blue = 4;
+            format.alpha = 4;
+        } else {
+            format.red = 5;
+            format.green = 6;
+            format.blue = 5;
+            format.alpha = 0;
+        }
+    }
+#endif
 
     bool forceMSAA =
         Preferences::GetBool("webgl.msaa-force", false);

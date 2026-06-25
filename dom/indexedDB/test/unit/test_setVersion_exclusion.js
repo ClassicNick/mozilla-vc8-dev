@@ -9,12 +9,12 @@ function testSteps()
 {
   const name = this.window ? window.location.pathname : "Splendid Test";
 
-  let request = mozIndexedDB.open(name, 1);
+  let request = indexedDB.open(name, 1);
   request.onerror = errorHandler;
   request.onupgradeneeded = grabEventAndContinueHandler;
   request.onsuccess = unexpectedSuccessHandler;
 
-  let request2 = mozIndexedDB.open(name, 2);
+  let request2 = indexedDB.open(name, 2);
   request2.onerror = errorHandler;
   request2.onupgradeneeded = unexpectedSuccessHandler;
   request2.onsuccess = unexpectedSuccessHandler;
@@ -48,14 +48,11 @@ function testSteps()
   event = yield;
   is(event.type, "complete", "Got complete event");
 
-  // The database is still not fully open here.
   try {
     db.transaction("foo");
-    ok(false, "Transactions should be disallowed now!");
+    ok(true, "Transactions should be allowed now!");
   } catch (e) {
-    ok(e instanceof DOMException, "Expect a DOMException");
-    is(e.name, "InvalidStateError", "Expect an InvalidStateError");
-    is(e.code, DOMException.INVALID_STATE_ERR, "Expect an INVALID_STATE_ERR");
+    ok(false, "Transactions should be allowed now!");
   }
 
   request.onsuccess = grabEventAndContinueHandler;

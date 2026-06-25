@@ -569,14 +569,26 @@ nsFilePicker::ShowXPFolderPicker(const nsString& aInitialDir)
 }
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+/*
+ * Show a folder picker post Windows XP
+ * 
+ * @param aInitialDir   The initial directory, the last used directory will be
+ *                      used if left blank.
+ * @param aWasInitError Out parameter will hold true if there was an error
+ *                      before the folder picker is shown.
+ * @return true if a file was selected successfully.
+*/
 bool
-nsFilePicker::ShowFolderPicker(const nsString& aInitialDir)
+nsFilePicker::ShowFolderPicker(const nsString& aInitialDir, bool &aWasInitError)
 {
   nsRefPtr<IFileOpenDialog> dialog;
   if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC,
                               IID_IFileOpenDialog,
-                              getter_AddRefs(dialog))))
+                              getter_AddRefs(dialog)))) {
+    aWasInitError = true;
     return false;
+  }
+  aWasInitError = false;
 
   // hook up event callbacks
   dialog->Advise(this, &mFDECookie);
@@ -847,21 +859,35 @@ nsFilePicker::ShowXPFilePicker(const nsString& aInitialDir)
 }
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+/*
+ * Show a file picker post Windows XP
+ * 
+ * @param aInitialDir   The initial directory, the last used directory will be
+ *                      used if left blank.
+ * @param aWasInitError Out parameter will hold true if there was an error
+ *                      before the file picker is shown.
+ * @return true if a file was selected successfully.
+*/
 bool
-nsFilePicker::ShowFilePicker(const nsString& aInitialDir)
+nsFilePicker::ShowFilePicker(const nsString& aInitialDir, bool &aWasInitError)
 {
   nsRefPtr<IFileDialog> dialog;
   if (mMode != modeSave) {
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC,
                                 IID_IFileOpenDialog,
-                                getter_AddRefs(dialog))))
+                                getter_AddRefs(dialog)))) {
+      aWasInitError = true;
       return false;
+    }
   } else {
     if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, NULL, CLSCTX_INPROC,
                                 IID_IFileSaveDialog,
-                                getter_AddRefs(dialog))))
+                                getter_AddRefs(dialog)))) {
+      aWasInitError = true;
       return false;
+    }
   }
+  aWasInitError = false;
 
   // hook up event callbacks
   dialog->Advise(this, &mFDECookie);
@@ -1025,22 +1051,31 @@ nsFilePicker::ShowW(PRInt16 *aReturnVal)
   mUnicodeFile.Truncate();
   mFiles.Clear();
 
-  bool result = false;
-   if (mMode == modeGetFolder) {
+  // Launch the XP file/folder picker on XP and as a fallback on Vista+. 
+  // The CoCreateInstance call to CLSID_FileOpenDialog fails with "(0x80040111)
+  // ClassFactory cannot supply requested class" when the checkbox for
+  // Disable Visual Themes is on in the compatability tab within the shortcut
+  // properties.
+  bool result = false, wasInitError = true;
+  if (mMode == modeGetFolder) {
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION)
-      result = ShowFolderPicker(initialDir);
-    else
-#endif
+      result = ShowFolderPicker(initialDir, wasInitError);
+    if (!result && wasInitError)
       result = ShowXPFolderPicker(initialDir);
-   } else {
+#else
+	  result = ShowXPFolderPicker(initialDir);
+#endif
+  } else {
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION)
-      result = ShowFilePicker(initialDir);
-    else
-#endif
+      result = ShowFilePicker(initialDir, wasInitError);
+    if (!result && wasInitError)
       result = ShowXPFilePicker(initialDir);
-   }
+#else
+	  result = ShowXPFilePicker(initialDir);
+#endif
+  }
 
   // exit, and return returnCancel in aReturnVal
   if (!result)

@@ -260,8 +260,7 @@ nsRect
   overrideBBox.RoundOut();
 
   nsRect overflowRect =
-    filterFrame->GetPostFilterBounds(firstFrame, &overrideBBox).
-                   ToAppUnits(aFrame->PresContext()->AppUnitsPerDevPixel());
+    filterFrame->GetPostFilterBounds(firstFrame, &overrideBBox);
 
   // Return overflowRect relative to aFrame, rather than "user space":
   return overflowRect - (aFrame->GetOffsetTo(firstFrame) + firstFrameToUserSpace);
@@ -293,18 +292,14 @@ nsSVGIntegrationUtils::AdjustInvalidAreaForSVGEffects(nsIFrame* aFrame,
     return aFrame->GetVisualOverflowRect();
   }
 
-  // Convert aInvalidRect into "user space" in dev pixels:
-  PRInt32 appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
+  // Convert aInvalidRect into "user space" in app units:
   nsPoint toUserSpace =
     aFrame->GetOffsetTo(firstFrame) + GetOffsetToUserSpace(firstFrame);
-  nsIntRect preEffectsRect =
-    (aInvalidRect + toUserSpace).ToOutsidePixels(appUnitsPerDevPixel);
+  nsRect preEffectsRect = aInvalidRect + toUserSpace;
 
-  nsIntRect postEffectsRect =
-    filterFrame->GetPostFilterDirtyArea(firstFrame, preEffectsRect);
-
-  // Return result relative to aFrame, rather than "user space":
-  return postEffectsRect.ToAppUnits(appUnitsPerDevPixel) - toUserSpace;
+  // Return ther result, relative to aFrame, not in user space:
+  return filterFrame->GetPostFilterDirtyArea(firstFrame, preEffectsRect) -
+           toUserSpace;
 }
 
 nsRect
@@ -320,18 +315,14 @@ nsSVGIntegrationUtils::GetRequiredSourceForInvalidArea(nsIFrame* aFrame,
   if (!filterFrame)
     return aDirtyRect;
   
-  // Convert aDirtyRect into "user space" in dev pixels:
-  PRInt32 appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
+  // Convert aDirtyRect into "user space" in app units:
   nsPoint toUserSpace =
     aFrame->GetOffsetTo(firstFrame) + GetOffsetToUserSpace(firstFrame);
-  nsIntRect postEffectsRect =
-    (aDirtyRect + toUserSpace).ToOutsidePixels(appUnitsPerDevPixel);
+  nsRect postEffectsRect = aDirtyRect + toUserSpace;
 
-  nsIntRect preEffectsRect =
-    filterFrame->GetPreFilterNeededArea(firstFrame, postEffectsRect);
-
-  // Return result relative to aFrame, rather than "user space":
-  return preEffectsRect.ToAppUnits(appUnitsPerDevPixel) - toUserSpace;
+  // Return ther result, relative to aFrame, not in user space:
+  return filterFrame->GetPreFilterNeededArea(firstFrame, postEffectsRect) -
+           toUserSpace;
 }
 
 bool
@@ -372,13 +363,13 @@ private:
 
 void
 nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
-                                              nsIFrame* aEffectsFrame,
+                                              nsIFrame* aFrame,
                                               const nsRect& aDirtyRect,
                                               nsDisplayListBuilder* aBuilder,
                                               nsDisplayList* aInnerList)
 {
 #ifdef DEBUG
-  nsISVGChildFrame *svgChildFrame = do_QueryFrame(aEffectsFrame);
+  nsISVGChildFrame *svgChildFrame = do_QueryFrame(aFrame);
   NS_ASSERTION(!svgChildFrame, "Should never be called on an SVG frame");
 #endif
 
@@ -396,7 +387,7 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
    * + Merge opacity and masking if both used together.
    */
 
-  float opacity = aEffectsFrame->GetStyleDisplay()->mOpacity;
+  float opacity = aFrame->GetStyleDisplay()->mOpacity;
   if (opacity == 0.0f) {
     return;
   }
@@ -404,7 +395,7 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
   /* Properties are added lazily and may have been removed by a restyle,
      so make sure all applicable ones are set again. */
   nsIFrame* firstFrame =
-    nsLayoutUtils::GetFirstContinuationOrSpecialSibling(aEffectsFrame);
+    nsLayoutUtils::GetFirstContinuationOrSpecialSibling(aFrame);
   nsSVGEffects::EffectProperties effectProperties =
     nsSVGEffects::GetEffectProperties(firstFrame);
 
@@ -422,14 +413,14 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
   gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(gfx);
 
   PRInt32 appUnitsPerDevPixel = 
-    aEffectsFrame->PresContext()->AppUnitsPerDevPixel();
+    aFrame->PresContext()->AppUnitsPerDevPixel();
   nsPoint firstFrameOffset = GetOffsetToUserSpace(firstFrame);
   nsPoint offset = (aBuilder->ToReferenceFrame(firstFrame) - firstFrameOffset).
                      ToNearestPixels(appUnitsPerDevPixel).
                      ToAppUnits(appUnitsPerDevPixel);
   aCtx->Translate(offset);
 
-  gfxMatrix cssPxToDevPxMatrix = GetCSSPxToDevPxMatrix(aEffectsFrame);
+  gfxMatrix cssPxToDevPxMatrix = GetCSSPxToDevPxMatrix(aFrame);
 
   bool complexEffects = false;
   /* Check if we need to do additional operations on this child's
@@ -437,7 +428,7 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
   if (opacity != 1.0f || maskFrame || (clipPathFrame && !isTrivialClip)) {
     complexEffects = true;
     gfx->Save();
-    aCtx->IntersectClip(aEffectsFrame->GetVisualOverflowRect());
+    aCtx->IntersectClip(aFrame->GetVisualOverflowRect());
     gfx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
   }
 
@@ -446,19 +437,18 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
    */
   if (clipPathFrame && isTrivialClip) {
     gfx->Save();
-    clipPathFrame->ClipPaint(aCtx, aEffectsFrame, cssPxToDevPxMatrix);
+    clipPathFrame->ClipPaint(aCtx, aFrame, cssPxToDevPxMatrix);
   }
 
   /* Paint the child */
   if (filterFrame) {
-    RegularFramePaintCallback callback(aBuilder, aInnerList, aEffectsFrame,
+    RegularFramePaintCallback callback(aBuilder, aInnerList, aFrame,
                                        offset);
-    nsIntRect dirtyRect = (aDirtyRect - offset)
-                            .ToOutsidePixels(appUnitsPerDevPixel);
-    filterFrame->PaintFilteredFrame(aCtx, aEffectsFrame, &callback, &dirtyRect);
+    nsRect dirtyRect = aDirtyRect - offset;
+    filterFrame->PaintFilteredFrame(aCtx, aFrame, &callback, &dirtyRect);
   } else {
     gfx->SetMatrix(matrixAutoSaveRestore.Matrix());
-    aInnerList->PaintForFrame(aBuilder, aCtx, aEffectsFrame,
+    aInnerList->PaintForFrame(aBuilder, aCtx, aFrame,
                               nsDisplayList::PAINT_DEFAULT);
     aCtx->Translate(offset);
   }
@@ -475,14 +465,14 @@ nsSVGIntegrationUtils::PaintFramesWithEffects(nsRenderingContext* aCtx,
   gfx->PopGroupToSource();
 
   nsRefPtr<gfxPattern> maskSurface =
-    maskFrame ? maskFrame->ComputeMaskAlpha(aCtx, aEffectsFrame,
+    maskFrame ? maskFrame->ComputeMaskAlpha(aCtx, aFrame,
                                             cssPxToDevPxMatrix, opacity) : nsnull;
 
   nsRefPtr<gfxPattern> clipMaskSurface;
   if (clipPathFrame && !isTrivialClip) {
     gfx->PushGroup(gfxASurface::CONTENT_COLOR_ALPHA);
 
-    nsresult rv = clipPathFrame->ClipPaint(aCtx, aEffectsFrame, cssPxToDevPxMatrix);
+    nsresult rv = clipPathFrame->ClipPaint(aCtx, aFrame, cssPxToDevPxMatrix);
     clipMaskSurface = gfx->PopGroup();
 
     if (NS_SUCCEEDED(rv) && clipMaskSurface) {

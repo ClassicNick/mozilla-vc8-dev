@@ -1138,14 +1138,14 @@ class ObjectImpl : public gc::Cell
     /* Compute dynamicSlotsCount() for this object. */
     inline uint32_t numDynamicSlots() const;
 
-    const Shape * nativeLookup(JSContext *cx, jsid id);
-    inline const Shape * nativeLookup(JSContext *cx, PropertyId pid);
-    inline const Shape * nativeLookup(JSContext *cx, PropertyName *name);
+    Shape * nativeLookup(JSContext *cx, jsid id);
+    inline Shape * nativeLookup(JSContext *cx, PropertyId pid);
+    inline Shape * nativeLookup(JSContext *cx, PropertyName *name);
 
 #ifdef DEBUG
-    const Shape * nativeLookupNoAllocation(JSContext *cx, jsid id);
-    inline const Shape * nativeLookupNoAllocation(JSContext *cx, PropertyId pid);
-    inline const Shape * nativeLookupNoAllocation(JSContext *cx, PropertyName *name);
+    Shape * nativeLookupNoAllocation(JSContext *cx, jsid id);
+    inline Shape * nativeLookupNoAllocation(JSContext *cx, PropertyId pid);
+    inline Shape * nativeLookupNoAllocation(JSContext *cx, PropertyName *name);
 #endif
 
     inline Class *getClass() const;
@@ -1266,6 +1266,7 @@ class ObjectImpl : public gc::Cell
     }
 
     /* GC support. */
+    static inline ThingRootKind rootKind() { return THING_ROOT_OBJECT; }
     static inline void readBarrier(ObjectImpl *obj);
     static inline void writeBarrierPre(ObjectImpl *obj);
     static inline void writeBarrierPost(ObjectImpl *obj, void *addr);
@@ -1319,6 +1320,9 @@ Downcast(Handle<ObjectImpl*> obj)
     return Handle<JSObject*>::fromMarkedLocation(reinterpret_cast<JSObject* const*>(obj.address()));
 }
 
+extern JSObject *
+ArrayBufferDelegate(JSContext *cx, Handle<ObjectImpl*> obj);
+
 /* Generic [[GetOwnProperty]] method. */
 bool
 GetOwnElement(JSContext *cx, Handle<ObjectImpl*> obj, uint32_t index, unsigned resolveFlags,
@@ -1358,5 +1362,14 @@ HasElement(JSContext *cx, Handle<ObjectImpl*> obj, uint32_t index, unsigned reso
            bool *found);
 
 } /* namespace js */
+
+namespace JS {
+template <> struct RootMethods<js::PropertyId>
+{
+    static js::PropertyId initial() { return js::PropertyId(); }
+    static ThingRootKind kind() { return THING_ROOT_PROPERTY_ID; }
+    static bool poisoned(js::PropertyId propid) { return IsPoisonedId(propid.asId()); }
+};
+}
 
 #endif /* ObjectImpl_h__ */
