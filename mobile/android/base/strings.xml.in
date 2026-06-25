@@ -1,5 +1,9 @@
 #filter substitution
 <?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
 <!DOCTYPE resources [
 #includesubst @BRANDPATH@
 #includesubst @STRINGSPATH@
@@ -88,6 +92,7 @@
   <string name="close_tab">&close_tab;</string>
   <string name="new_tab">&new_tab;</string>
   <string name="new_tab_opened">&new_tab_opened;</string>
+  <string name="num_tabs">&num_tabs;</string>
   <string name="addons">&addons;</string>
   <string name="downloads">&downloads;</string>
   <string name="char_encoding">&char_encoding;</string>

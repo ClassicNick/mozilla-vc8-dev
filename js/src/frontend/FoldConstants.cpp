@@ -1,42 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=99:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998-2011
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/FloatingPoint.h"
 
@@ -233,8 +200,8 @@ FoldXMLConstants(JSContext *cx, ParseNode *pn, Parser *parser)
     ParseNodeKind kind = pn->getKind();
     ParseNode **pnp = &pn->pn_head;
     ParseNode *pn1 = *pnp;
-    RootedVarString accum(cx);
-    RootedVarString str(cx);
+    RootedString accum(cx);
+    RootedString str(cx);
     if ((pn->pn_xflags & PNX_CANTFOLD) == 0) {
         if (kind == PNK_XMLETAGO)
             accum = cx->runtime->atomState.etagoAtom;
@@ -413,7 +380,7 @@ Boolish(ParseNode *pn)
         ParseNode *pn2 = pn->pn_head;
         if (!pn2->isKind(PNK_FUNCTION))
             return Unknown;
-        if (!(pn2->pn_funbox->tcflags & TCF_GENEXP_LAMBDA))
+        if (!(pn2->pn_funbox->inGenexpLambda))
             return Unknown;
         return Truthy;
       }
@@ -434,7 +401,7 @@ Boolish(ParseNode *pn)
 }
 
 bool
-js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
+js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGenexpLambda, bool inCond)
 {
     ParseNode *pn1 = NULL, *pn2 = NULL, *pn3 = NULL;
 
@@ -442,20 +409,9 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
 
     switch (pn->getArity()) {
       case PN_FUNC:
-      {
-        TreeContext *tc = parser->tc;
-        uint32_t oldflags = tc->flags;
-        FunctionBox *oldlist = tc->functionList;
-
-        tc->flags = pn->pn_funbox->tcflags;
-        tc->functionList = pn->pn_funbox->kids;
-        if (!FoldConstants(cx, pn->pn_body, parser))
+        if (!FoldConstants(cx, pn->pn_body, parser, pn->pn_funbox->inGenexpLambda))
             return false;
-        pn->pn_funbox->kids = tc->functionList;
-        tc->flags = oldflags;
-        tc->functionList = oldlist;
         break;
-      }
 
       case PN_LIST:
       {
@@ -469,7 +425,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
 
         /* Save the list head in pn1 for later use. */
         for (; pn2; pn2 = pn2->pn_next) {
-            if (!FoldConstants(cx, pn2, parser, cond))
+            if (!FoldConstants(cx, pn2, parser, inGenexpLambda, cond))
                 return false;
         }
         break;
@@ -480,17 +436,17 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
         pn1 = pn->pn_kid1;
         pn2 = pn->pn_kid2;
         pn3 = pn->pn_kid3;
-        if (pn1 && !FoldConstants(cx, pn1, parser, pn->isKind(PNK_IF)))
+        if (pn1 && !FoldConstants(cx, pn1, parser, inGenexpLambda, pn->isKind(PNK_IF)))
             return false;
         if (pn2) {
-            if (!FoldConstants(cx, pn2, parser, pn->isKind(PNK_FORHEAD)))
+            if (!FoldConstants(cx, pn2, parser, inGenexpLambda, pn->isKind(PNK_FORHEAD)))
                 return false;
             if (pn->isKind(PNK_FORHEAD) && pn2->isOp(JSOP_TRUE)) {
                 parser->freeTree(pn2);
                 pn->pn_kid2 = NULL;
             }
         }
-        if (pn3 && !FoldConstants(cx, pn3, parser))
+        if (pn3 && !FoldConstants(cx, pn3, parser, inGenexpLambda))
             return false;
         break;
 
@@ -500,17 +456,17 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
 
         /* Propagate inCond through logical connectives. */
         if (pn->isKind(PNK_OR) || pn->isKind(PNK_AND)) {
-            if (!FoldConstants(cx, pn1, parser, inCond))
+            if (!FoldConstants(cx, pn1, parser, inGenexpLambda, inCond))
                 return false;
-            if (!FoldConstants(cx, pn2, parser, inCond))
+            if (!FoldConstants(cx, pn2, parser, inGenexpLambda, inCond))
                 return false;
             break;
         }
 
         /* First kid may be null (for default case in switch). */
-        if (pn1 && !FoldConstants(cx, pn1, parser, pn->isKind(PNK_WHILE)))
+        if (pn1 && !FoldConstants(cx, pn1, parser, inGenexpLambda, pn->isKind(PNK_WHILE)))
             return false;
-        if (!FoldConstants(cx, pn2, parser, pn->isKind(PNK_DOWHILE)))
+        if (!FoldConstants(cx, pn2, parser, inGenexpLambda, pn->isKind(PNK_DOWHILE)))
             return false;
         break;
 
@@ -529,7 +485,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
         if (pn->isOp(JSOP_TYPEOF) && !pn1->isKind(PNK_NAME))
             pn->setOp(JSOP_TYPEOFEXPR);
 
-        if (pn1 && !FoldConstants(cx, pn1, parser, pn->isOp(JSOP_NOT)))
+        if (pn1 && !FoldConstants(cx, pn1, parser, inGenexpLambda, pn->isOp(JSOP_NOT)))
             return false;
         break;
 
@@ -544,14 +500,14 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
             pn1 = pn->pn_expr;
             while (pn1 && pn1->isArity(PN_NAME) && !pn1->isUsed())
                 pn1 = pn1->pn_expr;
-            if (pn1 && !FoldConstants(cx, pn1, parser))
+            if (pn1 && !FoldConstants(cx, pn1, parser, inGenexpLambda))
                 return false;
         }
         break;
 
       case PN_NAMESET:
         pn1 = pn->pn_tree;
-        if (!FoldConstants(cx, pn1, parser))
+        if (!FoldConstants(cx, pn1, parser, inGenexpLambda))
             return false;
         break;
 
@@ -589,7 +545,7 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
 
 #if JS_HAS_GENERATOR_EXPRS
         /* Don't fold a trailing |if (0)| in a generator expression. */
-        if (!pn2 && (parser->tc->flags & TCF_GENEXP_LAMBDA))
+        if (!pn2 && inGenexpLambda)
             break;
 #endif
 
@@ -753,9 +709,9 @@ js::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inCond)
                 return false;
             if (!pn1->isKind(PNK_STRING) || !pn2->isKind(PNK_STRING))
                 return true;
-            RootedVarString left(cx, pn1->pn_atom);
-            RootedVarString right(cx, pn2->pn_atom);
-            RootedVarString str(cx, js_ConcatStrings(cx, left, right));
+            RootedString left(cx, pn1->pn_atom);
+            RootedString right(cx, pn2->pn_atom);
+            RootedString str(cx, js_ConcatStrings(cx, left, right));
             if (!str)
                 return false;
             pn->pn_atom = js_AtomizeString(cx, str);

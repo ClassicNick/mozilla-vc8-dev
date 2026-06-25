@@ -1,42 +1,8 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 sw=2 et tw=78: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2000
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Johnny Stenback <jst@netscape.com> (original author)
- *   Ms2ger <ms2ger@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 // On top because they include basictypes.h:
@@ -187,7 +153,7 @@
 #include "nsDOMCSSAttrDeclaration.h"
 
 // XBL related includes.
-#include "nsIXBLService.h"
+#include "nsXBLService.h"
 #include "nsXBLBinding.h"
 #include "nsBindingManager.h"
 #include "nsIFrame.h"
@@ -326,6 +292,7 @@
 #include "nsIDOMCSSStyleSheet.h"
 #include "nsDOMCSSValueList.h"
 #include "nsIDOMDeviceProximityEvent.h"
+#include "nsIDOMUserProximityEvent.h"
 #include "nsIDOMDeviceLightEvent.h"
 #include "nsIDOMDeviceOrientationEvent.h"
 #include "nsIDOMDeviceMotionEvent.h"
@@ -435,6 +402,7 @@
 #include "nsIDOMSVGUnitTypes.h"
 #include "nsIDOMSVGURIReference.h"
 #include "nsIDOMSVGUseElement.h"
+#include "nsIDOMSVGViewElement.h"
 #include "nsIDOMSVGZoomAndPan.h"
 #include "nsIDOMSVGZoomEvent.h"
 
@@ -445,6 +413,10 @@
 
 // Storage includes
 #include "nsDOMStorage.h"
+
+// Device Storage
+#include "nsIDOMDeviceStorage.h"
+#include "nsIDOMDeviceStorageCursor.h"
 
 // Drag and drop
 #include "nsIDOMDataTransfer.h"
@@ -466,6 +438,7 @@
 
 #include "nsIDOMDesktopNotification.h"
 #include "nsIDOMNavigatorDesktopNotification.h"
+#include "nsIDOMNavigatorDeviceStorage.h"
 #include "nsIDOMNavigatorGeolocation.h"
 #include "Navigator.h"
 
@@ -533,6 +506,7 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #endif
 
 #ifdef MOZ_B2G_BT
+#include "BluetoothManager.h"
 #include "BluetoothAdapter.h"
 #endif
 
@@ -820,6 +794,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   // Device Proximity
   NS_DEFINE_CLASSINFO_DATA(DeviceProximityEvent, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  // User Proximity
+  NS_DEFINE_CLASSINFO_DATA(UserProximityEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   // Device Orientation
   NS_DEFINE_CLASSINFO_DATA(DeviceOrientationEvent, nsDOMGenericSH,
@@ -1211,6 +1188,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                                      ELEMENT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(SVGUseElement, nsElementSH,
                            ELEMENT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(SVGViewElement, nsElementSH,
+                           ELEMENT_SCRIPTABLE_FLAGS)
 
   // other SVG classes
   NS_DEFINE_CLASSINFO_DATA(SVGAngle, nsDOMGenericSH,
@@ -1421,6 +1400,12 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(MessageEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
+  NS_DEFINE_CLASSINFO_DATA(DeviceStorage, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
+  NS_DEFINE_CLASSINFO_DATA(DeviceStorageCursor, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
+
   NS_DEFINE_CLASSINFO_DATA(GeoGeolocation, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   
@@ -1623,7 +1608,7 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(CustomEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozMutationObserver, nsDOMGenericSH,
+  NS_DEFINE_CLASSINFO_DATA(MutationObserver, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MutationRecord, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1640,6 +1625,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
 #endif
 
 #ifdef MOZ_B2G_BT
+  NS_DEFINE_CLASSINFO_DATA(BluetoothManager, nsEventTargetSH,
+                           EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(BluetoothAdapter, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
 #endif
@@ -1673,7 +1660,7 @@ static const nsContractIDMapData kConstructorMap[] =
   NS_DEFINE_CONSTRUCTOR_DATA(XSLTProcessor,
                              "@mozilla.org/document-transformer;1?type=xslt")
   NS_DEFINE_CONSTRUCTOR_DATA(EventSource, NS_EVENTSOURCE_CONTRACTID)
-  NS_DEFINE_CONSTRUCTOR_DATA(MozMutationObserver, NS_DOMMUTATIONOBSERVER_CONTRACTID)
+  NS_DEFINE_CONSTRUCTOR_DATA(MutationObserver, NS_DOMMUTATIONOBSERVER_CONTRACTID)
 };
 
 #define NS_DEFINE_EVENT_CTOR(_class)                        \
@@ -1697,6 +1684,7 @@ NS_DEFINE_EVENT_CTOR(UIEvent)
 NS_DEFINE_EVENT_CTOR(MouseEvent)
 NS_DEFINE_EVENT_CTOR(DeviceLightEvent)
 NS_DEFINE_EVENT_CTOR(DeviceProximityEvent)
+NS_DEFINE_EVENT_CTOR(UserProximityEvent)
 
 nsresult
 NS_DOMStorageEventCtor(nsISupports** aInstancePtrResult)
@@ -1732,6 +1720,7 @@ static const nsConstructorFuncMapData kConstructorFuncMap[] =
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(UIEvent)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(MouseEvent)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(DeviceProximityEvent)
+  NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(UserProximityEvent)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(DeviceLightEvent)
   NS_DEFINE_EVENT_CONSTRUCTOR_FUNC_DATA(StorageEvent)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(MozSmsFilter, sms::SmsFilter::NewSmsFilter)
@@ -2456,6 +2445,7 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(Navigator, nsIDOMNavigator)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigator)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigatorDeviceStorage)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigatorGeolocation)
     DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMNavigatorDesktopNotification,
                                         Navigator::HasDesktopNotificationSupport())
@@ -2618,6 +2608,11 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(DeviceProximityEvent, nsIDOMDeviceProximityEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDeviceProximityEvent)
+    DOM_CLASSINFO_EVENT_MAP_ENTRIES
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(UserProximityEvent, nsIDOMUserProximityEvent)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMUserProximityEvent)
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
@@ -3666,6 +3661,12 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_SVG_GRAPHIC_ELEMENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(SVGViewElement, nsIDOMSVGViewElement)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGFitToViewBox)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGZoomAndPan)
+    DOM_CLASSINFO_SVG_ELEMENT_MAP_ENTRIES
+  DOM_CLASSINFO_MAP_END
+
   // other SVG classes
 
   DOM_CLASSINFO_MAP_BEGIN(SVGAngle, nsIDOMSVGAngle)
@@ -4048,6 +4049,16 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(DeviceStorage, nsIDOMDeviceStorage)
+     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDeviceStorage)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(DeviceStorageCursor, nsIDOMDeviceStorageCursor)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMDeviceStorageCursor)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMDOMRequest)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
+  DOM_CLASSINFO_MAP_END
+
   DOM_CLASSINFO_MAP_BEGIN(GeoGeolocation, nsIDOMGeoGeolocation)
      DOM_CLASSINFO_MAP_ENTRY(nsIDOMGeoGeolocation)
   DOM_CLASSINFO_MAP_END
@@ -4397,8 +4408,8 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(MozMutationObserver, nsIDOMMozMutationObserver)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozMutationObserver)
+  DOM_CLASSINFO_MAP_BEGIN(MutationObserver, nsIDOMMutationObserver)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMutationObserver)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(MutationRecord, nsIDOMMutationRecord)
@@ -4428,6 +4439,10 @@ nsDOMClassInfo::Init()
 #endif
 
 #ifdef MOZ_B2G_BT
+  DOM_CLASSINFO_MAP_BEGIN(BluetoothManager, nsIDOMBluetoothManager)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothManager)
+  DOM_CLASSINFO_MAP_END  
+
   DOM_CLASSINFO_MAP_BEGIN(BluetoothAdapter, nsIDOMBluetoothAdapter)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothAdapter)
   DOM_CLASSINFO_MAP_END
@@ -5226,8 +5241,8 @@ static JSClass sGlobalScopePolluterClass = {
 
 // static
 JSBool
-nsWindowSH::GlobalScopePolluterGetProperty(JSContext *cx, JSObject *obj,
-                                           jsid id, jsval *vp)
+nsWindowSH::GlobalScopePolluterGetProperty(JSContext *cx, JSHandleObject obj,
+                                           JSHandleId id, jsval *vp)
 {
   // Someone is accessing a element by referencing its name/id in the
   // global scope, do a security check to make sure that's ok.
@@ -5253,7 +5268,7 @@ nsWindowSH::GlobalScopePolluterGetProperty(JSContext *cx, JSObject *obj,
 
 // static
 JSBool
-nsWindowSH::SecurityCheckOnAddDelProp(JSContext *cx, JSObject *obj, jsid id,
+nsWindowSH::SecurityCheckOnAddDelProp(JSContext *cx, JSHandleObject obj, JSHandleId id,
                                       jsval *vp)
 {
   // Someone is accessing a element by referencing its name/id in the
@@ -5271,7 +5286,7 @@ nsWindowSH::SecurityCheckOnAddDelProp(JSContext *cx, JSObject *obj, jsid id,
 
 // static
 JSBool
-nsWindowSH::SecurityCheckOnSetProp(JSContext *cx, JSObject *obj, jsid id, JSBool strict,
+nsWindowSH::SecurityCheckOnSetProp(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict,
                                    jsval *vp)
 {
   return SecurityCheckOnAddDelProp(cx, obj, id, vp);
@@ -5286,8 +5301,8 @@ GetDocument(JSObject *obj)
 
 // static
 JSBool
-nsWindowSH::GlobalScopePolluterNewResolve(JSContext *cx, JSObject *obj,
-                                          jsid id, unsigned flags,
+nsWindowSH::GlobalScopePolluterNewResolve(JSContext *cx, JSHandleObject obj,
+                                          JSHandleId id, unsigned flags,
                                           JSObject **objp)
 {
   if (flags & (JSRESOLVE_ASSIGNING | JSRESOLVE_DECLARING |
@@ -5776,7 +5791,7 @@ static const IDBConstant sIDBConstants[] = {
 };
 
 static JSBool
-IDBConstantGetter(JSContext *cx, JSObject *obj, jsid id, jsval* vp)
+IDBConstantGetter(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval* vp)
 {
   MOZ_ASSERT(JSID_IS_INT(id));
   
@@ -5877,7 +5892,7 @@ DefineIDBInterfaceConstants(JSContext *cx, JSObject *obj, const nsIID *aIID)
   return NS_OK;
 }
 
-class nsDOMConstructor : public nsIDOMDOMConstructor
+class nsDOMConstructor MOZ_FINAL : public nsIDOMDOMConstructor
 {
 protected:
   nsDOMConstructor(const PRUnichar* aName,
@@ -6911,7 +6926,7 @@ LocationSetterGuts(JSContext *cx, JSObject *obj, jsval *vp)
 
 template<class Interface>
 static JSBool
-LocationSetter(JSContext *cx, JSObject *obj, jsid id, JSBool strict,
+LocationSetter(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict,
                jsval *vp)
 {
   nsresult rv = LocationSetterGuts<Interface>(cx, obj, vp);
@@ -6926,9 +6941,11 @@ LocationSetter(JSContext *cx, JSObject *obj, jsid id, JSBool strict,
 }
 
 static JSBool
-LocationSetterUnwrapper(JSContext *cx, JSObject *obj, jsid id, JSBool strict,
+LocationSetterUnwrapper(JSContext *cx, JSHandleObject obj_, JSHandleId id, JSBool strict,
                         jsval *vp)
 {
+  JS::RootedObject obj(cx, obj_);
+
   JSObject *wrapped = XPCWrapper::UnsafeUnwrapSecurityWrapper(obj);
   if (wrapped) {
     obj = wrapped;
@@ -6939,9 +6956,12 @@ LocationSetterUnwrapper(JSContext *cx, JSObject *obj, jsid id, JSBool strict,
 
 NS_IMETHODIMP
 nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
-                       JSObject *obj, jsid id, PRUint32 flags,
+                       JSObject *obj_, jsid id_, PRUint32 flags,
                        JSObject **objp, bool *_retval)
 {
+  JS::RootedObject obj(cx, obj_);
+  JS::RootedId id(cx, id_);
+
   nsGlobalWindow *win = nsGlobalWindow::FromWrapper(wrapper);
 
   if (!JSID_IS_STRING(id)) {
@@ -7037,7 +7057,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     // We want this code to be before the child frame lookup code
     // below so that a child frame named 'constructor' doesn't
     // shadow the window's constructor property.
-    if (id == sConstructor_id) {
+    if (sConstructor_id == id) {
       return ResolveConstructor(cx, obj, objp);
     }
   }
@@ -7049,7 +7069,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     return NS_OK;
   }
 
-  if (id == sLocation_id) {
+  if (sLocation_id == id) {
     // This must be done even if we're just getting the value of
     // window.location (i.e. no checking flags & JSRESOLVE_ASSIGNING
     // here) since we must define window.location to prevent the
@@ -7188,7 +7208,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     }
   }
 
-  if (id == s_content_id) {
+  if (s_content_id == id) {
     // Map window._content to window.content for backwards
     // compatibility, this should spit out an message on the JS
     // console.
@@ -7237,7 +7257,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
       return NS_OK;
     }
   } else {
-    if (id == sNavigator_id) {
+    if (sNavigator_id == id) {
       nsCOMPtr<nsIDOMNavigator> navigator;
       rv = win->GetNavigator(getter_AddRefs(navigator));
       NS_ENSURE_SUCCESS(rv, rv);
@@ -7260,7 +7280,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
       return NS_OK;
     }
 
-    if (id == sDocument_id) {
+    if (sDocument_id == id) {
       nsCOMPtr<nsIDOMDocument> document;
       rv = win->GetDocument(getter_AddRefs(document));
       NS_ENSURE_SUCCESS(rv, rv);
@@ -7294,7 +7314,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
       return NS_OK;
     }
 
-    if (id == sDialogArguments_id && win->IsModalContentWindow()) {
+    if (sDialogArguments_id == id && win->IsModalContentWindow()) {
       nsCOMPtr<nsIArray> args;
       ((nsGlobalModalWindow *)win)->GetDialogArguments(getter_AddRefs(args));
 
@@ -7582,7 +7602,7 @@ nsNavigatorSH::PreCreate(nsISupports *nativeObj, JSContext *cx,
 
 template<nsresult (*func)(JSContext *cx, JSObject *obj, jsval *vp)>
 static JSBool
-GetterShim(JSContext *cx, JSObject *obj, jsid /* unused */, jsval *vp)
+GetterShim(JSContext *cx, JSHandleObject obj, JSHandleId /* unused */, jsval *vp)
 {
   nsresult rv = (*func)(cx, obj, vp);
   if (NS_FAILED(rv)) {
@@ -8017,7 +8037,7 @@ nsElementSH::PostCreate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   // We have a binding that must be installed.
   bool dummy;
 
-  nsCOMPtr<nsIXBLService> xblService(do_GetService("@mozilla.org/xbl;1"));
+  nsXBLService* xblService = nsXBLService::GetInstance();
   NS_ENSURE_TRUE(xblService, NS_ERROR_NOT_AVAILABLE);
 
   nsRefPtr<nsXBLBinding> binding;
@@ -8763,14 +8783,16 @@ nsHTMLDocumentSH::GetDocumentAllNodeList(JSContext *cx, JSObject *obj,
 }
 
 JSBool
-nsHTMLDocumentSH::DocumentAllGetProperty(JSContext *cx, JSObject *obj,
-                                         jsid id, jsval *vp)
+nsHTMLDocumentSH::DocumentAllGetProperty(JSContext *cx, JSHandleObject obj_,
+                                         JSHandleId id, jsval *vp)
 {
+  JSObject *obj = obj_;
+
   // document.all.item and .namedItem get their value in the
   // newResolve hook, so nothing to do for those properties here. And
   // we need to return early to prevent <div id="item"> from shadowing
   // document.all.item(), etc.
-  if (id == sItem_id || id == sNamedItem_id) {
+  if (sItem_id == id || sNamedItem_id == id) {
     return JS_TRUE;
   }
 
@@ -8790,7 +8812,7 @@ nsHTMLDocumentSH::DocumentAllGetProperty(JSContext *cx, JSObject *obj,
   nsresult rv = NS_OK;
 
   if (JSID_IS_STRING(id)) {
-    if (id == sLength_id) {
+    if (sLength_id == id) {
       // Map document.all.length to the length of the collection
       // document.getElementsByTagName("*"), and make sure <div
       // id="length"> doesn't shadow document.all.length.
@@ -8812,7 +8834,7 @@ nsHTMLDocumentSH::DocumentAllGetProperty(JSContext *cx, JSObject *obj,
       *vp = INT_TO_JSVAL(length);
 
       return JS_TRUE;
-    } else if (id != sTags_id) {
+    } else if (sTags_id != id) {
       // For all other strings, look for an element by id or name.
 
       nsDependentJSString str(id);
@@ -8860,7 +8882,7 @@ nsHTMLDocumentSH::DocumentAllGetProperty(JSContext *cx, JSObject *obj,
 }
 
 JSBool
-nsHTMLDocumentSH::DocumentAllNewResolve(JSContext *cx, JSObject *obj, jsid id,
+nsHTMLDocumentSH::DocumentAllNewResolve(JSContext *cx, JSHandleObject obj, JSHandleId id,
                                         unsigned flags, JSObject **objp)
 {
   if (flags & JSRESOLVE_ASSIGNING) {
@@ -8871,7 +8893,7 @@ nsHTMLDocumentSH::DocumentAllNewResolve(JSContext *cx, JSObject *obj, jsid id,
 
   jsval v = JSVAL_VOID;
 
-  if (id == sItem_id || id == sNamedItem_id) {
+  if (sItem_id == id || sNamedItem_id == id) {
     // Define the item() or namedItem() method.
 
     JSFunction *fnc = ::JS_DefineFunctionById(cx, obj, id, CallToGetPropMapper,
@@ -8881,14 +8903,14 @@ nsHTMLDocumentSH::DocumentAllNewResolve(JSContext *cx, JSObject *obj, jsid id,
     return fnc != nsnull;
   }
 
-  if (id == sLength_id) {
+  if (sLength_id == id) {
     // document.all.length. Any jsval other than undefined would do
     // here, all we need is to get into the code below that defines
     // this propery on obj, the rest happens in
     // DocumentAllGetProperty().
 
     v = JSVAL_ONE;
-  } else if (id == sTags_id) {
+  } else if (sTags_id == id) {
     nsHTMLDocument *doc = GetDocument(obj);
 
     JSObject *tags = ::JS_NewObject(cx, &sHTMLDocumentAllTagsClass, nsnull,
@@ -8998,10 +9020,10 @@ PrivateToFlags(void *priv)
 }
 
 JSBool
-nsHTMLDocumentSH::DocumentAllHelperGetProperty(JSContext *cx, JSObject *obj,
-                                               jsid id, JS::Value *vp)
+nsHTMLDocumentSH::DocumentAllHelperGetProperty(JSContext *cx, JSHandleObject obj,
+                                               JSHandleId id, JS::Value *vp)
 {
-  if (id != nsDOMClassInfo::sAll_id) {
+  if (nsDOMClassInfo::sAll_id != id) {
     return JS_TRUE;
   }
 
@@ -9057,11 +9079,11 @@ nsHTMLDocumentSH::DocumentAllHelperGetProperty(JSContext *cx, JSObject *obj,
 }
 
 JSBool
-nsHTMLDocumentSH::DocumentAllHelperNewResolve(JSContext *cx, JSObject *obj,
-                                              jsid id, unsigned flags,
+nsHTMLDocumentSH::DocumentAllHelperNewResolve(JSContext *cx, JSHandleObject obj,
+                                              JSHandleId id, unsigned flags,
                                               JSObject **objp)
 {
-  if (id == nsDOMClassInfo::sAll_id) {
+  if (nsDOMClassInfo::sAll_id == id) {
     // document.all is resolved for the first time. Define it.
     JSObject *helper = GetDocumentAllHelper(obj);
 
@@ -9080,8 +9102,8 @@ nsHTMLDocumentSH::DocumentAllHelperNewResolve(JSContext *cx, JSObject *obj,
 
 
 JSBool
-nsHTMLDocumentSH::DocumentAllTagsNewResolve(JSContext *cx, JSObject *obj,
-                                            jsid id, unsigned flags,
+nsHTMLDocumentSH::DocumentAllTagsNewResolve(JSContext *cx, JSHandleObject obj,
+                                            JSHandleId id, unsigned flags,
                                             JSObject **objp)
 {
   if (JSID_IS_STRING(id)) {
@@ -10292,24 +10314,20 @@ nsStorage2SH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   nsCOMPtr<nsIDOMStorage> storage(do_QueryWrappedNative(wrapper));
   NS_ENSURE_TRUE(storage, NS_ERROR_UNEXPECTED);
 
-  nsAutoString val;
-  nsresult rv = NS_OK;
+  JSString* key = IdToString(cx, id);
+  NS_ENSURE_TRUE(key, NS_ERROR_UNEXPECTED);
 
-  if (JSID_IS_STRING(id)) {
-    // For native wrappers, do not get random names on storage objects.
-    if (ObjectIsNativeWrapper(cx, obj)) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
+  nsDependentJSString keyStr;
+  NS_ENSURE_TRUE(keyStr.init(cx, key), NS_ERROR_UNEXPECTED);
 
-    rv = storage->GetItem(nsDependentJSString(id), val);
-    NS_ENSURE_SUCCESS(rv, rv);
-  } else {
-    PRInt32 n = GetArrayIndexFromId(cx, id);
-    NS_ENSURE_TRUE(n >= 0, NS_ERROR_NOT_AVAILABLE);
-
-    rv = storage->Key(n, val);
-    NS_ENSURE_SUCCESS(rv, rv);
+  // For native wrappers, do not get random names on storage objects.
+  if (ObjectIsNativeWrapper(cx, obj)) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
+
+  nsAutoString val;
+  nsresult rv = storage->GetItem(keyStr, val);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   JSAutoRequest ar(cx);
 

@@ -1,43 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   John Bandhauer <jband@netscape.com> (original author)
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Wrapper object for reflecting native xpcom objects into JavaScript. */
 
@@ -1642,8 +1608,6 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
             if (!newobj)
                 return NS_ERROR_FAILURE;
 
-            JS_SetPrivate(flat, nsnull);
-
             JSObject *propertyHolder =
                 JS_NewObjectWithGivenProto(ccx, NULL, NULL, aNewParent);
             if (!propertyHolder || !JS_CopyPropertiesFrom(ccx, propertyHolder, flat))
@@ -1658,6 +1622,17 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
                     !wrapper->GetSameCompartmentSecurityWrapper(ccx))
                     return NS_ERROR_FAILURE;
             }
+
+            // Null out the private of the JS reflector. If we don't, we'll end up
+            // with two JS objects with the same WN in their private slot, and both
+            // will try to delete it during finalization. The one in this
+            // compartment will actually go away quite soon, because we swap() it
+            // with another object during the transplant and let that object die.
+            //
+            // NB: It's important to do this _after_ copying the properties to
+            // propertyHolder. Otherwise, an object with |foo.x === foo| will
+            // crash when JS_CopyPropertiesFrom tries to call wrap() on foo.x.
+            JS_SetPrivate(flat, nsnull);
 
             JSObject *ww = wrapper->GetWrapper();
             if (ww) {
@@ -1850,8 +1825,8 @@ return_tearoff:
 
         // Unwrap any wrapper wrappers.
         JSObject *unsafeObj = cx
-                              ? XPCWrapper::Unwrap(cx, cur)
-                              : XPCWrapper::UnsafeUnwrapSecurityWrapper(cur);
+                              ? XPCWrapper::Unwrap(cx, cur, /* stopAtOuter = */ false)
+                              : js::UnwrapObject(cur, /* stopAtOuter = */ false);
         if (unsafeObj) {
             obj = unsafeObj;
             goto restart;
@@ -3751,19 +3726,17 @@ XPCJSObjectHolder::~XPCJSObjectHolder()
 void
 XPCJSObjectHolder::TraceJS(JSTracer *trc)
 {
-    JS_SET_TRACING_DETAILS(trc, PrintTraceName, this, 0);
+    JS_SET_TRACING_DETAILS(trc, GetTraceName, this, 0);
     JS_CallTracer(trc, mJSObj, JSTRACE_OBJECT);
 }
 
-#ifdef DEBUG
 // static
 void
-XPCJSObjectHolder::PrintTraceName(JSTracer* trc, char *buf, size_t bufsize)
+XPCJSObjectHolder::GetTraceName(JSTracer* trc, char *buf, size_t bufsize)
 {
     JS_snprintf(buf, bufsize, "XPCJSObjectHolder[0x%p].mJSObj",
                 trc->debugPrintArg);
 }
-#endif
 
 // static
 XPCJSObjectHolder*

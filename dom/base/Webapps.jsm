@@ -187,7 +187,7 @@ let DOMApplicationRegistry = {
 
     let dir = FileUtils.getDir(DIRECTORY_NAME, ["webapps", id], true, true);
     let manFile = dir.clone();
-    manFile.append("manifest.json");
+    manFile.append("manifest.webapp");
     this._writeFile(manFile, JSON.stringify(app.manifest));
     this.webapps[id] = appObject;
 
@@ -229,7 +229,13 @@ let DOMApplicationRegistry = {
 
     let index = aIndex || 0;
     let id = aData[index].id;
-    let file = FileUtils.getFile(DIRECTORY_NAME, ["webapps", id, "manifest.json"], true);
+
+    // the manifest file used to be named manifest.json, so fallback on this.
+    let file = FileUtils.getFile(DIRECTORY_NAME, ["webapps", id, "manifest.webapp"], true);
+    if (!file.exists()) {
+      file = FileUtils.getFile(DIRECTORY_NAME, ["webapps", id, "manifest.json"], true);
+    }
+
     this._loadJSONAsync(file, (function(aJSON) {
       aData[index].manifest = aJSON;
       if (index == aData.length - 1)
@@ -345,6 +351,20 @@ let DOMApplicationRegistry = {
     
     let app = this._cloneAppObject(this.webapps[aId]);
     return app;
+  },
+
+  getAppByManifestURL: function(aManifestURL) {
+    // This could be O(1) if |webapps| was a dictionary indexed on manifestURL
+    // which should be the unique app identifier.
+    // It's currently O(n).
+    for (let id in this.webapps) {
+      let app = this.webapps[id];
+      if (app.manifestURL == aManifestURL) {
+        return this._cloneAppObject(app);
+      }
+    }
+
+    return null;
   },
   
   getAllWithoutManifests: function(aCallback) {

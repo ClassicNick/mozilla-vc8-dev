@@ -1,40 +1,7 @@
 /* -*- Mode: Java; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Benjamin Smedberg <bsmedberg@covad.net>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* The prefs in this file are shipped with the GRE and should apply to all
  * embedding situations. Application-specific preferences belong somewhere else,
@@ -244,6 +211,7 @@ pref("gfx.font_rendering.directwrite.use_gdi_table_loading", true);
 
 #ifdef XP_WIN
 pref("gfx.canvas.azure.enabled", true);
+pref("gfx.content.azure.enabled", true);
 #else
 #ifdef XP_MACOSX
 pref("gfx.canvas.azure.enabled", true);
@@ -3442,7 +3410,6 @@ pref("webgl.disabled", false);
 pref("webgl.shader_validator", true);
 pref("webgl.force_osmesa", false);
 pref("webgl.osmesalib", "");
-pref("webgl.verbose", false);
 pref("webgl.prefer-native-gl", false);
 pref("webgl.min_capability_mode", false);
 pref("webgl.disable-extensions", false);
@@ -3466,7 +3433,13 @@ pref("layers.acceleration.force-enabled", false);
 
 pref("layers.acceleration.draw-fps", false);
 
+// An environment variable (MOZ_USE_OMTC)is used instead of a pref on X11 
+// platforms because we start having access to prefs long after the first 
+// call to XOpenDisplay which is hard to change due to interdependencies 
+// in the initialization (see bug 722012 for more details).
+#ifndef MOZ_X11
 pref("layers.offmainthreadcomposition.enabled", false);
+#endif
 
 #ifdef MOZ_X11
 #ifdef MOZ_WIDGET_GTK2
@@ -3494,6 +3467,9 @@ pref("geo.enabled", true);
 
 // Enable/Disable the orientation API for content
 pref("device.motion.enabled", true);
+
+// Enable/Disable the device storage API for content
+pref("device.storage.enabled", false);
 
 // Toggle which thread the HTML5 parser uses for stream parsing
 pref("html5.offmainthread", true);

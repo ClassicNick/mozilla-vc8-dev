@@ -1,43 +1,9 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sw=4 et tw=78:
  *
- * ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla Communicator client code, released
- * March 31, 1998.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Nick Fitzgerald <nfitzgerald@mozilla.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either of the GNU General Public License Version 2 or later (the "GPL"),
- * or the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS script operations.
@@ -78,6 +44,8 @@
 
 #include "frontend/TreeContext-inl.h"
 #include "vm/RegExpObject-inl.h"
+
+#include "frontend/TreeContext-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -148,7 +116,7 @@ Bindings::add(JSContext *cx, HandleAtom name, BindingKind kind)
         slot += nargs + nvars;
     }
 
-    RootedVarId id(cx);
+    RootedId id(cx);
     if (!name) {
         JS_ASSERT(kind == ARGUMENT); /* destructuring */
         id = INT_TO_JSID(nargs);
@@ -205,7 +173,7 @@ Bindings::callObjectShape(JSContext *cx) const
     /*
      * Now build the Shape without duplicate properties.
      */
-    RootedVarShape shape(cx);
+    RootedShape shape(cx);
     shape = initialShape(cx);
     for (int i = shapes.length() - 1; i >= 0; --i) {
         shape = shape->getChildBinding(cx, shapes[i]);
@@ -434,7 +402,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
     if (mode == XDR_ENCODE) {
         script = *scriptp;
         JS_ASSERT_IF(parentScript, parentScript->compartment() == script->compartment());
-    
+
         nargs = script->bindings.numArgs();
         nvars = script->bindings.numVars();
         argsVars = (nargs << 16) | nvars;
@@ -449,7 +417,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
     JS_ASSERT(nvars != Bindings::BINDING_COUNT_LIMIT);
 
     Bindings bindings(cx);
-    Bindings::StackRoot bindingsRoot(cx, &bindings);
+    Bindings::AutoRooter bindingsRoot(cx, &bindings);
 
     uint32_t nameCount = nargs + nvars;
     if (nameCount > 0) {
@@ -499,7 +467,7 @@ js::XDRScript(XDRState<mode> *xdr, JSScript **scriptp, JSScript *parentScript)
                 continue;
             }
 
-            RootedVarAtom name(cx);
+            RootedAtom name(cx);
             if (mode == XDR_ENCODE)
                 name = names[i].maybeAtom;
             if (!XDRAtom(xdr, name.address()))
@@ -1030,9 +998,9 @@ js::FreeScriptFilenames(JSRuntime *rt)
  * ClosedSlotArray  ClosedArgs      closedArgs()
  * ClosedSlotArray  ClosedVars      closedVars()
  *
- * Then are the elements of several arrays.  
+ * Then are the elements of several arrays.
  * - Most of these arrays have headers listed above (if present).  For each of
- *   these, the array pointer and the array length is stored in the header.  
+ *   these, the array pointer and the array length is stored in the header.
  * - The remaining arrays have pointers and lengths that are stored directly in
  *   JSScript.  This is because, unlike the others, they are nearly always
  *   non-zero length and so the optional-header space optimization isn't
@@ -1048,7 +1016,7 @@ js::FreeScriptFilenames(JSRuntime *rt)
  * Closed args      closedArgs()->vector  closedArgs()->length
  * Closed vars      closedVars()->vector  closedVars()->length
  * Bytecodes        code                  length
- * Source notes     notes()               numNotes() * sizeof(jssrcnote)  
+ * Source notes     notes()               numNotes() * sizeof(jssrcnote)
  *
  * IMPORTANT: This layout has two key properties.
  * - It ensures that everything has sufficient alignment;  in particular, the
@@ -1245,7 +1213,7 @@ JSScript *
 JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
 {
     uint32_t mainLength, prologLength, nfixed;
-    RootedVar<JSScript*> script(cx);
+    Rooted<JSScript*> script(cx);
     const char *filename;
     JSFunction *fun;
 
@@ -1257,7 +1225,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     mainLength = bce->offset();
     prologLength = bce->prologOffset();
 
-    if (!bce->bindings.ensureShape(cx))
+    if (!bce->sc->bindings.ensureShape(cx))
         return NULL;
 
     uint32_t nsrcnotes = uint32_t(bce->countFinalSourceNotes());
@@ -1272,13 +1240,13 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     if (!script)
         return NULL;
 
-    bce->bindings.makeImmutable();
+    bce->sc->bindings.makeImmutable();
 
     JS_ASSERT(script->mainOffset == 0);
     script->mainOffset = prologLength;
     PodCopy<jsbytecode>(script->code, bce->prologBase(), prologLength);
     PodCopy<jsbytecode>(script->main(), bce->base(), mainLength);
-    nfixed = bce->inFunction() ? bce->bindings.numVars() : 0;
+    nfixed = bce->sc->inFunction ? bce->sc->bindings.numVars() : 0;
     JS_ASSERT(nfixed < SLOTNO_LIMIT);
     script->nfixed = uint16_t(nfixed);
     InitAtomMap(cx, bce->atomIndices.getMap(), script->atoms);
@@ -1296,7 +1264,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         return NULL;
     }
     script->nslots = script->nfixed + bce->maxStackDepth;
-    script->staticLevel = uint16_t(bce->staticLevel);
+    script->staticLevel = uint16_t(bce->sc->staticLevel);
     script->principals = bce->parser->principals;
 
     if (script->principals)
@@ -1327,27 +1295,32 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         bce->regexpList.finish(script->regexps());
     if (bce->constList.length() != 0)
         bce->constList.finish(script->consts());
-    if (bce->flags & TCF_NO_SCRIPT_RVAL)
-        script->noScriptRval = true;
-    if (bce->flags & TCF_STRICT_MODE_CODE)
-        script->strictModeCode = true;
-    if (bce->flags & TCF_COMPILE_N_GO) {
+    script->strictModeCode = bce->sc->inStrictMode();
+    if (bce->parser->compileAndGo) {
         script->compileAndGo = true;
         const StackFrame *fp = bce->parser->callerFrame;
         if (fp && fp->isFunctionFrame())
             script->savedCallerFun = true;
     }
-    if (bce->bindingsAccessedDynamically())
-        script->bindingsAccessedDynamically = true;
-    if (bce->flags & TCF_HAS_SINGLETONS)
-        script->hasSingletons = true;
-    if (bce->flags & TCF_FUN_IS_GENERATOR)
-        script->isGenerator = true;
+    script->bindingsAccessedDynamically = bce->sc->bindingsAccessedDynamically();
+    script->hasSingletons = bce->hasSingletons;
+#ifdef JS_METHODJIT
+    if (cx->compartment->debugMode())
+        script->debugMode = true;
+#endif
 
-    if (bce->argumentsHasLocalBinding()) {
-        script->setArgumentsHasLocalBinding(bce->argumentsLocalSlot());
-        if (bce->definitelyNeedsArgsObj())
-            script->setNeedsArgsObj(true);
+    if (bce->sc->inFunction) {
+        if (bce->sc->funArgumentsHasLocalBinding()) {
+            // This must precede the script->bindings.transfer() call below.
+            script->setArgumentsHasLocalBinding(bce->sc->argumentsLocalSlot());
+            if (bce->sc->funDefinitelyNeedsArgsObj())
+                script->setNeedsArgsObj(true);
+        } else {
+            JS_ASSERT(!bce->sc->funDefinitelyNeedsArgsObj());
+        }
+    } else {
+        JS_ASSERT(!bce->sc->funArgumentsHasLocalBinding());
+        JS_ASSERT(!bce->sc->funDefinitelyNeedsArgsObj());
     }
 
     if (nClosedArgs)
@@ -1355,18 +1328,23 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
     if (nClosedVars)
         PodCopy<uint32_t>(script->closedVars()->vector, &bce->closedVars[0], nClosedVars);
 
-    script->bindings.transfer(cx, &bce->bindings);
+    script->bindings.transfer(cx, &bce->sc->bindings);
 
     fun = NULL;
-    if (bce->inFunction()) {
+    if (bce->sc->inFunction) {
+        JS_ASSERT(!bce->noScriptRval);
+        JS_ASSERT(!bce->needScriptGlobal);
+
+        script->isGenerator = bce->sc->funIsGenerator();
+
         /*
          * We initialize fun->script() to be the script constructed above
          * so that the debugger has a valid fun->script().
          */
-        fun = bce->fun();
+        fun = bce->sc->fun();
         JS_ASSERT(fun->isInterpreted());
         JS_ASSERT(!fun->script());
-        if (bce->flags & TCF_FUN_HEAVYWEIGHT)
+        if (bce->sc->funIsHeavyweight())
             fun->flags |= JSFUN_HEAVYWEIGHT;
 
         /*
@@ -1375,20 +1353,27 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         bool singleton =
             cx->typeInferenceEnabled() &&
             bce->parent &&
-            bce->parentBCE()->checkSingletonContext();
+            bce->parent->checkSingletonContext();
 
         if (!script->typeSetFunction(cx, fun, singleton))
             return NULL;
 
         fun->setScript(script);
         script->globalObject = fun->getParent() ? &fun->getParent()->global() : NULL;
+
     } else {
+        // It'd be nice to JS_ASSERT(!bce->sc->funIsHeavyweight()) here, but
+        // Parser.cpp is sloppy and sometimes applies it to non-functions.
+        JS_ASSERT(!bce->sc->funIsGenerator());
+
         /*
          * Initialize script->object, if necessary, so that the debugger has a
          * valid holder object.
          */
-        if (bce->flags & TCF_NEED_SCRIPT_GLOBAL)
+        if (bce->needScriptGlobal)
             script->globalObject = GetCurrentGlobal(cx);
+
+        script->noScriptRval = bce->noScriptRval;
     }
 
     /* Tell the debugger about this compiled script. */
@@ -1398,7 +1383,7 @@ JSScript::NewScriptFromEmitter(JSContext *cx, BytecodeEmitter *bce)
         if (script->compileAndGo) {
             compileAndGoGlobal = script->globalObject;
             if (!compileAndGoGlobal)
-                compileAndGoGlobal = &bce->scopeChain()->global();
+                compileAndGoGlobal = &bce->sc->scopeChain()->global();
         }
         Debugger::onNewScript(cx, script, compileAndGoGlobal);
     }
@@ -1445,6 +1430,7 @@ JS_FRIEND_API(void)
 js_CallNewScriptHook(JSContext *cx, JSScript *script, JSFunction *fun)
 {
     JS_ASSERT(!script->callDestroyHook);
+    JS_ASSERT(!script->isActiveEval);
     if (JSNewScriptHook hook = cx->runtime->debugHooks.newScriptHook) {
         AutoKeepAtoms keep(cx->runtime);
         hook(cx, script->filename, script->lineno, script, fun,
@@ -1734,7 +1720,7 @@ js::CloneScript(JSContext *cx, JSScript *src)
 
     for (unsigned i = 0; i < names.length(); ++i) {
         if (JSAtom *atom = names[i].maybeAtom) {
-            if (!bindings.add(cx, RootedVarAtom(cx, atom), names[i].kind))
+            if (!bindings.add(cx, RootedAtom(cx, atom), names[i].kind))
                 return NULL;
         } else {
             uint16_t _;
@@ -2167,7 +2153,7 @@ JSScript::setNeedsArgsObj(bool needsArgsObj)
 /* static */ bool
 JSScript::applySpeculationFailed(JSContext *cx, JSScript *script_)
 {
-    RootedVar<JSScript*> script(cx, script_);
+    Rooted<JSScript*> script(cx, script_);
 
     JS_ASSERT(script->analyzedArgsUsage());
     JS_ASSERT(script->argumentsHasLocalBinding());
@@ -2252,19 +2238,19 @@ JSScript::varIsAliased(unsigned varSlot)
 }
 
 bool
-JSScript::argIsAliased(unsigned argSlot)
+JSScript::formalIsAliased(unsigned argSlot)
 {
-    return argLivesInCallObject(argSlot) || needsArgsObj();
+    return formalLivesInCallObject(argSlot) || argsObjAliasesFormals();
 }
 
 bool
-JSScript::argLivesInArgumentsObject(unsigned argSlot)
+JSScript::formalLivesInArgumentsObject(unsigned argSlot)
 {
-    return needsArgsObj() && !argLivesInCallObject(argSlot);
+    return argsObjAliasesFormals() && !formalLivesInCallObject(argSlot);
 }
 
 bool
-JSScript::argLivesInCallObject(unsigned argSlot)
+JSScript::formalLivesInCallObject(unsigned argSlot)
 {
     if (bindingsAccessedDynamically)
         return true;

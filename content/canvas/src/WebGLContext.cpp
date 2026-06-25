@@ -1,41 +1,7 @@
 /* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- *   Mozilla Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Vladimir Vukicevic <vladimir@pobox.com> (original author)
- *   Mark Steele <mwsteele@gmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebGLContext.h"
 #include "WebGLExtensions.h"
@@ -114,7 +80,6 @@ WebGLContext::WebGLContext()
     mGeneration = 0;
     mInvalidated = false;
     mResetLayer = true;
-    mVerbose = false;
     mOptionsFrozen = false;
 
     mActiveTexture = 0;
@@ -187,6 +152,8 @@ WebGLContext::WebGLContext()
     mContextRestorer = do_CreateInstance("@mozilla.org/timer;1");
     mContextStatus = ContextStable;
     mContextLostErrorSet = false;
+
+    mAlreadyReportedMessages = 0;
 }
 
 WebGLContext::~WebGLContext()
@@ -237,8 +204,6 @@ WebGLContext::DestroyResourcesAndContext()
         mShaders.Last()->DeleteOnce();
     while (mPrograms.Length())
         mPrograms.Last()->DeleteOnce();
-    while (mUniformLocations.Length())
-        mUniformLocations.Last()->DeleteOnce();
 
     if (mBlackTexturesAreInitialized) {
         gl->fDeleteTextures(1, &mBlackTexture2D);
@@ -332,7 +297,7 @@ WebGLContext::SetContextOptions(nsIPropertyBag *aOptions)
     newOpts.depth |= newOpts.stencil;
 
 #if 0
-    LogMessage("aaHint: %d stencil: %d depth: %d alpha: %d premult: %d preserve: %d\n",
+    GenerateWarning("aaHint: %d stencil: %d depth: %d alpha: %d premult: %d preserve: %d\n",
                newOpts.antialias ? 1 : 0,
                newOpts.stencil ? 1 : 0,
                newOpts.depth ? 1 : 0,
@@ -407,15 +372,11 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
         Preferences::GetBool("webgl.force-enabled", false);
     bool disabled =
         Preferences::GetBool("webgl.disabled", false);
-    bool verbose =
-        Preferences::GetBool("webgl.verbose", false);
 
     ScopedGfxFeatureReporter reporter("WebGL", forceEnabled);
 
     if (disabled)
         return NS_ERROR_FAILURE;
-
-    mVerbose = verbose;
 
     // We're going to create an entirely new context.  If our
     // generation is not 0 right now (that is, if this isn't the first
@@ -425,7 +386,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     // If incrementing the generation would cause overflow,
     // don't allow it.  Allowing this would allow us to use
     // resource handles created from older context generations.
-    if (!(mGeneration+1).valid())
+    if (!(mGeneration + 1).isValid())
         return NS_ERROR_FAILURE; // exit without changing the value of mGeneration
 
     gl::ContextFormat format(gl::ContextFormat::BasicRGBA32);
@@ -530,7 +491,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
         if (renderer == gl::GLContext::RendererAdreno200 ||
             renderer == gl::GLContext::RendererAdreno205)
         {
-            LogMessage("WebGL blocked on this Adreno driver!");
+            GenerateWarning("WebGL blocked on this Adreno driver!");
             return NS_ERROR_FAILURE;
         }
     }
@@ -540,10 +501,10 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     if (forceOSMesa) {
         gl = gl::GLContextProviderOSMesa::CreateOffscreen(gfxIntSize(width, height), format);
         if (!gl || !InitAndValidateGL()) {
-            LogMessage("OSMesa forced, but creating context failed -- aborting!");
+            GenerateWarning("OSMesa forced, but creating context failed -- aborting!");
             return NS_ERROR_FAILURE;
         }
-        LogMessage("Using software rendering via OSMesa (THIS WILL BE SLOW)");
+        GenerateWarning("Using software rendering via OSMesa (THIS WILL BE SLOW)");
     }
 
 #ifdef XP_WIN
@@ -551,7 +512,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     if (!gl && (preferEGL || useANGLE) && !preferOpenGL) {
         gl = gl::GLContextProviderEGL::CreateOffscreen(gfxIntSize(width, height), format);
         if (!gl || !InitAndValidateGL()) {
-            LogMessage("Error during ANGLE OpenGL ES initialization");
+            GenerateWarning("Error during ANGLE OpenGL ES initialization");
             return NS_ERROR_FAILURE;
         }
     }
@@ -561,7 +522,7 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
     if (!gl && useOpenGL) {
         gl = gl::GLContextProvider::CreateOffscreen(gfxIntSize(width, height), format);
         if (gl && !InitAndValidateGL()) {
-            LogMessage("Error during OpenGL initialization");
+            GenerateWarning("Error during OpenGL initialization");
             return NS_ERROR_FAILURE;
         }
     }
@@ -571,16 +532,16 @@ WebGLContext::SetDimensions(PRInt32 width, PRInt32 height)
         gl = gl::GLContextProviderOSMesa::CreateOffscreen(gfxIntSize(width, height), format);
         if (gl) {
             if (!InitAndValidateGL()) {
-                LogMessage("Error during OSMesa initialization");
+                GenerateWarning("Error during OSMesa initialization");
                 return NS_ERROR_FAILURE;
             } else {
-                LogMessage("Using software rendering via OSMesa (THIS WILL BE SLOW)");
+                GenerateWarning("Using software rendering via OSMesa (THIS WILL BE SLOW)");
             }
         }
     }
 
     if (!gl) {
-        LogMessage("Can't get a usable WebGL context");
+        GenerateWarning("Can't get a usable WebGL context");
         return NS_ERROR_FAILURE;
     }
 

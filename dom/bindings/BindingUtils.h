@@ -13,9 +13,11 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "jswrapper.h"
 
-#include "XPCQuickStubs.h"
-#include "XPCWrapper.h"
+#include "nsIXPConnect.h"
+#include "qsObjectHelper.h"
+#include "xpcpublic.h"
 #include "nsTraceRefcnt.h"
 #include "nsWrapperCacheInlines.h"
 
@@ -34,7 +36,7 @@ Throw(JSContext* cx, nsresult rv)
 
   // XXX Introduce exception machinery.
   if (mainThread) {
-    XPCThrower::Throw(rv, cx);
+    xpc::Throw(cx, rv);
   } else {
     if (!JS_IsExceptionPending(cx)) {
       ThrowDOMExceptionForNSResult(cx, rv);
@@ -106,7 +108,7 @@ UnwrapObject(JSContext* cx, JSObject* obj, T** value)
       return NS_ERROR_XPC_BAD_CONVERT_JS;
     }
 
-    obj = XPCWrapper::Unwrap(cx, obj, false);
+    obj = xpc::Unwrap(cx, obj, false);
     if (!obj) {
       return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
     }
@@ -138,18 +140,25 @@ inline bool
 IsArrayLike(JSContext* cx, JSObject* obj)
 {
   MOZ_ASSERT(obj);
-  // For simplicity, check for security wrappers up front
+  // For simplicity, check for security wrappers up front.  In case we
+  // have a security wrapper, don't forget to enter the compartment of
+  // the underlying object after unwrapping.
+  JSAutoEnterCompartment ac;
   if (js::IsWrapper(obj)) {
-    obj = XPCWrapper::Unwrap(cx, obj, false);
+    obj = xpc::Unwrap(cx, obj, false);
     if (!obj) {
       // Let's say it's not
+      return false;
+    }
+
+    if (!ac.enter(cx, obj)) {
       return false;
     }
   }
 
   // XXXbz need to detect platform objects (including listbinding
   // ones) with indexGetters here!
-  return JS_IsArrayObject(cx, obj);
+  return JS_IsArrayObject(cx, obj) || JS_IsTypedArrayObject(obj, cx);
 }
 
 inline bool
@@ -168,7 +177,7 @@ IsPlatformObject(JSContext* cx, JSObject* obj)
   }
   // Now for simplicity check for security wrappers before anything else
   if (js::IsWrapper(obj)) {
-    obj = XPCWrapper::Unwrap(cx, obj, false);
+    obj = xpc::Unwrap(cx, obj, false);
     if (!obj) {
       // Let's say it's not
       return false;
@@ -239,6 +248,16 @@ struct ConstantSpec
 bool
 DefineConstants(JSContext* cx, JSObject* obj, ConstantSpec* cs);
 
+template<typename T>
+struct Prefable {
+  // A boolean indicating whether this set of specs is enabled
+  bool enabled;
+  // Array of specs, terminated in whatever way is customary for T.
+  // Null to indicate a end-of-array for Prefable, when such an
+  // indicator is needed.
+  T* specs;
+};
+
 /*
  * Create a DOM interface object (if constructorClass is non-null) and/or a
  * DOM interface prototype object (if protoClass is non-null).
@@ -280,9 +299,10 @@ JSObject*
 CreateInterfaceObjects(JSContext* cx, JSObject* global, JSObject* receiver,
                        JSObject* protoProto, JSClass* protoClass,
                        JSClass* constructorClass, JSNative constructor,
-                       unsigned ctorNargs, JSFunctionSpec* methods,
-                       JSPropertySpec* properties, ConstantSpec* constants,
-                       JSFunctionSpec* staticMethods, const char* name);
+                       unsigned ctorNargs, Prefable<JSFunctionSpec>* methods,
+                       Prefable<JSPropertySpec>* properties,
+                       Prefable<ConstantSpec>* constants,
+                       Prefable<JSFunctionSpec>* staticMethods, const char* name);
 
 template <class T>
 inline bool
@@ -560,17 +580,28 @@ WrapNativeParent(JSContext* cx, JSObject* scope, const T& p)
 // Spec needs a name property
 template <typename Spec>
 static bool
-InitIds(JSContext* cx, Spec* specs, jsid* ids)
+InitIds(JSContext* cx, Prefable<Spec>* prefableSpecs, jsid* ids)
 {
-  Spec* spec = specs;
+  MOZ_ASSERT(prefableSpecs);
+  MOZ_ASSERT(prefableSpecs->specs);
   do {
-    JSString *str = ::JS_InternString(cx, spec->name);
-    if (!str) {
-      return false;
-    }
+    // We ignore whether the set of ids is enabled and just intern all the IDs,
+    // because this is only done once per application runtime.
+    Spec* spec = prefableSpecs->specs;
+    do {
+      JSString *str = ::JS_InternString(cx, spec->name);
+      if (!str) {
+        return false;
+      }
 
-    *ids = INTERNED_STRING_TO_JSID(cx, str);
-  } while (++ids, (++spec)->name);
+      *ids = INTERNED_STRING_TO_JSID(cx, str);
+    } while (++ids, (++spec)->name);
+
+    // We ran out of ids for that pref.  Put a JSID_VOID in on the id
+    // corresponding to the list terminator for the pref.
+    *ids = JSID_VOID;
+    ++ids;
+  } while ((++prefableSpecs)->specs);
 
   return true;
 }
@@ -581,6 +612,136 @@ JSBool
 ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp);
 JSBool
 ThrowingConstructorWorkers(JSContext* cx, unsigned argc, JS::Value* vp);
+
+template<class T>
+class NonNull
+{
+public:
+  NonNull()
+#ifdef DEBUG
+    : inited(false)
+#endif
+  {}
+
+  operator T&() {
+    MOZ_ASSERT(inited);
+    MOZ_ASSERT(ptr, "NonNull<T> was set to null");
+    return *ptr;
+  }
+
+  void operator=(T* t) {
+    ptr = t;
+    MOZ_ASSERT(ptr);
+#ifdef DEBUG
+    inited = true;
+#endif
+  }
+
+  T** Slot() {
+#ifdef DEBUG
+    inited = true;
+#endif
+    return &ptr;
+  }
+
+protected:
+  T* ptr;
+#ifdef DEBUG
+  bool inited;
+#endif
+};
+
+template<class T>
+class OwningNonNull
+{
+public:
+  OwningNonNull()
+#ifdef DEBUG
+    : inited(false)
+#endif
+  {}
+
+  operator T&() {
+    MOZ_ASSERT(inited);
+    MOZ_ASSERT(ptr, "OwningNonNull<T> was set to null");
+    return *ptr;
+  }
+
+  void operator=(T* t) {
+    init(t);
+  }
+
+  void operator=(const already_AddRefed<T>& t) {
+    init(t);
+  }
+
+protected:
+  template<typename U>
+  void init(U t) {
+    ptr = t;
+    MOZ_ASSERT(ptr);
+#ifdef DEBUG
+    inited = true;
+#endif
+  }
+
+  nsRefPtr<T> ptr;
+#ifdef DEBUG
+  bool inited;
+#endif
+};
+
+enum StringificationBehavior {
+  eStringify,
+  eEmpty,
+  eNull
+};
+
+static inline bool
+ConvertJSValueToString(JSContext* cx, const JS::Value& v, JS::Value* pval,
+                       StringificationBehavior nullBehavior,
+                       StringificationBehavior undefinedBehavior,
+                       nsDependentString& result)
+{
+  JSString *s;
+  if (v.isString()) {
+    s = v.toString();
+  } else {
+    StringificationBehavior behavior;
+    if (v.isNull()) {
+      behavior = nullBehavior;
+    } else if (v.isUndefined()) {
+      behavior = undefinedBehavior;
+    } else {
+      behavior = eStringify;
+    }
+
+    // If pval is null, that means the argument was optional and
+    // not passed; turn those into void strings if they're
+    // supposed to be stringified.
+    if (behavior != eStringify || !pval) {
+      // Here behavior == eStringify implies !pval, so both eNull and
+      // eStringify should end up with void strings.
+      result.SetIsVoid(behavior != eEmpty);
+      return true;
+    }
+
+    s = JS_ValueToString(cx, v);
+    if (!s) {
+      return false;
+    }
+    pval->setString(s);  // Root the new string.
+  }
+
+  size_t len;
+  const jschar *chars = JS_GetStringCharsZAndLength(cx, s, &len);
+  if (!chars) {
+    return false;
+  }
+
+  result.Rebind(chars, len);
+  return true;
+}
 
 } // namespace dom
 } // namespace mozilla

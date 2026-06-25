@@ -1,40 +1,7 @@
 /* vim:set ts=4 sw=4 sts=4 et cin: */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is Mozilla.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 2002
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Darin Fisher <darin@netscape.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHttpConnectionMgr.h"
 #include "nsHttpConnection.h"
@@ -1077,15 +1044,27 @@ nsHttpConnectionMgr::ReportFailedToProcess(nsIURI *uri)
     if (NS_FAILED(rv) || !isHttp || host.IsEmpty())
         return;
 
-    // report the event for both the anonymous and non-anonymous
-    // versions of this host
+    // report the event for all the permutations of anonymous and
+    // private versions of this host
     nsRefPtr<nsHttpConnectionInfo> ci =
         new nsHttpConnectionInfo(host, port, nsnull, usingSSL);
     ci->SetAnonymous(false);
+    ci->SetPrivate(false);
     PipelineFeedbackInfo(ci, RedCorruptedContent, nsnull, 0);
 
-    ci = new nsHttpConnectionInfo(host, port, nsnull, usingSSL);
+    ci = ci->Clone();
+    ci->SetAnonymous(false);
+    ci->SetPrivate(true);
+    PipelineFeedbackInfo(ci, RedCorruptedContent, nsnull, 0);
+
+    ci = ci->Clone();
     ci->SetAnonymous(true);
+    ci->SetPrivate(false);
+    PipelineFeedbackInfo(ci, RedCorruptedContent, nsnull, 0);
+
+    ci = ci->Clone();
+    ci->SetAnonymous(true);
+    ci->SetPrivate(true);
     PipelineFeedbackInfo(ci, RedCorruptedContent, nsnull, 0);
 }
 
@@ -1132,9 +1111,22 @@ nsHttpConnectionMgr::AtActiveConnectionLimit(nsConnectionEntry *ent, PRUint8 cap
 
     // Add in the in-progress tcp connections, we will assume they are
     // keepalive enabled.
-    totalCount += ent->mHalfOpens.Length();
-    persistCount += ent->mHalfOpens.Length();
+    PRUint32 pendingHalfOpens = 0;
+    for (i = 0; i < ent->mHalfOpens.Length(); ++i) {
+        nsHalfOpenSocket *halfOpen = ent->mHalfOpens[i];
+
+        // Exclude half-open's that has already created a usable connection.
+        // This prevents the limit being stuck on ipv6 connections that 
+        // eventually time out after typical 21 seconds of no ACK+SYN reply.
+        if (halfOpen->HasConnected())
+            continue;
+
+        ++pendingHalfOpens;
+    }
     
+    totalCount += pendingHalfOpens;
+    persistCount += pendingHalfOpens;
+
     LOG(("   total=%d, persist=%d\n", totalCount, persistCount));
 
     PRUint16 maxConns;
@@ -1150,8 +1142,10 @@ nsHttpConnectionMgr::AtActiveConnectionLimit(nsConnectionEntry *ent, PRUint8 cap
     }
 
     // use >= just to be safe
-    return (totalCount >= maxConns) || ( (caps & NS_HTTP_ALLOW_KEEPALIVE) &&
-                                         (persistCount >= maxPersistConns) );
+    bool result = (totalCount >= maxConns) || ( (caps & NS_HTTP_ALLOW_KEEPALIVE) &&
+                                              (persistCount >= maxPersistConns) );
+    LOG(("  result: %s", result ? "true" : "false"));
+    return result;
 }
 
 void
@@ -2332,7 +2326,8 @@ nsHalfOpenSocket::nsHalfOpenSocket(nsConnectionEntry *ent,
     : mEnt(ent),
       mTransaction(trans),
       mCaps(caps),
-      mSpeculative(false)
+      mSpeculative(false),
+      mHasConnected(false)
 {
     NS_ABORT_IF_FALSE(ent && trans, "constructor with null arguments");
     LOG(("Creating nsHalfOpenSocket [this=%p trans=%p ent=%s]\n",
@@ -2503,8 +2498,12 @@ nsHttpConnectionMgr::nsHalfOpenSocket::SetupBackupTimer()
         mSynTimer = do_CreateInstance(NS_TIMER_CONTRACTID, &rv);
         if (NS_SUCCEEDED(rv)) {
             mSynTimer->InitWithCallback(this, timeout, nsITimer::TYPE_ONE_SHOT);
-            LOG(("nsHalfOpenSocket::SetupBackupTimer()"));
+            LOG(("nsHalfOpenSocket::SetupBackupTimer() [this=%p]", this));
         }
+    }
+    else if (timeout) {
+        LOG(("nsHalfOpenSocket::SetupBackupTimer() [this=%p],"
+             " transaction already done!", this));
     }
 }
 
@@ -2553,10 +2552,7 @@ nsHttpConnectionMgr::nsHalfOpenSocket::Notify(nsITimer *timer)
     NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
     NS_ABORT_IF_FALSE(timer == mSynTimer, "wrong timer");
 
-    if (!gHttpHandler->ConnMgr()->
-        AtActiveConnectionLimit(mEnt, mCaps)) {
-        SetupBackupStreams();
-    }
+    SetupBackupStreams();
 
     mSynTimer = nsnull;
     return NS_OK;
@@ -2624,6 +2620,10 @@ nsHalfOpenSocket::OnOutputStreamReady(nsIAsyncOutputStream *out)
              "conn->init (%p) failed %x\n", conn.get(), rv));
         return rv;
     }
+
+    // This half-open socket has created a connection.  This flag excludes it
+    // from counter of actual connections used for checking limits.
+    mHasConnected = true;
 
     // if this is still in the pending list, remove it and dispatch it
     index = mEnt->mPendingQ.IndexOf(mTransaction);

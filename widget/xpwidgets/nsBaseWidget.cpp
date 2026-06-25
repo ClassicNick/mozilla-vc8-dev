@@ -1,40 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is mozilla.org code.
- *
- * The Initial Developer of the Original Code is
- * Netscape Communications Corporation.
- * Portions created by the Initial Developer are Copyright (C) 1998
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *   Dean Tessman <dean_tessman@hotmail.com>
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above. If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
 
@@ -58,6 +25,7 @@
 #include "nsIGfxInfo.h"
 #include "npapi.h"
 #include "base/thread.h"
+#include "prenv.h"
 
 #ifdef DEBUG
 #include "nsIObserver.h"
@@ -71,12 +39,18 @@ static bool debug_InSecureKeyboardInputMode = false;
 static PRInt32 gNumWidgets;
 #endif
 
+static void InitOnlyOnce();
+static bool sUseOffMainThreadCompositing = false;
+
 using namespace mozilla::layers;
 using namespace mozilla;
 using base::Thread;
 using mozilla::ipc::AsyncChannel;
 
 nsIContent* nsBaseWidget::mLastRollup = nsnull;
+// Global user preference for disabling native theme. Used
+// in NativeWindowTheme.
+bool            gDisableNativeTheme               = false;
 
 // nsBaseWidget
 NS_IMPL_ISUPPORTS1(nsBaseWidget, nsIWidget)
@@ -130,12 +104,13 @@ nsBaseWidget::nsBaseWidget()
 #endif
 
 #ifdef DEBUG
-    debug_RegisterPrefCallbacks();
+  debug_RegisterPrefCallbacks();
 #endif
+  InitOnlyOnce();
 }
 
 
-static void DestroyCompositor(CompositorParent* aCompositorParent,
+static void DeferredDestroyCompositor(CompositorParent* aCompositorParent,
                               CompositorChild* aCompositorChild,
                               Thread* aCompositorThread)
 {
@@ -145,6 +120,27 @@ static void DestroyCompositor(CompositorParent* aCompositorParent,
     aCompositorChild->Release();
 }
 
+void nsBaseWidget::DestroyCompositor() 
+{
+  if (mCompositorChild) {
+    mCompositorChild->SendWillStop();
+
+    // The call just made to SendWillStop can result in IPC from the
+    // CompositorParent to the CompositorChild (e.g. caused by the destruction
+    // of shared memory). We need to ensure this gets processed by the
+    // CompositorChild before it gets destroyed. It suffices to ensure that
+    // events already in the MessageLoop get processed before the
+    // CompositorChild is destroyed, so we add a task to the MessageLoop to
+    // handle compositor desctruction.
+    MessageLoop::current()->PostTask(FROM_HERE,
+               NewRunnableFunction(DeferredDestroyCompositor, mCompositorParent,
+                                   mCompositorChild, mCompositorThread));
+    // The DestroyCompositor task we just added to the MessageLoop will handle
+    // releasing mCompositorParent and mCompositorChild.
+    mCompositorParent.forget();
+    mCompositorChild.forget();
+  }
+}
 
 //-------------------------------------------------------------------------
 //
@@ -163,25 +159,7 @@ nsBaseWidget::~nsBaseWidget()
     mLayerManager = nsnull;
   }
 
-  if (mCompositorChild) {
-    mCompositorChild->SendWillStop();
-
-    // The call just made to SendWillStop can result in IPC from the
-    // CompositorParent to the CompositorChild (e.g. caused by the destruction
-    // of shared memory). We need to ensure this gets processed by the
-    // CompositorChild before it gets destroyed. It suffices to ensure that
-    // events already in the MessageLoop get processed before the
-    // CompositorChild is destroyed, so we add a task to the MessageLoop to
-    // handle compositor desctruction.
-    MessageLoop::current()->
-      PostTask(FROM_HERE,
-               NewRunnableFunction(DestroyCompositor, mCompositorParent,
-                                   mCompositorChild, mCompositorThread));
-    // The DestroyCompositor task we just added to the MessageLoop will handle
-    // releasing mCompositorParent and mCompositorChild.
-    mCompositorParent.forget();
-    mCompositorChild.forget();
-  }
+  DestroyCompositor();
 
 #ifdef NOISY_WIDGET_LEAKS
   gNumWidgets--;
@@ -204,6 +182,14 @@ void nsBaseWidget::BaseCreate(nsIWidget *aParent,
                               nsDeviceContext *aContext,
                               nsWidgetInitData *aInitData)
 {
+  static bool gDisableNativeThemeCached = false;
+  if (!gDisableNativeThemeCached) {
+    mozilla::Preferences::AddBoolVarCache(&gDisableNativeTheme,
+                                          "mozilla.widget.disable-native-theme",
+                                          gDisableNativeTheme);
+    gDisableNativeThemeCached = true;
+  }
+
   // save the event callback function
   mEventCallback = aHandleEventFunction;
   
@@ -889,8 +875,9 @@ void nsBaseWidget::CreateCompositor()
     AsyncChannel *parentChannel = mCompositorParent->GetIPCChannel();
     AsyncChannel::Side childSide = mozilla::ipc::AsyncChannel::Child;
     mCompositorChild->Open(parentChannel, childMessageLoop, childSide);
+    PRInt32 maxTextureSize;
     PLayersChild* shadowManager =
-      mCompositorChild->SendPLayersConstructor(LayerManager::LAYERS_OPENGL);
+      mCompositorChild->SendPLayersConstructor(LayerManager::LAYERS_OPENGL, &maxTextureSize);
 
     if (shadowManager) {
       ShadowLayerForwarder* lf = lm->AsShadowForwarder();
@@ -901,6 +888,7 @@ void nsBaseWidget::CreateCompositor()
       }
       lf->SetShadowManager(shadowManager);
       lf->SetParentBackendType(LayerManager::LAYERS_OPENGL);
+      lf->SetMaxTextureSize(maxTextureSize);
 
       mLayerManager = lm;
     } else {
@@ -909,6 +897,11 @@ void nsBaseWidget::CreateCompositor()
       mCompositorChild = nsnull;
     }
   }
+}
+
+bool nsBaseWidget::UseOffMainThreadCompositing()
+{
+  return sUseOffMainThreadCompositing;
 }
 
 LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
@@ -923,9 +916,7 @@ LayerManager* nsBaseWidget::GetLayerManager(PLayersChild* aShadowManager,
     if (mUseAcceleratedRendering) {
 
       // Try to use an async compositor first, if possible
-      bool useCompositor =
-        Preferences::GetBool("layers.offmainthreadcomposition.enabled", false);
-      if (useCompositor) {
+      if (UseOffMainThreadCompositing()) {
         // e10s uses the parameter to pass in the shadow manager from the TabChild
         // so we don't expect to see it there since this doesn't support e10s.
         NS_ASSERTION(aShadowManager == nsnull, "Async Compositor not supported with e10s");
@@ -1323,6 +1314,25 @@ nsBaseWidget::GetGLFrameBufferFormat()
     return LOCAL_GL_RGBA;
   }
   return LOCAL_GL_NONE;
+}
+
+static void InitOnlyOnce()
+{
+  static bool once = true;
+  if (!once) {
+    return;
+  }
+  once = false;
+
+#ifdef MOZ_X11
+  // On X11 platforms only use OMTC if firefox was initalized with thread-safe 
+  // X11 (else it would crash).
+  sUseOffMainThreadCompositing = (PR_GetEnv("MOZ_USE_OMTC") != NULL);
+#else
+  sUseOffMainThreadCompositing = mozilla::Preferences::GetBool(
+        "layers.offmainthreadcomposition.enabled", 
+        false);
+#endif
 }
 
 #ifdef DEBUG
