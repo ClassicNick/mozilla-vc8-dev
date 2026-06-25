@@ -231,7 +231,7 @@ void
 BreakpointSite::recompile(FreeOp *fop)
 {
 #ifdef JS_METHODJIT
-    if (script->hasJITCode()) {
+    if (script->hasJITInfo()) {
         mjit::Recompiler::clearStackReferences(fop, script);
         mjit::ReleaseScriptCode(fop, script);
     }
@@ -2455,10 +2455,14 @@ DebuggerScript_getUrl(JSContext *cx, unsigned argc, Value *vp)
 {
     THIS_DEBUGSCRIPT_SCRIPT(cx, argc, vp, "(get url)", args, obj, script);
 
-    JSString *str = js_NewStringCopyZ(cx, script->filename);
-    if (!str)
-        return false;
-    args.rval().setString(str);
+    if (script->filename) {
+        JSString *str = js_NewStringCopyZ(cx, script->filename);
+        if (!str)
+            return false;
+        args.rval().setString(str);
+    } else {
+        args.rval().setNull();
+    }
     return true;
 }
 
@@ -4274,14 +4278,42 @@ DebuggerEnv_getObject(JSContext *cx, unsigned argc, Value *vp)
         return false;
     }
 
-    JSObject *obj = IsWith(env)
-                    ? &env->asDebugScope().scope().asWith().object()
-                    : env;
+    JSObject *obj;
+    if (IsWith(env)) {
+        obj = &env->asDebugScope().scope().asWith().object();
+    } else {
+        obj = env;
+        JS_ASSERT(!obj->isDebugScope());
+    }
 
     Value rval = ObjectValue(*obj);
     if (!dbg->wrapDebuggeeValue(cx, &rval))
         return false;
     args.rval() = rval;
+    return true;
+}
+
+static JSBool
+DebuggerEnv_getCallee(JSContext *cx, unsigned argc, Value *vp)
+{
+    THIS_DEBUGENV_OWNER(cx, argc, vp, "get callee", args, envobj, env, dbg);
+
+    args.rval().setNull();
+
+    if (!env->isDebugScope())
+        return true;
+
+    JSObject &scope = env->asDebugScope().scope();
+    if (!scope.isCall())
+        return true;
+
+    JSObject *callee = scope.asCall().getCallee();
+    if (!callee)
+        return true;
+
+    args.rval() = ObjectValue(*callee);
+    if (!dbg->wrapDebuggeeValue(cx, &args.rval()))
+        return false;
     return true;
 }
 
@@ -4423,6 +4455,7 @@ static JSPropertySpec DebuggerEnv_properties[] = {
     JS_PSG("type", DebuggerEnv_getType, 0),
     JS_PSG("object", DebuggerEnv_getObject, 0),
     JS_PSG("parent", DebuggerEnv_getParent, 0),
+    JS_PSG("callee", DebuggerEnv_getCallee, 0),
     JS_PS_END
 };
 

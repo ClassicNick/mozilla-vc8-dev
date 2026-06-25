@@ -90,6 +90,9 @@ BrowserElementChild.prototype = {
     addMessageListener("browser-element-api:get-screenshot",
                        this._recvGetScreenshot.bind(this));
 
+    addMessageListener("browser-element-api:set-visible",
+                        this._recvSetVisible.bind(this));
+
     let els = Cc["@mozilla.org/eventlistenerservice;1"]
                 .getService(Ci.nsIEventListenerService);
 
@@ -155,11 +158,18 @@ BrowserElementChild.prototype = {
     });
   },
 
+  _recvSetVisible: function(data) {
+    debug("Received setVisible message: (" + data.json.visible + ")");
+    if (docShell.isActive !== data.json.visible) {
+      docShell.isActive = data.json.visible;
+    }
+  },
+
   _keyEventHandler: function(e) {
     if (whitelistedEvents.indexOf(e.keyCode) != -1 && !e.defaultPrevented) {
       sendAsyncMsg('keyevent', {
         type: e.type,
-        code: e.keyCode,
+        keyCode: e.keyCode,
         charCode: e.charCode,
       });
     }

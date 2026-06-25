@@ -35,6 +35,9 @@ typedef int int32_t;
 typedef unsigned int uint32_t;
 typedef __int64 int64_t;
 typedef unsigned __int64 uint64_t;
+#if defined (_MSC_VER) && _MSC_VER <= 1310
+# pragma  intrinsic(_byteswap_ushort,_byteswap_ulong)
+#endif
 #define ntohl(x) _byteswap_ulong (x)
 #define ntohs(x) _byteswap_ushort (x)
 #define htonl(x) _byteswap_ulong (x)
@@ -199,6 +202,13 @@ class OTSStream {
   unsigned chksum_buffer_offset_;
 };
 
+#ifdef MOZ_OTS_REPORT_ERRORS
+// Signature of the function to be provided by the client in order to report errors.
+// The return type is a boolean so that it can be used within an expression,
+// but the actual value is ignored. (Suggested convention is to always return 'false'.)
+typedef bool (*MessageFunc)(void *user_data, const char *format, ...);
+#endif
+
 // -----------------------------------------------------------------------------
 // Process a given OpenType file and write out a sanitised version
 //   output: a pointer to an object implementing the OTSStream interface. The
@@ -209,6 +219,9 @@ class OTSStream {
 //   preserve_graphite_tables: whether to preserve Graphite Layout tables
 // -----------------------------------------------------------------------------
 bool OTS_API Process(OTSStream *output, const uint8_t *input, size_t length,
+#ifdef MOZ_OTS_REPORT_ERRORS
+                     MessageFunc message_func, void *user_data,
+#endif
                      bool preserve_graphite_tables = false);
 
 // Force to disable debug output even when the library is compiled with

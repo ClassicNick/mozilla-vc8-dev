@@ -1087,15 +1087,14 @@ Function(JSContext *cx, unsigned argc, Value *vp)
 
         /*
          * Initialize a tokenstream that reads from the given string.  No
-         * partialTokenizingContext is needed because this TokenStream won't
-         * report any strict mode errors.  (If it did try, we'd just get a NULL
-         * deref crash.)  Any strict mode errors which might be reported here
-         * (duplicate argument names, etc.) will be detected when we compile
-         * the function body.
+         * StrictModeGetter is needed because this TokenStream won't report any
+         * strict mode errors.  Any strict mode errors which might be reported
+         * here (duplicate argument names, etc.) will be detected when we
+         * compile the function body.
          */
         TokenStream ts(cx, principals, originPrincipals,
                        collected_args, args_length, filename, lineno, cx->findVersion(),
-                       /* partialTokenizingContext = */ NULL);
+                       /* strictModeGetter = */ NULL);
 
         /* The argument string may be empty or contain no tokens. */
         TokenKind tt = ts.getToken();

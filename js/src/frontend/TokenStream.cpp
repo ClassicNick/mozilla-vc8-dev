@@ -121,7 +121,7 @@ js::IsIdentifier(JSLinearString *str)
 /* Initialize members that aren't initialized in |init|. */
 TokenStream::TokenStream(JSContext *cx, JSPrincipals *prin, JSPrincipals *originPrin,
                          const jschar *base, size_t length, const char *fn, unsigned ln,
-                         JSVersion v, PartialTokenizingContext *ptc)
+                         JSVersion v, StrictModeGetter *smg)
   : tokens(),
     tokensRoot(cx, &tokens),
     cursor(),
@@ -139,10 +139,11 @@ TokenStream::TokenStream(JSContext *cx, JSPrincipals *prin, JSPrincipals *origin
     listenerTSData(),
     tokenbuf(cx),
     version(v),
-    xml(VersionHasXML(v)),
+    allowXML(VersionHasAllowXML(v)),
+    moarXML(VersionHasMoarXML(v)),
     cx(cx),
     originPrincipals(JSScript::normalizeOriginPrincipals(prin, originPrin)),
-    partialTokenizingContext(ptc)
+    strictModeGetter(smg)
 {
     if (originPrincipals)
         JS_HoldPrincipals(originPrincipals);
@@ -882,8 +883,8 @@ TokenStream::getXMLTextOrTag(TokenKind *ttp, Token **tpp)
  * - https://bugzilla.mozilla.org/show_bug.cgi?id=309712
  * - https://bugzilla.mozilla.org/show_bug.cgi?id=310993
  *
- * So without JSOPTION_XML, we changed around Firefox 1.5 never to scan an XML
- * comment or CDATA literal.  Instead, we always scan <! as the start of an
+ * So without JSOPTION_MOAR_XML, we changed around Firefox 1.5 never to scan an
+ * XML comment or CDATA literal.  Instead, we always scan <! as the start of an
  * HTML comment hack to end of line, used since Netscape 2 to hide script tag
  * content from script-unaware browsers.
  *
@@ -1873,7 +1874,7 @@ TokenStream::getTokenInternal()
 
       case '<':
 #if JS_HAS_XML_SUPPORT
-        if ((flags & TSF_OPERAND) && !isStrictMode() && (hasXML() || peekChar() != '!')) {
+        if ((flags & TSF_OPERAND) && allowsXML() && (hasMoarXML() || peekChar() != '!')) {
             if (!getXMLMarkup(&tt, &tp))
                 goto error;
             goto out;

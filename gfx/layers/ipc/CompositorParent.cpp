@@ -38,6 +38,7 @@ CompositorParent::CompositorParent(nsIWidget* aWidget, MessageLoop* aMsgLoop,
   , mRenderToEGLSurface(aRenderToEGLSurface)
   , mEGLSurfaceSize(aSurfaceWidth, aSurfaceHeight)
   , mPauseCompositionMonitor("PauseCompositionMonitor")
+  , mResumeCompositionMonitor("ResumeCompositionMonitor")
 {
   MOZ_COUNT_CTOR(CompositorParent);
 }
@@ -133,11 +134,17 @@ CompositorParent::ResumeComposition()
 {
   NS_ABORT_IF_FALSE(CompositorThreadID() == PlatformThread::CurrentId(),
                     "ResumeComposition() can only be called on the compositor thread");
+
+  mozilla::MonitorAutoLock lock(mResumeCompositionMonitor);
+
   mPaused = false;
 
 #ifdef MOZ_WIDGET_ANDROID
   static_cast<LayerManagerOGL*>(mLayerManager.get())->gl()->RenewSurface();
 #endif
+
+  // if anyone's waiting to make sure that composition really got resumed, tell them
+  lock.NotifyAll();
 }
 
 void
@@ -179,9 +186,14 @@ CompositorParent::SchedulePauseOnCompositorThread()
 void
 CompositorParent::ScheduleResumeOnCompositorThread(int width, int height)
 {
+  mozilla::MonitorAutoLock lock(mResumeCompositionMonitor);
+
   CancelableTask *resumeTask =
     NewRunnableMethod(this, &CompositorParent::ResumeCompositionAndResize, width, height);
   CompositorLoop()->PostTask(FROM_HERE, resumeTask);
+
+  // Wait until the resume has actually been processed by the compositor thread
+  lock.Wait();
 }
 
 void
@@ -396,6 +408,17 @@ CompositorParent::TransformShadowTree()
     (mScrollOffset.y / tempScaleDiffY - metricsScrollOffset.y) * mYScale);
   ViewTransform treeTransform(-scrollCompensation, mXScale, mYScale);
   shadow->SetShadowTransform(gfx3DMatrix(treeTransform) * currentTransform);
+
+  // Alter the scroll offset so that fixed position layers remain within
+  // the page area.
+  float offsetX = mScrollOffset.x / tempScaleDiffX;
+  float offsetY = mScrollOffset.y / tempScaleDiffY;
+  offsetX = NS_MAX((float)mContentRect.x, NS_MIN(offsetX, (float)(mContentRect.XMost() - mWidgetSize.width)));
+  offsetY = NS_MAX((float)mContentRect.y, NS_MIN(offsetY, (float)(mContentRect.YMost() - mWidgetSize.height)));
+  gfxPoint reverseViewTranslation(offsetX - metricsScrollOffset.x,
+                                  offsetY - metricsScrollOffset.y);
+
+  TranslateFixedLayers(layer, reverseViewTranslation);
 }
 
 void
@@ -471,7 +494,6 @@ CompositorParent::AllocPLayers(const LayersBackend& aBackendType, int* aMaxTextu
     *aMaxTextureSize = layerManager->GetMaxTextureSize();
     return new ShadowLayersParent(slm, this);
   } else if (aBackendType == LayerManager::LAYERS_BASIC) {
-    // This require Cairo to be thread-safe
     nsRefPtr<LayerManager> layerManager = new BasicShadowLayerManager(mWidget);
     mWidget = NULL;
     mLayerManager = layerManager;

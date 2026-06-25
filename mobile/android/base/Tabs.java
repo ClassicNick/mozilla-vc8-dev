@@ -65,6 +65,7 @@ public class Tabs implements GeckoEventListener {
                     GeckoApp.mBrowserToolbar.updateTabCountAndAnimate(getCount());
                     GeckoApp.mBrowserToolbar.updateBackButton(false);
                     GeckoApp.mBrowserToolbar.updateForwardButton(false);
+                    GeckoApp.mAppContext.invalidateOptionsMenu();
                 }
             });
         }
@@ -75,8 +76,10 @@ public class Tabs implements GeckoEventListener {
 
     public void removeTab(int id) {
         if (tabs.containsKey(id)) {
-            order.remove(getTab(id));
+            Tab tab = getTab(id);
+            order.remove(tab);
             tabs.remove(id);
+            tab.freeBuffer();
             Log.i(LOGTAG, "Removed a tab with id: " + id);
         }
     }
@@ -104,6 +107,7 @@ public class Tabs implements GeckoEventListener {
                 if (isSelectedTab(tab)) {
                     String url = tab.getURL();
                     GeckoApp.mBrowserToolbar.refresh();
+                    GeckoApp.mAppContext.invalidateOptionsMenu();
                     GeckoApp.mDoorHangerPopup.updatePopup();
                     notifyListeners(tab, TabEvents.SELECTED);
 

@@ -95,9 +95,10 @@ UnwrapDOMObject(JSObject* obj, const js::Class* clasp)
 // Some callers don't want to set an exception when unwrappin fails
 // (for example, overload resolution uses unwrapping to tell what sort
 // of thing it's looking at).
-template <prototypes::ID PrototypeID, class T>
+// U must be something that a T* can be assigned to (e.g. T* or an nsRefPtr<T>).
+template <prototypes::ID PrototypeID, class T, typename U>
 inline nsresult
-UnwrapObject(JSContext* cx, JSObject* obj, T** value)
+UnwrapObject(JSContext* cx, JSObject* obj, U& value)
 {
   /* First check to see whether we have a DOM object */
   JSClass* clasp = js::GetObjectJSClass(obj);
@@ -128,7 +129,7 @@ UnwrapObject(JSContext* cx, JSObject* obj, T** value)
   DOMJSClass* domClass = DOMJSClass::FromJSClass(clasp);
   if (domClass->mInterfaceChain[PrototypeTraits<PrototypeID>::Depth] ==
       PrototypeID) {
-    *value = UnwrapDOMObject<T>(obj, clasp);
+    value = UnwrapDOMObject<T>(obj, clasp);
     return NS_OK;
   }
 
@@ -188,9 +189,10 @@ IsPlatformObject(JSContext* cx, JSObject* obj)
     JS_IsArrayBufferObject(obj, cx);
 }
 
-template <class T>
+// U must be something that a T* can be assigned to (e.g. T* or an nsRefPtr<T>).
+template <class T, typename U>
 inline nsresult
-UnwrapObject(JSContext* cx, JSObject* obj, T* *value)
+UnwrapObject(JSContext* cx, JSObject* obj, U& value)
 {
   return UnwrapObject<static_cast<prototypes::ID>(
            PrototypeIDMap<T>::PrototypeID)>(cx, obj, value);
@@ -629,6 +631,12 @@ public:
     return *ptr;
   }
 
+  operator const T&() const {
+    MOZ_ASSERT(inited);
+    MOZ_ASSERT(ptr, "NonNull<T> was set to null");
+    return *ptr;
+  }
+
   void operator=(T* t) {
     ptr = t;
     MOZ_ASSERT(ptr);
@@ -742,6 +750,82 @@ ConvertJSValueToString(JSContext* cx, const JS::Value& v, JS::Value* pval,
   result.Rebind(chars, len);
   return true;
 }
+
+// Class for representing optional arguments.
+template<typename T>
+class Optional {
+public:
+  Optional() {}
+
+  bool WasPassed() const {
+    return !mImpl.empty();
+  }
+
+  void Construct() {
+    mImpl.construct();
+  }
+
+  template <class T1, class T2>
+  void Construct(const T1 &t1, const T2 &t2) {
+    mImpl.construct(t1, t2);
+  }
+
+  const T& Value() const {
+    return mImpl.ref();
+  }
+
+  T& Value() {
+    return mImpl.ref();
+  }
+
+private:
+  // Forbid copy-construction and assignment
+  Optional(const Optional& other) MOZ_DELETE;
+  const Optional &operator=(const Optional &other) MOZ_DELETE;
+  
+  Maybe<T> mImpl;
+};
+
+// Specialization for strings.
+template<>
+class Optional<nsAString> {
+public:
+  Optional() : mPassed(false) {}
+
+  bool WasPassed() const {
+    return mPassed;
+  }
+
+  void operator=(const nsAString* str) {
+    MOZ_ASSERT(str);
+    mStr = str;
+    mPassed = true;
+  }
+
+  const nsAString& Value() const {
+    MOZ_ASSERT(WasPassed());
+    return *mStr;
+  }
+
+private:
+  // Forbid copy-construction and assignment
+  Optional(const Optional& other) MOZ_DELETE;
+  const Optional &operator=(const Optional &other) MOZ_DELETE;
+  
+  bool mPassed;
+  const nsAString* mStr;
+};
+
+// Class for representing sequences in arguments.  We use an auto array that can
+// hold 16 elements, to avoid having to allocate in common cases.  This needs to
+// be fallible because web content controls the length of the array, and can
+// easily try to create very large lengths.
+template<typename T>
+class Sequence : public AutoFallibleTArray<T, 16>
+{
+public:
+  Sequence() : AutoFallibleTArray<T, 16>() {}
+};
 
 } // namespace dom
 } // namespace mozilla

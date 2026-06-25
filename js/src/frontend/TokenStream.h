@@ -413,23 +413,20 @@ enum TokenStreamFlags
 
 struct Parser;
 
-// Ideally, tokenizing would be entirely independent of context, i.e. not
-// depend on the contents of the current TreeContext/SharedContext.  But that's
-// not quite true.  This class constitutes a tiny back-channel from TokenStream
-// to the context that avoids exposing most of TreeContext/SharedContext to
-// TokenStream.  It should be used sparingly, e.g. to avoid storing some state
-// twice (as used to be done with the strict mode flag).
+// Ideally, tokenizing would be entirely independent of context.  But the
+// strict mode flag, which is in SharedContext, affects tokenizing, and
+// TokenStream needs to see it.
 //
-class PartialTokenizingContext {
+// This class constitutes a tiny back-channel from TokenStream to the strict
+// mode flag that avoids exposing the rest of SharedContext to TokenStream.  
+// get() is implemented in Parser.cpp.
+//
+class StrictModeGetter {
     Parser *parser;
   public:
-    PartialTokenizingContext(Parser *p) : parser(p) { }
+    StrictModeGetter(Parser *p) : parser(p) { }
 
-    // The strict mode flag for global code and each function is in the relevant
-    // SharedContext.  Because it affects both tokenizing and parsing,
-    // TokenStream needs to be able to see it.  inStrictMode() is implemented
-    // in Parser.cpp.
-    bool inStrictMode() const;
+    bool get() const;
 };
 
 class TokenStream
@@ -449,7 +446,7 @@ class TokenStream
 
     TokenStream(JSContext *cx, JSPrincipals *principals, JSPrincipals *originPrincipals,
                 const jschar *base, size_t length, const char *filename, unsigned lineno,
-                JSVersion version, PartialTokenizingContext *ptc);
+                JSVersion version, StrictModeGetter *smg);
 
     ~TokenStream();
 
@@ -467,11 +464,12 @@ class TokenStream
     const CharBuffer &getTokenbuf() const { return tokenbuf; }
     const char *getFilename() const { return filename; }
     unsigned getLineno() const { return lineno; }
-    /* Note that the version and hasXML can get out of sync via setXML. */
+    /* Note that the version and hasMoarXML can get out of sync via setMoarXML. */
     JSVersion versionNumber() const { return VersionNumber(version); }
     JSVersion versionWithFlags() const { return version; }
-    bool hasXML() const { return xml || VersionShouldParseXML(versionNumber()); }
-    void setXML(bool enabled) { xml = enabled; }
+    bool allowsXML() const { return allowXML && !isStrictMode(); }
+    bool hasMoarXML() const { return moarXML || VersionShouldParseXML(versionNumber()); }
+    void setMoarXML(bool enabled) { moarXML = enabled; }
 
     bool isCurrentTokenEquality() const {
         return TokenKindIsEquality(currentToken().type);
@@ -495,10 +493,10 @@ class TokenStream
     void setUnexpectedEOF(bool enabled = true) { setFlag(enabled, TSF_UNEXPECTED_EOF); }
     void setOctalCharacterEscape(bool enabled = true) { setFlag(enabled, TSF_OCTAL_CHAR); }
 
-    bool isStrictMode() { return partialTokenizingContext->inStrictMode(); }
-    bool isXMLTagMode() { return !!(flags & TSF_XMLTAGMODE); }
-    bool isXMLOnlyMode() { return !!(flags & TSF_XMLONLYMODE); }
-    bool isUnexpectedEOF() { return !!(flags & TSF_UNEXPECTED_EOF); }
+    bool isStrictMode() const { return strictModeGetter ? strictModeGetter->get() : false; }
+    bool isXMLTagMode() const { return !!(flags & TSF_XMLTAGMODE); }
+    bool isXMLOnlyMode() const { return !!(flags & TSF_XMLONLYMODE); }
+    bool isUnexpectedEOF() const { return !!(flags & TSF_UNEXPECTED_EOF); }
     bool isEOF() const { return !!(flags & TSF_EOF); }
     bool hasOctalCharacterEscape() const { return flags & TSF_OCTAL_CHAR; }
 
@@ -799,11 +797,11 @@ class TokenStream
     bool                maybeEOL[256];       /* probabilistic EOL lookup table */
     bool                maybeStrSpecial[256];/* speeds up string scanning */
     JSVersion           version;        /* (i.e. to identify keywords) */
-    bool                xml;            /* see JSOPTION_XML */
+    bool                allowXML;       /* see JSOPTION_ALLOW_XML */
+    bool                moarXML;        /* see JSOPTION_MOAR_XML */
     JSContext           *const cx;
     JSPrincipals        *const originPrincipals;
-    PartialTokenizingContext *partialTokenizingContext; /* used to test for
-                                                           strict mode */
+    StrictModeGetter    *strictModeGetter; /* used to test for strict mode */
 };
 
 struct KeywordInfo {

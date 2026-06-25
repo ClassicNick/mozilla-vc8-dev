@@ -35,7 +35,7 @@
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
 #include "nsAlgorithm.h"
-#include "SpdySession.h"
+#include "ASpdySession.h"
 
 #include "nsIXULAppInfo.h"
 
@@ -169,9 +169,11 @@ nsHttpHandler::nsHttpHandler()
     , mTelemetryEnabled(false)
     , mAllowExperiments(true)
     , mEnableSpdy(false)
+    , mSpdyV2(true)
+    , mSpdyV3(true)
     , mCoalesceSpdy(true)
     , mUseAlternateProtocol(false)
-    , mSpdySendingChunkSize(SpdySession::kSendingChunkSize)
+    , mSpdySendingChunkSize(ASpdySession::kSendingChunkSize)
     , mSpdyPingThreshold(PR_SecondsToInterval(44))
     , mSpdyPingTimeout(PR_SecondsToInterval(8))
 {
@@ -402,52 +404,6 @@ nsHttpHandler::IsAcceptableEncoding(const char *enc)
         enc += 2;
     
     return nsHttp::FindToken(mAcceptEncodings.get(), enc, HTTP_LWS ",") != nsnull;
-}
-
-nsresult
-nsHttpHandler::GetCacheSession(nsCacheStoragePolicy storagePolicy,
-                               bool isPrivate,
-                               nsICacheSession **result)
-{
-    nsresult rv;
-
-    // Skip cache if disabled in preferences
-    if (!mUseCache)
-        return NS_ERROR_NOT_AVAILABLE;
-
-    // We want to get the pointer to the cache service each time we're called,
-    // because it's possible for some add-ons (such as Google Gears) to swap
-    // in new cache services on the fly, and we want to pick them up as
-    // appropriate.
-    nsCOMPtr<nsICacheService> serv = do_GetService(NS_CACHESERVICE_CONTRACTID,
-                                                   &rv);
-    if (NS_FAILED(rv)) return rv;
-
-    const char *sessionName = "HTTP";
-    switch (storagePolicy) {
-    case nsICache::STORE_IN_MEMORY:
-        sessionName = isPrivate ? "HTTP-memory-only-PB" : "HTTP-memory-only";
-        break;
-    case nsICache::STORE_OFFLINE:
-        sessionName = "HTTP-offline";
-        break;
-    default:
-        break;
-    }
-
-    nsCOMPtr<nsICacheSession> cacheSession;
-    rv = serv->CreateSession(sessionName,
-                             storagePolicy,
-                             nsICache::STREAM_BASED,
-                             getter_AddRefs(cacheSession));
-    if (NS_FAILED(rv)) return rv;
-
-    rv = cacheSession->SetDoomEntriesIfExpired(false);
-    if (NS_FAILED(rv)) return rv;
-
-    NS_ADDREF(*result = cacheSession);
-
-    return NS_OK;
 }
 
 nsresult
@@ -1135,6 +1091,18 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
         rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled"), &cVar);
         if (NS_SUCCEEDED(rv))
             mEnableSpdy = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v2"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v2"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mSpdyV2 = cVar;
+    }
+
+    if (PREF_CHANGED(HTTP_PREF("spdy.enabled.v3"))) {
+        rv = prefs->GetBoolPref(HTTP_PREF("spdy.enabled.v3"), &cVar);
+        if (NS_SUCCEEDED(rv))
+            mSpdyV3 = cVar;
     }
 
     if (PREF_CHANGED(HTTP_PREF("spdy.coalesce-hostnames"))) {

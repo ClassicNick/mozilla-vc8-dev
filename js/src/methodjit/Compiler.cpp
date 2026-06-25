@@ -111,6 +111,8 @@ mjit::Compiler::compile()
 
     CompileStatus status = performCompilation();
     if (status != Compile_Okay && status != Compile_Retry) {
+        if (!outerScript->ensureHasJITInfo(cx))
+            return Compile_Error;
         JSScript::JITScriptHandle *jith = outerScript->jitHandle(isConstructing, cx->compartment->needsBarrier());
         JSScript::ReleaseCode(cx->runtime->defaultFreeOp(), jith);
         jith->setUnjittable();
@@ -909,12 +911,13 @@ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
     if (!cx->methodJitEnabled)
         return Compile_Abort;
 
-    JSScript::JITScriptHandle *jith = script->jitHandle(construct, cx->compartment->needsBarrier());
-    if (jith->isUnjittable())
-        return Compile_Abort;
+    if (script->hasJITInfo()) {
+        JSScript::JITScriptHandle *jith = script->jitHandle(construct, cx->compartment->needsBarrier());
+        if (jith->isUnjittable())
+            return Compile_Abort;
+    }
 
-    if (request == CompileRequest_Interpreter &&
-        !cx->hasRunOption(JSOPTION_METHODJIT_ALWAYS) &&
+    if (!cx->hasRunOption(JSOPTION_METHODJIT_ALWAYS) &&
         (cx->typeInferenceEnabled()
          ? script->incUseCount() <= INFER_USES_BEFORE_COMPILE
          : script->incUseCount() <= USES_BEFORE_COMPILE))
@@ -930,6 +933,11 @@ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
         script->nslots++;
 
     uint64_t gcNumber = cx->runtime->gcNumber;
+
+    if (!script->ensureHasJITInfo(cx))
+        return Compile_Error;
+
+    JSScript::JITScriptHandle *jith = script->jitHandle(construct, cx->compartment->needsBarrier());
 
     JITScript *jit;
     if (jith->isEmpty()) {
@@ -951,8 +959,7 @@ mjit::CanMethodJIT(JSContext *cx, JSScript *script, jsbytecode *pc,
     if (desc.chunk)
         return Compile_Okay;
 
-    if (request == CompileRequest_Interpreter &&
-        !cx->hasRunOption(JSOPTION_METHODJIT_ALWAYS) &&
+    if (!cx->hasRunOption(JSOPTION_METHODJIT_ALWAYS) &&
         ++desc.counter <= INFER_USES_BEFORE_COMPILE)
     {
         return Compile_Skipped;
@@ -2246,6 +2253,25 @@ mjit::Compiler::generateMethod()
                 frame.push(MagicValue(JS_OPTIMIZED_ARGUMENTS));
             }
           END_CASE(JSOP_ARGUMENTS)
+          BEGIN_CASE(JSOP_ACTUALSFILLED)
+          {
+
+            // We never inline things with defaults because of the switch.
+            JS_ASSERT(a == outer);
+            RegisterID value = frame.allocReg(), nactual = frame.allocReg();
+            int32_t defstart = GET_UINT16(PC);
+            masm.move(Imm32(defstart), value);
+            masm.load32(Address(JSFrameReg, StackFrame::offsetOfNumActual()), nactual);
+
+            // Best would be a single instruction where available (like
+            // cmovge on x86), but there's no way get that yet, so jump.
+            Jump j = masm.branch32(Assembler::LessThan, nactual, Imm32(defstart));
+            masm.move(nactual, value);
+            j.linkTo(masm.label(), &masm);
+            frame.freeReg(nactual);
+            frame.pushInt32(value);
+          }
+          END_CASE(JSOP_ACTUALSFILLED)
 
           BEGIN_CASE(JSOP_ITERNEXT)
             iterNext(GET_INT8(PC));
@@ -3089,7 +3115,8 @@ mjit::Compiler::generateMethod()
           BEGIN_CASE(JSOP_CALLGNAME)
           {
             uint32_t index = GET_UINT32_INDEX(PC);
-            jsop_getgname(index);
+            if (!jsop_getgname(index))
+                return Compile_Error;
             frame.extra(frame.peek(-1)).name = script->getName(index);
           }
           END_CASE(JSOP_GETGNAME)
@@ -3098,7 +3125,8 @@ mjit::Compiler::generateMethod()
           {
             jsbytecode *next = &PC[JSOP_SETGNAME_LENGTH];
             bool pop = JSOp(*next) == JSOP_POP && !analysis->jumpTarget(next);
-            jsop_setgname(script->getName(GET_UINT32_INDEX(PC)), pop);
+            if (!jsop_setgname(script->getName(GET_UINT32_INDEX(PC)), pop))
+                return Compile_Error;
           }
           END_CASE(JSOP_SETGNAME)
 
@@ -6142,29 +6170,29 @@ mjit::Compiler::jsop_bindgname()
     frame.pushTypedPayload(JSVAL_TYPE_OBJECT, Registers::ReturnReg);
 }
 
-void
+bool
 mjit::Compiler::jsop_getgname(uint32_t index)
 {
     /* Optimize undefined, NaN and Infinity. */
     PropertyName *name = script->getName(index);
     if (name == cx->runtime->atomState.typeAtoms[JSTYPE_VOID]) {
         frame.push(UndefinedValue());
-        return;
+        return true;
     }
     if (name == cx->runtime->atomState.NaNAtom) {
         frame.push(cx->runtime->NaNValue);
-        return;
+        return true;
     }
     if (name == cx->runtime->atomState.InfinityAtom) {
         frame.push(cx->runtime->positiveInfinityValue);
-        return;
+        return true;
     }
 
     /* Optimize singletons like Math for JSOP_CALLPROP. */
     JSObject *obj = pushedSingleton(0);
     if (obj && !hasTypeBarriers(PC) && testSingletonProperty(globalObj, RootedId(cx, NameToId(name)))) {
         frame.push(ObjectValue(*obj));
-        return;
+        return true;
     }
 
     jsid id = NameToId(name);
@@ -6173,7 +6201,7 @@ mjit::Compiler::jsop_getgname(uint32_t index)
         !globalObj->getType(cx)->unknownProperties()) {
         types::TypeSet *propertyTypes = globalObj->getType(cx)->getProperty(cx, id, false);
         if (!propertyTypes)
-            return;
+            return false;
 
         /*
          * If we are accessing a defined global which is a normal data property
@@ -6191,7 +6219,7 @@ mjit::Compiler::jsop_getgname(uint32_t index)
 
                 BarrierState barrier = pushAddressMaybeBarrier(Address(reg), type, true);
                 finishBarrier(barrier, REJOIN_GETTER, 0);
-                return;
+                return true;
             }
         }
     }
@@ -6269,7 +6297,7 @@ mjit::Compiler::jsop_getgname(uint32_t index)
 #else
     jsop_getgname_slow(index);
 #endif
-
+    return true;
 }
 
 void
@@ -6282,13 +6310,13 @@ mjit::Compiler::jsop_setgname_slow(PropertyName *name)
     pushSyncedEntry(0);
 }
 
-void
+bool
 mjit::Compiler::jsop_setgname(PropertyName *name, bool popGuaranteed)
 {
     if (monitored(PC)) {
         /* Global accesses are monitored only for a few names like __proto__. */
         jsop_setgname_slow(name);
-        return;
+        return true;
     }
 
     jsid id = NameToId(name);
@@ -6302,7 +6330,7 @@ mjit::Compiler::jsop_setgname(PropertyName *name, bool popGuaranteed)
          */
         types::TypeSet *types = globalObj->getType(cx)->getProperty(cx, id, false);
         if (!types)
-            return;
+            return false;
         const js::Shape *shape = globalObj->nativeLookup(cx, NameToId(name));
         if (shape && shape->hasDefaultSetter() &&
             shape->writable() && shape->hasSlot() &&
@@ -6324,7 +6352,7 @@ mjit::Compiler::jsop_setgname(PropertyName *name, bool popGuaranteed)
             frame.storeTo(frame.peek(-1), Address(reg), popGuaranteed);
             frame.shimmy(1);
             frame.freeReg(reg);
-            return;
+            return true;
         }
     }
 
@@ -6332,7 +6360,7 @@ mjit::Compiler::jsop_setgname(PropertyName *name, bool popGuaranteed)
     /* Write barrier. */
     if (cx->compartment->needsBarrier()) {
         jsop_setgname_slow(name);
-        return;
+        return true;
     }
 #endif
 
@@ -6407,6 +6435,7 @@ mjit::Compiler::jsop_setgname(PropertyName *name, bool popGuaranteed)
 #else
     jsop_setgname_slow(name);
 #endif
+    return true;
 }
 
 void

@@ -136,7 +136,7 @@ var VirtualCursorController = {
     let virtualCursor = this.getVirtualCursor(document);
     let acc = virtualCursor.position;
 
-    if (acc.numActions > 0) {
+    if (acc.actionCount > 0) {
       acc.doAction(0);
     } else {
       // XXX Some mobile widget sets do not expose actions properly
@@ -163,6 +163,22 @@ var VirtualCursorController = {
   getVirtualCursor: function getVirtualCursor(document) {
     return gAccRetrieval.getAccessibleFor(document).
       QueryInterface(Ci.nsIAccessibleCursorable).virtualCursor;
+  },
+
+  moveCursorToObject: function moveCursorToObject(aAccessible, aRule) {
+    let doc = aAccessible.document;
+    while (doc) {
+      let vc = null;
+      try {
+        vc = doc.QueryInterface(Ci.nsIAccessibleCursorable).virtualCursor;
+      } catch (x) {
+        doc = doc.parentDocument;
+        continue;
+      }
+      if (vc)
+        vc.moveNext(aRule || this.SimpleTraversalRule, aAccessible, true);
+      break;
+    }
   },
 
   SimpleTraversalRule: {

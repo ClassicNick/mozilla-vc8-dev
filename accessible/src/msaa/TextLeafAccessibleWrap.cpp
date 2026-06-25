@@ -7,7 +7,7 @@
 #include "ISimpleDOMText_i.c"
 
 #include "nsCoreUtils.h"
-#include "nsDocAccessible.h"
+#include "DocAccessible.h"
 #include "Statistics.h"
 #include "nsIFrame.h"
 #include "nsFontMetrics.h"
@@ -23,7 +23,7 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 TextLeafAccessibleWrap::
-  TextLeafAccessibleWrap(nsIContent* aContent, nsDocAccessible* aDoc) :
+  TextLeafAccessibleWrap(nsIContent* aContent, DocAccessible* aDoc) :
   TextLeafAccessible(aContent, aDoc)
 {
 }
@@ -51,7 +51,7 @@ TextLeafAccessibleWrap::QueryInterface(REFIID iid, void** ppv)
     statistics::ISimpleDOMUsed();
     *ppv = static_cast<ISimpleDOMText*>(this);
   } else {
-    return nsAccessibleWrap::QueryInterface(iid, ppv);
+    return AccessibleWrap::QueryInterface(iid, ppv);
   }
    
   (reinterpret_cast<IUnknown*>(*ppv))->AddRef(); 
@@ -101,7 +101,7 @@ __try {
     return rv;
   }
 
-  nsDocAccessible* docAccessible = Document();
+  DocAccessible* docAccessible = Document();
   NS_ASSERTION(docAccessible,
                "There must always be a doc accessible, but there isn't. Crash!");
 

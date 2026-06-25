@@ -306,7 +306,7 @@ namespace {
       directory.forget(&webShellAppData->directory);
 
       // There is only XUL.
-      XRE_main(*pargc, *pargv, webShellAppData);
+      XRE_main(*pargc, *pargv, webShellAppData, 0);
     }
 
     return true;

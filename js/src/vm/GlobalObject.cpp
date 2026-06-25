@@ -282,7 +282,7 @@ GlobalObject::initStandardClasses(JSContext *cx, Handle<GlobalObject*> global)
            js_InitStringClass(cx, global) &&
            js_InitTypedArrayClasses(cx, global) &&
 #if JS_HAS_XML_SUPPORT
-           js_InitXMLClasses(cx, global) &&
+           (!VersionHasAllowXML(cx->findVersion()) || js_InitXMLClasses(cx, global)) &&
 #endif
 #if JS_HAS_GENERATORS
            js_InitIteratorClasses(cx, global) &&
@@ -336,7 +336,7 @@ GlobalObject::clear(JSContext *cx)
      */
     for (gc::CellIter i(cx->compartment, gc::FINALIZE_SCRIPT); !i.done(); i.next()) {
         JSScript *script = i.get<JSScript>();
-        if (script->compileAndGo && script->hasJITCode() && script->hasClearedGlobal()) {
+        if (script->compileAndGo && script->hasJITInfo() && script->hasClearedGlobal()) {
             mjit::Recompiler::clearStackReferences(cx->runtime->defaultFreeOp(), script);
             mjit::ReleaseScriptCode(cx->runtime->defaultFreeOp(), script);
         }
