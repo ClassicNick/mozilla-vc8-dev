@@ -85,7 +85,6 @@ class NetworkInformation;
 } // namespace hal
 
 namespace dom {
-class ScreenOrientationWrapper;
 namespace sms {
 struct SmsFilterData;
 } // namespace sms
@@ -323,7 +322,7 @@ public:
     enum {
         WINDOW_FORMAT_RGBA_8888          = 1,
         WINDOW_FORMAT_RGBX_8888          = 2,
-        WINDOW_FORMAT_RGB_565            = 4,
+        WINDOW_FORMAT_RGB_565            = 4
     };
 
     bool HasNativeWindowAccess();
@@ -379,14 +378,14 @@ public:
     void AddPluginView(jobject view, const gfxRect& rect);
     void RemovePluginView(jobject view);
 
-    // This method doesn't take a ScreenOrientation because it's an enum and
-    // that would require including the header which requires include IPC
-    // headers which requires including basictypes.h which requires a lot of
-    // changes...
-    void GetScreenOrientation(dom::ScreenOrientationWrapper& aOrientation);
+    // These methods don't use a ScreenOrientation because it's an
+    // enum and that would require including the header which requires
+    // include IPC headers which requires including basictypes.h which
+    // requires a lot of changes...
+    uint32_t GetScreenOrientation();
     void EnableScreenOrientationNotifications();
     void DisableScreenOrientationNotifications();
-    void LockScreenOrientation(const dom::ScreenOrientationWrapper& aOrientation);
+    void LockScreenOrientation(uint32_t aOrientation);
     void UnlockScreenOrientation();
 
     void PumpMessageLoop();
@@ -550,14 +549,14 @@ protected:
 class AutoLocalJNIFrame {
 public:
     AutoLocalJNIFrame(int nEntries = 128)
-        : mEntries(nEntries)
+        : mEntries(nEntries), mHasFrameBeenPushed(false)
     {
         mJNIEnv = AndroidBridge::GetJNIEnv();
         Push();
     }
 
     AutoLocalJNIFrame(JNIEnv* aJNIEnv, int nEntries = 128)
-        : mEntries(nEntries)
+        : mEntries(nEntries), mHasFrameBeenPushed(false)
     {
         mJNIEnv = aJNIEnv ? aJNIEnv : AndroidBridge::GetJNIEnv();
 
@@ -569,9 +568,14 @@ public:
     // any local refs that you need to keep around in global refs!
     void Purge() {
         if (mJNIEnv) {
-            mJNIEnv->PopLocalFrame(NULL);
+            if (mHasFrameBeenPushed)
+                mJNIEnv->PopLocalFrame(NULL);
             Push();
         }
+    }
+
+    JNIEnv* GetEnv() {
+        return mJNIEnv;
     }
 
     bool CheckForException() {
@@ -590,7 +594,8 @@ public:
 
         CheckForException();
 
-        mJNIEnv->PopLocalFrame(NULL);
+        if (mHasFrameBeenPushed)
+            mJNIEnv->PopLocalFrame(NULL);
     }
 
 private:
@@ -603,13 +608,15 @@ private:
         // not hurt.
         jint ret = mJNIEnv->PushLocalFrame(mEntries + 1);
         NS_ABORT_IF_FALSE(ret == 0, "Failed to push local JNI frame");
-        if (ret < 0) {
+        if (ret < 0)
             CheckForException();
-        }
+        else
+            mHasFrameBeenPushed = true;
     }
 
     int mEntries;
     JNIEnv* mJNIEnv;
+    bool mHasFrameBeenPushed;
 };
 
 }

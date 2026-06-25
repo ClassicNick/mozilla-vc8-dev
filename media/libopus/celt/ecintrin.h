@@ -54,7 +54,11 @@
   This macro should only be used for implementing ec_ilog(), if it is defined.
   All other code should use EC_ILOG() instead.*/
 #if defined(_MSC_VER)
+#if _MSC_VER >= 1400
 # include <intrin.h>
+#else
+unsigned char _BitScanReverse(unsigned long * Index, unsigned long Mask);
+#endif
 /*In _DEBUG mode this is not an intrinsic by default.*/
 # pragma intrinsic(_BitScanReverse)
 

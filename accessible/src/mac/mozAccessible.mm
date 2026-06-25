@@ -453,7 +453,7 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 
 - (NSString*)role
 {
-#ifdef DEBUG_A11Y
+#ifdef DEBUG
   NS_ASSERTION(nsAccUtils::IsTextInterfaceSupportCorrect(mGeckoAccessible),
                "Does not support nsIAccessibleText when it should");
 #endif
@@ -476,10 +476,10 @@ GetNativeFromGeckoAccessible(nsIAccessible *anAccessible)
 {
   switch (mRole) {
     case roles::LIST:
-      return NSAccessibilityContentListSubrole;
+      return @"AXContentList"; // 10.6+ NSAccessibilityContentListSubrole;
 
     case roles::DEFINITION_LIST:
-      return NSAccessibilityDefinitionListSubrole;
+      return @"AXDefinitionList"; // 10.6+ NSAccessibilityDefinitionListSubrole;
 
     case roles::TERM:
       return @"AXTerm";

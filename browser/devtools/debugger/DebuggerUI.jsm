@@ -46,6 +46,7 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 
 const DBG_XUL = "chrome://browser/content/debugger.xul";
+const DBG_STRINGS_URI = "chrome://browser/locale/devtools/debugger.properties";
 const REMOTE_PROFILE_NAME = "_remote-debug";
 
 Cu.import("resource://gre/modules/devtools/dbg-server.jsm");
@@ -66,6 +67,20 @@ function DebuggerUI(aWindow) {
 }
 
 DebuggerUI.prototype = {
+  /**
+   * Called by the DebuggerPane to update the Debugger toggle switches with the
+   * debugger state.
+   */
+  refreshCommand: function DUI_refreshCommand() {
+    let selectedTab = this.chromeWindow.getBrowser().selectedTab;
+    let command = this.chromeWindow.document.getElementById("Tools:Debugger");
+
+    if (this.getDebugger(selectedTab) != null) {
+      command.setAttribute("checked", "true");
+    } else {
+      command.removeAttribute("checked");
+    }
+  },
 
   /**
    * Starts a debugger for the current tab, or stops it if already started.
@@ -78,28 +93,26 @@ DebuggerUI.prototype = {
       tab._scriptDebugger.close();
       return null;
     }
-    return new DebuggerPane(tab);
+    return new DebuggerPane(this, tab);
   },
 
   /**
-   * Starts a remote debugger in a new process, or stops it if already started.
-   * @see DebuggerProcess.constructor
-   * @return DebuggerProcess if the debugger is started, null if it's stopped.
+   * Starts a remote debugger in a new window, or stops it if already started.
+   * @return RemoteDebuggerWindow if the debugger is started, null if stopped.
    */
-  toggleRemoteDebugger: function DUI_toggleRemoteDebugger(aOnClose, aOnRun) {
+  toggleRemoteDebugger: function DUI_toggleRemoteDebugger() {
     let win = this.chromeWindow;
 
     if (win._remoteDebugger) {
       win._remoteDebugger.close();
       return null;
     }
-    return new DebuggerProcess(win, aOnClose, aOnRun);
+    return new RemoteDebuggerWindow(this);
   },
 
   /**
    * Starts a chrome debugger in a new process, or stops it if already started.
-   * @see DebuggerProcess.constructor
-   * @return DebuggerProcess if the debugger is started, null if it's stopped.
+   * @return ChromeDebuggerProcess if the debugger is started, null if stopped.
    */
   toggleChromeDebugger: function DUI_toggleChromeDebugger(aOnClose, aOnRun) {
     let win = this.chromeWindow;
@@ -108,15 +121,33 @@ DebuggerUI.prototype = {
       win._chromeDebugger.close();
       return null;
     }
-    return new DebuggerProcess(win, aOnClose, aOnRun, true);
+    return new ChromeDebuggerProcess(win, aOnClose, aOnRun, true);
   },
 
   /**
    * Get the debugger for a specified tab.
-   * @return DebuggerPane if a debugger exists for the tab, null otherwise
+   * @return DebuggerPane if a debugger exists for the tab, null otherwise.
    */
   getDebugger: function DUI_getDebugger(aTab) {
-    return aTab._scriptDebugger;
+    return '_scriptDebugger' in aTab ? aTab._scriptDebugger : null;
+  },
+
+  /**
+   * Get the remote debugger for the current chrome window.
+   * @return RemoteDebuggerWindow if a remote debugger exists, null otherwise.
+   */
+  getRemoteDebugger: function DUI_getRemoteDebugger() {
+    let win = this.chromeWindow;
+    return '_remoteDebugger' in win ? win._remoteDebugger : null;
+  },
+
+  /**
+   * Get the chrome debugger for the current firefox instance.
+   * @return ChromeDebuggerProcess if a chrome debugger exists, null otherwise.
+   */
+  getChromeDebugger: function DUI_getChromeDebugger() {
+    let win = this.chromeWindow;
+    return '_chromeDebugger' in win ? win._chromeDebugger : null;
   },
 
   /**
@@ -131,12 +162,15 @@ DebuggerUI.prototype = {
 /**
  * Creates a pane that will host the debugger.
  *
+ * @param DebuggerUI aDebuggerUI
+ *        The parent instance creating the new debugger.
  * @param XULElement aTab
  *        The tab in which to create the debugger.
  */
-function DebuggerPane(aTab) {
+function DebuggerPane(aDebuggerUI, aTab) {
+  this._globalUI = aDebuggerUI;
   this._tab = aTab;
-  
+
   this._initServer();
   this._create();
 }
@@ -163,7 +197,7 @@ DebuggerPane.prototype = {
     let ownerDocument = gBrowser.parentNode.ownerDocument;
 
     this._splitter = ownerDocument.createElement("splitter");
-    this._splitter.setAttribute("class", "hud-splitter");
+    this._splitter.setAttribute("class", "devtools-horizontal-splitter");
 
     this._frame = ownerDocument.createElement("iframe");
     this._frame.height = DebuggerPreferences.height;
@@ -181,13 +215,14 @@ DebuggerPane.prototype = {
       self._frame.addEventListener("unload", self.close, true);
 
       // Bind shortcuts for accessing the breakpoint methods in the debugger.
-      let bkp = self.debuggerWindow.DebuggerController.Breakpoints;
+      let bkp = self.contentWindow.DebuggerController.Breakpoints;
       self.addBreakpoint = bkp.addBreakpoint;
       self.removeBreakpoint = bkp.removeBreakpoint;
       self.getBreakpoint = bkp.getBreakpoint;
     }, true);
 
     this._frame.setAttribute("src", DBG_XUL);
+    this._globalUI.refreshCommand();
   },
 
   /**
@@ -210,13 +245,15 @@ DebuggerPane.prototype = {
     this._splitter = null;
     this._frame = null;
     this._nbox = null;
+
+    this._globalUI.refreshCommand();
   },
 
   /**
    * Gets the debugger content window.
    * @return nsIDOMWindow if a debugger window exists, null otherwise
    */
-  get debuggerWindow() {
+  get contentWindow() {
     return this._frame ? this._frame.contentWindow : null;
   },
 
@@ -225,38 +262,115 @@ DebuggerPane.prototype = {
    * @return object if a debugger window exists, null otherwise
    */
   get breakpoints() {
-    let debuggerWindow = this.debuggerWindow;
-    if (debuggerWindow) {
-      return debuggerWindow.DebuggerController.Breakpoints.store;
+    let contentWindow = this.contentWindow;
+    if (contentWindow) {
+      return contentWindow.DebuggerController.Breakpoints.store;
     }
     return null;
   }
 };
 
 /**
- * Creates a process that will hold the remote debugger.
+ * Creates a window that will host a remote debugger.
+ *
+ * @param DebuggerUI aDebuggerUI
+ *        The parent instance creating the new debugger.
+ */
+function RemoteDebuggerWindow(aDebuggerUI) {
+  this._globalUI = aDebuggerUI;
+  this._win = aDebuggerUI.chromeWindow;
+
+  this._create();
+}
+
+RemoteDebuggerWindow.prototype = {
+
+  /**
+   * Creates and initializes the widgets containing the remote debugger UI.
+   */
+  _create: function DP__create() {
+    this._win._remoteDebugger = this;
+
+    this._dbgwin = this._globalUI.chromeWindow.open(DBG_XUL,
+      L10N.getStr("remoteDebuggerWindowTitle"),
+      "width=" + DebuggerPreferences.remoteWinWidth + "," +
+      "height=" + DebuggerPreferences.remoteWinHeight + "," +
+      "chrome,dependent,resizable,centerscreen");
+
+    this._dbgwin._remoteFlag = true;
+
+    this.close = this.close.bind(this);
+    let self = this;
+
+    this._dbgwin.addEventListener("Debugger:Loaded", function dbgLoaded() {
+      self._dbgwin.removeEventListener("Debugger:Loaded", dbgLoaded, true);
+      self._dbgwin.addEventListener("Debugger:Close", self.close, true);
+      self._dbgwin.addEventListener("unload", self.close, true);
+
+      // Bind shortcuts for accessing the breakpoint methods in the debugger.
+      let bkp = self.contentWindow.DebuggerController.Breakpoints;
+      self.addBreakpoint = bkp.addBreakpoint;
+      self.removeBreakpoint = bkp.removeBreakpoint;
+      self.getBreakpoint = bkp.getBreakpoint;
+    }, true);
+  },
+
+  /**
+   * Closes the remote debugger, along with the parent window if necessary.
+   */
+  close: function DP_close() {
+    if (!this._win) {
+      return;
+    }
+    delete this._win._remoteDebugger;
+    this._win = null;
+
+    this._dbgwin.close();
+    this._dbgwin = null;
+  },
+
+  /**
+   * Gets the remote debugger content window.
+   * @return nsIDOMWindow if a debugger window exists, null otherwise.
+   */
+  get contentWindow() {
+    return this._dbgwin;
+  },
+
+  /**
+   * Shortcut for accessing the list of breakpoints in the remote debugger.
+   * @return object if a debugger window exists, null otherwise.
+   */
+  get breakpoints() {
+    let contentWindow = this.contentWindow;
+    if (contentWindow) {
+      return contentWindow.DebuggerController.Breakpoints.store;
+    }
+    return null;
+  }
+};
+
+/**
+ * Creates a process that will hold a chrome debugger.
  *
  * @param function aOnClose
  *        Optional, a function called when the process exits.
  * @param function aOnRun
  *        Optional, a function called when the process starts running.
- * @param boolean aInitServerFlag
- *        True to initialize the server. This should happen only in the chrome
- *        debugging case. This should also be true by default after bug #747429.
  * @param nsIDOMWindow aWindow
- *        The chrome window for which the remote debugger instance is created.
+ *        The chrome window for which the debugger instance is created.
  */
-function DebuggerProcess(aWindow, aOnClose, aOnRun, aInitServerFlag) {
+function ChromeDebuggerProcess(aWindow, aOnClose, aOnRun) {
   this._win = aWindow;
   this._closeCallback = aOnClose;
   this._runCallback = aOnRun;
 
-  aInitServerFlag && this._initServer();
+  this._initServer();
   this._initProfile();
   this._create();
 }
 
-DebuggerProcess.prototype = {
+ChromeDebuggerProcess.prototype = {
 
   /**
    * Initializes the debugger server.
@@ -293,7 +407,7 @@ DebuggerProcess.prototype = {
    * Creates and initializes the profile & process for the remote debugger.
    */
   _create: function RDP__create() {
-    this._win._remoteDebugger = this;
+    this._win._chromeDebugger = this;
 
     let file = FileUtils.getFile("CurProcD",
       [Services.appinfo.OS == "WINNT" ? "firefox.exe"
@@ -323,7 +437,7 @@ DebuggerProcess.prototype = {
     if (!this._win) {
       return;
     }
-    delete this._win._remoteDebugger;
+    delete this._win._chromeDebugger;
     this._win = null;
 
     if (this._dbgProcess.isRunning) {
@@ -340,6 +454,26 @@ DebuggerProcess.prototype = {
     this._dbgProfile = null;
   }
 };
+
+/**
+ * Localization convenience methods.
+ */
+let L10N = {
+
+  /**
+   * L10N shortcut function.
+   *
+   * @param string aName
+   * @return string
+   */
+  getStr: function L10N_getStr(aName) {
+    return this.stringBundle.GetStringFromName(aName);
+  }
+};
+
+XPCOMUtils.defineLazyGetter(L10N, "stringBundle", function() {
+  return Services.strings.createBundle(DBG_STRINGS_URI);
+});
 
 /**
  * Various debugger preferences.

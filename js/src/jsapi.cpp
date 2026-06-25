@@ -89,7 +89,7 @@
 #include "builtin/MapObject.h"
 #include "builtin/RegExp.h"
 #include "frontend/BytecodeCompiler.h"
-#include "frontend/BytecodeEmitter.h"
+#include "frontend/TreeContext.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
 #include "js/MemoryMetrics.h"
@@ -757,7 +757,6 @@ JSRuntime::JSRuntime()
     gcCallback(NULL),
     gcSliceCallback(NULL),
     gcFinalizeCallback(NULL),
-    gcMallocBytes(0),
     gcBlackRootsTraceOp(NULL),
     gcBlackRootsData(NULL),
     gcGrayRootsTraceOp(NULL),
@@ -770,6 +769,7 @@ JSRuntime::JSRuntime()
     emptyString(NULL),
     debugMode(false),
     profilingScripts(false),
+    alwaysPreserveCode(false),
     hadOutOfMemory(false),
     data(NULL),
 #ifdef JS_THREADSAFE
@@ -1505,57 +1505,104 @@ JS_WrapValue(JSContext *cx, jsval *vp)
     return cx->compartment->wrap(cx, vp);
 }
 
+/*
+ * Identity remapping. Not for casual consumers.
+ *
+ * Normally, an object's contents and its identity are inextricably linked.
+ * Identity is determined by the address of the JSObject* in the heap, and
+ * the contents are what is located at that address. Transplanting allows these
+ * concepts to be separated through a combination of swapping (exchanging the
+ * contents of two same-compartment objects) and remapping cross-compartment
+ * identities by altering wrappers.
+ *
+ * The |origobj| argument should be the object whose identity needs to be
+ * remapped, usually to another compartment. The contents of |origobj| are
+ * destroyed.
+ *
+ * The |target| argument serves two purposes:
+ *
+ * First, |target| serves as a hint for the new identity of the object. The new
+ * identity object will always be in the same compartment as |target|, but
+ * if that compartment already had an object representing |origobj| (either a
+ * cross-compartment wrapper for it, or |origobj| itself if the two arguments
+ * are same-compartment), the existing object is used. Otherwise, |target|
+ * itself is used. To avoid ambiguity, JS_TransplantObject always returns the
+ * new identity.
+ *
+ * Second, the new identity object's contents will be those of |target|. A swap()
+ * is used to make this happen if an object other than |target| is used.
+ */
+
+static bool RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target);
+
 JS_PUBLIC_API(JSObject *)
 JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
 {
     AssertNoGC(cx);
+    JS_ASSERT(origobj != target);
 
-     // This function is called when an object moves between two
-     // different compartments. In that case, we need to "move" the
-     // window from origobj's compartment to target's compartment.
     JSCompartment *destination = target->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
     Value origv = ObjectValue(*origobj);
-    JSObject *obj;
+    JSObject *newIdentity;
 
     if (origobj->compartment() == destination) {
         // If the original object is in the same compartment as the
         // destination, then we know that we won't find wrapper in the
         // destination's cross compartment map and that the same
-        // object will continue to work.  Note the rare case where
-        // |origobj == target|. In that case, we can just treat this
-        // as a same compartment navigation. The effect is to clear
-        // all of the wrappers and their holders if they have
-        // them. This would be cleaner as a separate API.
-        if (origobj != target && !origobj->swap(cx, target))
+        // object will continue to work.
+        if (!origobj->swap(cx, target))
             return NULL;
-        obj = origobj;
+        newIdentity = origobj;
     } else if (WrapperMap::Ptr p = map.lookup(origv)) {
         // There might already be a wrapper for the original object in
-        // the new compartment. If there is, make it the primary outer
-        // window proxy around the inner (accomplished by swapping
-        // target's innards with the old, possibly security wrapper,
-        // innards).
-        obj = &p->value.toObject();
+        // the new compartment. If there is, we use its identity and swap
+        // in the contents of |target|.
+        newIdentity = &p->value.toObject();
         map.remove(p);
-        if (!obj->swap(cx, target))
+        if (!newIdentity->swap(cx, target))
             return NULL;
     } else {
-        // Otherwise, this is going to be our outer window proxy in
-        // the new compartment.
-        obj = target;
+        // Otherwise, we use |target| for the new identity object.
+        newIdentity = target;
     }
 
     // Now, iterate through other scopes looking for references to the
-    // old outer window. They need to be updated to point at the new
-    // outer window.  They also might transition between different
-    // types of security wrappers based on whether the new compartment
-    // is same origin with them.
-    Value targetv = ObjectValue(*obj);
+    // old object, and update the relevant cross-compartment wrappers.
+    if (!RemapWrappers(cx, origobj, newIdentity))
+        return NULL;
+
+    // Lastly, update the original object to point to the new one.
+    if (origobj->compartment() != destination) {
+        AutoCompartment ac(cx, origobj);
+        JSObject *newIdentityWrapper = newIdentity;
+        if (!ac.enter() || !JS_WrapObject(cx, &newIdentityWrapper))
+            return NULL;
+        if (!origobj->swap(cx, newIdentityWrapper))
+            return NULL;
+        origobj->compartment()->crossCompartmentWrappers.put(ObjectValue(*newIdentity),
+                                                             origv);
+    }
+
+    // The new identity object might be one of several things. Return it to avoid
+    // ambiguity.
+    return newIdentity;
+}
+
+/*
+ * Remap cross-compartment wrappers pointing to |src| to point to |dst|. All
+ * wrappers are recomputed.
+ */
+static bool
+RemapWrappers(JSContext *cx, JSObject *orig, JSObject *target)
+{
+    Value origv = ObjectValue(*orig);
+    Value targetv = ObjectValue(*target);
+
     CompartmentVector &vector = cx->runtime->compartments;
     AutoValueVector toTransplant(cx);
     if (!toTransplant.reserve(vector.length()))
-        return NULL;
+        return false;
 
     for (JSCompartment **p = vector.begin(), **end = vector.end(); p != end; ++p) {
         WrapperMap &pmap = (*p)->crossCompartmentWrappers;
@@ -1575,9 +1622,9 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
         // First, we wrap it in the new compartment. This will return
         // a new wrapper.
         AutoCompartment ac(cx, wobj);
-        JSObject *tobj = obj;
+        JSObject *tobj = target;
         if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-            return NULL;
+            return false;
 
         // Now, because we need to maintain object identity, we do a
         // brain transplant on the old object. At the same time, we
@@ -1585,22 +1632,11 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
         // to the old wrapper.
         JS_ASSERT(tobj != wobj);
         if (!wobj->swap(cx, tobj))
-            return NULL;
+            return false;
         pmap.put(targetv, ObjectValue(*wobj));
     }
 
-    // Lastly, update the original object to point to the new one.
-    if (origobj->compartment() != destination) {
-        AutoCompartment ac(cx, origobj);
-        JSObject *tobj = obj;
-        if (!ac.enter() || !JS_WrapObject(cx, &tobj))
-            return NULL;
-        if (!origobj->swap(cx, tobj))
-            return NULL;
-        origobj->compartment()->crossCompartmentWrappers.put(targetv, origv);
-    }
-
-    return obj;
+    return true;
 }
 
 /*
@@ -1620,87 +1656,62 @@ js_TransplantObjectWithWrapper(JSContext *cx,
 {
     AssertNoGC(cx);
 
-    JSObject *obj;
+    JSObject *newWrapper;
     JSCompartment *destination = targetobj->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
 
     // |origv| is the map entry we're looking up. The map entries are going to
-    // be for the location object itself.
+    // be for |origobj|, not |origwrapper|.
     Value origv = ObjectValue(*origobj);
 
     // There might already be a wrapper for the original object in the new
     // compartment.
     if (WrapperMap::Ptr p = map.lookup(origv)) {
-        // There is. Make the existing wrapper a same compartment location
-        // wrapper (swapping it with the given new wrapper).
-        obj = &p->value.toObject();
+        // There is. Make the existing cross-compartment wrapper a same-
+        // compartment wrapper.
+        newWrapper = &p->value.toObject();
         map.remove(p);
-        if (!obj->swap(cx, targetwrapper))
+        if (!newWrapper->swap(cx, targetwrapper))
             return NULL;
     } else {
-        // Otherwise, use the passed-in wrapper as the same compartment
-        // location wrapper.
-        obj = targetwrapper;
+        // Otherwise, use the passed-in wrapper as the same-compartment wrapper.
+        newWrapper = targetwrapper;
     }
 
     // Now, iterate through other scopes looking for references to the old
-    // location object. Note that the entries in the maps are for |origobj|
-    // and not |origwrapper|. They need to be updated to point at the new
-    // location object.
-    Value targetv = ObjectValue(*targetobj);
-    CompartmentVector &vector = cx->runtime->compartments;
-    AutoValueVector toTransplant(cx);
-    if (!toTransplant.reserve(vector.length()))
+    // object. Note that the entries in the maps are for |origobj| and not
+    // |origwrapper|. They need to be updated to point at the new object.
+    if (!RemapWrappers(cx, origobj, targetobj))
         return NULL;
 
-    for (JSCompartment **p = vector.begin(), **end = vector.end(); p != end; ++p) {
-        WrapperMap &pmap = (*p)->crossCompartmentWrappers;
-        if (WrapperMap::Ptr wp = pmap.lookup(origv)) {
-            // We found a wrapper. Remember and root it.
-            toTransplant.infallibleAppend(wp->value);
-        }
-    }
-
-    for (Value *begin = toTransplant.begin(), *end = toTransplant.end(); begin != end; ++begin) {
-        JSObject *wobj = &begin->toObject();
-        JSCompartment *wcompartment = wobj->compartment();
-        WrapperMap &pmap = wcompartment->crossCompartmentWrappers;
-        JS_ASSERT(pmap.lookup(origv));
-        pmap.remove(origv);
-
-        // First, we wrap it in the new compartment. This will return a
-        // new wrapper.
-        AutoCompartment ac(cx, wobj);
-
-        JSObject *tobj = targetobj;
-        if (!ac.enter() || !wcompartment->wrap(cx, &tobj))
-            return NULL;
-
-        // Now, because we need to maintain object identity, we do a brain
-        // transplant on the old object. At the same time, we update the
-        // entry in the compartment's wrapper map to point to the old
-        // wrapper.
-        JS_ASSERT(tobj != wobj);
-        if (!wobj->swap(cx, tobj))
-            return NULL;
-        pmap.put(targetv, ObjectValue(*wobj));
-    }
-
-    // Lastly, update the original object to point to the new one. However, as
-    // mentioned above, we do the transplant on the wrapper, not the object
-    // itself, since all of the references are to the object itself.
+    // Lastly, update things in the original compartment. Our invariants dictate
+    // that the original compartment can only have one cross-compartment wrapper
+    // to the new object. So we choose to update |origwrapper|, not |origobj|,
+    // since theoretically there should have been no direct intra-compartment
+    // references to |origobj|.
     {
         AutoCompartment ac(cx, origobj);
-        JSObject *tobj = obj;
-        if (!ac.enter() || !JS_WrapObject(cx, &tobj))
+        JSObject *wrapperGuts = targetobj;
+        if (!ac.enter() || !JS_WrapObject(cx, &wrapperGuts))
             return NULL;
-        if (!origwrapper->swap(cx, tobj))
+        if (!origwrapper->swap(cx, wrapperGuts))
             return NULL;
-        origwrapper->compartment()->crossCompartmentWrappers.put(targetv,
+        origwrapper->compartment()->crossCompartmentWrappers.put(ObjectValue(*targetobj),
                                                                  ObjectValue(*origwrapper));
     }
 
-    return obj;
+    return newWrapper;
+}
+
+/*
+ * Recompute all cross-compartment wrappers for an object, resetting state.
+ * Gecko uses this to clear Xray wrappers when doing a navigation that reuses
+ * the inner window and global object.
+ */
+JS_PUBLIC_API(JSBool)
+JS_RefreshCrossCompartmentWrappers(JSContext *cx, JSObject *obj)
+{
+    return RemapWrappers(cx, obj, obj);
 }
 
 JS_PUBLIC_API(JSObject *)
@@ -1742,35 +1753,20 @@ JS_InitStandardClasses(JSContext *cx, JSObject *obj)
 
 #define CLASP(name)                 (&name##Class)
 #define TYPED_ARRAY_CLASP(type)     (&TypedArray::classes[TypedArray::type])
-#define EAGER_ATOM(name)            NAME_OFFSET(name), NULL
-#define EAGER_CLASS_ATOM(name)      CLASS_NAME_OFFSET(name), NULL
+#define EAGER_ATOM(name)            NAME_OFFSET(name)
+#define EAGER_CLASS_ATOM(name)      CLASS_NAME_OFFSET(name)
 #define EAGER_ATOM_AND_CLASP(name)  EAGER_CLASS_ATOM(name), CLASP(name)
-#define LAZY_ATOM(name)             NAME_OFFSET(lazy.name), js_##name##_str
 
 typedef struct JSStdName {
     JSObjectOp  init;
     size_t      atomOffset;     /* offset of atom pointer in JSAtomState */
-    const char  *name;          /* null if atom is pre-pinned, else name */
     Class       *clasp;
 } JSStdName;
 
 static PropertyName *
 StdNameToPropertyName(JSContext *cx, JSStdName *stdn)
 {
-    size_t offset;
-    PropertyName *atom;
-    const char *name;
-
-    offset = stdn->atomOffset;
-    atom = OFFSET_TO_NAME(cx->runtime, offset);
-    if (!atom) {
-        name = stdn->name;
-        if (name) {
-            atom = js_Atomize(cx, name, strlen(name), InternAtom)->asPropertyName();
-            OFFSET_TO_NAME(cx->runtime, offset) = atom;
-        }
-    }
-    return atom;
+    return OFFSET_TO_NAME(cx->runtime, stdn->atomOffset);
 }
 
 /*
@@ -1801,7 +1797,7 @@ static JSStdName standard_class_atoms[] = {
     {js_InitWeakMapClass,               EAGER_CLASS_ATOM(WeakMap), &js::WeakMapClass},
     {js_InitMapClass,                   EAGER_CLASS_ATOM(Map), &js::MapObject::class_},
     {js_InitSetClass,                   EAGER_CLASS_ATOM(Set), &js::SetObject::class_},
-    {NULL,                              0, NULL, NULL}
+    {NULL,                              0, NULL}
 };
 
 /*
@@ -1815,20 +1811,20 @@ static JSStdName standard_class_names[] = {
     /* Global properties and functions defined by the Number class. */
     {js_InitNumberClass,        EAGER_ATOM(NaN), CLASP(Number)},
     {js_InitNumberClass,        EAGER_ATOM(Infinity), CLASP(Number)},
-    {js_InitNumberClass,        LAZY_ATOM(isNaN), CLASP(Number)},
-    {js_InitNumberClass,        LAZY_ATOM(isFinite), CLASP(Number)},
-    {js_InitNumberClass,        LAZY_ATOM(parseFloat), CLASP(Number)},
-    {js_InitNumberClass,        LAZY_ATOM(parseInt), CLASP(Number)},
+    {js_InitNumberClass,        EAGER_ATOM(isNaN), CLASP(Number)},
+    {js_InitNumberClass,        EAGER_ATOM(isFinite), CLASP(Number)},
+    {js_InitNumberClass,        EAGER_ATOM(parseFloat), CLASP(Number)},
+    {js_InitNumberClass,        EAGER_ATOM(parseInt), CLASP(Number)},
 
     /* String global functions. */
-    {js_InitStringClass,        LAZY_ATOM(escape), CLASP(String)},
-    {js_InitStringClass,        LAZY_ATOM(unescape), CLASP(String)},
-    {js_InitStringClass,        LAZY_ATOM(decodeURI), CLASP(String)},
-    {js_InitStringClass,        LAZY_ATOM(encodeURI), CLASP(String)},
-    {js_InitStringClass,        LAZY_ATOM(decodeURIComponent), CLASP(String)},
-    {js_InitStringClass,        LAZY_ATOM(encodeURIComponent), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(escape), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(unescape), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(decodeURI), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(encodeURI), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(decodeURIComponent), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(encodeURIComponent), CLASP(String)},
 #if JS_HAS_UNEVAL
-    {js_InitStringClass,        LAZY_ATOM(uneval), CLASP(String)},
+    {js_InitStringClass,        EAGER_ATOM(uneval), CLASP(String)},
 #endif
 
     /* Exception constructors. */
@@ -1842,8 +1838,8 @@ static JSStdName standard_class_names[] = {
     {js_InitExceptionClasses,   EAGER_CLASS_ATOM(URIError), CLASP(Error)},
 
 #if JS_HAS_XML_SUPPORT
-    {js_InitXMLClass,           LAZY_ATOM(XMLList), CLASP(XML)},
-    {js_InitXMLClass,           LAZY_ATOM(isXMLName), CLASP(XML)},
+    {js_InitXMLClass,           EAGER_ATOM(XMLList), CLASP(XML)},
+    {js_InitXMLClass,           EAGER_ATOM(isXMLName), CLASP(XML)},
 #endif
 
 #if JS_HAS_GENERATORS
@@ -1867,7 +1863,7 @@ static JSStdName standard_class_names[] = {
     {js_InitWeakMapClass,       EAGER_ATOM_AND_CLASP(WeakMap)},
     {js_InitProxyClass,         EAGER_ATOM_AND_CLASP(Proxy)},
 
-    {NULL,                      0, NULL, NULL}
+    {NULL,                      0, NULL}
 };
 
 static JSStdName object_prototype_names[] = {
@@ -1880,20 +1876,20 @@ static JSStdName object_prototype_names[] = {
     {js_InitObjectClass,        EAGER_ATOM(toLocaleString), CLASP(Object)},
     {js_InitObjectClass,        EAGER_ATOM(valueOf), CLASP(Object)},
 #if JS_HAS_OBJ_WATCHPOINT
-    {js_InitObjectClass,        LAZY_ATOM(watch), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(unwatch), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(watch), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(unwatch), CLASP(Object)},
 #endif
-    {js_InitObjectClass,        LAZY_ATOM(hasOwnProperty), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(isPrototypeOf), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(propertyIsEnumerable), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(hasOwnProperty), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(isPrototypeOf), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(propertyIsEnumerable), CLASP(Object)},
 #if OLD_GETTER_SETTER_METHODS
-    {js_InitObjectClass,        LAZY_ATOM(defineGetter), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(defineSetter), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(lookupGetter), CLASP(Object)},
-    {js_InitObjectClass,        LAZY_ATOM(lookupSetter), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(defineGetter), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(defineSetter), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(lookupGetter), CLASP(Object)},
+    {js_InitObjectClass,        EAGER_ATOM(lookupSetter), CLASP(Object)},
 #endif
 
-    {NULL,                      0, NULL, NULL}
+    {NULL,                      0, NULL}
 };
 
 JS_PUBLIC_API(JSBool)
@@ -2149,7 +2145,6 @@ JS_EnumerateResolvedStandardClasses(JSContext *cx, JSObject *obj, JSIdArray *ida
 #undef EAGER_ATOM
 #undef EAGER_CLASS_ATOM
 #undef EAGER_ATOM_CLASP
-#undef LAZY_ATOM
 
 JS_PUBLIC_API(JSBool)
 JS_GetClassObject(JSContext *cx, JSObject *obj, JSProtoKey key, JSObject **objp)
@@ -4589,6 +4584,11 @@ JS_CloneFunctionObject(JSContext *cx, JSObject *funobj, JSObject *parent_)
         return NULL;
     }
 
+    if (fun->isBoundFunction()) {
+        JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
+                             JSMSG_CANT_CLONE_OBJECT);
+        return NULL;
+    }
 
     return CloneFunctionObject(cx, fun, parent, fun->getAllocKind());
 }
@@ -6590,13 +6590,22 @@ JS_AbortIfWrongThread(JSRuntime *rt)
 JS_PUBLIC_API(void)
 JS_SetGCZeal(JSContext *cx, uint8_t zeal, uint32_t frequency)
 {
-#ifdef JS_GC_ZEAL
     const char *env = getenv("JS_GC_ZEAL");
     if (env) {
+        if (0 == strcmp(env, "help")) {
+            printf("Format: JS_GC_ZEAL=N[,F]\n"
+                   "N indicates \"zealousness\":\n"
+                   "  0: no additional GCs\n"
+                   "  1: additional GCs at common danger points\n"
+                   "  2: GC every F allocations (default: 100)\n"
+                   "  3: GC when the window paints (browser only)\n"
+                   "  4: Verify write barriers between instructions\n"
+                   "  5: Verify write barriers between paints\n");
+        }
+        const char *p = strchr(env, ',');
         zeal = atoi(env);
-        frequency = 1;
+        frequency = p ? atoi(p + 1) : JS_DEFAULT_ZEAL_FREQ;
     }
-#endif
 
     bool schedule = zeal >= js::gc::ZealAllocValue;
     cx->runtime->gcZeal_ = zeal;

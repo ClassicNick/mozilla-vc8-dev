@@ -529,19 +529,17 @@ XPCConvert::JSData2Native(XPCCallContext& ccx, void* d, jsval s,
             return false;
         case nsXPTType::T_IID:
         {
-            JSObject* obj;
-            const nsID* pid=nsnull;
+            const nsID* pid = nsnull;
 
             // There's no good reason to pass a null IID.
-            if (JSVAL_IS_VOID(s) || JSVAL_IS_NULL(s)) {
+            if (s.isNullOrUndefined()) {
                 if (pErr)
-                  *pErr = NS_ERROR_XPC_BAD_CONVERT_JS;
+                    *pErr = NS_ERROR_XPC_BAD_CONVERT_JS;
                 return false;
             }
 
-            if (!JSVAL_IS_OBJECT(s) ||
-                (!(obj = JSVAL_TO_OBJECT(s))) ||
-                (!(pid = xpc_JSObjectToID(cx, obj))) ||
+            if (!s.isObject() ||
+                (!(pid = xpc_JSObjectToID(cx, &s.toObject()))) ||
                 (!(pid = (const nsID*) nsMemory::Clone(pid, sizeof(nsID))))) {
                 return false;
             }
@@ -796,7 +794,6 @@ XPCConvert::JSData2Native(XPCCallContext& ccx, void* d, jsval s,
         case nsXPTType::T_INTERFACE:
         case nsXPTType::T_INTERFACE_IS:
         {
-            JSObject* obj;
             NS_ASSERTION(iid,"can't do interface conversions without iid");
 
             if (iid->Equals(NS_GET_IID(nsIVariant))) {
@@ -825,19 +822,19 @@ XPCConvert::JSData2Native(XPCCallContext& ccx, void* d, jsval s,
             }
             //else ...
 
-            if (JSVAL_IS_VOID(s) || JSVAL_IS_NULL(s)) {
+            if (s.isNullOrUndefined()) {
                 *((nsISupports**)d) = nsnull;
                 return true;
             }
 
             // only wrap JSObjects
-            if (!JSVAL_IS_OBJECT(s) || !(obj = JSVAL_TO_OBJECT(s))) {
-                if (pErr && JSVAL_IS_INT(s) && 0 == JSVAL_TO_INT(s))
+            if (!s.isObject()) {
+                if (pErr && s.isInt32() && 0 == s.toInt32())
                     *pErr = NS_ERROR_XPC_BAD_CONVERT_JS_ZERO_ISNOT_NULL;
                 return false;
             }
 
-            return JSObject2NativeInterface(ccx, (void**)d, obj, iid,
+            return JSObject2NativeInterface(ccx, (void**)d, &s.toObject(), iid,
                                             nsnull, pErr);
         }
         default:
@@ -977,19 +974,17 @@ XPCConvert::NativeInterface2JSObject(XPCLazyCallContext& lccx,
         flat = cache->GetWrapper();
     }
 
+    XPCCallContext &ccx = lccx.GetXPCCallContext();
+    if (!ccx.IsValid())
+        return false;
+
     // We can't simply construct a slim wrapper. Go ahead and create an
     // XPCWrappedNative for this object. At this point, |flat| could be
     // non-null, meaning that either we already have a wrapped native from
     // the cache (which might need to be QI'd to the new interface) or that
     // we found a slim wrapper that we'll have to morph.
-    AutoMarkingNativeInterfacePtr iface;
+    AutoMarkingNativeInterfacePtr iface(ccx);
     if (iid) {
-        XPCCallContext &ccx = lccx.GetXPCCallContext();
-        if (!ccx.IsValid())
-            return false;
-
-        iface.Init(ccx);
-
         if (Interface)
             iface = *Interface;
 
@@ -1010,10 +1005,6 @@ XPCConvert::NativeInterface2JSObject(XPCLazyCallContext& lccx,
     XPCWrappedNative* wrapper;
     nsRefPtr<XPCWrappedNative> strongWrapper;
     if (!flat) {
-        XPCCallContext &ccx = lccx.GetXPCCallContext();
-        if (!ccx.IsValid())
-            return false;
-
         rv = XPCWrappedNative::GetNewOrUsed(ccx, aHelper, xpcscope, iface,
                                             getter_AddRefs(strongWrapper));
 
@@ -1030,17 +1021,12 @@ XPCConvert::NativeInterface2JSObject(XPCLazyCallContext& lccx,
         // a valid XPCCallContext because we checked when calling Init on
         // iface.
         if (iface)
-            wrapper->FindTearOff(lccx.GetXPCCallContext(), iface, false,
-                                 &rv);
+            wrapper->FindTearOff(ccx, iface, false, &rv);
         else
             rv = NS_OK;
     } else {
         NS_ASSERTION(IS_SLIM_WRAPPER(flat),
                      "What kind of wrapper is this?");
-
-        XPCCallContext &ccx = lccx.GetXPCCallContext();
-        if (!ccx.IsValid())
-            return false;
 
         SLIM_LOG(("***** morphing from XPCConvert::NativeInterface2JSObject"
                   "(%p)\n",
@@ -1071,10 +1057,6 @@ XPCConvert::NativeInterface2JSObject(XPCLazyCallContext& lccx,
             *pErr = NS_OK;
         return true;
     }
-
-    XPCCallContext &ccx = lccx.GetXPCCallContext();
-    if (!ccx.IsValid())
-        return false;
 
     JSObject *original = flat;
     if (!JS_WrapObject(ccx, &flat))
@@ -1758,7 +1740,7 @@ XPCConvert::JSTypedArray2Native(XPCCallContext& ccx,
 
 // static
 JSBool
-XPCConvert::JSArray2Native(XPCCallContext& ccx, void** d, jsval s,
+XPCConvert::JSArray2Native(XPCCallContext& ccx, void** d, JS::Value s,
                            uint32_t count, const nsXPTType& type,
                            const nsID* iid, nsresult* pErr)
 {
@@ -1766,21 +1748,11 @@ XPCConvert::JSArray2Native(XPCCallContext& ccx, void** d, jsval s,
 
     JSContext* cx = ccx.GetJSContext();
 
-    // No Action, FRee memory, RElease object
-    enum CleanupMode {na, fr, re};
-
-    CleanupMode cleanupMode;
-
-    JSObject* jsarray = nsnull;
-    void* array = nsnull;
-    uint32_t initedCount;
-    jsval current;
-
     // XXX add support for getting chars from strings
 
     // XXX add support to indicate *which* array element was not convertable
 
-    if (JSVAL_IS_VOID(s) || JSVAL_IS_NULL(s)) {
+    if (s.isNullOrUndefined()) {
         if (0 != count) {
             if (pErr)
                 *pErr = NS_ERROR_XPC_NOT_ENOUGH_ELEMENTS_IN_ARRAY;
@@ -1791,13 +1763,13 @@ XPCConvert::JSArray2Native(XPCCallContext& ccx, void** d, jsval s,
         return true;
     }
 
-    if (!JSVAL_IS_OBJECT(s)) {
+    if (!s.isObject()) {
         if (pErr)
             *pErr = NS_ERROR_XPC_CANT_CONVERT_PRIMITIVE_TO_ARRAY;
         return false;
     }
 
-    jsarray = JSVAL_TO_OBJECT(s);
+    JSObject* jsarray = &s.toObject();
 
     // If this is a typed array, then try a fast conversion with memcpy.
     if (JS_IsTypedArrayObject(jsarray, cx)) {
@@ -1838,9 +1810,16 @@ XPCConvert::JSArray2Native(XPCCallContext& ccx, void** d, jsval s,
         }                                                                     \
     PR_END_MACRO
 
+    // No Action, FRee memory, RElease object
+    enum CleanupMode {na, fr, re};
+
+    CleanupMode cleanupMode;
+
+    void *array = nsnull;
+    uint32_t initedCount;
+    jsval current;
 
     // XXX check IsPtr - esp. to handle array of nsID (as opposed to nsID*)
-
     // XXX make extra space at end of char* and wchar* and null termintate
 
     switch (type.TagPart()) {

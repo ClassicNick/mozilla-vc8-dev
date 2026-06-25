@@ -131,7 +131,10 @@ TiledThebesLayerOGL::~TiledThebesLayerOGL()
 void
 TiledThebesLayerOGL::PaintedTiledLayerBuffer(const BasicTiledLayerBuffer* mTiledBuffer)
 {
+  mMainMemoryTiledBuffer.ReadUnlock();
   mMainMemoryTiledBuffer = *mTiledBuffer;
+  // TODO: Remove me once Bug 747811 lands.
+  delete mTiledBuffer;
   mRegionToUpload.Or(mRegionToUpload, mMainMemoryTiledBuffer.GetLastPaintRegion());
 
 }

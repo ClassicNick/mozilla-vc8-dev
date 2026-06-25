@@ -1552,7 +1552,7 @@ nsIContent::HasIndependentSelection()
   return (frame && frame->GetStateBits() & NS_FRAME_INDEPENDENT_SELECTION);
 }
 
-nsIContent*
+dom::Element*
 nsIContent::GetEditingHost()
 {
   // If this isn't editable, return NULL.
@@ -1566,12 +1566,12 @@ nsIContent::GetEditingHost()
   }
 
   nsIContent* content = this;
-  for (nsIContent* parent = GetParent();
+  for (dom::Element* parent = GetElementParent();
        parent && parent->HasFlag(NODE_IS_EDITABLE);
-       parent = content->GetParent()) {
+       parent = content->GetElementParent()) {
     content = parent;
   }
-  return content;
+  return content->AsElement();
 }
 
 nsresult
@@ -1717,17 +1717,9 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsChildContentList)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsChildContentList)
 
 // If nsChildContentList is changed so that any additional fields are
-// traversed by the cycle collector, then CAN_SKIP must be updated.
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsChildContentList)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsChildContentList)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsChildContentList)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsChildContentList)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+// traversed by the cycle collector, then CAN_SKIP must be updated to
+// check that the additional fields are null.
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsChildContentList)
 
 // nsChildContentList only ever has a single child, its wrapper, so if
 // the wrapper is black, the list can't be part of a garbage cycle.
@@ -2142,7 +2134,10 @@ nsGenericElement::SetScrollTop(PRInt32 aScrollTop)
   if (sf) {
     nsPoint pt = sf->GetScrollPosition();
     pt.y = nsPresContext::CSSPixelsToAppUnits(aScrollTop);
-    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT);
+    nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
+    // Don't allow pt.y + halfPixel since that would round up to the next CSS pixel.
+    nsRect range(pt.x, pt.y - halfPixel, 0, halfPixel*2 - 1);
+    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT, &range);
   }
   return NS_OK;
 }
@@ -2172,7 +2167,10 @@ nsGenericElement::SetScrollLeft(PRInt32 aScrollLeft)
   if (sf) {
     nsPoint pt = sf->GetScrollPosition();
     pt.x = nsPresContext::CSSPixelsToAppUnits(aScrollLeft);
-    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT);
+    nscoord halfPixel = nsPresContext::CSSPixelsToAppUnits(0.5f);
+    // Don't allow pt.x + halfPixel since that would round up to the next CSS pixel.
+    nsRect range(pt.x - halfPixel, pt.y, halfPixel*2 - 1, 0);
+    sf->ScrollTo(pt, nsIScrollableFrame::INSTANT, &range);
   }
   return NS_OK;
 }
@@ -6482,6 +6480,20 @@ nsINode::Length() const
   }
 }
 
+static const char*
+GetFullScreenError(nsIDocument* aDoc)
+{
+  if (!nsContentUtils::IsRequestFullScreenAllowed()) {
+    return "FullScreenDeniedNotInputDriven";
+  }
+  
+  if (nsContentUtils::IsSitePermDeny(aDoc->NodePrincipal(), "fullscreen")) {
+    return "FullScreenDeniedBlocked";
+  }
+
+  return nsnull;
+}
+
 nsresult nsGenericElement::MozRequestFullScreen()
 {
   // Only grant full-screen requests if this is called from inside a trusted
@@ -6489,11 +6501,12 @@ nsresult nsGenericElement::MozRequestFullScreen()
   // This stops the full-screen from being abused similar to the popups of old,
   // and it also makes it harder for bad guys' script to go full-screen and
   // spoof the browser chrome/window and phish logins etc.
-  if (!nsContentUtils::IsRequestFullScreenAllowed()) {
+  const char* error = GetFullScreenError(OwnerDoc());
+  if (error) {
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                     "DOM", OwnerDoc(),
                                     nsContentUtils::eDOM_PROPERTIES,
-                                    "FullScreenDeniedNotInputDriven");
+                                    error);
     nsRefPtr<nsAsyncDOMEvent> e =
       new nsAsyncDOMEvent(OwnerDoc(),
                           NS_LITERAL_STRING("mozfullscreenerror"),

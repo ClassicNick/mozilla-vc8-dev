@@ -19,6 +19,10 @@
 #include "nsXPCOMPrivate.h"     // for MAXPATHLEN and XPCOM_DLL
 #include "nsXULAppAPI.h"
 
+#ifndef _countof
+#define _countof(a) sizeof(a) / sizeof(a[0])
+#endif
+
 XRE_GetFileFromPathType XRE_GetFileFromPath;
 XRE_CreateAppDataType XRE_CreateAppData;
 XRE_FreeAppDataType XRE_FreeAppData;
@@ -142,7 +146,7 @@ namespace {
     va_start(ap, fmt);
 
     wchar_t msg[1024];
-    _vsnwprintf_s(msg, _countof(msg), _countof(msg), fmt, ap);
+    _vsnwprintf(msg, _countof(msg), fmt, ap);
 
     MessageBoxW(NULL, msg, L"WebappRT", MB_OK);
 
@@ -156,7 +160,7 @@ namespace {
     va_start(ap, fmt);
 
     char msg[1024];
-    vsnprintf(msg, sizeof(msg), fmt, ap);
+    _vsnprintf(msg, sizeof(msg), fmt, ap);
 
     wchar_t wide_msg[1024];
     MultiByteToWideChar(CP_UTF8,

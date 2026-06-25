@@ -2813,12 +2813,8 @@ js_TransplantObjectWithWrapper(JSContext *cx,
                                JSObject *targetobj,
                                JSObject *targetwrapper);
 
-extern JS_FRIEND_API(JSObject *)
-js_TransplantObjectWithWrapper(JSContext *cx,
-                               JSObject *origobj,
-                               JSObject *origwrapper,
-                               JSObject *targetobj,
-                               JSObject *targetwrapper);
+extern JS_PUBLIC_API(JSBool)
+JS_RefreshCrossCompartmentWrappers(JSContext *cx, JSObject *ob);
 
 #ifdef __cplusplus
 JS_END_EXTERN_C
@@ -3502,9 +3498,6 @@ extern JS_PUBLIC_API(void)
 JS_GC(JSRuntime *rt);
 
 extern JS_PUBLIC_API(void)
-JS_CompartmentGC(JSRuntime *rt, JSCompartment *comp);
-
-extern JS_PUBLIC_API(void)
 JS_MaybeGC(JSContext *cx);
 
 extern JS_PUBLIC_API(void)
@@ -3630,8 +3623,8 @@ struct JSClass {
     /* Optionally non-null members start here. */
     JSCheckAccessOp     checkAccess;
     JSNative            call;
-    JSNative            construct;
     JSHasInstanceOp     hasInstance;
+    JSNative            construct;
     JSTraceOp           trace;
 
     void                *reserved[40];

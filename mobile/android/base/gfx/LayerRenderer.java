@@ -71,7 +71,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.util.ArrayList;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The layer renderer implements the rendering logic for a layer view.
@@ -97,12 +97,13 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
     private final ScrollbarLayer mHorizScrollLayer;
     private final ScrollbarLayer mVertScrollLayer;
     private final FadeRunnable mFadeRunnable;
-    private final FloatBuffer mCoordBuffer;
+    private ByteBuffer mCoordByteBuffer;
+    private FloatBuffer mCoordBuffer;
     private RenderContext mLastPageContext;
     private int mMaxTextureSize;
     private int mBackgroundColor;
 
-    private ArrayList<Layer> mExtraLayers = new ArrayList<Layer>();
+    private CopyOnWriteArrayList<Layer> mExtraLayers = new CopyOnWriteArrayList<Layer>();
 
     // Dropped frames display
     private int[] mFrameTimings;
@@ -123,6 +124,9 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
     private int mTextureHandle;
     private int mSampleHandle;
     private int mTMatrixHandle;
+
+    private int mSurfaceWidth;
+    private int mSurfaceHeight;
 
     // column-major matrix applied to each vertex to shift the viewport from
     // one ranging from (-1, -1),(1,1) to (0,0),(1,1) and to scale all sizes by
@@ -211,9 +215,22 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
 
         // Initialize the FloatBuffer that will be used to store all vertices and texture
         // coordinates in draw() commands.
-        ByteBuffer byteBuffer = GeckoAppShell.allocateDirectBuffer(COORD_BUFFER_SIZE * 4);
-        byteBuffer.order(ByteOrder.nativeOrder());
-        mCoordBuffer = byteBuffer.asFloatBuffer();
+        mCoordByteBuffer = GeckoAppShell.allocateDirectBuffer(COORD_BUFFER_SIZE * 4);
+        mCoordByteBuffer.order(ByteOrder.nativeOrder());
+        mCoordBuffer = mCoordByteBuffer.asFloatBuffer();
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            if (mCoordByteBuffer != null) {
+                GeckoAppShell.freeDirectBuffer(mCoordByteBuffer);
+                mCoordByteBuffer = null;
+                mCoordBuffer = null;
+            }
+        } finally {
+            super.finalize();
+        }
     }
 
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -273,9 +290,7 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
     }
 
     public void addLayer(Layer layer) {
-        LayerController controller = mView.getController();
-
-        synchronized (controller) {
+        synchronized (mExtraLayers) {
             if (mExtraLayers.contains(layer)) {
                 mExtraLayers.remove(layer);
             }
@@ -285,9 +300,7 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
     }
 
     public void removeLayer(Layer layer) {
-        LayerController controller = mView.getController();
-
-        synchronized (controller) {
+        synchronized (mExtraLayers) {
             mExtraLayers.remove(layer);
         }
     }
@@ -344,11 +357,14 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
     }
 
     private RenderContext createContext(RectF viewport, FloatSize pageSize, float zoomFactor) {
-        return new RenderContext(viewport, pageSize, zoomFactor, mPositionHandle, mTextureHandle,
+        return new RenderContext(viewport, pageSize, new IntSize(mSurfaceWidth, mSurfaceHeight), zoomFactor, mPositionHandle, mTextureHandle,
                                  mCoordBuffer);
     }
 
     public void onSurfaceChanged(GL10 gl, final int width, final int height) {
+        mSurfaceWidth = width;
+        mSurfaceHeight = height;
+
         GLES20.glViewport(0, 0, width, height);
 
         if (mFrameRateLayer != null) {
@@ -552,8 +568,6 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
 
             for (Layer layer : mExtraLayers)
                 mUpdated &= layer.update(mPageContext); // called on compositor thread
-
-            GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
         }
 
         /** Retrieves the bounds for the layer, rounded in such a way that it
@@ -597,6 +611,8 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
 
         /** This function is invoked via JNI; be careful when modifying signature. */
         public void drawBackground() {
+            GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
+
             /* Update background color. */
             mBackgroundColor = mView.getController().getCheckerboardColor();
 
@@ -631,9 +647,8 @@ public class LayerRenderer implements GLSurfaceView.Renderer {
                 /* Scissor around the page-rect, in case the page has shrunk
                  * since the screenshot layer was last updated.
                  */
-                setScissorRect();
+                setScissorRect(); // Calls glEnable(GL_SCISSOR_TEST))
                 mCheckerboardLayer.draw(mPageContext);
-                GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
             }
         }
 

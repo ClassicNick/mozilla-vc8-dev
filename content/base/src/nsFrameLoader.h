@@ -249,7 +249,7 @@ public:
    * Return the document that owns this, or null if we don't have
    * an owner.
    */
-  nsIDocument* OwnerDoc() const
+  nsIDocument* GetOwnerDoc() const
   { return mOwnerContent ? mOwnerContent->OwnerDoc() : nsnull; }
 
   PBrowserParent* GetRemoteBrowser();
@@ -285,13 +285,13 @@ public:
   nsFrameMessageManager* GetFrameMessageManager() { return mMessageManager; }
 
   mozilla::dom::Element* GetOwnerContent() { return mOwnerContent; }
-  void SetOwnerContent(mozilla::dom::Element* aContent);
-
   bool ShouldClipSubdocument() { return mClipSubdocument; }
 
   bool ShouldClampScrollPosition() { return mClampScrollPosition; }
 
 private:
+
+  void SetOwnerContent(mozilla::dom::Element* aContent);
 
   bool ShouldUseRemoteProcess();
 

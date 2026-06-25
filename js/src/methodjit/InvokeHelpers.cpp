@@ -348,7 +348,7 @@ UncachedInlineCall(VMFrame &f, InitialFrameFlags initial,
      * will be constructing a new type object for 'this'.
      */
     if (!newType) {
-        if (JITScript *jit = newscript->getJIT(regs.fp()->isConstructing())) {
+        if (JITScript *jit = newscript->getJIT(regs.fp()->isConstructing(), cx->compartment->needsBarrier())) {
             if (jit->invokeEntry) {
                 *pret = jit->invokeEntry;
 
@@ -565,7 +565,7 @@ js_InternalThrow(VMFrame &f)
         // property.
         JS_ASSERT(!f.fp()->finishedInInterpreter());
         UnwindScope(cx, 0);
-        f.regs.sp = f.fp()->base();
+        f.regs.setToEndOfScript();
 
         if (cx->compartment->debugMode()) {
             // This can turn a throw or error into a healthy return. Note that

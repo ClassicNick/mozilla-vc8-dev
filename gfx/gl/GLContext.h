@@ -127,6 +127,12 @@ public:
       Valid  // Texture fully ready to use.
     };
 
+    enum Flags {
+        NoFlags          = 0x0,
+        UseNearestFilter = 0x1,
+        NeedsYFlip       = 0x2
+    };
+
     typedef gfxASurface::gfxContentType ContentType;
 
     virtual ~TextureImage() {}
@@ -318,18 +324,24 @@ protected:
      */
     TextureImage(const nsIntSize& aSize,
                  GLenum aWrapMode, ContentType aContentType,
-                 bool aIsRGB = false)
+                 Flags aFlags = NoFlags)
         : mSize(aSize)
         , mWrapMode(aWrapMode)
         , mContentType(aContentType)
         , mFilter(gfxPattern::FILTER_GOOD)
+        , mFlags(aFlags)
     {}
+
+    virtual nsIntRect GetSrcTileRect() {
+        return nsIntRect(nsIntPoint(0,0), mSize);
+    };
 
     nsIntSize mSize;
     GLenum mWrapMode;
     ContentType mContentType;
     ShaderProgramType mShaderType;
     gfxPattern::GraphicsFilter mFilter;
+    Flags mFlags;
 };
 
 /**
@@ -352,8 +364,9 @@ public:
                       const nsIntSize& aSize,
                       GLenum aWrapMode,
                       ContentType aContentType,
-                      GLContext* aContext)
-        : TextureImage(aSize, aWrapMode, aContentType)
+                      GLContext* aContext,
+                      TextureImage::Flags aFlags = TextureImage::NoFlags)
+        : TextureImage(aSize, aWrapMode, aContentType, aFlags)
         , mTexture(aTexture)
         , mTextureState(Created)
         , mGLContext(aContext)
@@ -408,7 +421,7 @@ class TiledTextureImage
 {
 public:
     TiledTextureImage(GLContext* aGL, nsIntSize aSize,
-        TextureImage::ContentType, bool aUseNearestFilter = false);
+        TextureImage::ContentType, TextureImage::Flags aFlags = TextureImage::NoFlags);
     ~TiledTextureImage();
     void DumpDiv();
     virtual gfxASurface* BeginUpdate(nsIntRegion& aRegion);
@@ -428,7 +441,10 @@ public:
     virtual bool InUpdate() const { return mInUpdate; };
     virtual void BindTexture(GLenum);
     virtual void ApplyFilter();
+
 protected:
+    virtual nsIntRect GetSrcTileRect();
+
     unsigned int mCurrentImage;
     TileIterationCallback mIterationCallback;
     void* mIterationCallbackData;
@@ -438,7 +454,6 @@ protected:
     unsigned int mTileSize;
     unsigned int mRows, mColumns;
     GLContext* mGL;
-    bool mUseNearestFilter;
     // A temporary surface to faciliate cross-tile updates.
     nsRefPtr<gfxASurface> mUpdateSurface;
     // The region of update requested
@@ -1274,7 +1289,8 @@ public:
      * |aContentType|.  The TextureImage's texture is configured to
      * use |aWrapMode| (usually GL_CLAMP_TO_EDGE or GL_REPEAT) and by
      * default, GL_LINEAR filtering.  Specify
-     * |aUseNearestFilter=true| for GL_NEAREST filtering.  Return
+     * |aFlags=UseNearestFilter| for GL_NEAREST filtering. Specify
+     * |aFlags=NeedsYFlip| if the image is flipped. Return
      * NULL if creating the TextureImage fails.
      *
      * The returned TextureImage may only be used with this GLContext.
@@ -1286,7 +1302,7 @@ public:
     CreateTextureImage(const nsIntSize& aSize,
                        TextureImage::ContentType aContentType,
                        GLenum aWrapMode,
-                       bool aUseNearestFilter=false);
+                       TextureImage::Flags aFlags = TextureImage::NoFlags);
 
     /**
      * In EGL we want to use Tiled Texture Images, which we return
@@ -1298,7 +1314,7 @@ public:
     virtual already_AddRefed<TextureImage>
     TileGenFunc(const nsIntSize& aSize,
                 TextureImage::ContentType aContentType,
-                bool aUseNearestFilter = false)
+                TextureImage::Flags aFlags = TextureImage::NoFlags)
     {
         return nsnull;
     };
@@ -1512,6 +1528,7 @@ public:
         EXT_unpack_subimage,
         OES_standard_derivatives,
         EXT_texture_filter_anisotropic,
+        EXT_texture_compression_s3tc,
         EXT_framebuffer_blit,
         ANGLE_framebuffer_blit,
         EXT_framebuffer_multisample,
@@ -1728,10 +1745,11 @@ protected:
                             const nsIntSize& aSize,
                             GLenum aWrapMode,
                             TextureImage::ContentType aContentType,
-                            GLContext* aContext)
+                            GLContext* aContext,
+                            TextureImage::Flags aFlags = TextureImage::NoFlags)
     {
         nsRefPtr<BasicTextureImage> teximage(
-            new BasicTextureImage(aTexture, aSize, aWrapMode, aContentType, aContext));
+            new BasicTextureImage(aTexture, aSize, aWrapMode, aContentType, aContext, aFlags));
         return teximage.forget();
     }
 
@@ -2108,6 +2126,18 @@ public:
     void fColorMask(realGLboolean red, realGLboolean green, realGLboolean blue, realGLboolean alpha) {
         BEFORE_GL_CALL;
         mSymbols.fColorMask(red, green, blue, alpha);
+        AFTER_GL_CALL;
+    }
+
+    void fCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *pixels) {
+        BEFORE_GL_CALL;
+        mSymbols.fCompressedTexImage2D(target, level, internalformat, width, height, border, imageSize, pixels);
+        AFTER_GL_CALL;
+    }
+
+    void fCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *pixels) {
+        BEFORE_GL_CALL;
+        mSymbols.fCompressedTexSubImage2D(target, level, xoffset, yoffset, width, height, format, imageSize, pixels);
         AFTER_GL_CALL;
     }
 

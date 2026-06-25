@@ -74,6 +74,7 @@ CPPSRCS	= \
         Blur.cpp \
         ScaledFontBase.cpp \
         DrawTargetDual.cpp \
+        ImageScaling.cpp \
         $(NULL)
 
 ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))
@@ -117,6 +118,15 @@ ifdef MOZ_DEBUG
 DEFINES += -DGFX_LOG_DEBUG -DGFX_LOG_WARNING
 endif
 
+# Are we targeting x86 or x64?  If so, build SSE2 files.
+ifneq (,$(INTEL_ARCHITECTURE))
+# VC2005 doesn't support _mm_castsi128_ps, so SSE2 is turned off
+ifeq ($(_MSC_VER), 1600)
+CPPSRCS += ImageScalingSSE2.cpp
+DEFINES += -DUSE_SSE2
+endif
+endif
+
 ifeq ($(MOZ_WIDGET_TOOLKIT),windows)
 ifdef CAIRO_HAS_D2D_SURFACE
 CPPSRCS	+= \
@@ -142,6 +152,8 @@ DEFINES += -DUSE_SKIA
 endif
 endif
 
+include $(topsrcdir)/config/rules.mk
+
 #ifeq ($(MOZ_WIDGET_TOOLKIT),cocoa)
 #CPPSRCS	+= \
 #        DrawTargetCG.cpp \
@@ -152,6 +164,16 @@ endif
 #EXTRA_DSO_LDOPTS += -framework OpenGL -framework AGL -framework QuickTime -framework AppKit -framework QuartzCore
 #endif
 
-include $(topsrcdir)/config/rules.mk
+# The file uses SSE2 intrinsics, so it needs special compile flags on some
+# compilers.
+ifneq (,$(INTEL_ARCHITECTURE))
+ifdef GNU_CC
+ImageScalingSSE2.$(OBJ_SUFFIX): CXXFLAGS+=-msse2
+endif
+
+ifdef SOLARIS_SUNPRO_CXX
+ImageScalingSSE2.$(OBJ_SUFFIX): OS_CXXFLAGS += -xarch=sse2 -xO4
+endif
+endif
 
 CXXFLAGS += $(MOZ_CAIRO_CFLAGS)

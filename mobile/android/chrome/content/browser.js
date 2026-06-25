@@ -2546,6 +2546,7 @@ var BrowserEventHandler = {
 
     BrowserApp.deck.addEventListener("DOMUpdatePageReport", PopupBlockerObserver.onUpdatePageReport, false);
     BrowserApp.deck.addEventListener("touchstart", this, false);
+    BrowserApp.deck.addEventListener("click", SelectHelper, true);
   },
 
   handleEvent: function(aEvent) {
@@ -2642,7 +2643,7 @@ var BrowserEventHandler = {
       this._cancelTapHighlight();
     } else if (aTopic == "Gesture:SingleTap") {
       let element = this._highlightElement;
-      if (element && !SelectHelper.handleClick(element)) {
+      if (element) {
         try {
           let data = JSON.parse(aData);
 
@@ -2679,8 +2680,7 @@ var BrowserEventHandler = {
       return;
     }
 
-    win = element.ownerDocument.defaultView;
-    while (element && win.getComputedStyle(element,null).display == "inline")
+    while (element && !this._shouldZoomToElement(element))
       element = element.parentNode;
 
     if (!element) {
@@ -2722,6 +2722,17 @@ var BrowserEventHandler = {
       rect.w = bRect.width; rect.h = availHeight;
       sendMessageToJava({ gecko: rect });
     }
+  },
+
+  _shouldZoomToElement: function(aElement) {
+    let win = aElement.ownerDocument.defaultView;
+    if (win.getComputedStyle(aElement, null).display == "inline")
+      return false;
+    if (aElement instanceof Ci.nsIDOMHTMLLIElement)
+      return false;
+    if (aElement instanceof Ci.nsIDOMHTMLQuoteElement)
+      return false;
+    return true;
   },
 
   _firstScrollEvent: false,

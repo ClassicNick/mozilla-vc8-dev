@@ -82,6 +82,61 @@ let DebuggerView = {
    */
   _onEditorLoad: function DV__onEditorLoad() {
     DebuggerController.Breakpoints.initialize();
+  },
+
+  /**
+   * Sets the close button hidden or visible. It's hidden by default.
+   * @param boolean aVisibleFlag
+   */
+  showCloseButton: function DV_showCloseButton(aVisibleFlag) {
+    document.getElementById("close").setAttribute("hidden", !aVisibleFlag);
+  }
+};
+
+/**
+ * A simple way of displaying a "Connect to..." prompt.
+ */
+function RemoteDebuggerPrompt() {
+
+  /**
+   * The remote uri the user wants to connect to.
+   */
+  this.uri = null;
+}
+
+RemoteDebuggerPrompt.prototype = {
+
+  /**
+   * Shows the prompt and sets the uri using the user input.
+   *
+   * @param boolean aIsReconnectingFlag
+   *                True to show the reconnect message instead.
+   */
+  show: function RDP_show(aIsReconnectingFlag) {
+    let check = { value: Prefs.remoteAutoConnect };
+    let input = { value: "http://" + Prefs.remoteHost +
+                               ":" + Prefs.remotePort + "/" };
+
+    while (true) {
+      let result = Services.prompt.prompt(null,
+        L10N.getStr("remoteDebuggerPromptTitle"),
+        L10N.getStr(aIsReconnectingFlag
+          ? "remoteDebuggerReconnectMessage"
+          : "remoteDebuggerPromptMessage"), input,
+        L10N.getStr("remoteDebuggerPromptCheck"), check);
+
+      Prefs.remoteAutoConnect = check.value;
+
+      try {
+        let uri = Services.io.newURI(input.value, null, null);
+        let url = uri.QueryInterface(Ci.nsIURL);
+
+        // If a url could be successfully retrieved, then the uri is correct.
+        this.uri = uri;
+        return result;
+      }
+      catch(e) { }
+    }
   }
 };
 
@@ -456,27 +511,22 @@ StackFramesView.prototype = {
    * @param string aState
    *        Either "paused" or "attached".
    */
-  updateState: function DVF_updateState(aState) {
-    let resume = document.getElementById("resume");
-    let status = document.getElementById("status");
+   updateState: function DVF_updateState(aState) {
+     let resume = document.getElementById("resume");
 
-    // If we're paused, show a pause label and a resume label on the button.
-    if (aState == "paused") {
-      status.textContent = L10N.getStr("pausedState");
-      resume.label = L10N.getStr("resumeLabel");
-    }
-    // If we're attached, do the opposite.
-    else if (aState == "attached") {
-      status.textContent = L10N.getStr("runningState");
-      resume.label = L10N.getStr("pauseLabel");
-    }
-    // No valid state parameter.
-    else {
-      status.textContent = "";
-    }
+     // If we're paused, show a pause label and a resume label on the button.
+     if (aState == "paused") {
+       resume.label = L10N.getStr("resumeLabel");
+       resume.setAttribute("checked", true);
+     }
+     // If we're attached, do the opposite.
+     else if (aState == "attached") {
+       resume.label = L10N.getStr("pauseLabel");
+       resume.removeAttribute("checked");
+     }
 
-    DebuggerView.Scripts.clearSearch();
-  },
+     DebuggerView.Scripts.clearSearch();
+   },
 
   /**
    * Removes all elements from the stackframes container, leaving it empty.

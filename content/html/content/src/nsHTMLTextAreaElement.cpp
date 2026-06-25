@@ -163,7 +163,6 @@ public:
   NS_IMETHOD_(void) GetDefaultValueFromContent(nsAString& aValue);
   NS_IMETHOD_(bool) ValueChanged() const;
   NS_IMETHOD_(void) GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const;
-  NS_IMETHOD_(void) SetTextEditorValue(const nsAString& aValue, bool aUserInput);
   NS_IMETHOD_(nsIEditor*) GetTextEditor();
   NS_IMETHOD_(nsISelectionController*) GetSelectionController();
   NS_IMETHOD_(nsFrameSelection*) GetConstFrameSelection();
@@ -173,7 +172,6 @@ public:
   NS_IMETHOD_(nsIContent*) GetRootEditorNode();
   NS_IMETHOD_(nsIContent*) CreatePlaceholderNode();
   NS_IMETHOD_(nsIContent*) GetPlaceholderNode();
-  NS_IMETHOD_(void) UpdatePlaceholderText(bool aNotify);
   NS_IMETHOD_(void) SetPlaceholderClass(bool aVisible, bool aNotify);
   NS_IMETHOD_(void) InitializeKeyboardEventListeners();
   NS_IMETHOD_(void) OnValueChanged(bool aNotify);
@@ -219,11 +217,6 @@ public:
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
-  virtual void UpdateEditableState(bool aNotify)
-  {
-    return UpdateEditableFormControlState(aNotify);
-  }
-
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHTMLTextAreaElement,
                                            nsGenericHTMLFormElement)
 
@@ -259,6 +252,10 @@ protected:
   bool                     mCanShowInvalidUI;
   /** Whether we should make :-moz-ui-valid apply on the element. **/
   bool                     mCanShowValidUI;
+  
+  void FireChangeEventIfNeeded();
+  
+  nsString mFocusedValue;
 
   /** The state of the text editor (selection controller and the editor) **/
   nsTextEditorState mState;
@@ -562,12 +559,6 @@ nsHTMLTextAreaElement::GetPlaceholderNode()
 }
 
 NS_IMETHODIMP_(void)
-nsHTMLTextAreaElement::UpdatePlaceholderText(bool aNotify)
-{
-  mState.UpdatePlaceholderText(aNotify);
-}
-
-NS_IMETHODIMP_(void)
 nsHTMLTextAreaElement::SetPlaceholderClass(bool aVisible, bool aNotify)
 {
   mState.SetPlaceholderClass(aVisible, aNotify);
@@ -589,7 +580,9 @@ nsHTMLTextAreaElement::SetValueInternal(const nsAString& aValue,
 NS_IMETHODIMP 
 nsHTMLTextAreaElement::SetValue(const nsAString& aValue)
 {
-  return SetValueInternal(aValue, false);
+  SetValueInternal(aValue, false);
+  GetValueInternal(mFocusedValue, true);
+  return NS_OK;
 }
 
 NS_IMETHODIMP 
@@ -733,16 +726,28 @@ nsHTMLTextAreaElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 
   // Fire onchange (if necessary), before we do the blur, bug 370521.
   if (aVisitor.mEvent->message == NS_BLUR_CONTENT) {
-    nsIFrame* primaryFrame = GetPrimaryFrame();
-    if (primaryFrame) {
-      nsITextControlFrame* textFrame = do_QueryFrame(primaryFrame);
-      if (textFrame) {
-        textFrame->CheckFireOnChange();
-      }
-    }
+    FireChangeEventIfNeeded();
   }
 
   return nsGenericHTMLFormElement::PreHandleEvent(aVisitor);
+}
+
+void
+nsHTMLTextAreaElement::FireChangeEventIfNeeded()
+{
+  nsString value;
+  GetValueInternal(value, true);
+
+  if (mFocusedValue.Equals(value)) {
+    return;
+  }
+
+  // Dispatch the change event.
+  mFocusedValue = value;
+  nsContentUtils::DispatchTrustedEvent(OwnerDoc(),
+                                       static_cast<nsIContent*>(this),
+                                       NS_LITERAL_STRING("change"), true, 
+                                       false);
 }
 
 nsresult
@@ -757,6 +762,7 @@ nsHTMLTextAreaElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
     if (aVisitor.mEvent->message == NS_FOCUS_CONTENT) {
       // If the invalid UI is shown, we should show it while focusing (and
       // update). Otherwise, we should not.
+      GetValueInternal(mFocusedValue, true);
       mCanShowInvalidUI = !IsValid() && ShouldShowValidityUI();
 
       // If neither invalid UI nor valid UI is shown, we shouldn't show the valid
@@ -1294,10 +1300,6 @@ nsHTMLTextAreaElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
       UpdateTooLongValidityState();
     }
 
-    if (aName == nsGkAtoms::readonly) {
-      UpdateEditableState(aNotify);
-      mState.UpdateEditableState(aNotify);
-    }
     UpdateState(aNotify);
   }
 
@@ -1529,13 +1531,6 @@ nsHTMLTextAreaElement::GetTextEditorValue(nsAString& aValue,
                                           bool aIgnoreWrap) const
 {
   mState.GetValue(aValue, aIgnoreWrap);
-}
-
-NS_IMETHODIMP_(void)
-nsHTMLTextAreaElement::SetTextEditorValue(const nsAString& aValue,
-                                          bool aUserInput)
-{
-  mState.SetValue(aValue, aUserInput);
 }
 
 NS_IMETHODIMP_(void)

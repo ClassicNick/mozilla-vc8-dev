@@ -107,10 +107,7 @@ class Type
         return data > JSVAL_TYPE_UNKNOWN;
     }
 
-    TypeObjectKey *objectKey() const {
-        JS_ASSERT(isObject());
-        return (TypeObjectKey *) data;
-    }
+    inline TypeObjectKey *objectKey() const;
 
     /* Accessors for JSObject types */
 
@@ -118,10 +115,7 @@ class Type
         return isObject() && !!(data & 1);
     }
 
-    JSObject *singleObject() const {
-        JS_ASSERT(isSingleObject());
-        return (JSObject *) (data ^ 1);
-    }
+    inline JSObject *singleObject() const;
 
     /* Accessors for TypeObject types */
 
@@ -129,10 +123,7 @@ class Type
         return isObject() && !(data & 1);
     }
 
-    TypeObject *typeObject() const {
-        JS_ASSERT(isTypeObject());
-        return (TypeObject *) data;
-    }
+    inline TypeObject *typeObject() const;
 
     bool operator == (Type o) const { return data == o.data; }
     bool operator != (Type o) const { return data != o.data; }
@@ -1139,11 +1130,15 @@ typedef HashMap<AllocationSiteKey,ReadBarriered<TypeObject>,AllocationSiteKey,Sy
 struct RecompileInfo
 {
     JSScript *script;
-    bool constructing:1;
-    uint32_t chunkIndex:31;
+    bool constructing : 1;
+    bool barriers : 1;
+    uint32_t chunkIndex:30;
 
     bool operator == (const RecompileInfo &o) const {
-        return script == o.script && constructing == o.constructing && chunkIndex == o.chunkIndex;
+        return script == o.script
+            && constructing == o.constructing
+            && barriers == o.barriers
+            && chunkIndex == o.chunkIndex;
     }
 };
 

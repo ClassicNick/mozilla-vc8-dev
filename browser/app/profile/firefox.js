@@ -631,6 +631,9 @@ pref("browser.preferences.animateFadeIn", true);
 pref("browser.preferences.animateFadeIn", false);
 #endif
 
+// Toggles between the two Preferences implementations, pop-up window and in-content
+pref("browser.preferences.inContent", false);
+
 pref("browser.download.show_plugins_in_list", true);
 pref("browser.download.hide_plugins_without_extensions", true);
 
@@ -1039,12 +1042,17 @@ pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
 // Disable the error console
 pref("devtools.errorconsole.enabled", false);
 
+// Enable the developer toolbar
+pref("devtools.toolbar.enabled", false);
+
 // Enable the Inspector
 pref("devtools.inspector.enabled", true);
 pref("devtools.inspector.htmlHeight", 112);
 pref("devtools.inspector.htmlPanelOpen", false);
 pref("devtools.inspector.sidebarOpen", false);
 pref("devtools.inspector.activeSidebar", "ruleview");
+pref("devtools.inspector.highlighterShowVeil", true);
+pref("devtools.inspector.highlighterShowInfobar", true);
 
 // Enable the Layout View
 pref("devtools.layoutview.enabled", false);
@@ -1055,6 +1063,9 @@ pref("devtools.debugger.enabled", false);
 pref("devtools.debugger.remote-enabled", false);
 pref("devtools.debugger.remote-host", "localhost");
 pref("devtools.debugger.remote-port", 6000);
+pref("devtools.debugger.remote-autoconnect", false);
+pref("devtools.debugger.remote-connection-retries", 3);
+pref("devtools.debugger.remote-timeout", 3000);
 
 // The default Debugger UI height
 pref("devtools.debugger.ui.height", 250);
@@ -1082,8 +1093,14 @@ pref("devtools.styleeditor.transitions", true);
 // Enable tools for Chrome development.
 pref("devtools.chrome.enabled", false);
 
-// Disable the GCLI enhanced command line.
-pref("devtools.gcli.enable", false);
+// Display the introductory text
+pref("devtools.gcli.hideIntro", false);
+
+// How eager are we to show help: never=1, sometimes=2, always=3
+pref("devtools.gcli.eagerHelper", 2);
+
+// Do we allow the 'pref set' command
+pref("devtools.gcli.allowSet", false);
 
 // The last Web Console height. This is initially 0 which means that the Web
 // Console will use the default height next time it shows.
@@ -1144,8 +1161,13 @@ pref("browser.newtab.url", "about:newtab");
 // Toggles the content of 'about:newtab'. Shows the grid when enabled.
 pref("browser.newtabpage.enabled", true);
 
-// Enable the DOM full-screen API.
+// Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
+
+// True if the fullscreen API requires approval upon a domain entering fullscreen.
+// Domains that have already had fullscreen permission granted won't re-request
+// approval.
+pref("full-screen-api.approval-required", true);
 
 // Startup Crash Tracking
 // number of startup crashes that can occur before starting into safe mode automatically

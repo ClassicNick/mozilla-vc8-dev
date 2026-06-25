@@ -73,7 +73,6 @@
 #include "jslibmath.h"
 
 #include "gc/Marking.h"
-#include "frontend/BytecodeEmitter.h"
 #ifdef JS_METHODJIT
 #include "methodjit/MethodJIT.h"
 #include "methodjit/Logging.h"
@@ -4249,9 +4248,7 @@ END_CASE(JSOP_ARRAYPUSH)
 
   forced_return:
     UnwindScope(cx, 0);
-    regs.sp = regs.fp()->base();
-    regs.pc = script->code + script->length - JSOP_STOP_LENGTH;
-    JS_ASSERT(*regs.pc == JSOP_STOP);
+    regs.setToEndOfScript();
 
     if (entryFrame != regs.fp())
         goto inline_return;

@@ -45,6 +45,7 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsLayoutUtils.h"
 #include "nsDOMEvent.h"
+#include "nsGlobalWindow.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -82,8 +83,10 @@ nsScreen::Create(nsPIDOMWindow* aWindow)
   nsRefPtr<nsScreen> screen = new nsScreen();
   screen->BindToOwner(aWindow);
 
-  hal::RegisterScreenOrientationObserver(screen);
-  hal::GetCurrentScreenOrientation(&(screen->mOrientation));
+  hal::RegisterScreenConfigurationObserver(screen);
+  hal::ScreenConfiguration config;
+  hal::GetCurrentScreenConfiguration(&config);
+  screen->mOrientation = config.orientation();
 
   return screen.forget();
 }
@@ -95,7 +98,7 @@ nsScreen::nsScreen()
 
 nsScreen::~nsScreen()
 {
-  hal::UnregisterScreenOrientationObserver(this);
+  hal::UnregisterScreenConfigurationObserver(this);
 }
 
 
@@ -285,10 +288,10 @@ nsScreen::GetAvailRect(nsRect& aRect)
 }
 
 void
-nsScreen::Notify(const ScreenOrientationWrapper& aOrientation)
+nsScreen::Notify(const hal::ScreenConfiguration& aConfiguration)
 {
   ScreenOrientation previousOrientation = mOrientation;
-  mOrientation = aOrientation.orientation;
+  mOrientation = aConfiguration.orientation();
 
   NS_ASSERTION(mOrientation != eScreenOrientation_None &&
                mOrientation != eScreenOrientation_EndGuard &&
@@ -379,11 +382,15 @@ nsScreen::MozLockOrientation(const nsAString& aOrientation, bool* aReturn)
       return NS_OK;
     }
 
-    bool fullscreen;
-    doc->GetMozFullScreen(&fullscreen);
-    if (!fullscreen) {
-      *aReturn = false;
-      return NS_OK;
+    // Apps and frames contained in apps can lock orientation.
+    // But non-apps can lock orientation only if they're fullscreen.
+    if (!static_cast<nsGlobalWindow*>(GetOwner())->IsPartOfApp()) {
+      bool fullscreen;
+      doc->GetMozFullScreen(&fullscreen);
+      if (!fullscreen) {
+        *aReturn = false;
+        return NS_OK;
+      }
     }
 
     nsCOMPtr<nsIDOMEventTarget> target = do_QueryInterface(GetOwner());

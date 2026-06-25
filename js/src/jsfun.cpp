@@ -67,7 +67,6 @@
 #include "jsstr.h"
 
 #include "frontend/BytecodeCompiler.h"
-#include "frontend/BytecodeEmitter.h"
 #include "frontend/TokenStream.h"
 #include "gc/Marking.h"
 #include "vm/Debugger.h"
@@ -547,8 +546,8 @@ JS_FRIEND_DATA(Class) js::FunctionClass = {
     NULL,                    /* finalize    */
     NULL,                    /* checkAccess */
     NULL,                    /* call        */
-    NULL,                    /* construct   */
     fun_hasInstance,
+    NULL,                    /* construct   */
     fun_trace
 };
 
@@ -1279,6 +1278,7 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
 {
     JS_ASSERT(parent);
     JS_ASSERT(proto);
+    JS_ASSERT(!fun->isBoundFunction());
 
     JSObject *cloneobj = NewObjectWithClassProto(cx, &FunctionClass, NULL, SkipScopeParent(parent), kind);
     if (!cloneobj)

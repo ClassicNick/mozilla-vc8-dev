@@ -860,11 +860,6 @@ nsHTMLInputElement::AfterSetAttr(PRInt32 aNameSpaceID, nsIAtom* aName,
       UpdateTypeMismatchValidityState();
     }
 
-    UpdateEditableState(aNotify);
-    nsTextEditorState *state = GetEditorState();
-    if (state) {
-      state->UpdateEditableState(aNotify);
-    }
     UpdateState(aNotify);
   }
 
@@ -1021,6 +1016,9 @@ nsHTMLInputElement::SetValue(const nsAString& aValue)
   }
   else {
     SetValueInternal(aValue, false, true);
+    if (IsSingleLineTextControl(false)) {
+      GetValueInternal(mFocusedValue);
+    }
   }
 
   return NS_OK;
@@ -1241,15 +1239,6 @@ nsHTMLInputElement::GetPlaceholderNode()
 }
 
 NS_IMETHODIMP_(void)
-nsHTMLInputElement::UpdatePlaceholderText(bool aNotify)
-{
-  nsTextEditorState *state = GetEditorState();
-  if (state) {
-    state->UpdatePlaceholderText(aNotify);
-  }
-}
-
-NS_IMETHODIMP_(void)
 nsHTMLInputElement::SetPlaceholderClass(bool aVisible, bool aNotify)
 {
   nsTextEditorState *state = GetEditorState();
@@ -1328,6 +1317,24 @@ nsHTMLInputElement::AfterSetFiles(bool aSetValueChanged)
   }
 
   UpdateAllValidityStates(true);
+}
+
+void
+nsHTMLInputElement::FireChangeEventIfNeeded()
+{
+  nsString value;
+  GetValueInternal(value);
+
+  if (!IsSingleLineTextControl(false) || mFocusedValue.Equals(value)) {
+    return;
+  }
+
+  // Dispatch the change event.
+  mFocusedValue = value;
+  nsContentUtils::DispatchTrustedEvent(OwnerDoc(),
+                                       static_cast<nsIContent*>(this), 
+                                       NS_LITERAL_STRING("change"), true,
+                                       false);
 }
 
 const nsCOMArray<nsIDOMFile>&
@@ -1808,7 +1815,7 @@ nsHTMLInputElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
   //FIXME Allow submission etc. also when there is no prescontext, Bug 329509.
   if (!aVisitor.mPresContext) {
     return nsGenericHTMLElement::PreHandleEvent(aVisitor);
-  }
+  } 
   //
   // Web pages expect the value of a radio button or checkbox to be set
   // *before* onclick and DOMActivate fire, and they expect that if they set
@@ -1908,13 +1915,7 @@ nsHTMLInputElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
 
   // Fire onchange (if necessary), before we do the blur, bug 357684.
   if (aVisitor.mEvent->message == NS_BLUR_CONTENT) {
-    nsIFrame* primaryFrame = GetPrimaryFrame();
-    if (primaryFrame) {
-      nsITextControlFrame* textFrame = do_QueryFrame(primaryFrame);
-      if (textFrame) {
-        textFrame->CheckFireOnChange();
-      }
-    }
+    FireChangeEventIfNeeded();
   }
 
   return nsGenericHTMLFormElement::PreHandleEvent(aVisitor);
@@ -1947,6 +1948,10 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
 
   if (aVisitor.mEvent->message == NS_FOCUS_CONTENT ||
       aVisitor.mEvent->message == NS_BLUR_CONTENT) {
+    if (aVisitor.mEvent->message == NS_FOCUS_CONTENT && 
+        IsSingleLineTextControl(false)) {
+      GetValueInternal(mFocusedValue);
+    }
 
     UpdateValidityUIBits(aVisitor.mEvent->message == NS_FOCUS_CONTENT);
 
@@ -2195,16 +2200,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
               (keyEvent->keyCode == NS_VK_RETURN ||
                keyEvent->keyCode == NS_VK_ENTER) &&
                IsSingleLineTextControl(false, mType)) {
-            nsIFrame* primaryFrame = GetPrimaryFrame();
-            if (primaryFrame) {
-              nsITextControlFrame* textFrame = do_QueryFrame(primaryFrame);
-
-              // Fire onChange (if necessary)
-              if (textFrame) {
-                textFrame->CheckFireOnChange();
-              }
-            }
-
+            FireChangeEventIfNeeded();   
             rv = MaybeSubmitForm(aVisitor.mPresContext);
             NS_ENSURE_SUCCESS(rv, rv);
           }
@@ -2441,6 +2437,14 @@ nsHTMLInputElement::HandleTypeChange(PRUint8 aNewType)
         // There is no value sanitizing algorithm for elements in this mode.
         break;
     }
+    
+    //Updating mFocusedValue in consequence.
+    if (isNewTypeSingleLine && !isCurrentTypeSingleLine) {
+      GetValueInternal(mFocusedValue);
+    }
+    else if (!isNewTypeSingleLine && isCurrentTypeSingleLine) {
+      mFocusedValue.Truncate();
+    } 
   }
 
   // Do not notify, it will be done after if needed.
@@ -4083,16 +4087,6 @@ nsHTMLInputElement::GetTextEditorValue(nsAString& aValue,
   nsTextEditorState *state = GetEditorState();
   if (state) {
     state->GetValue(aValue, aIgnoreWrap);
-  }
-}
-
-NS_IMETHODIMP_(void)
-nsHTMLInputElement::SetTextEditorValue(const nsAString& aValue,
-                                       bool aUserInput)
-{
-  nsTextEditorState *state = GetEditorState();
-  if (state) {
-    state->SetValue(aValue, aUserInput);
   }
 }
 

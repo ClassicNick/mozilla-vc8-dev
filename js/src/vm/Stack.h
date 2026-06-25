@@ -42,6 +42,7 @@
 #define Stack_h__
 
 #include "jsfun.h"
+#include "jsautooplen.h"
 
 struct JSContext;
 struct JSCompartment;
@@ -796,8 +797,8 @@ class StackFrame
      * Callee
      *
      * Only function frames have a callee. An eval frame in a function has the
-     * same caller as its containing function frame. maybeCalleev can be used
-     * to return a value that is either caller object (for function frames) or
+     * same callee as its containing function frame. maybeCalleev can be used
+     * to return a value that is either the callee object (for function frames) or
      * null (for global frames).
      */
 
@@ -1190,9 +1191,7 @@ class StackFrame
     }
 
 #ifdef JS_METHODJIT
-    mjit::JITScript *jit() {
-        return script()->getJIT(isConstructing());
-    }
+    inline mjit::JITScript *jit();
 #endif
 
     void methodjitStaticAsserts();
@@ -1288,12 +1287,24 @@ class FrameRegs
         fp_ = (StackFrame *) newfp;
     }
 
+    /* For EnterMethodJIT: */
+    void refreshFramePointer(StackFrame *fp) {
+        fp_ = fp;
+    }
+
     /* For stubs::CompileFunction, ContextStack: */
     void prepareToRun(StackFrame &fp, JSScript *script) {
         pc = script->code;
         sp = fp.slots() + script->nfixed;
         fp_ = &fp;
         inlined_ = NULL;
+    }
+
+    void setToEndOfScript() {
+        JSScript *script = fp()->script();
+        sp = fp()->base();
+        pc = script->code + script->length - JSOP_STOP_LENGTH;
+        JS_ASSERT(*pc == JSOP_STOP);
     }
 
     /* For pushDummyFrame: */

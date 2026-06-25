@@ -138,7 +138,6 @@ abstract public class GeckoApp
 
     public static BrowserToolbar mBrowserToolbar;
     public static DoorHangerPopup mDoorHangerPopup;
-    public static SiteIdentityPopup mSiteIdentityPopup;
     public static FormAssistPopup mFormAssistPopup;
     public Favicons mFavicons;
 
@@ -907,7 +906,7 @@ abstract public class GeckoApp
                         handleDocumentStart(tabId, showProgress, uri);
                     } else if ((state & GeckoAppShell.WPL_STATE_STOP) != 0) {
                         Log.i(LOGTAG, "Got a document stop");
-                        handleDocumentStop(tabId, success);
+                        handleDocumentStop(tabId, success, uri);
                     }
                 }
             } else if (event.equals("Content:LoadError")) {
@@ -1062,6 +1061,23 @@ abstract public class GeckoApp
                         AccessibilityManager accessibilityManager =
                             (AccessibilityManager) mAppContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
                         accessibilityManager.sendAccessibilityEvent(accEvent);
+                    }
+                });
+            } else if (event.equals("Accessibility:Ready")) {
+                mMainHandler.post(new Runnable() {
+                    public void run() {
+                        JSONObject ret = new JSONObject();
+                        AccessibilityManager accessibilityManager =
+                            (AccessibilityManager) mAppContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
+                        try {
+                            ret.put("enabled", accessibilityManager.isEnabled());
+                            // XXX: A placeholder for future explore by touch support.
+                            ret.put("exploreByTouch", false);
+                        } catch (Exception ex) {
+                            Log.e(LOGTAG, "Error building JSON arguments for Accessibility:Ready:", ex);
+                        }
+                        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Accessibility:Settings",
+                                                                                       ret.toString()));
                     }
                 });
             }
@@ -1235,7 +1251,7 @@ abstract public class GeckoApp
         });
     }
 
-    void handleDocumentStop(int tabId, boolean success) {
+    void handleDocumentStop(int tabId, boolean success, final String uri) {
         final Tab tab = Tabs.getInstance().getTab(tabId);
         if (tab == null)
             return;
@@ -1251,6 +1267,9 @@ abstract public class GeckoApp
         });
         GeckoAppShell.getHandler().postDelayed(new Runnable() {
             public void run() {
+                if (!uri.equals(tab.getURL()))
+                    return;
+
                 getAndProcessThumbnailForTab(tab);
                 if (Tabs.getInstance().isSelectedTab(tab)) {
                     GeckoAppShell.sendEventToGecko(GeckoEvent.createStartPaintListentingEvent(tab.getId()));
@@ -1335,11 +1354,12 @@ abstract public class GeckoApp
                 if (layer == null) {
                     layer = new PluginLayer(view, rect, mLayerController.getView().getRenderer().getMaxTextureSize());
                     tab.addPluginLayer(view, layer);
-                    mLayerController.getView().addLayer(layer);
                 } else {
                     layer.reset(rect);
                     layer.setVisible(true);
                 }
+
+                mLayerController.getView().addLayer(layer);
             }
         });
     }
@@ -1658,7 +1678,6 @@ abstract public class GeckoApp
         mPluginContainer = (AbsoluteLayout) findViewById(R.id.plugin_container);
 
         mDoorHangerPopup = new DoorHangerPopup(this);
-        mSiteIdentityPopup = new SiteIdentityPopup(this);
         mFormAssistPopup = (FormAssistPopup) findViewById(R.id.form_assist_popup);
 
         Log.w(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - UI almost up");
@@ -1694,6 +1713,7 @@ abstract public class GeckoApp
         GeckoAppShell.registerGeckoEventListener("Session:StatePurged", GeckoApp.mAppContext);
         GeckoAppShell.registerGeckoEventListener("Bookmark:Insert", GeckoApp.mAppContext);
         GeckoAppShell.registerGeckoEventListener("Accessibility:Event", GeckoApp.mAppContext);
+        GeckoAppShell.registerGeckoEventListener("Accessibility:Ready", GeckoApp.mAppContext);
 
         if (SmsManager.getInstance() != null) {
           SmsManager.getInstance().start();
@@ -1949,8 +1969,7 @@ abstract public class GeckoApp
         // Undo whatever we did in onPause.
         super.onResume();
 
-        if (mSiteIdentityPopup != null)
-            mSiteIdentityPopup.dismiss();
+        SiteIdentityPopup.getInstance().dismiss();
 
         int newOrientation = getResources().getConfiguration().orientation;
 
@@ -2039,6 +2058,8 @@ abstract public class GeckoApp
         GeckoAppShell.unregisterGeckoEventListener("Tab:HasTouchListener", GeckoApp.mAppContext);
         GeckoAppShell.unregisterGeckoEventListener("Session:StatePurged", GeckoApp.mAppContext);
         GeckoAppShell.unregisterGeckoEventListener("Bookmark:Insert", GeckoApp.mAppContext);
+        GeckoAppShell.unregisterGeckoEventListener("Accessibility:Event", GeckoApp.mAppContext);
+        GeckoAppShell.unregisterGeckoEventListener("Accessibility:Ready", GeckoApp.mAppContext);
 
         if (mFavicons != null)
             mFavicons.close();
@@ -2079,8 +2100,7 @@ abstract public class GeckoApp
             mOrientation = newConfig.orientation;
             if (mFormAssistPopup != null)
                 mFormAssistPopup.hide();
-            if (mSiteIdentityPopup != null)
-                mSiteIdentityPopup.dismiss();
+            SiteIdentityPopup.getInstance().dismiss();
             refreshActionBar();
         }
     }
@@ -2243,8 +2263,7 @@ abstract public class GeckoApp
                 public void run() {
                     Log.i(LOGTAG, "Checking profile migration in: " + profileDir.getAbsolutePath());
 
-                    ProfileMigrator profileMigrator =
-                        new ProfileMigrator(app, profileDir);
+                    ProfileMigrator profileMigrator = new ProfileMigrator(app);
 
                     // Do a migration run on the first start after an upgrade.
                     if (!profileMigrator.hasMigrationRun()) {
@@ -2274,7 +2293,7 @@ abstract public class GeckoApp
 
                         profileMigrator.setLongOperationCallbacks(startCallback,
                                                                   stopCallback);
-                        profileMigrator.launchPlaces();
+                        profileMigrator.launchPlaces(profileDir);
 
                         long timeDiff = SystemClock.uptimeMillis() - currentTime;
                         Log.i(LOGTAG, "Profile migration took " + timeDiff + " ms");
@@ -2291,8 +2310,7 @@ abstract public class GeckoApp
         final File profileDir = getProfile().getDir();
         if (profileDir != null) {
             final GeckoApp app = GeckoApp.mAppContext;
-            ProfileMigrator profileMigrator =
-                new ProfileMigrator(app, profileDir);
+            ProfileMigrator profileMigrator = new ProfileMigrator(app);
             if (!profileMigrator.hasSyncMigrated()) {
                 Log.i(LOGTAG, "Checking Sync settings in: " + profileDir.getAbsolutePath());
                 profileMigrator.launchSyncPrefs();
@@ -2524,8 +2542,9 @@ abstract public class GeckoApp
             return;
         }
 
-        if (mSiteIdentityPopup.isShowing()) {
-            mSiteIdentityPopup.dismiss();
+        SiteIdentityPopup identityPopup = SiteIdentityPopup.getInstance();
+        if (identityPopup.isShowing()) {
+            identityPopup.dismiss();
             return;
         }
 

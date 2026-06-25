@@ -264,6 +264,7 @@ struct AutoEnterCompilation
         JS_ASSERT(!info.script);
         info.script = script;
         info.constructing = constructing;
+        info.barriers = cx->compartment->needsBarrier();
         info.chunkIndex = chunkIndex;
     }
 
@@ -272,6 +273,7 @@ struct AutoEnterCompilation
         JS_ASSERT(info.script);
         info.script = NULL;
         info.constructing = false;
+        info.barriers = false;
         info.chunkIndex = 0;
     }
 };
@@ -1014,6 +1016,33 @@ HashSetLookup(U **values, unsigned count, T key)
     return NULL;
 }
 
+inline TypeObjectKey *
+Type::objectKey() const
+{
+    JS_ASSERT(isObject());
+    if (isTypeObject())
+        TypeObject::readBarrier((TypeObject *) data);
+    else
+        JSObject::readBarrier((JSObject *) (data ^ 1));
+    return (TypeObjectKey *) data;
+}
+
+inline JSObject *
+Type::singleObject() const
+{
+    JS_ASSERT(isSingleObject());
+    JSObject::readBarrier((JSObject *) (data ^ 1));
+    return (JSObject *) (data ^ 1);
+}
+
+inline TypeObject *
+Type::typeObject() const
+{
+    JS_ASSERT(isTypeObject());
+    TypeObject::readBarrier((TypeObject *) data);
+    return (TypeObject *) data;
+}
+
 inline bool
 TypeSet::hasType(Type type)
 {
@@ -1490,7 +1519,7 @@ js::analyze::ScriptAnalysis::addPushedType(JSContext *cx, uint32_t offset, uint3
 inline js::types::TypeObject *
 JSCompartment::getEmptyType(JSContext *cx)
 {
-    if (!emptyTypeObject)
+    if (!(js::types::TypeObject *) emptyTypeObject)
         emptyTypeObject = types.newTypeObject(cx, NULL, JSProto_Object, NULL, true);
     return emptyTypeObject;
 }
