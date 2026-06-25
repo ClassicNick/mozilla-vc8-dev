@@ -29,8 +29,10 @@ template <class T>
 class HashTableEntry {
     HashNumber keyHash;
 
+public:
     typedef typename tl::StripConst<T>::result NonConstT;
 
+private:
     static const HashNumber sFreeKey = 0;
     static const HashNumber sRemovedKey = 1;
     static const HashNumber sCollisionBit = 1;

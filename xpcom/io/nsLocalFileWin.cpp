@@ -2953,7 +2953,7 @@ nsresult
 nsLocalFile::RevealClassic()
 {
   // use the full path to explorer for security
-  nsCOMPtr<nsILocalFile> winDir;
+  nsCOMPtr<nsIFile> winDir;
   nsresult rv = GetSpecialSystemDirectory(Win_WindowsDirectory, getter_AddRefs(winDir));
   NS_ENSURE_SUCCESS(rv, rv);
   nsAutoString explorerPath;

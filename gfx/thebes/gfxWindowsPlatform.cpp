@@ -121,6 +121,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(
 namespace
 {
 
+#if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
 PRInt64 GetD2DVRAMUsageDrawTarget() {
     return mozilla::gfx::Factory::GetD2DVRAMUsageDrawTarget();
 }
@@ -128,9 +129,11 @@ PRInt64 GetD2DVRAMUsageDrawTarget() {
 PRInt64 GetD2DVRAMUsageSourceSurface() {
     return mozilla::gfx::Factory::GetD2DVRAMUsageSourceSurface();
 }
+#endif
 
 } // anonymous namespace
 
+#if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
 NS_MEMORY_REPORTER_IMPLEMENT(
     D2DVRAMDT,
     "gfx-d2d-vram-drawtarget",
@@ -146,6 +149,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(
     UNITS_BYTES,
     GetD2DVRAMUsageSourceSurface,
     "Video memory used by D2D SourceSurfaces.")
+#endif
 
 #define GFX_USE_CLEARTYPE_ALWAYS "gfx.font_rendering.cleartype.always_use_for_content"
 #define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
@@ -359,8 +363,10 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(D2DVram));
     mD2DDevice = nsnull;
 #endif
+#ifdef ENABLE_GPU_MEM_REPORTER
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(D2DVRAMDT));
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(D2DVRAMSS));
+#endif
 
     UpdateRenderMode();
 

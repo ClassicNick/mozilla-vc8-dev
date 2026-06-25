@@ -383,19 +383,22 @@ class ScopeIter
 
 class ScopeIterKey
 {
+public:
+    enum Type { Call, Block, With, StrictEvalScope };
+private:
     StackFrame *fp_;
     JSObject *cur_;
     StaticBlockObject *block_;
-    ScopeIter::Type type_;
+    ScopeIterKey::Type type_;
 
   public:
     ScopeIterKey() : fp_(NULL), cur_(NULL), block_(NULL), type_() {}
     ScopeIterKey(const ScopeIter &si)
-      : fp_(si.fp_), cur_(si.cur_), block_(si.block_), type_(si.type_)
+      : fp_(si.fp_), cur_(si.cur_), block_(si.block_), type_((ScopeIterKey::Type) si.type_)
     {}
 
     StackFrame *fp() const { return fp_; }
-    ScopeIter::Type type() const { return type_; }
+    ScopeIterKey::Type type() const { return type_; }
 
     /* For use as hash policy */
     typedef ScopeIterKey Lookup;

@@ -575,6 +575,7 @@ nsWindowsShellService::GetCanSetDesktopBackground(bool* aResult)
   return NS_OK;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 static nsresult
 DynSHOpenWithDialog(HWND hwndParent, const OPENASINFO *poainfo)
 {
@@ -602,6 +603,7 @@ DynSHOpenWithDialog(HWND hwndParent, const OPENASINFO *poainfo)
   return SUCCEEDED(SHOpenWithDialogFn(hwndParent, poainfo)) ? NS_OK :
                                                               NS_ERROR_FAILURE;
 }
+#endif
 
 NS_IMETHODIMP
 nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
@@ -617,6 +619,7 @@ nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
   }
 
   nsresult rv = LaunchHelper(appHelperPath);
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (NS_SUCCEEDED(rv) && IsWin8OrLater()) {
     OPENASINFO info;
     info.pcszFile = L"http";
@@ -630,6 +633,7 @@ nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
     rv = NS_SUCCEEDED(IsDefaultBrowser(&isDefaultBrowser)) &&
          isDefaultBrowser ? S_OK : NS_ERROR_FAILURE;
   }
+#endif
   return rv;
 }
 

@@ -77,8 +77,7 @@ class Handle
   public:
     /* Creates a handle from a handle of a type convertible to T. */
     template <typename S>
-    Handle(Handle<S> handle,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0)
+    Handle(Handle<S> handle)
     {
         ptr = reinterpret_cast<const T *>(handle.address());
     }
@@ -102,8 +101,7 @@ class Handle
      */
     template <typename S>
     inline
-    Handle(Rooted<S> &root,
-           typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy = 0);
+    Handle(Rooted<S> &root);
 
     const T *address() const { return ptr; }
     T value() const { return *ptr; }
@@ -205,8 +203,7 @@ class Rooted
 
 template<typename T> template <typename S>
 inline
-Handle<T>::Handle(Rooted<S> &root,
-                  typename mozilla::EnableIf<mozilla::IsConvertible<S, T>::value, int>::Type dummy)
+Handle<T>::Handle(Rooted<S> &root)
 {
     ptr = reinterpret_cast<const T *>(root.address());
 }
