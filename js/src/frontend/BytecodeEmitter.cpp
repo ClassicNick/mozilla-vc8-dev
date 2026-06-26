@@ -599,6 +599,8 @@ EmitNonLocalJumpFixup(JSContext *cx, BytecodeEmitter *bce, StmtInfoBCE *toStmt)
                 stmt = stmt->down;
                 if (stmt == toStmt)
                     break;
+                if (NewSrcNote(cx, bce, SRC_HIDDEN) < 0)
+                    return false;
                 if (Emit1(cx, bce, JSOP_LEAVEFORLETIN) < 0)
                     return false;
                 if (!PopIterator(cx, bce))
@@ -3734,9 +3736,9 @@ ParseNode::getConstantValue(JSContext *cx, bool strictChecks, Value *vp)
 
         unsigned idx = 0;
         RootedId id(cx);
+        RootedValue value(cx);
         for (ParseNode *pn = pn_head; pn; idx++, pn = pn->pn_next) {
-            Value value;
-            if (!pn->getConstantValue(cx, strictChecks, &value))
+            if (!pn->getConstantValue(cx, strictChecks, value.address()))
                 return false;
             id = INT_TO_JSID(idx);
             if (!obj->defineGeneric(cx, id, value, NULL, NULL, JSPROP_ENUMERATE))
@@ -3757,8 +3759,8 @@ ParseNode::getConstantValue(JSContext *cx, bool strictChecks, Value *vp)
             return false;
 
         for (ParseNode *pn = pn_head; pn; pn = pn->pn_next) {
-            Value value;
-            if (!pn->pn_right->getConstantValue(cx, strictChecks, &value))
+            RootedValue value(cx);
+            if (!pn->pn_right->getConstantValue(cx, strictChecks, value.address()))
                 return false;
 
             ParseNode *pnid = pn->pn_left;
@@ -4854,18 +4856,16 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
         // Inherit most things (principals, version, etc) from the parent.
         Rooted<JSScript*> parent(cx, bce->script);
         Rooted<JSObject*> enclosingScope(cx, EnclosingStaticScope(bce));
-        Rooted<JSScript*> script(cx, JSScript::Create(cx,
-                                                      enclosingScope,
-                                                      /* savedCallerFun = */ false,
-                                                      parent->principals,
-                                                      parent->originPrincipals,
-                                                      parent->compileAndGo,
-                                                      /* noScriptRval = */ false,
-                                                      parent->getVersion(),
+        CompileOptions options(cx);
+        options.setPrincipals(parent->principals)
+               .setOriginPrincipals(parent->originPrincipals)
+               .setCompileAndGo(parent->compileAndGo)
+               .setNoScriptRval(false)
+               .setVersion(parent->getVersion());
+        Rooted<JSScript*> script(cx, JSScript::Create(cx, enclosingScope, false, options,
                                                       parent->staticLevel + 1,
-                                                      bce->script->source,
-                                                      funbox->bufStart,
-                                                      funbox->bufEnd));
+                                                      bce->script->scriptSource(),
+                                                      funbox->bufStart, funbox->bufEnd));
         if (!script)
             return false;
 
@@ -5752,7 +5752,8 @@ EmitObject(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
             if (obj) {
                 JS_ASSERT(!obj->inDictionaryMode());
                 Rooted<jsid> id(cx, AtomToId(pn3->pn_atom));
-                if (!DefineNativeProperty(cx, obj, id, UndefinedValue(), NULL, NULL,
+                RootedValue undefinedValue(cx, UndefinedValue());
+                if (!DefineNativeProperty(cx, obj, id, undefinedValue, NULL, NULL,
                                           JSPROP_ENUMERATE, 0, 0))
                 {
                     return false;

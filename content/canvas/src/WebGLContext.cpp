@@ -74,7 +74,7 @@ NS_NewCanvasRenderingContextWebGL(nsIDOMWebGLRenderingContext** aResult)
 }
 
 WebGLContext::WebGLContext()
-    : gl(nsnull)
+    : gl(nullptr)
 {
     SetIsDOMBinding();
     mExtensions.SetLength(WebGLExtensionID_number_of_extensions);
@@ -156,6 +156,7 @@ WebGLContext::WebGLContext()
     mContextLostErrorSet = false;
 
     mAlreadyGeneratedWarnings = 0;
+    mAlreadyWarnedAboutFakeVertexAttrib0 = false;
 }
 
 WebGLContext::~WebGLContext()
@@ -163,7 +164,7 @@ WebGLContext::~WebGLContext()
     DestroyResourcesAndContext();
     WebGLMemoryMultiReporterWrapper::RemoveWebGLContext(this);
     TerminateContextLossTimer();
-    mContextRestorer = nsnull;
+    mContextRestorer = nullptr;
 }
 
 JSObject*
@@ -184,7 +185,7 @@ WebGLContext::DestroyResourcesAndContext()
             observerService->RemoveObserver(mMemoryPressureObserver,
                                             "memory-pressure");
         }
-        mMemoryPressureObserver = nsnull;
+        mMemoryPressureObserver = nullptr;
     }
 
     if (!gl)
@@ -194,11 +195,11 @@ WebGLContext::DestroyResourcesAndContext()
 
     mBound2DTextures.Clear();
     mBoundCubeMapTextures.Clear();
-    mBoundArrayBuffer = nsnull;
-    mBoundElementArrayBuffer = nsnull;
-    mCurrentProgram = nsnull;
-    mBoundFramebuffer = nsnull;
-    mBoundRenderbuffer = nsnull;
+    mBoundArrayBuffer = nullptr;
+    mBoundElementArrayBuffer = nullptr;
+    mCurrentProgram = nullptr;
+    mBoundFramebuffer = nullptr;
+    mBoundRenderbuffer = nullptr;
 
     mAttribBuffers.Clear();
 
@@ -233,7 +234,7 @@ WebGLContext::DestroyResourcesAndContext()
     }
 #endif
 
-    gl = nsnull;
+    gl = nullptr;
 }
 
 void
@@ -248,7 +249,7 @@ WebGLContext::Invalidate()
     nsSVGEffects::InvalidateDirectRenderingObservers(mCanvasElement);
 
     mInvalidated = true;
-    mCanvasElement->InvalidateCanvasContent(nsnull);
+    mCanvasElement->InvalidateCanvasContent(nullptr);
 }
 
 /* readonly attribute nsIDOMHTMLCanvasElement canvas; */
@@ -722,7 +723,7 @@ WebGLContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                              LayerManager *aManager)
 {
     if (!IsContextStable())
-        return nsnull;
+        return nullptr;
 
     if (!mResetLayer && aOldLayer &&
         aOldLayer->HasUserData(&gWebGLLayerUserData)) {
@@ -733,9 +734,9 @@ WebGLContext::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     nsRefPtr<CanvasLayer> canvasLayer = aManager->CreateCanvasLayer();
     if (!canvasLayer) {
         NS_WARNING("CreateCanvasLayer returned null!");
-        return nsnull;
+        return nullptr;
     }
-    WebGLContextUserData *userData = nsnull;
+    WebGLContextUserData *userData = nullptr;
     if (aBuilder->IsPaintingToWindow()) {
       // Make the layer tell us whenever a transaction finishes (including
       // the current transaction), so we can clear our invalidation state and
@@ -913,10 +914,10 @@ nsIWebGLExtension*
 WebGLContext::GetExtension(const nsAString& aName)
 {
     if (!IsContextStable())
-        return nsnull;
+        return nullptr;
 
     if (mDisableExtensions) {
-        return nsnull;
+        return nullptr;
     }
 
     WebGLExtensionID ext = WebGLExtensionID_unknown_extension;
@@ -933,9 +934,17 @@ WebGLContext::GetExtension(const nsAString& aName)
         if (IsExtensionSupported(OES_standard_derivatives))
             ext = OES_standard_derivatives;
     }
+    else if (aName.Equals(NS_LITERAL_STRING("EXT_texture_filter_anisotropic"),
+             nsCaseInsensitiveStringComparator()))
+    {
+        if (IsExtensionSupported(EXT_texture_filter_anisotropic))
+            ext = EXT_texture_filter_anisotropic;
+    }
     else if (aName.Equals(NS_LITERAL_STRING("MOZ_EXT_texture_filter_anisotropic"),
              nsCaseInsensitiveStringComparator()))
     {
+        GenerateWarning("MOZ_EXT_texture_filter_anisotropic has been renamed to EXT_texture_filter_anisotropic. "
+                        "Support for the MOZ_-prefixed string will be removed very soon.");
         if (IsExtensionSupported(EXT_texture_filter_anisotropic))
             ext = EXT_texture_filter_anisotropic;
     }
@@ -953,7 +962,7 @@ WebGLContext::GetExtension(const nsAString& aName)
     }
 
     if (ext == WebGLExtensionID_unknown_extension) {
-      return nsnull;
+      return nullptr;
     }
 
     if (!mExtensions[ext]) {
@@ -1161,7 +1170,7 @@ void
 WebGLContext::MaybeRestoreContext()
 {
     // Don't try to handle it if we already know it's busted.
-    if (mContextStatus != ContextStable || gl == nsnull)
+    if (mContextStatus != ContextStable || gl == nullptr)
         return;
 
     bool isEGL = gl->GetContextType() == GLContext::ContextTypeEGL,
@@ -1490,7 +1499,7 @@ WebGLContext::GetSupportedExtensions(nsIVariant **retval)
     GetSupportedExtensions(extensions);
 
     if (extensions.IsNull()) {
-        *retval = nsnull;
+        *retval = nullptr;
         return NS_OK;
     }
 
@@ -1508,7 +1517,7 @@ WebGLContext::GetSupportedExtensions(nsIVariant **retval)
         for (PRUint32 i = 0; i < extList.Length(); ++i) {
             exts.AppendElement(extList[i].get());
         }
-        rv = wrval->SetAsArray(nsIDataType::VTYPE_WCHAR_STR, nsnull,
+        rv = wrval->SetAsArray(nsIDataType::VTYPE_WCHAR_STR, nullptr,
                                exts.Length(), exts.Elements());
     } else {
         rv = wrval->SetAsEmptyArray();
@@ -1538,8 +1547,10 @@ WebGLContext::GetSupportedExtensions(Nullable< nsTArray<nsString> > &retval)
         arr.AppendElement(NS_LITERAL_STRING("OES_texture_float"));
     if (IsExtensionSupported(OES_standard_derivatives))
         arr.AppendElement(NS_LITERAL_STRING("OES_standard_derivatives"));
-    if (IsExtensionSupported(EXT_texture_filter_anisotropic))
+    if (IsExtensionSupported(EXT_texture_filter_anisotropic)) {
+        arr.AppendElement(NS_LITERAL_STRING("EXT_texture_filter_anisotropic"));
         arr.AppendElement(NS_LITERAL_STRING("MOZ_EXT_texture_filter_anisotropic"));
+    }
     if (IsExtensionSupported(WEBGL_lose_context))
         arr.AppendElement(NS_LITERAL_STRING("MOZ_WEBGL_lose_context"));
     if (IsExtensionSupported(WEBGL_compressed_texture_s3tc))

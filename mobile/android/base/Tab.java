@@ -30,10 +30,7 @@ import java.util.regex.Matcher;
 
 public final class Tab {
     private static final String LOGTAG = "GeckoTab";
-    private static final int kThumbnailWidth = 136;
-    private static final int kThumbnailHeight = 78;
 
-    private static float sDensity = 0.0f;
     private static Pattern sColorPattern;
     private int mId;
     private String mUrl;
@@ -43,7 +40,7 @@ public final class Tab {
     private int mFaviconSize;
     private JSONObject mIdentityData;
     private boolean mReaderEnabled;
-    private Drawable mThumbnail;
+    private BitmapDrawable mThumbnail;
     private int mHistoryIndex;
     private int mHistorySize;
     private int mParentId;
@@ -101,7 +98,6 @@ public final class Tab {
         mContentObserver = new ContentObserver(GeckoAppShell.getHandler()) {
             public void onChange(boolean selfChange) {
                 updateBookmark();
-                updateReadingListItem();
             }
         };
         BrowserDB.registerBookmarkObserver(mContentResolver, mContentObserver);
@@ -123,10 +119,6 @@ public final class Tab {
     // may be null if user-entered query hasn't yet been resolved to a URI
     public String getURL() {
         return mUrl;
-    }
-
-    public String getTitle() {
-        return mTitle;
     }
 
     public String getDisplayTitle() {
@@ -170,19 +162,12 @@ public final class Tab {
         mThumbnailBuffer = null;
     }
 
-    float getDensity() {
-        if (sDensity == 0.0f) {
-            sDensity = GeckoApp.mAppContext.getDisplayMetrics().density;
-        }
-        return sDensity;
-    }
-
     int getThumbnailWidth() {
-        return (int)(kThumbnailWidth * getDensity());
+        return (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_width));
     }
 
     int getThumbnailHeight() {
-        return (int)(kThumbnailHeight * getDensity());
+        return (int) (GeckoApp.mAppContext.getResources().getDimension(R.dimen.tab_thumbnail_height));
     }
 
     public void updateThumbnail(final Bitmap b) {
@@ -191,10 +176,9 @@ public final class Tab {
             public void run() {
                 if (b != null) {
                     try {
-                        if (mState == Tab.STATE_SUCCESS)
-                            saveThumbnailToDB(new BitmapDrawable(b));
-
                         mThumbnail = new BitmapDrawable(b);
+                        if (mState == Tab.STATE_SUCCESS)
+                            saveThumbnailToDB();
                     } catch (OutOfMemoryError oom) {
                         Log.e(LOGTAG, "Unable to create/scale bitmap", oom);
                         mThumbnail = null;
@@ -249,7 +233,6 @@ public final class Tab {
             mUrl = url;
             Log.i(LOGTAG, "Updated url: " + url + " for tab with id: " + mId);
             updateBookmark();
-            updateReadingListItem();
             updateHistory(mUrl, mTitle);
         }
     }
@@ -380,6 +363,11 @@ public final class Tab {
 
     public void setReaderEnabled(boolean readerEnabled) {
         mReaderEnabled = readerEnabled;
+        GeckoAppShell.getMainHandler().post(new Runnable() {
+            public void run() {
+                Tabs.getInstance().notifyListeners(Tab.this, Tabs.TabEvents.MENU_UPDATED);
+            }
+        });
     }
 
     private void updateBookmark() {
@@ -387,29 +375,21 @@ public final class Tab {
         if (url == null)
             return;
 
-        GeckoBackgroundThread.getHandler().post(new Runnable() {
-            public void run() {
-                boolean bookmark = BrowserDB.isBookmark(mContentResolver, url);
+        (new GeckoAsyncTask<Void, Void, Void>() {
+            @Override
+            public Void doInBackground(Void... params) {
                 if (url.equals(getURL())) {
-                    mBookmark = bookmark;
+                    mBookmark = BrowserDB.isBookmark(mContentResolver, url);
+                    mReadingListItem = BrowserDB.isReadingListItem(mContentResolver, url);
                 }
+                return null;
             }
-        });
-    }
 
-    private void updateReadingListItem() {
-        final String url = getURL();
-        if (url == null)
-            return;
-
-        GeckoBackgroundThread.getHandler().post(new Runnable() {
-            public void run() {
-                boolean readingListItem = BrowserDB.isReadingListItem(mContentResolver, url);
-                if (url.equals(getURL())) {
-                    mReadingListItem = readingListItem;
-                }
+            @Override
+            public void onPostExecute(Void result) {
+                Tabs.getInstance().notifyListeners(Tab.this, Tabs.TabEvents.MENU_UPDATED);
             }
-        });
+        }).execute();
     }
 
     public void addBookmark() {
@@ -419,7 +399,7 @@ public final class Tab {
                 if (url == null)
                     return;
 
-                BrowserDB.addBookmark(mContentResolver, getTitle(), url);
+                BrowserDB.addBookmark(mContentResolver, mTitle, url);
             }
         });
     }
@@ -589,13 +569,13 @@ public final class Tab {
         }
     }
 
-    private void saveThumbnailToDB(BitmapDrawable thumbnail) {
+    private void saveThumbnailToDB() {
         try {
             String url = getURL();
             if (url == null)
                 return;
 
-            BrowserDB.updateThumbnailForUrl(mContentResolver, url, thumbnail);
+            BrowserDB.updateThumbnailForUrl(mContentResolver, url, mThumbnail);
         } catch (Exception e) {
             // ignore
         }

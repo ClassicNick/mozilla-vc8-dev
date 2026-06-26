@@ -60,7 +60,7 @@ static char* GetVersion(WCHAR* verbuf)
                        LOWORD(fileInfo->dwFileVersionLS));
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 static PRUint32 CalculateVariantCount(char* mimeTypes)
@@ -282,11 +282,11 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
  */
 nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
 {
-  *outLibrary = nsnull;
+  *outLibrary = nullptr;
 
   nsresult rv = NS_OK;
   DWORD zerome, versionsize;
-  WCHAR* verbuf = nsnull;
+  WCHAR* verbuf = nullptr;
 
   if (!mPlugin)
     return NS_ERROR_NULL_POINTER;

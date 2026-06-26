@@ -17,6 +17,7 @@
 #include "nsIWebNavigation.h"
 #include "nsITabChild.h"
 #include "nsIDocShell.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "WindowIdentifier.h"
 #include "mozilla/dom/ScreenOrientation.h"
@@ -74,7 +75,7 @@ WindowIsActive(nsIDOMWindow *window)
   return !hidden;
 }
 
-nsAutoPtr<WindowIdentifier::IDArrayType> gLastIDToVibrate;
+StaticAutoPtr<WindowIdentifier::IDArrayType> gLastIDToVibrate;
 
 void InitLastIDToVibrate()
 {
@@ -237,6 +238,7 @@ public:
     }
 
     GetCurrentInformationInternal(&mInfo);
+    mHasValidCache = true;
     return mInfo;
   }
 
@@ -480,7 +482,7 @@ UnregisterSensorObserver(SensorType aSensor, ISensorObserver *aObserver) {
     }
   }
   delete [] gSensorObservers;
-  gSensorObservers = nsnull;
+  gSensorObservers = nullptr;
 }
 
 void
@@ -719,7 +721,7 @@ NotifyAlarmFired()
 }
 
 bool
-SetAlarm(long aSeconds, long aNanoseconds)
+SetAlarm(PRInt32 aSeconds, PRInt32 aNanoseconds)
 {
   // It's pointless to program an alarm nothing is going to observe ...
   MOZ_ASSERT(sAlarmObserver);

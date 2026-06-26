@@ -42,6 +42,8 @@ struct Parser : private AutoGCRooter
 
     TreeContext         *tc;            /* innermost tree context (stack-allocated) */
 
+    SourceCompressionToken *sct;        /* compression token for aborting */
+
     /* Root atoms and objects allocated for the parsed tree. */
     AutoKeepAtoms       keepAtoms;
 
@@ -53,9 +55,8 @@ struct Parser : private AutoGCRooter
     const bool          compileAndGo:1;
 
   public:
-    Parser(JSContext *cx, JSPrincipals *prin, JSPrincipals *originPrin,
-           const jschar *chars, size_t length, const char *fn, unsigned ln, JSVersion version,
-           bool foldConstants, bool compileAndGo);
+    Parser(JSContext *cx, const CompileOptions &options,
+           const jschar *chars, size_t length, bool foldConstants);
     ~Parser();
 
     friend void AutoGCRooter::trace(JSTracer *trc);
@@ -108,6 +109,8 @@ struct Parser : private AutoGCRooter
     typedef bool (Parser::*Reporter)(ParseNode *pn, unsigned errorNumber, ...);
 
   private:
+    Parser *thisForCtor() { return this; }
+
     ParseNode *allocParseNode(size_t size) {
         JS_ASSERT(size == sizeof(ParseNode));
         return static_cast<ParseNode *>(allocator.allocNode());

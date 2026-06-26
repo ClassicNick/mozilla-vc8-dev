@@ -139,7 +139,7 @@ public:
   
   inline void CleanRedirectCacheChainIfNecessary()
   {
-      mRedirectedCachekeys = nsnull;
+      mRedirectedCachekeys = nullptr;
   }
   NS_IMETHOD HTTPUpgrade(const nsACString & aProtocolName,
                          nsIHttpUpgradeListener *aListener); 
@@ -197,8 +197,7 @@ protected:
   void AddCookiesToRequest();
   virtual nsresult SetupReplacementChannel(nsIURI *,
                                            nsIChannel *,
-                                           bool preserveMethod,
-                                           bool forProxy);
+                                           bool preserveMethod);
 
   // Helper function to simplify getting notification callbacks.
   template <class T>
@@ -296,7 +295,7 @@ public:
   // retval isn't refcounted and is set only when event was successfully
   // posted, the event is returned for the purpose of cancelling when needed
   nsresult AsyncCall(void (T::*funcPtr)(),
-                     nsRunnableMethod<T> **retval = nsnull);
+                     nsRunnableMethod<T> **retval = nullptr);
 private:
   T *mThis;
 
@@ -335,7 +334,7 @@ inline void HttpAsyncAborter<T>::HandleAsyncAbort()
 
   // finally remove ourselves from the load group.
   if (mThis->mLoadGroup)
-    mThis->mLoadGroup->RemoveRequest(mThis, nsnull, mThis->mStatus);
+    mThis->mLoadGroup->RemoveRequest(mThis, nullptr, mThis->mStatus);
 }
 
 template <class T>

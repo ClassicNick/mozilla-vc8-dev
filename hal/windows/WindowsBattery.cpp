@@ -10,6 +10,7 @@
 #include "mozilla/dom/battery/Constants.h"
 
 #include <windows.h>
+#include "nsWindowsHelpers.h"
 
 using namespace mozilla::dom::battery;
 
@@ -22,11 +23,11 @@ static nsCOMPtr<nsITimer> sUpdateTimer;
 /* Power Event API is Vista or later */
 typedef HPOWERNOTIFY (WINAPI *REGISTERPOWERSETTINGNOTIFICATION) (HANDLE, LPCGUID, DWORD);
 typedef BOOL (WINAPI *UNREGISTERPOWERSETTINGNOTIFICATION) (HPOWERNOTIFY);
-static REGISTERPOWERSETTINGNOTIFICATION sRegisterPowerSettingNotification = nsnull;
-static UNREGISTERPOWERSETTINGNOTIFICATION sUnregisterPowerSettingNotification = nsnull;
-static HPOWERNOTIFY sPowerHandle = nsnull;
-static HPOWERNOTIFY sCapacityHandle = nsnull;
-static HWND sHWnd = nsnull;
+static REGISTERPOWERSETTINGNOTIFICATION sRegisterPowerSettingNotification = nullptr;
+static UNREGISTERPOWERSETTINGNOTIFICATION sUnregisterPowerSettingNotification = nullptr;
+static HPOWERNOTIFY sPowerHandle = nullptr;
+static HPOWERNOTIFY sCapacityHandle = nullptr;
+static HWND sHWnd = nullptr;
 #endif
 
 
@@ -101,9 +102,9 @@ EnableBatteryNotifications()
     // Create custom window to watch battery event
     // If we can get Gecko's window handle, this is unnecessary.
 
-    if (sHWnd == nsnull) {
+    if (sHWnd == nullptr) {
       WNDCLASSW wc;
-      HMODULE hSelf = GetModuleHandle(nsnull);
+      HMODULE hSelf = GetModuleHandle(nullptr);
 
       if (!GetClassInfoW(hSelf, L"MozillaBatteryClass", &wc)) {
         ZeroMemory(&wc, sizeof(WNDCLASSW));
@@ -115,10 +116,10 @@ EnableBatteryNotifications()
 
       sHWnd = CreateWindowW(L"MozillaBatteryClass", L"Battery Watcher",
                             0, 0, 0, 0, 0,
-                            nsnull, nsnull, hSelf, nsnull);
+                            nullptr, nullptr, hSelf, nullptr);
     }
 
-    if (sHWnd == nsnull) {
+    if (sHWnd == nullptr) {
       return;
     }
 
@@ -138,7 +139,7 @@ EnableBatteryNotifications()
     sUpdateTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
     if (sUpdateTimer) {
       sUpdateTimer->InitWithFuncCallback(UpdateHandler,
-                                         nsnull,
+                                         nullptr,
                                          Preferences::GetInt("dom.battery.timer",
                                                              30000 /* 30s */),
                                          nsITimer::TYPE_REPEATING_SLACK);
@@ -153,24 +154,24 @@ DisableBatteryNotifications()
   if (IsVistaOrLater()) {
     if (sPowerHandle) {
       sUnregisterPowerSettingNotification(sPowerHandle);
-      sPowerHandle = nsnull;
+      sPowerHandle = nullptr;
     }
 
     if (sCapacityHandle) {
       sUnregisterPowerSettingNotification(sCapacityHandle);
-      sCapacityHandle = nsnull;
+      sCapacityHandle = nullptr;
     }
 
     if (sHWnd) {
       DestroyWindow(sHWnd);
-      sHWnd = nsnull;
+      sHWnd = nullptr;
     }
   } else
 #endif
   {
     if (sUpdateTimer) {
       sUpdateTimer->Cancel();
-      sUpdateTimer = nsnull;
+      sUpdateTimer = nullptr;
     }
   }
 }

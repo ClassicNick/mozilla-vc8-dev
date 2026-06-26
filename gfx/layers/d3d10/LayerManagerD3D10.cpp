@@ -20,6 +20,7 @@
 #include "ReadbackLayerD3D10.h"
 #include "ImageLayerD3D10.h"
 #include "mozilla/layers/PLayerChild.h"
+#include "mozilla/WidgetUtils.h"
 
 #include "../d3d9/Nv3DVUtils.h"
 
@@ -305,7 +306,7 @@ LayerManagerD3D10::Destroy()
     if (mRoot) {
       static_cast<LayerD3D10*>(mRoot->ImplData())->LayerManagerDestroyed();
     }
-    mRootForShadowTree = nsnull;
+    mRootForShadowTree = nullptr;
     // XXX need to be careful here about surface destruction
     // racing with share-to-chrome message
   }
@@ -339,7 +340,7 @@ LayerManagerD3D10::EndEmptyTransaction()
   if (!mRoot)
     return false;
 
-  EndTransaction(nsnull, nsnull);
+  EndTransaction(nullptr, nullptr);
   return true;
 }
 
@@ -362,8 +363,8 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
 #endif
 
     Render();
-    mCurrentCallbackInfo.Callback = nsnull;
-    mCurrentCallbackInfo.CallbackData = nsnull;
+    mCurrentCallbackInfo.Callback = nullptr;
+    mCurrentCallbackInfo.CallbackData = nullptr;
   }
 
 #ifdef MOZ_LAYERS_HAVE_LOG
@@ -371,7 +372,7 @@ LayerManagerD3D10::EndTransaction(DrawThebesLayerCallback aCallback,
   MOZ_LAYERS_LOG(("]----- EndTransaction"));
 #endif
 
-  mTarget = nsnull;
+  mTarget = nullptr;
 }
 
 already_AddRefed<ThebesLayer>
@@ -448,7 +449,6 @@ LayerManagerD3D10::CreateOptimalSurface(const gfxIntSize &aSize,
   
   CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, aSize.width, aSize.height, 1, 1);
   desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-  desc.MiscFlags = D3D10_RESOURCE_MISC_GDI_COMPATIBLE;
   
   HRESULT hr = device()->CreateTexture2D(&desc, NULL, getter_AddRefs(texture));
 
@@ -484,8 +484,11 @@ TemporaryRef<DrawTarget>
 LayerManagerD3D10::CreateDrawTarget(const IntSize &aSize,
                                     SurfaceFormat aFormat)
 {
+  BackendType backend;
   if ((aFormat != FORMAT_B8G8R8A8 &&
-       aFormat != FORMAT_B8G8R8X8)) {
+       aFormat != FORMAT_B8G8R8X8) ||
+       !gfxPlatform::GetPlatform()->SupportsAzureCanvas(backend) ||
+       backend != BACKEND_DIRECT2D) {
     return LayerManager::CreateDrawTarget(aSize, aFormat);
   }
 
@@ -630,10 +633,13 @@ LayerManagerD3D10::VerifyBufferSize()
       return;
     }
 
-    mRTView = nsnull;
-    if (gfxWindowsPlatform::IsOptimus() ||
-        gfxWindowsPlatform::IsRunningInWindows8Metro()) {
+    mRTView = nullptr;
+    if (gfxWindowsPlatform::IsOptimus()) { 
       mSwapChain->ResizeBuffers(1, rect.width, rect.height,
+                                DXGI_FORMAT_B8G8R8A8_UNORM,
+                                0);
+    } else if (gfxWindowsPlatform::IsRunningInWindows8Metro()) {
+      mSwapChain->ResizeBuffers(2, rect.width, rect.height,
                                 DXGI_FORMAT_B8G8R8A8_UNORM,
                                 0);
     } else {
@@ -659,7 +665,7 @@ LayerManagerD3D10::VerifyBufferSize()
     desc.MiscFlags = D3D10_RESOURCE_MISC_SHARED
                      // FIXME/bug 662109: synchronize using KeyedMutex
                      /*D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX*/;
-    HRESULT hr = device()->CreateTexture2D(&desc, nsnull, getter_AddRefs(mBackBuffer));
+    HRESULT hr = device()->CreateTexture2D(&desc, nullptr, getter_AddRefs(mBackBuffer));
     if (FAILED(hr)) {
       ReportFailure(NS_LITERAL_CSTRING("LayerManagerD3D10::VerifyBufferSize(): Failed to create shared texture"),
                     hr);
@@ -667,7 +673,7 @@ LayerManagerD3D10::VerifyBufferSize()
     }
 
     // XXX resize texture?
-    mRTView = nsnull;
+    mRTView = nullptr;
   }
 }
 
@@ -729,7 +735,8 @@ LayerManagerD3D10::Render()
   if (mTarget) {
     PaintToTarget();
   } else if (mBackBuffer) {
-    ShadowLayerForwarder::BeginTransaction();
+    ShadowLayerForwarder::BeginTransaction(mWidget->GetNaturalBounds(),
+                                           ROTATION_0);
     
     nsIntRect contentRect = nsIntRect(0, 0, rect.width, rect.height);
     if (!mRootForShadowTree) {
@@ -745,7 +752,7 @@ LayerManagerD3D10::Render()
         windowLayer = new WindowLayer(this);
         windowLayer->SetShadow(ConstructShadowFor(windowLayer));
         CreatedThebesLayer(windowLayer);
-        mRootForShadowTree->InsertAfter(windowLayer, nsnull);
+        mRootForShadowTree->InsertAfter(windowLayer, nullptr);
         ShadowLayerForwarder::InsertAfter(mRootForShadowTree, windowLayer);
     }
 
@@ -903,7 +910,7 @@ LayerD3D10::SelectShader(PRUint8 aFlags)
     return effect()->GetTechniqueByName("RenderYCbCrLayer");
   default:
     NS_ERROR("Invalid shader.");
-    return nsnull;
+    return nullptr;
   }
 }
 
@@ -941,7 +948,7 @@ LayerD3D10::LoadMaskTexture()
 }
 
 WindowLayer::WindowLayer(LayerManagerD3D10* aManager)
-  : ThebesLayer(aManager, nsnull)
+  : ThebesLayer(aManager, nullptr)
 {
  }
 
@@ -951,13 +958,13 @@ WindowLayer::~WindowLayer()
 }
 
 DummyRoot::DummyRoot(LayerManagerD3D10* aManager)
-  : ContainerLayer(aManager, nsnull)
+  : ContainerLayer(aManager, nullptr)
 {
 }
 
 DummyRoot::~DummyRoot()
 {
-  RemoveChild(nsnull);
+  RemoveChild(nullptr);
   PLayerChild::Send__delete__(GetShadow());
 }
 

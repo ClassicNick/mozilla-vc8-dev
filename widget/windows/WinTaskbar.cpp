@@ -80,7 +80,7 @@ SetWindowAppUserModelProp(nsIDOMWindow *aParent,
 
   typedef HRESULT (WINAPI * SHGetPropertyStoreForWindowPtr)
                     (HWND hwnd, REFIID riid, void** ppv);
-  SHGetPropertyStoreForWindowPtr funcGetProStore = nsnull;
+  SHGetPropertyStoreForWindowPtr funcGetProStore = nullptr;
 
   HMODULE hDLL = ::LoadLibraryW(kShellLibraryName);
   funcGetProStore = (SHGetPropertyStoreForWindowPtr)
@@ -229,7 +229,7 @@ WinTaskbar::Initialize() {
 }
 
 WinTaskbar::WinTaskbar() 
-  : mTaskbar(nsnull) {
+  : mTaskbar(nullptr) {
 }
 
 WinTaskbar::~WinTaskbar() {
@@ -330,7 +330,7 @@ WinTaskbar::RegisterAppUserModelID() {
   if (WinUtils::GetWindowsVersion() < WinUtils::WIN7_VERSION)
     return false;
 
-  SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nsnull;
+  SetCurrentProcessExplicitAppUserModelIDPtr funcAppUserModelID = nullptr;
   bool retVal = false;
 
   nsAutoString uid;

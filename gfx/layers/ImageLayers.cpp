@@ -14,7 +14,7 @@
 #include "mozilla/layers/ImageContainerChild.h"
 
 #ifdef XP_MACOSX
-#include "nsCoreAnimationSupport.h"
+#include "mozilla/gfx/QuartzSupport.h"
 #endif
 
 #ifdef XP_WIN
@@ -28,6 +28,8 @@
 #endif
 
 using namespace mozilla::ipc;
+using mozilla::gfx::DataSourceSurface;
+using mozilla::gfx::SourceSurface;
 
 namespace mozilla {
 namespace layers {
@@ -39,7 +41,7 @@ ImageFactory::CreateImage(const Image::Format *aFormats,
                           BufferRecycleBin *aRecycleBin)
 {
   if (!aNumFormats) {
-    return nsnull;
+    return nullptr;
   }
   nsRefPtr<Image> img;
   if (FormatInList(aFormats, aNumFormats, Image::PLANAR_YCBCR)) {
@@ -97,10 +99,10 @@ ImageContainer::ImageContainer(int flag)
   mPreviousImagePainted(false),
   mImageFactory(new ImageFactory()),
   mRecycleBin(new BufferRecycleBin()),
-  mRemoteData(nsnull),
-  mRemoteDataMutex(nsnull),
-  mCompositionNotifySink(nsnull),
-  mImageContainerChild(nsnull)
+  mRemoteData(nullptr),
+  mRemoteDataMutex(nullptr),
+  mCompositionNotifySink(nullptr),
+  mImageContainerChild(nullptr)
 {
   if (flag == ENABLE_ASYNC && ImageBridgeChild::IsCreated()) {
     mImageContainerChild = 
@@ -169,7 +171,7 @@ ImageContainer::SetCurrentImageInTransaction(Image *aImage)
 }
 
 bool ImageContainer::IsAsync() const {
-  return mImageContainerChild != nsnull;
+  return mImageContainerChild != nullptr;
 }
 
 PRUint64 ImageContainer::GetAsyncContainerID() const
@@ -231,7 +233,7 @@ ImageContainer::LockCurrentAsSurface(gfxIntSize *aSize, Image** aCurrentImage)
     }
 
     if (!mActiveImage) {
-      return nsnull;
+      return nullptr;
     } 
 
     if (mActiveImage->GetFormat() == Image::REMOTE_IMAGE_BITMAP) {
@@ -256,7 +258,7 @@ ImageContainer::LockCurrentAsSurface(gfxIntSize *aSize, Image** aCurrentImage)
   }
 
   if (!mActiveImage) {
-    return nsnull;
+    return nullptr;
   }
 
   *aSize = mActiveImage->GetSize();
@@ -282,11 +284,11 @@ ImageContainer::GetCurrentAsSurface(gfxIntSize *aSize)
     EnsureActiveImage();
 
     if (!mActiveImage)
-      return nsnull;
+      return nullptr;
     *aSize = mRemoteData->mSize;
   } else {
     if (!mActiveImage)
-      return nsnull;
+      return nullptr;
     *aSize = mActiveImage->GetSize();
   }
   return mActiveImage->GetAsSurface();
@@ -325,7 +327,7 @@ ImageContainer::SetRemoteImageData(RemoteImageData *aData, CrossProcessMutex *aM
   if (aData) {
     memset(aData, 0, sizeof(RemoteImageData));
   } else {
-    mActiveImage = nsnull;
+    mActiveImage = nullptr;
   }
 
   mRemoteDataMutex = aMutex;
@@ -336,7 +338,7 @@ ImageContainer::EnsureActiveImage()
 {
   if (mRemoteData) {
     if (mRemoteData->mWasUpdated) {
-      mActiveImage = nsnull;
+      mActiveImage = nullptr;
     }
 
     if (mRemoteData->mType == RemoteImageData::RAW_BITMAP &&
@@ -367,7 +369,7 @@ ImageContainer::EnsureActiveImage()
 }
 
 PlanarYCbCrImage::PlanarYCbCrImage(BufferRecycleBin *aRecycleBin)
-  : Image(nsnull, PLANAR_YCBCR)
+  : Image(nullptr, PLANAR_YCBCR)
   , mBufferSize(0)
   , mRecycleBin(aRecycleBin)
 {
@@ -496,14 +498,31 @@ PlanarYCbCrImage::GetAsSurface()
 void
 MacIOSurfaceImage::SetData(const Data& aData)
 {
-  mIOSurface = nsIOSurface::LookupSurface(aData.mIOSurface->GetIOSurfaceID());
+  mIOSurface = MacIOSurface::LookupSurface(aData.mIOSurface->GetIOSurfaceID());
   mSize = gfxIntSize(mIOSurface->GetWidth(), mIOSurface->GetHeight());
 }
 
 already_AddRefed<gfxASurface>
 MacIOSurfaceImage::GetAsSurface()
 {
-  return mIOSurface->GetAsSurface();
+  mIOSurface->Lock();
+  size_t bytesPerRow = mIOSurface->GetBytesPerRow();
+  size_t ioWidth = mIOSurface->GetWidth();
+  size_t ioHeight = mIOSurface->GetHeight();
+
+  unsigned char* ioData = (unsigned char*)mIOSurface->GetBaseAddress();
+
+  nsRefPtr<gfxImageSurface> imgSurface =
+    new gfxImageSurface(gfxIntSize(ioWidth, ioHeight), gfxASurface::ImageFormatARGB32);
+
+  for (int i = 0; i < ioHeight; i++) {
+    memcpy(imgSurface->Data() + i * imgSurface->Stride(),
+           ioData + i * bytesPerRow, ioWidth * 4);
+  }
+
+  mIOSurface->Unlock();
+
+  return imgSurface.forget();
 }
 
 void

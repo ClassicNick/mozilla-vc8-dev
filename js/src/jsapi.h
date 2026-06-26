@@ -861,6 +861,9 @@ class ValueOperations
     bool isPrimitive() const { return value()->isPrimitive(); }
     bool isGCThing() const { return value()->isGCThing(); }
 
+    bool isNullOrUndefined() const { return value()->isNullOrUndefined(); }
+    bool isObjectOrNull() const { return value()->isObjectOrNull(); }
+
     bool toBoolean() const { return value()->toBoolean(); }
     double toNumber() const { return value()->toNumber(); }
     int32_t toInt32() const { return value()->toInt32(); }
@@ -898,7 +901,7 @@ class MutableValueOperations : public ValueOperations<Outer>
     void setMagic(JSWhyMagic why) { value()->setMagic(why); }
     bool setNumber(uint32_t ui) { return value()->setNumber(ui); }
     bool setNumber(double d) { return value()->setNumber(d); }
-    void setObjectOrNull(JSObject *arg) { value()->setObjectOrNull(); }
+    void setObjectOrNull(JSObject *arg) { value()->setObjectOrNull(arg); }
 };
 
 /*
@@ -944,7 +947,7 @@ class RootedBase<Value> : public MutableValueOperations<Rooted<Value> >
         return static_cast<const Rooted<Value>*>(this)->address();
     }
 
-    friend class MutableValueOperations<Handle<Value> >;
+    friend class MutableValueOperations<Rooted<Value> >;
     Value * extractMutable() {
         return static_cast<Rooted<Value>*>(this)->address();
     }
@@ -1375,9 +1378,9 @@ class CallReceiver
     Value &calleev() const { JS_ASSERT(!usedRval_); return argv_[-2]; }
     Value &thisv() const { return argv_[-1]; }
 
-    Value &rval() const {
+    JS::MutableHandleValue rval() const {
         setUsedRval();
-        return argv_[-2];
+        return JS::MutableHandleValue::fromMarkedLocation(&argv_[-2]);
     }
 
     Value *spAfterCall() const {
@@ -1613,8 +1616,8 @@ typedef JS::MutableHandle<JS::Value> JSMutableHandleValue;
 typedef struct { JSObject **_; } JSHandleObject;
 typedef struct { JSString **_; } JSHandleString;
 typedef struct { JSObject **_; } JSMutableHandleObject;
-typedef struct { jsid *_; } JSHandleId;
 typedef struct { jsval *_; } JSMutableHandleValue;
+typedef struct { jsid *_; } JSHandleId;
 
 JSBool JS_CreateHandleObject(JSContext *cx, JSObject *obj, JSHandleObject *phandle);
 void JS_DestroyHandleObject(JSContext *cx, JSHandleObject handle);
@@ -1637,7 +1640,7 @@ void JS_DestroyHandleId(JSContext *cx, JSHandleId handle);
  * obj[id] can't be deleted (because it's permanent).
  */
 typedef JSBool
-(* JSPropertyOp)(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
+(* JSPropertyOp)(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
 
 /*
  * Set a property named by id in obj, treating the assignment as strict
@@ -1647,7 +1650,7 @@ typedef JSBool
  * set.
  */
 typedef JSBool
-(* JSStrictPropertyOp)(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
+(* JSStrictPropertyOp)(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
 
 /*
  * This function type is used for callbacks that enumerate the properties of
@@ -1730,7 +1733,7 @@ typedef JSBool
  * *vp on success, and returning false on error or exception.
  */
 typedef JSBool
-(* JSConvertOp)(JSContext *cx, JSHandleObject obj, JSType type, jsval *vp);
+(* JSConvertOp)(JSContext *cx, JSHandleObject obj, JSType type, JSMutableHandleValue vp);
 
 /*
  * Delegate typeof to an object so it can cloak a primitive or another object.
@@ -2006,6 +2009,10 @@ typedef JSObject *
 
 typedef void
 (* JSDestroyCompartmentCallback)(JSFreeOp *fop, JSCompartment *compartment);
+
+typedef void
+(* JSCompartmentNameCallback)(JSRuntime *rt, JSCompartment *compartment,
+                              char *buf, size_t bufsize);
 
 /*
  * Read structured data from the reader r. This hook is used to read a value
@@ -2664,6 +2671,12 @@ namespace js {
  */
 extern JS_PUBLIC_API(bool)
 ToNumberSlow(JSContext *cx, JS::Value v, double *dp);
+
+/*
+ * DO NOT CALL THIS. Use JS::ToBoolean
+ */
+extern JS_PUBLIC_API(bool)
+ToBooleanSlow(const JS::Value &v);
 } /* namespace js */
 
 namespace JS {
@@ -2680,6 +2693,26 @@ ToNumber(JSContext *cx, const Value &v, double *out)
         return true;
     }
     return js::ToNumberSlow(cx, v, out);
+}
+
+JS_ALWAYS_INLINE bool
+ToBoolean(const Value &v)
+{
+    if (v.isBoolean())
+        return v.toBoolean();
+    if (v.isInt32())
+        return v.toInt32() != 0;
+    if (v.isObject())
+        return true;
+    if (v.isNullOrUndefined())
+        return false;
+    if (v.isDouble()) {
+        double d = v.toDouble();
+        return !MOZ_DOUBLE_IS_NaN(d) && d != 0;
+    }
+
+    /* Slow path. Handle Strings. */
+    return js::ToBooleanSlow(v);
 }
 
 } /* namespace JS */
@@ -3093,6 +3126,9 @@ JS_GetImplementationVersion(void);
 extern JS_PUBLIC_API(void)
 JS_SetDestroyCompartmentCallback(JSRuntime *rt, JSDestroyCompartmentCallback callback);
 
+extern JS_PUBLIC_API(void)
+JS_SetCompartmentNameCallback(JSRuntime *rt, JSCompartmentNameCallback callback);
+
 extern JS_PUBLIC_API(JSWrapObjectCallback)
 JS_SetWrapObjectCallbacks(JSRuntime *rt,
                           JSWrapObjectCallback callback,
@@ -3144,10 +3180,10 @@ class JS_PUBLIC_API(JSAutoEnterCompartment)
      * access to the AutoCompartment definition here.  We statically assert in
      * jsapi.cpp that we have the right size here.
      *
-     * In practice, 32-bit Windows and Android get 16-word |bytes|, while
-     * other platforms get 13-word |bytes|.
+     * In practice, 32-bit Windows and Android get 16-word |bytes|, while other
+     * platforms get 12-word |bytes|.
      */
-    void* bytes[sizeof(void*) == 4 && MOZ_ALIGNOF(uint64_t) == 8 ? 16 : 13];
+    void* bytes[sizeof(void*) == 4 && MOZ_ALIGNOF(uint64_t) == 8 ? 16 : 12];
 
   protected:
     js::AutoCompartment *getAutoCompartment() {
@@ -3250,6 +3286,12 @@ JS_EnumerateResolvedStandardClasses(JSContext *cx, JSObject *obj,
 extern JS_PUBLIC_API(JSBool)
 JS_GetClassObject(JSContext *cx, JSObject *obj, JSProtoKey key,
                   JSObject **objp);
+
+extern JS_PUBLIC_API(JSBool)
+JS_GetClassPrototype(JSContext *cx, JSProtoKey key, JSObject **objp);
+
+extern JS_PUBLIC_API(JSProtoKey)
+JS_IdentifyClassPrototype(JSContext *cx, JSObject *obj);
 
 /*
  * Returns the original value of |Function.prototype| from the global object in
@@ -3717,7 +3759,7 @@ JS_CallTracer(JSTracer *trc, void *thing, JSGCTraceKind kind);
 #ifdef JS_GC_ZEAL
 # define JS_SET_TRACING_LOCATION(trc, location)                               \
     JS_BEGIN_MACRO                                                            \
-        if ((trc)->realLocation == NULL || (location) == NULL)                \
+        if (!(trc)->realLocation || !(location))                              \
             (trc)->realLocation = (location);                                 \
     JS_END_MACRO
 #else
@@ -4048,7 +4090,7 @@ struct JSClass {
  * with the following flags. Failure to use JSCLASS_GLOBAL_FLAGS was
  * prevously allowed, but is now an ES5 violation and thus unsupported.
  */
-#define JSCLASS_GLOBAL_SLOT_COUNT      (JSProto_LIMIT * 3 + 21)
+#define JSCLASS_GLOBAL_SLOT_COUNT      (JSProto_LIMIT * 3 + 23)
 #define JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(n)                                    \
     (JSCLASS_IS_GLOBAL | JSCLASS_HAS_RESERVED_SLOTS(JSCLASS_GLOBAL_SLOT_COUNT + (n)))
 #define JSCLASS_GLOBAL_FLAGS                                                  \
@@ -4155,10 +4197,10 @@ extern JS_PUBLIC_API(JSBool)
 JS_DefaultValue(JSContext *cx, JSObject *obj, JSType hint, jsval *vp);
 
 extern JS_PUBLIC_API(JSBool)
-JS_PropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, jsval *vp);
+JS_PropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHandleValue vp);
 
 extern JS_PUBLIC_API(JSBool)
-JS_StrictPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, jsval *vp);
+JS_StrictPropertyStub(JSContext *cx, JSHandleObject obj, JSHandleId id, JSBool strict, JSMutableHandleValue vp);
 
 extern JS_PUBLIC_API(JSBool)
 JS_EnumerateStub(JSContext *cx, JSHandleObject obj);
@@ -4167,7 +4209,7 @@ extern JS_PUBLIC_API(JSBool)
 JS_ResolveStub(JSContext *cx, JSHandleObject obj, JSHandleId id);
 
 extern JS_PUBLIC_API(JSBool)
-JS_ConvertStub(JSContext *cx, JSHandleObject obj, JSType type, jsval *vp);
+JS_ConvertStub(JSContext *cx, JSHandleObject obj, JSType type, JSMutableHandleValue vp);
 
 struct JSConstDoubleSpec {
     double          dval;
@@ -4904,6 +4946,64 @@ JS_CompileUCFunctionForPrincipalsVersion(JSContext *cx, JSObject *obj,
                                          const char *filename, unsigned lineno,
                                          JSVersion version);
 
+#ifdef __cplusplus
+JS_END_EXTERN_C
+
+namespace JS {
+
+/* Options for JavaScript compilation. */
+struct CompileOptions {
+    JSPrincipals *principals;
+    JSPrincipals *originPrincipals;
+    JSVersion version;
+    bool versionSet;
+    bool utf8;
+    const char *filename;
+    unsigned lineno;
+    bool compileAndGo;
+    bool noScriptRval;
+
+    CompileOptions(JSContext *cx);
+    CompileOptions &setPrincipals(JSPrincipals *p) { principals = p; return *this; }
+    CompileOptions &setOriginPrincipals(JSPrincipals *p) { originPrincipals = p; return *this; }
+    CompileOptions &setVersion(JSVersion v) { version = v; versionSet = true; return *this; }
+    CompileOptions &setUTF8(bool u) { utf8 = u; return *this; }
+    CompileOptions &setFileAndLine(const char *f, unsigned l) {
+        filename = f; lineno = l; return *this;
+    }
+    CompileOptions &setCompileAndGo(bool cng) { compileAndGo = cng; return *this; }
+    CompileOptions &setNoScriptRval(bool nsr) { noScriptRval = nsr; return *this; }
+};
+
+extern JS_PUBLIC_API(JSScript *)
+Compile(JSContext *cx, JSHandleObject obj, CompileOptions options,
+        const char *bytes, size_t length);
+
+extern JS_PUBLIC_API(JSScript *)
+Compile(JSContext *cx, JSHandleObject obj, CompileOptions options,
+        const jschar *chars, size_t length);
+
+extern JS_PUBLIC_API(JSScript *)
+Compile(JSContext *cx, JSHandleObject obj, CompileOptions options, FILE *file);
+
+extern JS_PUBLIC_API(JSScript *)
+Compile(JSContext *cx, JSHandleObject obj, CompileOptions options, const char *filename);
+
+extern JS_PUBLIC_API(JSFunction *)
+CompileFunction(JSContext *cx, JSHandleObject obj, CompileOptions options,
+                const char *name, unsigned nargs, const char **argnames,
+                const char *bytes, size_t length);
+
+extern JS_PUBLIC_API(JSFunction *)
+CompileFunction(JSContext *cx, JSHandleObject obj, CompileOptions options,
+                const char *name, unsigned nargs, const char **argnames,
+                const jschar *chars, size_t length);
+
+} /* namespace JS */
+
+JS_BEGIN_EXTERN_C
+#endif /* __cplusplus */
+
 extern JS_PUBLIC_API(JSString *)
 JS_DecompileScript(JSContext *cx, JSScript *script, const char *name, unsigned indent);
 
@@ -5022,6 +5122,24 @@ JS_EvaluateUCScriptForPrincipalsVersionOrigin(JSContext *cx, JSObject *obj,
                                               const jschar *chars, unsigned length,
                                               const char *filename, unsigned lineno,
                                               jsval *rval, JSVersion version);
+
+#ifdef __cplusplus
+JS_END_EXTERN_C
+
+namespace JS {
+
+extern JS_PUBLIC_API(bool)
+Evaluate(JSContext *cx, JSHandleObject obj, CompileOptions options,
+         const jschar *chars, size_t length, jsval *rval);
+
+extern JS_PUBLIC_API(bool)
+Evaluate(JSContext *cx, JSHandleObject obj, CompileOptions options,
+         const char *bytes, size_t length, jsval *rval);
+
+} /* namespace JS */
+
+JS_BEGIN_EXTERN_C
+#endif
 
 extern JS_PUBLIC_API(JSBool)
 JS_CallFunction(JSContext *cx, JSObject *obj, JSFunction *fun, unsigned argc,

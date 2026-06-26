@@ -140,6 +140,14 @@ XPCOMUtils.defineLazyGetter(this, "Social", function() {
   return tmp.Social;
 });
 
+#ifdef MOZ_SAFE_BROWSING
+XPCOMUtils.defineLazyGetter(this, "SafeBrowsing", function() {
+  let tmp = {};
+  Cu.import("resource://gre/modules/SafeBrowsing.jsm", tmp);
+  return tmp.SafeBrowsing;
+});
+#endif
+
 let gInitialPages = [
   "about:blank",
   "about:newtab",
@@ -154,6 +162,7 @@ let gInitialPages = [
 #include browser-fullZoom.js
 #include browser-places.js
 #include browser-plugins.js
+#include browser-safebrowsing.js
 #include browser-social.js
 #include browser-tabPreviews.js
 #include browser-tabview.js
@@ -637,12 +646,6 @@ const gFormSubmitObserver = {
   init: function()
   {
     this.panel = document.getElementById('invalid-form-popup');
-  },
-
-  panelIsOpen: function()
-  {
-    return this.panel && this.panel.state != "hiding" &&
-           this.panel.state != "closed";
   },
 
   notifyInvalidSubmit : function (aFormElement, aInvalidElements)
@@ -1241,6 +1244,11 @@ var gBrowserInit = {
     TelemetryTimestamps.add("delayedStartupStarted");
     gDelayedStartupTimeoutId = null;
 
+#ifdef MOZ_SAFE_BROWSING
+    // Bug 778855 - Perf regression if we do this here. To be addressed in bug 779008.
+    setTimeout(function() { SafeBrowsing.init(); }, 2000);
+#endif
+
     Services.obs.addObserver(gSessionHistoryObserver, "browser:purge-session-history", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-disabled", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-started", false);
@@ -1402,9 +1410,9 @@ var gBrowserInit = {
     // Enable developer toolbar?
     let devToolbarEnabled = gPrefService.getBoolPref("devtools.toolbar.enabled");
     if (devToolbarEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_DevToolbar");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:DevToolbar");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
       document.getElementById("Tools:DevToolbarFocus").removeAttribute("disabled");
 
       // Show the toolbar if it was previously visible
@@ -1416,25 +1424,25 @@ var gBrowserInit = {
     // Enable Inspector?
     let enabled = gPrefService.getBoolPref("devtools.inspector.enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Inspect");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Inspect");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Debugger?
     let enabled = gPrefService.getBoolPref("devtools.debugger.enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Debugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Debugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Remote Debugger?
     let enabled = gPrefService.getBoolPref("devtools.debugger.remote-enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_RemoteDebugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:RemoteDebugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Chrome Debugger?
@@ -1442,34 +1450,34 @@ var gBrowserInit = {
                   gPrefService.getBoolPref("devtools.debugger.chrome-enabled") &&
                   gPrefService.getBoolPref("devtools.debugger.remote-enabled");
     if (enabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ChromeDebugger");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ChromeDebugger");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Error Console?
     // XXX Temporarily always-enabled, see bug 601201
     let consoleEnabled = true || gPrefService.getBoolPref("devtools.errorconsole.enabled");
     if (consoleEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ErrorConsole");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ErrorConsole");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Scratchpad in the UI, if the preference allows this.
     let scratchpadEnabled = gPrefService.getBoolPref(Scratchpad.prefEnabledName);
     if (scratchpadEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_Scratchpad");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:Scratchpad");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     // Enable Style Editor?
     let styleEditorEnabled = gPrefService.getBoolPref(StyleEditor.prefEnabledName);
     if (styleEditorEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_StyleEditor");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:StyleEditor");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
 #ifdef MENUBAR_CAN_AUTOHIDE
@@ -1484,9 +1492,9 @@ var gBrowserInit = {
     // Enable Responsive UI?
     let responsiveUIEnabled = gPrefService.getBoolPref("devtools.responsiveUI.enabled");
     if (responsiveUIEnabled) {
-      let broadcaster = document.getElementById("devtoolsMenuBroadcaster_ResponsiveUI");
-      broadcaster.removeAttribute("disabled");
-      broadcaster.removeAttribute("hidden");
+      let cmd = document.getElementById("Tools:ResponsiveUI");
+      cmd.removeAttribute("disabled");
+      cmd.removeAttribute("hidden");
     }
 
     let appMenuButton = document.getElementById("appmenu-button");
@@ -2580,7 +2588,7 @@ function BrowserOnClick(event) {
             label: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.label"),
             accessKey: gNavigatorBundle.getString("safebrowsing.notAnAttackButton.accessKey"),
             callback: function() {
-              openUILinkIn(safebrowsing.getReportURL('MalwareError'), 'tab');
+              openUILinkIn(gSafeBrowsing.getReportURL('MalwareError'), 'tab');
             }
           };
         } else {
@@ -2589,7 +2597,7 @@ function BrowserOnClick(event) {
             label: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.label"),
             accessKey: gNavigatorBundle.getString("safebrowsing.notAForgeryButton.accessKey"),
             callback: function() {
-              openUILinkIn(safebrowsing.getReportURL('Error'), 'tab');
+              openUILinkIn(gSafeBrowsing.getReportURL('Error'), 'tab');
             }
           };
         }
@@ -3936,7 +3944,7 @@ var XULBrowserWindow = {
     this._hostChanged = true;
 
     // Hide the form invalid popup.
-    if (gFormSubmitObserver.panelIsOpen()) {
+    if (gFormSubmitObserver.panel) {
       gFormSubmitObserver.panel.hidePopup();
     }
 
@@ -4681,15 +4689,9 @@ var TabsInTitlebar = {
     this._readPref();
     Services.prefs.addObserver(this._prefName, this, false);
 
-    // Don't trust the initial value of the sizemode attribute; wait for the resize event.
+    // Don't trust the initial value of the sizemode attribute; wait for
+    // the resize event (handled in tabbrowser.xml).
     this.allowedBy("sizemode", false);
-    window.addEventListener("resize", function (event) {
-      if (event.target != window)
-        return;
-      let sizemode = document.documentElement.getAttribute("sizemode");
-      TabsInTitlebar.allowedBy("sizemode",
-                               sizemode == "maximized" || sizemode == "fullscreen");
-    }, false);
 
     this._initialized = true;
 #endif

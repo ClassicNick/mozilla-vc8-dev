@@ -39,27 +39,6 @@ static double FlushToZero(double aVal)
     return aVal;
 }
 
-/* Helper function to fill in an nscoord with the specified nsCSSValue. */
-static nscoord CalcLength(const nsCSSValue &aValue,
-                          nsStyleContext* aContext,
-                          nsPresContext* aPresContext,
-                          bool &aCanStoreInRuleTree)
-{
-  if (aValue.GetUnit() == eCSSUnit_Pixel ||
-      aValue.GetUnit() == eCSSUnit_Number) {
-    // Handle this here (even though nsRuleNode::CalcLength handles it
-    // fine) so that callers are allowed to pass a null style context
-    // and pres context to SetToTransformFunction if they know (as
-    // nsStyleAnimation does) that all lengths within the transform
-    // function have already been computed to pixels and percents.
-    //
-    // Raw numbers are treated as being pixels.
-    return nsPresContext::CSSPixelsToAppUnits(aValue.GetFloatValue());
-  }
-  return nsRuleNode::CalcLength(aValue, aContext, aPresContext,
-                                aCanStoreInRuleTree);
-}
-
 static float
 ProcessTranslatePart(const nsCSSValue& aValue,
                      nsStyleContext* aContext,
@@ -72,6 +51,19 @@ ProcessTranslatePart(const nsCSSValue& aValue,
 
   if (aValue.GetUnit() == eCSSUnit_Percent) {
     percent = aValue.GetPercentValue();
+  } else if (aValue.GetUnit() == eCSSUnit_Pixel ||
+             aValue.GetUnit() == eCSSUnit_Number) {
+    // Handle this here (even though nsRuleNode::CalcLength handles it
+    // fine) so that callers are allowed to pass a null style context
+    // and pres context to SetToTransformFunction if they know (as
+    // nsStyleAnimation does) that all lengths within the transform
+    // function have already been computed to pixels and percents.
+    //
+    // Raw numbers are treated as being pixels.
+    //
+    // Don't convert to aValue to AppUnits here to avoid precision issues.
+    return aValue.GetFloatValue() *
+           (float(nsPresContext::AppUnitsPerCSSPixel()) / aAppUnitsPerMatrixUnit);
   } else if (aValue.IsCalcUnit()) {
     nsRuleNode::ComputedCalc result =
       nsRuleNode::SpecifiedCalcToComputedCalc(aValue, aContext, aPresContext,
@@ -79,8 +71,8 @@ ProcessTranslatePart(const nsCSSValue& aValue,
     percent = result.mPercent;
     offset = result.mLength;
   } else {
-    offset = CalcLength(aValue, aContext, aPresContext,
-                         aCanStoreInRuleTree);
+    offset = nsRuleNode::CalcLength(aValue, aContext, aPresContext,
+                                    aCanStoreInRuleTree);
   }
 
   return (percent * NSAppUnitsToFloatPixels(aSize, aAppUnitsPerMatrixUnit)) + 
@@ -390,6 +382,19 @@ ProcessSkewY(gfx3DMatrix& aMatrix, const nsCSSValue::Array* aData)
   ProcessSkewHelper(aMatrix, 0.0, aData->Item(1).GetAngleValueInRadians());
 }
 
+/* Function that converts a skew transform into a matrix. */
+static void
+ProcessSkew(gfx3DMatrix& aMatrix, const nsCSSValue::Array* aData)
+{
+  NS_ASSERTION(aData->Count() == 2 || aData->Count() == 3, "Bad array!");
+
+  double xSkew = aData->Item(1).GetAngleValueInRadians();
+  double ySkew = (aData->Count() == 2
+                  ? 0.0 : aData->Item(2).GetAngleValueInRadians());
+
+  ProcessSkewHelper(aMatrix, xSkew, ySkew);
+}
+
 /* Function that converts a rotate transform into a matrix. */
 static void
 ProcessRotateZ(gfx3DMatrix& aMatrix, const nsCSSValue::Array* aData)
@@ -551,6 +556,9 @@ MatrixForTransformFunction(gfx3DMatrix& aMatrix,
   case eCSSKeyword_skewy:
     ProcessSkewY(aMatrix, aData);
     break;
+  case eCSSKeyword_skew:
+    ProcessSkew(aMatrix, aData);
+    break;
   case eCSSKeyword_rotatex:
     ProcessRotateX(aMatrix, aData);
     break;
@@ -607,7 +615,7 @@ ReadTransforms(const nsCSSValueList* aList,
 {
   gfx3DMatrix result;
 
-  for (const nsCSSValueList* curr = aList; curr != nsnull; curr = curr->mNext) {
+  for (const nsCSSValueList* curr = aList; curr != nullptr; curr = curr->mNext) {
     const nsCSSValue &currElem = curr->mValue;
     NS_ASSERTION(currElem.GetUnit() == eCSSUnit_Function,
                  "Stream should consist solely of functions!");

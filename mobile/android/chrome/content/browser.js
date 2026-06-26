@@ -1565,10 +1565,8 @@ var SelectionHandler = {
         break;
       }
       case "after-viewport-change": {
-        // Update the cache and reposition the handles after the viewport
-        // changes (e.g. panning, zooming).
+        // Update the cache after the viewport changes (e.g. panning, zooming).
         this.updateCacheForSelection();
-        this.positionHandles();
         break;
       }
       case "TextSelection:Move": {
@@ -1871,13 +1869,15 @@ var SelectionHandler = {
     // Translate coordinates to account for selections in sub-frames. We can't cache
     // this because the top-level page may have scrolled since selection started.
     let offset = this._getViewOffset();
+    let scrollX = {}, scrollY = {};
+    this._view.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).getScrollXY(false, scrollX, scrollY);
     sendMessageToJava({
       gecko: {
         type: "TextSelection:PositionHandles",
-        startLeft: this.cache.start.x + offset.x,
-        startTop: this.cache.start.y + offset.y,
-        endLeft: this.cache.end.x + offset.x,
-        endTop: this.cache.end.y + offset.y
+        startLeft: this.cache.start.x + offset.x + scrollX.value,
+        startTop: this.cache.start.y + offset.y + scrollY.value,
+        endLeft: this.cache.end.x + offset.x + scrollX.value,
+        endTop: this.cache.end.y + offset.y + scrollY.value
       }
     });
   },
@@ -1959,13 +1959,6 @@ var UserAgent = {
         let tab = BrowserApp.getTabForWindow(channelWindow);
         if (tab == null)
           break;
-
-        if (channel.URI.host.indexOf("youtube") != -1) {
-          let ua = Cc["@mozilla.org/network/protocol;1?name=http"].getService(Ci.nsIHttpProtocolHandler).userAgent;
-#expand let version = "__MOZ_APP_VERSION__";
-          ua += " Fennec/" + version;
-          channel.setRequestHeader("User-Agent", ua, false);
-        }
 
         // Send desktop UA if "Request Desktop Site" is enabled
         if (tab.desktopMode)
@@ -2161,6 +2154,7 @@ Tab.prototype = {
     this.browser.addEventListener("scroll", this, true);
     this.browser.addEventListener("MozScrolledAreaChanged", this, true);
     this.browser.addEventListener("PluginClickToPlay", this, true);
+    this.browser.addEventListener("PluginNotFound", this, true);
     this.browser.addEventListener("pageshow", this, true);
 
     Services.obs.addObserver(this, "before-first-paint", false);
@@ -2253,6 +2247,7 @@ Tab.prototype = {
     this.browser.removeEventListener("DOMWillOpenModalDialog", this, true);
     this.browser.removeEventListener("scroll", this, true);
     this.browser.removeEventListener("PluginClickToPlay", this, true);
+    this.browser.removeEventListener("PluginNotFound", this, true);
     this.browser.removeEventListener("MozScrolledAreaChanged", this, true);
 
     Services.obs.removeObserver(this, "before-first-paint");
@@ -2587,8 +2582,8 @@ Tab.prototype = {
       case "DOMContentLoaded": {
         let target = aEvent.originalTarget;
 
-        // ignore on frames
-        if (target.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (target != this.browser.contentDocument)
           return;
 
         // Sample the background color of the page and pass it along. (This is used to draw the
@@ -2633,8 +2628,8 @@ Tab.prototype = {
         if (!target.href || target.disabled)
           return;
 
-        // ignore on frames
-        if (target.ownerDocument.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (target.ownerDocument != this.browser.contentDocument)
           return;
 
         // sanitize the rel string
@@ -2687,8 +2682,8 @@ Tab.prototype = {
         if (!aEvent.isTrusted)
           return;
 
-        // ignore on frames
-        if (aEvent.target.defaultView != this.browser.contentWindow)
+        // ignore on frames and other documents
+        if (aEvent.originalTarget != this.browser.contentDocument)
           return;
 
         sendMessageToJava({
@@ -2798,6 +2793,21 @@ Tab.prototype = {
 
           NativeWindow.doorhanger.hide("ask-to-play-plugins", tab.id);
         }, true);
+        break;
+      }
+
+      case "PluginNotFound": {
+        let plugin = aEvent.target;
+        plugin.clientTop; // force style flush
+
+        // On devices where we don't support Flash, there will be a "Learn More..." link in
+        // the missing plugin error message.
+        let learnMoreLink = plugin.ownerDocument.getAnonymousElementByAttribute(plugin, "class", "unsupportedLearnMoreLink");
+        if (learnMoreLink) {
+          let learnMoreUrl = Services.urlFormatter.formatURLPref("app.support.baseURL");
+          learnMoreUrl += "why-cant-firefox-mobile-play-flash-on-my-device";
+          learnMoreLink.href = learnMoreUrl;
+        }
         break;
       }
 
@@ -3227,7 +3237,7 @@ var BrowserEventHandler = {
     Services.obs.addObserver(this, "dom-touch-listener-added", false);
 
     BrowserApp.deck.addEventListener("DOMUpdatePageReport", PopupBlockerObserver.onUpdatePageReport, false);
-    BrowserApp.deck.addEventListener("touchstart", this, false);
+    BrowserApp.deck.addEventListener("touchstart", this, true);
     BrowserApp.deck.addEventListener("click", SelectHelper, true);
   },
 
@@ -3460,6 +3470,10 @@ var BrowserEventHandler = {
   _doTapHighlight: function _doTapHighlight(aElement) {
     this._cancelTapHighlight();
     this._highlightTimeout = setTimeout(function(self) {
+      // If aElement is from a dead window, defaultView will be null.
+      if (!aElement.ownerDocument.defaultView)
+        return;
+
       DOMUtils.setContentState(aElement, kStateActive);
       self._highlightElement = aElement;
     }, kTapHighlightDelay, this);
@@ -3474,13 +3488,19 @@ var BrowserEventHandler = {
     if (!this._highlightElement)
       return;
 
+    let ownerDocument = this._highlightElement.ownerDocument;
+    this._highlightElement = null;
+
+    // If _highlightElement is from a dead window, defaultView will be null.
+    if (!ownerDocument.defaultView)
+      return;
+
     // If the active element is in a sub-frame, we need to make that frame's document
     // active to remove the element's active state.
-    if (this._highlightElement.ownerDocument != BrowserApp.selectedBrowser.contentWindow.document)
-      DOMUtils.setContentState(this._highlightElement.ownerDocument.documentElement, kStateActive);
+    if (ownerDocument != BrowserApp.selectedBrowser.contentWindow.document)
+      DOMUtils.setContentState(ownerDocument.documentElement, kStateActive);
 
     DOMUtils.setContentState(BrowserApp.selectedBrowser.contentWindow.document.documentElement, kStateActive);
-    this._highlightElement = null;
   },
 
   _updateLastPosition: function(x, y, dx, dy) {
@@ -3500,7 +3520,7 @@ var BrowserEventHandler = {
       for (let i = 0; i < rects.length; i++) {
         let rect = rects[i];
         let inBounds =
-          (aX> rect.left  && aX < (rect.left + rect.width)) &&
+          (aX > rect.left && aX < (rect.left + rect.width)) &&
           (aY > rect.top && aY < (rect.top + rect.height));
         if (inBounds) {
           isTouchClick = false;
@@ -3511,8 +3531,8 @@ var BrowserEventHandler = {
       if (isTouchClick) {
         let rect = rects[0];
         if (rect.width != 0 || rect.height != 0) {
-          aX = Math.min(rect.left + rect.width, Math.max(rect.left, aX));
-          aY = Math.min(rect.top + rect.height, Math.max(rect.top,  aY));
+          aX = Math.min(Math.floor(rect.left + rect.width), Math.max(Math.ceil(rect.left), aX));
+          aY = Math.min(Math.floor(rect.top + rect.height), Math.max(Math.ceil(rect.top),  aY));
         }
       }
     }
@@ -3523,7 +3543,7 @@ var BrowserEventHandler = {
     let window = aElement.ownerDocument.defaultView;
     try {
       let cwu = window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
-      cwu.sendMouseEventToWindow(aName, Math.round(aX), Math.round(aY), 0, 1, 0, true);
+      cwu.sendMouseEventToWindow(aName, aX, aY, 0, 1, 0, true);
     } catch(e) {
       Cu.reportError(e);
     }
@@ -6098,6 +6118,7 @@ var RemoteDebugger = {
     try {
       if (!DebuggerServer.initialized) {
         DebuggerServer.init(this._allowConnection);
+        DebuggerServer.addBrowserActors();
         DebuggerServer.addActors("chrome://browser/content/dbg-browser-actors.js");
       }
 
@@ -6320,18 +6341,18 @@ let Reader = {
         let doc = tab.browser.contentWindow.document.cloneNode(true);
 
         let readability = new Readability(uri, doc);
-        article = readability.parse();
+        readability.parse(function (article) {
+          if (!article) {
+            this.log("Failed to parse page");
+            callback(null);
+            return;
+          }
 
-        if (!article) {
-          this.log("Failed to parse page");
-          callback(null);
-          return;
-        }
+          // Append URL to the article data
+          article.url = url;
 
-        // Append URL to the article data
-        article.url = url;
-
-        callback(article);
+          callback(article);
+        }.bind(this));
       }.bind(this));
     } catch (e) {
       this.log("Error parsing document from tab: " + e);
@@ -6358,7 +6379,7 @@ let Reader = {
         let doc = tab.browser.contentWindow.document;
 
         let readability = new Readability(uri, doc);
-        callback(readability.check());
+        readability.check(callback);
       }.bind(this));
     } catch (e) {
       this.log("Error checking tab readability: " + e);
@@ -6501,9 +6522,6 @@ let Reader = {
       }
 
       callback(doc);
-
-      // Request has finished, remove browser element
-      browser.parentNode.removeChild(browser);
     }.bind(this));
 
     browser.loadURIWithFlags(url, Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
@@ -6519,33 +6537,37 @@ let Reader = {
       request.browser = this._downloadDocument(url, function(doc) {
         this.log("Finished loading page: " + doc);
 
-        // Delete reference to the browser element as we're
-        // now done with this request.
-        delete request.browser;
-
         if (!doc) {
           this.log("Error loading page");
           this._runCallbacksAndFinish(request, null);
+          return;
         }
 
         this.log("Parsing response with Readability");
 
         let uri = Services.io.newURI(url, null, null);
         let readability = new Readability(uri, doc);
-        let article = readability.parse();
+        readability.parse(function (article) {
+          // Delete reference to the browser element as we've finished parsing.
+          let browser = request.browser;
+          if (browser) {
+            browser.parentNode.removeChild(browser);
+            delete request.browser;
+          }
 
-        if (!article) {
-          this.log("Failed to parse page");
-          this._runCallbacksAndFinish(request, null);
-          return;
-        }
+          if (!article) {
+            this.log("Failed to parse page");
+            this._runCallbacksAndFinish(request, null);
+            return;
+          }
 
-        this.log("Parsing has been successful");
+          this.log("Parsing has been successful");
 
-        // Append URL to the article data
-        article.url = url;
+          // Append URL to the article data
+          article.url = url;
 
-        this._runCallbacksAndFinish(request, article);
+          this._runCallbacksAndFinish(request, article);
+        }.bind(this));
       }.bind(this));
     } catch (e) {
       this.log("Error downloading and parsing document: " + e);
