@@ -9,14 +9,22 @@
 #define mozilla_layers_ShadowLayers_h 1
 
 #include "gfxASurface.h"
+#include "GLDefs.h"
 
 #include "ImageLayers.h"
-#include "Layers.h"
+#include "LayersBackend.h"
 #include "mozilla/ipc/SharedMemory.h"
 
 class gfxSharedImageSurface;
 
 namespace mozilla {
+
+namespace gl {
+class GLContext;
+class TextureImage;
+}
+using namespace gl;
+
 namespace layers {
 
 class Edit;
@@ -31,6 +39,7 @@ class ShadowContainerLayer;
 class ShadowImageLayer;
 class ShadowColorLayer;
 class ShadowCanvasLayer;
+class ShadowRefLayer;
 class SurfaceDescriptor;
 class ThebesBuffer;
 class TiledLayerComposer;
@@ -100,7 +109,6 @@ class ShadowLayerForwarder
 
 public:
   typedef gfxASurface::gfxContentType gfxContentType;
-  typedef LayerManager::LayersBackend LayersBackend;
 
   virtual ~ShadowLayerForwarder();
 
@@ -126,6 +134,7 @@ public:
   void CreatedImageLayer(ShadowableLayer* aImage);
   void CreatedColorLayer(ShadowableLayer* aColor);
   void CreatedCanvasLayer(ShadowableLayer* aCanvas);
+  void CreatedRefLayer(ShadowableLayer* aRef);
 
   /**
    * The specified layer is destroying its buffers.
@@ -398,6 +407,18 @@ public:
   virtual already_AddRefed<ShadowColorLayer> CreateShadowColorLayer() = 0;
   /** CONSTRUCTION PHASE ONLY */
   virtual already_AddRefed<ShadowCanvasLayer> CreateShadowCanvasLayer() = 0;
+  /** CONSTRUCTION PHASE ONLY */
+  virtual already_AddRefed<ShadowRefLayer> CreateShadowRefLayer() { return nsnull; }
+
+  /**
+   * Try to open |aDescriptor| for direct texturing.  If the
+   * underlying surface supports direct texturing, a non-null
+   * TextureImage is returned.  Otherwise null is returned.
+   */
+  static already_AddRefed<TextureImage>
+  OpenDescriptorForDirectTexturing(GLContext* aContext,
+                                   const SurfaceDescriptor& aDescriptor,
+                                   GLenum aWrapMode);
 
   static void PlatformSyncBeforeReplyUpdate();
 
@@ -460,7 +481,7 @@ public:
   virtual void DestroySharedSurface(gfxSharedImageSurface* aSurface) = 0;
   virtual void DestroySharedSurface(SurfaceDescriptor* aSurface) = 0;
 protected:
-  ~ISurfaceDeAllocator() {};
+  ~ISurfaceDeAllocator() {}
 };
 
 /**
@@ -487,7 +508,7 @@ public:
     mAllocator = aAllocator;
   }
 
-  virtual void DestroyFrontBuffer() { };
+  virtual void DestroyFrontBuffer() { }
 
   /**
    * The following methods are
@@ -662,6 +683,20 @@ public:
 protected:
   ShadowColorLayer(LayerManager* aManager, void* aImplData)
     : ColorLayer(aManager, aImplData)
+  {}
+};
+
+class ShadowRefLayer : public ShadowLayer,
+                       public RefLayer
+{
+public:
+  virtual ShadowLayer* AsShadowLayer() { return this; }
+
+  MOZ_LAYER_DECL_NAME("ShadowRefLayer", TYPE_SHADOW)
+
+protected:
+  ShadowRefLayer(LayerManager* aManager, void* aImplData)
+    : RefLayer(aManager, aImplData)
   {}
 };
 

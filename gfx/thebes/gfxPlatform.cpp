@@ -61,6 +61,10 @@
 #include "GLContext.h"
 #include "GLContextProvider.h"
 
+#ifdef MOZ_WIDGET_ANDROID
+#include "TexturePoolOGL.h"
+#endif
+
 #include "mozilla/FunctionTimer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Assertions.h"
@@ -262,15 +266,6 @@ gfxPlatform::Init()
     useOffMainThreadCompositing = Preferences::GetBool(
           "layers.offmainthreadcomposition.enabled", 
           false);
-    // Until https://bugzilla.mozilla.org/show_bug.cgi?id=745148 lands,
-    // we use either omtc or content processes, but not both.  Prefer
-    // OOP content to omtc.  (Currently, this only affects b2g.)
-    //
-    // See https://bugzilla.mozilla.org/show_bug.cgi?id=761962 .
-    if (!Preferences::GetBool("dom.ipc.tabs.disabled", true)) {
-        // Disable omtc if OOP content isn't force-disabled.
-        useOffMainThreadCompositing = false;
-    }
 #endif
 
     if (useOffMainThreadCompositing && (XRE_GetProcessType() == 
@@ -346,6 +341,11 @@ gfxPlatform::Init()
 
     gPlatform->mWorkAroundDriverBugs = Preferences::GetBool("gfx.work-around-driver-bugs", true);
 
+#ifdef MOZ_WIDGET_ANDROID
+    // Texture pool init
+    mozilla::gl::TexturePoolOGL::Init();
+#endif
+
     // Force registration of the gfx component, thus arranging for
     // ::Shutdown to be called.
     nsCOMPtr<nsISupports> forceReg
@@ -381,6 +381,11 @@ gfxPlatform::Shutdown()
         Preferences::RemoveObservers(gPlatform->mFontPrefsObserver, kObservedPrefs);
         gPlatform->mFontPrefsObserver = nsnull;
     }
+
+#ifdef MOZ_WIDGET_ANDROID
+    // Shut down the texture pool
+    mozilla::gl::TexturePoolOGL::Shutdown();
+#endif
 
     // Shut down the default GL context provider.
     mozilla::gl::GLContextProvider::Shutdown();
@@ -1502,7 +1507,7 @@ gfxPlatform::GetLog(eGfxLog aWhichLog)
 int
 gfxPlatform::GetScreenDepth() const
 {
-    MOZ_ASSERT(false, "Not implemented on this platform");
+    NS_WARNING("GetScreenDepth not implemented on this platform -- returning 0!");
     return 0;
 }
 

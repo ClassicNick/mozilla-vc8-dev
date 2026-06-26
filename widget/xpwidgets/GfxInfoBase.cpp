@@ -513,7 +513,7 @@ GfxInfoBase::Init()
 }
 
 NS_IMETHODIMP
-GfxInfoBase::GetFeatureStatus(PRInt32 aFeature, PRInt32* aStatus NS_OUTPARAM)
+GfxInfoBase::GetFeatureStatus(PRInt32 aFeature, PRInt32* aStatus)
 {
   if (GetPrefValueForFeature(aFeature, *aStatus))
     return NS_OK;
@@ -705,7 +705,7 @@ GfxInfoBase::GetFeatureStatusImpl(PRInt32 aFeature,
 
 NS_IMETHODIMP
 GfxInfoBase::GetFeatureSuggestedDriverVersion(PRInt32 aFeature,
-                                              nsAString& aVersion NS_OUTPARAM)
+                                              nsAString& aVersion)
 {
   nsCString version;
   if (GetPrefValueForDriverVersion(version)) {
@@ -721,7 +721,7 @@ GfxInfoBase::GetFeatureSuggestedDriverVersion(PRInt32 aFeature,
 
 NS_IMETHODIMP
 GfxInfoBase::GetWebGLParameter(const nsAString& aParam,
-                               nsAString& aResult NS_OUTPARAM)
+                               nsAString& aResult)
 {
   return GfxInfoWebGL::GetWebGLParameter(aParam, aResult);
 }
@@ -795,7 +795,7 @@ GfxInfoBase::LogFailure(const nsACString &failure)
 
 /* void getFailures ([optional] out unsigned long failureCount, [array, size_is (failureCount), retval] out string failures); */
 /* XPConnect method of returning arrays is very ugly. Would not recommend. Fallable nsMemory::Alloc makes things worse */
-NS_IMETHODIMP GfxInfoBase::GetFailures(PRUint32 *failureCount NS_OUTPARAM, char ***failures NS_OUTPARAM)
+NS_IMETHODIMP GfxInfoBase::GetFailures(PRUint32 *failureCount, char ***failures)
 {
 
   NS_ENSURE_ARG_POINTER(failureCount);

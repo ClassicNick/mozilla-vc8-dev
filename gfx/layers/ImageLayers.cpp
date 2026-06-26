@@ -6,6 +6,7 @@
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/ipc/CrossProcessMutex.h"
 #include "ImageLayers.h"
+#include "SharedTextureImage.h"
 #include "gfxImageSurface.h"
 #include "gfxSharedImageSurface.h"
 #include "yuv_convert.h"
@@ -45,9 +46,15 @@ ImageFactory::CreateImage(const Image::Format *aFormats,
     img = new PlanarYCbCrImage(aRecycleBin);
   } else if (FormatInList(aFormats, aNumFormats, Image::CAIRO_SURFACE)) {
     img = new CairoImage();
+  } else if (FormatInList(aFormats, aNumFormats, Image::SHARED_TEXTURE)) {
+    img = new SharedTextureImage();
 #ifdef XP_MACOSX
   } else if (FormatInList(aFormats, aNumFormats, Image::MAC_IO_SURFACE)) {
     img = new MacIOSurfaceImage();
+#endif
+#ifdef MOZ_WIDGET_GONK
+  } else if (FormatInList(aFormats, aNumFormats, Image::GONK_IO_SURFACE)) {
+    img = new GonkIOSurfaceImage();
 #endif
   }
   return img.forget();
