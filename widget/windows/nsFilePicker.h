@@ -95,15 +95,10 @@ protected:
   bool FilePickerWrapper(OPENFILENAMEW* ofn, PickerType aType);
   bool ShowXPFolderPicker(const nsString& aInitialDir);
   bool ShowXPFilePicker(const nsString& aInitialDir);
-<<<<<<< HEAD
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  bool ShowFolderPicker(const nsString& aInitialDir);
-  bool ShowFilePicker(const nsString& aInitialDir);
-#endif
-=======
   bool ShowFolderPicker(const nsString& aInitialDir, bool &aWasInitError);
   bool ShowFilePicker(const nsString& aInitialDir, bool &aWasInitError);
->>>>>>> 6114f48
+#endif
   void AppendXPFilter(const nsAString& aTitle, const nsAString& aFilter);
   void RememberLastUsedDirectory();
   bool IsPrivacyModeEnabled();

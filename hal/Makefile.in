@@ -24,6 +24,7 @@ LIBRARY_NAME   = hal_s
 FORCE_STATIC_LIB = 1
 LIBXUL_LIBRARY = 1
 EXPORT_LIBRARY = 1
+FAIL_ON_WARNINGS = 1
 
 EXPORTS_NAMESPACES = mozilla
 EXPORTS_mozilla = \
@@ -87,6 +88,7 @@ CPPSRCS += \
   FallbackVibration.cpp \
   FallbackScreenConfiguration.cpp \
   FallbackPower.cpp \
+  FallbackAlarm.cpp \
   $(NULL)
 endif
 else ifeq (cocoa,$(MOZ_WIDGET_TOOLKIT))

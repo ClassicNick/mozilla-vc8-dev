@@ -290,7 +290,7 @@ js::RunScript(JSContext *cx, JSScript *script, StackFrame *fp)
 #ifdef JS_METHODJIT
     mjit::CompileStatus status;
     status = mjit::CanMethodJIT(cx, script, script->code, fp->isConstructing(),
-                                mjit::CompileRequest_Interpreter);
+                                mjit::CompileRequest_Interpreter, fp);
     if (status == mjit::Compile_Error)
         return false;
 
@@ -479,7 +479,7 @@ js::ExecuteKernel(JSContext *cx, JSScript *script_, JSObject &scopeChain, const 
     if (!cx->stack.pushExecuteFrame(cx, script, thisv, scopeChain, type, evalInFrame, &efg))
         return false;
 
-    if (!script->ensureRanAnalysis(cx, &scopeChain))
+    if (!script->ensureRanAnalysis(cx))
         return false;
     TypeScript::SetThis(cx, script, efg.fp()->thisValue());
 
@@ -839,7 +839,7 @@ TryNoteIter::settle()
  * in *expr.
  */
 static bool
-DoIncDec(JSContext *cx, JSScript *script, jsbytecode *pc, const Value &v, Value *slot, Value *expr)
+DoIncDec(JSContext *cx, HandleScript script, jsbytecode *pc, const Value &v, Value *slot, Value *expr)
 {
     const JSCodeSpec &cs = js_CodeSpec[*pc];
 
@@ -1488,7 +1488,7 @@ check_backedge:
         DO_OP();
     mjit::CompileStatus status =
         mjit::CanMethodJIT(cx, script, regs.pc, regs.fp()->isConstructing(),
-                           mjit::CompileRequest_Interpreter);
+                           mjit::CompileRequest_Interpreter, regs.fp());
     if (status == mjit::Compile_Error)
         goto error;
     if (status == mjit::Compile_Okay) {
@@ -2475,7 +2475,8 @@ BEGIN_CASE(JSOP_FUNCALL)
         /* Try to ensure methods are method JIT'd.  */
         mjit::CompileStatus status = mjit::CanMethodJIT(cx, script, script->code,
                                                         construct,
-                                                        mjit::CompileRequest_Interpreter);
+                                                        mjit::CompileRequest_Interpreter,
+                                                        regs.fp());
         if (status == mjit::Compile_Error)
             goto error;
         if (status == mjit::Compile_Okay) {
@@ -2833,7 +2834,10 @@ BEGIN_CASE(JSOP_DEFVAR)
     RootedObject &obj = rootObject0;
     obj = &regs.fp()->varObj();
 
-    if (!DefVarOrConstOperation(cx, obj, script->getName(regs.pc), attrs))
+    RootedPropertyName &name = rootName0;
+    name = script->getName(regs.pc);
+
+    if (!DefVarOrConstOperation(cx, obj, name, attrs))
         goto error;
 }
 END_CASE(JSOP_DEFVAR)
@@ -2967,9 +2971,11 @@ BEGIN_CASE(JSOP_SETTER)
 {
     JSOp op2 = JSOp(*++regs.pc);
     RootedId &id = rootId0;
-    Value rval;
+    RootedValue &rval_ = rootValue0;
+    Value &rval = rval_.get();
     int i;
-    JSObject *obj;
+
+    RootedObject &obj = rootObject0;
     switch (op2) {
       case JSOP_SETNAME:
       case JSOP_SETPROP:
@@ -3121,7 +3127,8 @@ BEGIN_CASE(JSOP_INITPROP)
 {
     /* Load the property's initial value into rval. */
     JS_ASSERT(regs.stackDepth() >= 2);
-    Value rval = regs.sp[-1];
+    RootedValue &rval = rootValue0;
+    rval = regs.sp[-1];
 
     /* Load the object being initialized into lval/obj. */
     RootedObject &obj = rootObject0;
@@ -3134,7 +3141,7 @@ BEGIN_CASE(JSOP_INITPROP)
     id = NameToId(name);
 
     if (JS_UNLIKELY(name == cx->runtime->atomState.protoAtom)
-        ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, script->strictModeCode)
+        ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, rval.address(), script->strictModeCode)
         : !DefineNativeProperty(cx, obj, id, rval, NULL, NULL,
                                 JSPROP_ENUMERATE, 0, 0, 0)) {
         goto error;

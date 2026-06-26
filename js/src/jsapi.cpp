@@ -732,8 +732,18 @@ JSRuntime::JSRuntime()
     gcVerifyData(NULL),
     gcChunkAllocationSinceLastGC(false),
     gcNextFullGCTime(0),
+    gcLastGCTime(0),
     gcJitReleaseTime(0),
     gcMode(JSGC_MODE_GLOBAL),
+    gcHighFrequencyGC(false),
+    gcHighFrequencyTimeThreshold(1000),
+    gcHighFrequencyLowLimitBytes(100 * 1024 * 1024),
+    gcHighFrequencyHighLimitBytes(500 * 1024 * 1024),
+    gcHighFrequencyHeapGrowthMax(3.0),
+    gcHighFrequencyHeapGrowthMin(1.5),
+    gcLowFrequencyHeapGrowth(1.5),
+    gcDynamicHeapGrowth(false),
+    gcDynamicMarkSlice(false),
     gcShouldCleanUpEverything(false),
     gcIsNeeded(0),
     gcWeakMapList(NULL),
@@ -774,6 +784,7 @@ JSRuntime::JSRuntime()
     positiveInfinityValue(UndefinedValue()),
     emptyString(NULL),
     debugMode(false),
+    spsProfiler(thisFromCtor()),
     profilingScripts(false),
     alwaysPreserveCode(false),
     hadOutOfMemory(false),
@@ -863,6 +874,9 @@ JSRuntime::init(uint32_t maxbytes)
         return false;
 
     if (!scriptFilenameTable.init())
+        return false;
+
+    if (!evalCache.init())
         return false;
 
     debugScopes = this->new_<DebugScopes>(this);
@@ -1559,6 +1573,15 @@ JS_TransplantObject(JSContext *cx, JSObject *origobj, JSObject *target)
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(target));
 
+    /*
+     * Transplantation typically allocates new wrappers in every compartment. If
+     * an incremental GC is active, this causes every compartment to be leaked
+     * for that GC. Hence, we finish any ongoing incremental GC before the
+     * transplant to avoid leaks.
+     */
+    if (cx->runtime->gcIncrementalState != NO_INCREMENTAL)
+        FinishIncrementalGC(cx->runtime, gcreason::TRANSPLANT);
+
     JSCompartment *destination = target->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
     Value origv = ObjectValue(*origobj);
@@ -1990,9 +2013,10 @@ JS_EnumerateStandardClasses(JSContext *cx, JSObject *obj_)
      * Check whether we need to bind 'undefined' and define it if so.
      * Since ES5 15.1.1.3 undefined can't be deleted.
      */
-    PropertyName *name = cx->runtime->atomState.typeAtoms[JSTYPE_VOID];
-    if (!obj->nativeContains(cx, NameToId(name)) &&
-        !obj->defineProperty(cx, name, UndefinedValue(),
+    RootedPropertyName undefinedName(cx, cx->runtime->atomState.typeAtoms[JSTYPE_VOID]);
+    RootedId undefinedId(cx, NameToId(undefinedName));
+    if (!obj->nativeContains(cx, (js::HandleId) undefinedId) &&
+        !obj->defineProperty(cx, undefinedName, UndefinedValue(),
                              JS_PropertyStub, JS_StrictPropertyStub,
                              JSPROP_PERMANENT | JSPROP_READONLY)) {
         return false;
@@ -2069,7 +2093,8 @@ static JSIdArray *
 EnumerateIfResolved(JSContext *cx, JSObject *obj, PropertyName *name, JSIdArray *ida,
                     int *ip, JSBool *foundp)
 {
-    *foundp = obj->nativeContains(cx, NameToId(name));
+    RootedId id(cx, NameToId(name));
+    *foundp = obj->nativeContains(cx, (js::HandleId) id);
     if (*foundp)
         ida = AddNameToArray(cx, name, ida, ip);
     return ida;
@@ -2931,6 +2956,30 @@ JS_SetGCParameter(JSRuntime *rt, JSGCParamKey key, uint32_t value)
       case JSGC_MARK_STACK_LIMIT:
         js::SetMarkStackLimit(rt, value);
         break;
+      case JSGC_HIGH_FREQUENCY_TIME_LIMIT:
+        rt->gcHighFrequencyTimeThreshold = value;
+        break;
+      case JSGC_HIGH_FREQUENCY_LOW_LIMIT:
+        rt->gcHighFrequencyLowLimitBytes = value * 1024 * 1024;
+        break;
+      case JSGC_HIGH_FREQUENCY_HIGH_LIMIT:
+        rt->gcHighFrequencyHighLimitBytes = value * 1024 * 1024;
+        break;
+      case JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MAX:
+        rt->gcHighFrequencyHeapGrowthMax = value / 100.0;
+        break;
+      case JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MIN:
+        rt->gcHighFrequencyHeapGrowthMin = value / 100.0;
+        break;
+      case JSGC_LOW_FREQUENCY_HEAP_GROWTH:
+        rt->gcLowFrequencyHeapGrowth = value / 100.0;
+        break;
+      case JSGC_DYNAMIC_HEAP_GROWTH:
+        rt->gcDynamicHeapGrowth = value;
+        break;
+      case JSGC_DYNAMIC_MARK_SLICE:
+        rt->gcDynamicMarkSlice = value;
+        break;
       default:
         JS_ASSERT(key == JSGC_MODE);
         rt->gcMode = JSGCMode(value);
@@ -2961,6 +3010,22 @@ JS_GetGCParameter(JSRuntime *rt, JSGCParamKey key)
         return uint32_t(rt->gcSliceBudget > 0 ? rt->gcSliceBudget / PRMJ_USEC_PER_MSEC : 0);
       case JSGC_MARK_STACK_LIMIT:
         return rt->gcMarker.sizeLimit();
+      case JSGC_HIGH_FREQUENCY_TIME_LIMIT:
+        return rt->gcHighFrequencyTimeThreshold;
+      case JSGC_HIGH_FREQUENCY_LOW_LIMIT:
+        return rt->gcHighFrequencyLowLimitBytes / 1024 / 1024;
+      case JSGC_HIGH_FREQUENCY_HIGH_LIMIT:
+        return rt->gcHighFrequencyHighLimitBytes / 1024 / 1024;
+      case JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MAX:
+        return uint32_t(rt->gcHighFrequencyHeapGrowthMax * 100);
+      case JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MIN:
+        return uint32_t(rt->gcHighFrequencyHeapGrowthMin * 100);
+      case JSGC_LOW_FREQUENCY_HEAP_GROWTH:
+        return uint32_t(rt->gcLowFrequencyHeapGrowth * 100);
+      case JSGC_DYNAMIC_HEAP_GROWTH:
+        return rt->gcDynamicHeapGrowth;
+      case JSGC_DYNAMIC_MARK_SLICE:
+        return rt->gcDynamicMarkSlice;
       default:
         JS_ASSERT(key == JSGC_NUMBER);
         return uint32_t(rt->gcNumber);
@@ -3313,15 +3378,11 @@ JS_NewObject(JSContext *cx, JSClass *jsclasp, JSObject *proto_, JSObject *parent
     JS_ASSERT(clasp != &FunctionClass);
     JS_ASSERT(!(clasp->flags & JSCLASS_IS_GLOBAL));
 
-    if (proto && !proto->setNewTypeUnknown(cx))
-        return NULL;
-
     JSObject *obj = NewObjectWithClassProto(cx, clasp, proto, parent);
     AssertRootingUnnecessary safe(cx);
     if (obj) {
         if (clasp->ext.equality)
             MarkTypeObjectFlags(cx, obj, OBJECT_FLAG_SPECIAL_EQUALITY);
-        MarkTypeObjectUnknownProperties(cx, obj->type());
     }
 
     JS_ASSERT_IF(obj, obj->getParent());
@@ -3357,7 +3418,8 @@ JS_NewObjectForConstructor(JSContext *cx, JSClass *clasp, const jsval *vp)
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, *vp);
 
-    return js_CreateThis(cx, Valueify(clasp), JSVAL_TO_OBJECT(*vp));
+    RootedObject obj(cx, JSVAL_TO_OBJECT(*vp));
+    return js_CreateThis(cx, Valueify(clasp), obj);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -3594,7 +3656,7 @@ JS_AlreadyHasOwnPropertyById(JSContext *cx, JSObject *obj_, jsid id_, JSBool *fo
         return JS_TRUE;
     }
 
-    *foundp = obj->nativeContains(cx, id);
+    *foundp = obj->nativeContains(cx, (js::HandleId) id);
     return JS_TRUE;
 }
 
@@ -4609,8 +4671,15 @@ JS_CloneFunctionObject(JSContext *cx, JSObject *funobj, JSObject *parent_)
         return NULL;
     }
 
+    /*
+     * If a function was compiled as compile-and-go or was compiled to be
+     * lexically nested inside some other script, we cannot clone it without
+     * breaking the compiler's assumptions.
+     */
     RootedFunction fun(cx, funobj->toFunction());
-    if (fun->isInterpreted() && fun->script()->compileAndGo) {
+    if (fun->isInterpreted() &&
+        (fun->script()->compileAndGo || fun->script()->enclosingStaticScope()))
+    {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL,
                              JSMSG_BAD_CLONE_FUNOBJ_SCOPE);
         return NULL;
@@ -4848,10 +4917,9 @@ CompileUCScriptForPrincipalsCommon(JSContext *cx, JSObject *obj_,
 
     bool compileAndGo = cx->hasRunOption(JSOPTION_COMPILE_N_GO);
     bool noScriptRval = cx->hasRunOption(JSOPTION_NO_SCRIPT_RVAL);
-    bool needScriptGlobal = true;
     return frontend::CompileScript(cx, obj, NULL, principals, originPrincipals,
-                                   compileAndGo, noScriptRval, needScriptGlobal,
-                                   chars, length, filename, lineno, version);
+                                   compileAndGo, noScriptRval, chars, length,
+                                   filename, lineno, version);
 }
 
 extern JS_PUBLIC_API(JSScript *)
@@ -5054,10 +5122,9 @@ CompileUTF8FileHelper(JSContext *cx, JSObject *obj_, JSPrincipals *principals,
     if (JS_DecodeUTF8(cx, buf, len, decodebuf, &decodelen)) {
         bool compileAndGo = cx->hasRunOption(JSOPTION_COMPILE_N_GO);
         bool noScriptRval = cx->hasRunOption(JSOPTION_NO_SCRIPT_RVAL);
-        bool needScriptGlobal = true;
         script = frontend::CompileScript(cx, obj, NULL, principals, NULL,
-                                         compileAndGo, noScriptRval, needScriptGlobal,
-                                         decodebuf, decodelen, filename, 1, cx->findVersion());
+                                         compileAndGo, noScriptRval, decodebuf, decodelen,
+                                         filename, 1, cx->findVersion());
     } else {
         script = NULL;
     }
@@ -5127,9 +5194,7 @@ JS_PUBLIC_API(JSObject *)
 JS_GetGlobalFromScript(JSScript *script)
 {
     JS_ASSERT(!script->isCachedEval);
-    JS_ASSERT(script->globalObject);
-
-    return script->globalObject;
+    return &script->global();
 }
 
 static JSFunction *
@@ -5324,7 +5389,7 @@ JS_ExecuteScript(JSContext *cx, JSObject *obj, JSScript *scriptArg_, jsval *rval
      * mozilla, but there doesn't seem to be one, so we handle it here.
      */
     if (scriptArg->compartment() != obj->compartment()) {
-        script = CloneScript(cx, scriptArg);
+        script = CloneScript(cx, NullPtr(), NullPtr(), scriptArg);
         if (!script.get())
             return false;
     } else {
@@ -5355,13 +5420,12 @@ EvaluateUCScriptForPrincipalsCommon(JSContext *cx, JSObject *obj_,
 
     bool compileAndGo = true;
     bool noScriptRval = !rval;
-    bool needScriptGlobal = true;
 
     CHECK_REQUEST(cx);
     AutoLastFrameCheck lfc(cx);
     JSScript *script = frontend::CompileScript(cx, obj, NULL, principals, originPrincipals,
-                                               compileAndGo, noScriptRval, needScriptGlobal,
-                                               chars, length, filename, lineno, compileVersion);
+                                               compileAndGo, noScriptRval, chars, length,
+                                               filename, lineno, compileVersion);
     if (!script)
         return false;
 
@@ -5979,12 +6043,15 @@ JS_PUBLIC_API(JSBool)
 JS_Stringify(JSContext *cx, jsval *vp, JSObject *replacer, jsval space,
              JSONWriteCallback callback, void *data)
 {
+    RootedValue value(cx, *vp);
+
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, replacer, space);
     StringBuffer sb(cx);
-    if (!js_Stringify(cx, vp, replacer, space, sb))
+    if (!js_Stringify(cx, &value, replacer, space, sb))
         return false;
+    *vp = value;
     if (sb.empty()) {
         JSAtom *nullAtom = cx->runtime->atomState.nullAtom;
         return callback(nullAtom->chars(), nullAtom->length(), data);
@@ -6349,6 +6416,14 @@ JS_ObjectIsDate(JSContext *cx, JSObject *obj)
     AssertHeapIsIdle(cx);
     JS_ASSERT(obj);
     return obj->isDate();
+}
+
+JS_PUBLIC_API(void)
+JS_ClearDateCaches(JSContext *cx)
+{
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+    js_ClearDateCaches();
 }
 
 /************************************************************************/

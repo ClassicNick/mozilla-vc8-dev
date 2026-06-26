@@ -209,14 +209,12 @@ FrameWorker.prototype = {
       }
     }
 
+    delete workerCache[this.url];
+
     // let pending events get delivered before actually removing the frame
     Services.tm.mainThread.dispatch(function deleteWorkerFrame() {
       // now nuke the iframe itself and forget everything about this worker.
-      let doc = Cc["@mozilla.org/appshell/appShellService;1"]
-                      .getService(Ci.nsIAppShellService)
-                      .hiddenDOMWindow.document;
-      doc.documentElement.removeChild(this.frame);
-      delete workerCache[this.url];
+      this.frame.parentNode.removeChild(this.frame);
     }.bind(this), Ci.nsIThread.DISPATCH_NORMAL);
   }
 };

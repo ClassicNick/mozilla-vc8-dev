@@ -46,6 +46,7 @@ JSCompartment::JSCompartment(JSRuntime *rt)
     gcPreserveCode(false),
     gcBytes(0),
     gcTriggerBytes(0),
+    gcHeapGrowthFactor(3.0),
     hold(false),
     isSystemCompartment(false),
     lastCodeRelease(0),
@@ -489,7 +490,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepNewTypeObjectTable(newTypeObjects);
         sweepNewTypeObjectTable(lazyTypeObjects);
 
-        if (emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
+		if ((js::types::TypeObject*) emptyTypeObject && !IsTypeObjectMarked(emptyTypeObject.unsafeGet()))
             emptyTypeObject = NULL;
 
         sweepBreakpoints(fop);
@@ -534,7 +535,6 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
                     if (releaseTypes) {
                         script->types->destroy();
                         script->types = NULL;
-                        script->typesPurged = true;
                     }
                 }
             }

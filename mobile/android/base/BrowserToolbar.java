@@ -7,6 +7,8 @@ package org.mozilla.gecko;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -39,7 +41,6 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.LinearLayout.LayoutParams;
 import android.widget.PopupWindow;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -66,6 +67,7 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
     private ImageButton mMenu;
     private LinearLayout mActionItemBar;
     private MenuPopup mMenuPopup;
+    private List<View> mFocusOrder;
 
     final private Context mContext;
     private LayoutInflater mInflater;
@@ -177,10 +179,12 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
             public void onClick(View view) {
                 int[] lockLocation = new int[2];
                 view.getLocationOnScreen(lockLocation);
-                LayoutParams lockLayoutParams = (LayoutParams) view.getLayoutParams();
+
+                RelativeLayout.LayoutParams iconsLayoutParams =
+                        (RelativeLayout.LayoutParams) ((View) view.getParent()).getLayoutParams();
 
                 // Calculate the left margin for the arrow based on the position of the lock icon.
-                int leftMargin = lockLocation[0] - lockLayoutParams.rightMargin;
+                int leftMargin = lockLocation[0] - iconsLayoutParams.rightMargin;
                 SiteIdentityPopup.getInstance().show(mSiteSecurity, leftMargin);
             }
         });
@@ -221,17 +225,7 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
 
         mMenu = (ImageButton) mLayout.findViewById(R.id.menu);
         mActionItemBar = (LinearLayout) mLayout.findViewById(R.id.menu_items);
-        mHasSoftMenuButton = false;
-
-        if (Build.VERSION.SDK_INT >= 11)
-            mHasSoftMenuButton = true;
-
-        if (Build.VERSION.SDK_INT >= 14) {
-            if(!ViewConfiguration.get(GeckoApp.mAppContext).hasPermanentMenuKey())
-               mHasSoftMenuButton = true;
-            else
-               mHasSoftMenuButton = false;
-        }
+        mHasSoftMenuButton = GeckoApp.mAppContext.hasPermanentMenuKey();
 
         if (mHasSoftMenuButton) {
             mMenu.setVisibility(View.VISIBLE);
@@ -263,6 +257,8 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
                 }
             }
         }
+
+        mFocusOrder = Arrays.asList(mBack, mForward, mAwesomeBar, mReader, mSiteSecurity, mStop, mTabs);
     }
 
     public View getLayout() {
@@ -283,7 +279,7 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
             case START:
                 if (Tabs.getInstance().isSelectedTab(tab)) {
                     setSecurityMode(tab.getSecurityMode());
-                    setReaderVisibility(tab.getReaderEnabled());
+                    setReaderMode(tab.getReaderEnabled());
                     updateBackButton(tab.canDoBack());
                     updateForwardButton(tab.canDoForward());
                     Boolean showProgress = (Boolean)data;
@@ -354,9 +350,10 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
         }
 
         mTabsCount.setText(String.valueOf(count));
+        mTabs.setContentDescription((count > 1) ?
+                                    mContext.getString(R.string.num_tabs, count) :
+                                    mContext.getString(R.string.one_tab));
         mCount = count;
-        mTabs.setContentDescription(mContext.getString(R.string.num_tabs, count));
-
         mHandler.postDelayed(new Runnable() {
             public void run() {
                 ((TextView) mTabsCount.getCurrentView()).setTextColor(mContext.getResources().getColor(R.color.url_bar_text_highlight));
@@ -372,7 +369,9 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
 
     public void updateTabCount(int count) {
         mTabsCount.setCurrentText(String.valueOf(count));
-        mTabs.setContentDescription(mContext.getString(R.string.num_tabs, count));
+        mTabs.setContentDescription((count > 1) ?
+                                    mContext.getString(R.string.num_tabs, count) :
+                                    mContext.getString(R.string.one_tab));
         mCount = count;
         updateTabs(GeckoApp.mAppContext.areTabsShown());
     }
@@ -405,11 +404,11 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
         if (visible) {
             mFavicon.setImageDrawable(mProgressSpinner);
             mProgressSpinner.start();
-            setStopVisibility(true);
+            setPageActionVisibility(true);
             Log.i(LOGTAG, "zerdatime " + SystemClock.uptimeMillis() + " - Throbber start");
         } else {
             mProgressSpinner.stop();
-            setStopVisibility(false);
+            setPageActionVisibility(false);
             Tab selectedTab = Tabs.getInstance().getSelectedTab();
             if (selectedTab != null)
                 setFavicon(selectedTab.getFavicon());
@@ -417,16 +416,39 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
         }
     }
 
-    public void setStopVisibility(boolean visible) {
-        mStop.setVisibility(visible ? View.VISIBLE : View.GONE);
+    public void setPageActionVisibility(boolean isLoading) {
+        // Handle the loading mode page actions
+        mStop.setVisibility(isLoading ? View.VISIBLE : View.GONE);
 
-        mSiteSecurity.setVisibility(mShowSiteSecurity && !visible ? View.VISIBLE : View.GONE);
-        mReader.setVisibility(mShowReader && !visible ? View.VISIBLE : View.GONE);
+        // Handle the viewing mode page actions
+        mSiteSecurity.setVisibility(mShowSiteSecurity && !isLoading ? View.VISIBLE : View.GONE);
+        mReader.setVisibility(mShowReader && !isLoading ? View.VISIBLE : View.GONE);
 
-        if (!visible && !mShowSiteSecurity && !mShowReader)
+        if (!isLoading && !mShowSiteSecurity && !mShowReader) {
+            // No visible page actions
             mAwesomeBar.setPadding(mPadding[0], mPadding[1], mPadding[2], mPadding[3]);
-        else
+        } else {
+            // At least one visible page action
             mAwesomeBar.setPadding(mPadding[0], mPadding[1], mPadding[0], mPadding[3]);
+        }
+
+        updateFocusOrder();
+    }
+
+    private void updateFocusOrder() {
+        View prevView = null;
+
+        for (View view : mFocusOrder) {
+            if (view.getVisibility() != View.VISIBLE)
+                continue;
+
+            if (prevView != null) {
+                view.setNextFocusLeftId(prevView.getId());
+                prevView.setNextFocusRightId(view.getId());
+            }
+
+            prevView = view;
+        }
     }
 
     public void setShadowVisibility(boolean visible) {
@@ -470,10 +492,13 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
             mSiteSecurity.setImageLevel(0);
             mShowSiteSecurity = false;
         }
+
+        setPageActionVisibility(mStop.getVisibility() == View.VISIBLE);
     }
 
-    public void setReaderVisibility(boolean showReader) {
+    public void setReaderMode(boolean showReader) {
         mShowReader = showReader;
+        setPageActionVisibility(mStop.getVisibility() == View.VISIBLE);
     }
 
     public void setVisibility(int visibility) {
@@ -528,7 +553,7 @@ public class BrowserToolbar implements ViewSwitcher.ViewFactory,
             setTitle(tab.getDisplayTitle());
             setFavicon(tab.getFavicon());
             setSecurityMode(tab.getSecurityMode());
-            setReaderVisibility(tab.getReaderEnabled());
+            setReaderMode(tab.getReaderEnabled());
             setProgressVisibility(tab.getState() == Tab.STATE_LOADING);
             setShadowVisibility((url == null) || !url.startsWith("about:"));
             updateTabCount(Tabs.getInstance().getCount());

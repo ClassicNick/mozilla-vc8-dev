@@ -114,15 +114,15 @@ GlobalObject::initFunctionAndObjectClasses(JSContext *cx)
         functionProto->flags |= JSFUN_PROTOTYPE;
 
         Rooted<JSScript*> script(cx, JSScript::Create(cx,
+                                                      /* enclosingScope = */ NullPtr(),
                                                       /* savedCallerFun = */ false,
                                                       /* principals = */ NULL,
                                                       /* originPrincipals = */ NULL,
                                                       /* compileAndGo = */ false,
                                                       /* noScriptRval = */ true,
-                                                      /* globalObject = */ NULL,
                                                       JSVERSION_DEFAULT,
                                                       /* staticLevel = */ 0));
-        if (!script || !script->fullyInitTrivial(cx))
+        if (!script || !JSScript::fullyInitTrivial(cx, script))
             return NULL;
 
         functionProto->initScript(script);
