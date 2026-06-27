@@ -42,7 +42,7 @@ static char* GetKeyValue(WCHAR* verbuf, WCHAR* key)
     return PL_strdup(NS_ConvertUTF16toUTF8(buf).get());
   }
 
-  return nsnull;
+  return nullptr;
 }
 
 static char* GetVersion(WCHAR* verbuf)
@@ -63,9 +63,9 @@ static char* GetVersion(WCHAR* verbuf)
   return nullptr;
 }
 
-static PRUint32 CalculateVariantCount(char* mimeTypes)
+static uint32_t CalculateVariantCount(char* mimeTypes)
 {
-  PRUint32 variants = 1;
+  uint32_t variants = 1;
 
   if (!mimeTypes)
     return 0;
@@ -80,7 +80,7 @@ static PRUint32 CalculateVariantCount(char* mimeTypes)
   return variants;
 }
 
-static char** MakeStringArray(PRUint32 variants, char* data)
+static char** MakeStringArray(uint32_t variants, char* data)
 {
   // The number of variants has been calculated based on the mime
   // type array. Plugins are not explicitely required to match
@@ -97,7 +97,7 @@ static char** MakeStringArray(PRUint32 variants, char* data)
 
   char * start = data;
 
-  for (PRUint32 i = 0; i < variants; i++) {
+  for (uint32_t i = 0; i < variants; i++) {
     char * p = PL_strchr(start, '|');
     if (p)
       *p = 0;
@@ -118,12 +118,12 @@ static char** MakeStringArray(PRUint32 variants, char* data)
   return array;
 }
 
-static void FreeStringArray(PRUint32 variants, char ** array)
+static void FreeStringArray(uint32_t variants, char ** array)
 {
   if ((variants == 0) || !array)
     return;
 
-  for (PRUint32 i = 0; i < variants; i++) {
+  for (uint32_t i = 0; i < variants; i++) {
     if (array[i]) {
       PL_strfree(array[i]);
       array[i] = NULL;
@@ -195,8 +195,8 @@ bool nsPluginsDir::IsPluginFile(nsIFile* file)
   if (extension)
     ++extension;
 
-  PRUint32 fullLength = PL_strlen(filename);
-  PRUint32 extLength = PL_strlen(extension);
+  uint32_t fullLength = PL_strlen(filename);
+  uint32_t extLength = PL_strlen(extension);
   if (fullLength >= 7 && extLength == 3) {
     if (!PL_strncasecmp(filename, "np", 2) && !PL_strncasecmp(extension, "dll", 3)) {
       // don't load OJI-based Java plugins
@@ -237,7 +237,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   nsAutoString pluginFolderPath;
   mPlugin->GetPath(pluginFolderPath);
 
-  PRInt32 idx = pluginFolderPath.RFindChar('\\');
+  int32_t idx = pluginFolderPath.RFindChar('\\');
   if (kNotFound == idx)
     return NS_ERROR_FILE_INVALID_PATH;
 

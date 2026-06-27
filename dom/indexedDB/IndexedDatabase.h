@@ -146,7 +146,7 @@ struct StructuredCloneWriteInfo
   JSAutoStructuredCloneBuffer mCloneBuffer;
   nsTArray<StructuredCloneFile> mFiles;
   IDBTransaction* mTransaction;
-  PRUint64 mOffsetToKeyProp;
+  uint64_t mOffsetToKeyProp;
 };
 
 struct SerializedStructuredCloneWriteInfo

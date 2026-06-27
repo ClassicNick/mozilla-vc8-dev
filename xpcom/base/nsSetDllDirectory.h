@@ -45,7 +45,7 @@ static inline void NS_SetDllDirectory(const WCHAR *aDllDirectory)
 {
   typedef BOOL
   (WINAPI *pfnSetDllDirectory) (LPCWSTR);
-  pfnSetDllDirectory setDllDirectory = nsnull;
+  pfnSetDllDirectory setDllDirectory = nullptr;
   setDllDirectory = reinterpret_cast<pfnSetDllDirectory>
       (GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetDllDirectoryW"));
   if (setDllDirectory) {

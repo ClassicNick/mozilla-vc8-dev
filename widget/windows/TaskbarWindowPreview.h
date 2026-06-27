@@ -45,7 +45,7 @@ private:
   virtual nsresult Enable();
   virtual nsresult Disable();
   virtual void DetachFromNSWindow();
-  nsresult UpdateButton(PRUint32 index);
+  nsresult UpdateButton(uint32_t index);
   nsresult UpdateButtons();
 
   // Is custom drawing enabled?

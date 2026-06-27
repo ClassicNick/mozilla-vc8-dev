@@ -135,7 +135,7 @@ public:
 };
 
 NS_IMETHODIMP
-DefaultController::GetWidth(PRUint32 *aWidth)
+DefaultController::GetWidth(uint32_t *aWidth)
 {
   RECT r;
   ::GetClientRect(mWnd, &r);
@@ -144,7 +144,7 @@ DefaultController::GetWidth(PRUint32 *aWidth)
 }
 
 NS_IMETHODIMP
-DefaultController::GetHeight(PRUint32 *aHeight)
+DefaultController::GetHeight(uint32_t *aHeight)
 {
   RECT r;
   ::GetClientRect(mWnd, &r);
@@ -154,7 +154,7 @@ DefaultController::GetHeight(PRUint32 *aHeight)
 
 NS_IMETHODIMP
 DefaultController::GetThumbnailAspectRatio(float *aThumbnailAspectRatio) {
-  PRUint32 width, height;
+  uint32_t width, height;
   GetWidth(&width);
   GetHeight(&height);
   if (!height)
@@ -171,7 +171,7 @@ DefaultController::DrawPreview(nsIDOMCanvasRenderingContext2D *ctx, bool *rDrawF
 }
 
 NS_IMETHODIMP
-DefaultController::DrawThumbnail(nsIDOMCanvasRenderingContext2D *ctx, PRUint32 width, PRUint32 height, bool *rDrawFrame) {
+DefaultController::DrawThumbnail(nsIDOMCanvasRenderingContext2D *ctx, uint32_t width, uint32_t height, bool *rDrawFrame) {
   *rDrawFrame = false;
   return NS_OK;
 }
