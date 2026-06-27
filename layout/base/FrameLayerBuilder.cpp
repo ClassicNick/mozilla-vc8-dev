@@ -498,10 +498,18 @@ public:
     mActiveScrolledRootPosition(0, 0) {}
 
   /**
+   * Record the number of clips in the Thebes layer's mask layer.
+   * Should not be reset when the layer is recycled since it is used to track
+   * changes in the use of mask layers.
+   */
+  uint32_t mMaskClipCount;
+
+  /**
    * A color that should be painted over the bounds of the layer's visible
    * region before any other content is painted.
    */
   nscolor mForcedBackgroundColor;
+
   /**
    * The resolution scale used.
    */
@@ -546,6 +554,16 @@ struct MaskLayerUserData : public LayerUserData
   float mScaleX, mScaleY;
 };
 
+/*
+ * User data to track the owning frame of a layer during construction.
+ */
+struct LayerOwnerUserData : public LayerUserData
+{
+  LayerOwnerUserData(nsIFrame* aOwnerFrame) : mOwnerFrame(aOwnerFrame) {}
+
+  nsIFrame* mOwnerFrame;
+};
+
 /**
  * The address of gThebesDisplayItemLayerUserData is used as the user
  * data key for ThebesLayers created by FrameLayerBuilder.
@@ -580,6 +598,12 @@ uint8_t gLayerManagerUserData;
  * The user data is a MaskLayerUserData.
  */
 uint8_t gMaskLayerUserData;
+/**
+ * The address of gLayerOwnerUserData is used as the user
+ * data key for a Layer's owner frame during layer-building.
+ * The user data is a LayerOwnerUserData.
+ */
+uint8_t gLayerOwnerUserData;
 
 /**
   * Helper functions for getting user data and casting it to the correct type.
@@ -691,32 +715,41 @@ FrameLayerBuilder::DidBeginRetainedLayerTransaction(LayerManager* aManager)
 }
 
 /**
- * A helper function to remove the mThebesLayerItems entries for every
- * layer in aLayer's subtree.
+ * A helper function to remove the mThebesLayerItems entries and
+ * layer ownership user-data for every layer in aLayer's subtree.
  */
 void
-FrameLayerBuilder::RemoveThebesItemsForLayerSubtree(Layer* aLayer)
+FrameLayerBuilder::RemoveThebesItemsAndOwnerDataForLayerSubtree(Layer* aLayer,
+                                                                bool aRemoveThebesItems,
+                                                                bool aRemoveOwnerData)
 {
+  if (aRemoveOwnerData) {
+    // Remove the layer owner flag so that this layer can be recovered by other
+    // frames in future layer tree constructions.
+    aLayer->RemoveUserData(&gLayerOwnerUserData);
+  }
+
   ThebesLayer* thebes = aLayer->AsThebesLayer();
   if (thebes) {
-    mThebesLayerItems.RemoveEntry(thebes);
+    if (aRemoveThebesItems) {
+      mThebesLayerItems.RemoveEntry(thebes);
+    }
     return;
   }
 
   for (Layer* child = aLayer->GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    RemoveThebesItemsForLayerSubtree(child);
+    RemoveThebesItemsAndOwnerDataForLayerSubtree(child, aRemoveThebesItems,
+                                                 aRemoveOwnerData);
   }
 }
 
 void
 FrameLayerBuilder::DidEndTransaction(LayerManager* aManager)
 {
-  if (aManager != mRetainingManager) {
-    Layer* root = aManager->GetRoot();
-    if (root) {
-      RemoveThebesItemsForLayerSubtree(root);
-    }
+  Layer* root = aManager->GetRoot();
+  if (root) {
+    RemoveThebesItemsAndOwnerDataForLayerSubtree(root, aManager != mRetainingManager, true);
   }
 
   GetMaskLayerImageCache()->Sweep();
@@ -896,8 +929,13 @@ FrameLayerBuilder::GetOldLayerForFrame(nsIFrame* aFrame, uint32_t aDisplayItemKe
   for (uint32_t i = 0; i < array->Length(); ++i) {
     if (array->ElementAt(i).mDisplayItemKey == aDisplayItemKey) {
       Layer* layer = array->ElementAt(i).mLayer;
-      if (layer->Manager() == mRetainingManager)
-        return layer;
+      if (layer->Manager() == mRetainingManager) {
+        LayerOwnerUserData* layerOwner = static_cast<LayerOwnerUserData*>
+          (layer->GetUserData(&gLayerOwnerUserData));
+        if (!layerOwner || layerOwner->mOwnerFrame == aFrame) {
+          return layer;
+        }
+      }
     }
   }
   return nullptr;
@@ -1645,6 +1683,10 @@ ContainerState::FindThebesLayerFor(nsDisplayItem* aItem,
     layer = thebesLayerData->mLayer;
   }
 
+  // check to see if the new item has rounded rect clips in common with
+  // other items in the layer
+  thebesLayerData->UpdateCommonClipCount(aClip);
+
   thebesLayerData->Accumulate(this, aItem, aVisibleRect, aDrawRect, aClip);
 
   return thebesLayerData;
@@ -1777,6 +1819,12 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
         nsLayoutUtils::GetActiveScrolledRootFor(mContainerFrame,
                                                 mBuilder->ReferenceFrame());
       forceInactive = true;
+    } else if (item->GetType() == nsDisplayItem::TYPE_SCROLL_LAYER) {
+      nsDisplayScrollLayer* scrollLayerItem =
+        static_cast<nsDisplayScrollLayer*>(item);
+      activeScrolledRoot =
+        nsLayoutUtils::GetActiveScrolledRootFor(scrollLayerItem->GetScrolledFrame(),
+                                                mBuilder->ReferenceFrame());
     } else {
       activeScrolledRoot = nsLayoutUtils::GetActiveScrolledRootFor(item, mBuilder);
     }
@@ -1964,7 +2012,7 @@ FrameLayerBuilder::AddThebesDisplayItem(ThebesLayer* aLayer,
 void
 FrameLayerBuilder::AddLayerDisplayItemForFrame(Layer* aLayer,
                                                nsIFrame* aFrame,
-                                               PRUint32 aDisplayItemKey,
+                                               uint32_t aDisplayItemKey,
                                                LayerState aLayerState)
 {
   DisplayItemDataEntry* entry = mNewDisplayItemData.PutEntry(aFrame);
@@ -1983,12 +2031,12 @@ FrameLayerBuilder::AddLayerDisplayItem(Layer* aLayer,
     return;
 
   nsIFrame* f = aItem->GetUnderlyingFrame();
-  PRUint32 key = aItem->GetPerFrameKey();
+  uint32_t key = aItem->GetPerFrameKey();
   AddLayerDisplayItemForFrame(aLayer, f, key, aLayerState);
 
   nsAutoTArray<nsIFrame*,4> mergedFrames;
   aItem->GetMergedFrames(&mergedFrames);
-  for (PRUint32 i = 0; i < mergedFrames.Length(); ++i) {
+  for (uint32_t i = 0; i < mergedFrames.Length(); ++i) {
     AddLayerDisplayItemForFrame(aLayer, mergedFrames[i], key, aLayerState);
   }
 }
@@ -2067,42 +2115,39 @@ ContainerState::Finish(uint32_t* aTextContentFlags)
 
   uint32_t textContentFlags = 0;
 
-  for (uint32_t i = 0; i <= mNewChildLayers.Length(); ++i) {
-    // An invariant of this loop is that the layers in mNewChildLayers
-    // with index < i are the first i child layers of mContainerLayer.
-    Layer* layer;
-    if (i < mNewChildLayers.Length()) {
-      layer = mNewChildLayers[i];
-      if (!layer->GetVisibleRegion().IsEmpty()) {
-        textContentFlags |= layer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA;
-      }
-      if (!layer->GetParent()) {
-        // This is not currently a child of the container, so just add it
-        // now.
-        Layer* prevChild = i == 0 ? nullptr : mNewChildLayers[i - 1].get();
-        mContainerLayer->InsertAfter(layer, prevChild);
-        continue;
-      }
-      NS_ASSERTION(layer->GetParent() == mContainerLayer,
-                   "Layer shouldn't be the child of some other container");
-    } else {
-      layer = nullptr;
+  // Make sure that current/existing layers are added to the parent and are
+  // in the correct order.
+  Layer* layer = nullptr;
+  for (uint32_t i = 0; i < mNewChildLayers.Length(); ++i) {
+    Layer* prevChild = i == 0 ? nullptr : mNewChildLayers[i - 1].get();
+    layer = mNewChildLayers[i];
+
+    if (!layer->GetVisibleRegion().IsEmpty()) {
+      textContentFlags |= layer->GetContentFlags() & Layer::CONTENT_COMPONENT_ALPHA;
     }
 
-    // If layer is non-null, then it's already a child of the container,
-    // so scan forward until we find it, removing the other layers we
-    // don't want here.
-    // If it's null, scan forward until we've removed all the leftover
-    // children.
-    Layer* nextOldChild = i == 0 ? mContainerLayer->GetFirstChild() :
-      mNewChildLayers[i - 1]->GetNextSibling();
-    while (nextOldChild != layer) {
-      Layer* tmp = nextOldChild;
-      nextOldChild = nextOldChild->GetNextSibling();
-      mContainerLayer->RemoveChild(tmp);
+    if (!layer->GetParent()) {
+      // This is not currently a child of the container, so just add it
+      // now.
+      mContainerLayer->InsertAfter(layer, prevChild);
+      continue;
     }
-    // If non-null, 'layer' is now in the right place in the list, so we
-    // can just move on to the next one.
+
+    NS_ASSERTION(layer->GetParent() == mContainerLayer,
+                 "Layer shouldn't be the child of some other container");
+    mContainerLayer->RepositionChild(layer, prevChild);
+  }
+
+  // Remove old layers that have become unused.
+  if (!layer) {
+    layer = mContainerLayer->GetFirstChild();
+  } else {
+    layer = layer->GetNextSibling();
+  }
+  while (layer) {
+    Layer *layerToRemove = layer;
+    layer = layer->GetNextSibling();
+    mContainerLayer->RemoveChild(layerToRemove);
   }
 
   *aTextContentFlags = textContentFlags;
@@ -2354,6 +2399,12 @@ FrameLayerBuilder::BuildContainerLayerFor(nsDisplayListBuilder* aBuilder,
     if (!containerLayer)
       return nullptr;
   }
+
+  // This layer is owned by this frame for this building phase, don't let
+  // it be found by another frame due to its old underlying frame or merged
+  // frames. This flag will be cleared in FrameLayerBuilder::DidEndTransaction
+  containerLayer->SetUserData(&gLayerOwnerUserData,
+                              new LayerOwnerUserData(aContainerFrame));
 
   if (aContainerItem &&
       aContainerItem->GetLayerState(aBuilder, aManager, aParameters) == LAYER_ACTIVE_EMPTY) {
@@ -3163,7 +3214,7 @@ FrameLayerBuilder::Clip::RemoveRoundedCorners()
 }
 
 gfxRect
-CalculateBounds(nsTArray<FrameLayerBuilder::Clip::RoundedRect> aRects, int32_t A2D)
+CalculateBounds(const nsTArray<FrameLayerBuilder::Clip::RoundedRect>& aRects, int32_t A2D)
 {
   nsRect bounds = aRects[0].mRect;
   for (uint32_t i = 1; i < aRects.Length(); ++i) {
@@ -3172,16 +3223,36 @@ CalculateBounds(nsTArray<FrameLayerBuilder::Clip::RoundedRect> aRects, int32_t A
  
   return nsLayoutUtils::RectToGfxRect(bounds, A2D);
 }
- 
+
+static void
+SetClipCount(ThebesDisplayItemLayerUserData* aThebesData,
+             uint32_t aClipCount)
+{
+  if (aThebesData) {
+    aThebesData->mMaskClipCount = aClipCount;
+  }
+}
+
 void
 ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aClip,
                                uint32_t aRoundedRectClipCount)
 {
+  // if the number of clips we are going to mask has decreased, then aLayer might have
+  // cached graphics which assume the existence of a soon-to-be non-existent mask layer
+  // in that case, invalidate the whole layer.
+  ThebesDisplayItemLayerUserData* thebesData = GetThebesDisplayItemLayerUserData(aLayer);
+  if (thebesData &&
+      aRoundedRectClipCount < thebesData->mMaskClipCount) {
+    ThebesLayer* thebes = aLayer->AsThebesLayer();
+    thebes->InvalidateRegion(thebes->GetValidRegion().GetBounds());
+  }
+
   // don't build an unnecessary mask
   nsIntRect layerBounds = aLayer->GetVisibleRegion().GetBounds();
   if (aClip.mRoundedClipRects.IsEmpty() ||
-      aRoundedRectClipCount <= 0 ||
+      aRoundedRectClipCount == 0 ||
       layerBounds.IsEmpty()) {
+    SetClipCount(thebesData, 0);
     return;
   }
 
@@ -3199,6 +3270,7 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
 
   if (*userData == newData) {
     aLayer->SetMaskLayer(maskLayer);
+    SetClipCount(thebesData, aRoundedRectClipCount);
     return;
   }
 
@@ -3224,28 +3296,24 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   gfxMatrix imageTransform = maskTransform;
   imageTransform.Scale(mParameters.mXScale, mParameters.mYScale);
 
+  nsAutoPtr<MaskLayerImageCache::MaskLayerImageKey> newKey(
+    new MaskLayerImageCache::MaskLayerImageKey(aLayer->Manager()->GetBackendType()));
+
   // copy and transform the rounded rects
-  nsTArray<MaskLayerImageCache::PixelRoundedRect> roundedRects;
   for (uint32_t i = 0; i < newData.mRoundedClipRects.Length(); ++i) {
-    roundedRects.AppendElement(
+    newKey->mRoundedClipRects.AppendElement(
       MaskLayerImageCache::PixelRoundedRect(newData.mRoundedClipRects[i],
                                             mContainerFrame->PresContext()));
-    roundedRects[i].ScaleAndTranslate(imageTransform);
+    newKey->mRoundedClipRects[i].ScaleAndTranslate(imageTransform);
   }
  
-  // check to see if we can reuse a mask image
-  const MaskLayerImageCache::MaskLayerImageKey* key =
-    new MaskLayerImageCache::MaskLayerImageKey(roundedRects, aLayer->Manager()->GetBackendType());
-  const MaskLayerImageCache::MaskLayerImageKey* lookupKey = key;
+  const MaskLayerImageCache::MaskLayerImageKey* lookupKey = newKey;
 
+  // check to see if we can reuse a mask image
   nsRefPtr<ImageContainer> container =
     GetMaskLayerImageCache()->FindImageFor(&lookupKey);
 
-  if (container) {
-    // track the returned key for the mask image
-    delete key;
-    key = lookupKey;
-  } else {
+  if (!container) {
     // no existing mask image, so build a new one
     nsRefPtr<gfxASurface> surface =
       aLayer->Manager()->CreateOptimalMaskSurface(surfaceSize);
@@ -3253,6 +3321,7 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
     // fail if we can't get the right surface
     if (!surface || surface->CairoStatus()) {
       NS_WARNING("Could not create surface for mask layer.");
+      SetClipCount(thebesData, 0);
       return;
     }
 
@@ -3275,7 +3344,7 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
     static_cast<CairoImage*>(image.get())->SetData(data);
     container->SetCurrentImageInTransaction(image);
 
-    GetMaskLayerImageCache()->PutImage(key, container);
+    GetMaskLayerImageCache()->PutImage(newKey.forget(), container);
   }
 
   maskLayer->SetContainer(container);
@@ -3285,9 +3354,10 @@ ContainerState::SetupMaskLayer(Layer *aLayer, const FrameLayerBuilder::Clip& aCl
   userData->mScaleX = newData.mScaleX;
   userData->mScaleY = newData.mScaleY;
   userData->mRoundedClipRects.SwapElements(newData.mRoundedClipRects);
-  userData->mImageKey = key;
+  userData->mImageKey = lookupKey;
 
   aLayer->SetMaskLayer(maskLayer);
+  SetClipCount(thebesData, aRoundedRectClipCount);
   return;
 }
 

@@ -253,7 +253,7 @@ public:
 
 private:
   nsAutoString mIconPath;
-  nsCAutoString mMimeTypeOfInputData;
+  nsAutoCString mMimeTypeOfInputData;
   nsAutoArrayPtr<uint8_t> mBuffer;
   uint32_t mBufferLength;
 };

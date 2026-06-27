@@ -234,10 +234,15 @@ MarionetteDriverActor.prototype = {
   getCurrentWindow: function MDA_getCurrentWindow() {
     let type = null;
     if (this.curFrame == null) {
-      if (appName != "B2G" && this.context == "content") {
-        type = 'navigator:browser';
+      if (this.curBrowser == null) {
+        if (appName != "B2G" && this.context == "content") {
+          type = 'navigator:browser';
+        }
+        return Services.wm.getMostRecentWindow(type);
       }
-      return Services.wm.getMostRecentWindow(type);
+      else {
+        return this.curBrowser.window;
+      }
     }
     else {
       return this.curFrame;
@@ -504,35 +509,31 @@ MarionetteDriverActor.prototype = {
    */
   executeScriptInSandbox: function MDA_executeScriptInSandbox(sandbox, script,
      directInject, async) {
-    try {
-      if (directInject && async &&
-          (this.scriptTimeout == null || this.scriptTimeout == 0)) {
-        this.sendError("Please set a timeout", 21, null);
-        return;
-      }
 
-      if (this.importedScripts.exists()) {
-        let stream = Cc["@mozilla.org/network/file-input-stream;1"].  
-                      createInstance(Ci.nsIFileInputStream);
-        stream.init(this.importedScripts, -1, 0, 0);
-        let data = NetUtil.readInputStreamToString(stream, stream.available());
-        script = data + script;
-      }
-
-      let res = Cu.evalInSandbox(script, sandbox, "1.8");
-
-      if (directInject && !async &&
-          (res == undefined || res.passed == undefined)) {
-        this.sendError("finish() not called", 500, null);
-        return;
-      }
-
-      if (!async) {
-        this.sendResponse(this.curBrowser.elementManager.wrapValue(res));
-      }
+    if (directInject && async &&
+        (this.scriptTimeout == null || this.scriptTimeout == 0)) {
+      this.sendError("Please set a timeout", 21, null);
+      return;
     }
-    catch (e) {
-      this.sendError(e.name + ': ' + e.message, 17, e.stack);
+
+    if (this.importedScripts.exists()) {
+      let stream = Cc["@mozilla.org/network/file-input-stream;1"].  
+                    createInstance(Ci.nsIFileInputStream);
+      stream.init(this.importedScripts, -1, 0, 0);
+      let data = NetUtil.readInputStreamToString(stream, stream.available());
+      script = data + script;
+    }
+
+    let res = Cu.evalInSandbox(script, sandbox, "1.8");
+
+    if (directInject && !async &&
+        (res == undefined || res.passed == undefined)) {
+      this.sendError("finish() not called", 500, null);
+      return;
+    }
+
+    if (!async) {
+      this.sendResponse(this.curBrowser.elementManager.wrapValue(res));
     }
   },
 
@@ -629,7 +630,10 @@ MarionetteDriverActor.prototype = {
       }
     }
     else {
-      this.sendAsync("executeJSScript", {value:aRequest.value, args:aRequest.args, timeout:aRequest.timeout});
+      this.sendAsync("executeJSScript", { value:aRequest.value,
+                                          args:aRequest.args,
+                                          newSandbox:aRequest.newSandbox,
+                                          timeout:aRequest.timeout });
    }
   },
 
@@ -667,7 +671,8 @@ MarionetteDriverActor.prototype = {
     let curWindow = this.getCurrentWindow();
     let original_onerror = curWindow.onerror;
     let that = this;
-    let marionette = new Marionette(this, curWindow, "chrome", this.marionetteLog, this.marionettePerf);
+    let marionette = new Marionette(this, curWindow, "chrome",
+                                    this.marionetteLog, this.marionettePerf);
     marionette.command_id = this.command_id;
 
     function chromeAsyncReturnFunc(value, status) {
@@ -737,7 +742,7 @@ MarionetteDriverActor.prototype = {
 
       this.executeScriptInSandbox(_chromeSandbox, script, directInject, true);
     } catch (e) {
-      this.sendError(e.name + ": " + e.message, 17, e.stack, marionette.command_id);
+      chromeAsyncReturnFunc(e.name + ": " + e.message, 17);
     }
   },
 
@@ -857,7 +862,9 @@ MarionetteDriverActor.prototype = {
     let winEn = this.getWinEnumerator(); 
     while(winEn.hasMoreElements()) {
       let foundWin = winEn.getNext();
-      let winId = foundWin.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
+      let winId = foundWin.QueryInterface(Ci.nsIInterfaceRequestor)
+                          .getInterface(Ci.nsIDOMWindowUtils)
+                          .outerWindowID;
       winId = winId + ((appName == "B2G") ? '-b2g' : '');
       if (aRequest.value == foundWin.name || aRequest.value == winId) {
         if (this.browsers[winId] == undefined) {
@@ -868,7 +875,6 @@ MarionetteDriverActor.prototype = {
           utils.window = foundWin;
           this.curBrowser = this.browsers[winId];
         }
-        foundWin.focus();
         this.sendOk();
         return;
       }
@@ -981,8 +987,9 @@ MarionetteDriverActor.prototype = {
     if (this.context == "chrome") {
       let id;
       try {
-        let notify = this.sendResponse.bind(this);
-        id = this.curBrowser.elementManager.find(this.getCurrentWindow(),aRequest, notify, false);
+        let on_success = this.sendResponse.bind(this);
+        let on_error = this.sendError.bind(this);
+        id = this.curBrowser.elementManager.find(this.getCurrentWindow(),aRequest, on_success, on_error, false);
       }
       catch (e) {
         this.sendError(e.message, e.code, e.stack);
@@ -1005,8 +1012,9 @@ MarionetteDriverActor.prototype = {
     if (this.context == "chrome") {
       let id;
       try {
-        let notify = this.sendResponse.bind(this);
-        id = this.curBrowser.elementManager.find(this.getCurrentWindow(), aRequest, notify, true);
+        let on_success = this.sendResponse.bind(this);
+        let on_error = this.sendError.bind(this);
+        id = this.curBrowser.elementManager.find(this.getCurrentWindow(), aRequest, on_success, on_error, true);
       }
       catch (e) {
         this.sendError(e.message, e.code, e.stack);
@@ -1515,6 +1523,7 @@ function BrowserObj(win) {
   this.B2G = "B2G";
   this.browser;
   this.tab = null;
+  this.window = win;
   this.knownFrames = [];
   this.curFrameId = null;
   this.startPage = "about:blank";
@@ -1558,8 +1567,6 @@ BrowserObj.prototype = {
       //if we have a new tab, make it the selected tab and give it focus
       this.browser.selectedTab = this.tab;
       let newTabBrowser = this.browser.getBrowserForTab(this.tab);
-      //focus the tab
-      newTabBrowser.ownerDocument.defaultView.focus();
     }
     else {
       //set this.tab to the currently focused tab

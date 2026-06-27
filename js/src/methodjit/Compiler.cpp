@@ -59,7 +59,7 @@ mjit::Compiler::Compiler(JSContext *cx, JSScript *outerScript,
     isConstructing(isConstructing),
     outerChunk(outerJIT()->chunkDescriptor(chunkIndex)),
     ssa(cx, outerScript),
-    globalObj(cx, outerScript->hasGlobal() ? &outerScript->global() : NULL),
+    globalObj(cx, outerScript->compileAndGo ? &outerScript->global() : NULL),
     globalSlots(globalObj ? globalObj->getRawSlots() : NULL),
     sps(&cx->runtime->spsProfiler, &script, &PC),
     masm(&sps),
@@ -134,11 +134,6 @@ mjit::Compiler::compile()
 CompileStatus
 mjit::Compiler::checkAnalysis(HandleScript script)
 {
-    if (script->hasClearedGlobal()) {
-        JaegerSpew(JSpew_Abort, "script has a cleared global\n");
-        return Compile_Abort;
-    }
-
     if (!script->ensureRanAnalysis(cx))
         return Compile_Error;
 
@@ -193,7 +188,7 @@ mjit::Compiler::scanInlineCalls(uint32_t index, uint32_t depth)
     ScriptAnalysis *analysis = script->analysis();
 
     /* Don't inline from functions which could have a non-global scope object. */
-    if (!script->hasGlobal() ||
+    if (!script->compileAndGo ||
         &script->global() != globalObj ||
         (script->function() && script->function()->getParent() != globalObj) ||
         (script->function() && script->function()->isHeavyweight()) ||
@@ -389,7 +384,7 @@ mjit::Compiler::pushActiveFrame(JSScript *script, uint32_t argc)
     if (cx->runtime->profilingScripts && !script->hasScriptCounts)
         script->initScriptCounts(cx);
 
-    ActiveFrame *newa = OffTheBooks::new_<ActiveFrame>(cx);
+    ActiveFrame *newa = js_new<ActiveFrame>(cx);
     if (!newa) {
         js_ReportOutOfMemory(cx);
         return Compile_Error;
@@ -440,7 +435,7 @@ mjit::Compiler::pushActiveFrame(JSScript *script, uint32_t argc)
         return Compile_Error;
     }
 
-    newa->jumpMap = (Label *)OffTheBooks::malloc_(sizeof(Label) * script->length);
+    newa->jumpMap = js_pod_malloc<Label>(script->length);
     if (!newa->jumpMap) {
         js_ReportOutOfMemory(cx);
         return Compile_Error;
@@ -530,7 +525,7 @@ mjit::Compiler::performCompilation()
 
         if (outerScript->hasScriptCounts || Probes::wantNativeAddressInfo(cx)) {
             size_t length = ssa.frameLength(ssa.numFrames() - 1);
-            pcLengths = (PCLengthEntry *) OffTheBooks::calloc_(sizeof(pcLengths[0]) * length);
+            pcLengths = js_pod_calloc<PCLengthEntry>(length);
             if (!pcLengths)
                 return Compile_Error;
         }
@@ -573,20 +568,20 @@ mjit::Compiler::ActiveFrame::ActiveFrame(JSContext *cx)
 
 mjit::Compiler::ActiveFrame::~ActiveFrame()
 {
-    js::Foreground::free_(jumpMap);
+    js_free(jumpMap);
     if (varTypes)
-        js::Foreground::free_(varTypes);
+        js_free(varTypes);
 }
 
 mjit::Compiler::~Compiler()
 {
     if (outer)
-        cx->delete_(outer);
+        js_delete(outer);
     for (unsigned i = 0; i < inlineFrames.length(); i++)
-        cx->delete_(inlineFrames[i]);
+        js_delete(inlineFrames[i]);
     while (loop) {
         LoopState *nloop = loop->outer;
-        cx->delete_(loop);
+        js_delete(loop);
         loop = nloop;
     }
 }
@@ -616,8 +611,7 @@ mjit::Compiler::prepareInferenceTypes(JSScript *script, ActiveFrame *a)
      * only if a variable has the same value on all incoming edges.
      */
 
-    a->varTypes = (VarType *)
-        OffTheBooks::calloc_(TotalSlots(script) * sizeof(VarType));
+    a->varTypes = js_pod_calloc<VarType>(TotalSlots(script));
     if (!a->varTypes) {
         js_ReportOutOfMemory(cx);
         return Compile_Error;
@@ -862,7 +856,7 @@ MakeJITScript(JSContext *cx, JSScript *script)
     size_t dataSize = sizeof(JITScript)
         + (chunks.length() * sizeof(ChunkDescriptor))
         + (edges.length() * sizeof(CrossChunkEdge));
-    uint8_t *cursor = (uint8_t *) OffTheBooks::calloc_(dataSize);
+    uint8_t *cursor = (uint8_t *) js_calloc(dataSize);
     if (!cursor)
         return NULL;
 
@@ -1360,7 +1354,7 @@ mjit::Compiler::finishThisUp()
 #endif
                       0;
 
-    uint8_t *cursor = (uint8_t *)OffTheBooks::calloc_(dataSize);
+    uint8_t *cursor = (uint8_t *)js_calloc(dataSize);
     if (!cursor) {
         execPool->release();
         js_ReportOutOfMemory(cx);
@@ -1461,7 +1455,8 @@ mjit::Compiler::finishThisUp()
         }
 
         JSScript *script =
-            (from.inlineIndex == UINT32_MAX) ? outerScript : inlineFrames[from.inlineIndex]->script;
+            (from.inlineIndex == UINT32_MAX) ? outerScript.get()
+                                             : inlineFrames[from.inlineIndex]->script;
         uint32_t codeOffset = from.ool
                             ? masm.size() + from.returnOffset
                             : from.returnOffset;
@@ -1812,7 +1807,7 @@ mjit::Compiler::finishThisUp()
     if (!Probes::registerMJITCode(cx, chunk,
                                   a, (JSActiveFrame**) inlineFrames.begin())) {
         execPool->release();
-        cx->free_(chunk);
+        js_free(chunk);
         js_ReportOutOfMemory(cx);
         return Compile_Error;
     }
@@ -1830,14 +1825,14 @@ mjit::Compiler::finishThisUp()
             JSOp op = JSOp(script->code[edge.source]);
             if (op == JSOP_TABLESWITCH) {
                 if (edge.jumpTableEntries)
-                    cx->free_(edge.jumpTableEntries);
+                    js_free(edge.jumpTableEntries);
                 CrossChunkEdge::JumpTableEntryVector *jumpTableEntries = NULL;
                 bool failed = false;
                 for (unsigned j = 0; j < chunkJumps.length(); j++) {
                     ChunkJumpTableEdge nedge = chunkJumps[j];
                     if (nedge.edge.source == edge.source && nedge.edge.target == edge.target) {
                         if (!jumpTableEntries) {
-                            jumpTableEntries = OffTheBooks::new_<CrossChunkEdge::JumpTableEntryVector>();
+                            jumpTableEntries = js_new<CrossChunkEdge::JumpTableEntryVector>();
                             if (!jumpTableEntries)
                                 failed = true;
                         }
@@ -1848,7 +1843,7 @@ mjit::Compiler::finishThisUp()
                 }
                 if (failed) {
                     execPool->release();
-                    cx->free_(chunk);
+                    js_free(chunk);
                     js_ReportOutOfMemory(cx);
                     return Compile_Error;
                 }
@@ -4622,7 +4617,7 @@ mjit::Compiler::inlineScriptedFunction(uint32_t argc, bool callingNew)
     frame.popn(argc + 2);
 
     if (entrySnapshot)
-        cx->array_delete(entrySnapshot);
+        js_free(entrySnapshot);
 
     if (exitState)
         frame.discardForJoin(exitState, analysis->getCode(PC).stackDepth - (argc + 2));
@@ -6753,7 +6748,7 @@ mjit::Compiler::jsop_newinit()
         masm.storePtr(ImmPtr(type), FrameAddress(offsetof(VMFrame, scratch)));
         masm.move(ImmPtr(stubArg), Registers::ArgReg1);
         INLINE_STUBCALL(stub, REJOIN_FALLTHROUGH);
-        frame.pushSynced(JSVAL_TYPE_OBJECT);
+        frame.pushSynced(knownPushedType(0));
 
         frame.extra(frame.peek(-1)).initArray = (*PC == JSOP_NEWARRAY);
         frame.extra(frame.peek(-1)).initObject = baseobj;
@@ -6780,7 +6775,7 @@ mjit::Compiler::jsop_newinit()
     stubcc.masm.move(ImmPtr(stubArg), Registers::ArgReg1);
     OOL_STUBCALL(stub, REJOIN_FALLTHROUGH);
 
-    frame.pushTypedPayload(JSVAL_TYPE_OBJECT, result);
+    frame.pushTypedPayload(knownPushedType(0), result);
 
     stubcc.rejoin(Changes(1));
 
@@ -6899,7 +6894,7 @@ mjit::Compiler::startLoop(jsbytecode *head, Jump entry, jsbytecode *entryTarget)
         loop->clearLoopRegisters();
     }
 
-    LoopState *nloop = OffTheBooks::new_<LoopState>(cx, &ssa, this, &frame);
+    LoopState *nloop = js_new<LoopState>(cx, &ssa, this, &frame);
     if (!nloop || !nloop->init(head, entry, entryTarget)) {
         js_ReportOutOfMemory(cx);
         return false;
@@ -7036,7 +7031,7 @@ mjit::Compiler::finishLoop(jsbytecode *head)
     loop->flushLoop(stubcc);
 
     LoopState *nloop = loop->outer;
-    cx->delete_(loop);
+    js_delete(loop);
     loop = nloop;
     frame.setLoop(loop);
 

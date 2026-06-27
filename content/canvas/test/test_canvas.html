@@ -14740,14 +14740,8 @@ isPixel(ctx, 0,25, 0,255,0,255, 0);
 isPixel(ctx, 50,25, 0,255,0,255, 0);
 isPixel(ctx, 99,25, 0,255,0,255, 0);
 isPixel(ctx, 0,49, 0,255,0,255, 0);
-if (IsAzureEnabled() && IsAzureCairo()) {
-  // Bug 764108
-  todo_isPixel(ctx, 50,49, 0,255,0,255, 0);
-  todo_isPixel(ctx, 99,49, 0,255,0,255, 0);
-} else {
-  isPixel(ctx, 50,49, 0,255,0,255, 0);
-  isPixel(ctx, 99,49, 0,255,0,255, 0);
-}
+isPixel(ctx, 50,49, 0,255,0,255, 0);
+isPixel(ctx, 99,49, 0,255,0,255, 0);
 
 }
 </script>
@@ -16125,12 +16119,9 @@ function test_2d_pattern_repeat_undefined() {
 var canvas = document.getElementById('c496');
 var ctx = canvas.getContext('2d');
 
-var undefinedHandler = IsAzureEnabled() ? todo : ok;
-
 var _thrown = undefined; try {
   ctx.createPattern(canvas, undefined);
-  // XXXbz TODO fix bug 784869
-} catch (e) { _thrown = e }; undefinedHandler(_thrown && _thrown.name == "SyntaxError" && _thrown.code == DOMException.SYNTAX_ERR, "should throw SyntaxError");
+} catch (e) { _thrown = e }; ok(_thrown && _thrown.name == "SyntaxError" && _thrown.code == DOMException.SYNTAX_ERR, "should throw SyntaxError");
 
 
 }

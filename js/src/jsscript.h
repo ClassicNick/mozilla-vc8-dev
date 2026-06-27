@@ -393,6 +393,10 @@ struct JSScript : public js::gc::Cell
                                  * or has had backedges taken. Reset if the
                                  * script's JIT code is forcibly discarded. */
 
+#if !defined(JS_METHODJIT) && JS_BITS_PER_WORD == 32
+    uint32_t        pad32;
+#endif
+
 #ifdef DEBUG
     // Unique identifier within the compartment for this script, used for
     // printing analysis information.
@@ -579,9 +583,6 @@ struct JSScript : public js::gc::Cell
     inline js::analyze::ScriptAnalysis *analysis();
 
     inline void clearPropertyReadTypes();
-
-    inline bool hasGlobal() const;
-    inline bool hasClearedGlobal() const;
 
     inline js::GlobalObject &global() const;
 

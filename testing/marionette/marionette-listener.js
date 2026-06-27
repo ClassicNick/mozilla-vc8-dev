@@ -465,8 +465,8 @@ function executeWithCallback(msg, timeout) {
   try {
     asyncTestRunning = true;
     if (importedScripts.exists()) {
-      let stream = Components.classes["@mozilla.org/network/file-input-stream;1"].  
-                      createInstance(Components.interfaces.nsIFileInputStream);
+      let stream = Cc["@mozilla.org/network/file-input-stream;1"].
+                      createInstance(Ci.nsIFileInputStream);
       stream.init(importedScripts, -1, 0, 0);
       let data = NetUtil.readInputStreamToString(stream, stream.available());
       scriptSrc = data + scriptSrc;
@@ -474,7 +474,7 @@ function executeWithCallback(msg, timeout) {
     Cu.evalInSandbox(scriptSrc, sandbox, "1.8");
   } catch (e) {
     // 17 = JavascriptException
-    sendError(e.name + ': ' + e.message, 17, e.stack);
+    sandbox.asyncComplete(e.name + ': ' + e.message, 17);
   }
 }
 
@@ -562,10 +562,10 @@ function refresh(msg) {
  * Find an element in the document using requested search strategy 
  */
 function findElementContent(msg) {
-  let id;
   try {
-    let notify = function(id) { sendResponse({value:id});};
-    id = elementManager.find(curWindow, msg.json, notify, false);
+    let on_success = function(id) { sendResponse({value:id}); };
+    let on_error = sendError;
+    elementManager.find(curWindow, msg.json, on_success, on_error, false);
   }
   catch (e) {
     sendError(e.message, e.code, e.stack);
@@ -576,10 +576,10 @@ function findElementContent(msg) {
  * Find elements in the document using requested search strategy 
  */
 function findElementsContent(msg) {
-  let id;
   try {
-    let notify = function(id) { sendResponse({value:id});};
-    id = elementManager.find(curWindow, msg.json, notify, true);
+    let on_success = function(id) { sendResponse({value:id}); };
+    let on_error = sendError;
+    elementManager.find(curWindow, msg.json, on_success, on_error, true);
   }
   catch (e) {
     sendError(e.message, e.code, e.stack);

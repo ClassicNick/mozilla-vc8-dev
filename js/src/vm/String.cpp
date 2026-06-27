@@ -17,6 +17,7 @@
 using namespace mozilla;
 using namespace js;
 
+#ifdef DEBUG
 bool
 JSString::isShort() const
 {
@@ -24,18 +25,7 @@ JSString::isShort() const
     JS_ASSERT_IF(is_short, isFixed());
     return is_short;
 }
-
-bool
-JSString::isFixed() const
-{
-    return isFlat() && !isExtensible();
-}
-
-bool
-JSString::isInline() const
-{
-    return isFixed() && (d.u1.chars == d.inlineStorage || isShort());
-}
+#endif
 
 bool
 JSString::isExternal() const
@@ -140,7 +130,7 @@ AllocChars(JSContext *maybecx, size_t length, jschar **chars, size_t *capacity)
 
     JS_STATIC_ASSERT(JSString::MAX_LENGTH * sizeof(jschar) < UINT32_MAX);
     size_t bytes = numChars * sizeof(jschar);
-    *chars = (jschar *)(maybecx ? maybecx->malloc_(bytes) : OffTheBooks::malloc_(bytes));
+    *chars = (jschar *)(maybecx ? maybecx->malloc_(bytes) : js_malloc(bytes));
     return *chars != NULL;
 }
 

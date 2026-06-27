@@ -65,7 +65,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsFrameMessageManager)
   tmp->mListeners.Clear();
-  for (PRInt32 i = tmp->mChildManagers.Count(); i > 0; --i) {
+  for (int32_t i = tmp->mChildManagers.Count(); i > 0; --i) {
     static_cast<nsFrameMessageManager*>(tmp->mChildManagers[i - 1])->
       Disconnect(false);
   }
@@ -173,7 +173,7 @@ nsFrameMessageManager::LoadFrameScript(const nsAString& aURL,
     NS_ENSURE_TRUE(mLoadScriptCallback(mCallbackData, aURL), NS_ERROR_FAILURE);
   }
 
-  for (PRInt32 i = 0; i < mChildManagers.Count(); ++i) {
+  for (int32_t i = 0; i < mChildManagers.Count(); ++i) {
     nsRefPtr<nsFrameMessageManager> mm =
       static_cast<nsFrameMessageManager*>(mChildManagers[i]);
     if (mm) {
@@ -290,8 +290,8 @@ nsFrameMessageManager::DispatchAsyncMessageInternal(const nsAString& aMessage,
     mAsyncCallback(mCallbackData, aMessage, aData);
   }
   if (aBroadcast == BROADCAST) {
-    PRInt32 len = mChildManagers.Count();
-    for (PRInt32 i = 0; i < len; ++i) {
+    int32_t len = mChildManagers.Count();
+    for (int32_t i = 0; i < len; ++i) {
       static_cast<nsFrameMessageManager*>(mChildManagers[i])->
          DispatchAsyncMessageInternal(aMessage, aData, aBroadcast);
     }
@@ -716,7 +716,7 @@ ContentScriptErrorReporter(JSContext* aCx,
 #ifdef DEBUG
   // Print it to stderr as well, for the benefit of those invoking
   // mozilla with -console.
-  nsCAutoString error;
+  nsAutoCString error;
   error.Assign("JavaScript ");
   if (JSREPORT_IS_STRICT(flags)) {
     error.Append("strict ");
@@ -822,6 +822,11 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
   }
 
   nsFrameJSScriptExecutorHolder* holder = sCachedScripts->Get(aURL);
+  if (!holder) {
+    TryCacheLoadAndCompileScript(aURL, EXECUTE_IF_CANT_CACHE);
+    holder = sCachedScripts->Get(aURL);
+  }
+
   if (holder) {
     nsContentUtils::ThreadJSContextStack()->Push(mCx);
     {
@@ -838,7 +843,12 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
     nsContentUtils::ThreadJSContextStack()->Pop(&unused);
     return;
   }
+}
 
+void
+nsFrameScriptExecutor::TryCacheLoadAndCompileScript(const nsAString& aURL,
+                                                    CacheFailedBehavior aBehavior)
+{
   nsCString url = NS_ConvertUTF16toUTF8(aURL);
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), url);
@@ -897,7 +907,7 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
                                        dataString.get(), dataString.Length());
 
         if (script) {
-          nsCAutoString scheme;
+          nsAutoCString scheme;
           uri->GetScheme(scheme);
           // We don't cache data: scripts!
           if (!scheme.EqualsLiteral("data")) {
@@ -907,8 +917,9 @@ nsFrameScriptExecutor::LoadFrameScriptInternal(const nsAString& aURL)
             JS_AddNamedScriptRoot(mCx, &(holder->mScript),
                                   "Cached message manager script");
             sCachedScripts->Put(aURL, holder);
+          } else if (aBehavior == EXECUTE_IF_CANT_CACHE) {
+            (void) JS_ExecuteScript(mCx, global, script, nullptr);
           }
-          (void) JS_ExecuteScript(mCx, global, script, nullptr);
         }
       }
     } 
