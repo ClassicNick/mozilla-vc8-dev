@@ -146,14 +146,14 @@ XPCOMUtils.defineLazyModuleGetter(this, "PageThumbs",
 #ifdef MOZ_SAFE_BROWSING
 XPCOMUtils.defineLazyGetter(this, "SafeBrowsing", function() {
   let tmp = {};
-  Cu.import("resource://gre/modules/SafeBrowsing.jsm", tmp);
+  Cu.import("resource:///modules/SafeBrowsing.jsm", tmp);
   return tmp.SafeBrowsing;
 });
 #endif
 
 XPCOMUtils.defineLazyGetter(this, "gBrowserNewTabPreloader", function () {
   let tmp = {};
-  Cu.import("resource://gre/modules/BrowserNewTabPreloader.jsm", tmp);
+  Cu.import("resource:///modules/BrowserNewTabPreloader.jsm", tmp);
   return new tmp.BrowserNewTabPreloader();
 });
 
@@ -1049,7 +1049,7 @@ var gBrowserInit = {
 
     // set default character set if provided
     if ("arguments" in window && window.arguments.length > 1 && window.arguments[1]) {
-      if (window.arguments[1].indexOf("charset=") != -1) {
+      if (window.arguments[1].startsWith("charset=")) {
         var arrayArgComponents = window.arguments[1].split("=");
         if (arrayArgComponents) {
           //we should "inherit" the charset menu setting in a new window
@@ -1432,14 +1432,6 @@ var gBrowserInit = {
       if (gPrefService.getBoolPref("devtools.toolbar.visible")) {
         DeveloperToolbar.show(false);
       }
-    }
-
-    // Enable Inspector?
-    let enabled = gPrefService.getBoolPref("devtools.inspector.enabled");
-    if (enabled) {
-      let cmd = document.getElementById("Tools:Inspect");
-      cmd.removeAttribute("disabled");
-      cmd.removeAttribute("hidden");
     }
 
     // Enable Debugger?
@@ -2766,7 +2758,7 @@ function getMeOutOfHere() {
     url = prefs.getComplexValue("browser.startup.homepage",
                                 Ci.nsIPrefLocalizedString).data;
     // If url is a pipe-delimited set of pages, just take the first one.
-    if (url.indexOf("|") != -1)
+    if (url.contains("|"))
       url = url.split("|")[0];
   } catch(e) {
     Components.utils.reportError("Couldn't get homepage pref: " + e);
@@ -3475,7 +3467,7 @@ function FillHistoryMenu(aParent) {
 
 function addToUrlbarHistory(aUrlToAdd) {
   if (aUrlToAdd &&
-      aUrlToAdd.indexOf(" ") == -1 &&
+      !aUrlToAdd.contains(" ") &&
       !/[\x00-\x1F]/.test(aUrlToAdd))
     PlacesUIUtils.markPageAsTyped(aUrlToAdd);
 }

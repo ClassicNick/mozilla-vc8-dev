@@ -100,7 +100,7 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
         return NULL;
     parser.sct = &sct;
 
-    SharedContext sc(cx, scopeChain, /* fun = */ NULL, /* funbox = */ NULL, StrictModeFromContext(cx));
+    SharedContext sc(cx, scopeChain, /* funbox = */ NULL, StrictModeFromContext(cx));
 
     ParseContext pc(&parser, &sc, staticLevel, /* bodyid = */ 0);
     if (!pc.init())
@@ -114,7 +114,8 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
 
     // Global/eval script bindings are always empty (all names are added to the
     // scope dynamically via JSOP_DEFFUN/VAR).
-    if (!script->bindings.initWithTemporaryStorage(cx, 0, 0, NULL))
+    InternalHandle<Bindings*> bindings(script, &script->bindings);
+    if (!Bindings::initWithTemporaryStorage(cx, bindings, 0, 0, NULL))
         return NULL;
 
     // We can specialize a bit for the given scope chain if that scope chain is the global object.
@@ -152,9 +153,7 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
             ObjectBox *funbox = parser.newObjectBox(callerFrame->fun());
             if (!funbox)
                 return NULL;
-            funbox->emitLink = bce.objectList.lastbox;
-            bce.objectList.lastbox = funbox;
-            bce.objectList.length++;
+            bce.objectList.add(funbox);
         }
     }
 
@@ -275,8 +274,11 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
     parser.sct = &sct;
 
     JS_ASSERT(fun);
-    SharedContext funsc(cx, /* scopeChain = */ NULL, fun, /* funbox = */ NULL,
-                        StrictModeFromContext(cx));
+
+    StrictMode sms = StrictModeFromContext(cx);
+    FunctionBox *funbox = parser.newFunctionBox(fun, /* outerpc = */ NULL, sms);
+
+    SharedContext funsc(cx, /* scopeChain = */ NULL, funbox, sms);
     fun->setArgCount(formals.length());
 
     unsigned staticLevel = 0;
@@ -326,7 +328,8 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
     if (!script)
         return false;
 
-    if (!funpc.generateFunctionBindings(cx, &script->bindings))
+    InternalHandle<Bindings*> bindings(script, &script->bindings);
+    if (!funpc.generateFunctionBindings(cx, bindings))
         return false;
 
     BytecodeEmitter funbce(/* parent = */ NULL, &parser, &funsc, script, /* callerFrame = */ NULL,

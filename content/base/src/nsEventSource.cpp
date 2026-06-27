@@ -537,7 +537,7 @@ NS_IMETHODIMP
 nsEventSource::OnDataAvailable(nsIRequest *aRequest,
                                nsISupports *aContext,
                                nsIInputStream *aInputStream,
-                               uint32_t aOffset,
+                               uint64_t aOffset,
                                uint32_t aCount)
 {
   NS_ENSURE_ARG_POINTER(aInputStream);
@@ -1093,9 +1093,9 @@ nsEventSource::PrintErrorOnConsole(const char *aBundleURI,
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = errObj->InitWithWindowID(message.get(),
-                                mScriptFile.get(),
-                                nullptr,
+  rv = errObj->InitWithWindowID(message,
+                                mScriptFile,
+                                EmptyString(),
                                 mScriptLine, 0,
                                 nsIScriptError::errorFlag,
                                 "Event Source", mInnerWindowID);

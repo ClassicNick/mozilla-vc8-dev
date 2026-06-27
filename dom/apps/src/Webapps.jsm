@@ -179,6 +179,7 @@ let DOMApplicationRegistry = {
     let app = this.webapps[aId];
     this._readManifests([{ id: aId }], (function registerManifest(aResult) {
       let manifest = aResult[0].manifest;
+      app.name = manifest.name;
       this._registerSystemMessages(manifest, app);
       this._registerActivities(manifest, app);
     }).bind(this));
@@ -345,6 +346,7 @@ let DOMApplicationRegistry = {
     appNote.id = id;
 
     appObject.localId = localId;
+    appObject.basePath = FileUtils.getDir(DIRECTORY_NAME, ["webapps"], true, true).path;
 
     let dir = FileUtils.getDir(DIRECTORY_NAME, ["webapps", id], true, true);
     let manFile = dir.clone();
@@ -367,6 +369,7 @@ let DOMApplicationRegistry = {
     this.webapps[id] = appObject;
 
     appObject.status = "installed";
+    appObject.name = app.manifest.name;
 
     let manifest = new DOMApplicationManifest(app.manifest, app.origin);
 
@@ -375,7 +378,7 @@ let DOMApplicationRegistry = {
         ppmm.broadcastAsyncMessage("Webapps:Install:Return:OK", aData);
         Services.obs.notifyObservers(this, "webapps-sync-install", appNote);
         this.children.forEach(function(aMsgMgr) {
-          aMsgMgr.broadcastAsyncMessage("Webapps:AddApp", { id: id, app: appObject });
+          aMsgMgr.sendAsyncMessage("Webapps:AddApp", { id: id, app: appObject });
         });
       }).bind(this));
 
@@ -399,16 +402,9 @@ let DOMApplicationRegistry = {
   },
 
   _nextLocalId: function() {
-    // All installed apps have a localId > 1000.
-    let maxLocalId = 1000;
-
-    for (let id in this.webapps) {
-      if (this.webapps[id].localId > maxLocalId) {
-        maxLocalId = this.webapps[id].localId;
-      }
-    }
-
-    return maxLocalId + 1;
+    let id = Services.prefs.getIntPref("dom.mozApps.maxLocalId") + 1;
+    Services.prefs.setIntPref("dom.mozApps.maxLocalId", id);
+    return id;
   },
 
   _appId: function(aURI) {

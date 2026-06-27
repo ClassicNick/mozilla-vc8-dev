@@ -2205,7 +2205,7 @@ nsWindow::SetNonClientMargins(nsIntMargin &margins)
   mCustomNonClient = true;
   if (!UpdateNonClientMargins()) {
     NS_WARNING("UpdateNonClientMargins failed!");
-    return false;
+    return NS_OK;
   }
 
   return NS_OK;

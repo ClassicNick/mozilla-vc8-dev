@@ -152,6 +152,11 @@ if test -z "$PERL" -o "$PERL" = ":"; then
     AC_MSG_ERROR([perl not found in \$PATH])
 fi
 
+AC_SUBST(GAIADIR)
+if test -n "$GAIADIR" ; then
+    AC_DEFINE(PACKAGE_GAIA)
+fi
+
 MOZ_ARG_WITH_STRING(gonk,
 [  --with-gonk=DIR
                location of gonk dir],
@@ -191,7 +196,7 @@ if test -n "$gonkdir" ; then
         ;;
     esac
 
-    CPPFLAGS="-DANDROID -isystem $gonkdir/bionic/libc/$ARCH_DIR/include -isystem $gonkdir/bionic/libc/include/ -isystem $gonkdir/bionic/libc/kernel/common -isystem $gonkdir/bionic/libc/kernel/$ARCH_DIR -isystem $gonkdir/bionic/libm/include -I$gonkdir/frameworks/base/opengl/include -I$gonkdir/frameworks/base/native/include -I$gonkdir/hardware/libhardware/include -I$gonkdir/hardware/libhardware_legacy/include -I$gonkdir/system -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/frameworks/base/include -I$gonkdir/external/dbus $CPPFLAGS -I$gonkdir/frameworks/base/services/sensorservice -I$gonkdir/frameworks/base/services/camera"
+    CPPFLAGS="-DANDROID -isystem $gonkdir/bionic/libc/$ARCH_DIR/include -isystem $gonkdir/bionic/libc/include/ -isystem $gonkdir/bionic/libc/kernel/common -isystem $gonkdir/bionic/libc/kernel/$ARCH_DIR -isystem $gonkdir/bionic/libm/include -I$gonkdir/frameworks/base/opengl/include -I$gonkdir/frameworks/base/native/include -I$gonkdir/hardware/libhardware/include -I$gonkdir/hardware/libhardware_legacy/include -I$gonkdir/system -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/frameworks/base/include -I$gonkdir/external/dbus -I$gonkdir/external/bluetooth/bluez/lib $CPPFLAGS -I$gonkdir/frameworks/base/services/sensorservice -I$gonkdir/frameworks/base/services/camera -I$gonkdir/system/media/wilhelm/include"
     CFLAGS="-mandroid -fno-short-enums -fno-exceptions $CFLAGS"
     CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions -Wno-psabi $CXXFLAGS $STLPORT_CPPFLAGS"
     dnl Add -llog by default, since we use it all over the place.
@@ -1412,15 +1417,15 @@ if test "$GNU_CC"; then
                   LDFLAGS=$_SAVE_LDFLAGS)
 
     # Check for -mssse3 on $CC
-    AC_MSG_CHECKING([for -mssse3 option to $CC])
-    HAVE_COMPILER_FLAG_MSSSE3=
+    AC_MSG_CHECKING([if toolchain supports -mssse3 option])
+    HAVE_TOOLCHAIN_SUPPORT_MSSSE3=
     _SAVE_CFLAGS=$CFLAGS
     CFLAGS="$CFLAGS -mssse3"
-    AC_TRY_COMPILE(,,AC_MSG_RESULT([yes])
-                     [HAVE_COMPILER_FLAG_MSSSE3=1],
+    AC_TRY_COMPILE([asm ("pmaddubsw %xmm2,%xmm3");],,AC_MSG_RESULT([yes])
+                     [HAVE_TOOLCHAIN_SUPPORT_MSSSE3=1],
                      AC_MSG_RESULT([no]))
     CFLAGS=$_SAVE_CFLAGS
-    AC_SUBST(HAVE_COMPILER_FLAG_MSSSE3)
+    AC_SUBST(HAVE_TOOLCHAIN_SUPPORT_MSSSE3)
 
     # Turn on GNU-specific warnings:
     # -Wall - turn on a lot of warnings
@@ -1624,6 +1629,50 @@ MOZ_ARG_ENABLE_BOOL(profiling,
 # For profiling builds keep the symbol information
 if test "$MOZ_PROFILING" -a -z "$STRIP_FLAGS"; then
     STRIP_FLAGS="--strip-debug"
+fi
+
+dnl ========================================================
+dnl = Use incremental GC
+dnl ========================================================
+JSGC_INCREMENTAL=1
+MOZ_ARG_DISABLE_BOOL(gcincremental,
+[  --disable-gcincremental Disable incremental GC],
+    JSGC_INCREMENTAL= )
+if test -n "$JSGC_INCREMENTAL"; then
+    AC_DEFINE(JSGC_INCREMENTAL)
+fi
+
+dnl ========================================================
+dnl = Use generational GC
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(gcgenerational,
+[  --enable-gcgenerational Enable generational GC],
+    JSGC_GENERATIONAL=1,
+    JSGC_GENERATIONAL= )
+if test -n "$JSGC_GENERATIONAL"; then
+    AC_DEFINE(JSGC_GENERATIONAL)
+fi
+
+dnl ========================================================
+dnl = Perform moving GC stack rooting analysis
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(root-analysis,
+[  --enable-root-analysis  Enable moving GC stack root analysis],
+    JSGC_ROOT_ANALYSIS=1,
+    JSGC_ROOT_ANALYSIS= )
+if test -n "$JSGC_ROOT_ANALYSIS"; then
+    AC_DEFINE(JSGC_ROOT_ANALYSIS)
+fi
+
+dnl ========================================================
+dnl = Use exact stack rooting for GC
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(exact-rooting,
+[  --enable-exact-rooting  Enable use of exact stack roots for GC],
+    JSGC_USE_EXACT_ROOTING=1,
+    JSGC_USE_EXACT_ROOTING= )
+if test -n "$JSGC_USE_EXACT_ROOTING"; then
+    AC_DEFINE(JSGC_USE_EXACT_ROOTING)
 fi
 
 dnl ========================================================
@@ -3873,7 +3922,7 @@ fi
 dnl system libevent Support
 dnl ========================================================
 MOZ_ARG_WITH_STRING(system-libevent,
-[  --with-system-libevent=[PFX]
+[  --with-system-libevent[=PFX]
                           Use system libevent [installed at prefix PFX]],
     LIBEVENT_DIR=$withval)
 
@@ -3882,10 +3931,11 @@ _SAVE_LDFLAGS=$LDFLAGS
 _SAVE_LIBS=$LIBS
 if test -z "$LIBEVENT_DIR" -o "$LIBEVENT_DIR" = no; then
     MOZ_NATIVE_LIBEVENT=
+elif test "$LIBEVENT_DIR" = yes; then
+    PKG_CHECK_MODULES(MOZ_LIBEVENT, libevent,
+        MOZ_NATIVE_LIBEVENT=1,
+        AC_MSG_ERROR([--with-system-libevent requested but libevent package not found]))
 else
-    if test "${LIBEVENT_DIR}" = "yes"; then
-        LIBEVENT_DIR=/usr
-    fi
     CFLAGS="-I${LIBEVENT_DIR}/include $CFLAGS"
     LDFLAGS="-L${LIBEVENT_DIR}/lib $LDFLAGS"
     MOZ_CHECK_HEADER(event.h,
@@ -3895,16 +3945,16 @@ else
         AC_MSG_ERROR([--with-system-libevent requested but event.h not found]))
     AC_CHECK_LIB(event, event_init,
                  [MOZ_NATIVE_LIBEVENT=1
-                  MOZ_LIBEVENT_INCLUDES="${LIBEVENT_DIR}/include"
+                  MOZ_LIBEVENT_CFLAGS="-I${LIBEVENT_DIR}/include"
                   MOZ_LIBEVENT_LIBS="-L${LIBEVENT_DIR}/lib -levent"],
-                 [MOZ_NATIVE_LIBEVENT= MOZ_LIBEVENT_INCLUDES= MOZ_LIBEVENT_LIBS=])
+                 [MOZ_NATIVE_LIBEVENT= MOZ_LIBEVENT_CFLAGS= MOZ_LIBEVENT_LIBS=])
 fi
 CFLAGS=$_SAVE_CFLAGS
 LDFLAGS=$_SAVE_LDFLAGS
 LIBS=$_SAVE_LIBS
 
 AC_SUBST(MOZ_NATIVE_LIBEVENT)
-AC_SUBST(MOZ_LIBEVENT_INCLUDES)
+AC_SUBST(MOZ_LIBEVENT_CFLAGS)
 AC_SUBST(MOZ_LIBEVENT_LIBS)
 
 dnl ========================================================
@@ -3952,11 +4002,7 @@ AC_CHECK_PROGS(YASM, yasm, "")
 
 if test -n "$YASM"; then
   dnl Pull out yasm's version string
-  changequote(,)
-  _YASM_VER_FILTER='s|.* \([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\).*|\1|p'
-  changequote([,])
-
-  YASM_VERSION=`yasm --version | sed -ne "$_YASM_VER_FILTER"`
+  YASM_VERSION=`yasm --version | $AWK '/^yasm/ { print $2 }'`
   _YASM_MAJOR_VERSION=`echo ${YASM_VERSION} | $AWK -F\. '{ print $1 }'`
   _YASM_MINOR_VERSION=`echo ${YASM_VERSION} | $AWK -F\. '{ print $2 }'`
   _YASM_RELEASE=`      echo ${YASM_VERSION} | $AWK -F\. '{ print $3 }'`
@@ -5497,6 +5543,9 @@ fi
 if test -n "$MOZ_CUBEB"; then
     case "$target" in
     *-android*|*-linuxandroid*)
+        if test -n "$gonkdir"; then
+            AC_DEFINE(MOZ_CUBEB)
+        fi
         dnl No Android implementation of libcubeb yet.
         ;;
     *-linux*)

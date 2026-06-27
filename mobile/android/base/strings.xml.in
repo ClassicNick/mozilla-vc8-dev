@@ -135,9 +135,10 @@
   <string name="reading_list_added">&reading_list_added;</string>
   <string name="reading_list_removed">&reading_list_removed;</string>
   <string name="reading_list_failed">&reading_list_failed;</string>
-  <string name="reader_mode">&reader_mode;</string>
+  <string name="reader">&reader;</string>
 
   <string name="contextmenu_open_new_tab">&contextmenu_open_new_tab;</string>
+  <string name="contextmenu_open_in_reader">&contextmenu_open_in_reader;</string>
   <string name="contextmenu_remove_history">&contextmenu_remove_history;</string>
   <string name="contextmenu_remove_bookmark">&contextmenu_remove_bookmark;</string>
   <string name="contextmenu_add_to_launcher">&contextmenu_add_to_launcher;</string>
@@ -210,4 +211,21 @@
   <string name="bookmarkhistory_import_wait">&bookmarkhistory_import_wait;</string>
 
   <string name="webapp_generic_name">&webapp_generic_name;</string>
+
+  <!-- Updater notifications -->
+  <string name="updater_start_title">&updater_start_title;</string>
+  <string name="updater_start_ticker">&updater_start_ticker;</string>
+  <string name="updater_start_select">&updater_start_select;</string>
+
+  <string name="updater_downloading_title">&updater_downloading_title;</string>
+  <string name="updater_downloading_ticker">&updater_downloading_ticker;</string>
+  <string name="updater_downloading_ticker_failed">&updater_downloading_ticker_failed;</string>
+  <string name="updater_downloading_select">&updater_downloading_select;</string>
+  <string name="updater_downloading_retry">&updater_downloading_retry;</string>
+  <string name="updater_downloading_willapply">&updater_downloading_willapply;</string>
+  
+  <string name="updater_apply_title">&updater_apply_title;</string>
+  <string name="updater_apply_ticker">&updater_apply_ticker;</string>
+  <string name="updater_apply_select">&updater_apply_select;</string>
+
 </resources>

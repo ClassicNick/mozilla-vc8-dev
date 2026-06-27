@@ -455,6 +455,7 @@ IsFontSizeInflationContainer(nsIFrame* aFrame,
                    (aFrame->GetParent()->GetContent() == content) ||
                    (content && (content->IsHTML(nsGkAtoms::option) ||
                                 content->IsHTML(nsGkAtoms::optgroup) ||
+                                content->IsHTML(nsGkAtoms::select) ||
                                 content->IsInNativeAnonymousSubtree()))) &&
                   !(aFrame->IsBoxFrame() && aFrame->GetParent()->IsBoxFrame());
   NS_ASSERTION(!aFrame->IsFrameOfType(nsIFrame::eLineParticipant) ||
@@ -997,7 +998,8 @@ nsIFrame::IsSVGTransformed(gfxMatrix *aOwnTransforms,
 bool
 nsIFrame::Preserves3DChildren() const
 {
-  if (GetStyleDisplay()->mTransformStyle != NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D || !IsTransformed())
+  if (GetStyleDisplay()->mTransformStyle != NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D ||
+      !GetStyleDisplay()->HasTransform())
       return false;
 
   // If we're all scroll frame, then all descendants will be clipped, so we can't preserve 3d.
@@ -1013,7 +1015,8 @@ nsIFrame::Preserves3DChildren() const
 bool
 nsIFrame::Preserves3D() const
 {
-  if (!GetParent() || !GetParent()->Preserves3DChildren() || !IsTransformed()) {
+  if (!GetParent() || !GetParent()->Preserves3DChildren() ||
+      !GetStyleDisplay()->HasTransform()) {
     return false;
   }
   return true;
@@ -2779,22 +2782,70 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   return rv;
 }
 
+/*
+ * SelectByTypeAtPoint
+ *
+ * Search for selectable content at point and attempt to select
+ * based on the start and end selection behaviours.
+ *
+ * @param aPresContext Presentation context
+ * @param aPoint Point at which selection will occur. Coordinates
+ * should be relaitve to this frame.
+ * @param aBeginAmountType, aEndAmountType Selection behavior, see
+ * nsIFrame for definitions.
+ * @param aSelectFlags Selection flags defined in nsFame.h.
+ * @return success or failure at finding suitable content to select.
+ */
+nsresult
+nsFrame::SelectByTypeAtPoint(nsPresContext* aPresContext,
+                             const nsPoint& aPoint,
+                             nsSelectionAmount aBeginAmountType,
+                             nsSelectionAmount aEndAmountType,
+                             uint32_t aSelectFlags)
+{
+  NS_ENSURE_ARG_POINTER(aPresContext);
+
+  // No point in selecting if selection is turned off
+  if (DisplaySelection(aPresContext) == nsISelectionController::SELECTION_OFF)
+    return NS_OK;
+
+  ContentOffsets offsets = GetContentOffsetsFromPoint(aPoint, SKIP_HIDDEN);
+  if (!offsets.content)
+    return NS_ERROR_FAILURE;
+
+  nsIFrame* theFrame;
+  int32_t offset;
+  const nsFrameSelection* frameSelection =
+    PresContext()->GetPresShell()->ConstFrameSelection();
+  theFrame = frameSelection->
+    GetFrameForNodeOffset(offsets.content, offsets.offset,
+                          nsFrameSelection::HINT(offsets.associateWithNext),
+                          &offset);
+  if (!theFrame)
+    return NS_ERROR_FAILURE;
+
+  nsFrame* frame = static_cast<nsFrame*>(theFrame);
+  return frame->PeekBackwardAndForward(aBeginAmountType, aEndAmountType,
+                                       offsets.offset, aPresContext,
+                                       aBeginAmountType != eSelectWord,
+                                       aSelectFlags);
+}
+
 /**
   * Multiple Mouse Press -- line or paragraph selection -- for the frame.
   * Wouldn't it be nice if this didn't have to be hardwired into Frame code?
  */
 NS_IMETHODIMP
-nsFrame::HandleMultiplePress(nsPresContext* aPresContext, 
+nsFrame::HandleMultiplePress(nsPresContext* aPresContext,
                              nsGUIEvent*    aEvent,
                              nsEventStatus* aEventStatus,
                              bool           aControlHeld)
 {
+  NS_ENSURE_ARG_POINTER(aEvent);
   NS_ENSURE_ARG_POINTER(aEventStatus);
-  if (nsEventStatus_eConsumeNoDefault == *aEventStatus) {
-    return NS_OK;
-  }
 
-  if (DisplaySelection(aPresContext) == nsISelectionController::SELECTION_OFF) {
+  if (nsEventStatus_eConsumeNoDefault == *aEventStatus ||
+      DisplaySelection(aPresContext) == nsISelectionController::SELECTION_OFF) {
     return NS_OK;
   }
 
@@ -2822,37 +2873,18 @@ nsFrame::HandleMultiplePress(nsPresContext* aPresContext,
     return NS_OK;
   }
 
-  nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
-  ContentOffsets offsets = GetContentOffsetsFromPoint(pt, SKIP_HIDDEN);
-  if (!offsets.content) return NS_ERROR_FAILURE;
-
-  nsIFrame* theFrame;
-  int32_t offset;
-  // Maybe make this a static helper?
-  const nsFrameSelection* frameSelection =
-    PresContext()->GetPresShell()->ConstFrameSelection();
-  theFrame = frameSelection->
-    GetFrameForNodeOffset(offsets.content, offsets.offset,
-                          nsFrameSelection::HINT(offsets.associateWithNext),
-                          &offset);
-  if (!theFrame)
-    return NS_ERROR_FAILURE;
-
-  nsFrame* frame = static_cast<nsFrame*>(theFrame);
-
-  return frame->PeekBackwardAndForward(beginAmount, endAmount,
-                                       offsets.offset, aPresContext,
-                                       beginAmount != eSelectWord,
-                                       aControlHeld);
+  nsPoint relPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
+  return SelectByTypeAtPoint(aPresContext, relPoint, beginAmount, endAmount,
+                             (aControlHeld ? SELECT_ACCUMULATE : 0));
 }
 
-NS_IMETHODIMP
+nsresult
 nsFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
                                 nsSelectionAmount aAmountForward,
                                 int32_t aStartPos,
                                 nsPresContext* aPresContext,
                                 bool aJumpLines,
-                                bool aMultipleSelection)
+                                uint32_t aSelectFlags)
 {
   nsIFrame* baseFrame = this;
   int32_t baseOffset = aStartPos;
@@ -2906,7 +2938,7 @@ nsFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
 
   rv = frameSelection->HandleClick(startpos.mResultContent,
                                    startpos.mContentOffset, startpos.mContentOffset,
-                                   false, aMultipleSelection,
+                                   false, (aSelectFlags & SELECT_ACCUMULATE),
                                    nsFrameSelection::HINTRIGHT);
   if (NS_FAILED(rv))
     return rv;
@@ -3873,16 +3905,47 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   }
   nscoord boxSizingToMarginEdgeWidth =
     aMargin.width + aBorder.width + aPadding.width - boxSizingAdjust.width;
+  const nsStyleCoord* widthStyleCoord = &(stylePos->mWidth);
+  const nsStyleCoord* heightStyleCoord = &(stylePos->mHeight);
+
+  bool isFlexItem = IsFlexItem();
+  bool isHorizontalFlexItem = false;
+ 
+#ifdef MOZ_FLEXBOX
+  if (isFlexItem) {
+    // Flex items use their "flex-basis" property in place of their main-size
+    // property (e.g. "width") for sizing purposes, *unless* they have
+    // "flex-basis:auto", in which case they use their main-size property after
+    // all.
+    uint32_t flexDirection = mParent->GetStylePosition()->mFlexDirection;
+    isHorizontalFlexItem =
+      flexDirection == NS_STYLE_FLEX_DIRECTION_ROW ||
+      flexDirection == NS_STYLE_FLEX_DIRECTION_ROW_REVERSE;
+
+    if (stylePos->mFlexBasis.GetUnit() != eStyleUnit_Auto) {
+      if (isHorizontalFlexItem) {
+        widthStyleCoord = &(stylePos->mFlexBasis);
+      } else {
+        heightStyleCoord = &(stylePos->mFlexBasis);
+      }
+    }
+  }
+#endif // MOZ_FLEXBOX
+
   // Compute width
 
-  if (stylePos->mWidth.GetUnit() != eStyleUnit_Auto) {
+  if (widthStyleCoord->GetUnit() != eStyleUnit_Auto) {
     result.width =
       nsLayoutUtils::ComputeWidthValue(aRenderingContext, this,
         aCBSize.width, boxSizingAdjust.width, boxSizingToMarginEdgeWidth,
-        stylePos->mWidth);
+        *widthStyleCoord);
   }
 
-  if (stylePos->mMaxWidth.GetUnit() != eStyleUnit_None) {
+  // Flex items ignore their min & max sizing properties in their
+  // flex container's main-axis.  (Those properties get applied later in
+  // the flexbox algorithm.)
+  if (stylePos->mMaxWidth.GetUnit() != eStyleUnit_None &&
+      !(isFlexItem && isHorizontalFlexItem)) {
     nscoord maxWidth =
       nsLayoutUtils::ComputeWidthValue(aRenderingContext, this,
         aCBSize.width, boxSizingAdjust.width, boxSizingToMarginEdgeWidth,
@@ -3890,22 +3953,34 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
     result.width = NS_MIN(maxWidth, result.width);
   }
 
-  nscoord minWidth =
-    nsLayoutUtils::ComputeWidthValue(aRenderingContext, this,
-      aCBSize.width, boxSizingAdjust.width, boxSizingToMarginEdgeWidth,
-      stylePos->mMinWidth);
+  nscoord minWidth;
+  if (stylePos->mMinWidth.GetUnit() != eStyleUnit_Auto &&
+      !(isFlexItem && isHorizontalFlexItem)) {
+    minWidth =
+      nsLayoutUtils::ComputeWidthValue(aRenderingContext, this,
+        aCBSize.width, boxSizingAdjust.width, boxSizingToMarginEdgeWidth,
+        stylePos->mMinWidth);
+  } else {
+    // Treat "min-width: auto" as 0.
+    // NOTE: Technically, "auto" is supposed to behave like "min-content" on
+    // flex items. However, we don't need to worry about that here, because
+    // flex items' min-sizes are intentionally ignored until the flex
+    // container explicitly considers them during space distribution.
+    minWidth = 0;
+  }
   result.width = NS_MAX(minWidth, result.width);
 
   // Compute height
-  if (!nsLayoutUtils::IsAutoHeight(stylePos->mHeight, aCBSize.height)) {
+  if (!nsLayoutUtils::IsAutoHeight(*heightStyleCoord, aCBSize.height)) {
     result.height =
       nsLayoutUtils::ComputeHeightValue(aCBSize.height, 
                                         boxSizingAdjust.height,
-                                        stylePos->mHeight);
+                                        *heightStyleCoord);
   }
 
   if (result.height != NS_UNCONSTRAINEDSIZE) {
-    if (!nsLayoutUtils::IsAutoHeight(stylePos->mMaxHeight, aCBSize.height)) {
+    if (!nsLayoutUtils::IsAutoHeight(stylePos->mMaxHeight, aCBSize.height) &&
+        !(isFlexItem && !isHorizontalFlexItem)) {
       nscoord maxHeight =
         nsLayoutUtils::ComputeHeightValue(aCBSize.height, 
                                           boxSizingAdjust.height,
@@ -3913,7 +3988,8 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
       result.height = NS_MIN(maxHeight, result.height);
     }
 
-    if (!nsLayoutUtils::IsAutoHeight(stylePos->mMinHeight, aCBSize.height)) {
+    if (!nsLayoutUtils::IsAutoHeight(stylePos->mMinHeight, aCBSize.height) &&
+        !(isFlexItem && !isHorizontalFlexItem)) {
       nscoord minHeight =
         nsLayoutUtils::ComputeHeightValue(aCBSize.height, 
                                           boxSizingAdjust.height, 

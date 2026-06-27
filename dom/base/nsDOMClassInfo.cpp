@@ -171,7 +171,6 @@
 #include "nsIDOMParser.h"
 #include "nsIDOMSerializer.h"
 #include "nsXMLHttpRequest.h"
-#include "nsWebSocket.h"
 #include "nsEventSource.h"
 #include "nsIDOMSettingsManager.h"
 #include "nsIDOMContactManager.h"
@@ -527,10 +526,11 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMNavigatorSystemMessages.h"
 
 #include "mozilla/dom/Activity.h"
+#include "TimeManager.h"
 
 #include "DOMCameraManager.h"
-#include "CameraControl.h"
-#include "CameraCapabilities.h"
+#include "DOMCameraControl.h"
+#include "DOMCameraCapabilities.h"
 
 #include "DOMError.h"
 #include "DOMRequest.h"
@@ -1346,6 +1346,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(ImageData, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(MozCanvasPrintState, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(SmartCardEvent, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1522,9 +1524,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
 
-  NS_DEFINE_CLASSINFO_DATA(ProgressEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-
   NS_DEFINE_CLASSINFO_DATA(XMLHttpRequestUpload, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
 
@@ -1618,9 +1617,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(DesktopNotificationCenter, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
-
-  NS_DEFINE_CLASSINFO_DATA(WebSocket, nsEventTargetSH,
-                           EVENTTARGET_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(IDBFactory, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -1722,6 +1718,9 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozActivity, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
+
+  NS_DEFINE_CLASSINFO_DATA(MozTimeManager, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 };
 
 // Objects that should be constructable through |new Name();|
@@ -1746,7 +1745,6 @@ NS_DEFINE_CONTRACT_CTOR(FileReader, NS_FILEREADER_CONTRACTID)
 NS_DEFINE_CONTRACT_CTOR(ArchiveReader, NS_ARCHIVEREADER_CONTRACTID)
 NS_DEFINE_CONTRACT_CTOR(FormData, NS_FORMDATA_CONTRACTID)
 NS_DEFINE_CONTRACT_CTOR(XMLSerializer, NS_XMLSERIALIZER_CONTRACTID)
-NS_DEFINE_CONTRACT_CTOR(WebSocket, NS_WEBSOCKET_CONTRACTID)
 NS_DEFINE_CONTRACT_CTOR(XPathEvaluator, NS_XPATH_EVALUATOR_CONTRACTID)
 NS_DEFINE_CONTRACT_CTOR(XSLTProcessor,
                         "@mozilla.org/document-transformer;1?type=xslt")
@@ -1824,7 +1822,6 @@ static const nsConstructorFuncMapData kConstructorFuncMap[] =
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(ArchiveReader, ArchiveReaderCtor)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(FormData, FormDataCtor)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(XMLSerializer, XMLSerializerCtor)
-  NS_DEFINE_CONSTRUCTOR_FUNC_DATA(WebSocket, WebSocketCtor)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(XPathEvaluator, XPathEvaluatorCtor)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(XSLTProcessor, XSLTProcessorCtor)
   NS_DEFINE_CONSTRUCTOR_FUNC_DATA(EventSource, EventSourceCtor)
@@ -1954,9 +1951,9 @@ PrintWarningOnConsole(JSContext *cx, const char *stringBundleProperty)
     }
   }
 
-  nsresult rv = scriptError->InitWithWindowID(msg.get(),
-                                              sourcefile.get(),
-                                              EmptyString().get(),
+  nsresult rv = scriptError->InitWithWindowID(msg,
+                                              sourcefile,
+                                              EmptyString(),
                                               lineno,
                                               0, // column for error is not available
                                               nsIScriptError::warningFlag,
@@ -2090,11 +2087,8 @@ SetParentToWindow(nsGlobalWindow *win, JSObject **parent)
   *parent = win->FastGetGlobalJSObject();
 
   if (MOZ_UNLIKELY(!*parent)) {
-    // The only known case where this can happen is when the inner window has
-    // been torn down. See bug 691178 comment 11. Should be a fatal MOZ_ASSERT,
-    // but we've found a way to hit it too often in mochitests. See bugs 777875
-    // 778424, 781078.
-    NS_ASSERTION(win->IsClosedOrClosing(), "win should be closed or closing");
+    // The inner window has been torn down. The scope is dying, so don't create
+    // any new wrappers.
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -2177,7 +2171,7 @@ bool
 nsDOMClassInfo::ObjectIsNativeWrapper(JSContext* cx, JSObject* obj)
 {
   return xpc::WrapperFactory::IsXrayWrapper(obj) &&
-         !xpc::WrapperFactory::IsPartiallyTransparent(obj);
+         xpc::AccessCheck::wrapperSubsumes(obj);
 }
 
 nsDOMClassInfo::nsDOMClassInfo(nsDOMClassInfoData* aData) : mData(aData)
@@ -2504,6 +2498,7 @@ nsDOMClassInfo::Init()
 #endif
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigatorCamera)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMNavigatorSystemMessages)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozNavigatorTime)
 
   DOM_CLASSINFO_MAP_END
 
@@ -3926,6 +3921,10 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMImageData)
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(MozCanvasPrintState, nsIDOMMozCanvasPrintState)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozCanvasPrintState)
+  DOM_CLASSINFO_MAP_END
+
   DOM_CLASSINFO_MAP_BEGIN(XSLTProcessor, nsIXSLTProcessor)
     DOM_CLASSINFO_MAP_ENTRY(nsIXSLTProcessor)
     DOM_CLASSINFO_MAP_ENTRY(nsIXSLTProcessorPrivate)
@@ -4191,11 +4190,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_END
 #endif
 
-  DOM_CLASSINFO_MAP_BEGIN(ProgressEvent, nsIDOMProgressEvent)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMProgressEvent)
-    DOM_CLASSINFO_EVENT_MAP_ENTRIES
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(XMLHttpRequestUpload, nsIXMLHttpRequestUpload)
     DOM_CLASSINFO_MAP_ENTRY(nsIXMLHttpRequestEventTarget)
     DOM_CLASSINFO_MAP_ENTRY(nsIXMLHttpRequestUpload)
@@ -4358,11 +4352,6 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(DesktopNotificationCenter, nsIDOMDesktopNotificationCenter)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMDesktopNotificationCenter)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(WebSocket, nsIWebSocket)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebSocket)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(IDBFactory, nsIIDBFactory)
@@ -4569,6 +4558,10 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
+  DOM_CLASSINFO_MAP_BEGIN(MozTimeManager, nsIDOMMozTimeManager)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozTimeManager)
+  DOM_CLASSINFO_MAP_END
+
 #ifdef DEBUG
   {
     uint32_t i = ArrayLength(sClassInfoData);
@@ -4633,7 +4626,8 @@ nsDOMClassInfo::Init()
   mozilla::dom::oldproxybindings::Register(nameSpaceManager);
 
   if (!AzureCanvasEnabled()) {
-    nameSpaceManager->RegisterDefineDOMInterface(NS_LITERAL_STRING("CanvasRenderingContext2D"), NULL);
+    nameSpaceManager->RegisterDefineDOMInterface(NS_LITERAL_STRING("CanvasRenderingContext2D"),
+                                                 nullptr, nullptr);
   }
 
   sIsInitialized = true;
@@ -5987,9 +5981,9 @@ IDBConstantGetter(JSContext *cx, JSHandleObject obj, JSHandleId id, JSMutableHan
     do_CreateInstance(NS_SCRIPTERROR_CONTRACTID);
   NS_WARN_IF_FALSE(errorObject, "Failed to create error object");
   if (errorObject) {
-    nsresult rv = errorObject->InitWithWindowID(warnText.get(),
-                                                nullptr, // file name
-                                                nullptr, // source line
+    nsresult rv = errorObject->InitWithWindowID(warnText,
+                                                EmptyString(), // file name
+                                                EmptyString(), // source line
                                                 0, 0, // Line/col number
                                                 nsIScriptError::warningFlag,
                                                 "DOM Core", windowID);
@@ -6714,13 +6708,6 @@ ConstructorEnabled(const nsGlobalNameStruct *aStruct, nsGlobalWindow *aWin)
     return false;
   }
 
-  // For now don't expose web sockets unless user has explicitly enabled them
-  if (aStruct->mDOMClassInfoID == eDOMClassInfo_WebSocket_id) {
-    if (!nsWebSocket::PrefEnabled()) {
-      return false;
-    }
-  }
-
   // For now don't expose server events unless user has explicitly enabled them
   if (aStruct->mDOMClassInfoID == eDOMClassInfo_EventSource_id) {
     if (!nsEventSource::PrefEnabled()) {
@@ -6781,6 +6768,10 @@ nsWindowSH::GlobalResolve(nsGlobalWindow *aWin, JSContext *cx,
     if (define) {
       if (name_struct->mType == nsGlobalNameStruct::eTypeClassConstructor &&
           !ConstructorEnabled(name_struct, aWin)) {
+        return NS_OK;
+      }
+
+      if (name_struct->mPrefEnabled && !(*name_struct->mPrefEnabled)()) {
         return NS_OK;
       }
 

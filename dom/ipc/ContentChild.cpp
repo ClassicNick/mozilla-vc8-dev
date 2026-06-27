@@ -19,9 +19,11 @@
 #include "AudioChild.h"
 #endif
 
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
 #include "mozilla/dom/PCrashReporterChild.h"
 #include "mozilla/dom/StorageChild.h"
+#include "mozilla/Hal.h"
 #include "mozilla/hal_sandbox/PHalChild.h"
 #include "mozilla/ipc/TestShellChild.h"
 #include "mozilla/ipc/XPCShellEnvironment.h"
@@ -31,7 +33,6 @@
 #include "mozilla/layers/PCompositorChild.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Attributes.h"
 
 #if defined(MOZ_SYDNEYAUDIO)
 #include "nsAudioStream.h"
@@ -94,12 +95,14 @@
 
 #include "nsDOMFile.h"
 #include "nsIRemoteBlob.h"
+#include "ProcessUtils.h"
 #include "StructuredCloneUtils.h"
 #include "URIUtils.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 
+using namespace base;
 using namespace mozilla::docshell;
 using namespace mozilla::dom::devicestorage;
 using namespace mozilla::dom::sms;
@@ -286,6 +289,19 @@ ContentChild::Init(MessageLoop* aIOLoop,
     crashreporter->SendAddLibraryMappings(mappings);
 #endif
 #endif
+
+    bool startBackground = true;
+    SendGetProcessAttributes(&mID, &startBackground,
+                             &mIsForApp, &mIsForBrowser);
+    hal::SetProcessPriority(
+        GetCurrentProcId(),
+        startBackground ? hal::PROCESS_PRIORITY_BACKGROUND:
+                          hal::PROCESS_PRIORITY_FOREGROUND);
+    if (mIsForApp && !mIsForBrowser) {
+        SetThisProcessName("(App)");
+    } else {
+        SetThisProcessName("Browser");
+    }
 
     return true;
 }
@@ -948,20 +964,6 @@ ContentChild::RecvAppInfo(const nsCString& version, const nsCString& buildID)
     mAppInfo.buildID.Assign(buildID);
 
     PreloadSlowThings();
-    return true;
-}
-
-bool
-ContentChild::RecvSetProcessAttributes(const uint64_t &id,
-                                       const bool& aIsForApp,
-                                       const bool& aIsForBrowser)
-{
-    if (mID != uint64_t(-1)) {
-        NS_WARNING("Setting content child's ID twice?");
-    }
-    mID = id;
-    mIsForApp = aIsForApp;
-    mIsForBrowser = aIsForBrowser;
     return true;
 }
 

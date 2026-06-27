@@ -649,13 +649,12 @@ struct JSRuntime : js::RuntimeFriendFields
         SavedGCRoot(void *thing, JSGCTraceKind kind) : thing(thing), kind(kind) {}
     };
     js::Vector<SavedGCRoot, 0, js::SystemAllocPolicy> gcSavedRoots;
+
+    bool                gcRelaxRootChecks;
+    int                 gcAssertNoGCDepth;
 #endif
 
     bool                gcPoke;
-
-#ifdef DEBUG
-    bool                relaxRootChecks;
-#endif
 
     enum HeapState {
         Idle,       // doing nothing with the GC heap
@@ -1021,8 +1020,6 @@ struct JSRuntime : js::RuntimeFriendFields
 };
 
 /* Common macros to access thread-local caches in JSRuntime. */
-#define JS_PROPERTY_CACHE(cx)   (cx->runtime->propertyCache)
-
 #define JS_KEEP_ATOMS(rt)   (rt)->gcKeepAtoms++;
 #define JS_UNKEEP_ATOMS(rt) (rt)->gcKeepAtoms--;
 
@@ -1191,10 +1188,6 @@ struct JSContext : js::ContextFriendFields
 
     /* True if generating an error, to prevent runaway recursion. */
     bool                generatingError;
-
-#ifdef DEBUG
-    bool                rootingUnnecessary;
-#endif
 
     /* The current compartment. */
     JSCompartment       *compartment;
@@ -1376,6 +1369,8 @@ struct JSContext : js::ContextFriendFields
     inline js::LifoAlloc &typeLifoAlloc();
 
     inline js::PropertyTree &propertyTree();
+
+    js::PropertyCache &propertyCache() { return runtime->propertyCache; }
 
 #ifdef JS_THREADSAFE
     unsigned            outstandingRequests;/* number of JS_BeginRequest calls

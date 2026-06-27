@@ -5110,7 +5110,7 @@ TypeDynamicResult(JSContext *cx, JSScript *script, jsbytecode *pc, Type type)
     jsbytecode *ignorePC = pc + GetBytecodeLength(pc);
     if (*ignorePC == JSOP_POP) {
         /* Value is ignored. */
-    } if (*ignorePC == JSOP_INT8 && GET_INT8(ignorePC) == -1) {
+    } else if (*ignorePC == JSOP_INT8 && GET_INT8(ignorePC) == -1) {
         ignorePC += JSOP_INT8_LENGTH;
         if (*ignorePC != JSOP_BITAND)
             ignorePC = NULL;
@@ -5481,7 +5481,7 @@ JSObject::makeLazyType(JSContext *cx)
     RootedObject self(cx, this);
     JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(getClass());
     TypeObject *type = cx->compartment->types.newTypeObject(cx, NULL, key, getProto());
-    AssertRootingUnnecessary safe(cx);
+    AutoAssertNoGC nogc;
     if (!type) {
         if (cx->typeInferenceEnabled())
             cx->compartment->types.setPendingNukeTypes(cx);

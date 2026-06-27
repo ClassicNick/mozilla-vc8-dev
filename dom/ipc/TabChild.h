@@ -48,6 +48,7 @@
 #include "nsITabChild.h"
 #include "mozilla/Attributes.h"
 #include "FrameMetrics.h"
+#include "ProcessUtils.h"
 
 struct gfxMatrix;
 
@@ -163,6 +164,8 @@ public:
     virtual ~TabChild();
 
     uint32_t GetAppId() { return mAppId; }
+
+    bool IsRootContentDocument();
 
     NS_DECL_ISUPPORTS
     NS_DECL_NSIWEBBROWSERCHROME
@@ -307,6 +310,7 @@ private:
     bool InitTabChildGlobal(FrameScriptLoading aScriptLoading = DEFAULT_LOAD_SCRIPTS);
     bool InitRenderingState();
     void DestroyWindow();
+    void SetProcessNameToAppName();
 
     // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
     void DoFakeShow();
