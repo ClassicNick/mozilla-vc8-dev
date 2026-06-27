@@ -2962,7 +2962,7 @@ nsXMLHttpRequest::Send(nsIVariant* aVariant, const Nullable<RequestBody>& aBody)
       }
 
       mUploadComplete = false;
-      PRUint32 uploadTotal = 0;
+      PRUint64 uploadTotal = 0;
       postDataStream->Available(&uploadTotal);
       mUploadTotal = uploadTotal;
 
@@ -3699,7 +3699,6 @@ nsXMLHttpRequest::MaybeDispatchProgressEvents(bool aFinalProgress)
     if (aFinalProgress) {
       mUploadTotal = mUploadTransferred;
       mUploadProgressMax = mUploadProgress;
-      mUploadLengthComputable = true;
     }
     if (mUpload && !mUploadComplete) {
       DispatchProgressEvent(mUpload, NS_LITERAL_STRING(PROGRESS_STR),
@@ -3710,7 +3709,6 @@ nsXMLHttpRequest::MaybeDispatchProgressEvents(bool aFinalProgress)
   } else {
     if (aFinalProgress) {
       mLoadTotal = mLoadTransferred;
-      mLoadLengthComputable = true;
     }
     mInLoadProgressEvent = true;
     DispatchProgressEvent(this, NS_LITERAL_STRING(PROGRESS_STR),

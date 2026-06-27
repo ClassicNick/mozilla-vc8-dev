@@ -5,8 +5,8 @@
 
 package org.mozilla.gecko;
 
+import org.mozilla.gecko.gfx.GeckoLayerClient;
 import org.mozilla.gecko.gfx.InputConnectionHandler;
-import org.mozilla.gecko.gfx.LayerController;
 
 import android.R;
 import android.content.Context;
@@ -43,7 +43,7 @@ import android.view.inputmethod.InputMethodManager;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class GeckoInputConnection
+class GeckoInputConnection
     extends BaseInputConnection
     implements TextWatcher, InputConnectionHandler {
 
@@ -95,8 +95,7 @@ public class GeckoInputConnection
     private int mCompositionStart = NO_COMPOSITION_STRING;
     private boolean mCommittingText;
     private KeyCharacterMap mKeyCharacterMap;
-    private Editable mEditable;
-    private Editable.Factory mEditableFactory;
+    private final Editable mEditable;
     private boolean mBatchMode;
     private ExtractedTextRequest mUpdateRequest;
     private final ExtractedText mUpdateExtract = new ExtractedText();
@@ -110,9 +109,8 @@ public class GeckoInputConnection
 
     protected GeckoInputConnection(View targetView) {
         super(targetView, true);
-
-        mEditableFactory = Editable.Factory.getInstance();
-        initEditable("");
+        mEditable = Editable.Factory.getInstance().newEditable("");
+        spanAndSelectEditable();
         mIMEState = IME_STATE_DISABLED;
         mIMETypeHint = "";
         mIMEActionHint = "";
@@ -283,19 +281,12 @@ public class GeckoInputConnection
         // setComposingText() places the given text into the editable, replacing any existing
         // composing text. This method will likely be called multiple times while we are composing
         // text.
-
-        // If the replacement composition string is empty and we have no active composition string
-        // to replace, then just ignore the empty string. Some VKBs, such as TouchPal Keyboard,
-        // send us empty strings at inopportune times, deleting committed text. See bug 768106.
-        if (text.length() == 0 && !hasCompositionString())
-            return true;
-
         return super.setComposingText(text, newCursorPosition);
     }
 
     private static View getView() {
-        LayerController controller = GeckoApp.mAppContext.getLayerController();
-        return (controller == null ? null : controller.getView());
+        GeckoLayerClient layerClient = GeckoApp.mAppContext.getLayerClient();
+        return (layerClient == null ? null : layerClient.getView());
     }
 
     private Span getSelection() {
@@ -534,6 +525,7 @@ public class GeckoInputConnection
     }
 
     protected void resetCompositionState() {
+        removeComposingSpans(mEditable);
         mCompositionStart = NO_COMPOSITION_STRING;
         mBatchMode = false;
         mUpdateRequest = null;
@@ -1149,16 +1141,16 @@ public class GeckoInputConnection
     }
 
     private void setEditable(String contents) {
+        int prevLength = mEditable.length();
         mEditable.removeSpan(this);
-        mEditable.replace(0, mEditable.length(), contents);
-        mEditable.setSpan(this, 0, contents.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
-        Selection.setSelection(mEditable, contents.length());
+        mEditable.replace(0, prevLength, contents);
+        spanAndSelectEditable();
     }
 
-    private void initEditable(String contents) {
-        mEditable = mEditableFactory.newEditable(contents);
-        mEditable.setSpan(this, 0, contents.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
-        Selection.setSelection(mEditable, contents.length());
+    private void spanAndSelectEditable() {
+        int length = mEditable.length();
+        mEditable.setSpan(this, 0, length, Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+        Selection.setSelection(mEditable, length);
     }
 
     protected final boolean hasCompositionString() {

@@ -2846,7 +2846,10 @@ nsDocShell::CanAccessItem(nsIDocShellTreeItem* aTargetItem,
     //             window with javascript
     // Bug 408052: Adopt "ancestor" frame navigation policy
 
-    // Now do a security check
+    // Now do a security check.
+    //
+    // Disallow navigation if the two frames are not part of the same app, or if
+    // they have different is-in-browser-element states.
     //
     // Allow navigation if
     //  1) aAccessingItem can script aTargetItem or one of its ancestors in
@@ -2857,7 +2860,29 @@ nsDocShell::CanAccessItem(nsIDocShellTreeItem* aTargetItem,
 
     if (aTargetItem == aAccessingItem) {
         // A frame is allowed to navigate itself.
-        return true;  
+        return true;
+    }
+
+    nsCOMPtr<nsIDocShell> targetDS = do_QueryInterface(aTargetItem);
+    nsCOMPtr<nsIDocShell> accessingDS = do_QueryInterface(aAccessingItem);
+    if (!!targetDS != !!accessingDS) {
+        // We must be able to convert both or neither to nsIDocShell.
+        return false;
+    }
+
+    if (targetDS && accessingDS) {
+        bool targetInBrowser = false, accessingInBrowser = false;
+        targetDS->GetIsInBrowserElement(&targetInBrowser);
+        accessingDS->GetIsInBrowserElement(&accessingInBrowser);
+
+        PRUint32 targetAppId = 0, accessingAppId = 0;
+        targetDS->GetAppId(&targetAppId);
+        accessingDS->GetAppId(&accessingAppId);
+
+        if (targetInBrowser != accessingInBrowser ||
+            targetAppId != accessingAppId) {
+            return false;
+        }
     }
 
     nsCOMPtr<nsIDocShellTreeItem> accessingRoot;
@@ -6055,16 +6080,18 @@ nsDocShell::OnStateChange(nsIWebProgress * aProgress, nsIRequest * aRequest,
         channel->GetURI(getter_AddRefs(uri));
         nsCAutoString aURI;
         uri->GetAsciiSpec(aURI);
-        if (this == aProgress){
+
+        nsCOMPtr<nsIWyciwygChannel>  wcwgChannel(do_QueryInterface(aRequest));
+        nsCOMPtr<nsIWebProgress> webProgress =
+            do_QueryInterface(GetAsSupports(this));
+
+        // We don't update navigation timing for wyciwyg channels
+        if (this == aProgress && !wcwgChannel){
             rv = MaybeInitTiming();
             if (mTiming) {
                 mTiming->NotifyFetchStart(uri, ConvertLoadTypeToNavigationType(mLoadType));
             } 
         }
-
-        nsCOMPtr<nsIWyciwygChannel>  wcwgChannel(do_QueryInterface(aRequest));
-        nsCOMPtr<nsIWebProgress> webProgress =
-            do_QueryInterface(GetAsSupports(this));
 
         // Was the wyciwyg document loaded on this docshell?
         if (wcwgChannel && !mLSHE && (mItemType == typeContent) && aProgress == webProgress.get()) {
@@ -11394,20 +11421,6 @@ nsDocShell::GetIsContent(bool *aIsContent)
     *aIsContent = (mItemType == typeContent);
     return NS_OK;
 }
-
-NS_IMETHODIMP
-nsDocShell::GetExtendedOrigin(nsIURI *aUri, nsACString &aResult)
-{
-    bool isInBrowserElement;
-    GetIsInBrowserElement(&isInBrowserElement);
-
-    nsCOMPtr<nsIScriptSecurityManager> ssmgr =
-      do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
-    NS_ENSURE_TRUE(ssmgr, NS_ERROR_FAILURE);
-
-    return ssmgr->GetExtendedOrigin(aUri, mAppId, isInBrowserElement, aResult);
-}
-
 
 bool
 nsDocShell::IsOKToLoadURI(nsIURI* aURI)

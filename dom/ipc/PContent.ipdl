@@ -73,14 +73,21 @@ struct FontListEntry {
     PRUint8   index;
 };
 
-struct DeviceStorageAddParams
+struct DeviceStorageStatParams
 {
   nsString fullpath;
-  PRUint8[] bits;
+};
+
+struct DeviceStorageAddParams
+{
+  PBlob blob;
+  nsString name;
+  nsString fullpath;
 };
 
 struct DeviceStorageGetParams
 {
+  nsString name;
   nsString fullpath;
 };
 
@@ -101,6 +108,7 @@ union DeviceStorageParams
   DeviceStorageGetParams;
   DeviceStorageDeleteParams;
   DeviceStorageEnumerationParams;
+  DeviceStorageStatParams;
 };
 
 struct SlicedBlobConstructorParams
@@ -122,6 +130,11 @@ union BlobConstructorParams
   FileBlobConstructorParams;
   SlicedBlobConstructorParams;
   MysteryBlobConstructorParams;
+};
+
+union AppId {
+  uint32_t;
+  nullable PBrowser;
 };
 
 rpc protocol PContent
@@ -147,9 +160,16 @@ both:
     // created from either the child or parent process!
     //
     // The child creates the PBrowser as part of
-    // TabChild::BrowserFrameProvideWindow, and the parent creates the PBrowser
-    // as part of ContentParent::CreateTab.
-    async PBrowser(PRUint32 chromeFlags, bool isBrowserElement, PRUint32 appId);
+    // TabChild::BrowserFrameProvideWindow, and the parent creates the
+    // PBrowser as part of ContentParent::CreateTab.
+    //
+    // When the parent constructs a PBrowser, the app ID handed to the
+    // child side is trusted.  In that case, |appId| is uint32_t.
+    // However, when the child side constructs a PBrowser, for
+    // window.open(), the parent must validate the app ID used on the
+    // parent side.  To do so, the child process must pass a valid
+    // PBrowser as its |AppId|.
+    async PBrowser(PRUint32 chromeFlags, bool isBrowserElement, AppId appId);
 
     async PBlob(BlobConstructorParams params);
 
@@ -195,6 +215,8 @@ child:
     LastPrivateDocShellDestroyed();
 
     FilePathUpdate(nsString filepath, nsCString reasons);
+
+    FileSystemUpdate(nsString fsName, nsString mountPoint, PRInt32 fsState);
 
 parent:
     PAudio(PRInt32 aNumChannels, PRInt32 aRate, PRInt32 aFormat);

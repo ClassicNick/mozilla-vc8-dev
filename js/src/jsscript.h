@@ -302,11 +302,6 @@ typedef HashMap<JSScript *,
                 DefaultHasher<JSScript *>,
                 SystemAllocPolicy> ScriptCountsMap;
 
-typedef HashMap<JSScript *,
-                jschar *,
-                DefaultHasher<JSScript *>,
-                SystemAllocPolicy> SourceMapMap;
-
 class DebugScript
 {
     friend struct ::JSScript;
@@ -542,8 +537,6 @@ struct JSScript : public js::gc::Cell
     bool            isGeneratorExp:1; /* is a generator expression */
     bool            hasScriptCounts:1;/* script has an entry in
                                          JSCompartment::scriptCountsMap */
-    bool            hasSourceMap:1;   /* script has an entry in
-                                         JSCompartment::sourceMapMap */
     bool            hasDebugScript:1; /* script has an entry in
                                          JSCompartment::debugScriptMap */
 
@@ -734,11 +727,6 @@ struct JSScript : public js::gc::Cell
     js::PCCounts getPCCounts(jsbytecode *pc);
     js::ScriptCounts releaseScriptCounts();
     void destroyScriptCounts(js::FreeOp *fop);
-
-    bool setSourceMap(JSContext *cx, jschar *sourceMap);
-    jschar *getSourceMap();
-    jschar *releaseSourceMap();
-    void destroySourceMap(js::FreeOp *fop);
 
     jsbytecode *main() {
         return code + mainOffset;
@@ -989,6 +977,12 @@ struct ScriptSource
     uint32_t refs;
     uint32_t length_;
     uint32_t compressedLength_;
+    jschar *sourceMap_;
+
+    // True if we can call JSRuntime::sourceHook to load the source on
+    // demand. If sourceRetrievable_ and hasSourceData() are false, it is not
+    // possible to get source at all.
+    bool sourceRetrievable_:1;
     bool argumentsNotIncluded_:1;
 #ifdef DEBUG
     bool ready_:1;
@@ -999,6 +993,8 @@ struct ScriptSource
       : refs(0),
         length_(0),
         compressedLength_(0),
+        sourceMap_(NULL),
+        sourceRetrievable_(false),
         argumentsNotIncluded_(false)
 #ifdef DEBUG
        ,ready_(true)
@@ -1021,6 +1017,8 @@ struct ScriptSource
 #ifdef DEBUG
     bool ready() const { return ready_; }
 #endif
+    void setSourceRetrievable() { sourceRetrievable_ = true; }
+    bool sourceRetrievable() const { return sourceRetrievable_; }
     bool hasSourceData() const { return !!data.source; }
     uint32_t length() const {
         JS_ASSERT(hasSourceData());
@@ -1036,6 +1034,11 @@ struct ScriptSource
     // XDR handling
     template <XDRMode mode>
     bool performXDR(XDRState<mode> *xdr);
+
+    // Source maps
+    void setSourceMap(jschar *sm);
+    const jschar *sourceMap();
+    bool hasSourceMap() const { return sourceMap_ != NULL; }
 
   private:
     void destroy(JSRuntime *rt);
@@ -1157,7 +1160,7 @@ struct ScriptFilenameEntry
 struct ScriptFilenameHasher
 {
     typedef const char *Lookup;
-    static HashNumber hash(const char *l) { return JS_HashString(l); }
+    static HashNumber hash(const char *l) { return mozilla::HashString(l); }
     static bool match(const ScriptFilenameEntry *e, const char *l) {
         return strcmp(e->filename, l) == 0;
     }

@@ -21,16 +21,13 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=627498
 // based on platform.
 
 var importObj = {};
-SpecialPowers.wrap(Components).utils.import("resource://gre/modules/Services.jsm",
-                                            importObj);
-var Services = SpecialPowers.wrap(importObj).Services;
 
 var Cc = SpecialPowers.wrap(Components).classes;
 var Ci = Components.interfaces;
 
 var sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
 
-var windows = Services.ww.getWindowEnumerator();
+var windows = SpecialPowers.Services.ww.getWindowEnumerator();
 var windowutils;
 var acceleratedWindows = 0;
 while (windows.hasMoreElements()) {

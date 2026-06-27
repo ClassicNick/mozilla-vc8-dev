@@ -91,6 +91,7 @@
 #include "nsXMLEventsManager.h"
 
 #include "nsBidiUtils.h"
+#include "mozilla/dom/DirectionalityUtils.h"
 
 #include "nsIDOMUserDataHandler.h"
 #include "nsIDOMXPathEvaluator.h"
@@ -170,6 +171,7 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::directionality;
 
 typedef nsTArray<Link*> LinkArray;
 
@@ -1510,6 +1512,7 @@ nsIDocument::nsIDocument()
     mAllowDNSPrefetch(true),
     mIsBeingUsedAsImage(false),
     mHasLinksToUpdate(false),
+    mDirectionality(eDir_LTR),
     mPartID(0)
 {
   SetInDocument();
@@ -5583,6 +5586,15 @@ nsDocument::SetDir(const nsAString& aDirection)
           // No presentation; just set it on ourselves
           SetBidiOptions(options);
         }
+        Directionality dir = elt->mValue == IBMBIDI_TEXTDIRECTION_RTL ?
+                               eDir_RTL : eDir_LTR;
+        SetDocumentDirectionality(dir);
+        // Set the directionality of the root element and its descendants, if any
+        Element* rootElement = GetRootElement();
+        if (rootElement) {
+          rootElement->SetDirectionality(dir, true);
+          SetDirectionalityOnDescendants(rootElement, dir);
+        }
       }
 
       break;
@@ -9104,7 +9116,7 @@ nsDocument::RequestFullScreen(Element* aElement,
   // trusted and so are automatically approved.
   if (!mIsApprovedForFullscreen) {
     mIsApprovedForFullscreen =
-      GetWindow()->IsInAppOrigin() ||
+      NodePrincipal()->GetAppStatus() >= nsIPrincipal::APP_STATUS_INSTALLED ||
       nsContentUtils::IsSitePermAllow(NodePrincipal(), "fullscreen");
   }
 

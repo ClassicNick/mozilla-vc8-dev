@@ -92,6 +92,7 @@ function startListeners() {
   addMessageListenerId("Marionette:goUrl", goUrl);
   addMessageListenerId("Marionette:getUrl", getUrl);
   addMessageListenerId("Marionette:getTitle", getTitle);
+  addMessageListenerId("Marionette:getPageSource", getPageSource);
   addMessageListenerId("Marionette:goBack", goBack);
   addMessageListenerId("Marionette:goForward", goForward);
   addMessageListenerId("Marionette:refresh", refresh);
@@ -100,6 +101,7 @@ function startListeners() {
   addMessageListenerId("Marionette:clickElement", clickElement);
   addMessageListenerId("Marionette:getElementAttribute", getElementAttribute);
   addMessageListenerId("Marionette:getElementText", getElementText);
+  addMessageListenerId("Marionette:getElementTagName", getElementTagName);
   addMessageListenerId("Marionette:isElementDisplayed", isElementDisplayed);
   addMessageListenerId("Marionette:isElementEnabled", isElementEnabled);
   addMessageListenerId("Marionette:isElementSelected", isElementSelected);
@@ -151,6 +153,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:setSearchTimeout", setSearchTimeout);
   removeMessageListenerId("Marionette:goUrl", goUrl);
   removeMessageListenerId("Marionette:getTitle", getTitle);
+  removeMessageListenerId("Marionette:getPageSource", getPageSource);
   removeMessageListenerId("Marionette:getUrl", getUrl);
   removeMessageListenerId("Marionette:goBack", goBack);
   removeMessageListenerId("Marionette:goForward", goForward);
@@ -159,7 +162,7 @@ function deleteSession(msg) {
   removeMessageListenerId("Marionette:findElementsContent", findElementsContent);
   removeMessageListenerId("Marionette:clickElement", clickElement);
   removeMessageListenerId("Marionette:getElementAttribute", getElementAttribute);
-  removeMessageListenerId("Marionette:getElementText", getElementText);
+  removeMessageListenerId("Marionette:getElementTagName", getElementTagName);
   removeMessageListenerId("Marionette:isElementDisplayed", isElementDisplayed);
   removeMessageListenerId("Marionette:isElementEnabled", isElementEnabled);
   removeMessageListenerId("Marionette:isElementSelected", isElementSelected);
@@ -522,6 +525,15 @@ function getTitle(msg) {
 }
 
 /**
+ * Get the current page source 
+ */
+function getPageSource(msg) {
+  var XMLSerializer = curWindow.XMLSerializer;
+  var pageSource = new XMLSerializer().serializeToString(curWindow.document);
+  sendResponse({value: pageSource });
+}
+
+/**
  * Go back in history 
  */
 function goBack(msg) {
@@ -609,6 +621,19 @@ function getElementText(msg) {
   try {
     let el = elementManager.getKnownElement(msg.json.element, curWindow);
     sendResponse({value: utils.getElementText(el)});
+  }
+  catch (e) {
+    sendError(e.message, e.code, e.stack);
+  }
+}
+
+/**
+ * Get the tag name of an element.
+ */
+function getElementTagName(msg) {
+  try {
+    let el = elementManager.getKnownElement(msg.json.element, curWindow);
+    sendResponse({value: el.tagName.toLowerCase()});
   }
   catch (e) {
     sendError(e.message, e.code, e.stack);

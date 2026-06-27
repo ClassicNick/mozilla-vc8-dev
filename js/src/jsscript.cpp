@@ -361,7 +361,6 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
         IsGenerator,
         IsGeneratorExp,
         OwnSource,
-        HasSourceData,
         ExplicitUseStrict
     };
 
@@ -521,11 +520,8 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
                           ? (1 << ParentFilename)
                           : (1 << OwnFilename);
         }
-        if (!enclosingScript || enclosingScript->scriptSource() != script->scriptSource()) {
+        if (!enclosingScript || enclosingScript->scriptSource() != script->scriptSource())
             scriptBits |= (1 << OwnSource);
-            if (script->scriptSource()->hasSourceData())
-                scriptBits |= (1 << HasSourceData);
-        }
         if (script->isGenerator)
             scriptBits |= (1 << IsGenerator);
         if (script->isGeneratorExp)
@@ -646,8 +642,7 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
             script->filename = enclosingScript->filename;
     }
 
-    if (scriptBits & (1 << HasSourceData)) {
-        JS_ASSERT(scriptBits & (1 << OwnSource));
+    if (scriptBits & (1 << OwnSource)) {
         if (!script->scriptSource()->performXDR<mode>(xdr))
             return false;
     }
@@ -913,61 +908,6 @@ JSScript::destroyScriptCounts(FreeOp *fop)
     }
 }
 
-bool
-JSScript::setSourceMap(JSContext *cx, jschar *sourceMap)
-{
-    JS_ASSERT(!hasSourceMap);
-
-    /* Create compartment's sourceMapMap if necessary. */
-    SourceMapMap *map = compartment()->sourceMapMap;
-    if (!map) {
-        map = cx->new_<SourceMapMap>();
-        if (!map || !map->init()) {
-            cx->delete_(map);
-            return false;
-        }
-        compartment()->sourceMapMap = map;
-    }
-
-    if (!map->putNew(this, sourceMap))
-        return false;
-
-    hasSourceMap = true; // safe to set this;  we can't fail after this point
-
-    return true;
-}
-
-jschar *
-JSScript::getSourceMap() {
-    JS_ASSERT(hasSourceMap);
-    SourceMapMap *map = compartment()->sourceMapMap;
-    JS_ASSERT(map);
-    SourceMapMap::Ptr p = map->lookup(this);
-    JS_ASSERT(p);
-    return p->value;
-}
-
-jschar *
-JSScript::releaseSourceMap()
-{
-    JS_ASSERT(hasSourceMap);
-    SourceMapMap *map = compartment()->sourceMapMap;
-    JS_ASSERT(map);
-    SourceMapMap::Ptr p = map->lookup(this);
-    JS_ASSERT(p);
-    jschar *sourceMap = p->value;
-    map->remove(p);
-    hasSourceMap = false;
-    return sourceMap;
-}
-
-void
-JSScript::destroySourceMap(FreeOp *fop)
-{
-    if (hasSourceMap)
-        fop->free_(releaseSourceMap());
-}
-
 #ifdef JS_THREADSAFE
 void
 SourceCompressorThread::compressorThread(void *arg)
@@ -1138,7 +1078,7 @@ JSScript::loadSource(JSContext *cx, bool *worked)
 {
     JS_ASSERT(!scriptSource_->hasSourceData());
     *worked = false;
-    if (!cx->runtime->sourceHook)
+    if (!cx->runtime->sourceHook || !scriptSource_->sourceRetrievable())
         return true;
     jschar *src = NULL;
     uint32_t length;
@@ -1290,6 +1230,7 @@ ScriptSource::destroy(JSRuntime *rt)
 {
     JS_ASSERT(ready());
     rt->free_(data.compressed);
+    rt->free_(sourceMap_);
 #ifdef DEBUG
     ready_ = false;
 #endif
@@ -1314,7 +1255,12 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
     if (!xdr->codeUint8(&hasSource))
         return false;
 
-    if (hasSource) {
+    uint8_t retrievable = sourceRetrievable_;
+    if (!xdr->codeUint8(&retrievable))
+        return false;
+    sourceRetrievable_ = retrievable;
+
+    if (hasSource && !sourceRetrievable_) {
         // Only set members when we know decoding cannot fail. This prevents the
         // script source from being partially initialized.
         uint32_t length = length_;
@@ -1347,12 +1293,52 @@ ScriptSource::performXDR(XDRState<mode> *xdr)
         argumentsNotIncluded_ = argumentsNotIncluded;
     }
 
+    uint8_t haveSourceMap = hasSourceMap();
+    if (!xdr->codeUint8(&haveSourceMap))
+        return false;
+
+    if (haveSourceMap) {
+        uint32_t sourceMapLen = (mode == XDR_DECODE) ? 0 : js_strlen(sourceMap_);
+        if (!xdr->codeUint32(&sourceMapLen))
+            return false;
+
+        if (mode == XDR_DECODE) {
+            size_t byteLen = (sourceMapLen + 1) * sizeof(jschar);
+            sourceMap_ = static_cast<jschar *>(xdr->cx()->malloc_(byteLen));
+            if (!sourceMap_)
+                return false;
+        }
+        if (!xdr->codeChars(sourceMap_, sourceMapLen)) {
+            if (mode == XDR_DECODE) {
+                xdr->cx()->free_(sourceMap_);
+                sourceMap_ = NULL;
+            }
+            return false;
+        }
+        sourceMap_[sourceMapLen] = '\0';
+    }
+
 #ifdef DEBUG
     if (mode == XDR_DECODE)
         ready_ = true;
 #endif
 
     return true;
+}
+
+void
+ScriptSource::setSourceMap(jschar *sm)
+{
+    JS_ASSERT(!hasSourceMap());
+    JS_ASSERT(sm);
+    sourceMap_ = sm;
+}
+
+const jschar *
+ScriptSource::sourceMap()
+{
+    JS_ASSERT(hasSourceMap());
+    return sourceMap_;
 }
 
 /*
@@ -1749,14 +1735,6 @@ JSScript::fullyInitFromEmitter(JSContext *cx, Handle<JSScript*> script, Bytecode
     }
     script->nslots = script->nfixed + bce->maxStackDepth;
 
-    jschar *sourceMap = (jschar *) bce->parser->tokenStream.releaseSourceMap();
-    if (sourceMap) {
-        if (!script->setSourceMap(cx, sourceMap)) {
-            cx->free_(sourceMap);
-            return false;
-        }
-    }
-
     if (!FinishTakingSrcNotes(cx, bce, script->notes()))
         return false;
     if (bce->ntrynotes != 0)
@@ -1915,7 +1893,6 @@ JSScript::finalize(FreeOp *fop)
 #endif
 
     destroyScriptCounts(fop);
-    destroySourceMap(fop);
     destroyDebugScript(fop);
     scriptSource_->decref(fop->runtime());
 

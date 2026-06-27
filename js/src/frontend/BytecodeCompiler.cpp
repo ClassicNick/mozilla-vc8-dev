@@ -65,14 +65,22 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
 
     if (!CheckLength(cx, length))
         return NULL;
+    JS_ASSERT_IF(staticLevel != 0, options.sourcePolicy != CompileOptions::LAZY_SOURCE);
     ScriptSource *ss = cx->new_<ScriptSource>();
     if (!ss)
         return NULL;
     ScriptSourceHolder ssh(cx->runtime, ss);
     SourceCompressionToken sct(cx);
-    if (!cx->hasRunOption(JSOPTION_ONLY_CNG_SOURCE) || options.compileAndGo) {
+    switch (options.sourcePolicy) {
+      case CompileOptions::SAVE_SOURCE:
         if (!ss->setSourceCopy(cx, chars, length, false, &sct))
             return NULL;
+        break;
+      case CompileOptions::LAZY_SOURCE:
+        ss->setSourceRetrievable();
+        break;
+      case CompileOptions::NO_SOURCE:
+        break;
     }
 
     Parser parser(cx, options, chars, length, /* foldConstants = */ true);
@@ -112,7 +120,7 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
              * Save eval program source in script->atoms[0] for the
              * eval cache (see EvalCacheLookup in jsobj.cpp).
              */
-            JSAtom *atom = js_AtomizeString(cx, source);
+            JSAtom *atom = AtomizeString(cx, source);
             jsatomid _;
             if (!atom || !bce.makeAtomIndex(atom, &_))
                 return NULL;
@@ -182,6 +190,9 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain, StackFrame *call
         parser.freeTree(pn);
     }
 
+    if (tokenStream.hasSourceMap())
+        ss->setSourceMap(tokenStream.releaseSourceMap());
+
 #if JS_HAS_XML_SUPPORT
     /*
      * Prevent XML data theft via <script src="http://victim.com/foo.xml">.
@@ -236,8 +247,11 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
         return NULL;
     ScriptSourceHolder ssh(cx->runtime, ss);
     SourceCompressionToken sct(cx);
-    if (!ss->setSourceCopy(cx, chars, length, true, &sct))
-        return NULL;
+    JS_ASSERT(options.sourcePolicy != CompileOptions::LAZY_SOURCE);
+    if (options.sourcePolicy == CompileOptions::SAVE_SOURCE) {
+        if (!ss->setSourceCopy(cx, chars, length, true, &sct))
+            return NULL;
+    }
 
     options.setCompileAndGo(false);
     Parser parser(cx, options, chars, length, /* foldConstants = */ true);
@@ -292,8 +306,10 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
         if (!GetOrderedBindings(cx, funsc.bindings, &names))
             return false;
 
+        RootedPropertyName name(cx);
         for (unsigned i = 0; i < nargs; i++) {
-            if (!DefineArg(fn, names[i].maybeName, i, &parser))
+            name = names[i].maybeName;
+            if (!DefineArg(fn, name, i, &parser))
                 return false;
         }
     }
@@ -324,6 +340,9 @@ frontend::CompileFunctionBody(JSContext *cx, HandleFunction fun, CompileOptions 
         fn->pn_body->pn_pos = pn->pn_pos;
         pn = fn->pn_body;
     }
+
+    if (parser.tokenStream.hasSourceMap())
+        ss->setSourceMap(parser.tokenStream.releaseSourceMap());
 
     if (!EmitFunctionScript(cx, &funbce, pn))
         return false;

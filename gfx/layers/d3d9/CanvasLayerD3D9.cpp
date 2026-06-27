@@ -190,6 +190,9 @@ void
 CanvasLayerD3D9::RenderLayer()
 {
   UpdateSurface();
+  if (mD3DManager->CompositingDisabled()) {
+    return;
+  }
   FireDidTransactionCallback();
 
   if (!mTexture)
@@ -359,7 +362,7 @@ ShadowCanvasLayerD3D9::GetLayer()
 void
 ShadowCanvasLayerD3D9::RenderLayer()
 {
-  if (!mBuffer) {
+  if (!mBuffer || mD3DManager->CompositingDisabled()) {
     return;
   }
 

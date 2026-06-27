@@ -18,6 +18,7 @@ import java.io.PrintWriter;
 import java.nio.IntBuffer;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import java.lang.Class;
 import java.lang.reflect.InvocationTargetException;
@@ -88,14 +89,14 @@ public class FennecNativeDriver implements Driver {
         // Set up reflexive access of java classes and methods.
         try {
             mClassLoader = activity.getClassLoader();
-            mGel = mClassLoader.loadClass("org.mozilla.gecko.GeckoEventListener");
+            mGel = mClassLoader.loadClass("org.mozilla.gecko.util.GeckoEventListener");
             mGe = mClassLoader.loadClass("org.mozilla.gecko.GeckoEvent");
             mGas = mClassLoader.loadClass("org.mozilla.gecko.GeckoAppShell");
             Class [] parameters = new Class[2];
             parameters[0] = String.class;
             parameters[1] = mGel;
-            mRegisterGEL = mGas.getMethod("registerGeckoEventListener", parameters);
-            mUnregisterGEL = mGas.getMethod("unregisterGeckoEventListener", parameters);
+            mRegisterGEL = mGas.getMethod("registerEventListener", parameters);
+            mUnregisterGEL = mGas.getMethod("unregisterEventListener", parameters);
             parameters = new Class[1];
             parameters[0] = mGe;
             mSendGE = mGas.getMethod("sendEventToGecko", parameters);
@@ -420,6 +421,20 @@ public class FennecNativeDriver implements Driver {
             retVal.put(parts[0].trim(), parts[1].trim());
         }
         return retVal;
+    }
+
+    public static void logAllStackTraces(LogLevel level) {
+        StringBuffer sb = new StringBuffer();
+        sb.append("Dumping ALL the threads!\n");
+        Map<Thread, StackTraceElement[]> allStacks = Thread.getAllStackTraces();
+        for (Thread t : allStacks.keySet()) {
+            sb.append(t.toString()).append('\n');
+            for (StackTraceElement ste : allStacks.get(t)) {
+                sb.append(ste.toString()).append('\n');
+            }
+            sb.append('\n');
+        }
+        log(level, sb.toString());
     }
 
     /** 

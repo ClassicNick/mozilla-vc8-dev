@@ -140,6 +140,9 @@ XPCOMUtils.defineLazyGetter(this, "Social", function() {
   return tmp.Social;
 });
 
+XPCOMUtils.defineLazyModuleGetter(this, "PageThumbs",
+  "resource:///modules/PageThumbs.jsm");
+
 #ifdef MOZ_SAFE_BROWSING
 XPCOMUtils.defineLazyGetter(this, "SafeBrowsing", function() {
   let tmp = {};
@@ -211,7 +214,7 @@ XPCOMUtils.defineLazyGetter(this, "PageMenu", function() {
 */
 function pageShowEventHandlers(event) {
   // Filter out events that are not about the document load we are interested in
-  if (event.originalTarget == content.document) {
+  if (event.target == content.document) {
     charsetLoadListener(event);
     XULBrowserWindow.asyncUpdateUI();
 
