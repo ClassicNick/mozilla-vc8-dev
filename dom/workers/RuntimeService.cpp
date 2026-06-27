@@ -166,6 +166,7 @@ enum {
   PREF_allow_xml,
   PREF_jit_hardening,
   PREF_mem_max,
+  PREF_ion,
 
 #ifdef JS_GC_ZEAL
   PREF_gczeal,
@@ -185,7 +186,8 @@ const char* gPrefsToWatch[] = {
   JS_OPTIONS_DOT_STR "typeinference",
   JS_OPTIONS_DOT_STR "allow_xml",
   JS_OPTIONS_DOT_STR "jit_hardening",
-  JS_OPTIONS_DOT_STR "mem.max"
+  JS_OPTIONS_DOT_STR "mem.max",
+  JS_OPTIONS_DOT_STR "ion.content"
 
 #ifdef JS_GC_ZEAL
   , PREF_WORKERS_GCZEAL
@@ -232,6 +234,9 @@ PrefCallback(const char* aPrefName, void* aClosure)
     }
     if (Preferences::GetBool(gPrefsToWatch[PREF_typeinference])) {
       newOptions |= JSOPTION_TYPE_INFERENCE;
+    }
+    if (Preferences::GetBool(gPrefsToWatch[PREF_ion])) {
+      newOptions |= JSOPTION_ION;
     }
     if (Preferences::GetBool(gPrefsToWatch[PREF_allow_xml])) {
       newOptions |= JSOPTION_ALLOW_XML;
