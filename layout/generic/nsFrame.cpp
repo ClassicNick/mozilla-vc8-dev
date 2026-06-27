@@ -52,7 +52,7 @@
 #include "nsCSSPseudoElements.h"
 #include "nsCSSFrameConstructor.h"
 
-#include "nsFrameTraversal.h"
+#include "nsFrameIterator.h"
 #include "nsStyleChangeList.h"
 #include "nsIDOMRange.h"
 #include "nsRange.h"
@@ -92,6 +92,8 @@
 #include "CSSCalc.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsFontInflationData.h"
+#include "nsAnimationManager.h"
+#include "nsTransitionManager.h"
 
 #include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
@@ -443,8 +445,8 @@ IsFontSizeInflationContainer(nsIFrame* aFrame,
   }
 
   nsIContent *content = aFrame->GetContent();
-  bool isInline = (aStyleDisplay->mDisplay == NS_STYLE_DISPLAY_INLINE ||
-                   (aStyleDisplay->IsFloating() &&
+  bool isInline = (aFrame->GetDisplay() == NS_STYLE_DISPLAY_INLINE ||
+                   (aFrame->IsFloating() &&
                     aFrame->GetType() == nsGkAtoms::letterFrame) ||
                    // Given multiple frames for the same node, only the
                    // outer one should be considered a container.
@@ -499,7 +501,8 @@ nsFrame::Init(nsIContent*      aContent,
 
     // Make bits that are currently off (see constructor) the same:
     mState |= state & (NS_FRAME_INDEPENDENT_SELECTION |
-                       NS_FRAME_GENERATED_CONTENT);
+                       NS_FRAME_GENERATED_CONTENT |
+                       NS_FRAME_IS_SVG_TEXT);
   }
   const nsStyleDisplay *disp = GetStyleDisplay();
   if (disp->HasTransform()) {
@@ -519,7 +522,7 @@ nsFrame::Init(nsIContent*      aContent,
       AddStateBits(NS_FRAME_FONT_INFLATION_CONTAINER);
       if (!GetParent() ||
           // I'd use NS_FRAME_OUT_OF_FLOW, but it's not set yet.
-          disp->IsFloating() || disp->IsAbsolutelyPositioned()) {
+          disp->IsFloating(this) || disp->IsAbsolutelyPositioned(this)) {
         AddStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT);
       }
     }
@@ -809,7 +812,8 @@ nsIFrame::GetUsedMargin() const
 {
   nsMargin margin(0, 0, 0, 0);
   if ((mState & NS_FRAME_FIRST_REFLOW) &&
-      !(mState & NS_FRAME_IN_REFLOW))
+      !(mState & NS_FRAME_IN_REFLOW) ||
+      (mState & NS_FRAME_IS_SVG_TEXT))
     return margin;
 
   nsMargin *m = static_cast<nsMargin*>
@@ -831,7 +835,8 @@ nsIFrame::GetUsedBorder() const
 {
   nsMargin border(0, 0, 0, 0);
   if ((mState & NS_FRAME_FIRST_REFLOW) &&
-      !(mState & NS_FRAME_IN_REFLOW))
+      !(mState & NS_FRAME_IN_REFLOW) ||
+      (mState & NS_FRAME_IS_SVG_TEXT))
     return border;
 
   // Theme methods don't use const-ness.
@@ -866,7 +871,8 @@ nsIFrame::GetUsedPadding() const
 {
   nsMargin padding(0, 0, 0, 0);
   if ((mState & NS_FRAME_FIRST_REFLOW) &&
-      !(mState & NS_FRAME_IN_REFLOW))
+      !(mState & NS_FRAME_IN_REFLOW) ||
+      (mState & NS_FRAME_IS_SVG_TEXT))
     return padding;
 
   // Theme methods don't use const-ness.
@@ -935,9 +941,20 @@ nsIFrame::GetPaddingRect() const
 bool
 nsIFrame::IsTransformed() const
 {
-  return (mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
+  return ((mState & NS_FRAME_MAY_BE_TRANSFORMED) &&
           (GetStyleDisplay()->HasTransform() ||
-           IsSVGTransformed());
+           IsSVGTransformed() ||
+           (mContent &&
+            nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                      eCSSProperty_transform))));
+}
+
+bool
+nsIFrame::HasOpacity() const
+{
+  return GetStyleDisplay()->mOpacity < 1.0f || (mContent &&
+           nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                     eCSSProperty_opacity));
 }
 
 bool
@@ -1479,7 +1496,7 @@ nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp, nsRect* aRect,
   NS_PRECONDITION(aRect, "Must have aRect out parameter");
 
   if (!(aDisp->mClipFlags & NS_STYLE_CLIP_RECT) ||
-      !(aDisp->IsAbsolutelyPositioned() || IsSVGContentWithCSSClip(this))) {
+      !(aDisp->IsAbsolutelyPositioned(this) || IsSVGContentWithCSSClip(this))) {
     return false;
   }
 
@@ -1764,9 +1781,12 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   nsRect clipPropClip;
   const nsStyleDisplay* disp = GetStyleDisplay();
   // We can stop right away if this is a zero-opacity stacking context and
-  // we're painting.
-  if (disp->mOpacity == 0.0 && aBuilder->IsForPainting())
+  // we're painting, and we're not animating opacity.
+  if (disp->mOpacity == 0.0 && aBuilder->IsForPainting() &&
+      !nsLayoutUtils::HasAnimationsForCompositor(mContent,
+                                                 eCSSProperty_opacity)) {
     return NS_OK;
+  }
 
   bool applyClipPropClipping =
       ApplyClipPropClipping(aBuilder, disp, this, &clipPropClip);
@@ -1781,7 +1801,7 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
       // Trying to  back-transform arbitrary rects gives us really weird results. I believe 
       // this is from points that lie beyond the vanishing point. As a workaround we transform t
       // he overflow rect into screen space and compare in that coordinate system.
-        
+
       // Transform the overflow rect into screen space
       nsRect overflow = GetVisualOverflowRectRelativeToSelf();
       nsPoint offset = aBuilder->ToReferenceFrame(this);
@@ -1911,7 +1931,6 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     // resultList was emptied
     resultList.AppendToTop(item);
   }
-
   /* If there are any SVG effects, wrap the list up in an SVG effects item
    * (which also handles CSS group opacity). Note that we create an SVG effects
    * item even if resultList is empty, since a filter can produce graphical
@@ -1927,7 +1946,7 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
   /* Else, if the list is non-empty and there is CSS group opacity without SVG
    * effects, wrap it up in an opacity item.
    */
-  else if (disp->mOpacity < 1.0f &&
+  else if (HasOpacity() &&
            !nsSVGUtils::CanOptimizeOpacity(this) &&
            !resultList.IsEmpty()) {
     rv = resultList.AppendNewToTop(
@@ -2081,12 +2100,12 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   // Child is composited if it's transformed, partially transparent, or has
   // SVG effects.
   const nsStyleDisplay* disp = child->GetStyleDisplay();
-  bool isVisuallyAtomic = disp->mOpacity != 1.0f
+  bool isVisuallyAtomic = child->HasOpacity()
     || child->IsTransformed()
     || nsSVGIntegrationUtils::UsingEffectsForFrame(child);
 
-  bool isPositioned = !isSVG && disp->IsPositioned();
-  if (isVisuallyAtomic || isPositioned || (!isSVG && disp->IsFloating()) ||
+  bool isPositioned = !isSVG && disp->IsPositioned(child);
+  if (isVisuallyAtomic || isPositioned || (!isSVG && disp->IsFloating(child)) ||
       ((disp->mClipFlags & NS_STYLE_CLIP_RECT) &&
        IsSVGContentWithCSSClip(child)) ||
       (aFlags & DISPLAY_CHILD_FORCE_STACKING_CONTEXT)) {
@@ -2227,7 +2246,7 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
         }
       }
     }
-  } else if (!isSVG && disp->IsFloating()) {
+  } else if (!isSVG && disp->IsFloating(child)) {
     if (!list.IsEmpty()) {
       rv = aLists.Floats()->AppendNewToTop(new (aBuilder)
           nsDisplayWrapList(aBuilder, child, &list));
@@ -3010,6 +3029,10 @@ NS_IMETHODIMP nsFrame::HandleRelease(nsPresContext* aPresContext,
                                      nsGUIEvent*    aEvent,
                                      nsEventStatus* aEventStatus)
 {
+  if (aEvent->eventStructType != NS_MOUSE_EVENT) {
+    return NS_OK;
+  }
+
   nsIFrame* activeFrame = GetActiveSelectionFrame(aPresContext, this);
 
   nsCOMPtr<nsIContent> captureContent = nsIPresShell::GetCapturingContent();
@@ -3450,7 +3473,7 @@ nsIFrame::ContentOffsets OffsetsForSingleFrame(nsIFrame* aFrame, nsPoint aPoint)
   // Figure out whether the offsets should be over, after, or before the frame
   nsRect rect(nsPoint(0, 0), aFrame->GetSize());
 
-  bool isBlock = (aFrame->GetStyleDisplay()->mDisplay != NS_STYLE_DISPLAY_INLINE);
+  bool isBlock = aFrame->GetDisplay() != NS_STYLE_DISPLAY_INLINE;
   bool isRtl = (aFrame->GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL);
   if ((isBlock && rect.y < aPoint.y) ||
       (!isBlock && ((isRtl  && rect.x + rect.width / 2 > aPoint.x) || 
@@ -4745,12 +4768,12 @@ nsIFrame::GetTransformMatrix(nsIFrame* aStopAtAncestor,
      * coordinates to our parent.
      */
     NS_ASSERTION(nsLayoutUtils::GetCrossDocParentFrame(this),
-	             "Cannot transform the viewport frame!");
+                 "Cannot transform the viewport frame!");
     PRInt32 scaleFactor = PresContext()->AppUnitsPerDevPixel();
 
     gfx3DMatrix result =
-      nsDisplayTransform::GetResultingTransformMatrix(this, nsPoint(0, 0),
-                                                      scaleFactor, nullptr, aOutAncestor);
+      nsDisplayTransform::GetResultingTransformMatrix(this, nsPoint(0, 0), scaleFactor, nullptr,
+                                                      nullptr, nullptr, nullptr, nullptr, aOutAncestor);
     // XXXjwatt: seems like this will double count offsets in the face of preserve-3d:
     nsPoint delta = GetOffsetToCrossDoc(*aOutAncestor);
     /* Combine the raw transform with a translation to our parent. */
@@ -4760,9 +4783,9 @@ nsIFrame::GetTransformMatrix(nsIFrame* aStopAtAncestor,
        0.0f);
     return result;
   }
-  
+
   *aOutAncestor = nsLayoutUtils::GetCrossDocParentFrame(this);
-  
+
   /* Otherwise, we're not transformed.  In that case, we'll walk up the frame
    * tree until we either hit the root frame or something that may be
    * transformed.  We'll then change coordinates into that frame, since we're
@@ -4995,7 +5018,8 @@ ComputeOutlineAndEffectsRect(nsIFrame* aFrame, bool* aAnyOutlineOrEffects,
 nsPoint
 nsIFrame::GetRelativeOffset(const nsStyleDisplay* aDisplay) const
 {
-  if (!aDisplay || NS_STYLE_POSITION_RELATIVE == aDisplay->mPosition) {
+  if (!aDisplay ||
+      aDisplay->IsRelativelyPositioned(this)) {
     nsPoint *offsets = static_cast<nsPoint*>
       (Properties().Get(ComputedOffsetProperty()));
     if (offsets) {
@@ -5271,7 +5295,7 @@ nsIFrame::GetContainingBlock() const
   // MathML frames might have absolute positioning style, but they would
   // still be in-flow.  So we have to check to make sure that the frame
   // is really out-of-flow too.
-  if (GetStyleDisplay()->IsAbsolutelyPositioned() &&
+  if (IsAbsolutelyPositioned() &&
       (GetStateBits() & NS_FRAME_OUT_OF_FLOW)) {
     return GetParent(); // the parent is always the containing block
   }
@@ -5758,16 +5782,12 @@ nsFrame::GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
       //resultFrame is not a block frame
       result = NS_ERROR_FAILURE;
 
-      nsCOMPtr<nsIFrameEnumerator> frameTraversal;
-      result = NS_NewFrameTraversal(getter_AddRefs(frameTraversal),
-                                    aPresContext, resultFrame,
-                                    ePostOrder,
-                                    false, // aVisual
-                                    aPos->mScrollViewStop,
-                                    false     // aFollowOOFs
-                                    );
-      if (NS_FAILED(result))
-        return result;
+      PRUint32 flags = /*FrameIteratorFlags::*/ FLAG_NONE;
+      if (aPos->mScrollViewStop) {
+        flags |= /*FrameIteratorFlags::*/ FLAG_LOCK_SCROLL;
+      }
+      nsFrameIterator frameTraversal(aPresContext, resultFrame,
+                                     ePostOrder, flags);
       nsIFrame *storeOldResultFrame = resultFrame;
       while ( !found ){
         nsPoint point;
@@ -5844,21 +5864,21 @@ nsFrame::GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
         if (aPos->mDirection == eDirNext && (resultFrame == nearStoppingFrame))
           break;
         //always try previous on THAT line if that fails go the other way
-        frameTraversal->Prev();
-        resultFrame = frameTraversal->CurrentItem();
+        frameTraversal.Prev();
+        resultFrame = frameTraversal.CurrentItem();
         if (!resultFrame)
           return NS_ERROR_FAILURE;
       }
 
       if (!found){
         resultFrame = storeOldResultFrame;
-        result = NS_NewFrameTraversal(getter_AddRefs(frameTraversal),
-                                      aPresContext, resultFrame,
-                                      eLeaf,
-                                      false, // aVisual
-                                      aPos->mScrollViewStop,
-                                      false     // aFollowOOFs
-                                      );
+
+        PRUint32 flags = /*FrameIteratorFlags::*/ FLAG_NONE;
+        if (aPos->mScrollViewStop) {
+          flags |= /*FrameIteratorFlags::*/ FLAG_LOCK_SCROLL;
+        }
+        frameTraversal = nsFrameIterator(aPresContext, resultFrame,
+                                         eLeaf, flags);
       }
       while ( !found ){
         nsPoint point(aPos->mDesiredX, 0);
@@ -5889,8 +5909,8 @@ nsFrame::GetNextPrevLineFromeBlockFrame(nsPresContext* aPresContext,
         if (aPos->mDirection == eDirNext && (resultFrame == farStoppingFrame))
           break;
         //previous didnt work now we try "next"
-        frameTraversal->Next();
-        nsIFrame *tempFrame = frameTraversal->CurrentItem();
+        frameTraversal.Next();
+        nsIFrame *tempFrame = frameTraversal.CurrentItem();
         if (!tempFrame)
           break;
         resultFrame = tempFrame;
@@ -6614,23 +6634,22 @@ nsIFrame::GetFrameFromDirection(nsDirection aDirection, bool aVisual,
         return NS_ERROR_FAILURE; //we are done. cannot jump lines
     }
 
-    nsCOMPtr<nsIFrameEnumerator> frameTraversal;
-    result = NS_NewFrameTraversal(getter_AddRefs(frameTraversal),
-                                  presContext, traversedFrame,
-                                  eLeaf,
-                                  aVisual && presContext->BidiEnabled(),
-                                  aScrollViewStop,
-                                  true     // aFollowOOFs
-                                  );
-    if (NS_FAILED(result))
-      return result;
+    PRUint32 flags = /*FrameIteratorFlags::*/ FLAG_FOLLOW_OUT_OF_FLOW;
+    if (aScrollViewStop) {
+      flags |= /*FrameIteratorFlags::*/ FLAG_LOCK_SCROLL;
+    }
+    if (aVisual && presContext->BidiEnabled()) {
+      flags |= /*FrameIteratorFlags::*/ FLAG_VISUAL;
+    }
+    nsFrameIterator frameTraversal(presContext, traversedFrame,
+                                   eLeaf, flags);
 
     if (aDirection == eDirNext)
-      frameTraversal->Next();
+      frameTraversal.Next();
     else
-      frameTraversal->Prev();
+      frameTraversal.Prev();
 
-    traversedFrame = frameTraversal->CurrentItem();
+    traversedFrame = frameTraversal.CurrentItem();
     if (!traversedFrame)
       return NS_ERROR_FAILURE;
     traversedFrame->IsSelectable(&selectable, nullptr);
@@ -7390,6 +7409,52 @@ nsIFrame::HasTerminalNewline() const
   return false;
 }
 
+static PRUint8
+ConvertSVGDominantBaselineToVerticalAlign(PRUint8 aDominantBaseline)
+{
+  switch (aDominantBaseline) {
+  case NS_STYLE_DOMINANT_BASELINE_HANGING:
+  case NS_STYLE_DOMINANT_BASELINE_TEXT_BEFORE_EDGE:
+    return NS_STYLE_VERTICAL_ALIGN_TEXT_TOP;
+  case NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE:
+  case NS_STYLE_DOMINANT_BASELINE_IDEOGRAPHIC:
+    return NS_STYLE_VERTICAL_ALIGN_TEXT_BOTTOM;
+  case NS_STYLE_DOMINANT_BASELINE_CENTRAL:
+  case NS_STYLE_DOMINANT_BASELINE_MIDDLE:
+    return NS_STYLE_VERTICAL_ALIGN_MIDDLE;
+  case NS_STYLE_DOMINANT_BASELINE_AUTO:
+  case NS_STYLE_DOMINANT_BASELINE_ALPHABETIC:
+    return NS_STYLE_VERTICAL_ALIGN_BASELINE;
+  default:
+    NS_NOTREACHED("unexpected aDominantBaseline value");
+    return NS_STYLE_VERTICAL_ALIGN_BASELINE;
+  }
+}
+
+PRUint8
+nsIFrame::VerticalAlignEnum() const
+{
+  if (mState & NS_FRAME_IS_SVG_TEXT) {
+    PRUint8 dominantBaseline;
+    for (const nsIFrame* frame = this; frame; frame = frame->GetParent()) {
+      dominantBaseline = frame->GetStyleSVGReset()->mDominantBaseline;
+      if (dominantBaseline != NS_STYLE_DOMINANT_BASELINE_AUTO ||
+          frame->GetType() == nsGkAtoms::svgTextFrame) {
+        break;
+      }
+    }
+    return ConvertSVGDominantBaselineToVerticalAlign(dominantBaseline);
+  }
+
+  const nsStyleCoord& verticalAlign =
+    GetStyleContext()->GetStyleTextReset()->mVerticalAlign;
+  if (verticalAlign.GetUnit() == eStyleUnit_Enumerated) {
+    return verticalAlign.GetIntValue();
+  }
+
+  return eInvalidVerticalAlign;
+}
+
 /* static */
 void nsFrame::FillCursorInformationFromStyle(const nsStyleUserInterface* ui,
                                              nsIFrame::Cursor& aCursor)
@@ -7550,7 +7615,7 @@ nsFrame::GetPrefSize(nsBoxLayoutState& aState)
 
   // get our size in CSS.
   bool widthSet, heightSet;
-  bool completelyRedefined = nsIBox::AddCSSPrefSize(this, size, widthSet, heightSet);
+  bool completelyRedefined = nsIFrame::AddCSSPrefSize(this, size, widthSet, heightSet);
 
   // Refresh our caches with new sizes.
   if (!completelyRedefined) {
@@ -7587,7 +7652,7 @@ nsFrame::GetMinSize(nsBoxLayoutState& aState)
   // get our size in CSS.
   bool widthSet, heightSet;
   bool completelyRedefined =
-    nsIBox::AddCSSMinSize(aState, this, size, widthSet, heightSet);
+    nsIFrame::AddCSSMinSize(aState, this, size, widthSet, heightSet);
 
   // Refresh our caches with new sizes.
   if (!completelyRedefined) {
@@ -7750,7 +7815,7 @@ nsFrame::BoxReflow(nsBoxLayoutState&        aState,
 
   //printf("width=%d, height=%d\n", aWidth, aHeight);
   /*
-  nsIBox* parent;
+  nsIFrame* parent;
   GetParentBox(&parent);
 
  // if (parent->GetStateBits() & NS_STATE_CURRENTLY_IN_DEBUG)
@@ -9294,9 +9359,9 @@ nsHTMLReflowState::DisplayInitFrameTypeExit(nsIFrame* aFrame,
       printf(" out-of-flow");
     if (aFrame->GetPrevInFlow())
       printf(" prev-in-flow");
-    if (disp->IsAbsolutelyPositioned())
+    if (aFrame->IsAbsolutelyPositioned())
       printf(" abspos");
-    if (disp->IsFloating())
+    if (aFrame->IsFloating())
       printf(" float");
 
     // This array must exactly match the NS_STYLE_DISPLAY constants.

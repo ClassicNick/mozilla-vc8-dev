@@ -1118,7 +1118,7 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
             constructHook = CONSTRUCT_HOOK_NAME
             constructArgs = methodLength(self.descriptor.interface.ctor())
         else:
-            constructHook = "ThrowingConstructorWorkers" if self.descriptor.workers else "ThrowingConstructor"
+            constructHook = "ThrowingConstructor"
             constructArgs = 0
 
         call = CGGeneric(("return dom::CreateInterfaceObjects(aCx, aGlobal, aReceiver, parentProto,\n"
@@ -1213,24 +1213,27 @@ def CheckPref(descriptor, globalName, varName, retval, wrapperCache = None):
     """
     if not descriptor.prefable:
         return ""
+
     if wrapperCache:
        wrapperCache = "      %s->ClearIsDOMBinding();\n" % (wrapperCache)
     else:
         wrapperCache = ""
+
+    failureCode = ("      %s = false;\n" +
+                   "      return %s;") % (varName, retval)
     return """
   {
     XPCWrappedNativeScope* scope =
       XPCWrappedNativeScope::FindInJSObjectScope(aCx, %s);
     if (!scope) {
-      return %s;
+%s
     }
 
     if (!scope->ExperimentalBindingsEnabled()) {
-%s      %s = false;
-      return %s;
+%s%s
     }
   }
-""" % (globalName, retval, wrapperCache, varName, retval)
+""" % (globalName, failureCode, wrapperCache, failureCode)
 
 class CGDefineDOMInterfaceMethod(CGAbstractMethod):
     """
@@ -1513,13 +1516,16 @@ def getJSToNativeConversionTemplate(type, descriptorProvider, failureCode=None,
     # Also, we should not have a defaultValue if we know we're an object
     assert(not isDefinitelyObject or defaultValue is None)
 
-    # A helper function for dealing with failures due to the JS value being the
+    # Helper functions for dealing with failures due to the JS value being the
     # wrong type of value
-    def onFailure(failureCode, isWorker):
+    def onFailureNotAnObject(failureCode):
         return CGWrapper(CGGeneric(
                 failureCode or
-                "return Throw<%s>(cx, NS_ERROR_XPC_BAD_CONVERT_JS);"
-                % toStringBool(isWorker)), post="\n")
+                'return ThrowErrorMessage(cx, MSG_NOT_OBJECT);'), post="\n")
+    def onFailureBadType(failureCode, typeName):
+        return CGWrapper(CGGeneric(
+                failureCode or
+                'return ThrowErrorMessage(cx, MSG_DOES_NOT_IMPLEMENT_INTERFACE, "%s");' % typeName), post="\n")
 
     # A helper function for handling default values.  Takes a template
     # body and the C++ code to set the default value and wraps the
@@ -1547,7 +1553,7 @@ def getJSToNativeConversionTemplate(type, descriptorProvider, failureCode=None,
     # A helper function for wrapping up the template body for
     # possibly-nullable objecty stuff
     def wrapObjectTemplate(templateBody, isDefinitelyObject, type,
-                           codeToSetNull, isWorker, failureCode=None):
+                           codeToSetNull, failureCode=None):
         if not isDefinitelyObject:
             # Handle the non-object cases by wrapping up the whole
             # thing in an if cascade.
@@ -1560,7 +1566,7 @@ def getJSToNativeConversionTemplate(type, descriptorProvider, failureCode=None,
                     "  %s;\n" % codeToSetNull)
             templateBody += (
                 "} else {\n" +
-                CGIndenter(onFailure(failureCode, isWorker)).define() +
+                CGIndenter(onFailureNotAnObject(failureCode)).define() +
                 "}")
             if type.nullable():
                 templateBody = handleDefaultNull(templateBody, codeToSetNull)
@@ -1646,8 +1652,7 @@ for (uint32_t i = 0; i < length; ++i) {
         templateBody += "\n}"
         templateBody = wrapObjectTemplate(templateBody, isDefinitelyObject,
                                           type,
-                                          "const_cast< %s & >(${declName}).SetNull()" % mutableTypeName.define(),
-                                          descriptorProvider.workers)
+                                          "const_cast< %s & >(${declName}).SetNull()" % mutableTypeName.define())
         return (templateBody, typeName, None, isOptional)
 
     if type.isUnion():
@@ -1666,6 +1671,7 @@ for (uint32_t i = 0; i < length; ++i) {
             unionArgumentObj += ".ref()"
 
         memberTypes = type.flatMemberTypes
+        names = []
 
         interfaceMemberTypes = filter(lambda t: t.isNonCallbackInterface(), memberTypes)
         if len(interfaceMemberTypes) > 0:
@@ -1676,6 +1682,7 @@ for (uint32_t i = 0; i < length; ++i) {
                 else:
                     name = memberType.name
                 interfaceObject.append(CGGeneric("(failed = !%s.TrySetTo%s(cx, ${val}, ${valPtr}, tryNext)) || !tryNext" % (unionArgumentObj, name)))
+                names.append(name)
             interfaceObject = CGWrapper(CGList(interfaceObject, " ||\n"), pre="done = ", post=";\n", reindent=True)
         else:
             interfaceObject = None
@@ -1692,6 +1699,7 @@ for (uint32_t i = 0; i < length; ++i) {
             arrayObject = CGWrapper(CGIndenter(arrayObject),
                                     pre="if (IsArrayLike(cx, &argObj)) {\n",
                                     post="}")
+            names.append(name)
         else:
             arrayObject = None
 
@@ -1705,6 +1713,7 @@ for (uint32_t i = 0; i < length; ++i) {
             dateObject = CGWrapper(CGIndenter(dateObject),
                                    pre="if (JS_ObjectIsDate(cx, &argObj)) {\n",
                                    post="\n}")
+            names.append(name)
         else:
             dateObject = None
 
@@ -1714,6 +1723,7 @@ for (uint32_t i = 0; i < length; ++i) {
             memberType = callbackMemberTypes[0]
             name = memberType.name
             callbackObject = CGGeneric("done = (failed = !%s.TrySetTo%s(cx, ${val}, ${valPtr}, tryNext)) || !tryNext;" % (unionArgumentObj, name))
+            names.append(name)
         else:
             callbackObject = None
 
@@ -1783,6 +1793,7 @@ for (uint32_t i = 0; i < length; ++i) {
             else:
                 name = memberType.name
             other = CGGeneric("done = (failed = !%s.TrySetTo%s(cx, ${val}, ${valPtr}, tryNext)) || !tryNext;" % (unionArgumentObj, name))
+            names.append(name)
             if hasObjectTypes:
                 other = CGWrapper(CGIndenter(other), "{\n", post="\n}")
                 if object:
@@ -1799,8 +1810,8 @@ for (uint32_t i = 0; i < length; ++i) {
                           "  return false;\n"
                           "}\n"
                           "if (!done) {\n"
-                          "  return Throw<%s>(cx, NS_ERROR_XPC_BAD_CONVERT_JS);\n"
-                          "}" % toStringBool(descriptorProvider.workers))
+                          "  return ThrowErrorMessage(cx, MSG_NOT_IN_UNION, \"%s\");\n"
+                          "}" % ", ".join(names))
         templateBody = CGWrapper(CGIndenter(CGList([templateBody, throw], "\n")), pre="{\n", post="\n}")
 
         typeName = type.name
@@ -1939,8 +1950,8 @@ for (uint32_t i = 0; i < length; ++i) {
                 "jsval tmpVal = ${val};\n" +
                 typePtr + " tmp;\n"
                 "if (NS_FAILED(xpc_qsUnwrapArg<" + typeName + ">(cx, ${val}, &tmp, static_cast<" + typeName + "**>(getter_AddRefs(${holderName})), &tmpVal))) {\n")
-            templateBody += CGIndenter(onFailure(failureCode,
-                                                 descriptor.workers)).define()
+            templateBody += CGIndenter(onFailureBadType(failureCode,
+                                                        descriptor.interface.identifier.name)).define()
             templateBody += ("}\n"
                 "MOZ_ASSERT(tmp);\n")
 
@@ -1959,7 +1970,7 @@ for (uint32_t i = 0; i < length; ++i) {
 
         templateBody = wrapObjectTemplate(templateBody, isDefinitelyObject,
                                           type, "${declName} = NULL",
-                                          descriptor.workers, failureCode)
+                                          failureCode)
 
         declType = CGGeneric(declType)
         if holderType is not None:
@@ -1972,19 +1983,13 @@ for (uint32_t i = 0; i < length; ++i) {
                             "arraybuffer views because making sure all the "
                             "objects are properly rooted is hard")
         name = type.name
-        if type.isArrayBuffer():
-            jsname = "ArrayBufferObject"
-        elif type.isArrayBufferView():
-            jsname = "ArrayBufferViewObject"
-        else:
-            jsname = type.name
-
         # By default, we use a Maybe<> to hold our typed array.  And in the optional
         # non-nullable case we want to pass Optional<TypedArray> to consumers, not
         # Optional<NonNull<TypedArray> >, so jump though some hoops to do that.
         holderType = "Maybe<%s>" % name
         constructLoc = "${holderName}"
         constructMethod = "construct"
+        constructInternal = "ref"
         if type.nullable():
             if isOptional:
                 declType = "const Optional<" + name + "*>"
@@ -1997,15 +2002,16 @@ for (uint32_t i = 0; i < length; ++i) {
                 holderType = None
                 constructLoc = "(const_cast<Optional<" + name + ">& >(${declName}))"
                 constructMethod = "Construct"
+                constructInternal = "Value"
             else:
                 declType = "NonNull<" + name + ">"
         template = (
-            "if (!JS_Is%s(&${val}.toObject(), cx)) {\n"
-            "%s" # No newline here because onFailure() handles that
-            "}\n"
-            "%s.%s(cx, &${val}.toObject());\n" %
-            (jsname, CGIndenter(onFailure(failureCode, descriptorProvider.workers)).define(),
-             constructLoc, constructMethod))
+            "%s.%s(cx, &${val}.toObject());\n"
+            "if (!%s.%s().inited()) {\n"
+            "%s" # No newline here because onFailureBadType() handles that
+            "}\n" %
+            (constructLoc, constructMethod, constructLoc, constructInternal,
+             CGIndenter(onFailureBadType(failureCode, type.name)).define()))
         nullableTarget = ""
         if type.nullable():
             if isOptional:
@@ -2019,7 +2025,6 @@ for (uint32_t i = 0; i < length; ++i) {
             template += "${declName} = ${holderName}.addr();"
         template = wrapObjectTemplate(template, isDefinitelyObject, type,
                                       "%s = NULL" % nullableTarget,
-                                      descriptorProvider.workers,
                                       failureCode)
 
         if holderType is not None:
@@ -2054,9 +2059,9 @@ for (uint32_t i = 0; i < length; ++i) {
                                      "%s.SetNull()" % varName)
             return handleDefault(
                 conversionCode,
-                ("static const PRUnichar data[] = { %s, 0 };\n"
+                ("static const PRUnichar data[] = { %s };\n"
                  "%s.SetData(data, ArrayLength(data) - 1)" %
-                 (", ".join("'" + char + "'" for char in defaultValue.value),
+                 (", ".join(["'" + char + "'" for char in defaultValue.value] + ["0"]),
                   varName)))
 
         if isMember:
@@ -2153,7 +2158,7 @@ for (uint32_t i = 0; i < length; ++i) {
         template = wrapObjectTemplate("${declName} = &${val}.toObject();",
                                       isDefinitelyObject, type,
                                       "${declName} = NULL",
-                                      descriptorProvider.workers, failureCode)
+                                      failureCode)
         if type.nullable():
             declType = CGGeneric("JSObject*")
         else:
@@ -2584,7 +2589,7 @@ if (!%(resultStr)s) {
                  IDLType.Tags.double]:
         # XXXbz will cast to double do the "even significand" thing that webidl
         # calls for for 64-bit ints?  Do we care?
-        return wrapAndSetPtr("JS_NewNumberValue(cx, double(%s), ${jsvalPtr})" % result)
+        return setValue("JS_NumberValue(double(%s))" % result)
 
     elif tag == IDLType.Tags.uint32:
         return setValue("UINT_TO_JSVAL(%s)" % result)

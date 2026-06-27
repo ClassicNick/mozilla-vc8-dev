@@ -3,11 +3,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DEPTH		= ../../..
+DEPTH		= @DEPTH@
 topsrcdir	= @top_srcdir@
 srcdir		= @srcdir@
 VPATH		= @srcdir@
-relativesrcdir  = dom/browser-element/mochitest
+relativesrcdir  = @relativesrcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
@@ -88,6 +88,10 @@ MOCHITEST_FILES = \
 		browserElement_OpenWindowDifferentOrigin.js \
 		test_browserElement_inproc_OpenWindowDifferentOrigin.html \
 		file_browserElement_OpenWindowDifferentOrigin.html \
+		browserElement_OpenNamed.js \
+		test_browserElement_inproc_OpenNamed.html \
+		file_browserElement_OpenNamed.html \
+		file_browserElement_OpenNamed2.html \
 		browserElement_SecurityChange.js \
 		test_browserElement_inproc_SecurityChange.html \
 		file_browserElement_SecurityChange.html \
@@ -139,6 +143,7 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_OpenWindowInFrame.html \
 		test_browserElement_oop_OpenWindowRejected.html \
 		test_browserElement_oop_OpenWindowDifferentOrigin.html \
+		test_browserElement_oop_OpenNamed.html \
 		test_browserElement_oop_SecurityChange.html \
 		test_browserElement_oop_BackForward.html \
 		test_browserElement_oop_Reload.html \

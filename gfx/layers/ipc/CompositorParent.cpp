@@ -21,6 +21,15 @@
 #include "nsIWidget.h"
 #include "RenderTrace.h"
 #include "ShadowLayersParent.h"
+#include "BasicLayers.h"
+#include "LayerManagerOGL.h"
+#include "nsIWidget.h"
+#include "nsGkAtoms.h"
+#include "RenderTrace.h"
+#include "nsStyleAnimation.h"
+#include "nsDisplayList.h"
+#include "AnimationCommon.h"
+#include "nsAnimationManager.h"
 
 using namespace base;
 using namespace mozilla::ipc;
@@ -409,6 +418,16 @@ private:
     gfx3DMatrix m(aContainer->GetTransform());
     m.Translate(gfxPoint3D(-fm.mViewportScrollOffset.x,
                            -fm.mViewportScrollOffset.y, 0));
+
+    // The transform already takes the resolution scale into account.  Since we
+    // will apply the resolution scale again when computing the effective
+    // transform, we must apply the inverse resolution scale here.
+    m.Scale(1.0f/c->GetPreXScale(),
+            1.0f/c->GetPreYScale(),
+            1);
+    m.ScalePost(1.0f/c->GetPostXScale(),
+                1.0f/c->GetPostYScale(),
+                1);
     aContainer->AsShadowLayer()->SetShadowTransform(m);
   }
 
@@ -431,15 +450,15 @@ CompositorParent::Composite()
     return;
   }
 
-  Layer* aLayer = mLayerManager->GetRoot();
-  AutoResolveRefLayers resolve(aLayer);
+  Layer* layer = mLayerManager->GetRoot();
+  AutoResolveRefLayers resolve(layer);
 
   bool requestNextFrame = TransformShadowTree(mLastCompose);
   if (requestNextFrame) {
     ScheduleComposition();
   }
 
-  RenderTraceLayers(aLayer, "0000");
+  RenderTraceLayers(layer, "0000");
 
   if (LAYERS_OPENGL == mLayerManager->GetBackendType() &&
       !mTargetConfig.naturalBounds().IsEmpty()) {
@@ -510,11 +529,19 @@ CompositorParent::TransformFixedLayers(Layer* aLayer,
     gfxPoint translation(aTranslation.x - (anchor.x - anchor.x / aScaleDiff.x),
                          aTranslation.y - (anchor.y - anchor.y / aScaleDiff.y));
 
-    // We are only translating the transform, so it is OK to translate the
-    // transform without the resolution scale.  This allows us to avoid applying
-    // the resolution scale and its inverse an extra time.
-    gfx3DMatrix layerTransform = aLayer->GetBaseTransform();
+    // The transform already takes the resolution scale into account.  Since we
+    // will apply the resolution scale again when computing the effective
+    // transform, we must apply the inverse resolution scale here.
+    gfx3DMatrix layerTransform = aLayer->GetTransform();
     Translate2D(layerTransform, translation);
+    if (ContainerLayer* c = aLayer->AsContainerLayer()) {
+      layerTransform.Scale(1.0f/c->GetPreXScale(),
+                           1.0f/c->GetPreYScale(),
+                           1);
+    }
+    layerTransform.ScalePost(1.0f/aLayer->GetPostXScale(),
+                             1.0f/aLayer->GetPostYScale(),
+                             1);
     ShadowLayer* shadow = aLayer->AsShadowLayer();
     shadow->SetShadowTransform(layerTransform);
 
@@ -543,11 +570,119 @@ SetShadowProperties(Layer* aLayer)
   shadow->SetShadowTransform(aLayer->GetBaseTransform());
   shadow->SetShadowVisibleRegion(aLayer->GetVisibleRegion());
   shadow->SetShadowClipRect(aLayer->GetClipRect());
+  shadow->SetShadowOpacity(aLayer->GetOpacity());
 
   for (Layer* child = aLayer->GetFirstChild();
       child; child = child->GetNextSibling()) {
     SetShadowProperties(child);
   }
+}
+
+// SampleValue should eventually take the CSS property as an argument.  This
+// will be needed if we ever animate two values with the same type but different
+// interpolation rules.
+static void
+SampleValue(float aPortion, Animation& aAnimation, nsStyleAnimation::Value& aStart,
+            nsStyleAnimation::Value& aEnd, Animatable* aValue)
+{
+  nsStyleAnimation::Value interpolatedValue;
+  NS_ASSERTION(aStart.GetUnit() == aEnd.GetUnit() ||
+               aStart.GetUnit() == nsStyleAnimation::eUnit_None ||
+               aEnd.GetUnit() == nsStyleAnimation::eUnit_None, "Must have same unit");
+  if (aStart.GetUnit() == nsStyleAnimation::eUnit_Transform ||
+      aEnd.GetUnit() == nsStyleAnimation::eUnit_Transform) {
+    nsStyleAnimation::Interpolate(eCSSProperty_transform, aStart, aEnd,
+                                  aPortion, interpolatedValue);
+    nsCSSValueList* interpolatedList = interpolatedValue.GetCSSValueListValue();
+
+    TransformData& data = aAnimation.data().get_TransformData();
+    gfx3DMatrix transform =
+      nsDisplayTransform::GetResultingTransformMatrix(nullptr, data.origin(), nsDeviceContext::AppUnitsPerCSSPixel(),
+                                                      &data.bounds(), interpolatedList, &data.mozOrigin(),
+                                                      &data.perspectiveOrigin(), &data.perspective());
+
+    InfallibleTArray<TransformFunction>* functions = new InfallibleTArray<TransformFunction>();
+    functions->AppendElement(TransformMatrix(transform));
+    *aValue = *functions;
+    return;
+  }
+
+  NS_ASSERTION(aStart.GetUnit() == nsStyleAnimation::eUnit_Float, "Should be opacity");
+  nsStyleAnimation::Interpolate(eCSSProperty_opacity, aStart, aEnd,
+                                aPortion, interpolatedValue);
+  *aValue = interpolatedValue.GetFloatValue();
+}
+
+static bool
+SampleAnimations(Layer* aLayer, TimeStamp aPoint)
+{
+  AnimationArray& animations = aLayer->GetAnimations();
+  InfallibleTArray<AnimData>& animationData = aLayer->GetAnimationData();
+
+  bool activeAnimations = false;
+
+  for (PRUint32 i = animations.Length(); i-- !=0; ) {
+    Animation& animation = animations[i];
+    AnimData& animData = animationData[i];
+
+    double numIterations = animation.numIterations() != -1 ?
+      animation.numIterations() : NS_IEEEPositiveInfinity();
+    double positionInIteration =
+      ElementAnimations::GetPositionInIteration(animation.startTime(),
+                                                aPoint,
+                                                animation.duration(),
+                                                numIterations,
+                                                animation.direction());
+
+    if (positionInIteration == -1) {
+        animations.RemoveElementAt(i);
+        animationData.RemoveElementAt(i);
+        continue;
+    }
+
+    NS_ABORT_IF_FALSE(0.0 <= positionInIteration &&
+                          positionInIteration <= 1.0,
+                        "position should be in [0-1]");
+
+    int segmentIndex = 0;
+    AnimationSegment* segment = animation.segments().Elements();
+    while (segment->endPortion() < positionInIteration) {
+      ++segment;
+      ++segmentIndex;
+    }
+
+    double positionInSegment = (positionInIteration - segment->startPortion()) /
+                                 (segment->endPortion() - segment->startPortion());
+
+    double portion = animData.mFunctions[segmentIndex]->GetValue(positionInSegment);
+
+    activeAnimations = true;
+
+    // interpolate the property
+    Animatable interpolatedValue;
+    SampleValue(portion, animation, animData.mStartValues[segmentIndex],
+                animData.mEndValues[segmentIndex], &interpolatedValue);
+    ShadowLayer* shadow = aLayer->AsShadowLayer();
+    switch (interpolatedValue.type()) {
+    case Animatable::TOpacity:
+      shadow->SetShadowOpacity(interpolatedValue.get_Opacity().value());
+      break;
+   case Animatable::TArrayOfTransformFunction: {
+      gfx3DMatrix matrix = interpolatedValue.get_ArrayOfTransformFunction()[0].get_TransformMatrix().value();
+      shadow->SetShadowTransform(matrix);
+      break;
+    }
+    default:
+      NS_WARNING("Unhandled animated property");
+    }
+  }
+
+  for (Layer* child = aLayer->GetFirstChild(); child;
+       child = child->GetNextSibling()) {
+    activeAnimations |= SampleAnimations(child, aPoint);
+  }
+
+  return activeAnimations;
 }
 
 bool
@@ -574,8 +709,7 @@ CompositorParent::ApplyAsyncContentTransformToTree(TimeStamp aCurrentFrame,
     gfx3DMatrix newTransform;
     *aWantNextFrame |=
       controller->SampleContentTransformForFrame(aCurrentFrame,
-                                                 container->GetFrameMetrics(),
-                                                 aLayer->GetTransform(),
+                                                 container,
                                                  &newTransform);
 
     shadow->SetShadowTransform(newTransform);
@@ -595,6 +729,10 @@ CompositorParent::TransformShadowTree(TimeStamp aCurrentFrame)
   ContainerLayer* container = layer->AsContainerLayer();
   Layer* root = mLayerManager->GetRoot();
 
+  // NB: we must sample animations *before* sampling pan/zoom
+  // transforms.
+  wantNextFrame |= SampleAnimations(layer, mLastCompose);
+
   const FrameMetrics& metrics = container->GetFrameMetrics();
   // We must apply the resolution scale before a pan/zoom transform, so we call
   // GetTransform here.
@@ -603,7 +741,7 @@ CompositorParent::TransformShadowTree(TimeStamp aCurrentFrame)
 
   // FIXME/bug 775437: unify this interface with the ~native-fennec
   // derived code
-  // 
+  //
   // Attempt to apply an async content transform to any layer that has
   // an async pan zoom controller (which means that it is rendered
   // async using Gecko). If this fails, fall back to transforming the
@@ -693,9 +831,12 @@ CompositorParent::TransformShadowTree(TimeStamp aCurrentFrame)
     // will apply the resolution scale again when computing the effective
     // transform, we must apply the inverse resolution scale here.
     gfx3DMatrix computedTransform = treeTransform * currentTransform;
-    computedTransform.Scale(1.0f/layer->GetXScale(),
-                            1.0f/layer->GetYScale(),
+    computedTransform.Scale(1.0f/container->GetPreXScale(),
+                            1.0f/container->GetPreYScale(),
                             1);
+    computedTransform.ScalePost(1.0f/container->GetPostXScale(),
+                                1.0f/container->GetPostYScale(),
+                                1);
     shadow->SetShadowTransform(computedTransform);
     TransformFixedLayers(layer, offset, scaleDiff);
   }

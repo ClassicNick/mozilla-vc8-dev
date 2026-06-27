@@ -18,6 +18,7 @@
 #include "gfxPattern.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
+#include "nsStyleAnimation.h"
 #include "LayersTypes.h"
 #include "FrameMetrics.h"
 #include "mozilla/gfx/2D.h"
@@ -44,8 +45,14 @@ namespace gl {
 class GLContext;
 }
 
+namespace css {
+class ComputedTimingFunction;
+}
+
 namespace layers {
 
+class Animation;
+class CommonLayerAttributes;
 class Layer;
 class ThebesLayer;
 class ContainerLayer;
@@ -386,7 +393,7 @@ public:
    */
   bool HasUserData(void* aKey)
   {
-    return GetUserData(aKey);
+    return mUserData.Has(static_cast<gfx::UserDataKey*>(aKey));
   }
   /**
    * This getter can be used anytime. Ownership is retained by the layer
@@ -462,6 +469,13 @@ private:
 };
 
 class ThebesLayer;
+typedef InfallibleTArray<Animation> AnimationArray;
+
+struct AnimData {
+  InfallibleTArray<nsStyleAnimation::Value> mStartValues;
+  InfallibleTArray<nsStyleAnimation::Value> mEndValues;
+  InfallibleTArray<mozilla::css::ComputedTimingFunction*> mFunctions;
+};
 
 /**
  * A Layer represents anything that can be rendered onto a destination
@@ -483,7 +497,7 @@ public:
     TYPE_THEBES
   };
 
-  virtual ~Layer() {}
+  virtual ~Layer();
 
   /**
    * Returns the LayerManager this Layer belongs to. Note that the layer
@@ -640,10 +654,10 @@ public:
     Mutated();
   }
 
-  void SetScale(float aXScale, float aYScale)
+  void SetPostScale(float aXScale, float aYScale)
   {
-    mXScale = aXScale;
-    mYScale = aYScale;
+    mPostXScale = aXScale;
+    mPostYScale = aYScale;
     Mutated();
   }
 
@@ -654,6 +668,14 @@ public:
    * with a displayport, but the layer does not move when that displayport scrolls.
    */
   void SetIsFixedPosition(bool aFixedPosition) { mIsFixedPosition = aFixedPosition; }
+
+  // Call AddAnimation to add an animation to this layer from layout code.
+  void AddAnimation(const Animation& aAnimation);
+  // ClearAnimations clears animations on this layer.
+  void ClearAnimations();
+  // This is only called when the layer tree is updated. Do not call this from
+  // layout code.  To add an animation to this layer, use AddAnimation.
+  void SetAnimations(const AnimationArray& aAnimations);
 
   /**
    * CONSTRUCTION PHASE ONLY
@@ -676,12 +698,14 @@ public:
   virtual Layer* GetLastChild() { return nullptr; }
   const gfx3DMatrix GetTransform();
   const gfx3DMatrix& GetBaseTransform() { return mTransform; }
-  float GetXScale() { return mXScale; }
-  float GetYScale() { return mYScale; }
+  float GetPostXScale() { return mPostXScale; }
+  float GetPostYScale() { return mPostYScale; }
   bool GetIsFixedPosition() { return mIsFixedPosition; }
   gfxPoint GetFixedPositionAnchor() { return mAnchor; }
   Layer* GetMaskLayer() { return mMaskLayer; }
 
+  AnimationArray& GetAnimations() { return mAnimations; }
+  InfallibleTArray<AnimData>& GetAnimationData() { return mAnimationData; }
   /**
    * DRAWING PHASE ONLY
    *
@@ -732,7 +756,7 @@ public:
    */
   bool HasUserData(void* aKey)
   {
-    return GetUserData(aKey);
+    return mUserData.Has(static_cast<gfx::UserDataKey*>(aKey));
   }
   /**
    * This getter can be used anytime. Ownership is retained by the layer
@@ -882,22 +906,7 @@ public:
 #endif
 
 protected:
-  Layer(LayerManager* aManager, void* aImplData) :
-    mManager(aManager),
-    mParent(nullptr),
-    mNextSibling(nullptr),
-    mPrevSibling(nullptr),
-    mImplData(aImplData),
-    mMaskLayer(nullptr),
-    mXScale(1.0f),
-    mYScale(1.0f),
-    mOpacity(1.0),
-    mContentFlags(0),
-    mUseClipRect(false),
-    mUseTileSourceRect(false),
-    mIsFixedPosition(false),
-    mDebugColorIndex(0)
-    {}
+  Layer(LayerManager* aManager, void* aImplData);
 
   void Mutated() { mManager->Mutated(this); }
 
@@ -913,6 +922,12 @@ protected:
    * for shadow layers, GetShadowTransform()
    */
   const gfx3DMatrix GetLocalTransform();
+
+  /**
+   * Returns the local opacity for this layer: either mOpacity or,
+   * for shadow layers, GetShadowOpacity()
+   */
+  const float GetLocalOpacity();
 
   /**
    * Computes a tweaked version of aTransform that snaps a point or a rectangle
@@ -938,9 +953,11 @@ protected:
   gfx::UserData mUserData;
   nsIntRegion mVisibleRegion;
   gfx3DMatrix mTransform;
-  float mXScale;
-  float mYScale;
+  float mPostXScale;
+  float mPostYScale;
   gfx3DMatrix mEffectiveTransform;
+  AnimationArray mAnimations;
+  InfallibleTArray<AnimData> mAnimationData;
   float mOpacity;
   nsIntRect mClipRect;
   nsIntRect mTileSourceRect;
@@ -1091,6 +1108,13 @@ public:
     Mutated();
   }
 
+  void SetPreScale(float aXScale, float aYScale)
+  {
+    mPreXScale = aXScale;
+    mPreYScale = aYScale;
+    Mutated();
+  }
+
   virtual void FillSpecificAttributes(SpecificLayerAttributes& aAttrs);
 
   void SortChildrenBy3DZOrder(nsTArray<Layer*>& aArray);
@@ -1102,6 +1126,8 @@ public:
   virtual Layer* GetFirstChild() { return mFirstChild; }
   virtual Layer* GetLastChild() { return mLastChild; }
   const FrameMetrics& GetFrameMetrics() { return mFrameMetrics; }
+  float GetPreXScale() { return mPreXScale; }
+  float GetPreYScale() { return mPreYScale; }
 
   MOZ_LAYER_DECL_NAME("ContainerLayer", TYPE_CONTAINER)
 
@@ -1152,6 +1178,8 @@ protected:
     : Layer(aManager, aImplData),
       mFirstChild(nullptr),
       mLastChild(nullptr),
+      mPreXScale(1.0f),
+      mPreYScale(1.0f),
       mUseIntermediateSurface(false),
       mSupportsComponentAlphaChildren(false),
       mMayHaveReadbackChild(false)
@@ -1175,6 +1203,8 @@ protected:
   Layer* mFirstChild;
   Layer* mLastChild;
   FrameMetrics mFrameMetrics;
+  float mPreXScale;
+  float mPreYScale;
   bool mUseIntermediateSurface;
   bool mSupportsComponentAlphaChildren;
   bool mMayHaveReadbackChild;

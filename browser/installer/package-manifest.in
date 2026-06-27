@@ -41,7 +41,9 @@
 @BINPATH@/@PREF_DIR@/firefox-l10n.js
 @BINPATH@/searchplugins/*
 #ifdef XP_WIN32
+#ifdef MOZ_UPDATER
 @BINPATH@/uninstall/helper.exe
+#endif
 #endif
 #ifdef MOZ_UPDATER
 @BINPATH@/update.locale

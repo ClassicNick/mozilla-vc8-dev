@@ -978,7 +978,6 @@ struct SourceCompressionToken;
 struct ScriptSource
 {
     friend class SourceCompressorThread;
-    ScriptSource *next;
   private:
     union {
         // When the script source is ready, compressedLength_ != 0 implies
@@ -987,43 +986,77 @@ struct ScriptSource
         jschar *source;
         unsigned char *compressed;
     } data;
+    uint32_t refs;
     uint32_t length_;
     uint32_t compressedLength_;
-    bool marked:1;
-    bool onRuntime_:1;
     bool argumentsNotIncluded_:1;
 #ifdef DEBUG
     bool ready_:1;
 #endif
 
   public:
-    static ScriptSource *createFromSource(JSContext *cx,
-                                          const jschar *src,
-                                          uint32_t length,
-                                          bool argumentsNotIncluded = false,
-                                          SourceCompressionToken *tok = NULL,
-                                          bool ownSource = false);
-    void attachToRuntime(JSRuntime *rt);
-    void mark() { marked = true; }
-    void destroy(JSRuntime *rt);
-    uint32_t length() const { return length_; }
-    bool onRuntime() const { return onRuntime_; }
-    bool argumentsNotIncluded() const { return argumentsNotIncluded_; }
+    ScriptSource()
+      : refs(0),
+        length_(0),
+        compressedLength_(0),
+        argumentsNotIncluded_(false)
+#ifdef DEBUG
+       ,ready_(true)
+#endif
+    {
+        data.source = NULL;
+    }
+    void incref() { refs++; }
+    void decref(JSRuntime *rt) {
+        JS_ASSERT(refs != 0);
+        if (--refs == 0)
+            destroy(rt);
+    }
+    bool setSourceCopy(JSContext *cx,
+                       const jschar *src,
+                       uint32_t length,
+                       bool argumentsNotIncluded,
+                       SourceCompressionToken *tok);
+    void setSource(const jschar *src, uint32_t length);
 #ifdef DEBUG
     bool ready() const { return ready_; }
 #endif
+    bool hasSourceData() const { return !!data.source; }
+    uint32_t length() const {
+        JS_ASSERT(hasSourceData());
+        return length_;
+    }
+    bool argumentsNotIncluded() const {
+        JS_ASSERT(hasSourceData());
+        return argumentsNotIncluded_;
+    }
     JSFixedString *substring(JSContext *cx, uint32_t start, uint32_t stop);
     size_t sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf);
 
-    // For the GC.
-    static void sweep(JSRuntime *rt);
-
     // XDR handling
     template <XDRMode mode>
-    static bool performXDR(XDRState<mode> *xdr, ScriptSource **ss);
+    bool performXDR(XDRState<mode> *xdr);
 
   private:
+    void destroy(JSRuntime *rt);
     bool compressed() { return compressedLength_ != 0; }
+};
+
+class ScriptSourceHolder
+{
+    JSRuntime *rt;
+    ScriptSource *ss;
+  public:
+    ScriptSourceHolder(JSRuntime *rt, ScriptSource *ss)
+      : rt(rt),
+        ss(ss)
+    {
+        ss->incref();
+    }
+    ~ScriptSourceHolder()
+    {
+        ss->decref(rt);
+    }
 };
 
 #ifdef JS_THREADSAFE

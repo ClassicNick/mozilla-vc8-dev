@@ -85,7 +85,8 @@ DocAccessible::
   mPresShell(aPresShell)
 {
   mFlags |= eDocAccessible;
-  mPresShell->SetAccDocument(this);
+  if (mPresShell)
+    mPresShell->SetAccDocument(this);
 
   mDependentIDsHash.Init();
   // XXX aaronl should we use an algorithm for the initial cache size?
@@ -603,7 +604,7 @@ DocAccessible::GetAccessible(nsINode* aNode) const
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessNode
 
-bool
+void
 DocAccessible::Init()
 {
 #ifdef DEBUG
@@ -613,8 +614,6 @@ DocAccessible::Init()
 
   // Initialize notification controller.
   mNotificationController = new NotificationController(this, mPresShell);
-  if (!mNotificationController)
-    return false;
 
   // Mark the document accessible as loaded if its DOM document was loaded at
   // this point (this can happen because a11y is started late or DOM document
@@ -623,7 +622,6 @@ DocAccessible::Init()
     mLoadState |= eDOMLoaded;
 
   AddEventListeners();
-  return true;
 }
 
 void
@@ -1396,12 +1394,7 @@ DocAccessible::BindToDocument(Accessible* aAccessible,
   mAccessibleCache.Put(aAccessible->UniqueID(), aAccessible);
 
   // Initialize the accessible.
-  if (!aAccessible->Init()) {
-    NS_ERROR("Failed to initialize an accessible!");
-
-    UnbindFromDocument(aAccessible);
-    return false;
-  }
+  aAccessible->Init();
 
   aAccessible->SetRoleMapEntry(aRoleMapEntry);
   if (aAccessible->IsElement())

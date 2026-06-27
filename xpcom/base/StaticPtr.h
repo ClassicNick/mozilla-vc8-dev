@@ -156,29 +156,29 @@ namespace StaticPtr_internal {
 class Zero;
 } // namespace StaticPtr_internal
 
-#define REFLEXIVE_EQUALITY_OPERATORS(type1, type2, eq_fn, ...) \
-  template<__VA_ARGS__>                                        \
+#define REFLEXIVE_EQUALITY_OPERATORS(type1, type2, eq_fn, a) \
+  template<typename T, class U>                                        \
   inline bool                                                  \
   operator==(type1 lhs, type2 rhs)                             \
   {                                                            \
     return eq_fn;                                              \
   }                                                            \
                                                                \
-  template<__VA_ARGS__>                                        \
+  template<typename T, class U>                                        \
   inline bool                                                  \
   operator==(type2 lhs, type1 rhs)                             \
   {                                                            \
     return rhs == lhs;                                         \
   }                                                            \
                                                                \
-  template<__VA_ARGS__>                                        \
+  template<typename T, class U>                                        \
   inline bool                                                  \
   operator!=(type1 lhs, type2 rhs)                             \
   {                                                            \
     return !(lhs == rhs);                                      \
   }                                                            \
                                                                \
-  template<__VA_ARGS__>                                        \
+  template<typename T, class U>                                        \
   inline bool                                                  \
   operator!=(type2 lhs, type1 rhs)                             \
   {                                                            \

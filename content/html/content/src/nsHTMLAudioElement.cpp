@@ -3,6 +3,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include "nsDOMError.h"
 #include "nsIDOMHTMLAudioElement.h"
 #include "nsHTMLAudioElement.h"
 #include "nsGenericHTMLElement.h"
@@ -189,7 +190,7 @@ nsHTMLAudioElement::MozCurrentSampleOffset(PRUint64 *aRetVal)
   if (position < 0) {
     *aRetVal = 0;
   } else {
-    *aRetVal = mAudioStream->GetPositionInFrames() * mChannels;
+    *aRetVal = position * mChannels;
   }
   return NS_OK;
 }

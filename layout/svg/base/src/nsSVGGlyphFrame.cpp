@@ -234,7 +234,7 @@ nsDisplaySVGGlyphs::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
   nsPoint userSpacePt = pointRelativeToReferenceFrame -
                           (ToReferenceFrame() - frame->GetPosition());
   if (frame->GetFrameForPoint(userSpacePt)) {
-    aOutFrames->AppendElement(frame);
+    aOutFrames->AppendElement((nsIFrame*) frame);
   }
 }
 
@@ -957,8 +957,9 @@ nsSVGGlyphFrame::SetupCairoState(gfxContext *aContext, gfxPattern **aStrokePatte
 
     SetupCairoStrokeHitGeometry(aContext);
     float opacity = style->mStrokeOpacity;
-    nsSVGPaintServerFrame *ps = GetPaintServer(&style->mStroke,
-                                               nsSVGEffects::StrokeProperty());
+    nsSVGPaintServerFrame *ps =
+      nsSVGEffects::GetPaintServer(this, &style->mStroke,
+                                   nsSVGEffects::StrokeProperty());
 
     nsRefPtr<gfxPattern> strokePattern;
 
@@ -970,10 +971,8 @@ nsSVGGlyphFrame::SetupCairoState(gfxContext *aContext, gfxPattern **aStrokePatte
     }
 
     if (!strokePattern) {
-      nscolor color;
-      nsSVGUtils::GetFallbackOrPaintColor(aContext, GetStyleContext(),
-                                          &nsStyleSVG::mStroke, &opacity,
-                                          &color);
+      nscolor color = nsSVGUtils::GetFallbackOrPaintColor(
+                        aContext, GetStyleContext(), &nsStyleSVG::mStroke);
       strokePattern = new gfxPattern(gfxRGBA(NS_GET_R(color) / 255.0,
                                              NS_GET_G(color) / 255.0,
                                              NS_GET_B(color) / 255.0,
@@ -1676,7 +1675,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
 
     PRUint32 flags = gfxTextRunFactory::TEXT_NEED_BOUNDING_BOX |
       GetTextRunFlags(text.Length()) |
-      nsLayoutUtils::GetTextRunFlagsForStyle(GetStyleContext(), GetStyleText(), GetStyleFont());
+      nsLayoutUtils::GetTextRunFlagsForStyle(GetStyleContext(), GetStyleFont(), 0);
 
     // XXX We should use a better surface here! But then we'd have to
     // change things so we can ensure we always have the "right" sort of

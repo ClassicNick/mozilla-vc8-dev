@@ -22,14 +22,14 @@
 #include "nsThreadUtils.h"
 #include "nsIDOMCameraManager.h"
 
-#define DOM_CAMERA_LOG( l, ... )          \
+#define DOM_CAMERA_LOG( l, a )          \
   do {                                    \
     if ( DOM_CAMERA_LOG_LEVEL >= (l) ) {  \
-      printf_stderr (__VA_ARGS__);        \
+      printf_stderr (a);        \
     }                                     \
   } while (0)
 
-#define DOM_CAMERA_LOGA( ... )        DOM_CAMERA_LOG( 0, __VA_ARGS__ )
+#define DOM_CAMERA_LOGA( a )        DOM_CAMERA_LOG( 0, a )
 
 enum {
   DOM_CAMERA_LOG_NOTHING,
@@ -38,9 +38,9 @@ enum {
   DOM_CAMERA_LOG_INFO
 };
 
-#define DOM_CAMERA_LOGI( ... )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_INFO,  __VA_ARGS__ )
-#define DOM_CAMERA_LOGW( ... )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_WARNING, __VA_ARGS__ )
-#define DOM_CAMERA_LOGE( ... )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_ERROR, __VA_ARGS__ )
+#define DOM_CAMERA_LOGI( a )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_INFO,  a )
+#define DOM_CAMERA_LOGW( a )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_WARNING, a )
+#define DOM_CAMERA_LOGE( a )        DOM_CAMERA_LOG( DOM_CAMERA_LOG_ERROR, a )
 
 class CameraErrorResult : public nsRunnable
 {

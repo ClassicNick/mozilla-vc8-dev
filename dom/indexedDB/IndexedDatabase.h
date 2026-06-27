@@ -39,6 +39,11 @@ class FileInfo;
 class IDBDatabase;
 class IDBTransaction;
 
+enum FactoryPrivilege {
+  Content,
+  Chrome
+};
+
 template <class T>
 void SwapData(T& aData1, T& aData2)
 {
@@ -46,6 +51,20 @@ void SwapData(T& aData1, T& aData2)
   aData2 = aData1;
   aData1 = temp;
 }
+
+struct StructuredCloneFile
+{
+  bool operator==(const StructuredCloneFile& aOther) const
+  {
+    return this->mFile == aOther.mFile &&
+           this->mFileInfo == aOther.mFileInfo &&
+           this->mInputStream == aOther.mInputStream;
+  }
+
+  nsCOMPtr<nsIDOMBlob> mFile;
+  nsRefPtr<FileInfo> mFileInfo;
+  nsCOMPtr<nsIInputStream> mInputStream;
+};
 
 struct SerializedStructuredCloneReadInfo;
 
@@ -57,7 +76,7 @@ struct StructuredCloneReadInfo
   void Swap(StructuredCloneReadInfo& aCloneReadInfo)
   {
     mCloneBuffer.swap(aCloneReadInfo.mCloneBuffer);
-    mFileInfos.SwapElements(aCloneReadInfo.mFileInfos);
+    mFiles.SwapElements(aCloneReadInfo.mFiles);
     SwapData(mDatabase, aCloneReadInfo.mDatabase);
   }
 
@@ -66,7 +85,7 @@ struct StructuredCloneReadInfo
   SetFromSerialized(const SerializedStructuredCloneReadInfo& aOther);
 
   JSAutoStructuredCloneBuffer mCloneBuffer;
-  nsTArray<nsRefPtr<FileInfo> > mFileInfos;
+  nsTArray<StructuredCloneFile> mFiles;
   IDBDatabase* mDatabase;
 };
 
@@ -94,20 +113,6 @@ struct SerializedStructuredCloneReadInfo
   // Make sure to update ipc/SerializationHelpers.h when changing members here!
   uint64_t* data;
   size_t dataLength;
-};
-
-struct StructuredCloneFile
-{
-  bool operator==(const StructuredCloneFile& aOther) const
-  {
-    return this->mFile == aOther.mFile &&
-           this->mFileInfo == aOther.mFileInfo &&
-           this->mInputStream == aOther.mInputStream;
-  }
-
-  nsCOMPtr<nsIDOMBlob> mFile;
-  nsRefPtr<FileInfo> mFileInfo;
-  nsCOMPtr<nsIInputStream> mInputStream;
 };
 
 struct SerializedStructuredCloneWriteInfo;

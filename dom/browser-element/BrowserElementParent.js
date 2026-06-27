@@ -19,6 +19,15 @@ function debug(msg) {
   //dump("BrowserElementParent - " + msg + "\n");
 }
 
+function getBoolPref(prefName, def) {
+  try {
+    return Services.prefs.getBoolPref(prefName);
+  }
+  catch(err) {
+    return def;
+  }
+}
+
 /**
  * BrowserElementParent implements one half of <iframe mozbrowser>.  (The other
  * half is, unsurprisingly, BrowserElementChild.)
@@ -125,6 +134,7 @@ function BrowserElementParent(frameLoader, hasRemoteFrame) {
   this._pendingDOMRequests = {};
   this._hasRemoteFrame = hasRemoteFrame;
 
+  this._frameLoader = frameLoader;
   this._frameElement = frameLoader.QueryInterface(Ci.nsIFrameLoader).ownerElement;
   if (!this._frameElement) {
     debug("No frame element?");
@@ -169,6 +179,7 @@ function BrowserElementParent(frameLoader, hasRemoteFrame) {
 
   let os = Cc["@mozilla.org/observer-service;1"].getService(Ci.nsIObserverService);
   os.addObserver(this, 'ask-children-to-exit-fullscreen', /* ownsWeak = */ true);
+  os.addObserver(this, 'oop-frameloader-crashed', /* ownsWeak = */ true);
 
   function defineMethod(name, fn) {
     XPCNativeWrapper.unwrap(self._frameElement)[name] = function() {
@@ -189,7 +200,7 @@ function BrowserElementParent(frameLoader, hasRemoteFrame) {
   // Define methods on the frame element.
   defineMethod('setVisible', this._setVisible);
   defineMethod('sendMouseEvent', this._sendMouseEvent);
-  if (Services.prefs.getBoolPref(TOUCH_EVENTS_ENABLED_PREF)) {
+  if (getBoolPref(TOUCH_EVENTS_ENABLED_PREF, false)) {
     defineMethod('sendTouchEvent', this._sendTouchEvent);
   }
   defineMethod('goBack', this._goBack);
@@ -465,12 +476,30 @@ BrowserElementParent.prototype = {
     this._windowUtils.remoteFrameFullscreenReverted();
   },
 
+  _fireFatalError: function() {
+    let evt = this._createEvent('error', {type: 'fatal'},
+                                /* cancelable = */ false);
+    this._frameElement.dispatchEvent(evt);
+  },
+
   observe: function(subject, topic, data) {
-    if (topic == 'ask-children-to-exit-fullscreen' &&
-        this._isAlive() &&
-        this._frameElement.ownerDocument == subject &&
-        this._hasRemoteFrame)
-      this._sendAsyncMsg('exit-fullscreen');
+    switch(topic) {
+    case 'oop-frameloader-crashed':
+      if (this._isAlive() && subject == this._frameLoader) {
+        this._fireFatalError();
+      }
+      break;
+    case 'ask-children-to-exit-fullscreen':
+      if (this._isAlive() &&
+          this._frameElement.ownerDocument == subject &&
+          this._hasRemoteFrame) {
+        this._sendAsyncMsg('exit-fullscreen');
+      }
+      break;
+    default:
+      debug('Unknown topic: ' + topic);
+      break;
+    };
   },
 };
 

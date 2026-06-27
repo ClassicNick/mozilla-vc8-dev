@@ -164,7 +164,8 @@ public:
   static void GarbageCollectNow(js::gcreason::Reason reason,
                                 IsIncremental aIncremental = NonIncrementalGC,
                                 IsCompartment aCompartment = NonCompartmentGC,
-                                IsShrinking aShrinking = NonShrinkingGC);
+                                IsShrinking aShrinking = NonShrinkingGC,
+                                int64_t aSliceMillis = 0);
   static void ShrinkGCBuffersNow();
   // If aExtraForgetSkippableCalls is -1, forgetSkippable won't be
   // called even if the previous collection was GC.
@@ -315,8 +316,6 @@ public:
   NS_DECL_ISUPPORTS
 
   virtual already_AddRefed<nsIScriptContext> CreateContext();
-
-  virtual nsresult ParseVersion(const nsString &aVersionStr, PRUint32 *flags);
 
   virtual nsresult DropScriptObject(void *object);
   virtual nsresult HoldScriptObject(void *object);

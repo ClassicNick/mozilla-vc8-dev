@@ -1311,8 +1311,8 @@ public:
    * and prefs indicate we should be optimizing for speed over quality
    */
   static PRUint32 GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
-                                          const nsStyleText* aStyleText,
-                                          const nsStyleFont* aStyleFont);
+                                          const nsStyleFont* aStyleFont,
+                                          nscoord aLetterSpacing);
 
   /**
    * Takes two rectangles whose origins must be the same, and computes
@@ -1498,9 +1498,27 @@ public:
                                         bool clear);
 
   /**
+   * Returns true if the content node has animations or transitions that can be
+   * performed on the compositor.
+   */
+  static bool HasAnimationsForCompositor(nsIContent* aContent,
+                                         nsCSSProperty aProperty);
+
+  /**
    * Checks if CSS 3D transforms are currently enabled.
    */
   static bool Are3DTransformsEnabled();
+
+  /**
+   * Checks if off-main-thread transform and opacity animations are enabled.
+   */
+  static bool AreOpacityAnimationsEnabled();
+  static bool AreTransformAnimationsEnabled();
+
+  /**
+   * Checks if we should warn about animations that can't be async
+   */
+  static bool IsAnimationLoggingEnabled();
 
   /**
    * Checks if we should forcibly use nearest pixel filtering for the

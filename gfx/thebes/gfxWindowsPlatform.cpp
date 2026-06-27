@@ -739,7 +739,7 @@ already_AddRefed<gfxASurface>
 gfxWindowsPlatform::CreateOffscreenSurface(const gfxIntSize& size,
                                            gfxASurface::gfxContentType contentType)
 {
-    gfxASurface *surf = nullptr;
+    nsRefPtr<gfxASurface> surf = nullptr;
 
 #ifdef CAIRO_HAS_WIN32_SURFACE
     if (mRenderMode == RENDER_GDI)
@@ -751,12 +751,11 @@ gfxWindowsPlatform::CreateOffscreenSurface(const gfxIntSize& size,
         surf = new gfxD2DSurface(size, OptimalFormatForContent(contentType));
 #endif
 
-    if (surf == nullptr)
+    if (!surf || surf->CairoStatus()) {
         surf = new gfxImageSurface(size, OptimalFormatForContent(contentType));
+    }
 
-    NS_IF_ADDREF(surf);
-
-    return surf;
+    return surf.forget();
 }
 
 already_AddRefed<gfxASurface>

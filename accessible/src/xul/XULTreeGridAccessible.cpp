@@ -14,6 +14,7 @@
 #include "Role.h"
 #include "States.h"
 
+#include "nsIMutableArray.h"
 #include "nsITreeSelection.h"
 #include "nsComponentManagerUtils.h"
 
@@ -778,11 +779,12 @@ XULTreeGridCellAccessible::IsSelected(bool* aIsSelected)
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeGridCellAccessible: nsAccessNode implementation
 
-bool
+void
 XULTreeGridCellAccessible::Init()
 {
-  if (!LeafAccessible::Init() || !mTreeView)
-    return false;
+  LeafAccessible::Init();
+
+  NS_ASSERTION(mTreeView, "mTreeView is null");
 
   PRInt16 type;
   mColumn->GetType(&type);
@@ -790,8 +792,6 @@ XULTreeGridCellAccessible::Init()
     mTreeView->GetCellValue(mRow, mColumn, mCachedTextEquiv);
   else
     mTreeView->GetCellText(mRow, mColumn, mCachedTextEquiv);
-
-  return true;
 }
 
 bool

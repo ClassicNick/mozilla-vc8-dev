@@ -738,7 +738,7 @@ ndigits(size_t n, size_t *result, const jschar *s, size_t* i, size_t limit)
 {
     size_t init = *i;
 
-    if (digits(result, s, i, JS_MIN(limit, init+n)))
+    if (digits(result, s, i, Min(limit, init+n)))
         return ((*i - init) == n);
 
     *i = init;
@@ -2590,7 +2590,7 @@ static JSBool
 date_toJSON(JSContext *cx, unsigned argc, Value *vp)
 {
     /* Step 1. */
-    JSObject *obj = ToObject(cx, &vp[1]);
+    RootedObject obj(cx, ToObject(cx, &vp[1]));
     if (!obj)
         return false;
 
@@ -3296,7 +3296,7 @@ js_DateGetSeconds(JSContext *cx, JSObject* obj)
 }
 
 JS_FRIEND_API(double)
-js_DateGetMsecSinceEpoch(JSContext *cx, JSObject *obj)
+js_DateGetMsecSinceEpoch(JSContext *cx, RawObject obj)
 {
     return obj->isDate() ? obj->getDateUTCTime().toNumber() : 0;
 }

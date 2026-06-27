@@ -165,19 +165,22 @@ def _parse_one(testcase, xul_tester):
             if xul_tester.test("xulRuntime.OS == 'Darwin'"):
                 testcase.expect = testcase.enable = False
             pos += 1
+        elif parts[pos] == 'pref(javascript.options.xml.content,true)':
+            testcase.options += ['-e', 'options("allow_xml");']
+            pos += 1
         else:
             print 'warning: invalid manifest line element "%s"'%parts[pos]
             pos += 1
 
-def _build_manifest_script_entry(t):
+def _build_manifest_script_entry(script_name, test):
     line = []
-    if t.terms:
-        line.append(t.terms)
+    if test.terms:
+        line.append(test.terms)
     line.append("script")
-    line.append(k)
-    if t.comment:
+    line.append(script_name)
+    if test.comment:
         line.append("#")
-        line.append(t.comment)
+        line.append(test.comment)
     return ' '.join(line)
 
 def _map_prefixes_left(test_list):
@@ -216,7 +219,7 @@ def _emit_manifest_at(location, relative, test_list, depth):
         else:
             numTestFiles += 1
             assert(len(test_list) == 1)
-            line = _build_manifest_script_entry(test_list[0])
+            line = _build_manifest_script_entry(k, test_list[0])
             manifest.append(line)
 
     # Always present our manifest in sorted order.

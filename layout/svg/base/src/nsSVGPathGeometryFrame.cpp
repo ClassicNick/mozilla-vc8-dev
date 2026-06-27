@@ -77,7 +77,7 @@ nsDisplaySVGPathGeometry::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& 
   nsPoint userSpacePt = pointRelativeToReferenceFrame -
                           (ToReferenceFrame() - frame->GetPosition());
   if (frame->GetFrameForPoint(userSpacePt)) {
-    aOutFrames->AppendElement(frame);
+    aOutFrames->AppendElement((nsIFrame*) frame);
   }
 }
 
