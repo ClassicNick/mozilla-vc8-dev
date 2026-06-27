@@ -75,6 +75,9 @@ MOCHITEST_FILES = \
 		browserElement_ForwardName.js \
 		test_browserElement_inproc_ForwardName.html \
 		file_browserElement_ForwardName.html \
+		browserElement_TargetBlank.js \
+		test_browserElement_inproc_TargetBlank.html \
+		file_browserElement_TargetBlank.html \
 		browserElement_PromptCheck.js \
 		test_browserElement_inproc_PromptCheck.html \
 		browserElement_PromptConfirm.js \
@@ -124,9 +127,17 @@ MOCHITEST_FILES = \
 
 # OOP tests don't work on Windows (bug 763081) or native-fennec (bug
 # 774939).
+#
+# Both the "inproc" and "oop" versions of OpenMixedProcess open remote frames,
+# so we don't run that test on platforms which don't support OOP tests.
+
 ifneq ($(OS_ARCH),WINNT) #{
 ifndef MOZ_JAVA_COMPOSITOR #{
 MOCHITEST_FILES += \
+		browserElement_OpenMixedProcess.js \
+		file_browserElement_OpenMixedProcess.html \
+		test_browserElement_inproc_OpenMixedProcess.html \
+		test_browserElement_oop_OpenMixedProcess.html \
 		test_browserElement_oop_LoadEvents.html \
 		test_browserElement_oop_DataURI.html \
 		test_browserElement_oop_ErrorSecurity.html \
@@ -147,6 +158,7 @@ MOCHITEST_FILES += \
 		test_browserElement_oop_AlertInFrame.html \
 		test_browserElement_oop_TargetTop.html \
 		test_browserElement_oop_ForwardName.html \
+		test_browserElement_oop_TargetBlank.html \
 		test_browserElement_oop_PromptCheck.html \
 		test_browserElement_oop_PromptConfirm.html \
 		test_browserElement_oop_Close.html \

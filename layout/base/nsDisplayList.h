@@ -23,7 +23,6 @@
 #include "nsRegion.h"
 #include "FrameLayerBuilder.h"
 #include "nsThemeConstants.h"
-#include "ImageLayers.h"
 #include "nsLayoutUtils.h"
 
 #include "mozilla/StandardInteger.h"
@@ -36,6 +35,13 @@ class nsRenderingContext;
 class nsDeviceContext;
 class nsDisplayTableItem;
 class nsDisplayItem;
+
+namespace mozilla {
+namespace layers {
+class ImageLayer;
+class ImageContainer;
+} //namepsace
+} //namepsace
 
 /*
  * An nsIFrame can have many different visual parts. For example an image frame
@@ -1592,11 +1598,7 @@ private:
 class nsDisplayBackground : public nsDisplayItem {
 public:
   nsDisplayBackground(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame);
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayBackground() {
-    MOZ_COUNT_DTOR(nsDisplayBackground);
-  }
-#endif
+  virtual ~nsDisplayBackground();
 
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
@@ -2433,7 +2435,7 @@ public:
     : nsDisplayItem(aBuilder, aFrame), mLeftEdge(0), mRightEdge(0) {}
 
   nsCharClipDisplayItem(nsIFrame* aFrame)
-    : nsDisplayItem(nsnull, aFrame, nsPoint()) {}
+    : nsDisplayItem(nullptr, aFrame, nsPoint()) {}
 
   struct ClipEdges {
     ClipEdges(const nsDisplayItem& aItem,

@@ -11,6 +11,7 @@
 #include "nsIConsoleService.h"
 #include "nsIDOMFile.h"
 #include "nsIDocument.h"
+#include "nsIDocShell.h"
 #include "nsIJSContextStack.h"
 #include "nsIMemoryReporter.h"
 #include "nsIScriptError.h"
@@ -31,12 +32,13 @@
 #include "js/MemoryMetrics.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
-#include "nsDOMError.h"
+#include "nsError.h"
 #include "nsDOMJSUtils.h"
 #include "nsGUIEvent.h"
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
+#include "nsSandboxFlags.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
 #include "mozilla/Attributes.h"
@@ -2591,7 +2593,14 @@ WorkerPrivate::Create(JSContext* aCx, JSObject* aObj, WorkerPrivate* aParent,
           // XXX Fix this, need a real domain here.
           domain = file;
         }
-        else {
+        // Workaround for workers needing a string domain - will be fixed
+        // in a followup after this lands.
+        else if (document->GetSandboxFlags() & SANDBOXED_ORIGIN) {
+          if (NS_FAILED(codebase->GetAsciiSpec(domain))) {
+            JS_ReportError(aCx, "Could not get URI's spec for sandboxed document!");
+            return nullptr;
+          }
+        } else {
           nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
             do_GetService(THIRDPARTYUTIL_CONTRACTID);
           if (!thirdPartyUtil) {

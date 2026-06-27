@@ -69,6 +69,7 @@ class nsWindowSizes;
 namespace mozilla {
 namespace css {
 class Loader;
+class ImageLoader;
 } // namespace css
 
 namespace dom {
@@ -78,8 +79,8 @@ class Element;
 } // namespace mozilla
 
 #define NS_IDOCUMENT_IID \
-{ 0xbd70ee06, 0x2a7d, 0x4258, \
-  { 0x86, 0x4b, 0xbd, 0x28, 0xad, 0x9f, 0xd1, 0x41 } }
+{ 0x57fe44ae, 0x6656, 0x44b8, \
+  { 0x8d, 0xc0, 0xfc, 0xa7, 0x43, 0x28, 0xbe, 0x86 } }
 
 // Flag for AddStyleSheet().
 #define NS_STYLESHEET_FROM_CATALOG                (1 << 0)
@@ -399,6 +400,25 @@ public:
     mBidiOptions = aBidiOptions;
   }
 
+
+  /**
+   * Get the sandbox flags for this document.
+   * @see nsSandboxFlags.h for the possible flags
+   */
+  PRUint32 GetSandboxFlags() const
+  {
+    return mSandboxFlags;
+  }
+
+  /**
+   * Set the sandbox flags for this document.
+   * @see nsSandboxFlags.h for the possible flags
+   */
+  void SetSandboxFlags(PRUint32 sandboxFlags)
+  {
+    mSandboxFlags = sandboxFlags;
+  }
+
   inline mozilla::directionality::Directionality GetDocumentDirectionality() {
     return mDirectionality;
   }
@@ -455,6 +475,11 @@ public:
   {
     mParentDocument = aParent;
   }
+  
+  /**
+   * Are plugins allowed in this document ?
+   */
+  virtual nsresult GetAllowPlugins (bool* aAllowPlugins) = 0;
 
   /**
    * Set the sub document for aContent to aSubDoc.
@@ -583,6 +608,13 @@ public:
    */
   mozilla::css::Loader* CSSLoader() const {
     return mCSSLoader;
+  }
+
+  /**
+   * Get this document's StyleImageLoader.  This is guaranteed to not return null.
+   */
+  mozilla::css::ImageLoader* StyleImageLoader() const {
+    return mStyleImageLoader;
   }
 
   /**
@@ -1739,6 +1771,7 @@ protected:
   // We hold a strong reference to mNodeInfoManager through mNodeInfo
   nsNodeInfoManager* mNodeInfoManager; // [STRONG]
   nsRefPtr<mozilla::css::Loader> mCSSLoader;
+  mozilla::css::ImageLoader* mStyleImageLoader; // [STRONG]
   nsHTMLStyleSheet* mAttrStyleSheet;
 
   // The set of all object, embed, applet, video and audio elements for
@@ -1857,6 +1890,11 @@ protected:
   // The bidi options for this document.  What this bitfield means is
   // defined in nsBidiUtils.h
   PRUint32 mBidiOptions;
+
+  // The sandbox flags on the document. These reflect the value of the sandbox attribute of the
+  // associated IFRAME or CSP-protectable content, if existent. These are set at load time and
+  // are immutable - see nsSandboxFlags.h for the possible flags.
+  PRUint32 mSandboxFlags;
 
   // The root directionality of this document.
   mozilla::directionality::Directionality mDirectionality;

@@ -763,7 +763,7 @@ nsColumnSetFrame::ReflowChildren(nsHTMLReflowMetrics&     aDesiredSize,
           if (continuationColumns.NotEmpty()) {
             SetOverflowFrames(PresContext(), continuationColumns);
           }
-          child = nsnull;
+          child = nullptr;
           break;
         } else if (contentBottom > aReflowState.mComputedMaxHeight ||
                    contentBottom > aReflowState.ComputedHeight()) {
@@ -1114,12 +1114,11 @@ nsColumnSetFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
       nsDisplayGeneric(aBuilder, this, ::PaintColumnRule, "ColumnRule",
                        nsDisplayItem::TYPE_COLUMN_RULE));
   
-  nsIFrame* kid = mFrames.FirstChild();
   // Our children won't have backgrounds so it doesn't matter where we put them.
-  while (kid) {
-    nsresult rv = BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
+  for (nsFrameList::Enumerator e(mFrames); !e.AtEnd(); e.Next()) {
+    nsresult rv = BuildDisplayListForChild(aBuilder, e.get(),
+                                           aDirtyRect, aLists);
     NS_ENSURE_SUCCESS(rv, rv);
-    kid = kid->GetNextSibling();
   }
   return NS_OK;
 }

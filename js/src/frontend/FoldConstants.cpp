@@ -15,12 +15,10 @@
 #include "frontend/FoldConstants.h"
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
-#include "frontend/TreeContext.h"
 #include "vm/NumericConversions.h"
 
 #include "jsatominlines.h"
 
-#include "frontend/TreeContext-inl.h"
 #include "vm/String-inl.h"
 
 using namespace js;
@@ -62,8 +60,6 @@ ContainsVarOrConst(ParseNode *pn)
         return ContainsVarOrConst(pn->pn_kid);
       case PN_NAME:
         return ContainsVarOrConst(pn->maybeExpr());
-      case PN_NAMESET:
-        return ContainsVarOrConst(pn->pn_tree);
       default:;
     }
     return NULL;
@@ -505,12 +501,6 @@ frontend::FoldConstants(JSContext *cx, ParseNode *pn, Parser *parser, bool inGen
             if (pn1 && !FoldConstants(cx, pn1, parser, inGenexpLambda))
                 return false;
         }
-        break;
-
-      case PN_NAMESET:
-        pn1 = pn->pn_tree;
-        if (!FoldConstants(cx, pn1, parser, inGenexpLambda))
-            return false;
         break;
 
       case PN_NULLARY:

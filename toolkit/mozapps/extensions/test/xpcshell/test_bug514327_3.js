@@ -5,6 +5,7 @@
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
+const Cr = Components.results;
 
 Cu.import("resource://testing-common/httpd.js");
 
@@ -120,6 +121,7 @@ function run_test() {
   gTestserver.registerDirectory("/data/", do_get_file("data"));
   gTestserver.start(4444);
 
+  startupManager();
 
   // initialize the blocklist with no entries
   var blocklistFile = gProfD.clone();

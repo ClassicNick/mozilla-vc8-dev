@@ -16,6 +16,8 @@
 #include "nsIHashable.h"
 #include "nsIClassInfoImpl.h"
 
+#include "mozilla/Attributes.h"
+
 #include "windows.h"
 #include "shlobj.h"
 
@@ -28,8 +30,8 @@ typedef HRESULT (WINAPI *SHOpenFolderAndSelectItemsPtr)(PCIDLIST_ABSOLUTE, UINT,
                                                         DWORD);
 #endif
 
-class nsLocalFile : public nsILocalFileWin,
-                    public nsIHashable
+class nsLocalFile MOZ_FINAL : public nsILocalFileWin,
+                              public nsIHashable
 {
 public:
     NS_DEFINE_STATIC_CID_ACCESSOR(NS_LOCAL_FILE_CID)

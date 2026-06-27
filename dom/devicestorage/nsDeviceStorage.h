@@ -57,6 +57,7 @@ public:
   // outside of the type of storage the user asked for.
   bool IsSafePath();
 
+  nsresult Remove();
   nsresult Write(nsIInputStream* aInputStream);
   nsresult Write(InfallibleTArray<PRUint8>& bits);
   void CollectFiles(nsTArray<nsRefPtr<DeviceStorageFile> > &aFiles, PRUint64 aSince = 0);
@@ -118,11 +119,12 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMDEVICESTORAGESTAT
 
-  nsDOMDeviceStorageStat(PRUint64 aFreeBytes, PRUint64 aTotalBytes);
+  nsDOMDeviceStorageStat(PRUint64 aFreeBytes, PRUint64 aTotalBytes, nsAString& aState);
 
 private:
   ~nsDOMDeviceStorageStat();
   PRUint64 mFreeBytes, mTotalBytes;
+  nsString mState;
 };
 
 //helpers
@@ -130,5 +132,8 @@ jsval StringToJsval(nsPIDOMWindow* aWindow, nsAString& aString);
 jsval nsIFileToJsval(nsPIDOMWindow* aWindow, DeviceStorageFile* aFile);
 jsval InterfaceToJsval(nsPIDOMWindow* aWindow, nsISupports* aObject, const nsIID* aIID);
 
+#ifdef MOZ_WIDGET_GONK
+nsresult GetSDCardStatus(nsAString& aState);
+#endif
 
 #endif

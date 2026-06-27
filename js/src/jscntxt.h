@@ -407,6 +407,8 @@ struct JSRuntime : js::RuntimeFriendFields
     js::mjit::JaegerRuntime *jaegerRuntime_;
 #endif
 
+    JSObject *selfHostedGlobal_;
+
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
     js::mjit::JaegerRuntime *createJaegerRuntime(JSContext *cx);
@@ -434,6 +436,11 @@ struct JSRuntime : js::RuntimeFriendFields
         return *jaegerRuntime_;
     }
 #endif
+
+    bool initSelfHosting(JSContext *cx);
+    void markSelfHostedGlobal(JSTracer *trc);
+    JSFunction *getSelfHostedFunction(JSContext *cx, const char *name);
+    bool cloneSelfHostedValueById(JSContext *cx, jsid id, js::HandleObject holder, js::Value *vp);
 
     /* Base address of the native stack for the current thread. */
     uintptr_t           nativeStackBase;
@@ -643,6 +650,8 @@ struct JSRuntime : js::RuntimeFriendFields
 
     bool isHeapBusy() { return heapState != Idle; }
 
+    bool isHeapCollecting() { return heapState == Collecting; }
+
     /*
      * These options control the zealousness of the GC. The fundamental values
      * are gcNextScheduled and gcDebugCompartmentGC. At every allocation,
@@ -694,6 +703,8 @@ struct JSRuntime : js::RuntimeFriendFields
     int gcZeal() { return 0; }
     bool needZealousGC() { return false; }
 #endif
+
+    bool                gcValidate;
 
     JSGCCallback        gcCallback;
     js::GCSliceCallback gcSliceCallback;

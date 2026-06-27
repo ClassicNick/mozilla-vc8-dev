@@ -46,6 +46,12 @@ let WebappsInstaller = {
       return null;
     }
 
+    let data = {
+      "installDir": shell.installDir.path,
+      "app": aData.app
+    };
+    Services.obs.notifyObservers(null, "webapp-installed", JSON.stringify(data));
+
     return shell;
   }
 }
@@ -107,8 +113,6 @@ function NativeApp(aData) {
                 : firstLine.substr(0, 253) + "...";
   }
   this.shortDescription = sanitize(shortDesc);
-
-  this.appcacheDefined = (app.manifest.appcache_path != undefined);
 
   // The app registry is the Firefox profile from which the app
   // was installed.
@@ -287,9 +291,6 @@ WinNativeApp.prototype = {
    * Creates the profile to be used for this app.
    */
   _createAppProfile: function() {
-    if (!this.appcacheDefined)
-      return;
-
     let profSvc = Cc["@mozilla.org/toolkit/profile-service;1"]
                     .getService(Ci.nsIToolkitProfileService);
 
@@ -536,9 +537,6 @@ MacNativeApp.prototype = {
   },
 
   _createAppProfile: function() {
-    if (!this.appcacheDefined)
-      return;
-
     let profSvc = Cc["@mozilla.org/toolkit/profile-service;1"]
                     .getService(Ci.nsIToolkitProfileService);
 
@@ -752,9 +750,6 @@ LinuxNativeApp.prototype = {
   },
 
   _createAppProfile: function() {
-    if (!this.appcacheDefined)
-      return;
-
     let profSvc = Cc["@mozilla.org/toolkit/profile-service;1"]
                     .getService(Ci.nsIToolkitProfileService);
 
@@ -806,10 +801,13 @@ LinuxNativeApp.prototype = {
     let factory = Cc["@mozilla.org/xpcom/ini-processor-factory;1"]
                     .getService(Ci.nsIINIParserFactory);
 
+    let browserBundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
+
     // ${InstallDir}/webapp.ini
     let writer = factory.createINIParser(this.webappINI).QueryInterface(Ci.nsIINIParserWriter);
     writer.setString("Webapp", "Name", this.appName);
     writer.setString("Webapp", "Profile", this.uniqueName);
+    writer.setString("Webapp", "UninstallMsg", browserBundle.formatStringFromName("webapps.uninstall.notification", [this.appName], 1));
     writer.setString("WebappRT", "InstallDir", this.runtimeFolder.path);
     writer.writeFile();
 
@@ -827,6 +825,10 @@ LinuxNativeApp.prototype = {
     let categories = this._translateCategories();
     if (categories)
       writer.setString("Desktop Entry", "Categories", categories);
+
+    writer.setString("Desktop Entry", "Actions", "Uninstall;");
+    writer.setString("Desktop Action Uninstall", "Name", browserBundle.GetStringFromName("webapps.uninstall.label"));
+    writer.setString("Desktop Action Uninstall", "Exec", this.webapprt.path + " -remove");
 
     writer.writeFile();
   },

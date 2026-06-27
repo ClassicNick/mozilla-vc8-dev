@@ -153,7 +153,6 @@ ifdef MOZ_OMX_PLUGIN
 tier_platform_dirs += \
 		media/omx-plugin/lib/ics/libutils \
 		media/omx-plugin/lib/ics/libstagefright \
-		media/omx-plugin/lib/ics/libstagefright_omx \
 		media/omx-plugin \
 		$(NULL)
 endif
@@ -178,6 +177,13 @@ tier_platform_dirs	+= \
 		embedding \
 		xpfe/appshell \
 		$(NULL)
+
+# This needs to be built after the gfx/ directory
+# to ensure all dependencies for skia (e.g. mozalloc, xpcom)
+# have been built
+ifeq (android,$(MOZ_WIDGET_TOOLKIT))
+tier_platform_dirs += other-licenses/skia-npapi
+endif
 
 ifdef MOZ_UNIVERSALCHARDET
 tier_platform_dirs += extensions/universalchardet
