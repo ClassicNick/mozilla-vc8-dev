@@ -6,6 +6,9 @@
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 
+#include "nsAutoPtr.h"
+#include "nsString.h"
+
 namespace mozilla {
 namespace widget {
 

@@ -983,7 +983,7 @@ float nsWindow::GetDPI()
   return float(heightPx/heightInches);
 }
 
-double nsWindow::GetDefaultScale()
+double nsWindow::GetDefaultScaleInternal()
 {
   HDC dc = ::GetDC(mWnd);
   if (!dc)
@@ -1961,7 +1961,7 @@ nsWindow::ResetLayout()
   // Send a gecko size event to trigger reflow.
   RECT clientRc = {0};
   GetClientRect(mWnd, &clientRc);
-  nsIntRect evRect(nsWindowGfx::ToIntRect(clientRc));
+  nsIntRect evRect(WinUtils::ToIntRect(clientRc));
   OnResize(evRect);
 
   // Invalidate and update
@@ -8075,7 +8075,7 @@ nsWindow::DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam, LPARAM inLPara
               nsWindowType wintype;
               activateWindow->GetWindowType(wintype);
               if (wintype == eWindowType_popup && activateWindow->PopupType() == ePopupTypePanel) {
-                *outResult = MA_NOACTIVATE;
+                *outResult = popupsToRollup != UINT32_MAX ? MA_NOACTIVATEANDEAT : MA_NOACTIVATE;
               }
             }
           }

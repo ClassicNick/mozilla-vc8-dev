@@ -87,6 +87,7 @@ struct GfxDriverInfo
   ~GfxDriverInfo();
 
   OperatingSystem mOperatingSystem;
+  uint32_t mOperatingSystemVersion;
 
   nsString mAdapterVendor;
 
@@ -118,6 +119,8 @@ struct GfxDriverInfo
 
   static const nsAString& GetDeviceVendor(DeviceVendor id);
   static nsAString* mDeviceVendors[DeviceVendorMax];
+
+  nsString mModel, mHardware, mProduct, mManufacturer;
 };
 
 #define GFX_DRIVER_VERSION(a,b,c,d) \

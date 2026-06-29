@@ -130,7 +130,6 @@ DOMCI_CLASS(CSSGroupRuleRuleList)
 DOMCI_CLASS(MediaList)
 DOMCI_CLASS(StyleSheetList)
 DOMCI_CLASS(CSSStyleSheet)
-DOMCI_CLASS(CSSStyleDeclaration)
 DOMCI_CLASS(ROCSSPrimitiveValue)
 
 // Range classes
@@ -414,7 +413,6 @@ DOMCI_CLASS(DataErrorEvent)
 
 // @font-face in CSS
 DOMCI_CLASS(CSSFontFaceRule)
-DOMCI_CLASS(CSSFontFaceStyleDecl)
 
 #if defined(MOZ_MEDIA)
 // WhatWG Video Element
@@ -521,9 +519,13 @@ DOMCI_CLASS(DOMFileHandle)
 DOMCI_CLASS(FileRequest)
 DOMCI_CLASS(LockedFile)
 
+#ifdef MOZ_SYS_MSG
 DOMCI_CLASS(MozActivity)
+#endif
 
+#ifdef MOZ_TIME_MANAGER
 DOMCI_CLASS(MozTimeManager)
+#endif
 
 #ifdef MOZ_WEBRTC
 DOMCI_CLASS(DataChannel)
