@@ -53,10 +53,6 @@
 #include <gtk/gtkprivate.h>
 #endif
 
-#if defined(MOZ_WIDGET_GTK2)
-#include "gtk2compat.h"
-#endif
-
 #include "nsGkAtoms.h"
 
 #ifdef MOZ_ENABLE_STARTUP_NOTIFICATION
@@ -4735,7 +4731,7 @@ check_for_rollup(gdouble aMouseX, gdouble aMouseY,
             // if we're dealing with menus, we probably have submenus and
             // we don't want to rollup if the click is in a parent menu of
             // the current submenu
-            uint32_t popupsToRollup = PR_UINT32_MAX;
+            uint32_t popupsToRollup = UINT32_MAX;
             if (!aAlwaysRollup) {
                 nsAutoTArray<nsIWidget*, 5> widgetChain;
                 uint32_t sameTypeCount = gRollupListener->GetSubmenuWidgetChain(&widgetChain);
@@ -4763,7 +4759,7 @@ check_for_rollup(gdouble aMouseX, gdouble aMouseY,
             // if we've determined that we should still rollup, do it.
             if (rollup) {
                 gRollupListener->Rollup(popupsToRollup);
-                if (popupsToRollup == PR_UINT32_MAX) {
+                if (popupsToRollup == UINT32_MAX) {
                     retVal = true;
                 }
             }

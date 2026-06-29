@@ -27,7 +27,7 @@ try {
 
 const kMessages =["SystemMessageManager:GetPending",
                   "SystemMessageManager:Register",
-                  "SystemMessageManager:Unregister"]
+                  "child-process-shutdown"]
 
 function debug(aMsg) {
   //dump("-- SystemMessageInternal " + Date.now() + " : " + aMsg + "\n");
@@ -110,7 +110,7 @@ SystemMessageInternal.prototype = {
         this._listeners[manifest].push(aMessage.target);
         debug("listeners for " + manifest + " : " + this._listeners[manifest].length);
         break;
-      case "SystemMessageManager:Unregister":
+      case "child-process-shutdown":
         debug("Got Unregister from " + aMessage.target);
         let mm = aMessage.target;
         for (let manifest in this._listeners) {

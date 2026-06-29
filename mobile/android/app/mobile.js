@@ -50,11 +50,17 @@ pref("browser.cache.disk.max_entry_size", 4096); // kilobytes
 pref("browser.cache.disk.smart_size.enabled", true);
 pref("browser.cache.disk.smart_size.first_run", true);
 
+#ifdef MOZ_PKG_SPECIAL
+// low memory devices
+pref("browser.cache.memory.enable", false);
+#else
 pref("browser.cache.memory.enable", true);
+#endif
 pref("browser.cache.memory.capacity", 1024); // kilobytes
 
 /* image cache prefs */
 pref("image.cache.size", 1048576); // bytes
+pref("image.high_quality_downscaling.enabled", false);
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);

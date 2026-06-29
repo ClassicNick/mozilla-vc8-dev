@@ -42,9 +42,9 @@ bool
 LoopState::init(jsbytecode *head, Jump entry, jsbytecode *entryTarget)
 {
     this->lifetime = outerAnalysis->getLoop(head);
-    JS_ASSERT(lifetime &&
-              lifetime->head == uint32_t(head - outerScript->code) &&
-              lifetime->entry == uint32_t(entryTarget - outerScript->code));
+    JS_ASSERT(lifetime);
+    JS_ASSERT(lifetime->head == uint32_t(head - outerScript->code));
+    JS_ASSERT(lifetime->entry == uint32_t(entryTarget - outerScript->code));
 
     this->entry = entry;
 
@@ -1648,7 +1648,8 @@ LoopState::definiteArrayAccess(const SSAValue &obj, const SSAValue &index)
     if (objTypes->hasObjectFlags(cx, OBJECT_FLAG_NON_DENSE_ARRAY))
         return false;
 
-    if (ArrayPrototypeHasIndexedProperty(cx, outerScript))
+    RootedScript rOuterScript(cx, outerScript);
+    if (ArrayPrototypeHasIndexedProperty(cx, rOuterScript))
         return false;
 
     uint32_t objSlot;

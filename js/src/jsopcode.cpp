@@ -1078,7 +1078,8 @@ SetPrinterLocalNames(JSContext *cx, JSScript *script, JSPrinter *jp)
     BindingVector *localNames = NULL;
     if (script->bindings.count() > 0) {
         localNames = cx->new_<BindingVector>(cx);
-        if (!localNames || !FillBindingVector(script->bindings, localNames))
+        RootedScript script_(cx, script);
+        if (!localNames || !FillBindingVector(script_, localNames))
             return false;
     }
     jp->localNames = localNames;
@@ -6047,7 +6048,8 @@ ExpressionDecompiler::init()
     localNames = cx->new_<BindingVector>(cx);
     if (!localNames)
         return false;
-    if (!FillBindingVector(script->bindings, localNames))
+    RootedScript script_(cx, script);
+    if (!FillBindingVector(script_, localNames))
         return false;
 
     return true;
@@ -6431,12 +6433,48 @@ ReconstructPCStack(JSContext *cx, JSScript *script, jsbytecode *target,
             if (0 < jmpoff && pc + jmpoff <= target) {
                 pc += jmpoff;
                 oplen = 0;
+                /* Use the Hidden pc count if we follow the goto */
                 if (hpcdepth != unsigned(-1)) {
                     pcdepth = hpcdepth;
                     hpcdepth = unsigned(-1);
                 }
                 continue;
             }
+
+            if (!script->hasTrynotes()) {
+                /* Use the normal pc count if continue after the goto */
+                hpcdepth = unsigned(-1);
+                continue;
+            }
+
+            /*
+             * If we do not follow a goto we look for another mean to continue
+             * at the next PC.
+             */
+            JSTryNote *tn = script->trynotes()->vector;
+            JSTryNote *tnEnd = tn + script->trynotes()->length;
+            for (; tn != tnEnd; tn++) {
+                jsbytecode *start = script->main() + tn->start;
+                jsbytecode *end = start + tn->length;
+                if (start < pc && pc <= end && end <= target)
+                    break;
+            }
+
+            if (tn != tnEnd) {
+                pcdepth = tn->stackDepth;
+                hpcdepth = unsigned(-1);
+                oplen = 0;
+                pc = script->main() + tn->start + tn->length;
+                continue;
+            }
+
+            /*
+             * JSOP_THROWING compensates for hidden JSOP_DUP at the start of the
+             * previous guarded catch (see EmitTry in BytecodeEmitter.cpp).
+             */
+            if (JSOp(*(pc + oplen)) == JSOP_THROWING)
+                hpcdepth = pcdepth + 2;
+            continue;
         }
 
         /*

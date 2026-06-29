@@ -119,7 +119,7 @@ public class UpdateService extends IntentService {
     protected void onHandleIntent (Intent intent) {
         if (UpdateServiceHelper.ACTION_REGISTER_FOR_UPDATES.equals(intent.getAction())) {
             registerForUpdates(false);
-        } if (UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE.equals(intent.getAction())) {
+        } else if (UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE.equals(intent.getAction())) {
             startUpdate(intent.getIntExtra(UpdateServiceHelper.EXTRA_UPDATE_FLAGS_NAME, 0));
         } else if (UpdateServiceHelper.ACTION_APPLY_UPDATE.equals(intent.getAction())) {
             applyUpdate(intent.getStringExtra(UpdateServiceHelper.EXTRA_PACKAGE_PATH_NAME));
@@ -168,7 +168,7 @@ public class UpdateService extends IntentService {
         if (manager == null)
             return;
 
-        PendingIntent pending = PendingIntent.getService(this, 0, new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE, null, this, UpdateService.class), 0);
+        PendingIntent pending = PendingIntent.getService(this, 0, new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE, null, this, UpdateService.class), PendingIntent.FLAG_UPDATE_CURRENT);
         manager.cancel(pending);
 
         lastAttempt.setTimeInMillis(lastAttempt.getTimeInMillis() + interval);

@@ -242,7 +242,7 @@ void NotifyNetworkChange(const hal::NetworkInformation& aNetworkInfo);
  * Adjusting system clock.
  * @param aDeltaMilliseconds The difference compared with current system clock.
  */
-void AdjustSystemClock(int32_t aDeltaMilliseconds);
+void AdjustSystemClock(int64_t aDeltaMilliseconds);
 
 /**
  * Set timezone
@@ -277,11 +277,15 @@ void NotifySystemTimeChange(const hal::SystemTimeChange& aReason);
 
 /**
  * Reboot the device.
+ * 
+ * This API is currently only allowed to be used from the main process.
  */
 void Reboot();
 
 /**
  * Power off the device.
+ * 
+ * This API is currently only allowed to be used from the main process.
  */
 void PowerOff();
 

@@ -200,7 +200,7 @@ StackWalkInitCriticalAddress()
 //
 //   http://msdn.microsoft.com/library/periodic/period97/F1/D3/S245C6.htm
 //
-PR_BEGIN_EXTERN_C
+extern "C" {
 
 typedef DWORD (__stdcall *SYMSETOPTIONSPROC)(DWORD);
 extern SYMSETOPTIONSPROC _SymSetOptions;
@@ -409,7 +409,7 @@ SYMGETLINEFROMADDRPROC64 _SymGetLineFromAddr64;
 DWORD gStackWalkThread;
 CRITICAL_SECTION gDbgHelpCS;
 
-PR_END_EXTERN_C
+}
 
 // Routine to print an error message to standard error.
 // Will also call callback with error, if data supplied.

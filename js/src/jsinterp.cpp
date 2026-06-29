@@ -1048,11 +1048,13 @@ IteratorNext(JSContext *cx, HandleObject iterobj, MutableHandleValue rval)
  * types of the pushed values are consistent with type inference information.
  */
 static inline void
-TypeCheckNextBytecode(JSContext *cx, JSScript *script, unsigned n, const FrameRegs &regs)
+TypeCheckNextBytecode(JSContext *cx, JSScript *script_, unsigned n, const FrameRegs &regs)
 {
 #ifdef DEBUG
     if (cx->typeInferenceEnabled() &&
-        n == GetBytecodeLength(regs.pc)) {
+        n == GetBytecodeLength(regs.pc))
+    {
+        RootedScript script(cx, script_);
         TypeScript::CheckBytecode(cx, script, regs.pc, regs.sp);
     }
 #endif
@@ -2585,7 +2587,7 @@ BEGIN_CASE(JSOP_CALLINTRINSIC)
 {
     RootedValue &rval = rootValue0;
 
-    if (!IntrinsicNameOperation(cx, script, regs.pc, rval.address()))
+    if (!IntrinsicNameOperation(cx, script, regs.pc, &rval))
         goto error;
 
     PUSH_COPY(rval);
@@ -3205,10 +3207,12 @@ BEGIN_CASE(JSOP_INITELEM)
         JS_ASSERT(obj->isArray());
         JS_ASSERT(JSID_IS_INT(id));
         JS_ASSERT(uint32_t(JSID_TO_INT(id)) < StackSpace::ARGS_LENGTH_MAX);
-        if (JSOp(regs.pc[JSOP_INITELEM_LENGTH]) == JSOP_ENDINIT &&
-            !SetLengthProperty(cx, obj, (uint32_t) (JSID_TO_INT(id) + 1)))
+        JSOp next = JSOp(*(regs.pc + GetBytecodeLength(regs.pc)));
+        if ((next == JSOP_ENDINIT && op == JSOP_INITELEM) ||
+            (next == JSOP_POP && op == JSOP_INITELEM_INC))
         {
-            goto error;
+            if (!SetLengthProperty(cx, obj, (uint32_t) (JSID_TO_INT(id) + 1)))
+                goto error;
         }
     } else {
         if (!JSObject::defineGeneric(cx, obj, id, rref, NULL, NULL, JSPROP_ENUMERATE))

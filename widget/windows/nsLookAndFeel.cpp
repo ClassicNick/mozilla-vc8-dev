@@ -12,6 +12,7 @@
 #include "nsUXThemeConstants.h"
 #include "gfxFont.h"
 #include "WinUtils.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla::widget;
 using mozilla::LookAndFeel;
@@ -42,6 +43,14 @@ static int32_t GetSystemParam(long flag, int32_t def)
     return ::SystemParametersInfo(flag, 0, &value, 0) ? value : def;
 }
 
+static int32_t IsTouchPresent()
+{
+  int32_t touchCapabilities;
+  touchCapabilities = ::GetSystemMetrics(SM_DIGITIZER);
+  return ((touchCapabilities & NID_READY) && 
+          (touchCapabilities & (NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH)));
+}
+
 nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
 {
   gShell32DLLInst = LoadLibraryW(L"Shell32.dll");
@@ -50,6 +59,8 @@ nsLookAndFeel::nsLookAndFeel() : nsXPLookAndFeel()
       gSHAppBarMessage = (SHAppBarMessagePtr) GetProcAddress(gShell32DLLInst,
                                                              "SHAppBarMessage");
   }
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::TOUCH_ENABLED_DEVICE,
+                                 IsTouchPresent());
 }
 
 nsLookAndFeel::~nsLookAndFeel()
@@ -381,13 +392,7 @@ nsLookAndFeel::GetIntImpl(IntID aID, int32_t &aResult)
         aResult = !nsUXThemeData::IsAppThemed();
         break;
     case eIntID_TouchEnabled:
-        aResult = 0;
-        int32_t touchCapabilities;
-        touchCapabilities = ::GetSystemMetrics(SM_DIGITIZER);
-        if ((touchCapabilities & NID_READY) && 
-           (touchCapabilities & (NID_EXTERNAL_TOUCH | NID_INTEGRATED_TOUCH))) {
-            aResult = 1;
-        }
+        aResult = IsTouchPresent();
         break;
     case eIntID_WindowsDefaultTheme:
         aResult = nsUXThemeData::IsDefaultWindowTheme();
@@ -617,7 +622,8 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
 
 bool
 nsLookAndFeel::GetFontImpl(FontID anID, nsString &aFontName,
-                           gfxFontStyle &aFontStyle)
+                           gfxFontStyle &aFontStyle,
+                           float aDevPixPerCSSPixel)
 {
   HDC tdc = GetDC(NULL);
   bool status = GetSysFontInfo(tdc, anID, aFontName, aFontStyle);

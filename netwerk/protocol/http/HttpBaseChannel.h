@@ -62,7 +62,9 @@ public:
   HttpBaseChannel();
   virtual ~HttpBaseChannel();
 
-  virtual nsresult Init(nsIURI *aURI, uint8_t aCaps, nsProxyInfo *aProxyInfo);
+  virtual nsresult Init(nsIURI *aURI, uint8_t aCaps, nsProxyInfo *aProxyInfo,
+                        uint32_t aProxyResolveFlags,
+                        nsIURI *aProxyURI);
 
   // nsIRequest
   NS_IMETHOD GetName(nsACString& aName);
@@ -185,9 +187,6 @@ public:
 
 public: /* Necko internal use only... */
 
-  bool ShouldRewriteRedirectToGET(uint32_t httpStatus, nsHttpAtom method);
-  bool IsSafeMethod(nsHttpAtom method);
-
 protected:
 
   // Handle notifying listener, removing from loadgroup if request failed.
@@ -228,6 +227,7 @@ protected:
   nsCOMPtr<nsIInputStream>          mUploadStream;
   nsAutoPtr<nsHttpResponseHead>     mResponseHead;
   nsRefPtr<nsHttpConnectionInfo>    mConnectionInfo;
+  nsCOMPtr<nsIProxyInfo>            mProxyInfo;
 
   nsCString                         mSpec; // ASCII encoded URL spec
   nsCString                         mContentTypeHint;
@@ -272,6 +272,9 @@ protected:
   uint32_t                          mSuspendCount;
 
   nsAutoPtr<nsTArray<nsCString> >   mRedirectedCachekeys;
+
+  uint32_t                          mProxyResolveFlags;
+  nsCOMPtr<nsIURI>                  mProxyURI;
 };
 
 // Share some code while working around C++'s absurd inability to handle casting

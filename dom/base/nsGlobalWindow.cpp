@@ -222,6 +222,7 @@
 #include "prrng.h"
 #include "nsSandboxFlags.h"
 #include "TimeChangeObserver.h"
+#include "nsPISocketTransportService.h"
 
 #ifdef ANDROID
 #include <android/log.h>
@@ -235,6 +236,7 @@ static const char kStorageEnabled[] = "dom.storage.enabled";
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using namespace mozilla::dom::ipc;
 using mozilla::TimeStamp;
 using mozilla::TimeDuration;
 
@@ -414,6 +416,9 @@ static const char kCryptoContractID[] = NS_CRYPTO_CONTRACTID;
 static const char kPkcs11ContractID[] = NS_PKCS11_CONTRACTID;
 #endif
 static const char sPopStatePrefStr[] = "browser.history.allowPopState";
+
+#define NETWORK_UPLOAD_EVENT_NAME     NS_LITERAL_STRING("moznetworkupload")
+#define NETWORK_DOWNLOAD_EVENT_NAME   NS_LITERAL_STRING("moznetworkdownload")
 
 /**
  * An object implementing the window.URL property.
@@ -625,7 +630,11 @@ static JSObject*
 NewOuterWindowProxy(JSContext *cx, JSObject *parent)
 {
   JSAutoCompartment ac(cx, parent);
-  JSObject *obj = js::Wrapper::New(cx, parent, js::GetObjectProto(parent), parent,
+  JSObject *proto;
+  if (!js::GetObjectProto(cx, parent, &proto))
+    return nullptr;
+
+  JSObject *obj = js::Wrapper::New(cx, parent, proto, parent,
                                    &nsOuterWindowProxy::singleton);
   NS_ASSERTION(js::GetObjectClass(obj)->ext.innerObject, "bad class");
   return obj;
@@ -681,7 +690,9 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
     mCallCleanUpAfterModalDialogCloses(false),
     mDialogAbuseCount(0),
     mStopAbuseDialogs(false),
-    mDialogsPermanentlyDisabled(false)
+    mDialogsPermanentlyDisabled(false),
+    mObservingNetworkUpload(false),
+    mObservingNetworkDownload(false)
 {
   nsLayoutStatics::AddRef();
 
@@ -984,6 +995,9 @@ nsGlobalWindow::CleanUp(bool aIgnoreModalDialog)
       os->RemoveObserver(mObserver, NS_IOSERVICE_OFFLINE_STATUS_TOPIC);
       os->RemoveObserver(mObserver, "dom-storage2-changed");
     }
+
+    DisableNetworkEvent(NS_NETWORK_UPLOAD_EVENT);
+    DisableNetworkEvent(NS_NETWORK_DOWNLOAD_EVENT);
 
     if (mIdleService) {
       mIdleService->RemoveIdleObserver(mObserver, MIN_IDLE_NOTIFICATION_TIME_S);
@@ -1683,7 +1697,11 @@ nsGlobalWindow::SetOuterObject(JSContext* aCx, JSObject* aOuterObject)
 
   // Set up the prototype for the outer object.
   JSObject* inner = JS_GetParent(aOuterObject);
-  JS_SetPrototype(aCx, aOuterObject, JS_GetPrototype(inner));
+  JSObject* proto;
+  if (!JS_GetPrototype(aCx, inner, &proto)) {
+    return NS_ERROR_FAILURE;
+  }
+  JS_SetPrototype(aCx, aOuterObject, proto);
 
   return NS_OK;
 }
@@ -1852,7 +1870,9 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
 
     if (aDocument != oldDoc) {
       xpc_UnmarkGrayObject(currentInner->mJSObject);
-      nsWindowSH::InvalidateGlobalScopePolluter(cx, currentInner->mJSObject);
+      if (!nsWindowSH::InvalidateGlobalScopePolluter(cx, currentInner->mJSObject)) {
+        return NS_ERROR_FAILURE;
+      }
     }
 
     // We're reusing the inner window, but this still counts as a navigation,
@@ -1988,7 +2008,8 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
 
         JS_SetParent(cx, mJSObject, newInnerWindow->mJSObject);
 
-        SetOuterObject(cx, mJSObject);
+        rv = SetOuterObject(cx, mJSObject);
+        NS_ENSURE_SUCCESS(rv, rv);
 
         JSCompartment *compartment = js::GetObjectCompartment(mJSObject);
         xpc::CompartmentPrivate *priv =
@@ -2045,9 +2066,13 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
     // the global object's compartment as its default compartment,
     // so update that now since it might have changed.
     JS_SetGlobalObject(cx, mJSObject);
-    NS_ASSERTION(JS_GetPrototype(mJSObject) ==
-                 JS_GetPrototype(newInnerJSObject),
+#ifdef DEBUG
+    JSObject *proto1, *proto2;
+    JS_GetPrototype(cx, mJSObject, &proto1);
+    JS_GetPrototype(cx, newInnerJSObject, &proto2);
+    NS_ASSERTION(proto1 == proto2,
                  "outer and inner globals should have the same prototype");
+#endif
 
     nsCOMPtr<nsIContent> frame = do_QueryInterface(GetFrameElementInternal());
     if (frame) {
@@ -8753,7 +8778,7 @@ nsGlobalWindow::RegisterIdleObserver(nsIIdleObserver* aIdleObserver)
   tmpIdleObserver.mIdleObserver = aIdleObserver;
   rv = aIdleObserver->GetTime(&tmpIdleObserver.mTimeInS);
   NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_ARG_MAX(tmpIdleObserver.mTimeInS, PR_UINT32_MAX / 1000);
+  NS_ENSURE_ARG_MAX(tmpIdleObserver.mTimeInS, UINT32_MAX / 1000);
   NS_ENSURE_ARG_MIN(tmpIdleObserver.mTimeInS, MIN_IDLE_NOTIFICATION_TIME_S);
 
   uint32_t insertAtIndex = FindInsertionIndex(&tmpIdleObserver);
@@ -9032,6 +9057,23 @@ nsGlobalWindow::Observe(nsISupports* aSubject, const char* aTopic,
       observer->Observe(aSubject, aTopic, aData);
 
     return NS_OK;
+  }
+
+  if (!nsCRT::strcmp(aTopic, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC) ||
+      !nsCRT::strcmp(aTopic, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC)) {
+    nsRefPtr<nsDOMEvent> event = new nsDOMEvent(nullptr, nullptr);
+    nsresult rv = event->InitEvent(
+      !nsCRT::strcmp(aTopic, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC)
+        ? NETWORK_UPLOAD_EVENT_NAME
+        : NETWORK_DOWNLOAD_EVENT_NAME,
+      false, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = event->SetTrusted(true);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    bool dummy;
+    return DispatchEvent(event, &dummy);
   }
 
   NS_WARNING("unrecognized topic in nsGlobalWindow::Observe");
@@ -10989,16 +11031,10 @@ nsGlobalChromeWindow::GetMessageManager(nsIMessageBroadcaster** aManager)
     nsCOMPtr<nsIMessageBroadcaster> globalMM =
       do_GetService("@mozilla.org/globalmessagemanager;1");
     mMessageManager =
-      new nsFrameMessageManager(true, /* aChrome */
-                                nullptr,
-                                nullptr,
-                                nullptr,
-                                nullptr,
+      new nsFrameMessageManager(nullptr,
                                 static_cast<nsFrameMessageManager*>(globalMM.get()),
                                 cx,
-                                false, /* aGlobal */
-                                false, /* aProcessManager */
-                                true /* aBroadcaster */);
+                                MM_CHROME | MM_BROADCASTER);
     NS_ENSURE_TRUE(mMessageManager, NS_ERROR_OUT_OF_MEMORY);
   }
   CallQueryInterface(mMessageManager, aManager);
@@ -11089,6 +11125,73 @@ nsGlobalWindow::SetHasAudioAvailableEventListeners()
 {
   if (mDoc) {
     mDoc->NotifyAudioAvailableListener();
+  }
+}
+
+void
+nsGlobalWindow::EnableNetworkEvent(uint32_t aType)
+{
+  if ((mObservingNetworkUpload && aType == NS_NETWORK_UPLOAD_EVENT) ||
+      (mObservingNetworkDownload && aType == NS_NETWORK_DOWNLOAD_EVENT)) {
+    return;
+  }
+
+  nsCOMPtr<nsIPermissionManager> permMgr =
+    do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
+  if (!permMgr) {
+    NS_ERROR("No PermissionManager available!");
+    return;
+  }
+
+  uint32_t permission = nsIPermissionManager::DENY_ACTION;
+  permMgr->TestExactPermissionFromPrincipal(GetPrincipal(), "network-events",
+                                            &permission);
+
+  if (permission != nsIPermissionManager::ALLOW_ACTION) {
+    return;
+  }
+
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  if (!os) {
+    NS_ERROR("ObserverService should be available!");
+    return;
+  }
+
+  switch (aType) {
+    case NS_NETWORK_UPLOAD_EVENT:
+      os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC, false);
+      mObservingNetworkUpload = true;
+      break;
+    case NS_NETWORK_DOWNLOAD_EVENT:
+      os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC, false);
+      mObservingNetworkDownload = true;
+      break;
+  }
+}
+
+void
+nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
+{
+  if ((!mObservingNetworkUpload && aType == NS_NETWORK_UPLOAD_EVENT) ||
+      (!mObservingNetworkDownload && aType == NS_NETWORK_DOWNLOAD_EVENT)) {
+    return;
+  }
+
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  if (!os) {
+    NS_ERROR("ObserverService should be available!");
+    return;
+  }
+
+  switch (aType) {
+    case NS_NETWORK_UPLOAD_EVENT:
+      os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC);
+      mObservingNetworkUpload = false;
+      break;
+    case NS_NETWORK_DOWNLOAD_EVENT:
+      os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC);
+      mObservingNetworkDownload = false;
+      break;
   }
 }
 

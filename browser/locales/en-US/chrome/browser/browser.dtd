@@ -244,9 +244,6 @@ These should match what Safari and other Apple applications use on OS X Lion. --
 <!ENTITY devToolbar.keytext                "F2">
 <!ENTITY devToolbarOtherToolsButton.label  "More Tools">
 
-<!ENTITY webConsoleButton.label "Web Console">
-<!ENTITY inspectorButton.label "Inspector">
-
 <!ENTITY inspectorHTMLCopyInner.label       "Copy Inner HTML">
 <!ENTITY inspectorHTMLCopyInner.accesskey   "I">
 
@@ -653,6 +650,9 @@ toolbar button -->
 
 <!ENTITY social.toggleSidebar.label "Show sidebar">
 <!ENTITY social.toggleSidebar.accesskey "s">
+
+<!ENTITY social.toggleNotifications.label "Show desktop notifications">
+<!ENTITY social.toggleNotifications.accesskey "n">
 
 <!ENTITY social.activated.undobutton.label "Undo">
 <!ENTITY social.activated.undobutton.accesskey "U">

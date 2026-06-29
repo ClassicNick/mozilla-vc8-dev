@@ -1333,7 +1333,7 @@ _intfromidentifier(NPIdentifier id)
   }
 
   if (!NPIdentifierIsInt(id)) {
-    return PR_INT32_MIN;
+    return INT32_MIN;
   }
 
   return NPIdentifierToInt(id);
@@ -2261,6 +2261,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
       jfieldID field = env->GetStaticFieldID(cls, "mAppContext",
                                              "Lorg/mozilla/gecko/GeckoApp;");
       jobject ret = env->GetStaticObjectField(cls, field);
+      env->DeleteLocalRef(cls);
       int32_t* i  = reinterpret_cast<int32_t*>(result);
       *i = reinterpret_cast<int32_t>(ret);
       return NPERR_NO_ERROR;
