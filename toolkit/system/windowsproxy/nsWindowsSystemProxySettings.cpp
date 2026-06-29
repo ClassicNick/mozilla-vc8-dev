@@ -16,6 +16,10 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIURI.h"
 
+#ifndef INTERNET_PER_CONN_FLAGS_UI
+#define INTERNET_PER_CONN_FLAGS_UI 10
+#endif
+
 class nsWindowsSystemProxySettings : public nsISystemProxySettings
 {
 public:
@@ -84,7 +88,7 @@ static nsresult ReadInternetOption(uint32_t aOption, uint32_t& aFlags,
                                  mozilla::ArrayLength(connName), 0);
 
     INTERNET_PER_CONN_OPTIONW options[2];
-    options[0].dwOption = INTERNET_PER_CONN_FLAGS;
+    options[0].dwOption = INTERNET_PER_CONN_FLAGS_UI;
     options[1].dwOption = aOption;
 
     INTERNET_PER_CONN_OPTION_LISTW list;
@@ -98,7 +102,15 @@ static nsresult ReadInternetOption(uint32_t aOption, uint32_t& aFlags,
     unsigned long size = sizeof(INTERNET_PER_CONN_OPTION_LISTW);
     if (!InternetQueryOptionW(NULL, INTERNET_OPTION_PER_CONNECTION_OPTION,
                               &list, &size)) {
-        return NS_ERROR_FAILURE;
+        if (GetLastError() != ERROR_INVALID_PARAMETER) {
+            return NS_ERROR_FAILURE;
+        }
+        options[0].dwOption = INTERNET_PER_CONN_FLAGS;
+        size = sizeof(INTERNET_PER_CONN_OPTION_LISTW);
+        if (!InternetQueryOptionW(NULL, INTERNET_OPTION_PER_CONNECTION_OPTION,
+                                  &list, &size)) {
+            return NS_ERROR_FAILURE;
+        }
     }
 
     aFlags = options[0].Value.dwValue;

@@ -973,11 +973,10 @@ MakeDefIntoUse(Definition *dn, ParseNode *pn, JSAtom *atom, Parser *parser)
     pn->dn_uses = dn;
 
     /*
-     * A PNK_FUNCTIONDECL node is always a definition, and two definition nodes
-     * in the same scope can't define the same name, so convert shadowed
-     * function declarations into nops. This is valid since all body-level
-     * function declaration initialization happens at the beginning of the
-     * function (thus, only the last declaration's effect is visible). E.g., in
+     * A PNK_FUNCTION node must be a definition, so convert shadowed function
+     * statements into nops. This is valid since all body-level function
+     * statement initialization happens at the beginning of the function
+     * (thus, only the last statement's effect is visible). E.g., in
      *
      *   function outer() {
      *     function g() { return 1 }
@@ -988,8 +987,7 @@ MakeDefIntoUse(Definition *dn, ParseNode *pn, JSAtom *atom, Parser *parser)
      *
      * both asserts are valid.
      */
-    JS_ASSERT(!dn->isKind(PNK_FUNCTIONEXPR));
-    if (dn->getKind() == PNK_FUNCTIONDECL) {
+    if (dn->getKind() == PNK_FUNCTION) {
         JS_ASSERT(dn->functionIsHoisted());
         pn->dn_uses = dn->pn_link;
         parser->prepareNodeForMutation(dn);
@@ -1518,8 +1516,7 @@ Parser::functionDef(HandlePropertyName funName, FunctionType type, FunctionSynta
     JS_ASSERT_IF(kind == Statement, funName);
 
     /* Make a TOK_FUNCTION node. */
-    ParseNode *pn =
-        FunctionNode::create(kind == Statement ? PNK_FUNCTIONDECL : PNK_FUNCTIONEXPR, this);
+    ParseNode *pn = FunctionNode::create(PNK_FUNCTION, this);
     if (!pn)
         return NULL;
     pn->pn_body = NULL;
@@ -1568,7 +1565,7 @@ Parser::functionDef(HandlePropertyName funName, FunctionType type, FunctionSynta
              */
             if (Definition *fn = pc->lexdeps.lookupDefn(funName)) {
                 JS_ASSERT(fn->isDefn());
-                fn->setKind(PNK_FUNCTIONDECL);
+                fn->setKind(PNK_FUNCTION);
                 fn->setArity(PN_FUNC);
                 fn->pn_pos.begin = pn->pn_pos.begin;
                 fn->pn_pos.end = pn->pn_pos.end;
@@ -1977,8 +1974,7 @@ Parser::statements(bool *hasFunctionStmt)
             return NULL;
         }
 
-        JS_ASSERT(!next->isKind(PNK_FUNCTIONEXPR));
-        if (next->isKind(PNK_FUNCTIONDECL)) {
+        if (next->isKind(PNK_FUNCTION)) {
             /*
              * PNX_FUNCDEFS notifies the emitter that the block contains body-
              * level function definitions that should be processed before the
@@ -2261,7 +2257,8 @@ MakeSetCall(JSContext *cx, ParseNode *pn, Parser *parser, unsigned msg)
     if (!parser->reportStrictModeError(pn, msg))
         return false;
 
-    if (pn->isGeneratorExpr()) {
+    ParseNode *pn2 = pn->pn_head;
+    if (pn2->isKind(PNK_FUNCTION) && (pn2->pn_funbox->inGenexpLambda)) {
         parser->reportError(pn, msg);
         return false;
     }
@@ -4043,9 +4040,9 @@ Parser::statement()
         if (!pn)
             return NULL;
         if (!tokenStream.matchToken(TOK_NAME) ||
-            tokenStream.currentToken().name() != context->runtime->atomState.xmlAtom ||
+            tokenStream.currentToken().name() != context->names().xml ||
             !tokenStream.matchToken(TOK_NAME) ||
-            tokenStream.currentToken().name() != context->runtime->atomState.namespaceAtom ||
+            tokenStream.currentToken().name() != context->names().namespace_ ||
             !tokenStream.matchToken(TOK_ASSIGN))
         {
             reportError(NULL, JSMSG_BAD_DEFAULT_XML_NAMESPACE);
@@ -5349,7 +5346,7 @@ Parser::generatorExpr(ParseNode *kid)
     pn->pn_hidden = true;
 
     /* Make a new node for the desugared generator function. */
-    ParseNode *genfn = FunctionNode::create(PNK_FUNCTIONEXPR, this);
+    ParseNode *genfn = FunctionNode::create(PNK_FUNCTION, this);
     if (!genfn)
         return NULL;
     genfn->setOp(JSOP_LAMBDA);
@@ -5664,22 +5661,24 @@ Parser::memberExpr(bool allowCallSyntax)
              */
             uint32_t index;
             PropertyName *name = NULL;
-            if (propExpr->isKind(PNK_STRING)) {
-                JSAtom *atom = propExpr->pn_atom;
-                if (atom->isIndex(&index)) {
-                    propExpr->setKind(PNK_NUMBER);
-                    propExpr->setOp(JSOP_DOUBLE);
-                    propExpr->pn_dval = index;
-                } else {
-                    name = atom->asPropertyName();
-                }
-            } else if (propExpr->isKind(PNK_NUMBER)) {
-                double number = propExpr->pn_dval;
-                if (number != ToUint32(number)) {
-                    JSAtom *atom = ToAtom(context, DoubleValue(number));
-                    if (!atom)
-                        return NULL;
-                    name = atom->asPropertyName();
+            if (foldConstants) {
+                if (propExpr->isKind(PNK_STRING)) {
+                    JSAtom *atom = propExpr->pn_atom;
+                    if (atom->isIndex(&index)) {
+                        propExpr->setKind(PNK_NUMBER);
+                        propExpr->setOp(JSOP_DOUBLE);
+                        propExpr->pn_dval = index;
+                    } else {
+                        name = atom->asPropertyName();
+                    }
+                } else if (propExpr->isKind(PNK_NUMBER)) {
+                    double number = propExpr->pn_dval;
+                    if (number != ToUint32(number)) {
+                        JSAtom *atom = ToAtom(context, DoubleValue(number));
+                        if (!atom)
+                            return NULL;
+                        name = atom->asPropertyName();
+                    }
                 }
             }
 

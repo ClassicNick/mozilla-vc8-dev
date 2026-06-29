@@ -1372,21 +1372,21 @@ extern bool
 GetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver, uint32_t index,
            unsigned resolveFlags, Value *vp);
 extern bool
-GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+GetPropertyId(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
             Handle<PropertyId> pid, unsigned resolveFlags, MutableHandle<Value> vp);
 inline bool
-GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+GetPropertyName(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
             Handle<PropertyName*> name, unsigned resolveFlags, MutableHandle<Value> vp)
 {
     Rooted<PropertyId> pid(cx, PropertyId(name));
-    return GetProperty(cx, obj, receiver, pid, resolveFlags, vp);
+    return GetPropertyId(cx, obj, receiver, pid, resolveFlags, vp);
 }
 inline bool
-GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+GetPropertySId(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
             Handle<SpecialId> sid, unsigned resolveFlags, MutableHandle<Value> vp)
 {
     Rooted<PropertyId> pid(cx, PropertyId(sid));
-    return GetProperty(cx, obj, receiver, pid, resolveFlags, vp);
+    return GetPropertyId(cx, obj, receiver, pid, resolveFlags, vp);
 }
 
 extern bool

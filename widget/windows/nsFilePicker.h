@@ -54,11 +54,10 @@ protected:
  */
 
 class nsFilePicker :
-  public nsBaseFilePicker
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-  , public IFileDialogEvents
+  public IFileDialogEvents,
 #endif
-  , public nsBaseWinFilePicker
+  public nsBaseWinFilePicker
 {
 public:
   nsFilePicker(); 

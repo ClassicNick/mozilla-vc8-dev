@@ -77,10 +77,6 @@ protected:
 public:
   nsCOMPtr<nsIFileStorage> mFileStorage;
   nsString mFileName;
-
-protected:
-  NS_DECL_EVENT_HANDLER(abort)
-  NS_DECL_EVENT_HANDLER(error)
 };
 
 END_FILE_NAMESPACE

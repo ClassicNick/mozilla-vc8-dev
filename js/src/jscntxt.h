@@ -22,6 +22,7 @@
 #include "jsgc.h"
 #include "jspropertycache.h"
 #include "jspropertytree.h"
+#include "jsprototypes.h"
 #include "jsutil.h"
 #include "prmjtime.h"
 
@@ -377,6 +378,24 @@ class FreeOp : public JSFreeOp {
 namespace JS {
 struct RuntimeSizes;
 }
+
+/* Various built-in or commonly-used names pinned on first context. */
+struct JSAtomState
+{
+#define PROPERTYNAME_FIELD(idpart, id, text) \
+    union { js::PropertyName *idpart##Atom; js::PropertyName *id; };
+    FOR_EACH_COMMON_PROPERTYNAME(PROPERTYNAME_FIELD)
+#undef PROPERTYNAME_FIELD
+#define PROPERTYNAME_FIELD(name, code, init) \
+    union { js::PropertyName *name##Atom; js::PropertyName *name; };
+    JS_FOR_EACH_PROTOTYPE(PROPERTYNAME_FIELD)
+#undef PROPERTYNAME_FIELD
+};
+
+#define ATOM(name) js::HandlePropertyName::fromMarkedLocation(&cx->names().name)
+
+#define NAME_OFFSET(name)       offsetof(JSAtomState, name##Atom)
+#define OFFSET_TO_NAME(rt,off)  (*(js::PropertyName **)((char*)&(rt)->atomState + (off)))
 
 struct JSRuntime : js::RuntimeFriendFields
 {
@@ -884,8 +903,18 @@ struct JSRuntime : js::RuntimeFriendFields
     void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
     JSPrincipals *trustedPrincipals() const { return trustedPrincipals_; }
 
-    /* Literal table maintained by jsatom.c functions. */
-    JSAtomState         atomState;
+    /* Set of all currently-living atoms. */
+    js::AtomSet         atoms;
+
+    union {
+        /*
+         * Cached pointers to various interned property names, initialized in
+         * order from first to last via the other union arm.
+         */
+        JSAtomState atomState;
+
+        js::PropertyName *firstCachedName;
+    };
 
     /* Tables of strings that are pre-allocated in the atomsCompartment. */
     js::StaticStrings   staticStrings;
@@ -1075,20 +1104,6 @@ struct JSRuntime : js::RuntimeFriendFields
 #define JS_KEEP_ATOMS(rt)   (rt)->gcKeepAtoms++;
 #define JS_UNKEEP_ATOMS(rt) (rt)->gcKeepAtoms--;
 
-#ifdef JS_ARGUMENT_FORMATTER_DEFINED
-/*
- * Linked list mapping format strings for JS_{Convert,Push}Arguments{,VA} to
- * formatter functions.  Elements are sorted in non-increasing format string
- * length order.
- */
-struct JSArgumentFormatMap {
-    const char          *format;
-    size_t              length;
-    JSArgumentFormatter formatter;
-    JSArgumentFormatMap *next;
-};
-#endif
-
 namespace js {
 
 struct AutoResolving;
@@ -1264,9 +1279,37 @@ struct JSContext : js::ContextFriendFields
   private:
     unsigned            enterCompartmentDepth_;
   public:
-    inline bool hasEnteredCompartment() const;
-    inline void enterCompartment(JSCompartment *c);
-    inline void leaveCompartment(JSCompartment *c);
+    bool hasEnteredCompartment() const {
+        return enterCompartmentDepth_ > 0;
+    }
+
+    void enterCompartment(JSCompartment *c) {
+        enterCompartmentDepth_++;
+        compartment = c;
+        if (throwing)
+            wrapPendingException();
+    }
+
+    inline void leaveCompartment(JSCompartment *oldCompartment) {
+        JS_ASSERT(hasEnteredCompartment());
+        enterCompartmentDepth_--;
+
+        /*
+         * Before we entered the current compartment, 'compartment' was
+         * 'oldCompartment', so we might want to simply set it back. However, we
+         * currently have this terrible scheme whereby defaultCompartmentObject_
+         * can be updated while enterCompartmentDepth_ > 0. In this case,
+         * oldCompartment != defaultCompartmentObject_->compartment and we must
+         * ignore oldCompartment.
+         */
+        if (hasEnteredCompartment() || !defaultCompartmentObject_)
+            compartment = oldCompartment;
+        else
+            compartment = defaultCompartmentObject_->compartment();
+
+        if (throwing)
+            wrapPendingException();
+    }
 
     /* See JS_SaveFrameChain/JS_RestoreFrameChain. */
   private:
@@ -1317,9 +1360,6 @@ struct JSContext : js::ContextFriendFields
   public:
     /* State for object and array toSource conversion. */
     js::ObjectSet       cycleDetectorSet;
-
-    /* Argument formatter support for JS_{Convert,Push}Arguments{,VA}. */
-    JSArgumentFormatMap *argumentFormatMap;
 
     /* Last message string and log file for debugging. */
     char                *lastMessage;
@@ -1528,6 +1568,8 @@ struct JSContext : js::ContextFriendFields
         throwing = false;
         exception.setUndefined();
     }
+
+    JSAtomState & names() { return runtime->atomState; }
 
 #ifdef DEBUG
     /*

@@ -659,7 +659,16 @@ struct JSScript : public js::gc::Cell
     inline void **nativeMap(bool constructing);
     inline void *nativeCodeForPC(bool constructing, jsbytecode *pc);
 
-    uint32_t getUseCount() const  { return useCount; }
+    /*
+     * Size of the JITScript and all sections.  If |mallocSizeOf| is NULL, the
+     * size is computed analytically.  (This method is implemented in
+     * MethodJIT.cpp.)
+     */
+    size_t sizeOfJitScripts(JSMallocSizeOfFun mallocSizeOf);
+#endif
+
+public:
+	uint32_t getUseCount() const  { return useCount; }
     uint32_t incUseCount() { return ++useCount; }
     uint32_t *addressOfUseCount() { return &useCount; }
     void resetUseCount() { useCount = 0; }
@@ -680,15 +689,6 @@ struct JSScript : public js::gc::Cell
         return maxLoopCount;
     }
 
-    /*
-     * Size of the JITScript and all sections.  If |mallocSizeOf| is NULL, the
-     * size is computed analytically.  (This method is implemented in
-     * MethodJIT.cpp.)
-     */
-    size_t sizeOfJitScripts(JSMallocSizeOfFun mallocSizeOf);
-#endif
-
-  public:
     bool initScriptCounts(JSContext *cx);
     js::PCCounts getPCCounts(jsbytecode *pc);
     js::ScriptCounts releaseScriptCounts();

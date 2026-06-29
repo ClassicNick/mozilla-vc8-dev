@@ -32,6 +32,7 @@
 #include "jsonparser.h"
 #include "jsopcode.h"
 #include "jsprobes.h"
+#include "jsprototypes.h"
 #include "jsproxy.h"
 #include "jsscope.h"
 #include "jsscript.h"
@@ -2433,7 +2434,7 @@ Detecting(JSContext *cx, jsbytecode *pc)
          * global binding...because, really?
          */
         atom = script->getAtom(GET_UINT32_INDEX(pc));
-        if (atom == cx->runtime->atomState.typeAtoms[JSTYPE_VOID] &&
+        if (atom == cx->runtime->atomState.undefinedAtom &&
             (pc += js_CodeSpec[op].length) < endpc) {
             op = JSOp(*pc);
             return op == JSOP_EQ || op == JSOP_NE || op == JSOP_STRICTEQ || op == JSOP_STRICTNE;
@@ -2660,6 +2661,9 @@ bool
 JSObject::ReserveForTradeGuts(JSContext *cx, JSObject *a, JSObject *b,
                               TradeGutsReserved &reserved)
 {
+    JS_ASSERT(a->compartment() == b->compartment());
+    AutoCompartment ac(cx, a);
+
     /*
      * When performing multiple swaps between objects which may have different
      * numbers of fixed slots, we reserve all space ahead of time so that the
@@ -2898,53 +2902,19 @@ JSObject::TradeGuts(JSContext *cx, JSObject *a, JSObject *b, TradeGutsReserved &
     b->type_ = tmp;
 }
 
-/*
- * Use this method with extreme caution. It trades the guts of two objects and updates
- * scope ownership. This operation is not thread-safe, just as fast array to slow array
- * transitions are inherently not thread-safe. Don't perform a swap operation on objects
- * shared across threads or, or bad things will happen. You have been warned.
- */
+/* Use this method with extreme caution. It trades the guts of two objects. */
 bool
 JSObject::swap(JSContext *cx, JSObject *other)
 {
     // Ensure swap doesn't cause a finalizer to not be run.
     JS_ASSERT(IsBackgroundFinalized(getAllocKind()) ==
               IsBackgroundFinalized(other->getAllocKind()));
+    JS_ASSERT(compartment() == other->compartment());
 
-    if (this->compartment() == other->compartment()) {
-        TradeGutsReserved reserved(cx);
-        if (!ReserveForTradeGuts(cx, this, other, reserved))
-            return false;
-        TradeGuts(cx, this, other, reserved);
-        return true;
-    }
-
-    JSObject *thisClone;
-    JSObject *otherClone;
-    {
-        AutoCompartment ac(cx, other);
-        thisClone = JS_CloneObject(cx, this, other->getProto(), other->getParent());
-        if (!thisClone || !JS_CopyPropertiesFrom(cx, thisClone, this))
-            return false;
-    }
-    {
-        AutoCompartment ac(cx, this);
-        otherClone = JS_CloneObject(cx, other, other->getProto(), other->getParent());
-        if (!otherClone || !JS_CopyPropertiesFrom(cx, otherClone, other))
-            return false;
-    }
-
-    TradeGutsReserved reservedThis(cx);
-    TradeGutsReserved reservedOther(cx);
-
-    if (!ReserveForTradeGuts(cx, this, otherClone, reservedThis) ||
-        !ReserveForTradeGuts(cx, other, thisClone, reservedOther)) {
+    TradeGutsReserved reserved(cx);
+    if (!ReserveForTradeGuts(cx, this, other, reserved))
         return false;
-    }
-
-    TradeGuts(cx, this, otherClone, reservedThis);
-    TradeGuts(cx, other, thisClone, reservedOther);
-
+    TradeGuts(cx, this, other, reserved);
     return true;
 }
 
@@ -3502,14 +3472,15 @@ js_InitNullClass(JSContext *cx, JSObject *obj)
     return NULL;
 }
 
-#define JS_PROTO(name,code,init) extern JSObject *init(JSContext *, JSObject *);
-#include "jsproto.tbl"
-#undef JS_PROTO
+#define DECLARE_PROTOTYPE_CLASS_INIT(name,code,init) \
+    extern JSObject *init(JSContext *cx, JSObject *obj);
+JS_FOR_EACH_PROTOTYPE(DECLARE_PROTOTYPE_CLASS_INIT)
+#undef DECLARE_PROTOTYPE_CLASS_INIT
 
 static JSClassInitializerOp lazy_prototype_init[JSProto_LIMIT] = {
-#define JS_PROTO(name,code,init) init,
-#include "jsproto.tbl"
-#undef JS_PROTO
+#define LAZY_PROTOTYPE_INIT(name,code,init) init,
+    JS_FOR_EACH_PROTOTYPE(LAZY_PROTOTYPE_INIT)
+#undef LAZY_PROTOTYPE_INIT
 };
 
 namespace js {
@@ -3621,7 +3592,7 @@ js_GetClassObject(JSContext *cx, RawObject obj, JSProtoKey key,
         return true;
     }
 
-    RootedId name(cx, NameToId(cx->runtime->atomState.classAtoms[key]));
+    RootedId name(cx, NameToId(ClassName(key, cx)));
     AutoResolving resolving(cx, global, name);
     if (resolving.alreadyStarted()) {
         /* Already caching id in global -- suppress recursion. */
@@ -3680,7 +3651,7 @@ js_FindClassObject(JSContext *cx, JSProtoKey protoKey, MutableHandleValue vp, Cl
             vp.set(ObjectValue(*cobj));
             return JS_TRUE;
         }
-        id = NameToId(cx->runtime->atomState.classAtoms[protoKey]);
+        id = NameToId(ClassName(protoKey, cx));
     } else {
         JSAtom *atom = Atomize(cx, clasp->name, strlen(clasp->name));
         if (!atom)
@@ -4949,7 +4920,7 @@ DefaultValue(JSContext *cx, HandleObject obj, JSType hint, MutableHandleValue vp
 
     RootedValue val(cx, ObjectValue(*obj));
     js_ReportValueError2(cx, JSMSG_CANT_CONVERT_TO, JSDVG_SEARCH_STACK, val, str,
-                         (hint == JSTYPE_VOID) ? "primitive type" : JS_TYPE_STR(hint));
+                         (hint == JSTYPE_VOID) ? "primitive type" : TypeStrings[hint]);
     return false;
 }
 
@@ -5200,10 +5171,10 @@ js_GetObjectSlotName(JSTracer *trc, char *buf, size_t bufsize)
     if (!shape) {
         const char *slotname = NULL;
         if (obj->isGlobal()) {
-#define JS_PROTO(name,code,init)                                              \
-    if ((code) == slot) { slotname = js_##name##_str; goto found; }
-#include "jsproto.tbl"
-#undef JS_PROTO
+#define TEST_SLOT_MATCHES_PROTOTYPE(name,code,init)                           \
+            if ((code) == slot) { slotname = js_##name##_str; goto found; }
+            JS_FOR_EACH_PROTOTYPE(TEST_SLOT_MATCHES_PROTOTYPE)
+#undef TEST_SLOT_MATCHES_PROTOTYPE
         }
       found:
         if (slotname)

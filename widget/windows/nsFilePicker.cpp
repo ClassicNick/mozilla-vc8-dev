@@ -172,7 +172,9 @@ private:
 nsFilePicker::nsFilePicker() :
   mSelectedType(1)
   , mDlgWnd(NULL)
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   , mFDECookie(0)
+#endif
 {
    CoInitialize(NULL);
 }

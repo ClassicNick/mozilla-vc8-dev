@@ -203,6 +203,12 @@ public:
   nsresult InitParameters(JSContext* aCx, const jsval* aParams);
   void InitParameters(bool aAnon, bool aSystem);
 
+  void SetParameters(bool aAnon, bool aSystem)
+  {
+    mIsAnon = aAnon;
+    mIsSystem = aSystem;
+  }
+
   NS_DECL_ISUPPORTS_INHERITED
 
   // nsIXMLHttpRequest
@@ -688,6 +694,7 @@ protected:
   };
   nsTArray<RequestHeader> mModifiedRequestHeaders;
 
+public:
   // Helper object to manage our XPCOM scriptability bits
   nsXMLHttpRequestXPCOMifier* mXPCOMifier;
 };

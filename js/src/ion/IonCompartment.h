@@ -97,9 +97,9 @@ class IonCompartment
 
     IonCode *getBailoutTable(JSContext *cx, const FrameSizeClass &frameClass);
     IonCode *getGenericBailoutHandler(JSContext *cx) {
-        if (!bailoutHandler_) {
+        if (!(IonCode *) bailoutHandler_) {
             bailoutHandler_ = generateBailoutHandler(cx);
-            if (!bailoutHandler_)
+            if (!(IonCode *) bailoutHandler_)
                 return NULL;
         }
         return bailoutHandler_;
@@ -110,9 +110,9 @@ class IonCompartment
 
     // Fallible; generates a thunk and returns the target.
     IonCode *getArgumentsRectifier(JSContext *cx) {
-        if (!argumentsRectifier_) {
+        if (!(IonCode *) argumentsRectifier_) {
             argumentsRectifier_ = generateArgumentsRectifier(cx);
-            if (!argumentsRectifier_)
+            if (!(IonCode *) argumentsRectifier_)
                 return NULL;
         }
         return argumentsRectifier_;
@@ -122,9 +122,9 @@ class IonCompartment
     }
 
     IonCode *getOrCreateInvalidationThunk(JSContext *cx) {
-        if (!invalidator_) {
+        if (!(IonCode *) invalidator_) {
             invalidator_ = generateInvalidator(cx);
-            if (!invalidator_)
+            if (!(IonCode *) invalidator_)
                 return NULL;
         }
         return invalidator_;
@@ -139,18 +139,18 @@ class IonCompartment
     }
 
     EnterIonCode enterJIT(JSContext *cx) {
-        if (!enterJIT_) {
+        if (!(IonCode *) enterJIT_) {
             enterJIT_ = generateEnterJIT(cx);
-            if (!enterJIT_)
+            if (!(IonCode *) enterJIT_)
                 return NULL;
         }
         return enterJIT_.get()->as<EnterIonCode>();
     }
 
     IonCode *preBarrier(JSContext *cx) {
-        if (!preBarrier_) {
+        if (!(IonCode *) preBarrier_) {
             preBarrier_ = generatePreBarrier(cx);
-            if (!preBarrier_)
+            if (!(IonCode *) preBarrier_)
                 return NULL;
         }
         return preBarrier_;

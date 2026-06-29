@@ -583,7 +583,7 @@ js::GetOwnElement(JSContext *cx, Handle<ObjectImpl*> obj, uint32_t index, unsign
 }
 
 bool
-js::GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
+js::GetPropertyId(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> receiver,
                 Handle<PropertyId> pid, unsigned resolveFlags, MutableHandle<Value> vp)
 {
     NEW_OBJECT_REPRESENTATION_ONLY();
@@ -601,7 +601,7 @@ js::GetProperty(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> rece
         }
 
         PropDesc desc;
-        if (!GetOwnProperty(cx, current, pid, resolveFlags, &desc))
+        if (!GetOwnProperty(cx, current, (PropertyId) pid, resolveFlags, &desc))
             return false;
 
         /* No property?  Recur or bottom out. */
