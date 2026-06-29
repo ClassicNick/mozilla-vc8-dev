@@ -360,6 +360,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_iternext();
     bool jsop_itermore();
     bool jsop_iterend();
+    bool jsop_in();
     bool jsop_instanceof();
     bool jsop_getaliasedvar(ScopeCoordinate sc);
     bool jsop_setaliasedvar(ScopeCoordinate sc);
@@ -444,7 +445,7 @@ class IonBuilder : public MIRGenerator
     types::RecompileInfo const recompileInfo;
 
     // If off thread compilation is successful, final LIR is attached here.
-    LIRGraph *lir;
+    LIRGraph *backgroundCompiledLir;
 
     void clearForBackEnd();
 

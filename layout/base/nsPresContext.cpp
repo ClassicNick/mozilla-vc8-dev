@@ -1170,6 +1170,15 @@ nsPresContext::GetToplevelContentDocumentPresContext()
   }
 }
 
+nsIWidget*
+nsPresContext::GetNearestWidget(nsPoint* aOffset)
+{
+  NS_ENSURE_TRUE(mShell, nullptr);
+  nsIFrame* frame = mShell->GetRootFrame();
+  NS_ENSURE_TRUE(frame, nullptr);
+  return frame->GetView()->GetNearestWidget(aOffset);
+}
+
 // We may want to replace this with something faster, maybe caching the root prescontext
 nsRootPresContext*
 nsPresContext::GetRootPresContext()
@@ -1651,6 +1660,7 @@ nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint)
     return;
   }
 
+  mUsesViewportUnits = false;
   RebuildUserFontSet();
   AnimationManager()->KeyframesListIsDirty();
 
@@ -1671,11 +1681,17 @@ void
 nsPresContext::MediaFeatureValuesChanged(bool aCallerWillRebuildStyleData)
 {
   mPendingMediaFeatureValuesChanged = false;
-  if (mShell &&
-      mShell->StyleSet()->MediumFeaturesChanged(this) &&
-      !aCallerWillRebuildStyleData) {
+
+  // MediumFeaturesChanged updates the applied rules, so it always gets called.
+  bool mediaFeaturesDidChange = mShell ? mShell->StyleSet()->MediumFeaturesChanged(this)
+                                       : false;
+
+  if (!aCallerWillRebuildStyleData &&
+      (mediaFeaturesDidChange || (mUsesViewportUnits && mPendingViewportChange))) {
     RebuildAllStyleData(nsChangeHint(0));
   }
+
+  mPendingViewportChange = false;
 
   if (!nsContentUtils::IsSafeToRunScript()) {
     NS_ABORT_IF_FALSE(mDocument->IsBeingUsedAsImage(),
@@ -2535,20 +2551,19 @@ nsRootPresContext::ComputePluginGeometryUpdates(nsIFrame* aFrame,
   mRegisteredPlugins.EnumerateEntries(SetPluginHidden, aFrame);
 
   nsIFrame* rootFrame = FrameManager()->GetRootFrame();
-  if (!rootFrame) {
-    return;
-  }
 
-  aBuilder->SetForPluginGeometry();
-  aBuilder->SetAccurateVisibleRegions();
-  // Merging and flattening has already been done and we should not do it
-  // again. nsDisplayScroll(Info)Layer doesn't support trying to flatten
-  // again.
-  aBuilder->SetAllowMergingAndFlattening(false);
-  nsRegion region = rootFrame->GetVisualOverflowRectRelativeToSelf();
-  // nsDisplayPlugin::ComputeVisibility will automatically set a non-hidden
-  // widget configuration for the plugin, if it's visible.
-  aList->ComputeVisibilityForRoot(aBuilder, &region);
+  if (rootFrame && aBuilder->ContainsPluginItem()) {
+    aBuilder->SetForPluginGeometry();
+    aBuilder->SetAccurateVisibleRegions();
+    // Merging and flattening has already been done and we should not do it
+    // again. nsDisplayScroll(Info)Layer doesn't support trying to flatten
+    // again.
+    aBuilder->SetAllowMergingAndFlattening(false);
+    nsRegion region = rootFrame->GetVisualOverflowRectRelativeToSelf();
+    // nsDisplayPlugin::ComputeVisibility will automatically set a non-hidden
+    // widget configuration for the plugin, if it's visible.
+    aList->ComputeVisibilityForRoot(aBuilder, &region);
+  }
 
   InitApplyPluginGeometryTimer();
 }

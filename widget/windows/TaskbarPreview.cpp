@@ -253,7 +253,7 @@ bool
 TaskbarPreview::IsWindowAvailable() const {
   if (mWnd) {
     nsWindow* win = WinUtils::GetNSWindowPtr(mWnd);
-    if(win && !win->HasDestroyStarted()) {
+    if(win && !win->Destroyed()) {
       return true;
     }
   }

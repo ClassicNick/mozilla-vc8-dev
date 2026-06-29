@@ -829,9 +829,6 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
     return NS_ERROR_FAILURE;
   }
 
-  bool oldProcessingScriptTag = context->GetProcessingScriptTag();
-  context->SetProcessingScriptTag(true);
-
   // Update our current script.
   nsCOMPtr<nsIScriptElement> oldCurrent = mCurrentScript;
   mCurrentScript = aRequest->mElement;
@@ -852,10 +849,6 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest,
   // Put the old script back in case it wants to do anything else.
   mCurrentScript = oldCurrent;
 
-  JSContext *cx = nullptr; // Initialize this to keep GCC happy.
-  cx = context->GetNativeContext();
-  JSAutoRequest ar(cx);
-  context->SetProcessingScriptTag(oldProcessingScriptTag);
   return rv;
 }
 
@@ -1189,10 +1182,6 @@ nsScriptLoader::PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
                         aRequest->mScriptText);
 
     NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!ShouldExecuteScript(mDocument, channel)) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
   }
 
   // This assertion could fire errorously if we ran out of memory when
@@ -1211,36 +1200,6 @@ nsScriptLoader::PrepareLoadedRequest(nsScriptLoadRequest* aRequest,
   aRequest->mLoading = false;
 
   return NS_OK;
-}
-
-/* static */
-bool
-nsScriptLoader::ShouldExecuteScript(nsIDocument* aDocument,
-                                    nsIChannel* aChannel)
-{
-  if (!aChannel) {
-    return false;
-  }
-
-  bool hasCert;
-  nsIPrincipal* docPrincipal = aDocument->NodePrincipal();
-  docPrincipal->GetHasCertificate(&hasCert);
-  if (!hasCert) {
-    return true;
-  }
-
-  nsCOMPtr<nsIPrincipal> channelPrincipal;
-  nsresult rv = nsContentUtils::GetSecurityManager()->
-    GetChannelPrincipal(aChannel, getter_AddRefs(channelPrincipal));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  NS_ASSERTION(channelPrincipal, "Gotta have a principal here!");
-
-  // If the channel principal isn't at least as powerful as the
-  // document principal, then we don't execute the script.
-  bool subsumes;
-  rv = channelPrincipal->Subsumes(docPrincipal, &subsumes);
-  return NS_SUCCEEDED(rv) && subsumes;
 }
 
 void
