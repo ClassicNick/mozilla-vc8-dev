@@ -23,6 +23,8 @@
 using namespace js;
 using namespace js::ion;
 
+using mozilla::DebugOnly;
+
 IonBuilder::IonBuilder(JSContext *cx, TempAllocator *temp, MIRGraph *graph,
                        TypeOracle *oracle, CompileInfo *info, size_t inliningDepth, uint32 loopDepth)
   : MIRGenerator(cx->compartment, temp, graph, info),
@@ -149,7 +151,7 @@ IonBuilder::getSingleCallTarget(uint32 argc, jsbytecode *pc)
 {
     AutoAssertNoGC nogc;
 
-    types::StackTypeSet *calleeTypes = oracle->getCallTarget(script(), argc, pc);
+    types::StackTypeSet *calleeTypes = oracle->getCallTarget(script().get(nogc), argc, pc);
     if (!calleeTypes)
         return NULL;
 

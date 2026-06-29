@@ -22,7 +22,6 @@
 #include "nsIJumpListItem.h"
 #include "JumpListItem.h"
 #include "nsIObserver.h"
-#include "nsIFaviconService.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Attributes.h"
 

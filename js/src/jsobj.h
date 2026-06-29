@@ -208,6 +208,7 @@ extern Class DateClass;
 extern Class ErrorClass;
 extern Class ElementIteratorClass;
 extern Class GeneratorClass;
+extern Class IntlClass;
 extern Class JSONClass;
 extern Class MapIteratorClass;
 extern Class MathClass;
@@ -310,7 +311,7 @@ struct JSObject : public js::ObjectImpl
      * Update the slot span directly for a dictionary object, and allocate
      * slots to cover the new span if necessary.
      */
-    bool setSlotSpan(JSContext *cx, uint32_t span);
+    static bool setSlotSpan(JSContext *cx, JS::HandleObject obj, uint32_t span);
 
     /* Upper bound on the number of elements in an object. */
     static const uint32_t NELEMENTS_LIMIT = JS_BIT(28);
@@ -1295,7 +1296,7 @@ js_NativeGet(JSContext *cx, js::Handle<JSObject*> obj, js::Handle<JSObject*> pob
 
 extern JSBool
 js_NativeSet(JSContext *cx, js::Handle<JSObject*> obj, js::Handle<JSObject*> receiver,
-             js::Shape *shape, bool added, bool strict, js::Value *vp);
+             js::Handle<js::Shape*> shape, bool added, bool strict, js::Value *vp);
 
 namespace js {
 

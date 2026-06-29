@@ -19,8 +19,9 @@
 #include "nsINodeList.h"
 #include "nsIHTMLCollection.h"
 #include "nsHashKeys.h"
-#include "nsGenericHTMLElement.h"
+#include "nsRefPtrHashtable.h"
 
+class nsGenericHTMLElement;
 class nsXPCClassInfo;
 class nsIDocument;
 class nsINode;
@@ -56,6 +57,7 @@ public:
   HTMLPropertiesCollection(nsGenericHTMLElement* aRoot);
   virtual ~HTMLPropertiesCollection();
 
+  using nsWrapperCache::GetWrapper;
   virtual JSObject* WrapObject(JSContext *cx, JSObject *scope,
                                bool *triedToWrap);
 
@@ -77,6 +79,7 @@ public:
     EnsureFresh();
     return mNames;
   }
+  virtual void GetSupportedNames(nsTArray<nsString>& aNames);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIDOMHTMLPROPERTIESCOLLECTION

@@ -19,6 +19,8 @@
 #include "ion/IonCode.h"
 #include "vm/String-inl.h"
 
+using mozilla::DebugOnly;
+
 void * const js::NullPtr::constNullValue = NULL;
 
 /*
@@ -87,6 +89,7 @@ CheckMarkedThing(JSTracer *trc, T *thing)
     JS_ASSERT(thing);
     JS_ASSERT(thing->compartment());
     JS_ASSERT(thing->compartment()->rt == trc->runtime);
+    JS_ASSERT_IF(IS_GC_MARKING_TRACER(trc), !thing->compartment()->scheduledForDestruction);
     JS_ASSERT(trc->debugPrinter || trc->debugPrintArg);
 
     DebugOnly<JSRuntime *> rt = trc->runtime;
@@ -114,8 +117,10 @@ MarkInternal(JSTracer *trc, T **thingp)
      * GC.
      */
     if (!trc->callback) {
-        if (thing->compartment()->isCollecting())
+        if (thing->compartment()->isCollecting()) {
             PushMarkStack(static_cast<GCMarker *>(trc), thing);
+            thing->compartment()->maybeAlive = true;
+        }
     } else {
         trc->callback(trc, (void **)thingp, GetGCThingTraceKind(thing));
         JS_UNSET_TRACING_LOCATION(trc);
@@ -129,7 +134,6 @@ MarkInternal(JSTracer *trc, T **thingp)
     JS_ASSERT_IF(IS_GC_MARKING_TRACER(trc),                             \
                  trc->runtime->gcIncrementalState == NO_INCREMENTAL ||  \
                  trc->runtime->gcIncrementalState == MARK_ROOTS);
-
 
 template <typename T>
 static void
@@ -262,19 +266,19 @@ MarkKind(JSTracer *trc, void **thingp, JSGCTraceKind kind)
     JS_ASSERT(kind == GetGCThingTraceKind(*thingp));
     switch (kind) {
       case JSTRACE_OBJECT:
-        MarkInternal(trc, reinterpret_cast<JSObject **>(thingp));
+        MarkInternal(trc, reinterpret_cast<RawObject *>(thingp));
         break;
       case JSTRACE_STRING:
-        MarkInternal(trc, reinterpret_cast<JSString **>(thingp));
+        MarkInternal(trc, reinterpret_cast<RawString *>(thingp));
         break;
       case JSTRACE_SCRIPT:
-        MarkInternal(trc, reinterpret_cast<JSScript **>(thingp));
+        MarkInternal(trc, reinterpret_cast<RawScript *>(thingp));
         break;
       case JSTRACE_SHAPE:
         MarkInternal(trc, reinterpret_cast<Shape **>(thingp));
         break;
       case JSTRACE_BASE_SHAPE:
-        MarkInternal(trc, reinterpret_cast<BaseShape **>(thingp));
+        MarkInternal(trc, reinterpret_cast<RawBaseShape *>(thingp));
         break;
       case JSTRACE_TYPE_OBJECT:
         MarkInternal(trc, reinterpret_cast<types::TypeObject **>(thingp));
@@ -629,10 +633,10 @@ PushMarkStack(GCMarker *gcmarker, ion::IonCode *thing)
 }
 
 static inline void
-ScanBaseShape(GCMarker *gcmarker, BaseShape *base);
+ScanBaseShape(GCMarker *gcmarker, RawBaseShape base);
 
 static void
-PushMarkStack(GCMarker *gcmarker, BaseShape *thing)
+PushMarkStack(GCMarker *gcmarker, RawBaseShape thing)
 {
     JS_COMPARTMENT_ASSERT(gcmarker->runtime, thing);
 
@@ -645,7 +649,7 @@ static void
 ScanShape(GCMarker *gcmarker, Shape *shape)
 {
   restart:
-    PushMarkStack(gcmarker, shape->base());
+    PushMarkStack(gcmarker, shape->base().unsafeGet());
 
     const EncapsulatedId &id = shape->propidRef();
     if (JSID_IS_STRING(id))
@@ -659,7 +663,7 @@ ScanShape(GCMarker *gcmarker, Shape *shape)
 }
 
 static inline void
-ScanBaseShape(GCMarker *gcmarker, BaseShape *base)
+ScanBaseShape(GCMarker *gcmarker, RawBaseShape base)
 {
     base->assertConsistency();
 
@@ -812,7 +816,7 @@ MarkChildren(JSTracer *trc, Shape *shape)
 }
 
 static void
-MarkChildren(JSTracer *trc, BaseShape *base)
+MarkChildren(JSTracer *trc, RawBaseShape base)
 {
     base->markChildren(trc);
 }
@@ -826,7 +830,7 @@ MarkChildren(JSTracer *trc, BaseShape *base)
  * updated to the current shape's parent.
  */
 inline void
-MarkCycleCollectorChildren(JSTracer *trc, BaseShape *base, JSObject **prevParent)
+MarkCycleCollectorChildren(JSTracer *trc, RawBaseShape base, RawObject *prevParent)
 {
     JS_ASSERT(base);
 
@@ -868,9 +872,9 @@ MarkCycleCollectorChildren(JSTracer *trc, BaseShape *base, JSObject **prevParent
 void
 MarkCycleCollectorChildren(JSTracer *trc, Shape *shape)
 {
-    JSObject *prevParent = NULL;
+    RawObject prevParent = NULL;
     do {
-        MarkCycleCollectorChildren(trc, shape->base(), &prevParent);
+        MarkCycleCollectorChildren(trc, shape->base().unsafeGet(), &prevParent);
         MarkId(trc, &shape->propidRef(), "propid");
         shape = shape->previous();
     } while (shape);
@@ -1325,15 +1329,15 @@ TraceChildren(JSTracer *trc, void *thing, JSGCTraceKind kind)
 {
     switch (kind) {
       case JSTRACE_OBJECT:
-        MarkChildren(trc, static_cast<JSObject *>(thing));
+        MarkChildren(trc, static_cast<RawObject>(thing));
         break;
 
       case JSTRACE_STRING:
-        MarkChildren(trc, static_cast<JSString *>(thing));
+        MarkChildren(trc, static_cast<RawString>(thing));
         break;
 
       case JSTRACE_SCRIPT:
-        MarkChildren(trc, static_cast<JSScript *>(thing));
+        MarkChildren(trc, static_cast<RawScript>(thing));
         break;
 
       case JSTRACE_SHAPE:
@@ -1345,7 +1349,7 @@ TraceChildren(JSTracer *trc, void *thing, JSGCTraceKind kind)
         break;
 
       case JSTRACE_BASE_SHAPE:
-        MarkChildren(trc, static_cast<BaseShape *>(thing));
+        MarkChildren(trc, static_cast<RawBaseShape>(thing));
         break;
 
       case JSTRACE_TYPE_OBJECT:

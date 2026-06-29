@@ -1563,7 +1563,7 @@ public:
         mContext->gl->fDeleteBuffers(1, &mGLName);
         mByteLength = 0;
         mCache = nullptr;
-        LinkedListElement<WebGLBuffer>::remove(); // remove from mContext->mBuffers
+        LinkedListElement<WebGLBuffer>::removeFrom(mContext->mBuffers);
     }
 
     size_t SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf) const {
@@ -1656,7 +1656,7 @@ public:
         mImageInfos.Clear();
         mContext->MakeContextCurrent();
         mContext->gl->fDeleteTextures(1, &mGLName);
-        LinkedListElement<WebGLTexture>::remove(); // remove from mContext->mTextures
+        LinkedListElement<WebGLTexture>::removeFrom(mContext->mTextures);
     }
 
     bool HasEverBeenBound() { return mHasEverBeenBound; }
@@ -2174,7 +2174,7 @@ public:
         mTranslationLog.Truncate();
         mContext->MakeContextCurrent();
         mContext->gl->fDeleteShader(mGLName);
-        LinkedListElement<WebGLShader>::remove(); // remove from mContext->mShaders
+        LinkedListElement<WebGLShader>::removeFrom(mContext->mShaders);
     }
 
     WebGLuint GLName() { return mGLName; }
@@ -2296,7 +2296,7 @@ public:
         DetachShaders();
         mContext->MakeContextCurrent();
         mContext->gl->fDeleteProgram(mGLName);
-        LinkedListElement<WebGLProgram>::remove(); // remove from mContext->mPrograms
+        LinkedListElement<WebGLProgram>::removeFrom(mContext->mPrograms);
     }
 
     void DetachShaders() {
@@ -2579,7 +2579,7 @@ public:
     void Delete() {
         mContext->MakeContextCurrent();
         mContext->gl->fDeleteRenderbuffers(1, &mGLName);
-        LinkedListElement<WebGLRenderbuffer>::remove(); // remove from mContext->mRenderbuffers
+        LinkedListElement<WebGLRenderbuffer>::removeFrom(mContext->mRenderbuffers);
     }
 
     bool HasEverBeenBound() { return mHasEverBeenBound; }
@@ -2824,7 +2824,7 @@ public:
         mDepthStencilAttachment.Reset();
         mContext->MakeContextCurrent();
         mContext->gl->fDeleteFramebuffers(1, &mGLName);
-        LinkedListElement<WebGLFramebuffer>::remove(); // remove from mContext->mFramebuffers
+        LinkedListElement<WebGLFramebuffer>::removeFrom(mContext->mFramebuffers);
     }
 
     bool HasEverBeenBound() { return mHasEverBeenBound; }

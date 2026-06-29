@@ -22,6 +22,16 @@
 using namespace js;
 using namespace JS;
 
+// Required by PerThreadDataFriendFields::getMainThread()
+JS_STATIC_ASSERT(offsetof(JSRuntime, mainThread) == sizeof(RuntimeFriendFields));
+
+PerThreadDataFriendFields::PerThreadDataFriendFields()
+{
+#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+    PodArrayZero(thingGCRooters);
+#endif
+}
+
 JS_FRIEND_API(void)
 JS_SetSourceHook(JSRuntime *rt, JS_SourceHook hook)
 {
@@ -361,6 +371,25 @@ js::IsOriginalScriptFunction(JSFunction *fun)
     return fun->script()->function() == fun;
 }
 
+JS_FRIEND_API(JSScript *)
+js::GetOutermostEnclosingFunctionOfScriptedCaller(JSContext *cx)
+{
+    if (!cx->hasfp())
+        return NULL;
+
+    StackFrame *fp = cx->fp();
+    if (!fp->isFunctionFrame())
+        return NULL;
+
+    JSFunction *scriptedCaller = fp->fun();
+    RootedScript outermost(cx, scriptedCaller->script());
+    for (StaticScopeIter i(scriptedCaller); !i.done(); i++) {
+        if (i.type() == StaticScopeIter::FUNCTION)
+            outermost = i.funScript();
+    }
+    return outermost;
+}
+
 JS_FRIEND_API(JSFunction *)
 js::DefineFunctionWithReserved(JSContext *cx, JSObject *objArg, const char *name, JSNative call,
                                unsigned nargs, unsigned attrs)
@@ -373,7 +402,7 @@ js::DefineFunctionWithReserved(JSContext *cx, JSObject *objArg, const char *name
     if (!atom)
         return NULL;
     Rooted<jsid> id(cx, AtomToId(atom));
-    return js_DefineFunction(cx, obj, id, call, nargs, attrs, NULL, JSFunction::ExtendedFinalizeKind);
+    return js_DefineFunction(cx, obj, id, call, nargs, attrs, NullPtr(), JSFunction::ExtendedFinalizeKind);
 }
 
 JS_FRIEND_API(JSFunction *)
@@ -393,7 +422,8 @@ js::NewFunctionWithReserved(JSContext *cx, JSNative native, unsigned nargs, unsi
             return NULL;
     }
 
-    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom,
+    JSFunction::Flags funFlags = JSAPIToJSFunctionFlags(flags);
+    return js_NewFunction(cx, NullPtr(), native, nargs, funFlags, parent, atom,
                           JSFunction::ExtendedFinalizeKind);
 }
 
@@ -408,7 +438,8 @@ js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, 
     assertSameCompartment(cx, parent);
 
     RootedAtom atom(cx, JSID_TO_ATOM(id));
-    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom,
+    JSFunction::Flags funFlags = JSAPIToJSFunctionFlags(flags);
+    return js_NewFunction(cx, NullPtr(), native, nargs, funFlags, parent, atom,
                           JSFunction::ExtendedFinalizeKind);
 }
 
@@ -870,18 +901,23 @@ IncrementalReferenceBarrier(void *ptr)
 {
     if (!ptr)
         return;
-    JS_ASSERT(!static_cast<gc::Cell *>(ptr)->compartment()->rt->isHeapBusy());
+
+    gc::Cell *cell = static_cast<gc::Cell *>(ptr);
+    JS_ASSERT(!cell->compartment()->rt->isHeapBusy());
+
+    AutoMarkInDeadCompartment amn(cell->compartment());
+
     uint32_t kind = gc::GetGCThingTraceKind(ptr);
     if (kind == JSTRACE_OBJECT)
-        JSObject::writeBarrierPre((JSObject *) ptr);
+        JSObject::writeBarrierPre(reinterpret_cast<RawObject>(ptr));
     else if (kind == JSTRACE_STRING)
-        JSString::writeBarrierPre((JSString *) ptr);
+        JSString::writeBarrierPre(reinterpret_cast<RawString>(ptr));
     else if (kind == JSTRACE_SCRIPT)
-        JSScript::writeBarrierPre((JSScript *) ptr);
+        JSScript::writeBarrierPre(reinterpret_cast<RawScript>(ptr));
     else if (kind == JSTRACE_SHAPE)
         Shape::writeBarrierPre((Shape *) ptr);
     else if (kind == JSTRACE_BASE_SHAPE)
-        BaseShape::writeBarrierPre((BaseShape *) ptr);
+        BaseShape::writeBarrierPre(reinterpret_cast<RawBaseShape>(ptr));
     else if (kind == JSTRACE_TYPE_OBJECT)
         types::TypeObject::writeBarrierPre((types::TypeObject *) ptr);
     else

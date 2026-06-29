@@ -141,6 +141,7 @@ public:
   {
     aError = SetOption(aIndex, aOption);
   }
+  virtual void GetSupportedNames(nsTArray<nsString>& aNames);
 
 private:
   /** The list of options (holds strong references).  This is infallible, so
@@ -236,14 +237,8 @@ public:
                       mozilla::dom::FromParser aFromParser = mozilla::dom::NOT_FROM_PARSER);
   virtual ~nsHTMLSelectElement();
 
-  /** Typesafe, non-refcounting cast from nsIContent.  Cheaper than QI. **/
-  static nsHTMLSelectElement* FromContent(nsIContent* aContent)
-  {
-    if (aContent && aContent->IsHTML(nsGkAtoms::select))
-      return static_cast<nsHTMLSelectElement*>(aContent);
-    return nullptr;
-  }
- 
+  NS_IMPL_FROMCONTENT_HTML_WITH_TAG(nsHTMLSelectElement, select)
+
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -251,7 +246,7 @@ public:
   NS_FORWARD_NSIDOMNODE_TO_NSINODE
 
   // nsIDOMElement
-  NS_FORWARD_NSIDOMELEMENT(nsGenericHTMLFormElement::)
+  NS_FORWARD_NSIDOMELEMENT_TO_GENERIC
 
   // nsIDOMHTMLElement
   NS_FORWARD_NSIDOMHTMLELEMENT(nsGenericHTMLFormElement::)
