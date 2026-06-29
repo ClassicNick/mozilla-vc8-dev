@@ -1390,16 +1390,6 @@ nsDocShell::LoadURI(nsIURI * aURI,
                 }
             } // parent
         } //parentDS
-        else {  
-            // This is the root docshell. If we got here while  
-            // executing an onLoad Handler,this load will not go 
-            // into session history.
-            bool inOnLoadHandler=false;
-            GetIsExecutingOnLoadHandler(&inOnLoadHandler);
-            if (inOnLoadHandler) {
-                loadType = LOAD_NORMAL_REPLACE;
-            }
-        } 
     } // !shEntry
 
     if (shEntry) {
@@ -2793,24 +2783,26 @@ nsDocShell::SetDocLoaderParent(nsDocLoader * aParent)
         }
         SetAllowDNSPrefetch(value);
     }
-#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
-    // Set the PB flag on the docshell based on the global PB mode for now
-    nsCOMPtr<nsIPrivateBrowsingService> pbs =
-        do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
-    if (pbs) {
-        bool inPrivateBrowsing = false;
-        pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
-        SetUsePrivateBrowsing(inPrivateBrowsing);
-    }
-#else
+
     nsCOMPtr<nsILoadContext> parentAsLoadContext(do_QueryInterface(parent));
     if (parentAsLoadContext &&
         NS_SUCCEEDED(parentAsLoadContext->GetUsePrivateBrowsing(&value)))
     {
         SetUsePrivateBrowsing(value);
-    }
+#ifndef MOZ_PER_WINDOW_PRIVATE_BROWSING
+        // Belt and suspenders - we want to catch any instances where the flag
+        // we're propagating doesn't match the global state.
+        nsCOMPtr<nsIPrivateBrowsingService> pbs =
+                do_GetService(NS_PRIVATE_BROWSING_SERVICE_CONTRACTID);
+        if (pbs) {
+            bool inPrivateBrowsing = false;
+            pbs->GetPrivateBrowsingEnabled(&inPrivateBrowsing);
+            NS_ASSERTION(inPrivateBrowsing == mInPrivateBrowsing,
+                         "Privacy status of parent docshell doesn't match global state!");
+        }
 #endif
-
+    }
+    
     nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
     if (parentURIListener)
         mContentListener->SetParentContentListener(parentURIListener);
@@ -4942,6 +4934,23 @@ nsDocShell::Destroy()
 }
 
 NS_IMETHODIMP
+nsDocShell::GetUnscaledDevicePixelsPerCSSPixel(double *aScale)
+{
+    if (mParentWidget) {
+        *aScale = mParentWidget->GetDefaultScale();
+        return NS_OK;
+    }
+
+    nsCOMPtr<nsIBaseWindow> ownerWindow(do_QueryInterface(mTreeOwner));
+    if (ownerWindow) {
+        return ownerWindow->GetUnscaledDevicePixelsPerCSSPixel(aScale);
+    }
+
+    *aScale = 1.0;
+    return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::SetPosition(int32_t x, int32_t y)
 {
     mBounds.x = x;
@@ -4998,6 +5007,13 @@ NS_IMETHODIMP
 nsDocShell::GetPositionAndSize(int32_t * x, int32_t * y, int32_t * cx,
                                int32_t * cy)
 {
+    if (mParentWidget) {
+        // ensure size is up-to-date if window has changed resolution
+        nsIntRect r;
+        mParentWidget->GetClientBounds(r);
+        SetPositionAndSize(mBounds.x, mBounds.y, r.width, r.height, false);
+    }
+
     // We should really consider just getting this information from
     // our window instead of duplicating the storage and code...
     if (cx || cy) {
@@ -6485,7 +6501,7 @@ nsDocShell::EndPageLoad(nsIWebProgress * aProgress,
     nsCOMPtr<nsIDocShell> kungFuDeathGrip(this);
 
     // Notify the ContentViewer that the Document has finished loading.  This
-    // will cause any OnLoad(...) and PopState(...) handlers to fire.
+    // will cause any OnLoad(...) handlers to fire.
     if (!mEODForCurrentDocument && mContentViewer) {
         mIsExecutingOnLoadHandler = true;
         mContentViewer->LoadComplete(aStatus);
@@ -11118,8 +11134,8 @@ nsDocShell::AddURIVisit(nsIURI* aURI,
         // 408 is special cased, since may actually indicate a temporary
         // connection problem.
         else if (aResponseStatus != 408 &&
-                 (aResponseStatus >= 400 && aResponseStatus <= 501 ||
-                  aResponseStatus == 505)) {
+                 ((aResponseStatus >= 400 && aResponseStatus <= 501) ||
+                   aResponseStatus == 505)) {
             visitURIFlags |= IHistory::UNRECOVERABLE_ERROR;
         }
 

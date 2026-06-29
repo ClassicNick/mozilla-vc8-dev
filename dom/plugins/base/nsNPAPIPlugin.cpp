@@ -8,7 +8,6 @@
 /* This must occur *after* layers/PLayers.h to avoid typedefs conflicts. */
 #include "mozilla/Util.h"
 
-#include "prtypes.h"
 #include "prmem.h"
 #include "prenv.h"
 #include "prclist.h"
@@ -2166,7 +2165,7 @@ _getvalue(NPP npp, NPNVariable variable, void *result)
 
 #ifndef NP_NO_CARBON
   case NPNVsupportsCarbonBool: {
-    *(NPBool*)result = true;
+    *(NPBool*)result = false;
 
     return NPERR_NO_ERROR;
   }

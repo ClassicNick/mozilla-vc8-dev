@@ -37,6 +37,7 @@ self.onmessage = function onmessage_start(msg) {
     test_mkdir();
     test_info();
     test_path();
+    test_exists_file();
   } catch (x) {
     log("Catching error: " + x);
     log("Stack: " + x.stack);
@@ -355,6 +356,20 @@ function test_readall_writeall_file()
   compare_files("test_readall_writeall_file (OS.File.readAll + writeAtomic 2)",
                 src_file_name, tmp_file_name);
 
+  // File.writeAtomic on top of existing file but without overwritten the file
+  exn = null;
+  try {
+    let view = new Uint8Array(readResult.buffer, 10, 200);
+    OS.File.writeAtomic(tmp_file_name, view,
+      { tmpPath: tmp_file_name + ".tmp", noOverwrite: true});
+  } catch (x) {
+    exn = x;
+  }
+  ok(exn && exn instanceof OS.File.Error && exn.becauseExists, "writeAtomic fails if file already exists with noOverwrite option");
+  // Check file was not overwritten.
+  compare_files("test_readall_writeall_file (OS.File.readAll + writeAtomic check file was not overwritten)",
+                src_file_name, tmp_file_name);
+
   // Ensure that File.writeAtomic fails if no temporary file name is provided
   // (FIXME: Remove this test as part of bug 793660)
 
@@ -365,7 +380,7 @@ function test_readall_writeall_file()
   } catch (x) {
     exn = x;
   }
-  ok(!!exn && exn instanceof TypeError, "wrietAtomic fails if tmpPath is not provided");
+  ok(!!exn && exn instanceof TypeError, "writeAtomic fails if tmpPath is not provided");
 }
 
 /**
@@ -757,4 +772,17 @@ function test_path()
   is(OS.Path.normalize(adotsdotsdots), OS.Path.join("..", ".."), "normalize a/../../..");
 
   ok(true, "test_path: Complete");
+}
+
+/**
+ * Test the file |exists| method.
+ */
+function test_exists_file()
+{
+  let file_name = OS.Path.join("chrome", "toolkit", "components" ,"osfile",
+                               "tests", "mochi", "test_osfile_front.xul");
+  ok(true, "test_exists_file: starting");
+  ok(OS.File.exists(file_name), "test_exists_file: file exists (OS.File.exists)");
+  ok(!OS.File.exists(file_name + ".tmp"), "test_exists_file: file does not exists (OS.File.exists)");
+  ok(true, "test_exists_file: complete");
 }

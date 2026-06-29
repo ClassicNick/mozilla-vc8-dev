@@ -11,8 +11,10 @@ const Cu = Components.utils;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
+#ifndef MOZ_WIDGET_GONK
 Cu.import("resource://gre/modules/LightweightThemeManager.jsm");
-Cu.import("resource://gre/modules/ctypes.jsm"); 
+#endif
+Cu.import("resource://gre/modules/ctypes.jsm");
 
 // When modifying the payload in incompatible ways, please bump this version number
 const PAYLOAD_VERSION = 1;
@@ -335,7 +337,8 @@ TelemetryPing.prototype = {
 
     // sysinfo fields are not always available, get what we can.
     let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
-    let fields = ["cpucount", "memsize", "arch", "version", "device", "manufacturer", "hardware",
+    let fields = ["cpucount", "memsize", "arch", "version", "kernel_version",
+                  "device", "manufacturer", "hardware",
                   "hasMMX", "hasSSE", "hasSSE2", "hasSSE3",
                   "hasSSSE3", "hasSSE4A", "hasSSE4_1", "hasSSE4_2",
                   "hasEDSP", "hasARMv6", "hasARMv7", "hasNEON"];
@@ -378,9 +381,11 @@ TelemetryPing.prototype = {
       }
     }
 
+#ifndef MOZ_WIDGET_GONK
     let theme = LightweightThemeManager.currentTheme;
     if (theme)
       ret.persona = theme.id;
+#endif
 
     if (this._addons)
       ret.addons = this._addons;

@@ -291,7 +291,7 @@ js::RunScript(JSContext *cx, HandleScript script, StackFrame *fp)
 #endif
 
     SPSEntryMarker marker(cx->runtime);
-	
+
 #ifdef JS_ION
     if (ion::IsEnabled(cx)) {
         ion::MethodStatus status = ion::CanEnter(cx, script, fp, false);
@@ -299,7 +299,7 @@ js::RunScript(JSContext *cx, HandleScript script, StackFrame *fp)
             return false;
         if (status == ion::Method_Compiled) {
             ion::IonExecStatus status = ion::Cannon(cx, fp);
-            
+
             // Note that if we bailed out, new inline frames may have been
             // pushed, so we interpret with the current fp.
             if (status == ion::IonExec_Bailout)
@@ -375,7 +375,8 @@ js::InvokeKernel(JSContext *cx, CallArgs args, MaybeConstruct construct)
         return false;
 
     /* Run function until JSOP_STOP, JSOP_RETURN or error. */
-    JSBool ok = RunScript(cx, fun->script(), ifg.fp());
+    RootedScript script(cx, fun->script());
+    JSBool ok = RunScript(cx, script, ifg.fp());
 
     /* Propagate the return value out. */
     args.rval().set(ifg.fp()->returnValue());
@@ -791,7 +792,6 @@ js::UnwindScope(JSContext *cx, uint32_t stackDepth)
 void
 js::UnwindForUncatchableException(JSContext *cx, const FrameRegs &regs)
 {
-
     /* c.f. the regular (catchable) TryNoteIter loop in Interpret. */
     for (TryNoteIter tni(regs); !tni.done(); ++tni) {
         JSTryNote *tn = *tni;
@@ -804,7 +804,7 @@ js::UnwindForUncatchableException(JSContext *cx, const FrameRegs &regs)
 
 TryNoteIter::TryNoteIter(const FrameRegs &regs)
   : regs(regs),
-    script(regs.fp()->script()),
+    script(regs.fp()->script().unsafeGet()),
     pcOffset(regs.pc - script->main())
 {
     if (script->hasTrynotes()) {
@@ -914,24 +914,6 @@ DoIncDec(JSContext *cx, HandleScript script, jsbytecode *pc, const Value &v, Val
         if (!obj)                                                             \
             goto error;                                                       \
     JS_END_MACRO
-
-/*
- * Threaded interpretation via computed goto appears to be well-supported by
- * GCC 3 and higher.  IBM's C compiler when run with the right options (e.g.,
- * -qlanglvl=extended) also supports threading.  Ditto the SunPro C compiler.
- * Currently it's broken for JS_VERSION < 160, though this isn't worth fixing.
- * Add your compiler support macros here.
- */
-#ifndef JS_THREADED_INTERP
-# if JS_VERSION >= 160 && (                                                   \
-    __GNUC__ >= 3 ||                                                          \
-    (__IBMC__ >= 700 && defined __IBM_COMPUTED_GOTO) ||                       \
-    __SUNPRO_C >= 0x570)
-#  define JS_THREADED_INTERP 1
-# else
-#  define JS_THREADED_INTERP 0
-# endif
-#endif
 
 template<typename T>
 class GenericInterruptEnabler : public InterpreterFrames::InterruptEnablerBase {
@@ -1070,57 +1052,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
     JS_ASSERT(!cx->compartment->activeAnalysis);
 
-#if JS_THREADED_INTERP
-#define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->hasScriptCounts, jumpTable == interruptJumpTable)
-#else
 #define CHECK_PCCOUNT_INTERRUPTS() JS_ASSERT_IF(script->hasScriptCounts, switchMask == -1)
-#endif
-
-    /*
-     * Macros for threaded interpreter loop
-     */
-#if JS_THREADED_INTERP
-    static void *const normalJumpTable[] = {
-# define OPDEF(op,val,name,token,length,nuses,ndefs,prec,format) \
-        JS_EXTENSION &&L_##op,
-# include "jsopcode.tbl"
-# undef OPDEF
-    };
-
-    static void *const interruptJumpTable[] = {
-# define OPDEF(op,val,name,token,length,nuses,ndefs,prec,format)              \
-        JS_EXTENSION &&interrupt,
-# include "jsopcode.tbl"
-# undef OPDEF
-    };
-
-    register void * const *jumpTable = normalJumpTable;
-
-    typedef GenericInterruptEnabler<void * const *> InterruptEnabler;
-    InterruptEnabler interrupts(&jumpTable, interruptJumpTable);
-
-# define DO_OP()            JS_BEGIN_MACRO                                    \
-                                CHECK_PCCOUNT_INTERRUPTS();                   \
-                                JS_EXTENSION_(goto *jumpTable[op]);           \
-                            JS_END_MACRO
-# define DO_NEXT_OP(n)      JS_BEGIN_MACRO                                    \
-                                TypeCheckNextBytecode(cx, script, n, regs);   \
-                                js::gc::MaybeVerifyBarriers(cx);              \
-                                op = (JSOp) *(regs.pc += (n));                \
-                                DO_OP();                                      \
-                            JS_END_MACRO
-
-# define BEGIN_CASE(OP)     L_##OP:
-# define END_CASE(OP)       DO_NEXT_OP(OP##_LENGTH);
-# define END_VARLEN_CASE    DO_NEXT_OP(len);
-# define ADD_EMPTY_CASE(OP) BEGIN_CASE(OP)                                    \
-                                JS_ASSERT(js_CodeSpec[OP].length == 1);       \
-                                op = (JSOp) *++regs.pc;                       \
-                                DO_OP();
-
-# define END_EMPTY_CASES
-
-#else /* !JS_THREADED_INTERP */
 
     register int switchMask = 0;
     int switchOp;
@@ -1157,8 +1089,6 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 # define END_VARLEN_CASE    goto advance_pc;
 # define ADD_EMPTY_CASE(OP) BEGIN_CASE(OP)
 # define END_EMPTY_CASES    goto advance_pc_by_one;
-
-#endif /* !JS_THREADED_INTERP */
 
 #define LOAD_DOUBLE(PCOFF, dbl)                                               \
     (dbl = script->getConst(GET_UINT32_INDEX(regs.pc + (PCOFF))).toDouble())
@@ -1203,11 +1133,13 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
 #define SET_SCRIPT(s)                                                         \
     JS_BEGIN_MACRO                                                            \
+        EnterAssertNoGCScope();                                               \
         script = (s);                                                         \
         if (script->hasAnyBreakpointsOrStepMode() || script->hasScriptCounts) \
             interrupts.enable();                                              \
         JS_ASSERT_IF(interpMode == JSINTERP_SKIP_TRAP,                        \
                      script->hasAnyBreakpointsOrStepMode());                  \
+        LeaveAssertNoGCScope();                                               \
     JS_END_MACRO
 
     /* Repoint cx->regs to a local variable for faster access. */
@@ -1222,7 +1154,7 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
     /* Copy in hot values that change infrequently. */
     JSRuntime *const rt = cx->runtime;
-    Rooted<JSScript*> script(cx);
+    RootedScript script(cx);
     SET_SCRIPT(regs.fp()->script());
 
     /* Reset the loop count on the script we're entering. */
@@ -1319,17 +1251,6 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
     DO_NEXT_OP(len);
 
-#if JS_THREADED_INTERP
-    /*
-     * This is a loop, but it does not look like a loop. The loop-closing
-     * jump is distributed throughout goto *jumpTable[op] inside of DO_OP.
-     * When interrupts are enabled, jumpTable is set to interruptJumpTable
-     * where all jumps point to the interrupt label. The latter, after
-     * calling the interrupt handler, dispatches through normalJumpTable to
-     * continue the normal bytecode processing.
-     */
-
-#else /* !JS_THREADED_INTERP */
     for (;;) {
       advance_pc_by_one:
         JS_ASSERT(js_CodeSpec[op].length == 1);
@@ -1344,14 +1265,9 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
         switchOp = int(op) | switchMask;
       do_switch:
         switch (switchOp) {
-#endif
 
-#if JS_THREADED_INTERP
-  interrupt:
-#else /* !JS_THREADED_INTERP */
   case -1:
     JS_ASSERT(switchMask == -1);
-#endif /* !JS_THREADED_INTERP */
     {
         bool moreInterrupts = false;
 
@@ -1417,14 +1333,9 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
 
         interpMode = JSINTERP_NORMAL;
 
-#if JS_THREADED_INTERP
-        jumpTable = moreInterrupts ? interruptJumpTable : normalJumpTable;
-        JS_EXTENSION_(goto *normalJumpTable[op]);
-#else
         switchMask = moreInterrupts ? -1 : 0;
         switchOp = int(op);
         goto do_switch;
-#endif
     }
 
 /* No-ops for ease of decompilation. */
@@ -2473,9 +2384,8 @@ BEGIN_CASE(JSOP_FUNCALL)
 
     InitialFrameFlags initial = construct ? INITIAL_CONSTRUCT : INITIAL_NONE;
     bool newType = cx->typeInferenceEnabled() && UseNewType(cx, script, regs.pc);
-    JSScript *newScript = fun->script();
-
-    if (!cx->stack.pushInlineFrame(cx, regs, args, *fun, newScript, initial))
+    RawScript funScript = fun->script().unsafeGet();
+    if (!cx->stack.pushInlineFrame(cx, regs, args, *fun, funScript, initial))
         goto error;
 
     SET_SCRIPT(regs.fp()->script());
@@ -3785,53 +3695,7 @@ BEGIN_CASE(JSOP_ARRAYPUSH)
 END_CASE(JSOP_ARRAYPUSH)
 #endif /* JS_HAS_GENERATORS */
 
-#if JS_THREADED_INTERP
-  L_JSOP_BACKPATCH:
-  L_JSOP_BACKPATCH_POP:
-
-# if !JS_HAS_GENERATORS
-  L_JSOP_GENERATOR:
-  L_JSOP_YIELD:
-  L_JSOP_ARRAYPUSH:
-# endif
-
-# if !JS_HAS_DESTRUCTURING
-  L_JSOP_ENUMCONSTELEM:
-# endif
-
-# if !JS_HAS_XML_SUPPORT
-  L_JSOP_CALLXMLNAME:
-  L_JSOP_STARTXMLEXPR:
-  L_JSOP_STARTXML:
-  L_JSOP_DELDESC:
-  L_JSOP_GETFUNNS:
-  L_JSOP_XMLPI:
-  L_JSOP_XMLCOMMENT:
-  L_JSOP_XMLCDATA:
-  L_JSOP_XMLELTEXPR:
-  L_JSOP_XMLTAGEXPR:
-  L_JSOP_TOXMLLIST:
-  L_JSOP_TOXML:
-  L_JSOP_ENDFILTER:
-  L_JSOP_FILTER:
-  L_JSOP_DESCENDANTS:
-  L_JSOP_XMLNAME:
-  L_JSOP_SETXMLNAME:
-  L_JSOP_BINDXMLNAME:
-  L_JSOP_ADDATTRVAL:
-  L_JSOP_ADDATTRNAME:
-  L_JSOP_TOATTRVAL:
-  L_JSOP_TOATTRNAME:
-  L_JSOP_QNAME:
-  L_JSOP_QNAMECONST:
-  L_JSOP_ANYNAME:
-  L_JSOP_DEFXMLNS:
-# endif
-
-#endif /* !JS_THREADED_INTERP */
-#if !JS_THREADED_INTERP
           default:
-#endif
           {
             char numBuf[12];
             JS_snprintf(numBuf, sizeof numBuf, "%d", op);
@@ -3840,10 +3704,8 @@ END_CASE(JSOP_ARRAYPUSH)
             goto error;
           }
 
-#if !JS_THREADED_INTERP
         } /* switch (op) */
     } /* for (;;) */
-#endif /* !JS_THREADED_INTERP */
 
   error:
     JS_ASSERT(&cx->regs() == &regs);

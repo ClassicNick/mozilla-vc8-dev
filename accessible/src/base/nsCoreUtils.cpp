@@ -164,11 +164,8 @@ nsCoreUtils::DispatchMouseEvent(uint32_t aEventType, int32_t aX, int32_t aY,
 }
 
 uint32_t
-nsCoreUtils::GetAccessKeyFor(nsIContent *aContent)
+nsCoreUtils::GetAccessKeyFor(nsIContent* aContent)
 {
-  if (!aContent)
-    return 0;
-
   // Accesskeys are registered by @accesskey attribute only. At first check
   // whether it is presented on the given element to avoid the slow
   // nsEventStateManager::GetRegisteredAccessKey() method.
@@ -482,26 +479,6 @@ nsCoreUtils::IsErrorPage(nsIDocument *aDocument)
   NS_NAMED_LITERAL_CSTRING(certerror, "certerror");
 
   return StringBeginsWith(path, neterror) || StringBeginsWith(path, certerror);
-}
-
-already_AddRefed<nsIDOMNode>
-nsCoreUtils::GetDOMNodeForContainer(nsIDocShellTreeItem *aContainer)
-{
-  nsCOMPtr<nsIDocShell> shell = do_QueryInterface(aContainer);
-
-  nsCOMPtr<nsIContentViewer> cv;
-  shell->GetContentViewer(getter_AddRefs(cv));
-
-  if (!cv)
-    return nullptr;
-
-  nsIDocument* doc = cv->GetDocument();
-  if (!doc)
-    return nullptr;
-
-  nsIDOMNode* node = nullptr;
-  CallQueryInterface(doc, &node);
-  return node;
 }
 
 bool

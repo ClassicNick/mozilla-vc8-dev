@@ -197,6 +197,8 @@ public:
   virtual bool ShouldIgnoreInvalidation();
   virtual void WillPaint(bool aWillSendDidPaint);
   virtual void DidPaint();
+  virtual void WillPaintWindow(bool aWillSendDidPaint);
+  virtual void DidPaintWindow();
   virtual void ScheduleViewManagerFlush();
   virtual void DispatchSynthMouseMove(nsGUIEvent *aEvent, bool aFlushOnHoverChange);
   virtual void ClearMouseCaptureOnView(nsIView* aView);
@@ -487,6 +489,7 @@ protected:
    */
   void AddUserSheet(nsISupports* aSheet);
   void AddAgentSheet(nsISupports* aSheet);
+  void AddAuthorSheet(nsISupports* aSheet);
   void RemoveSheet(nsStyleSet::sheetType aType, nsISupports* aSheet);
 
   // Hide a view if it is a popup
@@ -695,6 +698,7 @@ protected:
   virtual void WindowSizeMoveDone();
   virtual void SysColorChanged() { mPresContext->SysColorChanged(); }
   virtual void ThemeChanged() { mPresContext->ThemeChanged(); }
+  virtual void BackingScaleFactorChanged() { mPresContext->UIResolutionChanged(); }
 
 #ifdef DEBUG
   // The reflow root under which we're currently reflowing.  Null when

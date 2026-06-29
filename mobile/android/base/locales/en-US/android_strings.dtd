@@ -81,7 +81,7 @@
 <!ENTITY pref_plugins_tap_to_play "Tap to play">
 <!ENTITY pref_plugins_disabled "Disabled">
 <!ENTITY pref_text_size "Text size">
-<!ENTITY pref_reflow_on_zoom "Enable Reflow-On-Zoom">
+<!ENTITY pref_reflow_on_zoom2 "Pinch to reflow text">
 <!ENTITY pref_font_size_tiny "Tiny">
 <!ENTITY pref_font_size_small "Small">
 <!ENTITY pref_font_size_medium "Medium">
@@ -112,6 +112,11 @@ size. -->
 <!ENTITY pref_private_data_offlineApps "Offline website data">
 <!ENTITY pref_private_data_siteSettings "Site preferences">
 
+<!ENTITY pref_update_autodownload "Automatic updates">
+<!ENTITY pref_update_autodownload_wifi "Only over Wi-Fi">
+<!ENTITY pref_update_autodownload_disabled "Disabled">
+<!ENTITY pref_update_autodownload_enabled "Enabled">
+
 <!ENTITY quit "Quit">
 
 <!ENTITY addons "Add-ons">
@@ -126,6 +131,7 @@ size. -->
 <!ENTITY find_in_page "Find in Page">
 <!ENTITY desktop_mode "Request Desktop Site">
 <!ENTITY tools "Tools">
+<!ENTITY new_pb_tab "New Private Browsing Tab">
 
 <!-- Localization note (find_text, find_prev, find_next, find_close) : These strings are used
      as alternate text for accessibility. They are not visible in the UI. -->
@@ -183,20 +189,19 @@ size. -->
 <!ENTITY abouthome_last_tabs_title "Your tabs from last time">
 <!ENTITY abouthome_last_tabs_open "Open all tabs from last time">
 <!ENTITY abouthome_top_sites_title "Top sites">
-<!ENTITY abouthome_top_sites_browse "Browse all your top sites">
 <!-- Localization note (abouthome_about_sync3, abouthome_about_apps2): The
      chevron (ex: "»"; unicode= U+00BB) is used as an arrow to show that
      clicking this text in the promotions box will perform some action. Note
      that a non-breaking space (unicode= U+00A0) should be used between this
      character and the remainder of the string to prevent word wrap. -->
 <!ENTITY abouthome_about_sync3 "Set up Firefox Sync to access bookmarks, history and tabs from your other devices&#x00A0;»">
-<!ENTITY abouthome_about_apps2 "Get apps from the Mozilla Marketplace and discover the best the Web has to offer&#x00A0;»">
+<!ENTITY abouthome_about_apps3 "Get apps from the Firefox Marketplace and discover the best the Web has to offer&#x00A0;»">
 <!-- Localization note (abouthome_sync_bold_name, abouthome_apps_bold_name):
      These strings are accentuated as bold text in the "abouthome_about_..."
      strings above. These strings should be a subset of the strings above and
      generally be the name of the product the string describes. -->
 <!ENTITY abouthome_sync_bold_name "Firefox Sync">
-<!ENTITY abouthome_apps_bold_name "Mozilla Marketplace">
+<!ENTITY abouthome_apps_bold_name2 "Firefox Marketplace">
 
 <!ENTITY filepicker_title "Choose File">
 <!ENTITY filepicker_audio_title "Choose or record a sound">
@@ -239,14 +244,14 @@ just addresses the organization to follow, e.g. "This site is run by " -->
 
 <!ENTITY searchable_description "Bookmarks and history">
 
-<!-- Updater notifications -->
-<!ENTITY updater_start_title "Update available for &brandShortName;">
-<!ENTITY updater_start_select "Touch to download">
-
-<!ENTITY updater_downloading_title "Downloading &brandShortName;">
-<!ENTITY updater_downloading_title_failed "Download failed">
-<!ENTITY updater_downloading_select "Touch to apply update once downloaded">
-<!ENTITY updater_downloading_retry "Touch to retry">
-
-<!ENTITY updater_apply_title "Update available for &brandShortName;">
-<!ENTITY updater_apply_select "Touch to update">
+ <!-- Updater notifications -->
+<!ENTITY updater_start_title2 "Update available for &brandShortName;">
+<!ENTITY updater_start_select2 "Touch to download">
+ 
+<!ENTITY updater_downloading_title2 "Downloading &brandShortName;">
+<!ENTITY updater_downloading_title_failed2 "Download failed">
+<!ENTITY updater_downloading_select2 "Touch to apply update once downloaded">
+<!ENTITY updater_downloading_retry2 "Touch to retry">
+ 
+<!ENTITY updater_apply_title2 "Update available for &brandShortName;">
+<!ENTITY updater_apply_select2 "Touch to update">

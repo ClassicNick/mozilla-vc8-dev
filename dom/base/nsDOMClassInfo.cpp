@@ -554,8 +554,6 @@ using mozilla::dom::indexedDB::IDBWrapperCache;
 #include "nsIDOMDataChannel.h"
 #endif
 
-#undef None // something included above defines this preprocessor symbol, maybe Xlib headers
-#include "WebGLContext.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
@@ -1558,9 +1556,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
 
   NS_DEFINE_CLASSINFO_DATA_WITH_NAME(MathMLElement, Element, nsElementSH,
                                      ELEMENT_SCRIPTABLE_FLAGS)
-
-  NS_DEFINE_CLASSINFO_DATA(WebGLActiveInfo, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
   NS_DEFINE_CLASSINFO_DATA(PaintRequest, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
@@ -4204,10 +4199,6 @@ nsDOMClassInfo::Init()
                                         nsDOMTouchEvent::PrefEnabled())
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(WebGLActiveInfo, nsIWebGLActiveInfo)
-    DOM_CLASSINFO_MAP_ENTRY(nsIWebGLActiveInfo)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(PaintRequest, nsIDOMPaintRequest)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMPaintRequest)
    DOM_CLASSINFO_MAP_END
@@ -4552,11 +4543,6 @@ nsDOMClassInfo::Init()
   // This needs to happen after the call to mozilla::dom::Register, because we
   // overwrite some values.
   mozilla::dom::oldproxybindings::Register(nameSpaceManager);
-
-  if (!AzureCanvasEnabled()) {
-    nameSpaceManager->RegisterDefineDOMInterface(NS_LITERAL_STRING("CanvasRenderingContext2D"),
-                                                 nullptr, nullptr);
-  }
 
   sIsInitialized = true;
 
@@ -5357,10 +5343,9 @@ nsWindowSH::GlobalScopePolluterNewResolve(JSContext *cx, JSHandleObject obj,
                                           JSHandleId id, unsigned flags,
                                           JSMutableHandleObject objp)
 {
-  if (flags & (JSRESOLVE_ASSIGNING | JSRESOLVE_QUALIFIED) ||
-      !JSID_IS_STRING(id)) {
-    // Nothing to do here if we're assigning, doing a qualified resolve, or
-    // resolving a non-string property.
+  if ((flags & JSRESOLVE_ASSIGNING) || !JSID_IS_STRING(id)) {
+    // Nothing to do here if we're assigning or resolving a non-string
+    // property.
 
     return JS_TRUE;
   }
@@ -7865,7 +7850,7 @@ nsNodeSH::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj,
     }
 
     // No slim wrappers for a document's scope object.
-    return node->IsInNativeAnonymousSubtree() ?
+    return node->ChromeOnlyAccess() ?
       NS_SUCCESS_CHROME_ACCESS_ONLY : NS_OK;
   }
 
@@ -7877,7 +7862,7 @@ nsNodeSH::PreCreate(nsISupports *nativeObj, JSContext *cx, JSObject *globalObj,
   nsresult rv = WrapNativeParent(cx, globalObj, native_parent, parentObj);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return node->IsInNativeAnonymousSubtree() ?
+  return node->ChromeOnlyAccess() ?
     NS_SUCCESS_CHROME_ACCESS_ONLY : NS_SUCCESS_ALLOW_SLIM_WRAPPERS;
 }
 

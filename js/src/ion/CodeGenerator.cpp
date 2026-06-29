@@ -308,7 +308,8 @@ CodeGenerator::visitLambda(LLambda *lir)
 
     JS_STATIC_ASSERT(offsetof(JSFunction, flags) == offsetof(JSFunction, nargs) + 2);
     masm.store32(Imm32(u.word), Address(output, offsetof(JSFunction, nargs)));
-    masm.storePtr(ImmGCPtr(fun->script()), Address(output, JSFunction::offsetOfNativeOrScript()));
+    masm.storePtr(ImmGCPtr(fun->script().unsafeGet()),
+                  Address(output, JSFunction::offsetOfNativeOrScript()));
     masm.storePtr(scopeChain, Address(output, JSFunction::offsetOfEnvironment()));
     masm.storePtr(ImmGCPtr(fun->displayAtom()), Address(output, JSFunction::offsetOfAtom()));
 
@@ -2900,6 +2901,7 @@ CodeGenerator::visitGetArgument(LGetArgument *lir)
 bool
 CodeGenerator::generate()
 {
+    AssertCanGC();
     JSContext *cx = GetIonContext()->cx;
 
     unsigned slots = graph.localSlotCount() +
@@ -2941,7 +2943,7 @@ CodeGenerator::generate()
     // We encode safepoints after the OSI-point offsets have been determined.
     encodeSafepoints();
 
-    JSScript *script = gen->info().script();
+    RootedScript script(cx, gen->info().script());
     JS_ASSERT(!script->hasIonScript());
 
     uint32 scriptFrameSize = frameClass_ == FrameSizeClass::None()
@@ -3118,8 +3120,10 @@ CodeGenerator::visitLoadFixedSlotT(LLoadFixedSlotT *ins)
     const Register obj = ToRegister(ins->getOperand(0));
     size_t slot = ins->mir()->slot();
     AnyRegister result = ToAnyRegister(ins->getDef(0));
+    MIRType type = ins->mir()->type();
 
-    masm.loadUnboxedValue(Address(obj, JSObject::getFixedSlotOffset(slot)), result);
+    masm.loadUnboxedValue(Address(obj, JSObject::getFixedSlotOffset(slot)), type, result);
+
     return true;
 }
 
@@ -4207,6 +4211,7 @@ CodeGenerator::visitSetDOMProperty(LSetDOMProperty *ins)
 bool
 CodeGenerator::visitFunctionBoundary(LFunctionBoundary *lir)
 {
+    AssertCanGC();
     Register temp = ToRegister(lir->temp()->output());
 
     switch (lir->type()) {

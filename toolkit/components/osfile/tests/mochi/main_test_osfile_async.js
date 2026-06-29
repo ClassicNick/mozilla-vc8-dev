@@ -172,7 +172,7 @@ let test = maketest("Main",
     let tests = [test_constants, test_path, test_open, test_stat,
                  test_read_write, test_read_write_all,
                  test_position, test_copy,
-                 test_iter];
+                 test_iter, test_exists];
     let current = 0;
     let aux = function aux() {
       if (current >= tests.length) {
@@ -520,6 +520,36 @@ let test_read_write_all = maketest(
     );
     promise = ensureSuccess(promise, test);
 
+// Check that writeAtomic fails if noOverwrite is true and the destination file already exists!
+
+    promise = promise.then(
+      function check_with_noOverwrite() {
+        let view = new Uint8Array(contents.buffer, 10, 200);
+        options = {tmpPath: tmpPath, noOverwrite: true};
+        return OS.File.writeAtomic(pathDest, view, options);
+      }
+    );
+
+    promise = promise.then(
+      function onSuccess() {
+        test.fail("With noOverwrite, writeAtomic should have refused to overwrite file");
+      },
+      function onFailure(err) {
+        test.info("With noOverwrite, writeAtomic correctly failed");
+        test.ok(err instanceof OS.File.Error, "writeAtomic correctly failed with a file error");
+        test.ok(err.becauseExists, "writeAtomic file error confirmed that the file already exists");
+        return reference_compare_files(pathSource, pathDest, test);
+      }
+    );
+
+    promise = promise.then(
+      function compare_complete() {
+        test.info("With noOverwrite, writeAtomic correctly did not overwrite destination file");
+        test.ok(!(new FileUtils.File(tmpPath).exists()), "Temporary file was removed");
+      }
+    );
+    promise = ensureSuccess(promise, test);
+
 // Now write a subset
 
     let START = 10;
@@ -570,7 +600,9 @@ let test_read_write_all = maketest(
       },
       function onFailure() {
         test.ok("Without a tmpPath, writeAtomic has failed as expected");
-      });
+      }
+    );
+
     return promise;
   }
 );
@@ -930,5 +962,26 @@ let test_iter = maketest("iter",
       }
     );
 
+    return promise;
+});
+
+/**
+ * Test OS.File.prototype.{exists}
+ */
+let test_exists = maketest("exists",
+  function exists(test) {
+    let promise;
+
+    promise = OS.File.exists(EXISTING_FILE);
+    promise = promise.then(function exists_worked(aExists) {
+      test.ok(aExists, "file exists");
+      return OS.File.exists(EXISTING_FILE + ".tmp");
+    });
+
+    promise = promise.then(function exists_on_absent_file_worked(aExists) {
+      test.ok(!aExists, "file does not exists");
+    });
+
+    // Do not forget to return the promise.
     return promise;
 });

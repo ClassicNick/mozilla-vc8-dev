@@ -1508,13 +1508,6 @@ FullTrustSecMan::GetCxSubjectPrincipal(JSContext *cx)
     return mSystemPrincipal;
 }
 
-NS_IMETHODIMP_(nsIPrincipal *)
-FullTrustSecMan::GetCxSubjectPrincipalAndFrame(JSContext *cx, JSStackFrame **fp)
-{
-    *fp = nullptr;
-    return mSystemPrincipal;
-}
-
 NS_IMETHODIMP
 FullTrustSecMan::GetExtendedOrigin(nsIURI* aURI, uint32_t aAppId,
                                    bool aInMozBrowser,
@@ -1857,7 +1850,7 @@ main(int argc, char **argv, char **envp)
         nsresult rv = rtsvc->GetBackstagePass(getter_AddRefs(backstagePass));
         if (NS_FAILED(rv)) {
             fprintf(gErrFile, "+++ Failed to get backstage pass from rtsvc: %8x\n",
-                    rv);
+                    static_cast<uint32_t>(rv));
             return 1;
         }
 

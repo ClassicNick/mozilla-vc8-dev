@@ -13,6 +13,8 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
+Cu.import("resource://gre/modules/JNI.jsm");
+Cu.import("resource://gre/modules/PrivateBrowsingUtils.jsm");
 
 #ifdef ACCESSIBILITY
 Cu.import("resource://gre/modules/accessibility/AccessFu.jsm");
@@ -162,7 +164,6 @@ var BrowserApp = {
 
     getBridge().browserApp = this;
 
-    Services.obs.addObserver(this, "Tab:Add", false);
     Services.obs.addObserver(this, "Tab:Load", false);
     Services.obs.addObserver(this, "Tab:Selected", false);
     Services.obs.addObserver(this, "Tab:Closed", false);
@@ -244,8 +245,7 @@ var BrowserApp = {
     // Init FormHistory
     Cc["@mozilla.org/satchel/form-history;1"].getService(Ci.nsIFormHistory2);
 
-    let loadParams = {};
-    let url = "about:home";
+    let url = null;
     let restoreMode = 0;
     let pinned = false;
     if ("arguments" in window) {
@@ -268,9 +268,6 @@ var BrowserApp = {
       SearchEngines.init();
       this.initContextMenu();
     }
-
-    if (url == "about:empty")
-      loadParams.flags = Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_HISTORY;
 
     // XXX maybe we don't do this if the launch was kicked off from external
     Services.io.offline = false;
@@ -295,12 +292,8 @@ var BrowserApp = {
         }
       });
 
-      // Open any commandline URLs, except the homepage
-      if (url && url != "about:home") {
-        loadParams.pinned = pinned;
-        this.addTab(url, loadParams);
-      } else {
-        // Let the session make a restored tab active
+      // Make the restored tab active if we aren't loading an external URL
+      if (url == null) {
         restoreToFront = true;
       }
 
@@ -326,15 +319,6 @@ var BrowserApp = {
 
       // Start the restore
       ss.restoreLastSession(restoreToFront, restoreMode == 1);
-    } else {
-      loadParams.showProgress = shouldShowProgress(url);
-      loadParams.pinned = pinned;
-      this.addTab(url, loadParams);
-
-      // show telemetry door hanger if we aren't restoring a session
-#ifdef MOZ_TELEMETRY_REPORTING
-      Telemetry.prompt();
-#endif
     }
 
     if (updated)
@@ -822,10 +806,11 @@ var BrowserApp = {
         webBrowserPrint.cancel();
       }
     }
+    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(aBrowser.contentWindow);
     let download = dm.addDownload(Ci.nsIDownloadManager.DOWNLOAD_TYPE_DOWNLOAD,
                                   aBrowser.currentURI,
                                   Services.io.newFileURI(file), "", mimeInfo,
-                                  Date.now() * 1000, null, cancelable);
+                                  Date.now() * 1000, null, cancelable, isPrivate);
 
     webBrowserPrint.print(printSettings, download);
   },
@@ -1065,8 +1050,6 @@ var BrowserApp = {
 
   observe: function(aSubject, aTopic, aData) {
     let browser = this.selectedBrowser;
-    if (!browser)
-      return;
 
     if (aTopic == "Session:Back") {
       browser.goBack();
@@ -1076,7 +1059,7 @@ var BrowserApp = {
       browser.reload();
     } else if (aTopic == "Session:Stop") {
       browser.stop();
-    } else if (aTopic == "Tab:Add" || aTopic == "Tab:Load") {
+    } else if (aTopic == "Tab:Load") {
       let data = JSON.parse(aData);
 
       // Pass LOAD_FLAGS_DISALLOW_INHERIT_OWNER to prevent any loads from
@@ -1088,7 +1071,10 @@ var BrowserApp = {
       let params = {
         selected: true,
         parentId: ("parentId" in data) ? data.parentId : -1,
-        flags: flags
+        flags: flags,
+        tabID: data.tabID,
+        isPrivate: data.isPrivate,
+        pinned: data.pinned
       };
 
       let url = data.url;
@@ -1105,7 +1091,7 @@ var BrowserApp = {
       if (!shouldShowProgress(url))
         params.showProgress = false;
 
-      if (aTopic == "Tab:Add")
+      if (data.newTab)
         this.addTab(url, params);
       else
         this.loadURI(url, browser, params);
@@ -1181,6 +1167,16 @@ var NativeWindow = {
     Services.obs.removeObserver(this, "Menu:Clicked");
     Services.obs.removeObserver(this, "Doorhanger:Reply");
     this.contextmenus.uninit();
+  },
+
+  loadDex: function(zipFile, implClass) {
+    sendMessageToJava({
+      gecko: {
+        type: "Dex:Load",
+        zipfile: zipFile,
+        impl: implClass || "Main"
+      }
+    });
   },
 
   toast: {
@@ -2238,8 +2234,6 @@ nsBrowserAccess.prototype = {
 };
 
 
-let gTabIDFactory = 0;
-
 // track the last known screen size so that new tabs
 // get created with the right size rather than being 1x1
 let gScreenWidth = 1;
@@ -2283,6 +2277,11 @@ Tab.prototype = {
     // Must be called after appendChild so the docshell has been created.
     this.setActive(false);
 
+    let isPrivate = ("isPrivate" in aParams) && aParams.isPrivate;
+    if (isPrivate) {
+      this.browser.docShell.QueryInterface(Ci.nsILoadContext).usePrivateBrowsing = true;
+    }
+
     this.browser.stop();
 
     let frameLoader = this.browser.QueryInterface(Ci.nsIFrameLoaderOwner).frameLoader;
@@ -2295,7 +2294,16 @@ Tab.prototype = {
     } catch (e) {}
 
     if (!aParams.zombifying) {
-      this.id = ++gTabIDFactory;
+      if ("tabID" in aParams) {
+        this.id = aParams.tabID;
+      } else {
+        let jni = new JNI();
+        let cls = jni.findClass("org/mozilla/gecko/Tabs");
+        let method = jni.getStaticMethodID(cls, "getNextTabId", "()I");
+        this.id = jni.callStaticIntMethod(cls, method);
+        jni.close();
+      }
+
       this.desktopMode = ("desktopMode" in aParams) ? aParams.desktopMode : false;
 
       let message = {
@@ -2308,7 +2316,8 @@ Tab.prototype = {
           selected: ("selected" in aParams) ? aParams.selected : true,
           title: aParams.title || aURL,
           delayLoad: aParams.delayLoad || false,
-          desktopMode: this.desktopMode
+          desktopMode: this.desktopMode,
+          isPrivate: isPrivate
         }
       };
       sendMessageToJava(message);
@@ -3180,18 +3189,6 @@ Tab.prototype = {
     this.shouldShowPluginDoorhanger = true;
     this.clickToPlayPluginsActivated = false;
 
-    // This is where we might check for helper apps.
-    // For now it is special cased to only check for the marketplace urls
-    if (WebappsUI.isMarketplace(aLocationURI)) {
-      // the marketplace app may not actually be installed, so instead we use a custom
-      // callback that will install and launch it for us if necessary
-      HelperApps.showDoorhanger(aLocationURI, function() {
-        WebappsUI.installAndLaunchMarketplace(aLocationURI.spec);
-        if (aRequest)
-          aRequest.cancel(Cr.NS_OK);
-      });
-    }
-
     let message = {
       gecko: {
         type: "Content:LocationChange",
@@ -3535,6 +3532,7 @@ var BrowserEventHandler = {
     document.addEventListener("MozMagnifyGesture", this, true);
 
     Services.prefs.addObserver("browser.zoom.reflowOnZoom", this, false);
+    this.updateReflozPref();
   },
 
   updateReflozPref: function() {
@@ -6555,10 +6553,6 @@ var WebappsUI = {
     let name = manifest.name ? manifest.name : manifest.fullLaunchPath();
     let showPrompt = true;
 
-    // skip showing the prompt if this is for the marketplace app
-    if (aData.app.origin == this.MARKETPLACE.URI.prePath)
-      showPrompt = false;
-
     if (!showPrompt || Services.prompt.confirm(null, Strings.browser.GetStringFromName("webapps.installTitle"), name)) {
       // Add a homescreen shortcut -- we can't use createShortcut, since we need to pass
       // a unique ID for Android webapp allocation
@@ -6642,9 +6636,8 @@ var WebappsUI = {
   get iconSize() {
     let iconSize = 64;
     try {
-      Cu.import("resource://gre/modules/JNI.jsm");
       let jni = new JNI();
-      let cls = jni.findClass("org.mozilla.gecko.GeckoAppShell");
+      let cls = jni.findClass("org/mozilla/gecko/GeckoAppShell");
       let method = jni.getStaticMethodID(cls, "getPreferredIconSize", "()I");
       iconSize = jni.callStaticIntMethod(cls, method);
       jni.close();
@@ -6804,11 +6797,13 @@ var Telemetry = {
   init: function init() {
     Services.obs.addObserver(this, "Preferences:Set", false);
     Services.obs.addObserver(this, "Telemetry:Add", false);
+    Services.obs.addObserver(this, "Telemetry:Prompt", false);
   },
 
   uninit: function uninit() {
     Services.obs.removeObserver(this, "Preferences:Set");
     Services.obs.removeObserver(this, "Telemetry:Add");
+    Services.obs.removeObserver(this, "Telemetry:Prompt");
   },
 
   observe: function observe(aSubject, aTopic, aData) {
@@ -6822,6 +6817,10 @@ var Telemetry = {
       var telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(Ci.nsITelemetry);
       let histogram = telemetry.getHistogramById(json.name);
       histogram.add(json.value);
+    } else if (aTopic == "Telemetry:Prompt") {
+#ifdef MOZ_TELEMETRY_REPORTING
+      this.prompt();
+#endif
     }
   },
 
@@ -7402,79 +7401,8 @@ var MemoryObserver = {
   },
 
   dumpMemoryStats: function(aLabel) {
-    // TODO once bug 788021 has landed, replace this code and just invoke that instead
-    // currently this code is hijacked from areweslimyet.com, original code can be found at:
-    // https://github.com/Nephyrin/MozAreWeSlimYet/blob/master/mozmill_endurance_test/performance.js
     let memMgr = Cc["@mozilla.org/memory-reporter-manager;1"].getService(Ci.nsIMemoryReporterManager);
-
-    let timestamp = new Date();
-    let memory = {};
-
-    // These *should* be identical to the explicit/resident root node
-    // sum, AND the explicit/resident node explicit value (on newer builds),
-    // but we record all three so we can make sure the data is consistent
-    memory['manager_explicit'] = memMgr.explicit;
-    memory['manager_resident'] = memMgr.resident;
-
-    let knownHeap = 0;
-
-    function addReport(path, amount, kind, units) {
-      if (units !== undefined && units != Ci.nsIMemoryReporter.UNITS_BYTES)
-        // Unhandled. (old builds don't specify units, but use only bytes)
-        return;
-
-      if (memory[path])
-        memory[path] += amount;
-      else
-        memory[path] = amount;
-      if (kind !== undefined && kind == Ci.nsIMemoryReporter.KIND_HEAP
-          && path.indexOf('explicit/') == 0)
-        knownHeap += amount;
-    }
-
-    // Normal reporters
-    let reporters = memMgr.enumerateReporters();
-    while (reporters.hasMoreElements()) {
-      let r = reporters.getNext();
-      r instanceof Ci.nsIMemoryReporter;
-      if (r.path.length) {
-        addReport(r.path, r.amount, r.kind, r.units);
-      }
-    }
-
-    // Multireporters
-    if (memMgr.enumerateMultiReporters) {
-      let multireporters = memMgr.enumerateMultiReporters();
-
-      while (multireporters.hasMoreElements()) {
-        let mr = multireporters.getNext();
-        mr instanceof Ci.nsIMemoryMultiReporter;
-        mr.collectReports(function (proc, path, kind, units, amount, description, closure) {
-          addReport(path, amount, kind, units);
-        }, null);
-      }
-    }
-
-    let heapAllocated = memory['heap-allocated'];
-    // Called heap-used in older builds
-    if (!heapAllocated) heapAllocated = memory['heap-used'];
-    // This is how about:memory calculates derived value heap-unclassified, which
-    // is necessary to get a proper explicit value.
-    if (knownHeap && heapAllocated)
-      memory['explicit/heap-unclassified'] = memory['heap-allocated'] - knownHeap;
-
-    // If the build doesn't have a resident/explicit reporter, but does have
-    // the memMgr.explicit/resident field, use that
-    if (!memory['resident'])
-      memory['resident'] = memory['manager_resident']
-    if (!memory['explicit'])
-      memory['explicit'] = memory['manager_explicit']
-
-    let label = "[AboutMemoryDump|" + aLabel + "] ";
-    dump(label + timestamp);
-    for (let type in memory) {
-      dump(label + type + " = " + memory[type]);
-    }
+    memMgr.dumpMemoryReportsToFile(aLabel, false, true);
   },
 };
 

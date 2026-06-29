@@ -290,6 +290,8 @@ IonActivation::~IonActivation()
 IonCode *
 IonCode::New(JSContext *cx, uint8 *code, uint32 bufferSize, JSC::ExecutablePool *pool)
 {
+    AssertCanGC();
+
     IonCode *codeObj = gc::NewGCThing<IonCode>(cx, gc::FINALIZE_IONCODE, sizeof(IonCode));
     if (!codeObj) {
         pool->release();
@@ -906,46 +908,10 @@ class AutoDestroyAllocator
     }
 };
 
-bool
-TestCompiler(IonBuilder *builder, MIRGraph *graph, AutoDestroyAllocator &autoDestroy)
-{
-    JS_ASSERT(!builder->script()->ion);
-    JSContext *cx = GetIonContext()->cx;
-
-    IonSpewNewFunction(graph, builder->script());
-
-    if (!builder->build())
-        return false;
-    builder->clearForBackEnd();
-
-    if (js_IonOptions.parallelCompilation) {
-        builder->script()->ion = ION_COMPILING_SCRIPT;
-
-        if (!StartOffThreadIonCompile(cx, builder))
-            return false;
-
-        // The allocator and associated data will be destroyed after being
-        // processed in the finishedOffThreadCompilations list.
-        autoDestroy.cancel();
-
-        return true;
-    }
-
-    if (!CompileBackEnd(builder))
-        return false;
-
-    CodeGenerator codegen(builder, *builder->lir);
-    if (!codegen.generate())
-        return false;
-
-    IonSpewEndFunction();
-
-    return true;
-}
-
 void
 AttachFinishedCompilations(JSContext *cx)
 {
+    AssertCanGC();
     IonCompartment *ion = cx->compartment->ionCompartment();
     if (!ion)
         return;
@@ -961,7 +927,7 @@ AttachFinishedCompilations(JSContext *cx)
         IonBuilder *builder = compilations.popCopy();
 
         if (builder->lir) {
-            JSScript *script = builder->script();
+            RootedScript script(cx, builder->script());
             IonContext ictx(cx, cx->compartment, &builder->temp());
 
             CodeGenerator codegen(builder, *builder->lir);
@@ -995,10 +961,10 @@ AttachFinishedCompilations(JSContext *cx)
 
 static const size_t BUILDER_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 1 << 12;
 
-template <bool Compiler(IonBuilder *, MIRGraph *, AutoDestroyAllocator &)>
 static bool
 IonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, bool constructing)
 {
+    AssertCanGC();
 #if JS_TRACE_LOGGING
     AutoTraceLog logger(TraceLogging::defaultLogger(),
                         TraceLogging::ION_COMPILE_START,
@@ -1040,10 +1006,43 @@ IonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, 
     AutoTempAllocatorRooter root(cx, temp);
 
     IonBuilder *builder = alloc->new_<IonBuilder>(cx, temp, graph, &oracle, info);
-    if (!Compiler(builder, graph, autoDestroy)) {
-        IonSpew(IonSpew_Abort, "IM Compilation failed.");
+    JS_ASSERT(!builder->script()->ion);
+
+    IonSpewNewFunction(graph, builder->script().unsafeGet());
+
+    if (!builder->build()) {
+        IonSpew(IonSpew_Abort, "Builder failed to build.");
         return false;
     }
+    builder->clearForBackEnd();
+
+    if (js_IonOptions.parallelCompilation) {
+        builder->script()->ion = ION_COMPILING_SCRIPT;
+
+        if (!StartOffThreadIonCompile(cx, builder)) {
+            IonSpew(IonSpew_Abort, "Unable to start off-thread ion compilation.");
+            return false;
+        }
+
+        // The allocator and associated data will be destroyed after being
+        // processed in the finishedOffThreadCompilations list.
+        autoDestroy.cancel();
+
+        return true;
+    }
+
+    if (!CompileBackEnd(builder)) {
+        IonSpew(IonSpew_Abort, "Failed during back-end compilation.");
+        return false;
+    }
+
+    CodeGenerator codegen(builder, *builder->lir);
+    if (!codegen.generate()) {
+        IonSpew(IonSpew_Abort, "Failed during code generation.");
+        return false;
+    }
+
+    IonSpewEndFunction();
 
     return true;
 }
@@ -1051,7 +1050,7 @@ IonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, 
 bool
 TestIonCompile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, bool constructing)
 {
-    if (!IonCompile<TestCompiler>(cx, script, fun, osrPc, constructing)) {
+    if (!IonCompile(cx, script, fun, osrPc, constructing)) {
         if (!cx->isExceptionPending())
             ForbidCompilation(cx, script);
         return false;
@@ -1139,7 +1138,6 @@ CheckScriptSize(JSScript *script)
     return true;
 }
 
-template <bool Compiler(IonBuilder *, MIRGraph *, AutoDestroyAllocator &)>
 static MethodStatus
 Compile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, bool constructing)
 {
@@ -1172,7 +1170,7 @@ Compile(JSContext *cx, JSScript *script, JSFunction *fun, jsbytecode *osrPc, boo
             return Method_Skipped;
     }
 
-    if (!IonCompile<Compiler>(cx, script, fun, osrPc, constructing))
+    if (!IonCompile(cx, script, fun, osrPc, constructing))
         return Method_CantCompile;
 
     // Compilation succeeded, but we invalidated right away.
@@ -1214,7 +1212,7 @@ ion::CanEnterAtBranch(JSContext *cx, HandleScript script, StackFrame *fp, jsbyte
 
     // Attempt compilation. Returns Method_Compiled if already compiled.
     JSFunction *fun = fp->isFunctionFrame() ? fp->fun() : NULL;
-    MethodStatus status = Compile<TestCompiler>(cx, script, fun, pc, false);
+    MethodStatus status = Compile(cx, script, fun, pc, false);
     if (status != Method_Compiled) {
         if (status == Method_CantCompile)
             ForbidCompilation(cx, script);
@@ -1270,7 +1268,7 @@ ion::CanEnter(JSContext *cx, HandleScript script, StackFrame *fp, bool newType)
 
     // Attempt compilation. Returns Method_Compiled if already compiled.
     JSFunction *fun = fp->isFunctionFrame() ? fp->fun() : NULL;
-    MethodStatus status = Compile<TestCompiler>(cx, script, fun, NULL, fp->isConstructing());
+    MethodStatus status = Compile(cx, script, fun, NULL, fp->isConstructing());
     if (status != Method_Compiled) {
         if (status == Method_CantCompile)
             ForbidCompilation(cx, script);
@@ -1300,6 +1298,7 @@ ion::CanEnterUsingFastInvoke(JSContext *cx, HandleScript script)
         return Method_Error;
 
     // This can GC, so afterward, script->ion is not guaranteed to be valid.
+    AssertCanGC();
     if (!cx->compartment->ionCompartment()->enterJIT(cx))
         return Method_Error;
 
@@ -1312,6 +1311,7 @@ ion::CanEnterUsingFastInvoke(JSContext *cx, HandleScript script)
 static IonExecStatus
 EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
 {
+    AssertCanGC();
     JS_CHECK_RECURSION(cx, return IonExec_Error);
     JS_ASSERT(ion::IsEnabled(cx));
     JS_ASSERT(CheckFrame(fp));
@@ -1351,7 +1351,7 @@ EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
         }
         calleeToken = CalleeToToken(&fp->callee());
     } else {
-        calleeToken = CalleeToToken(fp->script());
+        calleeToken = CalleeToToken(fp->script().unsafeGet());
     }
 
     // Caller must construct |this| before invoking the Ion function.
@@ -1391,7 +1391,8 @@ EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
 IonExecStatus
 ion::Cannon(JSContext *cx, StackFrame *fp)
 {
-    JSScript *script = fp->script();
+    AssertCanGC();
+    RootedScript script(cx, fp->script());
     IonScript *ion = script->ion;
     IonCode *code = ion->method();
     void *jitcode = code->raw();
@@ -1422,7 +1423,8 @@ ion::Cannon(JSContext *cx, StackFrame *fp)
 IonExecStatus
 ion::SideCannon(JSContext *cx, StackFrame *fp, jsbytecode *pc)
 {
-    JSScript *script = fp->script();
+    AssertCanGC();
+    RootedScript script(cx, fp->script());
     IonScript *ion = script->ion;
     IonCode *code = ion->method();
     void *osrcode = code->raw() + ion->osrEntryOffset();
@@ -1457,7 +1459,7 @@ ion::FastInvoke(JSContext *cx, HandleFunction fun, CallArgs &args)
 {
     JS_CHECK_RECURSION(cx, return IonExec_Error);
 
-    HandleScript script = fun->script();
+    RootedScript script(cx, fun->script());
     IonScript *ion = script->ionScript();
     IonCode *code = ion->method();
     void *jitcode = code->raw();
@@ -1512,6 +1514,7 @@ ion::FastInvoke(JSContext *cx, HandleFunction fun, CallArgs &args)
 static void
 InvalidateActivation(FreeOp *fop, uint8 *ionTop, bool invalidateAll)
 {
+    AutoAssertNoGC nogc;
     IonSpew(IonSpew_Invalidate, "BEGIN invalidating activation");
 
     size_t frameno = 1;
@@ -1557,7 +1560,7 @@ InvalidateActivation(FreeOp *fop, uint8 *ionTop, bool invalidateAll)
         if (it.checkInvalidation())
             continue;
 
-        JSScript *script = it.script();
+        RawScript script = it.script();
         if (!script->hasIonScript())
             continue;
 

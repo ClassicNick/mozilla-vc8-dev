@@ -83,12 +83,6 @@ pref("browser.download.manager.focusWhenStarting", false);
 pref("browser.download.manager.flashCount", 2);
 pref("browser.download.manager.displayedHistoryDays", 7);
 
-/* download alerts (disabled above) */
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 6000);
-pref("alerts.height", 50);
-
 /* download helper */
 pref("browser.helperApps.deleteTempFileOnExit", false);
 
@@ -177,8 +171,6 @@ pref("content.sink.enable_perf_mode",  2); // 0 - switch, 1 - interactive, 2 - p
 pref("content.sink.pending_event_mode", 0);
 pref("content.sink.perf_deflect_count", 1000000);
 pref("content.sink.perf_parse_time", 50000000);
-
-pref("javascript.options.mem.high_water_mark", 32);
 
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
@@ -476,10 +468,6 @@ pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 
 // Interval at which update manifest is fetched.  In units of seconds.
 pref("app.update.interval", 86400); // 1 day
-// First interval to elapse before checking for update.  In units of
-// milliseconds.  Capped at 10 seconds.
-pref("app.update.timerFirstInterval", 3600000); // 1 hour
-pref("app.update.timerMinimumDelay", 3600); // 1 hour in seconds
 // Don't throttle background updates.
 pref("app.update.download.backgroundInterval", 0);
 
@@ -529,7 +517,7 @@ pref("javascript.options.mem.gc_high_frequency_heap_growth_min", 101);
 pref("javascript.options.mem.gc_high_frequency_high_limit_mb", 40);
 pref("javascript.options.mem.gc_high_frequency_low_limit_mb", 10);
 pref("javascript.options.mem.gc_low_frequency_heap_growth", 105);
-pref("javascript.options.mem.high_water_mark", 16);
+pref("javascript.options.mem.high_water_mark", 6);
 
 // Show/Hide scrollbars when active/inactive
 pref("ui.showHideScrollbars", 1);

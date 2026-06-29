@@ -17,7 +17,8 @@
     <uses-sdk android:minSdkVersion="8"
               android:targetSdkVersion="14"/>
 
-#include ../sync/manifests/SyncAndroidManifest_permissions.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_permissions.xml.in
+#include ../services/manifests/SyncAndroidManifest_permissions.xml.in
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -128,25 +129,6 @@
 
 #include @OBJDIR@/WebAppManifestFragment.xml.in
 
-        <activity android:name=".MarketplaceApp"
-                  android:label="Mozilla Marketplace"
-                  android:configChanges="keyboard|keyboardHidden|mcc|mnc|orientation|screenSize"
-                  android:windowSoftInputMode="stateUnspecified|adjustResize"
-                  android:icon="@drawable/marketplace"
-                  android:launchMode="singleTask"
-                  android:theme="@style/Gecko.NoActionBar"
-                  android:noHistory="true">
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="http" android:host="marketplace.mozilla.org"/>
-                <data android:scheme="https" android:host="marketplace.mozilla.org"/>
-            </intent-filter>
-
-        </activity>
-
         <!-- Masquerade as the Resolver so that we can be opened from the Marketplace. -->
         <activity-alias
             android:name="com.android.internal.app.ResolverActivity"
@@ -188,7 +170,8 @@
           </intent-filter>
         </activity>
 
-#include ../sync/manifests/SyncAndroidManifest_activities.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_activities.xml.in
+#include ../services/manifests/SyncAndroidManifest_activities.xml.in
 
 #if MOZ_CRASHREPORTER
   <activity android:name="CrashReporter"
@@ -260,7 +243,8 @@
         </service>
 
 
-#include ../sync/manifests/SyncAndroidManifest_services.xml.in
+#include ../services/manifests/AnnouncementsAndroidManifest_services.xml.in
+#include ../services/manifests/SyncAndroidManifest_services.xml.in
     </application>
 
     <permission android:name="@ANDROID_PACKAGE_NAME@.permissions.BROWSER_PROVIDER"

@@ -258,6 +258,21 @@
      };
 
      /**
+      * Checks if a file exists
+      *
+      * @param {string} path The path to the file.
+      *
+      * @return {bool} true if the file exists, false otherwise.
+      */
+     File.exists = function Unix_exists(path) {
+       if (UnixFile.access(path, OS.Constants.libc.F_OK) == -1) {
+         return false;
+       } else {
+         return true;
+       }
+     };
+
+     /**
       * Remove an existing file.
       *
       * @param {string} path The name of the file.

@@ -2198,7 +2198,7 @@ SetJumpOffsetAt(BytecodeEmitter *bce, ptrdiff_t off)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127.
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047.
  * LLVM is deciding to inline this function which uses a lot of stack space
  * into EmitTree which is recursive and uses relatively little stack space.
  */
@@ -2668,7 +2668,7 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
     /* Initialize fun->script() so that the debugger has a valid fun->script(). */
     RootedFunction fun(cx, bce->script->function());
     JS_ASSERT(fun->isInterpreted());
-    JS_ASSERT(!fun->script());
+    JS_ASSERT(!fun->script().unsafeGet());
     fun->setScript(bce->script);
     if (!JSFunction::setTypeForScriptedFunction(cx, fun, singleton))
         return false;
@@ -3908,7 +3908,7 @@ EmitCatch(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4271,7 +4271,7 @@ EmitIf(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
  * let-expressions.
  */
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4343,7 +4343,7 @@ EmitLet(JSContext *cx, BytecodeEmitter *bce, ParseNode *pnLet)
 
 #if JS_HAS_XML_SUPPORT
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4424,7 +4424,7 @@ EmitXMLProcessingInstruction(JSContext *cx, BytecodeEmitter *bce, XMLProcessingI
 #endif
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -4835,9 +4835,10 @@ EmitFor(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn, ptrdiff_t top)
 static JS_NEVER_INLINE bool
 EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 {
+    AssertCanGC();
     RootedFunction fun(cx, pn->pn_funbox->function());
     JS_ASSERT(fun->isInterpreted());
-    if (fun->script()) {
+    if (fun->script().unsafeGet()) {
         /*
          * This second pass is needed to emit JSOP_NOP with a source note
          * for the already-emitted function definition prolog opcode. See
@@ -5532,7 +5533,7 @@ EmitLogical(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -5626,7 +5627,7 @@ EmitIncOrDec(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool
@@ -5732,7 +5733,7 @@ EmitConditionalExpression(JSContext *cx, BytecodeEmitter *bce, ConditionalExpres
 }
 
 /*
- * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr12127. See
+ * Using MOZ_NEVER_INLINE in here is a workaround for llvm.org/pr14047. See
  * the comment on EmitSwitch.
  */
 MOZ_NEVER_INLINE static bool

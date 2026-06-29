@@ -195,8 +195,8 @@ pref("media.video-queue.default-size", 10);
 // Whether to run in native HiDPI mode on machines with "Retina"/HiDPI display;
 //   <= 0 : hidpi mode disabled, display will just use pixel-based upscaling
 //   == 1 : hidpi supported if all screens share the same backingScaleFactor
-//   >= 2 : hidpi supported even with mixed backingScaleFactors (currently broken)
-pref("gfx.hidpi.enabled", 1);
+//   >= 2 : hidpi supported even with mixed backingScaleFactors (somewhat broken)
+pref("gfx.hidpi.enabled", 2);
 #endif
 
 // 0 = Off, 1 = Full, 2 = Tagged Images Only. 
@@ -232,18 +232,12 @@ pref("gfx.font_rendering.graphite.enabled", false);
 // (see http://mxr.mozilla.org/mozilla-central/ident?i=ShapingType)
 // Scripts not listed are grouped in the default category.
 // Set the pref to -1 to have all text shaped via the harfbuzz backend.
-#ifdef XP_MACOSX
-// use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04) + thai (0x40)
-pref("gfx.font_rendering.harfbuzz.scripts", 71);
-#else
-#ifdef ANDROID
-// use harfbuzz for everything, as we don't have a platform script-shaping lib
-// to fall back on anyhow, and Indic support is coming along well
-pref("gfx.font_rendering.harfbuzz.scripts", -1);
-#else
+#ifdef XP_WIN
 // use harfbuzz for default (0x01) + arabic (0x02) + hebrew (0x04)
 pref("gfx.font_rendering.harfbuzz.scripts", 7);
-#endif
+#else
+// use harfbuzz for all scripts (except when using AAT fonts on OS X)
+pref("gfx.font_rendering.harfbuzz.scripts", -1);
 #endif
 
 #ifdef XP_WIN
@@ -253,7 +247,6 @@ pref("gfx.font_rendering.directwrite.use_gdi_table_loading", true);
 
 pref("gfx.font_rendering.opentype_svg.enabled", false);
 
-pref("gfx.canvas.azure.enabled", true);
 #ifdef XP_WIN
 // comma separated list of backends to use in order of preference
 // e.g., pref("gfx.canvas.azure.backends", "direct2d,skia,cairo");
@@ -261,6 +254,7 @@ pref("gfx.canvas.azure.backends", "direct2d,cairo");
 pref("gfx.content.azure.backends", "direct2d");
 pref("gfx.content.azure.enabled", true);
 #else
+pref("gfx.content.azure.enabled", false);
 #ifdef XP_MACOSX
 pref("gfx.canvas.azure.backends", "cg");
 // Accelerated cg canvas where available (10.7+)
@@ -1255,6 +1249,9 @@ pref("network.proxy.autoconfig_url", "");
 pref("network.proxy.autoconfig_retry_interval_min", 5);    // 5 seconds
 pref("network.proxy.autoconfig_retry_interval_max", 300);  // 5 minutes
 
+// Use the HSTS preload list by default
+pref("network.stricttransportsecurity.preloadlist", true);
+
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
 
@@ -1266,7 +1263,7 @@ pref("intl.charsetmenu.browser.more1",      "ISO-8859-1, ISO-8859-15, IBM850, x-
 pref("intl.charsetmenu.browser.more2",      "ISO-8859-4, ISO-8859-13, windows-1257, IBM852, ISO-8859-2, x-mac-ce, windows-1250, x-mac-croatian, IBM855, ISO-8859-5, ISO-IR-111, KOI8-R, x-mac-cyrillic, windows-1251, IBM866, KOI8-U, x-mac-ukrainian, ISO-8859-16, x-mac-romanian");
 pref("intl.charsetmenu.browser.more3",      "GB2312, gbk, gb18030, HZ-GB-2312, ISO-2022-CN, Big5, Big5-HKSCS, x-euc-tw, EUC-JP, ISO-2022-JP, Shift_JIS, EUC-KR, x-windows-949, x-johab, ISO-2022-KR");
 pref("intl.charsetmenu.browser.more4",      "armscii-8, TIS-620, ISO-8859-11, windows-874, IBM857, ISO-8859-9, x-mac-turkish, windows-1254, x-viet-tcvn5712, VISCII, x-viet-vps, windows-1258, x-mac-devanagari, x-mac-gujarati, x-mac-gurmukhi");
-pref("intl.charsetmenu.browser.more5",      "ISO-8859-6, windows-1256, IBM864, ISO-8859-8-I, windows-1255, ISO-8859-8, IBM862");
+pref("intl.charsetmenu.browser.more5",      "ISO-8859-6, windows-1256, ISO-8859-8-I, windows-1255, ISO-8859-8, IBM862");
 pref("intl.charsetmenu.browser.unicode",    "UTF-8, UTF-16LE, UTF-16BE");
 pref("intl.charsetmenu.mailedit",           "chrome://global/locale/intl.properties");
 pref("intl.charsetmenu.browser.cache",      "");
@@ -3796,10 +3793,6 @@ pref("dom.mozApps.dev_mode", false);
 
 // Lowest localId for apps.
 pref("dom.mozApps.maxLocalId", 1000);
-
-// Let us know wether we should run the permissions update algorithm.
-// See Bug 787439
-pref("dom.mozApps.runUpdate", true);
 
 // Minimum delay in milliseconds between network activity notifications (0 means
 // no notifications). The delay is the same for both download and upload, though

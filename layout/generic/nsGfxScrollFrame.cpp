@@ -38,9 +38,6 @@
 #include "nsEventDispatcher.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
-#ifdef ACCESSIBILITY
-#include "nsAccessibilityService.h"
-#endif
 #include "nsBidiUtils.h"
 #include "nsFrameManager.h"
 #include "mozilla/Preferences.h"
@@ -856,24 +853,18 @@ nsHTMLScrollFrame::GetFrameName(nsAString& aResult) const
 #endif
 
 #ifdef ACCESSIBILITY
-already_AddRefed<Accessible>
-nsHTMLScrollFrame::CreateAccessible()
+a11y::AccType
+nsHTMLScrollFrame::AccessibleType()
 {
   // Create an accessible regardless of focusable state because the state can be
   // changed during frame life cycle without any notifications to accessibility.
   if (mContent->IsRootOfNativeAnonymousSubtree() ||
       GetScrollbarStyles() == nsIScrollableFrame::
         ScrollbarStyles(NS_STYLE_OVERFLOW_HIDDEN, NS_STYLE_OVERFLOW_HIDDEN) ) {
-    return nullptr;
+    return a11y::eNoAccessible;
   }
 
-  nsAccessibilityService* accService = nsIPresShell::AccService();
-  if (accService) {
-    return accService->CreateHyperTextAccessible(mContent,
-                                                 PresContext()->PresShell());
-  }
-
-  return nullptr;
+  return a11y::eHyperTextAccessible;
 }
 #endif
 
@@ -1783,13 +1774,6 @@ void nsGfxScrollFrameInner::MarkActive()
 
 void nsGfxScrollFrameInner::ScrollVisual(nsPoint aOldScrolledFramePos)
 {
-  nsRootPresContext* rootPresContext = mOuter->PresContext()->GetRootPresContext();
-  if (!rootPresContext) {
-    return;
-  }
-
-  rootPresContext->RequestUpdatePluginGeometry();
-
   AdjustViews(mScrolledFrame);
   // We need to call this after fixing up the view positions
   // to be consistent with the frame hierarchy.
@@ -3054,14 +3038,11 @@ nsXULScrollFrame::LayoutScrollArea(nsBoxLayoutState& aState,
                             mInner.mScrollPort.Size());
   int32_t flags = NS_FRAME_NO_MOVE_VIEW;
 
-  nsRect originalRect = mInner.mScrolledFrame->GetRect();
-  nsRect originalVisOverflow = mInner.mScrolledFrame->GetVisualOverflowRect();
-
   nsSize minSize = mInner.mScrolledFrame->GetMinSize(aState);
-  
+
   if (minSize.height > childRect.height)
     childRect.height = minSize.height;
-  
+
   if (minSize.width > childRect.width)
     childRect.width = minSize.width;
 

@@ -124,6 +124,8 @@ fun_getProperty(JSContext *cx, HandleObject obj_, HandleId id, MutableHandleValu
             return false;
 
 #ifdef JS_ION
+        AutoAssertNoGC nogc;
+
         // If this script hasn't been compiled yet, make sure it will never
         // be compiled. IonMonkey does not guarantee |f.arguments| can be
         // fully recovered, so we try to mitigate observing this behavior by
@@ -138,9 +140,9 @@ fun_getProperty(JSContext *cx, HandleObject obj_, HandleId id, MutableHandleValu
     }
 
 #ifdef JS_METHODJIT
-    StackFrame *fp = iter.fp();
-    if (iter.isScript() && iter.isIon())
-        fp = NULL;
+    StackFrame *fp = NULL;
+    if (iter.isScript() && !iter.isIon())
+        fp = iter.interpFrame();
 
     if (JSID_IS_ATOM(id, cx->names().caller) && fp && fp->prev()) {
         /*
@@ -421,7 +423,8 @@ js::XDRInterpretedFunction(XDRState<mode> *xdr, HandleObject enclosingScope, Han
         if (!JSFunction::setTypeForScriptedFunction(cx, fun))
             return false;
         JS_ASSERT(fun->nargs == fun->script()->bindings.numArgs());
-        js_CallNewScriptHook(cx, fun->script(), fun);
+        RootedScript script(cx, fun->script());
+        js_CallNewScriptHook(cx, script, fun);
         objp.set(fun);
     }
 
@@ -437,6 +440,8 @@ js::XDRInterpretedFunction(XDRState<XDR_DECODE> *, HandleObject, HandleScript, M
 JSObject *
 js::CloneInterpretedFunction(JSContext *cx, HandleObject enclosingScope, HandleFunction srcFun)
 {
+    AssertCanGC();
+
     /* NB: Keep this in sync with XDRInterpretedFunction. */
 
     RootedObject parent(cx, NULL);
@@ -449,7 +454,8 @@ js::CloneInterpretedFunction(JSContext *cx, HandleObject enclosingScope, HandleF
     if (!JSObject::clearType(cx, clone))
         return NULL;
 
-    RawScript clonedScript = CloneScript(cx, enclosingScope, clone, srcFun->script());
+    RootedScript srcScript(cx, srcFun->script());
+    RawScript clonedScript = CloneScript(cx, enclosingScope, clone, srcScript);
     if (!clonedScript)
         return NULL;
 
@@ -461,7 +467,8 @@ js::CloneInterpretedFunction(JSContext *cx, HandleObject enclosingScope, HandleF
     if (!JSFunction::setTypeForScriptedFunction(cx, clone))
         return NULL;
 
-    js_CallNewScriptHook(cx, clone->script(), clone);
+    RootedScript cloneScript(cx, clone->script());
+    js_CallNewScriptHook(cx, cloneScript, clone);
     return clone;
 }
 
@@ -555,7 +562,7 @@ JS_FRIEND_DATA(Class) js::FunctionClass = {
 
 /* Find the body of a function (not including braces). */
 static bool
-FindBody(JSContext *cx, HandleFunction fun, const jschar *chars, size_t length,
+FindBody(JSContext *cx, HandleFunction fun, StableCharPtr chars, size_t length,
          size_t *bodyStart, size_t *bodyEnd)
 {
     // We don't need principals, since those are only used for error reporting.
@@ -591,8 +598,7 @@ FindBody(JSContext *cx, HandleFunction fun, const jschar *chars, size_t length,
     *bodyStart = ts.offsetOfToken(ts.currentToken());
     if (braced)
         *bodyStart += 1;
-    RangedPtr<const jschar> end(chars, length);
-    end = chars + length;
+    StableCharPtr end(chars.get() + length, chars.get(), length);
     if (end[-1] == '}') {
         end--;
     } else {
@@ -600,7 +606,7 @@ FindBody(JSContext *cx, HandleFunction fun, const jschar *chars, size_t length,
         for (; unicode::IsSpaceOrBOM2(end[-1]); end--)
             ;
     }
-    *bodyEnd = end.get() - chars;
+    *bodyEnd = end - chars;
     JS_ASSERT(*bodyStart <= *bodyEnd);
     return true;
 }
@@ -639,14 +645,14 @@ js::FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, bool lamb
     }
     if (haveSource) {
         RootedScript script(cx, fun->script());
-        RootedString srcStr(cx, fun->script()->sourceData(cx));
+        RootedString srcStr(cx, script->sourceData(cx));
         if (!srcStr)
             return NULL;
         Rooted<JSStableString *> src(cx, srcStr->ensureStable(cx));
         if (!src)
             return NULL;
 
-        const jschar *chars = src->chars();
+        StableCharPtr chars = src->chars();
         bool exprBody = fun->flags & JSFUN_EXPR_CLOSURE;
         // The source data for functions created by calling the Function
         // constructor is only the function's body.
@@ -663,9 +669,6 @@ js::FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, bool lamb
         // resulting function will have the same semantics.
         bool addUseStrict = script->strictModeCode && !script->explicitUseStrict;
 
-        // Functions created with the constructor can't have inherited strict
-        // mode.
-        JS_ASSERT(!funCon || !addUseStrict);
         bool buildBody = funCon && !bodyOnly;
         if (buildBody) {
             // This function was created with the Function constructor. We don't
@@ -693,10 +696,17 @@ js::FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, bool lamb
         if ((bodyOnly && !funCon) || addUseStrict) {
             // We need to get at the body either because we're only supposed to
             // return the body or we need to insert "use strict" into the body.
-            JS_ASSERT(!buildBody);
-            size_t bodyStart = 0, bodyEnd = 0;
-            if (!FindBody(cx, fun, chars, src->length(), &bodyStart, &bodyEnd))
-                return NULL;
+            size_t bodyStart = 0, bodyEnd;
+
+            // If the function is defined in the Function constructor, we
+            // already have a body.
+            if (!funCon) {
+                JS_ASSERT(!buildBody);
+                if (!FindBody(cx, fun, chars, src->length(), &bodyStart, &bodyEnd))
+                    return NULL;
+            } else {
+                bodyEnd = src->length();
+            }
 
             if (addUseStrict) {
                 // Output source up to beginning of body.
@@ -716,7 +726,7 @@ js::FunctionToString(JSContext *cx, HandleFunction fun, bool bodyOnly, bool lamb
 
             // Output just the body (for bodyOnly) or the body and possibly
             // closing braces (for addUseStrict).
-            size_t dependentEnd = (bodyOnly) ? bodyEnd : src->length();
+            size_t dependentEnd = bodyOnly ? bodyEnd : src->length();
             if (!out.append(chars + bodyStart, dependentEnd - bodyStart))
                 return NULL;
         } else {
@@ -1095,7 +1105,9 @@ CallOrConstructBoundFunction(JSContext *cx, unsigned argc, Value *vp)
 static JSBool
 fun_isGenerator(JSContext *cx, unsigned argc, Value *vp)
 {
-    JSFunction *fun;
+    AutoAssertNoGC nogc;
+
+    RawFunction fun;
     if (!IsFunctionObject(vp[1], &fun)) {
         JS_SET_RVAL(cx, vp, BooleanValue(false));
         return true;
@@ -1291,7 +1303,7 @@ Function(JSContext *cx, unsigned argc, Value *vp)
             js_ReportOutOfMemory(cx);
             return false;
         }
-        jschar *collected_args = cp;
+        StableCharPtr collected_args(cp, args_length + 1);
 
         /*
          * Concatenate the arguments into the new string, separated by commas.
@@ -1370,8 +1382,6 @@ Function(JSContext *cx, unsigned argc, Value *vp)
 #endif
 
     JS::Anchor<JSString *> strAnchor(NULL);
-    const jschar *chars;
-    size_t length;
 
     RootedString str(cx);
     if (!args.length())
@@ -1384,8 +1394,8 @@ Function(JSContext *cx, unsigned argc, Value *vp)
     if (!stable)
         return false;
     strAnchor.set(str);
-    chars = stable->chars();
-    length = stable->length();
+    StableCharPtr chars = stable->chars();
+    size_t length = stable->length();
 
     /*
      * NB: (new Function) is not lexically closed by its caller, it's just an
@@ -1461,6 +1471,7 @@ JSFunction * JS_FASTCALL
 js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
                        HandleObject proto, gc::AllocKind kind)
 {
+    AssertCanGC();
     JS_ASSERT(parent);
     JS_ASSERT(proto);
     JS_ASSERT(!fun->isBoundFunction());
@@ -1474,7 +1485,7 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
     clone->nargs = fun->nargs;
     clone->flags = fun->flags & ~JSFUN_EXTENDED;
     if (fun->isInterpreted()) {
-        clone->initScript(fun->script());
+        clone->initScript(fun->script().unsafeGet());
         clone->initEnvironment(parent);
     } else {
         clone->initNative(fun->native(), fun->jitInfo());
@@ -1526,8 +1537,9 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
 
             GlobalObject *global = script->compileAndGo ? &script->global() : NULL;
 
-            js_CallNewScriptHook(cx, clone->script(), clone);
-            Debugger::onNewScript(cx, clone->script(), global);
+            script = clone->script();
+            js_CallNewScriptHook(cx, script, clone);
+            Debugger::onNewScript(cx, script, global);
         }
     }
     return clone;
@@ -1571,6 +1583,7 @@ js_DefineFunction(JSContext *cx, HandleObject obj, HandleId id, Native native,
                              obj, atom, kind);
     } else {
         JS_ASSERT(attrs & JSFUN_INTERPRETED);
+        JS_ASSERT(!cx->runtime->isSelfHostedGlobal(cx->global()));
         fun = cx->runtime->getSelfHostedFunction(cx, selfHostedName);
         fun->initAtom(JSID_TO_ATOM(id));
     }

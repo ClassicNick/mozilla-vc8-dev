@@ -7,14 +7,12 @@
 #ifndef nsPluginInstanceOwner_h_
 #define nsPluginInstanceOwner_h_
 
-#include "prtypes.h"
 #include "npapi.h"
 #include "nsCOMPtr.h"
 #include "nsIPluginInstanceOwner.h"
 #include "nsIPluginTagInfo.h"
 #include "nsIPrivacyTransitionObserver.h"
 #include "nsIDOMEventListener.h"
-#include "nsIScrollPositionListener.h"
 #include "nsPluginHost.h"
 #include "nsPluginNativeWindow.h"
 #include "nsWeakReference.h"
@@ -49,7 +47,6 @@ class gfxXlibSurface;
 class nsPluginInstanceOwner : public nsIPluginInstanceOwner,
                               public nsIPluginTagInfo,
                               public nsIDOMEventListener,
-                              public nsIScrollPositionListener,
                               public nsIPrivacyTransitionObserver,
                               public nsSupportsWeakReference
 {
@@ -104,17 +101,7 @@ public:
 #elif defined(XP_OS2)
   void Paint(const nsRect& aDirtyRect, HPS aHPS);
 #endif
-  
-#ifdef MAC_CARBON_PLUGINS
-  void CancelTimer();
-  void StartTimer(bool isVisible);
-#endif
-  void SendIdleEvent();
-  
-  // nsIScrollPositionListener interface
-  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY);
-  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY);
-  
+
   //locals
   
   nsresult Init(nsIContent* aContent);
@@ -129,6 +116,7 @@ public:
   
   NPDrawingModel GetDrawingModel();
   bool IsRemoteDrawingCoreAnimation();
+  nsresult ContentsScaleFactorChanged(double aContentsScaleFactor);
   NPEventModel GetEventModel();
   static void CARefresh(nsITimer *aTimer, void *aClosure);
   void AddToCARefreshTimer();
@@ -276,11 +264,6 @@ private:
   bool mFullScreen;
   void* mJavaView;
 #endif 
-
-#if defined(XP_MACOSX) && !defined(NP_NO_CARBON)
-  void AddScrollPositionListener();
-  void RemoveScrollPositionListener();
-#endif
  
   nsPluginNativeWindow       *mPluginWindow;
   nsRefPtr<nsNPAPIPluginInstance> mInstance;
@@ -318,9 +301,6 @@ private:
 #endif
   bool                        mPluginWindowVisible;
   bool                        mPluginDocumentActiveState;
-#if defined(XP_MACOSX) && !defined(NP_NO_CARBON)
-  bool                        mRegisteredScrollPositionListener;
-#endif
 
   uint16_t          mNumCachedAttrs;
   uint16_t          mNumCachedParams;

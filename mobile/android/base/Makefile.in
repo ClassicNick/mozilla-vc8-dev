@@ -14,7 +14,7 @@ DIRS = locales
 
 DIST_FILES = package-name.txt
 
-include $(topsrcdir)/mobile/android/base/android-sync-files.mk
+include $(topsrcdir)/mobile/android/base/android-services-files.mk
 
 MOZGLUE_JAVA_FILES := \
   mozglue/DirectBufferAllocator.java \
@@ -40,6 +40,7 @@ FENNEC_JAVA_FILES = \
   ActivityHandlerHelper.java \
   AndroidImport.java \
   AndroidImportPreference.java \
+  AnimatorProxy.java \
   AlertNotification.java \
   AnimatedHeightLayout.java \
   AwesomeBar.java \
@@ -101,6 +102,7 @@ FENNEC_JAVA_FILES = \
   OnInterceptTouchListener.java \
   PrefsHelper.java \
   PrivateDataPreference.java \
+  PrivateTab.java \
   PropertyAnimator.java \
   ProfileMigrator.java \
   PromptService.java \
@@ -152,6 +154,7 @@ FENNEC_JAVA_FILES = \
   gfx/NinePatchTileLayer.java \
   gfx/PanningPerfAPI.java \
   gfx/PointUtils.java \
+  gfx/ProgressiveUpdateData.java \
   gfx/RectUtils.java \
   gfx/ScreenshotLayer.java \
   gfx/ScrollbarLayer.java \
@@ -283,7 +286,7 @@ GARBAGE += \
   Manifest.java \
   $(NULL)
 
-GARBAGE_DIRS += classes db jars res sync
+GARBAGE_DIRS += classes db jars res sync services
 
 MOZ_ANDROID_SHARED_ID = "$(ANDROID_PACKAGE_NAME).sharedID"
 MOZ_ANDROID_SHARED_ACCOUNT_TYPE = "$(ANDROID_PACKAGE_NAME)_sync"
@@ -421,6 +424,7 @@ RES_VALUES_V11 = \
 RES_VALUES_LARGE_V11 = \
   $(SYNC_RES_VALUES_LARGE_V11) \
   res/values-large-v11/dimens.xml \
+  res/values-large-v11/styles.xml \
   $(NULL)
 
 RES_VALUES_XLARGE_V11 = \
@@ -459,6 +463,7 @@ RES_DRAWABLE_BASE = \
   res/drawable/abouthome_promo_logo_apps.png \
   res/drawable/abouthome_promo_logo_sync.png \
   res/drawable/abouthome_thumbnail.png \
+  res/drawable/abouthome_thumbnail_bg.png \
   res/drawable/address_bar_bg_shadow.png \
   res/drawable/alert_addon.png \
   res/drawable/alert_app.png \
@@ -539,6 +544,7 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/abouthome_promo_logo_apps.png \
   res/drawable-hdpi/abouthome_promo_logo_sync.png \
   res/drawable-hdpi/abouthome_thumbnail.png \
+  res/drawable-hdpi/abouthome_thumbnail_bg.png \
   res/drawable-hdpi/address_bar_bg_shadow.png \
   res/drawable-hdpi/alert_addon.png \
   res/drawable-hdpi/alert_app.png \
@@ -601,6 +607,7 @@ RES_DRAWABLE_XHDPI = \
   res/drawable-xhdpi/abouthome_promo_logo_apps.png \
   res/drawable-xhdpi/abouthome_promo_logo_sync.png \
   res/drawable-xhdpi/abouthome_thumbnail.png \
+  res/drawable-xhdpi/abouthome_thumbnail_bg.png \
   res/drawable-xhdpi/address_bar_bg_shadow.png \
   res/drawable-xhdpi/address_bar_texture_port.png \
   res/drawable-xhdpi/address_bar_url_default.9.png \
@@ -923,6 +930,7 @@ MOZ_ANDROID_DRAWABLES += \
   mobile/android/base/resources/drawable/action_bar_button.xml                  \
   mobile/android/base/resources/drawable/address_bar_bg.xml                     \
   mobile/android/base/resources/drawable/address_bar_bg_shadow_repeat.xml       \
+  mobile/android/base/resources/drawable/address_bar_url_level.xml              \
   mobile/android/base/resources/drawable/autocomplete_list_bg.9.png             \
   mobile/android/base/resources/drawable/awesomebar_tab_indicator.xml           \
   mobile/android/base/resources/drawable/awesomebar_tab_selected.xml            \
@@ -1059,7 +1067,7 @@ $(PP_RES_XML): $(patsubst res/%,$(srcdir)/resources/%.in,$(PP_RES_XML))
              $(AUTOMATION_PPARGS) $(DEFINES) $(ACDEFINES) $(subst res,$(srcdir)/resources,$@).in > $@
 
 # AndroidManifest.xml includes these files, so they need to be marked as dependencies.
-SYNC_MANIFEST_FRAGMENTS = $(wildcard $(topsrcdir)/mobile/android/sync/manifests/*.in)
+SERVICES_MANIFEST_FRAGMENTS = $(wildcard $(topsrcdir)/mobile/android/services/manifests/*.in)
 
 android-tgts = \
   AndroidManifest.xml \
@@ -1071,7 +1079,7 @@ android-tgts = \
 android-preqs = \
   Makefile.in \
   $(call mkdir_deps,db,sync/repositories/android) \
-  $(SYNC_MANIFEST_FRAGMENTS) \
+  $(SERVICES_MANIFEST_FRAGMENTS) \
   WebAppManifestFragment.xml.in \
   WebAppsFragments.java \
   $(NULL)

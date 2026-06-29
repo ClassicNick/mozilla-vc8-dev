@@ -413,7 +413,7 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
     uint32_t scriptBits = 0;
 
     JSContext *cx = xdr->cx();
-    Rooted<JSScript*> script(cx);
+    RootedScript script(cx);
     nsrcnotes = ntrynotes = natoms = nobjects = nregexps = nconsts = 0;
     jssrcnote *notes = NULL;
 
@@ -1002,7 +1002,7 @@ SourceCompressorThread::waitOnCompression(SourceCompressionToken *userTok)
 {
     JS_ASSERT(userTok == tok);
     PR_Lock(lock);
-    if (state == COMPRESSING)
+    while (state == COMPRESSING)
         PR_WaitCondVar(done, PR_INTERVAL_NO_TIMEOUT);
     JS_ASSERT(state == IDLE);
     SourceCompressionToken *saveTok = tok;
@@ -1128,7 +1128,7 @@ ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
             }
             cx->runtime->sourceDataCache.put(this, cached);
         }
-        chars = cached->chars();
+        chars = cached->chars().get();
         JS_ASSERT(chars);
     } else {
         chars = data.source;
@@ -1140,7 +1140,7 @@ ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
 }
 
 bool
-ScriptSource::setSourceCopy(JSContext *cx, const jschar *src, uint32_t length,
+ScriptSource::setSourceCopy(JSContext *cx, StableCharPtr src, uint32_t length,
                             bool argumentsNotIncluded, SourceCompressionToken *tok)
 {
     JS_ASSERT(!hasSourceData());
@@ -1157,12 +1157,12 @@ ScriptSource::setSourceCopy(JSContext *cx, const jschar *src, uint32_t length,
         ready_ = false;
 #endif
         tok->ss = this;
-        tok->chars = src;
+        tok->chars = src.get();
         cx->runtime->sourceCompressorThread.compress(tok);
     } else
 #endif
     {
-        PodCopy(data.source, src, length_);
+        PodCopy(data.source, src.get(), length_);
     }
 
     return true;
@@ -1773,6 +1773,8 @@ JSScript::isShortRunning()
 bool
 JSScript::enclosingScriptsCompiledSuccessfully() const
 {
+    AutoAssertNoGC nogc;
+
     /*
      * When a nested script is succesfully compiled, it is eagerly given the
      * static JSFunction of its enclosing script. The enclosing function's
@@ -2051,6 +2053,7 @@ namespace js {
 unsigned
 CurrentLine(JSContext *cx)
 {
+    AutoAssertNoGC nogc;
     return PCToLineNumber(cx->fp()->script(), cx->regs().pc);
 }
 
@@ -2058,6 +2061,7 @@ void
 CurrentScriptFileLineOriginSlow(JSContext *cx, const char **file, unsigned *linenop,
                                 JSPrincipals **origin)
 {
+    AutoAssertNoGC nogc;
     NonBuiltinScriptFrameIter iter(cx);
 
     if (iter.done()) {
@@ -2067,7 +2071,7 @@ CurrentScriptFileLineOriginSlow(JSContext *cx, const char **file, unsigned *line
         return;
     }
 
-    RootedScript script(cx, iter.script());
+    RawScript script = iter.script();
     *file = script->filename;
     *linenop = PCToLineNumber(iter.script(), iter.pc());
     *origin = script->originPrincipals;
@@ -2086,6 +2090,8 @@ Rebase(RawScript dst, RawScript src, T *srcp)
 JSScript *
 js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, HandleScript src)
 {
+    AssertCanGC();
+
     /* NB: Keep this in sync with XDRScript. */
 
     uint32_t nconsts   = src->hasConsts()   ? src->consts()->length   : 0;
@@ -2128,7 +2134,7 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
                     enclosingScope = fun;
 
                 clone = CloneStaticBlockObject(cx, enclosingScope, innerBlock);
-            } else {
+            } else if (obj->isFunction()) {
                 RootedFunction innerFun(cx, obj->toFunction());
 
                 StaticScopeIter ssi(innerFun->script()->enclosingStaticScope());
@@ -2139,6 +2145,14 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
                     enclosingScope = fun;
 
                 clone = CloneInterpretedFunction(cx, enclosingScope, innerFun);
+            } else {
+                /*
+                 * Clone object literals emitted for the JSOP_NEWOBJECT opcode. We only emit that
+                 * instead of the less-optimized JSOP_NEWINIT for self-hosted code or code compiled
+                 * with JSOPTION_COMPILE_N_GO set. As we don't clone the latter type of code, this
+                 * case should only ever be hit when cloning objects from self-hosted code.
+                 */
+                clone = CloneObjectLiteral(cx, cx->global(), obj);
             }
             if (!clone || !objects.append(clone))
                 return NULL;
@@ -2541,6 +2555,7 @@ JSScript::setNeedsArgsObj(bool needsArgsObj)
 /* static */ bool
 JSScript::argumentsOptimizationFailed(JSContext *cx, HandleScript script)
 {
+    AssertCanGC();
     JS_ASSERT(script->analyzedArgsUsage());
     JS_ASSERT(script->argumentsHasVarBinding());
     JS_ASSERT(!script->isGenerator);
@@ -2572,8 +2587,19 @@ JSScript::argumentsOptimizationFailed(JSContext *cx, HandleScript script)
      *  - type inference data for the script assuming script->needsArgsObj; and
      */
     for (AllFramesIter i(cx->stack.space()); !i.done(); ++i) {
-        StackFrame *fp = i.fp();
-        if (fp->isFunctionFrame() && !fp->runningInIon() && fp->script() == script) {
+        /*
+         * We cannot reliably create an arguments object for Ion activations of
+         * this script.  To maintain the invariant that "script->needsArgsObj
+         * implies fp->hasArgsObj", the Ion bail mechanism will create an
+         * arguments object right after restoring the StackFrame and before
+         * entering the interpreter (in ion::ThunkToInterpreter).  This delay is
+         * safe since the engine avoids any observation of a StackFrame when it
+         * beginsIonActivation (see StackIter::interpFrame comment).
+         */
+        if (i.isIon())
+            continue;
+        StackFrame *fp = i.interpFrame();
+        if (fp->isFunctionFrame() && fp->script() == script) {
             ArgumentsObject *argsobj = ArgumentsObject::createExpected(cx, fp);
             if (!argsobj) {
                 /*
