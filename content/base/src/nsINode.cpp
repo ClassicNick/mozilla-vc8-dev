@@ -723,7 +723,7 @@ nsINode::CompareDocumentPosition(nsINode& aOtherNode) const
     // to the chain and walk up to the element
     if (elem) {
       node1 = elem;
-      parents1.AppendElement(attr1);
+      parents1.AppendElement((const nsINode*) attr1);
     }
   }
   if (node2->IsNodeOfType(nsINode::eATTRIBUTE)) {
@@ -753,7 +753,7 @@ nsINode::CompareDocumentPosition(nsINode& aOtherNode) const
 
     if (elem) {
       node2 = elem;
-      parents2.AppendElement(attr2);
+      parents2.AppendElement((const nsINode*) attr2);
     }
   }
 

@@ -779,7 +779,7 @@ gfxDWriteFont::GetScaledFont(mozilla::gfx::DrawTarget *aTarget)
   if (wantCairo) {
     mAzureScaledFont = Factory::CreateScaledFontWithCairo(nativeFont,
                                                         GetAdjustedSize(),
-                                                        GetCairoScaledFont());
+                                                        CairoScaledFont());
   } else {
     mAzureScaledFont = Factory::CreateScaledFontForNativeFont(nativeFont,
                                                             GetAdjustedSize());

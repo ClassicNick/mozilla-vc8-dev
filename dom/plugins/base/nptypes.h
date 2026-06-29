@@ -22,6 +22,22 @@
   typedef unsigned int uint32_t;
   typedef long long int64_t;
   typedef unsigned long long uint64_t;
+  // Define _W64 macros to mark types changing their size, like intptr_t.
+#ifndef _W64
+#  if !defined(__midl) && (defined(_X86_) || defined(_M_IX86)) && _MSC_VER >= 1300
+#     define _W64 __w64
+#  else
+#     define _W64
+#  endif
+#endif
+  // 7.18.1.4 Integer types capable of holding object pointers
+#ifdef _WIN64 // [
+   typedef signed __int64    intptr_t;
+   typedef unsigned __int64  uintptr_t;
+#else // _WIN64 ][
+   typedef _W64 signed int   intptr_t;
+   typedef _W64 unsigned int uintptr_t;
+#endif // _WIN64 ]
 #elif defined(_AIX) || defined(__sun) || defined(__osf__) || defined(IRIX) || defined(HPUX)
   /*
    * AIX and SunOS ship a inttypes.h header that defines [u]int32_t,

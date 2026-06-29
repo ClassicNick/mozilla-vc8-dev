@@ -473,7 +473,6 @@ class WebGLContext :
     public nsIDOMWebGLRenderingContext,
     public nsICanvasRenderingContextInternal,
     public nsSupportsWeakReference,
-    public nsITimerCallback,
     public WebGLRectangleObject,
     public nsWrapperCache
 {
@@ -509,8 +508,6 @@ public:
                                  bool *triedToWrap);
 
     NS_DECL_NSIDOMWEBGLRENDERINGCONTEXT
-
-    NS_DECL_NSITIMERCALLBACK
 
     // nsICanvasRenderingContextInternal
     NS_IMETHOD SetDimensions(int32_t width, int32_t height);
@@ -607,6 +604,12 @@ public:
         return mMinCapability;
     }
 
+    void RobustnessTimerCallback(nsITimer* timer);
+
+    static void RobustnessTimerCallbackStatic(nsITimer* timer, void *thisPointer) {
+        static_cast<WebGLContext*>(thisPointer)->RobustnessTimerCallback(timer);
+    }
+
     void SetupContextLossTimer() {
         // If the timer was already running, don't restart it here. Instead,
         // wait until the previous call is done, then fire it one more time.
@@ -616,10 +619,11 @@ public:
             mDrawSinceContextLossTimerSet = true;
             return;
         }
-        
-        mContextRestorer->InitWithCallback(static_cast<nsITimerCallback*>(this),
-                                           PR_MillisecondsToInterval(1000),
-                                           nsITimer::TYPE_ONE_SHOT);
+
+        mContextRestorer->InitWithFuncCallback(RobustnessTimerCallbackStatic,
+                                               static_cast<void*>(this),
+                                               1000,
+                                               nsITimer::TYPE_ONE_SHOT);
         mContextLossTimerRunning = true;
         mDrawSinceContextLossTimerSet = false;
     }
@@ -1522,6 +1526,11 @@ struct WebGLVertexAttribData {
     GLuint actualStride() const {
         if (stride) return stride;
         return size * componentSize();
+    }
+
+    // for cycle collection
+    WebGLBuffer* get() {
+        return buf.get();
     }
 };
 
@@ -2644,6 +2653,8 @@ class WebGLFramebufferAttachment
     WebGLint mTextureLevel;
     WebGLenum mTextureCubeMapFace;
 
+    friend class WebGLFramebuffer;
+
 public:
     WebGLFramebufferAttachment(WebGLenum aAttachmentPoint)
         : mAttachmentPoint(aAttachmentPoint)
@@ -3106,7 +3117,9 @@ public:
 
     virtual JSObject* WrapObject(JSContext *cx, JSObject *scope);
 
-    NS_DECL_ISUPPORTS
+    NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+    NS_DECL_CYCLE_COLLECTION_CLASS(WebGLUniformLocation)
+
 protected:
     // nsRefPtr, not WebGLRefPtr, so that we don't prevent the program from being explicitly deleted.
     // we just want to avoid having a dangling pointer.

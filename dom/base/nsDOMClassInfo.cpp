@@ -179,7 +179,6 @@
 
 #ifdef MOZ_B2G_RIL
 #include "nsIWifi.h"
-#include "nsIWifiEventInits.h"
 #endif
 
 // includes needed for the prototype chain interfaces
@@ -562,6 +561,12 @@ static NS_DEFINE_CID(kDOMSOF_CID, NS_DOM_SCRIPT_OBJECT_FACTORY_CID);
 
 static const char kDOMStringBundleURL[] =
   "chrome://global/locale/dom/dom.properties";
+
+#ifdef MOZ_DISABLE_DOMCRYPTO
+  static const bool domCryptoEnabled = false;
+#else
+  static const bool domCryptoEnabled = true;
+#endif
 
 // NOTE: DEFAULT_SCRIPTABLE_FLAGS and DOM_DEFAULT_SCRIPTABLE_FLAGS
 //       are defined in nsIDOMClassInfo.h.
@@ -1519,6 +1524,8 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MediaStream, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
+  NS_DEFINE_CLASSINFO_DATA(LocalMediaStream, nsDOMGenericSH,
+                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
 #endif
 
   NS_DEFINE_CLASSINFO_DATA(XMLHttpRequestUpload, nsEventTargetSH,
@@ -1619,10 +1626,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
 #ifdef MOZ_B2G_RIL
-  NS_DEFINE_CLASSINFO_DATA(MozWifiStatusChangeEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozWifiConnectionInfoEvent, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(Telephony, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(TelephonyCall, nsEventTargetSH,
@@ -1733,10 +1736,6 @@ NS_DEFINE_EVENT_CTOR(Event)
 NS_DEFINE_EVENT_CTOR(UIEvent)
 NS_DEFINE_EVENT_CTOR(MouseEvent)
 NS_DEFINE_EVENT_CTOR(WheelEvent)
-#ifdef MOZ_B2G_RIL
-NS_DEFINE_EVENT_CTOR(MozWifiStatusChangeEvent)
-NS_DEFINE_EVENT_CTOR(MozWifiConnectionInfoEvent)
-#endif
 
 #define MOZ_GENERATED_EVENT_LIST
 #define MOZ_GENERATED_EVENT(_event_interface) \
@@ -2377,7 +2376,8 @@ nsDOMClassInfo::RegisterExternalClasses()
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIDOMWindowPerformance,                 \
                                       nsGlobalWindow::HasPerformanceSupport()) \
   DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsITouchEventReceiver,                   \
-                                      nsDOMTouchEvent::PrefEnabled())
+                                      nsDOMTouchEvent::PrefEnabled())          \
+  DOM_CLASSINFO_MAP_CONDITIONAL_ENTRY(nsIWindowCrypto, domCryptoEnabled)
 
 nsresult
 nsDOMClassInfo::Init()
@@ -4136,6 +4136,10 @@ nsDOMClassInfo::Init()
 
   DOM_CLASSINFO_MAP_BEGIN(MediaStream, nsIDOMMediaStream)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMMediaStream)
+  DOM_CLASSINFO_MAP_END
+
+  DOM_CLASSINFO_MAP_BEGIN(LocalMediaStream, nsIDOMLocalMediaStream)
+    DOM_CLASSINFO_MAP_ENTRY(nsIDOMLocalMediaStream)
   DOM_CLASSINFO_MAP_END
 #endif
 

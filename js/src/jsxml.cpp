@@ -3948,7 +3948,7 @@ PutProperty(JSContext *cx, HandleObject obj_, HandleId id_, JSBool strict, Mutab
                      * and targetprop are non-null.
                      */
                     Rooted<JSObject*> robj(cx, rxml->object);
-                    ok = GetProperty(cx, robj, id, &attrval);
+                    ok = GetProperty(cx, robj, (HandleId) id, &attrval);
                     if (!ok)
                         goto out;
                     if (JSVAL_IS_PRIMITIVE(attrval))    /* no such attribute */
@@ -4056,7 +4056,7 @@ PutProperty(JSContext *cx, HandleObject obj_, HandleId id_, JSBool strict, Mutab
                     goto out;
 
                 /* 2(e)(ii). */
-                ok = GetProperty(cx, parentobj, id, vp);
+                ok = GetProperty(cx, parentobj, (HandleId) id, vp);
                 if (!ok)
                     goto out;
                 attr = (JSXML *) JSVAL_TO_OBJECT(vp)->getPrivate();
@@ -4515,7 +4515,7 @@ ResolveValue(JSContext *cx, JSXML *list, JSXML **result)
 
     RootedId id(cx, OBJECT_TO_JSID(targetprop));
     Rooted<JSObject*> baseObj(cx, base->object);
-    if (!GetProperty(cx, baseObj, id, &tv))
+    if (!GetProperty(cx, baseObj, (HandleId) id, &tv))
         return JS_FALSE;
     target = (JSXML *) JSVAL_TO_OBJECT(tv)->getPrivate();
 
@@ -4527,7 +4527,7 @@ ResolveValue(JSContext *cx, JSXML *list, JSXML **result)
         tv = STRING_TO_JSVAL(cx->runtime->emptyString);
         if (!PutProperty(cx, baseObj, id, false, &tv))
             return JS_FALSE;
-        if (!GetProperty(cx, baseObj, id, &tv))
+        if (!GetProperty(cx, baseObj, (HandleId) id, &tv))
             return JS_FALSE;
         target = (JSXML *) JSVAL_TO_OBJECT(tv)->getPrivate();
     }
@@ -5461,7 +5461,7 @@ xml_appendChild(JSContext *cx, unsigned argc, jsval *vp)
         return JS_FALSE;
 
     RootedValue v(cx);
-    if (!GetProperty(cx, obj, name, &v))
+    if (!GetProperty(cx, obj, (HandleId) name, &v))
         return JS_FALSE;
 
     JS_ASSERT(!JSVAL_IS_PRIMITIVE(v));
@@ -5502,7 +5502,7 @@ xml_attribute(JSContext *cx, unsigned argc, jsval *vp)
     RootedObject obj(cx, ToObject(cx, HandleValue::fromMarkedLocation(&vp[1])));
     if (!obj)
         return JS_FALSE;
-    return GetProperty(cx, obj, id, MutableHandleValue::fromMarkedLocation(vp));
+    return GetProperty(cx, obj, (HandleId) id, MutableHandleValue::fromMarkedLocation(vp));
 }
 
 /* XML and XMLList */
@@ -5518,7 +5518,7 @@ xml_attributes(JSContext *cx, unsigned argc, jsval *vp)
     RootedObject obj(cx, ToObject(cx, HandleValue::fromMarkedLocation(&vp[1])));
     if (!obj)
         return JS_FALSE;
-    return GetProperty(cx, obj, id, MutableHandleValue::fromMarkedLocation(vp));
+    return GetProperty(cx, obj, (HandleId) id, MutableHandleValue::fromMarkedLocation(vp));
 }
 
 static JSXML *
@@ -5598,7 +5598,7 @@ xml_child_helper(JSContext *cx, JSObject *obj_, JSXML *xml, jsval name,
     if (!ValueToIdForXML(cx, name, id.address()))
         return JS_FALSE;
 
-    return GetProperty(cx, obj, id, rval);
+    return GetProperty(cx, obj, (HandleId) id, rval);
 }
 
 /* XML and XMLList */
@@ -5679,7 +5679,7 @@ xml_children(JSContext *cx, unsigned argc, jsval *vp)
     if (!obj)
         return false;
     RootedId name(cx, NameToId(cx->names().star));
-    return GetProperty(cx, obj, name, MutableHandleValue::fromMarkedLocation(vp));
+    return GetProperty(cx, obj, (HandleId) name, MutableHandleValue::fromMarkedLocation(vp));
 }
 
 /* XML and XMLList */
