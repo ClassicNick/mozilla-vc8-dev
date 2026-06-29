@@ -523,13 +523,12 @@ gfxWindowsPlatform::UpdateRenderMode()
 #endif
 
     uint32_t canvasMask = 1 << BACKEND_CAIRO;
-    uint32_t contentMask;
+    uint32_t contentMask = 0;
     if (mRenderMode == RENDER_DIRECT2D) {
       canvasMask |= 1 << BACKEND_DIRECT2D;
-      contentMask = BACKEND_DIRECT2D;
+      contentMask |= 1 << BACKEND_DIRECT2D;
     } else {
       canvasMask |= 1 << BACKEND_SKIA;
-      contentMask = 0;
     }
     InitBackendPrefs(canvasMask, contentMask);
 }
@@ -779,7 +778,7 @@ gfxWindowsPlatform::CreateOffscreenImageSurface(const gfxIntSize& aSize,
     return surface.forget();
 }
 
-RefPtr<ScaledFont>
+TemporaryRef<ScaledFont>
 gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
 #ifdef CAIRO_HAS_DWRITE_FONT

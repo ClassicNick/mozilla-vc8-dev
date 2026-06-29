@@ -79,7 +79,6 @@ class JSDependentString;
 class JSExtensibleString;
 class JSExternalString;
 class JSLinearString;
-class JSFixedString;
 class JSRope;
 class JSAtom;
 class JSWrapper;
@@ -371,7 +370,7 @@ typedef JSObject *
 
 /* Signature for class initialization ops. */
 typedef JSObject *
-(* JSClassInitializerOp)(JSContext *cx, JSObject *obj);
+(* JSClassInitializerOp)(JSContext *cx, JSHandleObject obj);
 
 /*
  * Hook that creates an iterator object for a given object. Returns the
