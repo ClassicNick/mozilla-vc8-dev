@@ -111,7 +111,7 @@ public:
                                             MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult OnSuccess() MOZ_OVERRIDE;
 
@@ -140,7 +140,7 @@ public:
 
   ~AddHelper()
   {
-    IDBObjectStore::ClearStructuredCloneBuffer(mCloneWriteInfo.mCloneBuffer);
+    IDBObjectStore::ClearCloneWriteInfo(mCloneWriteInfo);
   }
 
   virtual nsresult DoDatabaseWork(mozIStorageConnection* aConnection)
@@ -155,7 +155,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -184,7 +184,7 @@ public:
 
   ~GetHelper()
   {
-    IDBObjectStore::ClearStructuredCloneBuffer(mCloneReadInfo.mCloneBuffer);
+    IDBObjectStore::ClearCloneReadInfo(mCloneReadInfo);
   }
 
   virtual nsresult DoDatabaseWork(mozIStorageConnection* aConnection)
@@ -199,7 +199,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -234,7 +234,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -257,7 +257,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -278,7 +278,7 @@ public:
 
   ~OpenCursorHelper()
   {
-    IDBObjectStore::ClearStructuredCloneBuffer(mCloneReadInfo.mCloneBuffer);
+    IDBObjectStore::ClearCloneReadInfo(mCloneReadInfo);
   }
 
   virtual nsresult DoDatabaseWork(mozIStorageConnection* aConnection)
@@ -293,7 +293,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -383,8 +383,7 @@ public:
   ~GetAllHelper()
   {
     for (uint32_t index = 0; index < mCloneReadInfos.Length(); index++) {
-      IDBObjectStore::ClearStructuredCloneBuffer(
-        mCloneReadInfos[index].mCloneBuffer);
+      IDBObjectStore::ClearCloneReadInfo(mCloneReadInfos[index]);
     }
   }
 
@@ -400,7 +399,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -439,7 +438,7 @@ public:
   PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams) MOZ_OVERRIDE;
 
   virtual ChildProcessSendResult
-  MaybeSendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
+  SendResponseToChildProcess(nsresult aResultCode) MOZ_OVERRIDE;
 
   virtual nsresult
   UnpackResponseFromParentProcess(const ResponseValue& aResponseValue)
@@ -935,6 +934,42 @@ IDBObjectStore::GetStructuredCloneReadInfoFromStatement(
   aInfo.mDatabase = aDatabase;
 
   return NS_OK;
+}
+
+// static
+void
+IDBObjectStore::ClearCloneWriteInfo(StructuredCloneWriteInfo& aWriteInfo)
+{
+  // This is kind of tricky, we only want to release stuff on the main thread,
+  // but we can end up being called on other threads if we have already been
+  // cleared on the main thread.
+  if (!aWriteInfo.mCloneBuffer.data() && !aWriteInfo.mFiles.Length()) {
+    return;
+  }
+
+  // If there's something to clear, we should be on the main thread.
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
+  ClearStructuredCloneBuffer(aWriteInfo.mCloneBuffer);
+  aWriteInfo.mFiles.Clear();
+}
+
+// static
+void
+IDBObjectStore::ClearCloneReadInfo(StructuredCloneReadInfo& aReadInfo)
+{
+  // This is kind of tricky, we only want to release stuff on the main thread,
+  // but we can end up being called on other threads if we have already been
+  // cleared on the main thread.
+  if (!aReadInfo.mCloneBuffer.data() && !aReadInfo.mFiles.Length()) {
+    return;
+  }
+
+  // If there's something to clear, we should be on the main thread.
+  NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
+
+  ClearStructuredCloneBuffer(aReadInfo.mCloneBuffer);
+  aReadInfo.mFiles.Clear();
 }
 
 // static
@@ -2528,9 +2563,8 @@ NoRequestObjectStoreHelper::UnpackResponseFromParentProcess(
   return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
 }
 
-HelperBase::ChildProcessSendResult
-NoRequestObjectStoreHelper::MaybeSendResponseToChildProcess(
-                                                           nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+NoRequestObjectStoreHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
   return Success_NotSent;
@@ -2738,7 +2772,7 @@ AddHelper::GetSuccessResult(JSContext* aCx,
 void
 AddHelper::ReleaseMainThreadObjects()
 {
-  IDBObjectStore::ClearStructuredCloneBuffer(mCloneWriteInfo.mCloneBuffer);
+  IDBObjectStore::ClearCloneWriteInfo(mCloneWriteInfo);
   ObjectStoreHelper::ReleaseMainThreadObjects();
 }
 
@@ -2789,16 +2823,14 @@ AddHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-AddHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+AddHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   ResponseValue response;
   if (NS_FAILED(aResultCode)) {
@@ -2891,7 +2923,7 @@ void
 GetHelper::ReleaseMainThreadObjects()
 {
   mKeyRange = nullptr;
-  IDBObjectStore::ClearStructuredCloneBuffer(mCloneReadInfo.mCloneBuffer);
+  IDBObjectStore::ClearCloneReadInfo(mCloneReadInfo);
   ObjectStoreHelper::ReleaseMainThreadObjects();
 }
 
@@ -2908,16 +2940,14 @@ GetHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-GetHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+GetHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   InfallibleTArray<PBlobParent*> blobsParent;
 
@@ -2938,7 +2968,7 @@ GetHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
                                            blobsParent);
     if (NS_FAILED(aResultCode)) {
       NS_WARNING("ConvertBlobsToActors failed!");
-  }
+    }
   }
 
   ResponseValue response;
@@ -3035,16 +3065,14 @@ DeleteHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-DeleteHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+DeleteHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   ResponseValue response;
   if (NS_FAILED(aResultCode)) {
@@ -3101,16 +3129,14 @@ ClearHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-ClearHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+ClearHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   ResponseValue response;
   if (NS_FAILED(aResultCode)) {
@@ -3303,7 +3329,7 @@ void
 OpenCursorHelper::ReleaseMainThreadObjects()
 {
   mKeyRange = nullptr;
-  IDBObjectStore::ClearStructuredCloneBuffer(mCloneReadInfo.mCloneBuffer);
+  IDBObjectStore::ClearCloneReadInfo(mCloneReadInfo);
 
   mCursor = nullptr;
 
@@ -3336,18 +3362,15 @@ OpenCursorHelper::PackArgumentsForParentProcess(
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-OpenCursorHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+OpenCursorHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
+  NS_ASSERTION(!mCursor, "Shouldn't have this yet!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
-
-  NS_ASSERTION(!mCursor, "Shouldn't have this yet!");
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   InfallibleTArray<PBlobParent*> blobsParent;
 
@@ -3754,8 +3777,7 @@ GetAllHelper::ReleaseMainThreadObjects()
 {
   mKeyRange = nullptr;
   for (uint32_t index = 0; index < mCloneReadInfos.Length(); index++) {
-    IDBObjectStore::ClearStructuredCloneBuffer(
-      mCloneReadInfos[index].mCloneBuffer);
+    IDBObjectStore::ClearCloneReadInfo(mCloneReadInfos[index]);
   }
   ObjectStoreHelper::ReleaseMainThreadObjects();
 }
@@ -3780,19 +3802,16 @@ GetAllHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-GetAllHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+GetAllHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
-    GetAllResponse getAllResponse;
-
+  GetAllResponse getAllResponse;
   if (NS_SUCCEEDED(aResultCode) && !mCloneReadInfos.IsEmpty()) {
     IDBDatabase* database = mObjectStore->Transaction()->Database();
     NS_ASSERTION(database, "This should never be null!");
@@ -3977,16 +3996,14 @@ CountHelper::PackArgumentsForParentProcess(ObjectStoreRequestParams& aParams)
   return NS_OK;
 }
 
-HelperBase::ChildProcessSendResult
-CountHelper::MaybeSendResponseToChildProcess(nsresult aResultCode)
+AsyncConnectionHelper::ChildProcessSendResult
+CountHelper::SendResponseToChildProcess(nsresult aResultCode)
 {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   NS_ASSERTION(IndexedDatabaseManager::IsMainProcess(), "Wrong process!");
 
   IndexedDBRequestParentBase* actor = mRequest->GetActorParent();
-  if (!actor) {
-    return Success_NotSent;
-  }
+  NS_ASSERTION(actor, "How did we get this far without an actor?");
 
   ResponseValue response;
   if (NS_FAILED(aResultCode)) {

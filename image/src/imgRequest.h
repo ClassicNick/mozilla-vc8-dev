@@ -21,16 +21,15 @@
 
 #include "nsCategoryCache.h"
 #include "nsCOMPtr.h"
-#include "nsString.h"
+#include "nsStringGlue.h"
 #include "nsTObserverArray.h"
 #include "nsWeakReference.h"
 #include "nsError.h"
 #include "imgIRequest.h"
-#include "imgStatusTracker.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 
 class imgCacheValidator;
-
+class imgStatusTracker;
 class imgLoader;
 class imgRequestProxy;
 class imgCacheEntry;
@@ -66,7 +65,7 @@ public:
                 int32_t aCORSMode);
 
   // Callers must call imgRequestProxy::Notify later.
-  nsresult AddProxy(imgRequestProxy *proxy);
+  void AddProxy(imgRequestProxy *proxy);
 
   // aNotify==false still sends OnStopRequest.
   nsresult RemoveProxy(imgRequestProxy *proxy, nsresult aStatus, bool aNotify);
@@ -82,6 +81,7 @@ public:
   // instantiated.
   nsresult LockImage();
   nsresult UnlockImage();
+  nsresult StartDecoding();
   nsresult RequestDecode();
 
   inline void SetInnerWindowID(uint64_t aInnerWindowId) {

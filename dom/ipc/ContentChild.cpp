@@ -102,6 +102,7 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsDeviceStorage.h"
 
 using namespace base;
 using namespace mozilla::docshell;
@@ -300,12 +301,25 @@ ContentChild::Init(MessageLoop* aIOLoop,
         startBackground ? hal::PROCESS_PRIORITY_BACKGROUND:
                           hal::PROCESS_PRIORITY_FOREGROUND);
     if (mIsForApp && !mIsForBrowser) {
-        SetThisProcessName("(App)");
+        SetProcessName(NS_LITERAL_STRING("(App)"));
     } else {
-        SetThisProcessName("Browser");
+        SetProcessName(NS_LITERAL_STRING("Browser"));
     }
 
     return true;
+}
+
+void
+ContentChild::SetProcessName(const nsAString& aName)
+{
+    mProcessName = aName;
+    mozilla::ipc::SetThisProcessName(NS_LossyConvertUTF16toASCII(aName).get());
+}
+
+const void
+ContentChild::GetProcessName(nsAString& aName)
+{
+    aName.Assign(mProcessName);
 }
 
 void
@@ -425,6 +439,20 @@ bool
 ContentChild::DeallocPMemoryReportRequest(PMemoryReportRequestChild* actor)
 {
     delete actor;
+    return true;
+}
+
+bool
+ContentChild::RecvDumpMemoryReportsToFile(const nsString& aIdentifier,
+                                          const bool& aMinimizeMemoryUsage,
+                                          const bool& aDumpChildProcesses)
+{
+    nsCOMPtr<nsIMemoryReporterManager> mgr =
+        do_GetService("@mozilla.org/memory-reporter-manager;1");
+    NS_ENSURE_TRUE(mgr, true);
+    mgr->DumpMemoryReportsToFile(aIdentifier,
+                                 aMinimizeMemoryUsage,
+                                 aDumpChildProcesses);
     return true;
 }
 

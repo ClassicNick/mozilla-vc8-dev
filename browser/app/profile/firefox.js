@@ -383,6 +383,7 @@ pref("browser.tabs.autoHide", false);
 pref("browser.tabs.closeWindowWithLastTab", true);
 pref("browser.tabs.insertRelatedAfterCurrent", true);
 pref("browser.tabs.warnOnClose", true);
+pref("browser.tabs.warnOnCloseOtherTabs", true);
 pref("browser.tabs.warnOnOpen", true);
 pref("browser.tabs.maxOpenBeforeWarn", 15);
 pref("browser.tabs.loadInBackground", true);
@@ -531,11 +532,6 @@ pref("mousewheel.with_shift.action", 2);
 pref("mousewheel.with_control.action",3);
 pref("mousewheel.with_meta.action", 1);  // command key on Mac
 pref("mousewheel.with_win.action", 1);
-
-// pref to control the alert notification 
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 4000);
 
 pref("browser.xul.error_pages.enabled", true);
 pref("browser.xul.error_pages.expert_bad_cert", false);
@@ -1014,7 +1010,7 @@ pref("devtools.inspector.htmlHeight", 112);
 pref("devtools.inspector.htmlPanelOpen", false);
 pref("devtools.inspector.sidebarOpen", false);
 pref("devtools.inspector.activeSidebar", "ruleview");
-pref("devtools.inspector.markupPreview", true);
+pref("devtools.inspector.markupPreview", false);
 
 // Enable the Layout View
 pref("devtools.layoutview.enabled", true);
@@ -1029,7 +1025,7 @@ pref("devtools.debugger.chrome-enabled", false);
 pref("devtools.debugger.remote-host", "localhost");
 pref("devtools.debugger.remote-autoconnect", false);
 pref("devtools.debugger.remote-connection-retries", 3);
-pref("devtools.debugger.remote-timeout", 3000);
+pref("devtools.debugger.remote-timeout", 20000);
 
 // The default Debugger UI settings
 pref("devtools.debugger.ui.height", 250);

@@ -25,6 +25,14 @@ using namespace mozilla::hal;
 namespace mozilla {
 namespace hal_sandbox {
 
+static bool sHalChildIsLive = false;
+
+bool
+IsHalChildLive()
+{
+  return sHalChildIsLive;
+}
+
 static PHalChild* sHal;
 static PHalChild*
 Hal()
@@ -228,6 +236,12 @@ PowerOff()
 }
 
 void
+StartForceQuitWatchdog(ShutdownMode aMode, int32_t aTimeoutSecs)
+{
+  NS_RUNTIMEABORT("StartForceQuitWatchdog() can't be called from sandboxed contexts.");
+}
+
+void
 EnableSensorNotifications(SensorType aSensor) {
   Hal()->SendEnableSensorNotifications(aSensor);
 }
@@ -390,6 +404,7 @@ public:
       hal::UnregisterSensorObserver(SensorType(sensor), this);
     }
     hal::UnregisterWakeLockObserver(this);
+    hal::UnregisterSystemTimeChangeObserver(this);
   }
 
   virtual bool
@@ -831,6 +846,12 @@ public:
 
 class HalChild : public PHalChild {
 public:
+  virtual void
+  ActorDestroy(ActorDestroyReason aWhy) MOZ_OVERRIDE
+  {
+    sHalChildIsLive = true;
+  }
+
   virtual bool
   RecvNotifyBatteryChange(const BatteryInformation& aBatteryInfo) MOZ_OVERRIDE {
     hal::NotifyBatteryChange(aBatteryInfo);

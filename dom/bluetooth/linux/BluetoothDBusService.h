@@ -134,26 +134,23 @@ public:
   PrepareAdapterInternal(const nsAString& aPath);
 
   virtual bool
-  ConnectHeadset(const nsAString& aDeviceAddress,
-                 const nsAString& aAdapterPath,
-                 BluetoothReplyRunnable* aRunnable);
+  Connect(const nsAString& aDeviceAddress,
+          const nsAString& aAdapterPath,
+          const uint16_t aProfileId,
+          BluetoothReplyRunnable* aRunnable);
 
   virtual void
-  DisconnectHeadset(BluetoothReplyRunnable* aRunnable);
-
-  virtual bool
-  ConnectObjectPush(const nsAString& aDeviceAddress,
-                    const nsAString& aAdapterPath,
-                    BluetoothReplyRunnable* aRunnable);
-
-  virtual void
-  DisconnectObjectPush(BluetoothReplyRunnable* aRunnable);
+  Disconnect(const uint16_t aProfileId, BluetoothReplyRunnable* aRunnable);
 
   virtual bool
   SendFile(const nsAString& aDeviceAddress,
            BlobParent* aBlobParent,
            BlobChild* aBlobChild,
            BluetoothReplyRunnable* aRunnable);
+
+  virtual bool
+  StopSendingFile(const nsAString& aDeviceAddress,
+                  BluetoothReplyRunnable* aRunnable);
 
 private:
   nsresult SendGetPropertyMessage(const nsAString& aPath,

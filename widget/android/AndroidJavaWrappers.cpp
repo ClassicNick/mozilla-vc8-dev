@@ -84,6 +84,7 @@ jmethodID AndroidGeckoLayerClient::jGetDisplayPort = 0;
 jmethodID AndroidGeckoLayerClient::jViewportCtor = 0;
 jfieldID AndroidGeckoLayerClient::jDisplayportPosition = 0;
 jfieldID AndroidGeckoLayerClient::jDisplayportResolution = 0;
+jmethodID AndroidGeckoLayerClient::jShouldAbortProgressiveUpdate = 0;
 
 jclass AndroidLayerRendererFrame::jLayerRendererFrameClass = 0;
 jmethodID AndroidLayerRendererFrame::jBeginDrawingMethod = 0;
@@ -234,7 +235,7 @@ AndroidGeckoEvent::InitGeckoEventClass(JNIEnv *jEnv)
 void
 AndroidGeckoSurfaceView::InitGeckoSurfaceViewClass(JNIEnv *jEnv)
 {
-#ifndef MOZ_JAVA_COMPOSITOR
+#ifndef MOZ_ANDROID_OMTC
     initInit();
 
     jGeckoSurfaceViewClass = getClassGlobalRef("org/mozilla/gecko/GeckoSurfaceView");
@@ -331,7 +332,7 @@ AndroidRectF::InitRectFClass(JNIEnv *jEnv)
 void
 AndroidGeckoLayerClient::InitGeckoLayerClientClass(JNIEnv *jEnv)
 {
-#ifdef MOZ_JAVA_COMPOSITOR
+#ifdef MOZ_ANDROID_OMTC
     initInit();
 
     jGeckoLayerClientClass = getClassGlobalRef("org/mozilla/gecko/gfx/GeckoLayerClient");
@@ -344,13 +345,14 @@ AndroidGeckoLayerClient::InitGeckoLayerClientClass(JNIEnv *jEnv)
     jActivateProgramMethod = getMethod("activateProgram", "()V");
     jDeactivateProgramMethod = getMethod("deactivateProgram", "()V");
     jGetDisplayPort = getMethod("getDisplayPort", "(ZZILorg/mozilla/gecko/gfx/ViewportMetrics;)Lorg/mozilla/gecko/gfx/DisplayPortMetrics;");
+    jShouldAbortProgressiveUpdate = getMethod("shouldAbortProgressiveUpdate", "(ZFFFFF)Z");
 
     jViewportClass = GetClassGlobalRef(jEnv, "org/mozilla/gecko/gfx/ViewportMetrics");
     jViewportCtor = GetMethodID(jEnv, jViewportClass, "<init>", "(FFFFFFFFFFFFF)V");
 
     jDisplayportClass = GetClassGlobalRef(jEnv, "org/mozilla/gecko/gfx/DisplayPortMetrics");
     jDisplayportPosition = GetFieldID(jEnv, jDisplayportClass, "mPosition", "Landroid/graphics/RectF;");
-    jDisplayportResolution = GetFieldID(jEnv, jDisplayportClass, "mResolution", "F");
+    jDisplayportResolution = GetFieldID(jEnv, jDisplayportClass, "resolution", "F");
 
 #endif
 }
@@ -358,7 +360,7 @@ AndroidGeckoLayerClient::InitGeckoLayerClientClass(JNIEnv *jEnv)
 void
 AndroidLayerRendererFrame::InitLayerRendererFrameClass(JNIEnv *jEnv)
 {
-#ifdef MOZ_JAVA_COMPOSITOR
+#ifdef MOZ_ANDROID_OMTC
     initInit();
 
     jLayerRendererFrameClass = getClassGlobalRef("org/mozilla/gecko/gfx/LayerRenderer$Frame");
@@ -373,7 +375,7 @@ AndroidLayerRendererFrame::InitLayerRendererFrameClass(JNIEnv *jEnv)
 void
 AndroidViewTransform::InitViewTransformClass(JNIEnv *jEnv)
 {
-#ifdef MOZ_JAVA_COMPOSITOR
+#ifdef MOZ_ANDROID_OMTC
     initInit();
 
     jViewTransformClass = getClassGlobalRef("org/mozilla/gecko/gfx/ViewTransform");
@@ -509,6 +511,15 @@ AndroidGeckoEvent::Init(JNIEnv *jenv, jobject jobj)
             mUnicodeChar = jenv->GetIntField(jobj, jUnicodeCharField);
             mRepeatCount = jenv->GetIntField(jobj, jRepeatCountField);
             ReadCharactersField(jenv);
+            break;
+
+        case NATIVE_GESTURE_EVENT:
+            mTime = jenv->GetLongField(jobj, jTimeField);
+            mMetaState = jenv->GetIntField(jobj, jMetaStateField);
+            mCount = jenv->GetIntField(jobj, jCountField);
+            ReadPointArray(mPoints, jenv, jPoints, mCount);
+            mX = jenv->GetDoubleField(jobj, jXField);
+
             break;
 
         case MOTION_EVENT:
@@ -801,6 +812,30 @@ AndroidGeckoLayerClient::SyncViewportInfo(const nsIntRect& aDisplayPort, float a
 
     aScrollOffset = nsIntPoint(viewTransform.GetX(env), viewTransform.GetY(env));
     aScaleX = aScaleY = viewTransform.GetScale(env);
+}
+
+bool
+AndroidGeckoLayerClient::ShouldAbortProgressiveUpdate(bool aHasPendingNewThebesContent,
+                                                      const gfx::Rect& aDisplayPort,
+                                                      float aDisplayResolution)
+{
+    JNIEnv *env = AndroidBridge::GetJNIEnv();
+    if (!env)
+        return false;
+
+    AutoLocalJNIFrame jniFrame(env);
+
+    bool ret = env->CallBooleanMethod(wrapped_obj, jShouldAbortProgressiveUpdate,
+                                      aHasPendingNewThebesContent,
+                                      (float)aDisplayPort.x,
+                                      (float)aDisplayPort.y,
+                                      (float)aDisplayPort.width,
+                                      (float)aDisplayPort.height,
+                                      aDisplayResolution);
+    if (jniFrame.CheckForException())
+        return false;
+
+    return ret;
 }
 
 jobject ConvertToJavaViewportMetrics(JNIEnv* env, nsIAndroidViewport* metrics) {

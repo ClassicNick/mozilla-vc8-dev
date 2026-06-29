@@ -32,14 +32,14 @@
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gMediaResourceLog;
-#define LOG(msg, ...) PR_LOG(gMediaResourceLog, PR_LOG_DEBUG, \
-                             (msg, ##__VA_ARGS__))
+#define LOG(msg, a) PR_LOG(gMediaResourceLog, PR_LOG_DEBUG, \
+                             (msg, a))
 // Debug logging macro with object pointer and class name.
-#define CMLOG(msg, ...) \
-        LOG("%p [ChannelMediaResource]: " msg, this, ##__VA_ARGS__)
+#define CMLOG(msg, a) \
+        LOG("%p [ChannelMediaResource]: " msg, this, a)
 #else
-#define LOG(msg, ...)
-#define CMLOG(msg, ...)
+#define LOG(msg, a)
+#define CMLOG(msg, a)
 #endif
 
 static const uint32_t HTTP_OK_CODE = 200;
@@ -602,7 +602,7 @@ nsresult ChannelMediaResource::OpenChannel(nsIStreamListener** aStreamListener)
     nsHTMLMediaElement* element = mDecoder->GetMediaElement();
     NS_ENSURE_TRUE(element, NS_ERROR_FAILURE);
     if (element->ShouldCheckAllowOrigin()) {
-      nsCORSListenerProxy* crossSiteListener =
+      nsRefPtr<nsCORSListenerProxy> crossSiteListener =
         new nsCORSListenerProxy(mListener,
                                 element->NodePrincipal(),
                                 false);

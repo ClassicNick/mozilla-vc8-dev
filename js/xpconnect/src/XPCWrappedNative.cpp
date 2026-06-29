@@ -285,8 +285,6 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
                                 nsIPrincipal *principal, bool initStandardClasses,
                                 XPCWrappedNative **wrappedGlobal)
 {
-    bool success;
-    nsresult rv;
     nsISupports *identity = nativeHelper.GetCanonical();
 
     // The object should specify that it's meant to be global.
@@ -316,8 +314,8 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
     // Create the global.
     JSObject *global;
     JSCompartment *compartment;
-    rv = xpc_CreateGlobalObject(ccx, clasp, principal, nullptr, false,
-                                &global, &compartment);
+    nsresult rv = xpc::CreateGlobalObject(ccx, clasp, principal, false, &global,
+                                          &compartment);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // Immediately enter the global's compartment, so that everything else we
@@ -347,7 +345,7 @@ XPCWrappedNative::WrapNewGlobal(XPCCallContext &ccx, xpcObjectHelper &nativeHelp
 
     // Set up the prototype on the global.
     MOZ_ASSERT(proto->GetJSProtoObject());
-    success = JS_SplicePrototype(ccx, global, proto->GetJSProtoObject());
+    bool success = JS_SplicePrototype(ccx, global, proto->GetJSProtoObject());
     if (!success)
         return NS_ERROR_FAILURE;
 
@@ -1581,7 +1579,7 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCCallContext& ccx,
 
                 // Expandos from other compartments are attached to the target JS object.
                 // Copy them over, and let the old ones die a natural death.
-                SetExpandoChain(newobj, nullptr);
+                SetWNExpandoChain(newobj, nullptr);
                 if (!XrayUtils::CloneExpandoChain(ccx, newobj, flat))
                     return NS_ERROR_FAILURE;
 

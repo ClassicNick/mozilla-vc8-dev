@@ -243,7 +243,7 @@ struct DateHashEntry : public PLDHashEntryHdr {
         int64_t h64, l64;
         LL_USHR(h64, t, 32);
         l64 = LL_INIT(0, 0xffffffff);
-        LL_AND(l64, l64, t);
+        l64 &= t;
         int32_t h32, l32;
         LL_L2I(h32, h64);
         LL_L2I(l32, l64);
@@ -257,7 +257,7 @@ struct DateHashEntry : public PLDHashEntryHdr {
         const DateHashEntry *entry =
             static_cast<const DateHashEntry *>(hdr);
 
-        return LL_EQ(*static_cast<const PRTime *>(key), entry->mKey);
+        return *static_cast<const PRTime *>(key) == entry->mKey;
     }
 };
 

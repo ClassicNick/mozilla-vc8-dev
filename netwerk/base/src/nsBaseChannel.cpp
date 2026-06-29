@@ -60,6 +60,7 @@ nsBaseChannel::nsBaseChannel()
   , mWasOpened(false)
   , mWaitingOnAsyncRedirect(false)
   , mStatus(NS_OK)
+  , mContentDispositionHint(UINT32_MAX)
 {
   mContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
 }
@@ -296,7 +297,7 @@ nsBaseChannel::ClassifyURI()
 //-----------------------------------------------------------------------------
 // nsBaseChannel::nsISupports
 
-NS_IMPL_ISUPPORTS_INHERITED7(nsBaseChannel,
+NS_IMPL_ISUPPORTS_INHERITED8(nsBaseChannel,
                              nsHashPropertyBag,
                              nsIRequest,
                              nsIChannel,
@@ -304,7 +305,8 @@ NS_IMPL_ISUPPORTS_INHERITED7(nsBaseChannel,
                              nsITransportEventSink,
                              nsIRequestObserver,
                              nsIStreamListener,
-                             nsIAsyncVerifyRedirectCallback)
+                             nsIAsyncVerifyRedirectCallback,
+                             nsIPrivateBrowsingChannel)
 
 //-----------------------------------------------------------------------------
 // nsBaseChannel::nsIRequest
@@ -390,6 +392,10 @@ nsBaseChannel::GetLoadGroup(nsILoadGroup **aLoadGroup)
 NS_IMETHODIMP
 nsBaseChannel::SetLoadGroup(nsILoadGroup *aLoadGroup)
 {
+  if (!CanSetLoadGroup(aLoadGroup)) {
+    return NS_ERROR_FAILURE;
+  }
+
   mLoadGroup = aLoadGroup;
   CallbacksChanged();
   return NS_OK;
@@ -445,6 +451,10 @@ nsBaseChannel::GetNotificationCallbacks(nsIInterfaceRequestor **aCallbacks)
 NS_IMETHODIMP
 nsBaseChannel::SetNotificationCallbacks(nsIInterfaceRequestor *aCallbacks)
 {
+  if (!CanSetCallbacks(aCallbacks)) {
+    return NS_ERROR_FAILURE;
+  }
+
   mCallbacks = aCallbacks;
   CallbacksChanged();
   return NS_OK;
@@ -490,13 +500,38 @@ nsBaseChannel::SetContentCharset(const nsACString &aContentCharset)
 NS_IMETHODIMP
 nsBaseChannel::GetContentDisposition(uint32_t *aContentDisposition)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  // preserve old behavior, fail unless explicitly set.
+  if (mContentDispositionHint == UINT32_MAX) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  *aContentDisposition = mContentDispositionHint;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsBaseChannel::SetContentDisposition(uint32_t aContentDisposition)
+{
+  mContentDispositionHint = aContentDisposition;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
 nsBaseChannel::GetContentDispositionFilename(nsAString &aContentDispositionFilename)
 {
-  return NS_ERROR_NOT_AVAILABLE;
+  if (!mContentDispositionFilename) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  aContentDispositionFilename = *mContentDispositionFilename;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsBaseChannel::SetContentDispositionFilename(const nsAString &aContentDispositionFilename)
+{
+  mContentDispositionFilename = new nsString(aContentDispositionFilename);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

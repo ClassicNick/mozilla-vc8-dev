@@ -317,13 +317,13 @@ inline void MorphMultiSlot(JSObject *obj)
     MOZ_ASSERT(!IS_SLIM_WRAPPER(obj));
 }
 
-inline void SetExpandoChain(JSObject *obj, JSObject *chain)
+inline void SetWNExpandoChain(JSObject *obj, JSObject *chain)
 {
     MOZ_ASSERT(IS_WN_WRAPPER(obj));
     JS_SetReservedSlot(obj, WRAPPER_MULTISLOT, JS::ObjectOrNullValue(chain));
 }
 
-inline JSObject* GetExpandoChain(JSObject *obj)
+inline JSObject* GetWNExpandoChain(JSObject *obj)
 {
     MOZ_ASSERT(IS_WN_WRAPPER(obj));
     return JS_GetReservedSlot(obj, WRAPPER_MULTISLOT).toObjectOrNull();
@@ -4421,8 +4421,7 @@ GetCompartmentPrivate(JSObject *object)
 
 inline bool IsUniversalXPConnectEnabled(JSCompartment *compartment)
 {
-    CompartmentPrivate *priv =
-      static_cast<CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
+    CompartmentPrivate *priv = GetCompartmentPrivate(compartment);
     if (!priv)
         return false;
     return priv->universalXPConnectEnabled;
@@ -4441,8 +4440,7 @@ inline bool EnableUniversalXPConnect(JSContext *cx)
     JSCompartment *compartment = js::GetContextCompartment(cx);
     if (!compartment)
         return true;
-    CompartmentPrivate *priv =
-      static_cast<CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
+    CompartmentPrivate *priv = GetCompartmentPrivate(compartment);
     if (!priv)
         return true;
     priv->universalXPConnectEnabled = true;

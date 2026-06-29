@@ -270,7 +270,7 @@ nsresult nsPluginFile::LoadPlugin(PRLibrary **outLibrary)
   }
 
   if (restoreOrigDir) {
-    BOOL bCheck = SetCurrentDirectoryW(aOrigDir);
+    DebugOnly<BOOL> bCheck = SetCurrentDirectoryW(aOrigDir);
     NS_ASSERTION(bCheck, "Error in Loading plugin");
   }
 
@@ -311,7 +311,7 @@ nsresult nsPluginFile::GetPluginInfo(nsPluginInfo& info, PRLibrary **outLibrary)
   if (!verbuf)
     return NS_ERROR_OUT_OF_MEMORY;
 
-  if (::GetFileVersionInfoW(lpFilepath, NULL, versionsize, verbuf))
+  if (::GetFileVersionInfoW(lpFilepath, 0, versionsize, verbuf))
   {
     // TODO: get appropriately-localized info from plugin file
     info.fName = GetKeyValue(verbuf, L"\\StringFileInfo\\040904E4\\ProductName");

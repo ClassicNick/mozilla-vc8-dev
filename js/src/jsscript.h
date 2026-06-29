@@ -482,6 +482,7 @@ struct JSScript : public js::gc::Cell
                                          JSCompartment::debugScriptMap */
     bool            hasFreezeConstraints:1; /* freeze constraints for stack
                                              * type sets have been generated */
+    bool            userBit:1; /* Opaque, used by the embedding. */
 
   private:
     /* See comments below. */
@@ -530,7 +531,7 @@ struct JSScript : public js::gc::Cell
     bool analyzedArgsUsage() const { return !needsArgsAnalysis_; }
     bool needsArgsObj() const { JS_ASSERT(analyzedArgsUsage()); return needsArgsObj_; }
     void setNeedsArgsObj(bool needsArgsObj);
-    static bool argumentsOptimizationFailed(JSContext *cx, JSScript *script);
+    static bool argumentsOptimizationFailed(JSContext *cx, js::HandleScript script);
 
     /*
      * Arguments access (via JSOP_*ARG* opcodes) must access the canonical
@@ -580,7 +581,7 @@ struct JSScript : public js::gc::Cell
         return scriptSource_;
     }
 
-    void setScriptSource(JSContext *cx, js::ScriptSource *ss);
+    void setScriptSource(js::ScriptSource *ss);
 
   public:
 
@@ -684,7 +685,7 @@ struct JSScript : public js::gc::Cell
 
 public:
 	uint32_t getUseCount() const  { return useCount; }
-    uint32_t incUseCount() { return ++useCount; }
+    uint32_t incUseCount(uint32_t amount = 1) { return useCount += amount; }
     uint32_t *addressOfUseCount() { return &useCount; }
     void resetUseCount() { useCount = 0; }
 
@@ -847,7 +848,7 @@ public:
 
     void destroyBreakpointSite(js::FreeOp *fop, jsbytecode *pc);
 
-    void clearBreakpointsIn(js::FreeOp *fop, js::Debugger *dbg, JSObject *handler);
+    void clearBreakpointsIn(js::FreeOp *fop, js::Debugger *dbg, js::RawObject handler);
     void clearTraps(js::FreeOp *fop);
 
     void markTrapClosures(JSTracer *trc);
@@ -1158,7 +1159,7 @@ struct SourceCompressionToken
 };
 
 extern void
-CallDestroyScriptHook(FreeOp *fop, JSScript *script);
+CallDestroyScriptHook(FreeOp *fop, js::RawScript script);
 
 extern const char *
 SaveScriptFilename(JSContext *cx, const char *filename);
@@ -1208,26 +1209,19 @@ struct ScriptAndCounts
 
 } /* namespace js */
 
-/*
- * To perturb as little code as possible, we introduce a js_GetSrcNote lookup
- * cache without adding an explicit cx parameter.  Thus js_GetSrcNote becomes
- * a macro that uses cx from its calls' lexical environments.
- */
-#define js_GetSrcNote(script,pc) js_GetSrcNoteCached(cx, script, pc)
-
 extern jssrcnote *
-js_GetSrcNoteCached(JSContext *cx, JSScript *script, jsbytecode *pc);
+js_GetSrcNote(JSContext *cx, js::RawScript script, jsbytecode *pc);
 
 extern jsbytecode *
-js_LineNumberToPC(JSScript *script, unsigned lineno);
+js_LineNumberToPC(js::RawScript script, unsigned lineno);
 
 extern JS_FRIEND_API(unsigned)
-js_GetScriptLineExtent(JSScript *script);
+js_GetScriptLineExtent(js::RawScript script);
 
 namespace js {
 
 extern unsigned
-PCToLineNumber(JSScript *script, jsbytecode *pc, unsigned *columnp = NULL);
+PCToLineNumber(js::RawScript script, jsbytecode *pc, unsigned *columnp = NULL);
 
 extern unsigned
 PCToLineNumber(unsigned startLine, jssrcnote *notes, jsbytecode *code, jsbytecode *pc,
@@ -1264,7 +1258,7 @@ CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, Hand
 template<XDRMode mode>
 bool
 XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enclosingScript,
-          HandleFunction fun, JSScript **scriptp);
+          HandleFunction fun, MutableHandleScript scriptp);
 
 } /* namespace js */
 

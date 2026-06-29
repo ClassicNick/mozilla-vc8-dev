@@ -12,32 +12,84 @@
 #include "BluetoothScoManager.h"
 #include "BluetoothService.h"
 #include "BluetoothServiceUuid.h"
+#include "BluetoothUtils.h"
 
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPtr.h"
 #include "nsContentUtils.h"
+#include "nsIAudioManager.h"
 #include "nsIObserverService.h"
 #include "nsIRadioInterfaceLayer.h"
-#include "nsISystemMessagesInternal.h"
-#include "BluetoothUtils.h"
-
 #include "nsVariant.h"
 
 #include <unistd.h> /* usleep() */
 
 #define MOZSETTINGS_CHANGED_ID "mozsettings-changed"
+#define BLUETOOTH_SCO_STATUS_CHANGED "bluetooth-sco-status-changed"
 #define AUDIO_VOLUME_MASTER "audio.volume.master"
 
-USING_BLUETOOTH_NAMESPACE
+using namespace mozilla;
 using namespace mozilla::ipc;
+USING_BLUETOOTH_NAMESPACE
 
-static nsRefPtr<BluetoothHfpManager> sInstance = nullptr;
-static nsCOMPtr<nsIThread> sHfpCommandThread;
-static bool sStopSendingRingFlag = true;
+class mozilla::dom::bluetooth::BluetoothHfpManagerObserver : public nsIObserver
+{
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
 
-static int kRingInterval = 3000000;  //unit: us
+  BluetoothHfpManagerObserver()
+  {
+    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+    MOZ_ASSERT(obs);
+    if (NS_FAILED(obs->AddObserver(this, MOZSETTINGS_CHANGED_ID, false))) {
+      NS_WARNING("Failed to add settings change observer!");
+    }
 
-NS_IMPL_ISUPPORTS1(BluetoothHfpManager, nsIObserver)
+    if (NS_FAILED(obs->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false))) {
+      NS_WARNING("Failed to add shutdown observer!");
+    }
+  }
+
+  ~BluetoothHfpManagerObserver()
+  {
+    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+    if (obs &&
+        (NS_FAILED(obs->RemoveObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) ||
+         NS_FAILED(obs->RemoveObserver(this, MOZSETTINGS_CHANGED_ID)))) {
+      NS_WARNING("Can't unregister observers!");
+    }
+  }
+};
+
+namespace {
+  StaticRefPtr<BluetoothHfpManager> gBluetoothHfpManager;
+  StaticAutoPtr<BluetoothHfpManagerObserver> sHfpObserver;
+  bool gInShutdown = false;
+  static nsCOMPtr<nsIThread> sHfpCommandThread;
+  static bool sStopSendingRingFlag = true;
+
+  static int kRingInterval = 3000000;  //unit: us
+} // anonymous namespace
+
+NS_IMPL_ISUPPORTS1(BluetoothHfpManagerObserver, nsIObserver)
+
+NS_IMETHODIMP
+BluetoothHfpManagerObserver::Observe(nsISupports* aSubject,
+                                     const char* aTopic,
+                                     const PRUnichar* aData)
+{
+  MOZ_ASSERT(gBluetoothHfpManager);
+  if (!strcmp(aTopic, MOZSETTINGS_CHANGED_ID)) {
+    return gBluetoothHfpManager->HandleVolumeChanged(nsDependentString(aData));
+  } else if (!strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
+    return gBluetoothHfpManager->HandleShutdown();
+  }
+
+  MOZ_ASSERT(false, "BluetoothHfpManager got unexpected topic!");
+  return NS_ERROR_UNEXPECTED;
+}
 
 class SendRingIndicatorTask : public nsRunnable
 {
@@ -52,7 +104,7 @@ public:
     MOZ_ASSERT(!NS_IsMainThread());
 
     while (!sStopSendingRingFlag) {
-      sInstance->SendLine("RING");
+      gBluetoothHfpManager->SendLine("RING");
 
       usleep(kRingInterval);
     }
@@ -82,14 +134,29 @@ CloseScoSocket()
 {
   MOZ_ASSERT(NS_IsMainThread());
 
+  nsCOMPtr<nsIAudioManager> am = do_GetService("@mozilla.org/telephony/audiomanager;1");
+  if (!am) {
+    NS_WARNING("Failed to get AudioManager Service!");
+    return;
+  }
+  am->SetForceForUse(am->USE_COMMUNICATION, am->FORCE_NONE);
+
   BluetoothScoManager* sco = BluetoothScoManager::Get();
   if (!sco) {
     NS_WARNING("BluetoothScoManager is not available!");
     return;
   }
 
-  if (sco->GetConnected())
+  if (sco->GetConnected()) {
+    nsCOMPtr<nsIObserverService> obs = do_GetService("@mozilla.org/observer-service;1");
+    if (obs) {
+      if (NS_FAILED(obs->NotifyObservers(nullptr, BLUETOOTH_SCO_STATUS_CHANGED, nullptr))) {
+        NS_WARNING("Failed to notify bluetooth-sco-status-changed observsers!");
+        return;
+      }
+    }
     sco->Disconnect();
+  }
 }
 
 BluetoothHfpManager::BluetoothHfpManager()
@@ -97,25 +164,36 @@ BluetoothHfpManager::BluetoothHfpManager()
   , mCurrentCallIndex(0)
   , mCurrentCallState(nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTED)
 {
-  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+}
 
-  if (obs && NS_FAILED(obs->AddObserver(sInstance, MOZSETTINGS_CHANGED_ID, false))) {
-    NS_WARNING("Failed to add settings change observer!");
-  }
+bool
+BluetoothHfpManager::Init()
+{
+  sHfpObserver = new BluetoothHfpManagerObserver();
 
   mListener = new BluetoothRilListener();
   if (!mListener->StartListening()) {
     NS_WARNING("Failed to start listening RIL");
+    return false;
   }
 
   if (!sHfpCommandThread) {
     if (NS_FAILED(NS_NewThread(getter_AddRefs(sHfpCommandThread)))) {
       NS_ERROR("Failed to new thread for sHfpCommandThread");
+      return false;
     }
   }
+
+  return true;
 }
 
 BluetoothHfpManager::~BluetoothHfpManager()
+{
+  Cleanup();
+}
+
+void
+BluetoothHfpManager::Cleanup()
 {
   if (!mListener->StopListening()) {
     NS_WARNING("Failed to stop listening RIL");
@@ -130,6 +208,8 @@ BluetoothHfpManager::~BluetoothHfpManager()
       NS_WARNING("Failed to shut down the bluetooth hfpmanager command thread!");
     }
   }
+
+  sHfpObserver = nullptr;
 }
 
 //static
@@ -138,44 +218,27 @@ BluetoothHfpManager::Get()
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (sInstance == nullptr) {
-    sInstance = new BluetoothHfpManager();
+  // If we already exist, exit early
+  if (gBluetoothHfpManager) {
+    return gBluetoothHfpManager;
   }
 
-  return sInstance;
-}
-
-bool
-BluetoothHfpManager::BroadcastSystemMessage(const nsAString& aType,
-                                            const InfallibleTArray<BluetoothNamedValue>& aData)
-{
-  JSContext* cx = nsContentUtils::GetSafeJSContext();
-  NS_ASSERTION(!::JS_IsExceptionPending(cx),
-               "Shouldn't get here when an exception is pending!");
-
-  JSAutoRequest jsar(cx);
-  JSObject* obj = JS_NewObject(cx, NULL, NULL, NULL);
-  if (!obj) {
-    NS_WARNING("Failed to new JSObject for system message!");
-    return false;
+  // If we're in shutdown, don't create a new instance
+  if (gInShutdown) {
+    NS_WARNING("BluetoothHfpManager can't be created during shutdown");
+    return nullptr;
   }
 
-  if (!SetJsObject(cx, obj, aData)) {
-    NS_WARNING("Failed to set properties of system message!");
-    return false;
+  // Create new instance, register, return
+  nsRefPtr<BluetoothHfpManager> manager = new BluetoothHfpManager();
+  NS_ENSURE_TRUE(manager, nullptr);
+
+  if (!manager->Init()) {
+    return nullptr;
   }
 
-  nsCOMPtr<nsISystemMessagesInternal> systemMessenger =
-    do_GetService("@mozilla.org/system-message-internal;1");
-
-  if (!systemMessenger) {
-    NS_WARNING("Failed to get SystemMessenger service!");
-    return false;
-  }
-
-  systemMessenger->BroadcastMessage(aType, OBJECT_TO_JSVAL(obj));
-
-  return true;
+  gBluetoothHfpManager = manager;
+  return gBluetoothHfpManager;
 }
 
 void
@@ -298,16 +361,13 @@ BluetoothHfpManager::HandleVolumeChanged(const nsAString& aData)
 }
 
 nsresult
-BluetoothHfpManager::Observe(nsISupports* aSubject,
-                             const char* aTopic,
-                             const PRUnichar* aData)
+BluetoothHfpManager::HandleShutdown()
 {
-  if (!strcmp(aTopic, MOZSETTINGS_CHANGED_ID)) {
-    return HandleVolumeChanged(nsDependentString(aData));
-  } else {
-    MOZ_ASSERT(false, "BluetoothHfpManager got unexpected topic!");
-  }
-  return NS_ERROR_UNEXPECTED;
+  MOZ_ASSERT(NS_IsMainThread());
+  gInShutdown = true;
+  CloseSocket();
+  gBluetoothHfpManager = nullptr;
+  return NS_OK;
 }
 
 // Virtual function of class SocketConsumer
@@ -390,6 +450,27 @@ BluetoothHfpManager::ReceiveSocketData(UnixSocketRawData* aMessage)
   } else if (!strncmp(msg, "AT+CHUP", 7)) {
     NotifyDialer(NS_LITERAL_STRING("CHUP"));
     SendLine("OK");
+  } else if (!strncmp(msg, "AT+CKPD", 7)) {
+    // For Headset
+    switch (mCurrentCallState) {
+      case nsIRadioInterfaceLayer::CALL_STATE_INCOMING:
+        NotifyDialer(NS_LITERAL_STRING("ATA"));
+        break;
+      case nsIRadioInterfaceLayer::CALL_STATE_CONNECTED:
+      case nsIRadioInterfaceLayer::CALL_STATE_DIALING:
+      case nsIRadioInterfaceLayer::CALL_STATE_ALERTING:
+        NotifyDialer(NS_LITERAL_STRING("CHUP"));
+        break;
+      case nsIRadioInterfaceLayer::CALL_STATE_DISCONNECTED:
+        NotifyDialer(NS_LITERAL_STRING("BLDN"));
+        break;
+      default:
+#ifdef DEBUG
+        NS_WARNING("Not handling state changed");
+#endif
+        break;
+    }
+    SendLine("OK");
   } else {
 #ifdef DEBUG
     nsCString warningMsg;
@@ -403,9 +484,15 @@ BluetoothHfpManager::ReceiveSocketData(UnixSocketRawData* aMessage)
 
 bool
 BluetoothHfpManager::Connect(const nsAString& aDeviceObjectPath,
+                             const bool aIsHandsfree,
                              BluetoothReplyRunnable* aRunnable)
 {
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (gInShutdown) {
+    MOZ_ASSERT(false, "Connect called while in shutdown!");
+    return false;
+  }
 
   BluetoothService* bs = BluetoothService::Get();
   if (!bs) {
@@ -414,8 +501,12 @@ BluetoothHfpManager::Connect(const nsAString& aDeviceObjectPath,
   }
   mDevicePath = aDeviceObjectPath;
 
-  nsString serviceUuidStr =
-    NS_ConvertUTF8toUTF16(mozilla::dom::bluetooth::BluetoothServiceUuidStr::Handsfree);
+  nsString serviceUuidStr;
+  if (aIsHandsfree) {
+    serviceUuidStr = NS_ConvertUTF8toUTF16(mozilla::dom::bluetooth::BluetoothServiceUuidStr::Handsfree);
+  } else {
+    serviceUuidStr = NS_ConvertUTF8toUTF16(mozilla::dom::bluetooth::BluetoothServiceUuidStr::Headset);
+  }
 
   nsRefPtr<BluetoothReplyRunnable> runnable = aRunnable;
 
@@ -435,6 +526,11 @@ bool
 BluetoothHfpManager::Listen()
 {
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (gInShutdown) {
+    MOZ_ASSERT(false, "Listen called while in shutdown!");
+    return false;
+  }
 
   BluetoothService* bs = BluetoothService::Get();
   if (!bs) {

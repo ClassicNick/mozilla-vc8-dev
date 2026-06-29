@@ -1649,13 +1649,7 @@ nsHttpChannel::OpenRedirectChannel(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from the old listeners...
-    mListener = nullptr;
-    mListenerContext = nullptr;
-
-    // ...and the old callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
 
     return NS_OK;
 }
@@ -1716,13 +1710,7 @@ nsHttpChannel::ContinueDoReplaceWithProxy(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from the old listeners...
-    mListener = nullptr;
-    mListenerContext = nullptr;
-
-    // ...and the old callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
 
     return rv;
 }
@@ -1738,14 +1726,6 @@ nsHttpChannel::ResolveProxy()
             do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID, &rv);
     if (NS_FAILED(rv))
         return rv;
-
-    // Check if we are configured to directly connect. This will save us
-    // a round trip through the event dispatch system
-    uint32_t proxyConfigType;
-    if (NS_SUCCEEDED(pps->GetProxyConfigType(&proxyConfigType)) &&
-        proxyConfigType == nsIProtocolProxyService::PROXYCONFIG_DIRECT) {
-        return NS_ERROR_FAILURE;
-    }
 
     return pps->AsyncResolve(mProxyURI ? mProxyURI : mURI, mProxyResolveFlags,
                              this, getter_AddRefs(mProxyRequest));
@@ -2284,13 +2264,7 @@ nsHttpChannel::ContinueProcessFallback(nsresult rv)
 
     notifier.RedirectSucceeded();
 
-    // disconnect from our listener
-    mListener = 0;
-    mListenerContext = 0;
-
-    // and from our callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
 
     mFallingBack = true;
 
@@ -4130,13 +4104,8 @@ nsHttpChannel::ContinueProcessRedirection(nsresult rv)
     
     notifier.RedirectSucceeded();
 
-    // disconnect from our listener
-    mListener = 0;
-    mListenerContext = 0;
+    ReleaseListeners();
 
-    // and from our callbacks
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
     return NS_OK;
 }
 
@@ -4319,8 +4288,10 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     nsresult rv;
 
     rv = NS_CheckPortSafety(mURI);
-    if (NS_FAILED(rv))
+    if (NS_FAILED(rv)) {
+        ReleaseListeners();
         return rv;
+    }
 
     // Remember the cookie header that was set, if any
     const char *cookieHeader = mRequestHead.PeekHeader(nsHttp::Cookie);
@@ -4355,7 +4326,11 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     if (!mProxyInfo && NS_SUCCEEDED(ResolveProxy()))
         return NS_OK;
 
-    return BeginConnect();
+    rv = BeginConnect();
+    if (NS_FAILED(rv))
+        ReleaseListeners();
+
+    return rv;
 }
 
 nsresult
@@ -5007,8 +4982,6 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     if (mListener) {
         LOG(("  calling OnStopRequest\n"));
         mListener->OnStopRequest(this, mListenerContext, status);
-        mListener = 0;
-        mListenerContext = 0;
     }
 
     if (mCacheEntry) {
@@ -5041,8 +5014,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     // We don't need this info anymore
     CleanRedirectCacheChainIfNecessary();
 
-    mCallbacks = nullptr;
-    mProgressSink = nullptr;
+    ReleaseListeners();
     
     return NS_OK;
 }

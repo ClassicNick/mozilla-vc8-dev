@@ -98,28 +98,27 @@ struct DevicePropertiesRequest
   nsString[] addresses;
 };
 
-struct ConnectHeadsetRequest
+struct ConnectRequest
 {
   nsString address;
   nsString adapterPath;
+  uint16_t profileId;
 };
 
-struct ConnectObjectPushRequest
+struct DisconnectRequest
 {
-  nsString address;
-  nsString adapterPath;
+  uint16_t profileId;
 };
-
-struct DisconnectHeadsetRequest
-{};
-
-struct DisconnectObjectPushRequest
-{};
 
 struct SendFileRequest
 {
   nsString devicePath;
   PBlob blob;
+};
+
+struct StopSendingFileRequest
+{
+  nsString devicePath;
 };
 
 union Request
@@ -138,11 +137,10 @@ union Request
   ConfirmAuthorizationRequest;
   DenyAuthorizationRequest;
   DevicePropertiesRequest;
-  ConnectHeadsetRequest;
-  ConnectObjectPushRequest;
-  DisconnectHeadsetRequest;
-  DisconnectObjectPushRequest;
+  ConnectRequest;
+  DisconnectRequest;
   SendFileRequest;
+  StopSendingFileRequest;
 };
 
 protocol PBluetooth

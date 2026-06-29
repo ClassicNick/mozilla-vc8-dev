@@ -2297,11 +2297,15 @@
   },
   "READ_SAVED_PING_SUCCESS": {
     "kind": "boolean",
-    "description": "Sucessful reading a saved ping file"
+    "description": "Successfully reading a saved ping file"
   },
   "TOUCH_ENABLED_DEVICE": {
     "kind": "boolean",
     "description": "The device supports touch input",
     "cpp_guard": "XP_WIN"
+  },
+  "COMPONENTS_OBJECT_ACCESSED_BY_CONTENT": {
+    "kind": "flag",
+    "description": "Whether content ever accesed the Components object in this session"
   }
 }

@@ -690,9 +690,7 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
     mCallCleanUpAfterModalDialogCloses(false),
     mDialogAbuseCount(0),
     mStopAbuseDialogs(false),
-    mDialogsPermanentlyDisabled(false),
-    mObservingNetworkUpload(false),
-    mObservingNetworkDownload(false)
+    mDialogsPermanentlyDisabled(false)
 {
   nsLayoutStatics::AddRef();
 
@@ -836,6 +834,12 @@ nsGlobalWindow::~nsGlobalWindow()
     nsAutoCString url;
     if (mLastOpenedURI) {
       mLastOpenedURI->GetSpec(url);
+
+      // Data URLs can be very long, so truncate to avoid flooding the log.
+      const uint32_t maxURLLength = 1000;
+      if (url.Length() > maxURLLength) {
+        url.Truncate(maxURLLength);
+      }
     }
 
     printf("--DOMWINDOW == %d (%p) [serial = %d] [outer = %p] [url = %s]\n",
@@ -2011,9 +2015,7 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
         rv = SetOuterObject(cx, mJSObject);
         NS_ENSURE_SUCCESS(rv, rv);
 
-        JSCompartment *compartment = js::GetObjectCompartment(mJSObject);
-        xpc::CompartmentPrivate *priv =
-          static_cast<xpc::CompartmentPrivate*>(JS_GetCompartmentPrivate(compartment));
+        xpc::CompartmentPrivate *priv = xpc::GetCompartmentPrivate(mJSObject);
         if (priv && priv->waiverWrapperMap) {
           NS_ASSERTION(!JS_IsExceptionPending(cx),
                        "We might overwrite a pending exception!");
@@ -3263,23 +3265,39 @@ nsGlobalWindow::GetClosed(bool* aClosed)
   return NS_OK;
 }
 
+nsDOMWindowList*
+nsGlobalWindow::GetWindowList()
+{
+  MOZ_ASSERT(IsOuterWindow());
+
+  if (!mFrames && mDocShell) {
+    mFrames = new nsDOMWindowList(mDocShell);
+  }
+
+  return mFrames;
+}
+
 NS_IMETHODIMP
 nsGlobalWindow::GetFrames(nsIDOMWindowCollection** aFrames)
 {
   FORWARD_TO_OUTER(GetFrames, (aFrames), NS_ERROR_NOT_INITIALIZED);
 
-  *aFrames = nullptr;
-
-  if (!mFrames && mDocShell) {
-    mFrames = new nsDOMWindowList(mDocShell);
-    if (!mFrames) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  }
-
-  *aFrames = static_cast<nsIDOMWindowCollection *>(mFrames);
+  *aFrames = GetWindowList();
   NS_IF_ADDREF(*aFrames);
   return NS_OK;
+}
+
+already_AddRefed<nsIDOMWindow>
+nsGlobalWindow::IndexedGetter(uint32_t aIndex, bool& aFound)
+{
+  aFound = false;
+
+  FORWARD_TO_OUTER(IndexedGetter, (aIndex, aFound), nullptr);
+
+  nsDOMWindowList* windows = GetWindowList();
+  NS_ENSURE_TRUE(windows, nullptr);
+
+  return windows->IndexedGetter(aIndex, aFound);
 }
 
 NS_IMETHODIMP
@@ -4355,14 +4373,22 @@ nsGlobalWindow::GetScrollY(int32_t* aScrollY)
   return GetScrollXY(nullptr, aScrollY, false);
 }
 
+uint32_t
+nsGlobalWindow::GetLength()
+{
+  FORWARD_TO_OUTER(GetLength, (), 0);
+
+  nsDOMWindowList* windows = GetWindowList();
+  NS_ENSURE_TRUE(windows, 0);
+
+  return windows->GetLength();
+}
+
 NS_IMETHODIMP
 nsGlobalWindow::GetLength(uint32_t* aLength)
 {
-  nsCOMPtr<nsIDOMWindowCollection> frames;
-  if (NS_SUCCEEDED(GetFrames(getter_AddRefs(frames))) && frames) {
-    return frames->GetLength(aLength);
-  }
-  return NS_ERROR_FAILURE;
+  *aLength = GetLength();
+  return NS_OK;
 }
 
 bool
@@ -6528,9 +6554,10 @@ nsGlobalWindow::Close()
     return NS_OK;
   }
 
-  // Don't allow scripts from content to close windows
-  // that were not opened by script
-  if (!mHadOriginalOpener && !nsContentUtils::IsCallerTrustedForWrite()) {
+  // Don't allow scripts from content to close non-app windows that were not
+  // opened by script.
+  if (!mDocShell->GetIsApp() &&
+      !mHadOriginalOpener && !nsContentUtils::IsCallerTrustedForWrite()) {
     bool allowClose =
       Preferences::GetBool("dom.allow_scripts_to_close_windows", true);
     if (!allowClose) {
@@ -11131,11 +11158,6 @@ nsGlobalWindow::SetHasAudioAvailableEventListeners()
 void
 nsGlobalWindow::EnableNetworkEvent(uint32_t aType)
 {
-  if ((mObservingNetworkUpload && aType == NS_NETWORK_UPLOAD_EVENT) ||
-      (mObservingNetworkDownload && aType == NS_NETWORK_DOWNLOAD_EVENT)) {
-    return;
-  }
-
   nsCOMPtr<nsIPermissionManager> permMgr =
     do_GetService(NS_PERMISSIONMANAGER_CONTRACTID);
   if (!permMgr) {
@@ -11160,11 +11182,9 @@ nsGlobalWindow::EnableNetworkEvent(uint32_t aType)
   switch (aType) {
     case NS_NETWORK_UPLOAD_EVENT:
       os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC, false);
-      mObservingNetworkUpload = true;
       break;
     case NS_NETWORK_DOWNLOAD_EVENT:
       os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC, false);
-      mObservingNetworkDownload = true;
       break;
   }
 }
@@ -11172,25 +11192,17 @@ nsGlobalWindow::EnableNetworkEvent(uint32_t aType)
 void
 nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
 {
-  if ((!mObservingNetworkUpload && aType == NS_NETWORK_UPLOAD_EVENT) ||
-      (!mObservingNetworkDownload && aType == NS_NETWORK_DOWNLOAD_EVENT)) {
-    return;
-  }
-
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (!os) {
-    NS_ERROR("ObserverService should be available!");
     return;
   }
 
   switch (aType) {
     case NS_NETWORK_UPLOAD_EVENT:
       os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC);
-      mObservingNetworkUpload = false;
       break;
     case NS_NETWORK_DOWNLOAD_EVENT:
       os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC);
-      mObservingNetworkDownload = false;
       break;
   }
 }

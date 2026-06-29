@@ -101,6 +101,7 @@
 #include "mozilla/dom/ipc/ProcessPriorityManager.h"
 #include "nsPermissionManager.h"
 #include "nsCookieService.h"
+#include "nsApplicationCacheService.h"
 
 extern void NS_ShutdownChainItemPool();
 
@@ -256,7 +257,8 @@ nsLayoutStatics::Initialize()
   InitProcessPriorityManager();
 
   nsPermissionManager::AppUninstallObserverInit();
-  nsCookieService::AppUninstallObserverInit();
+  nsCookieService::AppClearDataObserverInit();
+  nsApplicationCacheService::AppClearDataObserverInit();
 
   nsDOMStorageBaseDB::Init();
 

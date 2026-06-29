@@ -638,6 +638,7 @@ nsWindowsShellService::LaunchControlPanelDefaultPrograms()
   return NS_OK;
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 nsresult
 nsWindowsShellService::LaunchHTTPHandlerPane()
 {
@@ -649,6 +650,7 @@ nsWindowsShellService::LaunchHTTPHandlerPane()
                      OAIF_REGISTER_EXT;
   return DynSHOpenWithDialog(NULL, &info);
 }
+#endif
 
 NS_IMETHODIMP
 nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
@@ -682,11 +684,8 @@ nsWindowsShellService::SetDefaultBrowser(bool aClaimAllTypes, bool aForAllUsers)
       }
     }
   }
-<<<<<<< HEAD
 #endif
-=======
 
->>>>>>> 71bc79b
   return rv;
 }
 

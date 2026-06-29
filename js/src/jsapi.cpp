@@ -842,7 +842,6 @@ JSRuntime::JSRuntime()
     thousandsSeparator(0),
     decimalSeparator(0),
     numGrouping(0),
-    waiveGCQuota(false),
     mathCache_(NULL),
     dtoaState(NULL),
     trustedPrincipals_(NULL),
@@ -1535,6 +1534,9 @@ JS_WrapValue(JSContext *cx, jsval *vp)
  *
  * Second, the new identity object's contents will be those of |target|. A swap()
  * is used to make this happen if an object other than |target| is used.
+ *
+ * We don't have a good way to recover from failure in this function, so
+ * we intentionally crash instead.
  */
 
 JS_PUBLIC_API(JSObject *)
@@ -1569,7 +1571,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
         // destination's cross compartment map and that the same
         // object will continue to work.
         if (!origobj->swap(cx, target))
-            return NULL;
+            MOZ_CRASH();
         newIdentity = origobj;
     } else if (WrapperMap::Ptr p = map.lookup(origv)) {
         // There might already be a wrapper for the original object in
@@ -1583,7 +1585,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
         NukeCrossCompartmentWrapper(cx, newIdentity);
 
         if (!newIdentity->swap(cx, target))
-            return NULL;
+            MOZ_CRASH();
     } else {
         // Otherwise, we use |target| for the new identity object.
         newIdentity = target;
@@ -1592,16 +1594,16 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     // Now, iterate through other scopes looking for references to the
     // old object, and update the relevant cross-compartment wrappers.
     if (!RemapAllWrappersForObject(cx, origobj, newIdentity))
-        return NULL;
+        MOZ_CRASH();
 
     // Lastly, update the original object to point to the new one.
     if (origobj->compartment() != destination) {
         RootedObject newIdentityWrapper(cx, newIdentity);
         AutoCompartment ac(cx, origobj);
         if (!JS_WrapObject(cx, newIdentityWrapper.address()))
-            return NULL;
+            MOZ_CRASH();
         if (!origobj->swap(cx, newIdentityWrapper))
-            return NULL;
+            MOZ_CRASH();
         origobj->compartment()->crossCompartmentWrappers.put(ObjectValue(*newIdentity), origv);
     }
 
@@ -1656,7 +1658,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
         NukeCrossCompartmentWrapper(cx, newWrapper);
 
         if (!newWrapper->swap(cx, targetwrapper))
-            return NULL;
+            MOZ_CRASH();
     } else {
         // Otherwise, use the passed-in wrapper as the same-compartment wrapper.
         newWrapper = targetwrapper;
@@ -1666,7 +1668,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     // object. Note that the entries in the maps are for |origobj| and not
     // |origwrapper|. They need to be updated to point at the new object.
     if (!RemapAllWrappersForObject(cx, origobj, targetobj))
-        return NULL;
+        MOZ_CRASH();
 
     // Lastly, update things in the original compartment. Our invariants dictate
     // that the original compartment can only have one cross-compartment wrapper
@@ -1683,14 +1685,14 @@ js_TransplantObjectWithWrapper(JSContext *cx,
         // and a possibly-dangerous object that isn't live.
         RootedObject reflectorGuts(cx, NewDeadProxyObject(cx, JS_GetGlobalForObject(cx, origobj)));
         if (!reflectorGuts || !origobj->swap(cx, reflectorGuts))
-            return NULL;
+            MOZ_CRASH();
 
         // Turn origwrapper into a CCW to the new object.
         RootedObject wrapperGuts(cx, targetobj);
         if (!JS_WrapObject(cx, wrapperGuts.address()))
-            return NULL;
+            MOZ_CRASH();
         if (!origwrapper->swap(cx, wrapperGuts))
-            return NULL;
+            MOZ_CRASH();
         origwrapper->compartment()->crossCompartmentWrappers.put(ObjectValue(*targetobj),
                                                                  ObjectValue(*origwrapper));
     }
@@ -4541,7 +4543,7 @@ JS_Enumerate(JSContext *cx, JSObject *objArg)
 const uint32_t JSSLOT_ITER_INDEX = 0;
 
 static void
-prop_iter_finalize(FreeOp *fop, JSObject *obj)
+prop_iter_finalize(FreeOp *fop, RawObject obj)
 {
     void *pdata = obj->getPrivate();
     if (!pdata)
@@ -4555,7 +4557,7 @@ prop_iter_finalize(FreeOp *fop, JSObject *obj)
 }
 
 static void
-prop_iter_trace(JSTracer *trc, JSObject *obj)
+prop_iter_trace(JSTracer *trc, RawObject obj)
 {
     void *pdata = obj->getPrivate();
     if (!pdata)
@@ -4800,21 +4802,19 @@ JS_NewFunction(JSContext *cx, JSNative native, unsigned nargs, unsigned flags,
 {
     RootedObject parent(cx, parentArg);
     JS_THREADSAFE_ASSERT(cx->compartment != cx->runtime->atomsCompartment);
-    JSAtom *atom;
 
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
 
-    if (!name) {
-        atom = NULL;
-    } else {
+    RootedAtom atom(cx);
+    if (name) {
         atom = Atomize(cx, name, strlen(name));
         if (!atom)
             return NULL;
     }
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parent, atom);
+    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom);
 }
 
 JS_PUBLIC_API(JSFunction *)
@@ -4828,7 +4828,8 @@ JS_NewFunctionById(JSContext *cx, JSNative native, unsigned nargs, unsigned flag
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
 
-    return js_NewFunction(cx, NULL, native, nargs, flags, parent, JSID_TO_ATOM(id));
+    RootedAtom atom(cx, JSID_TO_ATOM(id));
+    return js_NewFunction(cx, NullPtr(), native, nargs, flags, parent, atom);
 }
 
 JS_PUBLIC_API(JSObject *)
@@ -5467,7 +5468,7 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
             return NULL;
     }
 
-    RootedFunction fun(cx, js_NewFunction(cx, NULL, NULL, 0, JSFUN_INTERPRETED, obj, funAtom));
+    RootedFunction fun(cx, js_NewFunction(cx, NullPtr(), NULL, 0, JSFUN_INTERPRETED, obj, funAtom));
     if (!fun)
         return NULL;
 
@@ -6306,8 +6307,10 @@ JS_DecodeUTF8(JSContext *cx, const char *src, size_t srclen, jschar *dst,
 }
 
 JS_PUBLIC_API(char *)
-JS_EncodeString(JSContext *cx, JSString *str)
+JS_EncodeString(JSContext *cx, JSRawString strArg)
 {
+    RootedString str(cx, strArg);
+
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
@@ -6410,7 +6413,7 @@ JS_ParseJSONWithReviver(JSContext *cx, const jschar *chars, uint32_t len, jsval 
 }
 
 JS_PUBLIC_API(JSBool)
-JS_ReadStructuredClone(JSContext *cx, const uint64_t *buf, size_t nbytes,
+JS_ReadStructuredClone(JSContext *cx, uint64_t *buf, size_t nbytes,
                        uint32_t version, jsval *vp,
                        const JSStructuredCloneCallbacks *optionalCallbacks,
                        void *closure)
@@ -6432,7 +6435,7 @@ JS_ReadStructuredClone(JSContext *cx, const uint64_t *buf, size_t nbytes,
 JS_PUBLIC_API(JSBool)
 JS_WriteStructuredClone(JSContext *cx, jsval valueArg, uint64_t **bufp, size_t *nbytesp,
                         const JSStructuredCloneCallbacks *optionalCallbacks,
-                        void *closure)
+                        void *closure, jsval transferable)
 {
     RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
@@ -6443,7 +6446,26 @@ JS_WriteStructuredClone(JSContext *cx, jsval valueArg, uint64_t **bufp, size_t *
         optionalCallbacks ?
         optionalCallbacks :
         cx->runtime->structuredCloneCallbacks;
-    return WriteStructuredClone(cx, value, (uint64_t **) bufp, nbytesp, callbacks, closure);
+    return WriteStructuredClone(cx, valueArg, (uint64_t **) bufp, nbytesp,
+                                callbacks, closure, transferable);
+}
+
+JS_PUBLIC_API(JSBool)
+JS_ClearStructuredClone(const uint64_t *data, size_t nbytes)
+{
+    return ClearStructuredClone(data, nbytes);
+}
+
+JS_PUBLIC_API(JSBool)
+JS_StructuredCloneHasTransferables(const uint64_t *data, size_t nbytes,
+                                   JSBool *hasTransferable)
+{
+    bool transferable;
+    if (!StructuredCloneHasTransferObjects(data, nbytes, &transferable))
+        return false;
+
+    *hasTransferable = transferable;
+    return true;
 }
 
 JS_PUBLIC_API(JSBool)
@@ -6469,7 +6491,7 @@ void
 JSAutoStructuredCloneBuffer::clear()
 {
     if (data_) {
-        js_free(data_);
+        ClearStructuredClone(data_, nbytes_);
         data_ = NULL;
         nbytes_ = 0;
         version_ = 0;
@@ -6488,6 +6510,12 @@ JSAutoStructuredCloneBuffer::adopt(uint64_t *data, size_t nbytes, uint32_t versi
 bool
 JSAutoStructuredCloneBuffer::copy(const uint64_t *srcData, size_t nbytes, uint32_t version)
 {
+    // transferable objects cannot be copied
+    bool hasTransferable;
+    if (!StructuredCloneHasTransferObjects(data_, nbytes_, &hasTransferable) ||
+        hasTransferable)
+        return false;
+
     uint64_t *newData = static_cast<uint64_t *>(js_malloc(nbytes));
     if (!newData)
         return false;
@@ -6516,7 +6544,7 @@ JSAutoStructuredCloneBuffer::steal(uint64_t **datap, size_t *nbytesp, uint32_t *
 bool
 JSAutoStructuredCloneBuffer::read(JSContext *cx, jsval *vp,
                                   const JSStructuredCloneCallbacks *optionalCallbacks,
-                                  void *closure) const
+                                  void *closure)
 {
     JS_ASSERT(cx);
     JS_ASSERT(data_);
@@ -6529,10 +6557,21 @@ JSAutoStructuredCloneBuffer::write(JSContext *cx, jsval valueArg,
                                    const JSStructuredCloneCallbacks *optionalCallbacks,
                                    void *closure)
 {
+    jsval transferable = JSVAL_VOID;
+    return write(cx, valueArg, transferable, optionalCallbacks, closure);
+}
+
+bool
+JSAutoStructuredCloneBuffer::write(JSContext *cx, jsval valueArg,
+                                   jsval transferable,
+                                   const JSStructuredCloneCallbacks *optionalCallbacks,
+                                   void *closure)
+{
     RootedValue value(cx, valueArg);
     clear();
     bool ok = !!JS_WriteStructuredClone(cx, value, &data_, &nbytes_,
-                                        optionalCallbacks, closure);
+                                        optionalCallbacks, closure,
+                                        transferable);
     if (!ok) {
         data_ = NULL;
         nbytes_ = 0;
@@ -7016,7 +7055,7 @@ JS_ErrorFromException(JSContext *cx, jsval valueArg)
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value);
-    return js_ErrorFromException(cx, value);
+    return js_ErrorFromException(value);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -7226,9 +7265,10 @@ AssertArgumentsAreSane(JSContext *cx, const JS::Value &value)
 } // namespace JS
 
 JS_PUBLIC_API(void *)
-JS_EncodeScript(JSContext *cx, JSScript *script, uint32_t *lengthp)
+JS_EncodeScript(JSContext *cx, JSRawScript scriptArg, uint32_t *lengthp)
 {
     XDREncoder encoder(cx);
+    RootedScript script(cx, scriptArg);
     if (!encoder.codeScript(&script))
         return NULL;
     return encoder.forgetData(lengthp);
@@ -7249,7 +7289,7 @@ JS_DecodeScript(JSContext *cx, const void *data, uint32_t length,
                 JSPrincipals *principals, JSPrincipals *originPrincipals)
 {
     XDRDecoder decoder(cx, data, length, principals, originPrincipals);
-    JSScript *script;
+    RootedScript script(cx);
     if (!decoder.codeScript(&script))
         return NULL;
     return script;

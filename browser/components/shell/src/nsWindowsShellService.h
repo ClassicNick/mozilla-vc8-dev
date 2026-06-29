@@ -27,7 +27,9 @@ public:
 protected:
   bool IsDefaultBrowserVista(bool aCheckAllTypes, bool* aIsDefaultBrowser);
   nsresult LaunchControlPanelDefaultPrograms();
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   nsresult LaunchHTTPHandlerPane();
+#endif
 
 private:
   bool      mCheckedThisSession;

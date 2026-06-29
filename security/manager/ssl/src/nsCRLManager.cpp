@@ -231,7 +231,7 @@ done:
         //with the next update date. We will not reschedule this crl in this
         //session anymore - or else, we land into a loop. It would anyway be
         //imported once the browser is restarted.
-        if(LL_CMP(updateTime, > , PR_Now())){
+        if(int64_t(updateTime) > int64_t(PR_Now())){
           toBeRescheduled = true;
         }
         nsMemory::Free(updateTime);
@@ -396,9 +396,9 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
   double tmpData;
   
   LL_L2F(tmpData,secsInDay);
-  LL_MUL(tmpData,dayCnt,tmpData);
+  tmpData = dayCnt * tmpData;
   LL_F2L(secsInDayCnt,tmpData);
-  LL_MUL(microsecInDayCnt, secsInDayCnt, PR_USEC_PER_SEC);
+  microsecInDayCnt = secsInDayCnt * PR_USEC_PER_SEC;
     
   PRTime lastUpdate;
   PRTime nextUpdate;
@@ -415,17 +415,17 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
 
   switch (autoUpdateType) {
   case TYPE_AUTOUPDATE_FREQ_BASED:
-    LL_SUB(diff, now, lastUpdate);             //diff is the no of micro sec between now and last update
-    LL_DIV(cycleCnt, diff, microsecInDayCnt);   //temp is the number of full cycles from lst update
-    LL_MOD(temp, diff, microsecInDayCnt);
-    if(!(LL_IS_ZERO(temp))) {
-      LL_ADD(cycleCnt,cycleCnt,1);            //no of complete cycles till next autoupdate instant
+    diff = now - lastUpdate;                    //diff is the no of micro sec between now and last update
+    cycleCnt = diff / microsecInDayCnt;       //temp is the number of full cycles from lst update
+    temp = diff % microsecInDayCnt;
+    if(temp != 0) {
+      ++cycleCnt;            //no of complete cycles till next autoupdate instant
     }
-    LL_MUL(temp,cycleCnt,microsecInDayCnt);    //micro secs from last update
-    LL_ADD(tempTime, lastUpdate, temp);
+    temp = cycleCnt * microsecInDayCnt;    //micro secs from last update
+    tempTime = lastUpdate + temp;
     break;  
   case TYPE_AUTOUPDATE_TIME_BASED:
-    LL_SUB(tempTime, nextUpdate, microsecInDayCnt);
+    tempTime = nextUpdate - microsecInDayCnt;
     break;
   default:
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -433,8 +433,8 @@ nsCRLManager::ComputeNextAutoUpdateTime(nsICRLInfo *info,
 
   //Now, a basic constraing is that the next auto update date can never be after
   //next update, if one is defined
-  if(LL_CMP(nextUpdate , > , 0 )) {
-    if(LL_CMP(tempTime , > , nextUpdate)) {
+  if(nextUpdate > 0) {
+    if(tempTime > nextUpdate) {
       tempTime = nextUpdate;
     }
   }

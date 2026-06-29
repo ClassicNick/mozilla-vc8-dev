@@ -2695,11 +2695,7 @@ nsContentUtils::GetImgLoaderForDocument(nsIDocument* aDoc)
     }
   } else {
     nsCOMPtr<nsIChannel> channel = aDoc->GetChannel();
-    if (channel) {
-      nsCOMPtr<nsILoadContext> context;
-      NS_QueryNotificationCallbacks(channel, context);
-      isPrivate = context && context->UsePrivateBrowsing();
-    }
+    isPrivate = channel && NS_UsePrivateBrowsing(channel);
   }
   return isPrivate ? sPrivateImgLoader : sImgLoader;
 }
@@ -6207,6 +6203,26 @@ nsContentUtils::CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
   return NS_OK;
 }
 
+// Initial implementation: only stores to RAM, not file
+// TODO: bug 704447: large file support
+nsresult
+nsContentUtils::CreateBlobBuffer(JSContext* aCx,
+                                 const nsACString& aData,
+                                 jsval& aBlob)
+{
+  uint32_t blobLen = aData.Length();
+  void* blobData = PR_Malloc(blobLen);
+  nsCOMPtr<nsIDOMBlob> blob;
+  if (blobData) {
+    memcpy(blobData, aData.BeginReading(), blobLen);
+    blob = new nsDOMMemoryFile(blobData, blobLen, EmptyString());
+  } else {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  JSObject* scope = JS_GetGlobalForScopeChain(aCx);
+  return nsContentUtils::WrapNative(aCx, scope, blob, &aBlob, nullptr, true);
+}
+
 void
 nsContentUtils::StripNullChars(const nsAString& aInStr, nsAString& aOutStr)
 {
@@ -6928,9 +6944,7 @@ nsContentUtils::ReleaseWrapper(nsISupports* aScriptObjectHolder,
     // from both here.
     JSObject* obj = aCache->GetWrapperPreserveColor();
     if (aCache->IsDOMBinding() && obj) {
-      JSCompartment *compartment = js::GetObjectCompartment(obj);
-      xpc::CompartmentPrivate *priv =
-        static_cast<xpc::CompartmentPrivate *>(JS_GetCompartmentPrivate(compartment));
+      xpc::CompartmentPrivate *priv = xpc::GetCompartmentPrivate(obj);
       priv->RemoveDOMExpandoObject(obj);
     }
     DropJSObjects(aScriptObjectHolder);

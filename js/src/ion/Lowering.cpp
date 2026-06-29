@@ -55,7 +55,7 @@ LIRGenerator::visitCallee(MCallee *callee)
     if (!define(ins, callee, LDefinition::PRESET))
         return false;
 
-    ins->getDef(0)->setOutput(LArgument(-sizeof(IonJSFrameLayout)
+    ins->getDef(0)->setOutput(LArgument(-int32_t(sizeof(IonJSFrameLayout))
                                         + IonJSFrameLayout::offsetOfCalleeToken()));
 
     return true;
@@ -454,7 +454,7 @@ LIRGenerator::visitCompare(MCompare *comp)
         // LCompareSAndBranch. Doing this now wouldn't be wrong, but doesn't
         // make sense and avoids confusion.
         if (comp->specialization() == MIRType_String) {
-            LCompareS *lir = new LCompareS(useRegister(left), useRegister(right));
+            LCompareS *lir = new LCompareS(useRegister(left), useRegister(right), temp());
             if (!define(lir, comp))
                 return false;
             return assignSafepoint(lir, comp);
@@ -735,6 +735,13 @@ LIRGenerator::visitPow(MPow *ins)
 }
 
 bool
+LIRGenerator::visitRandom(MRandom *ins)
+{
+    LRandom *lir = new LRandom(tempFixed(CallTempReg0), tempFixed(CallTempReg1));
+    return defineFixed(lir, ins, LAllocation(AnyRegister(ReturnFloatReg)));
+}
+
+bool
 LIRGenerator::visitMathFunction(MMathFunction *ins)
 {
     JS_ASSERT(ins->type() == MIRType_Double);
@@ -989,9 +996,9 @@ LIRGenerator::visitToDouble(MToDouble *convert)
       default:
         // Objects might be effectful.
         // Strings are complicated - we don't handle them yet.
-        JS_NOT_REACHED("unexpected type");
+        JS_ASSERT(!"unexpected type");
+        return false;
     }
-    return false;
 }
 
 bool
@@ -1024,23 +1031,21 @@ LIRGenerator::visitToInt32(MToInt32 *convert)
       case MIRType_String:
         // Strings are complicated - we don't handle them yet.
         IonSpew(IonSpew_Abort, "String to Int32 not supported yet.");
-        break;
+        return false;
 
       case MIRType_Object:
         // Objects might be effectful.
         IonSpew(IonSpew_Abort, "Object to Int32 not supported yet.");
-        break;
+        return false;
 
       case MIRType_Undefined:
         IonSpew(IonSpew_Abort, "Undefined coerces to NaN, not int32.");
-        break;
+        return false;
 
       default:
-        // Undefined coerces to NaN, not int32.
-        JS_NOT_REACHED("unexpected type");
+        JS_ASSERT(!"unexpected type");
+        return false;
     }
-
-    return false;
 }
 
 bool
@@ -1074,10 +1079,9 @@ LIRGenerator::visitTruncateToInt32(MTruncateToInt32 *truncate)
       default:
         // Objects might be effectful.
         // Strings are complicated - we don't handle them yet.
-        JS_NOT_REACHED("unexpected type");
+        JS_ASSERT(!"unexpected type");
+        return false;
     }
-
-    return false;
 }
 
 bool
@@ -1090,8 +1094,8 @@ LIRGenerator::visitToString(MToString *ins)
       case MIRType_Null:
       case MIRType_Undefined:
       case MIRType_Boolean:
-        JS_NOT_REACHED("NYI: Lower MToString");
-        break;
+        JS_ASSERT(!"NYI: Lower MToString");
+        return false;
 
       case MIRType_Int32: {
         LIntToString *lir = new LIntToString(useRegister(opd));
@@ -1103,16 +1107,26 @@ LIRGenerator::visitToString(MToString *ins)
 
       default:
         // Objects might be effectful. (see ToPrimitive)
-        JS_NOT_REACHED("unexpected type");
-        break;
+        JS_ASSERT(!"unexpected type");
+        return false;
     }
-    return false;
 }
 
 bool
 LIRGenerator::visitRegExp(MRegExp *ins)
 {
     LRegExp *lir = new LRegExp();
+    return defineVMReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitRegExpTest(MRegExpTest *ins)
+{
+    JS_ASSERT(ins->regexp()->type() == MIRType_Object);
+    JS_ASSERT(ins->string()->type() == MIRType_String);
+
+    LRegExpTest *lir = new LRegExpTest(useRegisterAtStart(ins->regexp()),
+                                       useRegisterAtStart(ins->string()));
     return defineVMReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
@@ -1169,14 +1183,12 @@ LIRGenerator::visitLoadSlot(MLoadSlot *ins)
 
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_NOT_REACHED("typed load must have a payload");
+        JS_ASSERT(!"typed load must have a payload");
         return false;
 
       default:
         return define(new LLoadSlotT(useRegister(ins->slots())), ins);
     }
-
-    return true;
 }
 
 bool
@@ -1308,7 +1320,7 @@ LIRGenerator::visitNot(MNot *ins)
       }
 
       default:
-        JS_NOT_REACHED("Unexpected MIRType.");
+        JS_ASSERT(!"Unexpected MIRType.");
         return false;
     }
 }
@@ -1355,7 +1367,7 @@ LIRGenerator::visitLoadElement(MLoadElement *ins)
       }
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_NOT_REACHED("typed load must have a payload");
+        JS_ASSERT(!"typed load must have a payload");
         return false;
 
       default:
@@ -1447,7 +1459,7 @@ LIRGenerator::visitArrayPopShift(MArrayPopShift *ins)
       }
       case MIRType_Undefined:
       case MIRType_Null:
-        JS_NOT_REACHED("typed load must have a payload");
+        JS_ASSERT(!"typed load must have a payload");
         return false;
 
       default:
@@ -1481,6 +1493,20 @@ LIRGenerator::visitArrayPush(MArrayPush *ins)
         return define(lir, ins) && assignSafepoint(lir, ins);
       }
     }
+}
+
+bool
+LIRGenerator::visitArrayConcat(MArrayConcat *ins)
+{
+    JS_ASSERT(ins->type() == MIRType_Object);
+    JS_ASSERT(ins->lhs()->type() == MIRType_Object);
+    JS_ASSERT(ins->rhs()->type() == MIRType_Object);
+
+    LArrayConcat *lir = new LArrayConcat(useFixed(ins->lhs(), CallTempReg1),
+                                         useFixed(ins->rhs(), CallTempReg2),
+                                         tempFixed(CallTempReg3),
+                                         tempFixed(CallTempReg4));
+    return defineVMReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 
 bool
@@ -1529,7 +1555,7 @@ LIRGenerator::visitClampToUint8(MClampToUint8 *ins)
       }
 
       default:
-        JS_NOT_REACHED("Unexpected type");
+        JS_ASSERT(!"unexpected type");
         return false;
     }
 }

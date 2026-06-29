@@ -63,6 +63,20 @@ const TLV_LOCATION_INFO_UMTS_SIZE = 11;
 
 const DEFAULT_EMERGENCY_NUMBERS = ["112", "911"];
 
+// MMI match groups
+const MMI_MATCH_GROUP_FULL_MMI = 1;
+const MMI_MATCH_GROUP_MMI_PROCEDURE = 2;
+const MMI_MATCH_GROUP_SERVICE_CODE = 3;
+const MMI_MATCH_GROUP_SIA = 5;
+const MMI_MATCH_GROUP_SIB = 7;
+const MMI_MATCH_GROUP_SIC = 9;
+const MMI_MATCH_GROUP_PWD_CONFIRM = 11;
+const MMI_MATCH_GROUP_DIALING_NUMBER = 12;
+
+const MMI_MAX_LENGTH_SHORT_CODE = 2;
+
+const MMI_END_OF_USSD = "#";
+
 let RILQUIRKS_CALLSTATE_EXTRA_UINT32 = libcutils.property_get("ro.moz.ril.callstate_extra_int");
 // This may change at runtime since in RIL v6 and later, we get the version
 // number via the UNSOLICITED_RIL_CONNECTED parcel.
@@ -748,6 +762,21 @@ let RIL = {
      * Mute or unmute the radio.
      */
     this._muted = true;
+
+    /**
+     * USSD session flag.
+     * Only one USSD session may exist at a time, and the session is assumed
+     * to exist until:
+     *    a) There's a call to cancelUSSD()
+     *    b) The implementation sends a UNSOLICITED_ON_USSD with a type code
+     *       of "0" (USSD-Notify/no further action) or "2" (session terminated)
+     */
+    this._ussdSession = null;
+
+   /**
+    * Regular expresion to parse MMI codes.
+    */
+    this._mmiRegExp = null;
   },
   
   get muted() {
@@ -2200,6 +2229,183 @@ let RIL = {
   },
 
   /**
+   * Helper to parse and process a MMI string.
+   */
+  _parseMMI: function _parseMMI(mmiString) {
+    if (!mmiString || !mmiString.length) {
+      return null;
+    }
+
+    // Regexp to parse and process the MMI code.
+    if (this._mmiRegExp == null) {
+      // The first group of the regexp takes the whole MMI string.
+      // The second group takes the MMI procedure that can be:
+      //    - Activation (*SC*SI#).
+      //    - Deactivation (#SC*SI#).
+      //    - Interrogation (*#SC*SI#).
+      //    - Registration (**SC*SI#).
+      //    - Erasure (##SC*SI#).
+      //  where SC = Service Code (2 or 3 digits) and SI = Supplementary Info
+      //  (variable length).
+      let pattern = "((\\*[*#]?|##?)";
+
+      // Third group of the regexp looks for the MMI Service code, which is a
+      // 2 or 3 digits that uniquely specifies the Supplementary Service
+      // associated with the MMI code.
+      pattern += "(\\d{2,3})";
+
+      // Groups from 4 to 9 looks for the MMI Supplementary Information SIA,
+      // SIB and SIC. SIA may comprise e.g. a PIN code or Directory Number,
+      // SIB may be used to specify the tele or bearer service and SIC to
+      // specify the value of the "No Reply Condition Timer". Where a particular
+      // service request does not require any SI, "*SI" is not entered. The use
+      // of SIA, SIB and SIC is optional and shall be entered in any of the
+      // following formats:
+      //    - *SIA*SIB*SIC#
+      //    - *SIA*SIB#
+      //    - *SIA**SIC#
+      //    - *SIA#
+      //    - **SIB*SIC#
+      //    - ***SISC#
+      pattern += "(\\*([^*#]*)(\\*([^*#]*)(\\*([^*#]*)";
+
+      // The eleventh group takes the password for the case of a password
+      // registration procedure.
+      pattern += "(\\*([^*#]*))?)?)?)?#)";
+
+      // The last group takes the dial string after the #.
+      pattern += "([^#]*)";
+
+      this._mmiRegExp = new RegExp(pattern);
+    }
+    let matches = this._mmiRegExp.exec(mmiString);
+
+    // If the regex does not apply over the MMI string, it can still be an MMI
+    // code. If the MMI String is a #-string (entry of any characters defined
+    // in the TS.23.038 Default Alphabet followed by #SEND) it shall be treated
+    // as a USSD code.
+    if (matches == null) {
+      if (mmiString.charAt(mmiString.length - 1) == MMI_END_OF_USSD) {
+        return {
+          fullMMI: mmiString
+        };
+      }
+      return null;
+    }
+
+    // After successfully executing the regular expresion over the MMI string,
+    // the following match groups should contain:
+    // 1 = full MMI string that might be used as a USSD request.
+    // 2 = MMI procedure.
+    // 3 = Service code.
+    // 5 = SIA.
+    // 7 = SIB.
+    // 9 = SIC.
+    // 11 = Password registration.
+    // 12 = Dialing number.
+    return {
+      fullMMI: matches[MMI_MATCH_GROUP_FULL_MMI],
+      procedure: matches[MMI_MATCH_GROUP_MMI_PROCEDURE],
+      serviceCode: matches[MMI_MATCH_GROUP_SERVICE_CODE],
+      sia: matches[MMI_MATCH_GROUP_SIA],
+      sib: matches[MMI_MATCH_GROUP_SIB],
+      sic: matches[MMI_MATCH_GROUP_SIC],
+      pwd: matches[MMI_MATCH_GROUP_PWD_CONFIRM],
+      dialNumber: matches[MMI_MATCH_GROUP_DIALING_NUMBER]
+    };
+  },
+
+  sendMMI: function sendMMI(options) {
+    if (DEBUG) {
+      debug("SendMMI " + JSON.stringify(options));
+    }
+    let mmiString = options.mmi;
+    let mmi = this._parseMMI(mmiString);
+
+    let _sendMMIError = (function _sendMMIError(errorMsg) {
+      options.rilMessageType = "sendMMI";
+      options.errorMsg = errorMsg;
+      this.sendDOMMessage(options);
+    }).bind(this);
+
+    if (mmi == null) {
+      if (this._ussdSession) {
+        options.ussd = mmiString;
+        this.sendUSSD(options);
+        return;
+      }
+      _sendMMIError("NO_VALID_MMI_STRING");
+      return;
+    }
+
+    if (DEBUG) {
+      debug("MMI " + JSON.stringify(mmi));
+    }
+
+    // We check if the MMI service code is supported and in that case we
+    // trigger the appropriate RIL request if possible.
+    let sc = mmi.serviceCode;
+
+    switch (sc) {
+      // Call forwarding
+      case MMI_SC_CFU:
+      case MMI_SC_CF_BUSY:
+      case MMI_SC_CF_NO_REPLY:
+      case MMI_SC_CF_NOT_REACHABLE:
+      case MMI_SC_CF_ALL:
+      case MMI_SC_CF_ALL_CONDITIONAL:
+        // TODO: Bug 793192 - MMI Codes: support call forwarding.
+        _sendMMIError("CALL_FORWARDING_NOT_SUPPORTED_VIA_MMI");
+        return;
+
+      // PIN/PIN2/PUK/PUK2
+      case MMI_SC_PIN:
+      case MMI_SC_PIN2:
+      case MMI_SC_PUK:
+      case MMI_SC_PUK2:
+        // TODO: Bug 793187 - MMI Codes: Support PIN/PIN2/PUK handling.
+        _sendMMIError("SIM_FUNCTION_NOT_SUPPORTED_VIA_MMI");
+        return;
+
+      // IMEI
+      case MMI_SC_IMEI:
+        // TODO: Bug 793189 - MMI Codes: get IMEI.
+        _sendMMIError("GET_IMEI_NOT_SUPPORTED_VIA_MMI");
+        return;
+
+      // Call barring
+      case MMI_SC_BAOC:
+      case MMI_SC_BAOIC:
+      case MMI_SC_BAOICxH:
+      case MMI_SC_BAIC:
+      case MMI_SC_BAICr:
+      case MMI_SC_BA_ALL:
+      case MMI_SC_BA_MO:
+      case MMI_SC_BA_MT:
+        _sendMMIError("CALL_BARRING_NOT_SUPPORTED_VIA_MMI");
+        return;
+
+      // Call waiting
+      case MMI_SC_CALL_WAITING:
+        _sendMMIError("CALL_WAITING_NOT_SUPPORTED_VIA_MMI");
+        return;
+    }
+
+    // If the MMI code is not a known code and is a recognized USSD request or
+    // a #-string, it shall still be sent as a USSD request.
+    if (mmi.fullMMI &&
+        (mmiString.charAt(mmiString.length - 1) == MMI_END_OF_USSD)) {
+      options.ussd = mmi.fullMMI;
+      this.sendUSSD(options);
+      return;
+    }
+
+    // At this point, the MMI string is considered as not valid MMI code and
+    // not valid USSD code.
+    _sendMMIError("NOT_VALID_MMI_STRING");
+  },
+
+  /**
    * Send USSD.
    *
    * @param ussd
@@ -3121,7 +3327,9 @@ let RIL = {
     // can be removed if is the same as the current one.
     for each (let newDataCall in datacalls) {
       if (newDataCall.status != DATACALL_FAIL_NONE) {
-        newDataCall.apn = newDataCallOptions.apn;
+        if (newDataCallOptions) {
+          newDataCall.apn = newDataCallOptions.apn;
+        }
         this._sendDataCallError(newDataCall, newDataCall.status);
       }
     }
@@ -3758,7 +3966,7 @@ let RIL = {
    * Send messages to the main thread.
    */
   sendDOMMessage: function sendDOMMessage(message) {
-    postMessage(message, "*");
+    postMessage(message);
   },
 
   /**
@@ -4191,10 +4399,9 @@ RIL[REQUEST_SIM_IO] = function REQUEST_SIM_IO(length, options) {
 };
 RIL[REQUEST_SEND_USSD] = function REQUEST_SEND_USSD(length, options) {
   if (DEBUG) {
-    debug("REQUEST_SEND_USSD " + JSON.stringify(options)); 
+    debug("REQUEST_SEND_USSD " + JSON.stringify(options));
   }
-  options.rilMessageType = "sendussd";
-  options.success = options.rilRequestError == 0 ? true : false;
+  options.success = this._ussdSession = options.rilRequestError == 0;
   options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
   this.sendDOMMessage(options);
 };
@@ -4202,8 +4409,8 @@ RIL[REQUEST_CANCEL_USSD] = function REQUEST_CANCEL_USSD(length, options) {
   if (DEBUG) {
     debug("REQUEST_CANCEL_USSD" + JSON.stringify(options));
   }
-  options.rilMessageType = "cancelussd";
-  options.success = options.rilRequestError == 0 ? true : false;
+  options.success = options.rilRequestError == 0;
+  this._ussdSession = !options.success;
   options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
   this.sendDOMMessage(options);
 };
@@ -4213,7 +4420,7 @@ RIL[REQUEST_QUERY_CALL_FORWARD_STATUS] = null;
 RIL[REQUEST_SET_CALL_FORWARD] = null;
 RIL[REQUEST_QUERY_CALL_WAITING] = null;
 RIL[REQUEST_SET_CALL_WAITING] = function REQUEST_SET_CALL_WAITING(length, options) {
-  options.success = options.rilRequestError == 0 ? true : false;
+  options.errorMsg = RIL_ERROR_TO_GECKO_ERROR[options.rilRequestError];
   this.sendDOMMessage(options);
 };
 RIL[REQUEST_SMS_ACKNOWLEDGE] = null;
@@ -4441,7 +4648,12 @@ RIL[REQUEST_STK_GET_PROFILE] = null;
 RIL[REQUEST_STK_SET_PROFILE] = null;
 RIL[REQUEST_STK_SEND_ENVELOPE_COMMAND] = null;
 RIL[REQUEST_STK_SEND_TERMINAL_RESPONSE] = null;
-RIL[REQUEST_STK_HANDLE_CALL_SETUP_REQUESTED_FROM_SIM] = null;
+RIL[REQUEST_STK_HANDLE_CALL_SETUP_REQUESTED_FROM_SIM] = function REQUEST_STK_HANDLE_CALL_SETUP_REQUESTED_FROM_SIM(length, options) {
+  if (!options.rilRequestError && options.hasConfirmed) {
+    options.rilMessageType = "stkcallsetup";
+    this.sendDOMMessage(options);
+  }
+};
 RIL[REQUEST_EXPLICIT_CALL_TRANSFER] = null;
 RIL[REQUEST_SET_PREFERRED_NETWORK_TYPE] = function REQUEST_SET_PREFERRED_NETWORK_TYPE(length, options) {
   if (options.networkType == null) {
@@ -4620,11 +4832,14 @@ RIL[UNSOLICITED_ON_USSD] = function UNSOLICITED_ON_USSD() {
   if (DEBUG) {
     debug("On USSD. Type Code: " + typeCode + " Message: " + message);
   }
+
+  this._ussdSession = (typeCode != "0" || typeCode != "2");
+
   // Empty message should not be progressed to the DOM.
   if (!message || message == "") {
     return;
   }
-  this.sendDOMMessage({rilMessageType: "ussdreceived",
+  this.sendDOMMessage({rilMessageType: "USSDReceived",
                        message: message});
 };
 RIL[UNSOLICITED_NITZ_TIME_RECEIVED] = function UNSOLICITED_NITZ_TIME_RECEIVED() {
@@ -5020,14 +5235,19 @@ let GsmPDUHelper = {
     return ret;
   },
 
-  writeStringAsSeptets: function writeStringAsSeptets(message, paddingBits, langIndex, langShiftIndex) {
+  writeStringAsSeptets: function writeStringAsSeptets(message, paddingBits, langIndex, langShiftIndex, strict7BitEncoding) {
     const langTable = PDU_NL_LOCKING_SHIFT_TABLES[langIndex];
     const langShiftTable = PDU_NL_SINGLE_SHIFT_TABLES[langShiftIndex];
 
     let dataBits = paddingBits;
     let data = 0;
     for (let i = 0; i < message.length; i++) {
-      let septet = langTable.indexOf(message[i]);
+      let c = message.charAt(i);
+      if (strict7BitEncoding) {
+        c = GSM_SMS_STRICT_7BIT_CHARMAP[c] || c;
+      }
+
+      let septet = langTable.indexOf(c);
       if (septet == PDU_NL_EXTENDED_ESCAPE) {
         continue;
       }
@@ -5036,9 +5256,9 @@ let GsmPDUHelper = {
         data |= septet << dataBits;
         dataBits += 7;
       } else {
-        septet = langShiftTable.indexOf(message[i]);
+        septet = langShiftTable.indexOf(c);
         if (septet == -1) {
-          throw new Error(message[i] + " not in 7 bit alphabet "
+          throw new Error("'" + c + "' is not in 7 bit alphabet "
                           + langIndex + ":" + langShiftIndex + "!");
         }
 
@@ -5983,6 +6203,7 @@ let GsmPDUHelper = {
     let encodedBodyLength = options.encodedBodyLength;
     let langIndex = options.langIndex;
     let langShiftIndex = options.langShiftIndex;
+    let strict7BitEncoding = options.strict7BitEncoding;
 
     // SMS-SUBMIT Format:
     //
@@ -6105,7 +6326,8 @@ let GsmPDUHelper = {
 
     switch (dcs) {
       case PDU_DCS_MSG_CODING_7BITS_ALPHABET:
-        this.writeStringAsSeptets(body, paddingBits, langIndex, langShiftIndex);
+        this.writeStringAsSeptets(body, paddingBits, langIndex, langShiftIndex,
+                                  strict7BitEncoding);
         break;
       case PDU_DCS_MSG_CODING_8BITS_ALPHABET:
         // Unsupported.

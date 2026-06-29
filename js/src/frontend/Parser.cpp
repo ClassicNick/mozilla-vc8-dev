@@ -114,7 +114,6 @@ PushStatementPC(ParseContext *pc, StmtInfoPC *stmt, StmtType type)
 {
     stmt->blockid = pc->blockid();
     PushStatement(pc, stmt, type);
-    stmt->isFunctionBodyBlock = false;
 }
 
 // See comment on member function declaration.
@@ -318,7 +317,7 @@ ParseContext::generateFunctionBindings(JSContext *cx, InternalHandle<Bindings*> 
 
     FunctionBox *funbox = sc->asFunbox();
     if (bindings->hasAnyAliasedBindings() || funbox->hasExtensibleScope())
-        funbox->fun()->flags |= JSFUN_HEAVYWEIGHT;
+        funbox->function()->flags |= JSFUN_HEAVYWEIGHT;
 
     return true;
 }
@@ -359,22 +358,6 @@ Parser::~Parser()
     cx->activeCompilations--;
 }
 
-ObjectBox::ObjectBox(ObjectBox* traceLink, JSObject *obj)
-  : traceLink(traceLink),
-    emitLink(NULL),
-    object(obj),
-    funbox(NULL)
-{
-}
-
-ObjectBox::ObjectBox(ObjectBox* traceLink, JSFunction *fun, FunctionBox *funbox)
-  : traceLink(traceLink),
-    emitLink(NULL),
-    object(fun),
-    funbox(funbox)
-{
-}
-
 ObjectBox *
 Parser::newObjectBox(JSObject *obj)
 {
@@ -388,7 +371,7 @@ Parser::newObjectBox(JSObject *obj)
      * function.
      */
 
-    ObjectBox *objbox = context->tempLifoAlloc().new_<ObjectBox>(traceListHead, obj);
+    ObjectBox *objbox = context->tempLifoAlloc().new_<ObjectBox>(obj, traceListHead);
     if (!objbox) {
         js_ReportOutOfMemory(context);
         return NULL;
@@ -401,8 +384,8 @@ Parser::newObjectBox(JSObject *obj)
 
 FunctionBox::FunctionBox(JSContext *cx, ObjectBox* traceListHead, JSFunction *fun,
                          ParseContext *outerpc, StrictMode sms)
-  : SharedContext(cx, /* isFunction = */ true, sms),
-    objbox(traceListHead, fun, this),
+  : ObjectBox(fun, traceListHead),
+    SharedContext(cx, /* isFunction = */ true, sms),
     bindings(),
     bufStart(0),
     bufEnd(0),
@@ -473,7 +456,7 @@ Parser::newFunctionBox(JSFunction *fun, ParseContext *outerpc, StrictMode sms)
         return NULL;
     }
 
-    traceListHead = &funbox->objbox;
+    traceListHead = funbox;
 
     return funbox;
 }
@@ -481,13 +464,7 @@ Parser::newFunctionBox(JSFunction *fun, ParseContext *outerpc, StrictMode sms)
 void
 Parser::trace(JSTracer *trc)
 {
-    ObjectBox *objbox = traceListHead;
-    while (objbox) {
-        MarkObjectRoot(trc, &objbox->object, "parser.object");
-        if (objbox->funbox)
-            objbox->funbox->bindings.trace(trc);
-        objbox = objbox->traceLink;
-    }
+    traceListHead->trace(trc);
 }
 
 static bool
@@ -664,7 +641,7 @@ ReportBadReturn(JSContext *cx, Parser *parser, ParseNode *pn, Parser::Reporter r
                 unsigned errnum, unsigned anonerrnum)
 {
     JSAutoByteString name;
-    JSAtom *atom = parser->pc->sc->asFunbox()->fun()->atom();
+    JSAtom *atom = parser->pc->sc->asFunbox()->function()->atom();
     if (atom) {
         if (!js_AtomToPrintableString(cx, atom, &name))
             return false;
@@ -733,11 +710,6 @@ ParseNode *
 Parser::functionBody(FunctionBodyType type)
 {
     JS_ASSERT(pc->sc->isFunction);
-
-    StmtInfoPC stmtInfo(context);
-    PushStatementPC(pc, &stmtInfo, STMT_BLOCK);
-    stmtInfo.isFunctionBodyBlock = true;
-
     JS_ASSERT(!pc->funHasReturnExpr && !pc->funHasReturnVoid);
 
     ParseNode *pn;
@@ -772,9 +744,6 @@ Parser::functionBody(FunctionBodyType type)
 
     if (!pn)
         return NULL;
-
-    JS_ASSERT(!pc->topStmt->isBlockScope);
-    FinishPopStatement(pc);
 
     /* Check for falling off the end of a function that returns a value. */
     if (context->hasStrictOption() && pc->funHasReturnExpr &&
@@ -827,7 +796,7 @@ Parser::functionBody(FunctionBodyType type)
     Definition *maybeArgDef = pc->decls().lookupFirst(arguments);
     bool argumentsHasBinding = !!maybeArgDef;
     bool argumentsHasLocalBinding = maybeArgDef && maybeArgDef->kind() != Definition::ARG;
-    bool hasRest = pc->sc->asFunbox()->fun()->hasRest();
+    bool hasRest = pc->sc->asFunbox()->function()->hasRest();
     if (hasRest && argumentsHasLocalBinding) {
         reportError(NULL, JSMSG_ARGUMENTS_AND_REST);
         return NULL;
@@ -1066,7 +1035,7 @@ struct frontend::BindData {
 };
 
 JSFunction *
-Parser::newFunction(ParseContext *pc, JSAtom *atom, FunctionSyntaxKind kind)
+Parser::newFunction(ParseContext *pc, HandleAtom atom, FunctionSyntaxKind kind)
 {
     JS_ASSERT_IF(kind == Statement, atom != NULL);
 
@@ -1086,7 +1055,7 @@ Parser::newFunction(ParseContext *pc, JSAtom *atom, FunctionSyntaxKind kind)
     uint32_t flags = JSFUN_INTERPRETED | (kind == Expression ? JSFUN_LAMBDA : 0);
     if (selfHostingMode)
         flags |= JSFUN_SELF_HOSTED;
-    fun = js_NewFunction(context, NULL, NULL, 0, flags, parent, atom);
+    fun = js_NewFunction(context, NullPtr(), NULL, 0, flags, parent, atom);
     if (fun && !compileAndGo) {
         if (!JSObject::clearParent(context, fun))
             return NULL;
@@ -1178,7 +1147,7 @@ LeaveFunction(ParseNode *fn, Parser *parser, PropertyName *funName = NULL,
                  * produce an error (in strict mode).
                  */
                 if (dn->isClosed() || dn->isAssigned())
-                    funbox->fun()->flags |= JSFUN_HEAVYWEIGHT;
+                    funbox->function()->flags |= JSFUN_HEAVYWEIGHT;
                 continue;
             }
 
@@ -1801,7 +1770,7 @@ Parser::setStrictMode(bool strictMode)
         // Strict mode was inherited.
         JS_ASSERT(pc->sc->strictModeState == StrictMode::STRICT);
         if (pc->sc->isFunction) {
-            JS_ASSERT(pc->parent->sc->strictModeState == StrictMode::STRICT);
+            JS_ASSERT_IF(pc->parent, pc->parent->sc->strictModeState == StrictMode::STRICT);
         } else {
             JS_ASSERT_IF(pc->staticLevel == 0,
                          StrictModeFromContext(context) == StrictMode::STRICT);
@@ -3606,7 +3575,7 @@ Parser::letStatement()
         if (stmt && stmt->isBlockScope) {
             JS_ASSERT(pc->blockChain == stmt->blockObj);
         } else {
-            if (!stmt || stmt->isFunctionBodyBlock) {
+            if (pc->atBodyLevel()) {
                 /*
                  * ES4 specifies that let at top level and at body-block scope
                  * does not shadow var, so convert back to var.
@@ -5339,7 +5308,7 @@ Parser::generatorExpr(ParseNode *kid)
     {
         ParseContext *outerpc = pc;
 
-        RootedFunction fun(context, newFunction(outerpc, /* atom = */ NULL, Expression));
+        RootedFunction fun(context, newFunction(outerpc, /* atom = */ NullPtr(), Expression));
         if (!fun)
             return NULL;
 

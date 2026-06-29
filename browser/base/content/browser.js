@@ -1456,11 +1456,9 @@ var gBrowserInit = {
     }
 
     // Enable Error Console?
-    // XXX Temporarily always-enabled, see bug 601201
-    let consoleEnabled = true || gPrefService.getBoolPref("devtools.errorconsole.enabled");
+    let consoleEnabled = gPrefService.getBoolPref("devtools.errorconsole.enabled");
     if (consoleEnabled) {
       let cmd = document.getElementById("Tools:ErrorConsole");
-      cmd.removeAttribute("disabled");
       cmd.removeAttribute("hidden");
     }
 
@@ -4018,6 +4016,7 @@ var XULBrowserWindow = {
   },
 
   onLocationChange: function (aWebProgress, aRequest, aLocationURI, aFlags) {
+    const nsIWebProgressListener = Ci.nsIWebProgressListener;
     var location = aLocationURI ? aLocationURI.spec : "";
     this._hostChanged = true;
 
@@ -4127,22 +4126,46 @@ var XULBrowserWindow = {
           document.documentElement.removeAttribute("disablechrome");
       }
 
+      // Utility functions for disabling find
+      function shouldDisableFind(aDocument) {
+        let docElt = aDocument.documentElement;
+        return docElt && docElt.getAttribute("disablefastfind") == "true";
+      }
+
+      function disableFindCommands(aDisable) {
+        let findCommands = [document.getElementById("cmd_find"),
+                            document.getElementById("cmd_findAgain"),
+                            document.getElementById("cmd_findPrevious")];
+        for (let elt of findCommands) {
+          if (aDisable)
+            elt.setAttribute("disabled", "true");
+          else
+            elt.removeAttribute("disabled");
+        }
+      }
+
+      function onContentRSChange(e) {
+        if (e.target.readyState != "interactive" && e.target.readyState != "complete")
+          return;
+
+        e.target.removeEventListener("readystate", onContentRSChange);
+        disableFindCommands(shouldDisableFind(e.target));
+      }
+
       // Disable find commands in documents that ask for them to be disabled.
-      let disableFind = false;
       if (aLocationURI &&
           (aLocationURI.schemeIs("about") || aLocationURI.schemeIs("chrome"))) {
-        let docElt = content.document.documentElement;
-        disableFind = docElt && docElt.getAttribute("disablefastfind") == "true";
-      }
-      let findCommands = [document.getElementById("cmd_find"),
-                          document.getElementById("cmd_findAgain"),
-                          document.getElementById("cmd_findPrevious")];
-      for (let elt of findCommands) {
-        if (disableFind)
-          elt.setAttribute("disabled", "true");
-        else
-          elt.removeAttribute("disabled");
-      }
+        // Don't need to re-enable/disable find commands for same-document location changes
+        // (e.g. the replaceStates in about:addons)
+        if (!(aFlags & nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)) {
+          if (content.document.readyState == "interactive" || content.document.readyState == "complete")
+            disableFindCommands(shouldDisableFind(content.document));
+          else {
+            content.document.addEventListener("readystatechange", onContentRSChange);
+          }
+        }
+      } else
+        disableFindCommands(false);
 
       if (gFindBarInitialized) {
         if (gFindBar.findMode != gFindBar.FIND_NORMAL) {
@@ -5315,7 +5338,7 @@ function handleLinkClick(event, href, linkNode) {
 
   if (where == "save") {
     saveURL(href, linkNode ? gatherTextUnder(linkNode) : "", null, true,
-            true, doc.documentURIObject);
+            true, doc.documentURIObject, doc);
     event.preventDefault();
     return true;
   }

@@ -46,6 +46,8 @@ enum {
 // Make sure we have enough space for those bits
 PR_STATIC_ASSERT(NODE_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
 
+#undef DATA_NODE_FLAG_BIT
+
 class nsGenericDOMDataNode : public nsIContent
 {
 public:
@@ -140,7 +142,7 @@ public:
   virtual uint32_t GetChildCount() const;
   virtual nsIContent *GetChildAt(uint32_t aIndex) const;
   virtual nsIContent * const * GetChildArray(uint32_t* aChildCount) const;
-  virtual int32_t IndexOf(nsINode* aPossibleChild) const;
+  virtual int32_t IndexOf(const nsINode* aPossibleChild) const MOZ_OVERRIDE;
   virtual nsresult InsertChildAt(nsIContent* aKid, uint32_t aIndex,
                                  bool aNotify);
   virtual void RemoveChildAt(uint32_t aIndex, bool aNotify);
@@ -274,9 +276,9 @@ protected:
   // Override from nsINode
   virtual nsINode::nsSlots* CreateSlots();
 
-  nsDataSlots *GetDataSlots()
+  nsDataSlots* DataSlots()
   {
-    return static_cast<nsDataSlots*>(GetSlots());
+    return static_cast<nsDataSlots*>(Slots());
   }
 
   nsDataSlots *GetExistingDataSlots() const

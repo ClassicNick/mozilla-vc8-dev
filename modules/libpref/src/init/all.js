@@ -173,6 +173,8 @@ pref("media.h264.enabled", true);
 #endif
 #ifdef MOZ_WEBRTC
 pref("media.navigator.enabled", false);
+pref("media.peerconnection.enabled", false);
+pref("media.navigator.permission.disabled", false);
 #else
 #ifdef ANDROID
 pref("media.navigator.enabled", true);
@@ -261,6 +263,8 @@ pref("gfx.content.azure.enabled", true);
 #else
 #ifdef XP_MACOSX
 pref("gfx.canvas.azure.backends", "cg");
+// Accelerated cg canvas where available (10.7+)
+pref("gfx.canvas.azure.accelerated", false);
 #else
 pref("gfx.canvas.azure.backends", "cairo");
 pref("gfx.content.azure.backends", "cairo");
@@ -866,6 +870,7 @@ pref("network.http.accept-encoding", "gzip, deflate");
 
 pref("network.http.pipelining"      , false);
 pref("network.http.pipelining.ssl"  , false); // disable pipelining over SSL
+pref("network.http.pipelining.abtest", false);
 pref("network.http.proxy.pipelining", false);
 
 // Max number of requests in the pipeline
@@ -924,6 +929,7 @@ pref("network.http.spdy.coalesce-hostnames", true);
 pref("network.http.spdy.use-alternate-protocol", true);
 pref("network.http.spdy.ping-threshold", 44);
 pref("network.http.spdy.ping-timeout", 8);
+pref("network.http.spdy.send-buffer-size", 131072);
 
 pref("network.http.diagnostics", false);
 
@@ -1014,6 +1020,7 @@ pref("network.IDN.whitelist.ac", true);
 pref("network.IDN.whitelist.ar", true);
 pref("network.IDN.whitelist.at", true);
 pref("network.IDN.whitelist.br", true);
+pref("network.IDN.whitelist.ca", true);
 pref("network.IDN.whitelist.ch", true);
 pref("network.IDN.whitelist.cl", true);
 pref("network.IDN.whitelist.cn", true);
@@ -1603,6 +1610,9 @@ pref("layout.css.devPixelsPerPx", "-1.0");
 
 // Is support for the the @supports rule enabled?
 pref("layout.css.supports-rule.enabled", true);
+
+// Is support for CSS Flexbox enabled?
+pref("layout.css.flexbox.enabled", false);
 
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
@@ -2291,6 +2301,10 @@ pref("ui.window_class_override", "");
 // and 1 is on.  Set this to 1 if three-finger swipe gestures do not cause
 // page back/forward actions, or if pinch-to-zoom does not work.
 pref("ui.elantech_gesture_hacks.enabled", -1);
+
+// Disable auto-configuration of devPixelsPerPx until we're ready to turn
+// it on.
+pref("layout.css.devPixelsPerPx", "1.0");
 
 # WINNT
 #endif
@@ -3520,6 +3534,19 @@ pref("zoom.minPercent", 30);
 pref("zoom.maxPercent", 300);
 pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2,2.4,3");
 
+/**
+ * Specify whether or not the browser should generate a reflow event on zoom.
+ * For a pan-and-zoom ui on mobile, it is sometimes desirable for a zoom event
+ * to limit the max line box width of text in order to enable easier reading
+ * of large amounts of text.
+ *
+ * If enabled, this will limit the max line box width of all text on a page to
+ * the viewport width (also generating a reflow), after a zoom event occurs.
+ *
+ * By default, this is not enabled.
+ */
+pref("browser.zoom.reflowOnZoom", false);
+
 // Image-related prefs
 // The maximum size, in bytes, of the decoded images we cache
 pref("image.cache.size", 5242880);
@@ -3535,7 +3562,7 @@ pref("image.http.accept", "image/png,image/*;q=0.8,*/*;q=0.5");
 #ifdef XP_MACOSX
 pref("image.high_quality_downscaling.enabled", false);
 #else
-pref("image.high_quality_downscaling.enabled", true);
+pref("image.high_quality_downscaling.enabled", false);
 #endif
 
 // The minimum percent downscaling we'll use high-quality downscaling on,
@@ -3669,10 +3696,7 @@ pref("network.buffer.cache.size",  32768);
 // Desktop Notification
 pref("notification.feature.enabled", false);
 
-// Alert sliding effect
-pref("alerts.slideIncrement", 1);
-pref("alerts.slideIncrementTime", 10);
-pref("alerts.totalOpenTime", 4000);
+// Alert animation effect, name is disableSlidingEffect for backwards-compat.
 pref("alerts.disableSlidingEffect", false);
 
 // DOM full-screen API.
@@ -3700,12 +3724,18 @@ pref("dom.battery.enabled", true);
 
 // WebSMS
 pref("dom.sms.enabled", false);
+// Enable Latin characters replacement with corresponding ones in GSM SMS
+// 7-bit default alphabet.
+pref("dom.sms.strict7BitEncoding", false);
 
 // WebContacts
 pref("dom.mozContacts.enabled", false);
 
 // WebAlarms
 pref("dom.mozAlarms.enabled", false);
+
+// WebNetworkStats
+pref("dom.mozNetworkStats.enabled", false);
 
 // WebSettings
 pref("dom.mozSettings.enabled", false);

@@ -89,6 +89,9 @@ ScaleFrameImage(imgFrame *aSrcFrame, imgFrame *aDstFrame,
 }
 #endif // MOZ_ENABLE_SKIA
 
+
+#include "sampler.h"
+
 using namespace mozilla;
 using namespace mozilla::image;
 using namespace mozilla::layers;
@@ -201,11 +204,10 @@ namespace image {
 static nsCOMPtr<nsIThread> sScaleWorkerThread = nullptr;
 
 #ifndef DEBUG
-NS_IMPL_ISUPPORTS3(RasterImage, imgIContainer, nsIProperties,
-                   nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS2(RasterImage, imgIContainer, nsIProperties)
 #else
-NS_IMPL_ISUPPORTS4(RasterImage, imgIContainer, nsIProperties,
-                   imgIContainerDebug, nsISupportsWeakReference)
+NS_IMPL_ISUPPORTS3(RasterImage, imgIContainer, nsIProperties,
+                   imgIContainerDebug)
 #endif
 
 //******************************************************************************
@@ -943,6 +945,10 @@ RasterImage::GetCurrentImage()
   nsresult rv = GetFrame(FRAME_CURRENT, FLAG_SYNC_DECODE, getter_AddRefs(imageSurface));
   NS_ENSURE_SUCCESS(rv, nullptr);
 
+  if (!mImageContainer) {
+    mImageContainer = LayerManager::CreateImageContainer();
+  }
+
   CairoImage::Data cairoData;
   cairoData.mSurface = imageSurface;
   GetWidth(&cairoData.mSize.width);
@@ -967,8 +973,6 @@ RasterImage::GetImageContainer(ImageContainer **_retval)
     NS_ADDREF(*_retval);
     return NS_OK;
   }
-  
-  mImageContainer = LayerManager::CreateImageContainer();
   
   nsRefPtr<layers::Image> image = GetCurrentImage();
   if (!image) {
@@ -1292,9 +1296,9 @@ RasterImage::FrameUpdated(uint32_t aFrameNum, nsIntRect &aUpdatedRect)
 
   frame->ImageUpdated(aUpdatedRect);
     
-  if (aFrameNum == GetCurrentImgFrameIndex()) {
-    // The image has changed, so we need to invalidate our cached ImageContainer.
-    UpdateImageContainer();
+  if (aFrameNum == GetCurrentImgFrameIndex() &&
+      !IsInUpdateImageContainer()) {
+    mImageContainer = nullptr;
   }
 }
 
@@ -2514,13 +2518,27 @@ RasterImage::WantDecodedFrames()
   }
 
   // Request a decode (no-op if we're decoded)
-  return RequestDecode();
+  return StartDecoding();
 }
 
 //******************************************************************************
 /* void requestDecode() */
 NS_IMETHODIMP
 RasterImage::RequestDecode()
+{
+  return RequestDecodeCore(ASYNCHRONOUS);
+}
+
+/* void startDecode() */
+NS_IMETHODIMP
+RasterImage::StartDecoding()
+{
+  return RequestDecodeCore(SOMEWHAT_SYNCHRONOUS);
+}
+
+
+NS_IMETHODIMP
+RasterImage::RequestDecodeCore(RequestDecodeType aDecodeType)
 {
   nsresult rv;
 
@@ -2552,7 +2570,7 @@ RasterImage::RequestDecode()
   // RequestDecode() is an asynchronous function this works fine (though it's
   // a little slower).
   if (mInDecoder) {
-    nsRefPtr<imgDecodeRequestor> requestor = new imgDecodeRequestor(this);
+    nsRefPtr<imgDecodeRequestor> requestor = new imgDecodeRequestor(*this);
     return NS_DispatchToCurrentThread(requestor);
   }
 
@@ -2580,7 +2598,8 @@ RasterImage::RequestDecode()
   // If we can do decoding now, do so.  Small images will decode completely,
   // large images will decode a bit and post themselves to the event loop
   // to finish decoding.
-  if (!mDecoded && !mInDecoder && mHasSourceData) {
+  if (!mDecoded && !mInDecoder && mHasSourceData && aDecodeType == SOMEWHAT_SYNCHRONOUS) {
+    SAMPLE_LABEL_PRINTF("RasterImage", "DecodeABitOf", "%s", GetURIString());
     DecodeWorker::Singleton()->DecodeABitOf(this);
     return NS_OK;
   }
@@ -2598,6 +2617,8 @@ nsresult
 RasterImage::SyncDecode()
 {
   nsresult rv;
+
+  SAMPLE_LABEL_PRINTF("RasterImage", "SyncDecode", "%s", GetURIString());;
 
   // If we're decoded already, no worries
   if (mDecoded)
@@ -2791,6 +2812,19 @@ RasterImage::ScaleRequest::Stop(RasterImage* aImg)
   request->stopped = true;
 }
 
+static inline bool
+IsDownscale(const gfxSize& scale)
+{
+  if (scale.width > 1.0)
+    return false;
+  if (scale.height > 1.0)
+    return false;
+  if (scale.width == 1.0 && scale.height == 1.0)
+    return false;
+
+  return true;
+}
+
 bool
 RasterImage::CanScale(gfxPattern::GraphicsFilter aFilter,
                       gfxSize aScale)
@@ -2798,8 +2832,7 @@ RasterImage::CanScale(gfxPattern::GraphicsFilter aFilter,
 // The high-quality scaler requires Skia.
 #ifdef MOZ_ENABLE_SKIA
   if (gHQDownscaling && aFilter == gfxPattern::FILTER_GOOD &&
-      !mAnim && mDecoded &&
-      (aScale.width <= 1.0 && aScale.height <= 1.0)) {
+      !mAnim && mDecoded && IsDownscale(aScale)) {
     gfxFloat factor = gHQDownscalingMinFactor / 1000.0;
     return (aScale.width < factor || aScale.height < factor);
   }

@@ -186,11 +186,6 @@ IonCompartment::mark(JSTracer *trc, JSCompartment *compartment)
         if (activation->compartment() != compartment)
             continue;
 
-        // Activations may be tied to the Method JIT, in which case enterJIT
-        // is not present on the activation's call stack.
-        if (!activation->entryfp() || activation->entryfp()->callingIntoIon())
-            continue;
-
         // Both OSR and normal function calls depend on the EnterJIT code
         // existing for entrance and exit.
         mustMarkEnterJIT = true;
@@ -270,7 +265,8 @@ IonActivation::IonActivation(JSContext *cx, StackFrame *fp)
     entryfp_(fp),
     bailout_(NULL),
     prevIonTop_(cx->runtime->ionTop),
-    prevIonJSContext_(cx->runtime->ionJSContext)
+    prevIonJSContext_(cx->runtime->ionJSContext),
+    prevpc_(NULL)
 {
     if (fp)
         fp->setRunningInIon();
@@ -426,11 +422,13 @@ IonScript::IonScript()
     scriptList_(0),
     scriptEntries_(0),
     refcount_(0),
-    slowCallCount(0),
-    recompileInfo_()
+    recompileInfo_(),
+    slowCallCount(0)
 {
 }
+
 static const int DataAlignment = 4;
+
 IonScript *
 IonScript::New(JSContext *cx, uint32 frameSlots, uint32 frameSize, size_t snapshotsSize,
                size_t bailoutEntries, size_t constants, size_t safepointIndices,
@@ -724,6 +722,14 @@ IonScript::toggleBarriers(bool enabled)
 void
 IonScript::purgeCaches(JSCompartment *c)
 {
+    // Don't reset any ICs if we're invalidated, otherwise, repointing the
+    // inline jump could overwrite an invalidation marker. These ICs can
+    // no longer run, however, the IC slow paths may be active on the stack.
+    // ICs therefore are required to check for invalidation before patching,
+    // to ensure the same invariant.
+    if (invalidated())
+        return;
+
     // This is necessary because AutoFlushCache::updateTop()
     // looks up the current flusher in the IonContext.  Without one
     // it cannot work.
@@ -1281,6 +1287,28 @@ ion::CanEnter(JSContext *cx, HandleScript script, StackFrame *fp, bool newType)
     return Method_Compiled;
 }
 
+MethodStatus
+ion::CanEnterUsingFastInvoke(JSContext *cx, HandleScript script)
+{
+    JS_ASSERT(ion::IsEnabled(cx));
+
+    // Skip if the code is expected to result in a bailout.
+    if (!script->hasIonScript() || script->ion->bailoutExpected())
+        return Method_Skipped;
+
+    if (!cx->compartment->ensureIonCompartmentExists(cx))
+        return Method_Error;
+
+    // This can GC, so afterward, script->ion is not guaranteed to be valid.
+    if (!cx->compartment->ionCompartment()->enterJIT(cx))
+        return Method_Error;
+
+    if (!script->ion)
+        return Method_Skipped;
+
+    return Method_Compiled;
+}
+
 static IonExecStatus
 EnterIon(JSContext *cx, StackFrame *fp, void *jitcode)
 {
@@ -1424,6 +1452,63 @@ ion::SideCannon(JSContext *cx, StackFrame *fp, jsbytecode *pc)
     return status;
 }
 
+IonExecStatus
+ion::FastInvoke(JSContext *cx, HandleFunction fun, CallArgs &args)
+{
+    JS_CHECK_RECURSION(cx, return IonExec_Error);
+
+    HandleScript script = fun->script();
+    IonScript *ion = script->ionScript();
+    IonCode *code = ion->method();
+    void *jitcode = code->raw();
+
+    JS_ASSERT(ion::IsEnabled(cx));
+    JS_ASSERT(!script->ion->bailoutExpected());
+
+    bool clearCallingIntoIon = false;
+    StackFrame *fp = cx->fp();
+
+    // Two cases we have to handle:
+    //
+    // (1) fp does not begin an Ion activation. This works exactly
+    //     like invoking Ion from JM: entryfp is set to fp and fp
+    //     has the callingIntoIon flag set.
+    //
+    // (2) fp already begins another IonActivation, for instance:
+    //        JM -> Ion -> array_sort -> Ion
+    //     In this cas we use an IonActivation with entryfp == NULL
+    //     and prevpc != NULL.
+    IonActivation activation(cx, NULL);
+    if (!fp->beginsIonActivation()) {
+        fp->setCallingIntoIon();
+        clearCallingIntoIon = true;
+        activation.setEntryFp(fp);
+    } else {
+        JS_ASSERT(!activation.entryfp());
+    }
+
+    activation.setPrevPc(cx->regs().pc);
+
+    EnterIonCode enter = cx->compartment->ionCompartment()->enterJITInfallible();
+    void *calleeToken = CalleeToToken(fun);
+
+    Value result = Int32Value(fun->nargs);
+
+    JSAutoResolveFlags rf(cx, RESOLVE_INFER);
+    enter(jitcode, args.length() + 1, &args[0] - 1, fp, calleeToken, &result);
+
+    if (clearCallingIntoIon)
+        fp->clearCallingIntoIon();
+
+    JS_ASSERT(fp == cx->fp());
+    JS_ASSERT(!cx->runtime->hasIonReturnOverride());
+
+    args.rval().set(result);
+
+    JS_ASSERT_IF(result.isMagic(), result.isMagic(JS_ION_ERROR));
+    return result.isMagic() ? IonExec_Error : IonExec_Ok;
+}
+
 static void
 InvalidateActivation(FreeOp *fop, uint8 *ionTop, bool invalidateAll)
 {
@@ -1479,6 +1564,13 @@ InvalidateActivation(FreeOp *fop, uint8 *ionTop, bool invalidateAll)
         if (!invalidateAll && !script->ion->invalidated())
             continue;
 
+        IonScript *ionScript = script->ion;
+
+        // Purge ICs before we mark this script as invalidated. This will
+        // prevent lastJump_ from appearing to be a bogus pointer, just
+        // in case anyone tries to read it.
+        ionScript->purgeCaches(script->compartment());
+
         // This frame needs to be invalidated. We do the following:
         //
         // 1. Increment the reference counter to keep the ionScript alive
@@ -1500,7 +1592,6 @@ InvalidateActivation(FreeOp *fop, uint8 *ionTop, bool invalidateAll)
         // instructions after the call) in to capture an appropriate
         // snapshot after the call occurs.
 
-        IonScript *ionScript = script->ion;
         ionScript->incref();
 
         const SafepointIndex *si = ionScript->getSafepointIndex(it.returnAddressToFp());

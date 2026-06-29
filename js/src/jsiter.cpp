@@ -349,7 +349,7 @@ GetCustomIterator(JSContext *cx, HandleObject obj, unsigned flags, MutableHandle
 
     /* Check whether we have a valid __iterator__ method. */
     HandlePropertyName name = cx->names().iteratorIntrinsic;
-    if (!GetMethod(cx, obj, name, 0, vp))
+    if (!GetMethod(cx, obj, (PropertyName *) name, 0, vp))
         return false;
 
     /* If there is no custom __iterator__ method, we are done here. */
@@ -1162,7 +1162,7 @@ SuppressDeletedPropertyHelper(JSContext *cx, HandleObject obj, StringPredicate p
 class SingleStringPredicate {
     Handle<JSFlatString*> str;
 public:
-    SingleStringPredicate(JSContext *cx, Handle<JSFlatString*> str) : str(str) {}
+    SingleStringPredicate(Handle<JSFlatString*> str) : str(str) {}
 
     bool operator()(JSFlatString *str) { return EqualStrings(str, this->str); }
     bool matchesAtMostOne() { return true; }
@@ -1174,7 +1174,7 @@ js_SuppressDeletedProperty(JSContext *cx, HandleObject obj, jsid id)
     Rooted<JSFlatString*> str(cx, IdToString(cx, id));
     if (!str)
         return false;
-    return SuppressDeletedPropertyHelper(cx, obj, SingleStringPredicate(cx, str));
+    return SuppressDeletedPropertyHelper(cx, obj, SingleStringPredicate(str));
 }
 
 bool

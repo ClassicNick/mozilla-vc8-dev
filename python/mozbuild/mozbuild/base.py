@@ -8,14 +8,12 @@ import logging
 import multiprocessing
 import os
 import pymake.parser
-import shlex
 import sys
 import subprocess
 import which
 
 from mozprocess.processhandler import ProcessHandlerMixin
 from pymake.data import Makefile
-from tempfile import TemporaryFile
 
 from mozbuild.config import ConfigProvider
 from mozbuild.config import PositiveIntegerType
@@ -191,8 +189,9 @@ class MozbuildObject(object):
         return os.path.join(self.topobjdir, path)
 
     def _run_make(self, directory=None, filename=None, target=None, log=True,
-            srcdir=False, allow_parallel=True, line_handler=None, env=None,
-            ignore_errors=False, silent=True, print_directory=True):
+            srcdir=False, allow_parallel=True, line_handler=None,
+            append_env=None, explicit_env=None, ignore_errors=False,
+            silent=True, print_directory=True):
         """Invoke make.
 
         directory -- Relative directory to look for Makefile in.
@@ -244,10 +243,16 @@ class MozbuildObject(object):
         params = {
             'args': args,
             'line_handler': line_handler,
-            'explicit_env': env,
+            'append_env': append_env,
+            'explicit_env': explicit_env,
             'log_level': logging.INFO,
             'require_unix_environment': True,
             'ignore_errors': ignore_errors,
+
+            # Make manages its children, so mozprocess doesn't need to bother.
+            # Having mozprocess manage children can also have side-effects when
+            # building on Windows. See bug 796840.
+            'ignore_children': True,
         }
 
         if log:
@@ -284,7 +289,7 @@ class MozbuildObject(object):
     def _run_command(self, args=None, cwd=None, append_env=None,
         explicit_env=None, log_name=None, log_level=logging.INFO,
         line_handler=None, require_unix_environment=False,
-        ignore_errors=False):
+        ignore_errors=False, ignore_children=False):
         """Runs a single command to completion.
 
         Takes a list of arguments to run where the first item is the
@@ -299,6 +304,8 @@ class MozbuildObject(object):
         require_unix_environment if True will ensure the command is executed
         within a UNIX environment. Basically, if we are on Windows, it will
         execute the command via an appropriate UNIX-like shell.
+
+        ignore_children is proxied to mozprocess's ignore_children.
         """
         args = self._normalize_command(args, require_unix_environment)
 
@@ -307,7 +314,7 @@ class MozbuildObject(object):
         def handleLine(line):
             # Converts str to unicode on Python 2 and bytes to str on Python 3.
             if isinstance(line, bytes):
-                line = line.decode(sys.stdout.encoding)
+                line = line.decode(sys.stdout.encoding or 'utf-8', 'replace')
 
             if line_handler:
                 line_handler(line)
@@ -324,10 +331,13 @@ class MozbuildObject(object):
             use_env.update(os.environ)
 
             if append_env:
-                use_env.update(env)
+                use_env.update(append_env)
+
+        self.log(logging.DEBUG, 'process', {'env': use_env}, 'Environment: {env}')
 
         p = ProcessHandlerMixin(args, cwd=cwd, env=use_env,
-            processOutputLine=[handleLine], universal_newlines=True)
+            processOutputLine=[handleLine], universal_newlines=True,
+            ignore_children=ignore_children)
         p.run()
         p.processOutput()
         status = p.wait()

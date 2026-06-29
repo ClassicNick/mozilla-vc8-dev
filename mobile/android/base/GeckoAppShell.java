@@ -1069,7 +1069,7 @@ public class GeckoAppShell
 
     static String getMimeTypeFromExtensions(String aFileExt) {
         MimeTypeMap mtm = MimeTypeMap.getSingleton();
-        StringTokenizer st = new StringTokenizer(aFileExt, "., ");
+        StringTokenizer st = new StringTokenizer(aFileExt, ".,; ");
         String type = null;
         String subType = null;
         while (st.hasMoreElements()) {
@@ -2260,5 +2260,19 @@ public class GeckoAppShell
     public static void notifyCheckUpdateResult(boolean result) {
         if (GeckoApp.mAppContext != null)
             GeckoApp.mAppContext.notifyCheckUpdateResult(result);
+    }
+    
+    public static boolean unlockProfile() {
+        // Try to kill any zombie Fennec's that might be running
+        GeckoAppShell.killAnyZombies();
+
+        // Then force unlock this profile
+        GeckoProfile profile = GeckoApp.mAppContext.getProfile();
+        File lock = profile.getFile(".parentlock");
+        if (lock.exists()) {
+            lock.delete();
+            return true;
+        }
+        return false;
     }
 }

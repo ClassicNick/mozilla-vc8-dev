@@ -1897,6 +1897,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsDocument)
   if (tmp->mSubDocuments && tmp->mSubDocuments->ops) {
     PL_DHashTableEnumerate(tmp->mSubDocuments, SubDocTraverser, &cb);
   }
+
+  if (tmp->mCSSLoader) {
+    tmp->mCSSLoader->TraverseCachedSheets(cb);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 
@@ -1970,6 +1974,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsDocument)
 
   tmp->mPendingTitleChangeEvent.Revoke();
 
+  if (tmp->mCSSLoader) {
+    tmp->mCSSLoader->UnlinkCachedSheets();
+  }
+
   tmp->mInUnlinkOrDeletion = false;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -1986,7 +1994,7 @@ nsDocument::Init()
   mRadioGroups.Init();
 
   // Force initialization.
-  nsINode::nsSlots* slots = GetSlots();
+  nsINode::nsSlots* slots = Slots();
 
   // Prepend self as mutation-observer whether we need it or not (some
   // subclasses currently do, other don't). This is because the code in
@@ -3500,7 +3508,7 @@ nsDocument::GetChildAt(uint32_t aIndex) const
 }
 
 int32_t
-nsDocument::IndexOf(nsINode* aPossibleChild) const
+nsDocument::IndexOf(const nsINode* aPossibleChild) const
 {
   return mChildren.IndexOfChild(aPossibleChild);
 }
@@ -6868,7 +6876,7 @@ nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
         if (NS_SUCCEEDED(rv)) {
           int64_t intermediateValue;
           LL_I2L(intermediateValue, PR_USEC_PER_MSEC);
-          LL_MUL(modDate, msecs, intermediateValue);
+          modDate = msecs * intermediateValue;
         }
       }
     } else {
@@ -6881,7 +6889,7 @@ nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
     }
   }
 
-  if (LL_IS_ZERO(modDate)) {
+  if (modDate == 0) {
     // We got nothing from our attempt to ask nsIFileChannel and
     // nsIHttpChannel for the last modified time. Return the current
     // time.
@@ -6889,7 +6897,7 @@ nsDocument::RetrieveRelevantHeaders(nsIChannel *aChannel)
   }
 
   mLastModified.Truncate();
-  if (LL_NE(modDate, LL_ZERO)) {
+  if (modDate != LL_ZERO) {
     PRExplodedTime prtime;
     PR_ExplodeTime(modDate, PR_LocalTimeParameters, &prtime);
     // "MM/DD/YYYY hh:mm:ss"
@@ -8391,7 +8399,7 @@ nsDocument::AddImage(imgIRequest* aImage)
   if (oldCount == 0 && mLockingImages) {
     rv = aImage->LockImage();
     if (NS_SUCCEEDED(rv))
-      rv = aImage->RequestDecode();
+      rv = aImage->StartDecoding();
   }
 
   // If this is the first insertion and we're animating images, request
@@ -9331,6 +9339,7 @@ nsDocument::RequestFullScreen(Element* aElement,
 
   // Remember this is the requesting full-screen document.
   sFullScreenDoc = do_GetWeakReference(static_cast<nsIDocument*>(this));
+  NS_ASSERTION(sFullScreenDoc, "nsDocument should support weak ref!");
 
 #ifdef DEBUG
   // Note assertions must run before SetWindowFullScreen() as that does
@@ -9454,21 +9463,16 @@ nsDocument::IsFullScreenEnabled(bool aCallerIsChrome, bool aLogFailure)
 
   // Ensure that all ancestor <iframe> elements have the mozallowfullscreen
   // boolean attribute set.
-  nsINode* node = static_cast<nsINode*>(this);
-  do {
-    nsIContent* content = static_cast<nsIContent*>(node);
-    if (content->IsHTML(nsGkAtoms::iframe) &&
-        !content->HasAttr(kNameSpaceID_None, nsGkAtoms::mozallowfullscreen)) {
-      // The node requesting fullscreen, or one of its crossdoc ancestors,
-      // is an iframe which doesn't have the "mozalllowfullscreen" attribute.
-      // This request is not authorized by the parent document.
-      LogFullScreenDenied(aLogFailure, "FullScreenDeniedIframeDisallowed", this);
-      return false;
-    }
-    node = nsContentUtils::GetCrossDocParentNode(node);
-  } while (node);
+  nsCOMPtr<nsIDocShell> docShell = do_QueryReferent(mDocumentContainer);
+  bool allowed = false;
+  if (docShell) {
+    docShell->GetFullscreenAllowed(&allowed);
+  }
+  if (!allowed) {
+    LogFullScreenDenied(aLogFailure, "FullScreenDeniedIframeDisallowed", this);
+  }
 
-  return true;
+  return allowed;
 }
 
 static void
@@ -9677,6 +9681,10 @@ nsDocument::RequestPointerLock(Element* aElement)
   nsEventStateManager::sPointerLockedElement = do_GetWeakReference(aElement);
   nsEventStateManager::sPointerLockedDoc =
     do_GetWeakReference(static_cast<nsIDocument*>(this));
+  NS_ASSERTION(nsEventStateManager::sPointerLockedElement &&
+               nsEventStateManager::sPointerLockedDoc,
+               "aElement and this should support weak references!");
+
   DispatchPointerLockChange(this);
 }
 

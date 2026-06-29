@@ -23,6 +23,11 @@ Cu.import('resource://gre/modules/PermissionSettings.jsm');
 Cu.import('resource://gre/modules/ObjectWrapper.jsm');
 Cu.import('resource://gre/modules/accessibility/AccessFu.jsm');
 Cu.import('resource://gre/modules/Payment.jsm');
+Cu.import("resource://gre/modules/AppsUtils.jsm");
+Cu.import('resource://gre/modules/UserAgentOverrides.jsm');
+#ifdef MOZ_B2G_RIL
+Cu.import('resource://gre/modules/NetworkStatsService.jsm');
+#endif
 
 XPCOMUtils.defineLazyServiceGetter(Services, 'env',
                                    '@mozilla.org/process/environment;1',
@@ -55,6 +60,13 @@ XPCOMUtils.defineLazyGetter(this, "ppmm", function() {
   return Cc["@mozilla.org/parentprocessmessagemanager;1"]
          .getService(Ci.nsIMessageListenerManager);
 });
+
+#ifdef MOZ_WIDGET_GONK
+XPCOMUtils.defineLazyGetter(this, "libcutils", function () {
+  Cu.import("resource://gre/modules/systemlibs.js");
+  return libcutils;
+});
+#endif
 
 function getContentWindow() {
   return shell.contentBrowser.contentWindow;
@@ -109,18 +121,40 @@ var shell = {
    },
 
   start: function shell_start() {
-
-    // Dogfood id. We might want to remove it in the future.
-    // see bug 789466
     try {
-      let dogfoodId = Services.prefs.getCharPref('prerelease.dogfood.id');
-      if (dogfoodId != "") {
-        let cr = Cc["@mozilla.org/xre/app-info;1"]
-                   .getService(Ci.nsICrashReporter);
-        cr.annotateCrashReport("Email", dogfoodId);
+      let cr = Cc["@mozilla.org/xre/app-info;1"]
+                 .getService(Ci.nsICrashReporter);
+      // Dogfood id. We might want to remove it in the future.
+      // see bug 789466
+      try {
+        let dogfoodId = Services.prefs.getCharPref('prerelease.dogfood.id');
+        if (dogfoodId != "") {
+          cr.annotateCrashReport("Email", dogfoodId);
+        }
       }
-    }
-    catch (e) { }
+      catch (e) { }
+
+#ifdef MOZ_WIDGET_GONK
+      // Annotate crash report
+      let annotations = [ [ "Android_Hardware",     "ro.hardware" ],
+                          [ "Android_Device",       "ro.product.device" ],
+                          [ "Android_CPU_ABI2",     "ro.product.cpu.abi2" ],
+                          [ "Android_CPU_ABI",      "ro.product.cpu.abi" ],
+                          [ "Android_Manufacturer", "ro.product.manufacturer" ],
+                          [ "Android_Brand",        "ro.product.brand" ],
+                          [ "Android_Model",        "ro.product.model" ],
+                          [ "Android_Board",        "ro.product.board" ],
+        ];
+
+      annotations.forEach(function (element) {
+          cr.annotateCrashReport(element[0], libcutils.property_get(element[1]));
+        });
+
+      let androidVersion = libcutils.property_get("ro.build.version.sdk") +
+                           "(" + libcutils.property_get("ro.build.version.codename") + ")";
+      cr.annotateCrashReport("Android_Version", androidVersion);
+#endif
+    } catch(e) { }
 
     let homeURL = this.homeURL;
     if (!homeURL) {
@@ -177,6 +211,7 @@ var shell = {
     CustomEventManager.init();
     WebappsHelper.init();
     AccessFu.attach(window);
+    UserAgentOverrides.init();
 
     // XXX could factor out into a settings->pref map.  Not worth it yet.
     SettingsListener.observe("debug.fps.enabled", false, function(value) {
@@ -212,6 +247,7 @@ var shell = {
 #ifndef MOZ_WIDGET_GONK
     delete Services.audioManager;
 #endif
+    UserAgentOverrides.uninit();
   },
 
   // If this key event actually represents a hardware button, filter it here
@@ -651,7 +687,7 @@ var WebappsHelper = {
           if (!aManifest)
             return;
 
-          let manifest = new DOMApplicationManifest(aManifest, json.origin);
+          let manifest = new ManifestHelper(aManifest, json.origin);
           shell.sendChromeEvent({
             "type": "webapps-launch",
             "url": manifest.fullLaunchPath(json.startPoint),

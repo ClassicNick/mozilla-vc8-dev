@@ -1400,7 +1400,7 @@ Debugger::markAllIteratively(GCMarker *trc)
 }
 
 void
-Debugger::traceObject(JSTracer *trc, JSObject *obj)
+Debugger::traceObject(JSTracer *trc, RawObject obj)
 {
     if (Debugger *dbg = Debugger::fromJSObject(obj))
         dbg->trace(trc);
@@ -1479,7 +1479,7 @@ Debugger::detachAllDebuggersFromGlobal(FreeOp *fop, GlobalObject *global,
 }
 
 void
-Debugger::finalize(FreeOp *fop, JSObject *obj)
+Debugger::finalize(FreeOp *fop, RawObject obj)
 {
     Debugger *dbg = fromJSObject(obj);
     if (!dbg)
@@ -2375,7 +2375,7 @@ SetScriptReferent(JSObject *obj, JSScript *script)
 }
 
 static void
-DebuggerScript_trace(JSTracer *trc, JSObject *obj)
+DebuggerScript_trace(JSTracer *trc, RawObject obj)
 {
     /* This comes from a private pointer, so no barrier needed. */
     if (JSScript *script = GetScriptReferent(obj)) {
@@ -3245,8 +3245,8 @@ DebuggerFrame_getArguments(JSContext *cx, unsigned argc, Value *vp)
         RootedValue undefinedValue(cx, UndefinedValue());
         for (unsigned i = 0; i < fargc; i++) {
             RootedFunction getobj(cx);
-            getobj = js_NewFunction(cx, NULL, DebuggerArguments_getArg, 0, 0, global, NULL,
-                                    JSFunction::ExtendedFinalizeKind);
+            getobj = js_NewFunction(cx, NullPtr(), DebuggerArguments_getArg, 0, 0, global,
+                                    NullPtr(), JSFunction::ExtendedFinalizeKind);
             if (!getobj)
                 return false;
             id = INT_TO_JSID(i);
@@ -3564,7 +3564,7 @@ static JSFunctionSpec DebuggerFrame_methods[] = {
 /*** Debugger.Object *****************************************************************************/
 
 static void
-DebuggerObject_trace(JSTracer *trc, JSObject *obj)
+DebuggerObject_trace(JSTracer *trc, RawObject obj)
 {
     /*
      * There is a barrier on private pointers, so the Unbarriered marking
@@ -4284,7 +4284,7 @@ static JSFunctionSpec DebuggerObject_methods[] = {
 /*** Debugger.Environment ************************************************************************/
 
 static void
-DebuggerEnv_trace(JSTracer *trc, JSObject *obj)
+DebuggerEnv_trace(JSTracer *trc, RawObject obj)
 {
     /*
      * There is a barrier on private pointers, so the Unbarriered marking

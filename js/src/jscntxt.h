@@ -120,9 +120,6 @@ struct GSNCache {
     void purge();
 };
 
-inline GSNCache *
-GetGSNCache(JSContext *cx);
-
 typedef Vector<ScriptAndCounts, 0, SystemAllocPolicy> ScriptAndCountsVector;
 
 struct ConservativeGCData
@@ -868,12 +865,6 @@ struct JSRuntime : js::RuntimeFriendFields
     const char          *decimalSeparator;
     const char          *numGrouping;
 
-    /*
-     * Flag indicating that we are waiving any soft limits on the GC heap
-     * because we want allocations to be infallible (except when we hit OOM).
-     */
-    bool                waiveGCQuota;
-
   private:
     js::MathCache *mathCache_;
     js::MathCache *createMathCache(JSContext *cx);
@@ -1360,9 +1351,6 @@ struct JSContext : js::ContextFriendFields
   public:
     /* State for object and array toSource conversion. */
     js::ObjectSet       cycleDetectorSet;
-
-    /* Last message string and log file for debugging. */
-    char                *lastMessage;
 
     /* Per-context optional error reporter. */
     JSErrorReporter     errorReporter;

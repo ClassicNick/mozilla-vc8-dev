@@ -23,6 +23,7 @@
 
 #include "mozilla/Preferences.h"
 #include "sampler.h"
+#include "mozilla/gfx/Tools.h"
 
 #include "nsAnimationManager.h"
 #include "nsTransitionManager.h"
@@ -33,6 +34,7 @@
 #endif
 
 using namespace mozilla::layers;
+using namespace mozilla::gfx;
 
 namespace mozilla {
 
@@ -1400,8 +1402,8 @@ ContainerState::CreateOrRecycleThebesLayer(const nsIFrame* aActiveScrolledRoot,
     // transform. See nsGfxScrollFrame::InvalidateInternal, where
     // we ensure that mInvalidThebesContent is updated according to the
     // scroll position as of the most recent paint.
-    if (data->mXScale != mParameters.mXScale ||
-        data->mYScale != mParameters.mYScale) {
+    if (!FuzzyEqual(data->mXScale, mParameters.mXScale, 0.00001) ||
+        !FuzzyEqual(data->mYScale, mParameters.mYScale, 0.00001)) {
       InvalidateEntireThebesLayer(layer, aActiveScrolledRoot);
       didResetScrollPositionForLayerPixelAlignment = true;
     }
@@ -1459,7 +1461,7 @@ ContainerState::CreateOrRecycleThebesLayer(const nsIFrame* aActiveScrolledRoot,
   layer->SetBaseTransform(gfx3DMatrix::From2D(matrix));
 
   // FIXME: Temporary workaround for bug 681192 and bug 724786.
-#ifndef MOZ_JAVA_COMPOSITOR
+#ifndef MOZ_ANDROID_OMTC
   // Calculate exact position of the top-left of the active scrolled root.
   // This might not be 0,0 due to the snapping in ScaleToNearestPixels.
   gfxPoint activeScrolledRootTopLeft = scaledOffset - matrix.GetTranslation();
@@ -2834,20 +2836,6 @@ FrameLayerBuilder::BuildContainerLayerFor(nsDisplayListBuilder* aBuilder,
       entry->mData.AppendElement(data);
       data->AddFrame(aContainerFrame);
       entry->mContainerLayerGeneration = mContainerLayerGeneration;
-    }
-
-    nsAutoTArray<nsIFrame*,4> mergedFrames;
-    if (aContainerItem) {
-      aContainerItem->GetMergedFrames(&mergedFrames);
-    }
-    for (uint32_t i = 0; i < mergedFrames.Length(); ++i) {
-      nsIFrame* mergedFrame = mergedFrames[i];
-      entry = mNewDisplayItemData.PutEntry(mergedFrame);
-      if (entry) {
-        entry->mContainerLayerGeneration = mContainerLayerGeneration;
-        entry->mData.AppendElement(data);
-        data->AddFrame(mergedFrame);
-      }
     }
   }
 

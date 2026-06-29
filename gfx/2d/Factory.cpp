@@ -318,7 +318,7 @@ Factory::CreateScaledFontForTrueTypeData(uint8_t *aData, uint32_t aSize,
                                          FontType aType)
 {
   switch (aType) {
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_DWRITE_FONT
   case FONT_DWRITE:
     {
       return new ScaledFontDWrite(aData, aSize, aFaceIndex, aGlyphSize);

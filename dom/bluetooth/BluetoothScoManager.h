@@ -9,10 +9,12 @@
 
 #include "BluetoothCommon.h"
 #include "mozilla/ipc/UnixSocket.h"
+#include "nsIObserver.h"
 
 BEGIN_BLUETOOTH_NAMESPACE
 
 class BluetoothReplyRunnable;
+class BluetoothScoManagerObserver;
 
 class BluetoothScoManager : public mozilla::ipc::UnixSocketConsumer
 {
@@ -28,7 +30,11 @@ public:
   bool GetConnected();
 
 private:
+  friend class BluetoothScoManagerObserver;
   BluetoothScoManager();
+  bool Init();
+  void Cleanup();
+  nsresult HandleShutdown();
   void CreateScoSocket(const nsAString& aDevicePath);
   bool mConnected;
 };

@@ -54,7 +54,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10511
+MOZPNG=10513
 NSPR_VERSION=4
 NSS_VERSION=3
 
@@ -1501,11 +1501,13 @@ if test "$GNU_CXX"; then
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
     # -Wempty-body - catches bugs, e.g. "if (c); foo();", few false positives
+    # -Werror=conversion-null - catches conversions between NULL and non-pointer types
     #
     _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wall -Wpointer-arith -Woverloaded-virtual"
     MOZ_CXX_SUPPORTS_WARNING(-W, error=return-type, ac_cxx_has_werror_return_type)
     MOZ_CXX_SUPPORTS_WARNING(-W, type-limits, ac_cxx_has_wtype_limits)
     MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
+    MOZ_CXX_SUPPORTS_WARNING(-W, error=conversion-null, ac_cxx_has_werror_conversion_null)
 
     # Turn off the following warnings that -Wall/-pedantic turn on:
     # -Wno-ctor-dtor-privacy - ???
@@ -2182,6 +2184,11 @@ ia64*-hpux*)
         DLL_PREFIX=
         IMPORT_LIB_SUFFIX=dll.a
         GCC_VERSION=`$CC -v 2>&1 | awk '/^gcc version/ { print $3 }'`
+
+        # We use mix of both POSIX and Win32 printf format across the tree, so format
+        # warnings are useless on mingw.
+        MOZ_C_SUPPORTS_WARNING(-Wno-, format, ac_c_has_wno_format)
+        MOZ_CXX_SUPPORTS_WARNING(-Wno-, format, ac_cxx_has_wno_format)
     else
         TARGET_COMPILER_ABI=msvc
         HOST_CC='$(CC)'
@@ -2216,7 +2223,13 @@ ia64*-hpux*)
         _DEFINES_CXXFLAGS='-FI $(DEPTH)/dist/include/mozilla-config.h -DMOZILLA_CLIENT'
         CFLAGS="$CFLAGS -W3 -Gy -Fd\$(COMPILE_PDBFILE)"
         CXXFLAGS="$CXXFLAGS -W3 -Gy -Fd\$(COMPILE_PDBFILE)"
-        CXXFLAGS="$CXXFLAGS -wd4800" # disable warning "forcing value to bool"
+        # MSVC warning C4345 warns of newly conformant behavior as of VS2003.
+        # MSVC warning C4351 warns of newly conformant behavior as of VS2005.
+        # MSVC warning C4800 warns when a value is implicitly cast to bool,
+        # because this also forces narrowing to a single byte, which can be a
+        # perf hit.  But this matters so little in practice (and often we want
+        # that behavior) that it's better to turn it off.
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -2989,9 +3002,60 @@ MOZ_CHECK_HEADERS(sys/statvfs.h sys/statfs.h sys/vfs.h sys/mount.h)
 
 dnl Quota support
 MOZ_CHECK_HEADERS(sys/quota.h sys/sysmacros.h)
-MOZ_CHECK_HEADERS(linux/quota.h)
+MOZ_CHECK_HEADERS([linux/quota.h],,,[#include <sys/socket.h>])
+
+dnl SCTP support - needs various network include headers
+MOZ_CHECK_HEADERS([linux/if_addr.h linux/rtnetlink.h],,,[#include <sys/socket.h>])
 
 MOZ_CHECK_HEADERS(sys/types.h netinet/in.h byteswap.h)
+
+dnl Check for sin_len and sin6_len - used by SCTP; only appears in Mac/*BSD generally
+AC_CACHE_CHECK(for sockaddr_in.sin_len,
+                   ac_cv_sockaddr_in_sin_len,
+                   [AC_TRY_COMPILE([#ifdef HAVE_SYS_TYPES_H
+                                    #include <sys/types.h>
+                                    #endif
+                                    #include <netinet/in.h>
+                                    struct sockaddr_in x;
+                                    void *foo = (void*) &x.sin_len;],
+                                   [],
+                                   [ac_cv_sockaddr_in_sin_len=true],
+                                   [ac_cv_sockaddr_in_sin_len=false])])
+if test "$ac_cv_sockaddr_in_sin_len" = true ; then
+  AC_DEFINE(HAVE_SIN_LEN)
+dnl HAVE_CONN_LEN must be the same as HAVE_SIN_LEN (and HAVE_SIN6_LEN too)
+  AC_DEFINE(HAVE_SCONN_LEN)
+fi
+
+AC_CACHE_CHECK(for sockaddr_in6.sin6_len,
+               ac_cv_sockaddr_in6_sin6_len,
+               [AC_TRY_COMPILE([#ifdef HAVE_SYS_TYPES_H
+                                #include <sys/types.h>
+                                #endif
+                                #include <netinet/in.h>
+                                struct sockaddr_in6 x;
+                                void *foo = (void*) &x.sin6_len;],
+                               [],
+                               [ac_cv_sockaddr_in6_sin6_len=true],
+                               [ac_cv_sockaddr_in6_sin6_len=false])])
+if test "$ac_cv_sockaddr_in6_sin6_len" = true ; then
+  AC_DEFINE(HAVE_SIN6_LEN)
+fi
+
+AC_CACHE_CHECK(for sockaddr.sa_len,
+               ac_cv_sockaddr_sa_len,
+               [AC_TRY_COMPILE([#ifdef HAVE_SYS_TYPES_H
+                                #include <sys/types.h>
+                                #endif
+                                #include <sys/socket.h>
+                                struct sockaddr x;
+                                void *foo = (void*) &x.sa_len;],
+                               [],
+                               [ac_cv_sockaddr_sa_len=true],
+                               [ac_cv_sockaddr_sa_len=false])])
+if test "$ac_cv_sockaddr_sa_len" = true ; then
+  AC_DEFINE(HAVE_SA_LEN)
+fi
 
 dnl Check whether the compiler supports the new-style C++ standard
 dnl library headers (i.e. <new>) or needs the old "new.h"
@@ -3872,7 +3936,7 @@ MOZ_ARG_WITH_BOOL(system-nspr,
     _USE_SYSTEM_NSPR=1 )
 
 if test -n "$_USE_SYSTEM_NSPR"; then
-    AM_PATH_NSPR(4.9.2, [MOZ_NATIVE_NSPR=1], [AC_MSG_ERROR([your don't have NSPR installed or your version is too old])])
+    AM_PATH_NSPR(4.9.3, [MOZ_NATIVE_NSPR=1], [AC_MSG_ERROR([your don't have NSPR installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSPR"; then
@@ -3915,13 +3979,14 @@ MOZ_ARG_WITH_STRING(system-libevent,
 _SAVE_CFLAGS=$CFLAGS
 _SAVE_LDFLAGS=$LDFLAGS
 _SAVE_LIBS=$LIBS
-if test -z "$LIBEVENT_DIR" -o "$LIBEVENT_DIR" = no; then
-    MOZ_NATIVE_LIBEVENT=
-elif test "$LIBEVENT_DIR" = yes; then
+if test "$LIBEVENT_DIR" = yes; then
     PKG_CHECK_MODULES(MOZ_LIBEVENT, libevent,
         MOZ_NATIVE_LIBEVENT=1,
-        AC_MSG_ERROR([--with-system-libevent requested but libevent package not found]))
-else
+        LIBEVENT_DIR=/usr)
+fi
+if test -z "$LIBEVENT_DIR" -o "$LIBEVENT_DIR" = no; then
+    MOZ_NATIVE_LIBEVENT=
+elif test -z "$MOZ_NATIVE_LIBEVENT"; then
     CFLAGS="-I${LIBEVENT_DIR}/include $CFLAGS"
     LDFLAGS="-L${LIBEVENT_DIR}/lib $LDFLAGS"
     MOZ_CHECK_HEADER(event.h,
@@ -3953,7 +4018,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.13.2, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.14, [MOZ_NATIVE_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSS"; then
@@ -4183,7 +4248,7 @@ ENABLE_SYSTEM_EXTENSION_DIRS=1
 MOZ_BRANDING_DIRECTORY=
 MOZ_OFFICIAL_BRANDING=
 MOZ_FEEDS=1
-MOZ_FLEXBOX=
+MOZ_FLEXBOX=1
 MOZ_WEBAPP_RUNTIME=
 MOZ_JSDEBUGGER=1
 MOZ_AUTH_EXTENSION=1
@@ -4202,8 +4267,11 @@ MOZ_OPUS=1
 MOZ_WEBM=1
 MOZ_DASH=
 MOZ_WEBRTC=1
+MOZ_PEERCONNECTION=
 MOZ_SRTP=
 MOZ_WEBRTC_SIGNALING=
+MOZ_WEBRTC_IN_LIBXUL=
+MOZ_SCTP=
 MOZ_MEDIA_PLUGINS=
 MOZ_MEDIA_NAVIGATOR=
 MOZ_OMX_PLUGIN=
@@ -4232,7 +4300,7 @@ MOZ_REFLOW_PERF=
 MOZ_SAFE_BROWSING=
 MOZ_HELP_VIEWER=
 MOZ_SPELLCHECK=1
-MOZ_JAVA_COMPOSITOR=
+MOZ_ANDROID_OMTC=
 MOZ_ONLY_TOUCH_EVENTS=
 MOZ_TOOLKIT_SEARCH=1
 MOZ_UI_LOCALE=en-US
@@ -5068,11 +5136,11 @@ fi
 
 
 dnl ========================================================
-dnl = Build with the Android Java compositor
+dnl = Build with the Android compositor
 dnl ========================================================
-if test -n "$MOZ_JAVA_COMPOSITOR"; then
+if test -n "$MOZ_ANDROID_OMTC"; then
      dnl Do this if defined in confvars.sh
-     AC_DEFINE(MOZ_JAVA_COMPOSITOR)
+     AC_DEFINE(MOZ_ANDROID_OMTC)
 fi
 
 dnl ========================================================
@@ -5212,11 +5280,26 @@ if test -n "$MOZ_WEBRTC"; then
     MOZ_VP8=1
     MOZ_VP8_ENCODER=1
     MOZ_VP8_ERROR_CONCEALMENT=1
+dnl enable once Signaling lands
+    MOZ_WEBRTC_SIGNALING=1
+    AC_DEFINE(MOZ_WEBRTC_SIGNALING)
+    if test "${OS_TARGET}" = "WINNT"; then
+        MOZ_WEBRTC_IN_LIBXUL=1
+    fi
+dnl enable once PeerConnection lands
+    MOZ_PEERCONNECTION=1
+    AC_DEFINE(MOZ_PEERCONNECTION)
+    MOZ_SCTP=1
     MOZ_SRTP=1
+    AC_DEFINE(MOZ_SCTP)
     AC_DEFINE(MOZ_SRTP)
 fi
 
 AC_SUBST(MOZ_WEBRTC)
+AC_SUBST(MOZ_WEBRTC_SIGNALING)
+AC_SUBST(MOZ_PEERCONNECTION)
+AC_SUBST(MOZ_WEBRTC_IN_LIBXUL)
+AC_SUBST(MOZ_SCTP)
 AC_SUBST(MOZ_SRTP)
 
 case "$target_cpu" in
@@ -8300,7 +8383,7 @@ AC_SUBST(IBMBIDI)
 AC_SUBST(MOZ_UNIVERSALCHARDET)
 AC_SUBST(ACCESSIBILITY)
 AC_SUBST(MOZ_SPELLCHECK)
-AC_SUBST(MOZ_JAVA_COMPOSITOR)
+AC_SUBST(MOZ_ANDROID_OMTC)
 AC_SUBST(MOZ_ONLY_TOUCH_EVENTS)
 AC_SUBST(MOZ_CRASHREPORTER)
 AC_SUBST(MOZ_CRASHREPORTER_INJECTOR)
@@ -8819,7 +8902,9 @@ fi
 if test -n "$MOZ_WEBRTC"; then
    AC_MSG_RESULT("generating WebRTC Makefiles...")
 
-   GYP_WEBRTC_OPTIONS="--format=mozmake -D build_with_mozilla=1 -D enable_protobuf=0 -D include_internal_video_render=0 ${EXTRA_GYP_DEFINES} --depth=${srcdir}/media/webrtc/trunk --toplevel-dir=${srcdir} -G OBJDIR=${_objdir}"
+   WEBRTC_CONFIG="-D build_with_mozilla=1 --include ${srcdir}/media/webrtc/webrtc_config.gypi"
+
+   GYP_WEBRTC_OPTIONS="--format=mozmake ${WEBRTC_CONFIG} ${EXTRA_GYP_DEFINES} --depth=${srcdir}/media/webrtc/trunk --toplevel-dir=${srcdir} -G OBJDIR=${_objdir}"
 
    $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium \
      $GYP_WEBRTC_OPTIONS \
@@ -8834,10 +8919,21 @@ if test -n "$MOZ_WEBRTC"; then
      AC_MSG_RESULT("generating WebRTC/Signaling Makefiles...")
      $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium \
        $GYP_WEBRTC_OPTIONS \
+       -D build_for_test=0 \
        --generator-output=${_objdir}/media/webrtc/signaling \
        ${srcdir}/media/webrtc/signaling/signaling.gyp
      if test "$?" != 0; then
         AC_MSG_ERROR([failed to generate WebRTC/Signaling Makefiles])
+     fi
+
+     AC_MSG_RESULT("generating WebRTC/SignalingTest Makefiles...")
+     $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium --format=mozmake \
+       $GYP_WEBRTC_OPTIONS \
+       -D build_for_test=1 \
+       --generator-output=${_objdir}/media/webrtc/signalingtest \
+       ${srcdir}/media/webrtc/signaling/signaling.gyp
+     if test "$?" != 0; then
+       AC_MSG_ERROR([failed to generate WebRTC/SignalingTest Makefiles])
      fi
    fi
 
@@ -8849,6 +8945,24 @@ if test -n "$MOZ_WEBRTC"; then
      ${srcdir}/media/webrtc/trunk/testing/gtest.gyp
    if test "$?" != 0; then
       AC_MSG_ERROR([failed to generate gtest Makefiles])
+   fi
+
+   AC_MSG_RESULT("generating nrappkit Makefiles...")
+   $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium --format=mozmake \
+     $GYP_WEBRTC_OPTIONS \
+     --generator-output=${_objdir}/media/mtransport/third_party/nrappkit \
+     ${srcdir}/media/mtransport/third_party/nrappkit/nrappkit.gyp
+   if test "$?" != 0; then
+      AC_MSG_ERROR([failed to generate nrappkit Makefiles])
+   fi
+
+   AC_MSG_RESULT("generating nICEr Makefiles...")
+   $PYTHON ${srcdir}/media/webrtc/trunk/build/gyp_chromium --format=mozmake \
+     $GYP_WEBRTC_OPTIONS \
+     --generator-output=${_objdir}/media/mtransport/third_party/nICEr \
+     ${srcdir}/media/mtransport/third_party/nICEr/nicer.gyp
+   if test "$?" != 0; then
+      AC_MSG_ERROR([failed to generate nICEr Makefiles])
    fi
 fi
 
