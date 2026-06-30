@@ -499,8 +499,12 @@ abstract public class BrowserApp extends GeckoApp
         showAwesomebar(AwesomeBar.Target.NEW_TAB);
     }
 
-    public void showLocalTabs() {
-        showTabs(TabsPanel.Panel.LOCAL_TABS);
+    public void showNormalTabs() {
+        showTabs(TabsPanel.Panel.NORMAL_TABS);
+    }
+
+    public void showPrivateTabs() {
+        showTabs(TabsPanel.Panel.PRIVATE_TABS);
     }
 
     public void showRemoteTabs() {
@@ -1021,6 +1025,24 @@ abstract public class BrowserApp extends GeckoApp
         charEncoding.setVisible(GeckoPreferences.getCharEncodingState());
 
         return true;
+    }
+
+    @Override
+    public boolean onContextItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.abouthome_topsites_edit:
+                mAboutHomeContent.editSite();
+                return true;
+
+            case R.id.abouthome_topsites_clear:
+                mAboutHomeContent.clearSite();
+                return true;
+
+            case R.id.abouthome_topsites_clearall:
+                mAboutHomeContent.clearAllSites();
+                return true;
+        }
+        return false;
     }
 
     @Override

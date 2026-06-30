@@ -4592,6 +4592,13 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
 
     case WM_FONTCHANGE:
     {
+      // We only handle this message for the hidden window,
+      // as we only need to update the (global) font list once
+      // for any given change, not once per window!
+      if (mWindowType != eWindowType_invisible) {
+        break;
+      }
+
       nsresult rv;
       bool didChange = false;
 
@@ -4599,10 +4606,7 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM &wParam, LPARAM &lParam,
       nsCOMPtr<nsIFontEnumerator> fontEnum = do_GetService("@mozilla.org/gfx/fontenumerator;1", &rv);
       if (NS_SUCCEEDED(rv)) {
         fontEnum->UpdateFontList(&didChange);
-        //didChange is TRUE only if new font langGroup is added to the list.
-        if (didChange)  {
-          ForceFontUpdate();
-        }
+        ForceFontUpdate();
       } //if (NS_SUCCEEDED(rv))
     }
     break;
@@ -6783,7 +6787,7 @@ LRESULT nsWindow::OnKeyDown(const MSG &aMsg,
       }
 
       nsKeyEvent keypressEvent(true, NS_KEY_PRESS, this);
-      keypressEvent.mFlags |= extraFlags;
+      keypressEvent.mFlags.Union(extraFlags);
       keypressEvent.charCode = uniChar;
       keypressEvent.alternativeCharCodes.AppendElements(altArray);
       InitKeyEvent(keypressEvent, nativeKey, modKeyState);
@@ -6791,7 +6795,7 @@ LRESULT nsWindow::OnKeyDown(const MSG &aMsg,
     }
   } else {
     nsKeyEvent keypressEvent(true, NS_KEY_PRESS, this);
-    keypressEvent.mFlags |= extraFlags;
+    keypressEvent.mFlags.Union(extraFlags);
     keypressEvent.keyCode = DOMKeyCode;
     InitKeyEvent(keypressEvent, nativeKey, aModKeyState);
     DispatchKeyEvent(keypressEvent, nullptr);
@@ -6896,7 +6900,7 @@ LRESULT nsWindow::OnChar(const MSG &aMsg,
 
   nsKeyEvent keypressEvent(true, NS_KEY_PRESS, this);
   if (aExtraFlags) {
-    keypressEvent.mFlags |= *aExtraFlags;
+    keypressEvent.mFlags.Union(*aExtraFlags);
   }
   keypressEvent.charCode = uniChar;
   if (!keypressEvent.charCode) {

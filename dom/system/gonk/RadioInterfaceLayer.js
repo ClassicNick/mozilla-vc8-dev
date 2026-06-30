@@ -99,7 +99,8 @@ const RIL_IPC_MOBILECONNECTION_MSG_NAMES = [
 ];
 
 const RIL_IPC_VOICEMAIL_MSG_NAMES = [
-  "RIL:RegisterVoicemailMsg"
+  "RIL:RegisterVoicemailMsg",
+  "RIL:GetVoicemailInfo"
 ];
 
 const RIL_IPC_CELLBROADCAST_MSG_NAMES = [
@@ -204,8 +205,6 @@ function RadioInterfaceLayer() {
     radioState:     RIL.GECKO_RADIOSTATE_UNAVAILABLE,
     cardState:      RIL.GECKO_CARDSTATE_UNAVAILABLE,
     icc:            null,
-    voicemail:      {number: null,
-                     displayName: null},
 
     // These objects implement the nsIDOMMozMobileConnectionInfo interface,
     // although the actual implementation lives in the content process. So are
@@ -227,6 +226,11 @@ function RadioInterfaceLayer() {
                      type: null,
                      signalStrength: null,
                      relSignalStrength: null},
+  };
+
+  this.voicemailInfo = {
+    number: null,
+    displayName: null
   };
 
   this.callWaitingStatus = null;
@@ -269,9 +273,6 @@ function RadioInterfaceLayer() {
   lock.get("ril.supl.passwd", this);
   lock.get("ril.supl.httpProxyHost", this);
   lock.get("ril.supl.httpProxyPort", this);
-
-  // Read the desired setting of call waiting from the settings DB.
-  lock.get("ril.callwaiting.enabled", this);
 
   // Read the 'time.nitz.automatic-update.enabled' setting to see if
   // we need to adjust the system clock time and time zone by NITZ.
@@ -482,6 +483,9 @@ RadioInterfaceLayer.prototype = {
       case "RIL:RegisterCellBroadcastMsg":
         this.registerMessageTarget("cellbroadcast", msg.target);
         break;
+      case "RIL:GetVoicemailInfo":
+        // This message is sync.
+        return this.voicemailInfo;
     }
   },
 
@@ -830,12 +834,6 @@ RadioInterfaceLayer.prototype = {
     // this here. (TODO GSM only for now, see bug 726098.)
     voiceInfo.type = "gsm";
 
-    // Ensure the call waiting status once the voice network connects.
-    if (voiceInfo.connected && this.callWaitingStatus == null) {
-      // The call waiting status has not been updated yet. Update that.
-      this.setCallWaitingEnabled(this._callWaitingEnabled);
-    }
-
     // Make sure we also reset the operator and signal strength information
     // if we drop off the network.
     if (newInfo.regState == RIL.NETWORK_CREG_STATE_UNKNOWN) {
@@ -1094,7 +1092,7 @@ RadioInterfaceLayer.prototype = {
     }
 
     if (value == null) {
-      // We haven't read the initial value from the settings DB yet.
+      // We haven't read the valid value from the settings DB yet.
       // Wait for that.
       return;
     }
@@ -1261,6 +1259,8 @@ RadioInterfaceLayer.prototype = {
     debug("handleEnumerateCalls: " + JSON.stringify(options));
     for (let i in options.calls) {
       options.calls[i].state = convertRILCallState(options.calls[i].state);
+      options.calls[i].isActive = this._activeCall ?
+        options.calls[i].callIndex == this._activeCall.callIndex : false;
     }
     this._sendRequestResults("RIL:EnumerateCalls", options);
   },
@@ -1448,6 +1448,8 @@ RadioInterfaceLayer.prototype = {
     if (!options.requestStatusReport) {
       // No more used if STATUS-REPORT not requested.
       delete this._sentSmsEnvelopes[message.envelopeId];
+    } else {
+      options.sms = sms;
     }
 
     options.request.notifyMessageSent(sms);
@@ -1583,12 +1585,12 @@ RadioInterfaceLayer.prototype = {
   },
 
   handleICCMbdn: function handleICCMbdn(message) {
-    let voicemail = this.rilContext.voicemail;
+    let voicemailInfo = this.voicemailInfo;
 
-    voicemail.number = message.number;
-    voicemail.displayName = message.alphaId;
+    voicemailInfo.number = message.number;
+    voicemailInfo.displayName = message.alphaId;
 
-    this._sendTargetMessage("voicemail", "RIL:VoicemailInfoChanged", voicemail);
+    this._sendTargetMessage("voicemail", "RIL:VoicemailInfoChanged", voicemailInfo);
   },
 
   handleICCInfoChange: function handleICCInfoChange(message) {
