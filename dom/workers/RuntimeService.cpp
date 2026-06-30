@@ -22,6 +22,7 @@
 #include "nsLayoutStatics.h"
 
 #include "jsdbgapi.h"
+#include "jsfriendapi.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
@@ -391,6 +392,27 @@ ContentSecurityPolicyAllows(JSContext* aCx)
   return false;
 }
 
+void
+CTypesActivityCallback(JSContext* aCx,
+                       js::CTypesActivityType aType)
+{
+  WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
+  worker->AssertIsOnWorkerThread();
+
+  switch (aType) {
+    case js::CTYPES_CALL_BEGIN:
+      worker->BeginCTypesCall();
+      break;
+
+    case js::CTYPES_CALL_END:
+      worker->EndCTypesCall();
+      break;
+
+    default:
+      MOZ_NOT_REACHED("Unknown type flag!");
+  }
+}
+
 JSContext*
 CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate)
 {
@@ -436,6 +458,8 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate)
   JS_SetErrorReporter(workerCx, ErrorReporter);
 
   JS_SetOperationCallback(workerCx, OperationCallback);
+
+  js::SetCTypesActivityCallback(runtime, CTypesActivityCallback);
 
   NS_ASSERTION((aWorkerPrivate->GetJSContextOptions() &
                 kRequiredJSContextOptions) == kRequiredJSContextOptions,
@@ -527,12 +551,6 @@ ResolveWorkerClasses(JSContext* aCx, JSHandleObject aObj, JSHandleId aId, unsign
                      JSMutableHandleObject aObjp)
 {
   AssertIsOnMainThread();
-
-  // Don't care about assignments, bail now.
-  if (aFlags & JSRESOLVE_ASSIGNING) {
-    aObjp.set(nullptr);
-    return true;
-  }
 
   // Make sure our strings are interned.
   if (JSID_IS_VOID(gStringIDs[0])) {

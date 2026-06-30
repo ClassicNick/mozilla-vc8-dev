@@ -365,7 +365,7 @@ protected:
    * @param aRelProvider [in] accessible that element has relation attribute
    * @param aRelAttr     [in, optional] relation attribute
    */
-  void AddDependentIDsFor(Accessible* aRelProvider,
+  void AddDependentIDsFor(dom::Element* aRelProviderElm,
                           nsIAtom* aRelAttr = nullptr);
 
   /**
@@ -376,7 +376,7 @@ protected:
    * @param aRelProvider [in] accessible that element has relation attribute
    * @param aRelAttr     [in, optional] relation attribute
    */
-  void RemoveDependentIDsFor(Accessible* aRelProvider,
+  void RemoveDependentIDsFor(dom::Element* aRelProviderElm,
                              nsIAtom* aRelAttr = nullptr);
 
   /**
@@ -493,7 +493,10 @@ protected:
     eScrollInitialized = 1 << 0,
 
     // Whether we support nsIAccessibleCursorable.
-    eCursorable = 1 << 1
+    eCursorable = 1 << 1,
+
+    // Whether the document is a tab document.
+    eTabDocument = 1 << 2
   };
 
   /**

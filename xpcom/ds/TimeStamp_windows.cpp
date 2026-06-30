@@ -27,15 +27,8 @@
 //
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
-static PRLogModuleInfo*
-GetTimeStampLog()
-{
-  static PRLogModuleInfo *sLog;
-  if (!sLog)
-    sLog = PR_NewLogModule("TimeStampWindows");
-  return sLog;
-}
-  #define LOG(x)  PR_LOG(GetTimeStampLog(), PR_LOG_DEBUG, x)
+  PRLogModuleInfo* timeStampLog = PR_NewLogModule("TimeStampWindows");
+  #define LOG(x)  PR_LOG(timeStampLog, PR_LOG_DEBUG, x)
 #else
   #define LOG(x)
 #endif /* PR_LOGGING */
@@ -90,9 +83,6 @@ static const ULONGLONG kOverflowLimit = 100;
 // which is the most usual increment.
 static const DWORD kDefaultTimeIncrement = 156001;
 
-// Time since GTC fallback after we forbid recalibration on wake up [ms]
-static const DWORD kForbidRecalibrationTime = 2000;
-
 // ----------------------------------------------------------------------------
 // Global variables, not changing at runtime
 // ----------------------------------------------------------------------------
@@ -127,12 +117,6 @@ static LONGLONG sFrequencyPerSec = 0;
 // Kept in [mt]
 static LONGLONG sUnderrunThreshold;
 static LONGLONG sOverrunThreshold;
-
-// QPC may be reset after wake up.  But because we may return GTC + sSkew
-// for a short time before we reclibrate after wakeup, result of 
-// CalibratedPerformanceCounter may go radically backwrads.  We have
-// to compensate this jump.
-static LONGLONG sWakeupAdjust = 0;
 
 // ----------------------------------------------------------------------------
 // Global lock
@@ -270,15 +254,6 @@ StandbyObserver::Observe(nsISupports *subject,
 {
   AutoCriticalSection lock(&sTimeStampLock);
 
-  CalibrationFlags value;
-  value.dwordValue = sCalibrationFlags.dwordValue;
-
-  if (value.flags.fallBackToGTC &&
-      ((sGetTickCount64() - sFallbackTime) > kForbidRecalibrationTime)) {
-    LOG(("Disallowing recalibration since the time from fallback is too long"));
-    return NS_OK;
-  }
-
   // Clear the potentiall fallback flag now and try using
   // QPC again after wake up.
   sFallBackToGTC = false;
@@ -415,11 +390,11 @@ PerformanceCounter()
 
 // Called when we detect a larger deviation of QPC to disable it.
 static inline void
-RecordFlaw(ULONGLONG gtc)
+RecordFlaw()
 {
   sFallBackToGTC = true;
 
-  LOG(("TimeStamp: falling back to GTC at %llu :(", gtc));
+  LOG(("TimeStamp: falling back to GTC :("));
 
 #if 0
   // This code has been disabled, because we:

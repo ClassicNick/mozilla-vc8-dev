@@ -39,7 +39,7 @@
 #include "jsapi.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
-#include "nsIViewManager.h"
+#include "nsViewManager.h"
 #include "sampler.h"
 #include "nsNPAPIPluginInstance.h"
 
@@ -50,9 +50,9 @@ using namespace mozilla;
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo *gLog = nullptr;
-#define LOG(...) PR_LOG(gLog, PR_LOG_NOTICE, (__VA_ARGS__))
+#define LOG(a) PR_LOG(gLog, PR_LOG_NOTICE, (a))
 #else
-#define LOG(...) do { } while(0)
+#define LOG(a) do { } while(0)
 #endif
 
 #define DEFAULT_FRAME_RATE 60
@@ -942,8 +942,16 @@ nsRefreshDriver::Tick(int64_t aNowEpoch, TimeStamp aNowTime)
 #ifdef DEBUG_INVALIDATIONS
     printf("Starting ProcessPendingUpdates\n");
 #endif
+#ifndef ANDROID
+    // Waiting for bug 785597 to work on android.
+    nsRefPtr<layers::LayerManager> mgr = mPresContext->GetPresShell()->GetLayerManager();
+    if (mgr) {
+      mgr->SetPaintStartTime(mMostRecentRefresh);
+    }
+#endif
+
     mViewManagerFlushIsPending = false;
-    nsCOMPtr<nsIViewManager> vm = mPresContext->GetPresShell()->GetViewManager();
+    nsRefPtr<nsViewManager> vm = mPresContext->GetPresShell()->GetViewManager();
     vm->ProcessPendingUpdates();
 #ifdef DEBUG_INVALIDATIONS
     printf("Ending ProcessPendingUpdates\n");

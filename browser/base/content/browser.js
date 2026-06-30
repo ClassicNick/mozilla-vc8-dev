@@ -1516,6 +1516,11 @@ var gBrowserInit = {
 
     gDevToolsBrowser.forgetBrowserWindow(window);
 
+    let desc = Object.getOwnPropertyDescriptor(window, "DeveloperToolbar");
+    if (desc && !desc.get) {
+      DeveloperToolbar.destroy();
+    }
+
     // First clean up services initialized in gBrowserInit.onLoad (or those whose
     // uninit methods don't depend on the services having been initialized).
     allTabs.uninit();
@@ -1750,7 +1755,6 @@ var nonBrowserWindowShutdown       = gBrowserInit.nonBrowserWindowShutdown.bind(
 
 
 function HandleAppCommandEvent(evt) {
-  evt.stopPropagation();
   switch (evt.command) {
   case "Back":
     BrowserBack();
@@ -1774,9 +1778,35 @@ function HandleAppCommandEvent(evt) {
   case "Home":
     BrowserHome();
     break;
-  default:
+  case "New":
+    BrowserOpenTab();
     break;
+  case "Close":
+    BrowserCloseTabOrWindow();
+    break;
+  case "Find":
+    gFindBar.onFindCommand();
+    break;
+  case "Help":
+    openHelpLink('firefox-help');
+    break;
+  case "Open":
+    BrowserOpenFileWindow();
+    break;
+  case "Print":
+    PrintUtils.print();
+    break;
+  case "Save":
+    saveDocument(window.content.document);
+    break;
+  case "SendMail":
+    MailIntegration.sendLinkForWindow(window.content);
+    break;
+  default:
+    return;
   }
+  evt.stopPropagation();
+  evt.preventDefault();
 }
 
 function gotoHistoryIndex(aEvent) {
@@ -3774,7 +3804,7 @@ var XULBrowserWindow = {
   startTime: 0,
   statusText: "",
   isBusy: false,
-  inContentWhitelist: ["about:addons", "about:permissions",
+  inContentWhitelist: ["about:addons", "about:downloads", "about:permissions",
                        "about:sync-progress", "about:preferences"],
 
   QueryInterface: function (aIID) {

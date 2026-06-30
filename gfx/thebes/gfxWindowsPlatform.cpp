@@ -389,9 +389,9 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
     if (mD2DDevice) {
         cairo_release_device(mD2DDevice);
     }
-#endif
 
     mozilla::gfx::Factory::D2DCleanup();
+#endif
 
     /* 
      * Uninitialize COM 

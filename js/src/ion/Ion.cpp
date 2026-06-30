@@ -1001,13 +1001,17 @@ CompileBackEnd(MIRGenerator *mir)
       }
 
       case RegisterAllocator_Backtracking: {
+#ifdef DEBUG
         integrity.record();
+#endif
 
         BacktrackingAllocator regalloc(mir, &lirgen, *lir);
         if (!regalloc.go())
             return NULL;
-        if (!integrity.check(true))
-            return NULL;
+
+#ifdef DEBUG
+        integrity.check(false);
+#endif
 
         IonSpewPass("Allocate Registers [Backtracking]");
         break;
@@ -1178,7 +1182,8 @@ IonCompile(JSContext *cx, HandleScript script, HandleFunction fun, jsbytecode *o
     AutoFlushCache afc("IonCompile");
 
     types::AutoEnterCompilation enterCompiler(cx, CompilerOutputKind(executionMode));
-    enterCompiler.init(script, false, 0);
+    if (!enterCompiler.init(script, false, 0))
+        return false;
 
     AutoTempAllocatorRooter root(cx, temp);
 

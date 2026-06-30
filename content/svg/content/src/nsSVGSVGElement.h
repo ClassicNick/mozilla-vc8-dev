@@ -6,7 +6,6 @@
 #ifndef __NS_SVGSVGELEMENT_H__
 #define __NS_SVGSVGELEMENT_H__
 
-#include "DOMSVGTests.h"
 #include "mozilla/dom/FromParser.h"
 #include "nsIDOMSVGFitToViewBox.h"
 #include "nsIDOMSVGLocatable.h"
@@ -15,7 +14,7 @@
 #include "nsIDOMSVGZoomAndPan.h"
 #include "nsSVGEnum.h"
 #include "nsSVGLength2.h"
-#include "nsSVGElement.h"
+#include "SVGGraphicsElement.h"
 #include "nsSVGViewBox.h"
 #include "SVGPreserveAspectRatio.h"
 #include "SVGAnimatedPreserveAspectRatio.h"
@@ -28,7 +27,7 @@ namespace mozilla {
   class SVGFragmentIdentifier;
 }
 
-typedef nsSVGElement nsSVGSVGElementBase;
+typedef mozilla::dom::SVGGraphicsElement nsSVGSVGElementBase;
 
 class nsSVGSVGElement;
 
@@ -100,9 +99,7 @@ public:
 
 class nsSVGSVGElement : public nsSVGSVGElementBase,
                         public nsIDOMSVGSVGElement,
-                        public DOMSVGTests,
                         public nsIDOMSVGFitToViewBox,
-                        public nsIDOMSVGLocatable,
                         public nsIDOMSVGZoomAndPan
 {
   friend class nsSVGOuterSVGFrame;
@@ -125,7 +122,6 @@ public:
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsSVGSVGElement, nsSVGSVGElementBase)
   NS_DECL_NSIDOMSVGSVGELEMENT
   NS_DECL_NSIDOMSVGFITTOVIEWBOX
-  NS_DECL_NSIDOMSVGLOCATABLE
   NS_DECL_NSIDOMSVGZOOMANDPAN
   
   // xxx I wish we could use virtual inheritance
@@ -165,6 +161,8 @@ public:
   // nsIContent interface
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const;
   virtual nsresult PreHandleEvent(nsEventChainPreVisitor& aVisitor);
+
+  virtual bool IsEventAttributeName(nsIAtom* aName) MOZ_OVERRIDE;
 
   // nsSVGElement specializations:
   virtual gfxMatrix PrependLocalTransformsTo(const gfxMatrix &aMatrix,
@@ -255,7 +253,6 @@ public:
 
 private:
   // nsSVGElement overrides
-  bool IsEventName(nsIAtom* aName);
 
   virtual nsresult BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                               nsIContent* aBindingParent,

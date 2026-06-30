@@ -44,6 +44,8 @@ ac_add_options --disable-skia
 ac_add_options --disable-maintenance-service
 ac_add_options --disable-updater
 ac_add_options --disable-cubeb
+ac_add_options --disable-dash
+ac_add_options --disable-wmf
 ac_add_options --with-windows-version=502
 
 # Branding Options
