@@ -665,7 +665,7 @@ js::XDRScript(XDRState<mode> *xdr, HandleObject enclosingScope, HandleScript enc
             /* Code the nested function's enclosing scope. */
             uint32_t funEnclosingScopeIndex = 0;
             if (mode == XDR_ENCODE) {
-                StaticScopeIter ssi((*objp)->toFunction()->script()->enclosingStaticScope());
+                StaticScopeIter ssi((*objp)->toFunction()->nonLazyScript()->enclosingStaticScope());
                 if (ssi.done() || ssi.type() == StaticScopeIter::FUNCTION) {
                     JS_ASSERT(ssi.done() == !fun);
                     funEnclosingScopeIndex = UINT32_MAX;
@@ -1256,9 +1256,9 @@ SourceCompressionToken::complete()
 {
     JS_ASSERT_IF(!ss, !chars);
 #ifdef JS_THREADSAFE
-    if (ss) {
+    if (active()) {
         cx->runtime->sourceCompressorThread.waitOnCompression(this);
-        JS_ASSERT(!ss);
+        JS_ASSERT(!active());
     }
     if (oom) {
         JS_ReportOutOfMemory(cx);
@@ -1271,6 +1271,7 @@ SourceCompressionToken::complete()
 void
 SourceCompressionToken::abort()
 {
+    JS_ASSERT(active());
 #ifdef JS_THREADSAFE
     cx->runtime->sourceCompressorThread.abort(this);
 #endif
@@ -1858,8 +1859,6 @@ JSScript::isShortRunning()
 bool
 JSScript::enclosingScriptsCompiledSuccessfully() const
 {
-    AutoAssertNoGC nogc;
-
     /*
      * When a nested script is succesfully compiled, it is eagerly given the
      * static JSFunction of its enclosing script. The enclosing function's
@@ -1871,9 +1870,9 @@ JSScript::enclosingScriptsCompiledSuccessfully() const
     while (enclosing) {
         if (enclosing->isFunction()) {
             RawFunction fun = enclosing->toFunction();
-            if (!fun->script().get(nogc))
+            if (!fun->hasScript())
                 return false;
-            enclosing = fun->script()->enclosingScope_;
+            enclosing = fun->nonLazyScript()->enclosingScope_;
         } else {
             enclosing = enclosing->asStaticBlock().enclosingStaticScope();
         }
@@ -1937,8 +1936,6 @@ JSScript::finalize(FreeOp *fop)
     }
 }
 
-namespace js {
-
 static const uint32_t GSN_CACHE_THRESHOLD = 100;
 static const uint32_t GSN_CACHE_MAP_INIT_SIZE = 20;
 
@@ -1949,8 +1946,6 @@ GSNCache::purge()
     if (map.initialized())
         map.finish();
 }
-
-} /* namespace js */
 
 jssrcnote *
 js_GetSrcNote(JSContext *cx, RawScript script, jsbytecode *pc)
@@ -2132,18 +2127,16 @@ js_GetScriptLineExtent(RawScript script)
     return 1 + lineno - script->lineno;
 }
 
-namespace js {
-
 unsigned
-CurrentLine(JSContext *cx)
+js::CurrentLine(JSContext *cx)
 {
     AutoAssertNoGC nogc;
     return PCToLineNumber(cx->fp()->script().get(nogc), cx->regs().pc);
 }
 
 void
-CurrentScriptFileLineOriginSlow(JSContext *cx, const char **file, unsigned *linenop,
-                                JSPrincipals **origin)
+js::CurrentScriptFileLineOriginSlow(JSContext *cx, const char **file, unsigned *linenop,
+                                    JSPrincipals **origin)
 {
     AutoAssertNoGC nogc;
     NonBuiltinScriptFrameIter iter(cx);
@@ -2160,8 +2153,6 @@ CurrentScriptFileLineOriginSlow(JSContext *cx, const char **file, unsigned *line
     *linenop = PCToLineNumber(iter.script().get(nogc), iter.pc());
     *origin = script->originPrincipals;
 }
-
-}  /* namespace js */
 
 template <class T>
 static inline T *
@@ -2221,7 +2212,7 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
             } else if (obj->isFunction()) {
                 RootedFunction innerFun(cx, obj->toFunction());
 
-                StaticScopeIter ssi(innerFun->script()->enclosingStaticScope());
+                StaticScopeIter ssi(innerFun->nonLazyScript()->enclosingStaticScope());
                 RootedObject enclosingScope(cx);
                 if (!ssi.done() && ssi.type() == StaticScopeIter::BLOCK)
                     enclosingScope = objects[FindBlockIndex(src, ssi.block())];

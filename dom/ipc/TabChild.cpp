@@ -64,6 +64,7 @@
 #include "nsInterfaceHashtable.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
+#include "nsGlobalWindow.h"
 #include "nsPresContext.h"
 #include "nsPrintfCString.h"
 #include "nsScriptLoader.h"
@@ -849,7 +850,7 @@ TabChild::BrowserFrameProvideWindow(nsIDOMWindow* aOpener,
   unused << Manager()->SendPBrowserConstructor(
       // We release this ref in DeallocPBrowserChild
       nsRefPtr<TabChild>(newChild).forget().get(),
-      context, /* chromeFlags */ 0);
+      IPCTabContext(context, mScrolling), /* chromeFlags */ 0);
 
   nsAutoCString spec;
   if (aURI) {
@@ -1154,6 +1155,17 @@ TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
                        aMessageName, false, &cloneData, nullptr, nullptr);
 }
 
+static void
+ScrollWindowTo(nsIDOMWindow* aWindow, const mozilla::gfx::Point& aPoint)
+{
+    nsGlobalWindow* window = static_cast<nsGlobalWindow*>(aWindow);
+    nsIScrollableFrame* sf = window->GetScrollFrame();
+
+    if (sf) {
+        sf->ScrollToCSSPixelsApproximate(aPoint);
+    }
+}
+
 bool
 TabChild::RecvUpdateFrame(const FrameMetrics& aFrameMetrics)
 {
@@ -1199,8 +1211,7 @@ TabChild::RecvUpdateFrame(const FrameMetrics& aFrameMetrics)
       AsyncPanZoomController::CalculateCompositedRectInCssPixels(aFrameMetrics);
     utils->SetScrollPositionClampingScrollPortSize(
       cssCompositedRect.width, cssCompositedRect.height);
-    window->ScrollTo(aFrameMetrics.mScrollOffset.x,
-                     aFrameMetrics.mScrollOffset.y);
+    ScrollWindowTo(window, aFrameMetrics.mScrollOffset);
     gfxSize resolution = AsyncPanZoomController::CalculateResolution(
       aFrameMetrics);
     utils->SetResolution(resolution.width, resolution.height);

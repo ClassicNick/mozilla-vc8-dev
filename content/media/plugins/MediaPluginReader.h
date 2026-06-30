@@ -7,12 +7,15 @@
 #define MediaPluginReader_h_
 
 #include "MediaResource.h"
-#include "MediaDecoder.h"
 #include "MediaDecoderReader.h"
 
 #include "MPAPI.h"
 
+class nsACString;
+
 namespace mozilla {
+
+class AbstractMediaDecoder;
 
 class MediaPluginReader : public MediaDecoderReader
 {
@@ -26,7 +29,8 @@ class MediaPluginReader : public MediaDecoderReader
   int64_t mAudioSeekTimeUs;
   VideoData *mLastVideoFrame;
 public:
-  MediaPluginReader(MediaDecoder* aDecoder);
+  MediaPluginReader(AbstractMediaDecoder* aDecoder,
+                    const nsACString& aContentType);
   ~MediaPluginReader();
 
   virtual nsresult Init(MediaDecoderReader* aCloneDonor);

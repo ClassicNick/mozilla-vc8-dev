@@ -15,9 +15,6 @@
 #include "ContentChild.h"
 #include "CrashReporterChild.h"
 #include "TabChild.h"
-#if defined(MOZ_SYDNEYAUDIO)
-#include "AudioChild.h"
-#endif
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
@@ -34,9 +31,6 @@
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/Preferences.h"
 
-#if defined(MOZ_SYDNEYAUDIO)
-#include "AudioStream.h"
-#endif
 #include "nsIMemoryReporter.h"
 #include "nsIMemoryInfoDumper.h"
 #include "nsIObserverService.h"
@@ -481,8 +475,12 @@ ContentChild::AllocPImageBridge(mozilla::ipc::Transport* aTransport,
     return ImageBridgeChild::StartUpInChildProcess(aTransport, aOtherProcess);
 }
 
+static CancelableTask* sFirstIdleTask;
+
 static void FirstIdle(void)
 {
+    MOZ_ASSERT(sFirstIdleTask);
+    sFirstIdleTask = nullptr;
     ContentChild::GetSingleton()->SendFirstIdle();
 }
 
@@ -492,7 +490,9 @@ ContentChild::AllocPBrowser(const IPCTabContext& aContext,
 {
     static bool firstIdleTaskPosted = false;
     if (!firstIdleTaskPosted) {
-        MessageLoop::current()->PostIdleTask(FROM_HERE, NewRunnableFunction(FirstIdle));
+        MOZ_ASSERT(!sFirstIdleTask);
+        sFirstIdleTask = NewRunnableFunction(FirstIdle);
+        MessageLoop::current()->PostIdleTask(FROM_HERE, sFirstIdleTask);
         firstIdleTaskPosted = true;
     }
 
@@ -662,29 +662,6 @@ ContentChild::RecvPTestShellConstructor(PTestShellChild* actor)
     return true;
 }
 
-PAudioChild*
-ContentChild::AllocPAudio(const int32_t& numChannels,
-                          const int32_t& rate)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioChild *child = new AudioChild();
-    NS_ADDREF(child);
-    return child;
-#else
-    return nullptr;
-#endif
-}
-
-bool
-ContentChild::DeallocPAudio(PAudioChild* doomed)
-{
-#if defined(MOZ_SYDNEYAUDIO)
-    AudioChild *child = static_cast<AudioChild*>(doomed);
-    NS_RELEASE(child);
-#endif
-    return true;
-}
-
 PDeviceStorageRequestChild*
 ContentChild::AllocPDeviceStorageRequest(const DeviceStorageParams& aParams)
 {
@@ -822,6 +799,10 @@ ContentChild::ActorDestroy(ActorDestroyReason why)
     // keep persistent state.
     QuickExit();
 #endif
+
+    if (sFirstIdleTask) {
+        sFirstIdleTask->Cancel();
+    }
 
     mAlertObservers.Clear();
 

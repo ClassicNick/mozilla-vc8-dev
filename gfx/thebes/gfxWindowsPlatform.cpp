@@ -391,6 +391,8 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
     }
 #endif
 
+    mozilla::gfx::Factory::D2DCleanup();
+
     /* 
      * Uninitialize COM 
      */ 

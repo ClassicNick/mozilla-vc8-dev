@@ -49,6 +49,8 @@ public:
     return mWindow;
   }
 
+  void Shutdown() {}
+
   virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope,
                                bool* aTriedToWrap);
 
@@ -73,7 +75,7 @@ public:
   CreateGain();
 
   already_AddRefed<DelayNode>
-  CreateDelay(float aMaxDelayTime, ErrorResult& aRv);
+  CreateDelay(double aMaxDelayTime, ErrorResult& aRv);
 
   already_AddRefed<PannerNode>
   CreatePanner();

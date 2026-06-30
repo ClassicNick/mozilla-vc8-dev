@@ -113,6 +113,34 @@ var gPluginHandler = {
                               true);
   },
 
+  // Helper to get the binding handler type from a plugin object
+  _getBindingType : function(plugin) {
+    if (!(plugin instanceof Ci.nsIObjectLoadingContent))
+      return null;
+
+    switch (plugin.pluginFallbackType) {
+      case Ci.nsIObjectLoadingContent.PLUGIN_UNSUPPORTED:
+        return "PluginNotFound";
+      case Ci.nsIObjectLoadingContent.PLUGIN_DISABLED:
+        return "PluginDisabled";
+      case Ci.nsIObjectLoadingContent.PLUGIN_BLOCKLISTED:
+        return "PluginBlocklisted";
+      case Ci.nsIObjectLoadingContent.PLUGIN_OUTDATED:
+        return "PluginOutdated";
+      case Ci.nsIObjectLoadingContent.PLUGIN_CLICK_TO_PLAY:
+        return "PluginClickToPlay";
+      case Ci.nsIObjectLoadingContent.PLUGIN_VULNERABLE_UPDATABLE:
+        return "PluginVulnerableUpdatable";
+      case Ci.nsIObjectLoadingContent.PLUGIN_VULNERABLE_NO_UPDATE:
+        return "PluginVulnerableNoUpdate";
+      case Ci.nsIObjectLoadingContent.PLUGIN_PLAY_PREVIEW:
+        return "PluginPlayPreview";
+      default:
+        // Not all states map to a handler
+        return null;
+    }
+  },
+
   handleEvent : function(event) {
     let self = gPluginHandler;
     let plugin = event.target;
@@ -122,10 +150,26 @@ var gPluginHandler = {
     if (!(plugin instanceof Ci.nsIObjectLoadingContent))
       return;
 
-    // Force a style flush, so that we ensure our binding is attached.
-    plugin.clientTop;
+    let eventType = event.type;
+    if (eventType == "PluginBindingAttached") {
+      // The plugin binding fires this event when it is created.
+      // As an untrusted event, ensure that this object actually has a binding
+      // and make sure we don't handle it twice
+      let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
+      if (!overlay || overlay._bindingHandled) {
+        return;
+      }
+      overlay._bindingHandled = true;
 
-    switch (event.type) {
+      // Lookup the handler for this binding
+      eventType = self._getBindingType(plugin);
+      if (!eventType) {
+        // Not all bindings have handlers
+        return;
+      }
+    }
+
+    switch (eventType) {
       case "PluginCrashed":
         self.pluginInstanceCrashed(plugin, event);
         break;
@@ -151,7 +195,7 @@ var gPluginHandler = {
 #ifdef XP_MACOSX
       case "npapi-carbon-event-model-failure":
 #endif
-        self.pluginUnavailable(plugin, event.type);
+        self.pluginUnavailable(plugin, eventType);
         break;
 
       case "PluginVulnerableUpdatable":
@@ -167,9 +211,9 @@ var gPluginHandler = {
         let messageString = gNavigatorBundle.getFormattedString("PluginClickToPlay", [pluginName]);
         let overlayText = doc.getAnonymousElementByAttribute(plugin, "class", "msg msgClickToPlay");
         overlayText.textContent = messageString;
-        if (event.type == "PluginVulnerableUpdatable" ||
-            event.type == "PluginVulnerableNoUpdate") {
-          let vulnerabilityString = gNavigatorBundle.getString(event.type);
+        if (eventType == "PluginVulnerableUpdatable" ||
+            eventType == "PluginVulnerableNoUpdate") {
+          let vulnerabilityString = gNavigatorBundle.getString(eventType);
           let vulnerabilityText = doc.getAnonymousElementByAttribute(plugin, "anonid", "vulnerabilityStatus");
           vulnerabilityText.textContent = vulnerabilityString;
         }
@@ -186,16 +230,24 @@ var gPluginHandler = {
     }
 
     // Hide the in-content UI if it's too big. The crashed plugin handler already did this.
-    if (event.type != "PluginCrashed") {
+    if (eventType != "PluginCrashed") {
       let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
-      /* overlay might be null, so only operate on it if it exists */
       if (overlay != null && self.isTooSmall(plugin, overlay))
           overlay.style.visibility = "hidden";
     }
   },
 
   canActivatePlugin: function PH_canActivatePlugin(objLoadingContent) {
+    let pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
+    let pluginPermission = Ci.nsIPermissionManager.UNKNOWN_ACTION;
+    if (objLoadingContent.actualType) {
+      let permissionString = pluginHost.getPermissionStringForType(objLoadingContent.actualType);
+      let browser = gBrowser.getBrowserForDocument(objLoadingContent.ownerDocument.defaultView.top.document);
+      pluginPermission = Services.perms.testPermission(browser.currentURI, permissionString);
+    }
+
     return !objLoadingContent.activated &&
+           pluginPermission != Ci.nsIPermissionManager.DENY_ACTION &&
            objLoadingContent.pluginFallbackType !== Ci.nsIObjectLoadingContent.PLUGIN_PLAY_PREVIEW;
   },
 
@@ -308,20 +360,26 @@ var gPluginHandler = {
   _handleClickToPlayEvent: function PH_handleClickToPlayEvent(aPlugin) {
     let doc = aPlugin.ownerDocument;
     let browser = gBrowser.getBrowserForDocument(doc.defaultView.top.document);
-    let pluginsPermission = Services.perms.testPermission(browser.currentURI, "plugins");
+    let pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
+    let pluginPermission = Ci.nsIPermissionManager.UNKNOWN_ACTION;
+    let objLoadingContent = aPlugin.QueryInterface(Ci.nsIObjectLoadingContent);
+    if (objLoadingContent.actualType) {
+      let permissionString = pluginHost.getPermissionStringForType(objLoadingContent.actualType);
+      pluginPermission = Services.perms.testPermission(browser.currentURI, permissionString);
+    }
     let overlay = doc.getAnonymousElementByAttribute(aPlugin, "class", "mainBox");
 
-    if (browser._clickToPlayPluginsActivated) {
-      let objLoadingContent = aPlugin.QueryInterface(Ci.nsIObjectLoadingContent);
-      objLoadingContent.playPlugin();
-      return;
-    } else if (pluginsPermission == Ci.nsIPermissionManager.DENY_ACTION) {
+    if (pluginPermission == Ci.nsIPermissionManager.DENY_ACTION) {
       if (overlay)
         overlay.style.visibility = "hidden";
       return;
     }
 
-    // The overlay is null if the XBL binding is not attached (element is display:none).
+    if (browser._clickToPlayPluginsActivated) {
+      objLoadingContent.playPlugin();
+      return;
+    }
+
     if (overlay) {
       overlay.addEventListener("click", function(aEvent) {
         // Have to check that the target is not the link to update the plugin
@@ -341,11 +399,6 @@ var gPluginHandler = {
   _handlePlayPreviewEvent: function PH_handlePlayPreviewEvent(aPlugin) {
     let doc = aPlugin.ownerDocument;
     let previewContent = doc.getAnonymousElementByAttribute(aPlugin, "class", "previewPluginContent");
-    if (!previewContent) {
-      // the XBL binding is not attached (element is display:none), fallback to click-to-play logic
-      gPluginHandler.stopPlayPreview(aPlugin, false);
-      return;
-    }
     let iframe = previewContent.getElementsByClassName("previewPluginContentFrame")[0];
     if (!iframe) {
       // lazy initialization of the iframe
@@ -379,15 +432,7 @@ var gPluginHandler = {
   },
 
   reshowClickToPlayNotification: function PH_reshowClickToPlayNotification() {
-    if (!Services.prefs.getBoolPref("plugins.click_to_play"))
-      return;
-
     let browser = gBrowser.selectedBrowser;
-
-    let pluginsPermission = Services.perms.testPermission(browser.currentURI, "plugins");
-    if (pluginsPermission == Ci.nsIPermissionManager.DENY_ACTION)
-      return;
-
     if (gPluginHandler._pluginNeedsActivationExceptThese([]))
       gPluginHandler._showClickToPlayNotification(browser);
   },
@@ -480,7 +525,19 @@ var gPluginHandler = {
     }
 
     return centerActions;
-   },
+  },
+
+  _setPermissionForPlugins: function PH_setPermissionForPlugins(aBrowser, aPermission, aPluginList) {
+    let pluginHost = Cc["@mozilla.org/plugin/host;1"].getService(Ci.nsIPluginHost);
+    for (let plugin of aPluginList) {
+      let objLoadingContent = plugin.QueryInterface(Ci.nsIObjectLoadingContent);
+      if (gPluginHandler.canActivatePlugin(objLoadingContent) &&
+          objLoadingContent.actualType) {
+        let permissionString = pluginHost.getPermissionStringForType(objLoadingContent.actualType);
+        Services.perms.add(aBrowser.currentURI, permissionString, aPermission);
+      }
+    }
+  },
 
   _showClickToPlayNotification: function PH_showClickToPlayNotification(aBrowser) {
     aBrowser._clickToPlayDoorhangerShown = true;
@@ -508,14 +565,14 @@ var gPluginHandler = {
       label: gNavigatorBundle.getString("activatePluginsMessage.always"),
       accessKey: gNavigatorBundle.getString("activatePluginsMessage.always.accesskey"),
       callback: function () {
-        Services.perms.add(aBrowser.currentURI, "plugins", Ci.nsIPermissionManager.ALLOW_ACTION);
+        gPluginHandler._setPermissionForPlugins(aBrowser, Ci.nsIPermissionManager.ALLOW_ACTION, cwu.plugins);
         gPluginHandler.activatePlugins(contentWindow);
       }
     },{
       label: gNavigatorBundle.getString("activatePluginsMessage.never"),
       accessKey: gNavigatorBundle.getString("activatePluginsMessage.never.accesskey"),
       callback: function () {
-        Services.perms.add(aBrowser.currentURI, "plugins", Ci.nsIPermissionManager.DENY_ACTION);
+        gPluginHandler._setPermissionForPlugins(aBrowser, Ci.nsIPermissionManager.DENY_ACTION, cwu.plugins);
         let notification = PopupNotifications.getNotification("click-to-play-plugins", aBrowser);
         if (notification)
           notification.remove();
@@ -534,7 +591,9 @@ var gPluginHandler = {
                             .getInterface(Ci.nsIDOMWindowUtils);
     for (let plugin of cwu.plugins) {
       let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
-      overlay.style.visibility = "hidden";
+      // for already activated plugins, there will be no overlay
+      if (overlay)
+        overlay.style.visibility = "hidden";
     }
   },
 
@@ -754,6 +813,9 @@ var gPluginHandler = {
     //
     // Configure the crashed-plugin placeholder.
     //
+
+    // Force a layout flush so the binding is attached.
+    plugin.clientTop;
     let doc = plugin.ownerDocument;
     let overlay = doc.getAnonymousElementByAttribute(plugin, "class", "mainBox");
     let statusDiv = doc.getAnonymousElementByAttribute(plugin, "class", "submitStatus");

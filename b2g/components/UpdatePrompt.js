@@ -152,7 +152,10 @@ UpdatePrompt.prototype = {
   },
 
   showUpdateHistory: function UP_showUpdateHistory(aParent) { },
-  showUpdateInstalled: function UP_showUpdateInstalled() { },
+  showUpdateInstalled: function UP_showUpdateInstalled() {
+    let lock = Services.settings.createLock();
+    lock.set("deviceinfo.last_updated", Date.now(), null, null);
+  },
 
   // Custom functions
 
@@ -320,14 +323,6 @@ UpdatePrompt.prototype = {
 
   forceUpdateCheck: function UP_forceUpdateCheck() {
     log("Forcing update check");
-
-    // If we already have an active update available, don't try to
-    // download again, just prompt for install.
-    if (Services.um.activeUpdate) {
-      this.setUpdateStatus("check-complete");
-      this.showApplyPrompt(Services.um.activeUpdate);
-      return;
-    }
 
     let checker = Cc["@mozilla.org/updates/update-checker;1"]
                     .createInstance(Ci.nsIUpdateChecker);

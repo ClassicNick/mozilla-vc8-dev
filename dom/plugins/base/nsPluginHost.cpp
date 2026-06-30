@@ -1295,17 +1295,28 @@ nsPluginHost::IsPluginEnabledForType(const char* aMimeType)
   return NS_OK;
 }
  
-bool
-nsPluginHost::IsPluginClickToPlayForType(const char* aMimeType)
+NS_IMETHODIMP
+nsPluginHost::IsPluginClickToPlayForType(const nsACString &aMimeType, bool *aResult)
 {
-  nsPluginTag *plugin = FindPluginForType(aMimeType, true);
-  if (plugin && 
-      (plugin->HasFlag(NS_PLUGIN_FLAG_CLICKTOPLAY) || mPluginsClickToPlay)) {
-    return true;
+  nsPluginTag *plugin = FindPluginForType(aMimeType.Data(), true);
+  if (!plugin) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  uint32_t blocklistState = nsIBlocklistService::STATE_NOT_BLOCKED;
+  nsresult rv = GetBlocklistStateForType(aMimeType.Data(), &blocklistState);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (mPluginsClickToPlay ||
+      blocklistState == nsIBlocklistService::STATE_VULNERABLE_NO_UPDATE ||
+      blocklistState == nsIBlocklistService::STATE_VULNERABLE_UPDATE_AVAILABLE) {
+    *aResult = true;
   }
   else {
-    return false;
+    *aResult = false;
   }
+
+  return NS_OK;
 }
 
 bool
@@ -1334,6 +1345,31 @@ nsPluginHost::GetBlocklistStateForType(const char *aMimeType, uint32_t *aState)
   }
 
   return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsPluginHost::GetPermissionStringForType(const nsACString &aMimeType, nsACString &aPermissionString)
+{
+  aPermissionString.Truncate();
+  uint32_t blocklistState;
+  nsresult rv = GetBlocklistStateForType(aMimeType.Data(), &blocklistState);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsPluginTag *tag = FindPluginForType(aMimeType.Data(), true);
+  if (!tag) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (blocklistState == nsIBlocklistService::STATE_VULNERABLE_UPDATE_AVAILABLE ||
+      blocklistState == nsIBlocklistService::STATE_VULNERABLE_NO_UPDATE) {
+    aPermissionString.AssignLiteral("plugin-vulnerable:");
+  }
+  else {
+    aPermissionString.AssignLiteral("plugin:");
+  }
+
+  aPermissionString.Append(tag->mFileName);
+
+  return NS_OK;
 }
 
 // check comma delimitered extensions
@@ -2153,10 +2189,6 @@ nsresult nsPluginHost::ScanPluginsDirectory(nsIFile *pluginsDir,
           }
           if (state == nsIBlocklistService::STATE_OUTDATED && !seenBefore) {
              warnOutdated = true;
-          }
-          if (state == nsIBlocklistService::STATE_VULNERABLE_UPDATE_AVAILABLE ||
-              state == nsIBlocklistService::STATE_VULNERABLE_NO_UPDATE) {
-            pluginTag->Mark(NS_PLUGIN_FLAG_CLICKTOPLAY);
           }
         }
       }

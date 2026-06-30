@@ -28,16 +28,19 @@ webidl_files = \
   DOMSettableTokenList.webidl \
   DOMStringMap.webidl \
   DynamicsCompressorNode.webidl \
+  Element.webidl \
   EventHandler.webidl \
   EventListener.webidl \
   EventTarget.webidl \
   FileList.webidl \
   FileReaderSync.webidl \
+  Function.webidl \
   GainNode.webidl \
   HTMLCollection.webidl \
   HTMLOptionsCollection.webidl \
   HTMLPropertiesCollection.webidl \
   ImageData.webidl \
+  Node.webidl \
   NodeList.webidl \
   PaintRequestList.webidl \
   PannerNode.webidl \

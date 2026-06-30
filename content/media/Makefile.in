@@ -15,8 +15,10 @@ LIBRARY_NAME = gkconmedia_s
 LIBXUL_LIBRARY = 1
 
 EXPORTS = \
+  AbstractMediaDecoder.h \
   AudioSampleFormat.h \
   AudioSegment.h \
+  DecoderTraits.h \
   FileBlockCache.h \
   MediaDecoderOwner.h \
   MediaResource.h \
@@ -39,6 +41,7 @@ EXPORTS = \
 
 CPPSRCS = \
   AudioSegment.cpp \
+  DecoderTraits.cpp \
   FileBlockCache.cpp \
   MediaResource.cpp \
   MediaStreamGraph.cpp \

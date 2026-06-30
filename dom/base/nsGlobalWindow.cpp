@@ -224,6 +224,7 @@
 #include "nsSandboxFlags.h"
 #include "TimeChangeObserver.h"
 #include "nsPISocketTransportService.h"
+#include "mozilla/dom/AudioContext.h"
 
 #ifdef ANDROID
 #include <android/log.h>
@@ -487,8 +488,8 @@ nsTimeout::~nsTimeout()
 }
 
 NS_IMPL_CYCLE_COLLECTION_LEGACY_NATIVE_CLASS(nsTimeout)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_NATIVE_0(nsTimeout)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_NATIVE_BEGIN(nsTimeout)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_0(nsTimeout)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsTimeout)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPrincipal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScriptHandler)
@@ -731,7 +732,10 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
   NS_ASSERTION(sWindowsById, "Windows hash table must be created!");
   NS_ASSERTION(!sWindowsById->Get(mWindowID),
                "This window shouldn't be in the hash table yet!");
-  sWindowsById->Put(mWindowID, this);
+  // We seem to see crashes in release builds because of null |sWindowsById|.
+  if (sWindowsById) {
+    sWindowsById->Put(mWindowID, this);
+  }
 
   mEventTargetObjects.Init();
 }
@@ -1121,6 +1125,11 @@ nsGlobalWindow::FreeInnerObjects()
 
   CleanupCachedXBLHandlers(this);
 
+  for (uint32_t i = 0; i < mAudioContexts.Length(); ++i) {
+    mAudioContexts[i]->Shutdown();
+  }
+  mAudioContexts.Clear();
+
 #ifdef DEBUG
   nsCycleCollector_DEBUG_shouldBeFreed(static_cast<nsIScriptGlobalObject*>(this));
 #endif
@@ -1210,6 +1219,15 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsGlobalWindow)
   return tmp->IsBlackForCC();
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
+inline void
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            IdleObserverHolder& aField,
+                            const char* aName,
+                            unsigned aFlags)
+{
+  CycleCollectionNoteChild(aCallback, aField.mIdleObserver.get(), aName, aFlags);
+}
+
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[512];
@@ -1259,10 +1277,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingStorageEvents)
 
-  for (uint32_t i = 0; i < tmp->mIdleObservers.Length(); i++) {
-    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mIdleObservers[i].nsIIdleObserverPtr");
-    cb.NoteXPCOMChild(tmp->mIdleObservers.ElementAt(i).mIdleObserver.get());
-  }
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIdleObservers)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
@@ -1772,7 +1787,10 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
   nsContentUtils::AddScriptRunner(
     NS_NewRunnableMethod(this, &nsGlobalWindow::ClearStatus));
 
-  bool reUseInnerWindow = aForceReuseInnerWindow || wouldReuseInnerWindow;
+  // Sometimes, WouldReuseInnerWindow() returns true even if there's no inner
+  // window (see bug 776497). Be safe.
+  bool reUseInnerWindow = (aForceReuseInnerWindow || wouldReuseInnerWindow) &&
+                          GetCurrentInnerWindowInternal();
 
   nsresult rv = NS_OK;
 
@@ -2789,6 +2807,12 @@ nsPIDOMWindow::MaybeCreateDoc()
     // has already called SetNewDocument().
     nsCOMPtr<nsIDocument> document = do_GetInterface(docShell);
   }
+}
+
+void
+nsPIDOMWindow::AddAudioContext(AudioContext* aAudioContext)
+{
+  mAudioContexts.AppendElement(aAudioContext);
 }
 
 NS_IMETHODIMP
@@ -5474,12 +5498,32 @@ nsGlobalWindow::SizeToContent()
 
   // The content viewer does a check to make sure that it's a content
   // viewer for a toplevel docshell.
-  
   nsCOMPtr<nsIContentViewer> cv;
   mDocShell->GetContentViewer(getter_AddRefs(cv));
   nsCOMPtr<nsIMarkupDocumentViewer> markupViewer(do_QueryInterface(cv));
   NS_ENSURE_TRUE(markupViewer, NS_ERROR_FAILURE);
-  NS_ENSURE_SUCCESS(markupViewer->SizeToContent(), NS_ERROR_FAILURE);
+
+  int32_t width, height;
+  NS_ENSURE_SUCCESS(markupViewer->GetContentSize(&width, &height),
+                    NS_ERROR_FAILURE);
+
+  // Make sure the new size is following the CheckSecurityWidthAndHeight
+  // rules.
+  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+  GetTreeOwner(getter_AddRefs(treeOwner));
+  NS_ENSURE_TRUE(treeOwner, NS_ERROR_FAILURE);
+
+  nsIntSize cssSize(DevToCSSIntPixels(nsIntSize(width, height)));
+  NS_ENSURE_SUCCESS(CheckSecurityWidthAndHeight(&cssSize.width,
+                                                &cssSize.height),
+                    NS_ERROR_FAILURE);
+
+  nsIntSize newDevSize(CSSToDevIntPixels(cssSize));
+
+  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = do_QueryInterface(mDocShell);
+  NS_ENSURE_SUCCESS(treeOwner->SizeShellTo(docShellAsItem,
+                                           newDevSize.width, newDevSize.height),
+                    NS_ERROR_FAILURE);
 
   return NS_OK;
 }
