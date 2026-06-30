@@ -151,7 +151,7 @@ js::BoxNonStrictThis(JSContext *cx, const CallReceiver &call)
 
 #ifdef DEBUG
     JSFunction *fun = call.callee().isFunction() ? call.callee().toFunction() : NULL;
-    JS_ASSERT_IF(fun && fun->isInterpreted(), !fun->inStrictMode());
+    JS_ASSERT_IF(fun && fun->isInterpreted(), !fun->strict());
 #endif
 
     bool modified;
@@ -1229,6 +1229,13 @@ js::Interpret(JSContext *cx, StackFrame *entryFrame, InterpMode interpMode)
         interpMode = JSINTERP_NORMAL;
 
     /*
+     * The RETHROW mode acts like a bailout mode, except that it resume an
+     * exception instead of resuming the script.
+     */
+    if (interpMode == JSINTERP_RETHROW)
+        goto error;
+
+    /*
      * It is important that "op" be initialized before calling DO_OP because
      * it is possible for "op" to be specially assigned during the normal
      * processing of an opcode while looping. We rely on DO_NEXT_OP to manage
@@ -2082,7 +2089,7 @@ BEGIN_CASE(JSOP_DELNAME)
         goto error;
 
     /* Strict mode code should never contain JSOP_DELNAME opcodes. */
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     /* ECMA says to return true if name is undefined or inherited. */
     PUSH_BOOLEAN(true);
@@ -2103,7 +2110,7 @@ BEGIN_CASE(JSOP_DELPROP)
     FETCH_OBJECT(cx, -1, obj);
 
     MutableHandleValue res = MutableHandleValue::fromMarkedLocation(&regs.sp[-1]);
-    if (!JSObject::deleteProperty(cx, obj, name, res, script->strictModeCode))
+    if (!JSObject::deleteProperty(cx, obj, name, res, script->strict))
         goto error;
 }
 END_CASE(JSOP_DELPROP)
@@ -2118,7 +2125,7 @@ BEGIN_CASE(JSOP_DELELEM)
     propval = regs.sp[-1];
 
     MutableHandleValue res = MutableHandleValue::fromMarkedLocation(&regs.sp[-2]);
-    if (!JSObject::deleteByValue(cx, obj, propval, res, script->strictModeCode))
+    if (!JSObject::deleteByValue(cx, obj, propval, res, script->strict))
         goto error;
 
     regs.sp--;
@@ -2277,7 +2284,7 @@ BEGIN_CASE(JSOP_SETELEM)
     RootedId &id = rootId0;
     FETCH_ELEMENT_ID(obj, -2, id);
     Value &value = regs.sp[-1];
-    if (!SetObjectElementOperation(cx, obj, id, value, script->strictModeCode))
+    if (!SetObjectElementOperation(cx, obj, id, value, script->strict))
         goto error;
     regs.sp[-3] = value;
     regs.sp -= 2;
@@ -2294,7 +2301,7 @@ BEGIN_CASE(JSOP_ENUMELEM)
     RootedId &id = rootId0;
     FETCH_ELEMENT_ID(obj, -1, id);
     rval = regs.sp[-3];
-    if (!JSObject::setGeneric(cx, obj, obj, id, &rval, script->strictModeCode))
+    if (!JSObject::setGeneric(cx, obj, obj, id, &rval, script->strict))
         goto error;
     regs.sp -= 3;
 }
@@ -2856,7 +2863,7 @@ BEGIN_CASE(JSOP_DEFFUN)
          */
 
         /* Step 5f. */
-        if (!JSObject::setProperty(cx, parent, parent, name, &rval, script->strictModeCode))
+        if (!JSObject::setProperty(cx, parent, parent, name, &rval, script->strict))
             goto error;
     } while (false);
 }
@@ -3052,7 +3059,7 @@ BEGIN_CASE(JSOP_INITPROP)
     id = NameToId(name);
 
     if (JS_UNLIKELY(name == cx->names().proto)
-        ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, script->strictModeCode)
+        ? !baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, script->strict)
         : !DefineNativeProperty(cx, obj, id, rval, NULL, NULL,
                                 JSPROP_ENUMERATE, 0, 0, 0)) {
         goto error;
@@ -3247,7 +3254,7 @@ END_CASE(JSOP_DEBUGGER)
 #if JS_HAS_XML_SUPPORT
 BEGIN_CASE(JSOP_DEFXMLNS)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     if (!js_SetDefaultXMLNamespace(cx, regs.sp[-1]))
         goto error;
@@ -3257,7 +3264,7 @@ END_CASE(JSOP_DEFXMLNS)
 
 BEGIN_CASE(JSOP_ANYNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     cx->runtime->gcExactScanningEnabled = false;
 
@@ -3271,7 +3278,7 @@ END_CASE(JSOP_ANYNAME)
 
 BEGIN_CASE(JSOP_QNAMEPART)
     /*
-     * We do not JS_ASSERT(!script->strictModeCode) here because JSOP_QNAMEPART
+     * We do not JS_ASSERT(!script->strict) here because JSOP_QNAMEPART
      * is used for __proto__ and (in contexts where we favor JSOP_*ELEM instead
      * of JSOP_*PROP) obj.prop compiled as obj['prop'].
      */
@@ -3281,7 +3288,7 @@ END_CASE(JSOP_QNAMEPART)
 #if JS_HAS_XML_SUPPORT
 BEGIN_CASE(JSOP_QNAMECONST)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
     Value rval = StringValue(script->getAtom(regs.pc));
     Value lval = regs.sp[-1];
     JSObject *obj = js_ConstructXMLQNameObject(cx, lval, rval);
@@ -3293,7 +3300,7 @@ END_CASE(JSOP_QNAMECONST)
 
 BEGIN_CASE(JSOP_QNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval = regs.sp[-1];
     Value lval = regs.sp[-2];
@@ -3307,7 +3314,7 @@ END_CASE(JSOP_QNAME)
 
 BEGIN_CASE(JSOP_TOATTRNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval;
     rval = regs.sp[-1];
@@ -3319,7 +3326,7 @@ END_CASE(JSOP_TOATTRNAME)
 
 BEGIN_CASE(JSOP_TOATTRVAL)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval;
     rval = regs.sp[-1];
@@ -3334,7 +3341,7 @@ END_CASE(JSOP_TOATTRVAL)
 BEGIN_CASE(JSOP_ADDATTRNAME)
 BEGIN_CASE(JSOP_ADDATTRVAL)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval = regs.sp[-1];
     Value lval = regs.sp[-2];
@@ -3350,7 +3357,7 @@ END_CASE(JSOP_ADDATTRNAME)
 
 BEGIN_CASE(JSOP_BINDXMLNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value lval;
     lval = regs.sp[-1];
@@ -3365,14 +3372,14 @@ END_CASE(JSOP_BINDXMLNAME)
 
 BEGIN_CASE(JSOP_SETXMLNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Rooted<JSObject*> obj(cx, &regs.sp[-3].toObject());
     RootedValue &rval = rootValue0;
     rval = regs.sp[-1];
     RootedId &id = rootId0;
     FETCH_ELEMENT_ID(obj, -2, id);
-    if (!JSObject::setGeneric(cx, obj, obj, id, &rval, script->strictModeCode))
+    if (!JSObject::setGeneric(cx, obj, obj, id, &rval, script->strict))
         goto error;
     rval = regs.sp[-1];
     regs.sp -= 2;
@@ -3383,7 +3390,7 @@ END_CASE(JSOP_SETXMLNAME)
 BEGIN_CASE(JSOP_CALLXMLNAME)
 BEGIN_CASE(JSOP_XMLNAME)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value lval = regs.sp[-1];
     RootedObject &obj = rootObject0;
@@ -3406,7 +3413,7 @@ END_CASE(JSOP_XMLNAME)
 BEGIN_CASE(JSOP_DESCENDANTS)
 BEGIN_CASE(JSOP_DELDESC)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     JSObject *obj;
     FETCH_OBJECT(cx, -2, obj);
@@ -3428,7 +3435,7 @@ END_CASE(JSOP_DESCENDANTS)
 
 BEGIN_CASE(JSOP_FILTER)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     /*
      * We push the hole value before jumping to [enditer] so we can detect the
@@ -3443,7 +3450,7 @@ END_VARLEN_CASE
 
 BEGIN_CASE(JSOP_ENDFILTER)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     bool cond = !regs.sp[-1].isMagic();
     if (cond) {
@@ -3471,7 +3478,7 @@ END_CASE(JSOP_ENDFILTER);
 
 BEGIN_CASE(JSOP_TOXML)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     cx->runtime->gcExactScanningEnabled = false;
 
@@ -3485,7 +3492,7 @@ END_CASE(JSOP_TOXML)
 
 BEGIN_CASE(JSOP_TOXMLLIST)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval = regs.sp[-1];
     JSObject *obj = js_ValueToXMLListObject(cx, rval);
@@ -3497,7 +3504,7 @@ END_CASE(JSOP_TOXMLLIST)
 
 BEGIN_CASE(JSOP_XMLTAGEXPR)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval = regs.sp[-1];
     JSString *str = ToString(cx, rval);
@@ -3509,7 +3516,7 @@ END_CASE(JSOP_XMLTAGEXPR)
 
 BEGIN_CASE(JSOP_XMLELTEXPR)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval = regs.sp[-1];
     JSString *str;
@@ -3528,7 +3535,7 @@ END_CASE(JSOP_XMLELTEXPR)
 
 BEGIN_CASE(JSOP_XMLCDATA)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     JSAtom *atom = script->getAtom(regs.pc);
     JSObject *obj = js_NewXMLSpecialObject(cx, JSXML_CLASS_TEXT, NULL, atom);
@@ -3540,7 +3547,7 @@ END_CASE(JSOP_XMLCDATA)
 
 BEGIN_CASE(JSOP_XMLCOMMENT)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     JSAtom *atom = script->getAtom(regs.pc);
     JSObject *obj = js_NewXMLSpecialObject(cx, JSXML_CLASS_COMMENT, NULL, atom);
@@ -3552,7 +3559,7 @@ END_CASE(JSOP_XMLCOMMENT)
 
 BEGIN_CASE(JSOP_XMLPI)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     JSAtom *atom = script->getAtom(regs.pc);
     Value rval = regs.sp[-1];
@@ -3566,7 +3573,7 @@ END_CASE(JSOP_XMLPI)
 
 BEGIN_CASE(JSOP_GETFUNNS)
 {
-    JS_ASSERT(!script->strictModeCode);
+    JS_ASSERT(!script->strict);
 
     Value rval;
     if (!cx->fp()->global().getFunctionNamespace(cx, &rval))

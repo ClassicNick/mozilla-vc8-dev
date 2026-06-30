@@ -561,8 +561,8 @@ StackTrace::Print(const Writer& aWriter) const
     void* pc = mPcs[i];
     PcInfo(pc, &details);
     if (details.function[0]) {
-      W("   %14p %s[%s +0x%X]\n", pc, details.function, details.library,
-        details.loffset);
+      W("   %s[%s +0x%X] %p\n", details.function, details.library,
+        details.loffset, pc);
     }
   }
 }
@@ -1264,8 +1264,8 @@ FrameGroup::Print(const Writer& aWriter, uint32_t aM, uint32_t aN,
     astr);
 
   W(" PC is\n");
-  W("   %14p %s[%s +0x%X]\n\n", mPc, details.function, details.library,
-    details.loffset);
+  W("   %s[%s +0x%X] %p\n\n", details.function, details.library,
+    details.loffset, mPc);
 }
 
 //---------------------------------------------------------------------------
@@ -1311,6 +1311,22 @@ OptionLong(const char* aArg, const char* aOptionName, long aMin, long aMax,
 
 static const size_t gMaxSampleBelowSize = 100 * 1000 * 1000;    // bytes
 
+// Default to sampling with a sample-below size that's a prime number close to
+// 4096.
+//
+// Using a sample-below size ~= 4096 is much faster than using a sample-below
+// size of 1, and it's not much less accurate in practice, so it's a reasonable
+// default.
+//
+// Using a prime sample-below size makes our sampling more random.  If we used
+// instead a sample-below size of 4096, for example, then if all our allocation
+// sizes were even (which they likely are, due to how jemalloc rounds up), our
+// alloc counter would take on only even values.
+//
+// In contrast, using a prime sample-below size lets us explore all possible
+// values of the alloc counter.
+static const size_t gDefaultSampleBelowSize = 4093;
+
 static void
 BadArg(const char* aArg)
 {
@@ -1324,8 +1340,9 @@ BadArg(const char* aArg)
   StatusMsg("  enables it with non-default options.\n");
   StatusMsg("\n");
   StatusMsg("The following options are allowed;  defaults are shown in [].\n");
-  StatusMsg("  --sample-below=<1..%d> Sample blocks smaller than this [1]\n",
-            int(gMaxSampleBelowSize));
+  StatusMsg("  --sample-below=<1..%d> Sample blocks smaller than this [%d]\n"
+            "                         (prime numbers recommended).\n",
+            int(gMaxSampleBelowSize), int(gDefaultSampleBelowSize));
   StatusMsg("  --mode=<normal|test|stress>   Which mode to run in? [normal]\n");
   StatusMsg("\n");
   exit(1);
@@ -1344,7 +1361,7 @@ Init(const malloc_table_t* aMallocTable)
 
   // Set defaults of things that can be affected by the $DMD env var.
   gMode = Normal;
-  gSampleBelowSize = 1;
+  gSampleBelowSize = gDefaultSampleBelowSize;
 
   // DMD is controlled by the |DMD| environment variable.
   // - If it's unset or empty or "0", DMD doesn't run.
@@ -1431,10 +1448,10 @@ Init(const malloc_table_t* aMallocTable)
   DMD_CREATE_TLS_INDEX(gTlsIndex);
 
   gStackTraceTable = InfallibleAllocPolicy::new_<StackTraceTable>();
-  gStackTraceTable->init(65536);
+  gStackTraceTable->init(8192);
 
   gLiveBlockTable = InfallibleAllocPolicy::new_<BlockTable>();
-  gLiveBlockTable->init(65536);
+  gLiveBlockTable->init(8192);
 
   gDoubleReportBlockGroupTable = InfallibleAllocPolicy::new_<BlockGroupTable>();
   gDoubleReportBlockGroupTable->init(0);
@@ -1650,35 +1667,28 @@ MallocSizeOf(const void* aPtr)
   return gMallocTable->malloc_usable_size(const_cast<void*>(aPtr));
 }
 
-static void
-ShowExecutionMeasurements(const Writer& aWriter)
+// Note that, unlike most SizeOf* functions, this function does not take a
+// |nsMallocSizeOfFun| argument.  That's because those arguments are primarily
+// to aid DMD track heap blocks... but DMD deliberately doesn't track heap
+// blocks it allocated for itself!
+MOZ_EXPORT void
+SizeOf(Sizes* aSizes)
 {
-  // Stats are non-deterministic, so don't show it in test mode.
-  if (gMode == Test) {
-    return;
-  }
-
-  WriteTitle("Execution measurements\n");
-
-  size_t sizeOfStackTraceTable =
-    gStackTraceTable->sizeOfIncludingThis(MallocSizeOf);
+  aSizes->mStackTraces = 0;
   for (StackTraceTable::Range r = gStackTraceTable->all();
        !r.empty();
        r.popFront()) {
     StackTrace* const& st = r.front();
-    sizeOfStackTraceTable += MallocSizeOf(st);
+    aSizes->mStackTraces += MallocSizeOf(st);
   }
-  W("Stack trace table: %s of %s entries used, taking up %s bytes\n",
-    Show(gStackTraceTable->count(),    gBuf1, kBufLen),
-    Show(gStackTraceTable->capacity(), gBuf2, kBufLen),
-    Show(sizeOfStackTraceTable, gBuf3, kBufLen));
 
-  W("Live block table:  %s of %s entries used, taking up %s bytes\n",
-    Show(gLiveBlockTable->count(),    gBuf1, kBufLen),
-    Show(gLiveBlockTable->capacity(), gBuf2, kBufLen),
-    Show(gLiveBlockTable->sizeOfIncludingThis(MallocSizeOf), gBuf3, kBufLen));
+  aSizes->mStackTraceTable =
+    gStackTraceTable->sizeOfIncludingThis(MallocSizeOf);
 
-  W("\n");
+  aSizes->mLiveBlockTable = gLiveBlockTable->sizeOfIncludingThis(MallocSizeOf);
+
+  aSizes->mDoubleReportTable =
+    gDoubleReportBlockGroupTable->sizeOfIncludingThis(MallocSizeOf);
 }
 
 static void
@@ -1714,11 +1724,11 @@ Dump(Writer aWriter)
   StatusMsg("  gathering live block groups...\n");
 
   BlockGroupTable unreportedBlockGroupTable;
-  (void)unreportedBlockGroupTable.init(2048);
+  (void)unreportedBlockGroupTable.init(1024);
   size_t unreportedUsableSize = 0;
 
   BlockGroupTable reportedBlockGroupTable;
-  (void)reportedBlockGroupTable.init(2048);
+  (void)reportedBlockGroupTable.init(1024);
   size_t reportedUsableSize = 0;
 
   bool anyBlocksSampled = false;
@@ -1737,7 +1747,8 @@ Dump(Writer aWriter)
   size_t totalUsableSize = unreportedUsableSize + reportedUsableSize;
 
   WriteTitle("Invocation\n");
-  W("$DMD = '%s'\n\n", gDMDEnvVar);
+  W("$DMD = '%s'\n", gDMDEnvVar);
+  W("Sample-below size = %lld\n\n", (long long)(gSampleBelowSize));
 
   PrintSortedGroups(aWriter, "Double-reported", "double-reported",
                     *gDoubleReportBlockGroupTable, kNoSize, kNoSize);
@@ -1763,7 +1774,51 @@ Dump(Writer aWriter)
 
   W("\n");
 
-  ShowExecutionMeasurements(aWriter);
+  // Stats are non-deterministic, so don't show them in test mode.
+  if (gMode != Test) {
+    Sizes sizes;
+    SizeOf(&sizes);
+
+    WriteTitle("Execution measurements\n");
+
+    W("Data structures that persist after Dump() ends:\n");
+
+    W("  Stack traces:        %10s bytes\n",
+      Show(sizes.mStackTraces, gBuf1, kBufLen));
+
+    W("  Stack trace table:   %10s bytes (%s entries, %s used)\n",
+      Show(sizes.mStackTraceTable,       gBuf1, kBufLen),
+      Show(gStackTraceTable->capacity(), gBuf2, kBufLen),
+      Show(gStackTraceTable->count(),    gBuf3, kBufLen));
+
+    W("  Live block table:    %10s bytes (%s entries, %s used)\n",
+      Show(sizes.mLiveBlockTable,       gBuf1, kBufLen),
+      Show(gLiveBlockTable->capacity(), gBuf2, kBufLen),
+      Show(gLiveBlockTable->count(),    gBuf3, kBufLen));
+
+    W("\nData structures that are cleared after Dump() ends:\n");
+
+    W("  Double-report table: %10s bytes (%s entries, %s used)\n",
+      Show(sizes.mDoubleReportTable,                 gBuf1, kBufLen),
+      Show(gDoubleReportBlockGroupTable->capacity(), gBuf2, kBufLen),
+      Show(gDoubleReportBlockGroupTable->count(),    gBuf3, kBufLen));
+
+    size_t unreportedSize =
+      unreportedBlockGroupTable.sizeOfIncludingThis(MallocSizeOf);
+    W("  Unreported table:    %10s bytes (%s entries, %s used)\n",
+      Show(unreportedSize,                       gBuf1, kBufLen),
+      Show(unreportedBlockGroupTable.capacity(), gBuf2, kBufLen),
+      Show(unreportedBlockGroupTable.count(),    gBuf3, kBufLen));
+
+    size_t reportedSize =
+      reportedBlockGroupTable.sizeOfIncludingThis(MallocSizeOf);
+    W("  Reported table:      %10s bytes (%s entries, %s used)\n",
+      Show(reportedSize,                       gBuf1, kBufLen),
+      Show(reportedBlockGroupTable.capacity(), gBuf2, kBufLen),
+      Show(reportedBlockGroupTable.count(),    gBuf3, kBufLen));
+
+    W("\n");
+  }
 
   ClearState();
 
@@ -1806,6 +1861,9 @@ static void
 RunTestMode(FILE* fp)
 {
   Writer writer(FpWrite, fp);
+
+  // The first part of this test requires sampling to be disabled.
+  gSampleBelowSize = 1;
 
   // 0th Dump.  Zero for everything.
   Dump(writer);

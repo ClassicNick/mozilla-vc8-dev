@@ -10,14 +10,15 @@
 /*
  * JS script descriptor.
  */
-#include "jsprvtd.h"
 #include "jsdbgapi.h"
-#include "jsclist.h"
 #include "jsinfer.h"
 #include "jsopcode.h"
 #include "jsscope.h"
 
 #include "gc/Barrier.h"
+#include "gc/Root.h"
+
+ForwardDeclareJS(Script);
 
 namespace js {
 
@@ -378,6 +379,8 @@ struct JSScript : public js::gc::Cell
     js::ScriptSource *scriptSource_; /* source code */
 #ifdef JS_METHODJIT
     JITScriptSet *mJITInfo;
+#else
+    void         *mJITInfoPad;
 #endif
     js::HeapPtrFunction function_;
     js::HeapPtrObject   enclosingScope_;
@@ -459,7 +462,7 @@ struct JSScript : public js::gc::Cell
     bool            noScriptRval:1; /* no need for result value of last
                                        expression statement */
     bool            savedCallerFun:1; /* can call getCallerFunction() */
-    bool            strictModeCode:1; /* code is in strict mode */
+    bool            strict:1; /* code is in strict mode */
     bool            explicitUseStrict:1; /* code has "use strict"; explicitly */
     bool            compileAndGo:1;   /* see Parser::compileAndGo */
     bool            bindingsAccessedDynamically:1; /* see ContextFlags' field of the same name */
@@ -478,9 +481,14 @@ struct JSScript : public js::gc::Cell
 #ifdef JS_METHODJIT
     bool            debugMode:1;      /* script was compiled in debug mode */
     bool            failedBoundsCheck:1; /* script has had hoisted bounds checks fail */
+#else
+    bool            debugModePad:1;
+    bool            failedBoundsCheckPad:1;
 #endif
 #ifdef JS_ION
     bool            failedShapeGuard:1; /* script has had hoisted shape guard fail */
+#else
+    bool            failedShapeGuardPad:1;
 #endif
     bool            invalidatedIdempotentCache:1; /* idempotent cache has triggered invalidation */
     bool            isGenerator:1;    /* is a generator */
@@ -552,7 +560,7 @@ struct JSScript : public js::gc::Cell
      * opcodes won't be emitted at all.
      */
     bool argsObjAliasesFormals() const {
-        return needsArgsObj() && !strictModeCode;
+        return needsArgsObj() && !strict;
     }
 
     bool hasAnyIonScript() const {
