@@ -492,7 +492,7 @@ class MacroAssembler : public MacroAssemblerSpecific
         // Push VMFunction pointer, to mark arguments.
         Push(ImmWord(f));
     }
-    void enterFakeExitFrame(void *codeVal = NULL) {
+    void enterFakeExitFrame(IonCode *codeVal = NULL) {
         linkExitFrame();
         Push(ImmWord(uintptr_t(codeVal)));
         Push(ImmWord(uintptr_t(NULL)));
@@ -503,7 +503,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     }
 
     void link(IonCode *code) {
-
+        JS_ASSERT(!oom());
         // If this code can transition to C++ code and witness a GC, then we need to store
         // the IonCode onto the stack in order to GC it correctly.  exitCodePatch should
         // be unset if the code never needed to push its IonCode*.
@@ -551,28 +551,28 @@ class MacroAssembler : public MacroAssemblerSpecific
     }
 
     // see above comment for what is returned
-    uint32 callIon(const Register &callee) {
+    uint32_t callIon(const Register &callee) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callIon(callee);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }
 
     // see above comment for what is returned
-    uint32 callWithExitFrame(IonCode *target) {
+    uint32_t callWithExitFrame(IonCode *target) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callWithExitFrame(target);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }
 
     // see above comment for what is returned
-    uint32 callWithExitFrame(IonCode *target, Register dynStack) {
+    uint32_t callWithExitFrame(IonCode *target, Register dynStack) {
         leaveSPSFrame();
         MacroAssemblerSpecific::callWithExitFrame(target, dynStack);
-        uint32 ret = currentOffset();
+        uint32_t ret = currentOffset();
         reenterSPSFrame();
         return ret;
     }

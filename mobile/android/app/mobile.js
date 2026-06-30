@@ -162,6 +162,7 @@ pref("dom.experimental_forms", true);
 
 /* extension manager and xpinstall */
 pref("xpinstall.whitelist.add", "addons.mozilla.org");
+pref("xpinstall.whitelist.add.180", "marketplace.firefox.com");
 
 pref("extensions.enabledScopes", 1);
 pref("extensions.autoupdate.enabled", true);
@@ -427,10 +428,6 @@ pref("plugin.disable", false);
 pref("dom.ipc.plugins.enabled", false);
 
 pref("plugins.click_to_play", true);
-// Disabled because of thread safety problem
-// in getting the bits from the surface.
-// Bug 756253
-pref("plugins.use_placeholder", 0);
 
 // product URLs
 // The breakpad report server to link to in about:crashes
@@ -524,6 +521,7 @@ pref("layers.offmainthreadcomposition.enabled", true);
 pref("layers.async-video.enabled", true);
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
+pref("layers.low-precision-resolution", 250);
 
 pref("notification.feature.enabled", true);
 

@@ -928,7 +928,7 @@ public:
 JS_STATIC_ASSERT(sizeof(JSScript::ArrayBitsT) * 8 >= JSScript::LIMIT);
 
 /* If this fails, add/remove padding within JSScript. */
-JS_STATIC_ASSERT(sizeof(JSScript) % js::gc::Cell::CellSize == 0);
+JS_STATIC_ASSERT(sizeof(JSScript) % js::gc::CellSize == 0);
 
 namespace js {
 
