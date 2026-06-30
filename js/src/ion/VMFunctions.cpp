@@ -13,6 +13,7 @@
 
 #include "vm/StringObject-inl.h"
 
+#include "jsboolinlines.h"
 #include "jsinterpinlines.h"
 
 using namespace js;
@@ -56,7 +57,7 @@ InvokeFunction(JSContext *cx, JSFunction *fun, uint32_t argc, Value *argv, Value
         if (fun->isInterpretedLazy() && !fun->getOrCreateScript(cx))
             return false;
         if (!fun->nonLazyScript()->canIonCompile()) {
-            JSScript *script = GetTopIonJSScript(cx);
+            UnrootedScript script = GetTopIonJSScript(cx);
             if (script->hasIonScript() &&
                 ++script->ion->slowCallCount >= js_IonOptions.slowCallLimit)
             {
@@ -142,7 +143,7 @@ InitProp(JSContext *cx, HandleObject obj, HandlePropertyName name, HandleValue v
 
     if (name == cx->names().proto)
         return baseops::SetPropertyHelper(cx, obj, obj, id, 0, &rval, false);
-    return !!DefineNativeProperty(cx, obj, id, rval, NULL, NULL, JSPROP_ENUMERATE, 0, 0, 0);
+    return DefineNativeProperty(cx, obj, id, rval, NULL, NULL, JSPROP_ENUMERATE, 0, 0, 0);
 }
 
 template<bool Equal>
@@ -227,11 +228,11 @@ StringsEqual(JSContext *cx, HandleString lhs, HandleString rhs, JSBool *res)
 template bool StringsEqual<true>(JSContext *cx, HandleString lhs, HandleString rhs, JSBool *res);
 template bool StringsEqual<false>(JSContext *cx, HandleString lhs, HandleString rhs, JSBool *res);
 
-bool
-ValueToBooleanComplement(JSContext *cx, const Value &input, JSBool *output)
+JSBool
+ObjectEmulatesUndefined(RawObject obj)
 {
-    *output = !ToBoolean(input);
-    return true;
+    AutoAssertNoGC nogc;
+    return EmulatesUndefined(obj);
 }
 
 bool
@@ -358,6 +359,19 @@ ArrayConcatDense(JSContext *cx, HandleObject obj1, HandleObject obj2, HandleObje
     if (!js::array_concat(cx, 1, argv))
         return NULL;
     return &argv[0].toObject();
+}
+
+bool
+CharCodeAt(JSContext *cx, HandleString str, int32_t index, uint32_t *code)
+{
+    JS_ASSERT(index < str->length());
+
+    const jschar *chars = str->getChars(cx);
+    if (!chars)
+        return false;
+
+    *code = chars[index];
+    return true;
 }
 
 JSFlatString *

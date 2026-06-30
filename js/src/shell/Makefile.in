@@ -11,9 +11,6 @@ VPATH		= @srcdir@
 
 include $(DEPTH)/config/autoconf.mk
 
-JS_SHELL=
-
-ifdef JS_SHELL
 PROGRAM         = js$(BIN_SUFFIX)
 CPPSRCS		= \
   js.cpp \
@@ -45,7 +42,6 @@ ifeq ($(TARGET_CPU),x86_64)
 DARWIN_EXE_LDFLAGS += -pagezero_size 10000 -image_base 100000000
 endif
 endif
-endif
 
 ifdef QEMU_EXE
 MOZ_POST_PROGRAM_COMMAND = $(topsrcdir)/build/qemu-wrap --qemu $(QEMU_EXE) --libdir $(CROSS_LIB)
@@ -63,7 +59,6 @@ SHELL_INSTALL_AUTOLOAD_DEST := $(DIST)/bin
 
 include $(topsrcdir)/config/rules.mk
 
-ifdef JS_SHELL
 ifdef MOZ_SHARK
 CFLAGS += -F/System/Library/PrivateFrameworks
 CXXFLAGS += -F/System/Library/PrivateFrameworks
@@ -78,4 +73,3 @@ GARBAGE += $(DEPTH)/$(PROGRAM)
 
 install:: $(PROGRAM)
 	$(SYSINSTALL) $^ $(DESTDIR)$(bindir)
-endif

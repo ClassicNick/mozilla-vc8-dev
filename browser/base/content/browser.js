@@ -1462,7 +1462,7 @@ var gBrowserInit = {
     }
 
     // Add Devtools menuitems and listeners
-    gDevTools.registerBrowserWindow(window);
+    gDevToolsBrowser.registerBrowserWindow(window);
 
     let appMenuButton = document.getElementById("appmenu-button");
     let appMenuPopup = document.getElementById("appmenu-popup");
@@ -1506,7 +1506,7 @@ var gBrowserInit = {
     if (!this._loadHandled)
       return;
 
-    gDevTools.forgetBrowserWindow(window);
+    gDevToolsBrowser.forgetBrowserWindow(window);
 
     // First clean up services initialized in gBrowserInit.onLoad (or those whose
     // uninit methods don't depend on the services having been initialized).
@@ -1644,6 +1644,8 @@ var gBrowserInit = {
         }
       }
     }
+
+    SocialUI.nonBrowserWindowInit();
 
     this._delayedStartupTimeoutId = setTimeout(this.nonBrowserWindowDelayedStartup.bind(this), 0);
   },
@@ -2319,6 +2321,10 @@ function URLBarSetURI(aURI) {
 
   if (value == null) {
     let uri = aURI || gBrowser.currentURI;
+    // Strip off "wyciwyg://" and passwords for the location bar
+    try {
+      uri = Services.uriFixup.createExposableURI(uri);
+    } catch (e) {}
 
     // Replace initial page URIs with an empty string
     // only if there's no opener (bug 370555).
@@ -3492,17 +3498,16 @@ function OpenBrowserWindow(options)
   var wintype = document.documentElement.getAttribute('windowtype');
 
   var extraFeatures = "";
-  var forcePrivate = false;
 #ifdef MOZ_PER_WINDOW_PRIVATE_BROWSING
-  forcePrivate = typeof options == "object" && "private" in options && options.private;
+  if (options && options.private) {
 #else
-  forcePrivate = gPrivateBrowsingUI.privateBrowsingEnabled;
+  if (gPrivateBrowsingUI.privateBrowsingEnabled) {
 #endif
-
-  if (forcePrivate) {
     extraFeatures = ",private";
     // Force the new window to load about:privatebrowsing instead of the default home page
     defaultArgs = "about:privatebrowsing";
+  } else {
+    extraFeatures = ",non-private";
   }
 
   // if and only if the current window is a browser window and it has a document with a character
@@ -3800,11 +3805,6 @@ var XULBrowserWindow = {
     delete this.isImage;
     return this.isImage = document.getElementById("isImage");
   },
-  get _uriFixup () {
-    delete this._uriFixup;
-    return this._uriFixup = Cc["@mozilla.org/docshell/urifixup;1"]
-                              .getService(Ci.nsIURIFixup);
-  },
 
   init: function () {
     this.throbberElement = document.getElementById("navigator-throbber");
@@ -4098,12 +4098,7 @@ var XULBrowserWindow = {
       }
 
       if (gURLBar) {
-        // Strip off "wyciwyg://" and passwords for the location bar
-        let uri = aLocationURI;
-        try {
-          uri = this._uriFixup.createExposableURI(uri);
-        } catch (e) {}
-        URLBarSetURI(uri);
+        URLBarSetURI(aLocationURI);
 
         // Update starring UI
         PlacesStarButton.updateState();
@@ -4523,9 +4518,8 @@ var TabsProgressListener = {
       // or history.push/pop/replaceState.
       if (aRequest) {
         // Initialize the click-to-play state.
-        aBrowser._clickToPlayDoorhangerShown = false;
         aBrowser._clickToPlayPluginsActivated = false;
-        aBrowser._pluginScriptedState = PLUGIN_SCRIPTED_STATE_NONE;
+        aBrowser._pluginScriptedState = gPluginHandler.PLUGIN_SCRIPTED_STATE_NONE;
       }
       FullZoom.onLocationChange(aLocationURI, false, aBrowser);
     }
@@ -7296,7 +7290,7 @@ var TabContextMenu = {
 XPCOMUtils.defineLazyModuleGetter(this, "gDevTools",
                                   "resource:///modules/devtools/gDevTools.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "DevToolsXULCommands",
+XPCOMUtils.defineLazyModuleGetter(this, "gDevToolsBrowser",
                                   "resource:///modules/devtools/gDevTools.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "HUDConsoleUI", function () {

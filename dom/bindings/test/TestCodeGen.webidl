@@ -451,6 +451,9 @@ interface TestInterface {
   // If you add things here, add them to TestExampleGen as well
 };
 
+interface TestChildInterface : TestInterface {
+};
+
 interface TestNonWrapperCacheInterface {
 };
 
@@ -507,6 +510,10 @@ dictionary Dict : ParentDict {
   TestEnum otherEnum = "b";
   DOMString otherStr = "def";
   DOMString? yetAnotherStr = null;
+  DOMString template;
+  object someObj;
+  object? anotherObj = null;
+  TestCallback? someCallback = null;
 };
 
 dictionary ParentDict : GrandparentDict {

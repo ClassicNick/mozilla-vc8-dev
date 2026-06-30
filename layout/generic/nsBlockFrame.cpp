@@ -9,8 +9,12 @@
  * boxes, also used for various anonymous boxes
  */
 
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+
 #include "nsCOMPtr.h"
 #include "nsBlockFrame.h"
+#include "nsAbsoluteContainingBlock.h"
 #include "nsBlockReflowContext.h"
 #include "nsBlockReflowState.h"
 #include "nsBulletFrame.h"
@@ -53,8 +57,6 @@
 #include "nsRenderingContext.h"
 #include "TextOverflow.h"
 #include "nsStyleStructInlines.h"
-#include "mozilla/Util.h" // for DebugOnly
-#include "mozilla/Likely.h"
 
 #ifdef IBMBIDI
 #include "nsBidiPresUtils.h"
@@ -6250,7 +6252,7 @@ nsBlockFrame::AccessibleType()
 {
   // block frame may be for <hr>
   if (mContent->Tag() == nsGkAtoms::hr) {
-    return a11y::eHTMLHR;
+    return a11y::eHTMLHRType;
   }
 
   if (!HasBullet() || !PresContext()) {
@@ -6273,11 +6275,11 @@ nsBlockFrame::AccessibleType()
     }
 
     // Not a bullet, treat as normal HTML container
-    return a11y::eHyperText;
+    return a11y::eHyperTextType;
   }
 
   // Create special list bullet accessible
-  return a11y::eHTMLLi;
+  return a11y::eHTMLLiType;
 }
 #endif
 

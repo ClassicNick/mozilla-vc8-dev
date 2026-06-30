@@ -2034,6 +2034,13 @@ nsWindow::OnExposeEvent(cairo_t *cr)
         // there is nothing left to do.
         if (!mGdkWindow)
             return TRUE;
+
+        // Re-get the listener since the will paint notification might have
+        // killed it.
+        listener =
+            mAttachedWidgetListener ? mAttachedWidgetListener : mWidgetListener;
+        if (!listener)
+            return FALSE;
     }
 
 #if defined(MOZ_WIDGET_GTK2)
@@ -3015,7 +3022,7 @@ nsWindow::OnKeyPressEvent(GdkEventKey *aEvent)
     KeymapWrapper::InitKeyEvent(event, aEvent);
     if (isKeyDownCancelled) {
       // If prevent default set for onkeydown, do the same for onkeypress
-      event.flags |= NS_EVENT_FLAG_NO_DEFAULT;
+      event.mFlags.mDefaultPrevented = true;
     }
 
     // before we dispatch a key, check if it's the context menu key.

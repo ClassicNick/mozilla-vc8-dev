@@ -11,6 +11,11 @@
 
 #include <algorithm>
 
+#include "mozilla/Assertions.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Util.h"
+
 #include "nsRuleNode.h"
 #include "nscore.h"
 #include "nsIServiceManager.h"
@@ -40,11 +45,8 @@
 #include "CSSCalc.h"
 #include "nsPrintfCString.h"
 
-#include "mozilla/Assertions.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/Likely.h"
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Util.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h>
@@ -65,7 +67,7 @@ using namespace mozilla::dom;
   if ((context_)->PresContext()->IsDynamic()) {                               \
     method_(request_);                                                      \
   } else {                                                                  \
-    nsCOMPtr<imgIRequest> req = nsContentUtils::GetStaticRequest(request_); \
+    nsRefPtr<imgRequestProxy> req = nsContentUtils::GetStaticRequest(request_); \
     method_(req);                                                           \
   }
 

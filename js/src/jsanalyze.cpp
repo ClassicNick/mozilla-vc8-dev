@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "jsanalyze.h"
 #include "jsautooplen.h"
 #include "jscompartment.h"
@@ -12,9 +14,10 @@
 #include "jsinferinlines.h"
 #include "jsobjinlines.h"
 
-using mozilla::DebugOnly;
 using namespace js;
 using namespace js::analyze;
+
+using mozilla::DebugOnly;
 
 /////////////////////////////////////////////////////////////////////
 // Bytecode
@@ -22,10 +25,9 @@ using namespace js::analyze;
 
 #ifdef DEBUG
 void
-analyze::PrintBytecode(JSContext *cx, JSScript *scriptArg, jsbytecode *pc)
+analyze::PrintBytecode(JSContext *cx, HandleScript script, jsbytecode *pc)
 {
-    RootedScript script(cx, scriptArg);
-
+    AssertCanGC();
     printf("#%u:", script->id());
     Sprinter sprinter(cx);
     if (!sprinter.init())
@@ -554,6 +556,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
           case JSOP_ENDINIT:
           case JSOP_INITPROP:
           case JSOP_INITELEM:
+          case JSOP_INITELEM_ARRAY:
           case JSOP_SETPROP:
           case JSOP_IN:
           case JSOP_INSTANCEOF:
@@ -564,7 +567,9 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
           case JSOP_RETRVAL:
           case JSOP_GETGNAME:
           case JSOP_CALLGNAME:
-          case JSOP_INTRINSICNAME:
+          case JSOP_GETINTRINSIC:
+          case JSOP_SETINTRINSIC:
+          case JSOP_BINDINTRINSIC:
           case JSOP_CALLINTRINSIC:
           case JSOP_SETGNAME:
           case JSOP_REGEXP:
@@ -1466,6 +1471,10 @@ ScriptAnalysis::analyzeSSA(JSContext *cx)
             stack[stackDepth - 2].v = code->poppedValues[2];
             break;
 
+          case JSOP_INITELEM_ARRAY:
+            stack[stackDepth - 1].v = code->poppedValues[1];
+            break;
+
           case JSOP_INITELEM:
             stack[stackDepth - 1].v = code->poppedValues[2];
             break;
@@ -1965,7 +1974,7 @@ CrossScriptSSA::foldValue(const CrossSSAValue &cv)
     const Frame &frame = getFrame(cv.frame);
     const SSAValue &v = cv.v;
 
-    JSScript *parentScript = NULL;
+    UnrootedScript parentScript = NULL;
     ScriptAnalysis *parentAnalysis = NULL;
     if (frame.parent != INVALID_FRAME) {
         parentScript = getFrame(frame.parent).script;
@@ -1998,7 +2007,7 @@ CrossScriptSSA::foldValue(const CrossSSAValue &cv)
              * If there is a single inline callee with a single return site,
              * propagate back to that.
              */
-            JSScript *callee = NULL;
+            UnrootedScript callee = NULL;
             uint32_t calleeFrame = INVALID_FRAME;
             for (unsigned i = 0; i < numFrames(); i++) {
                 if (iterFrame(i).parent == cv.frame && iterFrame(i).parentpc == pc) {
@@ -2050,6 +2059,7 @@ ScriptAnalysis::printSSA(JSContext *cx)
 
     printf("\n");
 
+    RootedScript script(cx, script_);
     for (unsigned offset = 0; offset < script_->length; offset++) {
         Bytecode *code = maybeCode(offset);
         if (!code)
@@ -2057,7 +2067,7 @@ ScriptAnalysis::printSSA(JSContext *cx)
 
         jsbytecode *pc = script_->code + offset;
 
-        PrintBytecode(cx, script_, pc);
+        PrintBytecode(cx, script, pc);
 
         SlotValue *newv = code->newValues;
         if (newv) {

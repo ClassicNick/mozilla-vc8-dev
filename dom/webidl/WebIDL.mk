@@ -21,7 +21,10 @@ webidl_files = \
   Blob.webidl \
   CanvasRenderingContext2D.webidl \
   ClientRectList.webidl \
+  CSSPrimitiveValue.webidl \
   CSSStyleDeclaration.webidl \
+  CSSValue.webidl \
+  CSSValueList.webidl \
   DelayNode.webidl \
   DOMImplementation.webidl \
   DOMParser.webidl \
@@ -45,13 +48,16 @@ webidl_files = \
   HTMLOptionsCollection.webidl \
   HTMLPropertiesCollection.webidl \
   ImageData.webidl \
+  MutationObserver.webidl \
   Node.webidl \
+  NodeFilter.webidl \
   NodeList.webidl \
   PaintRequestList.webidl \
   PannerNode.webidl \
   Performance.webidl \
   PerformanceNavigation.webidl \
   PerformanceTiming.webidl \
+  RGBColor.webidl \
   Screen.webidl \
   SVGLengthList.webidl \
   SVGNumberList.webidl \
@@ -66,6 +72,7 @@ webidl_files = \
   XMLHttpRequestEventTarget.webidl \
   XMLHttpRequestUpload.webidl \
   XMLSerializer.webidl \
+  XPathEvaluator.webidl \
   $(NULL)
 
 ifdef MOZ_WEBGL

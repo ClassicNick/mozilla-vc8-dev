@@ -291,6 +291,8 @@ public:
     /** Return the DPI of the widget this TabChild draws to. */
     void GetDPI(float* aDPI);
 
+    gfxSize GetZoom() { return mLastMetrics.mZoom; }
+
     void SetBackgroundColor(const nscolor& aColor);
 
     void NotifyPainted();
@@ -304,6 +306,16 @@ public:
      */
     void MakeVisible();
     void MakeHidden();
+
+    virtual bool RecvSetAppType(const nsString& aAppType);
+
+    /**
+     * Get this object's app type.
+     *
+     * A TabChild's app type corresponds to the value of its frame element's
+     * "mozapptype" attribute.
+     */
+    void GetAppType(nsAString& aAppType) const { aAppType = mAppType; }
 
 protected:
     virtual PRenderFrameChild* AllocPRenderFrame(ScrollingBehavior* aScrolling,
@@ -406,6 +418,7 @@ private:
     bool mNotified;
     bool mContentDocumentIsDisplayed;
     bool mTriedBrowserInit;
+    nsString mAppType;
 
     DISALLOW_EVIL_CONSTRUCTORS(TabChild);
 };

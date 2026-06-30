@@ -103,6 +103,9 @@ public:
   // imgRequest::RemoveProxy
   void ClearAnimationConsumers();
 
+  nsresult Clone(imgINotificationObserver* aObserver, imgRequestProxy** aClone);
+  nsresult GetStaticRequest(imgRequestProxy** aReturn);
+
 protected:
   friend class imgStatusTracker;
   friend class imgStatusNotifyRunnable;
@@ -132,7 +135,7 @@ protected:
   // class) imgStatusTracker is the only class allowed to send us
   // notifications.
 
-  /* non-virtual imgIDecoderObserver methods */
+  /* non-virtual imgDecoderObserver methods */
   void OnStartContainer  ();
   void OnFrameUpdate     (const nsIntRect * aRect);
   void OnStopFrame       ();
@@ -176,7 +179,7 @@ protected:
 
   nsresult PerformClone(imgINotificationObserver* aObserver,
                         imgRequestProxy* (aAllocFn)(imgRequestProxy*),
-                        imgIRequest** aClone);
+                        imgRequestProxy** aClone);
 
 public:
   NS_FORWARD_SAFE_NSITIMEDCHANNEL(TimedChannel())

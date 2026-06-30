@@ -37,12 +37,12 @@
 
 #if defined(PR_LOGGING)
 static PRLogModuleInfo* gDASHMPDParserLog = nullptr;
-#define LOG(msg, ...) PR_LOG(gDASHMPDParserLog, PR_LOG_DEBUG, \
-                             ("%p [nsDASHMPDParser] " msg, this, __VA_ARGS__))
+#define LOG(msg, a) PR_LOG(gDASHMPDParserLog, PR_LOG_DEBUG, \
+                             ("%p [nsDASHMPDParser] " msg, this, a))
 #define LOG1(msg) PR_LOG(gDASHMPDParserLog, PR_LOG_DEBUG, \
                          ("%p [nsDASHMPDParser] " msg, this))
 #else
-#define LOG(msg, ...)
+#define LOG(msg, a)
 #define LOG1(msg)
 #endif
 

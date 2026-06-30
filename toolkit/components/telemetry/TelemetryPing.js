@@ -147,7 +147,7 @@ function getSimpleMeasurements() {
            .getService(Ci.nsIJSEngineTelemetryStats)
            .telemetryValue;
 
-  let shutdownDuration = Services.startup.lastShutdownDuration;
+  let shutdownDuration = Telemetry.lastShutdownDuration;
   if (shutdownDuration)
     ret.shutdownDuration = shutdownDuration;
 
@@ -614,6 +614,7 @@ TelemetryPing.prototype = {
       this.sendPingsFromIterator(server, reason, i);
     }
     function onError() {
+      this.savePing(data, true);
       // Notify that testing is complete, even if we didn't send everything.
       finishPings(reason);
     }
@@ -740,6 +741,9 @@ TelemetryPing.prototype = {
       this._initialized = true;
       this.attachObservers();
       this.gatherMemory();
+
+      Telemetry.asyncReadShutdownTime(function () {
+      });
       delete this._timer;
     }
     this._timer.initWithCallback(timerCallback.bind(this), TELEMETRY_DELAY,

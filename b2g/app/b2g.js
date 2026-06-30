@@ -174,7 +174,8 @@ pref("content.sink.perf_parse_time", 50000000);
 
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
-pref("dom.max_script_run_time", 20);
+// Bug 817230 - disable the dialog until we implement its checkbox properly
+pref("dom.max_script_run_time", 0);
 
 // plugins
 pref("plugin.disable", true);
@@ -403,6 +404,7 @@ pref("dom.mozAlarms.enabled", true);
 // NetworkStats
 #ifdef MOZ_B2G_RIL
 pref("dom.mozNetworkStats.enabled", true);
+pref("ril.lastKnownMcc", 724);
 #endif
 
 // WebSettings
@@ -480,6 +482,14 @@ pref("app.update.interval", 86400); // 1 day
 // Don't throttle background updates.
 pref("app.update.download.backgroundInterval", 0);
 
+// Retry update socket connections every 30 seconds in the cases of certain kinds of errors
+pref("app.update.socket.retryTimeout", 30000);
+
+// Max of 20 consecutive retries (total 10 minutes) before giving up and marking
+// the update download as failed.
+// Note: Offline errors will always retry when the network comes online.
+pref("app.update.socket.maxErrors", 20);
+
 // Enable update logging for now, to diagnose growing pains in the
 // field.
 pref("app.update.log", true);
@@ -544,6 +554,8 @@ pref("hal.processPriorityManager.gonk.masterOomScoreAdjust", 0);
 pref("hal.processPriorityManager.gonk.masterKillUnderMB", 1);
 pref("hal.processPriorityManager.gonk.foregroundOomScoreAdjust", 67);
 pref("hal.processPriorityManager.gonk.foregroundKillUnderMB", 4);
+pref("hal.processPriorityManager.gonk.backgroundHomescreenOomScoreAdjust", 200);
+pref("hal.processPriorityManager.gonk.backgroundHomescreenKillUnderMB", 5);
 pref("hal.processPriorityManager.gonk.backgroundOomScoreAdjust", 400);
 pref("hal.processPriorityManager.gonk.backgroundKillUnderMB", 8);
 pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 10);

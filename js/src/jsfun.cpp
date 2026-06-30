@@ -425,7 +425,7 @@ js::XDRInterpretedFunction(XDRState<mode> *xdr, HandleObject enclosingScope, Han
             return false;
         JS_ASSERT(fun->nargs == fun->nonLazyScript()->bindings.numArgs());
         RootedScript script(cx, fun->nonLazyScript());
-        js_CallNewScriptHook(cx, script, fun);
+        CallNewScriptHook(cx, script, fun);
         objp.set(fun);
     }
 
@@ -451,7 +451,7 @@ js::CloneInterpretedFunction(JSContext *cx, HandleObject enclosingScope, HandleF
         return NULL;
 
     RootedScript srcScript(cx, srcFun->nonLazyScript());
-    RawScript clonedScript = CloneScript(cx, enclosingScope, clone, srcScript);
+    RootedScript clonedScript(cx, CloneScript(cx, enclosingScope, clone, srcScript));
     if (!clonedScript)
         return NULL;
 
@@ -464,7 +464,7 @@ js::CloneInterpretedFunction(JSContext *cx, HandleObject enclosingScope, HandleF
         return NULL;
 
     RootedScript cloneScript(cx, clone->nonLazyScript());
-    js_CallNewScriptHook(cx, cloneScript, clone);
+    CallNewScriptHook(cx, cloneScript, clone);
     return clone;
 }
 
@@ -1478,6 +1478,11 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
     clone->nargs = fun->nargs;
     clone->flags = fun->flags & ~JSFunction::EXTENDED;
     if (fun->isInterpreted()) {
+        if (fun->isInterpretedLazy()) {
+            AutoCompartment ac(cx, fun);
+            if (!fun->getOrCreateScript(cx))
+                return NULL;
+        }
         clone->initScript(fun->nonLazyScript());
         clone->initEnvironment(parent);
     } else {
@@ -1520,7 +1525,7 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
 
             clone->mutableScript().init(NULL);
 
-            RawScript cscript = CloneScript(cx, scope, clone, script);
+            RootedScript cscript(cx, CloneScript(cx, scope, clone, script));
             if (!cscript)
                 return NULL;
 
@@ -1530,7 +1535,7 @@ js_CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent,
             GlobalObject *global = script->compileAndGo ? &script->global() : NULL;
 
             script = clone->nonLazyScript();
-            js_CallNewScriptHook(cx, script, clone);
+            CallNewScriptHook(cx, script, clone);
             Debugger::onNewScript(cx, script, global);
         }
     }

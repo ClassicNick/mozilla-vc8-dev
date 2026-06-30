@@ -283,7 +283,7 @@ namespace JSC {
 
                 va_list va;
                 va_start(va, fmt);
-                int i = vsnprintf(buf, sizeof(buf), fmt, va);
+                int i = _vsnprintf(buf, sizeof(buf), fmt, va);
                 va_end(va);
 
                 if (i > -1) {
@@ -318,7 +318,7 @@ namespace JSC {
 
                 va_list va;
                 va_start(va, fmt);
-                int i = vsnprintf(buf, sizeof(buf), fmt, va);
+                int i = _vsnprintf(buf, sizeof(buf), fmt, va);
                 va_end(va);
 
                 if (i > -1) {

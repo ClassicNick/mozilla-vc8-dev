@@ -8,6 +8,7 @@
  * Base class for all our document implementations.
  */
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Util.h"
 #include "mozilla/Likely.h"
 
@@ -171,6 +172,7 @@
 #include "mozilla/Preferences.h"
 
 #include "imgILoader.h"
+#include "imgRequestProxy.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsSandboxFlags.h"
 #include "nsIAppsService.h"
@@ -7063,7 +7065,7 @@ nsDocument::OnPageShow(bool aPersisted,
     SetImagesNeedAnimating(true);
   }
 
-  UpdateVisibilityState(true);
+  UpdateVisibilityState();
 
   nsCOMPtr<nsIDOMEventTarget> target = aDispatchStartTarget;
   if (!target) {
@@ -7125,7 +7127,7 @@ nsDocument::OnPageHide(bool aPersisted,
 
   mVisible = false;
 
-  UpdateVisibilityState(true);
+  UpdateVisibilityState();
 
   EnumerateExternalResources(NotifyPageHide, &aPersisted);
   EnumerateFreezableElements(NotifyActivityChanged, nullptr);
@@ -7468,7 +7470,7 @@ nsDocument::MaybePreLoadImage(nsIURI* uri, const nsAString &aCrossOriginAttr)
   }
 
   // Image not in cache - trigger preload
-  nsCOMPtr<imgIRequest> request;
+  nsRefPtr<imgRequestProxy> request;
   nsresult rv =
     nsContentUtils::LoadImage(uri,
                               this,
@@ -7945,12 +7947,13 @@ nsDocument::FindImageMap(const nsAString& aUseMapValue)
   }
 
   uint32_t i, n = mImageMaps->Length(true);
+  nsString name;
   for (i = 0; i < n; ++i) {
     nsIContent* map = mImageMaps->Item(i);
     if (map->AttrValueIs(kNameSpaceID_None, nsGkAtoms::id, mapName,
                          eCaseMatters) ||
-        map->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, mapName,
-                         eIgnoreCase)) {
+        (map->GetAttr(kNameSpaceID_None, nsGkAtoms::name, name) &&
+         mapName.Equals(name, nsCaseInsensitiveStringComparator()))) {
       return map->AsElement();
     }
   }
@@ -9482,35 +9485,23 @@ nsDocument::GetMozPointerLockElement(nsIDOMElement** aPointerLockedElement)
 #undef TOUCH_EVENT
 #undef EVENT
 
-/* virtual */ void
-nsDocument::UpdateVisibilityState(bool aFireEventSync)
+void
+nsDocument::UpdateVisibilityState()
 {
   VisibilityState oldState = mVisibilityState;
   mVisibilityState = GetVisibilityState();
   if (oldState != mVisibilityState) {
-    if (aFireEventSync) {
-      FireVisibilityChangeEvent();
-    } else {
-      nsCOMPtr<nsIRunnable> event =
-        NS_NewRunnableMethod(this, &nsDocument::FireVisibilityChangeEvent);
-      NS_DispatchToMainThread(event);
-    }
+    nsContentUtils::DispatchTrustedEvent(this, static_cast<nsIDocument*>(this),
+                                         NS_LITERAL_STRING("visibilitychange"),
+                                         /* bubbles = */ true,
+                                         /* cancelable = */ false);
+    nsContentUtils::DispatchTrustedEvent(this, static_cast<nsIDocument*>(this),
+                                         NS_LITERAL_STRING("mozvisibilitychange"),
+                                         /* bubbles = */ true,
+                                         /* cancelable = */ false);
 
     EnumerateFreezableElements(NotifyActivityChanged, nullptr);
   }
-}
-
-void
-nsDocument::FireVisibilityChangeEvent()
-{
-  nsContentUtils::DispatchTrustedEvent(this, static_cast<nsIDocument*>(this),
-                                       NS_LITERAL_STRING("visibilitychange"),
-                                       /* bubbles = */ true,
-                                       /* cancelable = */ false);
-  nsContentUtils::DispatchTrustedEvent(this, static_cast<nsIDocument*>(this),
-                                       NS_LITERAL_STRING("mozvisibilitychange"),
-                                       /* bubbles = */ true,
-                                       /* cancelable = */ false);
 }
 
 nsDocument::VisibilityState
@@ -9529,6 +9520,14 @@ nsDocument::GetVisibilityState() const
   }
 
   return eVisible;
+}
+
+/* virtual */ void
+nsDocument::PostVisibilityUpdateEvent()
+{
+  nsCOMPtr<nsIRunnable> event =
+    NS_NewRunnableMethod(this, &nsDocument::UpdateVisibilityState);
+  NS_DispatchToMainThread(event);
 }
 
 NS_IMETHODIMP

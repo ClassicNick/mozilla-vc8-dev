@@ -304,14 +304,14 @@ class IonBuilder : public MIRGenerator
     MDefinition *walkScopeChain(unsigned hops);
 
     MInstruction *addBoundsCheck(MDefinition *index, MDefinition *length);
-    MInstruction *addShapeGuard(MDefinition *obj, const Shape *shape, BailoutKind bailoutKind);
+    MInstruction *addShapeGuard(MDefinition *obj, const UnrootedShape shape, BailoutKind bailoutKind);
 
     JSObject *getNewArrayTemplateObject(uint32_t count);
 
     bool invalidatedIdempotentCache();
 
-    bool loadSlot(MDefinition *obj, Shape *shape, MIRType rvalType);
-    bool storeSlot(MDefinition *obj, Shape *shape, MDefinition *value, bool needsBarrier);
+    bool loadSlot(MDefinition *obj, HandleShape shape, MIRType rvalType);
+    bool storeSlot(MDefinition *obj, UnrootedShape shape, MDefinition *value, bool needsBarrier);
 
     // jsop_getprop() helpers.
     bool getPropTryArgumentsLength(bool *emitted);
@@ -349,7 +349,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_getgname(HandlePropertyName name);
     bool jsop_setgname(HandlePropertyName name);
     bool jsop_getname(HandlePropertyName name);
-    bool jsop_intrinsicname(HandlePropertyName name);
+    bool jsop_intrinsic(HandlePropertyName name);
     bool jsop_bindname(PropertyName *name);
     bool jsop_getelem();
     bool jsop_getelem_dense();
@@ -370,13 +370,11 @@ class IonBuilder : public MIRGenerator
     bool jsop_delprop(HandlePropertyName name);
     bool jsop_newarray(uint32_t count);
     bool jsop_newobject(HandleObject baseObj);
-    bool jsop_initelem();
-    bool jsop_initelem_dense();
+    bool jsop_initelem_array();
     bool jsop_initprop(HandlePropertyName name);
     bool jsop_regexp(RegExpObject *reobj);
     bool jsop_object(JSObject *obj);
     bool jsop_lambda(JSFunction *fun);
-    bool jsop_deflocalfun(uint32_t local, JSFunction *fun);
     bool jsop_this();
     bool jsop_typeof();
     bool jsop_toid();
@@ -513,13 +511,16 @@ class IonBuilder : public MIRGenerator
     // an outer script.
     bool failedShapeGuard_;
 
-    // If this script can use a lazy arguments object, it wil be pre-created
+    // If this script can use a lazy arguments object, it will be pre-created
     // here.
     MInstruction *lazyArguments_;
+
+    // If the script use a callee, it will be retrieved in the first basic
+    // block.
+    MCallee *callee_;
 };
 
 } // namespace ion
 } // namespace js
 
 #endif // jsion_bytecode_analyzer_h__
-

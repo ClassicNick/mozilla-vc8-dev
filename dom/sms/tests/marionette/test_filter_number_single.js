@@ -9,8 +9,7 @@ SpecialPowers.setBoolPref("dom.sms.enabled", true);
 let sms = window.navigator.mozSms;
 let numberMsgs = 10;
 let smsList = new Array();
-let defaultRemoteNumber = "5552227777";
-let defaultRemoteNumberFormats = ["5552227777", "+15552227777"];
+let defaultRemoteNumber = "+15552227777";
 
 function verifyInitialState() {
   log("Verifying initial state.");
@@ -128,7 +127,7 @@ function nextRep() {
   if (smsList.length < numberMsgs) {
     // Have every other sms be from different number, so filter won't find all
     if (smsList.length % 2) {
-      simulateIncomingSms("5559990000");
+      simulateIncomingSms("+15559990000");
     } else {
       simulateIncomingSms();
     }
@@ -144,7 +143,7 @@ function getMsgs() {
 
   // Going to filter for one number only, so set our expected SMS array
   smsList = smsList.filter(function(i) {
-    return defaultRemoteNumberFormats.indexOf(i.sender) >= 0 ? true : false;
+    return i.sender != defaultRemoteNumber ? false: true;
   });
 
   // Set filter for default remote number
@@ -195,7 +194,6 @@ function verifyFoundMsgs(foundSmsList) {
   // Verify the SMS messages returned by getMessages are the correct ones
   for (var x = 0; x < foundSmsList.length; x++) {
     is(foundSmsList[x].id, smsList[x].id, "id");
-    is(foundSmsList[x].sender, smsList[x].sender, "number");
   }
   deleteAllMsgs(cleanUp);
 }

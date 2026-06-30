@@ -103,10 +103,7 @@ IDBTransaction::CreateInternal(IDBDatabase* aDatabase,
   nsRefPtr<IDBTransaction> transaction = new IDBTransaction();
 
   transaction->BindToOwner(aDatabase);
-  if (!transaction->SetScriptOwner(aDatabase->GetScriptOwner())) {
-    return nullptr;
-  }
-
+  transaction->SetScriptOwner(aDatabase->GetScriptOwner());
   transaction->mDatabase = aDatabase;
   transaction->mMode = aMode;
   transaction->mDatabaseInfo = aDatabase->Info();
@@ -355,7 +352,8 @@ IDBTransaction::GetOrCreateConnection(mozIStorageConnection** aResult)
 
   if (!mConnection) {
     nsCOMPtr<mozIStorageConnection> connection =
-      IDBFactory::GetConnection(mDatabase->FilePath());
+      IDBFactory::GetConnection(mDatabase->FilePath(),
+                                mDatabase->Origin());
     NS_ENSURE_TRUE(connection, NS_ERROR_FAILURE);
 
     nsresult rv;

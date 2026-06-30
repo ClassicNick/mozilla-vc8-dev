@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
+
 #include "CodeGenerator-x86.h"
 #include "ion/shared/CodeGenerator-shared-inl.h"
 #include "ion/MIR.h"
@@ -137,7 +139,7 @@ CodeGeneratorX86::visitUnbox(LUnbox *unbox)
 void
 CodeGeneratorX86::linkAbsoluteLabels()
 {
-    JSScript *script = gen->info().script();
+    UnrootedScript script = gen->info().script();
     IonCode *method = script->ion->method();
 
     for (size_t i = 0; i < deferredDoubles_.length(); i++) {
