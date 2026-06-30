@@ -535,7 +535,7 @@ JSCompartment::mark(JSTracer *trc)
      * If a compartment is on-stack, we mark its global so that
      * JSContext::global() remains valid.
      */
-    if (enterCompartmentDepth && global_)
+	if (enterCompartmentDepth && (js::GlobalObject*) global_)
         MarkObjectRoot(trc, global_.unsafeGet(), "on-stack compartment global");
 }
 
@@ -642,7 +642,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         sweepNewTypeObjectTable(lazyTypeObjects);
         sweepBreakpoints(fop);
 
-        if (global_ && IsObjectAboutToBeFinalized(global_.unsafeGet()))
+		if ((js::GlobalObject*) global_ && IsObjectAboutToBeFinalized(global_.unsafeGet()))
             global_ = NULL;
 
 #ifdef JS_ION
