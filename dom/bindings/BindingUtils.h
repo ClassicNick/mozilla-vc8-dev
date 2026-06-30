@@ -963,7 +963,13 @@ struct WrapNativeParentHelper
     }
 
     bool triedToWrap;
-    obj = parent->WrapObject(cx, scope, &triedToWrap);
+    // Inline this here while we have non-dom objects in wrapper caches.
+    if (!CouldBeDOMBinding(parent)) {
+      triedToWrap = false;
+    } else {
+      obj = parent->WrapObject(cx, scope, &triedToWrap);
+    }
+
     if (!triedToWrap) {
       obj = WrapNativeParentFallback<T>::Wrap(cx, scope, parent, cache);
     }

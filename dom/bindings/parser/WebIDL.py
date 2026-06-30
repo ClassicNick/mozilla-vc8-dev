@@ -1190,17 +1190,6 @@ class IDLNullableType(IDLType):
                 raise WebIDLError("The inner type of a nullable type must not "
                                   "be a union type that itself has a nullable "
                                   "type as a member type", [self.location])
-            # Check for dictionaries in the union
-            for memberType in self.inner.flatMemberTypes:
-                if memberType.isDictionary():
-                    raise WebIDLError("The inner type of a nullable type must "
-                                      "not be a union type containing a "
-                                      "dictionary type",
-                                      [self.location, memberType.location])
-                    
-        if self.inner.isDictionary():
-            raise WebIDLError("The inner type of a nullable type must not be a "
-                              "dictionary type", [self.location])
 
         self.name = self.inner.name
         return self
@@ -2143,6 +2132,9 @@ class IDLAttribute(IDLInterfaceMember):
                 raise WebIDLError("[Unforgeable] is only allowed on readonly "
                                   "attributes", [attr.location, self.location])
             self._unforgeable = True
+        elif identifier == "Constant" and not self.readonly:
+            raise WebIDLError("[Constant] only allowed on readonly attributes",
+                              [attr.location, self.location])
         elif identifier == "PutForwards":
             if not self.readonly:
                 raise WebIDLError("[PutForwards] is only allowed on readonly "
@@ -2276,6 +2268,7 @@ class IDLCallbackType(IDLType, IDLObjectWithScope):
                 argument.resolve(self)
 
         self._treatNonCallableAsNull = False
+        self._workerOnly = False
 
     def isCallback(self):
         return True
@@ -2316,11 +2309,16 @@ class IDLCallbackType(IDLType, IDLObjectWithScope):
         return (other.isPrimitive() or other.isString() or other.isEnum() or
                 other.isNonCallbackInterface() or other.isDate())
 
+    def isWorkerOnly(self):
+        return self._workerOnly
+
     def addExtendedAttributes(self, attrs):
         unhandledAttrs = []
         for attr in attrs:
             if attr.identifier() == "TreatNonCallableAsNull":
                 self._treatNonCallableAsNull = True
+            elif attr.identifier() == "WorkerOnly":
+                self._workerOnly = True
             else:
                 unhandledAttrs.append(attr)
         if len(unhandledAttrs) != 0:
@@ -2532,6 +2530,19 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
                                           "a required argument must be "
                                           "optional", [argument.location])
 
+                    # An argument cannot be a Nullable Dictionary
+                    if argument.type.nullable():
+                        raise WebIDLError("An argument cannot be a nullable dictionary",
+                                          [argument.location])
+
+                # An argument cannot be a nullable union containing a dictionary
+                if argument.type.isUnion() and argument.type.nullable():
+                    for memberType in argument.type.inner.flatMemberTypes:
+                        if memberType.isDictionary():
+                            raise WebIDLError("An argument cannot be a nullable union "
+                                              "containing a dictionary",
+                                              [argument.location, memberType.location])
+
                 # Only the last argument can be variadic
                 if variadicArgument:
                     raise WebIDLError("Variadic argument is not last argument",
@@ -2641,6 +2652,10 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             raise WebIDLError("Methods must not be flagged as "
                               "[Unforgeable]",
                               [attr.location, self.location])
+        elif identifier == "Constant":
+            raise WebIDLError("Methods must not be flagged as "
+                              "[Constant]",
+                              [attr.location, self.location]);
         elif identifier == "PutForwards":
             raise WebIDLError("Only attributes support [PutForwards]",
                               [attr.location, self.location])

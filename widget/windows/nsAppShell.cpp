@@ -218,13 +218,16 @@ CollectNewLoadedModules()
 
   CloseHandle(hModuleSnap);
 }
+#endif // defined(_MSC_VER) && defined(_M_IX86)
 
 NS_IMETHODIMP
 nsAppShell::Run(void)
 {
+#if defined(_MSC_VER) && defined(_M_IX86)
   LoadedModuleInfo modules[NUM_LOADEDMODULEINFO];
   memset(modules, 0, sizeof(modules));
   sLoadedModules = modules;	
+#endif
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // Ignore failure; failing to start the application is not exactly an
@@ -238,13 +241,13 @@ nsAppShell::Run(void)
   mozilla::widget::StopAudioSession();
 #endif
 
+#if defined(_MSC_VER) && defined(_M_IX86)
   // Don't forget to null this out!
   sLoadedModules = nullptr;
+#endif
 
   return rv;
 }
-
-#endif
 
 NS_IMETHODIMP
 nsAppShell::Exit(void)

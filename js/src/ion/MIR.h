@@ -598,6 +598,25 @@ class MOsrEntry : public MNullaryInstruction
     }
 };
 
+// No-op instruction. This cannot be moved or eliminated, and is intended for
+// anchoring resume points at arbitrary points in a block.
+class MNop : public MNullaryInstruction
+{
+  protected:
+    MNop() {
+    }
+
+  public:
+    INSTRUCTION_HEADER(Nop);
+    static MNop *New() {
+        return new MNop();
+    }
+
+    AliasSet getAliasSet() const {
+        return AliasSet::None();
+    }
+};
+
 // A constant js::Value.
 class MConstant : public MNullaryInstruction
 {
@@ -1740,6 +1759,9 @@ class MToInt32 : public MUnaryInstruction
     bool canBeNegativeZero() {
         return canBeNegativeZero_;
     }
+    void setCanBeNegativeZero(bool negativeZero) {
+        canBeNegativeZero_ = negativeZero;
+    }
 
     bool congruentTo(MDefinition *const &ins) const {
         return congruentIfOperandsEqual(ins);
@@ -2419,8 +2441,8 @@ class MAdd : public MBinaryArithInstruction
     bool isTruncated() const {
         return implicitTruncate_;
     }
-    void setTruncated(bool val) {
-        implicitTruncate_ = val;
+    void setTruncated(bool truncate) {
+        implicitTruncate_ = truncate;
     }
     bool updateForReplacement(MDefinition *ins);
     double getIdentity() {
@@ -2451,8 +2473,8 @@ class MSub : public MBinaryArithInstruction
     bool isTruncated() const {
         return implicitTruncate_;
     }
-    void setTruncated(bool val) {
-        implicitTruncate_ = val;
+    void setTruncated(bool truncate) {
+        implicitTruncate_ = truncate;
     }
     bool updateForReplacement(MDefinition *ins);
 
@@ -2509,7 +2531,13 @@ class MMul : public MBinaryArithInstruction
     }
 
     bool canOverflow();
-    bool canBeNegativeZero();
+
+    bool canBeNegativeZero() {
+        return canBeNegativeZero_;
+    }
+    void setCanBeNegativeZero(bool negativeZero) {
+        canBeNegativeZero_ = negativeZero;
+    }
 
     bool updateForReplacement(MDefinition *ins);
 
@@ -2525,6 +2553,13 @@ class MMul : public MBinaryArithInstruction
 
     void setPossibleTruncated(bool truncate) {
         possibleTruncate_ = truncate;
+
+        // We can remove the negative zero check, because op if it is only used truncated.
+        // The "Possible" in the function name means that we are not sure,
+        // that "integer mul and disregarding overflow" == "double mul and ToInt32"
+        // Note: when removing truncated state, we have to add negative zero check again,
+        // because we are not sure if it was removed by this or other passes.
+        canBeNegativeZero_ = !truncate;
     }
 };
 
@@ -2570,12 +2605,15 @@ class MDiv : public MBinaryArithInstruction
     bool isTruncated() const {
         return implicitTruncate_;
     }
-    void setTruncated(bool val) {
-        implicitTruncate_ = val;
+    void setTruncated(bool truncate) {
+        implicitTruncate_ = truncate;
     }
 
     bool canBeNegativeZero() {
         return canBeNegativeZero_;
+    }
+    void setCanBeNegativeZero(bool negativeZero) {
+        canBeNegativeZero_ = negativeZero;
     }
 
     bool canBeNegativeOverflow() {
@@ -4823,11 +4861,11 @@ class MCallGetProperty
     public BoxInputsPolicy
 {
     CompilerRootPropertyName name_;
-    bool markEffectful_;
+    bool idempotent_;
 
     MCallGetProperty(MDefinition *value, HandlePropertyName name)
       : MUnaryInstruction(value), name_(name),
-        markEffectful_(true)
+        idempotent_(false)
     {
         setResultType(MIRType_Value);
     }
@@ -4851,11 +4889,11 @@ class MCallGetProperty
     // Constructors need to perform a GetProp on the function prototype.
     // Since getters cannot be set on the prototype, fetching is non-effectful.
     // The operation may be safely repeated in case of bailout.
-    void markUneffectful() {
-        markEffectful_ = false;
+    void setIdempotent() {
+        idempotent_ = true;
     }
     AliasSet getAliasSet() const {
-        if (markEffectful_)
+        if (!idempotent_)
             return AliasSet::Store(AliasSet::Any);
         return AliasSet::None();
     }
@@ -4955,33 +4993,49 @@ class MSetDOMProperty
 };
 
 class MGetDOMProperty
-  : public MAryInstruction<1>,
+  : public MAryInstruction<2>,
     public ObjectPolicy<0>
 {
-    const JSJitPropertyOp func_;
-    bool isInfallible_;
+    const JSJitInfo *info_;
 
-    MGetDOMProperty(const JSJitPropertyOp func, MDefinition *obj, bool isInfallible)
-      : func_(func), isInfallible_(isInfallible)
+    MGetDOMProperty(const JSJitInfo *jitinfo, MDefinition *obj, MDefinition *guard)
+      : info_(jitinfo)
     {
+        JS_ASSERT(jitinfo);
+
         initOperand(0, obj);
 
+        // Pin the guard as an operand if we want to hoist later
+        initOperand(1, guard);
+
+        // We are movable iff the jitinfo says we can be.
+        if (jitinfo->isConstant)
+            setMovable();
+
         setResultType(MIRType_Value);
+    }
+
+  protected:
+    const JSJitInfo *info() const {
+        return info_;
     }
 
   public:
     INSTRUCTION_HEADER(GetDOMProperty);
 
-    static MGetDOMProperty *New(const JSJitPropertyOp func, MDefinition *obj, bool isInfallible)
+    static MGetDOMProperty *New(const JSJitInfo *info, MDefinition *obj, MDefinition *guard)
     {
-        return new MGetDOMProperty(func, obj, isInfallible);
+        return new MGetDOMProperty(info, obj, guard);
     }
 
     const JSJitPropertyOp fun() {
-        return func_;
+        return info_->op;
     }
-    bool isInfallible() {
-        return isInfallible_;
+    bool isInfallible() const {
+        return info_->isInfallible;
+    }
+    bool isDomConstant() const {
+        return info_->isConstant;
     }
     MDefinition *object() {
         return getOperand(0);
@@ -4990,6 +5044,29 @@ class MGetDOMProperty
     TypePolicy *typePolicy() {
         return this;
     }
+
+    bool congruentTo(MDefinition *const &ins) const {
+        if (!isDomConstant())
+            return false;
+
+        if (!ins->isGetDOMProperty())
+            return false;
+
+        // Checking the jitinfo is the same as checking the constant function
+        if (!(info() == ins->toGetDOMProperty()->info()))
+            return false;
+
+        return congruentIfOperandsEqual(ins);
+    }
+
+    AliasSet getAliasSet() const {
+        // The whole point of constancy is that it's non-effectful and doesn't
+        // conflict with anything
+        if (isDomConstant())
+            return AliasSet::None();
+        return AliasSet::Store(AliasSet::Any);
+    }
+
 };
 
 class MStringLength
@@ -5254,9 +5331,9 @@ class MInstanceOf
 
   public:
     MInstanceOf(MDefinition *obj, RawObject proto)
-      : MUnaryInstruction(obj)
+      : MUnaryInstruction(obj),
+        protoObj_(proto)
     {
-        protoObj_ = proto;
         setResultType(MIRType_Boolean);
     }
 
@@ -5600,6 +5677,7 @@ class MResumePoint : public MNode
     uint32 stackDepth_;
     jsbytecode *pc_;
     MResumePoint *caller_;
+    MInstruction *instruction_;
     Mode mode_;
 
     MResumePoint(MBasicBlock *block, jsbytecode *pc, MResumePoint *parent, Mode mode);
@@ -5643,6 +5721,12 @@ class MResumePoint : public MNode
         for (MResumePoint *it = caller_; it; it = it->caller_)
             count++;
         return count;
+    }
+    MInstruction *instruction() {
+        return instruction_;
+    }
+    void setInstruction(MInstruction *ins) {
+        instruction_ = ins;
     }
     Mode mode() const {
         return mode_;

@@ -665,6 +665,24 @@ class LCallDOMNative : public LJSCallInstructionHelper<BOX_PIECES, 0, 5>
     }
 };
 
+// Generates a polymorphic callsite for |new|, where |this| has not been
+// pre-allocated by the caller.
+class LCallConstructor : public LJSCallInstructionHelper<BOX_PIECES, 1, 0>
+{
+  public:
+    LIR_HEADER(CallConstructor);
+
+    LCallConstructor(const LAllocation &func, uint32 argslot)
+      : JSCallHelper(argslot)
+    {
+        setOperand(0, func);
+    }
+
+    const LAllocation *getFunction() {
+        return getOperand(0);
+    }
+};
+
 template <size_t defs, size_t ops>
 class LDOMPropertyInstructionHelper : public LCallInstructionHelper<defs, 1 + ops, 3>
 {
@@ -1433,15 +1451,41 @@ class LMathFunctionD : public LCallInstructionHelper<1, 1, 1>
 // Adds two integers, returning an integer value.
 class LAddI : public LBinaryMath<0>
 {
+    bool recoversInput_;
+
   public:
     LIR_HEADER(AddI);
+
+    LAddI()
+      : recoversInput_(false)
+    { }
+
+    virtual bool recoversInput() const {
+        return recoversInput_;
+    }
+    void setRecoversInput() {
+        recoversInput_ = true;
+    }
 };
 
 // Subtracts two integers, returning an integer value.
 class LSubI : public LBinaryMath<0>
 {
+    bool recoversInput_;
+
   public:
     LIR_HEADER(SubI);
+
+    LSubI()
+      : recoversInput_(false)
+    { }
+
+    virtual bool recoversInput() const {
+        return recoversInput_;
+    }
+    void setRecoversInput() {
+        recoversInput_ = true;
+    }
 };
 
 // Performs an add, sub, mul, or div on two double values.
