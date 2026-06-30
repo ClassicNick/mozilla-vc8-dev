@@ -71,7 +71,6 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIWindowWatcher.h"
-#include "nsMemoryReporterManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsSystemInfo.h"
 #include "nsThreadUtils.h"
@@ -130,13 +129,35 @@ namespace dom {
 
 #define NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC "ipc:network:set-offline"
 
+// This represents a single measurement taken by a memory reporter in a child
+// process and passed to this one.  Its process is non-empty, and its amount is
+// fixed.
+class ChildMemoryReporter MOZ_FINAL : public MemoryReporterBase
+{
+public:
+    ChildMemoryReporter(const char* aProcess, const char* aPath, int32_t aKind,
+                        int32_t aUnits, int64_t aAmount,
+                        const char* aDescription)
+      : MemoryReporterBase(aPath, aKind, aUnits, aDescription)
+      , mProcess(aProcess)
+      , mAmount(aAmount)
+    {
+    }
+
+private:
+    int64_t Amount() { return mAmount; }
+
+    nsCString mProcess;
+    int64_t   mAmount;
+};
+
 class MemoryReportRequestParent : public PMemoryReportRequestParent
 {
 public:
     MemoryReportRequestParent();
     virtual ~MemoryReportRequestParent();
 
-    virtual bool    Recv__delete__(const InfallibleTArray<MemoryReport>& report);
+    virtual bool Recv__delete__(const InfallibleTArray<MemoryReport>& report);
 private:
     ContentParent* Owner()
     {
@@ -201,7 +222,9 @@ ContentParent::PreallocateAppProcess()
     sPreallocatedAppProcess =
         new ContentParent(MAGIC_PREALLOCATED_APP_MANIFEST_URL,
                           /*isBrowserElement=*/false,
-                          base::PRIVILEGES_DEFAULT);
+                          // Final privileges are set when we
+                          // transform into our app.
+                          base::PRIVILEGES_INHERIT);
     sPreallocatedAppProcess->Init();
 }
 
@@ -419,20 +442,14 @@ ContentParent::CreateBrowserOrApp(const TabContext& aContext)
     nsRefPtr<ContentParent> p = gAppContentParents->Get(manifestURL);
     if (!p) {
         ChildPrivileges privs = PrivilegesForApp(ownApp);
-        if (privs != base::PRIVILEGES_DEFAULT) {
+        p = MaybeTakePreallocatedAppProcess();
+        if (p) {
+            p->TransformPreallocatedIntoApp(manifestURL, privs);            
+        } else {
+            NS_WARNING("Unable to use pre-allocated app process");
             p = new ContentParent(manifestURL, /* isBrowserElement = */ false,
                                   privs);
             p->Init();
-        } else {
-            p = MaybeTakePreallocatedAppProcess();
-            if (p) {
-                p->SetManifestFromPreallocated(manifestURL);
-            } else {
-                NS_WARNING("Unable to use pre-allocated app process");
-                p = new ContentParent(manifestURL, /* isBrowserElement = */ false,
-                                      base::PRIVILEGES_DEFAULT);
-                p->Init();
-            }
         }
         gAppContentParents->Put(manifestURL, p);
     }
@@ -515,12 +532,15 @@ ContentParent::Init()
 }
 
 void
-ContentParent::SetManifestFromPreallocated(const nsAString& aAppManifestURL)
+ContentParent::TransformPreallocatedIntoApp(const nsAString& aAppManifestURL,
+                                            ChildPrivileges aPrivs)
 {
     MOZ_ASSERT(mAppManifestURL == MAGIC_PREALLOCATED_APP_MANIFEST_URL);
     // Clients should think of mAppManifestURL as const ... we're
     // bending the rules here just for the preallocation hack.
     const_cast<nsString&>(mAppManifestURL) = aAppManifestURL;
+    // If this fails, the child process died.
+    unused << SendSetProcessPrivileges(aPrivs);
 }
 
 void
@@ -1696,9 +1716,10 @@ ContentParent::SetChildMemoryReporters(const InfallibleTArray<MemoryReport>& rep
         int32_t   units    = report[i].units();
         int64_t   amount   = report[i].amount();
         nsCString desc     = report[i].desc();
-        
-        nsRefPtr<nsMemoryReporter> r =
-            new nsMemoryReporter(process, path, kind, units, amount, desc);
+
+        nsRefPtr<ChildMemoryReporter> r =
+            new ChildMemoryReporter(process.get(), path.get(), kind, units,
+                                    amount, desc.get());
 
         mMemoryReporters.AppendObject(r);
         mgr->RegisterReporter(r);

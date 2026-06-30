@@ -875,6 +875,73 @@ PickChunk(JSCompartment *comp)
     return chunk;
 }
 
+#ifdef JS_GC_ZEAL
+
+extern void
+js::SetGCZeal(JSRuntime *rt, uint8_t zeal, uint32_t frequency)
+{
+    if (zeal == 0) {
+        if (rt->gcVerifyPreData)
+            VerifyBarriers(rt, PreBarrierVerifier);
+        if (rt->gcVerifyPostData)
+            VerifyBarriers(rt, PostBarrierVerifier);
+    }
+
+#ifdef JS_METHODJIT
+    /* In case JSCompartment::compileBarriers() changed... */
+    for (CompartmentsIter c(rt); !c.done(); c.next())
+        mjit::ClearAllFrames(c);
+#endif
+
+    bool schedule = zeal >= js::gc::ZealAllocValue;
+    rt->gcZeal_ = zeal;
+    rt->gcZealFrequency = frequency;
+    rt->gcNextScheduled = schedule ? frequency : 0;
+}
+
+static bool
+InitGCZeal(JSRuntime *rt)
+{
+    const char *env = getenv("JS_GC_ZEAL");
+    if (!env)
+        return true;
+
+    int zeal = -1;
+    int frequency = JS_DEFAULT_ZEAL_FREQ;
+    if (strcmp(env, "help") != 0) {
+        zeal = atoi(env);
+        const char *p = strchr(env, ',');
+        if (p)
+            frequency = atoi(p + 1);
+    }
+
+    if (zeal < 0 || zeal > ZealLimit || frequency < 0) {
+        fprintf(stderr,
+                "Format: JS_GC_ZEAL=N[,F]\n"
+                "N indicates \"zealousness\":\n"
+                "  0: no additional GCs\n"
+                "  1: additional GCs at common danger points\n"
+                "  2: GC every F allocations (default: 100)\n"
+                "  3: GC when the window paints (browser only)\n"
+                "  4: Verify pre write barriers between instructions\n"
+                "  5: Verify pre write barriers between paints\n"
+                "  6: Verify stack rooting (ignoring XML)\n"
+                "  7: Verify stack rooting (all roots)\n"
+                "  8: Incremental GC in two slices: 1) mark roots 2) finish collection\n"
+                "  9: Incremental GC in two slices: 1) mark all 2) new marking and finish\n"
+                " 10: Incremental GC in multiple slices\n"
+                " 11: Verify post write barriers between instructions\n"
+                " 12: Verify post write barriers between paints\n"
+                " 13: Purge analysis state every F allocations (default: 100)\n");
+        return false;
+    }
+
+    SetGCZeal(rt, zeal, frequency);
+    return true;
+}
+
+#endif
+
 /* Lifetime for type sets attached to scripts containing observed types. */
 static const int64_t JIT_SCRIPT_RELEASE_TYPES_INTERVAL = 60 * 1000 * 1000;
 
@@ -908,6 +975,12 @@ js_InitGC(JSRuntime *rt, uint32_t maxbytes)
 #ifndef JS_MORE_DETERMINISTIC
     rt->gcJitReleaseTime = PRMJ_Now() + JIT_SCRIPT_RELEASE_TYPES_INTERVAL;
 #endif
+
+#ifdef JS_GC_ZEAL
+    if (!InitGCZeal(rt))
+        return false;
+#endif
+
     return true;
 }
 
@@ -1104,8 +1177,6 @@ ArenaLists::allocateFromArena(JSCompartment *comp, AllocKind thingKind)
 
     ArenaList *al = &arenaLists[thingKind];
     AutoLockGC maybeLock;
-
-    JS_ASSERT(!comp->scheduledForDestruction);
 
 #ifdef JS_THREADSAFE
     volatile uintptr_t *bfs = &backgroundFinalizeState[thingKind];
@@ -4078,13 +4149,10 @@ IncrementalCollectSlice(JSRuntime *rt,
 IncrementalSafety
 gc::IsIncrementalGCSafe(JSRuntime *rt)
 {
+    JS_ASSERT(!rt->mainThread.suppressGC);
+
     if (rt->gcKeepAtoms)
         return IncrementalSafety::Unsafe("gcKeepAtoms set");
-
-    for (CompartmentsIter c(rt); !c.done(); c.next()) {
-        if (c->activeAnalysis)
-            return IncrementalSafety::Unsafe("activeAnalysis set");
-    }
 
     if (!rt->gcIncrementalEnabled)
         return IncrementalSafety::Unsafe("incremental permanently disabled");
@@ -4447,6 +4515,10 @@ gc::RunDebugGC(JSContext *cx)
 {
 #ifdef JS_GC_ZEAL
     JSRuntime *rt = cx->runtime;
+
+    if (rt->mainThread.suppressGC)
+        return;
+
     PrepareForDebugGC(cx->runtime);
 
     int type = rt->gcZeal();
@@ -4484,8 +4556,7 @@ gc::RunDebugGC(JSContext *cx)
             rt->gcIncrementalLimit = rt->gcZealFrequency / 2;
         }
     } else if (type == ZealPurgeAnalysisValue) {
-        if (!cx->compartment->activeAnalysis)
-            cx->compartment->types.maybePurgeAnalysis(cx, /* force = */ true);
+        cx->compartment->types.maybePurgeAnalysis(cx, /* force = */ true);
     } else {
         Collect(rt, false, SliceBudget::Unlimited, GC_NORMAL, gcreason::DEBUG_GC);
     }
@@ -4518,17 +4589,6 @@ void PreventGCDuringInteractiveDebug()
 }
 
 #endif
-
-gc::AutoSuppressGC::AutoSuppressGC(JSContext *cx)
-  : suppressGC_(cx->runtime->mainThread.suppressGC)
-{
-    suppressGC_++;
-}
-
-gc::AutoSuppressGC::~AutoSuppressGC()
-{
-    suppressGC_--;
-}
 
 void
 js::ReleaseAllJITCode(FreeOp *fop)

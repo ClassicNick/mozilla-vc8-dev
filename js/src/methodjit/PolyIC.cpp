@@ -20,6 +20,8 @@
 #include "jsinterpinlines.h"
 #include "jsautooplen.h"
 
+#include "js/CharacterEncoding.h"
+
 #include "vm/ScopeObject-inl.h"
 #include "vm/StringObject-inl.h"
 
@@ -406,15 +408,15 @@ class SetPropCompiler : public PICStubCompiler
         JS_ASSERT(pic.typeMonitored);
 
         RecompilationMonitor monitor(cx);
-        jsid id = NameToId(name);
 
         types::TypeObject *type = obj->getType(cx);
         if (monitor.recompiled())
             return false;
 
         if (!type->unknownProperties()) {
-            types::AutoEnterTypeInference enter(cx);
-            types::TypeSet *types = type->getProperty(cx, types::MakeTypeId(cx, id), true);
+            types::AutoEnterAnalysis enter(cx);
+            RootedId id(cx, NameToId(name));
+            types::TypeSet *types = type->getProperty(cx, types::IdToTypeId(id), true);
             if (!types)
                 return false;
 
@@ -2409,12 +2411,12 @@ GetElementIC::attachGetProp(VMFrame &f, HandleObject obj, HandleValue v, HandleP
 
     CodeLocationLabel cs = buffer.finalize(f);
 #if DEBUG
-    char *chars = DeflateString(cx, v.toString()->getChars(cx), v.toString()->length());
+    Latin1CharsZ latin1 = LossyTwoByteCharsToNewLatin1CharsZ(cx, v.toString()->ensureLinear(cx)->range());
     JaegerSpew(JSpew_PICs, "generated %s stub at %p for atom %p (\"%s\") shape %p (%s: %d)\n",
-               js_CodeName[JSOp(*f.pc())], cs.executableAddress(), (void*)name, chars,
+               js_CodeName[JSOp(*f.pc())], cs.executableAddress(), (void*)name, latin1.get(),
                (void*)holder->lastProperty(), cx->fp()->script()->filename,
                CurrentLine(cx));
-    js_free(chars);
+    JS_free(latin1);
 #endif
 
     // Update the inline guards, if needed.

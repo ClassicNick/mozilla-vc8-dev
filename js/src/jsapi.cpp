@@ -64,6 +64,7 @@
 #include "frontend/BytecodeCompiler.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
+#include "js/CharacterEncoding.h"
 #include "js/MemoryMetrics.h"
 #include "vm/Debugger.h"
 #include "vm/NumericConversions.h"
@@ -490,7 +491,7 @@ JS_ValueToSource(JSContext *cx, jsval valueArg)
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value);
-    return js_ValueToSource(cx, value);
+    return ValueToSource(cx, value);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -585,9 +586,8 @@ JS_ValueToUint16(JSContext *cx, jsval valueArg, uint16_t *ip)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_ValueToBoolean(JSContext *cx, jsval valueArg, JSBool *bp)
+JS_ValueToBoolean(JSContext *cx, jsval value, JSBool *bp)
 {
-    RootedValue value(cx, valueArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value);
@@ -614,10 +614,8 @@ JS_GetTypeName(JSContext *cx, JSType type)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_StrictlyEqual(JSContext *cx, jsval value1Arg, jsval value2Arg, JSBool *equal)
+JS_StrictlyEqual(JSContext *cx, jsval value1, jsval value2, JSBool *equal)
 {
-    RootedValue value1(cx, value1Arg);
-    RootedValue value2(cx, value2Arg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value1, value2);
@@ -644,10 +642,8 @@ JS_LooselyEqual(JSContext *cx, jsval value1Arg, jsval value2Arg, JSBool *equal)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_SameValue(JSContext *cx, jsval value1Arg, jsval value2Arg, JSBool *same)
+JS_SameValue(JSContext *cx, jsval value1, jsval value2, JSBool *same)
 {
-    RootedValue value1(cx, value1Arg);
-    RootedValue value2(cx, value2Arg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value1, value2);
@@ -1588,8 +1584,8 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     AutoMaybeTouchDeadCompartments agc(cx);
 
     JSCompartment *destination = target->compartment();
-    Value origv = ObjectValue(*origobj);
-    JSObject *newIdentity;
+    RootedValue origv(cx, ObjectValue(*origobj));
+    RootedObject newIdentity(cx);
 
     if (origobj->compartment() == destination) {
         // If the original object is in the same compartment as the
@@ -1666,7 +1662,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     JS_ASSERT(!IsCrossCompartmentWrapper(targetobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(targetwrapper));
 
-    JSObject *newWrapper;
+    RootedObject newWrapper(cx);
     JSCompartment *destination = targetobj->compartment();
 
     // |origv| is the map entry we're looking up. The map entries are going to
@@ -1916,7 +1912,6 @@ JS_PUBLIC_API(JSBool)
 JS_ResolveStandardClass(JSContext *cx, JSObject *objArg, jsid id, JSBool *resolved)
 {
     RootedObject obj(cx, objArg);
-    JSString *idstr;
     JSRuntime *rt;
     JSAtom *atom;
     JSStdName *stdnm;
@@ -1931,7 +1926,7 @@ JS_ResolveStandardClass(JSContext *cx, JSObject *objArg, jsid id, JSBool *resolv
     if (!rt->hasContexts() || !JSID_IS_ATOM(id))
         return true;
 
-    idstr = JSID_TO_STRING(id);
+    RootedString idstr(cx, JSID_TO_STRING(id));
 
     /* Check whether we're resolving 'undefined', and define it if so. */
     atom = rt->atomState.undefined;
@@ -3009,6 +3004,9 @@ JS_SetGCParameter(JSRuntime *rt, JSGCParamKey key, uint32_t value)
       case JSGC_ALLOCATION_THRESHOLD:
         rt->gcAllocationThreshold = value * 1024 * 1024;
         break;
+      case JSGC_ENABLE_GENERATIONAL:
+        rt->gcGenerationalEnabled = bool(value);
+        break;
       default:
         JS_ASSERT(key == JSGC_MODE);
         rt->gcMode = JSGCMode(value);
@@ -3572,7 +3570,7 @@ LookupResult(JSContext *cx, HandleObject obj, HandleObject obj2, jsid id,
         return JS_TRUE;
     }
 
-    if (IsImplicitProperty(shape)) {
+    if (!obj2->isNative()) {
         if (obj2->isProxy()) {
             AutoPropertyDescriptorRooter desc(cx);
             if (!Proxy::getPropertyDescriptor(cx, obj2, id, &desc, 0))
@@ -3581,10 +3579,10 @@ LookupResult(JSContext *cx, HandleObject obj, HandleObject obj2, jsid id,
                 *vp = desc.value;
                 return true;
             }
-        } else if (obj2->isNative()) {
-            *vp = obj2->getDenseElement(JSID_TO_INT(id));
-            return true;
         }
+    } else if (IsImplicitDenseElement(shape)) {
+        *vp = obj2->getDenseElement(JSID_TO_INT(id));
+        return true;
     } else {
         /* Peek at the native property's slot value, without doing a Get. */
         if (shape->hasSlot()) {
@@ -4062,7 +4060,7 @@ GetPropertyDescriptorById(JSContext *cx, HandleObject obj, HandleId id, unsigned
 
     desc->obj = obj2;
     if (obj2->isNative()) {
-        if (IsImplicitProperty(shape)) {
+        if (IsImplicitDenseElement(shape)) {
             desc->attrs = JSPROP_ENUMERATE;
             desc->getter = NULL;
             desc->setter = NULL;
@@ -4318,9 +4316,10 @@ JS_GetProperty(JSContext *cx, JSObject *objArg, const char *name, jsval *vp)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_GetPropertyDefault(JSContext *cx, JSObject *objArg, const char *name, jsval def, jsval *vp)
+JS_GetPropertyDefault(JSContext *cx, JSObject *objArg, const char *name, jsval defArg, jsval *vp)
 {
     RootedObject obj(cx, objArg);
+    RootedValue def(cx, defArg);
     JSAtom *atom = Atomize(cx, name, strlen(name));
     return atom && JS_GetPropertyByIdDefault(cx, obj, AtomToId(atom), def, vp);
 }
@@ -4356,8 +4355,9 @@ JS_GetMethodById(JSContext *cx, JSObject *objArg, jsid idArg, JSObject **objp, j
 JS_PUBLIC_API(JSBool)
 JS_GetMethod(JSContext *cx, JSObject *objArg, const char *name, JSObject **objp, jsval *vp)
 {
+    RootedObject obj(cx, objArg);
     JSAtom *atom = Atomize(cx, name, strlen(name));
-    return atom && JS_GetMethodById(cx, objArg, AtomToId(atom), objp, vp);
+    return atom && JS_GetMethodById(cx, obj, AtomToId(atom), objp, vp);
 }
 
 JS_PUBLIC_API(JSBool)
@@ -5286,7 +5286,7 @@ JS::Compile(JSContext *cx, HandleObject obj, CompileOptions options,
     JS_ASSERT_IF(options.principals, cx->compartment->principals == options.principals);
     AutoLastFrameCheck lfc(cx);
 
-    return frontend::CompileScript(cx, obj, NULL, options, StableCharPtr(chars, length), length);
+    return frontend::CompileScript(cx, obj, NullFramePtr(), options, StableCharPtr(chars, length), length);
 }
 
 JSScript *
@@ -5639,7 +5639,7 @@ JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
 
     options.setCompileAndGo(true);
     options.setNoScriptRval(!rval);
-    RootedScript script(cx, frontend::CompileScript(cx, obj, NULL, options,
+    RootedScript script(cx, frontend::CompileScript(cx, obj, NullFramePtr(), options,
                                                     StableCharPtr(chars, length), length));
     if (!script)
         return false;
@@ -6231,27 +6231,24 @@ JS_DecodeBytes(JSContext *cx, const char *src, size_t srclen, jschar *dst, size_
 }
 
 JS_PUBLIC_API(char *)
-JS_EncodeString(JSContext *cx, JSRawString strArg)
+JS_EncodeString(JSContext *cx, JSRawString str)
 {
-    RootedString str(cx, strArg);
-
+    AutoAssertNoGC nogc;
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
-    const jschar *chars = str->getChars(cx);
-    if (!chars)
+    JSLinearString *linear = str->ensureLinear(cx);
+    if (!linear)
         return NULL;
-    return DeflateString(cx, chars, str->length());
+
+    return LossyTwoByteCharsToNewLatin1CharsZ(cx, linear->range()).c_str();
 }
 
 JS_PUBLIC_API(size_t)
 JS_GetStringEncodingLength(JSContext *cx, JSString *str)
 {
-    /* jsd calls us with a NULL cx. Ugh. */
-    if (cx) {
-        AssertHeapIsIdle(cx);
-        CHECK_REQUEST(cx);
-    }
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
 
     const jschar *chars = str->getChars(cx);
     if (!chars)
@@ -6260,8 +6257,11 @@ JS_GetStringEncodingLength(JSContext *cx, JSString *str)
 }
 
 JS_PUBLIC_API(size_t)
-JS_EncodeStringToBuffer(JSString *str, char *buffer, size_t length)
+JS_EncodeStringToBuffer(JSContext *cx, JSString *str, char *buffer, size_t length)
 {
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+
     /*
      * FIXME bug 612141 - fix DeflateStringToBuffer interface so the result
      * would allow to distinguish between insufficient buffer and encoding
@@ -6366,7 +6366,7 @@ JS_WriteStructuredClone(JSContext *cx, jsval valueArg, uint64_t **bufp, size_t *
         optionalCallbacks ?
         optionalCallbacks :
         cx->runtime->structuredCloneCallbacks;
-    return WriteStructuredClone(cx, valueArg, (uint64_t **) bufp, nbytesp,
+    return WriteStructuredClone(cx, value, (uint64_t **) bufp, nbytesp,
                                 callbacks, closure, transferable);
 }
 
@@ -7038,50 +7038,7 @@ JS_AbortIfWrongThread(JSRuntime *rt)
 JS_PUBLIC_API(void)
 JS_SetGCZeal(JSContext *cx, uint8_t zeal, uint32_t frequency)
 {
-    const char *env = getenv("JS_GC_ZEAL");
-    if (env) {
-        if (0 == strcmp(env, "help")) {
-            printf("Format: JS_GC_ZEAL=N[,F]\n"
-                   "N indicates \"zealousness\":\n"
-                   "  0: no additional GCs\n"
-                   "  1: additional GCs at common danger points\n"
-                   "  2: GC every F allocations (default: 100)\n"
-                   "  3: GC when the window paints (browser only)\n"
-                   "  4: Verify pre write barriers between instructions\n"
-                   "  5: Verify pre write barriers between paints\n"
-                   "  6: Verify stack rooting (ignoring XML)\n"
-                   "  7: Verify stack rooting (all roots)\n"
-                   "  8: Incremental GC in two slices: 1) mark roots 2) finish collection\n"
-                   "  9: Incremental GC in two slices: 1) mark all 2) new marking and finish\n"
-                   " 10: Incremental GC in multiple slices\n"
-                   " 11: Verify post write barriers between instructions\n"
-                   " 12: Verify post write barriers between paints\n"
-                   " 13: Purge analysis state every F allocations (default: 100)\n");
-        }
-        const char *p = strchr(env, ',');
-        zeal = atoi(env);
-        frequency = p ? atoi(p + 1) : JS_DEFAULT_ZEAL_FREQ;
-    }
-
-    JSRuntime *rt = cx->runtime;
-
-    if (zeal == 0) {
-        if (rt->gcVerifyPreData)
-            VerifyBarriers(rt, PreBarrierVerifier);
-        if (rt->gcVerifyPostData)
-            VerifyBarriers(rt, PostBarrierVerifier);
-    }
-
-#ifdef JS_METHODJIT
-    /* In case JSCompartment::compileBarriers() changed... */
-    for (CompartmentsIter c(rt); !c.done(); c.next())
-        mjit::ClearAllFrames(c);
-#endif
-
-    bool schedule = zeal >= js::gc::ZealAllocValue;
-    rt->gcZeal_ = zeal;
-    rt->gcZealFrequency = frequency;
-    rt->gcNextScheduled = schedule ? frequency : 0;
+    SetGCZeal(cx->runtime, zeal, frequency);
 }
 
 JS_PUBLIC_API(void)

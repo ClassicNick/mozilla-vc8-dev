@@ -9,6 +9,7 @@
 #include "mozilla/DebugOnly.h"
 
 #include "base/basictypes.h"
+#include <algorithm>
 
 #if defined(MOZ_WIDGET_ANDROID)
 # include <android/log.h>
@@ -510,28 +511,28 @@ private:
   {
     if (RefLayer* ref = aLayer->AsRefLayer()) {
       if (const LayerTreeState* state = GetIndirectShadowTree(ref->GetReferentId())) {
-        Layer* referent = state->mRoot;
-
-        if (!ref->GetVisibleRegion().IsEmpty()) {
-          ScreenOrientation chromeOrientation = mTargetConfig.orientation();
-          ScreenOrientation contentOrientation = state->mTargetConfig.orientation();
-          if (!IsSameDimension(chromeOrientation, contentOrientation) &&
-              ContentMightReflowOnOrientationChange(mTargetConfig.clientBounds())) {
-            mReadyForCompose = false;
+        if (Layer* referent = state->mRoot) {
+          if (!ref->GetVisibleRegion().IsEmpty()) {
+            ScreenOrientation chromeOrientation = mTargetConfig.orientation();
+            ScreenOrientation contentOrientation = state->mTargetConfig.orientation();
+            if (!IsSameDimension(chromeOrientation, contentOrientation) &&
+                ContentMightReflowOnOrientationChange(mTargetConfig.clientBounds())) {
+              mReadyForCompose = false;
+            }
           }
-        }
 
-        if (OP == Resolve) {
-          ref->ConnectReferentLayer(referent);
-          if (AsyncPanZoomController* apzc = state->mController) {
-            referent->SetUserData(&sPanZoomUserDataKey,
-                                  new PanZoomUserData(apzc));
+          if (OP == Resolve) {
+            ref->ConnectReferentLayer(referent);
+            if (AsyncPanZoomController* apzc = state->mController) {
+              referent->SetUserData(&sPanZoomUserDataKey,
+                                    new PanZoomUserData(apzc));
+            } else {
+              CompensateForContentScrollOffset(ref, referent);
+            }
           } else {
-            CompensateForContentScrollOffset(ref, referent);
+            ref->DetachReferentLayer(referent);
+            referent->RemoveUserData(&sPanZoomUserDataKey);
           }
-        } else {
-          ref->DetachReferentLayer(referent);
-          referent->RemoveUserData(&sPanZoomUserDataKey);
         }
       }
     }
@@ -760,9 +761,9 @@ SampleValue(float aPortion, Animation& aAnimation, nsStyleAnimation::Value& aSta
                0.0f);
   transform.Translate(newOrigin);
 
-  InfallibleTArray<TransformFunction>* functions = new InfallibleTArray<TransformFunction>();
-  functions->AppendElement(TransformMatrix(transform));
-  *aValue = *functions;
+  InfallibleTArray<TransformFunction> functions;
+  functions.AppendElement(TransformMatrix(transform));
+  *aValue = functions;
 }
 
 static bool
@@ -983,7 +984,7 @@ CompositorParent::TransformScrollableLayer(Layer* aLayer, const gfx3DMatrix& aRo
   // within the page boundaries.
   if (mContentRect.width * tempScaleDiffX < metrics.mCompositionBounds.width) {
     offset.x = -metricsScrollOffset.x;
-    scaleDiff.width = NS_MIN(1.0f, metrics.mCompositionBounds.width / (float)mContentRect.width);
+    scaleDiff.width = std::min(1.0f, metrics.mCompositionBounds.width / (float)mContentRect.width);
   } else {
     offset.x = clamped(mScrollOffset.x / tempScaleDiffX, (float)mContentRect.x,
                        mContentRect.XMost() - metrics.mCompositionBounds.width / tempScaleDiffX) -
@@ -993,7 +994,7 @@ CompositorParent::TransformScrollableLayer(Layer* aLayer, const gfx3DMatrix& aRo
 
   if (mContentRect.height * tempScaleDiffY < metrics.mCompositionBounds.height) {
     offset.y = -metricsScrollOffset.y;
-    scaleDiff.height = NS_MIN(1.0f, metrics.mCompositionBounds.height / (float)mContentRect.height);
+    scaleDiff.height = std::min(1.0f, metrics.mCompositionBounds.height / (float)mContentRect.height);
   } else {
     offset.y = clamped(mScrollOffset.y / tempScaleDiffY, (float)mContentRect.y,
                        mContentRect.YMost() - metrics.mCompositionBounds.height / tempScaleDiffY) -

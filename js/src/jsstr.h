@@ -40,6 +40,9 @@ class MutatingRopeSegmentRange;
  */
 class RopeBuilder;
 
+extern JSString *
+ConcatStringsNoGC(JSContext *cx, JSString *s1, JSString *s2);
+
 }  /* namespace js */
 
 extern JSString *
@@ -149,14 +152,13 @@ ValueToStringBuffer(JSContext *cx, const Value &v, StringBuffer &sb);
 
 } /* namespace js */
 
+namespace js {
 /*
  * Convert a value to its source expression, returning null after reporting
  * an error, otherwise returning a new string reference.
  */
-extern JS_FRIEND_API(JSString *)
-js_ValueToSource(JSContext *cx, const js::Value &v);
-
-namespace js {
+extern JSString *
+ValueToSource(JSContext *cx, const js::Value &v);
 
 /*
  * Test if strings are equal. The caller can call the function even if str1
@@ -223,9 +225,6 @@ InflateString(JSContext *cx, const char *bytes, size_t *length);
  */
 extern jschar *
 InflateUTF8String(JSContext *cx, const char *bytes, size_t *length);
-
-extern char *
-DeflateString(JSContext *cx, const jschar *chars, size_t length);
 
 /*
  * Inflate bytes to JS chars in an existing buffer. 'chars' must be large

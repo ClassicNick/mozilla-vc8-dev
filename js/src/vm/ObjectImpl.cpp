@@ -264,12 +264,11 @@ js::ObjectImpl::slotInRange(uint32_t slot, SentinelAllowed sentinel) const
 MOZ_NEVER_INLINE
 #endif
 UnrootedShape
-js::ObjectImpl::nativeLookup(JSContext *cx, jsid idArg)
+js::ObjectImpl::nativeLookup(JSContext *cx, HandleId id)
 {
     AssertCanGC();
     MOZ_ASSERT(isNative());
     Shape **spp;
-    RootedId id(cx, idArg);
     return Shape::search(cx, lastProperty(), id, &spp);
 }
 
@@ -514,7 +513,7 @@ js::GetOwnProperty(JSContext *cx, Handle<ObjectImpl*> obj, PropertyId pid_, unsi
     }
 
     /* |shape| is always set /after/ a GC. */
-    UnrootedShape shape = obj->nativeLookup(cx, pid);
+    UnrootedShape shape = obj->nativeLookup(cx, (PropertyId) pid);
     if (!shape) {
         DropUnrooted(shape);
 
@@ -536,7 +535,7 @@ js::GetOwnProperty(JSContext *cx, Handle<ObjectImpl*> obj, PropertyId pid_, unsi
         }
 
         /* Now look it up again. */
-        shape = obj->nativeLookup(cx, pid);
+        shape = obj->nativeLookup(cx, (PropertyId) pid);
         if (!shape) {
             desc->setUndefined();
             return true;

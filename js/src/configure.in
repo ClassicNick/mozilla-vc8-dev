@@ -55,7 +55,6 @@ NSPR_VERSION=4
 dnl Set the minimum version of toolkit libs used by mozilla
 dnl ========================================================
 PERL_VERSION=5.006
-PYTHON_VERSION=2.7
 WINDRES_VERSION=2.14.90
 W32API_VERSION=3.14
 
@@ -673,10 +672,7 @@ else
     AC_MSG_RESULT([yes])
 fi
 
-MOZ_PATH_PROGS(PYTHON, $PYTHON python2.7 python)
-if test -z "$PYTHON"; then
-    AC_MSG_ERROR([python was not found in \$PATH])
-fi
+MOZ_PYTHON
 
 if test -z "$COMPILE_ENVIRONMENT"; then
     NSINSTALL_BIN='$(PYTHON) $(topsrcdir)/config/nsinstall.py'
@@ -1185,6 +1181,9 @@ dnl ========================================================
 dnl GNU specific defaults
 dnl ========================================================
 if test "$GNU_CC"; then
+    # Per bug 719659 comment 2, some of the headers on ancient build machines
+    # may require gnu89 inline semantics.  But otherwise, we use C99.
+    CFLAGS="$CFLAGS -std=gnu99 -fgnu89-inline"
     MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$@ -o $@'
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$@ -o $@'
     DSO_LDOPTS='-shared'
@@ -1197,7 +1196,12 @@ if test "$GNU_CC"; then
             DSO_LDOPTS="$DSO_LDOPTS -Wl,-z,defs"
         fi
     fi
-    WARNINGS_AS_ERRORS='-Werror -Wno-error=uninitialized'
+    WARNINGS_AS_ERRORS='-Werror'
+    # Don't treat -Wuninitialized as error b/c it has lots of false positives.
+    WARNINGS_AS_ERRORS="$WARNINGS_AS_ERRORS -Wno-error=uninitialized"
+    # Don't treat -Wdeprecated-declarations as error b/c we don't want our
+    # builds held hostage when a platform-specific API is suddenly deprecated.
+    WARNINGS_AS_ERRORS="$WARNINGS_AS_ERRORS -Wno-error=deprecated-declarations"
     DSO_CFLAGS=''
     DSO_PIC_CFLAGS='-fPIC'
     ASFLAGS="$ASFLAGS -fPIC"
@@ -1211,8 +1215,7 @@ if test "$GNU_CC"; then
 
     # Turn on GNU-specific warnings:
     # -Wall - turn on a lot of warnings
-    # -pedantic - this is turned on below
-    # -Wpointer-arith - enabled with -pedantic, but good to have even if not
+    # -Wpointer-arith - good to have
     # -Wdeclaration-after-statement - MSVC doesn't like these
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
@@ -1223,12 +1226,10 @@ if test "$GNU_CC"; then
     MOZ_C_SUPPORTS_WARNING(-W, type-limits, ac_c_has_wtype_limits)
     MOZ_C_SUPPORTS_WARNING(-W, empty-body, ac_c_has_wempty_body)
 
-    # Turn off the following warnings that -Wall/-pedantic turn on:
+    # Turn off the following warnings that -Wall turns on:
     # -Wno-unused - lots of violations in third-party code
-    # -Wno-overlength-strings - we exceed the minimum maximum length frequently
     #
     _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wno-unused"
-    MOZ_C_SUPPORTS_WARNING(-Wno-, overlength-strings, ac_c_has_wno_overlength_strings)
 
     if test -z "$INTEL_CC" -a -z "$CLANG_CC"; then
        # Don't use -Wcast-align with ICC or clang
@@ -1241,9 +1242,6 @@ if test "$GNU_CC"; then
            ;;
        esac
     fi
-
-    dnl Turn pedantic on but disable the warnings for long long
-    _PEDANTIC=1
 
     _DEFINES_CFLAGS='-include $(DEPTH)/js-confdefs.h -DMOZILLA_CLIENT'
     _USE_CPP_INCLUDE_FLAG=1
@@ -1275,8 +1273,7 @@ fi
 if test "$GNU_CXX"; then
     # Turn on GNU-specific warnings:
     # -Wall - turn on a lot of warnings
-    # -pedantic - this is turned on below
-    # -Wpointer-arith - enabled with -pedantic, but good to have even if not
+    # -Wpointer-arith - good to have
     # -Woverloaded-virtual - ???
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
@@ -1289,16 +1286,10 @@ if test "$GNU_CXX"; then
     MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
     MOZ_CXX_SUPPORTS_WARNING(-W, error=conversion-null, ac_cxx_has_werror_conversion_null)
 
-    # Turn off the following warnings that -Wall/-pedantic turn on:
-    # -Wno-ctor-dtor-privacy - ???
-    # -Wno-overlength-strings - we exceed the minimum maximum length frequently
+    # Turn off the following warnings that -Wall turns on:
     # -Wno-invalid-offsetof - we use offsetof on non-POD types frequently
-    # -Wno-variadic-macros - ???
     #
-    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-ctor-dtor-privacy"
-    MOZ_CXX_SUPPORTS_WARNING(-Wno-, overlength-strings, ac_cxx_has_wno_overlength_strings)
     MOZ_CXX_SUPPORTS_WARNING(-Wno-, invalid-offsetof, ac_cxx_has_wno_invalid_offsetof)
-    MOZ_CXX_SUPPORTS_WARNING(-Wno-, variadic-macros, ac_cxx_has_wno_variadic_macros)
 
     if test -z "$INTEL_CXX" -a -z "$CLANG_CXX"; then
        # Don't use -Wcast-align with ICC or clang
@@ -1471,17 +1462,6 @@ case "$host" in
     ;;
 esac
 
-dnl We require version 2.7 of Python to build.
-AC_MSG_CHECKING([for Python version >= $PYTHON_VERSION but not 3.x])
-changequote(,)
-$PYTHON -c "import sys; sys.exit(sys.version[:3] < sys.argv[1] or sys.version[:2] != '2.')" $PYTHON_VERSION
-_python_res=$?
-changequote([,])
-if test "$_python_res" != 0; then
-    AC_MSG_ERROR([Python $PYTHON_VERSION or higher (but not Python 3.x) is required.])
-fi
-AC_MSG_RESULT([yes])
-
 dnl Check for using a custom <stdint.h> implementation
 dnl ========================================================
 AC_MSG_CHECKING(for custom <stdint.h> implementation)
@@ -1559,7 +1539,6 @@ case "$target" in
     MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MOZ_OPTIMIZE_FLAGS="-O3 -fno-stack-protector"
-    _PEDANTIC=
     CFLAGS="$CFLAGS -fno-common"
     CXXFLAGS="$CXXFLAGS -fno-common"
     DLL_SUFFIX=".dylib"
@@ -3990,33 +3969,6 @@ AC_SUBST(PROFILE_USE_LDFLAGS)
 AC_LANG_CPLUSPLUS
 
 dnl ========================================================
-dnl Test for -pedantic bustage
-dnl ========================================================
-MOZ_ARG_DISABLE_BOOL(pedantic,
-[  --disable-pedantic      Issue all warnings demanded by strict ANSI C ],
-_PEDANTIC= )
-if test "$_PEDANTIC"; then
-    _SAVE_CXXFLAGS=$CXXFLAGS
-    CXXFLAGS="$CXXFLAGS -pedantic ${_WARNINGS_CXXFLAGS} -Wno-long-long"
-    AC_MSG_CHECKING([whether C++ compiler has -pedantic long long bug])
-    AC_TRY_COMPILE([$configure_static_assert_macros],
-                   [CONFIGURE_STATIC_ASSERT(sizeof(long long) == 8)],
-                   result="no", result="yes" )
-    AC_MSG_RESULT([$result])
-    CXXFLAGS="$_SAVE_CXXFLAGS"
-
-    case "$result" in
-    no)
-        _WARNINGS_CFLAGS="-pedantic ${_WARNINGS_CFLAGS} -Wno-long-long"
-        _WARNINGS_CXXFLAGS="-pedantic ${_WARNINGS_CXXFLAGS} -Wno-long-long"
-        ;;
-    yes)
-        AC_MSG_ERROR([Your compiler appears to have a known bug where long long is miscompiled when using -pedantic.  Reconfigure using --disable-pedantic. ])
-        ;;
-    esac
-fi
-
-dnl ========================================================
 dnl Autoconf test for gcc 2.7.2.x (and maybe others?) so that we don't
 dnl provide non-const forms of the operator== for comparing nsCOMPtrs to
 dnl raw pointers in nsCOMPtr.h.  (VC++ has the same bug.)
@@ -4109,27 +4061,24 @@ else
 fi
 
 dnl ========================================================
-dnl = Disable -fstrict-aliasing on Linux/Android with GCC 4.4 and earlier.
-dnl = See bug 821502.
+dnl = Disable -fstrict-aliasing with GCC 4.4 and earlier.
+dnl = See bugs 821502 and 832623.
 dnl ========================================================
-case "$target" in
-*-android*|*-linuxandroid*|*-*linux*)
-    if test "$GNU_CC"; then
-        changequote(,)
-        GCC_VERSION_FULL=`echo "$CXX_VERSION" | $PERL -pe 's/^.*gcc version ([^ ]*).*/$1/'`
-        GCC_VERSION=`echo "$GCC_VERSION_FULL" | $PERL -pe '(split(/\./))[0]>=4&&s/(^\d*\.\d*).*/$1/;'`
-        changequote([,])
+if test -n "$GNU_CC" -a -z "$CLANG_CC"; then
+    changequote(,)
+    GCC_VERSION_FULL=`echo "$CXX_VERSION" | $PERL -pe 's/^.*gcc version ([^ ]*).*/$1/'`
+    GCC_VERSION=`echo "$GCC_VERSION_FULL" | $PERL -pe '(split(/\./))[0]>=4&&s/(^\d*\.\d*).*/$1/;'`
+    changequote([,])
 
-        GCC_MAJOR_VERSION=`echo ${GCC_VERSION} | $AWK -F\. '{ print $1 }'`
-        GCC_MINOR_VERSION=`echo ${GCC_VERSION} | $AWK -F\. '{ print $2 }'`
+    GCC_MAJOR_VERSION=`echo ${GCC_VERSION} | $AWK -F\. '{ print $1 }'`
+    GCC_MINOR_VERSION=`echo ${GCC_VERSION} | $AWK -F\. '{ print $2 }'`
 
-        dnl GCC 3.x isn't supported, so we don't need to check for that.
-        if test "$GCC_MAJOR_VERSION" -eq "4" -a "$GCC_MINOR_VERSION" -lt "5" ; then
-            CFLAGS="$CFLAGS -fno-strict-aliasing"
-            CXXFLAGS="$CXXFLAGS -fno-strict-aliasing"
-        fi
+    dnl GCC 3.x isn't supported, so we don't need to check for that.
+    if test "$GCC_MAJOR_VERSION" -eq "4" -a "$GCC_MINOR_VERSION" -lt "5" ; then
+        CFLAGS="$CFLAGS -fno-strict-aliasing"
+        CXXFLAGS="$CXXFLAGS -fno-strict-aliasing"
     fi
-esac
+fi
 
 dnl ========================================================
 dnl = Link js shell to system readline
@@ -4279,7 +4228,6 @@ dnl win32 options
 AC_SUBST(MOZ_MAPINFO)
 AC_SUBST(MOZ_BROWSE_INFO)
 AC_SUBST(MOZ_TOOLS_DIR)
-AC_SUBST(PYTHON)
 
 dnl Echo the CFLAGS to remove extra whitespace.
 CFLAGS=`echo \
@@ -4467,7 +4415,6 @@ MAKEFILES="
   shell/Makefile
   config/Makefile
   config/autoconf.mk
-  config/expandlibs_config.py
 "
 
 if test "$JS_NATIVE_EDITLINE"; then

@@ -11,6 +11,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/GuardObjects.h"
 
+#include "js/CharacterEncoding.h"
+
 #include "jsapi.h"
 #include "jsatom.h"
 #include "jsfriendapi.h"
@@ -27,7 +29,7 @@ class JSExtensibleString;
 class JSExternalString;
 ForwardDeclareJS(LinearString);
 class JSStableString;
-class JSInlineString;
+ForwardDeclareJS(InlineString);
 class JSRope;
 ForwardDeclareJS(FlatString);
 ForwardDeclareJS(Atom);
@@ -446,8 +448,12 @@ private:
     void init(JSString *left, JSString *right, size_t length);
 
   public:
-    static inline JSRope *new_(JSContext *cx, js::HandleString left,
-                               js::HandleString right, size_t length);
+    template <js::AllowGC allowGC>
+    static inline JSRope *
+    newStringMaybeAllowGC(JSContext *cx,
+                          typename js::MaybeRooted<JSString*, allowGC>::HandleType left,
+                          typename js::MaybeRooted<JSString*, allowGC>::HandleType right,
+                          size_t length);
 
     inline JSString *leftChild() const {
         JS_ASSERT(isRope());
@@ -478,6 +484,11 @@ class JSLinearString : public JSString
     const jschar *chars() const {
         JS_ASSERT(JSString::isLinear());
         return d.u1.chars;
+    }
+
+    JS::TwoByteChars range() const {
+        JS_ASSERT(JSString::isLinear());
+        return JS::TwoByteChars(d.u1.chars, length());
     }
 };
 
@@ -557,6 +568,12 @@ class JSStableString : public JSFlatString
     JS::StableCharPtr chars() const {
         JS_ASSERT(!JSString::isInline());
         return JS::StableCharPtr(d.u1.chars, length());
+    }
+
+    JS_ALWAYS_INLINE
+    JS::StableTwoByteChars range() const {
+        JS_ASSERT(!JSString::isInline());
+        return JS::StableTwoByteChars(d.u1.chars, length());
     }
 };
 
@@ -642,6 +659,7 @@ class JSInlineString : public JSFlatString
 
   public:
     static inline JSInlineString *new_(JSContext *cx);
+    static inline JSInlineString *tryNew_(JSContext *cx);
 
     inline jschar *init(size_t length);
 
@@ -673,6 +691,7 @@ class JSShortString : public JSInlineString
 
   public:
     static inline JSShortString *new_(JSContext *cx);
+    static inline JSShortString *tryNew_(JSContext *cx);
 
     static const size_t MAX_SHORT_LENGTH = JSString::NUM_INLINE_CHARS +
                                            INLINE_EXTENSION_CHARS
@@ -827,7 +846,7 @@ class PropertyName : public JSAtom
 
 JS_STATIC_ASSERT(sizeof(PropertyName) == sizeof(JSString));
 
-static JS_ALWAYS_INLINE jsid
+static JS_ALWAYS_INLINE RawId
 NameToId(PropertyName *name)
 {
     return NON_INTEGER_ATOM_TO_JSID(name);

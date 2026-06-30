@@ -34,6 +34,7 @@
 
 #include "sampler.h"
 #include "nsJSPrincipals.h"
+#include <algorithm>
 
 #ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
@@ -571,7 +572,7 @@ ReleaseSliceNow(uint32_t slice, void *data)
     MOZ_ASSERT(slice > 0, "nonsensical/useless call with slice == 0");
     nsTArray<nsISupports *> *items = static_cast<nsTArray<nsISupports *>*>(data);
 
-    slice = NS_MIN(slice, items->Length());
+    slice = std::min(slice, items->Length());
     for (uint32_t i = 0; i < slice; ++i) {
         // Remove (and NS_RELEASE) the last entry in "items":
         uint32_t lastItemIdx = items->Length() - 1;
@@ -1307,6 +1308,11 @@ XPCJSRuntime::~XPCJSRuntime()
         fprintf(stderr, "nJRSI: destroyed runtime %p\n", (void *)mJSRuntime);
 #endif
     }
+#ifdef MOZ_ENABLE_PROFILER_SPS
+    // Tell the profiler that the runtime is gone
+    if (ProfileStack *stack = mozilla_profile_stack())
+        stack->sampleRuntime(nullptr);
+#endif
 
 #ifdef DEBUG
     for (uint32_t i = 0; i < XPCCCX_STRING_CACHE_SIZE; ++i) {
@@ -1855,6 +1861,10 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.unusedCode,
                   "Memory allocated by one of the JITs to hold the "
                   "runtime's code, but which is currently unused.");
+
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/regexp-data"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.regexpData,
+                  "Memory used by the regexp JIT to hold data.");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack"),
                   nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stack,
@@ -2486,10 +2496,12 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     // to cause period, and we hope hygienic, last-ditch GCs from within
     // the GC's allocator.
     JS_SetGCParameter(mJSRuntime, JSGC_MAX_BYTES, 0xffffffff);
-#ifdef MOZ_ASAN
-    // ASan requires more stack space due to redzones
+#if defined(MOZ_ASAN) || (defined(DEBUG) && !defined(XP_WIN))
+    // Bug 803182: account for the 4x difference in the size of js::Interpret
+    // between optimized and debug builds. Also, ASan requires more stack space
+    // due to redzones
     JS_SetNativeStackQuota(mJSRuntime, 2 * 128 * sizeof(size_t) * 1024);
-#else  
+#else
     JS_SetNativeStackQuota(mJSRuntime, 128 * sizeof(size_t) * 1024);
 #endif
     JS_SetContextCallback(mJSRuntime, ContextCallback);

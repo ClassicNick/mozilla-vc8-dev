@@ -73,7 +73,7 @@ GCONF_VERSION=1.2.1
 GIO_VERSION=2.20
 STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.7.15.1
+SQLITE_VERSION=3.7.15.2
 
 MSMANIFEST_TOOL=
 
@@ -147,29 +147,7 @@ else
   touch $_objdir/CLOBBER
 fi
 
-MOZ_PATH_PROGS(PYTHON, $PYTHON python2.7 python)
-if test -z "$PYTHON"; then
-    AC_MSG_ERROR([python was not found in \$PATH])
-fi
-
-AC_MSG_RESULT([Creating Python environment])
-dnl This verifies our Python version is sane and ensures the Python
-dnl virtualenv is present and up to date. It sanitizes the environment
-dnl for us, so we don't need to clean anything out.
-$PYTHON $_topsrcdir/build/virtualenv/populate_virtualenv.py \
-    $_topsrcdir $MOZ_BUILD_ROOT/_virtualenv || exit 1
-
-dnl Create a virtualenv where we can install local Python packages
-case "$host_os" in
-mingw*)
-    PYTHON=`cd $MOZ_BUILD_ROOT && pwd -W`/_virtualenv/Scripts/python.exe
-    ;;
-*)
-    PYTHON=$MOZ_BUILD_ROOT/_virtualenv/bin/python
-    ;;
-esac
-
-AC_SUBST(PYTHON)
+MOZ_PYTHON
 
 MOZ_DEFAULT_COMPILER
 
@@ -1418,6 +1396,9 @@ dnl ========================================================
 dnl GNU specific defaults
 dnl ========================================================
 if test "$GNU_CC"; then
+    # Per bug 719659 comment 2, some of the headers on ancient build machines
+    # may require gnu89 inline semantics.  But otherwise, we use C99.
+    CFLAGS="$CFLAGS -std=gnu99 -fgnu89-inline"
     # FIXME: Let us build with strict aliasing. bug 414641.
     CFLAGS="$CFLAGS -fno-strict-aliasing"
     MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -Wl,-h,$@ -o $@'
@@ -1432,7 +1413,12 @@ if test "$GNU_CC"; then
             DSO_LDOPTS="$DSO_LDOPTS -Wl,-z,defs"
         fi
     fi
-    WARNINGS_AS_ERRORS='-Werror -Wno-error=uninitialized'
+    WARNINGS_AS_ERRORS='-Werror'
+    # Don't treat -Wuninitialized as error b/c it has lots of false positives.
+    WARNINGS_AS_ERRORS="$WARNINGS_AS_ERRORS -Wno-error=uninitialized"
+    # Don't treat -Wdeprecated-declarations as error b/c we don't want our
+    # builds held hostage when a platform-specific API is suddenly deprecated.
+    WARNINGS_AS_ERRORS="$WARNINGS_AS_ERRORS -Wno-error=deprecated-declarations"
     DSO_CFLAGS=''
     DSO_PIC_CFLAGS='-fPIC'
     ASFLAGS="$ASFLAGS -fPIC"
@@ -1471,8 +1457,7 @@ if test "$GNU_CC"; then
 
     # Turn on GNU-specific warnings:
     # -Wall - turn on a lot of warnings
-    # -pedantic - this is turned on below
-    # -Wpointer-arith - enabled with -pedantic, but good to have even if not
+    # -Wpointer-arith - good to have
     # -Wdeclaration-after-statement - MSVC doesn't like these
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
@@ -1483,12 +1468,10 @@ if test "$GNU_CC"; then
     MOZ_C_SUPPORTS_WARNING(-W, type-limits, ac_c_has_wtype_limits)
     MOZ_C_SUPPORTS_WARNING(-W, empty-body, ac_c_has_wempty_body)
     
-    # Turn off the following warnings that -Wall/-pedantic turn on:
+    # Turn off the following warnings that -Wall turns on:
     # -Wno-unused - lots of violations in third-party code
-    # -Wno-overlength-strings - we exceed the minimum maximum length frequently
     #
     _WARNINGS_CFLAGS="${_WARNINGS_CFLAGS} -Wno-unused"
-    MOZ_C_SUPPORTS_WARNING(-Wno-, overlength-strings, ac_c_has_wno_overlength_strings)
 
     if test -z "$INTEL_CC" -a -z "$CLANG_CC"; then
        # Don't use -Wcast-align with ICC or clang
@@ -1501,9 +1484,6 @@ if test "$GNU_CC"; then
            ;;
        esac
     fi
-
-    dnl Turn pedantic on but disable the warnings for long long
-    _PEDANTIC=1
 
     _DEFINES_CFLAGS='-include $(DEPTH)/mozilla-config.h -DMOZILLA_CLIENT'
     _USE_CPP_INCLUDE_FLAG=1
@@ -1538,8 +1518,7 @@ if test "$GNU_CXX"; then
 
     # Turn on GNU-specific warnings:
     # -Wall - turn on a lot of warnings
-    # -pedantic - this is turned on below
-    # -Wpointer-arith - enabled with -pedantic, but good to have even if not
+    # -Wpointer-arith - good to have
     # -Woverloaded-virtual - ???
     # -Werror=return-type - catches missing returns, zero false positives
     # -Wtype-limits - catches overflow bugs, few false positives
@@ -1550,16 +1529,10 @@ if test "$GNU_CXX"; then
     MOZ_CXX_SUPPORTS_WARNING(-W, type-limits, ac_cxx_has_wtype_limits)
     MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
 
-    # Turn off the following warnings that -Wall/-pedantic turn on:
-    # -Wno-ctor-dtor-privacy - ???
-    # -Wno-overlength-strings - we exceed the minimum maximum length frequently 
+    # Turn off the following warnings that -Wall turns on:
     # -Wno-invalid-offsetof - we use offsetof on non-POD types frequently
-    # -Wno-variadic-macros - ???
     #
-    _WARNINGS_CXXFLAGS="${_WARNINGS_CXXFLAGS} -Wno-ctor-dtor-privacy"
-    MOZ_CXX_SUPPORTS_WARNING(-Wno-, overlength-strings, ac_cxx_has_wno_overlength_strings)
     MOZ_CXX_SUPPORTS_WARNING(-Wno-, invalid-offsetof, ac_cxx_has_wno_invalid_offsetof)
-    MOZ_CXX_SUPPORTS_WARNING(-Wno-, variadic-macros, ac_cxx_has_wno_variadic_macros)
 
     if test -z "$INTEL_CXX" -a -z "$CLANG_CXX"; then
        # Don't use -Wcast-align with ICC or clang
@@ -1980,7 +1953,6 @@ case "$target" in
     MKSHLIB='$(CXX) $(CXXFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MKCSHLIB='$(CC) $(CFLAGS) $(DSO_PIC_CFLAGS) $(DSO_LDOPTS) -o $@'
     MOZ_OPTIMIZE_FLAGS="-O3"
-    _PEDANTIC=
     # Statically disable jemalloc on 10.5 and 32-bit 10.6.  See bug 702250.
     if test "$HAVE_64BIT_OS"; then
         MOZ_MEMORY=1
@@ -2219,6 +2191,9 @@ ia64*-hpux*)
         CXXFLAGS="$CXXFLAGS -W3 -Gy -Fd\$(COMPILE_PDBFILE)"
         # MSVC warning C4345 warns of newly conformant behavior as of VS2003.
         # MSVC warning C4351 warns of newly conformant behavior as of VS2005.
+        # MSVC warning C4482 warns when an enum value is refered specifing the
+        # name of the enum itself.  This behavior is allowed in C++11, and the
+        # warning has been removed in VS2012.
         # MSVC warning C4800 warns when a value is implicitly cast to bool,
         # because this also forces narrowing to a single byte, which can be a
         # perf hit.  But this matters so little in practice (and often we want
@@ -2226,7 +2201,7 @@ ia64*-hpux*)
         # MSVC warning C4819 warns some UTF-8 characters (e.g. copyright sign)
         # on non-Western system locales even if it is in a comment.
         CFLAGS="$CFLAGS -wd4819"
-        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4800 -wd4819"
+        CXXFLAGS="$CXXFLAGS -wd4345 -wd4351 -wd4482 -wd4800 -wd4819"
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
@@ -5294,8 +5269,12 @@ dnl the master list above.
 if test -n "$MOZ_WEBRTC"; then
     case "$target" in
     *-android*|*-linuxandroid*)
-        dnl Make sure doesn't get matched by *-linux*
-        MOZ_WEBRTC=
+        if test -n "$MOZ_B2G"; then
+            MOZ_WEBRTC=1
+        else
+            dnl Make sure doesn't get matched by *-linux*
+            MOZ_WEBRTC=
+        fi
         ;;
     *-linux*|*-mingw*|*-darwin*)
         dnl Leave enabled
@@ -5323,18 +5302,20 @@ if test -n "$MOZ_WEBRTC"; then
     MOZ_VP8_ENCODER=1
     MOZ_VP8_ERROR_CONCEALMENT=1
 
-    dnl OpenSLES is only available in Android 2.3 and later; we'll change this
-    dnl hard dependency to a dynamic load with graceful runtime failure before
-    dnl we make --enable-webrtc on by default in Android (bug 815905)
-    dnl
-    if test "$OS_TARGET" = "Android"; then
-       LDFLAGS="$LDFLAGS -lOpenSLES"
+    if test "$MOZ_WIDGET_TOOLKIT" != "gonk"; then
+       dnl OpenSLES is only available in Android 2.3 and later; we'll change this
+       dnl hard dependency to a dynamic load with graceful runtime failure before
+       dnl we make --enable-webrtc on by default in Android (bug 815905)
+       dnl
+       if test "$OS_TARGET" = "Android"; then
+          LDFLAGS="$LDFLAGS -lOpenSLES"
+       fi
+       case "$target" in
+          *-android*|*-linuxandroid*)
+          LDFLAGS="$LDFLAGS -lOpenSLES"
+          ;;
+       esac
     fi
-    case "$target" in
-    *-android*|*-linuxandroid*)
-       LDFLAGS="$LDFLAGS -lOpenSLES"
-       ;;
-    esac
 
 dnl enable once Signaling lands
     MOZ_WEBRTC_SIGNALING=1
@@ -6036,8 +6017,6 @@ if test -n "$MOZ_CRASHREPORTER"; then
     PKG_CHECK_MODULES(MOZ_GTHREAD, gthread-2.0)
     AC_SUBST(MOZ_GTHREAD_CFLAGS)
     AC_SUBST(MOZ_GTHREAD_LIBS)
-
-    MOZ_CHECK_HEADERS([curl/curl.h], [], [AC_MSG_ERROR([Couldn't find curl/curl.h which is required for the crash reporter.  Use --disable-crashreporter to disable the crash reporter.])])
   fi
 
   if test "$OS_ARCH" != "$HOST_OS_ARCH"; then
@@ -7919,33 +7898,6 @@ AC_SUBST(PROFILE_USE_LDFLAGS)
 AC_LANG_CPLUSPLUS
 
 dnl ========================================================
-dnl Test for -pedantic bustage
-dnl ========================================================
-MOZ_ARG_DISABLE_BOOL(pedantic,
-[  --disable-pedantic      Issue all warnings demanded by strict ANSI C ],
-_PEDANTIC= )
-if test "$_PEDANTIC"; then
-    _SAVE_CXXFLAGS=$CXXFLAGS
-    CXXFLAGS="$CXXFLAGS -pedantic ${_WARNINGS_CXXFLAGS} -Wno-long-long"
-    AC_MSG_CHECKING([whether C++ compiler has -pedantic long long bug])
-    AC_TRY_COMPILE([$configure_static_assert_macros],
-                   [CONFIGURE_STATIC_ASSERT(sizeof(long long) == 8)],
-                   result="no", result="yes" )
-    AC_MSG_RESULT([$result])
-    CXXFLAGS="$_SAVE_CXXFLAGS"
-
-    case "$result" in
-    no)
-        _WARNINGS_CFLAGS="-pedantic ${_WARNINGS_CFLAGS} -Wno-long-long"
-        _WARNINGS_CXXFLAGS="-pedantic ${_WARNINGS_CXXFLAGS} -Wno-long-long"
-        ;;
-    yes)
-        AC_MSG_ERROR([Your compiler appears to have a known bug where long long is miscompiled when using -pedantic.  Reconfigure using --disable-pedantic. ])
-        ;;
-    esac
-fi
-
-dnl ========================================================
 dnl Autoconf test for gcc 2.7.2.x (and maybe others?) so that we don't
 dnl provide non-const forms of the operator== for comparing nsCOMPtrs to
 dnl raw pointers in nsCOMPtr.h.  (VC++ has the same bug.)
@@ -9110,20 +9062,34 @@ if test "${OS_TARGET}" = "WINNT"; then
    EXTRA_GYP_DEFINES="-D MSVS_VERSION=${_MSVS_VERSION} -D MSVS_OS_BITS=${OS_BITS}"
 
 elif test "${OS_TARGET}" = "Android"; then
-   EXTRA_GYP_DEFINES="-D gtest_target_type=executable -D android_toolchain=${android_toolchain} -G os=android "
+   if test "${MOZ_WIDGET_TOOLKIT}" != "gonk"; then
+      EXTRA_GYP_DEFINES="-D gtest_target_type=executable -D android_toolchain=${android_toolchain} -G os=android "
+   fi
    if test -n "$ARM_ARCH" && test "$ARM_ARCH" -lt 7; then
-      EXTRA_GYP_DEFINES+=" -D armv7=0 "
+      EXTRA_GYP_DEFINES="${EXTRA_GYP_DEFINES} -D armv7=0 "
    else
-      EXTRA_GYP_DEFINES+=" -D armv7=1 "
+      EXTRA_GYP_DEFINES="${EXTRA_GYP_DEFINES} -D armv7=1 "
    fi
 fi
 
 if test -n "$MOZ_WEBRTC"; then
    AC_MSG_RESULT("generating WebRTC Makefiles...")
 
+   if test "${MOZ_WIDGET_TOOLKIT}" = "gonk"; then
+      EXTRA_GYP_DEFINES="${EXTRA_GYP_DEFINES} -D moz_widget_toolkit_gonk=1"
+   else
+      EXTRA_GYP_DEFINES="${EXTRA_GYP_DEFINES} -D moz_widget_toolkit_gonk=0"
+   fi
+
 dnl Any --include files must also appear in -D FORCED_INCLUDE_FILE= entries
 dnl so that regeneration via dependencies works correctly
    WEBRTC_CONFIG="-D build_with_mozilla=1 --include ${srcdir}/media/webrtc/webrtc_config.gypi -D FORCED_INCLUDE_FILE=${srcdir}/media/webrtc/webrtc_config.gypi"
+
+   if test -n HAVE_CLOCK_MONOTONIC; then
+      WEBRTC_CONFIG="${WEBRTC_CONFIG} -D moz_have_clock_monotonic=1"
+   else
+      WEBRTC_CONFIG="${WEBRTC_CONFIG} -D moz_have_clock_monotonic=0"
+   fi
 
    GYP_WEBRTC_OPTIONS="--format=mozmake ${WEBRTC_CONFIG} -D target_arch=${WEBRTC_TARGET_ARCH} ${EXTRA_GYP_DEFINES} --depth=${srcdir}/media/webrtc/trunk --toplevel-dir=${srcdir} -G OBJDIR=${_objdir}"
 
@@ -9396,6 +9362,9 @@ export MOZ_NATIVE_ZLIB
 export MOZ_ZLIB_CFLAGS
 export MOZ_ZLIB_LIBS
 export MOZ_APP_NAME
+export DONT_POPULATE_VIRTUALENV=1
+export PYTHON
+export MOZILLA_CENTRAL_PATH=$_topsrcdir
 export STLPORT_CPPFLAGS
 export STLPORT_LDFLAGS
 export STLPORT_LIBS

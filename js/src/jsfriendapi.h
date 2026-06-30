@@ -492,10 +492,16 @@ SetReservedSlot(RawObject obj, size_t slot, const Value &value)
 {
     JS_ASSERT(slot < JSCLASS_RESERVED_SLOTS(GetObjectClass(obj)));
     shadow::Object *sobj = reinterpret_cast<shadow::Object *>(obj);
-    if (sobj->slotRef(slot).isMarkable())
+    if (sobj->slotRef(slot).isMarkable()
+#ifdef JSGC_GENERATIONAL
+        || value.isMarkable()
+#endif
+       )
+    {
         SetReservedSlotWithBarrier(obj, slot, value);
-    else
+    } else {
         sobj->slotRef(slot) = value;
+    }
 }
 
 JS_FRIEND_API(uint32_t)
@@ -534,6 +540,9 @@ CastAsJSStrictPropertyOp(RawObject object)
 
 JS_FRIEND_API(bool)
 GetPropertyNames(JSContext *cx, RawObject obj, unsigned flags, js::AutoIdVector *props);
+
+JS_FRIEND_API(bool)
+AppendUnique(JSContext *cx, AutoIdVector &base, AutoIdVector &others);
 
 JS_FRIEND_API(bool)
 GetGeneric(JSContext *cx, JSObject *obj, JSObject *receiver, jsid id, Value *vp);
@@ -968,6 +977,11 @@ CastToJSFreeOp(FreeOp *fop)
  */
 extern JS_FRIEND_API(const jschar*)
 GetErrorTypeName(JSContext* cx, int16_t exnType);
+
+#ifdef DEBUG
+extern JS_FRIEND_API(unsigned)
+GetEnterCompartmentDepth(JSContext* cx);
+#endif
 
 /* Implemented in jswrapper.cpp. */
 typedef enum NukeReferencesToWindow {

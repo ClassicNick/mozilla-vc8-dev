@@ -73,6 +73,11 @@ XPCOMUtils.defineLazyServiceGetter(this, "DOMUtils",
 XPCOMUtils.defineLazyServiceGetter(window, "URIFixup",
   "@mozilla.org/docshell/urifixup;1", "nsIURIFixup");
 
+#ifdef MOZ_WEBRTC
+XPCOMUtils.defineLazyServiceGetter(this, "MediaManagerService",
+  "@mozilla.org/mediaManagerService;1", "nsIMediaManagerService");
+#endif
+
 const kStateActive = 0x00000001; // :active pseudoclass for elements
 
 const kXLinkNamespace = "http://www.w3.org/1999/xlink";
@@ -156,6 +161,12 @@ var Strings = {};
 var BrowserApp = {
   _tabs: [],
   _selectedTab: null,
+
+  get isTablet() {
+    let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
+    delete this.isTablet;
+    return this.isTablet = sysInfo.get("tablet");
+  },
 
   deck: null,
 
@@ -247,6 +258,9 @@ var BrowserApp = {
 #ifdef ACCESSIBILITY
     AccessFu.attach(window);
 #endif
+#ifdef MOZ_WEBRTC
+    WebrtcUI.init();
+#endif
 
     // Init LoginManager
     Cc["@mozilla.org/login-manager;1"].getService(Ci.nsILoginManager);
@@ -268,7 +282,15 @@ var BrowserApp = {
 
     let updated = this.isAppUpdated();
     if (pinned) {
-      WebAppRT.init(updated, url);
+      WebAppRT.init(updated, url).then(function(aUrl) {
+        BrowserApp.addTab(aUrl);
+      }, function() {
+        let uri = Services.io.newURI(url, null, null);
+        if (!uri)
+          return;
+        Cc["@mozilla.org/uriloader/external-protocol-service;1"].getService(Ci.nsIExternalProtocolService).getProtocolHandlerInfo(uri.scheme).launchWithURI(uri);
+        BrowserApp.quit();
+      });
     } else {
       SearchEngines.init();
       this.initContextMenu();
@@ -318,7 +340,7 @@ var BrowserApp = {
   initContextMenu: function ba_initContextMenu() {
     // TODO: These should eventually move into more appropriate classes
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.openInNewTab"),
-      NativeWindow.contextmenus.linkOpenableContext,
+      NativeWindow.contextmenus.linkOpenableNonPrivateContext,
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         BrowserApp.addTab(url, { selected: false, parentId: BrowserApp.selectedTab.id });
@@ -515,6 +537,9 @@ var BrowserApp = {
 #ifdef MOZ_TELEMETRY_REPORTING
     Telemetry.uninit();
 #endif
+#ifdef MOZ_WEBRTC
+    WebrtcUi.uninit();
+#endif
   },
 
   // This function returns false during periods where the browser displayed document is
@@ -523,8 +548,13 @@ var BrowserApp = {
   // switch tabs, and ends when the new browser content document has been drawn and handed
   // off to the compositor.
   isBrowserContentDocumentDisplayed: function() {
-    if (window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).isFirstPaint)
+    try {
+      if (window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils).isFirstPaint)
+        return false;
+    } catch (e) {
       return false;
+    }
+
     let tab = this.selectedTab;
     if (!tab)
       return true;
@@ -728,6 +758,38 @@ var BrowserApp = {
       }
     };
     sendMessageToJava(message);
+  },
+
+  /**
+   * Gets an open tab with the given URL.
+   *
+   * @param  aURL URL to look for
+   * @return the tab with the given URL, or null if no such tab exists
+   */
+  getTabWithURL: function getTabWithURL(aURL) {
+    let uri = Services.io.newURI(aURL, null, null);
+    for (let i = 0; i < this._tabs.length; ++i) {
+      let tab = this._tabs[i];
+      if (tab.browser.currentURI.equals(uri)) {
+        return tab;
+      }
+    }
+    return null;
+  },
+
+  /**
+   * If a tab with the given URL already exists, that tab is selected.
+   * Otherwise, a new tab is opened with the given URL.
+   *
+   * @param aURL URL to open
+   */
+  selectOrOpenTab: function selectOrOpenTab(aURL) {
+    let tab = this.getTabWithURL(aURL);
+    if (tab == null) {
+      this.addTab(aURL);
+    } else {
+      this.selectTab(tab);
+    }
   },
 
   // This method updates the state in BrowserApp after a tab has been selected
@@ -978,6 +1040,9 @@ var BrowserApp = {
   },
 
   getFocusedInput: function(aBrowser, aOnlyInputElements = false) {
+    if (!aBrowser)
+      return null;
+
     let doc = aBrowser.contentDocument;
     if (!doc)
       return null;
@@ -1009,7 +1074,8 @@ var BrowserApp = {
 
   scrollToFocusedInput: function(aBrowser, aAllowZoom = true) {
     let focused = this.getFocusedInput(aBrowser);
-    if (focused) {
+
+    if (focused && !this.isTablet && !ViewportHandler.getViewportMetadata(aBrowser.contentWindow).hasMetaViewport) {
       // _zoomToElement will handle not sending any message if this input is already mostly filling the screen
       BrowserEventHandler._zoomToElement(focused, -1, false, aAllowZoom);
     }
@@ -1386,6 +1452,17 @@ var NativeWindow = {
       }
     },
 
+    linkOpenableNonPrivateContext: {
+      matches: function linkOpenableNonPrivateContextMatches(aElement) {
+        let doc = aElement.ownerDocument;
+        if (!doc || PrivateBrowsingUtils.isWindowPrivate(doc.defaultView)) {
+          return false;
+        }
+
+        return NativeWindow.contextmenus.linkOpenableContext.matches(aElement);
+      }
+    },
+
     linkOpenableContext: {
       matches: function linkOpenableContextMatches(aElement) {
         let uri = NativeWindow.contextmenus._getLink(aElement);
@@ -1678,6 +1755,11 @@ var NativeWindow = {
         }
       };
       let data = JSON.parse(sendMessageToJava(msg));
+      if (data.button == -1) {
+        // prompt was cancelled
+        return;
+      }
+
       let selectedId = itemArray[data.button].id;
       let selectedItem = this._getMenuItemForId(selectedId);
 
@@ -2679,6 +2761,15 @@ Tab.prototype = {
     let selectedPanel = BrowserApp.deck.selectedPanel;
     BrowserApp.deck.insertBefore(this.browser, aParams.sibling || null);
     BrowserApp.deck.selectedPanel = selectedPanel;
+
+    if (BrowserApp.manifestUrl) {
+      let appsService = Cc["@mozilla.org/AppsService;1"].getService(Ci.nsIAppsService);
+      let manifest = appsService.getAppByManifestURL(BrowserApp.manifestUrl);
+      if (manifest) {
+        let app = manifest.QueryInterface(Ci.mozIApplication);
+        this.browser.docShell.setIsApp(app.localId);
+      }
+    }
 
     // Must be called after appendChild so the docshell has been created.
     this.setActive(false);
@@ -5341,6 +5432,7 @@ var ViewportHandler = {
 
     // Note: These values will be NaN if parseFloat or parseInt doesn't find a number.
     // Remember that NaN is contagious: Math.max(1, NaN) == Math.min(1, NaN) == NaN.
+    let hasMetaViewport = true;
     let scale = parseFloat(windowUtils.getDocumentMetadata("viewport-initial-scale"));
     let minScale = parseFloat(windowUtils.getDocumentMetadata("viewport-minimum-scale"));
     let maxScale = parseFloat(windowUtils.getDocumentMetadata("viewport-maximum-scale"));
@@ -5368,6 +5460,7 @@ var ViewportHandler = {
       if (doctype && /(WAP|WML|Mobile)/.test(doctype.publicId))
         return { defaultZoom: 1, autoSize: true, allowZoom: true };
 
+      hasMetaViewport = false;
       let defaultZoom = Services.prefs.getIntPref("browser.viewport.defaultZoom");
       if (defaultZoom >= 0) {
         scale = defaultZoom / 1000;
@@ -5392,7 +5485,8 @@ var ViewportHandler = {
       width: width,
       height: height,
       autoSize: autoSize,
-      allowZoom: allowZoom
+      allowZoom: allowZoom,
+      hasMetaViewport: hasMetaViewport
     };
   },
 
@@ -6935,7 +7029,6 @@ var WebappsUI = {
     Services.obs.addObserver(this, "webapps-sync-install", false);
     Services.obs.addObserver(this, "webapps-sync-uninstall", false);
     Services.obs.addObserver(this, "webapps-install-error", false);
-    Services.obs.addObserver(this, "WebApps:InstallMarketplace", false);
   },
 
   uninit: function unint() {
@@ -6944,7 +7037,6 @@ var WebappsUI = {
     Services.obs.removeObserver(this, "webapps-sync-install");
     Services.obs.removeObserver(this, "webapps-sync-uninstall");
     Services.obs.removeObserver(this, "webapps-install-error", false);
-    Services.obs.removeObserver(this, "WebApps:InstallMarketplace", false);
   },
 
   DEFAULT_PREFS_FILENAME: "default-prefs.js",
@@ -6977,12 +7069,7 @@ var WebappsUI = {
         this.doInstall(data);
         break;
       case "webapps-launch":
-        DOMApplicationRegistry.getManifestFor(data.origin, (function(aManifest) {
-          if (!aManifest)
-            return;
-          let manifest = new ManifestHelper(aManifest, data.origin);
-          this.openURL(manifest.fullLaunchPath(), data.origin);
-        }).bind(this));
+        this.openURL(data.manifestURL, data.origin);
         break;
       case "webapps-sync-install":
         // Create a system notification allowing the user to launch the app
@@ -6994,7 +7081,7 @@ var WebappsUI = {
           let observer = {
             observe: function (aSubject, aTopic) {
               if (aTopic == "alertclickcallback") {
-                WebappsUI.openURL(manifest.fullLaunchPath(), data.origin);
+                WebappsUI.openURL(data.manifestURL, data.origin);
               }
             }
           };
@@ -7008,64 +7095,10 @@ var WebappsUI = {
         sendMessageToJava({
           gecko: {
             type: "WebApps:Uninstall",
-            uniqueURI: data.origin
+            origin: data.origin
           }
         });
         break;
-      case "WebApps:InstallMarketplace":
-        this.installAndLaunchMarketplace(data.url);
-        break;
-    }
-  },
-
-  MARKETPLACE: {
-      MANIFEST: "https://marketplace.mozilla.org/manifest.webapp",
-      get URI() {
-        delete this.URI;
-        return this.URI = Services.io.newURI(this.MANIFEST, null, null);
-      }
-  },
-
-  isMarketplace: function isMarketplace(aUri) {
-    try {
-      return !aUri.schemeIs("about") && aUri.host == this.MARKETPLACE.URI.host;
-    } catch(ex) {
-      console.log("could not find host for " + aUri.spec + ", " + ex);
-    }
-    return false;
-  },
-
-  // installs the marketplace, if a url is passed in, will launch it when the install
-  // is complete
-  installAndLaunchMarketplace: function installAndLaunchMarketplace(aLaunchUrl) {
-    // TODO: Add a flag to hide other install prompt dialogs. This should be silent if possible
-    let request = navigator.mozApps.getInstalled();
-    request.onsuccess = function() {
-      let foundMarket = false;
-      for (let i = 0; i < request.result.length; i++) {
-        if (request.result[i].origin == WebappsUI.MARKETPLACE.URI.prePath)
-          foundMarket = true;
-      }
-
-      let launchFun = (function() {
-        if (aLaunchUrl)
-          WebappsUI.openURL(aLaunchUrl || WebappsUI.MARKETPLACE.URI.prePath, WebappsUI.MARKETPLACE.URI.prePath);
-      }).bind(this);
-
-      if (foundMarket) {
-        launchFun();
-      } else {
-        let r = navigator.mozApps.install(WebappsUI.MARKETPLACE.MANIFEST);
-        r.onsuccess = function() {
-          launchFun();
-        };
-        r.onerror = function() {
-          console.log("error installing market " + this.error.name);
-        };
-      }
-    };
-    request.onerror = function() {
-      console.log("error getting installed " + this.error.name);
     }
   },
 
@@ -7116,9 +7149,9 @@ var WebappsUI = {
             gecko: {
               type: "WebApps:Install",
               name: manifest.name,
-              launchPath: manifest.fullLaunchPath(),
+              manifestURL: aData.app.manifestURL,
+              origin: aData.app.origin,
               iconURL: scaledIcon,
-              uniqueURI: aData.app.origin
             }
           });
 
@@ -7177,11 +7210,11 @@ var WebappsUI = {
     }
   },
 
-  openURL: function openURL(aURI, aOrigin) {
+  openURL: function openURL(aManifestURL, aOrigin) {
     sendMessageToJava({
       gecko: {
         type: "WebApps:Open",
-        uri: aURI,
+        manifestURL: aManifestURL,
         origin: aOrigin
       }
     });
@@ -8012,9 +8045,10 @@ var MemoryObserver = {
     // If this browser is already a zombie, fallback to the session data
     let currentURL = browser.__SS_restore ? data.entries[0].url : browser.currentURI.spec;
     let sibling = browser.nextSibling;
+    let isPrivate = PrivateBrowsingUtils.isWindowPrivate(browser.contentWindow);
 
     tab.destroy();
-    tab.create(currentURL, { sibling: sibling, zombifying: true, delayLoad: true });
+    tab.create(currentURL, { sibling: sibling, zombifying: true, delayLoad: true, isPrivate: isPrivate });
 
     // Reattach session store data and flag this browser so it is restored on select
     browser = tab.browser;
@@ -8099,6 +8133,112 @@ var Distribution = {
     defaults.setCharPref("distribution.version", aData.version);
   }
 };
+
+#ifdef MOZ_WEBRTC
+var WebrtcUI = {
+  init: function () {
+    Services.obs.addObserver(this, "getUserMedia:request", false);
+  },
+
+  uninit: function () {
+    Services.obs.removeObserver(this, "getUserMedia:request");
+  },
+
+  observe: function(aSubject, aTopic, aData) {
+    if (aTopic == "getUserMedia:request") {
+      this.handleRequest(aSubject, aTopic, aData);
+    }
+  },
+
+  handleRequest: function handleRequest(aSubject, aTopic, aData) {
+    let { windowID: windowID, callID: callID } = JSON.parse(aData);
+
+    let someWindow = Services.wm.getMostRecentWindow("navigator:browser");
+    if (someWindow != window)
+      return;
+
+    let contentWindow = someWindow.QueryInterface(Ci.nsIInterfaceRequestor)
+          .getInterface(Ci.nsIDOMWindowUtils).getOuterWindowWithId(windowID);
+    let browser = BrowserApp.getBrowserForWindow(contentWindow);
+    let params = aSubject.QueryInterface(Ci.nsIMediaStreamOptions);
+
+    browser.ownerDocument.defaultView.navigator.mozGetUserMediaDevices(
+      function (devices) {
+        WebrtcUI.prompt(browser, callID, params.audio, params.video, devices);
+      },
+      function (error) {
+        Cu.reportError(error);
+      }
+    );
+  },
+
+  getDeviceButtons: function(aDevices, aCallID, stringBundle) {
+    let buttons = [{
+      label: stringBundle.GetStringFromName("getUserMedia.denyRequest.label"),
+      callback: function() {
+        Services.obs.notifyObservers(null, "getUserMedia:response:deny", aCallID);
+      }
+    }];
+    for (let device of aDevices) {
+      let button = {
+        label: stringBundle.GetStringFromName("getUserMedia.shareRequest.label"),
+        callback: function() {
+          let allowedDevices = Cc["@mozilla.org/supports-array;1"].createInstance(Ci.nsISupportsArray);
+          allowedDevices.AppendElement(device);
+          Services.obs.notifyObservers(allowedDevices, "getUserMedia:response:allow", aCallID);
+          // Show browser-specific indicator for the active camera/mic access.
+          // XXX: Mobile?
+        }
+      };
+      buttons.push(button);
+    }
+
+    return buttons;
+  },
+
+  prompt: function prompt(aBrowser, aCallID, aAudioRequested, aVideoRequested, aDevices) {
+    let audioDevices = [];
+    let videoDevices = [];
+    for (let device of aDevices) {
+      device = device.QueryInterface(Ci.nsIMediaDevice);
+      switch (device.type) {
+      case "audio":
+        if (aAudioRequested)
+          audioDevices.push(device);
+        break;
+      case "video":
+        if (aVideoRequested)
+          videoDevices.push(device);
+        break;
+      }
+    }
+
+    let requestType;
+    if (audioDevices.length && videoDevices.length)
+      requestType = "CameraAndMicrophone";
+    else if (audioDevices.length)
+      requestType = "Microphone";
+    else if (videoDevices.length)
+      requestType = "Camera";
+    else
+      return;
+
+    let host = aBrowser.contentDocument.documentURIObject.asciiHost;
+    let stringBundle = Services.strings.createBundle("chrome://browser/locale/browser.properties");
+    let message = stringBundle.formatStringFromName("getUserMedia.share" + requestType + ".message", [ host ], 1);
+
+    if (audioDevices.length) {
+      let buttons = this.getDeviceButtons(audioDevices, aCallID, stringBundle);
+      NativeWindow.doorhanger.show(message, "webrtc-request-audio", buttons, BrowserApp.selectedTab.id);
+    }
+
+    if (videoDevices.length) {
+      let buttons = this.getDeviceButtons(videoDevices, aCallID, stringBundle);
+      NativeWindow.doorhanger.show(message, "webrtc-request-video", buttons, BrowserApp.selectedTab.id);
+    }
+  }
+}
+#endif
 
 var Tabs = {
   // This object provides functions to manage a most-recently-used list

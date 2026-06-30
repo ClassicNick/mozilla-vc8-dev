@@ -13,6 +13,7 @@
 #include <stdarg.h>
 #include "SVGContentUtils.h"
 #include "SVGPathSegUtils.h"
+#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.141592653589793
@@ -203,7 +204,7 @@ SVGPathData::GetPathSegAtLength(float aDistance) const
 
   NS_ABORT_IF_FALSE(i == mData.Length(), "Very, very bad - mData corrupt");
 
-  return NS_MAX(0U, segIndex - 1); // -1 because while loop takes us 1 too far
+  return std::max(0U, segIndex - 1); // -1 because while loop takes us 1 too far
 }
 
 /**

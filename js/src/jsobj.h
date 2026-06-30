@@ -217,6 +217,7 @@ extern Class IntlClass;
 extern Class JSONClass;
 extern Class MapIteratorClass;
 extern Class MathClass;
+extern Class ModuleClass;
 extern Class NumberClass;
 extern Class NormalArgumentsObjectClass;
 extern Class ObjectClass;
@@ -243,6 +244,7 @@ class ElementIteratorObject;
 class GlobalObject;
 class MapObject;
 class MapIteratorObject;
+class Module;
 class NestedScopeObject;
 class NewObjectCache;
 class NormalArgumentsObject;
@@ -269,7 +271,7 @@ class WithObject;
  * The JSFunction struct is an extension of this struct allocated from a larger
  * GC size-class.
  */
-struct JSObject : public js::ObjectImpl
+class JSObject : public js::ObjectImpl
 {
   private:
     friend class js::Shape;
@@ -785,6 +787,13 @@ struct JSObject : public js::ObjectImpl
         return addProperty(cx, self, id, NULL, NULL, slot, attrs, 0, 0);
     }
 
+    js::UnrootedShape addDataProperty(JSContext *cx, js::HandlePropertyName name, uint32_t slot, unsigned attrs) {
+        JS_ASSERT(!(attrs & (JSPROP_GETTER | JSPROP_SETTER)));
+        js::RootedObject self(cx, this);
+        js::RootedId id(cx, NameToId(name));
+        return addProperty(cx, self, id, NULL, NULL, slot, attrs, 0, 0);
+    }
+
     /* Add or overwrite a property for id in this scope. */
     static js::UnrootedShape putProperty(JSContext *cx, JS::HandleObject obj, JS::HandleId id,
                                          JSPropertyOp getter, JSStrictPropertyOp setter,
@@ -968,6 +977,7 @@ struct JSObject : public js::ObjectImpl
     inline bool isGenerator() const;
     inline bool isGlobal() const;
     inline bool isMapIterator() const;
+    inline bool isModule() const;
     inline bool isObject() const;
     inline bool isPrimitive() const;
     inline bool isPropertyIterator() const;
@@ -1024,6 +1034,7 @@ struct JSObject : public js::ObjectImpl
     inline js::GlobalObject &asGlobal();
     inline js::MapObject &asMap();
     inline js::MapIteratorObject &asMapIterator();
+    inline js::Module &asModule();
     inline js::NestedScopeObject &asNestedScope();
     inline js::NormalArgumentsObject &asNormalArguments();
     inline js::NumberObject &asNumber();
@@ -1331,12 +1342,13 @@ GetMethod(JSContext *cx, HandleObject obj, PropertyName *name, unsigned getHow, 
  * store the property value in *vp.
  */
 extern bool
-HasDataProperty(JSContext *cx, HandleObject obj, jsid id, Value *vp);
+HasDataProperty(JSContext *cx, HandleObject obj, HandleId id, Value *vp);
 
 inline bool
 HasDataProperty(JSContext *cx, HandleObject obj, PropertyName *name, Value *vp)
 {
-    return HasDataProperty(cx, obj, NameToId(name), vp);
+    RootedId id(cx, NameToId(name));
+    return HasDataProperty(cx, obj, id, vp);
 }
 
 extern JSBool
@@ -1412,7 +1424,7 @@ js_InferFlags(JSContext *cx, unsigned defaultFlags);
  * If protoKey is constant and scope is non-null, use GlobalObject's prototype
  * methods instead.
  */
-extern JS_FRIEND_API(bool)
+extern bool
 js_GetClassPrototype(JSContext *cx, JSProtoKey protoKey, js::MutableHandleObject protop,
                      js::Class *clasp = NULL);
 

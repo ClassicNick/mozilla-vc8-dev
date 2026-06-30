@@ -39,6 +39,8 @@
 #include "nsSMILTypes.h"
 #include "nsIContentIterator.h"
 #include "SVGAngle.h"
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include <algorithm>
 
 DOMCI_NODE_DATA(SVGSVGElement, mozilla::dom::SVGSVGElement)
 
@@ -53,12 +55,12 @@ SVGSVGElement::WrapNode(JSContext *aCx, JSObject *aScope, bool *aTriedToWrap)
   return SVGSVGElementBinding::Wrap(aCx, aScope, this, aTriedToWrap);
 }
 
-NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(nsSVGTranslatePoint::DOMVal, mElement)
+NS_SVG_VAL_IMPL_CYCLE_COLLECTION_WRAPPERCACHED(DOMSVGTranslatePoint, mElement)
 
-NS_IMPL_CYCLE_COLLECTING_ADDREF(nsSVGTranslatePoint::DOMVal)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(nsSVGTranslatePoint::DOMVal)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(DOMSVGTranslatePoint)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMSVGTranslatePoint)
 
-NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSVGTranslatePoint::DOMVal)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGTranslatePoint)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   // We have to qualify nsISVGPoint because NS_GET_IID looks for a class in the
   // global namespace
@@ -66,39 +68,37 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSVGTranslatePoint::DOMVal)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-nsresult
-nsSVGTranslatePoint::ToDOMVal(SVGSVGElement *aElement,
-                              nsISupports **aResult)
+nsISVGPoint*
+DOMSVGTranslatePoint::Clone()
 {
-  NS_ADDREF(*aResult = new DOMVal(this, aElement));
-  return NS_OK;
+  return new DOMSVGTranslatePoint(this);
 }
 
 nsISupports*
-nsSVGTranslatePoint::DOMVal::GetParentObject()
+DOMSVGTranslatePoint::GetParentObject()
 {
   return static_cast<nsIDOMSVGSVGElement*>(mElement);
 }
 
 void
-nsSVGTranslatePoint::DOMVal::SetX(float aValue, ErrorResult& rv)
+DOMSVGTranslatePoint::SetX(float aValue, ErrorResult& rv)
 {
-  rv = mElement->SetCurrentTranslate(aValue, mVal->GetY());
+  rv = mElement->SetCurrentTranslate(aValue, mPt.GetY());
 }
 
 void
-nsSVGTranslatePoint::DOMVal::SetY(float aValue, ErrorResult& rv)
+DOMSVGTranslatePoint::SetY(float aValue, ErrorResult& rv)
 {
-  rv = mElement->SetCurrentTranslate(mVal->GetX(), aValue);
+  rv = mElement->SetCurrentTranslate(mPt.GetX(), aValue);
 }
 
 already_AddRefed<nsISVGPoint>
-nsSVGTranslatePoint::DOMVal::MatrixTransform(SVGMatrix& matrix)
+DOMSVGTranslatePoint::MatrixTransform(SVGMatrix& matrix)
 {
   float a = matrix.A(), b = matrix.B(), c = matrix.C();
   float d = matrix.D(), e = matrix.E(), f = matrix.F();
-  float x = mVal->GetX();
-  float y = mVal->GetY();
+  float x = mPt.GetX();
+  float y = mPt.GetY();
 
   nsCOMPtr<nsISVGPoint> point = new DOMSVGPoint(a*x + c*y + e, b*x + d*y + f);
   return point.forget();
@@ -129,7 +129,6 @@ nsSVGElement::EnumInfo SVGSVGElement::sEnumInfo[1] =
 //----------------------------------------------------------------------
 // nsISupports methods
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(SVGSVGElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SVGSVGElement,
                                                 SVGSVGElementBase)
   if (tmp->mTimedDocumentRoot) {
@@ -210,7 +209,7 @@ SVGSVGElement::GetX(nsIDOMSVGAnimatedLength * *aX)
   return NS_OK;
 }
 
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGSVGElement::X()
 {
   return mLengthAttributes[ATTR_X].ToDOMAnimatedLength(this);
@@ -224,7 +223,7 @@ SVGSVGElement::GetY(nsIDOMSVGAnimatedLength * *aY)
   return NS_OK;
 }
 
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGSVGElement::Y()
 {
   return mLengthAttributes[ATTR_Y].ToDOMAnimatedLength(this);
@@ -238,7 +237,7 @@ SVGSVGElement::GetWidth(nsIDOMSVGAnimatedLength * *aWidth)
   return NS_OK;
 }
 
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGSVGElement::Width()
 {
   return mLengthAttributes[ATTR_WIDTH].ToDOMAnimatedLength(this);
@@ -252,7 +251,7 @@ SVGSVGElement::GetHeight(nsIDOMSVGAnimatedLength * *aHeight)
   return NS_OK;
 }
 
-already_AddRefed<nsIDOMSVGAnimatedLength>
+already_AddRefed<SVGAnimatedLength>
 SVGSVGElement::Height()
 {
   return mLengthAttributes[ATTR_HEIGHT].ToDOMAnimatedLength(this);
@@ -361,8 +360,7 @@ SVGSVGElement::GetCurrentTranslate(nsISupports * *aCurrentTranslate)
 already_AddRefed<nsISVGPoint>
 SVGSVGElement::CurrentTranslate()
 {
-  nsCOMPtr<nsISVGPoint> point;
-  mCurrentTranslate.ToDOMVal(this, getter_AddRefs(point));
+  nsCOMPtr<nsISVGPoint> point = new DOMSVGTranslatePoint(&mCurrentTranslate, this);
   return point.forget();
 }
 
@@ -792,7 +790,7 @@ SVGSVGElement::SetCurrentScaleTranslate(float s, float x, float y)
   mPreviousTranslate = mCurrentTranslate;
   
   mCurrentScale = s;
-  mCurrentTranslate = nsSVGTranslatePoint(x, y);
+  mCurrentTranslate = SVGPoint(x, y);
 
   // now dispatch the appropriate event if we are the root element
   nsIDocument* doc = GetCurrentDoc();
@@ -964,7 +962,7 @@ SVGSVGElement::UpdateHasChildrenOnlyTransform()
 {
   bool hasChildrenOnlyTransform =
     HasViewBoxOrSyntheticViewBox() ||
-    (IsRoot() && (mCurrentTranslate != nsSVGTranslatePoint(0.0f, 0.0f) ||
+    (IsRoot() && (mCurrentTranslate != SVGPoint(0.0f, 0.0f) ||
                   mCurrentScale != 1.0f));
   mHasChildrenOnlyTransform = hasChildrenOnlyTransform;
 }
@@ -1011,6 +1009,8 @@ SVGSVGElement::BindToTree(nsIDocument* aDocument,
                           nsIContent* aBindingParent,
                           bool aCompileEventHandlers)
 {
+  static const char kSVGStyleSheetURI[] = "resource://gre/res/svg.css";
+
   nsSMILAnimationController* smilController = nullptr;
 
   if (aDocument) {
@@ -1037,6 +1037,13 @@ SVGSVGElement::BindToTree(nsIDocument* aDocument,
                                               aBindingParent,
                                               aCompileEventHandlers);
   NS_ENSURE_SUCCESS(rv,rv);
+
+  if (aDocument) {
+    // Setup the style sheet during binding, not element construction,
+    // because we could move the root SVG element from the document
+    // that created it to another document.
+    aDocument->EnsureCatalogStyleSheet(kSVGStyleSheetURI);
+  }
 
   if (mTimedDocumentRoot && smilController) {
     rv = mTimedDocumentRoot->SetParent(smilController);
@@ -1212,8 +1219,8 @@ SVGSVGElement::GetLength(uint8_t aCtxType)
     h = mViewportHeight;
   }
 
-  w = NS_MAX(w, 0.0f);
-  h = NS_MAX(h, 0.0f);
+  w = std::max(w, 0.0f);
+  h = std::max(h, 0.0f);
 
   switch (aCtxType) {
   case SVGContentUtils::X:

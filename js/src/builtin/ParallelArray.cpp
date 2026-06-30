@@ -1145,7 +1145,7 @@ ParallelArrayObject::create(JSContext *cx, HandleObject buffer, uint32_t offset,
 
     // Propagate element types.
     if (cx->typeInferenceEnabled()) {
-        AutoEnterTypeInference enter(cx);
+        AutoEnterAnalysis enter(cx);
         TypeObject *bufferType = buffer->getType(cx);
         TypeObject *resultType = result->getType(cx);
         if (!bufferType->unknownProperties() && !resultType->unknownProperties()) {
@@ -1747,7 +1747,7 @@ ParallelArrayObject::lookupElement(JSContext *cx, HandleObject obj, uint32_t ind
 {
     // No prototype walking for elements.
     if (index < as(obj)->outermostDimension()) {
-        MarkImplicitPropertyFound(propp);
+        MarkNonNativePropertyFound(propp);
         objp.set(obj);
         return true;
     }

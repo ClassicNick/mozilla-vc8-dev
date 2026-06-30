@@ -27,8 +27,8 @@ JS_STATIC_ASSERT(offsetof(JSRuntime, mainThread) == sizeof(RuntimeFriendFields))
 
 PerThreadDataFriendFields::PerThreadDataFriendFields()
 {
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
-    PodArrayZero(thingGCRooters);
+#if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
+    skipGCRooters = NULL;
 #endif
 }
 
@@ -932,6 +932,14 @@ js::GetTestingFunctions(JSContext *cx)
 
     return obj;
 }
+
+#ifdef DEBUG
+JS_FRIEND_API(unsigned)
+js::GetEnterCompartmentDepth(JSContext *cx)
+{
+  return cx->getEnterCompartmentDepth();
+}
+#endif
 
 JS_FRIEND_API(void)
 js::SetRuntimeProfilingStack(JSRuntime *rt, ProfileEntry *stack, uint32_t *size, uint32_t max)

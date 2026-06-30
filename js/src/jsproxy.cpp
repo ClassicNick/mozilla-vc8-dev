@@ -1471,10 +1471,11 @@ ReportInvalidTrapResult(JSContext *cx, JSObject *proxy, JSAtom *atom)
 // This function is shared between getOwnPropertyNames, enumerate, and keys
 static bool
 ArrayToIdVector(JSContext *cx, HandleObject proxy, HandleObject target, HandleValue v,
-                AutoIdVector &props, unsigned flags, JSAtom *trapName)
+                AutoIdVector &props, unsigned flags, JSAtom *trapName_)
 {
     JS_ASSERT(v.isObject());
     RootedObject array(cx, &v.toObject());
+    RootedAtom trapName(cx, trapName_);
 
     // steps g-h
     uint32_t n;
@@ -2293,8 +2294,8 @@ Proxy::delete_(JSContext *cx, JSObject *proxy_, jsid id, bool *bp)
     return GetProxyHandler(proxy)->delete_(cx, proxy, id, bp);
 }
 
-static bool
-AppendUnique(JSContext *cx, AutoIdVector &base, AutoIdVector &others)
+JS_FRIEND_API(bool)
+js::AppendUnique(JSContext *cx, AutoIdVector &base, AutoIdVector &others)
 {
     AutoIdVector uniqueOthers(cx);
     if (!uniqueOthers.reserve(others.length()))
@@ -2551,7 +2552,7 @@ proxy_LookupGeneric(JSContext *cx, HandleObject obj, HandleId id,
         return false;
 
     if (found) {
-        MarkImplicitPropertyFound(propp);
+        MarkNonNativePropertyFound(propp);
         objp.set(obj);
     } else {
         objp.set(NULL);

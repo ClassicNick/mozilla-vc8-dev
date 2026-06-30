@@ -56,7 +56,7 @@ const MEM_HISTOGRAMS = {
   "js-compartments/system": "MEMORY_JS_COMPARTMENTS_SYSTEM",
   "js-compartments/user": "MEMORY_JS_COMPARTMENTS_USER",
   "explicit": "MEMORY_EXPLICIT",
-  "resident": "MEMORY_RESIDENT",
+  "resident-fast": "MEMORY_RESIDENT",
   "vsize": "MEMORY_VSIZE",
   "storage-sqlite": "MEMORY_STORAGE_SQLITE",
   "images-content-used-uncompressed":
@@ -756,6 +756,7 @@ TelemetryPing.prototype = {
     this._timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     function timerCallback() {
       this._initialized = true;
+      this.loadSavedPings(false);
       this.attachObservers();
       this.gatherMemory();
 
@@ -765,7 +766,6 @@ TelemetryPing.prototype = {
     }
     this._timer.initWithCallback(timerCallback.bind(this), TELEMETRY_DELAY,
                                  Ci.nsITimer.TYPE_ONE_SHOT);
-    this.loadSavedPings(false);
   },
 
   verifyPingChecksum: function verifyPingChecksum(ping) {

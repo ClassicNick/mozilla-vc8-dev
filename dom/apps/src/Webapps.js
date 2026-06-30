@@ -74,18 +74,23 @@ WebappsRegistry.prototype = {
 
   _validateURL: function(aURL) {
     let uri;
+    let res;
     try {
       uri = Services.io.newURI(aURL, null, null);
-      let scheme = uri.scheme;
-      if (!uri.schemeIs("http") && !uri.schemeIs("https")) {
-        throw new Components.Exception(
-          "INVALID_URL_SCHEME: '" + scheme + "'; must be 'http' or 'https'",
-          Cr.NS_ERROR_FAILURE
-        );
+      if (uri.schemeIs("http") || uri.schemeIs("https")) {
+        res = uri.spec;
       }
     } catch(e) {
       throw new Components.Exception(
         "INVALID_URL: '" + aURL, Cr.NS_ERROR_FAILURE
+      );
+    }
+
+    // The scheme is incorrect, throw an exception.
+    if (!res) {
+      throw new Components.Exception(
+        "INVALID_URL_SCHEME: '" + uri.scheme + "'; must be 'http' or 'https'",
+        Cr.NS_ERROR_FAILURE
       );
     }
     return uri.spec;
@@ -179,6 +184,10 @@ WebappsRegistry.prototype = {
   },
 
   get mgmt() {
+    if (!this.hasMgmtPrivilege) {
+      return null;
+    }
+
     if (!this._mgmt)
       this._mgmt = new WebappsApplicationMgmt(this._window);
     return this._mgmt;
@@ -236,10 +245,19 @@ WebappsRegistry.prototype = {
                               "Webapps:GetSelf:Return:OK",
                               "Webapps:CheckInstalled:Return:OK" ]);
 
-    let util = this._window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
+    let util = this._window.QueryInterface(Ci.nsIInterfaceRequestor)
+                           .getInterface(Ci.nsIDOMWindowUtils);
     this._id = util.outerWindowID;
     cpmm.sendAsyncMessage("Webapps:RegisterForMessages",
                           ["Webapps:Install:Return:OK"]);
+
+    let principal = aWindow.document.nodePrincipal;
+    let perm = Services.perms
+               .testExactPermissionFromPrincipal(principal, "webapps-manage");
+
+    // Only pages with the webapps-manage permission set can get access to
+    // the mgmt object.
+    this.hasMgmtPrivilege = perm == Ci.nsIPermissionManager.ALLOW_ACTION;
   },
 
   classID: Components.ID("{fff440b3-fae2-45c1-bf03-3b5a2e432270}"),
@@ -585,16 +603,6 @@ WebappsApplication.prototype = {
   * mozIDOMApplicationMgmt object
   */
 function WebappsApplicationMgmt(aWindow) {
-  let principal = aWindow.document.nodePrincipal;
-  let secMan = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(Ci.nsIScriptSecurityManager);
-
-  let perm = principal == secMan.getSystemPrincipal()
-               ? Ci.nsIPermissionManager.ALLOW_ACTION
-               : Services.perms.testExactPermissionFromPrincipal(principal, "webapps-manage");
-
-  //only pages with perm set can use some functions
-  this.hasPrivileges = perm == Ci.nsIPermissionManager.ALLOW_ACTION;
-
   this.initHelper(aWindow, ["Webapps:GetAll:Return:OK",
                             "Webapps:GetAll:Return:KO",
                             "Webapps:Uninstall:Return:OK",
@@ -651,8 +659,7 @@ WebappsApplicationMgmt.prototype = {
   getAll: function() {
     let request = this.createRequest();
     cpmm.sendAsyncMessage("Webapps:GetAll", { oid: this._id,
-                                              requestID: this.getRequestId(request),
-                                              hasPrivileges: this.hasPrivileges });
+                                              requestID: this.getRequestId(request) });
     return request;
   },
 
@@ -672,17 +679,11 @@ WebappsApplicationMgmt.prototype = {
   },
 
   set oninstall(aCallback) {
-    if (this.hasPrivileges)
-      this._oninstall = aCallback;
-    else
-      throw new Components.Exception("Denied", Cr.NS_ERROR_FAILURE);
+    this._oninstall = aCallback;
   },
 
   set onuninstall(aCallback) {
-    if (this.hasPrivileges)
-      this._onuninstall = aCallback;
-    else
-      throw new Components.Exception("Denied", Cr.NS_ERROR_FAILURE);
+    this._onuninstall = aCallback;
   },
 
   receiveMessage: function(aMessage) {

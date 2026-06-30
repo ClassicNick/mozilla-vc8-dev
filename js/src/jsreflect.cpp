@@ -27,6 +27,7 @@
 
 #include "frontend/Parser.h"
 #include "frontend/TokenStream.h"
+#include "js/CharacterEncoding.h"
 #include "vm/RegExpObject.h"
 
 #include "jsscriptinlines.h"
@@ -3398,7 +3399,7 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
     if (!src)
         return JS_FALSE;
 
-    js::ScopedFreePtr<char> filename;
+    ScopedJSFreePtr<char> filename;
     uint32_t lineno = 1;
     bool loc = true;
 
@@ -3442,7 +3443,8 @@ reflect_parse(JSContext *cx, uint32_t argc, jsval *vp)
                 if (!chars)
                     return JS_FALSE;
 
-                filename = DeflateString(cx, chars, length);
+                TwoByteChars tbchars(chars, length);
+                filename = LossyTwoByteCharsToNewLatin1CharsZ(cx, tbchars).c_str();
                 if (!filename)
                     return JS_FALSE;
             }

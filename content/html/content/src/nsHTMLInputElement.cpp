@@ -36,7 +36,6 @@
 #include "nsIFrame.h"
 #include "nsEventStates.h"
 #include "nsIServiceManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsError.h"
 #include "nsIEditor.h"
 #include "nsGUIEvent.h"
@@ -60,6 +59,7 @@
 #include "nsEventListenerManager.h"
 
 #include "nsRuleData.h"
+#include <algorithm>
 
 // input type=radio
 #include "nsIRadioGroupContainer.h"
@@ -633,9 +633,9 @@ nsHTMLInputElement::GetEditorState() const
 
 // nsISupports
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsHTMLInputElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLInputElement,
                                                   nsGenericHTMLFormElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mValidity)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mControllers)
   if (tmp->IsSingleLineTextControl(false)) {
     tmp->mInputData.mState->Traverse(cb);
@@ -646,6 +646,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsHTMLInputElement,
                                                   nsGenericHTMLFormElement)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mValidity)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mControllers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFiles)
   if (tmp->mFileList) {
@@ -1082,10 +1083,8 @@ nsHTMLInputElement::ConvertStringToNumber(nsAString& aValue,
       }
     case NS_FORM_INPUT_DATE:
       {
-        JSContext* ctx = nsContentUtils::GetContextFromDocument(OwnerDoc());
-        if (!ctx) {
-          return false;
-        }
+        SafeAutoJSContext ctx;
+        JSAutoRequest ar(ctx);
 
         uint32_t year, month, day;
         if (!GetValueAsDate(aValue, &year, &month, &day)) {
@@ -1242,10 +1241,8 @@ nsHTMLInputElement::ConvertNumberToString(double aValue,
       return true;
     case NS_FORM_INPUT_DATE:
       {
-        JSContext* ctx = nsContentUtils::GetContextFromDocument(OwnerDoc());
-        if (!ctx) {
-          return false;
-        }
+        SafeAutoJSContext ctx;
+        JSAutoRequest ar(ctx);
 
         // The specs require |aValue| to be truncated.
         aValue = floor(aValue);
@@ -1505,10 +1502,10 @@ nsHTMLInputElement::ApplyStep(int32_t aStep)
     value = max;
   // If we go down, we want to clamp on min.
   } else if (aStep < 0 && min == min) {
-    value = NS_MAX(value, min);
+    value = std::max(value, min);
   // If we go up, we want to clamp on max.
   } else if (aStep > 0 && max == max) {
-    value = NS_MIN(value, max);
+    value = std::min(value, max);
   }
 
   SetValue(value);
@@ -3188,6 +3185,11 @@ nsHTMLInputElement::ParseAttribute(int32_t aNamespaceID,
              newType == NS_FORM_INPUT_TIME ||
              newType == NS_FORM_INPUT_DATE) && 
             !Preferences::GetBool("dom.experimental_forms", false)) {
+          newType = kInputDefaultType->value;
+          aResult.SetTo(newType, &aValue);
+        }
+        if (newType == NS_FORM_INPUT_FILE &&
+            Preferences::GetBool("dom.disable_input_file", false)) {
           newType = kInputDefaultType->value;
           aResult.SetTo(newType, &aValue);
         }

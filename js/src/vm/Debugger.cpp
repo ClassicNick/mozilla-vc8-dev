@@ -128,7 +128,7 @@ ValueToIdentifier(JSContext *cx, const Value &v, MutableHandleId id)
  */
 class Debugger::FrameRange
 {
-    TaggedFramePtr frame;
+    AbstractFramePtr frame;
 
     /* The debuggers in |fp|'s compartment, or NULL if there are none. */
     GlobalObject::DebuggerVector *debuggers;
@@ -157,7 +157,7 @@ class Debugger::FrameRange
      * Similarly, if stack frames are added to or removed from frontDebugger(),
      * then the range's front is invalid until popFront is called.
      */
-    FrameRange(TaggedFramePtr frame, GlobalObject *global = NULL)
+    FrameRange(AbstractFramePtr frame, GlobalObject *global = NULL)
       : frame(frame)
     {
         nextDebugger = 0;
@@ -417,7 +417,7 @@ Debugger::fromChildJSObject(JSObject *obj)
 bool
 Debugger::getScriptFrame(JSContext *cx, const ScriptFrameIter &iter, Value *vp)
 {
-    FrameMap::AddPtr p = frames.lookupForAdd(iter.taggedFramePtr());
+    FrameMap::AddPtr p = frames.lookupForAdd(iter.abstractFramePtr());
     if (!p) {
         /* Create and populate the Debugger.Frame object. */
         JSObject *proto = &object->getReservedSlot(JSSLOT_DEBUG_FRAME_PROTO).toObject();
@@ -431,7 +431,7 @@ Debugger::getScriptFrame(JSContext *cx, const ScriptFrameIter &iter, Value *vp)
         frameobj->setPrivate(data);
         frameobj->setReservedSlot(JSSLOT_DEBUGFRAME_OWNER, ObjectValue(*object));
 
-        if (!frames.add(p, iter.taggedFramePtr(), frameobj)) {
+        if (!frames.add(p, iter.abstractFramePtr(), frameobj)) {
             js_ReportOutOfMemory(cx);
             return false;
         }
@@ -491,7 +491,7 @@ Debugger::slowPathOnEnterFrame(JSContext *cx, Value *vp)
     if (GlobalObject::DebuggerVector *debuggers = global->getDebuggers()) {
         for (Debugger **p = debuggers->begin(); p != debuggers->end(); p++) {
             Debugger *dbg = *p;
-            JS_ASSERT(dbg->observesFrame(iter.taggedFramePtr()));
+            JS_ASSERT(dbg->observesFrame(iter.abstractFramePtr()));
             if (dbg->observesEnterFrame() && !triggered.append(ObjectValue(*dbg->toJSObject())))
                 return JSTRAP_ERROR;
         }
@@ -533,7 +533,7 @@ Debugger::slowPathOnLeaveFrame(JSContext *cx, bool frameOk)
 
     /* Build a list of the recipients. */
     AutoObjectVector frames(cx);
-    for (FrameRange r(iter.taggedFramePtr(), global); !r.empty(); r.popFront()) {
+    for (FrameRange r(iter.abstractFramePtr(), global); !r.empty(); r.popFront()) {
         if (!frames.append(r.frontFrame())) {
             cx->clearPendingException();
             return false;
@@ -585,7 +585,7 @@ Debugger::slowPathOnLeaveFrame(JSContext *cx, bool frameOk)
      * debugger's onPop handler could have caused another debugger to create its
      * own Debugger.Frame instance.
      */
-    for (FrameRange r(iter.taggedFramePtr(), global); !r.empty(); r.popFront()) {
+    for (FrameRange r(iter.abstractFramePtr(), global); !r.empty(); r.popFront()) {
         RootedObject frameobj(cx, r.frontFrame());
         Debugger *dbg = r.frontDebugger();
         JS_ASSERT(dbg == Debugger::fromChildJSObject(frameobj));
@@ -600,7 +600,7 @@ Debugger::slowPathOnLeaveFrame(JSContext *cx, bool frameOk)
             /* Don't exit the loop; we must mark all frames as dead. */
         }
 
-        dbg->frames.remove(iter.taggedFramePtr());
+        dbg->frames.remove(iter.abstractFramePtr());
     }
 
     /*
@@ -1195,7 +1195,7 @@ Debugger::onSingleStep(JSContext *cx, Value *vp)
      * onStep handlers.
      */
     AutoObjectVector frames(cx);
-    for (FrameRange r(iter.taggedFramePtr()); !r.empty(); r.popFront()) {
+    for (FrameRange r(iter.abstractFramePtr()); !r.empty(); r.popFront()) {
         JSObject *frame = r.frontFrame();
         if (!frame->getReservedSlot(JSSLOT_DEBUGFRAME_ONSTEP_HANDLER).isUndefined() &&
             !frames.append(frame))
@@ -1223,7 +1223,7 @@ Debugger::onSingleStep(JSContext *cx, Value *vp)
             for (Debugger **p = debuggers->begin(); p != debuggers->end(); p++) {
                 Debugger *dbg = *p;
                 for (FrameMap::Range r = dbg->frames.all(); !r.empty(); r.popFront()) {
-                    TaggedFramePtr frame = r.front().key;
+                    AbstractFramePtr frame = r.front().key;
                     JSObject *frameobj = r.front().value;
                     if (frame.script() == trappingScript &&
                         !frameobj->getReservedSlot(JSSLOT_DEBUGFRAME_ONSTEP_HANDLER).isUndefined())
@@ -1991,9 +1991,9 @@ Debugger::getNewestFrame(JSContext *cx, unsigned argc, Value *vp)
          */
         if (i.isIon())
             continue;
-        if (dbg->observesFrame(i.taggedFramePtr())) {
+        if (dbg->observesFrame(i.abstractFramePtr())) {
             ScriptFrameIter iter(i.seg()->cx(), StackIter::GO_THROUGH_SAVED);
-            while (iter.isIon() || iter.taggedFramePtr() != i.taggedFramePtr())
+            while (iter.isIon() || iter.abstractFramePtr() != i.abstractFramePtr())
                 ++iter;
             return dbg->getScriptFrame(cx, iter, vp);
         }
@@ -2182,7 +2182,7 @@ Debugger::removeDebuggeeGlobal(FreeOp *fop, GlobalObject *global,
      * which slowPathOnLeaveFrame would have to examine.
      */
     for (FrameMap::Enum e(frames); !e.empty(); e.popFront()) {
-        TaggedFramePtr frame = e.front().key;
+        AbstractFramePtr frame = e.front().key;
         if (&frame.script()->global() == global) {
             DebuggerFrame_freeStackIterData(fop, e.front().value);
             e.removeFront();
@@ -3360,7 +3360,7 @@ DebuggerFrame_getEnvironment(JSContext *cx, unsigned argc, Value *vp)
     Rooted<Env*> env(cx);
     {
         AutoCompartment ac(cx, iter.scopeChain());
-        env = GetDebugScopeForFrame(cx, iter.taggedFramePtr());
+        env = GetDebugScopeForFrame(cx, iter.abstractFramePtr());
         if (!env)
             return false;
     }
@@ -3421,7 +3421,7 @@ DebuggerFrame_getOlder(JSContext *cx, unsigned argc, Value *vp)
     for (++iter; !iter.done(); ++iter) {
         if (iter.isIon())
             continue;
-        if (dbg->observesFrame(iter.taggedFramePtr()))
+        if (dbg->observesFrame(iter.abstractFramePtr()))
             return dbg->getScriptFrame(cx, iter, vp);
     }
     args.rval().setNull();
@@ -3683,18 +3683,18 @@ DebuggerFrame_setOnPop(JSContext *cx, unsigned argc, Value *vp)
  * source as appearing starting at |lineno| in |filename|. Store the return
  * value in |*rval|. Use |thisv| as the 'this' value.
  *
- * If |fp| is non-NULL, evaluate as for a direct eval in that frame; |env|
- * must be either |fp|'s DebugScopeObject, or some extension of that
- * environment; either way, |fp|'s scope is where newly declared variables
- * go. In this case, |fp| must have a computed 'this' value, equal to |thisv|.
+ * If |frame| is non-NULL, evaluate as for a direct eval in that frame; |env|
+ * must be either |frame|'s DebugScopeObject, or some extension of that
+ * environment; either way, |frame|'s scope is where newly declared variables
+ * go. In this case, |frame| must have a computed 'this' value, equal to |thisv|.
  */
 JSBool
-js::EvaluateInEnv(JSContext *cx, Handle<Env*> env, HandleValue thisv, StackFrame *fp,
+js::EvaluateInEnv(JSContext *cx, Handle<Env*> env, HandleValue thisv, AbstractFramePtr frame,
                   StableCharPtr chars, unsigned length, const char *filename, unsigned lineno,
                   Value *rval)
 {
-    assertSameCompartment(cx, env, fp);
-    JS_ASSERT_IF(fp, thisv.get() == fp->thisValue());
+    assertSameCompartment(cx, env, frame);
+    JS_ASSERT_IF(frame, thisv.get() == frame.thisValue());
 
     JS_ASSERT(!IsPoisonedPtr(chars.get()));
 
@@ -3708,15 +3708,15 @@ js::EvaluateInEnv(JSContext *cx, Handle<Env*> env, HandleValue thisv, StackFrame
            .setCompileAndGo(true)
            .setNoScriptRval(false)
            .setFileAndLine(filename, lineno);
-    RootedScript script(cx, frontend::CompileScript(cx, env, fp, options, chars, length,
+    RootedScript script(cx, frontend::CompileScript(cx, env, frame, options, chars, length,
                                                     /* source = */ NULL,
-                                                    /* staticLevel = */ fp ? 1 : 0));
+                                                    /* staticLevel = */ frame ? 1 : 0));
     if (!script)
         return false;
 
     script->isActiveEval = true;
-    ExecuteType type = !fp && env->isGlobal() ? EXECUTE_DEBUG_GLOBAL : EXECUTE_DEBUG;
-    return ExecuteKernel(cx, script, *env, thisv, type, fp, rval);
+    ExecuteType type = !frame && env->isGlobal() ? EXECUTE_DEBUG_GLOBAL : EXECUTE_DEBUG;
+    return ExecuteKernel(cx, script, *env, thisv, type, frame, rval);
 }
 
 static JSBool
@@ -3777,7 +3777,7 @@ DebuggerGenericEval(JSContext *cx, const char *fullMethodName,
         if (!iter->computeThis())
             return false;
         thisv = iter->thisv();
-        env = GetDebugScopeForFrame(cx, iter->taggedFramePtr());
+        env = GetDebugScopeForFrame(cx, iter->abstractFramePtr());
         if (!env)
             return false;
     } else {
@@ -3806,8 +3806,8 @@ DebuggerGenericEval(JSContext *cx, const char *fullMethodName,
     /* Run the code and produce the completion value. */
     Value rval;
     JS::Anchor<JSString *> anchor(stable);
-    StackFrame *fp = iter ? iter->interpFrame() : NULL;
-    bool ok = EvaluateInEnv(cx, env, thisv, fp, stable->chars(), stable->length(),
+    AbstractFramePtr frame = iter ? iter->abstractFramePtr() : NullFramePtr();
+    bool ok = EvaluateInEnv(cx, env, thisv, frame, stable->chars(), stable->length(),
                             "debugger eval code", 1, &rval);
     return dbg->receiveCompletionValue(ac, ok, rval, vp);
 }
