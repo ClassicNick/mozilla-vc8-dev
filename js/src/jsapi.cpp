@@ -743,6 +743,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
 #ifdef JS_METHODJIT
     jaegerRuntime_(NULL),
 #endif
+    ionRuntime_(NULL),
     selfHostedGlobal_(NULL),
     nativeStackBase(0),
     nativeStackQuota(0),
@@ -804,7 +805,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcSliceBudget(SliceBudget::Unlimited),
     gcIncrementalEnabled(true),
     gcExactScanningEnabled(true),
-    gcInTransplant(false),
+    gcManipulatingDeadCompartments(false),
     gcObjectsMarkedInDeadCompartments(0),
     gcPoke(false),
     heapState(Idle),
@@ -1014,6 +1015,9 @@ JSRuntime::~JSRuntime()
     js_delete(mathCache_);
 #ifdef JS_METHODJIT
     js_delete(jaegerRuntime_);
+#endif
+#ifdef JS_ION
+    js_delete(ionRuntime_);
 #endif
     js_delete(execAlloc_);  /* Delete after jaegerRuntime_. */
 
@@ -1558,7 +1562,7 @@ JS_TransplantObject(JSContext *cx, JSObject *origobjArg, JSObject *targetArg)
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
     JS_ASSERT(!IsCrossCompartmentWrapper(target));
 
-    AutoTransplantGC agc(cx);
+    AutoMaybeTouchDeadCompartments agc(cx);
 
     JSCompartment *destination = target->compartment();
     WrapperMap &map = destination->crossCompartmentWrappers;
@@ -1632,7 +1636,7 @@ js_TransplantObjectWithWrapper(JSContext *cx,
     RootedObject targetobj(cx, targetobjArg);
     RootedObject targetwrapper(cx, targetwrapperArg);
 
-    AutoTransplantGC agc(cx);
+    AutoMaybeTouchDeadCompartments agc(cx);
 
     AssertHeapIsIdle(cx);
     JS_ASSERT(!IsCrossCompartmentWrapper(origobj));
