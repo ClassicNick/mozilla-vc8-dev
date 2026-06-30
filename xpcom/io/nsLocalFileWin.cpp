@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Util.h"
 
 #include "nsCOMPtr.h"
@@ -3335,7 +3336,7 @@ nsLocalFile::GetHashCode(uint32_t *aResult)
 void
 nsLocalFile::GlobalInit()
 {
-    nsresult rv = NS_CreateShortcutResolver();
+    DebugOnly<nsresult> rv = NS_CreateShortcutResolver();
     NS_ASSERTION(NS_SUCCEEDED(rv), "Shortcut resolver could not be created");
 
     // shell32.dll should be loaded already, so we are not actually 

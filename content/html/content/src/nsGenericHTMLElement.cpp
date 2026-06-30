@@ -16,7 +16,6 @@
 #include "mozilla/css/StyleRule.h"
 #include "nsIDocument.h"
 #include "nsIDocumentEncoder.h"
-#include "nsIDOMHTMLBodyElement.h"
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMAttr.h"
 #include "nsIDOMDocumentFragment.h"
@@ -100,6 +99,7 @@
 #include "nsHTMLDocument.h"
 #include "nsDOMTouchEvent.h"
 #include "nsGlobalWindow.h"
+#include "mozilla/dom/HTMLBodyElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -233,9 +233,8 @@ class nsGenericHTMLElementTearoff : public nsIDOMElementCSSInlineStyle
 
   NS_IMETHOD GetStyle(nsIDOMCSSStyleDeclaration** aStyle)
   {
-    mozilla::ErrorResult rv;
-    NS_IF_ADDREF(*aStyle = mElement->GetStyle(rv));
-    return rv.ErrorCode();
+    NS_ADDREF(*aStyle = mElement->Style());
+    return NS_OK;
   }
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsGenericHTMLElementTearoff,
@@ -1870,16 +1869,6 @@ nsGenericHTMLElement::SetAttrHelper(nsIAtom* aAttr, const nsAString& aValue)
   return SetAttr(kNameSpaceID_None, aAttr, aValue, true);
 }
 
-nsresult
-nsGenericHTMLElement::SetBoolAttr(nsIAtom* aAttr, bool aValue)
-{
-  if (aValue) {
-    return SetAttr(kNameSpaceID_None, aAttr, EmptyString(), true);
-  }
-
-  return UnsetAttr(kNameSpaceID_None, aAttr, true);
-}
-
 int32_t
 nsGenericHTMLElement::GetIntAttr(nsIAtom* aAttr, int32_t aDefault) const
 {
@@ -3035,8 +3024,7 @@ nsGenericHTMLElement::IsCurrentBodyElement()
 {
   // TODO Bug 698498: Should this handle the case where GetBody returns a
   //                  frameset?
-  nsCOMPtr<nsIDOMHTMLBodyElement> bodyElement = do_QueryInterface(this);
-  if (!bodyElement) {
+  if (!IsHTML(nsGkAtoms::body)) {
     return false;
   }
 
@@ -3048,7 +3036,7 @@ nsGenericHTMLElement::IsCurrentBodyElement()
 
   nsCOMPtr<nsIDOMHTMLElement> htmlElement;
   htmlDocument->GetBody(getter_AddRefs(htmlElement));
-  return htmlElement == bodyElement;
+  return htmlElement == static_cast<HTMLBodyElement*>(this);
 }
 
 // static

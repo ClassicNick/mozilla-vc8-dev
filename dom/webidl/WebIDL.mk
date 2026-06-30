@@ -21,6 +21,7 @@ webidl_files = \
   Blob.webidl \
   CanvasRenderingContext2D.webidl \
   CaretPosition.webidl \
+  CDATASection.webidl \
   CharacterData.webidl \
   ClientRectList.webidl \
   Comment.webidl \
@@ -93,9 +94,11 @@ webidl_files = \
   Performance.webidl \
   PerformanceNavigation.webidl \
   PerformanceTiming.webidl \
+  ProcessingInstruction.webidl \
   Rect.webidl \
   RGBColor.webidl \
   Screen.webidl \
+  SVGAElement.webidl \
   SVGAltGlyphElement.webidl \
   SVGAngle.webidl \
   SVGAnimatedAngle.webidl \
@@ -114,11 +117,14 @@ webidl_files = \
   SVGDescElement.webidl \
   SVGElement.webidl \
   SVGEllipseElement.webidl \
+  SVGFitToViewBox.webidl \
   SVGForeignObjectElement.webidl \
   SVGGElement.webidl \
+  SVGGradientElement.webidl \
   SVGGraphicsElement.webidl \
   SVGImageElement.webidl \
   SVGLengthList.webidl \
+  SVGLinearGradientElement.webidl \
   SVGLineElement.webidl \
   SVGLocatableElement.webidl \
   SVGMatrix.webidl \
@@ -132,11 +138,13 @@ webidl_files = \
   SVGPolygonElement.webidl \
   SVGPolylineElement.webidl \
   SVGPreserveAspectRatio.webidl \
+  SVGRadialGradientElement.webidl \
   SVGRectElement.webidl \
   SVGScriptElement.webidl \
   SVGSetElement.webidl \
   SVGStopElement.webidl \
   SVGStyleElement.webidl \
+  SVGSVGElement.webidl \
   SVGSwitchElement.webidl \
   SVGTests.webidl \
   SVGTextContentElement.webidl \
@@ -148,7 +156,10 @@ webidl_files = \
   SVGTransformableElement.webidl \
   SVGTransformList.webidl \
   SVGTSpanElement.webidl \
+  SVGUnitTypes.webidl \
   SVGURIReference.webidl \
+  SVGViewElement.webidl \
+  SVGZoomAndPan.webidl \
   Text.webidl \
   TextDecoder.webidl \
   TextEncoder.webidl \

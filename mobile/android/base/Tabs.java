@@ -9,7 +9,6 @@ import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.util.GeckoEventListener;
 import org.mozilla.gecko.sync.setup.SyncAccounts;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import android.accounts.Account;
@@ -18,7 +17,6 @@ import android.accounts.OnAccountsUpdateListener;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.net.Uri;
-import android.os.SystemClock;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -133,7 +131,6 @@ public class Tabs implements GeckoEventListener {
         mSelectedTab = tab;
         mActivity.runOnUiThread(new Runnable() { 
             public void run() {
-                mActivity.hideFormAssistPopup();
                 if (isSelectedTab(tab)) {
                     notifyListeners(tab, TabEvents.SELECTED);
 
@@ -159,6 +156,14 @@ public class Tabs implements GeckoEventListener {
             return null;
     }
 
+    /**
+     * Gets the selected tab.
+     *
+     * The selected tab can be null if we're doing a session restore after a
+     * crash and Gecko isn't ready yet.
+     *
+     * @return the selected tab, or null if no tabs exist
+     */
     public Tab getSelectedTab() {
         return mSelectedTab;
     }

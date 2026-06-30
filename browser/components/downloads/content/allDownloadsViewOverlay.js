@@ -22,6 +22,8 @@ Cu.import("resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
                                   "resource://gre/modules/PrivateBrowsingUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "RecentWindow",
+                                  "resource:///modules/RecentWindow.jsm");
 
 const nsIDM = Ci.nsIDownloadManager;
 
@@ -78,7 +80,7 @@ function DownloadElementShell(aDataItem, aPlacesNode, aAnnotations) {
   this._element.classList.add("download");
   this._element.classList.add("download-state");
 
- if (aAnnotations)
+  if (aAnnotations)
     this._annotations = aAnnotations;
   if (aDataItem)
     this.dataItem = aDataItem;
@@ -90,25 +92,50 @@ DownloadElementShell.prototype = {
   // The richlistitem for the download
   get element() this._element,
 
+  /**
+   * Manages the "active" state of the shell.  By default all the shells
+   * without a dataItem are inactive, thus their UI is not updated.  They must
+   * be activated when entering the visible area.  Session downloads are
+   * always active since they always have a dataItem.
+   *
+   * @return whether the element was updated.
+   */
+  ensureActive: function DES_ensureActive() {
+    if (this._active)
+      return false;
+    this._active = true;
+    this._element.setAttribute("active", true);
+    this._updateStatusUI();
+    this._fetchTargetFileInfo();
+    return true;
+  },
+  get active() !!this._active,
+
   // The data item for the download
   _dataItem: null,
   get dataItem() this._dataItem,
 
   set dataItem(aValue) {
-    if ((this._dataItem = aValue)) {
-      this._wasDone = this._dataItem.done;
-      this._wasInProgress = this._dataItem.inProgress;
+    this._dataItem = aValue;
+    let shouldUpdate = false;
+    if (this._dataItem) {
       this._targetFileInfoFetched = false;
-      this._fetchTargetFileInfo();
+      // The dataItem can be replaced, in such a case the shell is already
+      // active but must be updated regardless.
+      shouldUpdate = !this.ensureActive();
     }
     else if (this._placesNode) {
-      this._wasInProgress = false;
-      this._wasDone = this.getDownloadState(true) == nsIDM.DOWNLOAD_FINISHED;
       this._targetFileInfoFetched = false;
-      this._fetchTargetFileInfo();
+      shouldUpdate = this.active;
+    }
+    else {
+      throw new Error("Should always have either a dataItem or a placesNode");
     }
 
-    this._updateStatusUI();
+    if (shouldUpdate) {
+      this._fetchTargetFileInfo();
+      this._updateStatusUI();
+    }
     return aValue;
   },
 
@@ -125,12 +152,14 @@ DownloadElementShell.prototype = {
 
       // We don't need to update the UI if we had a data item, because
       // the places information isn't used in this case.
-      if (!this._dataItem && this._placesNode) {
-        this._wasInProgress = false;
-        this._wasDone = this.getDownloadState(true) == nsIDM.DOWNLOAD_FINISHED;
+      if (!this._dataItem) {
+        if (!this._placesNode)
+          throw new Error("Should always have either a dataItem or a placesNode");
         this._targetFileInfoFetched = false;
-        this._updateStatusUI();
-        this._fetchTargetFileInfo();
+        if (this.active) {
+          this._updateStatusUI();
+          this._fetchTargetFileInfo();
+        }
       }
     }
     return aNode;
@@ -154,8 +183,13 @@ DownloadElementShell.prototype = {
   get _icon() {
     if (this._targetFileURI)
       return "moz-icon://" + this._targetFileURI + "?size=32";
-    if (this._placesNode)
-      return this.placesNode.icon;
+    if (this._placesNode) {
+      // Try to extract an extension from the uri.
+      let ext = this._downloadURIObj.QueryInterface(Ci.nsIURL).fileExtension;
+      if (ext)
+        return "moz-icon://." + ext + "?size=32";
+      return this._placesNode.icon || "moz-icon://.unknown?size=32";
+    }
     if (this._dataItem)
       throw new Error("Session-download items should always have a target file uri");
     throw new Error("Unexpected download element state");
@@ -223,6 +257,8 @@ DownloadElementShell.prototype = {
   _fetchTargetFileInfo: function DES__fetchTargetFileInfo() {
     if (this._targetFileInfoFetched)
       throw new Error("_fetchTargetFileInfo should not be called if the information was already fetched");
+    if (!this.active)
+      throw new Error("Trying to _fetchTargetFileInfo on an inactive download shell");
 
     let path = this._targetFilePath;
 
@@ -320,48 +356,65 @@ DownloadElementShell.prototype = {
         return s.stateScanning;
       }
 
-      let [displayHost, fullHost] =
-        DownloadUtils.getURIHost(this._dataItem.referrer ||
-                                 this._dataItem.uri);
-
-      let end = new Date(this.dataItem.endTime);
-      let [displayDate, fullDate] = DownloadUtils.getReadableDates(end);
-      return s.statusSeparator(fullHost, fullDate);
+      throw new Error("_getStatusText called with a bogus download state");
     }
 
+    // This is a not-in-progress or history download.
+    let stateLabel = "";
     switch (this.getDownloadState()) {
       case nsIDM.DOWNLOAD_FAILED:
-        return s.stateFailed;
+        stateLabel = s.stateFailed;
+        break;
       case nsIDM.DOWNLOAD_CANCELED:
-        return s.stateCanceled;
+        stateLabel = s.stateCanceled;
+        break;
       case nsIDM.DOWNLOAD_BLOCKED_PARENTAL:
-        return s.stateBlockedParentalControls;
+        stateLabel = s.stateBlockedParentalControls;
+        break;
       case nsIDM.DOWNLOAD_BLOCKED_POLICY:
-        return s.stateBlockedPolicy;
+        stateLabel = s.stateBlockedPolicy;
+        break;
       case nsIDM.DOWNLOAD_DIRTY:
-        return s.stateDirty;
+        stateLabel = s.stateDirty;
+        break;
       case nsIDM.DOWNLOAD_FINISHED:{
         // For completed downloads, show the file size (e.g. "1.5 MB")
         if (this._targetFileInfoFetched && this._targetFileExists) {
           let [size, unit] = DownloadUtils.convertByteUnits(this._targetFileSize);
-          return s.sizeWithUnits(size, unit);
+          stateLabel = s.sizeWithUnits(size, unit);
+          break;
         }
-        break;
+        // Fallback to default unknown state.
       }
+      default:
+        stateLabel = s.sizeUnknown;
+        break;
     }
 
-    return s.sizeUnknown;
+    // TODO (bug 829201): history downloads should get the referrer from Places.
+    let referrer = this._dataItem && this._dataItem.referrer ||
+                   this.downloadURI;
+    let [displayHost, fullHost] = DownloadUtils.getURIHost(referrer);
+
+    // TODO (bug 826991): history downloads should get endTime from annotations.
+    let date = this._dataItem && this._dataItem.endTime ||
+               (this._placesNode.time / 1000);
+    let [displayDate, fullDate] = DownloadUtils.getReadableDates(new Date(date));
+
+    // We use the same XUL label to display the state, the host name, and the
+    // end time.
+    let firstPart = s.statusSeparator(stateLabel, displayHost);
+    return s.statusSeparator(firstPart, displayDate);
   },
 
   // The progressmeter element for the download
   get _progressElement() {
-    let progressElement = document.getAnonymousElementByAttribute(
-      this._element, "anonid", "progressmeter");
-    if (progressElement) {
-      delete this._progressElement;
-      return this._progressElement = progressElement;
+    if (!("__progressElement" in this)) {
+      this.__progressElement =
+        document.getAnonymousElementByAttribute(this._element, "anonid",
+                                                "progressmeter");
     }
-    return null;
+    return this.__progressElement;
   },
 
   // Updates the download state attribute (and by that hide/unhide the
@@ -406,6 +459,8 @@ DownloadElementShell.prototype = {
   },
 
   _updateStatusUI: function DES__updateStatusUI() {
+    if (!this.active)
+      throw new Error("Trying to _updateStatusUI on an inactive download shell");
     this._element.setAttribute("displayName", this._displayName);
     this._element.setAttribute("image", this._icon);
     this._updateDownloadStatusUI();
@@ -440,24 +495,16 @@ DownloadElementShell.prototype = {
   },
 
   /* DownloadView */
-  onStateChange: function DES_onStateChange() {
-    if (!this._wasDone && this._dataItem.done) {
+  onStateChange: function DES_onStateChange(aOldState) {
+    if (aOldState != nsIDM.DOWNLOAD_FINISHED &&
+        aOldState != this.dataItem.state) {
       // See comment in DVI_onStateChange in downloads.js (the panel-view)
       this._element.setAttribute("image", this._icon + "&state=normal");
 
       this._targetFileInfoFetched = false;
-      this._fetchTargetFileInfo();
+      if (this.active)
+        this._fetchTargetFileInfo();
     }
-
-    this._wasDone = this._dataItem.done;
-
-    // Update the end time using the current time if required.
-    if (this._wasInProgress && !this._dataItem.inProgress) {
-      this._endTime = Date.now();
-    }
-
-    this._wasDone = this._dataItem.done;
-    this._wasInProgress = this._dataItem.inProgress;
 
     this._updateDownloadStatusUI();
     if (this._element.selected)
@@ -471,6 +518,9 @@ DownloadElementShell.prototype = {
 
   /* nsIController */
   isCommandEnabled: function DES_isCommandEnabled(aCommand) {
+    // The only valid command for inactive elements is cmd_delete.
+    if (!this.active && aCommand != "cmd_delete")
+      return false;
     switch (aCommand) {
       case "downloadsCmd_open": {
         // We cannot open a session dowload file unless it's done ("openable").
@@ -487,7 +537,7 @@ DownloadElementShell.prototype = {
         return this._targetFileExists;
       }
       case "downloadsCmd_show": {
-        // TODO: Bug 827010 - Handle part-file asynchronously. 
+        // TODO: Bug 827010 - Handle part-file asynchronously.
         if (this._dataItem &&
             this._dataItem.partFile && this._dataItem.partFile.exists())
           return true;
@@ -502,8 +552,8 @@ DownloadElementShell.prototype = {
       case "downloadsCmd_pauseResume":
         return this._dataItem && this._dataItem.inProgress && this._dataItem.resumable;
       case "downloadsCmd_retry":
-        // Disable the retry command for past downloads until it's fully implemented.
-        return this._dataItem && this._dataItem.canRetry;
+        // An history download can always be retried.
+        return !this._dataItem || this._dataItem.canRetry;
       case "downloadsCmd_openReferrer":
         return this._dataItem && !!this._dataItem.referrer;
       case "cmd_delete":
@@ -518,8 +568,16 @@ DownloadElementShell.prototype = {
   },
 
   _retryAsHistoryDownload: function DES__retryAsHistoryDownload() {
-    // TODO: save in the right location (the current saveURL api does not allow this)
-    saveURL(this.downloadURI, this._displayName, null, true, true, undefined, document);
+    // In future we may try to download into the same original target uri, when
+    // we have it.  Though that requires verifying the path is still valid and
+    // may surprise the user if he wants to be requested every time.
+
+    // For private browsing, try to get document out of the most recent browser
+    // window, or provide our own if there's no browser window.
+    let browserWin = RecentWindow.getMostRecentBrowserWindow();
+    let initiatingDoc = browserWin ? browserWin.document : document;
+    saveURL(this.downloadURI, this._displayName, null, true, true, undefined,
+            initiatingDoc);
   },
 
   /* nsIController */
@@ -574,7 +632,8 @@ DownloadElementShell.prototype = {
   // show up in the search results for the given term.  Both the display
   // name for the download and the url are searched.
   matchesSearchTerm: function DES_matchesSearchTerm(aTerm) {
-    // Stub implemention until we figure out something better
+    if (!aTerm)
+      return true;
     aTerm = aTerm.toLowerCase();
     return this._displayName.toLowerCase().indexOf(aTerm) != -1 ||
            this.downloadURI.toLowerCase().indexOf(aTerm) != -1;
@@ -623,7 +682,7 @@ DownloadElementShell.prototype = {
  * as they exist they "collapses" their history "counterpart" (So we don't show two
  * items for every download).
  */
-function DownloadsPlacesView(aRichListBox) {
+function DownloadsPlacesView(aRichListBox, aActive = true) {
   this._richlistbox = aRichListBox;
   this._richlistbox._placesView = this;
   this._richlistbox.controllers.appendController(this);
@@ -640,8 +699,11 @@ function DownloadsPlacesView(aRichListBox) {
 
   this._searchTerm = "";
 
+  this._active = aActive;
+
   // Register as a downloads view. The places data will be initialized by
   // the places setter.
+  this._initiallySelectedElement = null;
   let downloadsData = DownloadsCommon.getData(window.opener || window);
   downloadsData.addView(this);
 
@@ -651,10 +713,22 @@ function DownloadsPlacesView(aRichListBox) {
     downloadsData.removeView(this);
     this.result = null;
   }.bind(this), true);
+  // Resizing the window may change items visibility.
+  window.addEventListener("resize", function() {
+    this._ensureVisibleElementsAreActive();
+  }.bind(this), true);
 }
 
 DownloadsPlacesView.prototype = {
   get associatedElement() this._richlistbox,
+
+  get active() this._active,
+  set active(val) {
+    this._active = val;
+    if (this._active)
+      this._ensureVisibleElementsAreActive();
+    return this._active;
+  },
 
   _forEachDownloadElementShellForURI:
   function DPV__forEachDownloadElementShellForURI(aURI, aCallback) {
@@ -794,6 +868,10 @@ DownloadsPlacesView.prototype = {
         if (!this._lastSessionDownloadElement) {
           this._lastSessionDownloadElement = newOrUpdatedShell.element;
         }
+        // Some operations like retrying an history download move an element to
+        // the top of the richlistbox, along with other session downloads.
+        // More generally, if a new download is added, should be made visible.
+        this._richlistbox.ensureElementIsVisible(newOrUpdatedShell.element);
       }
       else if (aDataItem) {
         let before = this._lastSessionDownloadElement ?
@@ -811,6 +889,11 @@ DownloadsPlacesView.prototype = {
           !newOrUpdatedShell.element._shell.matchesSearchTerm(this.searchTerm);
       }
     }
+
+    // If aDocumentFragment is defined this is a batch change, so it's up to
+    // the caller to append the fragment and activate the visible shells.
+    if (!aDocumentFragment)
+      this._ensureVisibleElementsAreActive();
   },
 
   _removeElement: function DPV__removeElement(aElement) {
@@ -823,6 +906,7 @@ DownloadsPlacesView.prototype = {
       this._richlistbox.selectItem(aElement.nextSibling);
     }
     this._richlistbox.removeChild(aElement);
+    this._ensureVisibleElementsAreActive();
   },
 
   _removeHistoryDownloadFromView:
@@ -863,7 +947,6 @@ DownloadsPlacesView.prototype = {
       shells.delete(shell);
       if (shells.size == 0)
         this._downloadElementsShellsForURI.delete(aDataItem.uri);
-      return;
     }
     else {
       shell.dataItem = null;
@@ -877,6 +960,51 @@ DownloadsPlacesView.prototype = {
         this._richlistbox.insertBefore(shell.element, before);
       }
     }
+  },
+
+  _ensureVisibleElementsAreActive:
+  function DPV__ensureVisibleElementsAreActive() {
+    if (!this.active || this._ensureVisibleTimer || !this._richlistbox.firstChild)
+      return;
+
+    this._ensureVisibleTimer = setTimeout(function() {
+      delete this._ensureVisibleTimer;
+      if (!this._richlistbox.firstChild)
+        return;
+
+      let rlbRect = this._richlistbox.getBoundingClientRect();
+      let winUtils = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                           .getInterface(Ci.nsIDOMWindowUtils);
+      let nodes = winUtils.nodesFromRect(rlbRect.left, rlbRect.top,
+                                         0, rlbRect.width, rlbRect.height, 0,
+                                         true, false);
+      // nodesFromRect returns nodes in z-index order, and for the same z-index
+      // sorts them in inverted DOM order, thus starting from the one that would
+      // be on top.
+      let firstVisibleNode, lastVisibleNode;
+      for (let node of nodes) {
+        if (node.localName === "richlistitem" && node._shell) {
+          node._shell.ensureActive();
+          // The first visible node is the last match.
+          firstVisibleNode = node;
+          // While the last visible node is the first match.
+          if (!lastVisibleNode)
+            lastVisibleNode = node;
+        }
+      }
+
+      // Also activate the first invisible nodes in both boundaries (that is,
+      // above and below the visible area) to ensure proper keyboard navigation
+      // in both directions.
+      let nodeBelowVisibleArea = lastVisibleNode && lastVisibleNode.nextSibling;
+      if (nodeBelowVisibleArea && nodeBelowVisibleArea._shell)
+        nodeBelowVisibleArea._shell.ensureActive();
+
+      let nodeABoveVisibleArea =
+        firstVisibleNode && firstVisibleNode.previousSibling;
+      if (nodeABoveVisibleArea && nodeABoveVisibleArea._shell)
+        nodeABoveVisibleArea._shell.ensureActive();
+    }.bind(this), 10);
   },
 
   _place: "",
@@ -918,6 +1046,7 @@ DownloadsPlacesView.prototype = {
       this._result = val;
       this._resultNode = val.root;
       this._resultNode.containerOpen = true;
+      this._ensureInitialSelection();
     }
     else {
       delete this._resultNode;
@@ -974,7 +1103,20 @@ DownloadsPlacesView.prototype = {
       }
     }
 
-    this._richlistbox.appendChild(elementsToAppendFragment);
+    this._appendDownloadsFragment(elementsToAppendFragment);
+    this._ensureVisibleElementsAreActive();
+  },
+
+  _appendDownloadsFragment: function DPV__appendDownloadsFragment(aDOMFragment) {
+    // Workaround multiple reflows hang by removing the richlistbox
+    // and adding it back when we're done.
+    let parentNode = this._richlistbox.parentNode;
+    let nextSibling = this._richlistbox.nextSibling;
+    this._richlistbox.controllers.removeController(this);
+    parentNode.removeChild(this._richlistbox);
+    this._richlistbox.appendChild(aDOMFragment);
+    parentNode.insertBefore(this._richlistbox, nextSibling);
+    this._richlistbox.controllers.appendController(this);
   },
 
   nodeInserted: function DPV_nodeInserted(aParent, aPlacesNode) {
@@ -1022,20 +1164,49 @@ DownloadsPlacesView.prototype = {
       for (let element of this._richlistbox.childNodes) {
         element.hidden = !element._shell.matchesSearchTerm(aValue);
       }
+      this._ensureVisibleElementsAreActive();
     }
     return this._searchTerm = aValue;
   },
 
-  applyFilter: function() {
-    throw new Error("applyFilter is not implemented by the DownloadsView")
-  },
-
-  load: function(aQueries, aOptions) {
-    throw new Error("|load| is not implemented by the Downloads View");
+  /**
+   * When the view loads, we want to select the first item.
+   * However, because session downloads, for which the data is loaded
+   * asynchronously, always come first in the list, and because the list
+   * may (or may not) already contain history downloads at that point, it
+   * turns out that by the time we can select the first item, the user may
+   * have already started using the view.
+   * To make things even more complicated, in other cases, the places data
+   * may be loaded after the session downloads data.  Thus we cannot rely on
+   * the order in which the data comes in.
+   * We work around this by attempting to select the first element twice,
+   * once after the places data is loaded and once when the session downloads
+   * data is done loading.  However, if the selection has changed in-between,
+   * we assume the user has already started using the view and give up.
+   */
+  _ensureInitialSelection: function DPV__ensureInitialSelection() {
+    // Either they're both null, or the selection has not changed in between.
+    if (this._richlistbox.selectedItem == this._initiallySelectedElement) {
+      let firstDownloadElement = this._richlistbox.firstChild;
+      if (firstDownloadElement != this._initiallySelectedElement) {
+        // We may be called before _ensureVisibleElementsAreActive,
+        // or before the download binding is attached. Therefore, ensure the
+        // first item is activated, and pass the item to the richlistbox
+        // setters only at a point we know for sure the binding is attached.
+        firstDownloadElement._shell.ensureActive();
+        Services.tm.mainThread.dispatch(function() {
+          this._richlistbox.selectedItem = firstDownloadElement;
+          this._richlistbox.currentItem = firstDownloadElement;
+          this._initiallySelectedElement = firstDownloadElement;
+        }.bind(this), Ci.nsIThread.DISPATCH_NORMAL);
+      }
+    }
   },
 
   onDataLoadStarting: function() { },
-  onDataLoadCompleted: function() { },
+  onDataLoadCompleted: function DPV_onDataLoadCompleted() {
+    this._ensureInitialSelection();
+  },
 
   onDataItemAdded: function DPV_onDataItemAdded(aDataItem, aNewest) {
     this._addDownloadData(aDataItem, null, aNewest);
@@ -1198,8 +1369,18 @@ DownloadsPlacesView.prototype = {
     let element = selectedElements[0];
     if (element._shell)
       element._shell.doDefaultCommand();
+  },
+
+  onScroll: function DPV_onScroll() {
+    this._ensureVisibleElementsAreActive();
   }
 };
+
+for (let methodName of ["load", "applyFilter", "selectNode", "selectItems"]) {
+  DownloadsPlacesView.prototype[methodName] = function() {
+    throw new Error("|" + methodName + "| is not implemented by the downloads view.");
+  }
+}
 
 function goUpdateDownloadCommands() {
   for (let command of DOWNLOAD_VIEW_SUPPORTED_COMMANDS) {

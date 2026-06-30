@@ -261,7 +261,7 @@ JS_SetWatchPoint(JSContext *cx, JSObject *obj_, jsid id,
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_WATCH_PROP);
         return false;
     } else {
-        if (!ValueToId(cx, IdToValue(id), propid.address()))
+        if (!ValueToId(cx, IdToValue(id), &propid))
             return false;
     }
 
@@ -277,6 +277,13 @@ JS_SetWatchPoint(JSContext *cx, JSObject *obj_, jsid id,
                              obj->getClass()->name);
         return false;
     }
+
+    /*
+     * Use sparse indexes for watched objects, as dense elements can be written
+     * to without checking the watchpoint map.
+     */
+    if (!JSObject::sparsifyDenseElements(cx, obj))
+        return false;
 
     types::MarkTypePropertyConfigured(cx, obj, propid);
 
@@ -452,10 +459,11 @@ JS_GetFunctionScript(JSContext *cx, JSFunction *fun)
 {
     if (fun->isNative())
         return NULL;
-    RawScript script;
+    UnrootedScript script;
     if (fun->isInterpretedLazy()) {
-       AutoCompartment funCompartment(cx, fun);
-       script = fun->getOrCreateScript(cx);
+        RootedFunction rootedFun(cx, fun);
+        AutoCompartment funCompartment(cx, rootedFun);
+        script = JSFunction::getOrCreateScript(cx, rootedFun);
         if (!script)
             MOZ_CRASH();
     } else {

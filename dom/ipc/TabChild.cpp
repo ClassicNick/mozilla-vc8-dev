@@ -30,10 +30,14 @@
 #include "nsContentUtils.h"
 #include "nsEmbedCID.h"
 #include "nsEventListenerManager.h"
+#ifdef MOZ_CRASHREPORTER
+#include "nsExceptionHandler.h"
+#endif
 #include "mozilla/dom/Element.h"
 #include "nsIAppsService.h"
 #include "nsIBaseWindow.h"
 #include "nsIComponentManager.h"
+#include "nsIDocumentInlines.h"
 #include "nsIDOMClassInfo.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMEvent.h"
@@ -424,7 +428,7 @@ TabChild::HandlePossibleViewportChange()
   float minScale = 1.0f;
 
   nsCOMPtr<nsIDOMElement> htmlDOMElement = do_QueryInterface(document->GetHtmlElement());
-  nsCOMPtr<nsIDOMElement> bodyDOMElement = do_QueryInterface(document->GetBodyElement());
+  HTMLBodyElement* bodyDOMElement = document->GetBodyElement();
 
   int32_t htmlWidth = 0, htmlHeight = 0;
   if (htmlDOMElement) {
@@ -433,8 +437,8 @@ TabChild::HandlePossibleViewportChange()
   }
   int32_t bodyWidth = 0, bodyHeight = 0;
   if (bodyDOMElement) {
-    bodyDOMElement->GetScrollWidth(&bodyWidth);
-    bodyDOMElement->GetScrollHeight(&bodyHeight);
+    bodyWidth = bodyDOMElement->ScrollWidth();
+    bodyHeight = bodyDOMElement->ScrollHeight();
   }
 
   float pageWidth, pageHeight;
@@ -1088,6 +1092,10 @@ TabChild::RecvLoadURL(const nsCString& uri)
     if (NS_FAILED(rv)) {
         NS_WARNING("mWebNav->LoadURI failed. Eating exception, what else can I do?");
     }
+
+#ifdef MOZ_CRASHREPORTER
+    CrashReporter::AnnotateCrashReport(NS_LITERAL_CSTRING("URL"), uri);
+#endif
 
     return true;
 }

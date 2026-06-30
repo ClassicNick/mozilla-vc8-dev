@@ -1459,7 +1459,7 @@ ValueToScript(JSContext *cx, jsval v, JSFunction **funp = NULL)
         return UnrootedScript(NULL);
 
     RootedScript script(cx);
-    fun->maybeGetOrCreateScript(cx, &script);
+    JSFunction::maybeGetOrCreateScript(cx, fun, &script);
     if (!script)
         JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_SCRIPTS_ONLY);
 
@@ -1916,9 +1916,9 @@ DisassembleScript(JSContext *cx, HandleScript script, JSFunction *fun, bool line
             RawObject obj = objects->vector[i];
             if (obj->isFunction()) {
                 Sprint(sp, "\n");
-                RawFunction fun = obj->toFunction();
+                RootedFunction fun(cx, obj->toFunction());
                 RootedScript script(cx);
-                fun->maybeGetOrCreateScript(cx, &script);
+                JSFunction::maybeGetOrCreateScript(cx, fun, &script);
                 if (!DisassembleScript(cx, script, fun, lines, recursive, sp))
                     return false;
             }
@@ -3343,6 +3343,30 @@ Snarf(JSContext *cx, unsigned argc, jsval *vp)
     return true;
 }
 
+static JSBool
+System(JSContext *cx, unsigned argc, jsval *vp)
+{
+    JSString *str;
+
+    if (argc != 1) {
+        JS_ReportErrorNumber(cx, my_GetErrorMessage, NULL, JSSMSG_INVALID_ARGS,
+                             "system");
+        return false;
+    }
+
+    str = JS_ValueToString(cx, JS_ARGV(cx, vp)[0]);
+    if (!str)
+        return false;
+    JSAutoByteString command(cx, str);
+    if (!command)
+        return false;
+
+    int result = system(command.ptr());
+
+    *vp = Int32Value(result);
+    return true;
+}
+
 static bool
 DecompileFunctionSomehow(JSContext *cx, unsigned argc, Value *vp,
                          JSString *(*decompiler)(JSContext *, JSFunction *, unsigned))
@@ -3838,13 +3862,17 @@ static JSFunctionSpecWithHelp shell_functions[] = {
 "  Sleep for dt seconds."),
 
 #endif
-    JS_FN_HELP("snarf", Snarf, 0, 0,
+    JS_FN_HELP("snarf", Snarf, 1, 0,
 "snarf(filename)",
 "  Read filename into returned string."),
 
-    JS_FN_HELP("read", Snarf, 0, 0,
+    JS_FN_HELP("read", Snarf, 1, 0,
 "read(filename)",
 "  Synonym for snarf."),
+
+    JS_FN_HELP("system", System, 1, 0,
+"system(command)",
+"  Execute command on the current host, returning result code."),
 
     JS_FN_HELP("compile", Compile, 1, 0,
 "compile(code)",
@@ -4977,12 +5005,17 @@ BindScriptArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
     return true;
 }
 
+// This function is currently only called from "#if defined(JS_ION)" chunks,
+// so we're guarding the function definition with an #ifdef, too, to avoid
+// build warning for unused function in non-ion-enabled builds:
+#if defined(JS_ION)
 static int
 OptionFailure(const char *option, const char *str)
 {
     fprintf(stderr, "Unrecognized option for %s: %s\n", option, str);
     return EXIT_FAILURE;
 }
+#endif /* JS_ION */
 
 static int
 ProcessArgs(JSContext *cx, JSObject *obj_, OptionParser *op)

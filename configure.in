@@ -147,7 +147,7 @@ else
   touch $_objdir/CLOBBER
 fi
 
-MOZ_PATH_PROGS(PYTHON, $PYTHON python2.7 python2.6 python2.5 python)
+MOZ_PATH_PROGS(PYTHON, $PYTHON python2.7 python)
 if test -z "$PYTHON"; then
     AC_MSG_ERROR([python was not found in \$PATH])
 fi
@@ -4596,6 +4596,7 @@ cairo-qt)
     TK_LIBS='$(MOZ_QT_LIBS)'
     AC_DEFINE(MOZ_WIDGET_QT)
     MOZ_PDF_PRINTING=1
+    AC_DEFINE(QT_NO_KEYWORDS)
     ;;
 
 cairo-os2)
@@ -6279,8 +6280,8 @@ dnl (unless in case of cross compiling, for which Unicode
 dnl is not yet sufficient).
 if test "$OS_ARCH" = "WINNT"; then
     REQ_NSIS_MAJOR_VER=2
-    MIN_NSIS_MINOR_VER=33
-    MOZ_PATH_PROGS(MAKENSISU, $MAKENSISU makensisu-2.46 makensisu makensis)
+    MIN_NSIS_MINOR_VER=46
+    MOZ_PATH_PROGS(MAKENSISU, $MAKENSISU makensisu-2.46 makensis)
     if test -n "$MAKENSISU" -a "$MAKENSISU" != ":"; then
       AC_MSG_RESULT([yes])
       changequote(,)
@@ -7340,7 +7341,7 @@ dnl our own linker.
 if test "$OS_TARGET" = Android; then
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -L$_objdir/dist/lib -lmozglue"
     WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=getaddrinfo,--wrap=freeaddrinfo,--wrap=gai_strerror"
-    WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl--wrap=PR_GetEnv,--wrap=PR_SetEnv"
+    WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=PR_GetEnv,--wrap=PR_SetEnv"
     if test -z "$gonkdir"; then
         WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=fork,--wrap=pthread_atfork,--wrap=raise"
         WRAP_LDFLAGS="${WRAP_LDFLAGS} -Wl,--wrap=memccpy,--wrap=memchr,--wrap=memrchr,--wrap=memcmp,--wrap=memcpy,--wrap=memmove,--wrap=memset,--wrap=memmem,--wrap=memswap,--wrap=index,--wrap=strchr,--wrap=strrchr,--wrap=strlen,--wrap=strcmp,--wrap=strcpy,--wrap=strcat,--wrap=strcasecmp,--wrap=strncasecmp,--wrap=strstr,--wrap=strcasestr,--wrap=strtok,--wrap=strtok_r,--wrap=strerror,--wrap=strerror_r,--wrap=strnlen,--wrap=strncat,--wrap=strncmp,--wrap=strncpy,--wrap=strlcat,--wrap=strlcpy,--wrap=strcspn,--wrap=strpbrk,--wrap=strsep,--wrap=strspn,--wrap=strcoll,--wrap=strxfrm"
@@ -8764,6 +8765,15 @@ if test "$MOZ_TELEMETRY_REPORTING"; then
         "$MOZ_UPDATE_CHANNEL" = "aurora"; then
         AC_DEFINE(MOZ_TELEMETRY_ON_BY_DEFAULT)
     fi
+fi
+
+dnl If we have any service that uploads data (and requires data submission
+dnl policy alert), set MOZ_DATA_REPORTING.
+dnl We need SUBST for build system and DEFINE for xul preprocessor.
+if test -n "$MOZ_TELEMETRY_REPORTING" || test -n "$MOZ_SERVICES_HEALTHREPORT" || test -n "MOZ_CRASHREPORTER"; then
+  MOZ_DATA_REPORTING=1
+  AC_DEFINE(MOZ_DATA_REPORTING)
+  AC_SUBST(MOZ_DATA_REPORTING)
 fi
 
 dnl win32 options

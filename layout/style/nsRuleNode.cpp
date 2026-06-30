@@ -30,6 +30,7 @@
 #include "pldhash.h"
 #include "nsStyleContext.h"
 #include "nsStyleSet.h"
+#include "nsStyleStruct.h"
 #include "nsSize.h"
 #include "imgIRequest.h"
 #include "nsRuleData.h"
@@ -2008,7 +2009,7 @@ nsRuleNode::WalkRuleTree(const nsStyleStructID aSID,
     detail = eRulePartialMixed; // Treat as though some data is specified to avoid
                                 // the optimizations and force data computation.
 
-  if (detail == eRuleNone && startStruct && !ruleData.mPostResolveCallback) {
+  if (detail == eRuleNone && startStruct) {
     // We specified absolutely no rule information, but a parent rule in the tree
     // specified all the rule information.  We set a bit along the branch from our
     // node in the tree to the node that specified the data that tells nodes on that
@@ -2017,7 +2018,6 @@ nsRuleNode::WalkRuleTree(const nsStyleStructID aSID,
     PropagateDependentBit(aSID, ruleNode, startStruct);
     return startStruct;
   }
-  // FIXME Do we need to check for mPostResolveCallback?
   if ((!startStruct && !isReset &&
        (detail == eRuleNone || detail == eRulePartialInherited)) ||
       detail == eRuleFullInherited) {
@@ -2071,10 +2071,6 @@ nsRuleNode::WalkRuleTree(const nsStyleStructID aSID,
 #include "nsStyleStructList.h"
 #undef STYLE_STRUCT
 #undef STYLE_STRUCT_TEST
-
-  // If we have a post-resolve callback, handle that now.
-  if (ruleData.mPostResolveCallback && (MOZ_LIKELY(res != nullptr)))
-    (*ruleData.mPostResolveCallback)(const_cast<void*>(res), &ruleData);
 
   // Now return the result.
   return res;
@@ -3055,25 +3051,23 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
       // XXXzw Should we even still *have* this code?  It looks to be making
       // old, probably obsolete assumptions.
 
-      // As far as I can tell the system default fonts and sizes
-      // on MS-Windows for Buttons, Listboxes/Comboxes and Text Fields are
-      // all pre-determined and cannot be changed by either the control panel
-      // or programmtically.
-      switch (fontID) {
+      if (fontID == LookAndFeel::eFont_Field ||
+          fontID == LookAndFeel::eFont_Button ||
+          fontID == LookAndFeel::eFont_List) {
+        // As far as I can tell the system default fonts and sizes
+        // on MS-Windows for Buttons, Listboxes/Comboxes and Text Fields are
+        // all pre-determined and cannot be changed by either the control panel
+        // or programmatically.
         // Fields (text fields)
         // Button and Selects (listboxes/comboboxes)
         //    We use whatever font is defined by the system. Which it appears
         //    (and the assumption is) it is always a proportional font. Then we
         //    always use 2 points smaller than what the browser has defined as
         //    the default proportional font.
-      case LookAndFeel::eFont_Field:
-      case LookAndFeel::eFont_Button:
-      case LookAndFeel::eFont_List:
         // Assumption: system defined font is proportional
         systemFont.size =
           NS_MAX(defaultVariableFont->size -
                  nsPresContext::CSSPointsToAppUnits(2), 0);
-        break;
       }
 #endif
     }
@@ -3449,11 +3443,6 @@ nsRuleNode::SetGenericFont(nsPresContext* aPresContext,
     nsRuleNode::SetFont(aPresContext, context,
                         aGenericFontID, &ruleData, &parentFont, aFont,
                         false, dummy);
-
-    // XXX Not sure if we need to do this here
-    // If we have a post-resolve callback, handle that now.
-    if (ruleData.mPostResolveCallback)
-      (ruleData.mPostResolveCallback)(aFont, &ruleData);
 
     parentFont = *aFont;
   }
@@ -7358,6 +7347,32 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
   } else if (eCSSUnit_Inherit == markerStartValue->GetUnit()) {
     canStoreInRuleTree = false;
     svg->mMarkerStart = parentSVG->mMarkerStart;
+  }
+
+  // paint-order: enum (bit field), inherit, initial
+  const nsCSSValue* paintOrderValue = aRuleData->ValueForPaintOrder();
+  switch (paintOrderValue->GetUnit()) {
+    case eCSSUnit_Null:
+      break;
+
+    case eCSSUnit_Enumerated:
+      MOZ_STATIC_ASSERT
+        (NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
+         "SVGStyleStruct::mPaintOrder not big enough");
+      svg->mPaintOrder = static_cast<uint8_t>(paintOrderValue->GetIntValue());
+      break;
+
+    case eCSSUnit_Inherit:
+      canStoreInRuleTree = false;
+      svg->mPaintOrder = parentSVG->mPaintOrder;
+      break;
+
+    case eCSSUnit_Initial:
+      svg->mPaintOrder = NS_STYLE_PAINT_ORDER_NORMAL;
+      break;
+
+    default:
+      NS_NOTREACHED("unexpected unit");
   }
 
   // shape-rendering: enum, inherit

@@ -195,6 +195,7 @@
 
 #include "nsIDragService.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/Selection.h"
 #include "nsFrameLoader.h"
 #include "nsISupportsPrimitives.h"
 #include "nsXPCOMCID.h"
@@ -741,7 +742,8 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
   if (!PR_GetEnv("MOZ_QUIET")) {
     printf("++DOMWINDOW == %d (%p) [serial = %d] [outer = %p]\n", gRefCnt,
            static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           gSerialCounter, static_cast<void*>(aOuterWindow));
+           gSerialCounter,
+           static_cast<void*>(static_cast<nsIScriptGlobalObject*>(aOuterWindow)));
   }
 #endif
 
@@ -816,9 +818,10 @@ nsGlobalWindow::~nsGlobalWindow()
       }
     }
 
+    nsGlobalWindow* outer = static_cast<nsGlobalWindow*>(mOuterWindow.get());
     printf("--DOMWINDOW == %d (%p) [serial = %d] [outer = %p] [url = %s]\n",
            gRefCnt, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           mSerial, static_cast<void*>(mOuterWindow.get()), url.get());
+           mSerial, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(outer)), url.get());
   }
 #endif
 

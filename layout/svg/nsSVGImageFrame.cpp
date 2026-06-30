@@ -8,14 +8,13 @@
 #include "gfxMatrix.h"
 #include "gfxPlatform.h"
 #include "imgIContainer.h"
-#include "nsIDOMSVGImageElement.h"
 #include "nsIImageLoadingContent.h"
 #include "nsLayoutUtils.h"
 #include "nsRenderingContext.h"
 #include "imgINotificationObserver.h"
 #include "nsSVGEffects.h"
 #include "nsSVGPathGeometryFrame.h"
-#include "nsSVGSVGElement.h"
+#include "mozilla/dom/SVGSVGElement.h"
 #include "nsSVGUtils.h"
 #include "SVGContentUtils.h"
 #include "mozilla/dom/SVGImageElement.h"
@@ -133,14 +132,12 @@ nsSVGImageFrame::Init(nsIContent* aContent,
                       nsIFrame* aParent,
                       nsIFrame* aPrevInFlow)
 {
-#ifdef DEBUG
-  nsCOMPtr<nsIDOMSVGImageElement> image = do_QueryInterface(aContent);
-  NS_ASSERTION(image, "Content is not an SVG image!");
-#endif
+  NS_ASSERTION(aContent->IsSVG(nsGkAtoms::image),
+               "Content is not an SVG image!");
 
   nsresult rv = nsSVGImageFrameBase::Init(aContent, aParent, aPrevInFlow);
   if (NS_FAILED(rv)) return rv;
-  
+
   mListener = new nsSVGImageListener(this);
   if (!mListener) return NS_ERROR_OUT_OF_MEMORY;
   nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(mContent);
@@ -361,8 +358,8 @@ nsSVGImageFrame::PaintSVG(nsRenderingContext *aContext,
       }
 
       // Grab root node (w/ sanity-check to make sure it exists & is <svg>)
-      nsSVGSVGElement* rootSVGElem =
-        static_cast<nsSVGSVGElement*>(imgRootFrame->GetContent());
+      SVGSVGElement* rootSVGElem =
+        static_cast<SVGSVGElement*>(imgRootFrame->GetContent());
       if (!rootSVGElem || !rootSVGElem->IsSVG(nsGkAtoms::svg)) {
         NS_ABORT_IF_FALSE(false, "missing or non-<svg> root node!!");
         return NS_OK;

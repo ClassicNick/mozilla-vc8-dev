@@ -2320,8 +2320,8 @@ nsresult nsHTMLMediaElement::FinishDecoderSetup(MediaDecoder* aDecoder,
 
   // The new stream has not been suspended by us.
   mPausedForInactiveDocumentOrChannel = false;
-  mPendingEvents.Clear();
   mEventDeliveryPaused = false;
+  mPendingEvents.Clear();
 
   aDecoder->SetAudioChannelType(mAudioChannelType);
   aDecoder->SetAudioCaptured(mAudioCaptured);
@@ -3113,8 +3113,8 @@ void nsHTMLMediaElement::SuspendOrResumeElement(bool aPauseElement, bool aSuspen
         GetSrcMediaStream()->ChangeExplicitBlockerCount(-1);
       }
       if (mEventDeliveryPaused) {
-        DispatchPendingMediaEvents();
         mEventDeliveryPaused = false;
+        DispatchPendingMediaEvents();
       }
     }
   }
@@ -3570,9 +3570,10 @@ void nsHTMLMediaElement::UpdateAudioChannelPlayingState()
   // The nsHTMLMediaElement is registered to the AudioChannelService only on B2G.
 #ifdef MOZ_B2G
   bool playingThroughTheAudioChannel =
-     (mReadyState >= nsIDOMHTMLMediaElement::HAVE_CURRENT_DATA &&
-      !mPaused &&
-      !IsPlaybackEnded());
+     (!mPaused &&
+      (HasAttr(kNameSpaceID_None, nsGkAtoms::loop) ||
+       (mReadyState >= nsIDOMHTMLMediaElement::HAVE_CURRENT_DATA &&
+        !IsPlaybackEnded())));
   if (playingThroughTheAudioChannel != mPlayingThroughTheAudioChannel) {
     mPlayingThroughTheAudioChannel = playingThroughTheAudioChannel;
 

@@ -18,7 +18,7 @@
 #include "nsDOMAttributeMap.h"
 #include "nsIAtom.h"
 #include "nsINodeInfo.h"
-#include "nsIDocument.h"
+#include "nsIDocumentInlines.h"
 #include "nsIDOMNodeList.h"
 #include "nsIDOMDocument.h"
 #include "nsIContentIterator.h"
@@ -1155,6 +1155,9 @@ Element::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                NODE_NEEDS_FRAME | NODE_DESCENDANTS_NEED_FRAMES |
                // And the restyle bits
                ELEMENT_ALL_RESTYLE_FLAGS);
+
+    // Propagate scoped style sheet tracking bit.
+    SetIsElementInStyleScope(mParent->IsElementInStyleScope());
   } else {
     // If we're not in the doc, update our subtree pointer.
     SetSubtreeRootPointer(aParent->SubtreeRoot());
@@ -1835,7 +1838,7 @@ Element::SetAttrAndNotify(int32_t aNamespaceID,
 
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::dir) {
-      hadValidDir = HasValidDir() || NodeInfo()->Equals(nsGkAtoms::bdi);
+      hadValidDir = HasValidDir() || IsHTML(nsGkAtoms::bdi);
     }
 
     // XXXbz Perhaps we should push up the attribute mapping function
@@ -2082,7 +2085,7 @@ Element::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   bool hadValidDir = false;
 
   if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::dir) {
-    hadValidDir = HasValidDir() || NodeInfo()->Equals(nsGkAtoms::bdi);
+    hadValidDir = HasValidDir() || IsHTML(nsGkAtoms::bdi);
   }
 
   nsAttrValue oldValue;
@@ -3594,4 +3597,14 @@ Element::GetEditorInternal()
 {
   nsCOMPtr<nsITextControlElement> textCtrl = do_QueryInterface(this);
   return textCtrl ? textCtrl->GetTextEditor() : nullptr;
+}
+
+nsresult
+Element::SetBoolAttr(nsIAtom* aAttr, bool aValue)
+{
+  if (aValue) {
+    return SetAttr(kNameSpaceID_None, aAttr, EmptyString(), true);
+  }
+
+  return UnsetAttr(kNameSpaceID_None, aAttr, true);
 }
