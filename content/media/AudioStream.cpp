@@ -12,7 +12,6 @@
 #include "VideoUtils.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
-#include <algorithm>
 extern "C" {
 #include "sydneyaudio/sydney_audio.h"
 }
@@ -102,7 +101,7 @@ static int PrefChanged(const char* aPref, void* aClosure)
       gVolumeScale = 1.0;
     } else {
       NS_ConvertUTF16toUTF8 utf8(value);
-      gVolumeScale = std::max<double>(0, PR_strtod(utf8.get(), nullptr));
+      gVolumeScale = NS_MAX<double>(0, PR_strtod(utf8.get(), nullptr));
     }
   } else if (strcmp(aPref, PREF_USE_CUBEB) == 0) {
 #ifdef MOZ_WIDGET_GONK
@@ -118,7 +117,7 @@ static int PrefChanged(const char* aPref, void* aClosure)
     // audible.
     uint32_t value = Preferences::GetUint(aPref, 100);
     MutexAutoLock lock(*gAudioPrefsLock);
-    gCubebLatency = std::min<uint32_t>(std::max<uint32_t>(value, 20), 1000);
+    gCubebLatency = NS_MIN<uint32_t>(NS_MAX<uint32_t>(value, 20), 1000);
   }
   return 0;
 }
@@ -577,7 +576,7 @@ public:
 
     uint32_t end = (mStart + mCount) % mCapacity;
 
-    uint32_t toCopy = std::min(mCapacity - end, aLength);
+    uint32_t toCopy = NS_MIN(mCapacity - end, aLength);
     memcpy(&mBuffer[end], aSrc, toCopy);
     memcpy(&mBuffer[0], aSrc + toCopy, aLength - toCopy);
     mCount += aLength;
@@ -592,7 +591,7 @@ public:
     NS_ABORT_IF_FALSE(aSize <= Length(), "Request too large.");
 
     *aData1 = &mBuffer[mStart];
-    *aSize1 = std::min(mCapacity - mStart, aSize);
+    *aSize1 = NS_MIN(mCapacity - mStart, aSize);
     *aData2 = &mBuffer[0];
     *aSize2 = aSize - *aSize1;
     mCount -= *aSize1 + *aSize2;
@@ -810,7 +809,7 @@ BufferedAudioStream::Write(const AudioDataValue* aBuf, uint32_t aFrames)
   uint32_t bytesToCopy = FramesToBytes(aFrames);
 
   while (bytesToCopy > 0) {
-    uint32_t available = std::min(bytesToCopy, mBuffer.Available());
+    uint32_t available = NS_MIN(bytesToCopy, mBuffer.Available());
     NS_ABORT_IF_FALSE(available % mBytesPerFrame == 0,
         "Must copy complete frames.");
 
@@ -974,7 +973,7 @@ BufferedAudioStream::GetPositionInFramesUnlocked()
   if (position >= mLostFrames) {
     adjustedPosition = position - mLostFrames;
   }
-  return std::min<uint64_t>(adjustedPosition, INT64_MAX);
+  return NS_MIN<uint64_t>(adjustedPosition, INT64_MAX);
 }
 
 bool
@@ -997,7 +996,7 @@ BufferedAudioStream::GetUnprocessed(void* aBuffer, long aFrames)
     wpos += FramesToBytes(flushedFrames);
   }
   uint32_t toPopBytes = FramesToBytes(aFrames - flushedFrames);
-  uint32_t available = std::min(toPopBytes, mBuffer.Length());
+  uint32_t available = NS_MIN(toPopBytes, mBuffer.Length());
 
   void* input[2];
   uint32_t input_size[2];
@@ -1026,7 +1025,7 @@ BufferedAudioStream::GetTimeStretched(void* aBuffer, long aFrames)
     if (mTimeStretcher->numSamples() <= static_cast<uint32_t>(aFrames)) {
       void* input[2];
       uint32_t input_size[2];
-      available = std::min(mBuffer.Length(), toPopBytes);
+      available = NS_MIN(mBuffer.Length(), toPopBytes);
       if (available != toPopBytes) {
         lowOnBufferedData = true;
       }
@@ -1048,7 +1047,7 @@ long
 BufferedAudioStream::DataCallback(void* aBuffer, long aFrames)
 {
   MonitorAutoLock mon(mMonitor);
-  uint32_t available = std::min(static_cast<uint32_t>(FramesToBytes(aFrames)), mBuffer.Length());
+  uint32_t available = NS_MIN(static_cast<uint32_t>(FramesToBytes(aFrames)), mBuffer.Length());
   NS_ABORT_IF_FALSE(available % mBytesPerFrame == 0, "Must copy complete frames");
   uint32_t underrunFrames = 0;
   uint32_t servicedFrames = 0;

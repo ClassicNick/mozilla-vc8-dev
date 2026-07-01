@@ -175,8 +175,8 @@ SVGRectElement::ConstructPath(gfxContext *aCtx)
   if (width <= 0 || height <= 0)
     return;
 
-  rx = std::max(rx, 0.0f);
-  ry = std::max(ry, 0.0f);
+  rx = NS_MAX(rx, 0.0f);
+  ry = NS_MAX(ry, 0.0f);
 
   /* optimize the no rounded corners case */
   if (rx == 0 && ry == 0) {

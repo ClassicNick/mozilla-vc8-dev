@@ -1219,8 +1219,8 @@ SVGSVGElement::GetLength(uint8_t aCtxType)
     h = mViewportHeight;
   }
 
-  w = std::max(w, 0.0f);
-  h = std::max(h, 0.0f);
+  w = NS_MAX(w, 0.0f);
+  h = NS_MAX(h, 0.0f);
 
   switch (aCtxType) {
   case SVGContentUtils::X:

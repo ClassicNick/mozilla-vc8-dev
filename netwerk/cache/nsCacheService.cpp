@@ -39,7 +39,6 @@
 
 
 #include "mozilla/net/NeckoCommon.h"
-#include <algorithm>
 
 using namespace mozilla;
 
@@ -371,7 +370,7 @@ nsCacheProfilePrefObserver::Remove()
 void
 nsCacheProfilePrefObserver::SetDiskCacheCapacity(int32_t capacity)
 {
-    mDiskCacheCapacity = std::max(0, capacity);
+    mDiskCacheCapacity = NS_MAX(0, capacity);
 }
 
 
@@ -439,7 +438,7 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
             rv = branch->GetIntPref(DISK_CACHE_CAPACITY_PREF, &capacity);
             if (NS_FAILED(rv))  
                 return rv;
-            mDiskCacheCapacity = std::max(0, capacity);
+            mDiskCacheCapacity = NS_MAX(0, capacity);
             nsCacheService::SetDiskCacheCapacity(mDiskCacheCapacity);
        
         // Update the cache capacity when smart sizing is turned on/off 
@@ -457,7 +456,7 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
                 rv = branch->GetIntPref(DISK_CACHE_CAPACITY_PREF, &newCapacity);
                 if (NS_FAILED(rv)) 
                     return rv;
-                mDiskCacheCapacity = std::max(0, newCapacity);
+                mDiskCacheCapacity = NS_MAX(0, newCapacity);
                 nsCacheService::SetDiskCacheCapacity(mDiskCacheCapacity);
             }
         } else if (!strcmp(DISK_CACHE_USE_OLD_MAX_SMART_SIZE_PREF, data.get())) {
@@ -472,7 +471,7 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
             if (NS_FAILED(rv)) 
                 return rv;
 
-            mDiskCacheMaxEntrySize = std::max(-1, newMaxSize);
+            mDiskCacheMaxEntrySize = NS_MAX(-1, newMaxSize);
             nsCacheService::SetDiskCacheMaxEntrySize(mDiskCacheMaxEntrySize);
           
 #if 0            
@@ -497,7 +496,7 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
             int32_t capacity = 0;
             rv = branch->GetIntPref(OFFLINE_CACHE_CAPACITY_PREF, &capacity);
             if (NS_FAILED(rv))  return rv;
-            mOfflineCacheCapacity = std::max(0, capacity);
+            mOfflineCacheCapacity = NS_MAX(0, capacity);
             nsCacheService::SetOfflineCacheCapacity(mOfflineCacheCapacity);
 #if 0
         } else if (!strcmp(OFFLINE_CACHE_DIR_PREF, data.get())) {
@@ -529,14 +528,14 @@ nsCacheProfilePrefObserver::Observe(nsISupports *     subject,
             if (NS_FAILED(rv)) 
                 return rv;
             
-            mMemoryCacheMaxEntrySize = std::max(-1, newMaxSize);
+            mMemoryCacheMaxEntrySize = NS_MAX(-1, newMaxSize);
             nsCacheService::SetMemoryCacheMaxEntrySize(mMemoryCacheMaxEntrySize);
         } else if (!strcmp(CACHE_COMPRESSION_LEVEL_PREF, data.get())) {
             mCacheCompressionLevel = CACHE_COMPRESSION_LEVEL;
             (void)branch->GetIntPref(CACHE_COMPRESSION_LEVEL_PREF,
                                      &mCacheCompressionLevel);
-            mCacheCompressionLevel = std::max(0, mCacheCompressionLevel);
-            mCacheCompressionLevel = std::min(9, mCacheCompressionLevel);
+            mCacheCompressionLevel = NS_MAX(0, mCacheCompressionLevel);
+            mCacheCompressionLevel = NS_MIN(9, mCacheCompressionLevel);
         } else if (!strcmp(SANITIZE_ON_SHUTDOWN_PREF, data.get())) {
             rv = branch->GetBoolPref(SANITIZE_ON_SHUTDOWN_PREF,
                                      &mSanitizeOnShutdown);
@@ -595,13 +594,13 @@ SmartCacheSize(const uint32_t availKB, bool shouldUseOldMaxSmartSize)
     // percentage of available space and a smaller minimum.
 
     // 20% of space up to 500 MB (10 MB min)
-    sz10MBs += std::max<uint32_t>(1, avail10MBs * .2);
+    sz10MBs += NS_MAX<uint32_t>(1, avail10MBs * .2);
 #else
     // 40% of space up to 500 MB (50 MB min)
-    sz10MBs += std::max<uint32_t>(5, avail10MBs * .4);
+    sz10MBs += NS_MAX<uint32_t>(5, avail10MBs * .4);
 #endif
 
-    return std::min<uint32_t>(maxSize, sz10MBs * 10 * 1024);
+    return NS_MIN<uint32_t>(maxSize, sz10MBs * 10 * 1024);
 }
 
  /* Computes our best guess for the default size of the user's disk cache, 
@@ -689,11 +688,11 @@ nsCacheProfilePrefObserver::ReadPrefs(nsIPrefBranch* branch)
 
     mDiskCacheCapacity = DISK_CACHE_CAPACITY;
     (void)branch->GetIntPref(DISK_CACHE_CAPACITY_PREF, &mDiskCacheCapacity);
-    mDiskCacheCapacity = std::max(0, mDiskCacheCapacity);
+    mDiskCacheCapacity = NS_MAX(0, mDiskCacheCapacity);
 
     (void) branch->GetIntPref(DISK_CACHE_MAX_ENTRY_SIZE_PREF,
                               &mDiskCacheMaxEntrySize);
-    mDiskCacheMaxEntrySize = std::max(-1, mDiskCacheMaxEntrySize);
+    mDiskCacheMaxEntrySize = NS_MAX(-1, mDiskCacheMaxEntrySize);
     
     (void) branch->GetComplexValue(DISK_CACHE_DIR_PREF,     // ignore error
                                    NS_GET_IID(nsIFile),
@@ -773,7 +772,7 @@ nsCacheProfilePrefObserver::ReadPrefs(nsIPrefBranch* branch)
     mOfflineCacheCapacity = OFFLINE_CACHE_CAPACITY;
     (void)branch->GetIntPref(OFFLINE_CACHE_CAPACITY_PREF,
                              &mOfflineCacheCapacity);
-    mOfflineCacheCapacity = std::max(0, mOfflineCacheCapacity);
+    mOfflineCacheCapacity = NS_MAX(0, mOfflineCacheCapacity);
 
     (void) branch->GetComplexValue(OFFLINE_CACHE_DIR_PREF,     // ignore error
                                    NS_GET_IID(nsIFile),
@@ -815,14 +814,14 @@ nsCacheProfilePrefObserver::ReadPrefs(nsIPrefBranch* branch)
 
     (void) branch->GetIntPref(MEMORY_CACHE_MAX_ENTRY_SIZE_PREF,
                               &mMemoryCacheMaxEntrySize);
-    mMemoryCacheMaxEntrySize = std::max(-1, mMemoryCacheMaxEntrySize);
+    mMemoryCacheMaxEntrySize = NS_MAX(-1, mMemoryCacheMaxEntrySize);
 
     // read cache compression level pref
     mCacheCompressionLevel = CACHE_COMPRESSION_LEVEL;
     (void)branch->GetIntPref(CACHE_COMPRESSION_LEVEL_PREF,
                              &mCacheCompressionLevel);
-    mCacheCompressionLevel = std::max(0, mCacheCompressionLevel);
-    mCacheCompressionLevel = std::min(9, mCacheCompressionLevel);
+    mCacheCompressionLevel = NS_MAX(0, mCacheCompressionLevel);
+    mCacheCompressionLevel = NS_MIN(9, mCacheCompressionLevel);
 
     // read cache shutdown sanitization prefs
     (void) branch->GetBoolPref(SANITIZE_ON_SHUTDOWN_PREF,

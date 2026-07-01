@@ -59,7 +59,6 @@
 #include "nsEventListenerManager.h"
 
 #include "nsRuleData.h"
-#include <algorithm>
 
 // input type=radio
 #include "nsIRadioGroupContainer.h"
@@ -1502,10 +1501,10 @@ nsHTMLInputElement::ApplyStep(int32_t aStep)
     value = max;
   // If we go down, we want to clamp on min.
   } else if (aStep < 0 && min == min) {
-    value = std::max(value, min);
+    value = NS_MAX(value, min);
   // If we go up, we want to clamp on max.
   } else if (aStep > 0 && max == max) {
-    value = std::min(value, max);
+    value = NS_MIN(value, max);
   }
 
   SetValue(value);

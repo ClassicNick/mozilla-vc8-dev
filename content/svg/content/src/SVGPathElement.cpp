@@ -129,8 +129,8 @@ SVGPathElement::GetPointAtLength(float distance, ErrorResult& rv)
     }
     distance *= totalLength / pathLength;
   }
-  distance = std::max(0.f,         distance);
-  distance = std::min(totalLength, distance);
+  distance = NS_MAX(0.f,         distance);
+  distance = NS_MIN(totalLength, distance);
 
   nsCOMPtr<nsISVGPoint> point = new DOMSVGPoint(flat->FindPoint(gfxPoint(distance, 0)));
   return point.forget();
