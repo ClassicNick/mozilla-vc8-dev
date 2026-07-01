@@ -21,7 +21,9 @@
 
 #  define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
 #  define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
 #  include <intrin.h>
+#endif
 
 #if defined(PR_LOGGING)
 // Log module for mozilla::TimeStamp for Windows logging...
@@ -467,6 +469,7 @@ static TimeStampInitialization initOnce;
 static bool
 HasStableTSC()
 {
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
   union {
     int regs[4];
     struct {
@@ -493,6 +496,9 @@ HasStableTSC()
   // if bit 8 is set than TSC will run at a constant rate
   // in all ACPI P-state, C-states and T-states
   return regs[3] & (1 << 8);
+#else
+	return false;
+#endif
 }
 
 nsresult

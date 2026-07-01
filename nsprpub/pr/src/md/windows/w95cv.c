@@ -19,6 +19,11 @@
  
 #include "primpl.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1310 
+#define RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO         0x01000000
+#define CRITICAL_SECTION_NO_DEBUG_INFO  RTL_CRITICAL_SECTION_FLAG_NO_DEBUG_INFO
+#endif
+
 /*
  * AddThreadToCVWaitQueueInternal --
  *

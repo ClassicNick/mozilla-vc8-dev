@@ -51,7 +51,7 @@ void
 AudioNodeStream::SetStreamTimeParameterImpl(uint32_t aIndex, MediaStream* aRelativeToStream,
                                             double aStreamTime)
 {
-  StreamTime streamTime = std::max<MediaTime>(0, SecondsToMediaTime(aStreamTime));
+  StreamTime streamTime = NS_MAX<MediaTime>(0, SecondsToMediaTime(aStreamTime));
   GraphTime graphTime = aRelativeToStream->StreamTimeToGraphTime(streamTime);
   StreamTime thisStreamTime = GraphTimeToStreamTimeOptimistic(graphTime);
   TrackTicks ticks = TimeToTicksRoundDown(IdealAudioRate(), thisStreamTime);

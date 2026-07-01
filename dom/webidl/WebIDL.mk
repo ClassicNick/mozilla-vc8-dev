@@ -71,6 +71,7 @@ webidl_files = \
   HTMLElement.webidl \
   HTMLFieldSetElement.webidl \
   HTMLFontElement.webidl \
+  HTMLFrameElement.webidl \
   HTMLFrameSetElement.webidl \
   HTMLHeadElement.webidl \
   HTMLHeadingElement.webidl \
@@ -78,14 +79,18 @@ webidl_files = \
   HTMLHtmlElement.webidl \
   HTMLImageElement.webidl \
   HTMLLabelElement.webidl \
+  HTMLLegendElement.webidl \
   HTMLLIElement.webidl \
   HTMLLinkElement.webidl \
   HTMLMapElement.webidl \
+  HTMLMenuElement.webidl \
+  HTMLMenuItemElement.webidl \
   HTMLMetaElement.webidl \
   HTMLMeterElement.webidl \
   HTMLModElement.webidl \
   HTMLOListElement.webidl \
   HTMLOptGroupElement.webidl \
+  HTMLOptionElement.webidl \
   HTMLOptionsCollection.webidl \
   HTMLOutputElement.webidl \
   HTMLParagraphElement.webidl \
@@ -107,7 +112,9 @@ webidl_files = \
   HTMLUListElement.webidl \
   ImageData.webidl \
   LinkStyle.webidl \
+  LocalMediaStream.webidl \
   Location.webidl \
+  MediaStream.webidl \
   MutationObserver.webidl \
   Node.webidl \
   NodeFilter.webidl \
@@ -121,7 +128,7 @@ webidl_files = \
   ProcessingInstruction.webidl \
   Rect.webidl \
   RGBColor.webidl \
-  RTCIceServer.webidl \
+  RTCConfiguration.webidl \
   Screen.webidl \
   SVGAElement.webidl \
   SVGAltGlyphElement.webidl \
@@ -146,6 +153,7 @@ webidl_files = \
   SVGDescElement.webidl \
   SVGElement.webidl \
   SVGEllipseElement.webidl \
+  SVGFilterElement.webidl \
   SVGFEFuncAElement.webidl \
   SVGFEFuncBElement.webidl \
   SVGFEFuncGElement.webidl \
@@ -223,6 +231,7 @@ endif
 ifdef MOZ_MEDIA
 webidl_files += \
   HTMLSourceElement.webidl \
+  MediaError.webidl \
   $(NULL)
 endif
 

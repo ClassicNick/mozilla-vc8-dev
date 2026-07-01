@@ -630,6 +630,7 @@ js::GetPropertyId(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> re
         }
 
         PropDesc desc;
+        PropDesc::AutoRooter rootDesc(cx, &desc);
         if (!GetOwnProperty(cx, current, (PropertyId) pid, resolveFlags, &desc))
             return false;
 

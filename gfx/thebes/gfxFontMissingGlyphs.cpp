@@ -216,7 +216,7 @@ gfxFontMissingGlyphs::DrawMissingGlyph(gfxContext    *aContext,
     // We always want integer scaling, otherwise the "bitmap" glyphs will look
     // even uglier than usual when zoomed
     int32_t scale =
-        std::max<int32_t>(1, nsDeviceContext::AppUnitsPerCSSPixel() /
+        NS_MAX<int32_t>(1, nsDeviceContext::AppUnitsPerCSSPixel() /
                              aAppUnitsPerDevPixel);
     aContext->Scale(gfxFloat(scale), gfxFloat(scale));
     if (aChar < 0x10000) {

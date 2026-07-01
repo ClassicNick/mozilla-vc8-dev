@@ -13,6 +13,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
+#include "mozilla/StandardInteger.h"
 
 #include <limits> /* for std::numeric_limits */
 
@@ -56,8 +57,11 @@ namespace JS { class Value; }
  */
 #if defined(__cplusplus) && !defined(__SUNPRO_CC) && !defined(__xlC__)
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER >= 1400
 # define JS_ENUM_HEADER(id, type)              enum id : type
+# define JS_ENUM_FOOTER(id)
+#elif defined (_MSC_VER) && _MSC_VER <= 1310
+# define JS_ENUM_HEADER(id, type)              enum id
 # define JS_ENUM_FOOTER(id)
 #else
 # define JS_ENUM_HEADER(id, type)              enum id

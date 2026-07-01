@@ -1481,9 +1481,8 @@ HyperTextAccessible::GetEditor() const
     return nullptr;
   }
 
-  nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-    nsCoreUtils::GetDocShellTreeItemFor(mContent);
-  nsCOMPtr<nsIEditingSession> editingSession(do_GetInterface(docShellTreeItem));
+  nsCOMPtr<nsIDocShell> docShell = nsCoreUtils::GetDocShellFor(mContent);
+  nsCOMPtr<nsIEditingSession> editingSession(do_GetInterface(docShell));
   if (!editingSession)
     return nullptr; // No editing session interface
 

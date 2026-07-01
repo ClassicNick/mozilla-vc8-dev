@@ -70,7 +70,7 @@ nsTableCaptionFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   // wrapping inside of us should not apply font size inflation.
   AutoMaybeDisableFontInflation an(this);
 
-  uint8_t captionSide = GetStyleTableBorder()->mCaptionSide;
+  uint8_t captionSide = StyleTableBorder()->mCaptionSide;
   if (captionSide == NS_STYLE_CAPTION_SIDE_LEFT ||
       captionSide == NS_STYLE_CAPTION_SIDE_RIGHT) {
     result.width = GetMinWidth(aRenderingContext);
@@ -103,7 +103,7 @@ nsTableCaptionFrame::GetParentStyleContextFrame() const
     nsIFrame* innerFrame = outerFrame->GetFirstPrincipalChild();
     if (innerFrame) {
       return nsFrame::CorrectStyleParentFrame(innerFrame,
-                                              GetStyleContext()->GetPseudo());
+                                              StyleContext()->GetPseudo());
     }
   }
 
@@ -286,7 +286,7 @@ nsTableOuterFrame::RemoveFrame(ChildListID     aListID,
   return NS_OK;
 }
 
-NS_METHOD 
+void
 nsTableOuterFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                     const nsRect&           aDirtyRect,
                                     const nsDisplayListSet& aLists)
@@ -296,26 +296,25 @@ nsTableOuterFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
 
   // If there's no caption, take a short cut to avoid having to create
   // the special display list set and then sort it.
-  if (mCaptionFrames.IsEmpty())
-    return BuildDisplayListForInnerTable(aBuilder, aDirtyRect, aLists);
-    
+  if (mCaptionFrames.IsEmpty()) {
+    BuildDisplayListForInnerTable(aBuilder, aDirtyRect, aLists);
+    return;
+  }
+
   nsDisplayListCollection set;
-  nsresult rv = BuildDisplayListForInnerTable(aBuilder, aDirtyRect, set);
-  NS_ENSURE_SUCCESS(rv, rv);
+  BuildDisplayListForInnerTable(aBuilder, aDirtyRect, set);
   
   nsDisplayListSet captionSet(set, set.BlockBorderBackgrounds());
-  rv = BuildDisplayListForChild(aBuilder, mCaptionFrames.FirstChild(),
-                                aDirtyRect, captionSet);
-  NS_ENSURE_SUCCESS(rv, rv);
+  BuildDisplayListForChild(aBuilder, mCaptionFrames.FirstChild(),
+                           aDirtyRect, captionSet);
   
   // Now we have to sort everything by content order, since the caption
   // may be somewhere inside the table
   set.SortAllByContentOrder(aBuilder, GetContent());
   set.MoveTo(aLists);
-  return NS_OK;
 }
 
-nsresult
+void
 nsTableOuterFrame::BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilder,
                                                  const nsRect&           aDirtyRect,
                                                  const nsDisplayListSet& aLists)
@@ -325,11 +324,9 @@ nsTableOuterFrame::BuildDisplayListForInnerTable(nsDisplayListBuilder*   aBuilde
   nsIFrame* kid = mFrames.FirstChild();
   // The children should be in content order
   while (kid) {
-    nsresult rv = BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
-    NS_ENSURE_SUCCESS(rv, rv);
+    BuildDisplayListForChild(aBuilder, kid, aDirtyRect, aLists);
     kid = kid->GetNextSibling();
   }
-  return NS_OK;
 }
 
 nsIFrame*
@@ -568,7 +565,7 @@ uint8_t
 nsTableOuterFrame::GetCaptionSide()
 {
   if (mCaptionFrames.NotEmpty()) {
-    return mCaptionFrames.FirstChild()->GetStyleTableBorder()->mCaptionSide;
+    return mCaptionFrames.FirstChild()->StyleTableBorder()->mCaptionSide;
   }
   else {
     return NO_SIDE; // no caption
@@ -579,7 +576,7 @@ uint8_t
 nsTableOuterFrame::GetCaptionVerticalAlign()
 {
   const nsStyleCoord& va =
-    mCaptionFrames.FirstChild()->GetStyleTextReset()->mVerticalAlign;
+    mCaptionFrames.FirstChild()->StyleTextReset()->mVerticalAlign;
   return (va.GetUnit() == eStyleUnit_Enumerated)
            ? va.GetIntValue()
            : NS_STYLE_VERTICAL_ALIGN_TOP;

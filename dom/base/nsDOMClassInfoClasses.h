@@ -149,9 +149,11 @@ DOMCI_CLASS(TreeContentView)
 #endif
 
 // Crypto classes
-DOMCI_CLASS(Crypto)
+#ifndef MOZ_DISABLE_CRYPTOLEGACY
 DOMCI_CLASS(CRMFObject)
-  
+#endif
+DOMCI_CLASS(Crypto)
+
 // DOM Traversal classes
 DOMCI_CLASS(TreeWalker)
 
@@ -163,10 +165,10 @@ DOMCI_CLASS(ChromeWindow)
 
 // ContentList object used for various live NodeLists
 DOMCI_CLASS(ContentList)
-  
+
 // Processing-instruction with target "xml-stylesheet"
 DOMCI_CLASS(XMLStylesheetProcessingInstruction)
-  
+
 DOMCI_CLASS(ImageDocument)
 
 #ifdef MOZ_XUL
@@ -191,7 +193,6 @@ DOMCI_CLASS(BeforeUnloadEvent)
 DOMCI_CLASS(SVGDocument)
 
 // SVG element classes
-DOMCI_CLASS(SVGAElement)
 DOMCI_CLASS(TimeEvent)
 DOMCI_CLASS(SVGFEBlendElement)
 DOMCI_CLASS(SVGFEColorMatrixElement)
@@ -217,11 +218,6 @@ DOMCI_CLASS(SVGFESpecularLightingElement)
 DOMCI_CLASS(SVGFESpotLightElement)
 DOMCI_CLASS(SVGFETileElement)
 DOMCI_CLASS(SVGFETurbulenceElement)
-DOMCI_CLASS(SVGFilterElement)
-DOMCI_CLASS(SVGImageElement)
-DOMCI_CLASS(SVGMarkerElement)
-DOMCI_CLASS(SVGMaskElement)
-DOMCI_CLASS(SVGTitleElement)
 DOMCI_CLASS(SVGUnknownElement)
 
 // other SVG classes
@@ -323,10 +319,6 @@ DOMCI_CLASS(HTMLSourceElement)
 DOMCI_CLASS(MediaError)
 DOMCI_CLASS(HTMLAudioElement)
 DOMCI_CLASS(TimeRanges)
-
-// Media streams
-DOMCI_CLASS(MediaStream)
-DOMCI_CLASS(LocalMediaStream)
 #endif
 
 // DOM Traversal NodeIterator class
@@ -407,6 +399,7 @@ DOMCI_CLASS(CameraCapabilities)
 
 DOMCI_CLASS(DOMError)
 DOMCI_CLASS(DOMRequest)
+DOMCI_CLASS(DOMCursor)
 DOMCI_CLASS(OpenWindowEventDetail)
 DOMCI_CLASS(AsyncScrollEventDetail)
 
@@ -424,4 +417,5 @@ DOMCI_CLASS(MozTimeManager)
 
 #ifdef MOZ_WEBRTC
 DOMCI_CLASS(DataChannel)
+DOMCI_CLASS(RTCPeerConnection)
 #endif

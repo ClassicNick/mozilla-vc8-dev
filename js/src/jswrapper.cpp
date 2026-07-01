@@ -377,7 +377,7 @@ ErrorCopier::~ErrorCopier()
 {
     JSContext *cx = ac.ref().context();
     if (ac.ref().origin() != cx->compartment && cx->isExceptionPending()) {
-        Value exc = cx->getPendingException();
+        RootedValue exc(cx, cx->getPendingException());
         if (exc.isObject() && exc.toObject().isError() && exc.toObject().getPrivate()) {
             cx->clearPendingException();
             ac.destroy();
@@ -1154,7 +1154,7 @@ js::RemapWrapper(JSContext *cx, JSObject *wobjArg, JSObject *newTargetArg)
         // Now, because we need to maintain object identity, we do a brain
         // transplant on the old object so that it contains the contents of the
         // new one.
-        if (!wobj->swap(cx, tobj))
+        if (!JSObject::swap(cx, wobj, tobj))
             MOZ_CRASH();
     }
 

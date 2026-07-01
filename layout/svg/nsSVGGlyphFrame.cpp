@@ -351,16 +351,16 @@ nsSVGGlyphFrame::GetType() const
   return nsGkAtoms::svgGlyphFrame;
 }
 
-NS_IMETHODIMP
+void
 nsSVGGlyphFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                   const nsRect&           aDirtyRect,
                                   const nsDisplayListSet& aLists)
 {
-  if (GetStyleFont()->mFont.size <= 0) {
-    return NS_OK;
+  if (StyleFont()->mFont.size <= 0) {
+    return;
   }
-  return aLists.Content()->AppendNewToTop(
-           new (aBuilder) nsDisplaySVGGlyphs(aBuilder, this));
+  aLists.Content()->AppendNewToTop(
+    new (aBuilder) nsDisplaySVGGlyphs(aBuilder, this));
 }
 
 //----------------------------------------------------------------------
@@ -370,10 +370,10 @@ NS_IMETHODIMP
 nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
                           const nsIntRect *aDirtyRect)
 {
-  if (!GetStyleVisibility()->IsVisible())
+  if (!StyleVisibility()->IsVisible())
     return NS_OK;
 
-  if (GetStyleFont()->mFont.size <= 0) {
+  if (StyleFont()->mFont.size <= 0) {
     // Don't even try to paint, or cairo will go into an error state.
     return NS_OK;
   }
@@ -383,7 +383,7 @@ nsSVGGlyphFrame::PaintSVG(nsRenderingContext *aContext,
   gfxContext *gfx = aContext->ThebesContext();
   uint16_t renderMode = SVGAutoRenderState::GetRenderMode(aContext);
 
-  switch (GetStyleSVG()->mTextRendering) {
+  switch (StyleSVG()->mTextRendering) {
   case NS_STYLE_TEXT_RENDERING_OPTIMIZESPEED:
     gfx->SetAntialiasMode(gfxContext::MODE_ALIASED);
     break;
@@ -667,7 +667,7 @@ nsSVGGlyphFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
   // Account for fill:
   if ((aFlags & nsSVGUtils::eBBoxIncludeFillGeometry) ||
       ((aFlags & nsSVGUtils::eBBoxIncludeFill) &&
-       GetStyleSVG()->mFill.mType != eStyleSVGPaintType_None)) {
+       StyleSVG()->mFill.mType != eStyleSVGPaintType_None)) {
     bbox = pathExtents;
   }
 
@@ -907,7 +907,7 @@ nsSVGGlyphFrame::GetBaselineOffset(float aMetricsScale)
   uint16_t dominantBaseline;
 
   for (nsIFrame *frame = GetParent(); frame; frame = frame->GetParent()) {
-    dominantBaseline = frame->GetStyleSVGReset()->mDominantBaseline;
+    dominantBaseline = frame->StyleSVGReset()->mDominantBaseline;
     if (dominantBaseline != NS_STYLE_DOMINANT_BASELINE_AUTO ||
         frame->GetType() == nsGkAtoms::svgTextFrame) {
       break;
@@ -956,7 +956,7 @@ nsSVGGlyphFrame::SetupCairoState(gfxContext *aContext,
     toDraw = DrawMode(toDraw | gfxFont::GLYPH_FILL);
   }
 
-  uint32_t paintOrder = GetStyleSVG()->mPaintOrder;
+  uint32_t paintOrder = StyleSVG()->mPaintOrder;
   while (paintOrder) {
     uint32_t component =
       paintOrder & ((1 << NS_STYLE_PAINT_ORDER_BITWIDTH) - 1);
@@ -984,7 +984,7 @@ nsSVGGlyphFrame::SetupCairoStroke(gfxContext *aContext,
     return false;
   }
 
-  const nsStyleSVG *style = GetStyleSVG();
+  const nsStyleSVG *style = StyleSVG();
   nsSVGUtils::SetupCairoStrokeHitGeometry(this, aContext, aOuterObjectPaint);
   float opacity = nsSVGUtils::GetOpacity(style->mStrokeOpacitySource,
                                          style->mStrokeOpacity,
@@ -1004,7 +1004,7 @@ nsSVGGlyphFrame::SetupCairoFill(gfxContext *aContext,
                                 gfxTextObjectPaint *aOuterObjectPaint,
                                 SVGTextObjectPaint *aThisObjectPaint)
 {
-  const nsStyleSVG *style = GetStyleSVG();
+  const nsStyleSVG *style = StyleSVG();
   if (style->mFill.mType == eStyleSVGPaintType_None) {
     aThisObjectPaint->SetFillOpacity(0.0f);
     return false;
@@ -1031,7 +1031,7 @@ nsSVGGlyphFrame::SetupInheritablePaint(gfxContext *aContext,
                                        nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
                                        const FramePropertyDescriptor *aProperty)
 {
-  const nsStyleSVG *style = GetStyleSVG();
+  const nsStyleSVG *style = StyleSVG();
   nsSVGPaintServerFrame *ps =
     nsSVGEffects::GetPaintServer(this, &(style->*aFillOrStroke), aProperty);
 
@@ -1041,7 +1041,7 @@ nsSVGGlyphFrame::SetupInheritablePaint(gfxContext *aContext,
     aTargetPaint.SetObjectPaint(aOuterObjectPaint, (style->*aFillOrStroke).mType);
   } else {
     nscolor color = nsSVGUtils::GetFallbackOrPaintColor(aContext,
-                                                        GetStyleContext(),
+                                                        StyleContext(),
                                                         aFillOrStroke);
     aTargetPaint.SetColor(color);
 
@@ -1066,7 +1066,7 @@ nsSVGGlyphFrame::SetupObjectPaint(gfxContext *aContext,
     return false;
   }
 
-  const nsStyleSVG *style = GetStyleSVG();
+  const nsStyleSVG *style = StyleSVG();
   const nsStyleSVGPaint &paint = style->*aFillOrStroke;
 
   if (paint.mType != eStyleSVGPaintType_ObjectFill &&
@@ -1546,7 +1546,7 @@ nsSVGGlyphFrame::GetEffectiveRotate(int32_t strLength, nsTArray<float> &aRotate)
 uint16_t
 nsSVGGlyphFrame::GetTextAnchor()
 {
-  return GetStyleSVG()->mTextAnchor;
+  return StyleSVG()->mTextAnchor;
 }
 
 bool
@@ -1750,7 +1750,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
                                bool aForceGlobalTransform)
 {
   // Compute the size at which the text should render (excluding the CTM)
-  const nsStyleFont* fontData = GetStyleFont();
+  const nsStyleFont* fontData = StyleFont();
   // Since SVG has its own scaling, we really don't want
   // fonts in SVG to respond to the browser's "TextZoom"
   // (Ctrl++,Ctrl+-)
@@ -1797,10 +1797,10 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
     
     // Get the unicodeBidi property from the parent, because it doesn't
     // inherit
-    bool bidiOverride = !!(mParent->GetStyleTextReset()->mUnicodeBidi &
+    bool bidiOverride = !!(mParent->StyleTextReset()->mUnicodeBidi &
                            NS_STYLE_UNICODE_BIDI_OVERRIDE);
     nsBidiLevel baseDirection =
-      GetStyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL ?
+      StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL ?
         NSBIDI_RTL : NSBIDI_LTR;
     nsBidiPresUtils::CopyLogicalToVisual(text, visualText,
                                          baseDirection, bidiOverride);
@@ -1822,7 +1822,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
     gfxPoint p = m.Transform(gfxPoint(1, 1)) - m.Transform(gfxPoint(0, 0));
     double contextScale = SVGContentUtils::ComputeNormalizedHypotenuse(p.x, p.y);
 
-    if (GetStyleSVG()->mTextRendering ==
+    if (StyleSVG()->mTextRendering ==
         NS_STYLE_TEXT_RENDERING_GEOMETRICPRECISION) {
       textRunSize = PRECISE_SIZE;
     } else {
@@ -1835,7 +1835,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
     bool printerFont = (presContext->Type() == nsPresContext::eContext_PrintPreview ||
                           presContext->Type() == nsPresContext::eContext_Print);
     gfxFontStyle fontStyle(font.style, font.weight, font.stretch, textRunSize,
-                           mStyleContext->GetStyleFont()->mLanguage,
+                           StyleFont()->mLanguage,
                            font.sizeAdjust, font.systemFont,
                            printerFont,
                            font.languageOverride);
@@ -1847,7 +1847,7 @@ nsSVGGlyphFrame::EnsureTextRun(float *aDrawScale, float *aMetricsScale,
 
     uint32_t flags = gfxTextRunFactory::TEXT_NEED_BOUNDING_BOX |
       GetTextRunFlags(text.Length()) |
-      nsLayoutUtils::GetTextRunFlagsForStyle(GetStyleContext(), GetStyleFont(), 0);
+      nsLayoutUtils::GetTextRunFlagsForStyle(StyleContext(), StyleFont(), 0);
 
     // XXX We should use a better surface here! But then we'd have to
     // change things so we can ensure we always have the "right" sort of

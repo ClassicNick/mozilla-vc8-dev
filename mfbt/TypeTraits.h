@@ -224,7 +224,9 @@ template<> struct IsPod<unsigned long long> { static const bool value = true; };
 template<> struct IsPod<bool>               { static const bool value = true; };
 template<> struct IsPod<float>              { static const bool value = true; };
 template<> struct IsPod<double>             { static const bool value = true; };
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
 template<> struct IsPod<wchar_t>            { static const bool value = true; };
+#endif
 template<typename T> struct IsPod<T*>       { static const bool value = true; };
 
 /**

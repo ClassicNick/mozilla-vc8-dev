@@ -186,7 +186,7 @@ nsTextControlFrame::CalcIntrinsicSize(nsRenderingContext* aRenderingContext,
   aRenderingContext->SetFont(fontMet);
 
   lineHeight =
-    nsHTMLReflowState::CalcLineHeight(GetStyleContext(), NS_AUTOHEIGHT,
+    nsHTMLReflowState::CalcLineHeight(StyleContext(), NS_AUTOHEIGHT,
                                       aFontSizeInflation);
   charWidth = fontMet->AveCharWidth();
   charMaxAdvance = fontMet->MaxAdvance();
@@ -224,7 +224,7 @@ nsTextControlFrame::CalcIntrinsicSize(nsRenderingContext* aRenderingContext,
     // using percentage padding anyway.
     nsMargin childPadding;
     nsIFrame* firstChild = GetFirstPrincipalChild();
-    if (firstChild && firstChild->GetStylePadding()->GetPadding(childPadding)) {
+    if (firstChild && firstChild->StylePadding()->GetPadding(childPadding)) {
       aIntrinsicSize.width += childPadding.LeftRight();
     } else {
       NS_ERROR("Percentage padding on value div?");
@@ -233,7 +233,7 @@ nsTextControlFrame::CalcIntrinsicSize(nsRenderingContext* aRenderingContext,
 
   // Increment width with cols * letter-spacing.
   {
-    const nsStyleCoord& lsCoord = GetStyleText()->mLetterSpacing;
+    const nsStyleCoord& lsCoord = StyleText()->mLetterSpacing;
     if (eStyleUnit_Coord == lsCoord.GetUnit()) {
       nscoord letterSpacing = lsCoord.GetCoordValue();
       if (letterSpacing != 0) {
@@ -387,7 +387,7 @@ nsTextControlFrame::CreateAnonymousContent(nsTArray<ContentInfo>& aElements)
 
     nsRefPtr<nsStyleContext> placeholderStyleContext =
       PresContext()->StyleSet()->ResolvePseudoElementStyle(
-          mContent->AsElement(), pseudoType, GetStyleContext());
+          mContent->AsElement(), pseudoType, StyleContext());
 
     if (!aElements.AppendElement(ContentInfo(placeholderNode,
                                  placeholderStyleContext))) {
@@ -488,7 +488,7 @@ nsTextControlFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
   }
 #ifdef DEBUG
   // Note: Ancestor ComputeAutoSize only computes a width if we're auto-width
-  else if (GetStylePosition()->mWidth.GetUnit() == eStyleUnit_Auto) {
+  else if (StylePosition()->mWidth.GetUnit() == eStyleUnit_Auto) {
     nsSize ancestorAutoSize =
       nsContainerFrame::ComputeAutoSize(aRenderingContext,
                                         aCBSize, aAvailableWidth,
@@ -527,7 +527,7 @@ nsTextControlFrame::Reflow(nsPresContext*   aPresContext,
   nscoord lineHeight = aReflowState.ComputedHeight();
   float inflation = nsLayoutUtils::FontSizeInflationFor(this);
   if (!IsSingleLineTextControl()) {
-    lineHeight = nsHTMLReflowState::CalcLineHeight(GetStyleContext(), 
+    lineHeight = nsHTMLReflowState::CalcLineHeight(StyleContext(), 
                                                   NS_AUTOHEIGHT, inflation);
   }
   nsRefPtr<nsFontMetrics> fontMet;
@@ -1458,7 +1458,7 @@ nsTextControlFrame::PeekOffset(nsPeekOffsetStruct *aPos)
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP
+void
 nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
                                      const nsRect&           aDirtyRect,
                                      const nsDisplayListSet& aLists)
@@ -1474,8 +1474,7 @@ nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
   nsCOMPtr<nsITextControlElement> txtCtrl = do_QueryInterface(GetContent());
   NS_ASSERTION(txtCtrl, "Content not a text control element!");
 
-  nsresult rv = DisplayBorderBackgroundOutline(aBuilder, aLists);
-  NS_ENSURE_SUCCESS(rv, rv);
+  DisplayBorderBackgroundOutline(aBuilder, aLists);
 
   nsIFrame* kid = mFrames.FirstChild();
   nsDisplayListSet set(aLists, aLists.Content());
@@ -1485,13 +1484,10 @@ nsTextControlFrame::BuildDisplayList(nsDisplayListBuilder*   aBuilder,
     // placeholder has to be visible.
     if (kid->GetContent() != txtCtrl->GetPlaceholderNode() ||
         txtCtrl->GetPlaceholderVisibility()) {
-      nsresult rv = BuildDisplayListForChild(aBuilder, kid, aDirtyRect, set, 0);
-      NS_ENSURE_SUCCESS(rv, rv);
+      BuildDisplayListForChild(aBuilder, kid, aDirtyRect, set, 0);
     }
     kid = kid->GetNextSibling();
   }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP

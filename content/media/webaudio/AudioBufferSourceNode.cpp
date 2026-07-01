@@ -71,7 +71,7 @@ public:
       aOutput->SetNull(WEBAUDIO_BLOCK_SIZE);
       return;
     }
-    TrackTicks endTime = std::min(mStart + mDuration, mStop);
+    TrackTicks endTime = NS_MIN(mStart + mDuration, mStop);
     // Don't set *aFinished just because we passed mStop. Maybe someone
     // will call stop() again with a different value.
     if (currentPosition + WEBAUDIO_BLOCK_SIZE >= mStart + mDuration) {
@@ -104,8 +104,8 @@ public:
     }
 
     AllocateAudioBlock(channels, aOutput);
-    TrackTicks start = std::max(currentPosition, mStart);
-    TrackTicks end = std::min(currentPosition + WEBAUDIO_BLOCK_SIZE, endTime);
+    TrackTicks start = NS_MAX(currentPosition, mStart);
+    TrackTicks end = NS_MIN(currentPosition + WEBAUDIO_BLOCK_SIZE, endTime);
     WriteZeroesToAudioBlock(aOutput, 0, uint32_t(start - currentPosition));
     for (uint32_t i = 0; i < channels; ++i) {
       memcpy(static_cast<float*>(const_cast<void*>(aOutput->mChannelData[i])) +
@@ -166,9 +166,9 @@ AudioBufferSourceNode::Start(JSContext* aCx, double aWhen, double aOffset,
   nsRefPtr<ThreadSharedFloatArrayBufferList> data =
     mBuffer->GetThreadSharedChannelsForRate(aCx, rate, &lengthSamples);
   double length = double(lengthSamples)/rate;
-  double offset = std::max(0.0, aOffset);
+  double offset = NS_MAX(0.0, aOffset);
   double endOffset = aDuration.WasPassed() ?
-      std::min(aOffset + aDuration.Value(), length) : length;
+      NS_MIN(aOffset + aDuration.Value(), length) : length;
   if (offset >= endOffset) {
     return;
   }
@@ -205,7 +205,7 @@ AudioBufferSourceNode::Stop(double aWhen, ErrorResult& aRv)
 
   ns->SetStreamTimeParameter(AudioBufferSourceNodeEngine::STOP,
                              Context()->DestinationStream(),
-                             std::max(0.0, aWhen));
+                             NS_MAX(0.0, aWhen));
 }
 
 void

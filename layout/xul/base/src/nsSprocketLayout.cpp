@@ -67,7 +67,7 @@ nsSprocketLayout::GetFrameState(nsIFrame* aBox, nsFrameState& aState)
 static uint8_t
 GetFrameDirection(nsIFrame* aBox)
 {
-   return aBox->GetStyleVisibility()->mDirection;
+   return aBox->StyleVisibility()->mDirection;
 }
 
 static void

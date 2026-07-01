@@ -122,8 +122,8 @@ nsSVGGradientFrame::GetStopInformation(int32_t aIndex,
       *aOffset = 1.0f;
   }
 
-  *aStopColor   = stopFrame->GetStyleSVGReset()->mStopColor;
-  *aStopOpacity = stopFrame->GetStyleSVGReset()->mStopOpacity;
+  *aStopColor   = stopFrame->StyleSVGReset()->mStopColor;
+  *aStopOpacity = stopFrame->StyleSVGReset()->mStopOpacity;
 }
 
 uint16_t
@@ -180,7 +180,7 @@ nsSVGGradientFrame::GetGradientTransform(nsIFrame *aSource,
   gfxMatrix bboxMatrix;
 
   uint16_t gradientUnits = GetGradientUnits();
-  if (gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
+  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
     // If this gradient is applied to text, our caller
     // will be the glyph, which is not a container, so we
     // need to get the parent
@@ -190,7 +190,7 @@ nsSVGGradientFrame::GetGradientTransform(nsIFrame *aSource,
       mSource = aSource;
   } else {
     NS_ASSERTION(
-      gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
+      gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
       "Unknown gradientUnits type");
     // objectBoundingBox is the default anyway
 
@@ -473,12 +473,12 @@ nsSVGLinearGradientFrame::GetLengthValue(uint32_t aIndex)
   // space units as part of the individual Get* routines.  Fixes 323669.
 
   uint16_t gradientUnits = GetGradientUnits();
-  if (gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
+  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
     return nsSVGUtils::UserSpace(mSource, &length);
   }
 
   NS_ASSERTION(
-    gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
+    gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
     "Unknown gradientUnits type");
 
   return length.GetAnimValue(static_cast<SVGSVGElement*>(nullptr));
@@ -604,12 +604,12 @@ nsSVGRadialGradientFrame::GetLengthValueFromElement(uint32_t aIndex,
   // space units as part of the individual Get* routines.  Fixes 323669.
 
   uint16_t gradientUnits = GetGradientUnits();
-  if (gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
+  if (gradientUnits == SVG_UNIT_TYPE_USERSPACEONUSE) {
     return nsSVGUtils::UserSpace(mSource, &length);
   }
 
   NS_ASSERTION(
-    gradientUnits == nsIDOMSVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
+    gradientUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX,
     "Unknown gradientUnits type");
 
   return length.GetAnimValue(static_cast<SVGSVGElement*>(nullptr));
