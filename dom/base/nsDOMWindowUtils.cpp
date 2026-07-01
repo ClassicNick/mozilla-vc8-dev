@@ -2954,7 +2954,7 @@ nsDOMWindowUtils::ExitFullscreen()
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
-  nsIDocument::ExitFullScreen(/* async = */ false);
+  nsIDocument::ExitFullscreen(nullptr, /* async */ false);
   return NS_OK;
 }
 

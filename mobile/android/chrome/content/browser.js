@@ -567,7 +567,7 @@ var BrowserApp = {
 
     let tab = this.selectedTab;
     if (!tab)
-      return true;
+      return false;
     return tab.contentDocumentIsDisplayed;
   },
 
@@ -679,9 +679,7 @@ var BrowserApp = {
       if (tab) {
         let message = {
           type: "Content:LoadError",
-          tabID: tab.id,
-          uri: aBrowser.currentURI.spec,
-          title: aBrowser.contentTitle
+          tabID: tab.id
         };
         sendMessageToJava(message);
         dump("Handled load error: " + e)
@@ -1083,7 +1081,7 @@ var BrowserApp = {
     if (focused) {
        // _zoomToElement will handle not sending any message if this input is already mostly filling the screen
       BrowserEventHandler._zoomToElement(focused, -1, false,
-          aAllowZoom && !this.isTablet && !ViewportHandler.getViewportMetadata(aBrowser.contentWindow).isSpecified);
+          aAllowZoom && !this.isTablet && !ViewportHandler.getViewportMetadata(aBrowser.contentWindow).hasMetaViewport);
     }
   },
 
@@ -2923,9 +2921,7 @@ Tab.prototype = {
       } catch(e) {
         let message = {
           type: "Content:LoadError",
-          tabID: this.id,
-          uri: this.browser.currentURI.spec,
-          title: this.browser.contentTitle
+          tabID: this.id
         };
         sendMessageToJava(message);
         dump("Handled load error: " + e);
@@ -3450,6 +3446,10 @@ Tab.prototype = {
             list.push("[" + rel + "]");
         }
 
+        // We only care about icon links
+        if (list.indexOf("[icon]") == -1)
+          return;
+
         // We want to get the largest icon size possible for our UI.
         let maxSize = 0;
 
@@ -3510,7 +3510,7 @@ Tab.prototype = {
           aEvent.preventDefault();
 
           sendMessageToJava({
-            type: "DOMWindowClose",
+            type: "Tab:Close",
             tabID: this.id
           });
         }
@@ -3777,13 +3777,13 @@ Tab.prototype = {
       aMetadata.minZoom = aMetadata.maxZoom = NaN;
     }
 
-    let scaleRatio = aMetadata.scaleRatio;
+    let scaleRatio = aMetadata.scaleRatio = ViewportHandler.getScaleRatio();
 
-    if (aMetadata.defaultZoom > 0)
+    if ("defaultZoom" in aMetadata && aMetadata.defaultZoom > 0)
       aMetadata.defaultZoom *= scaleRatio;
-    if (aMetadata.minZoom > 0)
+    if ("minZoom" in aMetadata && aMetadata.minZoom > 0)
       aMetadata.minZoom *= scaleRatio;
-    if (aMetadata.maxZoom > 0)
+    if ("maxZoom" in aMetadata && aMetadata.maxZoom > 0)
       aMetadata.maxZoom *= scaleRatio;
 
     ViewportHandler.setMetadataForDocument(this.browser.contentDocument, aMetadata);
@@ -3809,8 +3809,13 @@ Tab.prototype = {
 
     let metadata = this.metadata;
     if (metadata.autoSize) {
-      viewportW = screenW / metadata.scaleRatio;
-      viewportH = screenH / metadata.scaleRatio;
+      if ("scaleRatio" in metadata) {
+        viewportW = screenW / metadata.scaleRatio;
+        viewportH = screenH / metadata.scaleRatio;
+      } else {
+        viewportW = screenW;
+        viewportH = screenH;
+      }
     } else {
       viewportW = metadata.width;
       viewportH = metadata.height;
@@ -3891,8 +3896,8 @@ Tab.prototype = {
       type: "Tab:ViewportMetadata",
       allowZoom: metadata.allowZoom,
       defaultZoom: metadata.defaultZoom || metadata.scaleRatio,
-      minZoom: metadata.minZoom,
-      maxZoom: metadata.maxZoom,
+      minZoom: metadata.minZoom || 0,
+      maxZoom: metadata.maxZoom || 0,
       tabID: this.id
     });
   },
@@ -5459,7 +5464,14 @@ var ViewportHandler = {
   },
 
   /**
-   * Returns the ViewportMetadata object.
+   * Returns an object with the page's preferred viewport properties:
+   *   defaultZoom (optional float): The initial scale when the page is loaded.
+   *   minZoom (optional float): The minimum zoom level.
+   *   maxZoom (optional float): The maximum zoom level.
+   *   width (optional int): The CSS viewport width in px.
+   *   height (optional int): The CSS viewport height in px.
+   *   autoSize (boolean): Resize the CSS viewport when the window resizes.
+   *   allowZoom (boolean): Let the user zoom in or out.
    */
   getViewportMetadata: function getViewportMetadata(aWindow) {
     let windowUtils = aWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
@@ -5491,22 +5503,12 @@ var ViewportHandler = {
     if (isNaN(scale) && isNaN(minScale) && isNaN(maxScale) && allowZoomStr == "" && widthStr == "" && heightStr == "") {
       // Only check for HandheldFriendly if we don't have a viewport meta tag
       let handheldFriendly = windowUtils.getDocumentMetadata("HandheldFriendly");
-      if (handheldFriendly == "true") {
-        return new ViewportMetadata({
-          defaultZoom: 1,
-          autoSize: true,
-          allowZoom: true
-        });
-      }
+      if (handheldFriendly == "true")
+        return { defaultZoom: 1, autoSize: true, allowZoom: true };
 
       let doctype = aWindow.document.doctype;
-      if (doctype && /(WAP|WML|Mobile)/.test(doctype.publicId)) {
-        return new ViewportMetadata({
-          defaultZoom: 1,
-          autoSize: true,
-          allowZoom: true
-        });
-      }
+      if (doctype && /(WAP|WML|Mobile)/.test(doctype.publicId))
+        return { defaultZoom: 1, autoSize: true, allowZoom: true };
 
       hasMetaViewport = false;
       let defaultZoom = Services.prefs.getIntPref("browser.viewport.defaultZoom");
@@ -5526,7 +5528,7 @@ var ViewportHandler = {
                   (!widthStr && (heightStr == "device-height" || scale == 1.0)));
     }
 
-    return new ViewportMetadata({
+    return {
       defaultZoom: scale,
       minZoom: minScale,
       maxZoom: maxScale,
@@ -5534,8 +5536,8 @@ var ViewportHandler = {
       height: height,
       autoSize: autoSize,
       allowZoom: allowZoom,
-      isSpecified: hasMetaViewport
-    });
+      hasMetaViewport: hasMetaViewport
+    };
   },
 
   clamp: function(num, min, max) {
@@ -5570,7 +5572,7 @@ var ViewportHandler = {
    * metadata is available for that document.
    */
   getMetadataForDocument: function getMetadataForDocument(aDocument) {
-    let metadata = this._metadata.get(aDocument, new ViewportMetadata());
+    let metadata = this._metadata.get(aDocument, this.getDefaultMetadata());
     return metadata;
   },
 
@@ -5580,47 +5582,17 @@ var ViewportHandler = {
       this._metadata.delete(aDocument);
     else
       this._metadata.set(aDocument, aMetadata);
+  },
+
+  /** Returns the default viewport metadata for a document. */
+  getDefaultMetadata: function getDefaultMetadata() {
+    return {
+      autoSize: false,
+      allowZoom: true,
+      scaleRatio: ViewportHandler.getScaleRatio()
+    };
   }
-
 };
-
-/**
- * An object which represents the page's preferred viewport properties:
- *   width (int): The CSS viewport width in px.
- *   height (int): The CSS viewport height in px.
- *   defaultZoom (float): The initial scale when the page is loaded.
- *   minZoom (float): The minimum zoom level.
- *   maxZoom (float): The maximum zoom level.
- *   autoSize (boolean): Resize the CSS viewport when the window resizes.
- *   allowZoom (boolean): Let the user zoom in or out.
- *   isSpecified (boolean): Whether the page viewport is specified or not.
- *   scaleRatio (float): The device-pixel-to-CSS-px ratio.
- */
-function ViewportMetadata(aMetadata = {}) {
-  this.width = ("width" in aMetadata) ? aMetadata.width : 0;
-  this.height = ("height" in aMetadata) ? aMetadata.height : 0;
-  this.defaultZoom = ("defaultZoom" in aMetadata) ? aMetadata.defaultZoom : 0;
-  this.minZoom = ("minZoom" in aMetadata) ? aMetadata.minZoom : 0;
-  this.maxZoom = ("maxZoom" in aMetadata) ? aMetadata.maxZoom : 0;
-  this.autoSize = ("autoSize" in aMetadata) ? aMetadata.autoSize : false;
-  this.allowZoom = ("allowZoom" in aMetadata) ? aMetadata.allowZoom : true;
-  this.isSpecified = ("isSpecified" in aMetadata) ? aMetadata.isSpecified : false;
-  this.scaleRatio = ViewportHandler.getScaleRatio();
-  Object.seal(this);
-}
-
-ViewportMetadata.prototype = {
-  width: null,
-  height: null,
-  defaultZoom: null,
-  minZoom: null,
-  maxZoom: null,
-  autoSize: null,
-  allowZoom: null,
-  isSpecified: null,
-  scaleRatio: null,
-};
-
 
 /**
  * Handler for blocked popups, triggered by DOMUpdatePageReport events in browser.xml
@@ -8180,7 +8152,11 @@ var MemoryObserver = {
 };
 
 var Distribution = {
+  // File used to store campaign data
   _file: null,
+
+  // Path to distribution directory for distribution customizations
+  _path: null,
 
   init: function dc_init() {
     Services.obs.addObserver(this, "Distribution:Set", false);
@@ -8188,7 +8164,7 @@ var Distribution = {
     Services.obs.addObserver(this, "Campaign:Set", false);
 
     // Look for file outside the APK:
-    // /data/data/org.mozilla.fennec/distribution.json
+    // /data/data/org.mozilla.xxx/distribution.json
     this._file = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
     this._file.append("distribution.json");
     this.readJSON(this._file, this.update);
@@ -8203,6 +8179,8 @@ var Distribution = {
   observe: function dc_observe(aSubject, aTopic, aData) {
     switch (aTopic) {
       case "Distribution:Set":
+        this._path = aData;
+
         // Reload the default prefs so we can observe "prefservice:after-app-defaults"
         Services.prefs.QueryInterface(Ci.nsIObserver).observe(null, "reload-default-prefs", null);
         break;
@@ -8243,10 +8221,16 @@ var Distribution = {
   },
 
   getPrefs: function dc_getPrefs() {
-    // Look for preferences file outside the APK:
-    // /data/data/org.mozilla.fennec/distribution/preferences.json
-    let file = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
-    file.append("distribution");
+    let file;
+    if (this._path) {
+      file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+      file.initWithPath(this._path);
+    } else {
+      // If a path isn't specified, look in the data directory:
+      // /data/data/org.mozilla.xxx/distribution
+      file = Services.dirsvc.get("XCurProcD", Ci.nsIFile);
+      file.append("distribution");
+    }
     file.append("preferences.json");
 
     this.readJSON(file, this.applyPrefs);
@@ -8312,6 +8296,8 @@ var Distribution = {
         defaults.setComplexValue(key, Ci.nsIPrefLocalizedString, localizedString);
       } catch (e) { /* ignore bad prefs and move on */ }
     }
+
+    sendMessageToJava({ type: "Distribution:Set:OK" });
   },
 
   // aFile is an nsIFile

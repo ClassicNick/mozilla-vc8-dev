@@ -141,6 +141,7 @@ let test = maketest("Main", function main(test) {
     yield test_iter();
     yield test_exists();
     yield test_debug_test();
+    yield test_system_shutdown();
     info("Test is over");
     SimpleTest.finish();
   });
@@ -401,6 +402,60 @@ let test_read_write_all = maketest("read_write_all", function read_write_all(tes
 
     // Cleanup.
     OS.File.remove(pathDest);
+
+    // Same tests with |flush: false|
+    // Check that read + writeAtomic performs a correct copy
+    options = {tmpPath: tmpPath, flush: false};
+    optionsBackup = {tmpPath: tmpPath, flush: false};
+    bytesWritten = yield OS.File.writeAtomic(pathDest, contents, options);
+    test.is(contents.byteLength, bytesWritten, "Wrote the correct number of bytes (without flush)");
+
+    // Check that options are not altered
+    test.is(Object.keys(options).length, Object.keys(optionsBackup).length,
+            "The number of options was not changed (without flush)");
+    for (let k in options) {
+      test.is(options[k], optionsBackup[k], "Option was not changed (without flush)");
+    }
+    yield reference_compare_files(pathSource, pathDest, test);
+
+    // Check that temporary file was removed
+    test.info("Compare complete (without flush)");
+    test.ok(!(new FileUtils.File(tmpPath).exists()), "Temporary file was removed (without flush)");
+
+    // Check that writeAtomic fails if noOverwrite is true and the destination
+    // file already exists!
+    view = new Uint8Array(contents.buffer, 10, 200);
+    try {
+      options = {tmpPath: tmpPath, noOverwrite: true, flush: false};
+      yield OS.File.writeAtomic(pathDest, view, options);
+      test.fail("With noOverwrite, writeAtomic should have refused to overwrite file (without flush)");
+    } catch (err) {
+      test.info("With noOverwrite, writeAtomic correctly failed (without flush)");
+      test.ok(err instanceof OS.File.Error, "writeAtomic correctly failed with a file error (without flush)");
+      test.ok(err.becauseExists, "writeAtomic file error confirmed that the file already exists (without flush)");
+    }
+    yield reference_compare_files(pathSource, pathDest, test);
+    test.ok(!(new FileUtils.File(tmpPath).exists()), "Temporary file was removed (without flush)");
+
+    // Now write a subset
+    START = 10;
+    LENGTH = 100;
+    view = new Uint8Array(contents.buffer, START, LENGTH);
+    bytesWritten = yield OS.File.writeAtomic(pathDest, view, {tmpPath: tmpPath, flush: false});
+    test.is(bytesWritten, LENGTH, "Partial write wrote the correct number of bytes (without flush)");
+    array2 = yield OS.File.read(pathDest);
+    view1 = new Uint8Array(contents.buffer, START, LENGTH);
+    test.is(view1.length, array2.length, "Re-read partial write with the correct number of bytes (without flush)");
+    for (let i = 0; i < LENGTH; ++i) {
+      if (view1[i] != array2[i]) {
+        test.is(view1[i], array2[i], "Offset " + i + " is correct (without flush)");
+      }
+      test.ok(true, "Compared re-read of partial write (without flush)");
+    }
+
+    // Cleanup.
+    OS.File.remove(pathDest);
+
   });
 });
 
@@ -690,5 +745,56 @@ let test_debug_test = maketest("debug_test", function debug_test(test) {
     toggleDebugTest(false);
     // Restore DEBUG to its original.
     OS.Shared.DEBUG = originalPref;
+  });
+});
+
+/**
+ * Test logging of file descriptors leaks.
+ */
+let test_system_shutdown = maketest("system_shutdown", function system_shutdown(test) {
+  return Task.spawn(function () {
+    // Save original DEBUG value.
+    let originalDebug = OS.Shared.DEBUG;
+    // Create a console listener.
+    function getConsoleListener(resource) {
+      let consoleListener = {
+        observe: function (aMessage) {
+          // Ignore unexpected messages.
+          if (!(aMessage instanceof Components.interfaces.nsIConsoleMessage)) {
+            return;
+          }
+          if (aMessage.message.indexOf("TEST OS Controller WARNING") < 0) {
+            return;
+          }
+          test.ok(aMessage.message.indexOf("WARNING: File descriptors leaks " +
+            "detected.") >= 0, "File descriptors leaks are logged correctly.");
+          test.ok(aMessage.message.indexOf(resource) >= 0,
+            "Leaked resource is correctly listed in the log.");
+          toggleDebugTest(false, resource, consoleListener);
+        }
+      };
+      return consoleListener;
+    }
+    // Set/Unset testing flags and Services.console listener.
+    function toggleDebugTest(startDebug, resource, consoleListener) {
+      Services.console[startDebug ? "registerListener" : "unregisterListener"](
+        consoleListener || getConsoleListener(resource));
+      OS.Shared.TEST = startDebug;
+      // If pref is false, restore DEBUG to its original.
+      OS.Shared.DEBUG = startDebug || originalDebug;
+    }
+
+    let currentDir = yield OS.File.getCurrentDirectory();
+    let iterator = new OS.File.DirectoryIterator(currentDir);
+    toggleDebugTest(true, currentDir);
+    Services.obs.notifyObservers(null, "test.osfile.web-workers-shutdown",
+      null);
+    yield iterator.close();
+
+    let openedFile = yield OS.File.open(EXISTING_FILE);
+    toggleDebugTest(true, EXISTING_FILE);
+    Services.obs.notifyObservers(null, "test.osfile.web-workers-shutdown",
+      null);
+    yield openedFile.close();
   });
 });

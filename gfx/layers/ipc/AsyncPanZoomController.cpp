@@ -1488,6 +1488,14 @@ void AsyncPanZoomController::UpdateZoomConstraints(bool aAllowZoom,
   mMaxZoom = aMaxZoom;
 }
 
+void AsyncPanZoomController::PostDelayedTask(Task* aTask, int aDelayMs) {
+  if (!mGeckoContentController) {
+    return;
+  }
+
+  mGeckoContentController->PostDelayedTask(aTask, aDelayMs);
+}
+
 void AsyncPanZoomController::SendAsyncScrollEvent() {
   if (!mGeckoContentController) {
     return;

@@ -215,9 +215,7 @@ public:
         mIgnoreGSUB(false),
         mSVGInitialized(false),
         mWeight(500), mStretch(NS_FONT_STRETCH_NORMAL),
-#ifdef MOZ_GRAPHITE
         mCheckedForGraphiteTables(false),
-#endif
         mHasCmapTable(false),
         mUVSOffset(0), mUVSData(nullptr),
         mUserFontData(nullptr),
@@ -256,7 +254,6 @@ public:
 
     virtual bool IsSymbolFont();
 
-#ifdef MOZ_GRAPHITE
     inline bool HasGraphiteTables() {
         if (!mCheckedForGraphiteTables) {
             CheckForGraphiteTables();
@@ -264,7 +261,6 @@ public:
         }
         return mHasGraphiteTables;
     }
-#endif
 
     inline bool HasCmapTable() {
         if (!mCharacterMap) {
@@ -351,10 +347,8 @@ public:
     uint16_t         mWeight;
     int16_t          mStretch;
 
-#ifdef MOZ_GRAPHITE
     bool             mHasGraphiteTables;
     bool             mCheckedForGraphiteTables;
-#endif
     bool             mHasCmapTable;
     nsRefPtr<gfxCharacterMap> mCharacterMap;
     uint32_t         mUVSOffset;
@@ -384,9 +378,7 @@ protected:
         mIgnoreGSUB(false),
         mSVGInitialized(false),
         mWeight(500), mStretch(NS_FONT_STRETCH_NORMAL),
-#ifdef MOZ_GRAPHITE
         mCheckedForGraphiteTables(false),
-#endif
         mHasCmapTable(false),
         mUVSOffset(0), mUVSData(nullptr),
         mUserFontData(nullptr),
@@ -399,9 +391,7 @@ protected:
         return nullptr;
     }
 
-#ifdef MOZ_GRAPHITE
     virtual void CheckForGraphiteTables();
-#endif
 
 private:
 
@@ -432,18 +422,14 @@ private:
     class FontTableBlobData;
 
     /**
-     * FontTableHashEntry manages the entries of hb_blob_ts for two
-     * different situations:
+     * FontTableHashEntry manages the entries of hb_blob_t's containing font
+     * table data.
      *
-     * The common situation is to share font table across fonts with the same
+     * This is used to share font tables across fonts with the same
      * font entry (but different sizes) for use by HarfBuzz.  The hashtable
      * does not own a strong reference to the blob, but keeps a weak pointer,
      * managed by FontTableBlobData.  Similarly FontTableBlobData keeps only a
      * weak pointer to the hashtable, managed by FontTableHashEntry.
-     *
-     * Some font tables are saved here before they would get stripped by OTS
-     * sanitizing.  These are retained for harfbuzz, which does its own
-     * sanitizing.  The hashtable owns a reference, so ownership is simple.
      */
 
     class FontTableHashEntry : public nsUint32HashKey
@@ -475,10 +461,6 @@ private:
         hb_blob_t *
         ShareTableAndGetBlob(FallibleTArray<uint8_t>& aTable,
                              nsTHashtable<FontTableHashEntry> *aHashtable);
-
-        // Transfer (not copy) elements of aTable to a new hb_blob_t that is
-        // owned by the hashtable entry.
-        void SaveTable(FallibleTArray<uint8_t>& aTable);
 
         // Return a strong reference to the blob.
         // Callers must hb_blob_destroy the returned blob.
@@ -1281,12 +1263,10 @@ public:
         return mFontEntry->HasCmapTable();
     }
 
-#ifdef MOZ_GRAPHITE
     // check whether this is an sfnt we can potentially use with Graphite
     bool FontCanSupportGraphite() {
         return mFontEntry->HasGraphiteTables();
     }
-#endif
 
     // Access to raw font table data (needed for Harfbuzz):
     // returns a pointer to data owned by the fontEntry or the OS,
@@ -1740,9 +1720,8 @@ protected:
     // of the text run being shaped
     nsAutoPtr<gfxFontShaper>   mPlatformShaper;
     nsAutoPtr<gfxFontShaper>   mHarfBuzzShaper;
-#ifdef MOZ_GRAPHITE
     nsAutoPtr<gfxFontShaper>   mGraphiteShaper;
-#endif
+
     mozilla::RefPtr<mozilla::gfx::ScaledFont> mAzureScaledFont;
 
     // Create a default platform text shaper for this font.

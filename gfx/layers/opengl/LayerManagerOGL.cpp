@@ -63,6 +63,7 @@ int32_t
 LayerManagerOGL::GetMaxTextureSize() const
 {
   int32_t maxSize;
+  mGLContext->MakeCurrent();
   mGLContext->fGetIntegerv(LOCAL_GL_MAX_TEXTURE_SIZE, &maxSize);
   return maxSize;
 }

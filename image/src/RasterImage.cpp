@@ -17,6 +17,7 @@
 #include "prenv.h"
 #include "ImageContainer.h"
 #include "Layers.h"
+#include "nsPresContext.h"
 
 #include "nsPNGDecoder.h"
 #include "nsGIFDecoder2.h"
@@ -768,6 +769,31 @@ RasterImage::GetHeight(int32_t *aHeight)
   }
 
   *aHeight = mSize.height;
+  return NS_OK;
+}
+ 
+//******************************************************************************
+/* [noscript] readonly attribute nsSize intrinsicSize; */
+NS_IMETHODIMP
+RasterImage::GetIntrinsicSize(nsSize* aSize)
+{
+  if (mError)
+    return NS_ERROR_FAILURE;
+
+  *aSize = nsSize(nsPresContext::CSSPixelsToAppUnits(mSize.width),
+                  nsPresContext::CSSPixelsToAppUnits(mSize.height));
+  return NS_OK;
+}
+
+//******************************************************************************
+/* [noscript] readonly attribute nsSize intrinsicRatio; */
+NS_IMETHODIMP
+RasterImage::GetIntrinsicRatio(nsSize* aRatio)
+{
+  if (mError)
+    return NS_ERROR_FAILURE;
+
+  *aRatio = nsSize(mSize.width, mSize.height);
   return NS_OK;
 }
 
@@ -1812,7 +1838,7 @@ get_header_str (char *buf, char *data, size_t data_len)
 }
 
 nsresult
-RasterImage::OnImageDataComplete(nsIRequest*, nsISupports*, nsresult)
+RasterImage::DoImageDataComplete()
 {
   if (mError)
     return NS_ERROR_FAILURE;
@@ -1871,6 +1897,19 @@ RasterImage::OnImageDataComplete(nsIRequest*, nsISupports*, nsresult)
     CONTAINER_ENSURE_SUCCESS(rv);
   }
   return NS_OK;
+}
+
+nsresult
+RasterImage::OnImageDataComplete(nsIRequest*, nsISupports*, nsresult aStatus, bool aLastPart)
+{
+  nsresult finalStatus = DoImageDataComplete();
+
+  // Give precedence to Necko failure codes.
+  if (NS_FAILED(aStatus))
+    finalStatus = aStatus;
+
+  GetStatusTracker().OnStopRequest(aLastPart, finalStatus);
+  return finalStatus;
 }
 
 nsresult
@@ -3065,6 +3104,15 @@ RasterImage::Draw(gfxContext *aContext,
   // disabled via the content.image.allow_locking pref.)
   if (DiscardingActive()) {
     DiscardTracker::Reset(&mDiscardTrackerNode);
+  }
+
+  // We would like to just check if we have a zero lock count, but we can't do
+  // that for animated images because in EnsureAnimExists we lock the image and
+  // never unlock so that animated images always have their lock count >= 1. In
+  // that case we use our animation consumers count as a proxy for lock count.
+  if (mLockCount == 0 || (mAnim && mAnimationConsumers == 0)) {
+    if (mStatusTracker)
+      mStatusTracker->GetDecoderObserver()->OnUnlockedDraw();
   }
 
   // We use !mDecoded && mHasSourceData to mean discarded.
