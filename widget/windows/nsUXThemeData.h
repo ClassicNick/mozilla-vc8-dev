@@ -145,6 +145,8 @@ public:
   typedef HRESULT (WINAPI*GetThemeBackgroundRegionPtr)(HANDLE hTheme, HDC hdc, int iPartId,
                                             int iStateId, const RECT* pRect,
                                             HRGN *pRegion);
+  typedef HRESULT (WINAPI*GetThemeMetricPtr)(HANDLE hTheme, HDC hdc, int iPartId, 
+											 int iStateId, int iPropId, int *piVal);
   typedef HRESULT (WINAPI*GetThemePartSizePtr)(HANDLE hTheme, HDC hdc, int iPartId,
                                          int iStateId, RECT* prc, int ts,
                                          SIZE* psz);
@@ -168,6 +170,7 @@ public:
   static GetThemeContentRectPtr getThemeContentRect;
   static GetThemeBackgroundRegionPtr getThemeBackgroundRegion;
   static GetThemePartSizePtr getThemePartSize;
+  static GetThemeMetricPtr getThemeMetric;
   static GetThemeSysFontPtr getThemeSysFont;
   static GetThemeColorPtr getThemeColor;
   static GetThemeMarginsPtr getThemeMargins;

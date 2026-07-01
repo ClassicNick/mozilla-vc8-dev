@@ -26,6 +26,7 @@ from __future__ import print_function, unicode_literals
 import logging
 import os
 import sys
+import time
 import traceback
 import types
 
@@ -118,11 +119,14 @@ class MozbuildSandbox(Sandbox):
         self.config = config
 
         topobjdir = os.path.abspath(config.topobjdir)
-
         topsrcdir = config.topsrcdir
-        if not path.startswith(topsrcdir):
+        norm_topsrcdir = os.path.normpath(topsrcdir)
+
+        if not path.startswith(norm_topsrcdir):
             external_dirs = config.substs.get('EXTERNAL_SOURCE_DIR', '').split()
             for external in external_dirs:
+                external = os.path.normpath(external)
+
                 if not os.path.isabs(external):
                     external = os.path.join(config.topsrcdir, external)
 
@@ -610,8 +614,10 @@ class BuildReader(object):
 
         self._read_files.add(path)
 
+        time_start = time.time()
         sandbox = MozbuildSandbox(self.config, path)
         sandbox.exec_file(path, filesystem_absolute=filesystem_absolute)
+        sandbox.execution_time = time.time() - time_start
         yield sandbox
 
         # Traverse into referenced files.

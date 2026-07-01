@@ -12,7 +12,9 @@
 #include "SurfaceTypes.h"
 
 #include <windows.h>
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include <d3d10_1.h>
+#endif
 
 namespace mozilla {
 namespace gl {
@@ -23,10 +25,12 @@ class SharedSurface_ANGLEShareHandle
     : public SharedSurface_GL
 {
 public:
+#ifdef MOZ_ENABLE_D3D10_LAYER
     static SharedSurface_ANGLEShareHandle* Create(GLContext* gl, ID3D10Device1* d3d,
                                                   EGLContext context, EGLConfig config,
                                                   const gfxIntSize& size,
                                                   bool hasAlpha);
+#endif
 
     static SharedSurface_ANGLEShareHandle* Cast(SharedSurface* surf) {
         MOZ_ASSERT(surf->Type() == SharedSurfaceType::EGLSurfaceANGLE);
@@ -38,6 +42,7 @@ protected:
     GLLibraryEGL* const mEGL;
     const EGLContext mContext;
     const EGLSurface mPBuffer;
+#ifdef MOZ_ENABLE_D3D10_LAYER
     nsRefPtr<ID3D10Texture2D> mTexture;
     nsRefPtr<ID3D10ShaderResourceView> mSRV;
 
@@ -60,6 +65,7 @@ protected:
         , mTexture(texture)
         , mSRV(srv)
     {}
+#endif
 
     EGLDisplay Display();
 
@@ -72,10 +78,12 @@ public:
     virtual void Fence();
     virtual bool WaitSync();
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
     // Implementation-specific functions below:
     ID3D10ShaderResourceView* GetSRV() {
         return mSRV;
     }
+#endif
 };
 
 
@@ -86,16 +94,21 @@ class SurfaceFactory_ANGLEShareHandle
 protected:
     GLContext* const mProdGL;
     GLLibraryEGL* const mEGL;
+#ifdef MOZ_ENABLE_D3D10_LAYER
     nsRefPtr<ID3D10Device1> mConsD3D;
+#endif
     EGLContext mContext;
     EGLConfig mConfig;
 
 public:
+#ifdef MOZ_ENABLE_D3D10_LAYER
     static SurfaceFactory_ANGLEShareHandle* Create(GLContext* gl,
                                                    ID3D10Device1* d3d,
                                                    const SurfaceCaps& caps);
+#endif
 
 protected:
+#ifdef MOZ_ENABLE_D3D10_LAYER
     SurfaceFactory_ANGLEShareHandle(GLContext* gl,
                                     GLLibraryEGL* egl,
                                     ID3D10Device1* d3d,
@@ -107,6 +120,7 @@ protected:
                                                       mContext, mConfig,
                                                       size, hasAlpha);
     }
+#endif
 };
 
 } /* namespace gfx */

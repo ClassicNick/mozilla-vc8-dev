@@ -5,12 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsHTMLMediaElement.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Util.h"
 
 #include "base/basictypes.h"
 #include "nsIDOMHTMLMediaElement.h"
 #include "nsIDOMHTMLSourceElement.h"
-#include "nsTimeRanges.h"
+#include "TimeRanges.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsPresContext.h"
@@ -72,8 +73,7 @@
 
 #include "ImageContainer.h"
 #include "nsIPowerManagerService.h"
-#include <cstdlib> // for std::abs(int/long)
-#include <cmath> // for std::abs(float/double)
+#include <algorithm>
 
 #ifdef MOZ_OGG
 #include "OggDecoder.h"
@@ -1351,7 +1351,7 @@ NS_IMETHODIMP nsHTMLMediaElement::GetDuration(double *aDuration)
 /* readonly attribute nsIDOMHTMLTimeRanges seekable; */
 NS_IMETHODIMP nsHTMLMediaElement::GetSeekable(nsIDOMTimeRanges** aSeekable)
 {
-  nsRefPtr<nsTimeRanges> ranges = new nsTimeRanges();
+  nsRefPtr<TimeRanges> ranges = new TimeRanges();
   if (mDecoder && mReadyState > nsIDOMHTMLMediaElement::HAVE_NOTHING) {
     mDecoder->GetSeekable(ranges);
   }
@@ -1371,7 +1371,7 @@ NS_IMETHODIMP nsHTMLMediaElement::GetPaused(bool *aPaused)
 /* readonly attribute nsIDOMHTMLTimeRanges played; */
 NS_IMETHODIMP nsHTMLMediaElement::GetPlayed(nsIDOMTimeRanges** aPlayed)
 {
-  nsTimeRanges* ranges = new nsTimeRanges();
+  TimeRanges* ranges = new TimeRanges();
   NS_ADDREF(*aPlayed = ranges);
 
   uint32_t timeRangeCount = 0;
@@ -3407,7 +3407,7 @@ nsHTMLMediaElement::CopyInnerTo(Element* aDest)
 
 nsresult nsHTMLMediaElement::GetBuffered(nsIDOMTimeRanges** aBuffered)
 {
-  nsRefPtr<nsTimeRanges> ranges = new nsTimeRanges();
+  nsRefPtr<TimeRanges> ranges = new TimeRanges();
   if (mReadyState > nsIDOMHTMLMediaElement::HAVE_NOTHING && mDecoder) {
     // If GetBuffered fails we ignore the error result and just return the
     // time ranges we found up till the error.
@@ -3519,10 +3519,10 @@ static double ClampPlaybackRate(double aPlaybackRate)
   if (aPlaybackRate == 0.0) {
     return aPlaybackRate;
   }
-  if (std::abs(aPlaybackRate) < MIN_PLAYBACKRATE) {
+  if (Abs(aPlaybackRate) < MIN_PLAYBACKRATE) {
     return aPlaybackRate < 0 ? -MIN_PLAYBACKRATE : MIN_PLAYBACKRATE;
   }
-  if (std::abs(aPlaybackRate) > MAX_PLAYBACKRATE) {
+  if (Abs(aPlaybackRate) > MAX_PLAYBACKRATE) {
     return aPlaybackRate < 0 ? -MAX_PLAYBACKRATE : MAX_PLAYBACKRATE;
   }
   return aPlaybackRate;

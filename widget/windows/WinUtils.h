@@ -191,11 +191,21 @@ public:
 
   /**
    * SHCreateItemFromParsingName() calls native SHCreateItemFromParsingName()
-   * API.  Note that you must call VistaCreateItemFromParsingNameInit() before
-   * calling this.  And the result must be TRUE.  Otherwise, returns E_FAIL.
+   * API which is available on Vista and up.
    */
   static HRESULT SHCreateItemFromParsingName(PCWSTR pszPath, IBindCtx *pbc,
                                              REFIID riid, void **ppv);
+
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
+  /**
+   * SHGetKnownFolderPath() calls native SHGetKnownFolderPath()
+   * API which is available on Vista and up.
+   */
+  static HRESULT SHGetKnownFolderPath(REFKNOWNFOLDERID rfid,
+                                      DWORD dwFlags,
+                                      HANDLE hToken,
+                                      PWSTR *ppszPath);
+#endif
 
   /**
    * GetShellItemPath return the file or directory path of a shell item.
@@ -230,13 +240,13 @@ private:
                                                             REFIID riid,
                                                             void **ppv);
   static SHCreateItemFromParsingNamePtr sCreateItemFromParsingName;
-
-  /**
-   * VistaCreateItemFromParsingNameInit() initializes the static pointer for
-   * SHCreateItemFromParsingName() API which is usable only on Vista and later.
-   * This returns TRUE if the API is available.  Otherwise, FALSE.
-   */
-  static bool VistaCreateItemFromParsingNameInit();
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
+  typedef HRESULT (WINAPI * SHGetKnownFolderPathPtr)(REFKNOWNFOLDERID rfid,
+                                                     DWORD dwFlags,
+                                                     HANDLE hToken,
+                                                     PWSTR *ppszPath);
+  static SHGetKnownFolderPathPtr sGetKnownFolderPath;
+#endif
 };
 
 #ifdef MOZ_PLACES

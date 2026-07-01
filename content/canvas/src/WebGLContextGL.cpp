@@ -2849,6 +2849,15 @@ WebGLContext::GetVertexAttrib(JSContext* cx, WebGLuint index, WebGLenum pname,
             return JS::Int32Value(mAttribBuffers[index].stride);
 
         case LOCAL_GL_VERTEX_ATTRIB_ARRAY_SIZE:
+        {
+            if (!ValidateAttribIndex(index, "enableVertexAttribArray"))
+                return JS::NullValue();
+
+            if (!mAttribBuffers[index].enabled)
+                return JS::Int32Value(4);
+
+            // Don't break; fall through.
+        }
         case LOCAL_GL_VERTEX_ATTRIB_ARRAY_TYPE:
         {
             GLint i = 0;
@@ -3672,12 +3681,17 @@ WebGLContext::SurfaceFromElementResultToImageSurface(nsLayoutUtils::SurfaceFromE
 }
 
 
+
 void
 WebGLContext::Uniform1i(WebGLUniformLocation *location_object, WebGLint a1)
 {
     GLint location;
     if (!ValidateUniformSetter("Uniform1i", location_object, location))
         return;
+
+    if (!ValidateSamplerUniformSetter("Uniform1i", location_object, a1))
+        return;
+
     MakeContextCurrent();
     gl->fUniform1i(location, a1);
 }
@@ -3689,6 +3703,13 @@ WebGLContext::Uniform2i(WebGLUniformLocation *location_object, WebGLint a1,
     GLint location;
     if (!ValidateUniformSetter("Uniform2i", location_object, location))
         return;
+
+    if (!ValidateSamplerUniformSetter("Uniform2i", location_object, a1) ||
+        !ValidateSamplerUniformSetter("Uniform2i", location_object, a2))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform2i(location, a1, a2);
 }
@@ -3700,6 +3721,14 @@ WebGLContext::Uniform3i(WebGLUniformLocation *location_object, WebGLint a1,
     GLint location;
     if (!ValidateUniformSetter("Uniform3i", location_object, location))
         return;
+
+    if (!ValidateSamplerUniformSetter("Uniform3i", location_object, a1) ||
+        !ValidateSamplerUniformSetter("Uniform3i", location_object, a2) ||
+        !ValidateSamplerUniformSetter("Uniform3i", location_object, a3))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform3i(location, a1, a2, a3);
 }
@@ -3711,6 +3740,15 @@ WebGLContext::Uniform4i(WebGLUniformLocation *location_object, WebGLint a1,
     GLint location;
     if (!ValidateUniformSetter("Uniform4i", location_object, location))
         return;
+
+    if (!ValidateSamplerUniformSetter("Uniform4i", location_object, a1) ||
+        !ValidateSamplerUniformSetter("Uniform4i", location_object, a2) ||
+        !ValidateSamplerUniformSetter("Uniform4i", location_object, a3) ||
+        !ValidateSamplerUniformSetter("Uniform4i", location_object, a4))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform4i(location, a1, a2, a3, a4);
 }
@@ -3768,6 +3806,10 @@ WebGLContext::Uniform1iv_base(WebGLUniformLocation *location_object,
                                     numElementsToUpload, arrayLength)) {
         return;
     }
+
+    if (!ValidateSamplerUniformSetter("Uniform1iv", location_object, data[0]))
+        return;
+
     MakeContextCurrent();
     gl->fUniform1iv(location, numElementsToUpload, data);
 }
@@ -3782,6 +3824,13 @@ WebGLContext::Uniform2iv_base(WebGLUniformLocation *location_object,
                                     numElementsToUpload, arrayLength)) {
         return;
     }
+
+    if (!ValidateSamplerUniformSetter("Uniform2iv", location_object, data[0]) ||
+        !ValidateSamplerUniformSetter("Uniform2iv", location_object, data[1]))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform2iv(location, numElementsToUpload, data);
 }
@@ -3796,6 +3845,14 @@ WebGLContext::Uniform3iv_base(WebGLUniformLocation *location_object,
                                     numElementsToUpload, arrayLength)) {
         return;
     }
+
+    if (!ValidateSamplerUniformSetter("Uniform3iv", location_object, data[0]) ||
+        !ValidateSamplerUniformSetter("Uniform3iv", location_object, data[1]) ||
+        !ValidateSamplerUniformSetter("Uniform3iv", location_object, data[2]))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform3iv(location, numElementsToUpload, data);
 }
@@ -3810,6 +3867,15 @@ WebGLContext::Uniform4iv_base(WebGLUniformLocation *location_object,
                                     numElementsToUpload, arrayLength)) {
         return;
     }
+
+    if (!ValidateSamplerUniformSetter("Uniform4iv", location_object, data[0]) ||
+        !ValidateSamplerUniformSetter("Uniform4iv", location_object, data[1]) ||
+        !ValidateSamplerUniformSetter("Uniform4iv", location_object, data[2]) ||
+        !ValidateSamplerUniformSetter("Uniform4iv", location_object, data[3]))
+    {
+        return;
+    }
+
     MakeContextCurrent();
     gl->fUniform4iv(location, numElementsToUpload, data);
 }

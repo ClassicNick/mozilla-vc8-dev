@@ -689,7 +689,7 @@ nsWindow::GetLayerManager(PLayersChild*, LayersBackend, LayerManagerPersistence,
     }
     // for OMTC allow use of the single layer manager/compositor
     // shared across all windows
-    if (UseOffMainThreadCompositing()) {
+    if (ShouldUseOffMainThreadCompositing()) {
         return sLayerManager;
     }
     return nullptr;
@@ -710,7 +710,7 @@ nsWindow::CreateLayerManager()
 
     mUseLayersAcceleration = ComputeShouldAccelerate(mUseLayersAcceleration);
 
-    if (UseOffMainThreadCompositing()) {
+    if (ShouldUseOffMainThreadCompositing()) {
         if (sLayerManager) {
             return;
         }

@@ -46,6 +46,7 @@ nsUXThemeData::DrawThemeBackgroundPtr nsUXThemeData::drawThemeBG = NULL;
 nsUXThemeData::DrawThemeEdgePtr nsUXThemeData::drawThemeEdge = NULL;
 nsUXThemeData::GetThemeContentRectPtr nsUXThemeData::getThemeContentRect = NULL;
 nsUXThemeData::GetThemeBackgroundRegionPtr nsUXThemeData::getThemeBackgroundRegion = NULL;
+nsUXThemeData::GetThemeMetricPtr nsUXThemeData::getThemeMetric = NULL;
 nsUXThemeData::GetThemePartSizePtr nsUXThemeData::getThemePartSize = NULL;
 nsUXThemeData::GetThemeSysFontPtr nsUXThemeData::getThemeSysFont = NULL;
 nsUXThemeData::GetThemeColorPtr nsUXThemeData::getThemeColor = NULL;
@@ -90,6 +91,7 @@ nsUXThemeData::Initialize()
     drawThemeEdge = (DrawThemeEdgePtr)GetProcAddress(sThemeDLL, "DrawThemeEdge");
     getThemeContentRect = (GetThemeContentRectPtr)GetProcAddress(sThemeDLL, "GetThemeBackgroundContentRect");
     getThemeBackgroundRegion = (GetThemeBackgroundRegionPtr)GetProcAddress(sThemeDLL, "GetThemeBackgroundRegion");
+	getThemeMetric = (GetThemeMetricPtr)GetProcAddress(sThemeDLL, "GetThemeMetric");
     getThemePartSize = (GetThemePartSizePtr)GetProcAddress(sThemeDLL, "GetThemePartSize");
     getThemeSysFont = (GetThemeSysFontPtr)GetProcAddress(sThemeDLL, "GetThemeSysFont");
     getThemeColor = (GetThemeColorPtr)GetProcAddress(sThemeDLL, "GetThemeColor");

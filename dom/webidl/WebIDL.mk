@@ -89,6 +89,7 @@ webidl_files = \
   HTMLMetaElement.webidl \
   HTMLMeterElement.webidl \
   HTMLModElement.webidl \
+  HTMLObjectElement.webidl \
   HTMLOListElement.webidl \
   HTMLOptGroupElement.webidl \
   HTMLOptionElement.webidl \
@@ -212,9 +213,11 @@ webidl_files = \
   Text.webidl \
   TextDecoder.webidl \
   TextEncoder.webidl \
+  TimeRanges.webidl \
   TreeWalker.webidl \
   URL.webidl \
   ValidityState.webidl \
+  WebComponents.webidl \
   WebSocket.webidl \
   UndoManager.webidl \
   URLUtils.webidl \

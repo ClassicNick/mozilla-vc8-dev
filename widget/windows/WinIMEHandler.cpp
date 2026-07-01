@@ -258,8 +258,10 @@ IMEHandler::SetInputContext(nsWindow* aWindow, InputContext& aInputContext)
   // FYI: If there is no composition, this call will do nothing.
   NotifyIME(aWindow, REQUEST_TO_COMMIT_COMPOSITION);
 
+#ifdef NS_ENABLE_TSF
   // Assume that SetInputContext() is called only when aWindow has focus.
   sPluginHasFocus = (aInputContext.mIMEState.mEnabled == IMEState::PLUGIN);
+#endif
 
   bool enable = IsIMEEnabled(aInputContext);
   bool adjustOpenState = (enable &&

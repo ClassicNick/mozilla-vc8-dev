@@ -10,6 +10,10 @@
  * Windows' Theme API. For more information on theme parts and states see
  * http://msdn.microsoft.com/en-us/library/bb773210(VS.85).aspx
  */
+
+#include <vssym32.h>
+#include <vsstyle.h>
+
 #define THEME_COLOR 204
 #define THEME_FONT  210
 
@@ -23,10 +27,6 @@
 // These constants are reversed for the trackbar (scale) thumb
 #define TKP_FOCUSED   4
 #define TKP_DISABLED  5
-
-// Toolbar constants
-#define TP_BUTTON 1
-#define TP_SEPARATOR 5
 
 // Toolbarbutton constants
 #define TB_CHECKED       5
@@ -77,16 +77,6 @@
 // Spin constants
 #define SPNP_UP            1
 #define SPNP_DOWN          2
-
-// Progress bar constants
-#define PP_BAR             1
-#define PP_BARVERT         2
-#define PP_CHUNK           3
-#define PP_CHUNKVERT       4
-#define PP_FILL            5
-#define PP_FILLVERT        6
-#define PP_MOVEOVERLAY     8
-#define PP_MOVEOVERLAYVERT 9
 
 // Tab constants
 #define TABP_TAB             4

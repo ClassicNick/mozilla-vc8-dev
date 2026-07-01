@@ -11,13 +11,13 @@
 // before this reaches the Release or even Beta channel.
 #define FORCE_PR_LOG
 
-#include "mozilla/TimeStamp.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/TimeStamp.h"
 #include <windows.h>
 
 #include "prlog.h"
 #include <stdio.h>
-#include <cstdlib> // for std::abs(int/long)
 
 #  define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
 #  define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
@@ -360,7 +360,7 @@ TimeStampValue::CheckQPC(int64_t aDuration, const TimeStampValue &aOther) const
     return false;
 
   // Treat absolutely for calibration purposes
-  aDuration = std::abs(aDuration);
+  aDuration = Abs(aDuration);
 
   // Check QPC is sane before using it.
 

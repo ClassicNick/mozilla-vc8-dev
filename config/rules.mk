@@ -24,7 +24,7 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
 
 ifndef EXTERNALLY_MANAGED_MAKE_FILE
 $(foreach var,$(_MOZBUILD_EXTERNAL_VARIABLES),$(if $($(var)),\
-    $(error Variable $(var) is defined in Makefile. It should only be defined in moz.build files.),\
+    $(error Variable $(var) is defined in Makefile. It should only be defined in moz.build files),\
     ))
 
 # Import the automatically generated backend file. If this file doesn't exist,
@@ -1665,7 +1665,7 @@ endif
 define install_file_template
 $(or $(3),libs):: $(2)/$(notdir $(1))
 $(call install_cmd_override,$(2)/$(notdir $(1)))
-$(2)/$(notdir $(1)): $(1) $$(call mkdir_deps,$(2))
+$(2)/$(notdir $(1)): $(1)
 	$$(call install_cmd,$(4) "$$<" "$${@D}")
 endef
 $(foreach category,$(INSTALL_TARGETS),\
@@ -1712,9 +1712,9 @@ $(foreach category,$(INSTALL_TARGETS),\
 # $(call preprocess_file_template, source_file, output_file,
 #                                  makefile_target, extra_flags)
 define preprocess_file_template
-$(2): $(1) $$(call mkdir_deps,$(dir $(2))) $$(GLOBAL_DEPS)
+$(2): $(1) $$(GLOBAL_DEPS)
 	$$(RM) "$$@"
-	$$(PYTHON) $$(topsrcdir)/config/Preprocessor.py $(4) $$(DEFINES) $$(ACDEFINES) $$(XULPPFLAGS) "$$<" > "$$@"
+	$$(PYTHON) $$(topsrcdir)/config/Preprocessor.py $(4) $$(DEFINES) $$(ACDEFINES) $$(XULPPFLAGS) "$$<" -o "$$@"
 $(3):: $(2)
 endef
 

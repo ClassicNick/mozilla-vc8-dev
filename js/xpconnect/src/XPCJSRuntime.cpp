@@ -1206,17 +1206,6 @@ void XPCJSRuntime::SystemIsBeingShutDown()
             Enumerate(DetachedWrappedNativeProtoShutdownMarker, nullptr);
 }
 
-JSContext *
-XPCJSRuntime::GetJSCycleCollectionContext()
-{
-    if (!mJSCycleCollectionContext) {
-        mJSCycleCollectionContext = JS_NewContext(mJSRuntime, 0);
-        if (!mJSCycleCollectionContext)
-            return nullptr;
-    }
-    return mJSCycleCollectionContext;
-}
-
 XPCJSRuntime::~XPCJSRuntime()
 {
     MOZ_ASSERT(!mReleaseRunnable);
@@ -1242,9 +1231,6 @@ XPCJSRuntime::~XPCJSRuntime()
         PR_DestroyLock(mWatchdogLock);
         mWatchdogWakeup = nullptr;
     }
-
-    if (mJSCycleCollectionContext)
-        JS_DestroyContextNoGC(mJSCycleCollectionContext);
 
     if (mCallContext)
         mCallContext->SystemIsBeingShutDown();
@@ -2493,7 +2479,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
  : mXPConnect(aXPConnect),
    mJSRuntime(nullptr),
    mJSContextStack(new XPCJSContextStack()),
-   mJSCycleCollectionContext(nullptr),
    mCallContext(nullptr),
    mAutoRoots(nullptr),
    mResolveName(JSID_VOID),

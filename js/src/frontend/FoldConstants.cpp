@@ -243,9 +243,8 @@ Boolish(ParseNode *pn)
 namespace js {
 namespace frontend {
 
-template <>
 bool
-FoldConstants<FullParseHandler>(JSContext *cx, ParseNode **pnp,
+FoldConstants(JSContext *cx, ParseNode **pnp,
                                 Parser<FullParseHandler> *parser,
                                 bool inGenexpLambda, bool inCond)
 {
@@ -730,9 +729,8 @@ FoldConstants<FullParseHandler>(JSContext *cx, ParseNode **pnp,
     return true;
 }
 
-template <>
 bool
-FoldConstants<SyntaxParseHandler>(JSContext *cx, SyntaxParseHandler::Node *pnp,
+FoldConstants(JSContext *cx, SyntaxParseHandler::Node *pnp,
                                   Parser<SyntaxParseHandler> *parser,
                                   bool inGenexpLambda, bool inCond)
 {

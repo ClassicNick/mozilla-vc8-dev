@@ -605,11 +605,6 @@ public:
         return ret;
     }
 
-    void InitFramebuffers() {
-        MakeCurrent();
-        BindFB(0);
-    }
-
 private:
     void GetShaderPrecisionFormatNonES2(GLenum shadertype, GLenum precisiontype, GLint* range, GLint* precision) {
         switch (precisiontype) {
@@ -1172,7 +1167,10 @@ public:
         if (!CreateScreenBuffer(size, caps))
             return false;
 
-        InitFramebuffers();
+        MakeCurrent();
+        fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, 0);
+        fScissor(0, 0, size.width, size.height);
+        fViewport(0, 0, size.width, size.height);
 
         mCaps = mScreen->Caps();
         UpdateGLFormats(caps);

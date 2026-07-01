@@ -12,6 +12,7 @@ using namespace mozilla::gfx;
 namespace mozilla {
 namespace gl {
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 SurfaceFactory_ANGLEShareHandle*
 SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
                                         ID3D10Device1* d3d,
@@ -29,6 +30,7 @@ SurfaceFactory_ANGLEShareHandle::Create(GLContext* gl,
 
     return new SurfaceFactory_ANGLEShareHandle(gl, egl, d3d, caps);
 }
+#endif
 
 EGLDisplay
 SharedSurface_ANGLEShareHandle::Display()
@@ -189,6 +191,7 @@ static EGLSurface CreatePBufferSurface(GLLibraryEGL* egl,
     return surface;
 }
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 SharedSurface_ANGLEShareHandle*
 SharedSurface_ANGLEShareHandle::Create(GLContext* gl, ID3D10Device1* d3d,
                                        EGLContext context, EGLConfig config,
@@ -271,6 +274,7 @@ SurfaceFactory_ANGLEShareHandle::SurfaceFactory_ANGLEShareHandle(GLContext* gl,
     mContext = mProdGL->GetEGLContext();
     MOZ_ASSERT(mConfig && mContext);
 }
+#endif
 
 } /* namespace gl */
 } /* namespace mozilla */

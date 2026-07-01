@@ -35,6 +35,8 @@
 #include "nsThemeConstants.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/Selection.h"
+#include <algorithm>
 
 // The bidi indicator hangs off the caret to one side, to show which
 // direction the typing is in. It needs to be at least 2x2 to avoid looking like 
@@ -1126,15 +1128,14 @@ void nsCaret::CaretBlinkCallback(nsITimer *aTimer, void *aClosure)
 
 
 //-----------------------------------------------------------------------------
-already_AddRefed<nsFrameSelection>
+nsFrameSelection*
 nsCaret::GetFrameSelection()
 {
-  nsCOMPtr<nsISelectionPrivate> privateSelection(do_QueryReferent(mDomSelectionWeak));
-  if (!privateSelection)
+  nsCOMPtr<nsISelection> sel = do_QueryReferent(mDomSelectionWeak);
+  if (!sel)
     return nullptr;
-  nsFrameSelection* frameSelection = nullptr;
-  privateSelection->GetFrameSelection(&frameSelection);
-  return frameSelection;
+
+  return static_cast<Selection*>(sel.get())->GetFrameSelection();
 }
 
 void
