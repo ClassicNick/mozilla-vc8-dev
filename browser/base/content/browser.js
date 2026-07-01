@@ -3000,6 +3000,10 @@ var PrintPreviewListener = {
     if (gFindBarInitialized)
       gFindBar.close();
 
+    var globalNotificationBox = document.getElementById("global-notificationbox");
+    this._chromeState.globalNotificationsOpen = !globalNotificationBox.notificationsHidden;
+    globalNotificationBox.notificationsHidden = true;
+
     this._chromeState.syncNotificationsOpen = false;
     var syncNotifications = document.getElementById("sync-notifications");
     if (syncNotifications) {
@@ -3018,6 +3022,9 @@ var PrintPreviewListener = {
 
     if (this._chromeState.findOpen)
       gFindBar.open();
+
+    if (this._chromeState.globalNotificationsOpen)
+      document.getElementById("global-notificationbox").notificationsHidden = false;
 
     if (this._chromeState.syncNotificationsOpen)
       document.getElementById("sync-notifications").notificationsHidden = false;
@@ -4674,9 +4681,14 @@ var TabsProgressListener = {
     // We can't look for this during onLocationChange since at that point the
     // document URI is not yet the about:-uri of the error page.
 
+    let doc = aWebProgress.DOMWindow.document;
     if (aStateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
         Components.isSuccessCode(aStatus) &&
-        aWebProgress.DOMWindow.document.documentURI.startsWith("about:")) {
+        doc.documentURI.startsWith("about:") &&
+        !doc.documentElement.hasAttribute("hasBrowserHandlers")) {
+      // STATE_STOP may be received twice for documents, thus store an
+      // attribute to ensure handling it just once.
+      doc.documentElement.setAttribute("hasBrowserHandlers", "true");
       aBrowser.addEventListener("click", BrowserOnClick, true);
       aBrowser.addEventListener("pagehide", function onPageHide(event) {
         if (event.target.defaultView.frameElement)
@@ -4686,7 +4698,7 @@ var TabsProgressListener = {
       }, true);
 
       // We also want to make changes to page UI for unprivileged about pages.
-      BrowserOnAboutPageLoad(aWebProgress.DOMWindow.document);
+      BrowserOnAboutPageLoad(doc);
     }
   },
 
@@ -6206,7 +6218,7 @@ var IndexedDBPromptHelper = {
     }
 
     const hiddenTimeoutDuration = 30000; // 30 seconds
-    const firstTimeoutDuration = 360000; // 5 minutes
+    const firstTimeoutDuration = 300000; // 5 minutes
 
     var timeoutId;
 

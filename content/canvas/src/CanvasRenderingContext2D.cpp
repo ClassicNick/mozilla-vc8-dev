@@ -2400,7 +2400,8 @@ struct NS_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcesso
             gfxRect glyphRect(xpos, baselineOrigin.y - height,
                               advance, height);
             gfxFontMissingGlyphs::DrawMissingGlyph(thebes, glyphRect,
-                                                   detailedGlyphs[0].mGlyphID);
+                                                   detailedGlyphs[0].mGlyphID,
+                                                   nsDeviceContext::AppUnitsPerCSSPixel());
 
             mCtx->mTarget->SetTransform(matrix);
           }

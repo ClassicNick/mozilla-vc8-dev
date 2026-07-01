@@ -59,6 +59,7 @@ ChannelMediaResource::ChannelMediaResource(MediaDecoder* aDecoder,
     mSeekingForMetadata(false),
     mByteRangeDownloads(false),
     mByteRangeFirstOpen(true),
+    mIsTransportSeekable(true),
     mSeekOffsetMonitor("media.dashseekmonitor"),
     mSeekOffset(-1)
 {
@@ -307,6 +308,7 @@ ChannelMediaResource::OnStartRequest(nsIRequest* aRequest)
 
   {
     MutexAutoLock lock(mLock);
+    mIsTransportSeekable = seekable;
     mChannelStatistics->Start();
   }
 
@@ -330,6 +332,13 @@ ChannelMediaResource::OnStartRequest(nsIRequest* aRequest)
   mDecoder->Progress(false);
 
   return NS_OK;
+}
+
+bool
+ChannelMediaResource::IsTransportSeekable()
+{
+  MutexAutoLock lock(mLock);
+  return mIsTransportSeekable;
 }
 
 nsresult
@@ -1300,6 +1309,7 @@ public:
     return false;
   }
   virtual bool    IsSuspended() { return false; }
+  virtual bool    IsTransportSeekable() MOZ_OVERRIDE { return true; }
 
   nsresult GetCachedRanges(nsTArray<MediaByteRange>& aRanges);
 

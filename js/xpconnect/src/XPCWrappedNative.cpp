@@ -510,7 +510,7 @@ XPCWrappedNative::GetNewOrUsed(XPCCallContext& ccx,
 
     if (sciWrapper.GetFlags().WantPreCreate()) {
         // PreCreate may touch dead compartments.
-        js::AutoMaybeTouchDeadCompartments agc(parent);
+        js::AutoMaybeTouchDeadZones agc(parent);
 
         JSObject* plannedParent = parent;
         nsresult rv = sciWrapper.GetCallback()->PreCreate(identity, ccx,
@@ -1685,7 +1685,7 @@ RescueOrphans(XPCCallContext& ccx, JSObject* obj)
     parentObj = js::UnwrapObject(parentObj, /* stopAtOuter = */ false);
 
     // PreCreate may touch dead compartments.
-    js::AutoMaybeTouchDeadCompartments agc(parentObj);
+    js::AutoMaybeTouchDeadZones agc(parentObj);
 
     bool isWN = IS_WRAPPER_CLASS(js::GetObjectClass(obj));
 
@@ -3775,7 +3775,7 @@ ConstructSlimWrapper(XPCCallContext &ccx,
     }
 
     // PreCreate may touch dead compartments.
-    js::AutoMaybeTouchDeadCompartments agc(parent);
+    js::AutoMaybeTouchDeadZones agc(parent);
 
     JSObject* plannedParent = parent;
     nsresult rv = classInfoHelper->PreCreate(identityObj, ccx, parent, &parent);

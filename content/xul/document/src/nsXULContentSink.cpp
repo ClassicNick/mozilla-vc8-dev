@@ -841,7 +841,7 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
                                const uint32_t aLineNumber)
 {
   uint32_t langID = nsIProgrammingLanguage::JAVASCRIPT;
-  uint32_t version = 0;
+  uint32_t version = JSVERSION_LATEST;
   nsresult rv;
 
   // Look for SRC attribute and look for a LANGUAGE attribute
@@ -890,7 +890,8 @@ XULContentSinkImpl::OpenScript(const PRUnichar** aAttributes,
           // various version strings anyway.  So we make no attempt to support
           // languages other than JS for language=
           nsAutoString lang(aAttributes[1]);
-          if (nsContentUtils::IsJavaScriptLanguage(lang, &version)) {
+          if (nsContentUtils::IsJavaScriptLanguage(lang)) {
+              version = JSVERSION_DEFAULT;
               langID = nsIProgrammingLanguage::JAVASCRIPT;
           }
       }

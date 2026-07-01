@@ -17,6 +17,7 @@ webidl_files = \
   AudioNode.webidl \
   AudioParam.webidl \
   AudioSourceNode.webidl \
+  BatteryManager.webidl \
   BiquadFilterNode.webidl \
   Blob.webidl \
   CanvasRenderingContext2D.webidl \
@@ -56,25 +57,38 @@ webidl_files = \
   Function.webidl \
   GainNode.webidl \
   HTMLAnchorElement.webidl \
+  HTMLBaseElement.webidl \
   HTMLBodyElement.webidl \
   HTMLBRElement.webidl \
+  HTMLButtonElement.webidl \
   HTMLCollection.webidl \
   HTMLDataListElement.webidl \
+  HTMLDirectoryElement.webidl \
   HTMLDivElement.webidl \
   HTMLDListElement.webidl \
   HTMLDocument.webidl \
   HTMLElement.webidl \
   HTMLFontElement.webidl \
   HTMLFrameSetElement.webidl \
+  HTMLHeadElement.webidl \
   HTMLHeadingElement.webidl \
+  HTMLHRElement.webidl \
+  HTMLHtmlElement.webidl \
   HTMLImageElement.webidl \
   HTMLLabelElement.webidl \
   HTMLLIElement.webidl \
+  HTMLLinkElement.webidl \
+  HTMLMapElement.webidl \
+  HTMLMetaElement.webidl \
+  HTMLMeterElement.webidl \
+  HTMLModElement.webidl \
   HTMLOListElement.webidl \
   HTMLOptionsCollection.webidl \
   HTMLParagraphElement.webidl \
+  HTMLParamElement.webidl \
   HTMLPreElement.webidl \
   HTMLPropertiesCollection.webidl \
+  HTMLQuoteElement.webidl \
   HTMLScriptElement.webidl \
   HTMLSpanElement.webidl \
   HTMLStyleElement.webidl \
@@ -189,6 +203,12 @@ webidl_files = \
   XPathEvaluator.webidl \
   XULElement.webidl \
   $(NULL)
+
+ifdef MOZ_MEDIA
+webidl_files += \
+  HTMLSourceElement.webidl \
+  $(NULL)
+endif
 
 ifdef MOZ_WEBGL
 webidl_files += \

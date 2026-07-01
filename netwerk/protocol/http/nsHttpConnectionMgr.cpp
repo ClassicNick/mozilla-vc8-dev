@@ -2784,7 +2784,8 @@ nsHalfOpenSocket::OnOutputStreamReady(nsIAsyncOutputStream *out)
                         gHttpHandler->ConnMgr()->mMaxRequestDelay,
                         mSocketTransport, mStreamIn, mStreamOut,
                         callbacks,
-                        PR_MillisecondsToInterval(rtt.ToMilliseconds()));
+                        PR_MillisecondsToInterval(
+                          static_cast<uint32_t>(rtt.ToMilliseconds())));
 
         if (NS_SUCCEEDED(mSocketTransport->GetPeerAddr(&peeraddr)))
             mEnt->RecordIPFamilyPreference(peeraddr.raw.family);
@@ -2800,7 +2801,8 @@ nsHalfOpenSocket::OnOutputStreamReady(nsIAsyncOutputStream *out)
                         gHttpHandler->ConnMgr()->mMaxRequestDelay,
                         mBackupTransport, mBackupStreamIn, mBackupStreamOut,
                         callbacks,
-                        PR_MillisecondsToInterval(rtt.ToMilliseconds()));
+                        PR_MillisecondsToInterval(
+                          static_cast<uint32_t>(rtt.ToMilliseconds())));
 
         if (NS_SUCCEEDED(mBackupTransport->GetPeerAddr(&peeraddr)))
             mEnt->RecordIPFamilyPreference(peeraddr.raw.family);
