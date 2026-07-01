@@ -63,6 +63,7 @@ webidl_files = \
   HTMLBRElement.webidl \
   HTMLButtonElement.webidl \
   HTMLCollection.webidl \
+  HTMLDataElement.webidl \
   HTMLDataListElement.webidl \
   HTMLDirectoryElement.webidl \
   HTMLDivElement.webidl \
@@ -120,6 +121,7 @@ webidl_files = \
   MutationObserver.webidl \
   Node.webidl \
   NodeFilter.webidl \
+  NodeIterator.webidl \
   NodeList.webidl \
   PaintRequest.webidl \
   PaintRequestList.webidl \
@@ -210,10 +212,12 @@ webidl_files = \
   Text.webidl \
   TextDecoder.webidl \
   TextEncoder.webidl \
+  TreeWalker.webidl \
   URL.webidl \
   ValidityState.webidl \
   WebSocket.webidl \
   UndoManager.webidl \
+  URLUtils.webidl \
   USSDReceivedEvent.webidl \
   XMLHttpRequest.webidl \
   XMLHttpRequestEventTarget.webidl \

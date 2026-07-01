@@ -133,8 +133,10 @@ public:
   void Cancel()
   {
     NS_ABORT_IF_FALSE(mDocument, "Duplicate call to Cancel");
-    mDocument->RemoveObserver(this);
-    mDocument = nullptr;
+    if (mDocument) {
+      mDocument->RemoveObserver(this);
+      mDocument = nullptr;
+    }
   }
 
 private:
@@ -198,10 +200,12 @@ public:
   void Cancel()
   {
     NS_ABORT_IF_FALSE(mDocument, "Duplicate call to Cancel");
-    mDocument->RemoveEventListener(NS_LITERAL_STRING("MozSVGAsImageDocumentLoad"), this, true);
-    mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGAbort"), this, true);
-    mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGError"), this, true);
-    mDocument = nullptr;
+    if (mDocument) {
+      mDocument->RemoveEventListener(NS_LITERAL_STRING("MozSVGAsImageDocumentLoad"), this, true);
+      mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGAbort"), this, true);
+      mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGError"), this, true);
+      mDocument = nullptr;
+    }
   }
 
 private:
@@ -490,10 +494,10 @@ VectorImage::GetHeight(int32_t* aHeight)
 NS_IMETHODIMP
 VectorImage::GetIntrinsicSize(nsSize* aSize)
 {
-  nsIFrame* rootFrame = GetRootLayoutFrame();
-  if (!rootFrame)
+  if (mError || !mIsFullyLoaded)
     return NS_ERROR_FAILURE;
 
+  nsIFrame* rootFrame = mSVGDocumentWrapper->GetRootLayoutFrame();
   *aSize = nsSize(-1, -1);
   nsIFrame::IntrinsicSize rfSize = rootFrame->GetIntrinsicSize();
   if (rfSize.width.GetUnit() == eStyleUnit_Coord)
@@ -509,10 +513,10 @@ VectorImage::GetIntrinsicSize(nsSize* aSize)
 NS_IMETHODIMP
 VectorImage::GetIntrinsicRatio(nsSize* aRatio)
 {
-  nsIFrame* rootFrame = GetRootLayoutFrame();
-  if (!rootFrame)
+  if (mError || !mIsFullyLoaded)
     return NS_ERROR_FAILURE;
 
+  nsIFrame* rootFrame = mSVGDocumentWrapper->GetRootLayoutFrame();
   *aRatio = rootFrame->GetIntrinsicRatio();
   return NS_OK;
 }
@@ -638,7 +642,7 @@ VectorImage::CopyFrame(uint32_t aWhichFrame,
                      gfxRect(gfxPoint(0,0), gfxIntSize(imageIntSize.width,
                                                        imageIntSize.height)),
                      nsIntRect(nsIntPoint(0,0), imageIntSize),
-                     imageIntSize, aFlags);
+                     imageIntSize, nullptr, aFlags);
   if (NS_SUCCEEDED(rv)) {
     *_retval = surface.forget().get();
   }
@@ -694,7 +698,6 @@ VectorImage::ExtractFrame(uint32_t aWhichFrame,
   return NS_OK;
 }
 
-
 //******************************************************************************
 /* [noscript] void draw(in gfxContext aContext,
  *                      in gfxGraphicsFilter aFilter,
@@ -702,6 +705,7 @@ VectorImage::ExtractFrame(uint32_t aWhichFrame,
  *                      [const] in gfxRect aFill,
  *                      [const] in nsIntRect aSubimage,
  *                      [const] in nsIntSize aViewportSize,
+ *                      [const] in SVGImageContext aSVGContext,
  *                      in uint32_t aFlags); */
 NS_IMETHODIMP
 VectorImage::Draw(gfxContext* aContext,
@@ -710,6 +714,7 @@ VectorImage::Draw(gfxContext* aContext,
                   const gfxRect& aFill,
                   const nsIntRect& aSubimage,
                   const nsIntSize& aViewportSize,
+                  const SVGImageContext* aSVGContext,
                   uint32_t aFlags)
 {
   NS_ENSURE_ARG_POINTER(aContext);
@@ -722,6 +727,8 @@ VectorImage::Draw(gfxContext* aContext,
   }
   mIsDrawing = true;
 
+  AutoSVGRenderingState autoSVGState(aSVGContext,
+                                     mSVGDocumentWrapper->GetRootSVGElem());
   mSVGDocumentWrapper->UpdateViewportBounds(aViewportSize);
   mSVGDocumentWrapper->FlushImageTransformInvalidation();
 
@@ -755,17 +762,6 @@ VectorImage::Draw(gfxContext* aContext,
 
   mIsDrawing = false;
   return NS_OK;
-}
-
-//******************************************************************************
-/* [notxpcom] nsIFrame GetRootLayoutFrame() */
-nsIFrame*
-VectorImage::GetRootLayoutFrame()
-{
-  if (mError)
-    return nullptr;
-
-  return mSVGDocumentWrapper->GetRootLayoutFrame();
 }
 
 //******************************************************************************

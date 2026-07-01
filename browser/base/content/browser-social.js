@@ -351,14 +351,8 @@ let SocialChatBar = {
     return !!this.chatbar.firstElementChild;
   },
   openChat: function(aProvider, aURL, aCallback, aMode) {
-    if (this.isAvailable) {
+    if (this.isAvailable)
       this.chatbar.openChat(aProvider, aURL, aCallback, aMode);
-      // We only want to focus the chat if it is as a result of user input.
-      let dwu = window.QueryInterface(Ci.nsIInterfaceRequestor)
-                      .getInterface(Ci.nsIDOMWindowUtils);
-      if (dwu.isHandlingUserInput)
-        this.chatbar.focus();
-    }
   },
   update: function() {
     let command = document.getElementById("Social:FocusChat");
@@ -748,9 +742,6 @@ var SocialToolbar = {
   // Called once, after window load, when the Social.provider object is
   // initialized.
   init: function SocialToolbar_init() {
-    let accesskey = gNavigatorBundle.getString("social.removeProvider.accesskey");
-    let removeCommand = document.getElementById("Social:Remove");
-    removeCommand.setAttribute("accesskey", accesskey);
     this._dynamicResizer = new DynamicResizeWatcher();
   },
 
@@ -758,10 +749,6 @@ var SocialToolbar = {
   updateProvider: function () {
     let provider = Social.provider || Social.defaultProvider;
     if (provider) {
-      let label = gNavigatorBundle.getFormattedString("social.removeProvider.label",
-                                                      [provider.name]);
-      let removeCommand = document.getElementById("Social:Remove");
-      removeCommand.setAttribute("label", label);
       this.button.setAttribute("label", provider.name);
       this.button.setAttribute("tooltiptext", provider.name);
       this.button.style.listStyleImage = "url(" + provider.iconURL + ")";

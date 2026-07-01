@@ -91,7 +91,7 @@ public class LayerView extends FrameLayout {
     public LayerView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
-        mGLController = new GLController(this);
+        mGLController = GLController.getInstance(this);
         mPaintState = PAINT_START;
         mBackgroundColor = Color.WHITE;
     }
@@ -132,6 +132,7 @@ public class LayerView extends FrameLayout {
         // this gets run on the gecko thread, but for thread safety we want the assignment
         // on the UI thread.
         post(new Runnable() {
+            @Override
             public void run() {
                 mTouchIntercepter = touchIntercepter;
             }
@@ -217,6 +218,7 @@ public class LayerView extends FrameLayout {
         return mBackgroundColor;
     }
 
+    @Override
     public void setBackgroundColor(int newColor) {
         mBackgroundColor = newColor;
         requestRender();
@@ -224,10 +226,6 @@ public class LayerView extends FrameLayout {
 
     public void setZoomConstraints(ZoomConstraints constraints) {
         mLayerClient.setZoomConstraints(constraints);
-    }
-
-    public void setViewportSize(int width, int height) {
-        mLayerClient.setViewportSize(width, height);
     }
 
     public void setInputConnectionHandler(InputConnectionHandler inputConnectionHandler) {
@@ -392,10 +390,6 @@ public class LayerView extends FrameLayout {
 
     private void onDestroyed() {
         mGLController.surfaceDestroyed();
-
-        if (mListener != null) {
-            mListener.compositionPauseRequested();
-        }
     }
 
     public Object getNativeWindow() {
@@ -409,8 +403,9 @@ public class LayerView extends FrameLayout {
     public static GLController registerCxxCompositor() {
         try {
             LayerView layerView = GeckoApp.mAppContext.getLayerView();
-            layerView.mListener.compositorCreated();
-            return layerView.getGLController();
+            GLController controller = layerView.getGLController();
+            controller.compositorCreated();
+            return controller;
         } catch (Exception e) {
             Log.e(LOGTAG, "Error registering compositor!", e);
             return null;
@@ -418,23 +413,23 @@ public class LayerView extends FrameLayout {
     }
 
     public interface Listener {
-        void compositorCreated();
         void renderRequested();
-        void compositionPauseRequested();
-        void compositionResumeRequested(int width, int height);
         void sizeChanged(int width, int height);
         void surfaceChanged(int width, int height);
     }
 
     private class SurfaceListener implements SurfaceHolder.Callback {
+        @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width,
                                                 int height) {
             onSizeChanged(width, height);
         }
 
+        @Override
         public void surfaceCreated(SurfaceHolder holder) {
         }
 
+        @Override
         public void surfaceDestroyed(SurfaceHolder holder) {
             onDestroyed();
         }
@@ -451,6 +446,7 @@ public class LayerView extends FrameLayout {
             mParent = aParent;
         }
 
+        @Override
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
             if (changed) {
                 mParent.surfaceChanged(right - left, bottom - top);

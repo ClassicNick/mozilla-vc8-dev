@@ -327,6 +327,8 @@ MediaDecoder::MediaDecoder() :
   mPlaybackPosition(0),
   mCurrentTime(0.0),
   mInitialVolume(0.0),
+  mInitialPlaybackRate(1.0),
+  mInitialPreservesPitch(true),
   mRequestedSeekTime(-1.0),
   mDuration(-1),
   mTransportSeekable(true),
@@ -342,6 +344,7 @@ MediaDecoder::MediaDecoder() :
   mFrameBufferLength(0),
   mPinnedForSeek(false),
   mShuttingDown(false),
+  mPausedForPlaybackRateNull(false),
   mAudioChannelType(AUDIO_CHANNEL_NORMAL)
 {
   MOZ_COUNT_CTOR(MediaDecoder);
@@ -468,6 +471,8 @@ nsresult MediaDecoder::InitializeStateMachine(MediaDecoder* aCloneDonor)
     mDecoderStateMachine->SetDuration(mDuration);
     mDecoderStateMachine->SetVolume(mInitialVolume);
     mDecoderStateMachine->SetAudioCaptured(mInitialAudioCaptured);
+    SetPlaybackRate(mInitialPlaybackRate);
+    mDecoderStateMachine->SetPreservesPitch(mInitialPreservesPitch);
 
     if (mFrameBufferLength > 0) {
       // The valid mFrameBufferLength value was specified earlier
@@ -1401,6 +1406,8 @@ void MediaDecoder::SetPlaybackRate(double aPlaybackRate)
 
   if (mDecoderStateMachine) {
     mDecoderStateMachine->SetPlaybackRate(aPlaybackRate);
+  } else {
+    mInitialPlaybackRate = aPlaybackRate;
   }
 }
 
@@ -1408,6 +1415,8 @@ void MediaDecoder::SetPreservesPitch(bool aPreservesPitch)
 {
   if (mDecoderStateMachine) {
     mDecoderStateMachine->SetPreservesPitch(aPreservesPitch);
+  } else {
+    mInitialPreservesPitch = aPreservesPitch;
   }
 }
 

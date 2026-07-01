@@ -3349,8 +3349,8 @@ DrawBorderImageComponent(nsRenderingContext&  aRenderingContext,
       (aUnitSize.width == aFill.width &&
        aUnitSize.height == aFill.height)) {
     nsLayoutUtils::DrawSingleImage(&aRenderingContext, subImage,
-                                   graphicsFilter,
-                                   aFill, aDirtyRect, imgIContainer::FLAG_NONE);
+                                   graphicsFilter, aFill, aDirtyRect,
+                                   nullptr, imgIContainer::FLAG_NONE);
     return;
   }
 
