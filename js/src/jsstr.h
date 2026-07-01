@@ -46,6 +46,22 @@ ConcatStrings(JSContext *cx,
               typename MaybeRooted<JSString*, allowGC>::HandleType left,
               typename MaybeRooted<JSString*, allowGC>::HandleType right);
 
+inline JSString *
+ConcatStringsAllowGC(JSContext *cx, LookupGenericOp lookup,
+               HandleString left,
+               HandleString right)
+{
+    return ConcatStrings<CanGC>(cx, left, right);
+}
+
+inline JSString *
+ConcatStringsDisallowGC(JSContext *cx, LookupGenericOp lookup,
+               JSString *left,
+               JSString *right)
+{
+    return ConcatStrings<NoGC>(cx, left, right);
+}
+
 }  /* namespace js */
 
 extern JSString * JS_FASTCALL

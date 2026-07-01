@@ -303,6 +303,17 @@ const STATE_APPLIED_PLATFORM = STATE_APPLIED_SVC;
 const STATE_APPLIED_PLATFORM = STATE_APPLIED;
 #endif
 
+// This makes it possible to run most tests on xulrunner where the update
+// channel default preference is not set.
+if (APP_BIN_NAME == "xulrunner") {
+  try {
+    gDefaultPrefBranch.getCharPref(PREF_APP_UPDATE_CHANNEL);
+  }
+  catch (e) {
+    setUpdateChannel("test_channel");
+  }
+}
+
 /**
  * Nulls out the most commonly used global vars used by tests as appropriate.
  */
@@ -336,7 +347,7 @@ function cleanUp() {
     gXHR             = null;
   }
 
-  gTestserver    = null;
+  gTestserver = null;
 }
 
 /**
@@ -456,6 +467,83 @@ if (IS_WIN) {
     logTestInfo("removing and testing the successful removal of the lock file");
     file.remove(false);
     do_check_false(file.exists());
+  }
+}
+
+/**
+ * Copies a directory and its children. First it tries nsIFile::CopyTo on the
+ * source directory and if that fails it will fall back to recursing.
+ *
+ * @param  aSrcDir
+ *         nsIFile for the source directory to be copied from.
+ * @param  aDestDir
+ *         nsIFile for the destination directory parent.
+ * @param  aDestLeafName
+ *         the destination directory name.
+ */
+function copyDirRecursive(aSrcDir, aDestDir, aDestLeafName) {
+  try {
+    aSrcDir.copyTo(aDestDir, aDestLeafName);
+    return;
+  }
+  catch (e) {
+    logTestInfo("copyTo error - src path: " + aSrcDir.path + ", dest path: " +
+                aDestDir.path + ", dir name: " + aDestLeafName +
+                ", exception: " + e);
+  }
+
+  let destDir = aDestDir.clone();
+  destDir.append(aDestLeafName);
+  if (!destDir.exists()) {
+    try {
+      destDir.create(AUS_Ci.nsIFile.DIRECTORY_TYPE, PERMS_DIRECTORY);
+    }
+    catch (e) {
+      logTestInfo("unable to create directory, path: " + destDir.path +
+                  ", exception: " + e);
+      do_throw(e);
+    }
+  }
+  var dirEntries = aSrcDir.directoryEntries;
+  while (dirEntries.hasMoreElements()) {
+    let entry = dirEntries.getNext().QueryInterface(AUS_Ci.nsIFile);
+
+    if (entry.isDirectory()) {
+      copyDirRecursive(entry, destDir, entry.leafName);
+    }
+    else {
+      let destFile = destDir.clone();
+      destFile.append(entry.leafName);
+      if (destFile.exists()) {
+        try {
+          destFile.remove(false);
+        }
+        catch (e) {
+          logTestInfo("unable to remove file, path: " + destFile.path +
+                      ", exception: " + e);
+          let bakFile = destDir.clone();
+          bakFile.append(entry.leafName + ".bak");
+          logTestInfo("attempting moveTo of file, src path: " + destFile.path +
+                      ", dest path: " + bakFile.path + ", exception: " + e);
+          try {
+            destFile.moveTo(destDir, bakFile.leafName);
+          }
+          catch (e) {
+            logTestInfo("unable to move file, src path: " + destFile.path +
+                        ", dest path: " + bakFile.path + ", exception: " + e);
+            do_throw(e);
+          }
+        }
+      }
+      try {
+        entry.copyTo(destDir, entry.leafName);
+      }
+      catch (e) {
+        logTestInfo("unable to copy file, src path: " + entry.path +
+                    ", dest path: " + destFile.path + ", exception: " + e);
+        do_throw(e);
+      }
+    }
   }
 }
 
@@ -1400,8 +1488,7 @@ function checkCallbackAppLog() {
               "and the expected command line arguments passed to it");
   do_check_eq(logContents, expectedLogContents);
 
-  // Use a timeout to give any files that were in use additional time to close.
-  do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
+  removeCallbackCopy();
 }
 
 /**
@@ -1431,7 +1518,7 @@ function checkCallbackServiceLog() {
               "and the expected command line arguments passed to it");
   do_check_eq(logContents, expectedLogContents);
 
-  do_timeout(TEST_HELPER_TIMEOUT, do_test_finished);
+  removeCallbackCopy();
 }
 
 function removeCallbackCopy() {

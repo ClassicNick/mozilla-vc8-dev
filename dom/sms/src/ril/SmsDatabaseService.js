@@ -720,9 +720,8 @@ SmsDatabaseService.prototype = {
 
   saveReceivedMessage: function saveReceivedMessage(
       aSender, aBody, aMessageClass, aDate, aCallback) {
-    let receiver = this.mRIL.rilContext.icc
-                 ? this.mRIL.rilContext.icc.msisdn
-                 : null;
+    let iccInfo = this.mRIL.rilContext.iccInfo;
+    let receiver = iccInfo ? iccInfo.msisdn : null;
 
     // Workaround an xpconnect issue with undefined string objects.
     // See bug 808220
@@ -764,8 +763,9 @@ SmsDatabaseService.prototype = {
 
   saveSendingMessage: function saveSendingMessage(
       aReceiver, aBody, aDeliveryStatus, aDate, aCallback) {
-    let sender = this.mRIL.rilContext.icc
-               ? this.mRIL.rilContext.icc.msisdn
+    let rilContext = this.mRIL.rilContext;
+    let sender = rilContext.iccInfo
+               ? rilContext.iccInfo.msisdn
                : null;
 
     // Workaround an xpconnect issue with undefined string objects.
@@ -775,18 +775,21 @@ SmsDatabaseService.prototype = {
     }
 
     let receiver = aReceiver;
-    if (receiver) {
-      let parsedNumber = PhoneNumberUtils.parse(receiver.toString());
-      receiver = (parsedNumber && parsedNumber.internationalNumber)
-                 ? parsedNumber.internationalNumber
-                 : receiver;
-    }
 
-    if (sender) {
-      let parsedNumber = PhoneNumberUtils.parse(sender.toString());
-      sender = (parsedNumber && parsedNumber.internationalNumber)
-               ? parsedNumber.internationalNumber
-               : sender;
+    if (rilContext.voice.network.mcc === rilContext.iccInfo.mcc) {
+      if (receiver) {
+        let parsedNumber = PhoneNumberUtils.parse(receiver.toString());
+        receiver = (parsedNumber && parsedNumber.internationalNumber)
+                   ? parsedNumber.internationalNumber
+                   : receiver;
+      }
+
+      if (sender) {
+        let parsedNumber = PhoneNumberUtils.parse(sender.toString());
+        sender = (parsedNumber && parsedNumber.internationalNumber)
+                 ? parsedNumber.internationalNumber
+                 : sender;
+      }
     }
 
     let message = {

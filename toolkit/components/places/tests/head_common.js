@@ -28,7 +28,7 @@ XPCOMUtils.defineLazyModuleGetter(this, "FileUtils",
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
                                   "resource://gre/modules/NetUtil.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
-                                  "resource://gre/modules/commonjs/promise/core.js");
+                                  "resource://gre/modules/commonjs/sdk/core/promise.js");
 XPCOMUtils.defineLazyModuleGetter(this, "Services",
                                   "resource://gre/modules/Services.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Task",
@@ -473,7 +473,7 @@ function create_JSON_backup(aFilename) {
   let bookmarksBackupDir = gProfD.clone();
   bookmarksBackupDir.append("bookmarkbackups");
   if (!bookmarksBackupDir.exists()) {
-    bookmarksBackupDir.create(Ci.nsIFile.DIRECTORY_TYPE, parseInt("0755"));
+    bookmarksBackupDir.create(Ci.nsIFile.DIRECTORY_TYPE, parseInt("0755", 8));
     do_check_true(bookmarksBackupDir.exists());
   }
   let bookmarksJSONFile = gTestDir.clone();
@@ -910,23 +910,6 @@ function promiseAddVisits(aPlaceInfo)
   );
 
   return deferred.promise;
-}
-
-/**
- * Asynchronously adds visits to a page, then either invokes a callback function
- * on success, or reports a test error on failure.
- *
- * @deprecated Use promiseAddVisits instead.
- */
-function addVisits(aPlaceInfo, aCallback, aStack)
-{
-  let stack = aStack || Components.stack.caller;
-  promiseAddVisits(aPlaceInfo).then(
-    aCallback,
-    function addVisits_onFailure(ex) {
-      do_throw(ex, stack);
-    }
-  );
 }
 
 /**

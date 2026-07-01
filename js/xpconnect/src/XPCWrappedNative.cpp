@@ -943,7 +943,7 @@ XPCWrappedNative::Destroy()
      */
     if (XPCJSRuntime *rt = GetRuntime()) {
         if (js::IsIncrementalBarrierNeeded(rt->GetJSRuntime()))
-            js::IncrementalReferenceBarrier(GetWrapperPreserveColor());
+            js::IncrementalObjectBarrier(GetWrapperPreserveColor());
         mWrapperWord = WRAPPER_WORD_POISON;
     } else {
         MOZ_ASSERT(mWrapperWord == WRAPPER_WORD_POISON);
@@ -3755,6 +3755,11 @@ ConstructSlimWrapper(XPCCallContext &ccx,
 {
     nsISupports *identityObj = aHelper.GetCanonical();
     nsXPCClassInfo *classInfoHelper = aHelper.GetXPCClassInfo();
+
+    if (!classInfoHelper) {
+        SLIM_LOG_NOT_CREATED(ccx, identityObj, "No classinfo helper");
+        return false;
+    }
 
     XPCNativeScriptableFlags flags(classInfoHelper->GetScriptableFlags());
 

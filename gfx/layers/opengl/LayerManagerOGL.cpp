@@ -1552,9 +1552,11 @@ LayerManagerOGL::CreateShadowThebesLayer()
     NS_WARNING("Call on destroyed layer manager");
     return nullptr;
   }
-  if (ThebesLayer::UseTiledThebes())
-    return nsRefPtr<ShadowThebesLayer>(new TiledThebesLayerOGL(this)).forget();
+#ifdef FORCE_BASICTILEDTHEBESLAYER
+  return nsRefPtr<ShadowThebesLayer>(new TiledThebesLayerOGL(this)).forget();
+#else
   return nsRefPtr<ShadowThebesLayerOGL>(new ShadowThebesLayerOGL(this)).forget();
+#endif
 }
 
 already_AddRefed<ShadowContainerLayer>

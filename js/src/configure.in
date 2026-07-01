@@ -437,8 +437,8 @@ case "$target" in
         fi
         if test "$_CC_MAJOR_VERSION" = "13"; then
             _CC_SUITE=7
-            CFLAGS="$CFLAGS -wd4003"
-            CXXFLAGS="$CXXFLAGS -wd4003"
+            CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4355 -wd4396 -wd4530 -wd4661"
         elif test "$_CC_MAJOR_VERSION" = "14"; then
             _CC_SUITE=8
             AC_DEFINE(_CRT_SECURE_NO_DEPRECATE)
@@ -3824,15 +3824,6 @@ MOZ_ARG_WITH_STRING(jitreport-granularity,
   JITREPORT_GRANULARITY=3)
 
 AC_DEFINE_UNQUOTED(JS_DEFAULT_JITREPORT_GRANULARITY, $JITREPORT_GRANULARITY)
-
-dnl ========================================================
-dnl = E4X support (ECMA-357)
-dnl ========================================================
-JS_HAS_XML_SUPPORT=1
-MOZ_ARG_DISABLE_BOOL(e4x,
-[  --disable-e4x           Disable JS support for XML (ECMA-357)],
-    JS_HAS_XML_SUPPORT=0 )
-AC_DEFINE_UNQUOTED(JS_HAS_XML_SUPPORT, $JS_HAS_XML_SUPPORT)
 
 dnl ========================================================
 dnl =

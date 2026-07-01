@@ -7,8 +7,10 @@
 #ifndef AudioEventTimeline_h_
 #define AudioEventTimeline_h_
 
-#include "mozilla/Attributes.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/TypedEnum.h"
+
 #include "nsTArray.h"
 #include "math.h"
 
@@ -72,7 +74,7 @@ private:
     double mDuration;
 
   private:
-    static bool IsValid(float value)
+    static bool IsValid(double value)
     {
       return MOZ_DOUBLE_IS_FINITE(value);
     }

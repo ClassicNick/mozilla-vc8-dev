@@ -6,7 +6,7 @@
 #include "base/basictypes.h"
 #include "CanvasRenderingContext2D.h"
 
-#include "nsIDOMXULElement.h"
+#include "nsXULElement.h"
 
 #include "prenv.h"
 
@@ -3235,7 +3235,7 @@ CanvasRenderingContext2D::DrawWindow(nsIDOMWindow* window, double x,
 }
 
 void
-CanvasRenderingContext2D::AsyncDrawXULElement(nsIDOMXULElement* elem,
+CanvasRenderingContext2D::AsyncDrawXULElement(nsXULElement& elem,
                                               double x, double y,
                                               double w, double h,
                                               const nsAString& bgColor,
@@ -3256,7 +3256,7 @@ CanvasRenderingContext2D::AsyncDrawXULElement(nsIDOMXULElement* elem,
   }
 
 #if 0
-  nsCOMPtr<nsIFrameLoaderOwner> loaderOwner = do_QueryInterface(elem);
+  nsCOMPtr<nsIFrameLoaderOwner> loaderOwner = do_QueryInterface(&elem);
   if (!loaderOwner) {
     error.Throw(NS_ERROR_FAILURE);
     return;

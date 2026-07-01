@@ -100,7 +100,7 @@ BackfillIndexInCharBuffer(uint32_t index, mozilla::RangedPtr<T> end)
 }
 
 template <AllowGC allowGC>
-bool
+extern bool
 IndexToIdSlow(JSContext *cx, uint32_t index,
               typename MaybeRooted<jsid, allowGC>::MutableHandleType idp);
 

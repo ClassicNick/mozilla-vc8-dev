@@ -5050,7 +5050,7 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
   SetDiscrete(*aRuleData->ValueForOrient(),
               display->mOrient, canStoreInRuleTree,
               SETDSC_ENUMERATED, parentDisplay->mOrient,
-              NS_STYLE_ORIENT_HORIZONTAL, 0, 0, 0, 0);
+              NS_STYLE_ORIENT_AUTO, 0, 0, 0, 0);
 
   COMPUTE_END_RESET(Display, display)
 }
@@ -6611,12 +6611,6 @@ nsRuleNode::ComputeTableData(void* aStartStruct,
               table->mLayoutStrategy, canStoreInRuleTree,
               SETDSC_ENUMERATED, parentTable->mLayoutStrategy,
               NS_STYLE_TABLE_LAYOUT_AUTO, 0, 0, 0, 0);
-
-  // cols: enum, int (not a real CSS prop)
-  const nsCSSValue* colsValue = aRuleData->ValueForCols();
-  if (eCSSUnit_Enumerated == colsValue->GetUnit() ||
-      eCSSUnit_Integer == colsValue->GetUnit())
-    table->mCols = colsValue->GetIntValue();
 
   // span: pixels (not a real CSS prop)
   const nsCSSValue* spanValue = aRuleData->ValueForSpan();

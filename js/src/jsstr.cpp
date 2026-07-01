@@ -66,6 +66,9 @@ using namespace js::unicode;
 
 using mozilla::CheckedInt;
 
+typedef Rooted<JSLinearString*> RootedLinearString;
+typedef Handle<JSLinearString*> HandleLinearString;
+
 static JSLinearString *
 ArgToRootedString(JSContext *cx, CallArgs &args, unsigned argno)
 {
@@ -1854,8 +1857,8 @@ js::str_match(JSContext *cx, unsigned argc, Value *vp)
     RootedObject array(cx);
     MatchArgType arg = array.address();
     RegExpStatics *res = cx->regExpStatics();
-    Value rval;
-    if (!DoMatch(cx, res, str, g.regExp(), MatchCallback, arg, MATCH_ARGS, &rval))
+    RootedValue rval(cx);
+    if (!DoMatch(cx, res, str, g.regExp(), MatchCallback, arg, MATCH_ARGS, rval.address()))
         return false;
 
     if (g.regExp().global())
@@ -1897,17 +1900,19 @@ js::str_search(JSContext *cx, unsigned argc, Value *vp)
 
     /* Per ECMAv5 15.5.4.12 (5) The last index property is ignored and left unchanged. */
     size_t i = 0;
-    MatchPair match;
+    ScopedMatchPairs matches(&cx->tempLifoAlloc());
 
-    RegExpRunStatus status = g.regExp().executeMatchOnly(cx, chars, length, &i, match);
+    RegExpRunStatus status = g.regExp().execute(cx, chars, length, &i, matches);
     if (status == RegExpRunStatus_Error)
         return false;
 
-    if (status == RegExpRunStatus_Success)
-        res->updateLazily(cx, stableStr, &g.regExp(), 0);
+    if (status == RegExpRunStatus_Success) {
+        res->updateFromMatchPairs(cx, stableStr, matches);
+        args.rval().setInt32(matches[0].start);
+    } else {
+        args.rval().setInt32(-1);
+    }
 
-    JS_ASSERT_IF(status == RegExpRunStatus_Success_NotFound, match.start == -1);
-    args.rval().setInt32(match.start);
     return true;
 }
 
@@ -2013,8 +2018,8 @@ FindReplaceLength(JSContext *cx, RegExpStatics *res, ReplaceData &rdata, size_t 
         JS_ASSERT(!rdata.elembase->getOps()->lookupProperty);
         JS_ASSERT(!rdata.elembase->getOps()->getProperty);
 
-        Value match;
-        if (!res->createLastMatch(cx, &match))
+        RootedValue match(cx);
+        if (!res->createLastMatch(cx, match.address()))
             return false;
         JSString *str = match.toString();
 
@@ -2027,8 +2032,8 @@ FindReplaceLength(JSContext *cx, RegExpStatics *res, ReplaceData &rdata, size_t 
                 return false;
         }
 
-        Value v;
-        if (HasDataProperty(cx, rdata.elembase, AtomToId(atom), &v) && v.isString()) {
+        RootedValue v(cx);
+        if (HasDataProperty(cx, rdata.elembase, AtomToId(atom), v.address()) && v.isString()) {
             rdata.repstr = v.toString()->ensureLinear(cx);
             if (!rdata.repstr)
                 return false;
@@ -3069,8 +3074,10 @@ str_concat(JSContext *cx, unsigned argc, Value *vp)
             str = strRoot;
         }
 
-        str = ConcatStrings<NoGC>(cx, str, argStr);
-        if (!str) {
+        JSString *next = ConcatStrings<NoGC>(cx, str, argStr);
+        if (next) {
+            str = next;
+        } else {
             RootedString strRoot(cx, str), argStrRoot(cx, argStr);
             str = ConcatStrings<CanGC>(cx, strRoot, argStrRoot);
             if (!str)
@@ -3158,7 +3165,7 @@ str_slice(JSContext *cx, unsigned argc, Value *vp)
  * HTML composition aids.
  */
 static bool
-tagify(JSContext *cx, const char *begin, JSLinearString *param, const char *end,
+tagify(JSContext *cx, const char *begin, HandleLinearString param, const char *end,
        CallReceiver call)
 {
     JSString *thisstr = ThisToStringForStringProto(cx, call);
@@ -3231,7 +3238,7 @@ tagify(JSContext *cx, const char *begin, JSLinearString *param, const char *end,
 static JSBool
 tagify_value(JSContext *cx, CallArgs args, const char *begin, const char *end)
 {
-    JSLinearString *param = ArgToRootedString(cx, args, 0);
+    RootedLinearString param(cx, ArgToRootedString(cx, args, 0));
     if (!param)
         return false;
 
@@ -3241,19 +3248,19 @@ tagify_value(JSContext *cx, CallArgs args, const char *begin, const char *end)
 static JSBool
 str_bold(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "b", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "b", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_italics(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "i", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "i", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_fixed(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "tt", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "tt", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
@@ -3283,37 +3290,37 @@ str_anchor(JSContext *cx, unsigned argc, Value *vp)
 static JSBool
 str_strike(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "strike", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "strike", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_small(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "small", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "small", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_big(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "big", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "big", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_blink(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "blink", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "blink", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_sup(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "sup", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "sup", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 
 static JSBool
 str_sub(JSContext *cx, unsigned argc, Value *vp)
 {
-    return tagify(cx, "sub", NULL, NULL, CallReceiverFromVp(vp));
+    return tagify(cx, "sub", NullPtr(), NULL, CallReceiverFromVp(vp));
 }
 #endif /* JS_HAS_STR_HTML_HELPERS */
 
@@ -4280,8 +4287,8 @@ str_decodeURI(JSContext *cx, unsigned argc, Value *vp)
     if (!str)
         return false;
 
-    Value result;
-    if (!Decode(cx, str, js_uriReservedPlusPound_ucstr, &result))
+    RootedValue result(cx);
+    if (!Decode(cx, str, js_uriReservedPlusPound_ucstr, result.address()))
         return false;
 
     args.rval().set(result);

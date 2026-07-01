@@ -1566,6 +1566,17 @@ nsDisplayBackgroundImage::~nsDisplayBackgroundImage()
 #endif
 }
 
+#ifdef MOZ_DUMP_PAINTING
+void
+nsDisplayBackgroundImage::WriteDebugInfo(FILE *aOutput)
+{
+  if (mIsThemed) {
+    fprintf(aOutput, "(themed, appearance:%d) ", mFrame->GetStyleDisplay()->mAppearance);
+  }
+
+}
+#endif
+
 /*static*/ nsresult
 nsDisplayBackgroundImage::AppendBackgroundItemsToTop(nsDisplayListBuilder* aBuilder,
                                                      nsIFrame* aFrame,
@@ -1998,11 +2009,8 @@ nsDisplayBackgroundImage::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
       (!mFrame->GetPrevContinuation() && !mFrame->GetNextContinuation())) {
     const nsStyleBackground::Layer& layer = mBackgroundStyle->mLayers[mLayer];
     if (layer.mImage.IsOpaque()) {
-      nsRect borderBox = nsRect(ToReferenceFrame(), mFrame->GetSize());
       nsPresContext* presContext = mFrame->PresContext();
-      nsRect r = nsCSSRendering::GetBackgroundLayerRect(presContext, mFrame,
-          borderBox, *mBackgroundStyle, layer);
-      result = GetInsideClipRegion(this, presContext, layer.mClip, r, aSnap);
+      result = GetInsideClipRegion(this, presContext, layer.mClip, mBounds, aSnap);
     }
   }
 
@@ -2053,6 +2061,9 @@ nsDisplayBackgroundImage::IsVaryingRelativeToMovingFrame(nsDisplayListBuilder* a
 nsRect
 nsDisplayBackgroundImage::GetPositioningArea()
 {
+  if (mIsThemed) {
+    return nsRect(ToReferenceFrame(), mFrame->GetSize());
+  }
   if (!mBackgroundStyle) {
     return nsRect();
   }
@@ -2126,7 +2137,7 @@ void nsDisplayBackgroundImage::ComputeInvalidationRegion(nsDisplayListBuilder* a
                                                          const nsDisplayItemGeometry* aGeometry,
                                                          nsRegion* aInvalidRegion)
 {
-  if (!mBackgroundStyle) {
+  if (!mIsThemed && !mBackgroundStyle) {
     return;
   }
 
@@ -2178,13 +2189,14 @@ nsDisplayBackgroundImage::GetBoundsInternal() {
   }
 
   nsRect borderBox = nsRect(ToReferenceFrame(), mFrame->GetSize());
+  nsRect clipRect = borderBox;
   if (mFrame->GetType() == nsGkAtoms::canvasFrame) {
     nsCanvasFrame* frame = static_cast<nsCanvasFrame*>(mFrame);
-    borderBox = frame->CanvasArea() + ToReferenceFrame();
+    clipRect = frame->CanvasArea() + ToReferenceFrame();
   }
   const nsStyleBackground::Layer& layer = mBackgroundStyle->mLayers[mLayer];
   return nsCSSRendering::GetBackgroundLayerRect(presContext, mFrame,
-                                                borderBox, *mBackgroundStyle, layer);
+                                                borderBox, clipRect, *mBackgroundStyle, layer);
 }
 
 uint32_t

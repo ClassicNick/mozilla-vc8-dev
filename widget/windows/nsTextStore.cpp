@@ -11,7 +11,6 @@
 #include "prlog.h"
 
 #include "nscore.h"
-#include "nsTextStore.h"
 #include "nsWindow.h"
 #ifdef MOZ_METRO
 #include "winrt/MetroWidget.h"
@@ -19,6 +18,9 @@
 #include "nsPrintfCString.h"
 #include "WinUtils.h"
 #include "mozilla/Preferences.h"
+
+#define INPUTSCOPE_INIT_GUID
+#include "nsTextStore.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -50,11 +52,6 @@ PRLogModuleInfo* sTextStoreLog = nullptr;
 /******************************************************************/
 /* InputScopeImpl                                                 */
 /******************************************************************/
-
-// InputScope property GUID
-static const GUID GUID_PROP_INPUTSCOPE =
-  { 0x1713dd5a, 0x68e7, 0x4a5b,
-    { 0x9a, 0xf6, 0x59, 0x2a, 0x59, 0x5c, 0x77, 0x8d } };
 
 class InputScopeImpl MOZ_FINAL : public ITfInputScope
 {

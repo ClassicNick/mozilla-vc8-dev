@@ -240,18 +240,32 @@ inline JSAtom *
 ToAtom(JSContext *cx, const js::Value &v);
 
 template <AllowGC allowGC>
-bool
+extern bool
 InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
                       typename MaybeRooted<jsid, allowGC>::MutableHandleType idp,
                       typename MaybeRooted<Value, allowGC>::MutableHandleType vp);
 
 template <AllowGC allowGC>
-inline bool
+inline extern bool
 InternNonIntElementId(JSContext *cx, JSObject *obj, const Value &idval,
                       typename MaybeRooted<jsid, allowGC>::MutableHandleType idp)
 {
     typename MaybeRooted<Value, allowGC>::RootType dummy(cx);
     return InternNonIntElementId<allowGC>(cx, obj, idval, idp, &dummy);
+}
+
+inline bool
+InternNonIntElementIdAllowGC(JSContext *cx, JSObject *obj, const Value &idval,
+                                 MutableHandleId idp, MutableHandleValue vp)
+{
+	return InternNonIntElementId<CanGC>(cx, obj, idval, idp, vp);
+}
+
+inline bool
+InternNonIntElementIdDisallowGC(JSContext *cx, JSObject *obj, const Value &idval,
+                                FakeMutableHandle<jsid> idp, FakeMutableHandle<Value> vp)
+{
+	return InternNonIntElementId<NoGC>(cx, obj, idval, idp, vp);
 }
 
 template<XDRMode mode>

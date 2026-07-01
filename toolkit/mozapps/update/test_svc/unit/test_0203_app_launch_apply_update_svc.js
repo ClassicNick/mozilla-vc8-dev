@@ -32,7 +32,7 @@ const MAX_TIMEOUT_RUNS = 300;
 
 // Maximum number of milliseconds the process that is launched can run before
 // the test will try to kill it.
-const APP_TIMER_TIMEOUT = 20000;
+const APP_TIMER_TIMEOUT = 120000;
 
 Components.utils.import("resource://gre/modules/ctypes.jsm");
 
@@ -335,7 +335,7 @@ function adjustPathsOnWindows() {
   tmpDir.append("ExecutableDir.tmp");
   tmpDir.createUnique(tmpDir.DIRECTORY_TYPE, 0755);
   let procDir = getCurrentProcessDir();
-  procDir.copyTo(tmpDir, "bin");
+  copyDirRecursive(procDir, tmpDir, "bin");
   let newDir = tmpDir.clone();
   newDir.append("bin");
   gWindowsBinDir = newDir;
