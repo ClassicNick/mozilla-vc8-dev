@@ -57,6 +57,7 @@ webidl_files = \
   Function.webidl \
   GainNode.webidl \
   HTMLAnchorElement.webidl \
+  HTMLAreaElement.webidl \
   HTMLBaseElement.webidl \
   HTMLBodyElement.webidl \
   HTMLBRElement.webidl \
@@ -68,6 +69,7 @@ webidl_files = \
   HTMLDListElement.webidl \
   HTMLDocument.webidl \
   HTMLElement.webidl \
+  HTMLFieldSetElement.webidl \
   HTMLFontElement.webidl \
   HTMLFrameSetElement.webidl \
   HTMLHeadElement.webidl \
@@ -83,10 +85,13 @@ webidl_files = \
   HTMLMeterElement.webidl \
   HTMLModElement.webidl \
   HTMLOListElement.webidl \
+  HTMLOptGroupElement.webidl \
   HTMLOptionsCollection.webidl \
+  HTMLOutputElement.webidl \
   HTMLParagraphElement.webidl \
   HTMLParamElement.webidl \
   HTMLPreElement.webidl \
+  HTMLProgressElement.webidl \
   HTMLPropertiesCollection.webidl \
   HTMLQuoteElement.webidl \
   HTMLScriptElement.webidl \
@@ -136,10 +141,15 @@ webidl_files = \
   SVGAnimationElement.webidl \
   SVGCircleElement.webidl \
   SVGClipPathElement.webidl \
+  SVGComponentTransferFunctionElement.webidl \
   SVGDefsElement.webidl \
   SVGDescElement.webidl \
   SVGElement.webidl \
   SVGEllipseElement.webidl \
+  SVGFEFuncAElement.webidl \
+  SVGFEFuncBElement.webidl \
+  SVGFEFuncGElement.webidl \
+  SVGFEFuncRElement.webidl \
   SVGFitToViewBox.webidl \
   SVGForeignObjectElement.webidl \
   SVGGElement.webidl \
@@ -203,6 +213,12 @@ webidl_files = \
   XPathEvaluator.webidl \
   XULElement.webidl \
   $(NULL)
+
+ifdef MOZ_AUDIO_CHANNEL_MANAGER
+webidl_files += \
+  AudioChannelManager.webidl \
+  $(NULL)
+endif
 
 ifdef MOZ_MEDIA
 webidl_files += \

@@ -64,9 +64,9 @@ namespace js {
  * common and future-friendly cases.
  */
 inline bool
-ComputeImplicitThis(JSContext *cx, HandleObject obj, Value *vp)
+ComputeImplicitThis(JSContext *cx, HandleObject obj, MutableHandleValue vp)
 {
-    vp->setUndefined();
+    vp.setUndefined();
 
     if (obj->isGlobal())
         return true;
@@ -78,7 +78,7 @@ ComputeImplicitThis(JSContext *cx, HandleObject obj, Value *vp)
     if (!nobj)
         return false;
 
-    vp->setObject(*nobj);
+    vp.setObject(*nobj);
     return true;
 }
 
@@ -1095,7 +1095,7 @@ ReportIfNotFunction(JSContext *cx, const Value &v, MaybeConstruct construct = NO
     if (v.isObject() && v.toObject().isFunction())
         return v.toObject().toFunction();
 
-    ReportIsNotFunction(cx, v, construct);
+    ReportIsNotFunction(cx, v, -1, construct);
     return NULL;
 }
 

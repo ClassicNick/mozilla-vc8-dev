@@ -1472,6 +1472,18 @@
     "kind": "boolean",
     "description": "Whether the user has requested not to see the Plugin Hang UI again"
   },
+  "PLUGIN_HANG_UI_RESPONSE_TIME": {
+    "kind": "exponential",
+    "high": "60000",
+    "n_buckets": 20,
+    "description": "Time spent in Plugin Hang UI (ms)"
+  },
+  "PLUGIN_HANG_TIME": {
+    "kind": "exponential",
+    "high": "60000",
+    "n_buckets": 20,
+    "description": "Value of dom.ipc.plugins.hangUITimeoutSecs plus time spent in Plugin Hang UI (ms)"
+  },
   "PLUGIN_SHUTDOWN_MS": {
     "kind": "exponential",
     "high": "5000",
@@ -2060,6 +2072,45 @@
     "n_buckets": 10,
     "description": "Firefox: Time taken by the tab closing animation in milliseconds"
   },
+  "FX_TAB_ANIM_OPEN_PREVIEW_FRAME_INTERVAL_MS": {
+    "kind": "exponential",
+    "low" : 7,
+    "high": "500",
+    "n_buckets": 50,
+    "description": "Average frame interval during tab open animation of about:newtab (preview=on), when other tabs are unaffected"
+  },
+  "FX_TAB_ANIM_OPEN_PREVIEW_FRAME_PAINT_MS": {
+    "kind": "exponential",
+    "high": "500",
+    "n_buckets": 30,
+    "description": "Average paint duration during tab open animation of about:newtab (preview=on), when other tabs are unaffected"
+  },
+  "FX_TAB_ANIM_OPEN_FRAME_INTERVAL_MS": {
+    "kind": "exponential",
+    "low" : 7,
+    "high": "500",
+    "n_buckets": 50,
+    "description": "Average frame interval during tab open animation of about:newtab (preview=off), when other tabs are unaffected"
+  },
+  "FX_TAB_ANIM_OPEN_FRAME_PAINT_MS": {
+    "kind": "exponential",
+    "high": "500",
+    "n_buckets": 30,
+    "description": "Average paint duration during tab open animation of about:newtab (preview=off), when other tabs are unaffected"
+  },
+  "FX_TAB_ANIM_ANY_FRAME_INTERVAL_MS": {
+    "kind": "exponential",
+    "low" : 7,
+    "high": "500",
+    "n_buckets": 50,
+    "description": "Average frame interval during any tab open/close animation (excluding tabstrip scroll)"
+  },
+  "FX_TAB_ANIM_ANY_FRAME_PAINT_MS": {
+    "kind": "exponential",
+    "high": "500",
+    "n_buckets": 30,
+    "description": "Average paint duration during any tab open/close animation (excluding tabstrip scroll)"
+  },
   "FX_TAB_SWITCH_UPDATE_MS": {
     "kind": "exponential",
     "high": "1000",
@@ -2606,5 +2657,12 @@
     "high": "10000",
     "n_buckets": 10,
     "description": "Time (ms) it takes to persist the last submitted Health Report payload to disk."
+  },
+  "POPUP_NOTIFICATION_MAINACTION_TRIGGERED_MS": {
+    "kind": "linear",
+    "low": 25,
+    "high": "80 * 25",
+    "n_buckets": "80 + 1",
+    "description": "The time (in milliseconds) after showing a PopupNotification that the mainAction was first triggered"
   }
 }

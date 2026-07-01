@@ -1068,6 +1068,21 @@ nsresult nsHTMLMediaElement::LoadResource()
     mChannel = nullptr;
   }
 
+  int16_t shouldLoad = nsIContentPolicy::ACCEPT;
+  nsresult rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_MEDIA,
+                                          mLoadingSrc,
+                                          NodePrincipal(),
+                                          static_cast<Element*>(this),
+                                          EmptyCString(), // mime type
+                                          nullptr, // extra
+                                          &shouldLoad,
+                                          nsContentUtils::GetContentPolicy(),
+                                          nsContentUtils::GetSecurityManager());
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_CP_REJECTED(shouldLoad)) {
+    return NS_ERROR_FAILURE;
+  }
+
   // Set the media element's CORS mode only when loading a resource
   mCORSMode = AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
 
@@ -1082,21 +1097,6 @@ nsresult nsHTMLMediaElement::LoadResource()
     mMimeType = other->mMimeType;
     if (NS_SUCCEEDED(rv))
       return rv;
-  }
-
-  int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(nsIContentPolicy::TYPE_MEDIA,
-                                          mLoadingSrc,
-                                          NodePrincipal(),
-                                          static_cast<Element*>(this),
-                                          EmptyCString(), // mime type
-                                          nullptr, // extra
-                                          &shouldLoad,
-                                          nsContentUtils::GetContentPolicy(),
-                                          nsContentUtils::GetSecurityManager());
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (NS_CP_REJECTED(shouldLoad)) {
-    return NS_ERROR_FAILURE;
   }
 
   if (IsMediaStreamURI(mLoadingSrc)) {
@@ -2045,6 +2045,23 @@ void nsHTMLMediaElement::DoneCreatingElement()
 {
    if (HasAttr(kNameSpaceID_None, nsGkAtoms::muted))
      mMuted = true;
+}
+
+bool nsHTMLMediaElement::IsHTMLFocusable(bool aWithMouse,
+                                         bool *aIsFocusable,
+                                         int32_t *aTabIndex)
+{
+  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable, aTabIndex)) {
+    return true;
+  }
+
+  *aIsFocusable = true;
+  return false;
+}
+
+int32_t nsHTMLMediaElement::TabIndexDefault()
+{
+  return 0;
 }
 
 nsresult nsHTMLMediaElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,

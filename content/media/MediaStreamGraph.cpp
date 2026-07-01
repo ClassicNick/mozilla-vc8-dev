@@ -225,22 +225,17 @@ MediaStreamGraphImpl::GraphTimeToStreamTime(MediaStream* aStream,
     }
     t = end;
   }
-<<<<<<< HEAD
   return NS_MAX<StreamTime>(0, s);
-}  
-=======
-  return std::max<StreamTime>(0, s);
 }
 
 StreamTime
 MediaStreamGraphImpl::GraphTimeToStreamTimeOptimistic(MediaStream* aStream,
                                                       GraphTime aTime)
 {
-  GraphTime computedUpToTime = std::min(mStateComputedTime, aTime);
+  GraphTime computedUpToTime = NS_MIN(mStateComputedTime, aTime);
   StreamTime s = GraphTimeToStreamTime(aStream, computedUpToTime);
   return s + (aTime - computedUpToTime);
 }
->>>>>>> ccf2573
 
 GraphTime
 MediaStreamGraphImpl::StreamTimeToGraphTime(MediaStream* aStream,

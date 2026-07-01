@@ -859,20 +859,6 @@ ContextStack::~ContextStack()
     JS_ASSERT(!seg_);
 }
 
-ptrdiff_t
-ContextStack::spIndexOf(const Value *vp)
-{
-    if (!hasfp())
-        return JSDVG_SEARCH_STACK;
-
-    Value *base = fp()->base();
-    Value *sp = regs().sp;
-    if (vp < base || vp >= sp)
-        return JSDVG_SEARCH_STACK;
-
-    return vp - sp;
-}
-
 bool
 ContextStack::onTop() const
 {
@@ -1017,7 +1003,7 @@ ContextStack::popInvokeArgs(const InvokeArgsGuard &iag)
 
 StackFrame *
 ContextStack::pushInvokeFrame(JSContext *cx, MaybeReportError report,
-                              const CallArgs &args, JSFunction *fun,
+                              const CallArgs &args, JSFunction *funArg,
                               InitialFrameFlags initial, FrameGuard *fg)
 {
     mozilla::Maybe<AutoAssertNoGC> maybeNoGC;
@@ -1029,6 +1015,7 @@ ContextStack::pushInvokeFrame(JSContext *cx, MaybeReportError report,
     JS_ASSERT(onTop());
     JS_ASSERT(space().firstUnused() == args.end());
 
+    RootedFunction fun(cx, funArg);
     RootedScript script(cx, fun->nonLazyScript());
 
     StackFrame::Flags flags = ToFrameFlags(initial);
@@ -1057,8 +1044,8 @@ ContextStack::pushInvokeFrame(JSContext *cx, const CallArgs &args,
 }
 
 bool
-ContextStack::pushExecuteFrame(JSContext *cx, JSScript *script, const Value &thisv,
-                               JSObject &scopeChain, ExecuteType type,
+ContextStack::pushExecuteFrame(JSContext *cx, HandleScript script, const Value &thisv,
+                               HandleObject scopeChain, ExecuteType type,
                                AbstractFramePtr evalInFrame, ExecuteFrameGuard *efg)
 {
     AssertCanGC();
@@ -1112,7 +1099,7 @@ ContextStack::pushExecuteFrame(JSContext *cx, JSScript *script, const Value &thi
 
     AbstractFramePtr prev = evalInFrame ? evalInFrame : maybefp();
     StackFrame *fp = reinterpret_cast<StackFrame *>(firstUnused + 2);
-    fp->initExecuteFrame(script, prevLink, prev, seg_->maybeRegs(), thisv, scopeChain, type);
+    fp->initExecuteFrame(script, prevLink, prev, seg_->maybeRegs(), thisv, *scopeChain, type);
     fp->initVarsToUndefined();
     efg->regs_.prepareToRun(*fp, script);
 

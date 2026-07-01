@@ -1,4 +1,11 @@
-// Effectively reverts Bug 784859 parts 1-6
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:set ts=2 sw=2 sts=2 et cindent: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// Implement TimeStamp::Now() with QueryPerformanceCounter() controlled with
+// values of GetTickCount().
 
 // XXX Forcing log to be able to catch issues in the field.  Should be removed
 // before this reaches the Release or even Beta channel.
@@ -6,16 +13,15 @@
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/Services.h"
-#include "nsIObserver.h"
-#include "nsIObserverService.h"
-#include "nsThreadUtils.h"
-#include "nsAutoPtr.h"
-#include <pratom.h>
 #include <windows.h>
 
 #include "prlog.h"
 #include <stdio.h>
+#include <cstdlib> // for std::abs(int/long)
+
+#  define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#  define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#  include <intrin.h>
 
 #if defined(PR_LOGGING)
 // Log module for mozilla::TimeStamp for Windows logging...
@@ -27,8 +33,15 @@
 //
 // this enables PR_LOG_DEBUG level information and places all output in
 // the file nspr.log
-  PRLogModuleInfo* timeStampLog = PR_NewLogModule("TimeStampWindows");
-  #define LOG(x)  PR_LOG(timeStampLog, PR_LOG_DEBUG, x)
+static PRLogModuleInfo*
+GetTimeStampLog()
+{
+  static PRLogModuleInfo *sLog;
+  if (!sLog)
+    sLog = PR_NewLogModule("TimeStampWindows");
+  return sLog;
+}
+  #define LOG(x)  PR_LOG(GetTimeStampLog(), PR_LOG_DEBUG, x)
 #else
   #define LOG(x)
 #endif /* PR_LOGGING */
@@ -40,44 +53,35 @@ static const double   kNsPerSecd  = 1000000000.0;
 static const LONGLONG kNsPerSec   = 1000000000;
 static const LONGLONG kNsPerMillisec = 1000000;
 
-
 // ----------------------------------------------------------------------------
 // Global constants
 // ----------------------------------------------------------------------------
 
-// After this time we always recalibrate the skew.
+// If QPC is found faulty for two stamps in this interval, we disable it
+// completely.
 //
-// On most platforms QPC and GTC have not quit the same slope, so after some
-// time the two values will disperse.  The 4s calibration interval has been
-// chosen mostly arbitrarily based on tests.
-//
-// Mostly, 4 seconds has been chosen based on the sleep/wake issue - timers
-// shift after wakeup.  I wanted to make the time as reasonably short as
-// possible to always recalibrate after even a very short standby time (quit
-// reasonable test case).  So, there is a lot of space to prolong it
-// to say 20 seconds or even more, needs testing in the field, though.
-//
-// Value is number of [ms].
-static const ULONGLONG kCalibrationInterval = 4000;
+// Values is in [ms].
+static const uint32_t kQPCHardFailureDetectionInterval = 2000;
 
-// On every read of QPC we check the overflow of skew difference doesn't go
-// over this number of milliseconds.  Both timer functions jitter so we have
-// to have some limit.  The value is based on tests.
+// On every use of QPC values we check the overflow of skew difference of the
+// two stamps doesn't go over this number of milliseconds.  Both timer
+// functions jitter so we have to have some limit.  The value is based on tests.
 //
-// Changing kCalibrationInterval influences this limit: prolonging
-// just kCalibrationInterval means to be more sensitive to threshold overflows.
+// Changing kQPCHardFailureDetectionInterval influences this limit: prolonging
+// just kQPCHardFailureDetectionInterval means to be more sensitive to threshold
+// overflows.
 //
-// How this constant is used (also see CheckCalibration function):
-// First, adjust the limit linearly to the calibration interval:
-//   LIMIT = (GTC_now - GTC_calib) / kCalibrationInterval
+// How this constant is used (see CheckQPC function):
+// First, adjust the limit linearly to the check interval:
+//   LIMIT = (GTC_now - GTC_epoch) / kQPCHardFailureDetectionInterval
 // Then, check the skew difference overflow is in this adjusted limit:
-//   ABS((QPC_now - GTC_now) - (QPC_calib - GTC_calib)) - THRESHOLD < LIMIT
+//   ABS( (QPC_now - GTC_now) - (QPC_epoch - GTC_epoch) ) - THRESHOLD < LIMIT
 //
 // Thresholds are calculated dynamically, see sUnderrunThreshold and
 // sOverrunThreshold below.
 //
-// Value is number of [ms].
-static const ULONGLONG kOverflowLimit = 100;
+// Limit is in number of [ms].
+static const ULONGLONG kOverflowLimit = 50;
 
 // If we are not able to get the value of GTC time increment, use this value
 // which is the most usual increment.
@@ -101,22 +105,39 @@ static const DWORD kDefaultTimeIncrement = 156001;
 
 #define ms2mt(x) ((x) * sFrequencyPerSec)
 #define mt2ms(x) ((x) / sFrequencyPerSec)
-#define mt2ms_d(x) (double(x) / sFrequencyPerSec)
+#define mt2ms_f(x) (double(x) / sFrequencyPerSec)
 
 // Result of QueryPerformanceFrequency
 static LONGLONG sFrequencyPerSec = 0;
 
 // Lower and upper bound that QueryPerformanceCounter - GetTickCount must not
-// go under or over when compared to the calibrated QPC - GTC difference (skew)
+// go under or over when compared to any older QPC - GTC difference (skew).
 // Values are based on the GetTickCount update interval.
 //
 // Schematically, QPC works correctly if ((QPC_now - GTC_now) -
-// (QPC_calib - GTC_calib)) is in  [sUnderrunThreshold, sOverrunThreshold]
-// interval every time we access them.
+// (QPC_epoch - GTC_epoch)) is in  [sUnderrunThreshold, sOverrunThreshold]
+// interval every time we compare two time stamps.
 //
 // Kept in [mt]
 static LONGLONG sUnderrunThreshold;
 static LONGLONG sOverrunThreshold;
+
+// Interval to return duration using QPC.  When two time stamps
+// are within this interval, perform QPC check first.
+//
+// Kept in [mt]
+static LONGLONG sQPCHardFailureDetectionInterval;
+
+// Flag for stable TSC that indicates platform where QPC is stable.
+static bool sHasStableTSC = false;
+
+// ----------------------------------------------------------------------------
+// Global state variables, changing at runtime
+// ----------------------------------------------------------------------------
+
+// Initially true, set to false when QPC is found unstable and never
+// returns back to true since that time.
+static bool volatile sUseQPC = true;
 
 // ----------------------------------------------------------------------------
 // Global lock
@@ -129,49 +150,22 @@ static const DWORD kLockSpinCount = 4096;
 // Common mutex (thanks the relative complexity of the logic, this is better
 // then using CMPXCHG8B.)
 // It is protecting the globals bellow.
-CRITICAL_SECTION sTimeStampLock;
+static CRITICAL_SECTION sTimeStampLock;
 
-// ----------------------------------------------------------------------------
-// Globals heavily chaning at runtime, protected with sTimeStampLock mutex
-// ----------------------------------------------------------------------------
-
-// The calibrated difference between QPC and GTC.
-//
-// Kept in [mt]
-static LONGLONG sSkew = 0;
-
-// Keeps the last result we have returned from TickCount64 (bellow).  Protects
-// from roll over and going backward.
+// Used only when GetTickCount64 is not available on the platform.
+// Last result of GetTickCount call.
 //
 // Kept in [ms]
-static ULONGLONG sLastGTCResult = 0;
+static DWORD sLastGTCResult = 0;
 
-// Holder of the last result of our main hi-res function.  Protects from going
-// backward.
-//
-// Kept in [mt]
-static ULONGLONG sLastResult = 0;
-
-// Time of the last performed calibration.
-//
-// Kept in [ms]
-static ULONGLONG sLastCalibrated;
-
-// After we have detected a run out of bounderies set this to true.  This
-// then disallows use of QPC result for the hi-res timer.
-static bool sFallBackToGTC = false;
-
-// Set to true to force recalibration on QPC read.  This is generally set after
-// system wake up, during which skew can change a lot.
-static bool sForceRecalibrate = false;
-
+// Higher part of the 64-bit value of MozGetTickCount64,
+// incremented atomically.
+static DWORD sLastGTCRollover = 0;
 
 namespace mozilla {
 
-
-static ULONGLONG
-CalibratedPerformanceCounter();
-
+typedef ULONGLONG (WINAPI* GetTickCount64_t)();
+static GetTickCount64_t sGetTickCount64 = nullptr;
 
 // ----------------------------------------------------------------------------
 // Critical Section helper class
@@ -193,80 +187,33 @@ private:
   LPCRITICAL_SECTION mSection;
 };
 
-
-// ----------------------------------------------------------------------------
-// System standby and wakeup status observer.  Needed to ignore skew jump after
-// the system has been woken up, happens mostly on XP.
-// ----------------------------------------------------------------------------
-
-class StandbyObserver MOZ_FINAL : public nsIObserver
+// Function protecting GetTickCount result from rolling over,
+// result is in [ms]
+static ULONGLONG WINAPI
+MozGetTickCount64()
 {
-  NS_DECL_ISUPPORTS
-  NS_DECL_NSIOBSERVER
+  DWORD GTC = ::GetTickCount();
 
-public:
-  StandbyObserver()
-  {
-    LOG(("TimeStamp: StandByObserver::StandByObserver()"));
-  }
-
-  ~StandbyObserver()
-  {
-    LOG(("TimeStamp: StandByObserver::~StandByObserver()"));
-  }
-
-  static inline void Ensure()
-  {
-    if (sInitialized)
-      return;
-
-    // Not available to init on other then the main thread since using
-    // the ObserverService.
-    if (!NS_IsMainThread())
-      return;
-
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    if (!obs)
-      return; // Too soon...
-
-    sInitialized = true;
-
-    nsRefPtr<StandbyObserver> observer = new StandbyObserver();
-    obs->AddObserver(observer, "wake_notification", false);
-
-    // There is no need to remove the observer, observer service is the only
-    // referer and we don't hold reference back to the observer service.
-  }
-
-private:
-  static bool sInitialized;
-};
-
-NS_IMPL_THREADSAFE_ISUPPORTS1(StandbyObserver, nsIObserver)
-
-bool
-StandbyObserver::sInitialized = false;
-
-NS_IMETHODIMP
-StandbyObserver::Observe(nsISupports *subject,
-                         const char *topic,
-                         const PRUnichar *data)
-{
+  // Cheaper then CMPXCHG8B
   AutoCriticalSection lock(&sTimeStampLock);
 
-  // Clear the potentiall fallback flag now and try using
-  // QPC again after wake up.
-  sFallBackToGTC = false;
-  sForceRecalibrate = true;
-  LOG(("TimeStamp: system has woken up, reset GTC fallback"));
+  // Pull the rollover counter forward only if new value of GTC goes way
+  // down under the last saved result
+  if ((sLastGTCResult > GTC) && ((sLastGTCResult - GTC) > (1UL << 30)))
+    ++sLastGTCRollover;
 
-  return NS_OK;
+  sLastGTCResult = GTC;
+  return ULONGLONG(sLastGTCRollover) << 32 | sLastGTCResult;
 }
 
-
-// ----------------------------------------------------------------------------
-// The timer core implementation
-// ----------------------------------------------------------------------------
+// Result is in [mt]
+static inline ULONGLONG
+PerformanceCounter()
+{
+  LARGE_INTEGER pc;
+  ::QueryPerformanceCounter(&pc);
+  return pc.QuadPart * 1000ULL;
+}
 
 static void
 InitThresholds()
@@ -276,6 +223,8 @@ InitThresholds()
   GetSystemTimeAdjustment(&timeAdjustment,
                           &timeIncrement,
                           &timeAdjustmentDisabled);
+
+  LOG(("TimeStamp: timeIncrement=%d [100ns]", timeIncrement));
 
   if (!timeIncrement)
     timeIncrement = kDefaultTimeIncrement;
@@ -300,15 +249,19 @@ InitThresholds()
   LONGLONG ticksPerGetTickCountResolutionCeiling =
     (int64_t(timeIncrementCeil) * sFrequencyPerSec) / 10000LL;
 
-
   // I observed differences about 2 times of the GTC resolution.  GTC may
   // jump by 32 ms in two steps, therefor use the ceiling value.
+  // Having 64 (15.6 or 16 * 4 exactly) is used to avoid false negatives
+  // for very short times where QPC and GTC may jitter even more.
   sUnderrunThreshold =
-    LONGLONG((-2) * ticksPerGetTickCountResolutionCeiling);
+    LONGLONG((-4) * ticksPerGetTickCountResolutionCeiling);
 
-  // QPC should go no further then 2 * GTC resolution
+  // QPC should go no further than 2 * GTC resolution.
   sOverrunThreshold =
-    LONGLONG((+2) * ticksPerGetTickCountResolution);
+    LONGLONG((+4) * ticksPerGetTickCountResolution);
+
+  sQPCHardFailureDetectionInterval =
+    LONGLONG(kQPCHardFailureDetectionInterval) * sFrequencyPerSec;
 }
 
 static void
@@ -321,8 +274,8 @@ InitResolution()
   ULONGLONG minres = ~0ULL;
   int loops = 10;
   do {
-    ULONGLONG start = CalibratedPerformanceCounter();
-    ULONGLONG end = CalibratedPerformanceCounter();
+    ULONGLONG start = PerformanceCounter();
+    ULONGLONG end = PerformanceCounter();
 
     ULONGLONG candidate = (end - start);
     if (candidate < minres)
@@ -353,165 +306,115 @@ InitResolution()
   sResolutionSigDigs = sigDigs;
 }
 
-// Function protecting GetTickCount result from rolling over, result is in [ms]
-// @param gtc
-// Result of GetTickCount().  Passing it as an arg lets us call it out
-// of the common mutex.
-static inline ULONGLONG
-TickCount64(DWORD now)
+// ----------------------------------------------------------------------------
+// TimeStampValue implementation
+// ----------------------------------------------------------------------------
+
+TimeStampValue::TimeStampValue(_SomethingVeryRandomHere* nullValue)
+  : mGTC(0)
+  , mQPC(0)
+  , mHasQPC(false)
+  , mIsNull(true)
 {
-  ULONGLONG lastResultHiPart = sLastGTCResult & (~0ULL << 32);
-  ULONGLONG result = lastResultHiPart | ULONGLONG(now);
-
-  // It may happen that when accessing GTC on multiple threads the results
-  // may differ (GTC value may be lower due to running before the others
-  // right around the overflow moment).  That falsely shifts the high part.
-  // Easiest solution is to check for a significant difference.
-
-  if (sLastGTCResult > result) {
-    if ((sLastGTCResult - result) > (1ULL << 31))
-      result += 1ULL << 32;
-    else
-      result = sLastGTCResult;
-  }
-
-  sLastGTCResult = result;
-  return result;
+  MOZ_ASSERT(!nullValue);
 }
 
-// Result is in [mt]
-static inline ULONGLONG
-PerformanceCounter()
+TimeStampValue::TimeStampValue(ULONGLONG aGTC, ULONGLONG aQPC, bool aHasQPC)
+  : mGTC(aGTC)
+  , mQPC(aQPC)
+  , mHasQPC(aHasQPC)
+  , mIsNull(false)
 {
-  LARGE_INTEGER pc;
-  ::QueryPerformanceCounter(&pc);
-  return pc.QuadPart * 1000ULL;
 }
 
-// Called when we detect a larger deviation of QPC to disable it.
-static inline void
-RecordFlaw()
+TimeStampValue&
+TimeStampValue::operator+=(const int64_t aOther)
 {
-  sFallBackToGTC = true;
-
-  LOG(("TimeStamp: falling back to GTC :("));
-
-#if 0
-  // This code has been disabled, because we:
-  // 0. InitResolution must not be called under the lock (would reenter) while
-  //    we shouldn't release it here just to allow it
-  // 1. may return back to using QPC after system wake up
-  // 2. InitResolution for GTC will probably return 0 anyway (increments
-  //    only every 15 or 16 ms.)
-  //
-  // There is no need to drop sFrequencyPerSec to 1, result of TickCount64
-  // is multiplied and later divided with sFrequencyPerSec.  Changing it
-  // here may introduce sync problems.  Syncing access to sFrequencyPerSec
-  // is overkill.  Drawback is we loose some bits from the upper bound of
-  // the 64 bits timer value, usualy up to 7, it means the app cannot run
-  // more then some 4'000'000 years :)
-  InitResolution();
-#endif
+  mGTC += aOther;
+  mQPC += aOther;
+  return *this;
 }
 
-// Check the current skew is in bounderies and occasionally recalculate it.
-// Return true if QPC is OK to use, return false to use GTC only.
-//
-// Arguments:
-// overflow - the calculated overflow out of the bounderies for skew difference
-// qpc - current value of QueryPerformanceCounter
-// gtc - current value of GetTickCount, more actual according possible system
-//       sleep between read of QPC and GTC
-static inline bool
-CheckCalibration(LONGLONG overflow, ULONGLONG qpc, ULONGLONG gtc)
+TimeStampValue&
+TimeStampValue::operator-=(const int64_t aOther)
 {
-  if (sFallBackToGTC) {
-    // We are forbidden to use QPC
+  mGTC -= aOther;
+  mQPC -= aOther;
+  return *this;
+}
+
+// If the duration is less then one second, perform check of QPC stability
+// by comparing both 'epoch' and 'now' skew (=GTC - QPC) values.
+bool
+TimeStampValue::CheckQPC(int64_t aDuration, const TimeStampValue &aOther) const
+{
+  if (!mHasQPC || !aOther.mHasQPC) // Not both holding QPC
     return false;
+
+  if (sHasStableTSC) // For stable TSC there is no need to check
+    return true;
+
+  if (!sUseQPC) // QPC globally disabled
+    return false;
+
+  // Treat absolutely for calibration purposes
+  aDuration = std::abs(aDuration);
+
+  // Check QPC is sane before using it.
+
+  LONGLONG skew1 = mGTC - mQPC;
+  LONGLONG skew2 = aOther.mGTC - aOther.mQPC;
+
+  LONGLONG diff = skew1 - skew2;
+  LONGLONG overflow;
+
+  if (diff < sUnderrunThreshold)
+    overflow = sUnderrunThreshold - diff;
+  else if (diff > sOverrunThreshold)
+    overflow = diff - sOverrunThreshold;
+  else
+    return true;
+
+  ULONGLONG trend;
+  if (aDuration)
+    trend = LONGLONG(overflow * (double(sQPCHardFailureDetectionInterval) / aDuration));
+  else
+    trend = overflow;
+
+  LOG(("TimeStamp: QPC check after %llums with overflow %1.4fms"
+       ", adjusted trend per interval is %1.4fms",
+       mt2ms(aDuration),
+       mt2ms_f(overflow),
+       mt2ms_f(trend)));
+
+  if (trend <= ms2mt(kOverflowLimit)) {
+    // We are in the limit, let go.
+    return true;
   }
 
-  ULONGLONG sinceLastCalibration = gtc - sLastCalibrated;
+  // QPC deviates, don't use it.
+  LOG(("TimeStamp: QPC found highly jittering"));
 
-  if (overflow && !sForceRecalibrate) {
-    // Calculate trend of the overflow to correspond to the calibration
-    // interval, we may get here long after the last calibration because we
-    // either didn't read the hi-res function or the system was suspended.
-    ULONGLONG trend = LONGLONG(overflow *
-      (double(kCalibrationInterval) / sinceLastCalibration));
-
-    LOG(("TimeStamp: calibration after %llus with overflow %1.4fms"
-         ", adjusted trend per calibration interval is %1.4fms",
-         sinceLastCalibration / 1000,
-         mt2ms_d(overflow),
-         mt2ms_d(trend)));
-
-    if (trend > ms2mt(kOverflowLimit)) {
-      // This sets sFallBackToGTC, we have detected
-      // an unreliability of QPC, stop using it.
-      RecordFlaw();
-      return false;
-    }
+  if (aDuration < sQPCHardFailureDetectionInterval) {
+    // Interval between the two time stamps is very short, consider
+    // QPC as unstable and disable it completely.
+    sUseQPC = false;
+    LOG(("TimeStamp: QPC disabled"));
   }
 
-  if (sinceLastCalibration > kCalibrationInterval || sForceRecalibrate) {
-    // Recalculate the skew now
-    sSkew = qpc - ms2mt(gtc);
-    sLastCalibrated = gtc;
-    LOG(("TimeStamp: new skew is %1.2fms (force:%d)",
-      mt2ms_d(sSkew), sForceRecalibrate));
-
-    sForceRecalibrate = false;
-  }
-
-  return true;
+  return false;
 }
 
-// The main function.  Result is in [mt] ensuring to not go back and be mostly
-// reliable with highest possible resolution.
-static ULONGLONG
-CalibratedPerformanceCounter()
+uint64_t
+TimeStampValue::operator-(const TimeStampValue &aOther) const
 {
-  // XXX This is using ObserverService, cannot instantiate in the static
-  // startup, really needs a better initation code here.
-  StandbyObserver::Ensure();
+  if (mIsNull && aOther.mIsNull)
+    return uint64_t(0);
 
-  // Don't hold the lock over call to QueryPerformanceCounter, since it is
-  // the largest bottleneck, let threads read the value concurently to have
-  // possibly a better performance.
+  if (CheckQPC(int64_t(mGTC - aOther.mGTC), aOther))
+    return mQPC - aOther.mQPC;
 
-  ULONGLONG qpc = PerformanceCounter();
-  DWORD gtcw = GetTickCount();
-
-  AutoCriticalSection lock(&sTimeStampLock);
-
-  // Rollover protection
-  ULONGLONG gtc = TickCount64(gtcw);
-
-  LONGLONG diff = qpc - ms2mt(gtc) - sSkew;
-  LONGLONG overflow = 0;
-
-  if (diff < sUnderrunThreshold) {
-    overflow = sUnderrunThreshold - diff;
-  }
-  else if (diff > sOverrunThreshold) {
-    overflow = diff - sOverrunThreshold;
-  }
-
-  ULONGLONG result = qpc;
-  if (!CheckCalibration(overflow, qpc, gtc)) {
-    // We are back on GTC, QPC has been observed unreliable
-    result = ms2mt(gtc) + sSkew;
-  }
-
-#if 0
-  LOG(("TimeStamp: result = %1.2fms, diff = %1.4fms",
-      mt2ms_d(result), mt2ms_d(diff)));
-#endif
-
-  if (result > sLastResult)
-    sLastResult = result;
-
-  return sLastResult;
+  return mGTC - aOther.mGTC;
 }
 
 // ----------------------------------------------------------------------------
@@ -521,14 +424,13 @@ CalibratedPerformanceCounter()
 double
 TimeDuration::ToSeconds() const
 {
-  return double(mValue) / (sFrequencyPerSec * 1000ULL);
+  // Converting before arithmetic avoids blocked store forward
+  return double(mValue) / (double(sFrequencyPerSec) * 1000.0);
 }
 
 double
 TimeDuration::ToSecondsSigDigits() const
 {
-  AutoCriticalSection lock(&sTimeStampLock);
-
   // don't report a value < mResolution ...
   LONGLONG resolution = sResolution;
   LONGLONG resolutionSigDigs = sResolutionSigDigs;
@@ -547,8 +449,6 @@ TimeDuration::FromMilliseconds(double aMilliseconds)
 TimeDuration
 TimeDuration::Resolution()
 {
-  AutoCriticalSection lock(&sTimeStampLock);
-
   return TimeDuration::FromTicks(int64_t(sResolution));
 }
 
@@ -564,19 +464,60 @@ struct TimeStampInitialization
 
 static TimeStampInitialization initOnce;
 
+static bool
+HasStableTSC()
+{
+  union {
+    int regs[4];
+    struct {
+      int nIds;
+      char cpuString[12];
+    };
+  } cpuInfo;
+
+  __cpuid(cpuInfo.regs, 0);
+  // Only allow Intel CPUs for now
+  // The order of the registers is reg[1], reg[3], reg[2].  We just adjust the
+  // string so that we can compare in one go.
+  if (_strnicmp(cpuInfo.cpuString, "GenuntelineI", sizeof(cpuInfo.cpuString)))
+    return false;
+
+  int regs[4];
+
+  // detect if the Advanced Power Management feature is supported
+  __cpuid(regs, 0x80000000);
+  if (regs[0] < 0x80000007)
+    return false;
+
+  __cpuid(regs, 0x80000007);
+  // if bit 8 is set than TSC will run at a constant rate
+  // in all ACPI P-state, C-states and T-states
+  return regs[3] & (1 << 8);
+}
+
 nsresult
 TimeStamp::Startup()
 {
   // Decide which implementation to use for the high-performance timer.
 
+  HMODULE kernelDLL = GetModuleHandleW(L"kernel32.dll");
+  sGetTickCount64 = reinterpret_cast<GetTickCount64_t>
+    (GetProcAddress(kernelDLL, "GetTickCount64"));
+  if (!sGetTickCount64) {
+    // If the platform does not support the GetTickCount64 (Windows XP doesn't),
+    // then use our fallback implementation based on GetTickCount.
+    sGetTickCount64 = MozGetTickCount64;
+  }
+
   InitializeCriticalSectionAndSpinCount(&sTimeStampLock, kLockSpinCount);
 
+  sHasStableTSC = HasStableTSC();
+  LOG(("TimeStamp: HasStableTSC=%d", sHasStableTSC));
+
   LARGE_INTEGER freq;
-  BOOL QPCAvailable = ::QueryPerformanceFrequency(&freq);
-  if (!QPCAvailable) {
+  sUseQPC = ::QueryPerformanceFrequency(&freq);
+  if (!sUseQPC) {
     // No Performance Counter.  Fall back to use GetTickCount.
-    sFrequencyPerSec = 1;
-    sFallBackToGTC = true;
     InitResolution();
 
     LOG(("TimeStamp: using GetTickCount"));
@@ -584,15 +525,10 @@ TimeStamp::Startup()
   }
 
   sFrequencyPerSec = freq.QuadPart;
-
-  ULONGLONG qpc = PerformanceCounter();
-  sLastCalibrated = TickCount64(::GetTickCount());
-  sSkew = qpc - ms2mt(sLastCalibrated);
+  LOG(("TimeStamp: QPC frequency=%llu", sFrequencyPerSec));
 
   InitThresholds();
   InitResolution();
-
-  LOG(("TimeStamp: initial skew is %1.2fms", mt2ms_d(sSkew)));
 
   return NS_OK;
 }
@@ -604,9 +540,15 @@ TimeStamp::Shutdown()
 }
 
 TimeStamp
-TimeStamp::Now()
+TimeStamp::Now(bool aHighResolution)
 {
-  return TimeStamp(uint64_t(CalibratedPerformanceCounter()));
+  // sUseQPC is volatile
+  bool useQPC = (aHighResolution && sUseQPC);
+
+  // Both values are in [mt] units.
+  ULONGLONG QPC = useQPC ? PerformanceCounter() : uint64_t(0);
+  ULONGLONG GTC = ms2mt(sGetTickCount64());
+  return TimeStamp(TimeStampValue(GTC, QPC, useQPC));
 }
 
 } // namespace mozilla

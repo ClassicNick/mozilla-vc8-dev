@@ -73,7 +73,7 @@ public:
   }
 
 private:
-  DOMFileMetadataParameters mConfig;
+  mozilla::idl::DOMFileMetadataParameters mConfig;
 
 public:
   uint64_t mSize;

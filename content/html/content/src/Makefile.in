@@ -31,11 +31,13 @@ EXPORTS_NAMESPACES = mozilla/dom
 
 EXPORTS_mozilla/dom = \
 		HTMLAnchorElement.h \
+		HTMLAreaElement.h \
 		HTMLBodyElement.h \
 		HTMLBRElement.h \
 		HTMLButtonElement.h \
 		HTMLDataListElement.h \
 		HTMLDivElement.h \
+		HTMLFieldSetElement.h \
 		HTMLFontElement.h \
 		HTMLFrameSetElement.h \
 		HTMLHeadingElement.h \
@@ -48,8 +50,11 @@ EXPORTS_mozilla/dom = \
 		HTMLMetaElement.h \
 		HTMLMeterElement.h \
 		HTMLModElement.h \
+		HTMLOptGroupElement.h \
+		HTMLOutputElement.h \
 		HTMLParagraphElement.h \
 		HTMLPreElement.h \
+		HTMLProgressElement.h \
 		HTMLScriptElement.h \
 		HTMLSharedElement.h \
 		HTMLSharedListElement.h \
@@ -77,14 +82,14 @@ CPPSRCS		= \
 		nsTextEditorState.cpp \
 		HTMLElement.cpp \
 		HTMLAnchorElement.cpp \
-		nsHTMLAreaElement.cpp \
+		HTMLAreaElement.cpp \
 		HTMLBRElement.cpp \
 		HTMLBodyElement.cpp \
 		HTMLButtonElement.cpp \
 		HTMLCanvasElement.cpp \
 		HTMLDataListElement.cpp \
 		HTMLDivElement.cpp \
-		nsHTMLFieldSetElement.cpp \
+		HTMLFieldSetElement.cpp \
 		HTMLFontElement.cpp \
 		nsHTMLFormElement.cpp \
 		nsHTMLFrameElement.cpp \
@@ -107,11 +112,11 @@ CPPSRCS		= \
 		HTMLObjectElement.cpp \
 		nsHTMLSharedObjectElement.cpp \
 		nsHTMLOptionElement.cpp \
-		nsHTMLOptGroupElement.cpp \
-		nsHTMLOutputElement.cpp \
+		HTMLOptGroupElement.cpp \
+		HTMLOutputElement.cpp \
 		HTMLParagraphElement.cpp \
 		HTMLPreElement.cpp \
-		nsHTMLProgressElement.cpp \
+		HTMLProgressElement.cpp \
 		HTMLScriptElement.cpp \
 		nsHTMLSelectElement.cpp \
 		HTMLSharedElement.cpp \

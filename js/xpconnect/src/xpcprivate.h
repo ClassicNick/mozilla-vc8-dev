@@ -912,6 +912,10 @@ public:
         return gExperimentalBindingsEnabled;
     }
 
+    bool XBLScopesEnabled() {
+        return gXBLScopesEnabled;
+    }
+
     size_t SizeOfIncludingThis(nsMallocSizeOfFun mallocSizeOf);
 
     AutoMarkingPtr**  GetAutoRootsAdr() {return &mAutoRoots;}
@@ -928,6 +932,7 @@ private:
     void ReleaseIncrementally(nsTArray<nsISupports *> &array);
 
     static bool gExperimentalBindingsEnabled;
+    static bool gXBLScopesEnabled;
 
     static const char* mStrings[IDX_TOTAL_COUNT];
     jsid mStrIDs[IDX_TOTAL_COUNT];
@@ -1476,12 +1481,6 @@ extern JSBool
 XPC_WN_JSOp_Enumerate(JSContext *cx, JSHandleObject obj, JSIterateOp enum_op,
                       JSMutableHandleValue statep, JSMutableHandleId idp);
 
-extern JSType
-XPC_WN_JSOp_TypeOf_Object(JSContext *cx, JSHandleObject obj);
-
-extern JSType
-XPC_WN_JSOp_TypeOf_Function(JSContext *cx, JSHandleObject obj);
-
 extern JSObject*
 XPC_WN_JSOp_ThisObject(JSContext *cx, JSHandleObject obj);
 
@@ -1517,7 +1516,6 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSHandleObject obj);
         nullptr, /* deleteElement */                                          \
         nullptr, /* deleteSpecial */                                          \
         XPC_WN_JSOp_Enumerate,                                                \
-        XPC_WN_JSOp_TypeOf_Function,                                          \
         XPC_WN_JSOp_ThisObject,                                               \
     }
 
@@ -1552,7 +1550,6 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JSHandleObject obj);
         nullptr, /* deleteElement */                                          \
         nullptr, /* deleteSpecial */                                          \
         XPC_WN_JSOp_Enumerate,                                                \
-        XPC_WN_JSOp_TypeOf_Object,                                            \
         XPC_WN_JSOp_ThisObject,                                               \
     }
 
@@ -1648,6 +1645,8 @@ public:
         JSObject *obj = GetGlobalJSObjectPreserveColor();
         MOZ_ASSERT(obj);
         JS_CALL_OBJECT_TRACER(trc, obj, "XPCWrappedNativeScope::mGlobalJSObject");
+        if (mXBLScope)
+            JS_CALL_OBJECT_TRACER(trc, mXBLScope, "XPCWrappedNativeScope::mXBLScope");
     }
 
     static void
@@ -1717,9 +1716,16 @@ public:
             mDOMExpandoMap->RemoveEntry(expando);
     }
 
+    // Gets the appropriate scope object for XBL in this scope. The context
+    // must be same-compartment with the global upon entering, and the scope
+    // object is wrapped into the compartment of the global.
+    JSObject *EnsureXBLScope(JSContext *cx);
+
     XPCWrappedNativeScope(JSContext *cx, JSObject* aGlobal);
 
     nsAutoPtr<JSObject2JSObjectMap> mWaiverWrapperMap;
+
+    bool IsXBLScope() { return mIsXBLScope; }
 
 protected:
     virtual ~XPCWrappedNativeScope();
@@ -1744,6 +1750,11 @@ private:
     // constructor).
     js::ObjectPtr                    mGlobalJSObject;
 
+    // XBL Scope. This is is a lazily-created sandbox for non-system scopes.
+    // EnsureXBLScope() decides whether it needs to be created or not.
+    // This reference is wrapped into the compartment of mGlobalJSObject.
+    js::ObjectPtr                    mXBLScope;
+
     // Prototype to use for wrappers with no helper.
     JSObject*                        mPrototypeNoHelper;
 
@@ -1752,6 +1763,7 @@ private:
     nsAutoPtr<DOMExpandoMap> mDOMExpandoMap;
 
     JSBool mExperimentalBindingsEnabled;
+    bool mIsXBLScope;
 };
 
 /***************************************************************************/

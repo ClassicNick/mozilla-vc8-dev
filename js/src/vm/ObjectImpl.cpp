@@ -138,12 +138,16 @@ PropDesc::wrapInto(JSContext *cx, HandleObject obj, const jsid &id, jsid *wrappe
         return false;
 
     *desc = *this;
-    if (!comp->wrap(cx, &desc->value_))
+    RootedValue value(cx, desc->value_);
+    RootedValue get(cx, desc->get_);
+    RootedValue set(cx, desc->set_);
+
+    if (!comp->wrap(cx, &value) || !comp->wrap(cx, &get) || !comp->wrap(cx, &set))
         return false;
-    if (!comp->wrap(cx, &desc->get_))
-        return false;
-    if (!comp->wrap(cx, &desc->set_))
-        return false;
+
+    desc->value_ = value;
+    desc->get_ = get;
+    desc->set_ = set;
     return !obj->isProxy() || desc->makeObject(cx);
 }
 
@@ -528,11 +532,8 @@ js::GetOwnProperty(JSContext *cx, Handle<ObjectImpl*> obj, PropertyId pid_, unsi
         return false;
     }
 
-    /* |shape| is always set /after/ a GC. */
-    UnrootedShape shape = obj->nativeLookup(cx, (PropertyId) pid);
+    RootedShape shape(cx, obj->nativeLookup(cx, (PropertyId) pid));
     if (!shape) {
-        DropUnrooted(shape);
-
         /* Not found: attempt to resolve it. */
         Class *clasp = obj->getClass();
         JSResolveOp resolve = clasp->resolve;
@@ -685,6 +686,7 @@ js::GetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
 
     Rooted<ObjectImpl*> current(cx, obj);
 
+    RootedValue getter(cx);
     do {
         MOZ_ASSERT(current);
 
@@ -715,8 +717,8 @@ js::GetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
 
         /* If it's an accessor property, call its [[Get]] with the receiver. */
         if (desc.isAccessorDescriptor()) {
-            Value get = desc.getterValue();
-            if (get.isUndefined()) {
+            getter = desc.getterValue();
+            if (getter.isUndefined()) {
                 vp->setUndefined();
                 return true;
             }
@@ -725,8 +727,8 @@ js::GetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
             if (!cx->stack.pushInvokeArgs(cx, 0, &args))
                 return false;
 
-            /* Push get, receiver, and no args. */
-            args.setCallee(get);
+            /* Push getter, receiver, and no args. */
+            args.setCallee(getter);
             args.setThis(ObjectValue(*current));
 
             bool ok = Invoke(cx, args);
@@ -916,6 +918,7 @@ js::SetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
     NEW_OBJECT_REPRESENTATION_ONLY();
 
     Rooted<ObjectImpl*> current(cx, obj);
+    RootedValue setter(cx);
 
     MOZ_ASSERT(receiver);
 
@@ -949,7 +952,7 @@ js::SetElement(JSContext *cx, Handle<ObjectImpl*> obj, Handle<ObjectImpl*> recei
             }
 
             if (ownDesc.isAccessorDescriptor()) {
-                Value setter = ownDesc.setterValue();
+                setter = ownDesc.setterValue();
                 if (setter.isUndefined()) {
                     *succeeded = false;
                     return true;

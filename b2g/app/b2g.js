@@ -174,8 +174,6 @@ pref("content.sink.perf_parse_time", 50000000);
 
 // Maximum scripts runtime before showing an alert
 pref("dom.max_chrome_script_run_time", 0); // disable slow script dialog for chrome
-// Bug 817230 - disable the dialog until we implement its checkbox properly
-pref("dom.max_script_run_time", 0);
 
 // plugins
 pref("plugin.disable", true);
@@ -565,9 +563,11 @@ pref("hal.processPriorityManager.gonk.backgroundKillUnderMB", 8);
 pref("hal.processPriorityManager.gonk.notifyLowMemUnderMB", 10);
 
 // Niceness values (i.e., CPU priorities) for B2G processes.
-pref("hal.processPriorityManager.gonk.masterNice", -1);
-pref("hal.processPriorityManager.gonk.foregroundNice", 0);
-pref("hal.processPriorityManager.gonk.backgroundNice", 10);
+pref("hal.processPriorityManager.gonk.masterNice", 0);
+pref("hal.processPriorityManager.gonk.foregroundNice", 1);
+pref("hal.processPriorityManager.gonk.backgroundPerceivableNice", 10);
+pref("hal.processPriorityManager.gonk.backgroundHomescreenNice", 20);
+pref("hal.processPriorityManager.gonk.backgroundNice", 20);
 
 #ifndef DEBUG
 // Enable pre-launching content processes for improved startup time
