@@ -2149,7 +2149,7 @@ nsCSSOffsetState::InitOffsets(nscoord aContainingBlockWidth,
     mComputedPadding.left = presContext->DevPixelsToAppUnits(widget.left);
     needPaddingProp = false;
   }
-  else if (frame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+  else if (frame->IsSVGText()) {
     mComputedPadding.SizeTo(0, 0, 0, 0);
     needPaddingProp = false;
   }
@@ -2175,7 +2175,7 @@ nsCSSOffsetState::InitOffsets(nscoord aContainingBlockWidth,
     mComputedBorderPadding.left =
       presContext->DevPixelsToAppUnits(widget.left);
   }
-  else if (frame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+  else if (frame->IsSVGText()) {
     mComputedBorderPadding.SizeTo(0, 0, 0, 0);
   }
   else if (aBorder) {  // border is an input arg
@@ -2421,7 +2421,7 @@ bool
 nsCSSOffsetState::ComputeMargin(nscoord aContainingBlockWidth)
 {
   // SVG text frames have no margin.
-  if (frame->GetStateBits() & NS_FRAME_IS_SVG_TEXT) {
+  if (frame->IsSVGText()) {
     return false;
   }
 

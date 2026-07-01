@@ -1919,8 +1919,8 @@ nsWindow::SetDrawsInTitlebar(bool aState)
   }
 
   if (aState) {
-     // left, top, right, bottom for nsIntMargin
-    nsIntMargin margins(-1, 0, -1, -1);
+    // top, right, bottom, left for nsIntMargin
+    nsIntMargin margins(0, -1, -1, -1);
     SetNonClientMargins(margins);
   }
   else {
@@ -5537,14 +5537,14 @@ nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my)
 
   // Ensure being accessible to borders of window.  Even if contents are in
   // this area, the area must behave as border.
-  nsIntMargin nonClientSize(NS_MAX(mHorResizeMargin - mNonClientOffset.left,
-                                   kResizableBorderMinSize),
-                            NS_MAX(mCaptionHeight - mNonClientOffset.top,
-                                   kResizableBorderMinSize),
+  nsIntMargin nonClientSize(NS_MAX(mCaptionHeight - mNonClientOffset.top,
+                                     kResizableBorderMinSize),
                             NS_MAX(mHorResizeMargin - mNonClientOffset.right,
-                                   kResizableBorderMinSize),
+                                     kResizableBorderMinSize),
                             NS_MAX(mVertResizeMargin - mNonClientOffset.bottom,
-                                   kResizableBorderMinSize));
+                                     kResizableBorderMinSize),
+                            NS_MAX(mHorResizeMargin - mNonClientOffset.left,
+                                     kResizableBorderMinSize));
 
   bool allowContentOverride = mSizeMode == nsSizeMode_Maximized ||
                               (mx >= winRect.left + nonClientSize.left &&
@@ -5557,10 +5557,10 @@ nsWindow::ClientMarginHitTestPoint(int32_t mx, int32_t my)
   // contents under the mouse cursor should be able to override the behavior.
   // E.g., user must expect that Firefox button always opens the popup menu
   // even when the user clicks on the above edge of it.
-  nsIntMargin borderSize(NS_MAX(nonClientSize.left, mHorResizeMargin),
-                         NS_MAX(nonClientSize.top, mVertResizeMargin),
-                         NS_MAX(nonClientSize.right, mHorResizeMargin),
-                         NS_MAX(nonClientSize.bottom, mVertResizeMargin));
+  nsIntMargin borderSize(NS_MAX(nonClientSize.top,    mVertResizeMargin),
+                         NS_MAX(nonClientSize.right,  mHorResizeMargin),
+                         NS_MAX(nonClientSize.bottom, mVertResizeMargin),
+                         NS_MAX(nonClientSize.left,   mHorResizeMargin));
 
   bool top    = false;
   bool bottom = false;
@@ -6889,7 +6889,7 @@ LRESULT nsWindow::OnChar(const MSG &aMsg,
   }
 
   if (IMEHandler::IsComposingOn(this)) {
-    ResetInputState();
+    IMEHandler::NotifyIME(this, REQUEST_TO_COMMIT_COMPOSITION);
   }
 
   wchar_t uniChar;
@@ -7392,9 +7392,10 @@ nsWindow::OnSysColorChanged()
  **************************************************************
  **************************************************************/
 
-NS_IMETHODIMP nsWindow::ResetInputState()
+NS_IMETHODIMP
+nsWindow::NotifyIME(NotificationToIME aNotification)
 {
-  return IMEHandler::NotifyIME(this, REQUEST_TO_COMMIT_COMPOSITION);
+  return IMEHandler::NotifyIME(this, aNotification);
 }
 
 NS_IMETHODIMP_(void)
@@ -7418,11 +7419,6 @@ nsWindow::GetInputContext()
   return mInputContext;
 }
 
-NS_IMETHODIMP nsWindow::CancelIMEComposition()
-{
-  return IMEHandler::NotifyIME(this, REQUEST_TO_CANCEL_COMPOSITION);
-}
-
 NS_IMETHODIMP
 nsWindow::GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState)
 {
@@ -7435,24 +7431,11 @@ nsWindow::GetToggledKeyState(uint32_t aKeyCode, bool* aLEDState)
 }
 
 NS_IMETHODIMP
-nsWindow::OnIMEFocusChange(bool aFocus)
-{
-  return IMEHandler::NotifyIME(this, aFocus ? NOTIFY_IME_OF_FOCUS :
-                                              NOTIFY_IME_OF_BLUR);
-}
-
-NS_IMETHODIMP
-nsWindow::OnIMETextChange(uint32_t aStart,
-                          uint32_t aOldEnd,
-                          uint32_t aNewEnd)
+nsWindow::NotifyIMEOfTextChange(uint32_t aStart,
+                                uint32_t aOldEnd,
+                                uint32_t aNewEnd)
 {
   return IMEHandler::NotifyIMEOfTextChange(aStart, aOldEnd, aNewEnd);
-}
-
-NS_IMETHODIMP
-nsWindow::OnIMESelectionChange(void)
-{
-  return IMEHandler::NotifyIME(this, NOTIFY_IME_OF_SELECTION_CHANGE);
 }
 
 nsIMEUpdatePreference

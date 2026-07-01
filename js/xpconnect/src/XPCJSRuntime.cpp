@@ -2340,7 +2340,6 @@ CompartmentNameCallback(JSRuntime *rt, JSCompartment *comp,
     memcpy(buf, name.get(), name.Length() + 1);
 }
 
-bool XPCJSRuntime::gExperimentalBindingsEnabled;
 bool XPCJSRuntime::gXBLScopesEnabled;
 
 static bool
@@ -2517,9 +2516,6 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
 #endif
 
     DOM_InitInterfaces();
-    Preferences::AddBoolVarCache(&gExperimentalBindingsEnabled,
-                                 "dom.experimental_bindings",
-                                 false);
     Preferences::AddBoolVarCache(&gXBLScopesEnabled,
                                  "dom.xbl_scopes",
                                  false);
