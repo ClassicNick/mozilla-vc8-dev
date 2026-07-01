@@ -1401,7 +1401,7 @@ RuntimeService::UpdateAllWorkerJSContextOptions()
 void
 RuntimeService::UpdateAllWorkerMemoryParameter(JSGCParamKey key)
 {
-  BROADCAST_ALL_WORKERS(UpdateJSWorkerMemoryParameter,
+  BROADCAST_ALL_WORKERS2(UpdateJSWorkerMemoryParameter,
                         key,
                         GetDefaultJSWorkerMemoryParameter(key));
 }

@@ -391,11 +391,11 @@ gfxFontUtils::ReadCMAPTableFormat4(const uint8_t *aBuf, uint32_t aLength,
             const uint16_t skipCode = 65536 - ReadShortAt16(idDeltas, i);
             if (startCount < skipCode) {
                 aCharacterMap.SetRange(startCount,
-                                       std::min<uint16_t>(skipCode - 1,
+                                       NS_MIN<uint16_t>(skipCode - 1,
                                                           endCount));
             }
             if (skipCode < endCount) {
-                aCharacterMap.SetRange(std::max<uint16_t>(startCount,
+                aCharacterMap.SetRange(NS_MAX<uint16_t>(startCount,
                                                           skipCode + 1),
                                        endCount);
             }

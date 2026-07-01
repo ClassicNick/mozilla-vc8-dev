@@ -867,7 +867,6 @@ struct Coverage
     }
   }
 
-public:
   struct Iter {
     Iter (void) : format (0) {};
     inline void init (const Coverage &c_) {

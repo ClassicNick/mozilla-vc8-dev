@@ -64,13 +64,7 @@ struct hb_ot_map_t
   };
 
   typedef void (*pause_func_t) (const struct hb_ot_shape_plan_t *plan, hb_font_t *font, hb_buffer_t *buffer);
-public:
-  typedef struct {
-    pause_func_t func;
-    void *user_data;
-  } pause_callback_t;
 
-private:
   struct pause_map_t {
     unsigned int num_lookups; /* Cumulative */
     pause_func_t callback;
@@ -79,7 +73,6 @@ private:
 
   hb_ot_map_t (void) { memset (this, 0, sizeof (*this)); }
 
-public:
   inline hb_mask_t get_global_mask (void) const { return global_mask; }
 
   inline hb_mask_t get_mask (hb_tag_t feature_tag, unsigned int *shift = NULL) const {
@@ -98,13 +91,11 @@ public:
     return map ? map->_1_mask : 0;
   }
 
-private:
   inline unsigned int get_feature_index (unsigned int table_index, hb_tag_t feature_tag) const {
     const feature_map_t *map = features.bsearch (&feature_tag);
     return map ? map->index[table_index] : HB_OT_LAYOUT_NO_FEATURE_INDEX;
   }
 
-public:
   inline unsigned int get_feature_stage (unsigned int table_index, hb_tag_t feature_tag) const {
     const feature_map_t *map = features.bsearch (&feature_tag);
     return map ? map->stage[table_index] : (unsigned int) -1;

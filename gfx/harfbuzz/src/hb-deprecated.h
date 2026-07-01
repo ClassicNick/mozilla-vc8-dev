@@ -1,5 +1,5 @@
 /*
- * Copyright © 2011  Google, Inc.
+ * Copyright © 2013  Google, Inc.
  *
  *  This is part of HarfBuzz, a text shaping library.
  *
@@ -28,39 +28,24 @@
 #error "Include <hb.h> instead."
 #endif
 
-#ifndef HB_VERSION_H
-#define HB_VERSION_H
+#ifndef HB_DEPRECATED_H
+#define HB_DEPRECATED_H
 
 #include "hb-common.h"
+#include "hb-unicode.h"
+#include "hb-font.h"
 
 HB_BEGIN_DECLS
 
+#ifndef HB_DISABLE_DEPRECATED
 
-#define HB_VERSION_MAJOR 0
-#define HB_VERSION_MINOR 9
-#define HB_VERSION_MICRO 12
+#define HB_SCRIPT_CANADIAN_ABORIGINAL		HB_SCRIPT_CANADIAN_SYLLABICS
 
-#define HB_VERSION_STRING "0.9.12"
+#define HB_BUFFER_FLAGS_DEFAULT			HB_BUFFER_FLAG_DEFAULT
+#define HB_BUFFER_SERIALIZE_FLAGS_DEFAULT	HB_BUFFER_SERIALIZE_FLAG_DEFAULT
 
-#define HB_VERSION_CHECK(major,minor,micro) \
-	((major)*10000+(minor)*100+(micro) >= \
-	 HB_VERSION_MAJOR*10000+HB_VERSION_MINOR*100+HB_VERSION_MICRO)
-
-
-void
-hb_version (unsigned int *major,
-	    unsigned int *minor,
-	    unsigned int *micro);
-
-const char *
-hb_version_string (void);
-
-hb_bool_t
-hb_version_check (unsigned int major,
-		  unsigned int minor,
-		  unsigned int micro);
-
+#endif
 
 HB_END_DECLS
 
-#endif /* HB_VERSION_H */
+#endif /* HB_DEPRECATED_H */

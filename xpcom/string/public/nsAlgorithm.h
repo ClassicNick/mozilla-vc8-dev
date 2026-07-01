@@ -16,10 +16,6 @@
   // for NS_ASSERTION
 #endif
 
-#if defined (_MSC_VER) && _MSC_VER <= 1310
-#undef  min
-#undef  max
-#endif
 
 template <class T>
 inline
@@ -45,6 +41,28 @@ template <class T>
 inline
 const T&
 XPCOM_MAX( const T& a, const T& b )
+  {
+    return a > b ? a : b;
+  }
+
+// These are the "old" NS_MIN and NS_MAX functions needed for some
+// compilers that effectively disable support for std::min and std::max.
+// We use these instead of std::min/max because we can't include the algorithm
+// header in all of XPCOM because the stl wrappers will error out when included
+// in parts of XPCOM. These functions should never be used outside of XPCOM.
+template <class T>
+inline
+const T&
+NS_MIN( const T& a, const T& b )
+  {
+    return a < b ? a : b;
+  }
+
+// Must return b when a == b in case a is -0
+template <class T>
+inline
+const T&
+NS_MAX( const T& a, const T& b )
   {
     return a > b ? a : b;
   }

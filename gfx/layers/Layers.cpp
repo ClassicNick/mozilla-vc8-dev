@@ -248,7 +248,7 @@ LayerManager::GetScrollableLayers(nsTArray<Layer*>& aArray)
 
     const FrameMetrics& frameMetrics = containerLayer->GetFrameMetrics();
     if (frameMetrics.IsScrollable()) {
-      aArray.AppendElement(containerLayer);
+      aArray.AppendElement((Layer*) containerLayer);
       continue;
     }
 
