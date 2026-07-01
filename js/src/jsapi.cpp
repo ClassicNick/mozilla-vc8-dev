@@ -788,8 +788,10 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcPoke(false),
     heapState(Idle),
 #ifdef JSGC_GENERATIONAL
-    gcNursery(),
-    gcStoreBuffer(&gcNursery),
+# ifdef JS_GC_ZEAL
+    gcVerifierNursery(),
+# endif
+    gcStoreBuffer(thisFromCtor()),
 #endif
 #ifdef JS_GC_ZEAL
     gcZeal_(0),
@@ -799,6 +801,7 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     gcIncrementalLimit(0),
 #endif
     gcValidate(true),
+    gcFullCompartmentChecks(false),
     gcCallback(NULL),
     gcSliceCallback(NULL),
     gcFinalizeCallback(NULL),
@@ -924,9 +927,6 @@ JSRuntime::init(uint32_t maxbytes)
     if (!stackSpace.init())
         return false;
 
-    if (!scriptFilenameTable.init())
-        return false;
-
     if (!scriptDataTable.init())
         return false;
 
@@ -955,7 +955,6 @@ JSRuntime::~JSRuntime()
      * Even though all objects in the compartment are dead, we may have keep
      * some filenames around because of gcKeepAtoms.
      */
-    FreeScriptFilenames(this);
     FreeScriptData(this);
 
 #ifdef JS_THREADSAFE
@@ -2539,7 +2538,7 @@ JS_GetTraceThingInfo(char *buf, size_t bufsize, JSTracer *trc, void *thing,
           case JSTRACE_SCRIPT:
           {
             JSScript *script = static_cast<JSScript *>(thing);
-            JS_snprintf(buf, bufsize, " %s:%u", script->filename, unsigned(script->lineno));
+            JS_snprintf(buf, bufsize, " %s:%u", script->filename(), unsigned(script->lineno));
             break;
           }
 
@@ -4395,8 +4394,8 @@ JS_DeleteProperty(JSContext *cx, JSObject *objArg, const char *name)
 static RawShape
 LastConfigurableShape(JSObject *obj)
 {
-    for (Shape::Range r(obj->lastProperty()->all()); !r.empty(); r.popFront()) {
-        RawShape shape = &r.front();
+    for (Shape::Range<NoGC> r(obj->lastProperty()); !r.empty(); r.popFront()) {
+        Shape *shape = &r.front();
         if (shape->configurable())
             return shape;
     }
@@ -4424,8 +4423,8 @@ JS_ClearNonGlobalObject(JSContext *cx, JSObject *objArg)
     }
 
     /* Set all remaining writable plain data properties to undefined. */
-    for (Shape::Range r(obj->lastProperty()->all()); !r.empty(); r.popFront()) {
-        RawShape shape = &r.front();
+    for (Shape::Range<NoGC> r(obj->lastProperty()); !r.empty(); r.popFront()) {
+        Shape *shape = &r.front();
         if (shape->isDataDescriptor() &&
             shape->writable() &&
             shape->hasDefaultSetter() &&

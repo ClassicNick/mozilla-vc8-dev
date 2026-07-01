@@ -907,13 +907,6 @@ nsWindow::OnGlobalAndroidEvent(AndroidGeckoEvent *ae)
                 win->RedrawAll();
             }
             break;
-
-        case AndroidGeckoEvent::GECKO_EVENT_SYNC:
-            AndroidBridge::Bridge()->AcknowledgeEventSync();
-            break;
-
-        default:
-            break;
     }
 }
 
@@ -945,7 +938,7 @@ bool
 nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
 {
     mozilla::layers::RenderTraceScope trace("DrawTo", "717171");
-    if (!mIsVisible || !mWidgetListener)
+    if (!mIsVisible || !mWidgetListener || !GetLayerManager(nullptr))
         return false;
 
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
@@ -1290,7 +1283,12 @@ nsWindow::DispatchMultitouchEvent(nsTouchEvent &event, AndroidGeckoEvent *ae)
 
     nsEventStatus status;
     DispatchEvent(&event, status);
-    return (status == nsEventStatus_eConsumeNoDefault);
+    // We check mMultipleActionsPrevented because that's what <input type=range>
+    // sets when someone starts dragging the thumb. It doesn't set the status
+    // because it doesn't want to prevent the code that gives the input focus
+    // from running.
+    return (status == nsEventStatus_eConsumeNoDefault ||
+            event.mFlags.mMultipleActionsPrevented);
 }
 
 void
@@ -2329,7 +2327,7 @@ nsWindow::WidgetPaintsBackground()
 bool
 nsWindow::NeedsPaint()
 {
-  if (sCompositorPaused || FindTopLevel() != nsWindow::TopWindow()) {
+  if (sCompositorPaused || FindTopLevel() != nsWindow::TopWindow() || !GetLayerManager(nullptr)) {
     return false;
   }
   return nsIWidget::NeedsPaint();

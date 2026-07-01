@@ -234,6 +234,7 @@ HyperTextAccessible::GetPosAndText(int32_t& aStartOffset, int32_t& aEndOffset,
   }
 
   nsIFrame *startFrame = nullptr;
+ nsIFrame* endFrame = nullptr;
   if (aEndFrame) {
     *aEndFrame = nullptr;
   }
@@ -263,6 +264,7 @@ HyperTextAccessible::GetPosAndText(int32_t& aStartOffset, int32_t& aEndOffset,
       continue;
     }
     nsIFrame *primaryFrame = frame;
+    endFrame = frame;
     if (nsAccUtils::IsText(childAcc)) {
       // We only need info up to rendered offset -- that is what we're
       // converting to content offset
@@ -388,9 +390,9 @@ HyperTextAccessible::GetPosAndText(int32_t& aStartOffset, int32_t& aEndOffset,
     NS_IF_ADDREF(*aStartAcc = lastAccessible);
   }
   if (aEndFrame && !*aEndFrame) {
-    *aEndFrame = startFrame;
-    if (aStartAcc && aEndAcc)
-      NS_IF_ADDREF(*aEndAcc = *aStartAcc);
+    *aEndFrame = endFrame;
+    if (aEndAcc && !*aEndAcc)
+      NS_IF_ADDREF(*aEndAcc = lastAccessible);
   }
 
   return startFrame;
@@ -1823,7 +1825,7 @@ HyperTextAccessible::SetSelectionBounds(int32_t aSelectionNum,
 
   nsRefPtr<nsRange> range;
   if (aSelectionNum == rangeCount)
-    range = new nsRange();
+    range = new nsRange(mContent);
   else
     range = domSel->GetRangeAt(aSelectionNum);
 
@@ -1885,7 +1887,7 @@ HyperTextAccessible::ScrollSubstringTo(int32_t aStartIndex, int32_t aEndIndex,
   if (IsDefunct())
     return NS_ERROR_FAILURE;
 
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mContent);
   nsresult rv = HypertextOffsetsToDOMRange(aStartIndex, aEndIndex, range);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1909,7 +1911,7 @@ HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartIndex,
   nsIntPoint coords = nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType,
                                                         this);
 
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(mContent);
   nsresult rv = HypertextOffsetsToDOMRange(aStartIndex, aEndIndex, range);
   NS_ENSURE_SUCCESS(rv, rv);
 

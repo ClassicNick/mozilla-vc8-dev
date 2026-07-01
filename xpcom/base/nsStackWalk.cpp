@@ -982,7 +982,7 @@ static BOOL CALLBACK callbackEspecial64(
        ? (addr >= aModuleBase && addr <= (aModuleBase + aModuleSize))
        : (addr <= aModuleBase && addr >= (aModuleBase - aModuleSize))
         ) {
-        retval = _SymLoadModule64(GetCurrentProcess(), NULL, (PSTR)aModuleName, NULL, aModuleBase, aModuleSize);
+        retval = !!_SymLoadModule64(GetCurrentProcess(), NULL, (PSTR)aModuleName, NULL, aModuleBase, aModuleSize);
         if (!retval)
             PrintError("SymLoadModule64");
     }
@@ -1264,11 +1264,18 @@ NS_DescribeCodeAddress(void *aPC, nsCodeAddressDetails *aDetails)
                     pSymbol);
 #endif
 
+<<<<<<< HEAD
         if (ok) {
             PL_strncpyz(aDetails->function, pSymbol->Name,
                         sizeof(aDetails->function));
             aDetails->foffset = displacement;
         }
+=======
+    if (ok) {
+        PL_strncpyz(aDetails->function, pSymbol->Name,
+                    sizeof(aDetails->function));
+        aDetails->foffset = static_cast<ptrdiff_t>(displacement);
+>>>>>>> c8d06a5
     }
 
     LeaveCriticalSection(&gDbgHelpCS); // release our lock
@@ -1279,6 +1286,7 @@ EXPORT_XPCOM_API(nsresult)
 NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
                             char *aBuffer, uint32_t aBufferSize)
 {
+<<<<<<< HEAD
 #ifdef USING_WXP_VERSION
     if (_StackWalk64) {
         if (aDetails->function[0])
@@ -1296,6 +1304,19 @@ NS_FormatCodeAddressDetails(void *aPC, const nsCodeAddressDetails *aDetails,
 #ifdef USING_WXP_VERSION
     }
 #endif
+=======
+    if (aDetails->function[0]) {
+        _snprintf(aBuffer, aBufferSize, "%s+0x%08lX [%s +0x%016lX]",
+                  aDetails->function, aDetails->foffset,
+                  aDetails->library, aDetails->loffset);
+    } else if (aDetails->library[0]) {
+        _snprintf(aBuffer, aBufferSize, "UNKNOWN [%s +0x%016lX]",
+                  aDetails->library, aDetails->loffset);
+    } else {
+        _snprintf(aBuffer, aBufferSize, "UNKNOWN 0x%016lX", aPC);
+    }
+
+>>>>>>> c8d06a5
     aBuffer[aBufferSize - 1] = '\0';
 
     uint32_t len = strlen(aBuffer);

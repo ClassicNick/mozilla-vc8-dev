@@ -43,7 +43,8 @@ const TELEMETRY_DB_OPEN = "HEALTHREPORT_DB_OPEN_MS";
 const TELEMETRY_DB_OPEN_FIRSTRUN = "HEALTHREPORT_DB_OPEN_FIRSTRUN_MS";
 const TELEMETRY_GENERATE_PAYLOAD = "HEALTHREPORT_GENERATE_JSON_PAYLOAD_MS";
 const TELEMETRY_JSON_PAYLOAD_SERIALIZE = "HEALTHREPORT_JSON_PAYLOAD_SERIALIZE_MS";
-const TELEMETRY_PAYLOAD_SIZE = "HEALTHREPORT_PAYLOAD_UNCOMPRESSED_BYTES";
+const TELEMETRY_PAYLOAD_SIZE_UNCOMPRESSED = "HEALTHREPORT_PAYLOAD_UNCOMPRESSED_BYTES";
+const TELEMETRY_PAYLOAD_SIZE_COMPRESSED = "HEALTHREPORT_PAYLOAD_COMPRESSED_BYTES";
 const TELEMETRY_SAVE_LAST_PAYLOAD = "HEALTHREPORT_SAVE_LAST_PAYLOAD_MS";
 const TELEMETRY_UPLOAD = "HEALTHREPORT_UPLOAD_MS";
 const TELEMETRY_SHUTDOWN_DELAY = "HEALTHREPORT_SHUTDOWN_DELAY_MS";
@@ -90,8 +91,6 @@ function AbstractHealthReporter(branch, policy, sessionRecorder) {
 
   this._errors = [];
 
-  this._pullOnlyProviders = {};
-  this._pullOnlyProvidersRegistered = false;
   this._lastDailyDate = null;
 
   // Yes, this will probably run concurrently with remaining constructor work.
@@ -177,12 +176,13 @@ AbstractHealthReporter.prototype = Object.freeze({
     this._log.info("Initializing provider manager.");
     this._providerManager = new Metrics.ProviderManager(this._storage);
     this._providerManager.onProviderError = this._recordError.bind(this);
+    this._providerManager.onProviderInit = this._initProvider.bind(this);
     this._providerManagerInProgress = true;
 
     let catString = this._prefs.get("service.providerCategories") || "";
     if (catString.length) {
       for (let category of catString.split(",")) {
-        yield this.registerProvidersFromCategoryManager(category);
+        yield this._providerManager.registerProvidersFromCategoryManager(category);
       }
     }
   },
@@ -201,6 +201,35 @@ AbstractHealthReporter.prototype = Object.freeze({
     this._log.info("HealthReporter started.");
     this._initialized = true;
     Services.obs.addObserver(this, "idle-daily", false);
+
+    // If upload is not enabled, ensure daily collection works. If upload
+    // is enabled, this will be performed as part of upload.
+    //
+    // This is important because it ensures about:healthreport contains
+    // longitudinal data even if upload is disabled. Having about:healthreport
+    // provide useful info even if upload is disabled was a core launch
+    // requirement.
+    //
+    // We do not catch changes to the backing pref. So, if the session lasts
+    // many days, we may fail to collect. However, most sessions are short and
+    // this code will likely be refactored as part of splitting up policy to
+    // serve Android. So, meh.
+    if (!this._policy.healthReportUploadEnabled) {
+      this._log.info("Upload not enabled. Scheduling daily collection.");
+      // Since the timer manager is a singleton and there could be multiple
+      // HealthReporter instances, we need to encode a unique identifier in
+      // the timer ID.
+      try {
+        let timerName = this._branch.replace(".", "-", "g") + "lastDailyCollection";
+        let tm = Cc["@mozilla.org/updates/timer-manager;1"]
+                   .getService(Ci.nsIUpdateTimerManager);
+        tm.registerTimer(timerName, this.collectMeasurements.bind(this),
+                         24 * 60 * 60);
+      } catch (ex) {
+        this._log.error("Error registering collection timer: " +
+                        CommonUtils.exceptionStr(ex));
+      }
+    }
 
     // Clean up caches and reduce memory usage.
     this._storage.compact();
@@ -400,173 +429,9 @@ AbstractHealthReporter.prototype = Object.freeze({
     return this._providerManager.getProvider(name);
   },
 
-  /**
-   * Register a `Metrics.Provider` with this instance.
-   *
-   * This needs to be called or no data will be collected. See also
-   * `registerProvidersFromCategoryManager`.
-   *
-   * @param provider
-   *        (Metrics.Provider) The provider to register for collection.
-   */
-  registerProvider: function (provider) {
-    return this._providerManager.registerProvider(provider);
-  },
-
-  /**
-   * Registers a provider from its constructor function.
-   *
-   * If the provider is pull-only, it will be stashed away and
-   * initialized later. Null will be returned.
-   *
-   * If it is not pull-only, it will be initialized immediately and a
-   * promise will be returned. The promise will be resolved when the
-   * provider has finished initializing.
-   */
-  registerProviderFromType: function (type) {
-    let proto = type.prototype;
-    if (proto.pullOnly) {
-      this._log.info("Provider is pull-only. Deferring initialization: " +
-                     proto.name);
-      this._pullOnlyProviders[proto.name] = type;
-
-      return null;
-    }
-
-    let provider = this.initProviderFromType(type);
-    return this.registerProvider(provider);
-  },
-
-  /**
-   * Registers providers from a category manager category.
-   *
-   * This examines the specified category entries and registers found
-   * providers.
-   *
-   * Category entries are essentially JS modules and the name of the symbol
-   * within that module that is a `Metrics.Provider` instance.
-   *
-   * The category entry name is the name of the JS type for the provider. The
-   * value is the resource:// URI to import which makes this type available.
-   *
-   * Example entry:
-   *
-   *   FooProvider resource://gre/modules/foo.jsm
-   *
-   * One can register entries in the application's .manifest file. e.g.
-   *
-   *   category healthreport-js-provider FooProvider resource://gre/modules/foo.jsm
-   *
-   * Then to load them:
-   *
-   *   let reporter = getHealthReporter("healthreport.");
-   *   reporter.registerProvidersFromCategoryManager("healthreport-js-provider");
-   *
-   * @param category
-   *        (string) Name of category to query and load from.
-   */
-  registerProvidersFromCategoryManager: function (category) {
-    this._log.info("Registering providers from category: " + category);
-    let cm = Cc["@mozilla.org/categorymanager;1"]
-               .getService(Ci.nsICategoryManager);
-
-    let promises = [];
-    let enumerator = cm.enumerateCategory(category);
-    while (enumerator.hasMoreElements()) {
-      let entry = enumerator.getNext()
-                            .QueryInterface(Ci.nsISupportsCString)
-                            .toString();
-
-      let uri = cm.getCategoryEntry(category, entry);
-      this._log.info("Attempting to load provider from category manager: " +
-                     entry + " from " + uri);
-
-      try {
-        let ns = {};
-        Cu.import(uri, ns);
-
-        let promise = this.registerProviderFromType(ns[entry]);
-        if (promise) {
-          promises.push(promise);
-        }
-      } catch (ex) {
-        this._recordError("Error registering provider from category manager : " +
-                          entry + ": ", ex);
-        continue;
-      }
-    }
-
-    return Task.spawn(function wait() {
-      for (let promise of promises) {
-        yield promise;
-      }
-    });
-  },
-
-  initProviderFromType: function (providerType) {
-    let provider = new providerType();
+  _initProvider: function (provider) {
     provider.initPreferences(this._branch + "provider.");
     provider.healthReporter = this;
-
-    return provider;
-  },
-
-  /**
-   * Ensure that pull-only providers are registered.
-   */
-  ensurePullOnlyProvidersRegistered: function () {
-    if (this._pullOnlyProvidersRegistered) {
-      return Promise.resolve();
-    }
-
-    let onFinished = function () {
-      this._pullOnlyProvidersRegistered = true;
-
-      return Promise.resolve();
-    }.bind(this);
-
-    return Task.spawn(function registerPullProviders() {
-      for each (let providerType in this._pullOnlyProviders) {
-        try {
-          let provider = this.initProviderFromType(providerType);
-          yield this.registerProvider(provider);
-        } catch (ex) {
-          this._recordError("Error registering pull-only provider", ex);
-        }
-      }
-    }.bind(this)).then(onFinished, onFinished);
-  },
-
-  ensurePullOnlyProvidersUnregistered: function () {
-    if (!this._pullOnlyProvidersRegistered) {
-      return Promise.resolve();
-    }
-
-    let onFinished = function () {
-      this._pullOnlyProvidersRegistered = false;
-
-      return Promise.resolve();
-    }.bind(this);
-
-    return Task.spawn(function unregisterPullProviders() {
-      for (let provider of this._providerManager.providers) {
-        if (!provider.pullOnly) {
-          continue;
-        }
-
-        this._log.info("Shutting down pull-only provider: " +
-                       provider.name);
-
-        try {
-          yield provider.shutdown();
-        } catch (ex) {
-          this._recordError("Error when shutting down provider: " +
-                            provider.name, ex);
-        } finally {
-          this._providerManager.unregisterProvider(provider.name);
-        }
-      }
-    }.bind(this)).then(onFinished, onFinished);
   },
 
   /**
@@ -682,7 +547,7 @@ AbstractHealthReporter.prototype = Object.freeze({
    */
   collectAndObtainJSONPayload: function (asObject=false) {
     return Task.spawn(function collectAndObtain() {
-      yield this.ensurePullOnlyProvidersRegistered();
+      yield this._providerManager.ensurePullOnlyProvidersRegistered();
 
       let payload;
       let error;
@@ -695,7 +560,7 @@ AbstractHealthReporter.prototype = Object.freeze({
         this._collectException("Error collecting and/or retrieving JSON payload",
                                ex);
       } finally {
-        yield this.ensurePullOnlyProvidersUnregistered();
+        yield this._providerManager.ensurePullOnlyProvidersUnregistered();
 
         if (error) {
           throw error;
@@ -1098,7 +963,7 @@ HealthReporter.prototype = Object.freeze({
    */
   requestDataUpload: function (request) {
     return Task.spawn(function doUpload() {
-      yield this.ensurePullOnlyProvidersRegistered();
+      yield this._providerManager.ensurePullOnlyProvidersRegistered();
       try {
         yield this.collectMeasurements();
         try {
@@ -1107,7 +972,7 @@ HealthReporter.prototype = Object.freeze({
           this._onSubmitDataRequestFailure(ex);
         }
       } finally {
-        yield this.ensurePullOnlyProvidersUnregistered();
+        yield this._providerManager.ensurePullOnlyProvidersUnregistered();
       }
     }.bind(this));
   },
@@ -1178,7 +1043,7 @@ HealthReporter.prototype = Object.freeze({
     return Task.spawn(function doUpload() {
       let payload = yield this.getJSONPayload();
 
-      let histogram = Services.telemetry.getHistogramById(TELEMETRY_PAYLOAD_SIZE);
+      let histogram = Services.telemetry.getHistogramById(TELEMETRY_PAYLOAD_SIZE_UNCOMPRESSED);
       histogram.add(payload.length);
 
       TelemetryStopwatch.start(TELEMETRY_SAVE_LAST_PAYLOAD, this);
@@ -1193,8 +1058,12 @@ HealthReporter.prototype = Object.freeze({
       TelemetryStopwatch.start(TELEMETRY_UPLOAD, this);
       let result;
       try {
+        let options = {
+          deleteID: this.lastSubmitID,
+          telemetryCompressed: TELEMETRY_PAYLOAD_SIZE_COMPRESSED,
+        };
         result = yield client.uploadJSON(this.serverNamespace, id, payload,
-                                         this.lastSubmitID);
+                                         options);
         TelemetryStopwatch.finish(TELEMETRY_UPLOAD, this);
       } catch (ex) {
         TelemetryStopwatch.cancel(TELEMETRY_UPLOAD, this);

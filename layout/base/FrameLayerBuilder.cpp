@@ -758,22 +758,11 @@ FrameLayerBuilder::Init(nsDisplayListBuilder* aBuilder, LayerManager* aManager)
 void
 FrameLayerBuilder::FlashPaint(gfxContext *aContext)
 {
-  static bool sPaintFlashingEnabled;
-  static bool sPaintFlashingPrefCached = false;
-
-  if (!sPaintFlashingPrefCached) {
-    sPaintFlashingPrefCached = true;
-    mozilla::Preferences::AddBoolVarCache(&sPaintFlashingEnabled,
-                                          "nglayout.debug.paint_flashing");
-  }
-
-  if (sPaintFlashingEnabled) {
-    float r = float(rand()) / RAND_MAX;
-    float g = float(rand()) / RAND_MAX;
-    float b = float(rand()) / RAND_MAX;
-    aContext->SetColor(gfxRGBA(r, g, b, 0.2));
-    aContext->Paint();
-  }
+  float r = float(rand()) / RAND_MAX;
+  float g = float(rand()) / RAND_MAX;
+  float b = float(rand()) / RAND_MAX;
+  aContext->SetColor(gfxRGBA(r, g, b, 0.4));
+  aContext->Paint();
 }
 
 FrameLayerBuilder::DisplayItemData*
@@ -3360,7 +3349,10 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
     aContext->Restore();
   }
 
-  FlashPaint(aContext);
+  if (presContext->RefreshDriver()->GetPaintFlashing()) {
+    FlashPaint(aContext);
+  }
+
   if (!aRegionToInvalidate.IsEmpty()) {
     aLayer->AddInvalidRect(aRegionToInvalidate.GetBounds());
   }

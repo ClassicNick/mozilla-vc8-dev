@@ -35,6 +35,7 @@ import android.nfc.NfcEvent;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -56,7 +57,8 @@ import java.util.Vector;
 
 abstract public class BrowserApp extends GeckoApp
                                  implements TabsPanel.TabsLayoutChangeListener,
-                                            PropertyAnimator.PropertyAnimationListener {
+                                            PropertyAnimator.PropertyAnimationListener,
+                                            View.OnKeyListener {
     private static final String LOGTAG = "GeckoBrowserApp";
 
     private static final String PREF_CHROME_DYNAMICTOOLBAR = "browser.chrome.dynamictoolbar";
@@ -97,11 +99,14 @@ abstract public class BrowserApp extends GeckoApp
 
     // Variables used for scrolling the toolbar on/off the page.
     private static final int TOOLBAR_ONLOAD_HIDE_DELAY = 2000;
+    private static final float TOOLBAR_MOVEMENT_THRESHOLD = 0.3f;
     private boolean mDynamicToolbarEnabled = false;
     private View mToolbarSpacer = null;
+    private float mLastTouchX = 0.0f;
     private float mLastTouchY = 0.0f;
     private float mToolbarSubpixelAccumulation = 0.0f;
-    private boolean mToolbarLocked = true;
+    private boolean mToolbarLocked = false;
+    private boolean mToolbarThresholdPassed = false;
 
     @Override
     public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
@@ -119,7 +124,6 @@ abstract public class BrowserApp extends GeckoApp
                         if (mDynamicToolbarEnabled) {
                             // Show the toolbar immediately.
                             mBrowserToolbar.animateVisibility(true, 0);
-                            mToolbarLocked = true;
                         }
                     } else {
                         hideAboutHome();
@@ -212,14 +216,12 @@ abstract public class BrowserApp extends GeckoApp
         if (action == MotionEvent.ACTION_DOWN ||
             action == MotionEvent.ACTION_POINTER_DOWN) {
             if (pointerCount == 1) {
-                mToolbarLocked = false;
+                mToolbarLocked = mToolbarThresholdPassed = false;
                 mToolbarSubpixelAccumulation = 0.0f;
+                mLastTouchX = event.getX();
                 mLastTouchY = event.getY();
                 return super.onInterceptTouchEvent(view, event);
             }
-            //
-            // Lock the toolbar until we're back down to one pointer.
-            mToolbarLocked = true;
 
             // Animate the toolbar to the fully on/off position.
             mBrowserToolbar.animateVisibility(
@@ -227,9 +229,10 @@ abstract public class BrowserApp extends GeckoApp
                     false : true, 0);
         }
 
-        // If more than one pointer has been tracked, let the event pass
-        // through and be handled by the PanZoomController for zooming.
-        if (pointerCount > 1) {
+        // If more than one pointer has been tracked, or we've locked the
+        // toolbar movement, let the event pass through and be handled by the
+        // PanZoomController for zooming.
+        if (pointerCount > 1 || mToolbarLocked) {
             return super.onInterceptTouchEvent(view, event);
         }
 
@@ -237,22 +240,47 @@ abstract public class BrowserApp extends GeckoApp
         // unlock the toolbar and track that remaining pointer.
         if (pointerCount == 1 && action == MotionEvent.ACTION_POINTER_UP) {
             mLastTouchY = event.getY(1 - event.getActionIndex());
-            mToolbarLocked = false;
             return super.onInterceptTouchEvent(view, event);
         }
 
         // Don't bother doing anything with the events if we're loading -
         // the toolbar will be permanently visible in this case.
+        float eventX = event.getX();
         float eventY = event.getY();
         if (Tabs.getInstance().getSelectedTab().getState() != Tab.STATE_LOADING) {
             int toolbarHeight = toolbarView.getHeight();
-            if (action == MotionEvent.ACTION_MOVE && !mToolbarLocked) {
+            float deltaX = mLastTouchX - eventX;
+            float deltaY = mLastTouchY - eventY;
+            int toolbarY = toolbarView.getScrollY();
+
+            // Check if we've passed the toolbar movement threshold
+            if (!mToolbarThresholdPassed) {
+                float threshold = toolbarHeight * TOOLBAR_MOVEMENT_THRESHOLD;
+                if (Math.abs(deltaY) > threshold) {
+                    mToolbarThresholdPassed = true;
+                    // If we're scrolling downwards and the toolbar was hidden
+                    // when we started scrolling, lock it.
+                    if (deltaY > 0 && toolbarY == toolbarHeight) {
+                        mToolbarLocked = true;
+                        return super.onInterceptTouchEvent(view, event);
+                    }
+                } else if (Math.abs(deltaX) > threshold) {
+                    // Any horizontal scrolling past the threshold should
+                    // initiate toolbar lock.
+                    mToolbarLocked = true;
+                    mToolbarThresholdPassed = true;
+                    return super.onInterceptTouchEvent(view, event);
+                } else {
+                    // The threshold hasn't been passed. We don't want to update
+                    // the stored last touch position, so return here.
+                    return super.onInterceptTouchEvent(view, event);
+                }
+            } else if (action == MotionEvent.ACTION_MOVE) {
                 // Cancel any ongoing animation before we start moving the toolbar.
                 mBrowserToolbar.cancelVisibilityAnimation();
 
                 // Move the toolbar by the amount the touch event has moved,
                 // clamping to fully visible or fully hidden.
-                float deltaY = mLastTouchY - eventY;
 
                 // Don't let the toolbar scroll off the top if it's just exposing
                 // overscroll area.
@@ -262,7 +290,6 @@ abstract public class BrowserApp extends GeckoApp
                     Math.max(0, toolbarHeight - (metrics.pageRectTop -
                                                  metrics.viewportRectTop)));
 
-                int toolbarY = toolbarView.getScrollY();
                 float newToolbarYf = Math.max(0, Math.min(toolbarMaxY,
                     toolbarY + deltaY + mToolbarSubpixelAccumulation));
                 int newToolbarY = Math.round(newToolbarYf);
@@ -277,16 +304,70 @@ abstract public class BrowserApp extends GeckoApp
             } else if (action == MotionEvent.ACTION_UP ||
                        action == MotionEvent.ACTION_CANCEL) {
                 // Animate the toolbar to fully on or off, depending on how much
-                // of it is hidden.
-                mBrowserToolbar.animateVisibility(
-                    toolbarView.getScrollY() > toolbarHeight / 2 ? false : true, 0);
+                // of it is hidden and the current swipe velocity.
+                mBrowserToolbar.animateVisibilityWithVelocityBias(
+                    toolbarY > toolbarHeight / 2 ? false : true,
+                    mLayerView.getPanZoomController().getVelocityVector().y);
             }
         }
 
-        // Update the last recorded y position.
+        // Update the last recorded position.
+        mLastTouchX = eventX;
         mLastTouchY = eventY;
 
         return super.onInterceptTouchEvent(view, event);
+    }
+
+    @Override
+    public boolean onKey(View v, int keyCode, KeyEvent event) {
+        // Global onKey handler. This is called if the focused UI doesn't
+        // handle the key event, and before Gecko swallows the events.
+        if (event.getAction() != KeyEvent.ACTION_DOWN) {
+            return false;
+        }
+
+        // Gamepad support only exists in API-level >= 9
+        if (Build.VERSION.SDK_INT >= 9 &&
+            (event.getSource() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD) {
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_BUTTON_Y:
+                    // Toggle/focus the address bar on gamepad-y button.
+                    if (mBrowserToolbar.isVisible()) {
+                        if (mDynamicToolbarEnabled &&
+                            Boolean.FALSE.equals(mAboutHomeShowing)) {
+                            mBrowserToolbar.animateVisibility(false, 0);
+                            mLayerView.requestFocus();
+                        } else {
+                            // Just focus the address bar when about:home is visible
+                            // or when the dynamic toolbar isn't enabled.
+                            mBrowserToolbar.requestFocusFromTouch();
+                        }
+                    } else {
+                        mBrowserToolbar.animateVisibility(true, 0);
+                        mBrowserToolbar.requestFocusFromTouch();
+                    }
+                    return true;
+                case KeyEvent.KEYCODE_BUTTON_L1:
+                    // Go back on L1
+                    Tabs.getInstance().getSelectedTab().doBack();
+                    return true;
+                case KeyEvent.KEYCODE_BUTTON_R1:
+                    // Go forward on R1
+                    Tabs.getInstance().getSelectedTab().doForward();
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (onKey(null, keyCode, event)) {
+            return true;
+        }
+
+        return super.onKeyDown(keyCode, event);
     }
 
     void handleReaderAdded(boolean success, final String title, final String url) {
@@ -343,6 +424,9 @@ abstract public class BrowserApp extends GeckoApp
         mBrowserToolbar = new BrowserToolbar(this);
         mBrowserToolbar.from(actionBar);
 
+        // Intercept key events for gamepad shortcuts
+        actionBar.setOnKeyListener(this);
+
         if (mTabsPanel != null) {
             mTabsPanel.setTabsLayoutChangeListener(this);
             updateSideBarState();
@@ -370,13 +454,13 @@ abstract public class BrowserApp extends GeckoApp
                         if (tab == null || tab.isPrivate()) {
                             return null;
                         }
-                        return new NdefMessage(NdefRecord.createUri(tab.getURL()));
+                        return new NdefMessage(new NdefRecord[] { NdefRecord.createUri(tab.getURL()) });
                     }
                 }, this);
             }
         }
 
-        // Load the dynamic toolbar pref
+        // Listen to the dynamic toolbar pref
         PrefsHelper.getPref(PREF_CHROME_DYNAMICTOOLBAR, new PrefsHelper.PrefHandlerBase() {
             @Override
             public void prefValue(String pref, boolean value) {
@@ -393,6 +477,7 @@ abstract public class BrowserApp extends GeckoApp
                         } else {
                             // Immediately show the toolbar when disabling the dynamic
                             // toolbar.
+                            mAboutHomeContent.setPadding(0, 0, 0, 0);
                             mBrowserToolbar.cancelVisibilityAnimation();
                             mBrowserToolbar.getLayout().scrollTo(0, 0);
                         }
@@ -402,6 +487,13 @@ abstract public class BrowserApp extends GeckoApp
                         ((BrowserToolbarLayout)mBrowserToolbar.getLayout()).refreshMargins();
                     }
                 });
+            }
+
+            @Override
+            public boolean isObserver() {
+                // We want to be notified of changes to be able to switch mode
+                // without restarting.
+                return true;
             }
         });
     }
@@ -474,6 +566,9 @@ abstract public class BrowserApp extends GeckoApp
                 Tabs.getInstance().loadUrl(uri, flags);
             }
         }
+
+        // Intercept key events for gamepad shortcuts
+        mLayerView.setOnKeyListener(this);
     }
 
     public void setToolbarHeight(int aHeight, int aVisibleHeight) {
@@ -798,7 +893,7 @@ abstract public class BrowserApp extends GeckoApp
     }
 
     private void showTabs(TabsPanel.Panel panel) {
-        if (Tabs.getInstance().getCount() == 0)
+        if (Tabs.getInstance().getDisplayCount() == 0)
             return;
 
         mTabsPanel.show(panel);
@@ -960,9 +1055,6 @@ abstract public class BrowserApp extends GeckoApp
         mAboutHomeShowing = true;
         Runnable r = new AboutHomeRunnable(true);
         mMainHandler.postAtFrontOfQueue(r);
-
-        // Refresh margins to possibly remove the toolbar padding
-        ((BrowserToolbarLayout)mBrowserToolbar.getLayout()).refreshMargins();
     }
 
     private void hideAboutHome() {
@@ -975,9 +1067,6 @@ abstract public class BrowserApp extends GeckoApp
         mAboutHomeShowing = false;
         Runnable r = new AboutHomeRunnable(false);
         mMainHandler.postAtFrontOfQueue(r);
-
-        // Refresh margins to possibly restore the toolbar padding
-        ((BrowserToolbarLayout)mBrowserToolbar.getLayout()).refreshMargins();
     }
 
     private class AboutHomeRunnable implements Runnable {
@@ -1014,7 +1103,10 @@ abstract public class BrowserApp extends GeckoApp
             } else {
                 findViewById(R.id.abouthome_content).setVisibility(View.GONE);
             }
-        } 
+
+            // Refresh margins to possibly restore the toolbar padding
+            ((BrowserToolbarLayout)mBrowserToolbar.getLayout()).refreshMargins();
+        }
     }
 
     private class HideTabsTouchListener implements OnInterceptTouchListener {
@@ -1277,7 +1369,7 @@ abstract public class BrowserApp extends GeckoApp
 
         // Only show the "Quit" menu item on pre-ICS. In ICS+, it's easy to
         // kill an app through the task switcher.
-        aMenu.findItem(R.id.quit).setVisible(Build.VERSION.SDK_INT < 14);
+        aMenu.findItem(R.id.quit).setVisible(Build.VERSION.SDK_INT < 14 || !isTouchDevice());
 
         if (tab == null || tab.getURL() == null) {
             bookmark.setEnabled(false);

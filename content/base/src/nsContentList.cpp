@@ -154,10 +154,9 @@ NS_IMPL_ADDREF_INHERITED(nsSimpleContentList, nsBaseContentList)
 NS_IMPL_RELEASE_INHERITED(nsSimpleContentList, nsBaseContentList)
 
 JSObject*
-nsSimpleContentList::WrapObject(JSContext *cx, JSObject *scope,
-                                bool *triedToWrap)
+nsSimpleContentList::WrapObject(JSContext *cx, JSObject *scope)
 {
-  return NodeListBinding::Wrap(cx, scope, this, triedToWrap);
+  return NodeListBinding::Wrap(cx, scope, this);
 }
 
 // nsFormContentList
@@ -288,18 +287,16 @@ const nsCacheableFuncStringContentList::ContentListType
 #endif
 
 JSObject*
-nsCacheableFuncStringNodeList::WrapObject(JSContext *cx, JSObject *scope,
-                                          bool *triedToWrap)
+nsCacheableFuncStringNodeList::WrapObject(JSContext *cx, JSObject *scope)
 {
-  return NodeListBinding::Wrap(cx, scope, this, triedToWrap);
+  return NodeListBinding::Wrap(cx, scope, this);
 }
 
 
 JSObject*
-nsCacheableFuncStringHTMLCollection::WrapObject(JSContext *cx, JSObject *scope,
-                                                bool *triedToWrap)
+nsCacheableFuncStringHTMLCollection::WrapObject(JSContext *cx, JSObject *scope)
 {
-  return HTMLCollectionBinding::Wrap(cx, scope, this, triedToWrap);
+  return HTMLCollectionBinding::Wrap(cx, scope, this);
 }
 
 // Hashtable for storing nsCacheableFuncStringContentList
@@ -515,9 +512,9 @@ nsContentList::~nsContentList()
 }
 
 JSObject*
-nsContentList::WrapObject(JSContext *cx, JSObject *scope, bool *triedToWrap)
+nsContentList::WrapObject(JSContext *cx, JSObject *scope)
 {
-  return HTMLCollectionBinding::Wrap(cx, scope, this, triedToWrap);
+  return HTMLCollectionBinding::Wrap(cx, scope, this);
 }
 
 NS_IMPL_ISUPPORTS_INHERITED3(nsContentList, nsBaseContentList,

@@ -9,6 +9,7 @@ generated_webidl_files = \
   $(NULL)
 
 webidl_files = \
+  ArchiveReader.webidl \
   AudioBuffer.webidl \
   AudioBufferSourceNode.webidl \
   AudioContext.webidl \
@@ -26,6 +27,7 @@ webidl_files = \
   CFStateChangeEvent.webidl \
   CharacterData.webidl \
   ClientRectList.webidl \
+  CommandEvent.webidl \
   Comment.webidl \
   CSS.webidl \
   CSSPrimitiveValue.webidl \
@@ -45,6 +47,7 @@ webidl_files = \
   DummyBinding.webidl \
   DynamicsCompressorNode.webidl \
   Element.webidl \
+  Event.webidl \
   EventHandler.webidl \
   EventListener.webidl \
   EventSource.webidl \
@@ -114,11 +117,14 @@ webidl_files = \
   HTMLTimeElement.webidl \
   HTMLTitleElement.webidl \
   HTMLUListElement.webidl \
+  IDBVersionChangeEvent.webidl \
   ImageData.webidl \
+  InspectorUtils.webidl \
   LinkStyle.webidl \
   LocalMediaStream.webidl \
   Location.webidl \
   MediaStream.webidl \
+  MessageEvent.webidl \
   MutationObserver.webidl \
   Node.webidl \
   NodeFilter.webidl \
@@ -131,6 +137,7 @@ webidl_files = \
   PerformanceNavigation.webidl \
   PerformanceTiming.webidl \
   ProcessingInstruction.webidl \
+  Range.webidl \
   Rect.webidl \
   RGBColor.webidl \
   RTCConfiguration.webidl \
@@ -169,6 +176,8 @@ webidl_files = \
   SVGFEImageElement.webidl \
   SVGFEMergeElement.webidl \
   SVGFEMergeNodeElement.webidl \
+  SVGFEPointLightElement.webidl \
+  SVGFETileElement.webidl \
   SVGFitToViewBox.webidl \
   SVGForeignObjectElement.webidl \
   SVGGElement.webidl \
@@ -221,6 +230,7 @@ webidl_files = \
   TextEncoder.webidl \
   TimeRanges.webidl \
   TreeWalker.webidl \
+  UIEvent.webidl \
   URL.webidl \
   ValidityState.webidl \
   WebComponents.webidl \

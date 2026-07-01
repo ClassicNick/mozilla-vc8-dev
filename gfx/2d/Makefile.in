@@ -145,7 +145,7 @@ CPPSRCS += \
         ScaledFontSkia.cpp \
         ScaledFontWin.cpp \
         $(NULL)
-DEFINES += -DUSE_SKIA
+DEFINES += -DUSE_SKIA -DSKIA_IMPLEMENTATION=1 -DGR_IMPLEMENTATION=1
 endif
 endif
 

@@ -282,13 +282,11 @@ SpdySession2::AddStream(nsAHttpTransaction *aHttpTransaction,
                        int32_t aPriority)
 {
   NS_ABORT_IF_FALSE(PR_GetCurrentThread() == gSocketThread, "wrong thread");
-  NS_ABORT_IF_FALSE(!mStreamTransactionHash.Get(aHttpTransaction),
-                    "AddStream duplicate transaction pointer");
 
   // integrity check
   if (mStreamTransactionHash.Get(aHttpTransaction)) {
     LOG3(("   New transaction already present\n"));
-    NS_ABORT_IF_FALSE(false, "New transaction already present in hash");
+    NS_ABORT_IF_FALSE(false, "AddStream duplicate transaction pointer");
     return false;
   }
 
@@ -1823,9 +1821,6 @@ SpdySession2::Close(nsresult aReason)
 
   mClosed = true;
 
-  NS_ABORT_IF_FALSE(mStreamTransactionHash.Count() ==
-                    mStreamIDHash.Count(),
-                    "index corruption");
   mStreamTransactionHash.Enumerate(ShutdownEnumerator, this);
   mStreamIDHash.Clear();
   mStreamTransactionHash.Clear();

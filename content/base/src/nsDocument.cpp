@@ -42,6 +42,7 @@
 #include "nsIDOMStyleSheet.h"
 #include "nsDOMAttribute.h"
 #include "nsIDOMDOMStringList.h"
+#include "nsIDOMDOMImplementation.h"
 #include "nsIDOMDocumentXBL.h"
 #include "mozilla/dom/Element.h"
 #include "nsGenericHTMLElement.h"
@@ -195,6 +196,7 @@
 #include "nsDOMCaretPosition.h"
 #include "nsIDOMHTMLTextAreaElement.h"
 #include "nsViewportInfo.h"
+#include "nsDOMEvent.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -4536,7 +4538,7 @@ nsDocument::GetDoctype(nsIDOMDocumentType** aDoctype)
 }
 
 NS_IMETHODIMP
-nsDocument::GetImplementation(nsISupports** aImplementation)
+nsDocument::GetImplementation(nsIDOMDOMImplementation** aImplementation)
 {
   ErrorResult rv;
   *aImplementation = GetImplementation(rv);
@@ -5026,7 +5028,7 @@ nsDocument::Register(JSContext* aCx, const nsAString& aName,
 
   // Do element upgrade.
   nsRefPtr<nsContentList> list = GetElementsByTagName(lcName);
-  for (int32_t i = 0; i < list->Length(false); i++) {
+  for (uint32_t i = 0; i < list->Length(false); i++) {
     nsCOMPtr<nsINode> oldNode = list->Item(i, false);
 
     // TODO(wchen): Perform upgrade on Shadow DOM when implemented.
@@ -5571,7 +5573,7 @@ nsDocument::CreateRange(nsIDOMRange** aReturn)
 already_AddRefed<nsRange>
 nsIDocument::CreateRange(ErrorResult& rv)
 {
-  nsRefPtr<nsRange> range = new nsRange();
+  nsRefPtr<nsRange> range = new nsRange(this);
   nsresult res = range->Set(this, 0, this, 0);
   if (NS_FAILED(res)) {
     rv.Throw(res);
@@ -6890,7 +6892,7 @@ nsDocument::CreateEvent(const nsAString& aEventType, nsIDOMEvent** aReturn)
   return rv.ErrorCode();
 }
 
-already_AddRefed<nsIDOMEvent>
+already_AddRefed<nsDOMEvent>
 nsIDocument::CreateEvent(const nsAString& aEventType, ErrorResult& rv) const
 {
   nsIPresShell *shell = GetShell();
@@ -6904,9 +6906,11 @@ nsIDocument::CreateEvent(const nsAString& aEventType, ErrorResult& rv) const
 
   // Create event even without presContext.
   nsCOMPtr<nsIDOMEvent> ev;
-  rv = nsEventDispatcher::CreateEvent(presContext, nullptr,
-                                      aEventType, getter_AddRefs(ev));
-  return ev.forget();
+  rv =
+    nsEventDispatcher::CreateEvent(const_cast<nsIDocument*>(this),
+                                   presContext, nullptr, aEventType,
+                                   getter_AddRefs(ev));
+  return ev ? ev.forget().get()->InternalDOMEvent() : nullptr;
 }
 
 void

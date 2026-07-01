@@ -65,6 +65,7 @@ import android.util.Log;
 import android.util.SparseBooleanArray;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -188,6 +189,7 @@ abstract public class GeckoApp
 
     private static Boolean sIsLargeTablet = null;
     private static Boolean sIsSmallTablet = null;
+    private static Boolean sIsTouchDevice = null;
 
     abstract public int getLayout();
     abstract public boolean hasTabsSideBar();
@@ -850,6 +852,10 @@ abstract public class GeckoApp
                 handleClearHistory();
             } else if (event.equals("Update:Check")) {
                 startService(new Intent(UpdateServiceHelper.ACTION_CHECK_FOR_UPDATE, null, this, UpdateService.class));
+            } else if (event.equals("Update:Download")) {
+                startService(new Intent(UpdateServiceHelper.ACTION_DOWNLOAD_UPDATE, null, this, UpdateService.class));
+            } else if (event.equals("Update:Install")) {
+                startService(new Intent(UpdateServiceHelper.ACTION_APPLY_UPDATE, null, this, UpdateService.class));
             } else if (event.equals("PrivateBrowsing:Data")) {
                 // null strings return "null" (http://code.google.com/p/android/issues/detail?id=13830)
                 if (message.isNull("session")) {
@@ -1094,7 +1100,7 @@ abstract public class GeckoApp
         final String fileName = aSrc.substring(aSrc.lastIndexOf("/") + 1);
         final PendingIntent emptyIntent = PendingIntent.getActivity(mAppContext, 0, new Intent(), 0);
         final AlertNotification notification = new AlertNotification(mAppContext, fileName.hashCode(), 
-                                R.drawable.alert_download, fileName, progText, System.currentTimeMillis() );
+                                R.drawable.alert_download, fileName, progText, System.currentTimeMillis(), null);
         notification.setLatestEventInfo(mAppContext, fileName, progText, emptyIntent );
         notification.flags |= Notification.FLAG_ONGOING_EVENT;
         notification.show();
@@ -1324,11 +1330,28 @@ abstract public class GeckoApp
     public boolean isSmallTablet() {
         if (sIsSmallTablet == null) {
             int screenLayout = getResources().getConfiguration().screenLayout;
-            return (Build.VERSION.SDK_INT >= 11 &&
-                    ((screenLayout & Configuration.SCREENLAYOUT_SIZE_MASK) == Configuration.SCREENLAYOUT_SIZE_LARGE));
+            sIsSmallTablet = (Build.VERSION.SDK_INT >= 11 &&
+                              ((screenLayout & Configuration.SCREENLAYOUT_SIZE_MASK) == Configuration.SCREENLAYOUT_SIZE_LARGE));
         }
 
         return sIsSmallTablet;
+    }
+
+    public boolean isTouchDevice() {
+        if (sIsTouchDevice == null) {
+            if (Build.VERSION.SDK_INT >= 9) {
+                sIsTouchDevice = false;
+                for (int inputDeviceId : InputDevice.getDeviceIds()) {
+                    if ((InputDevice.getDevice(inputDeviceId).getSources() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN) {
+                        sIsTouchDevice = true;
+                    }
+                }
+            } else {
+                // pre-gingerbread just assume everything is touch-enabled
+                sIsTouchDevice = true;
+            }
+        }
+        return sIsTouchDevice;
     }
 
     /** Called when the activity is first created. */
@@ -1657,6 +1680,8 @@ abstract public class GeckoApp
         registerEventListener("Wallpaper:Set");
         registerEventListener("Sanitize:ClearHistory");
         registerEventListener("Update:Check");
+        registerEventListener("Update:Download");
+        registerEventListener("Update:Install");
         registerEventListener("PrivateBrowsing:Data");
 
         if (SmsManager.getInstance() != null) {
@@ -1676,8 +1701,6 @@ abstract public class GeckoApp
                 UpdateServiceHelper.registerForUpdates(GeckoApp.this, value);
             }
         });
-
-        final GeckoApp self = this;
 
         // End of the startup of our Java App
         mJavaUiStartupTimer.stop();
@@ -1731,8 +1754,9 @@ abstract public class GeckoApp
             } else {
                 onSearchRequested();
             }
+        } else if (ACTION_ALERT_CALLBACK.equals(action)) {
+            processAlertCallback(intent);
         }
-
     }
 
     public GeckoProfile getProfile() {
@@ -1820,6 +1844,21 @@ abstract public class GeckoApp
         }
     }
 
+    private void processAlertCallback(Intent intent) {
+        String alertName = "";
+        String alertCookie = "";
+        Uri data = intent.getData();
+        if (data != null) {
+            alertName = data.getQueryParameter("name");
+            if (alertName == null)
+                alertName = "";
+            alertCookie = data.getQueryParameter("cookie");
+            if (alertCookie == null)
+                alertCookie = "";
+        }
+        handleNotification(ACTION_ALERT_CALLBACK, alertName, alertCookie);
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         if (GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoExiting)) {
@@ -1860,18 +1899,7 @@ abstract public class GeckoApp
             String uri = getURIFromIntent(intent);
             GeckoAppShell.sendEventToGecko(GeckoEvent.createURILoadEvent(uri));
         } else if (ACTION_ALERT_CALLBACK.equals(action)) {
-            String alertName = "";
-            String alertCookie = "";
-            Uri data = intent.getData();
-            if (data != null) {
-                alertName = data.getQueryParameter("name");
-                if (alertName == null)
-                    alertName = "";
-                alertCookie = data.getQueryParameter("cookie");
-                if (alertCookie == null)
-                    alertCookie = "";
-            }
-            handleNotification(ACTION_ALERT_CALLBACK, alertName, alertCookie);
+            processAlertCallback(intent);
         } else if (ACTION_WIDGET.equals(action)) {
             addTab();
         }
@@ -2012,11 +2040,6 @@ abstract public class GeckoApp
     @Override
     public void onDestroy()
     {
-        // Tell Gecko to shutting down; we'll end up calling System.exit()
-        // in onXreExit.
-        if (isFinishing())
-            GeckoAppShell.sendEventToGecko(GeckoEvent.createShutdownEvent());
-
         unregisterEventListener("log");
         unregisterEventListener("Reader:Added");
         unregisterEventListener("Reader:Removed");
@@ -2049,6 +2072,8 @@ abstract public class GeckoApp
         unregisterEventListener("Wallpaper:Set");
         unregisterEventListener("Sanitize:ClearHistory");
         unregisterEventListener("Update:Check");
+        unregisterEventListener("Update:Download");
+        unregisterEventListener("Update:Install");
         unregisterEventListener("PrivateBrowsing:Data");
 
         deleteTempFiles();
@@ -2173,7 +2198,12 @@ abstract public class GeckoApp
     }
 
     public void handleNotification(String action, String alertName, String alertCookie) {
-        GeckoAppShell.handleNotification(action, alertName, alertCookie);
+        // If Gecko isn't running yet, we ignore the notification. Note that
+        // even if Gecko is running but it was restarted since the notification
+        // was created, the notification won't be handled (bug 849653).
+        if (GeckoThread.checkLaunchState(GeckoThread.LaunchState.GeckoRunning)) {
+            GeckoAppShell.handleNotification(action, alertName, alertCookie);
+        }
     }
 
     private void checkMigrateProfile() {
@@ -2418,8 +2448,8 @@ abstract public class GeckoApp
         }
     }
 
-    public void notifyCheckUpdateResult(boolean result) {
-        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Update:CheckResult", result ? "true" : "false"));
+    public void notifyCheckUpdateResult(String result) {
+        GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Update:CheckResult", result));
     }
 
     protected void connectGeckoLayerClient() {

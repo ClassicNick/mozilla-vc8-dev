@@ -10,12 +10,14 @@
 #include "nsDOMEvent.h"
 #include "nsLayoutUtils.h"
 #include "nsEvent.h"
+#include "mozilla/dom/UIEventBinding.h"
 
 class nsDOMUIEvent : public nsDOMEvent,
                      public nsIDOMUIEvent
 {
 public:
-  nsDOMUIEvent(nsPresContext* aPresContext, nsGUIEvent* aEvent);
+  nsDOMUIEvent(mozilla::dom::EventTarget* aOwner,
+               nsPresContext* aPresContext, nsGUIEvent* aEvent);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsDOMUIEvent, nsDOMEvent)
@@ -83,6 +85,79 @@ public:
 
     return nsIntPoint(nsPresContext::AppUnitsToIntCSSPixels(pt.x),
                       nsPresContext::AppUnitsToIntCSSPixels(pt.y));
+  }
+
+  static already_AddRefed<nsDOMUIEvent> Constructor(const mozilla::dom::GlobalObject& aGlobal,
+                                                    const nsAString& aType,
+                                                    const mozilla::dom::UIEventInit& aParam,
+                                                    mozilla::ErrorResult& aRv);
+
+  virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope)
+  {
+    return mozilla::dom::UIEventBinding::Wrap(aCx, aScope, this);
+  }
+
+  already_AddRefed<nsIDOMWindow> GetView()
+  {
+    nsCOMPtr<nsIDOMWindow> view = mView;
+    return mView.forget();
+  }
+
+  int32_t Detail()
+  {
+    return mDetail;
+  }
+
+  int32_t LayerX()
+  {
+    return GetLayerPoint().x;
+  }
+
+  int32_t LayerY()
+  {
+    return GetLayerPoint().y;
+  }
+
+  int32_t PageX()
+  {
+    int32_t x;
+    GetPageX(&x);
+    return x;
+  }
+
+  int32_t PageY()
+  {
+    int32_t y;
+    GetPageY(&y);
+    return y;
+  }
+
+  uint32_t Which()
+  {
+    uint32_t w;
+    GetWhich(&w);
+    return w;
+  }
+
+  already_AddRefed<nsINode> GetRangeParent();
+
+  int32_t RangeOffset()
+  {
+    int32_t offset;
+    GetRangeOffset(&offset);
+    return offset;
+  }
+
+  bool CancelBubble()
+  {
+    return mEvent->mFlags.mPropagationStopped;
+  }
+
+  bool IsChar()
+  {
+    bool isChar;
+    GetIsChar(&isChar);
+    return isChar;
   }
 
 protected:
