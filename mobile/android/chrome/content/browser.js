@@ -162,12 +162,6 @@ var BrowserApp = {
   _tabs: [],
   _selectedTab: null,
 
-  get isTablet() {
-    let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
-    delete this.isTablet;
-    return this.isTablet = sysInfo.get("tablet");
-  },
-
   deck: null,
 
   startup: function startup() {
@@ -504,6 +498,30 @@ var BrowserApp = {
             url: src
           }
         });
+      });
+
+    NativeWindow.contextmenus.add(
+      function(aTarget) {
+        if (aTarget instanceof HTMLVideoElement) {
+          // If a video element is zero width or height, its essentially
+          // an HTMLAudioElement.
+          if (aTarget.videoWidth == 0 || aTarget.videoHeight == 0 )
+            return Strings.browser.GetStringFromName("contextmenu.saveAudio");
+          return Strings.browser.GetStringFromName("contextmenu.saveVideo");
+        } else if (aTarget instanceof HTMLAudioElement) {
+          return Strings.browser.GetStringFromName("contextmenu.saveAudio");
+        }
+        return Strings.browser.GetStringFromName("contextmenu.saveVideo");
+      }, NativeWindow.contextmenus.mediaSaveableContext,
+      function(aTarget) {
+        let url = aTarget.currentSrc || aTarget.src;
+        let filePickerTitleKey = (aTarget instanceof HTMLVideoElement &&
+                                  (aTarget.videoWidth != 0 && aTarget.videoHeight != 0))
+                                  ? "SaveVideoTitle" : "SaveAudioTitle";
+        // Skipped trying to pull MIME type out of cache for now
+        ContentAreaUtils.internalSave(url, null, null, null, null, false,
+                                      filePickerTitleKey, null, aTarget.ownerDocument.documentURIObject,
+                                      aTarget.ownerDocument, true, null);
       });
   },
 
@@ -1074,8 +1092,7 @@ var BrowserApp = {
 
   scrollToFocusedInput: function(aBrowser, aAllowZoom = true) {
     let focused = this.getFocusedInput(aBrowser);
-
-    if (focused && !this.isTablet && !ViewportHandler.getViewportMetadata(aBrowser.contentWindow).hasMetaViewport) {
+    if (focused) {
       // _zoomToElement will handle not sending any message if this input is already mostly filling the screen
       BrowserEventHandler._zoomToElement(focused, -1, false, aAllowZoom);
     }
@@ -1095,7 +1112,17 @@ var BrowserApp = {
         break;
 
       case "Session:Reload":
-        browser.reload();
+        // Try to use the session history to reload so that framesets are
+        // handled properly. If the window has no session history, fall back
+        // to using the web navigation's reload method.
+        let flags = Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_PROXY | Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE;
+        let webNav = browser.webNavigation;
+        try {
+          let sh = webNav.sessionHistory;
+          if (sh)
+            webNav = sh.QueryInterface(Ci.nsIWebNavigation);
+        } catch (e) {}
+        webNav.reload(flags);
         break;
 
       case "Session:Stop":
@@ -1550,6 +1577,13 @@ var NativeWindow = {
           return (request && (request.imageStatus & request.STATUS_SIZE_AVAILABLE));
         }
         return false;
+      }
+    },
+
+    mediaSaveableContext: {
+      matches: function mediaSaveableContextMatches(aElement) {
+        return (aElement instanceof HTMLVideoElement ||
+               aElement instanceof HTMLAudioElement);
       }
     },
 
@@ -4232,7 +4266,7 @@ var BrowserEventHandler = {
     let rect = ElementTouchHelper.getBoundingContentRect(aElement);
 
     let viewport = BrowserApp.selectedTab.getViewport();
-    let bRect = new Rect(aCanZoomIn ? Math.max(viewport.cssPageLeft, rect.x - margin) : viewport.cssLeft,
+    let bRect = new Rect(aCanZoomIn ? Math.max(viewport.cssPageLeft, rect.x - margin) : viewport.cssPageLeft,
                          rect.y,
                          aCanZoomIn ? rect.w + 2 * margin : viewport.cssWidth,
                          rect.h);
@@ -5432,7 +5466,6 @@ var ViewportHandler = {
 
     // Note: These values will be NaN if parseFloat or parseInt doesn't find a number.
     // Remember that NaN is contagious: Math.max(1, NaN) == Math.min(1, NaN) == NaN.
-    let hasMetaViewport = true;
     let scale = parseFloat(windowUtils.getDocumentMetadata("viewport-initial-scale"));
     let minScale = parseFloat(windowUtils.getDocumentMetadata("viewport-minimum-scale"));
     let maxScale = parseFloat(windowUtils.getDocumentMetadata("viewport-maximum-scale"));
@@ -5460,7 +5493,6 @@ var ViewportHandler = {
       if (doctype && /(WAP|WML|Mobile)/.test(doctype.publicId))
         return { defaultZoom: 1, autoSize: true, allowZoom: true };
 
-      hasMetaViewport = false;
       let defaultZoom = Services.prefs.getIntPref("browser.viewport.defaultZoom");
       if (defaultZoom >= 0) {
         scale = defaultZoom / 1000;
@@ -5485,8 +5517,7 @@ var ViewportHandler = {
       width: width,
       height: height,
       autoSize: autoSize,
-      allowZoom: allowZoom,
-      hasMetaViewport: hasMetaViewport
+      allowZoom: allowZoom
     };
   },
 

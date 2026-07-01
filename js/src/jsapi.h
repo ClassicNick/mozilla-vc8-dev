@@ -33,6 +33,7 @@
 #include "jsalloc.h"
 #include "js/Vector.h"
 #include "js/HashTable.h"
+#include "js/CharacterEncoding.h"
 
 /************************************************************************/
 
@@ -3317,7 +3318,6 @@ class JS_PUBLIC_API(JSAutoCompartment)
   public:
     JSAutoCompartment(JSContext *cx, JSRawObject target);
     JSAutoCompartment(JSContext *cx, JSScript *target);
-    JSAutoCompartment(JSContext *cx, JSStackFrame *target);
     JSAutoCompartment(JSContext *cx, JSString *target);
     ~JSAutoCompartment();
 };
@@ -3538,12 +3538,6 @@ JS_THIS(JSContext *cx, jsval *vp)
  * created.
  */
 #define JS_THIS_VALUE(cx,vp)    ((vp)[1])
-
-extern JS_PUBLIC_API(void)
-JS_MallocInCompartment(JSCompartment *comp, size_t nbytes);
-
-extern JS_PUBLIC_API(void)
-JS_FreeInCompartment(JSCompartment *comp, size_t nbytes);
 
 extern JS_PUBLIC_API(void *)
 JS_malloc(JSContext *cx, size_t nbytes);
@@ -6160,6 +6154,14 @@ JS_SetParallelCompilationEnabled(JSContext *cx, bool enabled);
  */
 extern JS_PUBLIC_API(JSBool)
 JS_IndexToId(JSContext *cx, uint32_t index, jsid *id);
+
+/*
+ * Convert chars into a jsid.
+ *
+ * |chars| may not be an index.
+ */
+extern JS_PUBLIC_API(JSBool)
+JS_CharsToId(JSContext* cx, JS::TwoByteChars chars, jsid *idp);
 
 /*
  *  Test if the given string is a valid ECMAScript identifier

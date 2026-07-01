@@ -61,14 +61,6 @@ public:
   virtual nsresult ExecuteScript(JSScript* aScriptObject,
                                  JSObject* aScopeObject);
 
-  virtual nsresult CompileEventHandler(nsIAtom *aName,
-                                       uint32_t aArgCount,
-                                       const char** aArgNames,
-                                       const nsAString& aBody,
-                                       const char *aURL, uint32_t aLineNo,
-                                       uint32_t aVersion,
-                                       bool aIsXBL,
-                                       nsScriptObjectHolder<JSObject>& aHandler);
   virtual nsresult CallEventHandler(nsISupports* aTarget, JSObject* aScope,
                                     JSObject* aHandler,
                                     nsIArray *argv, nsIVariant **rv);
@@ -133,7 +125,7 @@ public:
     NonIncrementalGC
   };
 
-  static void GarbageCollectNow(js::gcreason::Reason reason,
+  static void GarbageCollectNow(JS::gcreason::Reason reason,
                                 IsIncremental aIncremental = NonIncrementalGC,
                                 IsCompartment aCompartment = NonCompartmentGC,
                                 IsShrinking aShrinking = NonShrinkingGC,
@@ -145,7 +137,7 @@ public:
                               int32_t aExtraForgetSkippableCalls = 0,
                               bool aForced = true);
 
-  static void PokeGC(js::gcreason::Reason aReason, int aDelay = 0);
+  static void PokeGC(JS::gcreason::Reason aReason, int aDelay = 0);
   static void KillGCTimer();
 
   static void PokeShrinkGCBuffers();
@@ -156,7 +148,7 @@ public:
   static void KillFullGCTimer();
   static void KillInterSliceGCTimer();
 
-  virtual void GC(js::gcreason::Reason aReason);
+  virtual void GC(JS::gcreason::Reason aReason);
 
   static uint32_t CleanupsSinceLastGC();
 

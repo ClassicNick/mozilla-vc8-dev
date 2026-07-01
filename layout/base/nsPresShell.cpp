@@ -5273,10 +5273,6 @@ public:
   ~nsAutoNotifyDidPaint()
   {
     mShell->GetPresContext()->NotifyDidPaintForSubtree(mFlags);
-    if (!(mFlags & nsIPresShell::PAINT_WILL_SEND_DID_PAINT) &&
-        nsContentUtils::XPConnect()) {
-      nsContentUtils::XPConnect()->NotifyDidPaint();
-    }
   }
 
 private:
@@ -5959,11 +5955,10 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
             eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent,
                                                               touch->mRefPoint,
                                                               frame);
-            nsIFrame* target =
-                          FindFrameTargetedByInputEvent(aEvent->eventStructType,
-                                                        frame,
-                                                        eventPoint,
-                                                        flags);
+            nsIFrame* target = FindFrameTargetedByInputEvent(aEvent,
+                                                             frame,
+                                                             eventPoint,
+                                                             flags);
             if (target && !anyTarget) {
               target->GetContentForEvent(aEvent, getter_AddRefs(anyTarget));
               while (anyTarget && !anyTarget->IsElement()) {
@@ -6031,7 +6026,7 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
         flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
       }
       nsIFrame* target =
-        FindFrameTargetedByInputEvent(aEvent->eventStructType, frame, eventPoint, flags);
+        FindFrameTargetedByInputEvent(aEvent, frame, eventPoint, flags);
       if (target) {
         frame = target;
       }
@@ -7128,7 +7123,7 @@ PresShell::ShouldIgnoreInvalidation()
 }
 
 void
-PresShell::WillPaint(bool aWillSendDidPaint)
+PresShell::WillPaint()
 {
   nsRootPresContext* rootPresContext = mPresContext->GetRootPresContext();
   if (!rootPresContext) {
@@ -7156,7 +7151,7 @@ PresShell::WillPaint(bool aWillSendDidPaint)
 }
 
 void
-PresShell::WillPaintWindow(bool aWillSendDidPaint)
+PresShell::WillPaintWindow()
 {
   nsRootPresContext* rootPresContext = mPresContext->GetRootPresContext();
   if (rootPresContext != mPresContext) {
@@ -9005,7 +9000,8 @@ void ColorToString(nscolor aColor, nsAutoString &aString)
 
 nsIFrame* nsIPresShell::GetAbsoluteContainingBlock(nsIFrame *aFrame)
 {
-  return FrameConstructor()->GetAbsoluteContainingBlock(aFrame);
+  return FrameConstructor()->GetAbsoluteContainingBlock(aFrame,
+      nsCSSFrameConstructor::ABS_POS);
 }
 
 #ifdef ACCESSIBILITY
