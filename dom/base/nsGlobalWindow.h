@@ -72,6 +72,10 @@
 #include "nsIDOMWindowB2G.h"
 #endif // MOZ_B2G
 
+#ifdef MOZ_WEBSPEECH
+#include "nsIDOMSpeechSynthesisGetter.h"
+#endif // MOZ_WEBSPEECH
+
 #define DEFAULT_HOME_PAGE "www.mozilla.org"
 #define PREF_BROWSER_STARTUP_HOMEPAGE "browser.startup.homepage"
 
@@ -256,7 +260,6 @@ class nsGlobalWindow : public mozilla::dom::EventTarget,
                        public nsPIDOMWindow,
                        public nsIScriptGlobalObject,
                        public nsIDOMJSWindow,
-                       public nsIScriptObjectPrincipal,
                        public nsIDOMStorageIndexedDB,
                        public nsSupportsWeakReference,
                        public nsIInterfaceRequestor,
@@ -267,6 +270,9 @@ class nsGlobalWindow : public mozilla::dom::EventTarget,
 #ifdef MOZ_B2G
                      , public nsIDOMWindowB2G
 #endif // MOZ_B2G
+#ifdef MOZ_WEBSPEECH
+                     , public nsIDOMSpeechSynthesisGetter
+#endif // MOZ_WEBSPEECH
 {
 public:
   typedef mozilla::TimeStamp TimeStamp;
@@ -290,9 +296,11 @@ public:
     return EnsureInnerWindow() ? GetWrapper() : nullptr;
   }
 
+  // nsIGlobalJSObjectHolder
+  virtual JSObject *GetGlobalJSObject();
+
   // nsIScriptGlobalObject
   virtual nsIScriptContext *GetContext();
-  virtual JSObject *GetGlobalJSObject();
   JSObject *FastGetGlobalJSObject()
   {
     return mJSObject;
@@ -302,6 +310,7 @@ public:
 
   virtual nsIScriptContext *GetScriptContext();
 
+  void PoisonOuterWindowProxy(JSObject *aObject);
   virtual void OnFinalize(JSObject* aObject);
   virtual void SetScriptsEnabled(bool aEnabled, bool aFireTimeouts);
 
@@ -317,6 +326,11 @@ public:
   // nsIDOMWindowB2G
   NS_DECL_NSIDOMWINDOWB2G
 #endif // MOZ_B2G
+
+#ifdef MOZ_WEBSPEECH
+  // nsIDOMSpeechSynthesisGetter
+  NS_DECL_NSIDOMSPEECHSYNTHESISGETTER
+#endif // MOZ_WEBSPEECH
 
   // nsIDOMWindowPerformance
   NS_DECL_NSIDOMWINDOWPERFORMANCE
@@ -616,13 +630,13 @@ public:
   }
 
 #ifdef MOZ_GAMEPAD
-  void AddGamepad(PRUint32 aIndex, nsDOMGamepad* aGamepad);
-  void RemoveGamepad(PRUint32 aIndex);
-  already_AddRefed<nsDOMGamepad> GetGamepad(PRUint32 aIndex);
+  void AddGamepad(uint32_t aIndex, nsDOMGamepad* aGamepad);
+  void RemoveGamepad(uint32_t aIndex);
+  already_AddRefed<nsDOMGamepad> GetGamepad(uint32_t aIndex);
   void SetHasSeenGamepadInput(bool aHasSeen);
   bool HasSeenGamepadInput();
   void SyncGamepadState();
-  static PLDHashOperator EnumGamepadsForSync(const PRUint32& aKey,
+  static PLDHashOperator EnumGamepadsForSync(const uint32_t& aKey,
                                              nsDOMGamepad* aData,
                                              void* userArg);
 #endif

@@ -1188,7 +1188,7 @@ nsXULElement::PreHandleEvent(nsEventChainPreVisitor& aVisitor)
                     if (commandEvent) {
                         commandEvent->GetSourceEvent(getter_AddRefs(domEvent));
                     } else {
-                        domEvent = NULL;
+                        domEvent = nullptr;
                     }
                 }
 

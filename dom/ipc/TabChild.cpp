@@ -1400,7 +1400,7 @@ TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
                                         const nsACString& aJSONData)
 {
     JSAutoRequest ar(mCx);
-    jsval json = JSVAL_NULL;
+    JS::Value json = JSVAL_NULL;
     StructuredCloneData cloneData;
     JSAutoStructuredCloneBuffer buffer;
     if (JS_ParseJSON(mCx,
@@ -2103,10 +2103,15 @@ TabChild::InitRenderingState()
     if (id != 0) {
         // Pushing layers transactions directly to a separate
         // compositor context.
+        PCompositorChild* compositorChild = CompositorChild::Get();
+        if (!compositorChild) {
+          NS_WARNING("failed to get CompositorChild instance");
+          return false;
+        }
         shadowManager =
-            CompositorChild::Get()->SendPLayersConstructor(be, id,
-                                                           &be,
-                                                           &maxTextureSize);
+            compositorChild->SendPLayersConstructor(be, id,
+                                                    &be,
+                                                    &maxTextureSize);
     } else {
         // Pushing transactions to the parent content.
         shadowManager = remoteFrame->SendPLayersConstructor();

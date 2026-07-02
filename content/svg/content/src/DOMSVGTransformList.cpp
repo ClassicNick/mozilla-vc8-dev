@@ -4,7 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSVGTransformList.h"
-#include "DOMSVGTransform.h"
+#include "mozilla/dom/SVGTransform.h"
 #include "mozilla/dom/SVGMatrix.h"
 #include "SVGAnimatedTransformList.h"
 #include "nsSVGElement.h"
@@ -16,7 +16,7 @@
 namespace {
 
 void UpdateListIndicesFromIndex(
-  FallibleTArray<mozilla::DOMSVGTransform*>& aItemsArray,
+  FallibleTArray<mozilla::dom::SVGTransform*>& aItemsArray,
   uint32_t aStartingIndex)
 {
   uint32_t length = aItemsArray.Length();
@@ -31,6 +31,8 @@ void UpdateListIndicesFromIndex(
 } // anonymous namespace
 
 namespace mozilla {
+
+using namespace dom;
 
 // We could use NS_IMPL_CYCLE_COLLECTION_1, except that in Unlink() we need to
 // clear our DOMSVGAnimatedTransformList's weak ref to us to be safe. (The other
@@ -77,10 +79,10 @@ DOMSVGTransformList::InternalListLengthWillChange(uint32_t aNewLength)
 {
   uint32_t oldLength = mItems.Length();
 
-  if (aNewLength > DOMSVGTransform::MaxListIndex()) {
+  if (aNewLength > SVGTransform::MaxListIndex()) {
     // It's safe to get out of sync with our internal list as long as we have
     // FEWER items than it does.
-    aNewLength = DOMSVGTransform::MaxListIndex();
+    aNewLength = SVGTransform::MaxListIndex();
   }
 
   nsRefPtr<DOMSVGTransformList> kungFuDeathGrip;
@@ -144,8 +146,8 @@ DOMSVGTransformList::Clear(ErrorResult& error)
   }
 }
 
-already_AddRefed<DOMSVGTransform>
-DOMSVGTransformList::Initialize(DOMSVGTransform& newItem, ErrorResult& error)
+already_AddRefed<SVGTransform>
+DOMSVGTransformList::Initialize(SVGTransform& newItem, ErrorResult& error)
 {
   if (IsAnimValList()) {
     error.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
@@ -160,7 +162,7 @@ DOMSVGTransformList::Initialize(DOMSVGTransform& newItem, ErrorResult& error)
   // clone of newItem, it would actually insert newItem. To prevent that from
   // happening we have to do the clone here, if necessary.
 
-  nsCOMPtr<DOMSVGTransform> domItem = &newItem;
+  nsRefPtr<SVGTransform> domItem = &newItem;
   if (domItem->HasOwner()) {
     domItem = newItem.Clone();
   }
@@ -170,7 +172,7 @@ DOMSVGTransformList::Initialize(DOMSVGTransform& newItem, ErrorResult& error)
   return InsertItemBefore(*domItem, 0, error);
 }
 
-DOMSVGTransform*
+SVGTransform*
 DOMSVGTransformList::IndexedGetter(uint32_t index, bool& found,
                                    ErrorResult& error)
 {
@@ -185,8 +187,8 @@ DOMSVGTransformList::IndexedGetter(uint32_t index, bool& found,
   return nullptr;
 }
 
-already_AddRefed<DOMSVGTransform>
-DOMSVGTransformList::InsertItemBefore(DOMSVGTransform& newItem,
+already_AddRefed<SVGTransform>
+DOMSVGTransformList::InsertItemBefore(SVGTransform& newItem,
                                       uint32_t index, ErrorResult& error)
 {
   if (IsAnimValList()) {
@@ -195,12 +197,12 @@ DOMSVGTransformList::InsertItemBefore(DOMSVGTransform& newItem,
   }
 
   index = NS_MIN(index, LengthNoFlush());
-  if (index >= DOMSVGTransform::MaxListIndex()) {
+  if (index >= SVGTransform::MaxListIndex()) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
   }
 
-  nsCOMPtr<DOMSVGTransform> domItem = &newItem;
+  nsRefPtr<SVGTransform> domItem = &newItem;
   if (newItem.HasOwner()) {
     domItem = newItem.Clone(); // must do this before changing anything!
   }
@@ -233,8 +235,8 @@ DOMSVGTransformList::InsertItemBefore(DOMSVGTransform& newItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGTransform>
-DOMSVGTransformList::ReplaceItem(DOMSVGTransform& newItem,
+already_AddRefed<SVGTransform>
+DOMSVGTransformList::ReplaceItem(SVGTransform& newItem,
                                  uint32_t index, ErrorResult& error)
 {
   if (IsAnimValList()) {
@@ -247,7 +249,7 @@ DOMSVGTransformList::ReplaceItem(DOMSVGTransform& newItem,
     return nullptr;
   }
 
-  nsCOMPtr<DOMSVGTransform> domItem = &newItem;
+  nsRefPtr<SVGTransform> domItem = &newItem;
   if (newItem.HasOwner()) {
     domItem = newItem.Clone(); // must do this before changing anything!
   }
@@ -273,7 +275,7 @@ DOMSVGTransformList::ReplaceItem(DOMSVGTransform& newItem,
   return domItem.forget();
 }
 
-already_AddRefed<DOMSVGTransform>
+already_AddRefed<SVGTransform>
 DOMSVGTransformList::RemoveItem(uint32_t index, ErrorResult& error)
 {
   if (IsAnimValList()) {
@@ -298,7 +300,7 @@ DOMSVGTransformList::RemoveItem(uint32_t index, ErrorResult& error)
   // Notify the DOM item of removal *before* modifying the lists so that the
   // DOM item can copy its *old* value:
   mItems[index]->RemovingFromList();
-  nsCOMPtr<DOMSVGTransform> result = mItems[index];
+  nsRefPtr<SVGTransform> result = mItems[index];
 
   InternalList().RemoveItem(index);
   mItems.RemoveElementAt(index);
@@ -312,14 +314,14 @@ DOMSVGTransformList::RemoveItem(uint32_t index, ErrorResult& error)
   return result.forget();
 }
 
-already_AddRefed<DOMSVGTransform>
+already_AddRefed<SVGTransform>
 DOMSVGTransformList::CreateSVGTransformFromMatrix(dom::SVGMatrix& matrix)
 {
-  nsCOMPtr<DOMSVGTransform> result = new DOMSVGTransform(matrix.Matrix());
+  nsRefPtr<SVGTransform> result = new SVGTransform(matrix.Matrix());
   return result.forget();
 }
 
-already_AddRefed<DOMSVGTransform>
+already_AddRefed<SVGTransform>
 DOMSVGTransformList::Consolidate(ErrorResult& error)
 {
   if (IsAnimValList()) {
@@ -344,7 +346,7 @@ DOMSVGTransformList::Consolidate(ErrorResult& error)
   MOZ_ASSERT(!error.Failed(), "How could this fail?");
 
   // And append the new transform
-  nsRefPtr<DOMSVGTransform> transform = new DOMSVGTransform(mx);
+  nsRefPtr<SVGTransform> transform = new SVGTransform(mx);
   return InsertItemBefore(*transform, LengthNoFlush(), error);
 }
 
@@ -355,7 +357,7 @@ void
 DOMSVGTransformList::EnsureItemAt(uint32_t aIndex)
 {
   if (!mItems[aIndex]) {
-    mItems[aIndex] = new DOMSVGTransform(this, aIndex, IsAnimValList());
+    mItems[aIndex] = new SVGTransform(this, aIndex, IsAnimValList());
   }
 }
 
@@ -375,7 +377,7 @@ DOMSVGTransformList::MaybeInsertNullInAnimValListAt(uint32_t aIndex)
                     "animVal list not in sync!");
 
   animVal->mItems.InsertElementAt(aIndex,
-                                  static_cast<DOMSVGTransform*>(nullptr));
+                                  static_cast<SVGTransform*>(nullptr));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
 }

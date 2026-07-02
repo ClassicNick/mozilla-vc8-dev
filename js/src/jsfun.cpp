@@ -10,6 +10,7 @@
  */
 #include <string.h>
 
+#include "mozilla/PodOperations.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/Util.h"
 
@@ -71,6 +72,7 @@ using namespace js::types;
 using namespace js::frontend;
 
 using mozilla::ArrayLength;
+using mozilla::PodCopy;
 
 static JSBool
 fun_getProperty(JSContext *cx, HandleObject obj_, HandleId id, MutableHandleValue vp)
@@ -1565,7 +1567,7 @@ js::CloneFunctionObject(JSContext *cx, HandleFunction fun, HandleObject parent, 
         clone->flags |= JSFunction::EXTENDED;
         if (fun->isExtended() && fun->compartment() == cx->compartment) {
             for (unsigned i = 0; i < FunctionExtended::NUM_EXTENDED_SLOTS; i++)
-                clone->setExtendedSlot(i, fun->getExtendedSlot(i));
+                clone->initExtendedSlot(i, fun->getExtendedSlot(i));
         } else {
             clone->initializeExtended();
         }

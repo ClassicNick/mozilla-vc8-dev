@@ -270,7 +270,7 @@ public:
  *
  * aBounds specifies the bounds of the drawing operation that will be
  * drawn to the target, it is given in device space! This function will
- * change aBounds to incorporate shadow bounds. If this is NULL the drawing
+ * change aBounds to incorporate shadow bounds. If this is nullptr the drawing
  * operation will be assumed to cover an infinite rect.
  */
 class AdjustedTarget
@@ -1420,7 +1420,7 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
     repeatMode = CanvasPattern::NOREPEAT;
   } else {
     error.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-    return NULL;
+    return nullptr;
   }
 
   Element* htmlElement;
@@ -1431,7 +1431,7 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
     nsIntSize size = canvas->GetSize();
     if (size.width == 0 || size.height == 0) {
       error.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return NULL;
+      return nullptr;
     }
 
     // Special case for Canvas, which could be an Azure canvas!
@@ -1459,12 +1459,12 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
 
   if (!res.mSurface) {
     error.Throw(NS_ERROR_NOT_AVAILABLE);
-    return NULL;
+    return nullptr;
   }
 
   // Ignore nullptr cairo surfaces! See bug 666312.
   if (!res.mSurface->CairoSurface() || res.mSurface->CairoStatus()) {
-    return NULL;
+    return nullptr;
   }
 
   EnsureTarget();
@@ -2254,7 +2254,7 @@ CanvasRenderingContext2D::MeasureText(const nsAString& rawText,
   Optional<double> maxWidth;
   error = DrawOrMeasureText(rawText, 0, 0, maxWidth, TEXT_DRAW_OPERATION_MEASURE, &width);
   if (error.Failed()) {
-    return NULL;
+    return nullptr;
   }
 
   nsRefPtr<nsIDOMTextMetrics> textMetrics = new TextMetrics(width);
@@ -3321,13 +3321,13 @@ CanvasRenderingContext2D::GetImageData(JSContext* aCx, double aSx,
   EnsureTarget();
   if (!IsTargetValid()) {
     error.Throw(NS_ERROR_FAILURE);
-    return NULL;
+    return nullptr;
   }
 
   if (!mCanvasElement && !mDocShell) {
     NS_ERROR("No canvas element and no docshell in GetImageData!!!");
     error.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return NULL;
+    return nullptr;
   }
 
   // Check only if we have a canvas element; if we were created with a docshell,
@@ -3337,18 +3337,18 @@ CanvasRenderingContext2D::GetImageData(JSContext* aCx, double aSx,
   {
     // XXX ERRMSG we need to report an error to developers here! (bug 329026)
     error.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return NULL;
+    return nullptr;
   }
 
   if (!NS_finite(aSx) || !NS_finite(aSy) ||
       !NS_finite(aSw) || !NS_finite(aSh)) {
     error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return NULL;
+    return nullptr;
   }
 
   if (!aSw || !aSh) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return NULL;
+    return nullptr;
   }
 
   int32_t x = JS_DoubleToInt32(aSx);
@@ -3382,7 +3382,7 @@ CanvasRenderingContext2D::GetImageData(JSContext* aCx, double aSx,
   JSObject* array;
   error = GetImageDataArray(aCx, x, y, w, h, &array);
   if (error.Failed()) {
-    return NULL;
+    return nullptr;
   }
   MOZ_ASSERT(array);
 
@@ -3690,14 +3690,14 @@ CreateImageData(JSContext* cx, CanvasRenderingContext2D* context,
   CheckedInt<uint32_t> len = CheckedInt<uint32_t>(w) * h * 4;
   if (!len.isValid()) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return NULL;
+    return nullptr;
   }
 
   // Create the fast typed array; it's initialized to 0 by default.
   JSObject* darray = Uint8ClampedArray::Create(cx, context, len.value());
   if (!darray) {
     error.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return NULL;
+    return nullptr;
   }
 
   nsRefPtr<mozilla::dom::ImageData> imageData =
@@ -3711,7 +3711,7 @@ CanvasRenderingContext2D::CreateImageData(JSContext* cx, double sw,
 {
   if (!sw || !sh) {
     error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return NULL;
+    return nullptr;
   }
 
   int32_t wi = JS_DoubleToInt32(sw);

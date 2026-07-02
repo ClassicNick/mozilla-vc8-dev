@@ -30,7 +30,7 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MetadataParameters)
 
   nsresult
-  Init(JSContext* aCx, const jsval* aVal)
+  Init(JSContext* aCx, const JS::Value* aVal)
   {
     return mConfig.Init(aCx, aVal);
   }
@@ -94,7 +94,7 @@ public:
   DoAsyncRun(nsISupports* aStream);
 
   nsresult
-  GetSuccessResult(JSContext* aCx, jsval* aVal);
+  GetSuccessResult(JSContext* aCx, JS::Value* aVal);
 
 protected:
   class AsyncMetadataGetter : public AsyncHelper

@@ -222,8 +222,6 @@ public:
                        uint32_t* imageLength,
                        imgFrame** aFrame);
 
-  void FrameUpdated(uint32_t aFrameNum, nsIntRect& aUpdatedRect);
-
   /* notification that the entire image has been decoded */
   nsresult DecodingComplete();
 
@@ -731,7 +729,10 @@ private: // data
   // IMPORTANT: if you use mFrames in a method, call EnsureImageIsDecoded() first
   // to ensure that the frames actually exist (they may have been discarded to save
   // memory, or we may be decoding on draw).
-  nsTArray<imgFrame *>       mFrames;
+  nsTArray<imgFrame*>        mFrames;
+
+  // The last frame we decoded for multipart images.
+  imgFrame*                  mMultipartDecodedFrame;
 
   nsCOMPtr<nsIProperties>    mProperties;
 

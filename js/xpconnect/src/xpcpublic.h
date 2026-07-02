@@ -25,11 +25,13 @@
 #include "mozilla/dom/DOMJSClass.h"
 #include "nsMathUtils.h"
 #include "nsStringBuffer.h"
+#include "nsIGlobalObject.h"
 #include "mozilla/dom/BindingDeclarations.h"
 
 class nsIPrincipal;
 class nsIXPConnectWrappedJS;
 class nsScriptNameSpaceManager;
+class nsIGlobalObject;
 
 #ifndef BAD_TLS_INDEX
 #define BAD_TLS_INDEX ((uint32_t) -1)
@@ -395,24 +397,30 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                                  nsISupports *closure, size_t *rtTotal = NULL);
 
 /**
- * Given an arbitrary object, Unwrap will return the wrapped object if the
- * passed-in object is a wrapper that Unwrap knows about *and* the
- * currently running code has permission to access both the wrapper and
- * wrapped object.
- *
- * Since this is meant to be called from functions like
- * XPCWrappedNative::GetWrappedNativeOfJSObject, it does not set an
- * exception on |cx|.
- */
-JSObject *
-Unwrap(JSContext *cx, JSObject *wrapper, bool stopAtOuter = true);
-
-/**
  * Throws an exception on cx and returns false.
  */
 bool
 Throw(JSContext *cx, nsresult rv);
 
+/**
+ * Every global should hold a native that implements the nsIGlobalObject interface.
+ */
+nsIGlobalObject *
+GetNativeForGlobal(JSObject *global);
+
+/**
+ * In some cases a native object does not really belong to any compartment (XBL,
+ * document created from by XHR of a worker, etc.). But when for some reason we
+ * have to wrap these natives (because of an event for example) instead of just
+ * wrapping them into some random compartment we find on the context stack (like
+ * we did previously) a default compartment is used. This function returns that
+ * compartment's global. It is a singleton on the runtime.
+ * If you find yourself wanting to use this compartment, you're probably doing
+ * something wrong. Callers MUST consult with the XPConnect module owner before
+ * using this compartment. If you don't, bholley will hunt you down.
+ */
+JSObject *
+GetJunkScope();
 } // namespace xpc
 
 nsCycleCollectionParticipant *

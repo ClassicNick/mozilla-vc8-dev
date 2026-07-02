@@ -5,11 +5,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* JS script descriptor. */
+
 #ifndef jsscript_h___
 #define jsscript_h___
-/*
- * JS script descriptor.
- */
+
+#include "mozilla/PodOperations.h"
 
 #include "jsdbgapi.h"
 #include "jsinfer.h"
@@ -1119,7 +1120,7 @@ struct ScriptSource
         JS_ASSERT(hasSourceData());
         return argumentsNotIncluded_;
     }
-    JSFlatString *substring(JSContext *cx, uint32_t start, uint32_t stop);
+    JSStableString *substring(JSContext *cx, uint32_t start, uint32_t stop);
     size_t sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf);
 
     // XDR handling
@@ -1296,7 +1297,7 @@ struct ScriptBytecodeHasher
     static bool match(SharedScriptData *entry, const Lookup &lookup) {
         if (entry->length != lookup.length)
             return false;
-        return PodEqual<jsbytecode>(entry->data, lookup.code, lookup.length);
+        return mozilla::PodEqual<jsbytecode>(entry->data, lookup.code, lookup.length);
     }
 };
 

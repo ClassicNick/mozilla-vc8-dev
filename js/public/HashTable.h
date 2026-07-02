@@ -11,6 +11,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Util.h"
 
@@ -609,7 +610,7 @@ template <class T>
 class HashTableEntry
 {
 public:
-	typedef typename tl::StripConst<T>::result NonConstT;
+	typedef typename mozilla::RemoveConst<T>::Type NonConstT;
 private:
     template <class, class, class> friend class HashTable;
 
@@ -655,7 +656,6 @@ private:
     bool isFree() const    { return keyHash == sFreeKey; }
     void clearLive()       { JS_ASSERT(isLive()); keyHash = sFreeKey; mem.addr()->~T(); }
     void clear()           { if (isLive()) mem.addr()->~T(); keyHash = sFreeKey; }
-    void clearNoDtor()     { keyHash = sFreeKey; }
     bool isRemoved() const { return keyHash == sRemovedKey; }
     void removeLive()      { JS_ASSERT(isLive()); keyHash = sRemovedKey; mem.addr()->~T(); }
     bool isLive() const    { return isLiveHash(keyHash); }
@@ -679,7 +679,7 @@ private:
 template <class T, class HashPolicy, class AllocPolicy>
 class HashTable : private AllocPolicy
 {
-    typedef typename tl::StripConst<T>::result NonConstT;
+    typedef typename mozilla::RemoveConst<T>::Type NonConstT;
     typedef typename HashPolicy::KeyType Key;
     typedef typename HashPolicy::Lookup Lookup;
 
@@ -835,13 +835,13 @@ class HashTable : private AllocPolicy
     HashTable(MoveRef<HashTable> rhs)
       : AllocPolicy(*rhs)
     {
-        PodAssign(this, &*rhs);
+        mozilla::PodAssign(this, &*rhs);
         rhs->table = NULL;
     }
     void operator=(MoveRef<HashTable> rhs) {
         if (table)
             destroyTable(*this, table, capacity());
-        PodAssign(this, &*rhs);
+        mozilla::PodAssign(this, &*rhs);
         rhs->table = NULL;
     }
 
@@ -1295,20 +1295,6 @@ class HashTable : private AllocPolicy
             uint32_t tableCapacity = capacity();
             for (Entry *e = table, *end = table + tableCapacity; e < end; ++e)
                 e->clear();
-        }
-        removedCount = 0;
-        entryCount = 0;
-        mutationCount++;
-    }
-
-    void clearWithoutCallingDestructors()
-    {
-        if (mozilla::IsPod<Entry>::value) {
-            memset(table, 0, sizeof(*table) * capacity());
-        } else {
-            uint32_t tableCapacity = capacity();
-            for (Entry *e = table, *end = table + tableCapacity; e < end; ++e)
-                e->clearNoDtor();
         }
         removedCount = 0;
         entryCount = 0;

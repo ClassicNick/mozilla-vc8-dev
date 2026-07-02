@@ -18,6 +18,7 @@
 #include "AudioChannelCommon.h"
 #include <algorithm>
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/EnableWebAudioCheck.h"
 
 DOMCI_NODE_DATA(HTMLAudioElement, mozilla::dom::HTMLAudioElement)
 
@@ -156,6 +157,10 @@ HTMLAudioElement::MozSetup(uint32_t aChannels, uint32_t aRate, ErrorResult& aRv)
     return;
   }
 
+  if (dom::EnableWebAudioCheck::PrefEnabled()) {
+    OwnerDoc()->WarnOnceAbout(nsIDocument::eMozAudioData);
+  }
+
   // If there is already a src provided, don't setup another stream
   if (mDecoder) {
     aRv.Throw(NS_ERROR_FAILURE);
@@ -212,7 +217,7 @@ HTMLAudioElement::MozWriteAudio(JSContext* aCx, JS::Value aData, ErrorResult& aR
 
   JSObject* darray = &aData.toObject();
   JS::AutoObjectRooter tvr(aCx);
-  JSObject* tsrc = NULL;
+  JSObject* tsrc = nullptr;
 
   // Allow either Float32Array or plain JS Array
   if (JS_IsFloat32Array(darray)) {

@@ -10,6 +10,9 @@
  */
 
 #include <string.h>
+
+#include "mozilla/PodOperations.h"
+
 #include "jstypes.h"
 #include "jsutil.h"
 #include "jscrashreport.h"
@@ -50,6 +53,9 @@
 using namespace js;
 using namespace js::gc;
 using namespace js::frontend;
+
+using mozilla::PodCopy;
+using mozilla::PodZero;
 
 typedef Rooted<GlobalObject *> RootedGlobalObject;
 
@@ -1185,7 +1191,7 @@ SourceDataCache::purge()
     map_ = NULL;
 }
 
-JSFlatString *
+JSStableString *
 ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
 {
     const jschar *chars;
@@ -1227,7 +1233,10 @@ ScriptSource::substring(JSContext *cx, uint32_t start, uint32_t stop)
 #else
     chars = data.source;
 #endif
-    return js_NewStringCopyN<CanGC>(cx, chars + start, stop - start);
+    JSFlatString *flatStr = js_NewStringCopyN<CanGC>(cx, chars + start, stop - start);
+    if (!flatStr)
+        return NULL;
+    return flatStr->ensureStable(cx);
 }
 
 bool
