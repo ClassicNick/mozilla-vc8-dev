@@ -127,6 +127,7 @@ static bool enableMethodJit = true;
 static bool enableTypeInference = true;
 static bool enableDisassemblyDumps = false;
 static bool enableIon = true;
+static bool enableBaseline = true;
 static bool enableAsmJS = true;
 
 static bool printTiming = false;
@@ -2574,7 +2575,9 @@ EvalInFrame(JSContext *cx, unsigned argc, jsval *vp)
     /* Debug-mode currently disables Ion compilation. */
     ScriptFrameIter fi(cx);
     for (uint32_t i = 0; i < upCount; ++i, ++fi) {
-        if (!fi.interpFrame()->prev())
+        ScriptFrameIter next(fi);
+        ++next;
+        if (next.done())
             break;
     }
 
@@ -4766,6 +4769,8 @@ NewContext(JSRuntime *rt)
         JS_ToggleOptions(cx, JSOPTION_TYPE_INFERENCE);
     if (enableIon)
         JS_ToggleOptions(cx, JSOPTION_ION);
+    if (enableBaseline)
+        JS_ToggleOptions(cx, JSOPTION_BASELINE);
     if (enableAsmJS)
         JS_ToggleOptions(cx, JSOPTION_ASMJS);
     return cx;
@@ -4946,6 +4951,11 @@ ProcessArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
         JS_ToggleOptions(cx, JSOPTION_ASMJS);
     }
 
+    if (op->getBoolOption("no-baseline")) {
+        enableBaseline = false;
+        JS_ToggleOptions(cx, JSOPTION_BASELINE);
+    }
+
     if (const char *str = op->getStringOption("ion-gvn")) {
         if (strcmp(str, "off") == 0)
             ion::js_IonOptions.gvn = false;
@@ -5014,6 +5024,13 @@ ProcessArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
     int32_t useCount = op->getIntOption("ion-uses-before-compile");
     if (useCount >= 0)
         ion::js_IonOptions.usesBeforeCompile = useCount;
+
+    useCount = op->getIntOption("baseline-uses-before-compile");
+    if (useCount >= 0)
+        ion::js_IonOptions.baselineUsesBeforeCompile = useCount;
+
+    if (op->getBoolOption("baseline-eager"))
+        ion::js_IonOptions.baselineUsesBeforeCompile = 0;
 
     if (const char *str = op->getStringOption("ion-regalloc")) {
         if (strcmp(str, "lsra") == 0)
@@ -5264,11 +5281,17 @@ main(int argc, char **argv, char **envp)
                                "  lsra: Linear Scan register allocation (default)\n"
                                "  backtracking: Priority based backtracking register allocation\n"
                                "  stupid: Simple block local register allocation")
-        || !op.addBoolOption('\0', "ion-eager", "Always ion-compile methods")
+        || !op.addBoolOption('\0', "ion-eager", "Always ion-compile methods (implies --baseline-eager)")
 #ifdef JS_THREADSAFE
         || !op.addStringOption('\0', "ion-parallel-compile", "on/off",
                                "Compile scripts off thread (default: off)")
 #endif
+        || !op.addBoolOption('\0', "baseline", "Enable baseline compiler (default)")
+        || !op.addBoolOption('\0', "no-baseline", "Disable baseline compiler")
+        || !op.addBoolOption('\0', "baseline-eager", "Always baseline-compile methods")
+        || !op.addIntOption('\0', "baseline-uses-before-compile", "COUNT",
+                            "Wait for COUNT calls or iterations before baseline-compiling "
+                            "(default: 10)", -1)
 #ifdef JSGC_GENERATIONAL
         || !op.addBoolOption('\0', "ggc", "Enable Generational GC")
 #endif
