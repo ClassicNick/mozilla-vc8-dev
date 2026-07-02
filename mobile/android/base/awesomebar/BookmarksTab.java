@@ -10,6 +10,7 @@ import org.mozilla.gecko.db.BrowserContract.Bookmarks;
 import org.mozilla.gecko.db.BrowserContract.Combined;
 import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.db.BrowserDB.URLColumns;
+import org.mozilla.gecko.util.ThreadUtils;
 
 import android.app.Activity;
 import android.content.Context;
@@ -57,7 +58,7 @@ public class BookmarksTab extends AwesomeBarTab {
     @Override
     public View getView() {
         if (mView == null) {
-            mView = (LayoutInflater.from(mContext).inflate(R.layout.awesomebar_list, null));
+            mView = new ListView(mContext, null);
             ((Activity)mContext).registerForContextMenu(mView);
             mView.setTag(TAG);
             mView.setOnTouchListener(mListListener);
@@ -368,7 +369,7 @@ public class BookmarksTab extends AwesomeBarTab {
         @Override
         protected void onPostExecute(final Cursor cursor) {
             // Hack: force this to the main thread, even though it should already be on it
-            GeckoApp.mAppContext.mMainHandler.post(new Runnable() {
+            ThreadUtils.postToUiThread(new Runnable() {
                 @Override
                 public void run() {
                     // this will update the cursorAdapter to use the new one if it already exists

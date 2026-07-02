@@ -1217,7 +1217,7 @@ nsHTMLInputElement::SetValue(const nsAString& aValue)
     }
   }
   else {
-    if (IsSingleLineTextControl(false)) {
+    if (MayFireChangeOnBlur()) {
       // If the value has been set by a script, we basically want to keep the
       // current change event state. If the element is ready to fire a change
       // event, we should keep it that way. Otherwise, we should make sure the
@@ -1947,7 +1947,7 @@ nsHTMLInputElement::FireChangeEventIfNeeded()
   nsString value;
   GetValueInternal(value);
 
-  if (!IsSingleLineTextControl(false) || mFocusedValue.Equals(value)) {
+  if (!MayFireChangeOnBlur() || mFocusedValue.Equals(value)) {
     return;
   }
 
@@ -2576,17 +2576,31 @@ nsHTMLInputElement::FinishRangeThumbDrag(nsGUIEvent* aEvent)
     SetValueOfRangeForUserEvent(rangeFrame->GetValueAtEventPoint(aEvent));
   }
   mIsDraggingRange = false;
+  FireChangeEventIfNeeded();
 }
 
 void
-nsHTMLInputElement::CancelRangeThumbDrag()
+nsHTMLInputElement::CancelRangeThumbDrag(bool aIsForUserEvent)
 {
   MOZ_ASSERT(mIsDraggingRange);
 
   if (nsIPresShell::GetCapturingContent() == this) {
     nsIPresShell::SetCapturingContent(nullptr, 0); // cancel capture
   }
-  SetValueOfRangeForUserEvent(mRangeThumbDragStartValue);
+  if (aIsForUserEvent) {
+    SetValueOfRangeForUserEvent(mRangeThumbDragStartValue);
+  } else {
+    // Don't dispatch an 'input' event - at least not using
+    // DispatchTrustedEvent.
+    // TODO: decide what we should do here - bug 851782.
+    nsAutoString val;
+    ConvertNumberToString(mRangeThumbDragStartValue, val);
+    SetValueInternal(val, true, true);
+    nsRangeFrame* frame = do_QueryFrame(GetPrimaryFrame());
+    if (frame) {
+      frame->UpdateThumbPositionForValueChange();
+    }
+  }
   mIsDraggingRange = false;
 }
 
@@ -2602,6 +2616,10 @@ nsHTMLInputElement::SetValueOfRangeForUserEvent(double aValue)
   if (frame) {
     frame->UpdateThumbPositionForValueChange();
   }
+  nsContentUtils::DispatchTrustedEvent(OwnerDoc(),
+                                       static_cast<nsIDOMHTMLInputElement*>(this),
+                                       NS_LITERAL_STRING("input"), true,
+                                       false);
 }
 
 static bool
@@ -2643,7 +2661,7 @@ nsHTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
   if (aVisitor.mEvent->message == NS_FOCUS_CONTENT ||
       aVisitor.mEvent->message == NS_BLUR_CONTENT) {
     if (aVisitor.mEvent->message == NS_FOCUS_CONTENT && 
-        IsSingleLineTextControl(false)) {
+        MayFireChangeOnBlur()) {
       GetValueInternal(mFocusedValue);
     }
 
@@ -3247,7 +3265,7 @@ void
 nsHTMLInputElement::HandleTypeChange(uint8_t aNewType)
 {
   if (mType == NS_FORM_INPUT_RANGE && mIsDraggingRange) {
-    CancelRangeThumbDrag();
+    CancelRangeThumbDrag(false);
   }
 
   ValueModeType aOldValueMode = GetValueMode();
@@ -3302,12 +3320,11 @@ nsHTMLInputElement::HandleTypeChange(uint8_t aNewType)
   }
 
   // Updating mFocusedValue in consequence:
-  // If the new type is a single line text control but the previous wasn't, we
-  // should set mFocusedValue to the current value.
-  // Otherwise, if the new type isn't a text control but the previous was, we
-  // should clear out mFocusedValue.
-  if (IsSingleLineTextControl(mType, false) &&
-      !IsSingleLineTextControl(oldType, false)) {
+  // If the new type fires a change event on blur, but the previous type
+  // doesn't, we should set mFocusedValue to the current value.
+  // Otherwise, if the new type doesn't fire a change event on blur, but the
+  // previous type does, we should clear out mFocusedValue.
+  if (MayFireChangeOnBlur(mType) && !MayFireChangeOnBlur(oldType)) {
     GetValueInternal(mFocusedValue);
   } else if (!IsSingleLineTextControl(mType, false) &&
              IsSingleLineTextControl(oldType, false)) {

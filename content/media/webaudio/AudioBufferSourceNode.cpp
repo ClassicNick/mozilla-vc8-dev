@@ -113,7 +113,7 @@ public:
                       TrackTicks* aCurrentPosition,
                       TrackTicks aMaxPos)
   {
-    uint32_t numFrames = std::min(WEBAUDIO_BLOCK_SIZE - *aOffsetWithinBlock,
+    uint32_t numFrames = NS_MIN(WEBAUDIO_BLOCK_SIZE - *aOffsetWithinBlock,
                                   uint32_t(aMaxPos - *aCurrentPosition));
     if (numFrames == WEBAUDIO_BLOCK_SIZE) {
       aOutput->SetNull(numFrames);
@@ -143,7 +143,7 @@ public:
                       uint32_t aBufferOffset,
                       uint32_t aBufferMax)
   {
-    uint32_t numFrames = std::min(std::min(WEBAUDIO_BLOCK_SIZE - *aOffsetWithinBlock,
+    uint32_t numFrames = NS_MIN(NS_MIN(WEBAUDIO_BLOCK_SIZE - *aOffsetWithinBlock,
                                            aBufferMax - aBufferOffset),
                                   uint32_t(mStop - *aCurrentPosition));
     if (numFrames == WEBAUDIO_BLOCK_SIZE) {
@@ -227,7 +227,8 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* aContext)
   , mStartCalled(false)
 {
   SetProduceOwnOutput(true);
-  mStream = aContext->Graph()->CreateAudioNodeStream(new AudioBufferSourceNodeEngine());
+  mStream = aContext->Graph()->CreateAudioNodeStream(new AudioBufferSourceNodeEngine(),
+                                                     MediaStreamGraph::INTERNAL_STREAM);
   mStream->AddMainThreadListener(this);
 }
 
@@ -277,7 +278,7 @@ AudioBufferSourceNode::Start(JSContext* aCx, double aWhen, double aOffset,
         mLoopStart >= 0.0 && mLoopEnd > 0.0 &&
         mLoopStart < mLoopEnd) {
       actualLoopStart = (mLoopStart > length) ? 0.0 : mLoopStart;
-      actualLoopEnd = std::min(mLoopEnd, length);
+      actualLoopEnd = NS_MIN(mLoopEnd, length);
     } else {
       actualLoopStart = 0.0;
       actualLoopEnd = length;
