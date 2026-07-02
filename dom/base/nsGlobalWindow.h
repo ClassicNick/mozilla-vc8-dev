@@ -73,7 +73,7 @@
 #endif // MOZ_B2G
 
 #ifdef MOZ_WEBSPEECH
-#include "nsIDOMSpeechSynthesisGetter.h"
+#include "nsISpeechSynthesisGetter.h"
 #endif // MOZ_WEBSPEECH
 
 #define DEFAULT_HOME_PAGE "www.mozilla.org"
@@ -123,6 +123,7 @@ namespace mozilla {
 namespace dom {
 class Navigator;
 class URL;
+class SpeechSynthesis;
 namespace indexedDB {
 class IDBFactory;
 } // namespace indexedDB
@@ -271,7 +272,7 @@ class nsGlobalWindow : public mozilla::dom::EventTarget,
                      , public nsIDOMWindowB2G
 #endif // MOZ_B2G
 #ifdef MOZ_WEBSPEECH
-                     , public nsIDOMSpeechSynthesisGetter
+                     , public nsISpeechSynthesisGetter
 #endif // MOZ_WEBSPEECH
 {
 public:
@@ -328,8 +329,8 @@ public:
 #endif // MOZ_B2G
 
 #ifdef MOZ_WEBSPEECH
-  // nsIDOMSpeechSynthesisGetter
-  NS_DECL_NSIDOMSPEECHSYNTHESISGETTER
+  // nsISpeechSynthesisGetter
+  NS_DECL_NSISPEECHSYNTHESISGETTER
 #endif // MOZ_WEBSPEECH
 
   // nsIDOMWindowPerformance
@@ -352,7 +353,7 @@ public:
   virtual NS_HIDDEN_(void) ActivateOrDeactivate(bool aActivate);
   virtual NS_HIDDEN_(void) SetActive(bool aActive);
   virtual NS_HIDDEN_(void) SetIsBackground(bool aIsBackground);
-  virtual NS_HIDDEN_(void) SetChromeEventHandler(nsIDOMEventTarget* aChromeEventHandler);
+  virtual NS_HIDDEN_(void) SetChromeEventHandler(mozilla::dom::EventTarget* aChromeEventHandler);
 
   virtual NS_HIDDEN_(void) SetInitialPrincipalToSubject();
 
@@ -414,12 +415,12 @@ public:
   static nsGlobalWindow *FromSupports(nsISupports *supports)
   {
     // Make sure this matches the casts we do in QueryInterface().
-    return (nsGlobalWindow *)(nsIDOMEventTarget *)supports;
+    return (nsGlobalWindow *)(mozilla::dom::EventTarget *)supports;
   }
   static nsISupports *ToSupports(nsGlobalWindow *win)
   {
     // Make sure this matches the casts we do in QueryInterface().
-    return (nsISupports *)(nsIDOMEventTarget *)win;
+    return (nsISupports *)(mozilla::dom::EventTarget *)win;
   }
   static nsGlobalWindow *FromWrapper(nsIXPConnectWrappedNative *wrapper)
   {
@@ -703,6 +704,10 @@ public:
 #undef ERROR_EVENT
 #undef EVENT
 
+#ifdef MOZ_WEBSPEECH
+  mozilla::dom::SpeechSynthesis* GetSpeechSynthesisInternal();
+#endif
+
 protected:
   // Array of idle observers that are notified of idle events.
   nsTObserverArray<IdleObserverHolder> mIdleObservers;
@@ -982,8 +987,10 @@ protected:
 
   void UpdateCanvasFocus(bool aFocusChanged, nsIContent* aNewContent);
 
-  already_AddRefed<nsPIWindowRoot> GetTopWindowRoot();
+public:
+  virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() MOZ_OVERRIDE;
 
+protected:
   static void NotifyDOMWindowDestroyed(nsGlobalWindow* aWindow);
   void NotifyWindowIDDestroyed(const char* aTopic);
 
@@ -1112,7 +1119,6 @@ protected:
   nsRefPtr<nsDOMWindowUtils>    mWindowUtils;
   nsString                      mStatus;
   nsString                      mDefaultStatus;
-  // index 0->language_id 1, so index MAX-1 == language_id MAX
   nsGlobalWindowObserver*       mObserver;
   nsCOMPtr<nsIDOMCrypto>        mCrypto;
 
@@ -1191,6 +1197,11 @@ protected:
   nsTHashtable<nsPtrHashKey<nsDOMEventTargetHelper> > mEventTargetObjects;
 
   nsTArray<uint32_t> mEnabledSensors;
+
+#ifdef MOZ_WEBSPEECH
+  // mSpeechSynthesis is only used on inner windows.
+  nsRefPtr<mozilla::dom::SpeechSynthesis> mSpeechSynthesis;
+#endif
 
   friend class nsDOMScriptableHelper;
   friend class nsDOMWindowUtils;
