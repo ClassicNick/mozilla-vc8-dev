@@ -31,10 +31,116 @@ const GUID KSDATAFORMAT_SUBTYPE_PCM =
 const GUID KSDATAFORMAT_SUBTYPE_IEEE_FLOAT =
 { 0x00000003, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
 
+typedef struct _MSPS_SLIST_ENTRY {
+    // Want a volatile pointer to non-volatile data so place after all type info
+    struct _MSPS_SLIST_ENTRY * volatile Next;
+} MSPS_SLIST_ENTRY, *MSPS_PSLIST_ENTRY;
+
+typedef union _MSPS_SLIST_HEADER {
+    // Provides 8 byte alignment for 32-bit builds.  Technically, not needed for
+    // current implementation below but leaving for future use.
+    ULONGLONG Alignment;
+    struct {
+        // Want a volatile pointer to non-volatile data so place after all type info
+        MSPS_PSLIST_ENTRY volatile Head;
+        volatile LONG Depth;
+        volatile LONG Mutex;
+    } List;
+} MSPS_SLIST_HEADER, *MSPS_PSLIST_HEADER;
+
 struct cubeb_stream_item {
   SLIST_ENTRY head;
   cubeb_stream * stream;
 };
+
+/* Portable implementation From MSPS */
+
+void WINAPI InitializeSListHead_kex(MSPS_PSLIST_HEADER ListHeader)
+{
+    //XASSERT( ListHeader != NULL );
+    if ( ListHeader == NULL ) {
+        return;
+    }
+
+    ListHeader->List.Head = NULL;
+    ListHeader->List.Depth = 0;
+    ListHeader->List.Mutex = 0;
+}
+
+MSPS_PSLIST_ENTRY WINAPI InterlockedPopEntrySList_kex(MSPS_PSLIST_HEADER ListHeader)
+{
+    MSPS_PSLIST_ENTRY oldHead = ListHeader->List.Head;
+    if ( oldHead == NULL ) {
+        return NULL;
+    }
+
+    while ( ListHeader->List.Mutex != 0 || InterlockedCompareExchange( &ListHeader->List.Mutex, 1, 0 ) != 0 ) {
+        // Spin until 'mutex' is free
+    }
+
+    // We have the 'mutex' so proceed with update
+    oldHead = ListHeader->List.Head;
+    if ( oldHead != NULL ) {
+        ListHeader->List.Head = oldHead->Next;
+        --(ListHeader->List.Depth);
+        //XASSERT( ListHeader->List.Depth <= 0 );
+        if ( !(ListHeader->List.Depth <= 0) ) {
+            return NULL;
+        }
+    }
+
+    // Free the 'mutex'
+    ListHeader->List.Mutex = 0;
+
+    return oldHead;
+}
+
+MSPS_PSLIST_ENTRY WINAPI InterlockedPushEntrySList_kex(MSPS_PSLIST_HEADER ListHeader, MSPS_PSLIST_ENTRY ListEntry)
+{
+    MSPS_PSLIST_ENTRY oldHead;
+    //XASSERT( ListHeader != NULL );
+    if ( ListHeader == NULL ) {
+        return NULL;
+    }
+
+    while ( ListHeader->List.Mutex != 0 || InterlockedCompareExchange( &ListHeader->List.Mutex, 1, 0 ) != 0 ) {
+        // Spin until 'mutex' is free
+    }
+
+    // We have the 'mutex' so proceed with update
+    oldHead = ListHeader->List.Head;
+    ListEntry->Next = oldHead;
+    ListHeader->List.Head = ListEntry;
+    ++(ListHeader->List.Depth);
+
+    // Free the 'mutex'
+    ListHeader->List.Mutex = 0;
+
+    return oldHead;
+}
+
+MSPS_PSLIST_ENTRY WINAPI InterlockedFlushSList_kex(MSPS_PSLIST_HEADER ListHeader)
+{
+    MSPS_PSLIST_ENTRY oldHead;
+    //XASSERT( ListHeader != NULL );
+    if ( ListHeader == NULL ) {
+        return NULL;
+    }
+
+    while ( ListHeader->List.Mutex != 0 || InterlockedCompareExchange( &ListHeader->List.Mutex, 1, 0 ) != 0 ) {
+        // Spin until 'mutex' is free
+    }
+
+    // We have the 'mutex' so proceed with update
+    oldHead = ListHeader->List.Head;
+    ListHeader->List.Head = NULL;
+    ListHeader->List.Depth = 0;
+
+    // Free the 'mutex'
+    ListHeader->List.Mutex = 0;
+
+    return oldHead;
+}
 
 static struct cubeb_ops const winmm_ops;
 
@@ -176,7 +282,7 @@ winmm_buffer_thread(void * user_ptr)
     /* Process work items in batches so that a single stream can't
        starve the others by continuously adding new work to the top of
        the work item stack. */
-    item = InterlockedFlushSList(ctx->work);
+    item = InterlockedFlushSList_kex(ctx->work);
     while (item != NULL) {
       PSLIST_ENTRY tmp = item;
       winmm_refill_stream(((struct cubeb_stream_item *) tmp)->stream);
@@ -205,7 +311,7 @@ winmm_buffer_callback(HWAVEOUT waveout, UINT msg, DWORD_PTR user_ptr, DWORD_PTR 
   item = _aligned_malloc(sizeof(struct cubeb_stream_item), MEMORY_ALLOCATION_ALIGNMENT);
   assert(item);
   item->stream = stm;
-  InterlockedPushEntrySList(stm->context->work, &item->head);
+  InterlockedPushEntrySList_kex(stm->context->work, &item->head);
 
   SetEvent(stm->context->event);
 }
@@ -255,7 +361,7 @@ winmm_init(cubeb ** context, char const * context_name)
 
   ctx->work = _aligned_malloc(sizeof(*ctx->work), MEMORY_ALLOCATION_ALIGNMENT);
   assert(ctx->work);
-  InitializeSListHead(ctx->work);
+  InitializeSListHead_kex(ctx->work);
 
   ctx->event = CreateEvent(NULL, FALSE, FALSE, NULL);
   if (!ctx->event) {
@@ -293,7 +399,7 @@ winmm_destroy(cubeb * ctx)
   DWORD rv;
 
   assert(ctx->active_streams == 0);
-  assert(!InterlockedPopEntrySList(ctx->work));
+  assert(!InterlockedPopEntrySList_kex(ctx->work));
 
   DeleteCriticalSection(&ctx->lock);
 

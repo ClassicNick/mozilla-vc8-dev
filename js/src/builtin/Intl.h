@@ -35,6 +35,16 @@ namespace js {
 /******************** Collator ********************/
 
 /**
+ * Returns a new instance of the standard built-in Collator constructor.
+ * Self-hosted code cannot cache this constructor (as it does for others in
+ * Utilities.js) because it is initialized after self-hosted code is compiled.
+ *
+ * Usage: collator = intl_Collator(locales, options)
+ */
+extern JSBool
+intl_Collator(JSContext *cx, unsigned argc, Value *vp);
+
+/**
  * Returns an object indicating the supported locales for collation
  * by having a true-valued property for each such locale with the
  * canonicalized language tag as the property name. The object has no
@@ -73,6 +83,16 @@ intl_CompareStrings(JSContext *cx, unsigned argc, Value *vp);
 /******************** NumberFormat ********************/
 
 /**
+ * Returns a new instance of the standard built-in NumberFormat constructor.
+ * Self-hosted code cannot cache this constructor (as it does for others in
+ * Utilities.js) because it is initialized after self-hosted code is compiled.
+ *
+ * Usage: numberFormat = intl_NumberFormat(locales, options)
+ */
+extern JSBool
+intl_NumberFormat(JSContext *cx, unsigned argc, Value *vp);
+
+/**
  * Returns an object indicating the supported locales for number formatting
  * by having a true-valued property for each such locale with the
  * canonicalized language tag as the property name. The object has no
@@ -92,6 +112,75 @@ intl_NumberFormat_availableLocales(JSContext *cx, unsigned argc, Value *vp);
  */
 extern JSBool
 intl_numberingSystem(JSContext *cx, unsigned argc, Value *vp);
+
+/**
+ * Returns a string representing the number x according to the effective
+ * locale and the formatting options of the given NumberFormat.
+ *
+ * Spec: ECMAScript Internationalization API Specification, 11.3.2.
+ *
+ * Usage: formatted = intl_FormatNumber(numberFormat, x)
+ */
+extern JSBool
+intl_FormatNumber(JSContext *cx, unsigned argc, Value *vp);
+
+
+/******************** DateTimeFormat ********************/
+
+/**
+ * Returns a new instance of the standard built-in DateTimeFormat constructor.
+ * Self-hosted code cannot cache this constructor (as it does for others in
+ * Utilities.js) because it is initialized after self-hosted code is compiled.
+ *
+ * Usage: dateTimeFormat = intl_DateTimeFormat(locales, options)
+ */
+extern JSBool
+intl_DateTimeFormat(JSContext *cx, unsigned argc, Value *vp);
+
+/**
+ * Returns an object indicating the supported locales for date and time
+ * formatting by having a true-valued property for each such locale with the
+ * canonicalized language tag as the property name. The object has no
+ * prototype.
+ *
+ * Usage: availableLocales = intl_DateTimeFormat_availableLocales()
+ */
+extern JSBool
+intl_DateTimeFormat_availableLocales(JSContext *cx, unsigned argc, Value *vp);
+
+/**
+ * Returns an array with the calendar type identifiers per Unicode
+ * Technical Standard 35, Unicode Locale Data Markup Language, for the
+ * supported calendars for the given locale. The default calendar is
+ * element 0.
+ *
+ * Usage: calendars = intl_availableCalendars(locale)
+ */
+extern JSBool
+intl_availableCalendars(JSContext *cx, unsigned argc, Value *vp);
+
+/**
+ * Return a pattern in the date-time format pattern language of Unicode
+ * Technical Standard 35, Unicode Locale Data Markup Language, for the
+ * best-fit date-time format pattern corresponding to skeleton for the
+ * given locale.
+ *
+ * Usage: pattern = intl_patternForSkeleton(locale, skeleton)
+ */
+extern JSBool
+intl_patternForSkeleton(JSContext *cx, unsigned argc, Value *vp);
+
+/**
+ * Returns a String value representing x (which must be a Number value)
+ * according to the effective locale and the formatting options of the
+ * given DateTimeFormat.
+ *
+ * Spec: ECMAScript Internationalization API Specification, 12.3.2.
+ *
+ * Usage: formatted = intl_FormatDateTime(dateTimeFormat, x)
+ */
+extern JSBool
+intl_FormatDateTime(JSContext *cx, unsigned argc, Value *vp);
 
 } // namespace js
 

@@ -125,9 +125,7 @@ DOMCI_CLASS(TimeEvent)
 DOMCI_CLASS(SVGFEConvolveMatrixElement)
 DOMCI_CLASS(SVGFEDiffuseLightingElement)
 DOMCI_CLASS(SVGFEDisplacementMapElement)
-DOMCI_CLASS(SVGFEGaussianBlurElement)
 DOMCI_CLASS(SVGFEMorphologyElement)
-DOMCI_CLASS(SVGFEOffsetElement)
 DOMCI_CLASS(SVGFESpecularLightingElement)
 DOMCI_CLASS(SVGFESpotLightElement)
 DOMCI_CLASS(SVGFETurbulenceElement)
@@ -263,6 +261,10 @@ DOMCI_CLASS(IDBOpenDBRequest)
 DOMCI_CLASS(Touch)
 DOMCI_CLASS(TouchList)
 DOMCI_CLASS(TouchEvent)
+
+#ifdef MOZ_GAMEPAD
+DOMCI_CLASS(Gamepad)
+#endif
 
 DOMCI_CLASS(MozCSSKeyframeRule)
 DOMCI_CLASS(MozCSSKeyframesRule)

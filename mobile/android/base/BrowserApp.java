@@ -65,6 +65,8 @@ abstract public class BrowserApp extends GeckoApp
 
     private static final String PREF_CHROME_DYNAMICTOOLBAR = "browser.chrome.dynamictoolbar";
 
+    private static final int TABS_ANIMATION_DURATION = 450;
+
     public static BrowserToolbar mBrowserToolbar;
     private AboutHomeContent mAboutHomeContent;
     private Boolean mAboutHomeShowing = null;
@@ -107,10 +109,6 @@ abstract public class BrowserApp extends GeckoApp
 
     // Whether the dynamic toolbar pref is enabled.
     private boolean mDynamicToolbarEnabled = false;
-
-    // The widget used to push the LayerView below the address bar when the
-    // toolbar is disabled.
-    private View mToolbarSpacer = null;
 
     // The last recorded touch event from onInterceptTouchEvent. These are
     // not updated until the movement threshold has been exceeded.
@@ -220,6 +218,14 @@ abstract public class BrowserApp extends GeckoApp
             return super.onInterceptTouchEvent(view, event);
         }
 
+        // Don't let the toolbar scroll at all if the page is shorter than
+        // the screen height.
+        ImmutableViewportMetrics metrics =
+            mLayerView.getLayerClient().getViewportMetrics();
+        if (metrics.getPageHeight() < metrics.getHeight()) {
+            return super.onInterceptTouchEvent(view, event);
+        }
+
         int action = event.getActionMasked();
         int pointerCount = event.getPointerCount();
 
@@ -302,8 +308,6 @@ abstract public class BrowserApp extends GeckoApp
 
             // Don't let the toolbar scroll off the top if it's just exposing
             // overscroll area.
-            ImmutableViewportMetrics metrics =
-                mLayerView.getLayerClient().getViewportMetrics();
             float toolbarMaxY = Math.min(toolbarHeight,
                 Math.max(0, toolbarHeight - (metrics.pageRectTop -
                                              metrics.viewportRectTop)));
@@ -431,8 +435,6 @@ abstract public class BrowserApp extends GeckoApp
 
         super.onCreate(savedInstanceState);
 
-        mToolbarSpacer = findViewById(R.id.toolbar_spacer);
-
         LinearLayout actionBar = (LinearLayout) getActionBarLayout();
         mMainLayout.addView(actionBar, 2);
 
@@ -490,7 +492,7 @@ abstract public class BrowserApp extends GeckoApp
                     @Override
                     public void run() {
                         if (mDynamicToolbarEnabled) {
-                            mToolbarSpacer.setPadding(0, 0, 0, 0);
+                            setToolbarMargin(0);
                         } else {
                             // Immediately show the toolbar when disabling the dynamic
                             // toolbar.
@@ -517,7 +519,6 @@ abstract public class BrowserApp extends GeckoApp
 
     @Override
     public void onDestroy() {
-        super.onDestroy();
         if (mPrefObserverId != null) {
             PrefsHelper.removeObserver(mPrefObserverId);
             mPrefObserverId = null;
@@ -543,6 +544,8 @@ abstract public class BrowserApp extends GeckoApp
                 nfc.setNdefPushMessageCallback(null, this);
             }
         }
+
+        super.onDestroy();
     }
 
     @Override
@@ -592,6 +595,16 @@ abstract public class BrowserApp extends GeckoApp
         mLayerView.setOnKeyListener(this);
     }
 
+    private void setSidebarMargin(int margin) {
+        ((RelativeLayout.LayoutParams) mGeckoLayout.getLayoutParams()).leftMargin = margin;
+        mGeckoLayout.requestLayout();
+    }
+
+    private void setToolbarMargin(int margin) {
+        ((RelativeLayout.LayoutParams) mGeckoLayout.getLayoutParams()).topMargin = margin;
+        mGeckoLayout.requestLayout();
+    }
+
     public void setToolbarHeight(int aHeight, int aVisibleHeight) {
         if (!mDynamicToolbarEnabled || Boolean.TRUE.equals(mAboutHomeShowing)) {
             // Use aVisibleHeight here so that when the dynamic toolbar is
@@ -603,11 +616,11 @@ abstract public class BrowserApp extends GeckoApp
                 // LayerView, which can cause visible artifacts.
                 mAboutHomeContent.setPadding(0, aVisibleHeight, 0, 0);
             } else {
-                mToolbarSpacer.setPadding(0, aVisibleHeight, 0, 0);
+                setToolbarMargin(aVisibleHeight);
             }
             aHeight = aVisibleHeight = 0;
         } else {
-            mToolbarSpacer.setPadding(0, 0, 0, 0);
+            setToolbarMargin(0);
         }
 
         // Update the Gecko-side global for fixed viewport margins.
@@ -748,9 +761,7 @@ abstract public class BrowserApp extends GeckoApp
             }
 
             mBrowserToolbar.adjustForTabsLayout(width);
-
-            ((RelativeLayout.LayoutParams) mGeckoLayout.getLayoutParams()).setMargins(width, 0, 0, 0);
-            mGeckoLayout.requestLayout();
+            setSidebarMargin(width);
         }
 
         if (changed) {
@@ -957,13 +968,17 @@ abstract public class BrowserApp extends GeckoApp
 
     @Override
     public void onTabsLayoutChange(int width, int height) {
-        if (mMainLayoutAnimator != null)
-            mMainLayoutAnimator.stop();
+        int animationLength = TABS_ANIMATION_DURATION;
+
+        if (mMainLayoutAnimator != null) {
+            animationLength = Math.max(1, animationLength - (int)mMainLayoutAnimator.getRemainingTime());
+            mMainLayoutAnimator.stop(false);
+        }
 
         if (mTabsPanel.isShown())
             mTabsPanel.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
 
-        mMainLayoutAnimator = new PropertyAnimator(450, sTabsInterpolator);
+        mMainLayoutAnimator = new PropertyAnimator(animationLength, sTabsInterpolator);
         mMainLayoutAnimator.setPropertyAnimationListener(this);
 
         boolean usingTextureView = mLayerView.shouldUseTextureView();
@@ -974,9 +989,8 @@ abstract public class BrowserApp extends GeckoApp
 
             // Set the gecko layout for sliding.
             if (!mTabsPanel.isShown()) {
-                ((RelativeLayout.LayoutParams) mGeckoLayout.getLayoutParams()).setMargins(0, 0, 0, 0);
                 mGeckoLayout.scrollTo(mTabsPanel.getWidth() * -1, 0);
-                mGeckoLayout.requestLayout();
+                setSidebarMargin(0);
             }
 
             mMainLayoutAnimator.attach(mGeckoLayout,
@@ -1023,7 +1037,7 @@ abstract public class BrowserApp extends GeckoApp
 
         if (mTabsPanel.isShown()) {
             if (hasTabsSideBar()) {
-                ((RelativeLayout.LayoutParams) mGeckoLayout.getLayoutParams()).setMargins(mTabsPanel.getWidth(), 0, 0, 0);
+                setSidebarMargin(mTabsPanel.getWidth());
                 mGeckoLayout.scrollTo(0, 0);
             }
 
@@ -1039,6 +1053,8 @@ abstract public class BrowserApp extends GeckoApp
 
         if (hasTabsSideBar())
             mBrowserToolbar.adjustTabsAnimation(true);
+
+        mMainLayoutAnimator = null;
     }
 
     /* Favicon methods */
@@ -1374,6 +1390,9 @@ abstract public class BrowserApp extends GeckoApp
 
         if (!mBrowserToolbar.openOptionsMenu())
             super.openOptionsMenu();
+
+        if (mDynamicToolbarEnabled)
+            mBrowserToolbar.animateVisibility(true);
     }
 
     @Override
@@ -1617,6 +1636,13 @@ abstract public class BrowserApp extends GeckoApp
                     Tabs.getInstance().loadUrlInTab("about:feedback");
             }
         }).execute();
+    }
+
+    @Override
+    protected NotificationClient makeNotificationClient() {
+        // The service is local to Fennec, so we can use it to keep
+        // Fennec alive during downloads.
+        return new ServiceNotificationClient(getApplicationContext());
     }
 
     private void resetFeedbackLaunchCount() {

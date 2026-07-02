@@ -69,6 +69,7 @@ webidl_files = \
   HTMLAnchorElement.webidl \
   HTMLAppletElement.webidl \
   HTMLAreaElement.webidl \
+  HTMLAudioElement.webidl \
   HTMLBaseElement.webidl \
   HTMLBodyElement.webidl \
   HTMLBRElement.webidl \
@@ -90,12 +91,14 @@ webidl_files = \
   HTMLHeadingElement.webidl \
   HTMLHRElement.webidl \
   HTMLHtmlElement.webidl \
+  HTMLIFrameElement.webidl \
   HTMLImageElement.webidl \
   HTMLLabelElement.webidl \
   HTMLLegendElement.webidl \
   HTMLLIElement.webidl \
   HTMLLinkElement.webidl \
   HTMLMapElement.webidl \
+  HTMLMediaElement.webidl \
   HTMLMenuElement.webidl \
   HTMLMenuItemElement.webidl \
   HTMLMetaElement.webidl \
@@ -126,6 +129,7 @@ webidl_files = \
   HTMLTimeElement.webidl \
   HTMLTitleElement.webidl \
   HTMLUListElement.webidl \
+  HTMLVideoElement.webidl \
   IDBVersionChangeEvent.webidl \
   ImageData.webidl \
   InspectorUtils.webidl \
@@ -177,6 +181,7 @@ webidl_files = \
   SVGComponentTransferFunctionElement.webidl \
   SVGDefsElement.webidl \
   SVGDescElement.webidl \
+  SVGDocument.webidl \
   SVGElement.webidl \
   SVGEllipseElement.webidl \
   SVGFilterElement.webidl \
@@ -191,9 +196,11 @@ webidl_files = \
   SVGFEFuncBElement.webidl \
   SVGFEFuncGElement.webidl \
   SVGFEFuncRElement.webidl \
+  SVGFEGaussianBlurElement.webidl \
   SVGFEImageElement.webidl \
   SVGFEMergeElement.webidl \
   SVGFEMergeNodeElement.webidl \
+  SVGFEOffsetElement.webidl \
   SVGFEPointLightElement.webidl \
   SVGFETileElement.webidl \
   SVGFitToViewBox.webidl \

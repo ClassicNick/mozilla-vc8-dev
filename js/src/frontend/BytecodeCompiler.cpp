@@ -66,6 +66,12 @@ CheckArgumentsWithinEval(JSContext *cx, Parser<FullParseHandler> &parser, Handle
             return false;
     }
 
+    // It's an error to use |arguments| in a generator expression.
+    if (script->isGeneratorExp) {
+        parser.report(ParseError, false, NULL, JSMSG_BAD_GENEXP_BODY, js_arguments_str);
+        return false;
+    }
+
     return true;
 }
 
@@ -79,19 +85,6 @@ frontend::CompileScript(JSContext *cx, HandleObject scopeChain,
                         SourceCompressionToken *extraSct /* = NULL */)
 {
     RootedString source(cx, source_);
-
-    class ProbesManager
-    {
-        const char* filename;
-        unsigned lineno;
-
-      public:
-        ProbesManager(const char *f, unsigned l) : filename(f), lineno(l) {
-			js::Probes::compileScriptBegin(filename, lineno);
-        }
-		~ProbesManager() { js::Probes::compileScriptEnd(filename, lineno); }
-    };
-    ProbesManager probesManager(options.filename, options.lineno);
 
     /*
      * The scripted callerFrame can only be given for compile-and-go scripts

@@ -126,15 +126,12 @@ abstract public class GeckoApp
         PREFETCH    /* launched with a passed URL that we prefetch */
     }
 
-    public static final String ACTION_ALERT_CLICK   = "org.mozilla.gecko.ACTION_ALERT_CLICK";
-    public static final String ACTION_ALERT_CLEAR   = "org.mozilla.gecko.ACTION_ALERT_CLEAR";
     public static final String ACTION_ALERT_CALLBACK = "org.mozilla.gecko.ACTION_ALERT_CALLBACK";
     public static final String ACTION_WEBAPP_PREFIX = "org.mozilla.gecko.WEBAPP";
     public static final String ACTION_DEBUG         = "org.mozilla.gecko.DEBUG";
     public static final String ACTION_BOOKMARK      = "org.mozilla.gecko.BOOKMARK";
     public static final String ACTION_LOAD          = "org.mozilla.gecko.LOAD";
     public static final String ACTION_INIT_PW       = "org.mozilla.gecko.INIT_PW";
-    public static final String ACTION_WIDGET        = "org.mozilla.gecko.WIDGET";
     public static final String SAVED_STATE_IN_BACKGROUND = "inBackground";
     public static final String SAVED_STATE_PRIVATE_SESSION = "privateSession";
 
@@ -1459,6 +1456,8 @@ abstract public class GeckoApp
                 editor.commit();
             }
         });
+
+        GeckoAppShell.setNotificationClient(makeNotificationClient());
     }
 
     protected void initializeChrome(String uri, boolean isExternalURL) {
@@ -1476,7 +1475,7 @@ abstract public class GeckoApp
             layerView.initializeView(GeckoAppShell.getEventDispatcher());
             mLayerView = layerView;
             // bind the GeckoEditable instance to the new LayerView
-            GeckoAppShell.notifyIMEEnabled(GeckoEditableListener.IME_STATE_DISABLED, "", "", "", false);
+            GeckoAppShell.notifyIMEContext(GeckoEditableListener.IME_STATE_DISABLED, "", "", "");
         }
     }
 
@@ -1747,14 +1746,7 @@ abstract public class GeckoApp
             GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("Viewport:Flush", null));
         }
 
-        // Homescreen Widget requests awesome bar
-        if (ACTION_WIDGET.equals(action)) {
-            if (mRestoreMode != RESTORE_NONE && !mIsRestoringActivity) {
-                addTab();
-            } else {
-                onSearchRequested();
-            }
-        } else if (ACTION_ALERT_CALLBACK.equals(action)) {
+        if (ACTION_ALERT_CALLBACK.equals(action)) {
             processAlertCallback(intent);
         }
     }
@@ -1900,8 +1892,6 @@ abstract public class GeckoApp
             GeckoAppShell.sendEventToGecko(GeckoEvent.createURILoadEvent(uri));
         } else if (ACTION_ALERT_CALLBACK.equals(action)) {
             processAlertCallback(intent);
-        } else if (ACTION_WIDGET.equals(action)) {
-            addTab();
         }
     }
 
@@ -2637,5 +2627,11 @@ abstract public class GeckoApp
             }
         }
         return false;
+    }
+
+    protected NotificationClient makeNotificationClient() {
+        // Don't use a notification service; we may be killed in the background
+        // during downloads.
+        return new AppNotificationClient(getApplicationContext());
     }
 }

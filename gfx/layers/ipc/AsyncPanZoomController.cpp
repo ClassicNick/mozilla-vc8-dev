@@ -224,20 +224,8 @@ WidgetSpaceToCompensatedViewportSpace(const gfx::Point& aPoint,
 }
 
 nsEventStatus
-AsyncPanZoomController::ReceiveInputEvent(const nsInputEvent& aEvent,
-                                          nsInputEvent* aOutEvent)
+AsyncPanZoomController::ReceiveMainThreadInputEvent(const nsInputEvent& aEvent)
 {
-  gfxFloat currentResolution;
-  gfx::Point currentScrollOffset, lastScrollOffset;
-  {
-    MonitorAutoLock monitor(mMonitor);
-    currentResolution = CalculateResolution(mFrameMetrics).width;
-    currentScrollOffset = gfx::Point(mFrameMetrics.mScrollOffset.x,
-                                     mFrameMetrics.mScrollOffset.y);
-    lastScrollOffset = gfx::Point(mLastContentPaintMetrics.mScrollOffset.x,
-                                  mLastContentPaintMetrics.mScrollOffset.y);
-  }
-
   nsEventStatus status;
   switch (aEvent.eventStructType) {
   case NS_TOUCH_EVENT: {
@@ -255,9 +243,21 @@ AsyncPanZoomController::ReceiveInputEvent(const nsInputEvent& aEvent,
     break;
   }
 
-  switch (aEvent.eventStructType) {
+  return status;
+}
+
+void
+AsyncPanZoomController::ApplyZoomCompensationToEvent(nsInputEvent* aEvent)
+{
+  gfxFloat currentResolution;
+  {
+    MonitorAutoLock monitor(mMonitor);
+    currentResolution = CalculateResolution(mFrameMetrics).width;
+  }
+
+  switch (aEvent->eventStructType) {
   case NS_TOUCH_EVENT: {
-    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aOutEvent);
+    nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aEvent);
     const nsTArray<nsCOMPtr<nsIDOMTouch> >& touches = touchEvent->touches;
     for (uint32_t i = 0; i < touches.Length(); ++i) {
       nsIDOMTouch* touch = touches[i];
@@ -272,14 +272,12 @@ AsyncPanZoomController::ReceiveInputEvent(const nsInputEvent& aEvent,
   }
   default: {
     gfx::Point refPoint = WidgetSpaceToCompensatedViewportSpace(
-      gfx::Point(aOutEvent->refPoint.x, aOutEvent->refPoint.y),
+      gfx::Point(aEvent->refPoint.x, aEvent->refPoint.y),
       currentResolution);
-    aOutEvent->refPoint = nsIntPoint(refPoint.x, refPoint.y);
+    aEvent->refPoint = nsIntPoint(refPoint.x, refPoint.y);
     break;
   }
   }
-
-  return status;
 }
 
 nsEventStatus AsyncPanZoomController::ReceiveInputEvent(const InputData& aEvent) {
@@ -933,12 +931,12 @@ const gfx::Rect AsyncPanZoomController::CalculatePendingDisplayPort(
   // down. i.e. we know that scrollableRect can go back as far as zero.
   // but we don't know how much further ahead it can go.
   if (scrollableRect.width < compositionBounds.width) {
-      scrollableRect.x = std::max(0.f,
+      scrollableRect.x = NS_MAX(0.f,
                                   scrollableRect.x - (compositionBounds.width - scrollableRect.width));
       scrollableRect.width = compositionBounds.width;
   }
   if (scrollableRect.height < compositionBounds.height) {
-      scrollableRect.y = std::max(0.f,
+      scrollableRect.y = NS_MAX(0.f,
                                   scrollableRect.y - (compositionBounds.height - scrollableRect.height));
       scrollableRect.height = compositionBounds.height;
   }
@@ -1359,15 +1357,15 @@ void AsyncPanZoomController::ZoomToRect(const gfxRect& aRect) {
     float localMinZoom;
     gfx::Rect compositedRect = CalculateCompositedRectInCssPixels(mFrameMetrics);
     localMinZoom =
-      std::max(currentZoom.width / (cssPageRect.width / compositedRect.width),
+      NS_MAX(currentZoom.width / (cssPageRect.width / compositedRect.width),
                currentZoom.height / (cssPageRect.height / compositedRect.height));
-    localMinZoom = std::max(localMinZoom, mMinZoom);
+    localMinZoom = NS_MAX(localMinZoom, mMinZoom);
 
     if (!zoomToRect.IsEmpty()) {
       // Intersect the zoom-to-rect to the CSS rect to make sure it fits.
       zoomToRect = zoomToRect.Intersect(cssPageRect);
       targetResolution =
-        std::min(compositionBounds.width / zoomToRect.width,
+        NS_MIN(compositionBounds.width / zoomToRect.width,
                  compositionBounds.height / zoomToRect.height);
       targetZoom = float(targetResolution / resolution.width) * currentZoom.width;
     }
@@ -1393,7 +1391,7 @@ void AsyncPanZoomController::ZoomToRect(const gfxRect& aRect) {
                              newHeight);
       zoomToRect = zoomToRect.Intersect(cssPageRect);
       targetResolution =
-        std::min(compositionBounds.width / zoomToRect.width,
+        NS_MIN(compositionBounds.width / zoomToRect.width,
                  compositionBounds.height / zoomToRect.height);
       targetZoom = float(targetResolution / resolution.width) * currentZoom.width;
     }

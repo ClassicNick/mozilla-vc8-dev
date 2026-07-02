@@ -129,15 +129,13 @@ nsTableRowFrame::~nsTableRowFrame()
 {
 }
 
-NS_IMETHODIMP
+void
 nsTableRowFrame::Init(nsIContent*      aContent,
                       nsIFrame*        aParent,
                       nsIFrame*        aPrevInFlow)
 {
-  nsresult  rv;
-
   // Let the base class do its initialization
-  rv = nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
+  nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
   NS_ASSERTION(NS_STYLE_DISPLAY_TABLE_ROW == StyleDisplay()->mDisplay,
                "wrong display on table row frame");
@@ -148,8 +146,6 @@ nsTableRowFrame::Init(nsIContent*      aContent,
     
     SetRowIndex(rowFrame->GetRowIndex());
   }
-
-  return rv;
 }
 
 /* virtual */ void

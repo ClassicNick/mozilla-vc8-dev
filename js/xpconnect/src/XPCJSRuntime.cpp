@@ -740,16 +740,16 @@ XPCJSRuntime::ReleaseIncrementally(nsTArray<nsISupports *> &array)
 
 /* static */ void
 XPCJSRuntime::GCSliceCallback(JSRuntime *rt,
-                              js::GCProgress progress,
-                              const js::GCDescription &desc)
+                              JS::GCProgress progress,
+                              const JS::GCDescription &desc)
 {
     XPCJSRuntime *self = nsXPConnect::GetRuntimeInstance();
     if (!self)
         return;
 
 #ifdef MOZ_CRASHREPORTER
-    CrashReporter::SetGarbageCollecting(progress == js::GC_CYCLE_BEGIN ||
-                                        progress == js::GC_SLICE_BEGIN);
+    CrashReporter::SetGarbageCollecting(progress == JS::GC_CYCLE_BEGIN ||
+                                        progress == JS::GC_SLICE_BEGIN);
 #endif
 
     if (self->mPrevGCSliceCallback)
@@ -788,7 +788,7 @@ XPCJSRuntime::GCCallback(JSRuntime *rt, JSGCStatus status)
                 self->mReleaseRunnable->ReleaseNow(false);
 
             // Do any deferred releases of native objects.
-            if (js::WasIncrementalGC(rt)) {
+            if (JS::WasIncrementalGC(rt)) {
                 self->ReleaseIncrementally(self->mNativesToReleaseArray);
             } else {
                 DoDeferredRelease(self->mNativesToReleaseArray);
@@ -1226,7 +1226,7 @@ XPCJSRuntime::~XPCJSRuntime()
 {
     MOZ_ASSERT(!mReleaseRunnable);
 
-    js::SetGCSliceCallback(mJSRuntime, mPrevGCSliceCallback);
+    JS::SetGCSliceCallback(mJSRuntime, mPrevGCSliceCallback);
 
     xpc_DelocalizeRuntime(mJSRuntime);
 
@@ -1427,6 +1427,7 @@ NS_MEMORY_REPORTER_IMPLEMENT(XPConnectJSGCHeap,
                              nsIMemoryReporter::UNITS_BYTES,
                              GetGCChunkTotalBytes,
                              "Memory used by the garbage-collected JavaScript heap.")
+
 static int64_t
 GetJSSystemCompartmentCount()
 {
@@ -1465,6 +1466,22 @@ NS_MEMORY_REPORTER_IMPLEMENT(XPConnectJSUserCompartmentCount,
     "and 'js-compartments-system' might not match the number of compartments "
     "listed under 'js' if a garbage collection occurs at an inopportune time, "
     "but such cases should be rare.")
+
+static int64_t
+GetJSMainRuntimeTemporaryPeakSize()
+{
+    return JS::PeakSizeOfTemporary(nsXPConnect::GetRuntimeInstance()->GetJSRuntime());
+}
+
+// This is also a single reporter so it can be used by telemetry.
+NS_MEMORY_REPORTER_IMPLEMENT(JSMainRuntimeTemporaryPeak,
+    "js-main-runtime-temporary-peak",
+    KIND_OTHER,
+    nsIMemoryReporter::UNITS_BYTES,
+    GetJSMainRuntimeTemporaryPeakSize,
+    "The peak size of the transient storage in the main JSRuntime (the "
+    "current size of which is reported as "
+    "'explicit/js-non-window/runtime/temporary').");
 
 // The REPORT* macros do an unconditional report.  The ZCREPORT* macros are for
 // compartments and zones; they aggregate any entries smaller than
@@ -1932,28 +1949,35 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   "Memory held transiently in JSRuntime and used during "
                   "compilation.  It mostly holds parse nodes.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/jaeger-code"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.jaegerCode,
-                  "Memory used by the JaegerMonkey JIT to hold the runtime's "
-                  "generated code.");
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/jaeger"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.jaeger,
+                  "Memory used by the JaegerMonkey JIT to hold generated code.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/ion-code"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.ionCode,
-                  "Memory used by the IonMonkey JIT to hold the runtime's "
-                  "generated code.");
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/ion"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.ion,
+                  "Memory used by the IonMonkey JIT to hold generated code.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/asm.js-code"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.asmJSCode,
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/baseline"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.baseline,
+                  "Memory used by the Baseline JIT to hold generated code.");
+
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/asm.js"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.asmJS,
                   "Memory used by AOT-compiled asm.js code.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/regexp-code"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.regexpCode,
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/regexp"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.regexp,
                   "Memory used by the regexp JIT to hold generated code.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/unused-code"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.unusedCode,
-                  "Memory allocated by one of the JITs to hold the "
-                  "runtime's code, but which is currently unused.");
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/other"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.other,
+                  "Memory used by the JITs to hold generated code for "
+                  "wrappers and trampolines.");
+
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/code/unused"),
+                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.code.unused,
+                  "Memory allocated by one of the JITs to hold code, "
+                  "but which is currently unused.");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/regexp-data"),
                   nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.regexpData,
@@ -2442,27 +2466,21 @@ PreserveWrapper(JSContext *cx, JSObject *obj)
     if (!ccx.IsValid())
         return false;
 
-    JSObject *obj2 = nullptr;
-    nsIXPConnectWrappedNative *wrapper =
-        XPCWrappedNative::GetWrappedNativeOfJSObject(cx, obj, nullptr, &obj2);
+    if (!IS_WRAPPER_CLASS(js::GetObjectClass(obj)))
+        return mozilla::dom::TryPreserveWrapper(obj);
+
     nsISupports *supports = nullptr;
+    if (IS_WN_WRAPPER_OBJECT(obj))
+        supports = XPCWrappedNative::Get(obj)->Native();
+    else
+        supports = static_cast<nsISupports*>(xpc_GetJSPrivate(obj));
 
-    if (wrapper) {
-        supports = wrapper->Native();
-    } else if (obj2) {
-        supports = static_cast<nsISupports*>(xpc_GetJSPrivate(obj2));
+    // For pre-Paris DOM bindings objects, we only support Node.
+    if (nsCOMPtr<nsINode> node = do_QueryInterface(supports)) {
+        nsContentUtils::PreserveWrapper(supports, node);
+        return true;
     }
-
-    if (supports) {
-        // For pre-Paris DOM bindings objects, we only support Node.
-        if (nsCOMPtr<nsINode> node = do_QueryInterface(supports)) {
-            nsContentUtils::PreserveWrapper(supports, node);
-            return true;
-        }
-        return false;
-    }
-
-    return mozilla::dom::TryPreserveWrapper(obj);
+    return false;
 }
 
 static nsresult
@@ -2635,7 +2653,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     JS_SetDestroyCompartmentCallback(mJSRuntime, CompartmentDestroyedCallback);
     JS_SetCompartmentNameCallback(mJSRuntime, CompartmentNameCallback);
     JS_SetGCCallback(mJSRuntime, GCCallback);
-    mPrevGCSliceCallback = js::SetGCSliceCallback(mJSRuntime, GCSliceCallback);
+    mPrevGCSliceCallback = JS::SetGCSliceCallback(mJSRuntime, GCSliceCallback);
     JS_SetFinalizeCallback(mJSRuntime, FinalizeCallback);
     JS_SetExtraGCRootsTracer(mJSRuntime, TraceBlackJS, this);
     JS_SetGrayGCRootsTracer(mJSRuntime, TraceGrayJS, this);
@@ -2682,6 +2700,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSGCHeap));
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSSystemCompartmentCount));
     NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(XPConnectJSUserCompartmentCount));
+    NS_RegisterMemoryReporter(new NS_MEMORY_REPORTER_NAME(JSMainRuntimeTemporaryPeak));
     NS_RegisterMemoryMultiReporter(new JSCompartmentsMultiReporter);
 
     mJSHolders.Init(512);
@@ -2908,7 +2927,7 @@ void
 XPCRootSetElem::RemoveFromRootSet(XPCLock *lock)
 {
     if (nsXPConnect *xpc = nsXPConnect::GetXPConnect())
-        js::PokeGC(xpc->GetRuntime()->GetJSRuntime());
+        JS::PokeGC(xpc->GetRuntime()->GetJSRuntime());
 
     NS_ASSERTION(mSelfp, "Must be linked");
 

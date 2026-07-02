@@ -154,13 +154,6 @@ var BrowserUI = {
         Util.dumpLn("Exception in delay load module:", ex.message);
       }
 
-      try {
-        // XXX This is currently failing
-        CapturePickerUI.init();
-      } catch(ex) {
-        Util.dumpLn("Exception in CapturePickerUI:", ex.message);
-      }
-
 #ifdef MOZ_UPDATER
       // Check for updates in progress
       let updatePrompt = Cc["@mozilla.org/updates/update-prompt;1"].createInstance(Ci.nsIUpdatePrompt);
@@ -1609,7 +1602,7 @@ var DialogUI = {
 
     let currentNode;
     let nodeIterator = xhr.responseXML.createNodeIterator(xhr.responseXML, NodeFilter.SHOW_TEXT, null, false);
-    while (currentNode = nodeIterator.nextNode()) {
+    while (!!(currentNode = nodeIterator.nextNode())) {
       let trimmed = currentNode.nodeValue.replace(/^\s\s*/, "").replace(/\s\s*$/, "");
       if (!trimmed.length)
         currentNode.parentNode.removeChild(currentNode);

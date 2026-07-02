@@ -376,7 +376,7 @@ ConservativeGCData::recordStackTop()
 }
 
 void
-AutoIdArray::trace(JSTracer *trc)
+JS::AutoIdArray::trace(JSTracer *trc)
 {
     JS_ASSERT(tag_ == IDARRAY);
     gc::MarkIdRange(trc, idArray->length, idArray->vector, "JSAutoIdArray.idArray");
@@ -492,8 +492,7 @@ AutoGCRooter::trace(JSTracer *trc)
 
       case SCRIPTVECTOR: {
         AutoScriptVector::VectorImpl &vector = static_cast<AutoScriptVector *>(this)->vector;
-        for (size_t i = 0; i < vector.length(); i++)
-            MarkScriptRoot(trc, &vector[i], "AutoScriptVector element");
+        MarkScriptRootRange(trc, vector.length(), vector.begin(), "js::AutoScriptVector.vector");
         return;
       }
 
@@ -628,8 +627,8 @@ AutoGCRooter::trace(JSTracer *trc)
     }
 
     JS_ASSERT(tag_ >= 0);
-    MarkValueRootRange(trc, tag_, static_cast<AutoArrayRooter *>(this)->array,
-                       "JS::AutoArrayRooter.array");
+    if (Value *vp = static_cast<AutoArrayRooter *>(this)->array)
+        MarkValueRootRange(trc, tag_, vp, "JS::AutoArrayRooter.array");
 }
 
 /* static */ void

@@ -207,7 +207,7 @@ protected:
   iterator begin() { return mData.Elements(); }
   iterator end() { return mData.Elements() + mData.Length(); }
 
-  nsTArray<float> mData;
+  FallibleTArray<float> mData;
 };
 
 

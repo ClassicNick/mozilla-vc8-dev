@@ -58,6 +58,8 @@ js_ReportAllocationOverflow(JSContext *cx);
 
 namespace js {
 
+typedef Rooted<JSLinearString*> RootedLinearString;
+
 struct CallsiteCloneKey {
     /* The original function that we are cloning. */
     JSFunction *original;
@@ -226,8 +228,9 @@ class SourceDataCache
 
 struct EvalCacheLookup
 {
-    JSLinearString *str;
-    JSFunction *caller;
+    EvalCacheLookup(JSContext *cx) : str(cx), caller(cx) {}
+    RootedLinearString str;
+    RootedFunction caller;
     unsigned staticLevel;
     JSVersion version;
     JSCompartment *compartment;
@@ -464,8 +467,6 @@ class PerThreadData : public js::PerThreadDataFriendFields
         SavedGCRoot(void *thing, JSGCTraceKind kind) : thing(thing), kind(kind) {}
     };
     js::Vector<SavedGCRoot, 0, js::SystemAllocPolicy> gcSavedRoots;
-
-    bool                gcRelaxRootChecks;
 #endif
 
     /*
@@ -752,6 +753,7 @@ struct JSRuntime : js::RuntimeFriendFields,
     //-------------------------------------------------------------------------
 
     bool initSelfHosting(JSContext *cx);
+    void finishSelfHosting();
     void markSelfHostingGlobal(JSTracer *trc);
     bool isSelfHostingGlobal(js::HandleObject global) {
         return global == selfHostingGlobal_;
@@ -896,7 +898,7 @@ struct JSRuntime : js::RuntimeFriendFields,
     bool                gcIsFull;
 
     /* The reason that an interrupt-triggered GC should be called. */
-    js::gcreason::Reason gcTriggerReason;
+    JS::gcreason::Reason gcTriggerReason;
 
     /*
      * If this is true, all marked objects must belong to a compartment being
@@ -1062,7 +1064,7 @@ struct JSRuntime : js::RuntimeFriendFields,
     bool                gcFullCompartmentChecks;
 
     JSGCCallback        gcCallback;
-    js::GCSliceCallback gcSliceCallback;
+    JS::GCSliceCallback gcSliceCallback;
     JSFinalizeCallback  gcFinalizeCallback;
 
     js::AnalysisPurgeCallback analysisPurgeCallback;
@@ -1179,10 +1181,12 @@ struct JSRuntime : js::RuntimeFriendFields,
      */
     uint32_t            propertyRemovals;
 
-    /* Number localization, used by jsnum.c */
+#if !ENABLE_INTL_API
+    /* Number localization, used by jsnum.cpp. */
     const char          *thousandsSeparator;
     const char          *decimalSeparator;
     const char          *numGrouping;
+#endif
 
   private:
     js::MathCache *mathCache_;
@@ -2329,6 +2333,7 @@ JSBool intrinsic_ThrowError(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_NewDenseArray(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_UnsafeSetElement(JSContext *cx, unsigned argc, Value *vp);
 JSBool intrinsic_ShouldForceSequential(JSContext *cx, unsigned argc, Value *vp);
+JSBool intrinsic_NewParallelArray(JSContext *cx, unsigned argc, Value *vp);
 
 #ifdef DEBUG
 JSBool intrinsic_Dump(JSContext *cx, unsigned argc, Value *vp);

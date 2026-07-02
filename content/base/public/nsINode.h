@@ -284,7 +284,7 @@ public:
   // - HTMLFrameSetElement:   mRowSpecs, mColSpecs
   // - nsHTMLInputElement:    mInputData, mFiles, mFileList, mStaticDocfileList
   // - nsHTMLMapElement:      mAreas
-  // - nsHTMLMediaElement:    many!
+  // - HTMLMediaElement:      many!
   // - nsHTMLOutputElement:   mDefaultValue, mTokenList
   // - nsHTMLRowElement:      mCells
   // - nsHTMLSelectElement:   mOptions, mRestoreState
@@ -360,7 +360,7 @@ public:
     /** data nodes (comments, PIs, text). Nodes of this type always
      returns a non-null value for nsIContent::GetText() */
     eDATA_NODE           = 1 << 8,
-    /** nsHTMLMediaElement */
+    /** HTMLMediaElement */
     eMEDIA               = 1 << 9,
     /** animation elements */
     eANIMATION           = 1 << 10,
@@ -1572,8 +1572,6 @@ public:
   {
     aLocalName = mNodeInfo->LocalName();
   }
-  // HasAttributes is defined inline in Element.h.
-  bool HasAttributes() const;
   nsDOMAttributeMap* GetAttributes();
   JS::Value SetUserData(JSContext* aCx, const nsAString& aKey, JS::Value aData,
                         nsIDOMUserDataHandler* aHandler,
@@ -2009,12 +2007,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsINode, NS_INODE_IID)
   NS_IMETHOD GetLocalName(nsAString& aLocalName) a \
   { \
     nsINode::GetLocalName(aLocalName); \
-    return NS_OK; \
-  } \
-  using nsINode::HasAttributes; \
-  NS_IMETHOD HasAttributes(bool* aResult) a \
-  { \
-    *aResult = nsINode::HasAttributes(); \
     return NS_OK; \
   } \
   NS_IMETHOD GetDOMBaseURI(nsAString& aBaseURI) a \
