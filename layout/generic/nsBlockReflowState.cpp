@@ -944,7 +944,11 @@ nsBlockReflowState::ClearFloats(nscoord aY, uint8_t aBreakType,
          aY, aBreakType);
   mFloatManager->List(stdout);
 #endif
-  
+
+  if (!mFloatManager->HasAnyFloats()) {
+    return aY;
+  }
+
   nscoord newY = aY;
 
   if (aBreakType != NS_STYLE_CLEAR_NONE) {
@@ -954,11 +958,16 @@ nsBlockReflowState::ClearFloats(nscoord aY, uint8_t aBreakType,
   if (aReplacedBlock) {
     for (;;) {
       nsFlowAreaRect floatAvailableSpace = GetFloatAvailableSpace(newY);
+      if (!floatAvailableSpace.mHasFloats) {
+        // If there aren't any floats here, then we always fit.
+        // We check this before calling WidthToClearPastFloats, which is
+        // somewhat expensive.
+        break;
+      }
       nsBlockFrame::ReplacedElementWidthToClear replacedWidth =
         nsBlockFrame::WidthToClearPastFloats(*this, floatAvailableSpace.mRect,
                                              aReplacedBlock);
-      if (!floatAvailableSpace.mHasFloats ||
-          NS_MAX(floatAvailableSpace.mRect.x - mContentArea.x,
+      if (NS_MAX(floatAvailableSpace.mRect.x - mContentArea.x,
                  replacedWidth.marginLeft) +
             replacedWidth.borderBoxWidth +
             NS_MAX(mContentArea.XMost() - floatAvailableSpace.mRect.XMost(),

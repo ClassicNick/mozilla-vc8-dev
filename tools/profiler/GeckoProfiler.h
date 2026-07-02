@@ -64,7 +64,7 @@
 // storage size in the circular buffer compared to regular labels. This function
 // can be used to annotate custom information such as URL for the resource being
 // decoded or the size of the paint.
-#define PROFILER_LABEL_PRINTF(name_space, info, format, ...) do {} while (0)
+#define PROFILER_LABEL_PRINTF(name_space, info, format, a) do {} while (0)
 
 // Insert a marker in the profile timeline. This is useful to delimit something
 // important happening such as the first paint. Unlike profiler_label that are
@@ -74,7 +74,7 @@
 
 // Main thread specilization to avoid TLS lookup for performance critical use.
 #define PROFILER_MAIN_THREAD_LABEL(name_space, info) do {} while (0)
-#define PROFILER_MAIN_THREAD_LABEL_PRINTF(name_space, info, format, ...) do {} while (0)
+#define PROFILER_MAIN_THREAD_LABEL_PRINTF(name_space, info, format, a) do {} while (0)
 
 // Initilize the profiler TLS, signal handlers on linux. If MOZ_PROFILER_STARTUP
 // is set the profiler will be started. This call must happen before any other

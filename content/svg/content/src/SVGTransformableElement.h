@@ -26,7 +26,7 @@ public:
     : nsSVGElement(aNodeInfo) {}
   virtual ~SVGTransformableElement() {}
 
-  NS_DECL_ISUPPORTS_INHERITED
+  virtual nsresult Clone(nsINodeInfo *aNodeInfo, nsINode **aResult) const MOZ_OVERRIDE = 0;
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedTransformList> Transform();
@@ -58,6 +58,8 @@ public:
   virtual nsIAtom* GetTransformListAttrName() const {
     return nsGkAtoms::transform;
   }
+
+  virtual bool IsTransformable() { return true; }
 
 protected:
   // nsSVGElement overrides

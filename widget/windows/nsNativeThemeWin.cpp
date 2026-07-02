@@ -200,8 +200,22 @@ GetGutterSize(HANDLE theme, HDC hdc)
     SIZE itemSize;
     nsUXThemeData::getThemePartSize(theme, hdc, MENU_POPUPITEM, MPI_NORMAL, NULL, TS_TRUE, &itemSize);
 
-    int width = NS_MAX(itemSize.cx, checkboxBGSize.cx + gutterSize.cx);
-    int height = NS_MAX(itemSize.cy, checkboxBGSize.cy);
+    // Figure out how big the menuitem's icon will be (if present) at current DPI
+    FLOAT scaleFactor = gfxWindowsPlatform::GetPlatform()->GetDPIScale();
+    int iconDevicePixels = NSToIntRound(16 * scaleFactor);
+    SIZE iconSize = {
+      iconDevicePixels, iconDevicePixels
+    };
+    // Not really sure what margins should be used here, but this seems to work in practice...
+    MARGINS margins = {0};
+	nsUXThemeData::getThemeMargins(theme, hdc, MENU_POPUPCHECKBACKGROUND, MCB_NORMAL,
+                    TMT_CONTENTMARGINS, NULL, &margins);
+    iconSize.cx += margins.cxLeftWidth + margins.cxRightWidth;
+    iconSize.cy += margins.cyTopHeight + margins.cyBottomHeight;
+
+    int width = NS_MAX(itemSize.cx, NS_MAX(iconSize.cx, checkboxBGSize.cx) + gutterSize.cx);
+    int height = NS_MAX(itemSize.cy, NS_MAX(iconSize.cy, checkboxBGSize.cy));
+
     SIZE ret;
     ret.cx = width;
     ret.cy = height;

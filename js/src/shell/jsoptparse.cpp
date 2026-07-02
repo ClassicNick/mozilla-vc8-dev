@@ -537,7 +537,7 @@ OptionParser::addIntOption(char shortflag, const char *longflag, const char *met
     IntOption *io = js_new<IntOption>(shortflag, longflag, help, metavar, defaultValue);
     if (!io)
         return false;
-    options.infallibleAppend(io);
+    options.infallibleAppend((Option*) io);
     return true;
 }
 
@@ -549,7 +549,7 @@ OptionParser::addBoolOption(char shortflag, const char *longflag, const char *he
     BoolOption *bo = js_new<BoolOption>(shortflag, longflag, help);
     if (!bo)
         return false;
-    options.infallibleAppend(bo);
+    options.infallibleAppend((Option*) bo);
     return true;
 }
 
@@ -562,7 +562,7 @@ OptionParser::addStringOption(char shortflag, const char *longflag, const char *
     StringOption *so = js_new<StringOption>(shortflag, longflag, help, metavar);
     if (!so)
         return false;
-    options.infallibleAppend(so);
+    options.infallibleAppend((Option*) so);
     return true;
 }
 
@@ -575,7 +575,7 @@ OptionParser::addMultiStringOption(char shortflag, const char *longflag, const c
     MultiStringOption *mso = js_new<MultiStringOption>(shortflag, longflag, help, metavar);
     if (!mso)
         return false;
-    options.infallibleAppend(mso);
+    options.infallibleAppend((Option*) mso);
     return true;
 }
 
@@ -589,7 +589,7 @@ OptionParser::addOptionalStringArg(const char *name, const char *help)
     StringOption *so = js_new<StringOption>(1, name, help, (const char *) NULL);
     if (!so)
         return false;
-    arguments.infallibleAppend(so);
+    arguments.infallibleAppend((Option*) so);
     return true;
 }
 
@@ -602,6 +602,6 @@ OptionParser::addOptionalMultiStringArg(const char *name, const char *help)
     MultiStringOption *mso = js_new<MultiStringOption>(1, name, help, (const char *) NULL);
     if (!mso)
         return false;
-    arguments.infallibleAppend(mso);
+    arguments.infallibleAppend((Option*) mso);
     return true;
 }

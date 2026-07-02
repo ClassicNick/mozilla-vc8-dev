@@ -52,9 +52,8 @@
 #include "nsHTMLDNSPrefetch.h"
 #include "nsHtml5Module.h"
 #include "nsFocusManager.h"
-#include "nsFrameList.h"
 #include "nsListControlFrame.h"
-#include "nsHTMLInputElement.h"
+#include "mozilla/dom/HTMLInputElement.h"
 #include "SVGElementFactory.h"
 #include "nsSVGUtils.h"
 #include "nsMathMLAtoms.h"
@@ -255,8 +254,6 @@ nsLayoutStatics::Initialize()
 
   nsCORSListenerProxy::Startup();
 
-  nsFrameList::Init();
-
   NS_SealStaticAtomTable();
 
   nsWindowMemoryReporter::Init();
@@ -373,9 +370,7 @@ nsLayoutStatics::Shutdown()
 
   NS_ShutdownEventTargetChainItemRecyclePool();
 
-  nsFrameList::Shutdown();
-
-  nsHTMLInputElement::DestroyUploadLastDir();
+  HTMLInputElement::DestroyUploadLastDir();
 
   nsLayoutUtils::Shutdown();
 

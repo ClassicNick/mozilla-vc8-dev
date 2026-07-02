@@ -2947,11 +2947,6 @@ public:
                                                 bool aLogAnimations = false);
   bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
 
-  static bool IsLayerPrerendered(Layer* aLayer)
-  {
-    return aLayer->HasUserData(nsIFrame::LayerIsPrerenderedDataKey());
-  }
-
 private:
   static gfx3DMatrix GetResultingTransformMatrixInternal(const FrameTransformProperties& aProperties,
                                                          const nsPoint& aOrigin,

@@ -1970,6 +1970,17 @@ nsGlobalWindow::SetOuterObject(JSContext* aCx, JSObject* aOuterObject)
   return NS_OK;
 }
 
+// We need certain special behavior for remote XUL whitelisted domains, but we
+// don't want that behavior to take effect in automation, because we whitelist
+// all the mochitest domains. So we need to check a pref here.
+static bool
+TreatAsRemoteXUL(nsIPrincipal* aPrincipal)
+{
+  MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(aPrincipal));
+  return nsContentUtils::AllowXULXBLForPrincipal(aPrincipal) &&
+         !Preferences::GetBool("dom.use_xbl_scopes_for_remote_xul", false);
+}
+
 /**
  * Create a new global object that will be used for an inner window.
  * Return the native global and an nsISupports 'holder' that can be used
@@ -2003,10 +2014,19 @@ CreateNativeGlobalForInner(JSContext* aCx,
 
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
 
+  // Determine if we need the Components object.
+  bool componentsInContent =
+    !Preferences::GetBool("dom.omit_components_in_content", true) ||
+    !Preferences::GetBool("dom.xbl_scopes", true);
+  bool needComponents = componentsInContent ||
+                        nsContentUtils::IsSystemPrincipal(aPrincipal) ||
+                        TreatAsRemoteXUL(aPrincipal);
+  uint32_t flags = needComponents ? 0 : nsIXPConnect::OMIT_COMPONENTS_OBJECT;
+
   nsRefPtr<nsIXPConnectJSObjectHolder> jsholder;
   nsresult rv = xpc->InitClassesWithNewWrappedGlobal(
     aCx, ToSupports(aNewInner),
-    aPrincipal, 0, zoneSpec, getter_AddRefs(jsholder));
+    aPrincipal, flags, zoneSpec, getter_AddRefs(jsholder));
   NS_ENSURE_SUCCESS(rv, rv);
 
   MOZ_ASSERT(jsholder);
@@ -8823,7 +8843,7 @@ nsGlobalWindow::GetLocalStorage(nsIDOMStorage ** aLocalStorage)
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsGlobalWindow::GetIndexedDB(nsIIDBFactory** _retval)
+nsGlobalWindow::GetIndexedDB(nsISupports** _retval)
 {
   if (!mIndexedDB) {
     nsresult rv;
@@ -8856,13 +8876,13 @@ nsGlobalWindow::GetIndexedDB(nsIIDBFactory** _retval)
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  nsCOMPtr<nsIIDBFactory> request(mIndexedDB);
+  nsCOMPtr<nsISupports> request(mIndexedDB);
   request.forget(_retval);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsGlobalWindow::GetMozIndexedDB(nsIIDBFactory** _retval)
+nsGlobalWindow::GetMozIndexedDB(nsISupports** _retval)
 {
   return GetIndexedDB(_retval);
 }
