@@ -78,7 +78,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/LookAndFeel.h"
 
-#include "sampler.h"
+#include "GeckoProfiler.h"
 
 #ifdef DEBUG
 #undef NOISY_BLINK
@@ -2271,12 +2271,13 @@ BuildTextRunsScanner::SetupBreakSinksForTextRun(gfxTextRun* aTextRun,
     if (!initialBreakController) {
       initialBreakController = mLineContainer;
     }
-    if (!initialBreakController->StyleText()->WhiteSpaceCanWrap()) {
+    if (!initialBreakController->StyleText()->
+                                 WhiteSpaceCanWrap(initialBreakController)) {
       flags |= nsLineBreaker::BREAK_SUPPRESS_INITIAL;
     }
     nsTextFrame* startFrame = mappedFlow->mStartFrame;
     const nsStyleText* textStyle = startFrame->StyleText();
-    if (!textStyle->WhiteSpaceCanWrap()) {
+    if (!textStyle->WhiteSpaceCanWrap(startFrame)) {
       flags |= nsLineBreaker::BREAK_SUPPRESS_INSIDE;
     }
     if (aTextRun->GetFlags() & nsTextFrameUtils::TEXT_NO_BREAKS) {
@@ -3107,7 +3108,7 @@ PropertyProvider::GetHyphenationBreaks(uint32_t aStart, uint32_t aLength,
   NS_PRECONDITION(IsInBounds(mStart, mLength, aStart, aLength), "Range out of bounds");
   NS_PRECONDITION(mLength != INT32_MAX, "Can't call this with undefined length");
 
-  if (!mTextStyle->WhiteSpaceCanWrap() ||
+  if (!mTextStyle->WhiteSpaceCanWrap(mFrame) ||
       mTextStyle->mHyphens == NS_STYLE_HYPHENS_NONE)
   {
     memset(aBreakBefore, false, aLength*sizeof(bool));
@@ -4590,7 +4591,7 @@ public:
 void
 nsDisplayText::Paint(nsDisplayListBuilder* aBuilder,
                      nsRenderingContext* aCtx) {
-  SAMPLE_LABEL("nsDisplayText", "Paint");
+  PROFILER_LABEL("nsDisplayText", "Paint");
   // Add 1 pixel of dirty area around mVisibleRect to allow us to paint
   // antialiased pixels beyond the measured text extents.
   // This is temporary until we do this in the actual calculation of text extents.
@@ -5387,7 +5388,7 @@ nsTextFrame::PaintOneShadow(uint32_t aOffset, uint32_t aLength,
                             const nsCharClipDisplayItem::ClipEdges& aClipEdges,
                             nscoord aLeftSideOffset, gfxRect& aBoundingBox)
 {
-  SAMPLE_LABEL("nsTextFrame", "PaintOneShadow");
+  PROFILER_LABEL("nsTextFrame", "PaintOneShadow");
   gfxPoint shadowOffset(aShadowDetails->mXOffset, aShadowDetails->mYOffset);
   nscoord blurRadius = NS_MAX(aShadowDetails->mRadius, 0);
 
@@ -6825,7 +6826,8 @@ nsTextFrame::PeekOffsetWord(bool aForward, bool aWordSelectEatSpace, bool aIsKey
         // Japanese and Chinese.
         canBreak = true;
       } else {
-        canBreak = isWordBreakBefore && aState->mSawBeforeType;
+        canBreak = isWordBreakBefore && aState->mSawBeforeType &&
+          (aWordSelectEatSpace != isWhitespace);
       }
       if (canBreak) {
         *aOffset = cIter.GetBeforeOffset() - mContentOffset;
@@ -7928,7 +7930,7 @@ nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
                                   canTrimTrailingWhitespace ? &trimmedWidth : nullptr,
                                   &textMetrics, boundingBoxType, ctx,
                                   &usedHyphenation, &transformedLastBreak,
-                                  textStyle->WordCanWrap(), &breakPriority);
+                                  textStyle->WordCanWrap(this), &breakPriority);
   if (!length && !textMetrics.mAscent && !textMetrics.mDescent) {
     // If we're measuring a zero-length piece of text, update
     // the height manually.

@@ -62,6 +62,7 @@
 #include "frontend/BytecodeCompiler.h"
 #include "gc/Marking.h"
 #include "gc/Memory.h"
+#include "ion/AsmJS.h"
 #include "js/CharacterEncoding.h"
 #include "js/MemoryMetrics.h"
 #include "vm/Debugger.h"
@@ -1054,6 +1055,9 @@ JSRuntime::setOwnerThread()
     nativeStackBase = GetNativeStackBase();
     if (nativeStackQuota)
         JS_SetNativeStackQuota(this, nativeStackQuota);
+#ifdef XP_MACOSX
+    asmJSMachExceptionHandler.setCurrentThread();
+#endif
 }
 
 void
@@ -1069,6 +1073,9 @@ JSRuntime::clearOwnerThread()
     mainThread.nativeStackLimit = UINTPTR_MAX;
 #else
     mainThread.nativeStackLimit = 0;
+#endif
+#ifdef XP_MACOSX
+    asmJSMachExceptionHandler.clearCurrentThread();
 #endif
 }
 
@@ -1511,6 +1518,8 @@ JS_WrapObject(JSContext *cx, JSObject **objp)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
+    if (*objp)
+        JS::ExposeGCThingToActiveJS(*objp, JSTRACE_OBJECT);
     return cx->compartment->wrap(cx, objp);
 }
 
@@ -1519,6 +1528,8 @@ JS_WrapValue(JSContext *cx, jsval *vp)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
+    if (vp)
+        JS::ExposeValueToActiveJS(*vp);
     RootedValue value(cx, *vp);
     bool ok = cx->compartment->wrap(cx, &value);
     *vp = value.get();
@@ -1530,6 +1541,13 @@ JS_WrapId(JSContext *cx, jsid *idp)
 {
   AssertHeapIsIdle(cx);
   CHECK_REQUEST(cx);
+  if (idp) {
+      jsid id = *idp;
+      if (JSID_IS_STRING(id))
+          JS::ExposeGCThingToActiveJS(JSID_TO_STRING(id), JSTRACE_STRING);
+      else if (JSID_IS_OBJECT(id))
+          JS::ExposeGCThingToActiveJS(JSID_TO_OBJECT(id), JSTRACE_OBJECT);
+  }
   return cx->compartment->wrapId(cx, idp);
 }
 
@@ -1801,7 +1819,9 @@ static JSStdName standard_class_atoms[] = {
     {js_InitWeakMapClass,               EAGER_ATOM_AND_CLASP(WeakMap)},
     {js_InitMapClass,                   EAGER_CLASS_ATOM(Map), &js::MapObject::class_},
     {js_InitSetClass,                   EAGER_CLASS_ATOM(Set), &js::SetObject::class_},
+#ifdef ENABLE_PARALLEL_JS
     {js_InitParallelArrayClass,         EAGER_CLASS_ATOM(ParallelArray), &js::ParallelArrayObject::class_},
+#endif
     {js_InitProxyClass,                 EAGER_ATOM_AND_CLASP(Proxy)},
 #if ENABLE_INTL_API
     {js_InitIntlClass,                  EAGER_ATOM_AND_CLASP(Intl)},
@@ -2419,19 +2439,6 @@ JS_RemoveScriptRootRT(JSRuntime *rt, JSScript **rp)
 JS_NEVER_INLINE JS_PUBLIC_API(void)
 JS_AnchorPtr(void *p)
 {
-}
-
-JS_PUBLIC_API(JSBool)
-JS_LockGCThingRT(JSRuntime *rt, void *gcthing)
-{
-    return js_LockThing(rt, gcthing);
-}
-
-JS_PUBLIC_API(JSBool)
-JS_UnlockGCThingRT(JSRuntime *rt, void *gcthing)
-{
-    js_UnlockThing(rt, gcthing);
-    return true;
 }
 
 JS_PUBLIC_API(void)
@@ -4839,7 +4846,7 @@ JS_CloneFunctionObject(JSContext *cx, JSObject *funobjArg, JSRawObject parentArg
         return NULL;
     }
 
-    if (fun->hasScript() && fun->nonLazyScript()->asmJS) {
+    if (fun->isNative() && IsAsmJSModuleNative(fun->native())) {
         JS_ReportErrorNumber(cx, js_GetErrorMessage, NULL, JSMSG_CANT_CLONE_OBJECT);
         return NULL;
     }
@@ -5386,7 +5393,7 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
     if (!fun)
         return NULL;
 
-    if (!frontend::CompileFunctionBody(cx, fun, options, formals, chars, length))
+    if (!frontend::CompileFunctionBody(cx, &fun, options, formals, chars, length))
         return NULL;
 
     if (obj && funAtom) {
@@ -7073,7 +7080,7 @@ JS_DescribeScriptedCaller(JSContext *cx, JSScript **script, unsigned *lineno)
     if (lineno)
         *lineno = 0;
 
-    ScriptFrameIter i(cx);
+    NonBuiltinScriptFrameIter i(cx);
     if (i.done())
         return JS_FALSE;
 

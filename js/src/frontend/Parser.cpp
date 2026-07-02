@@ -332,12 +332,9 @@ ParseContext<ParseHandler>::generateFunctionBindings(JSContext *cx, InternalHand
 
 template <typename ParseHandler>
 bool
-Parser<ParseHandler>::report(ParseReportKind kind, bool strict, Node pn, unsigned errorNumber, ...)
+Parser<ParseHandler>::reportHelper(ParseReportKind kind, bool strict, uint32_t offset,
+                             unsigned errorNumber, va_list args)
 {
-    uint32_t offset = (pn ? handler.getPosition(pn) : tokenStream.currentToken().pos).begin;
-
-    va_list args;
-    va_start(args, errorNumber);
     bool result = false;
     switch (kind) {
       case ParseError:
@@ -354,6 +351,30 @@ Parser<ParseHandler>::report(ParseReportKind kind, bool strict, Node pn, unsigne
         result = tokenStream.reportStrictModeErrorNumberVA(offset, strict, errorNumber, args);
         break;
     }
+    return result;
+}
+
+template <typename ParseHandler>
+bool
+Parser<ParseHandler>::report(ParseReportKind kind, bool strict, Node pn, unsigned errorNumber, ...)
+{
+    uint32_t offset = (pn ? handler.getPosition(pn) : tokenStream.currentToken().pos).begin;
+
+    va_list args;
+    va_start(args, errorNumber);
+    bool result = reportHelper(kind, strict, offset, errorNumber, args);
+    va_end(args);
+    return result;
+}
+
+template <typename ParseHandler>
+bool
+Parser<ParseHandler>::reportWithOffset(ParseReportKind kind, bool strict, uint32_t offset,
+                                       unsigned errorNumber, ...)
+{
+    va_list args;
+    va_start(args, errorNumber);
+    bool result = reportHelper(kind, strict, offset, errorNumber, args);
     va_end(args);
     return result;
 }
@@ -437,6 +458,7 @@ FunctionBox::FunctionBox(JSContext *cx, ObjectBox* traceListHead, JSFunction *fu
     bindings(),
     bufStart(0),
     bufEnd(0),
+    asmStart(0),
     ndefaults(0),
     inWith(false),                  // initialized below
     inGenexpLambda(false),
@@ -818,7 +840,7 @@ Parser<FullParseHandler>::standaloneFunctionBody(HandleFunction fun, const AutoN
         return null();
     handler.setFunctionBox(fn, *funbox);
 
-    ParseContext<FullParseHandler> funpc(this, *funbox, 0, /* staticLevel = */ 0);
+    ParseContext<FullParseHandler> funpc(this, *funbox, /* staticLevel = */ 0, /* bodyid = */ 0);
     if (!funpc.init())
         return null();
 
@@ -2166,6 +2188,7 @@ Parser<ParseHandler>::maybeParseDirective(Node pn, bool *cont)
         } else if (directive == context->names().useAsm) {
             if (pc->sc->isFunctionBox()) {
                 pc->sc->asFunctionBox()->useAsm = true;
+                pc->sc->asFunctionBox()->asmStart = handler.getPosition(pn).begin;
             } else {
                 if (!report(ParseWarning, false, pn, JSMSG_USE_ASM_DIRECTIVE_FAIL))
                     return false;
@@ -2880,7 +2903,7 @@ Parser<ParseHandler>::returnOrYield(bool useAssignExpr)
             pc->sc->asFunctionBox()->setIsGenerator();
         } else {
             pc->yieldCount++;
-            pc->yieldNode = pn;
+            pc->yieldOffset = handler.getPosition(pn).begin;
         }
     }
 #endif
@@ -5213,7 +5236,7 @@ class GenexpGuard
         ParseContext<ParseHandler> *pc = parser->pc;
         if (pc->parenDepth == 0) {
             pc->yieldCount = 0;
-            pc->yieldNode = ParseHandler::null();
+            pc->yieldOffset = 0;
         }
         startYieldCount = pc->yieldCount;
         pc->parenDepth++;
@@ -5244,10 +5267,12 @@ GenexpGuard<ParseHandler>::checkValidBody(Node pn, unsigned err)
 {
     ParseContext<ParseHandler> *pc = parser->pc;
     if (pc->yieldCount > startYieldCount) {
-        Node errorNode = pc->yieldNode;
-        if (!errorNode)
-            errorNode = pn;
-        parser->report(ParseError, false, errorNode, err, js_yield_str);
+        uint32_t offset = pc->yieldOffset
+                          ? pc->yieldOffset
+                          : (pn ? parser->handler.getPosition(pn)
+                                : parser->tokenStream.currentToken().pos).begin;
+
+        parser->reportWithOffset(ParseError, false, offset, err, js_yield_str);
         return false;
     }
 

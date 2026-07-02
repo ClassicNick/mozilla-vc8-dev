@@ -19,7 +19,7 @@
 namespace {
 
 void
-UpdateListIndicesFromIndex(nsTArray<mozilla::nsISVGPoint*>& aItemsArray,
+UpdateListIndicesFromIndex(FallibleTArray<mozilla::nsISVGPoint*>& aItemsArray,
                            uint32_t aStartingIndex)
 {
   uint32_t length = aItemsArray.Length();

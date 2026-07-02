@@ -3839,6 +3839,10 @@ pref("image.high_quality_downscaling.enabled", true);
 // interpreted as a floating-point number / 1000.
 pref("image.high_quality_downscaling.min_factor", 1000);
 
+// The maximum memory size which we'll use high-quality uspcaling on,
+// interpreted as number of decoded bytes.
+pref("image.high_quality_upscaling.max_size", 20971520);
+
 //
 // Image memory management prefs
 //
@@ -3869,6 +3873,14 @@ pref("image.mem.max_ms_before_yield", 5);
 // The maximum amount of decoded image data we'll willingly keep around (we
 // might keep around more than this, but we'll try to get down to this value).
 pref("image.mem.max_decoded_image_kb", 51200);
+
+// Whether we decode images on multiple background threads rather than the
+// foreground thread.
+pref("image.multithreaded_decoding.enabled", true);
+
+// How many threads we'll use for multithreaded decoding. If < 0, will be
+// automatically determined based on the system's number of cores.
+pref("image.multithreaded_decoding.limit", -1);
 
 // WebGL prefs
 pref("gl.msaa-level", 2);

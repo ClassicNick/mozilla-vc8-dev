@@ -167,7 +167,7 @@ private:
   // Weak refs to our DOMSVGNumber items. The items are friends and take care
   // of clearing our pointer to them when they die.
 public:
-  nsTArray<DOMSVGNumber*> mItems;
+  FallibleTArray<DOMSVGNumber*> mItems;
 
   nsRefPtr<DOMSVGAnimatedNumberList> mAList;
 };

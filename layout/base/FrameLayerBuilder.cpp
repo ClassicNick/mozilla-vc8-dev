@@ -24,7 +24,7 @@
 #include "nsSVGIntegrationUtils.h"
 
 #include "mozilla/Preferences.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
 #include "mozilla/gfx/Tools.h"
 
 #include "nsAnimationManager.h"
@@ -2047,7 +2047,7 @@ ContainerState::ProcessDisplayItems(const nsDisplayList& aList,
                                     uint32_t aFlags,
                                     const nsIFrame* aForceActiveScrolledRoot)
 {
-  SAMPLE_LABEL("ContainerState", "ProcessDisplayItems");
+  PROFILER_LABEL("ContainerState", "ProcessDisplayItems");
 
   const nsIFrame* lastActiveScrolledRoot = nullptr;
   nsPoint topLeft;
@@ -3191,7 +3191,7 @@ FrameLayerBuilder::DrawThebesLayer(ThebesLayer* aLayer,
                                    const nsIntRegion& aRegionToInvalidate,
                                    void* aCallbackData)
 {
-  SAMPLE_LABEL("gfx", "DrawThebesLayer");
+  PROFILER_LABEL("gfx", "DrawThebesLayer");
 
   nsDisplayListBuilder* builder = static_cast<nsDisplayListBuilder*>
     (aCallbackData);

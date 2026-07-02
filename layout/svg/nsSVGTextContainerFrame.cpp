@@ -136,7 +136,7 @@ nsSVGTextContainerFrame::GetEndPositionOfChar(uint32_t charnum, nsISupports **_r
 }
 
 NS_IMETHODIMP
-nsSVGTextContainerFrame::GetExtentOfChar(uint32_t charnum, nsIDOMSVGRect **_retval)
+nsSVGTextContainerFrame::GetExtentOfChar(uint32_t charnum, dom::SVGIRect **_retval)
 {
   *_retval = nullptr;
 

@@ -1242,7 +1242,7 @@ if test "$GNU_CXX"; then
     MOZ_CXX_SUPPORTS_WARNING(-W, type-limits, ac_cxx_has_wtype_limits)
     MOZ_CXX_SUPPORTS_WARNING(-W, empty-body, ac_cxx_has_wempty_body)
     MOZ_CXX_SUPPORTS_WARNING(-W, error=conversion-null, ac_cxx_has_werror_conversion_null)
-    MOZ_CXX_SUPPORTS_WARNING(-W, sign-compare, ac_c_has_sign_compare)
+    MOZ_CXX_SUPPORTS_WARNING(-W, sign-compare, ac_cxx_has_sign_compare)
 
     # Turn off the following warnings that -Wall turns on:
     # -Wno-invalid-offsetof - we use offsetof on non-POD types frequently
@@ -2087,6 +2087,7 @@ i?86-*)
     ENABLE_MONOIC=1
     ENABLE_POLYIC=1
     ENABLE_METHODJIT_TYPED_ARRAY=1
+    ENABLE_YARR_JIT=1
     AC_DEFINE(JS_CPU_X86)
     AC_DEFINE(JS_NUNBOX32)
     ;;
@@ -2096,6 +2097,7 @@ x86_64*-*)
     ENABLE_MONOIC=1
     ENABLE_POLYIC=1
     ENABLE_METHODJIT_TYPED_ARRAY=1
+    ENABLE_YARR_JIT=1
     AC_DEFINE(JS_CPU_X64)
     AC_DEFINE(JS_PUNBOX64)
     ;;
@@ -2105,6 +2107,7 @@ arm*-*)
     ENABLE_MONOIC=1
     ENABLE_POLYIC=1
     ENABLE_METHODJIT_TYPED_ARRAY=1
+    ENABLE_YARR_JIT=1
     AC_DEFINE(JS_CPU_ARM)
     AC_DEFINE(JS_NUNBOX32)
     ;;
@@ -2114,6 +2117,7 @@ sparc*-*)
     ENABLE_MONOIC=1
     ENABLE_POLYIC=1
     ENABLE_METHODJIT_TYPED_ARRAY=1
+    ENABLE_YARR_JIT=1
 dnl ENABLE_ION=0
     AC_DEFINE(JS_CPU_SPARC)
     AC_DEFINE(JS_NUNBOX32)
@@ -2124,6 +2128,7 @@ mips*-*)
     ENABLE_MONOIC=1
     ENABLE_POLYIC=1
     ENABLE_METHODJIT_TYPED_ARRAY=1
+    ENABLE_YARR_JIT=1
     AC_DEFINE(JS_CPU_MIPS)
     AC_DEFINE(JS_NUNBOX32)
     ;;
@@ -2150,6 +2155,10 @@ MOZ_ARG_ENABLE_BOOL(methodjit-spew,
   ENABLE_METHODJIT_SPEW=1,
   ENABLE_METHODJIT_SPEW= )
 
+MOZ_ARG_DISABLE_BOOL(yarr-jit,
+[  --disable-yarr-jit    Disable YARR JIT support],
+  ENABLE_YARR_JIT= )
+
 AC_SUBST(ENABLE_METHODJIT)
 AC_SUBST(ENABLE_METHODJIT_SPEW)
 
@@ -2175,6 +2184,12 @@ AC_SUBST(ENABLE_ION)
 
 if test "$ENABLE_ION"; then
     AC_DEFINE(JS_ION)
+fi
+
+AC_SUBST(ENABLE_YARR_JIT)
+
+if test "$ENABLE_YARR_JIT"; then
+    AC_DEFINE(ENABLE_YARR_JIT)
 fi
 
 MOZ_COMPILER_OPTS
@@ -3779,6 +3794,23 @@ if test -n "$DEHYDRA_PATH"; then
     AC_DEFINE(NS_STATIC_CHECKING)
 fi
 AC_SUBST(DEHYDRA_PATH)
+
+dnl ========================================================
+dnl = Enable using the clang plugin to build
+dnl ========================================================
+
+MOZ_ARG_ENABLE_BOOL(clang-plugin,
+[  --enable-clang-plugin   Enable building with the mozilla clang plugin ],
+   ENABLE_CLANG_PLUGIN=1,
+   ENABLE_CLANG_PLUGIN= )
+if test -n "$ENABLE_CLANG_PLUGIN"; then
+    if test -z "$CLANG_CC"; then
+        AC_MSG_ERROR([Can't use clang plugin without clang.])
+    fi
+    AC_DEFINE(MOZ_CLANG_PLUGIN)
+fi
+
+AC_SUBST(ENABLE_CLANG_PLUGIN)
 
 dnl ========================================================
 dnl = Enable static checking using sixgill

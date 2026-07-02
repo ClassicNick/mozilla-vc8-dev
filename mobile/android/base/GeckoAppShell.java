@@ -549,16 +549,22 @@ public class GeckoAppShell
         gRestartScheduled = true;
     }
 
-    public static File installWebApp(String aTitle, String aURI, String aUniqueURI, String aIconURL) {
-        int index = WebAppAllocator.getInstance(GeckoApp.mAppContext).findAndAllocateIndex(aUniqueURI, aTitle, aIconURL);
+    public static File preInstallWebApp(String aTitle, String aURI, String aUniqueURI) {
+        int index = WebAppAllocator.getInstance(GeckoApp.mAppContext).findAndAllocateIndex(aUniqueURI, aTitle, (String) null);
         GeckoProfile profile = GeckoProfile.get(GeckoApp.mAppContext, "webapp" + index);
-        createShortcut(aTitle, aURI, aUniqueURI, aIconURL, "webapp");
         return profile.getDir();
+    }
+
+    public static void postInstallWebApp(String aTitle, String aURI, String aUniqueURI, String aIconURL) {
+    	WebAppAllocator allocator = WebAppAllocator.getInstance(GeckoApp.mAppContext);
+		int index = allocator.getIndexForApp(aUniqueURI);
+    	assert index != -1 && aIconURL != null;
+    	allocator.updateAppAllocation(aUniqueURI, index, BitmapUtils.getBitmapFromDataURI(aIconURL));
+    	createShortcut(aTitle, aURI, aUniqueURI, aIconURL, "webapp");
     }
 
     public static Intent getWebAppIntent(String aURI, String aUniqueURI, String aTitle, Bitmap aIcon) {
         int index;
-
         if (aIcon != null && !TextUtils.isEmpty(aTitle))
             index = WebAppAllocator.getInstance(GeckoApp.mAppContext).findAndAllocateIndex(aUniqueURI, aTitle, aIcon);
         else
@@ -1110,41 +1116,51 @@ public class GeckoAppShell
         return intent;
     }
 
-    static SynchronousQueue<String> sClipboardQueue =
-        new SynchronousQueue<String>();
+    /* On some devices, access to the clipboard service needs to happen
+     * on a thread with a looper, so this function requires a looper is
+     * present on the thread. */
+    @SuppressWarnings("deprecation")
+    private static String getClipboardTextImpl() {
+        Context context = GeckoApp.mAppContext;
+        if (android.os.Build.VERSION.SDK_INT >= 11) {
+            android.content.ClipboardManager cm = (android.content.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm.hasPrimaryClip()) {
+                ClipData clip = cm.getPrimaryClip();
+                if (clip != null) {
+                    ClipData.Item item = clip.getItemAt(0);
+                    return item.coerceToText(context).toString();
+                }
+            }
+        } else {
+            android.text.ClipboardManager cm = (android.text.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm.hasText()) {
+                return cm.getText().toString();
+            }
+        }
+        return null;
+    }
+
+    private static SynchronousQueue<String> sClipboardQueue = new SynchronousQueue<String>();
     private static String EMPTY_STRING = new String();
 
-    // On some devices, access to the clipboard service needs to happen
-    // on a thread with a looper, so dispatch this to our looper thread
-    // Note: the main looper won't work because it may be blocked on the
-    // gecko thread, which is most likely this thread
     static String getClipboardText() {
-        ThreadUtils.postToBackgroundThread(new Runnable() {
+        // If we're on the UI thread or the background thread, we have a looper on the thread
+        // and can just call this directly. For any other threads, post the call to the
+        // background thread.
+
+        if (ThreadUtils.isOnUiThread() || ThreadUtils.isOnBackgroundThread()) {
+            return getClipboardTextImpl();
+        }
+
+        ThreadUtils.postToBackgroundThread(new Runnable() { 
             @Override
-            @SuppressWarnings("deprecation")
             public void run() {
-                Context context = GeckoApp.mAppContext;
-                String text = null;
-                if (android.os.Build.VERSION.SDK_INT >= 11) {
-                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
-                        context.getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (cm.hasPrimaryClip()) {
-                        ClipData clip = cm.getPrimaryClip();
-                        if (clip != null) {
-                            ClipData.Item item = clip.getItemAt(0);
-                            text = item.coerceToText(context).toString();
-                        }
-                    }
-                } else {
-                    android.text.ClipboardManager cm = (android.text.ClipboardManager)
-                        context.getSystemService(Context.CLIPBOARD_SERVICE);
-                    if (cm.hasText())
-                        text = cm.getText().toString();
-                }
+                String text = getClipboardTextImpl();
                 try {
                     sClipboardQueue.put(text != null ? text : EMPTY_STRING);
                 } catch (InterruptedException ie) {}
-            }});
+            }
+        });
         try {
             String ret = sClipboardQueue.take();
             return (EMPTY_STRING.equals(ret) ? null : ret);
@@ -1167,7 +1183,8 @@ public class GeckoAppShell
                         context.getSystemService(Context.CLIPBOARD_SERVICE);
                     cm.setText(text);
                 }
-            }});
+            }
+        });
     }
 
     public static void setNotificationClient(NotificationClient client) {

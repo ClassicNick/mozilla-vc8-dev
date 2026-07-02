@@ -242,14 +242,13 @@ const int32_t nsNavHistory::kGetInfoIndex_RevHost = 3;
 const int32_t nsNavHistory::kGetInfoIndex_VisitCount = 4;
 const int32_t nsNavHistory::kGetInfoIndex_VisitDate = 5;
 const int32_t nsNavHistory::kGetInfoIndex_FaviconURL = 6;
-const int32_t nsNavHistory::kGetInfoIndex_SessionId = 7;
-const int32_t nsNavHistory::kGetInfoIndex_ItemId = 8;
-const int32_t nsNavHistory::kGetInfoIndex_ItemDateAdded = 9;
-const int32_t nsNavHistory::kGetInfoIndex_ItemLastModified = 10;
-const int32_t nsNavHistory::kGetInfoIndex_ItemParentId = 11;
-const int32_t nsNavHistory::kGetInfoIndex_ItemTags = 12;
-const int32_t nsNavHistory::kGetInfoIndex_Frecency = 13;
-const int32_t nsNavHistory::kGetInfoIndex_Hidden = 14;
+const int32_t nsNavHistory::kGetInfoIndex_ItemId = 7;
+const int32_t nsNavHistory::kGetInfoIndex_ItemDateAdded = 8;
+const int32_t nsNavHistory::kGetInfoIndex_ItemLastModified = 9;
+const int32_t nsNavHistory::kGetInfoIndex_ItemParentId = 10;
+const int32_t nsNavHistory::kGetInfoIndex_ItemTags = 11;
+const int32_t nsNavHistory::kGetInfoIndex_Frecency = 12;
+const int32_t nsNavHistory::kGetInfoIndex_Hidden = 13;
 
 PLACES_FACTORY_SINGLETON_IMPLEMENTATION(nsNavHistory, gHistoryService)
 
@@ -259,7 +258,6 @@ nsNavHistory::nsNavHistory()
 , mBatchDBTransaction(nullptr)
 , mCachedNow(0)
 , mExpireNowTimer(nullptr)
-, mLastSessionID(0)
 , mHistoryEnabled(true)
 , mNumVisitsForFrecency(10)
 , mTagsFolder(-1)
@@ -504,38 +502,10 @@ nsNavHistory::LoadPrefs()
 }
 
 
-int64_t
-nsNavHistory::GetNewSessionID()
-{
-  // Use cached value if already initialized.
-  if (mLastSessionID)
-    return ++mLastSessionID;
-
-  // Extract the last session ID, so we know where to pick up. There is no
-  // index over sessions so we use the visit_date index.
-  nsCOMPtr<mozIStorageStatement> selectSession;
-  nsresult rv = mDB->MainConn()->CreateStatement(NS_LITERAL_CSTRING(
-    "SELECT session FROM moz_historyvisits "
-    "ORDER BY visit_date DESC "
-  ), getter_AddRefs(selectSession));
-  NS_ENSURE_SUCCESS(rv, 0);
-  bool hasSession;
-  if (NS_SUCCEEDED(selectSession->ExecuteStep(&hasSession)) && hasSession) {
-    mLastSessionID = selectSession->AsInt64(0) + 1;
-  }
-  else {
-    mLastSessionID = 1;
-  }
-
-  return mLastSessionID;
-}
-
-
 void
 nsNavHistory::NotifyOnVisit(nsIURI* aURI,
                           int64_t aVisitID,
                           PRTime aTime,
-                          int64_t aSessionID,
                           int64_t referringVisitID,
                           int32_t aTransitionType,
                           const nsACString& aGUID,
@@ -554,7 +524,7 @@ nsNavHistory::NotifyOnVisit(nsIURI* aURI,
 
   NOTIFY_OBSERVERS(mCanNotify, mCacheObservers, mObservers,
                    nsINavHistoryObserver,
-                   OnVisit(aURI, aVisitID, aTime, aSessionID,
+                   OnVisit(aURI, aVisitID, aTime, 0,
                            referringVisitID, aTransitionType, aGUID, aHidden));
 }
 
@@ -1423,7 +1393,7 @@ PlacesSQLQueryBuilder::SelectAsURI()
 
       mQueryString = NS_LITERAL_CSTRING(
         "SELECT h.id, h.url, h.title AS page_title, h.rev_host, h.visit_count, "
-        "h.last_visit_date, f.url, null, null, null, null, null, ") +
+        "h.last_visit_date, f.url, null, null, null, null, ") +
         tagsSqlFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
         "FROM moz_places h "
         "LEFT JOIN moz_favicons f ON h.favicon_id = f.id "
@@ -1448,7 +1418,7 @@ PlacesSQLQueryBuilder::SelectAsURI()
 
         mQueryString = NS_LITERAL_CSTRING(
           "SELECT b2.fk, h.url, COALESCE(b2.title, h.title) AS page_title, "
-            "h.rev_host, h.visit_count, h.last_visit_date, f.url, null, b2.id, "
+            "h.rev_host, h.visit_count, h.last_visit_date, f.url, b2.id, "
             "b2.dateAdded, b2.lastModified, b2.parent, ") +
             tagsSqlFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
           "FROM moz_bookmarks b2 "
@@ -1472,7 +1442,7 @@ PlacesSQLQueryBuilder::SelectAsURI()
                            tagsSqlFragment);
         mQueryString = NS_LITERAL_CSTRING(
           "SELECT b.fk, h.url, COALESCE(b.title, h.title) AS page_title, "
-            "h.rev_host, h.visit_count, h.last_visit_date, f.url, null, b.id, "
+            "h.rev_host, h.visit_count, h.last_visit_date, f.url, b.id, "
             "b.dateAdded, b.lastModified, b.parent, ") +
             tagsSqlFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
           "FROM moz_bookmarks b "
@@ -1505,7 +1475,7 @@ PlacesSQLQueryBuilder::SelectAsVisit()
                      tagsSqlFragment);
   mQueryString = NS_LITERAL_CSTRING(
     "SELECT h.id, h.url, h.title AS page_title, h.rev_host, h.visit_count, "
-      "v.visit_date, f.url, v.session, null, null, null, null, ") +
+      "v.visit_date, f.url, null, null, null, null, ") +
       tagsSqlFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
     "FROM moz_places h "
     "JOIN moz_historyvisits v ON h.id = v.place_id "
@@ -1541,7 +1511,7 @@ PlacesSQLQueryBuilder::SelectAsDay()
   mQueryString = nsPrintfCString(
      "SELECT null, "
        "'place:type=%ld&sort=%ld&beginTime='||beginTime||'&endTime='||endTime, "
-      "dayTitle, null, null, beginTime, null, null, null, null, null, null, null "
+      "dayTitle, null, null, beginTime, null, null, null, null, null, null "
      "FROM (", // TOUTER BEGIN
      resultType,
      sortingMode);
@@ -1744,7 +1714,7 @@ PlacesSQLQueryBuilder::SelectAsSite()
 
   mQueryString = nsPrintfCString(
     "SELECT null, 'place:type=%ld&sort=%ld&domain=&domainIsHost=true'%s, "
-           ":localhost, :localhost, null, null, null, null, null, null, null, null "
+           ":localhost, :localhost, null, null, null, null, null, null, null "
     "WHERE EXISTS ( "
       "SELECT h.id FROM moz_places h "
       "%s "
@@ -1757,7 +1727,7 @@ PlacesSQLQueryBuilder::SelectAsSite()
     "UNION ALL "
     "SELECT null, "
            "'place:type=%ld&sort=%ld&domain='||host||'&domainIsHost=true'%s, "
-           "host, host, null, null, null, null, null, null, null, null "
+           "host, host, null, null, null, null, null, null, null "
     "FROM ( "
       "SELECT get_unreversed_host(h.rev_host) AS host "
       "FROM moz_places h "
@@ -1796,7 +1766,7 @@ PlacesSQLQueryBuilder::SelectAsTag()
 
   mQueryString = nsPrintfCString(
     "SELECT null, 'place:folder=' || id || '&queryType=%d&type=%ld', "
-           "title, null, null, null, null, null, null, dateAdded, "
+           "title, null, null, null, null, null, dateAdded, "
            "lastModified, null, null, null "
     "FROM moz_bookmarks "
     "WHERE parent = %lld",
@@ -2030,7 +2000,7 @@ nsNavHistory::ConstructQueryString(
     // smart bookmark.
     queryString = NS_LITERAL_CSTRING(
       "SELECT h.id, h.url, h.title AS page_title, h.rev_host, h.visit_count, h.last_visit_date, "
-          "f.url, null, null, null, null, null, ") +
+          "f.url, null, null, null, null, ") +
           tagsSqlFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
         "FROM moz_places h "
         "LEFT OUTER JOIN moz_favicons f ON h.favicon_id = f.id "
@@ -3880,15 +3850,10 @@ nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
     resultNode.forget(aResult);
     return NS_OK;
   }
-  // now we know the result type is some kind of visit (regular or full)
-
-  // session
-  int64_t session = aRow->AsInt64(kGetInfoIndex_SessionId);
 
   if (aOptions->ResultType() == nsNavHistoryQueryOptions::RESULTS_AS_VISIT) {
     nsRefPtr<nsNavHistoryResultNode> resultNode =
-      new nsNavHistoryVisitResultNode(url, title, accessCount, time,
-                                      favicon, session);
+      new nsNavHistoryResultNode(url, title, accessCount, time, favicon);
 
     nsAutoString tags;
     rv = aRow->GetString(kGetInfoIndex_ItemTags, tags);
@@ -3992,7 +3957,7 @@ nsNavHistory::VisitIdToResultNode(int64_t visitId,
       // Should match kGetInfoIndex_* (see GetQueryResults)
       statement = mDB->GetStatement(NS_LITERAL_CSTRING(
         "SELECT h.id, h.url, h.title, h.rev_host, h.visit_count, "
-               "v.visit_date, f.url, v.session, null, null, null, null, "
+               "v.visit_date, f.url, null, null, null, null, "
                ) + tagsFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
         "FROM moz_places h "
         "JOIN moz_historyvisits v ON h.id = v.place_id "
@@ -4006,7 +3971,7 @@ nsNavHistory::VisitIdToResultNode(int64_t visitId,
       // Should match kGetInfoIndex_* (see GetQueryResults)
       statement = mDB->GetStatement(NS_LITERAL_CSTRING(
         "SELECT h.id, h.url, h.title, h.rev_host, h.visit_count, "
-               "h.last_visit_date, f.url, null, null, null, null, null, "
+               "h.last_visit_date, f.url, null, null, null, null, "
                ) + tagsFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
         "FROM moz_places h "
         "JOIN moz_historyvisits v ON h.id = v.place_id "
@@ -4051,7 +4016,7 @@ nsNavHistory::BookmarkIdToResultNode(int64_t aBookmarkId, nsNavHistoryQueryOptio
   // Should match kGetInfoIndex_*
   nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(NS_LITERAL_CSTRING(
       "SELECT b.fk, h.url, COALESCE(b.title, h.title), "
-             "h.rev_host, h.visit_count, h.last_visit_date, f.url, null, b.id, "
+             "h.rev_host, h.visit_count, h.last_visit_date, f.url, b.id, "
              "b.dateAdded, b.lastModified, b.parent, "
              ) + tagsFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
       "FROM moz_bookmarks b "
@@ -4091,7 +4056,7 @@ nsNavHistory::URIToResultNode(nsIURI* aURI,
   // Should match kGetInfoIndex_*
   nsCOMPtr<mozIStorageStatement> stmt = mDB->GetStatement(NS_LITERAL_CSTRING(
     "SELECT h.id, :page_url, h.title, h.rev_host, h.visit_count, "
-           "h.last_visit_date, f.url, null, null, null, null, null, "
+           "h.last_visit_date, f.url, null, null, null, null, "
            ) + tagsFragment + NS_LITERAL_CSTRING(", h.frecency, h.hidden "
     "FROM moz_places h "
     "LEFT JOIN moz_favicons f ON h.favicon_id = f.id "

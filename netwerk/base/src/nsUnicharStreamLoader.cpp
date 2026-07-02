@@ -10,7 +10,11 @@
 #include "nsICharsetConverterManager.h"
 #include "nsIServiceManager.h"
 
-#define SNIFFING_BUFFER_SIZE 512 // specified in draft-abarth-mime-sniff-06
+// 1024 bytes is specified in
+// http://www.whatwg.org/specs/web-apps/current-work/#charset for HTML; for
+// other resource types (e.g. CSS) typically fewer bytes are fine too, since
+// they only look at things right at the beginning of the data.
+#define SNIFFING_BUFFER_SIZE 1024
 
 using namespace mozilla;
 

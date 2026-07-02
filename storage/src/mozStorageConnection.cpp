@@ -35,7 +35,7 @@
 #include "SQLCollations.h"
 #include "FileSystemModule.h"
 #include "mozStorageHelper.h"
-#include "sampler.h"
+#include "GeckoProfiler.h"
 
 #include "prlog.h"
 #include "prprf.h"
@@ -471,7 +471,7 @@ nsresult
 Connection::initialize()
 {
   NS_ASSERTION (!mDBConn, "Initialize called on already opened database!");
-  SAMPLE_LABEL("storage", "Connection::initialize");
+  PROFILER_LABEL("storage", "Connection::initialize");
 
   // in memory database requested, sqlite uses a magic file name
   int srv = ::sqlite3_open_v2(":memory:", &mDBConn, mFlags, NULL);
@@ -488,7 +488,7 @@ Connection::initialize(nsIFile *aDatabaseFile)
 {
   NS_ASSERTION (aDatabaseFile, "Passed null file!");
   NS_ASSERTION (!mDBConn, "Initialize called on already opened database!");
-  SAMPLE_LABEL("storage", "Connection::initialize");
+  PROFILER_LABEL("storage", "Connection::initialize");
 
   mDatabaseFile = aDatabaseFile;
 
@@ -516,7 +516,7 @@ Connection::initialize(nsIFileURL *aFileURL)
 {
   NS_ASSERTION (aFileURL, "Passed null file URL!");
   NS_ASSERTION (!mDBConn, "Initialize called on already opened database!");
-  SAMPLE_LABEL("storage", "Connection::initialize");
+  PROFILER_LABEL("storage", "Connection::initialize");
 
   nsCOMPtr<nsIFile> databaseFile;
   nsresult rv = aFileURL->GetFile(getter_AddRefs(databaseFile));
@@ -985,7 +985,7 @@ NS_IMETHODIMP
 Connection::Clone(bool aReadOnly,
                   mozIStorageConnection **_connection)
 {
-  SAMPLE_LABEL("storage", "Connection::Clone");
+  PROFILER_LABEL("storage", "Connection::Clone");
   if (!mDBConn)
     return NS_ERROR_NOT_INITIALIZED;
   if (!mDatabaseFile)

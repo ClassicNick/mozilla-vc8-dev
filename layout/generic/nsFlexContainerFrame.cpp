@@ -1637,9 +1637,9 @@ SingleLineCrossAxisPositionTracker::
       // in this flex line), so we can use them in computing mLineCrossSize
       // below:
       mCrossStartToFurthestBaseline = NS_MAX(mCrossStartToFurthestBaseline,
-                                             crossStartToBaseline);
+                                               crossStartToBaseline);
       crossEndToFurthestBaseline = NS_MAX(crossEndToFurthestBaseline,
-                                          crossEndToBaseline);
+                                            crossEndToBaseline);
     } else {
       largestOuterCrossSize = NS_MAX(largestOuterCrossSize, curOuterCrossSize);
     }
@@ -1651,8 +1651,8 @@ SingleLineCrossAxisPositionTracker::
   // and
   //  (b) largest cross-size of all other children.
   mLineCrossSize = NS_MAX(mCrossStartToFurthestBaseline +
-                          crossEndToFurthestBaseline,
-                          largestOuterCrossSize);
+                            crossEndToFurthestBaseline,
+                            largestOuterCrossSize);
 }
 
 nscoord
