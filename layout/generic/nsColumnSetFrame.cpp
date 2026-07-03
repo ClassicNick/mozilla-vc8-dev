@@ -898,33 +898,6 @@ nsColumnSetFrame::Reflow(nsPresContext*           aPresContext,
         maybeContinuousBreakingDetected = true;
       }
 
-<<<<<<< HEAD
-        nscoord nextGuess =
-          (config.mKnownFeasibleHeight + config.mKnownInfeasibleHeight)/2;
-        // The constant of 600 twips is arbitrary. It's about two line-heights.
-        if (config.mKnownFeasibleHeight - nextGuess < 600 &&
-            !maybeContinuousBreakingDetected) {
-          // We're close to our target, so just try shrinking just the
-          // minimum amount that will cause one of our columns to break
-          // differently.
-          nextGuess = config.mKnownFeasibleHeight - 1;
-        } else if (unboundedLastColumn) {
-          // Make a guess by dividing that into N columns. Add some slop
-          // to try to make it on the feasible side.  The constant of
-          // 600 twips is arbitrary. It's about two line-heights.
-          nextGuess = colData.mSumHeight/config.mBalanceColCount + 600;
-          // Sanitize it
-          nextGuess = clamped(nextGuess, config.mKnownInfeasibleHeight + 1,
-                                         config.mKnownFeasibleHeight - 1);
-        } else if (config.mKnownFeasibleHeight == NS_INTRINSICSIZE) {
-          // This can happen when we had a next-in-flow so we didn't
-          // want to do an unbounded height measuring step. Let's just increase
-          // from the infeasible height by some reasonable amount.
-          nextGuess = config.mKnownInfeasibleHeight*2 + 600;
-        }
-        // Don't bother guessing more than our height constraint.
-        nextGuess = NS_MIN(availableContentHeight, nextGuess);
-=======
       nscoord nextGuess =
         (config.mKnownFeasibleHeight + config.mKnownInfeasibleHeight)/2;
       // The constant of 600 twips is arbitrary. It's about two line-heights.
@@ -949,8 +922,7 @@ nsColumnSetFrame::Reflow(nsPresContext*           aPresContext,
         nextGuess = config.mKnownInfeasibleHeight*2 + 600;
       }
       // Don't bother guessing more than our height constraint.
-      nextGuess = std::min(availableContentHeight, nextGuess);
->>>>>>> 60124d1
+      nextGuess = NS_MIN(availableContentHeight, nextGuess);
 
 #ifdef DEBUG_roc
       printf("*** nsColumnSetFrame::Reflow balancing choosing next guess=%d\n", nextGuess);

@@ -191,7 +191,7 @@ PannerNode::~PannerNode()
 }
 
 JSObject*
-PannerNode::WrapObject(JSContext* aCx, JSObject* aScope)
+PannerNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
   return PannerNodeBinding::Wrap(aCx, aScope, this);
 }

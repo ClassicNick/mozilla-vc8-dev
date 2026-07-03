@@ -29,20 +29,21 @@ const unsigned MAX_SCRIPT_PROCESSOR_CHANNELS = 10000;
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_3(AudioContext,
-                                        mWindow, mDestination, mListener)
+NS_IMPL_CYCLE_COLLECTION_2(AudioContext, mDestination, mListener)
 
-NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(AudioContext, AddRef)
-NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(AudioContext, Release)
+NS_IMPL_ADDREF_INHERITED(AudioContext, nsDOMEventTargetHelper)
+NS_IMPL_RELEASE_INHERITED(AudioContext, nsDOMEventTargetHelper)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(AudioContext)
+NS_INTERFACE_MAP_END_INHERITING(nsDOMEventTargetHelper)
 
 static uint8_t gWebAudioOutputKey;
 
 AudioContext::AudioContext(nsPIDOMWindow* aWindow)
-  : mWindow(aWindow)
-  , mDestination(new AudioDestinationNode(this, MediaStreamGraph::GetInstance()))
+  : mDestination(new AudioDestinationNode(this, MediaStreamGraph::GetInstance()))
 {
   // Actually play audio
   mDestination->Stream()->AddAudioOutput(&gWebAudioOutputKey);
+  nsDOMEventTargetHelper::BindToOwner(aWindow);
   SetIsDOMBinding();
 
   mPannerNodes.Init();
@@ -55,7 +56,7 @@ AudioContext::~AudioContext()
 }
 
 JSObject*
-AudioContext::WrapObject(JSContext* aCx, JSObject* aScope)
+AudioContext::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 {
   return AudioContextBinding::Wrap(aCx, aScope, this);
 }
@@ -349,6 +350,9 @@ AudioContext::GetJSContext() const
 
   nsCOMPtr<nsIScriptGlobalObject> scriptGlobal =
     do_QueryInterface(GetParentObject());
+  if (!scriptGlobal) {
+    return nullptr;
+  }
   nsIScriptContext* scriptContext = scriptGlobal->GetContext();
   if (!scriptContext) {
     return nullptr;

@@ -102,7 +102,6 @@
 #include "nsError.h"
 #include "nsIDOMDOMException.h"
 #include "nsIDOMNode.h"
-#include "nsIDOMMozNamedAttrMap.h"
 #include "nsIDOMDOMStringList.h"
 
 // HTMLFormElement helper includes
@@ -560,8 +559,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            ELEMENT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(Attr, nsAttributeSH,
                            NODE_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(MozNamedAttrMap, nsNamedNodeMapSH,
-                           ARRAY_SCRIPTABLE_FLAGS)
 
   // Misc Core related classes
 
@@ -719,10 +716,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
   NS_DEFINE_CLASSINFO_DATA(SVGZoomEvent, nsEventSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA(CanvasGradient, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(CanvasPattern, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(MozCanvasPrintState, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
@@ -1725,10 +1718,6 @@ nsDOMClassInfo::Init()
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMEventTarget)
   DOM_CLASSINFO_MAP_END
 
-  DOM_CLASSINFO_MAP_BEGIN(MozNamedAttrMap, nsIDOMMozNamedAttrMap)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMMozNamedAttrMap)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(Event, nsIDOMEvent)
     DOM_CLASSINFO_EVENT_MAP_ENTRIES
   DOM_CLASSINFO_MAP_END
@@ -1991,14 +1980,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_BEGIN(SVGZoomEvent, nsIDOMSVGZoomEvent)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMSVGZoomEvent)
     DOM_CLASSINFO_UI_EVENT_MAP_ENTRIES
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(CanvasGradient, nsIDOMCanvasGradient)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCanvasGradient)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(CanvasPattern, nsIDOMCanvasPattern)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMCanvasPattern)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(MozCanvasPrintState, nsIDOMMozCanvasPrintState)
@@ -3420,6 +3401,8 @@ BaseStubConstructor(nsIWeakReference* aWeakOwner,
                     const nsGlobalNameStruct *name_struct, JSContext *cx,
                     JSObject *obj, unsigned argc, jsval *argv, jsval *rval)
 {
+  MOZ_ASSERT(obj);
+
   nsresult rv;
   nsCOMPtr<nsISupports> native;
   if (name_struct->mType == nsGlobalNameStruct::eTypeClassConstructor) {
@@ -3935,11 +3918,7 @@ nsDOMConstructor::Construct(nsIXPConnectWrappedNative *wrapper, JSContext * cx,
                             JSObject * obj, uint32_t argc, jsval * argv,
                             jsval * vp, bool *_retval)
 {
-  JSObject* class_obj = JSVAL_TO_OBJECT(argv[-2]);
-  if (!class_obj) {
-    NS_ERROR("nsDOMConstructor::Construct couldn't get constructor object.");
-    return NS_ERROR_UNEXPECTED;
-  }
+  MOZ_ASSERT(obj);
 
   const nsGlobalNameStruct *name_struct = GetNameStruct();
   NS_ENSURE_TRUE(name_struct, NS_ERROR_FAILURE);
@@ -6068,31 +6047,6 @@ nsNamedArraySH::GetProperty(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 }
 
 
-// NamedNodeMap helper
-
-nsISupports*
-nsNamedNodeMapSH::GetItemAt(nsISupports *aNative, uint32_t aIndex,
-                            nsWrapperCache **aCache, nsresult *aResult)
-{
-  *aResult = NS_OK;
-  nsDOMAttributeMap* map = nsDOMAttributeMap::FromSupports(aNative);
-
-  nsINode *attr;
-  *aCache = attr = map->GetItemAt(aIndex);
-  return attr;
-}
-
-nsISupports*
-nsNamedNodeMapSH::GetNamedItem(nsISupports *aNative, const nsAString& aName,
-                               nsWrapperCache **aCache, nsresult *aResult)
-{
-  nsDOMAttributeMap* map = nsDOMAttributeMap::FromSupports(aNative);
-
-  nsINode *attr;
-  *aCache = attr = map->GetNamedItem(aName);
-  return attr;
-}
-
 NS_IMETHODIMP
 nsDocumentSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                          JSObject *obj, jsid id, uint32_t flags,
@@ -7463,6 +7417,8 @@ nsDOMConstructorSH::Call(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                          JSObject *obj, uint32_t argc, jsval *argv, jsval *vp,
                          bool *_retval)
 {
+  MOZ_ASSERT(obj);
+
   nsDOMConstructor *wrapped =
     static_cast<nsDOMConstructor *>(wrapper->Native());
 
@@ -7482,6 +7438,8 @@ nsDOMConstructorSH::Construct(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
                               JSObject *obj, uint32_t argc, jsval *argv,
                               jsval *vp, bool *_retval)
 {
+  MOZ_ASSERT(obj);
+
   nsDOMConstructor *wrapped =
     static_cast<nsDOMConstructor *>(wrapper->Native());
 

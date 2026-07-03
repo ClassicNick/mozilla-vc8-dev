@@ -381,7 +381,7 @@ NS_INTERFACE_TABLE_HEAD(nsChildContentList)
 NS_INTERFACE_MAP_END
 
 JSObject*
-nsChildContentList::WrapObject(JSContext *cx, JSObject *scope)
+nsChildContentList::WrapObject(JSContext *cx, JS::Handle<JSObject*> scope)
 {
   return NodeListBinding::Wrap(cx, scope, this);
 }
@@ -691,9 +691,7 @@ FragmentOrElement::GetChildren(uint32_t aFilter)
     }
   }
 
-  nsINodeList* returnList = nullptr;
-  list.forget(&returnList);
-  return returnList;
+  return list.forget();
 }
 
 static nsIContent*

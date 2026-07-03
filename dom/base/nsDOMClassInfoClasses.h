@@ -19,7 +19,6 @@ DOMCI_CLASS(DOMConstructor)
 DOMCI_CLASS(DOMException)
 DOMCI_CLASS(Element)
 DOMCI_CLASS(Attr)
-DOMCI_CLASS(MozNamedAttrMap)
 
 // Event classes
 DOMCI_CLASS(Event)
@@ -117,8 +116,6 @@ DOMCI_CLASS(SVGRect)
 DOMCI_CLASS(SVGZoomEvent)
 
 // Canvas
-DOMCI_CLASS(CanvasGradient)
-DOMCI_CLASS(CanvasPattern)
 DOMCI_CLASS(MozCanvasPrintState)
 
 // WindowUtils

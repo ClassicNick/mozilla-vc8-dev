@@ -411,13 +411,8 @@ Key::DecodeNumber(const unsigned char*& aPos, const unsigned char* aEnd)
   ++aPos;
 
   uint64_t number = 0;
-<<<<<<< HEAD
   memcpy(&number, aPos, NS_MIN<size_t>(sizeof(number), aEnd - aPos));
-  number = NS_SWAP64(number);
-=======
-  memcpy(&number, aPos, std::min<size_t>(sizeof(number), aEnd - aPos));
   number = mozilla::NativeEndian::swapFromBigEndian(number);
->>>>>>> 60124d1
 
   aPos += sizeof(number);
 

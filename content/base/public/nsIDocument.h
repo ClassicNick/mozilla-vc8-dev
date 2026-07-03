@@ -94,6 +94,7 @@ class DOMImplementation;
 class Element;
 struct ElementRegistrationOptions;
 class EventTarget;
+class FrameRequestCallback;
 class GlobalObject;
 class HTMLBodyElement;
 class Link;
@@ -246,11 +247,8 @@ public:
    */
   already_AddRefed<nsILoadGroup> GetDocumentLoadGroup() const
   {
-    nsILoadGroup *group = nullptr;
-    if (mDocumentLoadGroup)
-      CallQueryReferent(mDocumentLoadGroup.get(), &group);
-
-    return group;
+    nsCOMPtr<nsILoadGroup> group = do_QueryReferent(mDocumentLoadGroup);
+    return group.forget();
   }
 
   /**
@@ -1079,11 +1077,8 @@ public:
    */
   already_AddRefed<nsISupports> GetContainer() const
   {
-    nsISupports* container = nullptr;
-    if (mDocumentContainer)
-      CallQueryReferent(mDocumentContainer.get(), &container);
-
-    return container;
+    nsCOMPtr<nsISupports> container = do_QueryReferent(mDocumentContainer);
+    return container.forget();
   }
 
   /**
@@ -1772,11 +1767,14 @@ public:
 
   virtual already_AddRefed<mozilla::dom::UndoManager> GetUndoManager() = 0;
 
-  nsresult ScheduleFrameRequestCallback(nsIFrameRequestCallback* aCallback,
+  typedef mozilla::dom::CallbackObjectHolder<
+    mozilla::dom::FrameRequestCallback,
+    nsIFrameRequestCallback> FrameRequestCallbackHolder;
+  nsresult ScheduleFrameRequestCallback(const FrameRequestCallbackHolder& aCallback,
                                         int32_t *aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
 
-  typedef nsTArray< nsCOMPtr<nsIFrameRequestCallback> > FrameRequestCallbackList;
+  typedef nsTArray<FrameRequestCallbackHolder> FrameRequestCallbackList;
   /**
    * Put this document's frame request callbacks into the provided
    * list, and forget about them.
@@ -2369,29 +2367,7 @@ protected:
 
   nsCOMPtr<nsIDocumentEncoder> mCachedEncoder;
 
-  struct FrameRequest {
-    FrameRequest(nsIFrameRequestCallback* aCallback,
-                 int32_t aHandle) :
-      mCallback(aCallback),
-      mHandle(aHandle)
-    {}
-
-    // Conversion operator so that we can append these to a
-    // FrameRequestCallbackList
-    operator nsIFrameRequestCallback* const () const { return mCallback; }
-
-    // Comparator operators to allow RemoveElementSorted with an
-    // integer argument on arrays of FrameRequest
-    bool operator==(int32_t aHandle) const {
-      return mHandle == aHandle;
-    }
-    bool operator<(int32_t aHandle) const {
-      return mHandle < aHandle;
-    }
-    
-    nsCOMPtr<nsIFrameRequestCallback> mCallback;
-    int32_t mHandle;
-  };
+  struct FrameRequest;
 
   nsTArray<FrameRequest> mFrameRequestCallbacks;
 

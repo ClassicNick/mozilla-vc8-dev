@@ -1194,7 +1194,10 @@ public:
         fViewport(0, 0, size.width, size.height);
 
         mCaps = mScreen->Caps();
-        UpdateGLFormats(caps);
+        if (mCaps.any)
+            DetermineCaps();
+
+        UpdateGLFormats(mCaps);
         UpdatePixelFormat();
 
         return true;

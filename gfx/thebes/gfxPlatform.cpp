@@ -515,9 +515,7 @@ gfxPlatform::OptimizeImage(gfxImageSurface *aSurface,
     tmpCtx.SetSource(aSurface);
     tmpCtx.Paint();
 
-    gfxASurface *ret = optSurface;
-    NS_ADDREF(ret);
-    return ret;
+    return optSurface.forget();
 }
 
 cairo_user_data_key_t kDrawTarget;
