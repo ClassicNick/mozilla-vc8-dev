@@ -180,7 +180,7 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t argc;
-  jsval *argv = nullptr;
+  JS::Value *argv = nullptr;
 
   ncc->GetArgc(&argc);
   ncc->GetArgvPtr(&argv);
@@ -304,19 +304,11 @@ nsJSScriptTimeoutHandler::Init(nsGlobalWindow *aWindow, bool *aIsInterval,
     // to setTimeout or setInterval; the first two are our callback
     // and the delay, so only arguments after that need to go in our
     // array.
-<<<<<<< HEAD
-    nsCOMPtr<nsIJSArgArray> array;
-    // NS_MAX(argc - 2, 0) wouldn't work right because argc is unsigned.
-    rv = NS_CreateJSArgv(cx, NS_MAX(argc, 2u) - 2, nullptr,
-                         getter_AddRefs(array));
-    if (NS_FAILED(rv)) {
-=======
     // std::max(argc - 2, 0) wouldn't work right because argc is unsigned.
-    uint32_t argCount = std::max(argc, 2u) - 2;
+    uint32_t argCount = NS_MAX(argc, 2u) - 2;
     FallibleTArray<JS::Value> args;
     if (!args.SetCapacity(argCount)) {
       // No need to drop here, since we already have a non-null mFunction
->>>>>>> f0a83e6
       return NS_ERROR_OUT_OF_MEMORY;
     }
     for (uint32_t idx = 0; idx < argCount; ++idx) {

@@ -64,8 +64,7 @@ public:
    * message will be sent to the compositor to create a corresponding content
    * host.
    */
-  static TemporaryRef<ContentClient> CreateContentClient(LayersBackend aBackendType,
-                                                         CompositableForwarder* aFwd);
+  static TemporaryRef<ContentClient> CreateContentClient(CompositableForwarder* aFwd);
 
   ContentClient(CompositableForwarder* aForwarder)
   : CompositableClient(aForwarder)
@@ -214,6 +213,11 @@ protected:
   virtual nsIntRegion GetUpdatedRegion(const nsIntRegion& aRegionToDraw,
                                        const nsIntRegion& aVisibleRegion,
                                        bool aDidSelfCopy);
+
+  // create and configure mTextureClient
+  void BuildTextureClient(ContentType aType,
+                          const nsIntRect& aRect,
+                          uint32_t aFlags);
 
   // Create the front buffer for the ContentClient/Host pair if necessary
   // and notify the compositor that we have created the buffer(s).

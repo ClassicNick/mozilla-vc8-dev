@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLInputElementBinding.h"
+#include "nsAsyncDOMEvent.h"
 #include "nsAttrValueInlines.h"
 
 #include "nsIDOMHTMLInputElement.h"
@@ -99,7 +100,6 @@
 #include "jsapi.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(Input)
-DOMCI_NODE_DATA(HTMLInputElement, mozilla::dom::HTMLInputElement)
 
 // XXX align=left, hspace, vspace, border? other nav4 attrs
 
@@ -715,7 +715,7 @@ NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(HTMLInputElement)
                                    nsIConstraintValidation)
   NS_HTML_CONTENT_INTERFACE_TABLE_TO_MAP_SEGUE(HTMLInputElement,
                                                nsGenericHTMLFormElement)
-NS_HTML_CONTENT_INTERFACE_TABLE_TAIL_CLASSINFO(HTMLInputElement)
+NS_HTML_CONTENT_INTERFACE_MAP_END
 
 // nsIConstraintValidation
 NS_IMPL_NSICONSTRAINTVALIDATION_EXCEPT_SETCUSTOMVALIDITY(HTMLInputElement)
@@ -2715,6 +2715,7 @@ HTMLInputElement::CancelRangeThumbDrag(bool aIsForUserEvent)
 {
   MOZ_ASSERT(mIsDraggingRange);
 
+  mIsDraggingRange = false;
   if (nsIPresShell::GetCapturingContent() == this) {
     nsIPresShell::SetCapturingContent(nullptr, 0); // cancel capture
   }
@@ -2731,8 +2732,10 @@ HTMLInputElement::CancelRangeThumbDrag(bool aIsForUserEvent)
     if (frame) {
       frame->UpdateForValueChange();
     }
+    nsRefPtr<nsAsyncDOMEvent> event =
+      new nsAsyncDOMEvent(this, NS_LITERAL_STRING("input"), true, false);
+    event->RunDOMEventWhenSafe();
   }
-  mIsDraggingRange = false;
 }
 
 void

@@ -13,7 +13,7 @@
 #include "nsContentUtils.h"
 #include "nsIDOMSVGAnimatedNumber.h"
 #include "nsSVGEffects.h"
-#include "SVGAnimatedTransformList.h"
+#include "nsSVGAnimatedTransformList.h"
 
 // XXX Tight coupling with content classes ahead!
 
@@ -156,10 +156,10 @@ nsSVGGradientFrame::GetSpreadMethod()
   return GetEnumValue(dom::SVGGradientElement::SPREADMETHOD);
 }
 
-const SVGAnimatedTransformList*
+const nsSVGAnimatedTransformList*
 nsSVGGradientFrame::GetGradientTransformList(nsIContent* aDefault)
 {
-  SVGAnimatedTransformList *thisTransformList =
+  nsSVGAnimatedTransformList *thisTransformList =
     static_cast<dom::SVGGradientElement*>(mContent)->GetAnimatedTransformList();
 
   if (thisTransformList && thisTransformList->IsExplicitlySet())
@@ -200,7 +200,7 @@ nsSVGGradientFrame::GetGradientTransform(nsIFrame *aSource,
       gfxMatrix(bbox.Width(), 0, 0, bbox.Height(), bbox.X(), bbox.Y());
   }
 
-  const SVGAnimatedTransformList* animTransformList =
+  const nsSVGAnimatedTransformList* animTransformList =
     GetGradientTransformList(mContent);
   if (!animTransformList)
     return bboxMatrix;

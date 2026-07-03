@@ -1,6 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: set ts=4 sw=4 et tw=99:
- *
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -562,6 +561,7 @@ IonScript::IonScript()
     callTargetEntries_(0),
     refcount_(0),
     recompileInfo_(),
+    osrPcMismatchCounter_(0),
     slowCallCount(0)
 {
 }
@@ -1623,8 +1623,19 @@ ion::CanEnterAtBranch(JSContext *cx, JSScript *script, AbstractFramePtr fp,
         return status;
     }
 
-    if (script->hasIonScript() && script->ionScript()->osrPc() != pc)
+    if (script->ionScript()->osrPc() != pc) {
+        // If we keep failing to enter the script due to an OSR pc mismatch,
+        // invalidate the script to force a recompile.
+        uint32_t count = script->ionScript()->incrOsrPcMismatchCounter();
+
+        if (count > js_IonOptions.osrPcMismatchesBeforeRecompile) {
+            if (!Invalidate(cx, script, SequentialExecution, true))
+                return Method_Error;
+        }
         return Method_Skipped;
+    }
+
+    script->ionScript()->resetOsrPcMismatchCounter();
 
     return Method_Compiled;
 }

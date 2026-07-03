@@ -194,8 +194,6 @@ nsRefMapEntry::RemoveElement(Element* aElement)
 // ctors & dtors
 //
 
-DOMCI_NODE_DATA(XULDocument, XULDocument)
-
 namespace mozilla {
 namespace dom {
 
@@ -366,7 +364,6 @@ NS_INTERFACE_TABLE_HEAD_CYCLE_COLLECTION_INHERITED(XULDocument)
       NS_INTERFACE_TABLE_ENTRY(XULDocument, nsICSSLoaderObserver)
     NS_OFFSET_AND_INTERFACE_TABLE_END
     NS_OFFSET_AND_INTERFACE_TABLE_TO_MAP_SEGUE
-    NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(XULDocument)
 NS_INTERFACE_MAP_END_INHERITING(XMLDocument)
 
 
@@ -1520,6 +1517,29 @@ XULDocument::GetHeight(ErrorResult& aRv)
     return height;
 }
 
+JSObject*
+GetScopeObjectOfNode(nsIDOMNode* node)
+{
+    MOZ_ASSERT(node, "Must not be called with null.");
+
+    // Window root occasionally keeps alive a node of a document whose
+    // window is already dead. If in this brief period someone calls
+    // GetPopupNode and we return that node, nsNodeSH::PreCreate will throw,
+    // because it will not know which scope this node belongs to. Returning
+    // an orphan node like that to JS would be a bug anyway, so to avoid
+    // this, let's do the same check as nsNodeSH::PreCreate does to
+    // determine the scope and if it fails let's just return null in
+    // XULDocument::GetPopupNode.
+    nsCOMPtr<nsINode> inode = do_QueryInterface(node);
+    MOZ_ASSERT(inode, "How can this happen?");
+
+    nsIDocument* doc = inode->OwnerDoc();
+    MOZ_ASSERT(inode, "This should never happen.");
+
+    nsIGlobalObject* global = doc->GetScopeObject();
+    return global ? global->GetGlobalJSObject() : nullptr;
+}
+
 //----------------------------------------------------------------------
 //
 // nsIDOMXULDocument interface
@@ -1542,8 +1562,10 @@ XULDocument::GetPopupNode(nsIDOMNode** aNode)
         }
     }
 
-    if (node && nsContentUtils::CanCallerAccess(node))
-      node.swap(*aNode);
+    if (node && nsContentUtils::CanCallerAccess(node)
+        && GetScopeObjectOfNode(node)) {
+        node.swap(*aNode);
+    }
 
     return NS_OK;
 }

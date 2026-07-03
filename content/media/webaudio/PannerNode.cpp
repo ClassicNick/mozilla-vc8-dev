@@ -184,7 +184,9 @@ PannerNode::PannerNode(AudioContext* aContext)
 
 PannerNode::~PannerNode()
 {
-  Context()->UnregisterPannerNode(this);
+  if (Context()) {
+    Context()->UnregisterPannerNode(this);
+  }
   DestroyMediaStream();
 }
 

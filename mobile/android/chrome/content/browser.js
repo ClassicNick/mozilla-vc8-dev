@@ -625,6 +625,8 @@ var BrowserApp = {
     aTab.setResolution(aTab._zoom, true);
     this.displayedDocumentChanged();
     this.deck.selectedPanel = aTab.browser;
+    // Focus the browser so that things like selection will be styled correctly.
+    aTab.browser.focus();
   },
 
   get selectedBrowser() {
@@ -2103,7 +2105,7 @@ var LightWeightThemeWebInstaller = {
 
 var UserAgent = {
   DESKTOP_UA: null,
-  YOUTUBE_DOMAIN: /\.?youtube\.com$/,
+  YOUTUBE_DOMAIN: /(^|\.)youtube\.com$/,
 
   init: function ua_init() {
     Services.obs.addObserver(this, "DesktopMode:Change", false);
@@ -2141,15 +2143,18 @@ var UserAgent = {
   },
 
   getUserAgentForUriAndTab: function ua_getUserAgentForUriAndTab(aUri, aTab, defaultUA) {
-    if (this.YOUTUBE_DOMAIN.test(aUri.host)) {
-      // Send the phone UA to youtube if this is a tablet
-      if (defaultUA.indexOf("Android; Mobile;") === -1)
-        return defaultUA.replace("Android;", "Android; Mobile;");
-    }
-
-    // Send desktop UA if "Request Desktop Site" is enabled
+    // Send desktop UA if "Request Desktop Site" is enabled.
     if (aTab.desktopMode)
       return this.DESKTOP_UA;
+
+    // Not all schemes have a host member.
+    if (aUri.schemeIs("http") || aUri.schemeIs("https")) {
+      if (this.YOUTUBE_DOMAIN.test(aUri.host)) {
+        // Send the phone UA to Youtube if this is a tablet.
+        if (defaultUA.indexOf("Android; Mobile;") === -1)
+          return defaultUA.replace("Android;", "Android; Mobile;");
+      }
+    }
 
     return defaultUA;
   },
@@ -2833,15 +2838,13 @@ Tab.prototype = {
 
     // Adjust the max line box width to be no more than the viewport width, but
     // only if the reflow-on-zoom preference is enabled.
-    if (BrowserEventHandler.mReflozPref && BrowserEventHandler._mLastPinchData) {
-      let webNav = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIWebNavigation);
-      let docShell = webNav.QueryInterface(Ci.nsIDocShell);
-      let docViewer = docShell.contentViewer.QueryInterface(Ci.nsIMarkupDocumentViewer);
-      let viewportWidth = gScreenWidth / aViewport.zoom;
-      // We add in a bit of fudge just so that the end characters don't accidentally
-      // get clipped. 15px is an arbitrary choice.
-      docViewer.changeMaxLineBoxWidth(viewportWidth - 15);
-      BrowserEventHandler._mLastPinchData = null;
+    let isZooming = Math.abs(aViewport.zoom - this._zoom) >= 1e-6;
+    if (isZooming &&
+        BrowserEventHandler.mReflozPref &&
+        BrowserApp.selectedTab._mReflozPoint &&
+        BrowserApp.selectedTab.probablyNeedRefloz) {
+      BrowserApp.selectedTab.performReflowOnZoom(aViewport);
+      BrowserApp.selectedTab.probablyNeedRefloz = false;
     }
 
     let win = this.browser.contentWindow;
@@ -3567,7 +3570,12 @@ Tab.prototype = {
   },
 
   setBrowserSize: function(aWidth, aHeight) {
+    if (Math.abs(this.browserWidth - aWidth) < 1e-6 && Math.abs(this.browserHeight - aHeight) < 1e-6) {
+      return;
+    }
+
     this.browserWidth = aWidth;
+    this.browserHeight = aHeight;
 
     if (!this.browser.contentWindow)
       return;
@@ -3882,7 +3890,9 @@ var BrowserEventHandler = {
         break;
 
       case "MozMagnifyGesture":
-        this.onPinchFinish(aData, this._mLastPinchPoint.x, this._mLastPinchPoint.y);
+        if (BrowserEventHandler.mReflozPref) {
+          this.onPinchFinish(aData, BrowserApp.selectedTab._mReflozPoint.x, BrowserApp.selectedTab._mReflozPoint.y);
+        }
         break;
 
       default:
@@ -3993,21 +4003,37 @@ var BrowserEventHandler = {
     sendMessageToJava(rect);
   },
 
-  _zoomInAndSnapToElement: function(aX, aY, aElement) {
-    let viewport = BrowserApp.selectedTab.getViewport();
-    if (viewport.zoom < 1.0) {
-      // We don't want to do this on zoom out.
+  _zoomInAndSnapToRange: function(aRange) {
+    if (!aRange) {
+      Cu.reportError("aRange is null in zoomInAndSnapToRange. Unable to maintain position.");
       return;
     }
 
+    let viewport = BrowserApp.selectedTab.getViewport();
     let fudge = 15; // Add a bit of fudge.
-    let win = BrowserApp.selectedBrowser.contentWindow;
+    let boundingElement = aRange.offsetNode;
+    while (!boundingElement.getBoundingClientRect && boundingElement.parentNode) {
+      boundingElement = boundingElement.parentNode;
+    }
 
-    let rect = ElementTouchHelper.getBoundingContentRect(aElement);
+    let rect = ElementTouchHelper.getBoundingContentRect(boundingElement);
+    let drRect = aRange.getClientRect();
+    let scrollTop =
+      BrowserApp.selectedBrowser.contentDocument.documentElement.scrollTop ||
+      BrowserApp.selectedBrowser.contentDocument.body.scrollTop;
+
+    // We subtract half the height of the viewport so that we can (ideally)
+    // center the area of interest on the screen.
+    let topPos = scrollTop + drRect.top - (viewport.cssHeight / 2.0);
+
+    // Factor in the border and padding
+    let boundingStyle = window.getComputedStyle(boundingElement);
+    let leftAdjustment = parseInt(boundingStyle.paddingLeft) +
+                         parseInt(boundingStyle.borderLeftWidth);
 
     rect.type = "Browser:ZoomToRect";
-    rect.x = Math.max(viewport.cssPageLeft, rect.x  - fudge);
-    rect.y = viewport.cssY;
+    rect.x = Math.max(viewport.cssPageLeft, rect.x  - fudge + leftAdjustment);
+    rect.y = Math.max(topPos, viewport.cssPageTop);
     rect.w = viewport.cssWidth;
     rect.h = viewport.cssHeight;
 
@@ -4015,18 +4041,25 @@ var BrowserEventHandler = {
    },
 
    onPinch: function(aData) {
-     let data = JSON.parse(aData);
-     this._mLastPinchPoint = {x: data.x, y: data.y};
+     // We only want to do this if reflow-on-zoom is enabled.
+     if (BrowserEventHandler.mReflozPref &&
+         !BrowserApp.selectedTab._mReflozPoint) {
+       let data = JSON.parse(aData);
+       let zoomPointX = data.x;
+       let zoomPointY = data.y;
+
+       BrowserApp.selectedTab._mReflozPoint = { x: zoomPointX, y: zoomPointY,
+         range: BrowserApp.selectedBrowser.contentDocument.caretPositionFromPoint(zoomPointX, zoomPointY) };
+         BrowserApp.selectedTab.probablyNeedRefloz = true;
+     }
    },
 
    onPinchFinish: function(aData, aX, aY) {
-     if (this.mReflozPref) {
-       let data = JSON.parse(aData);
-       let pinchElement = ElementTouchHelper.anyElementFromPoint(aX, aY);
-       data.element = pinchElement;
-       BrowserApp.selectedTab._mLastPinchElement = pinchElement;
-       this._mLastPinchData = data;
-       this._zoomInAndSnapToElement(data.x, data.y, data.element);
+     // We only want to do this if reflow-on-zoom is enabled.
+     if (BrowserEventHandler.mReflozPref) {
+       let range = BrowserApp.selectedTab._mReflozPoint.range;
+       this._zoomInAndSnapToRange(range);
+       BrowserApp.selectedTab._mReflozPoint = null;
      }
    },
 
@@ -4046,8 +4079,6 @@ var BrowserEventHandler = {
   _scrollableElement: null,
 
   _highlightElement: null,
-
-  _mLastPinchData: null,
 
   _doTapHighlight: function _doTapHighlight(aElement) {
     DOMUtils.setContentState(aElement, kStateActive);

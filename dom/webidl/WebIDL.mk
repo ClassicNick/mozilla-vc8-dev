@@ -20,6 +20,7 @@ webidl_files = \
   AudioListener.webidl \
   AudioNode.webidl \
   AudioParam.webidl \
+  AudioStreamTrack.webidl \
   Attr.webidl \
   BatteryManager.webidl \
   BeforeUnloadEvent.webidl \
@@ -30,6 +31,7 @@ webidl_files = \
   CDATASection.webidl \
   CFStateChangeEvent.webidl \
   CharacterData.webidl \
+  ChildNode.webidl \
   ClientRect.webidl \
   ClientRectList.webidl \
   ClipboardEvent.webidl \
@@ -45,6 +47,7 @@ webidl_files = \
   CSSValueList.webidl \
   DelayNode.webidl \
   DesktopNotification.webidl \
+  DeviceMotionEvent.webidl \
   Document.webidl \
   DocumentFragment.webidl \
   DocumentType.webidl \
@@ -67,6 +70,7 @@ webidl_files = \
   File.webidl \
   FileHandle.webidl \
   FileList.webidl \
+  FileReader.webidl \
   FileReaderSync.webidl \
   FileRequest.webidl \
   FormData.webidl \
@@ -81,6 +85,7 @@ webidl_files = \
   HTMLBodyElement.webidl \
   HTMLBRElement.webidl \
   HTMLButtonElement.webidl \
+  HTMLCanvasElement.webidl \
   HTMLCollection.webidl \
   HTMLDataElement.webidl \
   HTMLDataListElement.webidl \
@@ -125,6 +130,7 @@ webidl_files = \
   HTMLPropertiesCollection.webidl \
   HTMLQuoteElement.webidl \
   HTMLScriptElement.webidl \
+  HTMLSelectElement.webidl \
   HTMLSourceElement.webidl \
   HTMLSpanElement.webidl \
   HTMLStyleElement.webidl \
@@ -149,16 +155,20 @@ webidl_files = \
   Location.webidl \
   MediaError.webidl \
   MediaStream.webidl \
+  MediaStreamTrack.webidl \
   MessageEvent.webidl \
   MouseEvent.webidl \
+  MouseScrollEvent.webidl \
   MozActivity.webidl \
   MutationEvent.webidl \
   MutationObserver.webidl \
+  NetDashboard.webidl \
   Node.webidl \
   NodeFilter.webidl \
   NodeIterator.webidl \
   NodeList.webidl \
   Notification.webidl \
+  NotifyPaintEvent.webidl \
   PaintRequest.webidl \
   PaintRequestList.webidl \
   PannerNode.webidl \
@@ -278,6 +288,7 @@ webidl_files = \
   TextDecoder.webidl \
   TextEncoder.webidl \
   TimeRanges.webidl \
+  TouchEvent.webidl \
   TransitionEvent.webidl \
   TreeWalker.webidl \
   UIEvent.webidl \
@@ -289,6 +300,7 @@ webidl_files = \
   UndoManager.webidl \
   URLUtils.webidl \
   USSDReceivedEvent.webidl \
+  VideoStreamTrack.webidl \
   XMLDocument.webidl \
   XMLHttpRequest.webidl \
   XMLHttpRequestEventTarget.webidl \
