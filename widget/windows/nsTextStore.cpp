@@ -47,8 +47,6 @@ using namespace mozilla::widget;
 PRLogModuleInfo* sTextStoreLog = nullptr;
 #endif // #ifdef PR_LOGGING
 
-#define IS_SEARCH static_cast<InputScope>(50)
-
 /******************************************************************/
 /* InputScopeImpl                                                 */
 /******************************************************************/

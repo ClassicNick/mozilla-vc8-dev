@@ -50,8 +50,7 @@ public:
   NS_IMETHOD Initialize(nsISupports* aOwner,
                         JSContext* aCx,
                         JSObject* aObj,
-                        uint32_t aArgc,
-                        JS::Value* aArgv);
+                        const JS::CallArgs& aArgs);
 
   typedef nsIDOMBlob* (*UnwrapFuncPtr)(JSContext*, JSObject*);
   nsresult InitBlob(JSContext* aCx,

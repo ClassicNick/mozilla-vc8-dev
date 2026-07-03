@@ -27,6 +27,7 @@
 
 #define _USE_MATH_DEFINES
 #include <cmath>
+#include <float.h>
 
 namespace WebCore {
 
@@ -34,7 +35,6 @@ namespace WebCore {
 
 // Define HAVE_DENORMAL if we support flushing denormals to zero.
 #if defined(XP_WIN) && defined(_MSC_VER) && _MSC_VER >= 1400
-#include <float.h>
 #define HAVE_DENORMAL
 #else
 #include <float.h>
@@ -54,9 +54,9 @@ public:
         // Save the current state, and set mode to flush denormals.
         //
         // http://stackoverflow.com/questions/637175/possible-bug-in-controlfp-s-may-not-restore-control-word-correctly
-        _controlfp(&m_savedCSR, 0, 0);
+        _controlfp_s(&m_savedCSR, 0, 0);
         unsigned int unused;
-        _controlfp(&unused, _DN_FLUSH, _MCW_DN);
+        _controlfp_s(&unused, _DN_FLUSH, _MCW_DN);
 #else
         m_savedCSR = getCSR();
         setCSR(m_savedCSR | 0x8040);

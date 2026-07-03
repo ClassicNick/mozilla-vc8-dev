@@ -71,7 +71,7 @@ struct CallsiteCloneKey {
     /* The offset of the call. */
     uint32_t offset;
 
-    CallsiteCloneKey() { mozilla::PodZero(this); }
+    CallsiteCloneKey(JSFunction *f, JSScript *s, uint32_t o) : original(f), script(s), offset(o) {}
 
     typedef CallsiteCloneKey Lookup;
 
@@ -1745,7 +1745,8 @@ struct JSContext : js::ContextFriendFields,
     js::Value           iterValue;
 
 #ifdef JS_METHODJIT
-    bool                 methodJitEnabled;
+    bool methodJitEnabled;
+    bool jitIsBroken;
 
     js::mjit::JaegerRuntime &jaegerRuntime() { return runtime->jaegerRuntime(); }
 #endif
@@ -2229,19 +2230,6 @@ SetValueRangeToNull(Value *vec, size_t len)
 {
     SetValueRangeToNull(vec, vec + len);
 }
-
-class AutoObjectVector : public AutoVectorRooter<JSObject *>
-{
-  public:
-    explicit AutoObjectVector(JSContext *cx
-                              MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-        : AutoVectorRooter<JSObject *>(cx, OBJVECTOR)
-    {
-        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    }
-
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-};
 
 class AutoStringVector : public AutoVectorRooter<JSString *>
 {

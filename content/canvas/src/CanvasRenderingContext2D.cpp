@@ -1255,7 +1255,7 @@ CanvasRenderingContext2D::GetMozCurrentTransformInverse(JSContext* cx,
 
 void
 CanvasRenderingContext2D::SetStyleFromJSValue(JSContext* cx,
-                                              JS::Value& value,
+                                              JS::Handle<JS::Value> value,
                                               Style whichStyle)
 {
   if (value.isString()) {
@@ -1270,9 +1270,10 @@ CanvasRenderingContext2D::SetStyleFromJSValue(JSContext* cx,
     nsCOMPtr<nsISupports> holder;
 
     CanvasGradient* gradient;
+    JS::Rooted<JS::Value> rootedVal(cx, value);
     nsresult rv = xpc_qsUnwrapArg<CanvasGradient>(cx, value, &gradient,
                                                   static_cast<nsISupports**>(getter_AddRefs(holder)),
-                                                  &value);
+                                                  rootedVal.address());
     if (NS_SUCCEEDED(rv)) {
       SetStyleFromGradient(gradient, whichStyle);
       return;
@@ -1281,7 +1282,7 @@ CanvasRenderingContext2D::SetStyleFromJSValue(JSContext* cx,
     CanvasPattern* pattern;
     rv = xpc_qsUnwrapArg<CanvasPattern>(cx, value, &pattern,
                                         static_cast<nsISupports**>(getter_AddRefs(holder)),
-                                        &value);
+                                        rootedVal.address());
     if (NS_SUCCEEDED(rv)) {
       SetStyleFromPattern(pattern, whichStyle);
       return;
@@ -2812,9 +2813,7 @@ CanvasRenderingContext2D::SetMozDash(JSContext* cx,
 JS::Value
 CanvasRenderingContext2D::GetMozDash(JSContext* cx, ErrorResult& error)
 {
-  JS::Value mozDash;
-  error = DashArrayToJSVal(CurrentState().dash, cx, &mozDash);
-  return mozDash;
+  return DashArrayToJSVal(CurrentState().dash, cx, error);
 }
 
 void
@@ -3425,7 +3424,7 @@ CanvasRenderingContext2D::GetImageDataArray(JSContext* aCx,
     }
   }
 
-  JSObject* darray = JS_NewUint8ClampedArray(aCx, len.value());
+  JS::Rooted<JSObject*> darray(aCx, JS_NewUint8ClampedArray(aCx, len.value()));
   if (!darray) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
