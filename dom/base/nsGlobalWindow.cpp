@@ -1822,6 +1822,14 @@ nsGlobalWindow::GetGlobalJSObject()
   return FastGetGlobalJSObject();
 }
 
+void
+nsGlobalWindow::TraceGlobalJSObject(JSTracer* aTrc)
+{
+  if (mJSObject) {
+    JS_CallObjectTracer(aTrc, &mJSObject, "active window global");
+  }
+}
+
 bool
 nsGlobalWindow::WouldReuseInnerWindow(nsIDocument *aNewDocument)
 {

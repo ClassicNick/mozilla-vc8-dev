@@ -429,7 +429,7 @@ void XPCJSRuntime::TraceXPConnectRoots(JSTracer *trc)
     while (JSContext *acx = JS_ContextIterator(GetJSRuntime(), &iter)) {
         MOZ_ASSERT(js::HasUnrootedGlobal(acx));
         if (JSObject *global = JS_GetGlobalObject(acx))
-            JS_CallObjectTracer(trc, global, "XPC global object");
+            JS_CallObjectTracer(trc, &global, "XPC global object");
     }
 
     XPCAutoLock lock(mMapLock);
@@ -3010,7 +3010,7 @@ JSObject *
 XPCJSRuntime::GetJunkScope()
 {
     if (!mJunkScope) {
-        SafeAutoJSContext cx;
+        AutoSafeJSContext cx;
         SandboxOptions options(cx);
         options.sandboxName.AssignASCII("XPConnect Junk Compartment");
         JSAutoRequest ac(cx);

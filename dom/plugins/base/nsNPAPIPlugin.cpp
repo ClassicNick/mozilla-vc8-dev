@@ -1300,7 +1300,7 @@ _getstringidentifier(const NPUTF8* name)
     NPN_PLUGIN_LOG(PLUGIN_LOG_ALWAYS,("NPN_getstringidentifier called from the wrong thread\n"));
   }
 
-  SafeAutoJSContext cx;
+  AutoSafeJSContext cx;
   JSAutoRequest ar(cx);
   return doGetIdentifier(cx, name);
 }
@@ -1313,7 +1313,7 @@ _getstringidentifiers(const NPUTF8** names, int32_t nameCount,
     NPN_PLUGIN_LOG(PLUGIN_LOG_ALWAYS,("NPN_getstringidentifiers called from the wrong thread\n"));
   }
 
-  SafeAutoJSContext cx;
+  AutoSafeJSContext cx;
   JSAutoRequest ar(cx);
 
   for (int32_t i = 0; i < nameCount; ++i) {
@@ -2648,7 +2648,7 @@ _getvalueforurl(NPP instance, NPNURLVariable variable, const char *url,
       nsCOMPtr<nsIPluginHost> pluginHostCOM(do_GetService(MOZ_PLUGIN_HOST_CONTRACTID));
       nsPluginHost *pluginHost = static_cast<nsPluginHost*>(pluginHostCOM.get());
       if (pluginHost && NS_SUCCEEDED(pluginHost->FindProxyForURL(url, value))) {
-        *len = *value ? PL_strlen(*value) : 0;
+        *len = *value ? strlen(*value) : 0;
         return NPERR_NO_ERROR;
       }
       break;
@@ -2674,7 +2674,7 @@ _getvalueforurl(NPP instance, NPNURLVariable variable, const char *url,
         return NPERR_GENERIC_ERROR;
       }
 
-      *len = PL_strlen(*value);
+      *len = strlen(*value);
       return NPERR_NO_ERROR;
     }
 
