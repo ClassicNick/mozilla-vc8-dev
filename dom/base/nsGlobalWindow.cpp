@@ -57,7 +57,7 @@
 #include "nsPluginHost.h"
 #include "nsIPluginInstanceOwner.h"
 #include "nsGeolocation.h"
-#include "nsDesktopNotification.h"
+#include "mozilla/dom/DesktopNotification.h"
 #include "nsContentCID.h"
 #include "nsLayoutStatics.h"
 #include "nsCycleCollector.h"
@@ -96,7 +96,6 @@
 #include "nsIDOMHashChangeEvent.h"
 #include "nsIDOMOfflineResourceList.h"
 #include "nsIDOMGeoGeolocation.h"
-#include "nsIDOMDesktopNotification.h"
 #include "nsPIDOMStorage.h"
 #include "nsDOMString.h"
 #include "nsIEmbeddingSiteWindow.h"
@@ -227,6 +226,7 @@
 #include "TimeChangeObserver.h"
 #include "nsPISocketTransportService.h"
 #include "mozilla/dom/AudioContext.h"
+#include "mozilla/dom/FunctionBinding.h"
 
 #ifdef MOZ_WEBSPEECH
 #include "mozilla/dom/SpeechSynthesis.h"
@@ -1489,6 +1489,10 @@ nsGlobalWindow::FreeInnerObjects()
     mAudioContexts[i]->Shutdown();
   }
   mAudioContexts.Clear();
+
+#ifdef MOZ_GAMEPAD
+  mGamepads.Clear();
+#endif
 }
 
 //*****************************************************************************
@@ -1631,6 +1635,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingStorageEvents)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIdleObservers)
 
+#ifdef MOZ_GAMEPAD
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepads)
+#endif
+
   // Traverse stuff from nsPIDOMWindow
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChromeEventHandler)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParentTarget)
@@ -1673,6 +1681,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIdleService)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingStorageEvents)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIdleObservers)
+
+#ifdef MOZ_GAMEPAD
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGamepads)
+#endif
 
   // Unlink stuff from nsPIDOMWindow
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChromeEventHandler)
@@ -1723,8 +1735,12 @@ nsGlobalWindow::UnmarkGrayTimers()
        timeout;
        timeout = timeout->getNext()) {
     if (timeout->mScriptHandler) {
-      JSObject* o = timeout->mScriptHandler->GetScriptObject();
-      xpc_UnmarkGrayObject(o);
+      Function* f = timeout->mScriptHandler->GetCallback();
+      if (f) {
+        // Callable() already does xpc_UnmarkGrayObject.
+        DebugOnly<JSObject*> o = f->Callable();
+        MOZ_ASSERT(!xpc_IsGrayGCThing(o), "Should have been unmarked");
+      }
     }
   }
 }
@@ -6509,7 +6525,7 @@ nsGlobalWindow::CallerInnerWindow()
     bool ok = JS_GetPrototype(cx, scope, &scopeProto);
     NS_ENSURE_TRUE(ok, nullptr);
     if (scopeProto && xpc::IsSandboxPrototypeProxy(scopeProto) &&
-        (scopeProto = js::UnwrapObjectChecked(scopeProto, /* stopAtOuter = */ false)))
+        (scopeProto = js::CheckedUnwrap(scopeProto, /* stopAtOuter = */ false)))
     {
       scope = scopeProto;
     }
@@ -10172,8 +10188,8 @@ nsGlobalWindow::RunTimeoutHandler(nsTimeout* aTimeout,
   }
 
   nsCOMPtr<nsIScriptTimeoutHandler> handler(timeout->mScriptHandler);
-  JSObject* scriptObject = handler->GetScriptObject();
-  if (!scriptObject) {
+  nsRefPtr<Function> callback = handler->GetCallback();
+  if (!callback) {
     // Evaluate the timeout expression.
     const PRUnichar* script = handler->GetHandlerText();
     NS_ASSERTION(script, "timeout has no script nor handler text!");
@@ -10189,18 +10205,14 @@ nsGlobalWindow::RunTimeoutHandler(nsTimeout* aTimeout,
     aScx->EvaluateString(nsDependentString(script), *FastGetGlobalJSObject(),
                          options, /*aCoerceToString = */ false, nullptr);
   } else {
-    nsCOMPtr<nsIVariant> dummy;
+    // Hold strong ref to ourselves while we call the callback.
     nsCOMPtr<nsISupports> me(static_cast<nsIDOMWindow *>(this));
-    aScx->CallEventHandler(me, FastGetGlobalJSObject(),
-                           scriptObject, handler->GetArgv(),
-                           // XXXmarkh - consider allowing CallEventHandler to
-                           // accept nullptr?
-                           getter_AddRefs(dummy));
-
+    ErrorResult ignored;
+    callback->Call(me, handler->GetArgs(), ignored);
   }
 
-  // We ignore any failures from calling EvaluateString() or
-  // CallEventHandler() on the context here since we're in a loop
+  // We ignore any failures from calling EvaluateString() on the context or
+  // Call() on a Function here since we're in a loop
   // where we're likely to be running timeouts whose OS timers
   // didn't fire in time and we don't want to not fire those timers
   // now just because execution of one timer failed. We can't

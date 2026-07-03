@@ -1137,7 +1137,7 @@ xpc_MorphSlimWrapper(JSContext *cx, nsISupports *tomorph)
     if (!cache)
         return NS_OK;
 
-    JSObject *obj = cache->GetWrapper();
+    JS::RootedObject obj(cx, cache->GetWrapper());
     if (!obj || !IS_SLIM_WRAPPER(obj))
         return NS_OK;
     NS_ENSURE_STATE(MorphSlimWrapper(cx, obj));
@@ -1332,7 +1332,7 @@ nsXPConnect::GetNativeOfWrapper(JSContext * aJSContext,
         return nullptr;
     }
 
-    aJSObj = js::UnwrapObjectChecked(aJSObj, /* stopAtOuter = */ false);
+    aJSObj = js::CheckedUnwrap(aJSObj, /* stopAtOuter = */ false);
     if (!aJSObj) {
         JS_ReportError(aJSContext, "Permission denied to get native of security wrapper");
         return nullptr;
@@ -1408,8 +1408,9 @@ nsXPConnect::ReparentWrappedNativeIfFound(JSContext * aJSContext,
     if (!scope || !scope2)
         return UnexpectedFailure(NS_ERROR_FAILURE);
 
+    JS::RootedObject newParent(ccx, aNewParent);
     return XPCWrappedNative::
-        ReparentWrapperIfFound(ccx, scope, scope2, aNewParent,
+        ReparentWrapperIfFound(ccx, scope, scope2, newParent,
                                aCOMObj);
 }
 
@@ -1660,14 +1661,20 @@ nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
 
 NS_IMETHODIMP
 nsXPConnect::EvalInSandboxObject(const nsAString& source, const char *filename,
-                                 JSContext *cx, JSObject *sandbox,
-                                 bool returnStringOnly, jsval *rval)
+                                 JSContext *cx, JSObject *sandboxArg,
+                                 bool returnStringOnly, JS::Value *rvalArg)
 {
-    if (!sandbox)
+    if (!sandboxArg)
         return NS_ERROR_INVALID_ARG;
 
-    return xpc_EvalInSandbox(cx, sandbox, source, filename ? filename : "x-bogus://XPConnect/Sandbox",
-                             1, JSVERSION_DEFAULT, returnStringOnly, rval);
+    JS::RootedObject sandbox(cx, sandboxArg);
+    JS::RootedValue rval(cx);
+    nsresult rv = xpc_EvalInSandbox(cx, sandbox, source, filename ? filename :
+                                    "x-bogus://XPConnect/Sandbox", 1, JSVERSION_DEFAULT,
+                                    returnStringOnly, &rval);
+    NS_ENSURE_SUCCESS(rv, rv);
+    *rvalArg = rval;
+    return NS_OK;
 }
 
 /* nsIXPConnectJSObjectHolder getWrappedNativePrototype (in JSContextPtr aJSContext, in JSObjectPtr aScope, in nsIClassInfo aClassInfo); */

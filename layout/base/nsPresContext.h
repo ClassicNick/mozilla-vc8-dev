@@ -912,7 +912,7 @@ public:
    */
   class InterruptPreventer;
   friend class InterruptPreventer;
-  class NS_STACK_CLASS InterruptPreventer {
+  class MOZ_STACK_CLASS InterruptPreventer {
   public:
     InterruptPreventer(nsPresContext* aCtx) :
       mCtx(aCtx),

@@ -762,7 +762,7 @@ enum CharClass {
   CHAR_CLASS_END_OF_INPUT };
 
 // Encapsulates DOM-word to real-word splitting
-struct NS_STACK_CLASS WordSplitState
+struct MOZ_STACK_CLASS WordSplitState
 {
   mozInlineSpellWordUtil*    mWordUtil;
   const nsDependentSubstring mDOMWordText;

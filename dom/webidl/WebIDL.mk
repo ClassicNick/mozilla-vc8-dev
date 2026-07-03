@@ -36,6 +36,7 @@ webidl_files = \
   CommandEvent.webidl \
   Comment.webidl \
   CompositionEvent.webidl \
+  Coordinates.webidl \
   CSS.webidl \
   CSSPrimitiveValue.webidl \
   CSSStyleDeclaration.webidl \
@@ -43,6 +44,7 @@ webidl_files = \
   CSSValue.webidl \
   CSSValueList.webidl \
   DelayNode.webidl \
+  DesktopNotification.webidl \
   Document.webidl \
   DocumentFragment.webidl \
   DocumentType.webidl \
@@ -70,6 +72,7 @@ webidl_files = \
   FormData.webidl \
   Function.webidl \
   GainNode.webidl \
+  Geolocation.webidl \
   HTMLAnchorElement.webidl \
   HTMLAppletElement.webidl \
   HTMLAreaElement.webidl \
@@ -162,6 +165,8 @@ webidl_files = \
   Performance.webidl \
   PerformanceNavigation.webidl \
   PerformanceTiming.webidl \
+  Position.webidl \
+  PositionError.webidl \
   ProcessingInstruction.webidl \
   Range.webidl \
   Rect.webidl \
@@ -325,6 +330,12 @@ webidl_files += \
   SpeechSynthesisUtterance.webidl \
   SpeechSynthesisVoice.webidl \
   SpeechSynthesis.webidl \
+  $(NULL)
+endif
+
+ifdef MOZ_GAMEPAD
+webidl_files += \
+  Gamepad.webidl \
   $(NULL)
 endif
 

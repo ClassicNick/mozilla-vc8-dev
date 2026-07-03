@@ -26,6 +26,7 @@
 #include "nsStyleContext.h"
 #include "nsStyleStruct.h"
 #include "nsStyleStructInlines.h"
+#include "nsSVGTextFrame2.h"
 #include "nsCoord.h"
 #include "nsRenderingContext.h"
 #include "nsIPresShell.h"
@@ -2667,7 +2668,7 @@ static bool IsInBounds(const gfxSkipCharsIterator& aStart, int32_t aContentLengt
 }
 #endif
 
-class NS_STACK_CLASS PropertyProvider : public gfxTextRun::PropertyProvider {
+class MOZ_STACK_CLASS PropertyProvider : public gfxTextRun::PropertyProvider {
 public:
   /**
    * Use this constructor for reflow, when we don't know what text is
@@ -4829,6 +4830,21 @@ nsTextFrame::GetTextDecorations(
   }
 }
 
+static float
+GetInflationForTextDecorations(nsIFrame* aFrame, nscoord aInflationMinFontSize)
+{
+  if (aFrame->IsSVGText()) {
+    const nsIFrame* container = aFrame;
+    while (container->GetType() != nsGkAtoms::svgTextFrame2) {
+      container = container->GetParent();
+    }
+    NS_ASSERTION(container, "expected to find an ancestor nsSVGTextFrame2");
+    return
+      static_cast<const nsSVGTextFrame2*>(container)->GetFontSizeScaleFactor();
+  }
+  return nsLayoutUtils::FontSizeInflationInner(aFrame, aInflationMinFontSize);
+}
+
 void
 nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
                                      const nsHTMLReflowState& aBlockReflowState,
@@ -4908,8 +4924,8 @@ nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
           decorationStyle = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
         }
 
-        float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                            inflationMinFontSize);
+        float inflation =
+          GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
         const gfxFont::Metrics metrics =
           GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -4933,8 +4949,8 @@ nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
           decorationStyle = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
         }
 
-        float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                            inflationMinFontSize);
+        float inflation =
+          GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
         const gfxFont::Metrics metrics =
           GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -4958,8 +4974,8 @@ nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
           decorationStyle = NS_STYLE_TEXT_DECORATION_STYLE_SOLID;
         }
 
-        float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                            inflationMinFontSize);
+        float inflation =
+          GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
         const gfxFont::Metrics metrics =
           GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -6049,8 +6065,8 @@ nsTextFrame::DrawTextRunAndDecorations(
         continue;
       }
 
-      float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                          inflationMinFontSize);
+      float inflation =
+        GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
       const gfxFont::Metrics metrics =
         GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -6069,8 +6085,8 @@ nsTextFrame::DrawTextRunAndDecorations(
         continue;
       }
 
-      float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                          inflationMinFontSize);
+      float inflation =
+        GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
       const gfxFont::Metrics metrics =
         GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -6095,8 +6111,8 @@ nsTextFrame::DrawTextRunAndDecorations(
         continue;
       }
 
-      float inflation = nsLayoutUtils::FontSizeInflationInner(dec.mFrame,
-                          inflationMinFontSize);
+      float inflation =
+        GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
       const gfxFont::Metrics metrics =
         GetFirstFontMetrics(GetFontGroupForFrame(dec.mFrame, inflation));
 
@@ -6565,7 +6581,7 @@ nsTextFrame::PeekOffsetNoAmount(bool aForward, int32_t* aOffset)
  * is interpreted according to aDirection, so if aDirection is -1, "before"
  * means actually *after* the cluster content.)
  */
-class NS_STACK_CLASS ClusterIterator {
+class MOZ_STACK_CLASS ClusterIterator {
 public:
   ClusterIterator(nsTextFrame* aTextFrame, int32_t aPosition, int32_t aDirection,
                   nsString& aContext);
@@ -7623,7 +7639,7 @@ nsTextFrame::Reflow(nsPresContext*           aPresContext,
 /**
  * Notifies accessibility about text reflow. Used by nsTextFrame::ReflowText.
  */
-class NS_STACK_CLASS ReflowTextA11yNotifier
+class MOZ_STACK_CLASS ReflowTextA11yNotifier
 {
 public:
   ReflowTextA11yNotifier(nsPresContext* aPresContext, nsIContent* aContent) :

@@ -161,7 +161,7 @@ MarginComponentForSide(nsMargin& aMargin, Side aSide)
 }
 
 // Encapsulates our flex container's main & cross axes.
-NS_STACK_CLASS class FlexboxAxisTracker {
+class MOZ_STACK_CLASS FlexboxAxisTracker {
 public:
   FlexboxAxisTracker(nsFlexContainerFrame* aFlexContainerFrame);
 
@@ -839,8 +839,7 @@ FlexItem::GetNumAutoMarginsInAxis(AxisOrientationType aAxis) const
 // corresponds to the 'start' edge of that axis).
 // This class shouldn't be instantiated directly -- rather, it should only be
 // instantiated via its subclasses defined below.
-NS_STACK_CLASS
-class PositionTracker {
+class MOZ_STACK_CLASS PositionTracker {
 public:
   // Accessor for the current value of the position that we're tracking.
   inline nscoord GetPosition() const { return mPosition; }
@@ -903,8 +902,7 @@ protected:
 };
 
 // Tracks our position in the main axis, when we're laying out flex items.
-NS_STACK_CLASS
-class MainAxisPositionTracker : public PositionTracker {
+class MOZ_STACK_CLASS MainAxisPositionTracker : public PositionTracker {
 public:
   MainAxisPositionTracker(nsFlexContainerFrame* aFlexContainerFrame,
                           const FlexboxAxisTracker& aAxisTracker,
@@ -935,8 +933,7 @@ private:
 // Utility class for managing our position along the cross axis along
 // the whole flex container (at a higher level than a single line)
 class SingleLineCrossAxisPositionTracker;
-NS_STACK_CLASS
-class CrossAxisPositionTracker : public PositionTracker {
+class MOZ_STACK_CLASS CrossAxisPositionTracker : public PositionTracker {
 public:
   CrossAxisPositionTracker(nsFlexContainerFrame* aFlexContainerFrame,
                            const FlexboxAxisTracker& aAxisTracker,
@@ -951,8 +948,7 @@ public:
 
 // Utility class for managing our position along the cross axis, *within* a
 // single flex line.
-NS_STACK_CLASS
-class SingleLineCrossAxisPositionTracker : public PositionTracker {
+class MOZ_STACK_CLASS SingleLineCrossAxisPositionTracker : public PositionTracker {
 public:
   SingleLineCrossAxisPositionTracker(nsFlexContainerFrame* aFlexContainerFrame,
                                      const FlexboxAxisTracker& aAxisTracker,
