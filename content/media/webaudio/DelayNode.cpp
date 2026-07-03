@@ -113,7 +113,7 @@ public:
     const double smoothingRate = WebAudioUtils::ComputeSmoothingRate(0.02, IdealAudioRate());
 
     if (mDelay.HasSimpleValue()) {
-      delayTime = std::max(0.0, std::min(mMaxDelay, double(mDelay.GetValue())));
+      delayTime = NS_MAX(0.0, NS_MIN(mMaxDelay, double(mDelay.GetValue())));
       if (firstTime) {
         // Initialize this only the first time to make sure that mCurrentDelayTime
         // has a valid value when we try to change the delay time further below.
@@ -123,7 +123,7 @@ public:
       // Compute the delay values for the duration of the input AudioChunk
       TrackTicks tick = aStream->GetCurrentPosition();
       for (size_t counter = 0; counter < WEBAUDIO_BLOCK_SIZE; ++counter) {
-        computedDelay[counter] = std::max(0.0, std::min(mMaxDelay,
+        computedDelay[counter] = NS_MAX(0.0, NS_MIN(mMaxDelay,
                                    double(mDelay.GetValueAtTime<TrackTicks>(tick + counter))));
       }
     }
@@ -201,7 +201,7 @@ public:
 
 DelayNode::DelayNode(AudioContext* aContext, double aMaxDelay)
   : AudioNode(aContext)
-  , mDelay(new AudioParam(this, SendDelayToStream, 0.0f, 0.0f, float(aMaxDelay)))
+  , mDelay(new AudioParam(this, SendDelayToStream, 0.0f))
 {
   DelayNodeEngine* engine = new DelayNodeEngine(aContext->Destination());
   mStream = aContext->Graph()->CreateAudioNodeStream(engine, MediaStreamGraph::INTERNAL_STREAM);

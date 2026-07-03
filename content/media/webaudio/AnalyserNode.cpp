@@ -11,6 +11,10 @@
 #include "mozilla/Mutex.h"
 #include "kiss_fft/kiss_fftr.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace mozilla {
 namespace dom {
 
@@ -100,8 +104,9 @@ AnalyserNode::WrapObject(JSContext* aCx, JSObject* aScope)
 void
 AnalyserNode::SetFftSize(uint32_t aValue, ErrorResult& aRv)
 {
-  // Disallow values that are either less than 2 or not a power of 2
-  if (aValue < 2 ||
+  // Disallow values that are not a power of 2 and outside the [32,2048] range
+  if (aValue < 32 ||
+      aValue > 2048 ||
       (aValue & (aValue - 1)) != 0) {
     aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -151,7 +156,7 @@ AnalyserNode::GetFloatFrequencyData(Float32Array& aArray)
   }
 
   float* buffer = aArray.Data();
-  uint32_t length = std::min(aArray.Length(), mOutputBuffer.Length());
+  uint32_t length = NS_MIN(aArray.Length(), mOutputBuffer.Length());
 
   for (uint32_t i = 0; i < length; ++i) {
     buffer[i] = WebAudioUtils::ConvertLinearToDecibels(mOutputBuffer[i], mMinDecibels);
@@ -169,12 +174,12 @@ AnalyserNode::GetByteFrequencyData(Uint8Array& aArray)
   const double rangeScaleFactor = 1.0 / (mMaxDecibels - mMinDecibels);
 
   unsigned char* buffer = aArray.Data();
-  uint32_t length = std::min(aArray.Length(), mOutputBuffer.Length());
+  uint32_t length = NS_MIN(aArray.Length(), mOutputBuffer.Length());
 
   for (uint32_t i = 0; i < length; ++i) {
     const double decibels = WebAudioUtils::ConvertLinearToDecibels(mOutputBuffer[i], mMinDecibels);
     // scale down the value to the range of [0, UCHAR_MAX]
-    const double scaled = std::max(0.0, std::min(double(UCHAR_MAX),
+    const double scaled = NS_MAX(0.0, NS_MIN(double(UCHAR_MAX),
                                                  UCHAR_MAX * (decibels - mMinDecibels) * rangeScaleFactor));
     buffer[i] = static_cast<unsigned char>(scaled);
   }
@@ -184,12 +189,12 @@ void
 AnalyserNode::GetByteTimeDomainData(Uint8Array& aArray)
 {
   unsigned char* buffer = aArray.Data();
-  uint32_t length = std::min(aArray.Length(), mBuffer.Length());
+  uint32_t length = NS_MIN(aArray.Length(), mBuffer.Length());
 
   for (uint32_t i = 0; i < length; ++i) {
     const float value = mBuffer[(i + mWriteIndex) % mBuffer.Length()];
     // scale the value to the range of [0, UCHAR_MAX]
-    const float scaled = std::max(0.0f, std::min(float(UCHAR_MAX),
+    const float scaled = NS_MAX(0.0f, NS_MIN(float(UCHAR_MAX),
                                                  128.0f * (value + 1.0f)));
     buffer[i] = static_cast<unsigned char>(scaled);
   }

@@ -4220,7 +4220,6 @@ MOZ_TREMOR=
 MOZ_WAVE=1
 MOZ_SAMPLE_TYPE_FLOAT32=
 MOZ_SAMPLE_TYPE_S16=
-MOZ_MEDIA=
 MOZ_OPUS=1
 MOZ_WEBM=1
 MOZ_DASH=
@@ -5344,7 +5343,6 @@ if test -n "$MOZ_WEBRTC"; then
     dnl MOZ_WEBRTC_ASSERT_ALWAYS turns on a number of safety asserts in
     dnl opt/production builds (via MOZ_CRASH())
     AC_DEFINE(MOZ_WEBRTC_ASSERT_ALWAYS)
-    MOZ_MEDIA=1
     MOZ_RAW=1
     MOZ_VP8=1
     MOZ_VP8_ENCODER=1
@@ -5412,7 +5410,6 @@ MOZ_ARG_DISABLE_BOOL(webspeech,
 
 if test -n "$MOZ_WEBSPEECH"; then
     AC_DEFINE(MOZ_WEBSPEECH)
-    MOZ_MEDIA=1
 fi
 
 AC_SUBST(MOZ_WEBSPEECH)
@@ -5427,7 +5424,6 @@ MOZ_ARG_ENABLE_BOOL(raw,
 
 if test -n "$MOZ_RAW"; then
     AC_DEFINE(MOZ_RAW)
-    MOZ_MEDIA=1
 fi
 
 AC_SUBST(MOZ_RAW)
@@ -5442,12 +5438,7 @@ MOZ_ARG_DISABLE_BOOL(ogg,
 
 if test -n "$MOZ_OGG"; then
     AC_DEFINE(MOZ_OGG)
-if test "$MOZ_WINSDK_TARGETVER" -ge "06010000"; then
-    MOZ_CUBEB=1
-else
 	MOZ_CUBEB=1
-fi
-    MOZ_MEDIA=1
 
     dnl Checks for __attribute__(aligned()) directive
     AC_CACHE_CHECK([__attribute__ ((aligned ())) support],
@@ -5510,7 +5501,6 @@ MOZ_ARG_DISABLE_BOOL(wmf,
 if test -n "$MOZ_WMF"; then
     AC_DEFINE(MOZ_WMF)
     MOZ_CUBEB=1
-    MOZ_MEDIA=1
 fi;
 
 dnl ========================================================
@@ -5605,12 +5595,7 @@ AC_SUBST(MOZ_LIBVPX_CFLAGS)
 AC_SUBST(MOZ_LIBVPX_LIBS)
 
 if test "$MOZ_WEBM"; then
-if test "$MOZ_WINSDK_TARGETVER" -ge "06010000"; then
     MOZ_CUBEB=1
-else
-	MOZ_CUBEB=1
-fi
-    MOZ_MEDIA=1
     if test "$MOZ_SAMPLE_TYPE_FLOAT32"; then
         MOZ_VORBIS=1
     else
@@ -5712,12 +5697,7 @@ MOZ_ARG_DISABLE_BOOL(wave,
 
 if test -n "$MOZ_WAVE"; then
     AC_DEFINE(MOZ_WAVE)
-if test "$MOZ_WINSDK_TARGETVER" -ge "06010000"; then
     MOZ_CUBEB=1
-else
-	MOZ_CUBEB=1
-fi
-    MOZ_MEDIA=1
 fi
 
 dnl ========================================================
@@ -5734,10 +5714,6 @@ fi
 
 if test -n "$MOZ_CUBEB"; then
     AC_DEFINE(MOZ_CUBEB)
-fi
-
-if test -n "$MOZ_MEDIA"; then
-    AC_DEFINE(MOZ_MEDIA)
 fi
 
 if test -n "$MOZ_VORBIS" -a -n "$MOZ_TREMOR"; then
@@ -5842,7 +5818,6 @@ AC_SUBST(MOZ_GSTREAMER)
 
 if test -n "$MOZ_GSTREAMER"; then
    AC_DEFINE(MOZ_GSTREAMER)
-   MOZ_MEDIA=1
 fi
 
 
@@ -8069,7 +8044,7 @@ dnl ========================================================
 MOZ_ARG_HEADER(Build dependencies)
 
 if test "$GNU_CC" -a "$GNU_CXX"; then
-  _DEPEND_CFLAGS='$(filter-out %/.pp,-MD -MF $(MDDEPDIR)/$(@F).pp)'
+  _DEPEND_CFLAGS='-MD -MP -MF $(MDDEPDIR)/$(@F).pp'
 dnl Sun Studio on Solaris use -xM instead of -MD, see config/rules.mk
 elif test "$SOLARIS_SUNPRO_CC"; then
   _DEPEND_CFLAGS=
@@ -8155,7 +8130,7 @@ dnl ========================================================
 dnl Graphics checks.
 dnl ========================================================
 
-if test "${OS_TARGET}" = "WINNT" -o "${OS_ARCH}" = "Darwin" -o "${MOZ_WIDGET_TOOLKIT}" = "android" -o "${MOZ_WIDGET_TOOLKIT}" = "gtk2"; then
+if test "${OS_TARGET}" = "WINNT" -o "${MOZ_WIDGET_TOOLKIT}" = "android" -o "${MOZ_WIDGET_TOOLKIT}" = "gtk2"; then
 MOZ_ENABLE_SKIA=1
 else
 MOZ_ENABLE_SKIA=
@@ -8977,7 +8952,6 @@ AC_SUBST(MOZ_NSS_PATCH)
 AC_SUBST(MOZ_APP_COMPONENT_LIBS)
 AC_SUBST(MOZ_APP_EXTRA_LIBS)
 
-AC_SUBST(MOZ_MEDIA)
 AC_SUBST(MOZ_SPEEX_RESAMPLER)
 AC_SUBST(MOZ_SOUNDTOUCH)
 AC_SUBST(MOZ_CUBEB)

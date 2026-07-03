@@ -4034,7 +4034,7 @@ its_addProperty(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue
 
     ToStringHelper idString(cx, id);
     fprintf(gOutFile, "adding its property %s,", idString.getBytes());
-    ToStringHelper valueString(cx, vp);
+    ToStringHelper valueString(cx, (HandleValue) vp);
     fprintf(gOutFile, " initial value %s\n", valueString.getBytes());
     return true;
 }
@@ -4047,7 +4047,7 @@ its_delProperty(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue
 
     ToStringHelper idString(cx, id);
     fprintf(gOutFile, "deleting its property %s,", idString.getBytes());
-    ToStringHelper valueString(cx, vp);
+    ToStringHelper valueString(cx, (HandleValue) vp);
     fprintf(gOutFile, " initial value %s\n", valueString.getBytes());
     return true;
 }
@@ -4060,7 +4060,7 @@ its_getProperty(JSContext *cx, HandleObject obj, HandleId id, MutableHandleValue
 
     ToStringHelper idString(cx, id);
     fprintf(gOutFile, "getting its property %s,", idString.getBytes());
-    ToStringHelper valueString(cx, vp);
+    ToStringHelper valueString(cx, (HandleValue) vp);
     fprintf(gOutFile, " initial value %s\n", valueString.getBytes());
     return true;
 }
@@ -4071,7 +4071,7 @@ its_setProperty(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Mut
     ToStringHelper idString(cx, id);
     if (its_noisy) {
         fprintf(gOutFile, "setting its property %s,", idString.getBytes());
-        ToStringHelper valueString(cx, vp);
+        ToStringHelper valueString(cx, (HandleValue) vp);
         fprintf(gOutFile, " new value %s\n", valueString.getBytes());
     }
 
@@ -4413,7 +4413,7 @@ env_setProperty(JSContext *cx, HandleObject obj, HandleId id, JSBool strict, Mut
     ToStringHelper idstr(cx, id, true);
     if (idstr.threw())
         return false;
-    ToStringHelper valstr(cx, vp, true);
+    ToStringHelper valstr(cx, (HandleValue) vp, true);
     if (valstr.threw())
         return false;
 #if defined XP_WIN || defined HPUX || defined OSF1
@@ -5295,6 +5295,8 @@ main(int argc, char **argv, char **envp)
         || !op.addIntOption('\0', "baseline-uses-before-compile", "COUNT",
                             "Wait for COUNT calls or iterations before baseline-compiling "
                             "(default: 10)", -1)
+        || !op.addBoolOption('\0', "no-fpu", "Pretend CPU does not support floating-point operations "
+                             "to test JIT codegen (no-op on platforms other than x86).")
 #ifdef JSGC_GENERATIONAL
         || !op.addBoolOption('\0', "ggc", "Enable Generational GC")
 #endif
@@ -5329,6 +5331,11 @@ main(int argc, char **argv, char **envp)
         OOM_maxAllocations = op.getIntOption('A');
     if (op.getBoolOption('O'))
         OOM_printAllocationCount = true;
+
+#if defined(JS_CPU_X86)
+    if (op.getBoolOption("no-fpu"))
+        JSC::MacroAssembler::SetFloatingPointDisabled();
+#endif
 #endif
 
     /* Use the same parameters as the browser in xpcjsruntime.cpp. */

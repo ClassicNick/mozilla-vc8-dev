@@ -106,7 +106,6 @@ OggReader::~OggReader()
 }
 
 nsresult OggReader::Init(MediaDecoderReader* aCloneDonor) {
-  mCodecStates.Init();
   int ret = ogg_sync_init(&mOggState);
   NS_ENSURE_TRUE(ret == 0, NS_ERROR_FAILURE);
   return NS_OK;
@@ -198,14 +197,13 @@ nsresult OggReader::ReadMetadata(VideoInfo* aInfo,
       // can follow in this Ogg segment, so there will be no other bitstreams
       // in the Ogg (unless it's invalid).
       readAllBOS = true;
-    } else if (!mCodecStates.Get(serial, nullptr)) {
+    } else if (!mCodecStore.Contains(serial)) {
       // We've not encountered a stream with this serial number before. Create
       // an OggCodecState to demux it, and map that to the OggCodecState
       // in mCodecStates.
       codecState = OggCodecState::Create(&page);
-      mCodecStates.Put(serial, codecState);
+      mCodecStore.Add(serial, codecState);
       bitstreams.AppendElement(codecState);
-      mKnownStreams.AppendElement(serial);
       if (codecState &&
           codecState->GetType() == OggCodecState::TYPE_VORBIS &&
           !mVorbisState)
@@ -241,8 +239,8 @@ nsresult OggReader::ReadMetadata(VideoInfo* aInfo,
       }
     }
 
-    mCodecStates.Get(serial, &codecState);
-    NS_ENSURE_TRUE(codecState, NS_ERROR_FAILURE);
+    codecState = mCodecStore.Get(serial);
+    NS_ENSURE_TRUE(codecState != nullptr, NS_ERROR_FAILURE);
 
     if (NS_FAILED(codecState->PageIn(&page))) {
       return NS_ERROR_FAILURE;
@@ -650,7 +648,6 @@ void OggReader::SetChained(bool aIsChained) {
 
 bool OggReader::ReadOggChain()
 {
-
   bool chained = false;
   OpusState* newOpusState = nullptr;
   VorbisState* newVorbisState = nullptr;
@@ -669,7 +666,7 @@ bool OggReader::ReadOggChain()
   }
 
   int serial = ogg_page_serialno(&page);
-  if (mCodecStates.Get(serial, nullptr)) {
+  if (mCodecStore.Contains(serial)) {
     return false;
   }
 
@@ -690,13 +687,12 @@ bool OggReader::ReadOggChain()
   else {
     return false;
   }
+  OggCodecState* state;
 
-  mCodecStates.Put(serial, codecState.forget());
-  mKnownStreams.AppendElement(serial);
-  OggCodecState* state = nullptr;
-  mCodecStates.Get(serial, &state);
+  mCodecStore.Add(serial, codecState.forget());
+  state = mCodecStore.Get(serial);
 
-  NS_ENSURE_TRUE(state, false);
+  NS_ENSURE_TRUE(state != nullptr, false);
 
   if (NS_FAILED(state->PageIn(&page))) {
     return false;
@@ -919,7 +915,7 @@ ogg_packet* OggReader::NextOggPacket(OggCodecState* aCodecState)
 
     uint32_t serial = ogg_page_serialno(&page);
     OggCodecState* codecState = nullptr;
-    mCodecStates.Get(serial, &codecState);
+    codecState = mCodecStore.Get(serial);
     if (codecState && NS_FAILED(codecState->PageIn(&page))) {
       return nullptr;
     }
@@ -1088,7 +1084,7 @@ int64_t OggReader::RangeEndTime(int64_t aStartOffset,
     int serial = ogg_page_serialno(&page);
 
     OggCodecState* codecState = nullptr;
-    mCodecStates.Get(serial, &codecState);
+    codecState = mCodecStore.Get(serial);
 
     if (!codecState) {
       // This page is from a bitstream which we haven't encountered yet.
@@ -1249,8 +1245,7 @@ OggReader::IndexedSeekResult OggReader::SeekToKeyframeUsingIndex(int64_t aTarget
     // Assume the index is invalid.
     return RollbackIndexedSeek(tell);
   }
-  OggCodecState* codecState = nullptr;
-  mCodecStates.Get(serial, &codecState);
+  OggCodecState* codecState = mCodecStore.Get(serial);
   if (codecState &&
       codecState->mActive &&
       ogg_stream_pagein(&codecState->mState, &page) != 0)
@@ -1639,8 +1634,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
       do {
         // Add the page to its codec state, determine its granule time.
         uint32_t serial = ogg_page_serialno(&page);
-        OggCodecState* codecState = nullptr;
-        mCodecStates.Get(serial, &codecState);
+        OggCodecState* codecState = mCodecStore.Get(serial);
         if (codecState && codecState->mActive) {
           int ret = ogg_stream_pagein(&codecState->mState, &page);
           NS_ENSURE_TRUE(ret == 0, NS_ERROR_FAILURE);
@@ -1846,7 +1840,7 @@ nsresult OggReader::GetBuffered(TimeRanges* aBuffered, int64_t aStartTime)
         startTime = TheoraState::Time(&mTheoraInfo, granulepos);
         NS_ASSERTION(startTime > 0, "Must have positive start time");
       }
-      else if (IsKnownStream(serial)) {
+      else if (mCodecStore.Contains(serial)) {
         // Stream is not the theora or vorbis stream we're playing,
         // but is one that we have header data for.
         startOffset += page.header_len + page.body_len;
@@ -1877,16 +1871,28 @@ nsresult OggReader::GetBuffered(TimeRanges* aBuffered, int64_t aStartTime)
 #endif
 }
 
-bool OggReader::IsKnownStream(uint32_t aSerial)
+OggCodecStore::OggCodecStore()
+: mMonitor("CodecStore")
 {
-  for (uint32_t i = 0; i < mKnownStreams.Length(); i++) {
-    uint32_t serial = mKnownStreams[i];
-    if (serial == aSerial) {
-      return true;
-    }
-  }
+  mCodecStates.Init();
+}
 
-  return false;
+void OggCodecStore::Add(uint32_t serial, OggCodecState* codecState)
+{
+  MonitorAutoLock mon(mMonitor);
+  mCodecStates.Put(serial, codecState);
+}
+
+bool OggCodecStore::Contains(uint32_t serial)
+{
+  MonitorAutoLock mon(mMonitor);
+  return mCodecStates.Get(serial, nullptr);
+}
+
+OggCodecState* OggCodecStore::Get(uint32_t serial)
+{
+  MonitorAutoLock mon(mMonitor);
+  return mCodecStates.Get(serial);
 }
 
 } // namespace mozilla

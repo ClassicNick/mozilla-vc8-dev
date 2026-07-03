@@ -1174,7 +1174,7 @@ public:
 inline nsISupports*
 ToSupports(WebGLContext* context)
 {
-  return static_cast<nsICanvasRenderingContextInternal*>(context);
+  return static_cast<nsIDOMWebGLRenderingContext*>(context);
 }
 
 class WebGLActiveInfo MOZ_FINAL

@@ -59,9 +59,10 @@ public:
   }
   void SetSmoothingTimeConstant(double aValue, ErrorResult& aRv);
 
+  void AppendChunk(const AudioChunk& aChunk);
+
 private:
   friend class AnalyserNodeEngine;
-  void AppendChunk(const AudioChunk& aChunk);
   bool AllocateBuffer();
   bool FFTAnalysis();
   void ApplyBlackmanWindow(float* aBuffer, uint32_t aSize);

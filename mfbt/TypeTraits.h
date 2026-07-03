@@ -61,7 +61,9 @@ template<> struct IsIntegralHelper<unsigned long>      : TrueType {};
 template<> struct IsIntegralHelper<long long>          : TrueType {};
 template<> struct IsIntegralHelper<unsigned long long> : TrueType {};
 template<> struct IsIntegralHelper<bool>               : TrueType {};
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
 template<> struct IsIntegralHelper<wchar_t>            : TrueType {};
+#endif
 
 } /* namespace detail */
 

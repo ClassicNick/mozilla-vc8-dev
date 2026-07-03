@@ -1150,7 +1150,7 @@ public:
                    JSObject* obj    = nullptr,
                    JSObject* funobj = nullptr,
                    jsid id          = JSID_VOID,
-                   unsigned argc       = NO_ARGS,
+                   unsigned argc    = NO_ARGS,
                    jsval *argv      = nullptr,
                    jsval *rval      = nullptr);
 
@@ -1295,8 +1295,8 @@ private:
 
     XPCCallContext*                 mPrevCallContext;
 
-    JSObject*                       mScopeForNewJSObjects;
-    JSObject*                       mFlattenedJSObject;
+    JS::RootedObject                mScopeForNewJSObjects;
+    JS::RootedObject                mFlattenedJSObject;
     XPCWrappedNative*               mWrapper;
     XPCWrappedNativeTearOff*        mTearOff;
 
@@ -1306,10 +1306,10 @@ private:
     XPCNativeInterface*             mInterface;
     XPCNativeMember*                mMember;
 
-    jsid                            mName;
+    JS::RootedId                    mName;
     JSBool                          mStaticMemberIsLocal;
 
-    unsigned                           mArgc;
+    unsigned                        mArgc;
     jsval*                          mArgv;
     jsval*                          mRetVal;
 
@@ -1322,15 +1322,13 @@ public:
     XPCLazyCallContext(XPCCallContext& ccx)
         : mCallBeginRequest(DONT_CALL_BEGINREQUEST),
           mCcx(&ccx),
-          mCcxToDestroy(nullptr)
-#ifdef DEBUG
-          , mCx(nullptr)
-          , mCallerLanguage(JS_CALLER)
-          , mObj(nullptr)
-          , mFlattenedJSObject(nullptr)
-          , mWrapper(nullptr)
-          , mTearOff(nullptr)
-#endif
+          mCcxToDestroy(nullptr),
+          mCx(nullptr),
+          mCallerLanguage(JS_CALLER),
+          mObj(ccx.GetJSContext(), nullptr),
+          mFlattenedJSObject(ccx.GetJSContext(), nullptr),
+          mWrapper(nullptr),
+          mTearOff(nullptr)
     {
     }
     XPCLazyCallContext(XPCContext::LangType callerLanguage, JSContext* cx,
@@ -1344,8 +1342,8 @@ public:
           mCcxToDestroy(nullptr),
           mCx(cx),
           mCallerLanguage(callerLanguage),
-          mObj(obj),
-          mFlattenedJSObject(flattenedJSObject),
+          mObj(cx, obj),
+          mFlattenedJSObject(cx, flattenedJSObject),
           mWrapper(wrapper),
           mTearOff(tearoff)
     {
@@ -1437,8 +1435,8 @@ private:
     XPCCallContext *mCcxToDestroy;
     JSContext *mCx;
     XPCContext::LangType mCallerLanguage;
-    JSObject *mObj;
-    JSObject *mFlattenedJSObject;
+    JS::RootedObject mObj;
+    JS::RootedObject mFlattenedJSObject;
     XPCWrappedNative *mWrapper;
     XPCWrappedNativeTearOff *mTearOff;
     mozilla::AlignedStorage2<XPCCallContext> mData;
@@ -1585,7 +1583,7 @@ class XPCWrappedNativeScope : public PRCList
 public:
 
     static XPCWrappedNativeScope*
-    GetNewOrUsed(JSContext *cx, JSObject* aGlobal);
+    GetNewOrUsed(JSContext *cx, JS::HandleObject aGlobal);
 
     XPCJSRuntime*
     GetRuntime() const {return XPCJSRuntime::Get();}
@@ -1705,7 +1703,7 @@ public:
     // object is wrapped into the compartment of the global.
     JSObject *EnsureXBLScope(JSContext *cx);
 
-    XPCWrappedNativeScope(JSContext *cx, JSObject* aGlobal);
+    XPCWrappedNativeScope(JSContext *cx, JS::HandleObject aGlobal);
 
     nsAutoPtr<JSObject2JSObjectMap> mWaiverWrapperMap;
 
@@ -4152,22 +4150,28 @@ xpc_GetJSPrivate(JSObject *obj)
     return js::GetObjectPrivate(obj);
 }
 
+inline JSContext *
+xpc_GetSafeJSContext()
+{
+    return XPCJSRuntime::Get()->GetJSContextStack()->GetSafeJSContext();
+}
+
 namespace xpc {
 struct SandboxOptions {
-    SandboxOptions()
+    SandboxOptions(JSContext *cx)
         : wantXrays(true)
         , wantComponents(true)
         , wantXHRConstructor(false)
-        , proto(NULL)
-        , sameZoneAs(NULL)
+        , proto(xpc_GetSafeJSContext())
+        , sameZoneAs(xpc_GetSafeJSContext())
     { }
 
     bool wantXrays;
     bool wantComponents;
     bool wantXHRConstructor;
-    JSObject* proto;
+    JS::RootedObject proto;
     nsCString sandboxName;
-    JSObject* sameZoneAs;
+    JS::RootedObject sameZoneAs;
 };
 
 JSObject *

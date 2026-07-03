@@ -89,9 +89,10 @@ static const uint32_t StackAlignment = 16;
 static const uint32_t StackAlignment = 4;
 #endif
 static const bool StackKeptAligned = false;
+static const uint32_t CodeAlignment = 8;
 static const uint32_t NativeFrameSize = sizeof(void*);
 static const uint32_t AlignmentAtPrologue = sizeof(void*);
-
+static const uint32_t AlignmentMidPrologue = AlignmentAtPrologue;
 struct ImmTag : public Imm32
 {
     ImmTag(JSValueTag mask)
@@ -431,6 +432,7 @@ class Assembler : public AssemblerX86Shared
     }
 
     void movsd(const double *dp, const FloatRegister &dest) {
+        JS_ASSERT(HasSSE2());
         masm.movsd_mr((const void *)dp, dest.code());
     }
 
@@ -447,6 +449,7 @@ class Assembler : public AssemblerX86Shared
         return masm.currentOffset();
     }
     CodeOffsetLabel movsdWithPatch(void *addr, FloatRegister dest) {
+        JS_ASSERT(HasSSE2());
         masm.movsd_mr(addr, dest.code());
         return masm.currentOffset();
     }
@@ -457,6 +460,7 @@ class Assembler : public AssemblerX86Shared
         return masm.currentOffset();
     }
     CodeOffsetLabel movsdWithPatch(FloatRegister dest, void *addr) {
+        JS_ASSERT(HasSSE2());
         masm.movsd_rm(dest.code(), addr);
         return masm.currentOffset();
     }
@@ -483,10 +487,12 @@ class Assembler : public AssemblerX86Shared
         return masm.currentOffset();
     }
     CodeOffsetLabel movssWithPatch(Address src, FloatRegister dest) {
+        JS_ASSERT(HasSSE2());
         masm.movss_mr_disp32(src.offset, src.base.code(), dest.code());
         return masm.currentOffset();
     }
     CodeOffsetLabel movsdWithPatch(Address src, FloatRegister dest) {
+        JS_ASSERT(HasSSE2());
         masm.movsd_mr_disp32(src.offset, src.base.code(), dest.code());
         return masm.currentOffset();
     }
@@ -505,10 +511,12 @@ class Assembler : public AssemblerX86Shared
         return masm.currentOffset();
     }
     CodeOffsetLabel movssWithPatch(FloatRegister src, Address dest) {
+        JS_ASSERT(HasSSE2());
         masm.movss_rm_disp32(src.code(), dest.offset, dest.base.code());
         return masm.currentOffset();
     }
     CodeOffsetLabel movsdWithPatch(FloatRegister src, Address dest) {
+        JS_ASSERT(HasSSE2());
         masm.movsd_rm_disp32(src.code(), dest.offset, dest.base.code());
         return masm.currentOffset();
     }

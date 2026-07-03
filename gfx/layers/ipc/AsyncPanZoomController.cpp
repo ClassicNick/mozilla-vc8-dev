@@ -306,10 +306,7 @@ nsEventStatus AsyncPanZoomController::ReceiveInputEvent(const InputData& aEvent)
         mTouchListenerTimeoutTask =
           NewRunnableMethod(this, &AsyncPanZoomController::TimeoutTouchListeners);
 
-        MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          mTouchListenerTimeoutTask,
-          gTouchListenerTimeout);
+        PostDelayedTask(mTouchListenerTimeoutTask, gTouchListenerTimeout);
       }
     }
     return nsEventStatus_eConsumeNoDefault;
@@ -338,10 +335,7 @@ nsEventStatus AsyncPanZoomController::HandleInputEvent(const InputData& aEvent) 
         mTouchListenerTimeoutTask =
           NewRunnableMethod(this, &AsyncPanZoomController::TimeoutTouchListeners);
 
-        MessageLoop::current()->PostDelayedTask(
-          FROM_HERE,
-          mTouchListenerTimeoutTask,
-          gTouchListenerTimeout);
+        PostDelayedTask(mTouchListenerTimeoutTask, gTouchListenerTimeout);
       }
       return nsEventStatus_eConsumeNoDefault;
     }
