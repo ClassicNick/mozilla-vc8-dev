@@ -508,9 +508,26 @@ OperatorIn(JSContext *cx, HandleValue key, HandleObject obj, JSBool *out)
 }
 
 bool
+OperatorInI(JSContext *cx, uint32_t index, HandleObject obj, JSBool *out)
+{
+    RootedValue key(cx, Int32Value(index));
+    return OperatorIn(cx, key, obj, out);
+}
+
+bool
 GetIntrinsicValue(JSContext *cx, HandlePropertyName name, MutableHandleValue rval)
 {
-    return cx->global()->getIntrinsicValue(cx, name, rval);
+    if (!cx->global()->getIntrinsicValue(cx, name, rval))
+        return false;
+
+    // This function is called when we try to compile a cold getintrinsic
+    // op. MCallGetIntrinsicValue has an AliasSet of None for optimization
+    // purposes, as its side effect is not observable from JS. We are
+    // guaranteed to bail out after this function, but because of its AliasSet,
+    // type info will not be reflowed. Manually monitor here.
+    types::TypeScript::Monitor(cx, rval);
+
+    return true;
 }
 
 bool
@@ -524,7 +541,10 @@ CreateThis(JSContext *cx, HandleObject callee, MutableHandleValue rval)
             JSScript *script = fun->getOrCreateScript(cx);
             if (!script || !script->ensureHasTypes(cx))
                 return false;
-            rval.set(ObjectValue(*CreateThisForFunction(cx, callee, false)));
+            JSObject *thisObj = CreateThisForFunction(cx, callee, false);
+            if (!thisObj)
+                return false;
+            rval.set(ObjectValue(*thisObj));
         }
     }
 

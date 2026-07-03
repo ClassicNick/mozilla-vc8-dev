@@ -150,6 +150,10 @@ function sendMessageToJava(aMessage) {
   return getBridge().handleGeckoMessage(JSON.stringify(aMessage));
 }
 
+function fuzzyEquals(a, b) {
+  return (Math.abs(a - b) < 1e-6);
+}
+
 #ifdef MOZ_CRASHREPORTER
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "CrashReporter",
@@ -206,6 +210,12 @@ var BrowserApp = {
     let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
     delete this.isTablet;
     return this.isTablet = sysInfo.get("tablet");
+  },
+
+  get isOnLowMemoryPlatform() {
+    let memory = Cc["@mozilla.org/xpcom/memory-service;1"].getService(Ci.nsIMemory);
+    delete this.isOnLowMemoryPlatform;
+    return this.isOnLowMemoryPlatform = memory.isLowMemoryPlatform();
   },
 
   deck: null,
@@ -381,6 +391,13 @@ var BrowserApp = {
         let newtabStrings = Strings.browser.GetStringFromName("newprivatetabpopup.opened");
         let label = PluralForm.get(1, newtabStrings).replace("#1", 1);
         NativeWindow.toast.show(label, "short");
+      });
+
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToReadingList"),
+      NativeWindow.contextmenus.linkOpenableContext,
+      function(aTarget) {
+        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+        Services.obs.notifyObservers(null, "Reader:Add", JSON.stringify({ url: url }));
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.copyLink"),
@@ -1288,8 +1305,6 @@ var BrowserApp = {
         let storage = Cc["@mozilla.org/login-manager/storage/mozStorage;1"].
                       getService(Ci.nsILoginManagerStorage);
         storage.init();
-
-        sendMessageToJava({ type: "Passwords:Init:Return" });
         Services.obs.removeObserver(this, "Passwords:Init");
         break;
       }
@@ -1298,7 +1313,6 @@ var BrowserApp = {
         let fh = Cc["@mozilla.org/satchel/form-history;1"].getService(Ci.nsIFormHistory2);
         // Force creation/upgrade of formhistory.sqlite
         let db = fh.DBConnection;
-        sendMessageToJava({ type: "FormHistory:Init:Return" });
         Services.obs.removeObserver(this, "FormHistory:Init");
         break;
       }
@@ -2582,7 +2596,7 @@ Tab.prototype = {
   },
 
   getActive: function getActive() {
-      return this.browser.docShellIsActive;
+    return this.browser.docShellIsActive;
   },
 
   setDisplayPort: function(aDisplayPort) {
@@ -2615,7 +2629,7 @@ Tab.prototype = {
         this._drawZoom = resolution;
         cwu.setResolution(resolution, resolution);
       }
-    } else if (Math.abs(resolution - zoom) >= 1e-6) {
+    } else if (!fuzzyEquals(resolution, zoom)) {
       dump("Warning: setDisplayPort resolution did not match zoom for background tab! (" + resolution + " != " + zoom + ")");
     }
 
@@ -2637,12 +2651,11 @@ Tab.prototype = {
       height: (aDisplayPort.bottom - aDisplayPort.top) / resolution
     };
 
-    let epsilon = 0.001;
     if (this._oldDisplayPort == null ||
-        Math.abs(displayPort.x - this._oldDisplayPort.x) > epsilon ||
-        Math.abs(displayPort.y - this._oldDisplayPort.y) > epsilon ||
-        Math.abs(displayPort.width - this._oldDisplayPort.width) > epsilon ||
-        Math.abs(displayPort.height - this._oldDisplayPort.height) > epsilon) {
+        !fuzzyEquals(displayPort.x, this._oldDisplayPort.x) ||
+        !fuzzyEquals(displayPort.y, this._oldDisplayPort.y) ||
+        !fuzzyEquals(displayPort.width, this._oldDisplayPort.width) ||
+        !fuzzyEquals(displayPort.height, this._oldDisplayPort.height)) {
       if (BrowserApp.gUseLowPrecision) {
         // Set the display-port to be 4x the size of the critical display-port,
         // on each dimension, giving us a 0.25x lower precision buffer around the
@@ -2875,7 +2888,7 @@ Tab.prototype = {
 
   setResolution: function(aZoom, aForce) {
     // Set zoom level
-    if (aForce || Math.abs(aZoom - this._zoom) >= 1e-6) {
+    if (aForce || !fuzzyEquals(aZoom, this._zoom)) {
       this._zoom = aZoom;
       if (BrowserApp.selectedTab == this) {
         let cwu = window.top.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowUtils);
@@ -3211,7 +3224,7 @@ Tab.prototype = {
 
         // For low-memory devices, don't allow reader mode since it takes up a lot of memory.
         // See https://bugzilla.mozilla.org/show_bug.cgi?id=792603 for details.
-        if (Cc["@mozilla.org/xpcom/memory-service;1"].getService(Ci.nsIMemory).isLowMemoryPlatform())
+        if (BrowserApp.isOnLowMemoryPlatform)
           return;
 
         // Once document is fully loaded, parse it
@@ -3570,7 +3583,7 @@ Tab.prototype = {
   },
 
   setBrowserSize: function(aWidth, aHeight) {
-    if (Math.abs(this.browserWidth - aWidth) < 1e-6 && Math.abs(this.browserHeight - aHeight) < 1e-6) {
+    if (fuzzyEquals(this.browserWidth, aWidth) && fuzzyEquals(this.browserHeight, aHeight)) {
       return;
     }
 
@@ -3925,7 +3938,7 @@ var BrowserEventHandler = {
     let dw = (aRect.width - vRect.width);
     let dx = (aRect.x - vRect.x);
 
-    if (Math.abs(aViewport.zoom - maxZoomAllowed) < 1e-6 && overlap.width / aRect.width > 0.9) {
+    if (fuzzyEquals(aViewport.zoom, maxZoomAllowed) && overlap.width / aRect.width > 0.9) {
       // we're already at the max zoom and the block is not spilling off the side of the screen so that even
       // if the block isn't taking up most of the viewport we can't pan/zoom in any more. return true so that we zoom out
       return true;
@@ -6512,6 +6525,10 @@ let Reader = {
 
   DEBUG: 0,
 
+  READER_ADD_SUCCESS: 0,
+  READER_ADD_FAILED: 1,
+  READER_ADD_DUPLICATE: 2,
+
   // Don't try to parse the page if it has too many elements (for memory and
   // performance reasons)
   MAX_ELEMS_TO_PARSE: 3000,
@@ -6527,30 +6544,66 @@ let Reader = {
   observe: function(aMessage, aTopic, aData) {
     switch(aTopic) {
       case "Reader:Add": {
-        let tab = BrowserApp.getTabForId(aData);
-        let currentURI = tab.browser.currentURI;
-        let url = currentURI.spec;
+        let args = JSON.parse(aData);
+        if ('fromAboutReader' in args) {
+          // Ignore adds initiated from aboutReader menu banner
+          break;
+        }
 
-        let sendResult = function(success, title) {
-          this.log("Reader:Add success=" + success + ", url=" + url + ", title=" + title);
+        let tabID = null;
+        let url, urlWithoutRef;
+
+        if ('tabID' in args) {
+          tabID = args.tabID;
+
+          let tab = BrowserApp.getTabForId(tabID);
+          let currentURI = tab.browser.currentURI;
+
+          url = currentURI.spec;
+          urlWithoutRef = currentURI.specIgnoringRef;
+        } else if ('url' in args) {
+          let uri = Services.io.newURI(args.url, null, null);
+          url = uri.spec;
+          urlWithoutRef = uri.specIgnoringRef;
+        } else {
+          throw new Error("Reader:Add requires a tabID or an URL as argument");
+        }
+
+        let sendResult = function(result, title) {
+          this.log("Reader:Add success=" + result + ", url=" + url + ", title=" + title);
 
           sendMessageToJava({
             type: "Reader:Added",
-            success: success,
+            result: result,
             title: title,
             url: url,
           });
         }.bind(this);
 
-        this.getArticleForTab(aData, currentURI.specIgnoringRef, function (article) {
+        let handleArticle = function(article) {
           if (!article) {
-            sendResult(false, "");
+            sendResult(this.READER_ADD_FAILED, "");
             return;
           }
 
           this.storeArticleInCache(article, function(success) {
-            sendResult(success, article.title);
-          });
+            let result = (success ? this.READER_ADD_SUCCESS : this.READER_ADD_FAILED);
+            sendResult(result, article.title);
+          }.bind(this));
+        }.bind(this);
+
+        this.getArticleFromCache(urlWithoutRef, function (article) {
+          // If the article is already in reading list, bail
+          if (article) {
+            sendResult(this.READER_ADD_DUPLICATE, "");
+            return;
+          }
+
+          if (tabID != null) {
+            this.getArticleForTab(tabID, urlWithoutRef, handleArticle);
+          } else {
+            this.parseDocumentFromURL(urlWithoutRef, handleArticle);
+          }
         }.bind(this));
         break;
       }
@@ -7159,7 +7212,7 @@ var Tabs = {
   init: function() {
     // on low-memory platforms, always allow tab expiration. on high-mem
     // platforms, allow it to be turned on once we hit a low-mem situation
-    if (Cc["@mozilla.org/xpcom/memory-service;1"].getService(Ci.nsIMemory).isLowMemoryPlatform()) {
+    if (BrowserApp.isOnLowMemoryPlatform) {
       this._enableTabExpiration = true;
     } else {
       Services.obs.addObserver(this, "memory-pressure", false);

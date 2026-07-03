@@ -2036,7 +2036,7 @@ public:
   virtual nsDisplayItem* WrapItem(nsDisplayListBuilder* aBuilder,
                                   nsDisplayItem* aItem) {
     return new (aBuilder)
-        nsDisplayXULEventRedirector(aBuilder, aItem->GetUnderlyingFrame(), aItem,
+        nsDisplayXULEventRedirector(aBuilder, aItem->Frame(), aItem,
                                     mTargetFrame);
   }
 private:

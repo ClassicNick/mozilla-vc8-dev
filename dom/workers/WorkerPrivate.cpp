@@ -76,6 +76,7 @@ using mozilla::MutexAutoLock;
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
 using mozilla::dom::workers::exceptions::ThrowDOMExceptionForNSResult;
+using mozilla::SafeAutoJSContext;
 
 USING_WORKERS_NAMESPACE
 using namespace mozilla::dom::workers::events;
@@ -626,7 +627,8 @@ public:
   {
     AssertIsOnMainThread();
 
-    RuntimeService::AutoSafeJSContext cx;
+    SafeAutoJSContext cx;
+    JSAutoRequest ar(cx);
 
     mFinishedWorker->Finish(cx);
 
@@ -1599,7 +1601,7 @@ WorkerRunnable::Run()
 {
   JSContext* cx;
   JSObject* targetCompartmentObject;
-  nsIThreadJSContextStack* contextStack = nullptr;
+  nsCxPusher pusher;
 
   nsRefPtr<WorkerPrivate> kungFuDeathGrip;
 
@@ -1615,14 +1617,7 @@ WorkerRunnable::Run()
 
     if (!mWorkerPrivate->GetParent()) {
       AssertIsOnMainThread();
-
-      contextStack = nsContentUtils::ThreadJSContextStack();
-      NS_ASSERTION(contextStack, "This should never be null!");
-
-      if (NS_FAILED(contextStack->Push(cx))) {
-        NS_WARNING("Failed to push context!");
-        contextStack = nullptr;
-      }
+      pusher.Push(cx);
     }
   }
 
@@ -1636,19 +1631,7 @@ WorkerRunnable::Run()
   }
 
   bool result = WorkerRun(cx, mWorkerPrivate);
-
   PostRun(cx, mWorkerPrivate, result);
-
-  if (contextStack) {
-    JSContext* otherCx;
-    if (NS_FAILED(contextStack->Pop(&otherCx))) {
-      NS_WARNING("Failed to pop context!");
-    }
-    else if (otherCx != cx) {
-      NS_WARNING("Popped a different context!");
-    }
-  }
-
   return result ? NS_OK : NS_ERROR_FAILURE;
 }
 
@@ -2383,7 +2366,7 @@ WorkerPrivateParent<Derived>::ParentJSContext() const
 
     if (!mScriptContext) {
       NS_ASSERTION(!mParentJSContext, "Shouldn't have a parent context!");
-      return RuntimeService::AutoSafeJSContext::GetSafeContext();
+      return nsContentUtils::GetSafeJSContext();
     }
 
     NS_ASSERTION(mParentJSContext == mScriptContext->GetNativeContext(),

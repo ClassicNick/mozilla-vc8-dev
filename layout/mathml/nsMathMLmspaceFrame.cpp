@@ -105,18 +105,16 @@ nsMathMLmspaceFrame::Reflow(nsPresContext*          aPresContext,
                             nsReflowStatus&          aStatus)
 {
   ProcessAttributes(aPresContext);
-  // nsLineLayout doesn't expect negative widths.
-  // XXXfredw Negative spaces are not implemented. See bug 717546
 
   mBoundingMetrics = nsBoundingMetrics();
-  mBoundingMetrics.width = NS_MAX(0, mWidth);
+  mBoundingMetrics.width = mWidth;
   mBoundingMetrics.ascent = mHeight;
   mBoundingMetrics.descent = mDepth;
   mBoundingMetrics.leftBearing = 0;
   mBoundingMetrics.rightBearing = mBoundingMetrics.width;
 
   aDesiredSize.ascent = mHeight;
-  aDesiredSize.width = mBoundingMetrics.width;
+  aDesiredSize.width = std::max(0, mBoundingMetrics.width);
   aDesiredSize.height = aDesiredSize.ascent + mDepth;
   // Also return our bounding metrics
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
@@ -132,8 +130,8 @@ nsMathMLmspaceFrame::MeasureForWidth(nsRenderingContext& aRenderingContext,
 {
   ProcessAttributes(PresContext());
   mBoundingMetrics = nsBoundingMetrics();
-  mBoundingMetrics.width = NS_MAX(0, mWidth);
-  aDesiredSize.width = mBoundingMetrics.width;
+  mBoundingMetrics.width = mWidth;
+  aDesiredSize.width = NS_MAX(0, mBoundingMetrics.width);
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
   return NS_OK;
 }

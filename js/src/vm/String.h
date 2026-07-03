@@ -467,6 +467,13 @@ private:
     }
 
     inline void markChildren(JSTracer *trc);
+
+    inline static size_t offsetOfLeft() {
+        return offsetof(JSRope, d.u1.left);
+    }
+    inline static size_t offsetOfRight() {
+        return offsetof(JSRope, d.s.u2.right);
+    }
 };
 
 JS_STATIC_ASSERT(sizeof(JSRope) == sizeof(JSString));

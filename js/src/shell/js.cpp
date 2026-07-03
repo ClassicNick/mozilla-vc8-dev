@@ -912,6 +912,7 @@ JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
     unsigned lineNumber = 1;
     RootedObject global(cx, NULL);
     bool catchTermination = false;
+    RootedObject callerGlobal(cx, cx->global());
 
     global = JS_GetGlobalForObject(cx, &args.callee());
     if (!global)
@@ -1043,7 +1044,11 @@ JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
         }
         if (!JS_ExecuteScript(cx, global, script, vp)) {
             if (catchTermination && !JS_IsExceptionPending(cx)) {
-                args.rval().setString(JS_NewStringCopyZ(cx, "terminated"));
+                JSAutoCompartment ac1(cx, callerGlobal);
+                JSString *str = JS_NewStringCopyZ(cx, "terminated");
+                if (!str)
+                    return false;
+                args.rval().setString(str);
                 return true;
             }
             return false;
@@ -5302,7 +5307,7 @@ main(int argc, char **argv, char **envp)
         || !op.addBoolOption('\0', "no-fpu", "Pretend CPU does not support floating-point operations "
                              "to test JIT codegen (no-op on platforms other than x86).")
 #ifdef JSGC_GENERATIONAL
-        || !op.addBoolOption('\0', "ggc", "Enable Generational GC")
+        || !op.addBoolOption('\0', "no-ggc", "Disable Generational GC")
 #endif
     )
     {
@@ -5352,7 +5357,7 @@ main(int argc, char **argv, char **envp)
 
     JS_SetGCParameter(rt, JSGC_MAX_BYTES, 0xffffffff);
 #ifdef JSGC_GENERATIONAL
-    if (!op.getBoolOption("ggc"))
+    if (op.getBoolOption("no-ggc"))
         JS::DisableGenerationalGC(rt);
 #endif
 

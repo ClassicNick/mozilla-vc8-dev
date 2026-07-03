@@ -47,7 +47,6 @@
 
 #include "nsBoxLayoutState.h"
 //for keylistener for "return" check
-#include "nsIDOMEventTarget.h"
 #include "nsIDocument.h" //observe documents to send onchangenotifications
 #include "nsIStyleSheet.h"//observe documents to send onchangenotifications
 #include "nsIStyleRule.h"//observe documents to send onchangenotifications

@@ -273,8 +273,10 @@ class IonBuilder : public MIRGenerator
     bool maybeInsertResume();
 
     bool initParameters();
+    void rewriteParameter(uint32_t slotIdx, MDefinition *param, int32_t argIndex);
     void rewriteParameters();
     bool initScopeChain();
+    bool initArgumentsObject();
     bool pushConstant(const Value &v);
 
     // Add a guard which ensure that the set of type which goes through this
@@ -375,6 +377,7 @@ class IonBuilder : public MIRGenerator
     bool jsop_delprop(HandlePropertyName name);
     bool jsop_newarray(uint32_t count);
     bool jsop_newobject(HandleObject baseObj);
+    bool jsop_initelem();
     bool jsop_initelem_array();
     bool jsop_initprop(HandlePropertyName name);
     bool jsop_regexp(RegExpObject *reobj);
@@ -457,6 +460,8 @@ class IonBuilder : public MIRGenerator
                                            uint32_t discards);
 
     InliningStatus inlineThrowError(CallInfo &callInfo);
+    InliningStatus inlineIsCallable(CallInfo &callInfo);
+    InliningStatus inlineToObject(CallInfo &callInfo);
     InliningStatus inlineDump(CallInfo &callInfo);
 
     // Main inlining functions

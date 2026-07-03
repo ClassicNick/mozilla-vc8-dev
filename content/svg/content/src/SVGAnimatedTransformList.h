@@ -115,12 +115,14 @@ private:
   nsSVGAnimatedTransformList& InternalAList();
   const nsSVGAnimatedTransformList& InternalAList() const;
 
+public:
   // Weak refs to our DOMSVGTransformList baseVal/animVal objects. These objects
   // are friends and take care of clearing these pointers when they die, making
   // these true weak references.
   DOMSVGTransformList *mBaseVal;
   DOMSVGTransformList *mAnimVal;
 
+private:
   // Strong ref to our element to keep it alive. We hold this not only for
   // ourself, but also for our base/animVal and all of their items.
   nsRefPtr<nsSVGElement> mElement;

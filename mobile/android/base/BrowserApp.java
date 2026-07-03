@@ -10,6 +10,7 @@ import org.mozilla.gecko.db.BrowserDB;
 import org.mozilla.gecko.gfx.BitmapUtils;
 import org.mozilla.gecko.gfx.ImmutableViewportMetrics;
 import org.mozilla.gecko.gfx.LayerView;
+import org.mozilla.gecko.gfx.PanZoomController;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.GamepadUtils;
 import org.mozilla.gecko.util.HardwareUtils;
@@ -72,6 +73,10 @@ abstract public class BrowserApp extends GeckoApp
     private static final String PREF_CHROME_DYNAMICTOOLBAR = "browser.chrome.dynamictoolbar";
 
     private static final int TABS_ANIMATION_DURATION = 450;
+
+    private static final int READER_ADD_SUCCESS = 0;
+    private static final int READER_ADD_FAILED = 1;
+    private static final int READER_ADD_DUPLICATE = 2;
 
     public static BrowserToolbar mBrowserToolbar;
     private AboutHome mAboutHome;
@@ -334,9 +339,10 @@ abstract public class BrowserApp extends GeckoApp
                    action == MotionEvent.ACTION_CANCEL) {
             // Animate the toolbar to fully on or off, depending on how much
             // of it is hidden and the current swipe velocity.
+            PanZoomController pzc = mLayerView.getPanZoomController();
+            float yVelocity = (pzc == null ? 0.0f : pzc.getVelocityVector().y);
             mBrowserToolbar.animateVisibilityWithVelocityBias(
-                toolbarY > toolbarHeight / 2 ? false : true,
-                mLayerView.getPanZoomController().getVelocityVector().y);
+                toolbarY > toolbarHeight / 2 ? false : true, yVelocity);
         }
 
         // Update the last recorded position.
@@ -431,9 +437,14 @@ abstract public class BrowserApp extends GeckoApp
         return super.onKeyDown(keyCode, event);
     }
 
-    void handleReaderAdded(boolean success, final String title, final String url) {
-        if (!success) {
-            showToast(R.string.reading_list_failed, Toast.LENGTH_SHORT);
+    void handleReaderAdded(int result, final String title, final String url) {
+        if (result != READER_ADD_SUCCESS) {
+            if (result == READER_ADD_FAILED) {
+                showToast(R.string.reading_list_failed, Toast.LENGTH_SHORT);
+            } else if (result == READER_ADD_DUPLICATE) {
+                showToast(R.string.reading_list_duplicate, Toast.LENGTH_SHORT);
+            }
+
             return;
         }
 
@@ -527,7 +538,7 @@ abstract public class BrowserApp extends GeckoApp
         Distribution.init(this, getPackageResourcePath());
         JavaAddonManager.getInstance().init(getApplicationContext());
 
-        if (Build.VERSION.SDK_INT >= 14) {
+        if (AppConstants.MOZ_ANDROID_BEAM && Build.VERSION.SDK_INT >= 14) {
             NfcAdapter nfc = NfcAdapter.getDefaultAdapter(this);
             if (nfc != null) {
                 nfc.setNdefPushMessageCallback(new NfcAdapter.CreateNdefMessageCallback() {
@@ -623,7 +634,7 @@ abstract public class BrowserApp extends GeckoApp
         unregisterEventListener("Feedback:MaybeLater");
         unregisterEventListener("Telemetry:Gather");
 
-        if (Build.VERSION.SDK_INT >= 14) {
+        if (AppConstants.MOZ_ANDROID_BEAM && Build.VERSION.SDK_INT >= 14) {
             NfcAdapter nfc = NfcAdapter.getDefaultAdapter(this);
             if (nfc != null) {
                 // null this out even though the docs say it's not needed,
@@ -988,10 +999,10 @@ abstract public class BrowserApp extends GeckoApp
                 Telemetry.HistogramAdd("FENNEC_FAVICONS_COUNT", BrowserDB.getCount(getContentResolver(), "favicons"));
                 Telemetry.HistogramAdd("FENNEC_THUMBNAILS_COUNT", BrowserDB.getCount(getContentResolver(), "thumbnails"));
             } else if (event.equals("Reader:Added")) {
-                final boolean success = message.getBoolean("success");
+                final int result = message.getInt("result");
                 final String title = message.getString("title");
                 final String url = message.getString("url");
-                handleReaderAdded(success, title, url);
+                handleReaderAdded(result, title, url);
             } else if (event.equals("Reader:Removed")) {
                 final String url = message.getString("url");
                 handleReaderRemoved(url);
@@ -1655,7 +1666,7 @@ abstract public class BrowserApp extends GeckoApp
 
         String action = intent.getAction();
 
-        if (Build.VERSION.SDK_INT >= 10 && NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
+        if (AppConstants.MOZ_ANDROID_BEAM && Build.VERSION.SDK_INT >= 10 && NfcAdapter.ACTION_NDEF_DISCOVERED.equals(action)) {
             String uri = intent.getDataString();
             GeckoAppShell.sendEventToGecko(GeckoEvent.createURILoadEvent(uri));
         }

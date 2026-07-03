@@ -32,6 +32,7 @@
     _(ParNewDenseArray)             \
     _(ParNewCallObject)             \
     _(ParBailout)                   \
+    _(InitElem)                     \
     _(InitProp)                     \
     _(CheckOverRecursed)            \
     _(ParCheckOverRecursed)         \
@@ -49,6 +50,9 @@
     _(CreateThis)                   \
     _(CreateThisWithProto)          \
     _(CreateThisWithTemplate)       \
+    _(CreateArgumentsObject)        \
+    _(GetArgumentsObjectArg)        \
+    _(SetArgumentsObjectArg)        \
     _(ReturnFromCtor)               \
     _(BitNotI)                      \
     _(BitNotV)                      \
@@ -206,6 +210,7 @@
     _(GetDOMProperty)               \
     _(SetDOMProperty)               \
     _(CallDOMNative)                \
+    _(IsCallable)                   \
     _(AsmJSLoadHeap)                \
     _(AsmJSStoreHeap)               \
     _(AsmJSLoadGlobalVar)           \

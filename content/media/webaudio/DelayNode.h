@@ -41,6 +41,7 @@ private:
 
 private:
   nsRefPtr<AudioParam> mDelay;
+public:
   SelfReference<DelayNode> mPlayingRef;
 };
 

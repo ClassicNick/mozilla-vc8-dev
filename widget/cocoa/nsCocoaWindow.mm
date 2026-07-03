@@ -2900,6 +2900,8 @@ static const NSString* kStateShowsToolbarButton = @"showsToolbarButton";
   } else {
     [borderView setNeedsDisplayInRect:rect];
   }
+
+  [[self mainChildView] maybeDrawInTitlebar];
 }
 
 - (NSRect)titlebarRect

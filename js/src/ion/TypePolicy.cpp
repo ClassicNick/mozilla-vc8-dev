@@ -178,8 +178,11 @@ ComparePolicy::adjustInputs(MInstruction *def)
         MInstruction *replace;
 
         // See BinaryArithPolicy::adjustInputs for an explanation of the following
-        if (in->type() == MIRType_Object || in->type() == MIRType_String)
+        if (in->type() == MIRType_Object || in->type() == MIRType_String ||
+            in->type() == MIRType_Undefined)
+        {
             in = boxAt(def, in);
+        }
 
         switch (type) {
           case MIRType_Double:
@@ -396,6 +399,8 @@ ObjectPolicy<Op>::staticAdjustInputs(MInstruction *ins)
 
 template bool ObjectPolicy<0>::staticAdjustInputs(MInstruction *ins);
 template bool ObjectPolicy<1>::staticAdjustInputs(MInstruction *ins);
+template bool ObjectPolicy<2>::staticAdjustInputs(MInstruction *ins);
+template bool ObjectPolicy<3>::staticAdjustInputs(MInstruction *ins);
 
 bool
 CallPolicy::adjustInputs(MInstruction *ins)
