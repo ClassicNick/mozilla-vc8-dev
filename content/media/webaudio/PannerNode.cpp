@@ -19,6 +19,21 @@ namespace dom {
 
 using namespace std;
 
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(PannerNode)
+  if (tmp->Context()) {
+    tmp->Context()->UnregisterPannerNode(tmp);
+  }
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END_INHERITED(AudioNode)
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(PannerNode, AudioNode)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PannerNode)
+NS_INTERFACE_MAP_END_INHERITING(AudioNode)
+
+NS_IMPL_ADDREF_INHERITED(PannerNode, AudioNode)
+NS_IMPL_RELEASE_INHERITED(PannerNode, AudioNode)
+
 class PannerNodeEngine : public AudioNodeEngine
 {
 public:
@@ -163,7 +178,10 @@ public:
 };
 
 PannerNode::PannerNode(AudioContext* aContext)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              2,
+              ChannelCountModeValues::Clamped_max,
+              ChannelInterpretationValues::Speakers)
   // Please keep these default values consistent with PannerNodeEngine::PannerNodeEngine above.
   , mPanningModel(PanningModelTypeValues::HRTF)
   , mDistanceModel(DistanceModelTypeValues::Inverse)

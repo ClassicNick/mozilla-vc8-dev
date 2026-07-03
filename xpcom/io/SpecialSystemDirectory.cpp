@@ -17,7 +17,9 @@
 #include <string.h>
 #include <direct.h>
 #include <shlobj.h>
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 #include <knownfolders.h>
+#endif
 #include <guiddef.h>
 
 #elif defined(XP_OS2)

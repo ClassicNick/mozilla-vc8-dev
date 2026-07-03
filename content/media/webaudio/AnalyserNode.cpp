@@ -79,7 +79,10 @@ public:
 };
 
 AnalyserNode::AnalyserNode(AudioContext* aContext)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              1,
+              ChannelCountModeValues::Explicit,
+              ChannelInterpretationValues::Speakers)
   , mFFTSize(2048)
   , mMinDecibels(-100.)
   , mMaxDecibels(-30.)

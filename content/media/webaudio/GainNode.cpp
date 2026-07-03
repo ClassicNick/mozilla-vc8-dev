@@ -95,7 +95,10 @@ public:
 };
 
 GainNode::GainNode(AudioContext* aContext)
-  : AudioNode(aContext)
+  : AudioNode(aContext,
+              2,
+              ChannelCountModeValues::Max,
+              ChannelInterpretationValues::Speakers)
   , mGain(new AudioParam(this, SendGainToStream, 1.0f))
 {
   GainNodeEngine* engine = new GainNodeEngine(this, aContext->Destination());

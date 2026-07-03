@@ -14,6 +14,7 @@
 #include "jslibmath.h"
 #include "jsinfer.h"
 #include "jsinferinlines.h"
+#include "jstypedarrayinlines.h"
 #include "TypePolicy.h"
 #include "IonAllocPolicy.h"
 #include "InlineList.h"
@@ -1782,6 +1783,9 @@ class MCompare
         // Double compared to Double
         Compare_Double,
 
+        Compare_DoubleMaybeCoerceLHS,
+        Compare_DoubleMaybeCoerceRHS,
+
         // String compared to String
         Compare_String,
 
@@ -2337,8 +2341,19 @@ class MToDouble
   : public MUnaryInstruction,
     public ToDoublePolicy
 {
-    MToDouble(MDefinition *def)
-      : MUnaryInstruction(def)
+  public:
+    // Types of values which can be converted.
+    enum ConversionKind {
+        NonStringPrimitives,
+        NonNullNonStringPrimitives,
+        NumbersOnly
+    };
+
+  private:
+    ConversionKind conversion_;
+
+    MToDouble(MDefinition *def, ConversionKind conversion = NonStringPrimitives)
+      : MUnaryInstruction(def), conversion_(conversion)
     {
         setResultType(MIRType_Double);
         setMovable();
@@ -2346,11 +2361,15 @@ class MToDouble
 
   public:
     INSTRUCTION_HEADER(ToDouble)
-    static MToDouble *New(MDefinition *def) {
-        return new MToDouble(def);
+    static MToDouble *New(MDefinition *def, ConversionKind conversion = NonStringPrimitives) {
+        return new MToDouble(def, conversion);
     }
     static MToDouble *NewAsmJS(MDefinition *def) {
         return new MToDouble(def);
+    }
+
+    ConversionKind conversion() const {
+        return conversion_;
     }
 
     TypePolicy *typePolicy() {
@@ -2362,6 +2381,8 @@ class MToDouble
         return getOperand(0);
     }
     bool congruentTo(MDefinition *const &ins) const {
+        if (!ins->isToDouble() || ins->toToDouble()->conversion() != conversion())
+            return false;
         return congruentIfOperandsEqual(ins);
     }
     AliasSet getAliasSet() const {
@@ -2635,6 +2656,7 @@ class MBinaryBitwiseInstruction
     }
 
     MDefinition *foldsTo(bool useValueNumbers);
+    MDefinition *foldUnnecessaryBitop();
     virtual MDefinition *foldIfZero(size_t operand) = 0;
     virtual MDefinition *foldIfNegOne(size_t operand) = 0;
     virtual MDefinition *foldIfEqual()  = 0;
@@ -5343,6 +5365,143 @@ class MGetPropertyCache
 
 };
 
+// Emit code to load a value from an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class MGetPropertyPolymorphic
+  : public MUnaryInstruction,
+    public SingleObjectPolicy
+{
+    struct Entry {
+        // The shape to guard against.
+        Shape *objShape;
+
+        // The property to laod.
+        Shape *shape;
+    };
+
+    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    CompilerRootPropertyName name_;
+
+    MGetPropertyPolymorphic(MDefinition *obj, HandlePropertyName name)
+      : MUnaryInstruction(obj),
+        name_(name)
+    {
+        setMovable();
+        setResultType(MIRType_Value);
+    }
+
+    PropertyName *name() const {
+        return name_;
+    }
+
+  public:
+    INSTRUCTION_HEADER(GetPropertyPolymorphic)
+
+    static MGetPropertyPolymorphic *New(MDefinition *obj, HandlePropertyName name) {
+        return new MGetPropertyPolymorphic(obj, name);
+    }
+
+    bool congruentTo(MDefinition *const &ins) const {
+        if (!ins->isGetPropertyPolymorphic())
+            return false;
+        if (name() != ins->toGetPropertyPolymorphic()->name())
+            return false;
+        return congruentIfOperandsEqual(ins);
+    }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    bool addShape(Shape *objShape, Shape *shape) {
+        Entry entry;
+        entry.objShape = objShape;
+        entry.shape = shape;
+        return shapes_.append(entry);
+    }
+    size_t numShapes() const {
+        return shapes_.length();
+    }
+    Shape *objShape(size_t i) const {
+        return shapes_[i].objShape;
+    }
+    Shape *shape(size_t i) const {
+        return shapes_[i].shape;
+    }
+    MDefinition *obj() const {
+        return getOperand(0);
+    }
+    AliasSet getAliasSet() const {
+        return AliasSet::Load(AliasSet::ObjectFields | AliasSet::FixedSlot | AliasSet::DynamicSlot);
+    }
+
+    bool mightAlias(MDefinition *store);
+};
+
+// Emit code to store a value to an object's slots if its shape matches
+// one of the shapes observed by the baseline IC, else bails out.
+class MSetPropertyPolymorphic
+  : public MBinaryInstruction,
+    public SingleObjectPolicy
+{
+    struct Entry {
+        // The shape to guard against.
+        Shape *objShape;
+
+        // The property to laod.
+        Shape *shape;
+    };
+
+    Vector<Entry, 4, IonAllocPolicy> shapes_;
+    bool needsBarrier_;
+
+    MSetPropertyPolymorphic(MDefinition *obj, MDefinition *value)
+      : MBinaryInstruction(obj, value),
+        needsBarrier_(false)
+    {
+    }
+
+  public:
+    INSTRUCTION_HEADER(SetPropertyPolymorphic)
+
+    static MSetPropertyPolymorphic *New(MDefinition *obj, MDefinition *value) {
+        return new MSetPropertyPolymorphic(obj, value);
+    }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+    bool addShape(Shape *objShape, Shape *shape) {
+        Entry entry;
+        entry.objShape = objShape;
+        entry.shape = shape;
+        return shapes_.append(entry);
+    }
+    size_t numShapes() const {
+        return shapes_.length();
+    }
+    Shape *objShape(size_t i) const {
+        return shapes_[i].objShape;
+    }
+    Shape *shape(size_t i) const {
+        return shapes_[i].shape;
+    }
+    MDefinition *obj() const {
+        return getOperand(0);
+    }
+    MDefinition *value() const {
+        return getOperand(1);
+    }
+    bool needsBarrier() const {
+        return needsBarrier_;
+    }
+    void setNeedsBarrier() {
+        needsBarrier_ = true;
+    }
+    AliasSet getAliasSet() const {
+        return AliasSet::Store(AliasSet::ObjectFields | AliasSet::FixedSlot | AliasSet::DynamicSlot);
+    }
+};
+
 class MDispatchInstruction
   : public MControlInstruction,
     public SingleObjectPolicy
@@ -5690,7 +5849,7 @@ class MBindNameCache
     CompilerRootScript script_;
     jsbytecode *pc_;
 
-    MBindNameCache(MDefinition *scopeChain, PropertyName *name, RawScript script, jsbytecode *pc)
+    MBindNameCache(MDefinition *scopeChain, PropertyName *name, JSScript *script, jsbytecode *pc)
       : MUnaryInstruction(scopeChain), name_(name), script_(script), pc_(pc)
     {
         setResultType(MIRType_Object);
@@ -5699,7 +5858,7 @@ class MBindNameCache
   public:
     INSTRUCTION_HEADER(BindNameCache)
 
-    static MBindNameCache *New(MDefinition *scopeChain, PropertyName *name, RawScript script,
+    static MBindNameCache *New(MDefinition *scopeChain, PropertyName *name, JSScript *script,
                                jsbytecode *pc) {
         return new MBindNameCache(scopeChain, name, script, pc);
     }
@@ -5713,7 +5872,7 @@ class MBindNameCache
     PropertyName *name() const {
         return name_;
     }
-    RawScript script() const {
+    JSScript *script() const {
         return script_;
     }
     jsbytecode *pc() const {
@@ -5752,7 +5911,7 @@ class MGuardShape
     MDefinition *obj() const {
         return getOperand(0);
     }
-    const RawShape shape() const {
+    const Shape *shape() const {
         return shape_;
     }
     BailoutKind bailoutKind() const {
@@ -6757,7 +6916,7 @@ class MInstanceOf
     CompilerRootObject protoObj_;
 
   public:
-    MInstanceOf(MDefinition *obj, RawObject proto)
+    MInstanceOf(MDefinition *obj, JSObject *proto)
       : MUnaryInstruction(obj),
         protoObj_(proto)
     {
@@ -6770,7 +6929,7 @@ class MInstanceOf
         return this;
     }
 
-    RawObject prototypeObject() {
+    JSObject *prototypeObject() {
         return protoObj_;
     }
 };
@@ -6965,7 +7124,7 @@ class MTypeBarrier
 // Like MTypeBarrier, guard that the value is in the given type set. This is
 // used before property writes to ensure the value being written is represented
 // in the property types for the object.
-class MMonitorTypes : public MUnaryInstruction
+class MMonitorTypes : public MUnaryInstruction, public BoxInputsPolicy
 {
     const types::StackTypeSet *typeSet_;
 
@@ -6983,6 +7142,11 @@ class MMonitorTypes : public MUnaryInstruction
     static MMonitorTypes *New(MDefinition *def, const types::StackTypeSet *types) {
         return new MMonitorTypes(def, types);
     }
+
+    TypePolicy *typePolicy() {
+        return this;
+    }
+
     MDefinition *input() const {
         return getOperand(0);
     }
@@ -7170,7 +7334,7 @@ class MFunctionBoundary : public MNullaryInstruction
     Type type_;
     unsigned inlineLevel_;
 
-    MFunctionBoundary(RawScript script, Type type, unsigned inlineLevel)
+    MFunctionBoundary(JSScript *script, Type type, unsigned inlineLevel)
       : script_(script), type_(type), inlineLevel_(inlineLevel)
     {
         JS_ASSERT_IF(type != Inline_Exit, script != NULL);
@@ -7181,12 +7345,12 @@ class MFunctionBoundary : public MNullaryInstruction
   public:
     INSTRUCTION_HEADER(FunctionBoundary)
 
-    static MFunctionBoundary *New(RawScript script, Type type,
+    static MFunctionBoundary *New(JSScript *script, Type type,
                                   unsigned inlineLevel = 0) {
         return new MFunctionBoundary(script, type, inlineLevel);
     }
 
-    RawScript script() {
+    JSScript *script() {
         return script_;
     }
 

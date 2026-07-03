@@ -161,10 +161,10 @@ public:
 
 END_INDEXEDDB_NAMESPACE
 
-#define IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, ...)                      \
+#define IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, a)                      \
   do {                                                                         \
     nsAutoCString _mark;                                                       \
-    _mark.AppendPrintf(_detailedFmt, ##__VA_ARGS__);                           \
+    _mark.AppendPrintf(_detailedFmt, a);                           \
     PROFILER_MARKER(_mark.get());                                              \
   } while (0)
 
@@ -173,10 +173,10 @@ END_INDEXEDDB_NAMESPACE
 
 #else // IDB_PROFILER_MARK_DETAILS
 
-#define IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, ...)                      \
+#define IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, a)                      \
   do {                                                                         \
     nsAutoCString _mark;                                                       \
-    _mark.AppendPrintf(_conciseFmt, ##__VA_ARGS__);                            \
+    _mark.AppendPrintf(_conciseFmt, a);                            \
     PROFILER_MARKER(_mark.get());                                              \
   } while (0)
 
@@ -184,18 +184,18 @@ END_INDEXEDDB_NAMESPACE
 
 #endif // IDB_PROFILER_MARK_DETAILS
 
-#define IDB_PROFILER_MARK_IF(_cond, _detailedFmt, _conciseFmt, ...)            \
+#define IDB_PROFILER_MARK_IF(_cond, _detailedFmt, _conciseFmt, a)            \
   do {                                                                         \
     if (_cond) {                                                               \
-      IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, __VA_ARGS__);               \
+      IDB_PROFILER_MARK(_detailedFmt, _conciseFmt, a);               \
     }                                                                          \
   } while (0)
 
 #else // IDB_PROFILER_USE_MARKS
 
-#define IDB_PROFILER_MARK(...) do { } while(0)
-#define IDB_PROFILER_MARK_IF(_cond, ...) do { } while(0)
-#define IDB_PROFILER_MARK2(_detailedFmt, _notdetailedFmt, ...) do { } while(0)
+#define IDB_PROFILER_MARK(a) do { } while(0)
+#define IDB_PROFILER_MARK_IF(_cond, a) do { } while(0)
+#define IDB_PROFILER_MARK2(_detailedFmt, _notdetailedFmt, a) do { } while(0)
 #define IDB_PROFILER_STRING(_arg) ""
 
 #endif // IDB_PROFILER_USE_MARKS

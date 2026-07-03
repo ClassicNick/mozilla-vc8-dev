@@ -751,6 +751,9 @@ pref("dom.experimental_forms", false);
 // Don't enable <input type=range> yet:
 pref("dom.experimental_forms_range", true);
 
+// Enables system messages and activities
+pref("dom.sysmsg.enabled", false);
+
 // Allocation Threshold for Workers
 pref("dom.workers.mem.gc_allocation_threshold_mb", 30);
 
@@ -4201,4 +4204,10 @@ pref("memory_info_dumper.watch_fifo", false);
 pref("captivedetect.maxWaitingTime", 5000);
 pref("captivedetect.pollingTime", 3000);
 pref("captivedetect.maxRetryCount", 5);
+#endif
+
+#ifdef RELEASE_BUILD
+pref("dom.forms.inputmode", false);
+#else
+pref("dom.forms.inputmode", true);
 #endif

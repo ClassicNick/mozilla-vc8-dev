@@ -33,6 +33,10 @@
 #include "AudioNodeEngine.h"
 #include "nsDebug.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 using mozilla::WEBAUDIO_BLOCK_SIZE;
 using mozilla::AudioBlockCopyChannelWithScale;
 

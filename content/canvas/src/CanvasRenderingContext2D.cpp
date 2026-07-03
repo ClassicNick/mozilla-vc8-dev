@@ -791,9 +791,12 @@ CanvasRenderingContext2D::EnsureTarget()
      if (layerManager) {
 #ifdef USE_SKIA_GPU
        if (gfxPlatform::GetPlatform()->UseAcceleratedSkiaCanvas()) {
+         SurfaceCaps caps = SurfaceCaps::ForRGBA();
+         caps.preserve = true;
+
          mGLContext = mozilla::gl::GLContextProvider::CreateOffscreen(gfxIntSize(size.width,
                                                                                  size.height),
-                                                                      SurfaceCaps::ForRGBA(),
+                                                                      caps,
                                                                       mozilla::gl::GLContext::ContextFlagsNone);
          mTarget = gfxPlatform::GetPlatform()->CreateDrawTargetForFBO(0, mGLContext, size, format);
        } else
@@ -1289,7 +1292,7 @@ CanvasRenderingContext2D::SetStyleFromJSValue(JSContext* cx,
 }
 
 static JS::Value
-WrapStyle(JSContext* cx, JSObject* obj,
+WrapStyle(JSContext* cx, JSObject* objArg,
           CanvasRenderingContext2D::CanvasMultiGetterType type,
           nsAString& str, nsISupports* supports, ErrorResult& error)
 {
@@ -1304,6 +1307,7 @@ WrapStyle(JSContext* cx, JSObject* obj,
     case CanvasRenderingContext2D::CMG_STYLE_PATTERN:
     case CanvasRenderingContext2D::CMG_STYLE_GRADIENT:
     {
+      JS::Rooted<JSObject*> obj(cx, objArg);
       ok = dom::WrapObject(cx, obj, supports, &v);
       break;
     }
@@ -1452,6 +1456,7 @@ CanvasRenderingContext2D::CreatePattern(const HTMLImageOrCanvasOrVideoElement& e
 
   // Ignore nullptr cairo surfaces! See bug 666312.
   if (!res.mSurface->CairoSurface() || res.mSurface->CairoStatus()) {
+    error.Throw(NS_ERROR_NOT_AVAILABLE);
     return nullptr;
   }
 
@@ -2414,19 +2419,27 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
                        ForStyle(mCtx, CanvasRenderingContext2D::STYLE_FILL, mCtx->mTarget),
                      DrawOptions(mState->globalAlpha, mCtx->UsedOperation()));
       } else if (mOp == CanvasRenderingContext2D::TEXT_DRAW_OPERATION_STROKE) {
-        RefPtr<Path> path = scaledFont->GetPathForGlyphs(buffer, mCtx->mTarget);
-
+        // stroke glyphs one at a time to avoid poor CoreGraphics performance
+        // when stroking a path with a very large number of points
+        buffer.mGlyphs = &glyphBuf.front();
+        buffer.mNumGlyphs = 1;
         const ContextState& state = *mState;
-        AdjustedTarget(mCtx, &bounds)->
-          Stroke(path, CanvasGeneralPattern().
-                   ForStyle(mCtx, CanvasRenderingContext2D::STYLE_STROKE, mCtx->mTarget),
-                 StrokeOptions(state.lineWidth, state.lineJoin,
-                               state.lineCap, state.miterLimit,
-                               state.dash.Length(),
-                               state.dash.Elements(),
-                               state.dashOffset),
-                 DrawOptions(state.globalAlpha, mCtx->UsedOperation()));
+        AdjustedTarget target(mCtx, &bounds);
+        const StrokeOptions strokeOpts(state.lineWidth, state.lineJoin,
+                                       state.lineCap, state.miterLimit,
+                                       state.dash.Length(),
+                                       state.dash.Elements(),
+                                       state.dashOffset);
+        CanvasGeneralPattern cgp;
+        const Pattern& patForStyle
+          (cgp.ForStyle(mCtx, CanvasRenderingContext2D::STYLE_STROKE, mCtx->mTarget));
+        const DrawOptions drawOpts(state.globalAlpha, mCtx->UsedOperation());
 
+        for (unsigned i = glyphBuf.size(); i > 0; --i) {
+          RefPtr<Path> path = scaledFont->GetPathForGlyphs(buffer, mCtx->mTarget);
+          target->Stroke(path, patForStyle, strokeOpts, drawOpts);
+          buffer.mGlyphs++;
+        }
       }
     }
   }

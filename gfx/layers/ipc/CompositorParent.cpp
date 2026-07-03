@@ -12,6 +12,7 @@
 #include "AutoOpenSurface.h"
 #include "CompositorParent.h"
 #include "mozilla/layers/CompositorOGL.h"
+#include "mozilla/layers/BasicCompositor.h"
 #include "LayerTransactionParent.h"
 #include "nsIWidget.h"
 #include "nsGkAtoms.h"
@@ -126,12 +127,12 @@ MessageLoop* CompositorParent::CompositorLoop()
 }
 
 CompositorParent::CompositorParent(nsIWidget* aWidget,
-                                   bool aRenderToEGLSurface,
+                                   bool aUseExternalSurfaceSize,
                                    int aSurfaceWidth, int aSurfaceHeight)
   : mWidget(aWidget)
   , mCurrentCompositeTask(NULL)
   , mPaused(false)
-  , mRenderToEGLSurface(aRenderToEGLSurface)
+  , mUseExternalSurfaceSize(aUseExternalSurfaceSize)
   , mEGLSurfaceSize(aSurfaceWidth, aSurfaceHeight)
   , mPauseCompositionMonitor("PauseCompositionMonitor")
   , mResumeCompositionMonitor("ResumeCompositionMonitor")
@@ -320,7 +321,7 @@ CompositorParent::ForceComposition()
 void
 CompositorParent::SetEGLSurfaceSize(int width, int height)
 {
-  NS_ASSERTION(mRenderToEGLSurface, "Compositor created without RenderToEGLSurface provided");
+  NS_ASSERTION(mUseExternalSurfaceSize, "Compositor created without UseExternalSurfaceSize provided");
   mEGLSurfaceSize.SizeTo(width, height);
   if (mLayerManager) {
     mLayerManager->GetCompositor()->SetDestinationSurfaceSize(gfx::IntSize(mEGLSurfaceSize.width, mEGLSurfaceSize.height));
@@ -563,23 +564,27 @@ CompositorParent::AllocPLayerTransaction(const LayersBackend& aBackendHint,
       new LayerManagerComposite(new CompositorOGL(mWidget,
                                                   mEGLSurfaceSize.width,
                                                   mEGLSurfaceSize.height,
-                                                  mRenderToEGLSurface));
-    mWidget = nullptr;
-    mLayerManager->SetCompositorID(mCompositorID);
-
-    if (!mLayerManager->Initialize()) {
-      NS_ERROR("Failed to init Compositor");
-      return nullptr;
-    }
-
-    mCompositionManager = new AsyncCompositionManager(mLayerManager);
-
-    *aTextureFactoryIdentifier = mLayerManager->GetTextureFactoryIdentifier();
-    return new LayerTransactionParent(mLayerManager, this, 0);
+                                                  mUseExternalSurfaceSize));
+  } else if (aBackendHint == mozilla::layers::LAYERS_BASIC) {
+    mLayerManager =
+      new LayerManagerComposite(new BasicCompositor(mWidget));
   } else {
     NS_ERROR("Unsupported backend selected for Async Compositor");
     return nullptr;
   }
+
+  mWidget = nullptr;
+  mLayerManager->SetCompositorID(mCompositorID);
+
+  if (!mLayerManager->Initialize()) {
+    NS_ERROR("Failed to init Compositor");
+    return nullptr;
+  }
+
+  mCompositionManager = new AsyncCompositionManager(mLayerManager);
+
+  *aTextureFactoryIdentifier = mLayerManager->GetTextureFactoryIdentifier();
+  return new LayerTransactionParent(mLayerManager, this, 0);
 }
 
 bool
