@@ -843,12 +843,6 @@ RasterImage::GetCurrentImgFrame()
   return GetImgFrame(GetCurrentImgFrameIndex());
 }
 
-imgFrame*
-RasterImage::GetCurrentDrawableImgFrame()
-{
-  return GetDrawableImgFrame(GetCurrentImgFrameIndex());
-}
-
 //******************************************************************************
 /* [notxpcom] boolean frameIsOpaque(in uint32_t aWhichFrame); */
 NS_IMETHODIMP_(bool)
@@ -3522,11 +3516,15 @@ RasterImage::DecodePool::DecodePool()
     mThreadPool = do_CreateInstance(NS_THREADPOOL_CONTRACTID);
     if (mThreadPool) {
       mThreadPool->SetName(NS_LITERAL_CSTRING("ImageDecoder"));
+      uint32_t limit;
       if (gDecodingThreadLimit <= 0) {
-        mThreadPool->SetThreadLimit(std::max(PR_GetNumberOfProcessors() - 1, 1));
+        limit = std::max(PR_GetNumberOfProcessors(), 2) - 1;
       } else {
-        mThreadPool->SetThreadLimit(static_cast<uint32_t>(gDecodingThreadLimit));
+        limit = static_cast<uint32_t>(gDecodingThreadLimit);
       }
+
+      mThreadPool->SetThreadLimit(limit);
+      mThreadPool->SetIdleThreadLimit(limit);
 
       nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
       if (obsSvc) {

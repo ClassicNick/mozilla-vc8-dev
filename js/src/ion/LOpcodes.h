@@ -134,6 +134,7 @@
     _(StoreSlotV)                   \
     _(StoreSlotT)                   \
     _(GuardShape)                   \
+    _(GuardObjectType)              \
     _(GuardClass)                   \
     _(ParWriteGuard)                \
     _(ParDump)                      \
@@ -181,6 +182,7 @@
     _(CallsiteCloneCache)           \
     _(CallGetElement)               \
     _(CallSetElement)               \
+    _(CallInitElementArray)         \
     _(CallSetProperty)              \
     _(CallDeleteProperty)           \
     _(SetPropertyCacheV)            \

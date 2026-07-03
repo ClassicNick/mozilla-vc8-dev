@@ -289,7 +289,7 @@ nsSVGGlyphFrame::CharacterDataChanged(CharacterDataChangeInfo* aInfo)
     // nsSVGUtils::InvalidateAndScheduleBoundsUpdate properly is when all our
     // text is gone, since it skips empty frames. So we have to invalidate
     // ourself.
-    nsSVGUtils::InvalidateBounds(this);
+    nsSVGEffects::InvalidateRenderingObservers(this);
   }
 
   return NS_OK;

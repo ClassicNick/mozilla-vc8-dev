@@ -45,7 +45,7 @@ namespace layers {
 class Composer2D;
 class CompositorChild;
 class LayerManager;
-class PLayersChild;
+class PLayerTransactionChild;
 }
 }
 
@@ -419,7 +419,7 @@ class nsIWidget : public nsISupports {
     typedef mozilla::layers::CompositorChild CompositorChild;
     typedef mozilla::layers::LayerManager LayerManager;
     typedef mozilla::layers::LayersBackend LayersBackend;
-    typedef mozilla::layers::PLayersChild PLayersChild;
+    typedef mozilla::layers::PLayerTransactionChild PLayerTransactionChild;
     typedef mozilla::widget::NotificationToIME NotificationToIME;
     typedef mozilla::widget::IMEState IMEState;
     typedef mozilla::widget::InputContext InputContext;
@@ -1148,18 +1148,40 @@ class nsIWidget : public nsISupports {
      * type |aBackendHint| instead of what would normally be created.
      * LAYERS_NONE means "no hint".
      */
-    virtual LayerManager* GetLayerManager(PLayersChild* aShadowManager,
+    virtual LayerManager* GetLayerManager(PLayerTransactionChild* aShadowManager,
                                           LayersBackend aBackendHint,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                           bool* aAllowRetaining = nullptr) = 0;
 
     /**
+     * Called before each layer manager transaction to allow any preparation
+     * for DrawWindowUnderlay/Overlay that needs to be on the main thread.
+     *
+     * Always called on the main thread.
+     */
+    virtual void PrepareWindowEffects() = 0;
+
+    /**
+     * Called when shutting down the LayerManager to clean-up any cached resources.
+     *
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
+     */
+    virtual void CleanupWindowEffects() = 0;
+
+    /**
      * Called before the LayerManager draws the layer tree.
+     *
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
      */
     virtual void DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) = 0;
 
     /**
      * Called after the LayerManager draws the layer tree
+     *
+     * Always called from the compositing thread, which may be the main-thread if
+     * OMTC is not enabled.
      */
     virtual void DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) = 0;
 

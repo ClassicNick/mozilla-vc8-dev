@@ -25,7 +25,6 @@
 #include "nsIDOMHTMLInputElement.h"
 #include "nsFocusManager.h"
 #include "nsEventListenerManager.h"
-#include "nsIDOMEventTarget.h"
 #include "nsIDOMEventListener.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
@@ -326,13 +325,9 @@ nsXBLPrototypeHandler::ExecuteHandler(EventTarget* aTarget,
   if (!JS_WrapObject(cx, bound.address())) {
     return NS_ERROR_FAILURE;
   }
-  JS::Rooted<JSObject*> boundHandler(cx, bound);
 
   nsRefPtr<EventHandlerNonNull> handlerCallback =
-    new EventHandlerNonNull(cx, globalObject, boundHandler, &ok);
-  if (!ok) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+    new EventHandlerNonNull(bound);
 
   nsEventHandler eventHandler(handlerCallback);
 

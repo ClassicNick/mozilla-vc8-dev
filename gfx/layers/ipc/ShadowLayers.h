@@ -35,8 +35,8 @@ class Edit;
 class EditReply;
 class OptionalThebesBuffer;
 class PLayerChild;
-class PLayersChild;
-class PLayersParent;
+class PLayerTransactionChild;
+class PLayerTransactionParent;
 class ShadowableLayer;
 class ShadowThebesLayer;
 class ShadowContainerLayer;
@@ -155,11 +155,14 @@ public:
 
   virtual void CreatedSingleBuffer(CompositableClient* aCompositable,
                                    const SurfaceDescriptor& aDescriptor,
-                                   const TextureInfo& aTextureInfo) MOZ_OVERRIDE;
+                                   const TextureInfo& aTextureInfo,
+                                   const SurfaceDescriptor* aDescriptorOnWhite = nullptr) MOZ_OVERRIDE;
   virtual void CreatedDoubleBuffer(CompositableClient* aCompositable,
                                    const SurfaceDescriptor& aFrontDescriptor,
                                    const SurfaceDescriptor& aBackDescriptor,
-                                   const TextureInfo& aTextureInfo) MOZ_OVERRIDE;
+                                   const TextureInfo& aTextureInfo,
+                                   const SurfaceDescriptor* aFrontDescriptorOnWhite = nullptr,
+                                   const SurfaceDescriptor* aBackDescriptorOnWhite = nullptr) MOZ_OVERRIDE;
   virtual void DestroyThebesBuffer(CompositableClient* aCompositable) MOZ_OVERRIDE;
 
   /**
@@ -243,7 +246,7 @@ public:
   /**
    * Set aMaskLayer as the mask on aLayer.
    * Note that only image layers are properly supported
-   * ShadowLayersParent::UpdateMask and accompanying ipdl
+   * LayerTransactionParent::UpdateMask and accompanying ipdl
    * will need changing to update properties for other kinds
    * of mask layer.
    */
@@ -265,7 +268,7 @@ public:
    * through ImageBridge, using an ID to connect the protocols on the
    * compositor side.
    */
-  void AttachAsyncCompositable(PLayersChild* aLayer, uint64_t aID);
+  void AttachAsyncCompositable(PLayerTransactionChild* aLayer, uint64_t aID);
 
   /**
    * Communicate to the compositor that the texture identified by aLayer
@@ -299,7 +302,7 @@ public:
   /**
    * Set an actor through which layer updates will be pushed.
    */
-  void SetShadowManager(PLayersChild* aShadowManager)
+  void SetShadowManager(PLayerTransactionChild* aShadowManager)
   {
     mShadowManager = aShadowManager;
   }
@@ -308,7 +311,7 @@ public:
    * True if this is forwarding to a ShadowLayerManager.
    */
   bool HasShadowManager() const { return !!mShadowManager; }
-  PLayersChild* GetShadowManager() const { return mShadowManager; }
+  PLayerTransactionChild* GetShadowManager() const { return mShadowManager; }
 
   /**
    * The following Alloc/Open/Destroy interfaces abstract over the
@@ -371,7 +374,7 @@ public:
 protected:
   ShadowLayerForwarder();
 
-  PLayersChild* mShadowManager;
+  PLayerTransactionChild* mShadowManager;
 
 #ifdef MOZ_HAVE_SURFACEDESCRIPTORGRALLOC
   virtual PGrallocBufferChild* AllocGrallocBuffer(const gfxIntSize& aSize,

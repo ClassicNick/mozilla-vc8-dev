@@ -104,7 +104,7 @@ public:
   NS_IMETHOD              HideWindowChrome(bool aShouldHide);
   NS_IMETHOD              MakeFullScreen(bool aFullScreen);
   virtual nsDeviceContext* GetDeviceContext();
-  virtual LayerManager*   GetLayerManager(PLayersChild* aShadowManager = nullptr,
+  virtual LayerManager*   GetLayerManager(PLayerTransactionChild* aShadowManager = nullptr,
                                           LayersBackend aBackendHint = mozilla::layers::LAYERS_NONE,
                                           LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
                                           bool* aAllowRetaining = nullptr);
@@ -112,6 +112,8 @@ public:
   virtual CompositorParent* NewCompositorParent(int aSurfaceWidth, int aSurfaceHeight);
   virtual void            CreateCompositor();
   virtual void            CreateCompositor(int aWidth, int aHeight);
+  virtual void            PrepareWindowEffects() {}
+  virtual void            CleanupWindowEffects() {}
   virtual void            DrawWindowUnderlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            DrawWindowOverlay(LayerManager* aManager, nsIntRect aRect) {}
   virtual void            UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) {}

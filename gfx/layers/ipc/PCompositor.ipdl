@@ -9,7 +9,7 @@ include "mozilla/ipc/RPCChannel.h";
 
 include LayersSurfaces;
 include protocol PGrallocBuffer;
-include protocol PLayers;
+include protocol PLayerTransaction;
 include "mozilla/layers/CompositorTypes.h";
 
 using mozilla::ipc::RPCChannel;
@@ -24,14 +24,14 @@ namespace layers {
 /**
  * The PCompositor protocol is used to manage communication between
  * the main thread and the compositor thread context. It's primary
- * purpose is to manage the PLayers sub protocol.
+ * purpose is to manage the PLayerTransaction sub protocol.
  */
 // This should really be 'sync', but we're using 'rpc' as a workaround
 // for Bug 716631.
 rpc protocol PCompositor
 {
-  // A Compositor manages a single Layer Manager (PLayers)
-  manages PLayers;
+  // A Compositor manages a single Layer Manager (PLayerTransaction)
+  manages PLayerTransaction;
 
 parent:
 
@@ -56,7 +56,7 @@ parent:
   sync MakeSnapshot(SurfaceDescriptor inSnapshot)
     returns (SurfaceDescriptor outSnapshot);
 
-  sync PLayers(LayersBackend layersBackendHint, uint64_t id)
+  sync PLayerTransaction(LayersBackend layersBackendHint, uint64_t id)
     returns (TextureFactoryIdentifier textureFactoryIdentifier);
 };
 

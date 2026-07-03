@@ -3247,15 +3247,15 @@ gsmsdp_negotiate_codec (fsmdef_dcb_t *dcb_p, cc_sdp_t *sdp_p,
 
 
                 found_codec = TRUE;
-                if(media->num_payloads >= payload_types_count) {
-                    /* We maxed our allocated memory -- processing is done. */
-                    return codec;
-                }
 
                 /* Incrementing this number serves as a "commit" for the
                    payload_info. If we bail out of the loop before this
                    happens, then the collected information is abandoned. */
                 media->num_payloads++;
+                if(media->num_payloads >= payload_types_count) {
+                    /* We maxed our allocated memory -- processing is done. */
+                    return codec;
+                }
 
                 if(offer) {
                     /* If we are creating an answer, return after the first match.
@@ -4626,7 +4626,7 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                                                               media,
                                                               &pc_stream_id);
                               if (lsm_rc) {
-                                cause = CC_CAUSE_NO_MEDIA;
+                                return (CC_CAUSE_NO_MEDIA);
                               } else {
                                 MOZ_ASSERT(pc_stream_id == 0);
                                 /* Use index 0 because we only have one stream */
@@ -4640,12 +4640,14 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                               }
                           }
 
-                          /* Now add the track to the single media stream.
-                             use index 0 because we only have one stream */
-                          result = gsmsdp_add_remote_track(0, i, dcb_p, media);
-                          MOZ_ASSERT(result);  /* TODO(ekr@rtfm.com) add real
-                                                 error checking, but this
-                                                 "can't fail" */
+                          if (created_media_stream) {
+                                /* Now add the track to the single media stream.
+                                   use index 0 because we only have one stream */
+                                result = gsmsdp_add_remote_track(0, i, dcb_p, media);
+                                MOZ_ASSERT(result);  /* TODO(ekr@rtfm.com) add real
+                                                       error checking, but this
+                                                       "can't fail" */
+                          }
                       }
                   }
               }

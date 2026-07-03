@@ -7,11 +7,12 @@
 #include "mozilla/FloatingPoint.h"
 
 #include "Key.h"
-#include "nsIStreamBufferAccess.h"
 #include "jsfriendapi.h"
 #include "nsAlgorithm.h"
 #include "nsJSUtils.h"
 #include "xpcpublic.h"
+#include "mozilla/Endian.h"
+#include <algorithm>
 
 USING_INDEXEDDB_NAMESPACE
 
@@ -397,8 +398,7 @@ Key::EncodeNumber(double aFloat, uint8_t aType)
                     (0 - pun.u) :
                     (pun.u | PR_UINT64(0x8000000000000000));
 
-  number = NS_SWAP64(number);
-  memcpy(buffer, &number, sizeof(number));
+  mozilla::BigEndian::writeUint64(buffer, number);
 }
 
 // static
@@ -411,8 +411,13 @@ Key::DecodeNumber(const unsigned char*& aPos, const unsigned char* aEnd)
   ++aPos;
 
   uint64_t number = 0;
+<<<<<<< HEAD
   memcpy(&number, aPos, NS_MIN<size_t>(sizeof(number), aEnd - aPos));
   number = NS_SWAP64(number);
+=======
+  memcpy(&number, aPos, std::min<size_t>(sizeof(number), aEnd - aPos));
+  number = mozilla::NativeEndian::swapFromBigEndian(number);
+>>>>>>> 60124d1
 
   aPos += sizeof(number);
 

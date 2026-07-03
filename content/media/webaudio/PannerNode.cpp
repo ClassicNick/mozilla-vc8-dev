@@ -22,9 +22,10 @@ using namespace std;
 class PannerNodeEngine : public AudioNodeEngine
 {
 public:
-  PannerNodeEngine()
+  explicit PannerNodeEngine(AudioNode* aNode)
+    : AudioNodeEngine(aNode)
     // Please keep these default values consistent with PannerNode::PannerNode below.
-    : mPanningModel(PanningModelTypeValues::HRTF)
+    , mPanningModel(PanningModelTypeValues::HRTF)
     , mPanningModelFunction(&PannerNodeEngine::HRTFPanningFunction)
     , mDistanceModel(DistanceModelTypeValues::Inverse)
     , mDistanceModelFunction(&PannerNodeEngine::InverseGainFunction)
@@ -176,7 +177,7 @@ PannerNode::PannerNode(AudioContext* aContext)
   , mConeOuterAngle(360.)
   , mConeOuterGain(0.)
 {
-  mStream = aContext->Graph()->CreateAudioNodeStream(new PannerNodeEngine(),
+  mStream = aContext->Graph()->CreateAudioNodeStream(new PannerNodeEngine(this),
                                                      MediaStreamGraph::INTERNAL_STREAM);
   // We should register once we have set up our stream and engine.
   Context()->Listener()->RegisterPannerNode(this);
@@ -187,7 +188,6 @@ PannerNode::~PannerNode()
   if (Context()) {
     Context()->UnregisterPannerNode(this);
   }
-  DestroyMediaStream();
 }
 
 JSObject*
@@ -282,8 +282,8 @@ PannerNodeEngine::EqualPowerPanningFunction(const AudioChunk& aInput,
   distanceGain = (this->*mDistanceModelFunction)(distance);
 
   // Actually compute the left and right gain.
-  gainL = cos(0.5 * M_PI * normalizedAzimuth);
-  gainR = sin(0.5 * M_PI * normalizedAzimuth);
+  gainL = cos(0.5 * M_PI * normalizedAzimuth) * aInput.mVolume;
+  gainR = sin(0.5 * M_PI * normalizedAzimuth) * aInput.mVolume;
 
   // Compute the output.
   if (inputChannels == 1) {

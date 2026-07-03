@@ -1593,7 +1593,6 @@ nsXPConnect::CreateSandbox(JSContext *cx, nsIPrincipal *principal,
     *_retval = nullptr;
 
     RootedValue rval(cx, JSVAL_VOID);
-    AUTO_MARK_JSVAL(ccx, rval.address());
 
     SandboxOptions options(cx);
     nsresult rv = xpc_CreateSandboxObject(cx, rval.address(), principal, options);
@@ -2421,13 +2420,13 @@ const uint8_t HAS_ORIGIN_PRINCIPALS_FLAG        = 2;
 
 static nsresult
 WriteScriptOrFunction(nsIObjectOutputStream *stream, JSContext *cx,
-                      JSScript *script, HandleObject functionObj)
+                      JSScript *scriptArg, HandleObject functionObj)
 {
     // Exactly one of script or functionObj must be given
-    MOZ_ASSERT(!script != !functionObj);
+    MOZ_ASSERT(!scriptArg != !functionObj);
 
-    if (!script)
-        script = JS_GetFunctionScript(cx, JS_GetObjectFunction(functionObj));
+    RootedScript script(cx, scriptArg ? scriptArg :
+                                        JS_GetFunctionScript(cx, JS_GetObjectFunction(functionObj)));
 
     nsIPrincipal *principal =
         nsJSPrincipals::get(JS_GetScriptPrincipals(script));

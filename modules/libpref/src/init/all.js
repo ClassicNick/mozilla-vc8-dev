@@ -216,6 +216,9 @@ pref("media.autoplay.enabled", true);
 // MediaDecoderReader's mVideoQueue.
 pref("media.video-queue.default-size", 10);
 
+// Whether to enable the audio writing APIs on the audio element
+pref("media.audio_data.enabled", true);
+
 #ifdef XP_MACOSX
 // Whether to run in native HiDPI mode on machines with "Retina"/HiDPI display;
 //   <= 0 : hidpi mode disabled, display will just use pixel-based upscaling
@@ -3285,6 +3288,8 @@ pref("font.name-list.monospace.ja", "MotoyaLMaru, MotoyaLCedar, Droid Sans Mono"
 pref("font.name.serif.ko", "Charis SIL Compact");
 pref("font.name.sans-serif.ko", "Open Sans");
 pref("font.name.monospace.ko", "Droid Sans Mono");
+pref("font.name-list.serif.ko", "HYSerif");
+pref("font.name-list.sans-serif.ko", "SmartGothic, DroidSansFallback, Droid Sans Fallback");
 
 pref("font.name.serif.th", "Charis SIL Compact");
 pref("font.name.sans-serif.th", "Open Sans");
@@ -3834,6 +3839,13 @@ pref("toolkit.zoomManager.zoomValues", ".3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2
 pref("browser.zoom.reflowOnZoom", false);
 
 /**
+ * Specifies the number of milliseconds to wait after a given reflow-on-zoom
+ * operation has completed before allowing another one to be triggered. This
+ * is to prevent a buildup of reflow-zoom events.
+ */
+pref("browser.zoom.reflowZoom.reflowTimeout", 500);
+
+/**
  * Controls whether or not the reflow-on-zoom behavior happens on page load.
  * This can be enabled in conjunction with the above preference (reflowOnZoom),
  * but has no effect if browser.zoom.reflowOnZoom is disabled.
@@ -3938,11 +3950,7 @@ pref("network.tcp.sendbuffer", 131072);
 pref("layers.async-video.enabled",false);
 
 // Whether to disable acceleration for all widgets.
-#ifdef MOZ_E10S_COMPAT
-pref("layers.acceleration.disabled", true);
-#else
 pref("layers.acceleration.disabled", false);
-#endif
 
 // Whether to force acceleration on, ignoring blacklists.
 #ifdef ANDROID
@@ -3975,11 +3983,8 @@ pref("gfx.xrender.enabled",true);
 
 #ifdef XP_WIN
 // Whether to disable the automatic detection and use of direct2d.
-#ifdef MOZ_E10S_COMPAT
-pref("gfx.direct2d.disabled", true);
-#else
 pref("gfx.direct2d.disabled", false);
-#endif
+
 // Whether to attempt to enable Direct2D regardless of automatic detection or
 // blacklisting
 pref("gfx.direct2d.force-enabled", false);

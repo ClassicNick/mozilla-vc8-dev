@@ -992,7 +992,7 @@ nsCocoaWindow::ConfigureChildren(const nsTArray<Configuration>& aConfigurations)
 }
 
 LayerManager*
-nsCocoaWindow::GetLayerManager(PLayersChild* aShadowManager,
+nsCocoaWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
                                LayersBackend aBackendHint,
                                LayerManagerPersistence aPersistence,
                                bool* aAllowRetaining)
@@ -1343,7 +1343,7 @@ nsresult nsCocoaWindow::DoResize(double aX, double aY,
   int32_t height = NSToIntRound(aHeight * scale);
   ConstrainSize(&width, &height);
 
-  nsIntRect newBounds(aX, aY,
+  nsIntRect newBounds(NSToIntRound(aX), NSToIntRound(aY),
                       NSToIntRound(width / scale),
                       NSToIntRound(height / scale));
 

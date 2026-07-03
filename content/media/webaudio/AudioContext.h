@@ -19,6 +19,7 @@
 #include "MediaBufferDecoder.h"
 #include "StreamBuffer.h"
 #include "MediaStreamGraph.h"
+#include "nsTHashtable.h"
 
 // X11 has a #define for CurrentTime. Unbelievable :-(.
 // See content/media/DOMMediaStream.h for more fun!
@@ -48,6 +49,7 @@ class DynamicsCompressorNode;
 class GainNode;
 class GlobalObject;
 class PannerNode;
+class ScriptProcessorNode;
 
 class AudioContext MOZ_FINAL : public nsWrapperCache,
                                public EnableWebAudioCheck
@@ -64,12 +66,7 @@ public:
     return mWindow;
   }
 
-  void Shutdown()
-  {
-    Suspend();
-    mDecoder.Shutdown();
-  }
-
+  void Shutdown();
   void Suspend();
   void Resume();
 
@@ -98,6 +95,22 @@ public:
   CreateBuffer(JSContext* aJSContext, uint32_t aNumberOfChannels,
                uint32_t aLength, float aSampleRate,
                ErrorResult& aRv);
+
+  already_AddRefed<ScriptProcessorNode>
+  CreateScriptProcessor(uint32_t aBufferSize,
+                        uint32_t aNumberOfInputChannels,
+                        uint32_t aNumberOfOutputChannels,
+                        ErrorResult& aRv);
+
+  already_AddRefed<ScriptProcessorNode>
+  CreateJavaScriptNode(uint32_t aBufferSize,
+                       uint32_t aNumberOfInputChannels,
+                       uint32_t aNumberOfOutputChannels,
+                       ErrorResult& aRv)
+  {
+    return CreateScriptProcessor(aBufferSize, aNumberOfInputChannels,
+                                 aNumberOfOutputChannels, aRv);
+  }
 
   already_AddRefed<AnalyserNode>
   CreateAnalyser();
@@ -139,6 +152,7 @@ public:
   MediaStream* DestinationStream() const;
   void UnregisterAudioBufferSourceNode(AudioBufferSourceNode* aNode);
   void UnregisterPannerNode(PannerNode* aNode);
+  void UnregisterScriptProcessorNode(ScriptProcessorNode* aNode);
   void UpdatePannerSource();
 
   JSContext* GetJSContext() const;
@@ -154,10 +168,14 @@ private:
   nsRefPtr<AudioListener> mListener;
   MediaBufferDecoder mDecoder;
   nsTArray<nsAutoPtr<WebAudioDecodeJob> > mDecodeJobs;
-  // Two arrays containing all the PannerNodes and AudioBufferSourceNodes,
-  // to compute the doppler shift. Those are weak pointers.
-  nsTArray<PannerNode*> mPannerNodes;
-  nsTArray<AudioBufferSourceNode*> mAudioBufferSourceNodes;
+  // Two hashsets containing all the PannerNodes and AudioBufferSourceNodes,
+  // to compute the doppler shift, and also to stop AudioBufferSourceNodes.
+  // These are all weak pointers.
+  nsTHashtable<nsPtrHashKey<PannerNode> > mPannerNodes;
+  nsTHashtable<nsPtrHashKey<AudioBufferSourceNode> > mAudioBufferSourceNodes;
+  // Hashset containing all ScriptProcessorNodes in order to stop them.
+  // These are all weak pointers.
+  nsTHashtable<nsPtrHashKey<ScriptProcessorNode> > mScriptProcessorNodes;
 };
 
 }

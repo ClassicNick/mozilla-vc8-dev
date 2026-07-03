@@ -147,6 +147,10 @@ abstract public class BrowserApp extends GeckoApp
 
     private Integer mPrefObserverId;
 
+    // Tag for the AboutHome fragment. The fragment is automatically attached
+    // after restoring from a saved state, so we use this tag to identify it.
+    private static final String ABOUTHOME_TAG = "abouthome";
+
     @Override
     public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
         switch(msg) {
@@ -507,13 +511,18 @@ abstract public class BrowserApp extends GeckoApp
             }
         });
 
-        // AboutHome will be dynamically attached and detached as
-        // about:home is shown. Adding/removing the fragment is not synchronous,
-        // so we can't use Fragment#isVisible() to determine whether the
-        // about:home is shown. Instead, we use Fragment#getUserVisibleHint()
-        // with the hint we set ourselves.
-        mAboutHome = AboutHome.newInstance();
-        mAboutHome.setUserVisibleHint(false);
+        // Find the Fragment if it was already added from a restored instance state.
+        mAboutHome = (AboutHome) getSupportFragmentManager().findFragmentByTag(ABOUTHOME_TAG);
+
+        if (mAboutHome == null) {
+            // AboutHome will be dynamically attached and detached as
+            // about:home is shown. Adding/removing the fragment is not synchronous,
+            // so we can't use Fragment#isVisible() to determine whether the
+            // about:home is shown. Instead, we use Fragment#getUserVisibleHint()
+            // with the hint we set ourselves.
+            mAboutHome = AboutHome.newInstance();
+            mAboutHome.setUserVisibleHint(false);
+        }
 
         mBrowserToolbar = new BrowserToolbar(this);
         mBrowserToolbar.from(actionBar);
@@ -679,8 +688,6 @@ abstract public class BrowserApp extends GeckoApp
                 // show about:home if we aren't restoring previous session
                 if (mRestoreMode == RESTORE_NONE) {
                     Tab tab = Tabs.getInstance().loadUrl("about:home", Tabs.LOADURL_NEW_TAB);
-                } else {
-                    hideAboutHome();
                 }
             } else {
                 int flags = Tabs.LOADURL_NEW_TAB | Tabs.LOADURL_USER_ENTERED;
@@ -780,21 +787,6 @@ abstract public class BrowserApp extends GeckoApp
 
     @Override
     public void refreshChrome() {
-        // Only ICS phones use a smaller action-bar in landscape mode.
-        if (Build.VERSION.SDK_INT >= 14 && !HardwareUtils.isTablet()) {
-            int index = mMainLayout.indexOfChild(mBrowserToolbar.getLayout());
-            mMainLayout.removeViewAt(index);
-
-            LinearLayout actionBar = (LinearLayout) getActionBarLayout();
-            mMainLayout.addView(actionBar, index);
-            mBrowserToolbar.from(actionBar);
-            mBrowserToolbar.refresh();
-
-            // The favicon view is different now, so we need to update the DoorHangerPopup anchor view.
-            if (mDoorHangerPopup != null)
-                mDoorHangerPopup.setAnchor(mBrowserToolbar.mFavicon);
-        }
-
         invalidateOptionsMenu();
         updateSideBarState();
         mTabsPanel.refresh();
@@ -804,17 +796,20 @@ abstract public class BrowserApp extends GeckoApp
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        // Don't update the url in the toolbar if the activity was cancelled, or if it was launched to pick
-        //  a site. The order of these checks matters because data will be null if the activity was cancelled.
-        if (resultCode != Activity.RESULT_OK ||
-            data.getStringExtra(AwesomeBar.TARGET_KEY).equals(AwesomeBar.Target.PICK_SITE.toString())) {
-            // We still need to call fromAwesomeBarSearch to perform the toolbar animation.
-            mBrowserToolbar.fromAwesomeBarSearch(null);
-            return;
+        String url = null;
+
+        // Don't update the url in the toolbar if the activity was cancelled.
+        if (resultCode == Activity.RESULT_OK && data != null) {
+            // Don't update the url if the activity was launched to pick a site.
+            String targetKey = data.getStringExtra(AwesomeBar.TARGET_KEY);
+            if (!AwesomeBar.Target.PICK_SITE.toString().equals(targetKey)) {
+                // Update the toolbar with the url that was just entered.
+                url = data.getStringExtra(AwesomeBar.URL_KEY);
+            }
         }
 
-        // Otherwise, update the toolbar with the url that was just entered.
-        mBrowserToolbar.fromAwesomeBarSearch(data.getStringExtra(AwesomeBar.URL_KEY));
+        // We always need to call fromAwesomeBarSearch to perform the toolbar animation.
+        mBrowserToolbar.fromAwesomeBarSearch(url);
     }
 
     public View getActionBarLayout() {
@@ -1223,7 +1218,7 @@ abstract public class BrowserApp extends GeckoApp
         // it can't be used between the Activity's onSaveInstanceState() and
         // onResume().
         getSupportFragmentManager().beginTransaction()
-                .add(R.id.gecko_layout, mAboutHome).commitAllowingStateLoss();
+                .add(R.id.gecko_layout, mAboutHome, ABOUTHOME_TAG).commitAllowingStateLoss();
         mAboutHome.setUserVisibleHint(true);
 
         mBrowserToolbar.setNextFocusDownId(R.id.abouthome_content);
@@ -1513,10 +1508,6 @@ abstract public class BrowserApp extends GeckoApp
         // In ICS+, it's easy to kill an app through the task switcher.
         aMenu.findItem(R.id.quit).setVisible(Build.VERSION.SDK_INT < 14 || HardwareUtils.isTelevision());
 
-        if (AppConstants.MOZ_PROFILING) {
-            aMenu.findItem(R.id.toggle_profiling).setVisible(true);
-        }
-
         if (tab == null || tab.getURL() == null) {
             bookmark.setEnabled(false);
             forward.setEnabled(false);
@@ -1561,11 +1552,6 @@ abstract public class BrowserApp extends GeckoApp
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.toggle_profiling) {
-            GeckoAppShell.sendEventToGecko(GeckoEvent.createBroadcastEvent("ToggleProfiling", null));
-            return true;
-        }
-
         Tab tab = null;
         Intent intent = null;
         switch (item.getItemId()) {

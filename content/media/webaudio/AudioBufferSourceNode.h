@@ -55,18 +55,18 @@ public:
 
   virtual JSObject* WrapObject(JSContext* aCx, JSObject* aScope);
 
-  void Start(JSContext* aCx, double aWhen, double aOffset,
+  void Start(double aWhen, double aOffset,
              const Optional<double>& aDuration, ErrorResult& aRv);
-  void NoteOn(JSContext* aCx, double aWhen, ErrorResult& aRv)
+  void NoteOn(double aWhen, ErrorResult& aRv)
   {
-    Start(aCx, aWhen, 0.0, Optional<double>(), aRv);
+    Start(aWhen, 0.0, Optional<double>(), aRv);
   }
-  void NoteGrainOn(JSContext* aCx, double aWhen, double aOffset,
+  void NoteGrainOn(double aWhen, double aOffset,
                    double aDuration, ErrorResult& aRv)
   {
     Optional<double> duration;
     duration.Construct(aDuration);
-    Start(aCx, aWhen, aOffset, duration, aRv);
+    Start(aWhen, aOffset, duration, aRv);
   }
   void Stop(double aWhen, ErrorResult& aRv);
   void NoteOff(double aWhen, ErrorResult& aRv)
@@ -74,13 +74,15 @@ public:
     Stop(aWhen, aRv);
   }
 
-  AudioBuffer* GetBuffer() const
+  AudioBuffer* GetBuffer(JSContext* aCx) const
   {
     return mBuffer;
   }
-  void SetBuffer(AudioBuffer* aBuffer)
+  void SetBuffer(JSContext* aCx, AudioBuffer* aBuffer)
   {
     mBuffer = aBuffer;
+    SendBufferParameterToStream(aCx);
+    SendLoopParametersToStream();
   }
   AudioParam* PlaybackRate() const
   {
@@ -93,6 +95,7 @@ public:
   void SetLoop(bool aLoop)
   {
     mLoop = aLoop;
+    SendLoopParametersToStream();
   }
   double LoopStart() const
   {
@@ -101,6 +104,7 @@ public:
   void SetLoopStart(double aStart)
   {
     mLoopStart = aStart;
+    SendLoopParametersToStream();
   }
   double LoopEnd() const
   {
@@ -109,21 +113,49 @@ public:
   void SetLoopEnd(double aEnd)
   {
     mLoopEnd = aEnd;
+    SendLoopParametersToStream();
   }
   void SendDopplerShiftToStream(double aDopplerShift);
 
   virtual void NotifyMainThreadStateChanged() MOZ_OVERRIDE;
 
 private:
+  friend class AudioBufferSourceNodeEngine;
+  // START, OFFSET and DURATION are always set by start() (along with setting
+  // mBuffer to something non-null).
+  // STOP is set by stop().
+  enum EngineParameters {
+    SAMPLE_RATE,
+    START,
+    STOP,
+    OFFSET,
+    DURATION,
+    LOOP,
+    LOOPSTART,
+    LOOPEND,
+    PLAYBACKRATE,
+    DOPPLERSHIFT
+  };
+
+  void SendLoopParametersToStream();
+  void SendBufferParameterToStream(JSContext* aCx);
+  void SendOffsetAndDurationParametersToStream(AudioNodeStream* aStream,
+                                               double aOffset,
+                                               double aDuration);
   static void SendPlaybackRateToStream(AudioNode* aNode);
+
+private:
   double mLoopStart;
   double mLoopEnd;
+  double mOffset;
+  double mDuration;
   nsRefPtr<AudioBuffer> mBuffer;
   nsRefPtr<AudioParam> mPlaybackRate;
   PannerNode* mPannerNode;
   SelfReference<AudioBufferSourceNode> mPlayingRef; // a reference to self while playing
   bool mLoop;
   bool mStartCalled;
+  bool mOffsetAndDurationRemembered;
 };
 
 }

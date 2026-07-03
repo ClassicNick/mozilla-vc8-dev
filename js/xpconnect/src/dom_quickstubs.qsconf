@@ -54,6 +54,7 @@ members = [
     #
     # canvas friends
     'nsIDOMCanvasGradient.*',
+    'nsIDOMCanvasPattern.*',
 
     # dom/interfaces/core
     'nsIDOMMozNamedAttrMap.item',
@@ -67,7 +68,6 @@ members = [
     'nsIDOMProgressEvent.total',
     #XXX Can't quickstub initProgressEvent because it has long long parameters.
 
-    'nsIDOMTouch.*',
     'nsIDOMTouchList.*',
 
     # dom/interfaces/html
@@ -146,6 +146,7 @@ members = [
 irregularFilenames = {
     # stowaways
     'nsIDOMCanvasGradient': 'nsIDOMCanvasRenderingContext2D',
+    'nsIDOMCanvasPattern': 'nsIDOMCanvasRenderingContext2D',
 
     'nsIDOMBlob': 'nsIDOMFile',
 
@@ -174,6 +175,7 @@ customIncludes = [
     ]
 
 customReturnInterfaces = [
+    'nsIDOMCanvasPattern',
     'nsIDOMCanvasGradient',
     ]
 

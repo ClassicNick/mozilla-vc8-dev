@@ -1043,7 +1043,9 @@ ion::BailoutIonToBaseline(JSContext *cx, IonActivation *activation, IonBailoutIt
             (int) prevFrameType);
     IonSpew(IonSpew_BaselineBailouts, "  Reading from snapshot offset %u size %u",
             iter.snapshotOffset(), iter.ionScript()->snapshotsSize());
+
     iter.ionScript()->setBailoutExpected();
+    iter.script()->updateBaselineOrIonRaw();
 
     // Allocate buffer to hold stack replacement data.
     BaselineStackBuilder builder(iter, 1024);
@@ -1183,6 +1185,13 @@ ion::FinishBailoutToBaseline(BaselineBailoutInfo *bailoutInfo)
     js::gc::AutoSuppressGC suppressGC(cx);
 
     IonSpew(IonSpew_BaselineBailouts, "  Done restoring frames");
+
+    // Check that we can get the current script's PC.
+#ifdef DEBUG
+    jsbytecode *pc;
+    cx->stack.currentScript(&pc);
+    IonSpew(IonSpew_BaselineBailouts, "  Got pc=%p", pc);
+#endif
 
     uint32_t numFrames = bailoutInfo->numFrames;
     JS_ASSERT(numFrames > 0);

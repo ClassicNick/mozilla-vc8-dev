@@ -7048,10 +7048,7 @@ nsDocShell::CanSavePresentation(uint32_t aLoadType,
 
     // If the document does not want its presentation cached, then don't.
     nsCOMPtr<nsIDocument> doc = mScriptGlobal->GetExtantDoc();
-    if (!doc || !doc->CanSavePresentation(aNewRequest))
-        return false;
-
-    return true;
+    return doc && doc->CanSavePresentation(aNewRequest);
 }
 
 void
@@ -8677,8 +8674,7 @@ nsDocShell::InternalLoad(nsIURI * aURI,
             // document in |newWin|, if any.
             nsCOMPtr<nsPIDOMWindow> piNewWin = do_QueryInterface(newWin);
             if (piNewWin) {
-                nsCOMPtr<nsIDocument> newDoc =
-                    do_QueryInterface(piNewWin->GetExtantDocument());
+                nsCOMPtr<nsIDocument> newDoc = piNewWin->GetExtantDoc();
                 if (!newDoc || newDoc->IsInitialDocument()) {
                     isNewWindow = true;
                     aFlags |= INTERNAL_LOAD_FLAGS_FIRST_LOAD;
@@ -9716,6 +9712,11 @@ nsDocShell::ScrollToAnchor(nsACString & aCurHash, nsACString & aNewHash,
         // If we failed to get the shell, or if there is no shell,
         // nothing left to do here.
         return NS_OK;
+    }
+
+    nsIScrollableFrame* rootScroll = shell->GetRootScrollFrameAsScrollable();
+    if (rootScroll) {
+        rootScroll->ClearDidHistoryRestore();
     }
 
     // If we have no new anchor, we do not want to scroll, unless there is a

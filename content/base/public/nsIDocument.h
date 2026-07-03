@@ -23,7 +23,6 @@
 #include "nsPIDOMWindow.h"               // for use in inline functions
 #include "nsPropertyTable.h"             // for member
 #include "nsTHashtable.h"                // for member
-#include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/DocumentBinding.h"
 
 class imgIRequest;
@@ -49,7 +48,6 @@ class nsIDOMDocumentFragment;
 class nsIDOMDocumentType;
 class nsIDOMElement;
 class nsIDOMNodeList;
-class nsIDOMTouch;
 class nsIDOMTouchList;
 class nsIDOMXPathExpression;
 class nsIDOMXPathNSResolver;
@@ -102,8 +100,10 @@ class Link;
 class NodeFilter;
 class NodeIterator;
 class ProcessingInstruction;
+class Touch;
 class TreeWalker;
 class UndoManager;
+template<typename> class OwningNonNull;
 template<typename> class Sequence;
 
 template<typename, typename> class CallbackObjectHolder;
@@ -522,10 +522,6 @@ public:
     mSandboxFlags = sandboxFlags;
   }
 
-  inline mozilla::Directionality GetDocumentDirectionality() {
-    return mDirectionality;
-  }
-  
   /**
    * Access HTTP header data (this may also get set from other
    * sources, like HTML META tags).
@@ -640,7 +636,7 @@ protected:
 public:
   // Get the root <html> element, or return null if there isn't one (e.g.
   // if the root isn't <html>)
-  Element* GetHtmlElement();
+  Element* GetHtmlElement() const;
   // Returns the first child of GetHtmlContent which has the given tag,
   // or nullptr if that doesn't exist.
   Element* GetHtmlChildElement(nsIAtom* aTag);
@@ -2000,7 +1996,7 @@ public:
   virtual void GetTitle(nsString& aTitle) = 0;
   virtual void SetTitle(const nsAString& aTitle, mozilla::ErrorResult& rv) = 0;
   void GetDir(nsAString& aDirection) const;
-  void SetDir(const nsAString& aDirection, mozilla::ErrorResult& rv);
+  void SetDir(const nsAString& aDirection);
   nsIDOMWindow* GetDefaultView() const
   {
     return GetWindow();
@@ -2090,7 +2086,7 @@ public:
              nsIDOMXPathNSResolver* aResolver, uint16_t aType,
              nsISupports* aResult, mozilla::ErrorResult& rv);
   // Touch event handlers already on nsINode
-  already_AddRefed<nsIDOMTouch>
+  already_AddRefed<mozilla::dom::Touch>
     CreateTouch(nsIDOMWindow* aView, mozilla::dom::EventTarget* aTarget,
                 int32_t aIdentifier, int32_t aPageX, int32_t aPageY,
                 int32_t aScreenX, int32_t aScreenY, int32_t aClientX,
@@ -2098,10 +2094,10 @@ public:
                 float aRotationAngle, float aForce);
   already_AddRefed<nsIDOMTouchList> CreateTouchList();
   already_AddRefed<nsIDOMTouchList>
-    CreateTouchList(nsIDOMTouch* aTouch,
-                    const mozilla::dom::Sequence<nsRefPtr<nsIDOMTouch> >& aTouches);
+    CreateTouchList(mozilla::dom::Touch& aTouch,
+                    const mozilla::dom::Sequence<mozilla::dom::OwningNonNull<mozilla::dom::Touch> >& aTouches);
   already_AddRefed<nsIDOMTouchList>
-    CreateTouchList(const mozilla::dom::Sequence<nsRefPtr<nsIDOMTouch> >& aTouches);
+    CreateTouchList(const mozilla::dom::Sequence<mozilla::dom::OwningNonNull<mozilla::dom::Touch> >& aTouches);
 
   virtual nsHTMLDocument* AsHTMLDocument() { return nullptr; }
 
@@ -2147,12 +2143,6 @@ protected:
   nsCString GetContentTypeInternal() const
   {
     return mContentType;
-  }
-
-  inline void
-  SetDocumentDirectionality(mozilla::Directionality aDir)
-  {
-    mDirectionality = aDir;
   }
 
   // All document WrapNode implementations MUST call this method.  A
@@ -2333,9 +2323,6 @@ protected:
   // associated IFRAME or CSP-protectable content, if existent. These are set at load time and
   // are immutable - see nsSandboxFlags.h for the possible flags.
   uint32_t mSandboxFlags;
-
-  // The root directionality of this document.
-  mozilla::Directionality mDirectionality;
 
   nsCString mContentLanguage;
 private:

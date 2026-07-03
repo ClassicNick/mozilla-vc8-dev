@@ -11,11 +11,11 @@
 
 #include "nsCSSFrameConstructor.h"
 
+#include "mozilla/AutoRestore.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LinkedList.h"
-
 #include "nsAbsoluteContainingBlock.h"
 #include "nsCRT.h"
 #include "nsIAtom.h"
@@ -92,6 +92,7 @@
 #include "nsAnimationManager.h"
 #include "nsTransitionManager.h"
 #include "nsSVGIntegrationUtils.h"
+#include "nsViewportFrame.h"
 #include <algorithm>
 
 #ifdef MOZ_XUL
@@ -1415,6 +1416,7 @@ nsCSSFrameConstructor::nsCSSFrameConstructor(nsIDocument *aDocument,
   , mDocElementContainingBlock(nullptr)
   , mGfxScrollFrame(nullptr)
   , mPageSequenceFrame(nullptr)
+  , mCurrentDepth(0)
   , mUpdateCount(0)
   , mQuotesDirty(false)
   , mCountersDirty(false)
@@ -1596,7 +1598,7 @@ nsCSSFrameConstructor::CreateGeneratedContent(nsFrameConstructorState& aState,
         nsAutoString  nameSpaceVal;
         contentString.Left(nameSpaceVal, barIndex);
         nsresult error;
-        attrNameSpace = nameSpaceVal.ToInteger(&error, 10);
+        attrNameSpace = nameSpaceVal.ToInteger(&error);
         contentString.Cut(0, barIndex + 1);
         if (contentString.Length()) {
           if (mDocument->IsHTML() && aParentContent->IsHTML()) {
@@ -7726,13 +7728,14 @@ DoApplyRenderingChangeToTree(nsIFrame* aFrame,
           !(aFrame->GetStateBits() & NS_STATE_IS_OUTER_SVG)) {
         if (aChange & nsChangeHint_UpdateEffects) {
           needInvalidatingPaint = true;
-          // Invalidate and update our area:
-          nsSVGUtils::InvalidateBounds(aFrame, false);
+          nsSVGEffects::InvalidateRenderingObservers(aFrame);
+          // Need to update our overflow rects:
           nsSVGUtils::ScheduleReflowSVG(aFrame);
         } else {
           needInvalidatingPaint = true;
           // Just invalidate our area:
-          nsSVGUtils::InvalidateBounds(aFrame);
+          nsSVGEffects::InvalidateRenderingObservers(aFrame);
+          aFrame->InvalidateFrameSubtree();
         }
       } else {
         needInvalidatingPaint = true;
@@ -9841,6 +9844,12 @@ nsCSSFrameConstructor::ProcessChildren(nsFrameConstructorState& aState,
   NS_PRECONDITION(aFrame->GetContentInsertionFrame() == aFrame,
                   "Parent frame in ProcessChildren should be its own "
                   "content insertion frame");
+  const uint32_t kMaxDepth = 2 * MAX_REFLOW_DEPTH;
+  MOZ_STATIC_ASSERT(kMaxDepth <= UINT16_MAX, "mCurrentDepth type is too narrow");
+  AutoRestore<uint16_t> savedDepth(mCurrentDepth);
+  if (mCurrentDepth != UINT16_MAX) {
+    ++mCurrentDepth;
+  }
 
   if (!aPossiblyLeafFrame) {
     aPossiblyLeafFrame = aFrame;
@@ -9938,6 +9947,11 @@ nsCSSFrameConstructor::ProcessChildren(nsFrameConstructorState& aState,
                                  itemsToConstruct);
     }
 
+    const bool addChildItems = MOZ_LIKELY(mCurrentDepth < kMaxDepth);
+    if (!addChildItems) {
+      NS_WARNING("ProcessChildren max depth exceeded");
+    }
+
     ChildIterator iter, last;
     for (ChildIterator::Init(aContent, &iter, &last);
          iter != last;
@@ -9948,8 +9962,12 @@ nsCSSFrameConstructor::ProcessChildren(nsFrameConstructorState& aState,
       if (child->IsElement()) {
         child->UnsetFlags(ELEMENT_ALL_RESTYLE_FLAGS);
       }
-      AddFrameConstructionItems(aState, child, iter.XBLInvolved(), aFrame,
-                                itemsToConstruct);
+      if (addChildItems) {
+        AddFrameConstructionItems(aState, child, iter.XBLInvolved(), aFrame,
+                                  itemsToConstruct);
+      } else {
+        ClearLazyBits(child, child->GetNextSibling());
+      }
     }
     itemsToConstruct.SetParentHasNoXBLChildren(!iter.XBLInvolved());
 
@@ -12436,7 +12454,7 @@ nsCSSFrameConstructor::RecomputePosition(nsIFrame* aFrame)
 
     // Construct a bogus parent reflow state so that there's a usable
     // containing block reflow state.
-    nsIFrame *parentFrame = aFrame->GetParent();
+    nsIFrame* parentFrame = aFrame->GetParent();
     nsSize parentSize = parentFrame->GetSize();
 
     nsFrameState savedState = parentFrame->GetStateBits();
@@ -12460,7 +12478,10 @@ nsCSSFrameConstructor::RecomputePosition(nsIFrame* aFrame)
     nsSize availSize(parentSize.width, NS_INTRINSICSIZE);
 
     nsSize size = aFrame->GetSize();
-    nsSize cbSize = aFrame->GetContainingBlock()->GetSize();
+    ViewportFrame* viewport = do_QueryFrame(parentFrame);
+    nsSize cbSize = viewport ?
+      viewport->AdjustReflowStateAsContainingBlock(&parentReflowState).Size()
+      : aFrame->GetContainingBlock()->GetSize();
     const nsMargin& parentBorder =
       parentReflowState.mStyleBorder->GetComputedBorder();
     cbSize -= nsSize(parentBorder.LeftRight(), parentBorder.TopBottom());

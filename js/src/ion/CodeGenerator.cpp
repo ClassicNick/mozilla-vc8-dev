@@ -127,8 +127,14 @@ MNewStringObject::templateObj() const {
 }
 
 CodeGenerator::CodeGenerator(MIRGenerator *gen, LIRGraph *graph, MacroAssembler *masm)
-  : CodeGeneratorSpecific(gen, graph, masm)
+  : CodeGeneratorSpecific(gen, graph, masm),
+    unassociatedScriptCounts_(NULL)
 {
+}
+
+CodeGenerator::~CodeGenerator()
+{
+    js_delete(unassociatedScriptCounts_);
 }
 
 bool
@@ -990,7 +996,7 @@ CodeGenerator::visitTypeBarrier(LTypeBarrier *lir)
     Register scratch = ToRegister(lir->temp());
 
     Label matched, miss;
-    masm.guardTypeSet(operand, lir->mir()->typeSet(), scratch, &matched, &miss);
+    masm.guardTypeSet(operand, lir->mir()->resultTypeSet(), scratch, &matched, &miss);
     masm.jump(&miss);
     if (!bailoutFrom(&miss, lir->snapshot()))
         return false;
@@ -1285,10 +1291,9 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
 
     // Knowing that calleereg is a non-native function, load the JSScript.
     masm.loadPtr(Address(calleereg, offsetof(JSFunction, u.i.script_)), objreg);
-    masm.loadPtr(Address(objreg, OffsetOfIonInJSScript(executionMode)), objreg);
 
-    // Guard that the IonScript has been compiled.
-    masm.branchPtr(Assembler::BelowOrEqual, objreg, ImmWord(ION_COMPILING_SCRIPT), &uncompiled);
+    // Load script jitcode.
+    masm.loadBaselineOrIonRaw(objreg, objreg, executionMode, &uncompiled);
 
     // Nestle the StackPointer up to the argument vector.
     masm.freeStack(unusedStack);
@@ -1307,9 +1312,6 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
     masm.cmp32(nargsreg, Imm32(call->numStackArgs()));
     masm.j(Assembler::Above, &thunk);
 
-    // No argument fixup needed. Load the start of the target IonCode.
-    masm.loadPtr(Address(objreg, IonScript::offsetOfMethod()), objreg);
-    masm.loadPtr(Address(objreg, IonCode::offsetOfCode()), objreg);
     masm.jump(&makeCall);
 
     // Argument fixed needed. Load the ArgumentsRectifier.
@@ -1423,14 +1425,9 @@ CodeGenerator::visitCallKnown(LCallKnown *call)
 
     // Knowing that calleereg is a non-native function, load the JSScript.
     masm.loadPtr(Address(calleereg, offsetof(JSFunction, u.i.script_)), objreg);
-    masm.loadPtr(Address(objreg, OffsetOfIonInJSScript(executionMode)), objreg);
 
-    // Guard that the IonScript has been compiled.
-    masm.branchPtr(Assembler::BelowOrEqual, objreg, ImmWord(ION_COMPILING_SCRIPT), &uncompiled);
-
-    // Load the start of the target IonCode.
-    masm.loadPtr(Address(objreg, IonScript::offsetOfMethod()), objreg);
-    masm.loadPtr(Address(objreg, IonCode::offsetOfCode()), objreg);
+    // Load script jitcode.
+    masm.loadBaselineOrIonRaw(objreg, objreg, executionMode, &uncompiled);
 
     // Nestle the StackPointer up to the argument vector.
     masm.freeStack(unusedStack);
@@ -1634,10 +1631,9 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
 
     // Knowing that calleereg is a non-native function, load the JSScript.
     masm.loadPtr(Address(calleereg, offsetof(JSFunction, u.i.script_)), objreg);
-    masm.loadPtr(Address(objreg, OffsetOfIonInJSScript(executionMode)), objreg);
 
-    // Guard that the IonScript has been compiled.
-    masm.branchPtr(Assembler::BelowOrEqual, objreg, ImmWord(ION_COMPILING_SCRIPT), &invoke);
+    // Load script jitcode.
+    masm.loadBaselineOrIonRaw(objreg, objreg, executionMode, &invoke);
 
     // Call with an Ion frame or a rectifier frame.
     {
@@ -1662,15 +1658,9 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
             masm.j(Assembler::Below, &underflow);
         }
 
-        // No argument fixup needed. Load the start of the target IonCode.
-        {
-            masm.loadPtr(Address(objreg, IonScript::offsetOfMethod()), objreg);
-            masm.loadPtr(Address(objreg, IonCode::offsetOfCode()), objreg);
-
-            // Skip the construction of the rectifier frame because we have no
-            // underflow.
-            masm.jump(&rejoin);
-        }
+        // Skip the construction of the rectifier frame because we have no
+        // underflow.
+        masm.jump(&rejoin);
 
         // Argument fixup needed. Get ready to call the argumentsRectifier.
         {
@@ -1811,7 +1801,7 @@ CodeGenerator::generateArgumentsChecks()
     for (uint32_t i = info.startArgSlot(); i < info.endArgSlot(); i++) {
         // All initial parameters are guaranteed to be MParameters.
         MParameter *param = rp->getOperand(i)->toParameter();
-        const types::TypeSet *types = param->typeSet();
+        const types::TypeSet *types = param->resultTypeSet();
         if (!types || types->unknown())
             continue;
 
@@ -2091,15 +2081,12 @@ CodeGenerator::maybeCreateScriptCounts()
     CompileInfo *outerInfo = &gen->info();
     RawScript script = outerInfo->script();
 
-    if (!script)
-        return NULL;
-
-    if (cx->runtime->profilingScripts && !script->hasScriptCounts) {
-        if (!script->initScriptCounts(cx))
+    if (cx->runtime->profilingScripts) {
+        if (script && !script->hasScriptCounts && !script->initScriptCounts(cx))
             return NULL;
     }
 
-    if (!script->hasScriptCounts)
+    if (script && !script->hasScriptCounts)
         return NULL;
 
     counts = js_new<IonScriptCounts>();
@@ -2108,24 +2095,34 @@ CodeGenerator::maybeCreateScriptCounts()
         return NULL;
     }
 
-    script->addIonCounts(counts);
+    if (script)
+        script->addIonCounts(counts);
 
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         MBasicBlock *block = graph.getBlock(i)->mir();
 
-        // Find a PC offset in the outermost script to use. If this block is
-        // from an inlined script, find a location in the outer script to
-        // associate information about the inling with.
-        MResumePoint *resume = block->entryResumePoint();
-        while (resume->caller())
-            resume = resume->caller();
-        uint32_t offset = resume->pc() - script->code;
-        JS_ASSERT(offset < script->length);
+        uint32_t offset = 0;
+        if (script) {
+            // Find a PC offset in the outermost script to use. If this block
+            // is from an inlined script, find a location in the outer script
+            // to associate information about the inlining with.
+            MResumePoint *resume = block->entryResumePoint();
+            while (resume->caller())
+                resume = resume->caller();
+            uint32_t offset = resume->pc() - script->code;
+            JS_ASSERT(offset < script->length);
+        }
 
         if (!counts->block(i).init(block->id(), offset, block->numSuccessors()))
             return NULL;
         for (size_t j = 0; j < block->numSuccessors(); j++)
             counts->block(i).setSuccessor(j, block->getSuccessor(j)->id());
+    }
+
+    if (!script) {
+        // Compiling code for Asm.js. Leave the counts on the CodeGenerator to
+        // be picked up by the AsmJSModule after generation finishes.
+        unassociatedScriptCounts_ = counts;
     }
 
     return counts;
@@ -4165,6 +4162,15 @@ CodeGenerator::emitArrayPopShift(LInstruction *lir, const MArrayPopShift *mir, R
                                      ool->entry());
     }
 
+    // Handle the failure case when the array length is non-writable in the
+    // OOL path.  (Unlike in the adding-an-element cases, we can't rely on the
+    // capacity <= length invariant for such arrays to avoid an explicit
+    // check.)
+    Address elementFlags(elementsTemp, ObjectElements::offsetOfFlags());
+    Imm32 bit(ObjectElements::NONWRITABLE_ARRAY_LENGTH);
+    masm.branchTest32(Assembler::NonZero, elementFlags, bit, ool->entry());
+
+    // Now adjust length and initializedLength.
     masm.store32(lengthTemp, Address(elementsTemp, ObjectElements::offsetOfLength()));
     masm.store32(lengthTemp, Address(elementsTemp, ObjectElements::offsetOfInitializedLength()));
 
@@ -4808,6 +4814,19 @@ CodeGenerator::visitCallSetElement(LCallSetElement *lir)
     pushArg(ToValue(lir, LCallSetElement::Index));
     pushArg(ToRegister(lir->getOperand(0)));
     return callVM(SetObjectElementInfo, lir);
+}
+
+typedef bool (*InitElementArrayFn)(JSContext *, jsbytecode *, HandleObject, uint32_t, HandleValue);
+static const VMFunction InitElementArrayInfo = FunctionInfo<InitElementArrayFn>(js::InitElementArray);
+
+bool
+CodeGenerator::visitCallInitElementArray(LCallInitElementArray *lir)
+{
+    pushArg(ToValue(lir, LCallInitElementArray::Value));
+    pushArg(Imm32(lir->mir()->index()));
+    pushArg(ToRegister(lir->getOperand(0)));
+    pushArg(ImmWord(lir->mir()->resumePoint()->pc()));
+    return callVM(InitElementArrayInfo, lir);
 }
 
 bool
