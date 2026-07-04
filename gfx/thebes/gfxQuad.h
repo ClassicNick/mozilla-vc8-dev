@@ -9,7 +9,7 @@
 #include "gfxTypes.h"
 #include "gfxLineSegment.h"
 
-struct THEBES_API gfxQuad {
+struct gfxQuad {
     gfxQuad(const gfxPoint& aOne, const gfxPoint& aTwo, const gfxPoint& aThree, const gfxPoint& aFour)
     {
         mPoints[0] = aOne;

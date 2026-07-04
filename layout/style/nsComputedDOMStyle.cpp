@@ -1098,7 +1098,7 @@ nsComputedDOMStyle::DoGetTransform()
   return MatrixToCSSValue(matrix);
 }
 
-/* static */ CSSValue*
+/* static */ nsROCSSPrimitiveValue*
 nsComputedDOMStyle::MatrixToCSSValue(gfx3DMatrix& matrix)
 {
   bool is3D = !matrix.Is2D();

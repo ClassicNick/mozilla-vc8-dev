@@ -77,7 +77,7 @@ public class ActivityHandlerHelper implements GeckoEventListener {
 
             Log.i(LOGTAG, "Mime: " + mimeType);
 
-            showFilePickerAsync(GeckoApp.mAppContext, mimeType, new FileResultHandler() {
+            showFilePickerAsync(GeckoAppShell.getGeckoInterface().getActivity(), mimeType, new FileResultHandler() {
                 public void gotFile(String filename) {
                     try {
                         message.put("file", filename);
@@ -202,7 +202,7 @@ public class ActivityHandlerHelper implements GeckoEventListener {
             return;
         }
 
-        final Prompt prompt = new Prompt(context, null, new Prompt.PromptCallback() {
+        final Prompt prompt = new Prompt(context, new Prompt.PromptCallback() {
             public void onPromptFinished(String promptServiceResult) {
                 int itemId = -1;
                 try {

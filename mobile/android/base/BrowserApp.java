@@ -13,6 +13,7 @@ import org.mozilla.gecko.gfx.GeckoLayerClient;
 import org.mozilla.gecko.gfx.ImmutableViewportMetrics;
 import org.mozilla.gecko.gfx.LayerView;
 import org.mozilla.gecko.gfx.PanZoomController;
+import org.mozilla.gecko.health.BrowserHealthReporter;
 import org.mozilla.gecko.menu.GeckoMenu;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.util.GamepadUtils;
@@ -20,7 +21,6 @@ import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.UiAsyncTask;
 import org.mozilla.gecko.widget.AboutHome;
-import org.mozilla.gecko.widget.GeckoActionProvider;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -142,6 +142,8 @@ abstract public class BrowserApp extends GeckoApp
     private SharedPreferencesHelper mSharedPreferencesHelper;
 
     private OrderedBroadcastHelper mOrderedBroadcastHelper;
+
+    private BrowserHealthReporter mBrowserHealthReporter;
 
     @Override
     public void onTabChanged(Tab tab, Tabs.TabEvents msg, Object data) {
@@ -414,6 +416,7 @@ abstract public class BrowserApp extends GeckoApp
         JavaAddonManager.getInstance().init(getApplicationContext());
         mSharedPreferencesHelper = new SharedPreferencesHelper(getApplicationContext());
         mOrderedBroadcastHelper = new OrderedBroadcastHelper(getApplicationContext());
+        mBrowserHealthReporter = new BrowserHealthReporter();
 
         if (AppConstants.MOZ_ANDROID_BEAM && Build.VERSION.SDK_INT >= 14) {
             NfcAdapter nfc = NfcAdapter.getDefaultAdapter(this);
@@ -630,6 +633,11 @@ abstract public class BrowserApp extends GeckoApp
         if (mOrderedBroadcastHelper != null) {
             mOrderedBroadcastHelper.uninit();
             mOrderedBroadcastHelper = null;
+        }
+
+        if (mBrowserHealthReporter != null) {
+            mBrowserHealthReporter.uninit();
+            mBrowserHealthReporter = null;
         }
 
         unregisterEventListener("CharEncoding:Data");
@@ -1427,19 +1435,6 @@ abstract public class BrowserApp extends GeckoApp
             mAddonMenuItemsCache.clear();
         }
 
-        // Action providers are available only ICS+.
-        if (Build.VERSION.SDK_INT >= 14) {
-            MenuItem share = mMenu.findItem(R.id.share);
-            GeckoActionProvider provider = new GeckoActionProvider(this);
-            provider.setOnTargetSelectedListener(new GeckoActionProvider.OnTargetSelectedListener() {
-                @Override
-                public void onTargetSelected() {
-                    closeOptionsMenu();
-                }
-            });
-            share.setActionProvider(provider);
-        }
-
         return true;
     }
 
@@ -1529,16 +1524,6 @@ abstract public class BrowserApp extends GeckoApp
         String scheme = Uri.parse(url).getScheme();
         share.setEnabled(!(scheme.equals("about") || scheme.equals("chrome") ||
                            scheme.equals("file") || scheme.equals("resource")));
-
-        // Action providers are available only ICS+.
-        if (Build.VERSION.SDK_INT >= 14) {
-            GeckoActionProvider provider = (GeckoActionProvider) share.getActionProvider();
-            if (provider != null) {
-                Intent shareIntent = GeckoAppShell.getShareIntent(this, url,
-                                                                  "text/plain", tab.getDisplayTitle());
-                provider.setIntent(shareIntent);
-            }
-        }
 
         // Disable save as PDF for about:home and xul pages
         saveAsPDF.setEnabled(!(tab.getURL().equals("about:home") ||

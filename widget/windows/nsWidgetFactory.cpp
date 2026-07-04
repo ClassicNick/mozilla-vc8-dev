@@ -17,6 +17,7 @@
 #include "nsScreenManagerWin.h"
 #include "nsSound.h"
 #include "WinMouseScrollHandler.h"
+#include "KeyboardLayout.h"
 #include "GfxInfo.h"
 #include "nsToolkit.h"
 
@@ -271,6 +272,7 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
 static void
 nsWidgetWindowsModuleDtor()
 {
+  KeyboardLayout::Shutdown();
   MouseScrollHandler::Shutdown();
   nsLookAndFeel::Shutdown();
   nsToolkit::Shutdown();
