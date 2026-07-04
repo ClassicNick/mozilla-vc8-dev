@@ -132,7 +132,6 @@ CPPSRCS += \
         LayerTransactionChild.cpp \
         LayerTransactionParent.cpp \
         SharedPlanarYCbCrImage.cpp \
-        ShmemYCbCrImage.cpp \
         SharedRGBImage.cpp \
         TaskThrottler.cpp \
         ImageClient.cpp \
@@ -144,6 +143,7 @@ CPPSRCS += \
         TextureHostOGL.cpp \
         TiledContentClient.cpp \
         TiledContentHost.cpp \
+        YCbCrImageDataSerializer.cpp \
         $(NULL)
 
 ifdef MOZ_X11 #{

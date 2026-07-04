@@ -1129,6 +1129,10 @@ protected:
     ContextStatus mContextStatus;
     bool mContextLostErrorSet;
 
+    // Used for some hardware (particularly Tegra 2 and 4) that likes to
+    // be Flushed while doing hundreds of draw calls.
+    int mDrawCallsSinceLastFlush;
+
     int mAlreadyGeneratedWarnings;
     bool mAlreadyWarnedAboutFakeVertexAttrib0;
 

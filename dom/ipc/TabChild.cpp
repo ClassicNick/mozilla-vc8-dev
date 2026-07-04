@@ -29,6 +29,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsEmbedCID.h"
 #include "nsEventListenerManager.h"
 #ifdef MOZ_CRASHREPORTER
@@ -631,7 +632,7 @@ TabChild::HandlePossibleViewportChange()
 
   // Force a repaint with these metrics. This, among other things, sets the
   // displayport, so we start with async painting.
-  RecvUpdateFrame(metrics);
+  ProcessUpdateFrame(metrics);
 }
 
 nsresult
@@ -1416,20 +1417,20 @@ void
 TabChild::DispatchMessageManagerMessage(const nsAString& aMessageName,
                                         const nsACString& aJSONData)
 {
-    JSAutoRequest ar(mCx);
-    JS::Rooted<JS::Value> json(mCx, JSVAL_NULL);
+    AutoSafeJSContext cx;
+    JS::Rooted<JS::Value> json(cx, JSVAL_NULL);
     StructuredCloneData cloneData;
     JSAutoStructuredCloneBuffer buffer;
-    if (JS_ParseJSON(mCx,
+    if (JS_ParseJSON(cx,
                       static_cast<const jschar*>(NS_ConvertUTF8toUTF16(aJSONData).get()),
                       aJSONData.Length(),
                       json.address())) {
-        WriteStructuredClone(mCx, json, buffer, cloneData.mClosure);
+        WriteStructuredClone(cx, json, buffer, cloneData.mClosure);
         cloneData.mData = buffer.data();
         cloneData.mDataLength = buffer.nbytes();
     }
 
-    nsFrameScriptCx cx(static_cast<nsIWebBrowserChrome*>(this), this);
+    nsFrameScriptCx frameScriptCx(static_cast<nsIWebBrowserChrome*>(this), this);
     // Let the BrowserElementScrolling helper (if it exists) for this
     // content manipulate the frame state.
     nsRefPtr<nsFrameMessageManager> mm =
@@ -1452,6 +1453,20 @@ ScrollWindowTo(nsIDOMWindow* aWindow, const mozilla::gfx::Point& aPoint)
 bool
 TabChild::RecvUpdateFrame(const FrameMetrics& aFrameMetrics)
 {
+    nsCOMPtr<nsIDOMWindowUtils> utils(GetDOMWindowUtils());
+
+    uint32_t presShellId;
+    nsresult rv = utils->GetPresShellId(&presShellId);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    if (NS_SUCCEEDED(rv) && aFrameMetrics.mPresShellId != presShellId) {
+        return true;
+    }
+    return ProcessUpdateFrame(aFrameMetrics);
+}
+
+bool
+TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
+  {
     if (!mCx || !mTabChildGlobal) {
         return true;
     }

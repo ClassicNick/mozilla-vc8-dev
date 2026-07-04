@@ -980,13 +980,13 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
                     AutoLayerManagerSetup
                       setupLayerManager(this, ctx, mozilla::layers::BUFFER_NONE);
 
-                    mWidgetListener->PaintWindow(this, region, 0);
+                    mWidgetListener->PaintWindow(this, region);
                 }
                 break;
             }
 
             case mozilla::layers::LAYERS_CLIENT: {
-                mWidgetListener->PaintWindow(this, region, 0);
+                mWidgetListener->PaintWindow(this, region);
                 break;
             }
 
@@ -995,7 +995,7 @@ nsWindow::DrawTo(gfxASurface *targetSurface, const nsIntRect &invalidRect)
                 static_cast<mozilla::layers::LayerManagerOGL*>(GetLayerManager(nullptr))->
                     SetClippingRegion(nsIntRegion(boundsRect));
 
-                mWidgetListener->PaintWindow(this, region, 0);
+                mWidgetListener->PaintWindow(this, region);
                 break;
             }
 

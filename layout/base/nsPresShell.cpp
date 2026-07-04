@@ -686,6 +686,7 @@ nsIPresShell::FrameSelection()
 //----------------------------------------------------------------------
 
 static bool sSynthMouseMove = true;
+static uint32_t sNextPresShellId;
 
 PresShell::PresShell()
   : mMouseLocation(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE)
@@ -712,6 +713,7 @@ PresShell::PresShell()
 #else
   mIsFirstPaint = true;
 #endif
+  mPresShellId = sNextPresShellId++;
   mFrozen = false;
 #ifdef DEBUG
   mPresArenaAllocCount = 0;
@@ -3836,7 +3838,7 @@ PresShell::FlushPendingNotifications(mozilla::ChangesToFlush aFlush)
       }
 
       if (aFlush.mFlushAnimations &&
-          CommonAnimationManager::ThrottlingEnabled() &&
+          nsLayoutUtils::AreAsyncAnimationsEnabled() &&
           !mPresContext->StyleUpdateForAllAnimationsIsUpToDate()) {
         mPresContext->AnimationManager()->
           FlushAnimations(CommonAnimationManager::Cannot_Throttle);
@@ -5574,9 +5576,6 @@ PresShell::Paint(nsView*        aViewToPaint,
   uint32_t flags = nsLayoutUtils::PAINT_WIDGET_LAYERS | nsLayoutUtils::PAINT_EXISTING_TRANSACTION;
   if (!(aFlags & PAINT_COMPOSITE)) {
     flags |= nsLayoutUtils::PAINT_NO_COMPOSITE;
-  }
-  if (aViewToPaint->InAlternatePaint()) {
-    flags |= nsLayoutUtils::PAINT_NO_CLEAR_INVALIDATIONS;
   }
 
   if (frame) {

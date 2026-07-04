@@ -675,8 +675,7 @@ public:
     PAINT_ALL_CONTINUATIONS = 0x40,
     PAINT_TO_WINDOW = 0x80,
     PAINT_EXISTING_TRANSACTION = 0x100,
-    PAINT_NO_COMPOSITE = 0x200,
-    PAINT_NO_CLEAR_INVALIDATIONS = 0x400
+    PAINT_NO_COMPOSITE = 0x200
   };
 
   /**
@@ -1585,10 +1584,9 @@ public:
   static bool Are3DTransformsEnabled();
 
   /**
-   * Checks if off-main-thread transform and opacity animations are enabled.
+   * Checks if off-main-thread animations are enabled.
    */
-  static bool AreOpacityAnimationsEnabled();
-  static bool AreTransformAnimationsEnabled();
+  static bool AreAsyncAnimationsEnabled();
 
   /**
    * Checks if we should warn about animations that can't be async

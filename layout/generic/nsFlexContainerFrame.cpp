@@ -17,6 +17,7 @@
 #include "prlog.h"
 
 using namespace mozilla::css;
+using namespace mozilla::layout;
 
 #ifdef PR_LOGGING
 static PRLogModuleInfo*
@@ -468,23 +469,43 @@ protected:
 static nsIFrame*
 GetFirstNonAnonBoxDescendant(nsIFrame* aFrame)
 {
-  MOZ_ASSERT(aFrame, "null frame passed to GetFirstNonAnonBoxDescendant()");
-  MOZ_ASSERT(aFrame->IsFlexItem(), "only intended for flex items");
-
-  while (true) {
+  while (aFrame) {
     nsIAtom* pseudoTag = aFrame->StyleContext()->GetPseudo();
 
     // If aFrame isn't an anonymous container, then it'll do.
     if (!pseudoTag ||                                 // No pseudotag.
         !nsCSSAnonBoxes::IsAnonBox(pseudoTag) ||      // Pseudotag isn't anon.
         pseudoTag == nsCSSAnonBoxes::mozNonElement) { // Text, not a container.
-      return aFrame;
+      break;
     }
 
     // Otherwise, descend to its first child and repeat.
+
+    // SPECIAL CASE: if we're dealing with an anonymous table, then it might
+    // be wrapping something non-anonymous in its caption or col-group lists
+    // (instead of its principal child list), so we have to look there.
+    // (Note: For anonymous tables that have a non-anon cell *and* a non-anon
+    // column, we'll always return the column. This is fine; we're really just
+    // looking for a handle to *anything* with a meaningful content node inside
+    // the table, for use in DOM comparisons to things outside of the table.)
+    if (MOZ_UNLIKELY(aFrame->GetType() == nsGkAtoms::tableOuterFrame)) {
+      nsIFrame* captionDescendant =
+        GetFirstNonAnonBoxDescendant(aFrame->GetFirstChild(kCaptionList));
+      if (captionDescendant) {
+        return captionDescendant;
+      }
+    } else if (MOZ_UNLIKELY(aFrame->GetType() == nsGkAtoms::tableFrame)) {
+      nsIFrame* colgroupDescendant =
+        GetFirstNonAnonBoxDescendant(aFrame->GetFirstChild(kColGroupList));
+      if (colgroupDescendant) {
+        return colgroupDescendant;
+      }
+    }
+
+    // USUAL CASE: Descend to the first child in principal list.
     aFrame = aFrame->GetFirstPrincipalChild();
-    MOZ_ASSERT(aFrame, "why do we have an anonymous box without any children?");
   }
+  return aFrame;
 }
 
 /**
@@ -506,6 +527,9 @@ bool
 IsOrderLEQWithDOMFallback(nsIFrame* aFrame1,
                           nsIFrame* aFrame2)
 {
+  MOZ_ASSERT(aFrame1->IsFlexItem() && aFrame2->IsFlexItem(),
+             "this method only intended for comparing flex items");
+
   if (aFrame1 == aFrame2) {
     // Anything is trivially LEQ itself, so we return "true" here... but it's
     // probably bad if we end up actually needing this, so let's assert.
@@ -525,6 +549,10 @@ IsOrderLEQWithDOMFallback(nsIFrame* aFrame1,
   // the actual frame that corresponds to our child content.
   aFrame1 = GetFirstNonAnonBoxDescendant(aFrame1);
   aFrame2 = GetFirstNonAnonBoxDescendant(aFrame2);
+  MOZ_ASSERT(aFrame1 && aFrame2,
+             "why do we have an anonymous box without any "
+             "non-anonymous descendants?");
+
 
   // Special case:
   // If either frame is for generated content from ::before or ::after, then
@@ -571,6 +599,9 @@ bool
 IsOrderLEQ(nsIFrame* aFrame1,
            nsIFrame* aFrame2)
 {
+  MOZ_ASSERT(aFrame1->IsFlexItem() && aFrame2->IsFlexItem(),
+             "this method only intended for comparing flex items");
+
   int32_t order1 = aFrame1->StylePosition()->mOrder;
   int32_t order2 = aFrame2->StylePosition()->mOrder;
 

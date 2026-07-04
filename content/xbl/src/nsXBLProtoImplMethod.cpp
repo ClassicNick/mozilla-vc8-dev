@@ -15,6 +15,7 @@
 #include "nsIScriptContext.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
+#include "nsCxPusher.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIXPConnect.h"
 #include "xpcpublic.h"
@@ -198,13 +199,11 @@ nsXBLProtoImplMethod::CompileMember(nsIScriptContext* aContext, const nsCString&
   }
 
   AutoPushJSContext cx(aContext->GetNativeContext());
-  JSAutoRequest ar(cx);
   JSAutoCompartment ac(cx, aClassObject);
   JS::CompileOptions options(cx);
   options.setFileAndLine(functionUri.get(),
                          uncompiledMethod->mBodyText.GetLineNumber())
-         .setVersion(JSVERSION_LATEST)
-         .setUserBit(true); // Flag us as XBL
+         .setVersion(JSVERSION_LATEST);
   JS::RootedObject rootedNull(cx, nullptr); // See bug 781070.
   JS::RootedObject methodObject(cx);
   nsresult rv = nsJSUtils::CompileFunction(cx, rootedNull, options, cname,
@@ -321,7 +320,6 @@ nsXBLProtoImplAnonymousMethod::Execute(nsIContent* aBoundElement)
   JS::Rooted<JSObject*> scopeObject(cx, xpc::GetXBLScope(cx, globalObject));
   NS_ENSURE_TRUE(scopeObject, NS_ERROR_OUT_OF_MEMORY);
 
-  JSAutoRequest ar(cx);
   JSAutoCompartment ac(cx, scopeObject);
   if (!JS_WrapObject(cx, thisObject.address()))
       return NS_ERROR_OUT_OF_MEMORY;

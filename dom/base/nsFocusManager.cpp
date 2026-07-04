@@ -212,7 +212,7 @@ nsFocusManager::Observe(nsISupports *aSubject,
   if (!nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
     nsDependentString data(aData);
     if (data.EqualsLiteral("accessibility.browsewithcaret")) {
-      UpdateCaret(false, true, mFocusedContent);
+      UpdateCaretForCaretBrowsingMode();
     }
     else if (data.EqualsLiteral("accessibility.tabfocus_applies_to_xul")) {
       nsIContent::sTabFocusModelAppliesToXUL =
@@ -1994,6 +1994,12 @@ nsFocusManager::RaiseWindow(nsPIDOMWindow* aWindow)
 }
 
 void
+nsFocusManager::UpdateCaretForCaretBrowsingMode()
+{
+  UpdateCaret(false, true, mFocusedContent);
+}
+
+void
 nsFocusManager::UpdateCaret(bool aMoveCaretToFocus,
                             bool aUpdateVisibility,
                             nsIContent* aContent)
@@ -2138,6 +2144,8 @@ nsFocusManager::SetCaretVisible(nsIPresShell* aPresShell,
       // First, hide the caret to prevent attempting to show it in SetCaretDOMSelection
       caret->SetCaretVisible(false);
 
+      // Caret must blink on non-editable elements
+      caret->SetIgnoreUserModify(true);
       // Tell the caret which selection to use
       caret->SetCaretDOMSelection(domSelection);
 
@@ -2149,6 +2157,7 @@ nsFocusManager::SetCaretVisible(nsIPresShell* aPresShell,
       if (!selCon)
         return NS_ERROR_FAILURE;
 
+      selCon->SetCaretReadOnly(false);
       selCon->SetCaretEnabled(aVisible);
       caret->SetCaretVisible(aVisible);
     }

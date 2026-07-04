@@ -15,6 +15,7 @@ import org.json.JSONObject;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -78,14 +79,15 @@ public class GeckoPreferences
 
         super.onCreate(savedInstanceState);
 
+        Bundle intentExtras = getIntent().getExtras();
+
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
-            Bundle intentExtras = getIntent().getExtras();
             if (intentExtras != null && intentExtras.containsKey(INTENT_EXTRA_RESOURCES)) {
                 String resourceName = intentExtras.getString(INTENT_EXTRA_RESOURCES);
                 int resource = getResources().getIdentifier(resourceName, "xml", getPackageName());
                 addPreferencesFromResource(resource);
             } else {
-                addPreferencesFromResource(R.xml.preferences_nonfragment);
+                addPreferencesFromResource(R.xml.preferences);
             }
         }
 
@@ -93,6 +95,12 @@ public class GeckoPreferences
 
         if (Build.VERSION.SDK_INT >= 14)
             getActionBar().setHomeButtonEnabled(true);
+
+        // If launched from notification, explicitly cancel the notification.
+        if (intentExtras != null && intentExtras.containsKey(DataReportingNotification.ALERT_NAME_DATAREPORTING_NOTIFICATION)) {
+            NotificationManager notificationManager = (NotificationManager) this.getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.cancel(DataReportingNotification.ALERT_NAME_DATAREPORTING_NOTIFICATION.hashCode());
+        }
     }
 
     /**
@@ -110,7 +118,7 @@ public class GeckoPreferences
         } else {
             // Use top-level settings screen.
             if (!onIsMultiPane()) {
-                fragmentArgs.putString(INTENT_EXTRA_RESOURCES, "preferences_main");
+                fragmentArgs.putString(INTENT_EXTRA_RESOURCES, "preferences");
             } else {
                 fragmentArgs.putString(INTENT_EXTRA_RESOURCES, "preferences_general");
             }

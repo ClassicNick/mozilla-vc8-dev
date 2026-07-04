@@ -1000,6 +1000,7 @@ BytecodeEmitter::isAliasedName(ParseNode *pn)
         return script->varIsAliased(pn->pn_cookie.slot());
       case Definition::PLACEHOLDER:
       case Definition::NAMED_LAMBDA:
+      case Definition::MISSING:
         JS_NOT_REACHED("unexpected dn->kind");
     }
     return false;
@@ -1343,6 +1344,9 @@ BindNameToSlotHelper(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
       case Definition::PLACEHOLDER:
         return true;
+
+      case Definition::MISSING:
+        JS_NOT_REACHED("missing");
     }
 
     /*
@@ -2474,6 +2478,22 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
         bce->switchToMain();
     }
 
+    /*
+     * Emit a prologue for run-once scripts which will deoptimize JIT code if
+     * the script ends up running multiple times via foo.caller related
+     * shenanigans.
+     */
+    bool runOnce = bce->parent &&
+        bce->parent->emittingRunOnceLambda &&
+        !funbox->argumentsHasLocalBinding() &&
+        !funbox->isGenerator();
+    if (runOnce) {
+        bce->switchToProlog();
+        if (!Emit1(cx, bce, JSOP_RUNONCE) < 0)
+            return false;
+        bce->switchToMain();
+    }
+
     if (!EmitTree(cx, bce, body))
         return false;
 
@@ -2491,8 +2511,10 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
      * If this function is only expected to run once, mark the script so that
      * initializers created within it may be given more precise types.
      */
-    if (bce->parent && bce->parent->emittingRunOnceLambda)
+    if (runOnce) {
         bce->script->treatAsRunOnce = true;
+        JS_ASSERT(!bce->script->hasRunOnce);
+    }
 
     /*
      * Mark as singletons any function which will only be executed once, or
@@ -4356,8 +4378,7 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
                .setCompileAndGo(parent->compileAndGo)
                .setSelfHostingMode(parent->selfHosted)
                .setNoScriptRval(false)
-               .setVersion(parent->getVersion())
-               .setUserBit(parent->userBit);
+               .setVersion(parent->getVersion());
 
         bool generateBytecode = true;
 #ifdef JS_ION
@@ -4386,9 +4407,10 @@ EmitFunc(JSContext *cx, BytecodeEmitter *bce, ParseNode *pn)
 
         if (generateBytecode) {
             Rooted<JSObject*> enclosingScope(cx, EnclosingStaticScope(bce));
+            Rooted<ScriptSourceObject *> sourceObject(cx, bce->script->sourceObject());
             Rooted<JSScript*> script(cx, JSScript::Create(cx, enclosingScope, false, options,
                                                           parent->staticLevel + 1,
-                                                          bce->script->scriptSource(),
+                                                          sourceObject,
                                                           funbox->bufStart, funbox->bufEnd));
             if (!script)
                 return false;
