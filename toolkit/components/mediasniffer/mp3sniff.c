@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "mp3sniff.h"
 

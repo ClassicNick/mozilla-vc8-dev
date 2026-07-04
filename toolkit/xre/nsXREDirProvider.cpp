@@ -1008,7 +1008,7 @@ nsXREDirProvider::GetUpdateRootDir(nsIFile* *aResult)
 
     // Figure out where we should check for a cached hash value
     wchar_t regPath[1024] = { L'\0' };
-    swprintf_s(regPath, mozilla::ArrayLength(regPath), L"SOFTWARE\\%S\\%S\\TaskBarIDs",
+    swprintf(regPath, mozilla::ArrayLength(regPath), L"SOFTWARE\\%S\\%S\\TaskBarIDs",
                gAppData->vendor, MOZ_APP_NAME);
 
     // If we pre-computed the hash, grab it from the registry.

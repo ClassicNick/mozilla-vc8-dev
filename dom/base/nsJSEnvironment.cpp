@@ -3075,7 +3075,7 @@ DOMAnalysisPurgeCallback(JSRuntime *aRt, JS::Handle<JSFlatString*> aDesc)
     prefix.Adopt(nsTextFormatter::smprintf(kFmt.get(),
                                            double(delta) / PR_USEC_PER_SEC));
 
-    nsDependentJSString stats(aDesc);
+    nsDependentJSString stats((JSFlatString*) aDesc);
     nsString msg = prefix + stats;
 
     nsCOMPtr<nsIConsoleService> cs = do_GetService(NS_CONSOLESERVICE_CONTRACTID);

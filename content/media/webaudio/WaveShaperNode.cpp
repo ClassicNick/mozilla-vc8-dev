@@ -68,7 +68,7 @@ public:
         // Index into the curve array based on the amplitude of the
         // incoming signal by clamping the amplitude to [-1, 1] and
         // performing a linear interpolation of the neighbor values.
-        float index = std::max(0.0f, std::min(float(mCurve.Length() - 1),
+        float index = NS_MAX(0.0f, NS_MIN(float(mCurve.Length() - 1),
                                               mCurve.Length() * (inputBuffer[j] + 1) / 2));
         uint32_t indexLower = uint32_t(index);
         uint32_t indexHigher = uint32_t(index + 1.0f);

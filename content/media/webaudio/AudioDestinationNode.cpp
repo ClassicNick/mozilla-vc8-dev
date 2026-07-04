@@ -59,7 +59,7 @@ public:
 
     // Record our input buffer
     MOZ_ASSERT(mWriteIndex < mLength, "How did this happen?");
-    const uint32_t duration = std::min(WEBAUDIO_BLOCK_SIZE, mLength - mWriteIndex);
+    const uint32_t duration = NS_MIN(WEBAUDIO_BLOCK_SIZE, mLength - mWriteIndex);
     for (uint32_t i = 0; i < mInputChannels.Length(); ++i) {
       if (aInput.IsNull()) {
         PodZero(mInputChannels[i] + mWriteIndex, duration);
@@ -112,7 +112,7 @@ public:
           return NS_OK;
         }
 
-        nsRefPtr<AudioContext> context;
+        AudioContext* context;
         {
           MutexAutoLock lock(mStream->Engine()->NodeMutex());
           AudioNode* node = mStream->Engine()->Node();

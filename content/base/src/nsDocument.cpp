@@ -3743,7 +3743,7 @@ nsDocument::AddStyleSheetToStyleSets(nsIStyleSheet* aSheet)
   }
 }
 
-#define DO_STYLESHEET_NOTIFICATION(createFunc, concreteInterface, initMethod, type, ...) \
+#define DO_STYLESHEET_NOTIFICATION(createFunc, concreteInterface, initMethod, type, a) \
   do {                                                                  \
     nsCOMPtr<nsIDOMEvent> event;                                        \
     nsresult rv = createFunc(getter_AddRefs(event), this,               \
@@ -3760,7 +3760,7 @@ nsDocument::AddStyleSheetToStyleSets(nsIStyleSheet* aSheet)
     nsCOMPtr<concreteInterface> ssEvent(do_QueryInterface(event));      \
     MOZ_ASSERT(ssEvent);                                                \
     ssEvent->initMethod(NS_LITERAL_STRING(type), true, true,            \
-                        cssSheet, __VA_ARGS__);                         \
+                        cssSheet, a);                         \
     event->SetTrusted(true);                                            \
     event->SetTarget(this);                                             \
     nsRefPtr<nsAsyncDOMEvent> asyncEvent = new nsAsyncDOMEvent(this, event); \

@@ -394,7 +394,7 @@ AudioNodeStream::ProduceOutput(GraphTime aFrom, GraphTime aTo)
 
   AudioSegment* segment = track->Get<AudioSegment>();
 
-  uint16_t outputCount = std::max(uint16_t(1), mEngine->OutputCount());
+  uint16_t outputCount = NS_MAX(uint16_t(1), mEngine->OutputCount());
   mLastChunks.SetLength(outputCount);
 
   if (mInCycle) {
