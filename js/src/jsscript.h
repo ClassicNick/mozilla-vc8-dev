@@ -818,22 +818,6 @@ public:
     static size_t offsetOfUseCount() { return offsetof(JSScript, useCount); }
     void resetUseCount() { useCount = 0; }
 
-    void resetLoopCount() {
-        if (loopCount > maxLoopCount)
-            maxLoopCount = loopCount;
-        loopCount = 0;
-    }
-
-    void incrLoopCount() {
-        ++loopCount;
-    }
-
-    uint32_t getMaxLoopCount() {
-        if (loopCount > maxLoopCount)
-            maxLoopCount = loopCount;
-        return maxLoopCount;
-    }
-
     bool initScriptCounts(JSContext *cx);
     js::PCCounts getPCCounts(jsbytecode *pc);
     void addIonCounts(js::ion::IonScriptCounts *ionCounts);

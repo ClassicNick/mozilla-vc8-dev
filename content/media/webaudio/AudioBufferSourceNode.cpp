@@ -419,8 +419,8 @@ public:
 AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* aContext)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Max,
-              ChannelInterpretationValues::Speakers)
+              ChannelCountMode::Max,
+              ChannelInterpretation::Speakers)
   , mLoopStart(0.0)
   , mLoopEnd(0.0)
   , mOffset(0.0)

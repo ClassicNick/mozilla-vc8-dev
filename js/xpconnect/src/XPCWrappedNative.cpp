@@ -2057,7 +2057,7 @@ XPCWrappedNative::GetSameCompartmentSecurityWrapper(JSContext *cx)
 {
     // Grab the current state of affairs.
     RootedObject flat(cx, GetFlatJSObject());
-    JSObject *wrapper = GetWrapper();
+    RootedObject wrapper(cx, GetWrapper());
 
     // If we already have a wrapper, it must be what we want.
     if (wrapper)

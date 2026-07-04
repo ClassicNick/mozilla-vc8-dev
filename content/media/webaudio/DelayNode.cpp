@@ -273,8 +273,8 @@ public:
 DelayNode::DelayNode(AudioContext* aContext, double aMaxDelay)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Max,
-              ChannelInterpretationValues::Speakers)
+              ChannelCountMode::Max,
+              ChannelInterpretation::Speakers)
   , mDelay(new AudioParam(this, SendDelayToStream, 0.0f))
 {
   DelayNodeEngine* engine = new DelayNodeEngine(this, aContext->Destination());

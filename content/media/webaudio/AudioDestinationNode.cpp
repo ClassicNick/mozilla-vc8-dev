@@ -18,8 +18,8 @@ NS_IMPL_ISUPPORTS_INHERITED0(AudioDestinationNode, AudioNode)
 AudioDestinationNode::AudioDestinationNode(AudioContext* aContext, MediaStreamGraph* aGraph)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Explicit,
-              ChannelInterpretationValues::Speakers)
+              ChannelCountMode::Explicit,
+              ChannelInterpretation::Speakers)
 {
   mStream = aGraph->CreateAudioNodeStream(new AudioNodeEngine(this),
                                           MediaStreamGraph::EXTERNAL_STREAM);

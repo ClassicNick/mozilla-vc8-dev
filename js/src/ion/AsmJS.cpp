@@ -2488,7 +2488,7 @@ static bool
 CheckArgument(ModuleCompiler &m, ParseNode *arg, PropertyName **name)
 {
     if (!IsDefinition(arg))
-        return m.failName(arg, "duplicate argument name '%s' not allowed", arg->name());
+        return m.fail(arg, "duplicate argument name not allowed");
 
     if (MaybeDefinitionInitializer(arg))
         return m.fail(arg, "default arguments not allowed");
@@ -4884,6 +4884,10 @@ AssertStackAlignment(MacroAssembler &masm)
 #endif
 }
 
+static const unsigned FramePushedAfterSave = NonVolatileRegs.gprs().size() * STACK_SLOT_SIZE +
+                                             NonVolatileRegs.fpus().size() * sizeof(double);
+
+#ifndef JS_CPU_ARM
 static unsigned
 StackArgBytes(const MIRTypeVector &argTypes)
 {
@@ -4903,9 +4907,6 @@ StackDecrementForCall(MacroAssembler &masm, const MIRTypeVector &argTypes, unsig
     return AlignBytes(alreadyPushed + extraBytes + argBytes, StackAlignment) - alreadyPushed;
 }
 
-static const unsigned FramePushedAfterSave = NonVolatileRegs.gprs().size() * STACK_SLOT_SIZE +
-                                             NonVolatileRegs.fpus().size() * sizeof(double);
-#ifndef JS_CPU_ARM
 static bool
 GenerateEntry(ModuleCompiler &m, const AsmJSModule::ExportedFunction &exportedFunc)
 {

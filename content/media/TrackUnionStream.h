@@ -219,7 +219,7 @@ protected:
       if (interval.mInputIsBlocked) {
         // Maybe the input track ended?
         segment->AppendNullData(ticks);
-        LOG(PR_LOG_DEBUG, ("TrackUnionStream %p appending %lld ticks of null data to track %d",
+        LOG(PR_LOG_DEBUG+1, ("TrackUnionStream %p appending %lld ticks of null data to track %d",
             this, (long long)ticks, outputTrack->GetID()));
       } else {
         // Figuring out which samples to use from the input stream is tricky
@@ -234,8 +234,8 @@ protected:
         segment->AppendSlice(*aInputTrack->GetSegment(),
                              NS_MIN(inputTrackEndPoint, inputStartTicks),
                              NS_MIN(inputTrackEndPoint, inputEndTicks));
-        LOG(PR_LOG_DEBUG, ("TrackUnionStream %p appending %lld ticks of input data to track %d",
-            this, (long long)(NS_MIN(inputTrackEndPoint, inputEndTicks) - NS_MIN(inputTrackEndPoint, inputStartTicks)),
+        LOG(PR_LOG_DEBUG+1, ("TrackUnionStream %p appending %lld ticks of input data to track %d",
+            this, (long long)(NS_MIN(inputTrackEndPoint, inputEndTicks) - std::min(inputTrackEndPoint, inputStartTicks)),
             outputTrack->GetID()));
       }
       for (uint32_t j = 0; j < mListeners.Length(); ++j) {

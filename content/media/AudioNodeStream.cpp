@@ -273,7 +273,7 @@ AudioNodeStream::ObtainInputBlock(AudioChunk& aTmpChunk, uint32_t aPortIndex)
     break;
   case ChannelCountMode::Clamped_max:
     // Clamp the computed output channel count to mNumberOfInputChannels.
-    outputChannelCount = std::min(outputChannelCount, mNumberOfInputChannels);
+    outputChannelCount = NS_MIN(outputChannelCount, mNumberOfInputChannels);
     break;
   case ChannelCountMode::Max:
     // Nothing to do here, just shut up the compiler warning.
@@ -378,7 +378,7 @@ AudioNodeStream::ProduceOutput(GraphTime aFrom, GraphTime aTo)
     mLastChunks[0].SetNull(WEBAUDIO_BLOCK_SIZE);
   } else {
     // We need to generate at least one input
-    uint16_t maxInputs = std::max(uint16_t(1), mEngine->InputCount());
+    uint16_t maxInputs = NS_MAX(uint16_t(1), mEngine->InputCount());
     OutputChunks inputChunks;
     inputChunks.SetLength(maxInputs);
     for (uint16_t i = 0; i < maxInputs; ++i) {

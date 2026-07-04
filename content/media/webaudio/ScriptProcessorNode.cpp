@@ -297,7 +297,7 @@ private:
           return NS_OK;
         }
 
-        nsRefPtr<ScriptProcessorNode> node;
+        ScriptProcessorNode* node;
         {
           // No need to keep holding the lock for the whole duration of this
           // function, since we're holding a strong reference to it, so if
@@ -382,8 +382,8 @@ ScriptProcessorNode::ScriptProcessorNode(AudioContext* aContext,
                                          uint32_t aNumberOfOutputChannels)
   : AudioNode(aContext,
               aNumberOfInputChannels,
-              mozilla::dom::ChannelCountModeValues::Explicit,
-              mozilla::dom::ChannelInterpretationValues::Speakers)
+              mozilla::dom::ChannelCountMode::Explicit,
+              mozilla::dom::ChannelInterpretation::Speakers)
   , mSharedBuffers(new SharedBuffers())
   , mBufferSize(aBufferSize ?
                   aBufferSize : // respect what the web developer requested

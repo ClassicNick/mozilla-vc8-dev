@@ -34,7 +34,7 @@ WebAudioUtils::ConvertDestinationStreamTimeToSourceStreamTime(double aTime,
                                                               MediaStream* aSource,
                                                               MediaStream* aDestination)
 {
-  StreamTime streamTime = std::max<MediaTime>(0, SecondsToMediaTime(aTime));
+  StreamTime streamTime = NS_MAX<MediaTime>(0, SecondsToMediaTime(aTime));
   GraphTime graphTime = aDestination->StreamTimeToGraphTime(streamTime);
   StreamTime thisStreamTime = aSource->GraphTimeToStreamTimeOptimistic(graphTime);
   TrackTicks ticks = TimeToTicksRoundUp(IdealAudioRate(), thisStreamTime);

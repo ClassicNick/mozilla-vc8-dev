@@ -1027,7 +1027,7 @@ nsFrameScriptExecutor::TryCacheLoadAndCompileScript(const nsAString& aURL,
   if (NS_FAILED(rv)) {
     return;
   }
-  
+
   bool hasFlags;
   rv = NS_URIChainHasFlags(uri,
                            nsIProtocolHandler::URI_IS_LOCAL_RESOURCE,
@@ -1036,7 +1036,7 @@ nsFrameScriptExecutor::TryCacheLoadAndCompileScript(const nsAString& aURL,
     NS_WARNING("Will not load a frame script!");
     return;
   }
-  
+
   nsCOMPtr<nsIChannel> channel;
   NS_NewChannel(getter_AddRefs(channel), uri);
   if (!channel) {
@@ -1128,7 +1128,7 @@ nsFrameScriptExecutor::InitTabChildGlobalInternal(nsISupports* aScope,
   nsIXPConnect* xpc = nsContentUtils::XPConnect();
   const uint32_t flags = nsIXPConnect::INIT_JS_STANDARD_CLASSES;
 
-  
+
   JS_SetContextPrivate(cx, aScope);
 
   nsresult rv =
@@ -1136,7 +1136,7 @@ nsFrameScriptExecutor::InitTabChildGlobalInternal(nsISupports* aScope,
                                          flags, JS::SystemZone, getter_AddRefs(mGlobal));
   NS_ENSURE_SUCCESS(rv, false);
 
-    
+
   JS::Rooted<JSObject*> global(cx);
   rv = mGlobal->GetJSObject(global.address());
   NS_ENSURE_SUCCESS(rv, false);

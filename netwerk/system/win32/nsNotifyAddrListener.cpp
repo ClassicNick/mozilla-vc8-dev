@@ -492,10 +492,6 @@ nsNotifyAddrListener::CheckICSStatus(PWCHAR aAdapterName)
 DWORD
 nsNotifyAddrListener::CheckAdaptersAddresses(void)
 {
-    static const DWORD flags =
-        GAA_FLAG_SKIP_FRIENDLY_NAME | GAA_FLAG_SKIP_ANYCAST |
-        GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
-
     if (!sGetAdaptersAddresses)
         return ERROR_NOT_SUPPORTED;
 

@@ -183,8 +183,8 @@ private:
 DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* aContext)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Explicit,
-              ChannelInterpretationValues::Speakers)
+              ChannelCountMode::Explicit,
+              ChannelInterpretation::Speakers)
   , mThreshold(new AudioParam(this, SendThresholdToStream, -24.f))
   , mKnee(new AudioParam(this, SendKneeToStream, 30.f))
   , mRatio(new AudioParam(this, SendRatioToStream, 12.f))

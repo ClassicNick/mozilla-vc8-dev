@@ -60,6 +60,7 @@ CPPSRCS += \
   UeventPoller.cpp \
   GonkSwitch.cpp \
   GonkFMRadio.cpp \
+  GonkDiskSpaceWatcher.cpp \
   $(NULL)
 else ifeq (Linux,$(OS_TARGET))
 CPPSRCS += \
@@ -145,6 +146,7 @@ CPPSRCS += \
   FallbackProcessPriority.cpp \
   FallbackFMRadio.cpp \
   FallbackFactoryReset.cpp \
+  FallbackDiskSpaceWatcher.cpp \
   $(NULL)
 endif #}
 

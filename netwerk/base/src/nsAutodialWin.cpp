@@ -43,8 +43,8 @@ PRIntervalTime nsAutodial::mDontRetryUntil = 0;
 // ctor. 
 nsAutodial::nsAutodial()
 :   mAutodialBehavior(AUTODIAL_DEFAULT),
-    mNumRASConnectionEntries(0),
-    mAutodialServiceDialingLocation(-1)
+    mAutodialServiceDialingLocation(-1),
+    mNumRASConnectionEntries(0)
 {
     mOSVerInfo.dwOSVersionInfoSize = sizeof(mOSVerInfo);
     GetVersionEx(&mOSVerInfo);

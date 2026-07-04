@@ -38,28 +38,28 @@ void SetParamsOnBiquad(WebCore::Biquad& aBiquad,
   }
 
   switch (aType) {
-  case BiquadFilterTypeValues::Lowpass:
+  case BiquadFilterType::Lowpass:
     aBiquad.setLowpassParams(normalizedFrequency, aQ);
     break;
-  case BiquadFilterTypeValues::Highpass:
+  case BiquadFilterType::Highpass:
     aBiquad.setHighpassParams(normalizedFrequency, aQ);
     break;
-  case BiquadFilterTypeValues::Bandpass:
+  case BiquadFilterType::Bandpass:
     aBiquad.setBandpassParams(normalizedFrequency, aQ);
     break;
-  case BiquadFilterTypeValues::Lowshelf:
+  case BiquadFilterType::Lowshelf:
     aBiquad.setLowShelfParams(normalizedFrequency, aGain);
     break;
-  case BiquadFilterTypeValues::Highshelf:
+  case BiquadFilterType::Highshelf:
     aBiquad.setHighShelfParams(normalizedFrequency, aGain);
     break;
-  case BiquadFilterTypeValues::Peaking:
+  case BiquadFilterType::Peaking:
     aBiquad.setPeakingParams(normalizedFrequency, aQ, aGain);
     break;
-  case BiquadFilterTypeValues::Notch:
+  case BiquadFilterType::Notch:
     aBiquad.setNotchParams(normalizedFrequency, aQ);
     break;
-  case BiquadFilterTypeValues::Allpass:
+  case BiquadFilterType::Allpass:
     aBiquad.setAllpassParams(normalizedFrequency, aQ);
     break;
   }
@@ -74,7 +74,7 @@ public:
     , mDestination(static_cast<AudioNodeStream*> (aDestination->Stream()))
     // Keep the default values in sync with the default values in
     // BiquadFilterNode::BiquadFilterNode
-    , mType(BiquadFilterTypeValues::Lowpass)
+    , mType(BiquadFilterType::Lowpass)
     , mFrequency(350.f)
     , mDetune(0.f)
     , mQ(1.f)
@@ -173,9 +173,9 @@ private:
 BiquadFilterNode::BiquadFilterNode(AudioContext* aContext)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Max,
-              ChannelInterpretationValues::Speakers)
-  , mType(BiquadFilterTypeValues::Lowpass)
+              ChannelCountMode::Max,
+              ChannelInterpretation::Speakers)
+  , mType(BiquadFilterType::Lowpass)
   , mFrequency(new AudioParam(this, SendFrequencyToStream, 350.f))
   , mDetune(new AudioParam(this, SendDetuneToStream, 0.f))
   , mQ(new AudioParam(this, SendQToStream, 1.f))

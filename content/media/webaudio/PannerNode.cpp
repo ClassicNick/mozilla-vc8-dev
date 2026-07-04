@@ -176,8 +176,8 @@ public:
 PannerNode::PannerNode(AudioContext* aContext)
   : AudioNode(aContext,
               2,
-              ChannelCountModeValues::Clamped_max,
-              ChannelInterpretationValues::Speakers)
+              ChannelCountMode::Clamped_max,
+              ChannelInterpretation::Speakers)
   // Please keep these default values consistent with PannerNodeEngine::PannerNodeEngine above.
   , mPanningModel(PanningModelType::HRTF)
   , mDistanceModel(DistanceModelType::Inverse)

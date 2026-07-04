@@ -167,8 +167,8 @@ nsCocoaWindow::~nsCocoaWindow()
   NS_IF_RELEASE(mPopupContentView);
 
   // Deal with the possiblity that we're being destroyed while running modal.
-  NS_ASSERTION(!mModal, "Widget destroyed while running modal!");
   if (mModal) {
+    NS_WARNING("Widget destroyed while running modal!");
     --gXULModalLevel;
     NS_ASSERTION(gXULModalLevel >= 0, "Wierdness setting modality!");
   }
@@ -531,6 +531,11 @@ NS_IMETHODIMP nsCocoaWindow::Destroy()
   }
 
   return NS_OK;
+}
+
+nsIWidget* nsCocoaWindow::GetParent()
+{
+  return mParent;
 }
 
 nsIWidget* nsCocoaWindow::GetSheetWindowParent(void)

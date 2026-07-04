@@ -1599,7 +1599,7 @@ _evaluate(NPP npp, NPObject* npobj, NPString *script, NPVariant *result)
   JS::CompileOptions options(cx);
   options.setFileAndLine(spec, 0)
          .setVersion(JSVERSION_DEFAULT);
-  nsresult rv = scx->EvaluateString(utf16script, *obj, options,
+  nsresult rv = scx->EvaluateString(utf16script, obj, options,
                                     /* aCoerceToString = */ false,
                                     rval);
 
