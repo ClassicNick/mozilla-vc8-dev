@@ -20,6 +20,7 @@ import org.mozilla.gecko.util.HardwareUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.gecko.util.UiAsyncTask;
 import org.mozilla.gecko.widget.AboutHome;
+import org.mozilla.gecko.widget.GeckoActionProvider;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -127,6 +128,10 @@ abstract public class BrowserApp extends GeckoApp
 
     // Stored value of the toolbar height, so we know when it's changed.
     private int mToolbarHeight = 0;
+
+    // Stored value of whether the last metrics change allowed for toolbar
+    // scrolling.
+    private boolean mDynamicToolbarCanScroll = false;
 
     private Integer mPrefObserverId;
 
@@ -712,6 +717,23 @@ abstract public class BrowserApp extends GeckoApp
             return;
         }
 
+        // If the page has shrunk so that the toolbar no longer scrolls, make
+        // sure the toolbar is visible.
+        if (aMetrics.getPageHeight() < aMetrics.getHeight()) {
+            if (mDynamicToolbarCanScroll) {
+                mDynamicToolbarCanScroll = false;
+                if (!mBrowserToolbar.isVisible()) {
+                    ThreadUtils.postToUiThread(new Runnable() {
+                        public void run() {
+                            mLayerView.getLayerMarginsAnimator().showMargins(false);
+                        }
+                    });
+                }
+            }
+        } else {
+            mDynamicToolbarCanScroll = true;
+        }
+
         final View toolbarLayout = mBrowserToolbar.getLayout();
         final int marginTop = Math.round(aMetrics.marginTop);
         ThreadUtils.postToUiThread(new Runnable() {
@@ -727,8 +749,12 @@ abstract public class BrowserApp extends GeckoApp
             return;
         }
 
+        // Make sure the toolbar is fully hidden or fully shown when the user
+        // lifts their finger. If the page is shorter than the viewport, the
+        // toolbar is always shown.
         ImmutableViewportMetrics metrics = mLayerView.getViewportMetrics();
-        if (metrics.marginTop >= mToolbarHeight / 2) {
+        if (metrics.getPageHeight() < metrics.getHeight()
+              || metrics.marginTop >= mToolbarHeight / 2) {
             mLayerView.getLayerMarginsAnimator().showMargins(false);
         } else {
             mLayerView.getLayerMarginsAnimator().hideMargins(false);
@@ -957,7 +983,7 @@ abstract public class BrowserApp extends GeckoApp
 
                 // Display notification for Mozilla data reporting, if data should be collected.
                 if (AppConstants.MOZ_DATA_REPORTING) {
-                    DataReportingNotification.checkAndNotifyPolicy(BrowserApp.mAppContext);
+                    DataReportingNotification.checkAndNotifyPolicy(GeckoAppShell.getContext());
                 }
 
             } else if (event.equals("Telemetry:Gather")) {
@@ -1401,6 +1427,19 @@ abstract public class BrowserApp extends GeckoApp
             mAddonMenuItemsCache.clear();
         }
 
+        // Action providers are available only ICS+.
+        if (Build.VERSION.SDK_INT >= 14) {
+            MenuItem share = mMenu.findItem(R.id.share);
+            GeckoActionProvider provider = new GeckoActionProvider(this);
+            provider.setOnTargetSelectedListener(new GeckoActionProvider.OnTargetSelectedListener() {
+                @Override
+                public void onTargetSelected() {
+                    closeOptionsMenu();
+                }
+            });
+            share.setActionProvider(provider);
+        }
+
         return true;
     }
 
@@ -1490,6 +1529,16 @@ abstract public class BrowserApp extends GeckoApp
         String scheme = Uri.parse(url).getScheme();
         share.setEnabled(!(scheme.equals("about") || scheme.equals("chrome") ||
                            scheme.equals("file") || scheme.equals("resource")));
+
+        // Action providers are available only ICS+.
+        if (Build.VERSION.SDK_INT >= 14) {
+            GeckoActionProvider provider = (GeckoActionProvider) share.getActionProvider();
+            if (provider != null) {
+                Intent shareIntent = GeckoAppShell.getShareIntent(this, url,
+                                                                  "text/plain", tab.getDisplayTitle());
+                provider.setIntent(shareIntent);
+            }
+        }
 
         // Disable save as PDF for about:home and xul pages
         saveAsPDF.setEnabled(!(tab.getURL().equals("about:home") ||

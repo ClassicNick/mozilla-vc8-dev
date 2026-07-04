@@ -25,6 +25,7 @@
 #include "ChannelMergerNode.h"
 #include "ChannelSplitterNode.h"
 #include "WaveShaperNode.h"
+#include "WaveTable.h"
 #include "nsNetUtil.h"
 
 // Note that this number is an arbitrary large value to protect against OOM
@@ -51,7 +52,8 @@ AudioContext::AudioContext(nsPIDOMWindow* aWindow,
                            uint32_t aNumberOfChannels,
                            uint32_t aLength,
                            float aSampleRate)
-  : mDestination(new AudioDestinationNode(this, aIsOffline,
+  : mSampleRate(aIsOffline ? aSampleRate : IdealAudioRate())
+  , mDestination(new AudioDestinationNode(this, aIsOffline,
                                           aNumberOfChannels,
                                           aLength, aSampleRate))
   , mIsOffline(aIsOffline)
@@ -107,8 +109,8 @@ AudioContext::Constructor(const GlobalObject& aGlobal,
     return nullptr;
   }
 
-  if (aSampleRate != IdealAudioRate()) {
-    // TODO: Add support for running OfflineAudioContext at other sampling rates
+  if (aSampleRate <= 0.0f) {
+    // The DOM binding protects us against infinity and NaN
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return nullptr;
   }
@@ -305,6 +307,24 @@ AudioContext::CreateBiquadFilter()
   nsRefPtr<BiquadFilterNode> filterNode =
     new BiquadFilterNode(this);
   return filterNode.forget();
+}
+
+already_AddRefed<WaveTable>
+AudioContext::CreateWaveTable(const Float32Array& aRealData,
+                              const Float32Array& aImagData,
+                              ErrorResult& aRv)
+{
+  if (aRealData.Length() != aImagData.Length() ||
+      aRealData.Length() == 0 ||
+      aRealData.Length() > 4096) {
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return nullptr;
+  }
+
+  nsRefPtr<WaveTable> waveTable =
+    new WaveTable(this, aRealData.Data(), aRealData.Length(),
+                  aImagData.Data(), aImagData.Length());
+  return waveTable.forget();
 }
 
 AudioListener*

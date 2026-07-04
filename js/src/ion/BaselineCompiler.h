@@ -35,6 +35,7 @@ namespace ion {
     _(JSOP_LABEL)              \
     _(JSOP_NOTEARG)            \
     _(JSOP_POP)                \
+    _(JSOP_POPN)               \
     _(JSOP_DUP)                \
     _(JSOP_DUP2)               \
     _(JSOP_SWAP)               \
@@ -152,7 +153,6 @@ namespace ion {
     _(JSOP_EXCEPTION)          \
     _(JSOP_DEBUGGER)           \
     _(JSOP_ARGUMENTS)          \
-    _(JSOP_RUNONCE)            \
     _(JSOP_REST)               \
     _(JSOP_TOID)               \
     _(JSOP_TABLESWITCH)        \
@@ -160,6 +160,7 @@ namespace ion {
     _(JSOP_MOREITER)           \
     _(JSOP_ITERNEXT)           \
     _(JSOP_ENDITER)            \
+    _(JSOP_CALLEE)             \
     _(JSOP_POPV)               \
     _(JSOP_SETRVAL)            \
     _(JSOP_RETURN)             \
@@ -237,7 +238,6 @@ class BaselineCompiler : public BaselineCompilerSpecific
 
     bool addPCMappingEntry(bool addIndexEntry);
 
-    void getScopeCoordinateObject(Register reg);
     Address getScopeCoordinateAddress(Register reg);
 };
 

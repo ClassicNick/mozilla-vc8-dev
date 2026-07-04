@@ -19,8 +19,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsISimpleEnumerator.h"
 #include "mozilla/Preferences.h"
-#include "imgIContainer.h"
-#include "imgITools.h"
 #include "nsStringStream.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"

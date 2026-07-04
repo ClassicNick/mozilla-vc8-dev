@@ -703,7 +703,6 @@ gfxASurface::BytesPerPixel(gfxImageFormat aImageFormat)
   }
 }
 
-#ifdef MOZ_DUMP_IMAGES
 void
 gfxASurface::WriteAsPNG(const char* aFile)
 {
@@ -883,5 +882,3 @@ gfxASurface::WriteAsPNG_internal(FILE* aFile, bool aBinary)
 
   return;
 }
-#endif
-

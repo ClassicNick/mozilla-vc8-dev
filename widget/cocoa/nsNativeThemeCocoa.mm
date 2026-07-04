@@ -2845,7 +2845,11 @@ nsNativeThemeCocoa::GetMinimumWidgetSize(nsRenderingContext* aContext,
         aResult->SizeTo(16, 16);
         break;
       }
+      // Intentional fallthrough to next case.
+    }
 
+    case NS_THEME_SCROLLBAR_NON_DISAPPEARING:
+    {
       // yeah, i know i'm cheating a little here, but i figure that it
       // really doesn't matter if the scrollbar is vertical or horizontal
       // and the width metric is a really good metric for every piece
@@ -3055,6 +3059,7 @@ nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* a
     case NS_THEME_SCROLLBAR_THUMB_VERTICAL:
     case NS_THEME_SCROLLBAR_TRACK_VERTICAL:
     case NS_THEME_SCROLLBAR_TRACK_HORIZONTAL:
+    case NS_THEME_SCROLLBAR_NON_DISAPPEARING:
 
     case NS_THEME_DROPDOWN:
     case NS_THEME_DROPDOWN_BUTTON:

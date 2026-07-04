@@ -883,6 +883,30 @@ class AutoNewContext
     }
 };
 
+class AutoSaveFrameChain
+{
+    JSContext *cx_;
+    bool saved_;
+
+  public:
+    AutoSaveFrameChain(JSContext *cx)
+      : cx_(cx),
+        saved_(false)
+    {}
+
+    bool save() {
+        if (!JS_SaveFrameChain(cx_))
+            return false;
+        saved_ = true;
+        return true;
+    }
+
+    ~AutoSaveFrameChain() {
+        if (saved_)
+            JS_RestoreFrameChain(cx_);
+    }
+};
+
 static JSBool
 JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
 {
@@ -908,6 +932,7 @@ JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
     unsigned lineNumber = 1;
     RootedObject global(cx, NULL);
     bool catchTermination = false;
+    bool saveFrameChain = false;
     RootedObject callerGlobal(cx, cx->global());
 
     global = JS_GetGlobalForObject(cx, &args.callee());
@@ -999,6 +1024,15 @@ JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
                 return false;
             catchTermination = b;
         }
+
+        if (!JS_GetProperty(cx, options, "saveFrameChain", v.address()))
+            return false;
+        if (!JSVAL_IS_VOID(v)) {
+            JSBool b;
+            if (!JS_ValueToBoolean(cx, v, &b))
+                return false;
+            saveFrameChain = b;
+        }
     }
 
     RootedString code(cx, args[0].toString());
@@ -1014,6 +1048,10 @@ JSEvaluate(JSContext *cx, unsigned argc, jsval *vp)
             return false;
         cx = ancx.get();
     }
+
+    AutoSaveFrameChain asfc(cx);
+    if (saveFrameChain && !asfc.save())
+        return false;
 
     {
         JSAutoCompartment ac(cx, global);
@@ -3587,6 +3625,8 @@ static JSFunctionSpecWithHelp shell_functions[] = {
 "      lineNumber: starting line number for error messages and debug info\n"
 "      global: global in which to execute the code\n"
 "      newContext: if true, create and use a new cx (default: false)\n"
+"      saveFrameChain: if true, save the frame chain before evaluating code\n"
+"         and restore it afterwards\n"
 "      catchTermination: if true, catch termination (failure without\n"
 "         an exception value, as for slow scripts or out-of-memory)\n"
 "          and return 'terminated'\n"),

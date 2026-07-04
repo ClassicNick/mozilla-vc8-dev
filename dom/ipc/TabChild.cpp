@@ -1607,11 +1607,8 @@ TabChild::RecvMouseEvent(const nsString& aType,
                          const int32_t&  aModifiers,
                          const bool&     aIgnoreRootScrollFrame)
 {
-  nsCOMPtr<nsIDOMWindowUtils> utils(GetDOMWindowUtils());
-  NS_ENSURE_TRUE(utils, true);
-  bool ignored = false;
-  utils->SendMouseEvent(aType, aX, aY, aButton, aClickCount, aModifiers,
-                        aIgnoreRootScrollFrame, 0, 0, &ignored);
+  DispatchMouseEvent(aType, aX, aY, aButton, aClickCount, aModifiers,
+                     aIgnoreRootScrollFrame);
   return true;
 }
 
@@ -1748,8 +1745,21 @@ void
 TabChild::FireContextMenuEvent()
 {
   MOZ_ASSERT(mTapHoldTimer && mActivePointerId >= 0);
-  RecvHandleLongTap(mGestureDownPoint);
-  CancelTapTracking();
+  bool defaultPrevented = DispatchMouseEvent(NS_LITERAL_STRING("contextmenu"),
+                                             mGestureDownPoint.x, mGestureDownPoint.y,
+                                             2 /* Right button */,
+                                             1 /* Click count */,
+                                             0 /* Modifiers */,
+                                             false /* Ignore root scroll frame */);
+
+  // Fire a click event if someone didn't call preventDefault() on the context
+  // menu event.
+  if (defaultPrevented) {
+    CancelTapTracking();
+  } else if (mTapHoldTimer) {
+    mTapHoldTimer->Cancel();
+    mTapHoldTimer = nullptr;
+  }
 }
 
 void
@@ -2221,6 +2231,24 @@ TabChild::IsAsyncPanZoomEnabled()
     return mScrolling == ASYNC_PAN_ZOOM;
 }
 
+bool
+TabChild::DispatchMouseEvent(const nsString& aType,
+                             const float&    aX,
+                             const float&    aY,
+                             const int32_t&  aButton,
+                             const int32_t&  aClickCount,
+                             const int32_t&  aModifiers,
+                             const bool&     aIgnoreRootScrollFrame)
+{
+  nsCOMPtr<nsIDOMWindowUtils> utils(GetDOMWindowUtils());
+  NS_ENSURE_TRUE(utils, true);
+  
+  bool defaultPrevented = false;
+  utils->SendMouseEvent(aType, aX, aY, aButton, aClickCount, aModifiers,
+                        aIgnoreRootScrollFrame, 0, 0, &defaultPrevented);
+  return defaultPrevented;
+}
+
 void
 TabChild::MakeVisible()
 {
@@ -2303,15 +2331,8 @@ TabChildGlobal::Init()
                                               MM_CHILD);
 }
 
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(TabChildGlobal,
-                                                nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mMessageManager)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(TabChildGlobal,
-                                                  nsDOMEventTargetHelper)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMessageManager)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(TabChildGlobal, nsDOMEventTargetHelper,
+                                     mMessageManager)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(TabChildGlobal)
   NS_INTERFACE_MAP_ENTRY(nsIMessageListenerManager)
