@@ -220,7 +220,7 @@ class MOZ_STACK_CLASS Handle : public js::HandleBase<T>
      */
     template <typename S>
     inline
-    Handle(Rooted<S> &root);
+    Handle(const Rooted<S> &root);
 
     /* Construct a read only handle from a mutable handle. */
     template <typename S>
@@ -760,7 +760,7 @@ namespace JS {
 
 template <typename T> template <typename S>
 inline
-Handle<T>::Handle(Rooted<S> &root)
+Handle<T>::Handle(const Rooted<S> &root)
 {
 	testAssign<S>();
     ptr = reinterpret_cast<const T *>(root.address());

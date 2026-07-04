@@ -37,6 +37,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 #include "Connection.h"
+#include "nsDOMClassInfo.h"
+#include "nsDOMEvent.h"
 #ifdef MOZ_B2G_RIL
 #include "MobileConnection.h"
 #include "mozilla/dom/CellBroadcast.h"
@@ -987,7 +989,7 @@ NS_IMETHODIMP Navigator::GetDeviceStorages(const nsAString &aType, nsIVariant** 
   }
 
   nsTArray<nsRefPtr<nsDOMDeviceStorage> > stores;
-  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, stores);
+  nsDOMDeviceStorage::CreateDeviceStoragesFor(win, aType, stores, false);
 
   nsCOMPtr<nsIWritableVariant> result = do_CreateInstance("@mozilla.org/variant;1");
   NS_ENSURE_TRUE(result, NS_ERROR_FAILURE);

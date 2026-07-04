@@ -24,6 +24,7 @@
 #include "nsLayoutStatics.h"
 #include "nsContentUtils.h"
 #include "nsCCUncollectableMarker.h"
+#include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectorUtils.h"
 #include "nsScriptLoader.h"
 #include "jsfriendapi.h"
@@ -67,7 +68,6 @@ const char* XPCJSRuntime::mStrings[] = {
     "__exposedProps__",     // IDX_EXPOSEDPROPS
     "baseURIObject",        // IDX_BASEURIOBJECT
     "nodePrincipal",        // IDX_NODEPRINCIPAL
-    "documentURIObject",    // IDX_DOCUMENTURIOBJECT
     "mozMatchesSelector"    // IDX_MOZMATCHESSELECTOR
 };
 
@@ -448,7 +448,7 @@ void XPCJSRuntime::TraceXPConnectRoots(JSTracer *trc)
 struct Closure
 {
     bool cycleCollectionEnabled;
-    nsCycleCollectionTraversalCallback *cb;
+    nsCycleCollectionNoteRootCallback *cb;
 };
 
 static void
@@ -483,7 +483,7 @@ NoteJSHolder(void *holder, nsScriptObjectTracer *&tracer, void *arg)
 // static
 void
 XPCJSRuntime::SuspectWrappedNative(XPCWrappedNative *wrapper,
-                                   nsCycleCollectionTraversalCallback &cb)
+                                   nsCycleCollectionNoteRootCallback &cb)
 {
     if (!wrapper->IsValid() || wrapper->IsWrapperExpired())
         return;
@@ -528,7 +528,7 @@ CanSkipWrappedJS(nsXPCWrappedJS *wrappedJS)
 }
 
 void
-XPCJSRuntime::AddXPConnectRoots(nsCycleCollectionTraversalCallback &cb)
+XPCJSRuntime::AddXPConnectRoots(nsCycleCollectionNoteRootCallback &cb)
 {
     // For all JS objects that are held by native objects but aren't held
     // through rooting or locking, we need to add all the native objects that
@@ -2601,7 +2601,8 @@ ReadSourceFromFilename(JSContext *cx, const char *filename, jschar **src, uint32
   function. See the comment in the XPCJSRuntime constructor.
 */
 static bool
-SourceHook(JSContext *cx, JSScript *script, jschar **src, uint32_t *length)
+SourceHook(JSContext *cx, JS::Handle<JSScript*> script, jschar **src,
+           uint32_t *length)
 {
   *src = NULL;
   *length = 0;

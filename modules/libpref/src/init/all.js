@@ -727,7 +727,7 @@ pref("dom.allow_scripts_to_close_windows",          false);
 
 pref("dom.disable_open_during_load",                false);
 pref("dom.popup_maximum",                           20);
-pref("dom.popup_allowed_events", "change click dblclick mouseup reset submit");
+pref("dom.popup_allowed_events", "change click dblclick mouseup reset submit touchend");
 pref("dom.disable_open_click_delay", 1000);
 
 pref("dom.storage.enabled", true);
@@ -1825,6 +1825,8 @@ pref("hangmonitor.timeout", 0);
 pref("plugins.load_appdir_plugins", false);
 // If true, plugins will be click to play
 pref("plugins.click_to_play", false);
+// The default value for nsIPluginTag.enabledState (STATE_ENABLED = 2)
+pref("plugin.default.state", 2);
 
 #ifndef DEBUG
 // How long a plugin is allowed to process a synchronous IPC message
@@ -3858,6 +3860,14 @@ pref("browser.zoom.reflowZoom.reflowTimeout", 500);
  * a page load inhbits this debugging.
  */
 pref("browser.zoom.reflowZoom.reflowTextOnPageLoad", true);
+
+
+/**
+ * The minimum font size to maintain when double-tap zooming into an element, in
+ * twips. The browser will attempt to make the frame large enough to enlarge the
+ * font size to this value.
+ */
+pref("browser.zoom.reflowZoom.minFontSizeTwips", 120);
 
 // Image-related prefs
 // The maximum size, in bytes, of the decoded images we cache

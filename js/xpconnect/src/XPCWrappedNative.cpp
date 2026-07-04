@@ -562,9 +562,7 @@ XPCWrappedNative::GetNewOrUsed(XPCCallContext& ccx,
         nsISupports *Object = helper.Object();
         if (nsXPCWrappedJSClass::IsWrappedJS(Object)) {
             nsCOMPtr<nsIXPConnectWrappedJS> wrappedjs(do_QueryInterface(Object));
-            RootedObject obj(ccx);
-            wrappedjs->GetJSObject(obj.address());
-            if (xpc::AccessCheck::isChrome(js::GetObjectCompartment(obj)) &&
+            if (xpc::AccessCheck::isChrome(js::GetObjectCompartment(wrappedjs->GetJSObject())) &&
                 !xpc::AccessCheck::isChrome(js::GetObjectCompartment(Scope->GetGlobalJSObject()))) {
                 needsCOW = true;
             }
@@ -1917,9 +1915,8 @@ XPCWrappedNative::InitTearOff(XPCCallContext& ccx,
 
         nsCOMPtr<nsIXPConnectWrappedJS> wrappedJS(do_QueryInterface(obj));
         if (wrappedJS) {
-            RootedObject jso(ccx);
-            if (NS_SUCCEEDED(wrappedJS->GetJSObject(jso.address())) &&
-                jso == mFlatJSObject) {
+            RootedObject jso(ccx, wrappedJS->GetJSObject());
+            if (jso == mFlatJSObject) {
                 // The implementing JSObject is the same as ours! Just say OK
                 // without actually extending the set.
                 //
@@ -2942,11 +2939,11 @@ CallMethodHelper::Invoke()
 /***************************************************************************/
 // interface methods
 
-/* readonly attribute JSObjectPtr JSObject; */
-NS_IMETHODIMP XPCWrappedNative::GetJSObject(JSObject * *aJSObject)
+/* JSObjectPtr GetJSObject(); */
+JSObject*
+XPCWrappedNative::GetJSObject()
 {
-    *aJSObject = GetFlatJSObject();
-    return NS_OK;
+    return GetFlatJSObject();
 }
 
 /* readonly attribute nsISupports Native; */
@@ -3548,13 +3545,11 @@ void DEBUG_ReportShadowedMembers(XPCNativeSet* set,
 
 NS_IMPL_THREADSAFE_ISUPPORTS1(XPCJSObjectHolder, nsIXPConnectJSObjectHolder)
 
-NS_IMETHODIMP
-XPCJSObjectHolder::GetJSObject(JSObject** aJSObj)
+JSObject*
+XPCJSObjectHolder::GetJSObject()
 {
-    NS_PRECONDITION(aJSObj, "bad param");
     NS_PRECONDITION(mJSObj, "bad object state");
-    *aJSObj = mJSObj;
-    return NS_OK;
+    return mJSObj;
 }
 
 XPCJSObjectHolder::XPCJSObjectHolder(XPCCallContext& ccx, JSObject* obj)
