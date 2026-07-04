@@ -133,10 +133,10 @@ nsHttpResponseHead::ParseStatusLine(const char *line)
     //
     // Parse Status-Line:: HTTP-Version SP Status-Code SP Reason-Phrase CRLF
     //
- 
+
     // HTTP-Version
     ParseVersion(line);
-    
+
     if ((mVersion == NS_HTTP_VERSION_0_9) || !(line = PL_strchr(line, ' '))) {
         mStatus = 200;
         mStatusText.AssignLiteral("OK");
@@ -168,11 +168,11 @@ nsHttpResponseHead::ParseHeaderLine(const char *line)
     nsHttpAtom hdr = {0};
     char *val;
     nsresult rv;
-    
+
     rv = mHeaders.ParseHeaderLine(line, &hdr, &val);
     if (NS_FAILED(rv))
         return rv;
-    
+
     // leading and trailing LWS has been removed from |val|
 
     // handle some special case headers...
@@ -184,7 +184,7 @@ nsHttpResponseHead::ParseHeaderLine(const char *line)
             mContentLength = len;
         }
         else {
-            // If this is a negative content length then just ignore it 
+            // If this is a negative content length then just ignore it
             LOG(("invalid content-length! %s\n", val));
         }
     }
@@ -237,7 +237,7 @@ nsHttpResponseHead::ComputeCurrentAge(uint32_t now,
     if (NS_SUCCEEDED(GetAgeValue(&ageValue)))
         *result = NS_MAX(*result, ageValue);
 
-    NS_ASSERTION(now >= requestTime, "bogus request time");
+    MOZ_ASSERT(now >= requestTime, "bogus request time");
 
     // Compute current age
     *result += (now - requestTime);
@@ -277,7 +277,7 @@ nsHttpResponseHead::ComputeFreshnessLifetime(uint32_t *result) const
         // the Expires header can specify a date in the past.
         return NS_OK;
     }
-    
+
     // Fallback on heuristic using last modified header...
     if (NS_SUCCEEDED(GetLastModifiedValue(&date2))) {
         LOG(("using last-modified to determine freshness-lifetime\n"));
@@ -334,7 +334,7 @@ nsHttpResponseHead::MustValidate() const
         LOG(("Must validate since response is an uncacheable error page\n"));
         return true;
     }
-    
+
     // The no-cache response header indicates that we must validate this
     // cached response before reusing.
     if (NoCache()) {
@@ -368,8 +368,8 @@ nsHttpResponseHead::MustValidateIfExpired() const
 {
     // according to RFC2616, section 14.9.4:
     //
-    //  When the must-revalidate directive is present in a response received by a   
-    //  cache, that cache MUST NOT use the entry after it becomes stale to respond to 
+    //  When the must-revalidate directive is present in a response received by a
+    //  cache, that cache MUST NOT use the entry after it becomes stale to respond to
     //  a subsequent request without first revalidating it with the origin server.
     //
     return HasHeaderValue(nsHttp::Cache_Control, "must-revalidate");
@@ -385,7 +385,7 @@ nsHttpResponseHead::IsResumable() const
     // non-2xx responses.
     return mStatus == 200 &&
            mVersion >= NS_HTTP_VERSION_1_1 &&
-           PeekHeader(nsHttp::Content_Length) && 
+           PeekHeader(nsHttp::Content_Length) &&
           (PeekHeader(nsHttp::ETag) || PeekHeader(nsHttp::Last_Modified)) &&
            HasHeaderValue(nsHttp::Accept_Ranges, "bytes");
 }
@@ -394,12 +394,12 @@ bool
 nsHttpResponseHead::ExpiresInPast() const
 {
     uint32_t maxAgeVal, expiresVal, dateVal;
-    
+
     // Bug #203271. Ensure max-age directive takes precedence over Expires
     if (NS_SUCCEEDED(GetMaxAgeValue(&maxAgeVal))) {
         return false;
     }
-    
+
     return NS_SUCCEEDED(GetExpiresValue(&expiresVal)) &&
            NS_SUCCEEDED(GetDateValue(&dateVal)) &&
            expiresVal < dateVal;
@@ -484,7 +484,7 @@ nsHttpResponseHead::ParseDateHeader(nsHttpAtom header, uint32_t *result) const
     if (st != PR_SUCCESS)
         return NS_ERROR_NOT_AVAILABLE;
 
-    *result = PRTimeToSeconds(time); 
+    *result = PRTimeToSeconds(time);
     return NS_OK;
 }
 
@@ -538,7 +538,7 @@ nsHttpResponseHead::GetExpiresValue(uint32_t *result) const
     if (time < 0)
         *result = 0;
     else
-        *result = PRTimeToSeconds(time); 
+        *result = PRTimeToSeconds(time);
     return NS_OK;
 }
 
@@ -626,7 +626,7 @@ nsHttpResponseHead::ParseCacheControl(const char *val)
     if (nsHttp::FindToken(val, "no-cache", HTTP_HEADER_VALUE_SEPS))
         mCacheControlNoCache = true;
 
-    // search header value for occurrence of "no-store" 
+    // search header value for occurrence of "no-store"
     if (nsHttp::FindToken(val, "no-store", HTTP_HEADER_VALUE_SEPS))
         mCacheControlNoStore = true;
 }

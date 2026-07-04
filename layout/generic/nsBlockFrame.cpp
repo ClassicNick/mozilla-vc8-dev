@@ -640,6 +640,11 @@ nsBlockFrame::GetMinWidth(nsRenderingContext *aRenderingContext)
   AutoNoisyIndenter indenter(gNoisyIntrinsic);
 #endif
 
+  for (nsBlockFrame* curFrame = this; curFrame;
+       curFrame = static_cast<nsBlockFrame*>(curFrame->GetNextContinuation())) {
+    curFrame->LazyMarkLinesDirty();
+  }
+
   if (GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
     ResolveBidi();
   InlineMinWidthData data;
@@ -719,6 +724,11 @@ nsBlockFrame::GetPrefWidth(nsRenderingContext *aRenderingContext)
   }
   AutoNoisyIndenter indenter(gNoisyIntrinsic);
 #endif
+
+  for (nsBlockFrame* curFrame = this; curFrame;
+       curFrame = static_cast<nsBlockFrame*>(curFrame->GetNextContinuation())) {
+    curFrame->LazyMarkLinesDirty();
+  }
 
   if (GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
     ResolveBidi();
@@ -992,21 +1002,7 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
     PrepareResizeReflow(state);
   }
 
-  if (GetStateBits() & NS_BLOCK_LOOK_FOR_DIRTY_FRAMES) {
-    for (line_iterator line = begin_lines(), line_end = end_lines();
-         line != line_end; ++line) {
-      int32_t n = line->GetChildCount();
-      for (nsIFrame* lineFrame = line->mFirstChild;
-           n > 0; lineFrame = lineFrame->GetNextSibling(), --n) {
-        if (NS_SUBTREE_DIRTY(lineFrame)) {
-          // NOTE:  MarkLineDirty does more than just marking the line dirty.
-          MarkLineDirty(line, &mLines);
-          break;
-        }
-      }
-    }
-    RemoveStateBits(NS_BLOCK_LOOK_FOR_DIRTY_FRAMES);
-  }
+  LazyMarkLinesDirty();
 
   mState &= ~NS_FRAME_FIRST_REFLOW;
 
@@ -1506,6 +1502,26 @@ nsBlockFrame::UpdateOverflow()
   }
 
   return nsBlockFrameSuper::UpdateOverflow();
+}
+
+void
+nsBlockFrame::LazyMarkLinesDirty()
+{
+  if (GetStateBits() & NS_BLOCK_LOOK_FOR_DIRTY_FRAMES) {
+    for (line_iterator line = begin_lines(), line_end = end_lines();
+         line != line_end; ++line) {
+      int32_t n = line->GetChildCount();
+      for (nsIFrame* lineFrame = line->mFirstChild;
+           n > 0; lineFrame = lineFrame->GetNextSibling(), --n) {
+        if (NS_SUBTREE_DIRTY(lineFrame)) {
+          // NOTE:  MarkLineDirty does more than just marking the line dirty.
+          MarkLineDirty(line, &mLines);
+          break;
+        }
+      }
+    }
+    RemoveStateBits(NS_BLOCK_LOOK_FOR_DIRTY_FRAMES);
+  }
 }
 
 void

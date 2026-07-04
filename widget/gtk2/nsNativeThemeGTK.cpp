@@ -1449,7 +1449,7 @@ nsNativeThemeGTK::WidgetIsContainer(uint8_t aWidgetType)
 }
 
 bool
-nsNativeThemeGTK::ThemeDrawsFocusForWidget(nsPresContext* aPresContext, nsIFrame* aFrame, uint8_t aWidgetType)
+nsNativeThemeGTK::ThemeDrawsFocusForWidget(uint8_t aWidgetType)
 {
    if (aWidgetType == NS_THEME_DROPDOWN ||
       aWidgetType == NS_THEME_BUTTON || 

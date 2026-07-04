@@ -61,11 +61,12 @@ private:
  *  nsCacheService
  ******************************************************************************/
 
-class nsCacheService : public nsICacheService
+class nsCacheService : public nsICacheServiceInternal
 {
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSICACHESERVICE
+    NS_DECL_NSICACHESERVICEINTERNAL
 
     nsCacheService();
     virtual ~nsCacheService();
@@ -240,6 +241,8 @@ private:
 public:
     static void      Lock(::mozilla::Telemetry::ID mainThreadLockerID);
     static void      Unlock();
+    void             LockAcquired();
+    void             LockReleased();
 
 private:
     nsresult         CreateDiskDevice();
@@ -325,6 +328,9 @@ private:
 
     mozilla::Mutex                  mLock;
     mozilla::CondVar                mCondVar;
+
+    mozilla::Mutex                  mTimeStampLock;
+    mozilla::TimeStamp              mLockAcquiredTimeStamp;
 
     nsCOMPtr<nsIThread>             mCacheIOThread;
 

@@ -1660,7 +1660,7 @@ public:
                                                         nsDisplayListBuilder* aBuilder) = 0;
   virtual void ConfigureLayer(ImageLayer* aLayer, const nsIntPoint& aOffset) = 0;
 
-  virtual bool SupportsOptimizingToImage() { return true; }
+  virtual bool SupportsOptimizingToImage() MOZ_OVERRIDE { return true; }
 };
 
 /**
@@ -1845,7 +1845,7 @@ public:
 
   virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayItemGeometry* aGeometry,
-                                         nsRegion* aInvalidRegion);
+                                         nsRegion* aInvalidRegion) MOZ_OVERRIDE;
 };
 
 /**
@@ -1901,7 +1901,7 @@ public:
 
   virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayItemGeometry* aGeometry,
-                                         nsRegion* aInvalidRegion)
+                                         nsRegion* aInvalidRegion) MOZ_OVERRIDE
   {
     const nsDisplayItemBoundsGeometry* geometry = static_cast<const nsDisplayItemBoundsGeometry*>(aGeometry);
     ComputeInvalidationRegionDifference(aBuilder, geometry, aInvalidRegion);
@@ -2000,7 +2000,7 @@ public:
                                       const nsRect& aRect, bool* aSnap);
 
 #ifdef MOZ_DUMP_PAINTING
-  virtual void WriteDebugInfo(FILE *aOutput);
+  virtual void WriteDebugInfo(FILE *aOutput) MOZ_OVERRIDE;
 #endif
 protected:
   typedef class mozilla::layers::ImageContainer ImageContainer;
@@ -2064,7 +2064,7 @@ public:
 
   virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayItemGeometry* aGeometry,
-                                         nsRegion* aInvalidRegion)
+                                         nsRegion* aInvalidRegion) MOZ_OVERRIDE
   {
     const nsDisplayItemBoundsGeometry* geometry = static_cast<const nsDisplayItemBoundsGeometry*>(aGeometry);
     ComputeInvalidationRegionDifference(aBuilder, geometry, aInvalidRegion);
@@ -2158,7 +2158,7 @@ public:
 
   virtual void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayItemGeometry* aGeometry,
-                                         nsRegion* aInvalidRegion)
+                                         nsRegion* aInvalidRegion) MOZ_OVERRIDE
   {
     const nsDisplayBoxShadowInnerGeometry* geometry = static_cast<const nsDisplayBoxShadowInnerGeometry*>(aGeometry);
     if (!geometry->mPaddingRect.IsEqualInterior(GetPaddingRect())) {
@@ -2274,7 +2274,7 @@ public:
   {
     aFrames->AppendElements(mMergedFrames);
   }
-  virtual bool IsInvalid(nsRect& aRect)
+  virtual bool IsInvalid(nsRect& aRect) MOZ_OVERRIDE
   {
     if (mFrame->IsInvalid(aRect) && aRect.IsEmpty()) {
       return true;
@@ -2412,7 +2412,7 @@ public:
   }
 #endif
 
-  bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder);
+  bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
 };
 
 /**
