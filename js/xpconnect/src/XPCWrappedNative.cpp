@@ -2189,8 +2189,7 @@ JSBool
 XPCWrappedNative::CallMethod(XPCCallContext& ccx,
                              CallMode mode /*= CALL_METHOD */)
 {
-    XPCContext* xpcc = ccx.GetXPCContext();
-    NS_ASSERTION(xpcc->CallerTypeIsJavaScript(),
+    NS_ASSERTION(ccx.GetXPCContext()->CallerTypeIsJavaScript(),
                  "Native caller for XPCWrappedNative::CallMethod?");
 
     nsresult rv = ccx.CanCallNow();

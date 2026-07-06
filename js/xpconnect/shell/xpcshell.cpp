@@ -698,7 +698,7 @@ static const struct JSOption {
     const char  *name;
     uint32_t    flag;
 } js_options[] = {
-    {"strict",          JSOPTION_STRICT},
+    {"strict",          JSOPTION_EXTRA_WARNINGS},
     {"werror",          JSOPTION_WERROR},
     {"strict_mode",     JSOPTION_STRICT_MODE},
 };
@@ -1150,7 +1150,7 @@ ProcessArgsForCompartment(JSContext *cx, char **argv, int argc)
         case 'S':
             JS_ToggleOptions(cx, JSOPTION_WERROR);
         case 's':
-            JS_ToggleOptions(cx, JSOPTION_STRICT);
+            JS_ToggleOptions(cx, JSOPTION_EXTRA_WARNINGS);
             break;
         case 'I':
             JS_ToggleOptions(cx, JSOPTION_COMPILE_N_GO);
@@ -1580,9 +1580,6 @@ main(int argc, char **argv, char **envp)
             return 1;
         }
 
-        JS::Rooted<JSObject*> glob(cx);
-        JS::Rooted<JSObject*> envobj(cx);
-
         argc--;
         argv++;
         ProcessArgsForCompartment(cx, argv, argc);
@@ -1647,14 +1644,14 @@ main(int argc, char **argv, char **envp)
         if (NS_FAILED(rv))
             return 1;
 
-        glob = holder->GetJSObject();
-        if (!glob) {
-            return 1;
-        }
-
-        backstagePass->SetGlobalObject(glob);
-
         {
+            JS::Rooted<JSObject*> glob(cx, holder->GetJSObject());
+            if (!glob) {
+                return 1;
+            }
+
+            backstagePass->SetGlobalObject(glob);
+
             JSAutoCompartment ac(cx, glob);
 
             if (!JS_InitReflect(cx, glob)) {
@@ -1668,6 +1665,7 @@ main(int argc, char **argv, char **envp)
                 return 1;
             }
 
+            JS::Rooted<JSObject*> envobj(cx);
             envobj = JS_DefineObject(cx, glob, "environment", &env_class, NULL, 0);
             if (!envobj) {
                 JS_EndRequest(cx);

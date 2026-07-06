@@ -119,10 +119,30 @@ VARIABLES = {
         likely go away.
         """),
 
+    'HOST_LIBRARY_NAME': (unicode, unicode, "",
+        """Name of target library generated when cross compiling.
+        """),
+
+    'LIBRARY_NAME': (unicode, unicode, "",
+        """The name of the library generated for a directory.
+
+        Example:
+        In example/components/moz.build,
+        LIBRARY_NAME = 'xpcomsample'
+        would generate example/components/libxpcomsample.so on Linux, or
+        example/components/xpcomsample.lib on Windows.
+        """),
+
     'SIMPLE_PROGRAMS': (StrictOrderingOnAppendList, list, [],
         """Generate a list of binaries from source.
 
         A list of sources, one per program, to compile & link with libs into standalone programs.
+        """),
+
+    'SSRCS': (StrictOrderingOnAppendList, list, [],
+        """Assembly source files.
+
+        This variable contains a list of files to invoke the assembler on.
         """),
 
     'TOOL_DIRS': (list, list, [],

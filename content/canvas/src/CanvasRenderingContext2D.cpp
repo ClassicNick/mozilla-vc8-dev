@@ -107,6 +107,10 @@
 #include "gfxWindowsPlatform.h"
 #endif
 
+#ifdef MOZ_WIDGET_GONK
+#include "mozilla/layers/ShadowLayers.h"
+#endif
+
 // windows.h (included by chromium code) defines this, in its infinite wisdom
 #undef DrawText
 
@@ -121,10 +125,6 @@ namespace mgfx = mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
-
-static float kDefaultFontSize = 10.0;
-static NS_NAMED_LITERAL_STRING(kDefaultFontName, "sans-serif");
-static NS_NAMED_LITERAL_STRING(kDefaultFontStyle, "10px sans-serif");
 
 // Cap sigma to avoid overly large temp surfaces.
 const Float SIGMA_MAX = 100;
@@ -788,6 +788,13 @@ CanvasRenderingContext2D::EnsureTarget()
          SurfaceCaps caps = SurfaceCaps::ForRGBA();
          caps.preserve = true;
 
+#ifdef MOZ_WIDGET_GONK
+         layers::ShadowLayerForwarder *forwarder = layerManager->AsShadowForwarder();
+         if (forwarder) {
+           caps.surfaceAllocator = static_cast<layers::ISurfaceAllocator*>(forwarder);
+         }
+#endif
+
          mGLContext = mozilla::gl::GLContextProvider::CreateOffscreen(gfxIntSize(size.width,
                                                                                  size.height),
                                                                       caps,
@@ -1308,7 +1315,7 @@ WrapStyle(JSContext* cx, JSObject* objArg,
     case CanvasRenderingContext2D::CMG_STYLE_GRADIENT:
     {
       JS::Rooted<JSObject*> obj(cx, objArg);
-      ok = dom::WrapObject(cx, obj, supports, v.address());
+      ok = dom::WrapObject(cx, obj, supports, &v);
       break;
     }
     default:
@@ -2697,12 +2704,14 @@ gfxFontGroup *CanvasRenderingContext2D::GetCurrentFontStyle()
   // use lazy initilization for the font group since it's rather expensive
   if (!CurrentState().fontGroup) {
     ErrorResult err;
+    NS_NAMED_LITERAL_STRING(kDefaultFontStyle, "10px sans-serif");
+    static float kDefaultFontSize = 10.0;
     SetFont(kDefaultFontStyle, err);
     if (err.Failed()) {
       gfxFontStyle style;
       style.size = kDefaultFontSize;
       CurrentState().fontGroup =
-        gfxPlatform::GetPlatform()->CreateFontGroup(kDefaultFontName,
+        gfxPlatform::GetPlatform()->CreateFontGroup(NS_LITERAL_STRING("sans-serif"),
                                                     &style,
                                                     nullptr);
       if (CurrentState().fontGroup) {
@@ -3210,6 +3219,10 @@ CanvasRenderingContext2D::DrawWindow(nsIDOMWindow* window, double x,
     drawSurf =
       gfxPlatform::GetPlatform()->CreateOffscreenSurface(gfxIntSize(ceil(w), ceil(h)),
                                                          gfxASurface::CONTENT_COLOR_ALPHA);
+    if (!drawSurf) {
+      error.Throw(NS_ERROR_FAILURE);
+      return;
+    }
 
     drawSurf->SetDeviceOffset(gfxPoint(-floor(x), -floor(y)));
     thebes = new gfxContext(drawSurf);
@@ -3223,6 +3236,11 @@ CanvasRenderingContext2D::DrawWindow(nsIDOMWindow* window, double x,
 
     drawSurf->SetDeviceOffset(gfxPoint(0, 0));
     nsRefPtr<gfxImageSurface> img = drawSurf->GetAsReadableARGB32ImageSurface();
+    if (!img || !img->Data()) {
+      error.Throw(NS_ERROR_FAILURE);
+      return;
+    }
+
     RefPtr<SourceSurface> data =
       mTarget->CreateSourceSurfaceFromData(img->Data(),
                                            IntSize(size.width, size.height),

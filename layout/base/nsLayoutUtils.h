@@ -24,7 +24,6 @@ class nsIImageLoadingContent;
 #include "nsStyleContext.h"
 #include "nsAutoPtr.h"
 #include "nsStyleSet.h"
-#include "nsView.h"
 #include "nsIFrame.h"
 #include "nsThreadUtils.h"
 #include "nsIPresShell.h"
@@ -40,6 +39,7 @@ class nsIImageLoadingContent;
 
 class nsBlockFrame;
 class gfxDrawable;
+class nsView;
 
 namespace mozilla {
 class SVGImageContext;

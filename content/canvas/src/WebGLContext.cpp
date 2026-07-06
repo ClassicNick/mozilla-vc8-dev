@@ -7,6 +7,10 @@
 #include "WebGLObjectModel.h"
 #include "WebGLExtensions.h"
 #include "WebGLContextUtils.h"
+#include "WebGLBuffer.h"
+#include "WebGLVertexAttribData.h"
+#include "WebGLMemoryMultiReporterWrapper.h"
+#include "WebGLFramebuffer.h"
 
 #include "AccessCheck.h"
 #include "nsIConsoleService.h"
@@ -18,7 +22,6 @@
 #include "nsIGfxInfo.h"
 #include "nsIWidget.h"
 
-#include "nsIPropertyBag.h"
 #include "nsIVariant.h"
 
 #include "imgIEncoder.h"
@@ -308,38 +311,22 @@ WebGLContext::Invalidate()
 // nsICanvasRenderingContextInternal
 //
 
-static bool
-GetBoolFromPropertyBag(nsIPropertyBag *bag, const char *propName, bool *boolResult)
-{
-    nsCOMPtr<nsIVariant> vv;
-    bool bv;
-
-    nsresult rv = bag->GetProperty(NS_ConvertASCIItoUTF16(propName), getter_AddRefs(vv));
-    if (NS_FAILED(rv) || !vv)
-        return false;
-
-    rv = vv->GetAsBool(&bv);
-    if (NS_FAILED(rv))
-        return false;
-
-    *boolResult = bv ? true : false;
-    return true;
-}
-
 NS_IMETHODIMP
-WebGLContext::SetContextOptions(nsIPropertyBag *aOptions)
+WebGLContext::SetContextOptions(JSContext* aCx, JS::Handle<JS::Value> aOptions)
 {
-    if (!aOptions)
-        return NS_OK;
+    WebGLContextAttributes attributes;
+    attributes.Init(aCx, aOptions);
 
     WebGLContextOptions newOpts;
 
-    GetBoolFromPropertyBag(aOptions, "stencil", &newOpts.stencil);
-    GetBoolFromPropertyBag(aOptions, "depth", &newOpts.depth);
-    GetBoolFromPropertyBag(aOptions, "premultipliedAlpha", &newOpts.premultipliedAlpha);
-    GetBoolFromPropertyBag(aOptions, "antialias", &newOpts.antialias);
-    GetBoolFromPropertyBag(aOptions, "preserveDrawingBuffer", &newOpts.preserveDrawingBuffer);
-    GetBoolFromPropertyBag(aOptions, "alpha", &newOpts.alpha);
+    newOpts.stencil = attributes.mStencil;
+    newOpts.depth = attributes.mDepth;
+    newOpts.premultipliedAlpha = attributes.mPremultipliedAlpha;
+    newOpts.antialias = attributes.mAntialias;
+    newOpts.preserveDrawingBuffer = attributes.mPreserveDrawingBuffer;
+    if (attributes.mAlpha.WasPassed()) {
+      newOpts.alpha = attributes.mAlpha.Value();
+    }
 
     // enforce that if stencil is specified, we also give back depth
     newOpts.depth |= newOpts.stencil;
@@ -925,7 +912,7 @@ WebGLContext::GetContextAttributes(Nullable<dom::WebGLContextAttributesInitializ
 
     const PixelBufferFormat& format = gl->GetPixelFormat();
 
-    result.mAlpha = format.alpha > 0;
+    result.mAlpha.Construct(format.alpha > 0);
     result.mDepth = format.depth > 0;
     result.mStencil = format.stencil > 0;
     result.mAntialias = format.samples > 1;
@@ -987,6 +974,9 @@ bool WebGLContext::IsExtensionSupported(JSContext *cx, WebGLExtensionID ext) con
             return true;
         case OES_texture_float:
             return gl->IsExtensionSupported(gl->IsGLES2() ? GLContext::OES_texture_float
+                                                          : GLContext::ARB_texture_float);
+        case OES_texture_float_linear:
+            return gl->IsExtensionSupported(gl->IsGLES2() ? GLContext::OES_texture_float_linear
                                                           : GLContext::ARB_texture_float);
         case EXT_texture_filter_anisotropic:
             return gl->IsExtensionSupported(GLContext::EXT_texture_filter_anisotropic);
@@ -1053,6 +1043,10 @@ WebGLContext::GetExtension(JSContext *cx, const nsAString& aName, ErrorResult& r
     else if (CompareWebGLExtensionName(name, "OES_texture_float"))
     {
         ext = OES_texture_float;
+    }
+    else if (CompareWebGLExtensionName(name, "OES_texture_float_linear"))
+    {
+        ext = OES_texture_float_linear;
     }
     else if (CompareWebGLExtensionName(name, "OES_standard_derivatives"))
     {
@@ -1141,6 +1135,9 @@ WebGLContext::GetExtension(JSContext *cx, const nsAString& aName, ErrorResult& r
                 break;
             case OES_texture_float:
                 obj = new WebGLExtensionTextureFloat(this);
+                break;
+            case OES_texture_float_linear:
+                obj = new WebGLExtensionTextureFloatLinear(this);
                 break;
             default:
                 MOZ_ASSERT(false, "should not get there.");
@@ -1483,6 +1480,8 @@ WebGLContext::GetSupportedExtensions(JSContext *cx, Nullable< nsTArray<nsString>
         arr.AppendElement(NS_LITERAL_STRING("OES_element_index_uint"));
     if (IsExtensionSupported(cx, OES_texture_float))
         arr.AppendElement(NS_LITERAL_STRING("OES_texture_float"));
+    if (IsExtensionSupported(cx, OES_texture_float_linear))
+        arr.AppendElement(NS_LITERAL_STRING("OES_texture_float_linear"));
     if (IsExtensionSupported(cx, OES_standard_derivatives))
         arr.AppendElement(NS_LITERAL_STRING("OES_standard_derivatives"));
     if (IsExtensionSupported(cx, EXT_texture_filter_anisotropic))

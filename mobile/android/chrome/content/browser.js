@@ -87,7 +87,7 @@ var LazyNotificationGetter = {
 
 [
 #ifdef MOZ_WEBRTC
-  ["WebrtcUI", ["getUserMedia:request"], "chrome://browser/content/WebrtcUI.js"],
+  ["WebrtcUI", ["getUserMedia:request", "recording-device-events"], "chrome://browser/content/WebrtcUI.js"],
 #endif
   ["MemoryObserver", ["memory-pressure", "Memory:Dump"], "chrome://browser/content/MemoryObserver.js"],
   ["ConsoleAPI", ["console-api-log-event"], "chrome://browser/content/ConsoleAPI.js"],
@@ -467,6 +467,26 @@ var BrowserApp = {
         let phoneNumber = NativeWindow.contextmenus._stripScheme(url);
         let title = aTarget.textContent || aTarget.title;
         NativeWindow.contextmenus._shareStringWithDefault(phoneNumber, title);
+      });
+
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
+      NativeWindow.contextmenus.emailLinkContext,
+      function(aTarget) {
+        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+        sendMessageToJava({
+          type: "Contact:Add",
+          email: url
+        });
+      });
+
+    NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
+      NativeWindow.contextmenus.phoneNumberLinkContext,
+      function(aTarget) {
+        let url = NativeWindow.contextmenus._getLinkURL(aTarget);
+        sendMessageToJava({
+          type: "Contact:Add",
+          phone: url
+        });
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.bookmarkLink"),
@@ -1248,7 +1268,7 @@ var BrowserApp = {
     if (aOnlyInputElements)
       return null;
 
-    if  (focused instanceof HTMLTextAreaElement || focused.isContentEditable) {
+    if (focused && (focused instanceof HTMLTextAreaElement || focused.isContentEditable)) {
 
       if (focused instanceof HTMLBodyElement) {
         // we are putting focus into a contentEditable frame. scroll the frame into
@@ -5108,6 +5128,7 @@ let HealthReportStatusListener = {
   MILLISECONDS_PER_DAY: 24 * 60 * 60 * 1000,
 
   COPY_FIELDS: [
+    "blocklistState",
     "userDisabled",
     "appDisabled",
     "version",

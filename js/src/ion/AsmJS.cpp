@@ -277,10 +277,16 @@ FunctionStatementList(ParseNode *fn)
 }
 
 static inline ParseNode *
-FunctionLastStatementOrNull(ParseNode *fn)
+FunctionLastReturnStatementOrNull(ParseNode *fn)
 {
-    ParseNode *list = FunctionStatementList(fn);
-    return list->pn_count == 0 ? NULL : list->last();
+    ParseNode *listIter = ListHead(FunctionStatementList(fn));
+    ParseNode *lastReturn = NULL;
+    while (listIter) {
+        if (listIter->isKind(PNK_RETURN))
+            lastReturn = listIter;
+        listIter = listIter->pn_next;
+    }
+    return lastReturn;
 }
 
 static inline bool
@@ -353,7 +359,8 @@ class Type
         Signed,
         Unsigned,
         Intish,
-        Void
+        Void,
+        Unknown
     };
 
   private:
@@ -410,6 +417,7 @@ class Type
           case Intish:
             return MIRType_Int32;
           case Void:
+          case Unknown:
             return MIRType_None;
         }
         JS_NOT_REACHED("Invalid Type");
@@ -426,6 +434,7 @@ class Type
           case Unsigned:  return "unsigned";
           case Intish:    return "intish";
           case Void:      return "void";
+          case Unknown:   return "unknown";
         }
         JS_NOT_REACHED("Invalid Type");
         return "";
@@ -620,6 +629,16 @@ class Use
         }
         JS_NOT_REACHED("unexpected use type");
         return Type::Void;
+    }
+    Type toFFIReturnType() const {
+        switch (which_) {
+          case NoCoercion: return Type::Unknown;
+          case ToInt32: return Type::Intish;
+          case ToNumber: return Type::Doublish;
+          case AddOrSub: return Type::Unknown;
+        }
+        JS_NOT_REACHED("unexpected use type");
+        return Type::Unknown;
     }
     MIRType toMIRType() const {
         switch (which_) {
@@ -819,7 +838,7 @@ TypedArrayLoadType(ArrayBufferView::ViewType viewType)
 
 enum ArrayStoreEnum {
     ArrayStore_Intish,
-    ArrayStore_Double
+    ArrayStore_Doublish
 };
 
 static ArrayStoreEnum
@@ -835,11 +854,11 @@ TypedArrayStoreType(ArrayBufferView::ViewType viewType)
         return ArrayStore_Intish;
       case ArrayBufferView::TYPE_FLOAT32:
       case ArrayBufferView::TYPE_FLOAT64:
-        return ArrayStore_Double;
+        return ArrayStore_Doublish;
       default:;
     }
     JS_NOT_REACHED("Unexpected array type");
-    return ArrayStore_Double;
+    return ArrayStore_Doublish;
 }
 
 /*****************************************************************************/
@@ -1150,7 +1169,7 @@ class MOZ_STACK_CLASS ModuleCompiler
     }
 
     bool init() {
-        if (!cx_->compartment->ensureIonCompartmentExists(cx_))
+        if (!cx_->compartment()->ensureIonCompartmentExists(cx_))
             return false;
 
         if (!globals_.init() || !exits_.init())
@@ -1454,7 +1473,7 @@ class MOZ_STACK_CLASS ModuleCompiler
         size_t allocedBytes = totalBytes + gc::PageSize;
 
         // Allocate the slab of memory.
-        JSC::ExecutableAllocator *execAlloc = cx_->compartment->ionCompartment()->execAlloc();
+        JSC::ExecutableAllocator *execAlloc = cx_->compartment()->ionCompartment()->execAlloc();
         JSC::ExecutablePool *pool;
         uint8_t *unalignedBytes = (uint8_t*)execAlloc->alloc(allocedBytes, &pool, JSC::ASMJS_CODE);
         if (!unalignedBytes)
@@ -2861,7 +2880,7 @@ CheckArguments(ModuleCompiler &m, ParseNode *fn, MIRTypeVector *argTypes, ParseN
 static bool
 CheckReturnType(ModuleCompiler &m, ParseNode *fn, RetType *returnType)
 {
-    ParseNode *stmt = FunctionLastStatementOrNull(fn);
+    ParseNode *stmt = FunctionLastReturnStatementOrNull(fn);
     if (!stmt || !stmt->isKind(PNK_RETURN) || !UnaryKid(stmt)) {
         *returnType = RetType::Void;
         return true;
@@ -3230,9 +3249,9 @@ CheckStoreArray(FunctionCompiler &f, ParseNode *lhs, ParseNode *rhs, MDefinition
         if (!rhsType.isIntish())
             return f.failf(lhs, "%s is not a subtype of intish", rhsType.toChars());
         break;
-      case ArrayStore_Double:
-        if (rhsType != Type::Double)
-            return f.failf(lhs, "%s is not double", rhsType.toChars());
+      case ArrayStore_Doublish:
+        if (!rhsType.isDoublish())
+            return f.failf(lhs, "%s is not a subtype of doublish", rhsType.toChars());
         break;
     }
 
@@ -3383,8 +3402,8 @@ CheckCallArgs(FunctionCompiler &f, ParseNode *callNode, Use use, FunctionCompile
         if (!CheckExpr(f, argNode, use, &argDef, &argType))
             return false;
 
-        if (argType.isVoid())
-            return f.fail(argNode, "void is not a valid argument type");
+        if (argType.toMIRType() == MIRType_None)
+            return f.failf(argNode, "%s is not a valid argument type", argType.toChars());
 
         if (!f.passArg(argDef, argType, args))
             return false;
@@ -3536,7 +3555,7 @@ CheckFFICall(FunctionCompiler &f, ParseNode *callNode, unsigned ffiIndex, Use us
     if (!f.ffiCall(exitIndex, args, use.toMIRType(), def))
         return false;
 
-    *type = use.toReturnType();
+    *type = use.toFFIReturnType();
     return true;
 }
 
@@ -3860,7 +3879,7 @@ CheckMultiply(FunctionCompiler &f, ParseNode *star, MDefinition **def, Type *typ
         if (!IsValidIntMultiplyConstant(lhs) && !IsValidIntMultiplyConstant(rhs))
             return f.fail(star, "one arg to int multiply must be a small (-2^20, 2^20) int literal");
         *def = f.mul(lhsDef, rhsDef, MIRType_Int32, MMul::Integer);
-        *type = Type::Signed;
+        *type = Type::Intish;
         return true;
     }
 
@@ -3985,7 +4004,7 @@ CheckComparison(FunctionCompiler &f, ParseNode *comp, MDefinition **def, Type *t
         return false;
 
     if ((lhsType.isSigned() && rhsType.isSigned()) || (lhsType.isUnsigned() && rhsType.isUnsigned())) {
-        MCompare::CompareType compareType = lhsType.isUnsigned()
+        MCompare::CompareType compareType = (lhsType.isUnsigned() && rhsType.isUnsigned())
                                             ? MCompare::Compare_UInt32
                                             : MCompare::Compare_Int32;
         *def = f.compare(lhsDef, rhsDef, comp->getOp(), compareType);
@@ -4591,7 +4610,7 @@ CheckVariableDecls(ModuleCompiler &m, FunctionCompiler::LocalMap *locals, ParseN
 {
     ParseNode *stmt = *stmtIter;
 
-    for (; stmt && stmt->isKind(PNK_VAR); stmt = NextNode(stmt)) {
+    for (; stmt && stmt->isKind(PNK_VAR); stmt = NextNonEmptyStatement(stmt)) {
         for (ParseNode *var = VarListHead(stmt); var; var = NextNode(var)) {
             if (!CheckVariableDecl(m, var, locals))
                 return false;
@@ -4626,7 +4645,7 @@ CheckFunctionBody(ModuleCompiler &m, ModuleCompiler::Func &func, LifoAlloc &lifo
 
     // Force Ion allocations to occur in the LifoAlloc while in scope.
     TempAllocator *tempAlloc = lifo.new_<TempAllocator>(&lifo);
-    IonContext icx(m.cx()->compartment, tempAlloc);
+    IonContext icx(m.cx()->compartment(), tempAlloc);
 
     // Allocate objects required for MIR generation.
     // Memory for the objects is provided by the LifoAlloc argument,
@@ -4634,7 +4653,7 @@ CheckFunctionBody(ModuleCompiler &m, ModuleCompiler::Func &func, LifoAlloc &lifo
     MIRGraph *graph = lifo.new_<MIRGraph>(tempAlloc);
     CompileInfo *info = lifo.new_<CompileInfo>(locals.count(),
                                                SequentialExecution);
-    MIRGenerator *mirGen = lifo.new_<MIRGenerator>(m.cx()->compartment, tempAlloc, graph, info);
+    MIRGenerator *mirGen = lifo.new_<MIRGenerator>(m.cx()->compartment(), tempAlloc, graph, info);
     JS_ASSERT(tempAlloc && graph && info && mirGen);
 
     FunctionCompiler f(m, func, Move(locals), mirGen);
@@ -4713,7 +4732,7 @@ CheckFunctionBodiesSequential(ModuleCompiler &m)
 
         IonSpewNewFunction(&mirGen->graph(), NullPtr());
 
-        IonContext icx(m.cx()->compartment, &mirGen->temp());
+        IonContext icx(m.cx()->compartment(), &mirGen->temp());
 
         if (!OptimizeMIR(mirGen))
             return m.fail(func.fn(), "internal compiler failure (probably out of memory)");
@@ -4749,7 +4768,7 @@ struct ParallelGroupState
 static AsmJSParallelTask *
 GetFinishedCompilation(ModuleCompiler &m, ParallelGroupState &group)
 {
-    AutoLockWorkerThreadState lock(m.cx()->runtime);
+    AutoLockWorkerThreadState lock(m.cx()->runtime());
 
     while (!group.state.asmJSWorkerFailed()) {
         if (!group.state.asmJSFinishedList.empty()) {
@@ -4854,7 +4873,7 @@ CancelOutstandingJobs(ModuleCompiler &m, ParallelGroupState &group)
     if (!group.outstandingJobs)
         return;
 
-    AutoLockWorkerThreadState lock(m.cx()->runtime);
+    AutoLockWorkerThreadState lock(m.cx()->runtime());
 
     // From the compiling tasks, eliminate those waiting for worker assignation.
     group.outstandingJobs -= group.state.asmJSWorklist.length();
@@ -4888,7 +4907,7 @@ static bool
 CheckFunctionBodiesParallel(ModuleCompiler &m)
 {
     // Saturate all worker threads plus the main thread.
-    WorkerThreadState &state = *m.cx()->runtime->workerThreadState;
+    WorkerThreadState &state = *m.cx()->runtime()->workerThreadState;
     size_t numParallelJobs = state.numThreads + 1;
 
     // Allocate scoped AsmJSParallelTask objects. Each contains a unique
@@ -5754,16 +5773,16 @@ js::CompileAsmJS(JSContext *cx, TokenStream &ts, ParseNode *fn, const CompileOpt
     if (!cx->hasOption(JSOPTION_ASMJS))
         return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by javascript.options.asmjs in about:config");
 
-    if (cx->compartment->debugMode())
+    if (cx->compartment()->debugMode())
         return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Disabled by debugger");
 
 #ifdef JS_ASMJS
-    if (!EnsureAsmJSSignalHandlersInstalled(cx->runtime))
+    if (!EnsureAsmJSSignalHandlersInstalled(cx->runtime()))
         return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Platform missing signal handler support");
 
 # ifdef JS_PARALLEL_COMPILATION
     if (OffThreadCompilationEnabled(cx)) {
-        if (!EnsureParallelCompilationInitialized(cx->runtime))
+        if (!EnsureParallelCompilationInitialized(cx->runtime()))
             return Warn(cx, JSMSG_USE_ASM_TYPE_FAIL, "Failed compilation thread initialization");
     }
 # endif
@@ -5805,7 +5824,7 @@ js::IsAsmJSCompilationAvailable(JSContext *cx, unsigned argc, Value *vp)
 
 #ifdef JS_ASMJS
     bool available = JSC::MacroAssembler().supportsFloatingPoint() &&
-                     !cx->compartment->debugMode() &&
+                     !cx->compartment()->debugMode() &&
                      cx->hasOption(JSOPTION_ASMJS);
 #else
     bool available = false;

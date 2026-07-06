@@ -5417,18 +5417,17 @@ AC_SUBST(MOZ_WEBRTC_ASSERT_ALWAYS)
 AC_SUBST(MOZ_SCTP)
 AC_SUBST(MOZ_SRTP)
 
-case "$target_cpu" in
-arm*)
+dnl Use integers over floats for audio on B2G and Android, because audio
+dnl backends for those platforms don't support floats.
+if test "$OS_TARGET" = "Android"; then
     MOZ_SAMPLE_TYPE_S16=1
     AC_DEFINE(MOZ_SAMPLE_TYPE_S16)
     AC_SUBST(MOZ_SAMPLE_TYPE_S16)
-;;
-*)
+else
     MOZ_SAMPLE_TYPE_FLOAT32=1
     AC_DEFINE(MOZ_SAMPLE_TYPE_FLOAT32)
     AC_SUBST(MOZ_SAMPLE_TYPE_FLOAT32)
-;;
-esac
+fi
 
 dnl ========================================================
 dnl = Disable Speech API code
@@ -9207,8 +9206,8 @@ if test -n "$ARM_ARCH"; then
     fi
 fi
 
-# Don't try to compile sse4.1 code if toolchain doesn't support
-if test -z "$HAVE_TOOLCHAIN_SUPPORT_MSSE4_1"; then
+# Don't try to compile ssse3/sse4.1 code if toolchain doesn't support
+if test -z "$HAVE_TOOLCHAIN_SUPPORT_SSSE3" || test -z "$HAVE_TOOLCHAIN_SUPPORT_MSSE4_1"; then
   EXTRA_GYP_DEFINES="$EXTRA_GYP_DEFINES -D yuv_disable_asm=1"
 fi
 

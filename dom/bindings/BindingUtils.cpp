@@ -160,6 +160,19 @@ ErrorResult::ReportJSException(JSContext* cx)
   JS_RemoveValueRoot(cx, &mJSException);
 }
 
+void
+ErrorResult::StealJSException(JSContext* cx,
+                              JS::MutableHandle<JS::Value> value)
+{
+  MOZ_ASSERT(!mMightHaveUnreportedJSException,
+             "Must call WouldReportJSException unconditionally in all codepaths that might call StealJSException");
+  MOZ_ASSERT(IsJSException(), "No exception to steal");
+
+  value.set(mJSException);
+  JS_RemoveValueRoot(cx, &mJSException);
+  mResult = NS_OK;
+}
+
 namespace dom {
 
 bool
@@ -668,6 +681,7 @@ VariantToJsval(JSContext* aCx, JS::Handle<JSObject*> aScope,
 JSBool
 QueryInterface(JSContext* cx, unsigned argc, JS::Value* vp)
 {
+  JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
   JS::Rooted<JS::Value> thisv(cx, JS_THIS(cx, vp));
   if (thisv.isNull())
     return false;
@@ -710,7 +724,7 @@ QueryInterface(JSContext* cx, unsigned argc, JS::Value* vp)
       return Throw<true>(cx, rv);
     }
 
-    return WrapObject(cx, origObj, ci, &NS_GET_IID(nsIClassInfo), vp);
+    return WrapObject(cx, origObj, ci, &NS_GET_IID(nsIClassInfo), args.rval());
   }
 
   nsCOMPtr<nsISupports> unused;
@@ -1783,13 +1797,13 @@ Date::SetTimeStamp(JSContext* cx, JSObject* objArg)
 }
 
 bool
-Date::ToDateObject(JSContext* cx, JS::Value* vp) const
+Date::ToDateObject(JSContext* cx, JS::MutableHandle<JS::Value> rval) const
 {
   JSObject* obj = JS_NewDateObjectMsec(cx, mMsecSinceEpoch);
   if (!obj) {
     return false;
   }
-  *vp = JS::ObjectValue(*obj);
+  rval.set(JS::ObjectValue(*obj));
   return true;
 }
 

@@ -476,21 +476,21 @@ TabParent::UpdateFrame(const FrameMetrics& aFrameMetrics)
   }
 }
 
-void TabParent::HandleDoubleTap(const nsIntPoint& aPoint)
+void TabParent::HandleDoubleTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleDoubleTap(aPoint);
   }
 }
 
-void TabParent::HandleSingleTap(const nsIntPoint& aPoint)
+void TabParent::HandleSingleTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleSingleTap(aPoint);
   }
 }
 
-void TabParent::HandleLongTap(const nsIntPoint& aPoint)
+void TabParent::HandleLongTap(const CSSIntPoint& aPoint)
 {
   if (!mIsDestroyed) {
     unused << SendHandleLongTap(aPoint);

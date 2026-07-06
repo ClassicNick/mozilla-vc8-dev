@@ -311,8 +311,8 @@ TokenStream::TokenStream(JSContext *cx, const CompileOptions &options,
     if (originPrincipals)
         JS_HoldPrincipals(originPrincipals);
 
-    JSSourceHandler listener = cx->runtime->debugHooks.sourceHandler;
-    void *listenerData = cx->runtime->debugHooks.sourceHandlerData;
+    JSSourceHandler listener = cx->runtime()->debugHooks.sourceHandler;
+    void *listenerData = cx->runtime()->debugHooks.sourceHandlerData;
 
     if (listener)
         listener(options.filename, options.lineno, base, length, &listenerTSData, listenerData);
@@ -370,7 +370,7 @@ TokenStream::~TokenStream()
     if (sourceMap)
         js_free(sourceMap);
     if (originPrincipals)
-        JS_DropPrincipals(cx->runtime, originPrincipals);
+        JS_DropPrincipals(cx->runtime(), originPrincipals);
 }
 
 /* Use the fastest available getc. */
@@ -605,7 +605,7 @@ TokenStream::reportStrictModeErrorNumberVA(uint32_t offset, bool strictMode, uns
     unsigned flags = JSREPORT_STRICT;
     if (strictMode)
         flags |= JSREPORT_ERROR;
-    else if (cx->hasStrictOption())
+    else if (cx->hasExtraWarningsOption())
         flags |= JSREPORT_WARNING;
     else
         return true;
@@ -635,8 +635,8 @@ CompileError::throwError()
          * sending the error on to the regular error reporter.
          */
         bool reportError = true;
-        if (JSDebugErrorHook hook = cx->runtime->debugHooks.debugErrorHook) {
-            reportError = hook(cx, message, &report, cx->runtime->debugHooks.debugErrorHookData);
+        if (JSDebugErrorHook hook = cx->runtime()->debugHooks.debugErrorHook) {
+            reportError = hook(cx, message, &report, cx->runtime()->debugHooks.debugErrorHookData);
         }
 
         /* Report the error */
@@ -784,7 +784,7 @@ TokenStream::reportWarning(unsigned errorNumber, ...)
 bool
 TokenStream::reportStrictWarningErrorNumberVA(uint32_t offset, unsigned errorNumber, va_list args)
 {
-    if (!cx->hasStrictOption())
+    if (!cx->hasExtraWarningsOption())
         return true;
 
     return reportCompileErrorNumberVA(offset, JSREPORT_STRICT|JSREPORT_WARNING, errorNumber, args);
@@ -857,21 +857,24 @@ CharsMatch(const jschar *p, const char *q) {
 }
 
 bool
-TokenStream::getAtSourceMappingURL(bool isMultiline)
+TokenStream::getSourceMappingURL(bool isMultiline, bool shouldWarnDeprecated)
 {
-    /* Match comments of the form "//@ sourceMappingURL=<url>" or
-     * "/\* //@ sourceMappingURL=<url> *\/"
+    /* Match comments of the form "//# sourceMappingURL=<url>" or
+     * "/\* //# sourceMappingURL=<url> *\/"
      *
-     * To avoid a crashing bug in IE, several JavaScript transpilers
-     * wrap single line comments containing a source mapping URL
-     * inside a multiline comment to avoid a crashing bug in IE. To
-     * avoid potentially expensive lookahead and backtracking, we
-     * only check for this case if we encounter an '@' character.
+     * To avoid a crashing bug in IE, several JavaScript transpilers wrap single
+     * line comments containing a source mapping URL inside a multiline
+     * comment. To avoid potentially expensive lookahead and backtracking, we
+     * only check for this case if we encounter a '#' character.
      */
     jschar peeked[18];
     int32_t c;
 
     if (peekChars(18, peeked) && CharsMatch(peeked, " sourceMappingURL=")) {
+        if (shouldWarnDeprecated && !reportWarning(JSMSG_DEPRECATED_SOURCE_MAP)) {
+            return false;
+        }
+
         skipChars(18);
         tokenbuf.clear();
 
@@ -1600,8 +1603,11 @@ TokenStream::getTokenInternal()
          * Look for a single-line comment.
          */
         if (matchChar('/')) {
-            if (matchChar('@') && !getAtSourceMappingURL(false))
-                goto error;
+            c = peekChar();
+            if (c == '@' || c == '#') {
+                if (!getSourceMappingURL(false, getChar() == '@'))
+                    goto error;
+            }
 
   skipline:
             /* Optimize line skipping if we are not in an HTML comment. */
@@ -1626,8 +1632,10 @@ TokenStream::getTokenInternal()
             unsigned linenoBefore = lineno;
             while ((c = getChar()) != EOF &&
                    !(c == '*' && matchChar('/'))) {
-                if (c == '@' && !getAtSourceMappingURL(true))
-                   goto error;
+                if (c == '@' || c == '#') {
+                    if (!getSourceMappingURL(true, c == '@'))
+                        goto error;
+                }
             }
             if (c == EOF) {
                 reportError(JSMSG_UNTERMINATED_COMMENT);

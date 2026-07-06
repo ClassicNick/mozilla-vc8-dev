@@ -162,9 +162,19 @@ class TestRecursiveMakeBackend(BackendTester):
                 'HOST_CSRCS += bar.c',
                 'HOST_CSRCS += foo.c',
             ],
+            'HOST_LIBRARY_NAME': [
+                'HOST_LIBRARY_NAME := host_bar',
+            ],
+            'LIBRARY_NAME': [
+                'LIBRARY_NAME := lib_name',
+            ],
             'SIMPLE_PROGRAMS': [
                 'SIMPLE_PROGRAMS += bar.x',
                 'SIMPLE_PROGRAMS += foo.x',
+            ],
+            'SSRCS': [
+                'SSRCS += bar.S',
+                'SSRCS += foo.S',
             ],
             'XPIDL_FLAGS': [
                 'XPIDL_FLAGS += -Idir1',

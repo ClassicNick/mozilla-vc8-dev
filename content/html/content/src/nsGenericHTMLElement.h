@@ -267,33 +267,33 @@ public:
   }
   mozilla::dom::Element* GetOffsetParent()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     return GetOffsetRect(rcFrame);
   }
   int32_t OffsetTop()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.y;
   }
   int32_t OffsetLeft()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.x;
   }
   int32_t OffsetWidth()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.width;
   }
   int32_t OffsetHeight()
   {
-    nsRect rcFrame;
+    mozilla::CSSIntRect rcFrame;
     GetOffsetRect(rcFrame);
 
     return rcFrame.height;
@@ -976,7 +976,7 @@ protected:
    * @note This method flushes pending notifications (Flush_Layout).
    * @param aRect the offset information [OUT]
    */
-  virtual mozilla::dom::Element* GetOffsetRect(nsRect& aRect);
+  mozilla::dom::Element* GetOffsetRect(mozilla::CSSIntRect& aRect);
 
   /**
    * Returns true if this is the current document's body element
@@ -1063,8 +1063,7 @@ enum {
 // same time, so if it becomes an issue we can probably merge them into the
 // same bit.  --bz
 
-// Make sure we have enough space for those bits
-PR_STATIC_ASSERT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 1 < 32);
+ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
 
 #undef FORM_ELEMENT_FLAG_BIT
 

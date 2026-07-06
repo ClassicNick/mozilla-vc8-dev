@@ -86,7 +86,7 @@ static const uint32_t kUpdateProgressBase = 50 * 1024;
  */
 static const uint32_t kPutRequestHeaderSize = 6;
 
-StaticAutoPtr<BluetoothOppManager> sInstance;
+StaticRefPtr<BluetoothOppManager> sInstance;
 
 /*
  * FIXME / Bug 806749
@@ -257,10 +257,18 @@ BluetoothOppManager::Connect(const nsAString& aDeviceAddress,
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  NS_ENSURE_FALSE_VOID(mSocket);
-
   BluetoothService* bs = BluetoothService::Get();
-  NS_ENSURE_TRUE_VOID(bs);
+  if (!bs || sInShutdown) {
+    DispatchBluetoothReply(aRunnable, BluetoothValue(),
+                           NS_LITERAL_STRING(ERR_NO_AVAILABLE_RESOURCE));
+    return;
+  }
+
+  if (mSocket) {
+    DispatchBluetoothReply(aRunnable, BluetoothValue(),
+                           NS_LITERAL_STRING(ERR_REACHED_CONNECTION_LIMIT));
+    return;
+  }
 
   mNeedsUpdatingSdpRecords = true;
 
@@ -1507,6 +1515,8 @@ BluetoothOppManager::OnUpdateSdpRecords(const nsAString& aDeviceAddress)
     Listen();
   }
 }
+
+NS_IMPL_ISUPPORTS0(BluetoothOppManager)
 
 bool
 BluetoothOppManager::AcquireSdcardMountLock()
