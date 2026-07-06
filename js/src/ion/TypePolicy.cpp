@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "TypePolicy.h"
-#include "MIR.h"
-#include "MIRGraph.h"
+#include "ion/TypePolicy.h"
+#include "ion/MIR.h"
+#include "ion/MIRGraph.h"
 
 using namespace js;
 using namespace js::ion;
@@ -77,7 +77,7 @@ BinaryStringPolicy::adjustInputs(MInstruction *ins)
             continue;
 
         MInstruction *replace = NULL;
-        if (in->type() == MIRType_Int32) {
+        if (in->type() == MIRType_Int32 || in->type() == MIRType_Double) {
             replace = MToString::New(in);
         } else {
             if (in->type() != MIRType_Value)
@@ -209,8 +209,7 @@ ComparePolicy::adjustInputs(MInstruction *def)
             replace = MUnbox::New(in, MIRType_String, MUnbox::Infallible);
             break;
           default:
-            JS_NOT_REACHED("Unknown compare specialization");
-            return false;
+            MOZ_ASSUME_UNREACHABLE("Unknown compare specialization");
         }
 
         def->block()->insertBefore(def, replace);
@@ -300,7 +299,7 @@ StringPolicy<Op>::staticAdjustInputs(MInstruction *def)
         return true;
 
     MInstruction *replace;
-    if (in->type() == MIRType_Int32) {
+    if (in->type() == MIRType_Int32 || in->type() == MIRType_Double) {
         replace = MToString::New(in);
     } else {
         if (in->type() != MIRType_Value)
@@ -315,6 +314,7 @@ StringPolicy<Op>::staticAdjustInputs(MInstruction *def)
 
 template bool StringPolicy<0>::staticAdjustInputs(MInstruction *ins);
 template bool StringPolicy<1>::staticAdjustInputs(MInstruction *ins);
+template bool StringPolicy<2>::staticAdjustInputs(MInstruction *ins);
 
 template <unsigned Op>
 bool
@@ -490,8 +490,7 @@ StoreTypedArrayPolicy::adjustValueInput(MInstruction *ins, int arrayType,
         value = boxAt(ins, value);
         break;
       default:
-        JS_NOT_REACHED("Unexpected type");
-        break;
+        MOZ_ASSUME_UNREACHABLE("Unexpected type");
     }
 
     if (value != curValue) {
@@ -528,8 +527,7 @@ StoreTypedArrayPolicy::adjustValueInput(MInstruction *ins, int arrayType,
         }
         break;
       default:
-        JS_NOT_REACHED("Invalid array type");
-        break;
+        MOZ_ASSUME_UNREACHABLE("Invalid array type");
     }
 
     if (value != curValue) {

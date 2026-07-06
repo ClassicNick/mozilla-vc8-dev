@@ -171,23 +171,22 @@ function clearSelection(aTarget) {
   Asynchronous Metro ui helpers
 =============================================================================*/
 
+// Hides the tab and context app bar if they are visible
 function hideContextUI()
 {
   purgeEventQueue();
 
   return Task.spawn(function() {
-    if (ContextUI.isExpanded) {
+    if (ContextUI.tabbarVisible) {
       let promise = waitForEvent(Elements.tray, "transitionend", null, Elements.tray);
-      if (ContextUI.dismiss())
-      {
-        info("ContextUI dismissed, waiting...");
+      if (ContextUI.dismiss()) {
         yield promise;
       }
     }
 
-    if (Elements.contextappbar.isShowing) {
+    if (ContextUI.contextAppbarVisible) {
       let promise = waitForEvent(Elements.contextappbar, "transitionend", null, Elements.contextappbar);
-      Elements.contextappbar.dismiss();
+      ContextUI.dismissContextAppbar();
       yield promise;
     }
   });
@@ -196,7 +195,7 @@ function hideContextUI()
 function showNavBar()
 {
   let promise = waitForEvent(Elements.navbar, "transitionend");
-  if (!ContextUI.isVisible) {
+  if (!ContextUI.navbarVisible) {
     ContextUI.displayNavbar();
     return promise;
   }
@@ -784,6 +783,24 @@ function runTests() {
   });
 }
 
+// wrap a method with a spy that records how and how many times it gets called
+// the spy is returned; use spy.restore() to put the original back
+function spyOnMethod(aObj, aMethod) {
+  let origFunc = aObj[aMethod];
+  let spy = function() {
+    spy.calledWith = Array.slice(arguments);
+    spy.callCount++;
+    return (spy.returnValue = origFunc.apply(aObj, arguments));
+  };
+  spy.callCount = 0;
+  spy.restore = function() {
+    return (aObj[aMethod] = origFunc);
+  };
+  return (aObj[aMethod] = spy);
+}
+
+// replace a method with a stub that records how and how many times it gets called
+// the stub is returned; use stub.restore() to put the original back
 function stubMethod(aObj, aMethod) {
   let origFunc = aObj[aMethod];
   let func = function() {

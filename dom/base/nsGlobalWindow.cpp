@@ -1643,6 +1643,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mControllers)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mArguments)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDialogArguments)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNavigator)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPerformance)
 
@@ -1697,6 +1698,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindow)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mControllers)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mArguments)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDialogArguments)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mNavigator)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPerformance)
 
@@ -2120,10 +2122,10 @@ CreateNativeGlobalForInner(JSContext* aCx,
   if (aNewInner->GetOuterWindow()) {
     top = aNewInner->GetTop();
   }
-  JS::ZoneSpecifier zoneSpec = JS::FreshZone;
+  JS::CompartmentOptions options;
   if (top) {
     if (top->GetGlobalJSObject()) {
-      zoneSpec = JS::SameZoneAs(top->GetGlobalJSObject());
+      options.zoneSpec = JS::SameZoneAs(top->GetGlobalJSObject());
     }
   }
 
@@ -2139,7 +2141,7 @@ CreateNativeGlobalForInner(JSContext* aCx,
   nsRefPtr<nsIXPConnectJSObjectHolder> jsholder;
   nsresult rv = xpc->InitClassesWithNewWrappedGlobal(
     aCx, ToSupports(aNewInner),
-    aPrincipal, flags, zoneSpec, getter_AddRefs(jsholder));
+    aPrincipal, flags, options, getter_AddRefs(jsholder));
   NS_ENSURE_SUCCESS(rv, rv);
 
   MOZ_ASSERT(jsholder);
@@ -11622,7 +11624,6 @@ nsGlobalChromeWindow::GetMessageManager(nsIMessageBroadcaster** aManager)
     mMessageManager =
       new nsFrameMessageManager(nullptr,
                                 static_cast<nsFrameMessageManager*>(globalMM.get()),
-                                cx,
                                 MM_CHROME | MM_BROADCASTER);
     NS_ENSURE_TRUE(mMessageManager, NS_ERROR_OUT_OF_MEMORY);
   }

@@ -359,8 +359,6 @@ IMEHandler::CurrentKeyboardLayoutHasIME()
 }
 #endif // #ifdef DEBUG
 
-// static
-
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 // static
 void

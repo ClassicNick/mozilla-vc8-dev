@@ -6,40 +6,40 @@
 
 #include "mozilla/MemoryReporting.h"
 
-#include "BaselineJIT.h"
-#include "BaselineCompiler.h"
-#include "BaselineInspector.h"
-#include "Ion.h"
-#include "IonAnalysis.h"
-#include "IonBuilder.h"
-#include "IonLinker.h"
-#include "IonSpewer.h"
-#include "LIR.h"
-#include "AliasAnalysis.h"
-#include "LICM.h"
-#include "ValueNumbering.h"
-#include "EdgeCaseAnalysis.h"
-#include "RangeAnalysis.h"
-#include "LinearScan.h"
-#include "ParallelSafetyAnalysis.h"
+#include "ion/BaselineJIT.h"
+#include "ion/BaselineCompiler.h"
+#include "ion/BaselineInspector.h"
+#include "ion/Ion.h"
+#include "ion/IonAnalysis.h"
+#include "ion/IonBuilder.h"
+#include "ion/IonLinker.h"
+#include "ion/IonSpewer.h"
+#include "ion/LIR.h"
+#include "ion/AliasAnalysis.h"
+#include "ion/LICM.h"
+#include "ion/ValueNumbering.h"
+#include "ion/EdgeCaseAnalysis.h"
+#include "ion/RangeAnalysis.h"
+#include "ion/LinearScan.h"
+#include "ion/ParallelSafetyAnalysis.h"
 #include "jscompartment.h"
 #include "vm/ThreadPool.h"
 #include "vm/ForkJoin.h"
-#include "IonCompartment.h"
-#include "PerfSpewer.h"
-#include "CodeGenerator.h"
+#include "ion/IonCompartment.h"
+#include "ion/PerfSpewer.h"
+#include "ion/CodeGenerator.h"
 #include "jsworkers.h"
-#include "BacktrackingAllocator.h"
-#include "StupidAllocator.h"
-#include "UnreachableCodeElimination.h"
-#include "EffectiveAddressAnalysis.h"
+#include "ion/BacktrackingAllocator.h"
+#include "ion/StupidAllocator.h"
+#include "ion/UnreachableCodeElimination.h"
+#include "ion/EffectiveAddressAnalysis.h"
 
 #if defined(JS_CPU_X86)
-# include "x86/Lowering-x86.h"
+# include "ion/x86/Lowering-x86.h"
 #elif defined(JS_CPU_X64)
-# include "x64/Lowering-x64.h"
+# include "ion/x64/Lowering-x64.h"
 #elif defined(JS_CPU_ARM)
-# include "arm/Lowering-arm.h"
+# include "ion/arm/Lowering-arm.h"
 #endif
 #include "gc/Marking.h"
 
@@ -51,9 +51,9 @@
 #include "vm/Stack-inl.h"
 #include "ion/IonFrames-inl.h"
 #include "ion/CompilerRoot.h"
-#include "ExecutionModeInlines.h"
-#include "AsmJS.h"
-#include "AsmJSModule.h"
+#include "ion/ExecutionModeInlines.h"
+#include "ion/AsmJS.h"
+#include "ion/AsmJSModule.h"
 
 #if JS_TRACE_LOGGING
 #include "TraceLogging.h"
@@ -298,7 +298,8 @@ IonCompartment::IonCompartment(IonRuntime *rt)
   : rt(rt),
     stubCodes_(NULL),
     baselineCallReturnAddr_(NULL),
-    stringConcatStub_(NULL)
+    stringConcatStub_(NULL),
+    parallelStringConcatStub_(NULL)
 {
 }
 
@@ -322,10 +323,18 @@ bool
 IonCompartment::ensureIonStubsExist(JSContext *cx)
 {
     if (!stringConcatStub_) {
-        stringConcatStub_ = generateStringConcatStub(cx);
+        stringConcatStub_ = generateStringConcatStub(cx, SequentialExecution);
         if (!stringConcatStub_)
             return false;
     }
+
+#ifdef JS_THREADSAFE
+    if (!parallelStringConcatStub_) {
+        parallelStringConcatStub_ = generateStringConcatStub(cx, ParallelExecution);
+        if (!parallelStringConcatStub_)
+            return false;
+    }
+#endif
 
     return true;
 }
@@ -810,8 +819,7 @@ IonScript::getSafepointIndex(uint32_t disp) const
         }
     }
 
-    JS_NOT_REACHED("displacement not found.");
-    return NULL;
+    MOZ_ASSUME_UNREACHABLE("displacement not found.");
 }
 
 const OsiIndex *
@@ -825,8 +833,7 @@ IonScript::getOsiIndex(uint32_t disp) const
             return it;
     }
 
-    JS_NOT_REACHED("Failed to find OSI point return address");
-    return NULL;
+    MOZ_ASSUME_UNREACHABLE("Failed to find OSI point return address");
 }
 
 const OsiIndex *
@@ -1209,7 +1216,7 @@ GenerateLIR(MIRGenerator *mir)
       }
 
       default:
-        JS_NOT_REACHED("Bad regalloc");
+        MOZ_ASSUME_UNREACHABLE("Bad regalloc");
     }
 
     if (mir->shouldCancel("Allocate Registers"))
@@ -1996,8 +2003,7 @@ InvalidateActivation(FreeOp *fop, uint8_t *ionTop, bool invalidateAll)
             break;
           case IonFrame_Unwound_OptimizedJS:
           case IonFrame_Unwound_BaselineStub:
-            JS_NOT_REACHED("invalid");
-            break;
+            MOZ_ASSUME_UNREACHABLE("invalid");
           case IonFrame_Unwound_Rectifier:
             IonSpew(IonSpew_Invalidate, "#%d unwound rectifier frame @ %p", frameno, it.fp());
             break;
@@ -2309,7 +2315,7 @@ ion::ForbidCompilation(JSContext *cx, JSScript *script, ExecutionMode mode)
         return;
     }
 
-    JS_NOT_REACHED("No such execution mode");
+    MOZ_ASSUME_UNREACHABLE("No such execution mode");
 }
 
 uint32_t

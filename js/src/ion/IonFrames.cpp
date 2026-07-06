@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "IonFrames.h"
+#include "ion/IonFrames.h"
 
 #include "jsobj.h"
 #include "jsscript.h"
@@ -298,7 +298,7 @@ IonFrameIterator::machineState() const
     // are unable to restore any FPUs registers from an OOL VM call.  This can
     // cause some trouble for f.arguments.
     MachineState machine;
-    for (GeneralRegisterIterator iter(reader.allSpills()); iter.more(); iter++)
+    for (GeneralRegisterBackwardIterator iter(reader.allSpills()); iter.more(); iter++)
         machine.setRegisterLocation(*iter, --spill);
 
     return machine;
@@ -394,7 +394,7 @@ HandleException(JSContext *cx, const IonFrameIterator &frame, ResumeFromExceptio
             return;
 
           default:
-            JS_NOT_REACHED("Invalid trap status");
+            MOZ_ASSUME_UNREACHABLE("Invalid trap status");
         }
     }
 
@@ -456,7 +456,7 @@ HandleException(JSContext *cx, const IonFrameIterator &frame, ResumeFromExceptio
             break;
 
           default:
-            JS_NOT_REACHED("Invalid try note");
+            MOZ_ASSUME_UNREACHABLE("Invalid try note");
         }
     }
 
@@ -627,7 +627,7 @@ MarkCalleeToken(JSTracer *trc, CalleeToken token)
         return CalleeToToken(script);
       }
       default:
-        JS_NOT_REACHED("unknown callee token type");
+        MOZ_ASSUME_UNREACHABLE("unknown callee token type");
     }
 }
 
@@ -721,7 +721,7 @@ MarkIonJSFrame(JSTracer *trc, const IonFrameIterator &frame)
     uintptr_t *spill = frame.spillBase();
     GeneralRegisterSet gcRegs = safepoint.gcSpills();
     GeneralRegisterSet valueRegs = safepoint.valueSpills();
-    for (GeneralRegisterIterator iter(safepoint.allSpills()); iter.more(); iter++) {
+    for (GeneralRegisterBackwardIterator iter(safepoint.allSpills()); iter.more(); iter++) {
         --spill;
         if (gcRegs.has(*iter))
             gc::MarkGCThingRoot(trc, reinterpret_cast<void **>(spill), "ion-gc-spill");
@@ -777,8 +777,7 @@ JitActivationIterator::jitStackRange(uintptr_t *&min, uintptr_t *&end)
         if (exitFrame->isWrapperExit() && f->outParam == Type_Handle) {
             switch (f->outParamRootType) {
               case VMFunction::RootNone:
-                JS_NOT_REACHED("Handle outparam must have root type");
-                break;
+                MOZ_ASSUME_UNREACHABLE("Handle outparam must have root type");
               case VMFunction::RootObject:
               case VMFunction::RootString:
               case VMFunction::RootPropertyName:
@@ -920,8 +919,7 @@ MarkIonExitFrame(JSTracer *trc, const IonFrameIterator &frame)
     if (f->outParam == Type_Handle) {
         switch (f->outParamRootType) {
           case VMFunction::RootNone:
-            JS_NOT_REACHED("Handle outparam must have root type");
-            break;
+            MOZ_ASSUME_UNREACHABLE("Handle outparam must have root type");
           case VMFunction::RootObject:
             gc::MarkObjectRoot(trc, footer->outParam<JSObject *>(), "ion-vm-out");
             break;
@@ -960,8 +958,7 @@ MarkJitActivation(JSTracer *trc, const JitActivationIterator &activations)
             MarkIonJSFrame(trc, frames);
             break;
           case IonFrame_Unwound_OptimizedJS:
-            JS_NOT_REACHED("invalid");
-            break;
+            MOZ_ASSUME_UNREACHABLE("invalid");
           case IonFrame_Rectifier:
           case IonFrame_Unwound_Rectifier:
             break;
@@ -971,8 +968,7 @@ MarkJitActivation(JSTracer *trc, const JitActivationIterator &activations)
             // dead.
             break;
           default:
-            JS_NOT_REACHED("unexpected frame type");
-            break;
+            MOZ_ASSUME_UNREACHABLE("unexpected frame type");
         }
     }
 }
@@ -1114,8 +1110,7 @@ SnapshotIterator::FromTypedPayload(JSValueType type, uintptr_t payload)
       case JSVAL_TYPE_OBJECT:
         return ObjectValue(*reinterpret_cast<JSObject *>(payload));
       default:
-        JS_NOT_REACHED("unexpected type - needs payload");
-        return UndefinedValue();
+        MOZ_ASSUME_UNREACHABLE("unexpected type - needs payload");
     }
 }
 
@@ -1184,8 +1179,7 @@ SnapshotIterator::slotValue(const Slot &slot)
         return ionScript_->getConstant(slot.constantIndex());
 
       default:
-        JS_NOT_REACHED("huh?");
-        return UndefinedValue();
+        MOZ_ASSUME_UNREACHABLE("huh?");
     }
 }
 
@@ -1204,7 +1198,7 @@ IonFrameIterator::ionScript() const
       case CalleeToken_ParallelFunction:
         return script()->parallelIonScript();
       default:
-        JS_NOT_REACHED("unknown callee token type");
+        MOZ_ASSUME_UNREACHABLE("unknown callee token type");
     }
 }
 

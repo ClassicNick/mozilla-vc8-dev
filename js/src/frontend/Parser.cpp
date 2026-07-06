@@ -188,8 +188,7 @@ ParseContext<FullParseHandler>::define(JSContext *cx, HandlePropertyName name,
         break;
 
       default:
-        JS_NOT_REACHED("unexpected kind");
-        break;
+        MOZ_ASSUME_UNREACHABLE("unexpected kind");
     }
 
     return true;
@@ -279,7 +278,7 @@ AppendPackedBindings(const ParseContext<ParseHandler> *pc, const DeclVector &vec
             kind = ARGUMENT;
             break;
           default:
-            JS_NOT_REACHED("unexpected dn->kind");
+            MOZ_ASSUME_UNREACHABLE("unexpected dn->kind");
         }
 
         /*
@@ -3975,8 +3974,7 @@ Parser<FullParseHandler>::forStatement()
 
 #if JS_HAS_DESTRUCTURING
           case PNK_ASSIGN:
-            JS_NOT_REACHED("forStatement TOK_ASSIGN");
-            break;
+            MOZ_ASSUME_UNREACHABLE("forStatement TOK_ASSIGN");
 
           case PNK_ARRAY:
           case PNK_OBJECT:
@@ -5321,7 +5319,9 @@ Parser<ParseHandler>::unaryExpr()
             return null();
 
         // Per spec, deleting any unary expression is valid -- it simply returns
-        // true -- except for one case that is illegal in strict mode.
+        // true -- except for a few cases that are illegal in strict mode.
+        if (foldConstants && !FoldConstants(context, &expr, this))
+            return null();
         if (handler.isName(expr)) {
             if (!report(ParseStrictError, pc->sc->strict, expr, JSMSG_DEPRECATED_DELETE_OPERAND))
                 return null();
@@ -6205,6 +6205,13 @@ Parser<ParseHandler>::memberExpr(TokenKind tt, bool allowCallSyntax)
 
             MUST_MATCH_TOKEN(TOK_RB, JSMSG_BRACKET_IN_INDEX);
 
+            /*
+             * Do folding so we don't have roundtrip changes for cases like:
+             * function (obj) { return obj["a" + "b"] }
+             */
+            if (foldConstants && !FoldConstants(context, &propExpr, this))
+                return null();
+
             nextMember = handler.newPropertyByValue(lhs, propExpr, pos().end);
             if (!nextMember)
                 return null();
@@ -6647,8 +6654,7 @@ Parser<ParseHandler>::primaryExpr(TokenKind tt)
             } else if (op == JSOP_INITPROP_SETTER) {
                 assignType = SET;
             } else {
-                JS_NOT_REACHED("bad opcode in object initializer");
-                assignType = VALUE; /* try to error early */
+                MOZ_ASSUME_UNREACHABLE("bad opcode in object initializer");
             }
 
             AtomIndexAddPtr p = seen.lookupForAdd(atom);

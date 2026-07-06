@@ -206,7 +206,10 @@ public:
   void                    SuppressBlurEvents(bool aSuppress); // Called from nsFilePicker
   bool                    BlurEventsSuppressed();
 #ifdef ACCESSIBILITY
-  mozilla::a11y::Accessible* GetRootAccessible();
+  /**
+   * Return an accessible associated with the window.
+   */
+  mozilla::a11y::Accessible* GetAccessible();
 #endif // ACCESSIBILITY
 
   /**

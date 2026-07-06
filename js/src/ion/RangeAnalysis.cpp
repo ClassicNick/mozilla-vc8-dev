@@ -11,12 +11,12 @@
 
 #include "vm/NumericConversions.h"
 
-#include "Ion.h"
-#include "IonAnalysis.h"
-#include "MIR.h"
-#include "MIRGraph.h"
-#include "RangeAnalysis.h"
-#include "IonSpewer.h"
+#include "ion/Ion.h"
+#include "ion/IonAnalysis.h"
+#include "ion/MIR.h"
+#include "ion/MIRGraph.h"
+#include "ion/RangeAnalysis.h"
+#include "ion/IonSpewer.h"
 
 using namespace js;
 using namespace js::ion;
@@ -349,12 +349,21 @@ Range::intersect(const Range *lhs, const Range *rhs, bool *emptyRange)
 void
 Range::unionWith(const Range *other)
 {
-   lower_infinite_ |= other->lower_infinite_;
-   upper_infinite_ |= other->upper_infinite_;
-   decimal_ |= other->decimal_;
-   max_exponent_ = Max(max_exponent_, other->max_exponent_);
-   setLower(Min(lower_, other->lower_));
-   setUpper(Max(upper_, other->upper_));
+   bool decimal = decimal_ | other->decimal_;
+   uint16_t max_exponent = Max(max_exponent_, other->max_exponent_);
+
+   if (lower_infinite_ || other->lower_infinite_)
+       makeLowerInfinite();
+   else
+       setLower(Min(lower_, other->lower_));
+
+   if (upper_infinite_ || other->upper_infinite_)
+       makeUpperInfinite();
+   else
+       setUpper(Max(upper_, other->upper_));
+
+   decimal_ = decimal;
+   max_exponent_ = max_exponent;
 }
 
 static const Range emptyRange;
