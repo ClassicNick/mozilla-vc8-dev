@@ -2573,7 +2573,7 @@ frontend::EmitFunctionScript(JSContext *cx, BytecodeEmitter *bce, ParseNode *bod
         !funbox->isGenerator();
     if (runOnce) {
         bce->switchToProlog();
-        if (!Emit1(cx, bce, JSOP_RUNONCE) < 0)
+        if (Emit1(cx, bce, JSOP_RUNONCE) < 0)
             return false;
         bce->switchToMain();
     }
@@ -6412,7 +6412,7 @@ CGConstList::finish(ConstArray *array)
  * We should try to get rid of offsetBias (always 0 or 1, where 1 is
  * JSOP_{NOP,POP}_LENGTH), which is used only by SRC_FOR.
  */
-JS_FRIEND_DATA(const JSSrcNoteSpec) js_SrcNoteSpec[] = {
+const JSSrcNoteSpec js_SrcNoteSpec[] = {
 /*  0 */ {"null",           0},
 
 /*  1 */ {"if",             0},

@@ -233,6 +233,18 @@ template <AllowGC allowGC>
 extern JSAtom *
 ToAtom(JSContext *cx, typename MaybeRooted<Value, allowGC>::HandleType v);
 
+inline JSAtom *
+ToAtomAllowGC(JSContext *cx, HandleValue v)
+{
+	return ToAtom<CanGC>(cx, v);
+}
+
+inline JSAtom *
+ToAtomDisallowGC(JSContext *cx, Value v)
+{
+	return ToAtom<NoGC>(cx, v);
+}
+
 template<XDRMode mode>
 bool
 XDRAtom(XDRState<mode> *xdr, js::MutableHandleAtom atomp);

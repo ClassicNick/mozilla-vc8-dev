@@ -188,7 +188,7 @@ pref("media.webm.enabled", true);
 pref("media.dash.enabled", false);
 #endif
 #ifdef MOZ_GSTREAMER
-pref("media.gstreamer.enabled", true);
+pref("media.gstreamer.enabled", false);
 #endif
 #ifdef MOZ_WEBRTC
 pref("media.navigator.enabled", true);
@@ -1854,6 +1854,13 @@ pref("plugins.load_appdir_plugins", false);
 pref("plugins.click_to_play", false);
 // The default value for nsIPluginTag.enabledState (STATE_ENABLED = 2)
 pref("plugin.default.state", 2);
+
+// How long in minutes we will allow a plugin to work after the user has chosen
+// to allow it "now"
+pref("plugin.sessionPermissionNow.intervalInMinutes", 60);
+// How long in days we will allow a plugin to work after the user has chosen
+// to allow it persistently.
+pref("plugin.persistentPermissionAlways.intervalInDays", 90);
 
 #ifndef DEBUG
 // How long a plugin is allowed to process a synchronous IPC message
@@ -3983,6 +3990,7 @@ pref("webgl.force-layers-readback", false);
 pref("webgl.lose-context-on-heap-minimize", false);
 pref("webgl.can-lose-context-in-foreground", true);
 pref("webgl.max-warnings-per-context", 32);
+pref("webgl.enable-draft-extensions", false);
 #ifdef MOZ_WIDGET_GONK
 pref("gfx.gralloc.fence-with-readpixels", false);
 #endif
@@ -4103,9 +4111,6 @@ pref("dom.idle-observers-api.enabled", true);
 // Time limit, in milliseconds, for nsEventStateManager::IsHandlingUserInput().
 // Used to detect long running handlers of user-generated events.
 pref("dom.event.handling-user-input-time-limit", 1000);
- 
-//3D Transforms
-pref("layout.3d-transforms.enabled", true);
 
 // Whether we should layerize all animated images (if otherwise possible).
 pref("layout.animated-image-layers.enabled", false);

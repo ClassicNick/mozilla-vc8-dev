@@ -48,7 +48,7 @@ ConcatStrings(JSContext *cx,
               typename MaybeRooted<JSString*, allowGC>::HandleType right);
 
 inline JSString *
-ConcatStringsAllowGC(JSContext *cx, LookupGenericOp lookup,
+ConcatStringsAllowGC(JSContext *cx,
                HandleString left,
                HandleString right)
 {
@@ -56,7 +56,7 @@ ConcatStringsAllowGC(JSContext *cx, LookupGenericOp lookup,
 }
 
 inline JSString *
-ConcatStringsDisallowGC(JSContext *cx, LookupGenericOp lookup,
+ConcatStringsDisallowGC(JSContext *cx,
                JSString *left,
                JSString *right)
 {

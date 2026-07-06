@@ -22,6 +22,7 @@
 #include "jsclist.h"
 #include "jsgc.h"
 
+#include "ds/FixedSizeHash.h"
 #include "ds/LifoAlloc.h"
 #include "frontend/ParseMaps.h"
 #include "gc/Nursery.h"
@@ -243,6 +244,33 @@ struct EvalCacheHashPolicy
 };
 
 typedef HashSet<EvalCacheEntry, EvalCacheHashPolicy, SystemAllocPolicy> EvalCache;
+
+struct LazyScriptHashPolicy
+{
+    struct Lookup {
+        JSContext *cx;
+        LazyScript *lazy;
+
+        Lookup(JSContext *cx, LazyScript *lazy)
+          : cx(cx), lazy(lazy)
+        {}
+    };
+
+    static const size_t NumHashes = 3;
+
+    static void hash(const Lookup &lookup, HashNumber hashes[NumHashes]);
+    static bool match(JSScript *script, const Lookup &lookup);
+
+    // Alternate methods for use when removing scripts from the hash without an
+    // explicit LazyScript lookup.
+    static void hash(JSScript *script, HashNumber hashes[NumHashes]);
+    static bool match(JSScript *script, JSScript *lookup) { return script == lookup; }
+
+    static void clear(JSScript **pscript) { *pscript = NULL; }
+    static bool isCleared(JSScript *script) { return !script; }
+};
+
+typedef FixedSizeHashSet<JSScript *, LazyScriptHashPolicy, 769> LazyScriptCache;
 
 class PropertyIteratorObject;
 
@@ -726,9 +754,6 @@ struct JSRuntime : public JS::shadow::Runtime,
     void assertValidThread() const {}
 #endif
 
-    /* Keeper of the contiguous stack used by all contexts in this thread. */
-    js::StackSpace stackSpace;
-
     /* Temporary arena pool used while compiling and decompiling. */
     static const size_t TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 4 * 1024;
     js::LifoAlloc tempLifoAlloc;
@@ -749,6 +774,9 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::ion::IonRuntime *ionRuntime_;
 
     JSObject *selfHostingGlobal_;
+
+    /* Space for interpreter frames. */
+    js::InterpreterStack interpreterStack_;
 
     JSC::ExecutableAllocator *createExecutableAllocator(JSContext *cx);
     WTF::BumpPointerAllocator *createBumpPointerAllocator(JSContext *cx);
@@ -776,6 +804,9 @@ struct JSRuntime : public JS::shadow::Runtime,
     }
     bool hasIonRuntime() const {
         return !!ionRuntime_;
+    }
+    js::InterpreterStack &interpreterStack() {
+        return interpreterStack_;
     }
 
     //-------------------------------------------------------------------------
@@ -1135,6 +1166,15 @@ struct JSRuntime : public JS::shadow::Runtime,
     /* Stack of thread-stack-allocated GC roots. */
     js::AutoGCRooter   *autoGCRooters;
 
+    /*
+     * The GC can only safely decommit memory when the page size of the
+     * running process matches the compiled arena size.
+     */
+    size_t              gcSystemPageSize;
+
+    /* The OS allocation granularity may not match the page size. */
+    size_t              gcSystemAllocGranularity;
+
     /* Strong references on scripts held for PCCount profiling API. */
     js::ScriptAndCountsVector *scriptAndCountsVector;
 
@@ -1248,6 +1288,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::NativeIterCache nativeIterCache;
     js::SourceDataCache sourceDataCache;
     js::EvalCache       evalCache;
+    js::LazyScriptCache lazyScriptCache;
 
     /* State used by jsdtoa.cpp. */
     DtoaState           *dtoaState;
@@ -1686,9 +1727,6 @@ struct JSContext : js::ThreadSafeContext,
     inline void setDefaultCompartmentObjectIfUnset(JSObject *obj);
     JSObject *maybeDefaultCompartmentObject() const { return defaultCompartmentObject_; }
 
-    /* Current execution stack. */
-    js::ContextStack    stack;
-
     /*
      * Current global. This is only safe to use within the scope of the
      * AutoCompartment from which it's called.
@@ -1748,8 +1786,7 @@ struct JSContext : js::ThreadSafeContext,
      * default version.
      */
     void maybeMigrateVersionOverride() {
-        JS_ASSERT(stack.empty());
-        if (JS_UNLIKELY(isVersionOverridden())) {
+        if (JS_UNLIKELY(isVersionOverridden()) && !currentlyRunning()) {
             defaultVersion = versionOverride;
             clearVersionOverride();
         }
@@ -1819,6 +1856,19 @@ struct JSContext : js::ThreadSafeContext,
     js::FrameRegs &interpreterRegs() const {
         return mainThread().activation()->asInterpreter()->regs();
     }
+
+    /*
+     * Get the topmost script and optional pc on the stack. By default, this
+     * function only returns a JSScript in the current compartment, returning
+     * NULL if the current script is in a different compartment. This behavior
+     * can be overridden by passing ALLOW_CROSS_COMPARTMENT.
+     */
+    enum MaybeAllowCrossCompartment {
+        DONT_ALLOW_CROSS_COMPARTMENT = false,
+        ALLOW_CROSS_COMPARTMENT = true
+    };
+    inline JSScript *currentScript(jsbytecode **pc = NULL,
+                                   MaybeAllowCrossCompartment = DONT_ALLOW_CROSS_COMPARTMENT) const;
 
 #ifdef MOZ_TRACE_JSCALLS
     /* Function entry/exit debugging callback. */
@@ -2014,6 +2064,12 @@ class MOZ_STACK_CLASS AutoKeepAtoms
     }
     ~AutoKeepAtoms() { JS_UNKEEP_ATOMS(rt); }
 };
+
+// Maximum supported value of arguments.length. This bounds the maximum
+// number of arguments that can be supplied to Function.prototype.apply.
+// This value also bounds the number of elements parsed in an array
+// initialiser.
+static const unsigned ARGS_LENGTH_MAX = 500 * 1000;
 
 } /* namespace js */
 

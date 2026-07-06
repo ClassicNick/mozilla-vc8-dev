@@ -1392,7 +1392,10 @@ MmsService.prototype = {
             "content-type": {
               "media": "application/smil",
               "params": {
-                "name": "smil.xml"
+                "name": "smil.xml",
+                "charset": {
+                  "charset": "utf-8"
+                }
               }
             },
             "content-length": smil.length,
@@ -1409,13 +1412,22 @@ MmsService.prototype = {
         let attachment = attachments[i];
         let content = attachment.content;
         let location = attachment.location;
+
+        let params = {
+          "name": location
+        };
+
+        if (content.type && content.type.indexOf("text/") == 0) {
+          params.charset = {
+            "charset": "utf-8"
+          };
+        }
+
         let part = {
           "headers": {
             "content-type": {
               "media": content.type,
-              "params": {
-                "name": location
-              }
+              "params": params
             },
             "content-length": content.size,
             "content-location": location,
@@ -1442,7 +1454,7 @@ MmsService.prototype = {
   send: function send(aParams, aRequest) {
     if (DEBUG) debug("send: aParams: " + JSON.stringify(aParams));
     if (aParams.receivers.length == 0) {
-      aRequest.notifySendMmsMessageFailed(Ci.nsIMobileMessageCallback.INTERNAL_ERROR);
+      aRequest.notifySendMessageFailed(Ci.nsIMobileMessageCallback.INTERNAL_ERROR);
       return;
     }
 
@@ -1485,14 +1497,14 @@ MmsService.prototype = {
       if (DEBUG) debug("Saving sending message is done. Start to send.");
 
       // For radio disabled error.
-      if(gMmsConnection.radioDisabled) {
+      if (gMmsConnection.radioDisabled) {
         if (DEBUG) debug("Error! Radio is disabled when sending MMS.");
         sendTransactionCb(aDomMessage.id, Ci.nsIMobileMessageCallback.RADIO_DISABLED_ERROR);
         return;
       }
 
       // For SIM card is not ready.
-      if(gRIL.rilContext.cardState != "ready") {
+      if (gRIL.rilContext.cardState != "ready") {
         if (DEBUG) debug("Error! SIM card is not ready when sending MMS.");
         sendTransactionCb(aDomMessage.id, Ci.nsIMobileMessageCallback.NO_SIM_CARD_ERROR);
         return;

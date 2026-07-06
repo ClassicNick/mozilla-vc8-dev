@@ -2028,15 +2028,9 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats &rtStats,
                   nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.regexpData,
                   "Memory used by the regexp JIT to hold data.");
 
-    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/stack"),
-                  nsIMemoryReporter::KIND_NONHEAP, rtStats.runtime.stack,
-                  "Memory used for the JS call stack.  This is the committed "
-                  "portion of the stack on Windows; on *nix, it is the resident "
-                  "portion of the stack.  Therefore, on *nix, if part of the "
-                  "stack is swapped out to disk, we do not count it here.\n\n"
-                  "Note that debug builds usually have stack poisoning enabled, "
-                  "which causes the whole stack to be committed (and likely "
-                  "resident).");
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/interpreter-stack"),
+                  nsIMemoryReporter::KIND_HEAP, rtStats.runtime.interpreterStack,
+                  "Memory used for JS interpreter frames.");
 
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/gc-marker"),
                   nsIMemoryReporter::KIND_HEAP, rtStats.runtime.gcMarker,
@@ -2537,7 +2531,7 @@ PreserveWrapper(JSContext *cx, JSObject *objArg)
 
     // For pre-Paris DOM bindings objects, we only support Node.
     if (nsCOMPtr<nsINode> node = do_QueryInterface(supports)) {
-        nsContentUtils::PreserveWrapper(supports, node);
+        node->PreserveWrapper(supports);
         return true;
     }
     return false;

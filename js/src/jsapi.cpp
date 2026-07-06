@@ -963,9 +963,6 @@ JSRuntime::init(uint32_t maxbytes)
 
     dateTimeInfo.updateTimeZoneAdjustment();
 
-    if (!stackSpace.init())
-        return false;
-
     if (!scriptDataTable.init())
         return false;
 
@@ -1142,8 +1139,6 @@ JS_NewRuntime(uint32_t maxbytes, JSUseHelperThreads useHelperThreads)
 #include "js.msg"
 #undef MSG_DEF
 #endif /* DEBUG */
-
-        InitMemorySubsystem();
 
         if (!js::TlsPerThreadData.init())
             return NULL;
@@ -5784,8 +5779,8 @@ JS_New(JSContext *cx, JSObject *ctorArg, unsigned argc, jsval *argv)
     // is not a simple variation of JSOP_CALL. We have to determine what class
     // of object to create, create it, and clamp the return value to an object,
     // among other details. InvokeConstructor does the hard work.
-    InvokeArgsGuard args;
-    if (!cx->stack.pushInvokeArgs(cx, argc, &args))
+    InvokeArgs args(cx);
+    if (!args.init(argc))
         return NULL;
 
     args.setCallee(ObjectValue(*ctor));
@@ -6995,6 +6990,33 @@ JS_SetParallelCompilationEnabled(JSContext *cx, bool enabled)
 {
 #ifdef JS_ION
     ion::js_IonOptions.parallelCompilation = enabled;
+#endif
+}
+
+JS_PUBLIC_API(void)
+JS_SetGlobalCompilerOption(JSContext *cx, JSCompilerOption opt, uint32_t value)
+{
+#ifdef JS_ION
+    ion::IonOptions defaultValues;
+
+    switch (opt) {
+      case JSCOMPILER_BASELINE_USECOUNT_TRIGGER:
+        if (value == uint32_t(-1))
+            value = defaultValues.baselineUsesBeforeCompile;
+        ion::js_IonOptions.baselineUsesBeforeCompile = value;
+        break;
+      case JSCOMPILER_ION_USECOUNT_TRIGGER:
+        if (value == uint32_t(-1))
+            value = defaultValues.usesBeforeCompile;
+        ion::js_IonOptions.usesBeforeCompile = value;
+        ion::js_IonOptions.eagerCompilation = (value == 0);
+        break;
+      case JSCOMPILER_PJS_ENABLE:
+        if (value == uint32_t(-1))
+            value = uint32_t(defaultValues.parallelCompilation);
+        ion::js_IonOptions.parallelCompilation = bool(value);
+        break;
+    }
 #endif
 }
 

@@ -37,9 +37,7 @@ xpc_OkToHandOutWrapper(nsWrapperCache *cache)
     NS_ABORT_IF_FALSE(cache->GetWrapper(), "Must have wrapper");
     NS_ABORT_IF_FALSE(IS_WN_REFLECTOR(cache->GetWrapper()),
                       "Must have XPCWrappedNative wrapper");
-    return
-        !static_cast<XPCWrappedNative*>(xpc_GetJSPrivate(cache->GetWrapper()))->
-            NeedsSOW();
+    return !XPCWrappedNative::Get(cache->GetWrapper())->NeedsSOW();
 }
 
 /***************************************************************************/
@@ -532,7 +530,7 @@ XPCWrappedNative::GetNewOrUsed(xpcObjectHelper& helper,
         if (cache) {
             RootedObject cached(cx, cache->GetWrapper());
             if (cached)
-                wrapper = static_cast<XPCWrappedNative*>(xpc_GetJSPrivate(cached));
+                wrapper = XPCWrappedNative::Get(cached);
         } else {
             // scoped lock
             XPCAutoLock lock(mapLock);
@@ -713,7 +711,7 @@ XPCWrappedNative::GetUsedOnly(nsISupports* Object,
     AutoJSContext cx;
     NS_ASSERTION(Object, "XPCWrappedNative::GetUsedOnly was called with a null Object");
 
-    XPCWrappedNative* wrapper;
+    nsRefPtr<XPCWrappedNative> wrapper;
     nsWrapperCache* cache = nullptr;
     CallQueryInterface(Object, &cache);
     if (cache) {
@@ -722,8 +720,7 @@ XPCWrappedNative::GetUsedOnly(nsISupports* Object,
             *resultWrapper = nullptr;
             return NS_OK;
         }
-        wrapper = static_cast<XPCWrappedNative*>(xpc_GetJSPrivate(flat));
-        NS_ADDREF(wrapper);
+        wrapper = XPCWrappedNative::Get(flat);
     } else {
         nsCOMPtr<nsISupports> identity = do_QueryInterface(Object);
 
@@ -741,18 +738,16 @@ XPCWrappedNative::GetUsedOnly(nsISupports* Object,
                 *resultWrapper = nullptr;
                 return NS_OK;
             }
-            NS_ADDREF(wrapper);
         }
     }
 
     nsresult rv;
     if (Interface && !wrapper->FindTearOff(Interface, false, &rv)) {
-        NS_RELEASE(wrapper);
         NS_ASSERTION(NS_FAILED(rv), "returning NS_OK on failure");
         return rv;
     }
 
-    *resultWrapper = wrapper;
+    wrapper.forget(resultWrapper);
     return NS_OK;
 }
 
@@ -1321,7 +1316,7 @@ XPCWrappedNative::ReparentWrapperIfFound(XPCWrappedNativeScope* aOldScope,
     if (cache) {
         flat = cache->GetWrapper();
         if (flat) {
-            wrapper = static_cast<XPCWrappedNative*>(xpc_GetJSPrivate(flat));
+            wrapper = XPCWrappedNative::Get(flat);
             NS_ASSERTION(wrapper->GetScope() == aOldScope,
                          "Incorrect scope passed");
         }
