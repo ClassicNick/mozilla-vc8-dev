@@ -1911,7 +1911,9 @@ DisassembleScript(JSContext *cx, HandleScript script, HandleFunction fun, bool l
                 RootedFunction f(cx, obj->toFunction());
                 RootedScript script(cx);
                 JSFunction::maybeGetOrCreateScript(cx, f, &script);
-                if (!DisassembleScript(cx, script, fun, lines, recursive, sp))
+                if (!script)
+                    Sprint(sp, "[native code]\n");
+                else if (!DisassembleScript(cx, script, fun, lines, recursive, sp))
                     return false;
             }
         }
@@ -3178,8 +3180,6 @@ Parse(JSContext *cx, unsigned argc, jsval *vp)
                                     JS_GetStringCharsZ(cx, scriptContents),
                                     JS_GetStringLength(scriptContents),
                                     /* foldConstants = */ true, NULL, NULL);
-    if (!parser.init())
-        return false;
 
     ParseNode *pn = parser.parse(NULL);
     if (!pn)
@@ -3218,8 +3218,6 @@ SyntaxParse(JSContext *cx, unsigned argc, jsval *vp)
     const jschar *chars = JS_GetStringCharsZ(cx, scriptContents);
     size_t length = JS_GetStringLength(scriptContents);
     Parser<frontend::SyntaxParseHandler> parser(cx, options, chars, length, false, NULL, NULL);
-    if (!parser.init())
-        return false;
 
     bool succeeded = parser.parse(NULL);
     if (cx->isExceptionPending())
@@ -3571,7 +3569,7 @@ GetSelfHostedValue(JSContext *cx, unsigned argc, jsval *vp)
                              "getSelfHostedValue");
         return false;
     }
-    RootedAtom srcAtom(cx, ToAtom<CanGC>(cx, args[0]));
+    RootedAtom srcAtom(cx, ToAtom<CanGC>(cx, args.handleAt(0)));
     if (!srcAtom)
         return false;
     RootedPropertyName srcName(cx, srcAtom->asPropertyName());
@@ -5330,6 +5328,7 @@ main(int argc, char **argv, char **envp)
     }
 
     op.setArgTerminatesOptions("script", true);
+    op.setArgCapturesRest("scriptArgs");
 
     switch (op.parseArgs(argc, argv)) {
       case OptionParser::ParseHelp:

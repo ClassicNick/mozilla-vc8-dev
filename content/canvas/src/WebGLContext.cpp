@@ -16,6 +16,7 @@
 #include "nsIXPConnect.h"
 #include "nsError.h"
 #include "nsIGfxInfo.h"
+#include "nsIWidget.h"
 
 #include "nsIPropertyBag.h"
 #include "nsIVariant.h"
@@ -48,6 +49,10 @@
 #include "mozilla/ProcessPriorityManager.h"
 
 #include "Layers.h"
+
+#ifdef MOZ_WIDGET_GONK
+#include "mozilla/layers/ShadowLayers.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -189,6 +194,12 @@ WebGLContext::WebGLContext()
 
     mAlreadyGeneratedWarnings = 0;
     mAlreadyWarnedAboutFakeVertexAttrib0 = false;
+    mMaxWarnings = Preferences::GetInt("webgl.max-warnings-per-context", 32);
+    if (mMaxWarnings < -1)
+    {
+        GenerateWarning("webgl.max-warnings-per-context size is too large (seems like a negative value wrapped)");
+        mMaxWarnings = 0;
+    }
 
     mLastUseIndex = 0;
 
@@ -457,6 +468,20 @@ WebGLContext::SetDimensions(int32_t width, int32_t height)
 
     caps.preserve = mOptions.preserveDrawingBuffer;
 
+#ifdef MOZ_WIDGET_GONK
+    nsIWidget *docWidget = nsContentUtils::WidgetForDocument(mCanvasElement->OwnerDoc());
+    if (docWidget) {
+        layers::LayerManager *layerManager = docWidget->GetLayerManager();
+        if (layerManager) {
+            // XXX we really want "AsSurfaceAllocator" here for generality
+            layers::ShadowLayerForwarder *forwarder = layerManager->AsShadowForwarder();
+            if (forwarder) {
+                caps.surfaceAllocator = static_cast<layers::ISurfaceAllocator*>(forwarder);
+            }
+        }
+    }
+#endif
+
     bool forceMSAA =
         Preferences::GetBool("webgl.msaa-force", false);
 
@@ -596,7 +621,8 @@ WebGLContext::Render(gfxContext *ctx, gfxPattern::GraphicsFilter f, uint32_t aFl
     if (surf->CairoStatus() != 0)
         return NS_ERROR_FAILURE;
 
-    gl->ReadPixelsIntoImageSurface(surf);
+    gl->MakeCurrent();
+    gl->ReadScreenIntoImageSurface(surf);
 
     bool srcPremultAlpha = mOptions.premultipliedAlpha;
     bool dstPremultAlpha = aFlags & RenderFlagPremultAlpha;

@@ -781,6 +781,12 @@ template bool
 js::XDRScript(XDRState<XDR_DECODE> *, HandleObject, HandleScript, HandleFunction,
               MutableHandleScript);
 
+js::ScriptSourceObject *
+JSScript::sourceObject() const
+{
+    return &sourceObject_->asScriptSource();
+}
+
 bool
 JSScript::initScriptCounts(JSContext *cx)
 {
@@ -893,6 +899,16 @@ JSScript::destroyScriptCounts(FreeOp *fop)
         ScriptCounts scriptCounts = releaseScriptCounts();
         scriptCounts.destroy(fop);
     }
+}
+
+void
+ScriptSourceObject::setSource(ScriptSource *source)
+{
+    if (source)
+        source->incref();
+    if (this->source())
+        this->source()->decref();
+    setReservedSlot(SOURCE_SLOT, PrivateValue(source));
 }
 
 void
@@ -1146,12 +1162,6 @@ ScriptSource::adjustDataSize(size_t nbytes)
         js_free(data.compressed);
     data.compressed = static_cast<unsigned char *>(buf);
     return !!data.compressed;
-}
-
-void
-JSScript::setSourceObject(js::ScriptSourceObject *sourceObject)
-{
-    sourceObject_ = sourceObject;
 }
 
 /* static */ bool
@@ -1663,7 +1673,11 @@ ScriptDataSize(uint32_t nbindings, uint32_t nobjects, uint32_t nregexps,
     if (ntrynotes != 0)
         size += sizeof(TryNoteArray) + ntrynotes * sizeof(JSTryNote);
 
-    size += nbindings * sizeof(Binding);
+    if (nbindings != 0) {
+	// Make sure bindings are sufficiently aligned.
+        size = JS_ROUNDUP(size, JS_ALIGNMENT_OF(Binding)) + nbindings * sizeof(Binding);
+    }
+
     return size;
 }
 
@@ -1713,7 +1727,7 @@ JSScript::Create(JSContext *cx, HandleObject enclosingScope, bool savedCallerFun
     }
     script->staticLevel = uint16_t(staticLevel);
 
-    script->setSourceObject(sourceObject);
+    script->sourceObject_ = sourceObject;
     script->sourceStart = bufStart;
     script->sourceEnd = bufEnd;
 
@@ -1792,6 +1806,11 @@ JSScript::partiallyInit(JSContext *cx, Handle<JSScript*> script, uint32_t nobjec
         cursor += vectorSize;
     }
 
+    if (script->bindings.count() != 0) {
+	// Make sure bindings are sufficiently aligned.
+	cursor = reinterpret_cast<uint8_t*>
+	    (JS_ROUNDUP(reinterpret_cast<uintptr_t>(cursor), JS_ALIGNMENT_OF(Binding)));
+    }
     cursor = script->bindings.switchToScriptStorage(reinterpret_cast<Binding *>(cursor));
 
     JS_ASSERT(cursor == script->data + size);
@@ -2301,18 +2320,23 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
                 clone = CloneStaticBlockObject(cx, enclosingScope, innerBlock);
             } else if (obj->isFunction()) {
                 RootedFunction innerFun(cx, obj->toFunction());
-                if (!innerFun->getOrCreateScript(cx))
-                    return NULL;
-                RootedObject staticScope(cx, innerFun->nonLazyScript()->enclosingStaticScope());
-                StaticScopeIter ssi(cx, staticScope);
-                RootedObject enclosingScope(cx);
-                if (!ssi.done() && ssi.type() == StaticScopeIter::BLOCK)
-                    enclosingScope = objects[FindBlockIndex(src, ssi.block())];
-                else
-                    enclosingScope = fun;
+                if (innerFun->isNative()) {
+                    assertSameCompartment(cx, innerFun);
+                    clone = innerFun;
+                } else {
+                    if (!innerFun->getOrCreateScript(cx))
+                        return NULL;
+                    RootedObject staticScope(cx, innerFun->nonLazyScript()->enclosingStaticScope());
+                    StaticScopeIter ssi(cx, staticScope);
+                    RootedObject enclosingScope(cx);
+                    if (!ssi.done() && ssi.type() == StaticScopeIter::BLOCK)
+                        enclosingScope = objects[FindBlockIndex(src, ssi.block())];
+                    else
+                        enclosingScope = fun;
 
-                clone = CloneInterpretedFunction(cx, enclosingScope, innerFun,
-                                                 src->selfHosted ? TenuredObject : newKind);
+                    clone = CloneInterpretedFunction(cx, enclosingScope, innerFun,
+                            src->selfHosted ? TenuredObject : newKind);
+                }
             } else {
                 /*
                  * Clone object literals emitted for the JSOP_NEWOBJECT opcode. We only emit that
