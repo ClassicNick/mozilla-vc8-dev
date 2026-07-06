@@ -1322,9 +1322,6 @@ HyperTextAccessible::NativeAttributes()
                                NS_LITERAL_STRING("contentinfo"));
       }
     }
-  } else if (tag == nsGkAtoms::footer) {
-    nsAccUtils::SetAccAttr(attributes, nsGkAtoms::xmlroles,
-                           NS_LITERAL_STRING("contentinfo"));
   } else if (tag == nsGkAtoms::aside) {
     nsAccUtils::SetAccAttr(attributes, nsGkAtoms::xmlroles,
                            NS_LITERAL_STRING("complementary"));

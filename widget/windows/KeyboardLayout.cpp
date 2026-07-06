@@ -1221,8 +1221,8 @@ NativeKey::DispatchKeyPressEventsWithKeyboardLayout(
   }
 
   uint32_t longestLength =
-    std::max(inputtingChars.mLength,
-             std::max(shiftedChars.mLength, unshiftedChars.mLength));
+    NS_MAX(inputtingChars.mLength,
+             NS_MAX(shiftedChars.mLength, unshiftedChars.mLength));
   uint32_t skipUniChars = longestLength - inputtingChars.mLength;
   uint32_t skipShiftedChars = longestLength - shiftedChars.mLength;
   uint32_t skipUnshiftedChars = longestLength - unshiftedChars.mLength;

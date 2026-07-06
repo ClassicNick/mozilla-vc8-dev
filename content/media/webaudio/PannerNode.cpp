@@ -72,6 +72,9 @@ public:
         case PanningModelType::HRTF:
           mPanningModelFunction = &PannerNodeEngine::HRTFPanningFunction;
           break;
+        default:
+          NS_NOTREACHED("We should never see the alternate names here");
+          break;
       }
       break;
     case PannerNode::DISTANCE_MODEL:
@@ -85,6 +88,9 @@ public:
           break;
         case DistanceModelType::Exponential:
           mDistanceModelFunction = &PannerNodeEngine::ExponentialGainFunction;
+          break;
+        default:
+          NS_NOTREACHED("We should never see the alternate names here");
           break;
       }
       break;

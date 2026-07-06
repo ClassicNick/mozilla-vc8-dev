@@ -76,10 +76,19 @@ elif CONFIG['OS_TARGET'] == 'Linux':
         CPP_SOURCES += [
             'FallbackBattery.cpp'
         ]
-elif CONFIG['OS_TARGET'] == 'WINNT':
+elif CONFIG['MOZ_WINSDK_TARGETVER'] >= '06010000':
     CPP_SOURCES += [
         'WindowsBattery.cpp',
         'WindowsSensor.cpp',
+        'FallbackVibration.cpp',
+        'FallbackScreenConfiguration.cpp',
+        'FallbackPower.cpp',
+        'FallbackAlarm.cpp',
+    ]
+elif CONFIG['MOZ_WINSDK_TARGETVER'] < '06010000':
+    CPP_SOURCES += [
+        'WindowsBattery.cpp',
+        'FallbackSensor.cpp',
         'FallbackVibration.cpp',
         'FallbackScreenConfiguration.cpp',
         'FallbackPower.cpp',

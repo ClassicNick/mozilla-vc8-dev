@@ -38,16 +38,16 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     ]
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     CPP_SOURCES += [
+        'ScaledFontWin.cpp',
+    ]
+elif CONFIG['WIN32_D2D_SURFACE_FEATURE']:
+    CPP_SOURCES += [
         'DrawTargetD2D.cpp',
-        'SourceSurfaceD2D.cpp',
-        'SourceSurfaceD2DTarget.cpp',
         'PathD2D.cpp',
         'ScaledFontDWrite.cpp',
+        'SourceSurfaceD2D.cpp',
+        'SourceSurfaceD2DTarget.cpp',
     ]
-    if CONFIG['MOZ_ENABLE_SKIA']:
-        CPP_SOURCES += [
-            'ScaledFontWin.cpp',
-        ]
 
 if CONFIG['MOZ_ENABLE_SKIA']:
     CPP_SOURCES += [
@@ -66,7 +66,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('android', 'gtk2', 'gonk', 'qt'):
 # Are we targeting x86 or x64?  If so, build SSE2 files.
 if CONFIG['INTEL_ARCHITECTURE']:
     # VC2005 doesn't support _mm_castsi128_ps, so SSE2 is turned off
-    if CONFIG['_MSC_VER'] != '1400':
+    if CONFIG['_MSC_VER'] >= '1500':
         CPP_SOURCES += [
             'ImageScalingSSE2.cpp',
             'BlurSSE2.cpp',

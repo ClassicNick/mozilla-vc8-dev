@@ -1951,7 +1951,7 @@ gdk_window_flash(GdkWindow *    aGdkWindow,
                          &x,
                          &y);
 
-  gc = gdk_gc_new(GDK_ROOT_PARENT());
+  gc = gdk_gc_new(gdk_get_default_root_window());
 
   white.pixel = WhitePixel(gdk_display,DefaultScreen(gdk_display));
 
@@ -1968,7 +1968,7 @@ gdk_window_flash(GdkWindow *    aGdkWindow,
    */
   for (i = 0; i < aTimes * 2; i++)
   {
-    gdk_draw_rectangle(GDK_ROOT_PARENT(),
+    gdk_draw_rectangle(gdk_get_default_root_window(),
                        gc,
                        TRUE,
                        x,
@@ -3712,8 +3712,10 @@ nsWindow::Create(nsIWidget        *aParent,
     }
 
     if (eventWidget) {
+#if defined(MOZ_WIDGET_GTK2)
         // Don't let GTK mess with the shapes of our GdkWindows
         GTK_PRIVATE_SET_FLAG(eventWidget, GTK_HAS_SHAPE_MASK);
+#endif
 
         // These events are sent to the owning widget of the relevant window
         // and propagate up to the first widget that handles the events, so we

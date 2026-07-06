@@ -1540,6 +1540,35 @@ nsDOMWindowUtils::GetScrollbarSize(bool aFlushLayout, int32_t* aWidth,
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetBoundsWithoutFlushing(nsIDOMElement *aElement,
+                                           nsIDOMClientRect** aResult)
+{
+  if (!nsContentUtils::IsCallerChrome()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
+  nsCOMPtr<nsPIDOMWindow> window = do_QueryReferent(mWindow);
+  NS_ENSURE_STATE(window);
+
+  nsresult rv;
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aElement, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsRefPtr<nsClientRect> rect = new nsClientRect(window);
+  nsIFrame* frame = content->GetPrimaryFrame();
+
+  if (frame) {
+    nsRect r = nsLayoutUtils::GetAllInFlowRectsUnion(frame,
+               nsLayoutUtils::GetContainingBlockForClientRect(frame),
+               nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
+    rect->SetLayoutRect(r);
+  }
+
+  rect.forget(aResult);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetRootBounds(nsIDOMClientRect** aResult)
 {
   if (!nsContentUtils::IsCallerChrome()) {
@@ -3381,7 +3410,7 @@ nsDOMWindowUtils::GetOMTAOrComputedStyle(nsIDOMNode* aNode,
 
   nsRefPtr<nsROCSSPrimitiveValue> cssValue = nullptr;
   nsIFrame* frame = element->GetPrimaryFrame();
-  if (frame) {
+  if (frame && nsLayoutUtils::AreAsyncAnimationsEnabled()) {
     if (aProperty.EqualsLiteral("opacity")) {
       Layer* layer = FrameLayerBuilder::GetDedicatedLayer(frame, nsDisplayItem::TYPE_OPACITY);
       if (layer) {

@@ -23,8 +23,10 @@
 // to manually include it
 #include <mmsystem.h>
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #include <dwmapi.h>
 typedef HRESULT (WINAPI*DwmGetCompositionTimingInfoProc)(HWND hWnd, DWM_TIMING_INFO *info);
+#endif
 #endif
 
 #include "mozilla/Util.h"
@@ -303,7 +305,7 @@ protected:
   }
 };
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 /*
  * Uses vsync timing on windows with DWM. Falls back dynamically to fixed rate if required.
  * - Call LoadDll() before usage and UnloadDll() when done (static, nesting unsupported)
@@ -602,7 +604,7 @@ GetFirstFrameDelay(imgIRequest* req)
 static PreciseRefreshDriverTimer *sRegularRateTimer = nullptr;
 static InactiveRefreshDriverTimer *sThrottledRateTimer = nullptr;
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 static int32_t sHighPrecisionTimerRequests = 0;
 // a bare pointer to avoid introducing a static constructor
 static nsITimer *sDisableHighPrecisionTimersTimer = nullptr;
@@ -611,7 +613,7 @@ static nsITimer *sDisableHighPrecisionTimersTimer = nullptr;
 /* static */ void
 nsRefreshDriver::InitializeStatics()
 {
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   PreciseRefreshDriverTimerWindowsDwmVsync::LoadDll();
 #endif
 
@@ -632,7 +634,7 @@ nsRefreshDriver::Shutdown()
   sRegularRateTimer = nullptr;
   sThrottledRateTimer = nullptr;
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   PreciseRefreshDriverTimerWindowsDwmVsync::UnloadDll();
 
   if (sDisableHighPrecisionTimersTimer) {
@@ -700,7 +702,7 @@ nsRefreshDriver::ChooseTimer() const
   if (!sRegularRateTimer) {
     bool isDefault = true;
     double rate = GetRegularTimerInterval(&isDefault);
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (PreciseRefreshDriverTimerWindowsDwmVsync::IsSupported()) {
       sRegularRateTimer = new PreciseRefreshDriverTimerWindowsDwmVsync(rate, isDefault);
     }
@@ -890,7 +892,7 @@ nsRefreshDriver::StopTimer()
   }
 }
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 static void
 DisableHighPrecisionTimersCallback(nsITimer *aTimer, void *aClosure)
 {
@@ -920,7 +922,7 @@ nsRefreshDriver::SetHighPrecisionTimersEnabled(bool aEnable)
 
   if (aEnable) {
     NS_ASSERTION(!mRequestedHighPrecision, "SetHighPrecisionTimersEnabled(true) called when already requested!");
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (++sHighPrecisionTimerRequests == 1) {
       // If we had a timer scheduled to disable it, that means that it's already
       // enabled; just cancel the timer.  Otherwise, really enable it.
@@ -935,7 +937,7 @@ nsRefreshDriver::SetHighPrecisionTimersEnabled(bool aEnable)
     mRequestedHighPrecision = true;
   } else {
     NS_ASSERTION(mRequestedHighPrecision, "SetHighPrecisionTimersEnabled(false) called when not requested!");
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (--sHighPrecisionTimerRequests == 0) {
       // Don't jerk us around between high precision and low precision
       // timers; instead, only allow leaving high precision timers

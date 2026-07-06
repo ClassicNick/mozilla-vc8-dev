@@ -885,6 +885,9 @@ ScanBaseShape(GCMarker *gcmarker, BaseShape *base)
         PushMarkStack(gcmarker, global);
     }
 
+    if (JSObject *metadata = base->getObjectMetadata())
+        PushMarkStack(gcmarker, metadata);
+
     /*
      * All children of the owned base shape are consistent with its
      * unowned one, thus we do not need to trace through children of the
@@ -1204,7 +1207,7 @@ struct SlotArrayLayout
 {
     union {
         HeapSlot *end;
-        HeapSlot::Kind kind;
+        uintptr_t kind;
     };
     union {
         HeapSlot *start;

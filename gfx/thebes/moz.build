@@ -222,7 +222,7 @@ elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         ]
 
 # Are we targeting x86 or x64?  If so, build gfxAlphaRecoverySSE2.cpp.
-if CONFIG['INTEL_ARCHITECTURE']:
+if CONFIG['COMPILE_SSE2_SRCS']:
     CPP_SOURCES += [
         'gfxAlphaRecoverySSE2.cpp',
     ]

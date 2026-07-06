@@ -43,9 +43,6 @@ EXPORTS += [
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
-    CPP_SOURCES += [
-        'D3D9SurfaceImage.cpp',
-    ]
     if CONFIG['MOZ_ENABLE_D3D9_LAYER']:
         EXPORTS += [
             'D3D9SurfaceImage.h',
@@ -53,6 +50,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
             'LayerManagerD3D9.h',
         ]
         CPP_SOURCES += [
+			'D3D9SurfaceImage.cpp',
             'LayerManagerD3D9.cpp',
             'ThebesLayerD3D9.cpp',
             'ContainerLayerD3D9.cpp',
