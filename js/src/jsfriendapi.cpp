@@ -13,6 +13,7 @@
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsgc.h"
+#include "jsobj.h"
 #include "jswrapper.h"
 #include "jsweakmap.h"
 #include "jswatchpoint.h"
@@ -1093,7 +1094,7 @@ js_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg,
     if (descriptor.attrs & JSPROP_SETTER)
         assertSameCompartment(cx, CastAsObjectJsval(descriptor.setter));
 
-    return js_DefineOwnProperty(cx, HandleObject(obj), id, descriptor, bp);
+    return DefineOwnProperty(cx, HandleObject(obj), id, descriptor, bp);
 }
 
 JS_FRIEND_API(JSBool)

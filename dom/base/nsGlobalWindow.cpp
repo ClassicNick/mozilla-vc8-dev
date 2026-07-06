@@ -4067,8 +4067,13 @@ nsGlobalWindow::GetInnerWidth(int32_t* aInnerWidth)
 
   nsRefPtr<nsPresContext> presContext;
   mDocShell->GetPresContext(getter_AddRefs(presContext));
+  nsRefPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
 
-  if (presContext) {
+  if (presContext && presShell) {
+    nsRefPtr<nsViewManager> viewManager = presShell->GetViewManager();
+    if (viewManager) {
+      viewManager->FlushDelayedResize(false);
+    }
     nsRect shellArea = presContext->GetVisibleArea();
     *aInnerWidth = nsPresContext::AppUnitsToIntCSSPixels(shellArea.width);
   } else {
@@ -4135,8 +4140,13 @@ nsGlobalWindow::GetInnerHeight(int32_t* aInnerHeight)
 
   nsRefPtr<nsPresContext> presContext;
   mDocShell->GetPresContext(getter_AddRefs(presContext));
+  nsRefPtr<nsIPresShell> presShell = mDocShell->GetPresShell();
 
-  if (presContext) {
+  if (presContext && presShell) {
+    nsRefPtr<nsViewManager> viewManager = presShell->GetViewManager();
+    if (viewManager) {
+      viewManager->FlushDelayedResize(false);
+    }
     nsRect shellArea = presContext->GetVisibleArea();
     *aInnerHeight = nsPresContext::AppUnitsToIntCSSPixels(shellArea.height);
   } else {

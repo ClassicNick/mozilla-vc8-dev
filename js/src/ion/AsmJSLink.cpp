@@ -23,8 +23,6 @@ using namespace js;
 using namespace js::ion;
 using namespace mozilla;
 
-#ifdef JS_ASMJS
-
 static bool
 LinkFail(JSContext *cx, const char *str)
 {
@@ -332,6 +330,8 @@ js::CallAsmJS(JSContext *cx, unsigned argc, Value *vp)
 
     {
         AsmJSActivation activation(cx, module);
+        ion::IonContext ictx(cx, NULL);
+        JitActivation jitActivation(cx, /* firstFrameIsConstructing = */ false, /* active */ false);
 
         // Call into generated code.
 #ifdef JS_CPU_ARM
@@ -389,7 +389,8 @@ HandleDynamicLinkFailure(JSContext *cx, CallArgs args, AsmJSModule &module, Hand
     const jschar *chars = src->chars().get();
 
     RootedFunction fun(cx, NewFunction(cx, NullPtr(), NULL, 0, JSFunction::INTERPRETED,
-                                       cx->global(), name));
+                                       cx->global(), name, JSFunction::FinalizeKind,
+                                       TenuredObject));
     if (!fun)
         return false;
 
@@ -527,5 +528,3 @@ js::IsAsmJSModuleNative(js::Native native)
 {
     return native == LinkAsmJS;
 }
-
-#endif  // defined(JS_ASMJS)

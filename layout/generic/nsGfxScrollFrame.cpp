@@ -1845,13 +1845,11 @@ ClampAndAlignWithPixels(nscoord aDesired,
   // Use a bound if it is within the allowed range and closer to desired than
   // the nearest pixel-aligned value.
   if (aBoundUpper == destUpper &&
-      static_cast<decltype(Abs(desired))>(aBoundUpper - desired) <
-      Abs(desired - aligned))
+      ((aBoundUpper - desired) < Abs(desired - aligned) || aBoundUpper - desired < 0) )
     return aBoundUpper;
 
   if (aBoundLower == destLower &&
-      static_cast<decltype(Abs(desired))>(desired - aBoundLower) <
-      Abs(aligned - desired))
+      ((desired - aBoundLower) < Abs(aligned - desired) || desired - aBoundLower < 0) )
     return aBoundLower;
 
   // Accept the nearest pixel-aligned value if it is within the allowed range. 

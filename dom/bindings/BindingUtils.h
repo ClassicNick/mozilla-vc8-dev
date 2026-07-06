@@ -535,29 +535,24 @@ MaybeWrapValue(JSContext* cx, JS::MutableHandle<JS::Value> rval)
     return true;
   }
 
-  if (rval.isObject()) {
-    JSObject* obj = &rval.toObject();
-    if (js::GetObjectCompartment(obj) != js::GetContextCompartment(cx)) {
-      return JS_WrapValue(cx, rval.address());
-    }
-
-    // We're same-compartment, but even then we might need to wrap
-    // objects specially.  Check for that.
-    if (GetSameCompartmentWrapperForDOMBinding(obj)) {
-      // We're a new-binding object, and "obj" now points to the right thing
-      rval.set(JS::ObjectValue(*obj));
-      return true;
-    }
-
-    if (!IS_SLIM_WRAPPER(obj)) {
-      // We might need a SOW
-      return JS_WrapValue(cx, rval.address());
-    }
-
-    // Fall through to returning true
+  if (!rval.isObject()) {
+    return true;
   }
 
-  return true;
+  JSObject* obj = &rval.toObject();
+  if (js::GetObjectCompartment(obj) != js::GetContextCompartment(cx)) {
+    return JS_WrapValue(cx, rval.address());
+  }
+
+  // We're same-compartment, but even then we might need to wrap
+  // objects specially.  Check for that.
+  if (GetSameCompartmentWrapperForDOMBinding(obj)) {
+    // We're a new-binding object, and "obj" now points to the right thing
+    rval.set(JS::ObjectValue(*obj));
+    return true;
+  }
+
+  return JS_WrapValue(cx, rval.address());
 }
 
 static inline void
@@ -642,7 +637,7 @@ WrapNewBindingObject(JSContext* cx, JS::Handle<JSObject*> scope, T* value,
   }
 
   rval.set(JS::ObjectValue(*obj));
-  return (sameCompartment && IS_SLIM_WRAPPER(obj)) || JS_WrapValue(cx, rval.address());
+  return JS_WrapValue(cx, rval.address());
 }
 
 // Create a JSObject wrapping "value", for cases when "value" is a
@@ -1582,6 +1577,11 @@ ConvertJSValueToString(JSContext* cx, JS::Handle<JS::Value> v,
   return true;
 }
 
+bool
+ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
+                           JS::MutableHandle<JS::Value> pval, bool nullable,
+                           nsACString& result);
+
 // Class for holding the type of members of a union. The union type has an enum
 // to keep track of which of its UnionMembers has been constructed.
 template<class T>
@@ -2056,6 +2056,24 @@ ConstructJSImplementation(JSContext* aCx, const char* aContractId,
 bool
 RegisterForDeferredFinalization(DeferredFinalizeStartFunction start,
                                 DeferredFinalizeFunction run);
+
+/**
+ * Convert an nsCString to jsval, returning true on success.
+ * These functions are intended for ByteString implementations.
+ * As such, the string is not UTF-8 encoded.  Any UTF8 strings passed to these
+ * methods will be mangled.
+ */
+bool NonVoidByteStringToJsval(JSContext *cx, const nsACString &str,
+                              JS::MutableHandle<JS::Value> rval);
+inline bool ByteStringToJsval(JSContext *cx, const nsACString &str,
+                              JS::MutableHandle<JS::Value> rval)
+{
+    if (str.IsVoid()) {
+        rval.setNull();
+        return true;
+    }
+    return NonVoidByteStringToJsval(cx, str, rval);
+}
 
 } // namespace dom
 } // namespace mozilla

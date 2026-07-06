@@ -1675,7 +1675,7 @@ ReportZoneStats(const JS::ZoneStats &zStats,
                       "heap that holds references to executable code pools "
                       "used by the IonMonkey JIT.");
 
-    ZCREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("lazy-scripts"),
+    ZCREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("lazy-script-data"),
                    zStats.lazyScripts,
                    "Memory holding miscellaneous additional information associated with lazy "
                    "scripts.");
@@ -2321,7 +2321,7 @@ class XPCJSRuntimeStats : public JS::RuntimeStats
         }
 
         if (needZone)
-            extras->jsPathPrefix += nsPrintfCString("zone(%p)/", (void *)js::GetCompartmentZone(c));
+            extras->jsPathPrefix += nsPrintfCString("zone(0x%p)/", (void *)js::GetCompartmentZone(c));
 
         extras->jsPathPrefix += NS_LITERAL_CSTRING("compartment(") + cName + NS_LITERAL_CSTRING(")/");
 
@@ -2536,14 +2536,10 @@ PreserveWrapper(JSContext *cx, JSObject *objArg)
     if (!ccx.IsValid())
         return false;
 
-    if (!IS_WRAPPER_CLASS(js::GetObjectClass(obj)))
+    if (!IS_WN_REFLECTOR(obj))
         return mozilla::dom::TryPreserveWrapper(obj);
 
-    nsISupports *supports = nullptr;
-    if (IS_WN_WRAPPER_OBJECT(obj))
-        supports = XPCWrappedNative::Get(obj)->Native();
-    else
-        supports = static_cast<nsISupports*>(xpc_GetJSPrivate(obj));
+    nsISupports *supports = XPCWrappedNative::Get(obj)->Native();
 
     // For pre-Paris DOM bindings objects, we only support Node.
     if (nsCOMPtr<nsINode> node = do_QueryInterface(supports)) {

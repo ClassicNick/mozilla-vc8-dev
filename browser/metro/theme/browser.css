@@ -308,6 +308,12 @@ documenttab[selected] .documenttab-selection {
   padding: 0 !important;
 }
 
+#urlbar-edit :invalid {
+  /* Hide error glow around the address bar that shows by default
+   * when URLs are made invalid by trmming. */
+  box-shadow: none !important;
+}
+
 /* Combined stop-reload button */
 #tool-reload {
   list-style-image: url("chrome://browser/skin/images/reload.png");
@@ -1012,4 +1018,31 @@ setting[type="radio"] > vbox {
   margin-top: -30px;
   margin-left: -18px;
   pointer-events: auto;
+}
+
+/* :::::: autoscroll popup ::::: */
+
+.autoscroller {
+  height: 28px;
+  width: 28px;
+  border: none;
+  margin: -14px;
+  padding: 0;
+  background-image: url("chrome://browser/skin/images/autoscroll.png");
+  background-color: transparent;
+  position: fixed;
+  visibility: hidden;
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  background-clip: padding-box;
+  background-position: right top;
+  -moz-appearance: none;
+}
+
+.autoscroller[scrolldir="NS"] {
+  background-position: right center;
+}
+
+.autoscroller[scrolldir="EW"] {
+  background-position: right bottom;
 }

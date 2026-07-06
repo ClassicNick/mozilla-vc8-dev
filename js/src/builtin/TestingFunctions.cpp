@@ -11,12 +11,13 @@
 #include "jsfriendapi.h"
 #include "jsgc.h"
 #include "jsobj.h"
-#include "jsobjinlines.h"
 #include "jsprf.h"
 #include "jswrapper.h"
 
 #include "builtin/TestingFunctions.h"
 #include "vm/ForkJoin.h"
+
+#include "jsobjinlines.h"
 
 #include "vm/Stack-inl.h"
 
@@ -221,6 +222,20 @@ GC(JSContext *cx, unsigned argc, jsval *vp)
     if (!str)
         return false;
     *vp = STRING_TO_JSVAL(str);
+    return true;
+}
+
+static JSBool
+MinorGC(JSContext *cx, unsigned argc, jsval *vp)
+{
+#ifdef JSGC_GENERATIONAL
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.get(0) == BooleanValue(true))
+        cx->runtime()->gcStoreBuffer.setOverflowed();
+
+    MinorGC(cx->runtime(), gcreason::API);
+#endif
     return true;
 }
 
@@ -992,6 +1007,11 @@ static JSFunctionSpecWithHelp TestingFunctions[] = {
 "  Run the garbage collector. When obj is given, GC only its compartment.\n"
 "  If 'compartment' is given, GC any compartments that were scheduled for\n"
 "  GC via schedulegc."),
+
+    JS_FN_HELP("minorgc", ::MinorGC, 0, 0,
+"minorgc([overflow])",
+"  Run a minor collector on the Nursery. When overflow is true, marks the\n"
+"  store buffer as overflowed before collecting."),
 
     JS_FN_HELP("gcparam", GCParameter, 2, 0,
 "gcparam(name [, value])",

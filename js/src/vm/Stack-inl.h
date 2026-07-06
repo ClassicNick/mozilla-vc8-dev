@@ -441,19 +441,6 @@ AbstractFramePtr::setReturnValue(const Value &rval) const
 #endif
 }
 
-inline bool
-AbstractFramePtr::hasPushedSPSFrame() const
-{
-    if (isStackFrame())
-        return asStackFrame()->hasPushedSPSFrame();
-#ifdef JS_ION
-    return asBaselineFrame()->hasPushedSPSFrame();
-#else
-    JS_NOT_REACHED("Invalid frame");
-    return false;
-#endif
-}
-
 inline JSObject *
 AbstractFramePtr::scopeChain() const
 {
@@ -876,10 +863,11 @@ AbstractFramePtr::popWith(JSContext *cx) const
         JS_NOT_REACHED("Invalid frame");
 }
 
-Activation::Activation(JSContext *cx, Kind kind)
+Activation::Activation(JSContext *cx, Kind kind, bool active)
   : cx_(cx),
     compartment_(cx->compartment()),
     prev_(cx->mainThread().activation_),
+    active_(active),
     savedFrameChain_(0),
     kind_(kind)
 {

@@ -999,8 +999,8 @@ js::DefineProperty(JSContext *cx, HandleObject obj, HandleId id, const PropDesc 
 }
 
 JSBool
-js_DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id, const Value &descriptor,
-                     JSBool *bp)
+js::DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id, HandleValue descriptor,
+                      JSBool *bp)
 {
     AutoPropDescArrayRooter descs(cx);
     PropDesc *desc = descs.append();
@@ -1015,8 +1015,8 @@ js_DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id, const Value &
 }
 
 JSBool
-js_DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id,
-                     const PropertyDescriptor &descriptor, JSBool *bp)
+js::DefineOwnProperty(JSContext *cx, HandleObject obj, HandleId id,
+                      const PropertyDescriptor &descriptor, JSBool *bp)
 {
     AutoPropDescArrayRooter descs(cx);
     PropDesc *desc = descs.append();
@@ -1222,6 +1222,8 @@ JSObject::isSealedOrFrozen(JSContext *cx, HandleObject obj, ImmutabilityType it,
 const char *
 JSObject::className(JSContext *cx, HandleObject obj)
 {
+    assertSameCompartment(cx, obj);
+
     if (obj->isProxy())
         return Proxy::className(cx, obj);
 
@@ -1279,6 +1281,15 @@ NewObject(JSContext *cx, Class *clasp, types::TypeObject *type_, JSObject *paren
 
     Probes::createObject(cx, obj);
     return obj;
+}
+
+void
+NewObjectCache::fillProto(EntryIndex entry, Class *clasp, js::TaggedProto proto,
+                          gc::AllocKind kind, JSObject *obj)
+{
+    JS_ASSERT_IF(proto.isObject(), !proto.toObject()->isGlobal());
+    JS_ASSERT(obj->getTaggedProto() == proto);
+    return fill(entry, clasp, proto.raw(), kind, obj);
 }
 
 JSObject *

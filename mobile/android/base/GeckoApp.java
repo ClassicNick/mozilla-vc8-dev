@@ -145,6 +145,7 @@ abstract public class GeckoApp
     public static final String ACTION_DEBUG         = "org.mozilla.gecko.DEBUG";
     public static final String ACTION_BOOKMARK      = "org.mozilla.gecko.BOOKMARK";
     public static final String ACTION_LOAD          = "org.mozilla.gecko.LOAD";
+    public static final String ACTION_LAUNCH_SETTINGS = "org.mozilla.gecko.SETTINGS";
     public static final String ACTION_INIT_PW       = "org.mozilla.gecko.INIT_PW";
     public static final String SAVED_STATE_IN_BACKGROUND = "inBackground";
     public static final String SAVED_STATE_PRIVATE_SESSION = "privateSession";
@@ -1434,6 +1435,14 @@ abstract public class GeckoApp
             }, 1000 * 5 /* 5 seconds */);
         }
 
+        // Check if launched from data reporting notification.
+        if (ACTION_LAUNCH_SETTINGS.equals(action)) {
+            Intent settingsIntent = new Intent(GeckoApp.sAppContext, GeckoPreferences.class);
+            // Copy extras.
+            settingsIntent.putExtras(intent);
+            startActivity(settingsIntent);
+        }
+
         //app state callbacks
         mAppStateListeners = new LinkedList<GeckoAppShell.AppStateListener>();
 
@@ -1524,10 +1533,12 @@ abstract public class GeckoApp
                 final Context context = GeckoApp.sAppContext;
                 AnnouncementsBroadcastService.recordLastLaunch(context);
 
-                // Kick off our background service to fetch product announcements.
-                // We do this by invoking the broadcast receiver, which uses the
-                // system alarm infrastructure to perform tasks at intervals.
+                // Kick off our background services that fetch product
+                // announcements and upload health reports.  We do this by
+                // invoking the broadcast receiver, which uses the system alarm
+                // infrastructure to perform tasks at intervals.
                 GeckoPreferences.broadcastAnnouncementsPref(context);
+                GeckoPreferences.broadcastHealthReportUploadPref(context);
 
                 /*
                   XXXX see bug 635342
@@ -1781,6 +1792,12 @@ abstract public class GeckoApp
             GeckoAppShell.sendEventToGecko(GeckoEvent.createURILoadEvent(uri));
         } else if (ACTION_ALERT_CALLBACK.equals(action)) {
             processAlertCallback(intent);
+        } if (ACTION_LAUNCH_SETTINGS.equals(action)) {
+            // Check if launched from data reporting notification.
+            Intent settingsIntent = new Intent(GeckoApp.sAppContext, GeckoPreferences.class);
+            // Copy extras.
+            settingsIntent.putExtras(intent);
+            startActivity(settingsIntent);
         }
     }
 

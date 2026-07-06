@@ -77,7 +77,6 @@
 
 #include "jsatominlines.h"
 #include "jsinferinlines.h"
-#include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
 #include "vm/Interpreter-inl.h"
@@ -4006,15 +4005,16 @@ JS_DefineUCPropertyWithTinyId(JSContext *cx, JSObject *objArg, const jschar *nam
 }
 
 JS_PUBLIC_API(JSBool)
-JS_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg, jsval descriptor, JSBool *bp)
+JS_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg, jsval descriptorArg, JSBool *bp)
 {
     RootedObject obj(cx, objArg);
     RootedId id(cx, idArg);
+    RootedValue descriptor(cx, descriptorArg);
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, id, descriptor);
 
-    return js_DefineOwnProperty(cx, obj, id, descriptor, bp);
+    return DefineOwnProperty(cx, obj, id, descriptor, bp);
 }
 
 JS_PUBLIC_API(JSObject *)
@@ -5288,10 +5288,10 @@ AutoFile::open(JSContext *cx, const char *filename)
 }
 
 
-JS::CompileOptions::CompileOptions(JSContext *cx)
+JS::CompileOptions::CompileOptions(JSContext *cx, JSVersion version)
     : principals(NULL),
       originPrincipals(NULL),
-      version(cx->findVersion()),
+      version(version != JSVERSION_UNKNOWN ? version : cx->findVersion()),
       versionSet(false),
       utf8(false),
       filename(NULL),
@@ -5498,7 +5498,8 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
             return NULL;
     }
 
-    RootedFunction fun(cx, NewFunction(cx, NullPtr(), NULL, 0, JSFunction::INTERPRETED, obj, funAtom));
+    RootedFunction fun(cx, NewFunction(cx, NullPtr(), NULL, 0, JSFunction::INTERPRETED, obj,
+                                       funAtom, JSFunction::FinalizeKind, TenuredObject));
     if (!fun)
         return NULL;
 

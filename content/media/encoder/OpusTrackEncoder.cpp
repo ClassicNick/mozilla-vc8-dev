@@ -12,7 +12,7 @@
 #include <android/log.h>
 #define LOG(args...) __android_log_print(ANDROID_LOG_INFO, "MediaEncoder", ## args);
 #else
-#define LOG(args, ...)
+#define LOG(args, a)
 #endif
 
 namespace mozilla {

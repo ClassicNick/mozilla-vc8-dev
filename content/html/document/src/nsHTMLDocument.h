@@ -19,11 +19,6 @@
 #include "nsIHttpChannel.h"
 #include "nsHTMLStyleSheet.h"
 
-// Document.Write() related
-#include "nsIWyciwygChannel.h"
-#include "nsILoadGroup.h"
-#include "nsNetUtil.h"
-
 #include "nsICommandManager.h"
 #include "mozilla/dom/HTMLSharedElement.h"
 #include "nsDOMEvent.h"
@@ -34,6 +29,8 @@ class nsIURI;
 class nsIMarkupDocumentViewer;
 class nsIDocShell;
 class nsICachingChannel;
+class nsIWyciwygChannel;
+class nsILoadGroup;
 
 class nsHTMLDocument : public nsDocument,
                        public nsIHTMLDocument,
@@ -47,7 +44,7 @@ public:
   ~nsHTMLDocument();
   virtual nsresult Init() MOZ_OVERRIDE;
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(nsHTMLDocument,
                                                          nsDocument)
 

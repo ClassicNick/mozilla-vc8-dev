@@ -104,6 +104,20 @@ VARIABLES = {
        This variable contains a list of files to copy into $(FINAL_TARGET)/components/.
         """),
 
+    'EXTRA_JS_MODULES': (StrictOrderingOnAppendList, list, [],
+        """Additional JavaScript files to distribute.
+
+        This variable contains a list of files to copy into JS_MODULES_PATH,
+        which is $(FINAL_TARGET)/modules by default.
+        """),
+
+    'EXTRA_PP_COMPONENTS': (StrictOrderingOnAppendList, list, [],
+        """Javascript XPCOM files.
+
+       This variable contains a list of files to preprocess.  Generated
+       files will be installed in the /components directory of the distribution.
+        """),
+
     'HOST_CSRCS': (StrictOrderingOnAppendList, list, [],
         """C source files to compile with the host compiler.
 
@@ -123,6 +137,13 @@ VARIABLES = {
         """Name of target library generated when cross compiling.
         """),
 
+    'JS_MODULES_PATH': (unicode, unicode, "",
+        """Path to install EXTRA_JS_MODULES.
+
+        EXTRA_JS_MODULES files are copied to this path, which defaults to
+        $(FINAL_TARGET)/modules if unspecified.
+        """),
+
     'LIBRARY_NAME': (unicode, unicode, "",
         """The name of the library generated for a directory.
 
@@ -131,6 +152,12 @@ VARIABLES = {
         LIBRARY_NAME = 'xpcomsample'
         would generate example/components/libxpcomsample.so on Linux, or
         example/components/xpcomsample.lib on Windows.
+        """),
+
+    'LIBS': (StrictOrderingOnAppendList, list, [],
+        """Linker libraries and flags.
+
+        A list of libraries and flags to include when linking.
         """),
 
     'SIMPLE_PROGRAMS': (StrictOrderingOnAppendList, list, [],

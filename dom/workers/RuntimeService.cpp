@@ -1834,7 +1834,7 @@ RuntimeService::NoteIdleThread(nsIThread* aThread)
 void
 RuntimeService::UpdateAllWorkerJSContextOptions()
 {
-  BROADCAST_ALL_WORKERS(UpdateJSContextOptions,
+  BROADCAST_ALL_WORKERS2(UpdateJSContextOptions,
                         sDefaultJSSettings.content.options,
                         sDefaultJSSettings.chrome.options);
 }

@@ -109,6 +109,7 @@ private:
 
   ReadyState mReadyState;
 public:
+  nsRefPtr<FileHandle> mFileHandle;
   FileMode mMode;
   RequestMode mRequestMode;
 private:

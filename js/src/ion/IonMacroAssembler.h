@@ -894,6 +894,8 @@ class MacroAssembler : public MacroAssemblerSpecific
     void copyMem(Register copyFrom, Register copyEnd, Register copyTo, Register temp);
 
     void convertInt32ValueToDouble(const Address &address, Register scratch, Label *done);
+    void convertValueToDouble(ValueOperand value, FloatRegister output, Label *fail);
+    void convertValueToInt32(ValueOperand value, FloatRegister temp, Register output, Label *fail);
 };
 
 static inline Assembler::DoubleCondition
@@ -971,7 +973,6 @@ JSOpToCondition(JSOp op, bool isSigned)
 
 typedef Vector<MIRType, 8> MIRTypeVector;
 
-#ifdef JS_ASMJS
 class ABIArgIter
 {
     ABIArgGenerator gen_;
@@ -991,7 +992,6 @@ class ABIArgIter
     MIRType mirType() const { JS_ASSERT(!done()); return types_[i_]; }
     uint32_t stackBytesConsumedSoFar() const { return gen_.stackBytesConsumedSoFar(); }
 };
-#endif
 
 } // namespace ion
 } // namespace js

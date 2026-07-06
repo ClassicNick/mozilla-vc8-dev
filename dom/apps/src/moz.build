@@ -9,3 +9,16 @@ EXTRA_COMPONENTS += [
     'AppsService.manifest',
     'Webapps.manifest',
 ]
+
+EXTRA_PP_COMPONENTS += [
+    'Webapps.js',
+]
+
+EXTRA_JS_MODULES += [
+    'AppDownloadManager.jsm',
+    'AppsServiceChild.jsm',
+    'FreeSpaceWatcher.jsm',
+    'OfflineCacheInstaller.jsm',
+    'PermissionsInstaller.jsm',
+    'PermissionsTable.jsm',
+]
