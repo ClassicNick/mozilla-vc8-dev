@@ -11,9 +11,6 @@
 #include "frontend/ParseNode.h"
 #include "ion/AsmJS.h"
 #include "ion/AsmJSModule.h"
-
-#include "frontend/ParseNode-inl.h"
-
 #include "ion/PerfSpewer.h"
 #include "ion/CodeGenerator.h"
 #include "ion/MIR.h"
@@ -22,6 +19,10 @@
 #ifdef MOZ_VTUNE
 # include "jitprofiling.h"
 #endif
+
+#include "jsfuninlines.h"
+
+#include "frontend/ParseNode-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -697,12 +698,10 @@ ExtractNumericLiteral(ParseNode *pn)
         d = NumberNodeValue(numberNode);
     }
 
-    if (NumberNodeHasFrac(numberNode))
+    if (NumberNodeHasFrac(numberNode) || IsNegativeZero(d))
         return NumLit(NumLit::Double, DoubleValue(d));
 
     int64_t i64 = int64_t(d);
-    if (d != double(i64))
-        return NumLit(NumLit::OutOfRangeInt, UndefinedValue());
 
     if (i64 >= 0) {
         if (i64 <= INT32_MAX)
@@ -5277,17 +5276,18 @@ TryEnablingIon(JSContext *cx, AsmJSModule::ExitDatum *exitDatum, int32_t argc, V
     const AsmJSModule &module =
         cx->mainThread().asmJSActivationStackFromOwnerThread()->module();
 
-#ifdef DEBUG
-    // The types should correspond, since we just run through invoke, before testing this.
-    JS_ASSERT(types::TypeScript::ThisTypes(script)->hasType(types::Type::UndefinedType()));
+    // Normally the types should corresond, since we just ran with those types,
+    // but there are reports this is asserting. Therefore doing it as a check, instead of DEBUG only.
+    if (!types::TypeScript::ThisTypes(script)->hasType(types::Type::UndefinedType()))
+        return true;
     for(uint32_t i = 0; i < exitDatum->fun->nargs; i++) {
         types::StackTypeSet *typeset = types::TypeScript::ArgTypes(script, i);
         types::Type type = types::Type::DoubleType();
         if (!argv[i].isDouble())
             type = types::Type::PrimitiveType(argv[i].extractNonDoubleType());
-        JS_ASSERT(typeset->hasType(type));
+        if (!typeset->hasType(type))
+            return true;
     }
-#endif
 
     // Enable
     IonScript *ionScript = script->ionScript();
@@ -5566,12 +5566,12 @@ ValueToInt32(JSContext *cx, Value *val)
 }
 
 static int32_t
-ValueToNumber(JSContext *cx, Value *val)
+ValueToNumber(JSContext *cx, MutableHandleValue val)
 {
     double dbl;
-    if (!ToNumber(cx, val[0], &dbl))
+    if (!ToNumber(cx, val, &dbl))
         return false;
-    val[0] = DoubleValue(dbl);
+    val.set(DoubleValue(dbl));
 
     return true;
 }

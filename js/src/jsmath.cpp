@@ -21,6 +21,7 @@
 #include "mozilla/Constants.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/MemoryReporting.h"
 
 #include <fcntl.h>
 
@@ -95,7 +96,7 @@ MathCache::MathCache() {
 }
 
 size_t
-MathCache::sizeOfIncludingThis(JSMallocSizeOfFun mallocSizeOf)
+MathCache::sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf)
 {
     return mallocSizeOf(this);
 }
@@ -123,7 +124,7 @@ js_math_abs(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     double z = Abs(x);
@@ -152,7 +153,7 @@ js::math_acos(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -185,7 +186,7 @@ js::math_asin(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -214,7 +215,7 @@ js::math_atan(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -267,7 +268,7 @@ js::math_atan2(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x, y;
-    if (!ToNumber(cx, args[0], &x) || !ToNumber(cx, args[1], &y))
+    if (!ToNumber(cx, args.handleAt(0), &x) || !ToNumber(cx, args.handleAt(1), &y))
         return false;
 
     double z = ecmaAtan2(x, y);
@@ -296,7 +297,7 @@ js_math_ceil(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     double z = js_math_ceil_impl(x);
@@ -321,7 +322,7 @@ js::math_cos(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -358,7 +359,7 @@ js::math_exp(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -387,7 +388,7 @@ js_math_floor(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     double z = js_math_floor_impl(x);
@@ -434,7 +435,7 @@ js::math_log(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -454,7 +455,7 @@ js_math_max(JSContext *cx, unsigned argc, Value *vp)
     double maxval = NegativeInfinity();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
-        if (!ToNumber(cx, args[i], &x))
+        if (!ToNumber(cx, args.handleAt(i), &x))
             return false;
         // Math.max(num, NaN) => NaN, Math.max(-0, +0) => +0
         if (x > maxval || IsNaN(x) || (x == maxval && IsNegative(maxval)))
@@ -472,7 +473,7 @@ js_math_min(JSContext *cx, unsigned argc, Value *vp)
     double minval = PositiveInfinity();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
-        if (!ToNumber(cx, args[i], &x))
+        if (!ToNumber(cx, args.handleAt(i), &x))
             return false;
         // Math.min(num, NaN) => NaN, Math.min(-0, +0) => -0
         if (x < minval || IsNaN(x) || (x == minval && IsNegativeZero(x)))
@@ -561,7 +562,7 @@ js_math_pow(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x, y;
-    if (!ToNumber(cx, args[0], &x) || !ToNumber(cx, args[1], &y))
+    if (!ToNumber(cx, args.handleAt(0), &x) || !ToNumber(cx, args.handleAt(1), &y))
         return false;
 
     /*
@@ -787,7 +788,7 @@ js_math_round(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     int32_t i;
@@ -823,7 +824,7 @@ js::math_sin(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -846,7 +847,7 @@ js_math_sqrt(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);
@@ -875,7 +876,7 @@ js::math_tan(JSContext *cx, unsigned argc, Value *vp)
     }
 
     double x;
-    if (!ToNumber(cx, args[0], &x))
+    if (!ToNumber(cx, args.handleAt(0), &x))
         return false;
 
     MathCache *mathCache = cx->runtime()->getMathCache(cx);

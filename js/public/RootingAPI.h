@@ -552,7 +552,7 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 #ifdef JS_THREADSAFE
         MOZ_ASSERT(js::IsInRequest(cxArg));
 #endif
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         js::ContextFriendFields *cx = js::ContextFriendFields::get(cxArg);
         commonInit(cx->thingGCRooters);
 #endif
@@ -560,7 +560,7 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 
     void init(js::PerThreadDataFriendFields *pt) {
         MOZ_ASSERT(pt);
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         commonInit(pt->thingGCRooters);
 #endif
     }
@@ -615,13 +615,13 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
     }
 
     ~Rooted() {
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
         JS_ASSERT(*stack == reinterpret_cast<Rooted<void*>*>(this));
         *stack = prev;
 #endif
     }
 
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
     Rooted<T> *previous() { return prev; }
 #endif
 
@@ -657,7 +657,10 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 
   private:
     void commonInit(Rooted<void*> **thingGCRooters) {
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
+        scanned = false;
+#endif
+#ifdef JSGC_TRACK_EXACT_ROOTS
         js::ThingRootKind kind = js::GCMethods<T>::kind();
         this->stack = &thingGCRooters[kind];
         this->prev = *stack;
@@ -667,13 +670,16 @@ class MOZ_STACK_CLASS Rooted : public js::RootedBase<T>
 #endif
     }
 
-#if defined(JSGC_ROOT_ANALYSIS) || defined(JSGC_USE_EXACT_ROOTING)
+#ifdef JSGC_TRACK_EXACT_ROOTS
     Rooted<void*> **stack, *prev;
 #endif
 
 #if defined(DEBUG) && defined(JS_GC_ZEAL) && defined(JSGC_ROOT_ANALYSIS) && !defined(JS_THREADSAFE)
     /* Has the rooting analysis ever scanned this Rooted's stack location? */
     friend void JS::CheckStackRoots(JSContext*);
+#endif
+
+#ifdef JSGC_ROOT_ANALYSIS
     bool scanned;
 #endif
 

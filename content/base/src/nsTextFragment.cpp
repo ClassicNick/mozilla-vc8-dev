@@ -16,6 +16,7 @@
 #include "nsBidiUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsUTF8Utils.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/SSE.h"
 #include "nsTextFragmentImpl.h"
 
@@ -391,7 +392,7 @@ nsTextFragment::Append(const PRUnichar* aBuffer, uint32_t aLength, bool aUpdateB
 }
 
 /* virtual */ size_t
-nsTextFragment::SizeOfExcludingThis(nsMallocSizeOfFun aMallocSizeOf) const
+nsTextFragment::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
   if (Is2b()) {
     return aMallocSizeOf(m2b);

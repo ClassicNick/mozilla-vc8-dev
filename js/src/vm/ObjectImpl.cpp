@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "vm/ObjectImpl-inl.h"
+
 #include "js/Value.h"
 #include "vm/Debugger.h"
 #include "vm/ObjectImpl.h"
@@ -12,9 +14,20 @@
 
 #include "gc/Barrier-inl.h"
 #include "gc/Marking.h"
-#include "vm/ObjectImpl-inl.h"
 
 using namespace js;
+
+bool
+js::ObjectImpl::uninlinedIsNative() const
+{
+    return isNative();
+}
+
+uint32_t
+js::ObjectImpl::uninlinedSlotSpan() const
+{
+    return slotSpan();
+}
 
 PropDesc::PropDesc()
   : pd_(UndefinedValue()),
@@ -909,7 +922,7 @@ TypedElementsHeader<T>::setElement(JSContext *cx, Handle<ObjectImpl*> obj,
         d = 0.0;
     } else if (v.isPrimitive()) {
         if (v.isString()) {
-            if (!ToNumber(cx, v, &d))
+            if (!StringToNumber(cx, v.toString(), &d))
                 return false;
         } else if (v.isUndefined()) {
             d = js_NaN;

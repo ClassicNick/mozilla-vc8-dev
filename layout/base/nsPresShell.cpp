@@ -18,6 +18,7 @@
 
 /* a presentation of a document, part 2 */
 
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/PBrowserChild.h"
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/Likely.h"
@@ -4447,6 +4448,9 @@ PresShell::RenderDocument(const nsRect& aRect, uint32_t aFlags,
   if (aFlags & RENDER_IGNORE_VIEWPORT_SCROLLING) {
     wouldFlushRetainedLayers = !IgnoringViewportScrolling();
     mRenderFlags = ChangeFlag(mRenderFlags, true, STATE_IGNORING_VIEWPORT_SCROLLING);
+  }
+  if (aFlags & RENDER_DRAWWINDOW_NOT_FLUSHING) {
+    mRenderFlags = ChangeFlag(mRenderFlags, true, STATE_DRAWWINDOW_NOT_FLUSHING);
   }
   if (aFlags & RENDER_DOCUMENT_RELATIVE) {
     // XXX be smarter about this ... drawWindow might want a rect
@@ -9443,7 +9447,7 @@ PresShell::GetRootPresShell()
 }
 
 void
-PresShell::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
+PresShell::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
                                nsArenaMemoryStats *aArenaObjectsSize,
                                size_t *aPresShellSize,
                                size_t *aStyleSetsSize,
@@ -9462,7 +9466,7 @@ PresShell::SizeOfIncludingThis(nsMallocSizeOfFun aMallocSizeOf,
 }
 
 size_t
-PresShell::SizeOfTextRuns(nsMallocSizeOfFun aMallocSizeOf) const
+PresShell::SizeOfTextRuns(MallocSizeOf aMallocSizeOf) const
 {
   nsIFrame* rootFrame = mFrameConstructor->GetRootFrame();
   if (!rootFrame) {

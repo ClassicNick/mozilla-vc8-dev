@@ -9,7 +9,10 @@
 
 #include "vm/ArgumentsObject.h"
 
+#include "mozilla/MemoryReporting.h"
+
 #include "vm/ScopeObject.h"
+#include "vm/ScopeObject-inl.h"
 
 namespace js {
 
@@ -142,7 +145,7 @@ ArgumentsObject::maybeGetElements(uint32_t start, uint32_t count, Value *vp)
 }
 
 inline size_t
-ArgumentsObject::sizeOfMisc(JSMallocSizeOfFun mallocSizeOf) const
+ArgumentsObject::sizeOfMisc(mozilla::MallocSizeOf mallocSizeOf) const
 {
     return mallocSizeOf(data());
 }
