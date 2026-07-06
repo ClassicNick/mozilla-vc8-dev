@@ -82,21 +82,6 @@ public:
    */
   nsresult LoadWithChannel(nsIChannel *aChannel, nsIStreamListener **aListener);
 
-  // Our WebIDL compiler doesn't put these values anywhere we can use.
-  enum {
-    NETWORK_EMPTY = 0,
-    NETWORK_IDLE = 1,
-    NETWORK_LOADING = 2,
-    NETWORK_NO_SOURCE = 3
-  };
-  enum {
-    HAVE_NOTHING = 0,
-    HAVE_METADATA = 1,
-    HAVE_CURRENT_DATA = 2,
-    HAVE_FUTURE_DATA = 3,
-    HAVE_ENOUGH_DATA = 4
-  };
-
   // nsIDOMHTMLMediaElement
   NS_DECL_NSIDOMHTMLMEDIAELEMENT
 
@@ -154,7 +139,13 @@ public:
 
   // Called by the video decoder object, on the main thread,
   // when it has read the first frame of the video
-  virtual void FirstFrameLoaded() MOZ_FINAL MOZ_OVERRIDE;
+  // aResourceFullyLoaded should be true if the resource has been
+  // fully loaded and the caller will call ResourceLoaded next.
+  virtual void FirstFrameLoaded(bool aResourceFullyLoaded) MOZ_FINAL MOZ_OVERRIDE;
+
+  // Called by the video decoder object, on the main thread,
+  // when the resource has completed downloading.
+  virtual void ResourceLoaded() MOZ_FINAL MOZ_OVERRIDE;
 
   // Called by the video decoder object, on the main thread,
   // when the resource has a network error during loading.
@@ -229,10 +220,16 @@ public:
   // Dispatch events that were raised while in the bfcache
   nsresult DispatchPendingMediaEvents();
 
-  // Called every time readyState might need to be updated.
-  // aNextFrame indicates whether the next frame is available. This method will
-  // choose the correct value for readyState.
-  virtual void UpdateReadyStateForData(NextFrameStatus aNextFrame) MOZ_FINAL MOZ_OVERRIDE;
+  // Called by the decoder when some data has been downloaded or
+  // buffering/seeking has ended. aNextFrameAvailable is true when
+  // the data for the next frame is available. This method will
+  // decide whether to set the ready state to HAVE_CURRENT_DATA,
+  // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA.
+  virtual void UpdateReadyStateForData(MediaDecoderOwner::NextFrameStatus aNextFrame) MOZ_FINAL MOZ_OVERRIDE;
+
+  // Use this method to change the mReadyState member, so required
+  // events can be fired.
+  void ChangeReadyState(nsMediaReadyState aState);
 
   // Return true if we can activate autoplay assuming enough data has arrived.
   bool CanActivateAutoplay();
@@ -627,12 +624,6 @@ protected:
                               MediaDecoder* aCloneDonor);
 
   /**
-   * Use this method to change the mReadyState member, so required
-   * events can be fired. Only UpdateReadyStateForData should call this.
-   */
-  void ChangeReadyState(nsMediaReadyState aState);
-
-  /**
    * Call this after setting up mLoadingSrc and mDecoder.
    */
   void AddMediaElementToURITable();
@@ -907,9 +898,6 @@ protected:
   nsMediaNetworkState mNetworkState;
   nsMediaReadyState mReadyState;
 
-  // Last value passed from codec or stream source to UpdateReadyStateForData.
-  NextFrameStatus mLastNextFrameStatus;
-
   enum LoadAlgorithmState {
     // No load algorithm instance is waiting for a source to be added to the
     // media in order to continue loading.
@@ -1016,15 +1004,9 @@ protected:
   // Set to false when completed, or not yet started.
   bool mBegun;
 
-  // True when the decoder has called MetadataLoaded
-  bool mMetadataLoaded;
-
   // True when the decoder has loaded enough data to display the
   // first frame of the content.
-  bool mFirstFrameLoaded;
-
-  // True when loadeddata has been fired for this resource.
-  bool mFiredLoadedData;
+  bool mLoadedFirstFrame;
 
   // Indicates whether current playback is a result of user action
   // (ie. calling of the Play method), or automatic playback due to
@@ -1127,9 +1109,6 @@ protected:
 
   // True if the media has an audio track
   bool mHasAudio;
-
-  // True if the media has a video track
-  bool mHasVideo;
 
   // True if the media's channel's download has been suspended.
   bool mDownloadSuspendedByCache;

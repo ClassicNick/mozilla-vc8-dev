@@ -239,8 +239,13 @@
         <!-- Content touch selection overlay -->
         <!-- onclick addresses dom bug 835175 -->
         <box onclick="false" class="selection-overlay-hidden" id="content-selection-overlay"/>
-  </stack>
+      </stack>
     </vbox>
+
+    <html:div id="overlay-back" class="overlay-button"
+              observes="cmd_back"></html:div>
+    <html:div id="overlay-plus" class="overlay-button"
+              observes="cmd_back"></html:div>
 
     <!-- popup for content navigator helper -->
     <appbar id="content-navigator" class="window-width content-navigator-box" orient="horizontal" pack="start">
@@ -334,7 +339,6 @@
                      flex="1"
                      ontextentered="BrowserUI.handleUrlbarEnter(param);"
                      onkeydown="BrowserUI.navEditKeyPress();"
-                     onclick="BrowserUI._urlbarClicked(event);"
                      onblur="BrowserUI._urlbarBlurred();"/>
           </hbox>
 
@@ -350,7 +354,7 @@
         <toolbarbutton id="star-button" class="appbar-primary" type="checkbox" oncommand="Appbar.onStarButton()"/>
         <toolbarbutton id="pin-button" class="appbar-primary" type="checkbox" oncommand="Appbar.onPinButton()"/>
         <toolbarbutton id="menu-button" class="appbar-primary" oncommand="Appbar.onMenuButton(event)"/>
-      </toolbar>
+       </toolbar>
     </appbar>
 
     <!-- Context button bar -->
@@ -364,16 +368,7 @@
       </toolbar>
     </appbar>
 
-    <!-- Chrome touch selection overlay -->
-    <!-- onclick addresses dom bug 835175 -->
-    <box onclick="false" class="selection-overlay-hidden" id="chrome-selection-overlay"/>
-
     <autoscroller class="autoscroller" id="autoscrollerid"/>
-
-    <html:div id="overlay-back" class="overlay-button"
-              observes="cmd_back" onclick="CommandUpdater.doCommand('cmd_back');"></html:div>
-    <html:div id="overlay-plus" class="overlay-button"
-              observes="cmd_back" onclick="CommandUpdater.doCommand('cmd_newTab');"></html:div>
 
     <flyoutpanel id="about-flyoutpanel" headertext="&aboutHeader.title;">
       <label id="about-product-label" value="&aboutHeader.product.label;"/>
@@ -606,6 +601,10 @@
       </dialog>
     </box>
 #endif
+
+    <!-- Chrome touch selection overlay -->
+    <!-- onclick addresses dom bug 835175 -->
+    <box onclick="false" class="selection-overlay-hidden" id="chrome-selection-overlay"/>
 
     <box onclick="event.stopPropagation();" id="context-container" class="menu-container" hidden="true">
       <!-- onclick is dom bug 835175 -->

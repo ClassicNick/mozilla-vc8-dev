@@ -3830,7 +3830,7 @@ nsBlockFrame::CreateContinuationFor(nsBlockReflowState& aState,
 
     mFrames.InsertFrame(nullptr, aFrame, newFrame);
 
-    if (aLine) { 
+    if (aLine) {
       aLine->NoteFrameAdded(newFrame);
     }
   }

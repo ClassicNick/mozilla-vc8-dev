@@ -89,10 +89,10 @@ struct BaseRect {
   Sub Intersect(const Sub& aRect) const
   {
     Sub result;
-    result.x = NS_MAX(x, aRect.x);
-    result.y = NS_MAX(y, aRect.y);
-    result.width = NS_MIN(XMost(), aRect.XMost()) - result.x;
-    result.height = NS_MIN(YMost(), aRect.YMost()) - result.y;
+    result.x = NS_MAX<T>(x, aRect.x);
+    result.y = NS_MAX<T>(y, aRect.y);
+    result.width = NS_MIN<T>(XMost(), aRect.XMost()) - result.x;
+    result.height = NS_MIN<T>(YMost(), aRect.YMost()) - result.y;
     if (result.width < 0 || result.height < 0) {
       result.SizeTo(0, 0);
     }

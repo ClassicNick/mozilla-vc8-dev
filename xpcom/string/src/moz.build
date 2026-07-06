@@ -24,3 +24,6 @@ if CONFIG['COMPILE_SSE2_SRCS']:
     CPP_SOURCES += [
         'nsUTF8UtilsSSE2.cpp',
     ]
+
+LIBRARY_NAME = 'string_s'
+
