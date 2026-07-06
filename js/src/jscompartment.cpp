@@ -11,7 +11,6 @@
 #include "jscntxt.h"
 #include "jsgc.h"
 #include "jsiter.h"
-#include "jsmath.h"
 #include "jsproxy.h"
 #include "jswatchpoint.h"
 #include "jswrapper.h"
@@ -634,8 +633,8 @@ CreateLazyScriptsForCompartment(JSContext *cx)
         if (obj->compartment() == cx->compartment() && obj->isFunction()) {
             JSFunction *fun = obj->toFunction();
             if (fun->isInterpretedLazy()) {
-                LazyScript *lazy = fun->lazyScript();
-                if (lazy->sourceObject() && !lazy->maybeScript()) {
+                LazyScript *lazy = fun->lazyScriptOrNull();
+                if (lazy && lazy->sourceObject() && !lazy->maybeScript()) {
                     if (!lazyFunctions.append(fun))
                         return false;
                 }
@@ -667,8 +666,9 @@ CreateLazyScriptsForCompartment(JSContext *cx)
         if (obj->compartment() == cx->compartment() && obj->isFunction()) {
             JSFunction *fun = obj->toFunction();
             if (fun->isInterpretedLazy()) {
-                JS_ASSERT(fun->lazyScript()->maybeScript());
-                JS_ALWAYS_TRUE(fun->getOrCreateScript(cx));
+                LazyScript *lazy = fun->lazyScriptOrNull();
+                if (lazy && lazy->maybeScript())
+                    fun->getExistingScript();
             }
         }
     }

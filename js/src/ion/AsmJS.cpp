@@ -6,6 +6,7 @@
 
 #include "jsmath.h"
 #include "jsworkers.h"
+#include "prmjtime.h"
 
 #include "frontend/ParseNode.h"
 #include "ion/AsmJS.h"
@@ -13,20 +14,19 @@
 
 #include "frontend/ParseNode-inl.h"
 
-using namespace js;
-using namespace js::frontend;
-using namespace mozilla;
-
 #include "ion/PerfSpewer.h"
 #include "ion/CodeGenerator.h"
 #include "ion/MIR.h"
 #include "ion/MIRGraph.h"
 
-using namespace js::ion;
-
 #ifdef MOZ_VTUNE
 # include "jitprofiling.h"
 #endif
+
+using namespace js;
+using namespace js::frontend;
+using namespace js::ion;
+using namespace mozilla;
 
 /*****************************************************************************/
 // ParseNode utilities
@@ -5316,7 +5316,10 @@ GenerateEntries(ModuleCompiler &m)
 static inline bool
 TryEnablingIon(JSContext *cx, AsmJSModule::ExitDatum *exitDatum, int32_t argc, Value *argv)
 {
-    JSScript *script = exitDatum->fun->maybeNonLazyScript();
+    if (!exitDatum->fun->hasScript())
+        return true;
+
+    JSScript *script = exitDatum->fun->nonLazyScript();
     if (!script)
         return true;
 
@@ -5826,6 +5829,13 @@ GenerateFFIIonExit(ModuleCompiler &m, const ModuleCompiler::ExitDescriptor &exit
     masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, DisableActivation));
     masm.pop(JSReturnReg_Data);
     masm.pop(JSReturnReg_Type);
+
+#ifdef DEBUG
+    masm.branchTestMagicValue(Assembler::Equal, JSReturnOperand, JS_ION_ERROR, throwLabel);
+    masm.branchTestMagic(Assembler::Equal, JSReturnOperand, &ionFailed);
+#else
+    masm.branchTestMagic(Assembler::Equal, JSReturnOperand, throwLabel);
+#endif
 
     switch (exit.use().which()) {
       case Use::NoCoercion:

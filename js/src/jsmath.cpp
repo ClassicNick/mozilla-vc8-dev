@@ -16,12 +16,13 @@
 
 #include "jsmath.h"
 
+#include "jslibmath.h"
+
 #include "mozilla/Constants.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 
 #include <fcntl.h>
-#include <stdlib.h>
 
 #ifdef XP_UNIX
 # include <unistd.h>
@@ -32,8 +33,6 @@
 #include "jsapi.h"
 #include "jsatom.h"
 #include "jscntxt.h"
-#include "jsversion.h"
-#include "jslibmath.h"
 #include "jscompartment.h"
 
 #include "jsobjinlines.h"
@@ -74,7 +73,7 @@ using mozilla::SpecificNaN;
 #define M_SQRT1_2       0.70710678118654752440
 #endif
 
-static JSConstDoubleSpec math_constants[] = {
+static const JSConstDoubleSpec math_constants[] = {
     {M_E,       "E",            0, {0,0,0}},
     {M_LOG2E,   "LOG2E",        0, {0,0,0}},
     {M_LOG10E,  "LOG10E",       0, {0,0,0}},

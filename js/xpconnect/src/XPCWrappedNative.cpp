@@ -847,7 +847,7 @@ XPCWrappedNative::Destroy()
      * the first time because mWrapperWord isn't used afterwards.
      */
     if (XPCJSRuntime *rt = GetRuntime()) {
-        if (IsIncrementalBarrierNeeded(rt->GetJSRuntime()))
+        if (IsIncrementalBarrierNeeded(rt->Runtime()))
             IncrementalObjectBarrier(GetWrapperPreserveColor());
         mWrapperWord = WRAPPER_WORD_POISON;
     } else {
@@ -863,7 +863,7 @@ XPCWrappedNative::UpdateScriptableInfo(XPCNativeScriptableInfo *si)
     NS_ASSERTION(mScriptableInfo, "UpdateScriptableInfo expects an existing scriptable info");
 
     // Write barrier for incremental GC.
-    JSRuntime* rt = GetRuntime()->GetJSRuntime();
+    JSRuntime* rt = GetRuntime()->Runtime();
     if (IsIncrementalBarrierNeeded(rt))
         mScriptableInfo->Mark();
 
@@ -878,7 +878,7 @@ XPCWrappedNative::SetProto(XPCWrappedNativeProto* p)
     MOZ_ASSERT(HasProto());
 
     // Write barrier for incremental GC.
-    JSRuntime* rt = GetRuntime()->GetJSRuntime();
+    JSRuntime* rt = GetRuntime()->Runtime();
     GetProto()->WriteBarrierPre(rt);
 
     mMaybeProto = p;
@@ -3274,7 +3274,7 @@ void DEBUG_ReportShadowedMembers(XPCNativeSet* set,
     // We just want to skip some classes...
     if (si) {
         // Add any classnames to skip to this (null terminated) array...
-        static const char* skipClasses[] = {
+        static const char* const skipClasses[] = {
             "Window",
             "HTMLDocument",
             "HTMLCollection",

@@ -288,9 +288,6 @@ public:
   nsresult OpenResource(MediaResource* aResource,
                         nsIStreamListener** aStreamListener);
 
-  // Called when the video file has completed downloading.
-  virtual void ResourceLoaded();
-
   // Called if the media file encounters a network error.
   virtual void NetworkError();
 
@@ -710,12 +707,6 @@ public:
   // This must be called on the main thread only.
   void PlaybackPositionChanged();
 
-  // Calls mElement->UpdateReadyStateForData, telling it which state we have
-  // entered.  Main thread only.
-  void NextFrameUnavailableBuffering();
-  void NextFrameAvailable();
-  void NextFrameUnavailable();
-
   // Calls mElement->UpdateReadyStateForData, telling it whether we have
   // data for the next frame and if we're buffering. Main thread only.
   void UpdateReadyStateForData();
@@ -1025,11 +1016,6 @@ public:
   // Any change to the state must call NotifyAll on the monitor.
   // This can only be PLAY_STATE_PAUSED or PLAY_STATE_PLAYING.
   PlayState mNextState;
-
-  // True when we have fully loaded the resource and reported that
-  // to the element (i.e. reached NETWORK_LOADED state).
-  // Accessed on the main thread only.
-  bool mCalledResourceLoaded;
 
   // True when seeking or otherwise moving the play position around in
   // such a manner that progress event data is inaccurate. This is set

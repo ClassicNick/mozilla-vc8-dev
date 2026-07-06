@@ -18,6 +18,7 @@
 #include "js/GCAPI.h"
 
 #include "nsISupports.h"
+#include "nsIURI.h"
 #include "nsIPrincipal.h"
 #include "nsWrapperCache.h"
 #include "nsStringGlue.h"
@@ -372,6 +373,7 @@ public:
 
     nsAutoCString jsPathPrefix;
     nsAutoCString domPathPrefix;
+    nsCOMPtr<nsIURI> location;
 
 private:
     CompartmentStatsExtras(const CompartmentStatsExtras &other) MOZ_DELETE;
@@ -414,9 +416,6 @@ GetNativeForGlobal(JSObject *global);
 JSObject *
 GetJunkScope();
 } // namespace xpc
-
-nsCycleCollectionParticipant *
-xpc_JSZoneParticipant();
 
 namespace mozilla {
 namespace dom {

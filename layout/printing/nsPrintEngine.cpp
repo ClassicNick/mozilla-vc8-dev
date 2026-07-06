@@ -113,6 +113,7 @@ static const char kPrintingPromptService[] = "@mozilla.org/embedcomp/printingpro
 #include "nsIContentViewerContainer.h"
 #include "nsIContentViewer.h"
 #include "nsIDocumentViewerPrint.h"
+#include "nsCSSFrameConstructor.h"
 
 #include "nsFocusManager.h"
 #include "nsRange.h"
@@ -1777,13 +1778,14 @@ nsPrintEngine::SetupToPrintContent()
   if (didReconstruction) {
     FirePrintPreviewUpdateEvent();
   }
-  
+
   DUMP_DOC_LIST(("\nAfter Reflow------------------------------------------"));
   PR_PL(("\n"));
   PR_PL(("-------------------------------------------------------\n"));
   PR_PL(("\n"));
 
   CalcNumPrintablePages(mPrt->mNumPrintablePages);
+  PromoteReflowsToReframeRoot();
 
   PR_PL(("--- Printing %d pages\n", mPrt->mNumPrintablePages));
   DUMP_DOC_TREELAYOUT;
@@ -2348,6 +2350,19 @@ nsPrintEngine::CalcNumPrintablePages(int32_t& aNumPages)
     }
   }
 }
+
+void
+nsPrintEngine::PromoteReflowsToReframeRoot()
+{
+  for (uint32_t i=0; i<mPrt->mPrintDocList.Length(); i++) {
+    nsPrintObject* po = mPrt->mPrintDocList.ElementAt(i);
+    NS_ASSERTION(po, "nsPrintObject can't be null!");
+    if (po->mPresContext) {
+      po->mPresContext->PresShell()->FrameConstructor()->SetPromoteReflowsToReframeRoot(true);
+    }
+  }
+}
+
 //-----------------------------------------------------------------
 //-- Done: Reflow Methods
 //-----------------------------------------------------------------

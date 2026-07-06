@@ -1785,7 +1785,7 @@ struct CustomPrototypeTraceArgs {
 
 
 static PLDHashOperator
-CustomPrototypeTrace(const nsAString& aName, JSObject*& aObject, void *aArg)
+CustomPrototypeTrace(const nsAString& aName, JS::Heap<JSObject*>& aObject, void *aArg)
 {
   CustomPrototypeTraceArgs* traceArgs = static_cast<CustomPrototypeTraceArgs*>(aArg);
   MOZ_ASSERT(aObject, "Protocol object value must not be null");
