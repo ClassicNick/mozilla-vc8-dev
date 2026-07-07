@@ -798,6 +798,16 @@ nsresult ChannelMediaResource::Read(char* aBuffer,
   return mCacheStream.Read(aBuffer, aCount, aBytes);
 }
 
+nsresult ChannelMediaResource::ReadAt(int64_t aOffset,
+                                      char* aBuffer,
+                                      uint32_t aCount,
+                                      uint32_t* aBytes)
+{
+  NS_ASSERTION(!NS_IsMainThread(), "Don't call on main thread");
+
+  return mCacheStream.ReadAt(aOffset, aBuffer, aCount, aBytes);
+}
+
 nsresult ChannelMediaResource::Seek(int32_t aWhence, int64_t aOffset)
 {
   NS_ASSERTION(!NS_IsMainThread(), "Don't call on main thread");
@@ -1306,6 +1316,8 @@ public:
   virtual void     SetReadMode(MediaCacheStream::ReadMode aMode) {}
   virtual void     SetPlaybackRate(uint32_t aBytesPerSecond) {}
   virtual nsresult Read(char* aBuffer, uint32_t aCount, uint32_t* aBytes);
+  virtual nsresult ReadAt(int64_t aOffset, char* aBuffer,
+                          uint32_t aCount, uint32_t* aBytes);
   virtual nsresult Seek(int32_t aWhence, int64_t aOffset);
   virtual void     StartSeekingForMetadata() {};
   virtual void     EndSeekingForMetadata() {};
@@ -1346,6 +1358,13 @@ public:
 
   nsresult GetCachedRanges(nsTArray<MediaByteRange>& aRanges);
 
+protected:
+  // These Unsafe variants of Read and Seek perform their operations
+  // without acquiring mLock. The caller must obtain the lock before
+  // calling. The implmentation of Read, Seek and ReadAt obtains the
+  // lock before calling these Unsafe variants to read or seek.
+  nsresult UnsafeRead(char* aBuffer, uint32_t aCount, uint32_t* aBytes);
+  nsresult UnsafeSeek(int32_t aWhence, int64_t aOffset);
 private:
   // Ensures mSize is initialized, if it can be.
   // mLock must be held when this is called, and mInput must be non-null.
@@ -1571,9 +1590,24 @@ nsresult FileMediaResource::ReadFromCache(char* aBuffer, int64_t aOffset, uint32
 nsresult FileMediaResource::Read(char* aBuffer, uint32_t aCount, uint32_t* aBytes)
 {
   MutexAutoLock lock(mLock);
+  return UnsafeRead(aBuffer, aCount, aBytes);
+}
 
+nsresult FileMediaResource::UnsafeRead(char* aBuffer, uint32_t aCount, uint32_t* aBytes)
+{
   EnsureSizeInitialized();
   return mInput->Read(aBuffer, aCount, aBytes);
+}
+
+nsresult FileMediaResource::ReadAt(int64_t aOffset, char* aBuffer,
+                                   uint32_t aCount, uint32_t* aBytes)
+{
+  NS_ASSERTION(!NS_IsMainThread(), "Don't call on main thread");
+
+  MutexAutoLock lock(mLock);
+  nsresult rv = UnsafeSeek(nsISeekableStream::NS_SEEK_SET, aOffset);
+  if (NS_FAILED(rv)) return rv;
+  return UnsafeRead(aBuffer, aCount, aBytes);
 }
 
 nsresult FileMediaResource::Seek(int32_t aWhence, int64_t aOffset)
@@ -1581,6 +1615,13 @@ nsresult FileMediaResource::Seek(int32_t aWhence, int64_t aOffset)
   NS_ASSERTION(!NS_IsMainThread(), "Don't call on main thread");
 
   MutexAutoLock lock(mLock);
+  return UnsafeSeek(aWhence, aOffset);
+}
+
+nsresult FileMediaResource::UnsafeSeek(int32_t aWhence, int64_t aOffset)
+{
+  NS_ASSERTION(!NS_IsMainThread(), "Don't call on main thread");
+
   if (!mSeekable)
     return NS_ERROR_FAILURE;
   EnsureSizeInitialized();
