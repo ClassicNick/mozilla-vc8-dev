@@ -302,7 +302,7 @@ class AsyncEncodeAndWriteIcon : public nsIRunnable
 {
 public:
   const bool mURLShortcut;
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   // Warning: AsyncEncodeAndWriteIcon assumes ownership of the aData buffer passed in
@@ -326,7 +326,7 @@ private:
 class AsyncDeleteIconFromDisk : public nsIRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   AsyncDeleteIconFromDisk(const nsAString &aIconPath);
@@ -339,7 +339,7 @@ private:
 class AsyncDeleteAllFaviconsFromDisk : public nsIRunnable
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 
   AsyncDeleteAllFaviconsFromDisk();

@@ -69,9 +69,9 @@ private:
 };
 
 
-NS_IMPL_THREADSAFE_ISUPPORTS2(nsCacheEntryDescriptor,
-                              nsICacheEntryDescriptor,
-                              nsICacheEntryInfo)
+NS_IMPL_ISUPPORTS2(nsCacheEntryDescriptor,
+                   nsICacheEntryDescriptor,
+                   nsICacheEntryInfo)
 
 nsCacheEntryDescriptor::nsCacheEntryDescriptor(nsCacheEntry * entry,
                                                nsCacheAccessMode accessGranted)
@@ -653,7 +653,7 @@ nsCacheEntryDescriptor::VisitMetaData(nsICacheMetaDataVisitor * visitor)
  *                      open while referenced.
  ******************************************************************************/
 
-NS_IMPL_THREADSAFE_ADDREF(nsCacheEntryDescriptor::nsInputStreamWrapper)
+NS_IMPL_ADDREF(nsCacheEntryDescriptor::nsInputStreamWrapper)
 NS_IMETHODIMP_(nsrefcnt)
 nsCacheEntryDescriptor::nsInputStreamWrapper::Release()
 {
@@ -671,7 +671,7 @@ nsCacheEntryDescriptor::nsInputStreamWrapper::Release()
 
     nsrefcnt count;
     NS_PRECONDITION(0 != mRefCnt, "dup release");
-    count = NS_AtomicDecrementRefcnt(mRefCnt);
+    count = --mRefCnt;
     NS_LOG_RELEASE(this, count, "nsCacheEntryDescriptor::nsInputStreamWrapper");
 
     if (0 == count) {
@@ -845,7 +845,7 @@ nsInputStreamWrapper::IsNonBlocking(bool *result)
  * nsDecompressInputStreamWrapper - an input stream wrapper that decompresses
  ******************************************************************************/
 
-NS_IMPL_THREADSAFE_ADDREF(nsCacheEntryDescriptor::nsDecompressInputStreamWrapper)
+NS_IMPL_ADDREF(nsCacheEntryDescriptor::nsDecompressInputStreamWrapper)
 NS_IMETHODIMP_(nsrefcnt)
 nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Release()
 {
@@ -864,7 +864,7 @@ nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Release()
 
     nsrefcnt count;
     NS_PRECONDITION(0 != mRefCnt, "dup release");
-    count = NS_AtomicDecrementRefcnt(mRefCnt);
+    count = --mRefCnt;
     NS_LOG_RELEASE(this, count,
                    "nsCacheEntryDescriptor::nsDecompressInputStreamWrapper");
 
@@ -1035,7 +1035,7 @@ nsDecompressInputStreamWrapper::EndZstream()
  *                       - also keeps the cache entry open while referenced.
  ******************************************************************************/
 
-NS_IMPL_THREADSAFE_ADDREF(nsCacheEntryDescriptor::nsOutputStreamWrapper)
+NS_IMPL_ADDREF(nsCacheEntryDescriptor::nsOutputStreamWrapper)
 NS_IMETHODIMP_(nsrefcnt)
 nsCacheEntryDescriptor::nsOutputStreamWrapper::Release()
 {
@@ -1053,7 +1053,7 @@ nsCacheEntryDescriptor::nsOutputStreamWrapper::Release()
 
     nsrefcnt count;
     NS_PRECONDITION(0 != mRefCnt, "dup release");
-    count = NS_AtomicDecrementRefcnt(mRefCnt);
+    count = --mRefCnt;
     NS_LOG_RELEASE(this, count,
                    "nsCacheEntryDescriptor::nsOutputStreamWrapper");
 
@@ -1265,7 +1265,7 @@ nsOutputStreamWrapper::IsNonBlocking(bool *result)
  *   data before it is written
  ******************************************************************************/
 
-NS_IMPL_THREADSAFE_ADDREF(nsCacheEntryDescriptor::nsCompressOutputStreamWrapper)
+NS_IMPL_ADDREF(nsCacheEntryDescriptor::nsCompressOutputStreamWrapper)
 NS_IMETHODIMP_(nsrefcnt)
 nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Release()
 {
@@ -1283,7 +1283,7 @@ nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Release()
 
     nsrefcnt count;
     NS_PRECONDITION(0 != mRefCnt, "dup release");
-    count = NS_AtomicDecrementRefcnt(mRefCnt);
+    count = --mRefCnt;
     NS_LOG_RELEASE(this, count,
                    "nsCacheEntryDescriptor::nsCompressOutputStreamWrapper");
 

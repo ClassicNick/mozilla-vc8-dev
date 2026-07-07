@@ -16,8 +16,6 @@
 
 #include "jsmath.h"
 
-#include "jslibmath.h"
-
 #include "mozilla/Constants.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
@@ -30,12 +28,13 @@
 # include <unistd.h>
 #endif
 
-#include "jstypes.h"
-#include "prmjtime.h"
 #include "jsapi.h"
 #include "jsatom.h"
 #include "jscntxt.h"
 #include "jscompartment.h"
+#include "jslibmath.h"
+#include "jstypes.h"
+#include "prmjtime.h"
 
 #include "jsobjinlines.h"
 

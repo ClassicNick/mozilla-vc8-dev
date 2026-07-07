@@ -25,7 +25,7 @@ class nsCacheEntryDescriptor :
     public nsICacheEntryDescriptor
 {
 public:
-    NS_DECL_ISUPPORTS
+    NS_DECL_THREADSAFE_ISUPPORTS
     NS_DECL_NSICACHEENTRYDESCRIPTOR
     NS_DECL_NSICACHEENTRYINFO
 
@@ -83,7 +83,7 @@ private:
          bool                        mInitialized;
 	 public:
          mozilla::Mutex              mLock;
-         NS_DECL_ISUPPORTS
+         NS_DECL_THREADSAFE_ISUPPORTS
          NS_DECL_NSIINPUTSTREAM
 
          nsInputStreamWrapper(nsCacheEntryDescriptor * desc, uint32_t off)
@@ -117,7 +117,7 @@ private:
          bool mStreamInitialized;
          bool mStreamEnded;
      public:
-         NS_DECL_ISUPPORTS
+         NS_DECL_THREADSAFE_ISUPPORTS
 
          nsDecompressInputStreamWrapper(nsCacheEntryDescriptor * desc,
                                       uint32_t off)
@@ -156,7 +156,7 @@ private:
          bool                        mInitialized;
          mozilla::Mutex              mLock;
      public:
-         NS_DECL_ISUPPORTS
+         NS_DECL_THREADSAFE_ISUPPORTS
          NS_DECL_NSIOUTPUTSTREAM
 
          nsOutputStreamWrapper(nsCacheEntryDescriptor * desc, uint32_t off)
@@ -197,7 +197,7 @@ private:
          bool mStreamEnded;
          uint32_t mUncompressedCount;
      public:
-         NS_DECL_ISUPPORTS
+         NS_DECL_THREADSAFE_ISUPPORTS
 
          nsCompressOutputStreamWrapper(nsCacheEntryDescriptor * desc, 
                                        uint32_t off)

@@ -1632,16 +1632,11 @@ static nsStyleContext* GetBackgroundStyleContext(nsIFrame* aFrame)
   return sc;
 }
 
-/*static*/ nsresult
+/*static*/ bool
 nsDisplayBackgroundImage::AppendBackgroundItemsToTop(nsDisplayListBuilder* aBuilder,
                                                      nsIFrame* aFrame,
-                                                     nsDisplayList* aList,
-                                                     bool* aAppendedThemedBackground)
+                                                     nsDisplayList* aList)
 {
-  if (aAppendedThemedBackground) {
-    *aAppendedThemedBackground = false;
-  }
-
   nsStyleContext* bgSC = nullptr;
   const nsStyleBackground* bg = nullptr;
   nsPresContext* presContext = aFrame->PresContext();
@@ -1675,14 +1670,11 @@ nsDisplayBackgroundImage::AppendBackgroundItemsToTop(nsDisplayListBuilder* aBuil
     nsDisplayThemedBackground* bgItem =
       new (aBuilder) nsDisplayThemedBackground(aBuilder, aFrame);
     aList->AppendNewToTop(bgItem);
-    if (aAppendedThemedBackground) {
-      *aAppendedThemedBackground = true;
-    }
-    return NS_OK;
+    return true;
   }
 
   if (!bg) {
-    return NS_OK;
+    return false;
   }
  
   // Passing bg == nullptr in this macro will result in one iteration with
@@ -1696,7 +1688,7 @@ nsDisplayBackgroundImage::AppendBackgroundItemsToTop(nsDisplayListBuilder* aBuil
     aList->AppendNewToTop(bgItem);
   }
 
-  return NS_OK;
+  return false;
 }
 
 // Check that the rounded border of aFrame, added to aToReferenceFrame,

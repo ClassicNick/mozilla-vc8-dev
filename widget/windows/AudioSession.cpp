@@ -89,7 +89,7 @@ protected:
   nsID mSessionGroupingParameter;
   SessionState mState;
 
-  nsAutoRefCnt mRefCnt;
+  ThreadSafeAutoRefCnt mRefCnt;
   NS_DECL_OWNINGTHREAD
 
   static AudioSession* sService;
@@ -153,8 +153,8 @@ AudioSession::GetSingleton()
 }
 
 // It appears Windows will use us on a background thread ...
-NS_IMPL_THREADSAFE_ADDREF(AudioSession)
-NS_IMPL_THREADSAFE_RELEASE(AudioSession)
+NS_IMPL_ADDREF(AudioSession)
+NS_IMPL_RELEASE(AudioSession)
 
 STDMETHODIMP
 AudioSession::QueryInterface(REFIID iid, void **ppv)
