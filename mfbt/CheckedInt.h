@@ -600,9 +600,9 @@ class CheckedInt
     template<typename U>
     CheckedInt(U value, bool isValid) : mValue(value), mIsValid(isValid)
     {
-      static_assert(detail::IsSupported<T>::value &&
-                    detail::IsSupported<U>::value,
-                    "This type is not supported by CheckedInt");
+      MOZ_STATIC_ASSERT(detail::IsSupported<T>::value &&
+                        detail::IsSupported<U>::value,
+                        "This type is not supported by CheckedInt");
     }
 
     friend struct detail::NegateImpl<T>;
@@ -624,9 +624,9 @@ class CheckedInt
       : mValue(T(value)),
         mIsValid(detail::IsInRange<T>(value))
     {
-      static_assert(detail::IsSupported<T>::value &&
-                    detail::IsSupported<U>::value,
-                    "This type is not supported by CheckedInt");
+      MOZ_STATIC_ASSERT(detail::IsSupported<T>::value &&
+                        detail::IsSupported<U>::value,
+                        "This type is not supported by CheckedInt");
     }
 
     template<typename U>
@@ -643,8 +643,8 @@ class CheckedInt
     /** Constructs a valid checked integer with initial value 0 */
     CheckedInt() : mValue(0), mIsValid(true)
     {
-      static_assert(detail::IsSupported<T>::value,
-                    "This type is not supported by CheckedInt");
+      MOZ_STATIC_ASSERT(detail::IsSupported<T>::value,
+                        "This type is not supported by CheckedInt");
     }
 
     /** @returns the actual value */
@@ -817,9 +817,9 @@ template<typename T, typename U>
 inline typename detail::CastToCheckedIntImpl<T, U>::ReturnType
 castToCheckedInt(U u)
 {
-  static_assert(detail::IsSupported<T>::value &&
-                detail::IsSupported<U>::value,
-                "This type is not supported by CheckedInt");
+  MOZ_STATIC_ASSERT(detail::IsSupported<T>::value &&
+                    detail::IsSupported<U>::value,
+                    "This type is not supported by CheckedInt");
   return detail::CastToCheckedIntImpl<T, U>::run(u);
 }
 

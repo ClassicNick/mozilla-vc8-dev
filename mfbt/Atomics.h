@@ -706,8 +706,8 @@ struct IntrinsicBase
     typedef T ValueType;
     typedef PrimitiveIntrinsics<sizeof(T)> Primitives;
     typedef typename Primitives::Type PrimType;
-    static_assert(sizeof(PrimType) == sizeof(T),
-                  "Selection of PrimitiveIntrinsics was wrong");
+    MOZ_STATIC_ASSERT(sizeof(PrimType) == sizeof(T),
+                      "Selection of PrimitiveIntrinsics was wrong");
     typedef CastHelper<PrimType, T> Cast;
 };
 
@@ -898,10 +898,10 @@ class Atomic : public detail::AtomicBase<T, Order>
 {
     // We only support 32-bit types on 32-bit Windows, which constrains our
     // implementation elsewhere.  But we support pointer-sized types everywhere.
-    static_assert(sizeof(T) == 4 || (sizeof(uintptr_t) == 8 && sizeof(T) == 8),
-                  "mozilla/Atomics.h only supports 32-bit and pointer-sized types");
+    MOZ_STATIC_ASSERT(sizeof(T) == 4 || (sizeof(uintptr_t) == 8 && sizeof(T) == 8),
+                      "mozilla/Atomics.h only supports 32-bit and pointer-sized types");
     // Regardless of the OS, we only support integral types here.
-    static_assert(IsIntegral<T>::value, "can only have integral atomic variables");
+    MOZ_STATIC_ASSERT(IsIntegral<T>::value, "can only have integral atomic variables");
 
     typedef typename detail::AtomicBase<T, Order> Base;
 
