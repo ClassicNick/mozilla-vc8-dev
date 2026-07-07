@@ -7,6 +7,7 @@
 #define nsError_h__
 
 #include "mozilla/Likely.h"
+#include "mozilla/StandardInteger.h"
 #include "mozilla/TypedEnum.h"
 
 #if defined(_MSC_VER) && _MSC_VER <= 1310

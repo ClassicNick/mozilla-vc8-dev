@@ -12,8 +12,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Casting.h"
-
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 
