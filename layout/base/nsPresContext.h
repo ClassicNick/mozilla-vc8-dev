@@ -304,7 +304,22 @@ public:
   /** 
    * Get medium of presentation
    */
-  nsIAtom* Medium() { return mMedium; }
+  nsIAtom* Medium() {
+    if (!mIsEmulatingMedia)
+      return mMedium;
+    return mMediaEmulated;
+  }
+
+  /*
+   * Render the document as if being viewed on a device with the specified
+   * media type.
+   */
+  void EmulateMedium(const nsAString& aMediaType);
+
+  /*
+   * Restore the viewer's natural medium
+   */
+  void StopEmulatingMedium();
 
   void* AllocateFromShell(size_t aSize)
   {
@@ -1150,6 +1165,7 @@ protected:
   nsRefPtr<nsAnimationManager> mAnimationManager;
   nsIAtom*              mMedium;        // initialized by subclass ctors;
                                         // weak pointer to static atom
+  nsCOMPtr<nsIAtom> mMediaEmulated;
 
   nsILinkHandler*       mLinkHandler;   // [WEAK]
 
@@ -1259,6 +1275,7 @@ protected:
   unsigned              mPendingUIResolutionChanged : 1;
   unsigned              mPendingMediaFeatureValuesChanged : 1;
   unsigned              mPrefChangePendingNeedsReflow : 1;
+  unsigned              mIsEmulatingMedia : 1;
   // True if the requests in mInvalidateRequestsSinceLastPaint cover the
   // entire viewport
   unsigned              mAllInvalidated : 1;
