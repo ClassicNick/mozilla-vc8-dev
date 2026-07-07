@@ -7,11 +7,12 @@
 #define nsError_h__
 
 #include "mozilla/Likely.h"
-#include "mozilla/StandardInteger.h"
 #include "mozilla/TypedEnum.h"
 
 #if defined(_MSC_VER) && _MSC_VER <= 1310
 typedef unsigned __int32  uint32_t;
+#else
+#include "mozilla/StandardInteger.h"
 #endif
 
 /*

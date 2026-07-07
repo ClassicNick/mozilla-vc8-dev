@@ -52,6 +52,7 @@
 #include "nsCanvasFrame.h"
 
 #include "mozilla/StandardInteger.h"
+#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::css;

@@ -16,6 +16,7 @@
 #include "nsPluginStreamListenerPeer.h"
 
 #include "mozilla/StandardInteger.h"
+#include <algorithm>
 
 nsNPAPIStreamWrapper::nsNPAPIStreamWrapper(nsIOutputStream *outputStream,
                                            nsNPAPIPluginStreamListener *streamListener)

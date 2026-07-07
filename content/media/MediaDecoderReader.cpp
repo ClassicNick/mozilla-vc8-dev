@@ -13,6 +13,7 @@
 
 #include "mozilla/mozalloc.h"
 #include "mozilla/StandardInteger.h"
+#include <algorithm>
 
 namespace mozilla {
 
