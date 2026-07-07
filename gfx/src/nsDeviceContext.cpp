@@ -275,7 +275,7 @@ nsDeviceContext::FontMetricsDeleted(const nsFontMetrics* aFontMetrics)
 bool
 nsDeviceContext::IsPrinterSurface()
 {
-    return(mPrintingSurface != NULL);
+    return mPrintingSurface != nullptr;
 }
 
 void

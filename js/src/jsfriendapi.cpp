@@ -19,6 +19,7 @@
 #include "prmjtime.h"
 
 #include "builtin/TestingFunctions.h"
+#include "vm/WrapperObject.h"
 
 #include "jsfuninlines.h"
 #include "jsobjinlines.h"
@@ -72,7 +73,7 @@ JS_FindCompilationScope(JSContext *cx, JSObject *objArg)
      * We unwrap wrappers here. This is a little weird, but it's what's being
      * asked of us.
      */
-    if (obj->isWrapper())
+    if (obj->is<WrapperObject>())
         obj = UncheckedUnwrap(obj);
 
     /*
@@ -730,6 +731,7 @@ js::DumpHeapComplete(JSRuntime *rt, FILE *fp)
     JSDumpHeapTracer dtrc(fp);
 
     JS_TracerInit(&dtrc, rt, DumpHeapVisitRoot);
+    dtrc.eagerlyTraceWeakMaps = TraceWeakMapKeysValues;
     TraceRuntime(&dtrc);
 
     fprintf(dtrc.output, "==========\n");

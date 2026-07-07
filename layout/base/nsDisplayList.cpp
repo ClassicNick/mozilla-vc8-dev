@@ -1496,6 +1496,20 @@ nsDisplayItem::ForceActiveLayers()
   return sForce;
 }
 
+/* static */ int32_t
+nsDisplayItem::MaxActiveLayers()
+{
+  static int32_t sMaxLayers = false;
+  static bool sMaxLayersCached = false;
+
+  if (!sMaxLayersCached) {
+    Preferences::AddIntVarCache(&sMaxLayers, "layers.max-active", -1);
+    sMaxLayersCached = true;
+  }
+
+  return sMaxLayersCached;
+}
+
 bool
 nsDisplayItem::RecomputeVisibility(nsDisplayListBuilder* aBuilder,
                                    nsRegion* aVisibleRegion) {
@@ -3079,16 +3093,16 @@ nsDisplayFixedPosition::BuildLayer(nsDisplayListBuilder* aBuilder,
   // coordinate-space of the built layer.
   float factor = presContext->AppUnitsPerDevPixel();
   nsPoint origin = viewportFrame->GetOffsetToCrossDoc(ReferenceFrame());
-  gfxRect anchorRect(NSAppUnitsToFloatPixels(origin.x, factor) *
-                       aContainerParameters.mXScale,
-                     NSAppUnitsToFloatPixels(origin.y, factor) *
-                       aContainerParameters.mYScale,
-                     NSAppUnitsToFloatPixels(containingBlockSize.width, factor) *
-                       aContainerParameters.mXScale,
-                     NSAppUnitsToFloatPixels(containingBlockSize.height, factor) *
-                       aContainerParameters.mYScale);
+  LayerRect anchorRect(NSAppUnitsToFloatPixels(origin.x, factor) *
+                         aContainerParameters.mXScale,
+                       NSAppUnitsToFloatPixels(origin.y, factor) *
+                         aContainerParameters.mYScale,
+                       NSAppUnitsToFloatPixels(containingBlockSize.width, factor) *
+                         aContainerParameters.mXScale,
+                       NSAppUnitsToFloatPixels(containingBlockSize.height, factor) *
+                         aContainerParameters.mYScale);
 
-  gfxPoint anchor(anchorRect.x, anchorRect.y);
+  LayerPoint anchor = anchorRect.TopLeft();
 
   const nsStylePosition* position = mFixedPosFrame->StylePosition();
   if (position->mOffset.GetRightUnit() != eStyleUnit_Auto)
@@ -3101,14 +3115,14 @@ nsDisplayFixedPosition::BuildLayer(nsDisplayListBuilder* aBuilder,
   // Also make sure the layer is aware of any fixed position margins that have
   // been set.
   nsMargin fixedMargins = presContext->PresShell()->GetContentDocumentFixedPositionMargins();
-  mozilla::gfx::Margin fixedLayerMargins(NSAppUnitsToFloatPixels(fixedMargins.top, factor) *
-                                           aContainerParameters.mYScale,
-                                         NSAppUnitsToFloatPixels(fixedMargins.right, factor) *
-                                           aContainerParameters.mXScale,
-                                         NSAppUnitsToFloatPixels(fixedMargins.bottom, factor) *
-                                           aContainerParameters.mYScale,
-                                         NSAppUnitsToFloatPixels(fixedMargins.left, factor) *
-                                           aContainerParameters.mXScale);
+  LayerMargin fixedLayerMargins(NSAppUnitsToFloatPixels(fixedMargins.top, factor) *
+                                  aContainerParameters.mYScale,
+                                NSAppUnitsToFloatPixels(fixedMargins.right, factor) *
+                                  aContainerParameters.mXScale,
+                                NSAppUnitsToFloatPixels(fixedMargins.bottom, factor) *
+                                  aContainerParameters.mYScale,
+                                NSAppUnitsToFloatPixels(fixedMargins.left, factor) *
+                                  aContainerParameters.mXScale);
 
   // If the frame is auto-positioned on either axis, set the top/left layer
   // margins to -1, to indicate to the compositor that this layer is

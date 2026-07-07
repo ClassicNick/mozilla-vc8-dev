@@ -259,6 +259,11 @@ IonBuilder::canInlineTarget(JSFunction *target)
         return false;
     }
 
+    if (!target->hasScript()) {
+        IonSpew(IonSpew_Inlining, "Cannot inline due to lack of Non-Lazy script");
+        return false;
+    }
+
     RootedScript inlineScript(cx, target->nonLazyScript());
     ExecutionMode executionMode = info().executionMode();
     if (!CanIonCompile(inlineScript, executionMode)) {
@@ -3464,11 +3469,13 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
     // Improve type information of |this| when not set.
     if (callInfo.constructing() && !callInfo.thisArg()->resultTypeSet()) {
         types::StackTypeSet *types = types::TypeScript::ThisTypes(calleeScript);
-        MTypeBarrier *barrier = MTypeBarrier::New(callInfo.thisArg(), cloneTypeSet(types), Bailout_Normal);
-        current->add(barrier);
-        MUnbox *unbox = MUnbox::New(barrier, MIRType_Object, MUnbox::Infallible);
-        current->add(unbox);
-        callInfo.setThis(unbox);
+        if (!types->unknown()) {
+            MTypeBarrier *barrier = MTypeBarrier::New(callInfo.thisArg(), cloneTypeSet(types), Bailout_Normal);
+            current->add(barrier);
+            MUnbox *unbox = MUnbox::New(barrier, MIRType_Object, MUnbox::Infallible);
+            current->add(unbox);
+            callInfo.setThis(unbox);
+        }
     }
 
     // Start inlining.
@@ -4228,7 +4235,7 @@ IonBuilder::inlineCalls(CallInfo &callInfo, AutoObjectVector &targets,
         //
         // Note that guarding is on the original function pointer even
         // if there is a clone, since cloning occurs at the callsite.
-        dispatch->addCase(&originals[i]->as<JSFunction>(), inlineBlock);
+        dispatch->addCase(original, inlineBlock);
 
         MDefinition *retVal = inlineReturnBlock->peek(-1);
         retPhi->addInput(retVal);
@@ -4238,11 +4245,13 @@ IonBuilder::inlineCalls(CallInfo &callInfo, AutoObjectVector &targets,
     }
 
     // Patch the InlinePropertyTable to not dispatch to vetoed paths.
+    //
+    // Note that like above, we trim using originals instead of targets.
     if (maybeCache) {
         maybeCache->object()->setResultTypeSet(cacheObjectTypeSet);
 
         InlinePropertyTable *propTable = maybeCache->propTable();
-        propTable->trimTo(targets, choiceSet);
+        propTable->trimTo(originals, choiceSet);
 
         // If all paths were vetoed, output only a generic fallback path.
         if (propTable->numEntries() == 0) {
@@ -4779,9 +4788,6 @@ IonBuilder::jsop_call(uint32_t argc, bool constructing)
     CallInfo callInfo(cx, constructing);
     if (!callInfo.init(current, argc))
         return false;
-
-    if (gotLambda && targets.length() > 0)
-        callInfo.setLambda(true);
 
     // Try inlining
     InliningStatus status = inlineCallsite(targets, originals, gotLambda, callInfo);

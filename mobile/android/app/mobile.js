@@ -546,6 +546,12 @@ pref("layers.async-video.enabled", true);
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
 pref("layers.low-precision-resolution", 250);
+// We want to limit layers for two reasons:
+// 1) We can't scroll smoothly if we have to many draw calls
+// 2) Pages that have too many layers consume too much memory and crash.
+// By limiting the number of layers on mobile we're making the main thread
+// work harder keep scrolling smooth and memory low.
+pref("layers.max-active", 20);
 
 pref("notification.feature.enabled", true);
 pref("dom.webnotifications.enabled", true);
@@ -756,3 +762,7 @@ pref("media.useAudioChannelService", false);
 
 // Turn on the CSP 1.0 parser for Content Security Policy headers
 pref("security.csp.speccompliant", true);
+
+// Enable hardware-accelerated Skia canvas
+pref("gfx.canvas.azure.backends", "skia");
+pref("gfx.canvas.azure.accelerated", true);

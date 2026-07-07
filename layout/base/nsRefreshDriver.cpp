@@ -38,7 +38,6 @@ typedef HRESULT (WINAPI*DwmGetCompositionTimingInfoProc)(HWND hWnd, DWM_TIMING_I
 #include "nsComponentManagerUtils.h"
 #include "prlog.h"
 #include "nsAutoPtr.h"
-#include "nsCSSFrameConstructor.h"
 #include "nsIDocument.h"
 #include "nsGUIEvent.h"
 #include "nsEventDispatcher.h"
@@ -51,6 +50,7 @@ typedef HRESULT (WINAPI*DwmGetCompositionTimingInfoProc)(HWND hWnd, DWM_TIMING_I
 #include "nsNPAPIPluginInstance.h"
 #include "nsPerformance.h"
 #include "mozilla/dom/WindowBinding.h"
+#include "RestyleManager.h"
 
 using mozilla::TimeStamp;
 using mozilla::TimeDuration;
@@ -1161,7 +1161,7 @@ nsRefreshDriver::Tick(int64_t aNowEpoch, TimeStamp aNowTime)
             continue;
           NS_ADDREF(shell);
           mStyleFlushObservers.RemoveElement(shell);
-          shell->FrameConstructor()->mObservingRefreshDriver = false;
+          shell->GetPresContext()->RestyleManager()->mObservingRefreshDriver = false;
           shell->FlushPendingNotifications(ChangesToFlush(Flush_Style, false));
           NS_RELEASE(shell);
         }

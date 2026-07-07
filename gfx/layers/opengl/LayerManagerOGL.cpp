@@ -338,7 +338,7 @@ LayerManagerOGL::Initialize(bool force)
                               0,
                               LOCAL_GL_RGBA,
                               LOCAL_GL_UNSIGNED_BYTE,
-                              NULL);
+                              nullptr);
 
       // unbind this texture, in preparation for binding it to the FBO
       mGLContext->fBindTexture(target, 0);
@@ -563,7 +563,7 @@ LayerManagerOGL::EndTransaction(DrawThebesLayerCallback aCallback,
     mThebesLayerCallbackData = nullptr;
   }
 
-  mTarget = NULL;
+  mTarget = nullptr;
 
 #ifdef MOZ_LAYERS_HAVE_LOG
   Log();
@@ -1077,7 +1077,7 @@ LayerManagerOGL::SetupBackBuffer(int aWidth, int aHeight)
                           0,
                           LOCAL_GL_RGBA,
                           LOCAL_GL_UNSIGNED_BYTE,
-                          NULL);
+                          nullptr);
   mGLContext->fBindTexture(mFBOTextureTarget, 0);
 
   mGLContext->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mBackBufferFBO);
@@ -1235,7 +1235,7 @@ LayerManagerOGL::CreateFBOWithTexture(const nsIntRect& aRect, InitMode aInit,
                             0,
                             LOCAL_GL_RGBA,
                             LOCAL_GL_UNSIGNED_BYTE,
-                            NULL);
+                            nullptr);
   }
   mGLContext->fTexParameteri(mFBOTextureTarget, LOCAL_GL_TEXTURE_MIN_FILTER,
                              LOCAL_GL_LINEAR);

@@ -66,6 +66,7 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
 
+import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.EnumSet;
@@ -389,6 +390,11 @@ abstract public class BrowserApp extends GeckoApp
     @Override
     public void onCreate(Bundle savedInstanceState) {
         mAboutHomeStartupTimer = new Telemetry.Timer("FENNEC_STARTUP_TIME_ABOUTHOME");
+
+        String args = getIntent().getStringExtra("args");
+        if (args != null && args.contains("--guest-mode")) {
+            mProfile = GeckoProfile.createGuestProfile(this);
+        }
 
         super.onCreate(savedInstanceState);
 
@@ -1203,8 +1209,8 @@ abstract public class BrowserApp extends GeckoApp
         // toolbar.
         if (mLayerView != null && isDynamicToolbarEnabled()) {
             if (width > 0 && height > 0) {
-                mLayerView.getLayerMarginsAnimator().showMargins(false);
                 mLayerView.getLayerMarginsAnimator().setMarginsPinned(true);
+                mLayerView.getLayerMarginsAnimator().showMargins(false);
             } else {
                 mLayerView.getLayerMarginsAnimator().setMarginsPinned(false);
             }
@@ -1428,7 +1434,7 @@ abstract public class BrowserApp extends GeckoApp
             }
         }
 
-        final MenuItem item = menu.add(Menu.NONE, info.id, Menu.NONE, info.label);
+        MenuItem item = menu.add(Menu.NONE, info.id, Menu.NONE, info.label);
         item.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(MenuItem item) {
@@ -1439,9 +1445,11 @@ abstract public class BrowserApp extends GeckoApp
         });
 
         if (info.icon != null) {
+            final int id = info.id;
             BitmapUtils.getDrawable(this, info.icon, new BitmapUtils.BitmapLoader() {
                 @Override
                 public void onBitmapFound(Drawable d) {
+                    MenuItem item = mMenu.findItem(id);
                     if (d == null) {
                         item.setIcon(R.drawable.ic_menu_addons_filler);
                         return;
@@ -1596,6 +1604,8 @@ abstract public class BrowserApp extends GeckoApp
         MenuItem charEncoding = aMenu.findItem(R.id.char_encoding);
         MenuItem findInPage = aMenu.findItem(R.id.find_in_page);
         MenuItem desktopMode = aMenu.findItem(R.id.desktop_mode);
+        MenuItem enterGuestMode = aMenu.findItem(R.id.enter_guest_mode);
+        MenuItem exitGuestMode = aMenu.findItem(R.id.exit_guest_mode);
 
         // Only show the "Quit" menu item on pre-ICS or television devices.
         // In ICS+, it's easy to kill an app through the task switcher.
@@ -1656,6 +1666,11 @@ abstract public class BrowserApp extends GeckoApp
         findInPage.setEnabled(!isAboutHome(tab));
 
         charEncoding.setVisible(GeckoPreferences.getCharEncodingState());
+
+        if (mProfile.inGuestMode())
+            exitGuestMode.setVisible(true);
+        else
+            enterGuestMode.setVisible(true);
 
         return true;
     }
@@ -1744,6 +1759,14 @@ abstract public class BrowserApp extends GeckoApp
                 return true;
             case R.id.new_private_tab:
                 addPrivateTab();
+                return true;
+            case R.id.enter_guest_mode:
+                doRestart("--guest-mode");
+                System.exit(0);
+                return true;
+            case R.id.exit_guest_mode:
+                doRestart();
+                System.exit(0);
                 return true;
             default:
                 return super.onOptionsItemSelected(item);

@@ -171,9 +171,9 @@ DeviceManagerD3D9::Init()
   WNDCLASSW wc;
   HRESULT hr;
 
-  if (!GetClassInfoW(GetModuleHandle(NULL), kClassName, &wc)) {
+  if (!GetClassInfoW(GetModuleHandle(nullptr), kClassName, &wc)) {
       ZeroMemory(&wc, sizeof(WNDCLASSW));
-      wc.hInstance = GetModuleHandle(NULL);
+      wc.hInstance = GetModuleHandle(nullptr);
       wc.lpfnWndProc = ::DefWindowProc;
       wc.lpszClassName = kClassName;
       if (!RegisterClassW(&wc)) {
@@ -183,8 +183,8 @@ DeviceManagerD3D9::Init()
   }
 
   mFocusWnd = ::CreateWindowW(kClassName, L"D3D9Window", WS_OVERLAPPEDWINDOW,
-                              CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL,
-                              NULL, GetModuleHandle(NULL), NULL);
+                              CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr,
+                              nullptr, GetModuleHandle(nullptr), nullptr);
 
   if (!mFocusWnd) {
     NS_WARNING("Failed to create DeviceManagerD3D9 Window.");
@@ -263,7 +263,7 @@ DeviceManagerD3D9::Init()
                                  D3DCREATE_MULTITHREADED |
                                  D3DCREATE_MIXED_VERTEXPROCESSING,
                                  &pp,
-                                 NULL,
+                                 nullptr,
                                  getter_AddRefs(mDeviceEx));
     if (SUCCEEDED(hr)) {
       mDevice = mDeviceEx;
@@ -314,7 +314,7 @@ DeviceManagerD3D9::Init()
    * Do some post device creation setup 
    */ 
   if (mNv3DVUtils) { 
-    IUnknown* devUnknown = NULL; 
+    IUnknown* devUnknown = nullptr; 
     if (mDevice) { 
       mDevice->QueryInterface(IID_IUnknown, (void **)&devUnknown); 
     } 
@@ -793,7 +793,7 @@ DeviceManagerD3D9::CreateVertexBuffer()
                                    0,
                                    D3DPOOL_DEFAULT,
                                    getter_AddRefs(mVB),
-                                   NULL);
+                                   nullptr);
 
   if (FAILED(hr)) {
     return false;
