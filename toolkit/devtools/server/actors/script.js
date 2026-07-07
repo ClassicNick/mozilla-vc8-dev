@@ -415,12 +415,22 @@ ThreadActor.prototype = {
       }
     }
 
-    if (aRequest && aRequest.pauseOnExceptions) {
-      this.dbg.onExceptionUnwind = this.onExceptionUnwind.bind(this);
+    if (aRequest) {
+      this._options.pauseOnExceptions = aRequest.pauseOnExceptions;
+      this.maybePauseOnExceptions();
     }
     let packet = this._resumed();
     DebuggerServer.xpcInspector.exitNestedEventLoop();
     return packet;
+  },
+
+  /**
+   * Set the debugging hook to pause on exceptions if configured to do so.
+   */
+  maybePauseOnExceptions: function() {
+    if (this._options.pauseOnExceptions) {
+      this.dbg.onExceptionUnwind = this.onExceptionUnwind.bind(this);
+    }
   },
 
   /**
@@ -2924,7 +2934,7 @@ function convertToUnicode(aString, aCharset=null) {
  *        An optional prefix for the reported error message.
  */
 function reportError(aError, aPrefix="") {
-  let msg = prefix + aError.message + ":\n" + aError.stack;
+  let msg = aPrefix + aError.message + ":\n" + aError.stack;
   Cu.reportError(msg);
   dumpn(msg);
 }

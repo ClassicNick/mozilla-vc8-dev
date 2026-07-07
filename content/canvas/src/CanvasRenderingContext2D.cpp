@@ -3949,6 +3949,3 @@ CanvasRenderingContext2D::ShouldForceInactiveLayer(LayerManager *aManager)
 
 }
 }
-
-DOMCI_DATA(CanvasRenderingContext2D, mozilla::dom::CanvasRenderingContext2D)
-

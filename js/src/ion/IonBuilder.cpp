@@ -4447,7 +4447,7 @@ IonBuilder::createThisScriptedSingleton(HandleFunction target, MDefinition *call
 
     // Generate an inline path to create a new |this| object with
     // the given singleton prototype.
-    types::TypeObject *type = proto->getNewType(cx, &ObjectClass, target);
+    types::TypeObject *type = cx->getNewType(&ObjectClass, proto.get(), target);
     if (!type)
         return NULL;
     if (!types::TypeScript::ThisTypes(target->nonLazyScript())->hasType(types::Type::ObjectType(type)))
@@ -6666,7 +6666,7 @@ IonBuilder::jsop_getelem_typed(int arrayType)
         current->add(load);
         current->push(load);
 
-        return resumeAfter(load) && pushTypeBarrier(load, types, needsBarrier);
+        return pushTypeBarrier(load, types, needsBarrier);
     }
 }
 

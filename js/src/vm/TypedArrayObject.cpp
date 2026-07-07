@@ -1442,13 +1442,8 @@ class TypedArrayObjectTemplate : public TypedArrayObject
             return true;
         }
 
-        RootedObject proto(cx, tarray->getProto());
-        if (!proto) {
-            vp.setUndefined();
-            return true;
-        }
-
-        return JSObject::getElement(cx, proto, receiver, index, vp);
+        vp.setUndefined();
+        return true;
     }
 
     static JSBool
@@ -1728,7 +1723,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject
         if (!obj)
             return NULL;
 
-        types::TypeObject *type = proto->getNewType(cx, obj->getClass());
+        types::TypeObject *type = cx->getNewType(obj->getClass(), proto.get());
         if (!type)
             return NULL;
         obj->setType(type);
@@ -2778,7 +2773,7 @@ DataViewObject::create(JSContext *cx, uint32_t byteOffset, uint32_t byteLength,
         return NULL;
 
     if (proto) {
-        types::TypeObject *type = proto->getNewType(cx, &class_);
+        types::TypeObject *type = cx->getNewType(&class_, TaggedProto(proto));
         if (!type)
             return NULL;
         obj->setType(type);

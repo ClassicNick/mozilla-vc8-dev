@@ -1429,7 +1429,7 @@ CodeGenerator::visitCallNative(LCallNative *call)
     int unusedStack = StackOffsetOfPassedArg(callargslot);
 
     // Registers used for callWithABI() argument-passing.
-    const Register argJSContextReg = ToRegister(call->getArgJSContextReg());
+    const Register argContextReg   = ToRegister(call->getArgContextReg());
     const Register argUintNReg     = ToRegister(call->getArgUintNReg());
     const Register argVpReg        = ToRegister(call->getArgVpReg());
 
@@ -1440,8 +1440,10 @@ CodeGenerator::visitCallNative(LCallNative *call)
 
     masm.checkStackAlignment();
 
-    // Native functions have the signature:
+    // Sequential native functions have the signature:
     //  bool (*)(JSContext *, unsigned, Value *vp)
+    // and parallel native functions have the signature:
+    //  ParallelResult (*)(ForkJoinSlice *, unsigned, Value *vp)
     // Where vp[0] is space for an outparam, vp[1] is |this|, and vp[2] onward
     // are the function arguments.
 
@@ -1453,7 +1455,12 @@ CodeGenerator::visitCallNative(LCallNative *call)
     masm.Push(ObjectValue(*target));
 
     // Preload arguments into registers.
-    masm.loadJSContext(argJSContextReg);
+    //
+    // Note that for parallel execution, loadContext does an ABI call, so we
+    // need to do this before we load the other argument registers, otherwise
+    // we'll hose them.
+    ExecutionMode executionMode = gen->info().executionMode();
+    masm.loadContext(argContextReg, tempReg, executionMode);
     masm.move32(Imm32(call->numStackArgs()), argUintNReg);
     masm.movePtr(StackPointer, argVpReg);
 
@@ -1463,30 +1470,46 @@ CodeGenerator::visitCallNative(LCallNative *call)
     uint32_t safepointOffset;
     if (!masm.buildFakeExitFrame(tempReg, &safepointOffset))
         return false;
-    masm.enterFakeExitFrame();
+    masm.enterFakeExitFrame(argContextReg, tempReg, executionMode);
 
     if (!markSafepointAt(safepointOffset, call))
         return false;
 
     // Construct and execute call.
     masm.setupUnalignedABICall(3, tempReg);
-    masm.passABIArg(argJSContextReg);
+    masm.passABIArg(argContextReg);
     masm.passABIArg(argUintNReg);
     masm.passABIArg(argVpReg);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, target->native()));
 
-    // Test for failure.
-    Label success, exception;
-    masm.branchTest32(Assembler::Zero, ReturnReg, ReturnReg, &exception);
+    Label success, failure;
+    switch (executionMode) {
+      case SequentialExecution:
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, target->native()));
+
+        // Test for failure.
+        masm.branchTest32(Assembler::Zero, ReturnReg, ReturnReg, &failure);
+        break;
+
+      case ParallelExecution:
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, target->parallelNative()));
+
+        // ParallelResult has more nuanced failure, but for now we fail on
+        // anything that's != TP_SUCCESS.
+        masm.branch32(Assembler::NotEqual, ReturnReg, Imm32(TP_SUCCESS), &failure);
+        break;
+
+      default:
+        MOZ_ASSUME_UNREACHABLE("No such execution mode");
+    }
 
     // Load the outparam vp[0] into output register(s).
     masm.loadValue(Address(StackPointer, IonNativeExitFrameLayout::offsetOfResult()), JSReturnOperand);
     masm.jump(&success);
 
-    // Handle exception case.
+    // Handle failure case.
     {
-        masm.bind(&exception);
-        masm.handleException();
+        masm.bind(&failure);
+        masm.handleFailure(executionMode);
     }
     masm.bind(&success);
 
@@ -3936,7 +3959,7 @@ CodeGenerator::visitIsNullOrLikeUndefinedAndBranch(LIsNullOrLikeUndefinedAndBran
     return true;
 }
 
-typedef JSString *(*ConcatStringsFn)(ThreadSafeContext *, HandleString, HandleString);
+typedef JSString *(*ConcatStringsFn)(JSContext *, HandleString, HandleString);
 static const VMFunction ConcatStringsInfo = FunctionInfo<ConcatStringsFn>(ConcatStrings<CanGC>);
 
 bool
@@ -6340,43 +6363,25 @@ CodeGenerator::visitLoadTypedArrayElement(LLoadTypedArrayElement *lir)
     return true;
 }
 
-class OutOfLineLoadTypedArray : public OutOfLineCodeBase<CodeGenerator>
-{
-    LLoadTypedArrayElementHole *ins_;
-
-  public:
-    OutOfLineLoadTypedArray(LLoadTypedArrayElementHole *ins)
-      : ins_(ins)
-    { }
-
-    bool accept(CodeGenerator *codegen) {
-        return codegen->visitOutOfLineLoadTypedArray(this);
-    }
-
-    LLoadTypedArrayElementHole *ins() const {
-        return ins_;
-    }
-};
-
 bool
 CodeGenerator::visitLoadTypedArrayElementHole(LLoadTypedArrayElementHole *lir)
 {
     Register object = ToRegister(lir->object());
     const ValueOperand out = ToOutValue(lir);
 
-    OutOfLineLoadTypedArray *ool = new OutOfLineLoadTypedArray(lir);
-    if (!addOutOfLineCode(ool))
-        return false;
-
     // Load the length.
     Register scratch = out.scratchReg();
     Int32Key key = ToInt32Key(lir->index());
     masm.unboxInt32(Address(object, TypedArrayObject::lengthOffset()), scratch);
 
-    // OOL path if index >= length.
-    masm.branchKey(Assembler::BelowOrEqual, scratch, key, ool->entry());
+    // Load undefined unless length > key.
+    Label inbounds, done;
+    masm.branchKey(Assembler::Above, scratch, key, &inbounds);
+    masm.moveValue(UndefinedValue(), out);
+    masm.jump(&done);
 
     // Load the elements vector.
+    masm.bind(&inbounds);
     masm.loadPtr(Address(object, TypedArrayObject::dataOffset()), scratch);
 
     int arrayType = lir->mir()->arrayType();
@@ -6396,35 +6401,7 @@ CodeGenerator::visitLoadTypedArrayElementHole(LLoadTypedArrayElementHole *lir)
     if (fail.used() && !bailoutFrom(&fail, lir->snapshot()))
         return false;
 
-    masm.bind(ool->rejoin());
-    return true;
-}
-
-typedef bool (*GetElementMonitoredFn)(JSContext *, MutableHandleValue, HandleValue, MutableHandleValue);
-static const VMFunction GetElementMonitoredInfo =
-    FunctionInfo<GetElementMonitoredFn>(js::GetElementMonitored);
-
-bool
-CodeGenerator::visitOutOfLineLoadTypedArray(OutOfLineLoadTypedArray *ool)
-{
-    LLoadTypedArrayElementHole *ins = ool->ins();
-    saveLive(ins);
-
-    Register object = ToRegister(ins->object());
-    ValueOperand out = ToOutValue(ins);
-
-    if (ins->index()->isConstant())
-        pushArg(*ins->index()->toConstant());
-    else
-        pushArg(TypedOrValueRegister(MIRType_Int32, ToAnyRegister(ins->index())));
-    pushArg(TypedOrValueRegister(MIRType_Object, AnyRegister(object)));
-    if (!callVM(GetElementMonitoredInfo, ins))
-        return false;
-
-    masm.storeCallResultValue(out);
-    restoreLive(ins);
-
-    masm.jump(ool->rejoin());
+    masm.bind(&done);
     return true;
 }
 
@@ -7091,7 +7068,7 @@ CodeGenerator::visitAsmJSCall(LAsmJSCall *ins)
     MAsmJSCall *mir = ins->mir();
 
 #if defined(JS_CPU_ARM) && !defined(JS_CPU_ARM_HARDFP)
-    for (unsigned i = 0; i < ins->numOperands(); i++) {
+    for (unsigned i = 0, e = ins->numOperands(); i < e; i++) {
         LAllocation *a = ins->getOperand(i);
         if (a->isFloatReg()) {
             FloatRegister fr = ToFloatRegister(a);
