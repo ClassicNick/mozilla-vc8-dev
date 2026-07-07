@@ -204,8 +204,6 @@ JS_SetSourceHook(JSRuntime *rt, JS_SourceHook hook);
 
 namespace js {
 
-extern mozilla::ThreadLocal<PerThreadData *> TlsPerThreadData;
-
 inline JSRuntime *
 GetRuntime(const JSContext *cx)
 {
@@ -442,7 +440,10 @@ GetGlobalForObjectCrossCompartment(JSObject *obj);
 
 // For legacy consumers only. This whole concept is going away soon.
 JS_FRIEND_API(JSObject *)
-GetDefaultGlobalForContext(JSContext *cx);
+DefaultObjectForContextOrNull(JSContext *cx);
+
+JS_FRIEND_API(void)
+SetDefaultObjectForContext(JSContext *cx, JSObject *obj);
 
 JS_FRIEND_API(void)
 NotifyAnimationActivity(JSObject *obj);
@@ -1473,6 +1474,10 @@ class JSJitGetterCallArgs : protected JS::MutableHandleValue
   public:
     explicit JSJitGetterCallArgs(const JS::CallArgs& args)
       : JS::MutableHandleValue(args.rval())
+    {}
+
+    explicit JSJitGetterCallArgs(JS::Rooted<JS::Value>* rooted)
+      : JS::MutableHandleValue(rooted)
     {}
 
     JS::MutableHandleValue rval() {

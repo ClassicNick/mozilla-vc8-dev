@@ -506,7 +506,7 @@ ReferenceFinder::addReferrer(jsval referrerArg, Path *path)
     /* Find the property of the results object named |pathName|. */
     RootedValue v(context);
 
-    if (!JS_GetProperty(context, result, pathName, v.address()))
+    if (!JS_GetProperty(context, result, pathName, &v))
         return false;
     if (v.isUndefined()) {
         /* Create an array to accumulate referents under this path. */
@@ -514,7 +514,7 @@ ReferenceFinder::addReferrer(jsval referrerArg, Path *path)
         if (!array)
             return false;
         v.setObject(*array);
-        return !!JS_SetProperty(context, result, pathName, &v);
+        return !!JS_SetProperty(context, result, pathName, v);
     }
 
     /* The property's value had better be an array. */

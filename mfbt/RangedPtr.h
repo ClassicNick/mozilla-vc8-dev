@@ -16,8 +16,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/NullPtr.h"
-
-#include "mozilla/StandardInteger.h"
+#include "mozilla/Util.h"
 
 namespace mozilla {
 

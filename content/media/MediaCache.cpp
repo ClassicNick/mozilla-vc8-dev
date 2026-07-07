@@ -1046,7 +1046,7 @@ MediaCache::Update()
           continue;
         }
         TimeDuration predictedUse = PredictNextUse(now, blockIndex);
-        latestPredictedUseForOverflow = std::max(latestPredictedUseForOverflow, predictedUse);
+        latestPredictedUseForOverflow = NS_MAX(latestPredictedUseForOverflow, predictedUse);
       }
     } else {
       freeBlockCount += maxBlocks - mIndex.Length();

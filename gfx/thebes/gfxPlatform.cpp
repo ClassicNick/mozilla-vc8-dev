@@ -257,6 +257,13 @@ gfxPlatform::gfxPlatform()
     mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     mBidiNumeralOption = UNINITIALIZED_VALUE;
 
+    mLayersPreferMemoryOverShmem =
+        XRE_GetProcessType() == GeckoProcessType_Default &&
+        Preferences::GetBool("layers.prefer-memory-over-shmem", true);
+
+    mLayersUseDeprecated =
+        Preferences::GetBool("layers.use-deprecated-textures", true);
+
     uint32_t canvasMask = (1 << BACKEND_CAIRO) | (1 << BACKEND_SKIA);
     uint32_t contentMask = 0;
     InitBackendPrefs(canvasMask, contentMask);
@@ -505,6 +512,12 @@ gfxPlatform::~gfxPlatform()
 #endif
 }
 
+bool
+gfxPlatform::PreferMemoryOverShmem() const {
+  MOZ_ASSERT(!CompositorParent::IsInCompositorThread());
+  return mLayersPreferMemoryOverShmem;
+}
+
 already_AddRefed<gfxASurface>
 gfxPlatform::CreateOffscreenImageSurface(const gfxIntSize& aSize,
                                          gfxASurface::gfxContentType aContentType)
@@ -636,7 +649,8 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
   RefPtr<SourceSurface> srcBuffer;
 
 #if defined XP_WIN && defined CARIO_HAS_D2D_SURFACE
-  if (aSurface->GetType() == gfxASurface::SurfaceTypeD2D) {
+  if (aSurface->GetType() == gfxASurface::SurfaceTypeD2D &&
+      format != FORMAT_A8) { {
     NativeSurface surf;
     surf.mFormat = format;
     surf.mType = NATIVE_SURFACE_D3D10_TEXTURE;

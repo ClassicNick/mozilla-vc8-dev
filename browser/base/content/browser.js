@@ -137,6 +137,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
 XPCOMUtils.defineLazyModuleGetter(this, "SitePermissions",
   "resource:///modules/SitePermissions.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "SessionStore",
+  "resource:///modules/sessionstore/SessionStore.jsm");
+
 let gInitialPages = [
   "about:blank",
   "about:newtab",
@@ -728,18 +731,6 @@ const gFormSubmitObserver = {
 
 var gBrowserInit = {
   onLoad: function() {
-    // window.arguments[0]: URI to load (string), or an nsISupportsArray of
-    //                      nsISupportsStrings to load, or a xul:tab of
-    //                      a tabbrowser, which will be replaced by this
-    //                      window (for this case, all other arguments are
-    //                      ignored).
-    //                 [1]: character set (string)
-    //                 [2]: referrer (nsIURI)
-    //                 [3]: postData (nsIInputStream)
-    //                 [4]: allowThirdPartyFixup (bool)
-    if ("arguments" in window && window.arguments[0])
-      var uriToLoad = window.arguments[0];
-
     gMultiProcessBrowser = gPrefService.getBoolPref("browser.tabs.remote");
 
     var mustLoadSidebar = false;
@@ -780,6 +771,7 @@ var gBrowserInit = {
       new nsBrowserAccess();
 
     // set default character set if provided
+    // window.arguments[1]: character set (string)
     if ("arguments" in window && window.arguments.length > 1 && window.arguments[1]) {
       if (window.arguments[1].startsWith("charset=")) {
         var arrayArgComponents = window.arguments[1].split("=");
@@ -946,7 +938,7 @@ var gBrowserInit = {
     retrieveToolbarIconsizesFromTheme();
 
     // Wait until chrome is painted before executing code not critical to making the window visible
-    this._boundDelayedStartup = this._delayedStartup.bind(this, uriToLoad, mustLoadSidebar);
+    this._boundDelayedStartup = this._delayedStartup.bind(this, mustLoadSidebar);
     window.addEventListener("MozAfterPaint", this._boundDelayedStartup);
 
     this._loadHandled = true;
@@ -957,7 +949,7 @@ var gBrowserInit = {
     this._boundDelayedStartup = null;
   },
 
-  _delayedStartup: function(uriToLoad, mustLoadSidebar) {
+  _delayedStartup: function(mustLoadSidebar) {
     let tmp = {};
     Cu.import("resource://gre/modules/TelemetryTimestamps.jsm", tmp);
     let TelemetryTimestamps = tmp.TelemetryTimestamps;
@@ -976,6 +968,7 @@ var gBrowserInit = {
     socialBrowser.addEventListener("MozApplicationManifest",
                               OfflineApps, false);
 
+    let uriToLoad = this._getUriToLoad();
     var isLoadingBlank = isBlankPageURL(uriToLoad);
 
     // This pageshow listener needs to be registered before we may call
@@ -1012,6 +1005,9 @@ var gBrowserInit = {
 
         gBrowser.swapBrowsersAndCloseOther(gBrowser.selectedTab, uriToLoad);
       }
+      // window.arguments[2]: referrer (nsIURI)
+      //                 [3]: postData (nsIInputStream)
+      //                 [4]: allowThirdPartyFixup (bool)
       else if (window.arguments.length >= 3) {
         loadURI(uriToLoad, window.arguments[2], window.arguments[3] || null,
                 window.arguments[4] || false);
@@ -1040,6 +1036,7 @@ var gBrowserInit = {
     OfflineApps.init();
     IndexedDBPromptHelper.init();
     gFormSubmitObserver.init();
+    SocialUI.init();
     AddonManager.addAddonListener(AddonsMgrListener);
     WebrtcIndicator.init();
 
@@ -1097,10 +1094,6 @@ var gBrowserInit = {
       Cu.import("resource:///modules/NetworkPrioritizer.jsm", NP);
       NP.trackBrowserWindow(window);
     }
-
-    // initialize the session-restore service (in case it's not already running)
-    let ss = Cc["@mozilla.org/browser/sessionstore;1"].getService(Ci.nsISessionStore);
-    let ssPromise = ss.init(window);
 
     PlacesToolbarHelper.init();
 
@@ -1277,20 +1270,44 @@ var gBrowserInit = {
 #endif
 #endif
 
-    ssPromise.then(() =>{
+    SessionStore.promiseInitialized.then(() => {
       // Enable the Restore Last Session command if needed
-      if (ss.canRestoreLastSession &&
+      if (SessionStore.canRestoreLastSession &&
           !PrivateBrowsingUtils.isWindowPrivate(window))
         goSetCommandEnabled("Browser:RestoreLastSession", true);
 
       TabView.init();
-      SocialUI.init();
 
       setTimeout(function () { BrowserChromeTest.markAsReady(); }, 0);
     });
 
     Services.obs.notifyObservers(window, "browser-delayed-startup-finished", "");
     TelemetryTimestamps.add("delayedStartupFinished");
+  },
+
+  // Returns the URI(s) to load at startup.
+  _getUriToLoad: function () {
+    // window.arguments[0]: URI to load (string), or an nsISupportsArray of
+    //                      nsISupportsStrings to load, or a xul:tab of
+    //                      a tabbrowser, which will be replaced by this
+    //                      window (for this case, all other arguments are
+    //                      ignored).
+    if (!window.arguments || !window.arguments[0])
+      return null;
+
+    let uri = window.arguments[0];
+    let sessionStartup = Cc["@mozilla.org/browser/sessionstartup;1"]
+                           .getService(Ci.nsISessionStartup);
+    let defaultArgs = Cc["@mozilla.org/browser/clh;1"]
+                        .getService(Ci.nsIBrowserHandler)
+                        .defaultArgs;
+
+    // If the given URI matches defaultArgs (the default homepage) we want
+    // to block its load if we're going to restore a session anyway.
+    if (uri == defaultArgs && sessionStartup.willOverrideHomepage)
+      return null;
+
+    return uri;
   },
 
   onUnload: function() {
@@ -3924,8 +3941,10 @@ var XULBrowserWindow = {
 
         // Update starring UI
         BookmarkingUI.updateStarState();
-        SocialMark.updateMarkState();
-        SocialShare.update();
+        if (SocialUI.enabled) {
+          SocialMark.updateMarkState();
+          SocialShare.update();
+        }
       }
 
       // Show or hide browser chrome based on the whitelist

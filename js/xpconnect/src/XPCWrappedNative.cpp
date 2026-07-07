@@ -1992,7 +1992,7 @@ class CallMethodHelper
                               nsID* result) const;
 
     JS_ALWAYS_INLINE JSBool
-    GetOutParamSource(uint8_t paramIndex, jsval* srcp) const;
+    GetOutParamSource(uint8_t paramIndex, MutableHandleValue srcp) const;
 
     JS_ALWAYS_INLINE JSBool
     GatherAndConvertResults();
@@ -2248,7 +2248,7 @@ CallMethodHelper::GetInterfaceTypeFromParam(uint8_t paramIndex,
 }
 
 JSBool
-CallMethodHelper::GetOutParamSource(uint8_t paramIndex, jsval* srcp) const
+CallMethodHelper::GetOutParamSource(uint8_t paramIndex, MutableHandleValue srcp) const
 {
     const nsXPTParamInfo& paramInfo = mMethodInfo->GetParam(paramIndex);
 
@@ -2347,7 +2347,7 @@ CallMethodHelper::GatherAndConvertResults()
             NS_ASSERTION(mArgv[i].isObject(), "out var is not object");
             if (!JS_SetPropertyById(mCallContext,
                                     &mArgv[i].toObject(),
-                                    mIdxValueId, &v)) {
+                                    mIdxValueId, v)) {
                 ThrowBadParam(NS_ERROR_XPC_CANT_SET_OUT_VAL, i, mCallContext);
                 return false;
             }
@@ -2528,7 +2528,7 @@ CallMethodHelper::ConvertIndependentParam(uint8_t i)
     //
     // This is a no-op for 'in' params.
     RootedValue src(mCallContext);
-    if (!GetOutParamSource(i, src.address()))
+    if (!GetOutParamSource(i, &src))
         return false;
 
     // All that's left to do is value conversion. Bail early if we don't need
@@ -2633,7 +2633,7 @@ CallMethodHelper::ConvertDependentParam(uint8_t i)
     //
     // This is a no-op for 'in' params.
     RootedValue src(mCallContext);
-    if (!GetOutParamSource(i, src.address()))
+    if (!GetOutParamSource(i, &src))
         return false;
 
     // All that's left to do is value conversion. Bail early if we don't need

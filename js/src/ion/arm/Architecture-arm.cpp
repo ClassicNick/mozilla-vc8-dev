@@ -14,11 +14,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define HWCAP_ARMv7 (1 << 31)
+#include "ion/arm/Assembler-arm.h"
 
-// lame check for kernel version
-// see bug 586550
 #if !(defined(ANDROID) || defined(MOZ_B2G))
+#define HWCAP_ARMv7 (1 << 31)
 #include <asm/hwcap.h>
 #else
 #define HWCAP_VFP      (1<<0)

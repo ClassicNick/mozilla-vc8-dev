@@ -722,7 +722,7 @@ nsGeolocationService::HandleMozsettingChanged(const PRUnichar* aData)
 
     JS::Rooted<JSObject*> obj(cx, &val.toObject());
     JS::Rooted<JS::Value> key(cx);
-    if (!JS_GetProperty(cx, obj, "key", key.address()) || !key.isString()) {
+    if (!JS_GetProperty(cx, obj, "key", &key) || !key.isString()) {
       return;
     }
 
@@ -732,7 +732,7 @@ nsGeolocationService::HandleMozsettingChanged(const PRUnichar* aData)
     }
 
     JS::Rooted<JS::Value> value(cx);
-    if (!JS_GetProperty(cx, obj, "value", value.address()) || !value.isBoolean()) {
+    if (!JS_GetProperty(cx, obj, "value", &value) || !value.isBoolean()) {
       return;
     }
 
