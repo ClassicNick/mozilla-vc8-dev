@@ -90,9 +90,6 @@ EXPORTS.gfxipc += [
 EXPORTS.mozilla.layers += [
     'Compositor.h',
     'CompositorTypes.h',
-    'ContainerLayerComposite.h',
-    'ContentClient.h',
-    'ContentHost.h',
     'Effects.h',
     'LayersTypes.h',
     'RenderTrace.h',

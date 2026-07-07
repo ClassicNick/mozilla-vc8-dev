@@ -52,8 +52,8 @@ JS_SetSourceHook(JSRuntime *rt, JS_SourceHook hook)
 JS_FRIEND_API(void)
 JS_SetGrayGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data)
 {
-    rt->gcGrayRootsTraceOp = traceOp;
-    rt->gcGrayRootsData = data;
+    rt->gcGrayRootTracer.op = traceOp;
+    rt->gcGrayRootTracer.data = data;
 }
 
 JS_FRIEND_API(JSString *)
@@ -300,6 +300,18 @@ JS_DefineFunctionsWithHelp(JSContext *cx, JSObject *objArg, const JSFunctionSpec
     }
 
     return true;
+}
+
+JS_FRIEND_API(bool)
+js_ObjectClassIs(JSContext *cx, HandleObject obj, ESClassValue classValue)
+{
+    return ObjectClassIs(obj, classValue, cx);
+}
+
+JS_FRIEND_API(const char *)
+js_ObjectClassName(JSContext *cx, HandleObject obj)
+{
+    return JSObject::className(cx, obj);
 }
 
 AutoSwitchCompartment::AutoSwitchCompartment(JSContext *cx, JSCompartment *newCompartment
@@ -1123,3 +1135,11 @@ js::IsInRequest(JSContext *cx)
     return !!cx->runtime()->requestDepth;
 }
 #endif
+
+#ifdef JSGC_GENERATIONAL
+JS_FRIEND_API(void)
+JS_StorePostBarrierCallback(JSContext* cx, void (*callback)(JSTracer *trc, void *key), void *key)
+{
+    cx->runtime()->gcStoreBuffer.putCallback(callback, key);
+}
+#endif /* JSGC_GENERATIONAL */

@@ -34,6 +34,8 @@
 #include "nsContentUtils.h"
 #include "ChildIterator.h"
 #include "nsRenderingContext.h"
+#include "prtime.h"
+#include <algorithm>
 
 #ifdef ACCESSIBILITY
 #include "nsAccessibilityService.h"

@@ -717,9 +717,6 @@ public:
         IDX_PROTO                   ,
         IDX_ITERATOR                ,
         IDX_EXPOSEDPROPS            ,
-        IDX_BASEURIOBJECT           ,
-        IDX_NODEPRINCIPAL           ,
-        IDX_MOZMATCHESSELECTOR      ,
         IDX_TOTAL_COUNT // just a count of the above
     };
 
@@ -2711,8 +2708,6 @@ private:
     nsXPCWrappedJSClass(JSContext* cx, REFNSIID aIID,
                         nsIInterfaceInfo* aInfo);
 
-    JSObject*  NewOutObject(JSContext* cx, JSObject* scope);
-
     JSBool IsReflectable(uint16_t i) const
         {return (JSBool)(mDescriptors[i/32] & (1 << (i%32)));}
     void SetReflectable(uint16_t i, JSBool b)
@@ -2843,7 +2838,7 @@ protected:
    void Unlink();
 
 private:
-    JSObject* mJSObj;
+    JS::Heap<JSObject*> mJSObj;
     nsXPCWrappedJSClass* mClass;
     nsXPCWrappedJS* mRoot;
     nsXPCWrappedJS* mNext;
@@ -3869,6 +3864,11 @@ GetObjectScope(JSObject *obj)
 
 extern JSBool gDebugMode;
 extern JSBool gDesiredDebugMode;
+
+JSObject* NewOutObject(JSContext* cx, JSObject* scope);
+bool IsOutObject(JSContext* cx, JSObject* obj);
+
+nsresult HasInstance(JSContext *cx, JS::HandleObject objArg, const nsID *iid, bool *bp);
 
 // Internal use only.
 bool PushJSContext(JSContext *aCx);

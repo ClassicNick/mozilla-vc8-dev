@@ -251,11 +251,11 @@ __declspec(noreturn) __inline void MOZ_NoReturn() {}
  * corrupted.
  */
 #ifndef DEBUG
-#  define MOZ_CRASH(...) MOZ_REALLY_CRASH()
+#  define MOZ_CRASH(a) MOZ_REALLY_CRASH()
 #else
-#  define MOZ_CRASH(...) \
+#  define MOZ_CRASH(a) \
      do { \
-       MOZ_ReportCrash("" __VA_ARGS__, __FILE__, __LINE__); \
+       MOZ_ReportCrash("" a, __FILE__, __LINE__); \
        MOZ_REALLY_CRASH(); \
      } while(0)
 #endif

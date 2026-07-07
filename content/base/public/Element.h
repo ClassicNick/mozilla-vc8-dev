@@ -39,6 +39,7 @@
 #include "nsAttrValue.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsIHTMLCollection.h"
+#include "Units.h"
 
 class nsIDOMEventListener;
 class nsIFrame;
@@ -674,8 +675,8 @@ public:
   {
     nsIScrollableFrame* sf = GetScrollFrame();
     if (sf) {
-      sf->ScrollToCSSPixels(nsIntPoint(sf->GetScrollPositionCSSPixels().x,
-                                       aScrollTop));
+      sf->ScrollToCSSPixels(CSSIntPoint(sf->GetScrollPositionCSSPixels().x,
+                                        aScrollTop));
     }
   }
   int32_t ScrollLeft()
@@ -687,8 +688,8 @@ public:
   {
     nsIScrollableFrame* sf = GetScrollFrame();
     if (sf) {
-      sf->ScrollToCSSPixels(nsIntPoint(aScrollLeft,
-                                       sf->GetScrollPositionCSSPixels().y));
+      sf->ScrollToCSSPixels(CSSIntPoint(aScrollLeft,
+                                        sf->GetScrollPositionCSSPixels().y));
     }
   }
   int32_t ScrollWidth();
@@ -920,6 +921,22 @@ public:
    * @param aValue   Boolean value of attribute.
    */
   NS_HIDDEN_(nsresult) SetBoolAttr(nsIAtom* aAttr, bool aValue);
+
+  /**
+   * Retrieve the ratio of font-size-inflated text font size to computed font
+   * size for this element. This will query the element for its primary frame,
+   * and then use this to get font size inflation information about the frame.
+   *
+   * @returns The font size inflation ratio (inflated font size to uninflated
+   *          font size) for the primary frame of this element. Returns 1.0
+   *          by default if font size inflation is not enabled. Returns -1
+   *          if the element does not have a primary frame.
+   *
+   * @note The font size inflation ratio that is returned is actually the
+   *       font size inflation data for the element's _primary frame_, not the
+   *       element itself, but for most purposes, this should be sufficient.
+   */
+  float FontSizeInflation();
 
 protected:
   /*

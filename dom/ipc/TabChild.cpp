@@ -1528,7 +1528,10 @@ TabChild::ProcessUpdateFrame(const FrameMetrics& aFrameMetrics)
     utils->SetScrollPositionClampingScrollPortSize(
       cssCompositedRect.width, cssCompositedRect.height);
     ScrollWindowTo(window, aFrameMetrics.mScrollOffset);
-    CSSToScreenScale resolution = aFrameMetrics.CalculateResolution();
+    LayoutDeviceToLayerScale resolution =
+      aFrameMetrics.CalculateResolution()
+      / aFrameMetrics.mDevPixelsPerCSSPixel
+      * ScreenToLayerScale(1);
     utils->SetResolution(resolution.scale, resolution.scale);
 
     nsCOMPtr<nsIDOMDocument> domDoc;

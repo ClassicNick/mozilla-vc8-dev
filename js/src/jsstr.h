@@ -48,7 +48,7 @@ ConcatStrings(ThreadSafeContext *cx,
               typename MaybeRooted<JSString*, allowGC>::HandleType right);
 
 inline JSString *
-ConcatStringsAllowGC(JSContext *cx,
+ConcatStringsAllowGC(ThreadSafeContext *cx,
                HandleString left,
                HandleString right)
 {
@@ -56,7 +56,7 @@ ConcatStringsAllowGC(JSContext *cx,
 }
 
 inline JSString *
-ConcatStringsDisallowGC(JSContext *cx,
+ConcatStringsDisallowGC(ThreadSafeContext *cx,
                JSString *left,
                JSString *right)
 {
@@ -181,7 +181,15 @@ namespace js {
  * an error, otherwise returning a new string reference.
  */
 extern JSString *
-ValueToSource(JSContext *cx, const js::Value &v);
+ValueToSource(JSContext *cx, HandleValue v);
+
+/*
+ * Convert a JSString to its source expression; returns null after reporting an
+ * error, otherwise returns a new string reference. No Handle needed since the
+ * input is dead after the GC.
+ */
+extern JSString *
+StringToSource(JSContext *cx, JSString *str);
 
 /*
  * Test if strings are equal. The caller can call the function even if str1

@@ -613,9 +613,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
                            DEFAULT_SCRIPTABLE_FLAGS |
                            WINDOW_SCRIPTABLE_FLAGS)
 
-  NS_DEFINE_CLASSINFO_DATA(GeoPositionCoords, nsDOMGenericSH,
-                           DOM_DEFAULT_SCRIPTABLE_FLAGS)
-
   NS_DEFINE_CLASSINFO_DATA(MozPowerManager, nsDOMGenericSH,
                            DOM_DEFAULT_SCRIPTABLE_FLAGS)
 
@@ -1551,10 +1548,6 @@ nsDOMClassInfo::Init()
 #ifdef MOZ_WEBSPEECH
     DOM_CLASSINFO_MAP_ENTRY(nsISpeechSynthesisGetter)
 #endif
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(GeoPositionCoords, nsIDOMGeoPositionCoords)
-     DOM_CLASSINFO_MAP_ENTRY(nsIDOMGeoPositionCoords)
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN(MozPowerManager, nsIDOMMozPowerManager)
@@ -4031,6 +4024,12 @@ nsWindowSH::GlobalResolve(nsGlobalWindow *aWin, JSContext *cx,
 
   if (name_struct->mType == nsGlobalNameStruct::eTypeProperty) {
     if (name_struct->mChromeOnly && !nsContentUtils::IsCallerChrome())
+      return NS_OK;
+
+    // Before defining a global property, check for a named subframe of the
+    // same name. If it exists, we don't want to shadow it.
+    nsCOMPtr<nsIDOMWindow> childWin = aWin->GetChildWindow(name);
+    if (childWin)
       return NS_OK;
 
     nsCOMPtr<nsISupports> native(do_CreateInstance(name_struct->mCID, &rv));

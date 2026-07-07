@@ -887,7 +887,7 @@ CodeGenerator::visitReturn(LReturn *lir)
 #endif
     // Don't emit a jump to the return label if this is the last block.
     if (current->mir() != *gen->graph().poBegin())
-        masm.jump(returnLabel_);
+        masm.jump(&returnLabel_);
     return true;
 }
 
@@ -2573,6 +2573,12 @@ CodeGenerator::generateBody()
 {
     IonScriptCounts *counts = maybeCreateScriptCounts();
 
+#if defined(JS_ION_PERF)
+    PerfSpewer *perfSpewer = &perfSpewer_;
+    if (gen->compilingAsmJS())
+        perfSpewer = &gen->perfSpewer();
+#endif
+
     for (size_t i = 0; i < graph.numBlocks(); i++) {
         current = graph.getBlock(i);
 
@@ -2591,8 +2597,9 @@ CodeGenerator::generateBody()
                 return false;
         }
 
-        if (PerfBlockEnabled())
-            perfSpewer_.startBasicBlock(current->mir(), masm);
+#if defined(JS_ION_PERF)
+        perfSpewer->startBasicBlock(current->mir(), masm);
+#endif
 
         for (; iter != current->end(); iter++) {
             IonSpew(IonSpew_Codegen, "instruction %s", iter->opName());
@@ -2614,8 +2621,9 @@ CodeGenerator::generateBody()
         if (masm.oom())
             return false;
 
-        if (PerfBlockEnabled())
-            perfSpewer_.endBasicBlock(masm);
+#if defined(JS_ION_PERF)
+        perfSpewer->endBasicBlock(masm);
+#endif
     }
 
     JS_ASSERT(pushedArgumentSlots_.empty());
@@ -3362,7 +3370,7 @@ CodeGenerator::visitTypedArrayLength(LTypedArrayLength *lir)
 {
     Register obj = ToRegister(lir->object());
     Register out = ToRegister(lir->output());
-    masm.unboxInt32(Address(obj, TypedArray::lengthOffset()), out);
+    masm.unboxInt32(Address(obj, TypedArrayObject::lengthOffset()), out);
     return true;
 }
 
@@ -3371,7 +3379,7 @@ CodeGenerator::visitTypedArrayElements(LTypedArrayElements *lir)
 {
     Register obj = ToRegister(lir->object());
     Register out = ToRegister(lir->output());
-    masm.loadPtr(Address(obj, TypedArray::dataOffset()), out);
+    masm.loadPtr(Address(obj, TypedArrayObject::dataOffset()), out);
     return true;
 }
 
@@ -5468,11 +5476,21 @@ CodeGenerator::link()
     if (callTargets.length() > 0)
         ionScript->copyCallTargetEntries(callTargets.begin());
 
-    // The correct state for prebarriers is unknown until the end of compilation,
-    // since a GC can occur during code generation. All barriers are emitted
-    // off-by-default, and are toggled on here if necessary.
-    if (cx->zone()->needsBarrier())
-        ionScript->toggleBarriers(true);
+    switch (executionMode) {
+      case SequentialExecution:
+        // The correct state for prebarriers is unknown until the end of compilation,
+        // since a GC can occur during code generation. All barriers are emitted
+        // off-by-default, and are toggled on here if necessary.
+        if (cx->zone()->needsBarrier())
+            ionScript->toggleBarriers(true);
+        break;
+      case ParallelExecution:
+        // We don't run incremental GC during parallel execution; no need to
+        // turn on barriers.
+        break;
+      default:
+        MOZ_ASSUME_UNREACHABLE("No such execution mode");
+    }
 
     return true;
 }
@@ -6254,7 +6272,7 @@ CodeGenerator::visitLoadTypedArrayElement(LLoadTypedArrayElement *lir)
     AnyRegister out = ToAnyRegister(lir->output());
 
     int arrayType = lir->mir()->arrayType();
-    int width = TypedArray::slotWidth(arrayType);
+    int width = TypedArrayObject::slotWidth(arrayType);
 
     Label fail;
     if (lir->index()->isConstant()) {
@@ -6302,16 +6320,16 @@ CodeGenerator::visitLoadTypedArrayElementHole(LLoadTypedArrayElementHole *lir)
     // Load the length.
     Register scratch = out.scratchReg();
     Int32Key key = ToInt32Key(lir->index());
-    masm.unboxInt32(Address(object, TypedArray::lengthOffset()), scratch);
+    masm.unboxInt32(Address(object, TypedArrayObject::lengthOffset()), scratch);
 
     // OOL path if index >= length.
     masm.branchKey(Assembler::BelowOrEqual, scratch, key, ool->entry());
 
     // Load the elements vector.
-    masm.loadPtr(Address(object, TypedArray::dataOffset()), scratch);
+    masm.loadPtr(Address(object, TypedArrayObject::dataOffset()), scratch);
 
     int arrayType = lir->mir()->arrayType();
-    int width = TypedArray::slotWidth(arrayType);
+    int width = TypedArrayObject::slotWidth(arrayType);
 
     Label fail;
     if (key.isConstant()) {
@@ -6363,7 +6381,7 @@ template <typename T>
 static inline void
 StoreToTypedArray(MacroAssembler &masm, int arrayType, const LAllocation *value, const T &dest)
 {
-    if (arrayType == TypedArray::TYPE_FLOAT32 || arrayType == TypedArray::TYPE_FLOAT64) {
+    if (arrayType == TypedArrayObject::TYPE_FLOAT32 || arrayType == TypedArrayObject::TYPE_FLOAT64) {
         masm.storeToTypedFloatArray(arrayType, ToFloatRegister(value), dest);
     } else {
         if (value->isConstant())
@@ -6380,7 +6398,7 @@ CodeGenerator::visitStoreTypedArrayElement(LStoreTypedArrayElement *lir)
     const LAllocation *value = lir->value();
 
     int arrayType = lir->mir()->arrayType();
-    int width = TypedArray::slotWidth(arrayType);
+    int width = TypedArrayObject::slotWidth(arrayType);
 
     if (lir->index()->isConstant()) {
         Address dest(elements, ToInt32(lir->index()) * width);
@@ -6400,7 +6418,7 @@ CodeGenerator::visitStoreTypedArrayElementHole(LStoreTypedArrayElementHole *lir)
     const LAllocation *value = lir->value();
 
     int arrayType = lir->mir()->arrayType();
-    int width = TypedArray::slotWidth(arrayType);
+    int width = TypedArrayObject::slotWidth(arrayType);
 
     bool guardLength = true;
     if (lir->index()->isConstant() && lir->length()->isConstant()) {
@@ -6936,7 +6954,7 @@ CodeGenerator::visitOutOfLineParallelAbort(OutOfLineParallelAbort *ool)
     masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ParallelAbort));
 
     masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
-    masm.jump(returnLabel_);
+    masm.jump(&returnLabel_);
     return true;
 }
 
@@ -6996,7 +7014,7 @@ CodeGenerator::visitOutOfLinePropagateParallelAbort(OutOfLinePropagateParallelAb
     masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, PropagateParallelAbort));
 
     masm.moveValue(MagicValue(JS_ION_ERROR), JSReturnOperand);
-    masm.jump(returnLabel_);
+    masm.jump(&returnLabel_);
     return true;
 }
 
@@ -7089,7 +7107,7 @@ CodeGenerator::visitAsmJSReturn(LAsmJSReturn *lir)
         masm.ma_vxfer(d0, r0, r1);
 #endif
     if (current->mir() != *gen->graph().poBegin())
-        masm.jump(returnLabel_);
+        masm.jump(&returnLabel_);
     return true;
 }
 
@@ -7098,7 +7116,7 @@ CodeGenerator::visitAsmJSVoidReturn(LAsmJSVoidReturn *lir)
 {
     // Don't emit a jump to the return label if this is the last block.
     if (current->mir() != *gen->graph().poBegin())
-        masm.jump(returnLabel_);
+        masm.jump(&returnLabel_);
     return true;
 }
 

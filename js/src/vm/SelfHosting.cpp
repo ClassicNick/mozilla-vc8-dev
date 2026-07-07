@@ -138,7 +138,7 @@ intrinsic_ToInteger(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     double result;
-    if (!ToInteger(cx, args[0], &result))
+    if (!ToInteger(cx, args.handleAt(0), &result))
         return false;
     args.rval().setDouble(result);
     return true;
@@ -453,7 +453,7 @@ js::intrinsic_UnsafeSetElement(JSContext *cx, unsigned argc, Value *vp)
             JS_ASSERT(idx < arrobj->getDenseInitializedLength());
             JSObject::setDenseElementWithType(cx, arrobj, idx, args[elemi]);
         } else {
-            JS_ASSERT(idx < TypedArray::length(arrobj));
+            JS_ASSERT(idx < TypedArrayObject::length(arrobj));
             RootedValue tmp(cx, args[elemi]);
             // XXX: Always non-strict.
             if (!JSObject::setElement(cx, arrobj, arrobj, idx, &tmp, false))

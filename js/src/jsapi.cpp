@@ -816,10 +816,6 @@ JSRuntime::JSRuntime(JSUseHelperThreads useHelperThreads)
     analysisPurgeCallback(NULL),
     analysisPurgeTriggerBytes(0),
     gcMallocBytes(0),
-    gcBlackRootsTraceOp(NULL),
-    gcBlackRootsData(NULL),
-    gcGrayRootsTraceOp(NULL),
-    gcGrayRootsData(NULL),
     autoGCRooters(NULL),
     scriptAndCountsVector(NULL),
     NaNValue(UndefinedValue()),
@@ -1742,7 +1738,7 @@ JS_InitStandardClasses(JSContext *cx, JSObject *objArg)
 
 #define CLASP(name)                 (&name##Class)
 #define OCLASP(name)                (&name##Object::class_)
-#define TYPED_ARRAY_CLASP(type)     (&TypedArray::classes[TypedArray::type])
+#define TYPED_ARRAY_CLASP(type)     (&TypedArrayObject::classes[TypedArrayObject::type])
 #define EAGER_ATOM(name)            NAME_OFFSET(name)
 #define EAGER_CLASS_ATOM(name)      NAME_OFFSET(name)
 #define EAGER_ATOM_AND_CLASP(name)  EAGER_CLASS_ATOM(name), CLASP(name)
@@ -1784,7 +1780,7 @@ static const JSStdName standard_class_atoms[] = {
 #ifdef ENABLE_PARALLEL_JS
     {js_InitParallelArrayClass,         EAGER_ATOM_AND_OCLASP(ParallelArray)},
 #endif
-    {js_InitProxyClass,                 EAGER_ATOM_AND_CLASP(Proxy)},
+    {js_InitProxyClass,                 EAGER_CLASS_ATOM(Proxy), &js::ObjectProxyClass},
 #if ENABLE_INTL_API
     {js_InitIntlClass,                  EAGER_ATOM_AND_CLASP(Intl)},
 #endif
@@ -1877,6 +1873,7 @@ static const JSStdName object_prototype_names[] = {
 #undef TYPED_ARRAY_CLASP
 #undef EAGER_ATOM
 #undef EAGER_CLASS_ATOM
+#undef EAGER_ATOM_CLASP
 #undef EAGER_ATOM_AND_CLASP
 
 JS_PUBLIC_API(JSBool)
@@ -2291,12 +2288,24 @@ JS_AnchorPtr(void *p)
 {
 }
 
-JS_PUBLIC_API(void)
-JS_SetExtraGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data)
+JS_PUBLIC_API(JSBool)
+JS_AddExtraGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data)
 {
     AssertHeapIsIdle(rt);
-    rt->gcBlackRootsTraceOp = traceOp;
-    rt->gcBlackRootsData = data;
+    return !!rt->gcBlackRootTracers.append(JSRuntime::ExtraTracer(traceOp, data));
+}
+
+JS_PUBLIC_API(void)
+JS_RemoveExtraGCRootsTracer(JSRuntime *rt, JSTraceDataOp traceOp, void *data)
+{
+    AssertHeapIsIdle(rt);
+    for (size_t i = 0; i < rt->gcBlackRootTracers.length(); i++) {
+        JSRuntime::ExtraTracer *e = &rt->gcBlackRootTracers[i];
+        if (e->op == traceOp && e->data == data) {
+            rt->gcBlackRootTracers.erase(e);
+            break;
+        }
+    }
 }
 
 JS_PUBLIC_API(void)
@@ -2789,9 +2798,15 @@ JS_SetFinalizeCallback(JSRuntime *rt, JSFinalizeCallback cb)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_IsAboutToBeFinalized(JSObject **obj)
+JS_IsAboutToBeFinalized(JS::Heap<JSObject *> *objp)
 {
-    return IsObjectAboutToBeFinalized(obj);
+    return IsObjectAboutToBeFinalized(objp->unsafeGet());
+}
+
+JS_PUBLIC_API(JSBool)
+JS_IsAboutToBeFinalizedUnbarriered(JSObject **objp)
+{
+    return IsObjectAboutToBeFinalized(objp);
 }
 
 JS_PUBLIC_API(void)
@@ -3357,9 +3372,13 @@ JS_NewObjectForConstructor(JSContext *cx, JSClass *clasp, const jsval *vp)
 }
 
 JS_PUBLIC_API(JSBool)
-JS_IsExtensible(JSObject *obj)
+JS_IsExtensible(JSContext *cx, HandleObject obj, JSBool *extensible)
 {
-    return obj->isExtensible();
+    bool isExtensible;
+    if (!JSObject::isExtensible(cx, obj, &isExtensible))
+        return false;
+    *extensible = isExtensible;
+    return true;
 }
 
 JS_PUBLIC_API(JSBool)
@@ -3394,7 +3413,10 @@ JS_DeepFreezeObject(JSContext *cx, JSObject *objArg)
     assertSameCompartment(cx, obj);
 
     /* Assume that non-extensible objects are already deep-frozen, to avoid divergence. */
-    if (!obj->isExtensible())
+    bool extensible;
+    if (!JSObject::isExtensible(cx, obj, &extensible))
+        return false;
+    if (!extensible)
         return true;
 
     if (!JSObject::freeze(cx, obj))
@@ -7141,5 +7163,17 @@ JS_GetScriptedGlobal(JSContext *cx)
     if (i.done())
         return cx->global();
     return &i.scopeChain()->global();
+}
+
+JS_PUBLIC_API(JSBool)
+JS_PreventExtensions(JSContext *cx, JS::HandleObject obj)
+{
+    JSBool extensible;
+    if (!JS_IsExtensible(cx, obj, &extensible))
+        return JS_TRUE;
+    if (extensible)
+        return JS_TRUE;
+
+    return JSObject::preventExtensions(cx, obj);
 }
 
