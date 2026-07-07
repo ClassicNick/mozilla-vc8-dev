@@ -1483,13 +1483,14 @@ gfxWindowsPlatform::GetD3D11Device()
     return nullptr;
   }
 
-  D3D_FEATURE_LEVEL featureLevels[] = {
-    D3D_FEATURE_LEVEL_11_1,
-    D3D_FEATURE_LEVEL_11_0,
-    D3D_FEATURE_LEVEL_10_1,
-    D3D_FEATURE_LEVEL_10_0,
-    D3D_FEATURE_LEVEL_9_3
-  };
+  nsTArray<D3D_FEATURE_LEVEL> featureLevels;
+  if (gfxWindowsPlatform::WindowsOSVersion() >= gfxWindowsPlatform::kWindows8) {
+    featureLevels.AppendElement(D3D_FEATURE_LEVEL_11_1);
+  }
+  featureLevels.AppendElement(D3D_FEATURE_LEVEL_11_0);
+  featureLevels.AppendElement(D3D_FEATURE_LEVEL_10_1);
+  featureLevels.AppendElement(D3D_FEATURE_LEVEL_10_0);
+  featureLevels.AppendElement(D3D_FEATURE_LEVEL_9_3);
 
   RefPtr<IDXGIAdapter1> adapter = GetDXGIAdapter();
 
@@ -1499,7 +1500,7 @@ gfxWindowsPlatform::GetD3D11Device()
 
   HRESULT hr = d3d11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
                                  D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                                 featureLevels, sizeof(featureLevels) / sizeof(D3D_FEATURE_LEVEL),
+                                 featureLevels.Elements(), featureLevels.Length(),
                                  D3D11_SDK_VERSION, byRef(mD3D11Device), nullptr, nullptr);
 
   // We leak these everywhere and we need them our entire runtime anyway, let's

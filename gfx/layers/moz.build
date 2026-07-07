@@ -9,7 +9,7 @@ MODULE = 'thebes'
 EXPORTS += [
     'CopyableCanvasLayer.h',
     'FrameMetrics.h',
-    'GonkIOSurfaceImage.h',
+    'GrallocImages.h',
     'ImageContainer.h',
     'ImageLayers.h',
     'ImageTypes.h',
@@ -163,7 +163,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gonk':
     CPP_SOURCES += [
         'ShadowLayerUtilsGralloc.cpp',
         'GrallocImages.cpp',
-        'GonkIOSurfaceImage.cpp',
     ]
 
 CPP_SOURCES += [

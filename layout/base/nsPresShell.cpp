@@ -6139,16 +6139,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
       nsPoint eventPoint;
       if (aEvent->message == NS_TOUCH_START) {
         nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aEvent);
-        // if there is only one touch in this touchstart event, assume that it is
-        // the start of a new touch session and evict any old touches in the
-        // queue
-        if (touchEvent->touches.Length() == 1) {
-          nsTArray< nsRefPtr<dom::Touch> > touches;
-          gCaptureTouchList.Enumerate(&AppendToTouchList, (void *)&touches);
-          for (uint32_t i = 0; i < touches.Length(); ++i) {
-            EvictTouchPoint(touches[i]);
-          }
-        }
         // if this is a continuing session, ensure that all these events are
         // in the same document by taking the target of the events already in
         // the capture list
@@ -6159,18 +6149,12 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
           gPreventMouseEvents = false;
         }
 
-        // Add any new touches to the queue
         for (int32_t i = touchEvent->touches.Length(); i; ) {
           --i;
           dom::Touch* touch = touchEvent->touches[i];
-          touch->mMessage = aEvent->message;
 
           int32_t id = touch->Identifier();
           if (!gCaptureTouchList.Get(id, nullptr)) {
-            // This event is a new touch. Mark it as a changedTouch and
-            // add it to the queue.
-            touch->mChanged = true;
-
             // find the target for this touch
             uint32_t flags = 0;
             eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent,
@@ -6186,7 +6170,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
                 anyTarget = anyTarget->GetParent();
               }
               touch->SetTarget(anyTarget);
-              gCaptureTouchList.Put(id, touch);
             } else {
               nsIFrame* newTargetFrame = nullptr;
               for (nsIFrame* f = target; f;
@@ -6215,7 +6198,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
                   targetContent = targetContent->GetParent();
                 }
                 touch->SetTarget(targetContent);
-                gCaptureTouchList.Put(id, touch);
               }
             }
             if (target) {
@@ -6230,7 +6212,6 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
             nsRefPtr<dom::Touch> oldTouch = gCaptureTouchList.GetWeak(id);
             if (oldTouch) {
               touch->SetTarget(oldTouch->mTarget);
-              gCaptureTouchList.Put(id, touch);
             }
           }
         }
@@ -6679,6 +6660,31 @@ PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
       case NS_MOUSE_BUTTON_UP:
         isHandlingUserInput = true;
         break;
+      case NS_TOUCH_START: {
+        nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aEvent);
+        // if there is only one touch in this touchstart event, assume that it is
+        // the start of a new touch session and evict any old touches in the
+        // queue
+        if (touchEvent->touches.Length() == 1) {
+          nsTArray< nsRefPtr<dom::Touch> > touches;
+          gCaptureTouchList.Enumerate(&AppendToTouchList, (void *)&touches);
+          for (uint32_t i = 0; i < touches.Length(); ++i) {
+            EvictTouchPoint(touches[i]);
+          }
+        }
+        // Add any new touches to the queue
+        for (uint32_t i = 0; i < touchEvent->touches.Length(); ++i) {
+          dom::Touch* touch = touchEvent->touches[i];
+          int32_t id = touch->Identifier();
+          if (!gCaptureTouchList.Get(id, nullptr)) {
+            // If it is not already in the queue, it is a new touch
+            touch->mChanged = true;
+          }
+          touch->mMessage = aEvent->message;
+          gCaptureTouchList.Put(id, touch);
+        }
+        break;
+      }
       case NS_TOUCH_CANCEL:
       case NS_TOUCH_END: {
         // Remove the changed touches

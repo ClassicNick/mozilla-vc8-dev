@@ -1622,6 +1622,11 @@ public:
   static bool AnimatedImageLayersEnabled();
 
   /**
+   * Checks if we should enable parsing for CSS Filters.
+   */
+  static bool CSSFiltersEnabled();
+
+  /**
    * Unions the overflow areas of all non-popup children of aFrame with
    * aOverflowAreas.
    */

@@ -535,8 +535,8 @@ class MOZ_STACK_CLASS MutableHandle : public js::MutableHandleBase<T>
         (void)a;
 #endif
     }
-    template <typename S>
-    void operator=(S v) MOZ_DELETE;
+    template <typename S> void operator=(S v) MOZ_DELETE;
+    void operator=(MutableHandle other) MOZ_DELETE;
 };
 
 typedef MutableHandle<JSObject*>   MutableHandleObject;

@@ -4,24 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ion/arm/CodeGenerator-arm.h"
+
 #include "mozilla/MathAlgorithms.h"
 
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsnum.h"
 
-#include "ion/arm/CodeGenerator-arm.h"
-#include "ion/PerfSpewer.h"
 #include "ion/CodeGenerator.h"
 #include "ion/IonCompartment.h"
 #include "ion/IonFrames.h"
 #include "ion/MIR.h"
 #include "ion/MIRGraph.h"
-#include "ion/shared/CodeGenerator-shared-inl.h"
+#include "ion/PerfSpewer.h"
 #include "vm/Shape.h"
 
 #include "jsscriptinlines.h"
 
+#include "ion/shared/CodeGenerator-shared-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;
@@ -208,9 +209,9 @@ CodeGeneratorARM::bailoutFrom(Label *label, LSnapshot *snapshot)
     switch (info.executionMode()) {
       case ParallelExecution: {
         // in parallel mode, make no attempt to recover, just signal an error.
-        OutOfLineParallelAbort *ool = oolParallelAbort(ParallelBailoutUnsupported,
-                                                       snapshot->mir()->block(),
-                                                       snapshot->mir()->pc());
+        OutOfLineAbortPar *ool = oolAbortPar(ParallelBailoutUnsupported,
+                                             snapshot->mir()->block(),
+                                             snapshot->mir()->pc());
         masm.retarget(label, ool->entry());
         return true;
       }
@@ -1446,6 +1447,17 @@ CodeGeneratorARM::visitCompareVAndBranch(LCompareVAndBranch *lir)
     masm.cmp32(lhs.payloadReg(), rhs.payloadReg());
     emitBranch(cond, lir->ifTrue(), lir->ifFalse());
 
+    return true;
+}
+
+bool
+CodeGeneratorARM::visitBitAndAndBranch(LBitAndAndBranch *baab)
+{
+    if (baab->right()->isConstant())
+        masm.ma_tst(ToRegister(baab->left()), Imm32(ToInt32(baab->right())));
+    else
+        masm.ma_tst(ToRegister(baab->left()), ToRegister(baab->right()));
+    emitBranch(Assembler::NonZero, baab->ifTrue(), baab->ifFalse());
     return true;
 }
 
