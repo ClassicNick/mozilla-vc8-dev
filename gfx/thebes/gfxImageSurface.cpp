@@ -45,7 +45,7 @@ void
 gfxImageSurface::MakeInvalid()
 {
     mSize = gfxIntSize(-1, -1);
-    mData = NULL;
+    mData = nullptr;
     mStride = 0;
 }
 

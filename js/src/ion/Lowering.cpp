@@ -61,6 +61,20 @@ LIRGenerator::visitCallee(MCallee *ins)
 }
 
 bool
+LIRGenerator::visitForceUse(MForceUse *ins)
+{
+    if (ins->input()->type() == MIRType_Value) {
+        LForceUseV *lir = new LForceUseV();
+        if (!useBox(lir, 0, ins->input()));
+            return false;
+        return add(lir);
+    }
+
+    LForceUseT *lir = new LForceUseT(useAnyOrConstant(ins->input()));
+    return add(lir);
+}
+
+bool
 LIRGenerator::visitGoto(MGoto *ins)
 {
     return add(new LGoto(ins->target()));
@@ -474,6 +488,13 @@ LIRGenerator::visitApplyArgs(MApplyArgs *apply)
     if (!assignSafepoint(lir, apply))
         return false;
     return true;
+}
+
+bool
+LIRGenerator::visitBail(MBail *bail)
+{
+    LBail *lir = new LBail();
+    return assignSnapshot(lir) && add(lir, bail);
 }
 
 bool

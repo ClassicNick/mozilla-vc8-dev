@@ -457,7 +457,7 @@ gfxXlibSurface::FindVisual(Screen *screen, gfxImageFormat format)
         case ImageFormatA8:
         case ImageFormatA1:
         default:
-            return NULL;
+            return nullptr;
     }
 
     for (int d = 0; d < screen->ndepths; d++) {
@@ -476,7 +476,7 @@ gfxXlibSurface::FindVisual(Screen *screen, gfxImageFormat format)
         }
     }
 
-    return NULL;
+    return nullptr;
 }
 
 /* static */
@@ -494,7 +494,7 @@ gfxXlibSurface::FindRenderFormat(Display *dpy, gfxImageFormat format)
             // and find xrender format by visual
             Visual *visual = FindVisual(DefaultScreenOfDisplay(dpy), format);
             if (!visual)
-                return NULL;
+                return nullptr;
             return XRenderFindVisualFormat(dpy, visual);
         }
         case ImageFormatA8:
@@ -505,7 +505,7 @@ gfxXlibSurface::FindRenderFormat(Display *dpy, gfxImageFormat format)
             break;
     }
 
-    return (XRenderPictFormat*)NULL;
+    return nullptr;
 }
 
 Screen*

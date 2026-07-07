@@ -56,7 +56,7 @@ gfxGDIShaper::ShapeText(gfxContext      *aContext,
                                            glyphs,
                                            length,
                                            INT_MAX,
-                                           NULL,
+                                           nullptr,
                                            partialWidthArray.Elements(),
                                            &size);
     if (!success) {

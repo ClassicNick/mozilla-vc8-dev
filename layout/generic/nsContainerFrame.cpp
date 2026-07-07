@@ -819,7 +819,7 @@ nsContainerFrame::SyncFrameViewProperties(nsPresContext*  aPresContext,
     }
   }
 
-  vm->SetViewZIndex(aView, autoZIndex, zIndex, isPositioned);
+  vm->SetViewZIndex(aView, autoZIndex, zIndex);
 }
 
 static nscoord GetCoord(const nsStyleCoord& aCoord, nscoord aIfNotCoord)

@@ -112,7 +112,7 @@ gfxASurface*
 gfxASurface::GetSurfaceWrapper(cairo_surface_t *csurf)
 {
     if (!csurf)
-        return NULL;
+        return nullptr;
     return (gfxASurface*) cairo_surface_get_user_data(csurf, &gfxasurface_pointer_key);
 }
 
@@ -280,7 +280,7 @@ void *
 gfxASurface::GetData(const cairo_user_data_key_t *key)
 {
     if (!mSurfaceValid)
-        return NULL;
+        return nullptr;
     return cairo_surface_get_user_data(mSurface, key);
 }
 

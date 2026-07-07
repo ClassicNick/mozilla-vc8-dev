@@ -339,7 +339,7 @@ nsSyncLoadService::PushSyncStreamToListener(nsIInputStream* aIn,
     if (!NS_InputStreamIsBuffered(aIn)) {
         int64_t chunkSize;
         rv = aChannel->GetContentLength(&chunkSize);
-        if (NS_FAILED(rv)) {
+        if (NS_FAILED(rv) || chunkSize < 1) {
             chunkSize = 4096;
         }
         chunkSize = NS_MIN(int64_t(UINT16_MAX), chunkSize);

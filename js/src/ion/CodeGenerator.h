@@ -59,6 +59,8 @@ class CodeGenerator : public CodeGeneratorSpecific
     bool visitTableSwitchV(LTableSwitchV *ins);
     bool visitParameter(LParameter *lir);
     bool visitCallee(LCallee *lir);
+    bool visitForceUseV(LForceUseV *lir);
+    bool visitForceUseT(LForceUseT *lir);
     bool visitStart(LStart *lir);
     bool visitReturn(LReturn *ret);
     bool visitDefVar(LDefVar *lir);
@@ -105,6 +107,7 @@ class CodeGenerator : public CodeGeneratorSpecific
     void emitPushArguments(LApplyArgsGeneric *apply, Register extraStackSpace);
     void emitPopArguments(LApplyArgsGeneric *apply, Register extraStackSize);
     bool visitApplyArgsGeneric(LApplyArgsGeneric *apply);
+    bool visitBail(LBail *lir);
     bool visitGetDynamicName(LGetDynamicName *lir);
     bool visitFilterArguments(LFilterArguments *lir);
     bool visitCallDirectEval(LCallDirectEval *lir);

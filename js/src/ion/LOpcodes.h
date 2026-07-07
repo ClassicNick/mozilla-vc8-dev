@@ -18,6 +18,8 @@
     _(Value)                        \
     _(Parameter)                    \
     _(Callee)                       \
+    _(ForceUseV)                    \
+    _(ForceUseT)                    \
     _(TableSwitch)                  \
     _(TableSwitchV)                 \
     _(Goto)                         \
@@ -44,6 +46,7 @@
     _(CallGeneric)                  \
     _(CallNative)                   \
     _(ApplyArgsGeneric)             \
+    _(Bail)                         \
     _(GetDynamicName)               \
     _(FilterArguments)              \
     _(CallDirectEval)               \

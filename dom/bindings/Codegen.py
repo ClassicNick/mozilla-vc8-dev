@@ -1670,8 +1670,11 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
     def definition_body(self):
         protoChain = self.descriptor.prototypeChain
         if len(protoChain) == 1:
-            getParentProto = "aCx, JS_GetObjectPrototype(aCx, aGlobal)"
             parentProtoType = "Rooted"
+            if self.descriptor.interface.getExtendedAttribute("ArrayClass"):
+                getParentProto = "aCx, JS_GetArrayPrototype(aCx, aGlobal)"
+            else:
+                getParentProto = "aCx, JS_GetObjectPrototype(aCx, aGlobal)"
         else:
             parentProtoName = self.descriptor.prototypeChain[-2]
             getParentProto = ("%s::GetProtoObject(aCx, aGlobal)" %
@@ -5289,7 +5292,7 @@ class CGJsonifierMethod(CGSpecializedMethod):
                '  return false;\n'
                '}\n')
         for m in self.descriptor.interface.members:
-          if m.isAttr() and not m.isStatic():
+          if m.isAttr() and not m.isStatic() and m.type.isSerializable():
               ret += ('{ // scope for "temp"\n'
                       '  JS::Rooted<JS::Value> temp(cx);\n'
                       '  if (!get_%s(cx, obj, self, JSJitGetterCallArgs(&temp))) {\n'
