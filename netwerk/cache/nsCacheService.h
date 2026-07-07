@@ -294,6 +294,7 @@ private:
     void             ClearDoomList(void);
     void             DoomActiveEntries(DoomCheckFn check);
     void             CloseAllStreams();
+    void             FireClearNetworkCacheStoredAnywhereNotification();
 
     static
     PLDHashOperator  GetActiveEntries(PLDHashTable *    table,

@@ -44,7 +44,6 @@
 #include "jsboolinlines.h"
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
-#include "jstypedarrayinlines.h"
 #include "builtin/Iterator-inl.h"
 #include "vm/ArrayObject-inl.h"
 #include "vm/ArgumentsObject-inl.h"
@@ -1449,9 +1448,13 @@ js::NewObjectWithClassProtoCommon(JSContext *cx, js::Class *clasp, JSObject *pro
     return obj;
 }
 
-JSObject *
-js::NewObjectWithType(JSContext *cx, HandleTypeObject type, JSObject *parent, gc::AllocKind allocKind,
-                      NewObjectKind newKind /* = GenericObject */)
+/*
+ * Create a plain object with the specified type. This bypasses getNewType to
+ * avoid losing creation site information for objects made by scripted 'new'.
+ */
+static JSObject *
+NewObjectWithType(JSContext *cx, HandleTypeObject type, JSObject *parent, gc::AllocKind allocKind,
+                  NewObjectKind newKind = GenericObject)
 {
     JS_ASSERT(type->proto->hasNewType(&ObjectClass, type));
     JS_ASSERT(parent);
@@ -2611,15 +2614,6 @@ JSObject::shrinkSlots(JSContext *cx, HandleObject obj, uint32_t oldCount, uint32
 {
     JS_ASSERT(newCount < oldCount);
 
-    /*
-     * Refuse to shrink slots for call objects. This only happens in a very
-     * obscure situation (deleting names introduced by a direct 'eval') and
-     * allowing the slots pointer to change may require updating pointers in
-     * the function's active args/vars information.
-     */
-    if (obj->is<CallObject>())
-        return;
-
     if (newCount == 0) {
         FreeSlots(cx, obj->slots);
         obj->slots = NULL;
@@ -3246,8 +3240,8 @@ PurgeProtoChain(JSContext *cx, JSObject *objArg, HandleId id)
     return true;
 }
 
-bool
-js_PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
+static bool
+PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
 {
     /* Re-root locally so we can re-assign. */
     RootedObject obj(cx, objArg);
@@ -3277,6 +3271,21 @@ js_PurgeScopeChainHelper(JSContext *cx, HandleObject objArg, HandleId id)
     return true;
 }
 
+/*
+ * PurgeScopeChain does nothing if obj is not itself a prototype or parent
+ * scope, else it reshapes the scope and prototype chains it links. It calls
+ * PurgeScopeChainHelper, which asserts that obj is flagged as a delegate
+ * (i.e., obj has ever been on a prototype or parent chain).
+ */
+static inline bool
+PurgeScopeChain(JSContext *cx, JS::HandleObject obj, JS::HandleId id)
+{
+    if (obj->isDelegate())
+        return PurgeScopeChainHelper(cx, obj, id);
+    return true;
+}
+
+
 Shape *
 js_AddNativeProperty(JSContext *cx, HandleObject obj, HandleId id,
                      PropertyOp getter, StrictPropertyOp setter, uint32_t slot,
@@ -3287,7 +3296,7 @@ js_AddNativeProperty(JSContext *cx, HandleObject obj, HandleId id,
      * this optimistically (assuming no failure below) before locking obj, so
      * we can lock the shadowed scope.
      */
-    if (!js_PurgeScopeChain(cx, obj, id))
+    if (!PurgeScopeChain(cx, obj, id))
         return NULL;
 
     Shape *shape =
@@ -3522,7 +3531,7 @@ js::DefineNativeProperty(JSContext *cx, HandleObject obj, HandleId id, HandleVal
      * is not possible.
      */
     if (!(defineHow & DNP_DONT_PURGE)) {
-        if (!js_PurgeScopeChain(cx, obj, id))
+        if (!PurgeScopeChain(cx, obj, id))
             return false;
     }
 
@@ -4160,31 +4169,36 @@ js::LookupPropertyPure(JSObject *obj, jsid id, JSObject **objp, Shape **propp)
  *
  *  - Any object in the lookup chain has a non-stub resolve hook.
  *  - Any object in the lookup chain is non-native.
- *  - Hashification of a shape tree into a shape table.
  *  - The property has a getter.
  */
 bool
-js::GetPropertyPure(JSObject *obj, jsid id, Value *vp)
+js::GetPropertyPure(ThreadSafeContext *tcx, JSObject *obj, jsid id, Value *vp)
 {
     JSObject *obj2;
     Shape *shape;
     if (!LookupPropertyPureInline(obj, id, &obj2, &shape))
         return false;
 
-    /*
-     * If we couldn't find the property, fail if any of the following edge
-     * cases appear.
-     */
     if (!shape) {
-        /* Do we have a non-stub class op hook? */
+        /* Fail if we have a non-stub class op hook? */
         if (obj->getClass()->getProperty && obj->getClass()->getProperty != JS_PropertyStub)
             return false;
+
+        /* Vanilla native object, return undefined. */
         vp->setUndefined();
         return true;
     }
 
     if (IsImplicitDenseElement(shape)) {
         *vp = obj2->getDenseElement(JSID_TO_INT(id));
+        return true;
+    }
+
+    /* Special case 'length' on Array. */
+    if (obj->is<ArrayObject>() &&
+        (JSID_IS_ATOM(id) && tcx->names().length == JSID_TO_ATOM(id)))
+    {
+        vp->setNumber(obj->as<ArrayObject>().length());
         return true;
     }
 
@@ -4488,7 +4502,7 @@ baseops::SetPropertyHelper(JSContext *cx, HandleObject obj, HandleObject receive
         }
 
         /* Purge the property cache of now-shadowed id in obj's scope chain. */
-        if (!js_PurgeScopeChain(cx, obj, id))
+        if (!PurgeScopeChain(cx, obj, id))
             return false;
 
         if (getter == JS_PropertyStub)
