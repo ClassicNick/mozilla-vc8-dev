@@ -4360,6 +4360,13 @@ nsContentUtils::IsSystemPrincipal(nsIPrincipal* aPrincipal)
   return NS_SUCCEEDED(rv) && isSystem;
 }
 
+bool
+nsContentUtils::IsExpandedPrincipal(nsIPrincipal* aPrincipal)
+{
+  nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(aPrincipal);
+  return !!ep;
+}
+
 nsIPrincipal*
 nsContentUtils::GetSystemPrincipal()
 {
@@ -5747,6 +5754,22 @@ nsContentUtils::AllocClassMatchingInfo(nsINode* aRootNode,
     aRootNode->OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks ?
     eIgnoreCase : eCaseMatters;
   return info;
+}
+
+// static
+void
+nsContentUtils::DeferredFinalize(nsISupports* aSupports)
+{
+  cyclecollector::DeferredFinalize(aSupports);
+}
+
+// static
+void
+nsContentUtils::DeferredFinalize(mozilla::DeferredFinalizeAppendFunction aAppendFunc,
+                                 mozilla::DeferredFinalizeFunction aFunc,
+                                 void* aThing)
+{
+  cyclecollector::DeferredFinalize(aAppendFunc, aFunc, aThing);
 }
 
 // static

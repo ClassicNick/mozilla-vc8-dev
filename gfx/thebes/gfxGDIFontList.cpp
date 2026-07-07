@@ -119,38 +119,24 @@ static HMODULE fontlib;
 
 class WinUserFontData : public gfxUserFontData {
 public:
-    WinUserFontData(HANDLE aFontRef, bool aIsEmbedded)
-        : mFontRef(aFontRef), mIsEmbedded(aIsEmbedded)
+    WinUserFontData(HANDLE aFontRef)
+        : mFontRef(aFontRef)
     { }
 
     virtual ~WinUserFontData()
     {
-        if (mIsEmbedded) {
-            ULONG pulStatus;
-            LONG err;
-            err = TTDeleteEmbeddedFontPtr(mFontRef, 0, &pulStatus);
+        DebugOnly<BOOL> success;
+        success = RemoveFontMemResourceEx(mFontRef);
 #if DEBUG
-            if (err != E_NONE) {
-                char buf[256];
-                sprintf(buf, "error deleting embedded font handle (%p) - TTDeleteEmbeddedFont returned %8.8x", mFontRef, err);
-                NS_ASSERTION(err == E_NONE, buf);
-            }
-#endif
-        } else {
-            DebugOnly<BOOL> success;
-            success = RemoveFontMemResourceEx(mFontRef);
-#if DEBUG
-            if (!success) {
-                char buf[256];
-                sprintf(buf, "error deleting font handle (%p) - RemoveFontMemResourceEx failed", mFontRef);
-                NS_ASSERTION(success, buf);
-            }
-#endif
+        if (!success) {
+            char buf[256];
+            sprintf(buf, "error deleting font handle (%p) - RemoveFontMemResourceEx failed", mFontRef);
+            NS_ASSERTION(success, buf);
         }
+#endif
     }
     
     HANDLE mFontRef;
-    bool mIsEmbedded;
 };
 
 BYTE 
@@ -951,94 +937,48 @@ gfxGDIFontList::MakePlatformFont(const gfxProxyFontEntry *aProxyEntry,
         return nullptr;
 
     bool hasVertical;
-    bool isCFF = gfxFontUtils::IsCffFont(aFontData, hasVertical);
+    bool isCFF = gfxFontUtils::IsCffFont(aFontData);
 
     nsresult rv;
     HANDLE fontRef = nullptr;
-    bool isEmbedded = false;
 
     nsAutoString uniqueName;
     rv = gfxFontUtils::MakeUniqueUserFontName(uniqueName);
     if (NS_FAILED(rv))
         return nullptr;
 
-    // for TTF fonts, first try using the t2embed library if available
-    if (!isCFF && TTLoadEmbeddedFontPtr && TTDeleteEmbeddedFontPtr) {
-        // TrueType-style glyphs, use EOT library
-        AutoFallibleTArray<uint8_t,2048> eotHeader;
-        uint8_t *buffer;
-        uint32_t eotlen;
+    FallibleTArray<uint8_t> newFontData;
 
-        isEmbedded = true;
-        uint32_t nameLen = NS_MIN<uint32_t>(uniqueName.Length(), LF_FACESIZE - 1);
-        nsAutoString fontName(Substring(uniqueName, 0, nameLen));
+    rv = gfxFontUtils::RenameFont(uniqueName, aFontData, aLength, &newFontData);
+
+    if (NS_FAILED(rv))
+        return nullptr;
         
-        FontDataOverlay overlayNameData = {0, 0, 0};
+    DWORD numFonts = 0;
 
-        rv = gfxFontUtils::MakeEOTHeader(aFontData, aLength, &eotHeader, 
-                                         &overlayNameData);
-        if (NS_SUCCEEDED(rv)) {
+    uint8_t *fontData = reinterpret_cast<uint8_t*> (newFontData.Elements());
+    uint32_t fontLength = newFontData.Length();
+    NS_ASSERTION(fontData, "null font data after renaming");
 
-            // load in embedded font data
-            eotlen = eotHeader.Length();
-            buffer = reinterpret_cast<uint8_t*> (eotHeader.Elements());
-            
-            int32_t ret;
-            ULONG privStatus, pulStatus;
-            EOTFontStreamReader eotReader(aFontData, aLength, buffer, eotlen,
-                                          &overlayNameData);
+    // http://msdn.microsoft.com/en-us/library/ms533942(VS.85).aspx
+    // "A font that is added by AddFontMemResourceEx is always private 
+    //  to the process that made the call and is not enumerable."
+    fontRef = AddFontMemResourceEx(fontData, fontLength, 
+                                    0 /* reserved */, &numFonts);
+    if (!fontRef)
+        return nullptr;
 
-            ret = TTLoadEmbeddedFontPtr(&fontRef, TTLOAD_PRIVATE, &privStatus,
-                                        LICENSE_PREVIEWPRINT, &pulStatus,
-                                        EOTFontStreamReader::ReadEOTStream,
-                                        &eotReader,
-                                        (PRUnichar*)(fontName.get()), 0, 0);
-            if (ret != E_NONE) {
-                fontRef = nullptr;
-                char buf[256];
-                sprintf(buf, "font (%s) not loaded using TTLoadEmbeddedFont - error %8.8x",
-                        NS_ConvertUTF16toUTF8(aProxyEntry->Name()).get(), ret);
-                NS_WARNING(buf);
-            }
-        }
-    }
-
-    // load CFF fonts or fonts that failed with t2embed loader
-    if (fontRef == nullptr) {
-        // Postscript-style glyphs, swizzle name table, load directly
-        FallibleTArray<uint8_t> newFontData;
-
-        isEmbedded = false;
-        rv = gfxFontUtils::RenameFont(uniqueName, aFontData, aLength, &newFontData);
-
-        if (NS_FAILED(rv))
-            return nullptr;
-        
-        DWORD numFonts = 0;
-
-        uint8_t *fontData = reinterpret_cast<uint8_t*> (newFontData.Elements());
-        uint32_t fontLength = newFontData.Length();
-        NS_ASSERTION(fontData, "null font data after renaming");
-
-        // http://msdn.microsoft.com/en-us/library/ms533942(VS.85).aspx
-        // "A font that is added by AddFontMemResourceEx is always private 
-        //  to the process that made the call and is not enumerable."
-        fontRef = AddFontMemResourceEx(fontData, fontLength, 
-                                       0 /* reserved */, &numFonts);
-        if (!fontRef)
-            return nullptr;
-
-        // only load fonts with a single face contained in the data
-        // AddFontMemResourceEx generates an additional face name for
-        // vertical text if the font supports vertical writing
-        if (fontRef && numFonts != 1 + !!hasVertical) {
-            RemoveFontMemResourceEx(fontRef);
-            return nullptr;
-        }
+    // only load fonts with a single face contained in the data
+    // AddFontMemResourceEx generates an additional face name for
+    // vertical text if the font supports vertical writing but since
+    // the font is referenced via the name this can be ignored
+    if (fontRef && numFonts > 2) {
+        RemoveFontMemResourceEx(fontRef);
+        return nullptr;
     }
 
     // make a new font entry using the unique name
-    WinUserFontData *winUserFontData = new WinUserFontData(fontRef, isEmbedded);
+    WinUserFontData *winUserFontData = new WinUserFontData(fontRef);
     uint16_t w = (aProxyEntry->mWeight == 0 ? 400 : aProxyEntry->mWeight);
 
     GDIFontEntry *fe = GDIFontEntry::CreateFontEntry(uniqueName, 

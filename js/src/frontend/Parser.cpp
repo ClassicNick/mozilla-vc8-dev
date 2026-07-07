@@ -42,7 +42,6 @@
 
 #include "frontend/ParseMaps-inl.h"
 #include "frontend/ParseNode-inl.h"
-#include "frontend/Parser-inl.h"
 #include "frontend/SharedContext-inl.h"
 
 #include "vm/NumericConversions.h"
@@ -865,8 +864,15 @@ Parser<FullParseHandler>::standaloneFunctionBody(HandleFunction fun, const AutoN
     if (!FoldConstants(context, &pn, this))
         return null();
 
-    InternalHandle<Bindings*> bindings(script, &script->bindings);
-    if (!funpc.generateFunctionBindings(context, bindings))
+    InternalHandle<Bindings*> scriptBindings(script, &script->bindings);
+    if (!funpc.generateFunctionBindings(context, scriptBindings))
+        return null();
+
+    // Also populate the internal bindings of the function box, so that
+    // heavyweight tests while emitting bytecode work.
+    InternalHandle<Bindings*> funboxBindings =
+        InternalHandle<Bindings*>::fromMarkedLocation(&(*funbox)->bindings);
+    if (!funpc.generateFunctionBindings(context, funboxBindings))
         return null();
 
     return pn;
@@ -6617,6 +6623,8 @@ Parser<ParseHandler>::primaryExpr(TokenKind tt)
                  * Support, e.g., |var {x, y} = o| as destructuring shorthand
                  * for |var {x: x, y: y} = o|, per proposed JS2/ES4 for JS1.8.
                  */
+                if (!abortIfSyntaxParser())
+                    return null();
                 tokenStream.ungetToken();
                 if (!tokenStream.checkForKeyword(atom->charsZ(), atom->length(), NULL, NULL))
                     return null();

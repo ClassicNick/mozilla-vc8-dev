@@ -1615,11 +1615,15 @@ nsDocument::Release()
       return mRefCnt.get();
     }
     NS_ASSERT_OWNINGTHREAD(nsDocument);
-    mRefCnt.stabilizeForDeletion();
     nsNodeUtils::LastRelease(this);
-    return 0;
   }
   return count;
+}
+
+NS_IMETHODIMP_(void)
+nsDocument::DeleteCycleCollectable()
+{
+  delete this;
 }
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsDocument)
@@ -11228,6 +11232,18 @@ nsDocument::DocSizeOfExcludingThis(nsWindowSizes* aWindowSizes) const
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
   // - many!
+}
+
+NS_IMETHODIMP
+nsDocument::QuerySelector(const nsAString& aSelector, nsIDOMElement **aReturn)
+{
+  return nsINode::QuerySelector(aSelector, aReturn);
+}
+
+NS_IMETHODIMP
+nsDocument::QuerySelectorAll(const nsAString& aSelector, nsIDOMNodeList **aReturn)
+{
+  return nsINode::QuerySelectorAll(aSelector, aReturn);
 }
 
 already_AddRefed<nsIDocument>

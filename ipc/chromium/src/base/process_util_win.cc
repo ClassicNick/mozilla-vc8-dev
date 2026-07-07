@@ -19,6 +19,8 @@
 #include "base/scoped_ptr.h"
 #include "base/win_util.h"
 
+#include <algorithm>
+
 #if defined (_MSC_VER) && _MSC_VER <= 1310
 typedef union _PSAPI_WORKING_SET_BLOCK {
     ULONG_PTR Flags;
@@ -373,9 +375,10 @@ bool LaunchApp(const std::wstring& cmdline,
   if (!createdOK)
     return false;
 
-  gProcessLog.print("==> process %d launched child process %d\n",
+  gProcessLog.print("==> process %d launched child process %d (%S)\n",
                     GetCurrentProcId(),
-                    process_info.dwProcessId);
+                    process_info.dwProcessId,
+                    cmdline.c_str());
 
   // Handles must be closed or they will leak
   CloseHandle(process_info.hThread);

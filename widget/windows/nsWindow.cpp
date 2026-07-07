@@ -3759,7 +3759,7 @@ bool nsWindow::DispatchPluginEvent(UINT aMessage,
 {
   bool ret = nsWindowBase::DispatchPluginEvent(
                WinUtils::InitMSG(aMessage, aWParam, aLParam, mWnd));
-  if (aDispatchPendingEvents) {
+  if (aDispatchPendingEvents && !Destroyed()) {
     DispatchPendingEvents();
   }
   return ret;
