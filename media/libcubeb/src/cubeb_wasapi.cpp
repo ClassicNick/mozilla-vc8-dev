@@ -4,6 +4,7 @@
  * This program is made available under an ISC-style license.  See the
  * accompanying file LICENSE for details.
  */
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 #if defined(HAVE_CONFIG_H)
 #include "config.h"
 #endif
@@ -786,4 +787,6 @@ cubeb_ops const wasapi_ops = {
   ///*.stream_get_latency =*/ wasapi_stream_get_latency
  };
 } // namespace anonymous
+
+#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 

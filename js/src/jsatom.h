@@ -228,13 +228,13 @@ extern JSAtom *
 ToAtom(ExclusiveContext *cx, typename MaybeRooted<Value, allowGC>::HandleType v);
 
 inline JSAtom *
-ToAtomAllowGC(JSContext *cx, HandleValue v)
+ToAtomAllowGC(ExclusiveContext *cx, HandleValue v)
 {
 	return ToAtom<CanGC>(cx, v);
 }
 
 inline JSAtom *
-ToAtomDisallowGC(JSContext *cx, Value v)
+ToAtomDisallowGC(ExclusiveContext *cx, Value v)
 {
 	return ToAtom<NoGC>(cx, v);
 }

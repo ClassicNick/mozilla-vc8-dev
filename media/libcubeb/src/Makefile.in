@@ -23,7 +23,11 @@ ifeq ($(OS_TARGET),WINNT)
 DISABLED_CSRCS           += \
                 cubeb_winmm.c \
                 $(NULL)
-DEFINES         += -DUSE_WINMM -DUSE_WASAPI
+DEFINES         += -DUSE_WINMM
+# Implicitly check for Windows Vista or newer SDKs
+ifdef NS_ENABLE_TSF
+DEFINES			+= -DUSE_WASAPI
+endif
 endif
 
 ifeq ($(OS_TARGET),Android)

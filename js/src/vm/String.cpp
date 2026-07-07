@@ -14,10 +14,6 @@
 
 #include "jscompartmentinlines.h"
 
-#ifdef JSGC_GENERATIONAL
-#include "vm/Shape-inl.h"
-#endif
-
 using namespace js;
 
 using mozilla::PodCopy;
@@ -193,7 +189,7 @@ JSRope::getCharsNonDestructiveInternal(ThreadSafeContext *cx, ScopedJSFreePtr<js
     jschar *pos = s;
 
     Vector<const JSString *, 8, SystemAllocPolicy> nodeStack;
-    if (!nodeStack.append(this))
+    if (!nodeStack.append((const JSString *) this))
         return false;
 
     const JSString *prev = NULL;

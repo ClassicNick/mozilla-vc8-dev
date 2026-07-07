@@ -28,7 +28,7 @@ TemporaryRef<DeprecatedTextureHost> CreateDeprecatedTextureHostD3D9(SurfaceDescr
   return nullptr;
 }
 
-#ifdef XP_WIN && MOZ_ENABLE_D3D10_LAYER
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
 TemporaryRef<DeprecatedTextureHost> CreateDeprecatedTextureHostD3D11(SurfaceDescriptorType aDescriptorType,
                                                              uint32_t aDeprecatedTextureHostFlags,
                                                              uint32_t aTextureFlags);
@@ -48,7 +48,7 @@ DeprecatedTextureHost::CreateDeprecatedTextureHost(SurfaceDescriptorType aDescri
       return CreateDeprecatedTextureHostD3D9(aDescriptorType,
                                          aDeprecatedTextureHostFlags,
                                          aTextureFlags);
-#ifdef XP_WIN && MOZ_ENABLE_D3D10_LAYER
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     case LAYERS_D3D11:
       return CreateDeprecatedTextureHostD3D11(aDescriptorType,
                                           aDeprecatedTextureHostFlags,

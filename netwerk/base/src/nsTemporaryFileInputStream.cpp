@@ -59,12 +59,12 @@ nsTemporaryFileInputStream::ReadSegments(nsWriteSegmentFun writer,
   mozilla::MutexAutoLock lock(mFileDescOwner->FileMutex());
   PR_Seek64(mFileDescOwner->mFD, mStartPos, PR_SEEK_SET);
 
-  count = std::min(count, uint32_t(mEndPos - mStartPos));
+  count = NS_MIN(count, uint32_t(mEndPos - mStartPos));
   uint32_t remainBufCount = count;
 
   char buf[4096];
   while (remainBufCount > 0) {
-    uint32_t bufCount = std::min(remainBufCount, (uint32_t)sizeof(buf));
+    uint32_t bufCount = NS_MIN(remainBufCount, (uint32_t)sizeof(buf));
     int32_t read_result = PR_Read(mFileDescOwner->mFD, buf, bufCount);
     if (read_result < 0) {
       return NS_ErrorAccordingToNSPR();

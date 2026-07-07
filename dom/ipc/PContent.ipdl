@@ -22,6 +22,7 @@ include protocol PStorage;
 include protocol PTestShell;
 include protocol PJavaScript;
 include DOMTypes;
+include JavaScriptTypes;
 include InputStreamParams;
 include PTabContext;
 include URIParams;
@@ -193,7 +194,7 @@ both:
 
     async PBlob(BlobConstructorParams params);
 
-    PJavaScript();
+    async PJavaScript();
 
 child:
     /**
@@ -332,7 +333,7 @@ parent:
 
     sync ReadFontList() returns (FontListEntry[] retValue);
 
-    sync SyncMessage(nsString aMessage, ClonedMessageData aData)
+    sync SyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows)
       returns (nsString[] retval);
 
     ShowAlertNotification(nsString imageUrl,
@@ -430,7 +431,7 @@ parent:
     async SetFakeVolumeState(nsString fsName, int32_t fsState);
 
 both:
-     AsyncMessage(nsString aMessage, ClonedMessageData aData);
+     AsyncMessage(nsString aMessage, ClonedMessageData aData, CpowEntry[] aCpows);
 };
 
 }

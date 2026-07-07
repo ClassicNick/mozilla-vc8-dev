@@ -34,12 +34,12 @@
 #include "vm/Shape.h"
 #include "vm/Xdr.h"
 
+#include "jsfuninlines.h"
 #include "jsinferinlines.h"
 #include "jsscriptinlines.h"
 
-#include "vm/Interpreter-inl.h"
-#include "vm/RegExpObject-inl.h"
 #include "vm/ScopeObject-inl.h"
+#include "vm/Stack-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -2445,6 +2445,7 @@ js::CloneScript(JSContext *cx, HandleObject enclosingScope, HandleFunction fun, 
     dst->isGeneratorExp = src->isGeneratorExp;
 
     /* Copy over hints. */
+    dst->shouldInline = src->shouldInline;
     dst->shouldCloneAtCallsite = src->shouldCloneAtCallsite;
     dst->isCallsiteClone = src->isCallsiteClone;
 

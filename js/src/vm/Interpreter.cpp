@@ -39,10 +39,8 @@
 #include "jsatominlines.h"
 #include "jsboolinlines.h"
 #include "jsinferinlines.h"
-#include "jsopcodeinlines.h"
 #include "jsscriptinlines.h"
 
-#include "builtin/Iterator-inl.h"
 #include "ion/IonFrames-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/Probes-inl.h"
@@ -2949,8 +2947,8 @@ BEGIN_CASE(JSOP_NEWINIT)
         obj = NewDenseEmptyArray(cx, NULL, newKind);
     } else {
         gc::AllocKind allocKind = GuessObjectGCKind(0);
-        newKind = UseNewTypeForInitializer(cx, script, regs.pc, &ObjectClass);
-        obj = NewBuiltinClassInstance(cx, &ObjectClass, allocKind, newKind);
+        newKind = UseNewTypeForInitializer(cx, script, regs.pc, &JSObject::class_);
+        obj = NewBuiltinClassInstance(cx, &JSObject::class_, allocKind, newKind);
     }
     if (!obj || !SetInitializerObjectType(cx, script, regs.pc, obj, newKind))
         goto error;
@@ -3008,7 +3006,7 @@ BEGIN_CASE(JSOP_INITPROP)
     /* Load the object being initialized into lval/obj. */
     RootedObject &obj = rootObject0;
     obj = &regs.sp[-2].toObject();
-    JS_ASSERT(obj->isObject());
+    JS_ASSERT(obj->is<JSObject>());
 
     PropertyName *name = script->getName(regs.pc);
 
