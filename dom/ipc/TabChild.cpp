@@ -293,6 +293,7 @@ TabChild::TabChild(ContentChild* aManager, const TabContext& aContext, uint32_t 
   , mContentDocumentIsDisplayed(false)
   , mTriedBrowserInit(false)
   , mOrientation(eScreenOrientation_PortraitPrimary)
+  , mUpdateHitRegion(false)
 {
     printf("creating %d!\n", NS_IsMainThread());
 }
@@ -2141,6 +2142,13 @@ TabChild::RecvDestroy()
   return Send__delete__(this);
 }
 
+bool
+TabChild::RecvSetUpdateHitRegion(const bool& aEnabled)
+{
+    mUpdateHitRegion = aEnabled;
+    return true;
+}
+
 PRenderFrameChild*
 TabChild::AllocPRenderFrameChild(ScrollingBehavior* aScrolling,
                             TextureFactoryIdentifier* aTextureFactoryIdentifier,
@@ -2350,6 +2358,12 @@ TabChild::MakeHidden()
     if (mWidget) {
         mWidget->Show(false);
     }
+}
+
+void
+TabChild::UpdateHitRegion(const nsRegion& aRegion)
+{
+    mRemoteFrame->SendUpdateHitRegion(aRegion);
 }
 
 NS_IMETHODIMP

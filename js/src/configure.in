@@ -4342,7 +4342,7 @@ if test -n "$ENABLE_INTL_API"; then
         WINNT)
             ICU_LIB_NAMES="icuin icuuc icudt"
             ;;
-        Darwin|Linux)
+        Darwin|Linux|DragonFly|FreeBSD|NetBSD|OpenBSD)
             ICU_LIB_NAMES="icui18n icuuc icudata"
             ;;
         *)
@@ -4388,6 +4388,9 @@ if test -n "$ENABLE_INTL_API" ; then
             ;;
         WINNT)
             ICU_TARGET=MSYS/MSVC
+            ;;
+        DragonFly|FreeBSD|NetBSD|OpenBSD)
+            ICU_TARGET=BSD
             ;;
     esac
 

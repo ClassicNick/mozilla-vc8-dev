@@ -25,10 +25,6 @@ using namespace mozilla::gl;
 namespace mozilla {
 namespace layers {
 
-
-
-
-
 TextureClient::TextureClient(TextureFlags aFlags)
   : mID(0)
   , mFlags(aFlags)
@@ -42,7 +38,7 @@ TextureClient::ShouldDeallocateInDestructor() const
 {
   return IsAllocated() &&
          !IsSharedWithCompositor() &&
-         !(GetFlags() & (TEXTURE_DEALLOCATE_HOST|TEXTURE_DEALLOCATE_CLIENT));
+         !(GetFlags() & (TEXTURE_DEALLOCATE_HOST | TEXTURE_DEALLOCATE_CLIENT));
 }
 
 bool

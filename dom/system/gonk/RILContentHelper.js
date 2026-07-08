@@ -75,6 +75,7 @@ const RIL_IPC_MSG_NAMES = [
   "RIL:SelectNetwork",
   "RIL:SelectNetworkAuto",
   "RIL:CallStateChanged",
+  "RIL:EmergencyCbModeChanged",
   "RIL:VoicemailNotification",
   "RIL:VoicemailInfoChanged",
   "RIL:CallError",
@@ -82,10 +83,8 @@ const RIL_IPC_MSG_NAMES = [
   "RIL:CardLockResult",
   "RIL:CardLockRetryCount",
   "RIL:USSDReceived",
-  "RIL:SendMMI:Return:OK",
-  "RIL:SendMMI:Return:KO",
-  "RIL:CancelMMI:Return:OK",
-  "RIL:CancelMMI:Return:KO",
+  "RIL:SendMMI",
+  "RIL:CancelMMI",
   "RIL:StkCommand",
   "RIL:StkSessionEnd",
   "RIL:DataError",
@@ -106,7 +105,8 @@ const RIL_IPC_MSG_NAMES = [
   "RIL:UpdateIccContact",
   "RIL:SetRoamingPreference",
   "RIL:GetRoamingPreference",
-  "RIL:CdmaCallWaiting"
+  "RIL:CdmaCallWaiting",
+  "RIL:ExitEmergencyCbMode"
 ];
 
 XPCOMUtils.defineLazyServiceGetter(this, "cpmm",
@@ -1138,6 +1138,24 @@ RILContentHelper.prototype = {
     return request;
   },
 
+  exitEmergencyCbMode: function exitEmergencyCbMode(window) {
+    if (window == null) {
+      throw Components.Exception("Can't get window object",
+                                  Cr.NS_ERROR_UNEXPECTED);
+    }
+    let request = Services.DOMRequest.createRequest(window);
+    let requestId = this.getRequestId(request);
+
+    cpmm.sendAsyncMessage("RIL:ExitEmergencyCbMode", {
+      clientId: 0,
+      data: {
+        requestId: requestId,
+      }
+    });
+
+    return request;
+  },
+
   _mobileConnectionListeners: null,
   _telephonyListeners: null,
   _cellBroadcastListeners: null,
@@ -1521,10 +1539,8 @@ RILContentHelper.prototype = {
                            [data.message, data.sessionEnded]);
         break;
       }
-      case "RIL:SendMMI:Return:OK":
-      case "RIL:CancelMMI:Return:OK":
-      case "RIL:SendMMI:Return:KO":
-      case "RIL:CancelMMI:Return:KO":
+      case "RIL:SendMMI":
+      case "RIL:CancelMMI":
         this.handleSendCancelMMI(msg.json);
         break;
       case "RIL:StkCommand":
@@ -1609,6 +1625,15 @@ RILContentHelper.prototype = {
         this._deliverEvent("_telephonyListeners",
                            "notifyCdmaCallWaiting",
                            [msg.json.data]);
+        break;
+      case "RIL:ExitEmergencyCbMode":
+        this.handleExitEmergencyCbMode(msg.json);
+        break;
+      case "RIL:EmergencyCbModeChanged":
+        let data = msg.json.data;
+        this._deliverEvent("_mobileConnectionListeners",
+                           "notifyEmergencyCbModeChanged",
+                           [data.active, data.timeoutMs]);
         break;
     }
   },
@@ -1751,7 +1776,7 @@ RILContentHelper.prototype = {
 
     if (changed) {
       this._deliverEvent("_voicemailListeners",
-                         "voicemailNotification",
+                         "notifyStatusChanged",
                          [this.voicemailStatus]);
     }
   },
@@ -1793,6 +1818,20 @@ RILContentHelper.prototype = {
 
     let status = new DOMCLIRStatus(message);
     this.fireRequestSuccess(message.requestId, status);
+  },
+
+  handleExitEmergencyCbMode: function handleExitEmergencyCbMode(message) {
+    let requestId = message.requestId;
+    let request = this.takeRequest(requestId);
+    if (!request) {
+      return;
+    }
+
+    if (!message.success) {
+      Services.DOMRequest.fireError(request, message.errorMsg);
+      return;
+    }
+    Services.DOMRequest.fireSuccess(request, null);
   },
 
   handleSendCancelMMI: function handleSendCancelMMI(message) {

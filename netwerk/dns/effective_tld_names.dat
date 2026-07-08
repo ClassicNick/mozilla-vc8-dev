@@ -5038,7 +5038,16 @@ nu
 *.nz
 
 // om : http://en.wikipedia.org/wiki/.om
-*.om
+om
+co.om
+com.om
+edu.om
+gov.om
+med.om
+museum.om
+net.om
+org.om
+pro.om
 !mediaphone.om
 !nawrastelecom.om
 !nawras.om
@@ -5742,8 +5751,13 @@ store.st
 // su : http://en.wikipedia.org/wiki/.su
 su
 
-// sv : http://www.svnet.org.sv/svpolicy.html
-*.sv
+// sv : http://www.svnet.org.sv/niveldos.pdf
+sv
+com.sv
+edu.sv
+gob.sv
+org.sv
+red.sv
 
 // sx : http://en.wikipedia.org/wiki/.sx
 // Confirmed by registry <jcvignes@openregistry.com> 2012-05-31
@@ -6645,6 +6659,11 @@ za.com
 // c.la : http://www.c.la/
 c.la
 
+// cloudControl : https://www.cloudcontrol.com/
+// Requested by Tobias Wilken <tw@cloudcontrol.com> 2013-07-23
+cloudcontrolled.com
+cloudcontrolapp.com
+
 // co.ca : http://registry.co.ca/
 co.ca
 
@@ -6948,6 +6967,10 @@ global.prod.fastly.net
 // GitHub, Inc.
 // Requested by Ben Toews <btoews@github.com> 2013-04-18
 github.io
+
+// GlobeHosting, Inc.
+// Requested by Zoltan Egresi <egresi@globehosting.com> 2013-07-12
+ro.com
 
 // Google, Inc.
 // Requested by Eduardo Vela <evn@google.com> 2012-10-24

@@ -3038,7 +3038,7 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
     // construct the html reflow state for the block. ReflowBlock 
     // will initialize it
     nsHTMLReflowState blockHtmlRS(aState.mPresContext, aState.mReflowState, frame, 
-                                  nsSize(availSpace.width, availSpace.height));
+                                  availSpace.Size());
     blockHtmlRS.mFlags.mHasClearance = aLine->HasClearance();
     
     nsFloatManager::SavedState floatManagerState;
@@ -5729,7 +5729,7 @@ nsBlockFrame::ComputeFloatWidth(nsBlockReflowState& aState,
                                                 aFloat);
 
   nsHTMLReflowState floatRS(aState.mPresContext, aState.mReflowState, aFloat, 
-                            nsSize(availSpace.width, availSpace.height));
+                            availSpace.Size());
   return floatRS.ComputedWidth() + floatRS.mComputedBorderPadding.LeftRight() +
     floatRS.mComputedMargin.LeftRight();
 }
