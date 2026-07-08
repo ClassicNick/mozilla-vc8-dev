@@ -36,7 +36,6 @@ struct ObjectsExtraSizes;
 namespace js {
 
 class AutoPropDescArrayRooter;
-class BaseProxyHandler;
 struct GCMarker;
 struct NativeIterator;
 class Nursery;
@@ -1127,6 +1126,8 @@ IsStandardClassResolved(JSObject *obj, js::Class *clasp);
 
 void
 MarkStandardClassInitializedNoProto(JSObject *obj, js::Class *clasp);
+
+typedef JSObject *(*ClassInitializerOp)(JSContext *cx, JS::HandleObject obj);
 
 } /* namespace js */
 

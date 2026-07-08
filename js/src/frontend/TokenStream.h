@@ -18,11 +18,11 @@
 
 #include "jscntxt.h"
 #include "jsopcode.h"
-#include "jsprvtd.h"
 #include "jspubtd.h"
 #include "jsversion.h"
 
 #include "js/Vector.h"
+#include "vm/RegExpObject.h"
 
 namespace js {
 namespace frontend {

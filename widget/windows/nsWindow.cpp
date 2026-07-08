@@ -893,7 +893,7 @@ void nsWindow::SubclassWindow(BOOL bState)
     }
     NS_ASSERTION(mPrevWndProc, "Null standard window procedure");
     // connect the this pointer to the nsWindow handle
-    WinUtils::SetNSWindowPtr(mWnd, this);
+    WinUtils::SetNSWindowBasePtr(mWnd, this);
   } else {
     if (IsWindow(mWnd)) {
       if (mUnicodeWidget) {
@@ -906,7 +906,7 @@ void nsWindow::SubclassWindow(BOOL bState)
                           reinterpret_cast<LONG_PTR>(mPrevWndProc));
       }
     }
-    WinUtils::SetNSWindowPtr(mWnd, NULL);
+    WinUtils::SetNSWindowBasePtr(mWnd, NULL);
     mPrevWndProc = NULL;
   }
 }
@@ -985,7 +985,14 @@ double nsWindow::GetDefaultScaleInternal()
   return gfxWindowsPlatform::GetPlatform()->GetDPIScale();
 }
 
-nsWindow* nsWindow::GetParentWindow(bool aIncludeOwner)
+nsWindow*
+nsWindow::GetParentWindow(bool aIncludeOwner)
+{
+  return static_cast<nsWindow*>(GetParentWindowBase(aIncludeOwner));
+}
+
+nsWindowBase*
+nsWindow::GetParentWindowBase(bool aIncludeOwner)
 {
   if (mIsTopWidgetWindow) {
     // Must use a flag instead of mWindowType to tell if the window is the
@@ -1024,7 +1031,7 @@ nsWindow* nsWindow::GetParentWindow(bool aIncludeOwner)
     }
   }
 
-  return widget;
+  return static_cast<nsWindowBase*>(widget);
 }
  
 BOOL CALLBACK

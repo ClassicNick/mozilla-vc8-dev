@@ -3229,7 +3229,7 @@ IonBuilder::jsop_try()
         return abort("Try-catch support disabled");
 
     // Try-finally is not yet supported.
-    JS_ASSERT(script()->analysis()->hasTryFinally());
+    JS_ASSERT(!script()->analysis()->hasTryFinally());
 
     graph().setHasTryBlock();
 
@@ -5072,6 +5072,9 @@ ArgumentTypesMatch(MDefinition *def, types::StackTypeSet *calleeTypes)
 
     if (def->type() == MIRType_Value)
         return false;
+
+    if (def->type() == MIRType_Object)
+        return calleeTypes->unknownObject();
 
     return calleeTypes->mightBeType(ValueTypeFromMIRType(def->type()));
 }

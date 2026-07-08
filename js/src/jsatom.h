@@ -13,10 +13,10 @@
 
 #include "jsalloc.h"
 #include "jsapi.h"
-#include "jsprvtd.h"
 #include "jspubtd.h"
 
 #include "gc/Barrier.h"
+#include "gc/Rooting.h"
 #include "js/HashTable.h"
 #include "vm/CommonPropertyNames.h"
 
@@ -229,6 +229,14 @@ ToAtomDisallowGC(ExclusiveContext *cx, Value v)
 {
 	return ToAtom<NoGC>(cx, v);
 }
+
+enum XDRMode {
+    XDR_ENCODE,
+    XDR_DECODE
+};
+
+template <XDRMode mode>
+class XDRState;
 
 template<XDRMode mode>
 bool
