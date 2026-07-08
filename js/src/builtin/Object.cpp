@@ -9,7 +9,6 @@
 #include "mozilla/Util.h"
 
 #include "jscntxt.h"
-#include "jsobj.h"
 
 #include "frontend/BytecodeCompiler.h"
 #include "vm/StringBuffer.h"
@@ -390,7 +389,7 @@ DefineAccessor(JSContext *cx, unsigned argc, Value *vp)
 
     bool dummy;
     RootedValue descObjValue(cx, ObjectValue(*descObj));
-    if (!DefineOwnProperty(cx, thisObj, id, descObjValue, &dummy))
+    if (!DefineOwnProperty(cx, thisObj, id, (HandleValue) descObjValue, &dummy))
         return false;
 
     args.rval().setUndefined();

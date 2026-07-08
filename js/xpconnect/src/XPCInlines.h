@@ -438,7 +438,7 @@ inline bool
 XPCNativeSet::MatchesSetUpToInterface(const XPCNativeSet* other,
                                       XPCNativeInterface* iface) const
 {
-    int count = std::min(int(mInterfaceCount), int(other->mInterfaceCount));
+    int count = NS_MIN(int(mInterfaceCount), int(other->mInterfaceCount));
 
     XPCNativeInterface* const * pp1 = mInterfaces;
     XPCNativeInterface* const * pp2 = other->mInterfaces;

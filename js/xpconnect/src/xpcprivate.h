@@ -98,7 +98,6 @@
 #include "nsXPCOM.h"
 #include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsCycleCollectorUtils.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "nsDebug.h"
 #include "nsISupports.h"
@@ -453,7 +452,7 @@ public:
         // Do a release-mode assert that we're not doing anything significant in
         // XPConnect off the main thread. If you're an extension developer hitting
         // this, you need to change your code. See bug 716167.
-        if (!MOZ_LIKELY(NS_IsMainThread() || NS_IsCycleCollectorThread()))
+        if (!MOZ_LIKELY(NS_IsMainThread()))
             MOZ_CRASH();
 
         return gSelf;
@@ -826,6 +825,7 @@ public:
     static void ActivityCallback(void *arg, bool active);
     static void CTypesActivityCallback(JSContext *cx,
                                        js::CTypesActivityType type);
+    static bool OperationCallback(JSContext *cx);
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
@@ -835,6 +835,7 @@ public:
     void DeleteJunkScope();
 
     PRTime GetWatchdogTimestamp(WatchdogTimestampCategory aCategory);
+    void OnAfterProcessNextEvent() { mSlowScriptCheckpoint = mozilla::TimeStamp(); }
 
 private:
     XPCJSRuntime(); // no implementation
@@ -874,6 +875,8 @@ private:
     JS::GCSliceCallback mPrevGCSliceCallback;
     JSObject* mJunkScope;
     nsRefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
+
+    mozilla::TimeStamp mSlowScriptCheckpoint;
 
     nsCOMPtr<nsIException>   mPendingException;
     nsCOMPtr<nsIExceptionManager> mExceptionManager;

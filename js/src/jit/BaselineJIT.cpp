@@ -12,8 +12,12 @@
 #include "jit/BaselineIC.h"
 #include "jit/CompileInfo.h"
 #include "jit/IonSpewer.h"
+#include "vm/Interpreter.h"
 
+#include "jsgcinlines.h"
+#include "jsobjinlines.h"
 #include "jsopcodeinlines.h"
+#include "jsscriptinlines.h"
 
 #include "jit/IonFrames-inl.h"
 #include "vm/Stack-inl.h"
@@ -394,6 +398,16 @@ BaselineScript::trace(JSTracer *trc)
         for (ICStub *stub = ent.firstStub(); stub; stub = stub->next())
             stub->trace(trc);
     }
+}
+
+/* static */
+void
+BaselineScript::writeBarrierPre(Zone *zone, BaselineScript *script)
+{
+#ifdef JSGC_INCREMENTAL
+    if (zone->needsBarrier())
+        script->trace(zone->barrierTracer());
+#endif
 }
 
 void
@@ -839,8 +853,9 @@ ion::FinishDiscardBaselineScript(FreeOp *fop, JSScript *script)
         return;
     }
 
-    BaselineScript::Destroy(fop, script->baselineScript());
+    BaselineScript *baseline = script->baselineScript();
     script->setBaselineScript(NULL);
+    BaselineScript::Destroy(fop, baseline);
 }
 
 void

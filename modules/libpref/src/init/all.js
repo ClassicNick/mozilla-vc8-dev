@@ -169,6 +169,9 @@ pref("media.windows-media-foundation.enabled", true);
 pref("media.windows-media-foundation.use-dxva", true);
 pref("media.windows-media-foundation.play-stand-alone", true);
 #endif
+#ifdef MOZ_DIRECTSHOW
+pref("media.directshow.enabled", true);
+#endif
 #ifdef MOZ_RAW
 pref("media.raw.enabled", true);
 #endif
@@ -226,7 +229,7 @@ pref("media.webspeech.recognition.enable", false);
 #endif
 
 // Whether to enable Web Audio support
-pref("media.webaudio.enabled", false);
+pref("media.webaudio.enabled", true);
 
 // Whether to autostart a media element with an |autoplay| attribute
 pref("media.autoplay.enabled", true);
@@ -912,6 +915,9 @@ pref("network.protocol-handler.external.moz-icon", false);
 // This pref controls the default settings.  Per protocol settings can be used
 // to override this value.
 pref("network.protocol-handler.expose-all", true);
+
+// Warning for about:networking page
+pref("network.warnOnAboutNetworking", true);
 
 // Example: make IMAP an exposed protocol
 // pref("network.protocol-handler.expose.imap", true);

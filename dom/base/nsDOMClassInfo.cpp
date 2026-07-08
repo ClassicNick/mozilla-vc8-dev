@@ -232,8 +232,6 @@ using mozilla::dom::workers::ResolveWorkerClasses;
 #endif
 
 #ifdef MOZ_B2G_BT
-#include "BluetoothManager.h"
-#include "BluetoothAdapter.h"
 #include "BluetoothDevice.h"
 #endif
 
@@ -633,10 +631,6 @@ static nsDOMClassInfoData sClassInfoData[] = {
 #endif
 
 #ifdef MOZ_B2G_BT
-  NS_DEFINE_CLASSINFO_DATA(BluetoothManager, nsEventTargetSH,
-                           EVENTTARGET_SCRIPTABLE_FLAGS)
-  NS_DEFINE_CLASSINFO_DATA(BluetoothAdapter, nsEventTargetSH,
-                           EVENTTARGET_SCRIPTABLE_FLAGS)
   NS_DEFINE_CLASSINFO_DATA(BluetoothDevice, nsEventTargetSH,
                            EVENTTARGET_SCRIPTABLE_FLAGS)
 #endif
@@ -1201,7 +1195,7 @@ nsDOMClassInfo::Init()
   AutoSafeJSContext cx;
 
   DOM_CLASSINFO_MAP_BEGIN(Window, nsIDOMWindow)
-    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(nsGlobalWindow::HasIndexedDBSupport())
+    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(true)
 #ifdef MOZ_WEBSPEECH
     DOM_CLASSINFO_MAP_ENTRY(nsISpeechSynthesisGetter)
 #endif
@@ -1396,7 +1390,7 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ModalContentWindow, nsIDOMWindow)
-    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(nsGlobalWindow::HasIndexedDBSupport())
+    DOM_CLASSINFO_WINDOW_MAP_ENTRIES(true)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMModalContentWindow)
 #ifdef MOZ_WEBSPEECH
     DOM_CLASSINFO_MAP_ENTRY(nsISpeechSynthesisGetter)
@@ -1527,14 +1521,6 @@ nsDOMClassInfo::Init()
 #endif
 
 #ifdef MOZ_B2G_BT
-  DOM_CLASSINFO_MAP_BEGIN(BluetoothManager, nsIDOMBluetoothManager)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothManager)
-  DOM_CLASSINFO_MAP_END
-
-  DOM_CLASSINFO_MAP_BEGIN(BluetoothAdapter, nsIDOMBluetoothAdapter)
-    DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothAdapter)
-  DOM_CLASSINFO_MAP_END
-
   DOM_CLASSINFO_MAP_BEGIN(BluetoothDevice, nsIDOMBluetoothDevice)
     DOM_CLASSINFO_MAP_ENTRY(nsIDOMBluetoothDevice)
   DOM_CLASSINFO_MAP_END

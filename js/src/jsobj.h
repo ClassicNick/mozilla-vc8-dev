@@ -18,16 +18,8 @@
 
 #include "mozilla/MemoryReporting.h"
 
-#include "jsapi.h"
-#include "jsatom.h"
-#include "jsclass.h"
-#include "jsfriendapi.h"
-
-#include "gc/Barrier.h"
-#include "gc/Heap.h"
 #include "vm/ObjectImpl.h"
 #include "vm/Shape.h"
-#include "vm/String.h"
 
 namespace JS {
 struct ObjectsExtraSizes;
@@ -1101,7 +1093,7 @@ HasOwnProperty(JSContext *cx, LookupGenericOp lookup,
                typename MaybeRooted<JSObject*, allowGC>::MutableHandleType objp,
                typename MaybeRooted<Shape*, allowGC>::MutableHandleType propp);
 
-inline JSBool
+inline bool
 HasOwnPropertyAllowGC(JSContext *cx, LookupGenericOp lookup,
                HandleObject obj,
                HandleId id,
@@ -1111,7 +1103,7 @@ HasOwnPropertyAllowGC(JSContext *cx, LookupGenericOp lookup,
     return HasOwnProperty<CanGC>(cx, lookup, obj, id, objp, propp);
 }
 
-inline JSBool
+inline bool
 HasOwnPropertyDiasllowGC(JSContext *cx, LookupGenericOp lookup,
                JSObject* obj,
                jsid id,

@@ -46,7 +46,9 @@ ac_add_options --disable-updater
 ac_add_options --disable-cubeb
 ac_add_options --disable-dash
 ac_add_options --disable-wmf
-ac_add_options --disable-intl-api
+ac_add_options --disable-directshow
+ac_add_options --disable-eme
+ac_add_options --without-intl-api
 ac_add_options --with-windows-version=502
 
 # Branding Options

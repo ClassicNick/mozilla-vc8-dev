@@ -408,12 +408,6 @@ AutoGCRooter::trace(JSTracer *trc)
         return;
       }
 
-      case DESCRIPTOR : {
-        PropertyDescriptor &desc = *static_cast<AutoPropertyDescriptorRooter *>(this);
-        desc.trace(trc);
-        return;
-      }
-
       case ID:
         MarkIdRoot(trc, &static_cast<AutoIdRooter *>(this)->id_, "JS::AutoIdRooter.id_");
         return;
@@ -694,7 +688,7 @@ js::gc::MarkRuntime(JSTracer *trc, bool useSavedRoots)
     }
 
     if (!trc->runtime->isHeapMinorCollecting() &&
-        (!IS_GC_MARKING_TRACER(trc) || rt->atomsCompartment->zone()->isCollecting()))
+        (!IS_GC_MARKING_TRACER(trc) || rt->atomsCompartment()->zone()->isCollecting()))
     {
         MarkAtoms(trc);
 #ifdef JS_ION

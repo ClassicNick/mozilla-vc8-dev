@@ -11,28 +11,27 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/TemplateLib.h"
 #include "mozilla/ThreadLocal.h"
 
 #include <setjmp.h>
-#include <string.h>
 
-#include "jsapi.h"
 #include "jsatom.h"
 #include "jsclist.h"
-#include "jsfriendapi.h"
 #include "jsgc.h"
 #include "jsproxy.h"
+#include "jsscript.h"
 
 #include "ds/FixedSizeHash.h"
-#include "ds/LifoAlloc.h"
 #include "frontend/ParseMaps.h"
 #include "gc/Nursery.h"
 #include "gc/Statistics.h"
 #include "gc/StoreBuffer.h"
+#ifdef XP_MACOSX
 #include "jit/AsmJSSignalHandlers.h"
+#endif
 #include "js/HashTable.h"
 #include "js/Vector.h"
+#include "vm/CommonPropertyNames.h"
 #include "vm/DateTime.h"
 #include "vm/SPSProfiler.h"
 #include "vm/Stack.h"
@@ -46,6 +45,9 @@
 #endif
 
 namespace js {
+
+class PerThreadData;
+class ThreadSafeContext;
 
 /* Thread Local Storage slot for storing the runtime for a thread. */
 extern mozilla::ThreadLocal<PerThreadData*> TlsPerThreadData;
@@ -71,13 +73,15 @@ namespace js {
 
 typedef Rooted<JSLinearString*> RootedLinearString;
 
+class Activation;
+class ActivationIterator;
 class AsmJSActivation;
-class InterpreterFrames;
 class MathCache;
 class WorkerThreadState;
 
 namespace ion {
 class IonRuntime;
+class JitActivation;
 struct PcScriptCache;
 }
 
@@ -658,6 +662,7 @@ class MarkingValidator;
 typedef Vector<JS::Zone *, 1, SystemAllocPolicy> ZoneVector;
 
 class AutoLockForExclusiveAccess;
+class AutoPauseWorkersForGC;
 
 } // namespace js
 
@@ -687,6 +692,9 @@ struct JSRuntime : public JS::shadow::Runtime,
      * as possible.
      */
     volatile int32_t    interrupt;
+
+    /* Branch callback */
+    JSOperationCallback operationCallback;
 
 #ifdef JS_THREADSAFE
   private:
@@ -750,11 +758,13 @@ struct JSRuntime : public JS::shadow::Runtime,
     PRLock *exclusiveAccessLock;
     mozilla::DebugOnly<PRThread *> exclusiveAccessOwner;
     mozilla::DebugOnly<bool> mainThreadHasExclusiveAccess;
+    mozilla::DebugOnly<bool> exclusiveThreadsPaused;
 
     /* Number of non-main threads with an ExclusiveContext. */
     size_t numExclusiveThreads;
 
     friend class js::AutoLockForExclusiveAccess;
+    friend class js::AutoPauseWorkersForGC;
 
   public:
 #endif // JS_THREADSAFE
@@ -762,6 +772,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool currentThreadHasExclusiveAccess() {
 #if defined(JS_THREADSAFE) && defined(DEBUG)
         return (!numExclusiveThreads && mainThreadHasExclusiveAccess) ||
+            exclusiveThreadsPaused ||
             exclusiveAccessOwner == PR_GetCurrentThread();
 #else
         return true;
@@ -775,9 +786,6 @@ struct JSRuntime : public JS::shadow::Runtime,
         return false;
 #endif
     }
-
-    /* Default compartment. */
-    JSCompartment       *atomsCompartment;
 
     /* Embedders can use this zone however they wish. */
     JS::Zone            *systemZone;
@@ -908,12 +916,6 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     /* The native stack size limit that runtime should not exceed. */
     size_t              nativeStackQuota;
-
-    /*
-     * Frames currently running in js::Interpret. See InterpreterFrames for
-     * details.
-     */
-    js::InterpreterFrames *interpreterFrames;
 
     /* Context create/destroy callback. */
     JSContextCallback   cxCallback;
@@ -1336,7 +1338,7 @@ struct JSRuntime : public JS::shadow::Runtime,
      */
     uint32_t            propertyRemovals;
 
-#if !ENABLE_INTL_API
+#if !EXPOSE_INTL_API
     /* Number localization, used by jsnum.cpp. */
     const char          *thousandsSeparator;
     const char          *decimalSeparator;
@@ -1362,8 +1364,15 @@ struct JSRuntime : public JS::shadow::Runtime,
 
     js::ConservativeGCData conservativeGC;
 
-    /* Pool of maps used during parse/emit. */
-    js::frontend::ParseMapPool parseMapPool;
+    // Pool of maps used during parse/emit. This may be modified by threads
+    // with an ExclusiveContext and requires a lock.
+  private:
+    js::frontend::ParseMapPool parseMapPool_;
+  public:
+    js::frontend::ParseMapPool &parseMapPool() {
+        JS_ASSERT(currentThreadHasExclusiveAccess());
+        return parseMapPool_;
+    }
 
   private:
     JSPrincipals        *trustedPrincipals_;
@@ -1371,8 +1380,29 @@ struct JSRuntime : public JS::shadow::Runtime,
     void setTrustedPrincipals(JSPrincipals *p) { trustedPrincipals_ = p; }
     JSPrincipals *trustedPrincipals() const { return trustedPrincipals_; }
 
-    /* Set of all currently-living atoms. */
-    js::AtomSet         atoms;
+    // Set of all currently-living atoms, and the compartment in which they
+    // reside. The atoms compartment is additionally used to hold runtime
+    // wide Ion code stubs. These may be modified by threads with an
+    // ExclusiveContext and require a lock.
+  private:
+    js::AtomSet atoms_;
+    JSCompartment *atomsCompartment_;
+  public:
+    js::AtomSet &atoms() {
+        JS_ASSERT(currentThreadHasExclusiveAccess());
+        return atoms_;
+    }
+    JSCompartment *atomsCompartment() {
+        JS_ASSERT(currentThreadHasExclusiveAccess());
+        return atomsCompartment_;
+    }
+
+    bool isAtomsCompartment(JSCompartment *comp) {
+        return comp == atomsCompartment_;
+    }
+
+    // The atoms compartment is the only one in its zone.
+    inline bool isAtomsZone(JS::Zone *zone);
 
     union {
         /*
@@ -1392,7 +1422,16 @@ struct JSRuntime : public JS::shadow::Runtime,
     JSPreWrapCallback                      preWrapObjectCallback;
     js::PreserveWrapperCallback            preserveWrapperCallback;
 
-    js::ScriptDataTable scriptDataTable;
+    // Table of bytecode and other data that may be shared across scripts
+    // within the runtime. This may be modified by threads with an
+    // ExclusiveContext and requires a lock.
+  private:
+    js::ScriptDataTable scriptDataTable_;
+  public:
+    js::ScriptDataTable &scriptDataTable() {
+        JS_ASSERT(currentThreadHasExclusiveAccess());
+        return scriptDataTable_;
+    }
 
 #ifdef DEBUG
     size_t              noGCOrAllocationCheck;

@@ -26,9 +26,11 @@
 #include "jsutil.h"
 
 #include "frontend/BytecodeEmitter.h"
+#include "frontend/SharedContext.h"
 #include "gc/Marking.h"
 #include "jit/BaselineJIT.h"
 #include "jit/IonCode.h"
+#include "vm/ArgumentsObject.h"
 #include "vm/Debugger.h"
 #include "vm/Interpreter.h"
 #include "vm/Shape.h"
@@ -164,7 +166,7 @@ Bindings::clone(JSContext *cx, InternalBindingsHandle self,
     Bindings &src = srcScript->bindings;
     ptrdiff_t off = (uint8_t *)src.bindingArray() - srcScript->data;
     JS_ASSERT(off >= 0);
-    JS_ASSERT(off <= srcScript->dataSize);
+    JS_ASSERT(size_t(off) <= srcScript->dataSize);
     Binding *dstPackedBindings = (Binding *)(dstScriptData + off);
 
     /*
@@ -862,9 +864,10 @@ JSScript::initScriptCounts(JSContext *cx)
     JS_ASSERT(size_t(cursor - base) == bytes);
 
     /* Enable interrupts in any interpreter frames running on this script. */
-    InterpreterFrames *frames;
-    for (frames = cx->runtime()->interpreterFrames; frames; frames = frames->older)
-        frames->enableInterruptsIfRunning(this);
+    for (ActivationIterator iter(cx->runtime()); !iter.done(); ++iter) {
+        if (iter.activation()->isInterpreter())
+            iter.activation()->asInterpreter()->enableInterruptsIfRunning(this);
+    }
 
     return true;
 }
@@ -1588,7 +1591,7 @@ void
 js::SweepScriptData(JSRuntime *rt)
 {
     JS_ASSERT(rt->gcIsFull);
-    ScriptDataTable &table = rt->scriptDataTable;
+    ScriptDataTable &table = rt->scriptDataTable();
 
     bool keepAtoms = false;
     for (ThreadDataIter iter(rt); !iter.done(); iter.next())
@@ -1608,7 +1611,7 @@ js::SweepScriptData(JSRuntime *rt)
 void
 js::FreeScriptData(JSRuntime *rt)
 {
-    ScriptDataTable &table = rt->scriptDataTable;
+    ScriptDataTable &table = rt->scriptDataTable();
     if (!table.initialized())
         return;
 
@@ -2609,9 +2612,10 @@ JSScript::ensureHasDebugScript(JSContext *cx)
      * interrupts enabled. The interrupts must stay enabled until the
      * debug state is destroyed.
      */
-    InterpreterFrames *frames;
-    for (frames = cx->runtime()->interpreterFrames; frames; frames = frames->older)
-        frames->enableInterruptsIfRunning(this);
+    for (ActivationIterator iter(cx->runtime()); !iter.done(); ++iter) {
+        if (iter.activation()->isInterpreter())
+            iter.activation()->asInterpreter()->enableInterruptsIfRunning(this);
+    }
 
     return true;
 }

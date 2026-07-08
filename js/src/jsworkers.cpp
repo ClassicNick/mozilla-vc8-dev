@@ -6,27 +6,21 @@
 
 #include "jsworkers.h"
 
+#ifdef JS_WORKER_THREADS
 #include "mozilla/DebugOnly.h"
 
 #include "prmjtime.h"
 
 #include "frontend/BytecodeCompiler.h"
-
-#ifdef JS_WORKER_THREADS
-# include "jit/ExecutionModeInlines.h"
-# include "jit/IonBuilder.h"
-#endif
+#include "jit/ExecutionModeInlines.h"
+#include "jit/IonBuilder.h"
 
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
-#include "vm/ObjectImpl-inl.h"
-
 using namespace js;
 
 using mozilla::DebugOnly;
-
-#ifdef JS_WORKER_THREADS
 
 bool
 js::EnsureWorkerThreadsInitialized(JSRuntime *rt)
@@ -607,9 +601,11 @@ WorkerThread::threadLoop()
 }
 
 AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
-  : runtime(rt), needsUnpause(false)
+  : runtime(rt), needsUnpause(false), oldExclusiveThreadsPaused(rt->exclusiveThreadsPaused)
 {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+
+    rt->exclusiveThreadsPaused = true;
 
     if (!runtime->workerThreadState)
         return;
@@ -640,6 +636,8 @@ AutoPauseWorkersForGC::AutoPauseWorkersForGC(JSRuntime *rt MOZ_GUARD_OBJECT_NOTI
 
 AutoPauseWorkersForGC::~AutoPauseWorkersForGC()
 {
+    runtime->exclusiveThreadsPaused = oldExclusiveThreadsPaused;
+
     if (!needsUnpause)
         return;
 
@@ -673,6 +671,8 @@ WorkerThread::pause()
 }
 
 #else /* JS_WORKER_THREADS */
+
+using namespace js;
 
 bool
 js::StartOffThreadAsmJSCompile(JSContext *cx, AsmJSParallelTask *asmData)

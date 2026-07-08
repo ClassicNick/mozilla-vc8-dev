@@ -40,8 +40,8 @@
 #include "gc/Marking.h"
 #include "jit/BaselineJIT.h"
 #include "js/MemoryMetrics.h"
+#include "vm/ArgumentsObject.h"
 #include "vm/Interpreter.h"
-#include "vm/RegExpStatics.h"
 #include "vm/RegExpStaticsObject.h"
 #include "vm/Shape.h"
 
@@ -1186,7 +1186,7 @@ JSObject::sealOrFreeze(JSContext *cx, HandleObject obj, ImmutabilityType it)
             if (!JSID_IS_EMPTY(child.propid))
                 MarkTypePropertyConfigured(cx, obj, child.propid);
 
-            last = cx->propertyTree().getChild(cx, last, obj->numFixedSlots(), child);
+            last = cx->compartment()->propertyTree.getChild(cx, last, obj->numFixedSlots(), child);
             if (!last)
                 return false;
         }

@@ -8,16 +8,9 @@
 #define jscompartment_h
 
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Util.h"
-
-#include "jscntxt.h"
-#include "jsgc.h"
-#include "jsobj.h"
 
 #include "gc/Zone.h"
 #include "vm/GlobalObject.h"
-#include "vm/RegExpObject.h"
-#include "vm/Shape.h"
 
 namespace js {
 
@@ -400,6 +393,12 @@ struct JSCompartment
     }
 #endif
 };
+
+inline bool
+JSRuntime::isAtomsZone(JS::Zone *zone)
+{
+    return zone == atomsCompartment_->zone();
+}
 
 // For use when changing the debug mode flag on one or more compartments.
 // Do not run scripts in any compartment that is scheduled for GC using this

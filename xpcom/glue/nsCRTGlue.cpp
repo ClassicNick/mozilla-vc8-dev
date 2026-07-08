@@ -275,7 +275,7 @@ printf_stderr(const char *fmt, ...)
     char buf[2048];
     va_list args;
     va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
+    _vsnprintf(buf, sizeof(buf), fmt, args);
     buf[sizeof(buf) - 1] = '\0';
     va_end(args);
     OutputDebugStringA(buf);

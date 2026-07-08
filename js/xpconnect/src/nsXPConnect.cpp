@@ -48,7 +48,6 @@
 #include "nsWrapperCacheInlines.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollector.h"
-#include "nsCycleCollectorUtils.h"
 #include "nsDOMMutationObserver.h"
 #include "nsICycleCollectorListener.h"
 #include "nsThread.h"
@@ -1181,6 +1180,9 @@ nsXPConnect::AfterProcessNextEvent(nsIThreadInternal *aThread,
     if (MOZ_UNLIKELY(mEventDepth == 0))
         return NS_OK;
     mEventDepth--;
+
+    // Now that we're back to the event loop, reset the slow script checkpoint.
+    mRuntime->OnAfterProcessNextEvent();
 
     // Call cycle collector occasionally.
     MOZ_ASSERT(NS_IsMainThread());

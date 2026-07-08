@@ -9,6 +9,8 @@
 
 #include "gc/Barrier.h"
 
+#include "jscompartment.h"
+
 #include "gc/Marking.h"
 #include "gc/StoreBuffer.h"
 
@@ -180,7 +182,7 @@ HeapValue::set(Zone *zone, const Value &v)
 #ifdef DEBUG
     if (value.isMarkable()) {
         JS_ASSERT(ZoneOfValue(value) == zone ||
-                  ZoneOfValue(value) == zone->runtimeFromMainThread()->atomsCompartment->zone());
+                  zone->runtimeFromAnyThread()->isAtomsZone(ZoneOfValue(value)));
     }
 #endif
 

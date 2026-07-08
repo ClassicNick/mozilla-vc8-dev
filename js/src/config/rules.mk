@@ -324,21 +324,9 @@ ifdef MOZ_DEBUG
 CODFILE=$(basename $(@F)).cod
 endif
 
-ifdef MOZ_MAPINFO
-ifdef SHARED_LIBRARY_NAME
-MAPFILE=$(SHARED_LIBRARY_NAME).map
-else
-MAPFILE=$(basename $(@F)).map
-endif # SHARED_LIBRARY_NAME
-endif # MOZ_MAPINFO
-
 ifdef DEFFILE
 OS_LDFLAGS += -DEF:$(call normalizepath,$(DEFFILE))
 EXTRA_DEPS += $(DEFFILE)
-endif
-
-ifdef MAPFILE
-OS_LDFLAGS += -MAP:$(MAPFILE)
 endif
 
 else #!GNU_CC
@@ -399,7 +387,7 @@ ALL_TRASH = \
 	$(OBJS:.$(OBJ_SUFFIX)=.i) $(OBJS:.$(OBJ_SUFFIX)=.i_o) \
 	$(HOST_PROGOBJS) $(HOST_OBJS) $(IMPORT_LIBRARY) $(DEF_FILE)\
 	$(EXE_DEF_FILE) so_locations _gen _stubs $(wildcard *.res) $(wildcard *.RES) \
-	$(wildcard *.pdb) $(CODFILE) $(MAPFILE) $(IMPORT_LIBRARY) \
+	$(wildcard *.pdb) $(CODFILE) $(IMPORT_LIBRARY) \
 	$(SHARED_LIBRARY:$(DLL_SUFFIX)=.exp) $(wildcard *.ilk) \
 	$(PROGRAM:$(BIN_SUFFIX)=.exp) $(SIMPLE_PROGRAMS:$(BIN_SUFFIX)=.exp) \
 	$(PROGRAM:$(BIN_SUFFIX)=.lib) $(SIMPLE_PROGRAMS:$(BIN_SUFFIX)=.lib) \
@@ -667,6 +655,7 @@ Makefile: $(DEPTH)/backend.RecursiveMakeBackend.built
 $(DEPTH)/backend.RecursiveMakeBackend.built:
 	@echo "Build configuration changed. Regenerating backend."
 	@cd $(DEPTH) && $(PYTHON) ./config.status
+	@$(TOUCH) $@
 
 include $(DEPTH)/backend.RecursiveMakeBackend.built.pp
 
@@ -983,17 +972,17 @@ EXTRA_DEPS += $(DTRACE_PROBE_OBJ)
 OBJS += $(DTRACE_PROBE_OBJ)
 endif
 
-$(filter %.$(LIB_SUFFIX),$(LIBRARY)): $(OBJS) $(LOBJS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(filter %.$(LIB_SUFFIX),$(LIBRARY)): $(OBJS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 	$(RM) $(LIBRARY)
-	$(EXPAND_AR) $(AR_FLAGS) $(OBJS) $(LOBJS) $(SHARED_LIBRARY_LIBS)
+	$(EXPAND_AR) $(AR_FLAGS) $(OBJS) $(SHARED_LIBRARY_LIBS)
 	$(RANLIB) $@
 
-$(filter-out %.$(LIB_SUFFIX),$(LIBRARY)): $(filter %.$(LIB_SUFFIX),$(LIBRARY)) $(OBJS) $(LOBJS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(filter-out %.$(LIB_SUFFIX),$(LIBRARY)): $(filter %.$(LIB_SUFFIX),$(LIBRARY)) $(OBJS) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 # When we only build a library descriptor, blow out any existing library
 	$(REPORT_BUILD)
 	$(if $(filter %.$(LIB_SUFFIX),$(LIBRARY)),,$(RM) $(REAL_LIBRARY) $(EXPORT_LIBRARY:%=%/$(REAL_LIBRARY)))
-	$(EXPAND_LIBS_GEN) -o $@ $(OBJS) $(LOBJS) $(SHARED_LIBRARY_LIBS)
+	$(EXPAND_LIBS_GEN) -o $@ $(OBJS) $(SHARED_LIBRARY_LIBS)
 
 ifeq ($(OS_ARCH),WINNT)
 # Import libraries are created by the rules creating shared libraries.
@@ -1047,7 +1036,7 @@ endif
 # symlinks back to the originals. The symlinks are a no-op for stabs debugging,
 # so no need to conditionalize on OS version or debugging format.
 
-$(SHARED_LIBRARY): $(OBJS) $(LOBJS) $(DEF_FILE) $(RESFILE) $(LIBRARY) $(EXTRA_DEPS) $(GLOBAL_DEPS)
+$(SHARED_LIBRARY): $(OBJS) $(DEF_FILE) $(RESFILE) $(LIBRARY) $(EXTRA_DEPS) $(GLOBAL_DEPS)
 	$(REPORT_BUILD)
 ifndef INCREMENTAL_LINKER
 	$(RM) $@
@@ -1056,10 +1045,10 @@ ifdef DTRACE_LIB_DEPENDENT
 ifndef XP_MACOSX
 	dtrace -G -C -s $(MOZILLA_DTRACE_SRC) -o  $(DTRACE_PROBE_OBJ) $(shell $(EXPAND_LIBS) $(MOZILLA_PROBE_LIBS))
 endif
-	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(LOBJS) $(SUB_SHLOBJS) $(DTRACE_PROBE_OBJ) $(MOZILLA_PROBE_LIBS) $(RESFILE) $(LDFLAGS) $(WRAP_LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE) $(if $(LIB_IS_C_ONLY),,$(STLPORT_LIBS))
+	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(SUB_SHLOBJS) $(DTRACE_PROBE_OBJ) $(MOZILLA_PROBE_LIBS) $(RESFILE) $(LDFLAGS) $(WRAP_LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE) $(if $(LIB_IS_C_ONLY),,$(STLPORT_LIBS))
 	@$(RM) $(DTRACE_PROBE_OBJ)
 else # ! DTRACE_LIB_DEPENDENT
-	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(LOBJS) $(SUB_SHLOBJS) $(RESFILE) $(LDFLAGS) $(WRAP_LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE) $(if $(LIB_IS_C_ONLY),,$(STLPORT_LIBS))
+	$(EXPAND_MKSHLIB) $(SHLIB_LDSTARTFILE) $(OBJS) $(SUB_SHLOBJS) $(RESFILE) $(LDFLAGS) $(WRAP_LDFLAGS) $(SHARED_LIBRARY_LIBS) $(EXTRA_DSO_LDOPTS) $(MOZ_GLUE_LDFLAGS) $(OS_LIBS) $(EXTRA_LIBS) $(DEF_FILE) $(SHLIB_LDENDFILE) $(if $(LIB_IS_C_ONLY),,$(STLPORT_LIBS))
 endif # DTRACE_LIB_DEPENDENT
 	@$(call CHECK_STDCXX,$@)
 

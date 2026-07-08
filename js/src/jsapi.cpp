@@ -15,7 +15,6 @@
 
 #include <ctype.h>
 #include <stdarg.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -50,7 +49,6 @@
 #if ENABLE_YARR_JIT
 #include "assembler/jit/ExecutableAllocator.h"
 #endif
-#include "builtin/BinaryData.h"
 #include "builtin/Eval.h"
 #include "builtin/Intl.h"
 #include "builtin/MapObject.h"
@@ -60,7 +58,6 @@
 #include "frontend/FullParseHandler.h"  // for JS_BufferIsCompileableUnit
 #include "frontend/Parser.h" // for JS_BufferIsCompileableUnit
 #include "gc/Marking.h"
-#include "gc/Memory.h"
 #include "jit/AsmJSLink.h"
 #include "js/CharacterEncoding.h"
 #if ENABLE_INTL_API
@@ -83,6 +80,7 @@
 #include "yarr/BumpPointerAllocator.h"
 
 #include "jsatominlines.h"
+#include "jsfuninlines.h"
 #include "jsinferinlines.h"
 #include "jsscriptinlines.h"
 
@@ -690,12 +688,12 @@ JS_Init(void)
     if (!ForkJoinSlice::InitializeTLS())
         return false;
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     UErrorCode err = U_ZERO_ERROR;
     u_init(&err);
     if (U_FAILURE(err))
         return false;
-#endif // ENABLE_INTL_API
+#endif // EXPOSE_INTL_API
 
     jsInitState = Running;
     return true;
@@ -718,9 +716,9 @@ JS_ShutDown(void)
 
     PRMJ_NowShutdown();
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     u_cleanup();
-#endif // ENABLE_INTL_API
+#endif // EXPOSE_INTL_API
 
     jsInitState = ShutDown;
 }
@@ -767,7 +765,7 @@ JS_SetICUMemoryFunctions(JS_ICUAllocFn allocFn, JS_ICUReallocFn reallocFn, JS_IC
                "must call JS_SetICUMemoryFunctions before any other JSAPI "
                "operation (including JS_Init)");
 
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     UErrorCode status = U_ZERO_ERROR;
     u_setMemoryFunctions(/* context = */ NULL, allocFn, reallocFn, freeFn, &status);
     return U_SUCCESS(status);
@@ -1342,7 +1340,7 @@ JS_PUBLIC_API(bool)
 JS_InitStandardClasses(JSContext *cx, JSObject *objArg)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
@@ -1398,7 +1396,7 @@ static const JSStdName standard_class_atoms[] = {
     {js_InitParallelArrayClass,         EAGER_ATOM_AND_OCLASP(ParallelArray)},
 #endif
     {js_InitProxyClass,                 EAGER_CLASS_ATOM(Proxy), OCLASP(ObjectProxy)},
-#if ENABLE_INTL_API
+#if EXPOSE_INTL_API
     {js_InitIntlClass,                  EAGER_ATOM_AND_CLASP(Intl)},
 #endif
 #ifdef ENABLE_BINARYDATA
@@ -2913,7 +2911,7 @@ JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals,
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     JS_ASSERT(!cx->isExceptionPending());
 
     JSRuntime *rt = cx->runtime();
@@ -2968,7 +2966,7 @@ JS_NewObject(JSContext *cx, JSClass *jsclasp, JSObject *protoArg, JSObject *pare
 {
     RootedObject proto(cx, protoArg);
     RootedObject parent(cx, parentArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, proto, parent);
@@ -2998,7 +2996,7 @@ JS_NewObjectWithGivenProto(JSContext *cx, JSClass *jsclasp, JSObject *protoArg, 
 {
     RootedObject proto(cx, protoArg);
     RootedObject parent(cx, parentArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, proto, parent);
@@ -3526,7 +3524,7 @@ JS_DefineOwnProperty(JSContext *cx, JSObject *objArg, jsid idArg, jsval descript
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, id, descriptor);
 
-    return DefineOwnProperty(cx, obj, id, descriptor, bp);
+    return DefineOwnProperty(cx, obj, id, (HandleValue) descriptor, bp);
 }
 
 JS_PUBLIC_API(JSObject *)
@@ -3603,7 +3601,7 @@ GetPropertyDescriptorById(JSContext *cx, HandleObject obj, HandleId id, unsigned
     if (!LookupPropertyById(cx, obj, id, flags, &obj2, &shape))
         return false;
 
-    JS_ASSERT(desc.isClear());
+    desc.clear();
     if (!shape || (own && obj != obj2))
         return true;
 
@@ -3638,15 +3636,11 @@ GetPropertyDescriptorById(JSContext *cx, HandleObject obj, HandleId id, unsigned
 
 JS_PUBLIC_API(bool)
 JS_GetPropertyDescriptorById(JSContext *cx, JSObject *objArg, jsid idArg, unsigned flags,
-                             JSPropertyDescriptor *desc_)
+                             MutableHandle<JSPropertyDescriptor> desc)
 {
     RootedObject obj(cx, objArg);
     RootedId id(cx, idArg);
-    Rooted<PropertyDescriptor> desc(cx);
-    if (!GetPropertyDescriptorById(cx, obj, id, flags, false, &desc))
-        return false;
-    *desc_ = desc;
-    return true;
+    return GetPropertyDescriptorById(cx, obj, id, flags, false, desc);
 }
 
 JS_PUBLIC_API(bool)
@@ -4255,7 +4249,7 @@ JS_NewArrayObject(JSContext *cx, int length, jsval *vector)
 {
     AutoArrayRooter tvr(cx, length, vector);
 
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
 
@@ -4353,7 +4347,7 @@ JS_NewFunction(JSContext *cx, JSNative native, unsigned nargs, unsigned flags,
                JSObject *parentArg, const char *name)
 {
     RootedObject parent(cx, parentArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
 
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
@@ -4376,7 +4370,7 @@ JS_NewFunctionById(JSContext *cx, JSNative native, unsigned nargs, unsigned flag
 {
     RootedObject parent(cx, parentArg);
     JS_ASSERT(JSID_IS_STRING(id));
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, parent);
@@ -4525,7 +4519,7 @@ js_generic_native_method_dispatcher(JSContext *cx, unsigned argc, Value *vp)
 JS_PUBLIC_API(bool)
 JS_DefineFunctions(JSContext *cx, JSObject *objArg, const JSFunctionSpec *fs)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, objArg);
@@ -4625,7 +4619,7 @@ JS_DefineFunction(JSContext *cx, JSObject *objArg, const char *name, JSNative ca
                   unsigned nargs, unsigned attrs)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -4642,7 +4636,7 @@ JS_DefineUCFunction(JSContext *cx, JSObject *objArg,
                     unsigned nargs, unsigned attrs)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -4659,7 +4653,7 @@ JS_DefineFunctionById(JSContext *cx, JSObject *objArg, jsid id_, JSNative call,
 {
     RootedObject obj(cx, objArg);
     RootedId id(cx, id_);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -4803,7 +4797,7 @@ JSScript *
 JS::Compile(JSContext *cx, HandleObject obj, CompileOptions options,
             const jschar *chars, size_t length)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -4956,7 +4950,7 @@ JS::CompileFunction(JSContext *cx, HandleObject obj, CompileOptions options,
                     const char *name, unsigned nargs, const char **argnames,
                     const jschar *chars, size_t length)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -5057,7 +5051,7 @@ JS_CompileFunction(JSContext *cx, JSObject *objArg, const char *name,
 JS_PUBLIC_API(JSString *)
 JS_DecompileScript(JSContext *cx, JSScript *scriptArg, const char *name, unsigned indent)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
 
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
@@ -5074,7 +5068,7 @@ JS_DecompileScript(JSContext *cx, JSScript *scriptArg, const char *name, unsigne
 JS_PUBLIC_API(JSString *)
 JS_DecompileFunction(JSContext *cx, JSFunction *funArg, unsigned indent)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, funArg);
@@ -5085,7 +5079,7 @@ JS_DecompileFunction(JSContext *cx, JSFunction *funArg, unsigned indent)
 JS_PUBLIC_API(JSString *)
 JS_DecompileFunctionBody(JSContext *cx, JSFunction *funArg, unsigned indent)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, funArg);
@@ -5099,7 +5093,7 @@ JS_ExecuteScript(JSContext *cx, JSObject *objArg, JSScript *scriptArg, jsval *rv
     RootedObject obj(cx, objArg);
     RootedScript script(cx, scriptArg);
 
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -5140,7 +5134,7 @@ extern JS_PUBLIC_API(bool)
 JS::Evaluate(JSContext *cx, HandleObject obj, CompileOptions options,
              const jschar *chars, size_t length, jsval *rval)
 {
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
@@ -5314,7 +5308,7 @@ JS_CallFunction(JSContext *cx, JSObject *objArg, JSFunction *fun, unsigned argc,
                 jsval *rval)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, fun, JSValueArray(argv, argc));
@@ -5332,7 +5326,7 @@ JS_CallFunctionName(JSContext *cx, JSObject *objArg, const char *name, unsigned 
                     jsval *rval)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, JSValueArray(argv, argc));
@@ -5359,7 +5353,7 @@ JS_CallFunctionValue(JSContext *cx, JSObject *objArg, jsval fval, unsigned argc,
                      jsval *rval)
 {
     RootedObject obj(cx, objArg);
-    JS_THREADSAFE_ASSERT(cx->compartment() != cx->runtime()->atomsCompartment);
+    JS_ASSERT(!cx->runtime()->isAtomsCompartment(cx->compartment()));
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj, fval, JSValueArray(argv, argc));
@@ -5425,17 +5419,17 @@ JS_New(JSContext *cx, JSObject *ctorArg, unsigned argc, jsval *argv)
 }
 
 JS_PUBLIC_API(JSOperationCallback)
-JS_SetOperationCallback(JSContext *cx, JSOperationCallback callback)
+JS_SetOperationCallback(JSRuntime *rt, JSOperationCallback callback)
 {
-    JSOperationCallback old = cx->operationCallback;
-    cx->operationCallback = callback;
+    JSOperationCallback old = rt->operationCallback;
+    rt->operationCallback = callback;
     return old;
 }
 
 JS_PUBLIC_API(JSOperationCallback)
-JS_GetOperationCallback(JSContext *cx)
+JS_GetOperationCallback(JSRuntime *rt)
 {
-    return cx->operationCallback;
+    return rt->operationCallback;
 }
 
 JS_PUBLIC_API(void)

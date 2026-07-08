@@ -8,7 +8,6 @@
 
 #include "mozilla/DebugOnly.h"
 
-#include "builtin/ParallelArray.h"
 #include "jit/IonMacroAssembler.h"
 #include "jit/IonSpewer.h"
 #include "jit/MIR.h"
@@ -143,6 +142,9 @@ CodeGeneratorShared::encodeSlots(LSnapshot *snapshot, MResumePoint *resumePoint,
         if (mir->isPassArg())
             mir = mir->toPassArg()->getArgument();
         JS_ASSERT(!mir->isPassArg());
+
+        if (mir->isBox())
+            mir = mir->toBox()->getOperand(0);
 
         MIRType type = mir->isUnused()
                        ? MIRType_Undefined

@@ -13,6 +13,7 @@
 
 #include "gc/Marking.h"
 
+#include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
 using namespace js;
@@ -626,7 +627,7 @@ bool
 StaticStrings::init(JSContext *cx)
 {
     AutoLockForExclusiveAccess lock(cx);
-    AutoCompartment ac(cx, cx->runtime()->atomsCompartment);
+    AutoCompartment ac(cx, cx->runtime()->atomsCompartment());
 
     for (uint32_t i = 0; i < UNIT_STATIC_LIMIT; i++) {
         jschar buffer[] = { jschar(i), '\0' };
