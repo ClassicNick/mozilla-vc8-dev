@@ -30,8 +30,6 @@
 
 #include "FFTBlock.h"
 
-#include "AudioNodeEngine.h"
-
 #include <complex>
 
 #ifndef M_PI

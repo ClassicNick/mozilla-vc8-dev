@@ -266,9 +266,9 @@ class JSString : public js::gc::Cell
      * getCharsZ additionally ensures the array is null terminated.
      */
 
-    inline const jschar *getChars(JSContext *cx);
-    inline const jschar *getCharsZ(JSContext *cx);
-    inline bool getChar(JSContext *cx, size_t index, jschar *code);
+    inline const jschar *getChars(js::ExclusiveContext *cx);
+    inline const jschar *getCharsZ(js::ExclusiveContext *cx);
+    inline bool getChar(js::ExclusiveContext *cx, size_t index, jschar *code);
 
     /*
      * Returns chars() if the string is already linear or flat. Otherwise
@@ -289,11 +289,11 @@ class JSString : public js::gc::Cell
 
     /* Fallible conversions to more-derived string types. */
 
-    inline JSLinearString *ensureLinear(JSContext *cx);
-    inline JSFlatString *ensureFlat(JSContext *cx);
-    inline JSStableString *ensureStable(JSContext *cx);
+    inline JSLinearString *ensureLinear(js::ExclusiveContext *cx);
+    inline JSFlatString *ensureFlat(js::ExclusiveContext *cx);
+    inline JSStableString *ensureStable(js::ExclusiveContext *cx);
 
-    static bool ensureLinear(JSContext *cx, JSString *str) {
+    static bool ensureLinear(js::ExclusiveContext *cx, JSString *str) {
         return str->ensureLinear(cx) != NULL;
     }
 
@@ -467,10 +467,10 @@ public:
     enum UsingBarrier { WithIncrementalBarrier, NoBarrier };
 private:
     template<UsingBarrier b>
-    JSFlatString *flattenInternal(JSContext *cx);
+    JSFlatString *flattenInternal(js::ExclusiveContext *cx);
 
     friend class JSString;
-    JSFlatString *flatten(JSContext *cx);
+    JSFlatString *flatten(js::ExclusiveContext *cx);
 
     void init(js::ThreadSafeContext *cx, JSString *left, JSString *right, size_t length);
 
@@ -533,7 +533,7 @@ class JSDependentString : public JSLinearString
                                  js::ScopedJSFreePtr<jschar> &out) const;
 
     friend class JSString;
-    JSFlatString *undepend(JSContext *cx);
+    JSFlatString *undepend(js::ExclusiveContext *cx);
 
     void init(js::ThreadSafeContext *cx, JSLinearString *base, const jschar *chars,
               size_t length);
@@ -705,7 +705,7 @@ class JSInlineString : public JSFlatString
 
     inline jschar *init(size_t length);
 
-    JSStableString *uninline(JSContext *cx);
+    JSStableString *uninline(js::ExclusiveContext *cx);
 
     inline void resetLength(size_t length);
 
@@ -1011,7 +1011,7 @@ class AutoNameVector : public AutoVectorRooter<PropertyName *>
 /* Avoid requiring vm/String-inl.h just to call getChars. */
 
 JS_ALWAYS_INLINE const jschar *
-JSString::getChars(JSContext *cx)
+JSString::getChars(js::ExclusiveContext *cx)
 {
     if (JSLinearString *str = ensureLinear(cx))
         return str->chars();
@@ -1019,7 +1019,7 @@ JSString::getChars(JSContext *cx)
 }
 
 JS_ALWAYS_INLINE bool
-JSString::getChar(JSContext *cx, size_t index, jschar *code)
+JSString::getChar(js::ExclusiveContext *cx, size_t index, jschar *code)
 {
     JS_ASSERT(index < length());
 
@@ -1053,7 +1053,7 @@ JSString::getChar(JSContext *cx, size_t index, jschar *code)
 }
 
 JS_ALWAYS_INLINE const jschar *
-JSString::getCharsZ(JSContext *cx)
+JSString::getCharsZ(js::ExclusiveContext *cx)
 {
     if (JSFlatString *str = ensureFlat(cx))
         return str->chars();
@@ -1097,7 +1097,7 @@ JSString::getCharsZNonDestructive(js::ThreadSafeContext *cx,
 }
 
 JS_ALWAYS_INLINE JSLinearString *
-JSString::ensureLinear(JSContext *cx)
+JSString::ensureLinear(js::ExclusiveContext *cx)
 {
     return isLinear()
            ? &asLinear()
@@ -1105,7 +1105,7 @@ JSString::ensureLinear(JSContext *cx)
 }
 
 JS_ALWAYS_INLINE JSFlatString *
-JSString::ensureFlat(JSContext *cx)
+JSString::ensureFlat(js::ExclusiveContext *cx)
 {
     return isFlat()
            ? &asFlat()
@@ -1115,7 +1115,7 @@ JSString::ensureFlat(JSContext *cx)
 }
 
 JS_ALWAYS_INLINE JSStableString *
-JSString::ensureStable(JSContext *maybecx)
+JSString::ensureStable(js::ExclusiveContext *maybecx)
 {
     if (isRope()) {
         JSFlatString *flat = asRope().flatten(maybecx);

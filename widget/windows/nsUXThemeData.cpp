@@ -10,7 +10,6 @@
 #include "nsUXThemeData.h"
 #include "nsDebug.h"
 #include "nsToolkit.h"
-#include "WinUtils.h"
 #include "nsUXThemeConstants.h"
 
 using namespace mozilla;
@@ -115,6 +114,7 @@ nsUXThemeData::Initialize()
   }
 #endif
 
+  CheckForCompositor(true);
   Invalidate();
 }
 
@@ -238,10 +238,10 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (!sTitlebarInfoPopulatedAero && nsUXThemeData::CheckForCompositor()) {
     RECT captionButtons;
-    if (SUCCEEDED(nsUXThemeData::dwmGetWindowAttributePtr(aWnd,
-                                                          DWMWA_CAPTION_BUTTON_BOUNDS,
-                                                          &captionButtons,
-                                                          sizeof(captionButtons)))) {
+    if (SUCCEEDED(WinUtils::dwmGetWindowAttributePtr(aWnd,
+                                                     DWMWA_CAPTION_BUTTON_BOUNDS,
+                                                     &captionButtons,
+                                                     sizeof(captionButtons)))) {
       sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cx = captionButtons.right - captionButtons.left - 3;
       sCommandButtons[CMDBUTTONIDX_BUTTONBOX].cy = (captionButtons.bottom - captionButtons.top) - 1;
       sTitlebarInfoPopulatedAero = true;
@@ -347,6 +347,16 @@ nsUXThemeData::GetNativeThemeId()
 bool nsUXThemeData::IsDefaultWindowTheme()
 {
   return sIsDefaultWindowsTheme;
+}
+
+// static
+bool nsUXThemeData::CheckForCompositor(bool aUpdateCache)
+{
+  static BOOL sCachedValue = FALSE;
+  if (aUpdateCache && WinUtils::dwmIsCompositionEnabledPtr) {
+    WinUtils::dwmIsCompositionEnabledPtr(&sCachedValue);
+  }
+  return sCachedValue;
 }
 
 // static

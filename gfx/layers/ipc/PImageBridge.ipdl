@@ -11,6 +11,7 @@ include protocol PGrallocBuffer;
 include protocol PCompositable;
 
 include "mozilla/layers/CompositorTypes.h";
+include "mozilla/GfxMessageUtils.h";
 
 using ImageHandle;
 using mozilla::ipc::RPCChannel;

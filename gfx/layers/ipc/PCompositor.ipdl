@@ -11,6 +11,7 @@ include LayersSurfaces;
 include protocol PGrallocBuffer;
 include protocol PLayerTransaction;
 include "mozilla/layers/CompositorTypes.h";
+include "mozilla/GfxMessageUtils.h";
 
 using mozilla::ipc::RPCChannel;
 using mozilla::null_t;

@@ -11,10 +11,7 @@
 
 #include "nscore.h"
 #include "mozilla/LookAndFeel.h"
-
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-#include <dwmapi.h>
-#endif
+#include "WinUtils.h"
 
 #include "nsWindowDefs.h"
 
@@ -180,26 +177,8 @@ public:
   static GetThemeSysColorPtr getThemeSysColor;
   static IsThemeBackgroundPartiallyTransparentPtr isThemeBackgroundPartiallyTransparent;
 
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   // dwmapi.dll function typedefs and declarations
-  typedef HRESULT (WINAPI*DwmExtendFrameIntoClientAreaProc)(HWND hWnd, const MARGINS *pMarInset);
-  typedef HRESULT (WINAPI*DwmIsCompositionEnabledProc)(BOOL *pfEnabled);
-  typedef HRESULT (WINAPI*DwmSetIconicThumbnailProc)(HWND hWnd, HBITMAP hBitmap, DWORD dwSITFlags);
-  typedef HRESULT (WINAPI*DwmSetIconicLivePreviewBitmapProc)(HWND hWnd, HBITMAP hBitmap, POINT *pptClient, DWORD dwSITFlags);
-  typedef HRESULT (WINAPI*DwmGetWindowAttributeProc)(HWND hWnd, DWORD dwAttribute, LPCVOID pvAttribute, DWORD cbAttribute);
-  typedef HRESULT (WINAPI*DwmSetWindowAttributeProc)(HWND hWnd, DWORD dwAttribute, LPCVOID pvAttribute, DWORD cbAttribute);
-  typedef HRESULT (WINAPI*DwmInvalidateIconicBitmapsProc)(HWND hWnd);
-  typedef HRESULT (WINAPI*DwmDefWindowProcProc)(HWND hWnd, UINT msg, LPARAM lParam, WPARAM wParam, LRESULT *aRetValue);
-
-  static DwmExtendFrameIntoClientAreaProc dwmExtendFrameIntoClientAreaPtr;
-  static DwmIsCompositionEnabledProc dwmIsCompositionEnabledPtr;
-  static DwmSetIconicThumbnailProc dwmSetIconicThumbnailPtr;
-  static DwmSetIconicLivePreviewBitmapProc dwmSetIconicLivePreviewBitmapPtr;
-  static DwmGetWindowAttributeProc dwmGetWindowAttributePtr;
-  static DwmSetWindowAttributeProc dwmSetWindowAttributePtr;
-  static DwmInvalidateIconicBitmapsProc dwmInvalidateIconicBitmapsPtr;
-  static DwmDefWindowProcProc dwmDwmDefWindowProcPtr;
-#endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
+  // Moved to widget/windows/WinUtils.h
 
   // This method returns the cached compositor state. Most
   // callers should call without the argument. The cache
@@ -216,5 +195,6 @@ public:
 #endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     return (sCachedValue != FALSE);
   }
+  static bool CheckForCompositor(bool aUpdateCache = false);
 };
 #endif // __UXThemeData_h__
