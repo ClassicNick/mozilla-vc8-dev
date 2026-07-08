@@ -597,6 +597,9 @@ class CGHeaders(CGWrapper):
             dictionary, if passed, to decide what to do with interface types.
             """
             assert not descriptor or not dictionary
+            if t.nullable() and dictionary:
+                # Need to make sure that Nullable as a dictionary member works
+                declareIncludes.add("mozilla/dom/Nullable.h")
             unrolled = t.unroll()
             if unrolled.isUnion():
                 # UnionConversions.h includes UnionTypes.h
@@ -604,7 +607,11 @@ class CGHeaders(CGWrapper):
             elif unrolled.isInterface():
                 if unrolled.isSpiderMonkeyInterface():
                     bindingHeaders.add("jsfriendapi.h")
-                    bindingHeaders.add("mozilla/dom/TypedArray.h")
+                    if dictionary:
+                        headerSet = declareIncludes
+                    else:
+                        headerSet = bindingHeaders
+                    headerSet.add("mozilla/dom/TypedArray.h")
                 else:
                     providers = getRelevantProviders(descriptor, dictionary,
                                                      config)
@@ -955,7 +962,7 @@ class CGAddPropertyHook(CGAbstractClassHook):
         args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj'),
                 Argument('JS::Handle<jsid>', 'id'), Argument('JS::MutableHandle<JS::Value>', 'vp')]
         CGAbstractClassHook.__init__(self, descriptor, ADDPROPERTY_HOOK_NAME,
-                                     'JSBool', args)
+                                     'bool', args)
 
     def generate_code(self):
         assert not self.descriptor.workers and self.descriptor.wrapperCache
@@ -1145,9 +1152,9 @@ class CGNamedConstructors(CGThing):
 class CGClassHasInstanceHook(CGAbstractStaticMethod):
     def __init__(self, descriptor):
         args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'obj'),
-                Argument('JS::MutableHandle<JS::Value>', 'vp'), Argument('JSBool*', 'bp')]
+                Argument('JS::MutableHandle<JS::Value>', 'vp'), Argument('bool*', 'bp')]
         CGAbstractStaticMethod.__init__(self, descriptor, HASINSTANCE_HOOK_NAME,
-                                        'JSBool', args)
+                                        'bool', args)
 
     def define(self):
         if not NeedsGeneratedHasInstance(self.descriptor):
@@ -1657,7 +1664,8 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
     def __init__(self, descriptor, properties):
         args = [Argument('JSContext*', 'aCx'),
                 Argument('JS::Handle<JSObject*>', 'aGlobal'),
-                Argument('JS::Heap<JSObject*>*', 'protoAndIfaceArray')]
+                Argument('JS::Heap<JSObject*>*', 'aProtoAndIfaceArray'),
+                Argument('bool', 'aDefineOnGlobal')]
         CGAbstractMethod.__init__(self, descriptor, 'CreateInterfaceObjects', 'void', args)
         self.properties = properties
     def definition_body(self):
@@ -1784,13 +1792,13 @@ if (!unforgeableHolder) {
 
         if needInterfacePrototypeObject:
             protoClass = "&PrototypeClass.mBase"
-            protoCache = "&protoAndIfaceArray[prototypes::id::%s]" % self.descriptor.name
+            protoCache = "&aProtoAndIfaceArray[prototypes::id::%s]" % self.descriptor.name
         else:
             protoClass = "nullptr"
             protoCache = "nullptr"
         if needInterfaceObject:
             interfaceClass = "&InterfaceObjectClass.mBase"
-            interfaceCache = "&protoAndIfaceArray[constructors::id::%s]" % self.descriptor.name
+            interfaceCache = "&aProtoAndIfaceArray[constructors::id::%s]" % self.descriptor.name
         else:
             # We don't have slots to store the named constructors.
             assert len(self.descriptor.interface.namedConstructors) == 0
@@ -1821,7 +1829,7 @@ if (!unforgeableHolder) {
                 "                            %s,\n"
                 "                            %s,\n"
                 "                            %s,\n"
-                "                            %s);" % (
+                "                            %s, aDefineOnGlobal);" % (
             protoClass, protoCache,
             interfaceClass, constructHookHolder, constructArgs,
             namedConstructors,
@@ -1833,7 +1841,7 @@ if (!unforgeableHolder) {
         if UseHolderForUnforgeable(self.descriptor):
             assert needInterfacePrototypeObject
             setUnforgeableHolder = CGGeneric(
-                "JSObject* proto = protoAndIfaceArray[prototypes::id::%s];\n"
+                "JSObject* proto = aProtoAndIfaceArray[prototypes::id::%s];\n"
                 "if (proto) {\n"
                 "  js::SetReservedSlot(proto, DOM_INTERFACE_PROTO_SLOTS_BASE,\n"
                 "                      JS::ObjectValue(*unforgeableHolder));\n"
@@ -1851,9 +1859,9 @@ class CGGetPerInterfaceObject(CGAbstractMethod):
     A method for getting a per-interface object (a prototype object or interface
     constructor object).
     """
-    def __init__(self, descriptor, name, idPrefix=""):
+    def __init__(self, descriptor, name, idPrefix="", extraArgs=[]):
         args = [Argument('JSContext*', 'aCx'),
-                Argument('JS::Handle<JSObject*>', 'aGlobal')]
+                Argument('JS::Handle<JSObject*>', 'aGlobal')] + extraArgs
         CGAbstractMethod.__init__(self, descriptor, name,
                                   'JS::Handle<JSObject*>', args, inline=True)
         self.id = idPrefix + "id::" + self.descriptor.name
@@ -1867,7 +1875,7 @@ class CGGetPerInterfaceObject(CGAbstractMethod):
   /* Check to see whether the interface objects are already installed */
   JS::Heap<JSObject*>* protoAndIfaceArray = GetProtoAndIfaceArray(aGlobal);
   if (!protoAndIfaceArray[%s]) {
-    CreateInterfaceObjects(aCx, aGlobal, protoAndIfaceArray);
+    CreateInterfaceObjects(aCx, aGlobal, protoAndIfaceArray, aDefineOnGlobal);
   }
 
   /* 
@@ -1890,15 +1898,18 @@ class CGGetProtoObjectMethod(CGGetPerInterfaceObject):
     def definition_body(self):
         return """
   /* Get the interface prototype object for this class.  This will create the
-     object as needed. */""" + CGGetPerInterfaceObject.definition_body(self)
+     object as needed. */
+  bool aDefineOnGlobal = true;""" + CGGetPerInterfaceObject.definition_body(self)
 
 class CGGetConstructorObjectMethod(CGGetPerInterfaceObject):
     """
     A method for getting the interface constructor object.
     """
     def __init__(self, descriptor):
-        CGGetPerInterfaceObject.__init__(self, descriptor, "GetConstructorObject",
-                                         "constructors::")
+        CGGetPerInterfaceObject.__init__(
+            self, descriptor, "GetConstructorObject",
+            "constructors::",
+            extraArgs=[Argument("bool", "aDefineOnGlobal", "true")])
     def definition_body(self):
         return """
   /* Get the interface object for this class.  This will create the object as
@@ -1913,7 +1924,7 @@ class CGDefineDOMInterfaceMethod(CGAbstractMethod):
         args = [Argument('JSContext*', 'aCx'),
                 Argument('JS::Handle<JSObject*>', 'aGlobal'),
                 Argument('JS::Handle<jsid>', 'id'),
-                Argument('bool*', 'aEnabled')]
+                Argument('bool', 'aDefineOnGlobal')]
         CGAbstractMethod.__init__(self, descriptor, 'DefineDOMInterface', 'JSObject*', args)
 
     def declare(self):
@@ -1928,7 +1939,7 @@ class CGDefineDOMInterfaceMethod(CGAbstractMethod):
 
     def definition_body(self):
         if len(self.descriptor.interface.namedConstructors) > 0:
-            getConstructor = """  JSObject* interfaceObject = GetConstructorObject(aCx, aGlobal);
+            getConstructor = """  JSObject* interfaceObject = GetConstructorObject(aCx, aGlobal, aDefineOnGlobal);
   if (!interfaceObject) {
     return nullptr;
   }
@@ -1940,10 +1951,8 @@ class CGDefineDOMInterfaceMethod(CGAbstractMethod):
   }
   return interfaceObject;"""
         else:
-            getConstructor = "  return GetConstructorObject(aCx, aGlobal);"
-        return ("""  *aEnabled = true;
-
-""" + getConstructor)
+            getConstructor = "  return GetConstructorObject(aCx, aGlobal, aDefineOnGlobal);"
+        return getConstructor
 
 class CGConstructorEnabledViaPrefEnabled(CGAbstractMethod):
     """
@@ -5196,9 +5205,8 @@ class CGAbstractBindingMethod(CGAbstractStaticMethod):
     """
     def __init__(self, descriptor, name, args, unwrapFailureCode=None,
                  getThisObj="args.computeThis(cx).toObjectOrNull()",
-                 callArgs="JS::CallArgs args = JS::CallArgsFromVp(argc, vp);",
-                 returnType="bool"):
-        CGAbstractStaticMethod.__init__(self, descriptor, name, returnType, args)
+                 callArgs="JS::CallArgs args = JS::CallArgsFromVp(argc, vp);"):
+        CGAbstractStaticMethod.__init__(self, descriptor, name, "bool", args)
 
         if unwrapFailureCode is None:
             self.unwrapFailureCode = 'return ThrowErrorMessage(cx, MSG_THIS_DOES_NOT_IMPLEMENT_INTERFACE, "Value", "%s");' % descriptor.interface.identifier.name
@@ -5365,7 +5373,7 @@ class CGNewResolveHook(CGAbstractBindingMethod):
         # Our "self" is actually the "obj" argument in this case, not the thisval.
         CGAbstractBindingMethod.__init__(
             self, descriptor, NEWRESOLVE_HOOK_NAME,
-            args, getThisObj="", callArgs="", returnType="JSBool")
+            args, getThisObj="", callArgs="")
 
     def generate_code(self):
         return CGIndenter(CGGeneric(
@@ -5393,7 +5401,7 @@ class CGEnumerateHook(CGAbstractBindingMethod):
         # Our "self" is actually the "obj" argument in this case, not the thisval.
         CGAbstractBindingMethod.__init__(
             self, descriptor, ENUMERATE_HOOK_NAME,
-            args, getThisObj="", callArgs="", returnType="JSBool")
+            args, getThisObj="", callArgs="")
 
     def generate_code(self):
         return CGIndenter(CGGeneric(
@@ -6098,6 +6106,10 @@ ${methods}
 private:
   friend class ${structName}Argument;
 
+  // Disallow copy-construction and assignment
+  ${structName}(const ${structName}&) MOZ_DELETE;
+  void operator=(const ${structName}&) MOZ_DELETE;
+
 ${destructors}
 
   enum Type {
@@ -6221,6 +6233,10 @@ ${methods}
                JS::MutableHandle<JS::Value> rval) const;
 
 private:
+  // Disallow copy-construction and assignment
+  ${structName}ReturnValue(const ${structName}ReturnValue&) MOZ_DELETE;
+  void operator=(const ${structName}ReturnValue&) MOZ_DELETE;
+
   enum Type {
     eUninitialized,
     ${enumValues}
@@ -6914,7 +6930,8 @@ class CGResolveOwnProperty(CGAbstractStaticMethod):
                 Argument('JS::Handle<JSObject*>', 'wrapper'),
                 Argument('JS::Handle<JSObject*>', 'obj'),
                 Argument('JS::Handle<jsid>', 'id'),
-                Argument('JSPropertyDescriptor*', 'desc'), Argument('unsigned', 'flags'),
+                Argument('JS::MutableHandle<JSPropertyDescriptor>', 'desc'),
+                Argument('unsigned', 'flags'),
                 ]
         CGAbstractStaticMethod.__init__(self, descriptor, "ResolveOwnProperty",
                                         "bool", args)
@@ -6932,7 +6949,8 @@ class CGResolveOwnPropertyViaNewresolve(CGAbstractBindingMethod):
                 Argument('JS::Handle<JSObject*>', 'wrapper'),
                 Argument('JS::Handle<JSObject*>', 'obj'),
                 Argument('JS::Handle<jsid>', 'id'),
-                Argument('JSPropertyDescriptor*', 'desc'), Argument('unsigned', 'flags'),
+                Argument('JS::MutableHandle<JSPropertyDescriptor>', 'desc'),
+                Argument('unsigned', 'flags'),
                 ]
         CGAbstractBindingMethod.__init__(self, descriptor,
                                          "ResolveOwnPropertyViaNewresolve",
@@ -7060,8 +7078,8 @@ class CGProxySpecialOperation(CGPerSignatureCall):
             templateValues = {
                 "declName": argument.identifier.name,
                 "holderName": argument.identifier.name + "_holder",
-                "val" : "JS::Handle<JS::Value>::fromMarkedLocation(&desc->value)",
-                "mutableVal" : "JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)",
+                "val": "desc.value()",
+                "mutableVal" : "desc.value()",
                 "obj": "obj"
             }
             self.cgRoot.prepend(instantiateJSToNativeConversion(info, templateValues))
@@ -7266,7 +7284,8 @@ class CGDOMJSProxyHandler_getOwnPropertyDescriptor(ClassMethod):
     def __init__(self, descriptor):
         args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'proxy'),
                 Argument('JS::Handle<jsid>', 'id'),
-                Argument('JSPropertyDescriptor*', 'desc'), Argument('unsigned', 'flags')]
+                Argument('JS::MutableHandle<JSPropertyDescriptor>', 'desc'),
+                Argument('unsigned', 'flags')]
         ClassMethod.__init__(self, "getOwnPropertyDescriptor", "bool", args)
         self.descriptor = descriptor
     def getBody(self):
@@ -7278,23 +7297,22 @@ class CGDOMJSProxyHandler_getOwnPropertyDescriptor(ClassMethod):
             setOrIndexedGet += "int32_t index = GetArrayIndexFromId(cx, id);\n"
             readonly = toStringBool(indexedSetter is None)
             fillDescriptor = "FillPropertyDescriptor(desc, proxy, %s);\nreturn true;" % readonly
-            templateValues = {'jsvalRef': 'JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)',
-                              'jsvalHandle': 'JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)',
+            templateValues = {'jsvalRef': 'desc.value()', 'jsvalHandle': 'desc.value()',
                               'obj': 'proxy', 'successCode': fillDescriptor}
             get = ("if (IsArrayIndex(index)) {\n" +
                    CGIndenter(CGProxyIndexedGetter(self.descriptor, templateValues)).define() + "\n" +
                    "}\n") % (self.descriptor.nativeType)
 
         if UseHolderForUnforgeable(self.descriptor):
-            getUnforgeable = """if (!JS_GetPropertyDescriptorById(cx, ${holder}, id, flags, desc)) {
+            getUnforgeable = """if (!JS_GetPropertyDescriptorById(cx, ${holder}, id, flags, desc.address())) {
   return false;
 }
-MOZ_ASSERT_IF(desc->obj, desc->obj == ${holder});"""
+MOZ_ASSERT_IF(desc.object(), desc.object() == ${holder});"""
             getUnforgeable = CallOnUnforgeableHolder(self.descriptor,
                                                      getUnforgeable, "isXray")
-            getUnforgeable += """if (desc->obj) {
-  desc->obj = proxy;
-  return !isXray || JS_WrapPropertyDescriptor(cx, desc);
+            getUnforgeable += """if (desc.object()) {
+  desc.object().set(proxy);
+  return !isXray || JS_WrapPropertyDescriptor(cx, desc.address());
 }
 
 """
@@ -7346,8 +7364,7 @@ MOZ_ASSERT_IF(desc->obj, desc->obj == ${holder});"""
         if self.descriptor.supportsNamedProperties():
             readonly = toStringBool(self.descriptor.operations['NamedSetter'] is None)
             fillDescriptor = "FillPropertyDescriptor(desc, proxy, %s);\nreturn true;" % readonly
-            templateValues = {'jsvalRef': 'JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)',
-                              'jsvalHandle': 'JS::MutableHandle<JS::Value>::fromMarkedLocation(&desc->value)',
+            templateValues = {'jsvalRef': 'desc.value()', 'jsvalHandle': 'desc.value()',
                               'obj': 'proxy', 'successCode': fillDescriptor}
             condition = "!HasPropertyOnPrototype(cx, proxy, this, id)"
             if self.descriptor.interface.getExtendedAttribute('OverrideBuiltins'):
@@ -7364,24 +7381,25 @@ MOZ_ASSERT_IF(desc->obj, desc->obj == ${holder});"""
 
         return setOrIndexedGet + """JS::Rooted<JSObject*> expando(cx);
 if (!isXray && (expando = GetExpandoObject(proxy))) {
-  if (!JS_GetPropertyDescriptorById(cx, expando, id, flags, desc)) {
+  if (!JS_GetPropertyDescriptorById(cx, expando, id, flags, desc.address())) {
     return false;
   }
-  if (desc->obj) {
+  if (desc.object()) {
     // Pretend the property lives on the wrapper.
-    desc->obj = proxy;
+    desc.object().set(proxy);
     return true;
   }
 }
 """ + namedGet + """
-desc->obj = nullptr;
+desc.object().set(nullptr);
 return true;"""
 
 class CGDOMJSProxyHandler_defineProperty(ClassMethod):
     def __init__(self, descriptor):
         args = [Argument('JSContext*', 'cx'), Argument('JS::Handle<JSObject*>', 'proxy'),
                 Argument('JS::Handle<jsid>', 'id'),
-                Argument('JSPropertyDescriptor*', 'desc'), Argument('bool*', 'defined')]
+                Argument('JS::MutableHandle<JSPropertyDescriptor>', 'desc'),
+                Argument('bool*', 'defined')]
         ClassMethod.__init__(self, "defineProperty", "bool", args, virtual=True, override=True)
         self.descriptor = descriptor
     def getBody(self):
@@ -7406,14 +7424,14 @@ class CGDOMJSProxyHandler_defineProperty(ClassMethod):
                     "}\n") % self.descriptor.name
 
         if UseHolderForUnforgeable(self.descriptor):
-            defineOnUnforgeable = ("JSBool hasUnforgeable;\n"
+            defineOnUnforgeable = ("bool hasUnforgeable;\n"
                                    "if (!JS_HasPropertyById(cx, ${holder}, id, &hasUnforgeable)) {\n"
                                    "  return false;\n"
                                    "}\n"
                                    "if (hasUnforgeable) {\n"
                                    "  *defined = true;" +
-                                   "  JSBool unused;\n"
-                                   "  return js_DefineOwnProperty(cx, ${holder}, id, *desc, &unused);\n"
+                                   "  bool unused;\n"
+                                   "  return js_DefineOwnProperty(cx, ${holder}, id, desc, &unused);\n"
                                    "}\n")
             set += CallOnUnforgeableHolder(self.descriptor,
                                            defineOnUnforgeable,
@@ -7497,7 +7515,7 @@ class CGDOMJSProxyHandler_delete(ClassMethod):
                        "}\n") % self.descriptor.nativeType
 
         if UseHolderForUnforgeable(self.descriptor):
-            unforgeable = ("JSBool hasUnforgeable;\n"
+            unforgeable = ("bool hasUnforgeable;\n"
                            "if (!JS_HasPropertyById(cx, ${holder}, id, &hasUnforgeable)) {\n"
                            "  return false;\n"
                            "}\n"
@@ -7603,8 +7621,8 @@ class CGDOMJSProxyHandler_hasOwn(ClassMethod):
             indexed = ""
 
         if UseHolderForUnforgeable(self.descriptor):
-            unforgeable = ("JSBool b = true;\n"
-                           "JSBool ok = JS_AlreadyHasOwnPropertyById(cx, ${holder}, id, &b);\n"
+            unforgeable = ("bool b = true;\n"
+                           "bool ok = JS_AlreadyHasOwnPropertyById(cx, ${holder}, id, &b);\n"
                            "*bp = !!b;\n"
                            "if (!ok || *bp) {\n"
                            "  return ok;\n"
@@ -7632,8 +7650,8 @@ class CGDOMJSProxyHandler_hasOwn(ClassMethod):
 """ + indexed + unforgeable + """
 JS::Rooted<JSObject*> expando(cx, GetExpandoObject(proxy));
 if (expando) {
-  JSBool b = true;
-  JSBool ok = JS_HasPropertyById(cx, expando, id, &b);
+  bool b = true;
+  bool ok = JS_HasPropertyById(cx, expando, id, &b);
   *bp = !!b;
   if (!ok || *bp) {
     return ok;
@@ -7655,7 +7673,7 @@ class CGDOMJSProxyHandler_get(ClassMethod):
     def getBody(self):
         if UseHolderForUnforgeable(self.descriptor):
             hasUnforgeable = (
-                "JSBool hasUnforgeable;\n"
+                "bool hasUnforgeable;\n"
                  "if (!JS_AlreadyHasOwnPropertyById(cx, ${holder}, id, &hasUnforgeable)) {\n"
                  "  return false;\n"
                  "}\n"
@@ -7668,7 +7686,7 @@ class CGDOMJSProxyHandler_get(ClassMethod):
             getUnforgeableOrExpando = ""
         getUnforgeableOrExpando += """JS::Rooted<JSObject*> expando(cx, DOMProxyHandler::GetExpandoObject(proxy));
 if (expando) {
-  JSBool hasProp;
+  bool hasProp;
   if (!JS_HasPropertyById(cx, expando, id, &hasProp)) {
     return false;
   }
@@ -7778,7 +7796,7 @@ class CGDOMJSProxyHandler_getElementIfPresent(ClassMethod):
 
 JS::Rooted<JSObject*> expando(cx, GetExpandoObject(proxy));
 if (expando) {
-  JSBool isPresent;
+  bool isPresent;
   if (!JS_GetElementIfPresent(cx, expando, index, expando, vp, &isPresent)) {
     return false;
   }
@@ -7798,7 +7816,7 @@ if (!js::GetObjectProto(cx, proxy, &proto)) {
   return false;
 }
 if (proto) {
-  JSBool isPresent;
+  bool isPresent;
   if (!JS_GetElementIfPresent(cx, proto, index, proxy, vp, &isPresent)) {
     return false;
   }

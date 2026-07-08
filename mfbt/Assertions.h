@@ -131,6 +131,10 @@
 
 #define MOZ_STATIC_ASSERT_IF(cond, expr, reason)  MOZ_STATIC_ASSERT(!(cond) || (expr), reason)
 
+#ifndef static_assert
+#define static_assert MOZ_STATIC_ASSERT
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

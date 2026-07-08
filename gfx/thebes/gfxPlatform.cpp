@@ -804,7 +804,7 @@ gfxPlatform::SupportsAzureContentForDrawTarget(DrawTarget* aTarget)
     return false;
   }
 
-  return (1 << aTarget->GetType()) & mContentBackendBitmask;
+  return SupportsAzureContentForType(aTarget->GetType());
 }
 
 bool
@@ -1886,6 +1886,7 @@ static bool sPrefLayersPreferD3D9 = false;
 static bool sLayersSupportsD3D9 = true;
 static int  sPrefLayoutFrameRate = -1;
 static bool sBufferRotationEnabled = false;
+static bool sComponentAlphaEnabled = true;
 
 static bool sLayersAccelerationPrefsInitialized = false;
 
@@ -1903,6 +1904,7 @@ InitLayersAccelerationPrefs()
     sPrefLayersPreferD3D9 = Preferences::GetBool("layers.prefer-d3d9", false);
     sPrefLayoutFrameRate = Preferences::GetInt("layout.frame_rate", -1);
     sBufferRotationEnabled = Preferences::GetBool("layers.bufferrotation.enabled", true);
+    sComponentAlphaEnabled = Preferences::GetBool("layers.componentalpha.enabled", true);
 
     nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
     if (gfxInfo) {
@@ -1993,4 +1995,15 @@ gfxPlatform::DisableBufferRotation()
   MutexAutoLock autoLock(*gGfxPlatformPrefsLock);
 
   sBufferRotationEnabled = false;
+}
+
+bool
+gfxPlatform::ComponentAlphaEnabled()
+{
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
+  return false;
+#endif
+
+  InitLayersAccelerationPrefs();
+  return sComponentAlphaEnabled;
 }

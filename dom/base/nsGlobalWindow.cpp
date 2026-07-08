@@ -574,17 +574,17 @@ public:
   virtual bool getPropertyDescriptor(JSContext* cx,
                                      JS::Handle<JSObject*> proxy,
                                      JS::Handle<jsid> id,
-                                     JSPropertyDescriptor* desc,
+                                     JS::MutableHandle<JSPropertyDescriptor> desc,
                                      unsigned flags) MOZ_OVERRIDE;
   virtual bool getOwnPropertyDescriptor(JSContext* cx,
                                         JS::Handle<JSObject*> proxy,
                                         JS::Handle<jsid> id,
-                                        JSPropertyDescriptor* desc,
+                                        JS::MutableHandle<JSPropertyDescriptor> desc,
                                         unsigned flags) MOZ_OVERRIDE;
   virtual bool defineProperty(JSContext* cx,
                               JS::Handle<JSObject*> proxy,
                               JS::Handle<jsid> id,
-                              JSPropertyDescriptor* desc) MOZ_OVERRIDE;
+                              JS::MutableHandle<JSPropertyDescriptor> desc) MOZ_OVERRIDE;
   virtual bool getOwnPropertyNames(JSContext *cx,
                                    JS::Handle<JSObject*> proxy,
                                    JS::AutoIdVector &props) MOZ_OVERRIDE;
@@ -687,18 +687,18 @@ bool
 nsOuterWindowProxy::getPropertyDescriptor(JSContext* cx,
                                           JS::Handle<JSObject*> proxy,
                                           JS::Handle<jsid> id,
-                                          JSPropertyDescriptor* desc,
+                                          JS::MutableHandle<JSPropertyDescriptor> desc,
                                           unsigned flags)
 {
   // The only thing we can do differently from js::Wrapper is shadow stuff with
   // our indexed properties, so we can just try getOwnPropertyDescriptor and if
   // that gives us nothing call on through to js::Wrapper.
-  desc->obj = nullptr;
+  desc.object().set(nullptr);
   if (!getOwnPropertyDescriptor(cx, proxy, id, desc, flags)) {
     return false;
   }
 
-  if (desc->obj) {
+  if (desc.object()) {
     return true;
   }
 
@@ -709,11 +709,11 @@ bool
 nsOuterWindowProxy::getOwnPropertyDescriptor(JSContext* cx,
                                              JS::Handle<JSObject*> proxy,
                                              JS::Handle<jsid> id,
-                                             JSPropertyDescriptor* desc,
+                                             JS::MutableHandle<JSPropertyDescriptor> desc,
                                              unsigned flags)
 {
   bool found;
-  if (!GetSubframeWindow(cx, proxy, id, &desc->value, found)) {
+  if (!GetSubframeWindow(cx, proxy, id, desc.value().address(), found)) {
     return false;
   }
   if (found) {
@@ -729,7 +729,7 @@ bool
 nsOuterWindowProxy::defineProperty(JSContext* cx,
                                    JS::Handle<JSObject*> proxy,
                                    JS::Handle<jsid> id,
-                                   JSPropertyDescriptor* desc)
+                                   JS::MutableHandle<JSPropertyDescriptor> desc)
 {
   int32_t index = GetArrayIndexFromId(cx, id);
   if (IsArrayIndex(index)) {
@@ -1030,6 +1030,10 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
     mSerial(0),
 #ifdef DEBUG
     mSetOpenerWindowCalled(false),
+#endif
+#ifdef MOZ_B2G
+    mNetworkUploadObserverEnabled(false),
+    mNetworkDownloadObserverEnabled(false),
 #endif
     mCleanedUp(false),
     mDialogAbuseCount(0),
@@ -5355,7 +5359,10 @@ nsGlobalWindow::CanMoveResizeWindows()
     }
   }
 
-  if (mDocShell) {
+  // The preference is useful for the webapp runtime. Webapps should be able
+  // to resize or move their window.
+  if (mDocShell && !Preferences::GetBool("dom.always_allow_move_resize_window",
+                                         false)) {
     bool allow;
     nsresult rv = mDocShell->GetAllowWindowControl(&allow);
     if (NS_SUCCEEDED(rv) && !allow)
@@ -6728,7 +6735,7 @@ PostMessageReadStructuredClone(JSContext* cx,
   return nullptr;
 }
 
-static JSBool
+static bool
 PostMessageWriteStructuredClone(JSContext* cx,
                                 JSStructuredCloneWriter* writer,
                                 JS::Handle<JSObject*> obj,
@@ -6765,7 +6772,7 @@ PostMessageWriteStructuredClone(JSContext* cx,
     return runtimeCallbacks->write(cx, writer, obj, nullptr);
   }
 
-  return JS_FALSE;
+  return false;
 }
 
 JSStructuredCloneCallbacks kPostMessageCallbacks = {
@@ -11799,10 +11806,16 @@ nsGlobalWindow::EnableNetworkEvent(uint32_t aType)
 
   switch (aType) {
     case NS_NETWORK_UPLOAD_EVENT:
-      os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC, false);
+      if (!mNetworkUploadObserverEnabled) {
+        mNetworkUploadObserverEnabled = true;
+        os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC, false);
+      }
       break;
     case NS_NETWORK_DOWNLOAD_EVENT:
-      os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC, false);
+      if (!mNetworkDownloadObserverEnabled) {
+        mNetworkDownloadObserverEnabled = true;
+        os->AddObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC, false);
+      }
       break;
   }
 }
@@ -11817,10 +11830,16 @@ nsGlobalWindow::DisableNetworkEvent(uint32_t aType)
 
   switch (aType) {
     case NS_NETWORK_UPLOAD_EVENT:
-      os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC);
+      if (mNetworkUploadObserverEnabled) {
+        mNetworkUploadObserverEnabled = false;
+        os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_UPLOAD_TOPIC);
+      }
       break;
     case NS_NETWORK_DOWNLOAD_EVENT:
-      os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC);
+      if (mNetworkDownloadObserverEnabled) {
+        mNetworkDownloadObserverEnabled = false;
+        os->RemoveObserver(mObserver, NS_NETWORK_ACTIVITY_BLIP_DOWNLOAD_TOPIC);
+      }
       break;
   }
 }

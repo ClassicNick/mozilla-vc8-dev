@@ -537,7 +537,7 @@ jsds_ErrorHookProc (JSDContext *jsdc, JSContext *cx, const char *message,
     return JSD_ERROR_REPORTER_PASS_ALONG;
 }
 
-static JSBool
+static bool
 jsds_CallHookProc (JSDContext* jsdc, JSDThreadState* jsdthreadstate,
                    unsigned type, void* callerdata)
 {
@@ -560,10 +560,10 @@ jsds_CallHookProc (JSDContext* jsdc, JSDThreadState* jsdthreadstate,
     }
     
     if (!hook)
-        return JS_TRUE;
+        return true;
 
     if (!jsds_FilterHook (jsdc, jsdthreadstate))
-        return JS_FALSE;
+        return false;
 
     JSDStackFrameInfo *native_frame = JSD_GetStackFrame (jsdc, jsdthreadstate);
     nsCOMPtr<jsdIStackFrame> frame =
@@ -573,7 +573,7 @@ jsds_CallHookProc (JSDContext* jsdc, JSDThreadState* jsdthreadstate,
     gJsds->DoUnPause(nullptr, true);
     jsdStackFrame::InvalidateAll();
 
-    return JS_TRUE;
+    return true;
 }
 
 static uint32_t
@@ -652,7 +652,7 @@ jsds_ExecutionHookProc (JSDContext* jsdc, JSDThreadState* jsdthreadstate,
 }
 
 static void
-jsds_ScriptHookProc (JSDContext* jsdc, JSDScript* jsdscript, JSBool creating,
+jsds_ScriptHookProc (JSDContext* jsdc, JSDScript* jsdscript, bool creating,
                      void* callerdata)
 {
 #ifdef CAUTIOUS_SCRIPTHOOK

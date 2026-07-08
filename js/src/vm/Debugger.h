@@ -150,7 +150,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
 {
     friend class Breakpoint;
     friend class mozilla::LinkedListElement<Debugger>;
-    friend JSBool (::JS_DefineDebuggerObject)(JSContext *cx, JSObject *obj);
+    friend bool (::JS_DefineDebuggerObject)(JSContext *cx, JSObject *obj);
 
   public:
     enum Hook {
@@ -322,8 +322,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     static bool clearAllBreakpoints(JSContext *cx, unsigned argc, Value *vp);
     static bool findScripts(JSContext *cx, unsigned argc, Value *vp);
     static bool findAllGlobals(JSContext *cx, unsigned argc, Value *vp);
-// njn: ?
-//    static JSBool wrap(JSContext *cx, unsigned argc, Value *vp);
     static bool construct(JSContext *cx, unsigned argc, Value *vp);
     static const JSPropertySpec properties[];
     static const JSFunctionSpec methods[];
@@ -677,7 +675,7 @@ void
 Debugger::onNewScript(JSContext *cx, HandleScript script, GlobalObject *compileAndGoGlobal)
 {
     JS_ASSERT_IF(script->compileAndGo, compileAndGoGlobal);
-    JS_ASSERT_IF(script->compileAndGo, compileAndGoGlobal == &script->global());
+    JS_ASSERT_IF(script->compileAndGo, compileAndGoGlobal == &script->uninlinedGlobal());
     // We early return in slowPathOnNewScript for self-hosted scripts, so we can
     // ignore those in our assertion here.
     JS_ASSERT_IF(!script->compartment()->options().invisibleToDebugger &&
@@ -699,7 +697,7 @@ Debugger::onNewGlobalObject(JSContext *cx, Handle<GlobalObject *> global)
         Debugger::slowPathOnNewGlobalObject(cx, global);
 }
 
-extern JSBool
+extern bool
 EvaluateInEnv(JSContext *cx, Handle<Env*> env, HandleValue thisv, AbstractFramePtr frame,
               StableCharPtr chars, unsigned length, const char *filename, unsigned lineno,
               MutableHandleValue rval);

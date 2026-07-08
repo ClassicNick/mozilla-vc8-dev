@@ -756,6 +756,7 @@ void CanvasRenderingContext2D::Demote()
   RefPtr<SourceSurface> snapshot = mTarget->Snapshot();
   RefPtr<DrawTarget> oldTarget = mTarget;
   mTarget = nullptr;
+  mResetLayer = true;
   mForceSoftware = true;
 
   // Recreate target, now demoted to software only
@@ -798,6 +799,13 @@ void
 CanvasRenderingContext2D::AddDemotableContext(CanvasRenderingContext2D* context)
 {
   DemotableContexts().push_back(context);
+}
+
+#define MIN_SKIA_GL_DIMENSION 16
+
+bool
+CheckSizeForSkiaGL(IntSize size) {
+  return size.width > MIN_SKIA_GL_DIMENSION && size.height > MIN_SKIA_GL_DIMENSION;
 }
 
 #endif
@@ -845,10 +853,7 @@ CanvasRenderingContext2D::EnsureTarget()
         nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
         nsString vendor;
 
-        if (!mForceSoftware &&
-            gfxInfo &&
-            NS_SUCCEEDED(gfxInfo->GetAdapterVendorID(vendor)) &&
-            StringBeginsWith(vendor, NS_LITERAL_STRING("NVIDIA")))
+        if (!mForceSoftware && CheckSizeForSkiaGL(size))
         {
           glContext = GLContextProvider::CreateOffscreen(gfxIntSize(size.width, size.height),
                                                          caps, GLContext::ContextFlagsNone);
@@ -1042,7 +1047,8 @@ CanvasRenderingContext2D::GetInputStream(const char *aMimeType,
 
   nsresult rv;
   const char encoderPrefix[] = "@mozilla.org/image/encoder;2?type=";
-  nsAutoArrayPtr<char> conid(new (std::nothrow) char[strlen(encoderPrefix) + strlen(aMimeType) + 1]);
+  static const fallible_t fallible = fallible_t();
+  nsAutoArrayPtr<char> conid(new (fallible) char[strlen(encoderPrefix) + strlen(aMimeType) + 1]);
 
   if (!conid) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -1056,7 +1062,7 @@ CanvasRenderingContext2D::GetInputStream(const char *aMimeType,
     return NS_ERROR_FAILURE;
   }
 
-  nsAutoArrayPtr<uint8_t> imageBuffer(new (std::nothrow) uint8_t[mWidth * mHeight * 4]);
+  nsAutoArrayPtr<uint8_t> imageBuffer(new (fallible) uint8_t[mWidth * mHeight * 4]);
   if (!imageBuffer) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -3040,6 +3046,24 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
   RedrawUser(gfxRect(dx, dy, dw, dh));
 }
 
+#ifdef USE_SKIA_GPU
+static bool
+IsStandardCompositeOp(CompositionOp op)
+{
+    return (op == OP_SOURCE ||
+            op == OP_ATOP ||
+            op == OP_IN ||
+            op == OP_OUT ||
+            op == OP_OVER ||
+            op == OP_DEST_IN ||
+            op == OP_DEST_OUT ||
+            op == OP_DEST_OVER ||
+            op == OP_DEST_ATOP ||
+            op == OP_ADD ||
+            op == OP_XOR);
+}
+#endif
+
 void
 CanvasRenderingContext2D::SetGlobalCompositeOperation(const nsAString& op,
                                                       ErrorResult& error)
@@ -3078,6 +3102,12 @@ CanvasRenderingContext2D::SetGlobalCompositeOperation(const nsAString& op,
   else CANVAS_OP_TO_GFX_OP("luminosity", LUMINOSITY)
   // XXX ERRMSG we need to report an error to developers here! (bug 329026)
   else return;
+
+#ifdef USE_SKIA_GPU
+  if (!IsStandardCompositeOp(comp_op)) {
+    Demote();
+  }
+#endif
 
 #undef CANVAS_OP_TO_GFX_OP
   CurrentState().op = comp_op;
@@ -3122,6 +3152,12 @@ CanvasRenderingContext2D::GetGlobalCompositeOperation(nsAString& op,
   else {
     error.Throw(NS_ERROR_FAILURE);
   }
+
+#ifdef USE_SKIA_GPU
+  if (!IsStandardCompositeOp(comp_op)) {
+    Demote();
+  }
+#endif
 
 #undef CANVAS_OP_TO_GFX_OP
 }

@@ -282,8 +282,6 @@ DeprecatedTextureClient::~DeprecatedTextureClient()
 DeprecatedTextureClientShmem::DeprecatedTextureClientShmem(CompositableForwarder* aForwarder,
                                        const TextureInfo& aTextureInfo)
   : DeprecatedTextureClient(aForwarder, aTextureInfo)
-  , mSurface(nullptr)
-  , mSurfaceAsImage(nullptr)
 {
 }
 
@@ -292,6 +290,8 @@ DeprecatedTextureClientShmem::ReleaseResources()
 {
   if (mSurface) {
     mSurface = nullptr;
+    mSurfaceAsImage = nullptr;
+
     ShadowLayerForwarder::CloseDescriptor(mDescriptor);
   }
 
@@ -322,6 +322,12 @@ DeprecatedTextureClientShmem::EnsureAllocated(gfx::IntSize aSize,
                                             mContentType, &mDescriptor)) {
       NS_WARNING("creating SurfaceDescriptor failed!");
     }
+    if (mContentType == gfxASurface::CONTENT_COLOR_ALPHA) {
+      nsRefPtr<gfxContext> context = new gfxContext(GetSurface());
+      context->SetColor(gfxRGBA(0, 0, 0, 0));
+      context->SetOperator(gfxContext::OPERATOR_SOURCE);
+      context->Paint();
+    }
   }
   return true;
 }
@@ -336,7 +342,7 @@ DeprecatedTextureClientShmem::SetDescriptor(const SurfaceDescriptor& aDescriptor
     EnsureAllocated(mSize, mContentType);
   }
 
-  mSurface = nullptr;
+  MOZ_ASSERT(!mSurface);
 
   NS_ASSERTION(mDescriptor.type() == SurfaceDescriptor::TSurfaceDescriptorGralloc ||
                mDescriptor.type() == SurfaceDescriptor::TShmem ||
@@ -357,6 +363,7 @@ DeprecatedTextureClientShmem::GetSurface()
                     ? OPEN_READ_WRITE
                     : OPEN_READ_ONLY;
     mSurface = ShadowLayerForwarder::OpenDescriptor(mode, mDescriptor);
+    MOZ_ASSERT(!mSurface || mSurface->GetContentType() == mContentType);
   }
 
   return mSurface.get();
