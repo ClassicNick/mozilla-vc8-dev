@@ -1125,7 +1125,7 @@ class ObjectElements
 };
 
 /* Shared singleton for objects with no elements. */
-extern HeapSlot *emptyObjectElements;
+extern HeapSlot *const emptyObjectElements;
 
 struct Class;
 struct GCMarker;

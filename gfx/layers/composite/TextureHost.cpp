@@ -27,13 +27,11 @@ TemporaryRef<DeprecatedTextureHost> CreateBasicDeprecatedTextureHost(SurfaceDesc
                                                              uint32_t aDeprecatedTextureHostFlags,
                                                              uint32_t aTextureFlags);
 
+#if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
 TemporaryRef<DeprecatedTextureHost> CreateDeprecatedTextureHostD3D9(SurfaceDescriptorType aDescriptorType,
                                                             uint32_t aDeprecatedTextureHostFlags,
-                                                            uint32_t aTextureFlags)
-{
-  NS_RUNTIMEABORT("not implemented");
-  return nullptr;
-}
+                                                            uint32_t aTextureFlags);
+#endif
 
 #if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
 TemporaryRef<DeprecatedTextureHost> CreateDeprecatedTextureHostD3D11(SurfaceDescriptorType aDescriptorType,
@@ -51,10 +49,12 @@ DeprecatedTextureHost::CreateDeprecatedTextureHost(SurfaceDescriptorType aDescri
       return CreateDeprecatedTextureHostOGL(aDescriptorType,
                                         aDeprecatedTextureHostFlags,
                                         aTextureFlags);
+#if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
     case LAYERS_D3D9:
       return CreateDeprecatedTextureHostD3D9(aDescriptorType,
                                          aDeprecatedTextureHostFlags,
                                          aTextureFlags);
+#endif
 #if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     case LAYERS_D3D11:
       return CreateDeprecatedTextureHostD3D11(aDescriptorType,
@@ -229,6 +229,9 @@ BufferTextureHost::Updated(const nsIntRegion* aRegion)
   } else {
     mPartialUpdate = false;
   }
+  if (GetFlags() & TEXTURE_IMMEDIATE_UPLOAD) {
+    MaybeUpload(mPartialUpdate ? &mMaybeUpdatedRegion : nullptr);
+  }
 }
 
 void
@@ -268,11 +271,8 @@ NewTextureSource*
 BufferTextureHost::GetTextureSources()
 {
   MOZ_ASSERT(mLocked, "should never be called while not locked");
-  if (!mFirstSource || mUpdateSerial != mFirstSource->GetUpdateSerial()) {
-    if (!Upload(mPartialUpdate ? &mMaybeUpdatedRegion : nullptr)) {
+  if (!MaybeUpload(mPartialUpdate ? &mMaybeUpdatedRegion : nullptr)) {
       return nullptr;
-    }
-    mFirstSource->SetUpdateSerial(mUpdateSerial);
   }
   return mFirstSource;
 }
@@ -291,6 +291,19 @@ BufferTextureHost::GetFormat() const
     return gfx::FORMAT_R8G8B8X8;
   }
   return mFormat;
+}
+
+bool
+BufferTextureHost::MaybeUpload(nsIntRegion *aRegion)
+{
+  if (mFirstSource && mFirstSource->GetUpdateSerial() == mUpdateSerial) {
+    return true;
+  }
+  if (!Upload(aRegion)) {
+    return false;
+  }
+  mFirstSource->SetUpdateSerial(mUpdateSerial);
+  return true;
 }
 
 bool
@@ -316,9 +329,10 @@ BufferTextureHost::Upload(nsIntRegion *aRegion)
     RefPtr<DataTextureSource> srcU;
     RefPtr<DataTextureSource> srcV;
     if (!mFirstSource) {
-      srcY = mCompositor->CreateDataTextureSource(mFlags);
-      srcU = mCompositor->CreateDataTextureSource(mFlags);
-      srcV = mCompositor->CreateDataTextureSource(mFlags);
+      // We don't support BigImages for YCbCr compositing.
+      srcY = mCompositor->CreateDataTextureSource(mFlags|TEXTURE_DISALLOW_BIGIMAGE);
+      srcU = mCompositor->CreateDataTextureSource(mFlags|TEXTURE_DISALLOW_BIGIMAGE);
+      srcV = mCompositor->CreateDataTextureSource(mFlags|TEXTURE_DISALLOW_BIGIMAGE);
       mFirstSource = srcY;
       srcY->SetNextSibling(srcU);
       srcU->SetNextSibling(srcV);
@@ -453,7 +467,7 @@ MemoryTextureHost::MemoryTextureHost(uint64_t aID,
 MemoryTextureHost::~MemoryTextureHost()
 {
   DeallocateDeviceData();
-  MOZ_COUNT_DTOR(ShmemTextureHost);
+  MOZ_COUNT_DTOR(MemoryTextureHost);
 }
 
 void

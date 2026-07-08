@@ -900,7 +900,7 @@ Element::BindToTree(nsIDocument* aDocument, nsIContent* aParent,
                     bool aCompileEventHandlers)
 {
   NS_PRECONDITION(aParent || aDocument, "Must have document if no parent!");
-  NS_PRECONDITION(HasSameOwnerDoc(NODE_FROM(aParent, aDocument)),
+  NS_PRECONDITION((NODE_FROM(aParent, aDocument)->OwnerDoc() == OwnerDoc()),
                   "Must have the same owner document");
   NS_PRECONDITION(!aParent || aDocument == aParent->GetCurrentDoc(),
                   "aDocument must be current doc of aParent");
@@ -2477,7 +2477,7 @@ private:
     uint32_t mLength;
   };
 public:
-  StringBuilder() : mLast(this), mLength(0)
+  StringBuilder() : mLast(MOZ_THIS_IN_INITIALIZER_LIST()), mLength(0)
   {
     MOZ_COUNT_CTOR(StringBuilder);
   }

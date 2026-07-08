@@ -310,8 +310,8 @@ class LifoAlloc
         BumpChunk *chunk;
         void *markInChunk;
         friend class LifoAlloc;
+	public:
         Mark(BumpChunk *chunk, void *markInChunk) : chunk(chunk), markInChunk(markInChunk) {}
-      public:
         Mark() : chunk(NULL), markInChunk(NULL) {}
     };
 

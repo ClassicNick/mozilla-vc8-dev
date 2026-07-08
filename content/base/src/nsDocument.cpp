@@ -1837,6 +1837,7 @@ CustomPrototypeTrace(const nsAString& aName, JS::Heap<JSObject*>& aObject, void 
   return PL_DHASH_NEXT;
 }
 
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsDocument)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(nsDocument)
   CustomPrototypeTraceArgs customPrototypeArgs = { aCallbacks, aClosure };
@@ -2479,7 +2480,7 @@ nsDocument::SendToConsole(nsCOMArray<nsISecurityConsoleMessage>& aMessages)
     aMessages[i]->GetCategory(category);
 
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_ConvertUTF16toUTF8(category).get(),
+                                    NS_ConvertUTF16toUTF8(category),
                                     this, nsContentUtils::eSECURITY_PROPERTIES,
                                     NS_ConvertUTF16toUTF8(messageTag).get());
   }
@@ -6702,6 +6703,14 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
         int32_t idx = parent->IndexOf(adoptedNode);
         MOZ_ASSERT(idx >= 0);
         parent->RemoveChildAt(idx, true);
+      } else {
+        MOZ_ASSERT(!adoptedNode->IsInDoc());
+
+        // If we're adopting a node that's not in a document, it might still
+        // have a binding applied. Remove the binding from the element now
+        // that it's getting adopted into a new document.
+        // TODO Fully tear down the binding.
+        adoptedNode->AsContent()->SetXBLBinding(nullptr);
       }
 
       break;
@@ -7787,7 +7796,7 @@ nsDocument::Destroy()
 
   // XXX We really should let cycle collection do this, but that currently still
   //     leaks (see https://bugzilla.mozilla.org/show_bug.cgi?id=406684).
-  nsContentUtils::ReleaseWrapper(static_cast<nsINode*>(this), this);
+  ReleaseWrapper(static_cast<nsINode*>(this));
 }
 
 void

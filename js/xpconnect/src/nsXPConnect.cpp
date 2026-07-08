@@ -469,7 +469,8 @@ CreateGlobalObject(JSContext *cx, JSClass *clasp, nsIPrincipal *principal,
     MOZ_ASSERT(principal);
 
     RootedObject global(cx,
-                        JS_NewGlobalObject(cx, clasp, nsJSPrincipals::get(principal), aOptions));
+                        JS_NewGlobalObject(cx, clasp, nsJSPrincipals::get(principal),
+                                           JS::DontFireOnNewGlobalHook, aOptions));
     if (!global)
         return nullptr;
     JSAutoCompartment ac(cx, global);
@@ -1241,6 +1242,20 @@ nsXPConnect::UnregisterGCCallback(xpcGCCallback func)
     mRuntime->RemoveGCCallback(func);
 }
 
+/* [noscript, notxpcom] void registerContextCallback(in xpcContextCallback func); */
+NS_IMETHODIMP_(void)
+nsXPConnect::RegisterContextCallback(xpcContextCallback func)
+{
+    mRuntime->AddContextCallback(func);
+}
+
+/* [noscript, notxpcom] void unregisterContextCallback(in xpcContextCallback func); */
+NS_IMETHODIMP_(void)
+nsXPConnect::UnregisterContextCallback(xpcContextCallback func)
+{
+    mRuntime->RemoveContextCallback(func);
+}
+
 #ifdef MOZ_JSDEBUGGER
 void
 nsXPConnect::CheckForDebugMode(JSRuntime *rt)
@@ -1442,14 +1457,6 @@ Base64Decode(JSContext *cx, JS::Value val, JS::Value *out)
 
     *out = STRING_TO_JSVAL(str);
     return true;
-}
-
-void
-DumpJSHeap(FILE* file)
-{
-    NS_ABORT_IF_FALSE(NS_IsMainThread(), "Must dump GC heap on main thread.");
-    nsXPConnect* xpc = nsXPConnect::XPConnect();
-    js::DumpHeapComplete(xpc->GetRuntime()->Runtime(), file);
 }
 
 void

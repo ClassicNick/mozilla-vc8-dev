@@ -28,6 +28,7 @@
 #include "nsIObjectFrame.h"
 #include "mozilla/dom/Element.h"
 
+using namespace mozilla;
 using namespace mozilla::dom;
 
 /******************************************************************/
@@ -831,8 +832,8 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
                                   rootWidget);
   eventOnRoot.refPoint = aEvent->refPoint;
   if (rootWidget != aEvent->widget) {
-    eventOnRoot.refPoint += aEvent->widget->WidgetToScreenOffset();
-    eventOnRoot.refPoint -= rootWidget->WidgetToScreenOffset();
+    eventOnRoot.refPoint += LayoutDeviceIntPoint::FromUntyped(
+      aEvent->widget->WidgetToScreenOffset() - rootWidget->WidgetToScreenOffset());
   }
   nsPoint ptInRoot =
     nsLayoutUtils::GetEventCoordinatesRelativeTo(&eventOnRoot, rootFrame);
@@ -890,16 +891,15 @@ nsContentEventHandler::OnQueryDOMWidgetHittest(nsQueryContentEvent* aEvent)
   nsIFrame* docFrame = mPresShell->GetRootFrame();
   NS_ENSURE_TRUE(docFrame, NS_ERROR_FAILURE);
 
-  nsIntPoint eventLoc =
-    aEvent->refPoint + aEvent->widget->WidgetToScreenOffset();
+  LayoutDeviceIntPoint eventLoc = aEvent->refPoint +
+    LayoutDeviceIntPoint::FromUntyped(aEvent->widget->WidgetToScreenOffset());
   nsIntRect docFrameRect = docFrame->GetScreenRect(); // Returns CSS pixels
-  eventLoc.x = mPresContext->DevPixelsToIntCSSPixels(eventLoc.x);
-  eventLoc.y = mPresContext->DevPixelsToIntCSSPixels(eventLoc.y);
-  eventLoc.x -= docFrameRect.x;
-  eventLoc.y -= docFrameRect.y;
+  CSSIntPoint eventLocCSS(
+    mPresContext->DevPixelsToIntCSSPixels(eventLoc.x) - docFrameRect.x,
+    mPresContext->DevPixelsToIntCSSPixels(eventLoc.y) - docFrameRect.y);
 
   Element* contentUnderMouse =
-    doc->ElementFromPointHelper(eventLoc.x, eventLoc.y, false, false);
+    doc->ElementFromPointHelper(eventLocCSS.x, eventLocCSS.y, false, false);
   if (contentUnderMouse) {
     nsIWidget* targetWidget = nullptr;
     nsIFrame* targetFrame = contentUnderMouse->GetPrimaryFrame();

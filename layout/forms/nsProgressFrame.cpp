@@ -5,7 +5,6 @@
 
 #include "nsProgressFrame.h"
 
-#include "nsIDOMHTMLProgressElement.h"
 #include "nsIContent.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
@@ -20,8 +19,10 @@
 #include "nsContentList.h"
 #include "nsFontMetrics.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLProgressElement.h"
 #include "nsContentList.h"
 
+using namespace mozilla::dom;
 
 nsIFrame*
 NS_NewProgressFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
@@ -156,10 +157,7 @@ nsProgressFrame::ReflowBarFrame(nsIFrame*                aBarFrame,
   nscoord xoffset = aReflowState.mComputedBorderPadding.left;
   nscoord yoffset = aReflowState.mComputedBorderPadding.top;
 
-  double position;
-  nsCOMPtr<nsIDOMHTMLProgressElement> progressElement =
-    do_QueryInterface(mContent);
-  progressElement->GetPosition(&position);
+  double position = static_cast<HTMLProgressElement*>(mContent)->Position();
 
   // Force the bar's size to match the current progress.
   // When indeterminate, the progress' size will be 100%.

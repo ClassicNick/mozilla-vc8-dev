@@ -28,6 +28,10 @@
 #include "gfxGDIFontList.h"
 #include "gfxGDIFont.h"
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
+#include "DeviceManagerD3D9.h"
+#endif
+
 #ifdef CAIRO_HAS_DWRITE_FONT
 #include "gfxDWriteFontList.h"
 #include "gfxDWriteFonts.h"
@@ -42,6 +46,7 @@
 
 using namespace mozilla;
 using namespace mozilla::gfx;
+using namespace mozilla::layers;
 
 #ifdef CAIRO_HAS_D2D_SURFACE
 #include "gfxD2DSurface.h"
@@ -361,8 +366,10 @@ BuildKeyNameFromFontName(nsAString &aName)
 
 gfxWindowsPlatform::gfxWindowsPlatform()
 #ifdef MOZ_ENABLE_D3D10_LAYER
-  : 
-mD3D11DeviceInitialized(false)
+  : mD3D9DeviceInitialized(false)
+#endif
+#ifdef MOZ_ENABLE_D3D10_LAYER
+  , mD3D11DeviceInitialized(false)
 #endif
 {
     mPrefFonts.Init(50);
@@ -401,6 +408,10 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
 {
     NS_UnregisterMemoryMultiReporter(mGPUAdapterMultiReporter);
     
+#ifdef MOZ_ENABLE_D3D9_LAYER
+     mDeviceManager = nullptr;
+#endif
+     
     ::ReleaseDC(nullptr, mScreenDC);
     // not calling FT_Done_FreeType because cairo may still hold references to
     // these FT_Faces.  See bug 458169.
@@ -1465,6 +1476,31 @@ gfxWindowsPlatform::SetupClearTypeParams()
     }
 #endif
 }
+
+#ifdef MOZ_ENABLE_D3D9_LAYER
+IDirect3DDevice9*
+gfxWindowsPlatform::GetD3D9Device()
+{
+  DeviceManagerD3D9* manager = GetD3D9DeviceManager();
+  return manager ? manager->device() : nullptr;
+}
+
+DeviceManagerD3D9*
+gfxWindowsPlatform::GetD3D9DeviceManager()
+{
+  if (!mD3D9DeviceInitialized) {
+    mD3D9DeviceInitialized = true;
+
+    mDeviceManager = new DeviceManagerD3D9();
+    if (!mDeviceManager->Init()) {
+      NS_WARNING("Could not initialise devive manager");
+      mDeviceManager = nullptr;
+    }
+  }
+
+  return mDeviceManager;
+}
+#endif
 
 #ifdef MOZ_ENABLE_D3D10_LAYER
 ID3D11Device*

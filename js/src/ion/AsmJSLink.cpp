@@ -7,8 +7,9 @@
 #include "ion/AsmJSLink.h"
 
 #ifdef MOZ_VTUNE
-# include "jitprofiling.h"
+# include "vtune/VTuneWrapper.h"
 #endif
+
 #include "jscntxt.h"
 #include "jsmath.h"
 #include "jswrapper.h"
@@ -421,7 +422,7 @@ HandleDynamicLinkFailure(JSContext *cx, CallArgs args, AsmJSModule &module, Hand
 
     CompileOptions options(cx);
     options.setPrincipals(cx->compartment()->principals)
-           .setOriginPrincipals(info.originPrincipals)
+           .setOriginPrincipals(info.scriptSource->originPrincipals())
            .setCompileAndGo(false)
            .setNoScriptRval(false);
 
@@ -576,7 +577,7 @@ LinkAsmJS(JSContext *cx, unsigned argc, JS::Value *vp)
     }
 
 #if defined(MOZ_VTUNE)
-    if (!SendFunctionsToVTune(cx, module))
+    if (IsVTuneProfilingActive() && !SendFunctionsToVTune(cx, module))
         return false;
 #endif
 

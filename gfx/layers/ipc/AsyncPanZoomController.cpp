@@ -279,7 +279,7 @@ AsyncPanZoomController::ReceiveInputEvent(const nsInputEvent& aEvent,
     nsTouchEvent* touchEvent = static_cast<nsTouchEvent*>(aOutEvent);
     const nsTArray< nsRefPtr<dom::Touch> >& touches = touchEvent->touches;
     for (uint32_t i = 0; i < touches.Length(); ++i) {
-      nsIDOMTouch* touch = touches[i];
+      dom::Touch* touch = touches[i];
       if (touch) {
         CSSPoint refCSSPoint = WidgetSpaceToCompensatedViewportSpace(
           ScreenPoint::FromUnknownPoint(gfx::Point(
@@ -297,7 +297,7 @@ AsyncPanZoomController::ReceiveInputEvent(const nsInputEvent& aEvent,
         aOutEvent->refPoint.x, aOutEvent->refPoint.y)),
       currentResolution);
     LayoutDevicePoint refPoint = refCSSPoint * mFrameMetrics.mDevPixelsPerCSSPixel;
-    aOutEvent->refPoint = nsIntPoint(refPoint.x, refPoint.y);
+    aOutEvent->refPoint = LayoutDeviceIntPoint(refPoint.x, refPoint.y);
     break;
   }
   }
@@ -1169,6 +1169,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
 
   mLastContentPaintMetrics = aLayerMetrics;
 
+  bool isDefault = mFrameMetrics.IsDefault();
   mFrameMetrics.mMayHaveTouchListeners = aLayerMetrics.mMayHaveTouchListeners;
 
   // TODO: Once a mechanism for calling UpdateScrollOffset() when content does
@@ -1207,7 +1208,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
     needContentRepaint |= (previousResolution != newResolution);
   }
 
-  if (aIsFirstPaint || mFrameMetrics.IsDefault()) {
+  if (aIsFirstPaint || isDefault) {
     mPaintThrottler.ClearHistory();
     mPaintThrottler.SetMaxDurations(gNumPaintDurationSamples);
 
@@ -1217,7 +1218,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
     // XXX If this is the very first time we're getting a layers update we need to
     // trigger another repaint, or the B2G browser shows stale content. This needs
     // to be investigated and fixed.
-    needContentRepaint |= (mFrameMetrics.IsDefault() && !aLayerMetrics.IsDefault());
+    needContentRepaint |= (isDefault && !aLayerMetrics.IsDefault());
 
     mFrameMetrics = aLayerMetrics;
     mState = NOTHING;

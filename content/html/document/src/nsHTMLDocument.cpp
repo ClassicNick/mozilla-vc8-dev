@@ -212,6 +212,8 @@ nsHTMLDocument::~nsHTMLDocument()
   mAll = nullptr;
 }
 
+NS_IMPL_CYCLE_COLLECTION_CLASS(nsHTMLDocument)
+
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsHTMLDocument, nsDocument)
   NS_ASSERTION(!nsCCUncollectableMarker::InGeneration(cb, tmp->GetMarkedCCGeneration()),
                "Shouldn't traverse nsHTMLDocument!");
@@ -2258,13 +2260,6 @@ NS_IMETHODIMP
 nsHTMLDocument::ReleaseEvents(int32_t aEventFlags)
 {
   ReportUseOfDeprecatedMethod(this, "UseOfReleaseEventsWarning");
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHTMLDocument::RouteEvent(nsIDOMEvent* aEvt)
-{
-  ReportUseOfDeprecatedMethod(this, "UseOfRouteEventWarning");
   return NS_OK;
 }
 

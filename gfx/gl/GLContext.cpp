@@ -15,6 +15,7 @@
 #include "GLContextProvider.h"
 #include "GLTextureImage.h"
 #include "nsIMemoryReporter.h"
+#include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "prenv.h"
 #include "prlink.h"
@@ -293,7 +294,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
 
     // Load OpenGL ES 2.0 symbols, or desktop if we aren't using ES 2.
     if (mInitialized) {
-        if (mIsGLES2) {
+        if (IsGLES2()) {
             SymLoadStruct symbols_ES2[] = {
                 { (PRFuncPtr*) &mSymbols.fGetShaderPrecisionFormat, { "GetShaderPrecisionFormat", nullptr } },
                 { (PRFuncPtr*) &mSymbols.fClearDepthf, { "ClearDepthf", nullptr } },
@@ -469,8 +470,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         }
 
         // Check for aux symbols based on extensions
-        if (IsExtensionSupported(GLContext::ANGLE_framebuffer_blit) ||
-            IsExtensionSupported(GLContext::EXT_framebuffer_blit))
+        if (IsExtensionSupported(XXX_framebuffer_blit))
         {
             SymLoadStruct auxSymbols[] = {
                 {
@@ -487,15 +487,13 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             if (!LoadSymbols(&auxSymbols[0], trygl, prefix)) {
                 NS_ERROR("GL supports framebuffer_blit without supplying glBlitFramebuffer");
 
-                MarkExtensionUnsupported(ANGLE_framebuffer_blit);
-                MarkExtensionUnsupported(EXT_framebuffer_blit);
+                MarkExtensionGroupUnsupported(XXX_framebuffer_blit);
                 mSymbols.fBlitFramebuffer = nullptr;
             }
         }
 
-        if (SupportsFramebufferMultisample())
+        if (IsExtensionSupported(XXX_framebuffer_multisample))
         {
-            MOZ_ASSERT(SupportsSplitFramebuffer());
             SymLoadStruct auxSymbols[] = {
                 {
                     (PRFuncPtr*) &mSymbols.fRenderbufferStorageMultisample,
@@ -511,8 +509,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             if (!LoadSymbols(&auxSymbols[0], trygl, prefix)) {
                 NS_ERROR("GL supports framebuffer_multisample without supplying glRenderbufferStorageMultisample");
 
-                MarkExtensionUnsupported(ANGLE_framebuffer_multisample);
-                MarkExtensionUnsupported(EXT_framebuffer_multisample);
+                MarkExtensionGroupUnsupported(XXX_framebuffer_multisample);
                 mSymbols.fRenderbufferStorageMultisample = nullptr;
             }
         }
@@ -572,9 +569,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             if (!LoadSymbols(&vaoSymbols[0], trygl, prefix)) {
                 NS_ERROR("GL supports Vertex Array Object without supplying its functions.");
 
-                MarkExtensionUnsupported(ARB_vertex_array_object);
-                MarkExtensionUnsupported(OES_vertex_array_object);
-                MarkExtensionUnsupported(APPLE_vertex_array_object);
+                MarkExtensionGroupUnsupported(XXX_vertex_array_object);
                 mSymbols.fIsVertexArray = nullptr;
                 mSymbols.fGenVertexArrays = nullptr;
                 mSymbols.fBindVertexArray = nullptr;
@@ -597,7 +592,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             if (!LoadSymbols(&vaoSymbols[0], trygl, prefix)) {
                 NS_ERROR("GL supports Vertex Array Object without supplying its functions.");
 
-                MarkExtensionUnsupported(APPLE_vertex_array_object);
+                MarkExtensionGroupUnsupported(XXX_vertex_array_object);
                 mSymbols.fIsVertexArray = nullptr;
                 mSymbols.fGenVertexArrays = nullptr;
                 mSymbols.fBindVertexArray = nullptr;
@@ -631,10 +626,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
             if (!LoadSymbols(drawInstancedSymbols, trygl, prefix)) {
                 NS_ERROR("GL supports instanced draws without supplying its functions.");
 
-                MarkExtensionUnsupported(ARB_draw_instanced);
-                MarkExtensionUnsupported(EXT_draw_instanced);
-                MarkExtensionUnsupported(NV_draw_instanced);
-                MarkExtensionUnsupported(ANGLE_instanced_array);
+                MarkExtensionGroupUnsupported(XXX_draw_instanced);
                 mSymbols.fDrawArraysInstanced = nullptr;
                 mSymbols.fDrawElementsInstanced = nullptr;
             }
@@ -705,7 +697,7 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         mMaxTextureImageSize = mMaxTextureSize;
 
         mMaxSamples = 0;
-        if (SupportsFramebufferMultisample()) {
+        if (IsExtensionSupported(XXX_framebuffer_multisample)) {
             fGetIntegerv(LOCAL_GL_MAX_SAMPLES, (GLint*)&mMaxSamples);
         }
 
@@ -730,6 +722,8 @@ GLContext::InitWithPrefix(const char *prefix, bool trygl)
         mSymbols.Zero();
         NS_WARNING("InitWithPrefix failed!");
     }
+
+    mVersionString = nsPrintfCString("%u.%u.%u", mVersion / 100, (mVersion / 10) % 10, mVersion % 10);
 
     return mInitialized;
 }
@@ -1021,7 +1015,7 @@ GLContext::ChooseGLFormats(const SurfaceCaps& caps) const
     // If we're on ES2 hardware and we have an explicit request for 16 bits of color or less
     // OR we don't support full 8-bit color, return a 4444 or 565 format.
     bool bpp16 = caps.bpp16;
-    if (mIsGLES2) {
+    if (IsGLES2()) {
         if (!IsExtensionSupported(OES_rgb8_rgba8))
             bpp16 = true;
     } else {
@@ -1031,7 +1025,7 @@ GLContext::ChooseGLFormats(const SurfaceCaps& caps) const
     }
 
     if (bpp16) {
-        MOZ_ASSERT(mIsGLES2);
+        MOZ_ASSERT(IsGLES2());
         if (caps.alpha) {
             formats.color_texInternalFormat = LOCAL_GL_RGBA;
             formats.color_texFormat = LOCAL_GL_RGBA;
@@ -1047,11 +1041,11 @@ GLContext::ChooseGLFormats(const SurfaceCaps& caps) const
         formats.color_texType = LOCAL_GL_UNSIGNED_BYTE;
 
         if (caps.alpha) {
-            formats.color_texInternalFormat = mIsGLES2 ? LOCAL_GL_RGBA : LOCAL_GL_RGBA8;
+            formats.color_texInternalFormat = IsGLES2() ? LOCAL_GL_RGBA : LOCAL_GL_RGBA8;
             formats.color_texFormat = LOCAL_GL_RGBA;
             formats.color_rbFormat  = LOCAL_GL_RGBA8;
         } else {
-            formats.color_texInternalFormat = mIsGLES2 ? LOCAL_GL_RGB : LOCAL_GL_RGB8;
+            formats.color_texInternalFormat = IsGLES2() ? LOCAL_GL_RGB : LOCAL_GL_RGB8;
             formats.color_texFormat = LOCAL_GL_RGB;
             formats.color_rbFormat  = LOCAL_GL_RGB8;
         }
@@ -1070,12 +1064,12 @@ GLContext::ChooseGLFormats(const SurfaceCaps& caps) const
 
     // Be clear that these are 0 if unavailable.
     formats.depthStencil = 0;
-    if (!mIsGLES2 || IsExtensionSupported(OES_packed_depth_stencil)) {
+    if (!IsGLES2() || IsExtensionSupported(OES_packed_depth_stencil)) {
         formats.depthStencil = LOCAL_GL_DEPTH24_STENCIL8;
     }
 
     formats.depth = 0;
-    if (mIsGLES2) {
+    if (IsGLES2()) {
         if (IsExtensionSupported(OES_depth24)) {
             formats.depth = LOCAL_GL_DEPTH_COMPONENT24;
         } else {
@@ -2323,7 +2317,7 @@ GLContext::TexImage2D(GLenum target, GLint level, GLint internalformat,
                       GLint pixelsize, GLint border, GLenum format,
                       GLenum type, const GLvoid *pixels)
 {
-    if (mIsGLES2) {
+    if (IsGLES2()) {
 
         NS_ASSERTION(format == (GLenum)internalformat,
                     "format and internalformat not the same for glTexImage2D on GLES2");
@@ -2430,7 +2424,7 @@ GLContext::TexSubImage2D(GLenum target, GLint level,
                          GLint pixelsize, GLenum format,
                          GLenum type, const GLvoid* pixels)
 {
-    if (mIsGLES2) {
+    if (IsGLES2()) {
         if (stride == width * pixelsize) {
             fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT,
                     NS_MIN(GetAddressAlignment((ptrdiff_t)pixels),
