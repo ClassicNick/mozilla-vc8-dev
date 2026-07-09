@@ -115,7 +115,7 @@ class WorkerThreadState
         return asmJSFailedFunction;
     }
 
-    void finishParseTaskForScript(JSScript *script);
+    void finishParseTaskForScript(JSRuntime *rt, JSScript *script);
 
   private:
 
@@ -247,8 +247,6 @@ class AutoLockWorkerThreadState
         MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 #ifdef JS_WORKER_THREADS
         state.lock();
-#else
-        (void)state;
 #endif
     }
 

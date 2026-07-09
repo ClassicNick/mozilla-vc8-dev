@@ -135,6 +135,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/StandardInteger.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/ThreadLocal.h"
 
 using namespace mozilla;
 

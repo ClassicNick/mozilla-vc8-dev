@@ -4448,6 +4448,10 @@ Selection::CollapseToStart()
   if (!firstRange)
     return NS_ERROR_FAILURE;
 
+  if (mFrameSelection) {
+    int16_t reason = mFrameSelection->PopReason() | nsISelectionListener::COLLAPSETOSTART_REASON;
+    mFrameSelection->PostReason(reason);
+  }
   return Collapse(firstRange->GetStartParent(), firstRange->StartOffset());
 }
 
@@ -4468,6 +4472,10 @@ Selection::CollapseToEnd()
   if (!lastRange)
     return NS_ERROR_FAILURE;
 
+  if (mFrameSelection) {
+    int16_t reason = mFrameSelection->PopReason() | nsISelectionListener::COLLAPSETOEND_REASON;
+    mFrameSelection->PostReason(reason);
+  }
   return Collapse(lastRange->GetEndParent(), lastRange->EndOffset());
 }
 

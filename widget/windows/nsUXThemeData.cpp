@@ -353,9 +353,11 @@ bool nsUXThemeData::IsDefaultWindowTheme()
 bool nsUXThemeData::CheckForCompositor(bool aUpdateCache)
 {
   static BOOL sCachedValue = FALSE;
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (aUpdateCache && WinUtils::dwmIsCompositionEnabledPtr) {
     WinUtils::dwmIsCompositionEnabledPtr(&sCachedValue);
   }
+#endif
   return sCachedValue;
 }
 

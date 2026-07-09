@@ -13,7 +13,7 @@
 
 #include "mozilla/Util.h"
 #include "mozilla/gfx/2D.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "gfx3DMatrix.h"
 #include "gfxColor.h"
@@ -39,7 +39,6 @@ typedef gfxASurface::gfxContentType gfxContentType;
 typedef gfxASurface::gfxImageFormat PixelFormat;
 typedef gfxASurface::gfxSurfaceType gfxSurfaceType;
 typedef gfxPattern::GraphicsFilter GraphicsFilterType;
-typedef layers::LayersBackend LayersBackend;
 typedef layers::ImageLayer::ScaleMode ScaleMode;
 
 } // namespace mozilla

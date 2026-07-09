@@ -33,7 +33,6 @@
 #include "mozilla/css/ImageLoader.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIScriptRuntime.h"
 #include "nsCOMArray.h"
 #include "nsDOMClassInfo.h"
 #include "nsCxPusher.h"

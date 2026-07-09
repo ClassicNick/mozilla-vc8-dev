@@ -81,8 +81,6 @@ LogHeaders(const char *lineStart)
 nsHttpTransaction::nsHttpTransaction()
     : mCallbacksLock("transaction mCallbacks lock")
     , mRequestSize(0)
-    , mConnection(nullptr)
-    , mConnInfo(nullptr)
     , mRequestHead(nullptr)
     , mResponseHead(nullptr)
     , mContentLength(-1)
@@ -135,9 +133,6 @@ nsHttpTransaction::~nsHttpTransaction()
 
     // Force the callbacks to be released right now
     mCallbacks = nullptr;
-
-    NS_IF_RELEASE(mConnection);
-    NS_IF_RELEASE(mConnInfo);
 
     delete mResponseHead;
     delete mForTakeResponseHead;
@@ -231,7 +226,7 @@ nsHttpTransaction::Init(uint32_t caps,
                                         !activityDistributorActive);
     if (NS_FAILED(rv)) return rv;
 
-    NS_ADDREF(mConnInfo = cinfo);
+    mConnInfo = cinfo;
     mCallbacks = callbacks;
     mConsumerTarget = target;
     mCaps = caps;
@@ -407,8 +402,7 @@ nsHttpTransaction::TakeSubTransactions(
 void
 nsHttpTransaction::SetConnection(nsAHttpConnection *conn)
 {
-    NS_IF_RELEASE(mConnection);
-    NS_IF_ADDREF(mConnection = conn);
+    mConnection = conn;
 
     if (conn) {
         MOZ_EVENT_TRACER_EXEC(static_cast<nsAHttpTransaction*>(this),
@@ -823,8 +817,8 @@ nsHttpTransaction::Close(nsresult reason)
         mTimings.responseEnd.IsNull() && !mTimings.responseStart.IsNull())
         mTimings.responseEnd = TimeStamp::Now();
 
-    if (relConn && mConnection)
-        NS_RELEASE(mConnection);
+    if (relConn)
+        mConnection = nullptr;
 
     mStatus = reason;
     mTransactionDone = true; // forcibly flag the transaction as complete
@@ -957,7 +951,7 @@ nsHttpTransaction::Restart()
 
     // clear old connection state...
     mSecurityInfo = 0;
-    NS_IF_RELEASE(mConnection);
+    mConnection = nullptr;
 
     // disable pipelining for the next attempt in case pipelining caused the
     // reset.  this is being overly cautious since we don't know if pipelining

@@ -58,6 +58,7 @@ WinUtils::SHGetKnownFolderPathPtr WinUtils::sGetKnownFolderPath = NULL;
 // on them during shutdown anyway.
 static const PRUnichar kShellLibraryName[] =  L"shell32.dll";
 static HMODULE sShellDll = NULL;
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 static const PRUnichar kDwmLibraryName[] = L"dwmapi.dll";
 static HMODULE sDwmDll = NULL;
 
@@ -70,11 +71,13 @@ WinUtils::DwmSetWindowAttributeProc WinUtils::dwmSetWindowAttributePtr = NULL;
 WinUtils::DwmInvalidateIconicBitmapsProc WinUtils::dwmInvalidateIconicBitmapsPtr = NULL;
 WinUtils::DwmDefWindowProcProc WinUtils::dwmDwmDefWindowProcPtr = NULL;
 WinUtils::DwmGetCompositionTimingInfoProc WinUtils::dwmGetCompositionTimingInfoPtr = NULL;
+#endif
 
 /* static */
 void
 WinUtils::Initialize()
 {
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   if (!sDwmDll && WinUtils::GetWindowsVersion() >= WinUtils::VISTA_VERSION) {
     sDwmDll = ::LoadLibraryW(kDwmLibraryName);
 
@@ -91,6 +94,7 @@ WinUtils::Initialize()
       dwmGetCompositionTimingInfoPtr = (DwmGetCompositionTimingInfoProc)::GetProcAddress(sDwmDll, "DwmGetCompositionTimingInfo");
     }
   }
+#endif
 }
 
 /* static */ 

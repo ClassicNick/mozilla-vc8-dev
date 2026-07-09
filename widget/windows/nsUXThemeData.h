@@ -186,15 +186,6 @@ public:
   // WM_DWMCOMPOSITIONCHANGED. This rule prevents inconsistent
   // results for two or more calls which check the state during
   // composition transition.
-  static bool CheckForCompositor(bool aUpdateCache = false) {
-    static BOOL sCachedValue = FALSE;
-#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-    if(aUpdateCache && dwmIsCompositionEnabledPtr) {
-      dwmIsCompositionEnabledPtr(&sCachedValue);
-    }
-#endif // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-    return (sCachedValue != FALSE);
-  }
   static bool CheckForCompositor(bool aUpdateCache = false);
 };
 #endif // __UXThemeData_h__
