@@ -21,6 +21,8 @@
 #include "celldata.h"
 
 #include "nsMathMLmtableFrame.h"
+#include "RestyleManager.h"
+#include <algorithm>
 
 using namespace mozilla;
 

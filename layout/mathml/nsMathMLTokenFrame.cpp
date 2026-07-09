@@ -12,6 +12,8 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsMathMLTokenFrame.h"
 #include "nsTextFrame.h"
+#include "RestyleManager.h"
+#include <algorithm>
 
 nsIFrame*
 NS_NewMathMLTokenFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
