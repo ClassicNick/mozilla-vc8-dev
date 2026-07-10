@@ -100,6 +100,10 @@ public:
    */
   virtual void AppendNullData(TrackTicks aDuration) = 0;
   /**
+   * Replace contents with disabled data of the same duration
+   */
+  virtual void ReplaceWithDisabled() = 0;
+  /**
    * Remove all contents, setting duration to 0.
    */
   virtual void Clear() = 0;
@@ -188,6 +192,15 @@ public:
       mChunks.AppendElement()->SetNull(aDuration);
     }
     mDuration += aDuration;
+  }
+  virtual void ReplaceWithDisabled()
+  {
+    if (GetType() != AUDIO) {
+      MOZ_CRASH("Disabling unknown segment type");
+    }
+    TrackTicks duration = GetDuration();
+    Clear();
+    AppendNullData(duration);
   }
   virtual void Clear()
   {

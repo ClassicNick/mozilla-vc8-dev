@@ -10,6 +10,11 @@
 #include "mozilla/StandardInteger.h"
 #include "mozilla/TimeStamp.h"
 
+namespace mozilla {
+class TimeDuration;
+class TimeStamp;
+}
+
 using mozilla::TimeStamp;
 using mozilla::TimeDuration;
 

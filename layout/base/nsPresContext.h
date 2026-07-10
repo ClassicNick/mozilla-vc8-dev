@@ -16,6 +16,7 @@
 #include "nsRect.h"
 #include "nsDeviceContext.h"
 #include "nsFont.h"
+#include "nsIAtom.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsCRT.h"
@@ -31,6 +32,7 @@
 #include "mozilla/TimeStamp.h"
 #include "prclist.h"
 #include "nsThreadUtils.h"
+#include "ScrollbarStyles.h"
 
 #ifdef IBMBIDI
 class nsBidiPresUtils;
@@ -626,25 +628,12 @@ public:
   nscoord RoundAppUnitsToNearestDevPixels(nscoord aAppUnits) const
   { return DevPixelsToAppUnits(AppUnitsToDevPixels(aAppUnits)); }
 
-  struct ScrollbarStyles {
-    // Always one of NS_STYLE_OVERFLOW_SCROLL, NS_STYLE_OVERFLOW_HIDDEN,
-    // or NS_STYLE_OVERFLOW_AUTO.
-    uint8_t mHorizontal, mVertical;
-    ScrollbarStyles(uint8_t h, uint8_t v) : mHorizontal(h), mVertical(v) {}
-    ScrollbarStyles() {}
-    bool operator==(const ScrollbarStyles& aStyles) const {
-      return aStyles.mHorizontal == mHorizontal && aStyles.mVertical == mVertical;
-    }
-    bool operator!=(const ScrollbarStyles& aStyles) const {
-      return aStyles.mHorizontal != mHorizontal || aStyles.mVertical != mVertical;
-    }
-  };
   void SetViewportOverflowOverride(uint8_t aX, uint8_t aY)
   {
     mViewportStyleOverflow.mHorizontal = aX;
     mViewportStyleOverflow.mVertical = aY;
   }
-  ScrollbarStyles GetViewportOverflowOverride()
+  mozilla::ScrollbarStyles GetViewportOverflowOverride()
   {
     return mViewportStyleOverflow;
   }
@@ -1221,7 +1210,7 @@ protected:
 
   nscolor               mBodyTextColor;
 
-  ScrollbarStyles       mViewportStyleOverflow;
+  mozilla::ScrollbarStyles mViewportStyleOverflow;
   uint8_t               mFocusRingWidth;
 
   bool mExistThrottledUpdates;

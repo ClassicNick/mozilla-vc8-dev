@@ -3258,6 +3258,13 @@ nsIDocument::ReleaseCapture() const
   }
 }
 
+already_AddRefed<nsIURI>
+nsIDocument::GetBaseURI() const
+{
+  nsCOMPtr<nsIURI> uri = GetDocBaseURI();
+  return uri.forget();
+}
+
 nsresult
 nsDocument::SetBaseURI(nsIURI* aURI)
 {

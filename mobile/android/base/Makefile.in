@@ -493,12 +493,10 @@ RES_LAYOUT = \
   res/layout/pin_bookmark_dialog.xml \
   res/layout/preference_rightalign_icon.xml \
   res/layout/preference_search_tip.xml \
-  res/layout/search_engine_row.xml \
   res/layout/site_setting_item.xml \
   res/layout/site_setting_title.xml \
   res/layout/shared_ui_components.xml \
   res/layout/site_identity.xml \
-  res/layout/suggestion_item.xml \
   res/layout/remote_tabs_child.xml \
   res/layout/remote_tabs_group.xml \
   res/layout/search_engine_row.xml \
@@ -668,6 +666,7 @@ RES_DRAWABLE_MDPI = \
   res/drawable-mdpi/icon_most_recent_empty.png \
   res/drawable-mdpi/icon_most_visited.png \
   res/drawable-mdpi/icon_most_visited_empty.png \
+  res/drawable-mdpi/icon_openinapp.png \
   res/drawable-mdpi/icon_pageaction.png \
   res/drawable-mdpi/icon_reading_list_empty.png \
   res/drawable-mdpi/progress_spinner.png \
@@ -780,6 +779,7 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/icon_most_recent_empty.png \
   res/drawable-hdpi/icon_most_visited.png \
   res/drawable-hdpi/icon_most_visited_empty.png \
+  res/drawable-hdpi/icon_openinapp.png \
   res/drawable-hdpi/icon_pageaction.png \
   res/drawable-hdpi/icon_reading_list_empty.png \
   res/drawable-hdpi/tab_indicator_divider.9.png \
@@ -878,6 +878,7 @@ RES_DRAWABLE_XHDPI = \
   res/drawable-xhdpi/icon_most_recent_empty.png \
   res/drawable-xhdpi/icon_most_visited.png \
   res/drawable-xhdpi/icon_most_visited_empty.png \
+  res/drawable-xhdpi/icon_openinapp.png \
   res/drawable-xhdpi/icon_pageaction.png \
   res/drawable-xhdpi/icon_reading_list_empty.png \
   res/drawable-xhdpi/spinner_default.9.png \

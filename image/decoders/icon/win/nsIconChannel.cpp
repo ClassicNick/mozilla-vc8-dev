@@ -240,7 +240,7 @@ static DWORD GetSpecialFolderIcon(nsIFile* aFile, int aFolder, SHFILEINFOW* aSFI
   ::GetShortPathNameW(fileNativePathStr.get(), fileNativePath, ArrayLength(fileNativePath));
 
   LPITEMIDLIST idList;
-  HRESULT hr = ::SHGetSpecialFolderLocation(NULL, aFolder, &idList);
+  HRESULT hr = ::SHGetSpecialFolderLocation(nullptr, aFolder, &idList);
   if (SUCCEEDED(hr)) {
     PRUnichar specialNativePath[MAX_PATH];
     ::SHGetPathFromIDListW(idList, specialNativePath);
@@ -462,7 +462,7 @@ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool nonBlocki
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
 
   // GetDIBits does not exist on windows mobile.
-  HICON hIcon = NULL;
+  HICON hIcon = nullptr;
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   nsCOMPtr<nsIMozIconURI> iconURI(do_QueryInterface(mUrl, &rv));
@@ -485,12 +485,12 @@ nsresult nsIconChannel::MakeInputStream(nsIInputStream** _retval, bool nonBlocki
     if (GetIconInfo(hIcon, &iconInfo))
     {
       // we got the bitmaps, first find out their size
-      HDC hDC = CreateCompatibleDC(NULL); // get a device context for the screen.
+      HDC hDC = CreateCompatibleDC(nullptr); // get a device context for the screen.
       BITMAPINFOHEADER maskHeader  = {sizeof(BITMAPINFOHEADER)};
       BITMAPINFOHEADER colorHeader = {sizeof(BITMAPINFOHEADER)};
       int colorTableSize, maskTableSize;
-      if (GetDIBits(hDC, iconInfo.hbmMask,  0, 0, NULL, (BITMAPINFO*)&maskHeader,  DIB_RGB_COLORS) &&
-          GetDIBits(hDC, iconInfo.hbmColor, 0, 0, NULL, (BITMAPINFO*)&colorHeader, DIB_RGB_COLORS) &&
+      if (GetDIBits(hDC, iconInfo.hbmMask,  0, 0, nullptr, (BITMAPINFO*)&maskHeader,  DIB_RGB_COLORS) &&
+          GetDIBits(hDC, iconInfo.hbmColor, 0, 0, nullptr, (BITMAPINFO*)&colorHeader, DIB_RGB_COLORS) &&
           maskHeader.biHeight == colorHeader.biHeight &&
           maskHeader.biWidth  == colorHeader.biWidth  &&
           colorHeader.biBitCount > 8 &&
