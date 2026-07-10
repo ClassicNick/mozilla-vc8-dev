@@ -16,7 +16,7 @@
 #define JS_CPU_ARM_HARDFP
 #endif
 namespace js {
-namespace ion {
+namespace jit {
 
 static const uint32_t STACK_SLOT_SIZE       = 4;
 static const uint32_t DOUBLE_STACK_ALIGNMENT = 2;
@@ -225,7 +225,7 @@ bool hasVFP();
 bool has16DP();
 bool hasIDIV();
 
-} // namespace ion
+} // namespace jit
 } // namespace js
 
 #endif /* jit_arm_Architecture_arm_h */

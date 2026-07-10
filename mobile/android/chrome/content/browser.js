@@ -35,8 +35,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "UserAgentOverrides",
 XPCOMUtils.defineLazyModuleGetter(this, "LoginManagerContent",
                                   "resource://gre/modules/LoginManagerContent.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
-                                  "resource://gre/modules/NetUtil.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Task", "resource://gre/modules/Task.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "OS", "resource://gre/modules/osfile.jsm");
 
 #ifdef MOZ_SAFE_BROWSING
 XPCOMUtils.defineLazyModuleGetter(this, "SafeBrowsing",
@@ -243,6 +243,7 @@ var BrowserApp = {
   _tabs: [],
   _selectedTab: null,
   _prefObservers: [],
+  isGuest: false,
 
   get isTablet() {
     let sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
@@ -354,6 +355,8 @@ var BrowserApp = {
         gScreenHeight = window.arguments[2];
       if (window.arguments[3])
         pinned = window.arguments[3];
+      if (window.arguments[4])
+        this.isGuest = window.arguments[4];
     }
 
     let status = this.startupStatus();
@@ -451,7 +454,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareLink"),
-      NativeWindow.contextmenus.linkShareableContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.linkShareableContext),
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let title = aTarget.textContent || aTarget.title;
@@ -459,7 +462,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareEmailAddress"),
-      NativeWindow.contextmenus.emailLinkContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let emailAddr = NativeWindow.contextmenus._stripScheme(url);
@@ -468,7 +471,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.sharePhoneNumber"),
-      NativeWindow.contextmenus.phoneNumberLinkContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.phoneNumberLinkContext),
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         let phoneNumber = NativeWindow.contextmenus._stripScheme(url);
@@ -477,7 +480,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
-      NativeWindow.contextmenus.emailLinkContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.emailLinkContext),
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         sendMessageToJava({
@@ -487,7 +490,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.addToContacts"),
-      NativeWindow.contextmenus.phoneNumberLinkContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.phoneNumberLinkContext),
       function(aTarget) {
         let url = NativeWindow.contextmenus._getLinkURL(aTarget);
         sendMessageToJava({
@@ -527,7 +530,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareMedia"),
-      NativeWindow.contextmenus.SelectorContext("video"),
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.SelectorContext("video")),
       function(aTarget) {
         let url = (aTarget.currentSrc || aTarget.src);
         let title = aTarget.textContent || aTarget.title;
@@ -560,7 +563,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.shareImage"),
-      NativeWindow.contextmenus.imageSaveableContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.imageSaveableContext),
       function(aTarget) {
         let doc = aTarget.ownerDocument;
         let imageCache = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools)
@@ -589,7 +592,7 @@ var BrowserApp = {
       });
 
     NativeWindow.contextmenus.add(Strings.browser.GetStringFromName("contextmenu.setImageAs"),
-      NativeWindow.contextmenus.imageSaveableContext,
+      NativeWindow.contextmenus._disableInGuest(NativeWindow.contextmenus.imageSaveableContext),
       function(aTarget) {
         let src = aTarget.src;
         sendMessageToJava({
@@ -2196,6 +2199,16 @@ var NativeWindow = {
       return null;
     },
 
+    _disableInGuest: function _disableInGuest(selector) {
+      return {
+        matches: function _disableInGuestMatches(aElement, aX, aY) {
+          if (BrowserApp.isGuest)
+            return false;
+          return selector.matches(aElement, aX, aY);
+        }
+      }
+    },
+
     _getLinkURL: function ch_getLinkURL(aLink) {
       let href = aLink.href;
       if (href)
@@ -2849,6 +2862,7 @@ Tab.prototype = {
       this.browser.focus();
       this.browser.docShellIsActive = true;
       Reader.updatePageAction(this);
+      HelperApps.updatePageAction(this.browser.currentURI);
     } else {
       this.browser.setAttribute("type", "content-targetable");
       this.browser.docShellIsActive = false;
@@ -6501,12 +6515,14 @@ var SearchEngines = {
 
     let suggestTemplate = null;
     let suggestEngine = null;
-    let engine = this.getSuggestionEngine();
-    if (engine != null) {
+
+    // Check to see if the default engine supports search suggestions. We only need to check
+    // the default engine because we only show suggestions for the default engine in the UI.
+    let engine = Services.search.defaultEngine;
+    if (engine.supportsResponseType("application/x-suggestions+json")) {
       suggestEngine = engine.name;
       suggestTemplate = engine.getSubmission("__searchTerms__", "application/x-suggestions+json").uri.spec;
     }
-
 
     // By convention, the currently configured default engine is at position zero in searchEngines.
     sendMessageToJava({
@@ -6561,19 +6577,6 @@ var SearchEngines = {
         dump("Unexpected message type observed: " + aTopic);
         break;
     }
-  },
-
-  getSuggestionEngine: function () {
-    let engines = [ Services.search.currentEngine,
-                    Services.search.defaultEngine ];
-
-    for (let i = 0; i < engines.length; i++) {
-      let engine = engines[i];
-      if (engine && engine.supportsResponseType("application/x-suggestions+json"))
-        return engine;
-    }
-
-    return null;
   },
 
   addEngine: function addEngine(aElement) {
@@ -6894,18 +6897,9 @@ var WebappsUI = {
 
   _writeData: function(aFile, aPrefs) {
     if (aPrefs.length > 0) {
-      let data = JSON.stringify(aPrefs);
-
-      let ostream = Cc["@mozilla.org/network/file-output-stream;1"].createInstance(Ci.nsIFileOutputStream);
-      ostream.init(aFile, -1, -1, 0);
-
-      let istream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(Ci.nsIStringInputStream);
-      istream.setData(data, data.length);
-
-      NetUtil.asyncCopy(istream, ostream, function(aResult) {
-        if (!Components.isSuccessCode(aResult)) {
-          console.log("Error writing default prefs: " + aResult);
-        }
+      let array = new TextEncoder().encode(JSON.stringify(aPrefs));
+      OS.File.writeAtomic(aFile.path, array, { tmpPath: aFile.path + ".tmp" }).then(null, function onError(reason) {
+        console.log("Error writing default prefs: " + reason);
       });
     }
   },
@@ -7725,16 +7719,9 @@ var Distribution = {
           return;
         }
 
-        // Save the data for the later sessions
-        let ostream = Cc["@mozilla.org/network/safe-file-output-stream;1"].createInstance(Ci.nsIFileOutputStream);
-        ostream.init(this._file, 0x02 | 0x08 | 0x20, parseInt("600", 8), ostream.DEFER_OPEN);
-
-        let converter = Cc["@mozilla.org/intl/scriptableunicodeconverter"].createInstance(Ci.nsIScriptableUnicodeConverter);
-        converter.charset = "UTF-8";
-
         // Asynchronously copy the data to the file.
-        let istream = converter.convertToInputStream(aData);
-        NetUtil.asyncCopy(istream, ostream, function(rc) { });
+        let array = new TextEncoder().encode(aData);
+        OS.File.writeAtomic(this._file.path, array, { tmpPath: this._file.path + ".tmp" });
         break;
       }
     }
@@ -7824,24 +7811,18 @@ var Distribution = {
   // aFile is an nsIFile
   // aCallback takes the parsed JSON object as a parameter
   readJSON: function dc_readJSON(aFile, aCallback) {
-    if (!aFile.exists())
-      return;
-
-    let channel = NetUtil.newChannel(aFile);
-    channel.contentType = "application/json";
-    NetUtil.asyncFetch(channel, function(aStream, aResult) {
-      if (!Components.isSuccessCode(aResult)) {
-        Cu.reportError("Distribution: Could not read from " + aFile.leafName + " file");
-        return;
-      }
-
-      let raw = NetUtil.readInputStreamToString(aStream, aStream.available(), { charset : "UTF-8" }) || "";
-      aStream.close();
+    Task.spawn(function() {
+      let bytes = yield OS.File.read(aFile.path);
+      let raw = new TextDecoder().decode(bytes) || "";
 
       try {
         aCallback(JSON.parse(raw));
       } catch (e) {
         Cu.reportError("Distribution: Could not parse JSON: " + e);
+      }
+    }).then(null, function onError(reason) {
+      if (!(reason instanceof OS.File.Error && reason.becauseNoSuchFile)) {
+        Cu.reportError("Distribution: Could not read from " + aFile.leafName + " file");
       }
     });
   }

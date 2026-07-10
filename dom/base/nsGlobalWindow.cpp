@@ -31,6 +31,7 @@
 #include "nsDOMWindowList.h"
 #include "nsIDOMWakeLock.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsIPermissionManager.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptTimeoutHandler.h"
 
@@ -47,7 +48,7 @@
 // Helper Classes
 #include "nsJSUtils.h"
 #include "jsapi.h"              // for JSAutoRequest
-#include "jsdbgapi.h"           // for JS_ClearWatchPointsForObject
+#include "js/OldDebugAPI.h"     // for JS_ClearWatchPointsForObject
 #include "jsfriendapi.h"        // for JS_GetGlobalForFrame
 #include "jswrapper.h"
 #include "nsReadableUtils.h"

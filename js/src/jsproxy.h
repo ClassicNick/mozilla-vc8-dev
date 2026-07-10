@@ -7,6 +7,8 @@
 #ifndef jsproxy_h
 #define jsproxy_h
 
+#include "mozilla/Maybe.h"
+
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
@@ -149,7 +151,7 @@ class JS_FRIEND_API(BaseProxyHandler)
                                      uint32_t index, MutableHandleValue vp, bool *present);
     virtual bool getPrototypeOf(JSContext *cx, HandleObject proxy, MutableHandleObject protop);
 
-    /* See comment for weakmapKeyDelegateOp in jsclass.h. */
+    /* See comment for weakmapKeyDelegateOp in js/Class.h. */
     virtual JSObject *weakmapKeyDelegate(JSObject *proxy);
 };
 

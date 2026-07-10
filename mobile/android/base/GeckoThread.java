@@ -137,16 +137,22 @@ public class GeckoThread extends Thread implements GeckoEventListener {
 
     private String addCustomProfileArg(String args) {
         String profile = "";
+        String guest = "";
         if (GeckoAppShell.getGeckoInterface() != null) {
-            if (GeckoAppShell.getGeckoInterface().getProfile().inGuestMode()) {
+            if (GeckoApp.sIsUsingCustomProfile) {
+                profile = " -P " + GeckoAppShell.getGeckoInterface().getProfile().getName();
+            } else {
                 try {
                     profile = " -profile " + GeckoAppShell.getGeckoInterface().getProfile().getDir().getCanonicalPath();
                 } catch (IOException ioe) { Log.e(LOGTAG, "error getting guest profile path", ioe); }
-            } else if (GeckoApp.sIsUsingCustomProfile) {
-                profile = " -P " + GeckoAppShell.getGeckoInterface().getProfile().getName();
+
+                if (args == null || !args.contains(BrowserApp.GUEST_BROWSING_ARG)) {
+                    guest = " " + BrowserApp.GUEST_BROWSING_ARG;
+                }
             }
         }
-        return (args != null ? args : "") + profile;
+
+        return (args != null ? args : "") + profile + guest;
     }
 
     @Override

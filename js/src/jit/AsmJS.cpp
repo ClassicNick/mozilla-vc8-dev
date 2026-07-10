@@ -35,7 +35,7 @@
 
 using namespace js;
 using namespace js::frontend;
-using namespace js::ion;
+using namespace js::jit;
 
 using mozilla::AddToHash;
 using mozilla::ArrayLength;
@@ -4588,10 +4588,18 @@ ParseFunction(ModuleCompiler &m, ParseNode **fnOut)
     DebugOnly<TokenKind> tk = tokenStream.getToken();
     JS_ASSERT(tk == TOK_FUNCTION);
 
-    if (tokenStream.getToken(TokenStream::KeywordIsName) != TOK_NAME)
-        return false;  // This will throw a SyntaxError, no need to m.fail.
+    RootedPropertyName name(m.cx());
 
-    RootedPropertyName name(m.cx(), tokenStream.currentToken().name());
+    TokenKind tt = tokenStream.getToken();
+    if (tt == TOK_NAME) {
+        name = tokenStream.currentName();
+    } else if (tt == TOK_YIELD) {
+        if (!m.parser().checkYieldNameValidity())
+            return false;
+        name = m.cx()->names().yield;
+    } else {
+        return false;  // The regular parser will throw a SyntaxError, no need to m.fail.
+    }
 
     ParseNode *fn = m.parser().handler.newFunctionDefinition();
     if (!fn)
@@ -4702,14 +4710,14 @@ GenerateCode(ModuleCompiler &m, ModuleCompiler::Func &func, MIRGenerator &mir, L
 
     m.masm().bind(func.code());
 
-    ScopedJSDeletePtr<CodeGenerator> codegen(ion::GenerateCode(&mir, &lir, &m.masm()));
+    ScopedJSDeletePtr<CodeGenerator> codegen(jit::GenerateCode(&mir, &lir, &m.masm()));
     if (!codegen)
         return m.fail(NULL, "internal codegen failure (probably out of memory)");
 
     if (!m.collectAccesses(mir))
         return false;
 
-    ion::IonScriptCounts *counts = codegen->extractUnassociatedScriptCounts();
+    jit::IonScriptCounts *counts = codegen->extractUnassociatedScriptCounts();
     if (counts && !m.addFunctionCounts(counts)) {
         js_delete(counts);
         return false;
@@ -5378,7 +5386,7 @@ GenerateEntry(ModuleCompiler &m, const AsmJSModule::ExportedFunction &exportedFu
     masm.reserveStack(stackDec);
     //JS_ASSERT(masm.framePushed() % 8 == 0);
     if(getenv("GDB_BREAK")) {
-        masm.breakpoint(js::ion::Assembler::Always);
+        masm.breakpoint(js::jit::Assembler::Always);
     }
     // Copy parameters out of argv into the registers/stack-slots specified by
     // the system ABI.

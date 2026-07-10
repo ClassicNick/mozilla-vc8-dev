@@ -193,6 +193,8 @@ public:
   NS_IMETHOD              GetNonClientMargins(nsIntMargin &margins);
   NS_IMETHOD              SetNonClientMargins(nsIntMargin &margins);
   void                    SetDrawsInTitlebar(bool aState);
+  mozilla::TemporaryRef<mozilla::gfx::DrawTarget> StartRemoteDrawing() MOZ_OVERRIDE;
+  virtual void            EndRemoteDrawing() MOZ_OVERRIDE;
 
   /**
    * Event helpers
@@ -522,6 +524,7 @@ protected:
 
   // Graphics
   HDC                   mPaintDC; // only set during painting
+  HDC                   mCompositeDC; // only set during StartRemoteDrawing
 
 #ifdef CAIRO_HAS_D2D_SURFACE
   nsRefPtr<gfxD2DSurface>    mD2DWindowSurface; // Surface for this window.
