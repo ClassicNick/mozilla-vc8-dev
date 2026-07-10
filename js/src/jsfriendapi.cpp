@@ -342,6 +342,14 @@ js::IsAtomsCompartment(JSCompartment *comp)
 }
 
 JS_FRIEND_API(bool)
+js::IsInNonStrictPropertySet(JSContext *cx)
+{
+    jsbytecode *pc;
+    JSScript *script = cx->currentScript(&pc, JSContext::ALLOW_CROSS_COMPARTMENT);
+    return script && !script->strict && (js_CodeSpec[*pc].format & JOF_SET);
+}
+
+JS_FRIEND_API(bool)
 js::IsFunctionObject(JSObject *obj)
 {
     return obj->is<JSFunction>();
@@ -552,6 +560,12 @@ void
 js::SetPreserveWrapperCallback(JSRuntime *rt, PreserveWrapperCallback callback)
 {
     rt->preserveWrapperCallback = callback;
+}
+
+JS_FRIEND_API(JSErrorReport*)
+js::ErrorFromException(Value val)
+{
+    return js_ErrorFromException(val);
 }
 
 /*

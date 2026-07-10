@@ -35,6 +35,7 @@ class JSAtom;
 struct JSErrorFormatString;
 class JSLinearString;
 struct JSJitInfo;
+class JSErrorReport;
 
 namespace JS {
 template <class T>
@@ -264,6 +265,15 @@ IsAtomsCompartment(JSCompartment *comp);
  */
 extern JS_FRIEND_API(bool)
 ReportIfUndeclaredVarAssignment(JSContext *cx, JS::HandleString propname);
+
+/*
+ * Returns whether we're in a non-strict property set (in that we're in a
+ * non-strict script and the bytecode we're on is a property set).  The return
+ * value does NOT indicate any sort of exception was thrown: it's just a
+ * boolean.
+ */
+extern JS_FRIEND_API(bool)
+IsInNonStrictPropertySet(JSContext *cx);
 
 struct WeakMapTracer;
 
@@ -575,6 +585,14 @@ SetPreserveWrapperCallback(JSRuntime *rt, PreserveWrapperCallback callback);
 
 JS_FRIEND_API(bool)
 IsObjectInContextCompartment(JSObject *obj, const JSContext *cx);
+
+/*
+ * ErrorFromException takes a raw Value so that it's possible to call it during
+ * GC/CC/whatever, when it may not be possible to get a JSContext to create a
+ * Rooted.  It promises to never ever GC.
+ */
+JS_FRIEND_API(JSErrorReport*)
+ErrorFromException(JS::Value val);
 
 /*
  * NB: these flag bits are encoded into the bytecode stream in the immediate
