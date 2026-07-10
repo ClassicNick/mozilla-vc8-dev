@@ -509,7 +509,7 @@ NS_ScriptErrorReporter(JSContext *cx,
       const PRUnichar* m = static_cast<const PRUnichar*>(report->ucmessage);
       if (m) {
         const PRUnichar* n = static_cast<const PRUnichar*>
-            (js::GetErrorTypeName(cx, report->exnType));
+          (js::GetErrorTypeName(JS_GetRuntime(cx), report->exnType));
         if (n) {
           msg.Assign(n);
           msg.AppendLiteral(": ");
@@ -1836,8 +1836,10 @@ nsJSContext::InitClasses(JS::Handle<JSObject*> aGlobalObj)
   ::JS_DefineProfilingFunctions(cx, aGlobalObj);
 
 #ifdef NS_TRACE_MALLOC
-  // Attempt to initialize TraceMalloc functions
-  ::JS_DefineFunctions(cx, aGlobalObj, TraceMallocFunctions);
+  if (nsContentUtils::IsCallerChrome()) {
+    // Attempt to initialize TraceMalloc functions
+    ::JS_DefineFunctions(cx, aGlobalObj, TraceMallocFunctions);
+  }
 #endif
 
 #ifdef MOZ_DMD
