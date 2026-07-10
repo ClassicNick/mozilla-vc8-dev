@@ -6,7 +6,7 @@
 #ifndef GFX_LAYERS_H
 #define GFX_LAYERS_H
 
-#include <stdint.h>                     // for uint32_t, uint64_t, uint8_t
+#include "mozilla/StandardInteger.h"                     // for uint32_t, uint64_t, uint8_t
 #include <stdio.h>                      // for FILE
 #include <sys/types.h>                  // for int32_t, int64_t
 #include "mozilla-config.h"             // for MOZ_DUMP_PAINTING
@@ -408,8 +408,8 @@ public:
     CreateOptimalMaskSurface(const gfxIntSize &aSize);
 
   /**
-   * Creates a DrawTarget which is optimized for inter-operating with this
-   * layermanager.
+   * Creates a DrawTarget for use with canvas which is optimized for
+   * inter-operating with this layermanager.
    */
   virtual TemporaryRef<mozilla::gfx::DrawTarget>
     CreateDrawTarget(const mozilla::gfx::IntSize &aSize,

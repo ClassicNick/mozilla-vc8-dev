@@ -6,7 +6,7 @@
 #ifndef GFX_BASICLAYERS_H
 #define GFX_BASICLAYERS_H
 
-#include <stdint.h>                     // for INT32_MAX, int32_t
+#include "mozilla/StandardInteger.h"                     // for INT32_MAX, int32_t
 #include "Layers.h"                     // for Layer (ptr only), etc
 #include "gfxASurface.h"                // for gfxASurface, etc
 #include "gfxCachedTempSurface.h"       // for gfxCachedTempSurface
@@ -177,6 +177,8 @@ protected:
                               EndTransactionFlags aFlags = END_DEFAULT);
 
   void FlashWidgetUpdateArea(gfxContext* aContext);
+
+  void RenderDebugOverlay();
 
   // Widget whose surface should be used as the basis for ThebesLayer
   // buffers.

@@ -5,12 +5,12 @@
 
 #include "nsTextFrameUtils.h"
 
-#include "nsIWordBreaker.h"
-#include "gfxFont.h"
 #include "nsUnicharUtils.h"
 #include "nsBidiUtils.h"
 #include "nsIContent.h"
 #include "nsStyleStruct.h"
+#include "nsTextFragment.h"
+#include <algorithm>
 
 // XXX TODO implement transform of backslash to yen that nsTextTransform does
 // when requested by PresContext->LanguageSpecificTransformType(). Do it with

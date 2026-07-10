@@ -5,14 +5,14 @@
 
 #include "LayerManagerComposite.h"
 #include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint16_t, uint32_t
+#include "mozilla/StandardInteger.h"                     // for uint16_t, uint32_t
 #include "CanvasLayerComposite.h"       // for CanvasLayerComposite
 #include "ColorLayerComposite.h"        // for ColorLayerComposite
 #include "Composer2D.h"                 // for Composer2D
 #include "CompositableHost.h"           // for CompositableHost
 #include "ContainerLayerComposite.h"    // for ContainerLayerComposite, etc
 #include "FrameMetrics.h"               // for FrameMetrics
-#include "GeckoProfilerImpl.h"          // for profiler_set_frame_number, etc
+#include "GeckoProfiler.h"              // for profiler_set_frame_number, etc
 #include "ImageLayerComposite.h"        // for ImageLayerComposite
 #include "Layers.h"                     // for Layer, ContainerLayer, etc
 #include "ThebesLayerComposite.h"       // for ThebesLayerComposite

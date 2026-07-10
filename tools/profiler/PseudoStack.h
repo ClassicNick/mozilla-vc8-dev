@@ -8,7 +8,7 @@
 
 #include "mozilla/NullPtr.h"
 #include "mozilla/StandardInteger.h"
-#include "jsfriendapi.h"
+#include "js/ProfilingStack.h"
 #include <stdlib.h>
 #include <algorithm>
 

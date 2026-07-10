@@ -1191,6 +1191,8 @@ js::math_atanh(JSContext *cx, unsigned argc, Value *vp)
     return math_function<math_atanh_impl>(cx, argc, vp);
 }
 
+// Math.hypot is disabled pending the resolution of spec issues (bug 896264).
+#if 0
 #if !HAVE_HYPOT
 double hypot(double x, double y)
 {
@@ -1256,6 +1258,7 @@ js::math_hypot(JSContext *cx, unsigned argc, Value *vp)
     args.rval().setNumber(math_hypot_impl(math_hypot_impl(x, y), z));
     return true;
 }
+#endif
 
 #if !HAVE_TRUNC
 double trunc(double x)
@@ -1364,7 +1367,10 @@ static const JSFunctionSpec math_static_methods[] = {
     JS_FN("acosh",          math_acosh,           1, 0),
     JS_FN("asinh",          math_asinh,           1, 0),
     JS_FN("atanh",          math_atanh,           1, 0),
+// Math.hypot is disabled pending the resolution of spec issues (bug 896264).
+#if 0
     JS_FN("hypot",          math_hypot,           2, 0),
+#endif
     JS_FN("trunc",          math_trunc,           1, 0),
     JS_FN("sign",           math_sign,            1, 0),
     JS_FN("cbrt",           math_cbrt,            1, 0),

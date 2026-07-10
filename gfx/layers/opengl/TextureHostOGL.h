@@ -7,7 +7,7 @@
 #define MOZILLA_GFX_TEXTUREOGL_H
 
 #include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint64_t
+#include "mozilla/StandardInteger.h"                     // for uint64_t
 #include "GLContext.h"                  // for GLContext, etc
 #include "GLContextTypes.h"             // for GLenum, GLuint
 #include "GLDefs.h"                     // for LOCAL_GL_CLAMP_TO_EDGE, etc

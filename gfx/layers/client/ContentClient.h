@@ -6,7 +6,7 @@
 #ifndef MOZILLA_GFX_CONTENTCLIENT_H
 #define MOZILLA_GFX_CONTENTCLIENT_H
 
-#include <stdint.h>                     // for uint32_t
+#include "mozilla/StandardInteger.h"                     // for uint32_t
 #include "ThebesLayerBuffer.h"          // for ThebesLayerBuffer, etc
 #include "gfxASurface.h"                // for gfxASurface, etc
 #include "gfxPlatform.h"                // for gfxPlatform
@@ -160,6 +160,7 @@ public:
                                                        const nsIntRect& aRect,
                                                        uint32_t aFlags,
                                                        RefPtr<gfx::DrawTarget>* aWhiteDT);
+  virtual bool SupportsAzureContent() const;
 
   virtual TextureInfo GetTextureInfo() const MOZ_OVERRIDE
   {

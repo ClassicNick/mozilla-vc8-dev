@@ -6,7 +6,7 @@
 #ifndef MOZILLA_GFX_IMAGECLIENT_H
 #define MOZILLA_GFX_IMAGECLIENT_H
 
-#include <stdint.h>                     // for uint32_t, uint64_t
+#include "mozilla/StandardInteger.h"                     // for uint32_t, uint64_t
 #include <sys/types.h>                  // for int32_t
 #include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
 #include "mozilla/RefPtr.h"             // for RefPtr, TemporaryRef
@@ -179,6 +179,11 @@ public:
   virtual TextureInfo GetTextureInfo() const MOZ_OVERRIDE
   {
     return TextureInfo(mType);
+  }
+
+  virtual void SetIPDLActor(CompositableChild* aChild) MOZ_OVERRIDE
+  {
+    MOZ_ASSERT(!aChild, "ImageClientBridge should not have IPDL actor");
   }
 
 protected:

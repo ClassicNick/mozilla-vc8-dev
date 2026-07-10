@@ -7,7 +7,7 @@
 #define GFX_LAYERS_ISURFACEDEALLOCATOR
 
 #include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint32_t
+#include "mozilla/StandardInteger.h"                     // for uint32_t
 #include "gfxASurface.h"                // for gfxASurface, etc
 #include "gfxPoint.h"                   // for gfxIntSize
 #include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc

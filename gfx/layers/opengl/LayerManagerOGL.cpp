@@ -5,7 +5,7 @@
 
 #include "LayerManagerOGL.h"
 #include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint32_t, uint8_t, etc
+#include "mozilla/StandardInteger.h"                     // for uint32_t, uint8_t, etc
 #include "mozilla-config.h"             // for MOZ_DUMP_PAINTING
 #include "CanvasLayerOGL.h"             // for CanvasLayerOGL
 #include "ColorLayerOGL.h"              // for ColorLayerOGL
@@ -14,7 +14,6 @@
 #include "FPSCounter.h"                 // for FPSState, FPSCounter
 #include "GLContext.h"                  // for GLContext, etc
 #include "GLContextProvider.h"          // for GLContextProvider
-#include "GeckoProfilerFunc.h"          // for TimeStamp
 #include "GeckoProfiler.h"              // for PROFILER_LABEL
 #include "ImageLayerOGL.h"              // for ImageLayerOGL
 #include "ImageLayers.h"                // for ImageLayer

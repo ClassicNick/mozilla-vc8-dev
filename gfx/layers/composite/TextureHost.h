@@ -7,7 +7,7 @@
 #define MOZILLA_GFX_TEXTUREHOST_H
 
 #include <stddef.h>                     // for size_t
-#include <stdint.h>                     // for uint64_t, uint32_t, uint8_t
+#include "mozilla/StandardInteger.h"                     // for uint64_t, uint32_t, uint8_t
 #include "./../mozilla-config.h"        // for MOZ_DUMP_PAINTING
 #include "gfxASurface.h"                // for gfxASurface, etc
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc

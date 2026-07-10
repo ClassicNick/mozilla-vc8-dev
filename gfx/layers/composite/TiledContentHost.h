@@ -6,7 +6,7 @@
 #ifndef GFX_TILEDCONTENTHOST_H
 #define GFX_TILEDCONTENTHOST_H
 
-#include <stdint.h>                     // for uint16_t
+#include "mozilla/StandardInteger.h"                     // for uint16_t
 #include <stdio.h>                      // for FILE
 #include <algorithm>                    // for swap
 #include "ContentHost.h"                // for ContentHost
@@ -237,7 +237,9 @@ public:
     mLowPrecisionVideoMemoryTiledBuffer.SetCompositor(aCompositor);
   }
 
-  virtual void Attach(Layer* aLayer, Compositor* aCompositor) MOZ_OVERRIDE;
+  virtual void Attach(Layer* aLayer,
+                      Compositor* aCompositor,
+                      AttachFlags aFlags = NO_FLAGS) MOZ_OVERRIDE;
 
 #ifdef MOZ_DUMP_PAINTING
   virtual void Dump(FILE* aFile=nullptr,

@@ -22,6 +22,7 @@
 #include "jsdbgapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
+#include "mozilla/dom/AtomList.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/DebugOnly.h"
@@ -312,9 +313,6 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror"))) {
     commonOptions |= JSOPTION_WERROR;
   }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference"))) {
-    commonOptions |= JSOPTION_TYPE_INFERENCE;
-  }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs"))) {
     commonOptions |= JSOPTION_ASMJS;
   }
@@ -327,6 +325,9 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.content"))) {
     contentOptions |= JSOPTION_ION;
   }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.content"))) {
+    contentOptions |= JSOPTION_TYPE_INFERENCE;
+  }
 
   // Chrome options.
   uint32_t chromeOptions = commonOptions;
@@ -335,6 +336,9 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.chrome"))) {
     chromeOptions |= JSOPTION_ION;
+  }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.chrome"))) {
+    chromeOptions |= JSOPTION_TYPE_INFERENCE;
   }
 #ifdef DEBUG
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict.debug"))) {
@@ -763,6 +767,11 @@ CTypesActivityCallback(JSContext* aCx,
   }
 }
 
+struct WorkerThreadRuntimePrivate : public PerThreadAtomCache
+{
+  WorkerPrivate* mWorkerPrivate;
+};
+
 JSContext*
 CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
 {
@@ -811,7 +820,10 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
     return nullptr;
   }
 
-  JS_SetRuntimePrivate(aRuntime, aWorkerPrivate);
+  WorkerThreadRuntimePrivate* rtPrivate = new WorkerThreadRuntimePrivate();
+  memset(rtPrivate, 0, sizeof(WorkerThreadRuntimePrivate));
+  rtPrivate->mWorkerPrivate = aWorkerPrivate;
+  JS_SetRuntimePrivate(aRuntime, rtPrivate);
 
   JS_SetErrorReporter(workerCx, ErrorReporter);
 
@@ -854,6 +866,10 @@ public:
 
   ~WorkerJSRuntime()
   {
+    WorkerThreadRuntimePrivate* rtPrivate = static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(Runtime()));
+    delete rtPrivate;
+    JS_SetRuntimePrivate(Runtime(), nullptr);
+
     // All JSContexts except mLastJSContext should be destroyed now.  The
     // worker global will be unrooted and the shutdown cycle collection
     // should break all remaining cycles.  Destroying mLastJSContext will run
@@ -1115,6 +1131,13 @@ WorkerCrossThreadDispatcher::PostTask(WorkerTask* aTask)
   nsRefPtr<WorkerTaskRunnable> runnable = new WorkerTaskRunnable(mPrivate, aTask);
   runnable->Dispatch(nullptr);
   return true;
+}
+
+WorkerPrivate*
+GetWorkerPrivateFromContext(JSContext* aCx)
+{
+  NS_ASSERTION(!NS_IsMainThread(), "Wrong thread!");
+  return static_cast<WorkerThreadRuntimePrivate*>(JS_GetRuntimePrivate(JS_GetRuntime(aCx)))->mWorkerPrivate;
 }
 
 END_WORKERS_NAMESPACE

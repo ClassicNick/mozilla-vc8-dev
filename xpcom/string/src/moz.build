@@ -27,3 +27,5 @@ if CONFIG['COMPILE_SSE2_SRCS']:
 
 LIBRARY_NAME = 'string_s'
 
+MSVC_ENABLE_PGO = True
+
