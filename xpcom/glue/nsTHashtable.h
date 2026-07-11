@@ -92,7 +92,7 @@ public:
    */
   ~nsTHashtable();
 
-  nsTHashtable(nsTHashtable<EntryType>&& aOther);
+  nsTHashtable(mozilla::MoveRef<nsTHashtable<EntryType> > aOther);
 
   /**
    * Initialize the table.  This function must be called before any other
@@ -387,16 +387,11 @@ nsTHashtable<EntryType>::nsTHashtable()
 
 template<class EntryType>
 nsTHashtable<EntryType>::nsTHashtable(
-  nsTHashtable<EntryType>&& aOther)
-  : mTable(mozilla::Move(aOther.mTable))
+  mozilla::MoveRef<nsTHashtable<EntryType> > aOther)
+  : mTable(mozilla::OldMove(aOther->mTable))
 {
-  // aOther shouldn't touch mTable after this, because we've stolen the table's
-  // pointers but not overwitten them.
-  MOZ_MAKE_MEM_UNDEFINED(aOther.mTable, sizeof(aOther.mTable));
-
-  // Indicate that aOther is not initialized.  This will make its destructor a
-  // nop, which is what we want.
-  aOther.mTable.entrySize = 0;
+  aOther->mTable = PLDHashTable();
+  aOther->mTable.entrySize = 0;
 }
 
 template<class EntryType>
@@ -472,7 +467,7 @@ nsTHashtable<EntryType>::s_CopyEntry(PLDHashTable          *table,
   EntryType* fromEntry =
     const_cast<EntryType*>(reinterpret_cast<const EntryType*>(from));
 
-  new(to) EntryType(mozilla::Move(*fromEntry));
+  new(to) EntryType(mozilla::OldMove(*fromEntry));
 
   fromEntry->~EntryType();
 }

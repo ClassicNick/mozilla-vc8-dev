@@ -36,7 +36,6 @@ using mozilla::unused;
 #include "gfxContext.h"
 
 #include "Layers.h"
-#include "BasicLayers.h"
 #include "LayerManagerOGL.h"
 #include "mozilla/layers/LayerManagerComposite.h"
 #include "mozilla/layers/AsyncCompositionManager.h"

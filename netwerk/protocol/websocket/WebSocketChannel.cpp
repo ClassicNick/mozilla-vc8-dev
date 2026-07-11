@@ -951,6 +951,7 @@ WebSocketChannel::WebSocketChannel() :
   mCompressor(nullptr),
   mDynamicOutputSize(0),
   mDynamicOutput(nullptr),
+  mPrivateBrowsing(false),
   mConnectionLogService(nullptr)
 {
   NS_ABORT_IF_FALSE(NS_IsMainThread(), "not main thread");
@@ -1327,7 +1328,7 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
 
         NS_DispatchToMainThread(new CallOnMessageAvailable(this, utf8Data, -1));
         nsresult rv;
-        if (mConnectionLogService) {
+        if (mConnectionLogService && !mPrivateBrowsing) {
           nsAutoCString host;
           rv = mURI->GetHostPort(host);
           if (NS_SUCCEEDED(rv)) {
@@ -1418,7 +1419,7 @@ WebSocketChannel::ProcessInput(uint8_t *buffer, uint32_t count)
                                                            payloadLength));
         // To add the header to 'Networking Dashboard' log
         nsresult rv;
-        if (mConnectionLogService) {
+        if (mConnectionLogService && !mPrivateBrowsing) {
           nsAutoCString host;
           rv = mURI->GetHostPort(host);
           if (NS_SUCCEEDED(rv)) {
@@ -1843,7 +1844,7 @@ WebSocketChannel::CleanupConnection()
   }
 
   nsresult rv;
-  if (mConnectionLogService) {
+  if (mConnectionLogService && !mPrivateBrowsing) {
     nsAutoCString host;
     rv = mURI->GetHostPort(host);
     if (NS_SUCCEEDED(rv))
@@ -2677,7 +2678,9 @@ WebSocketChannel::AsyncOpen(nsIURI *aURI,
   if (NS_FAILED(rv))
     return rv;
 
-  if (mConnectionLogService) {
+  mPrivateBrowsing = NS_UsePrivateBrowsing(localChannel);
+
+  if (mConnectionLogService && !mPrivateBrowsing) {
     nsAutoCString host;
     rv = mURI->GetHostPort(host);
     if (NS_SUCCEEDED(rv)) {
@@ -2782,7 +2785,7 @@ WebSocketChannel::SendMsgCommon(const nsACString *aMsg, bool aIsBinary,
   }
 
   nsresult rv;
-  if (mConnectionLogService) {
+  if (mConnectionLogService && !mPrivateBrowsing) {
     nsAutoCString host;
     rv = mURI->GetHostPort(host);
     if (NS_SUCCEEDED(rv)) {

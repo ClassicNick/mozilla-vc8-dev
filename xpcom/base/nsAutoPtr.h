@@ -99,11 +99,13 @@ class nsAutoPtr
         {
         }
 
+#if !defined (_MSC_VER) || _MSC_VER >= 1600
       nsAutoPtr( nsAutoPtr<T>&& aSmartPtr )
             : mRawPtr( aSmartPtr.forget() )
           // Construct by transferring ownership from another smart pointer.
         {
         }
+#endif
 
         // Assignment operators
 

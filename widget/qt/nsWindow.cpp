@@ -94,7 +94,6 @@ using namespace QtMobility;
 #include "gfxUtils.h"
 #include "Layers.h"
 #include "GLContextProvider.h"
-#include "BasicLayers.h"
 #include "LayerManagerOGL.h"
 #include "nsFastStartupQt.h"
 
@@ -440,8 +439,7 @@ nsWindow::ClearCachedResources()
 {
     if (mLayerManager &&
         mLayerManager->GetBackendType() == mozilla::layers::LAYERS_BASIC) {
-        static_cast<mozilla::layers::BasicLayerManager*> (mLayerManager.get())->
-            ClearCachedResources();
+        statimLayerManager->ClearCachedResources();
     }
     for (nsIWidget* kid = mFirstChild; kid; ) {
         nsIWidget* next = kid->GetNextSibling();

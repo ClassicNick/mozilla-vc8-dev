@@ -7,8 +7,9 @@
 #define PROFILER_FUNCS_H
 
 #include "mozilla/NullPtr.h"
-#include "mozilla/StandardInteger.h"
 #include "mozilla/TimeStamp.h"
+#include "js/TypeDecls.h"
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 class TimeDuration;
@@ -17,9 +18,6 @@ class TimeStamp;
 
 using mozilla::TimeStamp;
 using mozilla::TimeDuration;
-
-struct JSContext;
-class JSObject;
 
 // Returns a handle to pass on exit. This can check that we are popping the
 // correct callstack.

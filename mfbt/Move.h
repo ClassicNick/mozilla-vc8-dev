@@ -175,6 +175,7 @@ OldMove(const T& t)
   return MoveRef<T>(const_cast<T&>(t));
 }
 
+#if !defined (_MSC_VER) || _MSC_VER >= 1600
 /**
  * Identical to std::Move(); this is necessary until our stlport supports
  * std::move().
@@ -205,6 +206,7 @@ Forward(typename RemoveReference<T>::Type&& t)
                 "misuse of Forward detected!  try the other overload");
   return static_cast<T&&>(t);
 }
+#endif
 
 /** Swap |t| and |u| using move-construction if possible. */
 template<typename T>

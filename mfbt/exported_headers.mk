@@ -28,12 +28,14 @@ EXPORTS_mozilla += \
   FloatingPoint.h \
   GuardObjects.h \
   HashFunctions.h \
+  IntegerPrintfMacros.h \
   Likely.h \
   LinkedList.h \
   MathAlgorithms.h \
   Maybe.h \
   MemoryChecking.h \
   MemoryReporting.h \
+  MSIntTypes.h \
   MSStdInt.h \
   Move.h \
   NullPtr.h \

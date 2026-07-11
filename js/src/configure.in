@@ -232,7 +232,7 @@ changequote(,)
 MOZJS_MAJOR_VERSION=`echo $MOZILLA_VERSION | sed "s|\(^[0-9]*\)\.[0-9]*.*|\1|"`
 MOZJS_MINOR_VERSION=`echo $MOZILLA_VERSION | sed "s|^[0-9]*\.\([0-9]*\).*|\1|"`
 MOZJS_PATCH_VERSION=`echo $MOZILLA_VERSION | sed "s|^[0-9]*\.[0-9]*[^0-9]*||"`
-IS_ALPHA=`echo $MOZILLA_VERSION | grep [ab]`
+IS_ALPHA=`echo $MOZILLA_VERSION | grep '[ab]'`
 
 dnl XXX in a temporary bid to avoid developer anger at renaming files
 dnl XXX before "js" symlinks exist, don't change names.
@@ -1386,6 +1386,16 @@ AC_MSG_CHECKING(for custom <stdint.h> implementation)
 if test "$MOZ_CUSTOM_STDINT_H"; then
   AC_DEFINE_UNQUOTED(MOZ_CUSTOM_STDINT_H, "$MOZ_CUSTOM_STDINT_H")
   AC_MSG_RESULT(using $MOZ_CUSTOM_STDINT_H)
+else
+  AC_MSG_RESULT(none specified)
+fi
+
+dnl Check for using a custom <inttypes.h> implementation
+dnl ========================================================
+AC_MSG_CHECKING(for custom <inttypes.h> implementation)
+if test "$MOZ_CUSTOM_INTTYPES_H"; then
+  AC_DEFINE_UNQUOTED(MOZ_CUSTOM_INTTYPES_H, "$MOZ_CUSTOM_INTTYPES_H")
+  AC_MSG_RESULT(using $MOZ_CUSTOM_INTTYPES_H)
 else
   AC_MSG_RESULT(none specified)
 fi

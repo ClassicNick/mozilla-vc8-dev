@@ -50,8 +50,8 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
             'd3d9/LayerManagerD3D9.h',
         ]
         EXPORTS.mozilla.layers += [
-            'CompositorD3D9.h',
-            'TextureD3D9.h',
+            'd3d9/CompositorD3D9.h',
+            'd3d9/TextureD3D9.h',
         ]
         CPP_SOURCES += [
 			'D3D9SurfaceImage.cpp',
@@ -97,8 +97,6 @@ EXPORTS.mozilla.layers += [
     'Compositor.h',
     'CompositorTypes.h',
     'Effects.h',
-    'GrallocTextureClient.h',
-    'GrallocTextureHost.h',
     'ImageDataSerializer.h',
     'LayersTypes.h',
     'RenderTrace.h',
@@ -142,6 +140,8 @@ EXPORTS.mozilla.layers += [
     'ipc/TaskThrottler.h',
     'opengl/CompositingRenderTargetOGL.h',
     'opengl/CompositorOGL.h',
+    'opengl/GrallocTextureClient.h',
+    'opengl/GrallocTextureHost.h',
     'opengl/TextureClientOGL.h',
     'opengl/TextureHostOGL.h',
 ]

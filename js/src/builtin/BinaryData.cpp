@@ -74,7 +74,7 @@ static void
 ReportCannotConvertTo(JSContext *cx, HandleObject fromObject, const char *toType)
 {
     RootedValue fromValue(cx, ObjectValue(*fromObject));
-    ReportCannotConvertTo(cx, fromValue, toType);
+    ReportCannotConvertTo(cx, (HandleValue) fromValue, toType);
 }
 
 static void
@@ -790,7 +790,7 @@ ArraySubarray(JSContext *cx, unsigned int argc, Value *vp)
 
     RootedObject thisObj(cx, &args.thisv().toObject());
     if (!IsBinaryArray(cx, thisObj)) {
-        ReportCannotConvertTo(cx, thisObj, "binary array");
+        ReportCannotConvertTo(cx, (HandleObject) thisObj, "binary array");
         return false;
     }
 
@@ -1113,13 +1113,13 @@ StructType::layout(JSContext *cx, HandleObject structType, HandleObject fields)
         uint32_t index;
         if (js_IdIsIndex(id, &index)) {
             RootedValue idValue(cx, IdToJsval(id));
-            ReportCannotConvertTo(cx, idValue, "StructType field name");
+            ReportCannotConvertTo(cx, (HandleValue) idValue, "StructType field name");
             return false;
         }
 
         RootedObject fieldType(cx, ToObjectIfObject(fieldTypeVal));
         if (!fieldType || !IsBinaryType(fieldType)) {
-            ReportCannotConvertTo(cx, fieldTypeVal, "StructType field specifier");
+            ReportCannotConvertTo(cx, (HandleObject) fieldTypeVal, "StructType field specifier");
             return false;
         }
 
