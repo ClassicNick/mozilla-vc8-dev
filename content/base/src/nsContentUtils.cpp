@@ -574,11 +574,11 @@ nsContentUtils::InitializeEventTable() {
     { nullptr }
   };
 
-  sAtomEventTable = new nsDataHashtable<nsISupportsHashKey, EventNameMapping>;
-  sStringEventTable = new nsDataHashtable<nsStringHashKey, EventNameMapping>;
+  sAtomEventTable = new nsDataHashtable<nsISupportsHashKey, EventNameMapping>(
+      int(ArrayLength(eventArray) / 0.75) + 1);
+  sStringEventTable = new nsDataHashtable<nsStringHashKey, EventNameMapping>(
+      int(ArrayLength(eventArray) / 0.75) + 1);
   sUserDefinedEvents = new nsCOMArray<nsIAtom>(64);
-  sAtomEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1);
-  sStringEventTable->Init(int(ArrayLength(eventArray) / 0.75) + 1);
 
   // Subtract one from the length because of the trailing null
   for (uint32_t i = 0; i < ArrayLength(eventArray) - 1; ++i) {
@@ -4875,10 +4875,9 @@ static void ProcessViewportToken(nsIDocument *aDocument,
 /* static */
 nsViewportInfo
 nsContentUtils::GetViewportInfo(nsIDocument *aDocument,
-                                uint32_t aDisplayWidth,
-                                uint32_t aDisplayHeight)
+                                const ScreenIntSize& aDisplaySize)
 {
-  return aDocument->GetViewportInfo(aDisplayWidth, aDisplayHeight);
+  return aDocument->GetViewportInfo(aDisplaySize);
 }
 
 /* static */
@@ -5515,6 +5514,19 @@ nsContentUtils::GetUTFOrigin(nsIURI* aURI, nsString& aOrigin)
   }
   
   return NS_OK;
+}
+
+/* static */
+void
+nsContentUtils::GetUTFNonNullOrigin(nsIURI* aURI, nsString& aOrigin)
+{
+  aOrigin.Truncate();
+
+  nsString origin;
+  nsresult rv = GetUTFOrigin(aURI, origin);
+  if (NS_SUCCEEDED(rv) && !origin.EqualsLiteral("null")) {
+    aOrigin.Assign(origin);
+  }
 }
 
 /* static */

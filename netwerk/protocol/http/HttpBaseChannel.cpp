@@ -86,9 +86,6 @@ HttpBaseChannel::Init(nsIURI *aURI,
 
   NS_PRECONDITION(aURI, "null uri");
 
-  nsresult rv = nsHashPropertyBag::Init();
-  if (NS_FAILED(rv)) return rv;
-
   mURI = aURI;
   mOriginalURI = aURI;
   mDocumentURI = nullptr;
@@ -101,7 +98,7 @@ HttpBaseChannel::Init(nsIURI *aURI,
   int32_t port = -1;
   bool usingSSL = false;
 
-  rv = mURI->SchemeIs("https", &usingSSL);
+  nsresult rv = mURI->SchemeIs("https", &usingSSL);
   if (NS_FAILED(rv)) return rv;
 
   rv = mURI->GetAsciiHost(host);

@@ -479,12 +479,8 @@ QuotaManager::Init()
     gStorageQuotaMB = DEFAULT_QUOTA_MB;
   }
 
-  mOriginInfos.Init();
-  mCheckQuotaHelpers.Init();
-  mLiveStorages.Init();
-
   MOZ_STATIC_ASSERT(Client::IDB == 0 && Client::TYPE_MAX == 1,
-                    "Fix the registration!");
+                "Fix the registration!");
 
   NS_ASSERTION(mClients.Capacity() == Client::TYPE_MAX,
                "Should be using an auto array with correct capacity!");

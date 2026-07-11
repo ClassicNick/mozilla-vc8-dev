@@ -617,9 +617,8 @@ GDIFontFamily::FindStyleVariations()
  */
 
 gfxGDIFontList::gfxGDIFontList()
+    : mFontSubstitutes(50)
 {
-    mFontSubstitutes.Init(50);
-
     InitializeFontEmbeddingProcs();
     // Make sure the t2embed library is available because it may be
     // disabled to work around security vulnerabilities.
@@ -784,8 +783,8 @@ gfxGDIFontList::LookupLocalFont(const gfxProxyFontEntry *aProxyEntry,
     }
 
     // lookup in name lookup tables, return null if not found
-    if (!(lookup = mPostscriptNames.GetWeak(aFullname)) &&
-        !(lookup = mFullnames.GetWeak(aFullname))) 
+    if (!(lookup = mExtraNames->mPostscriptNames.GetWeak(aFullname)) &&
+        !(lookup = mExtraNames->mFullnames.GetWeak(aFullname)))
     {
         return nullptr;
     }

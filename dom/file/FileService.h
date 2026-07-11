@@ -161,8 +161,6 @@ private:
   private:
     FileStorageInfo()
     {
-      mFilesReading.Init();
-      mFilesWriting.Init();
     }
 
     nsTArray<nsRefPtr<LockedFileQueue> > mLockedFileQueues;

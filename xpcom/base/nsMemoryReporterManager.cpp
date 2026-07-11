@@ -807,8 +807,6 @@ nsMemoryReporterManager::nsMemoryReporterManager()
   : mMutex("nsMemoryReporterManager::mMutex"),
     mIsRegistrationBlocked(false)
 {
-    mReporters.Init();
-    mMultiReporters.Init();
 }
 
 nsMemoryReporterManager::~nsMemoryReporterManager()

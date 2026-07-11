@@ -81,7 +81,6 @@ public:
 
   bool Initialize()
   {
-    mTable.Init();
     return true;
   }
 

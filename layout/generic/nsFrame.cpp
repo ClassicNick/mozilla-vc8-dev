@@ -4569,7 +4569,6 @@ nsIFrame::MarkLayersActive(nsChangeHint aChangeHint)
     static_cast<LayerActivity*>(properties.Get(LayerActivityProperty()));
   if (layerActivity) {
     gLayerActivityTracker->MarkUsed(layerActivity);
-    layerActivity->mMutationCount++;
   } else {
     if (!gLayerActivityTracker) {
       gLayerActivityTracker = new LayerActivityTracker();
@@ -4578,6 +4577,7 @@ nsIFrame::MarkLayersActive(nsChangeHint aChangeHint)
     gLayerActivityTracker->AddObject(layerActivity);
     properties.Set(LayerActivityProperty(), layerActivity);
   }
+  layerActivity->mMutationCount++;
   NS_UpdateHint(layerActivity->mChangeHint, aChangeHint);
 }
 

@@ -16,6 +16,7 @@
 #include <set>
 #include <stack>
 #include <map>
+#include <bitset>
 
 #ifdef WIN32
 #include <windows.h>
@@ -46,8 +47,6 @@
 #include "GLTextureImage.h"
 #include "SurfaceTypes.h"
 #include "GLScreenBuffer.h"
-
-typedef char realGLboolean;
 
 #include "GLContextSymbols.h"
 
@@ -119,8 +118,6 @@ namespace GLFeature {
     };
 }
 
-typedef uintptr_t SharedTextureHandle;
-
 MOZ_BEGIN_ENUM_CLASS(ContextProfile, uint8_t)
     Unknown = 0,
     OpenGL, // only for IsAtLeast's <profile> parameter
@@ -128,7 +125,6 @@ MOZ_BEGIN_ENUM_CLASS(ContextProfile, uint8_t)
     OpenGLCompatibility,
     OpenGLES
 MOZ_END_ENUM_CLASS(ContextProfile)
-
 
 class GLContext
     : public GLLibraryLoader
@@ -157,20 +153,6 @@ public:
         RendererSGX540,
         RendererTegra,
         RendererOther
-    };
-
-    enum ContextFlags {
-        ContextFlagsNone = 0x0,
-        ContextFlagsGlobal = 0x1,
-        ContextFlagsMesaLLVMPipe = 0x2
-    };
-
-    enum GLContextType {
-        ContextTypeUnknown,
-        ContextTypeWGL,
-        ContextTypeCGL,
-        ContextTypeGLX,
-        ContextTypeEGL
     };
 
 
@@ -439,66 +421,41 @@ public:
 
 public:
 
-    // this should just be a std::bitset, but that ended up breaking
-    // MacOS X builds; see bug 584919.  We can replace this with one
-    // later on.  This is handy to use in WebGL contexts as well,
-    // so making it public.
-    template<size_t Size>
-    struct ExtensionBitset
+    template<size_t N>
+    static void InitializeExtensionsBitSet(std::bitset<N>& extensionsBitset, const char* extStr, const char** extList, bool verbose = false)
     {
-        ExtensionBitset()
-        {
-            for (size_t i = 0; i < Size; ++i)
-                extensions[i] = false;
-        }
+        char* exts = strdup(extStr);
 
-        void Load(const char* extStr, const char** extList, bool verbose = false)
-        {
-            char* exts = strdup(extStr);
+        if (verbose)
+            printf_stderr("Extensions: %s\n", exts);
 
-            if (verbose)
-                printf_stderr("Extensions: %s\n", exts);
-
-            char* cur = exts;
-            bool done = false;
-            while (!done) {
-                char* space = strchr(cur, ' ');
-                if (space) {
-                    *space = '\0';
-                } else {
-                    done = true;
-                }
-
-                for (int i = 0; extList[i]; ++i) {
-                    if (PL_strcasecmp(cur, extList[i]) == 0) {
-                        if (verbose)
-                            printf_stderr("Found extension %s\n", cur);
-                        extensions[i] = 1;
-                    }
-                }
-
-                cur = space + 1;
+        char* cur = exts;
+        bool done = false;
+        while (!done) {
+            char* space = strchr(cur, ' ');
+            if (space) {
+                *space = '\0';
+            } else {
+                done = true;
             }
 
-            free(exts);
+            for (int i = 0; extList[i]; ++i) {
+                if (PL_strcasecmp(cur, extList[i]) == 0) {
+                    if (verbose)
+                        printf_stderr("Found extension %s\n", cur);
+                    extensionsBitset[i] = true;
+                }
+            }
+
+            cur = space + 1;
         }
 
-        bool& operator[](size_t index) {
-            MOZ_ASSERT(index < Size, "out of range");
-            return extensions[index];
-        }
-
-        const bool& operator[](size_t index) const {
-            MOZ_ASSERT(index < Size, "out of range");
-            return extensions[index];
-        }
-
-        bool extensions[Size];
-    };
+        free(exts);
+    }
 
 
 protected:
-    ExtensionBitset<Extensions_Max> mAvailableExtensions;
+    std::bitset<Extensions_Max> mAvailableExtensions;
 
 
 // -----------------------------------------------------------------------------
@@ -517,7 +474,7 @@ public:
 
 
 private:
-    ExtensionBitset<GLFeature::EnumMax> mAvailableFeatures;
+    std::bitset<GLFeature::EnumMax> mAvailableFeatures;
 
     /**
      * Init features regarding OpenGL extension and context version and profile
@@ -621,6 +578,9 @@ private:
 // -----------------------------------------------------------------------------
 // MOZ_GL_DEBUG implementation
 private:
+
+#undef BEFORE_GL_CALL
+#undef AFTER_GL_CALL
 
 #ifdef DEBUG
 
@@ -2353,7 +2313,6 @@ protected:
         mNeedsTextureSizeChecks(false),
         mWorkAroundDriverBugs(true)
     {
-        mUserData.Init();
         mOwningThread = NS_GetCurrentThread();
 
         mTexBlit_UseDrawNotCopy = Preferences::GetBool("gl.blit-draw-not-copy", false);
@@ -2591,22 +2550,6 @@ public:
      * Only valid if IsOffscreen() returns true.
      */
     const gfxIntSize& OffscreenSize() const;
-
-
-    enum SharedTextureShareType {
-        SameProcess = 0,
-        CrossProcess
-    };
-
-    enum SharedTextureBufferType {
-        TextureID
-#ifdef MOZ_WIDGET_ANDROID
-        , SurfaceTexture
-#endif
-#ifdef XP_MACOSX
-        , IOSurface
-#endif
-    };
 
     /*
      * Create a new shared GLContext content handle, using the passed buffer as a source.

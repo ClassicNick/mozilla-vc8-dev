@@ -368,15 +368,14 @@ BuildKeyNameFromFontName(nsAString &aName)
 }
 
 gfxWindowsPlatform::gfxWindowsPlatform()
+  : mPrefFonts(50)
 #ifdef MOZ_ENABLE_D3D10_LAYER
-  : mD3D9DeviceInitialized(false)
+  , mD3D9DeviceInitialized(false)
 #endif
 #ifdef MOZ_ENABLE_D3D10_LAYER
   , mD3D11DeviceInitialized(false)
 #endif
 {
-    mPrefFonts.Init(50);
-
     mUseClearTypeForDownloadableFonts = UNINITIALIZED_VALUE;
     mUseClearTypeAlways = UNINITIALIZED_VALUE;
 

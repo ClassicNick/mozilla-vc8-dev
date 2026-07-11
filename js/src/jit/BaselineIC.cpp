@@ -15,6 +15,7 @@
 #include "jit/BaselineJIT.h"
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
+#include "jit/PerfSpewer.h"
 #include "jit/VMFunctions.h"
 
 #include "jsboolinlines.h"
@@ -571,6 +572,10 @@ ICStubCompiler::getStubCode()
         return NULL;
 
     JS_ASSERT(entersStubFrame_ == ICStub::CanMakeCalls(kind));
+
+#ifdef JS_ION_PERF
+    writePerfSpewerIonCodeProfile(newStubCode, "BaselineIC");
+#endif
 
     return newStubCode;
 }
@@ -4211,6 +4216,7 @@ ICGetElemNativeCompiler::generateStubCode(MacroAssembler &masm)
             // Load function in scratchReg and ensure that it has a jit script.
             masm.loadPtr(Address(BaselineStubReg, ICGetElemNativeGetterStub::offsetOfGetter()),
                          scratchReg);
+            masm.loadPtr(Address(scratchReg, JSFunction::offsetOfNativeOrScript()), scratchReg);
             masm.loadBaselineOrIonRaw(scratchReg, scratchReg, SequentialExecution,
                                       popR1 ? &failurePopR1 : &failure);
 
