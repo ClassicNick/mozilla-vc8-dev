@@ -197,7 +197,7 @@ class EncapsulatedPtr
     operator T*() const { return value; }
 
   protected:
-    void pre();
+    void pre() { T::writeBarrierPre(value); }
 };
 
 template <class T, class Unioned = uintptr_t>
@@ -320,8 +320,18 @@ class RelocatablePtr : public EncapsulatedPtr<T>
     }
 
   protected:
-    inline void post();
-    inline void relocate(JSRuntime *rt);
+    void post() {
+#ifdef JSGC_GENERATIONAL
+        JS_ASSERT(this->value);
+        T::writeBarrierPostRelocate(this->value, &this->value);
+#endif
+    }
+
+    void relocate(JSRuntime *rt) {
+#ifdef JSGC_GENERATIONAL
+        T::writeBarrierPostRemove(this->value, &this->value);
+#endif
+    }
 };
 
 /*
@@ -772,15 +782,6 @@ class HeapSlot : public EncapsulatedValue
     }
 };
 
-/*
- * NOTE: This is a placeholder for bug 619558.
- *
- * Run a post write barrier that encompasses multiple contiguous slots in a
- * single step.
- */
-inline void
-DenseRangeWriteBarrierPost(JSRuntime *rt, JSObject *obj, uint32_t start, uint32_t count);
-
 static inline const Value *
 Valueify(const EncapsulatedValue *array)
 {
@@ -921,6 +922,11 @@ class ReadBarrieredValue
 
     inline JSObject &toObject() const;
 };
+
+#ifdef DEBUG
+bool
+RuntimeFromMainThreadIsHeapMajorCollecting(JS::shadow::Zone *shadowZone);
+#endif
 
 } /* namespace js */
 

@@ -50,7 +50,7 @@ static const uint32_t BAILOUT_TABLE_ENTRY_SIZE    = 4;
 class Registers
 {
   public:
-    typedef enum {
+    enum RegisterID {
         r0 = 0,
         r1,
         r2,
@@ -74,7 +74,7 @@ class Registers
         r15,
         pc = r15,
         invalid_reg
-    } RegisterID;
+    };
     typedef RegisterID Code;
 
     static const char *GetName(Code code) {
@@ -146,7 +146,7 @@ typedef uint16_t PackedRegisterMask;
 class FloatRegisters
 {
   public:
-    typedef enum {
+    enum FPRegisterID {
         d0,
         d1,
         d2,
@@ -180,7 +180,7 @@ class FloatRegisters
         d29,
         d30,
         invalid_freg
-    } FPRegisterID;
+    };
     typedef FPRegisterID Code;
 
     static const char *GetName(Code code) {

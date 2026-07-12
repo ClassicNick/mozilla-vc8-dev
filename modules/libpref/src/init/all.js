@@ -78,10 +78,15 @@ pref("offline-apps.quota.warn",        51200);
 // cache compression turned off for now - see bug #715198
 pref("browser.cache.compression_level", 0);
 
+// Whether or not testing features are enabled.
+pref("dom.quotaManager.testing", false);
+
 // Whether or not indexedDB is enabled.
 pref("dom.indexedDB.enabled", true);
 // Space to allow indexedDB databases before prompting (in MB).
 pref("dom.indexedDB.warningQuota", 50);
+// Whether or not indexedDB experimental features are enabled.
+pref("dom.indexedDB.experimental", false);
 
 // Whether or not Web Workers are enabled.
 pref("dom.workers.enabled", true);
@@ -146,6 +151,13 @@ pref("browser.display.focus_ring_style", 1);
 pref("browser.helperApps.alwaysAsk.force",  false);
 pref("browser.helperApps.neverAsk.saveToDisk", "");
 pref("browser.helperApps.neverAsk.openFile", "");
+
+#ifdef XP_WIN
+// By default, security zone information is stored in the Alternate Data Stream
+// of downloaded executable files on Windows.  This preference allows disabling
+// this feature, and thus the associated system-level execution prompts.
+pref("browser.download.saveZoneInformation", true);
+#endif
 
 // xxxbsmedberg: where should prefs for the toolkit go?
 pref("browser.chrome.toolbar_tips",         true);
@@ -284,6 +296,12 @@ pref("gfx.font_loader.interval", 50);          // run every 50 ms
 
 // whether to always search all font cmaps during system font fallback
 pref("gfx.font_rendering.fallback.always_use_cmaps", false);
+
+// cache shaped word results
+pref("gfx.font_rendering.wordcache.charlimit", 32);
+
+// cache shaped word results
+pref("gfx.font_rendering.wordcache.maxentries", 10000);
 
 pref("gfx.font_rendering.graphite.enabled", true);
 

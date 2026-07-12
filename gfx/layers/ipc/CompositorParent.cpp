@@ -49,6 +49,7 @@
 #if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
 #include "mozilla/layers/CompositorD3D9.h"
 #endif
+#include "GeckoProfiler.h"
 
 using namespace base;
 using namespace mozilla;
@@ -493,6 +494,7 @@ CompositorParent::ScheduleComposition()
 void
 CompositorParent::Composite()
 {
+  PROFILER_LABEL("CompositorParent", "Composite");
   NS_ABORT_IF_FALSE(CompositorThreadID() == PlatformThread::CurrentId(),
                     "Composite can only be called on the compositor thread");
   mCurrentCompositeTask = nullptr;
@@ -543,6 +545,7 @@ CompositorParent::Composite()
 void
 CompositorParent::ComposeToTarget(gfxContext* aTarget)
 {
+  PROFILER_LABEL("CompositorParent", "ComposeToTarget");
   AutoRestore<bool> override(mOverrideComposeReadiness);
   mOverrideComposeReadiness = true;
 

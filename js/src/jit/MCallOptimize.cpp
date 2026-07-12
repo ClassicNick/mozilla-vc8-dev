@@ -623,7 +623,7 @@ IonBuilder::inlineMathSqrt(CallInfo &callInfo)
     MIRType argType = callInfo.getArg(0)->type();
     if (getInlineReturnType() != MIRType_Double)
         return InliningStatus_NotInlined;
-    if (argType != MIRType_Double && argType != MIRType_Int32)
+    if (!IsNumberType(argType))
         return InliningStatus_NotInlined;
 
     callInfo.unwrapArgs();
@@ -792,9 +792,9 @@ IonBuilder::inlineMathImul(CallInfo &callInfo)
     if (returnType != MIRType_Int32)
         return InliningStatus_NotInlined;
 
-    if (!IsNumberType(callInfo.getArg(0)->type()))
+    if (!IsNumberType(callInfo.getArg(0)->type()) || callInfo.getArg(0)->type() == MIRType_Float32)
         return InliningStatus_NotInlined;
-    if (!IsNumberType(callInfo.getArg(1)->type()))
+    if (!IsNumberType(callInfo.getArg(1)->type()) || callInfo.getArg(1)->type() == MIRType_Float32)
         return InliningStatus_NotInlined;
 
     callInfo.unwrapArgs();

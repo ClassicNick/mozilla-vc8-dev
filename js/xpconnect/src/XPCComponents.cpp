@@ -7,40 +7,21 @@
 
 /* The "Components" xpcom objects for JavaScript. */
 
-#include "mozilla/unused.h"
-
 #include "xpcprivate.h"
-#include "XPCQuickStubs.h"
-#include "nsReadableUtils.h"
 #include "xpcIJSModuleLoader.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIDOMWindow.h"
 #include "XPCJSWeakReference.h"
-#include "XPCWrapper.h"
-#include "jsproxy.h"
-#include "js/OldDebugAPI.h"
 #include "WrapperFactory.h"
-#include "XrayWrapper.h"
-#include "nsNullPrincipal.h"
 #include "nsJSUtils.h"
 #include "mozJSComponentLoader.h"
 #include "nsContentUtils.h"
-#include "nsCxPusher.h"
 #include "jsfriendapi.h"
-#include "AccessCheck.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/Preferences.h"
-#include "nsPrincipal.h"
 #include "mozilla/Attributes.h"
-#include "nsIScriptContext.h"
 #include "nsJSEnvironment.h"
-#include "nsXMLHttpRequest.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/XPTInterfaceInfoManager.h"
-#include "nsDOMClassInfoID.h"
-#include "nsGlobalWindow.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/BindingUtils.h"
+#include "nsZipArchive.h"
 
 using namespace mozilla;
 using namespace JS;
@@ -2817,7 +2798,7 @@ nsXPCComponents_Utils::EvalInSandbox(const nsAString& source,
 
     // Optional fourth and fifth arguments: filename and line number.
     nsXPIDLCString filename;
-    int32_t lineNo = (optionalArgc >= 3) ? lineNumber : 0;
+    int32_t lineNo = (optionalArgc >= 3) ? lineNumber : 1;
     if (optionalArgc >= 2) {
         JSString *filenameStr = JS_ValueToString(cx, filenameVal);
         if (!filenameStr)

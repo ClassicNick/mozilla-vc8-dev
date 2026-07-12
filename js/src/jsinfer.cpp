@@ -35,11 +35,9 @@
 #include "js/MemoryMetrics.h"
 #include "vm/Shape.h"
 
-#include "jsanalyzeinlines.h"
 #include "jsatominlines.h"
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
-#include "jsopcodeinlines.h"
 #include "jsscriptinlines.h"
 
 using namespace js;
@@ -1104,6 +1102,32 @@ StackTypeSet::isDOMClass()
     }
 
     return true;
+}
+
+bool
+StackTypeSet::maybeCallable()
+{
+    if (!maybeObject())
+        return false;
+
+    if (unknownObject())
+        return true;
+
+    unsigned count = getObjectCount();
+    for (unsigned i = 0; i < count; i++) {
+        Class *clasp;
+        if (JSObject *object = getSingleObject(i))
+            clasp = object->getClass();
+        else if (TypeObject *object = getTypeObject(i))
+            clasp = object->clasp;
+        else
+            continue;
+
+        if (clasp->isCallable())
+            return true;
+    }
+
+    return false;
 }
 
 JSObject *

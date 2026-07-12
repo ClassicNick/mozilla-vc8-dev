@@ -152,6 +152,9 @@ SRGBOverrideObserver::Observe(nsISupports *aSubject,
 
 #define GFX_PREF_OPENTYPE_SVG "gfx.font_rendering.opentype_svg.enabled"
 
+#define GFX_PREF_WORD_CACHE_CHARLIMIT "gfx.font_rendering.wordcache.charlimit"
+#define GFX_PREF_WORD_CACHE_MAXENTRIES "gfx.font_rendering.wordcache.maxentries"
+
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
 
 #define BIDI_NUMERAL_PREF "bidi.numeral"
@@ -259,6 +262,8 @@ gfxPlatform::gfxPlatform()
     mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     mFallbackUsesCmaps = UNINITIALIZED_VALUE;
 
+    mWordCacheCharLimit = UNINITIALIZED_VALUE;
+    mWordCacheMaxEntries = UNINITIALIZED_VALUE;
     mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
     mOpenTypeSVGEnabled = UNINITIALIZED_VALUE;
     mBidiNumeralOption = UNINITIALIZED_VALUE;
@@ -963,6 +968,34 @@ gfxPlatform::OpenTypeSVGEnabled()
     }
 
     return mOpenTypeSVGEnabled > 0;
+}
+
+uint32_t
+gfxPlatform::WordCacheCharLimit()
+{
+    if (mWordCacheCharLimit == UNINITIALIZED_VALUE) {
+        mWordCacheCharLimit =
+            Preferences::GetInt(GFX_PREF_WORD_CACHE_CHARLIMIT, 32);
+        if (mWordCacheCharLimit < 0) {
+            mWordCacheCharLimit = 32;
+        }
+    }
+
+    return uint32_t(mWordCacheCharLimit);
+}
+
+uint32_t
+gfxPlatform::WordCacheMaxEntries()
+{
+    if (mWordCacheMaxEntries == UNINITIALIZED_VALUE) {
+        mWordCacheMaxEntries =
+            Preferences::GetInt(GFX_PREF_WORD_CACHE_MAXENTRIES, 10000);
+        if (mWordCacheMaxEntries < 0) {
+            mWordCacheMaxEntries = 10000;
+        }
+    }
+
+    return uint32_t(mWordCacheMaxEntries);
 }
 
 bool
@@ -1764,6 +1797,16 @@ gfxPlatform::GetBidiNumeralOption()
     return mBidiNumeralOption;
 }
 
+static void
+FlushFontAndWordCaches()
+{
+    gfxFontCache *fontCache = gfxFontCache::GetCache();
+    if (fontCache) {
+        fontCache->AgeAllGenerations();
+        fontCache->FlushShapedWordCaches();
+    }
+}
+
 void
 gfxPlatform::FontsPrefsChanged(const char *aPref)
 {
@@ -1772,20 +1815,18 @@ gfxPlatform::FontsPrefsChanged(const char *aPref)
         mAllowDownloadableFonts = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_FALLBACK_USE_CMAPS, aPref)) {
         mFallbackUsesCmaps = UNINITIALIZED_VALUE;
+    } else if (!strcmp(GFX_PREF_WORD_CACHE_CHARLIMIT, aPref)) {
+        mWordCacheCharLimit = UNINITIALIZED_VALUE;
+        FlushFontAndWordCaches();
+    } else if (!strcmp(GFX_PREF_WORD_CACHE_MAXENTRIES, aPref)) {
+        mWordCacheMaxEntries = UNINITIALIZED_VALUE;
+        FlushFontAndWordCaches();
     } else if (!strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
         mGraphiteShapingEnabled = UNINITIALIZED_VALUE;
-        gfxFontCache *fontCache = gfxFontCache::GetCache();
-        if (fontCache) {
-            fontCache->AgeAllGenerations();
-            fontCache->FlushShapedWordCaches();
-        }
+        FlushFontAndWordCaches();
     } else if (!strcmp(GFX_PREF_HARFBUZZ_SCRIPTS, aPref)) {
         mUseHarfBuzzScripts = UNINITIALIZED_VALUE;
-        gfxFontCache *fontCache = gfxFontCache::GetCache();
-        if (fontCache) {
-            fontCache->AgeAllGenerations();
-            fontCache->FlushShapedWordCaches();
-        }
+        FlushFontAndWordCaches();
     } else if (!strcmp(BIDI_NUMERAL_PREF, aPref)) {
         mBidiNumeralOption = UNINITIALIZED_VALUE;
     } else if (!strcmp(GFX_PREF_OPENTYPE_SVG, aPref)) {
