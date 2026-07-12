@@ -1358,28 +1358,6 @@ JS_IsInRequest(JSRuntime *rt);
 
 namespace js {
 
-inline bool
-IsPoisonedId(jsid iden)
-{
-    if (JSID_IS_STRING(iden))
-        return JS::IsPoisonedPtr(JSID_TO_STRING(iden));
-    if (JSID_IS_OBJECT(iden))
-        return JS::IsPoisonedPtr(JSID_TO_OBJECT(iden));
-    return false;
-}
-
-template <> struct GCMethods<jsid>
-{
-    static jsid initial() { return JSID_VOID; }
-    static ThingRootKind kind() { return THING_ROOT_ID; }
-    static bool poisoned(jsid id) { return IsPoisonedId(id); }
-    static bool needsPostBarrier(jsid id) { return false; }
-#ifdef JSGC_GENERATIONAL
-    static void postBarrier(jsid *idp) {}
-    static void relocate(jsid *idp) {}
-#endif
-};
-
 void
 AssertHeapIsIdle(JSRuntime *rt);
 
@@ -2417,7 +2395,7 @@ struct JSFunctionSpec {
 
 extern JS_PUBLIC_API(JSObject *)
 JS_InitClass(JSContext *cx, JSObject *obj, JSObject *parent_proto,
-             JSClass *clasp, JSNative constructor, unsigned nargs,
+             const JSClass *clasp, JSNative constructor, unsigned nargs,
              const JSPropertySpec *ps, const JSFunctionSpec *fs,
              const JSPropertySpec *static_ps, const JSFunctionSpec *static_fs);
 
@@ -2428,11 +2406,11 @@ JS_InitClass(JSContext *cx, JSObject *obj, JSObject *parent_proto,
 extern JS_PUBLIC_API(bool)
 JS_LinkConstructorAndPrototype(JSContext *cx, JSObject *ctor, JSObject *proto);
 
-extern JS_PUBLIC_API(JSClass *)
+extern JS_PUBLIC_API(const JSClass *)
 JS_GetClass(JSObject *obj);
 
 extern JS_PUBLIC_API(bool)
-JS_InstanceOf(JSContext *cx, JSObject *obj, JSClass *clasp, jsval *argv);
+JS_InstanceOf(JSContext *cx, JSObject *obj, const JSClass *clasp, jsval *argv);
 
 extern JS_PUBLIC_API(bool)
 JS_HasInstance(JSContext *cx, JSObject *obj, jsval v, bool *bp);
@@ -2444,7 +2422,7 @@ extern JS_PUBLIC_API(void)
 JS_SetPrivate(JSObject *obj, void *data);
 
 extern JS_PUBLIC_API(void *)
-JS_GetInstancePrivate(JSContext *cx, JSObject *obj, JSClass *clasp,
+JS_GetInstancePrivate(JSContext *cx, JSObject *obj, const JSClass *clasp,
                       jsval *argv);
 
 extern JS_PUBLIC_API(bool)
@@ -2472,35 +2450,36 @@ JS_GetObjectId(JSContext *cx, JSObject *obj, jsid *idp);
 
 namespace JS {
 
-enum {
-    FreshZone,
-    SystemZone,
-    SpecificZones
+enum ZoneSpecifier {
+    FreshZone = 0,
+    SystemZone = 1
 };
 
-typedef uintptr_t ZoneSpecifier;
-
-inline ZoneSpecifier
-SameZoneAs(JSObject *obj)
+class JS_PUBLIC_API(CompartmentOptions)
 {
-    JS_ASSERT(uintptr_t(obj) > SpecificZones);
-    return ZoneSpecifier(obj);
-}
+    union {
+        ZoneSpecifier spec;
+        void *pointer; // js::Zone* is not exposed in the API.
+    } zone_;
+    JSVersion version_;
 
-struct JS_PUBLIC_API(CompartmentOptions) {
-    ZoneSpecifier zoneSpec;
-    JSVersion version;
+  public:
     bool invisibleToDebugger;
 
-    explicit CompartmentOptions() : zoneSpec(JS::FreshZone)
-                                  , version(JSVERSION_UNKNOWN)
-                                  , invisibleToDebugger(false)
-    {}
+    explicit CompartmentOptions()
+      : version_(JSVERSION_UNKNOWN)
+      , invisibleToDebugger(false)
+    {
+        zone_.spec = JS::FreshZone;
+    }
 
-    CompartmentOptions &setZone(ZoneSpecifier spec) { zoneSpec = spec; return *this; }
-    CompartmentOptions &setVersion(JSVersion version_) {
-        JS_ASSERT(version_ != JSVERSION_UNKNOWN);
-        version = version_;
+    CompartmentOptions &setZone(ZoneSpecifier spec);
+
+    CompartmentOptions &setSameZoneAs(JSObject *obj);
+
+    CompartmentOptions &setVersion(JSVersion aVersion) {
+        MOZ_ASSERT(aVersion != JSVERSION_UNKNOWN);
+        version_ = aVersion;
         return *this;
     }
 
@@ -2511,6 +2490,15 @@ struct JS_PUBLIC_API(CompartmentOptions) {
     CompartmentOptions &setInvisibleToDebugger(bool invisible) {
         invisibleToDebugger = invisible;
         return *this;
+    }
+
+    ZoneSpecifier zoneSpecifier() const { return zone_.spec; }
+
+    JSVersion version() const { return version_; }
+
+    void *zonePointer() const {
+        JS_ASSERT(uintptr_t(zone_.pointer) > uintptr_t(JS::SystemZone));
+        return zone_.pointer;
     }
 };
 
@@ -2542,7 +2530,7 @@ enum OnNewGlobalHookOption {
 } /* namespace JS */
 
 extern JS_PUBLIC_API(JSObject *)
-JS_NewGlobalObject(JSContext *cx, JSClass *clasp, JSPrincipals *principals,
+JS_NewGlobalObject(JSContext *cx, const JSClass *clasp, JSPrincipals *principals,
                    JS::OnNewGlobalHookOption hookOption,
                    const JS::CompartmentOptions &options = JS::CompartmentOptions());
 
@@ -2550,7 +2538,7 @@ extern JS_PUBLIC_API(void)
 JS_FireOnNewGlobalObject(JSContext *cx, JS::HandleObject global);
 
 extern JS_PUBLIC_API(JSObject *)
-JS_NewObject(JSContext *cx, JSClass *clasp, JSObject *proto, JSObject *parent);
+JS_NewObject(JSContext *cx, const JSClass *clasp, JSObject *proto, JSObject *parent);
 
 /* Queries the [[Extensible]] property of the object. */
 extern JS_PUBLIC_API(bool)
@@ -2567,7 +2555,7 @@ JS_GetObjectRuntime(JSObject *obj);
  * proto if proto's actual parameter value is null.
  */
 extern JS_PUBLIC_API(JSObject *)
-JS_NewObjectWithGivenProto(JSContext *cx, JSClass *clasp, JSObject *proto,
+JS_NewObjectWithGivenProto(JSContext *cx, const JSClass *clasp, JSObject *proto,
                            JSObject *parent);
 
 /*
@@ -2591,7 +2579,7 @@ extern JS_PUBLIC_API(JSObject *)
 JS_New(JSContext *cx, JSObject *ctor, unsigned argc, jsval *argv);
 
 extern JS_PUBLIC_API(JSObject *)
-JS_DefineObject(JSContext *cx, JSObject *obj, const char *name, JSClass *clasp,
+JS_DefineObject(JSContext *cx, JSObject *obj, const char *name, const JSClass *clasp,
                 JSObject *proto, unsigned attrs);
 
 extern JS_PUBLIC_API(bool)
@@ -3838,7 +3826,7 @@ class JSAutoByteString
         return mBytes;
     }
 
-    char *encodeLatin1(js::ContextFriendFields *cx, JSString *str);
+    char *encodeLatin1(js::ExclusiveContext *cx, JSString *str);
 
     char *encodeUtf8(JSContext *cx, JSString *str) {
         JS_ASSERT(!mBytes);
@@ -4244,7 +4232,7 @@ JS_IsConstructing(JSContext *cx, const jsval *vp)
  * [[Prototype]].
  */
 extern JS_PUBLIC_API(JSObject *)
-JS_NewObjectForConstructor(JSContext *cx, JSClass *clasp, const jsval *vp);
+JS_NewObjectForConstructor(JSContext *cx, const JSClass *clasp, const jsval *vp);
 
 /************************************************************************/
 

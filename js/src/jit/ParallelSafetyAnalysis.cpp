@@ -132,6 +132,7 @@ class ParallelSafetyVisitor : public MInstructionVisitor
     CUSTOM_OP(Call)
     UNSAFE_OP(ApplyArgs)
     UNSAFE_OP(Bail)
+    UNSAFE_OP(AssertFloat32)
     UNSAFE_OP(GetDynamicName)
     UNSAFE_OP(FilterArguments)
     UNSAFE_OP(CallDirectEval)
@@ -772,7 +773,7 @@ ParallelSafetyVisitor::visitThrow(MThrow *thr)
 
 static bool
 GetPossibleCallees(JSContext *cx, HandleScript script, jsbytecode *pc,
-                   types::StackTypeSet *calleeTypes, CallTargetVector &targets);
+                   types::TemporaryTypeSet *calleeTypes, CallTargetVector &targets);
 
 static bool
 AddCallTarget(HandleScript script, CallTargetVector &targets);
@@ -803,7 +804,7 @@ jit::AddPossibleCallees(MIRGraph &graph, CallTargetVector &targets)
                 continue;
             }
 
-            types::StackTypeSet *calleeTypes = callIns->getFunction()->resultTypeSet();
+            types::TemporaryTypeSet *calleeTypes = callIns->getFunction()->resultTypeSet();
             RootedScript script(cx, callIns->block()->info().script());
             if (!GetPossibleCallees(cx,
                                     script,
@@ -821,7 +822,7 @@ static bool
 GetPossibleCallees(JSContext *cx,
                    HandleScript script,
                    jsbytecode *pc,
-                   types::StackTypeSet *calleeTypes,
+                   types::TemporaryTypeSet *calleeTypes,
                    CallTargetVector &targets)
 {
     if (!calleeTypes || calleeTypes->baseFlags() != 0)

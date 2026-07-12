@@ -118,7 +118,7 @@ JS_SplicePrototype(JSContext *cx, JSObject *objArg, JSObject *protoArg)
 }
 
 JS_FRIEND_API(JSObject *)
-JS_NewObjectWithUniqueType(JSContext *cx, JSClass *clasp, JSObject *protoArg, JSObject *parentArg)
+JS_NewObjectWithUniqueType(JSContext *cx, const JSClass *clasp, JSObject *protoArg, JSObject *parentArg)
 {
     RootedObject proto(cx, protoArg);
     RootedObject parent(cx, parentArg);
@@ -128,7 +128,7 @@ JS_NewObjectWithUniqueType(JSContext *cx, JSClass *clasp, JSObject *protoArg, JS
      * TypeObject attached to our proto with information about our object, since
      * we're not going to be using that TypeObject anyway.
      */
-    RootedObject obj(cx, NewObjectWithGivenProto(cx, (js::Class *)clasp, NULL, parent, SingletonObject));
+    RootedObject obj(cx, NewObjectWithGivenProto(cx, (const js::Class *)clasp, NULL, parent, SingletonObject));
     if (!obj)
         return NULL;
     if (!JS_SplicePrototype(cx, obj, proto))
@@ -493,7 +493,7 @@ js::NewFunctionByIdWithReserved(JSContext *cx, JSNative native, unsigned nargs, 
 
 JS_FRIEND_API(JSObject *)
 js::InitClassWithReserved(JSContext *cx, JSObject *objArg, JSObject *parent_protoArg,
-                          JSClass *clasp, JSNative constructor, unsigned nargs,
+                          const JSClass *clasp, JSNative constructor, unsigned nargs,
                           const JSPropertySpec *ps, const JSFunctionSpec *fs,
                           const JSPropertySpec *static_ps, const JSFunctionSpec *static_fs)
 {
@@ -523,7 +523,7 @@ js::SetFunctionNativeReserved(JSObject *fun, size_t which, const Value &val)
 JS_FRIEND_API(bool)
 js::GetObjectProto(JSContext *cx, JS::Handle<JSObject*> obj, JS::MutableHandle<JSObject*> proto)
 {
-    js::Class *clasp = GetObjectClass(obj);
+    const js::Class *clasp = GetObjectClass(obj);
     if (clasp == js::ObjectProxyClassPtr ||
         clasp == js::OuterWindowProxyClassPtr ||
         clasp == js::FunctionProxyClassPtr)

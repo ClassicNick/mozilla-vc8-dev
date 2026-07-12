@@ -77,11 +77,11 @@ static const int kSupportedFeatureLevels[] =
   { D3D10_FEATURE_LEVEL_10_1, D3D10_FEATURE_LEVEL_10_0,
     D3D10_FEATURE_LEVEL_9_3 };
 
-class GfxD2DSurfaceCacheReporter MOZ_FINAL : public MemoryReporterBase
+class GfxD2DSurfaceCacheReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
     GfxD2DSurfaceCacheReporter()
-      : MemoryReporterBase("gfx-d2d-surface-cache", KIND_OTHER, UNITS_BYTES,
+      : MemoryUniReporter("gfx-d2d-surface-cache", KIND_OTHER, UNITS_BYTES,
 "Memory used by the Direct2D internal surface cache.")
     {}
 private:
@@ -114,11 +114,11 @@ bool OncePreferenceDirect2DForceEnabled()
 
 } // anonymous namespace
 
-class GfxD2DSurfaceVramReporter MOZ_FINAL : public MemoryReporterBase
+class GfxD2DSurfaceVramReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
     GfxD2DSurfaceVramReporter()
-      : MemoryReporterBase("gfx-d2d-surface-vram", KIND_OTHER, UNITS_BYTES,
+      : MemoryUniReporter("gfx-d2d-surface-vram", KIND_OTHER, UNITS_BYTES,
                            "Video memory used by D2D surfaces.")
     {}
 private:
@@ -132,11 +132,11 @@ private:
 #endif
 
 #if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
-class GfxD2DVramDrawTargetReporter MOZ_FINAL : public MemoryReporterBase
+class GfxD2DVramDrawTargetReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
     GfxD2DVramDrawTargetReporter()
-      : MemoryReporterBase("gfx-d2d-vram-draw-target", KIND_OTHER, UNITS_BYTES,
+      : MemoryUniReporter("gfx-d2d-vram-draw-target", KIND_OTHER, UNITS_BYTES,
                            "Video memory used by D2D DrawTargets.")
     {}
 private:
@@ -146,11 +146,11 @@ private:
     }
 };
 
-class GfxD2DVramSourceSurfaceReporter MOZ_FINAL : public MemoryReporterBase
+class GfxD2DVramSourceSurfaceReporter MOZ_FINAL : public MemoryUniReporter
 {
 public:
     GfxD2DVramSourceSurfaceReporter()
-      : MemoryReporterBase("gfx-d2d-vram-source-surface",
+      : MemoryUniReporter("gfx-d2d-vram-source-surface",
                            KIND_OTHER, UNITS_BYTES,
                            "Video memory used by D2D SourceSurfaces.")
     {}
@@ -215,7 +215,7 @@ typedef HRESULT (WINAPI*D3D11CreateDeviceFunc)(
 #endif
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-class GPUAdapterMultiReporter : public nsIMemoryMultiReporter {
+class GPUAdapterReporter : public nsIMemoryReporter {
 
     // Callers must Release the DXGIAdapter after use or risk mem-leak
     static bool GetDXGIAdapter(IDXGIAdapter **DXGIAdapter)
@@ -237,7 +237,7 @@ class GPUAdapterMultiReporter : public nsIMemoryMultiReporter {
 public:
     NS_DECL_ISUPPORTS
 
-    // nsIMemoryMultiReporter abstract method implementation
+    // nsIMemoryReporter abstract method implementation
     NS_IMETHOD
     GetName(nsACString &aName)
     {
@@ -245,9 +245,9 @@ public:
         return NS_OK;
     }
     
-    // nsIMemoryMultiReporter abstract method implementation
+    // nsIMemoryReporter abstract method implementation
     NS_IMETHOD
-    CollectReports(nsIMemoryMultiReporterCallback* aCb,
+    CollectReports(nsIMemoryReporterCallback* aCb,
                    nsISupports* aClosure)
     {
         int32_t winVers, buildNum;
@@ -356,7 +356,7 @@ public:
         return NS_OK;
     }
 };
-NS_IMPL_ISUPPORTS1(GPUAdapterMultiReporter, nsIMemoryMultiReporter)
+NS_IMPL_ISUPPORTS1(GPUAdapterReporter, nsIMemoryReporter)
 #endif
 
 static __inline void
@@ -401,14 +401,14 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     UpdateRenderMode();
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-    mGPUAdapterMultiReporter = new GPUAdapterMultiReporter();
-    NS_RegisterMemoryMultiReporter(mGPUAdapterMultiReporter);
+    mGPUAdapterReporter = new GPUAdapterReporter();
+    NS_RegisterMemoryReporter(mGPUAdapterReporter);
 #endif
 }
 
 gfxWindowsPlatform::~gfxWindowsPlatform()
 {
-    NS_UnregisterMemoryMultiReporter(mGPUAdapterMultiReporter);
+    NS_UnregisterMemoryReporter(mGPUAdapterReporter);
     
 #ifdef MOZ_ENABLE_D3D9_LAYER
      mDeviceManager = nullptr;
@@ -526,7 +526,7 @@ gfxWindowsPlatform::UpdateRenderMode()
 #endif
 
     uint32_t canvasMask = 1 << BACKEND_CAIRO;
-    uint32_t contentMask = 1 << BACKEND_CAIRO;
+    uint32_t contentMask = 0;
     if (mRenderMode == RENDER_DIRECT2D) {
       canvasMask |= 1 << BACKEND_DIRECT2D;
       contentMask |= 1 << BACKEND_DIRECT2D;

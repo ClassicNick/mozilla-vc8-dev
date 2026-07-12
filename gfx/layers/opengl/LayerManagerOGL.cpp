@@ -895,7 +895,7 @@ LayerManagerOGL::Render()
   }
 
   if (mFPS) {
-    mFPS->DrawFPS(TimeStamp::Now(), mGLContext, GetProgram(Copy2DProgramType));
+    mFPS->DrawFPS(TimeStamp::Now(), 0, mGLContext, GetProgram(Copy2DProgramType));
   }
 
   if (mGLContext->IsDoubleBuffered()) {

@@ -496,6 +496,22 @@ LIRGenerator::visitBail(MBail *bail)
 }
 
 bool
+LIRGenerator::visitAssertFloat32(MAssertFloat32 *assertion)
+{
+    MIRType type = assertion->input()->type();
+    bool checkIsFloat32 = assertion->mustBeFloat32();
+
+    if (!allowFloat32Optimizations())
+        return true;
+
+    if (type != MIRType_Value && !js_IonOptions.eagerCompilation) {
+        JS_ASSERT_IF(checkIsFloat32, type == MIRType_Float32);
+        JS_ASSERT_IF(!checkIsFloat32, type != MIRType_Float32);
+    }
+    return true;
+}
+
+bool
 LIRGenerator::visitGetDynamicName(MGetDynamicName *ins)
 {
     MDefinition *scopeChain = ins->getScopeChain();
@@ -1935,7 +1951,7 @@ LIRGenerator::visitTypeBarrier(MTypeBarrier *ins)
     // Requesting a non-GC pointer is safe here since we never re-enter C++
     // from inside a type barrier test.
 
-    const types::StackTypeSet *types = ins->resultTypeSet();
+    const types::TemporaryTypeSet *types = ins->resultTypeSet();
     bool needTemp = !types->unknownObject() && types->getObjectCount() > 0;
 
     MIRType inputType = ins->getOperand(0)->type();
@@ -1986,7 +2002,7 @@ LIRGenerator::visitMonitorTypes(MMonitorTypes *ins)
     // Requesting a non-GC pointer is safe here since we never re-enter C++
     // from inside a type check.
 
-    const types::StackTypeSet *types = ins->typeSet();
+    const types::TemporaryTypeSet *types = ins->typeSet();
     bool needTemp = !types->unknownObject() && types->getObjectCount() > 0;
     LDefinition tmp = needTemp ? temp() : tempToUnbox();
 
@@ -2370,7 +2386,7 @@ LIRGenerator::visitClampToUint8(MClampToUint8 *ins)
         return redefine(ins, in);
 
       case MIRType_Int32:
-        return define(new LClampIToUint8(useRegisterAtStart(in)), ins);
+        return defineReuseInput(new LClampIToUint8(useRegisterAtStart(in)), ins, 0);
 
       case MIRType_Double:
         return define(new LClampDToUint8(useRegisterAtStart(in), tempCopy(in, 0)), ins);
