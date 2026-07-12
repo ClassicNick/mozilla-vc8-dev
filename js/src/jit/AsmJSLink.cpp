@@ -224,8 +224,10 @@ DynamicallyLinkModule(JSContext *cx, CallArgs args, AsmJSModule &module)
         // This check is sufficient without considering the size of the loaded datum because heap
         // loads and stores start on an aligned boundary and the heap byteLength has larger alignment.
         JS_ASSERT((module.minHeapLength() - 1) <= INT32_MAX);
-        if (heap->byteLength() < module.minHeapLength())
-            return LinkFail(cx, "ArrayBuffer byteLength less than the largest source code heap length constraint.");
+        if (heap->byteLength() < module.minHeapLength()) {
+            return LinkFail(cx, JS_smprintf("ArrayBuffer byteLength of 0x%x is less than 0x%x (which is the largest constant heap access offset rounded up to the next valid heap size).",
+                                            heap->byteLength(), module.minHeapLength()));
+        }
 
         if (!ArrayBufferObject::prepareForAsmJS(cx, heap))
             return LinkFail(cx, "Unable to prepare ArrayBuffer for asm.js use");
@@ -508,7 +510,7 @@ SendFunctionsToPerf(JSContext *cx, AsmJSModule &module)
         return true;
 
     uintptr_t base = (uintptr_t) module.codeBase();
-    const char *filename = module.sourceDesc().scriptSource()->filename();
+    const char *filename = module.scriptSource()->filename();
 
     for (unsigned i = 0; i < module.numPerfFunctions(); i++) {
         const AsmJSModule::ProfiledFunction &func = module.perfProfiledFunction(i);
@@ -535,7 +537,7 @@ SendBlocksToPerf(JSContext *cx, AsmJSModule &module)
         return true;
 
     unsigned long funcBaseAddress = (unsigned long) module.codeBase();
-    const char *filename = module.sourceDesc().scriptSource()->filename();
+    const char *filename = module.scriptSource()->filename();
 
     for (unsigned i = 0; i < module.numPerfBlocksFunctions(); i++) {
         const AsmJSModule::ProfiledBlocksFunction &func = module.perfProfiledBlocksFunction(i);

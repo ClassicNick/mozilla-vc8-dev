@@ -42,6 +42,7 @@ IonBuilder::IonBuilder(JSContext *cx, TempAllocator *temp, MIRGraph *graph,
     cx(cx),
     baselineFrame_(baselineFrame),
     abortReason_(AbortReason_Disable),
+    analysis_(info->script()),
     loopDepth_(loopDepth),
     callerResumePoint_(NULL),
     callerBuilder_(NULL),
@@ -231,10 +232,10 @@ IonBuilder::canEnterInlinedFunction(JSFunction *target)
 
     JSScript *targetScript = target->nonLazyScript();
 
-    if (!targetScript->ensureRanAnalysis(cx))
+    if (targetScript->uninlineable)
         return false;
 
-    if (targetScript->uninlineable)
+    if (!targetScript->analyzedArgsUsage())
         return false;
 
     if (targetScript->needsArgsObj())
@@ -370,7 +371,7 @@ IonBuilder::analyzeNewLoopTypes(MBasicBlock *entry, jsbytecode *start, jsbytecod
             continue;
         if (slot >= info().firstStackSlot())
             continue;
-        if (!script()->analysis()->maybeCode(pc))
+        if (!analysis().maybeInfo(pc))
             continue;
 
         MPhi *phi = entry->getSlot(slot)->toPhi();
@@ -491,9 +492,21 @@ IonBuilder::pushLoop(CFGState::State initial, jsbytecode *stopAt, MBasicBlock *e
 }
 
 bool
-IonBuilder::build()
+IonBuilder::init()
 {
     if (!script()->ensureHasBytecodeTypeMap(cx))
+        return false;
+
+    if (!analysis().init(cx))
+        return false;
+
+    return true;
+}
+
+bool
+IonBuilder::build()
+{
+    if (!init())
         return false;
 
     setCurrentAndSpecializePhis(newBlock(pc));
@@ -633,10 +646,10 @@ bool
 IonBuilder::buildInline(IonBuilder *callerBuilder, MResumePoint *callerResumePoint,
                         CallInfo &callInfo)
 {
-    inlineCallInfo_ = &callInfo;
-
-    if (!script()->ensureHasBytecodeTypeMap(cx))
+    if (!init())
         return false;
+
+    inlineCallInfo_ = &callInfo;
 
     IonSpew(IonSpew_Scripts, "Inlining script %s:%d (%p)",
             script()->filename(), script()->lineno, (void *)script());
@@ -842,7 +855,7 @@ IonBuilder::initScopeChain(MDefinition *callee)
     // from earlier.  However, always make a scope chain when |needsArgsObj| is true
     // for the script, since arguments object construction requires the scope chain
     // to be passed in.
-    if (!info().needsArgsObj() && !script()->analysis()->usesScopeChain())
+    if (!info().needsArgsObj() && !analysis().usesScopeChain())
         return true;
 
     // The scope chain is only tracked in scripts that have NAME opcodes which
@@ -1194,10 +1207,10 @@ IonBuilder::snoopControlFlow(JSOp op)
 {
     switch (op) {
       case JSOP_NOP:
-        return maybeLoop(op, info().getNote(cx, pc));
+        return maybeLoop(op, info().getNote(gsn, pc));
 
       case JSOP_POP:
-        return maybeLoop(op, info().getNote(cx, pc));
+        return maybeLoop(op, info().getNote(gsn, pc));
 
       case JSOP_RETURN:
       case JSOP_STOP:
@@ -1208,7 +1221,7 @@ IonBuilder::snoopControlFlow(JSOp op)
 
       case JSOP_GOTO:
       {
-        jssrcnote *sn = info().getNote(cx, pc);
+        jssrcnote *sn = info().getNote(gsn, pc);
         switch (sn ? SN_TYPE(sn) : SRC_NULL) {
           case SRC_BREAK:
           case SRC_BREAK2LABEL:
@@ -1233,7 +1246,7 @@ IonBuilder::snoopControlFlow(JSOp op)
       }
 
       case JSOP_TABLESWITCH:
-        return tableSwitch(op, info().getNote(cx, pc));
+        return tableSwitch(op, info().getNote(gsn, pc));
 
       case JSOP_IFNE:
         // We should never reach an IFNE, it's a stopAt point, which will
@@ -1651,9 +1664,9 @@ IonBuilder::inspectOpcode(JSOp op)
 
       default:
 #ifdef DEBUG
-        return abort("Unsupported opcode: %s (line %d)", js_CodeName[op], info().lineno(cx, pc));
+        return abort("Unsupported opcode: %s (line %d)", js_CodeName[op], info().lineno(pc));
 #else
-        return abort("Unsupported opcode: %d (line %d)", op, info().lineno(cx, pc));
+        return abort("Unsupported opcode: %d (line %d)", op, info().lineno(pc));
 #endif
     }
 }
@@ -2533,7 +2546,7 @@ IonBuilder::assertValidLoopHeadOp(jsbytecode *pc)
         GetNextPc(state.loop.entry->pc()) == pc);
 
     // do-while loops have a source note.
-    jssrcnote *sn = info().getNote(cx, pc);
+    jssrcnote *sn = info().getNote(gsn, pc);
     if (sn) {
         jsbytecode *ifne = pc + js_GetSrcNoteOffset(sn, 0);
 
@@ -2571,7 +2584,7 @@ IonBuilder::doWhileLoop(JSOp op, jssrcnote *sn)
     int condition_offset = js_GetSrcNoteOffset(sn, 0);
     jsbytecode *conditionpc = pc + condition_offset;
 
-    jssrcnote *sn2 = info().getNote(cx, pc+1);
+    jssrcnote *sn2 = info().getNote(gsn, pc+1);
     int offset = js_GetSrcNoteOffset(sn2, 0);
     jsbytecode *ifne = pc + offset + 1;
     JS_ASSERT(ifne > pc);
@@ -2941,7 +2954,7 @@ IonBuilder::jsop_condswitch()
     //  3/ Generate code for all bodies (see processCondSwitchBody).
 
     JS_ASSERT(JSOp(*pc) == JSOP_CONDSWITCH);
-    jssrcnote *sn = info().getNote(cx, pc);
+    jssrcnote *sn = info().getNote(gsn, pc);
     JS_ASSERT(SN_TYPE(sn) == SRC_CONDSWITCH);
 
     // Get the exit pc
@@ -2959,7 +2972,7 @@ IonBuilder::jsop_condswitch()
     JS_ASSERT(pc < curCase && curCase <= exitpc);
     while (JSOp(*curCase) == JSOP_CASE) {
         // Fetch the next case.
-        jssrcnote *caseSn = info().getNote(cx, curCase);
+        jssrcnote *caseSn = info().getNote(gsn, curCase);
         JS_ASSERT(caseSn && SN_TYPE(caseSn) == SRC_NEXTCASE);
         ptrdiff_t off = js_GetSrcNoteOffset(caseSn, 0);
         curCase = off ? curCase + off : GetNextPc(curCase);
@@ -3040,7 +3053,7 @@ IonBuilder::processCondSwitchCase(CFGState &state)
     jsbytecode *lastTarget = currentIdx ? bodies[currentIdx - 1]->pc() : NULL;
 
     // Fetch the following case in which we will continue.
-    jssrcnote *sn = info().getNote(cx, pc);
+    jssrcnote *sn = info().getNote(gsn, pc);
     ptrdiff_t off = js_GetSrcNoteOffset(sn, 0);
     jsbytecode *casePc = off ? pc + off : GetNextPc(pc);
     bool caseIsDefault = JSOp(*casePc) == JSOP_DEFAULT;
@@ -3276,7 +3289,7 @@ IonBuilder::jsop_ifeq(JSOp op)
     JS_ASSERT(falseStart > pc);
 
     // We only handle cases that emit source notes.
-    jssrcnote *sn = info().getNote(cx, pc);
+    jssrcnote *sn = info().getNote(gsn, pc);
     if (!sn)
         return abort("expected sourcenote");
 
@@ -3324,7 +3337,7 @@ IonBuilder::jsop_ifeq(JSOp op)
         JS_ASSERT(trueEnd > pc);
         JS_ASSERT(trueEnd < falseStart);
         JS_ASSERT(JSOp(*trueEnd) == JSOP_GOTO);
-        JS_ASSERT(!info().getNote(cx, trueEnd));
+        JS_ASSERT(!info().getNote(gsn, trueEnd));
 
         jsbytecode *falseEnd = trueEnd + GetJumpOffset(trueEnd);
         JS_ASSERT(falseEnd > trueEnd);
@@ -3355,7 +3368,7 @@ IonBuilder::jsop_try()
         return abort("Try-catch support disabled");
 
     // Try-finally is not yet supported.
-    if (script()->analysis()->hasTryFinally())
+    if (analysis().hasTryFinally())
         return abort("Has try-finally");
 
     // Try-catch within inline frames is not yet supported.
@@ -3364,7 +3377,7 @@ IonBuilder::jsop_try()
 
     graph().setHasTryBlock();
 
-    jssrcnote *sn = info().getNote(cx, pc);
+    jssrcnote *sn = info().getNote(gsn, pc);
     JS_ASSERT(SN_TYPE(sn) == SRC_TRY);
 
     // Get the pc of the last instruction in the try block. It's a JSOP_GOTO to
@@ -3401,7 +3414,7 @@ IonBuilder::jsop_try()
         return false;
 
     MBasicBlock *successor;
-    if (script()->analysis()->maybeCode(afterTry)) {
+    if (analysis().maybeInfo(afterTry)) {
         successor = newBlock(current, afterTry);
         if (!successor)
             return false;
@@ -3748,7 +3761,10 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
     BaselineInspector inspector(cx, calleeScript);
 
     // Improve type information of |this| when not set.
-    if (callInfo.constructing() && !callInfo.thisArg()->resultTypeSet()) {
+    if (callInfo.constructing() &&
+        !callInfo.thisArg()->resultTypeSet() &&
+        calleeScript->types)
+    {
         types::StackTypeSet *types = types::TypeScript::ThisTypes(calleeScript);
         if (!types->unknown()) {
             MTypeBarrier *barrier = MTypeBarrier::New(callInfo.thisArg(), cloneTypeSet(types), Bailout_Normal);
@@ -3773,7 +3789,6 @@ IonBuilder::inlineScriptedCall(CallInfo &callInfo, JSFunction *target)
     IonBuilder inlineBuilder(cx, &temp(), &graph(), &inspector, info, NULL,
                              inliningDepth_ + 1, loopDepth_);
     if (!inlineBuilder.buildInline(this, outerResumePoint, callInfo)) {
-        JS_ASSERT(calleeScript->hasAnalysis());
         if (cx->isExceptionPending()) {
             IonSpew(IonSpew_Abort, "Inline builder raised exception.");
             abortReason_ = AbortReason_Error;
@@ -3931,7 +3946,7 @@ IonBuilder::makeInliningDecision(JSFunction *target, CallInfo &callInfo)
             return false;
         }
 
-        if (targetScript->analysis()->hasLoops()) {
+        if (targetScript->hasLoops()) {
             IonSpew(IonSpew_Inlining, "%s:%d - Vetoed: big function that contains a loop",
                                       targetScript->filename(), targetScript->lineno);
             return false;
@@ -4555,6 +4570,11 @@ IonBuilder::createCallObject(MDefinition *callee, MDefinition *scope)
     MInstruction *callObj = MNewCallObject::New(templateObj, script()->treatAsRunOnce, slots);
     current->add(callObj);
 
+    // Insert a post barrier to protect the following writes if we allocated
+    // the new call object directly into tenured storage.
+    if (templateObj->type()->isLongLivedForJITAlloc())
+        current->add(MPostWriteBarrier::New(callObj));
+
     // Initialize the object's reserved slots. No post barrier is needed here,
     // for the same reason as in createDeclEnvObject.
     current->add(MStoreFixedSlot::New(callObj, CallObject::enclosingScopeSlot(), scope));
@@ -5087,7 +5107,7 @@ IonBuilder::testNeedsArgumentCheck(JSContext *cx, JSFunction *target, CallInfo &
         return true;
 
     JSScript *targetScript = target->nonLazyScript();
-    if (!targetScript->hasAnalysis())
+    if (!targetScript->types)
         return true;
 
     if (!ArgumentTypesMatch(callInfo.thisArg(), cloneTypeSet(types::TypeScript::ThisTypes(targetScript))))
@@ -5661,7 +5681,8 @@ IonBuilder::addBlock(MBasicBlock *block, uint32_t loopDepth)
 MBasicBlock *
 IonBuilder::newBlock(MBasicBlock *predecessor, jsbytecode *pc)
 {
-    MBasicBlock *block = MBasicBlock::New(graph(), info(), predecessor, pc, MBasicBlock::NORMAL);
+    MBasicBlock *block = MBasicBlock::New(graph(), &analysis(), info(),
+                                          predecessor, pc, MBasicBlock::NORMAL);
     return addBlock(block, loopDepth_);
 }
 
@@ -5683,7 +5704,8 @@ IonBuilder::newBlockPopN(MBasicBlock *predecessor, jsbytecode *pc, uint32_t popp
 MBasicBlock *
 IonBuilder::newBlockAfter(MBasicBlock *at, MBasicBlock *predecessor, jsbytecode *pc)
 {
-    MBasicBlock *block = MBasicBlock::New(graph(), info(), predecessor, pc, MBasicBlock::NORMAL);
+    MBasicBlock *block = MBasicBlock::New(graph(), &analysis(), info(),
+                                          predecessor, pc, MBasicBlock::NORMAL);
     if (!block)
         return NULL;
     graph().insertBlockAfter(at, block);
@@ -5693,7 +5715,8 @@ IonBuilder::newBlockAfter(MBasicBlock *at, MBasicBlock *predecessor, jsbytecode 
 MBasicBlock *
 IonBuilder::newBlock(MBasicBlock *predecessor, jsbytecode *pc, uint32_t loopDepth)
 {
-    MBasicBlock *block = MBasicBlock::New(graph(), info(), predecessor, pc, MBasicBlock::NORMAL);
+    MBasicBlock *block = MBasicBlock::New(graph(), &analysis(), info(),
+                                          predecessor, pc, MBasicBlock::NORMAL);
     return addBlock(block, loopDepth);
 }
 
@@ -5719,7 +5742,7 @@ IonBuilder::newOsrPreheader(MBasicBlock *predecessor, jsbytecode *loopEntry)
         uint32_t slot = info().scopeChainSlot();
 
         MInstruction *scopev;
-        if (script()->analysis()->usesScopeChain()) {
+        if (analysis().usesScopeChain()) {
             scopev = MOsrScopeChain::New(entry);
         } else {
             // Use an undefined value if the script does not need its scope
@@ -6470,7 +6493,7 @@ IonBuilder::jsop_intrinsic(PropertyName *name)
 bool
 IonBuilder::jsop_bindname(PropertyName *name)
 {
-    JS_ASSERT(script()->analysis()->usesScopeChain());
+    JS_ASSERT(analysis().usesScopeChain());
 
     MDefinition *scopeChain = current->scopeChain();
     MBindNameCache *ins = MBindNameCache::New(scopeChain, name, script(), pc);
@@ -7348,13 +7371,10 @@ IonBuilder::jsop_setelem_dense(types::TemporaryTypeSet::DoubleConversion convers
         MOZ_ASSUME_UNREACHABLE("Unknown double conversion");
     }
 
-    bool writeHole;
+    bool writeHole = false;
     if (safety == SetElem_Normal) {
-        writeHole = script()->analysis()->getCode(pc).arrayWriteHole;
         SetElemICInspector icInspect(inspector->setElemICInspector(pc));
-        writeHole |= icInspect.sawOOBDenseWrite();
-    } else {
-        writeHole = false;
+        writeHole = icInspect.sawOOBDenseWrite();
     }
 
     // Use MStoreElementHole if this SETELEM has written to out-of-bounds
@@ -8399,9 +8419,7 @@ IonBuilder::getPropTryCache(bool *emitted, PropertyName *name, jsid id,
                             bool barrier, types::TemporaryTypeSet *types)
 {
     JS_ASSERT(*emitted == false);
-    bool accessGetter =
-        script()->analysis()->getCode(pc).accessGetter ||
-        inspector->hasSeenAccessedGetter(pc);
+    bool accessGetter = inspector->hasSeenAccessedGetter(pc);
 
     MDefinition *obj = current->peek(-1);
 
@@ -8831,7 +8849,7 @@ IonBuilder::jsop_lambda(JSFunction *fun)
     if (fun->isInterpreted() && !fun->getOrCreateScript(cx))
         return false;
 
-    JS_ASSERT(script()->analysis()->usesScopeChain());
+    JS_ASSERT(analysis().usesScopeChain());
     if (fun->isArrow())
         return abort("bound arrow function");
     if (fun->isNative() && IsAsmJSModuleNative(fun->native()))
@@ -8857,7 +8875,7 @@ IonBuilder::jsop_defvar(uint32_t index)
         attrs |= JSPROP_READONLY;
 
     // Pass the ScopeChain.
-    JS_ASSERT(script()->analysis()->usesScopeChain());
+    JS_ASSERT(analysis().usesScopeChain());
 
     // Bake the name pointer into the MDefVar.
     MDefVar *defvar = MDefVar::New(name, attrs, current->scopeChain());
@@ -8873,7 +8891,7 @@ IonBuilder::jsop_deffun(uint32_t index)
     if (fun->isNative() && IsAsmJSModuleNative(fun->native()))
         return abort("asm.js module function");
 
-    JS_ASSERT(script()->analysis()->usesScopeChain());
+    JS_ASSERT(analysis().usesScopeChain());
 
     MDefFun *deffun = MDefFun::New(fun, current->scopeChain());
     current->add(deffun);

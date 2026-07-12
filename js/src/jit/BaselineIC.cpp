@@ -2879,7 +2879,7 @@ ICBinaryArith_BooleanWithInt32::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.bind(&fixOverflow);
         masm.sub32(rhsReg, lhsReg);
-        masm.jump(&failure);
+        // Proceed to failure below.
         break;
       }
       case JSOP_SUB: {
@@ -2892,7 +2892,7 @@ ICBinaryArith_BooleanWithInt32::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.bind(&fixOverflow);
         masm.add32(rhsReg, lhsReg);
-        masm.jump(&failure);
+        // Proceed to failure below.
         break;
       }
       case JSOP_BITOR: {
@@ -4815,6 +4815,16 @@ ICSetElem_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
     masm.pushBaselineFramePtr(BaselineFrameReg, R0.scratchReg());
 
     return tailCallVM(DoSetElemFallbackInfo, masm);
+}
+
+void
+BaselineScript::noteArrayWriteHole(uint32_t pcOffset)
+{
+    ICEntry &entry = icEntryFromPCOffset(pcOffset);
+    ICFallbackStub *stub = entry.fallbackStub();
+
+    if (stub->isSetElem_Fallback())
+        stub->toSetElem_Fallback()->noteArrayWriteHole();
 }
 
 //

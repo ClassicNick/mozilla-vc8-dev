@@ -224,11 +224,9 @@ template<> struct IsPod<float>              : TrueType {};
 template<> struct IsPod<double>             : TrueType {};
 #if !defined (_MSC_VER) || _MSC_VER >= 1400
 template<> struct IsPod<wchar_t>            : TrueType {};
-<<<<<<< HEAD
-=======
+#endif
 #ifdef MOZ_CHAR16_IS_NOT_WCHAR
 template<> struct IsPod<char16_t>           : TrueType {};
->>>>>>> 339e846
 #endif
 template<typename T> struct IsPod<T*>       : TrueType {};
 

@@ -60,17 +60,6 @@ using namespace js::types;
 using mozilla::DebugOnly;
 using mozilla::PodCopy;
 
-/* Some objects (e.g., With) delegate 'this' to another object. */
-static inline JSObject *
-CallThisObjectHook(JSContext *cx, HandleObject obj, Value *argv)
-{
-    JSObject *thisp = JSObject::thisObject(cx, obj);
-    if (!thisp)
-        return NULL;
-    argv[-1].setObject(*thisp);
-    return thisp;
-}
-
 /*
  * Note: when Clang 3.2 (32-bit) inlines the two functions below in Interpret,
  * the conservative stack scanner leaks a ton of memory and this negatively
@@ -1224,24 +1213,23 @@ ModOperation(JSContext *cx, HandleScript script, jsbytecode *pc, HandleValue lhs
 
 static JS_ALWAYS_INLINE bool
 SetObjectElementOperation(JSContext *cx, Handle<JSObject*> obj, HandleId id, const Value &value,
-                          bool strict, JSScript *maybeScript = NULL, jsbytecode *pc = NULL)
+                          bool strict, JSScript *script = NULL, jsbytecode *pc = NULL)
 {
-    RootedScript script(cx, maybeScript);
     types::TypeScript::MonitorAssign(cx, obj, id);
 
+#ifdef JS_ION
     if (obj->isNative() && JSID_IS_INT(id)) {
         uint32_t length = obj->getDenseInitializedLength();
         int32_t i = JSID_TO_INT(id);
         if ((uint32_t)i >= length) {
             // Annotate script if provided with information (e.g. baseline)
-            if (script && script->hasAnalysis()) {
-                JS_ASSERT(pc);
-                script->analysis()->getCode(pc).arrayWriteHole = true;
-            }
+            if (script && script->hasBaselineScript() && *pc == JSOP_SETELEM)
+                script->baselineScript()->noteArrayWriteHole(pc - script->code);
         }
     }
+#endif
 
-    if (obj->isNative() && !obj->setHadElementsAccess(cx))
+    if (obj->isNative() && !JSID_IS_INT(id) && !obj->setHadElementsAccess(cx))
         return false;
 
     RootedValue tmp(cx, value);
@@ -3364,7 +3352,7 @@ default:
 
             switch (tn->kind) {
               case JSTRY_CATCH:
-                  JS_ASSERT(*regs.pc == JSOP_ENTERBLOCK);
+                JS_ASSERT(*regs.pc == JSOP_ENTERBLOCK || *regs.pc == JSOP_EXCEPTION);
 
                 /* Catch cannot intercept the closing of a generator. */
                   if (JS_UNLIKELY(cx->getPendingException().isMagic(JS_GENERATOR_CLOSING)))
