@@ -12,7 +12,9 @@
 /* include windows.h for the HWND and HDC definitions that we need. */
 #include <windows.h>
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
 struct IDirect3DSurface9;
+#endif
 
 /* undefine LoadImage because our code uses that name */
 #undef LoadImage
@@ -30,8 +32,10 @@ public:
     gfxWindowsSurface(HWND wnd, uint32_t flags = 0);
     gfxWindowsSurface(HDC dc, uint32_t flags = 0);
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     // Create from a shared d3d9surface
     gfxWindowsSurface(IDirect3DSurface9 *surface, uint32_t flags = 0);
+#endif
 
     // Create a DIB surface
     gfxWindowsSurface(const gfxIntSize& size,

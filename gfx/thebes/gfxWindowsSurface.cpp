@@ -34,13 +34,14 @@ gfxWindowsSurface::gfxWindowsSurface(HDC dc, uint32_t flags) :
     InitWithDC(flags);
 }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
 gfxWindowsSurface::gfxWindowsSurface(IDirect3DSurface9 *surface, uint32_t flags) :
     mOwnsDC(false), mForPrinting(false), mDC(0), mWnd(nullptr)
 {
     cairo_surface_t *surf = cairo_win32_surface_create_with_d3dsurface9(surface);
     Init(surf);
 }
-
+#endif
 
 void
 gfxWindowsSurface::MakeInvalid(gfxIntSize& size)

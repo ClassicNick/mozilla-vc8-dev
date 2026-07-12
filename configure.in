@@ -9325,7 +9325,7 @@ fi
 # Run the SpiderMonkey 'configure' script.
 dist=$MOZ_BUILD_ROOT/dist
 ac_configure_args="$_SUBDIR_CONFIG_ARGS"
-ac_configure_args="$ac_configure_args --enable-threadsafe"
+ac_configure_args="$ac_configure_args --disable-threadsafe"
 
 MOZ_ARG_WITH_STRING(intl-api,
 [  --with-intl-api, --with-intl-api=build, --without-intl-api
@@ -9340,7 +9340,7 @@ if test "$NIGHTLY_BUILD" = "1" -a "$MOZ_BUILD_APP" = "browser"; then
     # In desktop nightlies the Internationalization API is disabled, but all
     # code for it is still built.  Bug 853301 will remove this so that it's
     # built and the API is enabled.
-    WITH_INTL="--with-intl-api=build"
+    WITH_INTL="--without-intl-api"
 else
     # Internationalization isn't built or exposed by default in non-desktop and
     # non-nightly builds.  Bugs to enable:

@@ -49,6 +49,7 @@ ac_add_options --disable-wmf
 ac_add_options --disable-directshow
 ac_add_options --disable-eme
 ac_add_options --without-intl-api
+ac_add_options --disable-threadsafe
 ac_add_options --with-windows-version=502
 
 # Branding Options

@@ -967,9 +967,15 @@ nsJSContext::GetCCRefcnt()
   // In the (abnormal) case of synchronous cycle-collection, the context may be
   // actively running JS code in which case we must keep it alive by adding an
   // extra refcount.
+#ifdef JS_THREADSAFE
   if (mContext && js::ContextHasOutstandingRequests(mContext)) {
     refcnt++;
   }
+#else
+  if (mContext) {
+    refcnt++;
+  }
+#endif
 
   return refcnt;
 }

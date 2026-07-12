@@ -59,7 +59,9 @@
 #include "cairo-private.h"
 #include <wchar.h>
 #include <windows.h>
+#ifdef MOZ_ENABLE_D3D9_LAYER
 #include <D3D9.h>
+#endif
 
 #if defined(__MINGW32__) && !defined(ETO_PDY)
 # define ETO_PDY 0x2000
@@ -390,7 +392,9 @@ _cairo_win32_surface_create_for_dc (HDC             original_dc,
 	goto FAIL;
 
     surface->format = format;
+#ifdef MOZ_ENABLE_D3D9_LAYER
     surface->d3d9surface = NULL;
+#endif
 
     surface->clip_rect.x = 0;
     surface->clip_rect.y = 0;
@@ -488,10 +492,12 @@ _cairo_win32_surface_finish (void *abstract_surface)
 	_cairo_win32_restore_initial_clip (surface);
     }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     if (surface->d3d9surface) {
         IDirect3DSurface9_ReleaseDC (surface->d3d9surface, surface->dc);
         IDirect3DSurface9_Release (surface->d3d9surface);
     }
+#endif
 
     if (surface->initial_clip_rgn)
 	DeleteObject (surface->initial_clip_rgn);
@@ -502,6 +508,7 @@ _cairo_win32_surface_finish (void *abstract_surface)
     return CAIRO_STATUS_SUCCESS;
 }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
 static cairo_status_t
 _cairo_win32_surface_d3d9_lock_rect (cairo_win32_surface_t  *surface,
 				   int                     x,
@@ -543,6 +550,7 @@ _cairo_win32_surface_d3d9_lock_rect (cairo_win32_surface_t  *surface,
 
     return CAIRO_STATUS_SUCCESS;
 }
+#endif
 
 static cairo_status_t
 _cairo_win32_surface_get_subimage (cairo_win32_surface_t  *surface,
@@ -672,6 +680,7 @@ _cairo_win32_surface_acquire_source_image (void                    *abstract_sur
 	return CAIRO_STATUS_SUCCESS;
     }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     if (surface->d3d9surface) {
 	cairo_image_surface_t *local;
 	status = _cairo_win32_surface_d3d9_lock_rect (abstract_surface, 0, 0,
@@ -682,7 +691,9 @@ _cairo_win32_surface_acquire_source_image (void                    *abstract_sur
 
 	*image_out = local;
 	*image_extra = surface;
-    } else {
+    } else 
+#endif
+	{
 	cairo_win32_surface_t *local;
 	status = _cairo_win32_surface_get_subimage (abstract_surface, 0, 0,
 						    surface->extents.width,
@@ -707,11 +718,14 @@ _cairo_win32_surface_release_source_image (void                   *abstract_surf
     cairo_win32_surface_t *surface = abstract_surface;
     cairo_win32_surface_t *local = image_extra;
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     if (local && local->d3d9surface) {
 	IDirect3DSurface9_UnlockRect (local->d3d9surface);
 	IDirect3DSurface9_GetDC (local->d3d9surface, &local->dc);
 	cairo_surface_destroy ((cairo_surface_t *)image);
-    } else {
+    } else 
+#endif
+	{
 	cairo_surface_destroy ((cairo_surface_t *)local);
     }
 }
@@ -735,6 +749,7 @@ _cairo_win32_surface_acquire_dest_image (void                    *abstract_surfa
 	return CAIRO_STATUS_SUCCESS;
     }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     if (surface->d3d9surface) {
 	cairo_image_surface_t *local = NULL;
 	status = _cairo_win32_surface_d3d9_lock_rect (abstract_surface,
@@ -748,7 +763,9 @@ _cairo_win32_surface_acquire_dest_image (void                    *abstract_surfa
 
 	*image_out = local;
 	*image_extra = surface;
-    } else {
+    } else 
+#endif
+	{
 	cairo_win32_surface_t *local = NULL;
 	status = _cairo_win32_surface_get_subimage (abstract_surface,
 						interest_rect->x,
@@ -782,11 +799,14 @@ _cairo_win32_surface_release_dest_image (void                    *abstract_surfa
     if (!local)
 	return;
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     if (local->d3d9surface) {
 	IDirect3DSurface9_UnlockRect (local->d3d9surface);
 	IDirect3DSurface9_GetDC (local->d3d9surface, &local->dc);
 	cairo_surface_destroy ((cairo_surface_t *)image);
-    } else {
+    } else 
+#endif
+	{
 
 	/* clear any clip that's currently set on the surface
 	   so that we can blit uninhibited. */
@@ -1950,7 +1970,9 @@ cairo_win32_surface_create_internal (HDC hdc, cairo_format_t format)
     surface->image = NULL;
     surface->format = format;
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
     surface->d3d9surface = NULL;
+#endif
     surface->dc = hdc;
     surface->bitmap = NULL;
     surface->is_dib = FALSE;
@@ -2111,6 +2133,7 @@ FINISH:
     return (cairo_surface_t*) new_surf;
 }
 
+#ifdef MOZ_ENABLE_D3D9_LAYER
 cairo_public cairo_surface_t *
 cairo_win32_surface_create_with_d3dsurface9 (IDirect3DSurface9 *surface)
 {
@@ -2124,6 +2147,8 @@ cairo_win32_surface_create_with_d3dsurface9 (IDirect3DSurface9 *surface)
     return (cairo_surface_t*) win_surface;
 
 }
+#endif
+
 /**
  * _cairo_surface_is_win32:
  * @surface: a #cairo_surface_t

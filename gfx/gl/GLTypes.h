@@ -6,7 +6,7 @@
 #define GLTYPES_H_
 
 #include <stddef.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 typedef int8_t realGLboolean;
 
@@ -14,21 +14,6 @@ typedef int8_t realGLboolean;
 #define __gltypes_h_
 #define __gl_h_
 
-<<<<<<< HEAD
-#include <stddef.h>
-#include "mozilla/StandardInteger.h"
-
-typedef unsigned int GLenum;
-typedef unsigned int GLbitfield;
-typedef unsigned int GLuint;
-typedef int GLint;
-typedef int GLsizei;
-typedef char realGLboolean;
-typedef signed char GLbyte;
-typedef short GLshort;
-typedef unsigned char GLubyte;
-typedef unsigned short GLushort;
-=======
 typedef uint32_t GLenum;
 typedef uint32_t GLbitfield;
 typedef uint32_t GLuint;
@@ -38,7 +23,6 @@ typedef int8_t GLbyte;
 typedef int16_t GLshort;
 typedef uint8_t GLubyte;
 typedef uint16_t GLushort;
->>>>>>> f94a2e7
 typedef float GLfloat;
 typedef float GLclampf;
 #ifndef GLdouble_defined

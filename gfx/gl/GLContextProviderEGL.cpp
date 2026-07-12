@@ -759,7 +759,7 @@ public:
 
     SharedHandleType mHandleType;
 
-	SharedHandleType_Image mImage;
+	SharedHandleType mImage;
 };
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -906,6 +906,7 @@ GLContextEGL::CreateSharedHandle(SharedTextureShareType shareType,
                                  void* buffer,
                                  SharedTextureBufferType bufferType)
 {
+	SharedTextureBufferType mTextureID;
     // Both EGLImage and SurfaceTexture only support same-process currently, but
     // it's possible to make SurfaceTexture work across processes. We should do that.
     if (shareType != SameProcess)
@@ -921,7 +922,7 @@ GLContextEGL::CreateSharedHandle(SharedTextureShareType shareType,
 
         return (SharedTextureHandle) new SurfaceTextureWrapper(reinterpret_cast<nsSurfaceTexture*>(buffer));
 #endif
-    case SharedTextureBufferType::TextureID: {
+    if (mTextureID) {
         if (!mShareWithEGLImage)
             return 0;
 
