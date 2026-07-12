@@ -1392,6 +1392,10 @@ void XPCJSRuntime::SystemIsBeingShutDown()
 
 XPCJSRuntime::~XPCJSRuntime()
 {
+    // Clear any pending exception.  It might be an XPCWrappedJS, and if we try
+    // to destroy it later we will crash.
+    SetPendingException(nullptr);
+
     JS::SetGCSliceCallback(Runtime(), mPrevGCSliceCallback);
 
     xpc_DelocalizeRuntime(Runtime());
@@ -2897,8 +2901,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    mObjectHolderRoots(nullptr),
    mWatchdogManager(new WatchdogManager(this)),
    mJunkScope(nullptr),
-   mAsyncSnowWhiteFreer(new AsyncFreeSnowWhite()),
-   mExceptionManagerNotAvailable(false)
+   mAsyncSnowWhiteFreer(new AsyncFreeSnowWhite())
 {
 #ifdef XPC_CHECK_WRAPPERS_AT_SHUTDOWN
     DEBUG_WrappedNativeHashtable =

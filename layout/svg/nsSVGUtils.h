@@ -21,8 +21,6 @@
 #include "nsID.h"
 #include "nsISupportsBase.h"
 #include "nsMathUtils.h"
-#include "nsPoint.h"
-#include "nsRect.h"
 #include "nsStyleStruct.h"
 #include "mozilla/Constants.h"
 
@@ -50,6 +48,9 @@ class gfxTextObjectPaint;
 
 struct nsStyleSVG;
 struct nsStyleSVGPaint;
+struct nsRect;
+struct nsIntRect;
+struct nsPoint;
 
 namespace mozilla {
 class SVGAnimatedPreserveAspectRatio;

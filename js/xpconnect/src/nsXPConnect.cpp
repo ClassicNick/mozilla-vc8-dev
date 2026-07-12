@@ -36,6 +36,7 @@
 #include "XPCQuickStubs.h"
 
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/IDBIndexBinding.h"
 #include "mozilla/dom/IDBObjectStoreBinding.h"
 #include "mozilla/dom/IDBOpenDBRequestBinding.h"
@@ -53,6 +54,8 @@
 #include "nsICycleCollectorListener.h"
 #include "nsThread.h"
 #include "mozilla/XPTInterfaceInfoManager.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -861,12 +864,14 @@ nsXPConnect::CreateStackFrameLocation(uint32_t aLanguage,
 {
     MOZ_ASSERT(_retval, "bad param");
 
-    return XPCJSStack::CreateStackFrameLocation(aLanguage,
-                                                aFilename,
-                                                aFunctionName,
-                                                aLineNumber,
-                                                aCaller,
-                                                _retval);
+    nsCOMPtr<nsIStackFrame> stackFrame =
+        exceptions::CreateStackFrameLocation(aLanguage,
+                                             aFilename,
+                                             aFunctionName,
+                                             aLineNumber,
+                                             aCaller);
+    stackFrame.forget(_retval);
+    return NS_OK;
 }
 
 /* readonly attribute nsIStackFrame CurrentJSStack; */
@@ -874,26 +879,10 @@ NS_IMETHODIMP
 nsXPConnect::GetCurrentJSStack(nsIStackFrame * *aCurrentJSStack)
 {
     MOZ_ASSERT(aCurrentJSStack, "bad param");
-    *aCurrentJSStack = nullptr;
 
-    // is there a current context available?
-    if (JSContext *cx = GetCurrentJSContext()) {
-        nsCOMPtr<nsIStackFrame> stack;
-        XPCJSStack::CreateStack(cx, getter_AddRefs(stack));
-        if (stack) {
-            // peel off native frames...
-            uint32_t language;
-            nsCOMPtr<nsIStackFrame> caller;
-            while (stack &&
-                   NS_SUCCEEDED(stack->GetLanguage(&language)) &&
-                   language != nsIProgrammingLanguage::JAVASCRIPT &&
-                   NS_SUCCEEDED(stack->GetCaller(getter_AddRefs(caller))) &&
-                   caller) {
-                stack = caller;
-            }
-            NS_IF_ADDREF(*aCurrentJSStack = stack);
-        }
-    }
+    nsCOMPtr<nsIStackFrame> currentStack = dom::GetCurrentJSStack();
+    currentStack.forget(aCurrentJSStack);
+
     return NS_OK;
 }
 
@@ -1710,9 +1699,15 @@ bool
 IsChromeOrXBL(JSContext* cx, JSObject* /* unused */)
 {
     MOZ_ASSERT(NS_IsMainThread());
-    JSCompartment* compartment = js::GetContextCompartment(cx);
-    return AccessCheck::isChrome(compartment) ||
-           IsXBLScope(compartment);
+    JSCompartment* c = js::GetContextCompartment(cx);
+
+    // For remote XUL, we run XBL in the XUL scope. Given that we care about
+    // compat and not security for remote XUL, we just always claim to be XBL.
+    //
+    // Note that, for performance, we don't check AllowXULXBLForPrincipal here,
+    // and instead rely on the fact that AllowXBLScope() only returns false in
+    // remote XUL situations.
+    return AccessCheck::isChrome(c) || IsXBLScope(c) || !AllowXBLScope(c);
 }
 
 } // namespace dom

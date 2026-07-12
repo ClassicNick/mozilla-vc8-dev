@@ -25,6 +25,8 @@
 #include "js/Value.h"
 #include "Layers.h"
 #include "MediaDecoder.h"
+// nsNPAPIPluginInstance must be included before nsIDocument.h, which is included in mozAutoDocUpdate.h.
+#include "nsNPAPIPluginInstance.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
@@ -5183,6 +5185,7 @@ nsContentUtils::GetContextForEventHandlers(nsINode* aNode,
 JSContext *
 nsContentUtils::GetCurrentJSContext()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   return sXPConnect->GetCurrentJSContext();
 }
 
@@ -5190,6 +5193,7 @@ nsContentUtils::GetCurrentJSContext()
 JSContext *
 nsContentUtils::GetSafeJSContext()
 {
+  MOZ_ASSERT(NS_IsMainThread());
   return sXPConnect->GetSafeJSContext();
 }
 

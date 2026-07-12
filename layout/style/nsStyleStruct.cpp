@@ -27,6 +27,8 @@
 #include "imgIContainer.h"
 
 #include "mozilla/Likely.h"
+#include "nsIURI.h"
+#include <algorithm>
 
 MOZ_STATIC_ASSERT((((1 << nsStyleStructID_Length) - 1) &
                    ~(NS_STYLE_INHERIT_MASK)) == 0,

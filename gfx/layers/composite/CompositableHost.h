@@ -8,7 +8,6 @@
 
 #include "mozilla/StandardInteger.h"                     // for uint64_t
 #include <stdio.h>                      // for FILE
-#include "mozilla-config.h"             // for MOZ_DUMP_PAINTING
 #include "gfxPoint.h"                   // for gfxSize
 #include "gfxRect.h"                    // for gfxRect
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc

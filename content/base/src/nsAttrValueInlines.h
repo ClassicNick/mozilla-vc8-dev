@@ -7,6 +7,8 @@
 
 #include "mozilla/StandardInteger.h"
 
+#include "nsAttrValue.h"
+
 struct MiscContainer
 {
   typedef nsAttrValue::ValueType ValueType;

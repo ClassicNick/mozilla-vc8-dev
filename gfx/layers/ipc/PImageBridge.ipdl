@@ -6,7 +6,7 @@
 include "mozilla/ipc/RPCChannel.h";
 
 include LayersSurfaces;
-include LayerTransaction;
+include LayersMessages;
 include protocol PGrallocBuffer;
 include protocol PCompositable;
 

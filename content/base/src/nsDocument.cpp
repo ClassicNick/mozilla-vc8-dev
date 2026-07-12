@@ -1430,6 +1430,9 @@ nsDocument::~nsDocument()
     }
 
     if (!isAboutScheme) {
+      // Record the page load
+      uint32_t pageLoaded = 1;
+      Accumulate(Telemetry::MIXED_CONTENT_UNBLOCK_COUNTER, pageLoaded);
       // Record the mixed content status of the docshell in Telemetry
       enum {
         NO_MIXED_CONTENT = 0, // There is no Mixed Content on the page
@@ -11322,7 +11325,7 @@ nsIDocument::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aScope)
                                            getter_AddRefs(holder),
                                            false);
   if (NS_FAILED(rv)) {
-    Throw<true>(aCx, rv);
+    Throw(aCx, rv);
     return nullptr;
   }
 

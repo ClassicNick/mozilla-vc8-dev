@@ -24,6 +24,8 @@
 #include "nsHTMLCSSStyleSheet.h"
 #include "nsCSSParser.h"
 #include "nsStyledElement.h"
+#include "nsIURI.h"
+#include <algorithm>
 
 using namespace mozilla;
 

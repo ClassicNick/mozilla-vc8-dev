@@ -22,6 +22,7 @@ extern "C" {
 #include "mozilla/TimeStamp.h"
 #include "VorbisUtils.h"
 #include "MediaMetadataManager.h"
+#include "nsISeekableStream.h"
 
 namespace mozilla {
 

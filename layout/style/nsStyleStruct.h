@@ -1792,7 +1792,8 @@ struct nsStyleDisplay {
   }
 
   bool IsRelativelyPositionedStyle() const {
-    return mPosition == NS_STYLE_POSITION_RELATIVE;
+    return NS_STYLE_POSITION_RELATIVE == mPosition ||
+           NS_STYLE_POSITION_STICKY == mPosition;
   }
 
   bool IsScrollableOverflow() const {
