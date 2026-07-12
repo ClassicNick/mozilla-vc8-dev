@@ -8,6 +8,7 @@
 #define mozilla_dom_bluetooth_bluetoothcommon_h__
 
 #include "mozilla/Observer.h"
+#include "nsPrintfCString.h"
 #include "nsStringGlue.h"
 #include "nsTArray.h"
 
@@ -18,24 +19,38 @@ extern bool gBluetoothDebugFlag;
 #undef BT_LOG
 #if defined(MOZ_WIDGET_GONK)
 #include <android/log.h>
-#define BT_LOG(args)                                              \
+/**
+ * Prints 'D'EBUG build logs, which show in DEBUG build only when
+ * developer setting 'Bluetooth output in adb' is enabled.
+ */
+#define BT_LOGD(args)                                             \
   do {                                                               \
     if (gBluetoothDebugFlag) {                                       \
       __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth", args); \
     }                                                                \
   } while(0)
 
+/**
+ * Prints 'R'ELEASE build logs, which show in both RELEASE and DEBUG builds.
+ */
+#define BT_LOGR(args)                                             \
+  __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth", args)      \
+
+/**
+ * Prints DEBUG build warnings, which show in DEBUG build only.
+ */
 #define BT_WARNING(args)                                          \
-  __android_log_print(ANDROID_LOG_WARN, "GeckoBluetooth", args)
+  NS_WARNING(nsPrintfCString(args).get())                            \
 
 #else
-#define BT_LOG(args, params)                                            \
+#define BT_LOGD(args, params)                                           \
   do {                                                               \
     if (gBluetoothDebugFlag) {                                       \
       printf(args, params);                                   \
     }                                                                \
   } while(0)
 
+#define BT_LOGR(args, params) printf(args, params)
 #define BT_WARNING(args, params) printf(args, params)
 #endif
 

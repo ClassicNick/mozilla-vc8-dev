@@ -382,7 +382,7 @@ OpaqueRenderer::Begin(LayerD3D9* aLayer)
   }
 
   nsRefPtr<gfxWindowsSurface> result = new gfxWindowsSurface(mSurface);
-  if (!result) {
+  if (!result || result->CairoStatus()) {
     NS_WARNING("Failed to d3d9 cairo surface.");
     return nullptr;
   }

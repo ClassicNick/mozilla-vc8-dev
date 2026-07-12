@@ -30,6 +30,10 @@
 #include "prenv.h"
 #include "mozilla/Preferences.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1310
+# pragma  intrinsic(_abs64)
+#endif
+
 namespace mozilla {
 
 using namespace mozilla::layers;
@@ -911,6 +915,10 @@ void MediaDecoderStateMachine::DecodeLoop()
         TimeStamp start = TimeStamp::Now();
         videoPlaying = mReader->DecodeVideoFrame(skipToNextKeyframe, currentTime);
         decodeTime = TimeStamp::Now() - start;
+        if (!videoPlaying) {
+          // Playback ended for this stream, close the sample queue.
+          mReader->VideoQueue().Finish();
+        }
       }
       if (THRESHOLD_FACTOR * DurationToUsecs(decodeTime) > lowAudioThreshold &&
           !HasLowUndecodedData())
@@ -934,6 +942,10 @@ void MediaDecoderStateMachine::DecodeLoop()
     if (!mDidThrottleAudioDecoding) {
       ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
       audioPlaying = mReader->DecodeAudioData();
+      if (!audioPlaying) {
+        // Playback ended for this stream, close the sample queue.
+        mReader->AudioQueue().Finish();
+      }
     }
 
     SendStreamData();
@@ -1454,7 +1466,7 @@ void MediaDecoderStateMachine::UpdateEstimatedDuration(int64_t aDuration)
   mDecoder->GetReentrantMonitor().AssertCurrentThreadIn();
   int64_t duration = GetDuration();
   if (aDuration != duration &&
-      abs(aDuration - duration) > ESTIMATED_DURATION_FUZZ_FACTOR_USECS) {
+      _abs64(aDuration - duration) > ESTIMATED_DURATION_FUZZ_FACTOR_USECS) {
     SetDuration(aDuration);
     nsCOMPtr<nsIRunnable> event =
       NS_NewRunnableMethod(mDecoder, &MediaDecoder::DurationChanged);
