@@ -2900,8 +2900,8 @@ DebuggerScript_getSourceMapUrl(JSContext *cx, unsigned argc, Value *vp)
     ScriptSource *source = script->scriptSource();
     JS_ASSERT(source);
 
-    if (source->hasSourceMap()) {
-        JSString *str = JS_NewUCStringCopyZ(cx, source->sourceMap());
+    if (source->hasSourceMapURL()) {
+        JSString *str = JS_NewUCStringCopyZ(cx, source->sourceMapURL());
         if (!str)
             return false;
         args.rval().setString(str);
@@ -3715,7 +3715,12 @@ DebuggerSource_getText(JSContext *cx, unsigned argc, Value *vp)
     THIS_DEBUGSOURCE_REFERENT(cx, argc, vp, "(get text)", args, obj, sourceObject);
 
     ScriptSource *ss = sourceObject->source();
-    JSString *str = ss->substring(cx, 0, ss->length());
+    bool hasSourceData = ss->hasSourceData();
+    if (!ss->hasSourceData() && !JSScript::loadSource(cx, ss, &hasSourceData))
+        return false;
+
+    JSString *str = hasSourceData ? ss->substring(cx, 0, ss->length())
+                                  : js_NewStringCopyZ<CanGC>(cx, "[no source]");
     if (!str)
         return false;
 

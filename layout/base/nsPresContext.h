@@ -1002,6 +1002,8 @@ public:
     mExistThrottledUpdates = aExistThrottledUpdates;
   }
 
+  bool IsDeviceSizePageSize();
+
 protected:
   friend class nsRunnableMethod<nsPresContext>;
   NS_HIDDEN_(void) ThemeChangedInternal();

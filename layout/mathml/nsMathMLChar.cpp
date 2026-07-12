@@ -37,7 +37,6 @@ using namespace mozilla;
 //#define NOISY_SEARCH 1
 
 // -----------------------------------------------------------------------------
-static const PRUnichar   kSpaceCh   = PRUnichar(' ');
 static const nsGlyphCode kNullGlyph = {{0, 0}, 0};
 typedef enum {eExtension_base, eExtension_variants, eExtension_parts}
   nsMathfontPrefExtension;

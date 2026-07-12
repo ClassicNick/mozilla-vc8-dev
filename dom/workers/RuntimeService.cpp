@@ -222,8 +222,6 @@ struct PrefTraits<int32_t>
 {
   typedef int32_t PrefValueType;
 
-  static const PrefValueType kDefaultValue = 0;
-
   static inline PrefValueType
   Get(const char* aPref)
   {
