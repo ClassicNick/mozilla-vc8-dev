@@ -9,10 +9,12 @@ include $(topsrcdir)/mobile/android/base/android-services-files.mk
 MOZGLUE_JAVA_FILES := \
   mozglue/ByteBufferInputStream.java \
   mozglue/DirectBufferAllocator.java \
-  mozglue/GeneratableAndroidBridgeTarget.java \
+  mozglue/generatorannotations/GeneratorOptions.java \
+  mozglue/generatorannotations/OptionalGeneratedParameter.java \
+  mozglue/generatorannotations/WrapEntireClassForJNI.java \
+  mozglue/generatorannotations/WrapElementForJNI.java \
   mozglue/NativeReference.java \
   mozglue/NativeZip.java \
-  mozglue/OptionalGeneratedParameter.java \
   $(NULL)
 
 MOZGLUE_PP_JAVA_FILES := \
@@ -666,7 +668,6 @@ RES_DRAWABLE_MDPI = \
   res/drawable-mdpi/icon_most_recent.png \
   res/drawable-mdpi/icon_most_recent_empty.png \
   res/drawable-mdpi/icon_most_visited.png \
-  res/drawable-mdpi/icon_most_visited_empty.png \
   res/drawable-mdpi/icon_openinapp.png \
   res/drawable-mdpi/icon_pageaction.png \
   res/drawable-mdpi/icon_reading_list_empty.png \
@@ -782,7 +783,6 @@ RES_DRAWABLE_HDPI = \
   res/drawable-hdpi/icon_most_recent.png \
   res/drawable-hdpi/icon_most_recent_empty.png \
   res/drawable-hdpi/icon_most_visited.png \
-  res/drawable-hdpi/icon_most_visited_empty.png \
   res/drawable-hdpi/icon_openinapp.png \
   res/drawable-hdpi/icon_pageaction.png \
   res/drawable-hdpi/icon_reading_list_empty.png \
@@ -884,7 +884,6 @@ RES_DRAWABLE_XHDPI = \
   res/drawable-xhdpi/icon_most_recent.png \
   res/drawable-xhdpi/icon_most_recent_empty.png \
   res/drawable-xhdpi/icon_most_visited.png \
-  res/drawable-xhdpi/icon_most_visited_empty.png \
   res/drawable-xhdpi/icon_openinapp.png \
   res/drawable-xhdpi/icon_pageaction.png \
   res/drawable-xhdpi/icon_reading_list_empty.png \
@@ -1311,11 +1310,13 @@ jni-stubs.inc: jars/gecko-browser.jar jars/gecko-mozglue.jar jars/gecko-util.jar
 ANNOTATION_PROCESSOR_JAVA_FILES = \
   build/annotationProcessors/AnnotationProcessor.java \
   build/annotationProcessors/CodeGenerator.java \
-  build/annotationProcessors/MethodWithAnnotationInfo.java \
+  build/annotationProcessors/AnnotationInfo.java \
+  build/annotationProcessors/classloader/AnnotatableEntity.java \
+  build/annotationProcessors/classloader/ClassWithOptions.java \
   build/annotationProcessors/classloader/IterableJarLoadingURLClassLoader.java \
   build/annotationProcessors/classloader/JarClassIterator.java \
-  build/annotationProcessors/utils/AlphabeticMethodComparator.java \
-  build/annotationProcessors/utils/GeneratableEntryPointIterator.java \
+  build/annotationProcessors/utils/AlphabeticAnnotatableEntityComparator.java \
+  build/annotationProcessors/utils/GeneratableElementIterator.java \
   build/annotationProcessors/utils/Utils.java \
   $(NULL)
 

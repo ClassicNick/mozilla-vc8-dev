@@ -52,6 +52,7 @@ namespace android {
 namespace mozilla {
     namespace gfx {
         class SharedSurface;
+        class SourceSurface;
         class DataSourceSurface;
         struct SurfaceCaps;
     }
@@ -2417,7 +2418,7 @@ public:
 #endif
 
     virtual already_AddRefed<TextureImage>
-    CreateDirectTextureImage(android::GraphicBuffer* aBuffer, GLenum aWrapMode)
+    CreateDirectTextureImage(::android::GraphicBuffer* aBuffer, GLenum aWrapMode)
     { return nullptr; }
 
     // Before reads from offscreen texture
@@ -2700,6 +2701,8 @@ public:
     // Similar to ReadPixelsIntoImageSurface, but pulls from the screen
     // instead of the currently bound framebuffer.
     void ReadScreenIntoImageSurface(gfxImageSurface* dest);
+
+    TemporaryRef<gfx::SourceSurface> ReadPixelsToSourceSurface(const gfx::IntSize &aSize);
 
     /**
      * Copy a rectangle from one TextureImage into another.  The

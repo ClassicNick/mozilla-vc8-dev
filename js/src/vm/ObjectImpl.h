@@ -8,7 +8,7 @@
 #define vm_ObjectImpl_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/GuardObjects.h"
+
 #include "mozilla/StandardInteger.h"
 
 #include "jsfriendapi.h"

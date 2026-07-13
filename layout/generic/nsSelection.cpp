@@ -4382,7 +4382,7 @@ Selection::Collapse(nsINode* aParentNode, int32_t aOffset)
   nsresult result;
 
   nsRefPtr<nsPresContext> presContext = GetPresContext();
-  if (presContext->Document() != aParentNode->OwnerDoc())
+  if (!presContext || presContext->Document() != aParentNode->OwnerDoc())
     return NS_ERROR_FAILURE;
 
   // Delete all of the current ranges
@@ -4623,7 +4623,7 @@ Selection::Extend(nsINode* aParentNode, int32_t aOffset)
     return NS_ERROR_FAILURE;
 
   nsRefPtr<nsPresContext> presContext = GetPresContext();
-  if (presContext->Document() != aParentNode->OwnerDoc())
+  if (!presContext || presContext->Document() != aParentNode->OwnerDoc())
     return NS_ERROR_FAILURE;
 
   //mFrameSelection->InvalidateDesiredX();
