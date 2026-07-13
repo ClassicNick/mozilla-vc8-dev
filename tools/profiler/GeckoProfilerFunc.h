@@ -19,6 +19,7 @@ class TimeStamp;
 using mozilla::TimeStamp;
 using mozilla::TimeDuration;
 
+class ProfilerBacktrace;
 class ProfilerMarkerPayload;
 
 // Returns a handle to pass on exit. This can check that we are popping the
@@ -33,6 +34,9 @@ void mozilla_sampler_start(int aEntries, double aInterval,
                            const char** aThreadNameFilters, uint32_t aFilterCount);
 
 void mozilla_sampler_stop();
+
+ProfilerBacktrace* mozilla_sampler_get_backtrace();
+void mozilla_sampler_free_backtrace(ProfilerBacktrace* aBacktrace);
 
 bool mozilla_sampler_is_active();
 
@@ -70,6 +74,7 @@ bool mozilla_sampler_register_thread(const char* name, void* stackTop);
 void mozilla_sampler_unregister_thread();
 
 double mozilla_sampler_time();
+double mozilla_sampler_time(const TimeStamp& aTime);
 
 /* Returns true if env var SPS_NEW is set to anything, else false. */
 extern bool sps_version2();

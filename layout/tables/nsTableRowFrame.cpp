@@ -764,7 +764,7 @@ nscoord CalcHeightFromUnpaginatedHeight(nsPresContext*   aPresContext,
 {
   nscoord height = 0;
   nsTableRowFrame* firstInFlow =
-    static_cast<nsTableRowFrame*>(aRow.GetFirstInFlow());
+    static_cast<nsTableRowFrame*>(aRow.FirstInFlow());
   if (firstInFlow->HasUnpaginatedHeight()) {
     height = firstInFlow->GetUnpaginatedHeight(aPresContext);
     for (nsIFrame* prevInFlow = aRow.GetPrevInFlow(); prevInFlow;
@@ -1125,7 +1125,7 @@ nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
   const nsStyleVisibility* rowVis = StyleVisibility();
   bool collapseRow = (NS_STYLE_VISIBILITY_COLLAPSE == rowVis->mVisible);
   nsTableFrame* tableFrame = static_cast<nsTableFrame*>(
-    nsTableFrame::GetTableFrame(this)->GetFirstInFlow());
+    nsTableFrame::GetTableFrame(this)->FirstInFlow());
   if (collapseRow) {
     tableFrame->SetNeedToCollapse(true);
   }
@@ -1347,7 +1347,7 @@ nsTableRowFrame::SetUnpaginatedHeight(nsPresContext* aPresContext,
 nscoord
 nsTableRowFrame::GetUnpaginatedHeight(nsPresContext* aPresContext)
 {
-  FrameProperties props = GetFirstInFlow()->Properties();
+  FrameProperties props = FirstInFlow()->Properties();
   return NS_PTR_TO_INT32(props.Get(RowUnpaginatedHeightProperty()));
 }
 

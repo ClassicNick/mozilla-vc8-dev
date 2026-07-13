@@ -15,6 +15,9 @@
 #include "WinUtils.h"
 #include "KeyboardLayout.h"
 
+#include "mozilla/MiscEvents.h"
+#include "mozilla/TextEvents.h"
+
 using namespace mozilla::widget;
 
 static nsIMM32Handler* gIMM32Handler = nullptr;

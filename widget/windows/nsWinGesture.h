@@ -19,7 +19,8 @@
 #define WM_TABLET_DEFBASE                    0x02C0
 #endif
 #include "nsPoint.h"
-#include "nsGUIEvent.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/TouchEvents.h"
 
 // Desktop builds target apis for 502. Win8 Metro builds target 602.
 #if WINVER < 0x0602
