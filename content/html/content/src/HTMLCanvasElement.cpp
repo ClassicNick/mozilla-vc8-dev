@@ -9,6 +9,7 @@
 #include "imgIEncoder.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "gfxImageSurface.h"
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
@@ -1054,7 +1055,7 @@ HTMLCanvasElement::GetSizeExternal()
 }
 
 NS_IMETHODIMP
-HTMLCanvasElement::RenderContextsExternal(gfxContext *aContext, gfxPattern::GraphicsFilter aFilter, uint32_t aFlags)
+HTMLCanvasElement::RenderContextsExternal(gfxContext *aContext, GraphicsFilter aFilter, uint32_t aFlags)
 {
   if (!mCurrentContext)
     return NS_OK;

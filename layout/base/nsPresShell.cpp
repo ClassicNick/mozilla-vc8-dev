@@ -157,6 +157,7 @@
 #include "RestyleManager.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIDragSession.h"
+#include "nsIFrameInlines.h"
 
 #ifdef ANDROID
 #include "nsIDocShellTreeOwner.h"
@@ -473,7 +474,7 @@ public:
       }
       if (frame) {
         frame->HandleEvent(aVisitor.mPresContext,
-                           (nsGUIEvent*) aVisitor.mEvent,
+                           static_cast<WidgetGUIEvent*>(aVisitor.mEvent),
                            &aVisitor.mEventStatus);
       }
     }
@@ -1899,7 +1900,7 @@ PresShell::FireBeforeResizeEvent()
     return;
 
   // Send beforeresize event from here.
-  nsEvent event(true, NS_BEFORERESIZE_EVENT);
+  WidgetEvent event(true, NS_BEFORERESIZE_EVENT);
 
   nsPIDOMWindow *window = mDocument->GetWindow();
   if (window) {
@@ -1921,7 +1922,7 @@ PresShell::FireResizeEvent()
     return;
 
   //Send resize event from here.
-  nsEvent event(true, NS_RESIZE_EVENT);
+  WidgetEvent event(true, NS_RESIZE_EVENT);
   nsEventStatus status = nsEventStatus_eIgnore;
 
   nsPIDOMWindow *window = mDocument->GetWindow();
@@ -3399,7 +3400,7 @@ PresShell::ScheduleViewManagerFlush()
 }
 
 void
-PresShell::DispatchSynthMouseMove(nsGUIEvent *aEvent,
+PresShell::DispatchSynthMouseMove(WidgetGUIEvent* aEvent,
                                   bool aFlushOnHoverChange)
 {
   RestyleManager* restyleManager = mPresContext->RestyleManager();
@@ -4369,10 +4370,7 @@ PresShell::RenderDocument(const nsRect& aRect, uint32_t aFlags,
   // either already the case, or overrides the operator in a group.
   // the original operator will be present when we PopGroup.
   // we can avoid using a temporary surface if we're using OPERATOR_OVER
-  // and our background color has no alpha (so we'll be compositing on top
-  // of a fully opaque solid color region)
-  bool needsGroup = NS_GET_A(aBackgroundColor) < 0xff ||
-    oldOperator != gfxContext::OPERATOR_OVER;
+  bool needsGroup = oldOperator != gfxContext::OPERATOR_OVER;
 
   if (needsGroup) {
     aThebesContext->PushGroup(NS_GET_A(aBackgroundColor) == 0xff ?
@@ -5244,8 +5242,8 @@ PresShell::ProcessSynthMouseMoveEvent(bool aFromScroll)
     refpoint += view->ViewToWidgetOffset();
   }
   NS_ASSERTION(view->GetWidget(), "view should have a widget here");
-  nsMouseEvent event(true, NS_MOUSE_MOVE, view->GetWidget(),
-                     nsMouseEvent::eSynthesized);
+  WidgetMouseEvent event(true, NS_MOUSE_MOVE, view->GetWidget(),
+                         WidgetMouseEvent::eSynthesized);
   event.refPoint = LayoutDeviceIntPoint::FromAppUnitsToNearest(refpoint, viewAPD);
   event.time = PR_IntervalNow();
   // XXX set event.modifiers ?
@@ -5740,7 +5738,7 @@ PresShell::GetEventTargetFrame()
 }
 
 already_AddRefed<nsIContent>
-PresShell::GetEventTargetContent(nsEvent* aEvent)
+PresShell::GetEventTargetContent(WidgetEvent* aEvent)
 {
   nsCOMPtr<nsIContent> content = GetCurrentEventContent();
   if (!content) {
@@ -5840,8 +5838,8 @@ PresShell::GetParentPresShell()
 }
 
 nsresult
-PresShell::RetargetEventToParent(nsGUIEvent*     aEvent,
-                                 nsEventStatus*  aEventStatus)
+PresShell::RetargetEventToParent(WidgetGUIEvent* aEvent,
+                                 nsEventStatus* aEventStatus)
 {
   // Send this events straight up to the parent pres shell.
   // We do this for keystroke events in zombie documents or if either a frame
@@ -5874,7 +5872,7 @@ PresShell::GetFocusedDOMWindowInOurWindow()
 }
 
 void
-PresShell::RecordMouseLocation(nsGUIEvent* aEvent)
+PresShell::RecordMouseLocation(WidgetGUIEvent* aEvent)
 {
   if (!mPresContext)
     return;
@@ -5888,7 +5886,8 @@ PresShell::RecordMouseLocation(nsGUIEvent* aEvent)
   }
 
   if ((aEvent->message == NS_MOUSE_MOVE &&
-       static_cast<nsMouseEvent*>(aEvent)->reason == nsMouseEvent::eReal) ||
+       static_cast<WidgetMouseEvent*>(aEvent)->reason ==
+         WidgetMouseEvent::eReal) ||
       aEvent->message == NS_MOUSE_ENTER ||
       aEvent->message == NS_MOUSE_BUTTON_DOWN ||
       aEvent->message == NS_MOUSE_BUTTON_UP) {
@@ -6006,10 +6005,10 @@ nsIFrame* GetNearestFrameContainingPresShell(nsIPresShell* aPresShell)
 }
 
 nsresult
-PresShell::HandleEvent(nsIFrame        *aFrame,
-                       nsGUIEvent*     aEvent,
-                       bool            aDontRetargetEvents,
-                       nsEventStatus*  aEventStatus)
+PresShell::HandleEvent(nsIFrame* aFrame,
+                       WidgetGUIEvent* aEvent,
+                       bool aDontRetargetEvents,
+                       nsEventStatus* aEventStatus)
 {
   NS_ASSERTION(aFrame, "null frame");
 
@@ -6185,7 +6184,8 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
     }
 
     bool isWindowLevelMouseExit = (aEvent->message == NS_MOUSE_EXIT) &&
-      (static_cast<nsMouseEvent*>(aEvent)->exit == nsMouseEvent::eTopLevel);
+      (static_cast<WidgetMouseEvent*>(aEvent)->exit ==
+         WidgetMouseEvent::eTopLevel);
 
     // Get the frame at the event point. However, don't do this if we're
     // capturing and retargeting the event because the captured frame will
@@ -6277,7 +6277,7 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
         eventPoint = nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, frame);
       }
       if (aEvent->eventStructType == NS_MOUSE_EVENT &&
-          static_cast<nsMouseEvent*>(aEvent)->ignoreRootScrollFrame) {
+          static_cast<WidgetMouseEvent*>(aEvent)->ignoreRootScrollFrame) {
         flags |= INPUT_IGNORE_ROOT_SCROLL_FRAME;
       }
       nsIFrame* target =
@@ -6313,7 +6313,7 @@ PresShell::HandleEvent(nsIFrame        *aFrame,
         mNoDelayedMouseEvents = true;
       } else if (!mNoDelayedMouseEvents && aEvent->message == NS_MOUSE_BUTTON_UP) {
         nsDelayedEvent* event =
-          new nsDelayedMouseEvent(static_cast<nsMouseEvent*>(aEvent));
+          new nsDelayedMouseEvent(static_cast<WidgetMouseEvent*>(aEvent));
         if (!mDelayedEvents.AppendElement(event)) {
           delete event;
         }
@@ -6555,8 +6555,8 @@ PresShell::ShowEventTargetDebug()
 #endif
 
 nsresult
-PresShell::HandlePositionedEvent(nsIFrame*      aTargetFrame,
-                                 nsGUIEvent*    aEvent,
+PresShell::HandlePositionedEvent(nsIFrame* aTargetFrame,
+                                 WidgetGUIEvent* aEvent,
                                  nsEventStatus* aEventStatus)
 {
   nsresult rv = NS_OK;
@@ -6608,7 +6608,7 @@ PresShell::HandlePositionedEvent(nsIFrame*      aTargetFrame,
 }
 
 nsresult
-PresShell::HandleEventWithTarget(nsEvent* aEvent, nsIFrame* aFrame,
+PresShell::HandleEventWithTarget(WidgetEvent* aEvent, nsIFrame* aFrame,
                                  nsIContent* aContent, nsEventStatus* aStatus)
 {
 #if DEBUG
@@ -6628,8 +6628,8 @@ PresShell::HandleEventWithTarget(nsEvent* aEvent, nsIFrame* aFrame,
   return rv;
 }
 
-static bool CanHandleContextMenuEvent(nsMouseEvent* aMouseEvent,
-                                        nsIFrame* aFrame)
+static bool CanHandleContextMenuEvent(WidgetMouseEvent* aMouseEvent,
+                                      nsIFrame* aFrame)
 {
 #if defined(XP_MACOSX) && defined(MOZ_XUL)
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
@@ -6638,7 +6638,7 @@ static bool CanHandleContextMenuEvent(nsMouseEvent* aMouseEvent,
     if (popupFrame) {
       // context menus should not be opened while another menu is open on Mac,
       // so return false so that the event is not fired.
-      if (aMouseEvent->context == nsMouseEvent::eContextMenuKey) {
+      if (aMouseEvent->context == WidgetMouseEvent::eContextMenuKey) {
         return false;
       } else if (aMouseEvent->widget) {
          nsWindowType windowType;
@@ -6659,7 +6659,7 @@ static bool CanHandleContextMenuEvent(nsMouseEvent* aMouseEvent,
 }
 
 nsresult
-PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
+PresShell::HandleEventInternal(WidgetEvent* aEvent, nsEventStatus* aStatus)
 {
   nsRefPtr<nsEventStateManager> manager = mPresContext->EventStateManager();
   nsresult rv = NS_OK;
@@ -6833,11 +6833,11 @@ PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
     }
 
     if (aEvent->message == NS_CONTEXTMENU) {
-      nsMouseEvent* me = static_cast<nsMouseEvent*>(aEvent);
+      WidgetMouseEvent* me = static_cast<WidgetMouseEvent*>(aEvent);
       if (!CanHandleContextMenuEvent(me, GetCurrentEventFrame())) {
         return NS_OK;
       }
-      if (me->context == nsMouseEvent::eContextMenuKey &&
+      if (me->context == WidgetMouseEvent::eContextMenuKey &&
           !AdjustContextMenuKeyEvent(me)) {
         return NS_OK;
       }
@@ -6928,7 +6928,7 @@ PresShell::HandleEventInternal(nsEvent* aEvent, nsEventStatus* aStatus)
 }
 
 void
-PresShell::DispatchTouchEvent(nsEvent *aEvent,
+PresShell::DispatchTouchEvent(WidgetEvent* aEvent,
                               nsEventStatus* aStatus,
                               nsPresShellEventCB* aEventCB,
                               bool aTouchIsNew)
@@ -7019,7 +7019,8 @@ PresShell::DispatchTouchEvent(nsEvent *aEvent,
 // Dispatch event to content only (NOT full processing)
 // See also HandleEventWithTarget which does full event processing.
 nsresult
-PresShell::HandleDOMEventWithTarget(nsIContent* aTargetContent, nsEvent* aEvent,
+PresShell::HandleDOMEventWithTarget(nsIContent* aTargetContent,
+                                    WidgetEvent* aEvent,
                                     nsEventStatus* aStatus)
 {
   nsresult rv = NS_OK;
@@ -7063,7 +7064,7 @@ PresShell::HandleDOMEventWithTarget(nsIContent* aTargetContent,
 }
 
 bool
-PresShell::AdjustContextMenuKeyEvent(nsMouseEvent* aEvent)
+PresShell::AdjustContextMenuKeyEvent(WidgetMouseEvent* aEvent)
 {
 #ifdef MOZ_XUL
   // if a menu is open, open the context menu relative to the active item on the menu. 

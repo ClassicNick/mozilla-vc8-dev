@@ -50,7 +50,7 @@ nsResizerFrame::nsResizerFrame(nsIPresShell* aPresShell, nsStyleContext* aContex
 
 NS_IMETHODIMP
 nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
-                            nsGUIEvent* aEvent,
+                            WidgetGUIEvent* aEvent,
                             nsEventStatus* aEventStatus)
 {
   NS_ENSURE_ARG_POINTER(aEventStatus);
@@ -66,7 +66,8 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
     case NS_MOUSE_BUTTON_DOWN: {
       if (aEvent->eventStructType == NS_TOUCH_EVENT ||
           (aEvent->eventStructType == NS_MOUSE_EVENT &&
-        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton))
+        static_cast<WidgetMouseEvent*>(aEvent)->button ==
+          WidgetMouseEvent::eLeftButton))
       {
         nsCOMPtr<nsIBaseWindow> window;
         nsIPresShell* presShell = aPresContext->GetPresShell();
@@ -133,7 +134,8 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 
       if (aEvent->eventStructType == NS_TOUCH_EVENT ||
           (aEvent->eventStructType == NS_MOUSE_EVENT &&
-        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton))
+           static_cast<WidgetMouseEvent*>(aEvent)->button ==
+             WidgetMouseEvent::eLeftButton))
     {
       // we're done tracking.
       mTrackingMouseMove = false;
@@ -294,7 +296,8 @@ nsResizerFrame::HandleEvent(nsPresContext* aPresContext,
 
   case NS_MOUSE_DOUBLECLICK:
     if (aEvent->eventStructType == NS_MOUSE_EVENT &&
-        static_cast<nsMouseEvent*>(aEvent)->button == nsMouseEvent::eLeftButton)
+        static_cast<WidgetMouseEvent*>(aEvent)->button ==
+          WidgetMouseEvent::eLeftButton)
     {
       nsCOMPtr<nsIBaseWindow> window;
       nsIPresShell* presShell = aPresContext->GetPresShell();
@@ -539,7 +542,8 @@ nsResizerFrame::GetDirection()
 }
 
 void
-nsResizerFrame::MouseClicked(nsPresContext* aPresContext, nsGUIEvent *aEvent)
+nsResizerFrame::MouseClicked(nsPresContext* aPresContext,
+                             WidgetGUIEvent *aEvent)
 {
   // Execute the oncommand event handler.
   nsContentUtils::DispatchXULCommand(mContent,

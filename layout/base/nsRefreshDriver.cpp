@@ -50,6 +50,7 @@ typedef HRESULT (WINAPI*DwmGetCompositionTimingInfoProc)(HWND hWnd, DWM_TIMING_I
 #include "mozilla/dom/WindowBinding.h"
 #include "RestyleManager.h"
 #include "Layers.h"
+#include "imgIContainer.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;

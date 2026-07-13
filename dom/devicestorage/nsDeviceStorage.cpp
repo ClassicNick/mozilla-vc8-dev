@@ -47,6 +47,8 @@
 #include "nsCExternalHandlerService.h"
 #include "nsIPermissionManager.h"
 #include "nsIStringBundle.h"
+#include "nsIDocument.h"
+#include <algorithm>
 
 #include "mozilla/dom/DeviceStorageBinding.h"
 
@@ -3465,10 +3467,10 @@ nsDOMDeviceStorage::PostHandleEvent(nsEventChainPostVisitor & aVisitor)
 }
 
 nsresult
-nsDOMDeviceStorage::DispatchDOMEvent(nsEvent *aEvent,
-                                     nsIDOMEvent *aDOMEvent,
-                                     nsPresContext *aPresContext,
-                                     nsEventStatus *aEventStatus)
+nsDOMDeviceStorage::DispatchDOMEvent(WidgetEvent* aEvent,
+                                     nsIDOMEvent* aDOMEvent,
+                                     nsPresContext* aPresContext,
+                                     nsEventStatus* aEventStatus)
 {
   return nsDOMEventTargetHelper::DispatchDOMEvent(aEvent,
                                                   aDOMEvent,

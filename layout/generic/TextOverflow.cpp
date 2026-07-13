@@ -18,6 +18,7 @@
 #include "nsRect.h"
 #include "nsRenderingContext.h"
 #include "nsTextFrame.h"
+#include "nsIFrameInlines.h"
 #include "mozilla/Util.h"
 #include "mozilla/Likely.h"
 
@@ -227,7 +228,7 @@ nsDisplayTextOverflowMarker::PaintTextToContext(nsRenderingContext* aCtx,
       NS_ASSERTION(!textRun->IsRightToLeft(),
                    "Ellipsis textruns should always be LTR!");
       gfxPoint gfxPt(pt.x, pt.y);
-      textRun->Draw(aCtx->ThebesContext(), gfxPt, gfxFont::GLYPH_FILL,
+      textRun->Draw(aCtx->ThebesContext(), gfxPt, DrawMode::GLYPH_FILL,
                     0, textRun->GetLength(), nullptr, nullptr, nullptr);
     }
   } else {

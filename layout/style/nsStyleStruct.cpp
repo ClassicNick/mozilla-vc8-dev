@@ -28,6 +28,7 @@
 
 #include "mozilla/Likely.h"
 #include "nsIURI.h"
+#include "nsIDocument.h"
 #include <algorithm>
 
 MOZ_STATIC_ASSERT((((1 << nsStyleStructID_Length) - 1) &

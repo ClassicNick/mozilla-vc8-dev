@@ -1197,7 +1197,7 @@ MapObject::construct(JSContext *cx, unsigned argc, Value *vp)
                 break;
             // FIXME: We're supposed to throw if pairVal isn't an object.  Bug
             // 918341.
-            pairObj = js_ValueToNonNullObject(cx, pairVal);
+            pairObj = ToObject(cx, pairVal);
             if (!pairObj)
                 return false;
 

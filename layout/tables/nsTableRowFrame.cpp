@@ -18,6 +18,8 @@
 #include "nsTableColFrame.h"
 #include "nsCOMPtr.h"
 #include "nsDisplayList.h"
+#include "nsIFrameInlines.h"
+#include <algorithm>
 
 using namespace mozilla;
 

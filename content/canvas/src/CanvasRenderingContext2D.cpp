@@ -1007,7 +1007,7 @@ CanvasRenderingContext2D::SetIsIPC(bool isIPC)
 }
 
 NS_IMETHODIMP
-CanvasRenderingContext2D::Render(gfxContext *ctx, gfxPattern::GraphicsFilter aFilter, uint32_t aFlags)
+CanvasRenderingContext2D::Render(gfxContext *ctx, GraphicsFilter aFilter, uint32_t aFlags)
 {
   nsresult rv = NS_OK;
 

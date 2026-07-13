@@ -3498,7 +3498,7 @@ DrawBorderImageComponent(nsRenderingContext&  aRenderingContext,
     aStyleBorder.SetSubImage(aIndex, subImage);
   }
 
-  gfxPattern::GraphicsFilter graphicsFilter =
+  GraphicsFilter graphicsFilter =
     nsLayoutUtils::GetGraphicsFilterForFrame(aForFrame);
 
   // If we have no tiling in either direction, we can skip the intermediate
@@ -4737,7 +4737,7 @@ nsImageRenderer::Draw(nsPresContext*       aPresContext,
     return;
   }
 
-  gfxPattern::GraphicsFilter graphicsFilter =
+  GraphicsFilter graphicsFilter =
     nsLayoutUtils::GetGraphicsFilterForFrame(mForFrame);
 
   switch (mType) {
@@ -4798,7 +4798,7 @@ nsImageRenderer::DrawBackground(nsPresContext*       aPresContext,
   }
 
   if (mType == eStyleImageType_Image) {
-    gfxPattern::GraphicsFilter graphicsFilter =
+    GraphicsFilter graphicsFilter =
       nsLayoutUtils::GetGraphicsFilterForFrame(mForFrame);
 
     nsLayoutUtils::DrawBackgroundImage(&aRenderingContext, mImageContainer,
