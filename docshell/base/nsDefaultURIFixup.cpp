@@ -21,6 +21,7 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "nsIObserverService.h"
+#include "nsXULAppAPI.h"
 
 using namespace mozilla;
 

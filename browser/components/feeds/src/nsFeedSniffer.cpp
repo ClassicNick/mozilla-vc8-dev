@@ -27,6 +27,8 @@
 #include "nsIMIMEHeaderParam.h"
 
 #include "nsMimeTypes.h"
+#include "nsIURI.h"
+#include <algorithm>
 
 #define TYPE_ATOM "application/atom+xml"
 #define TYPE_RSS "application/rss+xml"

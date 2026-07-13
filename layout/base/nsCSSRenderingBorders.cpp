@@ -1578,6 +1578,8 @@ nsCSSBorderRenderer::DrawNoCompositeColorSolidBorderAzure()
     builder->LineTo(strokeEnd);
     RefPtr<Path> path = builder->Finish();
     dt->Stroke(path, ColorPattern(Color::FromABGR(mBorderColors[i])), StrokeOptions(mBorderWidths[i]));
+    builder = nullptr;
+    path = nullptr;
 
     Pattern *pattern;
 

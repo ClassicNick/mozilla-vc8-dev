@@ -31,6 +31,10 @@
 #include <cmath>
 #include "mozilla/FFTBlock.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 const unsigned PeriodicWaveSize = 4096; // This must be a power of two.
 const unsigned NumberOfRanges = 36; // There should be 3 * log2(PeriodicWaveSize) 1/3 octave ranges.
 const float CentsPerRange = 1200 / 3; // 1/3 Octave.
@@ -137,7 +141,7 @@ unsigned PeriodicWave::numberOfPartialsForRange(unsigned rangeIndex) const
     float centsToCull = rangeIndex * m_centsPerRange;
 
     // A value from 0 -> 1 representing what fraction of the partials to keep.
-    float cullingScale = pow(2, -centsToCull / 1200);
+    float cullingScale = powf(2, -centsToCull / 1200);
 
     // The very top range will have all the partials culled.
     unsigned numberOfPartials = cullingScale * maxNumberOfPartials();

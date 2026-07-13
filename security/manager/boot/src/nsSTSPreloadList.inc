@@ -8,7 +8,7 @@
 /*****************************************************************************/
 
 #include "mozilla/StandardInteger.h"
-const PRTime gPreloadListExpirationTime = INT64_C(1390040594058000);
+const PRTime gPreloadListExpirationTime = INT64_C(1390645107959000);
 
 class nsSTSPreload
 {

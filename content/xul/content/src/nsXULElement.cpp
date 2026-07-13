@@ -89,6 +89,8 @@
 #include "nsAttrValueOrString.h"
 #include "nsAttrValueInlines.h"
 #include "mozilla/Attributes.h"
+#include "nsIController.h"
+#include <algorithm>
 
 // The XUL doc interface
 #include "nsIDOMXULDocument.h"

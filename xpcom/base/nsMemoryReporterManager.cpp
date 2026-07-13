@@ -1021,7 +1021,6 @@ nsMemoryReporterManager::GetExplicit(int64_t* aExplicit)
 #ifndef HAVE_JEMALLOC_STATS
     return NS_ERROR_NOT_AVAILABLE;
 #else
-    nsresult rv;
     bool more;
 
     // For each reporter we call CollectReports and filter out the

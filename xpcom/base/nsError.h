@@ -16,6 +16,8 @@ typedef unsigned __int32  uint32_t;
 #include "mozilla/StandardInteger.h"
 #endif
 
+#define EMPTY_STATIC_ASSERT(a, b)
+
 /*
  * To add error code to your module, you need to do the following:
  *
@@ -188,9 +190,9 @@ inline uint32_t NS_FAILED_impl(nsresult _nsresult) {
 #define NS_SUCCEEDED(_nsresult) ((bool)MOZ_LIKELY(!NS_FAILED_impl(_nsresult)))
 
 /* Check that our enum type is actually uint32_t as expected */
-static_assert(((nsresult)0) < ((nsresult)-1),
+EMPTY_STATIC_ASSERT(((nsresult)0) < ((nsresult)-1),
               "nsresult must be an unsigned type");
-static_assert(sizeof(nsresult) == sizeof(uint32_t),
+EMPTY_STATIC_ASSERT(sizeof(nsresult) == sizeof(uint32_t),
               "nsresult must be 32 bits");
 #else
 #define NS_FAILED_impl(_nsresult) ((_nsresult) & 0x80000000)

@@ -5,6 +5,8 @@
 #include "nsIOService.h"
 #include "nsSyncStreamListener.h"
 #include "nsIPipe.h"
+#include "nsThreadUtils.h"
+#include <algorithm>
 
 nsresult
 nsSyncStreamListener::Init()
