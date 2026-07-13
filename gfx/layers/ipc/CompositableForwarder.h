@@ -7,8 +7,13 @@
 #ifndef MOZILLA_LAYERS_COMPOSITABLEFORWARDER
 #define MOZILLA_LAYERS_COMPOSITABLEFORWARDER
 
+<<<<<<< HEAD
 #include "mozilla/StandardInteger.h"                     // for int32_t, uint64_t
 #include "gfxASurface.h"                // for gfxASurface, etc
+=======
+#include <stdint.h>                     // for int32_t, uint64_t
+#include "gfxTypes.h"
+>>>>>>> b121657
 #include "mozilla/Attributes.h"         // for MOZ_OVERRIDE
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for ISurfaceAllocator
@@ -45,7 +50,6 @@ class CompositableForwarder : public ISurfaceAllocator
   friend class AutoOpenSurface;
   friend class DeprecatedTextureClientShmem;
 public:
-  typedef gfxASurface::gfxContentType gfxContentType;
 
   CompositableForwarder()
     : mMultiProcess(false)

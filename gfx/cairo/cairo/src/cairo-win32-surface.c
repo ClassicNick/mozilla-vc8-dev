@@ -60,7 +60,7 @@
 #include <wchar.h>
 #include <windows.h>
 #ifdef MOZ_ENABLE_D3D9_LAYER
-#include <D3D9.h>
+#include <d3d9.h>
 #endif
 
 #if defined(__MINGW32__) && !defined(ETO_PDY)

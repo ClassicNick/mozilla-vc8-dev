@@ -2506,7 +2506,7 @@ nsFrame::IsSelectable(bool* aSelectable, uint8_t* aSelectStyle) const
   //    AUTO     -> CELL     -> TEXT -> AUTO,     the returned value is TEXT
   //
   uint8_t selectStyle  = NS_STYLE_USER_SELECT_AUTO;
-  nsIFrame* frame      = (nsIFrame*)this;
+  nsIFrame* frame      = const_cast<nsFrame*>(this);
 
   while (frame) {
     const nsStyleUIReset* userinterface = frame->StyleUIReset();
@@ -4517,7 +4517,7 @@ NS_IMETHODIMP nsFrame::GetOffsetFromView(nsPoint&  aOffset,
                                          nsView** aView) const
 {
   NS_PRECONDITION(nullptr != aView, "null OUT parameter pointer");
-  nsIFrame* frame = (nsIFrame*)this;
+  nsIFrame* frame = const_cast<nsFrame*>(this);
 
   *aView = nullptr;
   aOffset.MoveTo(0, 0);
