@@ -6,7 +6,7 @@
 #ifndef mozilla_TouchEvents_h__
 #define mozilla_TouchEvents_h__
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "mozilla/dom/Touch.h"
 #include "mozilla/MouseEvents.h"
@@ -139,7 +139,7 @@ public:
     MOZ_COUNT_DTOR(WidgetTouchEvent);
   }
 
-  nsTArray<nsRefPtr<mozilla::dom::Touch>> touches;
+  nsTArray<nsRefPtr<mozilla::dom::Touch> > touches;
 
   void AssignTouchEventData(const WidgetTouchEvent& aEvent, bool aCopyTargets)
   {

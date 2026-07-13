@@ -117,7 +117,7 @@ typename Builder::Object TableTicker::GetMetaJSCustomObject(Builder& b)
   b.DefineProperty(meta, "processType", XRE_GetProcessType());
 
   TimeDuration delta = TimeStamp::Now() - sStartTime;
-  b.DefineProperty(meta, "startTime", PR_Now()/1000.0f - delta.ToMilliseconds());
+  b.DefineProperty(meta, "startTime", PR_Now()/1000.0 - delta.ToMilliseconds());
 
   nsresult res;
   nsCOMPtr<nsIHttpProtocolHandler> http = do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http", &res);
@@ -230,7 +230,7 @@ typename Builder::Object BuildJavaThreadJSObject(Builder& b)
         b.DefineProperty(sample, "frames", frames);
         b.ArrayPush(samples, sample);
 
-        double sampleTime = GeckoJavaSampler::GetSampleTimeJavaProfiling(0, sampleId);
+        double sampleTime = AndroidBridge::Bridge()->GetSampleTimeJavaProfiling(0, sampleId);
         b.DefineProperty(sample, "time", sampleTime);
       }
       typename Builder::RootedObject frame(b.context(), b.CreateObject());
@@ -282,12 +282,12 @@ void TableTicker::BuildJSObject(Builder& b, typename Builder::ObjectHandle profi
 
 #if defined(SPS_OS_android) && !defined(MOZ_WIDGET_GONK)
   if (ProfileJava()) {
-    GeckoJavaSampler::PauseJavaProfiling();
+    AndroidBridge::Bridge()->PauseJavaProfiling();
 
     typename Builder::RootedObject javaThread(b.context(), BuildJavaThreadJSObject(b));
     b.ArrayPush(threads, javaThread);
 
-    GeckoJavaSampler::UnpauseJavaProfiling();
+    AndroidBridge::Bridge()->UnpauseJavaProfiling();
   }
 #endif
 

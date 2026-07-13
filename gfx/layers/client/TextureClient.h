@@ -89,18 +89,6 @@ public:
 class TextureClientData {
 public:
   virtual void DeallocateSharedData(ISurfaceAllocator* allocator) = 0;
-
-  /**
-   * Called just before telling the host side to deallocate the data.
-   *
-   * The reference to the shared data must be dropped without doing the deallocation
-   * because it is the host side that will deallocate the data.
-   * If there is a memory reproting mechanism in place for this type of data,
-   * the memory should be reported as deallocated. After this call, nothing on
-   * the client process should still have a reference to the shared data.
-   */
-  virtual void ForgetSharedData() = 0;
-
   virtual ~TextureClientData() {}
 };
 
@@ -136,12 +124,13 @@ public:
   virtual TextureClientSurface* AsTextureClientSurface() { return nullptr; }
   virtual TextureClientYCbCr* AsTextureClientYCbCr() { return nullptr; }
 
-  virtual void MarkUnused() {}
-
-  virtual bool Lock(OpenMode aMode)
-  {
-    return IsValid();
-  }
+  /**
+   * Locks the shared data, allowing the caller to get access to it.
+   *
+   * Please always lock/unlock when accessing the shared data.
+   * If Lock() returns false, you should not attempt to access the shared data.
+   */
+  virtual bool Lock(OpenMode aMode) { return IsValid(); }
 
   virtual void Unlock() {}
 
@@ -150,11 +139,18 @@ public:
    * Textures that do not implement locking should be immutable or should
    * use immediate uploads (see TextureFlags in CompositorTypes.h)
    */
-  virtual bool ImplementsLocking() const
-  {
-    return false;
-  }
+  virtual bool ImplementsLocking() const { return false; }
 
+  /**
+   * Sets this texture's ID.
+   *
+   * This ID is used to match a texture client with his corresponding TextureHost.
+   * Only the CompositableClient should be allowed to set or clear the ID.
+   * Zero is always an invalid ID.
+   * For a given compositableClient, there can never be more than one texture
+   * client with the same non-zero ID.
+   * Texture clients from different compositables may have the same ID.
+   */
   void SetID(uint64_t aID)
   {
     MOZ_ASSERT(mID == 0 && aID != 0);
@@ -167,10 +163,7 @@ public:
     mID = 0;
   }
 
-  uint64_t GetID() const
-  {
-    return mID;
-  }
+  uint64_t GetID() const { return mID; }
 
   virtual bool IsAllocated() const = 0;
 
@@ -178,8 +171,22 @@ public:
 
   virtual gfx::IntSize GetSize() const = 0;
 
+  /**
+   * Drop the shared data into a TextureClientData object and mark this
+   * TextureClient as invalid.
+   *
+   * The TextureClient must not hold any reference to the shared data
+   * after this method has been called.
+   * The TextureClientData is owned by the caller.
+   */
   virtual TextureClientData* DropTextureData() = 0;
 
+  /**
+   * TextureFlags contain important information about various aspects
+   * of the texture, like how its liferime is managed, and how it
+   * should be displayed.
+   * See TextureFlags in CompositorTypes.h.
+   */
   TextureFlags GetFlags() const { return mFlags; }
 
   /**
@@ -201,6 +208,10 @@ public:
    */
   bool IsValid() const { return mValid; }
 
+  /**
+   * An invalid TextureClient cannot provide access to its shared data
+   * anymore. This usually means it will soon be destroyed.
+   */
   void MarkInvalid() { mValid = false; }
 
 protected:

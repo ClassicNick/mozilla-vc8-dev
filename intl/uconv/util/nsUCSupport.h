@@ -11,6 +11,7 @@
 #include "nsIUnicodeDecoder.h"
 #include "uconvutil.h"
 #include "mozilla/Mutex.h"
+#include "nsAlgorithm.h"
 
 #define ONE_BYTE_TABLE_SIZE 256
 

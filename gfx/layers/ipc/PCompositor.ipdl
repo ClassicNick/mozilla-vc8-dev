@@ -5,15 +5,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-include "mozilla/ipc/RPCChannel.h";
-
 include LayersSurfaces;
 include protocol PGrallocBuffer;
 include protocol PLayerTransaction;
 include "mozilla/layers/CompositorTypes.h";
 include "mozilla/GfxMessageUtils.h";
 
-using mozilla::ipc::RPCChannel;
 using mozilla::null_t;
 using mozilla::layers::TextureFactoryIdentifier;
 using mozilla::layers::LayersBackend;
@@ -29,7 +26,7 @@ namespace layers {
  */
 // This should really be 'sync', but we're using 'rpc' as a workaround
 // for Bug 716631.
-rpc protocol PCompositor
+intr protocol PCompositor
 {
   // A Compositor manages a single Layer Manager (PLayerTransaction)
   manages PLayerTransaction;

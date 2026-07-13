@@ -6,7 +6,7 @@
 #ifndef mozilla_MouseEvents_h__
 #define mozilla_MouseEvents_h__
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/MathAlgorithms.h"
@@ -424,9 +424,6 @@ typedef WidgetWheelEvent                WheelEvent;
 } // namespace mozilla
 
 // TODO: Remove following typedefs
-typedef mozilla::WidgetMouseEventBase   nsMouseEvent_base;
 typedef mozilla::WidgetMouseEvent       nsMouseEvent;
-typedef mozilla::WidgetDragEvent        nsDragEvent;
-typedef mozilla::WidgetMouseScrollEvent nsMouseScrollEvent;
 
 #endif // mozilla_MouseEvents_h__

@@ -320,7 +320,7 @@ class IDLUnresolvedIdentifier(IDLObject):
                               [location])
         if name[0] == '_' and not allowDoubleUnderscore:
             name = name[1:]
-        if (name in ["constructor", "iterator", "toString", "toJSON"] and
+        if (name in ["constructor", "toString", "toJSON"] and
             not allowForbidden):
             raise WebIDLError("Cannot use reserved identifier '%s'" % (name),
                               [location])
@@ -676,6 +676,11 @@ class IDLInterface(IDLObjectWithScope):
             ancestor.interfacesBasedOnSelf.add(self)
             for ancestorConsequential in ancestor.getConsequentialInterfaces():
                 ancestorConsequential.interfacesBasedOnSelf.add(self)
+
+        for member in self.members:
+            if (member.isAttr() and member.isUnforgeable() and
+                not hasattr(member, "originatingInterface")):
+                member.originatingInterface = self
 
         if self.parent:
             # Make sure we don't shadow any of the [Unforgeable] attributes on

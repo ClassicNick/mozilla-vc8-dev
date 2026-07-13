@@ -153,6 +153,8 @@ print >>ipcmsgstart, """
 #ifndef IPCMessageStart_h
 #define IPCMessageStart_h
 
+#include "mozilla/Assertions.h"
+
 enum IPCMessageStart {
 """
 

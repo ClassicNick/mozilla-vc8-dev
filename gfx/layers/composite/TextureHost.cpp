@@ -59,7 +59,7 @@ DeprecatedTextureHost::CreateDeprecatedTextureHost(SurfaceDescriptorType aDescri
                                         aDeprecatedTextureHostFlags,
                                         aTextureFlags);
       if (aCompositableHost) {
-        result->SetCompositableQuirks(aCompositableHost->GetCompositableQuirks());
+        result->SetCompositableBackendSpecificData(aCompositableHost->GetCompositableBackendSpecificData());
       }
       return result;
       }
@@ -148,9 +148,10 @@ CreateBackendIndependentTextureHost(uint64_t aID,
   return result;
 }
 
-void TextureHost::SetCompositableQuirks(CompositableQuirks* aQuirks)
+void
+TextureHost::SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
 {
-    mQuirks = aQuirks;
+    mCompositableBackendData = aBackendData;
 }
 
 
@@ -179,9 +180,10 @@ TextureHost::PrintInfo(nsACString& aTo, const char* aPrefix)
 
 #endif
 
-void TextureSource::SetCompositableQuirks(CompositableQuirks* aQuirks)
+void
+TextureSource::SetCompositableBackendSpecificData(CompositableBackendSpecificData* aBackendData)
 {
-    mQuirks = aQuirks;
+    mCompositableBackendData = aBackendData;
 }
 
 TextureSource::TextureSource()

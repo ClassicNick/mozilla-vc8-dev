@@ -1891,7 +1891,8 @@ enum nsStyleContentType {
   eStyleContentType_CloseQuote    = 41,
   eStyleContentType_NoOpenQuote   = 42,
   eStyleContentType_NoCloseQuote  = 43,
-  eStyleContentType_AltContent    = 50
+  eStyleContentType_AltContent    = 50,
+  eStyleContentType_Uninitialized
 };
 
 struct nsStyleContentData {
@@ -1906,7 +1907,7 @@ struct nsStyleContentData {
 #endif
 
   nsStyleContentData()
-    : mType(nsStyleContentType(0))
+    : mType(eStyleContentType_Uninitialized)
 #ifdef DEBUG
     , mImageTracked(false)
 #endif

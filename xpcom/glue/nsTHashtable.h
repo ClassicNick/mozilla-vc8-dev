@@ -508,7 +508,7 @@ PLDHashOperator
 ImplCycleCollectionTraverse_EnumFunc(EntryType *aEntry,
                                      void* aUserData)
 {
-  auto userData = static_cast<nsTHashtableCCTraversalData*>(aUserData);
+  nsTHashtableCCTraversalData* userData = static_cast<nsTHashtableCCTraversalData*>(aUserData);
 
   ImplCycleCollectionTraverse(userData->mCallback,
                               *aEntry,

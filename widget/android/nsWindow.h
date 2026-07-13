@@ -11,7 +11,6 @@
 #include "nsIIdleServiceInternal.h"
 #include "nsTArray.h"
 #include "AndroidJavaWrappers.h"
-#include "GeneratedJNIWrappers.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextEvents.h"
 
@@ -192,7 +191,7 @@ protected:
     bool mIMEMaskSelectionUpdate, mIMEMaskTextUpdate;
     int32_t mIMEMaskEventsCount; // Mask events when > 0
     nsString mIMEComposingText;
-    nsAutoTArray<nsTextRange, 4> mIMERanges;
+    nsAutoTArray<mozilla::TextRange, 4> mIMERanges;
     bool mIMEUpdatingContext;
     nsAutoTArray<mozilla::AndroidGeckoEvent, 8> mIMEKeyEvents;
 
@@ -222,9 +221,10 @@ protected:
     static void LogWindow(nsWindow *win, int index, int indent);
 
 private:
-    void InitKeyEvent(nsKeyEvent& event, mozilla::AndroidGeckoEvent& key,
+    void InitKeyEvent(mozilla::WidgetKeyboardEvent& event,
+                      mozilla::AndroidGeckoEvent& key,
                       ANPEvent* pluginEvent);
-    void DispatchMotionEvent(nsInputEvent &event,
+    void DispatchMotionEvent(mozilla::WidgetInputEvent &event,
                              mozilla::AndroidGeckoEvent *ae,
                              const nsIntPoint &refPoint);
     void DispatchGestureEvent(uint32_t msg, uint32_t direction, double delta,
@@ -233,7 +233,7 @@ private:
     void CreateLayerManager(int aCompositorWidth, int aCompositorHeight);
     void RedrawAll();
 
-    mozilla::widget::android::LayerRendererFrame mLayerRendererFrame;
+    mozilla::AndroidLayerRendererFrame mLayerRendererFrame;
 
     static mozilla::StaticRefPtr<mozilla::layers::APZCTreeManager> sApzcTreeManager;
     static mozilla::StaticRefPtr<mozilla::layers::LayerManager> sLayerManager;

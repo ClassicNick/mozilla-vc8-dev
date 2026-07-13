@@ -10,7 +10,6 @@
 #include "jscntxt.h"
 
 #include "jit/Ion.h"
-#include "jit/MIR.h"
 
 ///////////////////////////////////////////////////////////////////////////
 // Read Me First
@@ -382,7 +381,7 @@ class LockedJSContext
       : slice_(slice),
         cx_(slice->acquireContext())
 #else
-      : cx_(NULL)
+      : cx_(nullptr)
 #endif
     { }
 
@@ -401,7 +400,7 @@ InParallelSection()
 {
 #ifdef JS_THREADSAFE
     ForkJoinSlice *current = ForkJoinSlice::Current();
-    return current != NULL;
+    return current != nullptr;
 #else
     return false;
 #endif
@@ -413,6 +412,10 @@ bool ParallelTestsShouldPass(JSContext *cx);
 
 ///////////////////////////////////////////////////////////////////////////
 // Debug Spew
+
+namespace jit {
+    class MDefinition;
+}
 
 namespace parallel {
 
@@ -476,7 +479,7 @@ js::ForkJoinSlice::Current()
 #if defined(JS_THREADSAFE) && defined(JS_ION)
     return (ForkJoinSlice*) PR_GetThreadPrivate(ThreadPrivateIndex);
 #else
-    return NULL;
+    return nullptr;
 #endif
 }
 

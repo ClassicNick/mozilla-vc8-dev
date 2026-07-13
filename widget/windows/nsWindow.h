@@ -205,7 +205,7 @@ public:
   virtual bool            DispatchMouseEvent(uint32_t aEventType, WPARAM wParam,
                                              LPARAM lParam,
                                              bool aIsContextMenuKey = false,
-                                             int16_t aButton = nsMouseEvent::eLeftButton,
+											 int16_t aButton = mozilla::WidgetMouseEvent::eLeftButton,
                                              uint16_t aInputSource = nsIDOMMouseEvent::MOZ_SOURCE_MOUSE);
   virtual bool            DispatchWindowEvent(nsGUIEvent*event, nsEventStatus &aStatus);
   void                    DispatchPendingEvents();
@@ -365,7 +365,6 @@ protected:
    * Event handlers
    */
   virtual void            OnDestroy();
-  virtual bool            OnMove(int32_t aX, int32_t aY);
   virtual bool            OnResize(nsIntRect &aWindowRect);
   bool                    OnGesture(WPARAM wParam, LPARAM lParam);
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
@@ -373,7 +372,7 @@ protected:
 #endif
   bool                    OnHotKey(WPARAM wParam, LPARAM lParam);
   bool                    OnPaint(HDC aDC, uint32_t aNestingLevel);
-  void                    OnWindowPosChanged(WINDOWPOS *wp, bool& aResult);
+  void                    OnWindowPosChanged(WINDOWPOS* wp);
   void                    OnWindowPosChanging(LPWINDOWPOS& info);
   void                    OnSysColorChanged();
 

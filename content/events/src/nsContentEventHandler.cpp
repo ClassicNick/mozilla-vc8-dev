@@ -84,7 +84,7 @@ nsContentEventHandler::InitCommon()
 }
 
 nsresult
-nsContentEventHandler::Init(nsQueryContentEvent* aEvent)
+nsContentEventHandler::Init(WidgetQueryContentEvent* aEvent)
 {
   NS_ASSERTION(aEvent, "aEvent must not be null");
 
@@ -113,7 +113,7 @@ nsContentEventHandler::Init(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::Init(nsSelectionEvent* aEvent)
+nsContentEventHandler::Init(WidgetSelectionEvent* aEvent)
 {
   NS_ASSERTION(aEvent, "aEvent must not be null");
 
@@ -474,7 +474,7 @@ nsContentEventHandler::SetRangeFromFlatTextOffset(
 }
 
 nsresult
-nsContentEventHandler::OnQuerySelectedText(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQuerySelectedText(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -517,7 +517,7 @@ nsContentEventHandler::OnQuerySelectedText(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQueryTextContent(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryTextContent(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -578,7 +578,7 @@ static nsresult GetFrameForTextRect(nsINode* aNode,
 }
 
 nsresult
-nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryTextRect(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -668,7 +668,7 @@ nsContentEventHandler::OnQueryTextRect(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQueryEditorRect(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryEditorRect(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -697,7 +697,7 @@ nsContentEventHandler::OnQueryEditorRect(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryCaretRect(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -769,7 +769,7 @@ nsContentEventHandler::OnQueryCaretRect(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQueryContentState(nsQueryContentEvent * aEvent)
+nsContentEventHandler::OnQueryContentState(WidgetQueryContentEvent * aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -781,7 +781,8 @@ nsContentEventHandler::OnQueryContentState(nsQueryContentEvent * aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQuerySelectionAsTransferable(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQuerySelectionAsTransferable(
+                         WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -804,7 +805,7 @@ nsContentEventHandler::OnQuerySelectionAsTransferable(nsQueryContentEvent* aEven
 }
 
 nsresult
-nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryCharacterAtPoint(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -827,8 +828,8 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
     NS_ENSURE_TRUE(rootWidget, NS_ERROR_FAILURE);
   }
 
-  nsQueryContentEvent eventOnRoot(true, NS_QUERY_CHARACTER_AT_POINT,
-                                  rootWidget);
+  WidgetQueryContentEvent eventOnRoot(true, NS_QUERY_CHARACTER_AT_POINT,
+                                      rootWidget);
   eventOnRoot.refPoint = aEvent->refPoint;
   if (rootWidget != aEvent->widget) {
     eventOnRoot.refPoint += LayoutDeviceIntPoint::FromUntyped(
@@ -843,7 +844,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
       !nsContentUtils::ContentIsDescendantOf(targetFrame->GetContent(),
                                              mRootContent)) {
     // there is no character at the point.
-    aEvent->mReply.mOffset = nsQueryContentEvent::NOT_FOUND;
+    aEvent->mReply.mOffset = WidgetQueryContentEvent::NOT_FOUND;
     aEvent->mSucceeded = true;
     return NS_OK;
   }
@@ -861,7 +862,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
                                 &nativeOffset);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsQueryContentEvent textRect(true, NS_QUERY_TEXT_RECT, aEvent->widget);
+  WidgetQueryContentEvent textRect(true, NS_QUERY_TEXT_RECT, aEvent->widget);
   textRect.InitForQueryTextRect(nativeOffset, 1);
   rv = OnQueryTextRect(&textRect);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -875,7 +876,7 @@ nsContentEventHandler::OnQueryCharacterAtPoint(nsQueryContentEvent* aEvent)
 }
 
 nsresult
-nsContentEventHandler::OnQueryDOMWidgetHittest(nsQueryContentEvent* aEvent)
+nsContentEventHandler::OnQueryDOMWidgetHittest(WidgetQueryContentEvent* aEvent)
 {
   nsresult rv = Init(aEvent);
   if (NS_FAILED(rv))
@@ -1050,7 +1051,7 @@ static void AdjustRangeForSelection(nsIContent* aRoot,
 }
 
 nsresult
-nsContentEventHandler::OnSelectionEvent(nsSelectionEvent* aEvent)
+nsContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent)
 {
   aEvent->mSucceeded = false;
 
