@@ -667,17 +667,7 @@ class JSObject : public js::ObjectImpl
     void initDenseElements(uint32_t dstStart, const js::Value *src, uint32_t count) {
         JS_ASSERT(dstStart + count <= getDenseCapacity());
         memcpy(&elements[dstStart], src, count * sizeof(js::HeapSlot));
-        DenseRangeWriteBarrierPost(runtimeFromMainThread(), this, dstStart, count);
-    }
-
-    void initDenseElementsUnbarriered(uint32_t dstStart, const js::Value *src, uint32_t count) {
-        /*
-         * For use by parallel threads, which since they cannot see nursery
-         * things do not require a barrier.
-         */
-        JS_ASSERT(!js::CurrentThreadCanAccessRuntime(runtimeFromAnyThread()));
-        JS_ASSERT(dstStart + count <= getDenseCapacity());
-        memcpy(&elements[dstStart], src, count * sizeof(js::HeapSlot));
+        DenseRangeWriteBarrierPost(runtimeFromAnyThread(), this, dstStart, count);
     }
 
     void moveDenseElements(uint32_t dstStart, uint32_t srcStart, uint32_t count) {
@@ -1280,12 +1270,6 @@ HasOwnPropertyDiasllowGC(JSContext *cx, LookupGenericOp lookup,
 {
     return HasOwnProperty<NoGC>(cx, lookup, obj, id, objp, propp);
 }
-
-bool
-IsStandardClassResolved(JSObject *obj, const js::Class *clasp);
-
-void
-MarkStandardClassInitializedNoProto(JSObject *obj, const js::Class *clasp);
 
 typedef JSObject *(*ClassInitializerOp)(JSContext *cx, JS::HandleObject obj);
 

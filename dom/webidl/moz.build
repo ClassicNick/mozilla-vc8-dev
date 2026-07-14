@@ -440,6 +440,10 @@ if CONFIG['MOZ_WEBRTC']:
     WEBIDL_FILES += [
         'DataChannel.webidl',
         'MediaStreamList.webidl',
+        'PeerConnectionImpl.webidl',
+        'PeerConnectionImplEnums.webidl',
+        'PeerConnectionObserver.webidl',
+        'PeerConnectionObserverEnums.webidl',
     ]
 
 if CONFIG['MOZ_WEBSPEECH']:

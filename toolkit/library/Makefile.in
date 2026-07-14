@@ -97,7 +97,7 @@ endif
 endif #}
 
 ifneq ($(strip $(MOZ_B2G_RIL)$(MOZ_B2G_BT)),) #{
-STATIC_LIBS += mozipcunixsocket_s
+STATIC_LIBS += mozipcunixsocket_s mozkeystore_s
 endif #}
 
 ifeq (gonk,$(MOZ_WIDGET_TOOLKIT))
@@ -466,6 +466,10 @@ OS_LIBS += \
   $(NULL)
 endif
 
+ifdef MOZ_RTSP
+OS_LIBS += -lstagefright_foundation
+endif
+
 ifdef MOZ_WMF
 OS_LIBS += $(call EXPAND_LIBNAME,mfuuid wmcodecdspuuid strmiids)
 endif
@@ -699,6 +703,7 @@ ifdef LINK_GTEST
 COMPONENT_LIBS += \
   gtest \
   gfxtest \
+  ssltest \
   $(NULL)
 endif
 

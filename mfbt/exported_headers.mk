@@ -40,6 +40,7 @@ EXPORTS_mozilla_FILES += \
   MSStdInt.h \
   Move.h \
   NullPtr.h \
+  NumericLimits.h \
   PodOperations.h \
   Poison.h \
   Range.h \
