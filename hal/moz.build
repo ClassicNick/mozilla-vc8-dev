@@ -91,13 +91,14 @@ elif CONFIG['MOZ_WINSDK_TARGETVER'] >= '06010000':
         'windows/WindowsSensor.cpp',
     ]
 elif CONFIG['MOZ_WINSDK_TARGETVER'] < '06010000':
-    CPP_SOURCES += [
-        'windows/WindowsBattery.cpp',
+    SOURCES += [
+        'fallback/FallbackAlarm.cpp',
+        'fallback/FallbackMemory.cpp',
+        'fallback/FallbackPower.cpp',
+        'fallback/FallbackScreenConfiguration.cpp',
         'fallback/FallbackSensor.cpp',
         'fallback/FallbackVibration.cpp',
-        'fallback/FallbackScreenConfiguration.cpp',
-        'fallback/FallbackPower.cpp',
-        'fallback/FallbackAlarm.cpp',
+        'windows/WindowsBattery.cpp',
     ]
 elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     SOURCES += [

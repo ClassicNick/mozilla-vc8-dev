@@ -116,7 +116,16 @@ Note : this source file requires "lz4_encoder.h"
 #define GCC_VERSION (__GNUC__ * 100 + __GNUC_MINOR__)
 
 #ifdef _MSC_VER    // Visual Studio
+#if _MSC_VER >= 1400
 #  include <intrin.h>   // For Visual 2005
+#else
+extern "C" {
+unsigned char _BitScanForward(unsigned long * Index, unsigned long Mask);
+unsigned char _BitScanReverse(unsigned long * Index, unsigned long Mask);
+#    pragma intrinsic(_BitScanForward)   // For Visual 2005
+#    pragma intrinsic(_BitScanReverse)   // For Visual 2005
+}
+#endif
 #  if LZ4_ARCH64   // 64-bit
 #    pragma intrinsic(_BitScanForward64) // For Visual 2005
 #    pragma intrinsic(_BitScanReverse64) // For Visual 2005

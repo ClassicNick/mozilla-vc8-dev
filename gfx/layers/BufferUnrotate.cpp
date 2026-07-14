@@ -3,9 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <algorithm> // min & max
+#include "nsAlgorithm.h" // NS_MIN & NS_MAX
 #include <cstdlib>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,8 +41,8 @@ void BufferUnrotate(uint8_t* aBuffer, int aByteWidth, int aHeight,
   }
 
   if (aYBoundary != 0) {
-    uint32_t smallestHeight = std::min(aHeight - aYBoundary, aYBoundary);
-    uint32_t largestHeight = std::max(aHeight - aYBoundary, aYBoundary);
+    uint32_t smallestHeight = NS_MIN(aHeight - aYBoundary, aYBoundary);
+    uint32_t largestHeight = NS_MAX(aHeight - aYBoundary, aYBoundary);
     uint32_t smallOffset = 0;
     uint32_t largeOffset = aYBoundary * aByteStride;
     uint32_t largeDestOffset = 0;

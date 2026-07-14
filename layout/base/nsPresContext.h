@@ -264,8 +264,8 @@ public:
   /**
    * Support for window.matchMedia()
    */
-  void MatchMedia(const nsAString& aMediaQueryList,
-                  nsIDOMMediaQueryList** aResult);
+  already_AddRefed<nsIDOMMediaQueryList>
+    MatchMedia(const nsAString& aMediaQueryList);
 
   /**
    * Access compatibility mode for this context.  This is the same as
