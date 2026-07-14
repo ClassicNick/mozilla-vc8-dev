@@ -1041,22 +1041,20 @@ nsJSContext::JSObjectFromInterface(nsISupports* aTarget,
   // We don't wrap here because we trust the JS engine to wrap the target
   // later.
   JS::Rooted<JS::Value> v(cx);
-  nsresult rv = nsContentUtils::WrapNative(cx, aScope, aTarget,
-                                           v.address());
+  nsresult rv = nsContentUtils::WrapNative(cx, aScope, aTarget, &v);
   NS_ENSURE_SUCCESS(rv, rv);
-
-#ifdef DEBUG
-  nsCOMPtr<nsISupports> targetSupp = do_QueryInterface(aTarget);
-  nsCOMPtr<nsISupports> native =
-    nsContentUtils::XPConnect()->GetNativeOfWrapper(cx,
-                                                    JSVAL_TO_OBJECT(v));
-  NS_ASSERTION(native == targetSupp, "Native should be the target!");
-#endif
 
   JSObject* obj = v.toObjectOrNull();
   if (obj) {
     JS::ExposeObjectToActiveJS(obj);
   }
+
+#ifdef DEBUG
+  nsCOMPtr<nsISupports> targetSupp = do_QueryInterface(aTarget);
+  nsCOMPtr<nsISupports> native =
+    nsContentUtils::XPConnect()->GetNativeOfWrapper(cx, obj);
+  NS_ASSERTION(native == targetSupp, "Native should be the target!");
+#endif
 
   *aRet = obj;
   return NS_OK;
@@ -1304,7 +1302,7 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
 #endif
           nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
           JS::Rooted<JS::Value> v(cx);
-          rv = nsContentUtils::WrapNative(cx, aScope, arg, v.address(),
+          rv = nsContentUtils::WrapNative(cx, aScope, arg, &v,
                                           getter_AddRefs(wrapper));
           if (NS_SUCCEEDED(rv)) {
             *thisval = v;
@@ -1506,7 +1504,7 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, JS::Value *aArgv)
       JS::Rooted<JSObject*> global(cx, GetWindowProxy());
       JS::Rooted<JS::Value> v(cx);
       nsresult rv = nsContentUtils::WrapNative(cx, global,
-                                               data, iid, v.address(),
+                                               data, iid, &v,
                                                getter_AddRefs(wrapper));
       NS_ENSURE_SUCCESS(rv, rv);
 
