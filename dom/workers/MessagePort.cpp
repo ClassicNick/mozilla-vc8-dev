@@ -67,7 +67,7 @@ MessagePort::PrefEnabled()
 
 void
 MessagePort::PostMessage(JSContext* aCx, JS::HandleValue aMessage,
-                         const Optional<Sequence<JS::Value>>& aTransferable,
+                         const Optional<Sequence<JS::Value> >& aTransferable,
                          ErrorResult& aRv)
 {
   AssertIsOnMainThread();

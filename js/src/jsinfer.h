@@ -28,7 +28,7 @@ class TypeRepresentation;
 class TaggedProto
 {
   public:
-    TaggedProto() : proto(NULL) {}
+    TaggedProto() : proto(nullptr) {}
     TaggedProto(JSObject *proto) : proto(proto) {}
 
     uintptr_t toWord() const { return uintptr_t(proto); }
@@ -102,22 +102,71 @@ class RootedBase<TaggedProto> : public TaggedProtoOperations<Rooted<TaggedProto>
 
 class CallObject;
 
+/*
+ * Execution Mode Overview
+ *
+ * JavaScript code can execute either sequentially or in parallel, such as in
+ * PJS. Functions which behave identically in either execution mode can take a
+ * ThreadSafeContext, and functions which have similar but not identical
+ * behavior between execution modes can be templated on the mode. Such
+ * functions use a context parameter type from ExecutionModeTraits below
+ * indicating whether they are only permitted constrained operations (such as
+ * thread safety, and side effects limited to being thread-local), or whether
+ * they can have arbitrary side effects.
+ */
+
+enum ExecutionMode {
+    /* Normal JavaScript execution. */
+    SequentialExecution,
+
+    /*
+     * JavaScript code to be executed in parallel worker threads in PJS in a
+     * fork join fashion.
+     */
+    ParallelExecution,
+
+    /*
+     * Modes after this point are internal and are not counted in
+     * NumExecutionModes below.
+     */
+
+    /*
+     * MIR analysis performed when invoking 'new' on a script, to determine
+     * definite properties. Used by the optimizing JIT.
+     */
+    DefinitePropertiesAnalysis
+};
+
+/*
+ * Not as part of the enum so we don't get warnings about unhandled enum
+ * values.
+ */
+static const unsigned NumExecutionModes = ParallelExecution + 1;
+
+template <ExecutionMode mode>
+struct ExecutionModeTraits
+{
+};
+
+template <> struct ExecutionModeTraits<SequentialExecution>
+{
+    typedef JSContext * ContextType;
+    typedef ExclusiveContext * ExclusiveContextType;
+
+    static inline JSContext *toContextType(ExclusiveContext *cx);
+};
+
+template <> struct ExecutionModeTraits<ParallelExecution>
+{
+    typedef ForkJoinSlice * ContextType;
+    typedef ForkJoinSlice * ExclusiveContextType;
+
+    static inline ForkJoinSlice *toContextType(ForkJoinSlice *cx) { return cx; }
+};
+
 namespace jit {
     struct IonScript;
     class IonAllocPolicy;
-
-    enum ExecutionMode {
-        // Normal JavaScript execution
-        SequentialExecution,
-
-        // JavaScript code to be executed in parallel worker threads,
-        // e.g. by ParallelArray
-        ParallelExecution,
-
-        // MIR analysis performed when invoking 'new' on a script, to determine
-        // definite properties
-        DefinitePropertiesAnalysis
-    };
 }
 
 namespace analyze {
@@ -259,7 +308,7 @@ public:
     TypeConstraint *next;
 
     TypeConstraint()
-        : next(NULL)
+        : next(nullptr)
     {}
 
     /* Debugging name for this kind of constraint. */
@@ -451,7 +500,7 @@ class TypeSet
     TypeConstraint *constraintList;
 
     TypeSet()
-      : flags(0), objectSet(NULL), constraintList(NULL)
+      : flags(0), objectSet(nullptr), constraintList(nullptr)
     {}
 
     void print();
@@ -466,7 +515,7 @@ class TypeSet
     bool unknownObject() const { return !!(flags & (TYPE_FLAG_UNKNOWN | TYPE_FLAG_ANYOBJECT)); }
 
     bool empty() const { return !baseFlags() && !baseObjectCount(); }
-    bool noConstraints() const { return constraintList == NULL; }
+    bool noConstraints() const { return constraintList == nullptr; }
 
     bool hasAnyFlag(TypeFlags flags) const {
         JS_ASSERT((flags & TYPE_FLAG_BASE_MASK) == flags);
@@ -497,7 +546,7 @@ class TypeSet
     /*
      * Iterate through the objects in this set. getObjectCount overapproximates
      * in the hash case (see SET_ARRAY_SIZE in jsinferinlines.h), and getObject
-     * may return NULL.
+     * may return nullptr.
      */
     inline unsigned getObjectCount() const;
     inline TypeObjectKey *getObject(unsigned i) const;
@@ -618,10 +667,10 @@ class TemporaryTypeSet : public TypeSet
     /* Whether the type set contains objects with any of a set of flags. */
     bool hasObjectFlags(CompilerConstraintList *constraints, TypeObjectFlags flags);
 
-    /* Get the class shared by all objects in this set, or NULL. */
+    /* Get the class shared by all objects in this set, or nullptr. */
     const Class *getKnownClass();
 
-    /* Get the prototype shared by all objects in this set, or NULL. */
+    /* Get the prototype shared by all objects in this set, or nullptr. */
     JSObject *getCommonPrototype();
 
     /* Get the typed array type of all objects in this set, or TypedArrayObject::TYPE_MAX. */
@@ -636,7 +685,7 @@ class TemporaryTypeSet : public TypeSet
     /* Whether clasp->emulatesUndefined() is true for one or more objects in this set. */
     bool maybeEmulatesUndefined();
 
-    /* Get the single value which can appear in this type set, otherwise NULL. */
+    /* Get the single value which can appear in this type set, otherwise nullptr. */
     JSObject *getSingleton();
 
     /* Whether any objects in the type set needs a barrier on id. */
@@ -960,7 +1009,7 @@ struct TypeObject : gc::BarrieredCell<TypeObject>
     inline HeapTypeSet *getProperty(ExclusiveContext *cx, jsid id);
 
     /* Get a property only if it already exists. */
-    inline HeapTypeSet *maybeGetProperty(ExclusiveContext *cx, jsid id);
+    inline HeapTypeSet *maybeGetProperty(jsid id);
 
     inline unsigned getPropertyCount();
     inline Property *getProperty(unsigned i);
@@ -1015,6 +1064,7 @@ struct TypeObject : gc::BarrieredCell<TypeObject>
     void clearAddendum(ExclusiveContext *cx);
     void clearNewScriptAddendum(ExclusiveContext *cx);
     void clearTypedObjectAddendum(ExclusiveContext *cx);
+    bool isPropertyConfigured(jsid id);
 
     void print();
 
@@ -1235,30 +1285,30 @@ class CompilerOutput
     // If this compilation has not been invalidated, the associated script and
     // kind of compilation being performed.
     JSScript *script_;
-    unsigned mode_ : 2;
+    ExecutionMode mode_ : 2;
 
     // Whether this compilation is about to be invalidated.
     bool pendingInvalidation_ : 1;
 
   public:
     CompilerOutput()
-      : script_(NULL), mode_(0), pendingInvalidation_(false)
+      : script_(nullptr), mode_(SequentialExecution), pendingInvalidation_(false)
     {}
 
-    CompilerOutput(JSScript *script, jit::ExecutionMode mode)
+    CompilerOutput(JSScript *script, ExecutionMode mode)
       : script_(script), mode_(mode), pendingInvalidation_(false)
     {}
 
     JSScript *script() const { return script_; }
-    inline jit::ExecutionMode mode() const { return static_cast<jit::ExecutionMode>(mode_); }
+    inline ExecutionMode mode() const { return mode_; }
 
     inline jit::IonScript *ion() const;
 
     bool isValid() const {
-        return script_ != NULL;
+        return script_ != nullptr;
     }
     void invalidate() {
-        script_ = NULL;
+        script_ = nullptr;
     }
 
     void setPendingInvalidation() {
@@ -1440,12 +1490,12 @@ bool TypeHasProperty(JSContext *cx, TypeObject *obj, jsid id, const Value &value
 
 #else
 
-inline const char * InferSpewColorReset() { return NULL; }
-inline const char * InferSpewColor(TypeConstraint *constraint) { return NULL; }
-inline const char * InferSpewColor(TypeSet *types) { return NULL; }
+inline const char * InferSpewColorReset() { return nullptr; }
+inline const char * InferSpewColor(TypeConstraint *constraint) { return nullptr; }
+inline const char * InferSpewColor(TypeSet *types) { return nullptr; }
 inline void InferSpew(SpewChannel which, const char *fmt, ...) {}
-inline const char * TypeString(Type type) { return NULL; }
-inline const char * TypeObjectString(TypeObject *type) { return NULL; }
+inline const char * TypeString(Type type) { return nullptr; }
+inline const char * TypeObjectString(TypeObject *type) { return nullptr; }
 
 #endif
 

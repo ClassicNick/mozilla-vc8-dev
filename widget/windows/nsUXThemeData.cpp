@@ -26,10 +26,10 @@ HANDLE
 nsUXThemeData::sThemes[eUXNumClasses];
 
 HMODULE
-nsUXThemeData::sThemeDLL = NULL;
+nsUXThemeData::sThemeDLL = nullptr;
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
 HMODULE
-nsUXThemeData::sDwmDLL = NULL;
+nsUXThemeData::sDwmDLL = nullptr;
 #endif
 
 bool
@@ -123,7 +123,7 @@ nsUXThemeData::Invalidate() {
   for(int i = 0; i < eUXNumClasses; i++) {
     if(sThemes[i]) {
       closeTheme(sThemes[i]);
-      sThemes[i] = NULL;
+      sThemes[i] = nullptr;
     }
   }
   BOOL useFlat = false;
@@ -138,7 +138,7 @@ nsUXThemeData::GetTheme(nsUXThemeClass cls) {
     return NULL;
   if(!sThemes[cls])
   {
-    sThemes[cls] = openTheme(NULL, GetClassName(cls));
+    sThemes[cls] = openTheme(nullptr, GetClassName(cls));
   }
   return sThemes[cls];
 }
@@ -262,10 +262,10 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
   wc.cbClsExtra    = 0;
   wc.cbWndExtra    = 0;
   wc.hInstance     = nsToolkit::mDllInstance;
-  wc.hIcon         = NULL;
-  wc.hCursor       = NULL;
-  wc.hbrBackground = NULL;
-  wc.lpszMenuName  = NULL;
+  wc.hIcon         = nullptr;
+  wc.hCursor       = nullptr;
+  wc.hbrBackground = nullptr;
+  wc.lpszMenuName  = nullptr;
   wc.lpszClassName = className.get();
   ::RegisterClassW(&wc);
 
@@ -276,8 +276,8 @@ nsUXThemeData::UpdateTitlebarInfo(HWND aWnd)
   HWND hWnd = CreateWindowExW(WS_EX_LAYERED,
                               className.get(), L"",
                               WS_OVERLAPPEDWINDOW,
-                              0, 0, 0, 0, aWnd, NULL,
-                              nsToolkit::mDllInstance, NULL);
+                              0, 0, 0, 0, aWnd, nullptr,
+                              nsToolkit::mDllInstance, nullptr);
   NS_ASSERTION(hWnd, "UpdateTitlebarInfo window creation failed.");
 
   ShowWindow(hWnd, SW_SHOW);
@@ -383,7 +383,7 @@ nsUXThemeData::UpdateNativeThemeInfo()
                                  MAX_PATH,
                                  themeColor,
                                  MAX_PATH,
-                                 NULL, 0))) {
+                                 nullptr, 0))) {
     sThemeId = LookAndFeel::eWindowsTheme_Classic;
     return;
   }

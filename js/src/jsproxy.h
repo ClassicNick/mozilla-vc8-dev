@@ -397,7 +397,7 @@ class JS_FRIEND_API(AutoEnterPolicy)
     AutoEnterPolicy(JSContext *cx, BaseProxyHandler *handler,
                     HandleObject wrapper, HandleId id, Action act, bool mayThrow)
 #ifdef DEBUG
-        : context(NULL)
+        : context(nullptr)
 #endif
     {
 		bool enterFun = handler->enter(cx, wrapper, id, act, &rv);
@@ -421,7 +421,7 @@ class JS_FRIEND_API(AutoEnterPolicy)
     // no-op constructor for subclass
     AutoEnterPolicy()
 #ifdef DEBUG
-        : context(NULL)
+        : context(nullptr)
 #endif
         {};
     void reportErrorIfExceptionIsNotPending(JSContext *cx, jsid id);

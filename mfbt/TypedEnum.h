@@ -28,7 +28,7 @@
 #  endif
 #elif defined(__GNUC__)
 #  if defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L
-#    if MOZ_GCC_VERSION_AT_LEAST(4, 5, 1)
+#    if MOZ_GCC_VERSION_AT_LEAST(4, 6, 3)
 #      define MOZ_HAVE_CXX11_ENUM_TYPE
 #      define MOZ_HAVE_CXX11_STRONG_ENUMS
 #    endif
@@ -249,12 +249,12 @@
     *   http://connect.microsoft.com/VisualStudio/feedback/details/380090/variadic-macro-replacement
     *   http://cplusplus.co.il/2010/07/17/variadic-macro-to-count-number-of-arguments/#comment-644
     */
-#  define MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL2(_1, _2, count, ...) \
+#  define MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL2(_1, _2, count, a) \
      count
 #  define MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL(args) \
      MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL2 args
-#  define MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS(...) \
-     MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL((__VA_ARGS__, 2, 1, 0))
+#  define MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS(a) \
+     MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS_IMPL((a, 2, 1, 0))
    /* Pick the right helper macro to invoke. */
 #  define MOZ_BEGIN_NESTED_ENUM_CLASS_CHOOSE_HELPER2(count) \
     MOZ_BEGIN_NESTED_ENUM_CLASS_HELPER##count
@@ -264,11 +264,11 @@
      MOZ_BEGIN_NESTED_ENUM_CLASS_CHOOSE_HELPER1(count)
    /* The actual macro. */
 #  define MOZ_BEGIN_NESTED_ENUM_CLASS_GLUE(x, y) x y
-#  define MOZ_BEGIN_NESTED_ENUM_CLASS(...) \
-     MOZ_BEGIN_NESTED_ENUM_CLASS_GLUE(MOZ_BEGIN_NESTED_ENUM_CLASS_CHOOSE_HELPER(MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS(__VA_ARGS__)), \
-                                      (__VA_ARGS__))
+#  define MOZ_BEGIN_NESTED_ENUM_CLASS(a) \
+     MOZ_BEGIN_NESTED_ENUM_CLASS_GLUE(MOZ_BEGIN_NESTED_ENUM_CLASS_CHOOSE_HELPER(MOZ_COUNT_BEGIN_ENUM_CLASS_ARGS(a)), \
+                                      (a))
 
-#  define MOZ_BEGIN_ENUM_CLASS(...) MOZ_BEGIN_NESTED_ENUM_CLASS(__VA_ARGS__)
+#  define MOZ_BEGIN_ENUM_CLASS(a) MOZ_BEGIN_NESTED_ENUM_CLASS(a)
 #  define MOZ_END_ENUM_CLASS(Name) \
      MOZ_END_NESTED_ENUM_CLASS(Name) \
      MOZ_FINISH_NESTED_ENUM_CLASS(Name)

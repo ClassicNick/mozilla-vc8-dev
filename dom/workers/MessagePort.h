@@ -25,7 +25,7 @@ class MessagePort MOZ_FINAL : public nsDOMEventTargetHelper
   typedef mozilla::ErrorResult ErrorResult;
 
   nsRefPtr<SharedWorker> mSharedWorker;
-  nsTArray<nsCOMPtr<nsIDOMEvent>> mQueuedEvents;
+  nsTArray<nsCOMPtr<nsIDOMEvent> > mQueuedEvents;
   uint64_t mSerial;
   bool mStarted;
 
@@ -35,7 +35,7 @@ public:
 
   void
   PostMessage(JSContext* aCx, JS::HandleValue aMessage,
-              const Optional<Sequence<JS::Value>>& aTransferable,
+              const Optional<Sequence<JS::Value> >& aTransferable,
               ErrorResult& aRv);
 
   void

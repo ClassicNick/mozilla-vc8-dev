@@ -30,7 +30,7 @@ class SharedWorker MOZ_FINAL : public nsDOMEventTargetHelper
 
   WorkerPrivate* mWorkerPrivate;
   nsRefPtr<MessagePort> mMessagePort;
-  nsTArray<nsCOMPtr<nsIDOMEvent>> mSuspendedEvents;
+  nsTArray<nsCOMPtr<nsIDOMEvent> > mSuspendedEvents;
   uint64_t mSerial;
   bool mSuspended;
 
@@ -91,7 +91,7 @@ private:
   // Only called by MessagePort.
   void
   PostMessage(JSContext* aCx, JS::HandleValue aMessage,
-              const Optional<Sequence<JS::Value>>& aTransferable,
+              const Optional<Sequence<JS::Value> >& aTransferable,
               ErrorResult& aRv);
 
   // Only called by RuntimeService.

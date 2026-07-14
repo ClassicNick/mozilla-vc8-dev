@@ -127,7 +127,7 @@ RecvAudioSessionData(const nsID& aID,
                                                       aIconPath);
 }
 
-AudioSession* AudioSession::sService = NULL;
+AudioSession* AudioSession::sService = nullptr;
 
 AudioSession::AudioSession()
 {
@@ -189,7 +189,7 @@ AudioSession::Start()
 
   // Don't check for errors in case something already initialized COM
   // on this thread.
-  CoInitialize(NULL);
+  CoInitialize(nullptr);
 
   if (mState == UNINITIALIZED) {
     mState = FAILED;
@@ -217,7 +217,7 @@ AudioSession::Start()
 
     // XXXkhuey we should provide a way for a xulrunner app to specify an icon
     // that's not in the product binary.
-    ::GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
 
     nsCOMPtr<nsIUUIDGenerator> uuidgen =
       do_GetService("@mozilla.org/uuid-generator;1");
@@ -232,7 +232,7 @@ AudioSession::Start()
 
   nsRefPtr<IMMDeviceEnumerator> enumerator;
   hr = ::CoCreateInstance(CLSID_MMDeviceEnumerator,
-                          NULL,
+                          nullptr,
                           CLSCTX_ALL,
                           IID_IMMDeviceEnumerator,
                           getter_AddRefs(enumerator));
@@ -252,31 +252,31 @@ AudioSession::Start()
   nsRefPtr<IAudioSessionManager> manager;
   hr = device->Activate(IID_IAudioSessionManager,
                         CLSCTX_ALL,
-                        NULL,
+                        nullptr,
                         getter_AddRefs(manager));
   if (FAILED(hr))
     return NS_ERROR_FAILURE;
 
-  hr = manager->GetAudioSessionControl(NULL,
+  hr = manager->GetAudioSessionControl(nullptr,
                                        FALSE,
                                        getter_AddRefs(mAudioSessionControl));
   if (FAILED(hr))
     return NS_ERROR_FAILURE;
 
   hr = mAudioSessionControl->SetGroupingParam((LPCGUID)&mSessionGroupingParameter,
-                                              NULL);
+                                              nullptr);
   if (FAILED(hr)) {
     StopInternal();
     return NS_ERROR_FAILURE;
   }
 
-  hr = mAudioSessionControl->SetDisplayName(mDisplayName.get(), NULL);
+  hr = mAudioSessionControl->SetDisplayName(mDisplayName.get(), nullptr);
   if (FAILED(hr)) {
     StopInternal();
     return NS_ERROR_FAILURE;
   }
 
-  hr = mAudioSessionControl->SetIconPath(mIconPath.get(), NULL);
+  hr = mAudioSessionControl->SetIconPath(mIconPath.get(), nullptr);
   if (FAILED(hr)) {
     StopInternal();
     return NS_ERROR_FAILURE;
@@ -299,7 +299,7 @@ AudioSession::StopInternal()
   static const nsID blankId = {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0} };
 
   if (mAudioSessionControl) {
-    mAudioSessionControl->SetGroupingParam((LPCGUID)&blankId, NULL);
+    mAudioSessionControl->SetGroupingParam((LPCGUID)&blankId, nullptr);
     mAudioSessionControl->UnregisterAudioSessionNotification(this);
     mAudioSessionControl = nullptr;
   }

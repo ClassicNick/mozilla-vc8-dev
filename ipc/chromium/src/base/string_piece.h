@@ -18,7 +18,7 @@
 #ifndef BASE_STRING_PIECE_H_
 #define BASE_STRING_PIECE_H_
 
-#include <algorithm>
+#include "nsAlgorithm.h"
 #include <iosfwd>
 #include <string>
 
@@ -76,7 +76,7 @@ class StringPiece {
   }
 
   int compare(const StringPiece& x) const {
-    int r = wordmemcmp(ptr_, x.ptr_, std::min(length_, x.length_));
+    int r = wordmemcmp(ptr_, x.ptr_, NS_MIN(length_, x.length_));
     if (r == 0) {
       if (length_ < x.length_) r = -1;
       else if (length_ > x.length_) r = +1;
@@ -162,7 +162,7 @@ inline bool operator!=(const ::StringPiece& x, const ::StringPiece& y) {
 
 inline bool operator<(const ::StringPiece& x, const ::StringPiece& y) {
   const int r = ::StringPiece::wordmemcmp(x.data(), y.data(),
-                                        std::min(x.size(), y.size()));
+                                        NS_MIN(x.size(), y.size()));
   return ((r < 0) || ((r == 0) && (x.size() < y.size())));
 }
 

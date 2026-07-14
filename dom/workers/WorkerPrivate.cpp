@@ -2178,7 +2178,7 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
         MOZ_ASSERT(aSharedWorker);
         MOZ_ASSERT(aClosure);
 
-        auto closure = static_cast<Closure*>(aClosure);
+        Closure* closure = static_cast<Closure*>(aClosure);
 
         if (closure->mWindow && aSharedWorker->GetOwner() == closure->mWindow) {
           // Calling Suspend() may change the refcount, ensure that the worker
@@ -2262,7 +2262,7 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
         MOZ_ASSERT(aSharedWorker);
         MOZ_ASSERT(aClosure);
 
-        auto closure = static_cast<Closure*>(aClosure);
+        Closure* closure = static_cast<Closure*>(aClosure);
 
         if (closure->mWindow && aSharedWorker->GetOwner() == closure->mWindow) {
           // Calling Resume() may change the refcount, ensure that the worker
@@ -2572,7 +2572,7 @@ WorkerPrivateParent<Derived>::PostMessageToMessagePort(
                              JSContext* aCx,
                              uint64_t aMessagePortSerial,
                              JS::Handle<JS::Value> aMessage,
-                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             const Optional<Sequence<JS::Value> >& aTransferable,
                              ErrorResult& aRv)
 {
   AssertIsOnMainThread();
@@ -2601,14 +2601,14 @@ bool
 WorkerPrivateParent<Derived>::DispatchMessageEventToMessagePort(
                                 JSContext* aCx, uint64_t aMessagePortSerial,
                                 JSAutoStructuredCloneBuffer& aBuffer,
-                                nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects)
+                                nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects)
 {
   AssertIsOnMainThread();
 
   JSAutoStructuredCloneBuffer buffer;
   buffer.swap(aBuffer);
 
-  nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
+  nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
   clonedObjects.SwapElements(aClonedObjects);
 
   SharedWorker* sharedWorker;
@@ -2993,7 +2993,7 @@ WorkerPrivateParent<Derived>::BroadcastErrorToSharedWorkers(
 template <class Derived>
 void
 WorkerPrivateParent<Derived>::GetAllSharedWorkers(
-                               nsTArray<nsRefPtr<SharedWorker>>& aSharedWorkers)
+                               nsTArray<nsRefPtr<SharedWorker> >& aSharedWorkers)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(IsSharedWorker());
@@ -3009,7 +3009,7 @@ WorkerPrivateParent<Derived>::GetAllSharedWorkers(
       MOZ_ASSERT(aSharedWorker);
       MOZ_ASSERT(aClosure);
 
-      auto array = static_cast<nsTArray<nsRefPtr<SharedWorker>>*>(aClosure);
+      nsTArray<nsRefPtr<SharedWorker> >* array = static_cast<nsTArray<nsRefPtr<SharedWorker> >*>(aClosure);
       array->AppendElement(aSharedWorker);
 
       return PL_DHASH_NEXT;
@@ -3053,7 +3053,7 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
       MOZ_ASSERT(aSharedWorker);
       MOZ_ASSERT(aClosure);
 
-      auto closure = static_cast<Closure*>(aClosure);
+      Closure* closure = static_cast<Closure*>(aClosure);
       MOZ_ASSERT(closure->mWindow);
 
       if (aSharedWorker->GetOwner() == closure->mWindow) {
@@ -4345,7 +4345,7 @@ WorkerPrivate::PostMessageToParentMessagePort(
                              JSContext* aCx,
                              uint64_t aMessagePortSerial,
                              JS::HandleValue aMessage,
-                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             const Optional<Sequence<JS::Value> >& aTransferable,
                              ErrorResult& aRv)
 {
   AssertIsOnWorkerThread();

@@ -20,14 +20,14 @@ namespace {
 bool
 DispatchMessageEvent(JSContext* aCx, JS::HandleObject aMessagePort,
                      JSAutoStructuredCloneBuffer& aBuffer,
-                     nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects)
+                     nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects)
 {
   MOZ_ASSERT(aMessagePort);
 
   JSAutoStructuredCloneBuffer buffer;
   aBuffer.swap(buffer);
 
-  nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
+  nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
   aClonedObjects.SwapElements(clonedObjects);
 
   JS::Rooted<JSObject*> event(aCx,
@@ -44,14 +44,14 @@ DispatchMessageEvent(JSContext* aCx, JS::HandleObject aMessagePort,
 class QueuedMessageEventRunnable : public WorkerRunnable
 {
   JSAutoStructuredCloneBuffer mBuffer;
-  nsTArray<nsCOMPtr<nsISupports>> mClonedObjects;
+  nsTArray<nsCOMPtr<nsISupports> > mClonedObjects;
   nsRefPtr<WorkerMessagePort> mMessagePort;
   JSObject* mMessagePortObject;
 
 public:
   QueuedMessageEventRunnable(WorkerPrivate* aWorkerPrivate,
                              JSAutoStructuredCloneBuffer& aBuffer,
-                             nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects)
+                             nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects)
   : WorkerRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount,
                    RunWhenClearing),
     mMessagePortObject(nullptr)
@@ -127,7 +127,7 @@ WorkerMessagePort::_finalize(JSFreeOp* aFop)
 void
 WorkerMessagePort::PostMessage(
                              JSContext* /* aCx */, JS::HandleValue aMessage,
-                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             const Optional<Sequence<JS::Value> >& aTransferable,
                              ErrorResult& aRv)
 {
   if (mClosed) {
@@ -185,7 +185,7 @@ bool
 WorkerMessagePort::MaybeDispatchEvent(
                                 JSContext* aCx,
                                 JSAutoStructuredCloneBuffer& aBuffer,
-                                nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects)
+                                nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects)
 {
   if (mClosed) {
     NS_WARNING("Not going to ever run this event!");

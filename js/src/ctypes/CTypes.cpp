@@ -2249,7 +2249,7 @@ ImplicitConvert(JSContext* cx,
   RootedObject valObj(cx, nullptr);
   if (!JSVAL_IS_PRIMITIVE(val)) {
     valObj = JSVAL_TO_OBJECT(val);
-    if (CData::IsCData(valObj)) {
+    if (CData::IsCData((JSObject*) valObj)) {
       sourceData = valObj;
       sourceType = CData::GetCType(sourceData);
 
@@ -3133,7 +3133,7 @@ CType::ConstructData(JSContext* cx,
   CallArgs args = CallArgsFromVp(argc, vp);
   // get the callee object...
   RootedObject obj(cx, &args.callee());
-  if (!CType::IsCType(obj)) {
+  if (!CType::IsCType((JSObject*) obj)) {
     JS_ReportError(cx, "not a CType");
     return false;
   }
@@ -3685,7 +3685,7 @@ CType::CreateArray(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject baseType(cx, JS_THIS_OBJECT(cx, vp));
   if (!baseType)
     return false;
-  if (!CType::IsCType(baseType)) {
+  if (!CType::IsCType((JSObject*) baseType)) {
     JS_ReportError(cx, "not a CType");
     return false;
   }
@@ -3718,7 +3718,7 @@ CType::ToString(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject obj(cx, JS_THIS_OBJECT(cx, vp));
   if (!obj)
     return false;
-  if (!CType::IsCType(obj) && !CType::IsCTypeProto(obj)) {
+  if (!CType::IsCType((JSObject*) obj) && !CType::IsCTypeProto(obj)) {
     JS_ReportError(cx, "not a CType");
     return false;
   }
@@ -3726,7 +3726,7 @@ CType::ToString(JSContext* cx, unsigned argc, jsval* vp)
   // Create the appropriate string depending on whether we're sCTypeClass or
   // sCTypeProtoClass.
   JSString* result;
-  if (CType::IsCType(obj)) {
+  if (CType::IsCType((JSObject*) obj)) {
     AutoString type;
     AppendString(type, "type ");
     AppendString(type, GetName(cx, obj));
@@ -3939,7 +3939,7 @@ PointerType::ConstructData(JSContext* cx,
                            HandleObject obj,
                            const CallArgs& args)
 {
-  if (!CType::IsCType(obj) || CType::GetTypeCode(obj) != TYPE_pointer) {
+  if (!CType::IsCType((JSObject*) obj) || CType::GetTypeCode(obj) != TYPE_pointer) {
     JS_ReportError(cx, "not a PointerType");
     return false;
   }
@@ -4269,7 +4269,7 @@ ArrayType::ConstructData(JSContext* cx,
 {
   RootedObject obj(cx, obj_); // Make a mutable version
 
-  if (!CType::IsCType(obj) || CType::GetTypeCode(obj) != TYPE_array) {
+  if (!CType::IsCType((JSObject*) obj) || CType::GetTypeCode(obj) != TYPE_array) {
     JS_ReportError(cx, "not an ArrayType");
     return false;
   }
@@ -4510,7 +4510,7 @@ bool
 ArrayType::Getter(JSContext* cx, HandleObject obj, HandleId idval, MutableHandleValue vp)
 {
   // This should never happen, but we'll check to be safe.
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -4546,7 +4546,7 @@ bool
 ArrayType::Setter(JSContext* cx, HandleObject obj, HandleId idval, bool strict, MutableHandleValue vp)
 {
   // This should never happen, but we'll check to be safe.
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -4585,7 +4585,7 @@ ArrayType::AddressOfElement(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject obj(cx, JS_THIS_OBJECT(cx, vp));
   if (!obj)
     return false;
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -4985,7 +4985,7 @@ StructType::Define(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject obj(cx, JS_THIS_OBJECT(cx, vp));
   if (!obj)
     return false;
-  if (!CType::IsCType(obj) ||
+  if (!CType::IsCType((JSObject*) obj) ||
       CType::GetTypeCode(obj) != TYPE_struct) {
     JS_ReportError(cx, "not a StructType");
     return false;
@@ -5020,7 +5020,7 @@ StructType::ConstructData(JSContext* cx,
                           HandleObject obj,
                           const CallArgs& args)
 {
-  if (!CType::IsCType(obj) || CType::GetTypeCode(obj) != TYPE_struct) {
+  if (!CType::IsCType((JSObject*) obj) || CType::GetTypeCode(obj) != TYPE_struct) {
     JS_ReportError(cx, "not a StructType");
     return false;
   }
@@ -5193,7 +5193,7 @@ StructType::FieldsArrayGetter(JSContext* cx, JS::CallArgs args)
 bool
 StructType::FieldGetter(JSContext* cx, HandleObject obj, HandleId idval, MutableHandleValue vp)
 {
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -5216,7 +5216,7 @@ StructType::FieldGetter(JSContext* cx, HandleObject obj, HandleId idval, Mutable
 bool
 StructType::FieldSetter(JSContext* cx, HandleObject obj, HandleId idval, bool strict, MutableHandleValue vp)
 {
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -5242,7 +5242,7 @@ StructType::AddressOfField(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject obj(cx, JS_THIS_OBJECT(cx, vp));
   if (!obj)
     return false;
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -5752,7 +5752,7 @@ FunctionType::Call(JSContext* cx,
   CallArgs args = CallArgsFromVp(argc, vp);
   // get the callee object...
   RootedObject obj(cx, &args.callee());
-  if (!CData::IsCData(obj)) {
+  if (!CData::IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }
@@ -6445,7 +6445,7 @@ CData::Address(JSContext* cx, unsigned argc, jsval* vp)
   RootedObject obj(cx, JS_THIS_OBJECT(cx, vp));
   if (!obj)
     return false;
-  if (!IsCData(obj)) {
+  if (!IsCData((JSObject*) obj)) {
     JS_ReportError(cx, "not a CData");
     return false;
   }

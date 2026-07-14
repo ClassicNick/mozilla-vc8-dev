@@ -1067,7 +1067,7 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
   // 2. Get GCS_COMPCLAUSE
   //--------------------------------------------------------
   long clauseArrayLength =
-    ::ImmGetCompositionStringW(aIMEContext.get(), GCS_COMPCLAUSE, NULL, 0);
+    ::ImmGetCompositionStringW(aIMEContext.get(), GCS_COMPCLAUSE, nullptr, 0);
   clauseArrayLength /= sizeof(uint32_t);
 
   if (clauseArrayLength > 0) {
@@ -1115,7 +1115,7 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
           mClauseArray[i] = ::MultiByteToWideChar(GetKeyboardCodePage(), 
                                                   MB_PRECOMPOSED,
                                                   (LPCSTR)compANSIStr.get(),
-                                                  len, NULL, 0);
+                                                  len, nullptr, 0);
         }
       }
     }
@@ -1134,7 +1134,7 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
   // This provides us with the attribute string necessary 
   // for doing hiliting
   long attrArrayLength =
-    ::ImmGetCompositionStringW(aIMEContext.get(), GCS_COMPATTR, NULL, 0);
+    ::ImmGetCompositionStringW(aIMEContext.get(), GCS_COMPATTR, nullptr, 0);
   attrArrayLength /= sizeof(uint8_t);
 
   if (attrArrayLength > 0) {
@@ -1160,7 +1160,7 @@ nsIMM32Handler::HandleComposition(nsWindow* aWindow,
   // Some IMEs (e.g., the standard IME for Korean) don't have caret position.
   if (lParam & GCS_CURSORPOS) {
     mCursorPosition =
-      ::ImmGetCompositionStringW(aIMEContext.get(), GCS_CURSORPOS, NULL, 0);
+      ::ImmGetCompositionStringW(aIMEContext.get(), GCS_CURSORPOS, nullptr, 0);
     if (mCursorPosition < 0) {
       mCursorPosition = NO_IME_CARET; // The result is error
     }
@@ -1677,7 +1677,7 @@ nsIMM32Handler::GetCompositionString(const nsIMEContext &aIMEContext,
                                      DWORD aIndex)
 {
   // Retrieve the size of the required output buffer.
-  long lRtn = ::ImmGetCompositionStringW(aIMEContext.get(), aIndex, NULL, 0);
+  long lRtn = ::ImmGetCompositionStringW(aIMEContext.get(), aIndex, nullptr, 0);
   if (lRtn < 0 ||
       !mCompositionString.SetLength((lRtn / sizeof(WCHAR)) + 1, mozilla::fallible_t())) {
     PR_LOG(gIMM32Log, PR_LOG_ALWAYS,
@@ -1743,7 +1743,7 @@ nsIMM32Handler::ConvertToANSIString(const nsAFlatString& aStr, UINT aCodePage,
 {
   int len = ::WideCharToMultiByte(aCodePage, 0,
                                   (LPCWSTR)aStr.get(), aStr.Length(),
-                                  NULL, 0, NULL, NULL);
+                                  nullptr, 0, nullptr, nullptr);
   NS_ENSURE_TRUE(len >= 0, false);
 
   if (!aANSIStr.SetLength(len, mozilla::fallible_t())) {
@@ -1752,7 +1752,7 @@ nsIMM32Handler::ConvertToANSIString(const nsAFlatString& aStr, UINT aCodePage,
     return false;
   }
   ::WideCharToMultiByte(aCodePage, 0, (LPCWSTR)aStr.get(), aStr.Length(),
-                        (LPSTR)aANSIStr.BeginWriting(), len, NULL, NULL);
+                        (LPSTR)aANSIStr.BeginWriting(), len, nullptr, nullptr);
   return true;
 }
 

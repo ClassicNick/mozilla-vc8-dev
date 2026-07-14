@@ -446,7 +446,7 @@ public:
                                JSContext* aCx,
                                uint64_t aMessagePortSerial,
                                JSAutoStructuredCloneBuffer& aBuffer,
-                               nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects);
+                               nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects);
 
   uint64_t
   GetInnerWindowId();
@@ -692,7 +692,7 @@ public:
   }
 
   void
-  GetAllSharedWorkers(nsTArray<nsRefPtr<SharedWorker>>& aSharedWorkers);
+  GetAllSharedWorkers(nsTArray<nsRefPtr<SharedWorker> >& aSharedWorkers);
 
   void
   CloseSharedWorkersForWindow(nsPIDOMWindow* aWindow);
@@ -899,7 +899,7 @@ public:
                              JSContext* aCx,
                              uint64_t aMessagePortSerial,
                              JS::HandleValue aMessage,
-                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             const Optional<Sequence<JS::Value> >& aTransferable,
                              ErrorResult& aRv);
 
   bool

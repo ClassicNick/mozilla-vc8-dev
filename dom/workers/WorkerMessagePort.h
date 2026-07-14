@@ -23,7 +23,7 @@ class WorkerMessagePort : public EventTarget
   struct MessageInfo
   {
     JSAutoStructuredCloneBuffer mBuffer;
-    nsTArray<nsCOMPtr<nsISupports>> mClonedObjects;
+    nsTArray<nsCOMPtr<nsISupports> > mClonedObjects;
   };
 
   nsTArray<MessageInfo> mQueuedMessages;
@@ -40,7 +40,7 @@ public:
 
   void
   PostMessage(JSContext* aCx, JS::HandleValue aMessage,
-              const Optional<Sequence<JS::Value>>& aTransferable,
+              const Optional<Sequence<JS::Value> >& aTransferable,
               ErrorResult& aRv);
 
   void
@@ -77,7 +77,7 @@ public:
 
   bool
   MaybeDispatchEvent(JSContext* aCx, JSAutoStructuredCloneBuffer& aBuffer,
-                     nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects);
+                     nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects);
 
   bool
   IsClosed() const

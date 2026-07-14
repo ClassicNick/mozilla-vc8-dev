@@ -97,7 +97,7 @@ TaskbarPreviewButton::GetImage(imgIContainer **img) {
   if (mImage)
     NS_ADDREF(*img = mImage);
   else
-    *img = NULL;
+    *img = nullptr;
   return NS_OK;
 }
 
@@ -112,7 +112,7 @@ TaskbarPreviewButton::SetImage(imgIContainer *img) {
                                  &Button().hIcon);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
-    Button().hIcon = NULL;
+    Button().hIcon = nullptr;
   }
   return Update();
 }

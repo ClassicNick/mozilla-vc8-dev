@@ -1882,7 +1882,7 @@ RuntimeService::RemoveSharedWorkerFromWindowMap(
   MOZ_ASSERT(aData.get());
   MOZ_ASSERT(aUserArg);
 
-  auto workerPrivate = static_cast<WorkerPrivate*>(aUserArg);
+  WorkerPrivate* workerPrivate = static_cast<WorkerPrivate*>(aUserArg);
 
   MOZ_ASSERT(workerPrivate->IsSharedWorker());
 
@@ -1903,7 +1903,7 @@ RuntimeService::FindSharedWorkerInfo(const nsACString& aKey,
                                      SharedWorkerInfo* aData,
                                      void* aUserArg)
 {
-  auto match = static_cast<MatchSharedWorkerInfo*>(aUserArg);
+  MatchSharedWorkerInfo* match = static_cast<MatchSharedWorkerInfo*>(aUserArg);
 
   if (aData->mWorkerPrivate == match->mWorkerPrivate) {
     match->mSharedWorkerInfo = aData;

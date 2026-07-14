@@ -184,7 +184,7 @@ this.SessionStore = {
     SessionStoreInternal.setTabState(aTab, aState);
   },
 
-  duplicateTab: function ss_duplicateTab(aWindow, aTab, aDelta) {
+  duplicateTab: function ss_duplicateTab(aWindow, aTab, aDelta = 0) {
     return SessionStoreInternal.duplicateTab(aWindow, aTab, aDelta);
   },
 
@@ -1456,7 +1456,7 @@ let SessionStoreInternal = {
     this.restoreHistoryPrecursor(window, [aTab], [tabState], 0, 0, 0);
   },
 
-  duplicateTab: function ssi_duplicateTab(aWindow, aTab, aDelta) {
+  duplicateTab: function ssi_duplicateTab(aWindow, aTab, aDelta = 0) {
     if (!aTab.ownerDocument || !aTab.ownerDocument.defaultView.__SSi ||
         !aWindow.getBrowser)
       throw (Components.returnCode = Cr.NS_ERROR_INVALID_ARG);
@@ -2462,11 +2462,18 @@ let SessionStoreInternal = {
       delete this._statesToRestore[aWindow.__SS_restoreID];
       delete aWindow.__SS_restoreID;
       delete this._windows[aWindow.__SSi]._restoring;
-
-      // It's important to set the window state to dirty so that
-      // we collect their data for the first time when saving state.
-      DirtyWindows.add(aWindow);
     }
+
+    // It's important to set the window state to dirty so that
+    // we collect their data for the first time when saving state.
+    DirtyWindows.add(aWindow);
+
+    // Set the state to restore as the window's current state. Normally, this
+    // will just be overridden the next time we collect state but we need this
+    // as a fallback should Firefox be shutdown early without notifying us
+    // beforehand.
+    this._windows[aWindow.__SSi].tabs = aTabData.slice();
+    this._windows[aWindow.__SSi].selected = aSelectTab;
 
     if (aTabs.length == 0) {
       // this is normally done in restoreHistory() but as we're returning early

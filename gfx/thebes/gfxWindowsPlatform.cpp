@@ -42,6 +42,7 @@
 
 #include "gfxUserFontSet.h"
 #include "nsWindowsHelpers.h"
+#include "gfx2DGlue.h"
 
 #include <string>
 

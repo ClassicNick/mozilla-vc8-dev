@@ -119,7 +119,7 @@ SharedWorker::Resume()
   mSuspended = false;
 
   if (!mSuspendedEvents.IsEmpty()) {
-    nsTArray<nsCOMPtr<nsIDOMEvent>> events;
+    nsTArray<nsCOMPtr<nsIDOMEvent> > events;
     mSuspendedEvents.SwapElements(events);
 
     for (uint32_t index = 0; index < events.Length(); index++) {
@@ -166,7 +166,7 @@ SharedWorker::Close()
 
 void
 SharedWorker::PostMessage(JSContext* aCx, JS::HandleValue aMessage,
-                          const Optional<Sequence<JS::Value>>& aTransferable,
+                          const Optional<Sequence<JS::Value> >& aTransferable,
                           ErrorResult& aRv)
 {
   AssertIsOnMainThread();

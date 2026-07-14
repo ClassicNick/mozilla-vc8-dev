@@ -12,6 +12,8 @@
 #include <stdarg.h>
 #include "SVGContentUtils.h"
 #include "SVGPathSegUtils.h"
+#include "gfxContext.h"
+#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.141592653589793

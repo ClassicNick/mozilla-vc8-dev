@@ -1124,9 +1124,9 @@ private:
   static bool
   GetOnconnectImpl(JSContext* aCx, JS::CallArgs aArgs)
   {
-    auto name = sEventStrings[STRING_onconnect];
+    const char* name = sEventStrings[STRING_onconnect];
 
-    auto scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), name);
+    SharedWorkerGlobalScope* scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), name);
     MOZ_ASSERT(scope);
 
     ErrorResult rv;
@@ -1150,7 +1150,7 @@ private:
   static bool
   GetOnconnect(JSContext* aCx, unsigned aArgc, JS::Value* aVp)
   {
-    auto args = JS::CallArgsFromVp(aArgc, aVp);
+    JS::CallArgs args = JS::CallArgsFromVp(aArgc, aVp);
     return JS::CallNonGenericMethod<IsSharedWorkerGlobalScope,
                                     GetOnconnectImpl>(aCx, args);
   }
@@ -1158,9 +1158,9 @@ private:
   static bool
   SetOnconnectImpl(JSContext* aCx, JS::CallArgs aArgs)
   {
-    auto name = sEventStrings[STRING_onconnect];
+    const char* name = sEventStrings[STRING_onconnect];
 
-    auto scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), name);
+    SharedWorkerGlobalScope* scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), name);
     MOZ_ASSERT(scope);
 
     if (aArgs.length() == 0 || !aArgs[0].isObject()) {
@@ -1192,7 +1192,7 @@ private:
   static bool
   SetOnconnect(JSContext* aCx, unsigned aArgc, JS::Value* aVp)
   {
-    auto args = JS::CallArgsFromVp(aArgc, aVp);
+    JS::CallArgs args = JS::CallArgsFromVp(aArgc, aVp);
     return JS::CallNonGenericMethod<IsSharedWorkerGlobalScope,
                                     SetOnconnectImpl>(aCx, args);
   }
@@ -1200,10 +1200,10 @@ private:
   static bool
   GetNameImpl(JSContext* aCx, JS::CallArgs aArgs)
   {
-    auto scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), "name");
+    SharedWorkerGlobalScope* scope = GetInstancePrivate(aCx, &aArgs.thisv().toObject(), "name");
     MOZ_ASSERT(scope);
 
-    auto name = scope->mWorker->SharedWorkerName();
+    const nsString name = scope->mWorker->SharedWorkerName();
     MOZ_ASSERT(!name.IsVoid());
 
     JS::Rooted<JSString*> nameStr(aCx,
@@ -1219,7 +1219,7 @@ private:
   static bool
   GetName(JSContext* aCx, unsigned aArgc, JS::Value* aVp)
   {
-    auto args = JS::CallArgsFromVp(aArgc, aVp);
+    JS::CallArgs args = JS::CallArgsFromVp(aArgc, aVp);
     return JS::CallNonGenericMethod<IsSharedWorkerGlobalScope,
                                     GetNameImpl>(aCx, args);
   }
@@ -1376,7 +1376,7 @@ WorkerGlobalScope::IsWorkerGlobalScope(JS::Handle<JS::Value> aVal)
     return false;
   }
 
-  auto classPtr = JS_GetClass(&aVal.toObject());
+  const JSClass* classPtr = JS_GetClass(&aVal.toObject());
 
   return classPtr == DedicatedWorkerGlobalScope::Class() ||
          classPtr == SharedWorkerGlobalScope::Class();
