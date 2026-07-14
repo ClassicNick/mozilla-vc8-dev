@@ -1017,7 +1017,7 @@ js::GetTestingFunctions(JSContext *cx)
     if (!obj)
         return nullptr;
 
-    if (!DefineTestingFunctions(cx, obj))
+    if (!DefineTestingFunctions(cx, obj, false))
         return nullptr;
 
     return obj;
@@ -1119,11 +1119,7 @@ js::AutoCTypesActivityCallback::AutoCTypesActivityCallback(JSContext *cx,
 JS_FRIEND_API(void)
 js::SetObjectMetadataCallback(JSContext *cx, ObjectMetadataCallback callback)
 {
-    // Clear any jitcode in the runtime, which behaves differently depending on
-    // whether there is a creation callback.
-    ReleaseAllJITCode(cx->runtime()->defaultFreeOp());
-
-    cx->compartment()->objectMetadataCallback = callback;
+    cx->compartment()->setObjectMetadataCallback(callback);
 }
 
 JS_FRIEND_API(bool)

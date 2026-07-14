@@ -250,6 +250,15 @@ DeprecatedTextureHost::SwapTextures(const SurfaceDescriptor& aImage,
   SetBuffer(mBuffer, mDeAllocator);
 }
 
+void
+DeprecatedTextureHost::OnActorDestroy()
+{
+  if (ISurfaceAllocator::IsShmem(mBuffer)) {
+    *mBuffer = SurfaceDescriptor();
+    mBuffer = nullptr;
+  }
+}
+
 #ifdef MOZ_LAYERS_HAVE_LOG
 
 void
@@ -515,6 +524,13 @@ ShmemTextureHost::DeallocateSharedData()
                "Shared memory would leak without a ISurfaceAllocator");
     mDeallocator->DeallocShmem(*mShmem);
   }
+}
+
+void
+ShmemTextureHost::OnActorDestroy()
+{
+  delete mShmem;
+  mShmem = nullptr;
 }
 
 uint8_t* ShmemTextureHost::GetBuffer()

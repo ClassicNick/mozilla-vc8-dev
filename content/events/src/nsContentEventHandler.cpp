@@ -26,6 +26,8 @@
 #include "nsIMEStateManager.h"
 #include "nsIObjectFrame.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/TextEvents.h"
+#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
