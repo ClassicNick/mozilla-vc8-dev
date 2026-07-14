@@ -149,7 +149,7 @@ MediaEngineDefaultVideoSource::Stop(SourceMediaStream *aSource, TrackID aID)
   }
 
   mTimer->Cancel();
-  mTimer = NULL;
+  mTimer = nullptr;
 
   aSource->EndTrack(aID);
   aSource->Finish();
@@ -247,7 +247,7 @@ MediaEngineDefaultVideoSource::NotifyPull(MediaStreamGraph* aGraph,
   TrackTicks delta = target - aLastEndTime;
 
   if (delta > 0) {
-    // NULL images are allowed
+    // nullptr images are allowed
     if (image) {
       segment.AppendFrame(image.forget(), delta,
                           gfxIntSize(mOpts.mWidth, mOpts.mHeight));
@@ -402,7 +402,7 @@ MediaEngineDefaultAudioSource::Stop(SourceMediaStream *aSource, TrackID aID)
   }
 
   mTimer->Cancel();
-  mTimer = NULL;
+  mTimer = nullptr;
 
   aSource->EndTrack(aID);
   aSource->Finish();

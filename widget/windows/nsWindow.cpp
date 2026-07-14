@@ -3693,6 +3693,13 @@ bool nsWindow::DispatchKeyboardEvent(WidgetGUIEvent* event)
   return ConvertStatus(status);
 }
 
+bool nsWindow::DispatchScrollEvent(WidgetGUIEvent* event)
+{
+  nsEventStatus status;
+  DispatchEvent(event, status);
+  return ConvertStatus(status);
+}
+
 bool nsWindow::DispatchWindowEvent(WidgetGUIEvent* event)
 {
   nsEventStatus status;

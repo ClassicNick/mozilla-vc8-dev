@@ -1990,6 +1990,11 @@ private:
 
     mAlreadyMappedToAddon = true;
 
+    if (XRE_GetProcessType() != GeckoProcessType_Default) {
+      // Only try to access the service from the main process.
+      return;
+    }
+
     nsAutoCString addonId;
     bool ok;
     nsCOMPtr<amIAddonManager> addonManager =
@@ -2636,7 +2641,7 @@ WorkerPrivateParent<Derived>::DispatchMessageEventToMessagePort(
   JSAutoCompartment(cx, sgo->GetGlobalJSObject());
 
   JS::Rooted<JS::Value> data(cx);
-  if (!buffer.read(cx, data.address(), WorkerStructuredCloneCallbacks(true))) {
+  if (!buffer.read(cx, &data, WorkerStructuredCloneCallbacks(true))) {
     return false;
   }
 

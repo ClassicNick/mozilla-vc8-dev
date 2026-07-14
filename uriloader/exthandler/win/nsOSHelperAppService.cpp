@@ -39,7 +39,7 @@ nsOSHelperAppService::nsOSHelperAppService() :
 {
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
   CoInitialize(NULL);
-  CoCreateInstance(CLSID_ApplicationAssociationRegistration, NULL, CLSCTX_INPROC,
+  CoCreateInstance(CLSID_ApplicationAssociationRegistration, nullptr, CLSCTX_INPROC,
                    IID_IApplicationAssociationRegistration, (void**)&mAppAssoc);
 #endif
 }
@@ -149,7 +149,8 @@ nsresult nsOSHelperAppService::OSProtocolHandlerExists(const char * aProtocolSch
                                &hKey);
     if (err == ERROR_SUCCESS)
     {
-      err = ::RegQueryValueExW(hKey, L"URL Protocol", NULL, NULL, NULL, NULL);
+      err = ::RegQueryValueExW(hKey, L"URL Protocol",
+                               nullptr, nullptr, nullptr, nullptr);
       *aHandlerExists = (err == ERROR_SUCCESS);
       // close the key
       ::RegCloseKey(hKey);

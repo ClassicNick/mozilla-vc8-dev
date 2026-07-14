@@ -93,7 +93,7 @@ namespace {
   {
     public:
       ScopedXREAppData()
-        : mAppData(NULL) { }
+        : mAppData(nullptr) { }
 
       nsresult
       create(nsIFile* aINIFile)
@@ -103,7 +103,7 @@ namespace {
 
       ~ScopedXREAppData()
       {
-        if (NULL != mAppData) {
+        if (nullptr != mAppData) {
           XRE_FreeAppData(mAppData);
         }
       }
@@ -139,7 +139,7 @@ namespace {
     wchar_t msg[1024];
     _vsnwprintf(msg, _countof(msg), fmt, ap);
 
-    MessageBoxW(NULL, msg, L"Web Runtime", MB_OK);
+    MessageBoxW(nullptr, msg, L"Web Runtime", MB_OK);
 
     va_end(ap);
   }
@@ -203,13 +203,13 @@ namespace {
     ::ZeroMemory(&pi, sizeof(pi));
 
     if (!CreateProcessW(curExePath, // Module name
-                        NULL,       // Command line
-                        NULL,       // Process handle not inheritable
-                        NULL,       // Thread handle not inheritable
+                        nullptr,    // Command line
+                        nullptr,    // Process handle not inheritable
+                        nullptr,    // Thread handle not inheritable
                         FALSE,      // Set handle inheritance to FALSE
                         0,          // No creation flags
-                        NULL,       // Use parent's environment block
-                        NULL,       // Use parent's starting directory
+                        nullptr,    // Use parent's environment block
+                        nullptr,    // Use parent's starting directory
                         &si,
                         &pi)) {
       return false;
@@ -362,8 +362,8 @@ namespace {
     //      RegGetValue instead
     if (ERROR_SUCCESS != RegQueryValueExW(key,
                                           L"Path",
-                                          NULL,
-                                          NULL,
+                                          nullptr,
+                                          nullptr,
                                           reinterpret_cast<BYTE*>(wideGreDir),
                                           &length)) {
       RegCloseKey(key);
@@ -387,8 +387,8 @@ namespace {
                                  -1,
                                  firefoxDir,
                                  MAXPATHLEN,
-                                 NULL,
-                                 NULL)) {
+                                 nullptr,
+                                 nullptr)) {
       return false;
     }
 
@@ -442,8 +442,8 @@ main(int argc, char* argv[])
                                -1,
                                buffer,
                                MAXPATHLEN,
-                               NULL,
-                               NULL)) {
+                               nullptr,
+                               nullptr)) {
     Output("Application directory could not be processed.");
     return 255;
   }

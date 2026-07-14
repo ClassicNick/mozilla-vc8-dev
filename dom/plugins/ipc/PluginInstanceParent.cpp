@@ -69,8 +69,8 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
     , mWindowType(NPWindowTypeWindow)
     , mDrawingModel(kDefaultDrawingModel)
 #if defined(OS_WIN)
-    , mPluginHWND(NULL)
-    , mPluginWndProc(NULL)
+    , mPluginHWND(nullptr)
+    , mPluginWndProc(nullptr)
     , mNestedEventState(false)
 #endif // defined(XP_WIN)
 #if defined(XP_MACOSX)
@@ -87,7 +87,7 @@ PluginInstanceParent::PluginInstanceParent(PluginModuleParent* parent,
 PluginInstanceParent::~PluginInstanceParent()
 {
     if (mNPP)
-        mNPP->pdata = NULL;
+        mNPP->pdata = nullptr;
 
 #if defined(OS_WIN)
     NS_ASSERTION(!(mPluginHWND || mPluginWndProc),
@@ -130,7 +130,7 @@ PluginInstanceParent::ActorDestroy(ActorDestroyReason why)
     // longer be valid. The X surface may be destroyed, or the shared
     // memory backing this surface may no longer be valid.
     if (mFrontSurface) {
-        mFrontSurface = NULL;
+        mFrontSurface = nullptr;
         if (mImageContainer) {
             mImageContainer->SetCurrentImage(nullptr);
         }
@@ -167,7 +167,7 @@ PluginInstanceParent::AllocPBrowserStreamParent(const nsCString& url,
                                                 uint16_t *stype)
 {
     NS_RUNTIMEABORT("Not reachable");
-    return NULL;
+    return nullptr;
 }
 
 bool
@@ -430,7 +430,7 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
                 mImageContainer->SetCompositionNotifySink(nullptr);
             }
             DeallocShmem(mRemoteImageDataShmem);
-            mRemoteImageDataMutex = NULL;
+            mRemoteImageDataMutex = nullptr;
         }
     } else {
         *result = NPERR_GENERIC_ERROR;
@@ -688,7 +688,7 @@ nsresult
 PluginInstanceParent::GetImageContainer(ImageContainer** aContainer)
 {
 #ifdef XP_MACOSX
-    MacIOSurface* ioSurface = NULL;
+    MacIOSurface* ioSurface = nullptr;
   
     if (mFrontIOSurface) {
       ioSurface = mFrontIOSurface;
@@ -1589,7 +1589,7 @@ PluginInstanceParent::AllocPPluginSurfaceParent(const WindowsSharedMemoryHandle&
     return new PluginSurfaceParent(handle, size, transparent);
 #else
     NS_ERROR("This shouldn't be called!");
-    return NULL;
+    return nullptr;
 #endif
 }
 
@@ -1728,7 +1728,7 @@ PluginInstanceParent::AnswerNPN_InitAsyncSurface(const gfxIntSize& size,
             CD3D10_TEXTURE2D_DESC desc(DXGI_FORMAT_B8G8R8A8_UNORM, size.width, size.height, 1, 1);
             desc.MiscFlags = D3D10_RESOURCE_MISC_SHARED_KEYEDMUTEX;
             desc.BindFlags = D3D10_BIND_RENDER_TARGET | D3D10_BIND_SHADER_RESOURCE;
-            if (FAILED(device->CreateTexture2D(&desc, NULL, getter_AddRefs(texture)))) {
+            if (FAILED(device->CreateTexture2D(&desc, nullptr, getter_AddRefs(texture)))) {
                 *result = false;
                 return true;
             }
@@ -1875,8 +1875,8 @@ PluginInstanceParent::UnsubclassPluginWindow()
 
         ::RemovePropW(mPluginHWND, kPluginInstanceParentProperty);
 
-        mPluginWndProc = NULL;
-        mPluginHWND = NULL;
+        mPluginWndProc = nullptr;
+        mPluginHWND = nullptr;
     }
 }
 
