@@ -990,7 +990,7 @@ js::math_tan(JSContext *cx, unsigned argc, Value *vp)
 typedef double (*UnaryMathFunctionType)(MathCache *cache, double);
 
 template <UnaryMathFunctionType F>
-bool math_function(JSContext *cx, unsigned argc, Value *vp)
+static bool math_function(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     if (args.length() == 0) {
@@ -1457,7 +1457,7 @@ js::math_trunc(JSContext *cx, unsigned argc, Value *vp)
     return math_function<math_trunc_impl>(cx, argc, vp);
 }
 
-double sign(double x)
+static double sign(double x)
 {
     if (mozilla::IsNaN(x))
         return GenericNaN();
