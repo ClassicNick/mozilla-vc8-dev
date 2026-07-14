@@ -218,7 +218,7 @@ protected:
 private:
   // These two members are created at |RtspMediaResource::OnConnected|.
   nsCOMPtr<nsIStreamingProtocolController> mMediaStreamController;
-  nsTArray<nsAutoPtr<RtspTrackBuffer>> mTrackBuffer;
+  nsTArray<nsAutoPtr<RtspTrackBuffer> > mTrackBuffer;
 
   // A flag that indicates the |RtspMediaResource::OnConnected| has already been
   // called.

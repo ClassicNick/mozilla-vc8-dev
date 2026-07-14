@@ -2894,7 +2894,7 @@ HTMLInputElement::MaybeSubmitForm(nsPresContext* aPresContext)
                            WidgetMouseEvent::eReal);
     nsEventStatus status = nsEventStatus_eIgnore;
     shell->HandleDOMEventWithTarget(submitContent, &event, &status);
-  } else if (mForm->HasSingleTextControl() &&
+  } else if (!mForm->ImplicitSubmissionIsDisabled() &&
              (mForm->HasAttr(kNameSpaceID_None, nsGkAtoms::novalidate) ||
               mForm->CheckValidFormSubmission())) {
     // TODO: removing this code and have the submit event sent by the form,
@@ -3601,6 +3601,7 @@ HTMLInputElement::PostHandleEvent(nsEventChainPostVisitor& aVisitor)
               (keyEvent->keyCode == NS_VK_RETURN ||
                keyEvent->keyCode == NS_VK_ENTER) &&
                (IsSingleLineTextControl(false, mType) ||
+                mType == NS_FORM_INPUT_NUMBER ||
                 IsExperimentalMobileType(mType))) {
             FireChangeEventIfNeeded();
             rv = MaybeSubmitForm(aVisitor.mPresContext);

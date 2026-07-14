@@ -16,6 +16,7 @@
 #include "jit/MIRGraph.h"
 
 #include "jsinferinlines.h"
+#include "jsobjinlines.h"
 
 #include "jit/shared/Lowering-shared-inl.h"
 
@@ -2706,6 +2707,7 @@ LIRGenerator::visitAssertRange(MAssertRange *ins)
     LInstruction *lir = nullptr;
 
     switch (input->type()) {
+      case MIRType_Boolean:
       case MIRType_Int32:
         lir = new LAssertRangeI(useRegisterAtStart(input));
         break;

@@ -18,14 +18,14 @@
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gRtspMediaResourceLog;
-#define LOG(msg, ...) PR_LOG(gRtspMediaResourceLog, PR_LOG_DEBUG, \
-                             (msg, ##__VA_ARGS__))
+#define LOG(msg, a) PR_LOG(gRtspMediaResourceLog, PR_LOG_DEBUG, \
+                             (msg, a))
 // Debug logging macro with object pointer and class name.
-#define RTSPMLOG(msg, ...) \
-        LOG("%p [RtspMediaResource]: " msg, this, ##__VA_ARGS__)
+#define RTSPMLOG(msg, a) \
+        LOG("%p [RtspMediaResource]: " msg, this, a)
 #else
-#define LOG(msg, ...)
-#define RTSPMLOG(msg, ...)
+#define LOG(msg, a)
+#define RTSPMLOG(msg, a)
 #endif
 
 namespace mozilla {

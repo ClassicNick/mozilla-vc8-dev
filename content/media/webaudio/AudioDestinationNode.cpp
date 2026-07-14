@@ -490,7 +490,7 @@ AudioDestinationNode::CreateAudioChannelAgent()
 
   int32_t state = 0;
   mAudioChannelAgent->StartPlaying(&state);
-  SetCanPlay(state == AudioChannelState::AUDIO_CHANNEL_STATE_NORMAL);
+  SetCanPlay(state == AUDIO_CHANNEL_STATE_NORMAL);
 }
 }
 
