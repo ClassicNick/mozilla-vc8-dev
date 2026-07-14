@@ -759,6 +759,11 @@ js::WouldDefinePastNonwritableLength(ThreadSafeContext *cx,
 
     *definesPast = true;
 
+    // Error in strict mode code or warn with strict option.
+    unsigned flags = strict ? JSREPORT_ERROR : (JSREPORT_STRICT | JSREPORT_WARNING);
+    if (cx->isForkJoinSlice())
+        return cx->asForkJoinSlice()->reportError(ParallelBailoutUnsupportedVM, flags);
+
     if (!cx->isJSContext())
         return true;
 
@@ -767,9 +772,7 @@ js::WouldDefinePastNonwritableLength(ThreadSafeContext *cx,
     if (!strict && !ncx->hasExtraWarningsOption())
         return true;
 
-    // Error in strict mode code or warn with strict option.
     // XXX include the index and maybe array length in the error message
-    unsigned flags = strict ? JSREPORT_ERROR : (JSREPORT_STRICT | JSREPORT_WARNING);
     return JS_ReportErrorFlagsAndNumber(ncx, flags, js_GetErrorMessage, nullptr,
                                         JSMSG_CANT_DEFINE_PAST_ARRAY_LENGTH);
 }
@@ -1083,14 +1086,14 @@ ArrayJoin(JSContext *cx, CallArgs &args)
 
     // Steps 4 and 5
     RootedString sepstr(cx, nullptr);
+    JS::Anchor<JSString *> anchor(nullptr);
+    const jschar *sepchars;
+    size_t seplen;
     if (!Locale && args.hasDefined(0)) {
         sepstr = ToString<CanGC>(cx, args[0]);
         if (!sepstr)
             return false;
-    }
-    const jschar *sepchars;
-    size_t seplen;
-    if (sepstr) {
+        anchor = sepstr;
         sepchars = sepstr->getChars(cx);
         if (!sepchars)
             return false;

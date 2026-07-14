@@ -1142,13 +1142,8 @@ EnsureSymInitialized()
     if (!EnsureImageHlpInitialized())
         return false;
 
-<<<<<<< HEAD
     _SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-    retStat = _SymInitialize(GetCurrentProcess(), NULL, TRUE);
-=======
-    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
-    retStat = SymInitialize(GetCurrentProcess(), nullptr, TRUE);
->>>>>>> efcc780
+    retStat = _SymInitialize(GetCurrentProcess(), nullptr, TRUE);
     if (!retStat)
         PrintError("SymInitialize");
 
