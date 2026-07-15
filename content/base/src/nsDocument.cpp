@@ -214,8 +214,6 @@
 #include "mozilla/dom/XPathEvaluator.h"
 #include "nsIDocumentEncoder.h"
 #include "nsIStructuredCloneContainer.h"
-#include "nsIMutableArray.h"
-#include "nsContentPermissionHelper.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -10648,11 +10646,17 @@ NS_IMPL_ISUPPORTS_INHERITED1(nsPointerLockPermissionRequest,
                              nsIContentPermissionRequest)
 
 NS_IMETHODIMP
-nsPointerLockPermissionRequest::GetTypes(nsIArray** aTypes)
+nsPointerLockPermissionRequest::GetType(nsACString& aType)
 {
-  return CreatePermissionArray(NS_LITERAL_CSTRING("pointerLock"),
-                               NS_LITERAL_CSTRING("unused"),
-                               aTypes);
+  aType = "pointerLock";
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPointerLockPermissionRequest::GetAccess(nsACString& aAccess)
+{
+  aAccess = "unused";
+  return NS_OK;
 }
 
 NS_IMETHODIMP

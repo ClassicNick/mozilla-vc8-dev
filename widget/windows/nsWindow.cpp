@@ -252,7 +252,7 @@ uint32_t        nsWindow::sOOPPPluginFocusEvent   =
 static const char *sScreenManagerContractID       = "@mozilla.org/gfx/screenmanager;1";
 
 #ifdef PR_LOGGING
-PRLogModuleInfo* gWindowsLog                      = nullptr;
+extern PRLogModuleInfo* gWindowsLog;
 #endif
 
 // Global used in Show window enumerations.
@@ -310,12 +310,6 @@ static const int32_t kResizableBorderMinSize = 3;
 
 nsWindow::nsWindow() : nsWindowBase()
 {
-#ifdef PR_LOGGING
-  if (!gWindowsLog) {
-    gWindowsLog = PR_NewLogModule("nsWindow");
-  }
-#endif
-
   mIconSmall            = nullptr;
   mIconBig              = nullptr;
   mWnd                  = nullptr;

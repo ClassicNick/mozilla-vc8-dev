@@ -22,6 +22,7 @@
 
 #ifdef XP_MACOSX
 #include "mozilla/gfx/QuartzSupport.h"
+#include "MacIOSurfaceImage.h"
 #endif
 
 #ifdef XP_WIN
@@ -78,6 +79,12 @@ ImageFactory::CreateImage(const ImageFormat *aFormats,
     img = new SharedTextureImage();
     return img.forget();
   }
+#ifdef XP_MACOSX
+  if (FormatInList(aFormats, aNumFormats, MAC_IOSURFACE)) {
+    img = new MacIOSurfaceImage();
+    return img.forget();
+  }
+#endif
 #if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
   if (FormatInList(aFormats, aNumFormats, D3D9_RGB32_TEXTURE)) {
     img = new D3D9SurfaceImage();

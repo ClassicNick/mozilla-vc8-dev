@@ -2925,11 +2925,7 @@ CASE(JSOP_INITELEM_SETTER)
     idval = REGS.sp[-2];
     val = &REGS.sp[-1].toObject();
 
-<<<<<<< HEAD
-    if (!InitGetterSetterOperation(cx, regs.pc, obj, (HandleId) idval, val))
-=======
-    if (!InitGetterSetterOperation(cx, REGS.pc, obj, idval, val))
->>>>>>> 2842a71
+    if (!InitGetterSetterOperation(cx, REGS.pc, obj, (HandleId) idval, val))
         goto error;
 
     REGS.sp -= 2;

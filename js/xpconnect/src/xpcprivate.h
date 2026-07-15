@@ -1371,6 +1371,7 @@ public:
 
     bool IsXBLScope() { return mIsXBLScope; }
     bool AllowXBLScope();
+    bool UseXBLScope() { return mUseXBLScope; }
 
 protected:
     virtual ~XPCWrappedNativeScope();
@@ -3743,13 +3744,17 @@ namespace xpc {
 class CompartmentPrivate
 {
 public:
+    enum LocationHint {
+        LocationHintRegular,
+        LocationHintAddon
+    };
+
     CompartmentPrivate()
         : wantXrays(false)
         , universalXPConnectEnabled(false)
         , adoptedNode(false)
         , donatedNode(false)
         , scope(nullptr)
-        , locationWasParsed(false)
     {
         MOZ_COUNT_CTOR(xpc::CompartmentPrivate);
     }
@@ -3780,10 +3785,14 @@ public:
         return location;
     }
     bool GetLocationURI(nsIURI **aURI) {
-        if (!locationURI && !TryParseLocationURI())
-            return false;
-        NS_IF_ADDREF(*aURI = locationURI);
-        return true;
+        return GetLocationURI(LocationHintRegular, aURI);
+    }
+    bool GetLocationURI(LocationHint aLocationHint, nsIURI **aURI) {
+        if (locationURI) {
+            NS_IF_ADDREF(*aURI = locationURI);
+            return true;
+        }
+        return TryParseLocationURI(aLocationHint, aURI);
     }
     void SetLocation(const nsACString& aLocation) {
         if (aLocation.IsEmpty())
@@ -3803,10 +3812,8 @@ public:
 private:
     nsCString location;
     nsCOMPtr<nsIURI> locationURI;
-    bool locationWasParsed;
 
-    bool TryParseLocationURI();
-    bool TryParseLocationURICandidate(const nsACString& uristr);
+    bool TryParseLocationURI(LocationHint aType, nsIURI** aURI);
 };
 
 CompartmentPrivate*
