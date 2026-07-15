@@ -310,11 +310,11 @@ private:
 #endif
 #ifdef MOZ_ENABLE_D3D9_LAYER
 	nsRefPtr<mozilla::layers::DeviceManagerD3D9> mDeviceManager;
+	bool mD3D9DeviceInitialized;
 #endif
 #ifdef MOZ_ENABLE_D3D10_LAYER
     mozilla::RefPtr<IDXGIAdapter1> mAdapter;
     mozilla::RefPtr<ID3D11Device> mD3D11Device;
-    bool mD3D9DeviceInitialized;
     bool mD3D11DeviceInitialized;
 #endif
 

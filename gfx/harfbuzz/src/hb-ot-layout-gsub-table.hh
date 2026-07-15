@@ -1255,9 +1255,6 @@ struct SubstLookup : Lookup
   template <typename T>
   static inline typename hb_collect_glyphs_context_t::return_t dispatch_recurse_func (hb_collect_glyphs_context_t *c, unsigned int lookup_index);
 
-  template <typename T>
-  static inline typename hb_is_inplace_context_t::return_t dispatch_recurse_func (hb_is_inplace_context_t *c, unsigned int lookup_index);
-
   template <typename context_t>
   inline typename context_t::return_t dispatch (context_t *c) const
   {
@@ -1362,14 +1359,6 @@ inline typename hb_closure_context_t::return_t SubstLookup::dispatch_recurse_fun
 
 template <typename T>
 inline typename hb_collect_glyphs_context_t::return_t SubstLookup::dispatch_recurse_func (hb_collect_glyphs_context_t *c, unsigned int lookup_index)
-{
-  const GSUB &gsub = *(hb_ot_layout_from_face (c->face)->gsub);
-  const SubstLookup &l = gsub.get_lookup (lookup_index);
-  return l.dispatch (c);
-}
-
-template <typename T>
-inline typename hb_is_inplace_context_t::return_t SubstLookup::dispatch_recurse_func (hb_is_inplace_context_t *c, unsigned int lookup_index)
 {
   const GSUB &gsub = *(hb_ot_layout_from_face (c->face)->gsub);
   const SubstLookup &l = gsub.get_lookup (lookup_index);

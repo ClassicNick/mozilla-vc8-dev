@@ -29,6 +29,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <process.h>
+#include <math.h>
 #include "platform.h"
 #include "TableTicker.h"
 #include "ProfileEntry.h"

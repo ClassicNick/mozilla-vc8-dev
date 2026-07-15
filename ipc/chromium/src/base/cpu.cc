@@ -5,6 +5,9 @@
 #include "base/cpu.h"
 #include <string>
 #include "nsError.h"
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
+#include <intrin.h>
+#endif
 
 namespace base {
 

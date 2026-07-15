@@ -10,6 +10,10 @@
 #include "gfxTypes.h"
 #include "nsRect.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1400
+#undef MOZILLA_MAY_SUPPORT_SSE2
+#endif
+
 struct nsIntRect;
 class gfxImageSurface;
 

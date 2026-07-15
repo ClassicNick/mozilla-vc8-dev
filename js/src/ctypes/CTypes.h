@@ -58,7 +58,7 @@ private:
 template<class T, size_t N = 0>
 class Array : public Vector<T, N, SystemAllocPolicy>
 {
-  static_assert(!mozilla::IsSame<T, JS::Value>::value,
+  MOZ_STATIC_ASSERT((!mozilla::IsSame<T, JS::Value>::value),
                 "use JS::AutoValueVector instead");
 };
 

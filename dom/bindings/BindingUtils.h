@@ -1404,7 +1404,7 @@ template <class T>
 struct
 WantsQueryInterface
 {
-  static_assert(IsBaseOf<nsISupports, T>::value,
+  MOZ_STATIC_ASSERT((IsBaseOf<nsISupports, T>::value),
                 "QueryInterface can't work without an nsISupports.");
   static bool Enabled(JSContext* aCx, JSObject* aGlobal)
   {

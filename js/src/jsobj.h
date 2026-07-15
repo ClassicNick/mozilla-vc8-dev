@@ -119,13 +119,13 @@ GetElement(JSContext *cx, HandleObject obj, uint32_t index, MutableHandleValue v
 
 template <ExecutionMode mode>
 extern bool
-SetPropertyHelper(typename ExecutionModeTraits<mode>::ContextType cx, HandleObject obj,
+SetPropertyHelper(JSContext* cx, HandleObject obj,
                   HandleObject receiver, HandleId id, unsigned defineHow,
                   MutableHandleValue vp, bool strict);
 
 template <ExecutionMode mode>
 inline bool
-SetPropertyHelper(typename ExecutionModeTraits<mode>::ContextType cx, HandleObject obj,
+SetPropertyHelper(JSContext* cx, HandleObject obj,
                   HandleObject receiver, PropertyName *name, unsigned defineHow,
                   MutableHandleValue vp, bool strict)
 {
@@ -1495,7 +1495,7 @@ NativeGet(JSContext *cx, js::Handle<JSObject*> obj, js::Handle<JSObject*> pobj,
 
 template <js::ExecutionMode mode>
 bool
-NativeSet(typename js::ExecutionModeTraits<mode>::ContextType cx,
+NativeSet(JSContext* cx,
           js::Handle<JSObject*> obj, js::Handle<JSObject*> receiver,
           js::Handle<js::Shape*> shape, bool strict, js::MutableHandleValue vp);
 

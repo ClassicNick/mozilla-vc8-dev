@@ -3409,7 +3409,7 @@ JSObject::addDataProperty(ExclusiveContext *cx, HandlePropertyName name,
  */
 template <ExecutionMode mode>
 static inline bool
-CallAddPropertyHook(typename ExecutionModeTraits<mode>::ExclusiveContextType cxArg,
+CallAddPropertyHook(ExclusiveContext* cxArg,
                     const Class *clasp, HandleObject obj, HandleShape shape,
                     HandleValue nominal)
 {
@@ -3439,7 +3439,7 @@ CallAddPropertyHook(typename ExecutionModeTraits<mode>::ExclusiveContextType cxA
 
 template <ExecutionMode mode>
 static inline bool
-CallAddPropertyHookDense(typename ExecutionModeTraits<mode>::ExclusiveContextType cxArg,
+CallAddPropertyHookDense(ExclusiveContext* cxArg,
                          const Class *clasp, HandleObject obj, uint32_t index,
                          HandleValue nominal)
 {
@@ -3485,7 +3485,7 @@ CallAddPropertyHookDense(typename ExecutionModeTraits<mode>::ExclusiveContextTyp
 
 template <ExecutionMode mode>
 static inline bool
-DefinePropertyOrElement(typename ExecutionModeTraits<mode>::ExclusiveContextType cx,
+DefinePropertyOrElement(ExclusiveContext* cx,
                         HandleObject obj, HandleId id,
                         PropertyOp getter, StrictPropertyOp setter,
                         unsigned attrs, unsigned flags, int shortid,
@@ -3527,7 +3527,7 @@ DefinePropertyOrElement(typename ExecutionModeTraits<mode>::ExclusiveContextType
         if (id == NameToId(cx->names().length)) {
             if (mode == SequentialExecution && !cx->shouldBeJSContext())
                 return false;
-            return ArraySetLength<mode>(ExecutionModeTraits<mode>::toContextType(cx), arr, id,
+            return ArraySetLength<mode>((JSContext*) cx, arr, id,
                                         attrs, value, setterIsStrict);
         }
 
@@ -3579,7 +3579,7 @@ DefinePropertyOrElement(typename ExecutionModeTraits<mode>::ExclusiveContextType
         if (!cx->shouldBeJSContext())
             return false;
         RootedValue nvalue(cx, value);
-        return NativeSet<mode>(ExecutionModeTraits<mode>::toContextType(cx),
+        return NativeSet<mode>((JSContext*) cx,
                                obj, obj, shape, setterIsStrict, &nvalue);
     }
     return true;
@@ -4148,7 +4148,7 @@ js::NativeGet(JSContext *cx, Handle<JSObject*> obj, Handle<JSObject*> pobj, Hand
 
 template <ExecutionMode mode>
 bool
-js::NativeSet(typename ExecutionModeTraits<mode>::ContextType cxArg,
+js::NativeSet(JSContext* cxArg,
               Handle<JSObject*> obj, Handle<JSObject*> receiver,
               HandleShape shape, bool strict, MutableHandleValue vp)
 {
@@ -4210,7 +4210,7 @@ js::NativeSet<SequentialExecution>(JSContext *cx,
                                    Handle<JSObject*> obj, Handle<JSObject*> receiver,
                                    HandleShape shape, bool strict, MutableHandleValue vp);
 template bool
-js::NativeSet<ParallelExecution>(ForkJoinSlice *slice,
+js::NativeSet<ParallelExecution>(JSContext *cx,
                                  Handle<JSObject*> obj, Handle<JSObject*> receiver,
                                  HandleShape shape, bool strict, MutableHandleValue vp);
 
@@ -4648,7 +4648,7 @@ JSObject::callMethod(JSContext *cx, HandleId id, unsigned argc, Value *argv, Mut
 
 template <ExecutionMode mode>
 bool
-baseops::SetPropertyHelper(typename ExecutionModeTraits<mode>::ContextType cxArg,
+baseops::SetPropertyHelper(JSContext* cxArg,
                            HandleObject obj, HandleObject receiver, HandleId id,
                            unsigned defineHow, MutableHandleValue vp, bool strict)
 {
@@ -4889,7 +4889,7 @@ baseops::SetPropertyHelper<SequentialExecution>(JSContext *cx, HandleObject obj,
                                                 HandleId id, unsigned defineHow,
                                                 MutableHandleValue vp, bool strict);
 template bool
-baseops::SetPropertyHelper<ParallelExecution>(ForkJoinSlice *slice, HandleObject obj,
+baseops::SetPropertyHelper<ParallelExecution>(JSContext *cx, HandleObject obj,
                                               HandleObject receiver,
                                               HandleId id, unsigned defineHow,
                                               MutableHandleValue vp, bool strict);

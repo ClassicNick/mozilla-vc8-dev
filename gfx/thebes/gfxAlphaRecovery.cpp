@@ -10,6 +10,10 @@
 #define MOZILLA_SSE_INCLUDE_HEADER_FOR_SSE2
 #include "mozilla/SSE.h"
 
+#if defined (_MSC_VER) && _MSC_VER <= 1400
+#undef MOZILLA_MAY_SUPPORT_SSE2
+#endif
+
 /* static */ bool
 gfxAlphaRecovery::RecoverAlpha(gfxImageSurface* blackSurf,
                                const gfxImageSurface* whiteSurf)

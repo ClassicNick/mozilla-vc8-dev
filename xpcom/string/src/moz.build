@@ -20,7 +20,7 @@ SOURCES += [
 
 # Are we targeting x86 or x86-64?  If so, compile the SSE2 functions for
 # nsUTF8Utils.cpp.
-if CONFIG['COMPILE_SSE2_SRCS']:
+if CONFIG['_MSC_VER'] >= '1400':
     SOURCES += [
         'nsUTF8UtilsSSE2.cpp',
     ]

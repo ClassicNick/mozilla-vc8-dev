@@ -413,7 +413,7 @@ struct ReverseIndexComparator
 
 template <ExecutionMode mode>
 bool
-js::CanonicalizeArrayLengthValue(typename ExecutionModeTraits<mode>::ContextType cx,
+js::CanonicalizeArrayLengthValue(JSContext* cx,
                                  HandleValue v, uint32_t *newLen)
 {
     double d;
@@ -731,7 +731,7 @@ js::ArraySetLength<SequentialExecution>(JSContext *cx, Handle<ArrayObject*> arr,
                                         HandleId id, unsigned attrs, HandleValue value,
                                         bool setterIsStrict);
 template bool
-js::ArraySetLength<ParallelExecution>(ForkJoinSlice *slice, Handle<ArrayObject*> arr,
+js::ArraySetLength<ParallelExecution>(JSContext *cx, Handle<ArrayObject*> arr,
                                       HandleId id, unsigned attrs, HandleValue value,
                                       bool setterIsStrict);
 
@@ -1200,7 +1200,7 @@ InitArrayTypes(JSContext *cx, TypeObject *type, const Value *vector, unsigned co
     if (cx->typeInferenceEnabled() && !type->unknownProperties()) {
         AutoEnterAnalysis enter(cx);
 
-        TypeSet *types = type->getProperty(cx, JSID_VOID);
+        HeapTypeSet *types = type->getProperty(cx, JSID_VOID);
         if (!types)
             return false;
 
@@ -2968,6 +2968,8 @@ static const JSFunctionSpec array_methods[] = {
     JS_SELF_HOSTED_FN("findIndex",   "ArrayFindIndex",   1,0),
 
     JS_SELF_HOSTED_FN("@@iterator",  "ArrayValues",      0,0),
+    JS_SELF_HOSTED_FN("entries",     "ArrayEntries",     0,0),
+    JS_SELF_HOSTED_FN("keys",        "ArrayKeys",        0,0),
     JS_FS_END
 };
 
