@@ -44,7 +44,7 @@ using namespace mozilla;
 #define SECONDS_PER_DAY 86400
 
 #ifdef PR_LOGGING
-static PRLogModuleInfo *sLog = NULL;
+static PRLogModuleInfo *sLog = nullptr;
 #endif
 
 // Use this to find previously added observers in our array:
@@ -391,7 +391,7 @@ nsIdleService::nsIdleService() : mCurrentlySetToTimeoutAt(TimeStamp()),
                                  mLastUserInteraction(TimeStamp::Now())
 {
 #ifdef PR_LOGGING
-  if (sLog == NULL)
+  if (sLog == nullptr)
     sLog = PR_NewLogModule("idleService");
 #endif
   MOZ_ASSERT(!gIdleService);

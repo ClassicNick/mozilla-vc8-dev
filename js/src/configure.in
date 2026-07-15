@@ -10,7 +10,6 @@ dnl ========================================================
 AC_PREREQ(2.13)
 AC_INIT(jsapi.h)
 AC_CONFIG_AUX_DIR(${srcdir}/build/autoconf)
-AC_CONFIG_HEADER(js-config.h)
 AC_CANONICAL_SYSTEM
 TARGET_CPU="${target_cpu}"
 TARGET_VENDOR="${target_vendor}"
@@ -236,10 +235,12 @@ dnl Get mozilla version from central milestone file
 dnl ==============================================================
 MOZILLA_VERSION=`$PERL $srcdir/config/milestone.pl -topsrcdir $srcdir`
 MOZILLA_UAVERSION=`$PERL $srcdir/config/milestone.pl -topsrcdir $srcdir -uaversion`
+MOZILLA_SYMBOLVERSION=`$PERL $srcdir/config/milestone.pl -topsrcdir $srcdir -symbolversion`
 
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION,"$MOZILLA_VERSION")
 AC_DEFINE_UNQUOTED(MOZILLA_VERSION_U,$MOZILLA_VERSION)
 AC_DEFINE_UNQUOTED(MOZILLA_UAVERSION,"$MOZILLA_UAVERSION")
+AC_DEFINE_UNQUOTED(MOZILLA_SYMBOLVERSION,"$MOZILLA_SYMBOLVERSION")
 
 # Separate version into components for use in shared object naming etc
 changequote(,)
@@ -4319,7 +4320,7 @@ AC_SUBST(ac_configure_args)
 dnl Spit out some output
 dnl ========================================================
 
-AC_OUTPUT([js-confdefs.h config/autoconf.mk config/emptyvars.mk])
+AC_OUTPUT()
 
 # Produce the js-config script at configure time; see the comments for
 # 'js*-config' in Makefile.in.
