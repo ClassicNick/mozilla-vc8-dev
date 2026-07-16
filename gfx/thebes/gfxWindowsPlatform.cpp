@@ -402,14 +402,17 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     UpdateRenderMode();
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-    mGPUAdapterReporter = new GPUAdapterReporter();
-    NS_RegisterMemoryReporter(mGPUAdapterReporter);
+    // This reporter is disabled because it frequently gives bogus values.  See
+    // bug 917496.
+    //mGPUAdapterReporter = new GPUAdapterReporter();
+    //NS_RegisterMemoryReporter(mGPUAdapterReporter);
+    mGPUAdapterReporter = nullptr;
 #endif
 }
 
 gfxWindowsPlatform::~gfxWindowsPlatform()
 {
-    NS_UnregisterMemoryReporter(mGPUAdapterReporter);
+    //NS_UnregisterMemoryReporter(mGPUAdapterReporter);
     
 #ifdef MOZ_ENABLE_D3D9_LAYER
      mDeviceManager = nullptr;
@@ -528,13 +531,16 @@ gfxWindowsPlatform::UpdateRenderMode()
 
     uint32_t canvasMask = 1 << BACKEND_CAIRO;
     uint32_t contentMask = 1 << BACKEND_CAIRO;
+    BackendType defaultBackend = BACKEND_CAIRO;
     if (mRenderMode == RENDER_DIRECT2D) {
       canvasMask |= 1 << BACKEND_DIRECT2D;
       contentMask |= 1 << BACKEND_DIRECT2D;
+      defaultBackend = BACKEND_DIRECT2D;
     } else {
       canvasMask |= 1 << BACKEND_SKIA;
     }
-    InitBackendPrefs(canvasMask, contentMask);
+    InitBackendPrefs(canvasMask, defaultBackend,
+                     contentMask, defaultBackend);
 }
 
 #ifdef CAIRO_HAS_D2D_SURFACE

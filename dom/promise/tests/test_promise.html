@@ -368,6 +368,15 @@ function promiseResolveNestedPromise() {
   });
 }
 
+function promiseRejectNoHandler() {
+  // This test only checks that the code that reports unhandled errors in the
+  // Promises implementation does not crash or leak.
+  var promise = new Promise(function(res, rej) {
+    noSuchMethod();
+  });
+  runTest();
+}
+
 var tests = [ promiseResolve, promiseReject,
               promiseException, promiseGC, promiseAsync,
               promiseDoubleThen, promiseThenException,
@@ -380,6 +389,7 @@ var tests = [ promiseResolve, promiseReject,
               promiseWrongNestedPromise, promiseLoop,
               promiseStaticReject, promiseStaticResolve,
               promiseResolveNestedPromise,
+              promiseRejectNoHandler,
             ];
 
 function runTest() {
