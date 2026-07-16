@@ -183,6 +183,7 @@ static WindowsDllInterceptor sNtDllInterceptor;
 
 namespace mozilla {
 
+#if defined(MOZ_ENABLE_PROFILER_SPS) && (defined(XP_WIN) || defined(XP_MACOSX))
 void InitPoisonIOInterposer() {
   // Don't poison twice... as this function may only be invoked on the main
   // thread when no other threads are running, it safe to allow multiple calls
@@ -209,7 +210,9 @@ void InitPoisonIOInterposer() {
     reinterpret_cast<void**>(&gOriginalNtWriteFileGather)
   );
 }
+#endif
 
+#if defined(MOZ_ENABLE_PROFILER_SPS) && (defined(XP_WIN) || defined(XP_MACOSX))
 void ClearPoisonIOInterposer() {
   MOZ_ASSERT(false);
   if (sIOPoisoned) {
@@ -218,5 +221,6 @@ void ClearPoisonIOInterposer() {
     sNtDllInterceptor = WindowsDllInterceptor();
   }
 }
+#endif
 
 } // namespace mozilla

@@ -83,6 +83,7 @@ std::vector<intptr_t>* getDebugFileIDs() {
 
 namespace mozilla{
 
+#if defined(MOZ_ENABLE_PROFILER_SPS) && (defined(XP_WIN) || defined(XP_MACOSX))
 // Auxiliary Method to test if a file descriptor is registered to be ignored
 // by the poisoning IO interposer
 bool IsDebugFile(intptr_t aFileID) {
@@ -91,6 +92,7 @@ bool IsDebugFile(intptr_t aFileID) {
   std::vector<intptr_t> &Vec = *getDebugFileIDs();
   return std::find(Vec.begin(), Vec.end(), aFileID) != Vec.end();
 }
+#endif
 
 // Clean-up for the registered debug files.
 // We should probably make sure all debug files are unregistered instead.
@@ -112,6 +114,7 @@ bool IsDebugFile(intptr_t aFileID) {
 
 extern "C" {
 
+#if defined(MOZ_ENABLE_PROFILER_SPS) && (defined(XP_WIN) || defined(XP_MACOSX))
   void MozillaRegisterDebugFD(int fd) {
     intptr_t fileId = FileDescriptorToID(fd);
     DebugFilesAutoLock lockedScope;
@@ -146,5 +149,6 @@ extern "C" {
     fflush(f);
     MozillaUnRegisterDebugFD(fd);
   }
+#endif
 
 }

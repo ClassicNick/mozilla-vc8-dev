@@ -24,13 +24,13 @@ namespace {
 class DelayedEventRunnable MOZ_FINAL : public WorkerRunnable
 {
   nsRefPtr<MessagePort> mMessagePort;
-  nsTArray<nsCOMPtr<nsIDOMEvent>> mEvents;
+  nsTArray<nsCOMPtr<nsIDOMEvent> > mEvents;
 
 public:
   DelayedEventRunnable(WorkerPrivate* aWorkerPrivate,
                        Target aTarget,
                        MessagePort* aMessagePort,
-                       nsTArray<nsCOMPtr<nsIDOMEvent>>& aEvents)
+                       nsTArray<nsCOMPtr<nsIDOMEvent> >& aEvents)
   : WorkerRunnable(aWorkerPrivate, aTarget,
                    aTarget == WorkerThread ? ModifyBusyCount : UnchangedBusyCount,
                    SkipWhenClearing),

@@ -26,7 +26,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(MessagePortList)
 
 public:
-  MessagePortList(nsISupports* aOwner, nsTArray<nsRefPtr<MessagePortBase>>& aPorts)
+  MessagePortList(nsISupports* aOwner, nsTArray<nsRefPtr<MessagePortBase> >& aPorts)
     : mOwner(aOwner)
     , mPorts(aPorts)
   {
@@ -66,7 +66,7 @@ public:
 
 public:
   nsCOMPtr<nsISupports> mOwner;
-  nsTArray<nsRefPtr<MessagePortBase>> mPorts;
+  nsTArray<nsRefPtr<MessagePortBase> > mPorts;
 };
 
 } // namespace dom

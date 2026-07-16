@@ -27,7 +27,7 @@ public:
 
   virtual void
   PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                const Optional<Sequence<JS::Value>>& aTransferable,
+                const Optional<Sequence<JS::Value> >& aTransferable,
                 ErrorResult& aRv) = 0;
 
   virtual void
@@ -69,7 +69,7 @@ public:
 
   virtual void
   PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                 const Optional<Sequence<JS::Value>>& aTransferable,
+                 const Optional<Sequence<JS::Value> >& aTransferable,
                  ErrorResult& aRv) MOZ_OVERRIDE;
 
   virtual void

@@ -874,10 +874,10 @@ nsMemoryReporterManager::EnumerateReporters(nsISimpleEnumerator** aResult)
 //#define DEBUG_CHILD_PROCESS_MEMORY_REPORTING 1
 
 #ifdef DEBUG_CHILD_PROCESS_MEMORY_REPORTING
-#define MEMORY_REPORTING_LOG(format, ...) \
-    fprintf(stderr, "++++ MEMORY REPORTING: " format, ##__VA_ARGS__);
+#define MEMORY_REPORTING_LOG(format, a) \
+    fprintf(stderr, "++++ MEMORY REPORTING: " format, a);
 #else
-#define MEMORY_REPORTING_LOG(...)
+#define MEMORY_REPORTING_LOG(a)
 #endif
 
 void

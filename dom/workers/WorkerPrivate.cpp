@@ -898,7 +898,7 @@ public:
   {
     // Release reference to objects that were AddRef'd for
     // cloning into worker when array goes out of scope.
-    nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
+    nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
     clonedObjects.SwapElements(mClonedObjects);
 
     JS::Rooted<JS::Value> messageData(aCx);
@@ -2724,7 +2724,7 @@ WorkerPrivateParent<Derived>::DispatchMessageEventToMessagePort(
 
   event->SetTrusted(true);
 
-  nsTArray<nsRefPtr<MessagePortBase>> ports;
+  nsTArray<nsRefPtr<MessagePortBase> > ports;
   ports.AppendElement(port);
 
   nsRefPtr<MessagePortList> portList = new MessagePortList(port, ports);
@@ -4519,7 +4519,7 @@ WorkerPrivate::PostMessageToParentInternal(
     &gChromeWorkerStructuredCloneCallbacks :
     &gWorkerStructuredCloneCallbacks;
 
-  nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
+  nsTArray<nsCOMPtr<nsISupports> > clonedObjects;
 
   JSAutoStructuredCloneBuffer buffer;
   if (!buffer.write(aCx, aMessage, transferable, callbacks, &clonedObjects)) {
@@ -4540,7 +4540,7 @@ WorkerPrivate::PostMessageToParentMessagePort(
                              JSContext* aCx,
                              uint64_t aMessagePortSerial,
                              JS::HandleValue aMessage,
-                             const Optional<Sequence<JS::Value>>& aTransferable,
+                             const Optional<Sequence<JS::Value> >& aTransferable,
                              ErrorResult& aRv)
 {
   AssertIsOnWorkerThread();
@@ -4823,7 +4823,7 @@ WorkerPrivate::SetTimeout(JSContext* aCx,
 
   uint32_t argc = aArguments.Length();
   if (argc && !newInfo->mTimeoutCallable.isUndefined()) {
-    nsTArray<JS::Heap<JS::Value>> extraArgVals(argc);
+    nsTArray<JS::Heap<JS::Value> > extraArgVals(argc);
     for (uint32_t index = 0; index < argc; index++) {
       extraArgVals.AppendElement(aArguments[index]);
     }
@@ -5267,7 +5267,7 @@ WorkerPrivate::ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial)
 
   event->SetTrusted(true);
 
-  nsTArray<nsRefPtr<MessagePortBase>> ports;
+  nsTArray<nsRefPtr<MessagePortBase> > ports;
   ports.AppendElement(port);
 
   nsRefPtr<MessagePortList> portList =

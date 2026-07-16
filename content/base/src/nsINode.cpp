@@ -2479,7 +2479,7 @@ nsINode::QuerySelectorAll(const nsAString& aSelector, ErrorResult& aResult)
   nsRefPtr<nsSimpleContentList> contentList = new nsSimpleContentList(this);
 
   aResult =
-    FindMatchingElements<false, nsAutoTArray<Element*, 128>>(this,
+    FindMatchingElements<false, nsAutoTArray<Element*, 128> >(this,
                                                              aSelector,
                                                              *contentList);
 

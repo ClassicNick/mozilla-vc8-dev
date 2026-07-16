@@ -922,7 +922,7 @@ public:
   void
   PostMessageToParent(JSContext* aCx,
                       JS::Handle<JS::Value> aMessage,
-                      const Optional<Sequence<JS::Value>>& aTransferable,
+                      const Optional<Sequence<JS::Value> >& aTransferable,
                       ErrorResult& aRv)
   {
     PostMessageToParentInternal(aCx, aMessage, aTransferable, false, 0, aRv);
@@ -1143,7 +1143,7 @@ private:
   void
   PostMessageToParentInternal(JSContext* aCx,
                               JS::Handle<JS::Value> aMessage,
-                              const Optional<Sequence<JS::Value>>& aTransferable,
+                              const Optional<Sequence<JS::Value> >& aTransferable,
                               bool aToMessagePort,
                               uint64_t aMessagePortSerial,
                               ErrorResult& aRv);

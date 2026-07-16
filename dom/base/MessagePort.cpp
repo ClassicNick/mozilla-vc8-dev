@@ -360,7 +360,7 @@ MessagePort::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
 
 void
 MessagePort::PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-                            const Optional<Sequence<JS::Value>>& aTransferable,
+                            const Optional<Sequence<JS::Value> >& aTransferable,
                             ErrorResult& aRv)
 {
   nsRefPtr<PostMessageRunnable> event = new PostMessageRunnable();

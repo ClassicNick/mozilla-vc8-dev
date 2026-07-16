@@ -120,7 +120,7 @@ public:
 
   void
   PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
-              const Optional<Sequence<JS::Value>>& aTransferable,
+              const Optional<Sequence<JS::Value> >& aTransferable,
               ErrorResult& aRv);
 
   IMPL_EVENT_HANDLER(message)

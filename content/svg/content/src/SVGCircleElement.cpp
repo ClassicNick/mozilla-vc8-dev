@@ -9,6 +9,10 @@
 #include "gfxContext.h"
 #include "mozilla/dom/SVGCircleElementBinding.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Circle)
 
 using namespace mozilla::gfx;

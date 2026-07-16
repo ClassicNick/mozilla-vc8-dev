@@ -39,7 +39,7 @@ NS_EXPORT int android_sdk_version;
 }
 #endif
 
-#if defined(XP_WIN)
+#if defined(XP_WIN) && !defined (_MSC_VER) || _MSC_VER >= 1400
 namespace {
 nsresult GetProfileHDDInfo(nsAutoCString& aModel, nsAutoCString& aRevision)
 {
@@ -199,6 +199,7 @@ nsSystemInfo::Init()
       rv = SetPropertyAsBool(NS_LITERAL_STRING("isWow64"), !!isWow64);
       NS_ENSURE_SUCCESS(rv, rv);
     }
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
     nsAutoCString hddModel, hddRevision;
     if (NS_SUCCEEDED(GetProfileHDDInfo(hddModel, hddRevision))) {
       rv = SetPropertyAsACString(NS_LITERAL_STRING("profileHDDModel"), hddModel);
@@ -207,6 +208,7 @@ nsSystemInfo::Init()
                                  hddRevision);
       NS_ENSURE_SUCCESS(rv, rv);
     }
+#endif
 #endif
 
 #if defined(MOZ_WIDGET_GTK)

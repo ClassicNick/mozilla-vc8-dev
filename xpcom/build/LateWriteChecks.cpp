@@ -136,7 +136,7 @@ void LateWriteObserver::Observe(IOInterposeObserver::Observation& aOb)
   HANDLE hFile;
   do {
     // mkstemp isn't supported so keep trying until we get a file
-    int result = _mktemp_s(name, strlen(name) + 1);
+    int result = (int) _mktemp(name);
     hFile = CreateFileA(name, GENERIC_WRITE, 0, NULL, CREATE_NEW,
                         FILE_ATTRIBUTE_NORMAL, NULL);
   } while (GetLastError() == ERROR_FILE_EXISTS);
