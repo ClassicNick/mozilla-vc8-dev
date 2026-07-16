@@ -8,7 +8,7 @@
 #ifndef mozilla_AppProcessChecker_h
 #define mozilla_AppProcessChecker_h
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 class nsIPrincipal;
 

@@ -3446,7 +3446,7 @@ CallAddPropertyHookDense(ExclusiveContext* cxArg,
 
 template <ExecutionMode mode>
 static bool
-UpdateShapeTypeAndValue(typename ExecutionModeTraits<mode>::ExclusiveContextType cx,
+UpdateShapeTypeAndValue(ExclusiveContext* cx,
                         JSObject *obj, Shape *shape, const Value &value)
 {
     jsid id = shape->propid();

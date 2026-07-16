@@ -67,6 +67,12 @@
      printf("ProcessPriorityManager[%schild-id=%llu, pid=%d] - " fmt "\n", \
        NameWithComma().get(), \
        (unsigned long long) ChildID(), Pid(), a)
+#  define LOG1(fmt) \
+     printf("ProcessPriorityManager - " fmt "\n")
+#  define LOGP1(fmt) \
+     printf("ProcessPriorityManager[%schild-id=%llu, pid=%d] - " fmt "\n", \
+       NameWithComma().get(), \
+       (unsigned long long) ChildID(), Pid())
 
 #elif defined(PR_LOGGING)
   static PRLogModuleInfo*
@@ -85,9 +91,19 @@
             ("ProcessPriorityManager[%schild-id=%llu, pid=%d] - " fmt, \
             NameWithComma().get(), \
             (unsigned long long) ChildID(), Pid(), a))
+#  define LOG1(fmt) \
+     PR_LOG(GetPPMLog(), PR_LOG_DEBUG, \
+            ("ProcessPriorityManager - " fmt))
+#  define LOGP1(fmt) \
+     PR_LOG(GetPPMLog(), PR_LOG_DEBUG, \
+            ("ProcessPriorityManager[%schild-id=%llu, pid=%d] - " fmt, \
+            NameWithComma().get(), \
+            (unsigned long long) ChildID(), Pid()))
 #else
 #define LOG(fmt, a)
 #define LOGP(fmt, a)
+#define LOG1(fmt)
+#define LOGP1(fmt)
 #endif
 
 using namespace mozilla;
@@ -375,7 +391,7 @@ ProcessPriorityManagerImpl::StaticInit()
 
   // If IPC tabs aren't enabled at startup, don't bother with any of this.
   if (!PrefsEnabled()) {
-    LOG("InitProcessPriorityManager bailing due to prefs.");
+    LOG1("InitProcessPriorityManager bailing due to prefs.");
 
     // Run StaticInit() again if the prefs change.  We don't expect this to
     // happen in normal operation, but it happens during testing.
@@ -414,7 +430,7 @@ ProcessPriorityManagerImpl::ProcessPriorityManagerImpl()
 void
 ProcessPriorityManagerImpl::Init()
 {
-  LOG("Starting up.  This is the master process.");
+  LOG1("Starting up.  This is the master process.");
 
   // The master process's priority never changes; set it here and then forget
   // about it.  We'll manage only subprocesses' priorities using the process
@@ -592,7 +608,7 @@ ParticularProcessPriorityManager::ParticularProcessPriorityManager(
   , mHoldsHighPriorityWakeLock(false)
 {
   MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_Default);
-  LOGP("Creating ParticularProcessPriorityManager.");
+  LOGP1("Creating ParticularProcessPriorityManager.");
 }
 
 void
@@ -622,7 +638,7 @@ ParticularProcessPriorityManager::Init()
 
 ParticularProcessPriorityManager::~ParticularProcessPriorityManager()
 {
-  LOGP("Destroying ParticularProcessPriorityManager.");
+  LOGP1("Destroying ParticularProcessPriorityManager.");
 
   // Unregister our wake lock observer if ShutDown hasn't been called.  (The
   // wake lock observer takes raw refs, so we don't want to take chances here!)
@@ -827,7 +843,7 @@ void
 ParticularProcessPriorityManager::ScheduleResetPriority(const char* aTimeoutPref)
 {
   if (mResetPriorityTimer) {
-    LOGP("ScheduleResetPriority bailing; the timer is already running.");
+    LOGP1("ScheduleResetPriority bailing; the timer is already running.");
     return;
   }
 
@@ -842,7 +858,7 @@ ParticularProcessPriorityManager::ScheduleResetPriority(const char* aTimeoutPref
 NS_IMETHODIMP
 ParticularProcessPriorityManager::Notify(nsITimer* aTimer)
 {
-  LOGP("Reset priority timer callback; about to ResetPriorityNow.");
+  LOGP1("Reset priority timer callback; about to ResetPriorityNow.");
   ResetPriorityNow();
   mResetPriorityTimer = nullptr;
   return NS_OK;
