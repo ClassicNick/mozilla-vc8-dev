@@ -24,6 +24,8 @@
 
 #include "jsobjinlines.h"
 
+#include "vm/ScopeObject-inl.h"
+
 using namespace js;
 using namespace JS;
 
@@ -452,8 +454,8 @@ js::GetOutermostEnclosingFunctionOfScriptedCaller(JSContext *cx)
 
     RootedFunction scriptedCaller(cx, iter.callee());
     RootedScript outermost(cx, scriptedCaller->nonLazyScript());
-    for (StaticScopeIter i(cx, scriptedCaller); !i.done(); i++) {
-        if (i.type() == StaticScopeIter::FUNCTION)
+    for (StaticScopeIter<NoGC> i(scriptedCaller); !i.done(); i++) {
+        if (i.type() == StaticScopeIter<NoGC>::FUNCTION)
             outermost = i.funScript();
     }
     return outermost;

@@ -841,6 +841,9 @@ typedef void
 (* JSDestroyCompartmentCallback)(JSFreeOp *fop, JSCompartment *compartment);
 
 typedef void
+(* JSZoneCallback)(JS::Zone *zone);
+
+typedef void
 (* JSCompartmentNameCallback)(JSRuntime *rt, JSCompartment *compartment,
                               char *buf, size_t bufsize);
 
@@ -1055,7 +1058,7 @@ ToNumberSlow(JSContext *cx, JS::Value v, double *dp);
  * DO NOT CALL THIS. Use JS::ToBoolean
  */
 extern JS_PUBLIC_API(bool)
-ToBooleanSlow(const JS::Value &v);
+ToBooleanSlow(JS::HandleValue v);
 } /* namespace js */
 
 namespace JS {
@@ -1078,7 +1081,7 @@ ToNumber(JSContext *cx, Handle<Value> v, double *out)
 }
 
 JS_ALWAYS_INLINE bool
-ToBoolean(const Value &v)
+ToBoolean(HandleValue v)
 {
     if (v.isBoolean())
         return v.toBoolean();
@@ -1201,9 +1204,6 @@ ToUint64(JSContext *cx, JS::Handle<JS::Value> v, uint64_t *out)
 
 
 } /* namespace JS */
-
-extern JS_PUBLIC_API(bool)
-JS_ValueToBoolean(JSContext *cx, jsval v, bool *bp);
 
 extern JS_PUBLIC_API(JSType)
 JS_TypeOfValue(JSContext *cx, jsval v);
@@ -1626,6 +1626,12 @@ extern JS_PUBLIC_API(void)
 JS_SetDestroyCompartmentCallback(JSRuntime *rt, JSDestroyCompartmentCallback callback);
 
 extern JS_PUBLIC_API(void)
+JS_SetDestroyZoneCallback(JSRuntime *rt, JSZoneCallback callback);
+
+extern JS_PUBLIC_API(void)
+JS_SetSweepZoneCallback(JSRuntime *rt, JSZoneCallback callback);
+
+extern JS_PUBLIC_API(void)
 JS_SetCompartmentNameCallback(JSRuntime *rt, JSCompartmentNameCallback callback);
 
 extern JS_PUBLIC_API(JSWrapObjectCallback)
@@ -1639,6 +1645,12 @@ JS_SetCompartmentPrivate(JSCompartment *compartment, void *data);
 
 extern JS_PUBLIC_API(void *)
 JS_GetCompartmentPrivate(JSCompartment *compartment);
+
+extern JS_PUBLIC_API(void)
+JS_SetZoneUserData(JS::Zone *zone, void *data);
+
+extern JS_PUBLIC_API(void *)
+JS_GetZoneUserData(JS::Zone *zone);
 
 extern JS_PUBLIC_API(bool)
 JS_WrapObject(JSContext *cx, JS::MutableHandleObject objp);

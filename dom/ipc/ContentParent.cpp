@@ -196,29 +196,21 @@ MemoryReportRequestParent::~MemoryReportRequestParent()
     MOZ_COUNT_DTOR(MemoryReportRequestParent);
 }
 
-/**
- * A memory reporter for ContentParent objects themselves.
- */
-class ContentParentMemoryReporter MOZ_FINAL : public nsIMemoryReporter
+// A memory reporter for ContentParent objects themselves.
+class ContentParentsMemoryReporter MOZ_FINAL : public MemoryMultiReporter
 {
 public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSIMEMORYREPORTER
-    NS_MEMORY_REPORTER_MALLOC_SIZEOF_FUN(MallocSizeOf)
+    ContentParentsMemoryReporter()
+      : MemoryMultiReporter("content-parents")
+    {}
+
+    NS_IMETHOD CollectReports(nsIMemoryReporterCallback* cb,
+                              nsISupports* aClosure);
 };
 
-NS_IMPL_ISUPPORTS1(ContentParentMemoryReporter, nsIMemoryReporter)
-
 NS_IMETHODIMP
-ContentParentMemoryReporter::GetName(nsACString& aName)
-{
-    aName.AssignLiteral("ContentParents");
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-ContentParentMemoryReporter::CollectReports(nsIMemoryReporterCallback* cb,
-                                            nsISupports* aClosure)
+ContentParentsMemoryReporter::CollectReports(nsIMemoryReporterCallback* cb,
+                                             nsISupports* aClosure)
 {
     nsAutoTArray<ContentParent*, 16> cps;
     ContentParent::GetAllEvenIfDead(cps);
@@ -468,8 +460,7 @@ ContentParent::StartUp()
         return;
     }
 
-    nsRefPtr<ContentParentMemoryReporter> mr = new ContentParentMemoryReporter();
-    NS_RegisterMemoryReporter(mr);
+    NS_RegisterMemoryReporter(new ContentParentsMemoryReporter());
 
     sCanLaunchSubprocesses = true;
 
@@ -1148,7 +1139,7 @@ ContentParent::ActorDestroy(ActorDestroyReason why)
     if (ppm) {
       ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
                           CHILD_PROCESS_SHUTDOWN_MESSAGE, false,
-                          nullptr, nullptr, nullptr);
+                          nullptr, nullptr, nullptr, nullptr);
     }
     nsCOMPtr<nsIThreadObserver>
         kungFuDeathGrip(static_cast<nsIThreadObserver*>(this));
@@ -2874,14 +2865,21 @@ bool
 ContentParent::RecvSyncMessage(const nsString& aMsg,
                                const ClonedMessageData& aData,
                                const InfallibleTArray<CpowEntry>& aCpows,
+                               const IPC::Principal& aPrincipal,
                                InfallibleTArray<nsString>* aRetvals)
 {
+  nsIPrincipal* principal = aPrincipal;
+  if (principal && !AssertAppPrincipal(this, principal)) {
+    return false;
+  }
+
   nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     CpowIdHolder cpows(GetCPOWManager(), aCpows);
+
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, true, &cloneData, &cpows, aRetvals);
+                        aMsg, true, &cloneData, &cpows, aPrincipal, aRetvals);
   }
   return true;
 }
@@ -2890,14 +2888,20 @@ bool
 ContentParent::AnswerRpcMessage(const nsString& aMsg,
                                 const ClonedMessageData& aData,
                                 const InfallibleTArray<CpowEntry>& aCpows,
+                                const IPC::Principal& aPrincipal,
                                 InfallibleTArray<nsString>* aRetvals)
 {
+  nsIPrincipal* principal = aPrincipal;
+  if (principal && !AssertAppPrincipal(this, principal)) {
+    return false;
+  }
+
   nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     CpowIdHolder cpows(GetCPOWManager(), aCpows);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, true, &cloneData, &cpows, aRetvals);
+                        aMsg, true, &cloneData, &cpows, aPrincipal, aRetvals);
   }
   return true;
 }
@@ -2905,14 +2909,20 @@ ContentParent::AnswerRpcMessage(const nsString& aMsg,
 bool
 ContentParent::RecvAsyncMessage(const nsString& aMsg,
                                 const ClonedMessageData& aData,
-                                const InfallibleTArray<CpowEntry>& aCpows)
+                                const InfallibleTArray<CpowEntry>& aCpows,
+                                const IPC::Principal& aPrincipal)
 {
+  nsIPrincipal* principal = aPrincipal;
+  if (principal && !AssertAppPrincipal(this, principal)) {
+    return false;
+  }
+
   nsRefPtr<nsFrameMessageManager> ppm = mMessageManager;
   if (ppm) {
     StructuredCloneData cloneData = ipc::UnpackClonedMessageDataForParent(aData);
     CpowIdHolder cpows(GetCPOWManager(), aCpows);
     ppm->ReceiveMessage(static_cast<nsIContentFrameMessageManager*>(ppm.get()),
-                        aMsg, false, &cloneData, &cpows, nullptr);
+                        aMsg, false, &cloneData, &cpows, aPrincipal, nullptr);
   }
   return true;
 }
@@ -3119,7 +3129,8 @@ bool
 ContentParent::DoSendAsyncMessage(JSContext* aCx,
                                   const nsAString& aMessage,
                                   const mozilla::dom::StructuredCloneData& aData,
-                                  JS::Handle<JSObject *> aCpows)
+                                  JS::Handle<JSObject *> aCpows,
+                                  nsIPrincipal* aPrincipal)
 {
   ClonedMessageData data;
   if (!BuildClonedMessageDataForParent(this, aData, data)) {
@@ -3129,7 +3140,7 @@ ContentParent::DoSendAsyncMessage(JSContext* aCx,
   if (!GetCPOWManager()->Wrap(aCx, aCpows, &cpows)) {
     return false;
   }
-  return SendAsyncMessage(nsString(aMessage), data, cpows);
+  return SendAsyncMessage(nsString(aMessage), data, cpows, aPrincipal);
 }
 
 bool
