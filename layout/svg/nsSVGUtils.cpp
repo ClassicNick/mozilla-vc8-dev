@@ -8,6 +8,7 @@
 #include "nsSVGUtils.h"
 
 // Keep others in (case-insensitive) order:
+#include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxImageSurface.h"
 #include "gfxMatrix.h"
@@ -37,7 +38,7 @@
 #include "nsSVGFilterPaintCallback.h"
 #include "nsSVGForeignObjectFrame.h"
 #include "nsSVGGeometryFrame.h"
-#include "nsSVGGlyphFrame.h"
+#include "gfxSVGGlyphs.h"
 #include "nsSVGInnerSVGFrame.h"
 #include "nsSVGIntegrationUtils.h"
 #include "nsSVGLength2.h"
@@ -48,11 +49,9 @@
 #include "nsSVGPathGeometryFrame.h"
 #include "nsSVGPaintServerFrame.h"
 #include "mozilla/dom/SVGSVGElement.h"
-#include "nsSVGTextContainerFrame.h"
 #include "nsTextFrame.h"
 #include "SVGContentUtils.h"
 #include "mozilla/unused.h"
-#include "gfx2DGlue.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -134,7 +133,6 @@ static const uint8_t gsRGBToLinearRGBMap[256] = {
 
 static bool sSVGDisplayListHitTestingEnabled;
 static bool sSVGDisplayListPaintingEnabled;
-static bool sSVGTextCSSFramesEnabled;
 
 bool
 NS_SVGDisplayListHitTestingEnabled()
@@ -146,12 +144,6 @@ bool
 NS_SVGDisplayListPaintingEnabled()
 {
   return sSVGDisplayListPaintingEnabled;
-}
-
-bool
-NS_SVGTextCSSFramesEnabled()
-{
-  return sSVGTextCSSFramesEnabled;
 }
 
 // we only take the address of this:
@@ -212,9 +204,6 @@ nsSVGUtils::Init()
 
   Preferences::AddBoolVarCache(&sSVGDisplayListPaintingEnabled,
                                "svg.display-lists.painting.enabled");
-
-  Preferences::AddBoolVarCache(&sSVGTextCSSFramesEnabled,
-                               "svg.text.css-frames.enabled");
 }
 
 void
@@ -1193,15 +1182,6 @@ nsSVGUtils::GetBBox(nsIFrame *aFrame, uint32_t aFlags)
         }
       }
       svg = do_QueryFrame(ancestor);
-    } else {
-      nsSVGTextContainerFrame* metrics = do_QueryFrame(
-        GetFirstNonAAncestorFrame(aFrame));
-      if (metrics) {
-        while (aFrame->GetType() != nsGkAtoms::svgTextFrame) {
-          aFrame = aFrame->GetParent();
-        }
-        svg = do_QueryFrame(aFrame);
-      }
     }
     nsIContent* content = aFrame->GetContent();
     if (content->IsSVG() &&

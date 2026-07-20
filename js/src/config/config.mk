@@ -35,14 +35,16 @@ endif
 # responsibility between Makefile.in and mozbuild files.
 _MOZBUILD_EXTERNAL_VARIABLES := \
   ANDROID_GENERATED_RESFILES \
-  ANDROID_RESFILES \
+  ANDROID_RES_DIRS \
   CMSRCS \
   CMMSRCS \
   CPP_UNIT_TESTS \
   DIRS \
   EXTRA_PP_COMPONENTS \
   EXTRA_PP_JS_MODULES \
+  FORCE_SHARED_LIB \
   FORCE_STATIC_LIB \
+  FINAL_LIBRARY \
   GTEST_CMMSRCS \
   GTEST_CPPSRCS \
   GTEST_CSRCS \
@@ -71,8 +73,10 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   $(NULL)
 
 _DEPRECATED_VARIABLES := \
+  ANDROID_RESFILES \
   MOCHITEST_FILES_PARTS \
   MOCHITEST_BROWSER_FILES_PARTS \
+  SHORT_LIBNAME \
   $(NULL)
 
 ifndef EXTERNALLY_MANAGED_MAKE_FILE
@@ -133,7 +137,6 @@ CHECK_VARS := \
  LIBRARY_NAME \
  MODULE \
  DEPTH \
- SHORT_LIBNAME \
  XPI_PKGNAME \
  INSTALL_EXTENSION_ID \
  SHARED_LIBRARY_NAME \
@@ -332,6 +335,13 @@ _ENABLE_PIC=1
 # Determine if module being compiled is destined
 # to be merged into libxul
 
+ifeq ($(FINAL_LIBRARY),xul)
+  ifdef LIBXUL_LIBRARY
+    $(error FINAL_LIBRARY is "xul", LIBXUL_LIBRARY is implied)
+  endif
+  LIBXUL_LIBRARY := 1
+endif
+
 ifdef LIBXUL_LIBRARY
 ifdef IS_COMPONENT
 $(error IS_COMPONENT is set, but is not compatible with LIBXUL_LIBRARY)
@@ -339,13 +349,7 @@ endif
 ifdef MODULE_NAME
 $(error MODULE_NAME is $(MODULE_NAME) but MODULE_NAME and LIBXUL_LIBRARY are not compatible)
 endif
-ifdef FORCE_STATIC_LIB
-$(error Makefile sets FORCE_STATIC_LIB which was already implied by LIBXUL_LIBRARY)
-endif
 FORCE_STATIC_LIB=1
-ifneq ($(SHORT_LIBNAME),)
-$(error SHORT_LIBNAME is $(SHORT_LIBNAME) but SHORT_LIBNAME is not compatable with LIBXUL_LIBRARY)
-endif
 endif
 
 # If we are building this component into an extension/xulapp, it cannot be
@@ -474,9 +478,9 @@ OS_INCLUDES += $(MOZ_JPEG_CFLAGS) $(MOZ_PNG_CFLAGS) $(MOZ_ZLIB_CFLAGS)
 # NSPR_CFLAGS and NSS_CFLAGS must appear ahead of OS_INCLUDES to avoid Linux
 # builds wrongly picking up system NSPR/NSS header files.
 INCLUDES = \
-  $(LOCAL_INCLUDES) \
   -I$(srcdir) \
   -I. \
+  $(LOCAL_INCLUDES) \
   -I$(DIST)/include \
   $(if $(LIBXUL_SDK),-I$(LIBXUL_SDK)/include) \
   $(NSPR_CFLAGS) $(NSS_CFLAGS) \

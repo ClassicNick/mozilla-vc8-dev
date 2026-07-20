@@ -1771,7 +1771,7 @@ nsresult OggReader::SeekBisection(int64_t aTarget,
   return NS_OK;
 }
 
-nsresult OggReader::GetBuffered(TimeRanges* aBuffered, int64_t aStartTime)
+nsresult OggReader::GetBuffered(dom::TimeRanges* aBuffered, int64_t aStartTime)
 {
   {
     mozilla::ReentrantMonitorAutoEnter mon(mMonitor);
