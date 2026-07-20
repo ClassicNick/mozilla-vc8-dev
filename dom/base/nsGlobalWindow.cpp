@@ -7962,9 +7962,12 @@ nsGlobalWindow::Close(ErrorResult& aError)
     return;
   }
 
-  // Don't allow scripts from content to close non-app windows that were not
-  // opened by script.
+  // Don't allow scripts from content to close non-app or non-neterror
+  // windows that were not opened by script.
+  nsAutoString url;
+  mDoc->GetURL(url);
   if (!mDocShell->GetIsApp() &&
+      !StringBeginsWith(url, NS_LITERAL_STRING("about:neterror")) &&
       !mHadOriginalOpener && !nsContentUtils::IsCallerChrome()) {
     bool allowClose = mAllowScriptsToClose ||
       Preferences::GetBool("dom.allow_scripts_to_close_windows", true);
@@ -8942,10 +8945,13 @@ NS_IMPL_REMOVE_SYSTEM_EVENT_LISTENER(nsGlobalWindow)
 NS_IMETHODIMP
 nsGlobalWindow::DispatchEvent(nsIDOMEvent* aEvent, bool* aRetVal)
 {
-  MOZ_ASSERT(!IsInnerWindow() || IsCurrentInnerWindow(),
-             "We should only fire events on the current inner window.");
-
   FORWARD_TO_INNER(DispatchEvent, (aEvent, aRetVal), NS_OK);
+
+  if (!IsCurrentInnerWindow()) {
+    NS_WARNING("DispatchEvent called on non-current inner window, dropping. "
+               "Please check the window in the caller instead.");
+    return NS_ERROR_FAILURE;
+  }
 
   if (!mDoc) {
     return NS_ERROR_FAILURE;
