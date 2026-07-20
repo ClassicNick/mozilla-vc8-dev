@@ -771,10 +771,14 @@ nsIdleService::IdleTimerCallback(void)
 void
 nsIdleService::SetTimerExpiryIfBefore(TimeStamp aNextTimeout)
 {
+#if defined(PR_LOGGING) || defined(MOZ_WIDGET_ANDROID)
   TimeDuration nextTimeoutDuration = aNextTimeout - TimeStamp::Now();
+#endif
+
   PR_LOG(sLog, PR_LOG_DEBUG,
          ("idleService: SetTimerExpiryIfBefore: next timeout %0.f msec from now",
           nextTimeoutDuration.ToMilliseconds()));
+
 #ifdef MOZ_WIDGET_ANDROID
   __android_log_print(ANDROID_LOG_INFO, "IdleService",
                       "SetTimerExpiryIfBefore: next timeout %0.f msec from now",
@@ -824,7 +828,6 @@ nsIdleService::SetTimerExpiryIfBefore(TimeStamp aNextTimeout)
   }
 }
 
-
 void
 nsIdleService::ReconfigureTimer(void)
 {
@@ -850,15 +853,20 @@ nsIdleService::ReconfigureTimer(void)
   TimeStamp nextTimeoutAt = mLastUserInteraction +
                             TimeDuration::FromSeconds(mDeltaToNextIdleSwitchInS);
 
+#if defined(PR_LOGGING) || defined(MOZ_WIDGET_ANDROID)
   TimeDuration nextTimeoutDuration = nextTimeoutAt - curTime;
+#endif
+
   PR_LOG(sLog, PR_LOG_DEBUG,
          ("idleService: next timeout %0.f msec from now",
           nextTimeoutDuration.ToMilliseconds()));
+
 #ifdef MOZ_WIDGET_ANDROID
   __android_log_print(ANDROID_LOG_INFO, "IdleService",
                       "next timeout %0.f msec from now",
                       nextTimeoutDuration.ToMilliseconds());
 #endif
+
   // Check if we should correct the timeout time because we should poll before.
   if ((mIdleObserverCount > 0) && UsePollMode()) {
     TimeStamp pollTimeout =
@@ -879,4 +887,3 @@ nsIdleService::ReconfigureTimer(void)
 
   SetTimerExpiryIfBefore(nextTimeoutAt);
 }
-

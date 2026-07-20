@@ -6791,7 +6791,7 @@ CDataFinalizer::Methods::ToString(JSContext *cx, unsigned argc, jsval *vp)
   } else if (!CDataFinalizer::GetValue(cx, objThis, value.address())) {
     MOZ_ASSUME_UNREACHABLE("Could not convert an empty CDataFinalizer");
   } else {
-    strMessage = JS_ValueToString(cx, value);
+    strMessage = ToString(cx, value);
     if (!strMessage) {
       return false;
     }
