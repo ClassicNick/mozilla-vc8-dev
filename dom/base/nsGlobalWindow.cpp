@@ -237,6 +237,15 @@ class nsIScriptTimeoutHandler;
 static PRLogModuleInfo* gDOMLeakPRLog;
 #endif
 
+#ifdef XP_LINUX
+#include <unistd.h> // for getpid()
+#endif
+
+#ifdef XP_WIN
+#include <process.h>
+#define getpid _getpid
+#endif
+
 static const char kStorageEnabled[] = "dom.storage.enabled";
 
 using namespace mozilla;
@@ -1140,10 +1149,12 @@ nsGlobalWindow::nsGlobalWindow(nsGlobalWindow *aOuterWindow)
 
 #ifdef DEBUG
   if (!PR_GetEnv("MOZ_QUIET")) {
-    printf("++DOMWINDOW == %d (%p) [serial = %d] [outer = %p]\n", gRefCnt,
-           static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           gSerialCounter,
-           static_cast<void*>(static_cast<nsIScriptGlobalObject*>(aOuterWindow)));
+    printf_stderr("++DOMWINDOW == %d (%p) [pid = %d] [serial = %d] [outer = %p]\n",
+                  gRefCnt,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
+                  getpid(),
+                  gSerialCounter,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(aOuterWindow)));
   }
 #endif
 
@@ -1216,9 +1227,13 @@ nsGlobalWindow::~nsGlobalWindow()
     }
 
     nsGlobalWindow* outer = static_cast<nsGlobalWindow*>(mOuterWindow.get());
-    printf("--DOMWINDOW == %d (%p) [serial = %d] [outer = %p] [url = %s]\n",
-           gRefCnt, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
-           mSerial, static_cast<void*>(static_cast<nsIScriptGlobalObject*>(outer)), url.get());
+    printf_stderr("--DOMWINDOW == %d (%p) [pid = %d] [serial = %d] [outer = %p] [url = %s]\n",
+                  gRefCnt,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(this)),
+                  getpid(),
+                  mSerial,
+                  static_cast<void*>(static_cast<nsIScriptGlobalObject*>(outer)),
+                  url.get());
   }
 #endif
 
@@ -6947,27 +6962,23 @@ nsGlobalWindow::SetResizable(bool aResizable)
   return NS_OK;
 }
 
-static void
-ReportUseOfDeprecatedMethod(nsGlobalWindow* aWindow, const char* aWarning)
-{
-  nsCOMPtr<nsIDocument> doc = aWindow->GetExtantDoc();
-  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                  NS_LITERAL_CSTRING("DOM Events"), doc,
-                                  nsContentUtils::eDOM_PROPERTIES,
-                                  aWarning);
-}
-
 NS_IMETHODIMP
 nsGlobalWindow::CaptureEvents(int32_t aEventFlags)
 {
-  ReportUseOfDeprecatedMethod(this, "UseOfCaptureEventsWarning");
+  if (mDoc) {
+    mDoc->WarnOnceAbout(nsIDocument::eUseOfCaptureEvents);
+  }
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsGlobalWindow::ReleaseEvents(int32_t aEventFlags)
 {
-  ReportUseOfDeprecatedMethod(this, "UseOfReleaseEventsWarning");
+  if (mDoc) {
+    mDoc->WarnOnceAbout(nsIDocument::eUseOfReleaseEvents);
+  }
+
   return NS_OK;
 }
 
@@ -10381,7 +10392,7 @@ nsGlobalWindow::ShowSlowScriptDialog()
   NS_ENSURE_TRUE(prompt, KillSlowScript);
 
   // Check if we should offer the option to debug
-  JS::RootedScript script(cx);
+  JS::Rooted<JSScript*> script(cx);
   unsigned lineno;
   bool hasFrame = JS_DescribeScriptedCaller(cx, &script, &lineno);
 
