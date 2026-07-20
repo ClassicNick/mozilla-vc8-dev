@@ -13,6 +13,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsCRT.h"
 #include "nsReadableUtils.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Telemetry.h"
 
 // The memory cache implements the "LRU-SP" caching algorithm
@@ -428,7 +429,7 @@ nsMemoryCacheDevice::EvictionList(nsCacheEntry * entry, int32_t  deltaSize)
     int32_t  size       = deltaSize + (int32_t)entry->DataSize();
     int32_t  fetchCount = NS_MAX(1, entry->FetchCount());
 
-    return NS_MIN(PR_FloorLog2(size / fetchCount), kQueueCount - 1);
+    return NS_MIN((int)mozilla::FloorLog2(size / fetchCount), kQueueCount - 1);
 }
 
 

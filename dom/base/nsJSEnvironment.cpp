@@ -839,7 +839,6 @@ nsJSContext::nsJSContext(bool aGCOnDestruction,
                                   js_options_dot_str, this);
   }
   mIsInitialized = false;
-  mScriptsEnabled = true;
   mProcessingScriptTag = false;
   HoldJSObjects(this);
 }
@@ -956,10 +955,6 @@ nsJSContext::EvaluateString(const nsAString& aScript,
                             void **aOffThreadToken)
 {
   NS_ENSURE_TRUE(mIsInitialized, NS_ERROR_NOT_INITIALIZED);
-  if (!mScriptsEnabled) {
-    return NS_OK;
-  }
-
   AutoCxPusher pusher(mContext);
   nsJSUtils::EvaluateOptions evalOptions;
   evalOptions.setCoerceToString(aCoerceToString);
@@ -1868,27 +1863,6 @@ nsJSContext::IsContextInitialized()
 {
   return mIsInitialized;
 }
-
-bool
-nsJSContext::GetScriptsEnabled()
-{
-  return mScriptsEnabled;
-}
-
-void
-nsJSContext::SetScriptsEnabled(bool aEnabled, bool aFireTimeouts)
-{
-  // eeek - this seems the wrong way around - the global should callback
-  // into each context, so every language is disabled.
-  mScriptsEnabled = aEnabled;
-
-  nsIScriptGlobalObject *global = GetGlobalObject();
-
-  if (global) {
-    global->SetScriptsEnabled(aEnabled, aFireTimeouts);
-  }
-}
-
 
 bool
 nsJSContext::GetProcessingScriptTag()

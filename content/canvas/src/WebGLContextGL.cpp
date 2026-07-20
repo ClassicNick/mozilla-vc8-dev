@@ -2715,6 +2715,7 @@ WebGLContext::Uniform1i(WebGLUniformLocation *location_object, GLint a1)
     if (!ValidateUniformSetter("Uniform1i", location_object, location))
         return;
 
+    // Only uniform1i can take sampler settings.
     if (!ValidateSamplerUniformSetter("Uniform1i", location_object, a1))
         return;
 
@@ -2730,12 +2731,6 @@ WebGLContext::Uniform2i(WebGLUniformLocation *location_object, GLint a1,
     if (!ValidateUniformSetter("Uniform2i", location_object, location))
         return;
 
-    if (!ValidateSamplerUniformSetter("Uniform2i", location_object, a1) ||
-        !ValidateSamplerUniformSetter("Uniform2i", location_object, a2))
-    {
-        return;
-    }
-
     MakeContextCurrent();
     gl->fUniform2i(location, a1, a2);
 }
@@ -2748,13 +2743,6 @@ WebGLContext::Uniform3i(WebGLUniformLocation *location_object, GLint a1,
     if (!ValidateUniformSetter("Uniform3i", location_object, location))
         return;
 
-    if (!ValidateSamplerUniformSetter("Uniform3i", location_object, a1) ||
-        !ValidateSamplerUniformSetter("Uniform3i", location_object, a2) ||
-        !ValidateSamplerUniformSetter("Uniform3i", location_object, a3))
-    {
-        return;
-    }
-
     MakeContextCurrent();
     gl->fUniform3i(location, a1, a2, a3);
 }
@@ -2766,14 +2754,6 @@ WebGLContext::Uniform4i(WebGLUniformLocation *location_object, GLint a1,
     GLint location;
     if (!ValidateUniformSetter("Uniform4i", location_object, location))
         return;
-
-    if (!ValidateSamplerUniformSetter("Uniform4i", location_object, a1) ||
-        !ValidateSamplerUniformSetter("Uniform4i", location_object, a2) ||
-        !ValidateSamplerUniformSetter("Uniform4i", location_object, a3) ||
-        !ValidateSamplerUniformSetter("Uniform4i", location_object, a4))
-    {
-        return;
-    }
 
     MakeContextCurrent();
     gl->fUniform4i(location, a1, a2, a3, a4);
