@@ -50,9 +50,9 @@ ThreadStackHelper::Shutdown()
 }
 
 ThreadStackHelper::ThreadStackHelper()
-  : 
+  :
 #ifdef MOZ_ENABLE_PROFILER_SPS
-	mPseudoStack(mozilla_get_pseudo_stack()),
+    mPseudoStack(mozilla_get_pseudo_stack()),
 #endif
     mStackBuffer()
   , mMaxStackSize(mStackBuffer.capacity())
@@ -157,6 +157,9 @@ ThreadStackHelper::PrepareStackBuffer(Stack& aStack) {
 #endif
   mStackBuffer.clear();
   return mStackBuffer.reserve(mMaxStackSize);
+#else
+  return false;
+#endif
 }
 
 void
