@@ -6,7 +6,7 @@
 
 #include "Input.h"
 
-#include <algorithm>
+#include "nsAlgorithm.h"
 #include <cassert>
 #include <cstring>
 
@@ -35,7 +35,7 @@ size_t Input::read(char* buf, size_t maxSize)
     while ((nRead < maxSize) && (mReadLoc.sIndex < mCount))
     {
         size_t size = mLength[mReadLoc.sIndex] - mReadLoc.cIndex;
-        size = std::min(size, maxSize);
+        size = NS_MIN(size, maxSize);
         std::memcpy(buf + nRead, mString[mReadLoc.sIndex] + mReadLoc.cIndex, size);
         nRead += size;
         mReadLoc.cIndex += size;

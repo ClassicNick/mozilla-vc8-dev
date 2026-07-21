@@ -16,7 +16,7 @@
 #include "compiler/SymbolTable.h"
 
 #include <stdio.h>
-#include <algorithm>
+#include "nsAlgorithm.h"
 #include <climits>
 
 TType::TType(const TPublicType &p) :
@@ -118,7 +118,7 @@ int TStructure::calculateDeepestNesting() const
 {
     int maxNesting = 0;
     for (size_t i = 0; i < mFields->size(); ++i) {
-        maxNesting = std::max(maxNesting, (*mFields)[i]->type()->getDeepestStructNesting());
+        maxNesting = NS_MAX(maxNesting, (*mFields)[i]->type()->getDeepestStructNesting());
     }
     return 1 + maxNesting;
 }

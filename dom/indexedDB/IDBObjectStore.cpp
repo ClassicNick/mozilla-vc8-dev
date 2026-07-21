@@ -2967,7 +2967,7 @@ IDBObjectStore::Count(JSContext* aCx,
 
 already_AddRefed<IDBRequest>
 IDBObjectStore::GetAllKeys(JSContext* aCx,
-                           const Optional<JS::Handle<JS::Value>>& aKey,
+                           const Optional<JS::Handle<JS::Value> >& aKey,
                            const Optional<uint32_t>& aLimit, ErrorResult& aRv)
 {
   MOZ_ASSERT(NS_IsMainThread());
@@ -2993,7 +2993,7 @@ IDBObjectStore::GetAllKeys(JSContext* aCx,
 
 already_AddRefed<IDBRequest>
 IDBObjectStore::OpenKeyCursor(JSContext* aCx,
-                              const Optional<JS::Handle<JS::Value>>& aRange,
+                              const Optional<JS::Handle<JS::Value> >& aRange,
                               IDBCursorDirection aDirection, ErrorResult& aRv)
 {
   MOZ_ASSERT(NS_IsMainThread());

@@ -63,13 +63,13 @@ DeprecatedTextureHost::CreateDeprecatedTextureHost(SurfaceDescriptorType aDescri
       }
       return result;
       }
-#if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
+#if defined XP_WIN && defined MOZ_ENABLE_D3D9_LAYER
     case LAYERS_D3D9:
       return CreateDeprecatedTextureHostD3D9(aDescriptorType,
                                          aDeprecatedTextureHostFlags,
                                          aTextureFlags);
 #endif
-#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
+#if defined XP_WIN && defined MOZ_ENABLE_D3D10_LAYER
     case LAYERS_D3D11:
       return CreateDeprecatedTextureHostD3D11(aDescriptorType,
                                           aDeprecatedTextureHostFlags,

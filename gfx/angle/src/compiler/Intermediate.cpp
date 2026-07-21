@@ -10,7 +10,7 @@
 
 #include <float.h>
 #include <limits.h>
-#include <algorithm>
+#include "nsAlgorithm.h"
 
 #include "compiler/HashNames.h"
 #include "compiler/localintermediate.h"
@@ -870,7 +870,7 @@ bool TIntermBinary::promote(TInfoSink& infoSink)
         getTypePointer()->setQualifier(EvqTemporary);
     }
 
-    int size = std::max(left->getNominalSize(), right->getNominalSize());
+    int size = NS_MAX(left->getNominalSize(), right->getNominalSize());
 
     //
     // All scalars. Code after this test assumes this case is removed!

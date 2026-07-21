@@ -222,7 +222,6 @@ UNIFIED_SOURCES += [
     'composite/ImageHost.cpp',
     'composite/ImageLayerComposite.cpp',
     'composite/LayerManagerComposite.cpp',
-    'composite/TextureHost.cpp',
     'composite/ThebesLayerComposite.cpp',
     'composite/TiledContentHost.cpp',
     'Compositor.cpp',
@@ -272,6 +271,7 @@ UNIFIED_SOURCES += [
 
 SOURCES += [
     'basic/BasicImageLayer.cpp',
+    'composite/TextureHost.cpp',
     'ImageContainer.cpp',
 ]
 

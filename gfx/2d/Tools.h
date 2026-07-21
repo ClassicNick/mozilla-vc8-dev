@@ -9,12 +9,12 @@
 #include "Types.h"
 #include "Point.h"
 #include <math.h>
-#if defined(_MSC_VER) && (_MSC_VER < 1600)
+#if defined(_MSC_VER) && _MSC_VER <= 1500
+#if _MSC_VER >= 1400
 #define hypotf _hypotf
+#elif _MSC_VER <= 1310
+#define hypotf hypotf_impl
 #endif
-
-#if defined(_MSC_VER) && (_MSC_VER <= 1310)
-_CRTIMP float  __cdecl _hypotf(float, float);
 #endif
 
 namespace mozilla {
@@ -65,6 +65,19 @@ NudgeToInteger(float *aVal)
     *aVal = r;
   }
 }
+
+#if defined(_MSC_VER) && (_MSC_VER <= 1310)
+inline float
+hypotf_impl(float a, float b)
+{
+  float x2, y2, z, result;
+  x2 = std::powf(a, 2);
+  y2 = std::powf(b, 2);
+  z = x2 + y2;
+  result = sqrtf(z);
+    return result;
+}
+#endif
 
 static inline Float
 Distance(Point aA, Point aB)

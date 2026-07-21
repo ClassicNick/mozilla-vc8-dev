@@ -12,9 +12,7 @@
 
 #if defined(_MSC_VER)
 
-typedef unsigned char uint8_t;
-typedef unsigned long uint32_t;
-typedef unsigned __int64 uint64_t;
+#include "mozilla/StandardInteger.h"
 
 // Other compilers
 

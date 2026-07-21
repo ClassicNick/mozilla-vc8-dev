@@ -603,8 +603,11 @@ class types::CompilerConstraintList
 
   public:
     CompilerConstraintList(jit::TempAllocator &alloc)
-      : constraints(alloc),
+      : 
+#ifdef JS_ION
+		constraints(alloc),
         frozenScripts(alloc),
+#endif
         failed_(false)
     {}
 
@@ -678,7 +681,11 @@ class types::CompilerConstraintList
 CompilerConstraintList *
 types::NewCompilerConstraintList(jit::TempAllocator &alloc)
 {
+#ifdef JS_ION
     return IonAlloc()->new_<CompilerConstraintList>(alloc);
+#else
+	MOZ_CRASH();
+#endif
 }
 
 /* static */ bool

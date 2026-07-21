@@ -4,6 +4,7 @@
 // found in the LICENSE file.
 //
 
+#include "nsAlgorithm.h"
 #include "compiler/VersionGLSL.h"
 
 static const int GLSL_VERSION_110 = 110;
@@ -135,6 +136,6 @@ bool TVersionGLSL::visitBranch(Visit, TIntermBranch*)
 
 void TVersionGLSL::updateVersion(int version)
 {
-    mVersion = std::max(version, mVersion);
+    mVersion = NS_MAX(version, mVersion);
 }
 
