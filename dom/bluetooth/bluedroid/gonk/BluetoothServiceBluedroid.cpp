@@ -20,12 +20,16 @@
 
 #include <hardware/hardware.h>
 
+#include "bluedroid/BluetoothA2dpManager.h"
+#include "bluedroid/BluetoothHfpManager.h"
 #include "BluetoothProfileController.h"
 #include "BluetoothReplyRunnable.h"
 #include "BluetoothUtils.h"
 #include "BluetoothUuid.h"
 #include "mozilla/dom/bluetooth/BluetoothTypes.h"
 #include "mozilla/ipc/UnixSocket.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPtr.h"
 
 using namespace mozilla;
 using namespace mozilla::ipc;
@@ -71,10 +75,11 @@ static InfallibleTArray<BluetoothNamedValue> sRemoteDevicesPack;
 static nsTArray<nsRefPtr<BluetoothProfileController> > sControllerArray;
 static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sBondingRunnableArray;
 static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sChangeDiscoveryRunnableArray;
-static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sGetPairedDeviceRunnableArray;
+static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sGetDeviceRunnableArray;
 static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sSetPropertyRunnableArray;
 static nsTArray<nsRefPtr<BluetoothReplyRunnable> > sUnbondingRunnableArray;
 static nsTArray<int> sRequestedDeviceCountArray;
+static StaticAutoPtr<Monitor> sToggleBtMonitor;
 
 /**
  *  Static callback functions
@@ -169,7 +174,7 @@ IsReady()
 const bt_interface_t*
 GetBluetoothInterface()
 {
-  return (IsReady()) ? sBtInterface : nullptr;
+  return sBtInterface;
 }
 
 void
@@ -184,7 +189,7 @@ StringToBdAddressType(const nsAString& aBdAddress,
   }
 }
 
-static void
+void
 BdAddressTypeToString(bt_bdaddr_t* aBdAddressType, nsAString& aRetBdAddress)
 {
   uint8_t* addr = aBdAddressType->address;
@@ -213,6 +218,16 @@ Setup()
   if (ret != BT_STATUS_SUCCESS) {
     BT_LOGR("%s: Fail to set: BT_SCAN_MODE_CONNECTABLE", __FUNCTION__);
   }
+
+  // Event 'AdapterAdded' has to be fired after enabled to notify Gaia
+  // that BluetoothAdapter is ready.
+  BluetoothSignal signal(NS_LITERAL_STRING("AdapterAdded"),
+                         NS_LITERAL_STRING(KEY_MANAGER), true);
+  nsRefPtr<DistributeBluetoothSignalTask>
+    t = new DistributeBluetoothSignalTask(signal);
+  if (NS_FAILED(NS_DispatchToMainThread(t))) {
+    BT_WARNING("Failed to dispatch to main thread!");
+  }
 }
 
 static void
@@ -222,22 +237,15 @@ AdapterStateChangeCallback(bt_state_t aStatus)
 
   BT_LOGR("%s, BT_STATE:%d", __FUNCTION__, aStatus);
 
-  nsAutoString signalName;
-  if (aStatus == BT_STATE_ON) {
-    Setup();
-    sIsBtEnabled = true;
-    signalName = NS_LITERAL_STRING("AdapterAdded");
-  } else {
-    sIsBtEnabled = false;
-    signalName = NS_LITERAL_STRING("Disabled");
+  sIsBtEnabled = (aStatus == BT_STATE_ON);
+
+  {
+    MonitorAutoLock lock(*sToggleBtMonitor);
+    lock.Notify();
   }
 
-  BluetoothSignal signal(signalName, NS_LITERAL_STRING(KEY_MANAGER),
-                         BluetoothValue(true));
-  nsRefPtr<DistributeBluetoothSignalTask>
-    t = new DistributeBluetoothSignalTask(signal);
-  if (NS_FAILED(NS_DispatchToMainThread(t))) {
-    NS_WARNING("Failed to dispatch to main thread!");
+  if (sIsBtEnabled) {
+    Setup();
   }
 }
 
@@ -321,7 +329,7 @@ AdapterPropertiesChangeCallback(bt_status_t aStatus, int aNumProperties,
     nsRefPtr<DistributeBluetoothSignalTask>
       t = new DistributeBluetoothSignalTask(signal);
     if (NS_FAILED(NS_DispatchToMainThread(t))) {
-      NS_WARNING("Failed to dispatch to main thread!");
+      BT_WARNING("Failed to dispatch to main thread!");
     }
 
     // bluedroid BTU task was stored in the task queue, see GKI_send_msg
@@ -348,7 +356,7 @@ RemoteDevicePropertiesChangeCallback(bt_status_t aStatus,
   MOZ_ASSERT(!NS_IsMainThread());
 
   if (sRequestedDeviceCountArray.IsEmpty()) {
-    MOZ_ASSERT(sGetPairedDeviceRunnableArray.IsEmpty());
+    MOZ_ASSERT(sGetDeviceRunnableArray.IsEmpty());
     return;
   }
 
@@ -387,21 +395,21 @@ RemoteDevicePropertiesChangeCallback(bt_status_t aStatus,
     BluetoothNamedValue(remoteDeviceBdAddress, props));
 
   if (sRequestedDeviceCountArray[0] == 0) {
-    MOZ_ASSERT(!sGetPairedDeviceRunnableArray.IsEmpty());
+    MOZ_ASSERT(!sGetDeviceRunnableArray.IsEmpty());
 
-    if (sGetPairedDeviceRunnableArray.IsEmpty()) {
+    if (sGetDeviceRunnableArray.IsEmpty()) {
       BT_LOGR("No runnable to return");
       return;
     }
 
-    DispatchBluetoothReply(sGetPairedDeviceRunnableArray[0],
+    DispatchBluetoothReply(sGetDeviceRunnableArray[0],
                            sRemoteDevicesPack, EmptyString());
 
     // After firing it, clean up cache
     sRemoteDevicesPack.Clear();
 
     sRequestedDeviceCountArray.RemoveElementAt(0);
-    sGetPairedDeviceRunnableArray.RemoveElementAt(0);
+    sGetDeviceRunnableArray.RemoveElementAt(0);
   }
 }
 
@@ -447,7 +455,7 @@ DeviceFoundCallback(int aNumProperties, bt_property_t *aProperties)
   nsRefPtr<DistributeBluetoothSignalTask>
     t = new DistributeBluetoothSignalTask(signal);
   if (NS_FAILED(NS_DispatchToMainThread(t))) {
-    NS_WARNING("Failed to dispatch to main thread!");
+    BT_WARNING("Failed to dispatch to main thread!");
   }
 }
 
@@ -491,7 +499,7 @@ PinRequestCallback(bt_bdaddr_t* aRemoteBdAddress,
   nsRefPtr<DistributeBluetoothSignalTask>
     t = new DistributeBluetoothSignalTask(signal);
   if (NS_FAILED(NS_DispatchToMainThread(t))) {
-    NS_WARNING("Failed to dispatch to main thread!");
+    BT_WARNING("Failed to dispatch to main thread!");
   }
 }
 
@@ -524,7 +532,7 @@ SspRequestCallback(bt_bdaddr_t* aRemoteBdAddress, bt_bdname_t* aRemoteBdName,
   nsRefPtr<DistributeBluetoothSignalTask>
     t = new DistributeBluetoothSignalTask(signal);
   if (NS_FAILED(NS_DispatchToMainThread(t))) {
-    NS_WARNING("Failed to dispatch to main thread!");
+    BT_WARNING("Failed to dispatch to main thread!");
   }
 }
 
@@ -629,7 +637,12 @@ EnsureBluetoothHalLoad()
   module->methods->open(module, BT_HARDWARE_MODULE_ID, &device);
   sBtDevice = (bluetooth_device_t *)device;
   sBtInterface = sBtDevice->get_bluetooth_interface();
-  BT_LOGD("Bluetooth HAL loaded");
+
+  int ret = sBtInterface->init(&sBluetoothCallbacks);
+  if (ret != BT_STATUS_SUCCESS) {
+    BT_LOGR("Error while setting the callbacks %s", __FUNCTION__);
+    sBtInterface = nullptr;
+  }
 
   return true;
 }
@@ -639,28 +652,16 @@ StartStopGonkBluetooth(bool aShouldEnable)
 {
   MOZ_ASSERT(!NS_IsMainThread());
 
-  static bool sIsBtInterfaceInitialized = false;
+  NS_ENSURE_TRUE(sBtInterface, NS_ERROR_FAILURE);
+  NS_ENSURE_TRUE(sIsBtEnabled != aShouldEnable, NS_OK);
 
-  if (!EnsureBluetoothHalLoad()) {
-    BT_LOGR("Failed to load bluedroid library.\n");
-    return NS_ERROR_FAILURE;
-  }
-
-  if (sIsBtEnabled == aShouldEnable)
-    return NS_OK;
-
-  if (sBtInterface && !sIsBtInterfaceInitialized) {
-    int ret = sBtInterface->init(&sBluetoothCallbacks);
-    if (ret != BT_STATUS_SUCCESS) {
-      BT_LOGR("Error while setting the callbacks %s", __FUNCTION__);
-      sBtInterface = nullptr;
-      return NS_ERROR_FAILURE;
-    }
-    sIsBtInterfaceInitialized = true;
-  }
   int ret = aShouldEnable ? sBtInterface->enable() : sBtInterface->disable();
+  NS_ENSURE_TRUE(ret == BT_STATUS_SUCCESS, NS_ERROR_FAILURE);
 
-  return (ret == BT_STATUS_SUCCESS) ? NS_OK : NS_ERROR_FAILURE;
+  MonitorAutoLock lock(*sToggleBtMonitor);
+  lock.Wait();
+
+  return NS_OK;
 }
 
 static void
@@ -695,6 +696,26 @@ ReplyStatusError(BluetoothReplyRunnable* aBluetoothReplyRunnable,
 /**
  *  Member functions
  */
+BluetoothServiceBluedroid::BluetoothServiceBluedroid()
+{
+  sToggleBtMonitor = new Monitor("BluetoothService.sToggleBtMonitor");
+
+  if (!EnsureBluetoothHalLoad()) {
+    BT_LOGR("Error! Failed to load bluedroid library.\n");
+    return;
+  }
+
+  // Register all the bluedroid callbacks before enable() get called
+  // It is required to register a2dp callbacks before a2dp media task starts up.
+  BluetoothHfpManager::Get();
+  BluetoothA2dpManager::Get();
+}
+
+BluetoothServiceBluedroid::~BluetoothServiceBluedroid()
+{
+  sToggleBtMonitor = nullptr;
+}
+
 nsresult
 BluetoothServiceBluedroid::StartInternal()
 {
@@ -725,11 +746,6 @@ bool
 BluetoothServiceBluedroid::IsEnabledInternal()
 {
   MOZ_ASSERT(!NS_IsMainThread());
-
-  if (!EnsureBluetoothHalLoad()) {
-    NS_ERROR("Failed to load bluedroid library.\n");
-    return false;
-  }
 
   return sIsBtEnabled;
 }
@@ -772,12 +788,54 @@ BluetoothServiceBluedroid::GetDefaultAdapterPathInternal(
 
 nsresult
 BluetoothServiceBluedroid::GetConnectedDevicePropertiesInternal(
-  uint16_t aProfileId, BluetoothReplyRunnable* aRunnable)
+  uint16_t aServiceUuid, BluetoothReplyRunnable* aRunnable)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
-  //FIXME: This will be implemented in later patches
-  DispatchBluetoothReply(aRunnable, BluetoothValue(true), EmptyString());
+  if (!IsReady()) {
+    NS_NAMED_LITERAL_STRING(errorStr, "Bluetooth service is not ready yet!");
+    DispatchBluetoothReply(aRunnable, BluetoothValue(), errorStr);
+    return NS_OK;
+  }
+
+  BluetoothProfileManagerBase* profile =
+    BluetoothUuidHelper::GetBluetoothProfileManager(aServiceUuid);
+  if (!profile) {
+    InfallibleTArray<BluetoothNamedValue> emptyArr;
+    DispatchBluetoothReply(aRunnable, emptyArr,
+                           NS_LITERAL_STRING(ERR_UNKNOWN_PROFILE));
+    return NS_OK;
+  }
+
+  nsTArray<nsString> deviceAddresses;
+  if (profile->IsConnected()) {
+    nsString address;
+    profile->GetAddress(address);
+    deviceAddresses.AppendElement(address);
+  }
+
+  int requestedDeviceCount = deviceAddresses.Length();
+  if (requestedDeviceCount == 0) {
+    InfallibleTArray<BluetoothNamedValue> emptyArr;
+    DispatchBluetoothReply(aRunnable, emptyArr, EmptyString());
+    return NS_OK;
+  }
+
+  for (int i = 0; i < requestedDeviceCount; i++) {
+    // Retrieve all properties of devices
+    bt_bdaddr_t addressType;
+    StringToBdAddressType(deviceAddresses[i], &addressType);
+
+    int ret = sBtInterface->get_remote_device_properties(&addressType);
+    if (ret != BT_STATUS_SUCCESS) {
+      DispatchBluetoothReply(aRunnable, BluetoothValue(true),
+                             NS_LITERAL_STRING("GetConnectedDeviceFailed"));
+      return NS_OK;
+    }
+  }
+
+  sRequestedDeviceCountArray.AppendElement(requestedDeviceCount);
+  sGetDeviceRunnableArray.AppendElement(aRunnable);
 
   return NS_OK;
 }
@@ -814,7 +872,7 @@ BluetoothServiceBluedroid::GetPairedDevicePropertiesInternal(
   }
 
   sRequestedDeviceCountArray.AppendElement(requestedDeviceCount);
-  sGetPairedDeviceRunnableArray.AppendElement(aRunnable);
+  sGetDeviceRunnableArray.AppendElement(aRunnable);
 
   return NS_OK;
 }
@@ -853,6 +911,7 @@ BluetoothServiceBluedroid::StopDiscoveryInternal(
     DispatchBluetoothReply(aRunnable, BluetoothValue(), errorStr);
     return NS_OK;
   }
+
   int ret = sBtInterface->cancel_discovery();
   if (ret != BT_STATUS_SUCCESS) {
     ReplyStatusError(aRunnable, ret, NS_LITERAL_STRING("StopDiscovery"));
@@ -860,6 +919,7 @@ BluetoothServiceBluedroid::StopDiscoveryInternal(
   }
 
   sChangeDiscoveryRunnableArray.AppendElement(aRunnable);
+
   return NS_OK;
 }
 
@@ -1132,12 +1192,14 @@ BluetoothServiceBluedroid::PrepareAdapterInternal()
 static void
 NextBluetoothProfileController()
 {
-  sControllerArray[0] = nullptr;
-  sControllerArray.RemoveElementAt(0);
+  MOZ_ASSERT(NS_IsMainThread());
 
-  if (!sControllerArray.IsEmpty()) {
-    sControllerArray[0]->Start();
-  }
+  // First, remove the task at the front which has been already done.
+  NS_ENSURE_FALSE_VOID(sControllerArray.IsEmpty());
+  sControllerArray.RemoveElementAt(0);
+  // Re-check if the task array is empty, if it's not, the next task will begin.
+  NS_ENSURE_FALSE_VOID(sControllerArray.IsEmpty());
+  sControllerArray[0]->Start();
 }
 
 static void
@@ -1170,13 +1232,6 @@ BluetoothServiceBluedroid::Connect(const nsAString& aDeviceAddress,
                                    uint16_t aServiceUuid,
                                    BluetoothReplyRunnable* aRunnable)
 {
-  // TODO: Remove this error reply once Connect() is done in profile managers
-  if (aRunnable) {
-    DispatchBluetoothReply(aRunnable, BluetoothValue(),
-                           NS_LITERAL_STRING(ERR_CONNECTION_FAILED));
-    return;
-  }
-
   ConnectDisconnect(true, aDeviceAddress, aRunnable, aServiceUuid, aCod);
 }
 
@@ -1191,13 +1246,6 @@ BluetoothServiceBluedroid::Disconnect(
   const nsAString& aDeviceAddress, uint16_t aServiceUuid,
   BluetoothReplyRunnable* aRunnable)
 {
-  // TODO: Remove this error reply once Disconnect() is done in profile managers
-  if (aRunnable) {
-    DispatchBluetoothReply(aRunnable, BluetoothValue(),
-                           NS_LITERAL_STRING(ERR_CONNECTION_FAILED));
-    return;
-  }
-
   ConnectDisconnect(false, aDeviceAddress, aRunnable, aServiceUuid);
 }
 

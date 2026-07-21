@@ -605,7 +605,11 @@ MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output)
     addDouble(ScratchFloatReg, input);
 
     Label outOfRange;
-    branchTruncateDouble(input, output, &outOfRange);
+
+    // Truncate to int32 and ensure the result <= 255. This relies on the
+    // processor setting output to a value > 255 for doubles outside the int32
+    // range (for instance 0x80000000).
+    cvttsd2si(input, output);
     branch32(Assembler::Above, output, Imm32(255), &outOfRange);
     {
         // Check if we had a tie.
@@ -681,12 +685,12 @@ MacroAssembler::newGCThing(const Register &result, gc::AllocKind allocKind, Labe
 }
 
 void
-MacroAssembler::newGCThing(const Register &result, JSObject *templateObject, Label *fail)
+MacroAssembler::newGCThing(const Register &result, JSObject *templateObject,
+                           Label *fail, gc::InitialHeap initialHeap)
 {
     gc::AllocKind allocKind = templateObject->tenuredGetAllocKind();
     JS_ASSERT(allocKind >= gc::FINALIZE_OBJECT0 && allocKind <= gc::FINALIZE_OBJECT_LAST);
 
-    gc::InitialHeap initialHeap = templateObject->type()->initialHeapForJITAlloc();
     newGCThing(result, allocKind, fail, initialHeap);
 }
 

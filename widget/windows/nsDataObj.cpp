@@ -32,6 +32,8 @@
 
 #include "WinUtils.h"
 #include "mozilla/LazyIdleThread.h"
+#include "mozilla/WindowsVersion.h"
+#include <algorithm>
 
 
 using namespace mozilla;
@@ -1114,7 +1116,7 @@ nsDataObj :: GetFileContentsInternetShortcut ( FORMATETC& aFE, STGMEDIUM& aSTG )
   int totalLen;
   nsCString path;
   if (!Preferences::GetBool(kShellIconPref, true) ||
-      WinUtils::GetWindowsVersion() < WinUtils::VISTA_VERSION) {
+      !IsVistaOrLater()) {
     shortcutFormatStr = "[InternetShortcut]\r\nURL=%s\r\n";
     const int formatLen = strlen(shortcutFormatStr) - 2;  // don't include %s
     totalLen = formatLen + asciiUrl.Length();  // don't include null character

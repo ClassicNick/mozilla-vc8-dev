@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Util.h"
+#include "mozilla/WindowsVersion.h"
 
 #include "nsUXThemeData.h"
 #include "nsDebug.h"
@@ -225,7 +226,7 @@ nsUXThemeData::InitTitlebarInfo()
   // Use system metrics for pre-vista, otherwise trigger a
   // refresh on the next layout.
   sTitlebarInfoPopulatedAero = sTitlebarInfoPopulatedThemed =
-    (WinUtils::GetWindowsVersion() < WinUtils::VISTA_VERSION);
+    !IsVistaOrLater();
 }
 
 // static
@@ -366,8 +367,7 @@ void
 nsUXThemeData::UpdateNativeThemeInfo()
 {
   // Trigger a refresh of themed button metrics if needed
-  sTitlebarInfoPopulatedThemed =
-    (WinUtils::GetWindowsVersion() < WinUtils::VISTA_VERSION);
+  sTitlebarInfoPopulatedThemed = !IsVistaOrLater();
 
   sIsDefaultWindowsTheme = false;
   sThemeId = LookAndFeel::eWindowsTheme_Generic;

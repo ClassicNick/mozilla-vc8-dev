@@ -320,7 +320,7 @@ Promise::Constructor(const GlobalObject& aGlobal,
 
 /* static */ already_AddRefed<Promise>
 Promise::Resolve(const GlobalObject& aGlobal, JSContext* aCx,
-                 const Optional<JS::Handle<JS::Value>>& aValue, ErrorResult& aRv)
+                 const Optional<JS::Handle<JS::Value> >& aValue, ErrorResult& aRv)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
   if (!window) {
@@ -337,7 +337,7 @@ Promise::Resolve(const GlobalObject& aGlobal, JSContext* aCx,
 
 /* static */ already_AddRefed<Promise>
 Promise::Reject(const GlobalObject& aGlobal, JSContext* aCx,
-                const Optional<JS::Handle<JS::Value>>& aValue, ErrorResult& aRv)
+                const Optional<JS::Handle<JS::Value> >& aValue, ErrorResult& aRv)
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aGlobal.GetAsSupports());
   if (!window) {
@@ -353,8 +353,8 @@ Promise::Reject(const GlobalObject& aGlobal, JSContext* aCx,
 }
 
 already_AddRefed<Promise>
-Promise::Then(const Optional<nsRefPtr<AnyCallback>>& aResolveCallback,
-              const Optional<nsRefPtr<AnyCallback>>& aRejectCallback)
+Promise::Then(const Optional<nsRefPtr<AnyCallback> >& aResolveCallback,
+              const Optional<nsRefPtr<AnyCallback> >& aRejectCallback)
 {
   nsRefPtr<Promise> promise = new Promise(GetParentObject());
 
@@ -378,9 +378,9 @@ Promise::Then(const Optional<nsRefPtr<AnyCallback>>& aResolveCallback,
 }
 
 already_AddRefed<Promise>
-Promise::Catch(const Optional<nsRefPtr<AnyCallback>>& aRejectCallback)
+Promise::Catch(const Optional<nsRefPtr<AnyCallback> >& aRejectCallback)
 {
-  Optional<nsRefPtr<AnyCallback>> resolveCb;
+  Optional<nsRefPtr<AnyCallback> > resolveCb;
   return Then(resolveCb, aRejectCallback);
 }
 

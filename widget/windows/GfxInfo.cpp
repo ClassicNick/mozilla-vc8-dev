@@ -258,6 +258,41 @@ ParseIDFromDeviceID(const nsAString &key, const char *prefix, int length)
   return id.ToInteger(&err, 16);
 }
 
+// OS version in 16.16 major/minor form
+// based on http://msdn.microsoft.com/en-us/library/ms724834(VS.85).aspx
+enum {
+  kWindowsUnknown = 0,
+  kWindows2000 = 0x50000,
+  kWindowsXP = 0x50001,
+  kWindowsServer2003 = 0x50002,
+  kWindowsVista = 0x60000,
+  kWindows7 = 0x60001,
+  kWindows8 = 0x60002,
+  kWindows8_1 = 0x60003
+};
+
+static int32_t
+WindowsOSVersion()
+{
+  static int32_t winVersion = UNINITIALIZED_VALUE;
+
+  OSVERSIONINFO vinfo;
+
+  if (winVersion == UNINITIALIZED_VALUE) {
+    vinfo.dwOSVersionInfoSize = sizeof (vinfo);
+#pragma warning(push)
+#pragma warning(disable:4996)
+    if (!GetVersionEx(&vinfo)) {
+#pragma warning(pop)
+      winVersion = kWindowsUnknown;
+    } else {
+      winVersion = int32_t(vinfo.dwMajorVersion << 16) + vinfo.dwMinorVersion;
+    }
+  }
+
+  return winVersion;
+}
+
 /* Other interesting places for info:
  *   IDXGIAdapter::GetDesc()
  *   IDirectDraw7::GetAvailableVidMem()
@@ -278,7 +313,7 @@ GfxInfo::Init()
   if (spoofedWindowsVersion) {
     PR_sscanf(spoofedWindowsVersion, "%x", &mWindowsVersion);
   } else {
-    mWindowsVersion = gfxWindowsPlatform::WindowsOSVersion();
+    mWindowsVersion = WindowsOSVersion();
   }
 
   mDeviceKeyDebug = NS_LITERAL_STRING("PrimarySearch");
@@ -320,7 +355,7 @@ GfxInfo::Init()
   // Unfortunately, the Device ID is nullptr, and we can't enumerate
   // it using the setup infrastructure (SetupDiGetClassDevsW below
   // will return INVALID_HANDLE_VALUE).
-  if (mWindowsVersion == gfxWindowsPlatform::kWindows8 &&
+  if (mWindowsVersion == kWindows8 &&
       mDeviceID.Length() == 0 &&
       mDeviceString.EqualsLiteral("RDPUDD Chained DD"))
   {
@@ -797,21 +832,21 @@ static OperatingSystem
 WindowsVersionToOperatingSystem(int32_t aWindowsVersion)
 {
   switch(aWindowsVersion) {
-    case gfxWindowsPlatform::kWindows2000:
+    case kWindows2000:
       return DRIVER_OS_WINDOWS_2000;
-    case gfxWindowsPlatform::kWindowsXP:
+    case kWindowsXP:
       return DRIVER_OS_WINDOWS_XP;
-    case gfxWindowsPlatform::kWindowsServer2003:
+    case kWindowsServer2003:
       return DRIVER_OS_WINDOWS_SERVER_2003;
-    case gfxWindowsPlatform::kWindowsVista:
+    case kWindowsVista:
       return DRIVER_OS_WINDOWS_VISTA;
-    case gfxWindowsPlatform::kWindows7:
+    case kWindows7:
       return DRIVER_OS_WINDOWS_7;
-    case gfxWindowsPlatform::kWindows8:
+    case kWindows8:
       return DRIVER_OS_WINDOWS_8;
-    case gfxWindowsPlatform::kWindows8_1:
+    case kWindows8_1:
       return DRIVER_OS_WINDOWS_8_1;
-    case gfxWindowsPlatform::kWindowsUnknown:
+    case kWindowsUnknown:
     default:
       return DRIVER_OS_UNKNOWN;
     };
@@ -1064,7 +1099,7 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
     // special-case the WinXP test slaves: they have out-of-date drivers, but we still want to
     // whitelist them, actually we do know that this combination of device and driver version
     // works well.
-    if (mWindowsVersion == gfxWindowsPlatform::kWindowsXP &&
+    if (mWindowsVersion == kWindowsXP &&
         adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorNVIDIA), nsCaseInsensitiveStringComparator()) &&
         adapterDeviceID.LowerCaseEqualsLiteral("0x0861") && // GeForce 9400
         driverVersion == V(6,14,11,7756))

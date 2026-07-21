@@ -77,7 +77,6 @@ Break(const char *aMsg);
 
 using namespace mozilla;
 
-static bool sIsMultiprocess = false;
 static const char *sMultiprocessDescription = nullptr;
 
 static Atomic<int32_t> gAssertionCount;
@@ -180,7 +179,6 @@ nsDebugImpl::GetIsDebuggerAttached(bool* aResult)
 /* static */ void
 nsDebugImpl::SetMultiprocessMode(const char *aDesc)
 {
-  sIsMultiprocess = true;
   sMultiprocessDescription = aDesc;
 }
 
@@ -315,15 +313,12 @@ NS_DebugBreak(uint32_t aSeverity, const char *aStr, const char *aExpr,
 
 #  define PrintToBuffer(a) PR_sxprintf(StuffFixedBuffer, &buf, a)
 
-   // If we're multiprocess, print "[PID]" or "[Desc PID]" at the beginning of
-   // the message.
-   if (sIsMultiprocess) {
-     PrintToBuffer("[");
-     if (sMultiprocessDescription) {
-       PrintToBuffer("%s ", sMultiprocessDescription);
-     }
-     PrintToBuffer("%d] ", base::GetCurrentProcId());
+   // Print "[PID]" or "[Desc PID]" at the beginning of the message.
+   PrintToBuffer("[");
+   if (sMultiprocessDescription) {
+     PrintToBuffer("%s ", sMultiprocessDescription);
    }
+   PrintToBuffer("%d] ", base::GetCurrentProcId());
 
    PrintToBuffer("%s: ", sevString);
 
