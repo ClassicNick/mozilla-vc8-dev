@@ -2192,7 +2192,7 @@ RuntimeService::UpdateAllWorkerJSContextOptions()
 void
 RuntimeService::UpdateAllWorkerPreference(WorkerPreference aPref, bool aValue)
 {
-  BROADCAST_ALL_WORKERS(UpdatePreference, aPref, aValue);
+  BROADCAST_ALL_WORKERS2(UpdatePreference, aPref, aValue);
 }
 
 void

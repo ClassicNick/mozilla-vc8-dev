@@ -1744,7 +1744,7 @@ JS_CopyPropertyFrom(JSContext *cx, HandleId id, HandleObject target,
         return false;
 
     bool ignored;
-    return DefineOwnProperty(cx, target, wrappedId, desc, &ignored);
+    return DefineOwnProperty(cx, target, wrappedId, (Handle<JSPropertyDescriptor>) desc, &ignored);
 }
 
 JS_FRIEND_API(bool)

@@ -154,7 +154,6 @@ ThreadStackHelper::PrepareStackBuffer(Stack& aStack) {
   if (!mPseudoStack) {
     return false;
   }
-#endif
   mStackBuffer.clear();
   return mStackBuffer.reserve(mMaxStackSize);
 #else
