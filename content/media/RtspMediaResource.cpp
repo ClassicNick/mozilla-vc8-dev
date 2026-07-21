@@ -18,13 +18,13 @@
 
 #ifdef PR_LOGGING
 PRLogModuleInfo* gRtspMediaResourceLog;
-#define LOG(msg, a) PR_LOG(gRtspMediaResourceLog, PR_LOG_DEBUG, \
-                             (msg, a))
+#define RTSP_LOG(msg, a) PR_LOG(gRtspMediaResourceLog, PR_LOG_DEBUG, \
+                                  (msg, a))
 // Debug logging macro with object pointer and class name.
 #define RTSPMLOG(msg, a) \
-        LOG("%p [RtspMediaResource]: " msg, this, a)
+        RTSP_LOG("%p [RtspMediaResource]: " msg, this, a)
 #else
-#define LOG(msg, a)
+#define RTSP_LOG(msg, a)
 #define RTSPMLOG(msg, a)
 #endif
 

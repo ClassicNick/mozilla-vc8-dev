@@ -1740,9 +1740,14 @@ CheckScript(JSContext *cx, JSScript *script, bool osr)
 
 // Longer scripts can only be compiled off thread, as these compilations
 // can be expensive and stall the main thread for too long.
-static const uint32_t MAX_OFF_THREAD_SCRIPT_SIZE = 100000;
-static const uint32_t MAX_MAIN_THREAD_SCRIPT_SIZE = 2000;
+static const uint32_t MAX_OFF_THREAD_SCRIPT_SIZE = 100 * 1000;
+static const uint32_t MAX_MAIN_THREAD_SCRIPT_SIZE = 2 * 1000;
 static const uint32_t MAX_MAIN_THREAD_LOCALS_AND_ARGS = 256;
+
+// DOM Worker runtimes don't have off thread compilation, but can also compile
+// larger scripts since this doesn't stall the main thread.
+static const uint32_t MAX_DOM_WORKER_SCRIPT_SIZE = 16 * 1000;
+static const uint32_t MAX_DOM_WORKER_LOCALS_AND_ARGS = 2048;
 
 static MethodStatus
 CheckScriptSize(JSContext *cx, JSScript* script)
@@ -1757,6 +1762,21 @@ CheckScriptSize(JSContext *cx, JSScript* script)
     }
 
     uint32_t numLocalsAndArgs = analyze::TotalSlots(script);
+    if (cx->runtime()->isWorkerRuntime()) {
+        // DOM Workers don't have off thread compilation enabled. Since workers
+        // don't block the browser's event loop, allow them to compile larger
+        // scripts.
+        JS_ASSERT(!OffThreadIonCompilationEnabled(cx->runtime()));
+
+        if (script->length > MAX_DOM_WORKER_SCRIPT_SIZE ||
+            numLocalsAndArgs > MAX_DOM_WORKER_LOCALS_AND_ARGS)
+        {
+            return Method_CantCompile;
+        }
+
+        return Method_Compiled;
+    }
+
     if (script->length > MAX_MAIN_THREAD_SCRIPT_SIZE ||
         numLocalsAndArgs > MAX_MAIN_THREAD_LOCALS_AND_ARGS)
     {
@@ -2356,15 +2376,20 @@ InvalidateActivation(FreeOp *fop, uint8_t *ionTop, bool invalidateAll)
     IonSpew(IonSpew_Invalidate, "END invalidating activation");
 }
 
+static void
+StopOffThreadCompilation(JSCompartment *comp)
+{
+    if (!comp->jitCompartment())
+        return;
+    CancelOffThreadIonCompile(comp, nullptr);
+    FinishAllOffThreadCompilations(comp->jitCompartment());
+}
+
 void
 jit::InvalidateAll(FreeOp *fop, Zone *zone)
 {
-    for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
-        if (!comp->jitCompartment())
-            continue;
-        CancelOffThreadIonCompile(comp, nullptr);
-        FinishAllOffThreadCompilations(comp->jitCompartment());
-    }
+    for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next())
+        StopOffThreadCompilation(comp);
 
     for (JitActivationIterator iter(fop->runtime()); !iter.done(); ++iter) {
         if (iter.activation()->compartment()->zone() == zone) {
@@ -2521,6 +2546,16 @@ jit::FinishInvalidation(FreeOp *fop, JSScript *script)
 
     if (script->hasParallelIonScript())
         FinishInvalidationOf(fop, script, script->parallelIonScript(), true);
+}
+
+void
+jit::FinishDiscardJitCode(FreeOp *fop, JSCompartment *comp)
+{
+    // Free optimized baseline stubs.
+    if (comp->jitCompartment())
+        comp->jitCompartment()->optimizedStubSpace()->free();
+
+    comp->types.clearCompilerOutputs(fop);
 }
 
 void
@@ -2710,4 +2745,63 @@ jit::TraceIonScripts(JSTracer* trc, JSScript *script)
 
     if (script->hasBaselineScript())
         jit::BaselineScript::Trace(trc, script->baselineScript());
+}
+
+AutoDebugModeInvalidation::~AutoDebugModeInvalidation()
+{
+    MOZ_ASSERT(!!comp_ != !!zone_);
+
+    if (needInvalidation_ == NoNeed)
+        return;
+
+    // Invalidate the stack if any compartments toggled from on->off, because
+    // we allow scripts to be on stack when turning off debug mode.
+    bool invalidateStack = needInvalidation_ == ToggledOff;
+    Zone *zone = zone_ ? zone_ : comp_->zone();
+    JSRuntime *rt = zone->runtimeFromMainThread();
+    FreeOp *fop = rt->defaultFreeOp();
+
+    if (comp_) {
+        StopOffThreadCompilation(comp_);
+    } else {
+        for (CompartmentsInZoneIter comp(zone_); !comp.done(); comp.next())
+            StopOffThreadCompilation(comp);
+    }
+
+    if (invalidateStack) {
+        jit::MarkActiveBaselineScripts(zone);
+
+        for (JitActivationIterator iter(rt); !iter.done(); ++iter) {
+            JSCompartment *comp = iter.activation()->compartment();
+            if ((comp_ && comp_ == comp) ||
+                (zone_ && zone_ == comp->zone() && comp->principals))
+            {
+                IonContext ictx(CompileRuntime::get(rt));
+                AutoFlushCache afc("AutoDebugModeInvalidation", rt->jitRuntime());
+                IonSpew(IonSpew_Invalidate, "Invalidating frames for debug mode toggle");
+                InvalidateActivation(fop, iter.jitTop(), true);
+            }
+        }
+    }
+
+    for (gc::CellIter i(zone, gc::FINALIZE_SCRIPT); !i.done(); i.next()) {
+        JSScript *script = i.get<JSScript>();
+        if ((comp_ && script->compartment() == comp_) ||
+            (zone_ && script->compartment()->principals))
+        {
+            FinishInvalidation(fop, script);
+            FinishDiscardBaselineScript(fop, script);
+            // script->clearAnalysis();
+            script->resetUseCount();
+        } else if (script->hasBaselineScript()) {
+            script->baselineScript()->resetActive();
+        }
+    }
+
+    if (comp_) {
+        FinishDiscardJitCode(fop, comp_);
+    } else {
+        for (CompartmentsInZoneIter comp(zone_); !comp.done(); comp.next())
+            FinishDiscardJitCode(fop, comp);
+    }
 }

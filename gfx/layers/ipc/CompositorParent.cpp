@@ -503,6 +503,15 @@ CompositorParent::ScheduleComposition()
 void
 CompositorParent::Composite()
 {
+  if (CanComposite()) {
+    mLayerManager->BeginTransaction();
+  }
+  CompositeInTransaction();
+}
+
+void
+CompositorParent::CompositeInTransaction()
+{
   profiler_tracing("Paint", "Composite", TRACING_INTERVAL_START);
   PROFILER_LABEL("CompositorParent", "Composite");
   NS_ABORT_IF_FALSE(CompositorThreadID() == PlatformThread::CurrentId(),
@@ -566,7 +575,7 @@ CompositorParent::ComposeToTarget(DrawTarget* aTarget)
   mLayerManager->BeginTransactionWithDrawTarget(aTarget);
   // Since CanComposite() is true, Composite() must end the layers txn
   // we opened above.
-  Composite();
+  CompositeInTransaction();
 }
 
 bool
@@ -631,10 +640,7 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
     }
   }
   ScheduleComposition();
-  LayerManagerComposite *layerComposite = mLayerManager->AsLayerManagerComposite();
-  if (layerComposite) {
-    layerComposite->NotifyShadowTreeTransaction();
-  }
+  mLayerManager->NotifyShadowTreeTransaction();
 }
 
 void

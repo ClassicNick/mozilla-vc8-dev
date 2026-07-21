@@ -167,21 +167,6 @@ struct ConservativeGCData
     }
 };
 
-class SourceDataCache
-{
-    typedef HashMap<ScriptSource *,
-                    JSStableString *,
-                    DefaultHasher<ScriptSource *>,
-                    SystemAllocPolicy> Map;
-    Map *map_;
-
-  public:
-    SourceDataCache() : map_(nullptr) {}
-    JSStableString *lookup(ScriptSource *ss);
-    void put(ScriptSource *ss, JSStableString *);
-    void purge();
-};
-
 struct EvalCacheEntry
 {
     JSScript *script;
@@ -1695,6 +1680,9 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool useHelperThreadsForIonCompilation_;
     bool useHelperThreadsForParsing_;
 
+    // True iff this is a DOM Worker runtime.
+    bool isWorkerRuntime_;
+
   public:
 
     bool useHelperThreads() const {
@@ -1734,6 +1722,12 @@ struct JSRuntime : public JS::shadow::Runtime,
     }
     bool useHelperThreadsForParsing() const {
         return useHelperThreadsForParsing_;
+    }
+    void setIsWorkerRuntime() {
+        isWorkerRuntime_ = true;
+    }
+    bool isWorkerRuntime() const {
+        return isWorkerRuntime_;
     }
 
 #ifdef DEBUG

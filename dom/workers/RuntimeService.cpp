@@ -825,6 +825,8 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
     }
   }
 
+  JS_SetIsWorkerRuntime(aRuntime);
+
   JS_SetNativeStackQuota(aRuntime, WORKER_CONTEXT_NATIVE_STACK_LIMIT);
 
   // Security policy:
@@ -898,6 +900,21 @@ public:
     mWorkerPrivate = nullptr;
   }
 
+  virtual void
+  PrepareForForgetSkippable() MOZ_OVERRIDE
+  {
+  }
+
+  virtual void
+  BeginCycleCollectionCallback() MOZ_OVERRIDE
+  {
+  }
+
+  virtual void
+  EndCycleCollectionCallback(CycleCollectorResults &aResults) MOZ_OVERRIDE
+  {
+  }
+
   void
   DispatchDeferredDeletion(bool aContinuation) MOZ_OVERRIDE
   {
@@ -917,7 +934,7 @@ public:
     mWorkerPrivate->AssertIsOnWorkerThread();
 
     if (aStatus == JSGC_END) {
-      nsCycleCollector_collect(true, nullptr, nullptr);
+      nsCycleCollector_collect(nullptr);
     }
   }
 

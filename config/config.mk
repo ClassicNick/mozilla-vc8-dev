@@ -35,7 +35,7 @@ endif
 # responsibility between Makefile.in and mozbuild files.
 _MOZBUILD_EXTERNAL_VARIABLES := \
   ANDROID_GENERATED_RESFILES \
-  ANDROID_RES_DIRS \
+  ANDROID_RESFILES \
   CMSRCS \
   CMMSRCS \
   CPP_UNIT_TESTS \
@@ -73,7 +73,6 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   $(NULL)
 
 _DEPRECATED_VARIABLES := \
-  ANDROID_RESFILES \
   MOCHITEST_FILES_PARTS \
   MOCHITEST_BROWSER_FILES_PARTS \
   SHORT_LIBNAME \
@@ -345,9 +344,6 @@ endif
 ifdef LIBXUL_LIBRARY
 ifdef IS_COMPONENT
 $(error IS_COMPONENT is set, but is not compatible with LIBXUL_LIBRARY)
-endif
-ifdef MODULE_NAME
-$(error MODULE_NAME is $(MODULE_NAME) but MODULE_NAME and LIBXUL_LIBRARY are not compatible)
 endif
 FORCE_STATIC_LIB=1
 endif
