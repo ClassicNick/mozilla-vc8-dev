@@ -1093,8 +1093,7 @@ public:
 // single flex line.
 class MOZ_STACK_CLASS SingleLineCrossAxisPositionTracker : public PositionTracker {
 public:
-  SingleLineCrossAxisPositionTracker(nsFlexContainerFrame* aFlexContainerFrame,
-                                     const FlexboxAxisTracker& aAxisTracker);
+  SingleLineCrossAxisPositionTracker(const FlexboxAxisTracker& aAxisTracker);
 
   void ComputeLineCrossSize(const nsTArray<FlexItem>& aItems);
   inline nscoord GetLineCrossSize() const { return mLineCrossSize; }
@@ -1393,8 +1392,8 @@ nsFlexContainerFrame::ResolveFlexibleLengths(
     PR_LOG(GetFlexContainerLog(), PR_LOG_DEBUG,
            (" available free space = %d\n", availableFreeSpace));
 
-    // If sign of free space matches flexType, give each flexible
-    // item a portion of availableFreeSpace.
+    // If sign of free space matches the type of flexing that we're doing, give
+    // each flexible item a portion of availableFreeSpace.
     if ((availableFreeSpace > 0 && havePositiveFreeSpace) ||
         (availableFreeSpace < 0 && !havePositiveFreeSpace)) {
 
@@ -1563,8 +1562,8 @@ MainAxisPositionTracker::
   }
 
   mJustifyContent = aFlexContainerFrame->StylePosition()->mJustifyContent;
-  // If packing space is negative, 'justify' behaves like 'start', and
-  // 'distribute' behaves like 'center'.  In those cases, it's simplest to
+  // If packing space is negative, 'space-between' behaves like 'flex-start',
+  // and 'space-around' behaves like 'center'. In those cases, it's simplest to
   // just pretend we have a different 'justify-content' value and share code.
   if (mPackingSpaceRemaining < 0) {
     if (mJustifyContent == NS_STYLE_JUSTIFY_CONTENT_SPACE_BETWEEN) {
@@ -1679,8 +1678,7 @@ MainAxisPositionTracker::TraversePackingSpace()
 }
 
 SingleLineCrossAxisPositionTracker::
-  SingleLineCrossAxisPositionTracker(nsFlexContainerFrame* aFlexContainerFrame,
-                                     const FlexboxAxisTracker& aAxisTracker)
+  SingleLineCrossAxisPositionTracker(const FlexboxAxisTracker& aAxisTracker)
   : PositionTracker(aAxisTracker.GetCrossAxis()),
     mLineCrossSize(0),
     mCrossStartToFurthestBaseline(nscoord_MIN) // Starts at -infinity, and then
@@ -1864,7 +1862,7 @@ SingleLineCrossAxisPositionTracker::
     case NS_STYLE_ALIGN_ITEMS_FLEX_START:
     case NS_STYLE_ALIGN_ITEMS_STRETCH:
       // No space to skip over -- we're done.
-      // NOTE: 'stretch' behaves like 'start' once we've stretched any
+      // NOTE: 'stretch' behaves like 'flex-start' once we've stretched any
       // auto-sized items (which we've already done).
       break;
     case NS_STYLE_ALIGN_ITEMS_FLEX_END:
@@ -2368,8 +2366,7 @@ nsFlexContainerFrame::Reflow(nsPresContext*           aPresContext,
 
   // Set up state for cross-axis-positioning of children _within_ a single
   // flex line.
-  SingleLineCrossAxisPositionTracker
-    lineCrossAxisPosnTracker(this, axisTracker);
+  SingleLineCrossAxisPositionTracker lineCrossAxisPosnTracker(axisTracker);
 
   lineCrossAxisPosnTracker.ComputeLineCrossSize(items);
   // XXXdholbert Once we've got multi-line flexbox support: here, after we've
