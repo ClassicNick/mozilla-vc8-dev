@@ -180,7 +180,8 @@ js_DumpChars(const jschar *s, size_t n);
  * Copies all own properties from |obj| to |target|. |obj| must be a "native"
  * object (that is to say, normal-ish - not an Array or a Proxy).
  *
- * On entry, |cx| must be in the compartment of |target|.
+ * This function immediately enters a compartment, and does not impose any
+ * restrictions on the compartment of |cx|.
  */
 extern JS_FRIEND_API(bool)
 JS_CopyPropertiesFrom(JSContext *cx, JSObject *target, JSObject *obj);
@@ -188,6 +189,8 @@ JS_CopyPropertiesFrom(JSContext *cx, JSObject *target, JSObject *obj);
 /*
  * Single-property version of the above. This function asserts that an |own|
  * property of the given name exists on |obj|.
+ *
+ * On entry, |cx| must be same-compartment with |obj|.
  */
 extern JS_FRIEND_API(bool)
 JS_CopyPropertyFrom(JSContext *cx, JS::HandleId id, JS::HandleObject target,
@@ -1450,6 +1453,12 @@ struct JSJitInfo {
     bool isPure;            /* As long as no non-pure DOM things happen, will
                                keep returning the same value for the given
                                "this" object" */
+    // XXXbz should we have a JSGetterJitInfo subclass or something?
+    // XXXbz should we have a JSValueType for the type of the member?
+    bool isInSlot;          /* True if this is a getter that can get a member
+                               from a slot of the "this" object directly. */
+    size_t slotIndex;       /* If isMember is true, the index of the slot to get
+                               the value from.  Otherwise 0. */
     JSValueType returnType; /* The return type tag.  Might be JSVAL_TYPE_UNKNOWN */
 
     /* An alternative native that's safe to call in parallel mode. */
@@ -1457,7 +1466,7 @@ struct JSJitInfo {
 };
 
 #define JS_JITINFO_NATIVE_PARALLEL(op)                                         \
-    {{nullptr},0,0,JSJitInfo::OpType_None,false,false,false,JSVAL_TYPE_MISSING,op}
+    {{nullptr},0,0,JSJitInfo::OpType_None,false,false,false,false,0,JSVAL_TYPE_MISSING,op}
 
 static JS_ALWAYS_INLINE const JSJitInfo *
 FUNCTION_VALUE_TO_JITINFO(const JS::Value& v)

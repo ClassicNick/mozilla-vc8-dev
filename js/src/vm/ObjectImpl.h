@@ -8,6 +8,7 @@
 #define vm_ObjectImpl_h
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 
 #include "mozilla/StandardInteger.h"
 
@@ -829,7 +830,7 @@ public:
         flags |= NONWRITABLE_ARRAY_LENGTH;
     }
 
-    ObjectElements(uint32_t capacity, uint32_t length)
+    MOZ_CONSTEXPR ObjectElements(uint32_t capacity, uint32_t length)
       : flags(0), initializedLength(0), capacity(capacity), length(length)
     {}
 

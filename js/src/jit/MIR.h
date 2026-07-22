@@ -442,8 +442,9 @@ class MDefinition : public MNode
     // dynamically with the use of bailout checks. If all the bailout checks
     // pass, the value will have this type.
     //
-    // Unless this is an MUrsh, which, as a special case, may return a value
-    // in (INT32_MAX,UINT32_MAX] even when its type() is MIRType_Int32.
+    // Unless this is an MUrsh that has bailouts disabled, which, as a special
+    // case, may return a value in (INT32_MAX,UINT32_MAX] even when its type()
+    // is MIRType_Int32.
     MIRType type() const {
         return resultType_;
     }
@@ -1998,7 +1999,7 @@ class MAssertFloat32 : public MUnaryInstruction
 
     bool canConsumeFloat32() const { return true; }
 
-    bool mustBeFloat32() { return mustBeFloat32_; }
+    bool mustBeFloat32() const { return mustBeFloat32_; }
 };
 
 class MGetDynamicName
@@ -3013,7 +3014,7 @@ class MToInt32
     // this only has backwards information flow.
     void analyzeEdgeCasesBackward();
 
-    bool canBeNegativeZero() {
+    bool canBeNegativeZero() const {
         return canBeNegativeZero_;
     }
     void setCanBeNegativeZero(bool negativeZero) {
@@ -3397,7 +3398,7 @@ class MUrsh : public MShiftInstruction
         return bailoutsDisabled_;
     }
 
-    bool fallible();
+    bool fallible() const;
 
     void computeRange();
 };
@@ -3919,7 +3920,7 @@ class MAdd : public MBinaryArithInstruction
         return 0;
     }
 
-    bool fallible();
+    bool fallible() const;
     void computeRange();
     bool truncate();
     bool isOperandTruncated(size_t index) const;
@@ -3955,7 +3956,7 @@ class MSub : public MBinaryArithInstruction
 
     bool isFloat32Commutative() const { return true; }
 
-    bool fallible();
+    bool fallible() const;
     void computeRange();
     bool truncate();
     bool isOperandTruncated(size_t index) const;
@@ -4014,9 +4015,9 @@ class MMul : public MBinaryArithInstruction
         return 1;
     }
 
-    bool canOverflow();
+    bool canOverflow() const;
 
-    bool canBeNegativeZero() {
+    bool canBeNegativeZero() const {
         return canBeNegativeZero_;
     }
     void setCanBeNegativeZero(bool negativeZero) {
@@ -4025,7 +4026,7 @@ class MMul : public MBinaryArithInstruction
 
     bool updateForReplacement(MDefinition *ins);
 
-    bool fallible() {
+    bool fallible() const {
         return canBeNegativeZero_ || canOverflow();
     }
 
@@ -4082,29 +4083,29 @@ class MDiv : public MBinaryArithInstruction
         MOZ_ASSUME_UNREACHABLE("not used");
     }
 
-    bool canBeNegativeZero() {
+    bool canBeNegativeZero() const {
         return canBeNegativeZero_;
     }
     void setCanBeNegativeZero(bool negativeZero) {
         canBeNegativeZero_ = negativeZero;
     }
 
-    bool canBeNegativeOverflow() {
+    bool canBeNegativeOverflow() const {
         return canBeNegativeOverflow_;
     }
 
-    bool canBeDivideByZero() {
+    bool canBeDivideByZero() const {
         return canBeDivideByZero_;
     }
 
-    bool isUnsigned() {
+    bool isUnsigned() const {
         return unsigned_;
     }
 
     bool isFloat32Commutative() const { return true; }
 
     void computeRange();
-    bool fallible();
+    bool fallible() const;
     bool truncate();
 };
 
@@ -4150,11 +4151,11 @@ class MMod : public MBinaryArithInstruction
     bool canBeDivideByZero() const;
     bool canBePowerOfTwoDivisor() const;
 
-    bool isUnsigned() {
+    bool isUnsigned() const {
         return unsigned_;
     }
 
-    bool fallible();
+    bool fallible() const;
 
     void computeRange();
     bool truncate();
@@ -8645,7 +8646,7 @@ class MNewCallObject : public MUnaryInstruction
     JSObject *templateObject() {
         return templateObj_;
     }
-    bool needsSingletonType() {
+    bool needsSingletonType() const {
         return needsSingletonType_;
     }
     AliasSet getAliasSet() const {

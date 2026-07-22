@@ -25,6 +25,7 @@ HASINSTANCE_HOOK_NAME = '_hasInstance'
 NEWRESOLVE_HOOK_NAME = '_newResolve'
 ENUMERATE_HOOK_NAME= '_enumerate'
 ENUM_ENTRY_VARIABLE_NAME = 'strings'
+INSTANCE_RESERVED_SLOTS = 3
 
 def replaceFileIfChanged(filename, newContents):
     """
@@ -192,12 +193,13 @@ class CGDOMJSClass(CGThing):
     def define(self):
         traceHook = TRACE_HOOK_NAME if self.descriptor.customTrace else 'nullptr'
         callHook = LEGACYCALLER_HOOK_NAME if self.descriptor.operations["LegacyCaller"] else 'nullptr'
+        slotCount = INSTANCE_RESERVED_SLOTS
         classFlags = "JSCLASS_IS_DOMJSCLASS | "
         if self.descriptor.interface.getExtendedAttribute("Global"):
             classFlags += "JSCLASS_DOM_GLOBAL | JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(DOM_GLOBAL_SLOTS) | JSCLASS_IMPLEMENTS_BARRIERS"
             traceHook = "mozilla::dom::TraceGlobal"
         else:
-            classFlags += "JSCLASS_HAS_RESERVED_SLOTS(3)"
+            classFlags += "JSCLASS_HAS_RESERVED_SLOTS(%d)" % slotCount
         if self.descriptor.interface.getExtendedAttribute("NeedNewResolve"):
             newResolveHook = "(JSResolveOp)" + NEWRESOLVE_HOOK_NAME
             classFlags += " | JSCLASS_NEW_RESOLVE"
@@ -647,13 +649,16 @@ class CGHeaders(CGWrapper):
             dictionary, if passed, to decide what to do with interface types.
             """
             assert not descriptor or not dictionary
+            # Dictionaries have members that need to be actually
+            # declared, not just forward-declared.
+            if dictionary:
+                headerSet = declareIncludes
+            else:
+                headerSet = bindingHeaders
             if t.nullable():
-                if dictionary:
-                    # Need to make sure that Nullable as a dictionary
-                    # member works.
-                    declareIncludes.add("mozilla/dom/Nullable.h")
-                else:
-                    bindingHeaders.add("mozilla/dom/Nullable.h")
+                # Need to make sure that Nullable as a dictionary
+                # member works.
+                headerSet.add("mozilla/dom/Nullable.h")
             unrolled = t.unroll()
             if unrolled.isUnion():
                 # UnionConversions.h includes UnionTypes.h
@@ -664,17 +669,12 @@ class CGHeaders(CGWrapper):
                     declareIncludes.add("mozilla/dom/UnionTypes.h")
             elif unrolled.isDate():
                 if dictionary or jsImplementedDescriptors:
-                    headerSet = declareIncludes
+                    declareIncludes.add("mozilla/dom/Date.h")
                 else:
-                    headerSet = bindingHeaders
-                headerSet.add("mozilla/dom/Date.h")
+                    bindingHeaders.add("mozilla/dom/Date.h")
             elif unrolled.isInterface():
                 if unrolled.isSpiderMonkeyInterface():
                     bindingHeaders.add("jsfriendapi.h")
-                    if dictionary:
-                        headerSet = declareIncludes
-                    else:
-                        headerSet = bindingHeaders
                     headerSet.add("mozilla/dom/TypedArray.h")
                 else:
                     providers = getRelevantProviders(descriptor, config)
@@ -683,40 +683,37 @@ class CGHeaders(CGWrapper):
                             typeDesc = p.getDescriptor(unrolled.inner.identifier.name)
                         except NoSuchDescriptorError:
                             continue
-                        if dictionary:
-                            # Dictionaries with interface members rely on the
-                            # actual class definition of that interface member
-                            # being visible in the binding header, because they
-                            # store them in nsRefPtr and have inline
-                            # constructors/destructors.
-                            #
-                            # XXXbz maybe dictionaries with interface members
-                            # should just have out-of-line constructors and
-                            # destructors?
-                            declareIncludes.add(typeDesc.headerFile)
-                        else:
-                            implementationIncludes.add(typeDesc.headerFile)
+                        # Dictionaries with interface members rely on the
+                        # actual class definition of that interface member
+                        # being visible in the binding header, because they
+                        # store them in nsRefPtr and have inline
+                        # constructors/destructors.
+                        #
+                        # XXXbz maybe dictionaries with interface members
+                        # should just have out-of-line constructors and
+                        # destructors?
+                        headerSet.add(typeDesc.headerFile)
             elif unrolled.isDictionary():
-                bindingHeaders.add(self.getDeclarationFilename(unrolled.inner))
+                headerSet.add(self.getDeclarationFilename(unrolled.inner))
             elif unrolled.isCallback():
                 # Callbacks are both a type and an object
-                bindingHeaders.add(self.getDeclarationFilename(t.unroll()))
+                headerSet.add(self.getDeclarationFilename(t.unroll()))
             elif unrolled.isFloat() and not unrolled.isUnrestricted():
                 # Restricted floats are tested for finiteness
                 bindingHeaders.add("mozilla/FloatingPoint.h")
                 bindingHeaders.add("mozilla/dom/PrimitiveConversions.h")
             elif unrolled.isEnum():
                 filename = self.getDeclarationFilename(unrolled.inner)
-                # Do nothing if the enum is defined in the same webidl file
-                # (the binding header doesn't need to include itself).
-                if filename != prefix + ".h":
-                    declareIncludes.add(filename)
+                declareIncludes.add(filename)
             elif unrolled.isPrimitive():
                 bindingHeaders.add("mozilla/dom/PrimitiveConversions.h")
 
         map(addHeadersForType,
             getAllTypes(descriptors + callbackDescriptors, dictionaries,
                         callbacks))
+
+        # Now make sure we're not trying to include the header from inside itself
+        declareIncludes.discard(prefix + ".h");
 
         # Now for non-callback descriptors make sure we include any
         # headers needed by Func declarations.
@@ -4588,9 +4585,13 @@ def needCx(returnType, arguments, extendedAttributes, considerTypes):
             'implicitJSContext' in extendedAttributes)
 
 def needScopeObject(returnType, arguments, extendedAttributes,
-                    isWrapperCached, considerTypes):
+                    isWrapperCached, considerTypes, isMember):
+    """
+    isMember should be true if we're dealing with an attribute
+    annotated as [StoreInSlot].
+    """
     return (considerTypes and not isWrapperCached and
-            (typeNeedsScopeObject(returnType, True) or
+            ((not isMember and typeNeedsScopeObject(returnType, True)) or
              any(typeNeedsScopeObject(a.type) for a in arguments)))
 
 class CGCallGenerator(CGThing):
@@ -4891,7 +4892,8 @@ if (global.Failed()) {
             needsUnwrappedVar = True
             argsPost.append("js::GetObjectCompartment(unwrappedObj.empty() ? obj : unwrappedObj.ref())")
         elif needScopeObject(returnType, arguments, self.extendedAttributes,
-                             descriptor.wrapperCache, True):
+                             descriptor.wrapperCache, True,
+                             idlNode.getExtendedAttribute("StoreInSlot")):
             needsUnwrap = True
             needsUnwrappedVar = True
             argsPre.append("unwrappedObj.empty() ? obj : unwrappedObj.ref()")
@@ -6001,13 +6003,15 @@ class CGMemberJITInfo(CGThing):
         return ""
 
     def defineJitInfo(self, infoName, opName, opType, infallible, constant,
-                      pure, returnTypes):
+                      pure, hasSlot, slotIndex, returnTypes):
         assert(not constant or pure) # constants are always pure
+        assert(not hasSlot or pure) # Things with slots had better be pure
         protoID = "prototypes::id::%s" % self.descriptor.name
         depth = "PrototypeTraits<%s>::Depth" % protoID
         failstr = toStringBool(infallible)
         conststr = toStringBool(constant)
         purestr = toStringBool(pure)
+        slotStr = toStringBool(hasSlot)
         returnType = reduce(CGMemberJITInfo.getSingleReturnType, returnTypes,
                             "")
         return ("\n"
@@ -6019,9 +6023,12 @@ class CGMemberJITInfo(CGThing):
                 "  %s,  /* isInfallible. False in setters. */\n"
                 "  %s,  /* isConstant. Only relevant for getters. */\n"
                 "  %s,  /* isPure.  Only relevant for getters. */\n"
+                "  %s,  /* hasSlot.  Only relevant for getters. */\n"
+                "  %d,  /* Reserved slot index, if we're stored in a slot, else 0. */\n"
                 "  %s   /* returnType.  Only relevant for getters/methods. */\n"
                 "};\n" % (infoName, opName, protoID, depth, opType, failstr,
-                          conststr, purestr, returnType))
+                          conststr, purestr, slotStr, slotIndex,
+                          returnType))
 
     def define(self):
         if self.member.isAttr():
@@ -6036,8 +6043,15 @@ class CGMemberJITInfo(CGThing):
             assert (getterinfal or (not getterconst and not getterpure))
 
             getterinfal = getterinfal and infallibleForMember(self.member, self.member.type, self.descriptor)
+            isInSlot = self.member.getExtendedAttribute("StoreInSlot")
+            if isInSlot:
+                slotIndex = INSTANCE_RESERVED_SLOTS + self.member.slotIndex;
+            else:
+                slotIndex = 0
+
             result = self.defineJitInfo(getterinfo, getter, "Getter",
                                         getterinfal, getterconst, getterpure,
+                                        isInSlot, slotIndex,
                                         [self.member.type])
             if (not self.member.readonly or
                 self.member.getExtendedAttribute("PutForwards") is not None or
@@ -6048,7 +6062,7 @@ class CGMemberJITInfo(CGThing):
                 setter = ("(JSJitGetterOp)set_%s" % self.member.identifier.name)
                 # Setters are always fallible, since they have to do a typed unwrap.
                 result += self.defineJitInfo(setterinfo, setter, "Setter",
-                                             False, False, False,
+                                             False, False, False, False, 0,
                                              [BuiltinTypes[IDLBuiltinType.Types.void]])
             return result
         if self.member.isMethod():
@@ -6075,7 +6089,7 @@ class CGMemberJITInfo(CGThing):
                     methodInfal = "infallible" in self.descriptor.getExtendedAttributes(self.member)
 
             result = self.defineJitInfo(methodinfo, method, "Method",
-                                        methodInfal, False, False,
+                                        methodInfal, False, False, False, 0,
                                         [s[0] for s in sigs])
             return result
         raise TypeError("Illegal member type to CGPropertyJITInfo")
@@ -9453,8 +9467,9 @@ class CGNativeMember(ClassMethod):
                   self.passJSBitsAsNeeded):
             args.insert(0, Argument("JSContext*", "cx"))
             if needScopeObject(returnType, argList, self.extendedAttrs,
-                               self.descriptorProvider,
-                               self.passJSBitsAsNeeded):
+                               self.descriptorProvider.wrapperCache,
+                               self.passJSBitsAsNeeded,
+                               self.member.getExtendedAttribute("StoreInSlot")):
                 args.insert(1, Argument("JS::Handle<JSObject*>", "obj"))
         # And if we're static, a global
         if self.member.isStatic():
@@ -9867,7 +9882,8 @@ class CGExampleRoot(CGThing):
                                 "mozilla/Attributes.h",
                                 "mozilla/ErrorResult.h" ],
                               [ "%s.h" % interfaceName,
-                                "mozilla/dom/%sBinding.h" % interfaceName,
+                                ("mozilla/dom/%s" %
+                                 CGHeaders.getDeclarationFilename(descriptor.interface)),
                                 "nsContentUtils.h" ], "", self.root);
 
         # And now some include guards

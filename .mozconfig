@@ -51,6 +51,7 @@ ac_add_options --disable-eme
 ac_add_options --without-intl-api
 ac_add_options --disable-threadsafe
 ac_add_options --disable-sse2
+ac_add_options --disable-unified-compilation
 ac_add_options --with-windows-version=502
 
 # Branding Options
