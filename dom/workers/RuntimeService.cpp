@@ -196,24 +196,9 @@ MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(gStringChars) == ID_COUNT,
 #if !(defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP))
 #define DUMP_CONTROLLED_BY_PREF 1
 #define PREF_DOM_WINDOW_DUMP_ENABLED "browser.dom.window.dump.enabled"
-
-// Protected by RuntimeService::mMutex.
-// Initialized by DumpPrefChanged via RuntimeService::Init().
-bool gWorkersDumpEnabled;
-
-static int
-DumpPrefChanged(const char* aPrefName, void* aClosure)
-{
-  MOZ_ASSERT(NS_IsMainThread());
-
-  bool enabled = Preferences::GetBool(PREF_DOM_WINDOW_DUMP_ENABLED, false);
-
-  Mutex* mutex = static_cast<Mutex*>(aClosure);
-  MutexAutoLock lock(*mutex);
-  gWorkersDumpEnabled = enabled;
-  return 0;
-}
 #endif
+
+#define PREF_PROMISE_ENABLED "dom.promise.enabled"
 
 class LiteralRebindingCString : public nsDependentCString
 {
@@ -1179,6 +1164,7 @@ END_WORKERS_NAMESPACE
 
 // This is only touched on the main thread. Initialized in Init() below.
 JSSettings RuntimeService::sDefaultJSSettings;
+bool RuntimeService::sDefaultPreferences[WORKERPREF_COUNT] = { false };
 
 RuntimeService::RuntimeService()
 : mMutex("RuntimeService::mMutex"), mObserved(false),
@@ -1589,6 +1575,11 @@ RuntimeService::Init()
                            WORKER_DEFAULT_ALLOCATION_THRESHOLD);
   }
 
+// If dump is not controlled by pref, it's set to true.
+#ifndef DUMP_CONTROLLED_BY_PREF
+  sDefaultPreferences[WORKERPREF_DUMP] = true;
+#endif
+
   mIdleThreadTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
   NS_ENSURE_STATE(mIdleThreadTimer);
 
@@ -1644,10 +1635,14 @@ RuntimeService::Init()
 #endif
 #if DUMP_CONTROLLED_BY_PREF
       NS_FAILED(Preferences::RegisterCallbackAndCall(
-                                              DumpPrefChanged,
+                                              WorkerPrefChanged,
                                               PREF_DOM_WINDOW_DUMP_ENABLED,
-                                              &mMutex)) ||
+                                              reinterpret_cast<void *>(WORKERPREF_DUMP))) ||
 #endif
+      NS_FAILED(Preferences::RegisterCallbackAndCall(
+                                              WorkerPrefChanged,
+                                              PREF_PROMISE_ENABLED,
+                                              reinterpret_cast<void *>(WORKERPREF_PROMISE))) ||
       NS_FAILED(Preferences::RegisterCallback(LoadJSContextOptions,
                                               PREF_JS_OPTIONS_PREFIX,
                                               nullptr)) ||
@@ -1810,10 +1805,13 @@ RuntimeService::Cleanup()
         NS_FAILED(Preferences::UnregisterCallback(LoadJSContextOptions,
                                                   PREF_WORKERS_OPTIONS_PREFIX,
                                                   nullptr)) ||
+        NS_FAILED(Preferences::UnregisterCallback(WorkerPrefChanged,
+                                                  PREF_PROMISE_ENABLED,
+                                                  reinterpret_cast<void *>(WORKERPREF_PROMISE))) ||
 #if DUMP_CONTROLLED_BY_PREF
-        NS_FAILED(Preferences::UnregisterCallback(DumpPrefChanged,
+        NS_FAILED(Preferences::UnregisterCallback(WorkerPrefChanged,
                                                   PREF_DOM_WINDOW_DUMP_ENABLED,
-                                                  &mMutex)) ||
+                                                  reinterpret_cast<void *>(WORKERPREF_DUMP))) ||
 #endif
 #ifdef JS_GC_ZEAL
         NS_FAILED(Preferences::UnregisterCallback(
@@ -2192,6 +2190,12 @@ RuntimeService::UpdateAllWorkerJSContextOptions()
 }
 
 void
+RuntimeService::UpdateAllWorkerPreference(WorkerPreference aPref, bool aValue)
+{
+  BROADCAST_ALL_WORKERS2(UpdatePreference, aPref, aValue);
+}
+
+void
 RuntimeService::UpdateAllWorkerMemoryParameter(JSGCParamKey aKey,
                                                uint32_t aValue)
 {
@@ -2250,16 +2254,33 @@ RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
   return NS_OK;
 }
 
-bool
-RuntimeService::WorkersDumpEnabled()
+/* static */ int
+RuntimeService::WorkerPrefChanged(const char* aPrefName, void* aClosure)
 {
-#if DUMP_CONTROLLED_BY_PREF
-  MutexAutoLock lock(mMutex);
-  // In optimized builds we check a pref that controls if we should
-  // enable output from dump() or not, in debug builds it's always
-  // enabled.
-  return gWorkersDumpEnabled;
-#else
-  return true;
+  AssertIsOnMainThread();
+
+  uintptr_t tmp = reinterpret_cast<uintptr_t>(aClosure);
+  MOZ_ASSERT(tmp < WORKERPREF_COUNT);
+  WorkerPreference key = static_cast<WorkerPreference>(tmp);
+
+  if (key == WORKERPREF_PROMISE) {
+    sDefaultPreferences[WORKERPREF_PROMISE] =
+      Preferences::GetBool(PREF_PROMISE_ENABLED, false);
+#ifdef DUMP_CONTROLLED_BY_PREF
+  } else if (key == WORKERPREF_DUMP) {
+    key = WORKERPREF_DUMP;
+    sDefaultPreferences[WORKERPREF_DUMP] =
+      Preferences::GetBool(PREF_DOM_WINDOW_DUMP_ENABLED, false);
 #endif
+  }
+
+  // This function should never be registered as a callback for a preference it
+  // does not handle.
+  MOZ_ASSERT(key != WORKERPREF_COUNT);
+
+  RuntimeService* rts = RuntimeService::GetService();
+  if (rts) {
+    rts->UpdateAllWorkerPreference(key, sDefaultPreferences[key]);
+  }
+  return 0;
 }

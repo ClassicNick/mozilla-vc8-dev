@@ -1806,7 +1806,7 @@ WebGLContext::GetTexParameter(GLenum target, GLenum pname)
 
 JS::Value
 WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
-                         WebGLUniformLocation *location, ErrorResult& rv)
+                         WebGLUniformLocation *location)
 {
     if (IsContextLost())
         return JS::NullValue();
@@ -1875,20 +1875,20 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
     }
 
     if (index == uniforms) {
-        rv.Throw(NS_ERROR_FAILURE); // XXX GL error? shouldn't happen.
+        GenerateWarning("getUniform: internal error: hit an OpenGL driver bug");
         return JS::NullValue();
     }
 
     GLenum baseType;
     GLint unitSize;
     if (!BaseTypeAndSizeFromUniformType(uniformType, &baseType, &unitSize)) {
-        rv.Throw(NS_ERROR_FAILURE);
+        GenerateWarning("getUniform: internal error: unknown uniform type 0x%x", uniformType);
         return JS::NullValue();
     }
 
     // this should never happen
     if (unitSize > 16) {
-        rv.Throw(NS_ERROR_FAILURE);
+        GenerateWarning("getUniform: internal error: unexpected uniform unit size %d", unitSize);
         return JS::NullValue();
     }
 
@@ -1900,7 +1900,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
         } else {
             JSObject* obj = Float32Array::Create(cx, this, unitSize, fv);
             if (!obj) {
-                rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+                ErrorOutOfMemory("getUniform: out of memory");
             }
             return JS::ObjectOrNullValue(obj);
         }
@@ -1912,7 +1912,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
         } else {
             JSObject* obj = Int32Array::Create(cx, this, unitSize, iv);
             if (!obj) {
-                rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+                ErrorOutOfMemory("getUniform: out of memory");
             }
             return JS::ObjectOrNullValue(obj);
         }
@@ -1927,7 +1927,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
                 uv[k] = JS::BooleanValue(iv[k] ? true : false);
             JSObject* obj = JS_NewArrayObject(cx, unitSize, uv);
             if (!obj) {
-                rv.Throw(NS_ERROR_OUT_OF_MEMORY);
+                ErrorOutOfMemory("getUniform: out of memory");
             }
             return JS::ObjectOrNullValue(obj);
         }
@@ -2638,11 +2638,14 @@ nsresult
 WebGLContext::SurfaceFromElementResultToImageSurface(nsLayoutUtils::SurfaceFromElementResult& res,
                                                      gfxImageSurface **imageOut, WebGLTexelFormat *format)
 {
+   *imageOut = nullptr;
+   *format = WebGLTexelFormat::None;
+
     if (!res.mSurface)
-        return NS_ERROR_FAILURE;
+        return NS_OK;
     if (res.mSurface->GetType() != gfxSurfaceTypeImage) {
         // SurfaceFromElement lied!
-        return NS_ERROR_FAILURE;
+        return NS_OK;
     }
 
     // We disallow loading cross-domain images and videos that have not been validated
