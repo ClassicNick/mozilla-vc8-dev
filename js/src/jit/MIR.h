@@ -337,6 +337,7 @@ class MDefinition : public MNode
     static void PrintOpcodeName(FILE *fp, Opcode op);
     virtual void printOpcode(FILE *fp) const;
     void dump(FILE *fp) const;
+    void dump() const;
 
     // For LICM.
     virtual bool neverHoist() const { return false; }
@@ -362,8 +363,8 @@ class MDefinition : public MNode
     // Warning: Range analysis is removing the bit-operations such as '| 0' at
     // the end of the transformations. Using this function to analyse any
     // operands after the truncate phase of the range analysis will lead to
-    // errors. Instead, one should define the collectRangeInfo() to set the
-    // right set of flags which are dependent on the range of the inputs.
+    // errors. Instead, one should define the collectRangeInfoPreTrunc() to set
+    // the right set of flags which are dependent on the range of the inputs.
     Range *range() const {
         JS_ASSERT(type() != MIRType_None);
         return range_;
@@ -391,8 +392,8 @@ class MDefinition : public MNode
     virtual void computeRange() {
     }
 
-    // Collect information from the truncated ranges.
-    virtual void collectRangeInfo() {
+    // Collect information from the pre-truncated ranges.
+    virtual void collectRangeInfoPreTrunc() {
     }
 
     MNode::Kind kind() const {
@@ -513,6 +514,10 @@ class MDefinition : public MNode
     // (only counting MDefinitions, ignoring MResumePoints)
     bool hasOneDefUse() const;
 
+    // Test whether this MDefinition has at least one use.
+    // (only counting MDefinitions, ignoring MResumePoints)
+    bool hasDefUses() const;
+
     bool hasUses() const {
         return !uses_.empty();
     }
@@ -530,11 +535,6 @@ class MDefinition : public MNode
     // returning false if the replacement should not be performed. For use when
     // GVN eliminates instructions which are not equivalent to one another.
     virtual bool updateForReplacement(MDefinition *ins) {
-        return true;
-    }
-
-    // Same thing, but for folding
-    virtual bool updateForFolding(MDefinition *ins) {
         return true;
     }
 
@@ -1907,6 +1907,40 @@ class MCall
         return this;
     }
     AliasSet getAliasSet() const {
+        if (isDOMFunction()) {
+            JS_ASSERT(getSingleTarget() && getSingleTarget()->isNative());
+
+            const JSJitInfo* jitInfo = getSingleTarget()->jitInfo();
+            JS_ASSERT(jitInfo);
+
+            if (jitInfo->isPure && jitInfo->argTypes) {
+                uint32_t argIndex = 0;
+                for (const JSJitInfo::ArgType* argType = jitInfo->argTypes;
+                     *argType != JSJitInfo::ArgTypeListEnd;
+                     ++argType, ++argIndex)
+                {
+                    if (argIndex >= numActualArgs()) {
+                        // Passing through undefined can't have side-effects
+                        continue;
+                    }
+                    // getArg(0) is "this", so skip it
+                    MDefinition *arg = getArg(argIndex+1);
+                    MIRType actualType = arg->type();
+                    // The only way to get side-effects is if we're passing in
+                    // something that might be an object to an argument that
+                    // expects a numeric, string, or boolean value.
+                    if ((actualType == MIRType_Value || actualType == MIRType_Object) &&
+                        (*argType &
+                         (JSJitInfo::Boolean | JSJitInfo::String | JSJitInfo::Numeric)))
+                    {
+                        return AliasSet::Store(AliasSet::Any);
+                    }
+                }
+                // We checked all the args, and they check out.  So we only
+                // alias DOM mutations.
+                return AliasSet::Load(AliasSet::DOMProperty);
+            }
+        }
         return AliasSet::Store(AliasSet::Any);
     }
 
@@ -2249,7 +2283,7 @@ class MCompare
     }
 
     void printOpcode(FILE *fp) const;
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 
     void trySpecializeFloat32(TempAllocator &alloc);
     bool isFloat32Commutative() const { return true; }
@@ -3401,6 +3435,7 @@ class MUrsh : public MShiftInstruction
     bool fallible() const;
 
     void computeRange();
+    void collectRangeInfoPreTrunc();
 };
 
 class MBinaryArithInstruction
@@ -3768,7 +3803,7 @@ class MPowHalf
     AliasSet getAliasSet() const {
         return AliasSet::None();
     }
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 };
 
 // Inline implementation of Math.random().
@@ -4067,9 +4102,10 @@ class MDiv : public MBinaryArithInstruction
         return new(alloc) MDiv(left, right, type);
     }
     static MDiv *NewAsmJS(TempAllocator &alloc, MDefinition *left, MDefinition *right,
-                          MIRType type)
+                          MIRType type, bool unsignd)
     {
         MDiv *div = new(alloc) MDiv(left, right, type);
+        div->unsigned_ = unsignd;
         if (type == MIRType_Int32)
             div->setTruncated(true);
         return div;
@@ -4130,9 +4166,10 @@ class MMod : public MBinaryArithInstruction
         return new(alloc) MMod(left, right, MIRType_Value);
     }
     static MMod *NewAsmJS(TempAllocator &alloc, MDefinition *left, MDefinition *right,
-                          MIRType type)
+                          MIRType type, bool unsignd)
     {
         MMod *mod = new(alloc) MMod(left, right, type);
+        mod->unsigned_ = unsignd;
         if (type == MIRType_Int32)
             mod->setTruncated(true);
         return mod;
@@ -4159,7 +4196,7 @@ class MMod : public MBinaryArithInstruction
 
     void computeRange();
     bool truncate();
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 };
 
 class MConcat
@@ -5390,7 +5427,7 @@ class MNot
     TypePolicy *typePolicy() {
         return this;
     }
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 
     void trySpecializeFloat32(TempAllocator &alloc);
     bool isFloat32Commutative() const { return true; }
@@ -5498,7 +5535,7 @@ class MBoundsCheckLower
     bool fallible() const {
         return fallible_;
     }
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 };
 
 // Load a value from a dense array's element vector and does a hole check if the
@@ -5603,7 +5640,7 @@ class MLoadElementHole
     AliasSet getAliasSet() const {
         return AliasSet::Load(AliasSet::Element);
     }
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
 };
 
 class MStoreElementCommon
@@ -7783,6 +7820,7 @@ class MGetDOMProperty
 {
     const JSJitInfo *info_;
 
+  protected:
     MGetDOMProperty(const JSJitInfo *jitinfo, MDefinition *obj, MDefinition *guard)
       : info_(jitinfo)
     {
@@ -7801,7 +7839,6 @@ class MGetDOMProperty
         setResultType(MIRType_Value);
     }
 
-  protected:
     const JSJitInfo *info() const {
         return info_;
     }
@@ -7826,6 +7863,10 @@ class MGetDOMProperty
     }
     bool isDomPure() const {
         return info_->isPure;
+    }
+    size_t domMemberSlotIndex() const {
+        MOZ_ASSERT(info_->isInSlot);
+        return info_->slotIndex;
     }
     MDefinition *object() {
         return getOperand(0);
@@ -7863,6 +7904,28 @@ class MGetDOMProperty
 
     bool possiblyCalls() const {
         return true;
+    }
+};
+
+class MGetDOMMember : public MGetDOMProperty
+{
+    // We inherit everything from MGetDOMProperty except our possiblyCalls value
+    MGetDOMMember(const JSJitInfo *jitinfo, MDefinition *obj, MDefinition *guard)
+        : MGetDOMProperty(jitinfo, obj, guard)
+    {
+    }
+
+  public:
+    INSTRUCTION_HEADER(GetDOMMember)
+
+    static MGetDOMMember *New(TempAllocator &alloc, const JSJitInfo *info, MDefinition *obj,
+                              MDefinition *guard)
+    {
+        return new(alloc) MGetDOMMember(info, obj, guard);
+    }
+
+    bool possiblyCalls() const {
+        return false;
     }
 };
 
@@ -8142,7 +8205,7 @@ class MInArray
     bool needsNegativeIntCheck() const {
         return needsNegativeIntCheck_;
     }
-    void collectRangeInfo();
+    void collectRangeInfoPreTrunc();
     AliasSet getAliasSet() const {
         return AliasSet::Load(AliasSet::Element);
     }
@@ -8266,7 +8329,8 @@ class MGetFrameArgument
 
 // This MIR instruction is used to set an argument value in the frame.
 class MSetFrameArgument
-  : public MUnaryInstruction
+  : public MUnaryInstruction,
+    public NoFloatPolicy<0>
 {
     uint32_t argno_;
 
@@ -8297,6 +8361,9 @@ class MSetFrameArgument
     }
     AliasSet getAliasSet() const {
         return AliasSet::Store(AliasSet::FrameArgument);
+    }
+    TypePolicy *typePolicy() {
+        return this;
     }
 };
 
@@ -9025,38 +9092,6 @@ class MAsmJSNeg : public MUnaryInstruction
     INSTRUCTION_HEADER(AsmJSNeg);
     static MAsmJSNeg *NewAsmJS(TempAllocator &alloc, MDefinition *op, MIRType type) {
         return new(alloc) MAsmJSNeg(op, type);
-    }
-};
-
-class MAsmJSUDiv : public MBinaryInstruction
-{
-    MAsmJSUDiv(MDefinition *left, MDefinition *right)
-      : MBinaryInstruction(left, right)
-    {
-        setResultType(MIRType_Int32);
-        setMovable();
-    }
-
-  public:
-    INSTRUCTION_HEADER(AsmJSUDiv);
-    static MAsmJSUDiv *New(TempAllocator &alloc, MDefinition *left, MDefinition *right) {
-        return new(alloc) MAsmJSUDiv(left, right);
-    }
-};
-
-class MAsmJSUMod : public MBinaryInstruction
-{
-    MAsmJSUMod(MDefinition *left, MDefinition *right)
-       : MBinaryInstruction(left, right)
-    {
-        setResultType(MIRType_Int32);
-        setMovable();
-    }
-
-  public:
-    INSTRUCTION_HEADER(AsmJSUMod);
-    static MAsmJSUMod *New(TempAllocator &alloc, MDefinition *left, MDefinition *right) {
-        return new(alloc) MAsmJSUMod(left, right);
     }
 };
 

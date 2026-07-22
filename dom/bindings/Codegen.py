@@ -193,7 +193,7 @@ class CGDOMJSClass(CGThing):
     def define(self):
         traceHook = TRACE_HOOK_NAME if self.descriptor.customTrace else 'nullptr'
         callHook = LEGACYCALLER_HOOK_NAME if self.descriptor.operations["LegacyCaller"] else 'nullptr'
-        slotCount = INSTANCE_RESERVED_SLOTS
+        slotCount = INSTANCE_RESERVED_SLOTS + self.descriptor.interface.totalMembersInSlots
         classFlags = "JSCLASS_IS_DOMJSCLASS | "
         if self.descriptor.interface.getExtendedAttribute("Global"):
             classFlags += "JSCLASS_DOM_GLOBAL | JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(DOM_GLOBAL_SLOTS) | JSCLASS_IMPLEMENTS_BARRIERS"
@@ -770,9 +770,6 @@ class CGHeaders(CGWrapper):
             if jsParent:
                 parentDesc = jsImplemented.getDescriptor(jsParent.identifier.name)
                 declareIncludes.add(parentDesc.jsImplParentHeader)
-
-        if len(jsImplementedDescriptors) != 0:
-            bindingHeaders.add("nsIDOMGlobalPropertyInitializer.h")
 
         # Let the machinery do its thing.
         def _includeString(includes):
@@ -2166,9 +2163,12 @@ class CGConstructorEnabledViaFunc(CGAbstractMethod):
 def CreateBindingJSObject(descriptor, properties, parent):
     # When we have unforgeable properties, we're going to define them
     # on our object, so we have to root it when we create it, so it
-    # won't suddenly die while defining the unforgeables.
+    # won't suddenly die while defining the unforgeables.  Similarly,
+    # if we have members in slots we'll have to call the getters which
+    # could also GC.
     needRoot = (properties.unforgeableAttrs.hasNonChromeOnly() or
-                properties.unforgeableAttrs.hasChromeOnly())
+                properties.unforgeableAttrs.hasChromeOnly() or
+                descriptor.interface.hasMembersInSlots())
     if needRoot:
         objDecl = "  JS::Rooted<JSObject*> obj(aCx);\n"
     else:
@@ -2283,6 +2283,27 @@ def AssertInheritanceChain(descriptor):
         "  MOZ_ASSERT(ToSupportsIsCorrect(aObject));\n")
     return asserts
 
+def InitMemberSlots(descriptor, wrapperCache):
+    """
+    Initialize member slots on our JS object if we're supposed to have some.
+
+    Note that this is called after the SetWrapper() call in the
+    wrapperCache case, since that can affect how our getters behave
+    and we plan to invoke them here.  So if we fail, we need to
+    ClearWrapper.
+    """
+    if not descriptor.interface.hasMembersInSlots():
+        return ""
+    if wrapperCache:
+        clearWrapper = "  aCache->ClearWrapper();\n"
+    else:
+        clearWrapper = ""
+    return CGIndenter(CGGeneric(
+            ("if (!UpdateMemberSlots(aCx, obj, aObject)) {\n"
+             "%s"
+             "  return nullptr;\n"
+             "}" % clearWrapper))).define()
+
 class CGWrapWithCacheMethod(CGAbstractMethod):
     """
     Create a wrapper JSObject for a given native that implements nsWrapperCache.
@@ -2300,6 +2321,7 @@ class CGWrapWithCacheMethod(CGAbstractMethod):
 
     def definition_body(self):
         if self.descriptor.nativeOwnership == 'worker':
+            assert not self.descriptor.interface.hasMembersInSlots()
             return """  return aObject->GetJSObject();"""
 
         assertISupportsInheritance = (
@@ -2334,12 +2356,13 @@ class CGWrapWithCacheMethod(CGAbstractMethod):
 %s
 %s
   aCache->SetWrapper(obj);
-
+%s
   return obj;""" % (AssertInheritanceChain(self.descriptor),
                     assertISupportsInheritance,
                     CreateBindingJSObject(self.descriptor, self.properties,
                                           "parent"),
-                    InitUnforgeableProperties(self.descriptor, self.properties))
+                    InitUnforgeableProperties(self.descriptor, self.properties),
+                    InitMemberSlots(self.descriptor, True))
 
 class CGWrapMethod(CGAbstractMethod):
     def __init__(self, descriptor):
@@ -2381,10 +2404,12 @@ class CGWrapNonWrapperCacheMethod(CGAbstractMethod):
 
 %s
 %s
+%s
   return obj;""" % (AssertInheritanceChain(self.descriptor),
                     CreateBindingJSObject(self.descriptor, self.properties,
                                           "global"),
-                    InitUnforgeableProperties(self.descriptor, self.properties))
+                    InitUnforgeableProperties(self.descriptor, self.properties),
+                    InitMemberSlots(self.descriptor, False))
 
 class CGWrapGlobalMethod(CGAbstractMethod):
     """
@@ -2426,6 +2451,36 @@ class CGWrapGlobalMethod(CGAbstractMethod):
   return obj;""" % (AssertInheritanceChain(self.descriptor),
                     self.descriptor.nativeType,
                     InitUnforgeableProperties(self.descriptor, self.properties))
+
+class CGUpdateMemberSlotsMethod(CGAbstractMethod):
+    def __init__(self, descriptor):
+        args = [Argument('JSContext*', 'aCx'),
+                Argument('JS::Handle<JSObject*>', 'aWrapper'),
+                Argument(descriptor.nativeType + '*' , 'aObject')]
+        CGAbstractMethod.__init__(self, descriptor, 'UpdateMemberSlots', 'bool', args)
+
+    def definition_body(self):
+        slotMembers = (m for m in self.descriptor.interface.members if
+                       m.isAttr() and m.getExtendedAttribute("StoreInSlot"))
+        def slotIndex(member):
+            return member.slotIndex + INSTANCE_RESERVED_SLOTS
+        storeSlots = (
+            CGGeneric(
+                'static_assert(%d < js::shadow::Object::MAX_FIXED_SLOTS,\n'
+                '              "Not enough fixed slots to fit \'%s.%s\'");\n'
+                "if (!get_%s(aCx, aWrapper, aObject, args)) {\n"
+                "  return false;\n"
+                "}\n"
+                "js::SetReservedSlot(aWrapper, %d, args.rval());" %
+                (slotIndex(m), self.descriptor.interface.identifier.name,
+                 m.identifier.name, m.identifier.name, slotIndex(m)))
+            for m in slotMembers)
+        body = CGList(storeSlots, "\n\n")
+        body.prepend(CGGeneric("JS::Rooted<JS::Value> temp(aCx);\n"
+                               "JSJitGetterCallArgs args(&temp);"))
+        body.append(CGGeneric("return true;"))
+
+        return CGIndenter(body).define()
 
 builtinNames = {
     IDLType.Tags.bool: 'bool',
@@ -6003,7 +6058,12 @@ class CGMemberJITInfo(CGThing):
         return ""
 
     def defineJitInfo(self, infoName, opName, opType, infallible, constant,
-                      pure, hasSlot, slotIndex, returnTypes):
+                      pure, hasSlot, slotIndex, returnTypes, args):
+        """
+        args is None if we don't want to output argTypes for some
+        reason (e.g. we have overloads or we're not a method) and
+        otherwise an iterable of the arguments for this method.
+        """
         assert(not constant or pure) # constants are always pure
         assert(not hasSlot or pure) # Things with slots had better be pure
         protoID = "prototypes::id::%s" % self.descriptor.name
@@ -6014,7 +6074,18 @@ class CGMemberJITInfo(CGThing):
         slotStr = toStringBool(hasSlot)
         returnType = reduce(CGMemberJITInfo.getSingleReturnType, returnTypes,
                             "")
+        if args is not None:
+            argTypes = "%s_argTypes" % infoName
+            args = [CGMemberJITInfo.getJSArgType(arg.type) for arg in args]
+            args.append("JSJitInfo::ArgTypeListEnd")
+            argTypesDecl = (
+                "static const JSJitInfo::ArgType %s[] = { %s };\n" %
+                (argTypes, ", ".join(args)))
+        else:
+            argTypes = "nullptr"
+            argTypesDecl = ""
         return ("\n"
+                "%s"
                 "static const JSJitInfo %s = {\n"
                 "  { %s },\n"
                 "  %s,\n"
@@ -6022,13 +6093,15 @@ class CGMemberJITInfo(CGThing):
                 "  JSJitInfo::%s,\n"
                 "  %s,  /* isInfallible. False in setters. */\n"
                 "  %s,  /* isConstant. Only relevant for getters. */\n"
-                "  %s,  /* isPure.  Only relevant for getters. */\n"
+                "  %s,  /* isPure.  Not relevant for setters. */\n"
                 "  %s,  /* hasSlot.  Only relevant for getters. */\n"
                 "  %d,  /* Reserved slot index, if we're stored in a slot, else 0. */\n"
-                "  %s   /* returnType.  Only relevant for getters/methods. */\n"
-                "};\n" % (infoName, opName, protoID, depth, opType, failstr,
-                          conststr, purestr, slotStr, slotIndex,
-                          returnType))
+                "  %s,  /* returnType.  Not relevant for setters. */\n"
+                "  %s,  /* argTypes.  Only relevant for methods */\n"
+                "  nullptr /* parallelNative */\n"
+                "};\n" % (argTypesDecl, infoName, opName, protoID, depth,
+                          opType, failstr, conststr, purestr, slotStr,
+                          slotIndex, returnType, argTypes))
 
     def define(self):
         if self.member.isAttr():
@@ -6046,13 +6119,16 @@ class CGMemberJITInfo(CGThing):
             isInSlot = self.member.getExtendedAttribute("StoreInSlot")
             if isInSlot:
                 slotIndex = INSTANCE_RESERVED_SLOTS + self.member.slotIndex;
+                if slotIndex >= 16 : # JS engine currently allows 16 fixed slots
+                    raise TypeError("Make sure we can actually have this many "
+                                    "fixed slots, please!")
             else:
                 slotIndex = 0
 
             result = self.defineJitInfo(getterinfo, getter, "Getter",
                                         getterinfal, getterconst, getterpure,
                                         isInSlot, slotIndex,
-                                        [self.member.type])
+                                        [self.member.type], None)
             if (not self.member.readonly or
                 self.member.getExtendedAttribute("PutForwards") is not None or
                 self.member.getExtendedAttribute("Replaceable") is not None):
@@ -6063,13 +6139,15 @@ class CGMemberJITInfo(CGThing):
                 # Setters are always fallible, since they have to do a typed unwrap.
                 result += self.defineJitInfo(setterinfo, setter, "Setter",
                                              False, False, False, False, 0,
-                                             [BuiltinTypes[IDLBuiltinType.Types.void]])
+                                             [BuiltinTypes[IDLBuiltinType.Types.void]],
+                                             None)
             return result
         if self.member.isMethod():
             methodinfo = ("%s_methodinfo" % self.member.identifier.name)
             name = CppKeywords.checkMethodName(self.member.identifier.name)
             # Actually a JSJitMethodOp, but JSJitGetterOp is first in the union.
             method = ("(JSJitGetterOp)%s" % name)
+            methodPure = self.member.getExtendedAttribute("Pure")
 
             # Methods are infallible if they are infallible, have no arguments
             # to unwrap, and have a return type that's infallible to wrap up for
@@ -6079,18 +6157,26 @@ class CGMemberJITInfo(CGThing):
                 # Don't handle overloading.  If there's more than one signature,
                 # one of them must take arguments.
                 methodInfal = False
+                args = None
             else:
                 sig = sigs[0]
+                # XXXbz can we move the smarts about fallibility due to arg
+                # conversions into the JIT, using our new args stuff?
                 if (len(sig[1]) != 0 or
                     not infallibleForMember(self.member, sig[0], self.descriptor)):
                     # We have arguments or our return-value boxing can fail
                     methodInfal = False
                 else:
                     methodInfal = "infallible" in self.descriptor.getExtendedAttributes(self.member)
+                # For now, only bother to output args if we're pure
+                if methodPure:
+                    args = sig[1]
+                else:
+                    args = None
 
             result = self.defineJitInfo(methodinfo, method, "Method",
-                                        methodInfal, False, False, False, 0,
-                                        [s[0] for s in sigs])
+                                        methodInfal, False, methodPure, False, 0,
+                                        [s[0] for s in sigs], args)
             return result
         raise TypeError("Illegal member type to CGPropertyJITInfo")
 
@@ -6171,6 +6257,74 @@ class CGMemberJITInfo(CGThing):
             return "JSVAL_TYPE_DOUBLE"
         # Different types
         return "JSVAL_TYPE_UNKNOWN"
+
+    @staticmethod
+    def getJSArgType(t):
+        assert not t.isVoid()
+        if t.nullable():
+            # Sometimes it might return null, sometimes not
+            return "JSJitInfo::ArgType(JSJitInfo::Null | %s)" % CGMemberJITInfo.getJSArgType(t.inner)
+        if t.isArray():
+            # No idea yet
+            assert False
+        if t.isSequence():
+            return "JSJitInfo::Object"
+        if t.isGeckoInterface():
+            return "JSJitInfo::Object"
+        if t.isString():
+            return "JSJitInfo::String"
+        if t.isEnum():
+            return "JSJitInfo::String"
+        if t.isCallback():
+            return "JSJitInfo::Object"
+        if t.isAny():
+            # The whole point is to return various stuff
+            return "JSJitInfo::Any"
+        if t.isObject():
+            return "JSJitInfo::Object"
+        if t.isSpiderMonkeyInterface():
+            return "JSJitInfo::Object"
+        if t.isUnion():
+            u = t.unroll();
+            type = "JSJitInfo::Null" if u.hasNullableType else ""
+            return ("JSJitInfo::ArgType(%s)" %
+                    reduce(CGMemberJITInfo.getSingleArgType,
+                           u.flatMemberTypes, type))
+        if t.isDictionary():
+            return "JSJitInfo::Object"
+        if t.isDate():
+            return "JSJitInfo::Object"
+        if not t.isPrimitive():
+            raise TypeError("No idea what type " + str(t) + " is.")
+        tag = t.tag()
+        if tag == IDLType.Tags.bool:
+            return "JSJitInfo::Boolean"
+        if tag in [IDLType.Tags.int8, IDLType.Tags.uint8,
+                   IDLType.Tags.int16, IDLType.Tags.uint16,
+                   IDLType.Tags.int32]:
+            return "JSJitInfo::Integer"
+        if tag in [IDLType.Tags.int64, IDLType.Tags.uint64,
+                   IDLType.Tags.unrestricted_float, IDLType.Tags.float,
+                   IDLType.Tags.unrestricted_double, IDLType.Tags.double]:
+            # These all use JS_NumberValue, which can return int or double.
+            # But TI treats "double" as meaning "int or double", so we're
+            # good to return JSVAL_TYPE_DOUBLE here.
+            return "JSJitInfo::Double"
+        if tag != IDLType.Tags.uint32:
+            raise TypeError("No idea what type " + str(t) + " is.")
+        # uint32 is sometimes int and sometimes double.
+        return "JSJitInfo::Double"
+
+    @staticmethod
+    def getSingleArgType(existingType, t):
+        type = CGMemberJITInfo.getJSArgType(t)
+        if existingType == "":
+            # First element of the list; just return its type
+            return type
+
+        if type == existingType:
+            return existingType
+        return "%s | %s" % (existingType, type)
 
 def getEnumValueName(value):
     # Some enum values can be empty strings.  Others might have weird
@@ -8306,6 +8460,10 @@ class CGDescriptor(CGThing):
 
         if descriptor.concrete:
             if descriptor.proxy:
+                if descriptor.interface.totalMembersInSlots != 0:
+                    raise TypeError("We can't have extra reserved slots for "
+                                    "proxy interface %s" %
+                                    descriptor.interface.identifier.name)
                 cgThings.append(CGGeneric("""MOZ_STATIC_ASSERT((IsBaseOf<nsISupports, %s >::value),
                   "We don't support non-nsISupports native classes for "
                   "proxy-based bindings yet");
@@ -8323,6 +8481,12 @@ class CGDescriptor(CGThing):
             else:
                 cgThings.append(CGDOMJSClass(descriptor))
                 cgThings.append(CGGetJSClassMethod(descriptor))
+                if descriptor.interface.hasMembersInSlots():
+                    if descriptor.interface.hasChildInterfaces():
+                        raise TypeError("We don't support members in slots on "
+                                        "non-leaf interfaces like %s" %
+                                        descriptor.interface.identifier.name)
+                    cgThings.append(CGUpdateMemberSlotsMethod(descriptor))
 
             if descriptor.interface.getExtendedAttribute("Global"):
                 assert descriptor.wrapperCache
