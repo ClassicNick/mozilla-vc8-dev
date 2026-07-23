@@ -1351,6 +1351,12 @@ Help(JSContext *cx, unsigned argc, jsval *vp);
 static bool
 Quit(JSContext *cx, unsigned argc, jsval *vp)
 {
+#ifdef JS_MORE_DETERMINISTIC
+    // Print a message to stderr in more-deterministic builds to help jsfunfuzz
+    // find uncatchable-exception bugs.
+    fprintf(stderr, "quit called\n");
+#endif
+
     CallArgs args = CallArgsFromVp(argc, vp);
     JS_ConvertArguments(cx, args.length(), args.array(), "/ i", &gExitCode);
 
@@ -5015,8 +5021,9 @@ class ScopedFileDesc
 static const uint32_t asmJSCacheCookie = 0xabbadaba;
 
 static bool
-ShellOpenAsmJSCacheEntryForRead(HandleObject global, size_t *serializedSizeOut,
-                                const uint8_t **memoryOut, intptr_t *handleOut)
+ShellOpenAsmJSCacheEntryForRead(HandleObject global, const jschar *begin, const jschar *limit,
+                                size_t *serializedSizeOut, const uint8_t **memoryOut,
+                                intptr_t *handleOut)
 {
     if (!jsCacheAsmJSPath)
         return false;
@@ -5087,8 +5094,8 @@ ShellCloseAsmJSCacheEntryForRead(HandleObject global, size_t serializedSize, con
 }
 
 static bool
-ShellOpenAsmJSCacheEntryForWrite(HandleObject global, size_t serializedSize,
-                                 uint8_t **memoryOut, intptr_t *handleOut)
+ShellOpenAsmJSCacheEntryForWrite(HandleObject global, const jschar *begin, const jschar *end,
+                                 size_t serializedSize, uint8_t **memoryOut, intptr_t *handleOut)
 {
     if (!jsCacheAsmJSPath)
         return false;
