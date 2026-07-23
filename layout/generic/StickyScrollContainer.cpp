@@ -87,7 +87,7 @@ StickyScrollContainer::NotifyReparentedFrameAcrossScrollFrameBoundary(nsIFrame* 
     return;
   }
 
-  auto i = oldSSC->mFrames.Length();
+  uint32_t i = oldSSC->mFrames.Length();
   while (i-- > 0) {
     nsIFrame* f = oldSSC->mFrames[i];
     StickyScrollContainer* newSSC = GetStickyScrollContainerForFrame(f);

@@ -171,6 +171,7 @@
 #include "nsHTMLStyleSheet.h"
 #include "nsHTMLCSSStyleSheet.h"
 #include "mozilla/dom/DOMImplementation.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Comment.h"
 #include "nsTextNode.h"
 #include "mozilla/dom/Link.h"
@@ -432,10 +433,10 @@ nsIdentifierMapEntry::SetImageElement(Element* aElement)
 }
 
 void
-nsIdentifierMapEntry::AddNameElement(nsIDocument* aDocument, Element* aElement)
+nsIdentifierMapEntry::AddNameElement(nsINode* aNode, Element* aElement)
 {
   if (!mNameContentList) {
-    mNameContentList = new nsSimpleContentList(aDocument);
+    mNameContentList = new nsSimpleContentList(aNode);
   }
 
   mNameContentList->AppendElement(aElement);
@@ -11454,6 +11455,23 @@ nsIDocument::SetStateObject(nsIStructuredCloneContainer *scContainer)
 {
   mStateObjectContainer = scContainer;
   mStateObjectCached = nullptr;
+}
+
+already_AddRefed<Element>
+nsIDocument::CreateHTMLElement(nsIAtom* aTag)
+{
+  nsCOMPtr<nsINodeInfo> nodeInfo;
+  nodeInfo = mNodeInfoManager->GetNodeInfo(aTag, nullptr, kNameSpaceID_XHTML,
+                                           nsIDOMNode::ELEMENT_NODE);
+  MOZ_ASSERT(nodeInfo, "GetNodeInfo should never fail");
+
+  nsCOMPtr<nsIContent> content = nullptr;
+  DebugOnly<nsresult> rv = NS_NewHTMLElement(getter_AddRefs(content),
+                                             nodeInfo.forget(),
+                                             mozilla::dom::NOT_FROM_PARSER);
+
+  MOZ_ASSERT(NS_SUCCEEDED(rv), "NS_NewHTMLElement should never fail");
+  return dont_AddRef(content.forget().get()->AsElement());
 }
 
 bool

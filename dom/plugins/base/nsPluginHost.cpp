@@ -147,7 +147,6 @@ static const char *kPluginRegistryVersion = "0.16";
 // The minimum registry version we know how to read
 static const char *kMinimumRegistryVersion = "0.9";
 
-static NS_DEFINE_IID(kIPluginTagInfoIID, NS_IPLUGINTAGINFO_IID);
 static const char kDirectoryServiceContractID[] = "@mozilla.org/file/directory_service;1";
 
 #define kPluginRegistryFilename NS_LITERAL_CSTRING("pluginreg.dat")
@@ -420,32 +419,6 @@ nsresult nsPluginHost::UserAgent(const char **retstring)
   PLUGIN_LOG(PLUGIN_LOG_NORMAL, ("nsPluginHost::UserAgent return=%s\n", *retstring));
 
   return res;
-}
-
-nsresult nsPluginHost::GetPrompt(nsIPluginInstanceOwner *aOwner, nsIPrompt **aPrompt)
-{
-  nsresult rv;
-  nsCOMPtr<nsIPrompt> prompt;
-  nsCOMPtr<nsIWindowWatcher> wwatch = do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
-
-  if (wwatch) {
-    nsCOMPtr<nsIDOMWindow> domWindow;
-    if (aOwner) {
-      nsCOMPtr<nsIDocument> document;
-      aOwner->GetDocument(getter_AddRefs(document));
-      if (document) {
-        domWindow = document->GetWindow();
-      }
-    }
-
-    if (!domWindow) {
-      wwatch->GetWindowByName(NS_LITERAL_STRING("_content").get(), nullptr, getter_AddRefs(domWindow));
-    }
-    rv = wwatch->GetNewPrompter(domWindow, getter_AddRefs(prompt));
-  }
-
-  NS_IF_ADDREF(*aPrompt = prompt);
-  return rv;
 }
 
 nsresult nsPluginHost::GetURL(nsISupports* pluginInst,
@@ -814,14 +787,8 @@ nsPluginHost::InstantiatePluginInstance(const char *aMimeType, nsIURI* aURL,
     return rv;
   }
 
-  nsCOMPtr<nsIPluginTagInfo> pti;
-  rv = instanceOwner->QueryInterface(kIPluginTagInfoIID, getter_AddRefs(pti));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   nsPluginTagType tagType;
-  rv = pti->GetTagType(&tagType);
+  rv = instanceOwner->GetTagType(&tagType);
   if (NS_FAILED(rv)) {
     return rv;
   }

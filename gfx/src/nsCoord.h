@@ -201,18 +201,6 @@ NSCoordSaturatingSubtract(nscoord a, nscoord b,
       return nscoord_MAX;
     } else {
       // case (d) for integers
-<<<<<<< HEAD
-      NS_ASSERTION(a < nscoord_MAX && b < nscoord_MAX,
-                   "Doing nscoord subtraction with values > nscoord_MAX");
-      NS_ASSERTION((int64_t)a - (int64_t)b > (int64_t)nscoord_MIN,
-                   "nscoord subtraction will reach or pass nscoord_MIN");
-      // This one's only a warning because the NS_MIN below means that
-      // we'll handle this case correctly.
-      NS_WARN_IF_FALSE((int64_t)a - (int64_t)b < (int64_t)nscoord_MAX,
-                       "nscoord subtraction capped to nscoord_MAX");
-
-=======
->>>>>>> bbe673a
       // Cap the result, in case we're dealing with numbers near nscoord_MAX
       return NS_MIN(nscoord_MAX, a - b);
     }
