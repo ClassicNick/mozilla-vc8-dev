@@ -34,8 +34,7 @@ class CompositorChild;
 class ImageLayer;
 class PLayerChild;
 
-class ClientLayerManager : public LayerManager,
-                           public ShadowLayerForwarder
+class ClientLayerManager : public LayerManager
 {
   typedef nsTArray<nsRefPtr<Layer> > LayerRefArray;
 
@@ -45,7 +44,7 @@ public:
 
   virtual ShadowLayerForwarder* AsShadowForwarder()
   {
-    return this;
+    return mForwarder;
   }
 
   virtual int32_t GetMaxTextureSize() const;
@@ -75,7 +74,7 @@ public:
 
   virtual TextureFactoryIdentifier GetTextureFactoryIdentifier() MOZ_OVERRIDE
   {
-    return mTextureFactoryIdentifier;
+    return mForwarder->GetTextureFactoryIdentifier();
   }
 
   virtual void FlushRendering() MOZ_OVERRIDE;
@@ -90,7 +89,7 @@ public:
 
   ShadowableLayer* Hold(Layer* aLayer);
 
-  bool HasShadowManager() const { return ShadowLayerForwarder::HasShadowManager(); }
+  bool HasShadowManager() const { return mForwarder->HasShadowManager(); }
 
   virtual bool IsCompositingCheap();
   virtual bool HasShadowManagerInternal() const { return HasShadowManager(); }
@@ -124,19 +123,19 @@ public:
 
   /**
    * Called for each iteration of a progressive tile update. Fills
-   * aViewport, aScaleX and aScaleY with the current scale and viewport
+   * aCompositionBounds and aZoom with the current scale and composition bounds
    * being used to composite the layers in this manager, to determine what area
-   * intersects with the target render rectangle. aDrawingCritical will be
-   * true if the current drawing operation is using the critical displayport.
+   * intersects with the target composition bounds.
+   * aDrawingCritical will be true if the current drawing operation is using
+   * the critical displayport.
    * Returns true if the update should continue, or false if it should be
    * cancelled.
    * This is only called if gfxPlatform::UseProgressiveTilePainting() returns
    * true.
    */
   bool ProgressiveUpdateCallback(bool aHasPendingNewThebesContent,
-                                 gfx::Rect& aViewport,
-                                 float& aScaleX,
-                                 float& aScaleY,
+                                 ScreenRect& aCompositionBounds,
+                                 CSSToScreenScale& aZoom,
                                  bool aDrawingCritical);
 
 #ifdef DEBUG
@@ -211,6 +210,8 @@ private:
   bool mTransactionIncomplete;
   bool mCompositorMightResample;
   bool mNeedsComposite;
+
+  RefPtr<ShadowLayerForwarder> mForwarder;
 };
 
 class ClientLayer : public ShadowableLayer
@@ -260,12 +261,12 @@ CreateShadowFor(ClientLayer* aLayer,
                 ClientLayerManager* aMgr,
                 CreatedMethod aMethod)
 {
-  PLayerChild* shadow = aMgr->ConstructShadowFor(aLayer);
+  PLayerChild* shadow = aMgr->AsShadowForwarder()->ConstructShadowFor(aLayer);
   // XXX error handling
   NS_ABORT_IF_FALSE(shadow, "failed to create shadow");
 
   aLayer->SetShadow(shadow);
-  (aMgr->*aMethod)(aLayer);
+  (aMgr->AsShadowForwarder()->*aMethod)(aLayer);
   aMgr->Hold(aLayer->AsLayer());
 }
 
