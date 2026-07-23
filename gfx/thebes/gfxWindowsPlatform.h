@@ -323,8 +323,6 @@ private:
 
     // TODO: unify this with mPrefFonts (NB: holds families, not fonts) in gfxPlatformFontList
     nsDataHashtable<nsCStringHashKey, nsTArray<nsRefPtr<gfxFontEntry> > > mPrefFonts;
-
-    nsIMemoryReporter* mGPUAdapterReporter;
 };
 
 #endif /* GFX_WINDOWS_PLATFORM_H */

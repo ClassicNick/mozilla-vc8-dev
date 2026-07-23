@@ -14,7 +14,7 @@
 
 #include <algorithm>
 #include <stddef.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 
@@ -49,13 +49,21 @@ class RollingMean
       MOZ_ASSERT(aMaxValues > 0);
     }
 
-    RollingMean& operator=(RollingMean&& aOther) {
-      MOZ_ASSERT(this != &aOther, "self-assignment is forbidden");
+    RollingMean& operator=(RollingMean& aOther) {
       this->~RollingMean();
       new(this) RollingMean(aOther.mMaxValues);
       mInsertIndex = aOther.mInsertIndex;
       mTotal = aOther.mTotal;
       mValues.swap(aOther.mValues);
+      return *this;
+    }
+	
+	RollingMean& operator=(MoveRef<RollingMean> aOther) {
+      this->~RollingMean();
+      new(this) RollingMean(aOther->mMaxValues);
+      mInsertIndex = aOther->mInsertIndex;
+      mTotal = aOther->mTotal;
+      mValues.swap(aOther->mValues);
       return *this;
     }
 
