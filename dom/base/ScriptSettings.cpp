@@ -62,7 +62,7 @@ public:
         return mStack[i]->mGlobalObject;
       }
     }
-    MOZ_ASSUME_UNREACHABLE();
+    MOZ_ASSUME_UNREACHABLE("Non-empty stack should always have an entry point");
   }
 
 private:
