@@ -543,16 +543,6 @@ TypeSet::unionSets(TypeSet *a, TypeSet *b, LifoAlloc *alloc)
 // assumptions no longer hold then the compilation is aborted and its result
 // discarded.
 
-static LifoAlloc *IonAlloc() {
-#ifdef JS_ION
-    return jit::GetIonContext()->temp->lifoAlloc();
-#else
-    MOZ_CRASH();
-#endif
-}
-
-namespace {
-
 // Superclass of all constraints generated during Ion compilation. These may
 // be allocated off the main thread, using the current Ion context's allocator.
 class CompilerConstraint
@@ -566,17 +556,15 @@ class CompilerConstraint
     // main thread performs side effects.
     TemporaryTypeSet *expected;
 
-    CompilerConstraint(const HeapTypeSetKey &property)
+    CompilerConstraint(LifoAlloc *alloc, const HeapTypeSetKey &property)
       : property(property),
-        expected(property.maybeTypes() ? property.maybeTypes()->clone(IonAlloc()) : nullptr)
+        expected(property.maybeTypes() ? property.maybeTypes()->clone(alloc) : nullptr)
     {}
 
     // Generate the type constraint recording the assumption made by this
     // compilation. Returns true if the assumption originally made still holds.
     virtual bool generateTypeConstraint(JSContext *cx, RecompileInfo recompileInfo) = 0;
 };
-
-} // anonymous namespace
 
 class types::CompilerConstraintList
 {
@@ -594,6 +582,9 @@ class types::CompilerConstraintList
     // OOM during generation of some constraint.
     bool failed_;
 
+    // Allocator used for constraints.
+    LifoAlloc *alloc_;
+
 #ifdef JS_ION
     // Constraints generated on heap properties.
     Vector<CompilerConstraint *, 0, jit::IonAllocPolicy> constraints;
@@ -605,6 +596,7 @@ class types::CompilerConstraintList
   public:
     CompilerConstraintList(jit::TempAllocator &alloc)
       : failed_(false)
+      , alloc_(alloc.lifoAlloc())
 #ifdef JS_ION
       , constraints(alloc)
       , frozenScripts(alloc)
@@ -676,13 +668,16 @@ class types::CompilerConstraintList
     void setFailed() {
         failed_ = true;
     }
+    LifoAlloc *alloc() const {
+        return alloc_;
+    }
 };
 
 CompilerConstraintList *
 types::NewCompilerConstraintList(jit::TempAllocator &alloc)
 {
 #ifdef JS_ION
-    return IonAlloc()->new_<CompilerConstraintList>(alloc);
+    return alloc.lifoAlloc()->new_<CompilerConstraintList>(alloc);
 #else
 	MOZ_CRASH();
 #endif
@@ -694,7 +689,7 @@ TypeScript::FreezeTypeSets(CompilerConstraintList *constraints, JSScript *script
                            TemporaryTypeSet **pArgTypes,
                            TemporaryTypeSet **pBytecodeTypes)
 {
-    LifoAlloc *alloc = IonAlloc();
+    LifoAlloc *alloc = constraints->alloc();
     StackTypeSet *existing = script->types->typeArray();
 
     size_t count = NumTypeSets(script);
@@ -726,8 +721,8 @@ class CompilerConstraintInstance : public CompilerConstraint
     T data;
 
   public:
-    CompilerConstraintInstance<T>(const HeapTypeSetKey &property, const T &data)
-      : CompilerConstraint(property), data(data)
+    CompilerConstraintInstance<T>(LifoAlloc *alloc, const HeapTypeSetKey &property, const T &data)
+      : CompilerConstraint(alloc, property), data(data)
     {}
 
     bool generateTypeConstraint(JSContext *cx, RecompileInfo recompileInfo);
@@ -1025,7 +1020,10 @@ class ConstraintDataFreeze
 void
 HeapTypeSetKey::freeze(CompilerConstraintList *constraints)
 {
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreeze> >(*this, ConstraintDataFreeze()));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreeze> T;
+    constraints->add(alloc->new_<T>(alloc, *this, ConstraintDataFreeze()));
 }
 
 static inline JSValueType
@@ -1216,7 +1214,10 @@ TypeObjectKey::hasFlags(CompilerConstraintList *constraints, TypeObjectFlags fla
     }
 
     HeapTypeSetKey objectProperty = property(JSID_EMPTY);
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeObjectFlags> >(objectProperty, ConstraintDataFreezeObjectFlags(flags)));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectFlags> T;
+    constraints->add(alloc->new_<T>(alloc, objectProperty, ConstraintDataFreezeObjectFlags(flags)));
     return false;
 }
 
@@ -1257,7 +1258,10 @@ TypeObject::initialHeap(CompilerConstraintList *constraints)
         return gc::DefaultHeap;
 
     HeapTypeSetKey objectProperty = TypeObjectKey::get(this)->property(JSID_EMPTY);
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeObjectFlags> >(objectProperty, ConstraintDataFreezeObjectFlags(OBJECT_FLAG_PRE_TENURE)));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectFlags> T;
+    constraints->add(alloc->new_<T>(alloc, objectProperty, ConstraintDataFreezeObjectFlags(OBJECT_FLAG_PRE_TENURE)));
 
     return gc::DefaultHeap;
 }
@@ -1349,7 +1353,10 @@ void
 TypeObjectKey::watchStateChangeForInlinedCall(CompilerConstraintList *constraints)
 {
     HeapTypeSetKey objectProperty = property(JSID_EMPTY);
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeObjectForInlinedCall> >(objectProperty, ConstraintDataFreezeObjectForInlinedCall()));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectForInlinedCall> T;
+    constraints->add(alloc->new_<T>(alloc, objectProperty, ConstraintDataFreezeObjectForInlinedCall()));
 }
 
 void
@@ -1357,7 +1364,11 @@ TypeObjectKey::watchStateChangeForNewScriptTemplate(CompilerConstraintList *cons
 {
     JSObject *templateObject = asTypeObject()->newScript()->templateObject;
     HeapTypeSetKey objectProperty = property(JSID_EMPTY);
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeObjectForNewScriptTemplate> >(objectProperty, ConstraintDataFreezeObjectForNewScriptTemplate(templateObject)));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectForNewScriptTemplate> T;
+    constraints->add(alloc->new_<T>(alloc, objectProperty,
+                                    ConstraintDataFreezeObjectForNewScriptTemplate(templateObject)));
 }
 
 void
@@ -1365,7 +1376,11 @@ TypeObjectKey::watchStateChangeForTypedArrayBuffer(CompilerConstraintList *const
 {
     void *viewData = asSingleObject()->as<TypedArrayObject>().viewData();
     HeapTypeSetKey objectProperty = property(JSID_EMPTY);
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeObjectForTypedArrayBuffer> >(objectProperty, ConstraintDataFreezeObjectForTypedArrayBuffer(viewData)));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeObjectForTypedArrayBuffer> T;
+    constraints->add(alloc->new_<T>(alloc, objectProperty,
+                                    ConstraintDataFreezeObjectForTypedArrayBuffer(viewData)));
 }
 
 static void
@@ -1449,7 +1464,11 @@ HeapTypeSetKey::configured(CompilerConstraintList *constraints, TypeObjectKey *t
     if (maybeTypes() && maybeTypes()->configuredProperty())
         return true;
 
-    constraints->add(IonAlloc()->new_<CompilerConstraintInstance<ConstraintDataFreezeConfiguredProperty> >(*this, ConstraintDataFreezeConfiguredProperty(type)));
+    LifoAlloc *alloc = constraints->alloc();
+
+    typedef CompilerConstraintInstance<ConstraintDataFreezeConfiguredProperty> T;
+    constraints->add(alloc->new_<T>(alloc, *this,
+                                    ConstraintDataFreezeConfiguredProperty(type)));
     return false;
 }
 

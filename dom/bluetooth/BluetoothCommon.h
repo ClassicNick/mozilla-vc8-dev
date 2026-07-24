@@ -19,22 +19,25 @@ extern bool gBluetoothDebugFlag;
 #undef BT_LOG
 #if defined(MOZ_WIDGET_GONK)
 #include <android/log.h>
+
 /**
  * Prints 'D'EBUG build logs, which show in DEBUG build only when
  * developer setting 'Bluetooth output in adb' is enabled.
  */
-#define BT_LOGD(args)                                             \
+#define BT_LOGD(msg, a)                                            \
   do {                                                               \
     if (gBluetoothDebugFlag) {                                       \
-      __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth", args); \
+      __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth",        \
+                          "%s: " msg, __FUNCTION__, ##__VA_ARGS__);  \
     }                                                                \
   } while(0)
 
 /**
  * Prints 'R'ELEASE build logs, which show in both RELEASE and DEBUG builds.
  */
-#define BT_LOGR(args)                                             \
-  __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth", args)      \
+#define BT_LOGR(msg, a)                                            \
+  __android_log_print(ANDROID_LOG_INFO, "GeckoBluetooth",            \
+                      "%s: " msg, __FUNCTION__, a)       \
 
 /**
  * Prints DEBUG build warnings, which show in DEBUG build only.
@@ -43,6 +46,7 @@ extern bool gBluetoothDebugFlag;
   NS_WARNING(nsPrintfCString(args).get())                            \
 
 #else
+<<<<<<< HEAD
 #define BT_LOGD(args, params)                                           \
   do {                                                               \
     if (gBluetoothDebugFlag) {                                       \
@@ -52,6 +56,17 @@ extern bool gBluetoothDebugFlag;
 
 #define BT_LOGR(args, params) printf(args, params)
 #define BT_WARNING(args, params) printf(args, params)
+=======
+#define BT_LOGD(msg, ...)                                            \
+  do {                                                               \
+    if (gBluetoothDebugFlag) {                                       \
+      printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__);               \
+    }                                                                \
+  } while(0)
+
+#define BT_LOGR(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
+#define BT_WARNING(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
+>>>>>>> 0da9273
 #endif
 
 #define BEGIN_BLUETOOTH_NAMESPACE \

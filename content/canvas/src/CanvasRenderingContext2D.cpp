@@ -4000,7 +4000,10 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     CanvasRenderingContext2DUserData* userData =
       static_cast<CanvasRenderingContext2DUserData*>(
         aOldLayer->GetUserData(&g2DContextLayerUserData));
-    if (userData && userData->IsForContext(this)) {
+
+    CanvasLayer::Data data;
+    data.mGLContext = static_cast<GLContext*>(mTarget->GetGLContext());
+    if (userData && userData->IsForContext(this) && aOldLayer->IsDataValid(data)) {
       nsRefPtr<CanvasLayer> ret = aOldLayer;
       return ret.forget();
     }
