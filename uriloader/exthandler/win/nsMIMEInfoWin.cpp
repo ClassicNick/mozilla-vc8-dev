@@ -256,7 +256,7 @@ nsMIMEInfoWin::LoadUriInternal(nsIURI * aURL)
 
     HMODULE hDll = NULL;
     
-    static const PRUnichar cmdVerb[] = L"open";
+    static const wchar_t cmdVerb[] = L"open";
     SHELLEXECUTEINFOW sinfo;
     memset(&sinfo, 0, sizeof(sinfo));
     sinfo.cbSize   = sizeof(sinfo);
@@ -452,7 +452,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
     if (bufLength == 0) // Error
       return false;
 
-    nsAutoArrayPtr<PRUnichar> destination(new PRUnichar[bufLength]);
+    nsAutoArrayPtr<wchar_t> destination(new wchar_t[bufLength]);
     if (!destination)
       return false;
     if (!::ExpandEnvironmentStringsW(appFilesystemCommand.get(),
@@ -460,7 +460,7 @@ bool nsMIMEInfoWin::GetDllLaunchInfo(nsIFile * aDll,
                                      bufLength))
       return false;
 
-    appFilesystemCommand = destination;
+    appFilesystemCommand = static_cast<const wchar_t*>(destination);
 
     // C:\Windows\System32\rundll32.exe "C:\Program Files\Windows 
     // Photo Gallery\PhotoViewer.dll", ImageView_Fullscreen %1

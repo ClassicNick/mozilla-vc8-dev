@@ -234,7 +234,7 @@ static DWORD GetSpecialFolderIcon(nsIFile* aFile, int aFolder, SHFILEINFOW* aSFI
   if (!aFile)
     return shellResult;
 
-  PRUnichar fileNativePath[MAX_PATH];
+  wchar_t fileNativePath[MAX_PATH];
   nsAutoString fileNativePathStr;
   aFile->GetPath(fileNativePathStr);
   ::GetShortPathNameW(fileNativePathStr.get(), fileNativePath, ArrayLength(fileNativePath));
@@ -242,7 +242,7 @@ static DWORD GetSpecialFolderIcon(nsIFile* aFile, int aFolder, SHFILEINFOW* aSFI
   LPITEMIDLIST idList;
   HRESULT hr = ::SHGetSpecialFolderLocation(nullptr, aFolder, &idList);
   if (SUCCEEDED(hr)) {
-    PRUnichar specialNativePath[MAX_PATH];
+    wchar_t specialNativePath[MAX_PATH];
     ::SHGetPathFromIDListW(idList, specialNativePath);
     ::GetShortPathNameW(specialNativePath, specialNativePath, ArrayLength(specialNativePath));
   

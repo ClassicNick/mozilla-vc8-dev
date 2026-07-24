@@ -88,9 +88,9 @@ class nsUXThemeData {
   static const wchar_t *GetClassName(nsUXThemeClass);
 
 public:
-  static const PRUnichar kThemeLibraryName[];
+  static const wchar_t kThemeLibraryName[];
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
-   static const PRUnichar kDwmLibraryName[];
+   static const wchar_t kDwmLibraryName[];
 #endif
   static bool sFlatMenus;
   static bool sTitlebarInfoPopulatedAero;

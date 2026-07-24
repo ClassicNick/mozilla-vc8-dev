@@ -26,7 +26,7 @@ UINT sAppShellGeckoMsgId = RegisterWindowMessageW(L"nsAppShell:EventID");
 } }
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-const PRUnichar* kTaskbarButtonEventId = L"TaskbarButtonCreated";
+const wchar_t* kTaskbarButtonEventId = L"TaskbarButtonCreated";
 UINT sTaskbarButtonCreatedMsg;
 
 /* static */
@@ -84,7 +84,7 @@ nsAppShell::Init()
   WNDCLASSW wc;
   HINSTANCE module = GetModuleHandle(nullptr);
 
-  const PRUnichar *const kWindowClass = L"nsAppShell:EventWindowClass";
+  const wchar_t *const kWindowClass = L"nsAppShell:EventWindowClass";
   if (!GetClassInfoW(module, kWindowClass, &wc)) {
     wc.style         = 0;
     wc.lpfnWndProc   = EventWindowProc;

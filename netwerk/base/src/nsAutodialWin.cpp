@@ -339,7 +339,7 @@ bool nsAutodial::IsRASConnected()
 }
 
 // Get the first RAS dial entry name from the phonebook.
-nsresult nsAutodial::GetFirstEntryName(PRUnichar* entryName, int bufferSize)
+nsresult nsAutodial::GetFirstEntryName(wchar_t* entryName, int bufferSize)
 {
     RASENTRYNAMEW rasEntryName;
     rasEntryName.dwSize = sizeof(rasEntryName);
@@ -382,7 +382,7 @@ int nsAutodial::NumRASEntries()
 }
 
 // Get the name of the default dial entry.
-nsresult nsAutodial::GetDefaultEntryName(PRUnichar* entryName, int bufferSize)
+nsresult nsAutodial::GetDefaultEntryName(wchar_t* entryName, int bufferSize)
 {
     // No RAS dialup entries. 
     if (mNumRASConnectionEntries <= 0)
@@ -403,8 +403,8 @@ nsresult nsAutodial::GetDefaultEntryName(PRUnichar* entryName, int bufferSize)
     //              or HKLM/Software/Microsoft/RAS Autodial/Default/DefaultInternet.
     // For Windows 2K: HKCU/RemoteAccess/InternetProfile.
 
-    const PRUnichar* key = nullptr;
-    const PRUnichar* val = nullptr;
+    const wchar_t* key = nullptr;
+    const wchar_t* val = nullptr;
 
     HKEY hKey = 0;
     LONG result = 0;
@@ -520,7 +520,7 @@ bool nsAutodial::IsAutodialServiceRunning()
 }
 
 // Add the specified address to the autodial directory.
-bool nsAutodial::AddAddressToAutodialDirectory(const PRUnichar* hostName)
+bool nsAutodial::AddAddressToAutodialDirectory(char16ptr_t hostName)
 {
     // First see if there is already a db entry for this address. 
     RASAUTODIALENTRYW autodialEntry;
