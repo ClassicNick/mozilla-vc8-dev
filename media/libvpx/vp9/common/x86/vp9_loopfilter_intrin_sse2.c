@@ -7,6 +7,8 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
+ 
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
 
 #include <emmintrin.h>  /* SSE2 */
 #include "vp9/common/vp9_loopfilter.h"
@@ -1280,3 +1282,5 @@ void vp9_mb_lpf_vertical_edge_w_sse2(unsigned char *s,
 
   transpose(src, 16, dst, p, 2);
 }
+
+#endif // _MSC_VER >= 1500

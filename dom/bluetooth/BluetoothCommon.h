@@ -46,27 +46,15 @@ extern bool gBluetoothDebugFlag;
   NS_WARNING(nsPrintfCString(args).get())                            \
 
 #else
-<<<<<<< HEAD
-#define BT_LOGD(args, params)                                           \
+#define BT_LOGD(msg, a)                                            \
   do {                                                               \
     if (gBluetoothDebugFlag) {                                       \
-      printf(args, params);                                   \
+      printf("%s: " msg, __FUNCTION__, a);               \
     }                                                                \
   } while(0)
 
-#define BT_LOGR(args, params) printf(args, params)
-#define BT_WARNING(args, params) printf(args, params)
-=======
-#define BT_LOGD(msg, ...)                                            \
-  do {                                                               \
-    if (gBluetoothDebugFlag) {                                       \
-      printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__);               \
-    }                                                                \
-  } while(0)
-
-#define BT_LOGR(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
-#define BT_WARNING(msg, ...) printf("%s: " msg, __FUNCTION__, ##__VA_ARGS__))
->>>>>>> 0da9273
+#define BT_LOGR(msg, a) printf("%s: " msg, __FUNCTION__, a))
+#define BT_WARNING(msg, a) printf("%s: " msg, __FUNCTION__, a))
 #endif
 
 #define BEGIN_BLUETOOTH_NAMESPACE \

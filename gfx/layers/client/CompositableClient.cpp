@@ -232,10 +232,12 @@ CompositableClient::CreateTextureClientForDrawing(SurfaceFormat aFormat,
 #ifdef XP_WIN
   LayersBackend parentBackend = GetForwarder()->GetCompositorBackendType();
   // XXX[nrc] uncomment once we have new texture clients for windows
+#ifdef CAIRO_HAS_D2D_SURFACE
   if (parentBackend == LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     //result = new TextureClientD3D11(GetForwarder(), GetTextureInfo());
   }
+#endif
   if (parentBackend == LAYERS_D3D9 &&
       !GetForwarder()->ForwardsToDifferentProcess() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {

@@ -441,7 +441,7 @@ class RegExpObject : public JSObject
 
     /* For access to assignInitialShape. */
     friend bool
-    EmptyShape::ensureInitialCustomShape<RegExpObject>(ExclusiveContext *cx,
+    EmptyShape::ensureInitialCustomShape(ExclusiveContext *cx,
                                                        Handle<RegExpObject*> obj);
 
     /*

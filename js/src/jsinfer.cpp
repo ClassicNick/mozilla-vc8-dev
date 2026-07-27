@@ -596,8 +596,8 @@ class types::CompilerConstraintList
   public:
     CompilerConstraintList(jit::TempAllocator &alloc)
       : failed_(false)
-      , alloc_(alloc.lifoAlloc())
 #ifdef JS_ION
+      , alloc_(alloc.lifoAlloc())
       , constraints(alloc)
       , frozenScripts(alloc)
 #endif

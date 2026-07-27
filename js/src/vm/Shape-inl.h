@@ -184,7 +184,7 @@ template<class ObjectSubclass>
 /* static */ inline bool
 EmptyShape::ensureInitialCustomShape(ExclusiveContext *cx, Handle<ObjectSubclass*> obj)
 {
-    static_assert(mozilla::IsBaseOf<JSObject, ObjectSubclass>::value,
+    MOZ_STATIC_ASSERT((mozilla::IsBaseOf<JSObject, ObjectSubclass>::value),
                   "ObjectSubclass must be a subclass of JSObject");
 
     // If the provided object has a non-empty shape, it was given the cached
