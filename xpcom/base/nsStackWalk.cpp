@@ -177,7 +177,7 @@ StackWalkInitCriticalAddress()
 #include <stdio.h>
 #include <malloc.h>
 #include "plstr.h"
-#include "mozilla/Util.h"
+#include "mozilla/ArrayUtils.h"
 
 #include "nspr.h"
 #if defined(_M_IX86) || defined(_M_AMD64)

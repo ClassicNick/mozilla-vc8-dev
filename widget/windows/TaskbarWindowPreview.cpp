@@ -7,7 +7,7 @@
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 
-#include "mozilla/Util.h"
+#include "mozilla/ArrayUtils.h"
 
 #include <nsITaskbarPreviewController.h>
 #include "TaskbarWindowPreview.h"
