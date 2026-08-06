@@ -381,13 +381,13 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     mScreenDC = GetDC(nullptr);
 
 #ifdef CAIRO_HAS_D2D_SURFACE
-    NS_RegisterMemoryReporter(new GfxD2DSurfaceCacheReporter());
-    NS_RegisterMemoryReporter(new GfxD2DSurfaceVramReporter());
+    RegisterStrongMemoryReporter(new GfxD2DSurfaceCacheReporter());
+    RegisterStrongMemoryReporter(new GfxD2DSurfaceVramReporter());
     mD2DDevice = nullptr;
 #endif
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-    NS_RegisterMemoryReporter(new GfxD2DVramDrawTargetReporter());
-    NS_RegisterMemoryReporter(new GfxD2DVramSourceSurfaceReporter());
+    RegisterStrongMemoryReporter(new GfxD2DVramDrawTargetReporter());
+    RegisterStrongMemoryReporter(new GfxD2DVramSourceSurfaceReporter());
 #endif
 
     UpdateRenderMode();
@@ -395,16 +395,12 @@ gfxWindowsPlatform::gfxWindowsPlatform()
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
     // This reporter is disabled because it frequently gives bogus values.  See
     // bug 917496.
-    //mGPUAdapterReporter = new GPUAdapterReporter();
-    //NS_RegisterMemoryReporter(mGPUAdapterReporter);
-    mGPUAdapterReporter = nullptr;
+    //RegisterStrongMemoryReporter(new GPUAdapterReporter());
 #endif
 }
 
 gfxWindowsPlatform::~gfxWindowsPlatform()
 {
-    //NS_UnregisterMemoryReporter(mGPUAdapterReporter);
-    
 #ifdef MOZ_ENABLE_D3D9_LAYER
      mDeviceManager = nullptr;
 #endif
