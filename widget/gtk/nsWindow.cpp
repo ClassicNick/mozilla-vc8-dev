@@ -4754,7 +4754,7 @@ nsWindow::CheckForRollup(gdouble aMouseX, gdouble aMouseY,
         bool rollup = true;
         if (aIsWheel) {
             rollup = rollupListener->ShouldRollupOnMouseWheelEvent();
-            retVal = true;
+            retVal = rollupListener->ShouldConsumeOnMouseWheelEvent();
         }
         // if we're dealing with menus, we probably have submenus and
         // we don't want to rollup if the click is in a parent menu of
