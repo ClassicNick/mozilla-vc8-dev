@@ -609,9 +609,9 @@ class HashMapEntry
     template <class> friend class detail::HashTableEntry;
     template <class, class, class, class> friend class HashMap;
 
+public:
     Key & mutableKey() { return key_; }
 
-  public:
     template<typename KeyInput, typename ValueInput>
     HashMapEntry(const KeyInput &k, const ValueInput &v)
       : key_(k),

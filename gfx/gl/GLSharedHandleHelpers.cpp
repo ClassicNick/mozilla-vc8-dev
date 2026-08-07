@@ -169,7 +169,7 @@ SharedTextureHandle CreateSharedHandle(GLContext* gl,
 
         return (SharedTextureHandle) new SurfaceTextureWrapper(reinterpret_cast<nsSurfaceTexture*>(buffer));
 #endif
-    case SharedTextureBufferType::TextureID: {
+    case TextureID: {
         if (!DoesEGLContextSupportSharingWithEGLImage(gl))
             return 0;
 
