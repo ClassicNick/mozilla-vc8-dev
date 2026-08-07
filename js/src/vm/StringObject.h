@@ -59,10 +59,11 @@ class StringObject : public JSObject
     friend JSObject *
     ::js_InitStringClass(JSContext *cx, js::HandleObject global);
 
+public:
     /* For access to assignInitialShape. */
-    friend bool
-    EmptyShape::ensureInitialCustomShape<StringObject>(ExclusiveContext *cx,
-                                                       Handle<StringObject*> obj);
+    bool
+    ensureInitialCustomShape(ExclusiveContext *cx,
+                             Handle<StringObject*> obj);
 
     /*
      * Compute the initial shape to associate with fresh String objects, which

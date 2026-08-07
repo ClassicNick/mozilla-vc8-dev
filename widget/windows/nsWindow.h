@@ -18,6 +18,7 @@
 #include "nsToolkit.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "gfxWindowsPlatform.h"
 #include "gfxWindowsSurface.h"
 #include "nsWindowDbg.h"
 #include "cairo.h"
@@ -442,6 +443,7 @@ protected:
   static void             ActivateOtherWindowHelper(HWND aWnd);
   void                    ClearCachedResources();
   nsIWidgetListener*      GetPaintListener();
+  static bool             IsRenderMode(gfxWindowsPlatform::RenderMode aMode);
 
 protected:
   nsCOMPtr<nsIWidget>   mParent;

@@ -31,10 +31,11 @@ class ErrorObject : public JSObject
     friend JSObject *
     ::js_InitExceptionClasses(JSContext *cx, JS::HandleObject global);
 
+public:
     /* For access to assignInitialShape. */
-    friend bool
-    EmptyShape::ensureInitialCustomShape<ErrorObject>(ExclusiveContext *cx,
-                                                      Handle<ErrorObject*> obj);
+    bool
+    ensureInitialCustomShape(ExclusiveContext *cx,
+                             Handle<ErrorObject*> obj);
 
     /*
      * Assign the initial error shape to the empty object.  (This shape does
@@ -44,6 +45,7 @@ class ErrorObject : public JSObject
     static Shape *
     assignInitialShape(ExclusiveContext *cx, Handle<ErrorObject*> obj);
 
+public:
     static bool
     init(JSContext *cx, Handle<ErrorObject*> obj, JSExnType type,
          ScopedJSFreePtr<JSErrorReport> *errorReport, HandleString fileName, HandleString stack,

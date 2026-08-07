@@ -436,13 +436,13 @@ class RegExpObject : public JSObject
         JSObject::setPrivate(&shared);
     }
 
-  private:
+  public:
     friend class RegExpObjectBuilder;
 
     /* For access to assignInitialShape. */
-    friend bool
-    EmptyShape::ensureInitialCustomShape<RegExpObject>(ExclusiveContext *cx,
-                                                       Handle<RegExpObject*> obj);
+    bool
+    ensureInitialCustomShape(ExclusiveContext *cx,
+                             Handle<RegExpObject*> obj);
 
     /*
      * Compute the initial shape to associate with fresh RegExp objects,
@@ -452,6 +452,7 @@ class RegExpObject : public JSObject
     static Shape *
     assignInitialShape(ExclusiveContext *cx, Handle<RegExpObject*> obj);
 
+private:
     bool init(ExclusiveContext *cx, HandleAtom source, RegExpFlag flags);
 
     /*

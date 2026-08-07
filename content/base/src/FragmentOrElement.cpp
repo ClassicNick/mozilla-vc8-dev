@@ -10,10 +10,10 @@
  * utility methods for subclasses, and so forth.
  */
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Util.h"
 
 #include "mozilla/dom/FragmentOrElement.h"
 
@@ -1327,7 +1327,7 @@ FindOptimizableSubtreeRoot(nsINode* aNode)
   return aNode;
 }
 
-StaticAutoPtr<nsTHashtable<nsPtrHashKey<nsINode>>> gCCBlackMarkedNodes;
+StaticAutoPtr<nsTHashtable<nsPtrHashKey<nsINode> > > gCCBlackMarkedNodes;
 
 static PLDHashOperator
 VisitBlackMarkedNode(nsPtrHashKey<nsINode>* aEntry, void*)
