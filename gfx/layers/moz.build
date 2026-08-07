@@ -97,6 +97,8 @@ EXPORTS.gfxipc += [
 
 EXPORTS.mozilla.layers += [
     'basic/BasicCompositor.h',
+    'basic/MacIOSurfaceTextureHostBasic.h',
+    'basic/TextureHostBasic.h',
     'client/CanvasClient.h',
     'client/CompositableClient.h',
     'client/ContentClient.h',
@@ -198,6 +200,7 @@ UNIFIED_SOURCES += [
     'basic/BasicLayerManager.cpp',
     'basic/BasicLayersImpl.cpp',
     'basic/BasicThebesLayer.cpp',
+    'basic/TextureHostBasic.cpp',
     'BufferUnrotate.cpp',
     'client/CanvasClient.cpp',
     'client/ClientCanvasLayer.cpp',
@@ -272,6 +275,7 @@ SOURCES += [
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     SOURCES += [
+        'basic/MacIOSurfaceTextureHostBasic.cpp',
         'opengl/MacIOSurfaceTextureClientOGL.cpp',
         'opengl/MacIOSurfaceTextureHostOGL.cpp',
     ]
