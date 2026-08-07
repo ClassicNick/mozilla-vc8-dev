@@ -3109,8 +3109,6 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
       allowZoom = true;
     }
     aFont->EnableZoom(aPresContext, allowZoom);
-  } else {
-    allowZoom = true;
   }
 
   // mLanguage must be set before before any of the CalcLengthWith calls
@@ -3573,18 +3571,14 @@ nsRuleNode::SetFont(nsPresContext* aPresContext, nsStyleContext* aContext,
 
   nscoord fontSize = aFont->mSize;
 
-  // Enforce the user's specified minimum font-size on the value that we
-  // expose (but don't change font-size:0, since that would unhide hidden
-  // text).
-  //
-  // We don't do this for SVG text, which we can tell from the value of
-  // -x-text-zoom.
+  // enforce the user' specified minimum font-size on the value that we expose
+  // (but don't change font-size:0, since that would unhide hidden text)
   if (fontSize > 0) {
     nscoord minFontSize = aPresContext->MinFontSize(aFont->mLanguage);
     if (minFontSize < 0) {
       minFontSize = 0;
     }
-    if (fontSize < minFontSize && !aPresContext->IsChrome() && allowZoom) {
+    if (fontSize < minFontSize && !aPresContext->IsChrome()) {
       // override the minimum font-size constraint
       fontSize = minFontSize;
     }
@@ -6964,6 +6958,13 @@ nsRuleNode::ComputePositionData(void* aStartStruct,
               parentPos->mBoxSizing,
               NS_STYLE_BOX_SIZING_CONTENT, 0, 0, 0, 0);
 
+  // align-content: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForAlignContent(),
+              pos->mAlignContent, canStoreInRuleTree,
+              SETDSC_ENUMERATED | SETDSC_UNSET_INITIAL,
+              parentPos->mAlignContent,
+              NS_STYLE_ALIGN_CONTENT_STRETCH, 0, 0, 0, 0);
+
   // align-items: enum, inherit, initial
   SetDiscrete(*aRuleData->ValueForAlignItems(),
               pos->mAlignItems, canStoreInRuleTree,
@@ -7046,6 +7047,13 @@ nsRuleNode::ComputePositionData(void* aStartStruct,
             pos->mFlexShrink, canStoreInRuleTree,
             parentPos->mFlexShrink, 1.0f,
             SETFCT_UNSET_INITIAL);
+
+  // flex-wrap: enum, inherit, initial
+  SetDiscrete(*aRuleData->ValueForFlexWrap(),
+              pos->mFlexWrap, canStoreInRuleTree,
+              SETDSC_ENUMERATED | SETDSC_UNSET_INITIAL,
+              parentPos->mFlexWrap,
+              NS_STYLE_FLEX_WRAP_NOWRAP, 0, 0, 0, 0);
 
   // order: integer, inherit, initial
   SetDiscrete(*aRuleData->ValueForOrder(),

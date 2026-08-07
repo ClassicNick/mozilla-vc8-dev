@@ -133,8 +133,16 @@ public:
    * minimum-scale, maximum-scale, and user-scalable.
    */
   void UpdateZoomConstraints(bool aAllowZoom,
-                             const mozilla::CSSToScreenScale& aMinScale,
-                             const mozilla::CSSToScreenScale& aMaxScale);
+                             const CSSToScreenScale& aMinScale,
+                             const CSSToScreenScale& aMaxScale);
+
+  /**
+   * Return the zoom constraints last set for this APZC (in the constructor
+   * or in UpdateZoomConstraints()).
+   */
+  void GetZoomConstraints(bool* aAllowZoom,
+                          CSSToScreenScale* aMinScale,
+                          CSSToScreenScale* aMaxScale);
 
   /**
    * Schedules a runnable to run on the controller/UI thread at some time
@@ -526,6 +534,14 @@ private:
   void SetState(PanZoomState aState);
 
   /**
+   * Convert ScreenPoint relative to this APZC to CSSIntPoint relative
+   * to the parent document. This excludes the transient compositor transform.
+   * NOTE: This must be converted to CSSIntPoint relative to the child
+   * document before sending over IPC.
+   */
+  bool ConvertToGecko(const ScreenPoint& aPoint, CSSIntPoint* aOut);
+
+  /**
    * Internal helpers for checking general state of this apzc.
    */
   bool IsTransformingState(PanZoomState aState);
@@ -599,8 +615,8 @@ private:
   // values; for example, allowing a min zoom of 0.0 can cause very bad things
   // to happen.
   bool mAllowZoom;
-  mozilla::CSSToScreenScale mMinZoom;
-  mozilla::CSSToScreenScale mMaxZoom;
+  CSSToScreenScale mMinZoom;
+  CSSToScreenScale mMaxZoom;
 
   // The last time the compositor has sampled the content transform for this
   // frame.
