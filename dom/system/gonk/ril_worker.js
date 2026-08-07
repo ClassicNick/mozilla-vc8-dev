@@ -362,11 +362,6 @@ let RIL = {
     this._pendingNetworkInfo = {rilMessageType: "networkinfochanged"};
 
     /**
-     * Mute or unmute the radio.
-     */
-    this._muted = true;
-
-    /**
      * USSD session flag.
      * Only one USSD session may exist at a time, and the session is assumed
      * to exist until:
@@ -389,17 +384,6 @@ let RIL = {
       MMI: cbmmi || null
     };
     this.mergedCellBroadcastConfig = null;
-  },
-
-  get muted() {
-    return this._muted;
-  },
-  set muted(val) {
-    val = Boolean(val);
-    if (this._muted != val) {
-      this.setMute(val);
-      this._muted = val;
-    }
   },
 
   /**
@@ -1466,10 +1450,10 @@ let RIL = {
    * @param mute
    *        Boolean to indicate whether to mute or unmute the radio.
    */
-  setMute: function setMute(mute) {
+  setMute: function setMute(options) {
     Buf.newParcel(REQUEST_SET_MUTE);
     Buf.writeInt32(1);
-    Buf.writeInt32(mute ? 1 : 0);
+    Buf.writeInt32(options.muted ? 1 : 0);
     Buf.sendParcel();
   },
 
@@ -3617,10 +3601,6 @@ let RIL = {
     if (conferenceChanged) {
       this._ensureConference();
     }
-
-    // Update our mute status. If there is anything in our currentCalls map then
-    // we know it's a voice call and we should leave audio on.
-    this.muted = (Object.getOwnPropertyNames(this.currentCalls).length === 0);
   },
 
   _ensureConference: function _ensureConference() {
@@ -9729,6 +9709,11 @@ let StkCommandParamsFactory = {
       menu.isHelpAvailable = true;
     }
 
+    ctlv = StkProactiveCmdHelper.searchForTag(COMPREHENSIONTLV_TAG_NEXT_ACTION_IND, ctlvs);
+    if (ctlv) {
+      menu.nextActionList = ctlv.value;
+    }
+
     return menu;
   },
 
@@ -10419,6 +10404,23 @@ let StkProactiveCmdHelper = {
     return {url: s};
   },
 
+  /**
+   * Next Action Indicator List.
+   *
+   * | Byte  | Description      | Length |
+   * |  1    | Next Action tag  |   1    |
+   * |  1    | Length(X)        |   1    |
+   * |  3~   | Next Action List |   X    |
+   * | 3+X-1 |                  |        |
+   */
+  retrieveNextActionList: function retrieveNextActionList(length) {
+    let nextActionList = [];
+    for (let i = 0; i < length; i++) {
+      nextActionList.push(GsmPDUHelper.readHexOctet());
+    }
+    return nextActionList;
+  },
+
   searchForTag: function searchForTag(tag, ctlvs) {
     let iter = Iterator(ctlvs);
     return this.searchForNextTag(tag, iter);
@@ -10483,6 +10485,9 @@ StkProactiveCmdHelper[COMPREHENSIONTLV_TAG_IMMEDIATE_RESPONSE] = function COMPRE
 };
 StkProactiveCmdHelper[COMPREHENSIONTLV_TAG_URL] = function COMPREHENSIONTLV_TAG_URL(length) {
   return this.retrieveUrl(length);
+};
+StkProactiveCmdHelper[COMPREHENSIONTLV_TAG_NEXT_ACTION_IND] = function COMPREHENSIONTLV_TAG_NEXT_ACTION_IND(length) {
+  return this.retrieveNextActionList(length);
 };
 
 let ComprehensionTlvHelper = {
@@ -11550,9 +11555,15 @@ let ICCRecordHelper = {
         ICCIOHelper.loadNextRecord(options);
       } else {
         if (onsuccess) {
+          RIL.iccInfoPrivate.pbrs = pbrs;
           onsuccess(pbrs);
         }
       }
+    }
+
+    if (RIL.iccInfoPrivate.pbrs) {
+      onsuccess(RIL.iccInfoPrivate.pbrs);
+      return;
     }
 
     let pbrs = [];

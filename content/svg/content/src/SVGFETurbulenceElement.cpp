@@ -121,7 +121,7 @@ SVGFETurbulenceElement::Type()
 FilterPrimitiveDescription
 SVGFETurbulenceElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
                                                 const IntRect& aFilterSubregion,
-                                                nsTArray<RefPtr<SourceSurface>>& aInputImages)
+                                                nsTArray<RefPtr<SourceSurface> >& aInputImages)
 {
   float fX = mNumberPairAttributes[BASE_FREQ].GetAnimValue(nsSVGNumberPair::eFirst);
   float fY = mNumberPairAttributes[BASE_FREQ].GetAnimValue(nsSVGNumberPair::eSecond);

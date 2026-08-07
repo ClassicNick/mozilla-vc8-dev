@@ -131,7 +131,7 @@ public:
 
     uint32_t end = (mStart + mCount) % mCapacity;
 
-    uint32_t toCopy = std::min(mCapacity - end, aLength);
+    uint32_t toCopy = NS_MIN(mCapacity - end, aLength);
     memcpy(&mBuffer[end], aSrc, toCopy);
     memcpy(&mBuffer[0], aSrc + toCopy, aLength - toCopy);
     mCount += aLength;
@@ -146,7 +146,7 @@ public:
     NS_ABORT_IF_FALSE(aSize <= Length(), "Request too large.");
 
     *aData1 = &mBuffer[mStart];
-    *aSize1 = std::min(mCapacity - mStart, aSize);
+    *aSize1 = NS_MIN(mCapacity - mStart, aSize);
     *aData2 = &mBuffer[0];
     *aSize2 = aSize - *aSize1;
     mCount -= *aSize1 + *aSize2;
@@ -179,9 +179,13 @@ public:
   // Returns the maximum number of channels supported by the audio hardware.
   static int MaxNumberOfChannels();
 
+  static void InitPreferredSampleRate();
   // Returns the samplerate the systems prefer, because it is the
   // samplerate the hardware/mixer supports.
-  static int PreferredSampleRate();
+  static int PreferredSampleRate() {
+    MOZ_ASSERT(sPreferredSampleRate);
+    return sPreferredSampleRate;
+  }
 
   AudioStream();
   ~AudioStream();
@@ -373,13 +377,13 @@ private:
 
   StreamState mState;
 
-  // This mutex protects the static members below.
-  static StaticMutex sMutex;
-  static cubeb* sCubebContext;
-
   // Prefered samplerate, in Hz (characteristic of the
   // hardware/mixer/platform/API used).
   static uint32_t sPreferredSampleRate;
+
+  // This mutex protects the static members below
+  static StaticMutex sMutex;
+  static cubeb* sCubebContext;
 
   static double sVolumeScale;
   static uint32_t sCubebLatency;

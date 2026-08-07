@@ -193,7 +193,7 @@ SVGFEImageElement::Href()
 FilterPrimitiveDescription
 SVGFEImageElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
                                            const IntRect& aFilterSubregion,
-                                           nsTArray<RefPtr<SourceSurface>>& aInputImages)
+                                           nsTArray<RefPtr<SourceSurface> >& aInputImages)
 {
   nsIFrame* frame = GetPrimaryFrame();
   if (!frame) {

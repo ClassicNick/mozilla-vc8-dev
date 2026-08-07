@@ -341,7 +341,7 @@ public:
                           const IntRect& aFillPaintRect,
                           SourceSurface* aStrokePaint,
                           const IntRect& aStrokePaintRect,
-                          nsTArray<RefPtr<SourceSurface>>& aAdditionalImages);
+                          nsTArray<RefPtr<SourceSurface> >& aAdditionalImages);
 
   /**
    * Computes the region that changes in the filter output due to a change in

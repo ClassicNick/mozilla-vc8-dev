@@ -565,7 +565,7 @@ FilterNodeFromPrimitiveDescription(const FilterPrimitiveDescription& aDescriptio
                                    DrawTarget* aDT,
                                    nsTArray<RefPtr<FilterNode> >& aSources,
                                    nsTArray<IntRect>& aSourceRegions,
-                                   nsTArray<RefPtr<SourceSurface>>& aInputImages)
+                                   nsTArray<RefPtr<SourceSurface> >& aInputImages)
 {
   const AttributeMap& atts = aDescription.Attributes();
   switch (aDescription.Type()) {
@@ -1006,7 +1006,7 @@ FilterNodeGraphFromDescription(DrawTarget* aDT,
                                const IntRect& aFillPaintRect,
                                SourceSurface* aStrokePaint,
                                const IntRect& aStrokePaintRect,
-                               nsTArray<RefPtr<SourceSurface>>& aAdditionalImages)
+                               nsTArray<RefPtr<SourceSurface> >& aAdditionalImages)
 {
   const nsTArray<FilterPrimitiveDescription>& primitives = aFilter.mPrimitives;
   const IntRect& filterSpaceBounds = aFilter.mFilterSpaceBounds;
@@ -1110,7 +1110,7 @@ FilterSupport::RenderFilterDescription(DrawTarget* aDT,
                                        const IntRect& aFillPaintRect,
                                        SourceSurface* aStrokePaint,
                                        const IntRect& aStrokePaintRect,
-                                       nsTArray<RefPtr<SourceSurface>>& aAdditionalImages)
+                                       nsTArray<RefPtr<SourceSurface> >& aAdditionalImages)
 {
   RefPtr<FilterNode> resultFilter =
     FilterNodeGraphFromDescription(aDT, aFilter, aRenderRect,

@@ -6,8 +6,8 @@
 #mk_add_options MOZ_MAKE_FLAGS="-j3"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR="j:/Browsers/VC71Compat/objdir/fxupdates/central/obj-fxvc71-ipc-release"
-WIN32_REDIST_DIR="j:/Browsers/VC71Compat/redist/VC71/SP1"
+mk_add_options MOZ_OBJDIR="f:/objdir/fxupdates/central/obj-fxvc71-ipc-release"
+WIN32_REDIST_DIR="f:/Redist/VC71SP1"
 
 
 # Configure Options
@@ -37,7 +37,8 @@ ac_add_options --disable-methodjit
 ac_add_options --disable-tracejit
 ac_add_options --disable-ion
 ac_add_options --enable-ipc
-ac_add_options --enable-webm
+ac_add_options --disable-webm
+ac_add_options --disable-libjpeg-turbo
 ac_add_options --disable-webrtc
 ac_add_options --disable-webspeech
 ac_add_options --disable-sps

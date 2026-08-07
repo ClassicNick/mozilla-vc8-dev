@@ -1901,6 +1901,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
             JSObject* obj = Float32Array::Create(cx, this, unitSize, fv);
             if (!obj) {
                 ErrorOutOfMemory("getUniform: out of memory");
+                return JS::NullValue();
             }
             return JS::ObjectOrNullValue(obj);
         }
@@ -1913,6 +1914,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
             JSObject* obj = Int32Array::Create(cx, this, unitSize, iv);
             if (!obj) {
                 ErrorOutOfMemory("getUniform: out of memory");
+                return JS::NullValue();
             }
             return JS::ObjectOrNullValue(obj);
         }
@@ -1928,6 +1930,7 @@ WebGLContext::GetUniform(JSContext* cx, WebGLProgram *prog,
             JSObject* obj = JS_NewArrayObject(cx, unitSize, uv);
             if (!obj) {
                 ErrorOutOfMemory("getUniform: out of memory");
+                return JS::NullValue();
             }
             return JS::ObjectOrNullValue(obj);
         }
