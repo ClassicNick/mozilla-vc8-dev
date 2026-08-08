@@ -54,6 +54,7 @@
 #include "nsIWebBrowserFocus.h"
 #include "nsIWebBrowserSetup.h"
 #include "nsIWebProgress.h"
+#include "nsIXULRuntime.h"
 #include "nsInterfaceHashtable.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
@@ -284,6 +285,7 @@ TabChild::TabChild(ContentChild* aManager, const TabContext& aContext, uint32_t 
   , mTriedBrowserInit(false)
   , mOrientation(eScreenOrientation_PortraitPrimary)
   , mUpdateHitRegion(false)
+  , mContextMenuHandled(false)
 {
 }
 
@@ -1660,6 +1662,18 @@ TabChild::RecvHandleLongTap(const CSSIntPoint& aPoint)
 }
 
 bool
+TabChild::RecvHandleLongTapUp(const CSSIntPoint& aPoint)
+{
+  if (mContextMenuHandled) {
+    mContextMenuHandled = false;
+    return true;
+  }
+
+  RecvHandleSingleTap(aPoint);
+  return true;
+}
+
+bool
 TabChild::RecvNotifyTransformBegin(const ViewID& aViewId)
 {
   nsIScrollableFrame* sf = nsLayoutUtils::FindScrollableFrameFor(aViewId);
@@ -2300,8 +2314,8 @@ TabChild::InitRenderingState()
                                      false);
     }
 
-    // This state can't really change during the lifetime of the child.
-    sCpowsEnabled = Preferences::GetBool("browser.tabs.remote", false);
+    // This state can't change during the lifetime of the child.
+    sCpowsEnabled = BrowserTabsRemote();
     if (Preferences::GetBool("dom.ipc.cpows.force-enabled", false))
       sCpowsEnabled = true;
 

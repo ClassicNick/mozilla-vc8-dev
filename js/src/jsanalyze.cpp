@@ -24,6 +24,7 @@ using mozilla::DebugOnly;
 using mozilla::PodCopy;
 using mozilla::PodZero;
 using mozilla::FloorLog2;
+using js::Vector;
 
 /////////////////////////////////////////////////////////////////////
 // Bytecode

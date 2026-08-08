@@ -87,6 +87,7 @@
 #include "mozilla/Mutex.h"
 
 #include "nsIGfxInfo.h"
+#include "nsIXULRuntime.h"
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -2077,7 +2078,7 @@ InitLayersAccelerationPrefs()
     sPrefLayoutFrameRate = Preferences::GetInt("layout.frame_rate", -1);
     sBufferRotationEnabled = Preferences::GetBool("layers.bufferrotation.enabled", true);
     sComponentAlphaEnabled = Preferences::GetBool("layers.componentalpha.enabled", true);
-    sPrefBrowserTabsRemote = Preferences::GetBool("browser.tabs.remote", false);
+    sPrefBrowserTabsRemote = BrowserTabsRemote();
 
 #ifdef XP_WIN
     if (sPrefLayersAccelerationForceEnabled) {

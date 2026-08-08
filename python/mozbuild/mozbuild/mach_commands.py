@@ -526,13 +526,20 @@ class Build(MachCommandBase):
 
     @Command('build-backend', category='build',
         description='Generate a backend used to build the tree.')
-    def build_backend(self):
+    @CommandArgument('-d', '--diff', action='store_true',
+        help='Show a diff of changes.')
+    def build_backend(self, diff=False):
         # When we support multiple build backends (Tup, Visual Studio, etc),
         # this command will be expanded to support choosing what to generate.
         python = self.virtualenv_manager.python_path
         config_status = os.path.join(self.topobjdir, 'config.status')
-        return self._run_command_in_objdir(args=[python, config_status],
-            pass_thru=True, ensure_exit_code=False)
+
+        args = [python, config_status]
+        if diff:
+            args.append('--diff')
+
+        return self._run_command_in_objdir(args=args, pass_thru=True,
+            ensure_exit_code=False)
 
 
 @CommandProvider
@@ -985,62 +992,3 @@ class MachDebug(MachCommandBase):
                 print('config defines:')
                 for k in sorted(config.defines):
                     print('\t%s' % k)
-
-
-@CommandProvider
-class Documentation(MachCommandBase):
-    """Helps manage in-tree documentation."""
-
-    @Command('build-docs', category='build-dev',
-        description='Generate documentation for the tree.')
-    @CommandArgument('--format', default='html',
-        help='Documentation format to write.')
-    @CommandArgument('--api-docs', action='store_true',
-        help='If specified, we will generate api docs templates for in-tree '
-            'Python. This will likely create and/or modify files in '
-            'build/docs. It is meant to be run by build maintainers when new '
-            'Python modules are added to the tree.')
-    @CommandArgument('outdir', default='<DEFAULT>', nargs='?',
-        help='Where to write output.')
-    def build_docs(self, format=None, api_docs=False, outdir=None):
-        self._activate_virtualenv()
-
-        self.virtualenv_manager.install_pip_package('mdn-sphinx-theme==0.3')
-
-        if api_docs:
-            import sphinx.apidoc
-            outdir = os.path.join(self.topsrcdir, 'build', 'docs', 'python')
-
-            base_args = [sys.argv[0], '--no-toc', '-o', outdir]
-
-            packages = [
-                ('python/codegen',),
-                ('python/mozbuild/mozbuild', 'test'),
-                ('python/mozbuild/mozpack', 'test'),
-                ('python/mozversioncontrol/mozversioncontrol',),
-            ]
-
-            for package in packages:
-                extra_args = [os.path.join(self.topsrcdir, package[0])]
-                extra_args.extend(package[1:])
-
-                sphinx.apidoc.main(base_args + extra_args)
-
-            return 0
-
-        import sphinx
-        if outdir == '<DEFAULT>':
-            outdir = os.path.join(self.topobjdir, 'docs', format)
-
-        args = [
-            sys.argv[0],
-            '-b', format,
-            os.path.join(self.topsrcdir, 'build', 'docs'),
-            outdir,
-        ]
-
-        result = sphinx.main(args)
-
-        print('Docs written to %s.' % outdir)
-
-        return result

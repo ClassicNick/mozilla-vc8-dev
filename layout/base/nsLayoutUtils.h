@@ -377,7 +377,6 @@ public:
   static void SetFixedPositionLayerData(Layer* aLayer, const nsIFrame* aViewportFrame,
                                         nsSize aViewportSize,
                                         const nsIFrame* aFixedPosFrame,
-                                        const nsIFrame* aReferenceFrame,
                                         nsPresContext* aPresContext,
                                         const ContainerLayerParameters& aContainerParameters);
 
@@ -1736,6 +1735,14 @@ public:
   static bool IsTextAlignTrueValueEnabled();
 
   /**
+   * Checks if CSS variables are currently enabled.
+   */
+  static bool CSSVariablesEnabled()
+  {
+    return sCSSVariablesEnabled;
+  }
+
+  /**
    * Unions the overflow areas of all non-popup children of aFrame with
    * aOverflowAreas.
    */
@@ -1962,6 +1969,7 @@ private:
   static bool sFontSizeInflationForceEnabled;
   static bool sFontSizeInflationDisabledInMasterProcess;
   static bool sInvalidationDebuggingIsEnabled;
+  static bool sCSSVariablesEnabled;
 };
 
 template<typename PointType, typename RectType, typename CoordType>

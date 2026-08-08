@@ -250,11 +250,9 @@ UNIFIED_SOURCES += [
     'ipc/SharedPlanarYCbCrImage.cpp',
     'ipc/SharedRGBImage.cpp',
     'ipc/TaskThrottler.cpp',
-    'Layers.cpp',
     'LayerScope.cpp',
     'LayersLogging.cpp',
     'LayerSorter.cpp',
-    'LayerTreeInvalidation.cpp',
     'opengl/CompositingRenderTargetOGL.cpp',
     'opengl/CompositorOGL.cpp',
     'opengl/OGLShaderProgram.cpp',
@@ -271,7 +269,17 @@ SOURCES += [
     'basic/BasicImageLayer.cpp',
     'composite/TextureHost.cpp',
     'ImageContainer.cpp',
+    'Layers.cpp',
+    'LayerTreeInvalidation.cpp',
 ]
+
+# Workaround compiler bug (Bug 795594)
+if CONFIG['_MSC_VER'] and CONFIG['CPU_ARCH'] == 'x86_64':
+    for src in [
+        'Layers.cpp',
+        'LayerTreeInvalidation.cpp',
+    ]:
+        SOURCES[src].no_pgo = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     SOURCES += [

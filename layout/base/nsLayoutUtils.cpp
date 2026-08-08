@@ -35,7 +35,6 @@
 #include "nsRenderingContext.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsCSSRendering.h"
-#include "nsCxPusher.h"
 #include "nsThemeConstants.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDocShell.h"
@@ -115,6 +114,7 @@ typedef FrameMetrics::ViewID ViewID;
 /* static */ bool nsLayoutUtils::sFontSizeInflationForceEnabled;
 /* static */ bool nsLayoutUtils::sFontSizeInflationDisabledInMasterProcess;
 /* static */ bool nsLayoutUtils::sInvalidationDebuggingIsEnabled;
+/* static */ bool nsLayoutUtils::sCSSVariablesEnabled;
 
 static ViewID sScrollIdCounter = FrameMetrics::START_SCROLL_ID;
 
@@ -283,8 +283,10 @@ GetScaleForValue(const nsStyleAnimation::Value& aValue,
     return gfxSize();
   }
 
-  nsCSSValueList* values = aValue.GetCSSValueListValue();
-  if (values->mValue.GetUnit() == eCSSUnit_None) {
+  nsCSSValueSharedList* list = aValue.GetCSSValueSharedListValue();
+  MOZ_ASSERT(list->mHead);
+
+  if (list->mHead->mValue.GetUnit() == eCSSUnit_None) {
     // There is an animation, but no actual transform yet.
     return gfxSize();
   }
@@ -292,7 +294,7 @@ GetScaleForValue(const nsStyleAnimation::Value& aValue,
   nsRect frameBounds = aFrame->GetRect();
   bool dontCare;
   gfx3DMatrix transform = nsStyleTransformMatrix::ReadTransforms(
-                            aValue.GetCSSValueListValue(),
+                            list->mHead,
                             aFrame->StyleContext(),
                             aFrame->PresContext(), dontCare, frameBounds,
                             aFrame->PresContext()->AppUnitsPerDevPixel());
@@ -1202,14 +1204,13 @@ nsLayoutUtils::SetFixedPositionLayerData(Layer* aLayer,
                                          const nsIFrame* aViewportFrame,
                                          nsSize aViewportSize,
                                          const nsIFrame* aFixedPosFrame,
-                                         const nsIFrame* aReferenceFrame,
                                          nsPresContext* aPresContext,
                                          const ContainerLayerParameters& aContainerParameters) {
   // Find out the rect of the viewport frame relative to the reference frame.
   // This, in conjunction with the container scale, will correspond to the
   // coordinate-space of the built layer.
   float factor = aPresContext->AppUnitsPerDevPixel();
-  nsPoint origin = aViewportFrame->GetOffsetToCrossDoc(aReferenceFrame);
+  nsPoint origin = aViewportFrame->GetOffsetToCrossDoc(aFixedPosFrame);
   LayerRect anchorRect(NSAppUnitsToFloatPixels(origin.x, factor) *
                          aContainerParameters.mXScale,
                        NSAppUnitsToFloatPixels(origin.y, factor) *
@@ -4781,12 +4782,6 @@ nsLayoutUtils::SurfaceFromElement(nsIImageLoadingContent* aElement,
     wantImageSurface = true;
   }
 
-  // Push a null JSContext on the stack so that code that runs within
-  // the below code doesn't think it's being called by JS. See bug
-  // 604262.
-  nsCxPusher pusher;
-  pusher.PushNull();
-
   nsCOMPtr<imgIRequest> imgRequest;
   rv = aElement->GetRequest(nsIImageLoadingContent::CURRENT_REQUEST,
                             getter_AddRefs(imgRequest));
@@ -5233,6 +5228,8 @@ nsLayoutUtils::Initialize()
                                "font.size.inflation.disabledInMasterProcess");
   Preferences::AddBoolVarCache(&sInvalidationDebuggingIsEnabled,
                                "nglayout.debug.invalidation");
+  Preferences::AddBoolVarCache(&sCSSVariablesEnabled,
+                               "layout.css.variables.enabled");
 
   Preferences::RegisterCallback(StickyEnabledPrefChangeCallback,
                                 STICKY_ENABLED_PREF_NAME);
