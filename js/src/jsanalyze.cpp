@@ -1629,7 +1629,7 @@ ScriptAnalysis::needsArgsObj(JSContext *cx)
      * statement. In the former case, we will dynamically detect the use and
      * mark the arguments optimization as having failed.
      */
-    if (script_->bindingsAccessedDynamically)
+    if (script_->bindingsAccessedDynamically())
         return false;
 
     /*
@@ -1651,7 +1651,7 @@ ScriptAnalysis::needsArgsObj(JSContext *cx)
      * arguments. The compiler can then assume that accesses through
      * arguments[i] will be on unaliased variables.
      */
-    if (script_->funHasAnyAliasedFormal && argumentsContentsObserved_)
+    if (script_->funHasAnyAliasedFormal() && argumentsContentsObserved_)
         return true;
 
     return false;
