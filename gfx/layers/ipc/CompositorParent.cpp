@@ -64,6 +64,7 @@ namespace layers {
 
 CompositorParent::LayerTreeState::LayerTreeState()
   : mParent(nullptr)
+  , mLayerManager(nullptr)
 {
 }
 
@@ -239,6 +240,7 @@ CompositorParent::Destroy()
 
   // Ensure that the layer manager is destructed on the compositor thread.
   mLayerManager = nullptr;
+  mCompositor = nullptr;
   mCompositionManager = nullptr;
   mApzcTreeManager->ClearTree();
   mApzcTreeManager = nullptr;
@@ -265,10 +267,12 @@ CompositorParent::RecvWillStop()
       LayerTreeState* lts = &it->second;
       if (lts->mParent == this) {
         mLayerManager->ClearCachedResources(lts->mRoot);
+        lts->mLayerManager = nullptr;
       }
     }
     mLayerManager->Destroy();
     mLayerManager = nullptr;
+    mCompositor = nullptr;
     mCompositionManager = nullptr;
   }
 
@@ -373,7 +377,9 @@ CompositorParent::ActorDestroy(ActorDestroyReason why)
   if (mLayerManager) {
     mLayerManager->Destroy();
     mLayerManager = nullptr;
+    sIndirectLayerTrees[mRootLayerTreeID].mLayerManager = nullptr;
     mCompositionManager = nullptr;
+    mCompositor = nullptr;
   }
 }
 
@@ -396,7 +402,7 @@ CompositorParent::PauseComposition()
   if (!mPaused) {
     mPaused = true;
 
-    mLayerManager->GetCompositor()->Pause();
+    mCompositor->Pause();
   }
 
   // if anyone's waiting to make sure that composition really got paused, tell them
@@ -411,7 +417,7 @@ CompositorParent::ResumeComposition()
 
   MonitorAutoLock lock(mResumeCompositionMonitor);
 
-  if (!mLayerManager->GetCompositor()->Resume()) {
+  if (!mCompositor->Resume()) {
 #ifdef MOZ_WIDGET_ANDROID
     // We can't get a surface. This could be because the activity changed between
     // the time resume was scheduled and now.
@@ -442,8 +448,8 @@ CompositorParent::SetEGLSurfaceSize(int width, int height)
 {
   NS_ASSERTION(mUseExternalSurfaceSize, "Compositor created without UseExternalSurfaceSize provided");
   mEGLSurfaceSize.SizeTo(width, height);
-  if (mLayerManager) {
-    mLayerManager->GetCompositor()->SetDestinationSurfaceSize(gfx::IntSize(mEGLSurfaceSize.width, mEGLSurfaceSize.height));
+  if (mCompositor) {
+    mCompositor->SetDestinationSurfaceSize(gfx::IntSize(mEGLSurfaceSize.width, mEGLSurfaceSize.height));
   }
 }
 
@@ -505,7 +511,7 @@ CompositorParent::NotifyShadowTreeTransaction(uint64_t aId, bool aIsFirstPaint)
     AutoResolveRefLayers resolve(mCompositionManager);
     mApzcTreeManager->UpdatePanZoomControllerTree(this, mLayerManager->GetRoot(), aIsFirstPaint, aId);
 
-    mLayerManager->AsLayerManagerComposite()->NotifyShadowTreeTransaction();
+    mCompositor->NotifyLayersTransaction();
   }
   ScheduleComposition();
 }
@@ -699,7 +705,7 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
     }
   }
   ScheduleComposition();
-  mLayerManager->NotifyShadowTreeTransaction();
+  mCompositor->NotifyLayersTransaction();
 }
 
 void
@@ -708,36 +714,33 @@ CompositorParent::InitializeLayerManager(const nsTArray<LayersBackend>& aBackend
   NS_ASSERTION(!mLayerManager, "Already initialised mLayerManager");
 
   for (size_t i = 0; i < aBackendHints.Length(); ++i) {
-    RefPtr<LayerManagerComposite> layerManager;
+    RefPtr<Compositor> compositor;
     if (aBackendHints[i] == LAYERS_OPENGL) {
-      layerManager =
-        new LayerManagerComposite(new CompositorOGL(mWidget,
-                                                    mEGLSurfaceSize.width,
-                                                    mEGLSurfaceSize.height,
-                                                    mUseExternalSurfaceSize));
+      compositor = new CompositorOGL(mWidget,
+                                     mEGLSurfaceSize.width,
+                                     mEGLSurfaceSize.height,
+                                     mUseExternalSurfaceSize);
     } else if (aBackendHints[i] == LAYERS_BASIC) {
-      layerManager =
-        new LayerManagerComposite(new BasicCompositor(mWidget));
+      compositor = new BasicCompositor(mWidget);
 #if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     } else if (aBackendHints[i] == LAYERS_D3D11) {
-      layerManager =
-        new LayerManagerComposite(new CompositorD3D11(mWidget)); 
-#endif
-#if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER 
-	} else if (aBackendHints[i] == LAYERS_D3D9) {
-      layerManager =
-        new LayerManagerComposite(new CompositorD3D9(this, mWidget));
+      compositor = new CompositorD3D11(mWidget);
+#elif defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
+    } else if (aBackendHints[i] == LAYERS_D3D9) {
+      compositor = new CompositorD3D9(this, mWidget);
 #endif
     }
 
-    if (!layerManager) {
-      continue;
-    }
+    MOZ_ASSERT(compositor, "Passed invalid backend hint");
 
-    layerManager->SetCompositorID(mCompositorID);
+    compositor->SetCompositorID(mCompositorID);
+    RefPtr<LayerManagerComposite> layerManager = new LayerManagerComposite(compositor);
 
     if (layerManager->Initialize()) {
       mLayerManager = layerManager;
+      MOZ_ASSERT(compositor);
+      mCompositor = compositor;
+      sIndirectLayerTrees[mRootLayerTreeID].mLayerManager = layerManager;
       return;
     }
   }
@@ -769,7 +772,7 @@ CompositorParent::AllocPLayerTransactionParent(const nsTArray<LayersBackend>& aB
   mCompositionManager = new AsyncCompositionManager(mLayerManager);
   *aSuccess = true;
 
-  *aTextureFactoryIdentifier = mLayerManager->GetTextureFactoryIdentifier();
+  *aTextureFactoryIdentifier = mCompositor->GetTextureFactoryIdentifier();
   LayerTransactionParent* p = new LayerTransactionParent(mLayerManager, this, 0);
   p->AddIPDLReference();
   return p;
@@ -855,6 +858,7 @@ void
 CompositorParent::NotifyChildCreated(uint64_t aChild)
 {
   sIndirectLayerTrees[aChild].mParent = this;
+  sIndirectLayerTrees[aChild].mLayerManager = mLayerManager;
 }
 
 /*static*/ uint64_t
@@ -924,6 +928,17 @@ CompositorParent::GetAPZCTreeManager(uint64_t aLayersId)
   }
   return nullptr;
 }
+
+float
+CompositorParent::ComputeRenderIntegrity()
+{
+  if (mLayerManager) {
+    return mLayerManager->ComputeRenderIntegrity();
+  }
+
+  return 1.0f;
+}
+
 
 /**
  * This class handles layer updates pushed directly from child
@@ -1075,9 +1090,9 @@ CrossProcessCompositorParent::AllocPLayerTransactionParent(const nsTArray<Layers
 {
   MOZ_ASSERT(aId != 0);
 
-  if (sIndirectLayerTrees[aId].mParent) {
-    LayerManagerComposite* lm = sIndirectLayerTrees[aId].mParent->GetLayerManager();
-    *aTextureFactoryIdentifier = lm->GetTextureFactoryIdentifier();
+  if (sIndirectLayerTrees[aId].mLayerManager) {
+    LayerManagerComposite* lm = sIndirectLayerTrees[aId].mLayerManager;
+    *aTextureFactoryIdentifier = lm->GetCompositor()->GetTextureFactoryIdentifier();
     *aSuccess = true;
     LayerTransactionParent* p = new LayerTransactionParent(lm, this, aId);
     p->AddIPDLReference();

@@ -508,16 +508,6 @@ class JSScript : public js::gc::BarrieredCell<JSScript>
     static const uint32_t stepFlagMask = 0x80000000U;
     static const uint32_t stepCountMask = 0x7fffffffU;
 
-    template <js::XDRMode mode>
-    friend
-    bool
-    js::XDRScript(js::XDRState<mode> *xdr, js::HandleObject enclosingScope, js::HandleScript enclosingScript,
-                  js::HandleFunction fun, js::MutableHandleScript scriptp);
-
-    friend JSScript *
-    js::CloneScript(JSContext *cx, js::HandleObject enclosingScope, js::HandleFunction fun, js::HandleScript src,
-                    js::NewObjectKind newKind);
-
   public:
     //
     // We order fields according to their size in order to avoid wasting space
@@ -573,7 +563,7 @@ class JSScript : public js::gc::BarrieredCell<JSScript>
     uint8_t *baselineOrIonSkipArgCheck;
 
     // 32-bit fields.
-
+public:
     uint32_t        length_;    /* length of code vector */
     uint32_t        dataSize_;  /* size of the used part of the data array */
 

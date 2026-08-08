@@ -1744,7 +1744,7 @@ inline Anchor<Value>::~Anchor()
 }
 #endif
 
-#ifdef DEBUG
+#ifdef JS_DEBUG
 namespace detail {
 
 struct ValueAlignmentTester { char c; JS::Value v; };
@@ -1756,7 +1756,7 @@ MOZ_STATIC_ASSERT(sizeof(LayoutAlignmentTester) == 16,
                   "jsval_layout must be 16-byte-aligned");
 
 } // namespace detail
-#endif /* DEBUG */
+#endif /* JS_DEBUG */
 
 } // namespace JS
 
