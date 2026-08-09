@@ -113,7 +113,7 @@ NS_IMETHODIMP
 TestListener::OnStopRequest( nsIChannel *aChannel,
                              nsISupports *aContext,
                              nsresult aStatus,
-                             const PRUnichar *aMsg ) {
+                             const char16_t *aMsg ) {
     nsresult rv = NS_OK;
 
     printf( "TestListener::OnStopRequest called on thread %d\n", mThreadNo );

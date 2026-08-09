@@ -4961,7 +4961,7 @@ bool IsLowercaseASCII(const nsAString& aValue)
 {
   int32_t len = aValue.Length();
   for (int32_t i = 0; i < len; ++i) {
-    PRUnichar c = aValue[i];
+    char16_t c = aValue[i];
     if (!(0x0061 <= (c) && ((c) <= 0x007a))) {
       return false;
     }
@@ -6804,7 +6804,7 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
 
       JS::Rooted<JS::Value> v(cx);
       rv = nsContentUtils::WrapNative(cx, global, this, this, &v,
-                                      nullptr, /* aAllowWrapping = */ false);
+                                      /* aAllowWrapping = */ false);
       if (rv.Failed())
         return nullptr;
       newScope = &v.toObject();
@@ -7228,8 +7228,8 @@ nsDocument::FlushExternalResources(mozFlushType aType)
 }
 
 void
-nsDocument::SetXMLDeclaration(const PRUnichar *aVersion,
-                              const PRUnichar *aEncoding,
+nsDocument::SetXMLDeclaration(const char16_t *aVersion,
+                              const char16_t *aEncoding,
                               const int32_t aStandalone)
 {
   if (!aVersion || *aVersion == '\0') {
@@ -10869,7 +10869,7 @@ nsDocument::SetApprovedForFullscreen(bool aIsApproved)
 nsresult
 nsDocument::Observe(nsISupports *aSubject,
                     const char *aTopic,
-                    const PRUnichar *aData)
+                    const char16_t *aData)
 {
   if (strcmp("fullscreen-approved", aTopic) == 0) {
     nsCOMPtr<nsIDocument> subject(do_QueryInterface(aSubject));
@@ -11468,11 +11468,9 @@ nsIDocument::WrapObject(JSContext *aCx, JS::Handle<JSObject*> aScope)
   JSAutoCompartment ac(aCx, obj);
 
   JS::Rooted<JS::Value> winVal(aCx);
-  nsCOMPtr<nsIXPConnectJSObjectHolder> holder;
   nsresult rv = nsContentUtils::WrapNative(aCx, obj, win,
                                            &NS_GET_IID(nsIDOMWindow),
                                            &winVal,
-                                           getter_AddRefs(holder),
                                            false);
   if (NS_FAILED(rv)) {
     Throw(aCx, rv);

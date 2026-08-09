@@ -1084,7 +1084,7 @@ MediaStreamGraphImpl::ProduceDataForStreamsBlockByBlock(uint32_t aStreamIndex,
   while (t < aTo) {
     GraphTime next = RoundUpToNextAudioBlock(aSampleRate, t);
     for (uint32_t i = aStreamIndex; i < mStreams.Length(); ++i) {
-      nsRefPtr<ProcessedMediaStream> ps = mStreams[i]->AsProcessedStream();
+      ProcessedMediaStream* ps = mStreams[i]->AsProcessedStream();
       if (ps) {
         ps->ProduceOutput(t, next);
       }
@@ -2418,7 +2418,7 @@ static bool gShutdownObserverRegistered = false;
 NS_IMETHODIMP
 MediaStreamGraphShutdownObserver::Observe(nsISupports *aSubject,
                                           const char *aTopic,
-                                          const PRUnichar *aData)
+                                          const char16_t *aData)
 {
   if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     if (gGraph) {

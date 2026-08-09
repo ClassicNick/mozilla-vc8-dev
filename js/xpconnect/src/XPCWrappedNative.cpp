@@ -1496,7 +1496,9 @@ XPCWrappedNative::FindTearOff(XPCNativeInterface* aInterface,
                         rv = NS_ERROR_OUT_OF_MEMORY;
                     }
                 }
-                goto return_result;
+                if (pError)
+                    *pError = rv;
+                return to;
             }
             if (!firstAvailable && to->IsAvailable())
                 firstAvailable = to;
@@ -1506,29 +1508,19 @@ XPCWrappedNative::FindTearOff(XPCNativeInterface* aInterface,
     to = firstAvailable;
 
     if (!to) {
-        XPCWrappedNativeTearOffChunk* newChunk =
-            new XPCWrappedNativeTearOffChunk();
-        if (!newChunk) {
-            rv = NS_ERROR_OUT_OF_MEMORY;
-            goto return_result;
-        }
+        auto newChunk = new XPCWrappedNativeTearOffChunk();
         lastChunk->mNextChunk = newChunk;
         to = newChunk->mTearOffs;
     }
 
-    {
-        // Scope keeps |tearoff| from leaking across the return_result: label
-        AutoMarkingWrappedNativeTearOffPtr tearoff(cx, to);
-        rv = InitTearOff(to, aInterface, needJSObject);
-        // During shutdown, we don't sweep tearoffs.  So make sure to unmark
-        // manually in case the auto-marker marked us.  We shouldn't ever be
-        // getting here _during_ our Mark/Sweep cycle, so this should be safe.
-        to->Unmark();
-        if (NS_FAILED(rv))
-            to = nullptr;
-    }
-
-return_result:
+    AutoMarkingWrappedNativeTearOffPtr tearoff(cx, to);
+    rv = InitTearOff(to, aInterface, needJSObject);
+    // During shutdown, we don't sweep tearoffs.  So make sure to unmark
+    // manually in case the auto-marker marked us.  We shouldn't ever be
+    // getting here _during_ our Mark/Sweep cycle, so this should be safe.
+    to->Unmark();
+    if (NS_FAILED(rv))
+        to = nullptr;
 
     if (pError)
         *pError = rv;

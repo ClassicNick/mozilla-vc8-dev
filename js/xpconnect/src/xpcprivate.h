@@ -408,7 +408,7 @@ class XPCReadableJSStringWrapper : public nsDependentString
 public:
     typedef nsDependentString::char_traits char_traits;
 
-    XPCReadableJSStringWrapper(const PRUnichar *chars, size_t length) :
+    XPCReadableJSStringWrapper(const char16_t *chars, size_t length) :
         nsDependentString(chars, length)
     { }
 
@@ -586,7 +586,7 @@ public:
 
     ~XPCJSRuntime();
 
-    XPCReadableJSStringWrapper *NewStringWrapper(const PRUnichar *str, uint32_t len);
+    XPCReadableJSStringWrapper *NewStringWrapper(const char16_t *str, uint32_t len);
     void DeleteString(nsAString *string);
 
     void AddGCCallback(xpcGCCallback cb);
@@ -2590,7 +2590,7 @@ public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPROPERTY
 
-  xpcProperty(const PRUnichar* aName, uint32_t aNameLen, nsIVariant* aValue);
+  xpcProperty(const char16_t* aName, uint32_t aNameLen, nsIVariant* aValue);
   virtual ~xpcProperty() {}
 
 private:
@@ -3236,7 +3236,7 @@ CloneAllAccess();
 
 // Returns access if wideName is in list
 char *
-CheckAccessList(const PRUnichar *wideName, const char *const list[]);
+CheckAccessList(const char16_t *wideName, const char *const list[]);
 } /* namespace xpc */
 
 /***************************************************************************/

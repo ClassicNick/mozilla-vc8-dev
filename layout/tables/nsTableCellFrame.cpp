@@ -1055,7 +1055,7 @@ nsTableCellFrame::GetType() const
   return nsGkAtoms::tableCellFrame;
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsTableCellFrame::GetFrameName(nsAString& aResult) const
 {
@@ -1098,7 +1098,7 @@ nsBCTableCellFrame::GetBorderRadii(nscoord aRadii[8]) const
   return false;
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsBCTableCellFrame::GetFrameName(nsAString& aResult) const
 {

@@ -316,7 +316,7 @@ NS_IMETHODIMP nsXULWindow::GetPrimaryContentShell(nsIDocShellTreeItem**
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetContentShellById(const PRUnichar* aID, 
+NS_IMETHODIMP nsXULWindow::GetContentShellById(const char16_t* aID, 
    nsIDocShellTreeItem** aDocShellTreeItem)
 {
   NS_ENSURE_ARG_POINTER(aDocShellTreeItem);
@@ -864,7 +864,7 @@ NS_IMETHODIMP nsXULWindow::SetFocus()
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::GetTitle(PRUnichar** aTitle)
+NS_IMETHODIMP nsXULWindow::GetTitle(char16_t** aTitle)
 {
   NS_ENSURE_ARG_POINTER(aTitle);
 
@@ -874,7 +874,7 @@ NS_IMETHODIMP nsXULWindow::GetTitle(PRUnichar** aTitle)
   return NS_OK;
 }
 
-NS_IMETHODIMP nsXULWindow::SetTitle(const PRUnichar* aTitle)
+NS_IMETHODIMP nsXULWindow::SetTitle(const char16_t* aTitle)
 {
   NS_ENSURE_STATE(mWindow);
   mTitle.Assign(aTitle);

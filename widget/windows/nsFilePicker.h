@@ -128,7 +128,7 @@ protected:
   nsCOMArray<nsIFile>    mFiles;
   static char            mLastUsedDirectory[];
   nsString               mUnicodeFile;
-  static PRUnichar      *mLastUsedUnicodeDirectory;
+  static char16_t      *mLastUsedUnicodeDirectory;
   HWND                   mDlgWnd;
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN

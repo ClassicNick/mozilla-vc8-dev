@@ -375,7 +375,7 @@ nsPrintSettingsGTK::SetOrientation(int32_t aOrientation)
 
 /* attribute wstring toFileName; */
 NS_IMETHODIMP
-nsPrintSettingsGTK::GetToFileName(PRUnichar * *aToFileName)
+nsPrintSettingsGTK::GetToFileName(char16_t * *aToFileName)
 {
   // Get the gtk output filename
   const char* gtk_output_uri = gtk_print_settings_get(mPrintSettings, GTK_PRINT_SETTINGS_OUTPUT_URI);
@@ -401,7 +401,7 @@ nsPrintSettingsGTK::GetToFileName(PRUnichar * *aToFileName)
 }
 
 NS_IMETHODIMP
-nsPrintSettingsGTK::SetToFileName(const PRUnichar * aToFileName)
+nsPrintSettingsGTK::SetToFileName(const char16_t * aToFileName)
 {
   if (aToFileName[0] == 0) {
     mToFileName.SetLength(0);
@@ -433,7 +433,7 @@ nsPrintSettingsGTK::SetToFileName(const PRUnichar * aToFileName)
 }
 
 NS_IMETHODIMP
-nsPrintSettingsGTK::GetPrinterName(PRUnichar * *aPrinter)
+nsPrintSettingsGTK::GetPrinterName(char16_t * *aPrinter)
 {
   const char* gtkPrintName = gtk_print_settings_get_printer(mPrintSettings);
   if (!gtkPrintName) {
@@ -451,7 +451,7 @@ nsPrintSettingsGTK::GetPrinterName(PRUnichar * *aPrinter)
 }
 
 NS_IMETHODIMP
-nsPrintSettingsGTK::SetPrinterName(const PRUnichar * aPrinter)
+nsPrintSettingsGTK::SetPrinterName(const char16_t * aPrinter)
 {
   NS_ConvertUTF16toUTF8 gtkPrinter(aPrinter);
 
@@ -506,14 +506,14 @@ nsPrintSettingsGTK::SetScaling(double aScaling)
 
 /* attribute wstring paperName; */
 NS_IMETHODIMP
-nsPrintSettingsGTK::GetPaperName(PRUnichar * *aPaperName)
+nsPrintSettingsGTK::GetPaperName(char16_t * *aPaperName)
 {
   NS_ENSURE_ARG_POINTER(aPaperName);
   *aPaperName = ToNewUnicode(NS_ConvertUTF8toUTF16(gtk_paper_size_get_name(mPaperSize)));
   return NS_OK;
 }
 NS_IMETHODIMP
-nsPrintSettingsGTK::SetPaperName(const PRUnichar * aPaperName)
+nsPrintSettingsGTK::SetPaperName(const char16_t * aPaperName)
 {
   NS_ConvertUTF16toUTF8 gtkPaperName(aPaperName);
 

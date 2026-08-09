@@ -202,7 +202,7 @@ struct nsStyleImage {
   void TrackImage(nsPresContext* aContext);
   void UntrackImage(nsPresContext* aContext);
   void SetGradientData(nsStyleGradient* aGradient);
-  void SetElementId(const PRUnichar* aElementId);
+  void SetElementId(const char16_t* aElementId);
   void SetCropRect(nsStyleSides* aCropRect);
 
   nsStyleImageType GetType() const {
@@ -218,7 +218,7 @@ struct nsStyleImage {
     NS_ASSERTION(mType == eStyleImageType_Gradient, "Data is not a gradient!");
     return mGradient;
   }
-  const PRUnichar* GetElementId() const {
+  const char16_t* GetElementId() const {
     NS_ASSERTION(mType == eStyleImageType_Element, "Data is not an element!");
     return mElementId;
   }
@@ -295,7 +295,7 @@ private:
   union {
     imgIRequest* mImage;
     nsStyleGradient* mGradient;
-    PRUnichar* mElementId;
+    char16_t* mElementId;
   };
   // This is _currently_ used only in conjunction with eStyleImageType_Image.
   nsAutoPtr<nsStyleSides> mCropRect;
@@ -2001,7 +2001,7 @@ enum nsStyleContentType {
 struct nsStyleContentData {
   nsStyleContentType  mType;
   union {
-    PRUnichar *mString;
+    char16_t *mString;
     imgRequestProxy *mImage;
     nsCSSValue::Array* mCounters;
   } mContent;

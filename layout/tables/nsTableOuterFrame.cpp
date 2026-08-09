@@ -123,7 +123,7 @@ nsTableCaptionFrame::AccessibleType()
 }
 #endif
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsTableCaptionFrame::GetFrameName(nsAString& aResult) const
 {
@@ -1102,7 +1102,7 @@ NS_NewTableOuterFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableOuterFrame)
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsTableOuterFrame::GetFrameName(nsAString& aResult) const
 {

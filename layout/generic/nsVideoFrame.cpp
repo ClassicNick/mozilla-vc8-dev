@@ -466,7 +466,7 @@ nsVideoFrame::AccessibleType()
 }
 #endif
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsVideoFrame::GetFrameName(nsAString& aResult) const
 {

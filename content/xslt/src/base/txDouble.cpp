@@ -26,8 +26,8 @@
 class txStringToDouble
 {
 public:
-    typedef PRUnichar input_type;
-    typedef PRUnichar value_type;
+    typedef char16_t input_type;
+    typedef char16_t value_type;
     txStringToDouble(): mState(eWhitestart), mSign(ePositive) {}
 
     void
@@ -37,7 +37,7 @@ public:
             return;
         }
         uint32_t i = 0;
-        PRUnichar c;
+        char16_t c;
         for ( ; i < aSourceLength; ++i) {
             c = aSource[i];
             switch (mState) {
@@ -147,7 +147,7 @@ void txDouble::toString(double aValue, nsAString& aDest)
     }
     if (mozilla::IsInfinite(aValue)) {
         if (aValue < 0)
-            aDest.Append(PRUnichar('-'));
+            aDest.Append(char16_t('-'));
         aDest.AppendLiteral("Infinity");
         return;
     }

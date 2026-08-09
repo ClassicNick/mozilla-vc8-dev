@@ -408,7 +408,7 @@ LIRGenerator::visitCall(MCall *call)
     JSFunction *target = call->getSingleTarget();
 
     // Call DOM functions.
-    if (call->isDOMFunction()) {
+    if (call->isCallDOMNative()) {
         JS_ASSERT(target && target->isNative());
         Register cxReg, objReg, privReg, argsReg;
         GetTempRegForIntArg(0, 0, &cxReg);
@@ -1913,6 +1913,17 @@ LIRGenerator::visitRegExp(MRegExp *ins)
     }
 
     LRegExp *lir = new(alloc()) LRegExp();
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitRegExpExec(MRegExpExec *ins)
+{
+    JS_ASSERT(ins->regexp()->type() == MIRType_Object);
+    JS_ASSERT(ins->string()->type() == MIRType_String);
+
+    LRegExpExec *lir = new(alloc()) LRegExpExec(useRegisterAtStart(ins->regexp()),
+                                                useRegisterAtStart(ins->string()));
     return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }
 

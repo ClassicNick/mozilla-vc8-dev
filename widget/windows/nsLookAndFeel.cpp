@@ -580,7 +580,7 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
   LOGFONTW logFont;
   NONCLIENTMETRICSW ncm;
   HGDIOBJ hGDI;
-  PRUnichar name[LF_FACESIZE];
+  char16_t name[LF_FACESIZE];
 
   // Depending on which stock font we want, there are three different
   // places we might have to look it up.
@@ -694,7 +694,7 @@ GetSysFontInfo(HDC aHDC, LookAndFeel::FontID anID,
   aFontStyle.systemFont = true;
 
   name[0] = 0;
-  memcpy(name, ptrLogFont->lfFaceName, LF_FACESIZE*sizeof(PRUnichar));
+  memcpy(name, ptrLogFont->lfFaceName, LF_FACESIZE*sizeof(char16_t));
   aFontName = name;
 
   return true;
@@ -714,7 +714,7 @@ nsLookAndFeel::GetFontImpl(FontID anID, nsString &aFontName,
 }
 
 /* virtual */
-PRUnichar
+char16_t
 nsLookAndFeel::GetPasswordCharacterImpl()
 {
 #define UNICODE_BLACK_CIRCLE_CHAR 0x25cf

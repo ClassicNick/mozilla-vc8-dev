@@ -2314,7 +2314,7 @@ NS_IMPL_ISUPPORTS1(RuntimeService, nsIObserver)
 // nsIObserver
 NS_IMETHODIMP
 RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
-                        const PRUnichar* aData)
+                        const char16_t* aData)
 {
   AssertIsOnMainThread();
 

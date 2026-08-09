@@ -25,7 +25,9 @@
 #include "mozilla/StandardInteger.h"
 #include "stddef.h"
 
-#include "mozilla/NullPtr.h"
+#ifdef __cplusplus
+#  include "mozilla/NullPtr.h"
+#endif
 
 /* Core XPCOM declarations. */
 

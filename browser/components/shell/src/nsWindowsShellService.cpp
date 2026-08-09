@@ -480,7 +480,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
       const nsString &flatValue = PromiseFlatString(valueData);
       res = ::RegSetValueExW(theKey, L"", 0, REG_SZ,
                              (const BYTE *) flatValue.get(),
-                             (flatValue.Length() + 1) * sizeof(PRUnichar));
+                             (flatValue.Length() + 1) * sizeof(char16_t));
       // Close the key that was created.
       ::RegCloseKey(theKey);
       if (REG_FAILED(res)) {
@@ -526,7 +526,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
                                (LPBYTE)currValue, &len);
       // Close the key that was opened.
       ::RegCloseKey(theKey);
-      if (REG_FAILED(res) || PRUnichar('\0') != *currValue) {
+      if (REG_FAILED(res) || char16_t('\0') != *currValue) {
         // Key wasn't set or was set to something other than our registry entry.
         // Delete the key along with all of its childrean and then recreate it.
         const nsString &flatName = PromiseFlatString(keyName);
@@ -542,7 +542,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
         }
 
         res = ::RegSetValueExW(theKey, L"", 0, REG_SZ, (const BYTE *) L"",
-                               sizeof(PRUnichar));
+                               sizeof(char16_t));
         // Close the key that was created.
         ::RegCloseKey(theKey);
         if (REG_FAILED(res)) {
@@ -586,7 +586,7 @@ nsWindowsShellService::IsDefaultBrowser(bool aStartupCheck,
     const nsString &flatValue = PromiseFlatString(valueData);
     res = ::RegSetValueExW(theKey, L"", 0, REG_SZ,
                            (const BYTE *) flatValue.get(),
-                           (flatValue.Length() + 1) * sizeof(PRUnichar));
+                           (flatValue.Length() + 1) * sizeof(char16_t));
     // Close the key that was created.
     ::RegCloseKey(theKey);
     // If updating the FTP protocol handlers shell open command fails try to
