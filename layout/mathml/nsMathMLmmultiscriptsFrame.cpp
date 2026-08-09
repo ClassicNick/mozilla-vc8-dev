@@ -9,6 +9,8 @@
 #include "nsRenderingContext.h"
 #include <algorithm>
 
+using mozilla::WritingMode;
+
 //
 // <mmultiscripts> -- attach prescripts and tensor indices to a base - implementation
 // <msub> -- attach a subscript to a base - implementation
@@ -162,7 +164,6 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
     tag = nsGkAtoms::msubsup_;
 
   nsBoundingMetrics bmFrame;
-  nsHTMLReflowMetrics frameSize;
 
   nscoord minShiftFromXHeight, subDrop, supDrop;
 
@@ -212,11 +213,11 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
   if (tag == nsGkAtoms::msub_) {
     subScriptShift = subScriptShift1;
   } else {
-    subScriptShift = std::max(subScriptShift1, subScriptShift2);
+    subScriptShift = NS_MAX(subScriptShift1, subScriptShift2);
   }
   if (0 < aUserSubScriptShift) {
     // the user has set the subscriptshift attribute
-    subScriptShift = std::max(subScriptShift, aUserSubScriptShift);
+    subScriptShift = NS_MAX(subScriptShift, aUserSubScriptShift);
   }
 
   /////////////////////////////////////
@@ -252,23 +253,24 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
 
   if (0 < aUserSupScriptShift) {
     // the user has set the supscriptshift attribute
-    supScriptShift = std::max(supScriptShift, aUserSupScriptShift);
+    supScriptShift = NS_MAX(supScriptShift, aUserSupScriptShift);
   }
 
   ////////////////////////////////////
   // Get the children's sizes
   ////////////////////////////////////
 
+  const WritingMode wm(aDesiredSize.GetWritingMode());
   nscoord width = 0, prescriptsWidth = 0, rightBearing = 0;
   nscoord minSubScriptShift = 0, minSupScriptShift = 0;
   nscoord trySubScriptShift = subScriptShift;
   nscoord trySupScriptShift = supScriptShift;
   nscoord maxSubScriptShift = subScriptShift;
   nscoord maxSupScriptShift = supScriptShift;
-  nsHTMLReflowMetrics baseSize;
-  nsHTMLReflowMetrics subScriptSize;
-  nsHTMLReflowMetrics supScriptSize;
-  nsHTMLReflowMetrics multiSubSize, multiSupSize;
+  nsHTMLReflowMetrics baseSize(wm);
+  nsHTMLReflowMetrics subScriptSize(wm);
+  nsHTMLReflowMetrics supScriptSize(wm);
+  nsHTMLReflowMetrics multiSubSize(wm), multiSupSize(wm);
   baseFrame = nullptr;
   nsIFrame* subScriptFrame = nullptr;
   nsIFrame* supScriptFrame = nullptr;
@@ -276,7 +278,8 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
 
   bool firstPrescriptsPair = false;
   nsBoundingMetrics bmBase, bmSubScript, bmSupScript, bmMultiSub, bmMultiSup;
-  multiSubSize.ascent = multiSupSize.ascent = -0x7FFFFFFF;
+  multiSubSize.SetTopAscent(-0x7FFFFFFF);
+  multiSupSize.SetTopAscent(-0x7FFFFFFF);
   bmMultiSub.ascent = bmMultiSup.ascent = -0x7FFFFFFF;
   bmMultiSub.descent = bmMultiSup.descent = -0x7FFFFFFF;
   nscoord italicCorrection = 0;
@@ -284,7 +287,7 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
   nsBoundingMetrics boundingMetrics;
   boundingMetrics.width = 0;
   boundingMetrics.ascent = boundingMetrics.descent = -0x7FFFFFFF;
-  aDesiredSize.width = aDesiredSize.height = 0;
+  aDesiredSize.Width() = aDesiredSize.Height() = 0;
 
   int32_t count = 0;
   bool foundNoneTag = false;
@@ -368,13 +371,13 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
         // parameter v, Rule 18a, App. G, TeXbook
         minSubScriptShift = bmBase.descent + subDrop;
         trySubScriptShift = NS_MAX(minSubScriptShift,subScriptShift);
-        multiSubSize.ascent = NS_MAX(multiSubSize.ascent,
-                                       subScriptSize.ascent);
+        multiSubSize.SetTopAscent(NS_MAX(multiSubSize.TopAscent(),
+                                       subScriptSize.TopAscent()));
         bmMultiSub.ascent = NS_MAX(bmMultiSub.ascent, bmSubScript.ascent);
         bmMultiSub.descent = NS_MAX(bmMultiSub.descent, bmSubScript.descent);
-        multiSubSize.height = 
-          NS_MAX(multiSubSize.height,
-                   subScriptSize.height - subScriptSize.ascent);
+        multiSubSize.Height() = 
+          NS_MAX(multiSubSize.Height(),
+                   subScriptSize.Height() - subScriptSize.TopAscent());
         if (bmSubScript.width)
           width = bmSubScript.width + aScriptSpace;
         rightBearing = bmSubScript.rightBearing;
@@ -405,19 +408,19 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
         minShiftFromXHeight = NSToCoordRound
           ((bmSupScript.descent + (1.0f/4.0f) * xHeight));
         trySupScriptShift = NS_MAX(minSupScriptShift,
-                                     std::max(minShiftFromXHeight,
+                                     NS_MAX(minShiftFromXHeight,
                                               supScriptShift));
-        multiSupSize.ascent = NS_MAX(multiSupSize.ascent,
-                                       supScriptSize.ascent);
+        multiSupSize.SetTopAscent(NS_MAX(multiSupSize.TopAscent(),
+                                       supScriptSize.TopAscent()));
         bmMultiSup.ascent = NS_MAX(bmMultiSup.ascent, bmSupScript.ascent);
         bmMultiSup.descent = NS_MAX(bmMultiSup.descent, bmSupScript.descent);
-        multiSupSize.height = 
-          std::max(multiSupSize.height,
-                   supScriptSize.height - supScriptSize.ascent);
+        multiSupSize.Height() = 
+          NS_MAX(multiSupSize.Height(),
+                   supScriptSize.Height() - supScriptSize.TopAscent());
 
         if (bmSupScript.width)
-          width = std::max(width, bmSupScript.width + aScriptSpace);
-        rightBearing = std::max(rightBearing, bmSupScript.rightBearing);
+          width = NS_MAX(width, bmSupScript.width + aScriptSpace);
+        rightBearing = NS_MAX(rightBearing, bmSupScript.rightBearing);
 
         if (!prescriptsFrame) { // we are still looping over base & postscripts
           boundingMetrics.rightBearing = boundingMetrics.width + rightBearing;
@@ -519,18 +522,18 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
   aFrame->SetBoundingMetrics(boundingMetrics);
 
   // get the reflow metrics ...
-  aDesiredSize.ascent = 
-    NS_MAX(baseSize.ascent, 
-             NS_MAX(multiSubSize.ascent - maxSubScriptShift,
-                      multiSupSize.ascent + maxSupScriptShift));
-  aDesiredSize.height = aDesiredSize.ascent +
-    NS_MAX(baseSize.height - baseSize.ascent,
-             NS_MAX(multiSubSize.height + maxSubScriptShift,
-                      multiSupSize.height - maxSupScriptShift));
-  aDesiredSize.width = boundingMetrics.width;
+  aDesiredSize.SetTopAscent( 
+    NS_MAX(baseSize.TopAscent(), 
+             NS_MAX(multiSubSize.TopAscent() - maxSubScriptShift,
+                      multiSupSize.TopAscent() + maxSupScriptShift)));
+  aDesiredSize.Height() = aDesiredSize.TopAscent() +
+    NS_MAX(baseSize.Height() - baseSize.TopAscent(),
+             NS_MAX(multiSubSize.Height() + maxSubScriptShift,
+                      multiSupSize.Height() - maxSupScriptShift));
+  aDesiredSize.Width() = boundingMetrics.width;
   aDesiredSize.mBoundingMetrics = boundingMetrics;
 
-  aFrame->SetReference(nsPoint(0, aDesiredSize.ascent));
+  aFrame->SetReference(nsPoint(0, aDesiredSize.TopAscent()));
 
   //////////////////
   // Place Children
@@ -556,10 +559,10 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
         isPreScript = false;
         // place the base ...
         childFrame = baseFrame;
-        dy = aDesiredSize.ascent - baseSize.ascent;
+        dy = aDesiredSize.TopAscent() - baseSize.TopAscent();
         FinishReflowChild (baseFrame, aPresContext, nullptr, baseSize,
-                           aFrame->MirrorIfRTL(aDesiredSize.width,
-                                               baseSize.width,
+                           aFrame->MirrorIfRTL(aDesiredSize.Width(),
+                                               baseSize.Width(),
                                                dx),
                            dy, 0);
         dx += bmBase.width + italicCorrection;
@@ -580,20 +583,20 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
           if (supScriptFrame)
             GetReflowAndBoundingMetricsFor(supScriptFrame, supScriptSize, bmSupScript);
 
-          width = NS_MAX(subScriptSize.width, supScriptSize.width);
+          width = NS_MAX(subScriptSize.Width(), supScriptSize.Width());
 
           if (subScriptFrame) {
             nscoord x = dx;
             // prescripts should be right aligned
             // https://bugzilla.mozilla.org/show_bug.cgi?id=928675
             if (isPreScript)
-              x += width - subScriptSize.width;
-            dy = aDesiredSize.ascent - subScriptSize.ascent +
+              x += width - subScriptSize.Width();
+            dy = aDesiredSize.TopAscent() - subScriptSize.TopAscent() +
               maxSubScriptShift;
             FinishReflowChild (subScriptFrame, aPresContext, nullptr,
                                subScriptSize,
-                               aFrame->MirrorIfRTL(aDesiredSize.width,
-                                                   subScriptSize.width,
+                               aFrame->MirrorIfRTL(aDesiredSize.Width(),
+                                                   subScriptSize.Width(),
                                                    x),
                                dy, 0);
           }
@@ -601,13 +604,13 @@ nsMathMLmmultiscriptsFrame::PlaceMultiScript(nsPresContext*      aPresContext,
           if (supScriptFrame) {
             nscoord x = dx;
             if (isPreScript)
-              x += width - supScriptSize.width;
-            dy = aDesiredSize.ascent - supScriptSize.ascent -
+              x += width - supScriptSize.Width();
+            dy = aDesiredSize.TopAscent() - supScriptSize.TopAscent() -
               maxSupScriptShift;
             FinishReflowChild (supScriptFrame, aPresContext, nullptr,
                                supScriptSize,
-                               aFrame->MirrorIfRTL(aDesiredSize.width,
-                                                   supScriptSize.width,
+                               aFrame->MirrorIfRTL(aDesiredSize.Width(),
+                                                   supScriptSize.Width(),
                                                    x),
                                dy, 0);
           }

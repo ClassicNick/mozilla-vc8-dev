@@ -4081,7 +4081,7 @@ CanvasRenderingContext2D::MarkContextClean()
 bool
 CanvasRenderingContext2D::ShouldForceInactiveLayer(LayerManager *aManager)
 {
-  return !aManager->CanUseCanvasLayerForSize(gfxIntSize(mWidth, mHeight));
+  return !aManager->CanUseCanvasLayerForSize(IntSize(mWidth, mHeight));
 }
 
 }

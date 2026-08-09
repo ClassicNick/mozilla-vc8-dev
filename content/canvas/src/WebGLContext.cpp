@@ -39,6 +39,7 @@
 #include "GLContextProvider.h"
 #include "GLContext.h"
 #include "ScopedGLHelpers.h"
+#include "GLReadTexImageHelper.h"
 
 #include "gfxCrashReporterUtils.h"
 
@@ -397,7 +398,7 @@ WebGLContext::SetDimensions(int32_t width, int32_t height)
         PresentScreenBuffer();
 
         // ResizeOffscreen scraps the current prod buffer before making a new one.
-        gl->ResizeOffscreen(gfxIntSize(width, height)); // Doesn't matter if it succeeds (soft-fail)
+        gl->ResizeOffscreen(gfx::IntSize(width, height)); // Doesn't matter if it succeeds (soft-fail)
         // It's unlikely that we'll get a proper-sized context if we recreate if we didn't on resize
 
         // everything's good, we're done here
@@ -623,7 +624,7 @@ WebGLContext::Render(gfxContext *ctx, GraphicsFilter f, uint32_t aFlags)
         return NS_ERROR_FAILURE;
 
     gl->MakeCurrent();
-    gl->ReadScreenIntoImageSurface(surf);
+    ReadScreenIntoImageSurface(gl, surf);
 
     bool srcPremultAlpha = mOptions.premultipliedAlpha;
     bool dstPremultAlpha = aFlags & RenderFlagPremultAlpha;

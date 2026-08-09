@@ -15213,7 +15213,7 @@ else
   echo "configure: failed program was:" >&5
   cat conftest.$ac_ext >&5
   rm -rf conftest*
-   { echo "configure: error: Could not compile basic X program." 1>&2; echo "configure: error: Could not compile basic X program." 1>&5; exit 1; } 
+   { echo "configure: error: Can't find X headers (install libxt-dev (Debian/Ubuntu), libXt-devel (Fedora), or xorg-x11-libXt-devel (SuSE))." 1>&2; echo "configure: error: Can't find X headers (install libxt-dev (Debian/Ubuntu), libXt-devel (Fedora), or xorg-x11-libXt-devel (SuSE))." 1>&5; exit 1; } 
 fi
 rm -f conftest*
     CFLAGS="$_SAVE_CFLAGS"

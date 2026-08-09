@@ -3801,7 +3801,7 @@ TextRenderedRunFlagsForBBoxContribution(const TextRenderedRun& aRun,
 }
 
 SVGBBox
-SVGTextFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
+SVGTextFrame::GetBBoxContribution(const gfx::Matrix &aToBBoxUserspace,
                                   uint32_t aFlags)
 {
   NS_ASSERTION(GetFirstPrincipalChild(), "must have a child frame");
@@ -3814,8 +3814,9 @@ SVGTextFrame::GetBBoxContribution(const gfxMatrix &aToBBoxUserspace,
   TextRenderedRunIterator it(this);
   for (TextRenderedRun run = it.Current(); run.mFrame; run = it.Next()) {
     uint32_t flags = TextRenderedRunFlagsForBBoxContribution(run, aFlags);
+    gfxMatrix m = ThebesMatrix(aToBBoxUserspace);
     SVGBBox bboxForRun =
-      run.GetUserSpaceRect(presContext, flags, &aToBBoxUserspace);
+      run.GetUserSpaceRect(presContext, flags, &m);
     bbox.UnionEdges(bboxForRun);
   }
 
@@ -5166,18 +5167,18 @@ SVGTextFrame::DoReflow()
   nsHTMLReflowState reflowState(presContext, kid,
                                 renderingContext,
                                 nsSize(width, NS_UNCONSTRAINEDSIZE));
-  nsHTMLReflowMetrics desiredSize;
+  nsHTMLReflowMetrics desiredSize(reflowState.GetWritingMode());
   nsReflowStatus status;
 
-  NS_ASSERTION(reflowState.mComputedBorderPadding == nsMargin(0, 0, 0, 0) &&
-               reflowState.mComputedMargin == nsMargin(0, 0, 0, 0),
+  NS_ASSERTION(reflowState.ComputedPhysicalBorderPadding() == nsMargin(0, 0, 0, 0) &&
+               reflowState.ComputedPhysicalMargin() == nsMargin(0, 0, 0, 0),
                "style system should ensure that :-moz-svg-text "
                "does not get styled");
 
   kid->WillReflow(presContext);
   kid->Reflow(presContext, desiredSize, reflowState, status);
   kid->DidReflow(presContext, &reflowState, nsDidReflowStatus::FINISHED);
-  kid->SetSize(nsSize(desiredSize.width, desiredSize.height));
+  kid->SetSize(nsSize(desiredSize.Width(), desiredSize.Height()));
 
   mState &= ~NS_STATE_SVG_TEXT_IN_REFLOW;
 

@@ -28,7 +28,7 @@ public:
 #ifdef MOZ_ENABLE_D3D10_LAYER
     static SharedSurface_ANGLEShareHandle* Create(GLContext* gl, ID3D10Device1* d3d,
                                                   EGLContext context, EGLConfig config,
-                                                  const gfxIntSize& size,
+                                                  const gfx::IntSize& size,
                                                   bool hasAlpha);
 #endif
 
@@ -48,7 +48,7 @@ protected:
 
     SharedSurface_ANGLEShareHandle(GLContext* gl,
                                    GLLibraryEGL* egl,
-                                   const gfxIntSize& size,
+                                   const gfx::IntSize& size,
                                    bool hasAlpha,
                                    EGLContext context,
                                    EGLSurface pbuffer,
@@ -114,7 +114,7 @@ protected:
                                     ID3D10Device1* d3d,
                                     const SurfaceCaps& caps);
 
-    virtual SharedSurface* CreateShared(const gfxIntSize& size) {
+    virtual SharedSurface* CreateShared(const gfx::IntSize& size) {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_ANGLEShareHandle::Create(mProdGL, mConsD3D,
                                                       mContext, mConfig,

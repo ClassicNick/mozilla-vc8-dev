@@ -96,6 +96,7 @@ class nsStringHashKey;
 class nsTextFragment;
 class nsViewportInfo;
 class nsWrapperCache;
+class nsAttrValue;
 
 struct JSPropertyDescriptor;
 struct JSRuntime;
@@ -832,10 +833,10 @@ public:
    * A helper function that parses a sandbox attribute (of an <iframe> or
    * a CSP directive) and converts it to the set of flags used internally.
    *
-   * @param aAttribute 	the value of the sandbox attribute
-   * @return 			the set of flags
+   * @param sandboxAttr   the sandbox attribute
+   * @return              the set of flags (0 if sandboxAttr is null)
    */
-  static uint32_t ParseSandboxAttributeToFlags(const nsAString& aSandboxAttr);
+  static uint32_t ParseSandboxAttributeToFlags(const nsAttrValue* sandboxAttr);
 
 
   /**
@@ -1460,7 +1461,7 @@ public:
    * If offline-apps.allow_by_default is true, we set offline-app permission
    * for the principal and return true.  Otherwise false.
    */
-  static bool MaybeAllowOfflineAppByDefault(nsIPrincipal *aPrincipal);
+  static bool MaybeAllowOfflineAppByDefault(nsIPrincipal *aPrincipal, nsIDOMWindow *aWindow);
 
   /**
    * Increases the count of blockers preventing scripts from running.

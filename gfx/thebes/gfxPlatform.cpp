@@ -274,7 +274,6 @@ static const char *gPrefLangNames[] = {
     "x-sinh",
     "x-tibt",
     "x-unicode",
-    "x-user-def"
 };
 
 gfxPlatform::gfxPlatform()

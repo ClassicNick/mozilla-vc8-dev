@@ -214,18 +214,18 @@ static nsSize ComputeInsideBorderSize(ScrollReflowState* aState,
   nscoord contentWidth = aState->mReflowState.ComputedWidth();
   if (contentWidth == NS_UNCONSTRAINEDSIZE) {
     contentWidth = aDesiredInsideBorderSize.width -
-      aState->mReflowState.mComputedPadding.LeftRight();
+      aState->mReflowState.ComputedPhysicalPadding().LeftRight();
   }
   nscoord contentHeight = aState->mReflowState.ComputedHeight();
   if (contentHeight == NS_UNCONSTRAINEDSIZE) {
     contentHeight = aDesiredInsideBorderSize.height -
-      aState->mReflowState.mComputedPadding.TopBottom();
+      aState->mReflowState.ComputedPhysicalPadding().TopBottom();
   }
 
   contentWidth  = aState->mReflowState.ApplyMinMaxWidth(contentWidth);
   contentHeight = aState->mReflowState.ApplyMinMaxHeight(contentHeight);
-  return nsSize(contentWidth + aState->mReflowState.mComputedPadding.LeftRight(),
-                contentHeight + aState->mReflowState.mComputedPadding.TopBottom());
+  return nsSize(contentWidth + aState->mReflowState.ComputedPhysicalPadding().LeftRight(),
+                contentHeight + aState->mReflowState.ComputedPhysicalPadding().TopBottom());
 }
 
 static void
@@ -329,9 +329,9 @@ nsHTMLScrollFrame::TryLayout(ScrollReflowState* aState,
   // XXXldb Can we depend more on ComputeSize here?
   nsSize desiredInsideBorderSize;
   desiredInsideBorderSize.width = vScrollbarDesiredWidth +
-    NS_MAX(aKidMetrics->width, hScrollbarMinWidth);
+    NS_MAX(aKidMetrics->Width(), hScrollbarMinWidth);
   desiredInsideBorderSize.height = hScrollbarDesiredHeight +
-    NS_MAX(aKidMetrics->height, vScrollbarMinHeight);
+    NS_MAX(aKidMetrics->Height(), vScrollbarMinHeight);
   aState->mInsideBorderSize =
     ComputeInsideBorderSize(aState, desiredInsideBorderSize);
   nsSize scrollPortSize = nsSize(NS_MAX(0, aState->mInsideBorderSize.width - vScrollbarDesiredWidth),
@@ -388,8 +388,8 @@ nsHTMLScrollFrame::ScrolledContentDependsOnHeight(ScrollReflowState* aState)
   // based on the presence of a horizontal scrollbar.
   return (mHelper.mScrolledFrame->GetStateBits() & NS_FRAME_CONTAINS_RELATIVE_HEIGHT) ||
     aState->mReflowState.ComputedHeight() != NS_UNCONSTRAINEDSIZE ||
-    aState->mReflowState.mComputedMinHeight > 0 ||
-    aState->mReflowState.mComputedMaxHeight != NS_UNCONSTRAINEDSIZE;
+    aState->mReflowState.ComputedMinHeight() > 0 ||
+    aState->mReflowState.ComputedMaxHeight() != NS_UNCONSTRAINEDSIZE;
 }
 
 nsresult
@@ -401,13 +401,13 @@ nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowState* aState,
 {
   // these could be NS_UNCONSTRAINEDSIZE ... NS_MIN arithmetic should
   // be OK
-  nscoord paddingLR = aState->mReflowState.mComputedPadding.LeftRight();
+  nscoord paddingLR = aState->mReflowState.ComputedPhysicalPadding().LeftRight();
 
   nscoord availWidth = aState->mReflowState.ComputedWidth() + paddingLR;
 
   nscoord computedHeight = aState->mReflowState.ComputedHeight();
-  nscoord computedMinHeight = aState->mReflowState.mComputedMinHeight;
-  nscoord computedMaxHeight = aState->mReflowState.mComputedMaxHeight;
+  nscoord computedMinHeight = aState->mReflowState.ComputedMinHeight();
+  nscoord computedMaxHeight = aState->mReflowState.ComputedMaxHeight();
   if (!ShouldPropagateComputedHeightToScrolledContent()) {
     computedHeight = NS_UNCONSTRAINEDSIZE;
     computedMinHeight = 0;
@@ -439,12 +439,12 @@ nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowState* aState,
                                    nsSize(availWidth, NS_UNCONSTRAINEDSIZE),
                                    -1, -1, nsHTMLReflowState::CALLER_WILL_INIT);
   kidReflowState.Init(presContext, -1, -1, nullptr,
-                      &aState->mReflowState.mComputedPadding);
+                      &aState->mReflowState.ComputedPhysicalPadding());
   kidReflowState.mFlags.mAssumingHScrollbar = aAssumeHScroll;
   kidReflowState.mFlags.mAssumingVScrollbar = aAssumeVScroll;
   kidReflowState.SetComputedHeight(computedHeight);
-  kidReflowState.mComputedMinHeight = computedMinHeight;
-  kidReflowState.mComputedMaxHeight = computedMaxHeight;
+  kidReflowState.ComputedMinHeight() = computedMinHeight;
+  kidReflowState.ComputedMaxHeight() = computedMaxHeight;
 
   // Temporarily set mHasHorizontalScrollbar/mHasVerticalScrollbar to
   // reflect our assumptions while we reflow the child.
@@ -552,7 +552,7 @@ nsresult
 nsHTMLScrollFrame::ReflowContents(ScrollReflowState* aState,
                                   const nsHTMLReflowMetrics& aDesiredSize)
 {
-  nsHTMLReflowMetrics kidDesiredSize(aDesiredSize.mFlags);
+  nsHTMLReflowMetrics kidDesiredSize(aDesiredSize.GetWritingMode(), aDesiredSize.mFlags);
   nsresult rv = ReflowScrolledFrame(aState, GuessHScrollbarNeeded(*aState),
       GuessVScrollbarNeeded(*aState), &kidDesiredSize, true);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -581,7 +581,7 @@ nsHTMLScrollFrame::ReflowContents(ScrollReflowState* aState,
       aState->mStyles.mHorizontal != NS_STYLE_OVERFLOW_SCROLL) {
     nsSize insideBorderSize =
       ComputeInsideBorderSize(aState,
-                              nsSize(kidDesiredSize.width, kidDesiredSize.height));
+                              nsSize(kidDesiredSize.Width(), kidDesiredSize.Height()));
     nsRect scrolledRect =
       mHelper.GetScrolledRectInternal(kidDesiredSize.ScrollableOverflow(),
                                      insideBorderSize);
@@ -789,8 +789,8 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
     mHelper.mScrolledFrame->GetScrollableOverflowRectRelativeToParent();
   nsPoint oldScrollPosition = mHelper.GetScrollPosition();
 
-  state.mComputedBorder = aReflowState.mComputedBorderPadding -
-    aReflowState.mComputedPadding;
+  state.mComputedBorder = aReflowState.ComputedPhysicalBorderPadding() -
+    aReflowState.ComputedPhysicalPadding();
 
   nsresult rv = ReflowContents(&state, aDesiredSize);
   if (NS_FAILED(rv))
@@ -835,9 +835,9 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
     }
   }
 
-  aDesiredSize.width = state.mInsideBorderSize.width +
+  aDesiredSize.Width() = state.mInsideBorderSize.width +
     state.mComputedBorder.LeftRight();
-  aDesiredSize.height = state.mInsideBorderSize.height +
+  aDesiredSize.Height() = state.mInsideBorderSize.height +
     state.mComputedBorder.TopBottom();
 
   aDesiredSize.SetOverflowAreasToDesiredBounds();
@@ -2025,9 +2025,9 @@ ScrollFrameHelper::ScrollToImpl(nsPoint aPt, const nsRect& aRange, nsIAtom* aOri
   nsPoint dist(std::abs(pt.x - mLastUpdateImagesPos.x),
                std::abs(pt.y - mLastUpdateImagesPos.y));
   nsSize scrollPortSize = GetScrollPositionClampingScrollPortSize();
-  nscoord horzAllowance = std::max(scrollPortSize.width / std::max(sHorzScrollFraction, 1),
+  nscoord horzAllowance = NS_MAX(scrollPortSize.width / NS_MAX(sHorzScrollFraction, 1),
                                    nsPresContext::AppUnitsPerCSSPixel());
-  nscoord vertAllowance = std::max(scrollPortSize.height / std::max(sVertScrollFraction, 1),
+  nscoord vertAllowance = NS_MAX(scrollPortSize.height / NS_MAX(sVertScrollFraction, 1),
                                    nsPresContext::AppUnitsPerCSSPixel());
   if (dist.x >= horzAllowance || dist.y >= vertAllowance) {
     needImageVisibilityUpdate = true;
@@ -2539,8 +2539,8 @@ nsRect
 ScrollFrameHelper::GetScrollRange(nscoord aWidth, nscoord aHeight) const
 {
   nsRect range = GetScrolledRect();
-  range.width = std::max(range.width - aWidth, 0);
-  range.height = std::max(range.height - aHeight, 0);
+  range.width = NS_MAX(range.width - aWidth, 0);
+  range.height = NS_MAX(range.height - aHeight, 0);
   return range;
 }
 
@@ -3931,14 +3931,14 @@ AdjustOverlappingScrollbars(nsRect& aVRect, nsRect& aHRect)
   const nsRect oldVRect = aVRect;
   const nsRect oldHRect = aHRect;
   if (oldVRect.Contains(oldHRect.BottomRight() - nsPoint(1, 1))) {
-    aHRect.width = std::max(0, oldVRect.x - oldHRect.x);
+    aHRect.width = NS_MAX(0, oldVRect.x - oldHRect.x);
   } else if (oldVRect.Contains(oldHRect.BottomLeft() - nsPoint(0, 1))) {
-    nscoord overlap = std::min(oldHRect.width, oldVRect.XMost() - oldHRect.x);
+    nscoord overlap = NS_MIN(oldHRect.width, oldVRect.XMost() - oldHRect.x);
     aHRect.x += overlap;
     aHRect.width -= overlap;
   }
   if (oldHRect.Contains(oldVRect.BottomRight() - nsPoint(1, 1))) {
-    aVRect.height = std::max(0, oldHRect.y - oldVRect.y);
+    aVRect.height = NS_MAX(0, oldHRect.y - oldVRect.y);
   }
 }
 
@@ -3989,14 +3989,14 @@ ScrollFrameHelper::LayoutScrollbars(nsBoxLayoutState& aState,
 
       nscoord vScrollbarWidth = mVScrollbarBox ?
         mVScrollbarBox->GetPrefSize(aState).width : defaultSize;
-      r.width = std::max(std::max(r.width, vScrollbarWidth), resizerMinSize.width);
+      r.width = NS_MAX(NS_MAX(r.width, vScrollbarWidth), resizerMinSize.width);
       if (aContentArea.x == mScrollPort.x && !scrollbarOnLeft) {
         r.x = aContentArea.XMost() - r.width;
       }
 
       nscoord hScrollbarHeight = mHScrollbarBox ?
         mHScrollbarBox->GetPrefSize(aState).height : defaultSize;
-      r.height = std::max(std::max(r.height, hScrollbarHeight), resizerMinSize.height);
+      r.height = NS_MAX(NS_MAX(r.height, hScrollbarHeight), resizerMinSize.height);
       if (aContentArea.y == mScrollPort.y) {
         r.y = aContentArea.YMost() - r.height;
       }

@@ -551,7 +551,7 @@ nsListControlFrame::ReflowAsDropdown(nsPresContext*           aPresContext,
       mNumDisplayRows = 1;
       mDropdownCanGrow = GetNumberOfRows() > 1;
     } else {
-      nscoord bp = aReflowState.mComputedBorderPadding.TopBottom();
+      nscoord bp = aReflowState.ComputedPhysicalBorderPadding().TopBottom();
       nscoord availableHeight = NS_MAX(above, below) - bp;
       nscoord newHeight;
       uint32_t rows;
@@ -2162,7 +2162,7 @@ nsListControlFrame::KeyDown(nsIDOMEvent* aKeyEvent)
     }
     case NS_VK_PAGE_UP: {
       int32_t itemsPerPage =
-        std::max(1, static_cast<int32_t>(mNumDisplayRows - 1));
+        NS_MAX(1, static_cast<int32_t>(mNumDisplayRows - 1));
       AdjustIndexForDisabledOpt(mEndSelectionIndex, newIndex,
                                 static_cast<int32_t>(numOptions),
                                 -itemsPerPage, -1);

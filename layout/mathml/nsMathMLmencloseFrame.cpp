@@ -307,7 +307,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
   ///////////////
   // Measure the size of our content using the base class to format like an
   // inferred mrow.
-  nsHTMLReflowMetrics baseSize;
+  nsHTMLReflowMetrics baseSize(aDesiredSize.GetWritingMode());
   nsresult rv =
     nsMathMLContainerFrame::Place(aRenderingContext, false, baseSize);
 
@@ -424,8 +424,8 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
     // arrow head does not overlap with that content. Hence we add some space
     // on the right. We don't add space on the top but only ensure that the
     // ascent is large enough.
-    dx_right = std::max(dx_right, arrowHeadSize);
-    mBoundingMetrics.ascent = std::max(mBoundingMetrics.ascent, arrowHeadSize);
+    dx_right = NS_MAX(dx_right, arrowHeadSize);
+    mBoundingMetrics.ascent = NS_MAX(mBoundingMetrics.ascent, arrowHeadSize);
   }
 
   ///////////////
@@ -549,19 +549,19 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
   mBoundingMetrics.rightBearing =
     NS_MAX(mBoundingMetrics.width, dx_left + bmBase.rightBearing);
   
-  aDesiredSize.width = mBoundingMetrics.width;
+  aDesiredSize.Width() = mBoundingMetrics.width;
 
-  aDesiredSize.ascent = NS_MAX(mBoundingMetrics.ascent, baseSize.ascent);
-  aDesiredSize.height = aDesiredSize.ascent +
-    NS_MAX(mBoundingMetrics.descent, baseSize.height - baseSize.ascent);
+  aDesiredSize.SetTopAscent(NS_MAX(mBoundingMetrics.ascent, baseSize.TopAscent()));
+  aDesiredSize.Height() = aDesiredSize.TopAscent() +
+    NS_MAX(mBoundingMetrics.descent, baseSize.Height() - baseSize.TopAscent());
 
   if (IsToDraw(NOTATION_LONGDIV) || IsToDraw(NOTATION_RADICAL)) {
     // get the leading to be left at the top of the resulting frame
     // this seems more reliable than using fm->GetLeading() on suspicious
     // fonts
     nscoord leading = nscoord(0.2f * mEmHeight);
-    nscoord desiredSizeAscent = aDesiredSize.ascent;
-    nscoord desiredSizeDescent = aDesiredSize.height - aDesiredSize.ascent;
+    nscoord desiredSizeAscent = aDesiredSize.TopAscent();
+    nscoord desiredSizeDescent = aDesiredSize.Height() - aDesiredSize.TopAscent();
     
     if (IsToDraw(NOTATION_LONGDIV)) {
       desiredSizeAscent = NS_MAX(desiredSizeAscent,
@@ -577,20 +577,20 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
                                   radicalDescent + mRuleThickness);
     }
 
-    aDesiredSize.ascent = desiredSizeAscent;
-    aDesiredSize.height = desiredSizeAscent + desiredSizeDescent;
+    aDesiredSize.SetTopAscent(desiredSizeAscent);
+    aDesiredSize.Height() = desiredSizeAscent + desiredSizeDescent;
   }
     
   if (IsToDraw(NOTATION_CIRCLE) ||
       IsToDraw(NOTATION_ROUNDEDBOX) ||
       (IsToDraw(NOTATION_TOP) && IsToDraw(NOTATION_BOTTOM))) {
     // center the menclose around the content (vertically)
-    nscoord dy = NS_MAX(aDesiredSize.ascent - bmBase.ascent,
-                        aDesiredSize.height - aDesiredSize.ascent -
+    nscoord dy = NS_MAX(aDesiredSize.TopAscent() - bmBase.ascent,
+                        aDesiredSize.Height() - aDesiredSize.TopAscent() -
                         bmBase.descent);
 
-    aDesiredSize.ascent = bmBase.ascent + dy;
-    aDesiredSize.height = aDesiredSize.ascent + bmBase.descent + dy;
+    aDesiredSize.SetTopAscent(bmBase.ascent + dy);
+    aDesiredSize.Height() = aDesiredSize.TopAscent() + bmBase.descent + dy;
   }
 
   // Update mBoundingMetrics ascent/descent
@@ -603,7 +603,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
       IsToDraw(NOTATION_VERTICALSTRIKE) ||
       IsToDraw(NOTATION_CIRCLE) ||
       IsToDraw(NOTATION_ROUNDEDBOX))
-    mBoundingMetrics.ascent = aDesiredSize.ascent;
+    mBoundingMetrics.ascent = aDesiredSize.TopAscent();
   
   if (IsToDraw(NOTATION_BOTTOM) ||
       IsToDraw(NOTATION_RIGHT) ||
@@ -614,12 +614,12 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
       IsToDraw(NOTATION_VERTICALSTRIKE) ||
       IsToDraw(NOTATION_CIRCLE) ||
       IsToDraw(NOTATION_ROUNDEDBOX))
-    mBoundingMetrics.descent = aDesiredSize.height - aDesiredSize.ascent;
+    mBoundingMetrics.descent = aDesiredSize.Height() - aDesiredSize.TopAscent();
 
   aDesiredSize.mBoundingMetrics = mBoundingMetrics;
   
   mReference.x = 0;
-  mReference.y = aDesiredSize.ascent;
+  mReference.y = aDesiredSize.TopAscent();
 
   if (aPlaceOrigin) {
     //////////////////
@@ -627,7 +627,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
     if (IsToDraw(NOTATION_LONGDIV))
       mMathMLChar[mLongDivCharIndex].SetRect(nsRect(dx_left -
                                                     bmLongdivChar.width,
-                                                    aDesiredSize.ascent -
+                                                    aDesiredSize.TopAscent() -
                                                     longdivAscent,
                                                     bmLongdivChar.width,
                                                     bmLongdivChar.ascent +
@@ -638,7 +638,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
                     dx_left + bmBase.width : dx_left - bmRadicalChar.width);
 
       mMathMLChar[mRadicalCharIndex].SetRect(nsRect(dx,
-                                                    aDesiredSize.ascent -
+                                                    aDesiredSize.TopAscent() -
                                                     radicalAscent,
                                                     bmRadicalChar.width,
                                                     bmRadicalChar.ascent +
@@ -649,7 +649,7 @@ nsMathMLmencloseFrame::PlaceInternal(nsRenderingContext& aRenderingContext,
 
     //////////////////
     // Finish reflowing child frames
-    PositionRowChildFrames(dx_left, aDesiredSize.ascent);
+    PositionRowChildFrames(dx_left, aDesiredSize.TopAscent());
   }
 
   return NS_OK;
@@ -795,9 +795,9 @@ void nsDisplayNotation::Paint(nsDisplayListBuilder* aBuilder,
       gfxCtx->NewPath();
       gfxPoint p[] = {
         rect.TopRight(),
-        rect.TopRight() + gfxPoint(-w -.4*h, std::max(-e / 2.0, h - .4*w)),
+        rect.TopRight() + gfxPoint(-w -.4*h, NS_MAX(-e / 2.0, h - .4*w)),
         rect.TopRight() + gfxPoint(-.7*w, .7*h),
-        rect.TopRight() + gfxPoint(std::min(e / 2.0, -w + .4*h), h + .4*w),
+        rect.TopRight() + gfxPoint(NS_MIN(e / 2.0, -w + .4*h), h + .4*w),
         rect.TopRight()
       };
       gfxCtx->Polygon(p, sizeof(p));

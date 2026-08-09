@@ -274,10 +274,10 @@ StickyScrollContainer::ComputePosition(nsIFrame* aFrame) const
   // For each sticky direction (top, bottom, left, right), move the frame along
   // the appropriate axis, based on the scroll position, but limit this to keep
   // the element's margin box within the containing block.
-  position.y = std::max(position.y, std::min(stick.y, contain.YMost()));
-  position.y = std::min(position.y, std::max(stick.YMost(), contain.y));
-  position.x = std::max(position.x, std::min(stick.x, contain.XMost()));
-  position.x = std::min(position.x, std::max(stick.XMost(), contain.x));
+  position.y = NS_MAX(position.y, NS_MIN(stick.y, contain.YMost()));
+  position.y = NS_MIN(position.y, NS_MAX(stick.YMost(), contain.y));
+  position.x = NS_MAX(position.x, NS_MIN(stick.x, contain.XMost()));
+  position.x = NS_MIN(position.x, NS_MAX(stick.XMost(), contain.x));
 
   return position;
 }
