@@ -14,11 +14,14 @@
 
 #include <string>
 
+#include "base/debug_util.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/time.h"
+
+static mozilla::EnvironmentLog gProcessLog("MOZ_PROCESS_LOG");
 
 namespace base {
 
@@ -171,6 +174,9 @@ bool LaunchApp(const std::vector<std::string>& argv,
   if (!spawn_succeeded || !process_handle_valid) {
     retval = false;
   } else {
+    gProcessLog.print("==> process %d launched child process %d\n",
+                      GetCurrentProcId(), pid);
+
     if (wait)
       HANDLE_EINTR(waitpid(pid, 0, 0));
 
@@ -212,7 +218,7 @@ NamedProcessIterator::NamedProcessIterator(const std::wstring& executable_name,
     // Get the size of the buffer
     size_t len = 0;
     if (sysctl(mib, arraysize(mib), NULL, &len, NULL, 0) < 0) {
-      LOG(ERROR) << "failed to get the size needed for the process list";
+      CHROMIUM_LOG(ERROR) << "failed to get the size needed for the process list";
       kinfo_procs_.resize(0);
       done = true;
     } else {
@@ -227,7 +233,7 @@ NamedProcessIterator::NamedProcessIterator(const std::wstring& executable_name,
         // If we get a mem error, it just means we need a bigger buffer, so
         // loop around again.  Anything else is a real error and give up.
         if (errno != ENOMEM) {
-          LOG(ERROR) << "failed to get the process list";
+          CHROMIUM_LOG(ERROR) << "failed to get the process list";
           kinfo_procs_.resize(0);
           done = true;
         }
@@ -241,7 +247,7 @@ NamedProcessIterator::NamedProcessIterator(const std::wstring& executable_name,
   } while (!done && (try_num++ < max_tries));
 
   if (!done) {
-    LOG(ERROR) << "failed to collect the process list in a few tries";
+    CHROMIUM_LOG(ERROR) << "failed to collect the process list in a few tries";
     kinfo_procs_.resize(0);
   }
 }
@@ -280,13 +286,13 @@ bool NamedProcessIterator::CheckForNextProcess() {
     // Found out what size buffer we need
     size_t data_len = 0;
     if (sysctl(mib, arraysize(mib), NULL, &data_len, NULL, 0) < 0) {
-      LOG(ERROR) << "failed to figure out the buffer size for a commandline";
+      CHROMIUM_LOG(ERROR) << "failed to figure out the buffer size for a commandline";
       continue;
     }
 
     data.resize(data_len);
     if (sysctl(mib, arraysize(mib), &data[0], &data_len, NULL, 0) < 0) {
-      LOG(ERROR) << "failed to fetch a commandline";
+      CHROMIUM_LOG(ERROR) << "failed to fetch a commandline";
       continue;
     }
 
@@ -295,7 +301,7 @@ bool NamedProcessIterator::CheckForNextProcess() {
 
     size_t exec_name_end = data.find('\0');
     if (exec_name_end == std::string::npos) {
-      LOG(ERROR) << "command line data didn't match expected format";
+      CHROMIUM_LOG(ERROR) << "command line data didn't match expected format";
       continue;
     }
     size_t last_slash = data.rfind('/', exec_name_end);

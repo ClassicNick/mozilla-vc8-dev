@@ -96,8 +96,25 @@
  *
  *                                POST-BARRIER
  *
- * These are not yet implemented. Once we get generational GC, they will allow
- * us to keep track of pointers from non-nursery space into the nursery.
+ * For generational GC, we want to be able to quickly collect the nursery in a
+ * minor collection.  Part of the way this is achieved is to only mark the
+ * nursery itself; tenured things, which may form the majority of the heap, are
+ * not traced through or marked.  This leads to the problem of what to do about
+ * tenured objects that have pointers into the nursery: if such things are not
+ * marked, they may be discarded while there are still live objects which
+ * reference them. The solution is to maintain information about these pointers,
+ * and mark their targets when we start a minor collection.
+ *
+ * The pointers can be thoughs of as edges in object graph, and the set of edges
+ * from the tenured generation into the nursery is know as the remembered set.
+ * Post barriers are used to track this remembered set.
+ *
+ * Whenever a slot which could contain such a pointer is written, we use a write
+ * barrier to check if the edge created is in the remembered set, and if so we
+ * insert it into the store buffer, which is the collector's representation of
+ * the remembered set.  This means than when we come to do a minor collection we
+ * can examine the contents of the store buffer and mark any edge targets that
+ * are in the nursery.
  *
  *                            IMPLEMENTATION DETAILS
  *
@@ -116,6 +133,21 @@
  * the "obj->field.init(value)" method instead of "obj->field = value". We use
  * the init naming idiom in many places to signify that a field is being
  * assigned for the first time.
+ *
+ * For each of pointers, Values and jsids this file implements four classes,
+ * illustrated here for the pointer (Ptr) classes:
+ *
+ * BarrieredPtr           abstract base class which provides common operations
+ *  |  |  |
+ *  |  | EncapsulatedPtr  provides pre-barriers only
+ *  |  |
+ *  | HeapPtr             provides pre- and post-barriers
+ *  |
+ * RelocatablePtr         provides pre- and post-barriers and is relocatable
+ *
+ * These classes are designed to be used by the internals of the JS engine.
+ * Barriers designed to be used externally are provided in
+ * js/public/RootingAPI.h.
  */
 
 namespace js {
@@ -995,7 +1027,7 @@ class EncapsulatedId : public BarrieredId
 {
   public:
     explicit EncapsulatedId(jsid id) : BarrieredId(id) {}
-    explicit EncapsulatedId() : BarrieredId(jsid::voidId()) {}
+    explicit EncapsulatedId() : BarrieredId(JSID_VOID) {}
 
     EncapsulatedId &operator=(const EncapsulatedId &v) {
         if (v.value != value)
@@ -1009,7 +1041,7 @@ class EncapsulatedId : public BarrieredId
 class RelocatableId : public BarrieredId
 {
   public:
-    explicit RelocatableId() : BarrieredId(jsid::voidId()) {}
+    explicit RelocatableId() : BarrieredId(JSID_VOID) {}
     explicit inline RelocatableId(jsid id) : BarrieredId(id) {}
     ~RelocatableId() { pre(); }
 
@@ -1046,7 +1078,7 @@ class RelocatableId : public BarrieredId
 class HeapId : public BarrieredId
 {
   public:
-    explicit HeapId() : BarrieredId(jsid::voidId()) {}
+    explicit HeapId() : BarrieredId(JSID_VOID) {}
 
     explicit HeapId(jsid id)
       : BarrieredId(id)

@@ -2903,12 +2903,18 @@ class XPCJSSourceHook: public js::SourceHook {
     }
 };
 
+static const JSWrapObjectCallbacks WrapObjectCallbacks = {
+    xpc::WrapperFactory::Rewrap,
+    xpc::WrapperFactory::WrapForSameCompartment,
+    xpc::WrapperFactory::PrepareForWrapping
+};
+
 XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
    : CycleCollectedJSRuntime(32L * 1024L * 1024L, JS_USE_HELPER_THREADS),
    mJSContextStack(new XPCJSContextStack()),
    mCallContext(nullptr),
    mAutoRoots(nullptr),
-   mResolveName(jsid::voidId()),
+   mResolveName(JSID_VOID),
    mResolvingWrapper(nullptr),
    mWrappedJSMap(JSObject2WrappedJSMap::newMap(XPC_JS_MAP_SIZE)),
    mWrappedJSClassMap(IID2WrappedJSClassMap::newMap(XPC_JS_CLASS_MAP_SIZE)),
@@ -2933,7 +2939,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     DOM_InitInterfaces();
 
     // these jsids filled in later when we have a JSContext to work with.
-    mStrIDs[0] = jsid::voidId();
+    mStrIDs[0] = JSID_VOID;
 
     MOZ_ASSERT(Runtime());
     JSRuntime* runtime = Runtime();
@@ -3031,10 +3037,7 @@ XPCJSRuntime::XPCJSRuntime(nsXPConnect* aXPConnect)
     JS_SetCompartmentNameCallback(runtime, CompartmentNameCallback);
     mPrevGCSliceCallback = JS::SetGCSliceCallback(runtime, GCSliceCallback);
     JS_SetFinalizeCallback(runtime, FinalizeCallback);
-    JS_SetWrapObjectCallbacks(runtime,
-                              xpc::WrapperFactory::Rewrap,
-                              xpc::WrapperFactory::WrapForSameCompartment,
-                              xpc::WrapperFactory::PrepareForWrapping);
+    JS_SetWrapObjectCallbacks(runtime, &WrapObjectCallbacks);
     js::SetPreserveWrapperCallback(runtime, PreserveWrapper);
 #ifdef MOZ_CRASHREPORTER
     JS_EnumerateDiagnosticMemoryRegions(DiagnosticMemoryCallback);
@@ -3134,7 +3137,7 @@ XPCJSRuntime::OnJSContextNew(JSContext *cx)
         for (unsigned i = 0; i < IDX_TOTAL_COUNT; i++) {
             str = JS_InternString(cx, mStrings[i]);
             if (!str) {
-                mStrIDs[0] = jsid::voidId();
+                mStrIDs[0] = JSID_VOID;
                 return false;
             }
             mStrIDs[i] = INTERNED_STRING_TO_JSID(cx, str);

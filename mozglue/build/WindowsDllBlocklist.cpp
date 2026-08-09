@@ -167,7 +167,7 @@ static bool sBlocklistInitFailed;
 static bool sUser32BeforeBlocklist;
 
 // Duplicated from xpcom glue. Ideally this should be shared.
-static void
+void
 printf_stderr(const char *fmt, ...)
 {
   if (IsDebuggerPresent()) {
@@ -372,7 +372,7 @@ DllBlockSet::Write(HANDLE file)
 
   // Because this method is called after a crash occurs, and uses heap memory,
   // protect this entire block with a structured exception handler.
-  __try {
+  MOZ_SEH_TRY {
     for (DllBlockSet* b = gFirst; b; b = b->mNext) {
       // write name[,v.v.v.v];
       WriteFile(file, b->mName, strlen(b->mName), &nBytes, nullptr);
@@ -395,7 +395,7 @@ DllBlockSet::Write(HANDLE file)
       WriteFile(file, ";", 1, &nBytes, nullptr);
     }
   }
-  __except (EXCEPTION_EXECUTE_HANDLER) { }
+  MOZ_SEH_EXCEPT (EXCEPTION_EXECUTE_HANDLER) { }
 }
 
 static

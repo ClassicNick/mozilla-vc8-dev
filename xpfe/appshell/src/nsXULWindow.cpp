@@ -1409,6 +1409,10 @@ void nsXULWindow::SyncAttributesToWidget()
   }
   mWindow->SetIcon(attr);
 
+  // "drawtitle" attribute
+  windowElement->GetAttribute(NS_LITERAL_STRING("drawtitle"), attr);
+  mWindow->SetDrawsTitle(attr.LowerCaseEqualsLiteral("true"));
+
   // "toggletoolbar" attribute
   windowElement->GetAttribute(NS_LITERAL_STRING("toggletoolbar"), attr);
   mWindow->SetShowsToolbarButton(attr.LowerCaseEqualsLiteral("true"));

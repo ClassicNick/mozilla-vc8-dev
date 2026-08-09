@@ -1213,21 +1213,6 @@ const CSSRect AsyncPanZoomController::CalculatePendingDisplayPort(
     scrollOffset.y = scrollableRect.y;
   }
 
-  // FIXME/bug 936500: Make sure the displayport contains the composition
-  // bounds. This is to work around a layout bug that means if a display item's
-  // corresponding displayport doesn't contain its frame's bounds, it may get
-  // optimised out and the layer won't get created.
-  if (displayPort.x + displayPort.width < compositionBounds.width) {
-    displayPort.x = -(displayPort.width - compositionBounds.width);
-  } else if (displayPort.x > 0) {
-    displayPort.x = 0;
-  }
-  if (displayPort.y + displayPort.height < compositionBounds.height) {
-    displayPort.y = -(displayPort.height - compositionBounds.height);
-  } else if (displayPort.y > 0) {
-    displayPort.y = 0;
-  }
-
   CSSRect shiftedDisplayPort = displayPort + scrollOffset;
   return scrollableRect.ClampRect(shiftedDisplayPort) - scrollOffset;
 }
@@ -1496,28 +1481,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(const FrameMetrics& aLayerMetri
 const FrameMetrics& AsyncPanZoomController::GetFrameMetrics() {
   mMonitor.AssertCurrentThreadIn();
   return mFrameMetrics;
-}
-
-void AsyncPanZoomController::UpdateCompositionBounds(const ScreenIntRect& aCompositionBounds) {
-  ReentrantMonitorAutoEnter lock(mMonitor);
-
-  ScreenIntRect oldCompositionBounds = mFrameMetrics.mCompositionBounds;
-  mFrameMetrics.mCompositionBounds = aCompositionBounds;
-
-  // If the window had 0 dimensions before, or does now, we don't want to
-  // repaint or update the zoom since we'll run into rendering issues and/or
-  // divide-by-zero. This manifests itself as the screen flashing. If the page
-  // has gone out of view, the buffer will be cleared elsewhere anyways.
-  if (aCompositionBounds.width && aCompositionBounds.height &&
-      oldCompositionBounds.width && oldCompositionBounds.height) {
-    float adjustmentFactor = float(aCompositionBounds.width) / float(oldCompositionBounds.width);
-    mFrameMetrics.mZoom.scale =
-      clamped(mFrameMetrics.mZoom.scale * adjustmentFactor,
-              mMinZoom.scale, mMaxZoom.scale);
-
-    // Repaint on a rotation so that our new resolution gets properly updated.
-    RequestContentRepaint();
-  }
 }
 
 void AsyncPanZoomController::ZoomToRect(CSSRect aRect) {
