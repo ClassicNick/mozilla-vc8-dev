@@ -490,20 +490,20 @@ class MacroAssembler : public MacroAssemblerSpecific
     void branchIfFunctionHasNoScript(Register fun, Label *label) {
         // 16-bit loads are slow and unaligned 32-bit loads may be too so
         // perform an aligned 32-bit load and adjust the bitmask accordingly.
-        JS_STATIC_ASSERT(offsetof(JSFunction, nargs) % sizeof(uint32_t) == 0);
-        JS_STATIC_ASSERT(offsetof(JSFunction, flags) == offsetof(JSFunction, nargs) + 2);
+        JS_ASSERT(JSFunction::offsetOfNargs() % sizeof(uint32_t) == 0);
+        JS_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
         JS_STATIC_ASSERT(IS_LITTLE_ENDIAN);
-        Address address(fun, offsetof(JSFunction, nargs));
+        Address address(fun, JSFunction::offsetOfNargs());
         uint32_t bit = JSFunction::INTERPRETED << 16;
         branchTest32(Assembler::Zero, address, Imm32(bit), label);
     }
     void branchIfInterpreted(Register fun, Label *label) {
         // 16-bit loads are slow and unaligned 32-bit loads may be too so
         // perform an aligned 32-bit load and adjust the bitmask accordingly.
-        JS_STATIC_ASSERT(offsetof(JSFunction, nargs) % sizeof(uint32_t) == 0);
-        JS_STATIC_ASSERT(offsetof(JSFunction, flags) == offsetof(JSFunction, nargs) + 2);
+        JS_ASSERT(JSFunction::offsetOfNargs() % sizeof(uint32_t) == 0);
+        JS_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
         JS_STATIC_ASSERT(IS_LITTLE_ENDIAN);
-        Address address(fun, offsetof(JSFunction, nargs));
+        Address address(fun, JSFunction::offsetOfNargs());
         uint32_t bit = JSFunction::INTERPRETED << 16;
         branchTest32(Assembler::NonZero, address, Imm32(bit), label);
     }
@@ -865,12 +865,12 @@ class MacroAssembler : public MacroAssemblerSpecific
     // been made so that a safepoint can be made at that location.
 
     template <typename T>
-    void callWithABINoProfiling(const T &fun, MoveOp::Kind result = MoveOp::GENERAL) {
+    void callWithABINoProfiling(const T &fun, Result result = GENERAL) {
         MacroAssemblerSpecific::callWithABI(fun, result);
     }
 
     template <typename T>
-    void callWithABI(const T &fun, MoveOp::Kind result = MoveOp::GENERAL) {
+    void callWithABI(const T &fun, Result result = GENERAL) {
         leaveSPSFrame();
         callWithABINoProfiling(fun, result);
         reenterSPSFrame();

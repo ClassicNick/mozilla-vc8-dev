@@ -1,4 +1,4 @@
-/* -*- Mnde: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -142,8 +142,11 @@ MNewStringObject::templateObj() const {
 }
 
 CodeGenerator::CodeGenerator(MIRGenerator *gen, LIRGraph *graph, MacroAssembler *masm)
-  : CodeGeneratorSpecific(gen, graph, masm),
-    unassociatedScriptCounts_(nullptr)
+  : CodeGeneratorSpecific(gen, graph, masm)
+#ifdef DEBUG
+  , ionScriptLabels_(gen->alloc())
+#endif
+  , unassociatedScriptCounts_(nullptr)
 {
 }
 
@@ -823,11 +826,11 @@ CodeGenerator::emitLambdaInit(const Register &output, const Register &scopeChain
         } s;
         uint32_t word;
     } u;
-    u.s.nargs = info.fun->nargs;
+    u.s.nargs = info.fun->nargs();
     u.s.flags = info.flags & ~JSFunction::EXTENDED;
 
-    JS_STATIC_ASSERT(offsetof(JSFunction, flags) == offsetof(JSFunction, nargs) + 2);
-    masm.store32(Imm32(u.word), Address(output, offsetof(JSFunction, nargs)));
+    JS_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
+    masm.store32(Imm32(u.word), Address(output, JSFunction::offsetOfNargs()));
     masm.storePtr(ImmGCPtr(info.scriptOrLazyScript),
                   Address(output, JSFunction::offsetOfNativeOrScript()));
     masm.storePtr(scopeChain, Address(output, JSFunction::offsetOfEnvironment()));
@@ -1185,28 +1188,13 @@ CodeGenerator::visitMoveGroup(LMoveGroup *group)
 
         const LAllocation *from = move.from();
         const LAllocation *to = move.to();
-        LDefinition::Type type = move.type();
 
         // No bogus moves.
         JS_ASSERT(*from != *to);
         JS_ASSERT(!from->isConstant());
         JS_ASSERT(from->isDouble() == to->isDouble());
 
-        MoveOp::Kind kind;
-        switch (type) {
-          case LDefinition::OBJECT:
-          case LDefinition::SLOTS:
-#ifdef JS_NUNBOX32
-          case LDefinition::TYPE:
-          case LDefinition::PAYLOAD:
-#else
-          case LDefinition::BOX:
-#endif
-          case LDefinition::GENERAL: kind = MoveOp::GENERAL; break;
-          case LDefinition::FLOAT32: kind = MoveOp::FLOAT32; break;
-          case LDefinition::DOUBLE:  kind = MoveOp::DOUBLE;  break;
-          default: MOZ_ASSUME_UNREACHABLE("Unexpected move type");
-        }
+        MoveOp::Kind kind = from->isDouble() ? MoveOp::DOUBLE : MoveOp::GENERAL;
 
         if (!resolver.addMove(toMoveOperand(from), toMoveOperand(to), kind))
             return false;
@@ -1965,7 +1953,7 @@ CodeGenerator::visitCallGeneric(LCallGeneric *call)
     masm.Push(Imm32(descriptor));
 
     // Check whether the provided arguments satisfy target argc.
-    masm.load16ZeroExtend(Address(calleereg, offsetof(JSFunction, nargs)), nargsreg);
+    masm.load16ZeroExtend(Address(calleereg, JSFunction::offsetOfNargs()), nargsreg);
     masm.cmp32(nargsreg, Imm32(call->numStackArgs()));
     masm.j(Assembler::Above, &thunk);
 
@@ -2057,7 +2045,7 @@ CodeGenerator::visitCallKnown(LCallKnown *call)
     // Native single targets are handled by LCallNative.
     JS_ASSERT(!target->isNative());
     // Missing arguments must have been explicitly appended by the IonBuilder.
-    JS_ASSERT(target->nargs <= call->numStackArgs());
+    JS_ASSERT(target->nargs() <= call->numStackArgs());
 
     JS_ASSERT_IF(call->mir()->isConstructing(), target->isInterpretedConstructor());
 
@@ -2297,11 +2285,11 @@ CodeGenerator::visitApplyArgsGeneric(LApplyArgsGeneric *apply)
 
         // Check whether the provided arguments satisfy target argc.
         if (!apply->hasSingleTarget()) {
-            masm.load16ZeroExtend(Address(calleereg, offsetof(JSFunction, nargs)), copyreg);
+            masm.load16ZeroExtend(Address(calleereg, JSFunction::offsetOfNargs()), copyreg);
             masm.cmp32(argcreg, copyreg);
             masm.j(Assembler::Below, &underflow);
         } else {
-            masm.cmp32(argcreg, Imm32(apply->getSingleTarget()->nargs));
+            masm.cmp32(argcreg, Imm32(apply->getSingleTarget()->nargs()));
             masm.j(Assembler::Below, &underflow);
         }
 
@@ -2893,6 +2881,160 @@ struct ScriptCountBlockState
     }
 };
 
+#ifdef DEBUG
+bool
+CodeGenerator::branchIfInvalidated(Register temp, Label *invalidated)
+{
+    CodeOffsetLabel label = masm.movWithPatch(ImmWord(uintptr_t(-1)), temp);
+    if (!ionScriptLabels_.append(label))
+        return false;
+
+    // If IonScript::refcount != 0, the script has been invalidated.
+    masm.branch32(Assembler::NotEqual,
+                  Address(temp, IonScript::offsetOfRefcount()),
+                  Imm32(0),
+                  invalidated);
+    return true;
+}
+
+bool
+CodeGenerator::emitObjectOrStringResultChecks(LInstruction *lir, MDefinition *mir)
+{
+    if (lir->numDefs() == 0)
+        return true;
+
+    JS_ASSERT(lir->numDefs() == 1);
+    Register output = ToRegister(lir->getDef(0));
+
+    GeneralRegisterSet regs(GeneralRegisterSet::All());
+    regs.take(output);
+
+    Register temp = regs.takeAny();
+    masm.push(temp);
+
+    // Don't check if the script has been invalidated. In that case invalid
+    // types are expected (until we reach the OsiPoint and bailout).
+    Label done;
+    if (!branchIfInvalidated(temp, &done))
+        return false;
+
+    if (mir->type() == MIRType_Object &&
+        mir->resultTypeSet() &&
+        !mir->resultTypeSet()->unknownObject())
+    {
+        // We have a result TypeSet, assert this object is in it.
+        Label miss, ok;
+        if (mir->resultTypeSet()->getObjectCount() > 0)
+            masm.guardObjectType(output, mir->resultTypeSet(), temp, &miss);
+        else
+            masm.jump(&miss);
+        masm.jump(&ok);
+
+        masm.bind(&miss);
+        masm.assumeUnreachable("MIR instruction returned object with unexpected type");
+
+        masm.bind(&ok);
+    }
+
+    // Check that we have a valid GC pointer.
+    if (gen->info().executionMode() != ParallelExecution) {
+        saveVolatile();
+        masm.setupUnalignedABICall(2, temp);
+        masm.loadJSContext(temp);
+        masm.passABIArg(temp);
+        masm.passABIArg(output);
+        masm.callWithABINoProfiling(mir->type() == MIRType_Object
+                                    ? JS_FUNC_TO_DATA_PTR(void *, AssertValidObjectPtr)
+                                    : JS_FUNC_TO_DATA_PTR(void *, AssertValidStringPtr));
+        restoreVolatile();
+    }
+
+    masm.bind(&done);
+    masm.pop(temp);
+    return true;
+}
+
+bool
+CodeGenerator::emitValueResultChecks(LInstruction *lir, MDefinition *mir)
+{
+    if (lir->numDefs() == 0)
+        return true;
+
+    JS_ASSERT(lir->numDefs() == BOX_PIECES);
+    if (!lir->getDef(0)->output()->isRegister())
+        return true;
+
+    ValueOperand output = ToOutValue(lir);
+
+    GeneralRegisterSet regs(GeneralRegisterSet::All());
+    regs.take(output);
+
+    Register temp1 = regs.takeAny();
+    Register temp2 = regs.takeAny();
+    masm.push(temp1);
+    masm.push(temp2);
+
+    // Don't check if the script has been invalidated. In that case invalid
+    // types are expected (until we reach the OsiPoint and bailout).
+    Label done;
+    if (!branchIfInvalidated(temp1, &done))
+        return false;
+
+    if (mir->resultTypeSet() && !mir->resultTypeSet()->unknown()) {
+        // We have a result TypeSet, assert this value is in it.
+        Label miss, ok;
+        masm.guardTypeSet(output, mir->resultTypeSet(), temp1, &miss);
+        masm.jump(&ok);
+
+        masm.bind(&miss);
+        masm.assumeUnreachable("MIR instruction returned value with unexpected type");
+
+        masm.bind(&ok);
+    }
+
+    // Check that we have a valid GC pointer.
+    if (gen->info().executionMode() != ParallelExecution) {
+        saveVolatile();
+
+        masm.pushValue(output);
+        masm.movePtr(StackPointer, temp1);
+
+        masm.setupUnalignedABICall(2, temp2);
+        masm.loadJSContext(temp2);
+        masm.passABIArg(temp2);
+        masm.passABIArg(temp1);
+        masm.callWithABINoProfiling(JS_FUNC_TO_DATA_PTR(void *, AssertValidValue));
+        masm.popValue(output);
+        restoreVolatile();
+    }
+
+    masm.bind(&done);
+    masm.pop(temp2);
+    masm.pop(temp1);
+    return true;
+}
+
+bool
+CodeGenerator::emitDebugResultChecks(LInstruction *ins)
+{
+    // In debug builds, check that LIR instructions return valid values.
+
+    MDefinition *mir = ins->mirRaw();
+    if (!mir)
+        return true;
+
+    switch (mir->type()) {
+      case MIRType_Object:
+      case MIRType_String:
+        return emitObjectOrStringResultChecks(ins, mir);
+      case MIRType_Value:
+        return emitValueResultChecks(ins, mir);
+      default:
+        return true;
+    }
+}
+#endif
+
 bool
 CodeGenerator::generateBody()
 {
@@ -2945,6 +3087,11 @@ CodeGenerator::generateBody()
 
             if (!iter->accept(this))
                 return false;
+
+#ifdef DEBUG
+            if (!emitDebugResultChecks(*iter))
+                return false;
+#endif
         }
         if (masm.oom())
             return false;
@@ -3058,9 +3205,9 @@ bool CodeGenerator::visitAtan2D(LAtan2D *lir)
     FloatRegister x = ToFloatRegister(lir->x());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(y, MoveOp::DOUBLE);
-    masm.passABIArg(x, MoveOp::DOUBLE);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaAtan2), MoveOp::DOUBLE);
+    masm.passABIArg(y);
+    masm.passABIArg(x);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaAtan2), MacroAssembler::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(lir->output()) == ReturnFloatReg);
     return true;
@@ -3073,9 +3220,9 @@ bool CodeGenerator::visitHypot(LHypot *lir)
     FloatRegister y = ToFloatRegister(lir->y());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(x, MoveOp::DOUBLE);
-    masm.passABIArg(y, MoveOp::DOUBLE);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaHypot), MoveOp::DOUBLE);
+    masm.passABIArg(x);
+    masm.passABIArg(y);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaHypot), MacroAssembler::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(lir->output()) == ReturnFloatReg);
     return true;
@@ -3814,10 +3961,10 @@ CodeGenerator::visitPowI(LPowI *ins)
     // its scratch register. We can therefore save an input register by
     // reusing the scratch register to pass constants to callWithABI.
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(value, MoveOp::DOUBLE);
+    masm.passABIArg(value);
     masm.passABIArg(power);
 
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::powi), MoveOp::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::powi), MacroAssembler::DOUBLE);
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     return true;
@@ -3831,9 +3978,9 @@ CodeGenerator::visitPowD(LPowD *ins)
     Register temp = ToRegister(ins->temp());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(value, MoveOp::DOUBLE);
-    masm.passABIArg(power, MoveOp::DOUBLE);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaPow), MoveOp::DOUBLE);
+    masm.passABIArg(value);
+    masm.passABIArg(power);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaPow), MacroAssembler::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
     return true;
@@ -3849,7 +3996,7 @@ CodeGenerator::visitRandom(LRandom *ins)
 
     masm.setupUnalignedABICall(1, temp2);
     masm.passABIArg(temp);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, math_random_no_outparam), MoveOp::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, math_random_no_outparam), MacroAssembler::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
     return true;
@@ -3869,7 +4016,7 @@ CodeGenerator::visitMathFunctionD(LMathFunctionD *ins)
         masm.movePtr(ImmPtr(mathCache), temp);
         masm.passABIArg(temp);
     }
-    masm.passABIArg(input, MoveOp::DOUBLE);
+    masm.passABIArg(input);
 
 #   define MAYBE_CACHED(fcn) (mathCache ? (void*)fcn ## _impl : (void*)fcn ## _uncached)
 
@@ -3950,7 +4097,7 @@ CodeGenerator::visitMathFunctionD(LMathFunctionD *ins)
 
 #   undef MAYBE_CACHED
 
-    masm.callWithABI(funptr, MoveOp::DOUBLE);
+    masm.callWithABI(funptr, MacroAssembler::DOUBLE);
     return true;
 }
 
@@ -3962,7 +4109,7 @@ CodeGenerator::visitMathFunctionF(LMathFunctionF *ins)
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     masm.setupUnalignedABICall(1, temp);
-    masm.passABIArg(input, MoveOp::FLOAT32);
+    masm.passABIArg(input);
 
     void *funptr = nullptr;
     switch (ins->mir()->function()) {
@@ -3979,7 +4126,7 @@ CodeGenerator::visitMathFunctionF(LMathFunctionF *ins)
         MOZ_ASSUME_UNREACHABLE("Unknown or unsupported float32 math function");
     }
 
-    masm.callWithABI(funptr, MoveOp::FLOAT32);
+    masm.callWithABI(funptr, MacroAssembler::FLOAT);
     return true;
 }
 
@@ -3993,13 +4140,13 @@ CodeGenerator::visitModD(LModD *ins)
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(lhs, MoveOp::DOUBLE);
-    masm.passABIArg(rhs, MoveOp::DOUBLE);
+    masm.passABIArg(lhs);
+    masm.passABIArg(rhs);
 
     if (gen->compilingAsmJS())
-        masm.callWithABI(AsmJSImm_ModD, MoveOp::DOUBLE);
+        masm.callWithABI(AsmJSImm_ModD, MacroAssembler::DOUBLE);
     else
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MoveOp::DOUBLE);
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MacroAssembler::DOUBLE);
     return true;
 }
 
@@ -5838,7 +5985,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
                      safepoints_.size(), callTargets.length(),
                      patchableBackedges_.length());
     if (!ionScript) {
-        recompileInfo.compilerOutput(cx->compartment()->types)->invalidate();
+        recompileInfo.compilerOutput(cx->zone()->types)->invalidate();
         return false;
     }
 
@@ -5863,7 +6010,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
         // Use js_free instead of IonScript::Destroy: the cache list and
         // backedge list are still uninitialized.
         js_free(ionScript);
-        recompileInfo.compilerOutput(cx->compartment()->types)->invalidate();
+        recompileInfo.compilerOutput(cx->zone()->types)->invalidate();
         return false;
     }
 
@@ -5884,7 +6031,7 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
                         /* resetUses */ false, /* cancelOffThread*/ false))
         {
             js_free(ionScript);
-            recompileInfo.compilerOutput(cx->compartment()->types)->invalidate();
+            recompileInfo.compilerOutput(cx->zone()->types)->invalidate();
             return false;
         }
     }
@@ -5916,6 +6063,14 @@ CodeGenerator::link(JSContext *cx, types::CompilerConstraintList *constraints)
 #if defined(JS_ION_PERF)
     if (PerfEnabled())
         perfSpewer_.writeProfile(script, code, masm);
+#endif
+
+#ifdef DEBUG
+    for (size_t i = 0; i < ionScriptLabels_.length(); i++) {
+        Assembler::patchDataWithValueCheck(CodeLocationLabel(code, ionScriptLabels_[i]),
+                                           ImmPtr(ionScript),
+                                           ImmPtr((void*)-1));
+    }
 #endif
 
     // for generating inline caches during the execution.

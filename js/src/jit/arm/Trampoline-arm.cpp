@@ -423,7 +423,7 @@ JitRuntime::generateArgumentsRectifier(JSContext *cx, ExecutionMode mode, void *
 
     // Load the number of |undefined|s to push into r6.
     masm.ma_ldr(DTRAddr(sp, DtrOffImm(IonRectifierFrameLayout::offsetOfCalleeToken())), r1);
-    masm.ma_ldrh(EDtrAddr(r1, EDtrOffImm(offsetof(JSFunction, nargs))), r6);
+    masm.ma_ldrh(EDtrAddr(r1, EDtrOffImm(JSFunction::offsetOfNargs())), r6);
 
     masm.ma_sub(r6, r8, r2);
 
@@ -735,22 +735,22 @@ JitRuntime::generateVMWrapper(JSContext *cx, const VMFunction &f)
         MoveOperand from;
         switch (f.argProperties(explicitArg)) {
           case VMFunction::WordByValue:
-            masm.passABIArg(MoveOperand(argsBase, argDisp), MoveOp::GENERAL);
+            masm.passABIArg(MoveOperand(argsBase, argDisp));
             argDisp += sizeof(void *);
             break;
           case VMFunction::DoubleByValue:
             // Values should be passed by reference, not by value, so we
             // assert that the argument is a double-precision float.
             JS_ASSERT(f.argPassedInFloatReg(explicitArg));
-            masm.passABIArg(MoveOperand(argsBase, argDisp), MoveOp::DOUBLE);
+            masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::FLOAT));
             argDisp += sizeof(double);
             break;
           case VMFunction::WordByRef:
-            masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::EFFECTIVE_ADDRESS), MoveOp::GENERAL);
+            masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::EFFECTIVE));
             argDisp += sizeof(void *);
             break;
           case VMFunction::DoubleByRef:
-            masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::EFFECTIVE_ADDRESS), MoveOp::GENERAL);
+            masm.passABIArg(MoveOperand(argsBase, argDisp, MoveOperand::EFFECTIVE));
             argDisp += 2 * sizeof(void *);
             break;
         }

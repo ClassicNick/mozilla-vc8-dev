@@ -24,6 +24,7 @@ from .data import (
     GeneratedEventWebIDLFile,
     GeneratedInclude,
     GeneratedWebIDLFile,
+    ExampleWebIDLInterface,
     HeaderFileSubstitution,
     HostProgram,
     HostSimpleProgram,
@@ -321,6 +322,7 @@ class TreeMetadataEmitter(LoggingMixin):
             ('PREPROCESSED_WEBIDL_FILES', PreprocessedWebIDLFile),
             ('TEST_WEBIDL_FILES', TestWebIDLFile),
             ('WEBIDL_FILES', WebIDLFile),
+            ('WEBIDL_EXAMPLE_INTERFACES', ExampleWebIDLInterface),
         ]
         for sandbox_var, klass in simple_lists:
             for name in sandbox.get(sandbox_var, []):
@@ -340,7 +342,7 @@ class TreeMetadataEmitter(LoggingMixin):
                 LibraryDefinition(sandbox, libname)
 
         if final_lib:
-            if sandbox.get('FORCE_STATIC_LIB'):
+            if isinstance(sandbox, MozbuildSandbox) and sandbox.get('FORCE_STATIC_LIB'):
                 raise SandboxValidationError('FINAL_LIBRARY implies FORCE_STATIC_LIB')
             self._final_libs.append((sandbox['OBJDIR'], libname, final_lib))
             passthru.variables['FORCE_STATIC_LIB'] = True

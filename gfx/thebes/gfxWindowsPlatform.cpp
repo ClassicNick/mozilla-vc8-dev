@@ -35,6 +35,8 @@
 #include "DeviceManagerD3D9.h"
 #endif
 
+#include "WinUtils.h"
+
 #ifdef CAIRO_HAS_DWRITE_FONT
 #include "gfxDWriteFontList.h"
 #include "gfxDWriteFonts.h"
@@ -47,10 +49,6 @@
 #include "gfx2DGlue.h"
 
 #include <string>
-
-using namespace mozilla;
-using namespace mozilla::gfx;
-using namespace mozilla::layers;
 
 #ifdef CAIRO_HAS_D2D_SURFACE
 #include "gfxD2DSurface.h"
@@ -71,6 +69,9 @@ using namespace mozilla::layers;
 #endif
 
 using namespace mozilla;
+using namespace mozilla::gfx;
+using namespace mozilla::layers;
+using namespace mozilla::widget;
 
 #ifdef CAIRO_HAS_D2D_SURFACE
 
@@ -377,8 +378,6 @@ gfxWindowsPlatform::gfxWindowsPlatform()
      */ 
     CoInitialize(nullptr); 
 
-    mScreenDC = GetDC(nullptr);
-
 #ifdef CAIRO_HAS_D2D_SURFACE
     RegisterStrongMemoryReporter(new GfxD2DSurfaceCacheReporter());
     RegisterStrongMemoryReporter(new GfxD2DSurfaceVramReporter());
@@ -403,8 +402,7 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
 #ifdef MOZ_ENABLE_D3D9_LAYER
      mDeviceManager = nullptr;
 #endif
-     
-    ::ReleaseDC(nullptr, mScreenDC);
+
     // not calling FT_Done_FreeType because cairo may still hold references to
     // these FT_Faces.  See bug 458169.
 #ifdef CAIRO_HAS_D2D_SURFACE
@@ -419,6 +417,12 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
      * Uninitialize COM 
      */ 
     CoUninitialize();
+}
+
+double
+gfxWindowsPlatform::GetDPIScale()
+{
+  return WinUtils::LogToPhysFactor();
 }
 
 void

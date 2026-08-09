@@ -502,6 +502,14 @@ VARIABLES = {
          These will be preprocessed before being parsed and converted.
          """, 'export'),
 
+    'WEBIDL_EXAMPLE_INTERFACES': (StrictOrderingOnAppendList, list,
+        """Names of example WebIDL interfaces to build as part of the build.
+
+        Names in this list correspond to WebIDL interface names defined in
+        WebIDL files included in the build from one of the \*WEBIDL_FILES
+        variables.
+        """, 'export'),
+
     # Test declaration.
     'A11Y_MANIFESTS': (StrictOrderingOnAppendList, list,
         """List of manifest files defining a11y tests.
@@ -564,6 +572,7 @@ VARIABLES = {
     'GYP_DIRS': (StrictOrderingOnAppendListWithFlagsFactory({
             'variables': dict,
             'input': unicode,
+            'sandbox_vars': dict,
         }), list,
         """Defines a list of object directories handled by gyp configurations.
 
@@ -575,6 +584,9 @@ VARIABLES = {
               object directory.
             - variables, a dictionary containing variables and values to pass
               to the gyp processor.
+            - sandbox_vars, a dictionary containing variables and values to
+              pass to the mozbuild processor on top of those derived from gyp
+              configuration.
 
         Typical use looks like:
             GYP_DIRS += ['foo', 'bar']

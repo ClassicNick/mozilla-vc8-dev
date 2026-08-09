@@ -219,7 +219,8 @@ public:
   enum EndTransactionFlags {
     END_DEFAULT = 0,
     END_NO_IMMEDIATE_REDRAW = 1 << 0,  // Do not perform the drawing phase
-    END_NO_COMPOSITE = 1 << 1 // Do not composite after drawing thebes layer contents.
+    END_NO_COMPOSITE = 1 << 1, // Do not composite after drawing thebes layer contents.
+    END_NO_REMOTE_COMPOSITE = 1 << 2 // Do not schedule a composition with a remote Compositor, if one exists.
   };
 
   FrameLayerBuilder* GetLayerBuilder() {
@@ -279,6 +280,13 @@ public:
   virtual void EndTransaction(DrawThebesLayerCallback aCallback,
                               void* aCallbackData,
                               EndTransactionFlags aFlags = END_DEFAULT) = 0;
+
+  /**
+   * Schedule a composition with the remote Compositor, if one exists
+   * for this LayerManager. Useful in conjunction with the END_NO_REMOTE_COMPOSITE
+   * flag to EndTransaction.
+   */
+  virtual void Composite() {}
 
   virtual bool HasShadowManagerInternal() const { return false; }
   bool HasShadowManager() const { return HasShadowManagerInternal(); }
@@ -684,7 +692,13 @@ public:
      * transaction where there is no possibility of redrawing the content, so the
      * implementation should be ready for that.
      */
-    CONTENT_MAY_CHANGE_TRANSFORM = 0x08
+    CONTENT_MAY_CHANGE_TRANSFORM = 0x08,
+
+    /**
+     * Disable subpixel AA for this layer. This is used if the display isn't suited
+     * for subpixel AA like hidpi or rotated content.
+     */
+    CONTENT_DISABLE_SUBPIXEL_AA = 0x10
   };
   /**
    * CONSTRUCTION PHASE ONLY

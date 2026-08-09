@@ -91,19 +91,18 @@
 #include "mozilla/dom/TextMetrics.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "nsGlobalWindow.h"
-
 #include "GLContext.h"
-using mozilla::gl::GLContext;
+#include "GLContextProvider.h"
 
 #ifdef USE_SKIA_GPU
 #undef free // apparently defined by some windows header, clashing with a free()
             // method in SkTypes.h
-#include "GLContextProvider.h"
 #include "GLContextSkia.h"
 #include "SurfaceTypes.h"
 #include "nsIGfxInfo.h"
-using mozilla::gl::GLContextProvider;
 #endif
+using mozilla::gl::GLContext;
+using mozilla::gl::GLContextProvider;
 
 #ifdef XP_WIN
 #include "gfxWindowsPlatform.h"

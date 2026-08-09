@@ -3092,7 +3092,6 @@ CASE(JSOP_NEWINIT)
         goto error;
 
     PUSH_OBJECT(*obj);
-    TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
 }
 END_CASE(JSOP_NEWINIT)
 
@@ -3106,7 +3105,6 @@ CASE(JSOP_NEWARRAY)
         goto error;
 
     PUSH_OBJECT(*obj);
-    TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
 }
 END_CASE(JSOP_NEWARRAY)
 
@@ -3122,7 +3120,6 @@ CASE(JSOP_NEWOBJECT)
         goto error;
 
     PUSH_OBJECT(*obj);
-    TypeScript::Monitor(cx, script, REGS.pc, REGS.sp[-1]);
 }
 END_CASE(JSOP_NEWOBJECT)
 
@@ -3612,7 +3609,7 @@ js::Lambda(JSContext *cx, HandleFunction fun, HandleObject parent)
         clone = js_fun_bind(cx, clone, thisval, nullptr, 0);
         if (!clone)
             return nullptr;
-        clone->as<JSFunction>().flags |= JSFunction::ARROW;
+        clone->as<JSFunction>().setArrow();
     }
 
     JS_ASSERT(clone->global() == clone->global());

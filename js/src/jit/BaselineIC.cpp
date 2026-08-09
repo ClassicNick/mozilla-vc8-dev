@@ -2841,9 +2841,9 @@ ICBinaryArith_Double::Compiler::generateStubCode(MacroAssembler &masm)
         break;
       case JSOP_MOD:
         masm.setupUnalignedABICall(2, R0.scratchReg());
-        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
-        masm.passABIArg(FloatReg1, MoveOp::DOUBLE);
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MoveOp::DOUBLE);
+        masm.passABIArg(FloatReg0);
+        masm.passABIArg(FloatReg1);
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MacroAssembler::DOUBLE);
         JS_ASSERT(ReturnFloatReg == FloatReg0);
         break;
       default:
@@ -2968,7 +2968,7 @@ ICBinaryArith_DoubleWithInt32::Compiler::generateStubCode(MacroAssembler &masm)
         masm.bind(&truncateABICall);
         masm.push(intReg);
         masm.setupUnalignedABICall(1, scratchReg);
-        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+        masm.passABIArg(FloatReg0);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::ToInt32));
         masm.storeCallResult(scratchReg);
         masm.pop(intReg);
@@ -3117,7 +3117,7 @@ ICUnaryArith_Double::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.bind(&truncateABICall);
         masm.setupUnalignedABICall(1, scratchReg);
-        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+        masm.passABIArg(FloatReg0);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::ToInt32));
         masm.storeCallResult(scratchReg);
 
@@ -4125,7 +4125,7 @@ ICGetElemNativeCompiler::emitCallScripted(MacroAssembler &masm, Register objReg)
 
     // Handle arguments underflow.
     Label noUnderflow;
-    masm.load16ZeroExtend(Address(callee, offsetof(JSFunction, nargs)), scratch);
+    masm.load16ZeroExtend(Address(callee, JSFunction::offsetOfNargs()), scratch);
     masm.branch32(Assembler::Equal, scratch, Imm32(0), &noUnderflow);
     {
         // Call the arguments rectifier.
@@ -6682,7 +6682,7 @@ ICGetProp_CallScripted::Compiler::generateStubCode(MacroAssembler &masm)
 
     // Handle arguments underflow.
     Label noUnderflow;
-    masm.load16ZeroExtend(Address(callee, offsetof(JSFunction, nargs)), scratch);
+    masm.load16ZeroExtend(Address(callee, JSFunction::offsetOfNargs()), scratch);
     masm.branch32(Assembler::Equal, scratch, Imm32(0), &noUnderflow);
     {
         // Call the arguments rectifier.
@@ -7591,7 +7591,7 @@ ICSetProp_CallScripted::Compiler::generateStubCode(MacroAssembler &masm)
 
     // Handle arguments underflow.
     Label noUnderflow;
-    masm.load16ZeroExtend(Address(callee, offsetof(JSFunction, nargs)), scratch);
+    masm.load16ZeroExtend(Address(callee, JSFunction::offsetOfNargs()), scratch);
     masm.branch32(Assembler::BelowOrEqual, scratch, Imm32(1), &noUnderflow);
     {
         // Call the arguments rectifier.
@@ -8538,7 +8538,7 @@ ICCallScriptedCompiler::generateStubCode(MacroAssembler &masm)
 
     // Handle arguments underflow.
     Label noUnderflow;
-    masm.load16ZeroExtend(Address(callee, offsetof(JSFunction, nargs)), callee);
+    masm.load16ZeroExtend(Address(callee, JSFunction::offsetOfNargs()), callee);
     masm.branch32(Assembler::AboveOrEqual, argcReg, callee, &noUnderflow);
     {
         // Call the arguments rectifier.
@@ -8794,7 +8794,7 @@ ICCall_ScriptedApplyArray::Compiler::generateStubCode(MacroAssembler &masm)
     masm.Push(scratch);
 
     // Load nargs into scratch for underflow check, and then load jitcode pointer into target.
-    masm.load16ZeroExtend(Address(target, offsetof(JSFunction, nargs)), scratch);
+    masm.load16ZeroExtend(Address(target, JSFunction::offsetOfNargs()), scratch);
     masm.loadPtr(Address(target, JSFunction::offsetOfNativeOrScript()), target);
     masm.loadBaselineOrIonRaw(target, target, SequentialExecution, nullptr);
 
@@ -8905,7 +8905,7 @@ ICCall_ScriptedApplyArguments::Compiler::generateStubCode(MacroAssembler &masm)
     masm.Push(scratch);
 
     // Load nargs into scratch for underflow check, and then load jitcode pointer into target.
-    masm.load16ZeroExtend(Address(target, offsetof(JSFunction, nargs)), scratch);
+    masm.load16ZeroExtend(Address(target, JSFunction::offsetOfNargs()), scratch);
     masm.loadPtr(Address(target, JSFunction::offsetOfNativeOrScript()), target);
     masm.loadBaselineOrIonRaw(target, target, SequentialExecution, nullptr);
 
