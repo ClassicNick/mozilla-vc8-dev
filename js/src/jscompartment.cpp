@@ -338,7 +338,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
         return true;
     }
 
-    RootedObject proto(cx, Proxy::LazyProto);
+    RootedObject proto(cx, TaggedProto::LazyProto);
     RootedObject existing(cx, existingArg);
     if (existing) {
         /* Is it possible to reuse |existing|? */
@@ -373,7 +373,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
 bool
 JSCompartment::wrapId(JSContext *cx, jsid *idp)
 {
-    MOZ_ASSERT(*idp != JSID_VOID, "JSID_VOID is an out-of-band sentinel value");
+    MOZ_ASSERT(*idp != jsid::voidId(), "jsid::voidId() is an out-of-band sentinel value");
     if (JSID_IS_INT(*idp))
         return true;
     RootedValue value(cx, IdToValue(*idp));

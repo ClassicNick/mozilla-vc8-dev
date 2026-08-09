@@ -222,11 +222,10 @@ IsPhiObservable(MPhi *phi, Observability observe)
     if (fun && slot == info.thisSlot())
         return true;
 
-    // If the function is heavyweight, and the Phi is of the |scopeChain|
-    // value, and the function may need an arguments object, then make sure
-    // to preserve the scope chain, because it may be needed to construct the
-    // arguments object during bailout.
-    if (fun && fun->isHeavyweight() && info.hasArguments() && slot == info.scopeChainSlot())
+    // If the function may need an arguments object, then make sure to preserve
+    // the scope chain, because it may be needed to construct the arguments
+    // object during bailout.
+    if (fun && info.hasArguments() && slot == info.scopeChainSlot())
         return true;
 
     // If the Phi is one of the formal argument, and we are using an argument
@@ -2014,7 +2013,7 @@ AnalyzePoppedThis(JSContext *cx, types::TypeObject *type,
 
         // Don't use GetAtomId here, we need to watch for SETPROP on
         // integer properties and bail out. We can't mark the aggregate
-        // JSID_VOID type property as being in a definite slot.
+        // jsid::voidId() type property as being in a definite slot.
         if (setprop->name() == cx->names().prototype ||
             setprop->name() == cx->names().proto ||
             setprop->name() == cx->names().constructor)
@@ -2177,7 +2176,8 @@ jit::AnalyzeNewScriptProperties(JSContext *cx, JSFunction *fun,
     MIRGraph graph(&temp);
     CompileInfo info(script, fun,
                      /* osrPc = */ nullptr, /* constructing = */ false,
-                     DefinitePropertiesAnalysis);
+                     DefinitePropertiesAnalysis,
+                     script->needsArgsObj());
 
     AutoTempAllocatorRooter root(cx, &temp);
 

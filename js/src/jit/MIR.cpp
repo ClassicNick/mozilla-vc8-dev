@@ -2870,7 +2870,7 @@ jit::DenseNativeElementType(types::CompilerConstraintList *constraints, MDefinit
         if (object->unknownProperties())
             return MIRType_None;
 
-        types::HeapTypeSetKey elementTypes = object->property(JSID_VOID);
+        types::HeapTypeSetKey elementTypes = object->property(jsid::voidId());
 
         MIRType type = MIRTypeFromValueType(elementTypes.knownTypeTag(constraints));
         if (type == MIRType_None)
@@ -2899,7 +2899,7 @@ PropertyReadNeedsTypeBarrier(types::CompilerConstraintList *constraints,
     if (object->unknownProperties() || observed->empty())
         return true;
 
-    jsid id = name ? NameToId(name) : JSID_VOID;
+    jsid id = name ? NameToId(name) : jsid::voidId();
     types::HeapTypeSetKey property = object->property(id);
     if (property.maybeTypes() && !TypeSetIncludes(observed, MIRType_Value, property.maybeTypes()))
         return true;
@@ -2929,7 +2929,13 @@ jit::PropertyReadNeedsTypeBarrier(JSContext *propertycx,
     // If this access has never executed, try to add types to the observed set
     // according to any property which exists on the object or its prototype.
     if (updateObserved && observed->empty() && name) {
-        JSObject *obj = object->singleton() ? object->singleton() : object->proto().toObjectOrNull();
+        JSObject *obj;
+        if (object->singleton())
+            obj = object->singleton();
+        else if (object->hasTenuredProto())
+            obj = object->proto().toObjectOrNull();
+        else
+            obj = nullptr;
 
         while (obj) {
             if (!obj->getClass()->isNative())
@@ -2953,6 +2959,8 @@ jit::PropertyReadNeedsTypeBarrier(JSContext *propertycx,
                 }
             }
 
+            if (!obj->hasTenuredProto())
+                break;
             obj = obj->getProto();
         }
     }
@@ -3004,7 +3012,11 @@ jit::PropertyReadOnPrototypeNeedsTypeBarrier(types::CompilerConstraintList *cons
         types::TypeObjectKey *object = types->getObject(i);
         if (!object)
             continue;
-        while (object->proto().isObject()) {
+        while (true) {
+            if (!object->hasTenuredProto())
+                return true;
+            if (!object->proto().isObject())
+                break;
             object = types::TypeObjectKey::get(object->proto().toObject());
             if (PropertyReadNeedsTypeBarrier(constraints, object, name, observed))
                 return true;
@@ -3061,7 +3073,7 @@ jit::AddObjectsForPropertyRead(MDefinition *obj, PropertyName *name,
         if (object->unknownProperties())
             return observed->addType(types::Type::AnyObjectType(), alloc);
 
-        jsid id = name ? NameToId(name) : JSID_VOID;
+        jsid id = name ? NameToId(name) : jsid::voidId();
         types::HeapTypeSetKey property = object->property(id);
         types::HeapTypeSet *types = property.maybeTypes();
         if (!types)
@@ -3102,7 +3114,7 @@ TryAddTypeBarrierForWrite(TempAllocator &alloc, types::CompilerConstraintList *c
         if (object->unknownProperties())
             return false;
 
-        jsid id = name ? NameToId(name) : JSID_VOID;
+        jsid id = name ? NameToId(name) : jsid::voidId();
         types::HeapTypeSetKey property = object->property(id);
         if (!property.maybeTypes())
             return false;
@@ -3212,7 +3224,7 @@ jit::PropertyWriteNeedsTypeBarrier(TempAllocator &alloc, types::CompilerConstrai
         if (IsTypedArrayClass(object->clasp()))
             continue;
 
-        jsid id = name ? NameToId(name) : JSID_VOID;
+        jsid id = name ? NameToId(name) : jsid::voidId();
         types::HeapTypeSetKey property = object->property(id);
         if (!TypeSetIncludes(property.maybeTypes(), (*pvalue)->type(), (*pvalue)->resultTypeSet())) {
             // Either pobj or pvalue needs to be modified to filter out the
@@ -3244,7 +3256,7 @@ jit::PropertyWriteNeedsTypeBarrier(TempAllocator &alloc, types::CompilerConstrai
         if (IsTypedArrayClass(object->clasp()))
             continue;
 
-        jsid id = name ? NameToId(name) : JSID_VOID;
+        jsid id = name ? NameToId(name) : jsid::voidId();
         types::HeapTypeSetKey property = object->property(id);
         if (TypeSetIncludes(property.maybeTypes(), (*pvalue)->type(), (*pvalue)->resultTypeSet()))
             continue;

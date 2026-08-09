@@ -130,7 +130,7 @@ class JS_FRIEND_API(BaseProxyHandler)
      *
      * enter() allows the policy to specify whether the caller may perform |act|
      * on the proxy's |id| property. In the case when |act| is CALL, |id| is
-     * generally JSID_VOID.
+     * generally jsid::voidId().
      *
      * The |act| parameter to enter() specifies the action being performed.
      * If |bp| is false, the trap suggests that the caller throw (though it
@@ -324,8 +324,6 @@ class Proxy
     /* IC entry path for handling __noSuchMethod__ on access. */
     static bool callProp(JSContext *cx, HandleObject proxy, HandleObject reveiver, HandleId id,
                          MutableHandleValue vp);
-
-    static JSObject * const LazyProto;
 };
 
 // Use these in places where you don't want to #include vm/ProxyObject.h.

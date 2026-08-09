@@ -700,9 +700,7 @@ StartRequest(JSContext *cx)
     } else {
         /* Indicate that a request is running. */
         rt->requestDepth = 1;
-
-        if (rt->activityCallback)
-            rt->activityCallback(rt->activityCallbackArg, true);
+        rt->triggerActivityCallback(true);
     }
 }
 
@@ -718,9 +716,7 @@ StopRequest(JSContext *cx)
     } else {
         rt->conservativeGC.updateForRequestEnd();
         rt->requestDepth = 0;
-
-        if (rt->activityCallback)
-            rt->activityCallback(rt->activityCallbackArg, false);
+        rt->triggerActivityCallback(false);
     }
 }
 #endif /* JS_THREADSAFE */
@@ -3757,7 +3753,7 @@ JS_NextProperty(JSContext *cx, JSObject *iterobjArg, jsid *idp)
 
         if (!shape->previous()) {
             JS_ASSERT(shape->isEmptyShape());
-            *idp = JSID_VOID;
+            *idp = jsid::voidId();
         } else {
             iterobj->setPrivateGCThing(const_cast<Shape *>(shape->previous().get()));
             *idp = shape->propid();
@@ -3768,7 +3764,7 @@ JS_NextProperty(JSContext *cx, JSObject *iterobjArg, jsid *idp)
         JS_ASSERT(i <= ida->length);
         STATIC_ASSUME(i <= ida->length);
         if (i == 0) {
-            *idp = JSID_VOID;
+            *idp = jsid::voidId();
         } else {
             *idp = ida->vector[--i];
             iterobj->setSlot(JSSLOT_ITER_INDEX, Int32Value(i));
@@ -5911,15 +5907,6 @@ JS_ErrorFromException(JSContext *cx, HandleValue value)
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, value);
     return js_ErrorFromException(value);
-}
-
-JS_PUBLIC_API(bool)
-JS_ThrowReportedError(JSContext *cx, const char *message,
-                      JSErrorReport *reportp)
-{
-    AssertHeapIsIdle(cx);
-    return JS_IsRunning(cx) &&
-           js_ErrorToException(cx, message, reportp, nullptr, nullptr);
 }
 
 JS_PUBLIC_API(bool)
