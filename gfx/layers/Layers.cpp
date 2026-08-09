@@ -16,6 +16,7 @@
 #include "ReadbackLayer.h"              // for ReadbackLayer
 #include "gfxPlatform.h"                // for gfxPlatform
 #include "gfxUtils.h"                   // for gfxUtils, etc
+#include "gfx2DGlue.h"
 #include "mozilla/DebugOnly.h"          // for DebugOnly
 #include "mozilla/Telemetry.h"          // for Accumulate
 #include "mozilla/TelemetryHistogramEnums.h"
@@ -175,7 +176,8 @@ Layer::Layer(LayerManager* aManager, void* aImplData) :
   mIsFixedPosition(false),
   mMargins(0, 0, 0, 0),
   mStickyPositionData(nullptr),
-  mIsScrollbar(false),
+  mScrollbarTargetId(FrameMetrics::NULL_SCROLL_ID),
+  mScrollbarDirection(ScrollDirection::NONE),
   mDebugColorIndex(0),
   mAnimationGeneration(0)
 {}
@@ -508,7 +510,7 @@ Layer::SnapTransform(const gfx3DMatrix& aTransform,
   gfx3DMatrix result;
   if (mManager->IsSnappingEffectiveTransforms() &&
       aTransform.Is2D(&matrix2D) &&
-      gfxSize(1.0, 1.0) <= aSnapRect.Size() &&
+      gfx::Size(1.0, 1.0) <= ToSize(aSnapRect.Size()) &&
       matrix2D.PreservesAxisAlignedRectangles()) {
     gfxPoint transformedTopLeft = matrix2D.Transform(aSnapRect.TopLeft());
     transformedTopLeft.Round();
@@ -1268,12 +1270,11 @@ Layer::PrintInfo(nsACString& aTo, const char* aPrefix)
   if (GetContentFlags() & CONTENT_COMPONENT_ALPHA) {
     aTo += " [componentAlpha]";
   }
-  if (GetIsScrollbar()) {
-    if (GetScrollbarDirection() == VERTICAL) {
-      aTo.AppendPrintf(" [vscrollbar=%lld]", GetScrollbarTargetContainerId());
-    } else {
-      aTo.AppendPrintf(" [hscrollbar=%lld]", GetScrollbarTargetContainerId());
-    }
+  if (GetScrollbarDirection() == VERTICAL) {
+    aTo.AppendPrintf(" [vscrollbar=%lld]", GetScrollbarTargetContainerId());
+  }
+  if (GetScrollbarDirection() == HORIZONTAL) {
+    aTo.AppendPrintf(" [hscrollbar=%lld]", GetScrollbarTargetContainerId());
   }
   if (GetIsFixedPosition()) {
     aTo.AppendPrintf(" [isFixedPosition anchor=%f,%f margin=%f,%f,%f,%f]", mAnchor.x, mAnchor.y,

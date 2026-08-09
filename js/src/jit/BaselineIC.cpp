@@ -2841,9 +2841,9 @@ ICBinaryArith_Double::Compiler::generateStubCode(MacroAssembler &masm)
         break;
       case JSOP_MOD:
         masm.setupUnalignedABICall(2, R0.scratchReg());
-        masm.passABIArg(FloatReg0);
-        masm.passABIArg(FloatReg1);
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MacroAssembler::DOUBLE);
+        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+        masm.passABIArg(FloatReg1, MoveOp::DOUBLE);
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MoveOp::DOUBLE);
         JS_ASSERT(ReturnFloatReg == FloatReg0);
         break;
       default:
@@ -2968,7 +2968,7 @@ ICBinaryArith_DoubleWithInt32::Compiler::generateStubCode(MacroAssembler &masm)
         masm.bind(&truncateABICall);
         masm.push(intReg);
         masm.setupUnalignedABICall(1, scratchReg);
-        masm.passABIArg(FloatReg0);
+        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::ToInt32));
         masm.storeCallResult(scratchReg);
         masm.pop(intReg);
@@ -3117,7 +3117,7 @@ ICUnaryArith_Double::Compiler::generateStubCode(MacroAssembler &masm)
 
         masm.bind(&truncateABICall);
         masm.setupUnalignedABICall(1, scratchReg);
-        masm.passABIArg(FloatReg0);
+        masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::ToInt32));
         masm.storeCallResult(scratchReg);
 
@@ -7865,19 +7865,6 @@ GetTemplateObjectForNative(JSContext *cx, HandleScript script, jsbytecode *pc,
         res.set(StringObject::create(cx, emptyString, TenuredObject));
         if (!res)
             return false;
-        return true;
-    }
-
-    if (native == intrinsic_NewParallelArray || native == ParallelArrayObject::construct) {
-        res.set(ParallelArrayObject::newInstance(cx, TenuredObject));
-        if (!res)
-            return false;
-
-        types::TypeObject *type =
-            types::TypeScript::InitObject(cx, script, pc, JSProto_ParallelArray);
-        if (!type)
-            return false;
-        res->setType(type);
         return true;
     }
 

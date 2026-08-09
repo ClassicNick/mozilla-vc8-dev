@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+/* -*- Mnde: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -1139,6 +1139,7 @@ CodeGenerator::visitStackArgT(LStackArgT *lir)
     const LAllocation *arg = lir->getArgument();
     MIRType argType = lir->mir()->getArgument()->type();
     uint32_t argslot = lir->argslot();
+    JS_ASSERT(argslot - 1u < graph.argumentSlotCount());
 
     int32_t stack_offset = StackOffsetOfPassedArg(argslot);
     Address dest(StackPointer, stack_offset);
@@ -1150,7 +1151,9 @@ CodeGenerator::visitStackArgT(LStackArgT *lir)
     else
         masm.storeValue(*(arg->toConstant()), dest);
 
-    return pushedArgumentSlots_.append(StackOffsetToSlot(stack_offset));
+    uint32_t slot = StackOffsetToSlot(stack_offset);
+    JS_ASSERT(slot - 1u < graph.totalSlotCount());
+    return pushedArgumentSlots_.append(slot);
 }
 
 bool
@@ -1158,10 +1161,15 @@ CodeGenerator::visitStackArgV(LStackArgV *lir)
 {
     ValueOperand val = ToValue(lir, 0);
     uint32_t argslot = lir->argslot();
+    JS_ASSERT(argslot - 1u < graph.argumentSlotCount());
+
     int32_t stack_offset = StackOffsetOfPassedArg(argslot);
 
     masm.storeValue(val, Address(StackPointer, stack_offset));
-    return pushedArgumentSlots_.append(StackOffsetToSlot(stack_offset));
+
+    uint32_t slot = StackOffsetToSlot(stack_offset);
+    JS_ASSERT(slot - 1u < graph.totalSlotCount());
+    return pushedArgumentSlots_.append(slot);
 }
 
 bool
@@ -1177,15 +1185,28 @@ CodeGenerator::visitMoveGroup(LMoveGroup *group)
 
         const LAllocation *from = move.from();
         const LAllocation *to = move.to();
+        LDefinition::Type type = move.type();
 
         // No bogus moves.
         JS_ASSERT(*from != *to);
         JS_ASSERT(!from->isConstant());
         JS_ASSERT(from->isDouble() == to->isDouble());
 
-        MoveResolver::Move::Kind kind = from->isDouble()
-                                        ? MoveResolver::Move::DOUBLE
-                                        : MoveResolver::Move::GENERAL;
+        MoveOp::Kind kind;
+        switch (type) {
+          case LDefinition::OBJECT:
+          case LDefinition::SLOTS:
+#ifdef JS_NUNBOX32
+          case LDefinition::TYPE:
+          case LDefinition::PAYLOAD:
+#else
+          case LDefinition::BOX:
+#endif
+          case LDefinition::GENERAL: kind = MoveOp::GENERAL; break;
+          case LDefinition::FLOAT32: kind = MoveOp::FLOAT32; break;
+          case LDefinition::DOUBLE:  kind = MoveOp::DOUBLE;  break;
+          default: MOZ_ASSUME_UNREACHABLE("Unexpected move type");
+        }
 
         if (!resolver.addMove(toMoveOperand(from), toMoveOperand(to), kind))
             return false;
@@ -2937,50 +2958,6 @@ CodeGenerator::generateBody()
     return true;
 }
 
-// Out-of-line object allocation for LNewParallelArray.
-class OutOfLineNewParallelArray : public OutOfLineCodeBase<CodeGenerator>
-{
-    LNewParallelArray *lir_;
-
-  public:
-    OutOfLineNewParallelArray(LNewParallelArray *lir)
-      : lir_(lir)
-    { }
-
-    bool accept(CodeGenerator *codegen) {
-        return codegen->visitOutOfLineNewParallelArray(this);
-    }
-
-    LNewParallelArray *lir() const {
-        return lir_;
-    }
-};
-
-typedef JSObject *(*NewInitParallelArrayFn)(JSContext *, HandleObject);
-static const VMFunction NewInitParallelArrayInfo =
-    FunctionInfo<NewInitParallelArrayFn>(NewInitParallelArray);
-
-bool
-CodeGenerator::visitNewParallelArrayVMCall(LNewParallelArray *lir)
-{
-    JS_ASSERT(gen->info().executionMode() == SequentialExecution);
-
-    Register objReg = ToRegister(lir->output());
-
-    JS_ASSERT(!lir->isCall());
-    saveLive(lir);
-
-    pushArg(ImmGCPtr(lir->mir()->templateObject()));
-    if (!callVM(NewInitParallelArrayInfo, lir))
-        return false;
-
-    if (ReturnReg != objReg)
-        masm.movePtr(ReturnReg, objReg);
-
-    restoreLive(lir);
-    return true;
-}
-
 // Out-of-line object allocation for LNewArray.
 class OutOfLineNewArray : public OutOfLineCodeBase<CodeGenerator>
 {
@@ -3081,9 +3058,9 @@ bool CodeGenerator::visitAtan2D(LAtan2D *lir)
     FloatRegister x = ToFloatRegister(lir->x());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(y);
-    masm.passABIArg(x);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaAtan2), MacroAssembler::DOUBLE);
+    masm.passABIArg(y, MoveOp::DOUBLE);
+    masm.passABIArg(x, MoveOp::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaAtan2), MoveOp::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(lir->output()) == ReturnFloatReg);
     return true;
@@ -3096,37 +3073,11 @@ bool CodeGenerator::visitHypot(LHypot *lir)
     FloatRegister y = ToFloatRegister(lir->y());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(x);
-    masm.passABIArg(y);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaHypot), MacroAssembler::DOUBLE);
+    masm.passABIArg(x, MoveOp::DOUBLE);
+    masm.passABIArg(y, MoveOp::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaHypot), MoveOp::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(lir->output()) == ReturnFloatReg);
-    return true;
-}
-
-bool
-CodeGenerator::visitNewParallelArray(LNewParallelArray *lir)
-{
-    Register objReg = ToRegister(lir->output());
-    JSObject *templateObject = lir->mir()->templateObject();
-
-    OutOfLineNewParallelArray *ool = new(alloc()) OutOfLineNewParallelArray(lir);
-    if (!addOutOfLineCode(ool))
-        return false;
-
-    masm.newGCThing(objReg, templateObject, ool->entry(), gc::DefaultHeap);
-    masm.initGCThing(objReg, templateObject);
-
-    masm.bind(ool->rejoin());
-    return true;
-}
-
-bool
-CodeGenerator::visitOutOfLineNewParallelArray(OutOfLineNewParallelArray *ool)
-{
-    if (!visitNewParallelArrayVMCall(ool->lir()))
-        return false;
-    masm.jump(ool->rejoin());
     return true;
 }
 
@@ -3863,10 +3814,10 @@ CodeGenerator::visitPowI(LPowI *ins)
     // its scratch register. We can therefore save an input register by
     // reusing the scratch register to pass constants to callWithABI.
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(value);
+    masm.passABIArg(value, MoveOp::DOUBLE);
     masm.passABIArg(power);
 
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::powi), MacroAssembler::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, js::powi), MoveOp::DOUBLE);
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     return true;
@@ -3880,9 +3831,9 @@ CodeGenerator::visitPowD(LPowD *ins)
     Register temp = ToRegister(ins->temp());
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(value);
-    masm.passABIArg(power);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaPow), MacroAssembler::DOUBLE);
+    masm.passABIArg(value, MoveOp::DOUBLE);
+    masm.passABIArg(power, MoveOp::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, ecmaPow), MoveOp::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
     return true;
@@ -3898,7 +3849,7 @@ CodeGenerator::visitRandom(LRandom *ins)
 
     masm.setupUnalignedABICall(1, temp2);
     masm.passABIArg(temp);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, math_random_no_outparam), MacroAssembler::DOUBLE);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, math_random_no_outparam), MoveOp::DOUBLE);
 
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
     return true;
@@ -3918,7 +3869,7 @@ CodeGenerator::visitMathFunctionD(LMathFunctionD *ins)
         masm.movePtr(ImmPtr(mathCache), temp);
         masm.passABIArg(temp);
     }
-    masm.passABIArg(input);
+    masm.passABIArg(input, MoveOp::DOUBLE);
 
 #   define MAYBE_CACHED(fcn) (mathCache ? (void*)fcn ## _impl : (void*)fcn ## _uncached)
 
@@ -3999,7 +3950,7 @@ CodeGenerator::visitMathFunctionD(LMathFunctionD *ins)
 
 #   undef MAYBE_CACHED
 
-    masm.callWithABI(funptr, MacroAssembler::DOUBLE);
+    masm.callWithABI(funptr, MoveOp::DOUBLE);
     return true;
 }
 
@@ -4011,7 +3962,7 @@ CodeGenerator::visitMathFunctionF(LMathFunctionF *ins)
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     masm.setupUnalignedABICall(1, temp);
-    masm.passABIArg(input);
+    masm.passABIArg(input, MoveOp::FLOAT32);
 
     void *funptr = nullptr;
     switch (ins->mir()->function()) {
@@ -4028,7 +3979,7 @@ CodeGenerator::visitMathFunctionF(LMathFunctionF *ins)
         MOZ_ASSUME_UNREACHABLE("Unknown or unsupported float32 math function");
     }
 
-    masm.callWithABI(funptr, MacroAssembler::FLOAT);
+    masm.callWithABI(funptr, MoveOp::FLOAT32);
     return true;
 }
 
@@ -4042,13 +3993,13 @@ CodeGenerator::visitModD(LModD *ins)
     JS_ASSERT(ToFloatRegister(ins->output()) == ReturnFloatReg);
 
     masm.setupUnalignedABICall(2, temp);
-    masm.passABIArg(lhs);
-    masm.passABIArg(rhs);
+    masm.passABIArg(lhs, MoveOp::DOUBLE);
+    masm.passABIArg(rhs, MoveOp::DOUBLE);
 
     if (gen->compilingAsmJS())
-        masm.callWithABI(AsmJSImm_ModD, MacroAssembler::DOUBLE);
+        masm.callWithABI(AsmJSImm_ModD, MoveOp::DOUBLE);
     else
-        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MacroAssembler::DOUBLE);
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, NumberMod), MoveOp::DOUBLE);
     return true;
 }
 
