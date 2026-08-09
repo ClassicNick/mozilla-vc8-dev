@@ -314,7 +314,9 @@ ImageContainer::LockCurrentAsSurface(gfx::IntSize *aSize, Image** aCurrentImage)
 
     if (mActiveImage->GetFormat() == REMOTE_IMAGE_BITMAP) {
       nsRefPtr<gfxImageSurface> newSurf =
-        new gfxImageSurface(mRemoteData->mBitmap.mData, mRemoteData->mSize, mRemoteData->mBitmap.mStride,
+        new gfxImageSurface(mRemoteData->mBitmap.mData,
+                            ThebesIntSize(mRemoteData->mSize),
+                            mRemoteData->mBitmap.mStride,
                             mRemoteData->mFormat == RemoteImageData::BGRX32 ?
                                                    gfxImageFormatARGB32 :
                                                    gfxImageFormatRGB24);
@@ -384,7 +386,7 @@ ImageContainer::GetCurrentSize()
   }
 
   if (!mActiveImage) {
-    return gfxIntSize(0,0);
+    return gfx::IntSize(0,0);
   }
 
   return mActiveImage->GetSize();
@@ -468,7 +470,7 @@ PlanarYCbCrImage::AllocateBuffer(uint32_t aSize)
 
 static void
 CopyPlane(uint8_t *aDst, const uint8_t *aSrc,
-          const gfxIntSize &aSize, int32_t aStride, int32_t aSkip)
+          const gfx::IntSize &aSize, int32_t aStride, int32_t aSkip)
 {
   if (!aSkip) {
     // Fast path: planar input.
@@ -585,7 +587,7 @@ already_AddRefed<gfxASurface>
 RemoteBitmapImage::GetAsSurface()
 {
   nsRefPtr<gfxImageSurface> newSurf =
-    new gfxImageSurface(mSize,
+    new gfxImageSurface(ThebesIntSize(mSize),
     mFormat == RemoteImageData::BGRX32 ? gfxImageFormatRGB24 : gfxImageFormatARGB32);
 
   for (int y = 0; y < mSize.height; y++) {

@@ -839,8 +839,10 @@ def UnionTypes(descriptors, dictionaries, callbacks, config):
                     # And if it needs rooting, we need RootedDictionary too
                     if typeNeedsRooting(f):
                         headers.add("mozilla/dom/RootedDictionary.h")
-                elif t.isPrimitive():
-                    implheaders.add("mozilla/dom/PrimitiveConversions.h")
+                elif f.isEnum():
+                    # Need to see the actual definition of the enum,
+                    # unfortunately.
+                    headers.add(CGHeaders.getDeclarationFilename(f.inner))
 
     map(addInfoForType, getAllTypes(descriptors, dictionaries, callbacks))
 
@@ -876,7 +878,15 @@ def UnionConversions(descriptors, dictionaries, callbacks, config):
                     if f.isSpiderMonkeyInterface():
                         headers.add("jsfriendapi.h")
                         headers.add("mozilla/dom/TypedArray.h")
-                    elif not f.inner.isExternal():
+                    elif f.inner.isExternal():
+                        providers = getRelevantProviders(descriptor, config)
+                        for p in providers:
+                            try:
+                                typeDesc = p.getDescriptor(f.inner.identifier.name)
+                            except NoSuchDescriptorError:
+                                continue
+                            headers.add(typeDesc.headerFile)
+                    else:
                         headers.add(CGHeaders.getDeclarationFilename(f.inner))
                     # Check for whether we have a possibly-XPConnect-implemented
                     # interface.  If we do, the right descriptor will come from
@@ -3299,13 +3309,14 @@ for (uint32_t i = 0; i < length; ++i) {
                 holderType = CGTemplatedType("Maybe", holderType)
 
         # If we're isOptional and not nullable the normal optional handling will
-        # handle lazy construction of our holder.  If we're nullable we do it
-        # all by hand because we do not want our holder constructed if we're
-        # null.
+        # handle lazy construction of our holder.  If we're nullable and not
+        # isMember we do it all by hand because we do not want our holder
+        # constructed if we're null.  But if we're isMember we don't have a
+        # holder anyway, so we can do the normal Optional codepath.
         declLoc = "${declName}"
         constructDecl = None
         if nullable:
-            if isOptional:
+            if isOptional and not isMember:
                 holderArgs = "${declName}.Value().SetValue()"
                 declType = CGTemplatedType("Optional", declType)
                 constructDecl = CGGeneric("${declName}.Construct();")
@@ -3374,7 +3385,7 @@ for (uint32_t i = 0; i < length; ++i) {
                                         declType=declType,
                                         holderType=holderType,
                                         holderArgs=holderArgs,
-                                        dealWithOptional=isOptional and not nullable)
+                                        dealWithOptional=isOptional and (not nullable or isMember))
 
     if type.isGeckoInterface():
         assert not isEnforceRange and not isClamp
