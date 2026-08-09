@@ -663,6 +663,7 @@ pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
 
 // Scripts & Windows prefs
+pref("dom.disable_beforeunload",            false);
 pref("dom.disable_image_src_set",           false);
 pref("dom.disable_window_flip",             false);
 pref("dom.disable_window_move_resize",      false);
@@ -878,6 +879,9 @@ pref("network.http.default-socket-type", "");
 // We set the timeout a little shorter to keep a reserve for cases when
 // the packet is lost or delayed on the route.
 pref("network.http.keep-alive.timeout", 115);
+
+// Timeout connections if an initial response is not received after 10 mins.
+pref("network.http.response.timeout", 300);
 
 // Limit the absolute number of http connections.
 // Note: the socket transport service will clamp the number below 256 if the OS
@@ -3897,7 +3901,6 @@ pref("signon.rememberSignons",              true);
 pref("signon.autofillForms",                true);
 pref("signon.autologin.proxy",              false);
 pref("signon.debug",                        false);
-pref("signon.useDOMFormHasPassword",        true);
 
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
