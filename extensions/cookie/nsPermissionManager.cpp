@@ -1107,7 +1107,7 @@ nsPermissionManager::CommonTestPermission(nsIPrincipal* aPrincipal,
   // if the permission is granted for any of them.
   nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(aPrincipal);
   if (ep) {
-    nsTArray<nsCOMPtr<nsIPrincipal>>* whitelist;
+    nsTArray<nsCOMPtr<nsIPrincipal> >* whitelist;
     nsresult rv = ep->GetWhiteList(&whitelist);
     NS_ENSURE_SUCCESS(rv, rv);
 

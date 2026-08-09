@@ -3620,7 +3620,7 @@ Selection::GetRangesForInterval(nsIDOMNode* aBeginNode, int32_t aBeginOffset,
   *aResultCount = 0;
   *aResults = nullptr;
 
-  nsTArray<nsRefPtr<nsRange>> results;
+  nsTArray<nsRefPtr<nsRange> > results;
   ErrorResult result;
   nsCOMPtr<nsINode> beginNode = do_QueryInterface(aBeginNode);
   nsCOMPtr<nsINode> endNode = do_QueryInterface(aEndNode);
@@ -3650,7 +3650,7 @@ void
 Selection::GetRangesForInterval(nsINode& aBeginNode, int32_t aBeginOffset,
                                 nsINode& aEndNode, int32_t aEndOffset,
                                 bool aAllowAdjacent,
-                                nsTArray<nsRefPtr<nsRange>>& aReturn,
+                                nsTArray<nsRefPtr<nsRange> >& aReturn,
                                 mozilla::ErrorResult& aRv)
 {
   nsTArray<nsRange*> results;

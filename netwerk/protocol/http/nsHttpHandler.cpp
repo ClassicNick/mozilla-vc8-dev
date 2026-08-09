@@ -60,6 +60,7 @@
 
 #if defined(XP_MACOSX)
 #include <CoreServices/CoreServices.h>
+#include "nsCocoaFeatures.h"
 #endif
 
 #if defined(XP_OS2)
@@ -150,7 +151,6 @@ nsHttpHandler::nsHttpHandler()
     , mProxyPipelining(true)
     , mIdleTimeout(PR_SecondsToInterval(10))
     , mSpdyTimeout(PR_SecondsToInterval(180))
-    , mResponseTimeout(PR_SecondsToInterval(600))
     , mMaxRequestAttempts(10)
     , mMaxRequestDelay(10)
     , mIdleSynTimeout(250)
@@ -749,11 +749,9 @@ nsHttpHandler::InitUserAgentComponents()
 #elif defined(__i386__) || defined(__x86_64__)
     mOscpu.AssignLiteral("Intel Mac OS X");
 #endif
-    SInt32 majorVersion, minorVersion;
-    if ((::Gestalt(gestaltSystemVersionMajor, &majorVersion) == noErr) &&
-        (::Gestalt(gestaltSystemVersionMinor, &minorVersion) == noErr)) {
-        mOscpu += nsPrintfCString(" %d.%d", majorVersion, minorVersion);
-    }
+    SInt32 majorVersion = nsCocoaFeatures::OSXVersionMajor();
+    SInt32 minorVersion = nsCocoaFeatures::OSXVersionMinor();
+    mOscpu += nsPrintfCString(" %d.%d", majorVersion, minorVersion);
 #elif defined (XP_UNIX)
     struct utsname name;
 
@@ -867,12 +865,6 @@ nsHttpHandler::PrefsChanged(nsIPrefBranch *prefs, const char *pref)
                 mConnMgr->UpdateParam(nsHttpConnectionMgr::MAX_REQUEST_DELAY,
                                       mMaxRequestDelay);
         }
-    }
-
-    if (PREF_CHANGED(HTTP_PREF("response.timeout"))) {
-        rv = prefs->GetIntPref(HTTP_PREF("response.timeout"), &val);
-        if (NS_SUCCEEDED(rv))
-            mResponseTimeout = PR_SecondsToInterval(clamped(val, 0, 0xffff));
     }
 
     if (PREF_CHANGED(HTTP_PREF("max-connections"))) {

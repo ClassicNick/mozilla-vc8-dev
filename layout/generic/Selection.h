@@ -183,7 +183,7 @@ public:
   void GetRangesForInterval(nsINode& aBeginNode, int32_t aBeginOffset,
                             nsINode& aEndNode, int32_t aEndOffset,
                             bool aAllowAdjacent,
-                            nsTArray<nsRefPtr<nsRange>>& aReturn,
+                            nsTArray<nsRefPtr<nsRange> >& aReturn,
                             mozilla::ErrorResult& aRv);
 
   void ScrollIntoView(int16_t aRegion, bool aIsSynchronous,

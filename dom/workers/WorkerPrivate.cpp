@@ -697,11 +697,11 @@ JSStructuredCloneCallbacks gMainThreadChromeWorkerStructuredCloneCallbacks = {
 
 class MainThreadReleaseRunnable MOZ_FINAL : public nsRunnable
 {
-  nsTArray<nsCOMPtr<nsISupports>> mDoomed;
+  nsTArray<nsCOMPtr<nsISupports> > mDoomed;
   nsTArray<nsCString> mHostObjectURIs;
 
 public:
-  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports>>& aDoomed,
+  MainThreadReleaseRunnable(nsTArray<nsCOMPtr<nsISupports> >& aDoomed,
                             nsTArray<nsCString>& aHostObjectURIs)
   {
     mDoomed.SwapElements(aDoomed);
@@ -756,7 +756,7 @@ private:
   virtual bool
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) MOZ_OVERRIDE
   {
-    nsTArray<nsCOMPtr<nsISupports>> doomed;
+    nsTArray<nsCOMPtr<nsISupports> > doomed;
     mFinishedWorker->ForgetMainThreadObjects(doomed);
 
     nsTArray<nsCString> hostObjectURIs;
@@ -2555,7 +2555,7 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
     AssertIsOnMainThread();
     MOZ_ASSERT(IsDedicatedWorker());
 
-    nsTArray<nsCOMPtr<nsIRunnable>> runnables;
+    nsTArray<nsCOMPtr<nsIRunnable> > runnables;
     mQueuedRunnables.SwapElements(runnables);
 
     for (uint32_t index = 0; index < runnables.Length(); index++) {

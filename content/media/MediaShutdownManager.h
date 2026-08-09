@@ -106,14 +106,14 @@ private:
   // References to the MediaDecoder. The decoders unregister themselves
   // in their Shutdown() method, so we'll drop the reference naturally when
   // we're shutting down (in the non xpcom-shutdown case).
-  nsTHashtable<nsRefPtrHashKey<MediaDecoder>> mDecoders;
+  nsTHashtable<nsRefPtrHashKey<MediaDecoder> > mDecoders;
 
   // References to the state machine threads that we're tracking shutdown
   // of. Note that although there is supposed to be a single state machine,
   // the construction and shutdown of these can interleave, so we must track
   // individual instances of the state machine threads.
   // These are strong references.
-  nsTHashtable<nsRefPtrHashKey<StateMachineThread>> mStateMachineThreads;
+  nsTHashtable<nsRefPtrHashKey<StateMachineThread> > mStateMachineThreads;
 
   // True if we have an XPCOM shutdown observer.
   bool mIsObservingShutdown;

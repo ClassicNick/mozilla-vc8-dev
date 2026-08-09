@@ -1753,15 +1753,6 @@ RuntimeService::Init()
                                              MAX_WORKERS_PER_DOMAIN);
   gMaxWorkersPerDomain = NS_MAX(0, maxPerDomain);
 
-  mDetectorName = Preferences::GetLocalizedCString("intl.charset.detector");
-
-  nsCOMPtr<nsIPlatformCharset> platformCharset =
-    do_GetService(NS_PLATFORMCHARSET_CONTRACTID, &rv);
-  if (NS_SUCCEEDED(rv)) {
-    rv = platformCharset->GetCharset(kPlatformCharsetSel_PlainTextInFile,
-                                     mSystemCharset);
-  }
-
   rv = InitOSFileConstants();
   if (NS_FAILED(rv)) {
     return rv;

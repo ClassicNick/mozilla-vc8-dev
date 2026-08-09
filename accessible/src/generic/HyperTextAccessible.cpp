@@ -587,11 +587,6 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
                                       int32_t* aStartOffset, int32_t* aEndOffset,
                                       nsAString& aText)
 {
-  if (aBoundaryType == BOUNDARY_CHAR) {
-    GetCharAt(aOffset, eGetBefore, aText, aStartOffset, aEndOffset);
-    return;
-  }
-
   *aStartOffset = *aEndOffset = 0;
   aText.Truncate();
 
@@ -607,7 +602,8 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
 
   switch (aBoundaryType) {
     case BOUNDARY_CHAR:
-      MOZ_ASSUME_UNREACHABLE("Already handled!");
+      if (convertedOffset != 0)
+        CharAt(convertedOffset - 1, aText, aStartOffset, aEndOffset);
       break;
 
     case BOUNDARY_WORD_START: {
@@ -674,7 +670,7 @@ HyperTextAccessible::TextAtOffset(int32_t aOffset,
 
   switch (aBoundaryType) {
     case BOUNDARY_CHAR:
-      GetCharAt(aOffset, eGetAt, aText, aStartOffset, aEndOffset);
+      CharAt(adjustedOffset, aText, aStartOffset, aEndOffset);
       break;
 
     case BOUNDARY_WORD_START:
@@ -722,11 +718,6 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
                                      int32_t* aStartOffset, int32_t* aEndOffset,
                                      nsAString& aText)
 {
-  if (aBoundaryType == BOUNDARY_CHAR) {
-    GetCharAt(aOffset, eGetAfter, aText, aStartOffset, aEndOffset);
-    return;
-  }
-
   *aStartOffset = *aEndOffset = 0;
   aText.Truncate();
 
@@ -742,7 +733,7 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
 
   switch (aBoundaryType) {
     case BOUNDARY_CHAR:
-      MOZ_ASSUME_UNREACHABLE("Already handled!");
+      CharAt(convertedOffset + 1, aText, aStartOffset, aEndOffset);
       break;
 
     case BOUNDARY_WORD_START:
@@ -1654,25 +1645,6 @@ HyperTextAccessible::RenderedToContentOffset(nsIFrame* aFrame, uint32_t aRendere
 
 ////////////////////////////////////////////////////////////////////////////////
 // HyperTextAccessible public
-
-bool
-HyperTextAccessible::GetCharAt(int32_t aOffset, EGetTextType aShift,
-                               nsAString& aChar, int32_t* aStartOffset,
-                               int32_t* aEndOffset)
-{
-  aChar.Truncate();
-
-  int32_t offset = ConvertMagicOffset(aOffset) + static_cast<int32_t>(aShift);
-  if (!CharAt(offset, aChar))
-    return false;
-
-  if (aStartOffset)
-    *aStartOffset = offset;
-  if (aEndOffset)
-    *aEndOffset = aChar.IsEmpty() ? offset : offset + 1;
-
-  return true;
-}
 
 int32_t
 HyperTextAccessible::GetChildOffset(uint32_t aChildIndex,

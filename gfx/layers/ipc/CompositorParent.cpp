@@ -65,6 +65,7 @@ namespace layers {
 CompositorParent::LayerTreeState::LayerTreeState()
   : mParent(nullptr)
   , mLayerManager(nullptr)
+  , mCrossProcessParent(nullptr)
 {
 }
 
@@ -1108,6 +1109,7 @@ CrossProcessCompositorParent::AllocPLayerTransactionParent(const nsTArray<Layers
   MOZ_ASSERT(aId != 0);
 
   if (sIndirectLayerTrees[aId].mLayerManager) {
+    sIndirectLayerTrees[aId].mCrossProcessParent = this;
     LayerManagerComposite* lm = sIndirectLayerTrees[aId].mLayerManager;
     *aTextureFactoryIdentifier = lm->GetCompositor()->GetTextureFactoryIdentifier();
     *aSuccess = true;

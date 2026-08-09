@@ -905,7 +905,7 @@ trap '[ "$?" != 0 ] && echo "------ config.log ------" && tail -n 25 config.log'
 
 
 ac_aux_dir=
-for ac_dir in ${srcdir}/build/autoconf $srcdir/${srcdir}/build/autoconf; do
+for ac_dir in ${srcdir}/../../build/autoconf $srcdir/${srcdir}/../../build/autoconf; do
   if test -f $ac_dir/install-sh; then
     ac_aux_dir=$ac_dir
     ac_install_sh="$ac_aux_dir/install-sh -c"
@@ -917,7 +917,7 @@ for ac_dir in ${srcdir}/build/autoconf $srcdir/${srcdir}/build/autoconf; do
   fi
 done
 if test -z "$ac_aux_dir"; then
-  { echo "configure: error: can not find install-sh or install.sh in ${srcdir}/build/autoconf $srcdir/${srcdir}/build/autoconf" 1>&2; echo "configure: error: can not find install-sh or install.sh in ${srcdir}/build/autoconf $srcdir/${srcdir}/build/autoconf" 1>&5; exit 1; }
+  { echo "configure: error: can not find install-sh or install.sh in ${srcdir}/../../build/autoconf $srcdir/${srcdir}/../../build/autoconf" 1>&2; echo "configure: error: can not find install-sh or install.sh in ${srcdir}/../../build/autoconf $srcdir/${srcdir}/../../build/autoconf" 1>&5; exit 1; }
 fi
 ac_config_guess=$ac_aux_dir/config.guess
 ac_config_sub=$ac_aux_dir/config.sub
@@ -6126,7 +6126,7 @@ EOF
 
   echo $ac_n "checking ARM version support in compiler""... $ac_c" 1>&6
 echo "configure:6129: checking ARM version support in compiler" >&5
-    ARM_ARCH=`${CC-cc} ${CFLAGS} -dM -E - < /dev/null | sed -n 's/.*__ARM_ARCH_\([0-9]*\).*/\1/p'`
+    ARM_ARCH=`${CC-cc} ${CFLAGS} -dM -E - < /dev/null | sed -n 's/.*__ARM_ARCH_\([0-9][0-9]*\).*/\1/p'`
   echo "$ac_t"""$ARM_ARCH"" 1>&6
 
   echo $ac_n "checking for ARM NEON support in compiler""... $ac_c" 1>&6
@@ -8949,8 +8949,8 @@ else
             if { ac_try='${CC-cc} -o conftest.${ac_objext} $CFLAGS $MOZ_DEBUG_FLAGS -c conftest.${ac_ext} 1>&2'; { (eval echo configure:8950: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } &&
                 { ac_try='${CC-cc} -o conftest${ac_exeext} $LDFLAGS $MOZ_DEBUG_FLAGS -Wl,--gc-sections conftest.${ac_objext} $LIBS 1>&2'; { (eval echo configure:8951: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }; } &&
                 test -s conftest${ac_exeext} -a -s conftest.${ac_objext}; then
-                 if test "`$PYTHON "$_topsrcdir"/build/autoconf/check_debug_ranges.py conftest.${ac_objext} conftest.${ac_ext}`" = \
-                         "`$PYTHON "$_topsrcdir"/build/autoconf/check_debug_ranges.py conftest${ac_exeext} conftest.${ac_ext}`"; then
+                 if test "`$PYTHON -m mozbuild.configure.check_debug_ranges conftest.${ac_objext} conftest.${ac_ext}`" = \
+                         "`$PYTHON -m mozbuild.configure.check_debug_ranges conftest${ac_exeext} conftest.${ac_ext}`"; then
                      GC_SECTIONS_BREAKS_DEBUG_RANGES=no
                  else
                      GC_SECTIONS_BREAKS_DEBUG_RANGES=yes
@@ -15411,6 +15411,7 @@ echo "configure:15386: checking MOZ_ICU_LIBS" >&5
      fi
   fi
 
+    MOZ_SHARED_ICU=1
 fi
 
 # Check whether --with-intl-api or --without-intl-api was given.
@@ -15612,10 +15613,12 @@ if test -d "."; then
     (cd "."; $PYTHON $_topsrcdir/build/subconfigure.py dump "$_CONFIG_SHELL")
 fi
 
+         AR="$HOST_AR" RANLIB="$HOST_RANLIB" \
          CC="$HOST_CC" CXX="$HOST_CXX" LD="$HOST_LD" \
          CFLAGS="$HOST_ICU_CFLAGS $HOST_OPTIMIZE_FLAGS" \
          CPPFLAGS="$ICU_CPPFLAGS" \
          CXXFLAGS="$HOST_ICU_CXXFLAGS $HOST_OPTIMZIE_FLAGS" \
+         LDFLAGS="$HOST_LDFLAGS" \
                 $SHELL $abs_srcdir/../../intl/icu/source/runConfigureICU \
                 $HOST_ICU_BUILD_OPTS \
                 $ICU_TARGET \
@@ -15655,6 +15658,13 @@ fi
     if test -n "$MOZ_DEBUG" -o "MOZ_DEBUG_SYMBOLS"; then
         ICU_CFLAGS="$ICU_CFLAGS $MOZ_DEBUG_FLAGS"
         ICU_CXXFLAGS="$ICU_CXXFLAGS $MOZ_DEBUG_FLAGS"
+        if test -n "$CROSS_COMPILE" -a "$OS_TARGET" = "Darwin"; then
+		# Bug 951758: Cross-OSX builds have issues with -g because it
+		# tries to run dsymutil
+                ICU_CFLAGS=`echo $ICU_CFLAGS | sed 's|-g||g'`
+                ICU_CXXFLAGS=`echo $ICU_CXXFLAGS | sed 's|-g||g'`
+        fi
+
         ICU_LDFLAGS="$MOZ_DEBUG_LDFLAGS"
         if test -z "$MOZ_DEBUG"; then
             # To generate debug symbols, it requires MOZ_DEBUG_FLAGS.
@@ -15747,12 +15757,12 @@ fi
 for ac_func in setlocale
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:15751: checking for $ac_func" >&5
+echo "configure:15761: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 15756 "configure"
+#line 15766 "configure"
 #include "confdefs.h"
 /* System header to define __stub macros and hopefully few prototypes,
     which can conflict with char $ac_func(); below.  */
@@ -15775,7 +15785,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:15779: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:15789: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func_$ac_func=yes"
 else
@@ -15805,12 +15815,12 @@ done
 for ac_func in localeconv
 do
 echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
-echo "configure:15809: checking for $ac_func" >&5
+echo "configure:15819: checking for $ac_func" >&5
 if eval "test \"`echo '$''{'ac_cv_func_$ac_func'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 15814 "configure"
+#line 15824 "configure"
 #include "confdefs.h"
 /* System header to define __stub macros and hopefully few prototypes,
     which can conflict with char $ac_func(); below.  */
@@ -15833,7 +15843,7 @@ $ac_func();
 
 ; return 0; }
 EOF
-if { (eval echo configure:15837: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:15847: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_func_$ac_func=yes"
 else
@@ -16279,9 +16289,7 @@ __all__ = ['topobjdir', 'topsrcdir', 'defines', 'non_global_defines', 'substs']
 
 if __name__ == '__main__':
     args = dict([(name, globals()[name]) for name in __all__])
-    import sys
-    sys.path.append(os.path.join(topsrcdir, ${extra_python_path}'build'))
-    from ConfigStatus import config_status
+    from mozbuild.config_status import config_status
     config_status(**args)
 EOF
 

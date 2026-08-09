@@ -394,6 +394,7 @@ class JSString : public js::gc::BarrieredCell<JSString>
 
     JS_ALWAYS_INLINE
     JSAtom &asAtom() const {
+        js::AutoThreadSafeAccess ts(this);
         JS_ASSERT(isAtom());
         return *(JSAtom *)this;
     }
@@ -1131,6 +1132,7 @@ JSString::base() const
 inline js::PropertyName *
 JSAtom::asPropertyName()
 {
+    js::AutoThreadSafeAccess ts(this);
 #ifdef DEBUG
     uint32_t dummy;
     JS_ASSERT(!isIndex(&dummy));

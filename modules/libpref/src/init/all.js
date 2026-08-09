@@ -880,9 +880,6 @@ pref("network.http.default-socket-type", "");
 // the packet is lost or delayed on the route.
 pref("network.http.keep-alive.timeout", 115);
 
-// Timeout connections if an initial response is not received after 10 mins.
-pref("network.http.response.timeout", 300);
-
 // Limit the absolute number of http connections.
 // Note: the socket transport service will clamp the number below 256 if the OS
 // cannot allocate that many FDs, and it also always tries to reserve up to 250
@@ -3028,6 +3025,9 @@ pref("print.print_extra_margin", 90); // twips (90 twips is an eigth of an inch)
 pref("ui.panel.default_level_parent", false);
 
 pref("ui.plugin.cancel_composition_at_input_source_changed", false);
+
+// The min width of composition window for plugins
+pref("ui.plugin.panel.min-width", 500);
 
 pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 

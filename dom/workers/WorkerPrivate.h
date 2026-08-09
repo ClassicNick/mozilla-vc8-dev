@@ -188,7 +188,7 @@ protected:
 
   // Protected by mMutex.
   nsRefPtr<EventTarget> mEventTarget;
-  nsTArray<nsRefPtr<WorkerRunnable>> mPreStartRunnables;
+  nsTArray<nsRefPtr<WorkerRunnable> > mPreStartRunnables;
 
 private:
   WorkerPrivate* mParent;
@@ -200,7 +200,7 @@ private:
   LoadInfo mLoadInfo;
 
   // Only used for top level workers.
-  nsTArray<nsCOMPtr<nsIRunnable>> mQueuedRunnables;
+  nsTArray<nsCOMPtr<nsIRunnable> > mQueuedRunnables;
   nsRevocableEventPtr<SynchronizeAndResumeRunnable> mSynchronizeRunnable;
 
   // Only for ChromeWorkers without window and only touched on the main thread.
@@ -687,14 +687,14 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   // Touched on multiple threads, protected with mMutex.
   JSContext* mJSContext;
   nsRefPtr<WorkerCrossThreadDispatcher> mCrossThreadDispatcher;
-  nsTArray<nsCOMPtr<nsIRunnable>> mUndispatchedRunnablesForSyncLoop;
+  nsTArray<nsCOMPtr<nsIRunnable> > mUndispatchedRunnablesForSyncLoop;
   nsCOMPtr<nsIThread> mThread;
 
   // Things touched on worker thread only.
   nsRefPtr<WorkerGlobalScope> mScope;
   nsTArray<ParentType*> mChildWorkers;
   nsTArray<WorkerFeature*> mFeatures;
-  nsTArray<nsAutoPtr<TimeoutInfo>> mTimeouts;
+  nsTArray<nsAutoPtr<TimeoutInfo> > mTimeouts;
 
   struct SyncLoopInfo
   {
@@ -711,7 +711,7 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   // This is only modified on the worker thread, but in DEBUG builds
   // AssertValidSyncLoop function iterates it on other threads. Therefore
   // modifications are done with mMutex held *only* in DEBUG builds.
-  nsTArray<nsAutoPtr<SyncLoopInfo>> mSyncLoopStack;
+  nsTArray<nsAutoPtr<SyncLoopInfo> > mSyncLoopStack;
 
   nsCOMPtr<nsITimer> mTimer;
 
