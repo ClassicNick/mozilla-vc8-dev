@@ -3529,7 +3529,7 @@ CreateSandboxObject(JSContext *cx, JS::MutableHandleValue vp, nsISupports *prinO
 // result, and cx->exception will be empty.
 nsresult
 EvalInSandbox(JSContext *cx, JS::HandleObject sandbox, const nsAString& source,
-              const char *filename, int32_t lineNo,
+              const nsACString& filename, int32_t lineNo,
               JSVersion jsVersion, bool returnStringOnly,
               JS::MutableHandleValue rval);
 
