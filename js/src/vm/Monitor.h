@@ -33,10 +33,6 @@ class Monitor
     PRLock *lock_;
     PRCondVar *condVar_;
 
-    bool isFor(Monitor &monitor) const {
-        return lock_ == monitor.lock_;
-    }
-
   public:
     Monitor()
       : lock_(nullptr),
@@ -77,6 +73,10 @@ class AutoLockMonitor
 #ifdef JS_THREADSAFE
         PR_Unlock(monitor.lock_);
 #endif
+    }
+
+    bool isFor(Monitor &other) const {
+        return monitor.lock_ == other.lock_;
     }
 
     void wait(PRCondVar *condVar) {
@@ -142,6 +142,10 @@ class AutoUnlockMonitor
 #ifdef JS_THREADSAFE
         PR_Lock(monitor.lock_);
 #endif
+    }
+
+    bool isFor(Monitor &other) const {
+        return monitor.lock_ == other.lock_;
     }
 };
 

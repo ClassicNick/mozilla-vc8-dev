@@ -307,7 +307,7 @@ ThreadPoolWorker::run()
 void
 ThreadPoolWorker::terminate(AutoLockMonitor &lock)
 {
-    MOZ_ASSERT(lock.isFor(*this));
+    MOZ_ASSERT(lock.isFor(*pool_));
     MOZ_ASSERT(state_ != TERMINATED);
     state_ = TERMINATED;
 }
