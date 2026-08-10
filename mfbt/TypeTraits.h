@@ -123,7 +123,7 @@ namespace detail {
 template<typename T>
 struct IsArrayHelper : FalseType {};
 
-template<typename T, decltype(sizeof(1)) N>
+template<typename T, int N>
 struct IsArrayHelper<T[N]> : TrueType {};
 
 template<typename T>
@@ -191,7 +191,7 @@ template<typename T>
 struct IsRvalueReference : FalseType {};
 
 template<typename T>
-struct IsRvalueReference<T&&> : TrueType {};
+struct IsRvalueReference<T&> : FalseType {};
 
 namespace detail {
 
@@ -223,7 +223,7 @@ namespace detail {
 // http://msdn.microsoft.com/en-us/library/ms177194%28v=vs.100%29.aspx
 template<typename T>
 struct IsClassHelper
-  : IntegralConstant<bool, __is_class(T)>
+  : IntegralConstant<bool, false>
 {};
 
 } // namespace detail
@@ -346,7 +346,7 @@ namespace detail {
 // http://msdn.microsoft.com/en-us/library/ms177194%28v=vs.100%29.aspx
 template<typename T>
 struct IsEmptyHelper
-  : IntegralConstant<bool, IsClass<T>::value && __is_empty(T)>
+  : IntegralConstant<bool, IsClass<T>::value>
 {};
 
 } // namespace detail

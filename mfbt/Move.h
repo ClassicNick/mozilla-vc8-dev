@@ -256,16 +256,19 @@ OldMove(const T& t)
 }
 
 /* Copy functions necessary for older compilers */
+template <typename T>
 inline T&
 Copy(T& t)
 {
 	return static_cast<T&>(t);
 }
 
+template <typename T>
 inline T&
 ConstCopy(const T& t)
 {
 	return const_cast<T&>(t);
+}
 
 #if !defined (_MSC_VER) || _MSC_VER >= 1600
 /**

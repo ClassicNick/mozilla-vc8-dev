@@ -710,7 +710,7 @@ RegExpCompartment::sweep(JSRuntime *rt)
         }
     }
 
-    if (matchResultTemplateObject_ &&
+    if ((JSObject*) matchResultTemplateObject_ &&
         IsObjectAboutToBeFinalized(matchResultTemplateObject_.unsafeGet()))
     {
         matchResultTemplateObject_ = nullptr;

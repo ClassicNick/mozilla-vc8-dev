@@ -150,15 +150,18 @@ TemporaryRef<TextureHost> CreateTextureHostBasic(const SurfaceDescriptor& aDesc,
                                                  ISurfaceAllocator* aDeallocator,
                                                  TextureFlags aFlags);
 
+#if defined XP_WIN && defined MOZ_ENABLE_D3D10_LAYER
 // implemented in TextureD3D11.cpp
 TemporaryRef<TextureHost> CreateTextureHostD3D11(const SurfaceDescriptor& aDesc,
                                                  ISurfaceAllocator* aDeallocator,
                                                  TextureFlags aFlags);
 
+#elif defined XP_WIN && defined MOZ_ENABLE_D3D10_LAYER
 // implemented in TextureD3D9.cpp
 TemporaryRef<TextureHost> CreateTextureHostD3D9(const SurfaceDescriptor& aDesc,
                                                 ISurfaceAllocator* aDeallocator,
                                                 TextureFlags aFlags);
+#endif
 
 // static
 TemporaryRef<TextureHost>
@@ -178,9 +181,10 @@ TextureHost::Create(const SurfaceDescriptor& aDesc,
       // See Bug 944420.
       return CreateTextureHostOGL(aDesc, aDeallocator, aFlags);
 #endif
-#ifdef XP_WIN
+#if defined XP_WIN && defined MOZ_ENABLE_D3D10_LAYER
     case LAYERS_D3D11:
       return CreateTextureHostD3D11(aDesc, aDeallocator, aFlags);
+#elif defined XP_WIN && defined MOZ_ENABLE_D3D9_LAYER
     case LAYERS_D3D9:
       return CreateTextureHostD3D9(aDesc, aDeallocator, aFlags);
 #endif
