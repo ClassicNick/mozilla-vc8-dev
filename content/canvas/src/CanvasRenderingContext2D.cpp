@@ -1736,7 +1736,7 @@ CanvasRenderingContext2D::Stroke()
   Redraw();
 }
 
-void CanvasRenderingContext2D::DrawSystemFocusRing(mozilla::dom::Element& aElement)
+void CanvasRenderingContext2D::DrawFocusIfNeeded(mozilla::dom::Element& aElement)
 {
   EnsureUserSpacePath();
 

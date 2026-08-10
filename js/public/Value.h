@@ -1955,8 +1955,8 @@ extern JS_PUBLIC_DATA(const jsval) JSVAL_VOID;
 
 namespace JS {
 
-extern JS_PUBLIC_DATA(const Handle<Value>) NullHandleValue;
-extern JS_PUBLIC_DATA(const Handle<Value>) UndefinedHandleValue;
+extern JS_PUBLIC_DATA(const HandleValue) NullHandleValue;
+extern JS_PUBLIC_DATA(const HandleValue) UndefinedHandleValue;
 
 }
 
