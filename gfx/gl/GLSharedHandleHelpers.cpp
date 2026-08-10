@@ -152,6 +152,8 @@ SharedTextureHandle CreateSharedHandle(GLContext* gl,
                                        void* buffer,
                                        SharedTextureBufferType bufferType)
 {
+	SharedTextureBufferType mTextureID;
+
     // unimplemented outside of EGL
     if (gl->GetContextType() != GLContextType::EGL)
         return 0;
@@ -171,7 +173,7 @@ SharedTextureHandle CreateSharedHandle(GLContext* gl,
 
         return (SharedTextureHandle) new SurfaceTextureWrapper(reinterpret_cast<nsSurfaceTexture*>(buffer));
 #endif
-    case TextureID: {
+    if (mTextureID) {
         if (!DoesEGLContextSupportSharingWithEGLImage(gl))
             return 0;
 

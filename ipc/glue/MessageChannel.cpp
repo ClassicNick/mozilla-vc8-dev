@@ -74,16 +74,16 @@ public:
         MOZ_ASSERT(mMessageName);
     }
 
-    InterruptFrame(InterruptFrame&& aOther)
+	InterruptFrame(mozilla::MoveRef<InterruptFrame> aOther)
     {
-        MOZ_ASSERT(aOther.mMessageName);
-        mMessageName = aOther.mMessageName;
-        aOther.mMessageName = nullptr;
-        aOther.mMoved = true;
+        MOZ_ASSERT(aOther->mMessageName);
+        mMessageName = aOther->mMessageName;
+        aOther->mMessageName = nullptr;
+        aOther->mMoved = true;
 
-        mMessageRoutingId = aOther.mMessageRoutingId;
-        mMesageSemantics = aOther.mMesageSemantics;
-        mDirection = aOther.mDirection;
+        mMessageRoutingId = aOther->mMessageRoutingId;
+        mMesageSemantics = aOther->mMesageSemantics;
+        mDirection = aOther->mDirection;
     }
 
     ~InterruptFrame()
@@ -94,11 +94,11 @@ public:
             free(const_cast<char*>(mMessageName));
     }
 
-    InterruptFrame& operator=(InterruptFrame&& aOther)
+	InterruptFrame& operator=(mozilla::MoveRef<InterruptFrame> aOther)
     {
         MOZ_ASSERT(&aOther != this);
         this->~InterruptFrame();
-        new (this) InterruptFrame(mozilla::Move(aOther));
+        new (this) InterruptFrame(aOther);
         return *this;
     }
 
@@ -146,7 +146,7 @@ public:
         if (mThat.mCxxStackFrames.empty())
             mThat.EnteredCxxStack();
 
-        mThat.mCxxStackFrames.append(InterruptFrame(direction, msg));
+		mThat.mCxxStackFrames.append(mozilla::OldMove(InterruptFrame(direction, msg)));
 
         const InterruptFrame& frame = mThat.mCxxStackFrames.back();
 

@@ -36,7 +36,7 @@ typedef char XML_LChar;
 typedef char16_t XML_Char;
 #define XML_T(x) (char16_t)x
 #else
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 typedef uint16_t XML_Char;
 #define XML_T(x) (uint16_t)x
 #endif

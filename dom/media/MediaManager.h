@@ -526,7 +526,7 @@ private:
   // ONLY access from MainThread so we don't need to lock
   WindowTable mActiveWindows;
   nsRefPtrHashtable<nsStringHashKey, GetUserMediaRunnable> mActiveCallbacks;
-  nsClassHashtable<nsUint64HashKey, nsTArray<nsString>> mCallIds;
+  nsClassHashtable<nsUint64HashKey, nsTArray<nsString> > mCallIds;
   // Always exists
   nsCOMPtr<nsIThread> mMediaThread;
 

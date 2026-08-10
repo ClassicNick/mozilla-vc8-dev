@@ -21,6 +21,7 @@
 #if !(defined(MOZ_PER_WINDOW_PRIVATE_BROWSING)) && defined(DEBUG)
 #include "nsIPrivateBrowsingService.h"
 #endif
+#include "nsISupportsPriority.h"
 #include <algorithm>
 
 using namespace mozilla::places;
@@ -555,6 +556,12 @@ AsyncFetchAndSetIconFromNetwork::Run()
     rv = pbChannel->SetPrivate(mFaviconLoadPrivate);
     NS_ENSURE_SUCCESS(rv, rv);
   }
+
+  nsCOMPtr<nsISupportsPriority> priorityChannel = do_QueryInterface(channel);
+  if (priorityChannel) {
+    priorityChannel->AdjustPriority(nsISupportsPriority::PRIORITY_LOWEST);
+  }
+
   return channel->AsyncOpen(this, nullptr);
 }
 
