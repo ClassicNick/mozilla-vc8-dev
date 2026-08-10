@@ -556,7 +556,6 @@ class IonBuilder : public MIRGenerator
     bool jsop_initelem();
     bool jsop_initelem_array();
     bool jsop_initelem_getter_setter();
-    bool jsop_mutateproto();
     bool jsop_initprop(PropertyName *name);
     bool jsop_initprop_getter_setter(PropertyName *name);
     bool jsop_regexp(RegExpObject *reobj);
@@ -630,7 +629,7 @@ class IonBuilder : public MIRGenerator
     InliningStatus inlineStrCharCodeAt(CallInfo &callInfo);
     InliningStatus inlineStrFromCharCode(CallInfo &callInfo);
     InliningStatus inlineStrCharAt(CallInfo &callInfo);
-    InliningStatus inlineStrReplaceRegExp(CallInfo &callInfo);
+    InliningStatus inlineStrReplace(CallInfo &callInfo);
 
     // RegExp natives.
     InliningStatus inlineRegExpExec(CallInfo &callInfo);

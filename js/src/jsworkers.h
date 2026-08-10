@@ -342,10 +342,10 @@ struct ParseTask
     // Rooted pointer to the scope in the target compartment which the
     // resulting script will be merged into. This is not safe to use off the
     // main thread.
-    JSObject *scopeChain;
+    PersistentRootedObject scopeChain;
 
     // Rooted pointer to the global object used by 'cx'.
-    JSObject *exclusiveContextGlobal;
+    PersistentRootedObject exclusiveContextGlobal;
 
     // Callback invoked off the main thread when the parse finishes.
     JS::OffThreadCompileCallback callback;
@@ -370,6 +370,11 @@ struct ParseTask
 
     ~ParseTask();
 };
+
+// Return whether, if a new parse task was started, it would need to wait for
+// an in-progress GC to complete before starting.
+extern bool
+OffThreadParsingMustWaitForGC(JSRuntime *rt);
 
 // Compression tasks are allocated on the stack by their triggering thread,
 // which will block on the compression completing as the task goes out of scope

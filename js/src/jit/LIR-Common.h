@@ -600,26 +600,6 @@ class LInitElemGetterSetter : public LCallInstructionHelper<0, 2 + BOX_PIECES, 0
 };
 
 // Takes in an Object and a Value.
-class LMutateProto : public LCallInstructionHelper<0, 1 + BOX_PIECES, 0>
-{
-  public:
-    LIR_HEADER(MutateProto)
-
-    LMutateProto(const LAllocation &object) {
-        setOperand(0, object);
-    }
-
-    static const size_t ValueIndex = 1;
-
-    const LAllocation *getObject() {
-        return getOperand(0);
-    }
-    const LAllocation *getValue() {
-        return getOperand(1);
-    }
-};
-
-// Takes in an Object and a Value.
 class LInitProp : public LCallInstructionHelper<0, 1 + BOX_PIECES, 0>
 {
   public:
@@ -3266,31 +3246,58 @@ class LRegExpTest : public LCallInstructionHelper<1, 2, 0>
     }
 };
 
-class LRegExpReplace : public LCallInstructionHelper<1, 3, 0>
+
+class LStrReplace : public LCallInstructionHelper<1, 3, 0>
 {
   public:
-    LIR_HEADER(RegExpReplace)
-
-    LRegExpReplace(const LAllocation &string, const LAllocation &regexp,
+    LStrReplace(const LAllocation &string, const LAllocation &pattern,
                    const LAllocation &replacement)
     {
         setOperand(0, string);
-        setOperand(1, regexp);
+        setOperand(1, pattern);
         setOperand(2, replacement);
     }
 
     const LAllocation *string() {
         return getOperand(0);
     }
-    const LAllocation *regexp() {
+    const LAllocation *pattern() {
         return getOperand(1);
     }
     const LAllocation *replacement() {
         return getOperand(2);
     }
+};
+
+class LRegExpReplace: public LStrReplace
+{
+  public:
+    LIR_HEADER(RegExpReplace);
+
+    LRegExpReplace(const LAllocation &string, const LAllocation &pattern,
+                   const LAllocation &replacement)
+      : LStrReplace(string, pattern, replacement)
+    {
+    }
 
     const MRegExpReplace *mir() const {
         return mir_->toRegExpReplace();
+    }
+};
+
+class LStringReplace: public LStrReplace
+{
+  public:
+    LIR_HEADER(StringReplace);
+
+    LStringReplace(const LAllocation &string, const LAllocation &pattern,
+                   const LAllocation &replacement)
+      : LStrReplace(string, pattern, replacement)
+    {
+    }
+
+    const MStringReplace *mir() const {
+        return mir_->toStringReplace();
     }
 };
 

@@ -270,16 +270,6 @@ LIRGenerator::visitInitElemGetterSetter(MInitElemGetterSetter *ins)
 }
 
 bool
-LIRGenerator::visitMutateProto(MMutateProto *ins)
-{
-    LMutateProto *lir = new(alloc()) LMutateProto(useRegisterAtStart(ins->getObject()));
-    if (!useBoxAtStart(lir, LMutateProto::ValueIndex, ins->getValue()))
-        return false;
-
-    return add(lir, ins) && assignSafepoint(lir, ins);
-}
-
-bool
 LIRGenerator::visitInitProp(MInitProp *ins)
 {
     LInitProp *lir = new(alloc()) LInitProp(useRegisterAtStart(ins->getObject()));
@@ -1949,12 +1939,25 @@ LIRGenerator::visitRegExpTest(MRegExpTest *ins)
 bool
 LIRGenerator::visitRegExpReplace(MRegExpReplace *ins)
 {
-    JS_ASSERT(ins->regexp()->type() == MIRType_Object);
+    JS_ASSERT(ins->pattern()->type() == MIRType_Object);
     JS_ASSERT(ins->string()->type() == MIRType_String);
     JS_ASSERT(ins->replacement()->type() == MIRType_String);
 
     LRegExpReplace *lir = new(alloc()) LRegExpReplace(useRegisterOrConstantAtStart(ins->string()),
-                                                      useRegisterAtStart(ins->regexp()),
+                                                      useRegisterAtStart(ins->pattern()),
+                                                      useRegisterOrConstantAtStart(ins->replacement()));
+    return defineReturn(lir, ins) && assignSafepoint(lir, ins);
+}
+
+bool
+LIRGenerator::visitStringReplace(MStringReplace *ins)
+{
+    JS_ASSERT(ins->pattern()->type() == MIRType_String);
+    JS_ASSERT(ins->string()->type() == MIRType_String);
+    JS_ASSERT(ins->replacement()->type() == MIRType_String);
+
+    LStringReplace *lir = new(alloc()) LStringReplace(useRegisterOrConstantAtStart(ins->string()),
+                                                      useRegisterAtStart(ins->pattern()),
                                                       useRegisterOrConstantAtStart(ins->replacement()));
     return defineReturn(lir, ins) && assignSafepoint(lir, ins);
 }

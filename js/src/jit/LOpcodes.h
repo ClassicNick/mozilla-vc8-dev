@@ -35,7 +35,6 @@
     _(AbortPar)                     \
     _(InitElem)                     \
     _(InitElemGetterSetter)         \
-    _(MutateProto)                    \
     _(InitProp)                     \
     _(InitPropGetterSetter)         \
     _(CheckOverRecursed)            \
@@ -153,6 +152,7 @@
     _(RegExpExec)                   \
     _(RegExpTest)                   \
     _(RegExpReplace)                \
+    _(StringReplace)                \
     _(Lambda)                       \
     _(LambdaForSingleton)           \
     _(LambdaPar)                    \
