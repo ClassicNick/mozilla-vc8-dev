@@ -5374,6 +5374,12 @@ nsIFrame::DumpFrameTree()
 }
 
 void
+nsIFrame::DumpFrameTreeLimited()
+{
+  List(stdout, 0);
+}
+
+void
 nsIFrame::RootFrameList(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
 {
   if (!aPresContext || !out)

@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WinIMEHandler.h"
+
+#include "mozilla/Preferences.h"
 #include "nsIMM32Handler.h"
 #include "nsWindowDefs.h"
 
@@ -23,6 +25,7 @@ namespace widget {
 
 #ifdef NS_ENABLE_TSF
 bool IMEHandler::sIsInTSFMode = false;
+bool IMEHandler::sIsIMMEnabled = true;
 bool IMEHandler::sPluginHasFocus = false;
 IMEHandler::SetInputScopesFunc IMEHandler::sSetInputScopes = nullptr;
 #endif // #ifdef NS_ENABLE_TSF
@@ -34,6 +37,8 @@ IMEHandler::Initialize()
 #ifdef NS_ENABLE_TSF
   nsTextStore::Initialize();
   sIsInTSFMode = nsTextStore::IsInTSFMode();
+  sIsIMMEnabled =
+    !sIsInTSFMode || Preferences::GetBool("intl.tsf.support_imm", true);
   if (!sIsInTSFMode) {
     // When full nsTextStore is not available, try to use SetInputScopes API
     // to enable at least InputScope. Use GET_MODULE_HANDLE_EX_FLAG_PIN to
@@ -104,24 +109,19 @@ IMEHandler::ProcessMessage(nsWindow* aWindow, UINT aMessage,
 {
 #ifdef NS_ENABLE_TSF
   if (IsTSFAvailable()) {
-    if (aMessage == WM_IME_SETCONTEXT) {
-      // If a windowless plugin had focus and IME was handled on it, composition
-      // window was set the position.  After that, even in TSF mode, WinXP keeps
-      // to use composition window at the position if the active IME is not
-      // aware TSF.  For avoiding this issue, we need to hide the composition
-      // window here.
-      if (aWParam) {
-        aLParam &= ~ISC_SHOWUICOMPOSITIONWINDOW;
-      }
-      return false;
-    }
-
-    if (aMessage == WM_USER_TSF_TEXTCHANGE) {
-      nsTextStore::OnTextChangeMsg();
-      aResult.mConsumed = true;
+    nsTextStore::ProcessMessage(aWindow, aMessage, aWParam, aLParam, aResult);
+    if (aResult.mConsumed) {
       return true;
     }
-    return false;
+    // If we don't support IMM in TSF mode, we don't use nsIMM32Handler.
+    if (!sIsIMMEnabled) {
+      return false;
+    }
+    // IME isn't implemented with IMM, nsIMM32Handler shouldn't handle any
+    // messages.
+    if (!nsTextStore::IsIMM_IME()) {
+      return false;
+    }
   }
 #endif // #ifdef NS_ENABLE_TSF
 
@@ -264,8 +264,7 @@ IMEHandler::OnDestroyWindow(nsWindow* aWindow)
     SetInputScopeForIMM32(aWindow, EmptyString());
   }
 #endif // #ifdef NS_ENABLE_TSF
-  nsIMEContext IMEContext(aWindow->GetWindowHandle());
-  IMEContext.AssociateDefaultContext();
+  AssociateIMEContext(aWindow, true);
 }
 
 // static
@@ -278,6 +277,8 @@ IMEHandler::SetInputContext(nsWindow* aWindow,
   NotifyIME(aWindow, REQUEST_TO_COMMIT_COMPOSITION);
 
 #ifdef NS_ENABLE_TSF
+  const InputContext& oldInputContext = aWindow->GetInputContext();
+
   // Assume that SetInputContext() is called only when aWindow has focus.
   sPluginHasFocus = (aInputContext.mIMEState.mEnabled == IMEState::PLUGIN);
 #endif
@@ -296,6 +297,14 @@ IMEHandler::SetInputContext(nsWindow* aWindow,
     nsTextStore::SetInputContext(aWindow, aInputContext, aAction);
     if (IsTSFAvailable()) {
       aInputContext.mNativeIMEContext = nsTextStore::GetTextStore();
+      if (sIsIMMEnabled) {
+        // Associate IME context for IMM-IMEs.
+        AssociateIMEContext(aWindow, enable);
+      } else if (oldInputContext.mIMEState.mEnabled == IMEState::PLUGIN) {
+        // Disassociate the IME context from the window when plugin loses focus
+        // in pure TSF mode.
+        AssociateIMEContext(aWindow, false);
+      }
       if (adjustOpenState) {
         nsTextStore::SetIMEOpenState(open);
       }
@@ -307,25 +316,37 @@ IMEHandler::SetInputContext(nsWindow* aWindow,
   }
 #endif // #ifdef NS_ENABLE_TSF
 
-  nsIMEContext IMEContext(aWindow->GetWindowHandle());
-  if (enable) {
-    IMEContext.AssociateDefaultContext();
-    if (!aInputContext.mNativeIMEContext) {
-      aInputContext.mNativeIMEContext = static_cast<void*>(IMEContext.get());
-    }
-  } else if (!aWindow->Destroyed()) {
-    // Don't disassociate the context after the window is destroyed.
-    IMEContext.Disassociate();
-    if (!aInputContext.mNativeIMEContext) {
-      // The old InputContext must store the default IMC.
-      aInputContext.mNativeIMEContext =
-        aWindow->GetInputContext().mNativeIMEContext;
-    }
-  }
+  AssociateIMEContext(aWindow, enable);
 
+  nsIMEContext IMEContext(aWindow->GetWindowHandle());
   if (adjustOpenState) {
     IMEContext.SetOpenState(open);
   }
+
+  if (aInputContext.mNativeIMEContext) {
+    return;
+  }
+
+  // The old InputContext must store the default IMC or old TextStore.
+  // When IME context is disassociated from the window, use it.
+  aInputContext.mNativeIMEContext = enable ?
+    static_cast<void*>(IMEContext.get()) : oldInputContext.mNativeIMEContext;
+}
+
+// static
+void
+IMEHandler::AssociateIMEContext(nsWindow* aWindow, bool aEnable)
+{
+  nsIMEContext IMEContext(aWindow->GetWindowHandle());
+  if (aEnable) {
+    IMEContext.AssociateDefaultContext();
+    return;
+  }
+  // Don't disassociate the context after the window is destroyed.
+  if (aWindow->Destroyed()) {
+    return;
+  }
+  IMEContext.Disassociate();
 }
 
 // static
@@ -342,6 +363,10 @@ IMEHandler::InitInputContext(nsWindow* aWindow, InputContext& aInputContext)
                          InputContextAction::GOT_FOCUS));
     aInputContext.mNativeIMEContext = nsTextStore::GetTextStore();
     MOZ_ASSERT(aInputContext.mNativeIMEContext);
+    // IME context isn't necessary in pure TSF mode.
+    if (!sIsIMMEnabled) {
+      AssociateIMEContext(aWindow, false);
+    }
     return;
   }
 #endif // #ifdef NS_ENABLE_TSF
