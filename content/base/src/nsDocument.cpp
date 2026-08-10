@@ -8817,6 +8817,10 @@ void
 nsDocument::ScrollToRef()
 {
   if (mScrolledToRefAlready) {
+    nsCOMPtr<nsIPresShell> shell = GetShell();
+    if (shell) {
+      shell->ScrollToAnchor();
+    }
     return;
   }
 

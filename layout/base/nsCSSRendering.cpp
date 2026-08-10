@@ -2289,7 +2289,7 @@ nsCSSRendering::PaintGradient(nsPresContext* aPresContext,
     mozilla::RefPtr<mozilla::gfx::GradientStops> gs =
       gfxGradientCache::GetOrCreateGradientStops(ctx->GetDrawTarget(),
                                                  rawStops,
-                                                 isRepeat ? gfx::EXTEND_REPEAT : gfx::EXTEND_CLAMP);
+                                                 isRepeat ? gfx::ExtendMode::REPEAT : gfx::ExtendMode::CLAMP);
     gradientPattern->SetColorStops(gs);
   } else {
     for (uint32_t i = 0; i < stops.Length(); i++) {
