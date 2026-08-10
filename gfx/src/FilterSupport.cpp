@@ -1475,6 +1475,7 @@ FilterSupport::ComputeSourceNeededRegions(const FilterDescription& aFilter,
 
 FilterPrimitiveDescription::FilterPrimitiveDescription(PrimitiveType aType)
  : mType(aType)
+ , mIsTainted(false)
 {
 }
 
@@ -1485,6 +1486,7 @@ FilterPrimitiveDescription::FilterPrimitiveDescription(const FilterPrimitiveDesc
  , mFilterPrimitiveSubregion(aOther.mFilterPrimitiveSubregion)
  , mInputColorSpaces(aOther.mInputColorSpaces)
  , mOutputColorSpace(aOther.mOutputColorSpace)
+ , mIsTainted(aOther.mIsTainted)
 {
 }
 
@@ -1498,6 +1500,7 @@ FilterPrimitiveDescription::operator=(const FilterPrimitiveDescription& aOther)
     mFilterPrimitiveSubregion = aOther.mFilterPrimitiveSubregion;
     mInputColorSpaces = aOther.mInputColorSpaces;
     mOutputColorSpace = aOther.mOutputColorSpace;
+    mIsTainted = aOther.mIsTainted;
   }
   return *this;
 }

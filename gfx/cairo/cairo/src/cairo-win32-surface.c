@@ -509,6 +509,16 @@ _cairo_win32_surface_finish (void *abstract_surface)
 }
 
 #ifdef MOZ_ENABLE_D3D9_LAYER
+static void
+get_d3d9_dc_and_clear_clip (cairo_win32_surface_t *surface)
+{
+    IDirect3DSurface9_GetDC (surface->d3d9surface, &surface->dc);
+    // The DC that we get back from the surface will not have
+    // a clip so clear surface->clip_region so that we don't think we have
+    // one when we don't.
+    _cairo_win32_surface_set_clip_region (surface, NULL);
+}
+
 static cairo_status_t
 _cairo_win32_surface_d3d9_lock_rect (cairo_win32_surface_t  *surface,
 				   int                     x,
@@ -528,7 +538,7 @@ _cairo_win32_surface_d3d9_lock_rect (cairo_win32_surface_t  *surface,
 	                             &rectout, &rectin, 0);
     surface->dc = 0; // Don't use the DC when this is locked!
     if (hr) {
-        IDirect3DSurface9_GetDC (surface->d3d9surface, &surface->dc);
+	get_d3d9_dc_and_clear_clip (surface);
         return CAIRO_INT_STATUS_UNSUPPORTED;
     }
     local = cairo_image_surface_create_for_data (rectout.pBits,
@@ -537,12 +547,12 @@ _cairo_win32_surface_d3d9_lock_rect (cairo_win32_surface_t  *surface,
 						 rectout.Pitch);
     if (local == NULL) {
 	IDirect3DSurface9_UnlockRect (surface->d3d9surface);
-	IDirect3DSurface9_GetDC (surface->d3d9surface, &surface->dc);
+	get_d3d9_dc_and_clear_clip (surface);
         return CAIRO_INT_STATUS_UNSUPPORTED;
     }
     if (local->base.status) {
 	IDirect3DSurface9_UnlockRect (surface->d3d9surface);
-	IDirect3DSurface9_GetDC (surface->d3d9surface, &surface->dc);
+	get_d3d9_dc_and_clear_clip (surface);
         return local->base.status;
     }
 
@@ -721,7 +731,7 @@ _cairo_win32_surface_release_source_image (void                   *abstract_surf
 #ifdef MOZ_ENABLE_D3D9_LAYER
     if (local && local->d3d9surface) {
 	IDirect3DSurface9_UnlockRect (local->d3d9surface);
-	IDirect3DSurface9_GetDC (local->d3d9surface, &local->dc);
+	get_d3d9_dc_and_clear_clip (surface);
 	cairo_surface_destroy ((cairo_surface_t *)image);
     } else 
 #endif
@@ -802,7 +812,7 @@ _cairo_win32_surface_release_dest_image (void                    *abstract_surfa
 #ifdef MOZ_ENABLE_D3D9_LAYER
     if (local->d3d9surface) {
 	IDirect3DSurface9_UnlockRect (local->d3d9surface);
-	IDirect3DSurface9_GetDC (local->d3d9surface, &local->dc);
+	get_d3d9_dc_and_clear_clip (surface);
 	cairo_surface_destroy ((cairo_surface_t *)image);
     } else 
 #endif
