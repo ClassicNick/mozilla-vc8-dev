@@ -2787,6 +2787,14 @@ NS_METHOD nsWindow::Invalidate(const nsIntRect & aRect)
   return NS_OK;
 }
 
+void
+nsWindow::Update()
+{
+    if (!ShouldUseOffMainThreadCompositing() && mWnd) {
+        ::UpdateWindow(mWnd);
+    }
+}
+
 NS_IMETHODIMP
 nsWindow::MakeFullScreen(bool aFullScreen)
 {

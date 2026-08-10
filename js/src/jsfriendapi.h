@@ -1517,8 +1517,8 @@ struct JSJitInfo {
         JSParallelNative parallelNative;
     };
 
-    uint32_t protoID;
-    uint32_t depth;
+    uint16_t protoID;
+    uint16_t depth;
     // type not being ParallelNative means this is a DOM method.  If you
     // change that, come up with a different way of implementing
     // isDOMJitInfo().
@@ -1575,6 +1575,19 @@ struct JSTypedMethodJitInfo
                                                  have side-effects. */
 };
 
+namespace JS {
+namespace detail {
+
+/* NEVER DEFINED, DON'T USE.  For use by JS_CAST_PARALLEL_NATIVE_TO only. */
+inline int CheckIsParallelNative(JSParallelNative parallelNative);
+
+} // namespace detail
+} // namespace JS
+
+#define JS_CAST_PARALLEL_NATIVE_TO(v, To) \
+    (static_cast<void>(sizeof(JS::detail::CheckIsParallelNative(v))), \
+     reinterpret_cast<To>(v))
+
 /*
  * You may ask yourself: why do we define a wrapper around a wrapper here?
  * The answer is that some compilers don't understand initializing a union
@@ -1589,13 +1602,17 @@ struct JSTypedMethodJitInfo
  * Initializing with a normal function pointer seems to work fine. Hence
  * the ugliness that you see before you.
  */
-#define JS_JITINFO_NATIVE_PARALLEL(infoName, wrapperName, serialOp)     \
-    bool wrapperName##_ParallelNativeThreadSafeWrapper(js::ForkJoinSlice *slice, unsigned argc, JS::Value *vp) \
+#define JS_JITINFO_NATIVE_PARALLEL(infoName, parallelOp)                \
+    const JSJitInfo infoName =                                          \
+        {{JS_CAST_PARALLEL_NATIVE_TO(parallelOp, JSJitGetterOp)},0,0,JSJitInfo::ParallelNative,JSVAL_TYPE_MISSING,false,false,false,false,0,JSJitInfo::AliasEverything}
+
+#define JS_JITINFO_NATIVE_PARALLEL_THREADSAFE(infoName, wrapperName, serialOp) \
+    bool wrapperName##_ParallelNativeThreadSafeWrapper(js::ForkJoinSlice *slice, unsigned argc, \
+                                                       JS::Value *vp)   \
     {                                                                   \
         return JSParallelNativeThreadSafeWrapper<serialOp>(slice, argc, vp); \
     }                                                                   \
-    const JSJitInfo infoName =                                          \
-        {{reinterpret_cast<JSJitGetterOp>(wrapperName##_ParallelNativeThreadSafeWrapper)},0,0,JSJitInfo::ParallelNative,JSVAL_TYPE_MISSING,false,false,false,false,0,JSJitInfo::AliasEverything}
+    JS_JITINFO_NATIVE_PARALLEL(infoName, wrapperName##_ParallelNativeThreadSafeWrapper)
 
 static JS_ALWAYS_INLINE const JSJitInfo *
 FUNCTION_VALUE_TO_JITINFO(const JS::Value& v)

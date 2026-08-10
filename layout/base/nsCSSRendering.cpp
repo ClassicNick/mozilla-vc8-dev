@@ -1776,7 +1776,8 @@ nsCSSRendering::DetermineBackgroundColor(nsPresContext* aPresContext,
   if (aDrawBackgroundColor &&
       bg->BottomLayer().mRepeat.mXRepeat == NS_STYLE_BG_REPEAT_REPEAT &&
       bg->BottomLayer().mRepeat.mYRepeat == NS_STYLE_BG_REPEAT_REPEAT &&
-      bg->BottomLayer().mImage.IsOpaque()) {
+      bg->BottomLayer().mImage.IsOpaque() &&
+      bg->BottomLayer().mBlendMode == NS_STYLE_BLEND_NORMAL) {
     aDrawBackgroundColor = false;
   }
 
@@ -4361,12 +4362,12 @@ CSSSizeOrRatio::ComputeConcreteSize() const
       mWidth,
       double(mRatio.height) / mRatio.width);
     return nsSize(mWidth, height);
-  } 
+  }
 
   MOZ_ASSERT(mHasHeight);
   nscoord width = NSCoordSaturatingNonnegativeMultiply(
     mHeight,
-    double(mRatio.width) / mRatio.height);      
+    double(mRatio.width) / mRatio.height);
   return nsSize(width, mHeight);
 }
 

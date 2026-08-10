@@ -316,7 +316,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
              */
             jsbytecode *next = pc + JSOP_GETLOCAL_LENGTH;
             if (JSOp(*next) != JSOP_POP || jumpTarget(next)) {
-                uint32_t local = GET_SLOTNO(pc);
+                uint32_t local = GET_LOCALNO(pc);
                 if (local >= script_->nfixed()) {
                     localsAliasStack_ = true;
                     break;
@@ -327,7 +327,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
 
           case JSOP_CALLLOCAL:
           case JSOP_SETLOCAL: {
-            uint32_t local = GET_SLOTNO(pc);
+            uint32_t local = GET_LOCALNO(pc);
             if (local >= script_->nfixed()) {
                 localsAliasStack_ = true;
                 break;
@@ -345,6 +345,10 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
 
           case JSOP_FINALLY:
             hasTryFinally_ = true;
+            break;
+
+          case JSOP_PUSHBLOCKSCOPE:
+            localsAliasStack_ = true;
             break;
 
           default:

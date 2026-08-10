@@ -1876,7 +1876,7 @@ class CGCreateInterfaceObjectsMethod(CGAbstractMethod):
 
         if UseHolderForUnforgeable(self.descriptor):
             createUnforgeableHolder = CGGeneric("""JS::Rooted<JSObject*> unforgeableHolder(aCx,
-  JS_NewObjectWithGivenProto(aCx, nullptr, nullptr, nullptr));
+  JS_NewObjectWithGivenProto(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
 if (!unforgeableHolder) {
   return;
 }""")
@@ -5939,7 +5939,7 @@ class CGJsonifierMethod(CGSpecializedMethod):
         CGSpecializedMethod.__init__(self, descriptor, method)
 
     def definition_body(self):
-        ret = ('JS::Rooted<JSObject*> result(cx, JS_NewObject(cx, nullptr, nullptr, nullptr));\n'
+        ret = ('JS::Rooted<JSObject*> result(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));\n'
                'if (!result) {\n'
                '  return false;\n'
                '}\n')
@@ -9098,7 +9098,7 @@ if (!*reinterpret_cast<jsid**>(atomsCache) && !InitIds(cx, atomsCache)) {
                 "\n") % self.makeClassName(self.dictionary.parent)
         else:
             body += (
-                "JS::Rooted<JSObject*> obj(cx, JS_NewObject(cx, nullptr, nullptr, nullptr));\n"
+                "JS::Rooted<JSObject*> obj(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));\n"
                 "if (!obj) {\n"
                 "  return false;\n"
                 "}\n"
@@ -11506,6 +11506,14 @@ class GlobalGenRoots():
 
         idEnum.append(ifaceChainMacro(1))
 
+        def fieldSizeAssert(amount, jitInfoField, message):
+            maxFieldValue = "(uint64_t(1) << (sizeof(((JSJitInfo*)nullptr)->%s) * 8))" % jitInfoField
+            return CGGeneric(declare="static_assert(%s < %s, \"%s\");\n\n"
+                             % (amount, maxFieldValue, message))
+
+        idEnum.append(fieldSizeAssert("id::_ID_Count", "protoID",
+                                      "Too many prototypes!"));
+
         # Wrap all of that in our namespaces.
         idEnum = CGNamespace.build(['mozilla', 'dom', 'prototypes'],
                                    CGWrapper(idEnum, pre='\n'))
@@ -11514,8 +11522,11 @@ class GlobalGenRoots():
         curr = CGList([idEnum])
 
         # Let things know the maximum length of the prototype chain.
-        maxMacro = CGGeneric(declare="#define MAX_PROTOTYPE_CHAIN_LENGTH " + str(config.maxProtoChainLength))
+        maxMacroName = "MAX_PROTOTYPE_CHAIN_LENGTH"
+        maxMacro = CGGeneric(declare="#define " + maxMacroName + " " + str(config.maxProtoChainLength))
         curr.append(CGWrapper(maxMacro, post='\n\n'))
+        curr.append(fieldSizeAssert(maxMacroName, "depth",
+                                    "Some inheritance chain is too long!"));
 
         # Constructor ID enum.
         constructors = [d.name for d in config.getDescriptors(hasInterfaceObject=True)]

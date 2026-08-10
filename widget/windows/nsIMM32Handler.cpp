@@ -239,6 +239,21 @@ nsIMM32Handler::CancelComposition(nsWindow* aWindow, bool aForce)
   }
 }
 
+// static
+void
+nsIMM32Handler::OnUpdateComposition(nsWindow* aWindow)
+{
+  NS_ENSURE_TRUE_VOID(gIMM32Handler);
+ 
+  if (aWindow->PluginHasFocus()) {
+    return;
+  }
+
+  nsIMEContext IMEContext(aWindow->GetWindowHandle());
+  gIMM32Handler->SetIMERelatedWindowsPos(aWindow, IMEContext);
+}
+
+
 /* static */ bool
 nsIMM32Handler::ProcessInputLangChangeMessage(nsWindow* aWindow,
                                               WPARAM wParam,
@@ -947,8 +962,6 @@ nsIMM32Handler::HandleStartComposition(nsWindow* aWindow,
   aWindow->InitEvent(event, &point);
   aWindow->DispatchWindowEvent(&event);
 
-  SetIMERelatedWindowsPos(aWindow, aIMEContext);
-
   mIsComposing = true;
   mComposingWindow = aWindow;
 
@@ -1609,7 +1622,9 @@ nsIMM32Handler::DispatchTextEvent(nsWindow* aWindow,
 
   aWindow->DispatchWindowEvent(&event);
 
-  SetIMERelatedWindowsPos(aWindow, aIMEContext);
+  // Calling SetIMERelatedWindowsPos will be failure on e10s at this point.
+  // text event will notify NOTIFY_IME_OF_COMPOSITION_UPDATE, then
+  // it will call SetIMERelatedWindowsPos.
 }
 
 void

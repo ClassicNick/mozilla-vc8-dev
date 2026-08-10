@@ -145,9 +145,9 @@ static float gTouchStartTolerance = 1.0f/2.0f;
 /**
  * Default touch behavior (is used when not touch behavior is set).
  */
-static const uint32_t DefaultTouchBehavior = AllowedTouchBehavior::VERTICAL_PAN |
-                                             AllowedTouchBehavior::HORIZONTAL_PAN |
-                                             AllowedTouchBehavior::ZOOM;
+static const uint32_t DefaultTouchBehavior = VERTICAL_PAN |
+                                             HORIZONTAL_PAN |
+                                             ZOOM;
 
 /**
  * Angle from axis within which we stay axis-locked
@@ -660,8 +660,8 @@ nsEventStatus AsyncPanZoomController::OnTouchMove(const MultiTouchInput& aEvent)
       }
 
       if (mTouchActionPropertyEnabled &&
-          (GetTouchBehavior(0) & AllowedTouchBehavior::VERTICAL_PAN) &&
-          (GetTouchBehavior(0) & AllowedTouchBehavior::HORIZONTAL_PAN)) {
+          (GetTouchBehavior(0) & VERTICAL_PAN) &&
+          (GetTouchBehavior(0) & HORIZONTAL_PAN)) {
         // User tries to trigger a touch behavior. If allowed touch behavior is vertical pan
         // + horizontal pan (touch-action value is equal to AUTO) we can return ConsumeNoDefault
         // status immediately to trigger cancel event further. It should happen independent of
@@ -994,7 +994,7 @@ const gfx::Point AsyncPanZoomController::GetAccelerationVector() {
 void AsyncPanZoomController::HandlePanningWithTouchAction(double aAngle, TouchBehaviorFlags aBehavior) {
   // Handling of cross sliding will need to be added in this method after touch-action released
   // enabled by default.
-  if ((aBehavior & AllowedTouchBehavior::VERTICAL_PAN) && (aBehavior & AllowedTouchBehavior::HORIZONTAL_PAN)) {
+  if ((aBehavior & VERTICAL_PAN) && (aBehavior & HORIZONTAL_PAN)) {
     if (mX.Scrollable() && mY.Scrollable()) {
       if (IsCloseToHorizontal(aAngle, AXIS_LOCK_ANGLE)) {
         mY.SetScrollingDisabled(true);
@@ -1010,7 +1010,7 @@ void AsyncPanZoomController::HandlePanningWithTouchAction(double aAngle, TouchBe
     } else {
       SetState(NOTHING);
     }
-  } else if (aBehavior & AllowedTouchBehavior::HORIZONTAL_PAN) {
+  } else if (aBehavior & HORIZONTAL_PAN) {
     // Using bigger angle for panning to keep behavior consistent
     // with IE.
     if (IsCloseToHorizontal(aAngle, ALLOWED_DIRECT_PAN_ANGLE)) {
@@ -1022,7 +1022,7 @@ void AsyncPanZoomController::HandlePanningWithTouchAction(double aAngle, TouchBe
       // requires it.
       SetState(NOTHING);
     }
-  } else if (aBehavior & AllowedTouchBehavior::VERTICAL_PAN) {
+  } else if (aBehavior & VERTICAL_PAN) {
     if (IsCloseToVertical(aAngle, ALLOWED_DIRECT_PAN_ANGLE)) {
       mX.SetScrollingDisabled(true);
       SetState(PANNING_LOCKED_Y);
@@ -1750,7 +1750,7 @@ bool AsyncPanZoomController::TouchActionAllowZoom() {
   // Pointer events specification implies all touch points to allow zoom
   // to perform it.
   for (size_t i = 0; i < mAllowedTouchBehaviors.Length(); i++) {
-    if (!(mAllowedTouchBehaviors[i] & AllowedTouchBehavior::ZOOM)) {
+    if (!(mAllowedTouchBehaviors[i] & ZOOM)) {
       return false;
     }
   }
@@ -1771,7 +1771,7 @@ AsyncPanZoomController::GetAllowedTouchBehavior(ScreenIntPoint& aPoint) {
   // Here we need to perform a hit testing over the touch-action regions attached to the
   // layer associated with current apzc.
   // Currently they are in progress, for more info see bug 928833.
-  return AllowedTouchBehavior::UNKNOWN;
+  return UNKNOWN;
 }
 
 void AsyncPanZoomController::SetAllowedTouchBehavior(const nsTArray<TouchBehaviorFlags>& aBehaviors) {

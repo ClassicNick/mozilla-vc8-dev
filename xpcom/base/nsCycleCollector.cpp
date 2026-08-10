@@ -2158,7 +2158,7 @@ MayHaveChild(void *o, nsCycleCollectionParticipant* cp)
 }
 
 template<class T>
-class SegmentedArrayElement : public LinkedListElement<SegmentedArrayElement<T>>
+class SegmentedArrayElement : public LinkedListElement<SegmentedArrayElement<T> >
                             , public AutoFallibleTArray<T, 60>
 {
 };
@@ -2201,7 +2201,7 @@ public:
     }
 
 private:
-    mozilla::LinkedList<SegmentedArrayElement<T>> mSegments;
+    mozilla::LinkedList<SegmentedArrayElement<T> > mSegments;
 };
 
 // JSPurpleBuffer keeps references to GCThings which might affect the
@@ -2239,8 +2239,8 @@ public:
     NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(JSPurpleBuffer)
 
     JSPurpleBuffer*& mReferenceToThis;
-    SegmentedArray<JS::Heap<JS::Value>> mValues;
-    SegmentedArray<JS::Heap<JSObject*>> mObjects;
+    SegmentedArray<JS::Heap<JS::Value> > mValues;
+    SegmentedArray<JS::Heap<JSObject*> > mObjects;
 };
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(JSPurpleBuffer)
@@ -2254,9 +2254,20 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSPurpleBuffer)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-#define NS_TRACE_SEGMENTED_ARRAY(_field)                                       \
+#define NS_TRACE_SEGMENTED_ARRAY1(_field)                                       \
     {                                                                          \
-        auto segment = tmp->_field.GetFirstSegment();                          \
+        SegmentedArrayElement<JS::Heap<JS::Value> >* segment = tmp->_field.GetFirstSegment();                          \
+        while (segment) {                                                      \
+            for (uint32_t i = segment->Length(); i > 0;) {                     \
+                aCallbacks.Trace(&segment->ElementAt(--i), #_field, aClosure); \
+            }                                                                  \
+            segment = segment->getNext();                                      \
+        }                                                                      \
+    }
+
+#define NS_TRACE_SEGMENTED_ARRAY2(_field)                                       \
+    {                                                                          \
+        SegmentedArrayElement<JS::Heap<JSObject*> >* segment = tmp->_field.GetFirstSegment();                          \
         while (segment) {                                                      \
             for (uint32_t i = segment->Length(); i > 0;) {                     \
                 aCallbacks.Trace(&segment->ElementAt(--i), #_field, aClosure); \
@@ -2266,8 +2277,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
     }
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(JSPurpleBuffer)
-    NS_TRACE_SEGMENTED_ARRAY(mValues)
-    NS_TRACE_SEGMENTED_ARRAY(mObjects)
+    NS_TRACE_SEGMENTED_ARRAY1(mValues)
+    NS_TRACE_SEGMENTED_ARRAY2(mObjects)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(JSPurpleBuffer, AddRef)
