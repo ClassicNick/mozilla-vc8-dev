@@ -148,7 +148,9 @@ ContentClientRemoteBuffer::EndPaint()
   SetBufferProvider(nullptr);
   SetBufferProviderOnWhite(nullptr);
   for (unsigned i = 0; i< mOldTextures.Length(); ++i) {
-    mOldTextures[i]->Unlock();
+    if (mOldTextures[i]->IsLocked()) {
+      mOldTextures[i]->Unlock();
+    }
   }
   mOldTextures.Clear();
 
@@ -557,6 +559,15 @@ ContentClientDoubleBuffered::PrepareFrame()
 {
   mIsNewBuffer = false;
 
+  if (mTextureClient) {
+    DebugOnly<bool> locked = mTextureClient->Lock(OPEN_READ_WRITE);
+    MOZ_ASSERT(locked);
+  }
+  if (mTextureClientOnWhite) {
+    DebugOnly<bool> locked = mTextureClientOnWhite->Lock(OPEN_READ_WRITE);
+    MOZ_ASSERT(locked);
+  }
+
   if (!mFrontAndBackBufferDiffer) {
     return;
   }
@@ -656,7 +667,7 @@ ContentClientDoubleBuffered::UpdateDestinationFrom(const RotatedBuffer& aSource,
   if (isClippingCheap) {
     destDT->PopClip();
   }
-  ReturnDrawTarget(destDT);
+  ReturnDrawTargetToBuffer(destDT);
 
   if (aSource.HaveBufferOnWhite()) {
     MOZ_ASSERT(HaveBufferOnWhite());
@@ -675,7 +686,7 @@ ContentClientDoubleBuffered::UpdateDestinationFrom(const RotatedBuffer& aSource,
     if (isClippingCheap) {
       destDT->PopClip();
     }
-    ReturnDrawTarget(destDT);
+    ReturnDrawTargetToBuffer(destDT);
   }
 }
 
@@ -895,7 +906,7 @@ DeprecatedContentClientDoubleBuffered::UpdateDestinationFrom(const RotatedBuffer
   if (isClippingCheap) {
     destDT->PopClip();
   }
-  ReturnDrawTarget(destDT);
+  ReturnDrawTargetToBuffer(destDT);
 
   if (aSource.HaveBufferOnWhite()) {
     MOZ_ASSERT(HaveBufferOnWhite());
@@ -914,7 +925,7 @@ DeprecatedContentClientDoubleBuffered::UpdateDestinationFrom(const RotatedBuffer
     if (isClippingCheap) {
       destDT->PopClip();
     }
-    ReturnDrawTarget(destDT);
+    ReturnDrawTargetToBuffer(destDT);
   }
 }
 
