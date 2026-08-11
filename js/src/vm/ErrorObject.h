@@ -85,6 +85,8 @@ public:
         return static_cast<JSErrorReport*>(slot.toPrivate());
     }
 
+    JSErrorReport * getOrCreateErrorReport(JSContext *cx);
+
     JSString * fileName() const {
         return getReservedSlot(FILENAME_SLOT).toString();
     }

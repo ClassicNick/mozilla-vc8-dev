@@ -39,16 +39,21 @@ Wrapper::defaultValue(JSContext *cx, HandleObject proxy, JSType hint, MutableHan
 }
 
 JSObject *
-Wrapper::New(JSContext *cx, JSObject *obj, JSObject *parent, Wrapper *handler)
+Wrapper::New(JSContext *cx, JSObject *obj, JSObject *parent, Wrapper *handler,
+             const WrapperOptions *options)
 {
     JS_ASSERT(parent);
 
     AutoMarkInDeadZone amd(cx->zone());
 
     RootedValue priv(cx, ObjectValue(*obj));
-    ProxyOptions options;
-    options.setCallable(obj->isCallable());
-    return NewProxyObject(cx, handler, priv, TaggedProto::LazyProto, parent, options);
+    mozilla::Maybe<WrapperOptions> opts;
+    if (!options) {
+        opts.construct();
+        opts.ref().selectDefaultClass(obj->isCallable());
+        options = opts.addr();
+    }
+    return NewProxyObject(cx, handler, priv, options->proto(), parent, *options);
 }
 
 JSObject *
@@ -137,6 +142,7 @@ Wrapper::~Wrapper()
 
 Wrapper Wrapper::singleton((unsigned)0);
 Wrapper Wrapper::singletonWithPrototype((unsigned)0, true);
+JSObject *Wrapper::defaultProto = TaggedProto::LazyProto;
 
 /* Compartments. */
 
@@ -867,14 +873,6 @@ DeadObjectProxy::getPrototypeOf(JSContext *cx, HandleObject proxy, MutableHandle
 
 DeadObjectProxy DeadObjectProxy::singleton;
 const char DeadObjectProxy::sDeadObjectFamily = 0;
-
-JSObject *
-js::NewDeadProxyObject(JSContext *cx, JSObject *parent,
-                       const ProxyOptions &options)
-{
-    return NewProxyObject(cx, &DeadObjectProxy::singleton, JS::NullHandleValue,
-                          nullptr, parent, options);
-}
 
 bool
 js::IsDeadProxyObject(JSObject *obj)

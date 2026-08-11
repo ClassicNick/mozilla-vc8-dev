@@ -1243,27 +1243,6 @@ InitSystemMetrics()
   }
 #endif
 
-  // os version metrics, currently only defined for Windows.
-  if (NS_SUCCEEDED(
-        LookAndFeel::GetInt(LookAndFeel::eIntID_OperatingSystemVersionIdentifier,
-                            &metricResult))) {
-    switch(metricResult) {
-      case LookAndFeel::eOperatingSystemVersion_WindowsXP:
-        sSystemMetrics->AppendElement(nsGkAtoms::windows_version_xp);
-        break;
-      case LookAndFeel::eOperatingSystemVersion_WindowsVista:
-        sSystemMetrics->AppendElement(nsGkAtoms::windows_version_vista);
-        break;
-      case LookAndFeel::eOperatingSystemVersion_Windows7:
-        sSystemMetrics->AppendElement(nsGkAtoms::windows_version_win7);
-        break;
-      case LookAndFeel::eOperatingSystemVersion_Windows8:
-        sSystemMetrics->AppendElement(nsGkAtoms::windows_version_win8);
-        break;
-      // don't add anything for future versions
-    }
-  }
-
   return true;
 }
 
@@ -1627,10 +1606,10 @@ static const nsEventStates sPseudoClassStates[] = {
   nsEventStates(),
   nsEventStates()
 };
-MOZ_STATIC_ASSERT(NS_ARRAY_LENGTH(sPseudoClassStates) ==
-                  nsCSSPseudoClasses::ePseudoClass_NotPseudoClass + 1,
-                  "ePseudoClass_NotPseudoClass is no longer at the end of"
-                  "sPseudoClassStates");
+MOZ_STATIC_ASSERT(MOZ_ARRAY_LENGTH(sPseudoClassStates) ==
+              nsCSSPseudoClasses::ePseudoClass_NotPseudoClass + 1,
+              "ePseudoClass_NotPseudoClass is no longer at the end of"
+              "sPseudoClassStates");
 
 static bool
 StateSelectorMatches(Element* aElement,

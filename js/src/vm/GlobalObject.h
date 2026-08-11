@@ -164,6 +164,7 @@ class GlobalObject : public JSObject
         JS_ASSERT(key <= JSProto_LIMIT);
         return getSlotForCompilation(APPLICATION_SLOTS + key);
     }
+    bool ensureConstructor(JSContext *cx, JSProtoKey key);
 
     void setConstructor(JSProtoKey key, const Value &v) {
         JS_ASSERT(key <= JSProto_LIMIT);
@@ -215,13 +216,16 @@ class GlobalObject : public JSObject
      * Note: A few builtin objects, like JSON and Math, are not constructors,
      * so getConstructor is a bit of a misnomer.
      */
-    bool isStandardClassResolved(const js::Class *clasp) const {
-        JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(clasp);
-
+    bool isStandardClassResolved(JSProtoKey key) const {
         // If the constructor is undefined, then it hasn't been initialized.
         MOZ_ASSERT(getConstructor(key).isUndefined() ||
                    getConstructor(key).isObject());
         return !getConstructor(key).isUndefined();
+    }
+
+    bool isStandardClassResolved(const js::Class *clasp) const {
+        JSProtoKey key = JSCLASS_CACHED_PROTO_KEY(clasp);
+        return isStandardClassResolved(key);
     }
 
   private:
@@ -623,9 +627,7 @@ class GlobalObject : public JSObject
     // Warn about use of the given __proto__ setter to attempt to mutate an
     // object's [[Prototype]], if no prior warning was given.
     static bool warnOnceAboutPrototypeMutation(JSContext *cx, HandleObject protoSetter) {
-        // Temporarily disabled until the second half of bug 948583 lands.
-        //return warnOnceAbout(cx, protoSetter, WARNED_PROTO_SETTING_SLOW, JSMSG_PROTO_SETTING_SLOW);
-        return true;
+        return warnOnceAbout(cx, protoSetter, WARNED_PROTO_SETTING_SLOW, JSMSG_PROTO_SETTING_SLOW);
     }
 
     static bool getOrCreateEval(JSContext *cx, Handle<GlobalObject*> global,
