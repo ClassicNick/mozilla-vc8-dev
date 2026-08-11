@@ -4785,8 +4785,8 @@ js::ReportIfUndeclaredVarAssignment(JSContext *cx, HandleString propname)
 bool
 JSObject::reportReadOnly(ThreadSafeContext *cxArg, jsid id, unsigned report)
 {
-    if (cxArg->isForkJoinSlice())
-        return cxArg->asForkJoinSlice()->reportError(ParallelBailoutUnsupportedVM, report);
+    if (cxArg->isForkJoinContext())
+        return cxArg->asForkJoinContext()->reportError(ParallelBailoutUnsupportedVM, report);
 
     if (!cxArg->isJSContext())
         return true;
@@ -4801,8 +4801,8 @@ JSObject::reportReadOnly(ThreadSafeContext *cxArg, jsid id, unsigned report)
 bool
 JSObject::reportNotConfigurable(ThreadSafeContext *cxArg, jsid id, unsigned report)
 {
-    if (cxArg->isForkJoinSlice())
-        return cxArg->asForkJoinSlice()->reportError(ParallelBailoutUnsupportedVM, report);
+    if (cxArg->isForkJoinContext())
+        return cxArg->asForkJoinContext()->reportError(ParallelBailoutUnsupportedVM, report);
 
     if (!cxArg->isJSContext())
         return true;
@@ -4817,8 +4817,8 @@ JSObject::reportNotConfigurable(ThreadSafeContext *cxArg, jsid id, unsigned repo
 bool
 JSObject::reportNotExtensible(ThreadSafeContext *cxArg, unsigned report)
 {
-    if (cxArg->isForkJoinSlice())
-        return cxArg->asForkJoinSlice()->reportError(ParallelBailoutUnsupportedVM, report);
+    if (cxArg->isForkJoinContext())
+        return cxArg->asForkJoinContext()->reportError(ParallelBailoutUnsupportedVM, report);
 
     if (!cxArg->isJSContext())
         return true;

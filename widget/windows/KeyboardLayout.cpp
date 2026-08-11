@@ -752,9 +752,7 @@ NativeKey::IsFollowedByCharMessage() const
       return false;
     }
   }
-  return (nextMsg.message == WM_CHAR ||
-          nextMsg.message == WM_SYSCHAR ||
-          nextMsg.message == WM_DEADCHAR);
+  return IsCharMessage(nextMsg);
 }
 
 bool
@@ -769,7 +767,7 @@ NativeKey::IsFollowedByDeadCharMessage() const
       return false;
     }
   }
-  return (nextMsg.message == WM_DEADCHAR);
+  return IsDeadCharMessage(nextMsg);
 }
 
 bool
@@ -983,7 +981,7 @@ NativeKey::DispatchKeyEvent(WidgetKeyboardEvent& aKeyEvent,
 bool
 NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN);
+  MOZ_ASSERT(IsKeyDownMessage());
 
   if (aEventDispatched) {
     *aEventDispatched = false;
@@ -1107,9 +1105,8 @@ bool
 NativeKey::HandleCharMessage(const MSG& aCharMsg,
                              bool* aEventDispatched) const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN ||
-             mMsg.message == WM_CHAR || mMsg.message == WM_SYSCHAR);
-  MOZ_ASSERT(aCharMsg.message == WM_CHAR || aCharMsg.message == WM_SYSCHAR);
+  MOZ_ASSERT(IsKeyDownMessage() || IsPrintableCharMessage(mMsg));
+  MOZ_ASSERT(IsPrintableCharMessage(aCharMsg.message));
 
   if (aEventDispatched) {
     *aEventDispatched = false;
@@ -1219,7 +1216,7 @@ NativeKey::HandleCharMessage(const MSG& aCharMsg,
 bool
 NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYUP || mMsg.message == WM_SYSKEYUP);
+  MOZ_ASSERT(IsKeyUpMessage());
 
   if (aEventDispatched) {
     *aEventDispatched = false;
@@ -1242,7 +1239,7 @@ NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const
 bool
 NativeKey::NeedsToHandleWithoutFollowingCharMessages() const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN);
+  MOZ_ASSERT(IsKeyDownMessage());
 
   // Enter and backspace are always handled here to avoid for example the
   // confusion between ctrl-enter and ctrl-J.
@@ -1281,9 +1278,9 @@ NativeKey::RemoveFollowingCharMessage() const
   }
 
   MSG msg;
-  if (!WinUtils::GetMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST) ||
-      !(msg.message == WM_CHAR || msg.message == WM_SYSCHAR ||
-        msg.message == WM_DEADCHAR)) {
+  if (!WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
+                             PM_REMOVE | PM_NOYIELD) ||
+      !IsCharMessage(msg)) {
     MOZ_CRASH("We lost the following char message");
   }
 
@@ -1313,7 +1310,8 @@ NativeKey::RemoveMessageAndDispatchPluginEvent(UINT aFirstMsg,
     }
     MOZ_ASSERT(found, "Fake char message must be found");
   } else {
-    WinUtils::GetMessage(&msg, mMsg.hwnd, aFirstMsg, aLastMsg);
+    WinUtils::PeekMessage(&msg, mMsg.hwnd, aFirstMsg, aLastMsg,
+                          PM_REMOVE | PM_NOYIELD);
   }
   if (mWidget->Destroyed()) {
     MOZ_CRASH("NativeKey tries to dispatch a plugin event on destroyed widget");
@@ -1325,7 +1323,7 @@ NativeKey::RemoveMessageAndDispatchPluginEvent(UINT aFirstMsg,
 bool
 NativeKey::DispatchPluginEventsAndDiscardsCharMessages() const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN);
+  MOZ_ASSERT(IsKeyDownMessage());
 
   if (mFakeCharMsgs) {
     for (uint32_t i = 0; i < mFakeCharMsgs->Length(); i++) {
@@ -1345,9 +1343,7 @@ NativeKey::DispatchPluginEventsAndDiscardsCharMessages() const
   bool gotMsg =
     WinUtils::PeekMessage(&msg, mMsg.hwnd, WM_KEYFIRST, WM_KEYLAST,
                           PM_NOREMOVE | PM_NOYIELD);
-  while (gotMsg &&
-         (msg.message == WM_CHAR || msg.message == WM_SYSCHAR ||
-          msg.message == WM_DEADCHAR)) {
+  while (gotMsg && IsCharMessage(msg)) {
     if (RemoveMessageAndDispatchPluginEvent(WM_KEYFIRST, WM_KEYLAST)) {
       return true;
     }
@@ -1368,7 +1364,7 @@ NativeKey::DispatchPluginEventsAndDiscardsCharMessages() const
 bool
 NativeKey::DispatchKeyPressEventsWithKeyboardLayout() const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN);
+  MOZ_ASSERT(IsKeyDownMessage());
   MOZ_ASSERT(!mIsDeadKey);
 
   KeyboardLayout* keyboardLayout = KeyboardLayout::GetInstance();
@@ -1532,11 +1528,11 @@ NativeKey::DispatchKeyPressEventsWithKeyboardLayout() const
 bool
 NativeKey::DispatchKeyPressEventForFollowingCharMessage() const
 {
-  MOZ_ASSERT(mMsg.message == WM_KEYDOWN || mMsg.message == WM_SYSKEYDOWN);
+  MOZ_ASSERT(IsKeyDownMessage());
 
   MSG msg = RemoveFollowingCharMessage();
   if (mFakeCharMsgs) {
-    if (msg.message == WM_DEADCHAR) {
+    if (IsDeadCharMessage(msg)) {
       return false;
     }
 #ifdef DEBUG
@@ -1565,7 +1561,7 @@ NativeKey::DispatchKeyPressEventForFollowingCharMessage() const
     return HandleCharMessage(msg);
   }
 
-  if (msg.message == WM_DEADCHAR) {
+  if (IsDeadCharMessage(msg)) {
     if (!mWidget->PluginHasFocus()) {
       return false;
     }
@@ -1575,7 +1571,7 @@ NativeKey::DispatchKeyPressEventForFollowingCharMessage() const
   bool defaultPrevented = HandleCharMessage(msg);
   // If a syschar keypress wasn't processed, Windows may want to
   // handle it to activate a native menu.
-  if (!defaultPrevented && msg.message == WM_SYSCHAR) {
+  if (!defaultPrevented && IsSysCharMessage(msg)) {
     ::DefWindowProcW(msg.hwnd, msg.message, msg.wParam, msg.lParam);
   }
   return defaultPrevented;
@@ -2650,7 +2646,8 @@ RedirectedKeyDownMessageManager::RemoveNextCharMessage(HWND aWnd)
   if (WinUtils::PeekMessage(&msg, aWnd, WM_KEYFIRST, WM_KEYLAST,
                             PM_NOREMOVE | PM_NOYIELD) &&
       (msg.message == WM_CHAR || msg.message == WM_SYSCHAR)) {
-    WinUtils::GetMessage(&msg, aWnd, msg.message, msg.message);
+    WinUtils::PeekMessage(&msg, aWnd, msg.message, msg.message,
+                          PM_REMOVE | PM_NOYIELD);
   }
 }
 

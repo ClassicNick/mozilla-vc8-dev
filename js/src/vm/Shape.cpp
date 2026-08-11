@@ -655,11 +655,11 @@ JSObject::addPropertyInternal<SequentialExecution>(js::ExclusiveContext* cx,
 
 template /* static */ Shape *
 JSObject::addPropertyInternal<ParallelExecution>(js::ExclusiveContext* cx,
-												   JS::HandleObject obj, JS::HandleId id,
-                                                   JSPropertyOp getter, JSStrictPropertyOp setter,
-                                                   uint32_t slot, unsigned attrs,
-                                                   unsigned flags, int shortid, js::Shape **spp,
-                                                   bool allowDictionary);
+                                                 HandleObject obj, HandleId id,
+                                                 PropertyOp getter, StrictPropertyOp setter,
+                                                 uint32_t slot, unsigned attrs,
+                                                 unsigned flags, int shortid, Shape **spp,
+                                                 bool allowDictionary);
 
 JSObject *
 js::NewReshapedObject(JSContext *cx, HandleTypeObject type, JSObject *parent,
@@ -1000,7 +1000,7 @@ JSObject::changeProperty<SequentialExecution>(ExclusiveContext *cx,
                                               unsigned attrs, unsigned mask,
                                               PropertyOp getter, StrictPropertyOp setter);
 template /* static */ Shape *
-JSObject::changeProperty<ParallelExecution>(ExclusiveContext *slice,
+JSObject::changeProperty<ParallelExecution>(ExclusiveContext *cx,
                                             HandleObject obj, HandleShape shape,
                                             unsigned attrs, unsigned mask,
                                             PropertyOp getter, StrictPropertyOp setter);
