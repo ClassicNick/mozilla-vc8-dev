@@ -289,7 +289,7 @@ nsresult nsCocoaWindow::Create(nsIWidget *aParent,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (mWindowType == eWindowType_popup) {
-    if (aInitData->mIsDragPopup) {
+    if (aInitData->mMouseTransparent) {
       [mWindow setIgnoresMouseEvents:YES];
     }
     // now we can convert newBounds to device pixels for the window we created,
