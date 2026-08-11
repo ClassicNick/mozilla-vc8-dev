@@ -4819,10 +4819,7 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
         return false;
 
       RootedObject fieldType(cx, nullptr);
-      JSFlatString* flat = ExtractStructField(cx, item, fieldType.address());
-      if (!flat)
-        return false;
-      Rooted<JSStableString*> name(cx, flat->ensureStable(cx));
+      Rooted<JSFlatString*> name(cx, ExtractStructField(cx, item, fieldType.address()));
       if (!name)
         return false;
       fieldRoots[i] = JS::ObjectValue(*fieldType);
@@ -4836,7 +4833,7 @@ StructType::DefineInternal(JSContext* cx, JSObject* typeObj_, JSObject* fieldsOb
 
       // Add the field to the StructType's 'prototype' property.
       if (!JS_DefineUCProperty(cx, prototype,
-             name->chars().get(), name->length(), JSVAL_VOID,
+             name->chars(), name->length(), JSVAL_VOID,
              StructType::FieldGetter, StructType::FieldSetter,
              JSPROP_SHARED | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;

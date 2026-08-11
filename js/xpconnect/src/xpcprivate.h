@@ -3217,7 +3217,7 @@ public:
     // if a given nsIVariant is in fact an XPCVariant.
     NS_DECLARE_STATIC_IID_ACCESSOR(XPCVARIANT_IID)
 
-    static XPCVariant* newVariant(JSContext* cx, jsval aJSVal);
+    static already_AddRefed<XPCVariant> newVariant(JSContext* cx, jsval aJSVal);
 
     /**
      * This getter clears the gray bit before handing out the jsval if the jsval
@@ -3560,7 +3560,8 @@ public:
     }
     bool GetLocationURI(LocationHint aLocationHint, nsIURI **aURI) {
         if (locationURI) {
-            NS_IF_ADDREF(*aURI = locationURI);
+            nsCOMPtr<nsIURI> rval = locationURI;
+            rval.forget(aURI);
             return true;
         }
         return TryParseLocationURI(aLocationHint, aURI);
