@@ -1322,7 +1322,7 @@ WrapCallThisObject(JSContext* cx, JS::Handle<JSObject*> scope, const T& p)
  */
 template<>
 inline JSObject*
-WrapCallThisObject<JS::Rooted<JSObject*>>(JSContext* cx,
+WrapCallThisObject<JS::Rooted<JSObject*> >(JSContext* cx,
                                           JS::Handle<JSObject*> scope,
                                           const JS::Rooted<JSObject*>& p)
 {

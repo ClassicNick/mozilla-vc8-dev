@@ -25,7 +25,7 @@ static StaticAutoPtr<ReentrantMonitor> sMonitor;
 
 // Hashtable, maps thread pool name to SharedThreadPool instance.
 // Modified only on the main thread.
-static StaticAutoPtr<nsDataHashtable<nsCStringHashKey, SharedThreadPool*>> sPools;
+static StaticAutoPtr<nsDataHashtable<nsCStringHashKey, SharedThreadPool*> > sPools;
 
 static already_AddRefed<nsIThreadPool>
 CreateThreadPool(const nsCString& aName);

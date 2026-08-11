@@ -755,7 +755,7 @@ Promise::All(const GlobalObject& aGlobal, JSContext* aCx,
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
-    Optional<JS::Handle<JS::Value>> optValue(aCx, JS::ObjectValue(*empty));
+    Optional<JS::Handle<JS::Value> > optValue(aCx, JS::ObjectValue(*empty));
     return Promise::Resolve(aGlobal, aCx, optValue, aRv);
   }
 
@@ -766,7 +766,7 @@ Promise::All(const GlobalObject& aGlobal, JSContext* aCx,
   nsRefPtr<PromiseCallback> rejectCb = new RejectPromiseCallback(promise);
 
   for (uint32_t i = 0; i < aIterable.Length(); ++i) {
-    Optional<JS::Handle<JS::Value>> optValue(aCx, aIterable.ElementAt(i));
+    Optional<JS::Handle<JS::Value> > optValue(aCx, aIterable.ElementAt(i));
     nsRefPtr<Promise> nextPromise = Promise::Cast(aGlobal, aCx, optValue, aRv);
 
     MOZ_ASSERT(!aRv.Failed());
@@ -786,7 +786,7 @@ Promise::All(const GlobalObject& aGlobal, JSContext* aCx,
 
 /* static */ already_AddRefed<Promise>
 Promise::Cast(const GlobalObject& aGlobal, JSContext* aCx,
-              const Optional<JS::Handle<JS::Value>>& aValue, ErrorResult& aRv)
+              const Optional<JS::Handle<JS::Value> >& aValue, ErrorResult& aRv)
 {
   // If a Promise was passed, just return it.
   JS::Rooted<JS::Value> value(aCx, aValue.WasPassed() ? aValue.Value() :
@@ -823,7 +823,7 @@ Promise::Race(const GlobalObject& aGlobal, JSContext* aCx,
   nsRefPtr<PromiseCallback> rejectCb = new RejectPromiseCallback(promise);
 
   for (uint32_t i = 0; i < aIterable.Length(); ++i) {
-    Optional<JS::Handle<JS::Value>> optValue(aCx, aIterable.ElementAt(i));
+    Optional<JS::Handle<JS::Value> > optValue(aCx, aIterable.ElementAt(i));
     nsRefPtr<Promise> nextPromise = Promise::Cast(aGlobal, aCx, optValue, aRv);
     // According to spec, Cast can throw, but our implementation never does.
     // Remove this when subclassing is supported.
@@ -881,7 +881,7 @@ Promise::RunTask()
 {
   MOZ_ASSERT(mState != Pending);
 
-  nsTArray<nsRefPtr<PromiseCallback>> callbacks;
+  nsTArray<nsRefPtr<PromiseCallback> > callbacks;
   callbacks.SwapElements(mState == Resolved ? mResolveCallbacks
                                             : mRejectCallbacks);
   mResolveCallbacks.Clear();

@@ -97,7 +97,7 @@ public:
 
   static already_AddRefed<Promise>
   Cast(const GlobalObject& aGlobal, JSContext* aCx,
-       const Optional<JS::Handle<JS::Value>>& aValue, ErrorResult& aRv);
+       const Optional<JS::Handle<JS::Value> >& aValue, ErrorResult& aRv);
 
   // FIXME(nsm): Bug 956197
   static already_AddRefed<Promise>
