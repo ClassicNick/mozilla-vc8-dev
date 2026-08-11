@@ -378,7 +378,11 @@ public:
                                JSContext* aCx,
                                uint64_t aMessagePortSerial,
                                JSAutoStructuredCloneBuffer& aBuffer,
+<<<<<<< HEAD
                                nsTArray<nsCOMPtr<nsISupports> >& aClonedObjects);
+=======
+                               nsTArray<nsCOMPtr<nsISupports>>& aClonedObjects);
+>>>>>>> parent of d21c9ac... Bug 961286 - Use move semantics for JSAutoStructuredCloneBuffer and wrappers. r=jorendorff, r=bent
 
   uint64_t
   GetInnerWindowId();

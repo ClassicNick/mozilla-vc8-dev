@@ -39,6 +39,14 @@ class FileInfo;
 class IDBDatabase;
 class IDBTransaction;
 
+template <class T>
+void SwapData(T& aData1, T& aData2)
+{
+  T temp = aData2;
+  aData2 = aData1;
+  aData1 = temp;
+}
+
 struct StructuredCloneFile
 {
   bool operator==(const StructuredCloneFile& aOther) const
@@ -60,8 +68,12 @@ struct StructuredCloneReadInfo
   // In IndexedDatabaseInlines.h
   inline StructuredCloneReadInfo();
 
-  inline StructuredCloneReadInfo&
-  operator=(StructuredCloneReadInfo&& aCloneReadInfo);
+  void Swap(StructuredCloneReadInfo& aCloneReadInfo)
+  {
+    mCloneBuffer.swap(aCloneReadInfo.mCloneBuffer);
+    mFiles.SwapElements(aCloneReadInfo.mFiles);
+    SwapData(mDatabase, aCloneReadInfo.mDatabase);
+  }
 
   // In IndexedDatabaseInlines.h
   inline bool
@@ -104,7 +116,14 @@ struct StructuredCloneWriteInfo
 {
   // In IndexedDatabaseInlines.h
   inline StructuredCloneWriteInfo();
-  inline StructuredCloneWriteInfo(StructuredCloneWriteInfo&& aCloneWriteInfo);
+
+  void Swap(StructuredCloneWriteInfo& aCloneWriteInfo)
+  {
+    mCloneBuffer.swap(aCloneWriteInfo.mCloneBuffer);
+    mFiles.SwapElements(aCloneWriteInfo.mFiles);
+    SwapData(mTransaction, aCloneWriteInfo.mTransaction);
+    SwapData(mOffsetToKeyProp, aCloneWriteInfo.mOffsetToKeyProp);
+  }
 
   bool operator==(const StructuredCloneWriteInfo& aOther) const
   {
