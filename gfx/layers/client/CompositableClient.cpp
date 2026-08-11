@@ -106,37 +106,37 @@ CompositableClient::CreateDeprecatedTextureClient(DeprecatedTextureClientType aD
 
   switch (aDeprecatedTextureClientType) {
   case TEXTURE_SHARED_GL:
-    if (parentBackend == LAYERS_OPENGL) {
+    if (parentBackend == LayersBackend::LAYERS_OPENGL) {
       result = new DeprecatedTextureClientSharedOGL(GetForwarder(), GetTextureInfo());
     }
      break;
   case TEXTURE_SHARED_GL_EXTERNAL:
-    if (parentBackend == LAYERS_OPENGL) {
+    if (parentBackend == LayersBackend::LAYERS_OPENGL) {
       result = new DeprecatedTextureClientSharedOGLExternal(GetForwarder(), GetTextureInfo());
     }
     break;
   case TEXTURE_STREAM_GL:
-    if (parentBackend == LAYERS_OPENGL) {
+    if (parentBackend == LayersBackend::LAYERS_OPENGL) {
       result = new DeprecatedTextureClientStreamOGL(GetForwarder(), GetTextureInfo());
     }
     break;
   case TEXTURE_YCBCR:
-    if (parentBackend == LAYERS_OPENGL ||
-        parentBackend == LAYERS_D3D9 ||
-        parentBackend == LAYERS_D3D11 ||
-        parentBackend == LAYERS_BASIC) {
+    if (parentBackend == LayersBackend::LAYERS_OPENGL ||
+        parentBackend == LayersBackend::LAYERS_D3D9 ||
+        parentBackend == LayersBackend::LAYERS_D3D11 ||
+        parentBackend == LayersBackend::LAYERS_BASIC) {
       result = new DeprecatedTextureClientShmemYCbCr(GetForwarder(), GetTextureInfo());
     }
     break;
   case TEXTURE_CONTENT:
 #if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
-    if (parentBackend == LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice()) {
+    if (parentBackend == LayersBackend::LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice()) {
       result = new DeprecatedTextureClientD3D11(GetForwarder(), GetTextureInfo());
       break;
     }
 #endif
 #if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
-	if (parentBackend == LAYERS_D3D9 &&
+    if (parentBackend == LayersBackend::LAYERS_D3D9 &&
         !GetForwarder()->ForwardsToDifferentProcess()) {
       // We can't use a d3d9 texture for an RGBA surface because we cannot get a DC for
       // for a gfxWindowsSurface.
@@ -144,7 +144,7 @@ CompositableClient::CreateDeprecatedTextureClient(DeprecatedTextureClientType aD
       // can create d3d9 textures on the main thread (because we need to reset on the
       // compositor thread, and the d3d9 device must be reset on the same thread it was
       // created on).
-      if (aContentType == GFX_CONTENT_COLOR_ALPHA ||
+      if (aContentType == gfxContentType::COLOR_ALPHA ||
           !gfxWindowsPlatform::GetPlatform()->GetD3D9Device()) {
         result = new DeprecatedTextureClientDIB(GetForwarder(), GetTextureInfo());
       } else {
@@ -159,8 +159,8 @@ CompositableClient::CreateDeprecatedTextureClient(DeprecatedTextureClientType aD
     break;
   case TEXTURE_FALLBACK:
 #ifdef XP_WIN
-    if (parentBackend == LAYERS_D3D11 ||
-        parentBackend == LAYERS_D3D9) {
+    if (parentBackend == LayersBackend::LAYERS_D3D11 ||
+        parentBackend == LayersBackend::LAYERS_D3D9) {
       result = new DeprecatedTextureClientShmem(GetForwarder(), GetTextureInfo());
     }
 #endif
@@ -213,15 +213,15 @@ CompositableClient::CreateTextureClientForDrawing(SurfaceFormat aFormat,
 
 #if defined XP_WIN && defined CAIRO_HAS_D2D_SURFACE
   LayersBackend parentBackend = GetForwarder()->GetCompositorBackendType();
-  if (parentBackend == LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
+  if (parentBackend == LayersBackend::LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     result = new TextureClientD3D11(aFormat, aTextureFlags);
   }
-  if (parentBackend == LAYERS_D3D9 &&
+  if (parentBackend == LayersBackend::LAYERS_D3D9 &&
       !GetForwarder()->ForwardsToDifferentProcess() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     // non-DIB textures don't work with alpha, see notes in TextureD3D9.
-    if (ContentForFormat(aFormat) != GFX_CONTENT_COLOR) {
+    if (ContentForFormat(aFormat) != gfxContentType::COLOR) {
       result = new DIBTextureClientD3D9(aFormat, aTextureFlags);
     } else {
       result = new CairoTextureClientD3D9(aFormat, aTextureFlags);

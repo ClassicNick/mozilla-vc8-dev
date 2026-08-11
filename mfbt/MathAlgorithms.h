@@ -432,6 +432,14 @@ FloorLog2(const T t)
   return detail::FloorLog2<T>::compute(t);
 }
 
+// Renamed function from FloorLog2 to resolve "ambiguity"
+template<typename T>
+inline uint_fast8_t
+FloorLog2Alt(const T t)
+{
+  return detail::FloorLog2<T>::compute(t);
+}
+
 /** A FloorLog2 variant that accepts only size_t. */
 inline uint_fast8_t
 FloorLog2Size(size_t n)

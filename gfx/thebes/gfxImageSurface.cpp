@@ -19,7 +19,7 @@ using namespace mozilla::gfx;
 gfxImageSurface::gfxImageSurface()
   : mSize(0, 0),
     mOwnsData(false),
-    mFormat(gfxImageFormatUnknown),
+    mFormat(gfxImageFormat::Unknown),
     mStride(0)
 {
 }
@@ -66,7 +66,7 @@ gfxImageSurface::InitWithData(unsigned char *aData, const gfxIntSize& aSize,
 
     cairo_surface_t *surface =
         cairo_image_surface_create_for_data((unsigned char*)mData,
-                                            (cairo_format_t)mFormat,
+                                            (cairo_format_t)(int)mFormat,
                                             mSize.width,
                                             mSize.height,
                                             mStride);
@@ -135,7 +135,7 @@ gfxImageSurface::AllocateAndInit(long aStride, int32_t aMinimalAllocation,
 
     cairo_surface_t *surface =
         cairo_image_surface_create_for_data((unsigned char*)mData,
-                                            (cairo_format_t)mFormat,
+                                            (cairo_format_t)(int)mFormat,
                                             mSize.width,
                                             mSize.height,
                                             mStride);
@@ -178,15 +178,15 @@ gfxImageSurface::ComputeStride(const gfxIntSize& aSize, gfxImageFormat aFormat)
 {
     long stride;
 
-    if (aFormat == gfxImageFormatARGB32)
+    if (aFormat == gfxImageFormat::ARGB32)
         stride = aSize.width * 4;
-    else if (aFormat == gfxImageFormatRGB24)
+    else if (aFormat == gfxImageFormat::RGB24)
         stride = aSize.width * 4;
-    else if (aFormat == gfxImageFormatRGB16_565)
+    else if (aFormat == gfxImageFormat::RGB16_565)
         stride = aSize.width * 2;
-    else if (aFormat == gfxImageFormatA8)
+    else if (aFormat == gfxImageFormat::A8)
         stride = aSize.width;
-    else if (aFormat == gfxImageFormatA1) {
+    else if (aFormat == gfxImageFormat::A1) {
         stride = (aSize.width + 7) / 8;
     } else {
         NS_WARNING("Unknown format specified to gfxImageSurface!");
@@ -242,10 +242,10 @@ static bool
 FormatsAreCompatible(gfxImageFormat a1, gfxImageFormat a2)
 {
     if (a1 != a2 &&
-        !(a1 == gfxImageFormatARGB32 &&
-          a2 == gfxImageFormatRGB24) &&
-        !(a1 == gfxImageFormatRGB24 &&
-          a2 == gfxImageFormatARGB32)) {
+        !(a1 == gfxImageFormat::ARGB32 &&
+          a2 == gfxImageFormat::RGB24) &&
+        !(a1 == gfxImageFormat::RGB24 &&
+          a2 == gfxImageFormat::ARGB32)) {
         return false;
     }
 
@@ -329,9 +329,9 @@ gfxImageSurface::GetSubimage(const gfxRect& aRect)
         (Stride() * (int)r.Y()) +
         (int)r.X() * gfxASurface::BytePerPixelFromFormat(Format());
 
-    if (format == gfxImageFormatARGB32 &&
+    if (format == gfxImageFormat::ARGB32 &&
         GetOpaqueRect().Contains(aRect)) {
-        format = gfxImageFormatRGB24;
+        format = gfxImageFormat::RGB24;
     }
 
     nsRefPtr<gfxSubimageSurface> image =

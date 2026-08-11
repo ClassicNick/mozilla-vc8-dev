@@ -759,7 +759,7 @@ ScriptAnalysis::analyzeBytecode(JSContext *cx)
      * updates the flow-insensitive type sets, so we cannot use SSA.
      */
 
-    PodZero(escapedSlots, numSlots);
+    PodZero1(escapedSlots, numSlots);
 
     bool allVarsAliased = script_->compartment()->debugMode();
     bool allArgsAliased = allVarsAliased || script_->argumentsHasVarBinding();
@@ -1911,7 +1911,7 @@ PhiNodeCapacity(unsigned length)
     if (length <= 4)
         return 4;
 
-    return 1 << (FloorLog2(length - 1) + 1);
+    return 1 << (FloorLog2Alt(length - 1) + 1);
 }
 
 bool
