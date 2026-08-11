@@ -333,7 +333,9 @@ nsWindow::nsWindow() : nsWindowBase()
   mFullscreenMode       = false;
   mMousePresent         = false;
   mDestroyCalled        = false;
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   mHasTaskbarIconBeenCreated = false;
+#endif
   mMouseTransparent     = false;
   mPickerDisplayCount   = 0;
   mWindowType           = eWindowType_child;
@@ -366,7 +368,6 @@ nsWindow::nsWindow() : nsWindowBase()
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   mTaskbarPreview = nullptr;
-  mHasTaskbarIconBeenCreated = false;
 #endif
 
   // Global initialization

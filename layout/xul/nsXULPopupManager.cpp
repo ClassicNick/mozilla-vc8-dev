@@ -1393,7 +1393,7 @@ nsXULPopupManager::GetVisiblePopups(nsTArray<nsIFrame *>& aPopups)
       // are transparent to mouse events.
       if (item->Frame()->PopupState() == ePopupOpenAndVisible &&
           !item->Frame()->IsMouseTransparent()) {
-        aPopups.AppendElement(item->Frame());
+        aPopups.AppendElement((nsIFrame*) item->Frame());
       }
 
       item = item->GetParent();
