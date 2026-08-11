@@ -3023,10 +3023,10 @@ JS_ForwardGetPropertyTo(JSContext *cx, JS::HandleObject obj, JS::HandleId id, JS
                         JS::MutableHandleValue vp);
 
 extern JS_PUBLIC_API(bool)
-JS_SetProperty(JSContext *cx, JSObject *obj, const char *name, JS::HandleValue v);
+JS_SetProperty(JSContext *cx, JS::HandleObject obj, const char *name, JS::HandleValue v);
 
 extern JS_PUBLIC_API(bool)
-JS_SetPropertyById(JSContext *cx, JSObject *obj, jsid id, JS::HandleValue v);
+JS_SetPropertyById(JSContext *cx, JS::HandleObject obj, JS::HandleId id, JS::HandleValue v);
 
 extern JS_PUBLIC_API(bool)
 JS_DeleteProperty(JSContext *cx, JS::HandleObject obj, const char *name);
@@ -3073,7 +3073,7 @@ JS_GetUCProperty(JSContext *cx, JSObject *obj,
                  JS::MutableHandleValue vp);
 
 extern JS_PUBLIC_API(bool)
-JS_SetUCProperty(JSContext *cx, JSObject *obj,
+JS_SetUCProperty(JSContext *cx, JS::HandleObject obj,
                  const jschar *name, size_t namelen,
                  JS::HandleValue v);
 
@@ -3114,7 +3114,22 @@ JS_ForwardGetElementTo(JSContext *cx, JSObject *obj, uint32_t index, JSObject *o
                        JS::MutableHandleValue vp);
 
 extern JS_PUBLIC_API(bool)
-JS_SetElement(JSContext *cx, JSObject *obj, uint32_t index, JS::MutableHandleValue vp);
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, JS::HandleValue v);
+
+extern JS_PUBLIC_API(bool)
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, JS::HandleObject v);
+
+extern JS_PUBLIC_API(bool)
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, JS::HandleString v);
+
+extern JS_PUBLIC_API(bool)
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, int32_t v);
+
+extern JS_PUBLIC_API(bool)
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, uint32_t v);
+
+extern JS_PUBLIC_API(bool)
+JS_SetElement(JSContext *cx, JS::HandleObject obj, uint32_t index, double v);
 
 extern JS_PUBLIC_API(bool)
 JS_DeleteElement(JSContext *cx, JS::HandleObject obj, uint32_t index);
@@ -3196,10 +3211,6 @@ JS_NewPropertyIterator(JSContext *cx, JS::Handle<JSObject*> obj);
 extern JS_PUBLIC_API(bool)
 JS_NextProperty(JSContext *cx, JS::Handle<JSObject*> iterobj, jsid *idp);
 
-extern JS_PUBLIC_API(bool)
-JS_CheckAccess(JSContext *cx, JS::Handle<JSObject*> obj, JS::Handle<jsid> id, JSAccessMode mode,
-               JS::MutableHandle<JS::Value> vp, unsigned *attrsp);
-
 extern JS_PUBLIC_API(jsval)
 JS_GetReservedSlot(JSObject *obj, uint32_t index);
 
@@ -3244,7 +3255,6 @@ extern JS_PUBLIC_API(void)
 JS_DropPrincipals(JSRuntime *rt, JSPrincipals *principals);
 
 struct JSSecurityCallbacks {
-    JSCheckAccessOp            checkObjectAccess;
     JSCSPEvalChecker           contentSecurityPolicyAllows;
     JSSubsumesOp               subsumes;
 };

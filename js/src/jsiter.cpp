@@ -669,13 +669,13 @@ js::GetIterator(JSContext *cx, HandleObject obj, unsigned flags, MutableHandleVa
 
     AutoIdVector keys(cx);
     if (flags & JSITER_FOREACH) {
-        if (JS_LIKELY(obj != nullptr) && !Snapshot(cx, obj, flags, &keys))
+        if (MOZ_LIKELY(obj != nullptr) && !Snapshot(cx, obj, flags, &keys))
             return false;
         JS_ASSERT(shapes.empty());
         if (!VectorToValueIterator(cx, obj, flags, keys, vp))
             return false;
     } else {
-        if (JS_LIKELY(obj != nullptr) && !Snapshot(cx, obj, flags, &keys))
+        if (MOZ_LIKELY(obj != nullptr) && !Snapshot(cx, obj, flags, &keys))
             return false;
         if (!VectorToKeyIterator(cx, obj, flags, keys, shapes.length(), key, vp))
             return false;
@@ -834,7 +834,6 @@ const Class PropertyIteratorObject::class_ = {
     JS_ResolveStub,
     JS_ConvertStub,
     finalize,
-    nullptr,                 /* checkAccess */
     nullptr,                 /* call        */
     nullptr,                 /* hasInstance */
     nullptr,                 /* construct   */
@@ -1264,7 +1263,6 @@ const Class StopIterationObject::class_ = {
     JS_ResolveStub,
     JS_ConvertStub,
     nullptr,                 /* finalize    */
-    nullptr,                 /* checkAccess */
     nullptr,                 /* call        */
     stopiter_hasInstance,
     nullptr                  /* construct   */
@@ -1488,7 +1486,6 @@ const Class LegacyGeneratorObject::class_ = {
     JS_ResolveStub,
     JS_ConvertStub,
     FinalizeGenerator<LegacyGeneratorObject>,
-    nullptr,                 /* checkAccess */
     nullptr,                 /* call        */
     nullptr,                 /* hasInstance */
     nullptr,                 /* construct   */
@@ -1511,7 +1508,6 @@ const Class StarGeneratorObject::class_ = {
     JS_ResolveStub,
     JS_ConvertStub,
     FinalizeGenerator<StarGeneratorObject>,
-    nullptr,                 /* checkAccess */
     nullptr,                 /* call        */
     nullptr,                 /* hasInstance */
     nullptr,                 /* construct   */

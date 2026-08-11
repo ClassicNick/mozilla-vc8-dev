@@ -1177,7 +1177,7 @@ public:
    */
   virtual const char* Name() = 0;
 
-  virtual void WriteDebugInfo(FILE *aOutput) {}
+  virtual void WriteDebugInfo(nsACString& aTo) {}
 #endif
 
   nsDisplayItem* GetAbove() { return mAbove; }
@@ -1989,12 +1989,7 @@ public:
   }
 
 #ifdef MOZ_DUMP_PAINTING
-  virtual void WriteDebugInfo(FILE *aOutput) MOZ_OVERRIDE
-  {
-    fprintf_stderr(aOutput, "(rgba %d,%d,%d,%d)",
-                   NS_GET_R(mColor), NS_GET_G(mColor),
-                   NS_GET_B(mColor), NS_GET_A(mColor));
-  }
+  virtual void WriteDebugInfo(nsACString& aTo) MOZ_OVERRIDE;
 #endif
 
   NS_DISPLAY_DECL_NAME("SolidColor", TYPE_SOLID_COLOR)
@@ -2153,7 +2148,7 @@ public:
                                          nsRegion* aInvalidRegion) MOZ_OVERRIDE;
 
 #ifdef MOZ_DUMP_PAINTING
-  virtual void WriteDebugInfo(FILE *aOutput) MOZ_OVERRIDE;
+  virtual void WriteDebugInfo(nsACString& aTo) MOZ_OVERRIDE;
 #endif
 protected:
   nsRect GetBoundsInternal();
@@ -2206,12 +2201,7 @@ public:
 
   NS_DISPLAY_DECL_NAME("BackgroundColor", TYPE_BACKGROUND_COLOR)
 #ifdef MOZ_DUMP_PAINTING
-  virtual void WriteDebugInfo(FILE *aOutput) MOZ_OVERRIDE {
-    fprintf_stderr(aOutput, "(rgba %d,%d,%d,%d)", 
-            NS_GET_R(mColor), NS_GET_G(mColor),
-            NS_GET_B(mColor), NS_GET_A(mColor));
-
-  }
+  virtual void WriteDebugInfo(nsACString& aTo) MOZ_OVERRIDE;
 #endif
 
 protected:
@@ -2600,9 +2590,7 @@ public:
   bool NeedsActiveLayer();
   NS_DISPLAY_DECL_NAME("Opacity", TYPE_OPACITY)
 #ifdef MOZ_DUMP_PAINTING
-  virtual void WriteDebugInfo(FILE *aOutput) MOZ_OVERRIDE {
-    fprintf_stderr(aOutput, "(opacity %f)", mFrame->StyleDisplay()->mOpacity);
-  }
+  virtual void WriteDebugInfo(nsACString& aTo) MOZ_OVERRIDE;
 #endif
 
   bool CanUseAsyncAnimations(nsDisplayListBuilder* aBuilder) MOZ_OVERRIDE;
@@ -2834,6 +2822,10 @@ public:
 
   virtual nsIFrame* GetScrolledFrame() { return mScrolledFrame; }
 
+#ifdef MOZ_DUMP_PAINTING
+  virtual void WriteDebugInfo(nsACString& aTo) MOZ_OVERRIDE;
+#endif
+
 protected:
   nsIFrame* mScrollFrame;
   nsIFrame* mScrolledFrame;
@@ -2966,7 +2958,7 @@ public:
                     LayerManager* aManager);
 
 #ifdef MOZ_DUMP_PAINTING
-  void PrintEffects(FILE* aOutput);
+  void PrintEffects(nsACString& aTo);
 #endif
 
 private:

@@ -1689,7 +1689,9 @@ Navigator::HasMobileMessageSupport(JSContext* /* unused */, JSObject* aGlobal)
   // First of all, the general pref has to be turned on.
   bool enabled = false;
   Preferences::GetBool("dom.sms.enabled", &enabled);
-  NS_ENSURE_TRUE(enabled, false);
+  if (!enabled) {
+    return false;
+  }
 
   NS_ENSURE_TRUE(win, false);
   NS_ENSURE_TRUE(win->GetDocShell(), false);
@@ -1710,7 +1712,9 @@ Navigator::HasTelephonySupport(JSContext* cx, JSObject* aGlobal)
   // First of all, the general pref has to be turned on.
   bool enabled = false;
   Preferences::GetBool("dom.telephony.enabled", &enabled);
-  NS_ENSURE_TRUE(enabled, false);
+  if (!enabled) {
+    return false;
+  }
 
   nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(global);
   return win && CheckPermission(win, "telephony");
@@ -1891,7 +1895,9 @@ Navigator::HasDataStoreSupport(JSContext* cx, JSObject* aGlobal)
   // First of all, the general pref has to be turned on.
   bool enabled = false;
   Preferences::GetBool("dom.datastore.enabled", &enabled);
-  NS_ENSURE_TRUE(enabled, false);
+  if (!enabled) {
+    return false;
+  }
 
   // Just for testing, we can enable DataStore for any kind of app.
   if (Preferences::GetBool("dom.testing.datastore_enabled_for_hosted_apps", false)) {
@@ -1914,6 +1920,27 @@ Navigator::HasDataStoreSupport(JSContext* cx, JSObject* aGlobal)
   }
 
   return status == nsIPrincipal::APP_STATUS_CERTIFIED;
+}
+
+/* static */
+bool
+Navigator::HasDownloadsSupport(JSContext* aCx, JSObject* aGlobal)
+{
+  // We'll need a rooted object so that GC doesn't make it go away while
+  // we're calling CheckIsChrome.
+  JS::Rooted<JSObject*> global(aCx, aGlobal);
+
+  // Because of the way this API must be implemented, it will interact with
+  // objects attached to a chrome window. We always want to allow this.
+  if (ThreadsafeCheckIsChrome(aCx, global)) {
+    return true;
+  }
+
+  nsCOMPtr<nsPIDOMWindow> win = GetWindowFromGlobal(global);
+
+  return win &&
+         CheckPermission(win, "downloads")  &&
+         Preferences::GetBool("dom.mozDownloads.enabled");
 }
 
 /* static */
