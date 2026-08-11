@@ -531,8 +531,7 @@ ReparentFrame(nsIFrame* aFrame, nsIFrame* aOldParent, nsIFrame* aNewParent)
 
   // When pushing and pulling frames we need to check for whether any
   // views need to be reparented
-  nsContainerFrame::ReparentFrameView(aFrame->PresContext(), aFrame,
-                                      aOldParent, aNewParent);
+  nsContainerFrame::ReparentFrameView(aFrame, aOldParent, aNewParent);
 }
  
 static void
@@ -1043,7 +1042,7 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
 
   // Now that we're done cleaning up our overflow container lists, we can
   // give |state| its nsOverflowContinuationTracker.
-  nsOverflowContinuationTracker tracker(aPresContext, this, false);
+  nsOverflowContinuationTracker tracker(this, false);
   state.mOverflowTracker = &tracker;
 
   // Drain & handle pushed floats
@@ -3184,7 +3183,7 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
               nsOverflowContinuationTracker::AutoFinish fini(aState.mOverflowTracker, frame);
               nsContainerFrame* parent =
                 static_cast<nsContainerFrame*>(nextFrame->GetParent());
-              rv = parent->StealFrame(aState.mPresContext, nextFrame);
+              rv = parent->StealFrame(nextFrame);
               NS_ENSURE_SUCCESS(rv, rv);
               if (parent != this)
                 ReparentFrame(nextFrame, parent, this);
@@ -3251,7 +3250,7 @@ nsBlockFrame::ReflowBlockFrame(nsBlockReflowState& aState,
               // to dig it out of the child lists.
               nsContainerFrame* parent = static_cast<nsContainerFrame*>
                                            (nextFrame->GetParent());
-              rv = parent->StealFrame(aState.mPresContext, nextFrame);
+              rv = parent->StealFrame(nextFrame);
               NS_ENSURE_SUCCESS(rv, rv);
             }
             else if (madeContinuation) {
@@ -3863,7 +3862,7 @@ nsBlockFrame::SplitFloat(nsBlockReflowState& aState,
   if (nextInFlow) {
     nsContainerFrame *oldParent =
       static_cast<nsContainerFrame*>(nextInFlow->GetParent());
-    DebugOnly<nsresult> rv = oldParent->StealFrame(aState.mPresContext, nextInFlow);
+    DebugOnly<nsresult> rv = oldParent->StealFrame(nextInFlow);
     NS_ASSERTION(NS_SUCCEEDED(rv), "StealFrame failed");
     if (oldParent != this) {
       ReparentFrame(nextInFlow, oldParent, this);
@@ -4562,7 +4561,7 @@ nsBlockFrame::GetOverflowOutOfFlows() const
     return nullptr;
   }
   nsFrameList* result =
-    GetPropTableFrames(PresContext(), OverflowOutOfFlowsProperty());
+    GetPropTableFrames(OverflowOutOfFlowsProperty());
   NS_ASSERTION(result, "value should always be non-empty when state set");
   return result;
 }
@@ -4579,22 +4578,19 @@ nsBlockFrame::SetOverflowOutOfFlows(const nsFrameList& aList,
     if (!(GetStateBits() & NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS)) {
       return;
     }
-    nsPresContext* pc = PresContext();
-    nsFrameList* list = RemovePropTableFrames(pc, OverflowOutOfFlowsProperty());
+    nsFrameList* list = RemovePropTableFrames(OverflowOutOfFlowsProperty());
     NS_ASSERTION(aPropValue == list, "prop value mismatch");
     list->Clear();
-    list->Delete(pc->PresShell());
+    list->Delete(PresContext()->PresShell());
     RemoveStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
   }
   else if (GetStateBits() & NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS) {
-    NS_ASSERTION(aPropValue == GetPropTableFrames(PresContext(),
-                                 OverflowOutOfFlowsProperty()),
+    NS_ASSERTION(aPropValue == GetPropTableFrames(OverflowOutOfFlowsProperty()),
                  "prop value mismatch");
     *aPropValue = aList;
   }
   else {
-    nsPresContext* pc = PresContext();
-    SetPropTableFrames(pc, new (pc->PresShell()) nsFrameList(aList),
+    SetPropTableFrames(new (PresContext()->PresShell()) nsFrameList(aList),
                        OverflowOutOfFlowsProperty());
     AddStateBits(NS_BLOCK_HAS_OVERFLOW_OUT_OF_FLOWS);
   }
@@ -5084,7 +5080,7 @@ nsBlockFrame::DoRemoveOutOfFlowFrame(nsIFrame* aFrame)
     nsIFrame* nif = aFrame->GetNextInFlow();
     if (nif) {
       static_cast<nsContainerFrame*>(nif->GetParent())
-        ->DeleteNextInFlowChild(aFrame->PresContext(), nif, false);
+        ->DeleteNextInFlowChild(nif, false);
     }
     // Now remove aFrame from its child list and Destroy it.
     block->RemoveFloatFromFloatCache(aFrame);
@@ -5344,7 +5340,6 @@ nsBlockFrame::DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags)
   // Clear our line cursor, since our lines may change.
   ClearLineCursor();
 
-  nsPresContext* presContext = PresContext();
   if (aDeletedFrame->GetStateBits() &
       (NS_FRAME_OUT_OF_FLOW | NS_FRAME_IS_OVERFLOW_CONTAINER)) {
     if (!aDeletedFrame->GetPrevInFlow()) {
@@ -5353,7 +5348,7 @@ nsBlockFrame::DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags)
       DoRemoveOutOfFlowFrame(aDeletedFrame);
     }
     else {
-      nsContainerFrame::DeleteNextInFlowChild(presContext, aDeletedFrame,
+      nsContainerFrame::DeleteNextInFlowChild(aDeletedFrame,
                                               (aFlags & FRAMES_ARE_EMPTY) != 0);
     }
     return NS_OK;
@@ -5463,7 +5458,7 @@ nsBlockFrame::DoRemoveFrame(nsIFrame* aDeletedFrame, uint32_t aFlags)
     if (deletedNextContinuation &&
         deletedNextContinuation->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER) {
       static_cast<nsContainerFrame*>(deletedNextContinuation->GetParent())
-        ->DeleteNextInFlowChild(presContext, deletedNextContinuation, false);
+        ->DeleteNextInFlowChild(deletedNextContinuation, false);
       deletedNextContinuation = nullptr;
     }
 
@@ -5627,9 +5622,8 @@ FindLineFor(nsIFrame*             aChild,
 }
 
 nsresult
-nsBlockFrame::StealFrame(nsPresContext* aPresContext,
-                         nsIFrame*      aChild,
-                         bool           aForceNormal)
+nsBlockFrame::StealFrame(nsIFrame* aChild,
+                         bool      aForceNormal)
 {
   MOZ_ASSERT(aChild->GetParent() == this);
 
@@ -5641,7 +5635,7 @@ nsBlockFrame::StealFrame(nsPresContext* aPresContext,
 
   if ((aChild->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER)
       && !aForceNormal) {
-    return nsContainerFrame::StealFrame(aPresContext, aChild);
+    return nsContainerFrame::StealFrame(aChild);
   }
 
   MOZ_ASSERT(!(aChild->GetStateBits() & NS_FRAME_OUT_OF_FLOW));
@@ -5689,16 +5683,14 @@ nsBlockFrame::RemoveFrameFromLine(nsIFrame* aChild, nsLineList::iterator aLine,
 }
 
 void
-nsBlockFrame::DeleteNextInFlowChild(nsPresContext* aPresContext,
-                                    nsIFrame*      aNextInFlow,
-                                    bool           aDeletingEmptyFrames)
+nsBlockFrame::DeleteNextInFlowChild(nsIFrame* aNextInFlow,
+                                    bool      aDeletingEmptyFrames)
 {
   NS_PRECONDITION(aNextInFlow->GetPrevInFlow(), "bad next-in-flow");
 
   if (aNextInFlow->GetStateBits() &
       (NS_FRAME_OUT_OF_FLOW | NS_FRAME_IS_OVERFLOW_CONTAINER)) {
-    nsContainerFrame::DeleteNextInFlowChild(aPresContext,
-        aNextInFlow, aDeletingEmptyFrames);
+    nsContainerFrame::DeleteNextInFlowChild(aNextInFlow, aDeletingEmptyFrames);
   }
   else {
 #ifdef DEBUG

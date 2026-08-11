@@ -1010,16 +1010,13 @@ js_InvokeOperationCallback(JSContext *cx)
      */
     rt->interrupt = 0;
 
-    /* IonMonkey sets its stack limit to UINTPTR_MAX to trigger operaton callbacks. */
+    /*
+     * IonMonkey sets its stack limit to UINTPTR_MAX to trigger operation
+     * callbacks.
+     */
     rt->resetIonStackLimit();
 
-    if (rt->gcIsNeeded)
-        GCSlice(rt, GC_NORMAL, rt->gcTriggerReason);
-
-#ifdef JSGC_GENERATIONAL
-    if (rt->gcStoreBuffer.isAboutToOverflow())
-        MinorGC(cx, JS::gcreason::FULL_STORE_BUFFER);
-#endif
+    js::gc::GCIfNeeded(cx);
 
 #ifdef JS_ION
     /*
@@ -1052,9 +1049,6 @@ js::ThreadSafeContext::ThreadSafeContext(JSRuntime *rt, PerThreadData *pt, Conte
     perThreadData(pt),
     allocator_(nullptr)
 {
-#ifdef JS_THREADSAFE
-    JS_ASSERT_IF(kind == Context_Exclusive, rt->workerThreadState != nullptr);
-#endif
 }
 
 bool
