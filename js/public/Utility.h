@@ -83,7 +83,7 @@ extern JS_PUBLIC_DATA(uint32_t) OOM_counter; /* data race, who cares. */
 
 #ifdef JS_OOM_DO_BACKTRACES
 #define JS_OOM_BACKTRACE_SIZE 32
-static JS_ALWAYS_INLINE void
+static MOZ_ALWAYS_INLINE void
 PrintBacktrace()
 {
     void* OOM_trace[JS_OOM_BACKTRACE_SIZE];
@@ -291,10 +291,10 @@ static inline void js_free(void* p)
         JS_NEW_BODY(ALLOCATOR, T, (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12))\
     }\
 
-JS_DECLARE_NEW_METHODS(js_new, js_malloc, static JS_ALWAYS_INLINE)
+JS_DECLARE_NEW_METHODS(js_new, js_malloc, static MOZ_ALWAYS_INLINE)
 
 template <class T>
-static JS_ALWAYS_INLINE void
+static MOZ_ALWAYS_INLINE void
 js_delete(T *p)
 {
     if (p) {
@@ -304,7 +304,7 @@ js_delete(T *p)
 }
 
 template<class T>
-static JS_ALWAYS_INLINE void
+static MOZ_ALWAYS_INLINE void
 js_delete_poison(T *p)
 {
     if (p) {
@@ -315,21 +315,21 @@ js_delete_poison(T *p)
 }
 
 template <class T>
-static JS_ALWAYS_INLINE T *
+static MOZ_ALWAYS_INLINE T *
 js_pod_malloc()
 {
     return (T *)js_malloc(sizeof(T));
 }
 
 template <class T>
-static JS_ALWAYS_INLINE T *
+static MOZ_ALWAYS_INLINE T *
 js_pod_calloc()
 {
     return (T *)js_calloc(sizeof(T));
 }
 
 template <class T>
-static JS_ALWAYS_INLINE T *
+static MOZ_ALWAYS_INLINE T *
 js_pod_malloc(size_t numElems)
 {
     if (numElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value)
@@ -338,7 +338,7 @@ js_pod_malloc(size_t numElems)
 }
 
 template <class T>
-static JS_ALWAYS_INLINE T *
+static MOZ_ALWAYS_INLINE T *
 js_pod_calloc(size_t numElems)
 {
     if (numElems & mozilla::tl::MulOverflowMask<sizeof(T)>::value)
