@@ -32,7 +32,7 @@ XPCVariant::XPCVariant(JSContext* cx, jsval aJSVal)
     : mJSVal(aJSVal), mCCGeneration(0)
 {
     nsVariant::Initialize(&mData);
-    if (!JSVAL_IS_PRIMITIVE(mJSVal)) {
+    if (!mJSVal.isPrimitive()) {
         // XXXbholley - The innerization here was from bug 638026. Blake says
         // the basic problem was that we were storing the C++ inner but the JS
         // outer, which meant that, after navigation, the JS inner could be
@@ -42,8 +42,9 @@ XPCVariant::XPCVariant(JSContext* cx, jsval aJSVal)
         // thing, but I'm saving the cleanup here for another day. Blake thinks
         // that we should just not store the WN if we're creating a variant for
         // an outer window.
-        JSObject *obj = JS_ObjectToInnerObject(cx, JSVAL_TO_OBJECT(mJSVal));
-        mJSVal = OBJECT_TO_JSVAL(obj);
+        JS::RootedObject obj(cx, &mJSVal.toObject());
+        obj = JS_ObjectToInnerObject(cx, obj);
+        mJSVal = JS::ObjectValue(*obj);
 
         JSObject *unwrapped = js::CheckedUnwrap(obj, /* stopAtOuter = */ false);
         mReturnRawObject = !(unwrapped && IS_WN_REFLECTOR(unwrapped));
@@ -208,7 +209,7 @@ XPCArrayHomogenizer::GetTypeForArray(JSContext* cx, HandleObject array,
         } else {
             MOZ_ASSERT(val.isObject(), "invalid type of jsval!");
             jsobj = &val.toObject();
-            if (JS_IsArrayObject(cx, jsobj))
+            if (JS_IsArrayObject(cx, (HandleObject) jsobj))
                 type = tArr;
             else if (xpc_JSObjectIsID(cx, jsobj))
                 type = tID;
@@ -327,7 +328,7 @@ bool XPCVariant::InitializeData(JSContext* cx)
 
     uint32_t len;
 
-    if (JS_IsArrayObject(cx, jsobj) && JS_GetArrayLength(cx, jsobj, &len)) {
+    if (JS_IsArrayObject(cx, (HandleObject) jsobj) && JS_GetArrayLength(cx, jsobj, &len)) {
         if (!len) {
             // Zero length array
             nsVariant::SetToEmptyArray(&mData);

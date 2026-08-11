@@ -472,7 +472,7 @@ nsFrameMessageManager::GetDelayedFrameScripts(JSContext* aCx, JS::MutableHandle<
     pair = JS_NewArrayObject(aCx, 2, pairElts);
     NS_ENSURE_TRUE(pair, NS_ERROR_OUT_OF_MEMORY);
 
-    NS_ENSURE_TRUE(JS_SetElement(aCx, array, i, pair),
+	NS_ENSURE_TRUE(JS_SetElement(aCx, array, i, (JS::HandleObject) pair),
                    NS_ERROR_OUT_OF_MEMORY);
   }
 
@@ -611,7 +611,7 @@ nsFrameMessageManager::SendMessage(const nsAString& aMessageName,
                       retval[i].Length(), &ret)) {
       return NS_ERROR_UNEXPECTED;
     }
-    NS_ENSURE_TRUE(JS_SetElement(aCx, dataArray, i, ret),
+					  NS_ENSURE_TRUE(JS_SetElement(aCx, dataArray, i, (JS::HandleValue) ret),
                    NS_ERROR_OUT_OF_MEMORY);
   }
 

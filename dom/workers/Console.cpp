@@ -497,7 +497,7 @@ WorkerConsole::Trace(JSContext* aCx)
 
 void
 WorkerConsole::Dir(JSContext* aCx,
-                   const Optional<JS::Handle<JS::Value>>& aValue)
+                   const Optional<JS::Handle<JS::Value> >& aValue)
 {
   Sequence<JS::Value> data;
 
@@ -514,7 +514,7 @@ METHOD(GroupEnd, "groupEnd")
 
 void
 WorkerConsole::Time(JSContext* aCx,
-                    const Optional<JS::Handle<JS::Value>>& aTimer)
+                    const Optional<JS::Handle<JS::Value> >& aTimer)
 {
   Sequence<JS::Value> data;
 
@@ -527,7 +527,7 @@ WorkerConsole::Time(JSContext* aCx,
 
 void
 WorkerConsole::TimeEnd(JSContext* aCx,
-                       const Optional<JS::Handle<JS::Value>>& aTimer)
+                       const Optional<JS::Handle<JS::Value> >& aTimer)
 {
   Sequence<JS::Value> data;
 

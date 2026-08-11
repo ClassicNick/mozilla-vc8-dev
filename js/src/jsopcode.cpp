@@ -66,7 +66,7 @@ const unsigned js_NumCodeSpecs = JS_ARRAY_LENGTH(js_CodeSpec);
  * bytecode or null.
  */
 static const char * const CodeToken[] = {
-#define TOKEN(op, val, name, token, ...)  token,
+#define TOKEN(op, val, name, token, a)  token,
     FOR_EACH_OPCODE(TOKEN)
 #undef TOKEN
 };
@@ -76,7 +76,7 @@ static const char * const CodeToken[] = {
  * and JIT debug spew.
  */
 const char * const js_CodeName[] = {
-#define OPNAME(op, val, name, ...)  name,
+#define OPNAME(op, val, name, a)  name,
     FOR_EACH_OPCODE(OPNAME)
 #undef OPNAME
 };

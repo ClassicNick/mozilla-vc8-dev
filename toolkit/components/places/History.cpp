@@ -237,7 +237,7 @@ GetJSArrayFromJSValue(JS::Handle<JS::Value> aValue,
                       uint32_t* _arrayLength) {
   if (aValue.isObjectOrNull()) {
     JS::Rooted<JSObject*> val(aCtx, aValue.toObjectOrNull());
-    if (JS_IsArrayObject(aCtx, val)) {
+	if (JS_IsArrayObject(aCtx, (JS::HandleValue) val)) {
       _array.set(val);
       (void)JS_GetArrayLength(aCtx, _array, _arrayLength);
       NS_ENSURE_ARG(*_arrayLength > 0);
@@ -413,14 +413,14 @@ GetIntFromJSObject(JSContext* aCtx,
  *        The JSObject to get the object from.
  * @param aIndex
  *        The index to get the object from.
- * @param _object
- *        The JSObject pointer on success.
+ * @param objOut
+ *        Set to the JSObject pointer on success.
  */
 nsresult
 GetJSObjectFromArray(JSContext* aCtx,
-                     JSObject* aArray,
+                     JS::Handle<JSObject*> aArray,
                      uint32_t aIndex,
-                     JSObject** _rooter)
+                     JS::MutableHandle<JSObject*> objOut)
 {
   NS_PRECONDITION(JS_IsArrayObject(aCtx, aArray),
                   "Must provide an object that is an array!");
@@ -428,8 +428,8 @@ GetJSObjectFromArray(JSContext* aCtx,
   JS::Rooted<JS::Value> value(aCtx);
   bool rc = JS_GetElement(aCtx, aArray, aIndex, &value);
   NS_ENSURE_TRUE(rc, NS_ERROR_UNEXPECTED);
-  NS_ENSURE_ARG(!JSVAL_IS_PRIMITIVE(value));
-  *_rooter = JSVAL_TO_OBJECT(value);
+  NS_ENSURE_ARG(!value.isPrimitive());
+  objOut.set(&value.toObject());
   return NS_OK;
 }
 
@@ -2760,7 +2760,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
   nsTArray<VisitData> visitData;
   for (uint32_t i = 0; i < infosLength; i++) {
     JS::Rooted<JSObject*> info(aCtx);
-    nsresult rv = GetJSObjectFromArray(aCtx, infos, i, info.address());
+    nsresult rv = GetJSObjectFromArray(aCtx, infos, i, &info);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<nsIURI> uri = GetURIFromJSObject(aCtx, info, "uri");
@@ -2799,7 +2799,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
       NS_ENSURE_TRUE(rc, NS_ERROR_UNEXPECTED);
       if (!JSVAL_IS_PRIMITIVE(visitsVal)) {
         visits = JSVAL_TO_OBJECT(visitsVal);
-        NS_ENSURE_ARG(JS_IsArrayObject(aCtx, visits));
+		NS_ENSURE_ARG(JS_IsArrayObject(aCtx, (JS::HandleObject) visits));
       }
     }
     NS_ENSURE_ARG(visits);
@@ -2814,7 +2814,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
     visitData.SetCapacity(visitData.Length() + visitsLength);
     for (uint32_t j = 0; j < visitsLength; j++) {
       JS::Rooted<JSObject*> visit(aCtx);
-      rv = GetJSObjectFromArray(aCtx, visits, j, visit.address());
+      rv = GetJSObjectFromArray(aCtx, visits, j, &visit);
       NS_ENSURE_SUCCESS(rv, rv);
 
       VisitData& data = *visitData.AppendElement(VisitData(uri));

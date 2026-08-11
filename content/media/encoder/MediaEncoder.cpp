@@ -17,6 +17,10 @@
 
 #endif
 
+#ifndef MOZ_WEBM
+#undef MOZ_WEBM_ENCODER
+#endif
+
 #ifdef MOZ_VORBIS
 #include "VorbisTrackEncoder.h"
 #endif

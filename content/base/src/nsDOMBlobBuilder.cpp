@@ -185,7 +185,7 @@ nsDOMMultipartFile::Initialize(nsISupports* aOwner,
     JS::Value* argv = aArgs.array();
     if (argv[0].isObject()) {
       JS::Rooted<JSObject*> obj(aCx, &argv[0].toObject());
-      if (JS_IsArrayObject(aCx, obj)) {
+	  if (JS_IsArrayObject(aCx, (JS::HandleObject) obj)) {
         return InitFile(aCx, aArgs.length(), aArgs.array());
       }
     }
@@ -227,7 +227,7 @@ nsDOMMultipartFile::ParseBlobArrayArgument(JSContext* aCx, JS::Value& aValue,
   }
 
   JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
-  if (!JS_IsArrayObject(aCx, obj)) {
+  if (!JS_IsArrayObject(aCx, (JS::HandleObject) obj)) {
     return NS_ERROR_TYPE_ERR; // We're not interested
   }
 

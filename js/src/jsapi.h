@@ -182,7 +182,8 @@ class AutoStringRooter : private AutoGCRooter {
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class AutoArrayRooter : private AutoGCRooter {
+class AutoArrayRooter : private AutoGCRooter
+{
   public:
     AutoArrayRooter(JSContext *cx, size_t len, Value *vec
                     MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
@@ -202,15 +203,28 @@ class AutoArrayRooter : private AutoGCRooter {
         array = newArray;
     }
 
-    Value *array;
+    Value *start() {
+        return array;
+    }
 
-    MutableHandleValue handleAt(size_t i)
-    {
+    size_t length() {
+        JS_ASSERT(tag_ >= 0);
+        return size_t(tag_);
+    }
+
+    MutableHandleValue handleAt(size_t i) {
         JS_ASSERT(i < size_t(tag_));
         return MutableHandleValue::fromMarkedLocation(&array[i]);
     }
-    HandleValue handleAt(size_t i) const
-    {
+    HandleValue handleAt(size_t i) const {
+        JS_ASSERT(i < size_t(tag_));
+        return HandleValue::fromMarkedLocation(&array[i]);
+    }
+    MutableHandleValue operator[](size_t i) {
+        JS_ASSERT(i < size_t(tag_));
+        return MutableHandleValue::fromMarkedLocation(&array[i]);
+    }
+    HandleValue operator[](size_t i) const {
         JS_ASSERT(i < size_t(tag_));
         return HandleValue::fromMarkedLocation(&array[i]);
     }
@@ -218,9 +232,9 @@ class AutoArrayRooter : private AutoGCRooter {
     friend void AutoGCRooter::trace(JSTracer *trc);
 
   private:
-    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
-
+    Value *array;
     js::SkipRoot skip;
+    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
 template<class T>
@@ -2525,7 +2539,7 @@ struct JSFunctionSpec {
     {name, {call, info}, nargs, flags, selfHostedName}
 
 extern JS_PUBLIC_API(JSObject *)
-JS_InitClass(JSContext *cx, JSObject *obj, JSObject *parent_proto,
+JS_InitClass(JSContext *cx, JS::HandleObject obj, JS::HandleObject parent_proto,
              const JSClass *clasp, JSNative constructor, unsigned nargs,
              const JSPropertySpec *ps, const JSFunctionSpec *fs,
              const JSPropertySpec *static_ps, const JSFunctionSpec *static_fs);
@@ -3085,7 +3099,10 @@ extern JS_PUBLIC_API(JSObject *)
 JS_NewArrayObject(JSContext *cx, int length, jsval *vector);
 
 extern JS_PUBLIC_API(bool)
-JS_IsArrayObject(JSContext *cx, JSObject *obj);
+JS_IsArrayObject(JSContext *cx, JS::HandleValue value);
+
+extern JS_PUBLIC_API(bool)
+JS_IsArrayObject(JSContext *cx, JS::HandleObject obj);
 
 extern JS_PUBLIC_API(bool)
 JS_GetArrayLength(JSContext *cx, JS::Handle<JSObject*> obj, uint32_t *lengthp);
@@ -4805,6 +4822,63 @@ struct AsmJSCacheOps
 
 extern JS_PUBLIC_API(void)
 SetAsmJSCacheOps(JSRuntime *rt, const AsmJSCacheOps *callbacks);
+
+/*
+ * Convenience class for imitating a JS level for-of loop. Typical usage:
+ *
+ *     ForOfIterator it(cx);
+ *     if (!it.init(iterable))
+ *       return false;
+ *     RootedValue val(cx);
+ *     while (true) {
+ *       bool done;
+ *       if (!it.next(&val, &done))
+ *         return false;
+ *       if (done)
+ *         break;
+ *       if (!DoStuff(cx, val))
+ *         return false;
+ *     }
+ */
+class MOZ_STACK_CLASS JS_PUBLIC_API(ForOfIterator) {
+  protected:
+    JSContext *cx_;
+    JS::RootedObject iterator;
+
+    ForOfIterator(const ForOfIterator &) MOZ_DELETE;
+    ForOfIterator &operator=(const ForOfIterator &) MOZ_DELETE;
+
+  public:
+    ForOfIterator(JSContext *cx) : cx_(cx), iterator(cx) { }
+
+    enum NonIterableBehavior {
+        ThrowOnNonIterable,
+        AllowNonIterable
+    };
+
+    /*
+     * Initialize the iterator.  If AllowNonIterable is passed then if iterable
+     * does not have a callable @@iterator init() will just return true instead
+     * of throwing.  Callers should then check valueIsIterable() before
+     * continuing with the iteration.
+     */
+    bool init(JS::HandleValue iterable,
+              NonIterableBehavior nonIterableBehavior = ThrowOnNonIterable);
+
+    /*
+     * Get the next value from the iterator.  If false *done is true
+     * after this call, do not examine val.
+     */
+    bool next(JS::MutableHandleValue val, bool *done);
+
+    /*
+     * If initialized with throwOnNonCallable = false, check whether
+     * the value is iterable.
+     */
+    bool valueIsIterable() const {
+        return iterator;
+    }
+};
 
 } /* namespace JS */
 

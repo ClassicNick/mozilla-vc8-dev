@@ -691,7 +691,7 @@ JSStructuredCloneWriter::parseTransferable()
 
     JSContext *cx = context();
     RootedObject array(cx, &transferable.toObject());
-    if (!JS_IsArrayObject(cx, array)) {
+    if (!JS_IsArrayObject(cx, (HandleObject) array)) {
         reportErrorTransferable();
         return false;
     }

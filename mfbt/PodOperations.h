@@ -46,6 +46,21 @@ PodZero(T* t, size_t nelem)
     memset(t, 0, sizeof(T));
 }
 
+/** Set the contents of |nelem| elements starting at |t| to 0. */
+/* Call this to resolve ambiguous function errors */
+template<typename T>
+static MOZ_ALWAYS_INLINE void
+PodZero1(T* t, size_t nelem)
+{
+  /*
+   * This function is often called with 'nelem' small; we use an inline loop
+   * instead of calling 'memset' with a non-constant length.  The compiler
+   * should inline the memset call with constant size, though.
+   */
+  for (T* end = t + nelem; t < end; t++)
+    memset(t, 0, sizeof(T));
+}
+
 /*
  * Arrays implicitly convert to pointers to their first element, which is
  * dangerous when combined with the above PodZero definitions.  Adding an

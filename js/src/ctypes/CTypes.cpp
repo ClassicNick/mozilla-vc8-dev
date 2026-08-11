@@ -1052,7 +1052,7 @@ InitInt64Class(JSContext* cx,
                const JSFunctionSpec* static_fs)
 {
   // Init type class and constructor
-  RootedObject prototype(cx, JS_InitClass(cx, parent, nullptr, clasp, construct,
+  RootedObject prototype(cx, JS_InitClass(cx, parent, js::NullPtr(), clasp, construct,
                                           0, nullptr, fs, nullptr, static_fs));
   if (!prototype)
     return nullptr;
@@ -2479,7 +2479,7 @@ ImplicitConvert(JSContext* cx,
         return TypeError(cx, "array", val);
       }
 
-    } else if (!JSVAL_IS_PRIMITIVE(val) && JS_IsArrayObject(cx, valObj)) {
+    } else if (!JSVAL_IS_PRIMITIVE(val) && JS_IsArrayObject(cx, (HandleObject) valObj)) {
       // Convert each element of the array by calling ImplicitConvert.
       uint32_t sourceLength;
       if (!JS_GetArrayLength(cx, valObj, &sourceLength) ||
@@ -4738,7 +4738,7 @@ StructType::Create(JSContext* cx, unsigned argc, jsval* vp)
 
   if (args.length() == 2) {
     RootedObject arr(cx, JSVAL_IS_PRIMITIVE(args[1]) ? nullptr : &args[1].toObject());
-    if (!arr || !JS_IsArrayObject(cx, arr)) {
+    if (!arr || !JS_IsArrayObject(cx, (HandleObject) arr)) {
       JS_ReportError(cx, "second argument must be an array");
       return false;
     }
@@ -5002,7 +5002,7 @@ StructType::Define(JSContext* cx, unsigned argc, jsval* vp)
     return false;
   }
   RootedObject arr(cx, JSVAL_TO_OBJECT(arg));
-  if (!JS_IsArrayObject(cx, arr)) {
+  if (!JS_IsArrayObject(cx, (HandleObject) arr)) {
     JS_ReportError(cx, "argument must be an array");
     return false;
   }
@@ -5181,7 +5181,7 @@ StructType::FieldsArrayGetter(JSContext* cx, JS::CallArgs args)
   }
 
   MOZ_ASSERT(args.rval().isObject());
-  MOZ_ASSERT(JS_IsArrayObject(cx, &args.rval().toObject()));
+  MOZ_ASSERT(JS_IsArrayObject(cx, args.rval()));
   return true;
 }
 
@@ -5601,7 +5601,7 @@ FunctionType::Create(JSContext* cx, unsigned argc, jsval* vp)
     // Prepare an array of jsvals for the arguments.
     if (!JSVAL_IS_PRIMITIVE(args[2]))
       arrayObj = &args[2].toObject();
-    if (!arrayObj || !JS_IsArrayObject(cx, arrayObj)) {
+    if (!arrayObj || !JS_IsArrayObject(cx, (HandleObject) arrayObj)) {
       JS_ReportError(cx, "third argument must be an array");
       return false;
     }

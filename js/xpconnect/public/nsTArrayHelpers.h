@@ -35,7 +35,7 @@ nsTArrayToJSArray(JSContext* aCx, const nsTArray<T>& aSourceArray,
     rv = nsContentUtils::WrapNative(aCx, global, obj, &wrappedVal, true);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (!JS_SetElement(aCx, arrayObj, index, wrappedVal)) {
+	if (!JS_SetElement(aCx, arrayObj, index, (JS::HandleValue) wrappedVal)) {
       NS_WARNING("JS_SetElement failed!");
       return NS_ERROR_FAILURE;
     }
@@ -75,7 +75,7 @@ nsTArrayToJSArray<nsString>(JSContext* aCx,
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    if (!JS_SetElement(aCx, arrayObj, index, s)) {
+	if (!JS_SetElement(aCx, arrayObj, index, (JS::HandleString) s)) {
       NS_WARNING("JS_SetElement failed!");
       return NS_ERROR_FAILURE;
     }

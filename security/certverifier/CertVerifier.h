@@ -8,6 +8,9 @@
 #define mozilla_psm__CertVerifier_h
 
 #include "certt.h"
+#if defined (_MSC_VER) && _MSC_VER <= 1500
+#include "mozilla/NullPtr.h"
+#endif
 #include "insanity/pkixtypes.h"
 
 namespace mozilla { namespace psm {

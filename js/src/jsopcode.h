@@ -22,7 +22,7 @@
  * JS operation bytecodes.
  */
 typedef enum JSOp {
-#define ENUMERATE_OPCODE(op, val, ...) op = val,
+#define ENUMERATE_OPCODE(op, val, a) op = val,
 FOR_EACH_OPCODE(ENUMERATE_OPCODE)
 #undef ENUMERATE_OPCODE
 

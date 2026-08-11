@@ -64,7 +64,7 @@ IDBKeyRange::FromJSVal(JSContext* aCx,
   }
 
   JS::Rooted<JSObject*> obj(aCx, aVal.isObject() ? &aVal.toObject() : nullptr);
-  if (aVal.isPrimitive() || JS_IsArrayObject(aCx, obj) ||
+  if (aVal.isPrimitive() || JS_IsArrayObject(aCx, (JS::HandleObject) obj) ||
       JS_ObjectIsDate(aCx, obj)) {
     // A valid key returns an 'only' IDBKeyRange.
     keyRange = new IDBKeyRange(nullptr, false, false, true);

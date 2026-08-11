@@ -132,7 +132,7 @@ Key::EncodeJSValInternal(JSContext* aCx, JS::Handle<JS::Value> aVal,
 
   if (aVal.isObject()) {
     JS::Rooted<JSObject*> obj(aCx, &aVal.toObject());
-    if (JS_IsArrayObject(aCx, obj)) {
+	if (JS_IsArrayObject(aCx, (JS::HandleObject) obj)) {
       aTypeOffset += eMaxType;
 
       if (aTypeOffset == eMaxType * MaxArrayCollapse) {
@@ -214,7 +214,7 @@ Key::DecodeJSValInternal(const unsigned char*& aPos, const unsigned char* aEnd,
 
       aTypeOffset = 0;
 
-      if (!JS_SetElement(aCx, array, index++, val)) {
+	  if (!JS_SetElement(aCx, array, index++, (JS::HandleValue) val)) {
         NS_WARNING("Failed to set array element!");
         IDB_REPORT_INTERNAL_ERR();
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;

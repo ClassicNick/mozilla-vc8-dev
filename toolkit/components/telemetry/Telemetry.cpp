@@ -1598,7 +1598,7 @@ CreateJSStackObject(JSContext *cx, const CombinedStacks &stacks) {
     if (!moduleInfoArray) {
       return nullptr;
     }
-    if (!JS_SetElement(cx, moduleArray, moduleIndex, moduleInfoArray)) {
+	if (!JS_SetElement(cx, moduleArray, moduleIndex, (JS::HandleObject) moduleInfoArray)) {
       return nullptr;
     }
 
@@ -1609,7 +1609,7 @@ CreateJSStackObject(JSContext *cx, const CombinedStacks &stacks) {
     if (!str) {
       return nullptr;
     }
-    if (!JS_SetElement(cx, moduleInfoArray, index++, str)) {
+    if (!JS_SetElement(cx, moduleInfoArray, index++, (JS::HandleString) str)) {
       return nullptr;
     }
 
@@ -1618,7 +1618,7 @@ CreateJSStackObject(JSContext *cx, const CombinedStacks &stacks) {
     if (!id) {
       return nullptr;
     }
-    if (!JS_SetElement(cx, moduleInfoArray, index++, id)) {
+    if (!JS_SetElement(cx, moduleInfoArray, index++, (JS::HandleString) id)) {
       return nullptr;
     }
   }
@@ -1642,7 +1642,7 @@ CreateJSStackObject(JSContext *cx, const CombinedStacks &stacks) {
       return nullptr;
     }
 
-    if (!JS_SetElement(cx, reportArray, i, pcArray)) {
+    if (!JS_SetElement(cx, reportArray, i, (JS::HandleObject) pcArray)) {
       return nullptr;
     }
 
@@ -1662,7 +1662,7 @@ CreateJSStackObject(JSContext *cx, const CombinedStacks &stacks) {
       if (!JS_SetElement(cx, framePair, 1, static_cast<double>(frame.mOffset))) {
         return nullptr;
       }
-      if (!JS_SetElement(cx, pcArray, pcIndex, framePair)) {
+      if (!JS_SetElement(cx, pcArray, pcIndex, (JS::HandleObject) framePair)) {
         return nullptr;
       }
     }
@@ -1835,7 +1835,7 @@ CreateJSHangHistogram(JSContext* cx, const Telemetry::HangHistogram& hang)
   }
   for (size_t i = 0; i < hangStack.length(); i++) {
     JS::RootedString string(cx, JS_NewStringCopyZ(cx, hangStack[i]));
-    if (!JS_SetElement(cx, stack, i, string)) {
+    if (!JS_SetElement(cx, stack, i, (JS::HandleString) string)) {
       return nullptr;
     }
   }
@@ -1878,7 +1878,7 @@ CreateJSThreadHangStats(JSContext* cx, const Telemetry::ThreadHangStats& thread)
   }
   for (size_t i = 0; i < thread.mHangs.length(); i++) {
     JS::RootedObject obj(cx, CreateJSHangHistogram(cx, thread.mHangs[i]));
-    if (!JS_SetElement(cx, hangs, i, obj)) {
+    if (!JS_SetElement(cx, hangs, i, (JS::HandleObject) obj)) {
       return nullptr;
     }
   }
@@ -1907,7 +1907,7 @@ TelemetryImpl::GetThreadHangStats(JSContext* cx, JS::MutableHandle<JS::Value> re
        histogram; histogram = iter.GetNext()) {
     JS::RootedObject obj(cx,
       CreateJSThreadHangStats(cx, *histogram));
-    if (!JS_SetElement(cx, retObj, threadIndex++, obj)) {
+    if (!JS_SetElement(cx, retObj, threadIndex++, (JS::HandleObject) obj)) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -1917,7 +1917,7 @@ TelemetryImpl::GetThreadHangStats(JSContext* cx, JS::MutableHandle<JS::Value> re
   for (size_t i = 0; i < mThreadHangStats.length(); i++) {
     JS::RootedObject obj(cx,
       CreateJSThreadHangStats(cx, mThreadHangStats[i]));
-    if (!JS_SetElement(cx, retObj, threadIndex++, obj)) {
+    if (!JS_SetElement(cx, retObj, threadIndex++, (JS::HandleObject) obj)) {
       return NS_ERROR_FAILURE;
     }
   }

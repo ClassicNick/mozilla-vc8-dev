@@ -9,7 +9,7 @@
 #include "EbmlIDs.h"
 #include "WebMElement.h"
 #include <stdio.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <stdlib.h>
 #include <time.h>
 

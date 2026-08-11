@@ -1469,7 +1469,7 @@ GetAllKeysHelper::GetSuccessResult(JSContext* aCx,
         return rv;
       }
 
-      if (!JS_SetElement(aCx, array, index, value)) {
+	  if (!JS_SetElement(aCx, array, index, (JS::HandleValue) value)) {
         IDB_WARNING("Failed to set array element!");
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }

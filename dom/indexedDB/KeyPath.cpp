@@ -270,8 +270,7 @@ KeyPath::Parse(JSContext* aCx, const JS::Value& aValue_, KeyPath* aKeyPath)
   aKeyPath->SetType(NONEXISTENT);
 
   // See if this is a JS array.
-  if (!JSVAL_IS_PRIMITIVE(aValue) &&
-      JS_IsArrayObject(aCx, JSVAL_TO_OBJECT(aValue))) {
+  if (JS_IsArrayObject(aCx, (JS::HandleValue) aValue)) {
 
     JS::Rooted<JSObject*> obj(aCx, JSVAL_TO_OBJECT(aValue));
 
@@ -405,7 +404,7 @@ KeyPath::ExtractKeyAsJSVal(JSContext* aCx, const JS::Value& aValue,
       return rv;
     }
 
-    if (!JS_SetElement(aCx, arrayObj, i, value)) {
+	if (!JS_SetElement(aCx, arrayObj, i, (JS::HandleValue) value)) {
       IDB_REPORT_INTERNAL_ERR();
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
@@ -516,7 +515,7 @@ KeyPath::ToJSVal(JSContext* aCx, JS::MutableHandle<JS::Value> aValue) const
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }
 
-      if (!JS_SetElement(aCx, array, i, val)) {
+	  if (!JS_SetElement(aCx, array, i, (JS::HandleValue) val)) {
         IDB_REPORT_INTERNAL_ERR();
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }

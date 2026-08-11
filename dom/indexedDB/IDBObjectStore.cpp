@@ -1043,9 +1043,8 @@ IDBObjectStore::AppendIndexUpdateInfo(
     return NS_OK;
   }
 
-  if (!JSVAL_IS_PRIMITIVE(val) &&
-      JS_IsArrayObject(aCx, JSVAL_TO_OBJECT(val))) {
-    JS::Rooted<JSObject*> array(aCx, JSVAL_TO_OBJECT(val));
+  if (JS_IsArrayObject(aCx, (JS::HandleValue) val)) {
+    JS::Rooted<JSObject*> array(aCx, &val.toObject());
     uint32_t arrayLength;
     if (!JS_GetArrayLength(aCx, array, &arrayLength)) {
       IDB_REPORT_INTERNAL_ERR();
@@ -4953,7 +4952,7 @@ GetAllKeysHelper::GetSuccessResult(JSContext* aCx,
         return rv;
       }
 
-      if (!JS_SetElement(aCx, array, index, value)) {
+	  if (!JS_SetElement(aCx, array, index, (JS::HandleValue) value)) {
         IDB_WARNING("Failed to set array element!");
         return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
       }

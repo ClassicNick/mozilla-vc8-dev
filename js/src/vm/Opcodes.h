@@ -523,7 +523,7 @@ namespace js {
 // the [0, 256) range.  Avert your eyes!  You don't want to know how the
 // sausage gets made.
 
-#define VALUE_AND_VALUE_PLUS_ONE(op, val, ...) \
+#define VALUE_AND_VALUE_PLUS_ONE(op, val, a) \
     val) && (val + 1 ==
 #define TRAILING_VALUE_AND_VALUE_PLUS_ONE(val) \
     val) && (val + 1 ==
@@ -537,7 +537,7 @@ static_assert((0 ==
 #undef VALUE_AND_VALUE_PLUS_ONE
 
 // Define JSOP_*_LENGTH constants for all ops.
-#define DEFINE_LENGTH_CONSTANT(op, val, name, image, len, ...) \
+#define DEFINE_LENGTH_CONSTANT(op, val, name, image, len, a) \
     MOZ_CONSTEXPR_VAR size_t op##_LENGTH = len;
 FOR_EACH_OPCODE(DEFINE_LENGTH_CONSTANT)
 #undef DEFINE_LENGTH_CONSTANT

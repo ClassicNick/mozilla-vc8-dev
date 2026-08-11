@@ -6,6 +6,8 @@
 #ifndef VP8TrackEncoder_h_
 #define VP8TrackEncoder_h_
 
+#ifdef MOZ_WEBM
+
 #include "TrackEncoder.h"
 #include "vpx/vpx_codec.h"
 
@@ -89,5 +91,7 @@ private:
 };
 
 } // namespace mozilla
+
+#endif // MOZ_WEBM
 
 #endif

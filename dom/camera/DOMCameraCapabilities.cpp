@@ -66,7 +66,7 @@ ParseStringItemAndAdd(JSContext* aCx, JS::Handle<JSObject*> aArray,
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
-  if (!JS_SetElement(aCx, aArray, aIndex, s)) {
+  if (!JS_SetElement(aCx, aArray, aIndex, (JS::HandleString) s)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -99,7 +99,7 @@ ParseDimensionItemAndAdd(JSContext* aCx, JS::Handle<JSObject*> aArray,
     return NS_ERROR_FAILURE;
   }
 
-  if (!JS_SetElement(aCx, aArray, aIndex, o)) {
+  if (!JS_SetElement(aCx, aArray, aIndex, (JS::HandleObject) o)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -394,7 +394,7 @@ DOMCameraCapabilities::GetVideoSizes(JSContext* cx, JS::MutableHandle<JS::Value>
       return NS_ERROR_FAILURE;
     }
 
-    if (!JS_SetElement(cx, array, i, o)) {
+	if (!JS_SetElement(cx, array, i, (JS::HandleObject) o)) {
       return NS_ERROR_FAILURE;
     }
   }

@@ -1376,7 +1376,7 @@ XPCConvert::NativeArray2JS(MutableHandleValue d, const void** s,
     PR_BEGIN_MACRO                                                                      \
         for (i = 0; i < count; i++) {                                                   \
             if (!NativeData2JS(&current, ((_t*)*s)+i, type, iid, pErr) ||               \
-                !JS_SetElement(cx, array, i, current))                                  \
+                !JS_SetElement(cx, array, i, (HandleValue) current))                                  \
                 goto failure;                                                           \
         }                                                                               \
     PR_END_MACRO
@@ -1615,7 +1615,7 @@ XPCConvert::JSArray2Native(void** d, HandleValue s,
         return JSTypedArray2Native(d, jsarray, count, type, pErr);
     }
 
-    if (!JS_IsArrayObject(cx, jsarray)) {
+    if (!JS_IsArrayObject(cx, (HandleObject) jsarray)) {
         if (pErr)
             *pErr = NS_ERROR_XPC_CANT_CONVERT_OBJECT_TO_ARRAY;
         return false;

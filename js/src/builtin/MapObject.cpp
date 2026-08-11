@@ -27,6 +27,7 @@ using mozilla::OldMove;
 using mozilla::MoveRef;
 using mozilla::ArrayLength;
 using JS::DoubleNaNValue;
+using JS::ForOfIterator;
 
 
 /*** OrderedHashTable ****************************************************************************/

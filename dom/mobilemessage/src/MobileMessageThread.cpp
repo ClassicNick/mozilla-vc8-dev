@@ -56,7 +56,7 @@ MobileMessageThread::Create(const uint64_t aId,
     }
 
     JS::Rooted<JSObject*> obj(aCx, &aParticipants.toObject());
-    if (!JS_IsArrayObject(aCx, obj)) {
+	if (!JS_IsArrayObject(aCx, (JS::HandleObject) obj)) {
       return NS_ERROR_INVALID_ARG;
     }
 

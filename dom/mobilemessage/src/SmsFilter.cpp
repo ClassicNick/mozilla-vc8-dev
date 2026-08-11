@@ -167,7 +167,7 @@ SmsFilter::SetNumbers(JSContext* aCx, JS::Handle<JS::Value> aNumbers)
   }
 
   JS::Rooted<JSObject*> obj(aCx, &aNumbers.toObject());
-  if (!JS_IsArrayObject(aCx, obj)) {
+  if (!JS_IsArrayObject(aCx, (JS::HandleObject) obj)) {
     return NS_ERROR_INVALID_ARG;
   }
 

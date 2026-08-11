@@ -209,7 +209,7 @@ MmsMessage::Create(int32_t               aId,
     return NS_ERROR_INVALID_ARG;
   }
   JS::Rooted<JSObject*> deliveryInfoObj(aCx, &aDeliveryInfo.toObject());
-  if (!JS_IsArrayObject(aCx, deliveryInfoObj)) {
+  if (!JS_IsArrayObject(aCx, (JS::HandleObject) deliveryInfoObj)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -236,7 +236,7 @@ MmsMessage::Create(int32_t               aId,
     return NS_ERROR_INVALID_ARG;
   }
   JS::Rooted<JSObject*> receiversObj(aCx, &aReceivers.toObject());
-  if (!JS_IsArrayObject(aCx, receiversObj)) {
+  if (!JS_IsArrayObject(aCx, (JS::HandleObject) receiversObj)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -270,7 +270,7 @@ MmsMessage::Create(int32_t               aId,
     return NS_ERROR_INVALID_ARG;
   }
   JS::Rooted<JSObject*> attachmentsObj(aCx, &aAttachments.toObject());
-  if (!JS_IsArrayObject(aCx, attachmentsObj)) {
+  if (!JS_IsArrayObject(aCx, (JS::HandleObject) attachmentsObj)) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -546,7 +546,7 @@ MmsMessage::GetDeliveryInfo(JSContext* aCx, JS::MutableHandle<JS::Value> aDelive
       return NS_ERROR_FAILURE;
     }
 
-    if (!JS_SetElement(aCx, deliveryInfo, i, infoJsObj)) {
+	if (!JS_SetElement(aCx, deliveryInfo, i, (JS::HandleObject) infoJsObj)) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -665,7 +665,7 @@ MmsMessage::GetAttachments(JSContext* aCx, JS::MutableHandle<JS::Value> aAttachm
       return NS_ERROR_FAILURE;
     }
 
-    if (!JS_SetElement(aCx, attachments, i, attachmentObj)) {
+	if (!JS_SetElement(aCx, attachments, i, (JS::HandleObject) attachmentObj)) {
       return NS_ERROR_FAILURE;
     }
   }

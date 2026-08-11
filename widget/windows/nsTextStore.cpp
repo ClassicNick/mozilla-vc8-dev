@@ -3062,7 +3062,7 @@ nsTextStore::GetIMEUpdatePreference()
                        nsIMEUpdatePreference::NOTIFY_DURING_DEACTIVE);
     }
   }
-  return nsIMEUpdatePreference(notifications, false);
+  return nsIMEUpdatePreference(notifications);
 }
 
 nsresult

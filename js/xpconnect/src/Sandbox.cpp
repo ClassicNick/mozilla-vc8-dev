@@ -1469,7 +1469,7 @@ SandboxOptions::ParseGlobalProperties()
     }
 
     RootedObject ctors(mCx, &value.toObject());
-    if (!JS_IsArrayObject(mCx, ctors)) {
+    if (!JS_IsArrayObject(mCx, (HandleObject) ctors)) {
         JS_ReportError(mCx, "Expected an array value for wantGlobalProperties");
         return false;
     }
@@ -1551,7 +1551,7 @@ nsXPCComponents_utils_Sandbox::CallOrConstruct(nsIXPConnectWrappedNative *wrappe
         prinOrSop = principal;
     } else if (args[0].isObject()) {
         RootedObject obj(cx, &args[0].toObject());
-        if (JS_IsArrayObject(cx, obj)) {
+        if (JS_IsArrayObject(cx, (HandleObject) obj)) {
             ok = GetExpandedPrincipal(cx, obj, getter_AddRefs(expanded));
             prinOrSop = expanded;
         } else {
