@@ -252,8 +252,7 @@ TextureHost::~TextureHost()
 
 void TextureHost::Finalize()
 {
-  if (GetFlags() & TEXTURE_DEALLOCATE_DEFERRED) {
-    MOZ_ASSERT(!(GetFlags() & TEXTURE_DEALLOCATE_CLIENT));
+  if (!(GetFlags() & TEXTURE_DEALLOCATE_CLIENT)) {
     DeallocateSharedData();
     DeallocateDeviceData();
   }
@@ -734,27 +733,17 @@ TextureParent::ActorDestroy(ActorDestroyReason why)
     return;
   }
 
-  bool isDeffered = mTextureHost->GetFlags() & TEXTURE_DEALLOCATE_DEFERRED;
   switch (why) {
   case AncestorDeletion:
-    NS_WARNING("PTexture deleted after ancestor");
-    // fall-through to deletion path
   case Deletion:
-    if (!(mTextureHost->GetFlags() & TEXTURE_DEALLOCATE_CLIENT) && !isDeffered) {
-      mTextureHost->DeallocateSharedData();
-    }
-    break;
-
   case NormalShutdown:
   case AbnormalShutdown:
-    mTextureHost->OnShutdown();
     break;
-
   case FailedConstructor:
     NS_RUNTIMEABORT("FailedConstructor isn't possible in PTexture");
   }
 
-  if (!isDeffered) {
+  if (mTextureHost->GetFlags() & TEXTURE_DEALLOCATE_CLIENT) {
     mTextureHost->ForgetSharedData();
   }
   mTextureHost = nullptr;
