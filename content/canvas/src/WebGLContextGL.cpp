@@ -3298,12 +3298,16 @@ WebGLContext::CompileShader(WebGLShader *shader)
                                                     nsDependentCString(mapped_name)));
             }
 
-            size_t len = 0;
-            ShGetInfo(compiler, SH_OBJECT_CODE_LENGTH, &len);
+            size_t lenWithNull = 0;
+            ShGetInfo(compiler, SH_OBJECT_CODE_LENGTH, &lenWithNull);
+            MOZ_ASSERT(lenWithNull >= 1);
+            size_t len = lenWithNull - 1;
 
             nsAutoCString translatedSrc;
-            translatedSrc.SetLength(len);
+            translatedSrc.SetLength(len); // Allocates len+1, for the null-term.
             ShGetObjectCode(compiler, translatedSrc.BeginWriting());
+
+            CopyASCIItoUTF16(translatedSrc, shader->mTranslatedSource);
 
             const char *ts = translatedSrc.get();
 
@@ -3323,6 +3327,8 @@ WebGLContext::CompileShader(WebGLShader *shader)
             // that's really bad, as that means we can't be 100% conformant. We should work towards always
             // using ANGLE identifier mapping.
             gl->fShaderSource(shadername, 1, &s, nullptr);
+
+            CopyASCIItoUTF16(s, shader->mTranslatedSource);
         }
 
         shader->SetTranslationSuccess();
@@ -3616,8 +3622,7 @@ WebGLContext::GetShaderPrecisionFormat(GLenum shadertype, GLenum precisiontype)
 void
 WebGLContext::GetShaderSource(WebGLShader *shader, nsAString& retval)
 {
-    if (IsContextLost())
-    {
+    if (IsContextLost()) {
         retval.SetIsVoid(true);
         return;
     }
@@ -3648,6 +3653,20 @@ WebGLContext::ShaderSource(WebGLShader *shader, const nsAString& source)
     shader->SetSource(source);
 
     shader->SetNeedsTranslation();
+}
+
+void
+WebGLContext::GetShaderTranslatedSource(WebGLShader *shader, nsAString& retval)
+{
+    if (IsContextLost()) {
+        retval.SetIsVoid(true);
+        return;
+    }
+
+    if (!ValidateObject("getShaderTranslatedSource: shader", shader))
+        return;
+
+    retval.Assign(shader->TranslatedSource());
 }
 
 GLenum WebGLContext::CheckedTexImage2D(GLenum target,

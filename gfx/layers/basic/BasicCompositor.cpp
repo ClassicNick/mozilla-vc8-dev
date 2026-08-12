@@ -293,6 +293,7 @@ DrawSurfaceWithTextureCoords(DrawTarget *aDest,
                              const gfx::Rect& aDestRect,
                              SourceSurface *aSource,
                              const gfx::Rect& aTextureCoords,
+                             gfx::Filter aFilter,
                              float aOpacity,
                              SourceSurface *aMask,
                              const Matrix& aMaskTransform)
@@ -309,6 +310,11 @@ DrawSurfaceWithTextureCoords(DrawTarget *aDest,
                                   gfxPoint(aDestRect.XMost(), aDestRect.y),
                                   gfxPoint(aDestRect.XMost(), aDestRect.YMost()));
   Matrix matrix = ToMatrix(transform);
+
+  // Only use REPEAT if aTextureCoords is outside (0, 0, 1, 1).
+  gfx::Rect unitRect(0, 0, 1, 1);
+  ExtendMode mode = unitRect.Contains(aTextureCoords) ? ExtendMode::CLAMP : ExtendMode::REPEAT;
+
   if (aMask) {
     aDest->PushClipRect(aDestRect);
     Matrix maskTransformInverse = aMaskTransform;
@@ -316,13 +322,13 @@ DrawSurfaceWithTextureCoords(DrawTarget *aDest,
     Matrix dtTransform = aDest->GetTransform();
     aDest->SetTransform(aMaskTransform);
     Matrix patternMatrix = maskTransformInverse * dtTransform * matrix;
-    aDest->MaskSurface(SurfacePattern(aSource, ExtendMode::REPEAT, patternMatrix),
+    aDest->MaskSurface(SurfacePattern(aSource, mode, patternMatrix, aFilter),
                        aMask, Point(), DrawOptions(aOpacity));
     aDest->SetTransform(dtTransform);
     aDest->PopClip();
   } else {
     aDest->FillRect(aDestRect,
-                    SurfacePattern(aSource, ExtendMode::REPEAT, matrix),
+                    SurfacePattern(aSource, mode, matrix, aFilter),
                     DrawOptions(aOpacity));
   }
 }
@@ -487,6 +493,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
       DrawSurfaceWithTextureCoords(dest, aRect,
                                    source->GetSurface(),
                                    texturedEffect->mTextureCoords,
+                                   texturedEffect->mFilter,
                                    aOpacity, sourceMask, maskTransform);
       break;
     }
@@ -504,6 +511,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
       DrawSurfaceWithTextureCoords(dest, aRect,
                                    sourceSurf,
                                    effectRenderTarget->mTextureCoords,
+                                   effectRenderTarget->mFilter,
                                    aOpacity, sourceMask, maskTransform);
       break;
     }
@@ -609,7 +617,19 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
 void
 BasicCompositor::EndFrame()
 {
+  // Pop aClipRectIn/bounds rect
   mRenderTarget->mDrawTarget->PopClip();
+
+  if (gfxPlatform::GetPlatform()->WidgetUpdateFlashing()) {
+    float r = float(rand()) / RAND_MAX;
+    float g = float(rand()) / RAND_MAX;
+    float b = float(rand()) / RAND_MAX;
+    // We're still clipped to mInvalidRegion, so just fill the bounds.
+    mRenderTarget->mDrawTarget->FillRect(ToRect(mInvalidRegion.GetBounds()),
+                                         ColorPattern(Color(r, g, b, 0.2f)));
+  }
+
+  // Pop aInvalidregion
   mRenderTarget->mDrawTarget->PopClip();
 
   // Note: Most platforms require us to buffer drawing to the widget surface.

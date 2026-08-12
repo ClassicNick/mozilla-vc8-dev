@@ -12,7 +12,6 @@
 #ifdef WIN32_LEAN_AND_MEAN
 #undef WIN32_LEAN_AND_MEAN
 #endif
-#define INITGUID
 #include <windows.h>
 #define AVVENDOR
 #include <objidl.h>

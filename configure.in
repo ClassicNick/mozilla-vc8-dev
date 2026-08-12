@@ -92,7 +92,6 @@ _topsrcdir=`cd \`dirname $0\`; pwd`
 _objdir=`pwd`
 
 
-
 dnl TODO Don't exempt L10N builds once bug 842760 is resolved.
 if test "$_topsrcdir" = "$_objdir" -a "${with_l10n_base+set}" != set; then
   echo "  ***"
@@ -287,7 +286,6 @@ if test -n "$gonkdir" ; then
     AC_SUBST(ANDROID_VERSION)
     AC_DEFINE(HAVE_SYS_UIO_H)
     AC_DEFINE(HAVE_PTHREADS)
-    CROSS_COMPILE=1
     MOZ_CHROME_FILE_FORMAT=omni
     direct_nspr_config=1
 else
@@ -314,16 +312,13 @@ AC_SUBST(OBJCOPY)
 dnl ========================================================
 dnl Checks for compilers.
 dnl ========================================================
-dnl Set CROSS_COMPILE in the environment when running configure
-dnl to use the cross-compile setup for now
-dnl ========================================================
 
 dnl AR_FLAGS set here so HOST_AR_FLAGS can be set correctly (see bug 538269)
 AR_FLAGS='crs $@'
 
 if test "$COMPILE_ENVIRONMENT"; then
 
-if test -n "$CROSS_COMPILE" -a "$target" != "$host"; then
+if test "$target" != "$host"; then
     MOZ_CROSS_COMPILER
 else
     AC_PROG_CC
@@ -3499,7 +3494,7 @@ MOZ_ARG_WITH_BOOL(system-nspr,
     _USE_SYSTEM_NSPR=1 )
 
 if test -n "$_USE_SYSTEM_NSPR"; then
-    AM_PATH_NSPR(4.10.2, [MOZ_NATIVE_NSPR=1], [AC_MSG_ERROR([your don't have NSPR installed or your version is too old])])
+    AM_PATH_NSPR(4.10.3, [MOZ_NATIVE_NSPR=1], [AC_MSG_ERROR([your don't have NSPR installed or your version is too old])])
 fi
 
 if test -n "$MOZ_NATIVE_NSPR"; then
@@ -3843,18 +3838,9 @@ AC_SUBST(MOZ_NATIVE_HUNSPELL)
 dnl ========================================================
 dnl system libffi Support
 dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(system-ffi,
-[  --enable-system-ffi       Use system libffi (located with pkgconfig)],
-    MOZ_NATIVE_FFI=1 )
+MOZ_CONFIG_FFI()
 
 if test -n "$MOZ_NATIVE_FFI"; then
-    # Vanilla libffi 3.0.9 needs a few patches from upcoming version 3.0.10
-    # for non-GCC compilers.
-    if test -z "$GNU_CC"; then
-        PKG_CHECK_MODULES(MOZ_FFI, libffi > 3.0.9)
-    else
-        PKG_CHECK_MODULES(MOZ_FFI, libffi >= 3.0.9)
-    fi
     MOZ_JS_STATIC_LIBS="$MOZ_JS_STATIC_LIBS $MOZ_FFI_LIBS"
 fi
 
@@ -3868,26 +3854,6 @@ MOZ_ARG_ENABLE_BOOL(shared-js,
                           Create a shared JavaScript library.],
     JS_SHARED_LIBRARY=1,
     JS_SHARED_LIBRARY=)
-
-dnl ========================================================
-dnl System ICU Support
-dnl ========================================================
-MOZ_NATIVE_ICU=
-MOZ_ARG_WITH_BOOL(system-icu,
-[  --with-system-icu
-                          Use system ICU (located with pkgconfig)],
-    MOZ_NATIVE_ICU=1)
-
-if test -n "$MOZ_NATIVE_ICU"; then
-    PKG_CHECK_MODULES(MOZ_ICU, icu-i18n >= 50.1)
-    MOZ_JS_STATIC_LIBS="$MOZ_JS_STATIC_LIBS $MOZ_ICU_LIBS"
-    MOZ_SHARED_ICU=1
-else
-    MOZ_ICU_CFLAGS='-I$(topsrcdir)/intl/icu/source/common -I$(topsrcdir)/intl/icu/source/i18n'
-    AC_SUBST(MOZ_ICU_CFLAGS)
-fi
-
-AC_SUBST(MOZ_NATIVE_ICU)
 
 dnl ========================================================
 dnl Java SDK support
@@ -3924,6 +3890,7 @@ MOZ_SAMPLE_TYPE_FLOAT32=
 MOZ_SAMPLE_TYPE_S16=
 MOZ_OPUS=1
 MOZ_WEBM=1
+MOZ_GSTREAMER=
 MOZ_DIRECTSHOW=
 MOZ_WMF=
 MOZ_FMP4=
@@ -4142,10 +4109,6 @@ WITH_APP_NAME=$withval,
 
 if test -n "$WITH_APP_NAME" ; then
     MOZ_APP_NAME="$WITH_APP_NAME"
-fi
-
-if test -z "$MOZ_APP_NAME"; then
-   MOZ_APP_NAME=`echo $MOZ_APP_BASENAME | tr A-Z a-z`
 fi
 
 MOZ_ARG_WITH_STRING(app-basename,
@@ -5573,44 +5536,59 @@ WINNT|Darwin|Android)
     ;;
 *)
     MOZ_GSTREAMER=1
+    GST_API_VERSION=0.10
     ;;
 esac
 
-MOZ_ARG_ENABLE_BOOL(gstreamer,
-[  --enable-gstreamer           Enable GStreamer support],
-MOZ_GSTREAMER=1,
-MOZ_GSTREAMER=)
-
-if test "$MOZ_GSTREAMER"; then
-    # API version, eg 0.10, 1.0 etc
+MOZ_ARG_ENABLE_STRING(gstreamer,
+[  --enable-gstreamer[=0.10]           Enable GStreamer support],
+[ MOZ_GSTREAMER=1
+  # API version, eg 0.10, 1.0 etc
+  if test -z "$enableval" -o "$enableval" = "yes"; then
     GST_API_VERSION=0.10
+  else
+    GST_API_VERSION=$enableval
+  fi],
+)
+
+if test -n "$MOZ_GSTREAMER"; then
     # core/base release number
-    GST_VERSION=0.10.25
+    if test "$GST_API_VERSION" = "1.0"; then
+      GST_VERSION=1.0
+    else
+      GST_VERSION=0.10.25
+    fi
+
     PKG_CHECK_MODULES(GSTREAMER,
                       gstreamer-$GST_API_VERSION >= $GST_VERSION
                       gstreamer-app-$GST_API_VERSION
-                      gstreamer-plugins-base-$GST_API_VERSION, ,
-                      AC_MSG_ERROR([gstreamer and gstreamer-plugins-base development packages are needed to build gstreamer backend. Install them or disable gstreamer support with --disable-gstreamer]))
-    if test -n "$GSTREAMER_LIBS"; then
-       _SAVE_LDFLAGS=$LDFLAGS
-       LDFLAGS="$LDFLAGS $GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
-       AC_TRY_LINK(,[return 0;],_HAVE_LIBGSTVIDEO=1,_HAVE_LIBGSTVIDEO=)
-       if test -n "$_HAVE_LIBGSTVIDEO" ; then
-          GSTREAMER_LIBS="$GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
-       else
-          AC_MSG_ERROR([gstreamer-plugins-base found, but no libgstvideo. Something has gone terribly wrong. Try reinstalling gstreamer-plugins-base; failing that, disable the gstreamer backend with --disable-gstreamer.])
-       fi
-       LDFLAGS=$_SAVE_LDFLAGS
-    else
-       AC_MSG_ERROR([gstreamer and gstreamer-plugins-base development packages are needed to build gstreamer backend. Install them or disable gstreamer support with --disable-gstreamer])
+                      gstreamer-plugins-base-$GST_API_VERSION,
+                      [_HAVE_GSTREAMER=1],
+                      [_HAVE_GSTREAMER=])
+    if test -z "$_HAVE_GSTREAMER"; then
+        AC_MSG_ERROR([gstreamer and gstreamer-plugins-base development packages are needed to build gstreamer backend. Install them or disable gstreamer support with --disable-gstreamer])
     fi
+
+    _SAVE_LDFLAGS=$LDFLAGS
+    LDFLAGS="$LDFLAGS $GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
+    AC_TRY_LINK(,[return 0;],_HAVE_LIBGSTVIDEO=1,_HAVE_LIBGSTVIDEO=)
+    if test -n "$_HAVE_LIBGSTVIDEO" ; then
+        GSTREAMER_LIBS="$GSTREAMER_LIBS -lgstvideo-$GST_API_VERSION"
+    else
+        AC_MSG_ERROR([gstreamer-plugins-base found, but no libgstvideo. Something has gone terribly wrong. Try reinstalling gstreamer-plugins-base; failing that, disable the gstreamer backend with --disable-gstreamer.])
+    fi
+    LDFLAGS=$_SAVE_LDFLAGS
+
+    AC_SUBST(GSTREAMER_CFLAGS)
+    AC_SUBST(GSTREAMER_LIBS)
 fi
-AC_SUBST(GSTREAMER_CFLAGS)
-AC_SUBST(GSTREAMER_LIBS)
+
 AC_SUBST(MOZ_GSTREAMER)
+AC_SUBST(GST_API_VERSION)
 
 if test -n "$MOZ_GSTREAMER"; then
-   AC_DEFINE(MOZ_GSTREAMER)
+     AC_DEFINE(MOZ_GSTREAMER)
+     AC_DEFINE_UNQUOTED(GST_API_VERSION, "$GST_API_VERSION")
 fi
 
 
@@ -8459,6 +8437,10 @@ AC_SUBST(MOZ_CHILD_PROCESS_BUNDLE)
 # - MOZ_PROFILE_MIGRATOR: When set, enables profile migrator.
 # - MOZ_EXTENSION_MANAGER: When set, enabled extension manager.
 
+if test -z "$MOZ_APP_NAME"; then
+   MOZ_APP_NAME=`echo $MOZ_APP_BASENAME | tr A-Z a-z`
+fi
+
 # For extensions and langpacks, we require a max version that is compatible
 # across security releases. MOZ_APP_MAXVERSION is our method for doing that.
 # 24.0a1 and 24.0a2 aren't affected
@@ -8802,84 +8784,34 @@ HAVE_SYS_MOUNT_H
 
 AC_SUBST(STLPORT_LIBS)
 
-MOZ_ARG_WITH_STRING(intl-api,
-[  --with-intl-api, --with-intl-api=build, --without-intl-api
-    Determine the status of the ECMAScript Internationalization API.  The first
-    (or lack of any of these) builds and exposes the API.  The second builds it
-    but doesn't use ICU or expose the API to script.  The third doesn't build
-    ICU at all.],
-    _INTL_API=$withval,
-    _INTL_API=yes)
+dnl ========================================================
+dnl ICU Support
+dnl ========================================================
 
-WITH_INTL="--with-intl-api=$_INTL_API"
-ENABLE_INTL_API=
-case "$_INTL_API" in
-no)
-    ;;
-build)
-    ENABLE_INTL_API=1
-    ;;
-yes)
-    ENABLE_INTL_API=1
-    ;;
-*)
-    AC_MSG_ERROR([Invalid value passed to --with-intl-api: $_INTL_API])
-    ;;
-esac
-
-if test -n "$ENABLE_INTL_API"; then
 if test "$MOZ_BUILD_APP" = "browser"; then
-    WITH_INTL="--with-intl-api"
+    _INTL_API=yes
 else
     # Internationalization isn't built or exposed by default in non-desktop
     # builds.  Bugs to enable:
     #
     #   Android:  bug 864843
     #   B2G:      bug 866301
-    WITH_INTL="--without-intl-api"
-    ENABLE_INTL_API=
-fi
+    _INTL_API=no
 fi
 
-dnl Settings for the implementation of the ECMAScript Internationalization API
-if test -n "$ENABLE_INTL_API"; then
-    AC_DEFINE(ENABLE_INTL_API)
+MOZ_CONFIG_ICU()
 
-    MOZ_CONFIG_ICU()
-
-    dnl Build ICU as a shared library for shared js builds.
-    if test -z "$MOZ_NATIVE_ICU" -a -n "$JS_SHARED_LIBRARY"; then
-        case "$OS_TARGET" in
-            WINNT)
-                ICU_LIB_NAMES="icuin icuuc icudt"
-                DBG_SUFFIX=
-                if test -n "$MOZ_DEBUG"; then
-                    DBG_SUFFIX=d
-                fi
-                MOZ_ICU_LIBS='$(foreach lib,$(ICU_LIB_NAMES),$(DEPTH)/js/src/intl/icu/target/lib/$(LIB_PREFIX)$(lib)$(DBG_SUFFIX).$(LIB_SUFFIX))'
-                ;;
-            Darwin)
-                ICU_LIB_NAMES="icui18n icuuc icudata"
-                MOZ_ICU_LIBS='$(foreach lib,$(ICU_LIB_NAMES),$(DEPTH)/js/src/intl/icu/target/lib/$(DLL_PREFIX)$(lib).$(MOZ_ICU_VERSION)$(DLL_SUFFIX))'
-                ;;
-            Linux|DragonFly|FreeBSD|NetBSD|OpenBSD)
-                ICU_LIB_NAMES="icui18n icuuc icudata"
-                MOZ_ICU_LIBS='$(foreach lib,$(ICU_LIB_NAMES),$(DEPTH)/js/src/intl/icu/target/lib/$(DLL_PREFIX)$(lib)$(DLL_SUFFIX).$(MOZ_ICU_VERSION))'
-                ;;
-            *)
-                AC_MSG_ERROR([ECMAScript Internationalization API is not yet supported on this platform])
-        esac
-    fi
+if test -n "$MOZ_NATIVE_ICU"; then
+    MOZ_JS_STATIC_LIBS="$MOZ_JS_STATIC_LIBS $MOZ_ICU_LIBS"
 fi
 
-AC_SUBST(DBG_SUFFIX)
-AC_SUBST(ENABLE_INTL_API)
-AC_SUBST(ICU_LIB_NAMES)
-AC_SUBST(MOZ_ICU_LIBS)
+MOZ_CREATE_CONFIG_STATUS()
 
-export WRITE_MOZINFO=1
-AC_OUTPUT()
-unset WRITE_MOZINFO
+# No need to run subconfigures when building with LIBXUL_SDK_DIR
+if test "$COMPILE_ENVIRONMENT" -a -z "$LIBXUL_SDK_DIR"; then
+  MOZ_SUBCONFIGURE_ICU()
+  MOZ_SUBCONFIGURE_FFI()
+fi
 
 # Hack around an Apple bug that affects the egrep that comes with OS X 10.7.
 # "env ARCHPREFERENCE=i386,x86_64 arch egrep" first tries to use the 32-bit
@@ -9092,7 +9024,9 @@ dist=$MOZ_BUILD_ROOT/dist
 ac_configure_args="$_SUBDIR_CONFIG_ARGS"
 ac_configure_args="$ac_configure_args --disable-threadsafe"
 
-ac_configure_args="$ac_configure_args $WITH_INTL"
+if test "$_INTL_API" = no; then
+    ac_configure_args="$ac_configure_args --without-intl-api"
+fi
 
 if test "$BUILD_CTYPES"; then
     # Build js-ctypes on the platforms we can.
@@ -9111,7 +9045,6 @@ if test -z "$MOZ_NATIVE_NSPR"; then
     ac_configure_args="$ac_configure_args --with-nspr-cflags='$NSPR_CFLAGS'"
     ac_configure_args="$ac_configure_args --with-nspr-libs='$NSPR_LIBS'"
 fi
-ac_configure_args="$ac_configure_args --with-dist-dir=../../dist"
 ac_configure_args="$ac_configure_args --prefix=$dist"
 if test "$MOZ_MEMORY"; then
    ac_configure_args="$ac_configure_args --enable-jemalloc"
@@ -9147,3 +9080,12 @@ AC_OUTPUT_SUBDIRS(js/src)
 ac_configure_args="$_SUBDIR_CONFIG_ARGS"
 
 fi # COMPILE_ENVIRONMENT && !LIBXUL_SDK_DIR
+
+export WRITE_MOZINFO=1
+dnl we need to run config.status after js/src subconfigure because we're
+dnl traversing its moz.build and we need its config.status for that.
+dnl However, writing our own config.status needs to happen before
+dnl subconfigures because the setup surrounding subconfigures alters
+dnl many AC_SUBSTed variables.
+MOZ_RUN_CONFIG_STATUS()
+unset WRITE_MOZINFO
