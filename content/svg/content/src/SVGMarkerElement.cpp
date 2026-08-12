@@ -16,6 +16,10 @@
 #include "mozilla/gfx/Matrix.h"
 #include "SVGContentUtils.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 NS_IMPL_NS_NEW_NAMESPACED_SVG_ELEMENT(Marker)
 
 namespace mozilla {

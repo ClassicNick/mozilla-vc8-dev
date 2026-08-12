@@ -137,13 +137,13 @@ public:
     CSSRect scrollableRect = mScrollableRect;
     CSSRect compBounds = CalculateCompositedRectInCssPixels();
     if (scrollableRect.width < compBounds.width) {
-      scrollableRect.x = std::max(0.f,
+      scrollableRect.x = NS_MAX(0.f,
                                   scrollableRect.x - (compBounds.width - scrollableRect.width));
       scrollableRect.width = compBounds.width;
     }
 
     if (scrollableRect.height < compBounds.height) {
-      scrollableRect.y = std::max(0.f,
+      scrollableRect.y = NS_MAX(0.f,
                                   scrollableRect.y - (compBounds.height - scrollableRect.height));
       scrollableRect.height = compBounds.height;
     }

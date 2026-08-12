@@ -11606,7 +11606,7 @@ class GlobalGenRoots():
                                    CGWrapper(idEnum, pre='\n'))
         idEnum = CGWrapper(idEnum, post='\n')
 
-        curr = CGList([CGGeneric(define="#include <stdint.h>\n\n"),
+        curr = CGList([CGGeneric(define='#include "mozilla/StandardInteger.h"\n\n'),
                        idEnum])
 
         # Let things know the maximum length of the prototype chain.
