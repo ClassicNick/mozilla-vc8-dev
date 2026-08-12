@@ -23,6 +23,9 @@ extern "C" {
 #include "VorbisUtils.h"
 #include "MediaMetadataManager.h"
 #include "nsISeekableStream.h"
+#include "gfx2DGlue.h"
+
+using namespace mozilla::gfx;
 
 namespace mozilla {
 
@@ -764,7 +767,7 @@ nsresult OggReader::DecodeTheora(ogg_packet* aPacket, int64_t aTimeThreshold)
                                      b,
                                      isKeyframe,
                                      aPacket->granulepos,
-                                     mPicture);
+                                     ToIntRect(mPicture));
     if (!v) {
       // There may be other reasons for this error, but for
       // simplicity just assume the worst case: out of memory.

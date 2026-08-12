@@ -1524,6 +1524,7 @@ public:
    */
   static uint32_t GetTextRunFlagsForStyle(nsStyleContext* aStyleContext,
                                           const nsStyleFont* aStyleFont,
+                                          const nsStyleText* aStyleText,
                                           nscoord aLetterSpacing);
 
   /**
