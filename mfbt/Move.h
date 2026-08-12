@@ -116,7 +116,7 @@ namespace mozilla {
  *
  *   c2 = Move(c1); // or OldMove()
  *
- * This destroys c1, moves c1's value to c2, and leaves c1 in an undefined but
+ * This destroys c2, moves c1's value to c2, and leaves c1 in an undefined but
  * destructible state.
  *
  * This header file defines MoveRef, Move, and OldMove in the mozilla namespace.

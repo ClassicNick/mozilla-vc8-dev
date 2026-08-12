@@ -27,8 +27,6 @@
 #include <windows.h>
 #include <softpub.h>
 #include <wintrust.h>
-
-#pragma comment(lib, "wintrust.lib")
 #endif // XP_WIN
 
 namespace mozilla {
@@ -856,7 +854,9 @@ BackgroundFileSaver::ExtractSignatureInfo(const nsAString& filePath)
   // Disallow revocation checks over the network
   trustData.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
   // no UI
+#if !defined (_MSC_VER) || _MSC_VER >= 1400
   trustData.dwUIContext = 0;
+#endif
   trustData.pFile = &fileToCheck;
 
   // The WINTRUST_ACTION_GENERIC_VERIFY_V2 policy verifies that the certificate

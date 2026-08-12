@@ -96,7 +96,7 @@ private:
 
   nsClassHashtable<nsStringHashKey, nsTArray<nsString> > mSearchParams;
 
-  nsTArray<nsRefPtr<URLSearchParamsObserver>> mObservers;
+  nsTArray<nsRefPtr<URLSearchParamsObserver> > mObservers;
 };
 
 } // namespace dom

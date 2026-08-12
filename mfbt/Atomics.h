@@ -938,7 +938,7 @@ class Atomic;
  * swap method is provided.
  */
 template<typename T, MemoryOrdering Order>
-class Atomic<T, Order, typename EnableIf<IsIntegral<T>::value && !IsSame<T, bool>::value>::Type>
+class Atomic<T, Order, typename EnableIf<IsIntegral<T>::value>::Type>
   : public detail::AtomicBaseIncDec<T, Order>
 {
     typedef typename detail::AtomicBaseIncDec<T, Order> Base;

@@ -146,7 +146,7 @@ nsMediaSniffer::GetMIMETypeFromContent(nsIRequest* aRequest,
   }
 
   // Bug 950023: 512 bytes are often not enough to sniff for mp3.
-  if (MatchesMP3(aData, std::min(aLength, MAX_BYTES_SNIFFED_MP3))) {
+  if (MatchesMP3(aData, NS_MIN(aLength, MAX_BYTES_SNIFFED_MP3))) {
     aSniffedType.AssignLiteral(AUDIO_MP3);
     return NS_OK;
   }

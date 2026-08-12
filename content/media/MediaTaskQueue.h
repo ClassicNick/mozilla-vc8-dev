@@ -56,7 +56,7 @@ private:
   Monitor mQueueMonitor;
 
   // Queue of tasks to run.
-  std::queue<RefPtr<nsIRunnable>> mTasks;
+  std::queue<RefPtr<nsIRunnable> > mTasks;
 
   // True if we've dispatched an event to the pool to execute events from
   // the queue.

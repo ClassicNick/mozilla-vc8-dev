@@ -18,6 +18,9 @@
 #ifndef insanity_pkix__pkixutil_h
 #define insanity_pkix__pkixutil_h
 
+#if defined (_MSC_VER) && _MSC_VER <= 1500
+#include "mozilla/NullPtr.h"
+#endif
 #include "insanity/pkixtypes.h"
 #include "prerror.h"
 #include "seccomon.h"

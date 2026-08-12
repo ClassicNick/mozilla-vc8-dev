@@ -8,7 +8,7 @@
 #ifndef nsFrameState_h_
 #define nsFrameState_h_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 #ifdef DEBUG
 #include "nsString.h"
@@ -20,7 +20,7 @@ typedef uint64_t nsFrameState_size_t;
 
 #define NS_FRAME_STATE_BIT(n_) (nsFrameState(nsFrameState_size_t(1) << (n_)))
 
-#if (_MSC_VER == 1600)
+#if (_MSC_VER <= 1600)
 /*
  * Visual Studio 2010 has trouble with the sized enum.  Although sized enums
  * are supported, two problems arise:

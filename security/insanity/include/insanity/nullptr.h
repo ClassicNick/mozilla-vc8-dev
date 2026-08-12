@@ -23,6 +23,8 @@
 #if __GNUC__ * 100 + __GNUC_MINOR__ < 406
 #define nullptr __null
 #endif
+#elif defined (_MSC_VER) && _MSC_VER <= 1500
+#include "mozilla/NullPtr.h"
 #endif
 
 #endif // insanity_pkix__nullptr_h
