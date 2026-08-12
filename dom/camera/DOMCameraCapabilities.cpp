@@ -1,372 +1,281 @@
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <cstring>
-#include <cstdlib>
-#include "base/basictypes.h"
-#include "nsDOMClassInfo.h"
-#include "jsapi.h"
-#include "CameraRecorderProfiles.h"
-#include "DOMCameraControl.h"
 #include "DOMCameraCapabilities.h"
+#include "nsPIDOMWindow.h"
+#include "nsContentUtils.h"
+#include "mozilla/dom/CameraManagerBinding.h"
+#include "mozilla/dom/CameraCapabilitiesBinding.h"
 #include "CameraCommon.h"
+#include "ICameraControl.h"
+#include "CameraRecorderProfiles.h"
 
-using namespace mozilla;
-using namespace mozilla::dom;
+namespace mozilla {
+namespace dom {
 
-DOMCI_DATA(CameraCapabilities, nsICameraCapabilities)
+NS_IMPL_CYCLE_COLLECTION_CLASS(CameraCapabilities)
 
-NS_INTERFACE_MAP_BEGIN(DOMCameraCapabilities)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CameraCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
+  tmp->mRecorderProfiles = JS::UndefinedValue();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(CameraCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(CameraCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JSVAL_MEMBER_CALLBACK(mRecorderProfiles)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+NS_IMPL_CYCLE_COLLECTING_ADDREF(CameraCapabilities)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(CameraCapabilities)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CameraCapabilities)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
-  NS_INTERFACE_MAP_ENTRY(nsICameraCapabilities)
-  NS_DOM_INTERFACE_MAP_ENTRY_CLASSINFO(CameraCapabilities)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_ADDREF(DOMCameraCapabilities)
-NS_IMPL_RELEASE(DOMCameraCapabilities)
-
-static nsresult
-ParseZoomRatioItemAndAdd(JSContext* aCx, JS::Handle<JSObject*> aArray,
-                         uint32_t aIndex, const char* aStart, char** aEnd)
+CameraCapabilities::CameraCapabilities(nsPIDOMWindow* aWindow)
+  : mRecorderProfiles(JS::UndefinedValue())
+  , mWindow(aWindow)
 {
-  if (!*aEnd) {
-    // make 'aEnd' follow the same semantics as strchr().
-    aEnd = nullptr;
+  DOM_CAMERA_LOGT("%s:%d : this=%p\n", __func__, __LINE__, this);
+  MOZ_COUNT_CTOR(CameraCapabilities);
+  mozilla::HoldJSObjects(this);
+  SetIsDOMBinding();
+}
+
+CameraCapabilities::~CameraCapabilities()
+{
+  DOM_CAMERA_LOGT("%s:%d : this=%p\n", __func__, __LINE__, this);
+  mRecorderProfiles = JS::UndefinedValue();
+  mozilla::DropJSObjects(this);
+  MOZ_COUNT_DTOR(CameraCapabilities);
+}
+
+JSObject*
+CameraCapabilities::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+{
+  return CameraCapabilitiesBinding::Wrap(aCx, aScope, this);
+}
+
+#define LOG_IF_ERROR(rv, param)                               \
+  do {                                                        \
+    if (NS_FAILED(rv)) {                                      \
+      DOM_CAMERA_LOGW("Error %x trying to get " #param "\n",  \
+        (rv));                                                \
+    }                                                         \
+  } while(0)
+
+nsresult
+CameraCapabilities::TranslateToDictionary(ICameraControl* aCameraControl,
+                                          uint32_t aKey, nsTArray<CameraSize>& aSizes)
+{
+  nsresult rv;
+  nsTArray<ICameraControl::Size> sizes;
+
+  rv = aCameraControl->Get(aKey, sizes);
+  if (NS_FAILED(rv)) {
+    return rv;
   }
 
-  /**
-   * The by-100 divisor is Gonk-specific.  For now, assume other platforms
-   * return actual fractional multipliers.
-   */
-  double d = strtod(aStart, aEnd);
-#if MOZ_WIDGET_GONK
-  d /= 100;
-#endif
-
-  if (!JS_SetElement(aCx, aArray, aIndex, d)) {
-    return NS_ERROR_FAILURE;
+  aSizes.Clear();
+  aSizes.SetCapacity(sizes.Length());
+  for (uint32_t i = 0; i < sizes.Length(); ++i) {
+    CameraSize* s = aSizes.AppendElement();
+    s->mWidth = sizes[i].width;
+    s->mHeight = sizes[i].height;
   }
 
   return NS_OK;
 }
 
-static nsresult
-ParseStringItemAndAdd(JSContext* aCx, JS::Handle<JSObject*> aArray,
-                      uint32_t aIndex, const char* aStart, char** aEnd)
+nsresult
+CameraCapabilities::Populate(ICameraControl* aCameraControl)
 {
-  JS::Rooted<JSString*> s(aCx);
+  NS_ENSURE_TRUE(aCameraControl, NS_ERROR_INVALID_ARG);
 
-  if (*aEnd) {
-    s = JS_NewStringCopyN(aCx, aStart, *aEnd - aStart);
-  } else {
-    s = JS_NewStringCopyZ(aCx, aStart);
-  }
-  if (!s) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  nsresult rv;
 
-  if (!JS_SetElement(aCx, aArray, aIndex, (JS::HandleString) s)) {
-    return NS_ERROR_FAILURE;
-  }
+  rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_PREVIEWSIZES, mPreviewSizes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_PREVIEWSIZES);
 
-  return NS_OK;
-}
+  rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_PICTURESIZES, mPictureSizes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_PICTURESIZES);
 
-static nsresult
-ParseDimensionItemAndAdd(JSContext* aCx, JS::Handle<JSObject*> aArray,
-                         uint32_t aIndex, const char* aStart, char** aEnd)
-{
-  char* x;
+  rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES, mThumbnailSizes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES);
 
-  if (!*aEnd) {
-    // make 'aEnd' follow the same semantics as strchr().
-    aEnd = nullptr;
-  }
-
-  JS::Rooted<JS::Value> w(aCx, INT_TO_JSVAL(strtol(aStart, &x, 10)));
-  JS::Rooted<JS::Value> h(aCx, INT_TO_JSVAL(strtol(x + 1, aEnd, 10)));
-
-  JS::Rooted<JSObject*> o(aCx, JS_NewObject(aCx, nullptr, JS::NullPtr(), JS::NullPtr()));
-  if (!o) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  if (!JS_SetProperty(aCx, o, "width", w)) {
-    return NS_ERROR_FAILURE;
-  }
-  if (!JS_SetProperty(aCx, o, "height", h)) {
-    return NS_ERROR_FAILURE;
-  }
-
+<<<<<<< HEAD
   if (!JS_SetElement(aCx, aArray, aIndex, (JS::HandleObject) o)) {
     return NS_ERROR_FAILURE;
   }
+=======
+  rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_VIDEOSIZES, mVideoSizes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_VIDEOSIZES);
+>>>>>>> 1a47463
 
-  return NS_OK;
-}
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_PICTUREFORMATS, mFileFormats);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_PICTUREFORMATS);
 
-nsresult
-DOMCameraCapabilities::ParameterListToNewArray(JSContext* aCx,
-                                               JS::MutableHandle<JSObject*> aArray,
-                                               uint32_t aKey,
-                                               ParseItemAndAddFunc aParseItemAndAdd)
-{
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_WHITEBALANCES, mWhiteBalanceModes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_WHITEBALANCES);
 
-  const char* value = mCamera->GetParameterConstChar(aKey);
-  if (!value) {
-    // in case we get nonsense data back
-    aArray.set(nullptr);
-    return NS_OK;
-  }
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_SCENEMODES, mSceneModes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_SCENEMODES);
 
-  aArray.set(JS_NewArrayObject(aCx, 0));
-  if (!aArray) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_EFFECTS, mEffects);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_EFFECTS);
 
-  const char* p = value;
-  uint32_t index = 0;
-  nsresult rv;
-  char* q;
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_FLASHMODES, mFlashModes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_FLASHMODES);
 
-  while (p) {
-    /**
-     * In C's string.h, strchr() is declared as returning 'char*'; in C++'s
-     * cstring, it is declared as returning 'const char*', _except_ in MSVC,
-     * where the C version is declared to return const like the C++ version.
-     *
-     * Unfortunately, for both cases, strtod() and strtol() take a 'char**' as
-     * the end-of-conversion pointer, so we need to cast away strchr()'s
-     * const-ness here to make the MSVC build everything happy.
-     */
-    q = const_cast<char*>(strchr(p, ','));
-    if (q != p) { // skip consecutive delimiters, just in case
-      rv = aParseItemAndAdd(aCx, aArray, index, p, &q);
-      NS_ENSURE_SUCCESS(rv, rv);
-      ++index;
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_FOCUSMODES, mFocusModes);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_FOCUSMODES);
+
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_ZOOMRATIOS, mZoomRatios);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_ZOOMRATIOS);
+
+  int32_t areas;
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_MAXFOCUSAREAS, areas);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_MAXFOCUSAREAS);
+  mMaxFocusAreas = areas < 0 ? 0 : areas;
+
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_MAXMETERINGAREAS, areas);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_MAXMETERINGAREAS);
+  mMaxMeteringAreas = areas < 0 ? 0 : areas;
+
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_MINEXPOSURECOMPENSATION, mMinExposureCompensation);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_MINEXPOSURECOMPENSATION);
+
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_MAXEXPOSURECOMPENSATION, mMaxExposureCompensation);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_MAXEXPOSURECOMPENSATION);
+
+  rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_EXPOSURECOMPENSATIONSTEP, mExposureCompensationStep);
+  LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_EXPOSURECOMPENSATIONSTEP);
+
+  mRecorderProfileManager = aCameraControl->GetRecorderProfileManager();
+  if (!mRecorderProfileManager) {
+    DOM_CAMERA_LOGW("Unable to get recorder profile manager\n");
+  } else {
+    AutoJSContext js;
+
+    JS::Rooted<JSObject*> o(js);
+    nsresult rv = mRecorderProfileManager->GetJsObject(js, o.address());
+    if (NS_FAILED(rv)) {
+      DOM_CAMERA_LOGE("Failed to JS-objectify profile manager (%d)\n", rv);
+      return rv;
     }
-    p = q;
-    if (p) {
-      ++p;
-    }
+
+    mRecorderProfiles = JS::ObjectValue(*o);
   }
 
-  return JS_FreezeObject(aCx, aArray) ? NS_OK : NS_ERROR_FAILURE;
-}
-
-nsresult
-DOMCameraCapabilities::StringListToNewObject(JSContext* aCx,
-                                             JS::MutableHandle<JS::Value> aArray,
-                                             uint32_t aKey)
-{
-  JS::Rooted<JSObject*> array(aCx);
-
-  nsresult rv = ParameterListToNewArray(aCx, &array, aKey, ParseStringItemAndAdd);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aArray.setObjectOrNull(array);
+  // For now, always return success, since the presence or absence of capabilities
+  // indicates whether or not they are supported.
   return NS_OK;
 }
 
-nsresult
-DOMCameraCapabilities::DimensionListToNewObject(JSContext* aCx,
-                                                JS::MutableHandle<JS::Value> aArray,
-                                                uint32_t aKey)
+void
+CameraCapabilities::GetPreviewSizes(nsTArray<dom::CameraSize>& retval) const
 {
-  JS::Rooted<JSObject*> array(aCx);
-
-  nsresult rv = ParameterListToNewArray(aCx, &array, aKey, ParseDimensionItemAndAdd);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aArray.setObjectOrNull(array);
-  return NS_OK;
+  retval = mPreviewSizes;
 }
 
-/* readonly attribute jsval previewSizes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetPreviewSizes(JSContext* cx,
-                                       JS::MutableHandle<JS::Value> aPreviewSizes)
+void
+CameraCapabilities::GetPictureSizes(nsTArray<dom::CameraSize>& retval) const
 {
-  return DimensionListToNewObject(cx, aPreviewSizes, CAMERA_PARAM_SUPPORTED_PREVIEWSIZES);
+  retval = mPictureSizes;
 }
 
-/* readonly attribute jsval pictureSizes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetPictureSizes(JSContext* cx,
-                                       JS::MutableHandle<JS::Value> aPictureSizes)
+void
+CameraCapabilities::GetThumbnailSizes(nsTArray<dom::CameraSize>& retval) const
 {
-  return DimensionListToNewObject(cx, aPictureSizes, CAMERA_PARAM_SUPPORTED_PICTURESIZES);
+  retval = mThumbnailSizes;
 }
 
-/* readonly attribute jsval thumbnailSizes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetThumbnailSizes(JSContext* cx,
-                                         JS::MutableHandle<JS::Value> aThumbnailSizes)
+void
+CameraCapabilities::GetVideoSizes(nsTArray<dom::CameraSize>& retval) const
 {
-  return DimensionListToNewObject(cx, aThumbnailSizes, CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES);
+  retval = mVideoSizes;
 }
 
-/* readonly attribute jsval fileFormats; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetFileFormats(JSContext* cx,
-                                      JS::MutableHandle<JS::Value> aFileFormats)
+void
+CameraCapabilities::GetFileFormats(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aFileFormats, CAMERA_PARAM_SUPPORTED_PICTUREFORMATS);
+  retval = mFileFormats;
 }
 
-/* readonly attribute jsval whiteBalanceModes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetWhiteBalanceModes(JSContext* cx,
-                                            JS::MutableHandle<JS::Value> aWhiteBalanceModes)
+void
+CameraCapabilities::GetWhiteBalanceModes(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aWhiteBalanceModes, CAMERA_PARAM_SUPPORTED_WHITEBALANCES);
+  retval = mWhiteBalanceModes;
 }
 
-/* readonly attribute jsval sceneModes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetSceneModes(JSContext* cx,
-                                     JS::MutableHandle<JS::Value> aSceneModes)
+void
+CameraCapabilities::GetSceneModes(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aSceneModes, CAMERA_PARAM_SUPPORTED_SCENEMODES);
+  retval = mSceneModes;
 }
 
-/* readonly attribute jsval effects; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetEffects(JSContext* cx,
-                                  JS::MutableHandle<JS::Value> aEffects)
+void
+CameraCapabilities::GetEffects(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aEffects, CAMERA_PARAM_SUPPORTED_EFFECTS);
+  retval = mEffects;
 }
 
-/* readonly attribute jsval flashModes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetFlashModes(JSContext* cx,
-                                     JS::MutableHandle<JS::Value> aFlashModes)
+void
+CameraCapabilities::GetFlashModes(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aFlashModes, CAMERA_PARAM_SUPPORTED_FLASHMODES);
+  retval = mFlashModes;
 }
 
-/* readonly attribute jsval focusModes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetFocusModes(JSContext* cx,
-                                     JS::MutableHandle<JS::Value> aFocusModes)
+void
+CameraCapabilities::GetFocusModes(nsTArray<nsString>& retval) const
 {
-  return StringListToNewObject(cx, aFocusModes, CAMERA_PARAM_SUPPORTED_FOCUSMODES);
+  retval = mFocusModes;
 }
 
-/* readonly attribute long maxFocusAreas; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetMaxFocusAreas(JSContext* cx, int32_t* aMaxFocusAreas)
+void
+CameraCapabilities::GetZoomRatios(nsTArray<double>& retval) const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_MAXFOCUSAREAS);
-  if (!value) {
-    // in case we get nonsense data back
-    *aMaxFocusAreas = 0;
-    return NS_OK;
-  }
-
-  *aMaxFocusAreas = atoi(value);
-  return NS_OK;
+  retval = mZoomRatios;
 }
 
-/* readonly attribute double minExposureCompensation; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetMinExposureCompensation(JSContext* cx, double* aMinExposureCompensation)
+uint32_t
+CameraCapabilities::MaxFocusAreas() const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_MINEXPOSURECOMPENSATION);
-  if (!value) {
-    // in case we get nonsense data back
-    *aMinExposureCompensation = 0;
-    return NS_OK;
-  }
-
-  *aMinExposureCompensation = atof(value);
-  return NS_OK;
+  return mMaxFocusAreas;
 }
 
-/* readonly attribute double maxExposureCompensation; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetMaxExposureCompensation(JSContext* cx, double* aMaxExposureCompensation)
+uint32_t
+CameraCapabilities::MaxMeteringAreas() const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_MAXEXPOSURECOMPENSATION);
-  if (!value) {
-    // in case we get nonsense data back
-    *aMaxExposureCompensation = 0;
-    return NS_OK;
-  }
-
-  *aMaxExposureCompensation = atof(value);
-  return NS_OK;
+  return mMaxMeteringAreas;
 }
 
-/* readonly attribute double stepExposureCompensation; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetStepExposureCompensation(JSContext* cx, double* aStepExposureCompensation)
+double
+CameraCapabilities::MinExposureCompensation() const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_EXPOSURECOMPENSATIONSTEP);
-  if (!value) {
-    // in case we get nonsense data back
-    *aStepExposureCompensation = 0;
-    return NS_OK;
-  }
-
-  *aStepExposureCompensation = atof(value);
-  return NS_OK;
+  return mMinExposureCompensation;
 }
 
-/* readonly attribute long maxMeteringAreas; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetMaxMeteringAreas(JSContext* cx, int32_t* aMaxMeteringAreas)
+double
+CameraCapabilities::MaxExposureCompensation() const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_MAXMETERINGAREAS);
-  if (!value) {
-    // in case we get nonsense data back
-    *aMaxMeteringAreas = 0;
-    return NS_OK;
-  }
-
-  *aMaxMeteringAreas = atoi(value);
-  return NS_OK;
+  return mMaxExposureCompensation;
 }
 
-/* readonly attribute jsval zoomRatios; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetZoomRatios(JSContext* cx, JS::MutableHandle<JS::Value> aZoomRatios)
+double
+CameraCapabilities::ExposureCompensationStep() const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  const char* value = mCamera->GetParameterConstChar(CAMERA_PARAM_SUPPORTED_ZOOM);
-  if (!value || strcmp(value, "true") != 0) {
-    // if zoom is not supported, return a null object
-    aZoomRatios.setNull();
-    return NS_OK;
-  }
-
-  JS::Rooted<JSObject*> array(cx);
-
-  nsresult rv = ParameterListToNewArray(cx, &array, CAMERA_PARAM_SUPPORTED_ZOOMRATIOS, ParseZoomRatioItemAndAdd);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aZoomRatios.setObjectOrNull(array);
-  return NS_OK;
-}
-
-/* readonly attribute jsval videoSizes; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetVideoSizes(JSContext* cx, JS::MutableHandle<JS::Value> aVideoSizes)
-{
+<<<<<<< HEAD
   NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
 
   nsTArray<mozilla::idl::CameraSize> sizes;
@@ -401,24 +310,16 @@ DOMCameraCapabilities::GetVideoSizes(JSContext* cx, JS::MutableHandle<JS::Value>
 
   aVideoSizes.setObject(*array);
   return NS_OK;
+=======
+  return mExposureCompensationStep;
+>>>>>>> 1a47463
 }
 
-/* readonly attribute jsval recorderProfiles; */
-NS_IMETHODIMP
-DOMCameraCapabilities::GetRecorderProfiles(JSContext* cx, JS::MutableHandle<JS::Value> aRecorderProfiles)
+JS::Value
+CameraCapabilities::RecorderProfiles(JSContext* aCx) const
 {
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  nsRefPtr<RecorderProfileManager> profileMgr = mCamera->GetRecorderProfileManager();
-  if (!profileMgr) {
-    aRecorderProfiles.setNull();
-    return NS_OK;
-  }
-
-  JS::Rooted<JSObject*> o(cx);
-  nsresult rv = profileMgr->GetJsObject(cx, o.address());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aRecorderProfiles.setObject(*o);
-  return NS_OK;
+  return mRecorderProfiles;
 }
+
+} // namespace dom
+} // namespace mozilla

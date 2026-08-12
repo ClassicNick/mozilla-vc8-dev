@@ -6839,7 +6839,8 @@ IsInlineFrame(nsIFrame *aFrame)
  */
 static nsRect
 UnionBorderBoxes(nsIFrame* aFrame, bool aApplyTransform,
-                 const nsSize* aSizeOverride = nullptr)
+                 const nsSize* aSizeOverride = nullptr,
+                 const nsOverflowAreas* aOverflowOverride = nullptr)
 {
   const nsRect bounds(nsPoint(0, 0),
                       aSizeOverride ? *aSizeOverride : aFrame->GetSize());
@@ -6858,59 +6859,71 @@ UnionBorderBoxes(nsIFrame* aFrame, bool aApplyTransform,
   // Only iterate through the children if the overflow areas suggest
   // that we might need to, and if the frame doesn't clip its overflow
   // anyway.
+  if (aOverflowOverride) {
+    if (!doTransform &&
+        bounds.IsEqualEdges(aOverflowOverride->VisualOverflow()) &&
+        bounds.IsEqualEdges(aOverflowOverride->ScrollableOverflow())) {
+      return u;
+    }
+  } else {
+    if (!doTransform &&
+        bounds.IsEqualEdges(aFrame->GetVisualOverflowRect()) &&
+        bounds.IsEqualEdges(aFrame->GetScrollableOverflowRect())) {
+      return u;
+    }
+  }
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   nsIAtom* fType = aFrame->GetType();
-  if (!u.IsEqualEdges(aFrame->GetVisualOverflowRect()) &&
-      !u.IsEqualEdges(aFrame->GetScrollableOverflowRect()) &&
-      !nsFrame::ShouldApplyOverflowClipping(aFrame, disp) &&
-      fType != nsGkAtoms::scrollFrame &&
-      fType != nsGkAtoms::svgOuterSVGFrame) {
+  if (nsFrame::ShouldApplyOverflowClipping(aFrame, disp) ||
+      fType == nsGkAtoms::scrollFrame ||
+      fType == nsGkAtoms::svgOuterSVGFrame) {
+    return u;
+  }
 
-    nsRect clipPropClipRect;
-    bool hasClipPropClip =
-      aFrame->GetClipPropClipRect(disp, &clipPropClipRect, bounds.Size());
+  nsRect clipPropClipRect;
+  bool hasClipPropClip =
+    aFrame->GetClipPropClipRect(disp, &clipPropClipRect, bounds.Size());
 
-    // Iterate over all children except pop-ups.
-    const nsIFrame::ChildListIDs skip(nsIFrame::kPopupList |
-                                      nsIFrame::kSelectPopupList);
-    for (nsIFrame::ChildListIterator childLists(aFrame);
-         !childLists.IsDone(); childLists.Next()) {
-      if (skip.Contains(childLists.CurrentID())) {
-        continue;
+  // Iterate over all children except pop-ups.
+  const nsIFrame::ChildListIDs skip(nsIFrame::kPopupList |
+                                    nsIFrame::kSelectPopupList);
+  for (nsIFrame::ChildListIterator childLists(aFrame);
+       !childLists.IsDone(); childLists.Next()) {
+    if (skip.Contains(childLists.CurrentID())) {
+      continue;
+    }
+
+    nsFrameList children = childLists.CurrentList();
+    for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next()) {
+      nsIFrame* child = e.get();
+      // Note that passing |true| for aApplyTransform when
+      // child->Preserves3D() is incorrect if our aApplyTransform is
+      // false... but the opposite would be as well.  This is because
+      // elements within a preserve-3d scene are always transformed up
+      // to the top of the scene.  This means we don't have a
+      // mechanism for getting a transform up to an intermediate point
+      // within the scene.  We choose to over-transform rather than
+      // under-transform because this is consistent with other
+      // overflow areas.
+      nsRect childRect = UnionBorderBoxes(child, true) +
+                         child->GetPosition();
+
+      if (hasClipPropClip) {
+        // Intersect with the clip before transforming.
+        childRect.IntersectRect(childRect, clipPropClipRect);
       }
 
-      nsFrameList children = childLists.CurrentList();
-      for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next()) {
-        nsIFrame* child = e.get();
-        // Note that passing |true| for aApplyTransform when
-        // child->Preserves3D() is incorrect if our aApplyTransform is
-        // false... but the opposite would be as well.  This is because
-        // elements within a preserve-3d scene are always transformed up
-        // to the top of the scene.  This means we don't have a
-        // mechanism for getting a transform up to an intermediate point
-        // within the scene.  We choose to over-transform rather than
-        // under-transform because this is consistent with other
-        // overflow areas.
-        nsRect childRect = UnionBorderBoxes(child, true) +
-                           child->GetPosition();
-
-        if (hasClipPropClip) {
-          // Intersect with the clip before transforming.
-          childRect.IntersectRect(childRect, clipPropClipRect);
-        }
-
-        // Note that we transform each child separately according to
-        // aFrame's transform, and then union, which gives a different
-        // (smaller) result from unioning and then transforming the
-        // union.  This doesn't match the way we handle overflow areas
-        // with 2-D transforms, though it does match the way we handle
-        // overflow areas in preserve-3d 3-D scenes.
-        if (doTransform && !child->Preserves3D()) {
-          childRect = nsDisplayTransform::TransformRect(childRect, aFrame,
-                                                        nsPoint(0, 0), &bounds);
-        }
-        u.UnionRectEdges(u, childRect);
+      // Note that we transform each child separately according to
+      // aFrame's transform, and then union, which gives a different
+      // (smaller) result from unioning and then transforming the
+      // union.  This doesn't match the way we handle overflow areas
+      // with 2-D transforms, though it does match the way we handle
+      // overflow areas in preserve-3d 3-D scenes.
+      if (doTransform && !child->Preserves3D()) {
+        childRect = nsDisplayTransform::TransformRect(childRect, aFrame,
+                                                      nsPoint(0, 0), &bounds);
       }
+      u.UnionRectEdges(u, childRect);
     }
   }
 
@@ -6959,7 +6972,7 @@ ComputeAndIncludeOutlineArea(nsIFrame* aFrame, nsOverflowAreas& aOverflowAreas,
   // function again.  We still need to deal with preserve-3d a bit.
   nsRect innerRect;
   if (frameForArea == aFrame) {
-    innerRect = UnionBorderBoxes(aFrame, false, &aNewSize);
+    innerRect = UnionBorderBoxes(aFrame, false, &aNewSize, &aOverflowAreas);
   } else {
     for (; frameForArea; frameForArea = frameForArea->GetNextSibling()) {
       nsRect r(UnionBorderBoxes(frameForArea, true));
