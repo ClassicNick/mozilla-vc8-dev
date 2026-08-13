@@ -78,6 +78,7 @@
 #include "vm/RegExpStatics.h"
 #include "vm/Runtime.h"
 #include "vm/Shape.h"
+#include "vm/SharedArrayObject.h"
 #include "vm/StopIterationObject.h"
 #include "vm/StringBuffer.h"
 #include "vm/TypedArrayObject.h"
@@ -880,18 +881,6 @@ JS_StringToVersion(const char *string)
         if (strcmp(v2smap[i].string, string) == 0)
             return v2smap[i].version;
     return JSVERSION_UNKNOWN;
-}
-
-JS_PUBLIC_API(JS::RuntimeOptions &)
-JS::RuntimeOptionsRef(JSRuntime *rt)
-{
-    return rt->options();
-}
-
-JS_PUBLIC_API(JS::RuntimeOptions &)
-JS::RuntimeOptionsRef(JSContext *cx)
-{
-    return cx->runtime()->options();
 }
 
 JS_PUBLIC_API(JS::ContextOptions &)
@@ -2154,7 +2143,7 @@ js::RecomputeStackLimit(JSRuntime *rt, StackKind kind)
 #endif
 
     // If there's no pending interrupt request set on the runtime's main thread's
-    // ionStackLimit, then update it so that it reflects the new nativeStacklimit.
+    // jitStackLimit, then update it so that it reflects the new nativeStacklimit.
     //
     // Note that, for now, we use the untrusted limit for ion. This is fine,
     // because it's the most conservative limit, and if we hit it, we'll bail
@@ -2162,10 +2151,10 @@ js::RecomputeStackLimit(JSRuntime *rt, StackKind kind)
 #ifdef JS_ION
     if (kind == StackForUntrustedScript) {
         JSRuntime::AutoLockForOperationCallback lock(rt);
-        if (rt->mainThread.ionStackLimit != uintptr_t(-1)) {
-            rt->mainThread.ionStackLimit = rt->mainThread.nativeStackLimit[kind];
+        if (rt->mainThread.jitStackLimit != uintptr_t(-1)) {
+            rt->mainThread.jitStackLimit = rt->mainThread.nativeStackLimit[kind];
 #ifdef JS_ARM_SIMULATOR
-            rt->mainThread.ionStackLimit = jit::Simulator::StackLimit();
+            rt->mainThread.jitStackLimit = jit::Simulator::StackLimit();
 #endif
         }
     }
@@ -2464,6 +2453,36 @@ class AutoHoldZone
 };
 
 } /* anonymous namespace */
+
+bool
+JS::CompartmentOptions::baseline(JSContext *cx) const
+{
+    return baselineOverride_.get(cx->options().baseline());
+}
+
+bool
+JS::CompartmentOptions::typeInference(const ExclusiveContext *cx) const
+{
+    /* Unlike the other options that can be overriden on a per compartment
+     * basis, the default value for the typeInference option is stored on the
+     * compartment's type zone, rather than the current JSContext. Type zones
+     * copy this default value over from the current JSContext when they are
+     * created.
+     */
+    return typeInferenceOverride_.get(cx->compartment()->zone()->types.inferenceEnabled);
+}
+
+bool
+JS::CompartmentOptions::ion(JSContext *cx) const
+{
+    return ionOverride_.get(cx->options().ion());
+}
+
+bool
+JS::CompartmentOptions::asmJS(JSContext *cx) const
+{
+    return asmJSOverride_.get(cx->options().asmJS());
+}
 
 bool
 JS::CompartmentOptions::cloneSingletons(JSContext *cx) const
@@ -4422,7 +4441,7 @@ JS::CompileOptions::CompileOptions(JSContext *cx, JSVersion version)
     strictOption = cx->options().strictMode();
     extraWarningsOption = cx->options().extraWarnings();
     werrorOption = cx->options().werror();
-    asmJSOption = cx->runtime()->options().asmJS();
+    asmJSOption = cx->options().asmJS();
 }
 
 bool
@@ -4559,42 +4578,38 @@ JS_CompileUCScript(JSContext *cx, JS::HandleObject obj, const jschar *chars,
 JS_PUBLIC_API(bool)
 JS_BufferIsCompilableUnit(JSContext *cx, HandleObject obj, const char *utf8, size_t length)
 {
-    bool result;
-    JSExceptionState *exnState;
-    JSErrorReporter older;
-
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     assertSameCompartment(cx, obj);
+
+    cx->clearPendingException();
+
     jschar *chars = JS::UTF8CharsToNewTwoByteCharsZ(cx, JS::UTF8Chars(utf8, length), &length).get();
     if (!chars)
         return true;
 
-    /*
-     * Return true on any out-of-memory error, so our caller doesn't try to
-     * collect more buffered source.
-     */
-    result = true;
-    exnState = JS_SaveExceptionState(cx);
-    {
-        CompileOptions options(cx);
-        options.setCompileAndGo(false);
-        Parser<frontend::FullParseHandler> parser(cx, &cx->tempLifoAlloc(),
-                                                  options, chars, length,
-                                                  /* foldConstants = */ true, nullptr, nullptr);
-        older = JS_SetErrorReporter(cx, nullptr);
-        if (!parser.parse(obj) && parser.isUnexpectedEOF()) {
-            /*
-             * We ran into an error. If it was because we ran out of
-             * source, we return false so our caller knows to try to
-             * collect more buffered source.
-             */
+    // Return true on any out-of-memory error or non-EOF-related syntax error, so our
+    // caller doesn't try to collect more buffered source.
+    bool result = true;
+
+    CompileOptions options(cx);
+    options.setCompileAndGo(false);
+    Parser<frontend::FullParseHandler> parser(cx, &cx->tempLifoAlloc(),
+                                              options, chars, length,
+                                              /* foldConstants = */ true, nullptr, nullptr);
+    JSErrorReporter older = JS_SetErrorReporter(cx, nullptr);
+    if (!parser.parse(obj)) {
+        // We ran into an error. If it was because we ran out of source, we
+        // return false so our caller knows to try to collect more buffered
+        // source.
+        if (parser.isUnexpectedEOF())
             result = false;
-        }
-        JS_SetErrorReporter(cx, older);
+
+        cx->clearPendingException();
     }
+    JS_SetErrorReporter(cx, older);
+
     js_free(chars);
-    JS_RestoreExceptionState(cx, exnState);
     return result;
 }
 
@@ -5870,6 +5885,33 @@ JS_ReportPendingException(JSContext *cx)
     return ok;
 }
 
+JS::AutoSaveExceptionState::AutoSaveExceptionState(JSContext *cx)
+    : context(cx), wasThrowing(cx->throwing), exceptionValue(cx)
+{
+    AssertHeapIsIdle(cx);
+    CHECK_REQUEST(cx);
+    if (wasThrowing) {
+        exceptionValue = cx->unwrappedException_;
+        cx->clearPendingException();
+    }
+}
+
+void
+JS::AutoSaveExceptionState::restore()
+{
+    context->throwing = wasThrowing;
+    context->unwrappedException_ = exceptionValue;
+    drop();
+}
+
+JS::AutoSaveExceptionState::~AutoSaveExceptionState()
+{
+    if (wasThrowing && !context->isExceptionPending()) {
+        context->throwing = true;
+        context->unwrappedException_ = exceptionValue;
+    }
+}
+
 struct JSExceptionState {
     bool throwing;
     jsval exception;
@@ -5976,23 +6018,23 @@ JS_ScheduleGC(JSContext *cx, uint32_t count)
 #endif
 
 JS_PUBLIC_API(void)
-JS_SetParallelParsingEnabled(JSRuntime *rt, bool enabled)
+JS_SetParallelParsingEnabled(JSContext *cx, bool enabled)
 {
 #ifdef JS_ION
-    rt->setParallelParsingEnabled(enabled);
+    cx->runtime()->setParallelParsingEnabled(enabled);
 #endif
 }
 
 JS_PUBLIC_API(void)
-JS_SetParallelIonCompilationEnabled(JSRuntime *rt, bool enabled)
+JS_SetParallelIonCompilationEnabled(JSContext *cx, bool enabled)
 {
 #ifdef JS_ION
-    rt->setParallelIonCompilationEnabled(enabled);
+    cx->runtime()->setParallelIonCompilationEnabled(enabled);
 #endif
 }
 
 JS_PUBLIC_API(void)
-JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t value)
+JS_SetGlobalJitCompilerOption(JSContext *cx, JSJitCompilerOption opt, uint32_t value)
 {
 #ifdef JS_ION
 
@@ -6015,19 +6057,19 @@ JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t v
         break;
       case JSJITCOMPILER_ION_ENABLE:
         if (value == 1) {
-            JS::RuntimeOptionsRef(rt).setIon(true);
+            JS::ContextOptionsRef(cx).setIon(true);
             IonSpew(js::jit::IonSpew_Scripts, "Enable ion");
         } else if (value == 0) {
-            JS::RuntimeOptionsRef(rt).setIon(false);
+            JS::ContextOptionsRef(cx).setIon(false);
             IonSpew(js::jit::IonSpew_Scripts, "Disable ion");
         }
         break;
       case JSJITCOMPILER_BASELINE_ENABLE:
         if (value == 1) {
-            JS::RuntimeOptionsRef(rt).setBaseline(true);
+            JS::ContextOptionsRef(cx).setBaseline(true);
             IonSpew(js::jit::IonSpew_BaselineScripts, "Enable baseline");
         } else if (value == 0) {
-            JS::RuntimeOptionsRef(rt).setBaseline(false);
+            JS::ContextOptionsRef(cx).setBaseline(false);
             IonSpew(js::jit::IonSpew_BaselineScripts, "Disable baseline");
         }
         break;
@@ -6038,7 +6080,7 @@ JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t v
 }
 
 JS_PUBLIC_API(int)
-JS_GetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt)
+JS_GetGlobalJitCompilerOption(JSContext *cx, JSJitCompilerOption opt)
 {
 #ifdef JS_ION
     switch (opt) {
@@ -6047,9 +6089,9 @@ JS_GetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt)
       case JSJITCOMPILER_ION_USECOUNT_TRIGGER:
         return jit::js_JitOptions.forcedDefaultIonUsesBeforeCompile;
       case JSJITCOMPILER_ION_ENABLE:
-        return JS::RuntimeOptionsRef(rt).ion();
+        return JS::ContextOptionsRef(cx).ion();
       case JSJITCOMPILER_BASELINE_ENABLE:
-        return JS::RuntimeOptionsRef(rt).baseline();
+        return JS::ContextOptionsRef(cx).baseline();
       default:
         break;
     }

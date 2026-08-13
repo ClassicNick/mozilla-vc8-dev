@@ -93,6 +93,7 @@ public:
   BackCert(CERTCertificate* nssCert, BackCert* childCert,
            ConstrainedNameOptions cnOptions)
     : encodedBasicConstraints(nullptr)
+    , encodedCertificatePolicies(nullptr)
     , encodedExtendedKeyUsage(nullptr)
     , encodedKeyUsage(nullptr)
     , encodedNameConstraints(nullptr)
@@ -106,6 +107,7 @@ public:
   Result Init();
 
   const SECItem* encodedBasicConstraints;
+  const SECItem* encodedCertificatePolicies;
   const SECItem* encodedExtendedKeyUsage;
   const SECItem* encodedKeyUsage;
   const SECItem* encodedNameConstraints;
