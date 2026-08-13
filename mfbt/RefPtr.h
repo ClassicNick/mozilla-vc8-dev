@@ -74,11 +74,12 @@ class RefCounted
   public:
     // Compatibility with nsRefPtr.
     void AddRef() const {
+      MOZ_ASSERT(int32_t(refCnt) >= 0);
       ++refCnt;
     }
 
     void Release() const {
-      MOZ_ASSERT(refCnt > 0);
+      MOZ_ASSERT(int32_t(refCnt) > 0);
       if (0 == --refCnt) {
 #ifdef DEBUG
         refCnt = detail::DEAD;
@@ -102,6 +103,9 @@ class RefCounted
 
 #define MOZ_DECLARE_REFCOUNTED_TYPENAME(T) \
   const char* typeName() const { return #T; }
+
+#define MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(T) \
+  virtual const char* typeName() const { return #T; }
 
 }
 
