@@ -14,6 +14,7 @@
 #include "mozilla/gfx/2D.h"
 #include "gfx2DGlue.h"
 
+using namespace mozilla;
 using namespace mozilla::gfx;
 
 gfxImageSurface::gfxImageSurface()
@@ -314,6 +315,18 @@ gfxImageSurface::CopyTo(SourceSurface *aSurface) {
     CopyForStride(data->GetData(), mData, size, data->Stride(), mStride);
 
     return true;
+}
+
+TemporaryRef<DataSourceSurface>
+gfxImageSurface::CopyToB8G8R8A8DataSourceSurface()
+{
+  RefPtr<DataSourceSurface> dataSurface =
+    Factory::CreateDataSourceSurface(IntSize(GetSize().width, GetSize().height),
+                                     SurfaceFormat::B8G8R8A8);
+  if (dataSurface) {
+    CopyTo(dataSurface);
+  }
+  return dataSurface.forget();
 }
 
 already_AddRefed<gfxSubimageSurface>

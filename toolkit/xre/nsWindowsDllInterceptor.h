@@ -42,13 +42,8 @@
  * 1. Save first N bytes of OrigFunction to trampoline, where N is a
  *    number of bytes >= 5 that are instruction aligned.
  *
- * 2. (Usually) Replace first 5 bytes of OrigFunction with a jump to the hook
+ * 2. Replace first 5 bytes of OrigFunction with a jump to the Hook
  *    function.
- *    (Special "shared" mode) Replace first 6 bytes of OrigFunction with an
- *    indirect jump to the hook function. "Shared" means that other software
- *    also tries to hook the same function. The indirect jump uses an absolute
- *    address, which allows us to coexist with other hooks that don't know how
- *    to relocate our 5-byte PC-relative jump.
  *
  * 3. After N bytes of the trampoline, add a jump to OrigFunction+N to
  *    continue original program flow.
@@ -82,8 +77,6 @@ class WindowsDllNopSpacePatcher
   byteptr_t mPatchedFns[maxPatchedFns];
   int mPatchedFnsLen;
 
-  static const uint16_t opTrampolineShortJump = 0xf9eb;
-
 public:
   WindowsDllNopSpacePatcher()
     : mModule(0)
@@ -96,11 +89,6 @@ public:
 
     for (int i = 0; i < mPatchedFnsLen; i++) {
       byteptr_t fn = mPatchedFns[i];
-
-      // If other code has changed this function, it is not safe to modify.
-      if (*((uint16_t*)fn) != opTrampolineShortJump) {
-        continue;
-      }
 
       // Ensure we can write to the code.
       DWORD op;
@@ -203,7 +191,7 @@ public:
     *origFunc = fn + 2;
 
     // Short jump up into our long jump.
-    *((uint16_t*)(fn)) = opTrampolineShortJump; // jmp $-5
+    *((uint16_t*)(fn)) = 0xf9eb; // jmp $-5
 
     // I think this routine is safe without this, but it can't hurt.
     FlushInstructionCache(GetCurrentProcess(),
@@ -225,12 +213,6 @@ class WindowsDllDetourPatcher
 {
   typedef unsigned char *byteptr_t;
 public:
-  enum JumpType
-  {
-    JUMP_DONTCARE,
-    JUMP_ABSOLUTE
-  };
-
   WindowsDllDetourPatcher() 
     : mModule(0), mHookPage(0), mMaxHooks(0), mCurHooks(0)
   {
@@ -248,28 +230,7 @@ public:
 #else
 #error "Unknown processor type"
 #endif
-      Trampoline *tramp = (Trampoline*)p;
-      byteptr_t origBytes = (byteptr_t)tramp->origFunction;
-
-      // If CreateTrampoline failed, we may have an empty trampoline.
-      if (!origBytes) {
-        continue;
-      }
-
-      // If other code has changed this function, it is not safe to modify.
-#if defined(_M_IX86)
-      if (tramp->jumpType != JUMP_ABSOLUTE &&
-          *origBytes != opTrampolineRelativeJump) {
-        continue;
-      }
-#elif defined(_M_X64)
-      if (*((uint16_t*)origBytes) != opTrampolineRegLoad) {
-        continue;
-      }
-#else
-#error "Unknown processor type"
-#endif
-
+      byteptr_t origBytes = *((byteptr_t *)p);
       // ensure we can modify the original code
       DWORD op;
       if (!VirtualProtectEx(GetCurrentProcess(), origBytes, nBytes, PAGE_EXECUTE_READWRITE, &op)) {
@@ -278,14 +239,9 @@ public:
       }
       // Remove the hook by making the original function jump directly
       // in the trampoline.
-      intptr_t dest = (intptr_t)(&tramp->code[0]);
+      intptr_t dest = (intptr_t)(p + sizeof(void *));
 #if defined(_M_IX86)
-      if (tramp->jumpType == JUMP_ABSOLUTE) {
-        // Absolute jumps on x86 are done indirectly via tramp->jumpTarget
-        tramp->jumpTarget = dest;
-      } else {
-        *((intptr_t*)(origBytes+1)) = dest - (intptr_t)(origBytes+5); // target displacement
-      }
+      *((intptr_t*)(origBytes+1)) = dest - (intptr_t)(origBytes+5); // target displacement
 #elif defined(_M_X64)
       *((intptr_t*)(origBytes+2)) = dest;
 #else
@@ -340,7 +296,7 @@ public:
     mModule = 0;
   }
 
-  bool AddHook(const char *pname, intptr_t hookDest, JumpType jumpType, void **origFunc)
+  bool AddHook(const char *pname, intptr_t hookDest, void **origFunc)
   {
     if (!mModule)
       return false;
@@ -351,7 +307,7 @@ public:
       return false;
     }
 
-    CreateTrampoline(pAddr, hookDest, jumpType, origFunc);
+    CreateTrampoline(pAddr, hookDest, origFunc);
     if (!*origFunc) {
       //printf ("CreateTrampoline failed\n");
       return false;
@@ -363,35 +319,19 @@ public:
 protected:
   const static int kPageSize = 4096;
   const static int kHookSize = 128;
-  const static int kCodeSize = 100;
-
-  const static uint8_t opTrampolineRelativeJump = 0xe9;
-  const static uint16_t opTrampolineIndirectJump = 0x25ff;
-  const static uint16_t opTrampolineRegLoad = 0xbb49;
 
   HMODULE mModule;
   byteptr_t mHookPage;
   int mMaxHooks;
   int mCurHooks;
 
-  struct Trampoline
-  {
-    void *origFunction;
-    JumpType jumpType;
-    intptr_t jumpTarget;
-    uint8_t code[kCodeSize];
-  };
-
-  static_assert(sizeof(Trampoline) <= kHookSize, "Trampolines too big");
-
   void CreateTrampoline(void *origFunction,
                         intptr_t dest,
-                        JumpType jumpType,
                         void **outTramp)
   {
     *outTramp = nullptr;
 
-    Trampoline *tramp = FindTrampolineSpace();
+    byteptr_t tramp = FindTrampolineSpace();
     if (!tramp)
       return;
 
@@ -401,9 +341,7 @@ protected:
     int pJmp32 = -1;
 
 #if defined(_M_IX86)
-    const int bytesNeeded = (jumpType == JUMP_ABSOLUTE) ? 6 : 5;
-
-    while (nBytes < bytesNeeded) {
+    while (nBytes < 5) {
       // Understand some simple instructions that might be found in a
       // prologue; we might need to extend this as necessary.
       //
@@ -447,22 +385,10 @@ protected:
       } else if (origBytes[nBytes] == 0x6A) {
         // PUSH imm8
         nBytes += 2;
-      } else if (origBytes[nBytes] == 0xa1) {
-        // MOV EAX, dword ptr [m32]
-        nBytes += 5;
       } else if (origBytes[nBytes] == 0xe9) {
         pJmp32 = nBytes;
         // jmp 32bit offset
         nBytes += 5;
-      } else if (origBytes[nBytes] == 0xf6 &&
-                 origBytes[nBytes+1] == 0x05) {
-        // TEST byte ptr [m32], imm8
-        nBytes += 7;
-      } else if (origBytes[nBytes] == 0xff &&
-                 origBytes[nBytes+1] == 0x25) {
-        // JMP dword ptr [m32]
-        // This is an indirect absolute jump; don't set pJmp32
-        nBytes += 6;
       } else {
         //printf ("Unknown x86 instruction byte 0x%02x, aborting trampoline\n", origBytes[nBytes]);
         return;
@@ -614,18 +540,17 @@ protected:
 #error "Unknown processor type"
 #endif
 
-    if (nBytes > kCodeSize) {
+    if (nBytes > 100) {
       //printf ("Too big!");
       return;
     }
 
     // We keep the address of the original function in the first bytes of
     // the trampoline buffer
-    tramp->origFunction = origFunction;
-    tramp->jumpType = jumpType;
-    tramp->jumpTarget = dest;
+    *((void **)tramp) = origFunction;
+    tramp += sizeof(void *);
 
-    memcpy(&tramp->code[0], origFunction, nBytes);
+    memcpy(tramp, origFunction, nBytes);
 
     // OrigFunction+N, the target of the trampoline
     byteptr_t trampDest = origBytes + nBytes;
@@ -635,36 +560,38 @@ protected:
       // Jump directly to the original target of the jump instead of jumping to the
       // original function.
       // Adjust jump target displacement to jump location in the trampoline.
-      *((intptr_t*)(&tramp->code[pJmp32+1])) += origBytes - &tramp->code[0];
+      *((intptr_t*)(tramp+pJmp32+1)) += origBytes - tramp;
     } else {
-      tramp->code[nBytes] = opTrampolineRelativeJump; // jmp
-      *((intptr_t*)(&tramp->code[nBytes+1])) = (intptr_t)trampDest - (intptr_t)(&tramp->code[nBytes+5]); // target displacement
+      tramp[nBytes] = 0xE9; // jmp
+      *((intptr_t*)(tramp+nBytes+1)) = (intptr_t)trampDest - (intptr_t)(tramp+nBytes+5); // target displacement
     }
 #elif defined(_M_X64)
     // If JMP32 opcode found, we don't insert to trampoline jump 
     if (pJmp32 >= 0) {
       // mov r11, address
-      *((uint16_t*)(&tramp->code[pJmp32])) = opTrampolineRegLoad;
-      *((intptr_t*)(&tramp->code[pJmp32+2])) = (intptr_t)directJmpAddr;
+      tramp[pJmp32]   = 0x49;
+      tramp[pJmp32+1] = 0xbb;
+      *((intptr_t*)(tramp+pJmp32+2)) = (intptr_t)directJmpAddr;
 
       // jmp r11
-      tramp->code[pJmp32+10] = 0x41;
-      tramp->code[pJmp32+11] = 0xff;
-      tramp->code[pJmp32+12] = 0xe3;
+      tramp[pJmp32+10] = 0x41;
+      tramp[pJmp32+11] = 0xff;
+      tramp[pJmp32+12] = 0xe3;
     } else {
       // mov r11, address
-      *((uint16_t*)(&tramp->code[nBytes])) = opTrampolineRegLoad;
-      *((intptr_t*)(&tramp->code[nBytes+2])) = (intptr_t)trampDest;
+      tramp[nBytes] = 0x49;
+      tramp[nBytes+1] = 0xbb;
+      *((intptr_t*)(tramp+nBytes+2)) = (intptr_t)trampDest;
 
       // jmp r11
-      tramp->code[nBytes+10] = 0x41;
-      tramp->code[nBytes+11] = 0xff;
-      tramp->code[nBytes+12] = 0xe3;
+      tramp[nBytes+10] = 0x41;
+      tramp[nBytes+11] = 0xff;
+      tramp[nBytes+12] = 0xe3;
     }
 #endif
 
     // The trampoline is now valid.
-    *outTramp = &tramp->code[0];
+    *outTramp = tramp;
 
     // ensure we can modify the original code
     DWORD op;
@@ -675,18 +602,13 @@ protected:
 
 #if defined(_M_IX86)
     // now modify the original bytes
-    if (jumpType == JUMP_ABSOLUTE) {
-      // Indirect jump with absolute address of pointer
-      // jmp dword ptr [&tramp->jumpTarget]
-      *((uint16_t*)(origBytes)) = opTrampolineIndirectJump;
-      *((intptr_t*)(origBytes+2)) = (intptr_t)&tramp->jumpTarget;
-    } else {
-      origBytes[0] = opTrampolineRelativeJump; // jmp rel32
-      *((intptr_t*)(origBytes+1)) = dest - (intptr_t)(origBytes+5); // target displacement
-    }
+    origBytes[0] = 0xE9; // jmp
+    *((intptr_t*)(origBytes+1)) = dest - (intptr_t)(origBytes+5); // target displacement
 #elif defined(_M_X64)
     // mov r11, address
-    *((uint16_t*)(origBytes)) = opTrampolineRegLoad;
+    origBytes[0] = 0x49;
+    origBytes[1] = 0xbb;
+
     *((intptr_t*)(origBytes+2)) = dest;
 
     // jmp r11
@@ -699,16 +621,16 @@ protected:
     VirtualProtectEx(GetCurrentProcess(), origFunction, nBytes, op, &op);
   }
 
-  Trampoline* FindTrampolineSpace()
+  byteptr_t FindTrampolineSpace()
   {
     if (mCurHooks >= mMaxHooks)
-      return nullptr;
+      return 0;
 
     byteptr_t p = mHookPage + mCurHooks*kHookSize;
 
     mCurHooks++;
 
-    return (Trampoline*)p;
+    return p;
   }
 };
 
@@ -718,7 +640,6 @@ class WindowsDllInterceptor
 {
   internal::WindowsDllNopSpacePatcher mNopSpacePatcher;
   internal::WindowsDllDetourPatcher mDetourPatcher;
-  typedef internal::WindowsDllDetourPatcher::JumpType JumpType;
 
   const char *mModuleName;
   int mNHooks;
@@ -766,32 +687,10 @@ public:
       mDetourPatcher.Init(mModuleName, mNHooks);
     }
 
-    bool rv = mDetourPatcher.AddHook(pname, hookDest, JumpType::JUMP_DONTCARE,
-                                     origFunc);
-
+    bool rv = mDetourPatcher.AddHook(pname, hookDest, origFunc);
     // printf("detourPatcher returned %d\n", rv);
     return rv;
   }
-
-  bool AddSharedHook(const char *pname, intptr_t hookDest, void **origFunc)
-  {
-    if (!mModuleName) {
-      return false;
-    }
-
-    // Skip the nop-space patcher and use only the detour patcher. Nop-space
-    // patches use relative jumps, which are not safe to share.
-
-    if (!mDetourPatcher.Initialized()) {
-      mDetourPatcher.Init(mModuleName, mNHooks);
-    }
-
-    bool rv = mDetourPatcher.AddHook(pname, hookDest, JumpType::JUMP_ABSOLUTE,
-                                     origFunc);
-
-    return rv;
-  }
-
 };
 
 } // namespace mozilla

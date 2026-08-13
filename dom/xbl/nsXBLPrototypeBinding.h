@@ -284,7 +284,7 @@ protected:
   // A table for attribute containers. Namespace IDs are used as
   // keys in the table. Containers are InnerAttributeTables.
   // This table is used to efficiently handle attribute changes.
-  nsAutoPtr<nsClassHashtable<nsUint32HashKey, InnerAttributeTable>> mAttributeTable;
+  nsAutoPtr<nsClassHashtable<nsUint32HashKey, InnerAttributeTable> > mAttributeTable;
 
   class IIDHashKey : public PLDHashEntryHdr
   {

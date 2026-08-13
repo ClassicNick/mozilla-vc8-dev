@@ -1819,7 +1819,7 @@ CustomDefinitionsTraverse(CustomElementHashKey* aKey,
 
 static PLDHashOperator
 CandidatesTraverse(CustomElementHashKey* aKey,
-                   nsTArray<nsRefPtr<Element>>* aData,
+                   nsTArray<nsRefPtr<Element> >* aData,
                    void* aArg)
 {
   nsCycleCollectionTraversalCallback *cb =
@@ -5535,10 +5535,10 @@ nsDocument::RegisterUnresolvedElement(Element* aElement, nsIAtom* aTypeName)
     return NS_OK;
   }
 
-  nsTArray<nsRefPtr<Element>>* unresolved;
+  nsTArray<nsRefPtr<Element> >* unresolved;
   mRegistry->mCandidatesMap.Get(&key, &unresolved);
   if (!unresolved) {
-    unresolved = new nsTArray<nsRefPtr<Element>>();
+    unresolved = new nsTArray<nsRefPtr<Element> >();
     // Ownership of unresolved is taken by mCandidatesMap.
     mRegistry->mCandidatesMap.Put(&key, unresolved);
   }
@@ -5761,7 +5761,7 @@ nsDocument::RegisterEnabled()
 }
 
 // static
-Maybe<nsTArray<mozilla::dom::CustomElementData*>>
+Maybe<nsTArray<mozilla::dom::CustomElementData*> >
 nsDocument::sProcessingStack;
 
 // static
@@ -5946,7 +5946,7 @@ nsDocument::RegisterElement(JSContext* aCx, const nsAString& aType,
   definitions.Put(&key, definition);
 
   // Do element upgrade.
-  nsAutoPtr<nsTArray<nsRefPtr<Element>>> candidates;
+  nsAutoPtr<nsTArray<nsRefPtr<Element> > > candidates;
   mRegistry->mCandidatesMap.RemoveAndForget(&key, candidates);
   if (candidates) {
     for (size_t i = 0; i < candidates->Length(); ++i) {
@@ -7452,11 +7452,15 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
 nsViewportInfo
 nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
 {
+  // In cases where the width of the CSS viewport is less than or equal to the width
+  // of the display (i.e. width <= device-width) then we disable double-tap-to-zoom
+  // behaviour. See bug 941995 for details.
+
   switch (mViewportType) {
   case DisplayWidthHeight:
     return nsViewportInfo(aDisplaySize);
   case DisplayWidthHeightNoZoom:
-    return nsViewportInfo(aDisplaySize, /* allowZoom */ false);
+    return nsViewportInfo(aDisplaySize, /*allowZoom*/ false, /*allowDoubleTapZoom*/ false);
   case Unknown:
   {
     nsAutoString viewport;
@@ -7476,7 +7480,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
           {
             // We're making an assumption that the docType can't change here
             mViewportType = DisplayWidthHeight;
-            return nsViewportInfo(aDisplaySize);
+            return nsViewportInfo(aDisplaySize, /*allowZoom*/true, /*allowDoubleTapZoom*/false);
           }
         }
       }
@@ -7485,7 +7489,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
       GetHeaderData(nsGkAtoms::handheldFriendly, handheldFriendly);
       if (handheldFriendly.EqualsLiteral("true")) {
         mViewportType = DisplayWidthHeight;
-        return nsViewportInfo(aDisplaySize);
+        return nsViewportInfo(aDisplaySize, /*allowZoom*/true, /*allowDoubleTapZoom*/false);
       }
 
       // Bug 940036. This is bad. When FirefoxOS was built, apps installed
@@ -7508,7 +7512,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
                                           "ImplicitMetaViewportTagFallback");
         }
         mViewportType = DisplayWidthHeightNoZoom;
-        return nsViewportInfo(aDisplaySize, /* allowZoom */ false);
+        return nsViewportInfo(aDisplaySize, /*allowZoom*/false, /*allowDoubleTapZoom*/false);
       }
     }
 
@@ -7582,6 +7586,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
         (userScalable.EqualsLiteral("false"))) {
       mAllowZoom = false;
     }
+    mAllowDoubleTapZoom = mAllowZoom;
 
     mScaleStrEmpty = scaleStr.IsEmpty();
     mWidthStrEmpty = widthStr.IsEmpty();
@@ -7648,7 +7653,7 @@ nsDocument::GetViewportInfo(const ScreenIntSize& aDisplaySize)
     }
 
     return nsViewportInfo(scaleFloat, scaleMinFloat, scaleMaxFloat, size,
-                          mAutoSize, mAllowZoom);
+                          mAutoSize, mAllowZoom, mAllowDoubleTapZoom);
   }
 }
 

@@ -579,7 +579,7 @@ JSCompartment::sweep(FreeOp *fop, bool releaseTypes)
         if ((js::GlobalObject*) global_ && IsObjectAboutToBeFinalized(global_.unsafeGet()))
             global_ = nullptr;
 
-        if (selfHostingScriptSource &&
+        if ((ScriptSourceObject*) selfHostingScriptSource &&
             IsObjectAboutToBeFinalized((JSObject **) selfHostingScriptSource.unsafeGet()))
         {
             selfHostingScriptSource = nullptr;

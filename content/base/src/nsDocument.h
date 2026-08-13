@@ -330,7 +330,7 @@ struct CustomElementData
   CustomElementData(nsIAtom* aType);
   // Objects in this array are transient and empty after each microtask
   // checkpoint.
-  nsTArray<nsAutoPtr<CustomElementCallback>> mCallbackQueue;
+  nsTArray<nsAutoPtr<CustomElementCallback> > mCallbackQueue;
   // Custom element type, for <button is="x-button"> or <x-button>
   // this would be x-button.
   nsCOMPtr<nsIAtom> mType;
@@ -1366,7 +1366,7 @@ private:
                              mozilla::dom::CustomElementDefinition>
       DefinitionMap;
     typedef nsClassHashtable<mozilla::dom::CustomElementHashKey,
-                             nsTArray<nsRefPtr<mozilla::dom::Element>>>
+                             nsTArray<nsRefPtr<mozilla::dom::Element> > >
       CandidateMap;
 
     // Hashtable for custom element definitions in web components.
@@ -1391,7 +1391,7 @@ private:
   // CustomElementData in this array, separated by nullptr that
   // represent the boundaries of the items in the stack. The first
   // queue in the stack is the base element queue.
-  static mozilla::Maybe<nsTArray<mozilla::dom::CustomElementData*>> sProcessingStack;
+  static mozilla::Maybe<nsTArray<mozilla::dom::CustomElementData*> > sProcessingStack;
 
   // Flag to prevent re-entrance into base element queue as described in the
   // custom elements speicification.
@@ -1632,7 +1632,7 @@ private:
   mozilla::LayoutDeviceToScreenScale mScaleMaxFloat;
   mozilla::LayoutDeviceToScreenScale mScaleFloat;
   mozilla::CSSToLayoutDeviceScale mPixelRatio;
-  bool mAutoSize, mAllowZoom, mValidScaleFloat, mValidMaxScale, mScaleStrEmpty, mWidthStrEmpty;
+  bool mAutoSize, mAllowZoom, mAllowDoubleTapZoom, mValidScaleFloat, mValidMaxScale, mScaleStrEmpty, mWidthStrEmpty;
   mozilla::CSSIntSize mViewportSize;
 
   nsrefcnt mStackRefCnt;
