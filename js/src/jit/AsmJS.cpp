@@ -5685,6 +5685,8 @@ CheckFunctionsParallel(ModuleCompiler &m)
     if (!ParallelCompilationEnabled(m.cx()) || !g.claim())
         return CheckFunctionsSequential(m);
 
+    IonSpew(IonSpew_Logs, "Can't log asm.js script. (Compiled on background thread.)");
+
     // Saturate all worker threads plus the main thread.
     size_t numParallelJobs = WorkerThreadState().threadCount + 1;
 
