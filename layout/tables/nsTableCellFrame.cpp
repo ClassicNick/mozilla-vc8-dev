@@ -189,7 +189,7 @@ nsTableCellFrame::GetColIndex(int32_t &aColIndex) const
   }
 }
 
-NS_IMETHODIMP
+nsresult
 nsTableCellFrame::AttributeChanged(int32_t         aNameSpaceID,
                                    nsIAtom*        aAttribute,
                                    int32_t         aModType)
@@ -230,7 +230,7 @@ nsTableCellFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 }
 
 
-NS_IMETHODIMP
+nsresult
 nsTableCellFrame::AppendFrames(ChildListID     aListID,
                                nsFrameList&    aFrameList)
 {
@@ -238,7 +238,7 @@ nsTableCellFrame::AppendFrames(ChildListID     aListID,
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP
+nsresult
 nsTableCellFrame::InsertFrames(ChildListID     aListID,
                                nsIFrame*       aPrevFrame,
                                nsFrameList&    aFrameList)
@@ -247,7 +247,7 @@ nsTableCellFrame::InsertFrames(ChildListID     aListID,
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP
+nsresult
 nsTableCellFrame::RemoveFrame(ChildListID     aListID,
                               nsIFrame*       aOldFrame)
 {
@@ -827,7 +827,7 @@ CalcUnpaginagedHeight(nsPresContext*        aPresContext,
   return computedHeight;
 }
 
-NS_METHOD nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
+nsresult nsTableCellFrame::Reflow(nsPresContext*           aPresContext,
                                    nsHTMLReflowMetrics&     aDesiredSize,
                                    const nsHTMLReflowState& aReflowState,
                                    nsReflowStatus&          aStatus)
@@ -1056,7 +1056,7 @@ nsTableCellFrame::GetType() const
 }
 
 #ifdef DEBUG_FRAME_DUMP
-NS_IMETHODIMP
+nsresult
 nsTableCellFrame::GetFrameName(nsAString& aResult) const
 {
   return MakeFrameName(NS_LITERAL_STRING("TableCell"), aResult);
@@ -1099,7 +1099,7 @@ nsBCTableCellFrame::GetBorderRadii(nscoord aRadii[8]) const
 }
 
 #ifdef DEBUG_FRAME_DUMP
-NS_IMETHODIMP
+nsresult
 nsBCTableCellFrame::GetFrameName(nsAString& aResult) const
 {
   return MakeFrameName(NS_LITERAL_STRING("BCTableCell"), aResult);

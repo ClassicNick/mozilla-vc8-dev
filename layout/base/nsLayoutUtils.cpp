@@ -309,10 +309,27 @@ GetScaleForValue(const nsStyleAnimation::Value& aValue,
   return transform2d.ScaleFactors(true);
 }
 
-gfxSize
-nsLayoutUtils::GetMaximumAnimatedScale(nsIContent* aContent)
+float
+GetSuitableScale(float aMaxScale, float aMinScale)
 {
-  gfxSize result;
+  // If the minimum scale >= 1.0f, use it; if the maximum <= 1.0f, use it;
+  // otherwise use 1.0f.
+  if (aMinScale >= 1.0f) {
+    return aMinScale;
+  }
+  else if (aMaxScale <= 1.0f) {
+    return aMaxScale;
+  }
+
+  return 1.0f;
+}
+
+gfxSize
+nsLayoutUtils::ComputeSuitableScaleForAnimation(nsIContent* aContent)
+{
+  gfxSize maxScale(1.0f, 1.0f);
+  gfxSize minScale(1.0f, 1.0f);
+
   ElementAnimations* animations = HasAnimationOrTransitionForCompositor<ElementAnimations>
     (aContent, nsGkAtoms::animationsProperty, eCSSProperty_transform);
   if (animations) {
@@ -325,47 +342,50 @@ nsLayoutUtils::GetMaximumAnimatedScale(nsIContent* aContent)
             AnimationPropertySegment& segment = prop.mSegments[segIdx];
             gfxSize from = GetScaleForValue(segment.mFromValue,
                                             aContent->GetPrimaryFrame());
-            result.width = NS_MAX<float>(result.width, from.width);
-            result.height = NS_MAX<float>(result.height, from.height);
+            maxScale.width = NS_MAX<float>(maxScale.width, from.width);
+            maxScale.height = NS_MAX<float>(maxScale.height, from.height);
+            minScale.width = NS_MIN<float>(minScale.width, from.width);
+            minScale.height = NS_MIN<float>(minScale.height, from.height);
             gfxSize to = GetScaleForValue(segment.mToValue,
                                           aContent->GetPrimaryFrame());
-            result.width = NS_MAX<float>(result.width, to.width);
-            result.height = NS_MAX<float>(result.height, to.height);
+            maxScale.width = NS_MAX<float>(maxScale.width, to.width);
+            maxScale.height = NS_MAX<float>(maxScale.height, to.height);
+            minScale.width = NS_MIN<float>(minScale.width, to.width);
+            minScale.height = NS_MIN<float>(minScale.height, to.height);
           }
         }
       }
     }
   }
+
   ElementTransitions* transitions = HasAnimationOrTransitionForCompositor<ElementTransitions>
     (aContent, nsGkAtoms::transitionsProperty, eCSSProperty_transform);
   if (transitions) {
     for (uint32_t i = 0, i_end = transitions->mPropertyTransitions.Length();
-         i < i_end; ++i)
-    {
+         i < i_end; ++i){
       ElementPropertyTransition &pt = transitions->mPropertyTransitions[i];
       if (pt.IsRemovedSentinel()) {
         continue;
       }
-
       if (pt.mProperty == eCSSProperty_transform) {
         gfxSize start = GetScaleForValue(pt.mStartValue,
                                          aContent->GetPrimaryFrame());
-        result.width = NS_MAX<float>(result.width, start.width);
-        result.height = NS_MAX<float>(result.height, start.height);
+        maxScale.width = NS_MAX<float>(maxScale.width, start.width);
+        maxScale.height = NS_MAX<float>(maxScale.height, start.height);
+        minScale.width = NS_MIN<float>(minScale.width, start.width);
+        minScale.height = NS_MIN<float>(minScale.height, start.height);
         gfxSize end = GetScaleForValue(pt.mEndValue,
                                        aContent->GetPrimaryFrame());
-        result.width = NS_MAX<float>(result.width, end.width);
-        result.height = NS_MAX<float>(result.height, end.height);
+        maxScale.width = NS_MAX<float>(maxScale.width, end.width);
+        maxScale.height = NS_MAX<float>(maxScale.height, end.height);
+        minScale.width = NS_MIN<float>(minScale.width, end.width);
+        minScale.height = NS_MIN<float>(minScale.height, end.height);
       }
     }
   }
 
-  // If we didn't manage to find a max scale, use no scale rather than 0,0
-  if (result == gfxSize()) {
-    return gfxSize(1, 1);
-  }
-
-  return result;
+  return gfxSize(GetSuitableScale(maxScale.width, minScale.width),
+      GetSuitableScale(maxScale.height, minScale.height));
 }
 
 bool
@@ -1454,7 +1474,7 @@ nsLayoutUtils::GetScrolledRect(nsIFrame* aScrolledFrame,
     // When the scrolled frame is RTL, this means moving it in our left-based
     // coordinate system, so we need to compensate for its extra width here by
     // effectively repositioning the frame.
-    nscoord extraWidth = std::max(0, aScrolledFrame->GetSize().width - aScrollPortSize.width);
+    nscoord extraWidth = NS_MAX(0, aScrolledFrame->GetSize().width - aScrollPortSize.width);
     x2 += extraWidth;
   }
   return nsRect(x1, y1, x2 - x1, y2 - y1);
@@ -5226,7 +5246,7 @@ nsLayoutUtils::GetFontFacesForText(nsIFrame* aFrame,
     if (aFollowContinuations && fend < aEndOffset) {
       next = static_cast<nsTextFrame*>(curr->GetNextContinuation());
       while (next && next->GetTextRun(nsTextFrame::eInflated) == textRun) {
-        fend = std::min(next->GetContentEnd(), aEndOffset);
+        fend = NS_MIN(next->GetContentEnd(), aEndOffset);
         next = fend < aEndOffset ?
           static_cast<nsTextFrame*>(next->GetNextContinuation()) : nullptr;
       }
@@ -5759,8 +5779,8 @@ nsLayoutUtils::UpdateImageVisibilityForFrame(nsIFrame* aImageFrame)
       if (transformedRect.y < scrollPort.y) {
         transformedRect.y = scrollPort.y;
       }
-      transformedRect.width = std::min(transformedRect.width, scrollPort.width);
-      transformedRect.height = std::min(transformedRect.height, scrollPort.height);
+      transformedRect.width = NS_MIN(transformedRect.width, scrollPort.width);
+      transformedRect.height = NS_MIN(transformedRect.height, scrollPort.height);
       rect = transformedRect;
       rectFrame = f;
     }

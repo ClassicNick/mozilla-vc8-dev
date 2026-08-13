@@ -32,7 +32,7 @@
 
 namespace insanity {
 
-#ifdef _MSC_VER
+#if defined (_MSC_VER) && _MSC_VER >= 1600
 
 using std::bind;
 using std::ref;

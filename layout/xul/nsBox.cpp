@@ -84,7 +84,7 @@ nsBox::ListBox(nsAutoString& aResult)
     }
 }
 
-NS_IMETHODIMP
+nsresult
 nsBox::DumpBox(FILE* aFile)
 {
   nsAutoString s;
@@ -201,7 +201,7 @@ nsBox::Shutdown()
   NS_IF_RELEASE(gTheme);
 }
 
-NS_IMETHODIMP
+nsresult
 nsBox::RelayoutChildAtOrdinal(nsBoxLayoutState& aState, nsIFrame* aChild)
 {
   return NS_OK;
@@ -283,7 +283,7 @@ nsBox::GetLayoutFlags(uint32_t& aFlags)
 }
 
 
-NS_IMETHODIMP
+nsresult
 nsIFrame::GetBorderAndPadding(nsMargin& aBorderAndPadding)
 {
   aBorderAndPadding.SizeTo(0, 0, 0, 0);
@@ -301,7 +301,7 @@ nsIFrame::GetBorderAndPadding(nsMargin& aBorderAndPadding)
   return rv;
 }
 
-NS_IMETHODIMP
+nsresult
 nsBox::GetBorder(nsMargin& aMargin)
 {
   aMargin.SizeTo(0,0,0,0);
@@ -327,7 +327,7 @@ nsBox::GetBorder(nsMargin& aMargin)
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsBox::GetPadding(nsMargin& aMargin)
 {
   const nsStyleDisplay *disp = StyleDisplay();
@@ -357,7 +357,7 @@ nsBox::GetPadding(nsMargin& aMargin)
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
 nsBox::GetMargin(nsMargin& aMargin)
 {
   aMargin.SizeTo(0,0,0,0);
@@ -961,7 +961,7 @@ nsBox::GetDebugBoxAt( const nsPoint& aPoint,
 }
 
 
-NS_IMETHODIMP
+nsresult
 nsBox::GetDebug(bool& aDebug)
 {
   aDebug = false;

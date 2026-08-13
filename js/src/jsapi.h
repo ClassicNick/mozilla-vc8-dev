@@ -3947,7 +3947,7 @@ Call(JSContext *cx, JS::HandleValue thisv, JS::HandleObject funObj, const JS::Ha
 {
     JS_ASSERT(funObj);
     JS::RootedValue fun(cx, JS::ObjectValue(*funObj));
-    return Call(cx, thisv, fun, args, rval);
+    return Call(cx, thisv, (HandleValue) fun, args, rval);
 }
 
 } /* namespace JS */

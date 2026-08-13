@@ -5,6 +5,7 @@
 #include "VolatileBuffer.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/mozalloc.h"
+#include "mozilla/NullPtr.h"
 
 #ifdef MOZ_MEMORY
 int posix_memalign(void** memptr, size_t alignment, size_t size);
@@ -29,9 +30,9 @@ bool VolatileBuffer::Init(size_t aSize, size_t aAlignment)
 #if defined(MOZ_MEMORY)
   posix_memalign(&mBuf, aAlignment, aSize);
 #elif defined(HAVE_POSIX_MEMALIGN)
-  moz_posix_memalign(&mBuf, aAlignment, aSize);
+  (void)moz_posix_memalign(&mBuf, aAlignment, aSize);
 #else
-#error "No memalign implementation found"
+// #error "No memalign implementation found"
 #endif
   return !!mBuf;
 }

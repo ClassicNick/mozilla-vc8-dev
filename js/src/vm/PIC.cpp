@@ -150,7 +150,7 @@ js::ForOfPIC::Chain::tryOptimizeArray(JSContext *cx, HandleObject array, bool *o
 
     // Good to optimize now, create stub to add.
     RootedShape shape(cx, array->lastProperty());
-    stub = cx->new_<Stub>(shape);
+	stub = cx->new_<Stub>((js::Shape*) shape);
     if (!stub)
         return false;
 

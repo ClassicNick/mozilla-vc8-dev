@@ -113,14 +113,8 @@ CameraCapabilities::Populate(ICameraControl* aCameraControl)
   rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES, mThumbnailSizes);
   LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_JPEG_THUMBNAIL_SIZES);
 
-<<<<<<< HEAD
-  if (!JS_SetElement(aCx, aArray, aIndex, (JS::HandleObject) o)) {
-    return NS_ERROR_FAILURE;
-  }
-=======
   rv = TranslateToDictionary(aCameraControl, CAMERA_PARAM_SUPPORTED_VIDEOSIZES, mVideoSizes);
   LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_VIDEOSIZES);
->>>>>>> 1a47463
 
   rv = aCameraControl->Get(CAMERA_PARAM_SUPPORTED_PICTUREFORMATS, mFileFormats);
   LOG_IF_ERROR(rv, CAMERA_PARAM_SUPPORTED_PICTUREFORMATS);
@@ -275,44 +269,7 @@ CameraCapabilities::MaxExposureCompensation() const
 double
 CameraCapabilities::ExposureCompensationStep() const
 {
-<<<<<<< HEAD
-  NS_ENSURE_TRUE(mCamera, NS_ERROR_NOT_AVAILABLE);
-
-  nsTArray<mozilla::idl::CameraSize> sizes;
-  nsresult rv = mCamera->GetVideoSizes(sizes);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (sizes.Length() == 0) {
-    // video recording not supported, return null
-    aVideoSizes.setNull();
-    return NS_OK;
-  }
-
-  JS::Rooted<JSObject*> array(cx, JS_NewArrayObject(cx, 0));
-  if (!array) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  for (uint32_t i = 0; i < sizes.Length(); ++i) {
-    JS::Rooted<JSObject*> o(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
-    JS::Rooted<JS::Value> v(cx, INT_TO_JSVAL(sizes[i].width));
-    if (!JS_SetProperty(cx, o, "width", v)) {
-      return NS_ERROR_FAILURE;
-    }
-    v = INT_TO_JSVAL(sizes[i].height);
-    if (!JS_SetProperty(cx, o, "height", v)) {
-      return NS_ERROR_FAILURE;
-    }
-
-	if (!JS_SetElement(cx, array, i, (JS::HandleObject) o)) {
-      return NS_ERROR_FAILURE;
-    }
-  }
-
-  aVideoSizes.setObject(*array);
-  return NS_OK;
-=======
   return mExposureCompensationStep;
->>>>>>> 1a47463
 }
 
 JS::Value

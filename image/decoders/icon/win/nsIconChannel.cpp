@@ -354,8 +354,8 @@ nsresult nsIconChannel::GetStockHIcon(nsIMozIconURI *aIconURI, HICON *hIcon)
 
   // We can only do this on Vista or above
   HMODULE hShellDLL = ::LoadLibraryW(L"shell32.dll");
-  SHGetStockIconInfoPtr pSHGetStockIconInfo =
-    (SHGetStockIconInfoPtr) ::GetProcAddress(hShellDLL, "SHGetStockIconInfo");
+  SHGetStockIconInfo pSHGetStockIconInfo =
+    (SHGetStockIconInfo) ::GetProcAddress(hShellDLL, "SHGetStockIconInfo");
 
   if (pSHGetStockIconInfo)
   {

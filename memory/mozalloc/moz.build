@@ -47,7 +47,7 @@ elif CONFIG['OS_TARGET'] == 'Darwin':
     UNIFIED_SOURCES += [
         'VolatileBufferOSX.cpp',
     ]
-elif CONFIG['OS_TARGET'] == 'WINNT':
+elif CONFIG['_MSC_VER'] >= '1400':
     UNIFIED_SOURCES += [
         'VolatileBufferWindows.cpp',
     ]
@@ -67,3 +67,5 @@ else:
 DEFINES['_GNU_SOURCE'] = True
 
 TEST_TOOL_DIRS += ['tests']
+
+GENERATED_INCLUDES += ['/xpcom']

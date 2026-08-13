@@ -9,8 +9,9 @@
 #include "VolatileBuffer.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/mozalloc.h"
+#include "mozilla/NullPtr.h"
 
-#include <Windows.h>
+#include <windows.h>
 
 #ifdef MOZ_MEMORY
 extern "C" int posix_memalign(void** memptr, size_t alignment, size_t size);

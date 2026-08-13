@@ -3925,7 +3925,7 @@ class ShellSourceHook: public SourceHook {
         RootedValue filenameValue(cx, StringValue(str));
 
         RootedValue result(cx);
-        if (!Call(cx, UndefinedHandleValue, fun, filenameValue, &result))
+        if (!Call(cx, UndefinedHandleValue, (HandleValue) fun, filenameValue, &result))
             return false;
 
         str = JS::ToString(cx, result);
@@ -3970,7 +3970,7 @@ WithSourceHook(JSContext *cx, unsigned argc, jsval *vp)
     SourceHook *savedHook = js::ForgetSourceHook(cx->runtime());
     js::SetSourceHook(cx->runtime(), hook);
     RootedObject fun(cx, &args[1].toObject());
-    bool result = Call(cx, UndefinedHandleValue, fun, JS::EmptyValueArray, args.rval());
+    bool result = Call(cx, UndefinedHandleValue, (HandleObject) fun, JS::EmptyValueArray, args.rval());
     js::SetSourceHook(cx->runtime(), savedHook);
     return result;
 }

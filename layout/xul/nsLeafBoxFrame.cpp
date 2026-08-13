@@ -69,7 +69,7 @@ nsLeafBoxFrame::Init(
   UpdateMouseThrough();
 }
 
-NS_IMETHODIMP
+nsresult
 nsLeafBoxFrame::AttributeChanged(int32_t aNameSpaceID,
                                  nsIAtom* aAttribute,
                                  int32_t aModType)
@@ -179,7 +179,7 @@ nsLeafBoxFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                   aMargin, aBorder, aPadding, aShrinkWrap);
 }
 
-NS_IMETHODIMP
+nsresult
 nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
                      nsHTMLReflowMetrics&     aDesiredSize,
                      const nsHTMLReflowState& aReflowState,
@@ -316,7 +316,7 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
 }
 
 #ifdef DEBUG_FRAME_DUMP
-NS_IMETHODIMP
+nsresult
 nsLeafBoxFrame::GetFrameName(nsAString& aResult) const
 {
   return MakeFrameName(NS_LITERAL_STRING("LeafBox"), aResult);
@@ -329,7 +329,7 @@ nsLeafBoxFrame::GetType() const
   return nsGkAtoms::leafBoxFrame;
 }
 
-NS_IMETHODIMP
+nsresult
 nsLeafBoxFrame::CharacterDataChanged(CharacterDataChangeInfo* aInfo)
 {
   MarkIntrinsicWidthsDirty();
