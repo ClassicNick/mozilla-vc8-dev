@@ -5264,7 +5264,8 @@ ParseFunction(ModuleCompiler &m, ParseNode **fnOut)
 
     Directives newDirectives = directives;
     AsmJSParseContext funpc(&m.parser(), outerpc, fn, funbox, &newDirectives,
-                            outerpc->staticLevel + 1, outerpc->blockidGen);
+                            outerpc->staticLevel + 1, outerpc->blockidGen,
+                            /* blockScopeDepth = */ 0);
     if (!funpc.init(m.parser().tokenStream))
         return false;
 
@@ -6952,7 +6953,7 @@ js::IsAsmJSCompilationAvailable(JSContext *cx, unsigned argc, Value *vp)
                      cx->signalHandlersInstalled() &&
                      cx->gcSystemPageSize() == AsmJSPageSize &&
                      !cx->compartment()->debugMode() &&
-                     cx->compartment()->options().asmJS(cx);
+                     cx->runtime()->options().asmJS();
 
     args.rval().set(BooleanValue(available));
     return true;

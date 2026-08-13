@@ -69,8 +69,6 @@ elif CONFIG['WIN32_D2D_SURFACE_FEATURE']:
         SOURCES += [
             'ScaledFontWin.cpp',
         ]
-        DEFINES['SKIA_IMPLEMENTATION'] = 1
-        DEFINES['GR_IMPLEMENTATION'] = 1
 
 if CONFIG['MOZ_ENABLE_SKIA']:
     UNIFIED_SOURCES += [
@@ -131,7 +129,7 @@ MSVC_ENABLE_PGO = True
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
-FINAL_LIBRARY = 'gkmedias'
+FINAL_LIBRARY = 'xul'
 
 for var in ('MOZ_GFX', 'USE_CAIRO', 'GFX2D_INTERNAL', 'MOZ2D_HAS_MOZ_CAIRO'):
     DEFINES[var] = True

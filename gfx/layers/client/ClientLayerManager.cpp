@@ -22,7 +22,6 @@
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "nsAString.h"
 #include "nsIWidget.h"                  // for nsIWidget
-#include "nsIWidgetListener.h"
 #include "nsTArray.h"                   // for AutoInfallibleTArray
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType, etc
 #ifdef MOZ_WIDGET_ANDROID
@@ -265,16 +264,6 @@ ClientLayerManager::Composite()
   }
 }
 
-void
-ClientLayerManager::DidComposite()
-{
-  MOZ_ASSERT(mWidget);
-  nsIWidgetListener *listener = mWidget->GetWidgetListener();
-  if (listener) {
-    listener->DidCompositeWindow();
-  }
-}
-
 void 
 ClientLayerManager::MakeSnapshotIfRequired()
 {
@@ -387,6 +376,20 @@ ClientLayerManager::ForwardTransaction(bool aScheduleComposite)
 
         compositableChild->GetCompositableClient()
           ->SetDescriptorFromReply(ots.textureId(), ots.image());
+        break;
+      }
+      case EditReply::TReturnReleaseFence: {
+        const ReturnReleaseFence& rep = reply.get_ReturnReleaseFence();
+        FenceHandle fence = rep.fence();
+        PTextureChild* child = rep.textureChild();
+
+        if (!fence.IsValid() || !child) {
+          break;
+        }
+        RefPtr<TextureClient> texture = TextureClient::AsTextureClient(child);
+        if (texture) {
+          texture->SetReleaseFenceHandle(fence);
+        }
         break;
       }
 

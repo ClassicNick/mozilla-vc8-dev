@@ -1561,31 +1561,7 @@ ContentChild::RecvMinimizeMemoryUsage()
         do_GetService("@mozilla.org/memory-reporter-manager;1");
     NS_ENSURE_TRUE(mgr, true);
 
-    nsCOMPtr<nsICancelableRunnable> runnable =
-        do_QueryReferent(mMemoryMinimizerRunnable);
-
-    // Cancel the previous task if it's still pending.
-    if (runnable) {
-        runnable->Cancel();
-        runnable = nullptr;
-    }
-
-    mgr->MinimizeMemoryUsage(/* callback = */ nullptr,
-                             getter_AddRefs(runnable));
-    mMemoryMinimizerRunnable = do_GetWeakReference(runnable);
-    return true;
-}
-
-bool
-ContentChild::RecvCancelMinimizeMemoryUsage()
-{
-    nsCOMPtr<nsICancelableRunnable> runnable =
-        do_QueryReferent(mMemoryMinimizerRunnable);
-    if (runnable) {
-        runnable->Cancel();
-        mMemoryMinimizerRunnable = nullptr;
-    }
-
+    mgr->MinimizeMemoryUsage(/* callback = */ nullptr);
     return true;
 }
 
@@ -1742,7 +1718,7 @@ ContentChild::RecvNuwaFork()
     // at the same time then we risk deadlock. Spinning the event loop here
     // guarantees the ordering is safe for PBackground.
     while (!BackgroundChild::GetForCurrentThread()) {
-        if (NS_WARN_IF(NS_FAILED(NS_ProcessNextEvent()))) {
+        if (NS_WARN_IF(!NS_ProcessNextEvent())) {
             return false;
         }
     }

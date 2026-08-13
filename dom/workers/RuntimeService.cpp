@@ -151,6 +151,26 @@ MOZ_STATIC_ASSERT(MAX_WORKERS_PER_DOMAIN >= 1,
     }                                                                          \
   PR_END_MACRO
 
+#define BROADCAST_ALL_WORKERS3(_func, a, b, c)                                      \
+  PR_BEGIN_MACRO                                                               \
+    AssertIsOnMainThread();                                                    \
+                                                                               \
+    nsAutoTArray<WorkerPrivate*, 100> workers;                                 \
+    {                                                                          \
+      MutexAutoLock lock(mMutex);                                              \
+                                                                               \
+      mDomainMap.EnumerateRead(AddAllTopLevelWorkersToArray, &workers);        \
+    }                                                                          \
+                                                                               \
+    if (!workers.IsEmpty()) {                                                  \
+      AutoSafeJSContext cx;                                                    \
+      JSAutoRequest ar(cx);													   \
+      for (uint32_t index = 0; index < workers.Length(); index++) {            \
+        workers[index]-> _func (cx, a, b, c);                              \
+      }                                                                        \
+    }                                                                          \
+  PR_END_MACRO
+
 // Prefixes for observing preference changes.
 #define PREF_JS_OPTIONS_PREFIX "javascript.options."
 #define PREF_WORKERS_OPTIONS_PREFIX PREF_WORKERS_PREFIX "options."
@@ -168,7 +188,7 @@ namespace {
 
 const uint32_t kNoIndex = uint32_t(-1);
 
-const JS::ContextOptions kRequiredJSContextOptions =
+const JS::ContextOptions kRequiredContextOptions =
   JS::ContextOptions().setDontReportUncaught(true)
                       .setNoScriptRval(true);
 
@@ -320,7 +340,7 @@ GenerateSharedWorkerKey(const nsACString& aScriptSpec, const nsACString& aName,
 }
 
 void
-LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
+LoadRuntimeAndContextOptions(const char* aPrefName, void* /* aClosure */)
 {
   AssertIsOnMainThread();
 
@@ -350,51 +370,47 @@ LoadJSContextOptions(const char* aPrefName, void* /* aClosure */)
   }
 #endif
 
+  // Runtime options.
+  JS::RuntimeOptions runtimeOptions;
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs"))) {
+    runtimeOptions.setAsmJS(true);
+  }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference"))) {
+    runtimeOptions.setTypeInference(true);
+  }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit"))) {
+    runtimeOptions.setBaseline(true);
+  }
+  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion"))) {
+    runtimeOptions.setIon(true);
+  }
+
   // Common options.
-  JS::ContextOptions commonOptions = kRequiredJSContextOptions;
+  JS::ContextOptions commonContextOptions = kRequiredContextOptions;
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict"))) {
-    commonOptions.setExtraWarnings(true);
+    commonContextOptions.setExtraWarnings(true);
   }
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror"))) {
-    commonOptions.setWerror(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs"))) {
-    commonOptions.setAsmJS(true);
+    commonContextOptions.setWerror(true);
   }
 
   // Content options.
-  JS::ContextOptions contentOptions = commonOptions;
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit.content"))) {
-    contentOptions.setBaseline(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.content"))) {
-    contentOptions.setIon(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.content"))) {
-    contentOptions.setTypeInference(true);
-  }
+  JS::ContextOptions contentContextOptions = commonContextOptions;
 
   // Chrome options.
-  JS::ContextOptions chromeOptions = commonOptions;
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit.chrome"))) {
-    chromeOptions.setBaseline(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion.chrome"))) {
-    chromeOptions.setIon(true);
-  }
-  if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("typeinference.chrome"))) {
-    chromeOptions.setTypeInference(true);
-  }
+  JS::ContextOptions chromeContextOptions = commonContextOptions;
 #ifdef DEBUG
   if (GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict.debug"))) {
-    chromeOptions.setExtraWarnings(true);
+    chromeContextOptions.setExtraWarnings(true);
   }
 #endif
 
-  RuntimeService::SetDefaultJSContextOptions(contentOptions, chromeOptions);
+  RuntimeService::SetDefaultRuntimeAndContextOptions(runtimeOptions,
+                                                     contentContextOptions,
+                                                     chromeContextOptions);
 
   if (rts) {
-    rts->UpdateAllWorkerJSContextOptions();
+    rts->UpdateAllWorkerRuntimeAndContextOptions();
   }
 }
 
@@ -683,11 +699,9 @@ ContentSecurityPolicyAllows(JSContext* aCx)
     nsString fileName;
     uint32_t lineNum = 0;
 
-    JS::Rooted<JSScript*> script(aCx);
-    const char* file;
-    if (JS_DescribeScriptedCaller(aCx, &script, &lineNum) &&
-        (file = JS_GetScriptFilename(aCx, script))) {
-      fileName = NS_ConvertUTF8toUTF16(file);
+    JS::AutoFilename file;
+    if (JS::DescribeScriptedCaller(aCx, &file, &lineNum) && file.get()) {
+      fileName = NS_ConvertUTF8toUTF16(file.get());
     } else {
       JS_ReportPendingException(aCx);
     }
@@ -792,6 +806,8 @@ CreateJSContextForWorker(WorkerPrivate* aWorkerPrivate, JSRuntime* aRuntime)
 
   JSSettings settings;
   aWorkerPrivate->CopyJSSettings(settings);
+
+  JS::RuntimeOptionsRef(aRuntime) = settings.runtimeOptions;
 
   JSSettings::JSGCSettingsArray& gcSettings = settings.gcSettings;
 
@@ -1636,10 +1652,11 @@ RuntimeService::Init()
 
   // Initialize JSSettings.
   if (!sDefaultJSSettings.gcSettings[0].IsSet()) {
-    sDefaultJSSettings.chrome.contextOptions = kRequiredJSContextOptions;
+    sDefaultJSSettings.runtimeOptions = JS::RuntimeOptions();
+    sDefaultJSSettings.chrome.contextOptions = kRequiredContextOptions;
     sDefaultJSSettings.chrome.maxScriptRuntime = -1;
     sDefaultJSSettings.chrome.compartmentOptions.setVersion(JSVERSION_LATEST);
-    sDefaultJSSettings.content.contextOptions = kRequiredJSContextOptions;
+    sDefaultJSSettings.content.contextOptions = kRequiredContextOptions;
     sDefaultJSSettings.content.maxScriptRuntime = MAX_SCRIPT_RUN_TIME_SEC;
 #ifdef JS_GC_ZEAL
     sDefaultJSSettings.gcZealFrequency = JS_DEFAULT_ZEAL_FREQ;
@@ -1714,13 +1731,13 @@ RuntimeService::Init()
                                   PREF_DOM_WINDOW_DUMP_ENABLED,
                                   reinterpret_cast<void *>(WORKERPREF_DUMP))) ||
 #endif
-      NS_FAILED(Preferences::RegisterCallback(LoadJSContextOptions,
+      NS_FAILED(Preferences::RegisterCallback(LoadRuntimeAndContextOptions,
                                               PREF_JS_OPTIONS_PREFIX,
                                               nullptr)) ||
       NS_FAILED(Preferences::RegisterCallbackAndCall(
-                                                    LoadJSContextOptions,
-                                                    PREF_WORKERS_OPTIONS_PREFIX,
-                                                    nullptr)) ||
+                                                   LoadRuntimeAndContextOptions,
+                                                   PREF_WORKERS_OPTIONS_PREFIX,
+                                                   nullptr)) ||
       NS_FAILED(Preferences::RegisterCallbackAndCall(
                                                  JSVersionChanged,
                                                  PREF_WORKERS_LATEST_JS_VERSION,
@@ -1867,10 +1884,10 @@ RuntimeService::Cleanup()
     if (NS_FAILED(Preferences::UnregisterCallback(JSVersionChanged,
                                                   PREF_WORKERS_LATEST_JS_VERSION,
                                                   nullptr)) ||
-        NS_FAILED(Preferences::UnregisterCallback(LoadJSContextOptions,
+        NS_FAILED(Preferences::UnregisterCallback(LoadRuntimeAndContextOptions,
                                                   PREF_JS_OPTIONS_PREFIX,
                                                   nullptr)) ||
-        NS_FAILED(Preferences::UnregisterCallback(LoadJSContextOptions,
+        NS_FAILED(Preferences::UnregisterCallback(LoadRuntimeAndContextOptions,
                                                   PREF_WORKERS_OPTIONS_PREFIX,
                                                   nullptr)) ||
 #if DUMP_CONTROLLED_BY_PREF
@@ -2252,9 +2269,10 @@ RuntimeService::NoteIdleThread(WorkerThread* aThread)
 }
 
 void
-RuntimeService::UpdateAllWorkerJSContextOptions()
+RuntimeService::UpdateAllWorkerRuntimeAndContextOptions()
 {
-  BROADCAST_ALL_WORKERS2(UpdateJSContextOptions,
+  BROADCAST_ALL_WORKERS3(UpdateRuntimeAndContextOptions,
+                        sDefaultJSSettings.runtimeOptions,
                         sDefaultJSSettings.content.contextOptions,
                         sDefaultJSSettings.chrome.contextOptions);
 }

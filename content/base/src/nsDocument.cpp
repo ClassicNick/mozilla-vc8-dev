@@ -11322,7 +11322,7 @@ public:
     }
 
     if (doc->mIsApprovedForFullscreen || doc->mAllowRelocking) {
-      Allow();
+      Allow(JS::UndefinedHandleValue);
       return NS_OK;
     }
 
@@ -11367,8 +11367,10 @@ NS_IMPL_ISUPPORTS_INHERITED1(nsPointerLockPermissionRequest,
 NS_IMETHODIMP
 nsPointerLockPermissionRequest::GetTypes(nsIArray** aTypes)
 {
+  nsTArray<nsString> emptyOptions;
   return CreatePermissionArray(NS_LITERAL_CSTRING("pointerLock"),
                                NS_LITERAL_CSTRING("unused"),
+                               emptyOptions,
                                aTypes);
 }
 
@@ -11413,8 +11415,10 @@ nsPointerLockPermissionRequest::Cancel()
 }
 
 NS_IMETHODIMP
-nsPointerLockPermissionRequest::Allow()
+nsPointerLockPermissionRequest::Allow(JS::HandleValue aChoices)
 {
+  MOZ_ASSERT(aChoices.isUndefined());
+
   nsCOMPtr<Element> e = do_QueryReferent(mElement);
   nsCOMPtr<nsIDocument> doc = do_QueryReferent(mDocument);
   nsDocument* d = static_cast<nsDocument*>(doc.get());

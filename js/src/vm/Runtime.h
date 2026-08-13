@@ -352,6 +352,7 @@ class NewObjectCache
      * nullptr if returning the object could possibly trigger GC (does not
      * indicate failure).
      */
+    template <AllowGC allowGC>
     inline JSObject *newObjectFromHit(JSContext *cx, EntryIndex entry, js::gc::InitialHeap heap);
 
     /* Fill an entry after a cache miss. */
@@ -1682,6 +1683,7 @@ struct JSRuntime : public JS::shadow::Runtime,
     void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::RuntimeSizes *runtime);
 
   private:
+    JS::RuntimeOptions options_;
 
     JSUseHelperThreads useHelperThreads_;
 
@@ -1727,6 +1729,13 @@ struct JSRuntime : public JS::shadow::Runtime,
     }
     bool isWorkerRuntime() const {
         return isWorkerRuntime_;
+    }
+
+    const JS::RuntimeOptions &options() const {
+        return options_;
+    }
+    JS::RuntimeOptions &options() {
+        return options_;
     }
 
 #ifdef DEBUG

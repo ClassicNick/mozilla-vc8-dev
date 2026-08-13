@@ -1437,6 +1437,69 @@ JS_StringToVersion(const char *string);
 
 namespace JS {
 
+class JS_PUBLIC_API(RuntimeOptions) {
+  public:
+    RuntimeOptions()
+      : baseline_(false),
+        typeInference_(false),
+        ion_(false),
+        asmJS_(false)
+    {
+    }
+
+    bool baseline() const { return baseline_; }
+    RuntimeOptions &setBaseline(bool flag) {
+        baseline_ = flag;
+        return *this;
+    }
+    RuntimeOptions &toggleBaseline() {
+        baseline_ = !baseline_;
+        return *this;
+    }
+
+    bool typeInference() const { return typeInference_; }
+    RuntimeOptions &setTypeInference(bool flag) {
+        typeInference_ = flag;
+        return *this;
+    }
+    RuntimeOptions &toggleTypeInference() {
+        typeInference_ = !typeInference_;
+        return *this;
+    }
+
+    bool ion() const { return ion_; }
+    RuntimeOptions &setIon(bool flag) {
+        ion_ = flag;
+        return *this;
+    }
+    RuntimeOptions &toggleIon() {
+        ion_ = !ion_;
+        return *this;
+    }
+
+    bool asmJS() const { return asmJS_; }
+    RuntimeOptions &setAsmJS(bool flag) {
+        asmJS_ = flag;
+        return *this;
+    }
+    RuntimeOptions &toggleAsmJS() {
+        asmJS_ = !asmJS_;
+        return *this;
+    }
+
+  private:
+    bool baseline_ : 1;
+    bool typeInference_ : 1;
+    bool ion_ : 1;
+    bool asmJS_ : 1;
+};
+
+JS_PUBLIC_API(RuntimeOptions &)
+RuntimeOptionsRef(JSRuntime *rt);
+
+JS_PUBLIC_API(RuntimeOptions &)
+RuntimeOptionsRef(JSContext *cx);
+
 class JS_PUBLIC_API(ContextOptions) {
   public:
     ContextOptions()
@@ -1448,10 +1511,6 @@ class JS_PUBLIC_API(ContextOptions) {
         noDefaultCompartmentObject_(false),
         noScriptRval_(false),
         strictMode_(false),
-        baseline_(false),
-        typeInference_(false),
-        ion_(false),
-        asmJS_(false),
         cloneSingletons_(false)
     {
     }
@@ -1536,46 +1595,6 @@ class JS_PUBLIC_API(ContextOptions) {
         return *this;
     }
 
-    bool baseline() const { return baseline_; }
-    ContextOptions &setBaseline(bool flag) {
-        baseline_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleBaseline() {
-        baseline_ = !baseline_;
-        return *this;
-    }
-
-    bool typeInference() const { return typeInference_; }
-    ContextOptions &setTypeInference(bool flag) {
-        typeInference_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleTypeInference() {
-        typeInference_ = !typeInference_;
-        return *this;
-    }
-
-    bool ion() const { return ion_; }
-    ContextOptions &setIon(bool flag) {
-        ion_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleIon() {
-        ion_ = !ion_;
-        return *this;
-    }
-
-    bool asmJS() const { return asmJS_; }
-    ContextOptions &setAsmJS(bool flag) {
-        asmJS_ = flag;
-        return *this;
-    }
-    ContextOptions &toggleAsmJS() {
-        asmJS_ = !asmJS_;
-        return *this;
-    }
-
     bool cloneSingletons() const { return cloneSingletons_; }
     ContextOptions &setCloneSingletons(bool flag) {
         cloneSingletons_ = flag;
@@ -1595,10 +1614,6 @@ class JS_PUBLIC_API(ContextOptions) {
     bool noDefaultCompartmentObject_ : 1;
     bool noScriptRval_ : 1;
     bool strictMode_ : 1;
-    bool baseline_ : 1;
-    bool typeInference_ : 1;
-    bool ion_ : 1;
-    bool asmJS_ : 1;
     bool cloneSingletons_ : 1;
 };
 
@@ -2645,18 +2660,6 @@ class JS_PUBLIC_API(CompartmentOptions)
         return *this;
     }
 
-    bool baseline(JSContext *cx) const;
-    Override &baselineOverride() { return baselineOverride_; }
-
-    bool typeInference(const js::ExclusiveContext *cx) const;
-    Override &typeInferenceOverride() { return typeInferenceOverride_; }
-
-    bool ion(JSContext *cx) const;
-    Override &ionOverride() { return ionOverride_; }
-
-    bool asmJS(JSContext *cx) const;
-    Override &asmJSOverride() { return asmJSOverride_; }
-
     bool cloneSingletons(JSContext *cx) const;
     Override &cloneSingletonsOverride() { return cloneSingletonsOverride_; }
 
@@ -2679,10 +2682,6 @@ class JS_PUBLIC_API(CompartmentOptions)
     JSVersion version_;
     bool invisibleToDebugger_;
     bool mergeable_;
-    Override baselineOverride_;
-    Override typeInferenceOverride_;
-    Override ionOverride_;
-    Override asmJSOverride_;
     Override cloneSingletonsOverride_;
     union {
         ZoneSpecifier spec;
@@ -4661,10 +4660,10 @@ JS_ScheduleGC(JSContext *cx, uint32_t count);
 #endif
 
 extern JS_PUBLIC_API(void)
-JS_SetParallelParsingEnabled(JSContext *cx, bool enabled);
+JS_SetParallelParsingEnabled(JSRuntime *rt, bool enabled);
 
 extern JS_PUBLIC_API(void)
-JS_SetParallelIonCompilationEnabled(JSContext *cx, bool enabled);
+JS_SetParallelIonCompilationEnabled(JSRuntime *rt, bool enabled);
 
 #define JIT_COMPILER_OPTIONS(Register)                             \
   Register(BASELINE_USECOUNT_TRIGGER, "baseline.usecount.trigger") \
@@ -4683,9 +4682,9 @@ typedef enum JSJitCompilerOption {
 } JSJitCompilerOption;
 
 extern JS_PUBLIC_API(void)
-JS_SetGlobalJitCompilerOption(JSContext *cx, JSJitCompilerOption opt, uint32_t value);
+JS_SetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt, uint32_t value);
 extern JS_PUBLIC_API(int)
-JS_GetGlobalJitCompilerOption(JSContext *cx, JSJitCompilerOption opt);
+JS_GetGlobalJitCompilerOption(JSRuntime *rt, JSJitCompilerOption opt);
 
 /*
  * Convert a uint32_t index into a jsid.
@@ -4707,17 +4706,41 @@ JS_CharsToId(JSContext* cx, JS::TwoByteChars chars, JS::MutableHandleId);
 extern JS_PUBLIC_API(bool)
 JS_IsIdentifier(JSContext *cx, JS::HandleString str, bool *isIdentifier);
 
+namespace JS {
+
 /*
- * Return the current script and line number of the most currently running
+ * AutoFilename encapsulates a pointer to a C-string and keeps the C-string
+ * alive for as long as the associated AutoFilename object is alive.
+ */
+class MOZ_STACK_CLASS JS_PUBLIC_API(AutoFilename)
+{
+    void *scriptSource_;
+
+    AutoFilename(const AutoFilename &) MOZ_DELETE;
+    void operator=(const AutoFilename &) MOZ_DELETE;
+
+  public:
+    AutoFilename() : scriptSource_(nullptr) {}
+    ~AutoFilename() { reset(nullptr); }
+
+    const char *get() const;
+
+    void reset(void *newScriptSource);
+};
+
+/*
+ * Return the current filename and line number of the most currently running
  * frame. Returns true if a scripted frame was found, false otherwise.
  *
  * If a the embedding has hidden the scripted caller for the topmost activation
  * record, this will also return false.
  */
 extern JS_PUBLIC_API(bool)
-JS_DescribeScriptedCaller(JSContext *cx, JS::MutableHandleScript script, unsigned *lineno);
+DescribeScriptedCaller(JSContext *cx, AutoFilename *filename = nullptr,
+                       unsigned *lineno = nullptr);
 
-namespace JS {
+extern JS_PUBLIC_API(JSObject *)
+GetScriptedCallerGlobal(JSContext *cx);
 
 /*
  * Informs the JS engine that the scripted caller should be hidden. This can be

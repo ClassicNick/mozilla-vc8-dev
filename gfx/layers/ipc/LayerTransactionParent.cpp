@@ -204,10 +204,13 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
     return true;
   }
 
+  // Clear fence handles used in previsou transaction.
+  ClearPrevFenceHandles();
+
   EditReplyVector replyv;
 
   {
-    AutoResolveRefLayers resolve(mShadowLayersManager->GetCompositionManager());
+    AutoResolveRefLayers resolve(mShadowLayersManager->GetCompositionManager(this));
     layer_manager()->BeginTransaction();
   }
 
@@ -510,7 +513,7 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
   }
 
   {
-    AutoResolveRefLayers resolve(mShadowLayersManager->GetCompositionManager());
+    AutoResolveRefLayers resolve(mShadowLayersManager->GetCompositionManager(this));
     layer_manager()->EndTransaction(nullptr, nullptr, LayerManager::END_NO_IMMEDIATE_REDRAW);
   }
 
@@ -705,6 +708,11 @@ bool
 LayerTransactionParent::DeallocPTextureParent(PTextureParent* actor)
 {
   return TextureHost::DestroyIPDLActor(actor);
+}
+
+bool LayerTransactionParent::IsSameProcess() const
+{
+  return OtherProcess() == ipc::kInvalidProcessHandle;
 }
 
 } // namespace layers

@@ -154,15 +154,11 @@ class HeapReverser : public JSTracer, public JS::CustomAutoRooter
     /* Construct a HeapReverser for |context|'s heap. */
     HeapReverser(JSContext *cx)
       : JS::CustomAutoRooter(cx),
+        noggc(JS_GetRuntime(cx)),
         runtime(JS_GetRuntime(cx)),
         parent(nullptr)
     {
         JS_TracerInit(this, runtime, traverseEdgeWithThis);
-        JS::DisableGenerationalGC(runtime);
-    }
-
-    ~HeapReverser() {
-        JS::EnableGenerationalGC(runtime);
     }
 
     bool init() { return map.init(); }
@@ -171,6 +167,8 @@ class HeapReverser : public JSTracer, public JS::CustomAutoRooter
     bool reverseHeap();
 
   private:
+    JS::AutoDisableGenerationalGC noggc;
+
     /* A runtime pointer for use by the destructor. */
     JSRuntime *runtime;
 
