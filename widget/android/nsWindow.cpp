@@ -1959,6 +1959,13 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
             selEvent.mExpandToClusterBoundary = false;
 
             DispatchEvent(&selEvent);
+
+            // Notify SelectionHandler of final caret position
+            // Required after IME hide via 'Back' button
+            AndroidGeckoEvent* broadcastEvent = AndroidGeckoEvent::MakeBroadcastEvent(
+                NS_LITERAL_CSTRING("TextSelection:UpdateCaretPos"),
+                NS_LITERAL_CSTRING(""));
+            nsAppShell::gAppShell->PostEvent(broadcastEvent);
         }
         break;
     case AndroidGeckoEvent::IME_ADD_COMPOSITION_RANGE:
@@ -2046,6 +2053,13 @@ nsWindow::OnIMEEvent(AndroidGeckoEvent *ae)
 
             DispatchEvent(&event);
             mIMERanges.Clear();
+
+            // Notify SelectionHandler of final caret position
+            // Required in cases of keyboards providing autoCorrections
+            AndroidGeckoEvent* broadcastEvent = AndroidGeckoEvent::MakeBroadcastEvent(
+                NS_LITERAL_CSTRING("TextSelection:UpdateCaretPos"),
+                NS_LITERAL_CSTRING(""));
+            nsAppShell::gAppShell->PostEvent(broadcastEvent);
         }
         break;
     case AndroidGeckoEvent::IME_REMOVE_COMPOSITION:
