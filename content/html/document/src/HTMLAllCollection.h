@@ -13,7 +13,7 @@
 #include "nsISupportsImpl.h"
 #include "nsRefPtrHashtable.h"
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 class nsContentList;
 class nsHTMLDocument;

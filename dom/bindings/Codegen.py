@@ -11343,7 +11343,7 @@ class CallbackMethod(CallbackMember):
         else:
             replacements["args"] = "JS::EmptyValueArray"
         return string.Template("${declCallable}${declThis}"
-                "if (${callGuard}!JS::Call(cx, ${thisVal}, callable,\n"
+                "if (${callGuard}!JS::CallValue(cx, ${thisVal}, callable,\n"
                 "              ${args}, &rval)) {\n"
                 "  aRv.Throw(NS_ERROR_UNEXPECTED);\n"
                 "  return${errorReturn};\n"

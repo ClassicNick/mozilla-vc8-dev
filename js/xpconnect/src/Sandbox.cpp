@@ -767,7 +767,7 @@ xpc::SandboxCallableProxyHandler::call(JSContext *cx, JS::Handle<JSObject*> prox
     }
 
     RootedValue func(cx, js::GetProxyPrivate(proxy));
-    return JS::Call(cx, thisVal, func, args, args.rval());
+    return JS::Call(cx, (HandleValue) thisVal, (HandleValue) func, args, args.rval());
 }
 
 xpc::SandboxCallableProxyHandler xpc::sandboxCallableProxyHandler;

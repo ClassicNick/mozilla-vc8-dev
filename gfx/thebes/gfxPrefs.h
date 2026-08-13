@@ -6,7 +6,7 @@
 #ifndef GFX_PREFS_H
 #define GFX_PREFS_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/TypedEnum.h"
 

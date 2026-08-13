@@ -5,7 +5,7 @@
 #ifndef DOM_CAMERA_CAMERACONTROLLISTENER_H
 #define DOM_CAMERA_CAMERACONTROLLISTENER_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "ICameraControl.h"
 
 namespace mozilla {

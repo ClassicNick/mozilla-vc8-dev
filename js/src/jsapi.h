@@ -3941,6 +3941,10 @@ extern JS_PUBLIC_API(bool)
 Call(JSContext *cx, JS::HandleValue thisv, JS::HandleValue fun, const JS::HandleValueArray& args,
      MutableHandleValue rval);
 
+extern JS_PUBLIC_API(bool)
+CallValue(JSContext *cx, JS::HandleValue thisv, JS::HandleValue fun, const JS::HandleValueArray& args,
+     MutableHandleValue rval);
+
 static inline bool
 Call(JSContext *cx, JS::HandleValue thisv, JS::HandleObject funObj, const JS::HandleValueArray& args,
      MutableHandleValue rval)
