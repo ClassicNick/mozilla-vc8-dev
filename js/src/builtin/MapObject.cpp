@@ -21,7 +21,7 @@
 
 using namespace js;
 
-using mozilla::DoubleEqualsInt32;
+using mozilla::NumberEqualsInt32;
 using mozilla::IsNaN;
 using mozilla::OldMove;
 using mozilla::MoveRef;
@@ -782,7 +782,7 @@ HashableValue::setValue(JSContext *cx, HandleValue v)
     } else if (v.isDouble()) {
         double d = v.toDouble();
         int32_t i;
-        if (DoubleEqualsInt32(d, &i)) {
+        if (NumberEqualsInt32(d, &i)) {
             // Normalize int32_t-valued doubles to int32_t for faster hashing and testing.
             value = Int32Value(i);
         } else if (IsNaN(d)) {

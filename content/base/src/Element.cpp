@@ -41,7 +41,7 @@
 #include "nsIServiceManager.h"
 #include "nsIDOMCSSStyleDeclaration.h"
 #include "nsDOMCSSAttrDeclaration.h"
-#include "nsINameSpaceManager.h"
+#include "nsNameSpaceManager.h"
 #include "nsContentList.h"
 #include "nsDOMTokenList.h"
 #include "nsXBLPrototypeBinding.h"
@@ -2593,6 +2593,12 @@ Element::MozRequestFullScreen()
   OwnerDoc()->AsyncRequestFullScreen(this);
 
   return;
+}
+
+void
+Element::MozRequestPointerLock()
+{
+  OwnerDoc()->RequestPointerLock(this);
 }
 
 NS_IMETHODIMP

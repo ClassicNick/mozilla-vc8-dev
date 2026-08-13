@@ -41,8 +41,8 @@
 using namespace js;
 
 using mozilla::Abs;
-using mozilla::DoubleEqualsInt32;
-using mozilla::DoubleIsInt32;
+using mozilla::NumberEqualsInt32;
+using mozilla::NumberIsInt32;
 using mozilla::ExponentComponent;
 using mozilla::IsFinite;
 using mozilla::IsInfinite;
@@ -353,9 +353,9 @@ js::math_cos(JSContext *cx, unsigned argc, Value *vp)
 #ifdef _WIN32
 #define EXP_IF_OUT_OF_RANGE(x)                  \
     if (!IsNaN(x)) {                            \
-        if (x == PositiveInfinity())            \
-            return PositiveInfinity();          \
-        if (x == NegativeInfinity())            \
+        if (x == PositiveInfinity<double>())    \
+            return PositiveInfinity<double>();  \
+        if (x == NegativeInfinity<double>())    \
             return 0.0;                         \
     }
 #else
@@ -522,7 +522,7 @@ js_math_max(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    double maxval = NegativeInfinity();
+    double maxval = NegativeInfinity<double>();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
         if (!ToNumber(cx, args[i], &x))
@@ -540,7 +540,7 @@ js_math_min(JSContext *cx, unsigned argc, Value *vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    double minval = PositiveInfinity();
+    double minval = PositiveInfinity<double>();
     for (unsigned i = 0; i < args.length(); i++) {
         double x;
         if (!ToNumber(cx, args[i], &x))
@@ -600,7 +600,7 @@ js::ecmaPow(double x, double y)
      * check for NaN since a comparison with NaN is always false.
      */
     int32_t yi;
-    if (DoubleEqualsInt32(y, &yi))
+    if (NumberEqualsInt32(y, &yi))
         return powi(x, yi);
 
     /*
@@ -841,7 +841,7 @@ double
 js::math_round_impl(double x)
 {
     int32_t i;
-    if (DoubleIsInt32(x, &i))
+    if (NumberIsInt32(x, &i))
         return double(i);
 
     /* Some numbers are so big that adding 0.5 would give the wrong number. */
@@ -1350,7 +1350,7 @@ js::ecmaHypot(double x, double y)
      * is NaN, not Infinity.
      */
     if (mozilla::IsInfinite(x) || mozilla::IsInfinite(y)) {
-        return mozilla::PositiveInfinity();
+        return mozilla::PositiveInfinity<double>();
     }
 #endif
     return hypot(x, y);
@@ -1399,7 +1399,7 @@ js::math_hypot(JSContext *cx, unsigned argc, Value *vp)
         }
     }
 
-    double result = isInfinite ? PositiveInfinity() :
+    double result = isInfinite ? PositiveInfinity<double>() :
                     isNaN ? GenericNaN() :
                     scale * sqrt(sumsq);
     args.rval().setNumber(result);
