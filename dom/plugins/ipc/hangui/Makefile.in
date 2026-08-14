@@ -4,18 +4,6 @@
 
 OS_LIBS = $(call EXPAND_LIBNAME,comctl32)
 
-RCINCLUDE = HangUIDlg.rc
-
-ifneq ($(_MSC_VER), 1310)
-STL_FLAGS = \
-  -D_HAS_EXCEPTIONS=0 \
-  $(NULL)
-else
-STL_FLAGS = \
-  -D_HAS_EXCEPTIONS=1 \
-  $(NULL)
-endif
-
 MOZ_GLUE_LDFLAGS =
 
 include $(topsrcdir)/config/rules.mk
