@@ -239,7 +239,6 @@ struct already_AddRefed
       return already_AddRefed<U>(tmp);
     }
 
-  private:
     T* mRawPtr;
   };
 
@@ -587,22 +586,22 @@ class nsCOMPtr MOZ_FINAL
         }
 
       nsCOMPtr( const already_AddRefed<T>& aSmartPtr )
-            : NSCAP_CTOR_BASE(aSmartPtr.take())
+            : NSCAP_CTOR_BASE(aSmartPtr.mRawPtr)
           // construct from |dont_AddRef(expr)|
         {
-          NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
+          NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
       template<typename U>
       nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
-            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.take()))
+            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
           // construct from |dont_AddRef(expr)|
         {
           // But make sure that U actually inherits from T
           MOZ_STATIC_ASSERT((mozilla::IsBaseOf<T, U>::value),
                         "U is not a subclass of T");
-          NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(mRawPtr));
+          NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(aSmartPtr.mRawPtr));
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
@@ -692,7 +691,7 @@ class nsCOMPtr MOZ_FINAL
           // Make sure that U actually inherits from T
           MOZ_STATIC_ASSERT((mozilla::IsBaseOf<T, U>::value),
                         "U is not a subclass of T");
-          assign_assuming_AddRef(static_cast<T*>(rhs.take()));
+          assign_assuming_AddRef(static_cast<T*>(rhs.mRawPtr));
           NSCAP_ASSERT_NO_QUERY_NEEDED();
           return *this;
         }
@@ -928,10 +927,10 @@ class nsCOMPtr<nsISupports>
         }
 
       nsCOMPtr( const already_AddRefed<nsISupports>& aSmartPtr )
-            : nsCOMPtr_base(aSmartPtr.take())
+            : nsCOMPtr_base(aSmartPtr.mRawPtr)
           // construct from |dont_AddRef(expr)|
         {
-          NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
+          NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
         }
 
       nsCOMPtr( const nsQueryInterface qi )
@@ -1014,7 +1013,7 @@ class nsCOMPtr<nsISupports>
       operator=( const already_AddRefed<nsISupports>& rhs )
           // assign from |dont_AddRef(expr)|
         {
-          assign_assuming_AddRef(rhs.take());
+          assign_assuming_AddRef(rhs.mRawPtr);
           return *this;
         }
 
