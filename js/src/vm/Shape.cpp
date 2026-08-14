@@ -1660,6 +1660,9 @@ class InitialShapeSetRef : public BufferableRef
 void
 JSCompartment::checkInitialShapesTableAfterMovingGC()
 {
+    if (!initialShapes.initialized())
+        return;
+
     /*
      * Assert that the postbarriers have worked and that nothing is left in
      * initialShapes that points into the nursery, and that the hash table

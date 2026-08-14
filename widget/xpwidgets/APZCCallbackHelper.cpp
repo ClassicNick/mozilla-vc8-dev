@@ -91,7 +91,7 @@ MaybeAlignAndClampDisplayPort(mozilla::layers::FrameMetrics& aFrameMetrics,
 static void
 RecenterDisplayPort(mozilla::layers::FrameMetrics& aFrameMetrics)
 {
-    CSSRect compositionBounds = aFrameMetrics.CalculateCompositedRectInCssPixels();
+    CSSRect compositionBounds(aFrameMetrics.CalculateCompositedRectInCssPixels());
     aFrameMetrics.mDisplayPort.x = (compositionBounds.width - aFrameMetrics.mDisplayPort.width) / 2;
     aFrameMetrics.mDisplayPort.y = (compositionBounds.height - aFrameMetrics.mDisplayPort.height) / 2;
 }
@@ -156,7 +156,7 @@ APZCCallbackHelper::UpdateRootFrame(nsIDOMWindowUtils* aUtils,
     // be 1000 pixels long but the frame would still be 100 pixels, and so the maximum
     // scroll range would be 900. Therefore this calculation depends on the zoom applied
     // to the content relative to the container.
-    CSSSize scrollPort = aMetrics.CalculateCompositedRectInCssPixels().Size();
+    CSSSize scrollPort = CSSSize(aMetrics.CalculateCompositedRectInCssPixels().Size());
     aUtils->SetScrollPositionClampingScrollPortSize(scrollPort.width, scrollPort.height);
 
     // Scroll the window to the desired spot
@@ -189,7 +189,7 @@ APZCCallbackHelper::UpdateRootFrame(nsIDOMWindowUtils* aUtils,
     // Finally, we multiply by a ScreenToLayerScale of 1.0f because the goal here is to
     // take the async zoom calculated by the APZC and tell gecko about it (turning it into
     // a "sync" zoom) which will update the resolution at which the layer is painted.
-    mozilla::layers::ParentLayerToLayerScale presShellResolution =
+    ParentLayerToLayerScale presShellResolution =
         aMetrics.mZoom
         / aMetrics.mDevPixelsPerCSSPixel
         / aMetrics.GetParentResolution()
@@ -321,6 +321,63 @@ APZCCallbackHelper::AcknowledgeScrollUpdate(const FrameMetrics::ViewID& aScrollI
     } else {
         r1->Run();
     }
+}
+
+static void
+DestroyCSSPoint(void* aObject, nsIAtom* aPropertyName,
+                void* aPropertyValue, void* aData)
+{
+  CSSPoint* point = static_cast<CSSPoint*>(aPropertyValue);
+  delete point;
+}
+
+void
+APZCCallbackHelper::UpdateCallbackTransform(const FrameMetrics& aApzcMetrics, const FrameMetrics& aActualMetrics)
+{
+    nsCOMPtr<nsIContent> content = nsLayoutUtils::FindContentFor(aApzcMetrics.mScrollId);
+    if (!content) {
+        return;
+    }
+    CSSPoint scrollDelta = aApzcMetrics.mScrollOffset - aActualMetrics.mScrollOffset;
+    content->SetProperty(nsGkAtoms::apzCallbackTransform, new CSSPoint(scrollDelta), DestroyCSSPoint);
+}
+
+CSSPoint
+APZCCallbackHelper::ApplyCallbackTransform(const CSSPoint& aInput, const ScrollableLayerGuid& aGuid)
+{
+    // XXX: technically we need to walk all the way up the layer tree from the layer
+    // represented by |aGuid.mScrollId| up to the root of the layer tree and apply
+    // the input transforms at each level in turn. However, it is quite difficult
+    // to do this given that the structure of the layer tree may be different from
+    // the structure of the content tree. Also it may be impossible to do correctly
+    // at this point because there are other CSS transforms and such interleaved in
+    // between so applying the inputTransforms all in a row at the end may leave
+    // some things transformed improperly. In practice we should rarely hit scenarios
+    // where any of this matters, so I'm skipping it for now and just doing the single
+    // transform for the layer that the input hit.
+
+    if (aGuid.mScrollId != FrameMetrics::NULL_SCROLL_ID) {
+        nsCOMPtr<nsIContent> content = nsLayoutUtils::FindContentFor(aGuid.mScrollId);
+        if (content) {
+            void* property = content->GetProperty(nsGkAtoms::apzCallbackTransform);
+            if (property) {
+                CSSPoint delta = (*static_cast<CSSPoint*>(property));
+                return aInput + delta;
+            }
+        }
+    }
+    return aInput;
+}
+
+nsIntPoint
+APZCCallbackHelper::ApplyCallbackTransform(const nsIntPoint& aPoint,
+                                        const ScrollableLayerGuid& aGuid,
+                                        const CSSToLayoutDeviceScale& aScale)
+{
+    LayoutDevicePoint point = LayoutDevicePoint(aPoint.x, aPoint.y);
+    point = ApplyCallbackTransform(point / aScale, aGuid) * aScale;
+    LayoutDeviceIntPoint ret = gfx::RoundedToInt(point);
+    return nsIntPoint(ret.x, ret.y);
 }
 
 }

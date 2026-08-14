@@ -155,12 +155,10 @@ WrapMode(gl::GLContext *aGl, bool aAllowRepeat)
 }
 
 CompositableDataGonkOGL::CompositableDataGonkOGL()
- : mTexture(0)
 {
 }
 CompositableDataGonkOGL::~CompositableDataGonkOGL()
 {
-  DeleteTextureIfPresent();
 }
 
 gl::GLContext*
@@ -177,28 +175,6 @@ void CompositableDataGonkOGL::SetCompositor(Compositor* aCompositor)
 void CompositableDataGonkOGL::ClearData()
 {
   CompositableBackendSpecificData::ClearData();
-  DeleteTextureIfPresent();
-}
-
-GLuint CompositableDataGonkOGL::GetTexture()
-{
-  if (!mTexture) {
-    if (gl()->MakeCurrent()) {
-      gl()->fGenTextures(1, &mTexture);
-    }
-  }
-  return mTexture;
-}
-
-void
-CompositableDataGonkOGL::DeleteTextureIfPresent()
-{
-  if (mTexture) {
-    if (gl()->MakeCurrent()) {
-      gl()->fDeleteTextures(1, &mTexture);
-    }
-    mTexture = 0;
-  }
 }
 
 #if MOZ_WIDGET_GONK && ANDROID_VERSION >= 17
@@ -503,9 +479,8 @@ StreamTextureSourceOGL::RetrieveTextureFromStream()
   switch (sharedSurf->Type()) {
     case SharedSurfaceType::GLTextureShare: {
       SharedSurface_GLTexture* glTexSurf = SharedSurface_GLTexture::Cast(sharedSurf);
-      glTexSurf->SetConsumerGL(gl());
-      mTextureHandle = glTexSurf->Texture();
-      mTextureTarget = glTexSurf->TextureTarget();
+      mTextureHandle = glTexSurf->ConsTexture(gl());
+      mTextureTarget = glTexSurf->ConsTextureTarget();
       MOZ_ASSERT(mTextureHandle);
       mFormat = sharedSurf->HasAlpha() ? SurfaceFormat::R8G8B8A8
                                        : SurfaceFormat::R8G8B8X8;
@@ -524,8 +499,8 @@ StreamTextureSourceOGL::RetrieveTextureFromStream()
 #ifdef XP_MACOSX
     case SharedSurfaceType::IOSurface: {
       SharedSurface_IOSurface* glTexSurf = SharedSurface_IOSurface::Cast(sharedSurf);
-      mTextureHandle = glTexSurf->Texture();
-      mTextureTarget = glTexSurf->TextureTarget();
+      mTextureHandle = glTexSurf->ConsTexture(gl());
+      mTextureTarget = glTexSurf->ConsTextureTarget();
       MOZ_ASSERT(mTextureHandle);
       mFormat = sharedSurf->HasAlpha() ? SurfaceFormat::R8G8B8A8
                                        : SurfaceFormat::R8G8B8X8;
@@ -731,19 +706,6 @@ TextureImageDeprecatedTextureHostOGL::UpdateImpl(const SurfaceDescriptor& aImage
     NS_WARNING("trying to update TextureImageDeprecatedTextureHostOGL without a compositor?");
     return;
   }
-
-#ifdef MOZ_WIDGET_GONK
-  if (mCompositableBackendData) {
-    // on gonk, this class is used as a fallback from gralloc buffer.
-    // There is a case this class is used with GrallocDeprecatedTextureHostOGL
-    // under same CompositableHost. if it happens, a gralloc buffer of
-    // GrallocDeprecatedTextureHostOGL needs to be unbounded from a texture,
-    // when the gralloc buffer is not rendered.
-    // Establish the unbound by deleting the texture.
-    // See Bug 916264.
-    static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get())->DeleteTextureIfPresent();
-  }
-#endif
 
   AutoOpenSurface surf(OPEN_READ_ONLY, aImage);
   gfx::IntSize size = surf.Size();
@@ -1197,7 +1159,7 @@ GLuint
 GrallocDeprecatedTextureHostOGL::GetGLTexture()
 {
   mCompositableBackendData->SetCompositor(mCompositor);
-  return static_cast<CompositableDataGonkOGL*>(mCompositableBackendData.get())->GetTexture();
+  return mCompositor->GetTemporaryTexture(LOCAL_GL_TEXTURE0);
 }
 
 #endif // MOZ_WIDGET_GONK

@@ -296,7 +296,7 @@ nsHostRecord::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const
 
     n += mBlacklistedItems.SizeOfExcludingThis(mallocSizeOf);
     for (size_t i = 0; i < mBlacklistedItems.Length(); i++) {
-        n += mBlacklistedItems[i].SizeOfIncludingThisMustBeUnshared(mallocSizeOf);
+        n += mBlacklistedItems[i].SizeOfExcludingThisMustBeUnshared(mallocSizeOf);
     }
     return n;
 }
@@ -415,8 +415,8 @@ nsHostResolver::nsHostResolver(uint32_t maxCacheEntries,
                                uint32_t maxCacheLifetime,
                                uint32_t lifetimeGracePeriod)
     : mMaxCacheEntries(maxCacheEntries)
-    , mMaxCacheLifetime(TimeDuration::FromSeconds(maxCacheLifetime * 60))
-    , mGracePeriod(lifetimeGracePeriod)
+    , mMaxCacheLifetime(TimeDuration::FromSeconds(maxCacheLifetime))
+    , mGracePeriod(TimeDuration::FromSeconds(lifetimeGracePeriod))
     , mLock("nsHostResolver.mLock")
     , mIdleThreadCV(mLock, "nsHostResolver.mIdleThreadCV")
     , mNumIdleThreads(0)
@@ -596,7 +596,7 @@ nsHostResolver::ResolveHost(const char            *host,
             // do we have a cached result that we can reuse?
             else if (!(flags & RES_BYPASS_CACHE) &&
                      he->rec->HasUsableResult(flags) &&
-                     TimeStamp::NowLoRes() <= (he->rec->expiration + TimeDuration::FromSeconds(mGracePeriod * 60))) {
+                     TimeStamp::NowLoRes() <= (he->rec->expiration + mGracePeriod)) {
                 LOG(("  Using cached record for host [%s].\n", host));
                 // put reference to host record on stack...
                 result = he->rec;
@@ -668,8 +668,7 @@ nsHostResolver::ResolveHost(const char            *host,
                     if (PL_DHASH_ENTRY_IS_BUSY(unspecHe) &&
                         unspecHe->rec &&
                         unspecHe->rec->HasUsableResult(flags) &&
-                        TimeStamp::NowLoRes() <= (he->rec->expiration +
-                            TimeDuration::FromSeconds(mGracePeriod * 60))) {
+                        TimeStamp::NowLoRes() <= (he->rec->expiration + mGracePeriod)) {
 
                         MOZ_ASSERT(unspecHe->rec->addr_info || unspecHe->rec->negative,
                                    "Entry should be resolved or negative.");

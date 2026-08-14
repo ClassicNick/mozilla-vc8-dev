@@ -63,13 +63,23 @@ public:
   Context(TrustDomain& trustDomain,
           const CERTCertificate& cert,
           CERTCertificate& issuerCert,
-          PRTime time)
+          PRTime time,
+          PRTime* thisUpdate,
+          PRTime* validThrough)
     : trustDomain(trustDomain)
     , cert(cert)
     , issuerCert(issuerCert)
     , time(time)
     , certStatus(Unknown)
+    , thisUpdate(thisUpdate)
+    , validThrough(validThrough)
   {
+    if (thisUpdate) {
+      *thisUpdate = 0;
+    }
+    if (validThrough) {
+      *validThrough = 0;
+    }
   }
 
   TrustDomain& trustDomain;
@@ -77,6 +87,8 @@ public:
   CERTCertificate& issuerCert;
   const PRTime time;
   CertStatus certStatus;
+  PRTime* thisUpdate;
+  PRTime* validThrough;
 
 private:
   Context(const Context&); // delete
@@ -319,7 +331,9 @@ SECStatus
 VerifyEncodedOCSPResponse(TrustDomain& trustDomain,
                           const CERTCertificate* cert,
                           CERTCertificate* issuerCert, PRTime time,
-                          const SECItem* encodedResponse)
+                          const SECItem* encodedResponse,
+                          PRTime* thisUpdate,
+                          PRTime* validThrough)
 {
   PR_ASSERT(cert);
   PR_ASSERT(issuerCert);
@@ -335,7 +349,8 @@ VerifyEncodedOCSPResponse(TrustDomain& trustDomain,
     return SECFailure;
   }
 
-  Context context(trustDomain, *cert, *issuerCert, time);
+  Context context(trustDomain, *cert, *issuerCert, time, thisUpdate,
+                  validThrough);
 
   if (der::Nested(input, der::SEQUENCE,
                   bind(OCSPResponse, _1, ref(context))) != der::Success) {
@@ -698,6 +713,13 @@ SingleResponse(der::Input& input, Context& context)
     if (CheckExtensionsForCriticality(input) != der::Success) {
       return der::Failure;
     }
+  }
+
+  if (context.thisUpdate) {
+    *context.thisUpdate = thisUpdate;
+  }
+  if (context.validThrough) {
+    *context.validThrough = notAfter;
   }
 
   return der::Success;

@@ -3220,7 +3220,6 @@ nsCycleCollector::Collect(ccType aCCType,
     if (mActivelyCollecting || mFreeingSnowWhite) {
         return false;
     }
-    AutoRestore<bool> ar(mActivelyCollecting);
     mActivelyCollecting = true;
 
     bool startedIdle = (mIncrementalPhase == IdlePhase);
@@ -3260,6 +3259,10 @@ nsCycleCollector::Collect(ccType aCCType,
             break;
         }
     } while (!aBudget.checkOverBudget() && !finished);
+
+    // Clear mActivelyCollecting here to ensure that a recursive call to
+    // Collect() does something.
+    mActivelyCollecting = false;
 
     if (aCCType != SliceCC && !startedIdle) {
         // We were in the middle of an incremental CC (using its own listener).

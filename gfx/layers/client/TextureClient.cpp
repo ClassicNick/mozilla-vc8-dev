@@ -27,8 +27,12 @@
 #include "mozilla/layers/TextureClientOGL.h"
 
 #ifdef XP_WIN
+#ifdef MOZ_ENABLE_D3D9_LAYER
 #include "mozilla/layers/TextureD3D9.h"
+#endif
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/TextureD3D11.h"
+#endif
 #include "gfxWindowsPlatform.h"
 #include "gfx2DGlue.h"
 #endif
@@ -50,6 +54,12 @@
 #else
 #  include "gfxReusableSharedImageSurfaceWrapper.h"
 #  include "gfxSharedImageSurface.h"
+#endif
+
+#if 0
+#define RECYCLE_LOG(a) printf_stderr(a)
+#else
+#define RECYCLE_LOG(a) do { } while (0)
 #endif
 
 using namespace mozilla::gl;
@@ -90,6 +100,20 @@ public:
 
   bool Recv__delete__() MOZ_OVERRIDE;
 
+  bool RecvCompositorRecycle()
+  {
+    RECYCLE_LOG("Receive recycle %p (%p)\n", mTextureClient, mWaitForRecycle.get());
+    mWaitForRecycle = nullptr;
+    return true;
+  }
+
+  void WaitForCompositorRecycle()
+  {
+    mWaitForRecycle = mTextureClient;
+    RECYCLE_LOG("Wait for recycle %p\n", mWaitForRecycle.get());
+    SendClientRecycle();
+  }
+
   /**
    * Only used during the deallocation phase iff we need synchronization between
    * the client and host side for deallocation (that is, when the data is going
@@ -128,6 +152,7 @@ private:
   }
 
   RefPtr<CompositableForwarder> mForwarder;
+  RefPtr<TextureClient> mWaitForRecycle;
   TextureClientData* mTextureData;
   TextureClient* mTextureClient;
   bool mIPCOpen;
@@ -138,6 +163,7 @@ private:
 void
 TextureChild::DeleteTextureData()
 {
+  mWaitForRecycle = nullptr;
   if (mTextureData) {
     mTextureData->DeallocateSharedData(GetAllocator());
     delete mTextureData;
@@ -158,6 +184,7 @@ TextureChild::ActorDestroy(ActorDestroyReason why)
   if (mTextureClient) {
     mTextureClient->mActor = nullptr;
   }
+  mWaitForRecycle = nullptr;
 }
 
 // static
@@ -181,7 +208,13 @@ TextureClient::DestroyIPDLActor(PTextureChild* actor)
 TextureClient*
 TextureClient::AsTextureClient(PTextureChild* actor)
 {
-  return actor? static_cast<TextureChild*>(actor)->mTextureClient : nullptr;
+  return actor ? static_cast<TextureChild*>(actor)->mTextureClient : nullptr;
+}
+
+void
+TextureClient::WaitForCompositorRecycle()
+{
+  mActor->WaitForCompositorRecycle();
 }
 
 bool
@@ -249,16 +282,20 @@ DisableGralloc(SurfaceFormat aFormat)
 TemporaryRef<TextureClient>
 TextureClient::CreateTextureClientForDrawing(ISurfaceAllocator* aAllocator,
                                              SurfaceFormat aFormat,
-                                             TextureFlags aTextureFlags)
+                                             TextureFlags aTextureFlags,
+                                             const gfx::IntSize& aSizeHint)
 {
   RefPtr<TextureClient> result;
 
 #ifdef XP_WIN
   LayersBackend parentBackend = aAllocator->GetCompositorBackendType();
+#ifdef MOZ_ENABLE_D3D10_LAYER
   if (parentBackend == LayersBackend::LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     result = new TextureClientD3D11(aFormat, aTextureFlags);
   }
+#endif
+#ifdef MOZ_ENABLE_D3D9_LAYER
   if (parentBackend == LayersBackend::LAYERS_D3D9 &&
       aAllocator->IsSameProcess() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
@@ -268,6 +305,7 @@ TextureClient::CreateTextureClientForDrawing(ISurfaceAllocator* aAllocator,
       result = new CairoTextureClientD3D9(aFormat, aTextureFlags);
     }
   }
+#endif
 #endif
 
 #ifdef MOZ_X11
@@ -298,7 +336,12 @@ TextureClient::CreateTextureClientForDrawing(ISurfaceAllocator* aAllocator,
 
 #ifdef MOZ_WIDGET_GONK
   if (!DisableGralloc(aFormat)) {
-    result = new GrallocTextureClientOGL(aAllocator, aFormat, aTextureFlags);
+    // Don't allow Gralloc texture clients to exceed the maximum texture size.
+    // BufferTextureClients have code to handle tiling the surface client-side.
+    int32_t maxTextureSize = aAllocator->GetMaxTextureSize();
+    if (aSizeHint.width <= maxTextureSize && aSizeHint.height <= maxTextureSize) {
+      result = new GrallocTextureClientOGL(aAllocator, aFormat, aTextureFlags);
+    }
   }
 #endif
 

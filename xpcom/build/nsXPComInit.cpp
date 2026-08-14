@@ -622,11 +622,13 @@ NS_InitXPCOM2(nsIServiceManager* *result,
     // this oddness.
     mozilla::SetICUMemoryFunctions();
 
+#ifdef MOZ_OGG
     // Do the same for libogg.
     ogg_set_mem_functions(OggReporter::Alloc,
                           OggReporter::Calloc,
                           OggReporter::Realloc,
                           OggReporter::Free);
+#endif
 
     // Initialize the JS engine.
     if (!JS_Init()) {

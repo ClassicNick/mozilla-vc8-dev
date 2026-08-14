@@ -7,7 +7,7 @@
 #ifndef mozilla_ChaosMode_h
 #define mozilla_ChaosMode_h
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <stdlib.h>
 
 namespace mozilla {

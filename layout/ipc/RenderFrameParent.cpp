@@ -539,7 +539,7 @@ public:
     }
   }
 
-  virtual void HandleDoubleTap(const CSSIntPoint& aPoint,
+  virtual void HandleDoubleTap(const CSSPoint& aPoint,
                                int32_t aModifiers,
                                const ScrollableLayerGuid& aGuid) MOZ_OVERRIDE
   {
@@ -558,7 +558,7 @@ public:
     }
   }
 
-  virtual void HandleSingleTap(const CSSIntPoint& aPoint,
+  virtual void HandleSingleTap(const CSSPoint& aPoint,
                                int32_t aModifiers,
                                const ScrollableLayerGuid& aGuid) MOZ_OVERRIDE
   {
@@ -577,7 +577,7 @@ public:
     }
   }
 
-  virtual void HandleLongTap(const CSSIntPoint& aPoint,
+  virtual void HandleLongTap(const CSSPoint& aPoint,
                              int32_t aModifiers,
                              const ScrollableLayerGuid& aGuid) MOZ_OVERRIDE
   {
@@ -596,7 +596,7 @@ public:
     }
   }
 
-  virtual void HandleLongTapUp(const CSSIntPoint& aPoint,
+  virtual void HandleLongTapUp(const CSSPoint& aPoint,
                                int32_t aModifiers,
                                const ScrollableLayerGuid& aGuid) MOZ_OVERRIDE
   {
@@ -943,12 +943,11 @@ RenderFrameParent::OwnerContentChanged(nsIContent* aContent)
 }
 
 void
-RenderFrameParent::NotifyInputEvent(const WidgetInputEvent& aEvent,
-                                    ScrollableLayerGuid* aOutTargetGuid,
-                                    WidgetInputEvent* aOutEvent)
+RenderFrameParent::NotifyInputEvent(WidgetInputEvent& aEvent,
+                                    ScrollableLayerGuid* aOutTargetGuid)
 {
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->ReceiveInputEvent(aEvent, aOutTargetGuid, aOutEvent);
+    GetApzcTreeManager()->ReceiveInputEvent(aEvent, aOutTargetGuid);
   }
 }
 

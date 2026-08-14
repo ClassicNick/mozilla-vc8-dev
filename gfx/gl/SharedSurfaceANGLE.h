@@ -72,11 +72,11 @@ protected:
 public:
     virtual ~SharedSurface_ANGLEShareHandle();
 
-    virtual void LockProdImpl();
-    virtual void UnlockProdImpl();
+    virtual void LockProdImpl() MOZ_OVERRIDE;
+    virtual void UnlockProdImpl() MOZ_OVERRIDE;
 
-    virtual void Fence();
-    virtual bool WaitSync();
+    virtual void Fence() MOZ_OVERRIDE;
+    virtual bool WaitSync() MOZ_OVERRIDE;
 
 #ifdef MOZ_ENABLE_D3D10_LAYER
     // Implementation-specific functions below:
@@ -114,7 +114,7 @@ protected:
                                     ID3D10Device1* d3d,
                                     const SurfaceCaps& caps);
 
-    virtual SharedSurface* CreateShared(const gfx::IntSize& size) {
+    virtual SharedSurface* CreateShared(const gfx::IntSize& size) MOZ_OVERRIDE {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_ANGLEShareHandle::Create(mProdGL, mConsD3D,
                                                       mContext, mConfig,

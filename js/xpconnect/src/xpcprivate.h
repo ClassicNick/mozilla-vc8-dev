@@ -551,7 +551,7 @@ public:
     static void ActivityCallback(void *arg, bool active);
     static void CTypesActivityCallback(JSContext *cx,
                                        js::CTypesActivityType type);
-    static bool OperationCallback(JSContext *cx);
+    static bool InterruptCallback(JSContext *cx);
     static void OutOfMemoryCallback(JSContext *cx);
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
@@ -909,24 +909,19 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JS::HandleObject obj);
         nullptr, /* lookupGeneric */                                          \
         nullptr, /* lookupProperty */                                         \
         nullptr, /* lookupElement */                                          \
-        nullptr, /* lookupSpecial */                                          \
         nullptr, /* defineGeneric */                                          \
         nullptr, /* defineProperty */                                         \
         nullptr, /* defineElement */                                          \
-        nullptr, /* defineSpecial */                                          \
         nullptr, /* getGeneric    */                                          \
         nullptr, /* getProperty    */                                         \
         nullptr, /* getElement    */                                          \
-        nullptr, /* getSpecial    */                                          \
         nullptr, /* setGeneric    */                                          \
         nullptr, /* setProperty    */                                         \
         nullptr, /* setElement    */                                          \
-        nullptr, /* setSpecial    */                                          \
         nullptr, /* getGenericAttributes  */                                  \
         nullptr, /* setGenericAttributes  */                                  \
         nullptr, /* deleteProperty */                                         \
         nullptr, /* deleteElement */                                          \
-        nullptr, /* deleteSpecial */                                          \
         nullptr, nullptr, /* watch/unwatch */                                 \
         nullptr, /* slice */                                                  \
         XPC_WN_JSOp_Enumerate,                                                \
@@ -938,24 +933,19 @@ XPC_WN_JSOp_ThisObject(JSContext *cx, JS::HandleObject obj);
         nullptr, /* lookupGeneric */                                          \
         nullptr, /* lookupProperty */                                         \
         nullptr, /* lookupElement */                                          \
-        nullptr, /* lookupSpecial */                                          \
         nullptr, /* defineGeneric */                                          \
         nullptr, /* defineProperty */                                         \
         nullptr, /* defineElement */                                          \
-        nullptr, /* defineSpecial */                                          \
         nullptr, /* getGeneric    */                                          \
         nullptr, /* getProperty    */                                         \
         nullptr, /* getElement    */                                          \
-        nullptr, /* getSpecial    */                                          \
         nullptr, /* setGeneric    */                                          \
         nullptr, /* setProperty    */                                         \
         nullptr, /* setElement    */                                          \
-        nullptr, /* setSpecial    */                                          \
         nullptr, /* getGenericAttributes  */                                  \
         nullptr, /* setGenericAttributes  */                                  \
         nullptr, /* deleteProperty */                                         \
         nullptr, /* deleteElement */                                          \
-        nullptr, /* deleteSpecial */                                          \
         nullptr, nullptr, /* watch/unwatch */                                 \
         nullptr, /* slice */                                                  \
         XPC_WN_JSOp_Enumerate,                                                \

@@ -1022,6 +1022,14 @@ public:
 
   bool IsDeviceSizePageSize();
 
+  bool HasWarnedAboutPositionedTableParts() const {
+    return mHasWarnedAboutPositionedTableParts;
+  }
+
+  void SetHasWarnedAboutPositionedTableParts() {
+    mHasWarnedAboutPositionedTableParts = true;
+  }
+
 protected:
   friend class nsRunnableMethod<nsPresContext>;
   NS_HIDDEN_(void) ThemeChangedInternal();
@@ -1324,6 +1332,8 @@ protected:
   // Use GetPaintFlashing() method instead.
   mutable unsigned mPaintFlashing : 1;
   mutable unsigned mPaintFlashingInitialized : 1;
+
+  unsigned mHasWarnedAboutPositionedTableParts : 1;
 
 #ifdef DEBUG
   bool                  mInitialized;
