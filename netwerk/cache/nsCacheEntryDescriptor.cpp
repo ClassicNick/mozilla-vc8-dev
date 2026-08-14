@@ -1122,7 +1122,7 @@ nsOutputStreamWrapper::LazyInit()
     // If anything above failed, clean up internal state and get out of here
     // (see bug #654926)...
     if (NS_FAILED(rv)) {
-        nsCacheService::ReleaseObject_Locked(stream.forget().get());
+        nsCacheService::ReleaseObject_Locked(stream.forget().take());
         mDescriptor->mOutputWrapper = nullptr;
         nsCacheService::ReleaseObject_Locked(mDescriptor);
         mDescriptor = nullptr;

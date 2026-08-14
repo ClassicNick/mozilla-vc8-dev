@@ -118,6 +118,12 @@
   #define NSCAP_LOG_RELEASE(this, ptr)
 #endif
 
+namespace mozilla {
+
+struct unused_t;
+
+} // namespace mozilla
+
 template <class T>
 struct already_AddRefed
     /*
@@ -156,7 +162,33 @@ struct already_AddRefed
       // nothing else to do here
     }
 
-    T* get() const { return mRawPtr; }
+    already_AddRefed(const already_AddRefed<T>& aOther)
+      : mRawPtr(aOther.take())
+    {
+      // nothing else to do here
+    }
+
+    ~already_AddRefed()
+    {
+      MOZ_ASSERT(!mRawPtr);
+    }
+
+    // Specialize the unused operator<< for already_AddRefed, to allow
+    // nsCOMPtr<nsIFoo> foo;
+    // unused << foo.forget();
+    friend void operator<<(const mozilla::unused_t& unused,
+                                         const already_AddRefed<T>& rhs)
+    {
+      auto mutableAlreadyAddRefed = const_cast<already_AddRefed<T>*>(&rhs);
+      unused << mutableAlreadyAddRefed->take();
+    }
+
+    T* take()
+    {
+      T* rawPtr = mRawPtr;
+      mRawPtr = nullptr;
+      return rawPtr;
+    }
 
     /**
      * This helper is useful in cases like
@@ -207,6 +239,7 @@ struct already_AddRefed
       return already_AddRefed<U>(tmp);
     }
 
+  private:
     T* mRawPtr;
   };
 
@@ -554,22 +587,22 @@ class nsCOMPtr MOZ_FINAL
         }
 
       nsCOMPtr( const already_AddRefed<T>& aSmartPtr )
-            : NSCAP_CTOR_BASE(aSmartPtr.mRawPtr)
+            : NSCAP_CTOR_BASE(aSmartPtr.take())
           // construct from |dont_AddRef(expr)|
         {
-          NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
+          NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
       template<typename U>
       nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
-            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
+            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.take()))
           // construct from |dont_AddRef(expr)|
         {
           // But make sure that U actually inherits from T
           MOZ_STATIC_ASSERT((mozilla::IsBaseOf<T, U>::value),
-                            "U is not a subclass of T");
-          NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(aSmartPtr.mRawPtr));
+                        "U is not a subclass of T");
+          NSCAP_LOG_ASSIGNMENT(this, static_cast<T*>(mRawPtr));
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
@@ -658,8 +691,8 @@ class nsCOMPtr MOZ_FINAL
         {
           // Make sure that U actually inherits from T
           MOZ_STATIC_ASSERT((mozilla::IsBaseOf<T, U>::value),
-                            "U is not a subclass of T");
-          assign_assuming_AddRef(static_cast<T*>(rhs.mRawPtr));
+                        "U is not a subclass of T");
+          assign_assuming_AddRef(static_cast<T*>(rhs.take()));
           NSCAP_ASSERT_NO_QUERY_NEEDED();
           return *this;
         }
@@ -895,10 +928,10 @@ class nsCOMPtr<nsISupports>
         }
 
       nsCOMPtr( const already_AddRefed<nsISupports>& aSmartPtr )
-            : nsCOMPtr_base(aSmartPtr.mRawPtr)
+            : nsCOMPtr_base(aSmartPtr.take())
           // construct from |dont_AddRef(expr)|
         {
-          NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
+          NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
         }
 
       nsCOMPtr( const nsQueryInterface qi )
@@ -981,7 +1014,7 @@ class nsCOMPtr<nsISupports>
       operator=( const already_AddRefed<nsISupports>& rhs )
           // assign from |dont_AddRef(expr)|
         {
-          assign_assuming_AddRef(rhs.mRawPtr);
+          assign_assuming_AddRef(rhs.take());
           return *this;
         }
 

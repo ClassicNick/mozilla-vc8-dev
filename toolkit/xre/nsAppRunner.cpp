@@ -14,6 +14,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Poison.h"
 #include "mozilla/Preferences.h"
@@ -4031,6 +4032,8 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
   GeckoProfilerInitRAII profilerGuard(&aLocal);
   PROFILER_LABEL("Startup", "XRE_Main");
 
+  mozilla::IOInterposerInit ioInterposerGuard;
+
   nsresult rv = NS_OK;
 
   gArgc = argc;
@@ -4233,6 +4236,8 @@ XRE_mainMetro(int argc, char* argv[], const nsXREAppData* aAppData)
   char aLocal;
   GeckoProfilerInitRAII profilerGuard(&aLocal);
   PROFILER_LABEL("Startup", "XRE_Main");
+
+  mozilla::IOInterposerInit ioInterposerGuard;
 
   nsresult rv = NS_OK;
 

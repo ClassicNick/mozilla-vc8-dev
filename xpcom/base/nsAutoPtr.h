@@ -928,7 +928,7 @@ class nsRefPtr
 
       template <typename I>
       nsRefPtr( const already_AddRefed<I>& aSmartPtr )
-            : mRawPtr(aSmartPtr.mRawPtr)
+            : mRawPtr(aSmartPtr.take())
           // construct from |dont_AddRef(expr)|
         {
         }
@@ -964,7 +964,7 @@ class nsRefPtr
       operator=( const already_AddRefed<I>& rhs )
           // assign from |dont_AddRef(expr)|
         {
-          assign_assuming_AddRef(rhs.mRawPtr);
+          assign_assuming_AddRef(rhs.take());
           return *this;
         }
 

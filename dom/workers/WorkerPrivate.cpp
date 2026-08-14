@@ -2233,7 +2233,7 @@ WorkerPrivateParent<Derived>::DispatchControlRunnable(
     }
 
     // Transfer ownership to the control queue.
-    self->mControlQueue.Push(runnable.forget().get());
+    self->mControlQueue.Push(runnable.forget().take());
 
     if (JSContext* cx = self->mJSContext) {
       MOZ_ASSERT(self->mThread);

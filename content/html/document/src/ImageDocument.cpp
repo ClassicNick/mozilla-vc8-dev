@@ -322,7 +322,7 @@ NS_IMETHODIMP
 ImageDocument::GetImageRequest(imgIRequest** aImageRequest)
 {
   ErrorResult rv;
-  *aImageRequest = GetImageRequest(rv).get();
+  *aImageRequest = GetImageRequest(rv).take();
   return rv.ErrorCode();
 }
 

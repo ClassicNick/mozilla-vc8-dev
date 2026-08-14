@@ -9,6 +9,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/ProtocolTypes.h"
@@ -634,7 +635,7 @@ public:
   {
     // May be created on any thread!
 
-    MOZ_ASSERT(aActor.get());
+    MOZ_ASSERT(mActor);
   }
 
   CreateCallbackRunnable()
@@ -677,7 +678,7 @@ private:
   {
     if (mTransport) {
       CRASH_IN_CHILD_PROCESS("Leaking transport!");
-      mTransport.forget();
+      unused << mTransport.forget();
     }
   }
 
@@ -698,7 +699,7 @@ public:
     mParentMessageLoop(aParentMessageLoop)
   {
     AssertIsOnMainThread();
-    MOZ_ASSERT(aParentActor.get());
+    MOZ_ASSERT(mParentActor);
     MOZ_ASSERT(aParentMessageLoop);
   }
 
@@ -1533,7 +1534,7 @@ ChildImpl::CreateCallbackRunnable::~CreateCallbackRunnable()
 {
   if (mActor) {
     CRASH_IN_CHILD_PROCESS("Leaking actor!");
-    mActor.forget();
+    unused << mActor.forget();
   }
 }
 
@@ -1676,7 +1677,7 @@ ChildImpl::OpenMainProcessActorRunnable::Run()
   }
 
   // Now that Open() has succeeded transfer the ownership of the actors to IPDL.
-  parentActor.forget();
+  unused << parentActor.forget();
 
   ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
@@ -1719,7 +1720,9 @@ ChildImpl::ParentCreateCallback::Success(
 {
   AssertIsInMainProcess();
   AssertIsOnMainThread();
-  MOZ_ASSERT(aParentActor.get());
+
+  nsRefPtr<ParentImpl> parentActor = aParentActor;
+  MOZ_ASSERT(parentActor);
   MOZ_ASSERT(aParentMessageLoop);
   MOZ_ASSERT(mEventTarget);
 
@@ -1729,7 +1732,7 @@ ChildImpl::ParentCreateCallback::Success(
   mEventTarget.swap(target);
 
   nsCOMPtr<nsIRunnable> openRunnable =
-    new OpenMainProcessActorRunnable(childActor.forget(), aParentActor,
+    new OpenMainProcessActorRunnable(childActor.forget(), parentActor.forget(),
                                      aParentMessageLoop);
   if (NS_FAILED(target->Dispatch(openRunnable, NS_DISPATCH_NORMAL))) {
     NS_WARNING("Failed to dispatch open runnable!");
