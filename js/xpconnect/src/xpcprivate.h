@@ -2775,8 +2775,9 @@ void PopJSContextNoScriptContext();
 class XPCJSContextStack
 {
 public:
-    XPCJSContextStack()
-      : mSafeJSContext(nullptr)
+    XPCJSContextStack(XPCJSRuntime *aRuntime)
+      : mRuntime(aRuntime)
+      , mSafeJSContext(nullptr)
     { }
 
     virtual ~XPCJSContextStack();
@@ -2809,6 +2810,7 @@ private:
     bool Push(JSContext *cx);
 
     AutoInfallibleTArray<XPCJSContextInfo, 16> mStack;
+    XPCJSRuntime* mRuntime;
     JSContext*  mSafeJSContext;
 };
 
@@ -3622,9 +3624,9 @@ DefineStaticJSVals(JSContext *cx);
 } // namespace dom
 } // namespace mozilla
 
-NS_EXPORT_(bool)
+bool
 xpc_LocalizeRuntime(JSRuntime *rt);
-NS_EXPORT_(void)
+void
 xpc_DelocalizeRuntime(JSRuntime *rt);
 
 /***************************************************************************/
