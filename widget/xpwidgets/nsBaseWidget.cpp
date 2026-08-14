@@ -82,6 +82,12 @@ int32_t nsIWidget::sPointerIdCounter = 0;
 // nsBaseWidget
 NS_IMPL_ISUPPORTS1(nsBaseWidget, nsIWidget)
 
+// IMEMessage is shared by nsIMEStateManager and TextComposition.
+// XXX Negative values are used in Android...
+enum IMEMessage
+{
+  NOTIFY_IME_OF_POSITION_CHANGE
+};
 
 nsAutoRollup::nsAutoRollup()
 {
@@ -1468,6 +1474,18 @@ nsBaseWidget::NotifySizeMoveDone()
   nsIPresShell* presShell = mWidgetListener->GetPresShell();
   if (presShell) {
     presShell->WindowSizeMoveDone();
+  }
+}
+
+void
+nsBaseWidget::NotifyWindowMoved(int32_t aX, int32_t aY)
+{
+  if (mWidgetListener) {
+    mWidgetListener->WindowMoved(this, aX, aY);
+  }
+
+  if (GetIMEUpdatePreference().WantPositionChanged()) {
+    NotifyIME(IMENotification((IMEMessage) NOTIFY_IME_OF_POSITION_CHANGE));
   }
 }
 

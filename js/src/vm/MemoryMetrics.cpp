@@ -111,7 +111,7 @@ NotableStringInfo::NotableStringInfo()
   : StringInfo(),
     bufferSize(0),
     buffer(0),
-    length(0),
+    length(0)
 {
 }
 
@@ -184,18 +184,17 @@ NotableClassInfo::NotableClassInfo(const char *className, const ClassInfo &info)
     PodCopy(className_, className, bytes);
 }
 
-NotableClassInfo::NotableClassInfo(NotableClassInfo &&info)
-  : ClassInfo(Move(info))
+NotableClassInfo::NotableClassInfo(MoveRef<NotableClassInfo> info)
+  : ClassInfo(info)
 {
-    className_ = info.className_;
-    info.className_ = nullptr;
+    className_ = info->className_;
+    info->className_ = nullptr;
 }
 
-NotableClassInfo &NotableClassInfo::operator=(NotableClassInfo &&info)
+NotableClassInfo &NotableClassInfo::operator=(MoveRef<NotableClassInfo> info)
 {
-    MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
     this->~NotableClassInfo();
-    new (this) NotableClassInfo(Move(info));
+    new (this) NotableClassInfo(info);
     return *this;
 }
 
@@ -215,18 +214,17 @@ NotableScriptSourceInfo::NotableScriptSourceInfo(const char *filename, const Scr
     PodCopy(filename_, filename, bytes);
 }
 
-NotableScriptSourceInfo::NotableScriptSourceInfo(NotableScriptSourceInfo &&info)
-  : ScriptSourceInfo(Move(info))
+NotableScriptSourceInfo::NotableScriptSourceInfo(MoveRef<NotableScriptSourceInfo> info)
+  : ScriptSourceInfo(info)
 {
-    filename_ = info.filename_;
-    info.filename_ = nullptr;
+    filename_ = info->filename_;
+    info->filename_ = nullptr;
 }
 
-NotableScriptSourceInfo &NotableScriptSourceInfo::operator=(NotableScriptSourceInfo &&info)
+NotableScriptSourceInfo &NotableScriptSourceInfo::operator=(MoveRef<NotableScriptSourceInfo> info)
 {
-    MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
     this->~NotableScriptSourceInfo();
-    new (this) NotableScriptSourceInfo(Move(info));
+    new (this) NotableScriptSourceInfo(info);
     return *this;
 }
 
@@ -341,6 +339,8 @@ AddClassInfo(Granularity granularity, CompartmentStats *cStats, const char *clas
              JS::ClassInfo &info)
 {
     if (granularity == FineGrained) {
+        if (!className)
+            className = "<no class name>";
         CompartmentStats::ClassesHashMap::AddPtr p =
             cStats->allClasses->lookupForAdd(className);
         if (!p) {

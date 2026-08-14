@@ -98,6 +98,7 @@ struct CStringHashPolicy
 #define DECL_SIZE(kind, gc, mSize)                      size_t mSize;
 #define ZERO_SIZE(kind, gc, mSize)                      mSize(0),
 #define COPY_OTHER_SIZE(kind, gc, mSize)                mSize(other.mSize),
+#define MOVE_OTHER_SIZE(kind, gc, mSize)                mSize(other->mSize),
 #define ADD_OTHER_SIZE(kind, gc, mSize)                 mSize += other.mSize;
 #define SUB_OTHER_SIZE(kind, gc, mSize)                 MOZ_ASSERT(mSize >= other.mSize); \
                                                         mSize -= other.mSize;
@@ -179,8 +180,8 @@ struct NotableClassInfo : public ClassInfo
 {
     NotableClassInfo();
     NotableClassInfo(const char *className, const ClassInfo &info);
-    NotableClassInfo(NotableClassInfo &&info);
-    NotableClassInfo &operator=(NotableClassInfo &&info);
+	NotableClassInfo(mozilla::MoveRef<NotableClassInfo> info);
+	NotableClassInfo &operator=(mozilla::MoveRef<NotableClassInfo> info);
 
     ~NotableClassInfo() {
         js_free(className_);
@@ -306,18 +307,9 @@ struct NotableStringInfo : public StringInfo
         js_free(buffer);
     }
 
-<<<<<<< HEAD
-    // A string needs to take up this many bytes of storage before we consider
-    // it to be "notable".
-    static size_t notableSize() {
-        return js::MemoryReportingSundriesThreshold();
-    }
-
     // The amount of memory we requested for |buffer|; i.e.
     // buffer = malloc(bufferSize).
     size_t bufferSize;
-=======
->>>>>>> 65d4864
     char *buffer;
     size_t length;
 };
@@ -370,8 +362,8 @@ struct NotableScriptSourceInfo : public ScriptSourceInfo
 {
     NotableScriptSourceInfo();
     NotableScriptSourceInfo(const char *filename, const ScriptSourceInfo &info);
-    NotableScriptSourceInfo(NotableScriptSourceInfo &&info);
-    NotableScriptSourceInfo &operator=(NotableScriptSourceInfo &&info);
+	NotableScriptSourceInfo(mozilla::MoveRef<NotableScriptSourceInfo> info);
+	NotableScriptSourceInfo &operator=(mozilla::MoveRef<NotableScriptSourceInfo> info);
 
     ~NotableScriptSourceInfo() {
         js_free(filename_);
@@ -462,25 +454,16 @@ struct ZoneStats
         isTotals(true)
     {}
 
-<<<<<<< HEAD
     ZoneStats(mozilla::MoveRef<ZoneStats> other)
-      : ZoneStatsPod(other),
-        strings(other->strings),
-        notableStrings(mozilla::OldMove(other->notableStrings))
+      : FOR_EACH_SIZE(MOVE_OTHER_SIZE)
+        stringInfo(mozilla::OldMove(other->stringInfo)),
+        extra(other->extra),
+        allStrings(other->allStrings),
+        notableStrings(mozilla::OldMove(other->notableStrings)),
+        isTotals(other->isTotals)
     {
-        other->strings = nullptr;
-=======
-    ZoneStats(ZoneStats &&other)
-      : FOR_EACH_SIZE(COPY_OTHER_SIZE)
-        stringInfo(mozilla::Move(other.stringInfo)),
-        extra(other.extra),
-        allStrings(other.allStrings),
-        notableStrings(mozilla::Move(other.notableStrings)),
-        isTotals(other.isTotals)
-    {
-        other.allStrings = nullptr;
+        other->allStrings = nullptr;
         MOZ_ASSERT(!other.isTotals);
->>>>>>> 65d4864
     }
 
     ~ZoneStats() {
@@ -564,16 +547,16 @@ struct CompartmentStats
         isTotals(true)
     {}
 
-    CompartmentStats(CompartmentStats &&other)
-      : FOR_EACH_SIZE(COPY_OTHER_SIZE)
-        classInfo(mozilla::Move(other.classInfo)),
-        extra(other.extra),
-        allClasses(other.allClasses),
-        notableClasses(mozilla::Move(other.notableClasses)),
-        isTotals(other.isTotals)
+	CompartmentStats(mozilla::MoveRef<CompartmentStats> other)
+      : FOR_EACH_SIZE(MOVE_OTHER_SIZE)
+        classInfo(mozilla::OldMove(other->classInfo)),
+        extra(other->extra),
+        allClasses(other->allClasses),
+        notableClasses(mozilla::OldMove(other->notableClasses)),
+        isTotals(other->isTotals)
     {
-        other.allClasses = nullptr;
-        MOZ_ASSERT(!other.isTotals);
+        other->allClasses = nullptr;
+        MOZ_ASSERT(!other->isTotals);
     }
 
     ~CompartmentStats() {

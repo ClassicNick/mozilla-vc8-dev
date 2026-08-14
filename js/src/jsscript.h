@@ -1225,6 +1225,7 @@ private:
 
     bool isRelazifiable() const {
         return (selfHosted() || lazyScript) &&
+               !(analyzedArgsUsage() && needsArgsObj()) &&
                !isGenerator() && !hasBaselineScript() && !hasAnyIonScript();
     }
     void setLazyScript(js::LazyScript *lazy) {

@@ -128,10 +128,10 @@ private:
          const Sequence<JS::Value>& aData);
 
   void
-  AppendCallData(const ConsoleCallData& aData);
+  AppendCallData(ConsoleCallData* aData);
 
   void
-  ProcessCallData(ConsoleCallData& aData);
+  ProcessCallData(ConsoleCallData* aData);
 
   // If the first JS::Value of the array is a string, this method uses it to
   // format a string. The supported sequences are:
@@ -146,7 +146,7 @@ private:
   // The output will be:
   //   [ "string: s, integer: 1, object: ", window, ", double: 0.9" ]
   void
-  ProcessArguments(JSContext* aCx, const nsTArray<JS::Heap<JS::Value>>& aData,
+  ProcessArguments(JSContext* aCx, const nsTArray<JS::Heap<JS::Value> >& aData,
                    Sequence<JS::Value>& aSequence);
 
   void
@@ -156,7 +156,7 @@ private:
   // Stringify and Concat all the JS::Value in a single string using ' ' as
   // separator.
   void
-  ComposeGroupName(JSContext* aCx, const nsTArray<JS::Heap<JS::Value>>& aData,
+  ComposeGroupName(JSContext* aCx, const nsTArray<JS::Heap<JS::Value> >& aData,
                    nsAString& aName);
 
   JS::Value
@@ -169,7 +169,7 @@ private:
 
   // The method populates a Sequence from an array of JS::Value.
   void
-  ArgumentsToValueList(const nsTArray<JS::Heap<JS::Value>>& aData,
+  ArgumentsToValueList(const nsTArray<JS::Heap<JS::Value> >& aData,
                        Sequence<JS::Value>& aSequence);
 
   void
@@ -179,13 +179,16 @@ private:
 
   JS::Value
   IncreaseCounter(JSContext* aCx, const ConsoleStackEntry& aFrame,
-                   const nsTArray<JS::Heap<JS::Value>>& aArguments);
+                   const nsTArray<JS::Heap<JS::Value> >& aArguments);
+
+  void
+  ClearConsoleData();
 
   nsCOMPtr<nsPIDOMWindow> mWindow;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIConsoleAPIStorage> mStorage;
 
-  nsTArray<ConsoleCallData> mQueuedCalls;
+  LinkedList<ConsoleCallData> mQueuedCalls;
   nsDataHashtable<nsStringHashKey, DOMHighResTimeStamp> mTimerRegistry;
   nsDataHashtable<nsStringHashKey, uint32_t> mCounterRegistry;
 

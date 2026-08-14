@@ -13,8 +13,10 @@
 #include "MediaPluginHost.h"
 #endif
 
+#ifdef MOZ_OGG
 #include "OggDecoder.h"
 #include "OggReader.h"
+#endif
 #ifdef MOZ_WAVE
 #include "WaveDecoder.h"
 #include "WaveReader.h"
@@ -472,10 +474,12 @@ InstantiateDecoder(const nsACString& aType, MediaDecoderOwner* aOwner)
     return decoder.forget();
   }
 #endif
+#ifdef MOZ_OGG
   if (IsOggType(aType)) {
     decoder = new OggDecoder();
     return decoder.forget();
   }
+#endif
 #ifdef MOZ_WAVE
   if (IsWaveType(aType)) {
     decoder = new WaveDecoder();
@@ -580,9 +584,11 @@ MediaDecoderReader* DecoderTraits::CreateReader(const nsACString& aType, Abstrac
     decoderReader = new RawReader(aDecoder);
   } else
 #endif
+#ifdef MOZ_OGG
   if (IsOggType(aType)) {
     decoderReader = new OggReader(aDecoder);
   } else
+#endif
 #ifdef MOZ_WAVE
   if (IsWaveType(aType)) {
     decoderReader = new WaveReader(aDecoder);

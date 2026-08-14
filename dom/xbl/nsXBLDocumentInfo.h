@@ -59,7 +59,7 @@ private:
   bool mScriptAccess;
   bool mIsChrome;
   // the binding table owns each nsXBLPrototypeBinding
-  nsAutoPtr<nsClassHashtable<nsCStringHashKey, nsXBLPrototypeBinding>> mBindingTable;
+  nsAutoPtr<nsClassHashtable<nsCStringHashKey, nsXBLPrototypeBinding> > mBindingTable;
 
   // non-owning pointer to the first binding in the table
   nsXBLPrototypeBinding* mFirstBinding;
