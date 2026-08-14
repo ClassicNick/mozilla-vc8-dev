@@ -1975,7 +1975,7 @@ class FunctionCompiler
             JS_ASSERT(unlabeledContinues_.empty());
             JS_ASSERT(labeledBreaks_.empty());
             JS_ASSERT(labeledContinues_.empty());
-            JS_ASSERT(curBlock_ == nullptr);
+            JS_ASSERT(inDeadCode());
         }
 #endif
     }
@@ -2068,7 +2068,7 @@ class FunctionCompiler
 
     MDefinition *getLocalDef(const Local &local)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         return curBlock_->getSlot(info().localSlot(local.slot));
     }
@@ -2084,7 +2084,7 @@ class FunctionCompiler
 
     MDefinition *constant(Value v, Type t)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MConstant *constant = MConstant::NewAsmJS(alloc(), v, t.toMIRType());
         curBlock_->add(constant);
@@ -2094,7 +2094,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *unary(MDefinition *op)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::NewAsmJS(alloc(), op);
         curBlock_->add(ins);
@@ -2104,7 +2104,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *unary(MDefinition *op, MIRType type)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::NewAsmJS(alloc(), op, type);
         curBlock_->add(ins);
@@ -2114,7 +2114,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *binary(MDefinition *lhs, MDefinition *rhs)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::New(alloc(), lhs, rhs);
         curBlock_->add(ins);
@@ -2124,7 +2124,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *binary(MDefinition *lhs, MDefinition *rhs, MIRType type)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::NewAsmJS(alloc(), lhs, rhs, type);
         curBlock_->add(ins);
@@ -2132,7 +2132,7 @@ class FunctionCompiler
     }
 
     MDefinition *minMax(MDefinition *lhs, MDefinition *rhs, MIRType type, bool isMax) {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MMinMax *ins = MMinMax::New(alloc(), lhs, rhs, type, isMax);
         curBlock_->add(ins);
@@ -2141,7 +2141,7 @@ class FunctionCompiler
 
     MDefinition *mul(MDefinition *lhs, MDefinition *rhs, MIRType type, MMul::Mode mode)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MMul *ins = MMul::New(alloc(), lhs, rhs, type, mode);
         curBlock_->add(ins);
@@ -2150,7 +2150,7 @@ class FunctionCompiler
 
     MDefinition *div(MDefinition *lhs, MDefinition *rhs, MIRType type, bool unsignd)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MDiv *ins = MDiv::NewAsmJS(alloc(), lhs, rhs, type, unsignd);
         curBlock_->add(ins);
@@ -2159,7 +2159,7 @@ class FunctionCompiler
 
     MDefinition *mod(MDefinition *lhs, MDefinition *rhs, MIRType type, bool unsignd)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MMod *ins = MMod::NewAsmJS(alloc(), lhs, rhs, type, unsignd);
         curBlock_->add(ins);
@@ -2169,7 +2169,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *bitwise(MDefinition *lhs, MDefinition *rhs)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::NewAsmJS(alloc(), lhs, rhs);
         curBlock_->add(ins);
@@ -2179,7 +2179,7 @@ class FunctionCompiler
     template <class T>
     MDefinition *bitwise(MDefinition *op)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         T *ins = T::NewAsmJS(alloc(), op);
         curBlock_->add(ins);
@@ -2188,7 +2188,7 @@ class FunctionCompiler
 
     MDefinition *compare(MDefinition *lhs, MDefinition *rhs, JSOp op, MCompare::CompareType type)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MCompare *ins = MCompare::NewAsmJS(alloc(), lhs, rhs, op, type);
         curBlock_->add(ins);
@@ -2197,14 +2197,14 @@ class FunctionCompiler
 
     void assign(const Local &local, MDefinition *def)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         curBlock_->setSlot(info().localSlot(local.slot), def);
     }
 
     MDefinition *loadHeap(ArrayBufferView::ViewType vt, MDefinition *ptr, NeedsBoundsCheck chk)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         MAsmJSLoadHeap *load = MAsmJSLoadHeap::New(alloc(), vt, ptr);
         curBlock_->add(load);
@@ -2215,7 +2215,7 @@ class FunctionCompiler
 
     void storeHeap(ArrayBufferView::ViewType vt, MDefinition *ptr, MDefinition *v, NeedsBoundsCheck chk)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         MAsmJSStoreHeap *store = MAsmJSStoreHeap::New(alloc(), vt, ptr, v);
         curBlock_->add(store);
@@ -2225,7 +2225,7 @@ class FunctionCompiler
 
     MDefinition *loadGlobalVar(const ModuleCompiler::Global &global)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
 
         uint32_t index = global.varOrConstIndex();
@@ -2239,7 +2239,7 @@ class FunctionCompiler
 
     void storeGlobalVar(const ModuleCompiler::Global &global, MDefinition *v)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         JS_ASSERT(!global.isConst());
         unsigned globalDataOffset = module().globalVarIndexToGlobalDataOffset(global.varOrConstIndex());
@@ -2294,7 +2294,7 @@ class FunctionCompiler
 
     void startCallArgs(Call *call)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         call->prevMaxStackBytes_ = mirGen().resetAsmJSMaxStackArgBytes();
     }
@@ -2304,7 +2304,7 @@ class FunctionCompiler
         if (!call->sig().appendArg(type))
             return false;
 
-        if (!curBlock_)
+        if (inDeadCode())
             return true;
 
         uint32_t childStackBytes = mirGen().resetAsmJSMaxStackArgBytes();
@@ -2328,7 +2328,7 @@ class FunctionCompiler
 
     void finishCallArgs(Call *call)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         uint32_t parentStackBytes = call->abi_.stackBytesConsumedSoFar();
         uint32_t newStackBytes;
@@ -2349,7 +2349,7 @@ class FunctionCompiler
   private:
     bool callPrivate(MAsmJSCall::Callee callee, const Call &call, MIRType returnType, MDefinition **def)
     {
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *def = nullptr;
             return true;
         }
@@ -2372,7 +2372,7 @@ class FunctionCompiler
     bool funcPtrCall(const ModuleCompiler::FuncPtrTable &table, MDefinition *index,
                      const Call &call, MDefinition **def)
     {
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *def = nullptr;
             return true;
         }
@@ -2390,7 +2390,7 @@ class FunctionCompiler
 
     bool ffiCall(unsigned exitIndex, const Call &call, MIRType returnType, MDefinition **def)
     {
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *def = nullptr;
             return true;
         }
@@ -2411,9 +2411,13 @@ class FunctionCompiler
 
     /*********************************************** Control flow generation */
 
+    inline bool inDeadCode() const {
+        return curBlock_ == nullptr;
+    }
+
     void returnExpr(MDefinition *expr)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         MAsmJSReturn *ins = MAsmJSReturn::New(alloc(), expr);
         curBlock_->end(ins);
@@ -2422,7 +2426,7 @@ class FunctionCompiler
 
     void returnVoid()
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         MAsmJSVoidReturn *ins = MAsmJSVoidReturn::New(alloc());
         curBlock_->end(ins);
@@ -2432,7 +2436,7 @@ class FunctionCompiler
     bool branchAndStartThen(MDefinition *cond, MBasicBlock **thenBlock, MBasicBlock **elseBlock,
                             ParseNode *thenPn, ParseNode* elsePn)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return true;
 
         bool hasThenBlock = *thenBlock != nullptr;
@@ -2457,12 +2461,14 @@ class FunctionCompiler
     }
 
     void assertCurrentBlockIs(MBasicBlock *block) {
+        if (inDeadCode())
+            return;
         JS_ASSERT(curBlock_ == block);
     }
 
     bool appendThenBlock(BlockVector *thenBlocks)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return true;
         return thenBlocks->append(curBlock_);
     }
@@ -2492,7 +2498,7 @@ class FunctionCompiler
 
     bool joinIfElse(const BlockVector &thenBlocks, ParseNode *pn)
     {
-        if (!curBlock_ && thenBlocks.empty())
+        if (inDeadCode() && thenBlocks.empty())
             return true;
         MBasicBlock *pred = curBlock_ ? curBlock_ : thenBlocks[0];
         MBasicBlock *join;
@@ -2513,7 +2519,7 @@ class FunctionCompiler
 
     void pushPhiInput(MDefinition *def)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return;
         JS_ASSERT(curBlock_->stackDepth() == info().firstStackSlot());
         curBlock_->push(def);
@@ -2521,7 +2527,7 @@ class FunctionCompiler
 
     MDefinition *popPhiOutput()
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return nullptr;
         JS_ASSERT(curBlock_->stackDepth() == info().firstStackSlot() + 1);
         return curBlock_->pop();
@@ -2532,7 +2538,7 @@ class FunctionCompiler
         if (!loopStack_.append(pn) || !breakableStack_.append(pn))
             return false;
         JS_ASSERT_IF(curBlock_, curBlock_->loopDepth() == loopStack_.length() - 1);
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *loopEntry = nullptr;
             return true;
         }
@@ -2550,7 +2556,7 @@ class FunctionCompiler
 
     bool branchAndStartLoopBody(MDefinition *cond, MBasicBlock **afterLoop, ParseNode *bodyPn, ParseNode *afterPn)
     {
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *afterLoop = nullptr;
             return true;
         }
@@ -2585,7 +2591,7 @@ class FunctionCompiler
         ParseNode *pn = popLoop();
         if (!loopEntry) {
             JS_ASSERT(!afterLoop);
-            JS_ASSERT(!curBlock_);
+            JS_ASSERT(inDeadCode());
             JS_ASSERT(!unlabeledBreaks_.has(pn));
             return true;
         }
@@ -2607,7 +2613,7 @@ class FunctionCompiler
     {
         ParseNode *pn = popLoop();
         if (!loopEntry) {
-            JS_ASSERT(!curBlock_);
+            JS_ASSERT(inDeadCode());
             JS_ASSERT(!unlabeledBreaks_.has(pn));
             return true;
         }
@@ -2674,7 +2680,7 @@ class FunctionCompiler
     {
         if (!breakableStack_.append(pn))
             return false;
-        if (!curBlock_) {
+        if (inDeadCode()) {
             *switchBlock = nullptr;
             return true;
         }
@@ -2824,7 +2830,7 @@ class FunctionCompiler
     template <class Key, class Map>
     bool addBreakOrContinue(Key key, Map *map)
     {
-        if (!curBlock_)
+        if (inDeadCode())
             return true;
         typename Map::AddPtr p = map->lookupForAdd(key);
         if (!p) {
@@ -4987,7 +4993,7 @@ CheckIfConditional(FunctionCompiler &f, ParseNode *conditional, ParseNode *thenS
 
     // Check post-conditions
     f.assertCurrentBlockIs(*thenBlock);
-    JS_ASSERT(*thenBlock && *elseOrJoinBlock);
+    JS_ASSERT_IF(!f.inDeadCode(), *thenBlock && *elseOrJoinBlock);
     return true;
 }
 
@@ -5017,7 +5023,7 @@ CheckIfCondition(FunctionCompiler &f, ParseNode *cond, ParseNode *thenStmt,
 
     // Check post-conditions
     f.assertCurrentBlockIs(*thenBlock);
-    JS_ASSERT(*thenBlock && *elseOrJoinBlock);
+    JS_ASSERT_IF(!f.inDeadCode(), *thenBlock && *elseOrJoinBlock);
     return true;
 }
 
