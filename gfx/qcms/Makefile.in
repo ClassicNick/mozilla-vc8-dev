@@ -52,3 +52,5 @@ transform-sse1.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE1_FLAGS)
 transform-sse2.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(SSE2_FLAGS)
 
 transform-altivec.$(OBJ_SUFFIX): COMPILE_CFLAGS += $(ALTIVEC_FLAGS)
+
+LIBS += libcmt.lib

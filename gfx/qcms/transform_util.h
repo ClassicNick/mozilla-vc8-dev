@@ -48,7 +48,7 @@ static inline unsigned char clamp_u8(float v)
   else if (v < 0)
     return 0;
   else
-    return floorf(v+.5);
+    return floor(v+.5);
 }
 
 static inline float clamp_float(float a)
