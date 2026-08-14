@@ -180,7 +180,6 @@
 #include "nsXULAppAPI.h"
 #include "mozilla/dom/Touch.h"
 #include "mozilla/dom/TouchEvent.h"
-#include "DictionaryHelpers.h"
 #include "GeneratedEvents.h"
 
 #include "mozilla/Preferences.h"

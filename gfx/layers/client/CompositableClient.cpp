@@ -11,25 +11,14 @@
 #include "mozilla/layers/TextureClientOGL.h"
 #include "mozilla/mozalloc.h"           // for operator delete, etc
 #include "gfxASurface.h"                // for gfxContentType
-#if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
-#include "mozilla/layers/TextureD3D9.h"
-#endif
-#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
+#ifdef XP_WIN
+#include "gfxWindowsPlatform.h"         // for gfxWindowsPlatform
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/TextureD3D11.h"
 #endif
-#ifdef XP_WIN
-#include "gfxWindowsPlatform.h"
-#include "gfx2DGlue.h"
+#ifdef MOZ_ENABLE_D3D9_LAYER
+#include "mozilla/layers/TextureD3D9.h"
 #endif
-#ifdef MOZ_X11
-#include "mozilla/layers/TextureClientX11.h"
-#ifdef GL_PROVIDER_GLX
-#include "GLXLibrary.h"
-#endif
-#endif
-#ifdef MOZ_WIDGET_GONK
-#include <cutils/properties.h>
-#include "mozilla/layers/GrallocTextureClient.h"
 #endif
 
 using namespace mozilla::gfx;
@@ -37,13 +26,14 @@ using namespace mozilla::gfx;
 namespace mozilla {
 namespace layers {
 
-CompositableClient::CompositableClient(CompositableForwarder* aForwarder)
+CompositableClient::CompositableClient(CompositableForwarder* aForwarder,
+                                       TextureFlags aTextureFlags)
 : mCompositableChild(nullptr)
 , mForwarder(aForwarder)
+, mTextureFlags(aTextureFlags)
 {
   MOZ_COUNT_CTOR(CompositableClient);
 }
-
 
 CompositableClient::~CompositableClient()
 {
@@ -137,7 +127,7 @@ CompositableClient::CreateDeprecatedTextureClient(DeprecatedTextureClientType aD
 #endif
 #if defined XP_WIN && MOZ_ENABLE_D3D9_LAYER
     if (parentBackend == LayersBackend::LAYERS_D3D9 &&
-        !GetForwarder()->ForwardsToDifferentProcess()) {
+        GetForwarder()->IsSameProcess()) {
       // We can't use a d3d9 texture for an RGBA surface because we cannot get a DC for
       // for a gfxWindowsSurface.
       // We have to wait for the compositor thread to create a d3d9 device before we
@@ -187,117 +177,16 @@ TemporaryRef<BufferTextureClient>
 CompositableClient::CreateBufferTextureClient(SurfaceFormat aFormat,
                                               TextureFlags aTextureFlags)
 {
-// XXX - Once bug 908196 is fixed, we can use gralloc textures here which will
-// improve performances of videos using SharedPlanarYCbCrImage on b2g.
-//#ifdef MOZ_WIDGET_GONK
-//  {
-//    RefPtr<BufferTextureClient> result = new GrallocTextureClientOGL(this,
-//                                                                     aFormat,
-//                                                                     aTextureFlags);
-//    return result.forget();
-//  }
-//#endif
-  if (gfxPlatform::GetPlatform()->PreferMemoryOverShmem()) {
-    RefPtr<BufferTextureClient> result = new MemoryTextureClient(this, aFormat, aTextureFlags);
-    return result.forget();
-  }
-  RefPtr<BufferTextureClient> result = new ShmemTextureClient(this, aFormat, aTextureFlags);
-  return result.forget();
+  return TextureClient::CreateBufferTextureClient(GetForwarder(), aFormat,
+                                                  aTextureFlags | mTextureFlags);
 }
-
-#ifdef MOZ_WIDGET_GONK
-static bool
-DisableGralloc(SurfaceFormat aFormat)
-{
-  if (aFormat == gfx::SurfaceFormat::A8) {
-    return true;
-  }
-#if ANDROID_VERSION <= 15
-  static bool checkedDevice = false;
-  static bool disableGralloc = false;
-
-  if (!checkedDevice) {
-    char propValue[PROPERTY_VALUE_MAX];
-    property_get("ro.product.device", propValue, "None");
-
-    if (strcmp("crespo",propValue) == 0) {
-      NS_WARNING("Nexus S has issues with gralloc, falling back to shmem");
-      disableGralloc = true;
-    }
-
-    checkedDevice = true;
-  }
-
-  if (disableGralloc) {
-    return true;
-  }
-  return false;
-#else
-  return false;
-#endif
-}
-#endif
 
 TemporaryRef<TextureClient>
 CompositableClient::CreateTextureClientForDrawing(SurfaceFormat aFormat,
                                                   TextureFlags aTextureFlags)
 {
-  RefPtr<TextureClient> result;
-
-#if defined XP_WIN && defined CAIRO_HAS_D2D_SURFACE
-  LayersBackend parentBackend = GetForwarder()->GetCompositorBackendType();
-  if (parentBackend == LayersBackend::LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
-      !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
-    result = new TextureClientD3D11(aFormat, aTextureFlags);
-  }
-  if (parentBackend == LayersBackend::LAYERS_D3D9 &&
-      !GetForwarder()->ForwardsToDifferentProcess() &&
-      !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
-    if (!gfxWindowsPlatform::GetPlatform()->GetD3D9Device()) {
-      result = new DIBTextureClientD3D9(aFormat, aTextureFlags);
-    } else {
-      result = new CairoTextureClientD3D9(aFormat, aTextureFlags);
-    }
-  }
-#endif
-
-#ifdef MOZ_X11
-  LayersBackend parentBackend = GetForwarder()->GetCompositorBackendType();
-  gfxSurfaceType type =
-    gfxPlatform::GetPlatform()->ScreenReferenceSurface()->GetType();
-
-  if (parentBackend == LayersBackend::LAYERS_BASIC &&
-      type == gfxSurfaceType::Xlib &&
-      !(aTextureFlags & TEXTURE_ALLOC_FALLBACK))
-  {
-    result = new TextureClientX11(aFormat, aTextureFlags);
-  }
-#ifdef GL_PROVIDER_GLX
-  if (parentBackend == LayersBackend::LAYERS_OPENGL &&
-      type == gfxSurfaceType::Xlib &&
-      !(aTextureFlags & TEXTURE_ALLOC_FALLBACK) &&
-      aFormat != SurfaceFormat::A8 &&
-      gl::sGLXLibrary.UseTextureFromPixmap())
-  {
-    result = new TextureClientX11(aFormat, aTextureFlags);
-  }
-#endif
-#endif
-
-#ifdef MOZ_WIDGET_GONK
-  if (!DisableGralloc(aFormat)) {
-    result = new GrallocTextureClientOGL(this, aFormat, aTextureFlags);
-  }
-#endif
-
-  // Can't do any better than a buffer texture client.
-  if (!result) {
-    result = CreateBufferTextureClient(aFormat, aTextureFlags);
-  }
-
-  MOZ_ASSERT(!result || result->AsTextureClientDrawTarget(),
-             "Not a TextureClientDrawTarget?");
-  return result;
+  return TextureClient::CreateTextureClientForDrawing(GetForwarder(), aFormat,
+                                                      aTextureFlags | mTextureFlags);
 }
 
 bool
