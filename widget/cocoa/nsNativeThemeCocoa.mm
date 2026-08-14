@@ -2079,7 +2079,8 @@ nsNativeThemeCocoa::DrawWidgetBackground(nsRenderingContext* aContext,
                                          nsIFrame* aFrame,
                                          uint8_t aWidgetType,
                                          const nsRect& aRect,
-                                         const nsRect& aDirtyRect)
+                                         const nsRect& aDirtyRect,
+                                         nsIntRegion* aRegionToClear)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
