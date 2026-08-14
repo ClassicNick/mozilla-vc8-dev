@@ -23,9 +23,9 @@
 
 #ifdef PR_LOGGING
 extern PRLogModuleInfo* gMediaSourceLog;
-#define MSE_DEBUG(...) PR_LOG(gMediaSourceLog, PR_LOG_DEBUG, (__VA_ARGS__))
+#define MSE_DEBUG(a) PR_LOG(gMediaSourceLog, PR_LOG_DEBUG, (a))
 #else
-#define MSE_DEBUG(...)
+#define MSE_DEBUG(a)
 #endif
 
 namespace mozilla {

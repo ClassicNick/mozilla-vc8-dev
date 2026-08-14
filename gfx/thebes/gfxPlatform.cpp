@@ -75,8 +75,9 @@
 #include "TexturePoolOGL.h"
 #endif
 
-#ifdef USE_SKIA
 #include "mozilla/Hal.h"
+
+#ifdef USE_SKIA
 #include "skia/SkGraphics.h"
 
 #include "SkiaGLGlue.h"
@@ -273,7 +274,9 @@ gfxPlatform::gfxPlatform()
     mLayersUseDeprecated = false;
 #endif
 
+#ifdef MOZ_SKIA
     mSkiaGlue = nullptr;
+#endif
 
     uint32_t canvasMask = BackendTypeBit(BackendType::CAIRO) | BackendTypeBit(BackendType::SKIA);
     uint32_t contentMask = BackendTypeBit(BackendType::CAIRO);
@@ -855,10 +858,13 @@ gfxPlatform::InitializeSkiaCacheLimits()
     printf_stderr("Determined SkiaGL cache limits: Size %i, Items: %i\n", cacheSizeLimit, cacheItemLimit);
   #endif
 
+#ifdef MOZ_SKIA
     mSkiaGlue->GetGrContext()->setTextureCacheLimits(cacheItemLimit, cacheSizeLimit);
+#endif
   }
 }
 
+#ifdef MOZ_SKIA
 mozilla::gl::SkiaGLGlue*
 gfxPlatform::GetSkiaGLGlue()
 {
@@ -879,10 +885,12 @@ gfxPlatform::GetSkiaGLGlue()
     MOZ_ASSERT(mSkiaGlue->GetGrContext(), "No GrContext");
     InitializeSkiaCacheLimits();
   }
-#endif
-
   return mSkiaGlue;
+#else
+  return nullptr;
+#endif
 }
+#endif
 
 void
 gfxPlatform::PurgeSkiaCache()

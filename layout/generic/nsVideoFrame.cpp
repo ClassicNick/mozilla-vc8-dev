@@ -271,7 +271,7 @@ nsVideoFrame::Reflow(nsPresContext*           aPresContext,
     if (child->GetContent() == mPosterImage) {
       // Reflow the poster frame.
       nsImageFrame* imageFrame = static_cast<nsImageFrame*>(child);
-      nsHTMLReflowMetrics kidDesiredSize(aReflowState.GetWritingMode());
+      nsHTMLReflowMetrics kidDesiredSize(aReflowState);
       nsSize availableSize = nsSize(aReflowState.AvailableWidth(),
                                     aReflowState.AvailableHeight());
       nsHTMLReflowState kidReflowState(aPresContext,
@@ -324,7 +324,7 @@ nsVideoFrame::Reflow(nsPresContext*           aPresContext,
       }
     } else if (child->GetContent() == mCaptionDiv) {
       // Reflow to caption div
-      nsHTMLReflowMetrics kidDesiredSize(aReflowState.GetWritingMode());
+      nsHTMLReflowMetrics kidDesiredSize(aReflowState);
       nsSize availableSize = nsSize(aReflowState.AvailableWidth(),
                                     aReflowState.AvailableHeight());
       nsHTMLReflowState kidReflowState(aPresContext,

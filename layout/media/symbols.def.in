@@ -485,7 +485,9 @@ _moz_cairo_win32_printing_surface_create
 #endif
 _moz_cairo_win32_scaled_font_select_font
 _moz_cairo_win32_surface_create
+#ifdef MOZ_ENABLE_D3D9_LAYER
 _moz_cairo_win32_surface_create_with_d3dsurface9
+#endif
 _moz_cairo_win32_surface_create_with_ddb
 _moz_cairo_win32_surface_create_with_dib
 _moz_cairo_win32_surface_get_dc
@@ -522,6 +524,7 @@ _moz_pixman_region32_selfcheck
 _moz_pixman_region32_reset
 _moz_pixman_region32_clear
 #endif
+#ifdef CAIRO_HAS_D2D_SURFACE
 cairo_d2d_create_device
 cairo_d2d_create_device_from_d3d10device
 cairo_d2d_device_get_device
@@ -544,8 +547,11 @@ cairo_dwrite_scaled_font_allow_manual_show_glyphs
 cairo_dwrite_scaled_font_get_force_GDI_classic
 cairo_dwrite_scaled_font_set_force_GDI_classic
 cairo_dwrite_set_cleartype_params
+#endif
 cairo_null_surface_create
+#ifdef CAIRO_HAS_D2D_SURFACE
 cairo_release_device
+#endif
 cairo_surface_attach_snapshot
 cairo_win32_get_dc_with_clip
 cairo_win32_get_system_text_quality

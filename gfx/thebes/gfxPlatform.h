@@ -40,7 +40,9 @@ struct gfxRGBA;
 namespace mozilla {
 namespace gl {
 class GLContext;
+#ifdef MOZ_SKIA
 class SkiaGLGlue;
+#endif
 }
 namespace gfx {
 class DrawTarget;
@@ -598,7 +600,9 @@ public:
     bool PreferMemoryOverShmem() const;
     bool UseDeprecatedTextures() const { return mLayersUseDeprecated; }
 
+#ifdef MOZ_SKIA
     mozilla::gl::SkiaGLGlue* GetSkiaGLGlue();
+#endif
     void PurgeSkiaCache();
 
 protected:
@@ -714,7 +718,9 @@ private:
     mozilla::RefPtr<mozilla::gfx::DrawEventRecorder> mRecorder;
     bool mLayersPreferMemoryOverShmem;
     bool mLayersUseDeprecated;
+#ifdef MOZ_SKIA
     mozilla::RefPtr<mozilla::gl::SkiaGLGlue> mSkiaGlue;
+#endif
 };
 
 #endif /* GFX_PLATFORM_H */

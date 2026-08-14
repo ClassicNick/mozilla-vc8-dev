@@ -399,7 +399,7 @@ GetProcAddress(GetModuleHandle(L"kernel32.dll"),"AttachConsole");
 
   if (PR_GetEnv("MOZ_DEBUG_CHILD_PROCESS")) {
 #ifdef OS_POSIX
-      printf("\n\nCHILDCHILDCHILDCHILD\n  debug me @%d\n\n", getpid());
+      printf("\n\nCHILDCHILDCHILDCHILD\n  debug me @ %d\n\n", getpid());
       sleep(30);
 #elif defined(OS_WIN)
       // Windows has a decent JIT debugging story, so NS_DebugBreak does the

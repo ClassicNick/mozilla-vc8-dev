@@ -739,7 +739,7 @@ nsHTMLFramesetFrame::ReflowPlaceChild(nsIFrame*                aChild,
   nsHTMLReflowState reflowState(aPresContext, aReflowState, aChild, aSize);
   reflowState.SetComputedWidth(NS_MAX(0, aSize.width - reflowState.ComputedPhysicalBorderPadding().LeftRight()));
   reflowState.SetComputedHeight(NS_MAX(0, aSize.height - reflowState.ComputedPhysicalBorderPadding().TopBottom()));
-  nsHTMLReflowMetrics metrics(aReflowState.GetWritingMode());
+  nsHTMLReflowMetrics metrics(aReflowState);
   metrics.Width() = aSize.width;
   metrics.Height() = aSize.height;
   nsReflowStatus status;

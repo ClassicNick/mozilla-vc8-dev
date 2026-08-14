@@ -519,34 +519,11 @@ struct CompartmentStats
         extra()
     {}
 
-<<<<<<< HEAD
-	CompartmentStats(mozilla::MoveRef<CompartmentStats> other)
-      : FOR_EACH_SIZE(MOVE_OTHER_SIZE)
-        classInfo(mozilla::OldMove(other->classInfo)),
-        extra(other->extra),
-        allClasses(other->allClasses),
-        notableClasses(mozilla::OldMove(other->notableClasses)),
-        isTotals(other->isTotals)
-    {
-        other->allClasses = nullptr;
-        MOZ_ASSERT(!other->isTotals);
-    }
-
-    ~CompartmentStats() {
-        // |allClasses| is usually deleted and set to nullptr before this
-        // destructor runs. But there are failure cases due to OOMs that may
-        // prevent that, so it doesn't hurt to try again here.
-        js_delete(allClasses);
-    }
-
-    bool initClasses(JSRuntime *rt);
-=======
     CompartmentStats(const CompartmentStats &other)
       : FOR_EACH_SIZE(COPY_OTHER_SIZE)
         objectsExtra(other.objectsExtra),
         extra(other.extra)
     {}
->>>>>>> ef09518
 
     void add(const CompartmentStats &other) {
         FOR_EACH_SIZE(ADD_OTHER_SIZE)

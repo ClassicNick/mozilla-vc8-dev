@@ -96,12 +96,16 @@
 
 #undef free // apparently defined by some windows header, clashing with a free()
             // method in SkTypes.h
+#ifdef MOZ_SKIA
 #include "SkiaGLGlue.h"
+#endif
 #include "SurfaceStream.h"
 #include "SurfaceTypes.h"
 
 using mozilla::gl::GLContext;
+#ifdef MOZ_SKIA
 using mozilla::gl::SkiaGLGlue;
+#endif
 using mozilla::gl::GLContextProvider;
 
 #ifdef XP_WIN
@@ -855,6 +859,7 @@ CanvasRenderingContext2D::EnsureTarget()
           CheckSizeForSkiaGL(size)) {
         DemoteOldestContextIfNecessary();
 
+#ifdef MOZ_SKIA
         SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
         if (glue) {
@@ -866,6 +871,7 @@ CanvasRenderingContext2D::EnsureTarget()
             printf_stderr("Failed to create a SkiaGL DrawTarget, falling back to software\n");
           }
         }
+#endif
         if (!mTarget) {
           mTarget = layerManager->CreateDrawTarget(size, format);
         }
@@ -4108,6 +4114,7 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
         aOldLayer->GetUserData(&g2DContextLayerUserData));
 
     CanvasLayer::Data data;
+#ifdef MOZ_SKIA
     if (mStream) {
       SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
@@ -4115,7 +4122,9 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
         data.mGLContext = glue->GetGLContext();
         data.mStream = mStream.get();
       }
-    } else {
+    } else 
+#endif
+	{
       data.mDrawTarget = mTarget;
     }
 
@@ -4151,6 +4160,7 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
   canvasLayer->SetUserData(&g2DContextLayerUserData, userData);
 
   CanvasLayer::Data data;
+#ifdef MOZ_SKIA
   if (mStream) {
     SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
 
@@ -4161,7 +4171,9 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
       data.mStream = mStream.get();
       data.mTexID = (uint32_t)((uintptr_t)mTarget->GetNativeSurface(NativeSurfaceType::OPENGL_TEXTURE));
     }
-  } else {
+  } else 
+#endif
+  {
     data.mDrawTarget = mTarget;
   }
 
