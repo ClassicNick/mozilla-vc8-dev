@@ -137,8 +137,7 @@ nsNameSpaceManager::GetNameSpaceID(const nsAString& aURI)
 
 nsresult
 NS_NewElement(Element** aResult,
-              already_AddRefed<nsINodeInfo>&& aNodeInfo,
-              FromParser aFromParser)
+              already_AddRefed<nsINodeInfo> aNodeInfo, FromParser aFromParser)
 {
   nsCOMPtr<nsINodeInfo> ni = aNodeInfo;
   int32_t ns = ni->NamespaceID();
