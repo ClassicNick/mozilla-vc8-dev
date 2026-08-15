@@ -1249,10 +1249,13 @@ public:
     , mCallee(nullptr)
   {}
 
+private:
+  // Private destructor, to discourage deletion outside of Release():
   ~AsyncScroll() {
     RemoveObserver();
   }
 
+public:
   nsPoint PositionAt(TimeStamp aTime);
   nsSize VelocityAt(TimeStamp aTime); // In nscoords per second
 
@@ -1552,7 +1555,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter,
   , mOuter(aOuter)
   , mAsyncScroll(nullptr)
   , mOriginOfLastScroll(nsGkAtoms::other)
-  , mScrollGeneration(1) // we start off pretending we scrolled to 0,0 to flush a notification to APZ
+  , mScrollGeneration(0)
   , mDestination(0, 0)
   , mScrollPosAtLastPaint(0, 0)
   , mRestorePos(-1, -1)

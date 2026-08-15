@@ -10,7 +10,7 @@
 #if defined (_MSC_VER) && _MSC_VER <= 1500
 #include "mozilla/NullPtr.h"
 #endif
-#include "insanity/pkixtypes.h"
+#include "pkix/pkixtypes.h"
 #include "OCSPCache.h"
 
 namespace mozilla { namespace psm {
@@ -32,7 +32,7 @@ public:
                        const PRTime time,
                        void* pinArg,
                        const Flags flags = 0,
-      /*optional out*/ insanity::pkix::ScopedCERTCertList* validationChain = nullptr,
+      /*optional out*/ mozilla::pkix::ScopedCERTCertList* validationChain = nullptr,
       /*optional out*/ SECOidTag* evOidPolicy = nullptr ,
       /*optional out*/ CERTVerifyLog* verifyLog = nullptr);
 
@@ -43,7 +43,7 @@ public:
        /*optional*/ void* pinarg,
                     const char* hostname,
                     bool saveIntermediatesInPermanentDatabase = false,
-   /*optional out*/ insanity::pkix::ScopedCERTCertList* certChainOut = nullptr,
+   /*optional out*/ mozilla::pkix::ScopedCERTCertList* certChainOut = nullptr,
    /*optional out*/ SECOidTag* evOidPolicy = nullptr);
 
 
@@ -52,7 +52,7 @@ public:
 #ifndef NSS_NO_LIBPKIX
     libpkix = 1,
 #endif
-    insanity = 2
+    mozillapkix = 2
   };
 
   enum missing_cert_download_config { missing_cert_download_off = 0, missing_cert_download_on };
@@ -83,13 +83,13 @@ public:
   const bool mOCSPGETEnabled;
 
 private:
-  SECStatus InsanityVerifyCert(CERTCertificate* cert,
+  SECStatus MozillaPKIXVerifyCert(CERTCertificate* cert,
       const SECCertificateUsage usage,
       const PRTime time,
       void* pinArg,
       const Flags flags,
       /*optional*/ const SECItem* stapledOCSPResponse,
-      /*optional out*/ insanity::pkix::ScopedCERTCertList* validationChain,
+      /*optional out*/ mozilla::pkix::ScopedCERTCertList* validationChain,
       /*optional out*/ SECOidTag* evOidPolicy);
 
   OCSPCache mOCSPCache;
