@@ -106,6 +106,12 @@ static PRLogModuleInfo* gMediaElementEventsLog;
 using namespace mozilla::layers;
 using mozilla::net::nsMediaFragmentURIParser;
 
+enum TextTrackSource {
+  Track,
+  AddTextTrackEnum,
+  MediaResourceSpecific
+};
+
 namespace mozilla {
 namespace dom {
 
@@ -3951,7 +3957,7 @@ HTMLMediaElement::AddTextTrack(TextTrackKind aKind,
 {
   if (mTextTrackManager) {
     return mTextTrackManager->AddTextTrack(aKind, aLabel, aLanguage,
-                                           TextTrackSource::AddTextTrack);
+                                           (TextTrackSource) AddTextTrackEnum);
   }
   return nullptr;
 }

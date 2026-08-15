@@ -267,7 +267,7 @@ CallObject::createForStrictEval(JSContext *cx, AbstractFramePtr frame)
     RootedFunction callee(cx);
     RootedScript script(cx, frame.script());
     RootedObject scopeChain(cx, frame.scopeChain());
-    return create(cx, script, scopeChain, callee);
+    return create(cx, script, (HandleObject) scopeChain, (HandleFunction) callee);
 }
 
 const Class CallObject::class_ = {

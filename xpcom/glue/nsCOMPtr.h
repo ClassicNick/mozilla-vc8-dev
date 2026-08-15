@@ -163,7 +163,7 @@ struct already_AddRefed
     }
 
     already_AddRefed(const already_AddRefed<T>& aOther)
-      : mRawPtr(aOther.take())
+      : mRawPtr(aOther.mRawPtr)
     {
       // nothing else to do here
     }
@@ -179,7 +179,7 @@ struct already_AddRefed
     friend void operator<<(const mozilla::unused_t& unused,
                                          const already_AddRefed<T>& rhs)
     {
-      auto mutableAlreadyAddRefed = const_cast<already_AddRefed<T>*>(&rhs);
+      already_AddRefed<T>* mutableAlreadyAddRefed = const_cast<already_AddRefed<T>*>(&rhs);
       unused << mutableAlreadyAddRefed->take();
     }
 
@@ -1358,12 +1358,6 @@ class nsGetterAddRefs
         {
           return reinterpret_cast<void**>(mTargetSmartPtr.StartAssignment());
         }
-
-      operator nsISupports**()
-        {
-          return reinterpret_cast<nsISupports**>(mTargetSmartPtr.StartAssignment());
-        }
-
       operator T**()
         {
           return mTargetSmartPtr.StartAssignment();

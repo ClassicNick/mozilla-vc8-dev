@@ -45,6 +45,12 @@ static PRLogModuleInfo* gTrackElementLog;
 #define LOG(type, msg)
 #endif
 
+enum TextTrackSource {
+  TrackEnum,
+  AddTextTrackEnum,
+  MediaResourceSpecific
+};
+
 // Replace the usual NS_IMPL_NS_NEW_HTML_ELEMENT(Track) so
 // we can return an UnknownElement instead when pref'd off.
 nsGenericHTMLElement*
@@ -154,7 +160,7 @@ HTMLTrackElement::CreateTextTrack()
   }
 
   mTrack = new TextTrack(OwnerDoc()->GetParentObject(), kind, label, srcLang,
-                         TextTrackSource::Track);
+                         (TextTrackSource) TrackEnum);
   mTrack->SetTrackElement(this);
 
   if (mMediaParent) {

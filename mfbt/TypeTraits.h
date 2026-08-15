@@ -480,7 +480,7 @@ struct IsSame<T, T> : TrueType {};
 
 namespace detail {
 
-#if defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER)
+#if defined(__GNUC__) || defined(__clang__) || defined(_MSC_VER) && _MSC_VER >= 1400
 
 template<class Base, class Derived>
 struct BaseOfTester : IntegralConstant<bool, __is_base_of(Base, Derived)> {};

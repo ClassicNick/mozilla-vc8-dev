@@ -47,6 +47,9 @@
 
 #if defined(XP_WIN)
 #include <Windows.h>
+#ifndef ERROR_FILE_TOO_LARGE
+#define ERROR_FILE_TOO_LARGE 223L
+#endif
 #endif // defined (XP_WIN)
 
 namespace mozilla {
@@ -678,7 +681,7 @@ public:
       return NS_ERROR_FAILURE;
     }
 
-    uint64_t bytes = std::min((uint64_t)stat.size, mBytes);
+    uint64_t bytes = NS_MIN((uint64_t)stat.size, mBytes);
     if (bytes > UINT32_MAX) {
       Fail(NS_LITERAL_CSTRING("Arithmetics"), nullptr, OS_ERROR_INVAL);
       return NS_ERROR_FAILURE;
@@ -694,7 +697,7 @@ public:
     char* dest_chars = reinterpret_cast<char*>(aBuffer.rwget().data);
     do {
       just_read = PR_Read(file, dest_chars + total_read,
-                          std::min(uint64_t(PR_INT32_MAX), bytes - total_read));
+                          NS_MIN(uint64_t(PR_INT32_MAX), bytes - total_read));
       if (just_read == -1) {
         Fail(NS_LITERAL_CSTRING("read"), nullptr, PR_GetOSError());
         return NS_ERROR_FAILURE;
