@@ -193,7 +193,7 @@ TextTrackManager::UpdateCueDisplay()
   }
 
   nsTArray<nsRefPtr<TextTrackCue> > activeCues;
-  mTextTracks->GetAllActiveCues(activeCues);
+  mTextTracks->UpdateAndGetShowingCues(activeCues);
 
   if (activeCues.Length() > 0) {
     nsCOMPtr<nsIWritableVariant> jsCues =
@@ -227,7 +227,7 @@ TextTrackManager::PopulatePendingList()
   for (uint32_t index = 0; index < len; ++index) {
     TextTrack* ttrack = mTextTracks->IndexedGetter(index, dummy);
     if (ttrack && ttrack->Mode() != TextTrackMode::Disabled &&
-        ttrack->ReadyState() == TextTrackReadyState::Loading) {
+        ttrack->ReadyState() == Loading) {
       mPendingTextTracks->AddTextTrack(ttrack,
                                        CompareTextTracks(mMediaElement));
     }

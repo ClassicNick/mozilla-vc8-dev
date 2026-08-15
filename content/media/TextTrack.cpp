@@ -190,8 +190,8 @@ TextTrack::SetReadyState(TextTrackReadyState aState)
   }
 
   HTMLMediaElement* mediaElement = mTextTrackList->GetMediaElement();
-  if (mediaElement && (mReadyState == TextTrackReadyState::Loaded||
-      mReadyState == TextTrackReadyState::FailedToLoad)) {
+  if (mediaElement && (mReadyState == Loaded||
+      mReadyState == FailedToLoad)) {
     mediaElement->RemoveTextTrack(this, true);
   }
 }

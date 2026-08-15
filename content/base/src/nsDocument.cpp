@@ -6619,7 +6619,8 @@ nsDocument::GetTitleFromElement(uint32_t aNamespace, nsAString& aTitle)
   nsIContent* title = GetTitleContent(aNamespace);
   if (!title)
     return;
-  nsContentUtils::GetNodeTextContent(title, false, aTitle);
+  if(!nsContentUtils::GetNodeTextContent(title, false, aTitle))
+    NS_RUNTIMEABORT("OOM");
 }
 
 NS_IMETHODIMP
@@ -7261,7 +7262,10 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
       // Remove from ownerElement.
       nsRefPtr<Attr> adoptedAttr = static_cast<Attr*>(adoptedNode);
 
-      nsCOMPtr<Element> ownerElement = adoptedAttr->GetElement();
+      nsCOMPtr<Element> ownerElement = adoptedAttr->GetOwnerElement(rv);
+      if (rv.Failed()) {
+        return nullptr;
+      }
 
       if (ownerElement) {
         nsRefPtr<Attr> newAttr =

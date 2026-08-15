@@ -16,7 +16,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/ErrorResult.h"
-#include <algorithm>
+#include "nsAlgorithm.h"
 
 struct nsRect;
 
@@ -54,22 +54,22 @@ public:
   double Left() const
   {
     double x = X(), w = Width();
-    return std::min(x, x + w);
+    return NS_MIN(x, x + w);
   }
   double Top() const
   {
     double y = Y(), h = Height();
-    return std::min(y, y + h);
+    return NS_MIN(y, y + h);
   }
   double Right() const
   {
     double x = X(), w = Width();
-    return std::max(x, x + w);
+    return NS_MAX(x, x + w);
   }
   double Bottom() const
   {
     double y = Y(), h = Height();
-    return std::max(y, y + h);
+    return NS_MAX(y, y + h);
   }
 
 protected:

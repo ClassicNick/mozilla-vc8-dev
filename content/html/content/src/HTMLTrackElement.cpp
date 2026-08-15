@@ -161,7 +161,7 @@ HTMLTrackElement::CreateTextTrack()
 
   mTrack = new TextTrack(OwnerDoc()->GetParentObject(), kind, label, srcLang,
                          TextTrackMode::Disabled,
-                         TextTrackReadyState::NotLoaded,
+                         NotLoaded,
                          (TextTrackSource) TrackEnum);
   mTrack->SetTrackElement(this);
 
@@ -325,7 +325,7 @@ uint16_t
 HTMLTrackElement::ReadyState() const
 {
   if (!mTrack) {
-    return TextTrackReadyState::NotLoaded;
+    return NotLoaded;
   }
 
   return mTrack->ReadyState();
