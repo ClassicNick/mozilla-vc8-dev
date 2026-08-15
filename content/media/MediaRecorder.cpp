@@ -598,6 +598,25 @@ MediaRecorder::Resume(ErrorResult& aResult)
   mState = RecordingState::Recording;
 }
 
+class CreateAndDispatchBlobEventRunnable : public nsRunnable {
+  nsCOMPtr<nsIDOMBlob> mBlob;
+  nsRefPtr<MediaRecorder> mRecorder;
+public:
+  CreateAndDispatchBlobEventRunnable(already_AddRefed<nsIDOMBlob> aBlob,
+									 MediaRecorder* aRecorder)
+	: mBlob(aBlob), mRecorder(aRecorder)
+  { }
+
+  NS_IMETHOD
+  Run();
+};
+
+NS_IMETHODIMP
+CreateAndDispatchBlobEventRunnable::Run()
+{
+	return mRecorder->CreateAndDispatchBlobEvent(mBlob.forget());
+}
+
 void
 MediaRecorder::RequestData(ErrorResult& aResult)
 {
