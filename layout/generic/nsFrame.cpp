@@ -1145,8 +1145,7 @@ nsIFrame::HasPerspective() const
 bool
 nsIFrame::ChildrenHavePerspective() const
 {
-  const nsStyleDisplay *disp = StyleDisplay();
-  return disp->mChildPerspective.GetUnit() == eStyleUnit_Coord;
+  return StyleDisplay()->HasPerspectiveStyle();
 }
 
 nsRect
