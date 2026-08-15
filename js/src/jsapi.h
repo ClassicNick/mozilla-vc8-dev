@@ -1428,7 +1428,6 @@ class JS_PUBLIC_API(RuntimeOptions) {
   public:
     RuntimeOptions()
       : baseline_(false),
-        typeInference_(false),
         ion_(false),
         asmJS_(false)
     {
@@ -1441,16 +1440,6 @@ class JS_PUBLIC_API(RuntimeOptions) {
     }
     RuntimeOptions &toggleBaseline() {
         baseline_ = !baseline_;
-        return *this;
-    }
-
-    bool typeInference() const { return typeInference_; }
-    RuntimeOptions &setTypeInference(bool flag) {
-        typeInference_ = flag;
-        return *this;
-    }
-    RuntimeOptions &toggleTypeInference() {
-        typeInference_ = !typeInference_;
         return *this;
     }
 
@@ -1476,7 +1465,6 @@ class JS_PUBLIC_API(RuntimeOptions) {
 
   private:
     bool baseline_ : 1;
-    bool typeInference_ : 1;
     bool ion_ : 1;
     bool asmJS_ : 1;
 };
