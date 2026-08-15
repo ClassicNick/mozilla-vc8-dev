@@ -68,10 +68,6 @@ namespace {
  */
 struct ArrayBufferContents {
   /**
-   * The header of the ArrayBuffer. This is the pointer actually used by JSAPI.
-   */
-  void* header;
-  /**
    * The data of the ArrayBuffer. This is the pointer manipulated to
    * read/write the contents of the buffer.
    */
@@ -88,12 +84,11 @@ struct ArrayBufferContents {
 struct ScopedArrayBufferContentsTraits {
   typedef ArrayBufferContents type;
   const static type empty() {
-    type result = {0, 0, 0};
+    type result = {0, 0};
     return result;
   }
   const static void release(type ptr) {
-    js_free(ptr.header);
-    ptr.header = nullptr;
+    js_free(ptr.data);
     ptr.data = nullptr;
     ptr.nbytes = 0;
   }
@@ -122,10 +117,9 @@ struct ScopedArrayBufferContents: public Scoped<ScopedArrayBufferContentsTraits>
   bool Allocate(uint32_t length) {
     dispose();
     ArrayBufferContents& value = rwget();
-    if (JS_AllocateArrayBufferContents(/*no context available*/nullptr,
-                                       length,
-                                       &value.header,
-                                       &value.data)) {
+    void *ptr = JS_AllocateArrayBufferContents(/*no context available*/nullptr, length);
+    if (ptr) {
+      value.data = (uint8_t *) ptr;
       value.nbytes = length;
       return true;
     }
@@ -363,7 +357,7 @@ nsresult
 TypedArrayResult::GetCacheableResult(JSContext* cx, JS::MutableHandle<JS::Value> aResult)
 {
   MOZ_ASSERT(NS_IsMainThread());
-  // We cannot simply construct a typed array using contents.header as
+  // We cannot simply construct a typed array using contents.data as
   // this would allow us to have several otherwise unrelated
   // ArrayBuffers with the same underlying C buffer. As this would be
   // very unsafe, we need to cache the result once we have it.
@@ -372,7 +366,7 @@ TypedArrayResult::GetCacheableResult(JSContext* cx, JS::MutableHandle<JS::Value>
   MOZ_ASSERT(contents.data);
 
   JS::Rooted<JSObject*>
-    arrayBuffer(cx, JS_NewArrayBufferWithContents(cx, contents.header));
+    arrayBuffer(cx, JS_NewArrayBufferWithContents(cx, contents.nbytes, contents.data));
   if (!arrayBuffer) {
     return NS_ERROR_OUT_OF_MEMORY;
   }

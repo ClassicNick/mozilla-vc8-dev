@@ -43,7 +43,7 @@ SVGMatrix::SetA(float aA, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.xx = aA;
   SetMatrix(mx);
 }
@@ -56,7 +56,7 @@ SVGMatrix::SetB(float aB, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.yx = aB;
   SetMatrix(mx);
 }
@@ -69,7 +69,7 @@ SVGMatrix::SetC(float aC, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.xy = aC;
   SetMatrix(mx);
 }
@@ -82,7 +82,7 @@ SVGMatrix::SetD(float aD, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.yy = aD;
   SetMatrix(mx);
 }
@@ -95,7 +95,7 @@ SVGMatrix::SetE(float aE, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.x0 = aE;
   SetMatrix(mx);
 }
@@ -108,7 +108,7 @@ SVGMatrix::SetF(float aF, ErrorResult& rv)
     return;
   }
 
-  gfxMatrix mx = Matrix();
+  gfxMatrix mx = GetMatrix();
   mx.y0 = aF;
   SetMatrix(mx);
 }
@@ -116,18 +116,18 @@ SVGMatrix::SetF(float aF, ErrorResult& rv)
 already_AddRefed<SVGMatrix>
 SVGMatrix::Multiply(SVGMatrix& aMatrix)
 {
-  nsRefPtr<SVGMatrix> matrix = new SVGMatrix(aMatrix.Matrix() * Matrix());
+  nsRefPtr<SVGMatrix> matrix = new SVGMatrix(aMatrix.GetMatrix() * GetMatrix());
   return matrix.forget();
 }
 
 already_AddRefed<SVGMatrix>
 SVGMatrix::Inverse(ErrorResult& rv)
 {
-  if (Matrix().IsSingular()) {
+  if (GetMatrix().IsSingular()) {
     rv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
   }
-  nsRefPtr<SVGMatrix> matrix = new SVGMatrix(gfxMatrix(Matrix()).Invert());
+  nsRefPtr<SVGMatrix> matrix = new SVGMatrix(gfxMatrix(GetMatrix()).Invert());
   return matrix.forget();
 }
 
@@ -135,7 +135,7 @@ already_AddRefed<SVGMatrix>
 SVGMatrix::Translate(float x, float y)
 {
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(Matrix()).Translate(gfxPoint(x, y)));
+    new SVGMatrix(gfxMatrix(GetMatrix()).Translate(gfxPoint(x, y)));
   return matrix.forget();
 }
 
@@ -150,7 +150,7 @@ SVGMatrix::ScaleNonUniform(float scaleFactorX,
                            float scaleFactorY)
 {
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(Matrix()).Scale(scaleFactorX, scaleFactorY));
+    new SVGMatrix(gfxMatrix(GetMatrix()).Scale(scaleFactorX, scaleFactorY));
   return matrix.forget();
 }
 
@@ -158,7 +158,7 @@ already_AddRefed<SVGMatrix>
 SVGMatrix::Rotate(float angle)
 {
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(Matrix()).Rotate(angle*radPerDegree));
+    new SVGMatrix(gfxMatrix(GetMatrix()).Rotate(angle*radPerDegree));
   return matrix.forget();
 }
 
@@ -171,14 +171,14 @@ SVGMatrix::RotateFromVector(float x, float y, ErrorResult& rv)
   }
 
   nsRefPtr<SVGMatrix> matrix =
-    new SVGMatrix(gfxMatrix(Matrix()).Rotate(atan2(y, x)));
+    new SVGMatrix(gfxMatrix(GetMatrix()).Rotate(atan2(y, x)));
   return matrix.forget();
 }
 
 already_AddRefed<SVGMatrix>
 SVGMatrix::FlipX()
 {
-  const gfxMatrix& mx = Matrix();
+  const gfxMatrix& mx = GetMatrix();
   nsRefPtr<SVGMatrix> matrix =
     new SVGMatrix(gfxMatrix(-mx.xx, -mx.yx, mx.xy, mx.yy, mx.x0, mx.y0));
   return matrix.forget();
@@ -187,7 +187,7 @@ SVGMatrix::FlipX()
 already_AddRefed<SVGMatrix>
 SVGMatrix::FlipY()
 {
-  const gfxMatrix& mx = Matrix();
+  const gfxMatrix& mx = GetMatrix();
   nsRefPtr<SVGMatrix> matrix =
     new SVGMatrix(gfxMatrix(mx.xx, mx.yx, -mx.xy, -mx.yy, mx.x0, mx.y0));
   return matrix.forget();
@@ -202,7 +202,7 @@ SVGMatrix::SkewX(float angle, ErrorResult& rv)
     return nullptr;
   }
 
-  const gfxMatrix& mx = Matrix();
+  const gfxMatrix& mx = GetMatrix();
   gfxMatrix skewMx(mx.xx, mx.yx,
                    (float) (mx.xy + mx.xx*ta), (float) (mx.yy + mx.yx*ta),
                    mx.x0, mx.y0);
@@ -219,7 +219,7 @@ SVGMatrix::SkewY(float angle, ErrorResult& rv)
     return nullptr;
   }
 
-  const gfxMatrix& mx = Matrix();
+  const gfxMatrix& mx = GetMatrix();
   gfxMatrix skewMx((float) (mx.xx + mx.xy*ta), (float) (mx.yx + mx.yy*ta),
                    mx.xy, mx.yy,
                    mx.x0, mx.y0);

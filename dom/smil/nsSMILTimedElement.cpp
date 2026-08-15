@@ -6,6 +6,7 @@
 #include "mozilla/DebugOnly.h"
 
 #include "mozilla/BasicEvents.h"
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/SVGAnimationElement.h"
 #include "nsSMILTimedElement.h"
 #include "nsAttrValueInlines.h"
@@ -16,7 +17,6 @@
 #include "nsSMILParserUtils.h"
 #include "nsSMILTimeContainer.h"
 #include "nsGkAtoms.h"
-#include "nsEventDispatcher.h"
 #include "nsReadableUtils.h"
 #include "nsMathUtils.h"
 #include "nsThreadUtils.h"
@@ -104,7 +104,7 @@ namespace
         }
       }
 
-      return nsEventDispatcher::Dispatch(mTarget, context, &event);
+      return EventDispatcher::Dispatch(mTarget, context, &event);
     }
   };
 }

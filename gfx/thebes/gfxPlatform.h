@@ -295,6 +295,10 @@ public:
       aObj.DefineProperty("AzureContentBackend", GetBackendName(mContentBackend));
     }
 
+    mozilla::gfx::BackendType GetContentBackend() {
+      return mContentBackend;
+    }
+
     mozilla::gfx::BackendType GetPreferredCanvasBackend() {
       return mPreferredCanvasBackend;
     }
@@ -654,10 +658,6 @@ protected:
      * Decode the backend enumberation from a string.
      */
     static mozilla::gfx::BackendType BackendTypeForName(const nsCString& aName);
-
-    mozilla::gfx::BackendType GetContentBackend() {
-      return mContentBackend;
-    }
 
     static mozilla::TemporaryRef<mozilla::gfx::ScaledFont>
       GetScaledFontForFontWithCairoSkia(mozilla::gfx::DrawTarget* aTarget, gfxFont* aFont);

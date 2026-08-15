@@ -160,7 +160,7 @@ HTMLTrackElement::CreateTextTrack()
   }
 
   mTrack = new TextTrack(OwnerDoc()->GetParentObject(), kind, label, srcLang,
-                         (TextTrackSource) TrackEnum);
+                         TextTrackMode::Disabled, (TextTrackSource) TrackEnum);
   mTrack->SetTrackElement(this);
 
   if (mMediaParent) {
