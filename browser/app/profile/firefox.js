@@ -1205,9 +1205,6 @@ pref("devtools.styleeditor.autocompletion-enabled", true);
 // Enable the Shader Editor.
 pref("devtools.shadereditor.enabled", false);
 
-// Enable the Web Audio Editor
-pref("devtools.webaudioeditor.enabled", false);
-
 // Enable tools for Chrome development.
 pref("devtools.chrome.enabled", false);
 
@@ -1314,6 +1311,8 @@ pref("browser.newtabpage.rows", 3);
 
 // number of columns of newtab grid
 pref("browser.newtabpage.columns", 3);
+
+pref("browser.newtabpage.directorySource", "chrome://global/content/directoryLinks.json");
 
 // Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);

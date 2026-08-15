@@ -477,6 +477,7 @@ gfxPlatform::Shutdown()
         }
 
         gPlatform->mMemoryPressureObserver = nullptr;
+        gPlatform->mSkiaGlue = nullptr;
     }
 
 #ifdef MOZ_WIDGET_ANDROID

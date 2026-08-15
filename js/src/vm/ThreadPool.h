@@ -208,7 +208,7 @@ class ThreadPool : public Monitor
         return offsetof(ThreadPool, workers_);
     }
 
-    static const uint16_t MAX_SLICE_ID = std::numeric_limits<uint16_t>::max();
+    static const uint16_t MAX_SLICE_ID = UINT16_MAX;
 
     ThreadPool(JSRuntime *rt);
     ~ThreadPool();

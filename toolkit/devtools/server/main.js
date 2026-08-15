@@ -39,7 +39,6 @@ Cu.import("resource://gre/modules/reflect.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 let wantLogging = Services.prefs.getBoolPref("devtools.debugger.log");
 
-Cu.import("resource://gre/modules/commonjs/sdk/core/promise.js");
 Cu.import("resource://gre/modules/jsdebugger.jsm");
 addDebuggerToGlobal(this);
 
@@ -358,11 +357,11 @@ var DebuggerServer = {
     if (!restrictPrivileges) {
       this.addTabActors();
       this.addGlobalActor(this.ChromeDebuggerActor, "chromeDebugger");
+      this.registerModule("devtools/server/actors/preference");
     }
 
     this.addActors("resource://gre/modules/devtools/server/actors/webapps.js");
     this.registerModule("devtools/server/actors/device");
-    this.registerModule("devtools/server/actors/preference");
   },
 
   /**
@@ -392,7 +391,6 @@ var DebuggerServer = {
     this.addActors("resource://gre/modules/devtools/server/actors/webconsole.js");
     this.registerModule("devtools/server/actors/inspector");
     this.registerModule("devtools/server/actors/webgl");
-    this.registerModule("devtools/server/actors/webaudio");
     this.registerModule("devtools/server/actors/stylesheets");
     this.registerModule("devtools/server/actors/styleeditor");
     this.registerModule("devtools/server/actors/storage");

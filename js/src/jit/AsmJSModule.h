@@ -294,26 +294,38 @@ class AsmJSModule
     // Function information to add to the VTune JIT profiler following linking.
     struct ProfiledFunction
     {
-        JSAtom *name;
-        unsigned startCodeOffset;
-        unsigned endCodeOffset;
-        unsigned lineno;
-        unsigned columnIndex;
+        PropertyName *name;
+        struct Pod {
+            unsigned startCodeOffset;
+            unsigned endCodeOffset;
+            unsigned lineno;
+            unsigned columnIndex;
+        } pod;
 
-        ProfiledFunction(JSAtom *name, unsigned start, unsigned end,
-                         unsigned line = 0U, unsigned column = 0U)
-          : name(name),
-            startCodeOffset(start),
-            endCodeOffset(end),
-            lineno(line),
-            columnIndex(column)
+        explicit ProfiledFunction()
+          : name(nullptr)
+        { }
+
+        ProfiledFunction(PropertyName *name, unsigned start, unsigned end,
+                         unsigned line = 0, unsigned column = 0)
+          : name(name)
         {
             JS_ASSERT(name->isTenured());
+
+            pod.startCodeOffset = start;
+            pod.endCodeOffset = end;
+            pod.lineno = line;
+            pod.columnIndex = column;
         }
 
         void trace(JSTracer *trc) {
-            MarkStringUnbarriered(trc, &name, "asm.js profiled function name");
+            if (name)
+                MarkStringUnbarriered(trc, &name, "asm.js profiled function name");
         }
+
+        size_t serializedSize() const;
+        uint8_t *serialize(uint8_t *cursor) const;
+        const uint8_t *deserialize(ExclusiveContext *cx, const uint8_t *cursor);
     };
 #endif
 
@@ -323,7 +335,7 @@ class AsmJSModule
         unsigned endInlineCodeOffset;
         jit::BasicBlocksVector blocks;
 
-        ProfiledBlocksFunction(JSAtom *name, unsigned start, unsigned endInline, unsigned end,
+        ProfiledBlocksFunction(PropertyName *name, unsigned start, unsigned endInline, unsigned end,
                                jit::BasicBlocksVector &blocksVector)
           : ProfiledFunction(name, start, end), endInlineCodeOffset(endInline),
             blocks(mozilla::OldMove(blocksVector))
@@ -331,9 +343,9 @@ class AsmJSModule
             JS_ASSERT(name->isTenured());
         }
 
-        ProfiledBlocksFunction(ProfiledBlocksFunction &&copy)
-          : ProfiledFunction(copy.name, copy.startCodeOffset, copy.endCodeOffset),
-            endInlineCodeOffset(copy.endInlineCodeOffset), blocks(mozilla::OldMove(copy.blocks))
+		ProfiledBlocksFunction(mozilla::MoveRef<ProfiledBlocksFunction> copy)
+          : ProfiledFunction(copy->name, copy->pod.startCodeOffset, copy->pod.endCodeOffset),
+            endInlineCodeOffset(copy->endInlineCodeOffset), blocks(mozilla::OldMove(copy->blocks))
         { }
     };
 #endif
@@ -443,13 +455,11 @@ class AsmJSModule
             if (exitIndexToGlobalDatum(i).fun)
                 MarkObject(trc, &exitIndexToGlobalDatum(i).fun, "asm.js imported function");
         }
-#if defined(MOZ_VTUNE)
+#if defined(MOZ_VTUNE) || defined(JS_ION_PERF)
         for (unsigned i = 0; i < profiledFunctions_.length(); i++)
             profiledFunctions_[i].trace(trc);
 #endif
 #if defined(JS_ION_PERF)
-        for (unsigned i = 0; i < profiledFunctions_.length(); i++)
-            profiledFunctions_[i].trace(trc);
         for (unsigned i = 0; i < perfProfiledBlocksFunctions_.length(); i++)
             perfProfiledBlocksFunctions_[i].trace(trc);
 #endif
@@ -570,9 +580,12 @@ class AsmJSModule
         JS_ASSERT(func.pod.codeOffset_ != UINT32_MAX);
         return JS_DATA_TO_FUNC_PTR(CodePtr, code_ + func.pod.codeOffset_);
     }
-#ifdef MOZ_VTUNE
-    bool trackProfiledFunction(JSAtom *name, unsigned startCodeOffset, unsigned endCodeOffset) {
-        ProfiledFunction func(name, startCodeOffset, endCodeOffset);
+
+#if defined(MOZ_VTUNE) || defined(JS_ION_PERF)
+    bool trackProfiledFunction(PropertyName *name, unsigned startCodeOffset, unsigned endCodeOffset,
+                               unsigned line, unsigned column)
+    {
+        ProfiledFunction func(name, startCodeOffset, endCodeOffset, line, column);
         return profiledFunctions_.append(func);
     }
     unsigned numProfiledFunctions() const {
@@ -582,21 +595,9 @@ class AsmJSModule
         return profiledFunctions_[i];
     }
 #endif
-#ifdef JS_ION_PERF
-    bool trackPerfProfiledFunction(JSAtom *name, unsigned startCodeOffset, unsigned endCodeOffset,
-                                   unsigned line, unsigned column)
-    {
-        ProfiledFunction func(name, startCodeOffset, endCodeOffset, line, column);
-        return profiledFunctions_.append(func);
-    }
-    unsigned numPerfFunctions() const {
-        return profiledFunctions_.length();
-    }
-    ProfiledFunction &perfProfiledFunction(unsigned i) {
-        return profiledFunctions_[i];
-    }
 
-    bool trackPerfProfiledBlocks(JSAtom *name, unsigned startCodeOffset, unsigned endInlineCodeOffset,
+#ifdef JS_ION_PERF
+    bool trackPerfProfiledBlocks(PropertyName *name, unsigned startCodeOffset, unsigned endInlineCodeOffset,
                                  unsigned endCodeOffset, jit::BasicBlocksVector &basicBlocks) {
         ProfiledBlocksFunction func(name, startCodeOffset, endInlineCodeOffset, endCodeOffset, basicBlocks);
         return perfProfiledBlocksFunctions_.append(mozilla::Move(func));
@@ -608,6 +609,7 @@ class AsmJSModule
         return perfProfiledBlocksFunctions_[i];
     }
 #endif
+
     bool hasArrayView() const {
         return pod.hasArrayView_;
     }
