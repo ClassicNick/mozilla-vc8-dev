@@ -3957,6 +3957,7 @@ HTMLMediaElement::AddTextTrack(TextTrackKind aKind,
   if (mTextTrackManager) {
     return mTextTrackManager->AddTextTrack(aKind, aLabel, aLanguage,
                                            TextTrackMode::Hidden,
+                                           TextTrackReadyState::Loaded,
                                            (TextTrackSource) AddTextTrackEnum);
   }
   return nullptr;

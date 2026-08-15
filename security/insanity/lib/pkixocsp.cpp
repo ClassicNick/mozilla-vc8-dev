@@ -327,6 +327,14 @@ VerifySignature(Context& context, ResponderIDType responderIDType,
   return SECSuccess;
 }
 
+static inline void
+SetErrorToMalformedResponseOnBadDERError()
+{
+  if (PR_GetError() == SEC_ERROR_BAD_DER) {
+    PR_SetError(SEC_ERROR_OCSP_MALFORMED_RESPONSE, 0);
+  }
+}
+
 SECStatus
 VerifyEncodedOCSPResponse(TrustDomain& trustDomain,
                           const CERTCertificate* cert,
@@ -346,6 +354,7 @@ VerifyEncodedOCSPResponse(TrustDomain& trustDomain,
 
   der::Input input;
   if (input.Init(encodedResponse->data, encodedResponse->len) != der::Success) {
+    SetErrorToMalformedResponseOnBadDERError();
     return SECFailure;
   }
 
@@ -354,10 +363,12 @@ VerifyEncodedOCSPResponse(TrustDomain& trustDomain,
 
   if (der::Nested(input, der::SEQUENCE,
                   bind(OCSPResponse, _1, ref(context))) != der::Success) {
+    SetErrorToMalformedResponseOnBadDERError();
     return SECFailure;
   }
 
   if (der::End(input) != der::Success) {
+    SetErrorToMalformedResponseOnBadDERError();
     return SECFailure;
   }
 
