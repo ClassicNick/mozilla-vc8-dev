@@ -905,7 +905,7 @@ ParentImpl::GetContentParent(PBackgroundParent* aBackgroundActor)
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aBackgroundActor);
 
-  auto actor = static_cast<ParentImpl*>(aBackgroundActor);
+  ParentImpl* actor = static_cast<ParentImpl*>(aBackgroundActor);
   if (actor->mActorDestroyed) {
     MOZ_ASSERT(false, "GetContentParent called after ActorDestroy was called!");
     return nullptr;
@@ -1647,7 +1647,7 @@ ChildImpl::GetThreadLocalForCurrentThread()
   MOZ_ASSERT(sThreadLocalIndex != kBadThreadLocalIndex,
              "BackgroundChild::Startup() was never called!");
 
-  auto threadLocalInfo =
+  ThreadLocalInfo* threadLocalInfo =
     static_cast<ThreadLocalInfo*>(PR_GetThreadPrivate(sThreadLocalIndex));
 
   if (!threadLocalInfo) {

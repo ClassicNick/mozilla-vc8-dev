@@ -336,10 +336,10 @@ HTMLTrackElement::SetReadyState(uint16_t aReadyState)
 {
   if (mTrack) {
     switch (aReadyState) {
-      case TextTrackReadyState::Loaded:
+      case Loaded:
         DispatchTrackRunnable(NS_LITERAL_STRING("loaded"));
         break;
-      case TextTrackReadyState::FailedToLoad:
+      case FailedToLoad:
         DispatchTrackRunnable(NS_LITERAL_STRING("error"));
         break;
     }
