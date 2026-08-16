@@ -98,6 +98,7 @@ public:
   static SIZE sCommandButtons[4];
   static mozilla::LookAndFeel::WindowsTheme sThemeId;
   static bool sIsDefaultWindowsTheme;
+  static bool sIsHighContrastOn;
 
   static void Initialize();
   static void Teardown();
@@ -115,6 +116,7 @@ public:
   static void UpdateNativeThemeInfo();
   static mozilla::LookAndFeel::WindowsTheme GetNativeThemeId();
   static bool IsDefaultWindowTheme();
+  static bool IsHighContrastOn();
 
   static inline BOOL IsAppThemed() {
     return isAppThemed && isAppThemed();

@@ -12,14 +12,14 @@
 "filename": "android-sdk.tar.xz"
 },
 {
-"size": 295,
-"digest": "328c22219212ce00fdb2d533507f0132b2062390293eaea1f4ade29eda4e3e7bcc35853f0b9c87fc8fcc1dbf42447bcaf65ff728b9adee76d0f726deb79db844",
+"size": 335,
+"digest": "2f0e2f345b39789e24de032a156c53d1895c69b525d661c57d208fd528e22694841213a06f52e70fac17b9161e107c581260d95dacda0a5710b90d57668dc895",
 "algorithm": "sha512",
 "filename": "setup.sh"
 },
 {
-"size": 150816,
-"digest": "af25ecf03b65795d21f011939984b130db167a4efc4f306700f373854f9d7ae664662cb7812c3d737eace7f3735324daa6eb540b5e42f90189b0d9a8dd5f4c9f",
+"size": 160232,
+"digest": "8656c3fc2daa66839ec81a0edbd9759040a83c7a41c3e472d7f90508b80eefd008b87305dc8549b4ff6098dc33fe17fedc9b4eb76cf5307d5f22dae925c033db",
 "algorithm": "sha512",
 "filename": "sccache.tar.xz"
 },
