@@ -78,6 +78,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/EventStates.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -313,6 +314,11 @@ nsIFrame::FindCloserFrameForSelection(
                                          aCurrentBestFrame->mYDistance)) {
     aCurrentBestFrame->mFrame = this;
   }
+}
+
+void
+nsIFrame::ContentStatesChanged(mozilla::EventStates aStates)
+{
 }
 
 void

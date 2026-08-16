@@ -121,6 +121,7 @@
 #include "nsDateTimeFormatCID.h"
 #include "nsIDateTimeFormat.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/EventStates.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "nsDOMCID.h"
 
@@ -4933,7 +4934,7 @@ nsDocument::EndLoad()
 }
 
 void
-nsDocument::ContentStateChanged(nsIContent* aContent, nsEventStates aStateMask)
+nsDocument::ContentStateChanged(nsIContent* aContent, EventStates aStateMask)
 {
   NS_PRECONDITION(!nsContentUtils::IsSafeToRunScript(),
                   "Someone forgot a scriptblocker");
@@ -4942,7 +4943,7 @@ nsDocument::ContentStateChanged(nsIContent* aContent, nsEventStates aStateMask)
 }
 
 void
-nsDocument::DocumentStatesChanged(nsEventStates aStateMask)
+nsDocument::DocumentStatesChanged(EventStates aStateMask)
 {
   // Invalidate our cached state.
   mGotDocumentState &= ~aStateMask;
@@ -9248,7 +9249,7 @@ nsDocument::MaybePreLoadImage(nsIURI* uri, const nsAString &aCrossOriginAttr)
   }
 }
 
-nsEventStates
+EventStates
 nsDocument::GetDocumentState()
 {
   if (!mGotDocumentState.HasState(NS_DOCUMENT_STATE_RTL_LOCALE)) {
@@ -9861,23 +9862,6 @@ nsDocument::AddImage(imgIRequest* aImage)
   }
 
   return rv;
-}
-
-static void
-NotifyAudioAvailableListener(nsIContent *aContent, void *aUnused)
-{
-  nsCOMPtr<nsIDOMHTMLMediaElement> domMediaElem(do_QueryInterface(aContent));
-  if (domMediaElem) {
-    HTMLMediaElement* mediaElem = static_cast<HTMLMediaElement*>(aContent);
-    mediaElem->NotifyAudioAvailableListener();
-  }
-}
-
-void
-nsDocument::NotifyAudioAvailableListener()
-{
-  mHasAudioAvailableListener = true;
-  EnumerateFreezableElements(::NotifyAudioAvailableListener, nullptr);
 }
 
 nsresult

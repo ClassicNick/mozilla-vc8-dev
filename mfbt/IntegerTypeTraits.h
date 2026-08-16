@@ -10,7 +10,7 @@
 #define mozilla_IntegerTypeTraits_h
 
 #include "mozilla/TypeTraits.h"
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 
