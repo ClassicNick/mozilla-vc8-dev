@@ -778,11 +778,7 @@ public:
     nsRefPtr<IDBFileHandle> fileHandle = IDBFileHandle::Create(aDatabase,
       aData.name, aData.type, fileInfo.forget());
 
-    JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
-    if (!global) {
-      return nullptr;
-    }
-    return fileHandle->WrapObject(aCx, global);
+    return fileHandle->WrapObject(aCx);
   }
 
   static JSObject* CreateAndWrapBlobOrFile(JSContext* aCx,
@@ -832,9 +828,7 @@ public:
       }
 
       JS::Rooted<JS::Value> wrappedBlob(aCx);
-      JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
-      rv = nsContentUtils::WrapNative(aCx, global, domBlob,
-                                      &NS_GET_IID(nsIDOMBlob),
+      rv = nsContentUtils::WrapNative(aCx, domBlob, &NS_GET_IID(nsIDOMBlob),
                                       &wrappedBlob);
       if (NS_FAILED(rv)) {
         NS_WARNING("Failed to wrap native!");
@@ -859,9 +853,7 @@ public:
     }
 
     JS::Rooted<JS::Value> wrappedFile(aCx);
-    JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
-    rv = nsContentUtils::WrapNative(aCx, global, domFile,
-                                    &NS_GET_IID(nsIDOMFile),
+    rv = nsContentUtils::WrapNative(aCx, domFile, &NS_GET_IID(nsIDOMFile),
                                     &wrappedFile);
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to wrap native!");
@@ -2616,9 +2608,9 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(IDBObjectStore)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(IDBObjectStore)
 
 JSObject*
-IDBObjectStore::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+IDBObjectStore::WrapObject(JSContext* aCx)
 {
-  return IDBObjectStoreBinding::Wrap(aCx, aScope, this);
+  return IDBObjectStoreBinding::Wrap(aCx, this);
 }
 
 JS::Value

@@ -30,9 +30,9 @@ SVGMatrix::GetParentObject() const
 }
 
 JSObject*
-SVGMatrix::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aScope)
+SVGMatrix::WrapObject(JSContext* aCx)
 {
-  return SVGMatrixBinding::Wrap(aCx, aScope, this);
+  return SVGMatrixBinding::Wrap(aCx, this);
 }
 
 void

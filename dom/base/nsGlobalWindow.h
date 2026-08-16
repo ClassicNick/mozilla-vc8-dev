@@ -84,6 +84,7 @@ class nsIDOMCrypto;
 class nsIDOMOfflineResourceList;
 class nsIScrollableFrame;
 class nsIControllers;
+class nsIJSID;
 class nsIScriptContext;
 class nsIScriptTimeoutHandler;
 class nsIWebBrowserChrome;
@@ -344,8 +345,7 @@ public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
   // nsWrapperCache
-  virtual JSObject *WrapObject(JSContext *cx,
-                               JS::Handle<JSObject*> scope) MOZ_OVERRIDE
+  virtual JSObject *WrapObject(JSContext *cx) MOZ_OVERRIDE
   {
     NS_ASSERTION(IsOuterWindow(),
                  "Inner window supports nsWrapperCache, fix WrapObject!");
@@ -358,8 +358,9 @@ public:
   // nsIScriptGlobalObject
   JSObject *FastGetGlobalJSObject() const
   {
-    return mJSObject;
+    return GetWrapperPreserveColor();
   }
+
   void TraceGlobalJSObject(JSTracer* aTrc);
 
   virtual nsresult EnsureScriptEnvironment();
@@ -367,9 +368,10 @@ public:
   virtual nsIScriptContext *GetScriptContext();
 
   void PoisonOuterWindowProxy(JSObject *aObject);
-  virtual void OnFinalize(JSObject* aObject);
 
   virtual bool IsBlackForCC(bool aTracingNeeded = true);
+
+  static JSObject* OuterObject(JSContext* aCx, JS::Handle<JSObject*> aObj);
 
   // nsIScriptObjectPrincipal
   virtual nsIPrincipal* GetPrincipal();
@@ -1000,6 +1002,9 @@ public:
   void SetReturnValue(JSContext* aCx, JS::Handle<JS::Value> aReturnValue,
                       mozilla::ErrorResult& aError);
 
+  JS::Value GetInterface(JSContext* aCx, nsIJSID* aIID,
+                         mozilla::ErrorResult& aError);
+
 protected:
   // Array of idle observers that are notified of idle events.
   nsTObserverArray<IdleObserverHolder> mIdleObservers;
@@ -1505,9 +1510,6 @@ protected:
 
   // These member variables are used on both inner and the outer windows.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
-
-  // The JS global object.  Global objects are always allocated tenured.
-  JS::TenuredHeap<JSObject*> mJSObject;
 
   typedef nsCOMArray<nsIDOMStorageEvent> nsDOMStorageEventArray;
   nsDOMStorageEventArray mPendingStorageEvents;

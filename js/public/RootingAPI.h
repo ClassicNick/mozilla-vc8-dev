@@ -243,6 +243,18 @@ class Heap : public js::HeapBase<T>
         }
     }
 
+    /*
+     * Set the pointer to a value which will cause a crash if it is
+     * dereferenced.
+     */
+    void setToCrashOnTouch() {
+        ptr = reinterpret_cast<T>(crashOnTouchPointer);
+    }
+
+    bool isSetToCrashOnTouch() {
+        return ptr == crashOnTouchPointer;
+    }
+
   private:
     void init(T newPtr) {
         MOZ_ASSERT(!js::GCMethods<T>::poisoned(newPtr));
@@ -263,6 +275,10 @@ class Heap : public js::HeapBase<T>
         js::GCMethods<T>::relocate(&ptr);
 #endif
     }
+
+    enum {
+        crashOnTouchPointer = 1
+    };
 
     T ptr;
 };
@@ -361,23 +377,10 @@ class TenuredHeap : public js::HeapBase<T>
         return *this;
     }
 
-    /*
-     * Set the pointer to a value which will cause a crash if it is
-     * dereferenced.
-     */
-    void setToCrashOnTouch() {
-        bits = (bits & flagsMask) | crashOnTouchPointer;
-    }
-
-    bool isSetToCrashOnTouch() {
-        return (bits & ~flagsMask) == crashOnTouchPointer;
-    }
-
   private:
     enum {
         maskBits = 3,
         flagsMask = (1 << maskBits) - 1,
-        crashOnTouchPointer = 1 << maskBits
     };
 
     uintptr_t bits;

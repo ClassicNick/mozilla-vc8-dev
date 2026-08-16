@@ -1093,7 +1093,8 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports* aArgs,
           NS_ASSERTION(prim == nullptr,
                        "Don't pass nsISupportsPrimitives - use nsIVariant!");
 #endif
-          rv = nsContentUtils::WrapNative(cx, aScope, arg, thisVal);
+          JSAutoCompartment ac(cx, aScope);
+          rv = nsContentUtils::WrapNative(cx, arg, thisVal);
         }
       }
     }
@@ -1281,10 +1282,10 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, JS::Value *aArgv)
 
       AutoFree iidGuard(iid); // Free iid upon destruction.
 
-      JS::Rooted<JSObject*> global(cx, GetWindowProxy());
+      JS::Rooted<JSObject*> scope(cx, GetWindowProxy());
       JS::Rooted<JS::Value> v(cx);
-      nsresult rv = nsContentUtils::WrapNative(cx, global,
-                                               data, iid, &v);
+      JSAutoCompartment ac(cx, scope);
+      nsresult rv = nsContentUtils::WrapNative(cx, data, iid, &v);
       NS_ENSURE_SUCCESS(rv, rv);
 
       *aArgv = v;
@@ -2766,11 +2767,7 @@ NS_DOMReadStructuredClone(JSContext* cx,
     nsRefPtr<ImageData> imageData = new ImageData(width, height,
                                                   dataArray.toObject());
     // Wrap it in a JS::Value.
-    JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
-    if (!global) {
-      return nullptr;
-    }
-    return imageData->WrapObject(cx, global);
+    return imageData->WrapObject(cx);
   }
 
   // Don't know what this is. Bail.
