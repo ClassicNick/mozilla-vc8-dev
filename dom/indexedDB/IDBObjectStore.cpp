@@ -1341,6 +1341,9 @@ IDBObjectStore::DeserializeValue(JSContext* aCx,
   JSStructuredCloneCallbacks callbacks = {
     IDBObjectStore::StructuredCloneReadCallback<MainThreadDeserializationTraits>,
     nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr
   };
 
@@ -1362,6 +1365,9 @@ IDBObjectStore::SerializeValue(JSContext* aCx,
   JSStructuredCloneCallbacks callbacks = {
     nullptr,
     StructuredCloneWriteCallback,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr
   };
 
@@ -4526,6 +4532,9 @@ CreateIndexHelper::InsertDataFromObjectStore(mozIStorageConnection* aConnection)
 
     JSStructuredCloneCallbacks callbacks = {
       IDBObjectStore::StructuredCloneReadCallback<CreateIndexDeserializationTraits>,
+      nullptr,
+      nullptr,
+      nullptr,
       nullptr,
       nullptr
     };
