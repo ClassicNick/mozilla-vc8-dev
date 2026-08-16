@@ -264,27 +264,33 @@ pref("media.peerconnection.identity.timeout", 10000);
 // kXxxUnchanged = 0, kXxxDefault = 1, and higher values are specific to each
 // setting (for Xxx = Ec, Agc, or Ns).  Defaults are all set to kXxxDefault here.
 pref("media.peerconnection.turn.disable", false);
-pref("media.peerconnection.aec_enabled", true);
-pref("media.peerconnection.aec", 1);
-pref("media.peerconnection.agc_enabled", false);
-pref("media.peerconnection.agc", 1);
-pref("media.peerconnection.noise_enabled", false);
-pref("media.peerconnection.noise", 1);
-// Adjustments for OS mediastream+output+OS+input delay (lower bound)
+pref("media.getusermedia.aec_enabled", true);
+pref("media.getusermedia.aec", 1);
+pref("media.getusermedia.agc_enabled", false);
+pref("media.getusermedia.agc", 1);
+pref("media.getusermedia.noise_enabled", true);
+pref("media.getusermedia.noise", 1);
+// Adjustments for OS-specific input delay (lower bound)
+// Adjustments for OS-specific AudioStream+cubeb+output delay (lower bound)
 #if defined(XP_MACOSX)
 pref("media.peerconnection.capture_delay", 50);
+pref("media.getusermedia.playout_delay", 10);
 #elif defined(XP_WIN)
 pref("media.peerconnection.capture_delay", 50);
+pref("media.getusermedia.playout_delay", 40);
 #elif defined(ANDROID)
 pref("media.peerconnection.capture_delay", 100);
+pref("media.getusermedia.playout_delay", 100);
 // Whether to enable Webrtc Hardware acceleration support
 pref("media.navigator.hardware.vp8_encode.acceleration_enabled", false);
 pref("media.navigator.hardware.vp8_decode.acceleration_enabled", false);
 #elif defined(XP_LINUX)
 pref("media.peerconnection.capture_delay", 70);
+pref("media.getusermedia.playout_delay", 50);
 #else
 // *BSD, others - merely a guess for now
 pref("media.peerconnection.capture_delay", 50);
+pref("media.getusermedia.playout_delay", 50);
 #endif
 #else
 #ifdef ANDROID
@@ -3909,10 +3915,6 @@ pref("image.mem.max_ms_before_yield", 5);
 // might keep around more than this, but we'll try to get down to this value).
 pref("image.mem.max_decoded_image_kb", 51200);
 
-// Hard limit for the amount of decoded image data, 0 means we don't have the
-// hard limit for it.
-pref("image.mem.hard_limit_decoded_image_kb", 0);
-
 // Minimum timeout for expiring unused images from the surface cache, in
 // milliseconds. This controls how long we store cached temporary surfaces.
 pref("image.mem.surfacecache.min_expiration_ms", 60000); // 60ms
@@ -4434,3 +4436,7 @@ pref("image.mozsamplesize.enabled", false);
 #ifndef MOZ_WIDGET_GONK
 pref("beacon.enabled", true);
 #endif
+
+// Camera prefs
+pref("camera.control.autofocus_moving_callback.enabled", false);
+pref("camera.control.face_detection.enabled", false);

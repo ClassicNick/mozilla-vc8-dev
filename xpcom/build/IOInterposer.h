@@ -287,7 +287,10 @@ public:
   static inline bool IsObservedOperation(IOInterposeObserver::Operation aOp) {
     return false;
   }
-  static inline void RegisterCurrentThread(bool)                          {}
+  static inline void RegisterCurrentThreadLock(bool)                          {}
+  static inline void RegisterCurrentThread()                          {}
+  static void
+	  UnregisterCurrentThread()												{}
 };
 
 #endif /* MOZ_ENABLE_PROFILER_SPS */

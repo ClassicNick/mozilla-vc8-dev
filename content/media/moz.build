@@ -11,6 +11,8 @@ PARALLEL_DIRS += [
   'webvtt'
 ]
 
+TEST_TOOL_DIRS += ['compiledtest']
+
 if CONFIG['MOZ_OGG']:
 	PARALLEL_DIRS += ['ogg']
 
@@ -59,6 +61,7 @@ EXPORTS += [
     'AudioChannelFormat.h',
     'AudioCompactor.h',
     'AudioEventTimeline.h',
+    'AudioMixer.h',
     'AudioNodeEngine.h',
     'AudioNodeExternalInputStream.h',
     'AudioNodeStream.h',
