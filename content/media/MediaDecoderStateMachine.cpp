@@ -788,7 +788,7 @@ void MediaDecoderStateMachine::AudioLoop()
     // AudioStream initialization can block for extended periods in unusual
     // circumstances, so we take care to drop the decoder monitor while
     // initializing.
-    nsAutoPtr<AudioStream> audioStream(new AudioStream());
+    RefPtr<AudioStream> audioStream(new AudioStream());
     audioStream->Init(channels, rate, audioChannel, AudioStream::HighLatency);
     audioStream->SetVolume(volume);
     if (audioStream->SetPreservesPitch(preservesPitch) != NS_OK) {
@@ -804,7 +804,7 @@ void MediaDecoderStateMachine::AudioLoop()
 
     {
       ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
-      mAudioStream = audioStream;
+      mAudioStream = audioStream.forget();
     }
   }
 
@@ -1561,6 +1561,7 @@ MediaDecoderStateMachine::DispatchDecodeTasksIfNeeded()
              (!needToDecodeAudio && !needToDecodeVideo));
 
   bool needIdle = !mDecoder->IsLogicallyPlaying() &&
+                  mState != DECODER_STATE_SEEKING &&
                   !needToDecodeAudio &&
                   !needToDecodeVideo &&
                   !IsPlaying();

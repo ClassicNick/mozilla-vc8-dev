@@ -52,6 +52,7 @@
 #endif
 #include "GeckoProfiler.h"
 #include "mozilla/ipc/ProtocolTypes.h"
+#include "mozilla/unused.h"
 
 using namespace base;
 using namespace mozilla;
@@ -190,6 +191,7 @@ CompositorParent::CompositorParent(nsIWidget* aWidget,
   , mResumeCompositionMonitor("ResumeCompositionMonitor")
   , mOverrideComposeReadiness(false)
   , mForceCompositionTask(nullptr)
+  , mWantDidCompositeEvent(false)
 {
   NS_ABORT_IF_FALSE(sCompositorThread != nullptr || sCompositorThreadID,
                     "The compositor thread must be Initialized before instanciating a COmpositorParent.");
@@ -524,6 +526,8 @@ CompositorParent::NotifyShadowTreeTransaction(uint64_t aId, bool aIsFirstPaint, 
   if (aScheduleComposite) {
     ScheduleComposition();
   }
+
+  mWantDidCompositeEvent = true;
 }
 
 // Used when layout.frame_rate is -1. Needs to be kept in sync with
@@ -653,6 +657,11 @@ CompositorParent::CompositeToTarget(DrawTarget* aTarget)
   mLayerManager->SetDebugOverlayWantsNextFrame(false);
   mLayerManager->EndEmptyTransaction();
 
+  if (!aTarget && mWantDidCompositeEvent) {
+    DidComposite();
+    mWantDidCompositeEvent = false;
+  }
+
   if (mLayerManager->DebugOverlayWantsNextFrame()) {
     ScheduleComposition();
   }
@@ -678,6 +687,20 @@ CompositorParent::CompositeToTarget(DrawTarget* aTarget)
   }
 
   profiler_tracing("Paint", "Composite", TRACING_INTERVAL_END);
+}
+
+void
+CompositorParent::DidComposite()
+{
+  unused << SendDidComposite(0);
+
+  for (LayerTreeMap::iterator it = sIndirectLayerTrees.begin();
+       it != sIndirectLayerTrees.end(); it++) {
+    LayerTreeState* lts = &it->second;
+    if (lts->mParent == this && lts->mCrossProcessParent) {
+      unused << lts->mCrossProcessParent->SendDidComposite(it->first);
+    }
+  }
 }
 
 void
@@ -768,6 +791,7 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
     }
   }
   mLayerManager->NotifyShadowTreeTransaction();
+  mWantDidCompositeEvent = true;
 }
 
 void

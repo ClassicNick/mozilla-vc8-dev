@@ -2907,7 +2907,7 @@ PresShell::GetReferenceRenderingContext()
     rc = new nsRenderingContext();
     rc->Init(devCtx, gfxPlatform::GetPlatform()->ScreenReferenceSurface());
   } else {
-    devCtx->CreateRenderingContext(*getter_AddRefs(rc));
+    rc = devCtx->CreateRenderingContext();
   }
   return rc.forget();
 }
@@ -5824,11 +5824,7 @@ PresShell::Paint(nsView*        aViewToPaint,
   NS_ASSERTION(layerManager, "Must be in paint event");
   bool shouldInvalidate = layerManager->NeedsWidgetInvalidation();
 
-  uint32_t didPaintFlags = aFlags;
-  if (!shouldInvalidate) {
-    didPaintFlags |= PAINT_COMPOSITE;
-  }
-  nsAutoNotifyDidPaint notifyDidPaint(this, didPaintFlags);
+  nsAutoNotifyDidPaint notifyDidPaint(this, aFlags);
   AutoUpdateHitRegion updateHitRegion(this, frame);
 
   // Whether or not we should set first paint when painting is
