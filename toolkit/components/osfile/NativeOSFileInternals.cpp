@@ -46,7 +46,7 @@
 #endif // defined (XP_UNIX)
 
 #if defined(XP_WIN)
-#include <Windows.h>
+#include <windows.h>
 #ifndef ERROR_FILE_TOO_LARGE
 #define ERROR_FILE_TOO_LARGE 223L
 #endif

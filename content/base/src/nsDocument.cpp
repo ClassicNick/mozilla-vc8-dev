@@ -42,6 +42,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/EventStateManager.h"
 #include "nsIDOMNodeFilter.h"
 
 #include "nsIDOMStyleSheet.h"
@@ -157,7 +158,6 @@
 #include "mozilla/dom/EncodingUtils.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "nsDOMNavigationTiming.h"
-#include "nsEventStateManager.h"
 
 #include "nsSMILAnimationController.h"
 #include "imgIContainer.h"
@@ -10589,7 +10589,7 @@ nsDocument::ExitFullscreen(nsIDocument* aDoc)
 {
   // Unlock the pointer, if it's locked.
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (pointerLockedElement) {
     UnlockPointer();
   }
@@ -10654,7 +10654,7 @@ nsDocument::RestorePreviousFullScreenState()
 
   // If fullscreen mode is updated the pointer should be unlocked
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (pointerLockedElement) {
     UnlockPointer();
   }
@@ -10853,7 +10853,7 @@ nsDocument::CleanupFullscreenState()
     Element* top = FullScreenStackTop();
     NS_ASSERTION(top, "Should have a top when full-screen stack isn't empty");
     if (top) {
-      nsEventStateManager::SetFullScreenState(top, false);
+      EventStateManager::SetFullScreenState(top, false);
     }
     mFullScreenStack.Clear();
   }
@@ -10874,10 +10874,11 @@ nsDocument::FullScreenStackPush(Element* aElement)
     // We're pushing a new element onto the full-screen stack, so we must
     // remove the ancestor and full-screen styles from the former top of the
     // stack.
-    nsEventStateManager::SetFullScreenState(top, false);
+    EventStateManager::SetFullScreenState(top, false);
   }
-  nsEventStateManager::SetFullScreenState(aElement, true);
-  mFullScreenStack.AppendElement(do_GetWeakReference(aElement));
+  EventStateManager::SetFullScreenState(aElement, true);
+  nsWeakPtr weakElement = do_GetWeakReference(aElement);
+  mFullScreenStack.AppendElement(weakElement);
   NS_ASSERTION(GetFullScreenElement() == aElement, "Should match");
   return true;
 }
@@ -10891,7 +10892,7 @@ nsDocument::FullScreenStackPop()
 
   // Remove styles from existing top element.
   Element* top = FullScreenStackTop();
-  nsEventStateManager::SetFullScreenState(top, false);
+  EventStateManager::SetFullScreenState(top, false);
 
   // Remove top element. Note the remaining top element in the stack
   // will not have full-screen style bits set, so we will need to restore
@@ -10912,7 +10913,7 @@ nsDocument::FullScreenStackPop()
     } else {
       // The top element of the stack is now an in-doc element. Apply the
       // full-screen styles and return.
-      nsEventStateManager::SetFullScreenState(element, true);
+      EventStateManager::SetFullScreenState(element, true);
       break;
     }
   }
@@ -11089,7 +11090,7 @@ nsDocument::RequestFullScreen(Element* aElement,
   // If a document is already in fullscreen, then unlock the mouse pointer
   // before setting a new document to fullscreen
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (pointerLockedElement) {
     UnlockPointer();
   }
@@ -11483,7 +11484,7 @@ nsPointerLockPermissionRequest::Allow(JS::HandleValue aChoices)
   Handled();
 
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (e == pointerLockedElement) {
     DispatchPointerLockChange(d);
     return NS_OK;
@@ -11502,10 +11503,10 @@ nsPointerLockPermissionRequest::Allow(JS::HandleValue aChoices)
 
   d->mCancelledPointerLockRequests = 0;
   e->SetPointerLock();
-  nsEventStateManager::sPointerLockedElement = do_GetWeakReference(e);
-  nsEventStateManager::sPointerLockedDoc = do_GetWeakReference(doc);
-  NS_ASSERTION(nsEventStateManager::sPointerLockedElement &&
-               nsEventStateManager::sPointerLockedDoc,
+  EventStateManager::sPointerLockedElement = do_GetWeakReference(e);
+  EventStateManager::sPointerLockedDoc = do_GetWeakReference(doc);
+  NS_ASSERTION(EventStateManager::sPointerLockedElement &&
+               EventStateManager::sPointerLockedDoc,
                "aElement and this should support weak references!");
 
   DispatchPointerLockChange(d);
@@ -11558,7 +11559,7 @@ nsDocument::RequestPointerLock(Element* aElement)
     "Must pass non-null element to nsDocument::RequestPointerLock");
 
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (aElement == pointerLockedElement) {
     DispatchPointerLockChange(this);
     return;
@@ -11569,7 +11570,7 @@ nsDocument::RequestPointerLock(Element* aElement)
     return;
   }
 
-  bool userInputOrChromeCaller = nsEventStateManager::IsHandlingUserInput() ||
+  bool userInputOrChromeCaller = EventStateManager::IsHandlingUserInput() ||
                                  nsContentUtils::IsCallerChrome();
 
   gPendingPointerLockRequest =
@@ -11689,7 +11690,7 @@ nsDocument::SetPointerLock(Element* aElement, int aCursorStyle)
   }
 
   // Hide the cursor and set pointer lock for future mouse events
-  nsRefPtr<nsEventStateManager> esm = presContext->EventStateManager();
+  nsRefPtr<EventStateManager> esm = presContext->EventStateManager();
   esm->SetCursor(aCursorStyle, nullptr, false,
                  0.0f, 0.0f, widget, true);
   esm->SetPointerLock(widget, aElement);
@@ -11700,12 +11701,12 @@ nsDocument::SetPointerLock(Element* aElement, int aCursorStyle)
 void
 nsDocument::UnlockPointer(nsIDocument* aDoc)
 {
-  if (!nsEventStateManager::sIsPointerLocked) {
+  if (!EventStateManager::sIsPointerLocked) {
     return;
   }
 
   nsCOMPtr<nsIDocument> pointerLockedDoc =
-    do_QueryReferent(nsEventStateManager::sPointerLockedDoc);
+    do_QueryReferent(EventStateManager::sPointerLockedDoc);
   if (!pointerLockedDoc || (aDoc && aDoc != pointerLockedDoc)) {
     return;
   }
@@ -11715,13 +11716,13 @@ nsDocument::UnlockPointer(nsIDocument* aDoc)
   }
 
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (pointerLockedElement) {
     pointerLockedElement->ClearPointerLock();
   }
 
-  nsEventStateManager::sPointerLockedElement = nullptr;
-  nsEventStateManager::sPointerLockedDoc = nullptr;
+  EventStateManager::sPointerLockedElement = nullptr;
+  EventStateManager::sPointerLockedDoc = nullptr;
   static_cast<nsDocument*>(pointerLockedDoc.get())->mAllowRelocking = !!aDoc;
   gPendingPointerLockRequest = nullptr;
   DispatchPointerLockChange(pointerLockedDoc);
@@ -11753,14 +11754,14 @@ Element*
 nsIDocument::GetMozPointerLockElement()
 {
   nsCOMPtr<Element> pointerLockedElement =
-    do_QueryReferent(nsEventStateManager::sPointerLockedElement);
+    do_QueryReferent(EventStateManager::sPointerLockedElement);
   if (!pointerLockedElement) {
     return nullptr;
   }
 
   // Make sure pointer locked element is in the same document.
   nsCOMPtr<nsIDocument> pointerLockedDoc =
-    do_QueryReferent(nsEventStateManager::sPointerLockedDoc);
+    do_QueryReferent(EventStateManager::sPointerLockedDoc);
   if (pointerLockedDoc != this) {
     return nullptr;
   }

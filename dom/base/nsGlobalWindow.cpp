@@ -131,10 +131,10 @@
 #endif
 #include "nsCDefaultURIFixup.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/EventStateManager.h"
 #include "nsIObserverService.h"
 #include "nsFocusManager.h"
 #include "nsIXULWindow.h"
-#include "nsEventStateManager.h"
 #include "nsITimedChannel.h"
 #include "nsServiceManagerUtils.h"
 #ifdef MOZ_XUL
@@ -204,7 +204,7 @@
 #include "nsLocation.h"
 #include "nsHTMLDocument.h"
 #include "nsWrapperCacheInlines.h"
-#include "nsDOMEventTargetHelper.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "prrng.h"
 #include "nsSandboxFlags.h"
 #include "TimeChangeObserver.h"
@@ -1225,10 +1225,10 @@ nsGlobalWindow::Init()
 }
 
 static PLDHashOperator
-DisconnectEventTargetObjects(nsPtrHashKey<nsDOMEventTargetHelper>* aKey,
+DisconnectEventTargetObjects(nsPtrHashKey<DOMEventTargetHelper>* aKey,
                              void* aClosure)
 {
-  nsRefPtr<nsDOMEventTargetHelper> target = aKey->GetKey();
+  nsRefPtr<DOMEventTargetHelper> target = aKey->GetKey();
   target->DisconnectFromOwner();
   return PL_DHASH_NEXT;
 }
@@ -1336,13 +1336,13 @@ nsGlobalWindow::~nsGlobalWindow()
 }
 
 void
-nsGlobalWindow::AddEventTargetObject(nsDOMEventTargetHelper* aObject)
+nsGlobalWindow::AddEventTargetObject(DOMEventTargetHelper* aObject)
 {
   mEventTargetObjects.PutEntry(aObject);
 }
 
 void
-nsGlobalWindow::RemoveEventTargetObject(nsDOMEventTargetHelper* aObject)
+nsGlobalWindow::RemoveEventTargetObject(DOMEventTargetHelper* aObject)
 {
   mEventTargetObjects.RemoveEntry(aObject);
 }
@@ -8340,14 +8340,15 @@ nsGlobalWindow::EnterModalState()
 
   // If there is an active ESM in this window, clear it. Otherwise, this can
   // cause a problem if a modal state is entered during a mouseup event.
-  nsEventStateManager* activeESM =
-    static_cast<nsEventStateManager*>(nsEventStateManager::GetActiveEventStateManager());
+  EventStateManager* activeESM =
+    static_cast<EventStateManager*>(
+      EventStateManager::GetActiveEventStateManager());
   if (activeESM && activeESM->GetPresContext()) {
     nsIPresShell* activeShell = activeESM->GetPresContext()->GetPresShell();
     if (activeShell && (
         nsContentUtils::ContentIsCrossDocDescendantOf(activeShell->GetDocument(), mDoc) ||
         nsContentUtils::ContentIsCrossDocDescendantOf(mDoc, activeShell->GetDocument()))) {
-      nsEventStateManager::ClearGlobalActiveContent(activeESM);
+      EventStateManager::ClearGlobalActiveContent(activeESM);
 
       activeShell->SetCapturingContent(nullptr, 0);
 
@@ -12855,12 +12856,12 @@ nsGlobalWindow::DisableTimeChangeNotifications()
 
 static PLDHashOperator
 CollectSizeAndListenerCount(
-  nsPtrHashKey<nsDOMEventTargetHelper> *aEntry,
+  nsPtrHashKey<DOMEventTargetHelper>* aEntry,
   void *arg)
 {
   nsWindowSizes* windowSizes = static_cast<nsWindowSizes*>(arg);
 
-  nsDOMEventTargetHelper* et = aEntry->GetKey();
+  DOMEventTargetHelper* et = aEntry->GetKey();
 
   if (nsCOMPtr<nsISizeOfEventTarget> iSizeOf = do_QueryObject(et)) {
     windowSizes->mDOMEventTargetsSize +=
@@ -12903,7 +12904,7 @@ nsGlobalWindow::AddSizeOfIncludingThis(nsWindowSizes* aWindowSizes) const
     mEventTargetObjects.SizeOfExcludingThis(nullptr,
                                             aWindowSizes->mMallocSizeOf);
   aWindowSizes->mDOMEventTargetsCount +=
-    const_cast<nsTHashtable<nsPtrHashKey<nsDOMEventTargetHelper> >*>
+    const_cast<nsTHashtable<nsPtrHashKey<DOMEventTargetHelper> >*>
       (&mEventTargetObjects)->EnumerateEntries(CollectSizeAndListenerCount,
                                                aWindowSizes);
 }

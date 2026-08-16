@@ -588,7 +588,6 @@ public:
      * This method should not be called from the compositor thread.
      */
     bool PreferMemoryOverShmem() const;
-    bool UseDeprecatedTextures() const { return mLayersUseDeprecated; }
 
 #ifdef MOZ_SKIA
     mozilla::gl::SkiaGLGlue* GetSkiaGLGlue();
@@ -703,7 +702,6 @@ private:
 
     mozilla::RefPtr<mozilla::gfx::DrawEventRecorder> mRecorder;
     bool mLayersPreferMemoryOverShmem;
-    bool mLayersUseDeprecated;
 #ifdef MOZ_SKIA
     mozilla::RefPtr<mozilla::gl::SkiaGLGlue> mSkiaGlue;
 #endif

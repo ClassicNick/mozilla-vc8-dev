@@ -40,6 +40,7 @@
 #endif
 
 #include "mozilla/StandardInteger.h"
+#include <math.h>
 #include "mozilla/unused.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Mutex.h"
