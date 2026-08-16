@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <math.h>
 
+#include "prprf.h"
 #include "nsCxPusher.h"
 #include "DecoderTraits.h"
 #include "harfbuzz/hb.h"
@@ -574,7 +575,7 @@ nsContentUtils::InitializeEventTable() {
     { nsGkAtoms::on##name_, _id, _type, _struct },
 #define WINDOW_ONLY_EVENT EVENT
 #define NON_IDL_EVENT EVENT
-#include "nsEventNameList.h"
+#include "mozilla/EventNameList.h"
 #undef WINDOW_ONLY_EVENT
 #undef EVENT
     { nullptr }
@@ -606,7 +607,7 @@ nsContentUtils::InitializeTouchEventTable()
 #define EVENT(name_,  _id, _type, _struct)
 #define TOUCH_EVENT(name_,  _id, _type, _struct)      \
       { nsGkAtoms::on##name_, _id, _type, _struct },
-#include "nsEventNameList.h"
+#include "mozilla/EventNameList.h"
 #undef TOUCH_EVENT
 #undef EVENT
       { nullptr }
@@ -2967,7 +2968,7 @@ nsContentUtils::GetEventArgNames(int32_t aNameSpaceID,
     *aArgCount = sizeof(names)/sizeof(names[0]); \
     *aArgArray = names;
 
-  // nsJSEventListener is what does the arg magic for onerror, and it does
+  // JSEventHandler is what does the arg magic for onerror, and it does
   // not seem to take the namespace into account.  So we let onerror in all
   // namespaces get the 3 arg names.
   if (aEventName == nsGkAtoms::onerror) {
@@ -3147,6 +3148,28 @@ nsContentUtils::ReportToConsoleNonLocalized(const nsAString& aErrorText,
   NS_ENSURE_SUCCESS(rv, rv);
 
   return sConsoleService->LogMessage(errorObject);
+}
+
+void
+nsContentUtils::LogMessageToConsole(const char* aMsg, ...)
+{
+  if (!sConsoleService) { // only need to bother null-checking here
+    CallGetService(NS_CONSOLESERVICE_CONTRACTID, &sConsoleService);
+    if (!sConsoleService) {
+      return;
+    }
+  }
+
+  va_list args;
+  va_start(args, aMsg);
+  char* formatted = PR_vsmprintf(aMsg, args);
+  va_end(args);
+  if (!formatted) {
+    return;
+  }
+
+  sConsoleService->LogStringMessage(NS_ConvertUTF8toUTF16(formatted).get());
+  PR_smprintf_free(formatted);
 }
 
 bool
