@@ -727,7 +727,7 @@ nsresult AsyncFaviconDataReady::OnFaviconDataNotAvailable(void)
   rv = NS_NewChannel(getter_AddRefs(channel), mozIconURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<myDownloadObserver> downloadObserver = new myDownloadObserver;
+  nsCOMPtr<nsIDownloadObserver> downloadObserver = new myDownloadObserver;
   nsCOMPtr<nsIStreamListener> listener;
   rv = NS_NewDownloader(getter_AddRefs(listener), downloadObserver, icoFile);
   NS_ENSURE_SUCCESS(rv, rv);
