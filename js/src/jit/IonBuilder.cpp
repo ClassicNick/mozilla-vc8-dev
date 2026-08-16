@@ -4102,6 +4102,10 @@ IonBuilder::makeInliningDecision(JSFunction *target, CallInfo &callInfo)
     types::TypeObjectKey *targetType = types::TypeObjectKey::get(target);
     targetType->watchStateChangeForInlinedCall(constraints());
 
+    // We mustn't relazify functions that have been inlined, because there's
+    // no way to tell if it safe to do so.
+    script()->setHasBeenInlined();
+
     return InliningDecision_Inline;
 }
 
@@ -10140,8 +10144,8 @@ IonBuilder::lookupTypedObjectField(MDefinition *typedObj,
     if (fieldDescrs->empty())
         return true;
 
-    *fieldOffset = int32_t(offset);
-    JS_ASSERT(*fieldOffset >= 0);
+    JS_ASSERT(offset >= 0);
+    *fieldOffset = offset;
 
     return true;
 }

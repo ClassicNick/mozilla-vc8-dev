@@ -176,7 +176,7 @@ public:
   {
     NS_ASSERTION(!HasFlag(NODE_IS_NATIVE_ANONYMOUS_ROOT) ||
                  (HasFlag(NODE_IS_ANONYMOUS_ROOT) &&
-                  HasFlag(NODE_IS_IN_ANONYMOUS_SUBTREE)),
+                  HasFlag(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE)),
                  "Some flags seem to be missing!");
     return HasFlag(NODE_IS_NATIVE_ANONYMOUS_ROOT);
   }
@@ -193,7 +193,7 @@ public:
    */
   void SetIsNativeAnonymousRoot()
   {
-    SetFlags(NODE_IS_ANONYMOUS_ROOT | NODE_IS_IN_ANONYMOUS_SUBTREE |
+    SetFlags(NODE_IS_ANONYMOUS_ROOT | NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE |
              NODE_IS_NATIVE_ANONYMOUS_ROOT);
   }
 
@@ -241,7 +241,7 @@ public:
                   static_cast<nsIContent*>(SubtreeRoot())->IsInNativeAnonymousSubtree()),
                  "Must have binding parent when in native anonymous subtree which is in document.\n"
                  "Native anonymous subtree which is not in document must have native anonymous root.");
-    return IsInNativeAnonymousSubtree() || GetBindingParent() != nullptr;
+    return IsInNativeAnonymousSubtree() || (!HasFlag(NODE_IS_IN_SHADOW_TREE) && GetBindingParent() != nullptr);
   }
 
   /**

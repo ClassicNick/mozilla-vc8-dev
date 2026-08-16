@@ -85,9 +85,9 @@ nsRenderingContext::Init(nsDeviceContext* aContext,
 
 void
 nsRenderingContext::Init(nsDeviceContext* aContext,
-                         DrawTarget* aDrawTarget)
+                         DrawTarget *aDrawTarget)
 {
-  Init(aContext, new gfxContext(aDrawTarget));
+    Init(aContext, new gfxContext(aDrawTarget));
 }
 
 //
