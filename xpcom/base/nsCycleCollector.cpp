@@ -2433,9 +2433,11 @@ public:
     virtual void Trace(JS::Heap<JS::Value>* aValue, const char* aName,
                        void* aClosure) const
     {
-        void* thing = JSVAL_TO_TRACEABLE(aValue->get());
-        if (thing && xpc_GCThingIsGrayCCThing(thing)) {
-            mCollector->GetJSPurpleBuffer()->mValues.AppendElement(*aValue);
+        if (aValue->isMarkable()) {
+            void* thing = aValue->toGCThing();
+            if (thing && xpc_GCThingIsGrayCCThing(thing)) {
+                mCollector->GetJSPurpleBuffer()->mValues.AppendElement(*aValue);
+            }
         }
     }
 

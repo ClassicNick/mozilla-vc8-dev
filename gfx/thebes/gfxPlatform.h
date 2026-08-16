@@ -47,6 +47,7 @@ class SkiaGLGlue;
 namespace gfx {
 class DrawTarget;
 class SourceSurface;
+class DataSourceSurface;
 class ScaledFont;
 class DrawEventRecorder;
 
@@ -222,6 +223,9 @@ public:
       GetSourceSurfaceForSurface(mozilla::gfx::DrawTarget *aTarget, gfxASurface *aSurface);
 
     static void ClearSourceSurfaceForSurface(gfxASurface *aSurface);
+
+    static mozilla::RefPtr<mozilla::gfx::DataSourceSurface>
+        GetWrappedDataSourceSurface(gfxASurface *aSurface);
 
     virtual mozilla::TemporaryRef<mozilla::gfx::ScaledFont>
       GetScaledFontForFont(mozilla::gfx::DrawTarget* aTarget, gfxFont *aFont);

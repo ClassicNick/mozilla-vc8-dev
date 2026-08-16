@@ -26,9 +26,7 @@
 #include "nsStyleStruct.h"
 #include "mozilla/Constants.h"
 
-class gfxASurface;
 class gfxContext;
-class gfxImageSurface;
 class gfxPattern;
 class nsFrameList;
 class nsIContent;

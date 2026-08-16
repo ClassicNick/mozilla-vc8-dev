@@ -775,12 +775,8 @@ AsyncFaviconDataReady::OnComplete(nsIURI *aFaviconURI,
                                 getter_AddRefs(container));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsRefPtr<gfxASurface> imgFrame =
-    container->GetFrame(imgIContainer::FRAME_FIRST, 0);
-  NS_ENSURE_TRUE(imgFrame, NS_ERROR_FAILURE);
-
   RefPtr<SourceSurface> surface =
-    gfxPlatform::GetPlatform()->GetSourceSurfaceForSurface(nullptr, imgFrame);
+    container->GetFrame(imgIContainer::FRAME_FIRST, 0);
   NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
 
   RefPtr<DataSourceSurface> dataSurface;
@@ -824,6 +820,7 @@ AsyncFaviconDataReady::OnComplete(nsIURI *aFaviconURI,
     size.width = surface->GetSize().width;
     size.height = surface->GetSize().height;
     dataSurface = surface->GetDataSurface();
+    NS_ENSURE_TRUE(dataSurface, NS_ERROR_FAILURE);
   }
 
   // Allocate a new buffer that we own and can use out of line in

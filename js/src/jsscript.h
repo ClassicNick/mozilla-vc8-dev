@@ -1159,7 +1159,9 @@ private:
     }
 
     bool hasIonScript() const {
-        return ion && ion != ION_DISABLED_SCRIPT && ion != ION_COMPILING_SCRIPT;
+        bool res = ion && ion != ION_DISABLED_SCRIPT && ion != ION_COMPILING_SCRIPT;
+        MOZ_ASSERT_IF(res, baseline);
+        return res;
     }
     bool canIonCompile() const {
         return ion != ION_DISABLED_SCRIPT;
@@ -1183,11 +1185,14 @@ private:
         if (hasIonScript())
             js::jit::IonScript::writeBarrierPre(tenuredZone(), ion);
         ion = ionScript;
+        MOZ_ASSERT_IF(hasIonScript(), hasBaselineScript());
         updateBaselineOrIonRaw();
     }
 
     bool hasBaselineScript() const {
-        return baseline && baseline != BASELINE_DISABLED_SCRIPT;
+        bool res = baseline && baseline != BASELINE_DISABLED_SCRIPT;
+        MOZ_ASSERT_IF(!res, !ion || ion == ION_DISABLED_SCRIPT);
+        return res;
     }
     bool canBaselineCompile() const {
         return baseline != BASELINE_DISABLED_SCRIPT;
