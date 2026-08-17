@@ -1695,8 +1695,9 @@ js_InitMathClass(JSContext *cx, HandleObject obj)
     if (!Math)
         return nullptr;
 
-    if (!JS_DefineProperty(cx, obj, js_Math_str, OBJECT_TO_JSVAL(Math),
-                           JS_PropertyStub, JS_StrictPropertyStub, 0)) {
+    if (!JS_DefineProperty(cx, obj, js_Math_str, (HandleObject) Math, 0,
+                           JS_PropertyStub, JS_StrictPropertyStub))
+    {
         return nullptr;
     }
 

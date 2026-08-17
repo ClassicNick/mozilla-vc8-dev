@@ -1071,7 +1071,7 @@ MapObject::initClass(JSContext *cx, JSObject *obj)
 
         // Define its alias.
         RootedValue funval(cx, ObjectValue(*fun));
-        if (!JS_DefineProperty(cx, proto, js_std_iterator_str, funval, nullptr, nullptr, 0))
+        if (!JS_DefineProperty(cx, proto, js_std_iterator_str, (HandleValue) funval, 0))
             return nullptr;
     }
     return proto;
@@ -1640,9 +1640,9 @@ SetObject::initClass(JSContext *cx, JSObject *obj)
 
         // Define its aliases.
         RootedValue funval(cx, ObjectValue(*fun));
-        if (!JS_DefineProperty(cx, proto, "keys", funval, nullptr, nullptr, 0))
+        if (!JS_DefineProperty(cx, proto, "keys", (HandleValue) funval, 0))
             return nullptr;
-        if (!JS_DefineProperty(cx, proto, js_std_iterator_str, funval, nullptr, nullptr, 0))
+        if (!JS_DefineProperty(cx, proto, js_std_iterator_str, (HandleValue) funval, 0))
             return nullptr;
     }
     return proto;

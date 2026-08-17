@@ -7,7 +7,7 @@
 #ifndef NetworkActivityMonitor_h___
 #define NetworkActivityMonitor_h___
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "nscore.h"
 #include "prio.h"
 #include "prinrval.h"

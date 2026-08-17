@@ -1530,7 +1530,7 @@ struct nsStyleText {
   uint8_t mHyphens;                     // [inherited] see nsStyleConsts.h
   uint8_t mTextSizeAdjust;              // [inherited] see nsStyleConsts.h
   uint8_t mTextOrientation;             // [inherited] see nsStyleConsts.h
-  uint8_t mTextCombineHorizontal;       // [inherited] see nsStyleConsts.h
+  uint8_t mTextCombineUpright;          // [inherited] see nsStyleConsts.h
   uint8_t mControlCharacterVisibility;  // [inherited] see nsStyleConsts.h
   int32_t mTabSize;                     // [inherited] see nsStyleConsts.h
 
@@ -1905,6 +1905,7 @@ struct nsStyleDisplay {
                         nsChangeHint_UpdateOpacityLayer |
                         nsChangeHint_UpdateTransformLayer |
                         nsChangeHint_UpdateOverflow |
+                        nsChangeHint_UpdatePostTransformOverflow |
                         nsChangeHint_AddOrRemoveTransform);
   }
   static nsChangeHint MaxDifferenceNeverInherited() {

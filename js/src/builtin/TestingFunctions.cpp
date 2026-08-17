@@ -744,9 +744,9 @@ CountHeap(JSContext *cx, unsigned argc, jsval *vp)
     RootedValue startValue(cx, UndefinedValue());
     if (args.length() > 0) {
         jsval v = args[0];
-        if (JSVAL_IS_TRACEABLE(v)) {
+        if (v.isMarkable()) {
             startValue = v;
-        } else if (!JSVAL_IS_NULL(v)) {
+        } else if (!v.isNull()) {
             JS_ReportError(cx,
                            "the first argument is not null or a heap-allocated "
                            "thing");
@@ -771,11 +771,11 @@ CountHeap(JSContext *cx, unsigned argc, jsval *vp)
                 return false;
             }
             traceValue = args[2];
-            if (!JSVAL_IS_TRACEABLE(traceValue)){
+            if (!traceValue.isMarkable()){
                 JS_ReportError(cx, "cannot trace this kind of value");
                 return false;
             }
-            traceThing = JSVAL_TO_TRACEABLE(traceValue);
+            traceThing = traceValue.toGCThing();
         } else {
             for (size_t i = 0; ;) {
                 if (JS_FlatStringEqualsAscii(flatStr, traceKindNames[i].name)) {
@@ -1055,14 +1055,14 @@ ShellObjectMetadataCallback(JSContext *cx, JSObject **pmetadata)
     static int createdIndex = 0;
     createdIndex++;
 
-    if (!JS_DefineProperty(cx, obj, "index", Int32Value(createdIndex),
-                           JS_PropertyStub, JS_StrictPropertyStub, 0))
+    if (!JS_DefineProperty(cx, obj, "index", createdIndex, 0,
+                           JS_PropertyStub, JS_StrictPropertyStub))
     {
         return false;
     }
 
-    if (!JS_DefineProperty(cx, obj, "stack", ObjectValue(*stack),
-                           JS_PropertyStub, JS_StrictPropertyStub, 0))
+    if (!JS_DefineProperty(cx, obj, "stack", (HandleObject) stack, 0,
+                           JS_PropertyStub, JS_StrictPropertyStub))
     {
         return false;
     }

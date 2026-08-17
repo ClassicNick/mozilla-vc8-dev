@@ -4328,6 +4328,7 @@ TypeZone::sweep(FreeOp *fop, bool releaseTypes, bool *oom)
 
     /* Sweep and find compressed indexes for each compiler output. */
     size_t newCompilerOutputCount = 0;
+#ifdef JS_ION
     if (compilerOutputs) {
         for (size_t i = 0; i < compilerOutputs->length(); i++) {
             CompilerOutput &output = (*compilerOutputs)[i];
@@ -4342,6 +4343,7 @@ TypeZone::sweep(FreeOp *fop, bool releaseTypes, bool *oom)
             }
         }
     }
+#endif
 
     {
         gcstats::AutoPhase ap2(rt->gcStats, gcstats::PHASE_DISCARD_TI);

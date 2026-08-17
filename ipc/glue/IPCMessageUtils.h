@@ -176,7 +176,7 @@ template <typename E,
           E HighBound>
 struct ContiguousEnumSerializer
   : EnumSerializer<E,
-                   ContiguousEnumValidator<E, MinLegal, HighBound>>
+                   ContiguousEnumValidator<E, MinLegal, HighBound> >
 {};
 
 /**
@@ -189,7 +189,7 @@ template <typename E,
           MOZ_TEMPLATE_ENUM_CLASS_ENUM_TYPE(E) HighBound>
 struct ContiguousTypedEnumSerializer
   : EnumSerializer<E,
-                   ContiguousTypedEnumValidator<E, MinLegal, HighBound>>
+                   ContiguousTypedEnumValidator<E, MinLegal, HighBound> >
 {};
 
 template <>
