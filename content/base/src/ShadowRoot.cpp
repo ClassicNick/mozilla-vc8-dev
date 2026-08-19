@@ -678,7 +678,7 @@ ShadowRootStyleSheetList::~ShadowRootStyleSheetList()
 nsCSSStyleSheet*
 ShadowRootStyleSheetList::IndexedGetter(uint32_t aIndex, bool& aFound)
 {
-  nsTArray<nsRefPtr<nsCSSStyleSheet>>* sheets =
+  nsTArray<nsRefPtr<nsCSSStyleSheet> >* sheets =
     mShadowRoot->mProtoBinding->GetStyleSheets();
 
   if (!sheets) {

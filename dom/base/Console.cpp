@@ -707,7 +707,7 @@ Console::ProfileMethod(JSContext* aCx, const nsAString& aAction,
   JS::Rooted<JSObject*> eventObj(aCx, &eventValue.toObject());
   MOZ_ASSERT(eventObj);
 
-  if (!JS_DefineProperty(aCx, eventObj, "wrappedJSObject", eventValue, JSPROP_ENUMERATE)) {
+  if (!JS_DefineProperty(aCx, eventObj, "wrappedJSObject", (JS::HandleValue) eventValue, JSPROP_ENUMERATE)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -1118,7 +1118,7 @@ Console::ProcessCallData(ConsoleCallData* aData)
   JS::Rooted<JSObject*> eventObj(cx, &eventValue.toObject());
   MOZ_ASSERT(eventObj);
 
-  if (!JS_DefineProperty(cx, eventObj, "wrappedJSObject", eventValue, JSPROP_ENUMERATE)) {
+  if (!JS_DefineProperty(cx, eventObj, "wrappedJSObject", (JS::HandleValue) eventValue, JSPROP_ENUMERATE)) {
     return;
   }
 
@@ -1129,7 +1129,7 @@ Console::ProcessCallData(ConsoleCallData* aData)
     if (!aData->mReifiedStack.empty()) {
       JS::Rooted<JS::Value> stacktrace(cx);
       if (!ToJSValue(cx, aData->mReifiedStack.ref(), &stacktrace) ||
-          !JS_DefineProperty(cx, eventObj, "stacktrace", stacktrace,
+		  !JS_DefineProperty(cx, eventObj, "stacktrace", (JS::HandleValue) stacktrace,
                              JSPROP_ENUMERATE)) {
         return;
       }

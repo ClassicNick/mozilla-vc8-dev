@@ -814,7 +814,7 @@ env_enumerate(JSContext *cx, HandleObject obj)
             continue;
         *value++ = '\0';
         valstr = JS_NewStringCopyZ(cx, value);
-        ok = valstr ? JS_DefineProperty(cx, obj, name, valstr, JSPROP_ENUMERATE) : false;
+        ok = valstr ? JS_DefineProperty(cx, obj, name, (HandleString) valstr, JSPROP_ENUMERATE) : false;
         value[-1] = '=';
         if (!ok)
             return false;
@@ -1089,7 +1089,7 @@ ProcessArgs(JSContext *cx, JS::Handle<JSObject*> obj, char **argv, int argc, XPC
     argsObj = JS_NewArrayObject(cx, 0);
     if (!argsObj)
         return 1;
-    if (!JS_DefineProperty(cx, obj, "arguments", argsObj, 0))
+    if (!JS_DefineProperty(cx, obj, "arguments", (HandleObject) argsObj, 0))
         return 1;
 
     for (size_t j = 0, length = argc - i; j < length; j++) {

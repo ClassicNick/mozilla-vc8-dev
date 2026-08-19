@@ -35,7 +35,7 @@ MetadataHelper::GetSuccessResult(JSContext* aCx,
   if (mParams->SizeRequested()) {
     JS::Rooted<JS::Value> val(aCx, JS_NumberValue(mParams->Size()));
 
-    if (!JS_DefineProperty(aCx, obj, "size", val, JSPROP_ENUMERATE)) {
+	if (!JS_DefineProperty(aCx, obj, "size", (JS::HandleValue) val, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -46,7 +46,7 @@ MetadataHelper::GetSuccessResult(JSContext* aCx,
     NS_ENSURE_TRUE(date, NS_ERROR_OUT_OF_MEMORY);
 
     JS::Rooted<JS::Value> dateRoot(aCx, JS::ObjectValue(*date));
-    if (!JS_DefineProperty(aCx, obj, "lastModified", dateRoot,
+	if (!JS_DefineProperty(aCx, obj, "lastModified", (JS::HandleValue) dateRoot,
                            JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }

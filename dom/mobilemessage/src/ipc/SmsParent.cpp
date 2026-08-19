@@ -43,7 +43,7 @@ MmsAttachmentDataToJSObject(JSContext* aContext,
                                                             aAttachment.id().get(),
                                                             aAttachment.id().Length()));
   NS_ENSURE_TRUE(idStr, nullptr);
-  if (!JS_DefineProperty(aContext, obj, "id", idStr, 0)) {
+  if (!JS_DefineProperty(aContext, obj, "id", (JS::HandleString) idStr, 0)) {
     return nullptr;
   }
 
@@ -51,7 +51,7 @@ MmsAttachmentDataToJSObject(JSContext* aContext,
                                                              aAttachment.location().get(),
                                                              aAttachment.location().Length()));
   NS_ENSURE_TRUE(locStr, nullptr);
-  if (!JS_DefineProperty(aContext, obj, "location", locStr, 0)) {
+  if (!JS_DefineProperty(aContext, obj, "location", (JS::HandleString) locStr, 0)) {
     return nullptr;
   }
 
@@ -62,7 +62,7 @@ MmsAttachmentDataToJSObject(JSContext* aContext,
                                            &NS_GET_IID(nsIDOMBlob),
                                            &content);
   NS_ENSURE_SUCCESS(rv, nullptr);
-  if (!JS_DefineProperty(aContext, obj, "content", content, 0)) {
+  if (!JS_DefineProperty(aContext, obj, "content", (JS::HandleValue) content, 0)) {
     return nullptr;
   }
 
@@ -82,7 +82,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
                                                          aRequest.smil().get(),
                                                          aRequest.smil().Length()));
   NS_ENSURE_TRUE(smilStr, false);
-  if(!JS_DefineProperty(aCx, paramsObj, "smil", smilStr, 0)) {
+  if(!JS_DefineProperty(aCx, paramsObj, "smil", (JS::HandleString) smilStr, 0)) {
     return false;
   }
 
@@ -91,7 +91,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
                                                             aRequest.subject().get(),
                                                             aRequest.subject().Length()));
   NS_ENSURE_TRUE(subjectStr, false);
-  if(!JS_DefineProperty(aCx, paramsObj, "subject", subjectStr, 0)) {
+  if(!JS_DefineProperty(aCx, paramsObj, "subject", (JS::HandleString) subjectStr, 0)) {
     return false;
   }
 
@@ -102,7 +102,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
                                   receiverArray.address()))) {
     return false;
   }
-  if (!JS_DefineProperty(aCx, paramsObj, "receivers", receiverArray, 0)) {
+  if (!JS_DefineProperty(aCx, paramsObj, "receivers", (JS::HandleObject) receiverArray, 0)) {
     return false;
   }
 
@@ -118,7 +118,7 @@ GetParamsFromSendMmsMessageRequest(JSContext* aCx,
     }
   }
 
-  if (!JS_DefineProperty(aCx, paramsObj, "attachments", attachmentArray, 0)) {
+  if (!JS_DefineProperty(aCx, paramsObj, "attachments", (JS::HandleObject) attachmentArray, 0)) {
     return false;
   }
 

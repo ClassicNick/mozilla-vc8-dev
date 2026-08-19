@@ -1663,7 +1663,7 @@ HTMLMediaElement::BuildObjectFromTags(nsCStringHashKey::KeyType aKey,
     args->error = true;
     return PL_DHASH_STOP;
   }
-  if (!JS_DefineProperty(args->cx, args->tags, aKey.Data(), string, JSPROP_ENUMERATE)) {
+  if (!JS_DefineProperty(args->cx, args->tags, aKey.Data(), (JS::HandleString) string, JSPROP_ENUMERATE)) {
     NS_WARNING("Failed to set metadata property");
     args->error = true;
     return PL_DHASH_STOP;

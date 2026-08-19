@@ -81,8 +81,10 @@
 
 #include "SkiaGLGlue.h"
 #else
+#ifdef MOZ_SKIA
 class mozilla::gl::SkiaGLGlue : public GenericAtomicRefCounted {
 };
+#endif
 #endif
 
 #include "mozilla/Preferences.h"

@@ -897,7 +897,7 @@ GetOrCreateClassObjectMap(JSContext *cx, JS::Handle<JSObject*> scope, const char
 
   // It's not there. Create and define it.
   JS::Rooted<JSObject*> map(cx, JS::NewWeakMapObject(cx));
-  if (!map || !JS_DefineProperty(cx, scope, mapName, map,
+  if (!map || !JS_DefineProperty(cx, scope, mapName, (JS::HandleObject) map,
                                  JSPROP_PERMANENT | JSPROP_READONLY,
                                  JS_PropertyStub, JS_StrictPropertyStub))
   {
@@ -1041,7 +1041,7 @@ nsXBLBinding::DoInitJSClass(JSContext *cx,
     // stick it on.
     JSAutoCompartment ac3(cx, holder);
     if (!JS_WrapObject(cx, &proto) ||
-        !JS_DefineProperty(cx, holder, aClassName.get(), proto,
+		!JS_DefineProperty(cx, holder, aClassName.get(), (JS::HandleObject) proto,
                            JSPROP_READONLY | JSPROP_PERMANENT,
                            JS_PropertyStub, JS_StrictPropertyStub))
     {

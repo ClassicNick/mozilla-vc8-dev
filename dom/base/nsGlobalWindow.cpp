@@ -2541,7 +2541,7 @@ nsGlobalWindow::SetNewDocument(nsIDocument* aDocument,
 
     if (!aState) {
       JS::Rooted<JSObject*> rootedWrapper(cx, GetWrapperPreserveColor());
-      if (!JS_DefineProperty(cx, newInnerGlobal, "window", rootedWrapper,
+	  if (!JS_DefineProperty(cx, newInnerGlobal, "window", (JS::HandleObject) rootedWrapper,
                              JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT,
                              JS_PropertyStub, JS_StrictPropertyStub)) {
         NS_ERROR("can't create the 'window' property");
@@ -4457,7 +4457,7 @@ nsGlobalWindow::SetOpener(nsIDOMWindow* aOpener, ErrorResult& aError)
 
     if (!JS_WrapObject(cx, &otherObj) ||
         !JS_WrapObject(cx, &thisObj) ||
-        !JS_DefineProperty(cx, thisObj, "opener", otherObj, JSPROP_ENUMERATE,
+		!JS_DefineProperty(cx, thisObj, "opener", (JS::HandleObject) otherObj, JSPROP_ENUMERATE,
                            JS_PropertyStub, JS_StrictPropertyStub)) {
       aError.Throw(NS_ERROR_FAILURE);
     }

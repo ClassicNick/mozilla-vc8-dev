@@ -959,12 +959,12 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
                             aMessage.Length()));
       NS_ENSURE_TRUE(jsMessage, NS_ERROR_OUT_OF_MEMORY);
       JS::Rooted<JS::Value> syncv(cx, JS::BooleanValue(aIsSync));
-      JS_DefineProperty(cx, param, "target", targetv, JSPROP_ENUMERATE);
-      JS_DefineProperty(cx, param, "name", jsMessage, JSPROP_ENUMERATE);
-      JS_DefineProperty(cx, param, "sync", syncv, JSPROP_ENUMERATE);
-      JS_DefineProperty(cx, param, "json", json, JSPROP_ENUMERATE); // deprecated
-      JS_DefineProperty(cx, param, "data", json, JSPROP_ENUMERATE);
-      JS_DefineProperty(cx, param, "objects", cpowsv, JSPROP_ENUMERATE);
+      JS_DefineProperty(cx, param, "target", (JS::HandleValue) targetv, JSPROP_ENUMERATE);
+	  JS_DefineProperty(cx, param, "name", (JS::HandleString) jsMessage, JSPROP_ENUMERATE);
+      JS_DefineProperty(cx, param, "sync", (JS::HandleValue) syncv, JSPROP_ENUMERATE);
+	  JS_DefineProperty(cx, param, "json", (JS::HandleValue) json, JSPROP_ENUMERATE); // deprecated
+      JS_DefineProperty(cx, param, "data", (JS::HandleValue) json, JSPROP_ENUMERATE);
+      JS_DefineProperty(cx, param, "objects", (JS::HandleValue) cpowsv, JSPROP_ENUMERATE);
 
       // message.principal == null
       if (!aPrincipal) {
@@ -988,16 +988,16 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
 
         JS::Rooted<JSString*> originStr(cx, JS_NewStringCopyN(cx, origin.get(), origin.Length()));
         NS_ENSURE_TRUE(originStr, NS_ERROR_OUT_OF_MEMORY);
-        JS_DefineProperty(cx, principalObj, "origin", originStr, JSPROP_ENUMERATE);
+        JS_DefineProperty(cx, principalObj, "origin", (JS::HandleString) originStr, JSPROP_ENUMERATE);
 
         bool browser;
         rv = aPrincipal->GetIsInBrowserElement(&browser);
         NS_ENSURE_SUCCESS(rv, rv);
 
         JS::Rooted<JS::Value> browserValue(cx, JS::BooleanValue(browser));
-        JS_DefineProperty(cx, principalObj, "isInBrowserElement", browserValue, JSPROP_ENUMERATE);
+        JS_DefineProperty(cx, principalObj, "isInBrowserElement", (JS::HandleValue) browserValue, JSPROP_ENUMERATE);
 
-        JS_DefineProperty(cx, param, "principal", principalObj, JSPROP_ENUMERATE);
+        JS_DefineProperty(cx, param, "principal", (JS::HandleObject) principalObj, JSPROP_ENUMERATE);
       }
 
       JS::Rooted<JS::Value> thisValue(cx, JS::UndefinedValue());

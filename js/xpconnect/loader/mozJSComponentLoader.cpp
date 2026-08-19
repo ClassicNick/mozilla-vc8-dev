@@ -721,7 +721,7 @@ mozJSComponentLoader::PrepareObjectForLocation(JSCLContextHelper& aCx,
         RootedObject locationObj(aCx, locationHolder->GetJSObject());
         NS_ENSURE_TRUE(locationObj, nullptr);
 
-        if (!JS_DefineProperty(aCx, obj, "__LOCATION__", locationObj, 0))
+        if (!JS_DefineProperty(aCx, obj, "__LOCATION__", (HandleObject) locationObj, 0))
             return nullptr;
     }
 
@@ -734,7 +734,7 @@ mozJSComponentLoader::PrepareObjectForLocation(JSCLContextHelper& aCx,
     RootedString exposedUri(aCx, JS_NewStringCopyN(aCx, nativePath.get(), nativePath.Length()));
     NS_ENSURE_TRUE(exposedUri, nullptr);
 
-    if (!JS_DefineProperty(aCx, obj, "__URI__", exposedUri, 0))
+    if (!JS_DefineProperty(aCx, obj, "__URI__", (HandleString) exposedUri, 0))
         return nullptr;
 
     if (createdNewGlobal) {

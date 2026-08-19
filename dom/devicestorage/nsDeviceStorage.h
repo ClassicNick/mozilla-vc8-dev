@@ -133,7 +133,7 @@ private:
   };
   already_AddRefed<CacheEntry> GetCacheEntry(const nsAString& aStorageName);
 
-  nsTArray<nsRefPtr<CacheEntry>> mCacheEntries;
+  nsTArray<nsRefPtr<CacheEntry> > mCacheEntries;
 
   nsCOMPtr<nsIThread> mIOThread;
 

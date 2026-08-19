@@ -118,8 +118,8 @@ DeviceStorageUsedSpaceCache::CreateOrGet()
 already_AddRefed<DeviceStorageUsedSpaceCache::CacheEntry>
 DeviceStorageUsedSpaceCache::GetCacheEntry(const nsAString& aStorageName)
 {
-  nsTArray<nsRefPtr<CacheEntry>>::size_type numEntries = mCacheEntries.Length();
-  nsTArray<nsRefPtr<CacheEntry>>::index_type i;
+  nsTArray<nsRefPtr<CacheEntry> >::size_type numEntries = mCacheEntries.Length();
+  nsTArray<nsRefPtr<CacheEntry> >::index_type i;
   for (i = 0; i < numEntries; i++) {
     nsRefPtr<CacheEntry>& cacheEntry = mCacheEntries[i];
     if (cacheEntry->mStorageName.Equals(aStorageName)) {
@@ -3180,7 +3180,7 @@ nsDOMDeviceStorage::Shutdown()
   obs->RemoveObserver(this, "disk-space-watcher");
 }
 
-StaticAutoPtr<nsTArray<nsString>> nsDOMDeviceStorage::sVolumeNameCache;
+StaticAutoPtr<nsTArray<nsString> > nsDOMDeviceStorage::sVolumeNameCache;
 
 // static
 void

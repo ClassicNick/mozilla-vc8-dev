@@ -2075,7 +2075,7 @@ DefineInterfaceConstants(JSContext *cx, JS::Handle<JSObject*> obj, const nsIID *
       }
     }
 
-    if (!::JS_DefineProperty(cx, obj, c->GetName(), v,
+	if (!::JS_DefineProperty(cx, obj, c->GetName(), (JS::HandleValue) v,
                              JSPROP_ENUMERATE | JSPROP_READONLY |
                              JSPROP_PERMANENT,
                              JS_PropertyStub, JS_StrictPropertyStub)) {
@@ -2689,7 +2689,7 @@ ResolvePrototype(nsIXPConnect *aXPConnect, nsGlobalWindow *aWin, JSContext *cx,
 
   // Per ECMA, the prototype property is {DontEnum, DontDelete, ReadOnly}
   if (!JS_WrapValue(cx, &v) ||
-      !JS_DefineProperty(cx, class_obj, "prototype", v,
+	  !JS_DefineProperty(cx, class_obj, "prototype", (JS::HandleValue) v,
                          JSPROP_PERMANENT | JSPROP_READONLY,
                          JS_PropertyStub, JS_StrictPropertyStub)) {
     return NS_ERROR_UNEXPECTED;
@@ -3191,7 +3191,7 @@ LookupComponentsShim(JSContext *cx, JS::Handle<JSObject*> global,
   JS::Rooted<JSObject*> interfaces(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), global));
   NS_ENSURE_TRUE(interfaces, NS_ERROR_OUT_OF_MEMORY);
   bool ok =
-    JS_DefineProperty(cx, components, "interfaces", interfaces,
+	  JS_DefineProperty(cx, components, "interfaces", (JS::HandleObject) interfaces,
                       JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY,
                       JS_PropertyStub, JS_StrictPropertyStub);
   NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
@@ -3214,7 +3214,7 @@ LookupComponentsShim(JSContext *cx, JS::Handle<JSObject*> global,
     }
 
     // Define the shim on the interfaces object.
-    ok = JS_DefineProperty(cx, interfaces, geckoName, v,
+	ok = JS_DefineProperty(cx, interfaces, geckoName, (JS::HandleValue) v,
                            JSPROP_ENUMERATE | JSPROP_PERMANENT | JSPROP_READONLY,
                            JS_PropertyStub, JS_StrictPropertyStub);
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
@@ -3376,7 +3376,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     // NB: We need to do this for any Xray wrapper.
     if (xpc::WrapperFactory::IsXrayWrapper(obj)) {
       *_retval = JS_WrapValue(cx, &v) &&
-                 JS_DefineProperty(cx, obj, "document", v,
+		  JS_DefineProperty(cx, obj, "document", (JS::HandleValue) v,
                                    JSPROP_READONLY | JSPROP_ENUMERATE,
                                    JS_PropertyStub, JS_StrictPropertyStub);
       if (!*_retval) {

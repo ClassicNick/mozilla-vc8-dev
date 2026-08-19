@@ -105,7 +105,6 @@
 #endif
 #include "SurfaceStream.h"
 #include "SurfaceTypes.h"
-#endif
 
 using mozilla::gl::GLContext;
 #ifdef MOZ_SKIA
@@ -131,7 +130,7 @@ using namespace mozilla::gfx;
 using namespace mozilla::ipc;
 using namespace mozilla::layers;
 
-namespace mgfx = mozilla::gfx;
+// namespace mozilla::gfx = mozilla::gfx;
 
 namespace mozilla {
 namespace dom {
@@ -295,7 +294,7 @@ public:
   typedef CanvasRenderingContext2D::ContextState ContextState;
 
   AdjustedTarget(CanvasRenderingContext2D *ctx,
-                 mgfx::Rect *aBounds = nullptr)
+                 mozilla::gfx::Rect *aBounds = nullptr)
     : mCtx(nullptr)
   {
     if (!ctx->NeedToDrawShadow()) {
@@ -314,7 +313,7 @@ public:
 
     Matrix transform = mCtx->mTarget->GetTransform();
 
-    mTempRect = mgfx::Rect(0, 0, ctx->mWidth, ctx->mHeight);
+    mTempRect = mozilla::gfx::Rect(0, 0, ctx->mWidth, ctx->mHeight);
 
     static const gfxFloat GAUSSIAN_SCALE_FACTOR = (3 * sqrt(2 * M_PI) / 4) * 1.5;
     int32_t blurRadius = (int32_t) floor(mSigma * GAUSSIAN_SCALE_FACTOR + 0.5);
@@ -382,7 +381,7 @@ private:
   RefPtr<DrawTarget> mTarget;
   CanvasRenderingContext2D *mCtx;
   Float mSigma;
-  mgfx::Rect mTempRect;
+  mozilla::gfx::Rect mTempRect;
 };
 
 void
@@ -722,7 +721,7 @@ CanvasRenderingContext2D::Redraw()
 }
 
 void
-CanvasRenderingContext2D::Redraw(const mgfx::Rect &r)
+CanvasRenderingContext2D::Redraw(const mozilla::gfx::Rect &r)
 {
   ++mInvalidateCount;
 
@@ -754,7 +753,7 @@ CanvasRenderingContext2D::RedrawUser(const gfxRect& r)
     return;
   }
 
-  mgfx::Rect newr =
+  mozilla::gfx::Rect newr =
     mTarget->GetTransform().TransformBounds(ToRect(r));
   Redraw(newr);
 }
@@ -779,7 +778,7 @@ void CanvasRenderingContext2D::Demote()
     return;
 
   // Restore the content from the old DrawTarget
-  mgfx::Rect r(0, 0, mWidth, mHeight);
+  mozilla::gfx::Rect r(0, 0, mWidth, mHeight);
   mTarget->DrawSurface(snapshot, r, r);
 
   // Restore the clips and transform
@@ -906,6 +905,7 @@ CanvasRenderingContext2D::EnsureTarget()
 
 #ifdef MOZ_SKIA
         SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();
+#endif
 
 #if USE_SKIA
         if (glue && glue->GetGrContext() && glue->GetGLContext()) {
@@ -941,7 +941,7 @@ CanvasRenderingContext2D::EnsureTarget()
       JS_updateMallocCounter(context, mWidth * mHeight * 4);
     }
 
-    mTarget->ClearRect(mgfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
+    mTarget->ClearRect(mozilla::gfx::Rect(Point(0, 0), Size(mWidth, mHeight)));
     // Force a full layer transaction since we didn't have a layer before
     // and now we might need one.
     if (mCanvasElement) {
@@ -1566,7 +1566,7 @@ CanvasRenderingContext2D::ClearRect(double x, double y, double w,
     return;
   }
 
-  mTarget->ClearRect(mgfx::Rect(x, y, w, h));
+  mTarget->ClearRect(mozilla::gfx::Rect(x, y, w, h));
 
   RedrawUser(gfxRect(x, y, w, h));
 }
@@ -1623,16 +1623,16 @@ CanvasRenderingContext2D::FillRect(double x, double y, double w,
     }
   }
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
 
   EnsureTarget();
   if (NeedToDrawShadow()) {
-    bounds = mgfx::Rect(x, y, w, h);
+    bounds = mozilla::gfx::Rect(x, y, w, h);
     bounds = mTarget->GetTransform().TransformBounds(bounds);
   }
 
   AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
-    FillRect(mgfx::Rect(x, y, w, h),
+    FillRect(mozilla::gfx::Rect(x, y, w, h),
              CanvasGeneralPattern().ForStyle(this, STYLE_FILL, mTarget),
              DrawOptions(state.globalAlpha, UsedOperation()));
 
@@ -1645,7 +1645,7 @@ CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
 {
   const ContextState &state = CurrentState();
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
 
   if (!w && !h) {
     return;
@@ -1657,7 +1657,7 @@ CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
   }
 
   if (NeedToDrawShadow()) {
-    bounds = mgfx::Rect(x - state.lineWidth / 2.0f, y - state.lineWidth / 2.0f,
+    bounds = mozilla::gfx::Rect(x - state.lineWidth / 2.0f, y - state.lineWidth / 2.0f,
                         w + state.lineWidth, h + state.lineWidth);
     bounds = mTarget->GetTransform().TransformBounds(bounds);
   }
@@ -1697,7 +1697,7 @@ CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
   }
 
   AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
-    StrokeRect(mgfx::Rect(x, y, w, h),
+    StrokeRect(mozilla::gfx::Rect(x, y, w, h),
                 CanvasGeneralPattern().ForStyle(this, STYLE_STROKE, mTarget),
                 StrokeOptions(state.lineWidth, state.lineJoin,
                               state.lineCap, state.miterLimit,
@@ -1731,7 +1731,7 @@ CanvasRenderingContext2D::Fill(const CanvasWindingRule& winding)
     return;
   }
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
 
   if (NeedToDrawShadow()) {
     bounds = mPath->GetBounds(mTarget->GetTransform());
@@ -1754,7 +1754,7 @@ void CanvasRenderingContext2D::Fill(const CanvasPath& path, const CanvasWindingR
     return;
   }
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
 
   if (NeedToDrawShadow()) {
     bounds = gfxpath->GetBounds(mTarget->GetTransform());
@@ -1783,7 +1783,7 @@ CanvasRenderingContext2D::Stroke()
                               state.dash.Length(), state.dash.Elements(),
                               state.dashOffset);
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
   if (NeedToDrawShadow()) {
     bounds =
       mPath->GetStrokedBounds(strokeOptions, mTarget->GetTransform());
@@ -1814,7 +1814,7 @@ CanvasRenderingContext2D::Stroke(const CanvasPath& path)
                               state.dash.Length(), state.dash.Elements(),
                               state.dashOffset);
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
   if (NeedToDrawShadow()) {
     bounds =
       gfxpath->GetStrokedBounds(strokeOptions, mTarget->GetTransform());
@@ -2490,7 +2490,7 @@ CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& options, ErrorRes
   }
 
   // get the bounds of the current path. They are relative to the canvas
-  mgfx::Rect bounds(mPath->GetBounds(mTarget->GetTransform()));
+  mozilla::gfx::Rect bounds(mPath->GetBounds(mTarget->GetTransform()));
   if ((bounds.width == 0) || (bounds.height == 0) || !bounds.IsFinite()) {
     // The specified region has no pixels.
     error.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
@@ -3386,22 +3386,22 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
   Filter filter;
 
   if (CurrentState().imageSmoothingEnabled)
-    filter = mgfx::Filter::LINEAR;
+    filter = mozilla::gfx::Filter::LINEAR;
   else
-    filter = mgfx::Filter::POINT;
+    filter = mozilla::gfx::Filter::POINT;
 
-  mgfx::Rect bounds;
+  mozilla::gfx::Rect bounds;
 
   if (NeedToDrawShadow()) {
-    bounds = mgfx::Rect(dx, dy, dw, dh);
+    bounds = mozilla::gfx::Rect(dx, dy, dw, dh);
     bounds = mTarget->GetTransform().TransformBounds(bounds);
   }
 
   if (srcSurf) {
     AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
       DrawSurface(srcSurf,
-                  mgfx::Rect(dx, dy, dw, dh),
-                  mgfx::Rect(sx, sy, sw, sh),
+                  mozilla::gfx::Rect(dx, dy, dw, dh),
+                  mozilla::gfx::Rect(sx, sy, sw, sh),
                   DrawSurfaceOptions(filter),
                   DrawOptions(CurrentState().globalAlpha, UsedOperation()));
   } else {
@@ -3415,7 +3415,7 @@ CanvasRenderingContext2D::DrawImage(const HTMLImageOrCanvasOrVideoElement& image
 void
 CanvasRenderingContext2D::DrawDirectlyToCanvas(
                           const nsLayoutUtils::DirectDrawInfo& image,
-                          mgfx::Rect* bounds, double dx, double dy,
+                          mozilla::gfx::Rect* bounds, double dx, double dy,
                           double dw, double dh, double sx, double sy,
                           double sw, double sh, gfxIntSize imgSize)
 {
@@ -3679,10 +3679,10 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& window, double x,
       return;
     }
 
-    mgfx::Rect destRect(0, 0, w, h);
-    mgfx::Rect sourceRect(0, 0, sw, sh);
+    mozilla::gfx::Rect destRect(0, 0, w, h);
+    mozilla::gfx::Rect sourceRect(0, 0, sw, sh);
     mTarget->DrawSurface(source, destRect, sourceRect,
-                         DrawSurfaceOptions(mgfx::Filter::POINT),
+                         DrawSurfaceOptions(mozilla::gfx::Filter::POINT),
                          DrawOptions(1.0f, CompositionOp::OP_OVER,
                                      AntialiasMode::NONE));
     mTarget->Flush();
@@ -4147,7 +4147,7 @@ CanvasRenderingContext2D::PutImageData_explicit(int32_t x, int32_t y, uint32_t w
                                dirtyRect.width, dirtyRect.height),
                        IntPoint(dirtyRect.x, dirtyRect.y));
 
-  Redraw(mgfx::Rect(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height));
+  Redraw(mozilla::gfx::Rect(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height));
 
   return NS_OK;
 }
@@ -4252,7 +4252,6 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
         aOldLayer->GetUserData(&g2DContextLayerUserData));
 
     CanvasLayer::Data data;
-#ifdef MOZ_SKIA
     if (mStream) {
 #ifdef USE_SKIA
       SkiaGLGlue* glue = gfxPlatform::GetPlatform()->GetSkiaGLGlue();

@@ -36,7 +36,7 @@ InfoObject::DefineProperty(const char *name, nsAString &value)
   if (!mOk)
     return;
 
-  mOk = JS_DefineProperty(mCx, mObj, name, string, JSPROP_ENUMERATE);
+  mOk = JS_DefineProperty(mCx, mObj, name, (JS::HandleString) string, JSPROP_ENUMERATE);
 }
 
 void

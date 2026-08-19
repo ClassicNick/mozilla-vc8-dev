@@ -276,7 +276,7 @@ DefineConstants(JSContext* cx, JS::Handle<JSObject*> obj,
   for (; cs->name; ++cs) {
     value = cs->value;
     bool ok =
-      JS_DefineProperty(cx, obj, cs->name, value,
+		JS_DefineProperty(cx, obj, cs->name, (JS::HandleValue) value,
                         JSPROP_ENUMERATE | JSPROP_READONLY | JSPROP_PERMANENT);
     if (!ok) {
       return false;

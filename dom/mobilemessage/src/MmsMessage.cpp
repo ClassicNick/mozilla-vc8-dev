@@ -552,7 +552,7 @@ MmsMessage::GetAttachments(JSContext* aCx, JS::MutableHandle<JS::Value> aAttachm
                                    attachment.id.Length());
     NS_ENSURE_TRUE(tmpJsStr, NS_ERROR_OUT_OF_MEMORY);
 
-    if (!JS_DefineProperty(aCx, attachmentObj, "id", tmpJsStr, JSPROP_ENUMERATE)) {
+	if (!JS_DefineProperty(aCx, attachmentObj, "id", (JS::HandleString) tmpJsStr, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -562,7 +562,7 @@ MmsMessage::GetAttachments(JSContext* aCx, JS::MutableHandle<JS::Value> aAttachm
                                    attachment.location.Length());
     NS_ENSURE_TRUE(tmpJsStr, NS_ERROR_OUT_OF_MEMORY);
 
-    if (!JS_DefineProperty(aCx, attachmentObj, "location", tmpJsStr, JSPROP_ENUMERATE)) {
+	if (!JS_DefineProperty(aCx, attachmentObj, "location", (JS::HandleString) tmpJsStr, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
 
@@ -574,7 +574,7 @@ MmsMessage::GetAttachments(JSContext* aCx, JS::MutableHandle<JS::Value> aAttachm
                                              &tmpJsVal);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (!JS_DefineProperty(aCx, attachmentObj, "content", tmpJsVal, JSPROP_ENUMERATE)) {
+	if (!JS_DefineProperty(aCx, attachmentObj, "content", (JS::HandleValue) tmpJsVal, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
 
