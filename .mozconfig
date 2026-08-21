@@ -3,7 +3,7 @@
 #
 
 # Make Options
-#mk_add_options MOZ_MAKE_FLAGS="-j3"
+#mk_add_options MOZ_MAKE_FLAGS="-j5"
 
 # Set line below to your desired object directory
 mk_add_options MOZ_OBJDIR="f:/objdir/fxupdates/central/obj-fxvc71-ipc-release"
@@ -52,7 +52,7 @@ ac_add_options --disable-wmf
 ac_add_options --disable-directshow
 ac_add_options --disable-eme
 ac_add_options --without-intl-api
-ac_add_options --disable-threadsafe
+ac_add_options --enable-threadsafe
 ac_add_options --disable-sse2
 ac_add_options --with-windows-version=502
 
