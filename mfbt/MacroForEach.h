@@ -40,7 +40,7 @@
  * MOZ_STATIC_ASSERT_VALID_ARG_COUNT to ensure that violating this constraint
  * results in a compile-time error.
  */
-#define MOZ_FOR_EACH_EXPAND_HELPER(...) __VA_ARGS__
+#define MOZ_FOR_EACH_EXPAND_HELPER(a) a
 #define MOZ_FOR_EACH_GLUE(a, b) a b
 #define MOZ_FOR_EACH(aMacro, aFixedArgs, aArgs) \
   MOZ_FOR_EACH_GLUE( \
