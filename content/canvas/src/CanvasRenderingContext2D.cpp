@@ -1587,13 +1587,8 @@ CanvasRenderingContext2D::FillRect(double x, double y, double w,
   }
 
   AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
-<<<<<<< HEAD
-    FillRect(mozilla::gfx::Rect(x, y, w, h),
-             CanvasGeneralPattern().ForStyle(this, STYLE_FILL, mTarget),
-=======
-    FillRect(mgfx::Rect(x, y, w, h),
+	FillRect(mozilla::gfx::Rect(x, y, w, h),
              CanvasGeneralPattern().ForStyle(this, Style::FILL, mTarget),
->>>>>>> 5f1fde8
              DrawOptions(state.globalAlpha, UsedOperation()));
 
   RedrawUser(gfxRect(x, y, w, h));
@@ -1657,13 +1652,8 @@ CanvasRenderingContext2D::StrokeRect(double x, double y, double w,
   }
 
   AdjustedTarget(this, bounds.IsEmpty() ? nullptr : &bounds)->
-<<<<<<< HEAD
-    StrokeRect(mozilla::gfx::Rect(x, y, w, h),
-                CanvasGeneralPattern().ForStyle(this, STYLE_STROKE, mTarget),
-=======
-    StrokeRect(mgfx::Rect(x, y, w, h),
+	StrokeRect(mozilla::gfx::Rect(x, y, w, h),
                 CanvasGeneralPattern().ForStyle(this, Style::STROKE, mTarget),
->>>>>>> 5f1fde8
                 StrokeOptions(state.lineWidth, state.lineJoin,
                               state.lineCap, state.miterLimit,
                               state.dash.Length(),
