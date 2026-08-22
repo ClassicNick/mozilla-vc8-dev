@@ -48,9 +48,7 @@
 #include "TextOverflow.h"
 #include "nsIFrameInlines.h"
 
-#ifdef IBMBIDI
 #include "nsBidiPresUtils.h"
-#endif // IBMBIDI
 
 static const int MIN_LINES_NEEDING_CURSOR = 20;
 
@@ -1022,10 +1020,8 @@ nsBlockFrame::Reflow(nsPresContext*           aPresContext,
                            topMarginRoot, bottomMarginRoot, needFloatManager,
                            consumedHeight);
 
-#ifdef IBMBIDI
   if (GetStateBits() & NS_BLOCK_NEEDS_BIDI_RESOLUTION)
     static_cast<nsBlockFrame*>(FirstContinuation())->ResolveBidi();
-#endif // IBMBIDI
 
   if (RenumberLists(aPresContext)) {
     AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -4763,10 +4759,7 @@ nsBlockFrame::InsertFrames(ChildListID aListID,
       mFloats.InsertFrames(this, aPrevFrame, aFrameList);
       return NS_OK;
     }
-#ifdef IBMBIDI
-    else if (kNoReflowPrincipalList == aListID) {}
-#endif // IBMBIDI
-    else {
+    else if (kNoReflowPrincipalList != aListID) {
       NS_ERROR("unexpected child list");
       return NS_ERROR_INVALID_ARG;
     }
@@ -4785,9 +4778,7 @@ nsBlockFrame::InsertFrames(ChildListID aListID,
 
   AddFrames(aFrameList, aPrevFrame);
 
-#ifdef IBMBIDI
   if (aListID != kNoReflowPrincipalList)
-#endif // IBMBIDI
     PresContext()->PresShell()->
       FrameNeedsReflow(this, nsIPresShell::eTreeChange,
                        NS_FRAME_HAS_DIRTY_CHILDREN); // XXX sufficient?
@@ -5070,12 +5061,10 @@ nsBlockFrame::RemoveFrame(ChildListID aListID,
     }
     DoRemoveOutOfFlowFrame(aOldFrame);
   }
-#ifdef IBMBIDI
   else if (kNoReflowPrincipalList == aListID) {
     // Skip the call to |FrameNeedsReflow| below by returning now.
     return DoRemoveFrame(aOldFrame, REMOVE_FIXED_CONTINUATIONS);
   }
-#endif // IBMBIDI
   else {
     NS_ERROR("unexpected child list");
     rv = NS_ERROR_INVALID_ARG;
@@ -7149,7 +7138,6 @@ nsBlockFrame::ComputeFinalHeight(const nsHTMLReflowState& aReflowState,
   }
 }
 
-#ifdef IBMBIDI
 nsresult
 nsBlockFrame::ResolveBidi()
 {
@@ -7163,7 +7151,6 @@ nsBlockFrame::ResolveBidi()
 
   return nsBidiPresUtils::Resolve(this);
 }
-#endif
 
 #ifdef DEBUG
 void

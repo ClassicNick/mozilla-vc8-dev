@@ -36,9 +36,12 @@ void
 ContentHelper::UpdateAllowedBehavior(uint32_t aTouchActionValue, bool aConsiderPanning, TouchBehaviorFlags& aOutBehavior)
 {
   if (aTouchActionValue != NS_STYLE_TOUCH_ACTION_AUTO) {
-    // Dropping zoom flag since zooming requires touch-action values of all touches
-    // to be AUTO.
-	  aOutBehavior &= ~mozilla::layers::ZOOM;
+    // Double-tap-zooming need property value AUTO
+	  aOutBehavior &= ~mozilla::layers::DOUBLE_TAP_ZOOM;
+    if (aTouchActionValue != NS_STYLE_TOUCH_ACTION_MANIPULATION) {
+      // Pinch-zooming need value AUTO or MANIPULATION
+		aOutBehavior &= ~mozilla::layers::PINCH_ZOOM;
+    }
   }
 
   if (aConsiderPanning) {
@@ -87,7 +90,7 @@ ContentHelper::GetAllowedTouchBehavior(nsIWidget* aWidget, const nsIntPoint& aPo
 
   bool considerPanning = true;
   TouchBehaviorFlags behavior = mozilla::layers::VERTICAL_PAN | mozilla::layers::HORIZONTAL_PAN |
-                                mozilla::layers::ZOOM;
+	  mozilla::layers::PINCH_ZOOM | mozilla::layers::DOUBLE_TAP_ZOOM;
 
   for (nsIFrame *frame = target; frame && frame->GetContent() && behavior; frame = frame->GetParent()) {
     UpdateAllowedBehavior(GetTouchActionFromFrame(frame), considerPanning, behavior);

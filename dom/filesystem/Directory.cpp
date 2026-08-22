@@ -105,7 +105,7 @@ Directory::CreateFile(const nsAString& aPath, const CreateFileOptions& aOptions)
 
   // Get the file content.
   if (aOptions.mData.WasPassed()) {
-    auto& data = aOptions.mData.Value();
+    OwningStringOrBlobOrArrayBufferOrArrayBufferView data = aOptions.mData.Value();
     if (data.IsString()) {
       NS_ConvertUTF16toUTF8 str(data.GetAsString());
       arrayData.AppendElements(reinterpret_cast<const uint8_t *>(str.get()),

@@ -69,7 +69,11 @@ public:
     /**
      * Return the observed operation as a human-readable string.
      */
+#ifdef MOZ_ENABLE_RPOFILER_SPS
     const char* ObservedOperationString() const;
+#else
+	const char* ObservedOperationString() const { return nullptr; };
+#endif
 
     /** Time at which the I/O operation was started */
     TimeStamp Start() const
@@ -150,7 +154,12 @@ protected:
    * main thread outside of XPCOM Initialization. IOInterposer observers should
    * call this function instead.
    */
+#ifdef MOZ_ENABLE_PROFILER_SPS
   static bool IsMainThread();
+#else
+	static bool IsMainThread() { return true; }
+#endif
+
 };
 
 #ifdef MOZ_ENABLE_PROFILER_SPS
@@ -275,10 +284,9 @@ namespace IOInterposer
 
 #else /* MOZ_ENABLE_PROFILER_SPS */
 
-class IOInterposer MOZ_FINAL
+namespace IOInterposer
 {
   IOInterposer();
-public:
   static inline void Init()                                               {}
   static inline void Clear()                                              {}
   static inline void Disable()                                            {}
@@ -294,6 +302,8 @@ public:
   static inline void RegisterCurrentThread()                          {}
   static void
 	  UnregisterCurrentThread()												{}
+  static void
+	  EnteringNextStage()												{}
 };
 
 #endif /* MOZ_ENABLE_PROFILER_SPS */

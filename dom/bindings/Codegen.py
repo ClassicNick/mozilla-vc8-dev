@@ -7671,7 +7671,7 @@ class CGUnionStruct(CGThing):
                     body=CGSwitch("aOther.mType", assignmentCases).define()))
                 disallowCopyConstruction = False
             else:
-                disallowCopyConstruction = True
+                disallowCopyConstruction = False
         else:
             disallowCopyConstruction = True
 

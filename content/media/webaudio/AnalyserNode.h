@@ -53,6 +53,8 @@ public:
   }
   void SetSmoothingTimeConstant(double aValue, ErrorResult& aRv);
 
+  void AppendChunk(const AudioChunk& aChunk);
+
   virtual const char* NodeType() const
   {
     return "AnalyserNode";

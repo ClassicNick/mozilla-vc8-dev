@@ -65,7 +65,7 @@ CreateFileTask::CreateFileTask(FileSystemBase* aFileSystem,
 
   mReplace = aParam.replace();
 
-  auto& data = aParam.data();
+  FileSystemFileDataValue data = aParam.data();
 
   if (data.type() == FileSystemFileDataValue::TArrayOfuint8_t) {
     mArrayData = data;

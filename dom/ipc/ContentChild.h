@@ -303,7 +303,7 @@ private:
     InfallibleTArray<nsAutoPtr<AlertObserver> > mAlertObservers;
     nsRefPtr<ConsoleListener> mConsoleListener;
 
-    nsTHashtable<nsPtrHashKey<nsIObserver>> mIdleObservers;
+    nsTHashtable<nsPtrHashKey<nsIObserver> > mIdleObservers;
 
     /**
      * An ID unique to the process containing our corresponding

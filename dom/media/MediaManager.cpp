@@ -773,7 +773,7 @@ static SourceSet *
     result->MoveElementsFrom(candidateSet);
     return result.forget();
   }
-  auto& constraints = aConstraints.GetAsMediaTrackConstraintsInternal();
+  MediaTrackConstraintsInternal& constraints = aConstraints.GetAsMediaTrackConstraintsInternal();
 
   // Then apply mandatory constraints
 
