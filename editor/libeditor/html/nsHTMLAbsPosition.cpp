@@ -5,7 +5,7 @@
 #include <math.h>
 
 #include "mozilla/Preferences.h"
-#include "mozilla/Selection.h"
+#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/mozalloc.h"
 #include "nsAString.h"
@@ -51,6 +51,7 @@
 #include "nscore.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 #define  BLACK_BG_RGB_TRIGGER 0xd0
 

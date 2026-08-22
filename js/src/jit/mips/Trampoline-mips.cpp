@@ -7,7 +7,6 @@
 #include "jscompartment.h"
 
 #include "jit/Bailouts.h"
-#include "jit/ExecutionModeInlines.h"
 #include "jit/IonFrames.h"
 #include "jit/IonLinker.h"
 #include "jit/IonSpewer.h"
@@ -18,6 +17,8 @@
 # include "jit/PerfSpewer.h"
 #endif
 #include "jit/VMFunctions.h"
+
+#include "jit/ExecutionMode-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -54,7 +55,7 @@ struct EnterJITArgs
     void *jitcode; // <- sp points here when function is entered.
     int maxArgc;
     Value *maxArgv;
-    StackFrame *fp;
+    InterpreterFrame *fp;
 
     // Arguments on stack
     CalleeToken calleeToken;
@@ -121,8 +122,8 @@ GeneratePrologue(MacroAssembler &masm)
 /*
  * This method generates a trampoline for a c++ function with the following
  * signature:
- *   void enter(void *code, int argc, Value *argv, StackFrame *fp, CalleeToken
- *              calleeToken, JSObject *scopeChain, Value *vp)
+ *   void enter(void *code, int argc, Value *argv, InterpreterFrame *fp,
+ *              CalleeToken calleeToken, JSObject *scopeChain, Value *vp)
  *   ...using standard EABI calling convention
  */
 JitCode *
@@ -188,7 +189,7 @@ JitRuntime::generateEnterJIT(JSContext *cx, EnterJitType type)
     masm.storePtr(s2, Address(StackPointer, 0)); // callee token
 
     masm.subPtr(StackPointer, s4);
-    masm.makeFrameDescriptor(s4, IonFrame_Entry);
+    masm.makeFrameDescriptor(s4, JitFrame_Entry);
     masm.push(s4); // descriptor
 
     CodeLabel returnLabel;
@@ -230,7 +231,7 @@ JitRuntime::generateEnterJIT(JSContext *cx, EnterJitType type)
 
         // Enter exit frame.
         masm.addPtr(Imm32(BaselineFrame::Size() + BaselineFrame::FramePointerOffset), scratch);
-        masm.makeFrameDescriptor(scratch, IonFrame_BaselineJS);
+        masm.makeFrameDescriptor(scratch, JitFrame_BaselineJS);
 
         // Push frame descriptor and fake return address.
         masm.reserveStack(2 * sizeof(uintptr_t));
@@ -245,7 +246,7 @@ JitRuntime::generateEnterJIT(JSContext *cx, EnterJitType type)
 
         masm.setupUnalignedABICall(3, scratch);
         masm.passABIArg(BaselineFrameReg); // BaselineFrame
-        masm.passABIArg(OsrFrameReg); // StackFrame
+        masm.passABIArg(OsrFrameReg); // InterpreterFrame
         masm.passABIArg(numStackValues);
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void *, jit::InitBaselineFrameForOsr));
 
@@ -454,7 +455,7 @@ JitRuntime::generateArgumentsRectifier(JSContext *cx, ExecutionMode mode, void *
     masm.lshiftPtr(Imm32(3), t0);
 
     // Construct sizeDescriptor.
-    masm.makeFrameDescriptor(t0, IonFrame_Rectifier);
+    masm.makeFrameDescriptor(t0, JitFrame_Rectifier);
 
     // Construct IonJSFrameLayout.
     masm.subPtr(Imm32(3 * sizeof(uintptr_t)), StackPointer);
