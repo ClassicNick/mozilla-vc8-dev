@@ -589,6 +589,7 @@ static void AudioMixerCallback(AudioDataValue* aMixedBuffer,
                                uint32_t aFrames)
 {
   // Need an api to register mixer callbacks, bug 989921
+#ifdef MOZ_WEBRTC
   if (aFrames > 0 && aChannels > 0) {
     // XXX need Observer base class and registration API
 #ifdef MOZ_WEBRTC
@@ -598,6 +599,7 @@ static void AudioMixerCallback(AudioDataValue* aMixedBuffer,
     }
 #endif
   }
+#endif
 }
 
 void
