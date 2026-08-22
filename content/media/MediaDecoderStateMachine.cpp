@@ -1039,7 +1039,7 @@ nsresult MediaDecoderStateMachine::Init(MediaDecoderStateMachine* aCloneDonor)
 
   MediaDecoderReader* cloneReader = nullptr;
   if (aCloneDonor) {
-    cloneReader = static_cast<MediaDecoderStateMachine*>(aCloneDonor)->mReader;
+    cloneReader = aCloneDonor->mReader;
   }
 
   mStateMachineThreadPool = stateMachinePool;
@@ -2721,7 +2721,7 @@ private:
   int mTimerId;
 };
 
-NS_IMPL_ISUPPORTS2(TimerEvent, nsITimerCallback, nsIRunnable);
+NS_IMPL_ISUPPORTS(TimerEvent, nsITimerCallback, nsIRunnable);
 
 nsresult MediaDecoderStateMachine::ScheduleStateMachine(int64_t aUsecs) {
   AssertCurrentThreadInMonitor();

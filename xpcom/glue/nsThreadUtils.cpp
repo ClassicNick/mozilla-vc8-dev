@@ -36,7 +36,7 @@ using mozilla::IsVistaOrLater;
 
 #ifndef XPCOM_GLUE_AVOID_NSPR
 
-NS_IMPL_ISUPPORTS1(nsRunnable, nsIRunnable)
+NS_IMPL_ISUPPORTS(nsRunnable, nsIRunnable)
 
 NS_IMETHODIMP
 nsRunnable::Run()
@@ -45,8 +45,8 @@ nsRunnable::Run()
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS2(nsCancelableRunnable, nsICancelableRunnable,
-                              nsIRunnable)
+NS_IMPL_ISUPPORTS(nsCancelableRunnable, nsICancelableRunnable,
+                  nsIRunnable)
 
 NS_IMETHODIMP
 nsCancelableRunnable::Run()
@@ -286,7 +286,7 @@ protected:
   const nsCString mName;
 };
 
-NS_IMPL_ISUPPORTS1(nsNameThreadRunnable, nsIRunnable)
+NS_IMPL_ISUPPORTS(nsNameThreadRunnable, nsIRunnable)
 
 NS_IMETHODIMP
 nsNameThreadRunnable::Run()

@@ -21,7 +21,7 @@
  *  nsISupports implementation
  *--------------------------------------------*/
 
-NS_IMPL_ISUPPORTS1(nsJARInputStream, nsIInputStream)
+NS_IMPL_ISUPPORTS(nsJARInputStream, nsIInputStream)
 
 /*----------------------------------------------------------
  * nsJARInputStream implementation

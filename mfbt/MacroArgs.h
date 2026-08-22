@@ -85,8 +85,8 @@
 #define MOZ_STATIC_ASSERT_VALID_ARG_COUNT(x) \
   static_assert( \
     sizeof(MOZ_MACROARGS_STRINGIFY_HELPER((x))) != sizeof("()") && \
-      MOZ_PASTE_PREFIX_AND_ARG_COUNT(1, x) > 10 && \
-      MOZ_PASTE_PREFIX_AND_ARG_COUNT(0.0, x) < 0.1, \
+      (MOZ_PASTE_PREFIX_AND_ARG_COUNT(1, x)) > 10 && \
+      (MOZ_PASTE_PREFIX_AND_ARG_COUNT(0.0, x)) < 0.1, \
     "MOZ_STATIC_ASSERT_VALID_ARG_COUNT requires 1 to 50 arguments") /* ; */
 
 /*

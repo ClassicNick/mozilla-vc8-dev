@@ -579,7 +579,7 @@ nsGIOInputStream::SetContentTypeOfChannel(const char *contentType)
   return rv;
 }
 
-NS_IMPL_ISUPPORTS1(nsGIOInputStream, nsIInputStream)
+NS_IMPL_ISUPPORTS(nsGIOInputStream, nsIInputStream)
 
 /**
  * Free all used memory and close stream.
@@ -897,7 +897,7 @@ class nsGIOProtocolHandler MOZ_FINAL : public nsIProtocolHandler
     nsCString mSupportedProtocols;
 };
 
-NS_IMPL_ISUPPORTS2(nsGIOProtocolHandler, nsIProtocolHandler, nsIObserver)
+NS_IMPL_ISUPPORTS(nsGIOProtocolHandler, nsIProtocolHandler, nsIObserver)
 
 nsresult
 nsGIOProtocolHandler::Init()

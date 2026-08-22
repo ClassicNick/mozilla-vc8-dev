@@ -271,7 +271,8 @@ StatsCompartmentCallback(JSRuntime *rt, void *data, JSCompartment *compartment)
                                         &cStats.shapesMallocHeapCompartmentTables,
                                         &cStats.crossCompartmentWrappersTable,
                                         &cStats.regexpCompartment,
-                                        &cStats.debuggeesSet);
+                                        &cStats.debuggeesSet,
+                                        &cStats.savedStacksSet);
 }
 
 static void

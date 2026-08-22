@@ -1102,7 +1102,7 @@ BEGIN_WORKERS_NAMESPACE
 // Entry point for main thread non-window globals.
 bool
 ResolveWorkerClasses(JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
-                     unsigned aFlags, JS::MutableHandle<JSObject*> aObjp)
+                     JS::MutableHandle<JSObject*> aObjp)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(nsContentUtils::IsCallerChrome());
@@ -2315,7 +2315,7 @@ RuntimeService::SendOfflineStatusChangeEventToAllWorkers(bool aIsOffline)
 }
 
 // nsISupports
-NS_IMPL_ISUPPORTS1(RuntimeService, nsIObserver)
+NS_IMPL_ISUPPORTS(RuntimeService, nsIObserver)
 
 // nsIObserver
 NS_IMETHODIMP
@@ -2484,7 +2484,7 @@ RuntimeService::WorkerThread::Dispatch(nsIRunnable* aRunnable, uint32_t aFlags)
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS1(RuntimeService::WorkerThread::Observer, nsIThreadObserver)
+NS_IMPL_ISUPPORTS(RuntimeService::WorkerThread::Observer, nsIThreadObserver)
 
 NS_IMETHODIMP
 RuntimeService::WorkerThread::Observer::OnDispatchedEvent(

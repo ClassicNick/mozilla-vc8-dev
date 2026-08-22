@@ -232,7 +232,7 @@ nsXBLProtoImpl::LookupMember(JSContext* aCx, nsString& aName,
 {
   for (nsXBLProtoImplMember* m = mMembers; m; m = m->GetNext()) {
     if (aName.Equals(m->GetName())) {
-      return JS_GetPropertyDescriptorById(aCx, aClassObject, aNameAsId, 0, aDesc);
+      return JS_GetPropertyDescriptorById(aCx, aClassObject, aNameAsId, aDesc);
     }
   }
   return true;
