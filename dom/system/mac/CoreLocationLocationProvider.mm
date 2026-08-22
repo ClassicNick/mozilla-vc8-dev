@@ -124,7 +124,7 @@ public:
   CLLocationManager* mLocationManager;
 };
 
-NS_IMPL_ISUPPORTS(CoreLocationLocationProvider, nsIGeolocationProvider)
+NS_IMPL_ISUPPORTS1(CoreLocationLocationProvider, nsIGeolocationProvider)
 
 CoreLocationLocationProvider::CoreLocationLocationProvider()
   : mCLObjects(nullptr)

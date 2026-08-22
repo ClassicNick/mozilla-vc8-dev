@@ -376,7 +376,7 @@ nsExpirationTracker<T,K>::ExpirationTrackerObserver::QueryInterface(REFNSIID aII
   NS_ASSERTION(aInstancePtr,
                "QueryInterface requires a non-NULL destination!");            
   nsresult rv = NS_ERROR_FAILURE;
-  NS_INTERFACE_TABLE(ExpirationTrackerObserver, nsIObserver)
+  NS_INTERFACE_TABLE1(ExpirationTrackerObserver, nsIObserver)
   return rv;
 }
 

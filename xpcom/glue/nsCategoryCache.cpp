@@ -62,7 +62,7 @@ nsCategoryObserver::nsCategoryObserver(const char* aCategory)
 nsCategoryObserver::~nsCategoryObserver() {
 }
 
-NS_IMPL_ISUPPORTS(nsCategoryObserver, nsIObserver)
+NS_IMPL_ISUPPORTS1(nsCategoryObserver, nsIObserver)
 
 void
 nsCategoryObserver::ListenerDied() {

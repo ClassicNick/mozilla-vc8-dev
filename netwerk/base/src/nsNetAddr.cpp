@@ -10,7 +10,7 @@
 
 using namespace mozilla::net;
 
-NS_IMPL_ISUPPORTS(nsNetAddr, nsINetAddr)
+NS_IMPL_ISUPPORTS1(nsNetAddr, nsINetAddr)
 
 /* Makes a copy of |addr| */
 nsNetAddr::nsNetAddr(NetAddr* addr)

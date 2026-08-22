@@ -158,7 +158,7 @@ private:
    nsCString mInterface;
 };
 
-NS_IMPL_ISUPPORTS(WifiProxyService, nsIWifiProxyService)
+NS_IMPL_ISUPPORTS1(WifiProxyService, nsIWifiProxyService)
 
 WifiProxyService::WifiProxyService()
 {

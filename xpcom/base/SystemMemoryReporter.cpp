@@ -726,7 +726,7 @@ private:
 #undef REPORT
 };
 
-NS_IMPL_ISUPPORTS(SystemReporter, nsIMemoryReporter)
+NS_IMPL_ISUPPORTS1(SystemReporter, nsIMemoryReporter)
 
 // Keep this in sync with SystemReporter::ProcessSizeKind!
 const char* SystemReporter::kindPathSuffixes[] = {

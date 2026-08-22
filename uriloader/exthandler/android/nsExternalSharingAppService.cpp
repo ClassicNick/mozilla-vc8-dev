@@ -14,7 +14,7 @@
 
 using namespace mozilla;
 
-NS_IMPL_ISUPPORTS(nsExternalSharingAppService, nsIExternalSharingAppService)
+NS_IMPL_ISUPPORTS1(nsExternalSharingAppService, nsIExternalSharingAppService)
 
 nsExternalSharingAppService::nsExternalSharingAppService()
 {

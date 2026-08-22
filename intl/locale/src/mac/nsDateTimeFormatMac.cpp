@@ -15,7 +15,7 @@
 #include "nsTArray.h"
 
 
-NS_IMPL_ISUPPORTS(nsDateTimeFormatMac, nsIDateTimeFormat)
+NS_IMPL_ISUPPORTS1(nsDateTimeFormatMac, nsIDateTimeFormat)
 
 nsresult nsDateTimeFormatMac::Initialize(nsILocale* locale)
 {

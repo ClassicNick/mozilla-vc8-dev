@@ -176,9 +176,11 @@ NS_INTERFACE_MAP_BEGIN(nsNavHistory)
 NS_INTERFACE_MAP_END
 
 // We don't care about flattening everything
-NS_IMPL_CI_INTERFACE_GETTER(nsNavHistory,
-                            nsINavHistoryService,
-                            nsIBrowserHistory)
+NS_IMPL_CI_INTERFACE_GETTER2(
+  nsNavHistory
+, nsINavHistoryService
+, nsIBrowserHistory
+)
 
 namespace {
 

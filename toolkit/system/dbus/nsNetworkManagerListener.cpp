@@ -38,7 +38,7 @@ nsNetworkManagerListener::~nsNetworkManagerListener()
   }
 }
 
-NS_IMPL_ISUPPORTS(nsNetworkManagerListener, nsINetworkLinkService)
+NS_IMPL_ISUPPORTS1(nsNetworkManagerListener, nsINetworkLinkService)
 
 nsresult
 nsNetworkManagerListener::GetIsLinkUp(bool* aIsUp)

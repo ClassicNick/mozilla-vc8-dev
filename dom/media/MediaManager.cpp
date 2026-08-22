@@ -260,7 +260,7 @@ protected:
 /**
  * nsIMediaDevice implementation.
  */
-NS_IMPL_ISUPPORTS(MediaDevice, nsIMediaDevice)
+NS_IMPL_ISUPPORTS1(MediaDevice, nsIMediaDevice)
 
 MediaDevice* MediaDevice::Create(MediaEngineVideoSource* source) {
   return new VideoDevice(source);
@@ -1207,7 +1207,7 @@ MediaManager::MediaManager()
        mPrefs.mWidth, mPrefs.mHeight, mPrefs.mFPS, mPrefs.mMinFPS));
 }
 
-NS_IMPL_ISUPPORTS(MediaManager, nsIMediaManagerService, nsIObserver)
+NS_IMPL_ISUPPORTS2(MediaManager, nsIMediaManagerService, nsIObserver)
 
 /* static */ StaticRefPtr<MediaManager> MediaManager::sSingleton;
 

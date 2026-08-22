@@ -519,7 +519,7 @@ AsyncExecuteStatements::notifyResults()
   return rv;
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS2(
   AsyncExecuteStatements,
   nsIRunnable,
   mozIStoragePendingStatement

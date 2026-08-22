@@ -230,7 +230,7 @@ private:
   uint32_t mDelay;
 };
 
-NS_IMPL_ISUPPORTS(nsAutoScrollTimer, nsITimerCallback)
+NS_IMPL_ISUPPORTS1(nsAutoScrollTimer, nsITimerCallback)
 
 nsresult NS_NewDomSelection(nsISelection **aDomSelection)
 {
@@ -5829,7 +5829,7 @@ Selection::WrapObject(JSContext* aCx)
 
 nsAutoCopyListener* nsAutoCopyListener::sInstance = nullptr;
 
-NS_IMPL_ISUPPORTS(nsAutoCopyListener, nsISelectionListener)
+NS_IMPL_ISUPPORTS1(nsAutoCopyListener, nsISelectionListener)
 
 /*
  * What we do now:

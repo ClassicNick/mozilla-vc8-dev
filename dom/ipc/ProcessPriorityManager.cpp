@@ -363,8 +363,8 @@ private:
 /* static */ StaticRefPtr<ProcessPriorityManagerImpl>
   ProcessPriorityManagerImpl::sSingleton;
 
-NS_IMPL_ISUPPORTS(ProcessPriorityManagerImpl,
-                  nsIObserver);
+NS_IMPL_ISUPPORTS1(ProcessPriorityManagerImpl,
+                   nsIObserver);
 
 /* static */ void
 ProcessPriorityManagerImpl::PrefChangedCallback(const char* aPref,
@@ -603,10 +603,10 @@ ProcessPriorityManagerImpl::NotifyProcessPriorityChanged(
   }
 }
 
-NS_IMPL_ISUPPORTS(ParticularProcessPriorityManager,
-                  nsIObserver,
-                  nsITimerCallback,
-                  nsISupportsWeakReference);
+NS_IMPL_ISUPPORTS3(ParticularProcessPriorityManager,
+                   nsIObserver,
+                   nsITimerCallback,
+                   nsISupportsWeakReference);
 
 ParticularProcessPriorityManager::ParticularProcessPriorityManager(
   ContentParent* aContentParent)
@@ -1182,8 +1182,8 @@ ProcessPriorityManagerChild::Singleton()
   return sSingleton;
 }
 
-NS_IMPL_ISUPPORTS(ProcessPriorityManagerChild,
-                  nsIObserver)
+NS_IMPL_ISUPPORTS1(ProcessPriorityManagerChild,
+                   nsIObserver)
 
 ProcessPriorityManagerChild::ProcessPriorityManagerChild()
 {

@@ -23,7 +23,7 @@ static bool sNumberControlEnabled;
 
 #define NUMBER_CONTROL_PREF "dom.forms.number"
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS2(
   nsLayoutStylesheetCache, nsIObserver, nsIMemoryReporter)
 
 nsresult

@@ -71,20 +71,20 @@ using namespace mozilla::net;
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(WebSocketChannel,
-                  nsIWebSocketChannel,
-                  nsIHttpUpgradeListener,
-                  nsIRequestObserver,
-                  nsIStreamListener,
-                  nsIProtocolHandler,
-                  nsIInputStreamCallback,
-                  nsIOutputStreamCallback,
-                  nsITimerCallback,
-                  nsIDNSListener,
-                  nsIProtocolProxyCallback,
-                  nsIInterfaceRequestor,
-                  nsIChannelEventSink,
-                  nsIThreadRetargetableRequest)
+NS_IMPL_ISUPPORTS13(WebSocketChannel,
+                    nsIWebSocketChannel,
+                    nsIHttpUpgradeListener,
+                    nsIRequestObserver,
+                    nsIStreamListener,
+                    nsIProtocolHandler,
+                    nsIInputStreamCallback,
+                    nsIOutputStreamCallback,
+                    nsITimerCallback,
+                    nsIDNSListener,
+                    nsIProtocolProxyCallback,
+                    nsIInterfaceRequestor,
+                    nsIChannelEventSink,
+                    nsIThreadRetargetableRequest)
 
 // We implement RFC 6455, which uses Sec-WebSocket-Version: 13 on the wire.
 #define SEC_WEBSOCKET_VERSION "13"
@@ -585,7 +585,7 @@ private:
   nsCString                         mData;
   int32_t                           mLen;
 };
-NS_IMPL_ISUPPORTS(CallOnMessageAvailable, nsIRunnable)
+NS_IMPL_ISUPPORTS1(CallOnMessageAvailable, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallOnStop
@@ -621,7 +621,7 @@ private:
   nsRefPtr<WebSocketChannel>        mChannel;
   nsresult                          mReason;
 };
-NS_IMPL_ISUPPORTS(CallOnStop, nsIRunnable)
+NS_IMPL_ISUPPORTS1(CallOnStop, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallOnServerClose
@@ -654,7 +654,7 @@ private:
   uint16_t                          mCode;
   nsCString                         mReason;
 };
-NS_IMPL_ISUPPORTS(CallOnServerClose, nsIRunnable)
+NS_IMPL_ISUPPORTS1(CallOnServerClose, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallAcknowledge
@@ -685,7 +685,7 @@ private:
   nsRefPtr<WebSocketChannel>        mChannel;
   uint32_t                          mSize;
 };
-NS_IMPL_ISUPPORTS(CallAcknowledge, nsIRunnable)
+NS_IMPL_ISUPPORTS1(CallAcknowledge, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // CallOnTransportAvailable
@@ -719,7 +719,7 @@ private:
   nsCOMPtr<nsIAsyncInputStream>  mSocketIn;
   nsCOMPtr<nsIAsyncOutputStream> mSocketOut;
 };
-NS_IMPL_ISUPPORTS(CallOnTransportAvailable, nsIRunnable)
+NS_IMPL_ISUPPORTS1(CallOnTransportAvailable, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // OutboundMessage
@@ -855,7 +855,7 @@ private:
   nsRefPtr<WebSocketChannel>  mChannel;
   OutboundMessage            *mMessage;
 };
-NS_IMPL_ISUPPORTS(OutboundEnqueuer, nsIRunnable)
+NS_IMPL_ISUPPORTS1(OutboundEnqueuer, nsIRunnable)
 
 //-----------------------------------------------------------------------------
 // nsWSCompression

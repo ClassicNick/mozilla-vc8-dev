@@ -22,7 +22,7 @@
 
 using namespace mozilla;
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS2(
   XPTInterfaceInfoManager,
   nsIInterfaceInfoManager,
   nsIMemoryReporter)

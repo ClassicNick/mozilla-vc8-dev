@@ -38,11 +38,13 @@ namespace storage {
 ////////////////////////////////////////////////////////////////////////////////
 //// nsIClassInfo
 
-NS_IMPL_CI_INTERFACE_GETTER(AsyncStatement,
-                            mozIStorageAsyncStatement,
-                            mozIStorageBaseStatement,
-                            mozIStorageBindingParams,
-                            mozilla::storage::StorageBaseStatementInternal)
+NS_IMPL_CI_INTERFACE_GETTER4(
+  AsyncStatement
+, mozIStorageAsyncStatement
+, mozIStorageBaseStatement
+, mozIStorageBindingParams
+, mozilla::storage::StorageBaseStatementInternal
+)
 
 class AsyncStatementClassInfo : public nsIClassInfo
 {
@@ -114,7 +116,7 @@ public:
 
 NS_IMETHODIMP_(MozExternalRefCountType) AsyncStatementClassInfo::AddRef() { return 2; }
 NS_IMETHODIMP_(MozExternalRefCountType) AsyncStatementClassInfo::Release() { return 1; }
-NS_IMPL_QUERY_INTERFACE(AsyncStatementClassInfo, nsIClassInfo)
+NS_IMPL_QUERY_INTERFACE1(AsyncStatementClassInfo, nsIClassInfo)
 
 static AsyncStatementClassInfo sAsyncStatementClassInfo;
 

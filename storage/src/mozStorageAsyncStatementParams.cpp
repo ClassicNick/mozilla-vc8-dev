@@ -27,7 +27,7 @@ AsyncStatementParams::AsyncStatementParams(AsyncStatement *aStatement)
   NS_ASSERTION(mStatement != nullptr, "mStatement is null");
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS2(
   AsyncStatementParams
 , mozIStorageStatementParams
 , nsIXPCScriptable

@@ -84,7 +84,7 @@ mozJSSubScriptLoader::~mozJSSubScriptLoader()
     /* empty */
 }
 
-NS_IMPL_ISUPPORTS(mozJSSubScriptLoader, mozIJSSubScriptLoader)
+NS_IMPL_ISUPPORTS1(mozJSSubScriptLoader, mozIJSSubScriptLoader)
 
 static nsresult
 ReportError(JSContext *cx, const char *msg)
@@ -411,7 +411,7 @@ private:
     size_t mScriptLength;
 };
 
-NS_IMPL_ISUPPORTS(ScriptPrecompiler, nsIStreamLoaderObserver);
+NS_IMPL_ISUPPORTS1(ScriptPrecompiler, nsIStreamLoaderObserver);
 
 class NotifyPrecompilationCompleteRunnable : public nsRunnable
 {

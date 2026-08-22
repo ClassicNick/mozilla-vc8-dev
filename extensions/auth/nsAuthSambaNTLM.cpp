@@ -44,7 +44,7 @@ nsAuthSambaNTLM::Shutdown()
     }
 }
 
-NS_IMPL_ISUPPORTS(nsAuthSambaNTLM, nsIAuthModule)
+NS_IMPL_ISUPPORTS1(nsAuthSambaNTLM, nsIAuthModule)
 
 static bool
 SpawnIOChild(char* const* aArgs, PRProcess** aPID,

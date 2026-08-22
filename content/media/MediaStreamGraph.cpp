@@ -2675,7 +2675,7 @@ MediaStreamGraphImpl::Destroy()
   mSelfRef = nullptr;
 }
 
-NS_IMPL_ISUPPORTS(MediaStreamGraphShutdownObserver, nsIObserver)
+NS_IMPL_ISUPPORTS1(MediaStreamGraphShutdownObserver, nsIObserver)
 
 static bool gShutdownObserverRegistered = false;
 
@@ -2742,7 +2742,7 @@ MediaStreamGraph::DestroyNonRealtimeInstance(MediaStreamGraph* aGraph)
   graph->ForceShutDown();
 }
 
-NS_IMPL_ISUPPORTS(MediaStreamGraphImpl, nsIMemoryReporter)
+NS_IMPL_ISUPPORTS1(MediaStreamGraphImpl, nsIMemoryReporter)
 
 struct ArrayClearer
 {

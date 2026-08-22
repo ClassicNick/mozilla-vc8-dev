@@ -197,7 +197,7 @@ Service::CollectReports(nsIHandleReportCallback *aHandleReport,
 ////////////////////////////////////////////////////////////////////////////////
 //// Service
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS3(
   Service,
   mozIStorageService,
   nsIObserver,

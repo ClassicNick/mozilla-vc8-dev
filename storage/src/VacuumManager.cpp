@@ -96,7 +96,7 @@ BaseCallback::HandleCompletion(uint16_t aReason)
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   BaseCallback
 , mozIStorageStatementCallback
 )
@@ -307,7 +307,7 @@ Vacuumer::notifyCompletion(bool aSucceeded)
 ////////////////////////////////////////////////////////////////////////////////
 //// VacuumManager
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS1(
   VacuumManager
 , nsIObserver
 )

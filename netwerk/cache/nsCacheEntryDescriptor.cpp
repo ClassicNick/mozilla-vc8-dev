@@ -69,9 +69,9 @@ private:
 };
 
 
-NS_IMPL_ISUPPORTS(nsCacheEntryDescriptor,
-                  nsICacheEntryDescriptor,
-                  nsICacheEntryInfo)
+NS_IMPL_ISUPPORTS2(nsCacheEntryDescriptor,
+                   nsICacheEntryDescriptor,
+                   nsICacheEntryInfo)
 
 nsCacheEntryDescriptor::nsCacheEntryDescriptor(nsCacheEntry * entry,
                                                nsCacheAccessMode accessGranted)

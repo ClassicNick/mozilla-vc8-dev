@@ -27,11 +27,11 @@ nsBasicDecoderSupport::~nsBasicDecoderSupport()
 // Interface nsISupports [implementation]
 
 #ifdef DEBUG
-NS_IMPL_ISUPPORTS(nsBasicDecoderSupport,
-                  nsIUnicodeDecoder,
-                  nsIBasicDecoder)
+NS_IMPL_ISUPPORTS2(nsBasicDecoderSupport,
+                   nsIUnicodeDecoder,
+                   nsIBasicDecoder)
 #else
-NS_IMPL_ISUPPORTS(nsBasicDecoderSupport, nsIUnicodeDecoder)
+NS_IMPL_ISUPPORTS1(nsBasicDecoderSupport, nsIUnicodeDecoder)
 #endif
 
 //----------------------------------------------------------------------
@@ -331,12 +331,12 @@ nsBasicEncoder::~nsBasicEncoder()
 NS_IMPL_ADDREF(nsBasicEncoder)
 NS_IMPL_RELEASE(nsBasicEncoder)
 #ifdef DEBUG
-NS_IMPL_QUERY_INTERFACE(nsBasicEncoder,
-                        nsIUnicodeEncoder,
-                        nsIBasicEncoder)
+NS_IMPL_QUERY_INTERFACE2(nsBasicEncoder,
+                         nsIUnicodeEncoder,
+                         nsIBasicEncoder)
 #else
-NS_IMPL_QUERY_INTERFACE(nsBasicEncoder,
-                        nsIUnicodeEncoder)
+NS_IMPL_QUERY_INTERFACE1(nsBasicEncoder,
+                         nsIUnicodeEncoder)
 #endif
 //----------------------------------------------------------------------
 // Class nsEncoderSupport [implementation]

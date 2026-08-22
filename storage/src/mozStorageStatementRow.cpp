@@ -23,7 +23,7 @@ StatementRow::StatementRow(Statement *aStatement)
 {
 }
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS2(
   StatementRow,
   mozIStorageStatementRow,
   nsIXPCScriptable

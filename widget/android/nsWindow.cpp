@@ -112,8 +112,8 @@ class ContentCreationNotifier MOZ_FINAL : public nsIObserver
     }
 };
 
-NS_IMPL_ISUPPORTS(ContentCreationNotifier,
-                  nsIObserver)
+NS_IMPL_ISUPPORTS1(ContentCreationNotifier,
+                   nsIObserver)
 
 static bool gMenu;
 static bool gMenuConsumed;

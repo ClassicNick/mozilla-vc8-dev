@@ -80,7 +80,7 @@ nsXULPrototypeCache::~nsXULPrototypeCache()
 }
 
 
-NS_IMPL_ISUPPORTS(nsXULPrototypeCache, nsIObserver)
+NS_IMPL_ISUPPORTS1(nsXULPrototypeCache, nsIObserver)
 
 /* static */ nsXULPrototypeCache*
 nsXULPrototypeCache::GetInstance()

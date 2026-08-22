@@ -4,7 +4,7 @@
 
 #include "nsSecurityConsoleMessage.h"
 
-NS_IMPL_ISUPPORTS(nsSecurityConsoleMessage, nsISecurityConsoleMessage)
+NS_IMPL_ISUPPORTS1(nsSecurityConsoleMessage, nsISecurityConsoleMessage)
 
 nsSecurityConsoleMessage::nsSecurityConsoleMessage()
 {

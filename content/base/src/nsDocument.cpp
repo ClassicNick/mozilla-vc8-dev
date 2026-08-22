@@ -722,9 +722,9 @@ nsDOMStyleSheetList::~nsDOMStyleSheetList()
   }
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(nsDOMStyleSheetList, StyleSheetList,
-                            nsIDocumentObserver,
-                            nsIMutationObserver)
+NS_IMPL_ISUPPORTS_INHERITED2(nsDOMStyleSheetList, StyleSheetList,
+                             nsIDocumentObserver,
+                             nsIMutationObserver)
 
 uint32_t
 nsDOMStyleSheetList::Length()
@@ -799,7 +799,7 @@ nsDOMStyleSheetList::StyleSheetRemoved(nsIDocument *aDocument,
 }
 
 // nsOnloadBlocker implementation
-NS_IMPL_ISUPPORTS(nsOnloadBlocker, nsIRequest)
+NS_IMPL_ISUPPORTS1(nsOnloadBlocker, nsIRequest)
 
 NS_IMETHODIMP
 nsOnloadBlocker::GetName(nsACString &aResult)
@@ -1119,9 +1119,9 @@ nsExternalResourceMap::AddExternalResource(nsIURI* aURI,
   return rv;
 }
 
-NS_IMPL_ISUPPORTS(nsExternalResourceMap::PendingLoad,
-                  nsIStreamListener,
-                  nsIRequestObserver)
+NS_IMPL_ISUPPORTS2(nsExternalResourceMap::PendingLoad,
+                   nsIStreamListener,
+                   nsIRequestObserver)
 
 NS_IMETHODIMP
 nsExternalResourceMap::PendingLoad::OnStartRequest(nsIRequest *aRequest,
@@ -1316,11 +1316,11 @@ nsExternalResourceMap::PendingLoad::StartLoad(nsIURI* aURI,
   return channel->AsyncOpen(this, nullptr);
 }
 
-NS_IMPL_ISUPPORTS(nsExternalResourceMap::LoadgroupCallbacks,
-                  nsIInterfaceRequestor)
+NS_IMPL_ISUPPORTS1(nsExternalResourceMap::LoadgroupCallbacks,
+                   nsIInterfaceRequestor)
 
 #define IMPL_SHIM(_i) \
-  NS_IMPL_ISUPPORTS(nsExternalResourceMap::LoadgroupCallbacks::_i##Shim, _i)
+  NS_IMPL_ISUPPORTS1(nsExternalResourceMap::LoadgroupCallbacks::_i##Shim, _i)
 
 IMPL_SHIM(nsILoadContext)
 IMPL_SHIM(nsIProgressEventSink)
@@ -5562,7 +5562,7 @@ class ProcessStackRunner MOZ_FINAL : public nsIRunnable
   bool mIsBaseQueue;
 };
 
-NS_IMPL_ISUPPORTS(ProcessStackRunner, nsIRunnable);
+NS_IMPL_ISUPPORTS1(ProcessStackRunner, nsIRunnable);
 
 } // anonymous namespace
 
@@ -9323,7 +9323,7 @@ public:
   }
   NS_DECL_ISUPPORTS
 };
-NS_IMPL_ISUPPORTS(StubCSSLoaderObserver, nsICSSLoaderObserver)
+NS_IMPL_ISUPPORTS1(StubCSSLoaderObserver, nsICSSLoaderObserver)
 
 }
 
@@ -11433,9 +11433,9 @@ public:
   bool mUserInputOrChromeCaller;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(nsPointerLockPermissionRequest,
-                            nsRunnable,
-                            nsIContentPermissionRequest)
+NS_IMPL_ISUPPORTS_INHERITED1(nsPointerLockPermissionRequest,
+                             nsRunnable,
+                             nsIContentPermissionRequest)
 
 NS_IMETHODIMP
 nsPointerLockPermissionRequest::GetTypes(nsIArray** aTypes)

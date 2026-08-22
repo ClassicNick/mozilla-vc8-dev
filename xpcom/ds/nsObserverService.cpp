@@ -168,7 +168,7 @@ nsObserverService::CollectReports(nsIHandleReportCallback* aHandleReport,
 // nsObserverService Implementation
 
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS3(
     nsObserverService,
     nsIObserverService,
     nsObserverService,

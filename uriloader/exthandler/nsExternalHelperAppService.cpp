@@ -578,7 +578,7 @@ static nsDefaultMimeTypeEntry nonDecodableExtensions [] = {
   { APPLICATION_GZIP, "svgz" }
 };
 
-NS_IMPL_ISUPPORTS(
+NS_IMPL_ISUPPORTS6(
   nsExternalHelperAppService,
   nsIExternalHelperAppService,
   nsPIExternalAppLauncher,
