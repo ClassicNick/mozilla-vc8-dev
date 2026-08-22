@@ -52,6 +52,7 @@ UNIFIED_SOURCES += xpcom_glue_src_cppsrcs
 UNIFIED_SOURCES += [
     'FrozenFunctions.cpp',
     'LateWriteChecks.cpp',
+    'MainThreadIOLogger.cpp',
     'nsXPComInit.cpp',
     'nsXPCOMStrings.cpp',
     'Services.cpp',

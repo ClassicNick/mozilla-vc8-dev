@@ -92,7 +92,7 @@
 #include <stdarg.h>
 #include <math.h>
 #include "xpcpublic.h"
-#include "js/Tracer.h"
+#include "js/TracingAPI.h"
 #include "js/WeakMapPtr.h"
 #include "pldhash.h"
 #include "nscore.h"
