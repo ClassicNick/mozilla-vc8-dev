@@ -1600,6 +1600,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter,
   , mScrollPosAtLastPaint(0, 0)
   , mRestorePos(-1, -1)
   , mLastPos(-1, -1)
+  , mResolution(1.0, 1.0)
   , mScrollPosForLayerPixelAlignment(-1, -1)
   , mLastUpdateImagesPos(-1, -1)
   , mNeverHasVerticalScrollbar(false)
@@ -2782,6 +2783,18 @@ ScrollFrameHelper::GetScrollPositionClampingScrollPortSize() const
     return presShell->GetScrollPositionClampingScrollPortSize();
   }
   return mScrollPort.Size();
+}
+
+gfxSize
+ScrollFrameHelper::GetResolution() const
+{
+  return mResolution;
+}
+
+void
+ScrollFrameHelper::SetResolution(const gfxSize& aResolution)
+{
+  mResolution = aResolution;
 }
 
 static void
@@ -4484,7 +4497,7 @@ ScrollFrameHelper::GetCoordAttribute(nsIFrame* aBox, nsIAtom* aAtom,
 }
 
 nsPresState*
-ScrollFrameHelper::SaveState()
+ScrollFrameHelper::SaveState() const
 {
   nsIScrollbarMediator* mediator = do_QueryFrame(GetScrolledFrame());
   if (mediator) {
@@ -4509,6 +4522,7 @@ ScrollFrameHelper::SaveState()
     pt = mRestorePos;
   }
   state->SetScrollState(pt);
+  state->SetResolution(mResolution);
   return state;
 }
 
@@ -4518,6 +4532,11 @@ ScrollFrameHelper::RestoreState(nsPresState* aState)
   mRestorePos = aState->GetScrollState();
   mDidHistoryRestore = true;
   mLastPos = mScrolledFrame ? GetLogicalScrollPosition() : nsPoint(0,0);
+  mResolution = aState->GetResolution();
+
+  if (mIsRoot) {
+    mOuter->PresContext()->PresShell()->SetResolution(mResolution.width, mResolution.height);
+  }
 }
 
 void

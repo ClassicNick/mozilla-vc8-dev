@@ -1075,7 +1075,7 @@ gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize,
 {
   NS_ASSERTION(mContentBackend != BackendType::NONE, "No backend.");
   if (mContentBackend == BackendType::CAIRO) {
-    nsRefPtr<gfxImageSurface> image = new gfxImageSurface(aData, gfxIntSize(aSize.width, aSize.height), aStride, SurfaceFormatToImageFormat(aFormat)); 
+    nsRefPtr<gfxImageSurface> image = new gfxImageSurface(aData, gfxIntSize(aSize.width, aSize.height), aStride, SurfaceFormatToImageFormat(aFormat));
     return Factory::CreateDrawTargetForCairoSurface(image->CairoSurface(), aSize);
   }
   return Factory::CreateDrawTargetForData(mContentBackend, aData, aSize, aStride, aFormat);
