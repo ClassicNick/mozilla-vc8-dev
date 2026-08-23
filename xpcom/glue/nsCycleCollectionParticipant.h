@@ -715,7 +715,6 @@ static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 // adding things to the CC graph to help debugging via CC logs, but it does not
 // traverse or unlink anything, so it is useless for anything else.
 #define NS_IMPL_CYCLE_COLLECTION_0(_class)                                     \
-<<<<<<< HEAD
  NS_IMPL_CYCLE_COLLECTION_CLASS(_class)                                        \
  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(_class)                                 \
  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                           \
@@ -1556,31 +1555,6 @@ static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(_f19)                                       \
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(_f20)                                       \
  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-=======
-  NS_IMPL_CYCLE_COLLECTION_CLASS(_class)                                       \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(_class)                                \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                          \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(_class)                              \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-#define NS_IMPL_CYCLE_COLLECTION(_class, ...)                                  \
-  NS_IMPL_CYCLE_COLLECTION_CLASS(_class)                                       \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(_class)                                \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(__VA_ARGS__)                                 \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                          \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(_class)                              \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)                               \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-#define NS_IMPL_CYCLE_COLLECTION_INHERITED(_class, _base, ...)                 \
-  NS_IMPL_CYCLE_COLLECTION_CLASS(_class)                                       \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(_class, _base)               \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(__VA_ARGS__)                                 \
-  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                          \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(_class, _base)             \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)                               \
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
->>>>>>> 5f1fde8
 
 #define NS_CYCLE_COLLECTION_NOTE_EDGE_NAME CycleCollectionNoteEdgeName
 

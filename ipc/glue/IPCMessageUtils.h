@@ -236,7 +236,7 @@ template <typename E,
           E AllBits>
 struct BitFlagsEnumSerializer
   : EnumSerializer<E,
-                   BitFlagsEnumValidator<E, AllBits>>
+                   BitFlagsEnumValidator<E, AllBits> >
 {};
 
 /**
@@ -248,7 +248,7 @@ template <typename E,
           MOZ_TEMPLATE_ENUM_CLASS_ENUM_TYPE(E) AllBits>
 struct BitFlagsTypedEnumSerializer
   : EnumSerializer<E,
-                   BitFlagsTypedEnumValidator<E, AllBits>>
+                   BitFlagsTypedEnumValidator<E, AllBits> >
 {};
 
 template <>

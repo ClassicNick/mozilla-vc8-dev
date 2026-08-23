@@ -2382,7 +2382,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(jsdService)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, jsdIDebuggerService)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION(jsdService,
+NS_IMPL_CYCLE_COLLECTION_10(jsdService,
                          mErrorHook, mBreakpointHook, mDebugHook,
                          mDebuggerHook, mInterruptHook, mScriptHook,
                          mThrowHook, mTopLevelHook, mFunctionHook,

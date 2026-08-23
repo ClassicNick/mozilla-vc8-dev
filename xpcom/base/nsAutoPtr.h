@@ -912,11 +912,13 @@ class nsRefPtr
             mRawPtr->AddRef();
         }
 
+#if !defined (_MSC_VER) || _MSC_VER >= 1600
       nsRefPtr(nsRefPtr<T>&& aRefPtr)
             : mRawPtr(aRefPtr.mRawPtr)
         {
           aRefPtr.mRawPtr = nullptr;
         }
+#endif
 
       // construct from a raw pointer (of the right type)
 
@@ -979,6 +981,7 @@ class nsRefPtr
           return *this;
         }
 
+#if !defined (_MSC_VER) || _MSC_VER >= 1600
       nsRefPtr<T>&
       operator=(nsRefPtr<T>&& aRefPtr)
       {
@@ -986,6 +989,7 @@ class nsRefPtr
         aRefPtr.mRawPtr = nullptr;
         return *this;
       }
+#endif
 
         // Other pointer operators
 

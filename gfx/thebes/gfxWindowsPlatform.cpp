@@ -287,14 +287,15 @@ public:
                         queryStatistics.hProcess = ProcessHandle;
                         queryStatistics.QueryProcessSegment.SegmentId = i;
                         if (NT_SUCCESS(queryD3DKMTStatistics(&queryStatistics))) {
-                            if (aperture)
-                                sharedBytesUsed += queryStatistics.QueryResult
-                                                                  .ProcessSegmentInfo
-                                                                  .BytesCommitted;
+                            ULONGLONG bytesCommitted;
+                            if (!IsWin8OrLater())
+                                bytesCommitted = queryStatistics.QueryResult.ProcessSegmentInfo.Win7.BytesCommitted;
                             else
-                                dedicatedBytesUsed += queryStatistics.QueryResult
-                                                                     .ProcessSegmentInfo
-                                                                     .BytesCommitted;
+                                bytesCommitted = queryStatistics.QueryResult.ProcessSegmentInfo.Win8.BytesCommitted;
+                            if (aperture)
+                                sharedBytesUsed += bytesCommitted;
+                            else
+                                dedicatedBytesUsed += bytesCommitted;
                         }
                     }
                 }
@@ -368,9 +369,7 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     UpdateRenderMode();
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
-    // This reporter is disabled because it frequently gives bogus values.  See
-    // bug 917496.
-    //RegisterStrongMemoryReporter(new GPUAdapterReporter());
+    RegisterStrongMemoryReporter(new GPUAdapterReporter());
 #endif
 }
 

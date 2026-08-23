@@ -180,7 +180,7 @@ protected:
 
   mozilla::EnumeratedArray<mozilla::layers::LayersBackend,
                            mozilla::layers::LayersBackend::LAYERS_LAST,
-                           nsAutoPtr<ImageBackendData>>
+                           nsAutoPtr<ImageBackendData> >
     mBackendData;
 
   void* mImplData;

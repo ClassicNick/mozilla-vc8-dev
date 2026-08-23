@@ -34,6 +34,7 @@
 #include "nsCRT.h"
 #include "nsEnumeratorUtils.h"
 #include "nsCycleCollectionParticipant.h"
+#include "mozilla/RefCountType.h"
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -233,7 +234,7 @@ NS_NewLocalStore(nsISupports* aOuter, REFNSIID aIID, void** aResult)
     return rv;
 }
 
-NS_IMPL_CYCLE_COLLECTION(LocalStoreImpl, mInner)
+NS_IMPL_CYCLE_COLLECTION_1(LocalStoreImpl, mInner)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(LocalStoreImpl)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(LocalStoreImpl)
 

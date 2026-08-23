@@ -11,7 +11,7 @@
 #include "nsScriptLoader.h"
 #include "nsIHTMLDocument.h"
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(nsHtml5DocumentBuilder, nsContentSink,
+NS_IMPL_CYCLE_COLLECTION_INHERITED_1(nsHtml5DocumentBuilder, nsContentSink,
                                    mOwnedElements)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(nsHtml5DocumentBuilder)

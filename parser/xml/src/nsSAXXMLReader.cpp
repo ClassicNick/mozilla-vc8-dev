@@ -24,7 +24,7 @@ using mozilla::dom::EncodingUtils;
 
 static NS_DEFINE_CID(kParserCID, NS_PARSER_CID);
 
-NS_IMPL_CYCLE_COLLECTION(nsSAXXMLReader,
+NS_IMPL_CYCLE_COLLECTION_8(nsSAXXMLReader,
                          mContentHandler,
                          mDTDHandler,
                          mErrorHandler,
