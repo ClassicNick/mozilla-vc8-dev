@@ -924,8 +924,8 @@ protected:
     std::vector<mozilla::RefPtr<mozilla::gfx::Path> > clipsPushed;
 
     nsRefPtr<gfxFontGroup> fontGroup;
-    EnumeratedArray<Style, Style::MAX, nsRefPtr<CanvasGradient>> gradientStyles;
-    EnumeratedArray<Style, Style::MAX, nsRefPtr<CanvasPattern>> patternStyles;
+    EnumeratedArray<Style, Style::MAX, nsRefPtr<CanvasGradient> > gradientStyles;
+    EnumeratedArray<Style, Style::MAX, nsRefPtr<CanvasPattern> > patternStyles;
     EnumeratedArray<Style, Style::MAX, nscolor> colorStyles;
 
     nsString font;

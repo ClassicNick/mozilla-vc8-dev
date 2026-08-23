@@ -1187,11 +1187,7 @@ static void AdjustRangeForSelection(nsIContent* aRoot,
     brContent = node->GetChildAt(--nodeOffset - 1);
   }
   *aNode = node;
-<<<<<<< HEAD
-  *aOffset = NS_MAX(offset, 0);
-=======
-  *aNodeOffset = std::max(nodeOffset, 0);
->>>>>>> 5f1fde8
+  *aNodeOffset = NS_MAX(nodeOffset, 0);
 }
 
 nsresult

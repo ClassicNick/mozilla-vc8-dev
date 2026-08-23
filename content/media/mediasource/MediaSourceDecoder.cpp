@@ -178,8 +178,8 @@ private:
 
   void WaitForPendingDecoders();
 
-  nsTArray<nsRefPtr<SubBufferDecoder>> mPendingDecoders;
-  nsTArray<nsRefPtr<SubBufferDecoder>> mDecoders;
+  nsTArray<nsRefPtr<SubBufferDecoder> > mPendingDecoders;
+  nsTArray<nsRefPtr<SubBufferDecoder> > mDecoders;
 
   int32_t mActiveVideoDecoder;
   int32_t mActiveAudioDecoder;
@@ -310,7 +310,7 @@ MediaSourceDecoder::EnqueueDecoderInitialization()
 
 class ReleaseDecodersTask : public nsRunnable {
 public:
-  ReleaseDecodersTask(nsTArray<nsRefPtr<SubBufferDecoder>>& aDecoders)
+  ReleaseDecodersTask(nsTArray<nsRefPtr<SubBufferDecoder> >& aDecoders)
   {
     mDecoders.SwapElements(aDecoders);
   }
@@ -321,7 +321,7 @@ public:
   }
 
 private:
-  nsTArray<nsRefPtr<SubBufferDecoder>> mDecoders;
+  nsTArray<nsRefPtr<SubBufferDecoder> > mDecoders;
 };
 
 void

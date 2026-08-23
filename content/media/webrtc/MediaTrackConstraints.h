@@ -22,8 +22,8 @@ public:
   typedef T Kind;
   dom::Sequence<Kind> mRequireN;
   bool mUnsupportedRequirement;
-  MediaTrackConstraintSet mRequired;
-  dom::Sequence<MediaTrackConstraintSet> mNonrequired;
+  mozilla::dom::MediaTrackConstraintSet mRequired;
+  dom::Sequence<mozilla::dom::MediaTrackConstraintSet> mNonrequired;
 
   MediaTrackConstraintsN(const dom::MediaTrackConstraints &aOther,
                          const dom::EnumEntry* aStrings)
@@ -32,9 +32,9 @@ public:
   , mStrings(aStrings)
   {
     if (mRequire.WasPassed()) {
-      auto& array = mRequire.Value();
+		dom::Sequence<nsString>& array = mRequire.Value();
       for (uint32_t i = 0; i < array.Length(); i++) {
-        auto value = ToEnum(array[i]);
+        Kind value = ToEnum(array[i]);
         if (value != Kind::Other) {
           mRequireN.AppendElement(value);
         } else {
@@ -44,7 +44,7 @@ public:
     }
   }
 protected:
-  MediaTrackConstraintSet& Triage(const Kind kind) {
+	mozilla::dom::MediaTrackConstraintSet& Triage(const Kind kind) {
     if (mRequireN.IndexOf(kind) != mRequireN.NoIndex) {
       return mRequired;
     } else {

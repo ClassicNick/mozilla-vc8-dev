@@ -142,7 +142,7 @@ private:
 
   // XXX: We only want to keep the current decoder alive, but need a way to
   // query @buffered for everything this SourceBuffer is responsible for.
-  nsTArray<nsRefPtr<SubBufferDecoder>> mDecoders;
+  nsTArray<nsRefPtr<SubBufferDecoder> > mDecoders;
   nsRefPtr<SubBufferDecoder> mCurrentDecoder;
 
   double mAppendWindowStart;

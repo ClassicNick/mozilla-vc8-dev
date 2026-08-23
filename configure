@@ -8597,7 +8597,7 @@ EOF
 
 fi
 
-if test "$_CC_MAJOR_VERSION" = "13"; then
+if test "$_CC_MAJOR_VERSION" = "12"; then
 MOZ_ENABLE_PROFILER_SPS=
 else
 MOZ_ENABLE_PROFILER_SPS=1

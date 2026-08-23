@@ -22,7 +22,9 @@
 #include "nsISupportsUtils.h"
 #endif
 
+#if defined MOZ_WEBRTC && defined(MOZ_WEBRTC_SIGNALING)
 #include "YuvStamper.h"
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -249,11 +251,13 @@ MediaEngineDefaultVideoSource::Notify(nsITimer* aTimer)
   layers::PlanarYCbCrData data;
   AllocateSolidColorFrame(data, mOpts.mWidth, mOpts.mHeight, 0x80, mCb, mCr);
 
+#if defined(MOZ_WEBRTC) && defined(MOZ_WEBRTC_SIGNALING)
   uint64_t timestamp = PR_Now();
   YuvStamper::Encode(mOpts.mWidth, mOpts.mHeight, mOpts.mWidth,
 		     data.mYChannel,
 		     reinterpret_cast<unsigned char*>(&timestamp), sizeof(timestamp),
 		     0, 0);
+#endif
 
   ycbcr_image->SetData(data);
   // SetData copies data, so we can free the frame
