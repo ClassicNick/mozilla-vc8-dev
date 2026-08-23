@@ -489,9 +489,9 @@ JitCompartment::initialize(JSContext *cx)
 bool
 JitCompartment::ensureIonStubsExist(JSContext *cx)
 {
-    if (!stringConcatStub_) {
+    if (!(JitCode*) stringConcatStub_) {
         stringConcatStub_ = generateStringConcatStub(cx, SequentialExecution);
-        if (!stringConcatStub_)
+        if (!(JitCode*) stringConcatStub_)
             return false;
     }
 
@@ -525,7 +525,7 @@ JitCompartment::notifyOfActiveParallelEntryScript(JSContext *cx, HandleScript sc
 
     script->parallelIonScript()->setIsParallelEntryScript();
     ScriptSet::AddPtr p = activeParallelEntryScripts_->lookupForAdd(script);
-    return p || activeParallelEntryScripts_->add(p, script);
+	return p || activeParallelEntryScripts_->add(p, (const js::EncapsulatedPtrScript) script);
 }
 
 void
@@ -640,10 +640,10 @@ JitCompartment::sweep(FreeOp *fop)
         baselineSetPropReturnFromStubAddr_ = nullptr;
     }
 
-    if (stringConcatStub_ && !IsJitCodeMarked(stringConcatStub_.unsafeGet()))
+    if ((JitCode*) stringConcatStub_ && !IsJitCodeMarked(stringConcatStub_.unsafeGet()))
         stringConcatStub_ = nullptr;
 
-    if (parallelStringConcatStub_ && !IsJitCodeMarked(parallelStringConcatStub_.unsafeGet()))
+    if ((JitCode*) parallelStringConcatStub_ && !IsJitCodeMarked(parallelStringConcatStub_.unsafeGet()))
         parallelStringConcatStub_ = nullptr;
 
     if (activeParallelEntryScripts_) {

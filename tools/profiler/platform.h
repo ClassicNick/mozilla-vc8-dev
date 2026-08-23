@@ -32,7 +32,7 @@
 #ifdef ANDROID
 #include <android/log.h>
 #else
-#define __android_log_print(a, ...)
+#define __android_log_print(a, x)
 #endif
 
 #ifdef XP_UNIX
@@ -65,19 +65,19 @@ bool moz_profiler_verbose();
     do { if (moz_profiler_verbose()) \
            __android_log_write(ANDROID_LOG_ERROR, "Profiler", text); \
     } while (0)
-# define LOGF(format, ...) \
+# define LOGF(format, a) \
     do { if (moz_profiler_verbose()) \
            __android_log_print(ANDROID_LOG_ERROR, "Profiler", format, \
-                               __VA_ARGS__); \
+                               a); \
     } while (0)
 
 #else
 # define LOG(text) \
     do { if (moz_profiler_verbose()) fprintf(stderr, "Profiler: %s\n", text); \
     } while (0)
-# define LOGF(format, ...) \
+# define LOGF(format, a) \
     do { if (moz_profiler_verbose()) fprintf(stderr, "Profiler: " format \
-                                             "\n", __VA_ARGS__);        \
+                                             "\n", a);        \
     } while (0)
 
 #endif

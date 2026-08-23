@@ -69,7 +69,7 @@ public:
     /**
      * Return the observed operation as a human-readable string.
      */
-#ifdef MOZ_ENABLE_RPOFILER_SPS
+#ifdef MOZ_ENABLE_PROFILER_SPS
     const char* ObservedOperationString() const;
 #else
 	const char* ObservedOperationString() const { return nullptr; };

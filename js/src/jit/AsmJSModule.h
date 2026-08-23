@@ -771,8 +771,8 @@ class AsmJSModule
         return pc >= code_ && pc < (code_ + functionBytes());
     }
 
-    void assignHeapAccesses(jit::AsmJSHeapAccessVector &&accesses) {
-        heapAccesses_ = Move(accesses);
+	void assignHeapAccesses(mozilla::MoveRef<jit::AsmJSHeapAccessVector> accesses) {
+		heapAccesses_ = mozilla::OldMove(accesses);
     }
     unsigned numHeapAccesses() const {
         return heapAccesses_.length();
@@ -784,8 +784,8 @@ class AsmJSModule
         return heapAccesses_[i];
     }
 
-    void assignCallSites(jit::CallSiteVector &&callsites) {
-        callSites_ = Move(callsites);
+	void assignCallSites(mozilla::MoveRef<jit::CallSiteVector> callsites) {
+		callSites_ = mozilla::OldMove(callsites);
     }
     unsigned numCallSites() const {
         return callSites_.length();

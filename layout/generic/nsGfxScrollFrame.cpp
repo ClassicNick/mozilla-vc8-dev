@@ -2359,7 +2359,7 @@ ClipItemsExceptCaret(nsDisplayList* aList, nsDisplayListBuilder* aBuilder,
       // Don't clip the caret if it overflows vertically only, and by half
       // its height at most.  This is to avoid clipping it when the line-height
       // is small.
-      auto half = bounds.height / 2;
+      nscoord half = bounds.height / 2;
       bounds.y += half;
       bounds.height -= half;
       isAffectedByClip = aClip.IsRectAffectedByClip(bounds);

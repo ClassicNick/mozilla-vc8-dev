@@ -892,10 +892,10 @@ class AssemblerShared
 
   public:
     bool append(CallSite callsite) { return callsites_.append(callsite); }
-    CallSiteVector &&extractCallSites() { return Move(callsites_); }
+	mozilla::MoveRef<CallSiteVector> extractCallSites() { return mozilla::OldMove(callsites_); }
 
     bool append(AsmJSHeapAccess access) { return asmJSHeapAccesses_.append(access); }
-    AsmJSHeapAccessVector &&extractAsmJSHeapAccesses() { return Move(asmJSHeapAccesses_); }
+	mozilla::MoveRef<AsmJSHeapAccessVector> extractAsmJSHeapAccesses() { return mozilla::OldMove(asmJSHeapAccesses_); }
 
     bool append(AsmJSGlobalAccess access) { return asmJSGlobalAccesses_.append(access); }
     size_t numAsmJSGlobalAccesses() const { return asmJSGlobalAccesses_.length(); }

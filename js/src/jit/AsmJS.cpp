@@ -827,7 +827,7 @@ class MOZ_STACK_CLASS ModuleCompiler
 
       public:
         Func(PropertyName *name, MoveRef<Signature> sig, Label *code)
-          : name_(name), defined_(false), srcOffset_(0), endOffset_(0), sig_(Move(sig)),
+          : name_(name), defined_(false), srcOffset_(0), endOffset_(0), sig_(OldMove(sig)),
             code_(code), compileTime_(0)
         {}
 
@@ -3869,10 +3869,10 @@ CheckFunctionSignature(ModuleCompiler &m, ParseNode *usepn, MoveRef<Signature> s
     if (!existing) {
         if (!CheckModuleLevelName(m, usepn, name))
             return false;
-        return m.addFunction(name, sig, func);
+		return m.addFunction(name, OldMove(sig), func);
     }
 
-    if (!CheckSignatureAgainstExisting(m, usepn, sig, existing->sig()))
+    if (!CheckSignatureAgainstExisting(m, usepn, (const Signature&) sig, existing->sig()))
         return false;
 
     *func = existing;
@@ -3920,7 +3920,7 @@ CheckFuncPtrTableAgainstExisting(ModuleCompiler &m, ParseNode *usepn,
         if (mask != table.mask())
             return m.failf(usepn, "mask does not match previous value (%u)", table.mask());
 
-        if (!CheckSignatureAgainstExisting(m, usepn, sig, table.sig()))
+        if (!CheckSignatureAgainstExisting(m, usepn, (const Signature&) sig, table.sig()))
             return false;
 
         *tableOut = &table;

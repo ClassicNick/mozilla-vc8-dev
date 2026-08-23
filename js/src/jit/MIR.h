@@ -4306,7 +4306,7 @@ class MMod : public MBinaryArithInstruction
 
 class MConcat
   : public MBinaryInstruction,
-    public MixPolicy<ConvertToStringPolicy<0>, ConvertToStringPolicy<1>>
+    public MixPolicy<ConvertToStringPolicy<0>, ConvertToStringPolicy<1> >
 {
     MConcat(MDefinition *left, MDefinition *right)
       : MBinaryInstruction(left, right)
@@ -4985,7 +4985,7 @@ class MRegExp : public MNullaryInstruction
 
 class MRegExpExec
   : public MBinaryInstruction,
-    public MixPolicy<ConvertToStringPolicy<0>, ObjectPolicy<1>>
+    public MixPolicy<ConvertToStringPolicy<0>, ObjectPolicy<1> >
 {
   private:
 

@@ -47,14 +47,21 @@ LinuxKernelMemoryBarrierFunc pLinuxKernelMemoryBarrier __attribute__((weak)) =
 #ifdef _WINNT_
 #  define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
 #  define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
+#if !defined(_MSC_VER) && _MSC_VER <= 1310
 #  include <intrin.h>
+#endif
 #else
+#if !defined(_MSC_VER) && _MSC_VER <= 1310
 #  include <intrin.h>
+#endif
 #  define _interlockedbittestandreset _interlockedbittestandreset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
 #  define _interlockedbittestandset _interlockedbittestandset_NAME_CHANGED_TO_AVOID_MSVS2005_ERROR
 #endif
    // Even though MSVC2005 has the intrinsic _ReadWriteBarrier, it fails to link to it when it's
    // not explicitly declared.
+extern "C" {
+void _ReadWriteBarrier(void);
+}
 #  pragma intrinsic(_ReadWriteBarrier)
 #endif // _MSC_VER > 1400
 #  define STORE_SEQUENCER() _ReadWriteBarrier();

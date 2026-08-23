@@ -342,12 +342,22 @@ void Sampler::UnregisterCurrentThread()
   }
 }
 
+typedef VOID (WINAPI* RtlCaptureContextFunc) (PCONTEXT ContextRecord);
+static RtlCaptureContextFunc RtlCaptureContextPtr;
+static HMODULE kernel32lib;
+
 void TickSample::PopulateContext(void* aContext)
 {
   MOZ_ASSERT(aContext);
   CONTEXT* pContext = reinterpret_cast<CONTEXT*>(aContext);
   context = pContext;
-  RtlCaptureContext(pContext);
+
+  kernel32lib = LoadLibrary("kernel32.dll");
+  RtlCaptureContextPtr = (RtlCaptureContextFunc)
+	  GetProcAddress(kernel32lib, "RtlCaptureContext");
+  if (RtlCaptureContextPtr) {
+    RtlCaptureContextPtr(pContext);
+  }
 
 #if defined(SPS_PLAT_amd64_windows)
 

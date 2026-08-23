@@ -313,7 +313,7 @@ IonBuilder::getPolyCallTargets(types::TemporaryTypeSet *calleeTypes, bool constr
             return true;
         }
 
-        DebugOnly<bool> appendOk = targets.append(fun);
+        DebugOnly<bool> appendOk = targets.append((JSObject*) fun);
         JS_ASSERT(appendOk);
     }
 
@@ -5139,7 +5139,7 @@ IonBuilder::jsop_call(uint32_t argc, bool constructing)
                 hasClones = true;
             }
         }
-        if (!targets.append(fun))
+        if (!targets.append((JSObject*) fun))
             return false;
     }
 

@@ -2857,7 +2857,7 @@ SetPropertyParIC::update(ForkJoinContext *cx, size_t cacheIndex, HandleObject ob
     // Avoid unnecessary locking if cannot attach stubs.
     if (!cache.canAttachStub()) {
         return baseops::SetPropertyHelper<ParallelExecution>(
-            cx, obj, obj, id, baseops::Qualified, &v, cache.strict());
+            (JSContext*) cx, obj, obj, id, baseops::Qualified, &v, cache.strict());
     }
 
     SetPropertyIC::NativeSetPropCacheability canCache = SetPropertyIC::CanAttachNone;
@@ -2874,7 +2874,7 @@ SetPropertyParIC::update(ForkJoinContext *cx, size_t cacheIndex, HandleObject ob
                 return cx->setPendingAbortFatal(ParallelBailoutFailedIC);
             if (alreadyStubbed) {
                 return baseops::SetPropertyHelper<ParallelExecution>(
-                    cx, obj, obj, id, baseops::Qualified, &v, cache.strict());
+                    (JSContext*) cx, obj, obj, id, baseops::Qualified, &v, cache.strict());
             }
 
             // If the object has a lazy type, we need to de-lazify it, but
@@ -2901,7 +2901,7 @@ SetPropertyParIC::update(ForkJoinContext *cx, size_t cacheIndex, HandleObject ob
     uint32_t oldSlots = obj->numDynamicSlots();
     RootedShape oldShape(cx, obj->lastProperty());
 
-    if (!baseops::SetPropertyHelper<ParallelExecution>(cx, obj, obj, id, baseops::Qualified, &v,
+    if (!baseops::SetPropertyHelper<ParallelExecution>((JSContext*) cx, obj, obj, id, baseops::Qualified, &v,
                                                        cache.strict()))
     {
         return false;

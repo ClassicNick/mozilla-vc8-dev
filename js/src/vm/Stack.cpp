@@ -1618,7 +1618,7 @@ jit::JitActivation::getRematerializedFrame(JSContext *cx, JitFrameIterator &iter
     RematerializedFrameTable::AddPtr p = rematerializedFrames_.lookupForAdd(top);
     if (!p) {
         RematerializedFrameVector empty(cx);
-        if (!rematerializedFrames_.add(p, top, Move(empty)))
+        if (!rematerializedFrames_.add(p, top, OldMove(empty)))
             return nullptr;
 
         InlineFrameIterator inlineIter(cx, &iter);

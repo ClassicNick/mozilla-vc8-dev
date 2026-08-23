@@ -90,8 +90,8 @@ TypeFallbackICSpew(JSContext *cx, ICTypeMonitor_Fallback *stub, const char *fmt,
 }
 
 #else
-#define FallbackICSpew(...)
-#define TypeFallbackICSpew(...)
+#define FallbackICSpew(a)
+#define TypeFallbackICSpew(a)
 #endif
 
 
@@ -2507,7 +2507,7 @@ ICToNumber_Fallback::Compiler::generateStubCode(MacroAssembler &masm)
 //
 
 // Disable PGO (see bug 851490).
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER >= 1600
 # pragma optimize("g", off)
 #endif
 static bool
@@ -2725,7 +2725,7 @@ DoBinaryArithFallback(JSContext *cx, BaselineFrame *frame, ICBinaryArith_Fallbac
     stub->noteUnoptimizableOperands();
     return true;
 }
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER >= 1600
 # pragma optimize("", on)
 #endif
 
@@ -3073,7 +3073,7 @@ ICBinaryArith_DoubleWithInt32::Compiler::generateStubCode(MacroAssembler &masm)
 //
 
 // Disable PGO (see bug 851490).
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER >= 1600
 # pragma optimize("g", off)
 #endif
 static bool
@@ -3142,7 +3142,7 @@ DoUnaryArithFallback(JSContext *cx, BaselineFrame *frame, ICUnaryArith_Fallback 
 
     return true;
 }
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && _MSC_VER >= 1600
 # pragma optimize("", on)
 #endif
 
