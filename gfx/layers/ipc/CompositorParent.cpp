@@ -740,11 +740,11 @@ SetShadowProperties(Layer* aLayer)
 }
 
 void
-CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
-                                      const TargetConfig& aTargetConfig,
-                                      bool aIsFirstPaint,
-                                      bool aScheduleComposite)
+CompositorParent::ScheduleRotationOnCompositorThread(const TargetConfig& aTargetConfig,
+                                                     bool aIsFirstPaint)
 {
+  MOZ_ASSERT(IsInCompositorThread());
+
   if (!aIsFirstPaint &&
       !mCompositionManager->IsFirstPaint() &&
       mCompositionManager->RequiresReorientation(aTargetConfig.orientation())) {
@@ -754,6 +754,15 @@ CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
     mForceCompositionTask = NewRunnableMethod(this, &CompositorParent::ForceComposition);
     ScheduleTask(mForceCompositionTask, gfxPrefs::OrientationSyncMillis());
   }
+}
+
+void
+CompositorParent::ShadowLayersUpdated(LayerTransactionParent* aLayerTree,
+                                      const TargetConfig& aTargetConfig,
+                                      bool aIsFirstPaint,
+                                      bool aScheduleComposite)
+{
+  ScheduleRotationOnCompositorThread(aTargetConfig, aIsFirstPaint);
 
   // Instruct the LayerManager to update its render bounds now. Since all the orientation
   // change, dimension change would be done at the stage, update the size here is free of
@@ -1253,7 +1262,12 @@ CrossProcessCompositorParent::ShadowLayersUpdated(
   bool aScheduleComposite)
 {
   uint64_t id = aLayerTree->GetId();
+
   MOZ_ASSERT(id != 0);
+  MOZ_ASSERT(sIndirectLayerTrees[id].mParent);
+
+  sIndirectLayerTrees[id].mParent->ScheduleRotationOnCompositorThread(aTargetConfig, aIsFirstPaint);
+
   Layer* shadowRoot = aLayerTree->GetRoot();
   if (shadowRoot) {
     SetShadowProperties(shadowRoot);
