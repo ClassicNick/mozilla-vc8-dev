@@ -243,7 +243,7 @@ BaseProxyHandler::keys(JSContext *cx, HandleObject proxy, AutoIdVector &props)
         if (!getOwnPropertyDescriptor(cx, proxy, id, &desc))
             return false;
         if (desc.object() && desc.isEnumerable())
-            props[i++] = id;
+            props[i++].set(id);
     }
 
     JS_ASSERT(i <= props.length());
@@ -1137,7 +1137,7 @@ NormalizePropertyDescriptor(JSContext *cx, MutableHandleValue vp, bool complete 
         return false;
     if (complete)
         desc->complete();
-    JS_ASSERT(!vp.isPrimitive()); // due to desc->initialize
+    JS_ASSERT(vp.isObject()); // due to desc->initialize
     RootedObject attributes(cx, &vp.toObject());
 
     /*
@@ -1582,7 +1582,7 @@ ArrayToIdVector(JSContext *cx, HandleObject proxy, HandleObject target, HandleVa
 
         // step iii
         for (uint32_t j = 0; j < i; ++j) {
-            if (props[j] == id) {
+            if (props[j].get() == id) {
                 ReportInvalidTrapResult(cx, proxy, trapName);
                 return false;
             }
@@ -1618,7 +1618,7 @@ ArrayToIdVector(JSContext *cx, HandleObject proxy, HandleObject target, HandleVa
 
         bool found = false;
         for (size_t j = 0; j < props.length(); ++j) {
-            if (props[j] == id) {
+            if (props[j].get() == id) {
                 found = true;
                break;
             }
@@ -2453,7 +2453,7 @@ js::AppendUnique(JSContext *cx, AutoIdVector &base, AutoIdVector &others)
     for (size_t i = 0; i < others.length(); ++i) {
         bool unique = true;
         for (size_t j = 0; j < base.length(); ++j) {
-            if (others[i] == base[j]) {
+            if (others[i].get() == base[j]) {
                 unique = false;
                 break;
             }

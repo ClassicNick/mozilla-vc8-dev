@@ -677,7 +677,7 @@ JS_GetPropertyDescArray(JSContext *cx, JS::HandleObject obj, JSPropertyDescArray
             pd[i].id = IdToValue(props[i]);
             if (!AddValueRoot(cx, &pd[i].value, nullptr))
                 goto bad;
-            if (!Proxy::get(cx, obj, obj, props.handleAt(i), MutableHandleValue::fromMarkedLocation(&pd[i].value)))
+            if (!Proxy::get(cx, obj, obj, props[i], MutableHandleValue::fromMarkedLocation(&pd[i].value)))
                 goto bad;
         }
 
@@ -1023,7 +1023,7 @@ FormatFrame(JSContext *cx, const NonBuiltinScriptFrameIter &iter, char *buf, int
     AutoPropertyDescArray thisProps(cx);
     if (iter.computeThis(cx)) {
         thisVal = iter.computedThisValue();
-        if (showThisProps && !thisVal.isPrimitive()) {
+        if (showThisProps && thisVal.isObject()) {
             RootedObject thisObj(cx, &thisVal.toObject());
             thisProps.fetch(thisObj);
         }

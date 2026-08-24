@@ -359,6 +359,20 @@ MDefinition::hasDefUses() const
     return false;
 }
 
+bool
+MDefinition::hasLiveDefUses() const
+{
+    for (MUseIterator i(uses_.begin()); i != uses_.end(); i++) {
+        MNode *ins = (*i)->consumer();
+        if (!ins->isDefinition())
+            continue;
+        if (!ins->toDefinition()->isRecoveredOnBailout())
+            return true;
+    }
+
+    return false;
+}
+
 MUseIterator
 MDefinition::removeUse(MUseIterator use)
 {
@@ -2789,6 +2803,24 @@ MLoadSlot::mightAlias(const MDefinition *store) const
     return true;
 }
 
+bool
+MGuardShapePolymorphic::congruentTo(const MDefinition *ins) const
+{
+    if (!ins->isGuardShapePolymorphic())
+        return false;
+
+    const MGuardShapePolymorphic *other = ins->toGuardShapePolymorphic();
+    if (numShapes() != other->numShapes())
+        return false;
+
+    for (size_t i = 0; i < numShapes(); i++) {
+        if (getShape(i) != other->getShape(i))
+            return false;
+    }
+
+    return congruentIfOperandsEqual(ins);
+}
+
 void
 InlinePropertyTable::trimTo(ObjectVector &targets, BoolVector &choiceSet)
 {
@@ -3114,8 +3146,10 @@ PropertyReadNeedsTypeBarrier(types::CompilerConstraintList *constraints,
         if (!TypeSetIncludes(observed, MIRType_Value, property.maybeTypes())) {
             // If all possible objects have been observed, we don't have to
             // guard on the specific object types.
-            if (property.maybeTypes()->objectsAreSubset(observed))
+            if (property.maybeTypes()->objectsAreSubset(observed)) {
+                property.freeze(constraints);
                 return BarrierKind::TypeTagOnly;
+            }
             return BarrierKind::TypeSet;
         }
     }
