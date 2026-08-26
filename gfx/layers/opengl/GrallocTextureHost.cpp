@@ -370,7 +370,7 @@ LayerRenderState
 GrallocTextureHostOGL::GetRenderState()
 {
   if (IsValid()) {
-    LayerRenderStateFlags flags = LayerRenderStateFlags::LAYER_RENDER_STATE_DEFAULT;
+    uint32_t flags = 0;
     if (mFlags & TextureFlags::NEEDS_Y_FLIP) {
       flags |= LAYER_RENDER_STATE_Y_FLIPPED;
     }
