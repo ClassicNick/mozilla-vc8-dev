@@ -372,10 +372,10 @@ GrallocTextureHostOGL::GetRenderState()
   if (IsValid()) {
     LayerRenderStateFlags flags = LayerRenderStateFlags::LAYER_RENDER_STATE_DEFAULT;
     if (mFlags & TextureFlags::NEEDS_Y_FLIP) {
-      flags |= LayerRenderStateFlags::Y_FLIPPED;
+      flags |= LAYER_RENDER_STATE_Y_FLIPPED;
     }
     if (mFlags & TextureFlags::RB_SWAPPED) {
-      flags |= LayerRenderStateFlags::FORMAT_RB_SWAP;
+      flags |= LAYER_RENDER_STATE_FORMAT_RB_SWAP;
     }
     return LayerRenderState(mTextureSource->mGraphicBuffer.get(),
                             gfx::ThebesIntSize(mSize),
