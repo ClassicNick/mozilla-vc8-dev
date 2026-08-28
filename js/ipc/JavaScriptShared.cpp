@@ -454,7 +454,7 @@ JavaScriptShared::Unwrap(JSContext *cx, const InfallibleTArray<CpowEntry> &aCpow
                                  obj,
                                  name.BeginReading(),
                                  name.Length(),
-                                 v,
+                                 (HandleValue) v,
                                  JSPROP_ENUMERATE))
         {
             return false;

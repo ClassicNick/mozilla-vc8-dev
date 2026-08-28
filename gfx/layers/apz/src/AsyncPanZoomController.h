@@ -959,7 +959,7 @@ public:
   Vector<Task*> TakeDeferredTasks() {
     Vector<Task*> result;
     mDeferredTasks.swap(result);
-    return result;
+    return OldMove(result);
   }
 
   /**

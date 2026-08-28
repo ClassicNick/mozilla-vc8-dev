@@ -1681,7 +1681,7 @@ bool AsyncPanZoomController::SampleContentTransformForFrame(const TimeStamp& aSa
     // the tasks need to be executed after we release the monitor since they
     // are allowed to call APZCTreeManager methods which can grab the tree lock. 
     if (mAnimation) {
-      deferredTasks = mAnimation->TakeDeferredTasks();
+      deferredTasks = OldMove(mAnimation->TakeDeferredTasks());
     }
   }
 

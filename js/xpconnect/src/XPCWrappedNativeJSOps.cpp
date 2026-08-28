@@ -249,7 +249,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
                 if (resolved)
                     *resolved = true;
                 RootedObject value(ccx, JS_GetFunctionObject(fun));
-                return JS_DefinePropertyById(ccx, obj, id, value,
+                return JS_DefinePropertyById(ccx, obj, id, (HandleObject) value,
                                              propFlags & ~JSPROP_ENUMERATE);
             }
         }
@@ -276,7 +276,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
                 AutoResolveName arn(ccx, id);
                 if (resolved)
                     *resolved = true;
-                return JS_DefinePropertyById(ccx, obj, id, jso,
+                return JS_DefinePropertyById(ccx, obj, id, (HandleObject) jso,
                                              propFlags & ~JSPROP_ENUMERATE);
             } else if (NS_FAILED(rv) && rv != NS_ERROR_NO_INTERFACE) {
                 return Throw(rv, ccx);
@@ -335,7 +335,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
             AutoResolveName arn(ccx, id);
             if (resolved)
                 *resolved = true;
-            return JS_DefinePropertyById(ccx, obj, id, jso,
+            return JS_DefinePropertyById(ccx, obj, id, (HandleObject) jso,
                                          propFlags & ~JSPROP_ENUMERATE);
         }
         if (resolved)
@@ -349,7 +349,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
         if (resolved)
             *resolved = true;
         return member->GetConstantValue(ccx, iface, val.address()) &&
-               JS_DefinePropertyById(ccx, obj, id, val, propFlags);
+               JS_DefinePropertyById(ccx, obj, id, (HandleValue) val, propFlags);
     }
 
     if (id == rt->GetStringID(XPCJSRuntime::IDX_TO_STRING) ||
@@ -367,7 +367,7 @@ DefinePropertyIfFound(XPCCallContext& ccx,
         AutoResolveName arn(ccx, id);
         if (resolved)
             *resolved = true;
-        return JS_DefinePropertyById(ccx, obj, id, funval, propFlags);
+        return JS_DefinePropertyById(ccx, obj, id, (HandleValue) funval, propFlags);
     }
 
     // else...

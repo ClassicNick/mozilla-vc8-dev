@@ -5781,7 +5781,7 @@ BindScriptArgs(JSContext *cx, JSObject *obj_, OptionParser *op)
         const char *scriptArg = msr.front();
         JS::RootedString str(cx, JS_NewStringCopyZ(cx, scriptArg));
         if (!str ||
-            !JS_DefineElement(cx, scriptArgs, i, str, JSPROP_ENUMERATE))
+            !JS_DefineElement(cx, scriptArgs, i, (HandleString) str, JSPROP_ENUMERATE))
         {
             return false;
         }

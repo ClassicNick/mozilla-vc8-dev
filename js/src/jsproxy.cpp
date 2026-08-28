@@ -410,7 +410,7 @@ DirectProxyHandler::defineProperty(JSContext *cx, HandleObject proxy, HandleId i
     RootedObject target(cx, proxy->as<ProxyObject>().target());
     RootedValue v(cx, desc.value());
     return CheckDefineProperty(cx, target, id, v, desc.attributes(), desc.getter(), desc.setter()) &&
-           JS_DefinePropertyById(cx, target, id, v, desc.attributes(), desc.getter(), desc.setter());
+           JS_DefinePropertyById(cx, target, id, (HandleValue) v, desc.attributes(), desc.getter(), desc.setter());
 }
 
 bool
@@ -1477,7 +1477,7 @@ TrapDefineOwnProperty(JSContext *cx, HandleObject proxy, HandleId id, MutableHan
         Rooted<PropertyDescriptor> desc(cx);
         if (!ParsePropertyDescriptorObject(cx, proxy, vp, &desc))
             return false;
-        return JS_DefinePropertyById(cx, target, id, desc.value(), desc.attributes(),
+        return JS_DefinePropertyById(cx, target, id, (HandleValue) desc.value(), desc.attributes(),
                                      desc.getter(), desc.setter());
     }
 

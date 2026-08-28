@@ -524,7 +524,7 @@ bool TelemetryIOInterposeObserver::ReflectFileStats(FileIOEntryType* entry,
   // Add jsEntry to top-level dictionary
   const nsAString& key = entry->GetKey();
   return JS_DefineUCProperty(cx, obj, key.Data(), key.Length(),
-                             jsEntry, JSPROP_ENUMERATE | JSPROP_READONLY);
+	  (JS::HandleObject) jsEntry, JSPROP_ENUMERATE | JSPROP_READONLY);
 }
 
 bool TelemetryIOInterposeObserver::ReflectIntoJS(JSContext *cx,
@@ -805,7 +805,7 @@ FillRanges(JSContext *cx, JS::Handle<JSObject*> array, Histogram *h)
   JS::Rooted<JS::Value> range(cx);
   for (size_t i = 0; i < h->bucket_count(); i++) {
     range = INT_TO_JSVAL(h->ranges(i));
-    if (!JS_DefineElement(cx, array, i, range, JSPROP_ENUMERATE))
+	if (!JS_DefineElement(cx, array, i, (JS::HandleValue) range, JSPROP_ENUMERATE))
       return false;
   }
   return true;

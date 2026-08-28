@@ -1435,7 +1435,7 @@ nsDOMClassInfo::ResolveConstructor(JSContext *cx, JSObject *aObj,
     // return the Object constructor.
 
     JS::Rooted<jsid> id(cx, sConstructor_id);
-    if (!::JS_DefinePropertyById(cx, obj, id, val, JSPROP_ENUMERATE,
+	if (!::JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) val, JSPROP_ENUMERATE,
                                  JS_PropertyStub, JS_StrictPropertyStub)) {
       return NS_ERROR_UNEXPECTED;
     }
@@ -1671,7 +1671,7 @@ nsDOMClassInfo::PostCreatePrototype(JSContext * cx, JSObject * aProto)
   if (!contentDefinedProperty && desc.object() && !desc.value().isUndefined() &&
       !JS_DefineUCProperty(cx, global, mData->mNameUTF16,
                            NS_strlen(mData->mNameUTF16),
-                           desc.value(), desc.attributes(),
+						   (JS::HandleValue) desc.value(), desc.attributes(),
                            desc.getter(), desc.setter())) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -3264,7 +3264,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     rv = WrapNative(cx, location, &NS_GET_IID(nsIDOMLocation), true, &v);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    bool ok = JS_DefinePropertyById(cx, obj, id, v,
+	bool ok = JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) v,
                                     JSPROP_PERMANENT | JSPROP_ENUMERATE,
                                     JS_PropertyStub, LocationSetterUnwrapper);
 
@@ -3292,7 +3292,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
 
     // Hold on to the top window object as a global property so we
     // don't need to worry about losing expando properties etc.
-    if (!JS_DefinePropertyById(cx, obj, id, v,
+	if (!JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) v,
                                JSPROP_READONLY | JSPROP_PERMANENT |
                                JSPROP_ENUMERATE,
                                JS_PropertyStub, JS_StrictPropertyStub)) {
@@ -3323,7 +3323,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     // But if the value is undefined, that means that GlobalResolve
     // also already defined it, so we don't have to.
     if (desc.object() && !desc.value().isUndefined() &&
-        !JS_DefinePropertyById(cx, global, id, desc.value(),
+		!JS_DefinePropertyById(cx, global, id, (JS::HandleValue) desc.value(),
                                desc.attributes(),
                                desc.getter(), desc.setter())) {
       return NS_ERROR_FAILURE;
@@ -3341,7 +3341,7 @@ nsWindowSH::NewResolve(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
     // Xray case we should never see undefined.
     MOZ_ASSERT_IF(isXray, !desc.value().isUndefined());
     if (!desc.value().isUndefined() &&
-        !JS_DefinePropertyById(cx, obj, id, desc.value(),
+		!JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) desc.value(),
                                desc.attributes(),
                                desc.getter(), desc.setter())) {
       return NS_ERROR_FAILURE;

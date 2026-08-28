@@ -846,7 +846,7 @@ env_resolve(JSContext *cx, HandleObject obj, HandleId id,
         RootedString valstr(cx, JS_NewStringCopyZ(cx, value));
         if (!valstr)
             return false;
-        if (!JS_DefinePropertyById(cx, obj, id, valstr, JSPROP_ENUMERATE)) {
+        if (!JS_DefinePropertyById(cx, obj, id, (HandleString) valstr, JSPROP_ENUMERATE)) {
             return false;
         }
         objp.set(obj);
@@ -1095,7 +1095,7 @@ ProcessArgs(JSContext *cx, JS::Handle<JSObject*> obj, char **argv, int argc, XPC
     for (size_t j = 0, length = argc - i; j < length; j++) {
         RootedString str(cx, JS_NewStringCopyZ(cx, argv[i++]));
         if (!str ||
-            !JS_DefineElement(cx, argsObj, j, str, JSPROP_ENUMERATE)) {
+            !JS_DefineElement(cx, argsObj, j, (HandleString) str, JSPROP_ENUMERATE)) {
             return 1;
         }
     }

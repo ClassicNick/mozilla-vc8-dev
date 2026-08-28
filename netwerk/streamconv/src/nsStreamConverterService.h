@@ -40,7 +40,7 @@ private:
     nsresult ParseFromTo(const char *aContractID, nsCString &aFromRes, nsCString &aToRes);
 
     // member variables
-    nsClassHashtable<nsCStringHashKey, nsCOMArray<nsIAtom>> mAdjacencyList;
+    nsClassHashtable<nsCStringHashKey, nsCOMArray<nsIAtom> > mAdjacencyList;
 };
 
 #endif // __nsstreamconverterservice__h___

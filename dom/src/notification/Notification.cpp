@@ -78,7 +78,7 @@ public:
     NS_ENSURE_TRUE(element, NS_ERROR_FAILURE);
 
     JS::Rooted<JSObject*> notifications(aCx, mNotifications);
-    if (!JS_DefineElement(aCx, notifications, mCount++, element, 0)) {
+	if (!JS_DefineElement(aCx, notifications, mCount++, (JS::HandleObject) element, 0)) {
       return NS_ERROR_FAILURE;
     }
     return NS_OK;

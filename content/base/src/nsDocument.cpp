@@ -12153,7 +12153,7 @@ nsIDocument::WrapObject(JSContext *aCx)
 
   JS::Rooted<JSObject*> winObj(aCx, &winVal.toObject());
   if (!JS_DefineUCProperty(aCx, winObj, doc_str.get(),
-                           doc_str.Length(), obj,
+	  doc_str.Length(), (JS::HandleObject) obj,
                            JSPROP_READONLY | JSPROP_ENUMERATE,
                            JS_PropertyStub, JS_StrictPropertyStub)) {
     return nullptr;

@@ -323,7 +323,7 @@ nsXPCComponents_Interfaces::NewResolve(nsIXPConnectWrappedNative *wrapper,
                     // Assign, not compare
                     (idobj = holder->GetJSObject())) {
                     *objp = obj;
-                    *_retval = JS_DefinePropertyById(cx, obj, id, idobj,
+                    *_retval = JS_DefinePropertyById(cx, obj, id, (HandleObject) idobj,
                                                      JSPROP_ENUMERATE |
                                                      JSPROP_READONLY |
                                                      JSPROP_PERMANENT);
@@ -577,7 +577,7 @@ nsXPCComponents_InterfacesByID::NewResolve(nsIXPConnectWrappedNative *wrapper,
                 (idobj = holder->GetJSObject())) {
                 *objp = obj;
                 *_retval =
-                    JS_DefinePropertyById(cx, obj, id, idobj,
+                    JS_DefinePropertyById(cx, obj, id, (HandleObject) idobj,
                                           JSPROP_ENUMERATE |
                                           JSPROP_READONLY |
                                           JSPROP_PERMANENT);
@@ -817,7 +817,7 @@ nsXPCComponents_Classes::NewResolve(nsIXPConnectWrappedNative *wrapper,
                     // Assign, not compare
                         (idobj = holder->GetJSObject())) {
                     *objp = obj;
-                    *_retval = JS_DefinePropertyById(cx, obj, id, idobj,
+                    *_retval = JS_DefinePropertyById(cx, obj, id, (HandleObject) idobj,
                                                      JSPROP_ENUMERATE |
                                                      JSPROP_READONLY |
                                                      JSPROP_PERMANENT);
@@ -1076,7 +1076,7 @@ nsXPCComponents_ClassesByID::NewResolve(nsIXPConnectWrappedNative *wrapper,
                     // Assign, not compare
                     (idobj = holder->GetJSObject())) {
                     *objp = obj;
-                    *_retval = JS_DefinePropertyById(cx, obj, id, idobj,
+                    *_retval = JS_DefinePropertyById(cx, obj, id, (HandleObject) idobj,
                                                      JSPROP_ENUMERATE |
                                                      JSPROP_READONLY |
                                                      JSPROP_PERMANENT);
@@ -2951,7 +2951,7 @@ xpc::CreateObjectIn(JSContext *cx, HandleValue vobj, CreateObjectInOptions &opti
             return false;
 
         if (define) {
-            if (!JS_DefinePropertyById(cx, scope, options.defineAs, obj, JSPROP_ENUMERATE,
+            if (!JS_DefinePropertyById(cx, scope, options.defineAs, (HandleObject) obj, JSPROP_ENUMERATE,
                                        JS_PropertyStub, JS_StrictPropertyStub))
                 return false;
         }

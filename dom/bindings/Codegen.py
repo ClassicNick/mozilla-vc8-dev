@@ -5043,7 +5043,7 @@ def getWrapTemplateForType(type, descriptorProvider, result, successCode,
                 do {
                   $*{innerTemplate}
                 } while (0);
-                if (!JS_DefineElement(cx, returnArray, ${index}, tmp,
+                if (!JS_DefineElement(cx, returnArray, ${index}, (JS::HandleValue) tmp,
                                       JSPROP_ENUMERATE)) {
                   $*{exceptionCode}
                 }
@@ -6786,7 +6786,7 @@ class CGNewResolveHook(CGAbstractBindingMethod):
             // has already defined it on the object.  Don't try to also
             // define it.
             if (!desc.value().isUndefined() &&
-                !JS_DefinePropertyById(cx, obj, id, desc.value(),
+                !JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) desc.value(),
                                        desc.attributes(),
                                        desc.getter(), desc.setter())) {
               return false;
@@ -8687,7 +8687,7 @@ class CGResolveOwnPropertyViaNewresolve(CGAbstractBindingMethod):
               // try to also define it.
               if (objDesc.object() &&
                   !objDesc.value().isUndefined() &&
-                  !JS_DefinePropertyById(cx, obj, id, objDesc.value(),
+                  !JS_DefinePropertyById(cx, obj, id, (JS::HandleValue) objDesc.value(),
                                          objDesc.attributes(),
                                          objDesc.getter(), objDesc.setter())) {
                 return false;
@@ -10570,7 +10570,7 @@ class CGDictionary(CGThing):
                              member.location))
 
         propDef = (
-            'JS_DefinePropertyById(cx, obj, atomsCache->%s, temp, JSPROP_ENUMERATE)' %
+            'JS_DefinePropertyById(cx, obj, atomsCache->%s, (JS::HandleValue) temp, JSPROP_ENUMERATE)' %
             self.makeIdName(member.identifier.name))
 
         innerTemplate = wrapForType(

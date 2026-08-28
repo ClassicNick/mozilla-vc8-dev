@@ -476,7 +476,7 @@ JSXrayTraits::resolveOwnProperty(JSContext *cx, Wrapper &jsWrapper,
     // cache the value explicitly. See the corresponding call to
     // JS_GetPropertyById at the top of this function.
     RootedValue value(cx, ObjectValue(*JS_GetFunctionObject(fun)));
-    return JS_DefinePropertyById(cx, holder, id, value, 0) &&
+    return JS_DefinePropertyById(cx, holder, id, (HandleValue) value, 0) &&
            JS_GetPropertyDescriptorById(cx, holder, id, desc);
 }
 
@@ -1101,7 +1101,7 @@ XPCWrappedNativeXrayTraits::resolveNativeProperty(JSContext *cx, HandleObject wr
         desc.setSetterObject(&fval.toObject());
 
     // Define the property.
-    return JS_DefinePropertyById(cx, holder, id, desc.value(), desc.attributes(),
+    return JS_DefinePropertyById(cx, holder, id, (HandleValue) desc.value(), desc.attributes(),
                                  desc.getter(), desc.setter());
 }
 
@@ -1293,7 +1293,7 @@ XPCWrappedNativeXrayTraits::defineProperty(JSContext *cx, HandleObject wrapper, 
         }
 
         *defined = true;
-        return JS_DefinePropertyById(cx, holder, id, desc.value(), desc.attributes(),
+        return JS_DefinePropertyById(cx, holder, id, (HandleValue) desc.value(), desc.attributes(),
                                      desc.getter(), desc.setter());
     }
 
@@ -1887,7 +1887,7 @@ XrayWrapper<Base, Traits>::getPropertyDescriptor(JSContext *cx, HandleObject wra
     if (!desc.object())
         return true;
 
-    if (!JS_DefinePropertyById(cx, holder, id, desc.value(), desc.attributes(),
+    if (!JS_DefinePropertyById(cx, holder, id, (HandleValue) desc.value(), desc.attributes(),
                                desc.getter(), desc.setter()) ||
         !JS_GetPropertyDescriptorById(cx, holder, id, desc))
     {
@@ -2019,7 +2019,7 @@ XrayWrapper<Base, Traits>::defineProperty(JSContext *cx, HandleObject wrapper,
     if (!RecreateLostWaivers(cx, desc.address(), &wrappedDesc))
         return false;
 
-    return JS_DefinePropertyById(cx, expandoObject, id, wrappedDesc.value(),
+    return JS_DefinePropertyById(cx, expandoObject, id, (HandleValue) wrappedDesc.value(),
                                  wrappedDesc.get().attrs,
                                  wrappedDesc.getter(), wrappedDesc.setter());
 }

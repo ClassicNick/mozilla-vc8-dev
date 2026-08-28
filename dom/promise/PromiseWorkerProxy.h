@@ -94,7 +94,7 @@ private:
 
   // Aimed to keep objects alive when doing the structured-clone read/write,
   // which can be added by calling StoreISupports() on the main thread.
-  nsTArray<nsMainThreadPtrHandle<nsISupports>> mSupportsArray;
+  nsTArray<nsMainThreadPtrHandle<nsISupports> > mSupportsArray;
 
   // Ensure the worker and the main thread won't race to access |mCleanedUp|.
   Mutex mCleanUpLock;
