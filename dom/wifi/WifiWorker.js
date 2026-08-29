@@ -161,12 +161,12 @@ var WifiManager = (function() {
 
   // Regular Wifi stuff.
   var netUtil = WifiNetUtil(controlMessage);
-  var wifiCommand = WifiCommand(controlMessage, manager.ifname);
+  var wifiCommand = WifiCommand(controlMessage, manager.ifname, sdkVersion);
 
   // Wifi P2P stuff
   var p2pManager;
   if (p2pSupported) {
-    let p2pCommand = WifiCommand(controlMessage, WifiP2pManager.INTERFACE_NAME);
+    let p2pCommand = WifiCommand(controlMessage, WifiP2pManager.INTERFACE_NAME, sdkVersion);
     p2pManager = WifiP2pManager(p2pCommand, netUtil);
   }
 
@@ -1379,6 +1379,15 @@ var WifiManager = (function() {
                                caInfo.certNickname);
   }
 
+  manager.deleteCert = function(caInfo, callback) {
+    var id = idgen++;
+    if (callback) {
+      controlCallbacks[id] = callback;
+    }
+
+    wifiCertService.deleteCert(id, caInfo.certNickname);
+  }
+
   return manager;
 })();
 
@@ -1647,6 +1656,7 @@ function WifiWorker() {
                     "WifiManager:setStaticIpMode",
                     "WifiManager:importCert",
                     "WifiManager:getImportedCerts",
+                    "WifiManager:deleteCert",
                     "child-process-shutdown"];
 
   messages.forEach((function(msgName) {
@@ -2605,6 +2615,9 @@ WifiWorker.prototype = {
       case "WifiManager:getImportedCerts":
         this.getImportedCerts(msg);
         break;
+      case "WifiManager:deleteCert":
+        this.deleteCert(msg);
+        break;
       case "WifiManager:getState": {
         let i;
         if ((i = this._domManagers.indexOf(msg.manager)) === -1) {
@@ -3006,7 +3019,7 @@ WifiWorker.prototype = {
     let self = this;
     let detail = msg.data;
     if (detail.method === "pbc") {
-      WifiManager.wpsPbc(WifiManager.ifname, function(ok) {
+      WifiManager.wpsPbc(function(ok) {
         if (ok)
           self._sendMessage(message, true, true, msg);
         else
@@ -3155,6 +3168,15 @@ WifiWorker.prototype = {
     }
 
     self._sendMessage(message, true, importedCerts, msg);
+  },
+
+  deleteCert: function deleteCert(msg) {
+    const message = "WifiManager:deleteCert:Return";
+    let self = this;
+
+    WifiManager.deleteCert(msg.data, function(data) {
+      self._sendMessage(message, data.status === 0, "Delete Cert failed", msg);
+    });
   },
 
   // This is a bit ugly, but works. In particular, this depends on the fact

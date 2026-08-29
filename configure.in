@@ -2592,8 +2592,13 @@ dnl ===============================================================
 if test "$GNU_CC"; then
   AC_DEFINE(HAVE_VISIBILITY_HIDDEN_ATTRIBUTE)
   AC_DEFINE(HAVE_VISIBILITY_ATTRIBUTE)
-  case "${OS_TARGET}" in
-  Darwin|Android)
+  if test -n "$gonkdir"; then
+    visibility_target=Gonk
+  else
+    visibility_target=$OS_TARGET
+  fi
+  case "$visibility_target" in
+  Darwin|Gonk)
     VISIBILITY_FLAGS='-fvisibility=hidden'
     ;;
   *)
@@ -9059,6 +9064,8 @@ else
   AC_DEFINE(MOZ_STATIC_JS)
 fi
 AC_SUBST(JS_SHARED_LIBRARY)
+
+AC_SUBST(UPLOAD_EXTRA_FILES)
 
 MOZ_CREATE_CONFIG_STATUS()
 
