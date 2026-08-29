@@ -23,6 +23,7 @@
 #include "nsAString.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 CreateElementTxn::CreateElementTxn()
   : EditTxn()
@@ -59,11 +60,9 @@ NS_IMETHODIMP CreateElementTxn::DoTransaction(void)
   NS_ASSERTION(mEditor && mParent, "bad state");
   NS_ENSURE_TRUE(mEditor && mParent, NS_ERROR_NOT_INITIALIZED);
 
-  nsCOMPtr<dom::Element> newContent;
-
-  //new call to use instead to get proper HTML element, bug# 39919
-  nsresult result = mEditor->CreateHTMLContent(mTag, getter_AddRefs(newContent));
-  NS_ENSURE_SUCCESS(result, result);
+  ErrorResult rv;
+  nsCOMPtr<Element> newContent = mEditor->CreateHTMLContent(mTag, rv);
+  NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
   NS_ENSURE_STATE(newContent);
 
   mNewNode = newContent;
@@ -72,7 +71,6 @@ NS_IMETHODIMP CreateElementTxn::DoTransaction(void)
 
   // insert the new node
   if (CreateElementTxn::eAppend == int32_t(mOffsetInParent)) {
-    ErrorResult rv;
     mParent->AppendChild(*mNewNode, rv);
     return rv.ErrorCode();
   }
@@ -83,7 +81,6 @@ NS_IMETHODIMP CreateElementTxn::DoTransaction(void)
   // note, it's ok for mRefNode to be null.  that means append
   mRefNode = mParent->GetChildAt(mOffsetInParent);
 
-  ErrorResult rv;
   mParent->InsertBefore(*mNewNode, mRefNode, rv);
   NS_ENSURE_SUCCESS(rv.ErrorCode(), rv.ErrorCode());
 
@@ -96,7 +93,7 @@ NS_IMETHODIMP CreateElementTxn::DoTransaction(void)
   }
 
   nsCOMPtr<nsISelection> selection;
-  result = mEditor->GetSelection(getter_AddRefs(selection));
+  nsresult result = mEditor->GetSelection(getter_AddRefs(selection));
   NS_ENSURE_SUCCESS(result, result);
   NS_ENSURE_TRUE(selection, NS_ERROR_NULL_POINTER);
 

@@ -43,7 +43,7 @@ MOZILLA_PKIX_ENUM_CLASS CertStatus : uint8_t {
   Unknown = der::CONTEXT_SPECIFIC | 2
 };
 #else
-ENUM_CLASS CertStatus {
+MOZILLA_PKIX_ENUM_CLASS CertStatus {
   Good = der::CONTEXT_SPECIFIC | 0,
   Revoked = der::CONTEXT_SPECIFIC | der::CONSTRUCTED | 1,
   Unknown = der::CONTEXT_SPECIFIC | 2
@@ -96,7 +96,7 @@ HashBuf(const SECItem& item, /*out*/ uint8_t *hashBuf, size_t hashBufLen)
     return der::Fail(SEC_ERROR_INVALID_ARGS);
   }
   if (item.len >
-      static_cast<decltype(item.len)>(std::numeric_limits<int32_t>::max())) {
+      std::numeric_limits<int32_t>::max()) {
     PR_NOT_REACHED("large OCSP responses should have already been rejected");
     return der::Fail(SEC_ERROR_INVALID_ARGS);
   }
@@ -146,7 +146,7 @@ CheckOCSPResponseSignerCert(TrustDomain& trustDomain,
   // TODO(bug 926261): If we're validating for a policy then the policy OID we
   // are validating for should be passed to CheckIssuerIndependentProperties.
   rv = CheckIssuerIndependentProperties(trustDomain, cert, time,
-                                        EndEntityOrCA::MustBeEndEntity, 0,
+                                        MustBeEndEntity, 0,
                                         SEC_OID_OCSP_RESPONDER,
                                         SEC_OID_X509_ANY_POLICY, 0);
   if (rv != Success) {

@@ -199,7 +199,7 @@ public:
     }
     item.type = type;
     item.data = const_cast<uint8_t*>(mark.mark);
-    item.len = static_cast<decltype(item.len)>(input - mark.mark);
+    item.len = input - mark.mark;
     return Success;
   }
 
@@ -328,7 +328,7 @@ NestedOf(Input& input, uint8_t outerTag, uint8_t innerTag,
   }
 
   if (inner.AtEnd()) {
-    if (mayBeEmpty != EmptyAllowed::Yes) {
+    if (mayBeEmpty != Yes) {
       return Fail(SEC_ERROR_BAD_DER);
     }
     return Success;

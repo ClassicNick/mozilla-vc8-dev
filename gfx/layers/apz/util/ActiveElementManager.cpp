@@ -14,8 +14,8 @@
 #include "base/message_loop.h"
 #include "base/task.h"
 
-#define AEM_LOG(...)
-// #define AEM_LOG(...) printf_stderr("AEM: " __VA_ARGS__)
+#define AEM_LOG(a)
+// #define AEM_LOG(a) printf_stderr("AEM: " a)
 
 namespace mozilla {
 namespace layers {

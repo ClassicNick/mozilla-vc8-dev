@@ -102,11 +102,11 @@ NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     // relevant trust bit isn't set then that means the cert must be considered
     // distrusted.
     PRUint32 relevantTrustBit =
-      endEntityOrCA == EndEntityOrCA::MustBeCA ? CERTDB_TRUSTED_CA
+      endEntityOrCA == MustBeCA ? CERTDB_TRUSTED_CA
                                                : CERTDB_TRUSTED;
     if (((flags & (relevantTrustBit|CERTDB_TERMINAL_RECORD)))
             == CERTDB_TERMINAL_RECORD) {
-      *trustLevel = TrustLevel::ActivelyDistrusted;
+      *trustLevel = ActivelyDistrusted;
       return SECSuccess;
     }
 
@@ -115,19 +115,19 @@ NSSCertDBTrustDomain::GetCertTrust(EndEntityOrCA endEntityOrCA,
     // Gecko implemented nsICertOverrideService.
     if (flags & CERTDB_TRUSTED_CA) {
       if (policy == SEC_OID_X509_ANY_POLICY) {
-        *trustLevel = TrustLevel::TrustAnchor;
+        *trustLevel = TrustAnchor;
         return SECSuccess;
       }
 #ifndef MOZ_NO_EV_CERTS
       if (CertIsAuthoritativeForEVPolicy(candidateCert, policy)) {
-        *trustLevel = TrustLevel::TrustAnchor;
+        *trustLevel = TrustAnchor;
         return SECSuccess;
       }
 #endif
     }
   }
 
-  *trustLevel = TrustLevel::InheritsTrust;
+  *trustLevel = InheritsTrust;
   return SECSuccess;
 }
 
@@ -272,7 +272,7 @@ NSSCertDBTrustDomain::CheckRevocation(
   // you to ever fetch OCSP."
 
   if ((mOCSPFetching == NeverFetchOCSP) ||
-      (endEntityOrCA == EndEntityOrCA::MustBeCA &&
+      (endEntityOrCA == MustBeCA &&
        (mOCSPFetching == FetchOCSPForDVHardFail ||
         mOCSPFetching == FetchOCSPForDVSoftFail))) {
     // We're not going to be doing any fetching, so if there was a cached

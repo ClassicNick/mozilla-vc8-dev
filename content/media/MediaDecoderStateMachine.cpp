@@ -212,6 +212,8 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   mMinimizePreroll(false),
   mDecodeThreadWaiting(false),
   mRealTime(aRealTime),
+  mDispatchedDecodeMetadataTask(false),
+  mDispatchedDecodeSeekTask(false),
   mLastFrameStatus(MediaDecoderOwner::NEXT_FRAME_UNINITIALIZED),
   mTimerId(0)
 {
@@ -1491,12 +1493,18 @@ MediaDecoderStateMachine::EnqueueDecodeMetadataTask()
 {
   AssertCurrentThreadInMonitor();
 
-  if (mState != DECODER_STATE_DECODING_METADATA) {
+  if (mState != DECODER_STATE_DECODING_METADATA ||
+      mDispatchedDecodeMetadataTask) {
     return NS_OK;
   }
   nsresult rv = mDecodeTaskQueue->Dispatch(
     NS_NewRunnableMethod(this, &MediaDecoderStateMachine::CallDecodeMetadata));
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_SUCCEEDED(rv)) {
+    mDispatchedDecodeMetadataTask = true;
+  } else {
+    NS_WARNING("Dispatch ReadMetadata task failed.");
+    return rv;
+  }
 
   return NS_OK;
 }
@@ -1600,14 +1608,18 @@ MediaDecoderStateMachine::EnqueueDecodeSeekTask()
                "Should be on state machine or decode thread.");
   AssertCurrentThreadInMonitor();
 
-  if (mState != DECODER_STATE_SEEKING) {
+  if (mState != DECODER_STATE_SEEKING ||
+      mDispatchedDecodeSeekTask) {
     return NS_OK;
   }
   nsresult rv = mDecodeTaskQueue->Dispatch(
     NS_NewRunnableMethod(this, &MediaDecoderStateMachine::DecodeSeek));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
+  if (NS_SUCCEEDED(rv)) {
+    mDispatchedDecodeSeekTask = true;
+  } else {
+    NS_WARNING("Dispatch DecodeSeek task failed.");
+  }
+  return rv;
 }
 
 nsresult
@@ -1808,6 +1820,7 @@ void
 MediaDecoderStateMachine::CallDecodeMetadata()
 {
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
+  AutoSetOnScopeExit<bool> unsetOnExit(mDispatchedDecodeMetadataTask, false);
   if (mState != DECODER_STATE_DECODING_METADATA) {
     return;
   }
@@ -1923,6 +1936,7 @@ void MediaDecoderStateMachine::DecodeSeek()
 {
   ReentrantMonitorAutoEnter mon(mDecoder->GetReentrantMonitor());
   NS_ASSERTION(OnDecodeThread(), "Should be on decode thread.");
+  AutoSetOnScopeExit<bool> unsetOnExit(mDispatchedDecodeSeekTask, false);
   if (mState != DECODER_STATE_SEEKING) {
     return;
   }

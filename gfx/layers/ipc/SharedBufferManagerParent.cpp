@@ -61,7 +61,7 @@ public:
   static int64_t sAmount;
 };
 
-NS_IMPL_ISUPPORTS(GrallocReporter, nsIMemoryReporter)
+NS_IMPL_ISUPPORTS1(GrallocReporter, nsIMemoryReporter)
 
 int64_t GrallocReporter::sAmount = 0;
 

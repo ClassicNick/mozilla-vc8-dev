@@ -130,7 +130,7 @@ NS_IMETHODIMP DoomCallbackWrapper::OnCacheEntryDoomed(nsresult status)
 // _OldVisitCallbackWrapper
 // Receives visit callbacks from the old API and forwards it to the new API
 
-NS_IMPL_ISUPPORTS(_OldVisitCallbackWrapper, nsICacheVisitor)
+NS_IMPL_ISUPPORTS1(_OldVisitCallbackWrapper, nsICacheVisitor)
 
 _OldVisitCallbackWrapper::~_OldVisitCallbackWrapper()
 {
@@ -489,7 +489,7 @@ class MetaDataVisitorWrapper : public nsICacheMetaDataVisitor
   nsCOMPtr<nsICacheEntryMetaDataVisitor> mCB;
 };
 
-NS_IMPL_ISUPPORTS(MetaDataVisitorWrapper, nsICacheMetaDataVisitor)
+NS_IMPL_ISUPPORTS1(MetaDataVisitorWrapper, nsICacheMetaDataVisitor)
 
 NS_IMETHODIMP
 MetaDataVisitorWrapper::VisitMetaDataElement(char const * key,
