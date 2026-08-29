@@ -176,9 +176,9 @@ AnalyserNode::GetFloatFrequencyData(const Float32Array& aArray)
   }
 
   float* buffer = aArray.Data();
-  uint32_t length = NS_MIN(aArray.Length(), mOutputBuffer.Length());
+  size_t length = NS_MIN(size_t(aArray.Length()), mOutputBuffer.Length());
 
-  for (uint32_t i = 0; i < length; ++i) {
+  for (size_t i = 0; i < length; ++i) {
     buffer[i] = WebAudioUtils::ConvertLinearToDecibels(mOutputBuffer[i], mMinDecibels);
   }
 }
@@ -194,9 +194,9 @@ AnalyserNode::GetByteFrequencyData(const Uint8Array& aArray)
   const double rangeScaleFactor = 1.0 / (mMaxDecibels - mMinDecibels);
 
   unsigned char* buffer = aArray.Data();
-  uint32_t length = NS_MIN(aArray.Length(), mOutputBuffer.Length());
+  size_t length = NS_MIN(size_t(aArray.Length()), mOutputBuffer.Length());
 
-  for (uint32_t i = 0; i < length; ++i) {
+  for (size_t i = 0; i < length; ++i) {
     const double decibels = WebAudioUtils::ConvertLinearToDecibels(mOutputBuffer[i], mMinDecibels);
     // scale down the value to the range of [0, UCHAR_MAX]
     const double scaled = NS_MAX(0.0, NS_MIN(double(UCHAR_MAX),
@@ -209,9 +209,9 @@ void
 AnalyserNode::GetFloatTimeDomainData(const Float32Array& aArray)
 {
   float* buffer = aArray.Data();
-  uint32_t length = std::min(aArray.Length(), mBuffer.Length());
+  size_t length = std::min(size_t(aArray.Length()), mBuffer.Length());
 
-  for (uint32_t i = 0; i < length; ++i) {
+  for (size_t i = 0; i < length; ++i) {
     buffer[i] = mBuffer[(i + mWriteIndex) % mBuffer.Length()];;
   }
 }
@@ -220,9 +220,9 @@ void
 AnalyserNode::GetByteTimeDomainData(const Uint8Array& aArray)
 {
   unsigned char* buffer = aArray.Data();
-  uint32_t length = NS_MIN(aArray.Length(), mBuffer.Length());
+  size_t length = NS_MIN(size_t(aArray.Length()), mBuffer.Length());
 
-  for (uint32_t i = 0; i < length; ++i) {
+  for (size_t i = 0; i < length; ++i) {
     const float value = mBuffer[(i + mWriteIndex) % mBuffer.Length()];
     // scale the value to the range of [0, UCHAR_MAX]
     const float scaled = NS_MAX(0.0f, NS_MIN(float(UCHAR_MAX),

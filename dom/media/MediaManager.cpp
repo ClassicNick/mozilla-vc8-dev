@@ -29,6 +29,7 @@
 #include "mozilla/dom/MediaStreamBinding.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/dom/GetUserMediaRequestBinding.h"
+#include "mozilla/Preferences.h"
 #include "MediaTrackConstraints.h"
 
 #include "Latency.h"
@@ -731,7 +732,7 @@ static SourceSet *
   GetSources(MediaEngine *engine,
              ConstraintsType &aConstraints,
              void (MediaEngine::* aEnumerate)(nsTArray<nsRefPtr<SourceType> >*),
-             char* media_device_name = nullptr)
+             const char* media_device_name = nullptr)
 {
   ScopedDeletePtr<SourceSet> result(new SourceSet);
 
@@ -749,7 +750,6 @@ static SourceSet *
       * to.
       */
     for (uint32_t len = sources.Length(), i = 0; i < len; i++) {
-#ifdef DEBUG
       sources[i]->GetName(deviceName);
       if (media_device_name && strlen(media_device_name) > 0)  {
         if (deviceName.EqualsASCII(media_device_name)) {
@@ -757,11 +757,8 @@ static SourceSet *
           break;
         }
       } else {
-#endif
         candidateSet.AppendElement(MediaDevice::Create(sources[i]));
-#ifdef DEBUG
       }
-#endif
     }
   }
 
@@ -1147,7 +1144,8 @@ public:
     const MediaStreamConstraints& aConstraints,
     already_AddRefed<nsIGetUserMediaDevicesSuccessCallback> aSuccess,
     already_AddRefed<nsIDOMGetUserMediaErrorCallback> aError,
-    uint64_t aWindowId, char* aAudioLoopbackDev, char* aVideoLoopbackDev)
+    uint64_t aWindowId, nsACString& aAudioLoopbackDev,
+    nsACString& aVideoLoopbackDev)
     : mConstraints(aConstraints)
     , mSuccess(aSuccess)
     , mError(aError)
@@ -1172,14 +1170,14 @@ public:
       VideoTrackConstraintsN constraints(GetInvariant(mConstraints.mVideo));
       ScopedDeletePtr<SourceSet> s(GetSources(backend, constraints,
           &MediaEngine::EnumerateVideoDevices,
-          mLoopbackVideoDevice));
+          mLoopbackVideoDevice.get()));
       final->MoveElementsFrom(*s);
     }
     if (IsOn(mConstraints.mAudio)) {
       AudioTrackConstraintsN constraints(GetInvariant(mConstraints.mAudio));
       ScopedDeletePtr<SourceSet> s (GetSources(backend, constraints,
           &MediaEngine::EnumerateAudioDevices,
-          mLoopbackAudioDevice));
+          mLoopbackAudioDevice.get()));
       final->MoveElementsFrom(*s);
     }
     NS_DispatchToMainThread(new DeviceSuccessCallbackRunnable(mWindowId,
@@ -1200,8 +1198,8 @@ private:
   // Audio & Video loopback devices to be used based on
   // the preference settings. This is currently used for
   // automated media tests only.
-  char* mLoopbackAudioDevice;
-  char* mLoopbackVideoDevice;
+  nsCString mLoopbackAudioDevice;
+  nsCString mLoopbackVideoDevice;
 };
 
 MediaManager::MediaManager()
@@ -1585,22 +1583,12 @@ MediaManager::GetUserMediaDevices(nsPIDOMWindow* aWindow,
 
   nsCOMPtr<nsIGetUserMediaDevicesSuccessCallback> onSuccess(aOnSuccess);
   nsCOMPtr<nsIDOMGetUserMediaErrorCallback> onError(aOnError);
-  char* loopbackAudioDevice = nullptr;
-  char* loopbackVideoDevice = nullptr;
-
-#ifdef DEBUG
-  nsresult rv;
 
   // Check if the preference for using loopback devices is enabled.
-  nsCOMPtr<nsIPrefService> prefs = do_GetService("@mozilla.org/preferences-service;1", &rv);
-  if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIPrefBranch> branch = do_QueryInterface(prefs);
-    if (branch) {
-      branch->GetCharPref("media.audio_loopback_dev", &loopbackAudioDevice);
-      branch->GetCharPref("media.video_loopback_dev", &loopbackVideoDevice);
-    }
-  }
-#endif
+  nsAdoptingCString loopbackAudioDevice =
+    Preferences::GetCString("media.audio_loopback_dev");
+  nsAdoptingCString loopbackVideoDevice =
+    Preferences::GetCString("media.video_loopback_dev");
 
   nsCOMPtr<nsIRunnable> gUMDRunnable = new GetUserMediaDevicesRunnable(
     aConstraints, onSuccess.forget(), onError.forget(),

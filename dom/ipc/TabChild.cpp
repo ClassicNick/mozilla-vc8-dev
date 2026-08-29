@@ -1331,6 +1331,23 @@ TabChild::DestroyWindow()
       }
       mLayersId = 0;
     }
+
+    for (uint32_t index = 0, count = mCachedFileDescriptorInfos.Length();
+         index < count;
+         index++) {
+        nsAutoPtr<CachedFileDescriptorInfo>& info =
+            mCachedFileDescriptorInfos[index];
+
+        MOZ_ASSERT(!info->mCallback);
+
+        if (info->mFileDescriptor.IsValid()) {
+            MOZ_ASSERT(!info->mCanceled);
+
+            nsRefPtr<CloseFileRunnable> runnable =
+                new CloseFileRunnable(info->mFileDescriptor);
+            runnable->Dispatch();
+        }
+    }
 }
 
 bool
@@ -1438,7 +1455,7 @@ TabChild::RecvCacheFileDescriptor(const nsString& aPath,
 
     // First see if we already have a request for this path.
     const CachedFileDescriptorInfo search(aPath);
-    uint32_t index =
+    size_t index =
         mCachedFileDescriptorInfos.IndexOf(search, 0,
                                            search.PathOnlyComparator());
     if (index == mCachedFileDescriptorInfos.NoIndex) {
@@ -1490,7 +1507,7 @@ TabChild::GetCachedFileDescriptor(const nsAString& aPath,
     // First see if we've already received a cached file descriptor for this
     // path.
     const CachedFileDescriptorInfo search(aPath);
-    uint32_t index =
+    size_t index =
         mCachedFileDescriptorInfos.IndexOf(search, 0,
                                            search.PathOnlyComparator());
     if (index == mCachedFileDescriptorInfos.NoIndex) {
@@ -1546,7 +1563,7 @@ TabChild::CancelCachedFileDescriptorCallback(
     }
 
     const CachedFileDescriptorInfo search(aPath, aCallback);
-    uint32_t index =
+    size_t index =
         mCachedFileDescriptorInfos.IndexOf(search, 0,
                                            search.PathAndCallbackComparator());
     if (index == mCachedFileDescriptorInfos.NoIndex) {
@@ -1562,6 +1579,9 @@ TabChild::CancelCachedFileDescriptorCallback(
     MOZ_ASSERT(!info->mFileDescriptor.IsValid());
     MOZ_ASSERT(info->mCallback == aCallback);
     MOZ_ASSERT(!info->mCanceled);
+
+    // No need to hold the callback any longer.
+    info->mCallback = nullptr;
 
     // Set this flag so that we will close the file descriptor when it arrives.
     info->mCanceled = true;
