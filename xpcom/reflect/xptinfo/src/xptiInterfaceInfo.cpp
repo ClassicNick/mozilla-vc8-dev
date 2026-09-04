@@ -252,7 +252,7 @@ xptiInterfaceEntry::GetConstant(uint16_t index, JS::MutableHandleValue constant,
         return NS_ERROR_INVALID_ARG;
     }
 
-    const auto& c = mDescriptor->const_descriptors[index - mConstantBaseIndex];
+    const XPTConstDescriptor& c = mDescriptor->const_descriptors[index - mConstantBaseIndex];
     AutoJSContext cx;
     JS::Rooted<JS::Value> v(cx);
     v.setUndefined();

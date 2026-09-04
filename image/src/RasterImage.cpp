@@ -3233,7 +3233,7 @@ RasterImage::DecodePool::DecodePool()
       mThreadPool->SetName(NS_LITERAL_CSTRING("ImageDecoder"));
       uint32_t limit;
       if (gDecodingThreadLimit <= 0) {
-        limit = std::max(PR_GetNumberOfProcessors(), 2) - 1;
+        limit = NS_MAX(PR_GetNumberOfProcessors(), 2) - 1;
       } else {
         limit = static_cast<uint32_t>(gDecodingThreadLimit);
       }
@@ -3532,7 +3532,7 @@ RasterImage::DecodePool::DecodeSomeOfImage(RasterImage* aImg,
           !aImg->mDecoder->NeedsNewFrame()) ||
          (aImg->mDecodeRequest && aImg->mDecodeRequest->mAllocatedNewFrame)) {
     chunkCount++;
-    uint32_t chunkSize = std::min(bytesToDecode, maxBytes);
+    uint32_t chunkSize = NS_MIN(bytesToDecode, maxBytes);
     nsresult rv = aImg->DecodeSomeData(chunkSize, aStrategy);
     if (NS_FAILED(rv)) {
       aImg->DoError();

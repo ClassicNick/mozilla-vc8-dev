@@ -149,7 +149,6 @@ protected:
   nsCOMPtr<nsIFile> mFile;
   nsCString mStorageId;
 public:
-  nsCOMPtr<nsIFileStorage> mFileStorage;
   nsString mFileName;
 };
 

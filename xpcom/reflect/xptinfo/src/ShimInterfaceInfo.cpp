@@ -148,8 +148,10 @@
 #include "nsIDOMSerializer.h"
 #include "nsIDOMSimpleGestureEvent.h"
 #include "nsIDOMSmartCardEvent.h"
+#ifdef MOZ_WEBSPEECH
 #include "nsIDOMSpeechRecognitionEvent.h"
 #include "nsIDOMSpeechSynthesisEvent.h"
+#endif // MOZ_WEBSPEECH
 #include "nsIDOMStorageEvent.h"
 #include "nsIDOMStyleSheet.h"
 #include "nsIDOMStyleSheetList.h"
@@ -317,8 +319,10 @@
 #include "mozilla/dom/ScrollAreaEventBinding.h"
 #include "mozilla/dom/SimpleGestureEventBinding.h"
 #include "mozilla/dom/SmartCardEventBinding.h"
+#ifdef MOZ_WEBSPEECH
 #include "mozilla/dom/SpeechRecognitionEventBinding.h"
 #include "mozilla/dom/SpeechSynthesisEventBinding.h"
+#endif // MOZ_WEBSPEECH
 #include "mozilla/dom/StorageEventBinding.h"
 #include "mozilla/dom/StyleSheetBinding.h"
 #include "mozilla/dom/StyleSheetListBinding.h"
@@ -502,8 +506,10 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
   DEFINE_SHIM_WITH_CUSTOM_INTERFACE(nsIDOMSerializer, XMLSerializer),
   DEFINE_SHIM(SimpleGestureEvent),
   DEFINE_SHIM(SmartCardEvent),
+#ifdef MOZ_WEBSPEECH
   DEFINE_SHIM(SpeechRecognitionEvent),
   DEFINE_SHIM(SpeechSynthesisEvent),
+#endif // MOZ_WEBSPEECH
   DEFINE_SHIM(StorageEvent),
   DEFINE_SHIM(StyleSheet),
   DEFINE_SHIM(StyleSheetList),
@@ -533,7 +539,7 @@ const ComponentsInterfaceShimEntry kComponentsInterfaceShimMap[] =
 #undef DEFINE_SHIM
 #undef DEFINE_SHIM_WITH_CUSTOM_INTERFACE
 
-NS_IMPL_ISUPPORTS(ShimInterfaceInfo, nsISupports, nsIInterfaceInfo)
+NS_IMPL_ISUPPORTS2(ShimInterfaceInfo, nsISupports, nsIInterfaceInfo)
 
 already_AddRefed<ShimInterfaceInfo>
 ShimInterfaceInfo::MaybeConstruct(const char* aName, JSContext* cx)
@@ -622,9 +628,9 @@ ShimInterfaceInfo::GetConstantCount(uint16_t* aCount)
             propHooks->mNativeProperties.chromeOnly
         };
         for (size_t i = 0; i < ArrayLength(props); ++i) {
-            auto prop = props[i];
+            const mozilla::dom::NativeProperties* prop = props[i];
             if (prop && prop->constants) {
-                for (auto cs = prop->constants->specs; cs->name; ++cs) {
+                for (const mozilla::dom::ConstantSpec* cs = prop->constants->specs; cs->name; ++cs) {
                     // We have found one constant here.  We explicitly do not
                     // bother calling isEnabled() here because it's OK to define
                     // potentially extra constants on these shim interfaces.
@@ -668,9 +674,9 @@ ShimInterfaceInfo::GetConstant(uint16_t aIndex, JS::MutableHandleValue aConstant
             propHooks->mNativeProperties.chromeOnly
         };
         for (size_t i = 0; i < ArrayLength(props); ++i) {
-            auto prop = props[i];
+            const mozilla::dom::NativeProperties* prop = props[i];
             if (prop && prop->constants) {
-                for (auto cs = prop->constants->specs; cs->name; ++cs) {
+                for (const mozilla::dom::ConstantSpec* cs = prop->constants->specs; cs->name; ++cs) {
                     // We have found one constant here.  We explicitly do not
                     // bother calling isEnabled() here because it's OK to define
                     // potentially extra constants on these shim interfaces.

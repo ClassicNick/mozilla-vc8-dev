@@ -1395,7 +1395,7 @@ CanvasRenderingContext2D::SetStyleFromUnion(const StringOrCanvasGradientOrCanvas
     return;
   }
 
-  MOZ_ASSUME_UNREACHABLE("Invalid union value");
+  MOZ_ASSERT_UNREACHABLE("Invalid union value");
 }
 
 void

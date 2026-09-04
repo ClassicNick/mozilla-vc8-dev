@@ -341,6 +341,8 @@ class MochitestRunner(MozbuildObject):
             manifest.tests.extend(tests)
 
             options.manifestFile = manifest
+            if len(test_paths) == 1 and len(tests) == 1:
+                options.testPath = test_paths[0]
 
         if rerun_failures:
             options.testManifest = failure_file_path
@@ -474,10 +476,6 @@ def MochitestCommand(func):
         help='If running tests by chunks, the number of the chunk to run.')
     func = this_chunk(func)
 
-    hide_subtests = CommandArgument('--hide-subtests', action='store_true',
-        help='If specified, will only log subtest results on failure or timeout.')
-    func = hide_subtests(func)
-
     debug_on_failure = CommandArgument('--debug-on-failure', action='store_true',
         help='Breaks execution and enters the JS debugger on a test failure. ' \
              'Should be used together with --jsdebugger.')
@@ -583,10 +581,6 @@ def B2GCommand(func):
     this_chunk = CommandArgument('--this-chunk', type=int,
         help='If running tests by chunks, the number of the chunk to run.')
     func = this_chunk(func)
-
-    hide_subtests = CommandArgument('--hide-subtests', action='store_true',
-        help='If specified, will only log subtest results on failure or timeout.')
-    func = hide_subtests(func)
 
     path = CommandArgument('test_paths', default=None, nargs='*',
         metavar='TEST',

@@ -430,7 +430,7 @@ public:
         mCallbackState = Complete;
         return;
       default:
-        MOZ_ASSUME_UNREACHABLE("Can't advance past Complete!");
+        MOZ_ASSERT_UNREACHABLE("Can't advance past Complete!");
     }
   }
 
@@ -2013,7 +2013,7 @@ QuotaManager::GetClient(Client::Type aClientType)
 uint32_t
 QuotaManager::GetStorageQuotaMB()
 {
-  return uint32_t(std::max(gStorageQuotaMB, 0));
+  return uint32_t(NS_MAX(gStorageQuotaMB, 0));
 }
 
 // static
@@ -2419,7 +2419,7 @@ QuotaManager::Observe(nsISupports* aSubject,
           }
         }
 
-        StorageMatcher<nsTArray<nsCOMPtr<nsIOfflineStorage>>> liveStorages;
+        StorageMatcher<nsTArray<nsCOMPtr<nsIOfflineStorage> > > liveStorages;
         liveStorages.Find(mLiveStorages, &indexes);
 
         if (!liveStorages.IsEmpty()) {
@@ -2796,7 +2796,7 @@ QuotaManager::RunSynchronizedOp(nsIOfflineStorage* aStorage,
 
   if (service) {
     // Have to copy here in case a transaction service needs a list too.
-    nsTArray<nsCOMPtr<nsIOfflineStorage>> array;
+    nsTArray<nsCOMPtr<nsIOfflineStorage> > array;
 
     for (uint32_t index = startIndex; index < endIndex; index++)  {
       if (!storages[index].IsEmpty() &&

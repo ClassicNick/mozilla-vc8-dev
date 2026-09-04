@@ -59,8 +59,12 @@ class TimeStamp;
 enum TracingMetadata {
   TRACING_DEFAULT,
   TRACING_INTERVAL_START,
-  TRACING_INTERVAL_END
+  TRACING_INTERVAL_END,
+  TRACING_EVENT,
+  TRACING_EVENT_BACKTRACE
 };
+
+class ProfilerBacktrace;
 
 #ifndef MOZ_ENABLE_PROFILER_SPS
 
@@ -89,6 +93,10 @@ enum TracingMetadata {
 #define PROFILER_MAIN_THREAD_LABEL_PRINTF(name_space, info, format, a) do {} while (0)
 
 static inline void profiler_tracing(const char* aCategory, const char* aInfo,
+                                    TracingMetadata metaData = TRACING_DEFAULT) {}
+
+static inline void profiler_tracing(const char* aCategory, const char* aInfo,
+                                    ProfilerBacktrace* aCause,
                                     TracingMetadata metaData = TRACING_DEFAULT) {}
 
 // Initilize the profiler TLS, signal handlers on linux. If MOZ_PROFILER_STARTUP
@@ -125,8 +133,6 @@ static inline void profiler_stop() {}
 static inline bool profiler_is_paused() { return false; }
 static inline void profiler_pause() {}
 static inline void profiler_resume() {}
-
-class ProfilerBacktrace;
 
 // Immediately capture the current thread's call stack and return it
 static inline ProfilerBacktrace* profiler_get_backtrace() { return nullptr; }

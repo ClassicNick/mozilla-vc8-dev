@@ -23,7 +23,7 @@ BEGIN_WORKERS_NAMESPACE
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(WorkerDataStoreCursor, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(WorkerDataStoreCursor, Release)
 
-NS_IMPL_CYCLE_COLLECTION(WorkerDataStoreCursor, mWorkerStore)
+NS_IMPL_CYCLE_COLLECTION_1(WorkerDataStoreCursor, mWorkerStore)
 
 WorkerDataStoreCursor::WorkerDataStoreCursor(WorkerDataStore* aWorkerStore)
   : mWorkerStore(aWorkerStore)

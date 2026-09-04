@@ -208,8 +208,8 @@ public:
   CSSSize CalculateBoundedCompositedSizeInCssPixels() const
   {
     CSSSize size = CalculateCompositedSizeInCssPixels();
-    size.width = std::min(size.width, mRootCompositionSize.width);
-    size.height = std::min(size.height, mRootCompositionSize.height);
+    size.width = NS_MIN(size.width, mRootCompositionSize.width);
+    size.height = NS_MIN(size.height, mRootCompositionSize.height);
     return size;
   }
 

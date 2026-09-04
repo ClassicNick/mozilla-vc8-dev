@@ -620,10 +620,12 @@ continue_loading:
       return STATUS_DLL_NOT_FOUND;
     }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_LONGHORN
     if (IsVistaOrLater() && !CheckASLR(full_fname)) {
       printf_stderr("LdrLoadDll: Blocking load of '%s'.  XPCOM components must support ASLR.\n", dllName);
       return STATUS_DLL_NOT_FOUND;
     }
+#endif
   }
 
   return stub_LdrLoadDll(filePath, flags, moduleFileName, handle);

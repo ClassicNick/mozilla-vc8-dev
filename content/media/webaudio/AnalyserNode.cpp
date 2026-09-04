@@ -209,7 +209,7 @@ void
 AnalyserNode::GetFloatTimeDomainData(const Float32Array& aArray)
 {
   float* buffer = aArray.Data();
-  size_t length = std::min(size_t(aArray.Length()), mBuffer.Length());
+  size_t length = NS_MIN(size_t(aArray.Length()), mBuffer.Length());
 
   for (size_t i = 0; i < length; ++i) {
     buffer[i] = mBuffer[(i + mWriteIndex) % mBuffer.Length()];;
