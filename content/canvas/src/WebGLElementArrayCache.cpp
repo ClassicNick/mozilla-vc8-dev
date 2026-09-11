@@ -371,32 +371,7 @@ bool WebGLElementArrayCacheTree<T>::Update(size_t firstByte, size_t lastByte)
   size_t firstLeaf = LeafForByte(firstByte);
   size_t lastLeaf = LeafForByte(lastByte);
 
-<<<<<<< HEAD
-  if (mInvalidated) {
-    mFirstInvalidatedLeaf = NS_MIN(firstLeaf, mFirstInvalidatedLeaf);
-    mLastInvalidatedLeaf = NS_MAX(lastLeaf, mLastInvalidatedLeaf);
-  } else {
-    mInvalidated = true;
-    mFirstInvalidatedLeaf = firstLeaf;
-    mLastInvalidatedLeaf = lastLeaf;
-  }
-}
-
-
-// When tree has been partially invalidated, from mFirstInvalidatedLeaf to
-// mLastInvalidatedLeaf, calling this method will 1) update the leaves in this interval
-// from the raw buffer data, and 2) propagate this update up the tree
-template<typename T>
-void WebGLElementArrayCacheTree<T>::Update()
-{
-  if (!mInvalidated) {
-    return;
-  }
-
-  MOZ_ASSERT(mLastInvalidatedLeaf < mNumLeaves);
-=======
   MOZ_ASSERT(firstLeaf <= lastLeaf && lastLeaf < mNumLeaves);
->>>>>>> 15b8b19
 
   size_t firstTreeIndex = TreeIndexForLeaf(firstLeaf);
   size_t lastTreeIndex = TreeIndexForLeaf(lastLeaf);

@@ -159,6 +159,7 @@ namespace js {
 namespace gc {
 class StoreBuffer;
 void MarkPersistentRootedChains(JSTracer *);
+void FinishPersistentRootedChains(JSRuntime *);
 }
 }
 
@@ -214,7 +215,7 @@ struct Runtime
     template <typename Referent> friend class JS::PersistentRooted;
 #endif
     friend void js::gc::MarkPersistentRootedChains(JSTracer *);
-    friend void ::js_FinishGC(JSRuntime *rt);
+    friend void js::gc::FinishPersistentRootedChains(JSRuntime *rt);
 
     mozilla::LinkedList<PersistentRootedFunction> functionPersistentRooteds;
     mozilla::LinkedList<PersistentRootedId>       idPersistentRooteds;
