@@ -66,6 +66,15 @@ NudgeToInteger(float *aVal)
   }
 }
 
+static inline void
+NudgeToInteger(float *aVal, float aErr)
+{
+  float r = floorf(*aVal + 0.5f);
+  if (FuzzyEqual(r, *aVal, aErr)) {
+    *aVal = r;
+  }
+}
+
 #if defined(_MSC_VER) && (_MSC_VER <= 1310)
 inline float
 hypotf_impl(float a, float b)
