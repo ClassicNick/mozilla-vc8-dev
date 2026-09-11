@@ -837,7 +837,7 @@ nsTableOuterFrame::OuterBeginReflowChild(nsPresContext*           aPresContext,
   }
 }
 
-nsresult
+void
 nsTableOuterFrame::OuterDoReflowChild(nsPresContext*             aPresContext,
                                       nsIFrame*                  aChildFrame,
                                       const nsHTMLReflowState&   aChildRS,
@@ -858,8 +858,8 @@ nsTableOuterFrame::OuterDoReflowChild(nsPresContext*             aPresContext,
     flags |= NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD;
   }
 
-  return ReflowChild(aChildFrame, aPresContext, aMetrics, aChildRS,
-                     childPt.x, childPt.y, flags, aStatus);
+  ReflowChild(aChildFrame, aPresContext, aMetrics, aChildRS,
+              childPt.x, childPt.y, flags, aStatus);
 }
 
 void 
@@ -878,7 +878,8 @@ nsTableOuterFrame::UpdateReflowMetrics(uint8_t              aCaptionSide,
   }
 }
 
-nsresult nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
+void
+nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
                                     nsHTMLReflowMetrics&     aDesiredSize,
                                     const nsHTMLReflowState& aOuterRS,
                                     nsReflowStatus&          aStatus)
@@ -886,7 +887,6 @@ nsresult nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsTableOuterFrame");
   DISPLAY_REFLOW(aPresContext, this, aOuterRS, aDesiredSize, aStatus);
 
-  nsresult rv = NS_OK;
   uint8_t captionSide = GetCaptionSide();
 
   // Initialize out parameters
@@ -980,9 +980,8 @@ nsresult nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
   nsMargin captionMargin;
   if (mCaptionFrames.NotEmpty()) {
     nsReflowStatus capStatus; // don't let the caption cause incomplete
-    rv = OuterDoReflowChild(aPresContext, mCaptionFrames.FirstChild(),
-                            *captionRS, captionMet, capStatus);
-    if (NS_FAILED(rv)) return rv;
+    OuterDoReflowChild(aPresContext, mCaptionFrames.FirstChild(),
+                       *captionRS, captionMet, capStatus);
     captionSize.width = captionMet.Width();
     captionSize.height = captionMet.Height();
     captionMargin = captionRS->ComputedPhysicalMargin();
@@ -1011,9 +1010,8 @@ nsresult nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
   // Then, now that we know how much to reduce the width of the inner
   // table to account for side captions, reflow the inner table.
   nsHTMLReflowMetrics innerMet(innerRS->GetWritingMode());
-  rv = OuterDoReflowChild(aPresContext, InnerTableFrame(), *innerRS,
-                          innerMet, aStatus);
-  if (NS_FAILED(rv)) return rv;
+  OuterDoReflowChild(aPresContext, InnerTableFrame(), *innerRS,
+                     innerMet, aStatus);
   nsSize innerSize;
   innerSize.width = innerMet.Width();
   innerSize.height = innerMet.Height();
@@ -1066,7 +1064,6 @@ nsresult nsTableOuterFrame::Reflow(nsPresContext*           aPresContext,
   // Return our desired rect
 
   NS_FRAME_SET_TRUNCATION(aStatus, aOuterRS, aDesiredSize);
-  return rv;
 }
 
 nsIAtom*

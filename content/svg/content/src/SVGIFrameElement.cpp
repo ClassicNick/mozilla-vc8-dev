@@ -39,14 +39,14 @@ nsSVGElement::LengthInfo SVGIFrameElement::sLengthInfo[4] =
 
 //----------------------------------------------------------------------
 // nsISupports methods
-NS_IMPL_ISUPPORTS_INHERITED(SVGIFrameElement, SVGIFrameElementBase,
+NS_IMPL_ISUPPORTS_INHERITED4(SVGIFrameElement, SVGIFrameElementBase,
                             nsIFrameLoaderOwner,
                             nsIDOMNode, nsIDOMElement,
                             nsIDOMSVGElement)
 //----------------------------------------------------------------------
 // Implementation
 
-SVGIFrameElement::SVGIFrameElement(already_AddRefed<nsINodeInfo>& aNodeInfo,
+SVGIFrameElement::SVGIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                                    FromParser aFromParser)
   : SVGIFrameElementBase(aNodeInfo)
   , nsElementFrameLoaderOwner(aFromParser)

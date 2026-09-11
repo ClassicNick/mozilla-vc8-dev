@@ -179,7 +179,7 @@ nsLeafBoxFrame::ComputeAutoSize(nsRenderingContext *aRenderingContext,
                                   aMargin, aBorder, aPadding, aShrinkWrap);
 }
 
-nsresult
+void
 nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
                      nsHTMLReflowMetrics&     aDesiredSize,
                      const nsHTMLReflowState& aReflowState,
@@ -311,8 +311,6 @@ nsLeafBoxFrame::Reflow(nsPresContext*   aPresContext,
 
   }
 #endif
-
-  return NS_OK;
 }
 
 #ifdef DEBUG_FRAME_DUMP

@@ -20,7 +20,7 @@
 #include "SVGAnimatedPreserveAspectRatio.h"
 
 nsresult NS_NewSVGIFrameElement(nsIContent **aResult,
-                                already_AddRefed<nsINodeInfo>&& aNodeInfo,
+                                already_AddRefed<nsINodeInfo> aNodeInfo,
                                 mozilla::dom::FromParser aFromParser);
 
 typedef mozilla::dom::SVGGraphicsElement SVGIFrameElementBase;
@@ -36,10 +36,10 @@ class SVGIFrameElement MOZ_FINAL : public SVGIFrameElementBase,
 {
   friend class ::nsSVGIFrameFrame;
   friend nsresult (::NS_NewSVGIFrameElement(nsIContent **aResult,
-                                  already_AddRefed<nsINodeInfo>&& aNodeInfo,
+                                  already_AddRefed<nsINodeInfo> aNodeInfo,
                                   mozilla::dom::FromParser aFromParser));
 
-  SVGIFrameElement(already_AddRefed<nsINodeInfo>& aNodeInfo,
+  SVGIFrameElement(already_AddRefed<nsINodeInfo> aNodeInfo,
                    mozilla::dom::FromParser aFromParser);
   virtual JSObject* WrapNode(JSContext *aCx) MOZ_OVERRIDE;
 
