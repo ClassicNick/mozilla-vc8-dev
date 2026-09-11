@@ -3603,6 +3603,15 @@ nsWindow::UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries)
   }
 }
 
+uint32_t
+nsWindow::GetMaxTouchPoints() const
+{
+  if (IsWin7OrLater()) {
+    return GetSystemMetrics(SM_MAXIMUMTOUCHES);
+  }
+  return 0;
+}
+
 /**************************************************************
  **************************************************************
  **
