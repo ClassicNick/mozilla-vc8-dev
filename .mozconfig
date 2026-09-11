@@ -6,8 +6,8 @@
 #mk_add_options MOZ_MAKE_FLAGS="-j5"
 
 # Set line below to your desired object directory
-mk_add_options MOZ_OBJDIR="f:/objdir/fxupdates/central/obj-fxvc71-ipc-release"
-WIN32_REDIST_DIR="f:/Redist/VC71SP1"
+mk_add_options MOZ_OBJDIR="e:/objdir/fxupdates/central/obj-fxvc71-ipc-release"
+WIN32_REDIST_DIR="e:/Redist/VC71SP1"
 
 
 # Configure Options
