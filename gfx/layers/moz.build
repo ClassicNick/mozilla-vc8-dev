@@ -103,6 +103,7 @@ EXPORTS.mozilla.layers += [
     'apz/src/Axis.h',
     'apz/src/GestureEventListener.h',
     'apz/src/TaskThrottler.h',
+    'apz/testutil/APZTestData.h',
     'apz/util/ActiveElementManager.h',
     'apz/util/APZCCallbackHelper.h',
     'AtomicRefCountedWithFinalize.h',
@@ -225,6 +226,7 @@ UNIFIED_SOURCES += [
     'apz/src/Axis.cpp',
     'apz/src/GestureEventListener.cpp',
     'apz/src/TaskThrottler.cpp',
+    'apz/testutil/APZTestData.cpp',
     'apz/util/ActiveElementManager.cpp',
     'apz/util/APZCCallbackHelper.cpp',
     'basic/BasicCanvasLayer.cpp',
@@ -363,3 +365,5 @@ CXXFLAGS += [
         'frameworks/native/include/media/openmax',
     ]
 ]
+
+MOCHITEST_MANIFESTS += ['apz/test/mochitest.ini']

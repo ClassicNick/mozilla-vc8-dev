@@ -1607,6 +1607,7 @@ ScrollFrameHelper::ScrollFrameHelper(nsContainerFrame* aOuter,
   , mCollapsedResizer(false)
   , mShouldBuildScrollableLayer(false)
   , mHasBeenScrolled(false)
+  , mIsResolutionSet(false)
 {
   mScrollingActive = IsAlwaysActive();
 
@@ -2793,6 +2794,7 @@ void
 ScrollFrameHelper::SetResolution(const gfxSize& aResolution)
 {
   mResolution = aResolution;
+  mIsResolutionSet = true;
 }
 
 static void
@@ -4536,6 +4538,7 @@ ScrollFrameHelper::RestoreState(nsPresState* aState)
   mDidHistoryRestore = true;
   mLastPos = mScrolledFrame ? GetLogicalScrollPosition() : nsPoint(0,0);
   mResolution = aState->GetResolution();
+  mIsResolutionSet = true;
 
   if (mIsRoot) {
     mOuter->PresContext()->PresShell()->SetResolution(mResolution.width, mResolution.height);
