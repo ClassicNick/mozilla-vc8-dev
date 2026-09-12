@@ -692,7 +692,7 @@ nsCSPParser::sourceList(nsTArray<nsCSPBaseSrc*>& outSrcs)
     // If the directive contains no other srcs, then we set the 'none'
     if (outSrcs.Length() == 0) {
       nsCSPKeywordSrc *keyword = new nsCSPKeywordSrc(CSP_NONE);
-      outSrcs.AppendElement(keyword);
+      outSrcs.AppendElement((nsCSPBaseSrc*) keyword);
     }
     // Otherwise, we ignore 'none' and report a warning
     else {
@@ -729,7 +729,7 @@ nsCSPParser::reportURIList(nsTArray<nsCSPBaseSrc*>& outSrcs)
 
     // Create new nsCSPReportURI and append to the list.
     nsCSPReportURI* reportURI = new nsCSPReportURI(uri);
-    outSrcs.AppendElement(reportURI);
+    outSrcs.AppendElement((nsCSPBaseSrc*) reportURI);
   }
 }
 

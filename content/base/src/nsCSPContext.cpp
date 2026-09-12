@@ -167,7 +167,7 @@ NS_IMPL_CLASSINFO(nsCSPContext,
                   nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_CSPCONTEXT_CID)
 
-NS_IMPL_ISUPPORTS_CI(nsCSPContext,
+NS_IMPL_ISUPPORTS2_CI(nsCSPContext,
                      nsIContentSecurityPolicy,
                      nsISerializable)
 

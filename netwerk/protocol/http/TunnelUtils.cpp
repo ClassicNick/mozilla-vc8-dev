@@ -1322,10 +1322,10 @@ SocketTransportShim::SetQoSBits(uint8_t aQoSBits)
   return mWrapped->SetQoSBits(aQoSBits);
 }
 
-NS_IMPL_ISUPPORTS(TLSFilterTransaction, nsITimerCallback)
-NS_IMPL_ISUPPORTS(SocketTransportShim, nsISocketTransport, nsITransport)
-NS_IMPL_ISUPPORTS(InputStreamShim, nsIInputStream, nsIAsyncInputStream)
-NS_IMPL_ISUPPORTS(OutputStreamShim, nsIOutputStream, nsIAsyncOutputStream)
+NS_IMPL_ISUPPORTS1(TLSFilterTransaction, nsITimerCallback)
+NS_IMPL_ISUPPORTS2(SocketTransportShim, nsISocketTransport, nsITransport)
+NS_IMPL_ISUPPORTS2(InputStreamShim, nsIInputStream, nsIAsyncInputStream)
+NS_IMPL_ISUPPORTS2(OutputStreamShim, nsIOutputStream, nsIAsyncOutputStream)
 
 } // namespace mozilla::net
 } // namespace mozilla

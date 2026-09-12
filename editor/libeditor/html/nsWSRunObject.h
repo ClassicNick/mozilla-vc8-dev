@@ -378,7 +378,7 @@ class MOZ_STACK_CLASS nsWSRunObject
     int32_t mLastNBSPOffset;           // ...
     
     // the list of nodes containing ws in this run
-    nsTArray<nsRefPtr<mozilla::dom::Text>> mNodeArray;
+    nsTArray<nsRefPtr<mozilla::dom::Text> > mNodeArray;
     
     WSFragment *mStartRun;             // the first WSFragment in the run
     WSFragment *mEndRun;               // the last WSFragment in the run, may be same as first

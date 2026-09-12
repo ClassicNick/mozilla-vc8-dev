@@ -16,7 +16,7 @@ struct APZTestDataToJSConverter {
   static void ConvertMap(const std::map<Key, Value>& aFrom,
                                dom::Sequence<KeyValuePair>& aOutTo,
                                void (*aElementConverter)(const Key&, const Value&, KeyValuePair&)) {
-    for (auto it = aFrom.begin(); it != aFrom.end(); ++it) {
+	for (std::map<Key, Value>::const_iterator it = aFrom.begin(); it != aFrom.end(); ++it) {
       aOutTo.AppendElement();
       aElementConverter(it->first, it->second, aOutTo.LastElement());
     }

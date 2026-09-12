@@ -86,7 +86,7 @@ private:
                        ViewID aScrollId,
                        const std::string& aKey,
                        const std::string& aValue) {
-    auto bucketIterator = aDataStore.find(aSequenceNumber);
+	std::map<SequenceNumber, Bucket>::iterator bucketIterator = aDataStore.find(aSequenceNumber);
     if (bucketIterator == aDataStore.end()) {
       MOZ_ASSERT(false, "LogTestDataImpl called with nonexistent sequence number");
       return;

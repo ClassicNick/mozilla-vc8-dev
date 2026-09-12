@@ -175,7 +175,7 @@ WrapperAnswer::AnswerDefineProperty(const ObjectId &objId, const nsString &id,
         return fail(cx, rs);
     }
 
-    if (!JS_DefinePropertyById(cx, obj, internedId, desc.value(), desc.attributes(),
+	if (!JS_DefinePropertyById(cx, obj, internedId, (JS::HandleValue) desc.value(), desc.attributes(),
                                desc.getter(), desc.setter()))
     {
         return fail(cx, rs);
@@ -413,7 +413,7 @@ WrapperAnswer::AnswerCall(const ObjectId &objId, const nsTArray<JSParam> &argv, 
         ContextOptionsRef(cx).setDontReportUncaught(true);
 
         HandleValueArray args = HandleValueArray::subarray(vals, 2, vals.length() - 2);
-        bool success = JS::Call(cx, vals[1], vals[0], args, &rval);
+		bool success = JS::Call(cx, (JS::HandleValue) vals[1], (JS::HandleValue) vals[0], args, &rval);
         if (!success)
             return fail(cx, rs);
     }
