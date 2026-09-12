@@ -46,9 +46,6 @@
 #include "jswrapper.h"
 #include "prmjtime.h"
 
-#if ENABLE_YARR_JIT
-#include "assembler/jit/ExecutableAllocator.h"
-#endif
 #include "builtin/Eval.h"
 #include "builtin/Intl.h"
 #include "builtin/MapObject.h"
@@ -85,7 +82,6 @@
 #include "vm/WeakMapObject.h"
 #include "vm/WrapperObject.h"
 #include "vm/Xdr.h"
-#include "yarr/BumpPointerAllocator.h"
 
 #include "jsatominlines.h"
 #include "jsfuninlines.h"
@@ -5897,7 +5893,7 @@ JS_NewRegExpObject(JSContext *cx, HandleObject obj, char *bytes, size_t length, 
         return nullptr;
 
     RegExpObject *reobj = RegExpObject::create(cx, res, chars, length,
-                                               RegExpFlag(flags), nullptr);
+                                               RegExpFlag(flags), nullptr, cx->tempLifoAlloc());
     js_free(chars);
     return reobj;
 }
@@ -5913,7 +5909,7 @@ JS_NewUCRegExpObject(JSContext *cx, HandleObject obj, jschar *chars, size_t leng
         return nullptr;
 
     return RegExpObject::create(cx, res, chars, length,
-                                RegExpFlag(flags), nullptr);
+                                RegExpFlag(flags), nullptr, cx->tempLifoAlloc());
 }
 
 JS_PUBLIC_API(bool)
@@ -5970,7 +5966,7 @@ JS_NewRegExpObjectNoStatics(JSContext *cx, char *bytes, size_t length, unsigned 
     if (!chars)
         return nullptr;
     RegExpObject *reobj = RegExpObject::createNoStatics(cx, chars, length,
-                                                        RegExpFlag(flags), nullptr);
+                                                        RegExpFlag(flags), nullptr, cx->tempLifoAlloc());
     js_free(chars);
     return reobj;
 }
@@ -5981,7 +5977,7 @@ JS_NewUCRegExpObjectNoStatics(JSContext *cx, jschar *chars, size_t length, unsig
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
     return RegExpObject::createNoStatics(cx, chars, length,
-                                         RegExpFlag(flags), nullptr);
+                                         RegExpFlag(flags), nullptr, cx->tempLifoAlloc());
 }
 
 JS_PUBLIC_API(bool)
