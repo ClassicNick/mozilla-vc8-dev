@@ -4294,7 +4294,7 @@ CanvasRenderingContext2D::ShouldForceInactiveLayer(LayerManager *aManager)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(CanvasPath, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(CanvasPath, Release)
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CanvasPath, mParent)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_1(CanvasPath, mParent)
 
 CanvasPath::CanvasPath(nsISupports* aParent)
   : mParent(aParent)

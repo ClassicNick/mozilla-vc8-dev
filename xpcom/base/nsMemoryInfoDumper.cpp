@@ -117,7 +117,7 @@ private:
   const bool mDumpChildProcesses;
 };
 
-NS_IMPL_ISUPPORTS_INHERITED(GCAndCCLogDumpRunnable, nsRunnable, nsIDumpGCAndCCLogsCallback)
+NS_IMPL_ISUPPORTS_INHERITED1(GCAndCCLogDumpRunnable, nsRunnable, nsIDumpGCAndCCLogsCallback)
 
 } // anonymous namespace
 
@@ -334,7 +334,7 @@ private:
   nsCOMPtr<nsIDumpGCAndCCLogsCallback> mCallback;
 };
 
-NS_IMPL_ISUPPORTS(nsDumpGCAndCCLogsCallbackHolder, nsIDumpGCAndCCLogsCallback)
+NS_IMPL_ISUPPORTS1(nsDumpGCAndCCLogsCallbackHolder, nsIDumpGCAndCCLogsCallback)
 
 NS_IMETHODIMP
 nsMemoryInfoDumper::DumpGCAndCCLogsToFile(const nsAString& aIdentifier,

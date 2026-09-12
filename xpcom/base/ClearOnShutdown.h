@@ -68,7 +68,7 @@ private:
 };
 
 extern bool sHasShutDown;
-extern StaticAutoPtr<LinkedList<ShutdownObserver>> sShutdownObservers;
+extern StaticAutoPtr<LinkedList<ShutdownObserver> > sShutdownObservers;
 
 } // namespace ClearOnShutdown_Internal
 
