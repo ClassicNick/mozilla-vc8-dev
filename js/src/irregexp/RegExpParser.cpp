@@ -80,7 +80,7 @@ RegExpBuilder::AddCharacter(jschar c)
 {
     pending_empty_ = false;
     if (characters_ == nullptr)
-        characters_ = alloc->newInfallible<CharacterVector>(*alloc);
+		characters_ = alloc->newInfallible<CharacterVector>(mozilla::OldMove((CharacterVector) *alloc));
     characters_->append(c);
     last_added_ = ADD_CHAR;
 }
@@ -168,10 +168,10 @@ RegExpBuilder::AddQuantifierToAtom(int min, int max,
         CharacterVector *char_vector = characters_;
         int num_chars = char_vector->length();
         if (num_chars > 1) {
-            CharacterVector *prefix = alloc->newInfallible<CharacterVector>(*alloc);
+			CharacterVector *prefix = alloc->newInfallible<CharacterVector>(mozilla::OldMove((CharacterVector) *alloc));
             prefix->append(char_vector->begin(), num_chars - 1);
             text_.Add(alloc, alloc->newInfallible<RegExpAtom>(prefix));
-            char_vector = alloc->newInfallible<CharacterVector>(*alloc);
+			char_vector = alloc->newInfallible<CharacterVector>(mozilla::OldMove((CharacterVector) *alloc));
             char_vector->append((*characters_)[num_chars - 1]);
         }
         characters_ = nullptr;
@@ -418,7 +418,7 @@ RegExpParser::ParseCharacterClass()
         is_negated = true;
         Advance();
     }
-    CharacterRangeVector *ranges = alloc->newInfallible<CharacterRangeVector>(*alloc);
+	CharacterRangeVector *ranges = alloc->newInfallible<CharacterRangeVector>(mozilla::OldMove((CharacterRangeVector) *alloc));
     while (has_more() && current() != ']') {
         jschar char_class = kNoCharClass;
         CharacterRange first;
@@ -756,7 +756,7 @@ RegExpTree* RegExpParser::ParseDisjunction()
           case '.': {
             Advance();
             // everything except \x0a, \x0d, \u2028 and \u2029
-            CharacterRangeVector *ranges = alloc->newInfallible<CharacterRangeVector>(*alloc);
+			CharacterRangeVector *ranges = alloc->newInfallible<CharacterRangeVector>(mozilla::OldMove((CharacterRangeVector) *alloc));
             CharacterRange::AddClassEscape(alloc, '.', ranges);
             RegExpTree* atom = alloc->newInfallible<RegExpCharacterClass>(ranges, false);
             builder->AddAtom(atom);
@@ -782,7 +782,7 @@ RegExpTree* RegExpParser::ParseDisjunction()
                 Advance(2);
             } else {
                 if (captures_ == nullptr)
-                    captures_ = alloc->newInfallible<RegExpCaptureVector>(*alloc);
+					captures_ = alloc->newInfallible<RegExpCaptureVector>(mozilla::OldMove((RegExpCaptureVector) *alloc));
                 if (captures_started() >= kMaxCaptures)
                     return ReportError(JSMSG_TOO_MANY_PARENS);
                 captures_->append((RegExpCapture *) nullptr);
@@ -823,7 +823,7 @@ RegExpTree* RegExpParser::ParseDisjunction()
                 widechar c = Next();
                 Advance(2);
                 CharacterRangeVector *ranges =
-                    alloc->newInfallible<CharacterRangeVector>(*alloc);
+					alloc->newInfallible<CharacterRangeVector>(mozilla::OldMove((CharacterRangeVector) *alloc));
                 CharacterRange::AddClassEscape(alloc, c, ranges);
                 RegExpTree* atom = alloc->newInfallible<RegExpCharacterClass>(ranges, false);
                 builder->AddAtom(atom);

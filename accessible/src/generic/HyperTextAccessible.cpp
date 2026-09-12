@@ -190,8 +190,13 @@ HyperTextAccessible::TextSubstring(int32_t aStartOffset, int32_t aEndOffset,
 {
   aText.Truncate();
 
-  uint32_t startOffset = ConvertMagicOffset(aStartOffset);
-  uint32_t endOffset = ConvertMagicOffset(aEndOffset);
+  index_t startOffset = ConvertMagicOffset(aStartOffset);
+  index_t endOffset = ConvertMagicOffset(aEndOffset);
+  if (!startOffset.IsValid() || !endOffset.IsValid() ||
+      startOffset > endOffset || endOffset > CharacterCount()) {
+    NS_ERROR("Wrong in offset");
+    return;
+  }
 
   int32_t startChildIdx = GetChildIndexAtOffset(startOffset);
   if (startChildIdx == -1)
@@ -607,9 +612,9 @@ HyperTextAccessible::TextBeforeOffset(int32_t aOffset,
   *aStartOffset = *aEndOffset = 0;
   aText.Truncate();
 
-  uint32_t convertedOffset = ConvertMagicOffset(aOffset);
-  if (convertedOffset == std::numeric_limits<uint32_t>::max()) {
-    NS_ERROR("Wrong given offset!");
+  index_t convertedOffset = ConvertMagicOffset(aOffset);
+  if (!convertedOffset.IsValid() || convertedOffset > CharacterCount()) {
+    NS_ERROR("Wrong in offset!");
     return;
   }
 
@@ -743,9 +748,9 @@ HyperTextAccessible::TextAfterOffset(int32_t aOffset,
   *aStartOffset = *aEndOffset = 0;
   aText.Truncate();
 
-  uint32_t convertedOffset = ConvertMagicOffset(aOffset);
-  if (convertedOffset == std::numeric_limits<uint32_t>::max()) {
-    NS_ERROR("Wrong given offset!");
+  index_t convertedOffset = ConvertMagicOffset(aOffset);
+  if (!convertedOffset.IsValid() || convertedOffset > CharacterCount()) {
+    NS_ERROR("Wrong in offset!");
     return;
   }
 
@@ -813,10 +818,15 @@ HyperTextAccessible::TextAttributes(bool aIncludeDefAttrs, int32_t aOffset,
   //    the attribute range itself can only stay the same or get smaller.
 
   *aStartOffset = *aEndOffset = 0;
+  index_t offset = ConvertMagicOffset(aOffset);
+  if (!offset.IsValid() || offset > CharacterCount()) {
+    NS_ERROR("Wrong in offset!");
+    return nullptr;
+  }
+
   nsCOMPtr<nsIPersistentProperties> attributes =
     do_CreateInstance(NS_PERSISTENTPROPERTIES_CONTRACTID);
 
-  uint32_t offset = ConvertMagicOffset(aOffset);
   Accessible* accAtOffset = GetChildAtOffset(offset);
   if (!accAtOffset) {
     // Offset 0 is correct offset when accessible has empty text. Include
@@ -1028,11 +1038,14 @@ nsIntRect
 HyperTextAccessible::TextBounds(int32_t aStartOffset, int32_t aEndOffset,
                                 uint32_t aCoordType)
 {
-  uint32_t startOffset = ConvertMagicOffset(aStartOffset);
-  uint32_t endOffset = ConvertMagicOffset(aEndOffset);
-  NS_ASSERTION(startOffset < endOffset &&
-               endOffset != std::numeric_limits<uint32_t>::max(),
-               "Wrong bad in!");
+  index_t startOffset = ConvertMagicOffset(aStartOffset);
+  index_t endOffset = ConvertMagicOffset(aEndOffset);
+  if (!startOffset.IsValid() || !endOffset.IsValid() ||
+      startOffset > endOffset || endOffset > CharacterCount()) {
+    NS_ERROR("Wrong in offset");
+    return nsIntRect();
+  }
+
 
   int32_t childIdx = GetChildIndexAtOffset(startOffset);
   if (childIdx == -1)
@@ -1416,8 +1429,13 @@ HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
                                           int32_t aStartOffset,
                                           int32_t aEndOffset)
 {
-  uint32_t startOffset = ConvertMagicOffset(aStartOffset);
-  uint32_t endOffset = ConvertMagicOffset(aEndOffset);
+  index_t startOffset = ConvertMagicOffset(aStartOffset);
+  index_t endOffset = ConvertMagicOffset(aEndOffset);
+  if (!startOffset.IsValid() || !endOffset.IsValid() ||
+      startOffset > endOffset || endOffset > CharacterCount()) {
+    NS_ERROR("Wrong in offset");
+    return false;
+  }
 
   dom::Selection* domSel = DOMSelection();
   if (!domSel)
@@ -1878,7 +1896,7 @@ HyperTextAccessible::GetSpellTextAttr(nsINode* aNode,
   if (rangeCount <= 0)
     return;
 
-  int32_t startOffset = 0, endOffset = 0;
+  uint32_t startOffset = 0, endOffset = 0;
   for (int32_t idx = 0; idx < rangeCount; idx++) {
     nsRange* range = domSel->GetRangeAt(idx);
     if (range->Collapsed())

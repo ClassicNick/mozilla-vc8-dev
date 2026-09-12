@@ -51,7 +51,7 @@ private:
   nsresult GetCurrentProcessDirectory(nsIFile** aFile);
 
   nsInterfaceHashtable<nsCStringHashKey, nsIFile> mHashtable;
-  nsTArray<nsCOMPtr<nsIDirectoryServiceProvider>> mProviders;
+  nsTArray<nsCOMPtr<nsIDirectoryServiceProvider> > mProviders;
 
 public:
 

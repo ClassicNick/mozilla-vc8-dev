@@ -59,7 +59,7 @@ private:
                              const char* aFromRawSegment, uint32_t aToOffset,
                              uint32_t aCount, uint32_t* aWriteCount);
 
-  nsTArray<nsCOMPtr<nsIInputStream>> mStreams;
+  nsTArray<nsCOMPtr<nsIInputStream> > mStreams;
   uint32_t mCurrentStream;
   bool mStartedReadingCurrent;
   nsresult mStatus;
