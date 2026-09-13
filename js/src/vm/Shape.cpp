@@ -867,10 +867,6 @@ JSObject::putProperty(ExclusiveContext* cx,
 
     JS_ASSERT_IF(shape->hasSlot() && !(attrs & JSPROP_SHARED), shape->slot() == slot);
 
-    bool wasGetterOrSetter = shape->hasGetterValue() || shape->hasSetterValue();
-    if (mode == ParallelExecution && wasGetterOrSetter)
-        return nullptr;
-
     if (obj->inDictionaryMode()) {
         /*
          * Updating some property in a dictionary-mode object. Create a new
@@ -939,10 +935,6 @@ JSObject::putProperty(ExclusiveContext* cx,
         if (cx->isJSContext())
             ++cx->asJSContext()->runtime()->propertyRemovals;
     }
-
-    // Inform type inference about any getter or setter property being changed.
-    if (wasGetterOrSetter)
-        types::MarkObjectStateChange(cx->asExclusiveContext(), obj);
 
     obj->checkShapeConsistency();
 
@@ -1133,10 +1125,6 @@ JSObject::removeProperty(ExclusiveContext *cx, jsid id_)
         JS_ASSERT(shape == self->lastProperty());
         self->removeLastProperty(cx);
     }
-
-    // Inform type inference about any getter or setter property being deleted.
-    if (shape->hasGetterValue() || shape->hasSetterValue())
-        types::MarkObjectStateChange(cx, self);
 
     self->checkShapeConsistency();
     return true;

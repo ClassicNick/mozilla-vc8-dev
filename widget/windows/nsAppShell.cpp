@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/ipc/WindowsMessageLoop.h"
 #include "nsAppShell.h"
 #include "nsToolkit.h"
 #include "nsThreadUtils.h"
@@ -145,6 +146,8 @@ nsAppShell::Init()
 #endif
 
   mLastNativeEventScheduled = TimeStamp::NowLoRes();
+
+  mozilla::ipc::windows::InitUIThread();
 
 #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   sTaskbarButtonCreatedMsg = ::RegisterWindowMessageW(kTaskbarButtonEventId);
@@ -313,7 +316,7 @@ nsAppShell::ProcessNextNativeEvent(bool mayWait)
       mozilla::HangMonitor::Suspend();
       {
         GeckoProfilerSleepRAII profiler_sleep;
-        ::WaitMessage();
+        WinUtils::WaitForMessage();
       }
     }
   } while (!gotMessage && mayWait);
