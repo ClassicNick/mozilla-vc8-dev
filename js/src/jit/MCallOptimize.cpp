@@ -693,21 +693,6 @@ IonBuilder::inlineMathCeil(CallInfo &callInfo)
         return InliningStatus_Inlined;
     }
 
-    if (IsFloatingPointType(argType) && returnType == MIRType_Int32) {
-        // Math.ceil(x) == -Math.floor(-x)
-        callInfo.setImplicitlyUsedUnchecked();
-        MConstant *minusOne = MConstant::New(alloc(), DoubleValue(-1.0));
-        current->add(minusOne);
-        MMul *mul = MMul::New(alloc(), callInfo.getArg(0), minusOne, argType);
-        current->add(mul);
-        MFloor *floor = MFloor::New(alloc(), mul);
-        current->add(floor);
-        MMul *result = MMul::New(alloc(), floor, minusOne, MIRType_Int32);
-        current->add(result);
-        current->push(result);
-        return InliningStatus_Inlined;
-    }
-
     if (IsFloatingPointType(argType) && returnType == MIRType_Double) {
         callInfo.setImplicitlyUsedUnchecked();
         MMathFunction *ins = MMathFunction::New(alloc(), callInfo.getArg(0), MMathFunction::Ceil, nullptr);
@@ -1919,7 +1904,6 @@ IonBuilder::inlineBoundFunction(CallInfo &nativeCallInfo, JSFunction *target)
          return InliningStatus_NotInlined;
 
     JSFunction *scriptedTarget = &(target->getBoundFunctionTarget()->as<JSFunction>());
-    JSRuntime *runtime = scriptedTarget->runtimeFromMainThread();
 
     // Don't optimize if we're constructing and the callee is not a
     // constructor, so that CallKnown does not have to handle this case
@@ -1930,17 +1914,17 @@ IonBuilder::inlineBoundFunction(CallInfo &nativeCallInfo, JSFunction *target)
         return InliningStatus_NotInlined;
     }
 
-    if (gc::IsInsideNursery(runtime, scriptedTarget))
+    if (gc::IsInsideNursery(scriptedTarget))
         return InliningStatus_NotInlined;
 
     for (size_t i = 0; i < target->getBoundFunctionArgumentCount(); i++) {
         const Value val = target->getBoundFunctionArgument(i);
-        if (val.isObject() && gc::IsInsideNursery(runtime, &val.toObject()))
+        if (val.isObject() && gc::IsInsideNursery(&val.toObject()))
             return InliningStatus_NotInlined;
     }
 
     const Value thisVal = target->getBoundFunctionThis();
-    if (thisVal.isObject() && gc::IsInsideNursery(runtime, &thisVal.toObject()))
+    if (thisVal.isObject() && gc::IsInsideNursery(&thisVal.toObject()))
         return InliningStatus_NotInlined;
 
     size_t argc = target->getBoundFunctionArgumentCount() + nativeCallInfo.argc();

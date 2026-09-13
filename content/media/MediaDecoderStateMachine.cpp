@@ -199,7 +199,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   mAmpleAudioThresholdUsecs(AMPLE_AUDIO_USECS),
   mDispatchedAudioDecodeTask(false),
   mDispatchedVideoDecodeTask(false),
-  mIsReaderIdle(false),
   mAudioCaptured(false),
   mTransportSeekable(true),
   mMediaSeekable(true),
@@ -578,7 +577,6 @@ MediaDecoderStateMachine::DecodeVideo()
     mDispatchedVideoDecodeTask = false;
     return;
   }
-  EnsureActive();
 
   // We don't want to consider skipping to the next keyframe if we've
   // only just started up the decode loop, so wait until we've decoded
@@ -672,7 +670,6 @@ MediaDecoderStateMachine::DecodeAudio()
     mDispatchedAudioDecodeTask = false;
     return;
   }
-  EnsureActive();
 
   // We don't want to consider skipping to the next keyframe if we've
   // only just started up the decode loop, so wait until we've decoded
@@ -1505,21 +1502,6 @@ MediaDecoderStateMachine::EnqueueDecodeMetadataTask()
 }
 
 void
-MediaDecoderStateMachine::EnsureActive()
-{
-  AssertCurrentThreadInMonitor();
-  MOZ_ASSERT(OnDecodeThread());
-  if (!mIsReaderIdle) {
-    return;
-  }
-  mIsReaderIdle = false;
-  {
-    ReentrantMonitorAutoExit exitMon(mDecoder->GetReentrantMonitor());
-    SetReaderActive();
-  }
-}
-
-void
 MediaDecoderStateMachine::SetReaderIdle()
 {
 #ifdef PR_LOGGING
@@ -1532,14 +1514,6 @@ MediaDecoderStateMachine::SetReaderIdle()
 #endif
   MOZ_ASSERT(OnDecodeThread());
   mReader->SetIdle();
-}
-
-void
-MediaDecoderStateMachine::SetReaderActive()
-{
-  DECODER_LOG(PR_LOG_DEBUG, "SetReaderActive()");
-  MOZ_ASSERT(OnDecodeThread());
-  mReader->SetActive();
 }
 
 void
@@ -1580,19 +1554,13 @@ MediaDecoderStateMachine::DispatchDecodeTasksIfNeeded()
     EnsureVideoDecodeTaskQueued();
   }
 
-  if (mIsReaderIdle == needIdle) {
-    return;
-  }
-  mIsReaderIdle = needIdle;
-  RefPtr<nsIRunnable> event;
-  if (mIsReaderIdle) {
-    event = NS_NewRunnableMethod(this, &MediaDecoderStateMachine::SetReaderIdle);
-  } else {
-    event = NS_NewRunnableMethod(this, &MediaDecoderStateMachine::SetReaderActive);
-  }
-  if (NS_FAILED(mDecodeTaskQueue->Dispatch(event.forget())) &&
-      mState != DECODER_STATE_SHUTDOWN) {
-    NS_WARNING("Failed to dispatch event to set decoder idle state");
+  if (needIdle) {
+    RefPtr<nsIRunnable> event = NS_NewRunnableMethod(
+        this, &MediaDecoderStateMachine::SetReaderIdle);
+    nsresult rv = mDecodeTaskQueue->Dispatch(event.forget());
+    if (NS_FAILED(rv) && mState != DECODER_STATE_SHUTDOWN) {
+      NS_WARNING("Failed to dispatch event to set decoder idle state");
+    }
   }
 }
 
@@ -1833,7 +1801,6 @@ nsresult MediaDecoderStateMachine::DecodeMetadata()
   if (mState != DECODER_STATE_DECODING_METADATA) {
     return NS_ERROR_FAILURE;
   }
-  EnsureActive();
 
   nsresult res;
   MediaInfo info;
@@ -1935,7 +1902,6 @@ void MediaDecoderStateMachine::DecodeSeek()
   if (mState != DECODER_STATE_SEEKING) {
     return;
   }
-  EnsureActive();
 
   // During the seek, don't have a lock on the decoder state,
   // otherwise long seek operations can block the main thread.

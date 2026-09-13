@@ -2563,12 +2563,6 @@ nsHTMLDocument::All()
   return mAll;
 }
 
-JSObject*
-nsHTMLDocument::GetAll(JSContext* aCx, ErrorResult& aRv)
-{
-  return All()->GetObject(aCx, aRv);
-}
-
 static void
 NotifyEditableStateChange(nsINode *aNode, nsIDocument *aDocument)
 {
