@@ -172,11 +172,11 @@ nsSprocketLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
   // See if we are collapsed. If we are, then simply iterate over all our
   // children and give them a rect of 0 width and height.
   if (aBox->IsCollapsed()) {
-    nsIFrame* child = aBox->GetChildBox();
+    nsIFrame* child = nsBox::GetChildBox(aBox);
     while(child) 
     {
       nsBoxFrame::LayoutChildAt(aState, child, nsRect(0,0,0,0));  
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
     }
     return NS_OK;
   }
@@ -301,7 +301,7 @@ nsSprocketLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
     nsComputedBoxSize* childComputedBoxSize = computedBoxSizes;
     nsBoxSize* childBoxSize                 = boxSizes;
 
-    nsIFrame* child = aBox->GetChildBox();
+    nsIFrame* child = nsBox::GetChildBox(aBox);
 
     int32_t count = 0;
     while (child || (childBoxSize && childBoxSize->bogus))
@@ -555,7 +555,7 @@ nsSprocketLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
       childComputedBoxSize = childComputedBoxSize->next;
       childBoxSize = childBoxSize->next;
 
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
       count++;
     }
 
@@ -610,7 +610,7 @@ nsSprocketLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
   // we really did have to change the positions because of packing (typically for 'center'
   // or 'end' pack values).
   if (x != origX || y != origY) {
-    nsIFrame* child = aBox->GetChildBox();
+    nsIFrame* child = nsBox::GetChildBox(aBox);
 
     // reposition all our children
     while (child) 
@@ -619,7 +619,7 @@ nsSprocketLayout::Layout(nsIFrame* aBox, nsBoxLayoutState& aState)
       childRect.x += (x - origX);
       childRect.y += (y - origY);
       child->SetBounds(aState, childRect);
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
     }
   }
 
@@ -667,7 +667,7 @@ nsSprocketLayout::PopulateBoxSizes(nsIFrame* aBox, nsBoxLayoutState& aState, nsB
   // so we can just optimize it out this way.
 
   // set flexes
-  nsIFrame* child = aBox->GetChildBox();
+  nsIFrame* child = nsBox::GetChildBox(aBox);
 
   aFlexes = 0;
   nsBoxSize* currentBox = nullptr;
@@ -704,12 +704,12 @@ nsSprocketLayout::PopulateBoxSizes(nsIFrame* aBox, nsBoxLayoutState& aState, nsB
     if (flex > 0) 
        aFlexes++;
    
-    child = child->GetNextBox();
+    child = GetNextBox(child);
   }
 #endif
 
   // get pref, min, max
-  child = aBox->GetChildBox();
+  child = nsBox::GetChildBox(aBox);
   currentBox = aBoxSizes;
   nsBoxSize* last = nullptr;
 
@@ -828,7 +828,7 @@ nsSprocketLayout::PopulateBoxSizes(nsIFrame* aBox, nsBoxLayoutState& aState, nsB
     currentBox->collapsed = collapsed;
     aFlexes += currentBox->flex;
 
-    child = child->GetNextBox();
+    child = nsBox::GetNextBox(child);
 
     last = currentBox;
     currentBox = currentBox->next;
@@ -935,7 +935,7 @@ nsSprocketLayout::AlignChildren(nsIFrame* aBox,
     halign = aBox->GetHAlign();
   }
 
-  nsIFrame* child = aBox->GetChildBox();
+  nsIFrame* child = nsBox::GetChildBox(aBox);
   while (child) {
 
     nsMargin margin;
@@ -996,7 +996,7 @@ nsSprocketLayout::AlignChildren(nsIFrame* aBox,
       child->SetBounds(aState, childRect);
     }
 
-    child = child->GetNextBox();
+    child = nsBox::GetNextBox(child);
   }
 }
 
@@ -1304,7 +1304,7 @@ nsSprocketLayout::GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aState)
    // run through all the children and get their min, max, and preferred sizes
    // return us the size of the box
 
-   nsIFrame* child = aBox->GetChildBox();
+   nsIFrame* child = nsBox::GetChildBox(aBox);
    nsFrameState frameState = nsFrameState(0);
    GetFrameState(aBox, frameState);
    bool isEqual = !!(frameState & NS_STATE_EQUAL_SIZE);
@@ -1333,7 +1333,7 @@ nsSprocketLayout::GetPrefSize(nsIFrame* aBox, nsBoxLayoutState& aState)
         count++;
       }
 
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
    }
 
    if (isEqual) {
@@ -1361,7 +1361,7 @@ nsSprocketLayout::GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aState)
    // run through all the children and get their min, max, and preferred sizes
    // return us the size of the box
 
-   nsIFrame* child = aBox->GetChildBox();
+   nsIFrame* child = nsBox::GetChildBox(aBox);
    nsFrameState frameState = nsFrameState(0);
    GetFrameState(aBox, frameState);
    bool isEqual = !!(frameState & NS_STATE_EQUAL_SIZE);
@@ -1401,7 +1401,7 @@ nsSprocketLayout::GetMinSize(nsIFrame* aBox, nsBoxLayoutState& aState)
         count++;
       }
 
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
    }
 
    
@@ -1430,7 +1430,7 @@ nsSprocketLayout::GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aState)
    // run through all the children and get their min, max, and preferred sizes
    // return us the size of the box
 
-   nsIFrame* child = aBox->GetChildBox();
+   nsIFrame* child = nsBox::GetChildBox(aBox);
    nsFrameState frameState = nsFrameState(0);
    GetFrameState(aBox, frameState);
    bool isEqual = !!(frameState & NS_STATE_EQUAL_SIZE);
@@ -1461,7 +1461,7 @@ nsSprocketLayout::GetMaxSize(nsIFrame* aBox, nsBoxLayoutState& aState)
         count++;
       }
 
-      child = child->GetNextBox();
+      child = nsBox::GetNextBox(child);
    }
 
    if (isEqual) {
@@ -1495,7 +1495,7 @@ nsSprocketLayout::GetAscent(nsIFrame* aBox, nsBoxLayoutState& aState)
    // run through all the children and get their min, max, and preferred sizes
    // return us the size of the box
    
-   nsIFrame* child = aBox->GetChildBox();
+   nsIFrame* child = nsBox::GetChildBox(aBox);
    
    while (child) 
    {  
@@ -1519,7 +1519,7 @@ nsSprocketLayout::GetAscent(nsIFrame* aBox, nsBoxLayoutState& aState)
         }
       //}
 
-      child = child->GetNextBox();      
+      child = nsBox::GetNextBox(child);      
    }
 
    nsMargin borderPadding;

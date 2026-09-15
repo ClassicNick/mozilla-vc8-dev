@@ -144,6 +144,12 @@ struct already_AddRefed
       // nothing else to do here
     }
 
+#ifdef MOZ_HAVE_CXX11_NULLPTR
+    // We have to keep this constructor implicit if we don't have nullptr support
+    // so that returning nullptr from a function which returns an already_AddRefed
+    // type works on the older b2g toolchains.
+    explicit
+#endif
     already_AddRefed( T* aRawPtr )
       : mRawPtr(aRawPtr)
     {
@@ -430,7 +436,7 @@ nsCOMPtr_base
   {
     public:
 
-      nsCOMPtr_base( nsISupports* rawPtr = 0 )
+      explicit nsCOMPtr_base( nsISupports* rawPtr = 0 )
           : mRawPtr(rawPtr)
         {
           // nothing else to do here
@@ -563,7 +569,7 @@ class nsCOMPtr MOZ_FINAL
           NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
         }
 
-      nsCOMPtr( T* aRawPtr )
+      MOZ_IMPLICIT nsCOMPtr( T* aRawPtr )
             : NSCAP_CTOR_BASE(aRawPtr)
           // construct from a raw pointer (of the right type)
         {
@@ -573,18 +579,27 @@ class nsCOMPtr MOZ_FINAL
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
-      nsCOMPtr( const already_AddRefed<T>& aSmartPtr )
+      MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<T>& aSmartPtr )
             : NSCAP_CTOR_BASE(aSmartPtr.mRawPtr)
-          // construct from |dont_AddRef(expr)|
+          // construct from |already_AddRefed|
+        {
+          NSCAP_LOG_ASSIGNMENT(this, mRawPtr);
+          NSCAP_ASSERT_NO_QUERY_NEEDED();
+        }
+
+      template<typename U>
+      MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
+            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
+          // construct from |already_AddRefed|
         {
           NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
       template<typename U>
-      nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
+      MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
             : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
-          // construct from |dont_AddRef(expr)|
+          // construct from |otherComPtr.forget()|
         {
           // But make sure that U actually inherits from T
           MOZ_STATIC_ASSERT((mozilla::IsBaseOf<T, U>::value),
@@ -593,7 +608,7 @@ class nsCOMPtr MOZ_FINAL
           NSCAP_ASSERT_NO_QUERY_NEEDED();
         }
 
-      nsCOMPtr( const nsQueryInterface qi )
+      MOZ_IMPLICIT nsCOMPtr( const nsQueryInterface qi )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_QueryInterface(expr)|
         {
@@ -601,7 +616,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_qi(qi, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsQueryInterfaceWithError& qi )
+      MOZ_IMPLICIT nsCOMPtr( const nsQueryInterfaceWithError& qi )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_QueryInterface(expr, &rv)|
         {
@@ -609,7 +624,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_qi_with_error(qi, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsGetServiceByCID gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByCID gs )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_GetService(cid_expr)|
         {
@@ -617,7 +632,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_gs_cid(gs, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsGetServiceByCIDWithError& gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByCIDWithError& gs )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_GetService(cid_expr, &rv)|
         {
@@ -625,7 +640,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_gs_cid_with_error(gs, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsGetServiceByContractID gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByContractID gs )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_GetService(contractid_expr)|
         {
@@ -633,7 +648,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_gs_contractid(gs, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsGetServiceByContractIDWithError& gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByContractIDWithError& gs )
             : NSCAP_CTOR_BASE(0)
           // construct from |do_GetService(contractid_expr, &rv)|
         {
@@ -641,7 +656,7 @@ class nsCOMPtr MOZ_FINAL
           assign_from_gs_contractid_with_error(gs, NS_GET_TEMPLATE_IID(T));
         }
 
-      nsCOMPtr( const nsCOMPtr_helper& helper )
+      MOZ_IMPLICIT nsCOMPtr( const nsCOMPtr_helper& helper )
             : NSCAP_CTOR_BASE(0)
           // ...and finally, anything else we might need to construct from
           //  can exploit the |nsCOMPtr_helper| facility
@@ -905,7 +920,7 @@ class nsCOMPtr<nsISupports>
           NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
         }
 
-      nsCOMPtr( nsISupports* aRawPtr )
+      MOZ_IMPLICIT nsCOMPtr( nsISupports* aRawPtr )
             : nsCOMPtr_base(aRawPtr)
           // construct from a raw pointer (of the right type)
         {
@@ -914,14 +929,14 @@ class nsCOMPtr<nsISupports>
           NSCAP_LOG_ASSIGNMENT(this, aRawPtr);
         }
 
-      nsCOMPtr( const already_AddRefed<nsISupports>& aSmartPtr )
+      MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<nsISupports>& aSmartPtr )
             : nsCOMPtr_base(aSmartPtr.mRawPtr)
           // construct from |dont_AddRef(expr)|
         {
           NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
         }
 
-      nsCOMPtr( const nsQueryInterface qi )
+      MOZ_IMPLICIT nsCOMPtr( const nsQueryInterface qi )
             : nsCOMPtr_base(0)
           // assign from |do_QueryInterface(expr)|
         {
@@ -929,7 +944,7 @@ class nsCOMPtr<nsISupports>
           assign_from_qi(qi, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsQueryInterfaceWithError& qi )
+      MOZ_IMPLICIT nsCOMPtr( const nsQueryInterfaceWithError& qi )
             : nsCOMPtr_base(0)
           // assign from |do_QueryInterface(expr, &rv)|
         {
@@ -937,7 +952,7 @@ class nsCOMPtr<nsISupports>
           assign_from_qi_with_error(qi, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsGetServiceByCID gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByCID gs )
             : nsCOMPtr_base(0)
           // assign from |do_GetService(cid_expr)|
         {
@@ -945,7 +960,7 @@ class nsCOMPtr<nsISupports>
           assign_from_gs_cid(gs, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsGetServiceByCIDWithError& gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByCIDWithError& gs )
             : nsCOMPtr_base(0)
           // assign from |do_GetService(cid_expr, &rv)|
         {
@@ -953,7 +968,7 @@ class nsCOMPtr<nsISupports>
           assign_from_gs_cid_with_error(gs, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsGetServiceByContractID gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByContractID gs )
             : nsCOMPtr_base(0)
           // assign from |do_GetService(contractid_expr)|
         {
@@ -961,7 +976,7 @@ class nsCOMPtr<nsISupports>
           assign_from_gs_contractid(gs, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsGetServiceByContractIDWithError& gs )
+      MOZ_IMPLICIT nsCOMPtr( const nsGetServiceByContractIDWithError& gs )
             : nsCOMPtr_base(0)
           // assign from |do_GetService(contractid_expr, &rv)|
         {
@@ -969,7 +984,7 @@ class nsCOMPtr<nsISupports>
           assign_from_gs_contractid_with_error(gs, NS_GET_IID(nsISupports));
         }
 
-      nsCOMPtr( const nsCOMPtr_helper& helper )
+      MOZ_IMPLICIT nsCOMPtr( const nsCOMPtr_helper& helper )
             : nsCOMPtr_base(0)
           // ...and finally, anything else we might need to construct from
           //  can exploit the |nsCOMPtr_helper| facility

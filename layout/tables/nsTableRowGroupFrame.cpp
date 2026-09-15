@@ -1583,7 +1583,7 @@ nsTableRowGroupFrame::HasInternalBreakAfter() const
 }
 /* ----- global methods ----- */
 
-nsIFrame*
+nsTableRowGroupFrame*
 NS_NewTableRowGroupFrame(nsIPresShell* aPresShell, nsStyleContext* aContext)
 {
   return new (aPresShell) nsTableRowGroupFrame(aContext);
