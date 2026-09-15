@@ -4713,7 +4713,7 @@ nsDisplayTransform::ShouldPrerenderTransformedContent(nsDisplayListBuilder* aBui
     message.AppendInt(nsPresContext::AppUnitsToIntCSSPixels(refSize.width));
     message.AppendLiteral(", ");
     message.AppendInt(nsPresContext::AppUnitsToIntCSSPixels(refSize.height));
-    message.AppendLiteral(")");
+    message.Append(')');
     CommonElementAnimationData::LogAsyncAnimationFailure(message,
                                                          aFrame->GetContent());
   }
@@ -5210,8 +5210,8 @@ bool nsDisplayTransform::UntransformVisibleRect(nsDisplayListBuilder* aBuilder,
 void
 nsDisplayTransform::WriteDebugInfo(nsACString& aTo)
 {
-  Matrix4x4 transform;
-  ToMatrix4x4(GetTransform(), transform);
+  gfx::Matrix4x4 transform;
+  gfx::ToMatrix4x4(GetTransform(), transform);
   AppendToString(aTo, transform);
 }
 #endif

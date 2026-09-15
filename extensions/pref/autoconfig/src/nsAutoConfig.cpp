@@ -260,7 +260,7 @@ nsresult nsAutoConfig::downloadAutoConfig()
                In this case the autoconfig URL is a script and 
                emailAddr as passed as an argument 
             */
-            mConfigURL.Append("?");
+            mConfigURL.Append('?');
             mConfigURL.Append(emailAddr); 
         }
     }

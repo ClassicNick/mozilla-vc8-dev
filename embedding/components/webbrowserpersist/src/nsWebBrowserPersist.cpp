@@ -2201,7 +2201,7 @@ nsWebBrowserPersist::CalculateAndAppendFileExt(nsIURI *aURI, nsIChannel *aChanne
                         if (newFileName.Length() > diff)
                             newFileName.Truncate(diff);
                     }
-                    newFileName.Append(".");
+                    newFileName.Append('.');
                     newFileName.Append(fileExt);
                 }
 

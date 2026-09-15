@@ -40,14 +40,12 @@
 #endif
 #endif
 
-using namespace mozilla::ipc;
-using namespace android;
-using namespace mozilla::gfx;
-
-
 namespace mozilla {
 namespace layers {
 
+using namespace mozilla::ipc;
+using namespace android;
+using namespace mozilla::gfx;
 
 Atomic<int32_t> Image::sSerialCounter(0);
 

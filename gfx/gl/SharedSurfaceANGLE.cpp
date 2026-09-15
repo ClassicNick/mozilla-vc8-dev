@@ -7,10 +7,10 @@
 
 #include "GLContextEGL.h"
 
-using namespace mozilla::gfx;
-
 namespace mozilla {
 namespace gl {
+
+using namespace mozilla::gfx;
 
 #ifdef MOZ_ENABLE_D3D10_LAYER
 SurfaceFactory_ANGLEShareHandle*

@@ -787,7 +787,7 @@ nsresult gfxFontUtils::MakeUniqueUserFontName(nsAString& aName)
             *p = '-';
     }
 
-    aName.Assign(NS_LITERAL_STRING("uf"));
+    aName.AssignLiteral("uf");
     aName.AppendASCII(guidB64);
     return NS_OK;
 }
@@ -1068,7 +1068,7 @@ gfxFontUtils::GetFullNameFromTable(hb_blob_t *aNameTable,
                                              gfxFontUtils::NAME_ID_STYLE,
                                              styleName);
         if (NS_SUCCEEDED(rv) && !styleName.IsEmpty()) {
-            name.AppendLiteral(" ");
+            name.Append(' ');
             name.Append(styleName);
             aFullName = name;
         }
