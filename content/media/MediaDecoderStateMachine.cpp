@@ -1123,7 +1123,7 @@ void MediaDecoderStateMachine::UpdatePlaybackPositionInternal(int64_t aTime)
     mEndTime = aTime;
     nsCOMPtr<nsIRunnable> event =
       NS_NewRunnableMethod(mDecoder, &MediaDecoder::DurationChanged);
-    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+    NS_DispatchToMainThread(event);
   }
 }
 
@@ -1136,7 +1136,7 @@ void MediaDecoderStateMachine::UpdatePlaybackPosition(int64_t aTime)
     mPositionChangeQueued = true;
     nsCOMPtr<nsIRunnable> event =
       NS_NewRunnableMethod(mDecoder, &MediaDecoder::PlaybackPositionChanged);
-    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+    NS_DispatchToMainThread(event);
   }
 
   mMetadataManager.DispatchMetadataIfNeeded(mDecoder, aTime);
@@ -1232,7 +1232,7 @@ void MediaDecoderStateMachine::UpdateEstimatedDuration(int64_t aDuration)
     SetDuration(aDuration);
     nsCOMPtr<nsIRunnable> event =
       NS_NewRunnableMethod(mDecoder, &MediaDecoder::DurationChanged);
-    NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+    NS_DispatchToMainThread(event);
   }
 }
 
@@ -1445,7 +1445,6 @@ void MediaDecoderStateMachine::Seek(const SeekTarget& aTarget)
                "Can only seek in range [0,duration]");
   mSeekTarget = SeekTarget(seekTime, aTarget.mType);
 
-  mBasePosition = seekTime - mStartTime;
   DECODER_LOG(PR_LOG_DEBUG, "Changed state to SEEKING (to %lld)", mSeekTarget.mTime);
   mState = DECODER_STATE_SEEKING;
   if (mDecoder->GetDecodedStream()) {
@@ -1861,7 +1860,7 @@ nsresult MediaDecoderStateMachine::DecodeMetadata()
                                  HasAudio(),
                                  HasVideo(),
                                  tags);
-  NS_DispatchToMainThread(metadataLoadedEvent, NS_DISPATCH_NORMAL);
+  NS_DispatchToMainThread(metadataLoadedEvent);
 
   if (HasAudio()) {
     RefPtr<nsIRunnable> decodeTask(
@@ -1925,6 +1924,12 @@ void MediaDecoderStateMachine::DecodeSeek()
     UpdatePlaybackPositionInternal(seekTime);
   }
 
+  // Update mBasePosition only after StopPlayback() which will call GetClock()
+  // which will call GetVideoStreamPosition() which will read mBasePosition.
+  // If we update mBasePosition too early in Seek(), |pos -= mBasePosition|
+  // will be wrong and assertion will fail in GetVideoStreamPosition().
+  mBasePosition = seekTime - mStartTime;
+
   // SeekingStarted will do a UpdateReadyStateForData which will
   // inform the element and its users that we have no frames
   // to display
@@ -1984,7 +1989,7 @@ void MediaDecoderStateMachine::DecodeSeek()
           }
           nsCOMPtr<nsIRunnable> event =
             NS_NewRunnableMethod(mDecoder, &MediaDecoder::Invalidate);
-          NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+          NS_DispatchToMainThread(event);
         }
       }
     } else {
@@ -2583,7 +2588,7 @@ void MediaDecoderStateMachine::UpdateReadyState() {
    */
   nsCOMPtr<nsIRunnable> event;
   event = NS_NewRunnableMethod(mDecoder, &MediaDecoder::UpdateReadyStateForData);
-  NS_DispatchToMainThread(event, NS_DISPATCH_NORMAL);
+  NS_DispatchToMainThread(event);
 }
 
 bool MediaDecoderStateMachine::JustExitedQuickBuffering()

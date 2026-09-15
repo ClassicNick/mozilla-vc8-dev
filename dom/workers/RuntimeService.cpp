@@ -676,7 +676,7 @@ public:
     mSyncLoopTarget = syncLoop.EventTarget();
     MOZ_ASSERT(mSyncLoopTarget);
 
-    if (NS_FAILED(NS_DispatchToMainThread(this, NS_DISPATCH_NORMAL))) {
+    if (NS_FAILED(NS_DispatchToMainThread(this))) {
       JS_ReportError(aCx, "Failed to dispatch to main thread!");
       return false;
     }
