@@ -80,7 +80,7 @@ HTMLShadowElement::SetProjectedShadow(ShadowRoot* aProjectedShadow)
     for (nsIContent* content = childIterator.GetNextChild();
          content;
          content = childIterator.GetNextChild()) {
-      content->DestInsertionPoints().AppendElement(this);
+      content->DestInsertionPoints().AppendElement((nsIContent*) this);
     }
 
     // Watch for mutations on the projected shadow because
@@ -181,7 +181,7 @@ HTMLShadowElement::DistributeSingleNode(nsIContent* aContent)
     return;
   }
 
-  aContent->DestInsertionPoints().AppendElement(this);
+  aContent->DestInsertionPoints().AppendElement((nsIContent*) this);
 
   // Handle the case where the shadow element is a child of
   // a node with a ShadowRoot. The nodes that have been distributed to
@@ -246,7 +246,7 @@ HTMLShadowElement::DistributeAllNodes()
          content;
          content = childIterator.GetNextChild()) {
       ShadowRoot::RemoveDestInsertionPoint(this, content->DestInsertionPoints());
-      content->DestInsertionPoints().AppendElement(this);
+      content->DestInsertionPoints().AppendElement((nsIContent*) this);
     }
   }
 

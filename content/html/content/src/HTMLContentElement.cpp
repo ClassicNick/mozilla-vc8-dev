@@ -109,7 +109,7 @@ HTMLContentElement::AppendMatchedNode(nsIContent* aContent)
 {
   mMatchedNodes.AppendElement(aContent);
   nsTArray<nsIContent*>& destInsertionPoint = aContent->DestInsertionPoints();
-  destInsertionPoint.AppendElement(this);
+  destInsertionPoint.AppendElement((nsIContent*) this);
 
   if (mMatchedNodes.Length() == 1) {
     // Fallback content gets dropped so we need to updated fallback
@@ -127,7 +127,7 @@ HTMLContentElement::UpdateFallbackDistribution()
     nsTArray<nsIContent*>& destInsertionPoint = child->DestInsertionPoints();
     destInsertionPoint.Clear();
     if (mMatchedNodes.IsEmpty()) {
-      destInsertionPoint.AppendElement(this);
+      destInsertionPoint.AppendElement((nsIContent*) this);
     }
   }
 }
@@ -150,7 +150,7 @@ HTMLContentElement::InsertMatchedNode(uint32_t aIndex, nsIContent* aContent)
 {
   mMatchedNodes.InsertElementAt(aIndex, aContent);
   nsTArray<nsIContent*>& destInsertionPoint = aContent->DestInsertionPoints();
-  destInsertionPoint.AppendElement(this);
+  destInsertionPoint.AppendElement((nsIContent*) this);
 
   if (mMatchedNodes.Length() == 1) {
     // Fallback content gets dropped so we need to updated fallback

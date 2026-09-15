@@ -35,6 +35,9 @@ if CONFIG['MOZ_VPX'] and not CONFIG['MOZ_NATIVE_LIBVPX']:
 
 if not CONFIG['MOZ_NATIVE_PNG']:
     external_dirs += ['media/libpng']
+    
+if CONFIG['MOZ_FMP4']:
+	external_dirs += ['media/libstagefright']
 
 external_dirs += [
     'media/kiss_fft',
@@ -42,7 +45,6 @@ external_dirs += [
     'media/libogg',
     'media/libtheora',
     'media/libspeex_resampler',
-    'media/libstagefright',
     'media/libsoundtouch',
 ]
 
