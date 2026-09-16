@@ -590,15 +590,6 @@ class nsCOMPtr MOZ_FINAL
       template<typename U>
       MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
             : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
-          // construct from |already_AddRefed|
-        {
-          NSCAP_LOG_ASSIGNMENT(this, aSmartPtr.mRawPtr);
-          NSCAP_ASSERT_NO_QUERY_NEEDED();
-        }
-
-      template<typename U>
-      MOZ_IMPLICIT nsCOMPtr( const already_AddRefed<U>& aSmartPtr )
-            : NSCAP_CTOR_BASE(static_cast<T*>(aSmartPtr.mRawPtr))
           // construct from |otherComPtr.forget()|
         {
           // But make sure that U actually inherits from T

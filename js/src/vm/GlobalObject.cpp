@@ -159,7 +159,7 @@ GlobalObject::resolveConstructor(JSContext *cx, Handle<GlobalObject*> global, JS
         return false;
 
     RootedId id(cx, NameToId(ClassName(key, cx)));
-    if (!global->addDataProperty(cx, id, constructorPropertySlot(key), 0))
+    if (!global->addDataProperty(cx, (jsid) id, constructorPropertySlot(key), 0))
         return false;
 
     global->setConstructor(key, ObjectValue(*ctor));

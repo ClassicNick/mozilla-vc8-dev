@@ -2092,7 +2092,7 @@ public:
   {
   }
 
-  MozMapRooter(JSContext *aCx, Nullable<MozMap<T>>* aMozMap
+  MozMapRooter(JSContext *aCx, Nullable<MozMap<T> >* aMozMap
                  MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     : JS::CustomAutoRooter(aCx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
       mNullableMozMap(aMozMap),
@@ -2125,7 +2125,7 @@ private:
 
   union {
     MozMap<T>* mMozMap;
-    Nullable<MozMap<T>>* mNullableMozMap;
+    Nullable<MozMap<T> >* mNullableMozMap;
   };
 
   MozMapType mMozMapType;

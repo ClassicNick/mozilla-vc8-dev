@@ -30,10 +30,16 @@ protected:
   {
   }
 
-  explicit TypedArrayObjectStorage(TypedArrayObjectStorage&& aOther)
+  explicit TypedArrayObjectStorage(TypedArrayObjectStorage& aOther)
     : mObj(aOther.mObj)
   {
     aOther.mObj = nullptr;
+  }
+
+  TypedArrayObjectStorage(mozilla::MoveRef<TypedArrayObjectStorage> aOther)
+    : mObj(aOther->mObj)
+  {
+    aOther->mObj = nullptr;
   }
 
 public:
@@ -69,13 +75,22 @@ struct TypedArray_base : public TypedArrayObjectStorage {
     mObj = nullptr;
   }
 
-  explicit TypedArray_base(TypedArray_base&& aOther)
-    : TypedArrayObjectStorage(Move(aOther)),
+  explicit TypedArray_base(TypedArray_base& aOther)
+    : TypedArrayObjectStorage(aOther),
       mData(aOther.mData),
       mLength(aOther.mLength)
   {
     aOther.mData = nullptr;
     aOther.mLength = 0;
+  }
+
+  TypedArray_base(MoveRef<TypedArray_base> aOther)
+    : TypedArrayObjectStorage(aOther),
+      mData(aOther->mData),
+      mLength(aOther->mLength)
+  {
+    aOther->mData = nullptr;
+    aOther->mLength = 0;
   }
 
 private:
@@ -139,8 +154,13 @@ struct TypedArray : public TypedArray_base<T,UnboxArray> {
     TypedArray_base<T,UnboxArray>()
   {}
 
-  explicit TypedArray(TypedArray&& aOther)
-    : TypedArray_base<T,UnboxArray>(Move(aOther))
+  explicit TypedArray(TypedArray& aOther)
+    : TypedArray_base<T,UnboxArray>(aOther)
+  {
+  }
+
+  TypedArray(MoveRef<TypedArray> aOther)
+    : TypedArray_base<T,UnboxArray>(OldMove(aOther))
   {
   }
 

@@ -17,6 +17,15 @@ namespace layers {
 
 const float EPSILON = 0.0001f;
 
+// Epsilon to be used when comparing 'float' coordinate values
+// with FuzzyEqualsAdditive. The rationale is that 'float' has 7 decimal
+// digits of precision, and coordinate values should be no larger than in the
+// ten thousands. Note also that the smallest legitimate difference in page
+// coordinates is 1 app unit, which is 1/60 of a (CSS pixel), so this epsilon
+// isn't too large.
+const float COORDINATE_EPSILON = 0.01f;
+
+class FrameMetrics;
 class AsyncPanZoomController;
 
 /**
@@ -80,6 +89,33 @@ public:
   float AdjustDisplacement(float aDisplacement, float& aOverscrollAmountOut);
 
   /**
+   * Overscrolls this axis by the requested amount in the requested direction.
+   * The axis must be at the end of its scroll range in this direction.
+   */
+  void OverscrollBy(float aOverscroll);
+
+  /**
+   * Return the amount of overscroll on this axis, in CSS pixels.
+   */
+  float GetOverscroll() const;
+
+  /**
+   * Start a snap-back animation to relieve overscroll.
+   */
+  void StartSnapBack();
+
+  /**
+   * Sample the snap-back animation to relieve overscroll.
+   * |aDelta| is the time since the last sample.
+   */
+  bool SampleSnapBack(const TimeDuration& aDelta);
+
+  /**
+   * Return whether this axis is overscrolled in either direction.
+   */
+  bool IsOverscrolled() const;
+
+  /**
    * Gets the distance between the starting position of the touch supplied in
    * startTouch() and the current touch from the last
    * updateWithTouchAtDevicePoint().
@@ -100,28 +136,18 @@ public:
    */
   bool FlingApplyFrictionOrCancel(const TimeDuration& aDelta);
 
-  /*
-   * Returns true if the page is zoomed in to some degree along this axis such that scrolling is
-   * possible and this axis has not been scroll locked while panning. Otherwise, returns false.
+  /**
+   * Returns true if the page has room to be scrolled along this axis.
    */
-  bool Scrollable();
+  bool CanScroll() const;
+
+  /**
+   * Returns true if the page has room to be scrolled along this axis
+   * and this axis is not scroll-locked.
+   */
+  bool CanScrollNow() const;
 
   void SetAxisLocked(bool aAxisLocked) { mAxisLocked = aAxisLocked; }
-
-  /**
-   * Gets the overscroll state of the axis in its current position.
-   */
-  Overscroll GetOverscroll();
-
-  /**
-   * If there is overscroll, returns the amount. Sign depends on in what
-   * direction it is overscrolling. Positive excess means that it is
-   * overscrolling in the positive direction, whereas negative excess means
-   * that it is overscrolling in the negative direction. If there is overscroll
-   * in both directions, this returns 0; it assumes that you check
-   * GetOverscroll() first.
-   */
-  float GetExcess();
 
   /**
    * Gets the raw velocity of this axis at this moment.
@@ -170,11 +196,6 @@ public:
    */
   bool ScaleWillOverscrollBothSides(float aScale);
 
-  /**
-   * Returns whether there is room to pan on this axis in either direction.
-   */
-  bool HasRoomToPan() const;
-
   float GetOrigin() const;
   float GetCompositionLength() const;
   float GetPageStart() const;
@@ -194,7 +215,20 @@ protected:
   float mVelocity;
   bool mAxisLocked;     // Whether movement on this axis is locked.
   AsyncPanZoomController* mAsyncPanZoomController;
+  // The amount by which this axis is in overscroll, in CSS coordinates.
+  // If this amount is nonzero, the relevant component of
+  // mAsyncPanZoomController->mFrameMetrics.mScrollOffset must be at its
+  // extreme allowed value in the relevant direction (that is, it must be at
+  // its maximum value if mOverscroll is positive, and at its minimum value
+  // if mOverscroll is negative).
+  float mOverscroll;
   nsTArray<float> mVelocityQueue;
+
+  const FrameMetrics& GetFrameMetrics() const;
+
+  // Adjust a requested overscroll amount for resistance, yielding a smaller
+  // actual overscroll amount.
+  float ApplyResistance(float aOverscroll) const;
 };
 
 class AxisX : public Axis {

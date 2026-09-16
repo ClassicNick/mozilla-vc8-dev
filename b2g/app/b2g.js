@@ -109,15 +109,14 @@ pref("mozilla.widget.use-buffer-pixmap", true);
 pref("mozilla.widget.disable-native-theme", true);
 pref("layout.reflow.synthMouseMove", false);
 pref("layers.enable-tiles", true);
-pref("layers.low-precision-buffer", true);
 /*
    Cross Process Mutex is not supported on Mac OS X so progressive
-   paint cannot be enabled for B2G on Mac OS X desktop
+   paint can not be enabled for B2G on Mac OS X desktop
 */
 #ifdef MOZ_WIDGET_COCOA
 pref("layers.progressive-paint", false);
 #else
-pref("layers.progressive-paint", true);
+pref("layers.progressive-paint", false);
 #endif
 
 /* download manager (don't show the window or alert) */
@@ -946,6 +945,11 @@ pref("apz.enlarge_displayport_when_clipped", true);
 // Use "sticky" axis locking
 pref("apz.axis_lock_mode", 2);
 pref("apz.subframe.enabled", true);
+
+// Overscroll-related settings
+pref("apz.overscroll.enabled", false);
+pref("apz.overscroll.snap_back_accel", "0.003");
+pref("apz.overscroll.snap_back_init_vel", "1");
 
 // This preference allows FirefoxOS apps (and content, I think) to force
 // the use of software (instead of hardware accelerated) 2D canvases by

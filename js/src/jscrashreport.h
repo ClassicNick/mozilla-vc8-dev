@@ -26,8 +26,8 @@ template<size_t size, unsigned char marker>
 class StackBuffer
 {
   public:
-    StackBuffer(void *data
-                MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+    explicit StackBuffer(void *data
+                         MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
     {
         MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 

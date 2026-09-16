@@ -472,7 +472,7 @@ JSXrayTraits::resolveOwnProperty(JSContext *cx, Wrapper &jsWrapper,
         // cache the value explicitly. See the corresponding call to
         // JS_GetPropertyById at the top of this function.
         RootedObject funObj(cx, JS_GetFunctionObject(fun));
-        return JS_DefinePropertyById(cx, holder, id, funObj, 0) &&
+        return JS_DefinePropertyById(cx, holder, id, (HandleObject) funObj, 0) &&
                JS_GetPropertyDescriptorById(cx, holder, id, desc);
     }
 
