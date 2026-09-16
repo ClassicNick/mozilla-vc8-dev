@@ -788,7 +788,7 @@ nsresult gfxFontUtils::MakeUniqueUserFontName(nsAString& aName)
             *p = '-';
     }
 
-    aName.AssignLiteral("uf");
+    aName.AssignLiteral(MOZ_UTF16("uf"));
     aName.AppendASCII(guidB64);
     return NS_OK;
 }

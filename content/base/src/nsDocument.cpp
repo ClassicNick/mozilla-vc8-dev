@@ -2967,7 +2967,7 @@ nsIDocument::GetLastModified(nsAString& aLastModified) const
   } else {
     // If we for whatever reason failed to find the last modified time
     // (or even the current time), fall back to what NS4.x returned.
-    aLastModified.AssignLiteral("01/01/1970 00:00:00");
+    aLastModified.AssignLiteral(MOZ_UTF16("01/01/1970 00:00:00"));
   }
 }
 
@@ -4569,10 +4569,10 @@ nsDocument::GetWindowInternal() const
   // the docshell, the outer window might be still obtainable from the it.
   nsCOMPtr<nsPIDOMWindow> win;
   if (mRemovedFromDocShell) {
-    nsCOMPtr<nsIInterfaceRequestor> requestor(mDocumentContainer);
-    if (requestor) {
-      // The docshell returns the outer window we are done.
-      win = do_GetInterface(requestor);
+    // The docshell returns the outer window we are done.
+    nsCOMPtr<nsIDocShell> kungfuDeathGrip(mDocumentContainer);
+    if (mDocumentContainer) {
+      win = mDocumentContainer->GetWindow();
     }
   } else {
     win = do_QueryInterface(mScriptGlobalObject);
@@ -7359,8 +7359,7 @@ nsIDocument::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv)
       do {
         nsPIDOMWindow *win = doc->GetWindow();
         if (win) {
-          nsCOMPtr<nsINode> node =
-            do_QueryInterface(win->GetFrameElementInternal());
+          nsCOMPtr<nsINode> node = win->GetFrameElementInternal();
           if (node &&
               nsContentUtils::ContentIsDescendantOf(node, adoptedNode)) {
             rv.Throw(NS_ERROR_DOM_HIERARCHY_REQUEST_ERR);
@@ -9170,16 +9169,16 @@ nsIDocument::GetReadyState(nsAString& aReadyState) const
 {
   switch(mReadyState) {
   case READYSTATE_LOADING :
-    aReadyState.AssignLiteral("loading");
+    aReadyState.AssignLiteral(MOZ_UTF16("loading"));
     break;
   case READYSTATE_INTERACTIVE :
-    aReadyState.AssignLiteral("interactive");
+    aReadyState.AssignLiteral(MOZ_UTF16("interactive"));
     break;
   case READYSTATE_COMPLETE :
-    aReadyState.AssignLiteral("complete");
+    aReadyState.AssignLiteral(MOZ_UTF16("complete"));
     break;
   default:
-    aReadyState.AssignLiteral("uninitialized");
+    aReadyState.AssignLiteral(MOZ_UTF16("uninitialized"));
   }
 }
 
@@ -10982,7 +10981,7 @@ IsInActiveTab(nsIDocument* aDoc)
   if (!rootItem) {
     return false;
   }
-  nsCOMPtr<nsIDOMWindow> rootWin = do_GetInterface(rootItem);
+  nsCOMPtr<nsIDOMWindow> rootWin = rootItem->GetWindow();
   if (!rootWin) {
     return false;
   }

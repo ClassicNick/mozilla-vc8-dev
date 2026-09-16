@@ -53,6 +53,7 @@ void
 ThebesLayerD3D9::InvalidateRegion(const nsIntRegion &aRegion)
 {
   mInvalidRegion.Or(mInvalidRegion, aRegion);
+  mInvalidRegion.SimplifyOutward(20);
   mValidRegion.Sub(mValidRegion, mInvalidRegion);
 }
 

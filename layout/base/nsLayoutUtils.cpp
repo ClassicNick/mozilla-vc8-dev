@@ -1623,12 +1623,10 @@ GetAnimatedGeometryRootForFrame(nsIFrame* aFrame,
     if (!parent)
       break;
     nsIAtom* parentType = parent->GetType();
-#ifdef ANDROID
     // Treat the slider thumb as being as an active scrolled root
-    // on mobile so that it can move without repainting.
+    // so that it can move without repainting.
     if (parentType == nsGkAtoms::sliderFrame)
       break;
-#endif
     // Sticky frames are active if their nearest scrollable frame
     // is also active, just keep a record of sticky frames that we
     // encounter for now.
@@ -5392,7 +5390,7 @@ nsLayoutUtils::GetDeviceContextForScreenInfo(nsPIDOMWindow* aWindow)
     // context does the right thing on multi-monitor systems when we return it to
     // the caller.  It will also make sure that our prescontext has been created,
     // if we're supposed to have one.
-    nsCOMPtr<nsPIDOMWindow> win = do_GetInterface(docShell);
+    nsCOMPtr<nsPIDOMWindow> win = docShell->GetWindow();
     if (!win) {
       // No reason to go on
       return nullptr;

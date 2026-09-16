@@ -245,6 +245,12 @@ typedef GeckoContentController::APZStateChange APZStateChange;
  * How much to adjust the displayport in the direction of scrolling. This value
  * is multiplied by the velocity and added to the displayport offset.
  *
+ * "apz.velocity_relevance_time_ms"
+ * When computing a fling velocity from the most recently stored velocity
+ * information, only velocities within the most X milliseconds are used.
+ * This pref controls the value of X.
+ * Units: ms
+ *
  * "apz.x_skate_size_multiplier", "apz.y_skate_size_multiplier"
  * The multiplier we apply to the displayport size if it is skating (current
  * velocity is above apz.min_skate_speed). We prefer to increase the size of the
@@ -686,7 +692,6 @@ nsEventStatus AsyncPanZoomController::HandleInputEvent(const InputData& aEvent) 
   default: NS_WARNING("Unhandled input event"); break;
   }
 
-  mLastEventTime = aEvent.mTime;
   return rv;
 }
 
@@ -721,7 +726,6 @@ nsEventStatus AsyncPanZoomController::HandleGestureEvent(const InputData& aEvent
   default: NS_WARNING("Unhandled input event"); break;
   }
 
-  mLastEventTime = aEvent.mTime;
   return rv;
 }
 
@@ -745,8 +749,8 @@ nsEventStatus AsyncPanZoomController::OnTouchStart(const MultiTouchInput& aEvent
       CancelAnimation();
       // Fall through.
     case NOTHING: {
-      mX.StartTouch(point.x);
-      mY.StartTouch(point.y);
+      mX.StartTouch(point.x, aEvent.mTime);
+      mY.StartTouch(point.y, aEvent.mTime);
       APZCTreeManager* treeManagerLocal = mTreeManager;
       nsRefPtr<GeckoContentController> controller = GetGeckoContentController();
       if (treeManagerLocal && controller) {
@@ -884,8 +888,8 @@ nsEventStatus AsyncPanZoomController::OnTouchEnd(const MultiTouchInput& aEvent) 
         }
       }
     }
-    mX.EndTouch();
-    mY.EndTouch();
+    mX.EndTouch(aEvent.mTime);
+    mY.EndTouch(aEvent.mTime);
     SetState(FLING);
     StartAnimation(new FlingAnimation(*this,
                                       true  /* apply acceleration */,
@@ -1238,9 +1242,8 @@ nsEventStatus AsyncPanZoomController::StartPanning(const MultiTouchInput& aEvent
 
   // When the touch move breaks through the pan threshold, reposition the touch down origin
   // so the page won't jump when we start panning.
-  mX.StartTouch(point.x);
-  mY.StartTouch(point.y);
-  mLastEventTime = aEvent.mTime;
+  mX.StartTouch(point.x, aEvent.mTime);
+  mY.StartTouch(point.y, aEvent.mTime);
 
   double angle = atan2(dy, dx); // range [-pi, pi]
   angle = fabs(angle); // range [0, pi]
@@ -1267,15 +1270,8 @@ nsEventStatus AsyncPanZoomController::StartPanning(const MultiTouchInput& aEvent
 
 void AsyncPanZoomController::UpdateWithTouchAtDevicePoint(const MultiTouchInput& aEvent) {
   ScreenIntPoint point = GetFirstTouchScreenPoint(aEvent);
-  TimeDuration timeDelta = TimeDuration().FromMilliseconds(aEvent.mTime - mLastEventTime);
-
-  // Probably a duplicate event, just throw it away.
-  if (timeDelta.ToMilliseconds() <= EPSILON) {
-    return;
-  }
-
-  mX.UpdateWithTouchAtDevicePoint(point.x, timeDelta);
-  mY.UpdateWithTouchAtDevicePoint(point.y, timeDelta);
+  mX.UpdateWithTouchAtDevicePoint(point.x, aEvent.mTime);
+  mY.UpdateWithTouchAtDevicePoint(point.y, aEvent.mTime);
 }
 
 bool AsyncPanZoomController::AttemptScroll(const ScreenPoint& aStartPoint,
@@ -1413,12 +1409,6 @@ bool AsyncPanZoomController::CallDispatchScroll(const ScreenPoint& aStartPoint, 
 void AsyncPanZoomController::TrackTouch(const MultiTouchInput& aEvent) {
   ScreenIntPoint prevTouchPoint(mX.GetPos(), mY.GetPos());
   ScreenIntPoint touchPoint = GetFirstTouchScreenPoint(aEvent);
-  TimeDuration timeDelta = TimeDuration().FromMilliseconds(aEvent.mTime - mLastEventTime);
-
-  // Probably a duplicate event, just throw it away.
-  if (timeDelta.ToMilliseconds() <= EPSILON) {
-    return;
-  }
 
   // If we're axis-locked, check if the user is trying to break the lock
   if (GetAxisLockMode() == STICKY && !mPanDirRestricted) {
@@ -1448,7 +1438,9 @@ void AsyncPanZoomController::TrackTouch(const MultiTouchInput& aEvent) {
 
   UpdateWithTouchAtDevicePoint(aEvent);
 
-  CallDispatchScroll(prevTouchPoint, touchPoint, 0);
+  if (prevTouchPoint != touchPoint) {
+    CallDispatchScroll(prevTouchPoint, touchPoint, 0);
+  }
 }
 
 ScreenIntPoint& AsyncPanZoomController::GetFirstTouchScreenPoint(const MultiTouchInput& aEvent) {

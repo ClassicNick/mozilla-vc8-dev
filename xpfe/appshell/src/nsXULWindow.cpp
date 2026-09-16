@@ -1546,7 +1546,7 @@ NS_IMETHODIMP nsXULWindow::GetWindowDOMWindow(nsIDOMWindow** aDOMWindow)
   NS_ENSURE_STATE(mDocShell);
 
   if (!mDOMWindow)
-    mDOMWindow = do_GetInterface(mDocShell);
+    mDOMWindow = mDocShell->GetWindow();
   NS_ENSURE_TRUE(mDOMWindow, NS_ERROR_FAILURE);
 
   *aDOMWindow = mDOMWindow;

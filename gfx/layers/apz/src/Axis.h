@@ -52,23 +52,22 @@ public:
   };
 
   /**
-   * Notify this Axis that a new touch has been received, including a time delta
-   * indicating how long it has been since the previous one. This triggers a
-   * recalculation of velocity.
+   * Notify this Axis that a new touch has been received, including a timestamp
+   * for when the touch was received. This triggers a recalculation of velocity.
    */
-  void UpdateWithTouchAtDevicePoint(int32_t aPos, const TimeDuration& aTimeDelta);
+  void UpdateWithTouchAtDevicePoint(int32_t aPos, uint32_t aTimestampMs);
 
   /**
    * Notify this Axis that a touch has begun, i.e. the user has put their finger
    * on the screen but has not yet tried to pan.
    */
-  void StartTouch(int32_t aPos);
+  void StartTouch(int32_t aPos, uint32_t aTimestampMs);
 
   /**
    * Notify this Axis that a touch has ended gracefully. This may perform
    * recalculations of the axis velocity.
    */
-  void EndTouch();
+  void EndTouch(uint32_t aTimestampMs);
 
   /**
    * Notify this Axis that a touch has ended forcefully. Useful for stopping
@@ -211,6 +210,7 @@ public:
 
 protected:
   int32_t mPos;
+  uint32_t mPosTimeMs;
   int32_t mStartPos;
   float mVelocity;
   bool mAxisLocked;     // Whether movement on this axis is locked.
@@ -222,7 +222,10 @@ protected:
   // its maximum value if mOverscroll is positive, and at its minimum value
   // if mOverscroll is negative).
   float mOverscroll;
-  nsTArray<float> mVelocityQueue;
+  // A queue of (timestamp, velocity) pairs; these are the historical
+  // velocities at the given timestamps. Timestamps are in milliseconds,
+  // velocities are in screen pixels per ms.
+  nsTArray<std::pair<uint32_t, float> > mVelocityQueue;
 
   const FrameMetrics& GetFrameMetrics() const;
 

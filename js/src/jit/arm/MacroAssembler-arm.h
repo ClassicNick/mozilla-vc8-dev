@@ -312,7 +312,7 @@ class MacroAssemblerARM : public Assembler
     void ma_vpush(VFPRegister r);
 
     // branches when done from within arm-specific code
-    void ma_b(Label *dest, Condition c = Always, bool isPatchable = false);
+    BufferOffset ma_b(Label *dest, Condition c = Always, bool isPatchable = false);
     void ma_bx(Register dest, Condition c = Always);
 
     void ma_b(void *target, Relocation::Kind reloc, Condition c = Always);
@@ -1426,9 +1426,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM
     }
     void addPtr(ImmPtr imm, const Register dest) {
         addPtr(ImmWord(uintptr_t(imm.value)), dest);
-    }
-    void mulBy3(const Register &src, const Register &dest) {
-        as_add(dest, src, lsl(src, 1));
     }
 
     void setStackArg(Register reg, uint32_t arg);
