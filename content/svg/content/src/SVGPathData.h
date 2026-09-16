@@ -195,6 +195,7 @@ protected:
   nsresult CopyFrom(const SVGPathData& rhs);
 
   float& operator[](uint32_t aIndex) {
+    mCachedPath = nullptr;
     return mData[aIndex];
   }
 
@@ -203,6 +204,7 @@ protected:
    * increased, in which case the list will be left unmodified.
    */
   bool SetLength(uint32_t aLength) {
+    mCachedPath = nullptr;
     return mData.SetLength(aLength);
   }
 
@@ -211,6 +213,7 @@ public:
 
 protected:
   void Clear() {
+    mCachedPath = nullptr;
     mData.Clear();
   }
 
@@ -224,10 +227,11 @@ protected:
 
   nsresult AppendSeg(uint32_t aType, ...); // variable number of float args
 
-  iterator begin() { return mData.Elements(); }
-  iterator end() { return mData.Elements() + mData.Length(); }
+  iterator begin() { mCachedPath = nullptr; return mData.Elements(); }
+  iterator end() { mCachedPath = nullptr; return mData.Elements() + mData.Length(); }
 
   FallibleTArray<float> mData;
+  mutable RefPtr<gfx::Path> mCachedPath;
 };
 
 

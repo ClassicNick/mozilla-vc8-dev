@@ -1380,7 +1380,7 @@ nsTableRowGroupFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
   }
 }
 
-nsresult
+void
 nsTableRowGroupFrame::AppendFrames(ChildListID     aListID,
                                    nsFrameList&    aFrameList)
 {
@@ -1414,11 +1414,9 @@ nsTableRowGroupFrame::AppendFrames(ChildListID     aListID,
                        NS_FRAME_HAS_DIRTY_CHILDREN);
     tableFrame->SetGeometryDirty();
   }
-
-  return NS_OK;
 }
 
-nsresult
+void
 nsTableRowGroupFrame::InsertFrames(ChildListID     aListID,
                                    nsIFrame*       aPrevFrame,
                                    nsFrameList&    aFrameList)
@@ -1465,10 +1463,9 @@ nsTableRowGroupFrame::InsertFrames(ChildListID     aListID,
                        NS_FRAME_HAS_DIRTY_CHILDREN);
     tableFrame->SetGeometryDirty();
   }
-  return NS_OK;
 }
 
-nsresult
+void
 nsTableRowGroupFrame::RemoveFrame(ChildListID     aListID,
                                   nsIFrame*       aOldFrame)
 {
@@ -1489,8 +1486,6 @@ nsTableRowGroupFrame::RemoveFrame(ChildListID     aListID,
     tableFrame->SetGeometryDirty();
   }
   mFrames.DestroyFrame(aOldFrame);
-
-  return NS_OK;
 }
 
 /* virtual */ nsMargin

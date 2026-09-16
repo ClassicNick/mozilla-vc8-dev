@@ -1610,7 +1610,7 @@ echo "configure:1610: checking for android toolchain directory" >&5
 
         kernel_name=`uname -s | tr "[:upper:]" "[:lower:]"`
 
-        for version in $android_gnu_compiler_version 4.7 4.6 4.4.3 ; do
+        for version in $android_gnu_compiler_version 4.8 4.7 4.6 4.4.3; do
             case "$target_cpu" in
             arm)
                 target_name=arm-linux-androideabi-$version
@@ -9928,7 +9928,7 @@ EOF
     ;;
   *)
     case $GCC_VERSION in
-    4.4*)
+    4.4*|4.6*)
       VISIBILITY_FLAGS='-I$(DIST)/system_wrappers -include $(topsrcdir)/config/gcc_hidden_dso_handle.h'
       ;;
     *)

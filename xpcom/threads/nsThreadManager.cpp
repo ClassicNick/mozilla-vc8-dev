@@ -24,7 +24,7 @@ DWORD gTLSThreadIDIndex = TlsAlloc();
 NS_TLS mozilla::threads::ID gTLSThreadID = mozilla::threads::Generic;
 #endif
 
-typedef nsTArray<nsRefPtr<nsThread>> nsThreadArray;
+typedef nsTArray<nsRefPtr<nsThread> > nsThreadArray;
 
 //-----------------------------------------------------------------------------
 

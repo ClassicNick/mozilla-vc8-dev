@@ -168,7 +168,7 @@ private:
    * Temporary storage for events that happen to be dispatched while we're in
    * the process of shutting down our real thread.
    */
-  nsTArray<nsCOMPtr<nsIRunnable>>* mQueuedRunnables;
+  nsTArray<nsCOMPtr<nsIRunnable> >* mQueuedRunnables;
 
   /**
    * The number of milliseconds a thread should be idle before dying.

@@ -567,7 +567,7 @@ public:
     nsTArray<gfxFont*> mFontsUsingSVGGlyphs;
     nsAutoPtr<gfxMathTable> mMathTable;
     nsTArray<gfxFontFeature> mFeatureSettings;
-    nsAutoPtr<nsDataHashtable<nsUint32HashKey,bool>> mSmallCapsSupport;
+    nsAutoPtr<nsDataHashtable<nsUint32HashKey,bool> > mSmallCapsSupport;
     uint32_t         mLanguageOverride;
 
     // Color Layer font support

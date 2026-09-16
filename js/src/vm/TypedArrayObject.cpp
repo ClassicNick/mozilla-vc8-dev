@@ -2065,24 +2065,24 @@ const JSFunctionSpec _typedArray##Object::jsfuncs[] = {                         
   {                                                                                             \
       return TypedArrayObjectTemplate<NativeType>::fromLength(cx, nelements);                   \
   }                                                                                             \
-  JS_FRIEND_API(JSObject *) JS_New ## Name ## ArrayFromArray(JSContext *cx, HandleObject other) \
+  JSObject * JS_New ## Name ## ArrayFromArray(JSContext *cx, HandleObject other) \
   {                                                                                             \
       return TypedArrayObjectTemplate<NativeType>::fromArray(cx, other);                        \
   }                                                                                             \
-  JS_FRIEND_API(JSObject *) JS_New ## Name ## ArrayWithBuffer(JSContext *cx,                    \
+  JSObject * JS_New ## Name ## ArrayWithBuffer(JSContext *cx,                    \
                                HandleObject arrayBuffer, uint32_t byteOffset, int32_t length)   \
   {                                                                                             \
       return TypedArrayObjectTemplate<NativeType>::fromBuffer(cx, arrayBuffer, byteOffset,      \
                                                               length, js::NullPtr());           \
   }                                                                                             \
-  JS_FRIEND_API(bool) JS_Is ## Name ## Array(JSObject *obj)                                     \
+  bool JS_Is ## Name ## Array(JSObject *obj)                                     \
   {                                                                                             \
       if (!(obj = CheckedUnwrap(obj)))                                                          \
           return false;                                                                         \
       const Class *clasp = obj->getClass();                                                     \
       return clasp == &TypedArrayObject::classes[TypedArrayObjectTemplate<NativeType>::ArrayTypeID()]; \
   } \
-  JS_FRIEND_API(JSObject *) js::Unwrap ## Name ## Array(JSObject *obj)                          \
+  JSObject * js::Unwrap ## Name ## Array(JSObject *obj)                          \
   {                                                                                             \
       obj = CheckedUnwrap(obj);                                                                 \
       if (!obj)                                                                                 \
@@ -2092,7 +2092,7 @@ const JSFunctionSpec _typedArray##Object::jsfuncs[] = {                         
           return obj;                                                                           \
       return nullptr;                                                                           \
   } \
-  JS_FRIEND_DATA(const js::Class* const) js::detail::Name ## ArrayClassPtr =                    \
+  const js::Class* const js::detail::Name ## ArrayClassPtr =                    \
       &js::TypedArrayObject::classes[TypedArrayObjectTemplate<NativeType>::ArrayTypeID()];
 
 IMPL_TYPED_ARRAY_JSAPI_CONSTRUCTORS(Int8, int8_t)
