@@ -320,9 +320,8 @@ BrowserGlue.prototype = {
 
         reporter.onInit().then(function record() {
           try {
-            let name = subject.QueryInterface(Ci.nsISearchEngine).name;
-            reporter.getProvider("org.mozilla.searches").recordSearch(name,
-                                                                      "urlbar");
+            let engine = subject.QueryInterface(Ci.nsISearchEngine);
+            reporter.getProvider("org.mozilla.searches").recordSearch(engine, "urlbar");
           } catch (ex) {
             Cu.reportError(ex);
           }
@@ -1286,7 +1285,7 @@ BrowserGlue.prototype = {
   },
 
   _migrateUI: function BG__migrateUI() {
-    const UI_VERSION = 14;
+    const UI_VERSION = 17;
     const BROWSER_DOCURL = "chrome://browser/content/browser.xul#";
     let currentUIVersion = 0;
     try {
@@ -1478,6 +1477,60 @@ BrowserGlue.prototype = {
       let path = OS.Path.join(OS.Constants.Path.profileDir,
                               "chromeappsstore.sqlite");
       OS.File.remove(path);
+    }
+
+    if (currentUIVersion < 15) {
+      // Migrate users from text or text&icons mode to icons mode.
+      let updateToolbars = function (aToolbarIds, aResourceName, aResourceValue) {
+        let resource = this._rdf.GetResource(aResourceName);
+        for (toolbarId of aToolbarIds) {
+          let toolbar = this._rdf.GetResource(BROWSER_DOCURL + toolbarId);
+          let oldValue = this._getPersist(toolbar, resource);
+          if (oldValue && oldValue != aResourceValue) {
+            this._setPersist(toolbar, resource, aResourceValue);
+          }
+        }
+      }.bind(this);
+
+      updateToolbars(["navigator-toolbox", "nav-bar", "PersonalToolbar", "addon-bar"], "mode", "icons");
+      // Exclude PersonalToolbar and addon-bar since they have lockiconsize="true".
+      updateToolbars(["navigator-toolbox", "nav-bar"], "iconsize", "large");
+    }
+
+    if (currentUIVersion < 16) {
+      let toolbarResource = this._rdf.GetResource(BROWSER_DOCURL + "nav-bar");
+      let collapsedResource = this._rdf.GetResource("collapsed");
+      let isCollapsed = this._getPersist(toolbarResource, collapsedResource);
+      if (isCollapsed == "true") {
+        this._setPersist(toolbarResource, collapsedResource, "false");
+      }
+    }
+
+    // Insert the bookmarks-menu-button into the nav-bar if it isn't already
+    // there.
+    if (currentUIVersion < 17) {
+      let currentsetResource = this._rdf.GetResource("currentset");
+      let toolbarResource = this._rdf.GetResource(BROWSER_DOCURL + "nav-bar");
+      let currentset = this._getPersist(toolbarResource, currentsetResource);
+      // Need to migrate only if toolbar is customized.
+      if (currentset) {
+        if (!currentset.contains("bookmarks-menu-button")) {
+          // The button isn't in the nav-bar, so let's look for an appropriate
+          // place to put it.
+          if (currentset.contains("downloads-button")) {
+            currentset = currentset.replace(/(^|,)downloads-button($|,)/,
+                                            "$1bookmarks-menu-button,downloads-button$2");
+          } else if (currentset.contains("home-button")) {
+            currentset = currentset.replace(/(^|,)home-button($|,)/,
+                                            "$1bookmarks-menu-button,home-button$2");
+          } else {
+            // Just append.
+            currentset = currentset.replace(/(^|,)window-controls($|,)/,
+                                            "$1bookmarks-menu-button,window-controls$2")
+          }
+          this._setPersist(toolbarResource, currentsetResource, currentset);
+        }
+      }
     }
 
     if (this._dirty)
@@ -1964,21 +2017,13 @@ ContentPermissionPrompt.prototype = {
 
   prompt: function CPP_prompt(request) {
 
-    // Only allow exactly one permission rquest here.
-    let types = request.types.QueryInterface(Ci.nsIArray);
-    if (types.length != 1) {
-      request.cancel();
-      return;
-    }
-    let perm = types.queryElementAt(0, Ci.nsIContentPermissionType);
-
     const kFeatureKeys = { "geolocation" : "geo",
                            "desktop-notification" : "desktop-notification",
                            "pointerLock" : "pointerLock",
                          };
 
     // Make sure that we support the request.
-    if (!(perm.type in kFeatureKeys)) {
+    if (!(request.type in kFeatureKeys)) {
         return;
     }
 
@@ -1990,7 +2035,7 @@ ContentPermissionPrompt.prototype = {
       return;
 
     var autoAllow = false;
-    var permissionKey = kFeatureKeys[perm.type];
+    var permissionKey = kFeatureKeys[request.type];
     var result = Services.perms.testExactPermissionFromPrincipal(requestingPrincipal, permissionKey);
 
     if (result == Ci.nsIPermissionManager.DENY_ACTION) {
@@ -2001,14 +2046,21 @@ ContentPermissionPrompt.prototype = {
     if (result == Ci.nsIPermissionManager.ALLOW_ACTION) {
       autoAllow = true;
       // For pointerLock, we still want to show a warning prompt.
-      if (perm.type != "pointerLock") {
+      if (request.type != "pointerLock") {
         request.allow();
         return;
       }
     }
 
+    var browser = this._getBrowserForRequest(request);
+    var chromeWin = browser.ownerDocument.defaultView;
+    if (!chromeWin.PopupNotifications)
+      // Ignore requests from browsers hosted in windows that don't support
+      // PopupNotifications.
+      return;
+
     // Show the prompt.
-    switch (perm.type) {
+    switch (request.type) {
     case "geolocation":
       this._promptGeo(request);
       break;

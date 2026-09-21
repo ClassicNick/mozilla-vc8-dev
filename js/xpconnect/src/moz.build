@@ -4,8 +4,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-MODULE = 'xpconnect'
-
 EXPORTS += [
     'BackstagePass.h',
     'nsCxPusher.h',
@@ -50,9 +48,13 @@ SOURCES += [
     'XPCWrapper.cpp',
 ]
 
-FAIL_ON_WARNINGS = True
+GENERATED_SOURCES += [
+    'DictionaryHelpers.cpp',
+    'dom_quickstubs.cpp',
+    'GeneratedEvents.cpp',
+]
 
-LIBXUL_LIBRARY = True
+FAIL_ON_WARNINGS = True
 
 MSVC_ENABLE_PGO = True
 
@@ -60,3 +62,4 @@ LIBRARY_NAME = 'xpconnect_s'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
+FINAL_LIBRARY = 'gklayout'

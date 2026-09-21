@@ -83,7 +83,7 @@ js::intrinsic_ThrowError(JSContext *cx, unsigned argc, Value *vp)
 
 #ifdef DEBUG
     const JSErrorFormatString *efs =
-        js_GetLocalizedErrorMessage(cx, NULL, NULL, errorNumber);
+        js_GetLocalizedErrorMessage(cx, nullptr, nullptr, errorNumber);
     JS_ASSERT(efs->argCount == args.length() - 1);
 #endif
 
@@ -411,7 +411,7 @@ js::intrinsic_UnsafePutElements(JSContext *cx, unsigned argc, Value *vp)
 
         if (arrobj->isNative()) {
             JS_ASSERT(idx < arrobj->getDenseInitializedLength());
-            JSObject::setDenseElementWithType(cx, arrobj, idx, args[elemi]);
+            arrobj->setDenseElementWithType(cx, idx, args[elemi]);
         } else {
             JS_ASSERT(idx < arrobj->as<TypedArrayObject>().length());
             RootedValue tmp(cx, args[elemi]);
@@ -659,14 +659,23 @@ static const JSFunctionSpec intrinsic_functions[] = {
               JSNativeThreadSafeWrapper<js::Memcpy>,
               &js::MemcpyJitInfo, 5, 0),
 
-#define LOAD_AND_STORE_FN_DECLS(_constant, _type, _name)                      \
+#define LOAD_AND_STORE_SCALAR_FN_DECLS(_constant, _type, _name)               \
     JS_FNINFO("Store_" #_name,                                                \
               JSNativeThreadSafeWrapper<js::StoreScalar##_type::Func>,        \
               &js::StoreScalar##_type::JitInfo, 3, 0),                        \
     JS_FNINFO("Load_" #_name,                                                 \
               JSNativeThreadSafeWrapper<js::LoadScalar##_type::Func>,         \
               &js::LoadScalar##_type::JitInfo, 3, 0),
-    JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(LOAD_AND_STORE_FN_DECLS)
+    JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(LOAD_AND_STORE_SCALAR_FN_DECLS)
+
+#define LOAD_AND_STORE_REFERENCE_FN_DECLS(_constant, _type, _name)              \
+    JS_FNINFO("Store_" #_name,                                                  \
+              JSNativeThreadSafeWrapper<js::StoreReference##_type::Func>,       \
+              &js::StoreReference##_type::JitInfo, 3, 0),                       \
+    JS_FNINFO("Load_" #_name,                                                   \
+              JSNativeThreadSafeWrapper<js::LoadReference##_type::Func>,        \
+              &js::LoadReference##_type::JitInfo, 3, 0),
+    JS_FOR_EACH_REFERENCE_TYPE_REPR(LOAD_AND_STORE_REFERENCE_FN_DECLS)
 
     // See builtin/Intl.h for descriptions of the intl_* functions.
     JS_FN("intl_availableCalendars", intl_availableCalendars, 1,0),
@@ -997,7 +1006,7 @@ js::SelfHostedFunction(JSContext *cx, HandlePropertyName propName)
 {
     RootedValue func(cx);
     if (!cx->global()->getIntrinsicValue(cx, propName, &func))
-        return NULL;
+        return nullptr;
 
     JS_ASSERT(func.isObject());
     JS_ASSERT(func.toObject().is<JSFunction>());

@@ -114,7 +114,7 @@ WMFReader::InitializeDXVA()
   MediaDecoderOwner* owner = mDecoder->GetOwner();
   NS_ENSURE_TRUE(owner, false);
 
-  HTMLMediaElement* element = owner->GetMediaElement();
+  dom::HTMLMediaElement* element = owner->GetMediaElement();
   NS_ENSURE_TRUE(element, false);
 
   nsRefPtr<LayerManager> layerManager =
@@ -129,16 +129,6 @@ WMFReader::InitializeDXVA()
   mDXVA2Manager = DXVA2Manager::Create();
 
   return mDXVA2Manager != nullptr;
-}
-
-static bool
-IsVideoContentType(const nsCString& aContentType)
-{
-  NS_NAMED_LITERAL_CSTRING(video, "video");
-  if (FindInReadable(video, aContentType)) {
-    return true;
-  }
-  return false;
 }
 
 nsresult

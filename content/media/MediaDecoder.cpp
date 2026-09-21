@@ -570,7 +570,7 @@ nsresult MediaDecoder::Play()
  * (and can be -1 if aValue is before aRanges.Start(0)).
  */
 static bool
-IsInRanges(TimeRanges& aRanges, double aValue, int32_t& aIntervalIndex)
+IsInRanges(dom::TimeRanges& aRanges, double aValue, int32_t& aIntervalIndex)
 {
   uint32_t length;
   aRanges.GetLength(&length);
@@ -598,7 +598,7 @@ nsresult MediaDecoder::Seek(double aTime)
 
   NS_ABORT_IF_FALSE(aTime >= 0.0, "Cannot seek to a negative value.");
 
-  TimeRanges seekable;
+  dom::TimeRanges seekable;
   nsresult res;
   uint32_t length = 0;
   res = GetSeekable(&seekable);
@@ -961,7 +961,7 @@ MediaDecoder::GetStatistics()
 double MediaDecoder::ComputePlaybackRate(bool* aReliable)
 {
   GetReentrantMonitor().AssertCurrentThreadIn();
-  MOZ_ASSERT(NS_IsMainThread() || OnStateMachineThread());
+  MOZ_ASSERT(NS_IsMainThread() || OnStateMachineThread() || OnDecodeThread());
 
   int64_t length = mResource ? mResource->GetLength() : -1;
   if (mDuration >= 0 && length >= 0) {
@@ -1326,7 +1326,7 @@ bool MediaDecoder::IsMediaSeekable()
   return mMediaSeekable;
 }
 
-nsresult MediaDecoder::GetSeekable(TimeRanges* aSeekable)
+nsresult MediaDecoder::GetSeekable(dom::TimeRanges* aSeekable)
 {
   double initialTime = 0.0;
 
@@ -1492,7 +1492,7 @@ void MediaDecoder::Invalidate()
 
 // Constructs the time ranges representing what segments of the media
 // are buffered and playable.
-nsresult MediaDecoder::GetBuffered(TimeRanges* aBuffered) {
+nsresult MediaDecoder::GetBuffered(dom::TimeRanges* aBuffered) {
   if (mDecoderStateMachine) {
     return mDecoderStateMachine->GetBuffered(aBuffered);
   }
@@ -1706,7 +1706,7 @@ MediaDecoder::IsWebMEnabled()
 }
 #endif
 
-#ifdef MOZ_RTSP
+#ifdef NECKO_PROTOCOL_rtsp
 bool
 MediaDecoder::IsRtspEnabled()
 {
@@ -1739,14 +1739,6 @@ MediaDecoder::IsMediaPluginsEnabled()
 }
 #endif
 
-#ifdef MOZ_DASH
-bool
-MediaDecoder::IsDASHEnabled()
-{
-  return Preferences::GetBool("media.dash.enabled");
-}
-#endif
-
 #ifdef MOZ_WMF
 bool
 MediaDecoder::IsWMFEnabled()
@@ -1763,16 +1755,12 @@ MediaDecoder::IsAppleMP3Enabled()
 }
 #endif
 
-class MediaReporter MOZ_FINAL : public nsIMemoryReporter
+class MediaReporter MOZ_FINAL : public MemoryMultiReporter
 {
 public:
-  NS_DECL_ISUPPORTS
-
-  NS_IMETHOD GetName(nsACString& aName)
-  {
-    aName.AssignLiteral("media");
-    return NS_OK;
-  }
+  MediaReporter()
+    : MemoryMultiReporter("media")
+  {}
 
   NS_IMETHOD CollectReports(nsIMemoryReporterCallback* aCb,
                             nsISupports* aClosure)
@@ -1799,8 +1787,6 @@ public:
     return NS_OK;
   }
 };
-
-NS_IMPL_ISUPPORTS1(MediaReporter, nsIMemoryReporter)
 
 MediaDecoderOwner*
 MediaDecoder::GetOwner()

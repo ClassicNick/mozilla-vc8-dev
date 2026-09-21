@@ -153,9 +153,9 @@ class TestRecursiveMakeBackend(BackendTester):
         """Ensure the RecursiveMakeBackend works without error."""
         env = self._consume('stub0', RecursiveMakeBackend)
         self.assertTrue(os.path.exists(os.path.join(env.topobjdir,
-            'backend.RecursiveMakeBackend.built')))
+            'backend.RecursiveMakeBackend')))
         self.assertTrue(os.path.exists(os.path.join(env.topobjdir,
-            'backend.RecursiveMakeBackend.built.pp')))
+            'backend.RecursiveMakeBackend.pp')))
 
     def test_output_files(self):
         """Ensure proper files are generated."""
@@ -211,8 +211,6 @@ class TestRecursiveMakeBackend(BackendTester):
         lines = [l.strip() for l in open(p, 'rt').readlines()[2:]]
         self.assertEqual(lines, [
             'MOZBUILD_DERIVED := 1',
-            'NO_MAKEFILE_RULE := 1',
-            'NO_SUBMAKEFILES_RULE := 1',
             'DIRS := dir1',
             'PARALLEL_DIRS := dir2',
             'TEST_DIRS := dir3',
@@ -244,8 +242,6 @@ class TestRecursiveMakeBackend(BackendTester):
         lines = [l.strip() for l in open(backend_path, 'rt').readlines()[2:]]
         self.assertEqual(lines, [
             'MOZBUILD_DERIVED := 1',
-            'NO_MAKEFILE_RULE := 1',
-            'NO_SUBMAKEFILES_RULE := 1',
             'DIRS := dir',
             'PARALLEL_DIRS := p_dir',
             'DIRS += external',
@@ -328,9 +324,6 @@ class TestRecursiveMakeBackend(BackendTester):
             'HOST_LIBRARY_NAME': [
                 'HOST_LIBRARY_NAME := host_bar',
             ],
-            'LIBRARY_NAME': [
-                'LIBRARY_NAME := lib_name',
-            ],
             'LIBXUL_LIBRARY': [
                 'LIBXUL_LIBRARY := 1',
             ],
@@ -346,17 +339,12 @@ class TestRecursiveMakeBackend(BackendTester):
                 'SDK_LIBRARY += bar.sdk',
                 'SDK_LIBRARY += foo.sdk',
             ],
-            'SHARED_LIBRARY_LIBS': [
-                'SHARED_LIBRARY_LIBS += bar.sll',
-                'SHARED_LIBRARY_LIBS += foo.sll',
-            ],
-            'SIMPLE_PROGRAMS': [
-                'SIMPLE_PROGRAMS += bar.x',
-                'SIMPLE_PROGRAMS += foo.x',
-            ],
             'SSRCS': [
                 'SSRCS += baz.S',
                 'SSRCS += foo.S',
+            ],
+            'VISIBILITY_FLAGS': [
+                'VISIBILITY_FLAGS :=',
             ],
         }
 

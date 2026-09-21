@@ -101,6 +101,7 @@
 /* This must occur *after* base/process_util.h to avoid typedefs conflicts. */
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Util.h"
+#include "mozilla/LinkedList.h"
 
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "nsCycleCollectionParticipant.h"
@@ -123,7 +124,7 @@
 #include <stdio.h>
 
 #include "mozilla/Likely.h"
-#include "mozilla/mozPoisonWrite.h"
+#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThreadLocal.h"
 
@@ -1111,10 +1112,10 @@ GraphWalker<Visitor>::DoWalk(nsDeque &aQueue)
     }
 }
 
-struct CCGraphDescriber
+struct CCGraphDescriber : public LinkedListElement<CCGraphDescriber>
 {
   CCGraphDescriber()
-  : mAddress("0x"), mToAddress("0x"), mCnt(0), mType(eUnknown) {}
+  : mAddress("0x"), mCnt(0), mType(eUnknown) {}
 
   enum Type
   {
@@ -1128,8 +1129,8 @@ struct CCGraphDescriber
   };
 
   nsCString mAddress;
-  nsCString mToAddress;
   nsCString mName;
+  nsCString mCompartmentOrToAddress;
   uint32_t mCnt;
   Type mType;
 };
@@ -1139,12 +1140,12 @@ class nsCycleCollectorLogger MOZ_FINAL : public nsICycleCollectorListener
 public:
     nsCycleCollectorLogger() :
       mStream(nullptr), mWantAllTraces(false),
-      mDisableLog(false), mWantAfterProcessing(false),
-      mNextIndex(0)
+      mDisableLog(false), mWantAfterProcessing(false)
     {
     }
     ~nsCycleCollectorLogger()
     {
+        ClearDescribers();
         if (mStream) {
             MozillaUnRegisterDebugFILE(mStream);
             fclose(mStream);
@@ -1209,8 +1210,7 @@ public:
     NS_IMETHOD Begin()
     {
         mCurrentAddress.AssignLiteral("0x");
-        mDescribers.Clear();
-        mNextIndex = 0;
+        ClearDescribers();
         if (mDisableLog) {
             return NS_OK;
         }
@@ -1221,12 +1221,14 @@ public:
         // want scripts which poll the filesystem looking for gc/cc dumps to
         // grab a file before we're finished writing to it.)
         nsCOMPtr<nsIFile> gcLogFile = CreateTempFile("incomplete-gc-edges");
-        NS_ENSURE_STATE(gcLogFile);
+        if (NS_WARN_IF(!gcLogFile))
+            return NS_ERROR_UNEXPECTED;
 
         // Dump the JS heap.
         FILE* gcLogANSIFile = nullptr;
         gcLogFile->OpenANSIFileDesc("w", &gcLogANSIFile);
-        NS_ENSURE_STATE(gcLogANSIFile);
+        if (NS_WARN_IF(!gcLogANSIFile))
+            return NS_ERROR_UNEXPECTED;
         MozillaRegisterDebugFILE(gcLogANSIFile);
         CollectorData *data = sCollectorData.get();
         if (data && data->mRuntime)
@@ -1237,11 +1239,13 @@ public:
         // Strip off "incomplete-".
         nsCOMPtr<nsIFile> gcLogFileFinalDestination =
             CreateTempFile("gc-edges");
-        NS_ENSURE_STATE(gcLogFileFinalDestination);
+        if (NS_WARN_IF(!gcLogFileFinalDestination))
+            return NS_ERROR_UNEXPECTED;
 
         nsAutoString gcLogFileFinalDestinationName;
         gcLogFileFinalDestination->GetLeafName(gcLogFileFinalDestinationName);
-        NS_ENSURE_STATE(!gcLogFileFinalDestinationName.IsEmpty());
+        if (NS_WARN_IF(gcLogFileFinalDestinationName.IsEmpty()))
+            return NS_ERROR_UNEXPECTED;
 
         gcLogFile->MoveTo(/* directory */ nullptr, gcLogFileFinalDestinationName);
 
@@ -1260,10 +1264,12 @@ public:
         // Open a file for dumping the CC graph.  We again prefix with
         // "incomplete-".
         mOutFile = CreateTempFile("incomplete-cc-edges");
-        NS_ENSURE_STATE(mOutFile);
+        if (NS_WARN_IF(!mOutFile))
+            return NS_ERROR_UNEXPECTED;
         MOZ_ASSERT(!mStream);
         mOutFile->OpenANSIFileDesc("w", &mStream);
-        NS_ENSURE_STATE(mStream);
+        if (NS_WARN_IF(!mStream))
+            return NS_ERROR_UNEXPECTED;
         MozillaRegisterDebugFILE(mStream);
 
         fprintf(mStream, "# WantAllTraces=%s\n", mWantAllTraces ? "true" : "false");
@@ -1278,7 +1284,8 @@ public:
                     aObjectDescription);
         }
         if (mWantAfterProcessing) {
-            CCGraphDescriber* d = mDescribers.AppendElement();
+            CCGraphDescriber* d =  new CCGraphDescriber();
+            mDescribers.insertBack(d);
             mCurrentAddress.AssignLiteral("0x");
             mCurrentAddress.AppendInt(aAddress, 16);
             d->mType = CCGraphDescriber::eRefCountedObject;
@@ -1289,20 +1296,28 @@ public:
         return NS_OK;
     }
     NS_IMETHOD NoteGCedObject(uint64_t aAddress, bool aMarked,
-                              const char *aObjectDescription)
+                              const char *aObjectDescription,
+                              uint64_t aCompartmentAddress)
     {
         if (!mDisableLog) {
             fprintf(mStream, "%p [gc%s] %s\n", (void*)aAddress,
                     aMarked ? ".marked" : "", aObjectDescription);
         }
         if (mWantAfterProcessing) {
-            CCGraphDescriber* d = mDescribers.AppendElement();
+            CCGraphDescriber* d =  new CCGraphDescriber();
+            mDescribers.insertBack(d);
             mCurrentAddress.AssignLiteral("0x");
             mCurrentAddress.AppendInt(aAddress, 16);
             d->mType = aMarked ? CCGraphDescriber::eGCMarkedObject :
                                  CCGraphDescriber::eGCedObject;
             d->mAddress = mCurrentAddress;
             d->mName.Append(aObjectDescription);
+            if (aCompartmentAddress) {
+                d->mCompartmentOrToAddress.AssignLiteral("0x");
+                d->mCompartmentOrToAddress.AppendInt(aCompartmentAddress, 16);
+            } else {
+                d->mCompartmentOrToAddress.SetIsVoid(true);
+            }
         }
         return NS_OK;
     }
@@ -1312,10 +1327,12 @@ public:
             fprintf(mStream, "> %p %s\n", (void*)aToAddress, aEdgeName);
         }
         if (mWantAfterProcessing) {
-            CCGraphDescriber* d = mDescribers.AppendElement();
+            CCGraphDescriber* d =  new CCGraphDescriber();
+            mDescribers.insertBack(d);
             d->mType = CCGraphDescriber::eEdge;
             d->mAddress = mCurrentAddress;
-            d->mToAddress.AppendInt(aToAddress, 16);
+            d->mCompartmentOrToAddress.AssignLiteral("0x");
+            d->mCompartmentOrToAddress.AppendInt(aToAddress, 16);
             d->mName.Append(aEdgeName);
         }
         return NS_OK;
@@ -1343,7 +1360,8 @@ public:
             fprintf(mStream, "%p [known=%u]\n", (void*)aAddress, aKnownEdges);
         }
         if (mWantAfterProcessing) {
-            CCGraphDescriber* d = mDescribers.AppendElement();
+            CCGraphDescriber* d =  new CCGraphDescriber();
+            mDescribers.insertBack(d);
             d->mType = CCGraphDescriber::eRoot;
             d->mAddress.AppendInt(aAddress, 16);
             d->mCnt = aKnownEdges;
@@ -1356,7 +1374,8 @@ public:
             fprintf(mStream, "%p [garbage]\n", (void*)aAddress);
         }
         if (mWantAfterProcessing) {
-            CCGraphDescriber* d = mDescribers.AppendElement();
+            CCGraphDescriber* d =  new CCGraphDescriber();
+            mDescribers.insertBack(d);
             d->mType = CCGraphDescriber::eGarbage;
             d->mAddress.AppendInt(aAddress, 16);
         }
@@ -1375,11 +1394,13 @@ public:
             // Strip off "incomplete-" from the log file's name.
             nsCOMPtr<nsIFile> logFileFinalDestination =
                 CreateTempFile("cc-edges");
-            NS_ENSURE_STATE(logFileFinalDestination);
+            if (NS_WARN_IF(!logFileFinalDestination))
+                return NS_ERROR_UNEXPECTED;
 
             nsAutoString logFileFinalDestinationName;
             logFileFinalDestination->GetLeafName(logFileFinalDestinationName);
-            NS_ENSURE_STATE(!logFileFinalDestinationName.IsEmpty());
+            if (NS_WARN_IF(logFileFinalDestinationName.IsEmpty()))
+                return NS_ERROR_UNEXPECTED;
 
             mOutFile->MoveTo(/* directory = */ nullptr,
                              logFileFinalDestinationName);
@@ -1402,43 +1423,44 @@ public:
     NS_IMETHOD ProcessNext(nsICycleCollectorHandler* aHandler,
                            bool* aCanContinue)
     {
-        NS_ENSURE_STATE(aHandler && mWantAfterProcessing);
-        if (mNextIndex < mDescribers.Length()) {
-            CCGraphDescriber& d = mDescribers[mNextIndex++];
-            switch (d.mType) {
+        if (NS_WARN_IF(!aHandler) || NS_WARN_IF(!mWantAfterProcessing))
+            return NS_ERROR_UNEXPECTED;
+        CCGraphDescriber* d = mDescribers.popFirst();
+        if (d) {
+            switch (d->mType) {
                 case CCGraphDescriber::eRefCountedObject:
-                    aHandler->NoteRefCountedObject(d.mAddress,
-                                                   d.mCnt,
-                                                   d.mName);
+                    aHandler->NoteRefCountedObject(d->mAddress,
+                                                   d->mCnt,
+                                                   d->mName);
                     break;
                 case CCGraphDescriber::eGCedObject:
                 case CCGraphDescriber::eGCMarkedObject:
-                    aHandler->NoteGCedObject(d.mAddress,
-                                             d.mType ==
+                    aHandler->NoteGCedObject(d->mAddress,
+                                             d->mType ==
                                                CCGraphDescriber::eGCMarkedObject,
-                                             d.mName);
+                                             d->mName,
+                                             d->mCompartmentOrToAddress);
                     break;
                 case CCGraphDescriber::eEdge:
-                    aHandler->NoteEdge(d.mAddress,
-                                       d.mToAddress,
-                                       d.mName);
+                    aHandler->NoteEdge(d->mAddress,
+                                       d->mCompartmentOrToAddress,
+                                       d->mName);
                     break;
                 case CCGraphDescriber::eRoot:
-                    aHandler->DescribeRoot(d.mAddress,
-                                           d.mCnt);
+                    aHandler->DescribeRoot(d->mAddress,
+                                           d->mCnt);
                     break;
                 case CCGraphDescriber::eGarbage:
-                    aHandler->DescribeGarbage(d.mAddress);
+                    aHandler->DescribeGarbage(d->mAddress);
                     break;
                 case CCGraphDescriber::eUnknown:
                     NS_NOTREACHED("CCGraphDescriber::eUnknown");
                     break;
             }
+            delete d;
         }
-        if (!(*aCanContinue = mNextIndex < mDescribers.Length())) {
+        if (!(*aCanContinue = !mDescribers.isEmpty())) {
             mCurrentAddress.AssignLiteral("0x");
-            mDescribers.Clear();
-            mNextIndex = 0;
         }
         return NS_OK;
     }
@@ -1477,6 +1499,14 @@ private:
         return dont_AddRef(logFile);
     }
 
+    void ClearDescribers()
+    {
+      CCGraphDescriber* d;
+      while((d = mDescribers.popFirst())) {
+        delete d;
+      }
+    }
+
     FILE *mStream;
     nsCOMPtr<nsIFile> mOutFile;
     bool mWantAllTraces;
@@ -1484,8 +1514,7 @@ private:
     bool mWantAfterProcessing;
     nsString mFilenameIdentifier;
     nsCString mCurrentAddress;
-    nsTArray<CCGraphDescriber> mDescribers;
-    uint32_t mNextIndex;
+    mozilla::LinkedList<CCGraphDescriber> mDescribers;
 };
 
 NS_IMPL_ISUPPORTS1(nsCycleCollectorLogger, nsICycleCollectorListener)
@@ -1495,7 +1524,8 @@ nsCycleCollectorLoggerConstructor(nsISupports* aOuter,
                                   const nsIID& aIID,
                                   void* *aInstancePtr)
 {
-    NS_ENSURE_TRUE(!aOuter, NS_ERROR_NO_AGGREGATION);
+    if (NS_WARN_IF(aOuter))
+        return NS_ERROR_NO_AGGREGATION;
 
     nsISupports *logger = new nsCycleCollectorLogger();
 
@@ -1587,7 +1617,8 @@ public:
     // nsCycleCollectionTraversalCallback methods.
     NS_IMETHOD_(void) DescribeRefCountedNode(nsrefcnt refCount,
                                              const char *objName);
-    NS_IMETHOD_(void) DescribeGCedNode(bool isMarked, const char *objName);
+    NS_IMETHOD_(void) DescribeGCedNode(bool isMarked, const char *objName,
+                                       uint64_t aCompartmentAddress);
 
     NS_IMETHOD_(void) NoteXPCOMChild(nsISupports *child);
     NS_IMETHOD_(void) NoteJSChild(void *child);
@@ -1771,14 +1802,15 @@ GCGraphBuilder::DescribeRefCountedNode(nsrefcnt refCount, const char *objName)
 }
 
 NS_IMETHODIMP_(void)
-GCGraphBuilder::DescribeGCedNode(bool isMarked, const char *objName)
+GCGraphBuilder::DescribeGCedNode(bool isMarked, const char *objName,
+                                 uint64_t aCompartmentAddress)
 {
     uint32_t refCount = isMarked ? UINT32_MAX : 0;
     mCollector->mVisitedGCed++;
 
     if (mListener) {
         mListener->NoteGCedObject((uint64_t)mCurrPi->mPointer, isMarked,
-                                  objName);
+                                  objName, aCompartmentAddress);
     }
 
     DescribeNode(refCount, objName);
@@ -1912,7 +1944,8 @@ public:
     NS_IMETHOD_(void) DescribeRefCountedNode(nsrefcnt refcount,
                                              const char *objname) {}
     NS_IMETHOD_(void) DescribeGCedNode(bool ismarked,
-                                       const char *objname) {}
+                                       const char *objname,
+                                       uint64_t aCompartmentAddress) {}
     NS_IMETHOD_(void) NoteNextEdgeName(const char* name) {}
     bool MayHaveChild() {
         return mMayHaveChild;
@@ -2132,8 +2165,7 @@ nsCycleCollector::MarkRoots(GCGraphBuilder &aBuilder)
     }
 
     if (aBuilder.RanOutOfMemory()) {
-        NS_ASSERTION(false,
-                     "Ran out of memory while building cycle collector graph");
+        MOZ_ASSERT(false, "Ran out of memory while building cycle collector graph");
         CC_TELEMETRY(_OOM, true);
     }
 }
@@ -2250,7 +2282,7 @@ nsCycleCollector::ScanWeakMaps()
     } while (anyChanged);
 
     if (failed) {
-        NS_ASSERTION(false, "Ran out of memory in ScanWeakMaps");
+        MOZ_ASSERT(false, "Ran out of memory in ScanWeakMaps");
         CC_TELEMETRY(_OOM, true);
     }
 }
@@ -2387,20 +2419,13 @@ nsCycleCollector::CollectWhite()
 // Memory reporter
 ////////////////////////
 
-class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
+class CycleCollectorReporter MOZ_FINAL : public MemoryMultiReporter
 {
   public:
     CycleCollectorReporter(nsCycleCollector* aCollector)
-      : mCollector(aCollector)
+        : MemoryMultiReporter("cycle-collector"),
+          mCollector(aCollector)
     {}
-
-    NS_DECL_ISUPPORTS
-
-    NS_IMETHOD GetName(nsACString& name)
-    {
-        name.AssignLiteral("cycle-collector");
-        return NS_OK;
-    }
 
     NS_IMETHOD CollectReports(nsIMemoryReporterCallback* aCb,
                               nsISupports* aClosure)
@@ -2423,7 +2448,8 @@ class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
                                    nsIMemoryReporter::KIND_HEAP,              \
                                    nsIMemoryReporter::UNITS_BYTES, _amount,   \
                                    NS_LITERAL_CSTRING(_desc), aClosure);      \
-                NS_ENSURE_SUCCESS(rv, rv);                                    \
+                if (NS_WARN_IF(NS_FAILED(rv)))                                \
+                    return rv;                                                \
             }                                                                 \
         } while (0)
 
@@ -2460,8 +2486,6 @@ class CycleCollectorReporter MOZ_FINAL : public nsIMemoryReporter
 
     nsCycleCollector* mCollector;
 };
-
-NS_IMPL_ISUPPORTS1(CycleCollectorReporter, nsIMemoryReporter)
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -2802,6 +2826,11 @@ nsCycleCollector::Shutdown()
 
     // Always delete snow white objects.
     FreeSnowWhite(true);
+
+#ifdef MOZ_VALGRIND
+    char *e = PR_GetEnv("XPCOM_CC_RUN_DURING_SHUTDOWN");
+    fprintf(stderr, "XPCOM_CC_RUN_DURING_SHUTDOWN = %s\n", e);
+#endif
 
 #ifndef DEBUG
     if (PR_GetEnv("XPCOM_CC_RUN_DURING_SHUTDOWN"))

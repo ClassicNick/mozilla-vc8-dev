@@ -327,6 +327,21 @@ ContentClientRemoteBuffer::SwapBuffers(const nsIntRegion& aFrontUpdatedRegion)
   }
 }
 
+
+void
+ContentClientRemoteBuffer::OnActorDestroy()
+{
+  if (mDeprecatedTextureClient) {
+    mDeprecatedTextureClient->OnActorDestroy();
+  }
+  if (mDeprecatedTextureClientOnWhite) {
+    mDeprecatedTextureClientOnWhite->OnActorDestroy();
+  }
+  for (size_t i = 0; i < mOldTextures.Length(); ++i) {
+    mOldTextures[i]->OnActorDestroy();
+  }
+}
+
 ContentClientDoubleBuffered::~ContentClientDoubleBuffered()
 {
   if (mDeprecatedTextureClient) {
@@ -425,6 +440,26 @@ ContentClientDoubleBuffered::SwapBuffers(const nsIntRegion& aFrontUpdatedRegion)
   }
 
   ContentClientRemoteBuffer::SwapBuffers(aFrontUpdatedRegion);
+}
+
+void
+ContentClientDoubleBuffered::OnActorDestroy()
+{
+  if (mDeprecatedTextureClient) {
+    mDeprecatedTextureClient->OnActorDestroy();
+  }
+  if (mDeprecatedTextureClientOnWhite) {
+    mDeprecatedTextureClientOnWhite->OnActorDestroy();
+  }
+  for (size_t i = 0; i < mOldTextures.Length(); ++i) {
+    mOldTextures[i]->OnActorDestroy();
+  }
+  if (mFrontClient) {
+    mFrontClient->OnActorDestroy();
+  }
+  if (mFrontClientOnWhite) {
+    mFrontClientOnWhite->OnActorDestroy();
+  }
 }
 
 struct AutoDeprecatedTextureClient {
@@ -894,12 +929,14 @@ ContentClientIncremental::BeginPaintBuffer(ThebesLayer* aLayer,
   // although they never cover it. This leads to two draw rects, the narow strip and the actually
   // newly exposed area. It would be wise to fix this glitch in any way to have simpler
   // clip and draw regions.
-  gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
+  result.mClip = CLIP_DRAW;
 
   if (mContentType == GFX_CONTENT_COLOR_ALPHA) {
+    result.mContext->Save();
+    gfxUtils::ClipToRegion(result.mContext, result.mRegionToDraw);
     result.mContext->SetOperator(gfxContext::OPERATOR_CLEAR);
     result.mContext->Paint();
-    result.mContext->SetOperator(gfxContext::OPERATOR_OVER);
+    result.mContext->Restore();
   }
 
   return result;

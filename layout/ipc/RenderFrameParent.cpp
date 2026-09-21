@@ -588,9 +588,9 @@ public:
     mMaxZoom = aMaxZoom;
   }
 
-  virtual bool GetZoomConstraints(bool* aOutAllowZoom,
-                                  CSSToScreenScale* aOutMinZoom,
-                                  CSSToScreenScale* aOutMaxZoom)
+  virtual bool GetRootZoomConstraints(bool* aOutAllowZoom,
+                                      CSSToScreenScale* aOutMinZoom,
+                                      CSSToScreenScale* aOutMaxZoom)
   {
     if (mHaveZoomConstraints) {
       *aOutAllowZoom = mAllowZoom;
@@ -618,15 +618,21 @@ private:
   CSSToScreenScale mMaxZoom;
 };
 
-RenderFrameParent::RenderFrameParent(nsFrameLoader* aFrameLoader,
-                                     ScrollingBehavior aScrollingBehavior,
-                                     TextureFactoryIdentifier* aTextureFactoryIdentifier,
-                                     uint64_t* aId)
+RenderFrameParent::RenderFrameParent()
   : mLayersId(0)
-  , mFrameLoader(aFrameLoader)
   , mFrameLoaderDestroyed(false)
   , mBackgroundColor(gfxRGBA(1, 1, 1))
 {
+}
+
+void
+RenderFrameParent::Init(nsFrameLoader* aFrameLoader,
+                        ScrollingBehavior aScrollingBehavior,
+                        TextureFactoryIdentifier* aTextureFactoryIdentifier,
+                        uint64_t* aId)
+{
+  mFrameLoader = aFrameLoader;
+
   mContentViews[FrameMetrics::ROOT_SCROLL_ID] =
     new nsContentView(aFrameLoader, FrameMetrics::ROOT_SCROLL_ID);
 
@@ -722,7 +728,7 @@ RenderFrameParent::BuildLayer(nsDisplayListBuilder* aBuilder,
                               LayerManager* aManager,
                               const nsIntRect& aVisibleRect,
                               nsDisplayItem* aItem,
-                              const ContainerParameters& aContainerParameters)
+                              const ContainerLayerParameters& aContainerParameters)
 {
   NS_ABORT_IF_FALSE(aFrame,
                     "makes no sense to have a shadow tree without a frame");
@@ -827,10 +833,11 @@ RenderFrameParent::OwnerContentChanged(nsIContent* aContent)
 
 void
 RenderFrameParent::NotifyInputEvent(const WidgetInputEvent& aEvent,
+                                    ScrollableLayerGuid* aOutTargetGuid,
                                     WidgetInputEvent* aOutEvent)
 {
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->ReceiveInputEvent(aEvent, aOutEvent);
+    GetApzcTreeManager()->ReceiveInputEvent(aEvent, aOutTargetGuid, aOutEvent);
   }
 }
 
@@ -838,8 +845,8 @@ void
 RenderFrameParent::NotifyDimensionsChanged(ScreenIntSize size)
 {
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->UpdateCompositionBounds(ScrollableLayerGuid(mLayersId),
-                                                  ScreenIntRect(ScreenIntPoint(), size));
+    GetApzcTreeManager()->UpdateRootCompositionBounds(
+      mLayersId, ScreenIntRect(ScreenIntPoint(), size));
   }
 }
 
@@ -872,24 +879,6 @@ bool
 RenderFrameParent::RecvNotifyCompositorTransaction()
 {
   TriggerRepaint();
-  return true;
-}
-
-bool
-RenderFrameParent::RecvCancelDefaultPanZoom()
-{
-  if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->CancelDefaultPanZoom(ScrollableLayerGuid(mLayersId));
-  }
-  return true;
-}
-
-bool
-RenderFrameParent::RecvDetectScrollableSubframe()
-{
-  if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->DetectScrollableSubframe(ScrollableLayerGuid(mLayersId));
-  }
   return true;
 }
 
@@ -1019,33 +1008,36 @@ RenderFrameParent::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 }
 
 void
-RenderFrameParent::ZoomToRect(const CSSRect& aRect)
+RenderFrameParent::ZoomToRect(uint32_t aPresShellId, ViewID aViewId,
+                              const CSSRect& aRect)
 {
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->ZoomToRect(ScrollableLayerGuid(mLayersId),
+    GetApzcTreeManager()->ZoomToRect(ScrollableLayerGuid(mLayersId, aPresShellId, aViewId),
                                      aRect);
   }
 }
 
 void
-RenderFrameParent::ContentReceivedTouch(bool aPreventDefault)
+RenderFrameParent::ContentReceivedTouch(const ScrollableLayerGuid& aGuid,
+                                        bool aPreventDefault)
 {
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->ContentReceivedTouch(ScrollableLayerGuid(mLayersId),
-                                               aPreventDefault);
+    GetApzcTreeManager()->ContentReceivedTouch(aGuid, aPreventDefault);
   }
 }
 
 void
-RenderFrameParent::UpdateZoomConstraints(bool aAllowZoom,
+RenderFrameParent::UpdateZoomConstraints(uint32_t aPresShellId,
+                                         ViewID aViewId,
+                                         bool aAllowZoom,
                                          const CSSToScreenScale& aMinZoom,
                                          const CSSToScreenScale& aMaxZoom)
 {
-  if (mContentController) {
+  if (mContentController && aViewId == FrameMetrics::ROOT_SCROLL_ID) {
     mContentController->SaveZoomConstraints(aAllowZoom, aMinZoom, aMaxZoom);
   }
   if (GetApzcTreeManager()) {
-    GetApzcTreeManager()->UpdateZoomConstraints(ScrollableLayerGuid(mLayersId),
+    GetApzcTreeManager()->UpdateZoomConstraints(ScrollableLayerGuid(mLayersId, aPresShellId, aViewId),
                                                 aAllowZoom, aMinZoom, aMaxZoom);
   }
 }
@@ -1071,7 +1063,7 @@ RenderFrameParent::HitTest(const nsRect& aRect)
 already_AddRefed<Layer>
 nsDisplayRemote::BuildLayer(nsDisplayListBuilder* aBuilder,
                             LayerManager* aManager,
-                            const ContainerParameters& aContainerParameters)
+                            const ContainerLayerParameters& aContainerParameters)
 {
   int32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
   nsIntRect visibleRect = GetVisibleRect().ToNearestPixels(appUnitsPerDevPixel);

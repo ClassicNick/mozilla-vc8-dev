@@ -28,6 +28,8 @@
         width="640" height="480"
         persist="screenX screenY width height sizemode">
 
+<script type="application/javascript;version=1.8"
+        src="chrome://browser/content/devtools/theme-switching.js"/>
 <script type="application/javascript" src="chrome://global/content/globalOverlay.js"/>
 <script type="application/javascript" src="chrome://browser/content/devtools/scratchpad.js"/>
 
@@ -35,7 +37,7 @@
 <script type="application/javascript">
   function goUpdateSourceEditorMenuItems() {
     goUpdateGlobalEditMenuItems();
-    let commands = ['cmd_undo', 'cmd_redo', 'cmd_cut', 'cmd_paste', 'cmd_delete', 'cmd_findAgain'];
+    let commands = ['cmd_undo', 'cmd_redo', 'cmd_delete', 'cmd_findAgain'];
     commands.forEach(goUpdateCommand);
   }
 </script>

@@ -6,23 +6,27 @@
 
 TEST_DIRS += ['test']
 
-MODULE = 'dom'
-
 EXPORTS.mozilla.dom += [
     'EncodingUtils.h',
+    'FallbackEncoding.h',
     'TextDecoder.h',
     'TextEncoder.h',
 ]
 
 SOURCES += [
     'EncodingUtils.cpp',
+    'FallbackEncoding.cpp',
+]
+
+UNIFIED_SOURCES += [
     'TextDecoder.cpp',
     'TextEncoder.cpp',
 ]
 
 FAIL_ON_WARNINGS = True
 
-LIBXUL_LIBRARY = True
-
-LIBRARY_NAME = 'domencoding_s'
+FINAL_LIBRARY = 'gklayout'
+LOCAL_INCLUDES += [
+    '/intl/locale/src',
+]
 

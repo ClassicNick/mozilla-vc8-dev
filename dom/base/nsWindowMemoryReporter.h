@@ -47,6 +47,8 @@ public:
       #define ZERO_SIZE(kind, mSize)  mSize(0),
       FOR_EACH_SIZE(ZERO_SIZE)
       #undef ZERO_SIZE
+      mDOMEventTargetsCount(0),
+      mDOMEventListenersCount(0),
       mArenaStats(),
       mMallocSizeOf(aMallocSizeOf)
   {}
@@ -202,7 +204,7 @@ private:
    * This is called asynchronously after we observe a DOM window being detached
    * from its docshell, and also right before we generate a memory report.
    */
-  void CheckForGhostWindows(nsTHashtable<nsUint64HashKey> *aOutGhostIDs = NULL);
+  void CheckForGhostWindows(nsTHashtable<nsUint64HashKey> *aOutGhostIDs = nullptr);
 
   /**
    * Maps a weak reference to a detached window (nsIWeakReference) to the time
