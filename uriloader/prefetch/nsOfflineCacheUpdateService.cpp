@@ -23,6 +23,7 @@
 #include "nsICacheSession.h"
 #include "nsICachingChannel.h"
 #include "nsIContent.h"
+#include "nsIDocShell.h"
 #include "nsIDocumentLoader.h"
 #include "nsIDOMElement.h"
 #include "nsIDOMWindow.h"
@@ -68,19 +69,12 @@ typedef mozilla::docshell::OfflineCacheUpdateGlue OfflineCacheUpdateGlue;
 //
 PRLogModuleInfo *gOfflineCacheUpdateLog;
 #endif
+
 #undef LOG
 #define LOG(args) PR_LOG(gOfflineCacheUpdateLog, 4, args)
-#define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
-class AutoFreeArray {
-public:
-    AutoFreeArray(uint32_t count, char **values)
-        : mCount(count), mValues(values) {};
-    ~AutoFreeArray() { NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(mCount, mValues); }
-private:
-    uint32_t mCount;
-    char **mValues;
-};
+#undef LOG_ENABLED
+#define LOG_ENABLED() PR_LOG_TEST(gOfflineCacheUpdateLog, 4)
 
 namespace { // anon
 
@@ -378,8 +372,7 @@ nsOfflineCacheUpdateService::ScheduleOnDocumentStop(nsIURI *aManifestURI,
          this, aManifestURI, aDocumentURI, aDocument));
 
     nsCOMPtr<nsIDocument> doc = do_QueryInterface(aDocument);
-    nsCOMPtr<nsISupports> container = doc->GetContainer();
-    nsCOMPtr<nsIWebProgress> progress = do_QueryInterface(container);
+    nsCOMPtr<nsIWebProgress> progress = do_QueryInterface(doc->GetContainer());
     NS_ENSURE_TRUE(progress, NS_ERROR_INVALID_ARG);
 
     // Proceed with cache update

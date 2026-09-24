@@ -47,11 +47,10 @@ EXPORTS.mozilla += [
     'LoadContext.h',
 ]
 
-SOURCES += [
+UNIFIED_SOURCES += [
     'LoadContext.cpp',
     'nsAboutRedirector.cpp',
     'nsDefaultURIFixup.cpp',
-    'nsDocShell.cpp',
     'nsDocShellEditorData.cpp',
     'nsDocShellEnumerator.cpp',
     'nsDocShellLoadInfo.cpp',
@@ -60,6 +59,11 @@ SOURCES += [
     'nsDSURIContentListener.cpp',
     'nsWebNavigationInfo.cpp',
     'SerializedLoadContext.cpp',
+]
+
+# nsDocShell.cpp cannot be built in unified mode because it forces NSPR logging.
+SOURCES += [
+    'nsDocShell.cpp',
 ]
 
 FAIL_ON_WARNINGS = True
@@ -75,7 +79,7 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/layout/base',
     '/layout/generic',
-    '/layout/xul/base/src',
+    '/layout/xul',
     '/netwerk/protocol/viewsource',
     '/xpcom/ds',
 ]

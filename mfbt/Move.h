@@ -175,37 +175,6 @@ OldMove(const T& t)
   return MoveRef<T>(const_cast<T&>(t));
 }
 
-/**
- * Identical to std::Move(); this is necessary until our stlport supports
- * std::move().
- */
-template<typename T>
-inline typename RemoveReference<T>::Type&&
-Move(T&& a)
-{
-  return static_cast<typename RemoveReference<T>::Type&&>(a);
-}
-
-/**
- * These two overloads are identidal to std::Forward(); they are necessary until
- * our stlport supports std::forward().
- */
-template<typename T>
-inline T&&
-Forward(typename RemoveReference<T>::Type& a)
-{
-  return static_cast<T&&>(a);
-}
-
-template<typename T>
-inline T&&
-Forward(typename RemoveReference<T>::Type&& t)
-{
-  static_assert(!IsLvalueReference<T>::value,
-                "misuse of Forward detected!  try the other overload");
-  return static_cast<T&&>(t);
-}
-
 /** Swap |t| and |u| using move-construction if possible. */
 template<typename T>
 inline void

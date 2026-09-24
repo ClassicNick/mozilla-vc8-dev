@@ -24,6 +24,12 @@ namespace jit {
 class CodeGenerator;
 class CallInfo;
 class BaselineInspector;
+class BaselineFrameInspector;
+
+// Records information about a baseline frame for compilation that is stable
+// when later used off thread.
+BaselineFrameInspector *
+NewBaselineFrameInspector(TempAllocator *temp, BaselineFrame *frame);
 
 class IonBuilder : public MIRGenerator
 {
@@ -207,7 +213,7 @@ class IonBuilder : public MIRGenerator
   public:
     IonBuilder(JSContext *analysisContext, CompileCompartment *comp, TempAllocator *temp, MIRGraph *graph,
                types::CompilerConstraintList *constraints,
-               BaselineInspector *inspector, CompileInfo *info, BaselineFrame *baselineFrame,
+               BaselineInspector *inspector, CompileInfo *info, BaselineFrameInspector *baselineFrame,
                size_t inliningDepth = 0, uint32_t loopDepth = 0);
 
     bool build();
@@ -231,7 +237,6 @@ class IonBuilder : public MIRGenerator
     JSFunction *getSingleCallTarget(types::TemporaryTypeSet *calleeTypes);
     bool getPolyCallTargets(types::TemporaryTypeSet *calleeTypes, bool constructing,
                             ObjectVector &targets, uint32_t maxTargets, bool *gotLambda);
-    bool canInlineTarget(JSFunction *target, CallInfo &callInfo);
 
     void popCfgStack();
     DeferredEdge *filterDeadDeferredEdges(DeferredEdge *edge);
@@ -334,6 +339,11 @@ class IonBuilder : public MIRGenerator
     // generated code correspond to the observed types for the bytecode.
     bool pushTypeBarrier(MDefinition *def, types::TemporaryTypeSet *observed, bool needBarrier);
 
+    // As pushTypeBarrier, but will compute the needBarrier boolean itself based
+    // on observed and the JSFunction that we're planning to call. The
+    // JSFunction must be a DOM method or getter.
+    bool pushDOMTypeBarrier(MInstruction *ins, types::TemporaryTypeSet *observed, JSFunction* func);
+
     // If definiteType is not known or def already has the right type, just
     // returns def.  Otherwise, returns an MInstruction that has that definite
     // type, infallibly unboxing ins as needed.  The new instruction will be
@@ -421,6 +431,9 @@ class IonBuilder : public MIRGenerator
     // binary data lookup helpers.
     bool lookupTypeRepresentationSet(MDefinition *typedObj,
                                      TypeRepresentationSet *out);
+    bool typeSetToTypeRepresentationSet(types::TemporaryTypeSet *types,
+                                        TypeRepresentationSet *out,
+                                        types::TypeTypedObject::Kind kind);
     bool lookupTypedObjectField(MDefinition *typedObj,
                                 PropertyName *name,
                                 int32_t *fieldOffset,
@@ -443,6 +456,11 @@ class IonBuilder : public MIRGenerator
                                      MDefinition *offset,
                                      ScalarTypeRepresentation *typeRepr,
                                      MDefinition *value);
+    bool checkTypedObjectIndexInBounds(size_t elemSize,
+                                       MDefinition *obj,
+                                       MDefinition *index,
+                                       MDefinition **indexAsByteOffset,
+                                       TypeRepresentationSet objTypeReprs);
 
     // jsop_setelem() helpers.
     bool setElemTryTyped(bool *emitted, MDefinition *object,
@@ -565,11 +583,20 @@ class IonBuilder : public MIRGenerator
         InliningStatus_Inlined
     };
 
+    enum InliningDecision
+    {
+        InliningDecision_Error,
+        InliningDecision_Inline,
+        InliningDecision_DontInline
+    };
+
+    static InliningDecision DontInline(JSScript *targetScript, const char *reason);
+
     // Oracles.
-    bool canEnterInlinedFunction(JSFunction *target);
-    bool makeInliningDecision(JSFunction *target, CallInfo &callInfo);
-    uint32_t selectInliningTargets(ObjectVector &targets, CallInfo &callInfo,
-                                   BoolVector &choiceSet);
+    InliningDecision canInlineTarget(JSFunction *target, CallInfo &callInfo);
+    InliningDecision makeInliningDecision(JSFunction *target, CallInfo &callInfo);
+    bool selectInliningTargets(ObjectVector &targets, CallInfo &callInfo,
+                               BoolVector &choiceSet, uint32_t *numInlineable);
 
     // Native inlining helpers.
     types::TemporaryTypeSet *getInlineReturnTypeSet();
@@ -664,7 +691,8 @@ class IonBuilder : public MIRGenerator
     bool makeCall(JSFunction *target, CallInfo &callInfo, bool cloneAtCallsite);
 
     MDefinition *patchInlinedReturn(CallInfo &callInfo, MBasicBlock *exit, MBasicBlock *bottom);
-    MDefinition *patchInlinedReturns(CallInfo &callInfo, MIRGraphExits &exits, MBasicBlock *bottom);
+    MDefinition *patchInlinedReturns(CallInfo &callInfo, MIRGraphReturns &returns,
+                                     MBasicBlock *bottom);
 
     bool objectsHaveCommonPrototype(types::TemporaryTypeSet *types, PropertyName *name,
                                     bool isGetter, JSObject *foundProto);
@@ -740,7 +768,7 @@ class IonBuilder : public MIRGenerator
     bool init();
 
     JSContext *analysisContext;
-    BaselineFrame *baselineFrame_;
+    BaselineFrameInspector *baselineFrame_;
     AbortReason abortReason_;
     TypeRepresentationSetHash *reprSetHash_;
 
@@ -757,6 +785,7 @@ class IonBuilder : public MIRGenerator
     uint32_t typeArrayHint;
 
     GSNCache gsn;
+    ScopeCoordinateNameCache scopeCoordinateNameCache;
 
     jsbytecode *pc;
     MBasicBlock *current;

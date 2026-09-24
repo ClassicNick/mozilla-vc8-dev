@@ -58,6 +58,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
 #include "mozilla/NullPtr.h"
 
@@ -117,24 +118,24 @@ class LinkedListElement
         isSentinel(false)
     { }
 
-    LinkedListElement(LinkedListElement<T>&& other)
-      : isSentinel(other.isSentinel)
+    LinkedListElement(mozilla::MoveRef<LinkedListElement<T> > other)
+      : isSentinel(other->isSentinel)
     {
-      if (!other.isInList()) {
+      if (!other->isInList()) {
         next = this;
         prev = this;
         return;
       }
 
-      MOZ_ASSERT(other.next->prev == &other);
-      MOZ_ASSERT(other.prev->next == &other);
+      MOZ_ASSERT(other->next->prev == &other);
+      MOZ_ASSERT(other->prev->next == &other);
 
       /*
        * Initialize |this| with |other|'s prev/next pointers, and adjust those
        * element to point to this one.
        */
-      next = other.next;
-      prev = other.prev;
+      next = other->next;
+      prev = other->prev;
 
       next->prev = this;
       prev->next = this;
@@ -143,8 +144,8 @@ class LinkedListElement
        * Adjust |other| so it doesn't think it's in a list.  This makes it
        * safely destructable.
        */
-      other.next = &other;
-      other.prev = &other;
+      other->next = &other;
+      other->prev = &other;
     }
 
     ~LinkedListElement() {
@@ -296,8 +297,8 @@ class LinkedList
   public:
     LinkedList() : sentinel(LinkedListElement<T>::NODE_KIND_SENTINEL) { }
 
-    LinkedList(LinkedList<T>&& other)
-      : sentinel(mozilla::Move(other.sentinel))
+    LinkedList(mozilla::MoveRef<LinkedList<T> > other)
+      : sentinel(mozilla::OldMove(other->sentinel))
     { }
 
     ~LinkedList() {
@@ -377,6 +378,26 @@ class LinkedList
     void clear() {
       while (popFirst())
         continue;
+    }
+
+    /*
+     * Measures the memory consumption of the list excluding |this|.  Note that
+     * it only measures the list elements themselves.  If the list elements
+     * contain pointers to other memory blocks, those blocks must be measured
+     * separately during a subsequent iteration over the list.
+     */
+    size_t sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
+      size_t n = 0;
+      for (const T* t = getFirst(); t; t = t->getNext())
+        n += mallocSizeOf(t);
+      return n;
+    }
+
+    /*
+     * Like sizeOfExcludingThis(), but measures |this| as well.
+     */
+    size_t sizeOfIncludingThis(MallocSizeOf mallocSizeOf) const {
+      return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
     }
 
     /*

@@ -49,6 +49,11 @@ public:
     CreateInstance(nsPIDOMWindow* aWindow);
   static bool IsWindowStillActive(uint64_t aWindowId);
 
+  // Build us an nsDOMCameraControl
+  mozilla::nsDOMCameraControl* GetCameraControl(uint32_t aDeviceNum,
+                                                nsICameraGetCameraCallback* onSuccess,
+                                                nsICameraErrorCallback* onError,
+                                                mozilla::ErrorResult& aRv);
   void Register(mozilla::nsDOMCameraControl* aDOMCameraControl);
   void OnNavigation(uint64_t aWindowId);
 
@@ -85,7 +90,7 @@ protected:
    * 'mActiveWindows' is only ever accessed while in the main thread,
    * so it is not otherwise protected.
    */
-  static WindowTable* sActiveWindows;
+  static ::WindowTable* sActiveWindows;
 };
 
 class GetCameraTask : public nsRunnable

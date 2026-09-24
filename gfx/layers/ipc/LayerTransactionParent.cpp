@@ -152,6 +152,7 @@ LayerTransactionParent::LayerTransactionParent(LayerManagerComposite* aManager,
   , mShadowLayersManager(aLayersManager)
   , mId(aId)
   , mDestroyed(false)
+  , mIPCOpen(false)
 {
   MOZ_COUNT_CTOR(LayerTransactionParent);
 }
@@ -284,6 +285,7 @@ LayerTransactionParent::RecvUpdate(const InfallibleTArray<Edit>& cset,
         layer->SetMaskLayer(nullptr);
       }
       layer->SetAnimations(common.animations());
+      layer->SetInvalidRegion(common.invalidRegion());
 
       typedef SpecificLayerAttributes Specific;
       const SpecificLayerAttributes& specific = attrs.specific();

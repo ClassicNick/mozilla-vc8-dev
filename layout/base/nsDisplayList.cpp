@@ -48,6 +48,7 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "ActiveLayerTracker.h"
+#include "nsContentUtils.h"
 
 #include "mozilla/StandardInteger.h"
 #include <algorithm>
@@ -593,6 +594,7 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
                                nsRect* aDisplayPort,
                                nsRect* aCriticalDisplayPort,
                                ViewID aScrollId,
+                               bool aIsRoot,
                                const ContainerLayerParameters& aContainerParameters) {
   nsPresContext* presContext = aForFrame->PresContext();
   int32_t auPerDevPixel = presContext->AppUnitsPerDevPixel();
@@ -617,6 +619,12 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
 
   if (scrollableFrame) {
     nsRect contentBounds = scrollableFrame->GetScrollRange();
+    if (scrollableFrame->GetScrollbarStyles().mVertical == NS_STYLE_OVERFLOW_HIDDEN) {
+      contentBounds.height = 0;
+    }
+    if (scrollableFrame->GetScrollbarStyles().mHorizontal == NS_STYLE_OVERFLOW_HIDDEN) {
+      contentBounds.width = 0;
+    }
     contentBounds.width += scrollableFrame->GetScrollPortRect().width;
     contentBounds.height += scrollableFrame->GetScrollPortRect().height;
     metrics.mScrollableRect = CSSRect::FromAppUnits(contentBounds);
@@ -629,6 +637,7 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
   }
 
   metrics.mScrollId = aScrollId;
+  metrics.mIsRoot = aIsRoot;
 
   // Only the root scrollable frame for a given presShell should pick up
   // the presShell's resolution. All the other frames are 1.0.
@@ -710,6 +719,13 @@ static void RecordFrameMetrics(nsIFrame* aForFrame,
   }
 
   metrics.mPresShellId = presShell->GetPresShellId();
+
+  // If the scroll frame's content is marked 'scrollgrab', record this
+  // in the FrameMetrics so APZ knows to provide the scroll grabbing
+  // behaviour.
+  if (aScrollFrame && nsContentUtils::HasScrollgrab(aScrollFrame->GetContent())) {
+    metrics.mHasScrollgrab = true;
+  }
 
   aRoot->SetFrameMetrics(metrics);
 }
@@ -1150,8 +1166,8 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
   root->SetPostScale(1.0f/containerParameters.mXScale,
                      1.0f/containerParameters.mYScale);
 
-  ViewID id = presContext->IsRootContentDocument() ? FrameMetrics::ROOT_SCROLL_ID
-                                                   : FrameMetrics::NULL_SCROLL_ID;
+  ViewID id = FrameMetrics::NULL_SCROLL_ID;
+  bool isRoot = presContext->IsRootContentDocument();
 
   nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
   nsRect displayport, criticalDisplayport;
@@ -1164,11 +1180,9 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
       usingCriticalDisplayport =
         nsLayoutUtils::GetCriticalDisplayPort(content, &criticalDisplayport);
 
-      if (id == FrameMetrics::ROOT_SCROLL_ID) {
-        // Record the mapping between the root scroll frame's content and
-        // ROOT_SCROLL_ID so that users of nsLayoutUtils::FindIDFor() and
-        // nsLayoutUtils::FindContentFor() don't have to special-case the root.
-        nsLayoutUtils::FindOrCreateIDFor(content, true);
+      // If this is the root content document, we want it to have a scroll id.
+      if (isRoot) {
+        id = nsLayoutUtils::FindOrCreateIDFor(content);
       }
     }
   }
@@ -1180,7 +1194,7 @@ void nsDisplayList::PaintForFrame(nsDisplayListBuilder* aBuilder,
                      root, mVisibleRect, viewport,
                      (usingDisplayport ? &displayport : nullptr),
                      (usingCriticalDisplayport ? &criticalDisplayport : nullptr),
-                     id, containerParameters);
+                     id, isRoot, containerParameters);
   if (usingDisplayport &&
       !(root->GetContentFlags() & Layer::CONTENT_OPAQUE)) {
     // See bug 693938, attachment 567017
@@ -2226,7 +2240,7 @@ nsDisplayThemedBackground::~nsDisplayThemedBackground()
 void
 nsDisplayThemedBackground::WriteDebugInfo(FILE *aOutput)
 {
-  fprintf(aOutput, "(themed, appearance:%d) ", mAppearance);
+  fprintf_stderr(aOutput, "(themed, appearance:%d) ", mAppearance);
 }
 #endif
 
@@ -2534,10 +2548,30 @@ nsDisplayBorder::Paint(nsDisplayListBuilder* aBuilder,
 nsRect
 nsDisplayBorder::GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap)
 {
-  nsRect borderBounds(ToReferenceFrame(), mFrame->GetSize());
-  borderBounds.Inflate(mFrame->StyleBorder()->GetImageOutset());
   *aSnap = true;
-  return borderBounds;
+  const nsStyleBorder *styleBorder = mFrame->StyleBorder();
+  nsRect borderBounds(ToReferenceFrame(), mFrame->GetSize());
+  if (styleBorder->IsBorderImageLoaded()) {
+    borderBounds.Inflate(mFrame->StyleBorder()->GetImageOutset());
+    return borderBounds;
+  } else {
+    nsMargin border = styleBorder->GetComputedBorder();
+    nsRect result;
+    if (border.top > 0) {
+      result = nsRect(borderBounds.X(), borderBounds.Y(), borderBounds.Width(), border.top);
+    }
+    if (border.right > 0) {
+      result.UnionRect(result, nsRect(borderBounds.XMost() - border.right, borderBounds.Y(), border.right, borderBounds.Height()));
+    }
+    if (border.bottom > 0) {
+      result.UnionRect(result, nsRect(borderBounds.X(), borderBounds.YMost() - border.bottom, borderBounds.Width(), border.bottom));
+    }
+    if (border.left > 0) {
+      result.UnionRect(result, nsRect(borderBounds.X(), borderBounds.Y(), border.left, borderBounds.Height()));
+    }
+
+    return result;
+  }
 }
 
 // Given a region, compute a conservative approximation to it as a list
@@ -2863,6 +2897,9 @@ RequiredLayerStateForChildrenInternal(nsDisplayListBuilder* aBuilder,
     if ((state == LAYER_ACTIVE || state == LAYER_ACTIVE_FORCE) &&
         state > result) {
       result = state;
+    }
+    if (state == LAYER_ACTIVE_EMPTY && state > result) {
+      result = LAYER_ACTIVE_FORCE;
     }
     if (state == LAYER_NONE) {
       nsDisplayList* list = i->GetSameCoordinateSystemChildren();
@@ -3450,7 +3487,7 @@ nsDisplayScrollLayer::BuildLayer(nsDisplayListBuilder* aBuilder,
                      mVisibleRect, viewport,
                      (usingDisplayport ? &displayport : nullptr),
                      (usingCriticalDisplayport ? &criticalDisplayport : nullptr),
-                     scrollId, aContainerParameters);
+                     scrollId, false, aContainerParameters);
 
   return layer.forget();
 }
@@ -4189,10 +4226,11 @@ already_AddRefed<Layer> nsDisplayTransform::BuildLayer(nsDisplayListBuilder *aBu
     return nullptr;
   }
 
+  uint32_t flags = ShouldPrerenderTransformedContent(aBuilder, mFrame, false) ?
+    FrameLayerBuilder::CONTAINER_NOT_CLIPPED_BY_ANCESTORS : 0;
   nsRefPtr<ContainerLayer> container = aManager->GetLayerBuilder()->
     BuildContainerLayerFor(aBuilder, aManager, mFrame, this, *mStoredList.GetChildren(),
-                           aContainerParameters, &newTransformMatrix,
-                           FrameLayerBuilder::CONTAINER_NOT_CLIPPED_BY_ANCESTORS);
+                           aContainerParameters, &newTransformMatrix, flags);
 
   if (!container) {
     return nullptr;
@@ -4705,32 +4743,32 @@ nsDisplaySVGEffects::PrintEffects(FILE* aOutput)
   bool isOK = true;
   nsSVGClipPathFrame *clipPathFrame = effectProperties.GetClipPathFrame(&isOK);
   bool first = true;
-  fprintf(aOutput, " effects=(");
+  fprintf_stderr(aOutput, " effects=(");
   if (mFrame->StyleDisplay()->mOpacity != 1.0f) {
     first = false;
-    fprintf(aOutput, "opacity(%f)", mFrame->StyleDisplay()->mOpacity);
+    fprintf_stderr(aOutput, "opacity(%f)", mFrame->StyleDisplay()->mOpacity);
   }
   if (clipPathFrame) {
     if (!first) {
-      fprintf(aOutput, ", ");
+      fprintf_stderr(aOutput, ", ");
     }
-    fprintf(aOutput, "clip(%s)", clipPathFrame->IsTrivial() ? "trivial" : "non-trivial");
+    fprintf_stderr(aOutput, "clip(%s)", clipPathFrame->IsTrivial() ? "trivial" : "non-trivial");
     first = false;
   }
   if (effectProperties.GetFilterFrame(&isOK)) {
     if (!first) {
-      fprintf(aOutput, ", ");
+      fprintf_stderr(aOutput, ", ");
     }
-    fprintf(aOutput, "filter");
+    fprintf_stderr(aOutput, "filter");
     first = false;
   }
   if (effectProperties.GetMaskFrame(&isOK)) {
     if (!first) {
-      fprintf(aOutput, ", ");
+      fprintf_stderr(aOutput, ", ");
     }
-    fprintf(aOutput, "mask");
+    fprintf_stderr(aOutput, "mask");
   }
-  fprintf(aOutput, ")");
+  fprintf_stderr(aOutput, ")");
 }
 #endif
 

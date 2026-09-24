@@ -63,6 +63,7 @@ EXPORTS.mozilla.dom += [
     'EventSource.h',
     'Link.h',
     'NodeIterator.h',
+    'ShadowRoot.h',
     'Text.h',
     'TreeWalker.h',
 ]
@@ -149,6 +150,7 @@ UNIFIED_SOURCES += [
     'nsXMLContentSerializer.cpp',
     'nsXMLHttpRequest.cpp',
     'nsXMLNameSpaceMap.cpp',
+    'ShadowRoot.cpp',
     'Text.cpp',
     'ThirdPartyUtil.cpp',
     'TreeWalker.cpp',
@@ -201,6 +203,7 @@ LOCAL_INCLUDES += [
     '/content/xslt/src/xpath',
     '/content/xul/content/src',
     '/content/xul/document/src',
+    '/docshell/base',
     '/dom/base',
     '/dom/ipc',
     '/dom/workers',
@@ -212,6 +215,6 @@ LOCAL_INCLUDES += [
     '/layout/generic',
     '/layout/style',
     '/layout/svg',
-    '/layout/xul/base/src',
+    '/layout/xul',
     '/netwerk/base/src',
 ]

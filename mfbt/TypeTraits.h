@@ -514,12 +514,6 @@ struct RemoveReference<T&>
     typedef T Type;
 };
 
-template<typename T>
-struct RemoveReference<T&&>
-{
-    typedef T Type;
-};
-
 /* 20.9.7.3 Sign modifications [meta.trans.sign] */
 
 template<bool B, typename T = void>

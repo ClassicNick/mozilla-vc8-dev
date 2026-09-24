@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Util.h"
+#include "mozilla/ArrayUtils.h"
 // On top because they include basictypes.h:
 #include "mozilla/dom/SmsFilter.h"
 
@@ -4003,7 +4003,7 @@ nsHTMLDocumentSH::GetDocumentAllNodeList(JSContext *cx,
     // We already have a node list in our reserved slot, use it.
     JS::Rooted<JSObject*> obj(cx, JSVAL_TO_OBJECT(collection));
     nsIHTMLCollection* htmlCollection;
-    rv = UNWRAP_OBJECT(HTMLCollection, cx, obj, htmlCollection);
+    rv = UNWRAP_OBJECT(HTMLCollection, obj, htmlCollection);
     if (NS_SUCCEEDED(rv)) {
       NS_ADDREF(*nodeList = static_cast<nsContentList*>(htmlCollection));
     }
@@ -4278,9 +4278,10 @@ nsISupports*
 nsStyleSheetListSH::GetItemAt(nsISupports *aNative, uint32_t aIndex,
                               nsWrapperCache **aCache, nsresult *rv)
 {
-  nsDOMStyleSheetList* list = nsDOMStyleSheetList::FromSupports(aNative);
-
-  return list->GetItemAt(aIndex);
+  nsIDOMStyleSheetList* list = static_cast<nsIDOMStyleSheetList*>(aNative);
+  nsCOMPtr<nsIDOMStyleSheet> sheet;
+  list->Item(aIndex, getter_AddRefs(sheet));
+  return sheet;
 }
 
 
@@ -4496,9 +4497,7 @@ nsStorage2SH::NewEnumerate(nsIXPConnectWrappedNative *wrapper, JSContext *cx,
   if (enum_op == JSENUMERATE_NEXT && keys->Length() != 0) {
     nsString& key = keys->ElementAt(0);
     JSString *str =
-      JS_NewUCStringCopyN(cx, reinterpret_cast<const jschar *>
-                                              (key.get()),
-                          key.Length());
+      JS_NewUCStringCopyN(cx, key.get(), key.Length());
     NS_ENSURE_TRUE(str, NS_ERROR_OUT_OF_MEMORY);
 
     JS_ValueToId(cx, STRING_TO_JSVAL(str), idp);

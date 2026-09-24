@@ -12,8 +12,13 @@
 #include "VideoUtils.h"
 #include "nsISeekableStream.h"
 
+<<<<<<< HEAD
 #include "mozilla/StandardInteger.h"
 #include "mozilla/Util.h"
+=======
+#include <stdint.h>
+#include "mozilla/ArrayUtils.h"
+>>>>>>> e149dacf
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Endian.h"
 #include <algorithm>

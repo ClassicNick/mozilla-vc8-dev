@@ -14,6 +14,7 @@
 
 #include "jsatom.h"
 #include "jscntxt.h"
+#include "jshashutil.h"
 #include "jsobj.h"
 
 #include "js/HashTable.h"
@@ -393,9 +394,10 @@ JSObject::getChildPropertyOnDictionary(ThreadSafeContext *cx, JS::HandleObject o
 JSObject::getChildProperty(ExclusiveContext *cx,
                            HandleObject obj, HandleShape parent, StackShape &child)
 {
+    StackShape::AutoRooter childRoot(cx, &child);
     RootedShape shape(cx, getChildPropertyOnDictionary(cx, obj, parent, child));
 
-    if (!shape) {
+    if (!obj->inDictionaryMode()) {
         shape = cx->compartment()->propertyTree.getChild(cx, parent, obj->numFixedSlots(), child);
         if (!shape)
             return nullptr;
@@ -412,11 +414,12 @@ JSObject::getChildProperty(ExclusiveContext *cx,
 JSObject::lookupChildProperty(ThreadSafeContext *cx,
                               HandleObject obj, HandleShape parent, StackShape &child)
 {
+    StackShape::AutoRooter childRoot(cx, &child);
     JS_ASSERT(cx->isThreadLocal(obj));
 
     RootedShape shape(cx, getChildPropertyOnDictionary(cx, obj, parent, child));
 
-    if (!shape) {
+    if (!obj->inDictionaryMode()) {
         shape = cx->compartment_->propertyTree.lookupChild(cx, parent, child);
         if (!shape)
             return nullptr;
@@ -1466,8 +1469,7 @@ BaseShape::getUnowned(ExclusiveContext *cx, const StackBaseShape &base)
     if (!table.initialized() && !table.init())
         return nullptr;
 
-    BaseShapeSet::AddPtr p = table.lookupForAdd(&base);
-
+    DependentAddPtr<BaseShapeSet> p(cx, table, &base);
     if (p)
         return *p;
 
@@ -1481,7 +1483,7 @@ BaseShape::getUnowned(ExclusiveContext *cx, const StackBaseShape &base)
 
     UnownedBaseShape *nbase = static_cast<UnownedBaseShape *>(nbase_);
 
-    if (!table.relookupOrAdd(p, &base, nbase))
+    if (!p.add(table, &base, nbase))
         return nullptr;
 
     return nbase;
@@ -1593,9 +1595,8 @@ EmptyShape::getInitialShape(ExclusiveContext *cx, const Class *clasp, TaggedProt
         return nullptr;
 
     typedef InitialShapeEntry::Lookup Lookup;
-    InitialShapeSet::AddPtr p =
-        table.lookupForAdd(Lookup(clasp, proto, parent, metadata, nfixed, objectFlags));
-
+    DependentAddPtr<InitialShapeSet>
+        p(cx, table, Lookup(clasp, proto, parent, metadata, nfixed, objectFlags));
     if (p)
         return p->shape;
 
@@ -1614,11 +1615,9 @@ EmptyShape::getInitialShape(ExclusiveContext *cx, const Class *clasp, TaggedProt
         return nullptr;
     new (shape) EmptyShape(nbase, nfixed);
 
-    if (!table.relookupOrAdd(p, Lookup(clasp, protoRoot, parentRoot, metadataRoot, nfixed, objectFlags),
-                             InitialShapeEntry(shape, protoRoot)))
-    {
+    Lookup lookup(clasp, protoRoot, parentRoot, metadataRoot, nfixed, objectFlags);
+    if (!p.add(table, lookup, InitialShapeEntry(shape, protoRoot)))
         return nullptr;
-    }
 
     return shape;
 }

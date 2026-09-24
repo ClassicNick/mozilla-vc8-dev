@@ -44,7 +44,6 @@
 #include "mozilla/dom/MessagePortList.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Util.h"
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
 #include "nsCxPusher.h"
@@ -346,7 +345,7 @@ struct WorkerStructuredCloneCallbacks
     // See if this is an ImageData object.
     {
       ImageData* imageData = nullptr;
-      if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageData, aCx, aObj, imageData))) {
+      if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageData, aObj, imageData))) {
         // Prepare the ImageData internals.
         uint32_t width = imageData->Width();
         uint32_t height = imageData->Height();
@@ -1465,6 +1464,29 @@ public:
   }
 };
 
+class UpdatePreferenceRunnable : public WorkerControlRunnable
+{
+  WorkerPreference mPref;
+  bool mValue;
+
+public:
+  UpdatePreferenceRunnable(WorkerPrivate* aWorkerPrivate,
+                           WorkerPreference aPref,
+                           bool aValue)
+    : WorkerControlRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
+      mPref(aPref),
+      mValue(aValue)
+  {
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    aWorkerPrivate->UpdatePreferenceInternal(aCx, mPref, mValue);
+    return true;
+  }
+};
+
 class UpdateJSWorkerMemoryParameterRunnable : public WorkerControlRunnable
 {
   uint32_t mValue;
@@ -1550,7 +1572,7 @@ public:
 
   void
   PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-                bool aDispatchResult)
+               bool aDispatchResult)
   {
     // Silence bad assertions, this can be dispatched from either the main
     // thread or the timer thread..
@@ -1560,6 +1582,41 @@ public:
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
   {
     aWorkerPrivate->GarbageCollectInternal(aCx, mShrinking, mCollectChildren);
+    return true;
+  }
+};
+
+class CycleCollectRunnable : public WorkerControlRunnable
+{
+protected:
+  bool mCollectChildren;
+
+public:
+  CycleCollectRunnable(WorkerPrivate* aWorkerPrivate, bool aCollectChildren)
+  : WorkerControlRunnable(aWorkerPrivate, WorkerThread, UnchangedBusyCount),
+    mCollectChildren(aCollectChildren)
+  { }
+
+  bool
+  PreDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    // Silence bad assertions, this can be dispatched from either the main
+    // thread or the timer thread..
+    return true;
+  }
+
+  void
+  PostDispatch(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
+               bool aDispatchResult)
+  {
+    // Silence bad assertions, this can be dispatched from either the main
+    // thread or the timer thread..
+  }
+
+  bool
+  WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate)
+  {
+    aWorkerPrivate->CycleCollectInternal(aCx, mCollectChildren);
     return true;
   }
 };
@@ -1961,8 +2018,7 @@ class WorkerPrivate::MemoryReporter MOZ_FINAL : public MemoryMultiReporter
 
 public:
   MemoryReporter(WorkerPrivate* aWorkerPrivate)
-  : MemoryMultiReporter("workers"),
-    mMutex(aWorkerPrivate->mMutex), mWorkerPrivate(aWorkerPrivate),
+  : mMutex(aWorkerPrivate->mMutex), mWorkerPrivate(aWorkerPrivate),
     mAlreadyMappedToAddon(false)
   {
     aWorkerPrivate->AssertIsOnWorkerThread();
@@ -2159,7 +2215,8 @@ WorkerPrivateParent<Derived>::WrapObject(JSContext* aCx,
 
   AssertIsOnParentThread();
 
-  JSObject* obj = WorkerBinding::Wrap(aCx, aScope, ParentAsWorkerPrivate());
+  JS::Rooted<JSObject*> obj(aCx, WorkerBinding::Wrap(aCx, aScope,
+                                                     ParentAsWorkerPrivate()));
 
   if (mRooted) {
     PreserveWrapper(this);
@@ -2779,6 +2836,21 @@ WorkerPrivateParent<Derived>::UpdateJSContextOptions(JSContext* aCx,
 
 template <class Derived>
 void
+WorkerPrivateParent<Derived>::UpdatePreference(JSContext* aCx, WorkerPreference aPref, bool aValue)
+{
+  AssertIsOnParentThread();
+  MOZ_ASSERT(aPref >= 0 && aPref < WORKERPREF_COUNT);
+
+  nsRefPtr<UpdatePreferenceRunnable> runnable =
+    new UpdatePreferenceRunnable(ParentAsWorkerPrivate(), aPref, aValue);
+  if (!runnable->Dispatch(aCx)) {
+    NS_WARNING("Failed to update worker preferences!");
+    JS_ClearPendingException(aCx);
+  }
+}
+
+template <class Derived>
+void
 WorkerPrivateParent<Derived>::UpdateJSWorkerMemoryParameter(JSContext* aCx,
                                                             JSGCParamKey aKey,
                                                             uint32_t aValue)
@@ -2853,9 +2925,25 @@ WorkerPrivateParent<Derived>::GarbageCollect(JSContext* aCx, bool aShrinking)
   AssertIsOnParentThread();
 
   nsRefPtr<GarbageCollectRunnable> runnable =
-    new GarbageCollectRunnable(ParentAsWorkerPrivate(), aShrinking, true);
+    new GarbageCollectRunnable(ParentAsWorkerPrivate(), aShrinking,
+                               /* collectChildren = */ true);
   if (!runnable->Dispatch(aCx)) {
-    NS_WARNING("Failed to update worker heap size!");
+    NS_WARNING("Failed to GC worker!");
+    JS_ClearPendingException(aCx);
+  }
+}
+
+template <class Derived>
+void
+WorkerPrivateParent<Derived>::CycleCollect(JSContext* aCx, bool aDummy)
+{
+  AssertIsOnParentThread();
+
+  nsRefPtr<CycleCollectRunnable> runnable =
+    new CycleCollectRunnable(ParentAsWorkerPrivate(),
+                             /* collectChildren = */ true);
+  if (!runnable->Dispatch(aCx)) {
+    NS_WARNING("Failed to CC worker!");
     JS_ClearPendingException(aCx);
   }
 }
@@ -3283,6 +3371,15 @@ WorkerPrivate::WorkerPrivate(JSContext* aCx,
 {
   MOZ_ASSERT_IF(IsSharedWorker(), !aSharedWorkerName.IsVoid());
   MOZ_ASSERT_IF(!IsSharedWorker(), aSharedWorkerName.IsEmpty());
+
+  if (aParent) {
+    aParent->AssertIsOnWorkerThread();
+    aParent->GetAllPreferences(mPreferences);
+  }
+  else {
+    AssertIsOnMainThread();
+    RuntimeService::GetDefaultPreferences(mPreferences);
+  }
 }
 
 WorkerPrivate::~WorkerPrivate()
@@ -3975,7 +4072,7 @@ WorkerPrivate::EnableMemoryReporter()
   // successfully registered the reporter.
   mMemoryReporter = new MemoryReporter(this);
 
-  if (NS_FAILED(NS_RegisterMemoryReporter(mMemoryReporter))) {
+  if (NS_FAILED(RegisterWeakMemoryReporter(mMemoryReporter))) {
     NS_WARNING("Failed to register memory reporter!");
     // No need to lock here since a failed registration means our memory
     // reporter can't start running. Just clean up.
@@ -4030,7 +4127,7 @@ WorkerPrivate::DisableMemoryReporter()
   }
 
   // Finally unregister the memory reporter.
-  if (NS_FAILED(NS_UnregisterMemoryReporter(memoryReporter))) {
+  if (NS_FAILED(UnregisterWeakMemoryReporter(memoryReporter))) {
     NS_WARNING("Failed to unregister memory reporter!");
   }
 }
@@ -5083,6 +5180,19 @@ WorkerPrivate::UpdateJSContextOptionsInternal(JSContext* aCx,
 }
 
 void
+WorkerPrivate::UpdatePreferenceInternal(JSContext* aCx, WorkerPreference aPref, bool aValue)
+{
+  AssertIsOnWorkerThread();
+  MOZ_ASSERT(aPref >= 0 && aPref < WORKERPREF_COUNT);
+
+  mPreferences[aPref] = aValue;
+
+  for (uint32_t index = 0; index < mChildWorkers.Length(); index++) {
+    mChildWorkers[index]->UpdatePreference(aCx, aPref, aValue);
+  }
+}
+
+void
 WorkerPrivate::UpdateJSWorkerMemoryParameterInternal(JSContext* aCx,
                                                      JSGCParamKey aKey,
                                                      uint32_t aValue)
@@ -5153,6 +5263,20 @@ WorkerPrivate::GarbageCollectInternal(JSContext* aCx, bool aShrinking,
   if (aCollectChildren) {
     for (uint32_t index = 0; index < mChildWorkers.Length(); index++) {
       mChildWorkers[index]->GarbageCollect(aCx, aShrinking);
+    }
+  }
+}
+
+void
+WorkerPrivate::CycleCollectInternal(JSContext* aCx, bool aCollectChildren)
+{
+  AssertIsOnWorkerThread();
+
+  nsCycleCollector_collect(nullptr);
+
+  if (aCollectChildren) {
+    for (uint32_t index = 0; index < mChildWorkers.Length(); index++) {
+      mChildWorkers[index]->CycleCollect(aCx, /* dummy = */ false);
     }
   }
 }
@@ -5259,7 +5383,7 @@ WorkerPrivate::ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial)
     return false;
   }
 
-  MessageEventInit init;
+  RootedDictionary<MessageEventInit> init(aCx);
   init.mBubbles = false;
   init.mCancelable = false;
   init.mSource = &jsPort.toObject();
@@ -5399,7 +5523,7 @@ GetWorkerCrossThreadDispatcher(JSContext* aCx, JS::Value aWorker)
   }
 
   WorkerPrivate* w = nullptr;
-  UNWRAP_OBJECT(Worker, aCx, &aWorker.toObject(), w);
+  UNWRAP_OBJECT(Worker, &aWorker.toObject(), w);
   MOZ_ASSERT(w);
   return w->GetCrossThreadDispatcher();
 }

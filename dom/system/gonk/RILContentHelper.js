@@ -101,6 +101,8 @@ const RIL_IPC_MSG_NAMES = [
   "RIL:SetRoamingPreference",
   "RIL:GetRoamingPreference",
   "RIL:ExitEmergencyCbMode",
+  "RIL:SetRadioEnabled",
+  "RIL:RadioStateChanged",
   "RIL:SetVoicePrivacyMode",
   "RIL:GetVoicePrivacyMode",
   "RIL:OtaStatusChanged"
@@ -459,6 +461,7 @@ function RILContentHelper() {
     this.rilContexts[clientId] = {
       cardState:            RIL.GECKO_CARDSTATE_UNKNOWN,
       networkSelectionMode: RIL.GECKO_NETWORK_SELECTION_UNKNOWN,
+      radioState:           null,
       iccInfo:              null,
       voiceConnectionInfo:  new MobileConnectionInfo(),
       dataConnectionInfo:   new MobileConnectionInfo()
@@ -491,7 +494,8 @@ RILContentHelper.prototype = {
                                          Ci.nsIVoicemailProvider,
                                          Ci.nsIIccProvider,
                                          Ci.nsIObserver,
-                                         Ci.nsISupportsWeakReference]),
+                                         Ci.nsISupportsWeakReference,
+                                         Ci.nsIObserver]),
   classID:   RILCONTENTHELPER_CID,
   classInfo: XPCOMUtils.generateCI({classID: RILCONTENTHELPER_CID,
                                     classDescription: "RILContentHelper",
@@ -556,7 +560,7 @@ RILContentHelper.prototype = {
     let rilContext = this.rilContexts[clientId];
 
     // Card is not detected, clear iccInfo to null.
-    if (!newInfo || !newInfo.iccType) {
+    if (!newInfo || !newInfo.iccType || !newInfo.iccid) {
       if (rilContext.iccInfo) {
         rilContext.iccInfo = null;
         this._deliverEvent(clientId,
@@ -610,6 +614,7 @@ RILContentHelper.prototype = {
       }
       this.rilContexts[cId].cardState = rilContext.cardState;
       this.rilContexts[cId].networkSelectionMode = rilContext.networkSelectionMode;
+      this.rilContexts[cId].radioState = rilContext.detailedRadioState;
       this.updateIccInfo(cId, rilContext.iccInfo);
       this.updateConnectionInfo(rilContext.voice, this.rilContexts[cId].voiceConnectionInfo);
       this.updateConnectionInfo(rilContext.data, this.rilContexts[cId].dataConnectionInfo);
@@ -654,6 +659,11 @@ RILContentHelper.prototype = {
   getNetworkSelectionMode: function getNetworkSelectionMode(clientId) {
     let context = this.getRilContext(clientId);
     return context && context.networkSelectionMode;
+  },
+
+  getRadioState: function getRadioState(clientId) {
+    let context = this.getRilContext(clientId);
+    return context && context.radioState;
   },
 
   /**
@@ -1092,6 +1102,7 @@ RILContentHelper.prototype = {
 
     let request = Services.DOMRequest.createRequest(window);
     let requestId = this.getRequestId(request);
+    this._windowsMap[requestId] = window;
 
     // Parsing nsDOMContact to Icc Contact format
     let iccContact = {};
@@ -1355,6 +1366,25 @@ RILContentHelper.prototype = {
       clientId: clientId,
       data: {
         requestId: requestId,
+      }
+    });
+
+    return request;
+  },
+
+  setRadioEnabled: function setRadioEnabled(clientId, window, enabled) {
+    if (window == null) {
+      throw Components.Exception("Can't get window object",
+                                  Cr.NS_ERROR_UNEXPECTED);
+    }
+    let request = Services.DOMRequest.createRequest(window);
+    let requestId = this.getRequestId(request);
+
+    cpmm.sendAsyncMessage("RIL:SetRadioEnabled", {
+      clientId: clientId,
+      data: {
+        requestId: requestId,
+        enabled: enabled,
       }
     });
 
@@ -1699,7 +1729,7 @@ RILContentHelper.prototype = {
         this.handleReadIccContacts(data);
         break;
       case "RIL:UpdateIccContact":
-        this.handleSimpleRequest(data.requestId, data.errorMsg, null);
+        this.handleUpdateIccContact(data);
         break;
       case "RIL:DataError":
         this.updateConnectionInfo(data, this.rilContexts[clientId].dataConnectionInfo);
@@ -1765,6 +1795,16 @@ RILContentHelper.prototype = {
                            "_mobileConnectionListeners",
                            "notifyEmergencyCbModeChanged",
                            [data.active, data.timeoutMs]);
+        break;
+      case "RIL:SetRadioEnabled":
+        this.handleSimpleRequest(data.requestId, data.errorMsg, null);
+        break;
+      case "RIL:RadioStateChanged":
+        this.rilContexts[clientId].radioState = data;
+        this._deliverEvent(clientId,
+                           "_mobileConnectionListeners",
+                           "notifyRadioStateChanged",
+                           null);
         break;
       case "RIL:SetVoicePrivacyMode":
         this.handleSimpleRequest(data.requestId, data.errorMsg, null);
@@ -1853,6 +1893,32 @@ RILContentHelper.prototype = {
     });
 
     this.fireRequestSuccess(message.requestId, result);
+  },
+
+  handleUpdateIccContact: function handleUpdateIccContact(message) {
+    if (message.errorMsg) {
+      this.fireRequestError(message.requestId, message.errorMsg);
+      return;
+    }
+
+    let window = this._windowsMap[message.requestId];
+    delete this._windowsMap[message.requestId];
+    let iccContact = message.contact;
+    let prop = {name: [iccContact.alphaId], tel: [{value: iccContact.number}]};
+    if (iccContact.email) {
+      prop.email = [{value: iccContact.email}];
+    }
+
+    // ANR - Additional Number
+    let anrLen = iccContact.anr ? iccContact.anr.length : 0;
+    for (let i = 0; i < anrLen; i++) {
+      prop.tel.push({value: iccContact.anr[i]});
+    }
+
+    let contact = new window.mozContact(prop);
+    contact.id = iccContact.contactId;
+
+    this.fireRequestSuccess(message.requestId, contact);
   },
 
   handleVoicemailNotification: function handleVoicemailNotification(clientId,
@@ -2093,4 +2159,3 @@ RILContentHelper.prototype = {
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([RILContentHelper,
                                                      DOMMMIError,
                                                      IccCardLockError]);
-

@@ -173,7 +173,7 @@
 
             let uri;
             try {
-              uri = uriFixup.createFixupURI(inputVal, Ci.nsIURIFixup.FIXUP_FLAG_USE_UTF8);
+              uri = uriFixup.createFixupURI(inputVal, Ci.nsIURIFixup.FIXUP_FLAG_NONE);
             } catch (e) {}
             if (!uri)
               return selectedVal;
@@ -549,7 +549,9 @@
         </getter>
         <setter>
           <![CDATA[
-            return this._isGridBound(this._results) ? this._results.selectedItem : null;
+            if (this._isGridBound(this._results)) {
+              this._results.selectedItem = val;
+            }
           ]]>
         </setter>
       </property>
@@ -562,7 +564,9 @@
         </getter>
         <setter>
           <![CDATA[
-            return this._isGridBound(this._results) ? this._results.selectedIndex : -1;
+            if (this._isGridBound(this._results)) {
+              this._results.selectedIndex = val;
+            }
           ]]>
         </setter>
       </property>

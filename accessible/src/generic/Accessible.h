@@ -245,6 +245,16 @@ public:
   }
 
   /**
+   * Return if accessible is unavailable.
+   */
+  bool Unavailable() const
+  {
+    uint64_t state = NativelyUnavailable() ? states::UNAVAILABLE : 0;
+    ApplyARIAState(&state);
+    return state & states::UNAVAILABLE;
+  }
+
+  /**
    * Return the states of accessible, not taking into account ARIA states.
    * Use State() to get complete set of states.
    */
@@ -869,10 +879,10 @@ protected:
   void ARIAName(nsString& aName);
 
   /**
-   * Compute the name of HTML/XUL node.
+   * Return the name for XUL element.
    */
-  mozilla::a11y::ENameValueFlag GetHTMLName(nsString& aName);
-  mozilla::a11y::ENameValueFlag GetXULName(nsString& aName);
+  static void XULElmName(DocAccessible* aDocument,
+                         nsIContent* aElm, nsString& aName);
 
   // helper method to verify frames
   static nsresult GetFullKeyName(const nsAString& aModifierName, const nsAString& aKeyName, nsAString& aStringOut);

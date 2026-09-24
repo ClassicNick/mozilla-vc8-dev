@@ -25,6 +25,14 @@ const kWidePanelItemClass = "panel-wide-item";
 let gModuleName = "[CustomizableWidgets]";
 #include logging.js
 
+function isWin8OrHigher() {
+  let osName = Services.sysinfo.getProperty("name");
+  let version = Services.sysinfo.getProperty("version");
+
+  // Windows 8 is version >= 6.2
+  return osName == "Windows_NT" && Services.vc.compare(version, "6.2") >= 0;
+}
+
 function setAttributes(aNode, aAttrs) {
   for (let [name, value] of Iterator(aAttrs)) {
     if (!value) {
@@ -41,13 +49,13 @@ function setAttributes(aNode, aAttrs) {
 function updateCombinedWidgetStyle(aNode, aArea, aModifyAutoclose) {
   let inPanel = (aArea == CustomizableUI.AREA_PANEL);
   let cls = inPanel ? "panel-combined-button" : "toolbarbutton-1";
-  if (!aArea)
-    cls = null;
   let attrs = {class: cls};
   if (aModifyAutoclose) {
     attrs.noautoclose = inPanel ? true : null;
   }
   for (let i = 0, l = aNode.childNodes.length; i < l; ++i) {
+    if (aNode.childNodes[i].localName == "separator")
+      continue;
     setAttributes(aNode.childNodes[i], attrs);
   }
 }
@@ -333,7 +341,9 @@ const CustomizableWidgets = [{
       node.classList.add("toolbaritem-combined-buttons");
       node.classList.add(kWidePanelItemClass);
 
-      buttons.forEach(function(aButton) {
+      buttons.forEach(function(aButton, aIndex) {
+        if (aIndex != 0)
+          node.appendChild(aDocument.createElementNS(kNSXUL, "separator"));
         let btnNode = aDocument.createElementNS(kNSXUL, "toolbarbutton");
         setAttributes(btnNode, aButton);
         if (inPanel)
@@ -342,7 +352,7 @@ const CustomizableWidgets = [{
       });
 
       // The middle node is the 'Reset Zoom' button.
-      let zoomResetButton = node.childNodes[1];
+      let zoomResetButton = node.childNodes[2];
       let window = aDocument.defaultView;
       function updateZoomResetButton() {
         //XXXgijs in some tests we get called very early, and there's no docShell on the
@@ -473,11 +483,11 @@ const CustomizableWidgets = [{
       node.classList.add("toolbaritem-combined-buttons");
       node.classList.add(kWidePanelItemClass);
 
-      buttons.forEach(function(aButton) {
+      buttons.forEach(function(aButton, aIndex) {
+        if (aIndex != 0)
+          node.appendChild(aDocument.createElementNS(kNSXUL, "separator"));
         let btnNode = aDocument.createElementNS(kNSXUL, "toolbarbutton");
         setAttributes(btnNode, aButton);
-        if (inPanel)
-          btnNode.setAttribute("tabindex", "0");
         node.appendChild(btnNode);
       });
 
@@ -775,4 +785,33 @@ const CustomizableWidgets = [{
       };
       CustomizableUI.addListener(listener);
     }
+  }, {
+    id: "email-link-button",
+    removable: true,
+    onCommand: function(aEvent) {
+      let win = aEvent.view;
+      win.MailIntegration.sendLinkForWindow(win.content);
+    }
   }];
+
+#ifdef XP_WIN
+#ifdef MOZ_METRO
+if (isWin8OrHigher()) {
+  CustomizableWidgets.push({
+    id: "switch-to-metro-button",
+    label: "switch-to-metro-button2.label",
+    tooltiptext: "switch-to-metro-button2.tooltiptext",
+    removable: true,
+    defaultArea: CustomizableUI.AREA_PANEL,
+    onCommand: function(aEvent) {
+      let win = aEvent.target &&
+        aEvent.target.ownerDocument &&
+        aEvent.target.ownerDocument.defaultView;
+      if (win && typeof win.SwitchToMetro == "function") {
+        win.SwitchToMetro();
+      }
+    }
+  });
+}
+#endif
+#endif

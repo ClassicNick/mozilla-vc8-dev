@@ -99,12 +99,6 @@ class nsAutoPtr
         {
         }
 
-      nsAutoPtr( nsAutoPtr<T>&& aSmartPtr )
-            : mRawPtr( aSmartPtr.forget() )
-          // Construct by transferring ownership from another smart pointer.
-        {
-        }
-
         // Assignment operators
 
       nsAutoPtr<T>&

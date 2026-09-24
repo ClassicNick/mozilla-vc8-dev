@@ -32,7 +32,7 @@ private:
   typedef typename KeyClass::KeyTypePointer KeyTypePointer;
   
   nsBaseHashtableET(KeyTypePointer aKey);
-  nsBaseHashtableET(nsBaseHashtableET<KeyClass,DataType>&& toMove);
+  nsBaseHashtableET(nsBaseHashtableET<KeyClass,DataType>& toCopy);
   ~nsBaseHashtableET();
 };
 
@@ -57,6 +57,8 @@ class nsBaseHashtable :
 public:
   typedef typename KeyClass::KeyType KeyType;
   typedef nsBaseHashtableET<KeyClass,DataType> EntryType;
+
+  using nsTHashtable<EntryType>::Contains;
 
   nsBaseHashtable()
   {
@@ -122,7 +124,7 @@ public:
   void Put(KeyType aKey, const UserDataType& aData)
   {
     if (!Put(aKey, aData, fallible_t()))
-      NS_RUNTIMEABORT("OOM");
+      NS_ABORT_OOM(this->mTable.entrySize * this->mTable.entryCount);
   }
 
   bool Put(KeyType aKey, const UserDataType& aData, const fallible_t&) NS_WARN_UNUSED_RESULT
@@ -354,9 +356,9 @@ nsBaseHashtableET<KeyClass,DataType>::nsBaseHashtableET(KeyTypePointer aKey) :
 
 template<class KeyClass,class DataType>
 nsBaseHashtableET<KeyClass,DataType>::nsBaseHashtableET
-  (nsBaseHashtableET<KeyClass,DataType>&& toMove) :
-  KeyClass(mozilla::Move(toMove)),
-  mData(mozilla::Move(toMove.mData))
+  (nsBaseHashtableET<KeyClass,DataType>& toCopy) :
+  KeyClass(toCopy),
+  mData(toCopy.mData)
 { }
 
 template<class KeyClass,class DataType>

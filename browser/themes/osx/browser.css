@@ -59,16 +59,6 @@
   }
 }
 
-/* Fullscreen and caption buttons don't move with RTL on OS X so override the automatic ordering. */
-.titlebar-placeholder[type="fullscreen-button"]:-moz-locale-dir(ltr),
-.titlebar-placeholder[type="caption-buttons"]:-moz-locale-dir(rtl) {
-  -moz-box-ordinal-group: 1000;
-}
-.titlebar-placeholder[type="caption-buttons"]:-moz-locale-dir(ltr),
-.titlebar-placeholder[type="fullscreen-button"]:-moz-locale-dir(rtl) {
-  -moz-box-ordinal-group: 0;
-}
-
 #main-window[chromehidden~="toolbar"] > #titlebar {
   padding-top: 22px;
 }
@@ -392,7 +382,7 @@ toolbarbutton.bookmark-item > menupopup {
 
 /* ----- PRIMARY TOOLBAR BUTTONS ----- */
 
-.toolbarbutton-1:not([type="menu-button"]),
+toolbar .toolbarbutton-1:not([type="menu-button"]),
 .toolbarbutton-1 > .toolbarbutton-menubutton-button,
 .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker,
 #restore-button {
@@ -598,6 +588,10 @@ toolbarbutton.bookmark-item > menupopup {
     -moz-image-region: rect(36px, 612px, 54px, 594px);
   }
 
+  #email-link-button@toolbarButtonPressed@ {
+    -moz-image-region: rect(18px, 306px, 36px, 288px);
+  }
+
   /**
    * OSX has a unique set of icons when fullscreen is in the checked state.
    */
@@ -744,6 +738,14 @@ toolbarbutton.bookmark-item > menupopup {
   }
 
   #social-share-button[cui-areatype="toolbar"]:hover:active:not([disabled="true"]) {
+    -moz-image-region: rect(36px, 612px, 72px, 576px);
+  }
+
+  #email-link-button[cui-areatype="toolbar"] {
+    -moz-image-region: rect(0, 612px, 36px, 576px);
+  }
+
+  #email-link-button[cui-areatype="toolbar"]:hover:active:not([disabled="true"]) {
     -moz-image-region: rect(36px, 612px, 72px, 576px);
   }
 
@@ -1017,6 +1019,16 @@ toolbarbutton.bookmark-item > menupopup {
   #preferences-button[cui-areatype="menu-panel"],
   toolbarpaletteitem[place="palette"] > #preferences-button {
     -moz-image-region: rect(0px, 1536px, 64px, 1472px);
+  }
+
+  #email-link-button[cui-areatype="menu-panel"],
+  toolbarpaletteitem[place="palette"] > #email-link-button {
+    -moz-image-region: rect(0px, 896px, 64px, 832px);
+  }
+
+  /* This is temporary until we have an email-link icon (Bug 932235) */
+  #email-link-button > image {
+    transform: scale(-1, -1);
   }
 
   /* Footer and wide panel control icons */
@@ -1415,14 +1427,14 @@ toolbarbutton.bookmark-item > menupopup {
   border-bottom-left-radius: 0;
 }
 
-#zoom-controls[cui-areatype="toolbar"] > #zoom-reset-button {
+#zoom-controls[cui-areatype="toolbar"]:not(.overflowedItem) > #zoom-reset-button {
   min-width: 0;
   margin: 0;
 }
 
-#zoom-controls[cui-areatype="toolbar"] > #zoom-reset-button > .toolbarbutton-text {
-  margin-top: 0;
+#zoom-controls[cui-areatype="toolbar"]:not(.overflowedItem) > #zoom-reset-button > .toolbarbutton-text {
   padding-top: 8px;
+  margin: 2px;
 }
 
 /* sync button */
@@ -1660,6 +1672,10 @@ toolbarbutton.bookmark-item > menupopup {
   margin: 0 -4px;
   position: relative;
   height: 22px;
+}
+
+#search-container {
+  min-width: calc(54px + 11ch);
 }
 
 %include ../shared/identity-block.inc.css
@@ -2537,6 +2553,7 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   min-height: @tabHeight@;
 }
 
+#main-window:not(:-moz-any([privatebrowsingmode=temporary],[customizing])) #navigator-toolbox[inFullscreen]:not(:-moz-lwtheme)::before,
 #main-window:not(:-moz-any([privatebrowsingmode=temporary],[customizing],[tabsintitlebar])) #navigator-toolbox:not(:-moz-lwtheme)::before {
   /* We want the titlebar to be unified, but we still want to be able
    * to give #TabsToolbar a background. So we can't set -moz-appearance:
@@ -3577,11 +3594,16 @@ toolbarbutton.chevron > .toolbarbutton-menu-dropmarker {
   #navigator-toolbox[inFullscreen]:not(:-moz-lwtheme)::before {
     height: calc(@tabHeight@ + 11px) !important;
   }
+  #main-window[inFullscreen][privatebrowsingmode=temporary],
   #main-window[inFullscreen]:-moz-lwtheme {
     /* This additional padding matches the change in height in the pseudo-element
-     * above. The rules combined force the top 22px of the background image to
-     * be hidden, so there image doesn't jump around with the loss of the titlebar */
+     * above. */
     padding-top: 11px;
+  }
+  #main-window[inFullscreen]:not([privatebrowsingmode=temporary]):-moz-lwtheme {
+    /* In combination with the previous rule, forces the top 22px of the
+     * background image to be hidden, so the image doesn't jump around with
+     * the loss of the titlebar. */
     background-position: right -11px;
   }
 }
@@ -3951,17 +3973,6 @@ window > chatbox {
 }
 
 /* End customization mode */
-
-panel[type="arrow"][popupid="click-to-play-plugins"] > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow[side="top"],
-panel[type="arrow"][popupid="click-to-play-plugins"] > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow[side="bottom"] {
-  list-style-image: url("chrome://global/skin/arrow/panelarrow-light-vertical.png");
-}
-@media (min-resolution: 2dppx) {
-  panel[type="arrow"][popupid="click-to-play-plugins"] > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow[side="top"],
-  panel[type="arrow"][popupid="click-to-play-plugins"] > .panel-arrowcontainer > .panel-arrowbox > .panel-arrow[side="bottom"] {
-    list-style-image: url("chrome://global/skin/arrow/panelarrow-light-vertical@2x.png");
- }
-}
 
 #main-window[privatebrowsingmode=temporary] {
   background-image: url("chrome://browser/skin/privatebrowsing-mask.png");

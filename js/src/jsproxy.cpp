@@ -781,6 +781,7 @@ class ScriptedIndirectProxyHandler : public BaseProxyHandler
     virtual bool nativeCall(JSContext *cx, IsAcceptableThis test, NativeImpl impl,
                             CallArgs args) MOZ_OVERRIDE;
     virtual JSString *fun_toString(JSContext *cx, HandleObject proxy, unsigned indent) MOZ_OVERRIDE;
+    virtual bool isScripted() MOZ_OVERRIDE { return true; }
 
     static ScriptedIndirectProxyHandler singleton;
 };
@@ -838,7 +839,7 @@ ReturnedValueMustNotBePrimitive(JSContext *cx, HandleObject proxy, JSAtom *atom,
         if (AtomToPrintableString(cx, atom, &bytes)) {
             RootedValue val(cx, ObjectOrNullValue(proxy));
             js_ReportValueError2(cx, JSMSG_BAD_TRAP_RETURN_VALUE,
-                                 JSDVG_SEARCH_STACK, val, NullPtr(), bytes.ptr());
+                                 JSDVG_SEARCH_STACK, val, js::NullPtr(), bytes.ptr());
         }
         return false;
     }
@@ -1101,6 +1102,7 @@ class ScriptedDirectProxyHandler : public DirectProxyHandler {
     /* Spidermonkey extensions. */
     virtual bool call(JSContext *cx, HandleObject proxy, const CallArgs &args) MOZ_OVERRIDE;
     virtual bool construct(JSContext *cx, HandleObject proxy, const CallArgs &args) MOZ_OVERRIDE;
+    virtual bool isScripted() MOZ_OVERRIDE { return true; }
 
     static ScriptedDirectProxyHandler singleton;
 };
@@ -1550,7 +1552,7 @@ ReportInvalidTrapResult(JSContext *cx, JSObject *proxy, JSAtom *atom)
     if (!AtomToPrintableString(cx, atom, &bytes))
         return;
     js_ReportValueError2(cx, JSMSG_INVALID_TRAP_RESULT, JSDVG_IGNORE_STACK, v,
-                         NullPtr(), bytes.ptr());
+                         js::NullPtr(), bytes.ptr());
 }
 
 // This function is shared between getOwnPropertyNames, enumerate, and keys
@@ -1841,7 +1843,7 @@ ScriptedDirectProxyHandler::delete_(JSContext *cx, HandleObject proxy, HandleId 
             return false;
         if (sealed) {
             RootedValue v(cx, IdToValue(id));
-            js_ReportValueError(cx, JSMSG_CANT_DELETE, JSDVG_IGNORE_STACK, v, NullPtr());
+            js_ReportValueError(cx, JSMSG_CANT_DELETE, JSDVG_IGNORE_STACK, v, js::NullPtr());
             return false;
         }
 
@@ -1889,7 +1891,7 @@ ScriptedDirectProxyHandler::enumerate(JSContext *cx, HandleObject proxy, AutoIdV
             return false;
         RootedValue v(cx, ObjectOrNullValue(proxy));
         js_ReportValueError2(cx, JSMSG_INVALID_TRAP_RESULT, JSDVG_SEARCH_STACK,
-                             v, NullPtr(), bytes.ptr());
+                             v, js::NullPtr(), bytes.ptr());
         return false;
     }
 
@@ -2200,7 +2202,7 @@ ScriptedDirectProxyHandler::keys(JSContext *cx, HandleObject proxy, AutoIdVector
             return false;
         RootedValue v(cx, ObjectOrNullValue(proxy));
         js_ReportValueError2(cx, JSMSG_INVALID_TRAP_RESULT, JSDVG_IGNORE_STACK,
-                             v, NullPtr(), bytes.ptr());
+                             v, js::NullPtr(), bytes.ptr());
         return false;
     }
 
@@ -3006,7 +3008,7 @@ ProxyObject::trace(JSTracer *trc, JSObject *obj)
              */
             Value key = ObjectValue(*referent);
             WrapperMap::Ptr p = proxy->compartment()->lookupWrapper(key);
-            JS_ASSERT(*p->value.unsafeGet() == ObjectValue(*proxy));
+            JS_ASSERT(*p->value().unsafeGet() == ObjectValue(*proxy));
         }
     }
 #endif
@@ -3345,15 +3347,15 @@ proxy_createFunction(JSContext *cx, unsigned argc, Value *vp)
     return true;
 }
 
-static const JSFunctionSpec static_methods[] = {
-    JS_FN("create",         proxy_create,          2, 0),
-    JS_FN("createFunction", proxy_createFunction,  3, 0),
-    JS_FS_END
-};
-
 JS_FRIEND_API(JSObject *)
 js_InitProxyClass(JSContext *cx, HandleObject obj)
 {
+    static const JSFunctionSpec static_methods[] = {
+        JS_FN("create",         proxy_create,          2, 0),
+        JS_FN("createFunction", proxy_createFunction,  3, 0),
+        JS_FS_END
+    };
+
     Rooted<GlobalObject*> global(cx, &obj->as<GlobalObject>());
     RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, proxy, cx->names().Proxy, 2);
@@ -3367,6 +3369,6 @@ js_InitProxyClass(JSContext *cx, HandleObject obj)
         return nullptr;
     }
 
-    global->markStandardClassInitializedNoProto(&ProxyObject::uncallableClass_);
+    global->setConstructor(JSProto_Proxy, ObjectValue(*ctor));
     return ctor;
 }

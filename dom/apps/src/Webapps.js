@@ -248,6 +248,7 @@ WebappsRegistry.prototype = {
   classID: Components.ID("{fff440b3-fae2-45c1-bf03-3b5a2e432270}"),
 
   QueryInterface: XPCOMUtils.generateQI([Ci.nsISupportsWeakReference,
+                                         Ci.nsIObserver,
                                          Ci.mozIDOMApplicationRegistry,
                                          Ci.mozIDOMApplicationRegistry2,
                                          Ci.nsIDOMGlobalPropertyInitializer]),
@@ -342,12 +343,12 @@ WebappsApplication.prototype = {
     this._downloadError = null;
 
     this.initDOMRequestHelper(aWindow, [
-      "Webapps:CheckForUpdate:Return:KO",
-      "Webapps:Connect:Return:OK",
-      "Webapps:Connect:Return:KO",
-      "Webapps:FireEvent",
-      "Webapps:GetConnections:Return:OK",
-      "Webapps:UpdateState"
+      { name: "Webapps:CheckForUpdate:Return:KO", weakRef: true },
+      { name: "Webapps:Connect:Return:OK", weakRef: true },
+      { name: "Webapps:Connect:Return:KO", weakRef: true },
+      { name: "Webapps:FireEvent", weakRef: true },
+      { name: "Webapps:GetConnections:Return:OK", weakRef: true },
+      { name: "Webapps:UpdateState", weakRef: true }
     ]);
 
     cpmm.sendAsyncMessage("Webapps:RegisterForMessages", {
@@ -634,7 +635,8 @@ WebappsApplication.prototype = {
   classID: Components.ID("{723ed303-7757-4fb0-b261-4f78b1f6bd22}"),
 
   QueryInterface: XPCOMUtils.generateQI([Ci.mozIDOMApplication,
-                                         Ci.nsISupportsWeakReference]),
+                                         Ci.nsISupportsWeakReference,
+                                         Ci.nsIObserver]),
 
   classInfo: XPCOMUtils.generateCI({classID: Components.ID("{723ed303-7757-4fb0-b261-4f78b1f6bd22}"),
                                     contractID: "@mozilla.org/webapps/application;1",
@@ -647,14 +649,13 @@ WebappsApplication.prototype = {
   * mozIDOMApplicationMgmt object
   */
 function WebappsApplicationMgmt(aWindow) {
-  this.initDOMRequestHelper(aWindow, [
-    { name: "Webapps:GetAll:Return:OK", strongRef: true },
-    { name: "Webapps:GetAll:Return:KO", strongRef: true },
-    { name: "Webapps:Uninstall:Return:OK", strongRef: true },
-    { name: "Webapps:Uninstall:Broadcast:Return:OK", strongRef: true },
-    { name: "Webapps:Uninstall:Return:KO", strongRef: true },
-    { name: "Webapps:Install:Return:OK", strongRef: true },
-    { name: "Webapps:GetNotInstalled:Return:OK", strongRef: true }]);
+  this.initDOMRequestHelper(aWindow, ["Webapps:GetAll:Return:OK",
+                                      "Webapps:GetAll:Return:KO",
+                                      "Webapps:Uninstall:Return:OK",
+                                      "Webapps:Uninstall:Broadcast:Return:OK",
+                                      "Webapps:Uninstall:Return:KO",
+                                      "Webapps:Install:Return:OK",
+                                      "Webapps:GetNotInstalled:Return:OK"]);
 
   cpmm.sendAsyncMessage("Webapps:RegisterForMessages",
                         {
@@ -789,7 +790,9 @@ WebappsApplicationMgmt.prototype = {
 
   classID: Components.ID("{8c1bca96-266f-493a-8d57-ec7a95098c15}"),
 
-  QueryInterface: XPCOMUtils.generateQI([Ci.mozIDOMApplicationMgmt, Ci.nsISupportsWeakReference]),
+  QueryInterface: XPCOMUtils.generateQI([Ci.mozIDOMApplicationMgmt,
+                                         Ci.nsISupportsWeakReference,
+                                         Ci.nsIObserver]),
 
   classInfo: XPCOMUtils.generateCI({classID: Components.ID("{8c1bca96-266f-493a-8d57-ec7a95098c15}"),
                                     contractID: "@mozilla.org/webapps/application-mgmt;1",

@@ -15,11 +15,18 @@ EXPORTS.mozilla.net += [
     'RtspHandler.h',
 ]
 
+# These files cannot be built in unified mode because they force NSPR logging.
 SOURCES += [
     'controller/RtspController.cpp',
     'controller/RtspControllerChild.cpp',
     'controller/RtspControllerParent.cpp',
     'controller/RtspMetaData.cpp',
+    'RtspChannel.cpp',
+    'RtspHandler.cpp',
+]
+
+# Android sources
+SOURCES += [
     'rtsp/AAMRAssembler.cpp',
     'rtsp/AAVCAssembler.cpp',
     'rtsp/AH263Assembler.cpp',
@@ -34,8 +41,6 @@ SOURCES += [
     'rtsp/ARTSPConnection.cpp',
     'rtsp/ASessionDescription.cpp',
     'rtsp/RTSPSource.cpp',
-    'RtspChannel.cpp',
-    'RtspHandler.cpp',
 ]
 
 FAIL_ON_WARNINGS = True
@@ -45,3 +50,18 @@ MSVC_ENABLE_PGO = True
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'necko'
+
+DEFINES['IMPL_NS_NET'] = True
+DEFINES['FORCE_PR_LOG'] = True
+
+LOCAL_INCLUDES += [
+    '../../base/src',
+    '/content/base/src',
+    '/content/events/src',
+    '/xpcom/ds',
+    'controller',
+    'rtsp',
+]
+
+for var in ('IMPL_NS_NET', 'FORCE_PR_LOG'):
+    DEFINES[var] = True

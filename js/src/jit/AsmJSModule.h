@@ -345,7 +345,7 @@ class AsmJSModule
             JS_ASSERT(name->isTenured());
         }
 
-        ProfiledBlocksFunction(const ProfiledBlocksFunction &copy)
+        ProfiledBlocksFunction(ProfiledBlocksFunction &&copy)
           : ProfiledFunction(copy.name, copy.startCodeOffset, copy.endCodeOffset),
             endInlineCodeOffset(copy.endInlineCodeOffset), blocks(mozilla::OldMove(copy.blocks))
         { }
@@ -565,7 +565,7 @@ class AsmJSModule
     bool trackPerfProfiledBlocks(JSAtom *name, unsigned startCodeOffset, unsigned endInlineCodeOffset,
                                  unsigned endCodeOffset, jit::BasicBlocksVector &basicBlocks) {
         ProfiledBlocksFunction func(name, startCodeOffset, endInlineCodeOffset, endCodeOffset, basicBlocks);
-        return perfProfiledBlocksFunctions_.append(func);
+        return perfProfiledBlocksFunctions_.append(mozilla::Move(func));
     }
     unsigned numPerfBlocksFunctions() const {
         return perfProfiledBlocksFunctions_.length();
@@ -775,7 +775,7 @@ class AsmJSModule
 };
 
 // Store the just-parsed module in the cache using AsmJSCacheOps.
-extern void
+extern bool
 StoreAsmJSModuleInCache(AsmJSParser &parser,
                         const AsmJSModule &module,
                         const AsmJSStaticLinkData &linkData,

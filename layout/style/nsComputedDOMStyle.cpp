@@ -8,8 +8,8 @@
 
 #include "nsComputedDOMStyle.h"
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Util.h"
 
 #include "nsError.h"
 #include "nsDOMString.h"
@@ -488,7 +488,10 @@ nsComputedDOMStyle::GetStyleContextForElementNoFlush(Element* aElement,
     if (type >= nsCSSPseudoElements::ePseudo_PseudoElementCount) {
       return nullptr;
     }
-    sc = styleSet->ResolvePseudoElementStyle(aElement, type, parentContext);
+    nsIFrame* frame = nsLayoutUtils::GetStyleFrame(aElement);
+    Element* pseudoElement = frame ? frame->GetPseudoElement(type) : nullptr;
+    sc = styleSet->ResolvePseudoElementStyle(aElement, type, parentContext,
+                                             pseudoElement);
   } else {
     sc = styleSet->ResolveStyleFor(aElement, parentContext);
   }
@@ -672,10 +675,15 @@ nsComputedDOMStyle::GetPropertyCSSValue(const nsAString& aPropertyName, ErrorRes
       while (topWithPseudoElementData->GetParent()->HasPseudoElementData()) {
         topWithPseudoElementData = topWithPseudoElementData->GetParent();
       }
-      NS_ASSERTION(nsCSSPseudoElements::PseudoElementContainsElements(
-                     topWithPseudoElementData->GetPseudoType()),
-                   "we should be in a pseudo-element that is expected to "
-                   "contain elements");
+      nsCSSPseudoElements::Type pseudo =
+        topWithPseudoElementData->GetPseudoType();
+      nsIAtom* pseudoAtom = nsCSSPseudoElements::GetPseudoAtom(pseudo);
+      nsAutoString assertMsg(
+        NS_LITERAL_STRING("we should be in a pseudo-element that is expected to contain elements ("));
+      assertMsg.Append(nsDependentString(pseudoAtom->GetUTF16String()));
+      assertMsg.Append(NS_LITERAL_STRING(")"));
+      NS_ASSERTION(nsCSSPseudoElements::PseudoElementContainsElements(pseudo),
+                   NS_LossyConvertUTF16toASCII(assertMsg).get());
     }
 #endif
     // Need to resolve a style context
@@ -3348,6 +3356,16 @@ nsComputedDOMStyle::DoGetBorderImageRepeat()
 }
 
 CSSValue*
+nsComputedDOMStyle::DoGetAlignContent()
+{
+  nsROCSSPrimitiveValue* val = new nsROCSSPrimitiveValue;
+  val->SetIdent(
+    nsCSSProps::ValueToKeywordEnum(StylePosition()->mAlignContent,
+                                   nsCSSProps::kAlignContentKTable));
+  return val;
+}
+
+CSSValue*
 nsComputedDOMStyle::DoGetAlignItems()
 {
   nsROCSSPrimitiveValue* val = new nsROCSSPrimitiveValue;
@@ -3427,6 +3445,16 @@ nsComputedDOMStyle::DoGetFlexShrink()
 {
   nsROCSSPrimitiveValue* val = new nsROCSSPrimitiveValue;
   val->SetNumber(StylePosition()->mFlexShrink);
+  return val;
+}
+
+CSSValue*
+nsComputedDOMStyle::DoGetFlexWrap()
+{
+  nsROCSSPrimitiveValue* val = new nsROCSSPrimitiveValue;
+  val->SetIdent(
+    nsCSSProps::ValueToKeywordEnum(StylePosition()->mFlexWrap,
+                                   nsCSSProps::kFlexWrapKTable));
   return val;
 }
 

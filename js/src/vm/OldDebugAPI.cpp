@@ -170,13 +170,16 @@ js::DebugExceptionUnwind(JSContext *cx, AbstractFramePtr frame, jsbytecode *pc)
 JS_FRIEND_API(bool)
 JS_SetDebugModeForAllCompartments(JSContext *cx, bool debug)
 {
-    AutoDebugModeGC dmgc(cx->runtime());
-
-    for (CompartmentsIter c(cx->runtime(), SkipAtoms); !c.done(); c.next()) {
-        // Ignore special compartments (atoms, JSD compartments)
-        if (c->principals) {
-            if (!c->setDebugModeFromC(cx, !!debug, dmgc))
-                return false;
+    for (ZonesIter zone(cx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
+        // Invalidate a zone at a time to avoid doing a zone-wide CellIter
+        // per compartment.
+        AutoDebugModeInvalidation invalidate(zone);
+        for (CompartmentsInZoneIter c(zone); !c.done(); c.next()) {
+            // Ignore special compartments (atoms, JSD compartments)
+            if (c->principals) {
+                if (!c->setDebugModeFromC(cx, !!debug, invalidate))
+                    return false;
+            }
         }
     }
     return true;
@@ -185,8 +188,8 @@ JS_SetDebugModeForAllCompartments(JSContext *cx, bool debug)
 JS_FRIEND_API(bool)
 JS_SetDebugModeForCompartment(JSContext *cx, JSCompartment *comp, bool debug)
 {
-    AutoDebugModeGC dmgc(cx->runtime());
-    return comp->setDebugModeFromC(cx, !!debug, dmgc);
+    AutoDebugModeInvalidation invalidate(comp);
+    return comp->setDebugModeFromC(cx, !!debug, invalidate);
 }
 
 static bool
@@ -388,7 +391,7 @@ JS_LineNumberToPC(JSContext *cx, JSScript *script, unsigned lineno)
 JS_PUBLIC_API(jsbytecode *)
 JS_EndPC(JSContext *cx, JSScript *script)
 {
-    return script->code + script->length;
+    return script->codeEnd();
 }
 
 JS_PUBLIC_API(bool)
@@ -396,7 +399,7 @@ JS_GetLinePCs(JSContext *cx, JSScript *script,
               unsigned startLine, unsigned maxLines,
               unsigned* count, unsigned** retLines, jsbytecode*** retPCs)
 {
-    size_t len = (script->length > maxLines ? maxLines : script->length);
+    size_t len = (script->length() > maxLines ? maxLines : script->length());
     unsigned *lines = cx->pod_malloc<unsigned>(len);
     if (!lines)
         return false;
@@ -421,7 +424,7 @@ JS_GetLinePCs(JSContext *cx, JSScript *script,
 
             if (lineno >= startLine) {
                 lines[i] = lineno;
-                pcs[i] = script->code + offset;
+                pcs[i] = script->offsetToPC(offset);
                 if (++i >= maxLines)
                     break;
             }

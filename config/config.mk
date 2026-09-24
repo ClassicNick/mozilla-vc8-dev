@@ -35,7 +35,7 @@ endif
 # responsibility between Makefile.in and mozbuild files.
 _MOZBUILD_EXTERNAL_VARIABLES := \
   ANDROID_GENERATED_RESFILES \
-  ANDROID_RES_DIRS \
+  ANDROID_RESFILES \
   CMSRCS \
   CMMSRCS \
   CPP_UNIT_TESTS \
@@ -45,9 +45,6 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   FORCE_SHARED_LIB \
   FORCE_STATIC_LIB \
   FINAL_LIBRARY \
-  GTEST_CMMSRCS \
-  GTEST_CPPSRCS \
-  GTEST_CSRCS \
   HOST_CSRCS \
   HOST_CMMSRCS \
   HOST_LIBRARY_NAME \
@@ -73,7 +70,6 @@ _MOZBUILD_EXTERNAL_VARIABLES := \
   $(NULL)
 
 _DEPRECATED_VARIABLES := \
-  ANDROID_RESFILES \
   MOCHITEST_FILES_PARTS \
   MOCHITEST_BROWSER_FILES_PARTS \
   SHORT_LIBNAME \
@@ -345,9 +341,6 @@ endif
 ifdef LIBXUL_LIBRARY
 ifdef IS_COMPONENT
 $(error IS_COMPONENT is set, but is not compatible with LIBXUL_LIBRARY)
-endif
-ifdef MODULE_NAME
-$(error MODULE_NAME is $(MODULE_NAME) but MODULE_NAME and LIBXUL_LIBRARY are not compatible)
 endif
 FORCE_STATIC_LIB=1
 endif
@@ -638,20 +631,6 @@ DEPENDENCIES	= .md
 
 MOZ_COMPONENT_LIBS=$(XPCOM_LIBS) $(MOZ_COMPONENT_NSPR_LIBS)
 
-ifeq ($(OS_ARCH),OS2)
-ELF_DYNSTR_GC	= echo
-else
-ELF_DYNSTR_GC	= :
-endif
-
-ifndef CROSS_COMPILE
-ifdef USE_ELF_DYNSTR_GC
-ifdef MOZ_COMPONENTS_VERSION_SCRIPT_LDFLAGS
-ELF_DYNSTR_GC 	= $(DEPTH)/config/elf-dynstr-gc
-endif
-endif
-endif
-
 ifdef MACOSX_DEPLOYMENT_TARGET
 export MACOSX_DEPLOYMENT_TARGET
 endif # MACOSX_DEPLOYMENT_TARGET
@@ -815,7 +794,7 @@ endif
 MERGE_FILES = $(foreach f,$(1),$(call MERGE_FILE,$(f)))
 
 ifeq (OS2,$(OS_ARCH))
-RUN_TEST_PROGRAM = $(topsrcdir)/build/os2/test_os2.cmd "$(LIBXUL_DIST)"
+RUN_TEST_PROGRAM = $(topsrcdir)/build/os2/test_os2.cmd '$(LIBXUL_DIST)'
 else
 ifneq (WINNT,$(OS_ARCH))
 RUN_TEST_PROGRAM = $(LIBXUL_DIST)/bin/run-mozilla.sh
@@ -852,7 +831,7 @@ EXPAND_MKSHLIB = $(EXPAND_LIBS_EXEC) $(EXPAND_MKSHLIB_ARGS) -- $(MKSHLIB)
 
 ifneq (,$(MOZ_LIBSTDCXX_TARGET_VERSION)$(MOZ_LIBSTDCXX_HOST_VERSION))
 ifneq ($(OS_ARCH),Darwin)
-CHECK_STDCXX = objdump -p $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null && echo "TEST-UNEXPECTED-FAIL | | We don't want these libstdc++ symbols to be used:" && objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && exit 1 || exit 0
+CHECK_STDCXX = objdump -p $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' > /dev/null && echo 'TEST-UNEXPECTED-FAIL | | We do not want these libstdc++ symbols to be used:' && objdump -T $(1) | grep -e 'GLIBCXX_3\.4\.\(9\|[1-9][0-9]\)' && exit 1 || exit 0
 endif
 
 ifdef MOZ_LIBSTDCXX_TARGET_VERSION

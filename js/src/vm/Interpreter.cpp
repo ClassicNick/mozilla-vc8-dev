@@ -1179,7 +1179,7 @@ SetObjectElementOperation(JSContext *cx, Handle<JSObject*> obj, HandleId id, con
         if ((uint32_t)i >= length) {
             // Annotate script if provided with information (e.g. baseline)
             if (script && script->hasBaselineScript() && *pc == JSOP_SETELEM)
-                script->baselineScript()->noteArrayWriteHole(pc - script->code);
+                script->baselineScript()->noteArrayWriteHole(script->pcToOffset(pc));
         }
     }
 #endif
@@ -1348,7 +1348,7 @@ Interpret(JSContext *cx, RunState &state)
     DebugOnly<uint32_t> blockDepth;
 
     if (JS_UNLIKELY(REGS.fp()->isGeneratorFrame())) {
-        JS_ASSERT(size_t(REGS.pc - script->code) <= script->length);
+        JS_ASSERT(script->containsPC(REGS.pc));
         JS_ASSERT(REGS.stackDepth() <= script->nslots);
 
         /*
@@ -1412,52 +1412,55 @@ CASE(EnableInterruptsPseudoOpcode)
         moreInterrupts = true;
     }
 
-    JSInterruptHook hook = cx->runtime()->debugHooks.interruptHook;
-    if (hook || script->stepModeEnabled()) {
-        RootedValue rval(cx);
-        JSTrapStatus status = JSTRAP_CONTINUE;
-        if (hook)
-            status = hook(cx, script, REGS.pc, rval.address(), cx->runtime()->debugHooks.interruptHookData);
-        if (status == JSTRAP_CONTINUE && script->stepModeEnabled())
-            status = Debugger::onSingleStep(cx, &rval);
-        switch (status) {
-          case JSTRAP_ERROR:
-            goto error;
-          case JSTRAP_CONTINUE:
-            break;
-          case JSTRAP_RETURN:
-            REGS.fp()->setReturnValue(rval);
-            interpReturnOK = true;
-            goto forced_return;
-          case JSTRAP_THROW:
-            cx->setPendingException(rval);
-            goto error;
-          default:;
+    if (cx->compartment()->debugMode()) {
+        JSInterruptHook hook = cx->runtime()->debugHooks.interruptHook;
+        if (hook || script->stepModeEnabled()) {
+            RootedValue rval(cx);
+            JSTrapStatus status = JSTRAP_CONTINUE;
+            if (hook)
+                status = hook(cx, script, REGS.pc, rval.address(),
+                              cx->runtime()->debugHooks.interruptHookData);
+            if (status == JSTRAP_CONTINUE && script->stepModeEnabled())
+                status = Debugger::onSingleStep(cx, &rval);
+            switch (status) {
+              case JSTRAP_ERROR:
+                goto error;
+              case JSTRAP_CONTINUE:
+                break;
+              case JSTRAP_RETURN:
+                REGS.fp()->setReturnValue(rval);
+                interpReturnOK = true;
+                goto forced_return;
+              case JSTRAP_THROW:
+                cx->setPendingException(rval);
+                goto error;
+              default:;
+            }
+            moreInterrupts = true;
         }
-        moreInterrupts = true;
-    }
 
-    if (script->hasAnyBreakpointsOrStepMode())
-        moreInterrupts = true;
+        if (script->hasAnyBreakpointsOrStepMode())
+            moreInterrupts = true;
 
-    if (script->hasBreakpointsAt(REGS.pc)) {
-        RootedValue rval(cx);
-        JSTrapStatus status = Debugger::onTrap(cx, &rval);
-        switch (status) {
-          case JSTRAP_ERROR:
-            goto error;
-          case JSTRAP_RETURN:
-            REGS.fp()->setReturnValue(rval);
-            interpReturnOK = true;
-            goto forced_return;
-          case JSTRAP_THROW:
-            cx->setPendingException(rval);
-            goto error;
-          default:
-            break;
+        if (script->hasBreakpointsAt(REGS.pc)) {
+            RootedValue rval(cx);
+            JSTrapStatus status = Debugger::onTrap(cx, &rval);
+            switch (status) {
+              case JSTRAP_ERROR:
+                goto error;
+              case JSTRAP_RETURN:
+                REGS.fp()->setReturnValue(rval);
+                interpReturnOK = true;
+                goto forced_return;
+              case JSTRAP_THROW:
+                cx->setPendingException(rval);
+                goto error;
+              default:
+                break;
+            }
+            JS_ASSERT(status == JSTRAP_CONTINUE);
+            JS_ASSERT(rval.isInt32() && rval.toInt32() == op);
         }
-        JS_ASSERT(status == JSTRAP_CONTINUE);
-        JS_ASSERT(rval.isInt32() && rval.toInt32() == op);
     }
 
     JS_ASSERT(activation.opMask() == EnableInterruptsPseudoOpcode);
@@ -1758,7 +1761,7 @@ CASE(JSOP_IN)
 {
     HandleValue rref = REGS.stackHandleAt(-1);
     if (!rref.isObject()) {
-        js_ReportValueError(cx, JSMSG_IN_NOT_OBJECT, -1, rref, NullPtr());
+        js_ReportValueError(cx, JSMSG_IN_NOT_OBJECT, -1, rref, js::NullPtr());
         goto error;
     }
     RootedObject &obj = rootObject0;
@@ -2381,7 +2384,7 @@ END_CASE(JSOP_ENUMELEM)
 CASE(JSOP_EVAL)
 {
     CallArgs args = CallArgsFromSp(GET_ARGC(REGS.pc), REGS.sp);
-    if (IsBuiltinEvalForScope(REGS.fp()->scopeChain(), args.calleev())) {
+    if (REGS.fp()->scopeChain()->global().valueIsEval(args.calleev())) {
         if (!DirectEval(cx, args))
             goto error;
     } else {
@@ -2435,7 +2438,7 @@ CASE(JSOP_SPREADEVAL)
             goto error;
         break;
       case JSOP_SPREADEVAL:
-        if (IsBuiltinEvalForScope(REGS.fp()->scopeChain(), args.calleev())) {
+        if (REGS.fp()->scopeChain()->global().valueIsEval(args.calleev())) {
             if (!DirectEval(cx, args))
                 goto error;
         } else {
@@ -2787,8 +2790,9 @@ CASE(JSOP_SETALIASEDVAR)
 
     // Avoid computing the name if no type updates are needed, as this may be
     // expensive on scopes with large numbers of variables.
-    PropertyName *name = obj.hasSingletonType() ? ScopeCoordinateName(script, REGS.pc)
-                                                : nullptr;
+    PropertyName *name = (obj.hasSingletonType() && !obj.hasLazyType())
+                         ? ScopeCoordinateName(cx->runtime()->scopeCoordinateNameCache, script, REGS.pc)
+                         : nullptr;
 
     obj.setAliasedVar(cx, sc, name, REGS.sp[-1]);
 }
@@ -3113,7 +3117,7 @@ END_CASE(JSOP_SPREAD)
 CASE(JSOP_GOSUB)
 {
     PUSH_BOOLEAN(false);
-    int32_t i = (REGS.pc - script->code) + JSOP_GOSUB_LENGTH;
+    int32_t i = script->pcToOffset(REGS.pc) + JSOP_GOSUB_LENGTH;
     int32_t len = GET_JUMP_OFFSET(REGS.pc);
     PUSH_INT32(i);
     ADVANCE_AND_DISPATCH(len);
@@ -3139,7 +3143,7 @@ CASE(JSOP_RETSUB)
     JS_ASSERT(rval.isInt32());
 
     /* Increment the PC by this much. */
-    int32_t len = rval.toInt32() - int32_t(REGS.pc - script->code);
+    int32_t len = rval.toInt32() - int32_t(script->pcToOffset(REGS.pc));
     ADVANCE_AND_DISPATCH(len);
 }
 
@@ -3180,7 +3184,7 @@ CASE(JSOP_INSTANCEOF)
     RootedValue &rref = rootValue0;
     rref = REGS.sp[-1];
     if (rref.isPrimitive()) {
-        js_ReportValueError(cx, JSMSG_BAD_INSTANCEOF_RHS, -1, rref, NullPtr());
+        js_ReportValueError(cx, JSMSG_BAD_INSTANCEOF_RHS, -1, rref, js::NullPtr());
         goto error;
     }
     RootedObject &obj = rootObject0;
@@ -3286,7 +3290,7 @@ CASE(JSOP_YIELD)
     if (cx->innermostGenerator()->state == JSGEN_CLOSING) {
         RootedValue &val = rootValue0;
         val.setObject(REGS.fp()->callee());
-        js_ReportValueError(cx, JSMSG_BAD_GENERATOR_YIELD, JSDVG_SEARCH_STACK, val, NullPtr());
+        js_ReportValueError(cx, JSMSG_BAD_GENERATOR_YIELD, JSDVG_SEARCH_STACK, val, js::NullPtr());
         goto error;
     }
     REGS.fp()->setReturnValue(REGS.sp[-1]);
@@ -3322,7 +3326,7 @@ DEFAULT()
     MOZ_ASSUME_UNREACHABLE("Interpreter loop exited via fallthrough");
 
   error:
-    JS_ASSERT(uint32_t(REGS.pc - script->code) < script->length);
+    JS_ASSERT(script->containsPC(REGS.pc));
 
     if (cx->isExceptionPending()) {
         /* Call debugger throw hooks. */

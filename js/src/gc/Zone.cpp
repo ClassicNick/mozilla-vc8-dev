@@ -172,8 +172,8 @@ Zone::sweepBreakpoints(FreeOp *fop)
             continue;
         bool scriptGone = IsScriptAboutToBeFinalized(&script);
         JS_ASSERT(script == i.get<JSScript>());
-        for (unsigned i = 0; i < script->length; i++) {
-            BreakpointSite *site = script->getBreakpointSite(script->code + i);
+        for (unsigned i = 0; i < script->length(); i++) {
+            BreakpointSite *site = script->getBreakpointSite(script->offsetToPC(i));
             if (!site)
                 continue;
             Breakpoint *nextbp;
@@ -226,13 +226,8 @@ Zone::discardJitCode(FreeOp *fop)
             script->resetUseCount();
         }
 
-        for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
-            /* Free optimized baseline stubs. */
-            if (comp->jitCompartment())
-                comp->jitCompartment()->optimizedStubSpace()->free();
-
-            comp->types.clearCompilerOutputs(fop);
-        }
+        for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next())
+            jit::FinishDiscardJitCode(fop, comp);
     }
 #endif
 }

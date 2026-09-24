@@ -1285,7 +1285,7 @@ BrowserGlue.prototype = {
   },
 
   _migrateUI: function BG__migrateUI() {
-    const UI_VERSION = 17;
+    const UI_VERSION = 18;
     const BROWSER_DOCURL = "chrome://browser/content/browser.xul#";
     let currentUIVersion = 0;
     try {
@@ -1479,23 +1479,7 @@ BrowserGlue.prototype = {
       OS.File.remove(path);
     }
 
-    if (currentUIVersion < 15) {
-      // Migrate users from text or text&icons mode to icons mode.
-      let updateToolbars = function (aToolbarIds, aResourceName, aResourceValue) {
-        let resource = this._rdf.GetResource(aResourceName);
-        for (toolbarId of aToolbarIds) {
-          let toolbar = this._rdf.GetResource(BROWSER_DOCURL + toolbarId);
-          let oldValue = this._getPersist(toolbar, resource);
-          if (oldValue && oldValue != aResourceValue) {
-            this._setPersist(toolbar, resource, aResourceValue);
-          }
-        }
-      }.bind(this);
-
-      updateToolbars(["navigator-toolbox", "nav-bar", "PersonalToolbar", "addon-bar"], "mode", "icons");
-      // Exclude PersonalToolbar and addon-bar since they have lockiconsize="true".
-      updateToolbars(["navigator-toolbox", "nav-bar"], "iconsize", "large");
-    }
+    // Version 15 was obsoleted in favour of 18.
 
     if (currentUIVersion < 16) {
       let toolbarResource = this._rdf.GetResource(BROWSER_DOCURL + "nav-bar");
@@ -1529,6 +1513,21 @@ BrowserGlue.prototype = {
                                             "$1bookmarks-menu-button,window-controls$2")
           }
           this._setPersist(toolbarResource, currentsetResource, currentset);
+        }
+      }
+    }
+
+    if (currentUIVersion < 18) {
+      // Remove iconsize and mode from all the toolbars
+      let toolbars = ["navigator-toolbox", "nav-bar", "PersonalToolbar",
+                      "addon-bar", "TabsToolbar", "toolbar-menubar"];
+      for (let resourceName of ["mode", "iconsize"]) {
+        let resource = this._rdf.GetResource(resourceName);
+        for (let toolbarId of toolbars) {
+          let toolbar = this._rdf.GetResource(BROWSER_DOCURL + toolbarId);
+          if (this._getPersist(toolbar, resource)) {
+            this._setPersist(toolbar, resource);
+          }
         }
       }
     }
@@ -1592,7 +1591,7 @@ BrowserGlue.prototype = {
     // be set to the version it has been added in, we will compare its value
     // to users' smartBookmarksVersion and add new smart bookmarks without
     // recreating old deleted ones.
-    const SMART_BOOKMARKS_VERSION = 4;
+    const SMART_BOOKMARKS_VERSION = 5;
     const SMART_BOOKMARKS_ANNO = "Places/SmartBookmark";
     const SMART_BOOKMARKS_PREF = "browser.places.smartBookmarksVersion";
 
@@ -1653,7 +1652,21 @@ BrowserGlue.prototype = {
             parent: PlacesUtils.bookmarksMenuFolderId,
             position: menuIndex++,
             newInVersion: 1
-          }
+          },
+          Windows8Touch: {
+            title: bundle.GetStringFromName("windows8TouchTitle"),
+            uri: NetUtil.newURI("place:folder=" +
+                                PlacesUtils.annotations.getItemsWithAnnotation('metro/bookmarksRoot', {})[0] +
+                                "&queryType=" +
+                                Ci.nsINavHistoryQueryOptions.QUERY_TYPE_BOOKMARKS +
+                                "&sort=" +
+                                Ci.nsINavHistoryQueryOptions.SORT_BY_DATEADDED_DESCENDING +
+                                "&maxResults=" + MAX_RESULTS +
+                                "&excludeQueries=1"),
+            parent: PlacesUtils.bookmarksMenuFolderId,
+            position: menuIndex++,
+            newInVersion: 5
+          },
         };
 
         // Set current itemId, parent and position if Smart Bookmark exists,
@@ -2017,13 +2030,21 @@ ContentPermissionPrompt.prototype = {
 
   prompt: function CPP_prompt(request) {
 
+    // Only allow exactly one permission rquest here.
+    let types = request.types.QueryInterface(Ci.nsIArray);
+    if (types.length != 1) {
+      request.cancel();
+      return;
+    }
+    let perm = types.queryElementAt(0, Ci.nsIContentPermissionType);
+
     const kFeatureKeys = { "geolocation" : "geo",
                            "desktop-notification" : "desktop-notification",
                            "pointerLock" : "pointerLock",
                          };
 
     // Make sure that we support the request.
-    if (!(request.type in kFeatureKeys)) {
+    if (!(perm.type in kFeatureKeys)) {
         return;
     }
 
@@ -2035,7 +2056,7 @@ ContentPermissionPrompt.prototype = {
       return;
 
     var autoAllow = false;
-    var permissionKey = kFeatureKeys[request.type];
+    var permissionKey = kFeatureKeys[perm.type];
     var result = Services.perms.testExactPermissionFromPrincipal(requestingPrincipal, permissionKey);
 
     if (result == Ci.nsIPermissionManager.DENY_ACTION) {
@@ -2046,7 +2067,7 @@ ContentPermissionPrompt.prototype = {
     if (result == Ci.nsIPermissionManager.ALLOW_ACTION) {
       autoAllow = true;
       // For pointerLock, we still want to show a warning prompt.
-      if (request.type != "pointerLock") {
+      if (perm.type != "pointerLock") {
         request.allow();
         return;
       }
@@ -2060,7 +2081,7 @@ ContentPermissionPrompt.prototype = {
       return;
 
     // Show the prompt.
-    switch (request.type) {
+    switch (perm.type) {
     case "geolocation":
       this._promptGeo(request);
       break;

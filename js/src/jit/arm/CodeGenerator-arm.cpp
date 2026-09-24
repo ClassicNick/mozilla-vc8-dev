@@ -201,7 +201,7 @@ CodeGeneratorARM::bailoutIf(Assembler::Condition condition, LSnapshot *snapshot)
     // We could not use a jump table, either because all bailout IDs were
     // reserved, or a jump table is not optimal for this frame size or
     // platform. Whatever, we will generate a lazy bailout.
-    OutOfLineBailout *ool = new OutOfLineBailout(snapshot, masm.framePushed());
+    OutOfLineBailout *ool = new(alloc()) OutOfLineBailout(snapshot, masm.framePushed());
     if (!addOutOfLineCode(ool))
         return false;
 
@@ -259,7 +259,7 @@ CodeGeneratorARM::bailoutFrom(Label *label, LSnapshot *snapshot)
     // We could not use a jump table, either because all bailout IDs were
     // reserved, or a jump table is not optimal for this frame size or
     // platform. Whatever, we will generate a lazy bailout.
-    OutOfLineBailout *ool = new OutOfLineBailout(snapshot, masm.framePushed());
+    OutOfLineBailout *ool = new(alloc()) OutOfLineBailout(snapshot, masm.framePushed());
     if (!addOutOfLineCode(ool)) {
         return false;
     }
@@ -654,18 +654,23 @@ CodeGeneratorARM::visitDivPowTwoI(LDivPowTwoI *ins)
     int32_t shift = ins->shift();
 
     if (shift != 0) {
-        if (!ins->mir()->isTruncated()) {
+        MDiv *mir = ins->mir();
+        if (!mir->isTruncated()) {
             // If the remainder is != 0, bailout since this must be a double.
             masm.as_mov(ScratchRegister, lsl(lhs, 32 - shift), SetCond);
             if (!bailoutIf(Assembler::NonZero, ins->snapshot()))
                 return false;
         }
 
+        if (!mir->canBeNegativeDividend()) {
+            // Numerator is unsigned, so needs no adjusting. Do the shift.
+            masm.as_mov(output, asr(lhs, shift));
+            return true;
+        }
+
         // Adjust the value so that shifting produces a correctly rounded result
         // when the numerator is negative. See 10-1 "Signed Division by a Known
         // Power of 2" in Henry S. Warren, Jr.'s Hacker's Delight.
-        // Note that we wouldn't need to do this adjustment if we could use
-        // Range Analysis to find cases when the value is never negative.
         if (shift > 1) {
             masm.as_mov(ScratchRegister, asr(lhs, 31));
             masm.as_add(ScratchRegister, lhs, lsr(ScratchRegister, 32 - shift));
@@ -722,7 +727,7 @@ CodeGeneratorARM::visitModI(LModI *ins)
     Register lhs = ToRegister(ins->lhs());
     Register rhs = ToRegister(ins->rhs());
     Register output = ToRegister(ins->output());
-    Register callTemp = ToRegister(ins->getTemp(0));
+    Register callTemp = ToRegister(ins->callTemp());
     MMod *mir = ins->mir();
 
     // save the lhs in case we end up with a 0 that should be a -0.0 because lhs < 0.
@@ -758,9 +763,10 @@ CodeGeneratorARM::visitSoftModI(LSoftModI *ins)
     Register lhs = ToRegister(ins->lhs());
     Register rhs = ToRegister(ins->rhs());
     Register output = ToRegister(ins->output());
-    Register callTemp = ToRegister(ins->getTemp(2));
+    Register callTemp = ToRegister(ins->callTemp());
     MMod *mir = ins->mir();
     Label done;
+
     // save the lhs in case we end up with a 0 that should be a -0.0 because lhs < 0.
     JS_ASSERT(callTemp.code() > r3.code() && callTemp.code() < r12.code());
     masm.ma_mov(lhs, callTemp);
@@ -1118,15 +1124,15 @@ CodeGeneratorARM::emitTableSwitchDispatch(MTableSwitch *mir, const Register &ind
     int32_t cases = mir->numCases();
     // Lower value with low value
     masm.ma_sub(index, Imm32(mir->low()), index, SetCond);
-    masm.ma_rsb(index, Imm32(cases - 1), index, SetCond, Assembler::Unsigned);
+    masm.ma_rsb(index, Imm32(cases - 1), index, SetCond, Assembler::NotSigned);
     AutoForbidPools afp(&masm);
-    masm.ma_ldr(DTRAddr(pc, DtrRegImmShift(index, LSL, 2)), pc, Offset, Assembler::Unsigned);
+    masm.ma_ldr(DTRAddr(pc, DtrRegImmShift(index, LSL, 2)), pc, Offset, Assembler::NotSigned);
     masm.ma_b(defaultcase);
 
     // To fill in the CodeLabels for the case entries, we need to first
     // generate the case entries (we don't yet know their offsets in the
     // instruction stream).
-    OutOfLineTableSwitch *ool = new OutOfLineTableSwitch(alloc(), mir);
+    OutOfLineTableSwitch *ool = new(alloc()) OutOfLineTableSwitch(alloc(), mir);
     for (int32_t i = 0; i < cases; i++) {
         CodeLabel cl;
         masm.writeCodePointer(cl.dest());
@@ -1902,7 +1908,7 @@ CodeGeneratorARM::generateInvalidateEpilogue()
 
     // We should never reach this point in JIT code -- the invalidation thunk should
     // pop the invalidated JS frame and return directly to its caller.
-    masm.breakpoint();
+    masm.assume_unreachable("Should have returned directly to its caller instead of here.");
     return true;
 }
 
@@ -2107,7 +2113,32 @@ CodeGeneratorARM::visitUDiv(LUDiv *ins)
     Register rhs = ToRegister(ins->rhs());
     Register output = ToRegister(ins->output());
 
+    Label done;
+    if (ins->mir()->canBeDivideByZero()) {
+        masm.ma_cmp(rhs, Imm32(0));
+        if (ins->mir()->isTruncated()) {
+            // Infinity|0 == 0
+            Label skip;
+            masm.ma_b(&skip, Assembler::NotEqual);
+            masm.ma_mov(Imm32(0), output);
+            masm.ma_b(&done);
+            masm.bind(&skip);
+        } else {
+            JS_ASSERT(ins->mir()->fallible());
+            if (!bailoutIf(Assembler::Equal, ins->snapshot()))
+                return false;
+        }
+    }
+
     masm.ma_udiv(lhs, rhs, output);
+
+    if (!ins->mir()->isTruncated()) {
+        masm.ma_cmp(output, Imm32(0));
+        if (!bailoutIf(Assembler::LessThan, ins->snapshot()))
+            return false;
+    }
+
+    masm.bind(&done);
     return true;
 }
 
@@ -2117,16 +2148,31 @@ CodeGeneratorARM::visitUMod(LUMod *ins)
     Register lhs = ToRegister(ins->lhs());
     Register rhs = ToRegister(ins->rhs());
     Register output = ToRegister(ins->output());
-    Label notzero;
     Label done;
 
-    masm.ma_cmp(rhs, Imm32(0));
-    masm.ma_b(&notzero, Assembler::NonZero);
-    masm.ma_mov(Imm32(0), output);
-    masm.ma_b(&done);
+    if (ins->mir()->canBeDivideByZero()) {
+        masm.ma_cmp(rhs, Imm32(0));
+        if (ins->mir()->isTruncated()) {
+            // Infinity|0 == 0
+            Label skip;
+            masm.ma_b(&skip, Assembler::NotEqual);
+            masm.ma_mov(Imm32(0), output);
+            masm.ma_b(&done);
+            masm.bind(&skip);
+        } else {
+            JS_ASSERT(ins->mir()->fallible());
+            if (!bailoutIf(Assembler::Equal, ins->snapshot()))
+                return false;
+        }
+    }
 
-    masm.bind(&notzero);
     masm.ma_umod(lhs, rhs, output);
+
+    if (!ins->mir()->isTruncated()) {
+        masm.ma_cmp(output, Imm32(0));
+        if (!bailoutIf(Assembler::LessThan, ins->snapshot()))
+            return false;
+    }
 
     masm.bind(&done);
     return true;
@@ -2141,10 +2187,9 @@ CodeGeneratorARM::visitSoftUDivOrMod(LSoftUDivOrMod *ins)
 
     JS_ASSERT(lhs == r0);
     JS_ASSERT(rhs == r1);
-    JS_ASSERT(ins->mirRaw()->isDiv() || ins->mirRaw()->isAsmJSUDiv() ||
-              ins->mirRaw()->isMod() || ins->mirRaw()->isAsmJSUMod());
-    JS_ASSERT_IF(ins->mirRaw()->isDiv() || ins->mirRaw()->isAsmJSUDiv(), output == r0);
-    JS_ASSERT_IF(ins->mirRaw()->isMod() || ins->mirRaw()->isAsmJSUMod(), output == r1);
+    JS_ASSERT(ins->mirRaw()->isDiv() || ins->mirRaw()->isMod());
+    JS_ASSERT_IF(ins->mirRaw()->isDiv(), output == r0);
+    JS_ASSERT_IF(ins->mirRaw()->isMod(), output == r1);
 
     Label afterDiv;
 

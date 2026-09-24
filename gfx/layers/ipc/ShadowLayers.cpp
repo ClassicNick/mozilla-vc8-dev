@@ -23,7 +23,7 @@
 #include "mozilla/layers/LayersMessages.h"  // for Edit, etc
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
 #include "mozilla/layers/LayersTypes.h"  // for MOZ_LAYERS_LOG
-#include "mozilla/layers/PLayerTransactionChild.h"
+#include "mozilla/layers/LayerTransactionChild.h"
 #include "ShadowLayerUtils.h"
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
 #include "mozilla/mozalloc.h"           // for operator new, etc
@@ -179,8 +179,7 @@ CompositableForwarder::IdentifyTextureHost(const TextureFactoryIdentifier& aIden
 }
 
 ShadowLayerForwarder::ShadowLayerForwarder()
- : mShadowManager(nullptr)
- , mDiagnosticTypes(DIAGNOSTIC_NONE)
+ : mDiagnosticTypes(DIAGNOSTIC_NONE)
  , mIsFirstPaint(false)
  , mWindowOverlayChanged(false)
 {
@@ -536,6 +535,7 @@ ShadowLayerForwarder::EndTransaction(InfallibleTArray<EditReply>* aReplies, bool
     }
     common.maskLayerParent() = nullptr;
     common.animations() = mutant->GetAnimations();
+    common.invalidRegion() = mutant->GetInvalidRegion();
     attrs.specific() = null_t();
     mutant->FillSpecificAttributes(attrs.specific());
 
@@ -614,6 +614,12 @@ ShadowLayerForwarder::DeallocShmem(ipc::Shmem& aShmem)
 {
   NS_ABORT_IF_FALSE(HasShadowManager(), "no shadow manager");
   mShadowManager->DeallocShmem(aShmem);
+}
+
+bool
+ShadowLayerForwarder::IPCOpen() const
+{
+  return mShadowManager->IPCOpen();
 }
 
 /*static*/ already_AddRefed<gfxASurface>
@@ -977,6 +983,12 @@ void ShadowLayerForwarder::AttachAsyncCompositable(uint64_t aCompositableID,
   mTxn->AddEdit(OpAttachAsyncCompositable(nullptr, Shadow(aLayer),
                                           aCompositableID));
 }
+
+void ShadowLayerForwarder::SetShadowManager(PLayerTransactionChild* aShadowManager)
+{
+  mShadowManager = static_cast<LayerTransactionChild*>(aShadowManager);
+}
+
 
 } // namespace layers
 } // namespace mozilla

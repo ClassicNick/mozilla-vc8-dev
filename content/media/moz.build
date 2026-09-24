@@ -35,6 +35,9 @@ if CONFIG['MOZ_MEDIA_PLUGINS']:
 if CONFIG['MOZ_WMF']:
     PARALLEL_DIRS += ['wmf']
 
+if CONFIG['MOZ_FMP4']:
+    PARALLEL_DIRS += ['fmp4']
+
 if CONFIG['MOZ_APPLEMEDIA']:
     PARALLEL_DIRS += ['apple']
 
@@ -101,7 +104,7 @@ EXPORTS.mozilla.dom += [
     'VideoStreamTrack.h',
 ]
 
-SOURCES += [
+UNIFIED_SOURCES += [
     'AudioAvailableEventManager.cpp',
     'AudioChannelFormat.cpp',
     'AudioNodeEngine.cpp',
@@ -111,11 +114,9 @@ SOURCES += [
     'AudioStream.cpp',
     'AudioStreamTrack.cpp',
     'BufferDecoder.cpp',
-    'DecoderTraits.cpp',
     'DOMMediaStream.cpp',
     'EncodedBufferCache.cpp',
     'FileBlockCache.cpp',
-    'Latency.cpp',
     'MediaCache.cpp',
     'MediaDecoder.cpp',
     'MediaDecoderReader.cpp',
@@ -141,6 +142,13 @@ SOURCES += [
     'WebVTTListener.cpp',
 ]
 
+# DecoderTraits.cpp needs to be built separately because of Mac OS X headers.
+# Latency.cpp needs to be built separately because it forces NSPR logging.
+SOURCES += [
+    'DecoderTraits.cpp',
+    'Latency.cpp',
+]
+
 FAIL_ON_WARNINGS = True
 
 if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['BUILD_ARM_NEON']:
@@ -156,7 +164,7 @@ FINAL_LIBRARY = 'gklayout'
 LOCAL_INCLUDES += [
     '/content/base/src',
     '/layout/generic',
-    '/layout/xul/base/src',
+    '/layout/xul',
 ]
 
 if CONFIG['MOZ_DIRECTSHOW']:

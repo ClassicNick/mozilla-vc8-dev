@@ -26,7 +26,6 @@ XPCOMUtils.defineLazyGetter(this, "domWindowUtils", function () {
 const RESIZE_SCROLL_DELAY = 20;
 
 let HTMLDocument = Ci.nsIDOMHTMLDocument;
-let HTMLElement = Ci.nsIDOMHTMLElement;
 let HTMLHtmlElement = Ci.nsIDOMHTMLHtmlElement;
 let HTMLBodyElement = Ci.nsIDOMHTMLBodyElement;
 let HTMLIFrameElement = Ci.nsIDOMHTMLIFrameElement;
@@ -283,7 +282,7 @@ let FormAssistant = {
       this._observer = new MutationObserver(function(mutations) {
         var del = [].some.call(mutations, function(m) {
           return [].some.call(m.removedNodes, function(n) {
-            return n === element;
+            return n.contains(element);
           });
         });
         if (del && element === self.focusedElement) {
@@ -292,8 +291,9 @@ let FormAssistant = {
         }
       });
 
-      this._observer.observe(element.parentNode, {
-        childList: true
+      this._observer.observe(element.ownerDocument.body, {
+        childList: true,
+        subtree: true
       });
     }
 
@@ -342,12 +342,6 @@ let FormAssistant = {
         }
 
         if (!target) {
-          break;
-        }
-
-        // Only handle the event from our descendants
-        if (target instanceof HTMLElement &&
-            content.window != target.ownerDocument.defaultView.top) {
           break;
         }
 
@@ -517,10 +511,16 @@ let FormAssistant = {
       case "Forms:Input:SendKey":
         CompositionManager.endComposition('');
 
-        ["keydown", "keypress", "keyup"].forEach(function(type) {
-          domWindowUtils.sendKeyEvent(type, json.keyCode, json.charCode,
-            json.modifiers);
-        });
+        this._editing = true;
+        let doKeypress = domWindowUtils.sendKeyEvent('keydown', json.keyCode,
+                                  json.charCode, json.modifiers);
+        if (doKeypress) {
+          domWindowUtils.sendKeyEvent('keypress', json.keyCode,
+                                  json.charCode, json.modifiers);
+        }
+        domWindowUtils.sendKeyEvent('keyup', json.keyCode,
+                                  json.charCode, json.modifiers);
+        this._editing = false;
 
         if (json.requestId) {
           sendAsyncMessage("Forms:SendKey:Result:OK", {
@@ -762,11 +762,18 @@ function isPlainTextField(element) {
     return false;
   }
 
-  return element instanceof HTMLInputElement ||
-         element instanceof HTMLTextAreaElement;
+  return element instanceof HTMLTextAreaElement ||
+         (element instanceof HTMLInputElement &&
+          element.mozIsTextField(false));
 }
 
 function getJSON(element, focusCounter) {
+  // <input type=number> has a nested anonymous <input type=text> element that
+  // takes focus on behalf of the number control when someone tries to focus
+  // the number control. If |element| is such an anonymous text control then we
+  // need it's number control here in order to get the correct 'type' etc.:
+  element = element.ownerNumberControl || element;
+
   let type = element.type || "";
   let value = element.value || "";
   let max = element.max || "";

@@ -109,12 +109,10 @@ public:
 
     virtual bool RecvMoveFocus(const bool& aForward);
     virtual bool RecvEvent(const RemoteDOMEvent& aEvent);
-    virtual bool RecvPRenderFrameConstructor(PRenderFrameParent* aFrame);
-    virtual bool RecvInitRenderFrame(PRenderFrameParent* aFrame,
-                                     ScrollingBehavior* aScrolling,
-                                     TextureFactoryIdentifier* aTextureFactoryIdentifier,
-                                     uint64_t* aLayersId,
-                                     bool *aSuccess);
+    virtual bool RecvPRenderFrameConstructor(PRenderFrameParent* actor,
+                                             ScrollingBehavior* scrolling,
+                                             TextureFactoryIdentifier* identifier,
+                                             uint64_t* layersId);
     virtual bool RecvBrowserFrameOpenWindow(PBrowserParent* aOpener,
                                             const nsString& aURL,
                                             const nsString& aName,
@@ -169,15 +167,13 @@ public:
                                 const CSSRect& aRect);
     virtual bool RecvUpdateZoomConstraints(const uint32_t& aPresShellId,
                                            const ViewID& aViewId,
+                                           const bool& aIsRoot,
                                            const bool& aAllowZoom,
                                            const CSSToScreenScale& aMinZoom,
                                            const CSSToScreenScale& aMaxZoom);
     virtual bool RecvUpdateScrollOffset(const uint32_t& aPresShellId, const ViewID& aViewId, const CSSIntPoint& aScrollOffset);
     virtual bool RecvContentReceivedTouch(const ScrollableLayerGuid& aGuid,
                                           const bool& aPreventDefault);
-    virtual bool RecvRecordingDeviceEvents(const nsString& aRecordingStatus,
-                                           const bool& aIsAudio,
-                                           const bool& aIsVideo);
     virtual PContentDialogParent* AllocPContentDialogParent(const uint32_t& aType,
                                                             const nsCString& aName,
                                                             const nsCString& aFeatures,
@@ -197,9 +193,9 @@ public:
     void Show(const nsIntSize& size);
     void UpdateDimensions(const nsRect& rect, const nsIntSize& size);
     void UpdateFrame(const layers::FrameMetrics& aFrameMetrics);
-    void HandleDoubleTap(const CSSIntPoint& aPoint);
-    void HandleSingleTap(const CSSIntPoint& aPoint);
-    void HandleLongTap(const CSSIntPoint& aPoint);
+    void HandleDoubleTap(const CSSIntPoint& aPoint, int32_t aModifiers);
+    void HandleSingleTap(const CSSIntPoint& aPoint, int32_t aModifiers);
+    void HandleLongTap(const CSSIntPoint& aPoint, int32_t aModifiers);
     void Activate();
     void Deactivate();
 
@@ -217,6 +213,9 @@ public:
     bool SendMouseWheelEvent(mozilla::WidgetWheelEvent& event);
     bool SendRealKeyEvent(mozilla::WidgetKeyboardEvent& event);
     bool SendRealTouchEvent(WidgetTouchEvent& event);
+    bool SendHandleSingleTap(const CSSIntPoint& aPoint);
+    bool SendHandleLongTap(const CSSIntPoint& aPoint);
+    bool SendHandleDoubleTap(const CSSIntPoint& aPoint);
 
     virtual PDocumentRendererParent*
     AllocPDocumentRendererParent(const nsRect& documentRect, const gfxMatrix& transform,
@@ -226,7 +225,8 @@ public:
     virtual bool DeallocPDocumentRendererParent(PDocumentRendererParent* actor);
 
     virtual PContentPermissionRequestParent*
-    AllocPContentPermissionRequestParent(const nsCString& aType, const nsCString& aAccess, const IPC::Principal& aPrincipal);
+    AllocPContentPermissionRequestParent(const InfallibleTArray<PermissionRequest>& aRequests,
+                                         const IPC::Principal& aPrincipal);
     virtual bool DeallocPContentPermissionRequestParent(PContentPermissionRequestParent* actor);
 
     virtual POfflineCacheUpdateParent* AllocPOfflineCacheUpdateParent(
@@ -308,7 +308,9 @@ protected:
     bool ShouldDelayDialogs();
     bool AllowContentIME();
 
-    virtual PRenderFrameParent* AllocPRenderFrameParent() MOZ_OVERRIDE;
+    virtual PRenderFrameParent* AllocPRenderFrameParent(ScrollingBehavior* aScrolling,
+                                                        TextureFactoryIdentifier* aTextureFactoryIdentifier,
+                                                        uint64_t* aLayersId) MOZ_OVERRIDE;
     virtual bool DeallocPRenderFrameParent(PRenderFrameParent* aFrame) MOZ_OVERRIDE;
 
     // IME
@@ -341,6 +343,8 @@ private:
     layout::RenderFrameParent* GetRenderFrame();
     nsRefPtr<ContentParent> mManager;
     void TryCacheDPIAndScale();
+
+    CSSIntPoint AdjustTapToChildWidget(const CSSIntPoint& aPoint);
 
     // When true, we create a pan/zoom controller for our frame and
     // notify it of input events targeting us.

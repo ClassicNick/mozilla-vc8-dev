@@ -10,8 +10,8 @@
 
 #include "jsfuninlines.h"
 
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/Util.h"
 
 #include <string.h>
 
@@ -499,7 +499,7 @@ fun_hasInstance(JSContext *cx, HandleObject objArg, MutableHandleValue v, bool *
          * has a non-object as its .prototype value.
          */
         RootedValue val(cx, ObjectValue(*obj));
-        js_ReportValueError(cx, JSMSG_BAD_PROTOTYPE, -1, val, NullPtr());
+        js_ReportValueError(cx, JSMSG_BAD_PROTOTYPE, -1, val, js::NullPtr());
         return false;
     }
 
@@ -1119,14 +1119,15 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
         if (cx->zone()->needsBarrier())
             LazyScript::writeBarrierPre(lazy);
 
-        // Suppress GC when lazily compiling functions, to preserve source
-        // character buffers.
+        // Suppress GC for now although we should be able to remove this by
+        // making 'lazy' a Rooted<LazyScript*> (which requires adding a
+        // THING_ROOT_LAZY_SCRIPT).
         AutoSuppressGC suppressGC(cx);
 
         fun->flags &= ~INTERPRETED_LAZY;
         fun->flags |= INTERPRETED;
 
-        JSScript *script = lazy->maybeScript();
+        RootedScript script(cx, lazy->maybeScript());
 
         if (script) {
             fun->initScript(script);
@@ -1155,13 +1156,12 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
         // has started.
         if (!lazy->numInnerFunctions() && !JS::IsIncrementalGCInProgress(cx->runtime())) {
             LazyScriptCache::Lookup lookup(cx, lazy);
-            cx->runtime()->lazyScriptCache.lookup(lookup, &script);
+            cx->runtime()->lazyScriptCache.lookup(lookup, script.address());
         }
 
         if (script) {
             RootedObject enclosingScope(cx, lazy->enclosingScope());
-            RootedScript scriptRoot(cx, script);
-            RootedScript clonedScript(cx, CloneScript(cx, enclosingScope, fun, scriptRoot));
+            RootedScript clonedScript(cx, CloneScript(cx, enclosingScope, fun, script));
             if (!clonedScript) {
                 fun->initLazyScript(lazy);
                 return false;
@@ -1182,7 +1182,8 @@ JSFunction::createScriptForLazilyInterpretedFunction(JSContext *cx, HandleFuncti
         JS_ASSERT(lazy->source()->hasSourceData());
 
         // Parse and compile the script from source.
-        const jschar *chars = lazy->source()->chars(cx);
+        SourceDataCache::AutoSuppressPurge asp(cx);
+        const jschar *chars = lazy->source()->chars(cx, asp);
         if (!chars) {
             fun->initLazyScript(lazy);
             return false;
@@ -1340,7 +1341,7 @@ js_fun_bind(JSContext *cx, HandleObject target, HandleValue thisArg,
     /* Step 4-6, 10-11. */
     RootedAtom name(cx, target->is<JSFunction>() ? target->as<JSFunction>().atom() : nullptr);
 
-    RootedObject funobj(cx, NewFunction(cx, NullPtr(), CallOrConstructBoundFunction, length,
+    RootedObject funobj(cx, NewFunction(cx, js::NullPtr(), CallOrConstructBoundFunction, length,
                                         JSFunction::NATIVE_CTOR, target, name));
     if (!funobj)
         return nullptr;
@@ -1585,7 +1586,7 @@ FunctionConstructor(JSContext *cx, unsigned argc, Value *vp, GeneratorKind gener
         if (!proto)
             return false;
     }
-    RootedFunction fun(cx, NewFunctionWithProto(cx, NullPtr(), nullptr, 0,
+    RootedFunction fun(cx, NewFunctionWithProto(cx, js::NullPtr(), nullptr, 0,
                                                 JSFunction::INTERPRETED_LAMBDA, global,
                                                 anonymousAtom, proto,
                                                 JSFunction::FinalizeKind, TenuredObject));

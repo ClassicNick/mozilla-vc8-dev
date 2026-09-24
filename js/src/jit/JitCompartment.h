@@ -368,7 +368,7 @@ class JitCompartment
     IonCode *getStubCode(uint32_t key) {
         ICStubCodeMap::AddPtr p = stubCodes_->lookupForAdd(key);
         if (p)
-            return p->value;
+            return p->value();
         return nullptr;
     }
     bool putStubCode(uint32_t key, Handle<IonCode *> stubCode) {
@@ -440,6 +440,7 @@ class JitCompartment
 // Called from JSCompartment::discardJitCode().
 void InvalidateAll(FreeOp *fop, JS::Zone *zone);
 void FinishInvalidation(FreeOp *fop, JSScript *script);
+void FinishDiscardJitCode(FreeOp *fop, JSCompartment *comp);
 
 // On windows systems, really large frames need to be incrementally touched.
 // The following constant defines the minimum increment of the touch.

@@ -7,8 +7,7 @@
  %toolboxDTD;
 ]>
 <?xml-stylesheet href="chrome://browser/skin/" type="text/css"?>
-<?xml-stylesheet rel="stylesheet" href="chrome://browser/content/devtools/framework/toolbox.css" type="text/css"?>
-<?xml-stylesheet rel="stylesheet" href="chrome://browser/skin/devtools/toolbox.css" type="text/css"?>
+<?xml-stylesheet rel="stylesheet" href="chrome://browser/content/devtools/framework/options-panel.css" type="text/css"?>
 
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
@@ -22,7 +21,7 @@
         <label value="&options.selectAdditionalTools.label;"/>
         <vbox id="additional-tools-box" class="options-groupbox"/>
         <label id="tools-not-supported-label"
-               class="options-citation-label"
+               class="options-citation-label theme-comment"
                value="&options.toolNotSupported.label;"/>
       </vbox>
       <vbox class="options-vertical-pane" flex="1">
@@ -74,7 +73,7 @@
             <checkbox id="devtools-disable-javascript"
                       label="&options.disableJavaScript.label2;"
                       tooltiptext="&options.disableJavaScript.tooltip;"/>
-            <label class="options-citation-label"
+            <label class="options-citation-label theme-comment"
                    value="(&options.context.triggersPageRefresh2;)"/>
           </hbox>
           <hbox class="hidden-labels-box">

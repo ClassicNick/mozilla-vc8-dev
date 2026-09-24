@@ -14,6 +14,8 @@
     UnsafeGetReservedSlot(obj, JS_DATUM_SLOT_TYPE_OBJ)
 #define DATUM_OWNER(obj) \
     UnsafeGetReservedSlot(obj, JS_DATUM_SLOT_OWNER)
+#define DATUM_LENGTH(obj) \
+    TO_INT32(UnsafeGetReservedSlot(obj, JS_DATUM_SLOT_LENGTH))
 
 // Type repr slots
 
@@ -95,6 +97,18 @@ TypedObjectPointer.prototype.kind = function() {
   return REPR_KIND(this.typeRepr);
 }
 
+TypedObjectPointer.prototype.length = function() {
+  switch (this.kind()) {
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+    return REPR_LENGTH(this.typeRepr);
+
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
+    return DATUM_LENGTH(this.datum);
+  }
+  assert(false, "length() invoked on non-array-type");
+  return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // Moving the pointer
 //
@@ -107,15 +121,17 @@ TypedObjectPointer.prototype.moveTo = function(propName) {
   switch (this.kind()) {
   case JS_TYPEREPR_SCALAR_KIND:
   case JS_TYPEREPR_REFERENCE_KIND:
+  case JS_TYPEREPR_X4_KIND:
     break;
 
-  case JS_TYPEREPR_ARRAY_KIND:
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
     // For an array, property must be an element. Note that we use the
     // length as loaded from the type *representation* as opposed to
     // the type *object*; this is because some type objects represent
     // unsized arrays and hence do not have a length.
     var index = TO_INT32(propName);
-    if (index === propName && index >= 0 && index < REPR_LENGTH(this.typeRepr))
+    if (index === propName && index >= 0 && index < this.length())
       return this.moveToElem(index);
     break;
 
@@ -126,17 +142,19 @@ TypedObjectPointer.prototype.moveTo = function(propName) {
   }
 
   ThrowError(JSMSG_TYPEDOBJECT_NO_SUCH_PROP, propName);
+  return undefined;
 };
 
 // Adjust `this` in place to point at the element `index`.  `this`
 // must be a array type and `index` must be within bounds. Returns
 // `this`.
 TypedObjectPointer.prototype.moveToElem = function(index) {
-  assert(this.kind() == JS_TYPEREPR_ARRAY_KIND,
+  assert(this.kind() == JS_TYPEREPR_SIZED_ARRAY_KIND ||
+         this.kind() == JS_TYPEREPR_UNSIZED_ARRAY_KIND,
          "moveToElem invoked on non-array");
   assert(TO_INT32(index) === index,
          "moveToElem invoked with non-integer index");
-  assert(index >= 0 && index < REPR_LENGTH(this.typeRepr),
+  assert(index >= 0 && index < this.length(),
          "moveToElem invoked with out-of-bounds index: " + index);
 
   var elementTypeObj = this.typeObj.elementType;
@@ -188,13 +206,28 @@ TypedObjectPointer.prototype.moveToField = function(propName) {
 TypedObjectPointer.prototype.get = function() {
   assert(ObjectIsAttached(this.datum), "get() called with unattached datum");
 
-  if (REPR_KIND(this.typeRepr) == JS_TYPEREPR_SCALAR_KIND)
+  switch (REPR_KIND(this.typeRepr)) {
+  case JS_TYPEREPR_SCALAR_KIND:
     return this.getScalar();
 
-  if (REPR_KIND(this.typeRepr) == JS_TYPEREPR_REFERENCE_KIND)
+  case JS_TYPEREPR_REFERENCE_KIND:
     return this.getReference();
 
-  return NewDerivedTypedDatum(this.typeObj, this.datum, this.offset);
+  case JS_TYPEREPR_X4_KIND:
+    return this.getX4();
+
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+    return NewDerivedTypedDatum(this.typeObj, this.datum, this.offset);
+
+  case JS_TYPEREPR_STRUCT_KIND:
+    return NewDerivedTypedDatum(this.typeObj, this.datum, this.offset);
+
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
+    assert(false, "Unhandled repr kind: " + REPR_KIND(this.typeRepr));
+  }
+
+  assert(false, "Unhandled kind: " + REPR_KIND(this.typeRepr));
+  return undefined;
 }
 
 TypedObjectPointer.prototype.getScalar = function() {
@@ -227,6 +260,7 @@ TypedObjectPointer.prototype.getScalar = function() {
   }
 
   assert(false, "Unhandled scalar type: " + type);
+  return undefined;
 }
 
 TypedObjectPointer.prototype.getReference = function() {
@@ -243,6 +277,30 @@ TypedObjectPointer.prototype.getReference = function() {
   }
 
   assert(false, "Unhandled scalar type: " + type);
+  return undefined;
+}
+
+TypedObjectPointer.prototype.getX4 = function() {
+  var type = REPR_TYPE(this.typeRepr);
+  var T = GetTypedObjectModule();
+  switch (type) {
+  case JS_X4TYPEREPR_FLOAT32:
+    var x = Load_float32(this.datum, this.offset + 0);
+    var y = Load_float32(this.datum, this.offset + 4);
+    var z = Load_float32(this.datum, this.offset + 8);
+    var w = Load_float32(this.datum, this.offset + 12);
+    return T.float32x4(x, y, z, w);
+
+  case JS_X4TYPEREPR_INT32:
+    var x = Load_int32(this.datum, this.offset + 0);
+    var y = Load_int32(this.datum, this.offset + 4);
+    var z = Load_int32(this.datum, this.offset + 8);
+    var w = Load_int32(this.datum, this.offset + 12);
+    return T.int32x4(x, y, z, w);
+  }
+
+  assert(false, "Unhandled x4 type: " + type);
+  return undefined;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -261,8 +319,8 @@ TypedObjectPointer.prototype.set = function(fromValue) {
   // Fast path: `fromValue` is a typed object with same type
   // representation as the destination. In that case, we can just do a
   // memcpy.
-  if (IsObject(fromValue) && HaveSameClass(fromValue, this.datum)) {
-    if (DATUM_TYPE_REPR(fromValue) === typeRepr) {
+  if (IsObject(fromValue) && ObjectIsTypedDatum(fromValue)) {
+    if (!typeRepr.variable && DATUM_TYPE_REPR(fromValue) === typeRepr) {
       if (!ObjectIsAttached(fromValue))
         ThrowError(JSMSG_TYPEDOBJECT_HANDLE_UNATTACHED);
 
@@ -281,12 +339,17 @@ TypedObjectPointer.prototype.set = function(fromValue) {
     this.setReference(fromValue);
     return;
 
-  case JS_TYPEREPR_ARRAY_KIND:
+  case JS_TYPEREPR_X4_KIND:
+    this.setX4(fromValue);
+    return;
+
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
     if (!IsObject(fromValue))
       break;
 
     // Check that "array-like" fromValue has an appropriate length.
-    var length = REPR_LENGTH(typeRepr);
+    var length = this.length();
     if (fromValue.length !== length)
       break;
 
@@ -317,7 +380,7 @@ TypedObjectPointer.prototype.set = function(fromValue) {
 
   ThrowError(JSMSG_CANT_CONVERT_TO,
              typeof(fromValue),
-             this.typeRepr.toSource())
+             this.typeRepr.toSource());
 }
 
 // Sets `fromValue` to `this` assuming that `this` is a scalar type.
@@ -363,6 +426,7 @@ TypedObjectPointer.prototype.setScalar = function(fromValue) {
   }
 
   assert(false, "Unhandled scalar type: " + type);
+  return undefined;
 }
 
 TypedObjectPointer.prototype.setReference = function(fromValue) {
@@ -380,6 +444,18 @@ TypedObjectPointer.prototype.setReference = function(fromValue) {
   }
 
   assert(false, "Unhandled scalar type: " + type);
+  return undefined;
+}
+
+// Sets `fromValue` to `this` assuming that `this` is a scalar type.
+TypedObjectPointer.prototype.setX4 = function(fromValue) {
+  // It is only permitted to set a float32x4/int32x4 value from another
+  // float32x4/int32x4; in that case, the "fast path" that uses memcopy will
+  // have already matched. So if we get to this point, we're supposed
+  // to "adapt" fromValue, but there are no legal adaptions.
+  ThrowError(JSMSG_CANT_CONVERT_TO,
+             typeof(fromValue),
+             this.typeRepr.toSource());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -487,9 +563,22 @@ function TypedArrayRedimension(newArrayType) {
   // Peel away the outermost array layers from the type of `this` to find
   // the core element type. In the process, count the number of elements.
   var oldArrayType = DATUM_TYPE_OBJ(this);
+  var oldArrayReprKind = REPR_KIND(TYPE_TYPE_REPR(oldArrayType));
   var oldElementType = oldArrayType;
   var oldElementCount = 1;
-  while (REPR_KIND(TYPE_TYPE_REPR(oldElementType)) == JS_TYPEREPR_ARRAY_KIND) {
+  switch (oldArrayReprKind) {
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
+    oldElementCount *= this.length;
+    oldElementType = oldElementType.elementType;
+    break;
+
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+    break;
+
+  default:
+    ThrowError(JSMSG_TYPEDOBJECT_HANDLE_BAD_ARGS, "this", "typed array");
+  }
+  while (REPR_KIND(TYPE_TYPE_REPR(oldElementType)) === JS_TYPEREPR_SIZED_ARRAY_KIND) {
     oldElementCount *= oldElementType.length;
     oldElementType = oldElementType.elementType;
   }
@@ -498,7 +587,7 @@ function TypedArrayRedimension(newArrayType) {
   // process, count the number of elements.
   var newElementType = newArrayType;
   var newElementCount = 1;
-  while (REPR_KIND(TYPE_TYPE_REPR(newElementType)) == JS_TYPEREPR_ARRAY_KIND) {
+  while (REPR_KIND(TYPE_TYPE_REPR(newElementType)) == JS_TYPEREPR_SIZED_ARRAY_KIND) {
     newElementCount *= newElementType.length;
     newElementType = newElementType.elementType;
   }
@@ -537,6 +626,18 @@ function TypedArrayRedimension(newArrayType) {
 function HandleCreate(obj, ...path) {
   if (!IsObject(this) || !ObjectIsTypeObject(this))
     ThrowError(JSMSG_INCOMPATIBLE_PROTO, "Type", "handle", "value");
+
+  switch (REPR_KIND(TYPE_TYPE_REPR(this))) {
+  case JS_TYPEREPR_SCALAR_KIND:
+  case JS_TYPEREPR_REFERENCE_KIND:
+  case JS_TYPEREPR_X4_KIND:
+  case JS_TYPEREPR_SIZED_ARRAY_KIND:
+  case JS_TYPEREPR_STRUCT_KIND:
+    break;
+
+  case JS_TYPEREPR_UNSIZED_ARRAY_KIND:
+    ThrowError(JSMSG_TYPEDOBJECT_HANDLE_TO_UNSIZED);
+  }
 
   var handle = NewTypedHandle(this);
 
@@ -606,7 +707,112 @@ function HandleTest(obj) {
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// X4
+
+function X4ProtoString(type) {
+  switch (type) {
+  case JS_X4TYPEREPR_INT32:
+    return "int32x4";
+  case JS_X4TYPEREPR_FLOAT32:
+    return "float32x4";
+  }
+
+  assert(false, "Unhandled type constant");
+  return undefined;
+}
+
+var X4LaneStrings = ["x", "y", "z", "w"];
+
+// Generalized handler for the various properties for accessing a
+// single lane of an X4 vector value. Note that this is the slow path;
+// the fast path will be inlined into ion code.
+function X4GetLane(datum, type, lane) {
+  if (!IsObject(datum) || !ObjectIsTypedDatum(datum))
+    ThrowError(JSMSG_INCOMPATIBLE_PROTO, X4ProtoString(type),
+               X4LaneStrings[lane], typeof this);
+
+  var repr = DATUM_TYPE_REPR(datum);
+  if (REPR_KIND(repr) != JS_TYPEREPR_X4_KIND || REPR_TYPE(repr) != type)
+    ThrowError(JSMSG_INCOMPATIBLE_PROTO, X4ProtoString(type),
+               X4LaneStrings[lane], typeof this);
+
+  switch (type) {
+  case JS_X4TYPEREPR_INT32:
+    return Load_int32(datum, lane * 4);
+  case JS_X4TYPEREPR_FLOAT32:
+    return Load_float32(datum, lane * 4);
+  }
+
+  assert(false, "Unhandled type constant");
+  return undefined;
+}
+
+function Float32x4Lane0() { return X4GetLane(this, JS_X4TYPEREPR_FLOAT32, 0); }
+function Float32x4Lane1() { return X4GetLane(this, JS_X4TYPEREPR_FLOAT32, 1); }
+function Float32x4Lane2() { return X4GetLane(this, JS_X4TYPEREPR_FLOAT32, 2); }
+function Float32x4Lane3() { return X4GetLane(this, JS_X4TYPEREPR_FLOAT32, 3); }
+
+function Int32x4Lane0() { return X4GetLane(this, JS_X4TYPEREPR_INT32, 0); }
+function Int32x4Lane1() { return X4GetLane(this, JS_X4TYPEREPR_INT32, 1); }
+function Int32x4Lane2() { return X4GetLane(this, JS_X4TYPEREPR_INT32, 2); }
+function Int32x4Lane3() { return X4GetLane(this, JS_X4TYPEREPR_INT32, 3); }
+
+function X4ToSource() {
+  if (!IsObject(this) || !ObjectIsTypedDatum(this))
+    ThrowError(JSMSG_INCOMPATIBLE_PROTO, "X4", "toSource", typeof this);
+
+  var repr = DATUM_TYPE_REPR(this);
+  if (REPR_KIND(repr) != JS_TYPEREPR_X4_KIND)
+    ThrowError(JSMSG_INCOMPATIBLE_PROTO, "X4", "toSource", typeof this);
+
+  var type = REPR_TYPE(repr);
+  return X4ProtoString(type)+"("+this.x+", "+this.y+", "+this.z+", "+this.w+")";
+}
+
+///////////////////////////////////////////////////////////////////////////
 // Miscellaneous
+
+// This is the `objectType()` function defined in the spec.
+// It returns the type of its argument.
+//
+// Warning: user exposed!
+function ArrayShorthand(...dims) {
+  if (!IsObject(this) || !ObjectIsTypeObject(this))
+    ThrowError(JSMSG_TYPEDOBJECT_HANDLE_BAD_ARGS,
+               "this", "typed object");
+
+  var T = GetTypedObjectModule();
+
+  if (dims.length == 0)
+    return new T.ArrayType(this);
+
+  var accum = this;
+  for (var i = dims.length - 1; i >= 0; i--)
+    accum = new T.ArrayType(accum).dimension(dims[i]);
+  return accum;
+}
+
+// Warning: user exposed!
+function TypeOfTypedDatum(obj) {
+  if (IsObject(obj) && ObjectIsTypedDatum(obj))
+    return DATUM_TYPE_OBJ(obj);
+
+  // Note: Do not create bindings for `Any`, `String`, etc in
+  // Utilities.js, but rather access them through
+  // `GetTypedObjectModule()`. The reason is that bindings
+  // you create in Utilities.js are part of the self-hosted global,
+  // vs the user-accessible global, and hence should not escape to
+  // user script.
+  var T = GetTypedObjectModule();
+  switch (typeof obj) {
+    case "object": return T.Object;
+    case "function": return T.Object;
+    case "string": return T.String;
+    case "number": return T.float64;
+    case "undefined": return T.Any;
+    default: return T.Any;
+  }
+}
 
 function ObjectIsTypedDatum(obj) {
   assert(IsObject(obj), "ObjectIsTypedDatum invoked with non-object")

@@ -87,6 +87,8 @@
                 "./src/stun/addrs.h",
                 "./src/stun/nr_socket_turn.c",
                 "./src/stun/nr_socket_turn.h",
+                "./src/stun/nr_socket_buffered_stun.c",
+                "./src/stun/nr_socket_buffered_stun.h",
                 "./src/stun/stun.h",
                 "./src/stun/stun_build.c",
                 "./src/stun/stun_build.h",
@@ -129,12 +131,13 @@
               'USE_TURN',
               'NR_SOCKET_IS_VOID_PTR',
               'restrict=',
-	      'R_DEFINED_INT2=int16_t',
-	      'R_DEFINED_UINT2=uint16_t',
-	      'R_DEFINED_INT4=int32_t',
-	      'R_DEFINED_UINT4=uint32_t',
-	      'R_DEFINED_INT8=int64_t',
-	      'R_DEFINED_UINT8=uint64_t',
+			  'R_PLATFORM_INT_TYPES="mozilla/StandardInteger.h"',
+			  'R_DEFINED_INT2=int16_t',
+			  'R_DEFINED_UINT2=uint16_t',
+			  'R_DEFINED_INT4=int32_t',
+			  'R_DEFINED_UINT4=uint32_t',
+			  'R_DEFINED_INT8=int64_t',
+			  'R_DEFINED_UINT8=uint64_t',
           ],
           
           'conditions' : [
@@ -166,7 +169,7 @@
                      'NEW_STDIO'
                      'RETSIGTYPE=void',
                      'TIME_WITH_SYS_TIME_H=1',
-                     '__UNUSED__="__attribute__((unused))"',
+                     '__UNUSED__=__attribute__((unused))',
                  ],
 
 		 'include_dirs': [
@@ -214,7 +217,7 @@
                      'NEW_STDIO'
                      'RETSIGTYPE=void',
                      'TIME_WITH_SYS_TIME_H=1',
-                     '__UNUSED__="__attribute__((unused))"',
+                     '__UNUSED__=__attribute__((unused))',
                  ],
 
 		 'include_dirs': [

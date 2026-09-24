@@ -28,6 +28,7 @@
 // nsNPAPIPluginInstance must be included before nsIDocument.h, which is included in mozAutoDocUpdate.h.
 #include "nsNPAPIPluginInstance.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Base64.h"
@@ -36,14 +37,15 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/HTMLContentElement.h"
 #include "mozilla/dom/TextDecoder.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/MutationEvent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Selection.h"
 #include "mozilla/TextEvents.h"
-#include "mozilla/Util.h"
 #include "nsAString.h"
 #include "nsAttrName.h"
 #include "nsAttrValue.h"
@@ -74,6 +76,7 @@
 #include "nsEventStateManager.h"
 #include "nsFocusManager.h"
 #include "nsGenericHTMLElement.h"
+#include "nsGenericHTMLFrameElement.h"
 #include "nsGkAtoms.h"
 #include "nsHostObjectProtocolHandler.h"
 #include "nsHtml5Module.h"
@@ -82,7 +85,6 @@
 #include "nsICategoryManager.h"
 #include "nsIChannelEventSink.h"
 #include "nsIChannelPolicy.h"
-#include "nsICharsetConverterManager.h"
 #include "nsICharsetDetectionObserver.h"
 #include "nsICharsetDetector.h"
 #include "nsIChromeRegistry.h"
@@ -378,6 +380,9 @@ nsContentUtils::Init()
     return NS_ERROR_FAILURE;
   NS_ADDREF(sSecurityManager);
 
+  // Getting the first context can trigger GC, so do this non-lazily.
+  sXPConnect->InitSafeJSContext();
+
   rv = CallGetService(NS_IOSERVICE_CONTRACTID, &sIOService);
   if (NS_FAILED(rv)) {
     // This makes life easier, but we can live without it.
@@ -387,7 +392,7 @@ nsContentUtils::Init()
 
   rv = CallGetService(NS_LBRK_CONTRACTID, &sLineBreaker);
   NS_ENSURE_SUCCESS(rv, rv);
-  
+
   rv = CallGetService(NS_WBRK_CONTRACTID, &sWordBreaker);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -414,7 +419,7 @@ nsContentUtils::Init()
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
-    NS_RegisterMemoryReporter(new DOMEventListenerManagersHashReporter);
+    RegisterStrongMemoryReporter(new DOMEventListenerManagersHashReporter());
   }
 
   sBlockedScriptRunners = new nsTArray< nsCOMPtr<nsIRunnable> >;
@@ -2622,10 +2627,7 @@ nsContentUtils::CanLoadImage(nsIURI* aURI, nsISupports* aContext,
   uint32_t appType = nsIDocShell::APP_TYPE_UNKNOWN;
 
   {
-    nsCOMPtr<nsISupports> container = aLoadingDocument->GetContainer();
-    nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem =
-      do_QueryInterface(container);
-
+    nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem = aLoadingDocument->GetDocShell();
     if (docShellTreeItem) {
       nsCOMPtr<nsIDocShellTreeItem> root;
       docShellTreeItem->GetRootTreeItem(getter_AddRefs(root));
@@ -3153,8 +3155,7 @@ nsContentUtils::IsChromeDoc(nsIDocument *aDocument)
 bool
 nsContentUtils::IsChildOfSameType(nsIDocument* aDoc)
 {
-  nsCOMPtr<nsISupports> container = aDoc->GetContainer();
-  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(do_QueryInterface(container));
+  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(aDoc->GetDocShell());
   nsCOMPtr<nsIDocShellTreeItem> sameTypeParent;
   if (docShellAsItem) {
     docShellAsItem->GetSameTypeParent(getter_AddRefs(sameTypeParent));
@@ -3235,8 +3236,7 @@ nsContentUtils::IsInChromeDocshell(nsIDocument *aDocument)
     return IsInChromeDocshell(aDocument->GetDisplayDocument());
   }
 
-  nsCOMPtr<nsISupports> docContainer = aDocument->GetContainer();
-  nsCOMPtr<nsIDocShellTreeItem> docShell(do_QueryInterface(docContainer));
+  nsCOMPtr<nsIDocShellTreeItem> docShell(aDocument->GetDocShell());
   int32_t itemType = nsIDocShellTreeItem::typeContent;
   if (docShell) {
     docShell->GetItemType(&itemType);
@@ -4331,15 +4331,28 @@ nsContentUtils::IsInSameAnonymousTree(const nsINode* aNode,
     return aContent->GetBindingParent() == nullptr;
   }
 
-  return static_cast<const nsIContent*>(aNode)->GetBindingParent() ==
-         aContent->GetBindingParent();
- 
+  const nsIContent* nodeAsContent = static_cast<const nsIContent*>(aNode);
+
+  // For nodes in a shadow tree, it is insufficient to simply compare
+  // the binding parent because a node may host multiple ShadowRoots,
+  // thus nodes in different shadow tree may have the same binding parent.
+  if (aNode->HasFlag(NODE_IS_IN_SHADOW_TREE)) {
+    return nodeAsContent->GetContainingShadow() ==
+      aContent->GetContainingShadow();
+  }
+
+  return nodeAsContent->GetBindingParent() == aContent->GetBindingParent();
 }
 
 class AnonymousContentDestroyer : public nsRunnable {
 public:
   AnonymousContentDestroyer(nsCOMPtr<nsIContent>* aContent) {
     mContent.swap(*aContent);
+    mParent = mContent->GetParent();
+    mDoc = mContent->OwnerDoc();
+  }
+  AnonymousContentDestroyer(nsCOMPtr<Element>* aElement) {
+    mContent = aElement->forget();
     mParent = mContent->GetParent();
     mDoc = mContent->OwnerDoc();
   }
@@ -4361,6 +4374,15 @@ nsContentUtils::DestroyAnonymousContent(nsCOMPtr<nsIContent>* aContent)
 {
   if (*aContent) {
     AddScriptRunner(new AnonymousContentDestroyer(aContent));
+  }
+}
+
+/* static */
+void
+nsContentUtils::DestroyAnonymousContent(nsCOMPtr<Element>* aElement)
+{
+  if (*aElement) {
+    AddScriptRunner(new AnonymousContentDestroyer(aElement));
   }
 }
 
@@ -4976,8 +4998,7 @@ nsContentUtils::HidePopupsInDocument(nsIDocument* aDocument)
 #ifdef MOZ_XUL
   nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
   if (pm && aDocument) {
-    nsCOMPtr<nsISupports> container = aDocument->GetContainer();
-    nsCOMPtr<nsIDocShellTreeItem> docShellToHide = do_QueryInterface(container);
+    nsCOMPtr<nsIDocShellTreeItem> docShellToHide = aDocument->GetDocShell();
     if (docShellToHide)
       pm->HidePopupsInDocShell(docShellToHide);
   }
@@ -5877,8 +5898,7 @@ nsContentUtils::IsSubDocumentTabbable(nsIContent* aContent)
     return false;
   }
 
-  nsCOMPtr<nsISupports> container = subDoc->GetContainer();
-  nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(container);
+  nsCOMPtr<nsIDocShell> docShell = subDoc->GetDocShell();
   if (!docShell) {
     return false;
   }
@@ -5896,6 +5916,37 @@ nsContentUtils::IsSubDocumentTabbable(nsIContent* aContent)
   // means the current document is a zombie document.
   // Only navigate into the subdocument if it's not a zombie.
   return !zombieViewer;
+}
+
+bool
+nsContentUtils::IsUserFocusIgnored(nsINode* aNode)
+{
+  if (!nsGenericHTMLFrameElement::BrowserFramesEnabled()) {
+    return false;
+  }
+
+  // Check if our mozbrowser iframe ancestors has ignoreuserfocus attribute.
+  while (aNode) {
+    nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(aNode);
+    if (browserFrame &&
+        aNode->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::ignoreuserfocus) &&
+        browserFrame->GetReallyIsBrowserOrApp()) {
+      return true;
+    }
+    nsPIDOMWindow* win = aNode->OwnerDoc()->GetWindow();
+    if (win) {
+      aNode = win->GetFrameElementInternal();
+    }
+  }
+
+  return false;
+}
+
+bool
+nsContentUtils::HasScrollgrab(nsIContent* aContent)
+{
+  nsGenericHTMLElement* element = nsGenericHTMLElement::FromContentOrNull(aContent);
+  return element && element->Scrollgrab();
 }
 
 void
@@ -5988,8 +6039,7 @@ nsContentUtils::FindPresShellForDocument(const nsIDocument* aDoc)
     return shell;
   }
 
-  nsCOMPtr<nsISupports> container = doc->GetContainer();
-  nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem = do_QueryInterface(container);
+  nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem = doc->GetDocShell();
   while (docShellTreeItem) {
     // We may be in a display:none subdocument, or we may not have a presshell
     // created yet.
@@ -6370,6 +6420,29 @@ nsContentUtils::HasPluginWithUncontrolledEventDispatch(nsIContent* aContent)
 }
 
 /* static */
+void
+nsContentUtils::FireMutationEventsForDirectParsing(nsIDocument* aDoc,
+                                                   nsIContent* aDest,
+                                                   int32_t aOldChildCount)
+{
+  // Fire mutation events. Optimize for the case when there are no listeners
+  int32_t newChildCount = aDest->GetChildCount();
+  if (newChildCount && nsContentUtils::
+        HasMutationListeners(aDoc, NS_EVENT_BITS_MUTATION_NODEINSERTED)) {
+    nsAutoTArray<nsCOMPtr<nsIContent>, 50> childNodes;
+    NS_ASSERTION(newChildCount - aOldChildCount >= 0,
+                 "What, some unexpected dom mutation has happened?");
+    childNodes.SetCapacity(newChildCount - aOldChildCount);
+    for (nsIContent* child = aDest->GetFirstChild();
+         child;
+         child = child->GetNextSibling()) {
+      childNodes.AppendElement(child);
+    }
+    FragmentOrElement::FireNodeInserted(aDoc, aDest, childNodes);
+  }
+}
+
+/* static */
 nsIDocument*
 nsContentUtils::GetFullscreenAncestor(nsIDocument* aDoc)
 {
@@ -6529,6 +6602,22 @@ nsContentUtils::InternalIsSupported(nsISupports* aObject,
 
   // Otherwise, we claim to support everything
   return true;
+}
+
+bool
+nsContentUtils::IsContentInsertionPoint(const nsIContent* aContent)
+{
+  // Check if the content is a XBL insertion point.
+  if (aContent->IsActiveChildrenElement()) {
+    return true;
+  }
+
+  // Check if the content is a web components content insertion point.
+  if (aContent->IsHTML(nsGkAtoms::content)) {
+    return static_cast<const HTMLContentElement*>(aContent)->IsInsertionPoint();
+  }
+
+  return false;
 }
 
 bool

@@ -102,7 +102,6 @@ let ScriptContexts = {};
   ["SelectionHelperUI", "chrome://browser/content/helperui/SelectionHelperUI.js"],
   ["SelectionPrototype", "chrome://browser/content/library/SelectionPrototype.js"],
   ["ChromeSelectionHandler", "chrome://browser/content/helperui/ChromeSelectionHandler.js"],
-  ["AnimatedZoom", "chrome://browser/content/AnimatedZoom.js"],
   ["CommandUpdater", "chrome://browser/content/commandUtil.js"],
   ["ContextCommands", "chrome://browser/content/ContextCommands.js"],
   ["Bookmarks", "chrome://browser/content/bookmarks.js"],
@@ -117,6 +116,7 @@ let ScriptContexts = {};
   ["NavButtonSlider", "chrome://browser/content/NavButtonSlider.js"],
   ["ContextUI", "chrome://browser/content/ContextUI.js"],
   ["FlyoutPanelsUI", "chrome://browser/content/flyoutpanels/FlyoutPanelsUI.js"],
+  ["SettingsCharm", "chrome://browser/content/flyoutpanels/SettingsCharm.js"],
   ["APZCObserver", "chrome://browser/content/apzc.js"],
 ].forEach(function (aScript) {
   let [name, script] = aScript;
@@ -151,10 +151,4 @@ XPCOMUtils.defineLazyGetter(this, "ContentAreaUtils", function() {
   let ContentAreaUtils = {};
   Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", ContentAreaUtils);
   return ContentAreaUtils;
-});
-
-XPCOMUtils.defineLazyGetter(this, "ZoomManager", function() {
-  let sandbox = {};
-  Services.scriptloader.loadSubScript("chrome://global/content/viewZoomOverlay.js", sandbox);
-  return sandbox.ZoomManager;
 });

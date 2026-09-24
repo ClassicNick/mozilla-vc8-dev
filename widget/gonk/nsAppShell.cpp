@@ -29,6 +29,7 @@
 #include <unistd.h>
 
 #include "base/basictypes.h"
+#include "GonkPermission.h"
 #include "nscore.h"
 #ifdef MOZ_OMX_DECODER
 #include "MediaResourceManagerService.h"
@@ -40,6 +41,9 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/Services.h"
 #include "mozilla/TextEvents.h"
+#if ANDROID_VERSION >= 18
+#include "nativewindow/FakeSurfaceComposer.h"
+#endif
 #include "nsAppShell.h"
 #include "mozilla/dom/Touch.h"
 #include "nsGkAtoms.h"
@@ -225,8 +229,12 @@ sendKeyEventWithMsg(uint32_t keyCode,
                     bool isRepeat)
 {
     WidgetKeyboardEvent event(true, msg, nullptr);
-    event.keyCode = keyCode;
-    event.charCode = charCode;
+    if (msg == NS_KEY_PRESS && charCode >= ' ') {
+        event.charCode = charCode;
+    } else {
+        event.keyCode = keyCode;
+    }
+    event.isChar = !!event.charCode;
     event.mIsRepeat = isRepeat;
     event.mKeyNameIndex = keyNameIndex;
     event.location = nsIDOMKeyEvent::DOM_KEY_LOCATION_MOBILE;
@@ -317,21 +325,13 @@ GeckoPointerController::getBounds(float* outMinX,
                                   float* outMaxX,
                                   float* outMaxY) const
 {
-    int32_t width, height, orientation;
-
     DisplayViewport viewport;
 
     mConfig->getDisplayInfo(false, &viewport);
 
     *outMinX = *outMinY = 0;
-    if (orientation == DISPLAY_ORIENTATION_90 ||
-        orientation == DISPLAY_ORIENTATION_270) {
-        *outMaxX = viewport.deviceHeight;
-        *outMaxY = viewport.deviceWidth;
-    } else {
-        *outMaxX = viewport.deviceWidth;
-        *outMaxY = viewport.deviceHeight;
-    }
+    *outMaxX = viewport.logicalRight;
+    *outMaxY = viewport.logicalBottom;
     return true;
 }
 
@@ -744,11 +744,16 @@ nsAppShell::Init()
 
     InitGonkMemoryPressureMonitoring();
 
-#ifdef MOZ_OMX_DECODER
     if (XRE_GetProcessType() == GeckoProcessType_Default) {
-      android::MediaResourceManagerService::instantiate();
-    }
+#ifdef MOZ_OMX_DECODER
+        android::MediaResourceManagerService::instantiate();
 #endif
+#if ANDROID_VERSION >= 18
+        android::FakeSurfaceComposer::instantiate();
+#endif
+        GonkPermissionService::instantiate();
+    }
+
     nsCOMPtr<nsIObserverService> obsServ = GetObserverService();
     if (obsServ) {
         obsServ->AddObserver(this, "browser-ui-startup-complete", false);

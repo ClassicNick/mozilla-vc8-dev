@@ -229,7 +229,7 @@ JSCompartment::wrap(JSContext *cx, JSString **strp)
     /* Check the cache. */
     RootedValue key(cx, StringValue(str));
     if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(key)) {
-        *strp = p->value.get().toString();
+        *strp = p->value().get().toString();
         return true;
     }
 
@@ -333,7 +333,7 @@ JSCompartment::wrap(JSContext *cx, MutableHandleObject obj, HandleObject existin
     /* If we already have a wrapper for this value, use it. */
     RootedValue key(cx, ObjectValue(*obj));
     if (WrapperMap::Ptr p = crossCompartmentWrappers.lookup(key)) {
-        obj.set(&p->value.get().toObject());
+        obj.set(&p->value().get().toObject());
         JS_ASSERT(obj->is<CrossCompartmentWrapperObject>());
         JS_ASSERT(obj->getParent() == global);
         return true;
@@ -449,8 +449,8 @@ JSCompartment::markCrossCompartmentWrappers(JSTracer *trc)
     JS_ASSERT(!zone()->isCollecting());
 
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
-        Value v = e.front().value;
-        if (e.front().key.kind == CrossCompartmentKey::ObjectWrapper) {
+        Value v = e.front().value();
+        if (e.front().key().kind == CrossCompartmentKey::ObjectWrapper) {
             ProxyObject *wrapper = &v.toObject().as<ProxyObject>();
 
             /*
@@ -474,12 +474,12 @@ void
 JSCompartment::markAllCrossCompartmentWrappers(JSTracer *trc)
 {
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
-        CrossCompartmentKey key = e.front().key;
+        CrossCompartmentKey key = e.front().key();
         MarkGCThingRoot(trc, (void **)&key.wrapped, "CrossCompartmentKey::wrapped");
         if (key.debugger)
             MarkObjectRoot(trc, &key.debugger, "CrossCompartmentKey::debugger");
-        MarkValueRoot(trc, e.front().value.unsafeGet(), "CrossCompartmentWrapper");
-        if (key.wrapped != e.front().key.wrapped || key.debugger != e.front().key.debugger)
+        MarkValueRoot(trc, e.front().value().unsafeGet(), "CrossCompartmentWrapper");
+        if (key.wrapped != e.front().key().wrapped || key.debugger != e.front().key().debugger)
             e.rekeyFront(key);
     }
 }
@@ -577,14 +577,16 @@ JSCompartment::sweepCrossCompartmentWrappers()
 
     /* Remove dead wrappers from the table. */
     for (WrapperMap::Enum e(crossCompartmentWrappers); !e.empty(); e.popFront()) {
-        CrossCompartmentKey key = e.front().key;
+        CrossCompartmentKey key = e.front().key();
         bool keyDying = IsCellAboutToBeFinalized(&key.wrapped);
-        bool valDying = IsValueAboutToBeFinalized(e.front().value.unsafeGet());
+        bool valDying = IsValueAboutToBeFinalized(e.front().value().unsafeGet());
         bool dbgDying = key.debugger && IsObjectAboutToBeFinalized(&key.debugger);
         if (keyDying || valDying || dbgDying) {
             JS_ASSERT(key.kind != CrossCompartmentKey::StringWrapper);
             e.removeFront();
-        } else if (key.wrapped != e.front().key.wrapped || key.debugger != e.front().key.debugger) {
+        } else if (key.wrapped != e.front().key().wrapped ||
+                   key.debugger != e.front().key().debugger)
+        {
             e.rekeyFront(key);
         }
     }
@@ -675,20 +677,20 @@ CreateLazyScriptsForCompartment(JSContext *cx)
 {
     AutoObjectVector lazyFunctions(cx);
 
-    // Find all root lazy functions in the compartment: those which have not been
-    // compiled and which have a source object, indicating that their parent has
-    // been compiled.
-    for (gc::CellIter i(cx->zone(), JSFunction::FinalizeKind); !i.done(); i.next()) {
-        JSObject *obj = i.get<JSObject>();
-        if (obj->compartment() == cx->compartment() && obj->is<JSFunction>()) {
-            JSFunction *fun = &obj->as<JSFunction>();
-            if (fun->isInterpretedLazy()) {
-                LazyScript *lazy = fun->lazyScriptOrNull();
-                if (lazy && lazy->sourceObject() && !lazy->maybeScript()) {
-                    if (!lazyFunctions.append(fun))
-                        return false;
-                }
-            }
+    // Find all live lazy scripts in the compartment, and via them all root
+    // lazy functions in the compartment: those which have not been compiled
+    // and which have a source object, indicating that their parent has been
+    // compiled.
+    for (gc::CellIter i(cx->zone(), gc::FINALIZE_LAZY_SCRIPT); !i.done(); i.next()) {
+        LazyScript *lazy = i.get<LazyScript>();
+        JSFunction *fun = lazy->function();
+        if (fun->compartment() == cx->compartment() &&
+            lazy->sourceObject() && !lazy->maybeScript())
+        {
+            MOZ_ASSERT(fun->isInterpretedLazy());
+            MOZ_ASSERT(lazy == fun->lazyScriptOrNull());
+            if (!lazyFunctions.append(fun))
+                return false;
         }
     }
 
@@ -710,27 +712,24 @@ CreateLazyScriptsForCompartment(JSContext *cx)
             return false;
     }
 
-    // Repoint any clones of the original functions to their new script.
-    for (gc::CellIter i(cx->zone(), JSFunction::FinalizeKind); !i.done(); i.next()) {
-        JSObject *obj = i.get<JSObject>();
-        if (obj->compartment() == cx->compartment() && obj->is<JSFunction>()) {
-            JSFunction *fun = &obj->as<JSFunction>();
-            if (fun->isInterpretedLazy()) {
-                LazyScript *lazy = fun->lazyScriptOrNull();
-                if (lazy && lazy->maybeScript())
-                    fun->existingScript();
-            }
-        }
-    }
-
     return true;
 }
 
 bool
-JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeGC &dmgc)
+JSCompartment::ensureDelazifyScriptsForDebugMode(JSContext *cx)
+{
+    MOZ_ASSERT(cx->compartment() == this);
+    if ((debugModeBits & DebugNeedDelazification) && !CreateLazyScriptsForCompartment(cx))
+        return false;
+    debugModeBits &= ~DebugNeedDelazification;
+    return true;
+}
+
+bool
+JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeInvalidation &invalidate)
 {
     bool enabledBefore = debugMode();
-    bool enabledAfter = (debugModeBits & ~unsigned(DebugFromC)) || b;
+    bool enabledAfter = (debugModeBits & DebugModeFromMask & ~DebugFromC) || b;
 
     // Debug mode can be enabled only when no scripts from the target
     // compartment are on the stack. It would even be incorrect to discard just
@@ -749,14 +748,12 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeGC &dmgc)
             JS_ReportErrorNumber(cx, js_GetErrorMessage, nullptr, JSMSG_DEBUG_NOT_IDLE);
             return false;
         }
-        if (enabledAfter && !CreateLazyScriptsForCompartment(cx))
-            return false;
     }
 
-    debugModeBits = (debugModeBits & ~unsigned(DebugFromC)) | (b ? DebugFromC : 0);
+    debugModeBits = (debugModeBits & ~DebugFromC) | (b ? DebugFromC : 0);
     JS_ASSERT(debugMode() == enabledAfter);
     if (enabledBefore != enabledAfter) {
-        updateForDebugMode(cx->runtime()->defaultFreeOp(), dmgc);
+        updateForDebugMode(cx->runtime()->defaultFreeOp(), invalidate);
         if (!enabledAfter)
             DebugScopes::onCompartmentLeaveDebugMode(this);
     }
@@ -764,7 +761,7 @@ JSCompartment::setDebugModeFromC(JSContext *cx, bool b, AutoDebugModeGC &dmgc)
 }
 
 void
-JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeGC &dmgc)
+JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeInvalidation &invalidate)
 {
     JSRuntime *rt = runtimeFromMainThread();
 
@@ -774,52 +771,42 @@ JSCompartment::updateForDebugMode(FreeOp *fop, AutoDebugModeGC &dmgc)
     }
 
 #ifdef JS_ION
+    MOZ_ASSERT(invalidate.isFor(this));
     JS_ASSERT_IF(debugMode(), !hasScriptsOnStack());
 
-    // When we change a compartment's debug mode, whether we're turning it
-    // on or off, we must always throw away all analyses: debug mode
-    // affects various aspects of the analysis, which then get baked into
-    // SSA results, which affects code generation in complicated ways. We
-    // must also throw away all JIT code, as its soundness depends on the
-    // analyses.
+    // Invalidate all JIT code since debug mode invalidates assumptions made
+    // by the JIT.
     //
-    // It suffices to do a garbage collection cycle or to finish the
-    // ongoing GC cycle. The necessary cleanup happens in
-    // JSCompartment::sweep.
-    //
-    // dmgc makes sure we can't forget to GC, but it is also important not
-    // to run any scripts in this compartment until the dmgc is destroyed.
-    // That is the caller's responsibility.
-    if (!rt->isHeapBusy())
-        dmgc.scheduleGC(zone());
+    // The AutoDebugModeInvalidation argument makes sure we can't forget to
+    // invalidate, but it is also important not to run any scripts in this
+    // compartment until the invalidate is destroyed.  That is the caller's
+    // responsibility.
+    invalidate.scheduleInvalidation(debugMode());
 #endif
 }
 
 bool
 JSCompartment::addDebuggee(JSContext *cx, js::GlobalObject *global)
 {
-    AutoDebugModeGC dmgc(cx->runtime());
-    return addDebuggee(cx, global, dmgc);
+    AutoDebugModeInvalidation invalidate(this);
+    return addDebuggee(cx, global, invalidate);
 }
 
 bool
 JSCompartment::addDebuggee(JSContext *cx,
                            GlobalObject *globalArg,
-                           AutoDebugModeGC &dmgc)
+                           AutoDebugModeInvalidation &invalidate)
 {
     Rooted<GlobalObject*> global(cx, globalArg);
 
     bool wasEnabled = debugMode();
-    if (!wasEnabled && !CreateLazyScriptsForCompartment(cx))
-        return false;
     if (!debuggees.put(global)) {
         js_ReportOutOfMemory(cx);
         return false;
     }
     debugModeBits |= DebugFromJS;
-    if (!wasEnabled) {
-        updateForDebugMode(cx->runtime()->defaultFreeOp(), dmgc);
-    }
+    if (!wasEnabled)
+        updateForDebugMode(cx->runtime()->defaultFreeOp(), invalidate);
     return true;
 }
 
@@ -828,14 +815,14 @@ JSCompartment::removeDebuggee(FreeOp *fop,
                               js::GlobalObject *global,
                               js::GlobalObjectSet::Enum *debuggeesEnum)
 {
-    AutoDebugModeGC dmgc(fop->runtime());
-    return removeDebuggee(fop, global, dmgc, debuggeesEnum);
+    AutoDebugModeInvalidation invalidate(this);
+    return removeDebuggee(fop, global, invalidate, debuggeesEnum);
 }
 
 void
 JSCompartment::removeDebuggee(FreeOp *fop,
                               js::GlobalObject *global,
-                              AutoDebugModeGC &dmgc,
+                              AutoDebugModeInvalidation &invalidate,
                               js::GlobalObjectSet::Enum *debuggeesEnum)
 {
     bool wasEnabled = debugMode();
@@ -849,7 +836,7 @@ JSCompartment::removeDebuggee(FreeOp *fop,
         debugModeBits &= ~DebugFromJS;
         if (wasEnabled && !debugMode()) {
             DebugScopes::onCompartmentLeaveDebugMode(this);
-            updateForDebugMode(fop, dmgc);
+            updateForDebugMode(fop, invalidate);
         }
     }
 }

@@ -11,6 +11,14 @@
 
 #include "mozilla/StandardInteger.h"
 
+#ifndef static_assert || _MSC_VER <= 1500
+#undef static_assert
+#endif
+
+#if _MSC_VER <= 1500
+#define static_assert(a, b)
+#endif
+
 /*
  * To add error code to your module, you need to do the following:
  *

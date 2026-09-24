@@ -452,7 +452,7 @@ GuessPhiType(MPhi *phi)
         }
         if (type == MIRType_None) {
             type = in->type();
-            if (in->isConstant())
+            if (in->canProduceFloat32())
                 convertibleToFloat32 = true;
             continue;
         }
@@ -461,17 +461,14 @@ GuessPhiType(MPhi *phi)
             if (in->resultTypeSet() && in->resultTypeSet()->empty())
                 continue;
 
-            if (IsFloatType(type) && IsFloatType(in->type())) {
-                // Specialize phis with int32 and float32 operands as float32.
-                type = MIRType_Float32;
-            } else if (convertibleToFloat32 && in->type() == MIRType_Float32) {
-                // If we only saw constants before and encounter a Float32 value, promote previous
-                // constants to Float32
+            if (convertibleToFloat32 && in->type() == MIRType_Float32) {
+                // If we only saw definitions that can be converted into Float32 before and
+                // encounter a Float32 value, promote previous values to Float32
                 type = MIRType_Float32;
             } else if (IsNumberType(type) && IsNumberType(in->type())) {
                 // Specialize phis with int32 and double operands as double.
                 type = MIRType_Double;
-                convertibleToFloat32 &= in->isConstant();
+                convertibleToFloat32 &= in->canProduceFloat32();
             } else {
                 return MIRType_Value;
             }
@@ -510,8 +507,10 @@ TypeAnalyzer::propagateSpecialization(MPhi *phi)
             continue;
         }
         if (use->type() != phi->type()) {
-            // Specialize phis with int32 and float operands as floats.
-            if (IsFloatType(use->type()) && IsFloatType(phi->type())) {
+            // Specialize phis with int32 that can be converted to float and float operands as floats.
+            if ((use->type() == MIRType_Int32 && use->canProduceFloat32() && phi->type() == MIRType_Float32) ||
+                (phi->type() == MIRType_Int32 && phi->canProduceFloat32() && use->type() == MIRType_Float32))
+            {
                 if (!respecialize(use, MIRType_Float32))
                     return false;
                 continue;
@@ -1289,7 +1288,7 @@ void
 jit::AssertGraphCoherency(MIRGraph &graph)
 {
 #ifdef DEBUG
-    if (!js_IonOptions.assertGraphConsistency)
+    if (!js_IonOptions.checkGraphConsistency)
         return;
     AssertBasicGraphCoherency(graph);
     AssertReversePostOrder(graph);
@@ -1304,7 +1303,7 @@ jit::AssertExtendedGraphCoherency(MIRGraph &graph)
     // are split)
 
 #ifdef DEBUG
-    if (!js_IonOptions.assertGraphConsistency)
+    if (!js_IonOptions.checkGraphConsistency)
         return;
     AssertGraphCoherency(graph);
 
@@ -1378,7 +1377,7 @@ FindDominatingBoundsCheck(BoundsCheckMap &checks, MBoundsCheck *check, size_t in
     // See the comment in ValueNumberer::findDominatingDef.
     HashNumber hash = BoundsCheckHashIgnoreOffset(check);
     BoundsCheckMap::Ptr p = checks.lookup(hash);
-    if (!p || index > p->value.validUntil) {
+    if (!p || index > p->value().validUntil) {
         // We didn't find a dominating bounds check.
         BoundsCheckInfo info;
         info.check = check;
@@ -1390,7 +1389,7 @@ FindDominatingBoundsCheck(BoundsCheckMap &checks, MBoundsCheck *check, size_t in
         return check;
     }
 
-    return p->value.check;
+    return p->value().check;
 }
 
 // Extract a linear sum from ins, if possible (otherwise giving the sum 'ins + 0').
@@ -1450,7 +1449,7 @@ jit::ExtractLinearInequality(MTest *test, BranchDirection direction,
     MDefinition *rhs = compare->getOperand(1);
 
     // TODO: optimize Compare_UInt32
-    if (compare->compareType() != MCompare::Compare_Int32)
+    if (!compare->isInt32Comparison())
         return false;
 
     JS_ASSERT(lhs->type() == MIRType_Int32);
@@ -1576,11 +1575,16 @@ TryEliminateTypeBarrierFromTest(MTypeBarrier *barrier, bool filtersNull, bool fi
 
     // Disregard the possible unbox added before the Typebarrier for checking.
     MDefinition *input = barrier->input();
-    if (input->isUnbox() && input->toUnbox()->mode() == MUnbox::TypeBarrier)
-        input = input->toUnbox()->input();
+    MUnbox *inputUnbox = nullptr;
+    if (input->isUnbox() && input->toUnbox()->mode() != MUnbox::Fallible) {
+        inputUnbox = input->toUnbox();
+        input = inputUnbox->input();
+    }
 
     if (test->getOperand(0) == input && direction == TRUE_BRANCH) {
         *eliminated = true;
+        if (inputUnbox)
+            inputUnbox->makeInfallible();
         barrier->replaceAllUsesWith(barrier->input());
         return;
     }
@@ -1614,6 +1618,8 @@ TryEliminateTypeBarrierFromTest(MTypeBarrier *barrier, bool filtersNull, bool fi
     }
 
     *eliminated = true;
+    if (inputUnbox)
+        inputUnbox->makeInfallible();
     barrier->replaceAllUsesWith(barrier->input());
 }
 
@@ -1626,11 +1632,8 @@ TryEliminateTypeBarrier(MTypeBarrier *barrier, bool *eliminated)
     const types::TemporaryTypeSet *inputTypes = barrier->input()->resultTypeSet();
 
     // Disregard the possible unbox added before the Typebarrier.
-    if (barrier->input()->isUnbox() &&
-        barrier->input()->toUnbox()->mode() == MUnbox::TypeBarrier)
-    {
+    if (barrier->input()->isUnbox() && barrier->input()->toUnbox()->mode() != MUnbox::Fallible)
         inputTypes = barrier->input()->toUnbox()->input()->resultTypeSet();
-    }
 
     if (!barrierTypes || !inputTypes)
         return true;
@@ -1743,9 +1746,6 @@ FindLeadingGoto(LBlock *bb)
     for (LInstructionIterator ins(bb->begin()); ins != bb->end(); ins++) {
         // Ignore labels.
         if (ins->isLabel())
-            continue;
-        // Ignore empty move groups.
-        if (ins->isMoveGroup() && ins->toMoveGroup()->numMoves() == 0)
             continue;
         // If we have a goto, we're good to go.
         if (ins->isGoto())
@@ -1921,6 +1921,12 @@ LinearSum::dump(FILE *fp) const
     fprintf(fp, "%s\n", sp.string());
 }
 
+void
+LinearSum::dump() const
+{
+    dump(stderr);
+}
+
 static bool
 AnalyzePoppedThis(JSContext *cx, types::TypeObject *type,
                   MDefinition *thisValue, MInstruction *ins, bool definitelyExecuted,
@@ -2003,14 +2009,14 @@ AnalyzePoppedThis(JSContext *cx, types::TypeObject *type,
             MResumePoint *rp = callerResumePoints[i];
             JSScript *script = rp->block()->info().script();
             types::TypeNewScript::Initializer entry(types::TypeNewScript::Initializer::SETPROP_FRAME,
-                                                    rp->pc() - script->code);
+                                                    script->pcToOffset(rp->pc()));
             if (!initializerList->append(entry))
                 return false;
         }
 
         JSScript *script = ins->block()->info().script();
         types::TypeNewScript::Initializer entry(types::TypeNewScript::Initializer::SETPROP,
-                                                setprop->resumePoint()->pc() - script->code);
+                                                script->pcToOffset(setprop->resumePoint()->pc()));
         if (!initializerList->append(entry))
             return false;
 

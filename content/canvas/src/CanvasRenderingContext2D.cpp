@@ -888,7 +888,7 @@ CanvasRenderingContext2D::EnsureTarget()
     static bool registered = false;
     if (!registered) {
       registered = true;
-      NS_RegisterMemoryReporter(new Canvas2dPixelsReporter());
+      RegisterStrongMemoryReporter(new Canvas2dPixelsReporter());
     }
 
     gCanvasAzureMemoryUsed += mWidth * mHeight * 4;
@@ -1069,11 +1069,9 @@ CanvasRenderingContext2D::GetImageBuffer(uint8_t** aImageBuffer,
   }
 
   RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
-  if (!data) {
+  if (!data || data->GetSize() != IntSize(mWidth, mHeight)) {
     return;
   }
-
-  MOZ_ASSERT(data->GetSize() == IntSize(mWidth, mHeight));
 
   *aImageBuffer = SurfaceToPackedBGRA(data);
   *aFormat = imgIEncoder::INPUT_FORMAT_HOSTARGB;
@@ -1084,17 +1082,17 @@ CanvasRenderingContext2D::GetInputStream(const char *aMimeType,
                                          const PRUnichar *aEncoderOptions,
                                          nsIInputStream **aStream)
 {
-  nsAutoArrayPtr<uint8_t> imageBuffer;
-  int32_t format = 0;
-  GetImageBuffer(getter_Transfers(imageBuffer), &format);
-  if (!imageBuffer) {
-    return NS_ERROR_FAILURE;
-  }
-
   nsCString enccid("@mozilla.org/image/encoder;2?type=");
   enccid += aMimeType;
   nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(enccid.get());
   if (!encoder) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoArrayPtr<uint8_t> imageBuffer;
+  int32_t format = 0;
+  GetImageBuffer(getter_Transfers(imageBuffer), &format);
+  if (!imageBuffer) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2210,11 +2208,13 @@ CanvasRenderingContext2D::SetFont(const nsAString& font,
 
   fontStyle->mFont.AddFontFeaturesToStyle(&style);
 
+  nsPresContext *c = presShell->GetPresContext();
   CurrentState().fontGroup =
       gfxPlatform::GetPlatform()->CreateFontGroup(fontStyle->mFont.name,
                                                   &style,
-                                                  presShell->GetPresContext()->GetUserFontSet());
+                                                  c->GetUserFontSet());
   NS_ASSERTION(CurrentState().fontGroup, "Could not get font group");
+  CurrentState().fontGroup->SetTextPerfMetrics(c->GetTextPerfMetrics());
 
   // The font getter is required to be reserialized based on what we
   // parsed (including having line-height removed).  (Older drafts of
@@ -2808,6 +2808,12 @@ gfxFontGroup *CanvasRenderingContext2D::GetCurrentFontStyle()
                                                     nullptr);
       if (CurrentState().fontGroup) {
         CurrentState().font = kDefaultFontStyle;
+
+        nsIPresShell* presShell = GetPresShell();
+        if (presShell) {
+          CurrentState().fontGroup->SetTextPerfMetrics(
+            presShell->GetPresContext()->GetTextPerfMetrics());
+        }
       } else {
         NS_ERROR("Default canvas font is invalid");
       }
@@ -3993,7 +3999,10 @@ CanvasRenderingContext2D::GetCanvasLayer(nsDisplayListBuilder* aBuilder,
     CanvasRenderingContext2DUserData* userData =
       static_cast<CanvasRenderingContext2DUserData*>(
         aOldLayer->GetUserData(&g2DContextLayerUserData));
-    if (userData && userData->IsForContext(this)) {
+
+    CanvasLayer::Data data;
+    data.mGLContext = static_cast<GLContext*>(mTarget->GetGLContext());
+    if (userData && userData->IsForContext(this) && aOldLayer->IsDataValid(data)) {
       nsRefPtr<CanvasLayer> ret = aOldLayer;
       return ret.forget();
     }
