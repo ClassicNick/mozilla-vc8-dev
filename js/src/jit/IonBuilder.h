@@ -13,6 +13,7 @@
 // JSScript.
 
 #include "jit/BytecodeAnalysis.h"
+#include "jit/IonOptimizationLevels.h"
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
@@ -211,9 +212,10 @@ class IonBuilder : public MIRGenerator
     static int CmpSuccessors(const void *a, const void *b);
 
   public:
-    IonBuilder(JSContext *analysisContext, CompileCompartment *comp, TempAllocator *temp, MIRGraph *graph,
-               types::CompilerConstraintList *constraints,
-               BaselineInspector *inspector, CompileInfo *info, BaselineFrameInspector *baselineFrame,
+    IonBuilder(JSContext *analysisContext, CompileCompartment *comp, TempAllocator *temp,
+               MIRGraph *graph, types::CompilerConstraintList *constraints,
+               BaselineInspector *inspector, CompileInfo *info,
+               const OptimizationInfo *optimizationInfo, BaselineFrameInspector *baselineFrame,
                size_t inliningDepth = 0, uint32_t loopDepth = 0);
 
     bool build();
@@ -229,10 +231,6 @@ class IonBuilder : public MIRGenerator
     JSAtom *readAtom(jsbytecode *pc);
     bool abort(const char *message, ...);
     void spew(const char *message);
-
-    static bool inliningEnabled() {
-        return js_IonOptions.inlining;
-    }
 
     JSFunction *getSingleCallTarget(types::TemporaryTypeSet *calleeTypes);
     bool getPolyCallTargets(types::TemporaryTypeSet *calleeTypes, bool constructing,
@@ -324,6 +322,8 @@ class IonBuilder : public MIRGenerator
     bool resumeAt(MInstruction *ins, jsbytecode *pc);
     bool resumeAfter(MInstruction *ins);
     bool maybeInsertResume();
+
+    void insertRecompileCheck();
 
     bool initParameters();
     void rewriteParameter(uint32_t slotIdx, MDefinition *param, int32_t argIndex);
@@ -611,6 +611,7 @@ class IonBuilder : public MIRGenerator
     // Math natives.
     InliningStatus inlineMathAbs(CallInfo &callInfo);
     InliningStatus inlineMathFloor(CallInfo &callInfo);
+    InliningStatus inlineMathCeil(CallInfo &callInfo);
     InliningStatus inlineMathRound(CallInfo &callInfo);
     InliningStatus inlineMathSqrt(CallInfo &callInfo);
     InliningStatus inlineMathAtan2(CallInfo &callInfo);
@@ -724,7 +725,7 @@ class IonBuilder : public MIRGenerator
     }
 
     // A builder is inextricably tied to a particular script.
-    HeapPtrScript script_;
+    JSScript *script_;
 
     // If off thread compilation is successful, the final code generator is
     // attached here. Code has been generated, but not linked (there is not yet
@@ -735,7 +736,7 @@ class IonBuilder : public MIRGenerator
   public:
     void clearForBackEnd();
 
-    JSScript *script() const { return script_.get(); }
+    JSScript *script() const { return script_; }
 
     CodeGenerator *backgroundCodegen() const { return backgroundCodegen_; }
     void setBackgroundCodegen(CodeGenerator *codegen) { backgroundCodegen_ = codegen; }
@@ -764,6 +765,17 @@ class IonBuilder : public MIRGenerator
 
     // Constraints for recording dependencies on type information.
     types::CompilerConstraintList *constraints_;
+
+    mozilla::Maybe<AutoLockForCompilation> lock_;
+
+    void lock() {
+        if (!analysisContext)
+            lock_.construct(compartment);
+    }
+    void unlock() {
+        if (!analysisContext)
+            lock_.destroy();
+    }
 
     // Basic analysis information about the script.
     BytecodeAnalysis analysis_;
@@ -855,14 +867,14 @@ class CallInfo
         fun_ = callInfo.fun();
         thisArg_ = callInfo.thisArg();
 
-        if (!args_.append(callInfo.argv().begin(), callInfo.argv().end()))
+        if (!args_.appendAll(callInfo.argv()))
             return false;
 
         return true;
     }
 
     bool init(MBasicBlock *current, uint32_t argc) {
-        JS_ASSERT(args_.length() == 0);
+        JS_ASSERT(args_.empty());
 
         // Get the arguments in the right order
         if (!args_.reserve(argc))
@@ -898,8 +910,8 @@ class CallInfo
     }
 
     void setArgs(MDefinitionVector *args) {
-        JS_ASSERT(args_.length() == 0);
-        args_.append(args->begin(), args->end());
+        JS_ASSERT(args_.empty());
+        args_.appendAll(*args);
     }
 
     MDefinitionVector &argv() {

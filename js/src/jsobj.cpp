@@ -69,6 +69,7 @@ using namespace js::types;
 using js::frontend::IsIdentifier;
 using mozilla::ArrayLength;
 using mozilla::DebugOnly;
+using mozilla::Maybe;
 using mozilla::RoundUpPow2;
 
 JS_STATIC_ASSERT(int32_t((JSObject::NELEMENTS_LIMIT - 1) * sizeof(Value)) == int64_t((JSObject::NELEMENTS_LIMIT - 1) * sizeof(Value)));
@@ -1273,7 +1274,7 @@ NewObject(ExclusiveContext *cx, const Class *clasp, types::TypeObject *type_, JS
     if (!NewObjectMetadata(cx, &metadata))
         return nullptr;
 
-    RootedShape shape(cx, EmptyShape::getInitialShape(cx, clasp, TaggedProto(type->proto),
+    RootedShape shape(cx, EmptyShape::getInitialShape(cx, clasp, type->proto(),
                                                       parent, metadata, kind));
     if (!shape)
         return nullptr;
@@ -1457,7 +1458,7 @@ js::NewObjectWithType(JSContext *cx, HandleTypeObject type, JSObject *parent, gc
     NewObjectCache &cache = cx->runtime()->newObjectCache;
 
     NewObjectCache::EntryIndex entry = -1;
-    if (parent == type->proto->getParent() &&
+    if (parent == type->proto().toObject()->getParent() &&
         newKind == GenericObject &&
         !cx->compartment()->hasObjectMetadataCallback())
     {
@@ -1685,7 +1686,7 @@ JSObject::nonNativeSetElement(JSContext *cx, HandleObject obj,
 {
     if (JS_UNLIKELY(obj->watched())) {
         RootedId id(cx);
-        if (!IndexToId(cx, index, id.address()))
+        if (!IndexToId(cx, index, &id))
             return false;
 
         WatchpointMap *wpmap = cx->compartment()->watchpointMap;
@@ -1985,9 +1986,12 @@ JSObject::TradeGuts(JSContext *cx, JSObject *a, JSObject *b, TradeGutsReserved &
      * Swap the object's types, to restore their initial type information.
      * The prototypes and classes of the objects were swapped in ReserveForTradeGuts.
      */
-    TypeObject *tmp = a->type_;
-    a->type_ = b->type_;
-    b->type_ = tmp;
+    {
+        AutoLockForCompilation lock(cx);
+        TypeObject *tmp = a->type_;
+        a->type_ = b->type_;
+        b->type_ = tmp;
+    }
 
     /* Don't try to swap a JSFunction for a plain function JSObject. */
     JS_ASSERT_IF(a->is<JSFunction>(), a->tenuredSizeOfThis() == b->tenuredSizeOfThis());
@@ -2019,9 +2023,12 @@ JSObject::TradeGuts(JSContext *cx, JSObject *a, JSObject *b, TradeGutsReserved &
         char tmp[mozilla::tl::Max<sizeof(JSFunction), sizeof(JSObject_Slots16)>::value];
         JS_ASSERT(size <= sizeof(tmp));
 
-        js_memcpy(tmp, a, size);
-        js_memcpy(a, b, size);
-        js_memcpy(b, tmp, size);
+        {
+            AutoLockForCompilation lock(cx);
+            js_memcpy(tmp, a, size);
+            js_memcpy(a, b, size);
+            js_memcpy(b, tmp, size);
+        }
 
 #ifdef JSGC_GENERATIONAL
         /*
@@ -2059,9 +2066,12 @@ JSObject::TradeGuts(JSContext *cx, JSObject *a, JSObject *b, TradeGutsReserved &
         void *bpriv = b->hasPrivate() ? b->getPrivate() : nullptr;
 
         char tmp[sizeof(JSObject)];
-        js_memcpy(&tmp, a, sizeof tmp);
-        js_memcpy(a, b, sizeof tmp);
-        js_memcpy(b, &tmp, sizeof tmp);
+        {
+            AutoLockForCompilation lock(cx);
+            js_memcpy(&tmp, a, sizeof tmp);
+            js_memcpy(a, b, sizeof tmp);
+            js_memcpy(b, &tmp, sizeof tmp);
+        }
 
         if (a->isNative())
             a->shape_->setNumFixedSlots(reserved.newafixed);
@@ -2519,6 +2529,12 @@ JSObject::growSlots(ThreadSafeContext *cx, HandleObject obj, uint32_t oldCount, 
         }
     }
 
+    // Global slots may be read during off thread compilation, and updates to
+    // their slot pointers need to be synchronized.
+    Maybe<AutoLockForCompilation> lock;
+    if (obj->is<GlobalObject>())
+        lock.construct(cx->asExclusiveContext());
+
     if (!oldCount) {
         obj->slots = AllocateSlots(cx, obj, newCount);
         if (!obj->slots)
@@ -2562,6 +2578,12 @@ JSObject::shrinkSlots(ThreadSafeContext *cx, HandleObject obj, uint32_t oldCount
     }
 
     JS_ASSERT(newCount >= SLOT_CAPACITY_MIN);
+
+    // Global slots may be read during off thread compilation, and updates to
+    // their slot pointers need to be synchronized.
+    Maybe<AutoLockForCompilation> lock;
+    if (obj->is<GlobalObject>())
+        lock.construct(cx->asExclusiveContext());
 
     HeapSlot *newslots = ReallocateSlots(cx, obj, obj->slots, oldCount, newCount);
     if (!newslots)
@@ -2967,7 +2989,11 @@ js::SetClassAndProto(JSContext *cx, HandleObject obj,
     MarkTypeObjectUnknownProperties(cx, obj->type(), true);
     MarkTypeObjectUnknownProperties(cx, type, true);
 
-    obj->setType(type);
+    {
+        AutoLockForCompilation lock(cx);
+        obj->setType(type);
+    }
+
     *succeeded = true;
     return true;
 }
@@ -3212,31 +3238,6 @@ PurgeScopeChain(ExclusiveContext *cx, JS::HandleObject obj, JS::HandleId id)
     return true;
 }
 
-Shape *
-js_AddNativeProperty(JSContext *cx, HandleObject obj, HandleId id,
-                     PropertyOp getter, StrictPropertyOp setter, uint32_t slot,
-                     unsigned attrs, unsigned flags, int shortid)
-{
-    /*
-     * Purge the property cache of now-shadowed id in obj's scope chain. Do
-     * this optimistically (assuming no failure below) before locking obj, so
-     * we can lock the shadowed scope.
-     */
-    if (!PurgeScopeChain(cx, obj, id))
-        return nullptr;
-
-    Shape *shape =
-        JSObject::putProperty<SequentialExecution>(cx, obj, id, getter, setter, slot,
-                                                   attrs, flags, shortid);
-    if (!shape)
-        return shape;
-
-    if (JSID_IS_INT(id))
-        JSObject::removeDenseElementForSparseIndex(cx, obj, JSID_TO_INT(id));
-
-    return shape;
-}
-
 bool
 baseops::DefineGeneric(ExclusiveContext *cx, HandleObject obj, HandleId id, HandleValue value,
                        PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
@@ -3281,7 +3282,7 @@ bool
 baseops::DefineElement(ExclusiveContext *cx, HandleObject obj, uint32_t index, HandleValue value,
                        PropertyOp getter, StrictPropertyOp setter, unsigned attrs)
 {
-    Rooted<jsid> id(cx);
+    RootedId id(cx);
     if (index <= JSID_INT_MAX) {
         id = INT_TO_JSID(index);
         return DefineNativeProperty(cx, obj, id, value, getter, setter, attrs, 0, 0);
@@ -3289,7 +3290,7 @@ baseops::DefineElement(ExclusiveContext *cx, HandleObject obj, uint32_t index, H
 
     AutoRooterGetterSetter gsRoot(cx, attrs, &getter, &setter);
 
-    if (!IndexToId(cx, index, id.address()))
+    if (!IndexToId(cx, index, &id))
         return false;
 
     return DefineNativeProperty(cx, obj, id, value, getter, setter, attrs, 0, 0);
@@ -3879,7 +3880,7 @@ baseops::LookupElement(JSContext *cx, HandleObject obj, uint32_t index,
                        MutableHandleObject objp, MutableHandleShape propp)
 {
     RootedId id(cx);
-    if (!IndexToId(cx, index, id.address()))
+    if (!IndexToId(cx, index, &id))
         return false;
 
     return LookupPropertyWithFlagsInline<CanGC>(cx, obj, id, cx->resolveFlags, objp, propp);
@@ -4055,7 +4056,7 @@ NativeGetInline(JSContext *cx,
               case JSOP_GETPROP:
               case JSOP_CALLPROP:
               case JSOP_LENGTH:
-                script->baselineScript()->noteAccessedGetter(script->pcToOffset(pc));
+                script->baselineScript()->noteAccessedGetter(cx, script->pcToOffset(pc));
                 break;
               default:
                 break;
@@ -4210,6 +4211,14 @@ GetPropertyHelperInline(JSContext *cx,
 
             /* Don't warn repeatedly for the same script. */
             if (!script || script->warnedAboutUndefinedProp())
+                return true;
+
+            /*
+             * Don't warn in self-hosted code (where the further presence of
+             * JS::ContextOptions::werror() would result in impossible-to-avoid
+             * errors to entirely-innocent client code).
+             */
+            if (script->selfHosted())
                 return true;
 
             /* We may just be checking if that object has an iterator. */
@@ -4418,11 +4427,9 @@ static bool
 JS_ALWAYS_INLINE
 GetElementPure(ThreadSafeContext *cx, JSObject *obj, uint32_t index, Value *vp)
 {
-    jsid id;
-    if (!IndexToIdPure(index, &id))
-        return false;
-
-    return GetPropertyPure(cx, obj, id, vp);
+    if (index <= JSID_INT_MAX)
+        return GetPropertyPure(cx, obj, INT_TO_JSID(index), vp);
+    return false;
 }
 
 /*
@@ -4454,7 +4461,7 @@ baseops::GetElement(JSContext *cx, HandleObject obj, HandleObject receiver, uint
                     MutableHandleValue vp)
 {
     RootedId id(cx);
-    if (!IndexToId(cx, index, id.address()))
+    if (!IndexToId(cx, index, &id))
         return false;
 
     /* This call site is hot -- use the always-inlined variant of js_GetPropertyHelper(). */
@@ -4835,7 +4842,7 @@ baseops::SetElementHelper(JSContext *cx, HandleObject obj, HandleObject receiver
                           unsigned defineHow, MutableHandleValue vp, bool strict)
 {
     RootedId id(cx);
-    if (!IndexToId(cx, index, id.address()))
+    if (!IndexToId(cx, index, &id))
         return false;
     return baseops::SetPropertyHelper<SequentialExecution>(cx, obj, receiver, id, defineHow, vp,
                                                            strict);
@@ -4940,7 +4947,7 @@ bool
 baseops::DeleteElement(JSContext *cx, HandleObject obj, uint32_t index, bool *succeeded)
 {
     RootedId id(cx);
-    if (!IndexToId(cx, index, id.address()))
+    if (!IndexToId(cx, index, &id))
         return false;
     return baseops::DeleteGeneric(cx, obj, id, succeeded);
 }
@@ -5520,6 +5527,8 @@ DumpProperty(JSObject *obj, Shape &shape)
 bool
 JSObject::uninlinedIsProxy() const
 {
+    AutoThreadSafeAccess ts0(this);
+    AutoThreadSafeAccess ts1(type_);
     return is<ProxyObject>();
 }
 

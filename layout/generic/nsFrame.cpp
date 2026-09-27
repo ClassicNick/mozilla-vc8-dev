@@ -67,7 +67,7 @@
 #include "nsChangeHint.h"
 #include "nsDeckFrame.h"
 #include "nsSubDocumentFrame.h"
-#include "nsSVGTextFrame2.h"
+#include "SVGTextFrame.h"
 
 #include "gfxContext.h"
 #include "nsRenderingContext.h"
@@ -710,14 +710,14 @@ nsFrame::GetOffsets(int32_t &aStart, int32_t &aEnd) const
 nsFrame::DidSetStyleContext(nsStyleContext* aOldStyleContext)
 {
   if (IsSVGText()) {
-    nsSVGTextFrame2* svgTextFrame = static_cast<nsSVGTextFrame2*>(
-        nsLayoutUtils::GetClosestFrameOfType(this, nsGkAtoms::svgTextFrame2));
+    SVGTextFrame* svgTextFrame = static_cast<SVGTextFrame*>(
+        nsLayoutUtils::GetClosestFrameOfType(this, nsGkAtoms::svgTextFrame));
     nsIFrame* anonBlock = svgTextFrame->GetFirstPrincipalChild();
-    // Just as in nsSVGTextFrame2::DidSetStyleContext, we need to ensure that
-    // any non-display nsSVGTextFrame2s get reflowed when a child text frame
+    // Just as in SVGTextFrame::DidSetStyleContext, we need to ensure that
+    // any non-display SVGTextFrames get reflowed when a child text frame
     // gets new style.
     //
-    // Note that we must check NS_FRAME_FIRST_REFLOW on our nsSVGTextFrame2's
+    // Note that we must check NS_FRAME_FIRST_REFLOW on our SVGTextFrame's
     // anonymous block frame rather than our self, since NS_FRAME_FIRST_REFLOW
     // may be set on us if we're a new frame that has been inserted after the
     // document's first reflow. (In which case this DidSetStyleContext call may
@@ -4892,7 +4892,13 @@ nsIFrame::InvalidateLayer(uint32_t aDisplayItemKey,
     // Plugins can transition from not rendering anything to rendering,
     // and still only call this. So always invalidate, with specifying
     // the display item type just in case.
-    if (aDisplayItemKey == nsDisplayItem::TYPE_PLUGIN) {
+    //
+    // In the bug 930056, dialer app startup but not shown on the
+    // screen because sometimes we don't have any retainned data
+    // for remote type displayitem and thus Repaint event is not
+    // triggered. So, always invalidate here as well.
+    if (aDisplayItemKey == nsDisplayItem::TYPE_PLUGIN ||
+        aDisplayItemKey == nsDisplayItem::TYPE_REMOTE) {
       InvalidateFrame();
     } else {
       InvalidateFrame(aDisplayItemKey);
@@ -7371,7 +7377,7 @@ nsIFrame::VerticalAlignEnum() const
     for (const nsIFrame* frame = this; frame; frame = frame->GetParent()) {
       dominantBaseline = frame->StyleSVGReset()->mDominantBaseline;
       if (dominantBaseline != NS_STYLE_DOMINANT_BASELINE_AUTO ||
-          frame->GetType() == nsGkAtoms::svgTextFrame2) {
+          frame->GetType() == nsGkAtoms::svgTextFrame) {
         break;
       }
     }
