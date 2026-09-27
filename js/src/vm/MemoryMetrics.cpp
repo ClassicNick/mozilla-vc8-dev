@@ -152,7 +152,7 @@ NotableStringInfo::NotableStringInfo(const NotableStringInfo& info)
 
 NotableStringInfo::NotableStringInfo(MoveRef<NotableStringInfo> info)
     : StringInfo(info),
-	  length(info.length)
+	  length(info->length)
 {
     buffer = info->buffer;
     info->buffer = nullptr;

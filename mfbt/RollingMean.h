@@ -14,7 +14,7 @@
 
 #include <algorithm>
 #include <stddef.h>
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 namespace mozilla {
 

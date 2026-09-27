@@ -5,7 +5,7 @@
 #ifndef BASE_THREAD_H_
 #define BASE_THREAD_H_
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include <string>
 
 #include "base/message_loop.h"

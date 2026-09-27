@@ -2244,7 +2244,7 @@ TelemetryImpl::RecordThreadHangStats(Telemetry::ThreadHangStats& aStats)
 
   MutexAutoLock autoLock(sTelemetry->mThreadHangStatsMutex);
 
-  sTelemetry->mThreadHangStats.append(Move(aStats));
+  sTelemetry->mThreadHangStats.append(OldMove(aStats));
 }
 
 NS_IMPL_ISUPPORTS_INHERITED1(TelemetryImpl, MemoryUniReporter, nsITelemetry)

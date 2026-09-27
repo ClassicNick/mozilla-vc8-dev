@@ -6,7 +6,7 @@
 #ifndef GFX_LAYERSCOPE_H
 #define GFX_LAYERSCOPE_H
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 
 struct nsIntSize;
 

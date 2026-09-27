@@ -84,7 +84,7 @@ public:
   void SetMaxDurations(uint32_t aMaxDurations)
   {
     if (aMaxDurations != mMean.maxValues()) {
-      mMean = RollingMean<TimeDuration, TimeDuration>(aMaxDurations);
+      mMean = OldMove(RollingMean<TimeDuration, TimeDuration>(aMaxDurations));
     }
   }
 

@@ -126,7 +126,7 @@ ThreadStackHelper::GetStack(Stack& aStack)
   MOZ_ALWAYS_TRUE(::thread_resume(mThreadID) == KERN_SUCCESS);
 
 #endif
-  aStack = Move(mStackBuffer);
+  aStack = OldMove(mStackBuffer);
 }
 
 #ifdef XP_LINUX

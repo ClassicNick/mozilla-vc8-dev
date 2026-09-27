@@ -349,7 +349,7 @@ BackgroundHangThread::ReportHang(PRIntervalTime aHangTime)
   // Recovered from a hang; called on the monitor thread
   // mManager->mLock IS locked
 
-  Telemetry::HangHistogram newHistogram(Move(mHangStack));
+  Telemetry::HangHistogram newHistogram(OldMove(mHangStack));
   for (Telemetry::HangHistogram* oldHistogram = mStats.mHangs.begin();
        oldHistogram != mStats.mHangs.end(); oldHistogram++) {
     if (newHistogram == *oldHistogram) {
@@ -360,7 +360,7 @@ BackgroundHangThread::ReportHang(PRIntervalTime aHangTime)
   }
   // Add new histogram
   newHistogram.Add(aHangTime);
-  mStats.mHangs.append(Move(newHistogram));
+  mStats.mHangs.append(OldMove(newHistogram));
 }
 
 void

@@ -587,13 +587,13 @@ private:
         // NOTE: This assumes the new entry belongs to the same hashtable as
         // the old, because the mHashtable pointer in mSharedBlobData (if
         // present) will not be updated.
-        FontTableHashEntry(FontTableHashEntry&& toMove)
-            : KeyClass(mozilla::Move(toMove))
-            , mSharedBlobData(mozilla::Move(toMove.mSharedBlobData))
-            , mBlob(mozilla::Move(toMove.mBlob))
+        FontTableHashEntry(FontTableHashEntry& toCopy)
+            : KeyClass(toCopy)
+            , mSharedBlobData(toCopy.mSharedBlobData)
+            , mBlob(toCopy.mBlob)
         {
-            toMove.mSharedBlobData = nullptr;
-            toMove.mBlob = nullptr;
+            toCopy.mSharedBlobData = nullptr;
+            toCopy.mBlob = nullptr;
         }
 
         ~FontTableHashEntry() { Clear(); }

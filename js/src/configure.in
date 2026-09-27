@@ -432,6 +432,8 @@ case "$target" in
 
 		if test "$_CC_MAJOR_VERSION" = "15"; then
             _CC_SUITE=9
+			CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
+            CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
         elif test "$_CC_MAJOR_VERSION" = "16"; then
             _CC_SUITE=10
         elif test "$_CC_MAJOR_VERSION" = "17"; then
