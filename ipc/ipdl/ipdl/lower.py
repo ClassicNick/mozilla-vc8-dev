@@ -4132,7 +4132,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         msgvar = self.msgvar
         tdvar = ExprVar('td')
         pidvar = ExprVar('pid')
-        pvar = ExprVar('p')
+        pvar = ExprVar('protocolid')
         iffail = StmtIf(ExprNot(ExprCall(
             ExprVar('mozilla::ipc::UnpackChannelOpened'),
             args=[ _backstagePass(),
@@ -4184,7 +4184,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 StmtBreak()
             ])
             label = _messageStartName(actor.ptype)
-            if actor.side is 'child':
+            if actor.side == 'child':
                 label += 'Child'
             return CaseLabel(label), case
 
