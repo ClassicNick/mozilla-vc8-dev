@@ -12,7 +12,6 @@
 
 #include <windows.h>
 #include <shobjidl.h>
-#undef LogSeverity // SetupAPI.h #defines this as DWORD
 #include "nsIWinTaskbar.h"
 #include "mozilla/Attributes.h"
 
