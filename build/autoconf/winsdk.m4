@@ -7,6 +7,7 @@ dnl Windows Server 2008 and newer SDKs have WinSDKVer.h, get the version
 dnl from there
 AC_DEFUN([MOZ_FIND_WINSDK_VERSION], [
   MOZ_CHECK_HEADERS([winsdkver.h])
+  MOZ_CHECK_HEADERS([sdkddkver.h])
   if test "$ac_cv_header_winsdkver_h" = "yes"; then
       dnl Get the highest _WIN32_WINNT and NTDDI versions supported
       dnl Take the higher of the two
@@ -31,7 +32,9 @@ EOF
                      ])
       MOZ_WINSDK_MAXVER=${ac_cv_winsdk_maxver}
   else
-      dnl Any SDK which doesn't have WinSDKVer.h is too old.
-      AC_MSG_ERROR([Your SDK does not have WinSDKVer.h. It is probably too old. Please upgrade to a newer SDK or try running the Windows SDK Configuration Tool and selecting a newer SDK. See https://developer.mozilla.org/En/Windows_SDK_versions for more details on fixing this.])
+      if test "$ac_cv_header_sdkddkver_h" = "yes"; then
+			#include <sdkddkver.h>
+                MOZ_WINSDK_MAXVER=0x06000000
+	  fi
   fi
 ])

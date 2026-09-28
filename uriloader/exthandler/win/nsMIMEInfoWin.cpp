@@ -640,7 +640,7 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray **_retval)
 
   nsAutoString fileExtToUse;
   if (fileExt.First() != '.')
-    fileExtToUse = PRUnichar('.');
+    fileExtToUse = char16_t('.');
   fileExtToUse.Append(NS_ConvertUTF8toUTF16(fileExt));
 
   // Note, the order in which these occur has an effect on the 

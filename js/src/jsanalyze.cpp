@@ -1352,7 +1352,7 @@ ScriptAnalysis::mergeValue(JSContext *cx, uint32_t offset, const SSAValue &v, Sl
 
 void
 ScriptAnalysis::checkPendingValue(JSContext *cx, const SSAValue &v, uint32_t slot,
-                                  Vector<SlotValue> *pending)
+                                  js::Vector<SlotValue> *pending)
 {
     JS_ASSERT(v.kind() != SSAValue::EMPTY);
 
@@ -1367,7 +1367,7 @@ ScriptAnalysis::checkPendingValue(JSContext *cx, const SSAValue &v, uint32_t slo
 
 void
 ScriptAnalysis::checkBranchTarget(JSContext *cx, uint32_t targetOffset,
-                                  Vector<uint32_t> &branchTargets,
+                                  js::Vector<uint32_t> &branchTargets,
                                   SSAValueInfo *values, uint32_t stackDepth)
 {
     unsigned targetDepth = getCode(targetOffset).stackDepth;
@@ -1406,7 +1406,7 @@ ScriptAnalysis::checkBranchTarget(JSContext *cx, uint32_t targetOffset,
 
 void
 ScriptAnalysis::checkExceptionTarget(JSContext *cx, uint32_t catchOffset,
-                                     Vector<uint32_t> &exceptionTargets)
+                                     js::Vector<uint32_t> &exceptionTargets)
 {
     JS_ASSERT(getCode(catchOffset).exceptionEntry);
 
@@ -1424,7 +1424,7 @@ ScriptAnalysis::checkExceptionTarget(JSContext *cx, uint32_t catchOffset,
 
 void
 ScriptAnalysis::mergeBranchTarget(JSContext *cx, SSAValueInfo &value, uint32_t slot,
-                                  const Vector<uint32_t> &branchTargets, uint32_t currentOffset)
+                                  const js::Vector<uint32_t> &branchTargets, uint32_t currentOffset)
 {
     if (slot >= numSlots) {
         /*
@@ -1458,7 +1458,7 @@ ScriptAnalysis::mergeBranchTarget(JSContext *cx, SSAValueInfo &value, uint32_t s
 
 void
 ScriptAnalysis::mergeExceptionTarget(JSContext *cx, const SSAValue &value, uint32_t slot,
-                                     const Vector<uint32_t> &exceptionTargets)
+                                     const js::Vector<uint32_t> &exceptionTargets)
 {
     JS_ASSERT(trackSlot(slot));
 
@@ -1491,7 +1491,7 @@ ScriptAnalysis::mergeExceptionTarget(JSContext *cx, const SSAValue &value, uint3
 
 void
 ScriptAnalysis::mergeAllExceptionTargets(JSContext *cx, SSAValueInfo *values,
-                                         const Vector<uint32_t> &exceptionTargets)
+                                         const js::Vector<uint32_t> &exceptionTargets)
 {
     for (unsigned i = 0; i < exceptionTargets.length(); i++) {
         Vector<SlotValue> *pending = getCode(exceptionTargets[i]).pendingValues;

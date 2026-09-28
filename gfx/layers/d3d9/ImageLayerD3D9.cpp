@@ -43,8 +43,8 @@ DataToTexture(IDirect3DDevice9 *aDevice,
 {
   nsRefPtr<IDirect3DTexture9> texture;
   nsRefPtr<IDirect3DDevice9Ex> deviceEx;
-  aDevice->QueryInterface(IID_IDirect3DDevice9Ex,
-                          (void**)getter_AddRefs(deviceEx));
+  //aDevice->QueryInterface(IID_IDirect3DDevice9Ex,
+  //                        (void**)getter_AddRefs(deviceEx));
 
   nsRefPtr<IDirect3DSurface9> surface;
   D3DLOCKED_RECT lockedRect;
@@ -173,8 +173,8 @@ static void AllocateTexturesYCbCr(PlanarYCbCrImage *aImage,
   nsRefPtr<IDirect3DSurface9> tmpSurfaceCr;
 
   nsRefPtr<IDirect3DDevice9Ex> deviceEx;
-  aDevice->QueryInterface(IID_IDirect3DDevice9Ex,
-                           getter_AddRefs(deviceEx));
+  //aDevice->QueryInterface(IID_IDirect3DDevice9Ex,
+  //                         getter_AddRefs(deviceEx));
 
   bool isD3D9Ex = deviceEx;
 
@@ -568,7 +568,7 @@ ImageLayerD3D9::GetAsTexture(gfx::IntSize* aSize)
   }
 
   bool dontCare;
-  *aSize = gfx::ThebesIntSize(image->GetSize());
+  *aSize = image->GetSize();
   nsRefPtr<IDirect3DTexture9> result = GetTexture(image, dontCare);
   return result.forget();
 }

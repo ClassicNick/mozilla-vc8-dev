@@ -58,11 +58,13 @@
 #include "nsMemory.h"
 #endif
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include <d3d11.h>
 
 #include "nsIMemoryReporter.h"
 #include <winternl.h>
 #include "d3dkmtQueryStatistics.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -77,19 +79,35 @@ static const int kSupportedFeatureLevels[] =
   { D3D10_FEATURE_LEVEL_10_1, D3D10_FEATURE_LEVEL_10_0,
     D3D10_FEATURE_LEVEL_9_3 };
 
-class GfxD2DSurfaceCacheReporter MOZ_FINAL : public MemoryUniReporter
+class GfxD2DSurfaceReporter MOZ_FINAL : public nsIMemoryReporter
 {
 public:
-    GfxD2DSurfaceCacheReporter()
-      : MemoryUniReporter("gfx-d2d-surface-cache", KIND_OTHER, UNITS_BYTES,
-"Memory used by the Direct2D internal surface cache.")
-    {}
-private:
-    int64_t Amount() MOZ_OVERRIDE
+    NS_DECL_ISUPPORTS
+
+    NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                              nsISupports* aData)
     {
-        return cairo_d2d_get_image_surface_cache_usage();
+        nsresult rv;
+
+        int64_t amount = cairo_d2d_get_image_surface_cache_usage();
+        rv = MOZ_COLLECT_REPORT(
+            "gfx-d2d-surface-cache", KIND_OTHER, UNITS_BYTES, amount,
+            "Memory used by the Direct2D internal surface cache.");
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        cairo_device_t *device =
+            gfxWindowsPlatform::GetPlatform()->GetD2DDevice();
+        amount = device ? cairo_d2d_get_surface_vram_usage(device) : 0;
+        rv = MOZ_COLLECT_REPORT(
+            "gfx-d2d-surface-vram", KIND_OTHER, UNITS_BYTES, amount,
+            "Video memory used by D2D surfaces.");
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        return NS_OK;
     }
 };
+
+NS_IMPL_ISUPPORTS1(GfxD2DSurfaceReporter, nsIMemoryReporter)
 
 namespace
 {
@@ -114,51 +132,37 @@ bool OncePreferenceDirect2DForceEnabled()
 
 } // anonymous namespace
 
-class GfxD2DSurfaceVramReporter MOZ_FINAL : public MemoryUniReporter
-{
-public:
-    GfxD2DSurfaceVramReporter()
-      : MemoryUniReporter("gfx-d2d-surface-vram", KIND_OTHER, UNITS_BYTES,
-                           "Video memory used by D2D surfaces.")
-    {}
-private:
-    int64_t Amount() MOZ_OVERRIDE {
-      cairo_device_t *device =
-          gfxWindowsPlatform::GetPlatform()->GetD2DDevice();
-      return device ? cairo_d2d_get_surface_vram_usage(device) : 0;
-    }
-};
-
 #endif
 
-class GfxD2DVramDrawTargetReporter MOZ_FINAL : public MemoryUniReporter
+#if defined CAIRO_HAS_D2D_SURFACE || defined ENABLE_GPU_MEM_REPORTER
+class GfxD2DVramReporter MOZ_FINAL : public nsIMemoryReporter
 {
 public:
-    GfxD2DVramDrawTargetReporter()
-      : MemoryUniReporter("gfx-d2d-vram-draw-target", KIND_OTHER, UNITS_BYTES,
-                           "Video memory used by D2D DrawTargets.")
-    {}
-private:
-    int64_t Amount() MOZ_OVERRIDE
+    NS_DECL_ISUPPORTS
+
+    NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                              nsISupports* aData)
     {
-        return Factory::GetD2DVRAMUsageDrawTarget();
+        nsresult rv;
+
+        rv = MOZ_COLLECT_REPORT(
+            "gfx-d2d-vram-draw-target", KIND_OTHER, UNITS_BYTES,
+            Factory::GetD2DVRAMUsageDrawTarget(),
+            "Video memory used by D2D DrawTargets.");
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        rv = MOZ_COLLECT_REPORT(
+            "gfx-d2d-vram-source-surface", KIND_OTHER, UNITS_BYTES,
+            Factory::GetD2DVRAMUsageSourceSurface(),
+            "Video memory used by D2D SourceSurfaces.");
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        return NS_OK;
     }
 };
 
-class GfxD2DVramSourceSurfaceReporter MOZ_FINAL : public MemoryUniReporter
-{
-public:
-    GfxD2DVramSourceSurfaceReporter()
-      : MemoryUniReporter("gfx-d2d-vram-source-surface",
-                           KIND_OTHER, UNITS_BYTES,
-                           "Video memory used by D2D SourceSurfaces.")
-    {}
-private:
-    int64_t Amount() MOZ_OVERRIDE
-    {
-        return Factory::GetD2DVRAMUsageSourceSurface();
-    }
-};
+NS_IMPL_ISUPPORTS1(GfxD2DVramReporter, nsIMemoryReporter)
+#endif
 
 #define GFX_USE_CLEARTYPE_ALWAYS "gfx.font_rendering.cleartype.always_use_for_content"
 #define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
@@ -190,13 +194,14 @@ typedef HRESULT (WINAPI*D3D10CreateDevice1Func)(
   UINT SDKVersion,
   ID3D10Device1 **ppDevice
 );
-#endif
 
 typedef HRESULT(WINAPI*CreateDXGIFactory1Func)(
   REFIID riid,
   void **ppFactory
 );
+#endif
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 typedef HRESULT (WINAPI*D3D11CreateDeviceFunc)(
   IDXGIAdapter *pAdapter,
   D3D_DRIVER_TYPE DriverType,
@@ -209,7 +214,9 @@ typedef HRESULT (WINAPI*D3D11CreateDeviceFunc)(
   D3D_FEATURE_LEVEL *pFeatureLevel,
   ID3D11DeviceContext *ppImmediateContext
 );
+#endif
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 class GPUAdapterReporter : public nsIMemoryReporter
 {
     // Callers must Release the DXGIAdapter after use or risk mem-leak
@@ -318,8 +325,7 @@ public:
     do {                                                                      \
       nsresult rv;                                                            \
       rv = aCb->Callback(EmptyCString(), NS_LITERAL_CSTRING(_path),           \
-                         nsIMemoryReporter::KIND_OTHER,                       \
-                         nsIMemoryReporter::UNITS_BYTES, _amount,             \
+                         KIND_OTHER, UNITS_BYTES, _amount,                    \
                          NS_LITERAL_CSTRING(_desc), aClosure);                \
       NS_ENSURE_SUCCESS(rv, rv);                                              \
     } while (0)
@@ -341,6 +347,7 @@ public:
 };
 
 NS_IMPL_ISUPPORTS1(GPUAdapterReporter, nsIMemoryReporter)
+#endif
 
 static __inline void
 BuildKeyNameFromFontName(nsAString &aName)
@@ -351,8 +358,11 @@ BuildKeyNameFromFontName(nsAString &aName)
 }
 
 gfxWindowsPlatform::gfxWindowsPlatform()
-  : mD3D11DeviceInitialized(false)
-  , mPrefFonts(50)
+  : 
+    mPrefFonts(50)
+#ifdef MOZ_ENABLE_D3D10_LAYER
+  , mD3D11DeviceInitialized(false)
+#endif
 {
     mUseClearTypeForDownloadableFonts = UNINITIALIZED_VALUE;
     mUseClearTypeAlways = UNINITIALIZED_VALUE;
@@ -365,12 +375,10 @@ gfxWindowsPlatform::gfxWindowsPlatform()
     CoInitialize(nullptr); 
 
 #ifdef CAIRO_HAS_D2D_SURFACE
-    RegisterStrongMemoryReporter(new GfxD2DSurfaceCacheReporter());
-    RegisterStrongMemoryReporter(new GfxD2DSurfaceVramReporter());
+    RegisterStrongMemoryReporter(new GfxD2DSurfaceReporter());
     mD2DDevice = nullptr;
+    RegisterStrongMemoryReporter(new GfxD2DVramReporter());
 #endif
-    RegisterStrongMemoryReporter(new GfxD2DVramDrawTargetReporter());
-    RegisterStrongMemoryReporter(new GfxD2DVramSourceSurfaceReporter());
 
     UpdateRenderMode();
 
@@ -389,9 +397,9 @@ gfxWindowsPlatform::~gfxWindowsPlatform()
     if (mD2DDevice) {
         cairo_release_device(mD2DDevice);
     }
-#endif
 
     mozilla::gfx::Factory::D2DCleanup();
+#endif
 
     /* 
      * Uninitialize COM 
@@ -691,6 +699,7 @@ gfxWindowsPlatform::CreateOffscreenImageSurface(const gfxIntSize& aSize,
 TemporaryRef<ScaledFont>
 gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 {
+#ifdef CAIRO_HAS_D2D_SURFACE
     if (aFont->GetType() == gfxFont::FONT_TYPE_DWRITE) {
         gfxDWriteFont *font = static_cast<gfxDWriteFont*>(aFont);
 
@@ -707,6 +716,7 @@ gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
         return Factory::CreateScaledFontForNativeFont(nativeFont,
                                                       font->GetAdjustedSize());
     }
+#endif
 
     NS_ASSERTION(aFont->GetType() == gfxFont::FONT_TYPE_GDI,
         "Fonts on windows should be GDI or DWrite!");
@@ -729,7 +739,7 @@ gfxWindowsPlatform::GetScaledFontForFont(DrawTarget* aTarget, gfxFont *aFont)
 already_AddRefed<gfxASurface>
 gfxWindowsPlatform::GetThebesSurfaceForDrawTarget(DrawTarget *aTarget)
 {
-#ifdef XP_WIN
+#if defined XP_WIN && CAIRO_HAS_D2D_SURFACE
   if (aTarget->GetType() == BACKEND_DIRECT2D) {
     if (!GetD2DDevice()) {
       // We no longer have a D2D device, can't do this.
@@ -770,7 +780,7 @@ gfxWindowsPlatform::GetFontList(nsIAtom *aLangGroup,
 static void
 RemoveCharsetFromFontSubstitute(nsAString &aName)
 {
-    int32_t comma = aName.FindChar(PRUnichar(','));
+    int32_t comma = aName.FindChar(char16_t(','));
     if (comma >= 0)
         aName.Truncate(comma);
 }
@@ -1435,6 +1445,7 @@ gfxWindowsPlatform::GetD3D9DeviceManager()
   return mDeviceManager;
 }
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 ID3D11Device*
 gfxWindowsPlatform::GetD3D11Device()
 {
@@ -1478,6 +1489,7 @@ gfxWindowsPlatform::GetD3D11Device()
 
   return mD3D11Device;
 }
+#endif
 
 bool
 gfxWindowsPlatform::IsOptimus()
@@ -1505,6 +1517,7 @@ gfxWindowsPlatform::GetScreenDepth() const
     return depth;
 }
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
 IDXGIAdapter1*
 gfxWindowsPlatform::GetDXGIAdapter()
 {
@@ -1542,3 +1555,4 @@ gfxWindowsPlatform::GetDXGIAdapter()
 
   return mAdapter;
 }
+#endif

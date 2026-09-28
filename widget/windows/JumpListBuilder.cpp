@@ -2,6 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 
 #include "JumpListBuilder.h"
 
@@ -502,7 +504,7 @@ nsresult JumpListBuilder::TransferIObjectArrayToIMutableArray(IObjectArray *objA
 
 NS_IMETHODIMP JumpListBuilder::Observe(nsISupports* aSubject,
                                         const char* aTopic,
-                                        const PRUnichar* aData)
+                                        const char16_t* aData)
 {
   if (nsDependentString(aData).EqualsASCII(kPrefTaskbarEnabled)) {
     bool enabled = Preferences::GetBool(kPrefTaskbarEnabled, true);
@@ -518,4 +520,6 @@ NS_IMETHODIMP JumpListBuilder::Observe(nsISupports* aSubject,
 
 } // namespace widget
 } // namespace mozilla
+
+#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 

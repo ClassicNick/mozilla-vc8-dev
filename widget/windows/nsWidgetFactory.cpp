@@ -156,12 +156,14 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIdleServiceWin, nsIdleServiceWin::Get
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsClipboard)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsClipboardHelper)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsSound)
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 NS_GENERIC_FACTORY_CONSTRUCTOR(WinTaskbar)
 NS_GENERIC_FACTORY_CONSTRUCTOR(JumpListBuilder)
 NS_GENERIC_FACTORY_CONSTRUCTOR(JumpListItem)
 NS_GENERIC_FACTORY_CONSTRUCTOR(JumpListSeparator)
 NS_GENERIC_FACTORY_CONSTRUCTOR(JumpListLink)
 NS_GENERIC_FACTORY_CONSTRUCTOR(JumpListShortcut)
+#endif
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsTransferable)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsHTMLFormatConverter)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDragService)
@@ -197,12 +199,14 @@ NS_DEFINE_NAMED_CID(NS_CLIPBOARDHELPER_CID);
 NS_DEFINE_NAMED_CID(NS_SOUND_CID);
 NS_DEFINE_NAMED_CID(NS_TRANSFERABLE_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLFORMATCONVERTER_CID);
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 NS_DEFINE_NAMED_CID(NS_WIN_TASKBAR_CID);
 NS_DEFINE_NAMED_CID(NS_WIN_JUMPLISTBUILDER_CID);
 NS_DEFINE_NAMED_CID(NS_WIN_JUMPLISTITEM_CID);
 NS_DEFINE_NAMED_CID(NS_WIN_JUMPLISTSEPARATOR_CID);
 NS_DEFINE_NAMED_CID(NS_WIN_JUMPLISTLINK_CID);
 NS_DEFINE_NAMED_CID(NS_WIN_JUMPLISTSHORTCUT_CID);
+#endif
 #ifdef MOZ_METRO
 NS_DEFINE_NAMED_CID(NS_WIN_METROUTILS_CID);
 #endif
@@ -231,12 +235,14 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
   { &kNS_SOUND_CID, false, nullptr, nsSoundConstructor },
   { &kNS_TRANSFERABLE_CID, false, nullptr, nsTransferableConstructor },
   { &kNS_HTMLFORMATCONVERTER_CID, false, nullptr, nsHTMLFormatConverterConstructor },
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   { &kNS_WIN_TASKBAR_CID, false, nullptr, WinTaskbarConstructor },
   { &kNS_WIN_JUMPLISTBUILDER_CID, false, nullptr, JumpListBuilderConstructor },
   { &kNS_WIN_JUMPLISTITEM_CID, false, nullptr, JumpListItemConstructor },
   { &kNS_WIN_JUMPLISTSEPARATOR_CID, false, nullptr, JumpListSeparatorConstructor },
   { &kNS_WIN_JUMPLISTLINK_CID, false, nullptr, JumpListLinkConstructor },
   { &kNS_WIN_JUMPLISTSHORTCUT_CID, false, nullptr, JumpListShortcutConstructor },
+#endif
   { &kNS_DRAGSERVICE_CID, false, nullptr, nsDragServiceConstructor },
   { &kNS_BIDIKEYBOARD_CID, false, nullptr, nsBidiKeyboardConstructor },
 #ifdef MOZ_METRO
@@ -266,12 +272,14 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
   { "@mozilla.org/sound;1", &kNS_SOUND_CID },
   { "@mozilla.org/widget/transferable;1", &kNS_TRANSFERABLE_CID },
   { "@mozilla.org/widget/htmlformatconverter;1", &kNS_HTMLFORMATCONVERTER_CID },
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   { "@mozilla.org/windows-taskbar;1", &kNS_WIN_TASKBAR_CID },
   { "@mozilla.org/windows-jumplistbuilder;1", &kNS_WIN_JUMPLISTBUILDER_CID },
   { "@mozilla.org/windows-jumplistitem;1", &kNS_WIN_JUMPLISTITEM_CID },
   { "@mozilla.org/windows-jumplistseparator;1", &kNS_WIN_JUMPLISTSEPARATOR_CID },
   { "@mozilla.org/windows-jumplistlink;1", &kNS_WIN_JUMPLISTLINK_CID },
   { "@mozilla.org/windows-jumplistshortcut;1", &kNS_WIN_JUMPLISTSHORTCUT_CID },
+#endif
   { "@mozilla.org/widget/dragservice;1", &kNS_DRAGSERVICE_CID },
   { "@mozilla.org/widget/bidikeyboard;1", &kNS_BIDIKEYBOARD_CID },
 #ifdef MOZ_METRO

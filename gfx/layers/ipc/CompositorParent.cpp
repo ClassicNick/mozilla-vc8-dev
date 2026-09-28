@@ -45,7 +45,9 @@
 #include "nsTraceRefcnt.h"              // for MOZ_COUNT_CTOR, etc
 #include "nsXULAppAPI.h"                // for XRE_GetIOMessageLoop
 #ifdef XP_WIN
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/CompositorD3D11.h"
+#endif
 #include "mozilla/layers/CompositorD3D9.h"
 #endif
 #include "GeckoProfiler.h"
@@ -732,9 +734,10 @@ CompositorParent::InitializeLayerManager(const nsTArray<LayersBackend>& aBackend
                                      mUseExternalSurfaceSize);
     } else if (aBackendHints[i] == LAYERS_BASIC) {
       compositor = new BasicCompositor(mWidget);
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     } else if (aBackendHints[i] == LAYERS_D3D11) {
       compositor = new CompositorD3D11(mWidget);
+#elif defined XP_WIN
     } else if (aBackendHints[i] == LAYERS_D3D9) {
       compositor = new CompositorD3D9(this, mWidget);
 #endif

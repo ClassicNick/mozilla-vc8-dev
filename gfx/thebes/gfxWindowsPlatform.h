@@ -34,8 +34,10 @@
 #include <dxgi.h>
 #endif
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 // This header is available in the June 2010 SDK and in the Win8 SDK
 #include <d3dcommon.h>
+#endif
 // Win 8.0 SDK types we'll need when building using older sdks.
 #if !defined(D3D_FEATURE_LEVEL_11_1) // defined in the 8.0 SDK only
 #define D3D_FEATURE_LEVEL_11_1 static_cast<D3D_FEATURE_LEVEL>(0xb100)
@@ -289,10 +291,12 @@ private:
 #ifdef CAIRO_HAS_D2D_SURFACE
     cairo_device_t *mD2DDevice;
 #endif
+	nsRefPtr<mozilla::layers::DeviceManagerD3D9> mDeviceManager;
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
     mozilla::RefPtr<IDXGIAdapter1> mAdapter;
-    nsRefPtr<mozilla::layers::DeviceManagerD3D9> mDeviceManager;
     mozilla::RefPtr<ID3D11Device> mD3D11Device;
     bool mD3D11DeviceInitialized;
+#endif
 
     virtual qcms_profile* GetPlatformCMSOutputProfile();
 

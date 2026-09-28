@@ -2,6 +2,8 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 
 #include "JumpListItem.h"
 
@@ -638,4 +640,6 @@ bool JumpListShortcut::ExecutableExists(nsCOMPtr<nsILocalHandlerApp>& handlerApp
 
 } // namespace widget
 } // namespace mozilla
+
+#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 

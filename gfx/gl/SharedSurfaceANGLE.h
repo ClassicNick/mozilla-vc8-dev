@@ -12,7 +12,9 @@
 #include "SurfaceTypes.h"
 
 #include <windows.h>
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include <d3d10_1.h>
+#endif
 
 namespace mozilla {
 namespace gl {
@@ -25,7 +27,7 @@ class SharedSurface_ANGLEShareHandle
 public:
     static SharedSurface_ANGLEShareHandle* Create(GLContext* gl, ID3D10Device1* d3d,
                                                   EGLContext context, EGLConfig config,
-                                                  const gfxIntSize& size,
+                                                  const gfx::IntSize& size,
                                                   bool hasAlpha);
 
     static SharedSurface_ANGLEShareHandle* Cast(SharedSurface* surf) {
@@ -38,12 +40,13 @@ protected:
     GLLibraryEGL* const mEGL;
     const EGLContext mContext;
     const EGLSurface mPBuffer;
+#ifdef MOZ_ENABLE_D3D10_LAYER
     nsRefPtr<ID3D10Texture2D> mTexture;
     nsRefPtr<ID3D10ShaderResourceView> mSRV;
 
     SharedSurface_ANGLEShareHandle(GLContext* gl,
                                    GLLibraryEGL* egl,
-                                   const gfxIntSize& size,
+                                   const gfx::IntSize& size,
                                    bool hasAlpha,
                                    EGLContext context,
                                    EGLSurface pbuffer,
@@ -60,6 +63,7 @@ protected:
         , mTexture(texture)
         , mSRV(srv)
     {}
+#endif
 
     EGLDisplay Display();
 
@@ -72,10 +76,12 @@ public:
     virtual void Fence();
     virtual bool WaitSync();
 
+#ifdef MOZ_ENABLE_D3D10_LAYER
     // Implementation-specific functions below:
     ID3D10ShaderResourceView* GetSRV() {
         return mSRV;
     }
+#endif
 };
 
 
@@ -86,27 +92,33 @@ class SurfaceFactory_ANGLEShareHandle
 protected:
     GLContext* const mProdGL;
     GLLibraryEGL* const mEGL;
+#ifdef MOZ_ENABLE_D3D10_LAYER
     nsRefPtr<ID3D10Device1> mConsD3D;
+#endif
     EGLContext mContext;
     EGLConfig mConfig;
 
 public:
+#ifdef MOZ_ENABLE_D3D10_LAYER
     static SurfaceFactory_ANGLEShareHandle* Create(GLContext* gl,
                                                    ID3D10Device1* d3d,
                                                    const SurfaceCaps& caps);
+#endif
 
 protected:
+#ifdef MOZ_ENABLE_D3D10_LAYER
     SurfaceFactory_ANGLEShareHandle(GLContext* gl,
                                     GLLibraryEGL* egl,
                                     ID3D10Device1* d3d,
                                     const SurfaceCaps& caps);
 
-    virtual SharedSurface* CreateShared(const gfxIntSize& size) {
+    virtual SharedSurface* CreateShared(const gfx::IntSize& size) {
         bool hasAlpha = mReadCaps.alpha;
         return SharedSurface_ANGLEShareHandle::Create(mProdGL, mConsD3D,
                                                       mContext, mConfig,
                                                       size, hasAlpha);
     }
+#endif
 };
 
 } /* namespace gfx */

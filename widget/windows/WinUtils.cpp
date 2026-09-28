@@ -66,7 +66,9 @@ const char FaviconHelper::kShortcutCacheDir[] = "shortcutCache";
 
 // apis available on vista and up.
 WinUtils::SHCreateItemFromParsingNamePtr WinUtils::sCreateItemFromParsingName = nullptr;
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 WinUtils::SHGetKnownFolderPathPtr WinUtils::sGetKnownFolderPath = nullptr;
+#endif
 
 // We just leak these DLL HMODULEs. There's no point in calling FreeLibrary
 // on them during shutdown anyway.
@@ -616,6 +618,7 @@ WinUtils::SHCreateItemFromParsingName(PCWSTR pszPath, IBindCtx *pbc,
   return sCreateItemFromParsingName(pszPath, pbc, riid, ppv);
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 /* static */
 HRESULT 
 WinUtils::SHGetKnownFolderPath(REFKNOWNFOLDERID rfid,
@@ -641,6 +644,7 @@ WinUtils::SHGetKnownFolderPath(REFKNOWNFOLDERID rfid,
 
   return sGetKnownFolderPath(rfid, dwFlags, hToken, ppszPath);
 }
+#endif
 
 #ifdef MOZ_PLACES
 /************************************************************************/

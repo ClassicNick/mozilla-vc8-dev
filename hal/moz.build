@@ -97,8 +97,8 @@ elif CONFIG['OS_TARGET'] == 'WINNT':
         'fallback/FallbackMemory.cpp',
         'fallback/FallbackPower.cpp',
         'fallback/FallbackScreenConfiguration.cpp',
+		'fallback/FallbackSensor.cpp',
         'fallback/FallbackVibration.cpp',
-        'windows/WindowsSensor.cpp',
     ]
     # WindowsBattery.cpp cannot be built in unified mode because it relies on HalImpl.h.
     SOURCES += [

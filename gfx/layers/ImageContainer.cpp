@@ -30,8 +30,10 @@
 #ifdef XP_WIN
 #include "gfxD2DSurface.h"
 #include "gfxWindowsPlatform.h"
+#ifdef MOZ_ENABLE_D3D10_LAYER
 #include <d3d10_1.h>
 #include "d3d10/ImageLayerD3D10.h"
+#endif
 #include "D3D9SurfaceImage.h"
 #endif
 
@@ -317,7 +319,7 @@ ImageContainer::LockCurrentAsSurface(gfx::IntSize *aSize, Image** aCurrentImage)
                                                    gfxImageFormatARGB32 :
                                                    gfxImageFormatRGB24);
 
-      *aSize = newSurf->GetSize();
+      *aSize = newSurf->GetSize().ToIntSize();
     
       return newSurf.forget();
     }
@@ -382,7 +384,7 @@ ImageContainer::GetCurrentSize()
   }
 
   if (!mActiveImage) {
-    return gfx::IntSize(0,0);
+    return gfx::IntSize(0, 0);
   }
 
   return mActiveImage->GetSize();
@@ -427,7 +429,7 @@ ImageContainer::EnsureActiveImage()
               
       mActiveImage = newImg;
     }
-#ifdef XP_WIN
+#if defined XP_WIN && CAIRO_HAS_D2D_SURFACE
     else if (mRemoteData->mType == RemoteImageData::DXGI_TEXTURE_HANDLE &&
              mRemoteData->mTextureHandle && !mActiveImage) {
       nsRefPtr<RemoteDXGITextureImage> newImg = new RemoteDXGITextureImage();

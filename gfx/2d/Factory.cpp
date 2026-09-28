@@ -32,7 +32,7 @@
 #include "DrawTargetCG.h"
 #endif
 
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
 #include "DrawTargetD2D.h"
 #ifdef USE_D2D1_1
 #include "DrawTargetD2D1.h"
@@ -156,7 +156,7 @@ namespace gfx {
 // XXX - Need to define an API to set this.
 int sGfxLogLevel = LOG_DEBUG;
 
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
 ID3D10Device1 *Factory::mD3D10Device;
 #ifdef USE_D2D1_1
 ID3D11Device *Factory::mD3D11Device;
@@ -186,7 +186,7 @@ Factory::CreateDrawTarget(BackendType aBackend, const IntSize &aSize, SurfaceFor
 {
   RefPtr<DrawTarget> retVal;
   switch (aBackend) {
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
   case BACKEND_DIRECT2D:
     {
       RefPtr<DrawTargetD2D> newTarget;
@@ -326,17 +326,17 @@ TemporaryRef<ScaledFont>
 Factory::CreateScaledFontForNativeFont(const NativeFont &aNativeFont, Float aSize)
 {
   switch (aNativeFont.mType) {
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
   case NATIVE_FONT_DWRITE_FONT_FACE:
     {
       return new ScaledFontDWrite(static_cast<IDWriteFontFace*>(aNativeFont.mFont), aSize);
     }
+#endif
 #if defined(USE_CAIRO) || defined(USE_SKIA)
   case NATIVE_FONT_GDI_FONT_FACE:
     {
       return new ScaledFontWin(static_cast<LOGFONT*>(aNativeFont.mFont), aSize);
     }
-#endif
 #endif
 #ifdef XP_MACOSX
   case NATIVE_FONT_MAC_FONT_FACE:
@@ -362,7 +362,7 @@ Factory::CreateScaledFontForTrueTypeData(uint8_t *aData, uint32_t aSize,
                                          FontType aType)
 {
   switch (aType) {
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
   case FONT_DWRITE:
     {
       return new ScaledFontDWrite(aData, aSize, aFaceIndex, aGlyphSize);
@@ -406,7 +406,7 @@ Factory::CreateDualDrawTarget(DrawTarget *targetA, DrawTarget *targetB)
 }
 
 
-#ifdef WIN32
+#if defined WIN32 && CAIRO_HAS_D2D_SURFACE
 TemporaryRef<DrawTarget>
 Factory::CreateDrawTargetForD3D10Texture(ID3D10Texture2D *aTexture, SurfaceFormat aFormat)
 {
@@ -645,6 +645,23 @@ Factory::CreateDataSourceSurface(const IntSize &aSize,
 {
   RefPtr<SourceSurfaceAlignedRawData> newSurf = new SourceSurfaceAlignedRawData();
   if (newSurf->Init(aSize, aFormat)) {
+    return newSurf;
+  }
+
+  return nullptr;
+}
+
+TemporaryRef<DataSourceSurface>
+Factory::CreateDataSourceSurfaceWithStride(const IntSize &aSize,
+                                           SurfaceFormat aFormat,
+                                           int32_t aStride)
+{
+  if (aStride < aSize.width * BytesPerPixel(aFormat)) {
+    return nullptr;
+  }
+
+  RefPtr<SourceSurfaceAlignedRawData> newSurf = new SourceSurfaceAlignedRawData();
+  if (newSurf->InitWithStride(aSize, aFormat, aStride)) {
     return newSurf;
   }
 

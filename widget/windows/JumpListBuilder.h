@@ -6,6 +6,8 @@
 #ifndef __JumpListBuilder_h__
 #define __JumpListBuilder_h__
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
+
 #include <windows.h>
 
 #undef NTDDI_VERSION
@@ -56,6 +58,8 @@ private:
 
 } // namespace widget
 } // namespace mozilla
+
+#endif // #if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 
 #endif /* __JumpListBuilder_h__ */
 

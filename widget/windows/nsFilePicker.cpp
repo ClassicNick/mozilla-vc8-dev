@@ -28,7 +28,7 @@
 using mozilla::IsVistaOrLater;
 using namespace mozilla::widget;
 
-PRUnichar *nsFilePicker::mLastUsedUnicodeDirectory;
+char16_t *nsFilePicker::mLastUsedUnicodeDirectory;
 char nsFilePicker::mLastUsedDirectory[MAX_PATH+1] = { 0 };
 
 static const wchar_t kDialogPtrProp[] = L"DialogPtrProperty";
@@ -191,7 +191,7 @@ NS_IMETHODIMP nsFilePicker::Init(nsIDOMWindow *aParent, const nsAString& aTitle,
 {
   nsCOMPtr<nsPIDOMWindow> window = do_QueryInterface(aParent);
   nsIDocShell* docShell = window ? window->GetDocShell() : nullptr;  
-  mLoadContext = do_QueryInterface(docShell);
+  mLoadContext = do_QueryInterface((nsILoadContext*) docShell);
   
   return nsBaseFilePicker::Init(aParent, aTitle, aMode);
 }
@@ -222,7 +222,7 @@ BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
 {
   if (uMsg == BFFM_INITIALIZED)
   {
-    PRUnichar * filePath = (PRUnichar *) lpData;
+    char16_t * filePath = (char16_t *) lpData;
     if (filePath)
       ::SendMessageW(hwnd, BFFM_SETSELECTIONW,
                      TRUE /* true because lpData is a path string */,
@@ -616,6 +616,7 @@ nsFilePicker::ShowFolderPicker(const nsString& aInitialDir, bool &aWasInitError)
 
   // results
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
   // If the user chose a Win7 Library, resolve to the library's
   // default save folder.
   nsRefPtr<IShellItem> folderPath;
@@ -628,6 +629,7 @@ nsFilePicker::ShowFolderPicker(const nsString& aInitialDir, bool &aWasInitError)
                                                getter_AddRefs(folderPath)))) {
     item.swap(folderPath);
   }
+#endif
 
   // get the folder's file system path
   return WinUtils::GetShellItemPath(item, mUnicodeFile);
@@ -809,7 +811,7 @@ nsFilePicker::ShowXPFilePicker(const nsString& aInitialDir)
   nsAutoString dirName(current);
   // Sometimes dirName contains a trailing slash and sometimes it doesn't:
   if (current[dirName.Length() - 1] != '\\')
-    dirName.Append((PRUnichar)'\\');
+    dirName.Append((char16_t)'\\');
   
   while (current && *current && *(current + wcslen(current) + 1)) {
     current = current + wcslen(current) + 1;
@@ -1225,7 +1227,7 @@ void
 nsFilePicker::AppendXPFilter(const nsAString& aTitle, const nsAString& aFilter)
 {
   mFilterList.Append(aTitle);
-  mFilterList.Append(PRUnichar('\0'));
+  mFilterList.Append(char16_t('\0'));
 
   if (aFilter.EqualsLiteral("..apps"))
     mFilterList.AppendLiteral("*.exe;*.com");
@@ -1238,7 +1240,7 @@ nsFilePicker::AppendXPFilter(const nsAString& aTitle, const nsAString& aFilter)
     mFilterList.Append(filter);
   }
 
-  mFilterList.Append(PRUnichar('\0'));
+  mFilterList.Append(char16_t('\0'));
 }
 
 NS_IMETHODIMP

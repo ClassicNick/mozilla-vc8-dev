@@ -285,7 +285,7 @@ PluginInstanceParent::AnswerNPN_GetValue_DrawingModelSupport(const NPNVariable& 
 {
     *value = false;
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     switch (model) {
         case NPNVsupportsAsyncWindowsDXGISurfaceBool: {
             if (gfxWindowsPlatform::GetPlatform()->GetRenderMode() == gfxWindowsPlatform::RENDER_DIRECT2D) {
@@ -369,7 +369,7 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
     } else
 #endif
     if (drawingModel == NPDrawingModelAsyncBitmapSurface
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
         || drawingModel == NPDrawingModelAsyncWindowsDXGISurface
 #endif
         ) {
@@ -379,7 +379,7 @@ PluginInstanceParent::AnswerNPN_SetValue_NPPVpluginDrawingModel(
             return true;
         }
 
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
         if (drawingModel == NPDrawingModelAsyncWindowsDXGISurface &&
             gfxWindowsPlatform::GetPlatform()->GetRenderMode() != gfxWindowsPlatform::RENDER_DIRECT2D) {
             *result = NPERR_GENERIC_ERROR;
@@ -644,7 +644,7 @@ PluginInstanceParent::RecvShow(const NPRect& updatedRect,
         CairoImage* cairoImage = static_cast<CairoImage*>(image.get());
         CairoImage::Data cairoData;
         cairoData.mSurface = surface;
-        cairoData.mSize = surface->GetSize();
+        cairoData.mSize = surface->GetSize().ToIntSize();
         cairoImage->SetData(cairoData);
 
         container->SetCurrentImage(cairoImage);
@@ -1217,7 +1217,7 @@ PluginInstanceParent::NPP_HandleEvent(void* event)
               HWND hwnd = GetForegroundWindow();
               if (hwnd && hwnd != mPluginHWND &&
                   GetClassNameW(hwnd, szClass,
-                                sizeof(szClass)/sizeof(PRUnichar)) &&
+                                sizeof(szClass)/sizeof(char16_t)) &&
                   !wcscmp(szClass, kFlashFullscreenClass)) {
                   return 0;
               }
@@ -1713,7 +1713,7 @@ PluginInstanceParent::AnswerNPN_InitAsyncSurface(const gfxIntSize& size,
             *result = true;
             return true;
         }
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     case NPDrawingModelAsyncWindowsDXGISurface: {
             ID3D10Device1 *device = gfxWindowsPlatform::GetPlatform()->GetD3D10Device();
 
@@ -1779,7 +1779,7 @@ PluginInstanceParent::RecvNegotiatedCarbon()
 bool
 PluginInstanceParent::RecvReleaseDXGISharedSurface(const DXGISharedSurfaceHandle &aHandle)
 {
-#ifdef XP_WIN
+#if defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     mTextureMap.Remove(aHandle);
 #endif
     return true;

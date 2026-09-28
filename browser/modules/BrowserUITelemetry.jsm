@@ -100,11 +100,26 @@ XPCOMUtils.defineLazyGetter(this, "DEFAULT_ITEMS", function() {
   return result;
 });
 
-const ALL_BUILTIN_ITEMS = [
-  "fullscreen-button",
-  "switch-to-metro-button",
-  "bookmarks-menu-button",
-];
+XPCOMUtils.defineLazyGetter(this, "ALL_BUILTIN_ITEMS", function() {
+  // These special cases are for click events on built-in items that are
+  // contained within customizable items (like the navigation widget).
+  const SPECIAL_CASES = [
+    "back-button",
+    "forward-button",
+    "urlbar-stop-button",
+    "urlbar-go-button",
+    "urlbar-reload-button",
+    "searchbar",
+    "cut-button",
+    "copy-button",
+    "paste-button",
+    "zoom-out-button",
+    "zoom-reset-button",
+    "zoom-in-button",
+  ]
+  return DEFAULT_ITEMS.concat(PALETTE_ITEMS)
+                      .concat(SPECIAL_CASES);
+});
 
 const OTHER_MOUSEUP_MONITORED_ITEMS = [
   "PlacesChevron",
@@ -115,12 +130,18 @@ this.BrowserUITelemetry = {
   init: function() {
     UITelemetry.addSimpleMeasureFunction("toolbars",
                                          this.getToolbarMeasures.bind(this));
+    Services.obs.addObserver(this, "sessionstore-windows-restored", false);
     Services.obs.addObserver(this, "browser-delayed-startup-finished", false);
   },
 
   observe: function(aSubject, aTopic, aData) {
-    if (aTopic == "browser-delayed-startup-finished") {
-      this._registerWindow(aSubject);
+    switch(aTopic) {
+      case "sessionstore-windows-restored":
+        this._gatherFirstWindowMeasurements();
+        break;
+      case "browser-delayed-startup-finished":
+        this._registerWindow(aSubject);
+        break;
     }
   },
 
@@ -185,16 +206,23 @@ this.BrowserUITelemetry = {
   },
 
   _firstWindowMeasurements: null,
-  _registerWindow: function(aWindow) {
-    // We'll gather measurements on the first non-popup window that opens
-    // after it has painted. We do this here instead of waiting for
-    // UITelemetry to ask for our measurements because at that point
-    // all browser windows have probably been closed, since the vast
-    // majority of saved-session pings are gathered during shutdown.
-    if (!this._firstWindowMeasurements && aWindow.toolbar.visible) {
-      this._firstWindowMeasurements = this._getWindowMeasurements(aWindow);
-    }
+  _gatherFirstWindowMeasurements: function() {
+    // We'll gather measurements as soon as the session has restored.
+    // We do this here instead of waiting for UITelemetry to ask for
+    // our measurements because at that point all browser windows have
+    // probably been closed, since the vast majority of saved-session
+    // pings are gathered during shutdown.
+    let win = RecentWindow.getMostRecentBrowserWindow({
+      private: false,
+      allowPopups: false,
+    });
 
+    // If there are no such windows, we're out of luck. :(
+    this._firstWindowMeasurements = win ? this._getWindowMeasurements(win)
+                                        : {};
+  },
+
+  _registerWindow: function(aWindow) {
     aWindow.addEventListener("unload", this);
     let document = aWindow.document;
 
@@ -318,6 +346,14 @@ this.BrowserUITelemetry = {
       // Base case - we clicked directly on one of our built-in items,
       // and we can go ahead and register that click.
       this._countMouseUpEvent("click-builtin-item", item.id, aEvent.button);
+      return;
+    }
+
+    // If not, we need to check if one of the ancestors of the clicked
+    // item is in our list of built-in items to check.
+    let candidate = getIDBasedOnFirstIDedAncestor(item);
+    if (ALL_BUILTIN_ITEMS.indexOf(candidate) != -1) {
+      this._countMouseUpEvent("click-builtin-item", candidate, aEvent.button);
     }
   },
 

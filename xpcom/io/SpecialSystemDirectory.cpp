@@ -129,6 +129,7 @@ GetWindowsFolder(int folder, nsIFile** aFile)
     return NS_NewLocalFile(nsDependentString(path, len), true, aFile);
 }
 
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 __inline HRESULT
 SHLoadLibraryFromKnownFolder(REFKNOWNFOLDERID aFolderId, DWORD aMode,
                              REFIID riid, void **ppv)
@@ -184,6 +185,7 @@ GetLibrarySaveToPath(int aFallbackFolderId, REFKNOWNFOLDERID aFolderId,
 
     return GetWindowsFolder(aFallbackFolderId, aFile);
 }
+#endif
 
 /**
  * Provides a fallback for getting the path to APPDATA or LOCALAPPDATA by
@@ -505,7 +507,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
             int32_t len = ::GetWindowsDirectoryW(path, MAX_PATH);
             if (len == 0)
                 break;
-            if (path[1] == PRUnichar(':') && path[2] == PRUnichar('\\'))
+            if (path[1] == char16_t(':') && path[2] == char16_t('\\'))
                 path[3] = 0;
 
             return NS_NewLocalFile(nsDependentString(path),
@@ -793,6 +795,7 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
                 rv = GetRegWindowsAppDataFolder(true, aFile);
             return rv;
         }
+#if MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
         case Win_Documents:
         {
             return GetLibrarySaveToPath(CSIDL_MYDOCUMENTS,
@@ -817,6 +820,26 @@ GetSpecialSystemDirectory(SystemDirectories aSystemSystemDirectory,
                                         FOLDERID_VideosLibrary,
                                         aFile);
         }
+#else
+		case Win_Documents:
+        {
+            return GetWindowsFolder(CSIDL_MYDOCUMENTS,
+                                        aFile);
+        }
+        case Win_Pictures:
+        {
+            return GetWindowsFolder(CSIDL_MYPICTURES,
+                                        aFile);
+        }
+        case Win_Music:
+        {
+            return GetWindowsFolder(CSIDL_MYMUSIC, aFile);
+        }
+        case Win_Videos:
+        {
+            return GetWindowsFolder(CSIDL_MYVIDEO, aFile);
+        }
+#endif  // MOZ_WINSDK_TARGETVER >= MOZ_NTDDI_WIN7
 #endif  // XP_WIN
 
 #if defined(XP_UNIX)

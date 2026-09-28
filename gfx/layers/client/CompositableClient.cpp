@@ -13,7 +13,9 @@
 #include "gfxASurface.h"                // for gfxContentType
 #ifdef XP_WIN
 #include "mozilla/layers/TextureD3D9.h"
+#if MOZ_ENABLE_D3D10_LAYER
 #include "mozilla/layers/TextureD3D11.h"
+#endif
 #include "gfxWindowsPlatform.h"
 #include "gfx2DGlue.h"
 #endif
@@ -126,10 +128,12 @@ CompositableClient::CreateDeprecatedTextureClient(DeprecatedTextureClientType aD
     break;
   case TEXTURE_CONTENT:
 #ifdef XP_WIN
+#ifdef CAIRO_HAS_D2D_SURFACE
     if (parentBackend == LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice()) {
       result = new DeprecatedTextureClientD3D11(GetForwarder(), GetTextureInfo());
       break;
     }
+#endif
     if (parentBackend == LAYERS_D3D9 &&
         !GetForwarder()->ForwardsToDifferentProcess()) {
       // We can't use a d3d9 texture for an RGBA surface because we cannot get a DC for
@@ -207,11 +211,13 @@ CompositableClient::CreateTextureClientForDrawing(SurfaceFormat aFormat,
 
 #ifdef XP_WIN
   LayersBackend parentBackend = GetForwarder()->GetCompositorBackendType();
+#ifdef CAIRO_HAS_D2D_SURFACE
   // XXX[nrc] uncomment once we have new texture clients for windows
   if (parentBackend == LAYERS_D3D11 && gfxWindowsPlatform::GetPlatform()->GetD2DDevice() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {
     //result = new TextureClientD3D11(GetForwarder(), GetTextureInfo());
   }
+#endif
   if (parentBackend == LAYERS_D3D9 &&
       !GetForwarder()->ForwardsToDifferentProcess() &&
       !(aTextureFlags & TEXTURE_ALLOC_FALLBACK)) {

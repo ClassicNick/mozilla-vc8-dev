@@ -396,12 +396,12 @@ AC_SUBST(CRTEXPDLLVERSION)
 MOZ_ARG_WITH_STRING(windows-version,
 [  --with-windows-version=WINSDK_TARGETVER
                           Windows SDK version to target. Lowest version
-                          currently allowed is 601 (Win7), highest is 602 (Win8)],
+                          currently allowed is 600 (WinVista), highest is 602 (Win8)],
   WINSDK_TARGETVER=$withval)
 
-# Currently only two sdk versions allowed, 601 and 602
+# Currently only three sdk versions allowed, 600, 601 and 602
 case "$WINSDK_TARGETVER" in
-601|602)
+600|601|602)
     MOZ_WINSDK_TARGETVER=0${WINSDK_TARGETVER}0000
     ;;
 
@@ -456,7 +456,7 @@ case "$target" in
 
 		if test "$_CC_MAJOR_VERSION" = "15"; then
             _CC_SUITE=9
-            _MSVS_VERSION=2008
+            MSVS_VERSION=2008
 			CFLAGS="$CFLAGS -wd4002 -wd4003 -wd4067 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
             CXXFLAGS="$CXXFLAGS -wd4002 -wd4003 -wd4067 -wd4146 -wd4161 -wd4275 -wd4288 -wd4355 -wd4396 -wd4530 -wd4661 -wd4667"
         elif test "$_CC_MAJOR_VERSION" = "16"; then
@@ -669,6 +669,7 @@ case "$target" in
     
     AC_DEFINE_UNQUOTED(MOZ_WINSDK_TARGETVER,0x$MOZ_WINSDK_TARGETVER)
     # Definitions matching sdkddkver.h
+	AC_DEFINE_UNQUOTED(MOZ_NTDDI_LONGHORN, 0x06000000)
     AC_DEFINE_UNQUOTED(MOZ_NTDDI_WIN7, 0x06010000)
     AC_DEFINE_UNQUOTED(MOZ_WINSDK_MAXVER,$MOZ_WINSDK_MAXVER)
     AC_SUBST(MOZ_WINSDK_MAXVER)
@@ -8696,7 +8697,7 @@ if test "$MOZ_X11"; then
             exit(1);
         }
     ], [],
-    [ AC_MSG_ERROR([Could not compile basic X program.]) ])
+    [ AC_MSG_ERROR([Can't find X headers (install libxt-dev (Debian/Ubuntu), libXt-devel (Fedora), or xorg-x11-libXt-devel (SuSE)).]) ])
     CFLAGS="$_SAVE_CFLAGS"
 
     if test -n "$MISSING_X"; then
