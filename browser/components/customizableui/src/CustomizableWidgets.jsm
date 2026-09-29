@@ -12,6 +12,8 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PlacesUIUtils",
+  "resource:///modules/PlacesUIUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "RecentlyClosedTabsAndWindowsMenuUtils",
   "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "CharsetManager",
@@ -42,12 +44,12 @@ function setAttributes(aNode, aAttrs) {
   }
 }
 
-function updateCombinedWidgetStyle(aNode, aArea, aModifyAutoclose) {
+function updateCombinedWidgetStyle(aNode, aArea, aModifyCloseMenu) {
   let inPanel = (aArea == CustomizableUI.AREA_PANEL);
   let cls = inPanel ? "panel-combined-button" : "toolbarbutton-1";
   let attrs = {class: cls};
-  if (aModifyAutoclose) {
-    attrs.noautoclose = inPanel ? true : null;
+  if (aModifyCloseMenu) {
+    attrs.closemenu = inPanel ? "none" : null;
   }
   for (let i = 0, l = aNode.childNodes.length; i < l; ++i) {
     if (aNode.childNodes[i].localName == "separator")
@@ -132,6 +134,21 @@ const CustomizableWidgets = [{
       while (recentlyClosedWindows.firstChild) {
         recentlyClosedWindows.removeChild(recentlyClosedWindows.firstChild);
       }
+
+#ifdef MOZ_SERVICES_SYNC
+      let tabsFromOtherComputers = doc.getElementById("sync-tabs-menuitem2");
+      if (PlacesUIUtils.shouldShowTabsFromOtherComputersMenuitem()) {
+        tabsFromOtherComputers.removeAttribute("hidden");
+      } else {
+        tabsFromOtherComputers.setAttribute("hidden", true);
+      }
+
+      if (PlacesUIUtils.shouldEnableTabsFromOtherComputersMenuitem()) {
+        tabsFromOtherComputers.removeAttribute("disabled");
+      } else {
+        tabsFromOtherComputers.setAttribute("disabled", true);
+      }
+#endif
 
       let tabsFragment = RecentlyClosedTabsAndWindowsMenuUtils.getTabsFragment(doc.defaultView, "toolbarbutton");
       let separator = doc.getElementById("PanelUI-recentlyClosedTabs-separator");
@@ -294,7 +311,7 @@ const CustomizableWidgets = [{
       let areaType = CustomizableUI.getAreaType(this.currentArea);
       let inPanel = areaType == CustomizableUI.TYPE_MENU_PANEL;
       let inToolbar = areaType == CustomizableUI.TYPE_TOOLBAR;
-      let noautoclose = inPanel ? "true" : null;
+      let closeMenu = inPanel ? "none" : null;
       let cls = inPanel ? "panel-combined-button" : "toolbarbutton-1";
 
       if (!this.currentArea)
@@ -302,20 +319,20 @@ const CustomizableWidgets = [{
 
       let buttons = [{
         id: "zoom-out-button",
-        noautoclose: noautoclose,
+        closemenu: closeMenu,
         command: "cmd_fullZoomReduce",
         class: cls,
         label: true,
         tooltiptext: true
       }, {
         id: "zoom-reset-button",
-        noautoclose: noautoclose,
+        closemenu: closeMenu,
         command: "cmd_fullZoomReset",
         class: cls,
         tooltiptext: true
       }, {
         id: "zoom-in-button",
-        noautoclose: noautoclose,
+        closemenu: closeMenu,
         command: "cmd_fullZoomEnlarge",
         class: cls,
         label: true,
@@ -348,9 +365,9 @@ const CustomizableWidgets = [{
         //XXXgijs in some tests we get called very early, and there's no docShell on the
         // tabbrowser. This breaks the zoom toolkit code (see bug 897410). Don't let that happen:
         let zoomFactor = 100;
-        if (window.gBrowser.docShell) {
+        try {
           zoomFactor = Math.floor(window.ZoomManager.zoom * 100);
-        }
+        } catch (e) {}
         zoomResetButton.setAttribute("label", CustomizableUI.getLocalizedProperty(
           buttons[1], "label", [zoomFactor]
         ));
@@ -359,6 +376,7 @@ const CustomizableWidgets = [{
       // Register ourselves with the service so we know when the zoom prefs change.
       Services.obs.addObserver(updateZoomResetButton, "browser-fullZoom:zoomChange", false);
       Services.obs.addObserver(updateZoomResetButton, "browser-fullZoom:zoomReset", false);
+      Services.obs.addObserver(updateZoomResetButton, "browser-fullZoom:location-change", false);
 
       if (inPanel) {
         let panel = aDocument.getElementById(kPanelId);
@@ -429,6 +447,7 @@ const CustomizableWidgets = [{
           CustomizableUI.removeListener(listener);
           Services.obs.removeObserver(updateZoomResetButton, "browser-fullZoom:zoomChange");
           Services.obs.removeObserver(updateZoomResetButton, "browser-fullZoom:zoomReset");
+          Services.obs.removeObserver(updateZoomResetButton, "browser-fullZoom:location-change");
           let panel = aDoc.getElementById(kPanelId);
           panel.removeEventListener("popupshowing", updateZoomResetButton);
           let container = aDoc.defaultView.gBrowser.tabContainer;

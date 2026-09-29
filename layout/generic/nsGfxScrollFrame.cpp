@@ -467,7 +467,7 @@ nsHTMLScrollFrame::ReflowScrolledFrame(ScrollReflowState* aState,
   // which will usually be different from the scrollport height;
   // invalidating the difference will cause unnecessary repainting.
   FinishReflowChild(mHelper.mScrolledFrame, presContext,
-                    &kidReflowState, *aMetrics, 0, 0,
+                    *aMetrics, &kidReflowState, 0, 0,
                     NS_FRAME_NO_MOVE_FRAME | NS_FRAME_NO_SIZE_VIEW);
 
   // XXX Some frames (e.g., nsObjectFrame, nsFrameFrame, nsTextFrame) don't bother
@@ -866,7 +866,7 @@ nsHTMLScrollFrame::Reflow(nsPresContext*           aPresContext,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsHTMLScrollFrame::GetFrameName(nsAString& aResult) const
 {
@@ -1190,7 +1190,7 @@ nsXULScrollFrame::GetMaxSize(nsBoxLayoutState& aState)
   return maxSize;
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsXULScrollFrame::GetFrameName(nsAString& aResult) const
 {

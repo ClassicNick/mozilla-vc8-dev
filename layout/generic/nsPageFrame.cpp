@@ -138,7 +138,7 @@ NS_IMETHODIMP nsPageFrame::Reflow(nsPresContext*           aPresContext,
     ReflowChild(frame, aPresContext, aDesiredSize, kidReflowState, xc, yc, 0, aStatus);
 
     // Place and size the child
-    FinishReflowChild(frame, aPresContext, &kidReflowState, aDesiredSize, xc, yc, 0);
+    FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowState, xc, yc, 0);
 
     NS_ASSERTION(!NS_FRAME_IS_FULLY_COMPLETE(aStatus) ||
                  !frame->GetNextInFlow(), "bad child flow list");
@@ -168,7 +168,7 @@ nsPageFrame::GetType() const
   return nsGkAtoms::pageFrame; 
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsPageFrame::GetFrameName(nsAString& aResult) const
 {
@@ -681,7 +681,7 @@ nsPageBreakFrame::GetType() const
   return nsGkAtoms::pageBreakFrame; 
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsPageBreakFrame::GetFrameName(nsAString& aResult) const
 {

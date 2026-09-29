@@ -569,6 +569,19 @@ WebConsoleFrame.prototype = {
       toolbox.on("webconsole-selected", this._onPanelSelected);
     }
 
+    /*
+     * Focus input line whenever the output area is clicked.
+     * Only focus when the target node (or parent, as in source links) is
+     * not an anchor.
+     */
+    this.outputNode.addEventListener("click", (e) => {
+      if ((e.button == 0) &&
+          (e.target.nodeName.toLowerCase() != "a") &&
+          (e.target.parentNode.nodeName.toLowerCase() != "a")) {
+        this.jsterm.inputNode.focus();
+      }
+    });
+
     // Toggle the timestamp on preference change
     gDevTools.on("pref-changed", this._onToolboxPrefChanged);
     this._onToolboxPrefChanged("pref-changed", {
@@ -3469,7 +3482,6 @@ JSTerm.prototype = {
   _updateVariablesView: function JST__updateVariablesView(aOptions)
   {
     let view = aOptions.view;
-    view.createHierarchy();
     view.empty();
 
     // We need to avoid pruning the object inspection starting point.
@@ -3516,20 +3528,24 @@ JSTerm.prototype = {
    * @private
    * @param object aOptions
    *        The options used for |this._updateVariablesView()|.
-   * @param string aString
-   *        The string that the variables view wants to evaluate.
+   * @param object aVar
+   *        The Variable object instance for the edited property.
+   * @param string aValue
+   *        The value the edited property was changed to.
    */
-  _variablesViewEvaluate: function JST__variablesViewEvaluate(aOptions, aString)
+  _variablesViewEvaluate:
+  function JST__variablesViewEvaluate(aOptions, aVar, aValue)
   {
     let updater = this._updateVariablesView.bind(this, aOptions);
     let onEval = this._silentEvalCallback.bind(this, updater);
+    let string = aVar.evaluationMacro(aVar, aValue);
 
     let evalOptions = {
       frame: this.SELECTED_FRAME,
       bindObjectActor: aOptions.objectActor.actor,
     };
 
-    this.requestEvaluation(aString, evalOptions).then(onEval, onEval);
+    this.requestEvaluation(string, evalOptions).then(onEval, onEval);
   },
 
   /**
@@ -4075,12 +4091,16 @@ JSTerm.prototype = {
     // If the inputNode has no value, then don't try to complete on it.
     if (!inputValue) {
       this.clearCompletion();
+      aCallback && aCallback(this);
+      this.emit("autocomplete-updated");
       return false;
     }
 
     // Only complete if the selection is empty.
     if (inputNode.selectionStart != inputNode.selectionEnd) {
       this.clearCompletion();
+      aCallback && aCallback(this);
+      this.emit("autocomplete-updated");
       return false;
     }
 
@@ -4105,6 +4125,7 @@ JSTerm.prototype = {
     }
 
     aCallback && aCallback(this);
+    this.emit("autocomplete-updated");
     return accepted || popup.itemCount > 0;
   },
 
@@ -4203,7 +4224,6 @@ JSTerm.prototype = {
         aRequestId != this.lastCompletion.requestId) {
       return;
     }
-
     // Cache whatever came from the server if the last char is alphanumeric or '.'
     let cursor = inputNode.selectionStart;
     let inputUntilCursor = inputValue.substring(0, cursor);
@@ -4217,6 +4237,8 @@ JSTerm.prototype = {
     let lastPart = aMessage.matchProp;
     if (!matches.length) {
       this.clearCompletion();
+      aCallback && aCallback(this);
+      this.emit("autocomplete-updated");
       return;
     }
 
@@ -4261,8 +4283,8 @@ JSTerm.prototype = {
       popup.selectNextItem();
     }
 
-    this.emit("autocomplete-updated");
     aCallback && aCallback(this);
+    this.emit("autocomplete-updated");
   },
 
   onAutocompleteSelect: function JSTF_onAutocompleteSelect()
@@ -4444,6 +4466,7 @@ var Utils = {
       case "Invalid HSTS Headers":
       case "Insecure Password Field":
       case "SSL":
+      case "CORS":
         return CATEGORY_SECURITY;
 
       default:

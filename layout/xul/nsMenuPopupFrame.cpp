@@ -148,10 +148,9 @@ nsMenuPopupFrame::Init(nsIContent*      aContent,
   }
 
   nsCOMPtr<nsIDocShellTreeItem> dsti = PresContext()->GetDocShell();
-  int32_t type = -1;
-  if (dsti && NS_SUCCEEDED(dsti->GetItemType(&type)) &&
-      type == nsIDocShellTreeItem::typeChrome)
+  if (dsti && dsti->ItemType() == nsIDocShellTreeItem::typeChrome) {
     mInContentShell = false;
+  }
 
   // To improve performance, create the widget for the popup only if it is not
   // a leaf. Leaf popups such as menus will create their widgets later when
@@ -1003,13 +1002,10 @@ nsMenuPopupFrame::SlideOrResize(nscoord& aScreenPoint, nscoord aSize,
 {
   // The popup may be positioned such that either the left/top or bottom/right
   // is outside the screen - but never both.
-  if (aScreenPoint < aScreenBegin) {
-    *aOffset = aScreenBegin - aScreenPoint;
-    aScreenPoint = aScreenBegin;
-  } else if (aScreenPoint + aSize > aScreenEnd) {
-    *aOffset = aScreenPoint + aSize - aScreenEnd;
-    aScreenPoint = std::max(aScreenEnd - aSize, 0);
-  }
+  nscoord newPos =
+    std::max(aScreenBegin, std::min(aScreenEnd - aSize, aScreenPoint));
+  *aOffset = newPos - aScreenPoint;
+  aScreenPoint = newPos;
   return std::min(aSize, aScreenEnd - aScreenPoint);
 }
 
@@ -1306,10 +1302,14 @@ nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame, bool aIsMove)
     // We might want to "slide" an arrow if the panel is of the correct type -
     // but we can only slide on one axis - the other axis must be "flipped or
     // resized" as normal.
-    bool slideHorizontal = mSlide && mPosition >= POPUPPOSITION_BEFORESTART
-                                  && mPosition <= POPUPPOSITION_AFTEREND;
-    bool slideVertical = mSlide && mPosition >= POPUPPOSITION_STARTBEFORE
-                                && mPosition <= POPUPPOSITION_ENDAFTER;
+    bool slideHorizontal = false, slideVertical = false;
+    if (mSlide) {
+      int8_t position = GetAlignmentPosition();
+      slideHorizontal = position >= POPUPPOSITION_BEFORESTART &&
+                        position <= POPUPPOSITION_AFTEREND;
+      slideVertical = position >= POPUPPOSITION_STARTBEFORE &&
+                      position <= POPUPPOSITION_ENDAFTER;
+    }
 
     // Next, check if there is enough space to show the popup at full size when
     // positioned at screenPoint. If not, flip the popups to the opposite side
@@ -1416,9 +1416,6 @@ nsMenuPopupFrame::GetConstraintRect(const nsRect& aAnchorRect,
                              &screenRectPixels.width, &screenRectPixels.height);
     }
   }
-
-  // keep a 3 pixel margin to the right and bottom of the screen for the WinXP dropshadow
-  screenRectPixels.SizeTo(screenRectPixels.width - 3, screenRectPixels.height - 3);
 
   nsRect screenRect = screenRectPixels.ToAppUnits(presContext->AppUnitsPerDevPixel());
   if (mInContentShell) {

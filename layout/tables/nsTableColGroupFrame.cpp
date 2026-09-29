@@ -377,7 +377,7 @@ NS_METHOD nsTableColGroupFrame::Reflow(nsPresContext*          aPresContext,
 
     nsReflowStatus status;
     ReflowChild(kidFrame, aPresContext, kidSize, kidReflowState, 0, 0, 0, status);
-    FinishReflowChild(kidFrame, aPresContext, nullptr, kidSize, 0, 0, 0);
+    FinishReflowChild(kidFrame, aPresContext, kidSize, nullptr, 0, 0, 0);
   }
 
   aDesiredSize.Width() = 0;
@@ -480,7 +480,7 @@ nsTableColGroupFrame::InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDis
   GetParent()->InvalidateFrameWithRect(aRect + GetPosition(), aDisplayItemKey);
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsTableColGroupFrame::GetFrameName(nsAString& aResult) const
 {

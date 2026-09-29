@@ -139,6 +139,7 @@ public:
                                      bool aUpdateNCArea = false,
                                      bool aIncludeChildren = false);
   NS_IMETHOD              Invalidate(const nsIntRect & aRect);
+  virtual void            Update() MOZ_OVERRIDE;
   virtual void*           GetNativeData(uint32_t aDataType);
   virtual void            FreeNativeData(void * data, uint32_t aDataType);
   NS_IMETHOD              SetTitle(const nsAString& aTitle);
@@ -425,6 +426,7 @@ protected:
   static void             UnregisterSpecialDropdownHooks();
   static bool             GetPopupsToRollup(nsIRollupListener* aRollupListener,
                                             uint32_t* aPopupsToRollup);
+  static bool             NeedsToHandleNCActivateDelayed(HWND aWnd);
   static bool             DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam, LPARAM inLParam, LRESULT* outResult);
 
   /**

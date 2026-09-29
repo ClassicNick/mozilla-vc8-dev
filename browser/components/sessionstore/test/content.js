@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 let Cu = Components.utils;
 let Ci = Components.interfaces;
 
@@ -33,8 +35,15 @@ addMessageListener("ss-test:modifySessionStorage", function (msg) {
   }
 });
 
-addMessageListener("ss-test:notifyObservers", function ({data: {topic, data}}) {
-  Services.obs.notifyObservers(null, topic, data || "");
+addMessageListener("ss-test:modifySessionStorage2", function (msg) {
+  for (let key of Object.keys(msg.data)) {
+    content.frames[0].sessionStorage[key] = msg.data[key];
+  }
+});
+
+addMessageListener("ss-test:purgeDomainData", function ({data: domain}) {
+  Services.obs.notifyObservers(null, "browser:purge-domain-data", domain);
+  content.setTimeout(() => sendAsyncMessage("ss-test:purgeDomainData"));
 });
 
 addMessageListener("ss-test:getStyleSheets", function (msg) {

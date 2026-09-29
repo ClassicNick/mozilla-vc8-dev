@@ -81,7 +81,7 @@ nsPageContentFrame::Reflow(nsPresContext*           aPresContext,
     }
 
     // Place and size the child
-    FinishReflowChild(frame, aPresContext, &kidReflowState, aDesiredSize, 0, 0, 0);
+    FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowState, 0, 0, 0);
 
     NS_ASSERTION(aPresContext->IsDynamic() || !NS_FRAME_IS_FULLY_COMPLETE(aStatus) ||
                   !frame->GetNextInFlow(), "bad child flow list");
@@ -110,7 +110,7 @@ nsPageContentFrame::GetType() const
   return nsGkAtoms::pageContentFrame; 
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsPageContentFrame::GetFrameName(nsAString& aResult) const
 {

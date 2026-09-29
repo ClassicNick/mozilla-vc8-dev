@@ -193,26 +193,6 @@ nsFrame::GetLogModuleInfo()
   return gLogModule;
 }
 
-void
-nsIFrame::DumpFrameTree()
-{
-  RootFrameList(PresContext(), stdout, 0);
-}
-
-void
-nsIFrame::RootFrameList(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
-{
-  if (!aPresContext || !out)
-    return;
-
-  nsIPresShell *shell = aPresContext->GetPresShell();
-  if (shell) {
-    nsIFrame* frame = shell->FrameManager()->GetRootFrame();
-    if(frame) {
-      frame->List(out, aIndent);
-    }
-  }
-}
 #endif
 
 static void
@@ -2641,6 +2621,7 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   // the mouse on the nearest scrollable frame. If there isn't a scrollable
   // frame, or something else is already capturing the mouse, there's no
   // reason to capture.
+  bool hasCapturedContent = false;
   if (!nsIPresShell::GetCapturingContent()) {
     nsIScrollableFrame* scrollFrame =
       nsLayoutUtils::GetNearestScrollableFrame(this,
@@ -2650,6 +2631,7 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
       nsIFrame* capturingFrame = do_QueryFrame(scrollFrame);
       nsIPresShell::SetCapturingContent(capturingFrame->GetContent(),
                                         CAPTURE_IGNOREALLOWED);
+      hasCapturedContent = true;
     }
   }
 
@@ -2693,6 +2675,13 @@ nsFrame::HandlePress(nsPresContext* aPresContext,
   // let the user move the caret by tapping and dragging.
   if (!offsets.content->IsEditable() &&
       Preferences::GetBool("browser.ignoreNativeFrameTextSelection", false)) {
+    // On touchables devices, mouse events are generated if the gesture is a tap.
+    // Such events are never going to generate a drag action, so let's release
+    // captured content if any.
+    if (hasCapturedContent) {
+      nsIPresShell::SetCapturingContent(nullptr, 0);
+    }
+
     return fc->HandleClick(offsets.content, offsets.StartOffset(),
                            offsets.EndOffset(), false, false,
                            offsets.associateWithNext);
@@ -5253,7 +5242,7 @@ nsIFrame::GetContainingBlock() const
   return GetNearestBlockContainer(GetParent());
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 
 int32_t nsFrame::ContentIndexInContainer(const nsIFrame* aFrame)
 {
@@ -5368,23 +5357,6 @@ nsFrame::GetFrameName(nsAString& aResult) const
   return MakeFrameName(NS_LITERAL_STRING("Frame"), aResult);
 }
 
-NS_IMETHODIMP_(nsFrameState)
-nsFrame::GetDebugStateBits() const
-{
-  // We'll ignore these flags for the purposes of comparing frame state:
-  //
-  //   NS_FRAME_EXTERNAL_REFERENCE
-  //     because this is set by the event state manager or the
-  //     caret code when a frame is focused. Depending on whether
-  //     or not the regression tests are run as the focused window
-  //     will make this value vary randomly.
-#define IRRELEVANT_FRAME_STATE_FLAGS NS_FRAME_EXTERNAL_REFERENCE
-
-#define FRAME_STATE_MASK (~(IRRELEVANT_FRAME_STATE_FLAGS))
-
-  return GetStateBits() & FRAME_STATE_MASK;
-}
-
 nsresult
 nsFrame::MakeFrameName(const nsAString& aType, nsAString& aResult) const
 {
@@ -5403,6 +5375,52 @@ nsFrame::MakeFrameName(const nsAString& aType, nsAString& aResult) const
   PR_snprintf(buf, sizeof(buf), "(%d)", ContentIndexInContainer(this));
   AppendASCIItoUTF16(buf, aResult);
   return NS_OK;
+}
+
+void
+nsIFrame::DumpFrameTree()
+{
+  RootFrameList(PresContext(), stdout, 0);
+}
+
+void
+nsIFrame::DumpFrameTreeLimited()
+{
+  List(stdout, 0);
+}
+
+void
+nsIFrame::RootFrameList(nsPresContext* aPresContext, FILE* out, int32_t aIndent)
+{
+  if (!aPresContext || !out)
+    return;
+
+  nsIPresShell *shell = aPresContext->GetPresShell();
+  if (shell) {
+    nsIFrame* frame = shell->FrameManager()->GetRootFrame();
+    if(frame) {
+      frame->List(out, aIndent);
+    }
+  }
+}
+#endif
+
+#ifdef DEBUG
+NS_IMETHODIMP_(nsFrameState)
+nsFrame::GetDebugStateBits() const
+{
+  // We'll ignore these flags for the purposes of comparing frame state:
+  //
+  //   NS_FRAME_EXTERNAL_REFERENCE
+  //     because this is set by the event state manager or the
+  //     caret code when a frame is focused. Depending on whether
+  //     or not the regression tests are run as the focused window
+  //     will make this value vary randomly.
+#define IRRELEVANT_FRAME_STATE_FLAGS NS_FRAME_EXTERNAL_REFERENCE
+
+#define FRAME_STATE_MASK (~(IRRELEVANT_FRAME_STATE_FLAGS))
+
+  return GetStateBits() & FRAME_STATE_MASK;
 }
 
 void
@@ -7957,8 +7975,8 @@ nsFrame::BoxReflow(nsBoxLayoutState&        aState,
     NS_ASSERTION(NS_FRAME_IS_COMPLETE(status), "bad status");
 
     uint32_t layoutFlags = aState.LayoutFlags();
-    nsContainerFrame::FinishReflowChild(this, aPresContext, &reflowState,
-                                        aDesiredSize, aX, aY, layoutFlags | NS_FRAME_NO_MOVE_FRAME);
+    nsContainerFrame::FinishReflowChild(this, aPresContext, aDesiredSize,
+                                        &reflowState, aX, aY, layoutFlags | NS_FRAME_NO_MOVE_FRAME);
 
     // Save the ascent.  (bug 103925)
     if (IsCollapsed()) {

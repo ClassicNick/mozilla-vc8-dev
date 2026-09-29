@@ -2538,7 +2538,7 @@ void nsTableFrame::PlaceChild(nsTableReflowState&  aReflowState,
     (aKidFrame->GetStateBits() & NS_FRAME_FIRST_REFLOW) != 0;
 
   // Place and size the child
-  FinishReflowChild(aKidFrame, PresContext(), nullptr, aKidDesiredSize,
+  FinishReflowChild(aKidFrame, PresContext(), aKidDesiredSize, nullptr,
                     aReflowState.x, aReflowState.y, 0);
 
   InvalidateTableFrame(aKidFrame, aOriginalKidRect, aOriginalKidVisualOverflow,
@@ -3020,7 +3020,7 @@ nsTableFrame::ReflowColGroups(nsRenderingContext *aRenderingContext)
         nsReflowStatus cgStatus;
         ReflowChild(kidFrame, presContext, kidMet, kidReflowState, 0, 0, 0,
                     cgStatus);
-        FinishReflowChild(kidFrame, presContext, nullptr, kidMet, 0, 0, 0);
+        FinishReflowChild(kidFrame, presContext, kidMet, nullptr, 0, 0, 0);
       }
     }
     SetHaveReflowedColGroups(true);
@@ -3475,7 +3475,7 @@ nsTableFrame::IsAutoLayout()
           width.GetIntValue() == NS_STYLE_WIDTH_MAX_CONTENT);
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 nsTableFrame::GetFrameName(nsAString& aResult) const
 {

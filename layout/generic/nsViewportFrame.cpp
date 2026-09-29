@@ -222,7 +222,7 @@ ViewportFrame::Reflow(nsPresContext*           aPresContext,
                        0, 0, 0, aStatus);
       kidHeight = kidDesiredSize.Height();
 
-      FinishReflowChild(kidFrame, aPresContext, nullptr, kidDesiredSize, 0, 0, 0);
+      FinishReflowChild(kidFrame, aPresContext, kidDesiredSize, nullptr, 0, 0, 0);
     } else {
       kidHeight = mFrames.FirstChild()->GetSize().height;
     }
@@ -298,7 +298,7 @@ ViewportFrame::GetType() const
   return nsGkAtoms::viewportFrame;
 }
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
 NS_IMETHODIMP
 ViewportFrame::GetFrameName(nsAString& aResult) const
 {

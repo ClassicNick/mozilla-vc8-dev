@@ -75,10 +75,10 @@
 
 #include "nsCSSParser.h"
 #include "nsIMediaList.h"
-#include "nsIDOMWakeLock.h"
+#include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/WakeLock.h"
 
 #include "ImageContainer.h"
-#include "nsIPowerManagerService.h"
 #include "nsRange.h"
 #include <algorithm>
 
@@ -1623,7 +1623,7 @@ HTMLMediaElement::MozGetMetadata(JSContext* cx, ErrorResult& aRv)
     return nullptr;
   }
 
-  JS::Rooted<JSObject*> tags(cx, JS_NewObject(cx, nullptr, nullptr, nullptr));
+  JS::Rooted<JSObject*> tags(cx, JS_NewObject(cx, nullptr, JS::NullPtr(), JS::NullPtr()));
   if (!tags) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -1642,14 +1642,14 @@ HTMLMediaElement::MozGetMetadata(JSContext* cx, ErrorResult& aRv)
 }
 
 NS_IMETHODIMP
-HTMLMediaElement::MozGetMetadata(JSContext* cx, JS::Value* aValue)
+HTMLMediaElement::MozGetMetadata(JSContext* cx, JS::MutableHandle<JS::Value> aValue)
 {
   ErrorResult rv;
 
   JSObject* obj = MozGetMetadata(cx, rv);
   if (!rv.Failed()) {
     MOZ_ASSERT(obj);
-    *aValue = JS::ObjectValue(*obj);
+    aValue.setObject(*obj);
   }
 
   return rv.ErrorCode();
@@ -2245,13 +2245,14 @@ void
 HTMLMediaElement::WakeLockCreate()
 {
   if (!mWakeLock) {
-    nsCOMPtr<nsIPowerManagerService> pmService =
-      do_GetService(POWERMANAGERSERVICE_CONTRACTID);
+    nsRefPtr<power::PowerManagerService> pmService =
+      power::PowerManagerService::GetInstance();
     NS_ENSURE_TRUE_VOID(pmService);
 
-    pmService->NewWakeLock(NS_LITERAL_STRING("cpu"),
-                           OwnerDoc()->GetWindow(),
-                           getter_AddRefs(mWakeLock));
+    ErrorResult rv;
+    mWakeLock = pmService->NewWakeLock(NS_LITERAL_STRING("cpu"),
+                                       OwnerDoc()->GetInnerWindow(),
+                                       rv);
   }
 }
 
@@ -2259,7 +2260,9 @@ void
 HTMLMediaElement::WakeLockRelease()
 {
   if (mWakeLock) {
-    mWakeLock->Unlock();
+    ErrorResult rv;
+    mWakeLock->Unlock(rv);
+    NS_WARN_IF_FALSE(!rv.Failed(), "Failed to unlock the wakelock.");
     mWakeLock = nullptr;
   }
 }
@@ -3674,12 +3677,12 @@ void HTMLMediaElement::FireTimeUpdate(bool aPeriodic)
     mDecoder->SetFragmentEndTime(mFragmentEnd);
   }
 
-  // Update visible text tracks.
+  // Update the cues displaying on the video.
   // Here mTextTrackManager can be null if the cycle collector has unlinked
   // us before our parent. In that case UnbindFromTree will call us
   // when our parent is unlinked.
   if (mTextTrackManager) {
-    mTextTrackManager->Update(time);
+    mTextTrackManager->UpdateCueDisplay();
   }
 }
 

@@ -138,6 +138,7 @@ struct NullPtr
 
 namespace gc {
 struct Cell;
+struct PersistentRootedMarker;
 } /* namespace gc */
 
 } /* namespace js */
@@ -506,11 +507,19 @@ class MOZ_STACK_CLASS MutableHandle : public js::MutableHandleBase<T>
   public:
     inline MutableHandle(Rooted<T> *root);
     inline MutableHandle(PersistentRooted<T> *root);
-    MutableHandle(int) MOZ_DELETE;
-#ifdef MOZ_HAVE_CXX11_NULLPTR
-    MutableHandle(decltype(nullptr)) MOZ_DELETE;
-#endif
 
+  private:
+    // Disallow true nullptr and emulated nullptr (gcc 4.4/4.5, __null, appears
+    // as int/long [32/64-bit]) for overloading purposes.
+    template<typename N>
+    MutableHandle(N,
+                  typename mozilla::EnableIf<mozilla::IsNullPointer<N>::value ||
+                                             mozilla::IsSame<N, int>::value ||
+                                             mozilla::IsSame<N, long>::value,
+                                             int>::Type dummy = 0)
+    MOZ_DELETE;
+
+  public:
     void set(T v) {
         JS_ASSERT(!js::GCMethods<T>::poisoned(v));
         *ptr = v;
@@ -549,8 +558,8 @@ class MOZ_STACK_CLASS MutableHandle : public js::MutableHandleBase<T>
 };
 
 #ifdef JSGC_GENERATIONAL
-JS_PUBLIC_API(void) HeapCellPostBarrier(js::gc::Cell **cellp);
-JS_PUBLIC_API(void) HeapCellRelocate(js::gc::Cell **cellp);
+JS_FRIEND_API(void) HeapCellPostBarrier(js::gc::Cell **cellp);
+JS_FRIEND_API(void) HeapCellRelocate(js::gc::Cell **cellp);
 #endif
 
 } /* namespace JS */
@@ -1090,7 +1099,6 @@ MutableHandle<T>::MutableHandle(PersistentRooted<T> *root)
     ptr = root->address();
 }
 
-
 /*
  * A copyable, assignable global GC root type with arbitrary lifetime, an
  * infallible constructor, and automatic unrooting on destruction.
@@ -1125,8 +1133,8 @@ MutableHandle<T>::MutableHandle(PersistentRooted<T> *root)
  */
 template<typename T>
 class PersistentRooted : public mozilla::LinkedListElement<PersistentRooted<T> > {
-    typedef mozilla::LinkedList<PersistentRooted> List;
-    typedef mozilla::LinkedListElement<PersistentRooted> Element;
+    friend class mozilla::LinkedList<PersistentRooted>;
+    friend class js::gc::PersistentRootedMarker;
 
     void registerWithRuntime(JSRuntime *rt) {
         JS::shadow::Runtime *srt = JS::shadow::Runtime::asShadowRuntime(rt);

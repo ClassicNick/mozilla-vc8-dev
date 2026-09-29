@@ -569,18 +569,12 @@ HistoryMenu.prototype = {
     if (!menuitem)
       return;
 
-    // If Sync isn't configured yet, then don't show the menuitem.
-    if (Weave.Status.checkSetup() == Weave.CLIENT_NOT_CONFIGURED ||
-        Weave.Svc.Prefs.get("firstSync", "") == "notReady") {
+    if (!PlacesUIUtils.shouldShowTabsFromOtherComputersMenuitem()) {
       menuitem.setAttribute("hidden", true);
       return;
     }
 
-    // The tabs engine might never be inited (if services.sync.registerEngines
-    // is modified), so make sure we avoid undefined errors.
-    let enabled = Weave.Service.isLoggedIn &&
-                  Weave.Service.engineManager.get("tabs") &&
-                  Weave.Service.engineManager.get("tabs").enabled;
+    let enabled = PlacesUIUtils.shouldEnableTabsFromOtherComputersMenuitem();
     menuitem.setAttribute("disabled", !enabled);
     menuitem.setAttribute("hidden", false);
 #endif
@@ -1005,7 +999,7 @@ let BookmarkingUI = {
     if (widget.overflowed) {
       // Don't open a popup in the overflow popup, rather just open the Library.
       event.preventDefault();
-      widget.node.removeAttribute("noautoclose");
+      widget.node.removeAttribute("closemenu");
       PlacesCommandHook.showPlacesOrganizer("BookmarksMenu");
       return;
     }
@@ -1178,7 +1172,7 @@ let BookmarkingUI = {
       let view = document.getElementById("PanelUI-bookmarks");
       view.addEventListener("ViewShowing", this.onPanelMenuViewShowing);
       view.addEventListener("ViewHiding", this.onPanelMenuViewHiding);
-      widget.node.setAttribute("noautoclose", "true");
+      widget.node.setAttribute("closemenu", "none");
       PanelUI.showSubView("PanelUI-bookmarks", widget.node,
                           CustomizableUI.AREA_PANEL);
       return;
@@ -1187,9 +1181,9 @@ let BookmarkingUI = {
       // Allow to close the panel if the page is already bookmarked, cause
       // we are going to open the edit bookmark panel.
       if (this._itemIds.length > 0)
-        widget.node.removeAttribute("noautoclose");
+        widget.node.removeAttribute("closemenu");
       else
-        widget.node.setAttribute("noautoclose", "true");
+        widget.node.setAttribute("closemenu", "none");
     }
 
     // Ignore clicks on the star if we are updating its state.

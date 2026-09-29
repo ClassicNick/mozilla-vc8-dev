@@ -586,6 +586,8 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aMsg, aParam.mIsRoot);
     WriteParam(aMsg, aParam.mHasScrollgrab);
     WriteParam(aMsg, aParam.mUpdateScrollOffset);
+    WriteParam(aMsg, aParam.mDisableScrollingX);
+    WriteParam(aMsg, aParam.mDisableScrollingY);
   }
 
   static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
@@ -605,7 +607,9 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mIsRoot) &&
             ReadParam(aMsg, aIter, &aResult->mHasScrollgrab) &&
-            ReadParam(aMsg, aIter, &aResult->mUpdateScrollOffset));
+            ReadParam(aMsg, aIter, &aResult->mUpdateScrollOffset) &&
+            ReadParam(aMsg, aIter, &aResult->mDisableScrollingX) &&
+            ReadParam(aMsg, aIter, &aResult->mDisableScrollingY));
   }
 };
 
@@ -660,9 +664,9 @@ struct ParamTraits<mozilla::layers::CompositableType>
 
 template <>
 struct ParamTraits<mozilla::gfx::SurfaceFormat>
-  : public EnumSerializer<mozilla::gfx::SurfaceFormat,
-                          mozilla::gfx::FORMAT_B8G8R8A8,
-                          mozilla::gfx::FORMAT_UNKNOWN>
+  : public TypedEnumSerializer<mozilla::gfx::SurfaceFormat,
+                               mozilla::gfx::SurfaceFormat::B8G8R8A8,
+                               mozilla::gfx::SurfaceFormat::UNKNOWN>
 {};
 
 template <>
@@ -682,6 +686,26 @@ struct ParamTraits<mozilla::layers::ScrollableLayerGuid>
     return (ReadParam(aMsg, aIter, &aResult->mLayersId) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mScrollId));
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::layers::ZoomConstraints>
+{
+  typedef mozilla::layers::ZoomConstraints paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam)
+  {
+    WriteParam(aMsg, aParam.mAllowZoom);
+    WriteParam(aMsg, aParam.mMinZoom);
+    WriteParam(aMsg, aParam.mMaxZoom);
+  }
+
+  static bool Read(const Message* aMsg, void** aIter, paramType* aResult)
+  {
+    return (ReadParam(aMsg, aIter, &aResult->mAllowZoom) &&
+            ReadParam(aMsg, aIter, &aResult->mMinZoom) &&
+            ReadParam(aMsg, aIter, &aResult->mMaxZoom));
   }
 };
 

@@ -500,7 +500,6 @@ public:
     : mUILoop(MessageLoop::current())
     , mRenderFrame(aRenderFrame)
     , mHaveZoomConstraints(false)
-    , mAllowZoom(true)
   { }
 
   virtual void RequestContentRepaint(const FrameMetrics& aFrameMetrics) MOZ_OVERRIDE
@@ -611,26 +610,21 @@ public:
     MessageLoop::current()->PostDelayedTask(FROM_HERE, aTask, aDelayMs);
   }
 
-  void SaveZoomConstraints(bool aAllowZoom,
-                           const CSSToScreenScale& aMinZoom,
-                           const CSSToScreenScale& aMaxZoom)
+  virtual bool GetRootZoomConstraints(ZoomConstraints* aOutConstraints)
   {
-    mHaveZoomConstraints = true;
-    mAllowZoom = aAllowZoom;
-    mMinZoom = aMinZoom;
-    mMaxZoom = aMaxZoom;
-  }
-
-  virtual bool GetRootZoomConstraints(bool* aOutAllowZoom,
-                                      CSSToScreenScale* aOutMinZoom,
-                                      CSSToScreenScale* aOutMaxZoom)
-  {
-    if (mHaveZoomConstraints) {
-      *aOutAllowZoom = mAllowZoom;
-      *aOutMinZoom = mMinZoom;
-      *aOutMaxZoom = mMaxZoom;
+    if (mHaveZoomConstraints && aOutConstraints) {
+      *aOutConstraints = mZoomConstraints;
     }
     return mHaveZoomConstraints;
+  }
+
+  virtual bool GetTouchSensitiveRegion(CSSRect* aOutRegion)
+  {
+    if (mTouchSensitiveRegion.IsEmpty())
+      return false;
+
+    *aOutRegion = CSSRect::FromAppUnits(mTouchSensitiveRegion.GetBounds());
+    return true;
   }
 
   virtual void NotifyTransformBegin(const ScrollableLayerGuid& aGuid)
@@ -663,6 +657,18 @@ public:
     }
   }
 
+  // Methods used by RenderFrameParent to set fields stored here.
+
+  void SaveZoomConstraints(const ZoomConstraints& aConstraints)
+  {
+    mHaveZoomConstraints = true;
+    mZoomConstraints = aConstraints;
+  }
+
+  void SetTouchSensitiveRegion(const nsRegion& aRegion)
+  {
+    mTouchSensitiveRegion = aRegion;
+  }
 private:
   void DoRequestContentRepaint(const FrameMetrics& aFrameMetrics)
   {
@@ -676,20 +682,25 @@ private:
   RenderFrameParent* mRenderFrame;
 
   bool mHaveZoomConstraints;
-  bool mAllowZoom;
-  CSSToScreenScale mMinZoom;
-  CSSToScreenScale mMaxZoom;
+  ZoomConstraints mZoomConstraints;
+  nsRegion mTouchSensitiveRegion;
 };
 
-RenderFrameParent::RenderFrameParent(nsFrameLoader* aFrameLoader,
-                                     ScrollingBehavior aScrollingBehavior,
-                                     TextureFactoryIdentifier* aTextureFactoryIdentifier,
-                                     uint64_t* aId)
+RenderFrameParent::RenderFrameParent()
   : mLayersId(0)
-  , mFrameLoader(aFrameLoader)
   , mFrameLoaderDestroyed(false)
   , mBackgroundColor(gfxRGBA(1, 1, 1))
 {
+}
+
+void
+RenderFrameParent::Init(nsFrameLoader* aFrameLoader,
+                        ScrollingBehavior aScrollingBehavior,
+                        TextureFactoryIdentifier* aTextureFactoryIdentifier,
+                        uint64_t* aId)
+{
+  mFrameLoader = aFrameLoader;
+
   *aId = 0;
 
   nsRefPtr<LayerManager> lm = GetFrom(mFrameLoader);
@@ -946,6 +957,13 @@ bool
 RenderFrameParent::RecvUpdateHitRegion(const nsRegion& aRegion)
 {
   mTouchRegion = aRegion;
+  if (mContentController) {
+    // Tell the content controller about the touch-sensitive region, so
+    // that it can provide it to APZ. This is required for APZ to do
+    // correct hit testing for a remote 'mozpasspointerevents' iframe
+    // until bug 928833 is fixed.
+    mContentController->SetTouchSensitiveRegion(aRegion);
+  }
   return true;
 }
 
@@ -1093,16 +1111,14 @@ void
 RenderFrameParent::UpdateZoomConstraints(uint32_t aPresShellId,
                                          ViewID aViewId,
                                          bool aIsRoot,
-                                         bool aAllowZoom,
-                                         const CSSToScreenScale& aMinZoom,
-                                         const CSSToScreenScale& aMaxZoom)
+                                         const ZoomConstraints& aConstraints)
 {
   if (mContentController && aIsRoot) {
-    mContentController->SaveZoomConstraints(aAllowZoom, aMinZoom, aMaxZoom);
+    mContentController->SaveZoomConstraints(aConstraints);
   }
   if (GetApzcTreeManager()) {
     GetApzcTreeManager()->UpdateZoomConstraints(ScrollableLayerGuid(mLayersId, aPresShellId, aViewId),
-                                                aAllowZoom, aMinZoom, aMaxZoom);
+                                                aConstraints);
   }
 }
 

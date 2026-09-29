@@ -24,11 +24,6 @@ class PropertyProvider;
 // This state bit is set on children of token MathML elements
 #define TEXT_IS_IN_TOKEN_MATHML          NS_FRAME_STATE_BIT(32)
 
-// This state bit is set on token MathML elements if the token represents an
-// <mi> tag whose inner HTML consists of a single non-whitespace character
-// to allow special rendering behaviour.
-#define TEXT_IS_IN_SINGLE_CHAR_MI        NS_FRAME_STATE_BIT(59)
-
 #define TEXT_HAS_FONT_INFLATION          NS_FRAME_STATE_BIT(61)
 
 typedef nsFrame nsTextFrameBase;
@@ -129,9 +124,13 @@ public:
   virtual void InvalidateFrame(uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
   virtual void InvalidateFrameWithRect(const nsRect& aRect, uint32_t aDisplayItemKey = 0) MOZ_OVERRIDE;
 
-#ifdef DEBUG
+#ifdef DEBUG_FRAME_DUMP
   void List(FILE* out, int32_t aIndent, uint32_t aFlags = 0) const MOZ_OVERRIDE;
   NS_IMETHOD GetFrameName(nsAString& aResult) const MOZ_OVERRIDE;
+  void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
+#endif
+
+#ifdef DEBUG
   NS_IMETHOD_(nsFrameState) GetDebugStateBits() const MOZ_OVERRIDE;
 #endif
   
@@ -430,10 +429,6 @@ public:
   virtual nscolor GetCaretColorAt(int32_t aOffset) MOZ_OVERRIDE;
 
   int16_t GetSelectionStatus(int16_t* aSelectionFlags);
-
-#ifdef DEBUG
-  void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
-#endif
 
   int32_t GetContentOffset() const { return mContentOffset; }
   int32_t GetContentLength() const

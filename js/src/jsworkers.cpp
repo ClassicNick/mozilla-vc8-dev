@@ -21,6 +21,7 @@
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 #include "jsobjinlines.h"
+#include "jsscriptinlines.h"
 
 using namespace js;
 
@@ -229,6 +230,18 @@ ParseTask::~ParseTask()
 }
 
 bool
+js::OffThreadParsingMustWaitForGC(JSRuntime *rt)
+{
+    // Off thread parsing can't occur during incremental collections on the
+    // atoms compartment, to avoid triggering barriers. (Outside the atoms
+    // compartment, the compilation will use a new zone that is never
+    // collected.) If an atoms-zone GC is in progress, hold off on executing the
+    // parse task until the atoms-zone GC completes (see
+    // EnqueuePendingParseTasksAfterGC).
+    return rt->activeGCInAtomsZone();
+}
+
+bool
 js::StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &options,
                               const jschar *chars, size_t length, HandleObject scopeChain,
                               JS::OffThreadCompileCallback callback, void *callbackData)
@@ -298,13 +311,7 @@ js::StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &optio
     WorkerThreadState &state = *cx->runtime()->workerThreadState;
     JS_ASSERT(state.numThreads);
 
-    // Off thread parsing can't occur during incremental collections on the
-    // atoms compartment, to avoid triggering barriers. (Outside the atoms
-    // compartment, the compilation will use a new zone which doesn't require
-    // barriers itself.) If an atoms-zone GC is in progress, hold off on
-    // executing the parse task until the atoms-zone GC completes (see
-    // EnqueuePendingParseTasksAfterGC).
-    if (cx->runtime()->activeGCInAtomsZone()) {
+    if (OffThreadParsingMustWaitForGC(cx->runtime())) {
         if (!state.parseWaitingOnGC.append(task.get()))
             return false;
     } else {
@@ -326,7 +333,7 @@ js::StartOffThreadParseScript(JSContext *cx, const ReadOnlyCompileOptions &optio
 void
 js::EnqueuePendingParseTasksAfterGC(JSRuntime *rt)
 {
-    JS_ASSERT(!rt->activeGCInAtomsZone());
+    JS_ASSERT(!OffThreadParsingMustWaitForGC(rt));
 
     if (!rt->workerThreadState || rt->workerThreadState->parseWaitingOnGC.empty())
         return;
@@ -589,7 +596,7 @@ CallNewScriptHookForAllScripts(JSContext *cx, HandleScript script)
     }
 
     // The global new script hook is called on every script that was compiled.
-    RootedFunction function(cx, script->function());
+    RootedFunction function(cx, script->functionNonDelazifying());
     CallNewScriptHook(cx, script, function);
 }
 
@@ -869,7 +876,7 @@ WorkerThread::handleCompressionWorkload(WorkerThreadState &state)
 
     {
         AutoUnlockWorkerThreadState unlock(runtime);
-        if (!compressionTask->compress())
+        if (!compressionTask->work())
             compressionTask->setOOM();
     }
 

@@ -16,8 +16,6 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/JNI.jsm");
 Cu.import('resource://gre/modules/Payment.jsm');
-Cu.import("resource://gre/modules/PermissionPromptHelper.jsm");
-Cu.import("resource://gre/modules/ContactService.jsm");
 Cu.import("resource://gre/modules/NotificationDB.jsm");
 Cu.import("resource://gre/modules/SpatialNavigation.jsm");
 Cu.import("resource://gre/modules/UITelemetry.jsm");
@@ -65,9 +63,17 @@ XPCOMUtils.defineLazyServiceGetter(this, "uuidgen",
                                    "@mozilla.org/uuid-generator;1",
                                    "nsIUUIDGenerator");
 
+XPCOMUtils.defineLazyModuleGetter(this, "SimpleServiceDiscovery",
+                                  "resource://gre/modules/SimpleServiceDiscovery.jsm");
+
 #ifdef NIGHTLY_BUILD
 XPCOMUtils.defineLazyModuleGetter(this, "ShumwayUtils",
                                   "resource://shumway/ShumwayUtils.jsm");
+#endif
+
+#ifdef MOZ_ANDROID_SYNTHAPKS
+XPCOMUtils.defineLazyModuleGetter(this, "WebappManager",
+                                  "resource://gre/modules/WebappManager.jsm");
 #endif
 
 // Lazily-loaded browser scripts:
@@ -75,11 +81,11 @@ XPCOMUtils.defineLazyModuleGetter(this, "ShumwayUtils",
   ["SelectHelper", "chrome://browser/content/SelectHelper.js"],
   ["InputWidgetHelper", "chrome://browser/content/InputWidgetHelper.js"],
   ["AboutReader", "chrome://browser/content/aboutReader.js"],
-  ["WebAppRT", "chrome://browser/content/WebAppRT.js"],
   ["MasterPassword", "chrome://browser/content/MasterPassword.js"],
   ["PluginHelper", "chrome://browser/content/PluginHelper.js"],
   ["OfflineApps", "chrome://browser/content/OfflineApps.js"],
   ["Linkifier", "chrome://browser/content/Linkify.js"],
+  ["CastingApps", "chrome://browser/content/CastingApps.js"],
 ].forEach(function (aScript) {
   let [name, script] = aScript;
   XPCOMUtils.defineLazyGetter(window, name, function() {
@@ -126,6 +132,22 @@ var LazyNotificationGetter = {
       }
     };
     Services.obs.addObserver(o, aNotification, false);
+    LazyNotificationGetter.observers.push(o);
+  });
+});
+
+// Lazily-loaded JS modules that use observer notifications
+[
+  ["Home", ["HomePanels:Get"], "resource://gre/modules/Home.jsm"],
+].forEach(module => {
+  let [name, notifications, resource] = module;
+  XPCOMUtils.defineLazyModuleGetter(this, name, resource);
+  notifications.forEach(notification => {
+    let o = {
+      notification: notification,
+      observe: (s, t, d) => this[name].observe(s, t, d)
+    };
+    Services.obs.addObserver(o, notification, false);
     LazyNotificationGetter.observers.push(o);
   });
 });
@@ -311,7 +333,15 @@ var BrowserApp = {
     Services.obs.addObserver(this, "FormHistory:Init", false);
     Services.obs.addObserver(this, "gather-telemetry", false);
     Services.obs.addObserver(this, "keyword-search", false);
-
+#ifdef MOZ_ANDROID_SYNTHAPKS
+    Services.obs.addObserver(this, "webapps-download-apk", false);
+    Services.obs.addObserver(this, "webapps-ask-install", false);
+    Services.obs.addObserver(this, "webapps-launch", false);
+    Services.obs.addObserver(this, "webapps-uninstall", false);
+    Services.obs.addObserver(this, "Webapps:AutoInstall", false);
+    Services.obs.addObserver(this, "Webapps:Load", false);
+    Services.obs.addObserver(this, "Webapps:AutoUninstall", false);
+#endif
     Services.obs.addObserver(this, "sessionstore-state-purge-complete", false);
 
     function showFullScreenWarning() {
@@ -346,11 +376,21 @@ var BrowserApp = {
     XPInstallObserver.init();
     CharacterEncoding.init();
     ActivityObserver.init();
+#ifdef MOZ_ANDROID_SYNTHAPKS
+    // TODO: replace with Android implementation of WebappOSUtils.isLaunchable.
+    Cu.import("resource://gre/modules/Webapps.jsm");
+    DOMApplicationRegistry.allAppsLaunchable = true;
+
+    // TODO: figure out why this is needed here.
+    Cu.import("resource://gre/modules/AppsUtils.jsm");
+#else
     WebappsUI.init();
+#endif
     RemoteDebugger.init();
     Reader.init();
     UserAgentOverrides.init();
     DesktopUserAgent.init();
+    CastingApps.init();
     Distribution.init();
     Tabs.init();
 #ifdef ACCESSIBILITY
@@ -378,11 +418,8 @@ var BrowserApp = {
         this.isGuest = window.arguments[4];
     }
 
-    let status = this.startupStatus();
     if (pinned) {
-      WebAppRT.init(status, url, function(aUrl) {
-        BrowserApp.addTab(aUrl);
-      });
+      this._initRuntime(this._startupStatus, url, aUrl => this.addTab(aUrl));
     } else {
       SearchEngines.init();
       this.initContextMenu();
@@ -399,7 +436,7 @@ var BrowserApp = {
     event.initEvent("UIReady", true, false);
     window.dispatchEvent(event);
 
-    if (status)
+    if (this._startupStatus)
       this.onAppUpdated();
 
     // Store the low-precision buffer pref
@@ -414,18 +451,22 @@ var BrowserApp = {
 #endif
   },
 
-  startupStatus: function() {
-    let savedmstone = null;
+  get _startupStatus() {
+    delete this._startupStatus;
+
+    let savedMilestone = null;
     try {
-      savedmstone = Services.prefs.getCharPref("browser.startup.homepage_override.mstone");
+      savedMilestone = Services.prefs.getCharPref("browser.startup.homepage_override.mstone");
     } catch (e) {
     }
-#expand    let ourmstone = "__MOZ_APP_VERSION__";
-    if (ourmstone != savedmstone) {
-      Services.prefs.setCharPref("browser.startup.homepage_override.mstone", ourmstone);
-      return savedmstone ? "upgrade" : "new";
+#expand    let ourMilestone = "__MOZ_APP_VERSION__";
+    this._startupStatus = "";
+    if (ourMilestone != savedMilestone) {
+      Services.prefs.setCharPref("browser.startup.homepage_override.mstone", ourMilestone);
+      this._startupStatus = savedMilestone ? "upgrade" : "new";
     }
-    return "";
+
+    return this._startupStatus;
   },
 
   /**
@@ -434,6 +475,13 @@ var BrowserApp = {
   setLocale: function (locale) {
     console.log("browser.js: requesting locale set: " + locale);
     sendMessageToJava({ type: "Locale:Set", locale: locale });
+  },
+
+  _initRuntime: function(status, url, callback) {
+    let sandbox = {};
+    Services.scriptloader.loadSubScript("chrome://browser/content/WebAppRT.js", sandbox);
+    window.WebAppRT = sandbox.WebAppRT;
+    WebAppRT.init(status, url, callback);
   },
 
   initContextMenu: function ba_initContextMenu() {
@@ -679,12 +727,15 @@ var BrowserApp = {
     HealthReportStatusListener.uninit();
     CharacterEncoding.uninit();
     SearchEngines.uninit();
+#ifndef MOZ_ANDROID_SYNTHAPKS
     WebappsUI.uninit();
+#endif
     RemoteDebugger.uninit();
     Reader.uninit();
     UserAgentOverrides.uninit();
     DesktopUserAgent.uninit();
     ExternalApps.uninit();
+    CastingApps.uninit();
     Distribution.uninit();
     Tabs.uninit();
   },
@@ -865,6 +916,16 @@ var BrowserApp = {
     };
     sendMessageToJava(message);
   },
+
+#ifdef MOZ_ANDROID_SYNTHAPKS
+  _loadWebapp: function(aMessage) {
+
+    this._initRuntime(this._startupStatus, aMessage.url, aUrl => {
+      this.manifestUrl = aMessage.url;
+      this.addTab(aUrl, { title: aMessage.name });
+    });
+  },
+#endif
 
   // Calling this will update the state in BrowserApp after a tab has been
   // closed in the Java UI.
@@ -1389,7 +1450,8 @@ var BrowserApp = {
 
         // Pass LOAD_FLAGS_DISALLOW_INHERIT_OWNER to prevent any loads from
         // inheriting the currently loaded document's principal.
-        let flags = Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
+        let flags = Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP |
+                    Ci.nsIWebNavigation.LOAD_FLAGS_FIXUP_SCHEME_TYPOS;
         if (data.userEntered) {
           flags |= Ci.nsIWebNavigation.LOAD_FLAGS_DISALLOW_INHERIT_OWNER;
         }
@@ -1519,6 +1581,38 @@ var BrowserApp = {
       case "nsPref:changed":
         this.notifyPrefObservers(aData);
         break;
+
+#ifdef MOZ_ANDROID_SYNTHAPKS
+      case "webapps-download-apk":
+        WebappManager.downloadApk(JSON.parse(aData));
+        break;
+
+      case "webapps-ask-install":
+        WebappManager.askInstall(JSON.parse(aData));
+        break;
+
+      case "webapps-launch": {
+        WebappManager.launch(JSON.parse(aData));
+        break;
+      }
+
+      case "webapps-uninstall": {
+        WebappManager.uninstall(JSON.parse(aData));
+        break;
+      }
+
+      case "Webapps:AutoInstall":
+        WebappManager.autoInstall(JSON.parse(aData));
+        break;
+
+      case "Webapps:Load":
+        this._loadWebapp(JSON.parse(aData));
+        break;
+
+      case "Webapps:AutoUninstall":
+        WebappManager.autoUninstall(JSON.parse(aData));
+        break;
+#endif
 
       case "Locale:Changed":
         // The value provided to Locale:Changed should be a BCP47 language tag
@@ -3217,20 +3311,6 @@ Tab.prototype = {
     // Adjust the max line box width to be no more than the viewport width, but
     // only if the reflow-on-zoom preference is enabled.
     let isZooming = !fuzzyEquals(aViewport.zoom, this._zoom);
-    if (BrowserApp.selectedTab.reflozPinchSeen &&
-        isZooming && aViewport.zoom < 1.0) {
-      // In this case, we want to restore the max line box width,
-      // because we are pinch-zooming to zoom out.
-      BrowserEventHandler.resetMaxLineBoxWidth();
-      BrowserApp.selectedTab.reflozPinchSeen = false;
-    } else if (BrowserApp.selectedTab.reflozPinchSeen &&
-               isZooming) {
-      // In this case, the user pinch-zoomed in, so we don't want to
-      // preserve position as we would with reflow-on-zoom.
-      BrowserApp.selectedTab.probablyNeedRefloz = false;
-      BrowserApp.selectedTab.clearReflowOnZoomPendingActions();
-      BrowserApp.selectedTab._mReflozPoint = null;
-    }
 
     let docViewer = null;
 
@@ -3786,7 +3866,7 @@ Tab.prototype = {
       }
 
       // true if the page loaded successfully (i.e., no 404s or other errors)
-      let success = false; 
+      let success = false;
       let uri = "";
       try {
         // Remember original URI for UA changes on redirected pages
@@ -3797,7 +3877,11 @@ Tab.prototype = {
       } catch (e) { }
       try {
         success = aRequest.QueryInterface(Components.interfaces.nsIHttpChannel).requestSucceeded;
-      } catch (e) { }
+      } catch (e) {
+        // If the request does not handle the nsIHttpChannel interface, use nsIRequest's success
+        // status. Used for local files. See bug 948849.
+        success = aRequest.status == 0;
+      }
 
       // Check to see if we restoring the content from a previous presentation (session)
       // since there should be no real network activity
@@ -6938,7 +7022,9 @@ var SearchEngines = {
       mDBConn.executeAsync(stmts, stmts.length, {
         handleResult: function (results) {
           let bytes = results.getNextRow().getResultByName("favicon");
-          favicon = "data:image/png;base64," + btoa(String.fromCharCode.apply(null, bytes));
+          if (bytes && bytes.length) {
+            favicon = "data:image/x-icon;base64," + btoa(String.fromCharCode.apply(null, bytes));
+          }
         },
         handleCompletion: function (reason) {
           // if there's already an engine with this name, add a number to
@@ -6990,6 +7076,7 @@ var ActivityObserver = {
   }
 };
 
+#ifndef MOZ_ANDROID_SYNTHAPKS
 var WebappsUI = {
   init: function init() {
     Cu.import("resource://gre/modules/Webapps.jsm");
@@ -7009,6 +7096,7 @@ var WebappsUI = {
     Services.obs.removeObserver(this, "webapps-install-error");
   },
 
+  DEFAULT_ICON: "chrome://browser/skin/images/default-app-icon.png",
   DEFAULT_PREFS_FILENAME: "default-prefs.js",
 
   observe: function observe(aSubject, aTopic, aData) {
@@ -7050,39 +7138,6 @@ var WebappsUI = {
     }
   },
 
-  getBiggestIcon: function getBiggestIcon(aIcons, aOrigin) {
-    const DEFAULT_ICON = "chrome://browser/skin/images/default-app-icon.png";
-    if (!aIcons)
-      return DEFAULT_ICON;
-  
-    let iconSizes = Object.keys(aIcons);
-    if (iconSizes.length == 0)
-      return DEFAULT_ICON;
-    iconSizes.sort(function(a, b) a - b);
-
-    let biggestIcon = aIcons[iconSizes.pop()];
-    let iconURI = null;
-    try {
-      iconURI = Services.io.newURI(biggestIcon, null, null);
-      if (iconURI.scheme == "data") {
-        return iconURI.spec;
-      }
-    } catch (ex) {
-      // we don't have a biggestIcon or its not a valid url
-    }
-
-    // if we have an origin, try to resolve biggestIcon as a relative url
-    if (!iconURI && aOrigin) {
-      try {
-        iconURI = Services.io.newURI(aOrigin.resolve(biggestIcon), null, null);
-      } catch (ex) {
-        console.log("Could not resolve url: " + aOrigin.spec + " " + biggestIcon + " - " + ex);
-      }
-    }
-
-    return iconURI ? iconURI.spec : DEFAULT_ICON;
-  },
-
   doInstall: function doInstall(aData) {
     let jsonManifest = aData.isPackage ? aData.app.updateManifest : aData.app.manifest;
     let manifest = new ManifestHelper(jsonManifest, aData.app.origin);
@@ -7108,7 +7163,7 @@ var WebappsUI = {
 
             // the manifest argument is the manifest from within the zip file,
             // TODO so now would be a good time to ask about permissions.
-            self.makeBase64Icon(self.getBiggestIcon(manifest.icons, Services.io.newURI(aData.app.origin, null, null)),
+            self.makeBase64Icon(localeManifest.biggestIconURL || this.DEFAULT_ICON,
               function(scaledIcon, fullsizeIcon) {
                 // if java returned a profile path to us, try to use it to pre-populate the app cache
                 // also save the icon so that it can be used in the splash screen
@@ -7238,9 +7293,8 @@ var WebappsUI = {
 
       // if the image failed to load, and it was not our default icon, attempt to
       // use our default as a fallback
-      let uri = Services.io.newURI(favicon.src, null, null);
-      if (!/^chrome$/.test(uri.scheme)) {
-        favicon.src = WebappsUI.getBiggestIcon(null);
+      if (favicon.src != WebappsUI.DEFAULT_ICON) {
+        favicon.src = WebappsUI.DEFAULT_ICON;
       }
     };
   
@@ -7258,6 +7312,7 @@ var WebappsUI = {
     });
   }
 }
+#endif
 
 var RemoteDebugger = {
   init: function rd_init() {

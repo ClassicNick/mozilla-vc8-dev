@@ -156,6 +156,25 @@ public:
     return false;
   }
 
+  /**
+   * Returns true if the matrix is anything other than a straight
+   * translation by integers.
+  */
+  bool HasNonIntegerTranslation() const {
+    return HasNonTranslation() ||
+      !FuzzyEqual(_31, floor(_31 + 0.5)) ||
+      !FuzzyEqual(_32, floor(_32 + 0.5));
+  }
+
+  /**
+   * Returns true if the matrix has any transform other
+   * than a straight translation.
+   */
+  bool HasNonTranslation() const {
+    return !FuzzyEqual(_11, 1.0) || !FuzzyEqual(_22, 1.0) ||
+           !FuzzyEqual(_12, 0.0) || !FuzzyEqual(_21, 0.0);
+  }
+
   /* Returns true if the matrix is an identity matrix.
    */
   bool IsIdentity() const
@@ -185,6 +204,23 @@ public:
     return IsTranslation() &&
            FuzzyEqual(_31, floorf(_31 + 0.5f)) &&
            FuzzyEqual(_32, floorf(_32 + 0.5f));
+  }
+
+  /**
+   * Returns true if matrix is multiple of 90 degrees rotation with flipping,
+   * scaling and translation.
+   */
+  bool PreservesAxisAlignedRectangles() const {
+      return ((FuzzyEqual(_11, 0.0) && FuzzyEqual(_22, 0.0))
+          || (FuzzyEqual(_12, 0.0) && FuzzyEqual(_21, 0.0)));
+  }
+
+  /**
+   * Returns true if the matrix has non-integer scale
+   */
+  bool HasNonIntegerScale() const {
+      return !FuzzyEqual(_11, floor(_11 + 0.5)) ||
+             !FuzzyEqual(_22, floor(_22 + 0.5));
   }
 
 private:

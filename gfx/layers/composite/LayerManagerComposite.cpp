@@ -20,7 +20,6 @@
 #include "Units.h"                      // for ScreenIntRect
 #include "gfx2DGlue.h"                  // for ToMatrix4x4
 #include "gfx3DMatrix.h"                // for gfx3DMatrix
-#include "gfxMatrix.h"                  // for gfxMatrix
 #include "gfxPlatform.h"                // for gfxPlatform
 #ifdef XP_MACOSX
 #include "gfxPlatformMac.h"
@@ -388,23 +387,19 @@ LayerManagerComposite::Render()
   }
 
   // Allow widget to render a custom background.
-  mCompositor->SaveState();
   mCompositor->GetWidget()->DrawWindowUnderlay(this, nsIntRect(actualBounds.x,
                                                                actualBounds.y,
                                                                actualBounds.width,
                                                                actualBounds.height));
-  mCompositor->RestoreState();
 
   // Render our layers.
   RootLayer()->RenderLayer(clipRect);
 
   // Allow widget to render a custom foreground.
-  mCompositor->SaveState();
   mCompositor->GetWidget()->DrawWindowOverlay(this, nsIntRect(actualBounds.x,
                                                               actualBounds.y,
                                                               actualBounds.width,
                                                               actualBounds.height));
-  mCompositor->RestoreState();
 
   // Debugging
   RenderDebugOverlay(actualBounds);
@@ -420,7 +415,7 @@ LayerManagerComposite::Render()
 }
 
 void
-LayerManagerComposite::SetWorldTransform(const gfxMatrix& aMatrix)
+LayerManagerComposite::SetWorldTransform(const gfx::Matrix& aMatrix)
 {
   NS_ASSERTION(aMatrix.PreservesAxisAlignedRectangles(),
                "SetWorldTransform only accepts matrices that satisfy PreservesAxisAlignedRectangles");
@@ -430,7 +425,7 @@ LayerManagerComposite::SetWorldTransform(const gfxMatrix& aMatrix)
   mWorldMatrix = aMatrix;
 }
 
-gfxMatrix&
+gfx::Matrix&
 LayerManagerComposite::GetWorldTransform(void)
 {
   return mWorldMatrix;
@@ -439,7 +434,7 @@ LayerManagerComposite::GetWorldTransform(void)
 void
 LayerManagerComposite::WorldTransformRect(nsIntRect& aRect)
 {
-  gfxRect grect(aRect.x, aRect.y, aRect.width, aRect.height);
+  gfx::Rect grect(aRect.x, aRect.y, aRect.width, aRect.height);
   grect = mWorldMatrix.TransformBounds(grect);
   aRect.SetRect(grect.X(), grect.Y(), grect.Width(), grect.Height());
 }
@@ -754,7 +749,7 @@ LayerManagerComposite::CreateDrawTarget(const IntSize &aSize,
                          aSize.width > 64 && aSize.height > 64 &&
                          gfxPlatformMac::GetPlatform()->UseAcceleratedCanvas();
   if (useAcceleration) {
-    return Factory::CreateDrawTarget(BACKEND_COREGRAPHICS_ACCELERATED,
+    return Factory::CreateDrawTarget(BackendType::COREGRAPHICS_ACCELERATED,
                                      aSize, aFormat);
   }
 #endif
@@ -769,6 +764,7 @@ LayerComposite::LayerComposite(LayerManagerComposite *aManager)
   , mShadowTransformSetByAnimation(false)
   , mDestroyed(false)
   , mLayerComposited(false)
+  , mClearFB(false)
 { }
 
 LayerComposite::~LayerComposite()

@@ -79,16 +79,15 @@ public:
   }
 };
 
-Telephony::Telephony()
-: mActiveCall(nullptr), mEnumerated(false)
+Telephony::Telephony(nsPIDOMWindow* aOwner)
+  : nsDOMEventTargetHelper(aOwner),
+    mActiveCall(nullptr), mEnumerated(false)
 {
   if (!gTelephonyList) {
     gTelephonyList = new TelephonyList();
   }
 
   gTelephonyList->AppendElement(this);
-
-  SetIsDOMBinding();
 }
 
 Telephony::~Telephony()
@@ -152,9 +151,7 @@ Telephony::Create(nsPIDOMWindow* aOwner, ErrorResult& aRv)
     return nullptr;
   }
 
-  nsRefPtr<Telephony> telephony = new Telephony();
-
-  telephony->BindToOwner(aOwner);
+  nsRefPtr<Telephony> telephony = new Telephony(aOwner);
 
   telephony->mProvider = ril;
   telephony->mListener = new Listener(telephony);
@@ -700,11 +697,11 @@ Telephony::NotifyError(uint32_t aServiceId,
 NS_IMETHODIMP
 Telephony::NotifyCdmaCallWaiting(uint32_t aServiceId, const nsAString& aNumber)
 {
-  MOZ_ASSERT(mActiveCall &&
-             mActiveCall->ServiceId() == aServiceId &&
-             mActiveCall->CallState() == nsITelephonyProvider::CALL_STATE_CONNECTED);
+  MOZ_ASSERT(mCalls.Length() == 1);
 
-  nsRefPtr<TelephonyCall> callToNotify = mActiveCall;
+  nsRefPtr<TelephonyCall> callToNotify = mCalls[0];
+  MOZ_ASSERT(callToNotify && callToNotify->ServiceId() == aServiceId);
+
   callToNotify->UpdateSecondNumber(aNumber);
   DispatchCallEvent(NS_LITERAL_STRING("callschanged"), callToNotify);
   return NS_OK;

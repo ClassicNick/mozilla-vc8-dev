@@ -721,7 +721,6 @@ static const char js_zeal_frequency_str[]     = JS_OPTIONS_DOT_STR "gczeal.frequ
 #endif
 static const char js_typeinfer_content_str[]  = JS_OPTIONS_DOT_STR "typeinference.content";
 static const char js_typeinfer_chrome_str[]   = JS_OPTIONS_DOT_STR "typeinference.chrome";
-static const char js_jit_hardening_str[]      = JS_OPTIONS_DOT_STR "jit_hardening";
 static const char js_memlog_option_str[]      = JS_OPTIONS_DOT_STR "mem.log";
 static const char js_memnotify_option_str[]   = JS_OPTIONS_DOT_STR "mem.notify";
 static const char js_asmjs_content_str[]      = JS_OPTIONS_DOT_STR "asmjs";
@@ -758,7 +757,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
   bool useTypeInference = Preferences::GetBool((chromeWindow || !contentWindow) ?
                                                js_typeinfer_chrome_str :
                                                js_typeinfer_content_str);
-  bool useHardening = Preferences::GetBool(js_jit_hardening_str);
   bool useBaselineJIT = Preferences::GetBool((chromeWindow || !contentWindow) ?
                                                js_baselinejit_chrome_str :
                                                js_baselinejit_content_str);
@@ -776,7 +774,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
     xr->GetInSafeMode(&safeMode);
     if (safeMode) {
       useTypeInference = false;
-      useHardening = false;
       useBaselineJIT = false;
       useBaselineJITEager = false;
       useIon = false;
@@ -809,9 +806,6 @@ nsJSContext::JSOptionChangedCallback(const char *pref, void *data)
 
   ::JS_SetGlobalJitCompilerOption(context->mContext, JSJITCOMPILER_ION_USECOUNT_TRIGGER,
                                   (useIonEager ? 0 : -1));
-
-  JSRuntime *rt = JS_GetRuntime(context->mContext);
-  JS_SetJitHardening(rt, useHardening);
 
 #ifdef JS_GC_ZEAL
   int32_t zeal = Preferences::GetInt(js_zeal_option_str, -1);
@@ -1059,8 +1053,8 @@ nsJSContext::BindCompiledEventHandler(nsISupports* aTarget,
 #ifdef DEBUG
   {
     JSAutoCompartment ac(cx, aHandler);
-    NS_ASSERTION(JS_TypeOfValue(cx,
-                                OBJECT_TO_JSVAL(aHandler)) == JSTYPE_FUNCTION,
+    JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*aHandler));
+    NS_ASSERTION(JS_TypeOfValue(cx, val) == JSTYPE_FUNCTION,
                  "Event handler object not a function");
   }
 #endif
@@ -1262,7 +1256,9 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
       }
       nsCOMPtr<nsIVariant> variant(do_QueryInterface(arg));
       if (variant != nullptr) {
-        rv = xpc->VariantToJS(cx, aScope, variant, thisval);
+        JS::Rooted<JS::Value> temp(cx);
+        rv = xpc->VariantToJS(cx, aScope, variant, &temp);
+        *thisval = temp.get();
       } else {
         // And finally, support the nsISupportsPrimitives supplied
         // by the AppShell.  It generally will pass only strings, but
@@ -1278,10 +1274,8 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
           NS_ASSERTION(prim == nullptr,
                        "Don't pass nsISupportsPrimitives - use nsIVariant!");
 #endif
-          nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
           JS::Rooted<JS::Value> v(cx);
-          rv = nsContentUtils::WrapNative(cx, aScope, arg, &v,
-                                          getter_AddRefs(wrapper));
+          rv = nsContentUtils::WrapNative(cx, aScope, arg, &v);
           if (NS_SUCCEEDED(rv)) {
             *thisval = v;
           }
@@ -1291,7 +1285,9 @@ nsJSContext::ConvertSupportsTojsvals(nsISupports *aArgs,
   } else {
     nsCOMPtr<nsIVariant> variant = do_QueryInterface(aArgs);
     if (variant) {
-      rv = xpc->VariantToJS(cx, aScope, variant, argv);
+      JS::Rooted<JS::Value> temp(cx);
+      rv = xpc->VariantToJS(cx, aScope, variant, &temp);
+      *argv = temp.get();
     } else {
       NS_ERROR("Not an array, not an interface?");
       rv = NS_ERROR_UNEXPECTED;
@@ -1476,12 +1472,10 @@ nsJSContext::AddSupportsPrimitiveTojsvals(nsISupports *aArg, JS::Value *aArgv)
 
       AutoFree iidGuard(iid); // Free iid upon destruction.
 
-      nsCOMPtr<nsIXPConnectJSObjectHolder> wrapper;
       JS::Rooted<JSObject*> global(cx, GetWindowProxy());
       JS::Rooted<JS::Value> v(cx);
       nsresult rv = nsContentUtils::WrapNative(cx, global,
-                                               data, iid, &v,
-                                               getter_AddRefs(wrapper));
+                                               data, iid, &v);
       NS_ENSURE_SUCCESS(rv, rv);
 
       *aArgv = v;
@@ -1936,7 +1930,10 @@ nsJSContext::GarbageCollectNow(JS::gcreason::Reason aReason,
 
   JS::PrepareForFullGC(sRuntime);
   if (aIncremental == IncrementalGC) {
+    MOZ_ASSERT(aShrinking == NonShrinkingGC);
     JS::IncrementalGC(sRuntime, aReason, aSliceMillis);
+  } else if (aShrinking == ShrinkingGC) {
+    JS::ShrinkingGC(sRuntime, aReason);
   } else {
     JS::GCForReason(sRuntime, aReason);
   }
@@ -2013,6 +2010,7 @@ struct CycleCollectorStats
     mSuspected = 0;
     mMaxSkippableDuration = 0;
     mMaxSliceTime = 0;
+    mTotalSliceTime = 0;
     mAnyLockedOut = false;
     mExtraForgetSkippableCalls = 0;
   }
@@ -2023,6 +2021,7 @@ struct CycleCollectorStats
   {
     uint32_t sliceTime = TimeUntilNow(mBeginSliceTime);
     mMaxSliceTime = std::max(mMaxSliceTime, sliceTime);
+    mTotalSliceTime += sliceTime;
     MOZ_ASSERT(mExtraForgetSkippableCalls == 0, "Forget to reset extra forget skippable calls?");
   }
 
@@ -2049,6 +2048,9 @@ struct CycleCollectorStats
 
   // The longest pause of any slice in the current CC.
   uint32_t mMaxSliceTime;
+
+  // The total amount of time spent actually running the current CC.
+  uint32_t mTotalSliceTime;
 
   // True if we were locked out by the GC in any slice of the current CC.
   bool mAnyLockedOut;
@@ -2267,7 +2269,8 @@ nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
       MOZ_UTF16("ForgetSkippable %lu times before CC, min: %lu ms, max: %lu ms, avg: %lu ms, total: %lu ms, max sync: %lu ms, removed: %lu"));
     nsString msg;
     msg.Adopt(nsTextFormatter::smprintf(kFmt.get(), double(delta) / PR_USEC_PER_SEC,
-                                        gCCStats.mMaxSliceTime, ccNowDuration, gCCStats.mSuspected,
+                                        gCCStats.mMaxSliceTime, gCCStats.mTotalSliceTime,
+                                        gCCStats.mSuspected,
                                         aResults.mVisitedRefCounted, aResults.mVisitedGCed, mergeMsg.get(),
                                         aResults.mFreedRefCounted, aResults.mFreedGCed,
                                         sCCollectedWaitingForGC, sLikelyShortLivingObjectsNeedingGC,
@@ -2291,6 +2294,7 @@ nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
        MOZ_UTF16("{ \"timestamp\": %llu, ")
          MOZ_UTF16("\"duration\": %llu, ")
          MOZ_UTF16("\"max_slice_pause\": %llu, ")
+         MOZ_UTF16("\"total_slice_pause\": %llu, ")
          MOZ_UTF16("\"max_finish_gc_duration\": %llu, ")
          MOZ_UTF16("\"max_sync_skippable_duration\": %llu, ")
          MOZ_UTF16("\"suspected\": %lu, ")
@@ -2313,7 +2317,9 @@ nsJSContext::EndCycleCollectionCallback(CycleCollectorResults &aResults)
        MOZ_UTF16("}"));
     nsString json;
     json.Adopt(nsTextFormatter::smprintf(kJSONFmt.get(), endCCTime, ccNowDuration,
-                                         gCCStats.mMaxSliceTime, gCCStats.mMaxGCDuration,
+                                         gCCStats.mMaxSliceTime,
+                                         gCCStats.mTotalSliceTime,
+                                         gCCStats.mMaxGCDuration,
                                          gCCStats.mMaxSkippableDuration,
                                          gCCStats.mSuspected,
                                          aResults.mVisitedRefCounted, aResults.mVisitedGCed,
@@ -3303,7 +3309,9 @@ NS_IMETHODIMP nsJSArgArray::QueryElementAt(uint32_t index, const nsIID & uuid, v
     return NS_ERROR_INVALID_ARG;
 
   if (uuid.Equals(NS_GET_IID(nsIVariant)) || uuid.Equals(NS_GET_IID(nsISupports))) {
-    return nsContentUtils::XPConnect()->JSToVariant(mContext, mArgv[index],
+    // Have to copy a Heap into a Rooted to work with it.
+    JS::Rooted<JS::Value> val(mContext, mArgv[index]);
+    return nsContentUtils::XPConnect()->JSToVariant(mContext, val,
                                                     (nsIVariant **)result);
   }
   NS_WARNING("nsJSArgArray only handles nsIVariant");

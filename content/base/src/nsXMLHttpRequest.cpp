@@ -921,10 +921,10 @@ nsXMLHttpRequest::SetResponseType(nsXMLHttpRequest::ResponseTypeEnum aResponseTy
 
 /* readonly attribute jsval response; */
 NS_IMETHODIMP
-nsXMLHttpRequest::GetResponse(JSContext *aCx, JS::Value *aResult)
+nsXMLHttpRequest::GetResponse(JSContext *aCx, JS::MutableHandle<JS::Value> aResult)
 {
   ErrorResult rv;
-  *aResult = GetResponse(aCx, rv);
+  aResult.set(GetResponse(aCx, rv));
   return rv.ErrorCode();
 }
 
@@ -990,7 +990,7 @@ nsXMLHttpRequest::GetResponse(JSContext* aCx, ErrorResult& aRv)
     JS::Rooted<JS::Value> result(aCx, JSVAL_NULL);
     JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
     aRv = nsContentUtils::WrapNative(aCx, scope, mResponseBlob, &result,
-                                     nullptr, true);
+                                     true);
     return result;
   }
   case XML_HTTP_RESPONSE_TYPE_DOCUMENT:
@@ -1002,7 +1002,7 @@ nsXMLHttpRequest::GetResponse(JSContext* aCx, ErrorResult& aRv)
     JS::Rooted<JSObject*> scope(aCx, JS::CurrentGlobalOrNull(aCx));
     JS::Rooted<JS::Value> result(aCx, JSVAL_NULL);
     aRv = nsContentUtils::WrapNative(aCx, scope, mResponseXML, &result,
-                                     nullptr, true);
+                                     true);
     return result;
   }
   case XML_HTTP_RESPONSE_TYPE_JSON:
@@ -1899,7 +1899,11 @@ nsXMLHttpRequest::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
       mProgressTimerIsActive = false;
       mProgressNotifier->Cancel();
     }
-    MaybeDispatchProgressEvents(true);
+    if (mUploadTransferred < mUploadTotal) {
+      mUploadTransferred = mUploadTotal;
+      mProgressSinceLastProgressEvent = true;
+      MaybeDispatchProgressEvents(true);
+    }
     mUploadComplete = true;
     DispatchProgressEvent(mUpload, NS_LITERAL_STRING(LOAD_STR),
                           true, mUploadTotal, mUploadTotal);
@@ -2403,7 +2407,7 @@ GetRequestBody(nsIVariant* aBody, nsIInputStream** aResult, uint64_t* aContentLe
     AutoSafeJSContext cx;
     JS::Rooted<JS::Value> realVal(cx);
 
-    nsresult rv = aBody->GetAsJSVal(realVal.address());
+    nsresult rv = aBody->GetAsJSVal(&realVal);
     if (NS_SUCCEEDED(rv) && !JSVAL_IS_PRIMITIVE(realVal)) {
       JS::Rooted<JSObject*> obj(cx, JSVAL_TO_OBJECT(realVal));
       if (JS_IsArrayBufferObject(obj)) {
@@ -3410,9 +3414,6 @@ nsXMLHttpRequest::MaybeDispatchProgressEvents(bool aFinalProgress)
   // We're uploading if our state is XML_HTTP_REQUEST_OPENED or
   // XML_HTTP_REQUEST_SENT
   if ((XML_HTTP_REQUEST_OPENED | XML_HTTP_REQUEST_SENT) & mState) {
-    if (aFinalProgress) {
-      mUploadTotal = mUploadTransferred;
-    }
     if (mUpload && !mUploadComplete) {
       DispatchProgressEvent(mUpload, NS_LITERAL_STRING(PROGRESS_STR),
                             mUploadLengthComputable, mUploadTransferred,

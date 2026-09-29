@@ -47,6 +47,8 @@ using mozilla::unused;
 #include "mozilla/layers/APZCTreeManager.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
+#include "ScopedGLHelpers.h"
+#include "mozilla/layers/CompositorOGL.h"
 
 #include "nsTArray.h"
 
@@ -1057,9 +1059,6 @@ nsWindow::OnDraw(AndroidGeckoEvent *ae)
 
     nsRefPtr<nsWindow> kungFuDeathGrip(this);
 
-    JNIEnv *env = AndroidBridge::GetJNIEnv();
-    if (!env)
-        return;
     AutoLocalJNIFrame jniFrame;
 
     // We're paused, or we haven't been given a window-size yet, so do nothing
@@ -2356,9 +2355,6 @@ void
 nsWindow::DrawWindowUnderlay(LayerManagerComposite* aManager, nsIntRect aRect)
 {
     JNIEnv *env = GetJNIForThread();
-    NS_ABORT_IF_FALSE(env, "No JNI environment at DrawWindowUnderlay()!");
-    if (!env)
-        return;
 
     AutoLocalJNIFrame jniFrame(env);
 
@@ -2380,6 +2376,10 @@ nsWindow::DrawWindowUnderlay(LayerManagerComposite* aManager, nsIntRect aRect)
         return;
     }
 
+    gl::GLContext* gl = static_cast<CompositorOGL*>(aManager->GetCompositor())->gl();
+    gl::ScopedGLState scopedScissorTestState(gl, LOCAL_GL_SCISSOR_TEST);
+    gl::ScopedScissorRect scopedScissorRectState(gl);
+
     client->ActivateProgram();
     if (!mLayerRendererFrame.BeginDrawing(&jniFrame)) return;
     if (!mLayerRendererFrame.DrawBackground(&jniFrame)) return;
@@ -2391,9 +2391,6 @@ nsWindow::DrawWindowOverlay(LayerManagerComposite* aManager, nsIntRect aRect)
 {
     PROFILER_LABEL("nsWindow", "DrawWindowOverlay");
     JNIEnv *env = GetJNIForThread();
-    NS_ABORT_IF_FALSE(env, "No JNI environment at DrawWindowOverlay()!");
-    if (!env)
-        return;
 
     AutoLocalJNIFrame jniFrame(env);
 
@@ -2401,6 +2398,10 @@ nsWindow::DrawWindowOverlay(LayerManagerComposite* aManager, nsIntRect aRect)
                       "Frame should have been created in DrawWindowUnderlay()!");
 
     GeckoLayerClient* client = AndroidBridge::Bridge()->GetLayerClient();
+
+    gl::GLContext* gl = static_cast<CompositorOGL*>(aManager->GetCompositor())->gl();
+    gl::ScopedGLState scopedScissorTestState(gl, LOCAL_GL_SCISSOR_TEST);
+    gl::ScopedScissorRect scopedScissorRectState(gl);
 
     client->ActivateProgram();
     if (!mLayerRendererFrame.DrawForeground(&jniFrame)) return;

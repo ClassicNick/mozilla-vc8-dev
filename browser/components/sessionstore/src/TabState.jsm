@@ -12,10 +12,12 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm", this);
 Cu.import("resource://gre/modules/Promise.jsm", this);
 Cu.import("resource://gre/modules/Task.jsm", this);
 
+XPCOMUtils.defineLazyModuleGetter(this, "console",
+  "resource://gre/modules/devtools/Console.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "Messenger",
   "resource:///modules/sessionstore/Messenger.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PrivacyLevel",
-  "resource:///modules/sessionstore/PrivacyLevel.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PrivacyFilter",
+  "resource:///modules/sessionstore/PrivacyFilter.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "TabStateCache",
   "resource:///modules/sessionstore/TabStateCache.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "TabAttributes",
@@ -164,8 +166,7 @@ let TabStateInternal = {
     let browser = tab.linkedBrowser;
 
     let promise = Task.spawn(function task() {
-      // Collect session history data asynchronously. Also collects
-      // text and scroll data.
+      // Collect session history data asynchronously.
       let history = yield Messenger.send(tab, "SessionStore:collectSessionHistory");
 
       // The tab could have been closed while waiting for a response.
@@ -328,7 +329,7 @@ let TabStateInternal = {
       history = syncHandler.collectSessionHistory(includePrivateData);
     } catch (e) {
       // This may happen if the tab has crashed.
-      Cu.reportError(e);
+      console.error(e);
       return tabData;
     }
 
@@ -352,29 +353,27 @@ let TabStateInternal = {
    */
   _copyFromPersistentCache: function (tab, tabData, options = {}) {
     let data = TabStateCache.getPersistent(tab.linkedBrowser);
-
-    // Nothing to do without any cached data.
     if (!data) {
       return;
     }
 
+    // The caller may explicitly request to omit privacy checks.
     let includePrivateData = options && options.includePrivateData;
 
     for (let key of Object.keys(data)) {
-      if (key != "storage" || includePrivateData) {
-        tabData[key] = data[key];
-      } else {
-        tabData.storage = {};
-        let isPinned = tab.pinned;
+      let value = data[key];
 
-        // If we're not allowed to include private data, let's filter out hosts
-        // based on the given tab's pinned state and the privacy level.
-        for (let host of Object.keys(data.storage)) {
-          let isHttps = host.startsWith("https:");
-          if (PrivacyLevel.canSave({isHttps: isHttps, isPinned: isPinned})) {
-            tabData.storage[host] = data.storage[host];
-          }
+      // Filter sensitive data according to the current privacy level.
+      if (!includePrivateData) {
+        if (key === "storage") {
+          value = PrivacyFilter.filterSessionStorageData(value, tab.pinned);
+        } else if (key === "formdata") {
+          value = PrivacyFilter.filterFormData(value, tab.pinned);
         }
+      }
+
+      if (value) {
+        tabData[key] = value;
       }
     }
   },

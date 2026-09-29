@@ -245,7 +245,7 @@ let NetworkHelper = {
       Ci.nsICachingChannel.LOAD_ONLY_FROM_CACHE |
       Ci.nsICachingChannel.LOAD_BYPASS_LOCAL_CACHE_IF_BUSY;
 
-    NetUtil.asyncFetch(channel, function (aInputStream, aStatusCode, aRequest) {
+    NetUtil.asyncFetch(channel, (aInputStream, aStatusCode, aRequest) => {
       if (!components.isSuccessCode(aStatusCode)) {
         aCallback(null);
         return;
@@ -424,9 +424,9 @@ let NetworkHelper = {
 
     // XML and JSON often come with custom MIME types, so in addition to the
     // standard "application/xml" and "application/json", we also look for
-    // variants like "application/x-bigcorp-xml" by checking for either string
-    // after any word boundary.
-    if (/^application\/[a-z-]+\b(xml|json)/.test(aMimeType)) {
+    // variants like "application/x-bigcorp+xml". For JSON we allow "+json" and
+    // "-json" as suffixes.
+    if (/^application\/\w+(?:[\.-]\w+)*(?:\+xml|[-+]json)$/.test(aMimeType)) {
       return true;
     }
 
