@@ -33,8 +33,8 @@ class ErrorObject : public JSObject
 
     /* For access to assignInitialShape. */
     friend bool
-    EmptyShape::ensureInitialCustomShape<ErrorObject>(ExclusiveContext *cx,
-                                                      Handle<ErrorObject*> obj);
+    EmptyShape::ensureInitialCustomShape(ExclusiveContext *cx,
+                                         Handle<ErrorObject*> obj);
 
     /*
      * Assign the initial error shape to the empty object.  (This shape does

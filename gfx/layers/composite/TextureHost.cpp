@@ -122,6 +122,7 @@ DeprecatedTextureHost::CreateDeprecatedTextureHost(SurfaceDescriptorType aDescri
       return CreateDeprecatedTextureHostD3D9(aDescriptorType,
                                          aDeprecatedTextureHostFlags,
                                          aTextureFlags);
+#elif defined XP_WIN && MOZ_ENABLE_D3D10_LAYER
     case LAYERS_D3D11:
       return CreateDeprecatedTextureHostD3D11(aDescriptorType,
                                           aDeprecatedTextureHostFlags,

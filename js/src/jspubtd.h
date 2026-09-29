@@ -233,7 +233,9 @@ struct Runtime
 
     /* Allow inlining of PersistentRooted constructors and destructors. */
   private:
+#if !defined (_MSC_VER) || _MSC_VER >= 1500
     template <typename Referent> friend class JS::PersistentRooted;
+#endif
     friend void js::gc::MarkPersistentRootedChains(JSTracer *);
     friend void ::js_FinishGC(JSRuntime *rt);
 
@@ -245,6 +247,9 @@ struct Runtime
     mozilla::LinkedList<PersistentRootedValue>    valuePersistentRooteds;
 
     /* Specializations of this return references to the appropriate list. */
+#if defined (_MSC_VER) || _MSC_VER <= 1400
+public:
+#endif
     template<typename Referent>
     inline mozilla::LinkedList<PersistentRooted<Referent> > &getPersistentRootedList();
 };

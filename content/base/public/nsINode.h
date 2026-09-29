@@ -1955,11 +1955,15 @@ ToCanonicalSupports(nsINode* aPointer)
   { \
     return nsINode::Contains(aOther, aResult); \
   }
+  
+#define SLASH()     /
+#define ASTERISK()  *
+#define NO_ARG()    SLASH()ASTERISK()ASTERISK()SLASH()
 
 #define NS_FORWARD_NSIDOMNODE_TO_NSINODE \
   NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(MOZ_FINAL)
 
 #define NS_FORWARD_NSIDOMNODE_TO_NSINODE_OVERRIDABLE \
-  NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER()
+  NS_FORWARD_NSIDOMNODE_TO_NSINODE_HELPER(NO_ARG())
 
 #endif /* nsINode_h___ */

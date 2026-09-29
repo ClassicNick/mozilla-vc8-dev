@@ -666,7 +666,7 @@ nsresult
 nsWindowsShellService::LaunchHTTPHandlerPane()
 {
   OPENASINFO info;
-  info.pcszFile = L"http";
+  info.pcszFile = (LPCTSTR) L"http";
   info.pcszClass = nullptr;
   info.oaifInFlags = OAIF_FORCE_REGISTRATION | 
                      OAIF_URL_PROTOCOL |

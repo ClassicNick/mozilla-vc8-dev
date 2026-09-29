@@ -750,7 +750,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget, gfxASurface *aSurfa
 
   RefPtr<SourceSurface> srcBuffer;
 
-#ifdef XP_WIN
+#if defined XP_WIN && CAIRO_HAS_D2D_SURFACE
   if (aSurface->GetType() == gfxSurfaceTypeD2D &&
       format != FORMAT_A8) {
     NativeSurface surf;

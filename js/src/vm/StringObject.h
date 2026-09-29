@@ -61,8 +61,8 @@ class StringObject : public JSObject
 
     /* For access to assignInitialShape. */
     friend bool
-    EmptyShape::ensureInitialCustomShape<StringObject>(ExclusiveContext *cx,
-                                                       Handle<StringObject*> obj);
+    EmptyShape::ensureInitialCustomShape(ExclusiveContext *cx,
+                                         Handle<StringObject*> obj);
 
     /*
      * Compute the initial shape to associate with fresh String objects, which

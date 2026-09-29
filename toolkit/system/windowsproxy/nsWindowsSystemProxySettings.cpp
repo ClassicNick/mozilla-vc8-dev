@@ -17,6 +17,10 @@
 #include "nsISupportsPrimitives.h"
 #include "nsIURI.h"
 
+#ifndef INTERNET_PER_CONN_FLAGS_UI
+#define INTERNET_PER_CONN_FLAGS_UI 10
+#endif
+
 class nsWindowsSystemProxySettings MOZ_FINAL : public nsISystemProxySettings
 {
 public:
