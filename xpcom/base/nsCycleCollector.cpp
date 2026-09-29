@@ -2254,9 +2254,20 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSPurpleBuffer)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-#define NS_TRACE_SEGMENTED_ARRAY(_field)                                       \
+#define NS_TRACE_SEGMENTED_ARRAY1(_field)                                       \
     {                                                                          \
-        auto segment = tmp->_field.GetFirstSegment();                          \
+        SegmentedArrayElement<JS::Heap<JS::Value> >* segment = tmp->_field.GetFirstSegment();                          \
+        while (segment) {                                                      \
+            for (uint32_t i = segment->Length(); i > 0;) {                     \
+                aCallbacks.Trace(&segment->ElementAt(--i), #_field, aClosure); \
+            }                                                                  \
+            segment = segment->getNext();                                      \
+        }                                                                      \
+    }
+
+#define NS_TRACE_SEGMENTED_ARRAY2(_field)                                       \
+    {                                                                          \
+        SegmentedArrayElement<JS::Heap<JSObject*> >* segment = tmp->_field.GetFirstSegment();                          \
         while (segment) {                                                      \
             for (uint32_t i = segment->Length(); i > 0;) {                     \
                 aCallbacks.Trace(&segment->ElementAt(--i), #_field, aClosure); \
@@ -2266,8 +2277,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
     }
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(JSPurpleBuffer)
-    NS_TRACE_SEGMENTED_ARRAY(mValues)
-    NS_TRACE_SEGMENTED_ARRAY(mObjects)
+    NS_TRACE_SEGMENTED_ARRAY1(mValues)
+    NS_TRACE_SEGMENTED_ARRAY2(mObjects)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(JSPurpleBuffer, AddRef)

@@ -5,7 +5,7 @@
 #ifndef __UNIPRIV__
 #define __UNIPRIV__
 
-#include <stdint.h>
+#include "mozilla/StandardInteger.h"
 #include "umap.h"
 #include "uconvutil.h"
 
